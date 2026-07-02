@@ -616,10 +616,31 @@ try {
   }
   await page.locator("#viewport").screenshot({ path: screenshotPath });
 
+  const bridgePathfinderNewMapSucceeded =
+    result.probe?.results?.bridgeLogicPathfinderNewMapInvoked === true
+    && result.probe?.results?.bridgeLogicPathfinderNewMapException === false
+    && result.probe?.results?.bridgeLogicPathfinderNewMapSkippedForBrowserSafety === false
+    && result.probe?.results?.bridgeLogicPathfinderAfterNewMapBridgeLayerCells > 0
+    && result.probe?.results?.bridgeLogicPathfinderAfterNewMapClearCells > 0
+    && result.probe?.results?.bridgeLogicPathfinderAfterNewMapGroundCells > 0
+    && result.probe?.results?.bridgeLogicPathfinderChangeToBrokenInvoked === true
+    && result.probe?.results?.bridgeLogicPathfinderAfterBrokenBridgeLayerCells > 0
+    && result.probe?.results?.bridgeLogicPathfinderAfterBrokenClearCells === 0
+    && result.probe?.results?.bridgeLogicPathfinderAfterBrokenBridgeImpassableCells > 0
+    && result.probe?.results?.bridgeLogicPathfinderChangeToRepairedInvoked === true
+    && result.probe?.results?.bridgeLogicPathfinderAfterRepairedBridgeLayerCells > 0
+    && result.probe?.results?.bridgeLogicPathfinderAfterRepairedClearCells > 0;
+  const bridgePathfinderNewMapDeferred =
+    result.probe?.results?.bridgeLogicPathfinderNewMapSkippedForBrowserSafety === true
+    && result.probe?.results?.bridgeLogicPathfinderNewMapInvoked === false
+    && result.probe?.results?.bridgeLogicPathfinderPreflightEstimatedMapCells > 0
+    && result.probe?.results?.bridgeLogicPathfinderChangeToBrokenInvoked === true
+    && result.probe?.results?.bridgeLogicPathfinderChangeToRepairedInvoked === true;
+
   if (!result.ok
       || result.command !== "ww3dTerrainBridgeBufferScene"
       || result.probe?.source !== "ww3d_terrain_bridge_buffer_scene_probe"
-      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> ThingFactory::newObject(GenericBridge) -> GameLogic::destroyObject/update-processDestroyList(temp GenericBridge) -> ThingFactory::newDrawable(GenericBridge) -> GameClient::destroyDrawable(temp GenericBridge) -> W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> TerrainLogic::addBridgeToLogic -> GameLogic::findObjectByID(GenericBridge) -> Object::attemptDamage(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::kill(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::attemptHealingFromSoleBenefactor(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::setDisabledUntil/checkDisabledStatus(GenericBridge) -> Object::goInvulnerable(GenericBridge) -> TerrainLogic::updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay -> GameLogic::destroyObject/update-processDestroyList(GenericBridge)"
+      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> ThingFactory::newObject(GenericBridge) -> GameLogic::destroyObject/update-processDestroyList(temp GenericBridge) -> ThingFactory::newDrawable(GenericBridge) -> GameClient::destroyDrawable(temp GenericBridge) -> W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> TerrainLogic::addBridgeToLogic -> AIPathfind::newMap/classifyMap preflight -> Pathfinder::changeBridgeState(broken/repaired) -> GameLogic::findObjectByID(GenericBridge) -> Object::attemptDamage(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::kill(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::attemptHealingFromSoleBenefactor(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::setDisabledUntil/checkDisabledStatus(GenericBridge) -> Object::goInvulnerable(GenericBridge) -> TerrainLogic::updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay -> GameLogic::destroyObject/update-processDestroyList(GenericBridge)"
       || result.probe?.results?.runtimeAssetSystemInstalled !== true
       || result.probe?.results?.modelsFileExists !== true
       || result.probe?.results?.meshFileExists !== true
@@ -765,6 +786,9 @@ try {
       || result.probe?.results?.bridgeLogicDestroyListLookupAfterProcessNull !== true
       || result.probe?.results?.bridgeLogicAiPathfinderAvailable !== true
       || result.probe?.results?.bridgeLogicFirstLayerAfterSeed !== 2
+      || result.probe?.results?.bridgeLogicPathfinderMapInvoked !== true
+      || result.probe?.results?.bridgeLogicPathfinderLayer !== result.probe?.results?.bridgeLogicFirstLayerAfterSeed
+      || (!bridgePathfinderNewMapSucceeded && !bridgePathfinderNewMapDeferred)
       || result.probe?.results?.bridgeDrawTerrainLogicBridgeCount <= 0
       || result.probe?.results?.bridgeDrawEnabledBridgeCount <= 0
       || result.probe?.results?.bridgeDrawWrapperInvoked !== true

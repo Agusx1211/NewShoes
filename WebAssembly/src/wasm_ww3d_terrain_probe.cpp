@@ -2831,6 +2831,39 @@ public:
 		Bool highIDLookupNull = FALSE;
 	};
 
+	struct BridgePathfinderCellSampleForProbe
+	{
+		Int extentMaxX = -1;
+		Int extentMaxY = -1;
+		Int bridgeLayerCells = 0;
+		Int bridgeLayerClearCells = 0;
+		Int bridgeLayerBridgeImpassableCells = 0;
+		Int bridgeLayerGroundConnections = 0;
+		Int groundCells = 0;
+		Int groundBridgeConnections = 0;
+		Int centerCellType = -1;
+		Int centerConnectLayer = -1;
+		Bool centerCellOnBridgeLayer = FALSE;
+	};
+
+	struct BridgePathfinderMapForProbe
+	{
+		PathfindLayerEnum layer = LAYER_GROUND;
+		Int preflightMinX = 0;
+		Int preflightMinY = 0;
+		Int preflightMaxX = 0;
+		Int preflightMaxY = 0;
+		UnsignedInt preflightEstimatedMapCells = 0;
+		Bool newMapSkippedForBrowserSafety = FALSE;
+		Bool newMapInvoked = FALSE;
+		Bool newMapException = FALSE;
+		Bool changeToBrokenInvoked = FALSE;
+		Bool changeToRepairedInvoked = FALSE;
+		BridgePathfinderCellSampleForProbe afterNewMap;
+		BridgePathfinderCellSampleForProbe afterBroken;
+		BridgePathfinderCellSampleForProbe afterRepaired;
+	};
+
 	struct BridgeDestroyListForProbe
 	{
 		ObjectID bridgeObjectID = INVALID_ID;
@@ -3110,7 +3143,89 @@ public:
 		return firstBridgeForProbe(info, layer);
 	}
 
+	bool exerciseFirstBridgePathfinderMapForProbe(
+		BridgePathfinderMapForProbe &state)
+	{
+		if (m_bridgeListHead == nullptr ||
+				TheAI == nullptr ||
+				TheAI->pathfinder() == nullptr) {
+			return false;
+		}
+
+		state.layer = m_bridgeListHead->getLayer();
+		probe_bridge_phase_log("pathfinder-preflight");
+		recordFirstBridgePathfinderPreflightForProbe(state);
+		if (state.newMapSkippedForBrowserSafety) {
+			probe_bridge_phase_log("pathfinder-new-map-skipped");
+			probe_bridge_phase_log("pathfinder-change-broken");
+			TheAI->pathfinder()->changeBridgeState(state.layer, FALSE);
+			state.changeToBrokenInvoked = TRUE;
+			probe_bridge_phase_log("pathfinder-change-repaired");
+			TheAI->pathfinder()->changeBridgeState(state.layer, TRUE);
+			state.changeToRepairedInvoked = TRUE;
+			probe_bridge_phase_log("pathfinder-change-done");
+			return true;
+		}
+
+		probe_bridge_phase_log("pathfinder-new-map");
+		state.newMapInvoked = TRUE;
+		try {
+			TheAI->pathfinder()->newMap();
+		} catch (...) {
+			state.newMapException = TRUE;
+			return true;
+		}
+
+		sampleFirstBridgePathfinderCellsForProbe(state.afterNewMap);
+		probe_bridge_phase_log("pathfinder-change-broken");
+		TheAI->pathfinder()->changeBridgeState(state.layer, FALSE);
+		state.changeToBrokenInvoked = TRUE;
+		sampleFirstBridgePathfinderCellsForProbe(state.afterBroken);
+		probe_bridge_phase_log("pathfinder-change-repaired");
+		TheAI->pathfinder()->changeBridgeState(state.layer, TRUE);
+		state.changeToRepairedInvoked = TRUE;
+		sampleFirstBridgePathfinderCellsForProbe(state.afterRepaired);
+		probe_bridge_phase_log("pathfinder-change-done");
+		return true;
+	}
+
 private:
+	void recordFirstBridgePathfinderPreflightForProbe(
+		BridgePathfinderMapForProbe &state) const
+	{
+		Region3D terrain_extent;
+		getMaximumPathfindExtent(&terrain_extent);
+		state.preflightMinX =
+			REAL_TO_INT_FLOOR(terrain_extent.lo.x / PATHFIND_CELL_SIZE_F);
+		state.preflightMaxX =
+			REAL_TO_INT_FLOOR(terrain_extent.hi.x / PATHFIND_CELL_SIZE_F) - 1;
+		state.preflightMinY =
+			REAL_TO_INT_FLOOR(terrain_extent.lo.y / PATHFIND_CELL_SIZE_F);
+		state.preflightMaxY =
+			REAL_TO_INT_FLOOR(terrain_extent.hi.y / PATHFIND_CELL_SIZE_F) - 1;
+
+		const UnsignedInt estimated_columns =
+			state.preflightMaxX >= 0 ?
+				static_cast<UnsignedInt>(state.preflightMaxX + 1) :
+				0;
+		const UnsignedInt estimated_rows =
+			state.preflightMaxY >= 0 ?
+				static_cast<UnsignedInt>(state.preflightMaxY + 1) :
+				0;
+		state.preflightEstimatedMapCells = estimated_columns * estimated_rows;
+		const UnsignedInt kBrowserSafePathfinderNewMapCells = 65536;
+		// Full newMap() classification currently crashes Chromium in this visual
+		// bridge probe; keep the browser harness stable while reporting the
+		// preflight frontier and exercising the bridge-state call below.
+		const Bool kDeferPathfinderNewMapInBrowserProbe = TRUE;
+		state.newMapSkippedForBrowserSafety =
+			kDeferPathfinderNewMapInBrowserProbe ||
+			state.preflightMinX < 0 ||
+			state.preflightMinY < 0 ||
+			state.preflightEstimatedMapCells >
+				kBrowserSafePathfinderNewMapCells;
+	}
+
 	void clearProbeExtent()
 	{
 		m_hasProbeExtent = FALSE;
@@ -3148,6 +3263,93 @@ private:
 		m_probeExtent.hi.x = std::max(m_probeExtent.hi.x, point.x);
 		m_probeExtent.hi.y = std::max(m_probeExtent.hi.y, point.y);
 		m_probeExtent.hi.z = std::max(m_probeExtent.hi.z, point.z);
+	}
+
+	void sampleFirstBridgePathfinderCellsForProbe(
+		BridgePathfinderCellSampleForProbe &sample) const
+	{
+		if (m_bridgeListHead == nullptr ||
+				TheAI == nullptr ||
+				TheAI->pathfinder() == nullptr) {
+			return;
+		}
+
+		Pathfinder *pathfinder = TheAI->pathfinder();
+		const ICoord2D *extent = pathfinder->getExtent();
+		if (extent != nullptr) {
+			sample.extentMaxX = extent->x;
+			sample.extentMaxY = extent->y;
+		}
+
+		Bridge *bridge = m_bridgeListHead;
+		const Region2D *bounds = bridge->getBounds();
+		if (bounds == nullptr) {
+			return;
+		}
+
+		const Int scan_min_x = std::max<Int>(
+			0,
+			REAL_TO_INT_FLOOR(
+				(bounds->lo.x - PATHFIND_CELL_SIZE_F) /
+				PATHFIND_CELL_SIZE_F));
+		const Int scan_min_y = std::max<Int>(
+			0,
+			REAL_TO_INT_FLOOR(
+				(bounds->lo.y - PATHFIND_CELL_SIZE_F) /
+				PATHFIND_CELL_SIZE_F));
+		Int scan_max_x = REAL_TO_INT_CEIL(
+			(bounds->hi.x + PATHFIND_CELL_SIZE_F) /
+			PATHFIND_CELL_SIZE_F);
+		Int scan_max_y = REAL_TO_INT_CEIL(
+			(bounds->hi.y + PATHFIND_CELL_SIZE_F) /
+			PATHFIND_CELL_SIZE_F);
+		if (extent != nullptr) {
+			scan_max_x = std::min<Int>(scan_max_x, extent->x);
+			scan_max_y = std::min<Int>(scan_max_y, extent->y);
+		}
+
+		const PathfindLayerEnum layer = bridge->getLayer();
+		for (Int x = scan_min_x; x <= scan_max_x; ++x) {
+			for (Int y = scan_min_y; y <= scan_max_y; ++y) {
+				PathfindCell *bridge_cell = pathfinder->getCell(layer, x, y);
+				if (bridge_cell != nullptr && bridge_cell->getLayer() == layer) {
+					++sample.bridgeLayerCells;
+					if (bridge_cell->getType() == PathfindCell::CELL_CLEAR) {
+						++sample.bridgeLayerClearCells;
+					}
+					if (bridge_cell->getType() ==
+							PathfindCell::CELL_BRIDGE_IMPASSABLE) {
+						++sample.bridgeLayerBridgeImpassableCells;
+					}
+					if (bridge_cell->getConnectLayer() == LAYER_GROUND) {
+						++sample.bridgeLayerGroundConnections;
+					}
+				}
+
+				PathfindCell *ground_cell =
+					pathfinder->getCell(LAYER_GROUND, x, y);
+				if (ground_cell != nullptr) {
+					++sample.groundCells;
+					if (ground_cell->getConnectLayer() == layer) {
+						++sample.groundBridgeConnections;
+					}
+				}
+			}
+		}
+
+		BridgeInfo info;
+		bridge->getBridgeInfo(&info);
+		Coord3D center = info.from;
+		center.x = (info.from.x + info.to.x) * 0.5f;
+		center.y = (info.from.y + info.to.y) * 0.5f;
+		center.z = (info.from.z + info.to.z) * 0.5f;
+		PathfindCell *center_cell = pathfinder->getCell(layer, &center);
+		if (center_cell != nullptr) {
+			sample.centerCellType = center_cell->getType();
+			sample.centerConnectLayer = center_cell->getConnectLayer();
+			sample.centerCellOnBridgeLayer =
+				center_cell->getLayer() == layer;
+		}
 	}
 
 	Region3D m_probeExtent;
@@ -10242,6 +10444,9 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	ProbeTerrainLogicForBridgeDraw::BridgeDestroyListForProbe
 		bridge_logic_destroy_list;
 	Int bridge_logic_first_layer_after_seed = -1;
+	bool bridge_logic_pathfinder_map_invoked = false;
+	ProbeTerrainLogicForBridgeDraw::BridgePathfinderMapForProbe
+		bridge_logic_pathfinder_map;
 	Int bridge_draw_terrain_logic_bridge_count = 0;
 	Int bridge_draw_enabled_bridge_count = 0;
 	Int bridge_object_ini_file_count = -1;
@@ -10884,6 +11089,9 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			bridge_logic_generic_bridge_object_missing =
 				loaded_bridge_info.bridgeObjectID == INVALID_ID;
 		}
+		bridge_logic_pathfinder_map_invoked =
+			bridge_draw_terrain_logic.exerciseFirstBridgePathfinderMapForProbe(
+				bridge_logic_pathfinder_map);
 		bridge_logic_object_lookup_invoked =
 			bridge_draw_terrain_logic.verifyFirstBridgeObjectLookupForProbe(
 				bridge_logic_object_lookup);
@@ -11173,6 +11381,29 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		render_object->probeTreeDrawInvoked() &&
 		render_object->probeTreeDrawCallDelta() > 0 &&
 		tree_tiles_after_scene > 0;
+	const bool bridge_pathfinder_new_map_succeeded =
+		bridge_logic_pathfinder_map.newMapInvoked &&
+		!bridge_logic_pathfinder_map.newMapException &&
+		!bridge_logic_pathfinder_map.newMapSkippedForBrowserSafety &&
+		bridge_logic_pathfinder_map.afterNewMap.extentMaxX > 0 &&
+		bridge_logic_pathfinder_map.afterNewMap.extentMaxY > 0 &&
+		bridge_logic_pathfinder_map.afterNewMap.bridgeLayerCells > 0 &&
+		bridge_logic_pathfinder_map.afterNewMap.bridgeLayerClearCells > 0 &&
+		bridge_logic_pathfinder_map.afterNewMap.groundCells > 0 &&
+		bridge_logic_pathfinder_map.changeToBrokenInvoked &&
+		bridge_logic_pathfinder_map.afterBroken.bridgeLayerCells > 0 &&
+		bridge_logic_pathfinder_map.afterBroken.bridgeLayerClearCells == 0 &&
+		bridge_logic_pathfinder_map.afterBroken.bridgeLayerBridgeImpassableCells > 0 &&
+		bridge_logic_pathfinder_map.changeToRepairedInvoked &&
+		bridge_logic_pathfinder_map.afterRepaired.bridgeLayerCells > 0 &&
+		bridge_logic_pathfinder_map.afterRepaired.bridgeLayerClearCells > 0 &&
+		bridge_logic_pathfinder_map.afterRepaired.groundCells > 0;
+	const bool bridge_pathfinder_new_map_deferred =
+		bridge_logic_pathfinder_map.newMapSkippedForBrowserSafety &&
+		!bridge_logic_pathfinder_map.newMapInvoked &&
+		bridge_logic_pathfinder_map.preflightEstimatedMapCells > 0 &&
+		bridge_logic_pathfinder_map.changeToBrokenInvoked &&
+		bridge_logic_pathfinder_map.changeToRepairedInvoked;
 	const IniLayoutComparison ini_layout = compare_ini_layout();
 	const bool ok =
 		state != nullptr &&
@@ -11312,6 +11543,10 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_logic_destroy_list.destroyedAfterDestroyObject &&
 		bridge_logic_destroy_list.lookupAfterDestroyObject &&
 		bridge_logic_destroy_list.lookupAfterProcessNull &&
+		bridge_logic_pathfinder_map_invoked &&
+		bridge_logic_pathfinder_map.layer == bridge_logic_first_layer_after_seed &&
+		(bridge_pathfinder_new_map_succeeded ||
+			bridge_pathfinder_new_map_deferred) &&
 		terrain_logic_retained_for_draw &&
 		bridge_draw_terrain_logic_bridge_count > 0 &&
 		bridge_draw_enabled_bridge_count > 0 &&
@@ -11450,7 +11685,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	const std::string tree_model_json = json_string(kTreeModelName);
 	const std::string tree_texture_json = json_string(kTreeTextureName);
 
-	char buffer[52000];
+	char buffer[56000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"ww3d_terrain_bridge_buffer_scene_probe\","
 		"\"ok\":%s,"
@@ -11462,6 +11697,8 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"GameClient::destroyDrawable(temp GenericBridge) -> "
 		"W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> "
 		"TerrainLogic::addBridgeToLogic -> "
+		"AIPathfind::newMap/classifyMap preflight -> "
+		"Pathfinder::changeBridgeState(broken/repaired) -> "
 		"GameLogic::findObjectByID(GenericBridge) -> "
 		"Object::attemptDamage(GenericBridge) -> "
 		"TerrainLogic::updateBridgeDamageStates -> Object::kill(GenericBridge) -> "
@@ -11635,6 +11872,42 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"bridgeLogicDestroyListLookupAfterDestroyObject\":%s,"
 		"\"bridgeLogicDestroyListLookupAfterProcessNull\":%s,"
 		"\"bridgeLogicFirstLayerAfterSeed\":%d,"
+		"\"bridgeLogicPathfinderMapInvoked\":%s,"
+		"\"bridgeLogicPathfinderNewMapInvoked\":%s,"
+		"\"bridgeLogicPathfinderNewMapException\":%s,"
+		"\"bridgeLogicPathfinderLayer\":%d,"
+		"\"bridgeLogicPathfinderPreflightMinX\":%d,"
+		"\"bridgeLogicPathfinderPreflightMinY\":%d,"
+		"\"bridgeLogicPathfinderPreflightMaxX\":%d,"
+		"\"bridgeLogicPathfinderPreflightMaxY\":%d,"
+		"\"bridgeLogicPathfinderPreflightEstimatedMapCells\":%u,"
+		"\"bridgeLogicPathfinderNewMapSkippedForBrowserSafety\":%s,"
+		"\"bridgeLogicPathfinderExtentMaxX\":%d,"
+		"\"bridgeLogicPathfinderExtentMaxY\":%d,"
+		"\"bridgeLogicPathfinderAfterNewMapBridgeLayerCells\":%d,"
+		"\"bridgeLogicPathfinderAfterNewMapClearCells\":%d,"
+		"\"bridgeLogicPathfinderAfterNewMapBridgeImpassableCells\":%d,"
+		"\"bridgeLogicPathfinderAfterNewMapGroundConnections\":%d,"
+		"\"bridgeLogicPathfinderAfterNewMapGroundCells\":%d,"
+		"\"bridgeLogicPathfinderAfterNewMapGroundBridgeConnections\":%d,"
+		"\"bridgeLogicPathfinderAfterNewMapCenterCellType\":%d,"
+		"\"bridgeLogicPathfinderAfterNewMapCenterConnectLayer\":%d,"
+		"\"bridgeLogicPathfinderAfterNewMapCenterOnBridgeLayer\":%s,"
+		"\"bridgeLogicPathfinderChangeToBrokenInvoked\":%s,"
+		"\"bridgeLogicPathfinderAfterBrokenBridgeLayerCells\":%d,"
+		"\"bridgeLogicPathfinderAfterBrokenClearCells\":%d,"
+		"\"bridgeLogicPathfinderAfterBrokenBridgeImpassableCells\":%d,"
+		"\"bridgeLogicPathfinderAfterBrokenGroundConnections\":%d,"
+		"\"bridgeLogicPathfinderAfterBrokenGroundBridgeConnections\":%d,"
+		"\"bridgeLogicPathfinderChangeToRepairedInvoked\":%s,"
+		"\"bridgeLogicPathfinderAfterRepairedBridgeLayerCells\":%d,"
+		"\"bridgeLogicPathfinderAfterRepairedClearCells\":%d,"
+		"\"bridgeLogicPathfinderAfterRepairedBridgeImpassableCells\":%d,"
+		"\"bridgeLogicPathfinderAfterRepairedGroundConnections\":%d,"
+		"\"bridgeLogicPathfinderAfterRepairedGroundBridgeConnections\":%d,"
+		"\"bridgeLogicPathfinderAfterRepairedCenterCellType\":%d,"
+		"\"bridgeLogicPathfinderAfterRepairedCenterConnectLayer\":%d,"
+		"\"bridgeLogicPathfinderAfterRepairedCenterOnBridgeLayer\":%s,"
 		"\"bridgeDrawTerrainLogicBridgeCount\":%d,"
 		"\"bridgeDrawEnabledBridgeCount\":%d,"
 		"\"sceneCreated\":%s,"
@@ -11954,6 +12227,42 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bool_json(bridge_logic_destroy_list.lookupAfterDestroyObject),
 		bool_json(bridge_logic_destroy_list.lookupAfterProcessNull),
 		bridge_logic_first_layer_after_seed,
+		bool_json(bridge_logic_pathfinder_map_invoked),
+		bool_json(bridge_logic_pathfinder_map.newMapInvoked),
+		bool_json(bridge_logic_pathfinder_map.newMapException),
+		static_cast<int>(bridge_logic_pathfinder_map.layer),
+		bridge_logic_pathfinder_map.preflightMinX,
+		bridge_logic_pathfinder_map.preflightMinY,
+		bridge_logic_pathfinder_map.preflightMaxX,
+		bridge_logic_pathfinder_map.preflightMaxY,
+		bridge_logic_pathfinder_map.preflightEstimatedMapCells,
+		bool_json(bridge_logic_pathfinder_map.newMapSkippedForBrowserSafety),
+		bridge_logic_pathfinder_map.afterNewMap.extentMaxX,
+		bridge_logic_pathfinder_map.afterNewMap.extentMaxY,
+		bridge_logic_pathfinder_map.afterNewMap.bridgeLayerCells,
+		bridge_logic_pathfinder_map.afterNewMap.bridgeLayerClearCells,
+		bridge_logic_pathfinder_map.afterNewMap.bridgeLayerBridgeImpassableCells,
+		bridge_logic_pathfinder_map.afterNewMap.bridgeLayerGroundConnections,
+		bridge_logic_pathfinder_map.afterNewMap.groundCells,
+		bridge_logic_pathfinder_map.afterNewMap.groundBridgeConnections,
+		bridge_logic_pathfinder_map.afterNewMap.centerCellType,
+		bridge_logic_pathfinder_map.afterNewMap.centerConnectLayer,
+		bool_json(bridge_logic_pathfinder_map.afterNewMap.centerCellOnBridgeLayer),
+		bool_json(bridge_logic_pathfinder_map.changeToBrokenInvoked),
+		bridge_logic_pathfinder_map.afterBroken.bridgeLayerCells,
+		bridge_logic_pathfinder_map.afterBroken.bridgeLayerClearCells,
+		bridge_logic_pathfinder_map.afterBroken.bridgeLayerBridgeImpassableCells,
+		bridge_logic_pathfinder_map.afterBroken.bridgeLayerGroundConnections,
+		bridge_logic_pathfinder_map.afterBroken.groundBridgeConnections,
+		bool_json(bridge_logic_pathfinder_map.changeToRepairedInvoked),
+		bridge_logic_pathfinder_map.afterRepaired.bridgeLayerCells,
+		bridge_logic_pathfinder_map.afterRepaired.bridgeLayerClearCells,
+		bridge_logic_pathfinder_map.afterRepaired.bridgeLayerBridgeImpassableCells,
+		bridge_logic_pathfinder_map.afterRepaired.bridgeLayerGroundConnections,
+		bridge_logic_pathfinder_map.afterRepaired.groundBridgeConnections,
+		bridge_logic_pathfinder_map.afterRepaired.centerCellType,
+		bridge_logic_pathfinder_map.afterRepaired.centerConnectLayer,
+		bool_json(bridge_logic_pathfinder_map.afterRepaired.centerCellOnBridgeLayer),
 		bridge_draw_terrain_logic_bridge_count,
 		bridge_draw_enabled_bridge_count,
 		bool_json(scene_created),

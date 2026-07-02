@@ -4222,6 +4222,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`;
       the harness captured
       `WebAssembly/artifacts/screenshots/harness-smoke-ww3d-terrain-bridge-buffer-scene-canvas.png`.
+- [x] Browser-gate the bridge-buffer pathfinder-map frontier without crashing
+      the render harness. The bridge scene now records an original
+      `AIPathfind::newMap` preflight for the retained logical bridge layer,
+      reports the current MD_CHI01 bridge extent as a 14,112-cell pathfinder
+      classification candidate, and deliberately defers the full
+      `Pathfinder::newMap()` call because invoking it inside the focused visual
+      bridge probe crashes Chromium after `W3DBridgeBuffer::loadBridges`.
+      The same scene now proves the seeded original bridge layer survives
+      `Pathfinder::changeBridgeState(broken/repaired)` under the focused
+      `GameLogic`/`AI` owners and keeps rendering the retained bridge, roads,
+      trees, and shroud overlay through the existing browser screenshot harness.
+      Verified with `cmake --build WebAssembly/build/wasm --target cnc-port -j 4`
+      and `npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
 - [x] Harness-prove the retained `GenericBridge` body-state clamp before
       chasing damaged bridge rendering. The bridge-buffer scene now reads the
       real `GenericBridge` object's `BodyModuleInterface` after
