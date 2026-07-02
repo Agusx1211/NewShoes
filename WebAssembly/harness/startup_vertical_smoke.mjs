@@ -383,6 +383,32 @@ function assertFunctionLexiconRuntimeFrontier(state) {
     "FunctionLexicon widget/draw/layout/W3D callback lookups did not resolve", probe.lookups);
 }
 
+function assertModuleFactoryRuntimeFrontier(state) {
+  const probe = state.moduleFactoryRuntime;
+  expect(probe?.attempted === true, "module factory runtime probe did not run", probe);
+  expect(probe.ok === true, "module factory runtime did not report ready", probe);
+  expect(probe.status === "ready", "module factory runtime status mismatch", probe);
+  expect(probe.nextRequired === "createParticleSystemManager",
+    "module factory runtime nextRequired mismatch", probe);
+  expect(probe.constructed === true && probe.theModuleFactoryOwned === true,
+    "original W3DModuleFactory was not constructed as TheModuleFactory", probe);
+  expect(probe.initRan === true && probe.initThrew === false,
+    "original W3DModuleFactory::init() did not complete", probe);
+  expect(probe.gameEngineInit?.factory === "createModuleFactory"
+      && probe.gameEngineInit.line === 447
+      && probe.gameEngineInit.originalConcrete === "W3DModuleFactory",
+    "GameEngine.cpp createModuleFactory ownership mismatch", probe);
+  expect(probe.lookups?.activeBody === true
+      && probe.lookups.destroyDie === true
+      && probe.lookups.inactiveBody === true
+      && probe.lookups.beaconClientUpdate === true
+      && probe.lookups.w3dDefaultDraw === true
+      && probe.lookups.w3dModelDraw === true
+      && probe.lookups.w3dLaserDraw === true
+      && probe.lookups.w3dPropDraw === true,
+    "ModuleFactory gameplay/client-update/W3D draw lookups did not resolve", probe.lookups);
+}
+
 function assertAudioOwnedFrontier(state) {
   const startup = state.originalEngineStartup;
   const frontier = startup?.deviceFactoryFrontier;
@@ -423,8 +449,20 @@ function assertAudioOwnedFrontier(state) {
       && frontier.functionLexiconRuntime.messageBoxSystemReady === true
       && frontier.functionLexiconRuntime.nextRequired === "originalFunctionLexiconRemainingShellCallbacks",
     "frontier functionLexiconRuntime summary mismatch", frontier.functionLexiconRuntime);
+  expect(frontier.moduleFactoryRuntime?.ready === true
+      && frontier.moduleFactoryRuntime.status === "ready"
+      && frontier.moduleFactoryRuntime.baseBehaviorReady === true
+      && frontier.moduleFactoryRuntime.clientUpdateReady === true
+      && frontier.moduleFactoryRuntime.w3dDrawReady === true
+      && frontier.moduleFactoryRuntime.nextRequired === "createParticleSystemManager",
+    "frontier moduleFactoryRuntime summary mismatch", frontier.moduleFactoryRuntime);
+  expect(entryByFactory(frontier, "createModuleFactory")?.ready === true
+      && entryByFactory(frontier, "createModuleFactory")?.status === "browser_runtime_initialized_original_w3d_module_factory",
+    "createModuleFactory frontier entry should be runtime-owned", frontier);
   expect(startup.browserDeviceLayer?.functionLexicon === false,
     "browser device layer should not mark the full function lexicon runtime-owned", startup.browserDeviceLayer);
+  expect(startup.browserDeviceLayer.moduleFactory === true,
+    "browser device layer should mark the module factory runtime-owned", startup.browserDeviceLayer);
 }
 
 function assertStartupSingletonsMissing(state) {
@@ -467,6 +505,8 @@ function assertOriginalStartupFrontier(state) {
   expect(browserLayer.audioManager === false, "browser audio manager should not be runtime-ready", browserLayer);
   expect(browserLayer.functionLexicon === false,
     "browser function lexicon should not be runtime-ready without archives", browserLayer);
+  expect(browserLayer.moduleFactory === false,
+    "browser module factory should not be runtime-ready without archives", browserLayer);
   expect(browserLayer.display === false, "browser display should not be production-ready", browserLayer);
 
   const frontier = startup.deviceFactoryFrontier;
@@ -561,6 +601,11 @@ function assertOriginalStartupFrontier(state) {
       && frontier.functionLexiconRuntime.status === "missing_runtime_archives",
     "function lexicon runtime should be blocked without archives",
     frontier.functionLexiconRuntime);
+  expect(frontier.moduleFactoryRuntime?.attempted === true
+      && frontier.moduleFactoryRuntime.ready === false
+      && frontier.moduleFactoryRuntime.status === "missing_runtime_archives",
+    "module factory runtime should be blocked without archives",
+    frontier.moduleFactoryRuntime);
 
   expect(frontier.fileSystemReady === false, "frontier filesystem should not be archive-ready", frontier);
   expect(frontier.startupFilesReady === false, "frontier startup files should be missing", frontier);
@@ -600,7 +645,8 @@ try {
   await page.locator("#viewport").screenshot({ path: canvasScreenshot });
 
   // Archive-backed boot: mount the startup + audio archive set and prove the
-  // boot constructs the original MilesAudioManager and W3DFunctionLexicon,
+  // boot constructs the original MilesAudioManager, W3DFunctionLexicon, and
+  // W3DModuleFactory,
   // runs the real AudioManager::init()/openDevice() path plus the original
   // W3DFunctionLexicon device-table load, original MainMenu/Credits/Skirmish
   // base shell callbacks, the promoted Challenge/PopupCommunicator/MapSelect/Replay/PopupReplay-modal/GameInfo owners,
@@ -637,6 +683,7 @@ try {
 
   assertAudioManagerRuntimeOwned(audioBootResult.state);
   assertFunctionLexiconRuntimeFrontier(audioBootResult.state);
+  assertModuleFactoryRuntimeFrontier(audioBootResult.state);
   assertAudioOwnedFrontier(audioBootResult.state);
 
   await audioPage.screenshot({ path: audioBootScreenshot });
@@ -656,6 +703,7 @@ try {
       firstUnownedInitLine: audioFrontier.firstUnownedInitLine,
       audioManagerRuntime: audioBootResult.state.audioManagerRuntime,
       functionLexiconRuntime: audioBootResult.state.functionLexiconRuntime,
+      moduleFactoryRuntime: audioBootResult.state.moduleFactoryRuntime,
     },
   }));
 } finally {

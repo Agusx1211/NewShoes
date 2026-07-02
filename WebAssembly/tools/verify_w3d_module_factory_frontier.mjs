@@ -199,6 +199,6 @@ console.log(JSON.stringify({
     decoratedKeyLookup: true,
     mapInsertion: true,
   },
-  runtimeBlockedBy:
-    "full W3DModuleFactory::init() runtime pulls the base ModuleFactory registration graph; prove it after original GameEngine.cpp startup owns the pre-createAudioManager file/INI/CD frontier",
+  runtimeCoveredBy:
+    "startup-vertical archive-backed moduleFactoryRuntime constructs W3DModuleFactory, runs init(), and proves public ModuleFactory lookups for representative base gameplay, client-update, and W3D draw modules",
 }));

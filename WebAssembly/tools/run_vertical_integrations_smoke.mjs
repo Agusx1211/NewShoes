@@ -83,12 +83,21 @@ function assertDeviceFrontier(payload, label) {
   const frontier = payload.originalEngineStartup?.deviceFactoryFrontier;
   const audioManagerReady = frontier?.audioManagerRuntime?.ready === true;
   const functionLexiconReady = frontier?.functionLexiconRuntime?.ready === true;
-  const expectedFirstUnownedFactory = audioManagerReady
-    ? (functionLexiconReady ? "createModuleFactory" : "createFunctionLexicon")
-    : "createAudioManager";
-  const expectedFirstUnownedLine = audioManagerReady
-    ? (functionLexiconReady ? 447 : 446)
-    : 434;
+  const moduleFactoryReady = frontier?.moduleFactoryRuntime?.ready === true;
+  const expectedFirstUnownedFactory = !audioManagerReady
+    ? "createAudioManager"
+    : !functionLexiconReady
+      ? "createFunctionLexicon"
+      : !moduleFactoryReady
+        ? "createModuleFactory"
+        : "createParticleSystemManager";
+  const expectedFirstUnownedLine = !audioManagerReady
+    ? 434
+    : !functionLexiconReady
+      ? 446
+      : !moduleFactoryReady
+        ? 447
+        : 453;
   expect(frontier?.firstUnownedInitFactory === expectedFirstUnownedFactory,
     `${label} did not report the expected first unowned device factory`, frontier);
   expect(frontier.firstUnownedInitLine === expectedFirstUnownedLine,
@@ -134,9 +143,14 @@ function assertStartupSingletonFrontier(payload, label) {
   if (baseIniMounted) {
     const audioManagerReady = frontier?.audioManagerRuntime?.ready === true;
     const functionLexiconReady = frontier?.functionLexiconRuntime?.ready === true;
-    const expectedNextRequired = audioManagerReady
-      ? (functionLexiconReady ? "createModuleFactory" : "createFunctionLexicon")
-      : "createAudioManager";
+    const moduleFactoryReady = frontier?.moduleFactoryRuntime?.ready === true;
+    const expectedNextRequired = !audioManagerReady
+      ? "createAudioManager"
+      : !functionLexiconReady
+        ? "createFunctionLexicon"
+        : !moduleFactoryReady
+          ? "createModuleFactory"
+          : "createParticleSystemManager";
     expect(startup.status === "browser_device_layer_pending",
       `${label} with base INI mounted should advance to browser device layer pending`, startup);
     expect(frontier.nextRequired === expectedNextRequired && frontier.setupReady === true,

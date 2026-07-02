@@ -2341,6 +2341,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `originalFunctionLexiconRemainingShellCallbacks` next. `ControlBarSystem`
       and `LeftHUDInput` remain open until the gameplay command/radar/player
       ownership surface is runtime-owned instead of weak-stubbed.
+- [x] Prove the original `W3DModuleFactory` runtime path in the browser startup
+      frontier without pretending the earlier `FunctionLexicon` blocker is done.
+      `wasm_module_factory_runtime` now constructs original `W3DModuleFactory`
+      through the linked `cnc-port` surface, assigns `TheModuleFactory`, runs
+      `W3DModuleFactory::init()`, and verifies public
+      `ModuleFactory::findModuleInterfaceMask()` lookups for representative base
+      gameplay modules (`ActiveBody`, `DestroyDie`, `InactiveBody`), the client
+      update module `BeaconClientUpdate`, and W3D draw modules
+      (`W3DDefaultDraw`, `W3DModelDraw`, `W3DLaserDraw`, `W3DPropDraw`).
+      Startup vertical reports `moduleFactoryRuntime.status:"ready"` and marks
+      the `createModuleFactory` frontier entry runtime-owned while keeping the
+      first unowned init factory at `createFunctionLexicon` until the remaining
+      callback graph is complete.
 ---
 
 ## M3 — File / data subsystem (real data)

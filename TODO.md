@@ -68,11 +68,14 @@ flow below.
       `PopupReplay` input/init/shutdown modal callbacks, plus the passive
       original `GameInfoWindowSystem` callback-name lookup without owning LAN
       game-info population; the remaining `FunctionLexicon` boundary is the
-      rest of the non-network layout callback graph);
+      rest of the non-network layout callback graph). The same archive-backed
+      boot now constructs original `W3DModuleFactory`, runs
+      `W3DModuleFactory::init()`, and proves public `ModuleFactory` lookups for
+      representative base gameplay, client-update, and W3D draw modules;
       archiveless or music-less boots honestly stay at line 434.
 - [ ] Own `createFunctionLexicon` (`W3DFunctionLexicon`, `GameEngine.cpp:446`)
-      and then `createModuleFactory` (line 447) in the browser boot — the new
-      first unowned init factories now that `TheAudio` is owned. The current
+      and then advance past the now-proven `createModuleFactory` (line 447) to
+      `createParticleSystemManager` (line 453) in the browser boot. The current
       linked runtime constructs original `W3DFunctionLexicon` and verifies the
       W3D device draw/layout callback tables plus the non-network base GUI
       system/input/tooltip/widget, IME draw, original `PopupReplay`
@@ -95,10 +98,14 @@ flow below.
       embedded-web menu behavior into `cnc-port`. Next promote the remaining
       non-network layout callback owners in small groups while leaving
       online/download/embedded web menus at explicit browser boundaries.
-      The real
-      `W3DModuleFactory` + all 224 module registrations already link into
-      `cnc-port` via `zh_gameengine_real_object_ini_runtime`, so lexicon/module
-      factory ownership should reuse that surface instead of relinking it.
+      The real `W3DModuleFactory` + all 224 module registrations now reuse the
+      `zh_gameengine_real_object_ini_runtime` link surface in the browser
+      startup: `moduleFactoryRuntime` constructs the original module factory,
+      runs `W3DModuleFactory::init()`, and verifies representative
+      `findModuleInterfaceMask()` lookups. The first unowned init factory
+      honestly remains `createFunctionLexicon` until the callback graph is
+      complete; after that the next startup owner is
+      `createParticleSystemManager`.
 - [ ] Promote `PopupReplaySystem` and `PopupReplayUpdate` only after the
       ScoreScreen replay-save state is split or runtime-owned without pulling
       LAN/WOL/GameSpy into `cnc-port`. Directly registering those callbacks
@@ -612,8 +619,8 @@ flow below.
       boundaries and avoiding download, transition, and game-start branches. It
       still uses focused display/font/text shims and no-op branch boundaries for
       undriven campaign/GameSpy/download/options paths, so full production
-      `W3DDisplay` construction and `W3DModuleFactory` module-template lookup
-      still need original public-API runtime proof. The linked `cnc-port`
+      `W3DDisplay` construction still needs original public-API runtime proof.
+      The linked `cnc-port`
       startup now constructs original `W3DFunctionLexicon` and verifies its W3D
       device callback-name lookups, but the base `FunctionLexicon` callback
       tables remain the honest `createFunctionLexicon` blocker.
@@ -622,12 +629,12 @@ flow below.
       `Win32GameEngine::createModuleFactory -> W3DModuleFactory` mapping,
       `GameEngine.cpp` call site, and all 19 original W3D draw-module
       registrations through the public `ModuleFactory` lookup internals; the
-      attempted standalone runtime lookup pulled the base ModuleFactory / INI /
-      game-client global graph, so the full `W3DModuleFactory::init()` runtime
-      proof should follow original `GameEngine.cpp` ownership of the
-      pre-`createAudioManager` file/INI/CD frontier. Advance the next vertical
-      slice outside the already-proven shell menu path unless a new menu flow
-      is driven through real original input/navigation and asset loading.
+      startup vertical now performs the corresponding browser runtime proof by
+      running original `W3DModuleFactory::init()` and checking public
+      `findModuleInterfaceMask()` results for base gameplay, client-update, and
+      W3D draw modules. Advance the next vertical slice outside the
+      already-proven shell menu path unless a new menu flow is driven through
+      real original input/navigation and asset loading.
       `test:vertical-integrations` now gates runtime archive preload/startup
       asset consumption, range-backed startup archive delivery, WindowZH-backed
       MainMenu dropdown/back and CreditsMenu layout callbacks, mapped-image
