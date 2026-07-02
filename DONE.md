@@ -2338,6 +2338,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       Verified with `npm --prefix WebAssembly run test:startup-vertical` and
       screenshots `startup-vertical-real-init.png` /
       `startup-vertical-real-init-menu-click.png`.
+- [x] Replace the stale-title real-init screenshot with a visible real
+      `Menus/MainMenu.wnd` repaint in the startup vertical. The real frame
+      bridge now clears the stale movie-break render gate only after the real
+      display reports no active movie and the Shell top is `MainMenu.wnd`,
+      restoring the original `MainMenuInit` intent without reordering
+      `GameClient::update()`. The harness performs the original first-run
+      mouse reveal, asserts the break gate is clear, samples WebGL canvas
+      pixels in the menu button area, captures visible MainMenu screenshots,
+      then clicks the engine hit-tested `ButtonUSA` path and state-verifies
+      the difficulty controls. Verified with
+      `npm --prefix WebAssembly run test:startup-vertical` and screenshots
+      `startup-vertical-real-init.png` /
+      `startup-vertical-real-init-menu-click.png`; follow-up visual transition
+      alignment after the click remains open in TODO.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what

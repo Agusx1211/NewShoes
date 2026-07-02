@@ -158,6 +158,7 @@ namespace {
 struct RealEngineFrameState {
 	int frames_attempted = 0;
 	int frames_completed = 0;
+	int stale_movie_break_clears = 0;
 	bool exception_caught = false;
 	std::string exception_text;
 	double last_frame_ms = 0.0;
@@ -436,6 +437,7 @@ void append_real_engine_client_state(std::string &json)
 	append_window_probe(json, "mainMenuParent", "MainMenu.wnd:MainMenuParent");
 	append_window_probe(json, "mapBorderSinglePlayer", "MainMenu.wnd:MapBorder");
 	append_window_probe(json, "mapBorderMain", "MainMenu.wnd:MapBorder2");
+	append_window_probe(json, "mapBorderDifficulty", "MainMenu.wnd:MapBorder4");
 	append_window_probe(json, "buttonSinglePlayer", "MainMenu.wnd:ButtonSinglePlayer");
 	append_window_probe(json, "buttonSingleBack", "MainMenu.wnd:ButtonSingleBack");
 	append_window_probe(json, "buttonUSA", "MainMenu.wnd:ButtonUSA");
@@ -447,12 +449,36 @@ void append_real_engine_client_state(std::string &json)
 	append_window_probe(json, "buttonOptions", "MainMenu.wnd:ButtonOptions");
 	append_window_probe(json, "buttonCredits", "MainMenu.wnd:ButtonCredits");
 	append_window_probe(json, "buttonExit", "MainMenu.wnd:ButtonExit");
+	append_window_probe(json, "buttonEasy", "MainMenu.wnd:ButtonEasy");
+	append_window_probe(json, "buttonMedium", "MainMenu.wnd:ButtonMedium");
+	append_window_probe(json, "buttonHard", "MainMenu.wnd:ButtonHard");
+	append_window_probe(json, "buttonDiffBack", "MainMenu.wnd:ButtonDiffBack");
 	append_window_under_probe_center(json, "underButtonSinglePlayerCenter", "MainMenu.wnd:ButtonSinglePlayer");
 	json += "}";
 
 	append_input_window_state(json);
 
 	json += "}";
+}
+
+void clear_stale_movie_break_for_visible_main_menu()
+{
+	if (TheWritableGlobalData == NULL || TheDisplay == NULL || TheShell == NULL) {
+		return;
+	}
+	if (!TheWritableGlobalData->m_breakTheMovie || TheDisplay->isMoviePlaying()) {
+		return;
+	}
+	WindowLayout *top = TheShell->top();
+	if (top == NULL || top->isHidden()) {
+		return;
+	}
+	const std::string filename = top->getFilename().str();
+	if (filename.find("MainMenu.wnd") == std::string::npos) {
+		return;
+	}
+	TheWritableGlobalData->m_breakTheMovie = FALSE;
+	++g_frame_state.stale_movie_break_clears;
 }
 
 } // namespace
@@ -470,7 +496,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame(int frame
 			++g_frame_state.frames_attempted;
 			const double frame_started_at = emscripten_get_now();
 			try {
+				clear_stale_movie_break_for_visible_main_menu();
 				TheGameEngine->update();
+				clear_stale_movie_break_for_visible_main_menu();
 				++g_frame_state.frames_completed;
 			} catch (const char *message) {
 				g_frame_state.exception_caught = true;
@@ -491,6 +519,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame(int frame
 	json += ",\"source\":\"GeneralsMD/Code/GameEngine/Source/Common/GameEngine.cpp::update via Win32GameEngine::update\"";
 	json += ",\"framesAttempted\":" + std::to_string(g_frame_state.frames_attempted);
 	json += ",\"framesCompleted\":" + std::to_string(g_frame_state.frames_completed);
+	json += ",\"staleMovieBreakClears\":" + std::to_string(g_frame_state.stale_movie_break_clears);
 	json += ",\"quitting\":";
 	json += (TheGameEngine != NULL && TheGameEngine->getQuitting() != FALSE) ? "true" : "false";
 	json += ",\"exceptionCaught\":";
