@@ -2331,6 +2331,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       and `PopupReplayUpdate` remain open because direct registration retains
       `LastReplayFileName` and `ScoreScreenEnableControls()` from the broader
       original `ScoreScreen.cpp` owner.
+- [x] Promote the original `ControlBarInput` callback name into the linked
+      `cnc-port` base `FunctionLexicon` without claiming the broader control-bar
+      command path. `zh_window_layout_script_runtime` now links original
+      `GUI/GUICallbacks/ControlBarCallback.cpp`, and the reduced wasm input
+      table registers the passive `ControlBarInput` callback. Startup vertical
+      verifies that lookup in the browser and now reports
+      `base_function_lexicon_control_bar_input_runtime_owned` with
+      `originalFunctionLexiconRemainingShellCallbacks` next. `ControlBarSystem`
+      and `LeftHUDInput` remain open until the gameplay command/radar/player
+      ownership surface is runtime-owned instead of weak-stubbed.
 ---
 
 ## M3 — File / data subsystem (real data)

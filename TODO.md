@@ -56,8 +56,8 @@ flow below.
       `KeyboardOptionsMenu` system/input/init/update/shutdown callbacks with
       original `MetaEvent` global ownership, original `InGamePopupMessage`
       system/input/init callbacks with original `InGameUI` global ownership,
-      original `IdleWorkerSystem`, original `BeaconWindowInput`,
-      original `ReplayControl` system/input callbacks,
+      original `IdleWorkerSystem`, original `BeaconWindowInput`, original
+      `ControlBarInput`, original `ReplayControl` system/input callbacks,
       plus `MainMenu`/`CreditsMenu`/`SkirmishGameOptionsMenu`/
       `SinglePlayerMenu` shell callback names, and original `ChallengeMenu`
       system/input/init/update/shutdown callbacks with original
@@ -80,7 +80,7 @@ flow below.
       original `DifficultySelect` system/input/init lookups, original
       `KeyboardOptionsMenu` system/input/init/update/shutdown lookups,
       original `InGamePopupMessage` system/input/init lookups,
-      original `IdleWorkerSystem`, `BeaconWindowInput`, and
+      original `IdleWorkerSystem`, `BeaconWindowInput`, `ControlBarInput`, and
       `ReplayControl` system/input lookups, and
       original `MainMenu`/`CreditsMenu`/
       `SkirmishGameOptionsMenu`/`SinglePlayerMenu`
@@ -104,6 +104,12 @@ flow below.
       LAN/WOL/GameSpy into `cnc-port`. Directly registering those callbacks
       retains `LastReplayFileName` and `ScoreScreenEnableControls()` from
       original `ScoreScreen.cpp`; do not replace that with fake weak stubs.
+- [ ] Promote `ControlBarSystem` and `LeftHUDInput` only after the original
+      control-bar command/radar/player ownership surface is ready in the
+      linked runtime. The passive `ControlBarInput` callback is now registered,
+      but the broader control-bar system/HUD callbacks reach gameplay command,
+      radar, mouse, player-list, and in-game UI state; keep those out of
+      `cnc-port` until that ownership is real instead of weak-stubbed.
 - [ ] Replace `WebAssembly/src/wasm_game_state_time_helper.cpp` with the
       original `Common/System/SaveGame/GameState.cpp` owner once the linked
       runtime no longer needs the focused GameLogic header boundary. The helper

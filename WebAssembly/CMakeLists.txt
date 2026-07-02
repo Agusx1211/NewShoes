@@ -4027,6 +4027,7 @@ add_library(zh_window_layout_script_runtime STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/HeaderTemplate.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/WindowVideoManager.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ControlBar/ControlBarBeacon.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/ControlBarCallback.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/ExtendedMessageBox.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/IMECandidate.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/InGamePopupMessage.cpp"

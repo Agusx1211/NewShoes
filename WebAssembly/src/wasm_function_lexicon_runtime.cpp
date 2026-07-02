@@ -32,6 +32,8 @@ extern WindowMsgHandledType PopupReplayInput(GameWindow *window, UnsignedInt msg
 	WindowMsgData mData1, WindowMsgData mData2);
 extern WindowMsgHandledType BeaconWindowInput(GameWindow *window, UnsignedInt msg,
 	WindowMsgData mData1, WindowMsgData mData2);
+extern WindowMsgHandledType ControlBarInput(GameWindow *window, UnsignedInt msg,
+	WindowMsgData mData1, WindowMsgData mData2);
 extern WindowMsgHandledType ExtendedMessageBoxSystem(GameWindow *window,
 	UnsignedInt msg, WindowMsgData mData1, WindowMsgData mData2);
 
@@ -295,6 +297,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.in_game_popup_message_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("InGamePopupMessageInput")) == InGamePopupMessageInput;
+	result.control_bar_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("ControlBarInput")) == ControlBarInput;
 	result.beacon_window_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("BeaconWindowInput")) == BeaconWindowInput;
@@ -591,6 +596,12 @@ bool in_game_popup_message_lookup_state_ready(
 		result.in_game_popup_message_init_lookup;
 }
 
+bool control_bar_input_lookup_state_ready(
+	const FunctionLexiconRuntimeProbeResult &result)
+{
+	return result.control_bar_input_lookup;
+}
+
 bool beacon_window_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 {
 	return result.beacon_window_input_lookup;
@@ -617,9 +628,9 @@ bool base_layout_callback_graph_ready(const FunctionLexiconRuntimeProbeResult &)
 {
 	// The linked runtime currently proves a shell-menu subset plus the
 	// challenge-menu, popup-communicator, in-game popup-message, idle-worker,
-	// beacon-window, replay-control, map-select, replay-menu, popup-replay modal
-	// callbacks, and game-info-window callback owners. Full ownership requires
-	// the remaining non-network layout callback graph.
+	// control-bar input, beacon-window, replay-control, map-select, replay-menu,
+	// popup-replay modal callbacks, and game-info-window callback owners. Full
+	// ownership requires the remaining non-network layout callback graph.
 	return false;
 }
 
@@ -634,6 +645,7 @@ bool lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 		replay_menu_lookup_state_ready(result) &&
 		popup_replay_lookup_state_ready(result) &&
 		in_game_popup_message_lookup_state_ready(result) &&
+		control_bar_input_lookup_state_ready(result) &&
 		beacon_window_lookup_state_ready(result) &&
 		replay_control_lookup_state_ready(result) &&
 		game_info_window_lookup_state_ready(result) &&
@@ -776,8 +788,13 @@ void finish_status(FunctionLexiconRuntimeProbeResult &result)
 		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
 		return;
 	}
-	if (!base_layout_callback_graph_ready(result)) {
+	if (!control_bar_input_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_popup_replay_modal_runtime_owned";
+		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
+		return;
+	}
+	if (!base_layout_callback_graph_ready(result)) {
+		result.status = "base_function_lexicon_control_bar_input_runtime_owned";
 		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
 		return;
 	}
@@ -993,6 +1010,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"difficultySelectInput\":%s,"
 		"\"keyboardOptionsMenuInput\":%s,"
 		"\"inGamePopupMessageInput\":%s,"
+		"\"controlBarInput\":%s,"
 		"\"beaconWindowInput\":%s,"
 		"\"replayControlInput\":%s,"
 		"\"gameWindowDefaultTooltip\":%s,"
@@ -1114,6 +1132,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.difficulty_select_input_lookup),
 		json_bool(state.keyboard_options_menu_input_lookup),
 		json_bool(state.in_game_popup_message_input_lookup),
+		json_bool(state.control_bar_input_lookup),
 		json_bool(state.beacon_window_input_lookup),
 		json_bool(state.replay_control_input_lookup),
 		json_bool(state.game_window_default_tooltip_lookup),

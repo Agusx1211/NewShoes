@@ -106,6 +106,7 @@ struct FunctionLexiconRuntimeProbeResult
 	bool difficulty_select_input_lookup = false;
 	bool keyboard_options_menu_input_lookup = false;
 	bool in_game_popup_message_input_lookup = false;
+	bool control_bar_input_lookup = false;
 	bool beacon_window_input_lookup = false;
 	bool replay_control_input_lookup = false;
 	bool game_window_default_tooltip_lookup = false;

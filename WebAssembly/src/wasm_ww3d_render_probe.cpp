@@ -217,6 +217,8 @@ __attribute__((weak)) void playerTemplateListBoxTooltip(
 
 extern WindowMsgHandledType BeaconWindowInput(GameWindow *window, UnsignedInt msg,
 	WindowMsgData mData1, WindowMsgData mData2);
+extern WindowMsgHandledType ControlBarInput(GameWindow *window, UnsignedInt msg,
+	WindowMsgData mData1, WindowMsgData mData2);
 
 namespace {
 
@@ -282,6 +284,7 @@ FunctionLexicon::TableEntry runtimeBaseInputTable[] = {
 	{ NAMEKEY_INVALID, "DifficultySelectInput", DifficultySelectInput },
 	{ NAMEKEY_INVALID, "KeyboardOptionsMenuInput", KeyboardOptionsMenuInput },
 	{ NAMEKEY_INVALID, "InGamePopupMessageInput", InGamePopupMessageInput },
+	{ NAMEKEY_INVALID, "ControlBarInput", ControlBarInput },
 	{ NAMEKEY_INVALID, "BeaconWindowInput", BeaconWindowInput },
 	{ NAMEKEY_INVALID, "ReplayControlInput", ReplayControlInput },
 	{ NAMEKEY_INVALID, nullptr, nullptr },

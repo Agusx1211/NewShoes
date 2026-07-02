@@ -178,12 +178,13 @@ const browserChecks = [
           && payload.archiveBackedStartup.audioManagerRuntime.music?.alreadyLoaded === true
           && payload.archiveBackedStartup.audioManagerRuntime.teardown?.tornDown === true,
         'Archive-backed startup boot did not prove real init/music/teardown');
-      expect(payload.archiveBackedStartup.functionLexiconRuntime?.status === 'base_function_lexicon_popup_replay_modal_runtime_owned',
-        'Archive-backed startup boot did not report the expected PopupReplay modal FunctionLexicon frontier');
+      expect(payload.archiveBackedStartup.functionLexiconRuntime?.status === 'base_function_lexicon_control_bar_input_runtime_owned',
+        'Archive-backed startup boot did not report the expected ControlBar input FunctionLexicon frontier');
       expect(payload.archiveBackedStartup.functionLexiconRuntime?.lookups?.popupReplayInput === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.popupReplayInit === true
-          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.popupReplayShutdown === true,
-        'Archive-backed startup boot did not prove PopupReplay modal callback lookups');
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.popupReplayShutdown === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.controlBarInput === true,
+        'Archive-backed startup boot did not prove PopupReplay modal and ControlBar input callback lookups');
       expect(payload.archiveBackedStartup.functionLexiconRuntime?.lookups?.popupReplaySystem === undefined
           && payload.archiveBackedStartup.functionLexiconRuntime?.lookups?.popupReplayUpdate === undefined,
         'Archive-backed startup boot should leave PopupReplay score-screen-dependent callbacks unregistered');
@@ -398,12 +399,12 @@ console.log(JSON.stringify({
     'original ButtonUSA faction difficulty transition and ButtonDiffBack return through MainMenuSystem',
     'original ButtonLoadReplay dropdown and ButtonLoadReplayBack return through MainMenuSystem',
     'original ButtonCredits path through Shell::push into CreditsMenuInit/CreditsMenuUpdate with INIZH-backed Credits.ini',
-    'browser boot constructs original W3DFunctionLexicon, verifies W3D device callback-name tables, and loads the non-network base GUI widget/input, IME draw, original ExtendedMessageBoxSystem, original DifficultySelect system/input/init callbacks, original KeyboardOptionsMenu system/input/init/update/shutdown callbacks with original MetaEvent global ownership, original InGamePopupMessage system/input/init callbacks, original IdleWorkerSystem callback, original BeaconWindowInput callback, original ReplayControl system/input callbacks, original ChallengeMenu callbacks, original PopupCommunicator callbacks, original MapSelectMenu callbacks, original ReplayMenu callbacks, original PopupReplay modal callbacks, original GameInfoWindowSystem lookup, and original MainMenu/Credits/Skirmish/SinglePlayer shell callback tables while the remaining layout graph remains the FunctionLexicon boundary',
+    'browser boot constructs original W3DFunctionLexicon, verifies W3D device callback-name tables, and loads the non-network base GUI widget/input, IME draw, original ExtendedMessageBoxSystem, original DifficultySelect system/input/init callbacks, original KeyboardOptionsMenu system/input/init/update/shutdown callbacks with original MetaEvent global ownership, original InGamePopupMessage system/input/init callbacks, original IdleWorkerSystem callback, original BeaconWindowInput callback, original ControlBarInput callback, original ReplayControl system/input callbacks, original ChallengeMenu callbacks, original PopupCommunicator callbacks, original MapSelectMenu callbacks, original ReplayMenu callbacks, original PopupReplay modal callbacks, original GameInfoWindowSystem lookup, and original MainMenu/Credits/Skirmish/SinglePlayer shell callback tables while the remaining layout graph remains the FunctionLexicon boundary',
     'source-pinned original GameLogic MSG_NEW_GAME dispatch frontier after CommandList handoff',
     'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, and first-call startNewGame(FALSE) deferral',
   ],
   nextRequired: [
-    'replace the remaining base FunctionLexicon shell layout callback registrations, including PopupReplay score-screen-dependent System/Update callbacks, so GameEngine.cpp line 446 can become fully runtime-owned',
+    'replace the remaining base FunctionLexicon shell/HUD callback registrations, including PopupReplay score-screen-dependent System/Update and broader ControlBarSystem/LeftHUDInput callbacks, so GameEngine.cpp line 446 can become fully runtime-owned',
     'advance the next vertical startup path outside the already-proven shell menu slice',
     'prove W3DModuleFactory module-template lookup through the original public API at runtime',
     'supply base Generals Window.big and replace the focused runtime in-memory BlankWindow adapter before continuing deferred startNewGame into terrain/player/script load',
