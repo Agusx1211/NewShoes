@@ -2308,6 +2308,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       reports `base_function_lexicon_game_info_window_runtime_owned` with
       `originalFunctionLexiconRemainingShellCallbacks` next; LAN game-info
       population and transport behavior remain outside the owned runtime path.
+- [x] Promote the original `ReplayMenu` callback owner into the linked
+      `cnc-port` base `FunctionLexicon`. `zh_window_layout_script_runtime` now
+      links original `GUI/GUICallbacks/Menus/ReplayMenu.cpp`, and the reduced
+      wasm system/input/init/update/shutdown tables register
+      `ReplayMenuSystem`, `ReplayMenuInput`, `ReplayMenuInit`,
+      `ReplayMenuUpdate`, and `ReplayMenuShutdown`. Startup vertical verifies
+      those callback-name lookups in the browser and now reports
+      `base_function_lexicon_replay_menu_runtime_owned` with
+      `originalFunctionLexiconRemainingShellCallbacks` next. The runtime also
+      owns a focused browser `SYSTEMTIME` date/time formatting helper for the
+      replay list until full original `GameState.cpp` ownership can replace it.
 ---
 
 ## M3 — File / data subsystem (real data)

@@ -63,10 +63,11 @@ flow below.
       system/input/init/update/shutdown callbacks with original
       `ChallengeGenerals` and `WindowVideoManager` ownership, plus original
       `PopupCommunicator` system/input/init/shutdown callbacks and original
-      `MapSelectMenu` system/input/init/update/shutdown callbacks, plus the
-      passive original `GameInfoWindowSystem` callback-name lookup without
-      owning LAN game-info population; the remaining `FunctionLexicon` boundary
-      is the rest of the non-network layout callback graph);
+      `MapSelectMenu` system/input/init/update/shutdown callbacks, original
+      `ReplayMenu` system/input/init/update/shutdown callbacks, plus the passive
+      original `GameInfoWindowSystem` callback-name lookup without owning LAN
+      game-info population; the remaining `FunctionLexicon` boundary is the
+      rest of the non-network layout callback graph);
       archiveless or music-less boots honestly stay at line 434.
 - [ ] Own `createFunctionLexicon` (`W3DFunctionLexicon`, `GameEngine.cpp:446`)
       and then `createModuleFactory` (line 447) in the browser boot — the new
@@ -85,9 +86,10 @@ flow below.
       system/input/init/update/shutdown lookups plus original `ChallengeMenu`
       system/input/init/update/shutdown lookups and original
       `PopupCommunicator` system/input/init/shutdown lookups plus original
-      `MapSelectMenu` system/input/init/update/shutdown lookups plus the
-      passive original `GameInfoWindowSystem` callback-name lookup, but full
-      ownership still needs the remaining original base `FunctionLexicon.cpp`
+      `MapSelectMenu` system/input/init/update/shutdown lookups plus original
+      `ReplayMenu` system/input/init/update/shutdown lookups plus the passive
+      original `GameInfoWindowSystem` callback-name lookup, but full ownership
+      still needs the remaining original base `FunctionLexicon.cpp`
       non-network layout callback graph without pulling LAN/WOL/GameSpy/
       embedded-web menu behavior into `cnc-port`. Next promote the remaining
       non-network layout callback owners in small groups while leaving
@@ -96,6 +98,12 @@ flow below.
       `W3DModuleFactory` + all 224 module registrations already link into
       `cnc-port` via `zh_gameengine_real_object_ini_runtime`, so lexicon/module
       factory ownership should reuse that surface instead of relinking it.
+- [ ] Replace `WebAssembly/src/wasm_game_state_time_helper.cpp` with the
+      original `Common/System/SaveGame/GameState.cpp` owner once the linked
+      runtime no longer needs the focused GameLogic header boundary. The helper
+      currently owns only the Win32-style `SYSTEMTIME` date/time formatting
+      symbols needed by original `ReplayMenu.cpp`; full save/load and
+      `GameState` snapshot behavior remain unowned.
 - [ ] Stage base-Generals `Music.big` in `extract_zh_runtime_archives.sh`
       (currently manually extracted via
       `cabextract -F Music.big` from the Generals CD1 `Data1.cab` into
