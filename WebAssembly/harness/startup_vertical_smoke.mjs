@@ -127,6 +127,52 @@ const mappedImageIniEntries = [
   "Data\\INI\\MappedImages\\TextureSize_512\\SUUserInterface512.INI",
 ];
 
+const objectIniStartupEntries = [
+  "Data\\INI\\Object\\AirforceGeneral.ini",
+  "Data\\INI\\Object\\AmericaAir.ini",
+  "Data\\INI\\Object\\AmericaCINEUnit.ini",
+  "Data\\INI\\Object\\AmericaInfantry.ini",
+  "Data\\INI\\Object\\AmericaMiscUnit.ini",
+  "Data\\INI\\Object\\AmericaVehicle.ini",
+  "Data\\INI\\Object\\BossGeneral.ini",
+  "Data\\INI\\Object\\ChemicalGeneral.ini",
+  "Data\\INI\\Object\\ChinaAir.ini",
+  "Data\\INI\\Object\\ChinaCINEUnit.ini",
+  "Data\\INI\\Object\\ChinaInfantry.ini",
+  "Data\\INI\\Object\\ChinaMiscUnit.ini",
+  "Data\\INI\\Object\\ChinaVehicle.ini",
+  "Data\\INI\\Object\\CivilianBuilding.ini",
+  "Data\\INI\\Object\\CivilianProp.ini",
+  "Data\\INI\\Object\\CivilianUnit.ini",
+  "Data\\INI\\Object\\DemoGeneral.ini",
+  "Data\\INI\\Object\\FactionBuilding.ini",
+  "Data\\INI\\Object\\FactionUnit.ini",
+  "Data\\INI\\Object\\GC_Chem_GLABuildings.ini",
+  "Data\\INI\\Object\\GC_Chem_GLASystem.ini",
+  "Data\\INI\\Object\\GC_Chem_GLAUnits.ini",
+  "Data\\INI\\Object\\GC_Slth_GLABuildings.ini",
+  "Data\\INI\\Object\\GC_Slth_GLASystem.ini",
+  "Data\\INI\\Object\\GC_Slth_GLAUnits.ini",
+  "Data\\INI\\Object\\GLAAir.ini",
+  "Data\\INI\\Object\\GLACINEUnit.ini",
+  "Data\\INI\\Object\\GLAInfantry.ini",
+  "Data\\INI\\Object\\GLAMiscUnit.ini",
+  "Data\\INI\\Object\\GLAVehicle.ini",
+  "Data\\INI\\Object\\Hulk.ini",
+  "Data\\INI\\Object\\InfantryGeneral.ini",
+  "Data\\INI\\Object\\LaserGeneral.ini",
+  "Data\\INI\\Object\\NatureProp.ini",
+  "Data\\INI\\Object\\NatureUnit.ini",
+  "Data\\INI\\Object\\NukeGeneral.ini",
+  "Data\\INI\\Object\\SpecialPowerObjects.ini",
+  "Data\\INI\\Object\\StealthGeneral.ini",
+  "Data\\INI\\Object\\SuperWeaponGeneral.ini",
+  "Data\\INI\\Object\\System.ini",
+  "Data\\INI\\Object\\TankGeneral.ini",
+  "Data\\INI\\Object\\TechBuildings.ini",
+  "Data\\INI\\Object\\WeaponObjects.ini",
+];
+
 const inizhStartupEntries = [
   "Data\\INI\\Armor.ini",
   "Data\\INI\\CommandButton.ini",
@@ -148,7 +194,7 @@ const inizhStartupEntries = [
   "Data\\INI\\Music.ini",
   ...mappedImageIniEntries,
   "Data\\INI\\ObjectCreationList.ini",
-  "Data\\INI\\Object\\AmericaInfantry.ini",
+  ...objectIniStartupEntries,
   "Data\\INI\\ParticleSystem.ini",
   "Data\\INI\\PlayerTemplate.ini",
   "Data\\INI\\Roads.ini",
@@ -487,6 +533,79 @@ function assertParticleSystemRuntimeFrontier(state) {
     "particle manager should only own templates during startup init", probe);
 }
 
+function lookupByName(lookups, name) {
+  return (lookups ?? []).find((entry) => entry?.name === name);
+}
+
+function assertObjectIniThingFactoryRuntime(probe, context) {
+  expect(probe?.attempted === true
+      && probe.ok === true
+      && probe.stage === "done"
+      && probe.error === "",
+    `${context} object INI runtime did not finish cleanly`, probe);
+  expect(probe.source === "GameEngine.cpp::init initSubsystem(TheThingFactory) + "
+      + "W3DModuleFactory::init + ThingFactory::parseObjectDefinition + INI.cpp::load/loadDirectory",
+    `${context} object INI runtime source mismatch`, probe);
+  expect(probe.loadedArchives === true
+      && probe.defaultObjectIniExists === true
+      && probe.defaultObjectIniBytes === 5530
+      && probe.defaultObjectIniLoaded === true
+      && probe.objectDirectoryLoaded === true
+      && probe.objectIniFileCount === 43
+      && probe.fileSystemObjectIniFileCount === 43
+      && probe.objectIniFilesLoaded === 43,
+    `${context} object INI file coverage mismatch`, probe);
+  expect(probe.gameDataLoaded === true
+      && probe.gameTextCsfLoaded === true
+      && probe.scienceLoaded === true
+      && probe.particleSystemLoaded === true
+      && probe.fxListLoaded === true
+      && probe.weaponLoaded === true
+      && probe.objectCreationListLoaded === true
+      && probe.locomotorLoaded === true
+      && probe.specialPowerLoaded === true
+      && probe.damageFXLoaded === true
+      && probe.armorLoaded === true,
+    `${context} object-template prerequisite stores did not load`, probe);
+  expect(probe.moduleFactoryInitialized === true
+      && probe.moduleFactoryIsW3D === true
+      && probe.hasW3DDefaultDraw === true
+      && probe.hasW3DModelDraw === true
+      && probe.hasDestroyDie === true
+      && probe.hasInactiveBody === true
+      && probe.hasAIUpdateInterface === true
+      && probe.hasGarrisonContain === true
+      && probe.thingFactoryIsW3D === true,
+    `${context} W3D module/thing factory ownership mismatch`, probe);
+  expect(Number.isInteger(probe.templateCount) && probe.templateCount >= 1800,
+    `${context} object template count too low`, probe);
+
+  const humvee = lookupByName(probe.lookups, "AmericaVehicleHumvee");
+  const rebel = lookupByName(probe.lookups, "GLAInfantryRebel");
+  const raptor = lookupByName(probe.lookups, "AmericaJetRaptor");
+  const overlord = lookupByName(probe.lookups, "ChinaTankOverlord");
+  expect(lookupByName(probe.lookups, "DefaultThingTemplate")?.found === true,
+    `${context} DefaultThingTemplate lookup failed`, probe.lookups);
+  expect(humvee?.found === true
+      && humvee.side === "America"
+      && humvee.buildCost === 700
+      && humvee.transportSlotCount === 3
+      && humvee.isVehicle === true
+      && humvee.isInfantry === false
+      && humvee.isSelectable === true,
+    `${context} AmericaVehicleHumvee fields mismatch`, humvee);
+  expect(rebel?.found === true
+      && rebel.side === "GLA"
+      && rebel.buildCost === 150
+      && rebel.transportSlotCount === 1
+      && rebel.isVehicle === false
+      && rebel.isInfantry === true
+      && rebel.isSelectable === true,
+    `${context} GLAInfantryRebel fields mismatch`, rebel);
+  expect(raptor?.found === true && overlord?.found === true,
+    `${context} representative vehicle/aircraft template lookup failed`, probe.lookups);
+}
+
 function assertAudioOwnedFrontier(state) {
   const startup = state.originalEngineStartup;
   const frontier = startup?.deviceFactoryFrontier;
@@ -549,6 +668,10 @@ function assertAudioOwnedFrontier(state) {
   expect(entryByFactory(frontier, "createParticleSystemManager")?.ready === true
       && entryByFactory(frontier, "createParticleSystemManager")?.status === "browser_runtime_initialized_original_w3d_particle_system_manager",
     "createParticleSystemManager frontier entry should be runtime-owned", frontier);
+  expect(entryByFactory(frontier, "createThingFactory")?.ready === false
+      && entryByFactory(frontier, "createThingFactory")?.status === "needs_browser_thing_factory",
+    "createThingFactory frontier entry should remain blocked until FunctionLexicon is fully owned",
+    frontier);
   expect(startup.browserDeviceLayer?.functionLexicon === false,
     "browser device layer should not mark the full function lexicon runtime-owned", startup.browserDeviceLayer);
   expect(startup.browserDeviceLayer.moduleFactory === true,
@@ -752,6 +875,7 @@ try {
   // runs the real AudioManager::init()/openDevice() path plus the original
   // W3DFunctionLexicon device-table load, original ControlBarObserver/GameWinBlockInput/MOTD/MainMenu/Credits/Skirmish
   // base shell callbacks, the promoted Options/SkirmishMapSelect/Challenge/PopupCommunicator/MapSelect/Replay/PopupReplay-modal/GameInfo owners,
+  // and the post-particle W3DThingFactory/object-template parse surface,
   // and honestly keeps the device-factory frontier at createFunctionLexicon
   // until the remaining callback owner groups are owned by cnc-port.
   const archives = await buildAudioOwnershipArchiveSpecs();
@@ -794,6 +918,13 @@ try {
   assertParticleSystemRuntimeFrontier(audioBootResult.state);
   assertAudioOwnedFrontier(audioBootResult.state);
 
+  debugLog("probing archive-backed object INI runtime");
+  const objectIniResult = await audioPage.evaluate(() => window.CnCPort.rpc("probeObjectIni", {
+    path: "/assets/startup-audio/*.big",
+  }));
+  expect(objectIniResult.ok === true, "archive-backed object INI probe RPC failed", objectIniResult);
+  assertObjectIniThingFactoryRuntime(objectIniResult.probe, "archive-backed startup");
+
   await audioPage.screenshot({ path: audioBootScreenshot });
 
   const audioFrontier =
@@ -813,6 +944,7 @@ try {
       functionLexiconRuntime: audioBootResult.state.functionLexiconRuntime,
       moduleFactoryRuntime: audioBootResult.state.moduleFactoryRuntime,
       particleSystemRuntime: audioBootResult.state.particleSystemRuntime,
+      objectIniRuntime: objectIniResult.probe,
     },
   }));
 } finally {

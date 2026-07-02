@@ -87,8 +87,12 @@ flow below.
       original `W3DParticleSys.cpp` / `W3DSnow.cpp` device sources, runs
       inherited `ParticleSystemManager::init()` over
       `Data\INI\ParticleSystem.ini`, and proves representative shipped
-      particle-template lookups; the next post-particle startup work is the
-      data-store stretch toward `createThingFactory` once `FunctionLexicon` is
+      particle-template lookups. The startup vertical now also mounts all 43
+      shipped `Data\INI\Object\*.ini` definitions and runs the existing
+      original `W3DThingFactory` / `ThingFactory` object-template parse runtime
+      against that archive-backed set, proving 2,099 shipped templates plus
+      representative Humvee/Rebel/Raptor/Overlord lookups; true
+      `GameEngine.cpp:482` ownership still waits for `FunctionLexicon` to be
       fully owned;
       archiveless or music-less boots honestly stay at line 434.
 - [ ] Own `createFunctionLexicon` (`W3DFunctionLexicon`, `GameEngine.cpp:446`)
@@ -135,10 +139,13 @@ flow below.
       `findModuleInterfaceMask()` lookups. `particleSystemRuntime` constructs
       original `W3DParticleSystemManager`, runs the real
       `ParticleSystemManager::init()` INI load, and verifies 1084 shipped
-      particle templates through public lookups. The first unowned init factory
-      honestly remains `createFunctionLexicon` until the callback graph is
-      complete; after that the next startup owner is the post-particle
-      data-store path toward `createThingFactory`.
+      particle templates through public lookups. The startup vertical now also
+      runs the archive-backed `W3DThingFactory` object-template parser over the
+      full shipped object INI set and verifies representative unit templates,
+      but keeps the first unowned init factory at `createFunctionLexicon` until
+      the callback graph is complete; after that the next startup owner is true
+      `createThingFactory` residency rather than the current focused
+      object-template probe.
 - [ ] Promote `PopupReplaySystem` and `PopupReplayUpdate` only after the
       ScoreScreen replay-save state is split or runtime-owned without pulling
       LAN/WOL/GameSpy into `cnc-port`. Directly registering those callbacks

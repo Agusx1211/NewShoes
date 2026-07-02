@@ -2780,6 +2780,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:object-ini`, proving the original
       `Win32BIGFileSystem` + `INI::loadDirectory` path still parses 2,099
       templates from the real 43-file object set.
+- [x] Promote the shipped object-template parse proof into the startup vertical
+      archive-backed path. `startup_vertical_smoke.mjs` now mounts all 43
+      shipped `Data\INI\Object\*.ini` definitions in its runtime archive set,
+      invokes the existing `probeObjectIni` RPC after the archive-backed boot,
+      and requires the real `W3DThingFactory` / `ThingFactory` / `INI.cpp`
+      object path to parse 2,099 templates plus representative
+      `AmericaVehicleHumvee`, `GLAInfantryRebel`, `AmericaJetRaptor`, and
+      `ChinaTankOverlord` lookups. The startup frontier still honestly reports
+      `createFunctionLexicon` as the first unowned factory, so this is
+      post-particle gameplay/data evidence rather than a premature
+      `GameEngine.cpp:482` ownership claim.
 
 ---
 

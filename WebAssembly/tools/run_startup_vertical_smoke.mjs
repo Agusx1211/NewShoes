@@ -233,6 +233,30 @@ const browserChecks = [
           && payload.archiveBackedStartup.particleSystemRuntime.templates.jetContrailThin === true
           && payload.archiveBackedStartup.particleSystemRuntime.templates.nukeMushroomRing === true,
         'Archive-backed startup boot did not prove ParticleSystem.ini template ownership');
+      expect(payload.archiveBackedStartup.objectIniRuntime?.ok === true
+          && payload.archiveBackedStartup.objectIniRuntime.stage === 'done'
+          && payload.archiveBackedStartup.objectIniRuntime.objectIniFileCount === 43
+          && payload.archiveBackedStartup.objectIniRuntime.objectIniFilesLoaded === 43
+          && payload.archiveBackedStartup.objectIniRuntime.templateCount >= 1800
+          && payload.archiveBackedStartup.objectIniRuntime.thingFactoryIsW3D === true
+          && payload.archiveBackedStartup.objectIniRuntime.hasW3DModelDraw === true
+          && payload.archiveBackedStartup.objectIniRuntime.hasDestroyDie === true
+          && payload.archiveBackedStartup.objectIniRuntime.hasAIUpdateInterface === true
+          && payload.archiveBackedStartup.objectIniRuntime.lookups?.some((entry) =>
+            entry.name === 'AmericaVehicleHumvee'
+            && entry.found === true
+            && entry.side === 'America'
+            && entry.buildCost === 700
+            && entry.isVehicle === true
+            && entry.isSelectable === true)
+          && payload.archiveBackedStartup.objectIniRuntime.lookups?.some((entry) =>
+            entry.name === 'GLAInfantryRebel'
+            && entry.found === true
+            && entry.side === 'GLA'
+            && entry.buildCost === 150
+            && entry.isInfantry === true
+            && entry.isSelectable === true),
+        'Archive-backed startup boot did not prove W3DThingFactory object-template ownership');
     },
   },
 ];
@@ -447,6 +471,7 @@ console.log(JSON.stringify({
     'browser boot constructs original W3DFunctionLexicon, verifies W3D device callback-name tables, loads the owned base GUI/widget/shell callback tables including passive GameInfoWindow system/init names, and reports the remaining FunctionLexicon callback owner groups as structured startup state',
     'browser boot constructs original W3DModuleFactory, runs W3DModuleFactory::init(), and proves public ModuleFactory lookups for representative base gameplay, client-update, and W3D draw modules',
     'browser boot constructs original W3DParticleSystemManager, runs ParticleSystemManager::init() against Data\\INI\\ParticleSystem.ini, and proves shipped particle template lookups through the public manager API',
+    'archive-backed startup mounts all shipped Object INI definitions and proves original W3DThingFactory parses representative unit templates through the real ThingFactory/INI path while the first unowned factory remains createFunctionLexicon',
     'source-pinned original GameLogic MSG_NEW_GAME dispatch frontier after CommandList handoff',
     'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, and first-call startNewGame(FALSE) deferral',
   ],
