@@ -4222,6 +4222,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`;
       the harness captured
       `WebAssembly/artifacts/screenshots/harness-smoke-ww3d-terrain-bridge-buffer-scene-canvas.png`.
+- [x] Browser-prove original `Pathfinder::newMap()` bridge-layer
+      classification in the bridge-buffer scene. The focused bridge terrain
+      logic now gives pathfinding an origin-based extent like production
+      `W3DTerrainLogic`, keeps its flat probe terrain contract by overriding
+      cliff and water checks, removes the hard browser deferral, and runs
+      original `AIPathfind::newMap()` / `classifyMap()` for the retained
+      logical bridge layer. The harness now rejects deferred pathfinder-map
+      runs and requires the browser sample to report `newMapInvoked=true`,
+      `newMapSkippedForBrowserSafety=false`, origin preflight
+      `minX=0/minY=0`, a 14,112-cell MD_CHI01 extent, bridge-layer clear
+      cells after classification, all sampled bridge-layer cells impassable
+      after `changeBridgeState(broken)`, and clear cells restored after
+      `changeBridgeState(repaired)`. Verified with
+      `cmake --build WebAssembly/build/wasm --target cnc-port -j 4` and
+      `npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
 - [x] Browser-gate the bridge-buffer pathfinder-map frontier without crashing
       the render harness. The bridge scene now records an original
       `AIPathfind::newMap` preflight for the retained logical bridge layer,

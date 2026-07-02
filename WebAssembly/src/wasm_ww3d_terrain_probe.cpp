@@ -2719,6 +2719,7 @@ public:
 	ProbeTerrainLogicForBridgeDraw()
 	{
 		clearProbeExtent();
+		clearPathfinderProbeExtent();
 	}
 
 	void addBridgeToLogic(
@@ -2754,9 +2755,29 @@ public:
 		return getGroundHeight(x, y, normal);
 	}
 
+	Bool isCliffCell(Real, Real) const override
+	{
+		return FALSE;
+	}
+
+	Bool isUnderwater(Real, Real, Real *waterZ = NULL, Real *terrainZ = NULL) override
+	{
+		if (waterZ != NULL) {
+			*waterZ = 0.0f;
+		}
+		if (terrainZ != NULL) {
+			*terrainZ = 0.0f;
+		}
+		return FALSE;
+	}
+
 	void getExtent(Region3D *extent) const override
 	{
 		if (extent == NULL) {
+			return;
+		}
+		if (m_usePathfinderProbeExtent) {
+			*extent = m_pathfinderProbeExtent;
 			return;
 		}
 		if (!m_hasProbeExtent) {
@@ -3153,9 +3174,11 @@ public:
 		}
 
 		state.layer = m_bridgeListHead->getLayer();
+		enableOriginPathfinderProbeExtent();
 		probe_bridge_phase_log("pathfinder-preflight");
 		recordFirstBridgePathfinderPreflightForProbe(state);
 		if (state.newMapSkippedForBrowserSafety) {
+			clearPathfinderProbeExtent();
 			probe_bridge_phase_log("pathfinder-new-map-skipped");
 			probe_bridge_phase_log("pathfinder-change-broken");
 			TheAI->pathfinder()->changeBridgeState(state.layer, FALSE);
@@ -3172,9 +3195,11 @@ public:
 		try {
 			TheAI->pathfinder()->newMap();
 		} catch (...) {
+			clearPathfinderProbeExtent();
 			state.newMapException = TRUE;
 			return true;
 		}
+		clearPathfinderProbeExtent();
 
 		sampleFirstBridgePathfinderCellsForProbe(state.afterNewMap);
 		probe_bridge_phase_log("pathfinder-change-broken");
@@ -3214,12 +3239,7 @@ private:
 				0;
 		state.preflightEstimatedMapCells = estimated_columns * estimated_rows;
 		const UnsignedInt kBrowserSafePathfinderNewMapCells = 65536;
-		// Full newMap() classification currently crashes Chromium in this visual
-		// bridge probe; keep the browser harness stable while reporting the
-		// preflight frontier and exercising the bridge-state call below.
-		const Bool kDeferPathfinderNewMapInBrowserProbe = TRUE;
 		state.newMapSkippedForBrowserSafety =
-			kDeferPathfinderNewMapInBrowserProbe ||
 			state.preflightMinX < 0 ||
 			state.preflightMinY < 0 ||
 			state.preflightEstimatedMapCells >
@@ -3235,6 +3255,27 @@ private:
 		m_probeExtent.hi.x = 0.0f;
 		m_probeExtent.hi.y = 0.0f;
 		m_probeExtent.hi.z = 0.0f;
+	}
+
+	void clearPathfinderProbeExtent()
+	{
+		m_usePathfinderProbeExtent = FALSE;
+		m_pathfinderProbeExtent.lo.x = 0.0f;
+		m_pathfinderProbeExtent.lo.y = 0.0f;
+		m_pathfinderProbeExtent.lo.z = 0.0f;
+		m_pathfinderProbeExtent.hi.x = 0.0f;
+		m_pathfinderProbeExtent.hi.y = 0.0f;
+		m_pathfinderProbeExtent.hi.z = 0.0f;
+	}
+
+	void enableOriginPathfinderProbeExtent()
+	{
+		Region3D extent;
+		getExtent(&extent);
+		m_pathfinderProbeExtent = extent;
+		m_pathfinderProbeExtent.lo.x = 0.0f;
+		m_pathfinderProbeExtent.lo.y = 0.0f;
+		m_usePathfinderProbeExtent = TRUE;
 	}
 
 	void extendProbeExtent(const BridgeInfo *info)
@@ -3353,7 +3394,9 @@ private:
 	}
 
 	Region3D m_probeExtent;
+	Region3D m_pathfinderProbeExtent;
 	Bool m_hasProbeExtent;
+	Bool m_usePathfinderProbeExtent;
 };
 
 struct ProbeLogicalHeightMapParseTrace
@@ -11697,7 +11740,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"GameClient::destroyDrawable(temp GenericBridge) -> "
 		"W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> "
 		"TerrainLogic::addBridgeToLogic -> "
-		"AIPathfind::newMap/classifyMap preflight -> "
+		"AIPathfind::newMap/classifyMap -> "
 		"Pathfinder::changeBridgeState(broken/repaired) -> "
 		"GameLogic::findObjectByID(GenericBridge) -> "
 		"Object::attemptDamage(GenericBridge) -> "

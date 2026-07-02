@@ -982,15 +982,15 @@ flow below.
       `TerrainLogic::addBridgeToLogic` inserts the retained logical `Bridge`
       through `AI::pathfinder()->addBridge()` before
       `W3DBridgeBuffer::drawBridges(FALSE, TheTerrainLogic)` enables the
-      visual bridge. The bridge scene now browser-reports an
-      `AIPathfind::newMap` preflight for the retained bridge layer and proves
-      `Pathfinder::changeBridgeState(broken/repaired)` survives the seeded
-      layer, but full `Pathfinder::newMap()` classification is deliberately
-      deferred because invoking it in this visual bridge probe crashes Chromium
-      after `loadBridges` even for the current 14,112-cell MD_CHI01 preflight.
-      Full pathfinder-map classification needs the production terrain/map
-      owner, not the focused visual probe envelope. It now loads the shipped
-      `GenericBridge` template through original `ThingFactory` /
+      visual bridge. The bridge scene now runs original
+      `AIPathfind::newMap()` / `classifyMap()` for the retained bridge layer
+      under an origin-based, flat focused terrain extent, then browser-proves
+      `Pathfinder::changeBridgeState(broken/repaired)` flips the sampled
+      bridge-layer cells from clear/connected to impassable and back. Full
+      pathfinder-map classification against the real loaded terrain still
+      belongs in the production terrain/map owner rather than this focused
+      bridge visual envelope. It now loads the shipped `GenericBridge` template
+      through original `ThingFactory` /
       `ThingTemplate` parsing and requires
       `bridgeLogicGenericBridgeObjectMissing === false`. Remaining work is to
       replace the bridge-only pathfinder and focused object creation/runtime
