@@ -275,6 +275,9 @@ const Int MAX_ENABLED_MODULES								= 16;
 	if (s_staticImagesInited)
 		return;
 
+	if (TheMappedImageCollection == NULL || TheAnim2DCollection == NULL)
+		return;
+
 	s_veterancyImage[0] = NULL;
  	s_veterancyImage[1] = TheMappedImageCollection->findImageByName("SCVeter1");
 	s_veterancyImage[2] = TheMappedImageCollection->findImageByName("SCVeter2");
@@ -382,9 +385,22 @@ Drawable::Drawable( const ThingTemplate *thingTemplate, DrawableStatus statusBit
 	//Added By Sadullah Nader
 	//Fix for the building percent
 	m_constructDisplayString = TheDisplayStringManager->newDisplayString();
-	m_constructDisplayString->setFont(TheFontLibrary->getFont(TheInGameUI->getDrawableCaptionFontName(),
-																TheGlobalLanguageData->adjustFontSize(TheInGameUI->getDrawableCaptionPointSize()),
-																TheInGameUI->isDrawableCaptionBold() ));
+	AsciiString drawableCaptionFont = "Arial";
+	Int drawableCaptionPointSize = 10;
+	Bool drawableCaptionBold = FALSE;
+	if (TheInGameUI != NULL)
+	{
+		drawableCaptionFont = TheInGameUI->getDrawableCaptionFontName();
+		drawableCaptionPointSize = TheInGameUI->getDrawableCaptionPointSize();
+		drawableCaptionBold = TheInGameUI->isDrawableCaptionBold();
+	}
+	if (TheGlobalLanguageData != NULL)
+	{
+		drawableCaptionPointSize = TheGlobalLanguageData->adjustFontSize(drawableCaptionPointSize);
+	}
+	m_constructDisplayString->setFont(TheFontLibrary->getFont(drawableCaptionFont,
+																drawableCaptionPointSize,
+																drawableCaptionBold ));
 
 	m_ambientSound = NULL;
   m_ambientSoundEnabled = true;
@@ -5647,4 +5663,3 @@ void TintEnvelope::loadPostProcess( void )
 {
 
 }  // end loadPostProcess
-

@@ -4207,6 +4207,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       without adding a new smoke target. Verified with
       `npm --prefix WebAssembly run build:wasm` and
       `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
+- [x] Browser-gate direct original `ThingFactory::newDrawable(GenericBridge)`
+      in the bridge-buffer scene. The terrain bridge probe now installs focused
+      drawable-time `GameClient`, font, display-string, and language owners,
+      calls `bridge_draw_thing_factory.newDrawable(...)` for
+      `GenericBridge`, proves the returned drawable ID, lookup-table
+      match, list head, draw-module readiness, and count increment, then
+      destroys the temporary drawable and proves the count and lookup return to
+      the pre-create state. `Drawable` construction now tolerates absent
+      optional UI image/animation singletons by deferring static icon cache
+      initialization until the real collections exist, while caption font
+      lookup falls back to a narrow default if `TheInGameUI` is not installed.
+      Verified with
+      `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`;
+      the harness captured
+      `WebAssembly/artifacts/screenshots/harness-smoke-ww3d-terrain-bridge-buffer-scene-canvas.png`.
 - [x] Harness-prove the retained `GenericBridge` body-state clamp before
       chasing damaged bridge rendering. The bridge-buffer scene now reads the
       real `GenericBridge` object's `BodyModuleInterface` after

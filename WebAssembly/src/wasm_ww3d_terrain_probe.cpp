@@ -52,8 +52,12 @@
 #include "GameLogic/SidesList.h"
 #include "GameLogic/Scripts.h"
 #include "GameLogic/TerrainLogic.h"
+#include "GameClient/DisplayStringManager.h"
+#include "GameClient/Drawable.h"
 #include "GameClient/FXList.h"
 #include "GameClient/GameClient.h"
+#include "GameClient/GameFont.h"
+#include "GameClient/GlobalLanguage.h"
 #include "GameClient/MapUtil.h"
 #include "GameClient/TerrainRoads.h"
 #include "GameClient/View.h"
@@ -151,8 +155,20 @@ void GameClient::reset()
 {
 }
 
-void GameClient::registerDrawable(Drawable *)
+DrawableID GameClient::allocDrawableID()
 {
+	DrawableID ret = m_nextDrawableID;
+	m_nextDrawableID = static_cast<DrawableID>(static_cast<UnsignedInt>(m_nextDrawableID) + 1);
+	return ret;
+}
+
+void GameClient::registerDrawable(Drawable *draw)
+{
+	if (draw == nullptr) {
+		return;
+	}
+	draw->setID(allocDrawableID());
+	draw->prependToList(&m_drawableList);
 }
 
 void GameClient::addDrawableToLookupTable(Drawable *draw)
@@ -183,8 +199,18 @@ void GameClient::iterateDrawablesInRegion(Region3D *, GameClientFuncPtr, void *)
 {
 }
 
-void GameClient::destroyDrawable(Drawable *)
+void GameClient::destroyDrawable(Drawable *draw)
 {
+	if (draw == nullptr) {
+		return;
+	}
+	draw->removeFromList(&m_drawableList);
+	Object *obj = draw->getObject();
+	if (obj != nullptr) {
+		obj->friend_bindToDrawable(nullptr);
+	}
+	removeDrawableFromLookupTable(draw);
+	draw->deleteInstance();
 }
 
 Bool GameClient::loadMap(AsciiString)
@@ -319,6 +345,80 @@ const char *bool_json(bool value)
 	return value ? "true" : "false";
 }
 
+class ProbeTerrainDrawableFontLibrary final : public FontLibrary
+{
+protected:
+	Bool loadFontData(GameFont *font) override
+	{
+		if (font == nullptr) {
+			return FALSE;
+		}
+		font->height = font->pointSize;
+		font->fontData = nullptr;
+		return TRUE;
+	}
+};
+
+class ProbeTerrainDrawableDisplayString final : public DisplayString
+{
+	MEMORY_POOL_GLUE_WITH_EXPLICIT_CREATE(
+		ProbeTerrainDrawableDisplayString,
+		"ProbeTerrainDrawableDisplayString",
+		1,
+		1)
+
+public:
+	void setWordWrap(Int wordWrap) override { m_wordWrap = wordWrap; }
+	void setWordWrapCentered(Bool isCentered) override { m_wordWrapCentered = isCentered; }
+	void draw(Int, Int, Color, Color) override {}
+	void draw(Int, Int, Color, Color, Int, Int) override {}
+	void getSize(Int *width, Int *height) override
+	{
+		if (width != nullptr) {
+			*width = getWidth();
+		}
+		if (height != nullptr) {
+			*height = m_font != nullptr ? m_font->height : 0;
+		}
+	}
+	Int getWidth(Int charPos = -1) override
+	{
+		const Int text_length = m_textString.getLength();
+		const Int chars = charPos >= 0 && charPos < text_length ? charPos : text_length;
+		return chars * 8;
+	}
+	void setUseHotkey(Bool, Color) override {}
+
+private:
+	Int m_wordWrap = 0;
+	Bool m_wordWrapCentered = FALSE;
+};
+
+EMPTY_DTOR(ProbeTerrainDrawableDisplayString)
+
+class ProbeTerrainDrawableDisplayStringManager final : public DisplayStringManager
+{
+public:
+	DisplayString *newDisplayString() override
+	{
+		DisplayString *string = newInstance(ProbeTerrainDrawableDisplayString);
+		link(string);
+		return string;
+	}
+
+	void freeDisplayString(DisplayString *string) override
+	{
+		if (string == nullptr) {
+			return;
+		}
+		unLink(string);
+		string->deleteInstance();
+	}
+
+	DisplayString *getGroupNumeralString(Int) override { return newDisplayString(); }
+	DisplayString *getFormationLetterString() override { return newDisplayString(); }
+};
+
 class ProbeTerrainLogicGameClient final : public GameClient
 {
 public:
@@ -326,9 +426,9 @@ public:
 	void update() override {}
 	void reset() override {}
 	void setFrame(UnsignedInt frame) override { m_frame = frame; }
-	void registerDrawable(Drawable *) override {}
-	Drawable *findDrawableByID(const DrawableID) override { return nullptr; }
-	Drawable *firstDrawable() override { return nullptr; }
+	void registerDrawable(Drawable *draw) override { GameClient::registerDrawable(draw); }
+	Drawable *findDrawableByID(const DrawableID id) override { return GameClient::findDrawableByID(id); }
+	Drawable *firstDrawable() override { return GameClient::firstDrawable(); }
 	GameMessage::Type evaluateContextCommand(
 		Drawable *,
 		const Coord3D *,
@@ -343,8 +443,14 @@ public:
 	Bool loadMap(AsciiString) override { return FALSE; }
 	void unloadMap(AsciiString) override {}
 	void iterateDrawablesInRegion(Region3D *, GameClientFuncPtr, void *) override {}
-	Drawable *friend_createDrawable(const ThingTemplate *, DrawableStatus) override { return nullptr; }
-	void destroyDrawable(Drawable *) override {}
+	Drawable *friend_createDrawable(const ThingTemplate *thing, DrawableStatus statusBits) override
+	{
+		if (thing == nullptr) {
+			return nullptr;
+		}
+		return newInstance(Drawable)(thing, statusBits);
+	}
+	void destroyDrawable(Drawable *draw) override { GameClient::destroyDrawable(draw); }
 	void setTimeOfDay(TimeOfDay tod) override
 	{
 		m_timeOfDayNotified = true;
@@ -358,11 +464,19 @@ public:
 	void releaseShadows() override {}
 	void allocateShadows() override {}
 	void preloadAssets(TimeOfDay) override {}
-	Drawable *getDrawableList() override { return nullptr; }
+	Drawable *getDrawableList() override { return GameClient::getDrawableList(); }
 	void notifyTerrainObjectMoved(Object *) override {}
 
 	bool timeOfDayNotified() const { return m_timeOfDayNotified; }
 	TimeOfDay notifiedTimeOfDay() const { return m_timeOfDay; }
+	UnsignedInt drawableCountForProbe() const
+	{
+		UnsignedInt count = 0;
+		for (Drawable *draw = m_drawableList; draw != nullptr; draw = draw->getNextDrawable()) {
+			++count;
+		}
+		return count;
+	}
 
 protected:
 	void crc(Xfer *) override {}
@@ -2548,7 +2662,7 @@ private:
 
 class W3DDefaultDraw : public DrawModule
 {
-	MEMORY_POOL_GLUE_WITH_USERLOOKUP_CREATE(W3DDefaultDraw, "ProbeW3DDefaultDraw")
+	MEMORY_POOL_GLUE_WITH_EXPLICIT_CREATE(W3DDefaultDraw, "ProbeW3DDefaultDraw", 4, 4)
 	MAKE_STANDARD_MODULE_MACRO(W3DDefaultDraw)
 
 public:
@@ -10019,6 +10133,22 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	UnsignedInt bridge_thing_factory_new_object_count_before = 0;
 	UnsignedInt bridge_thing_factory_new_object_count_after_create = 0;
 	UnsignedInt bridge_thing_factory_new_object_count_after_destroy = 0;
+	bool bridge_thing_factory_new_drawable_scope_ready = false;
+	bool bridge_thing_factory_new_drawable_template_found = false;
+	bool bridge_thing_factory_new_drawable_invoked = false;
+	bool bridge_thing_factory_new_drawable_exception = false;
+	Int bridge_thing_factory_new_drawable_exception_code = 0;
+	bool bridge_thing_factory_new_drawable_returned = false;
+	bool bridge_thing_factory_new_drawable_lookup_found = false;
+	bool bridge_thing_factory_new_drawable_lookup_matches = false;
+	bool bridge_thing_factory_new_drawable_first_matches = false;
+	bool bridge_thing_factory_new_drawable_draw_module_ready = false;
+	bool bridge_thing_factory_new_drawable_destroy_invoked = false;
+	bool bridge_thing_factory_new_drawable_lookup_after_destroy_null = false;
+	DrawableID bridge_thing_factory_new_drawable_id = INVALID_DRAWABLE_ID;
+	UnsignedInt bridge_thing_factory_new_drawable_count_before = 0;
+	UnsignedInt bridge_thing_factory_new_drawable_count_after_create = 0;
+	UnsignedInt bridge_thing_factory_new_drawable_count_after_destroy = 0;
 	bool asset_manager_created = false;
 	bool runtime_asset_system_installed = false;
 	bool texture_file_factory_installed = false;
@@ -10610,6 +10740,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 				direct_generic_bridge_template != nullptr;
 		}
 		if (direct_generic_bridge_template != nullptr) {
+			probe_bridge_phase_log("new-object");
 			bridge_thing_factory_new_object_invoked = true;
 			bridge_thing_factory_new_object_count_before =
 				bridge_draw_game_logic.getObjectCount();
@@ -10622,6 +10753,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			} catch (...) {
 				bridge_thing_factory_new_object_exception = true;
 			}
+			probe_bridge_phase_log("new-object-done");
 			bridge_thing_factory_new_object_returned =
 				direct_bridge_object != nullptr;
 			if (direct_bridge_object != nullptr) {
@@ -10640,10 +10772,12 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 					direct_bridge_object->getBodyModule() != nullptr;
 				bridge_thing_factory_new_object_count_after_create =
 					bridge_draw_game_logic.getObjectCount();
+				probe_bridge_phase_log("destroy-temp-object");
 				bridge_draw_game_logic.destroyObject(direct_bridge_object);
 				bridge_thing_factory_new_object_destroyed_before_process =
 					direct_bridge_object->isDestroyed();
 				bridge_draw_game_logic.update();
+				probe_bridge_phase_log("destroy-temp-object-done");
 				bridge_thing_factory_new_object_count_after_destroy =
 					bridge_draw_game_logic.getObjectCount();
 				bridge_thing_factory_new_object_lookup_after_destroy_null =
@@ -10651,6 +10785,83 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 					TheGameLogic->findObjectByID(
 						bridge_thing_factory_new_object_id) == nullptr;
 			}
+		}
+		if (direct_generic_bridge_template != nullptr) {
+			bridge_thing_factory_new_drawable_template_found = true;
+			FontLibrary *old_font_library = TheFontLibrary;
+			DisplayStringManager *old_display_string_manager = TheDisplayStringManager;
+			GlobalLanguage *old_global_language = TheGlobalLanguageData;
+			{
+				ProbeTerrainDrawableFontLibrary drawable_font_library;
+				ProbeTerrainDrawableDisplayStringManager drawable_display_string_manager;
+				GlobalLanguage drawable_global_language;
+				TheFontLibrary = &drawable_font_library;
+				TheDisplayStringManager = &drawable_display_string_manager;
+				TheGlobalLanguageData = &drawable_global_language;
+				bridge_thing_factory_new_drawable_scope_ready =
+					TheGameClient == &bridge_draw_game_client &&
+					TheFontLibrary == &drawable_font_library &&
+					TheDisplayStringManager == &drawable_display_string_manager &&
+					TheGlobalLanguageData == &drawable_global_language;
+
+				Drawable *direct_bridge_drawable = nullptr;
+				bridge_thing_factory_new_drawable_invoked = true;
+				bridge_thing_factory_new_drawable_count_before =
+					bridge_draw_game_client.drawableCountForProbe();
+				probe_bridge_phase_log("new-drawable");
+				try {
+					direct_bridge_drawable =
+						bridge_draw_thing_factory.newDrawable(
+							direct_generic_bridge_template,
+							DRAWABLE_STATUS_NONE);
+				} catch (ErrorCode error) {
+					bridge_thing_factory_new_drawable_exception = true;
+					bridge_thing_factory_new_drawable_exception_code =
+						static_cast<Int>(error);
+				} catch (int error) {
+					bridge_thing_factory_new_drawable_exception = true;
+					bridge_thing_factory_new_drawable_exception_code =
+						static_cast<Int>(error);
+				} catch (...) {
+					bridge_thing_factory_new_drawable_exception = true;
+					bridge_thing_factory_new_drawable_exception_code = -1;
+				}
+				probe_bridge_phase_log("new-drawable-done");
+				bridge_thing_factory_new_drawable_returned =
+					direct_bridge_drawable != nullptr;
+				if (direct_bridge_drawable != nullptr) {
+					bridge_thing_factory_new_drawable_id =
+						direct_bridge_drawable->getID();
+					Drawable *direct_drawable_lookup =
+						bridge_draw_game_client.findDrawableByID(
+							bridge_thing_factory_new_drawable_id);
+					bridge_thing_factory_new_drawable_lookup_found =
+						direct_drawable_lookup != nullptr;
+					bridge_thing_factory_new_drawable_lookup_matches =
+						direct_drawable_lookup == direct_bridge_drawable;
+					bridge_thing_factory_new_drawable_first_matches =
+						bridge_draw_game_client.firstDrawable() ==
+						direct_bridge_drawable;
+					DrawModule **draw_modules =
+						direct_bridge_drawable->getDrawModulesNonDirty();
+					bridge_thing_factory_new_drawable_draw_module_ready =
+						draw_modules != nullptr && draw_modules[0] != nullptr;
+					bridge_thing_factory_new_drawable_count_after_create =
+						bridge_draw_game_client.drawableCountForProbe();
+					probe_bridge_phase_log("destroy-temp-drawable");
+					bridge_draw_game_client.destroyDrawable(direct_bridge_drawable);
+					bridge_thing_factory_new_drawable_destroy_invoked = true;
+					bridge_thing_factory_new_drawable_count_after_destroy =
+						bridge_draw_game_client.drawableCountForProbe();
+					bridge_thing_factory_new_drawable_lookup_after_destroy_null =
+						bridge_draw_game_client.findDrawableByID(
+							bridge_thing_factory_new_drawable_id) == nullptr;
+					probe_bridge_phase_log("destroy-temp-drawable-done");
+				}
+			}
+			TheGlobalLanguageData = old_global_language;
+			TheDisplayStringManager = old_display_string_manager;
+			TheFontLibrary = old_font_library;
 		}
 		probe_bridge_phase_log("load-bridges");
 		bridge_buffer->loadBridges(&bridge_draw_terrain_logic, FALSE);
@@ -11159,6 +11370,22 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_thing_factory_new_object_count_after_destroy ==
 			bridge_thing_factory_new_object_count_before &&
 		bridge_thing_factory_new_object_lookup_after_destroy_null &&
+		bridge_thing_factory_new_drawable_scope_ready &&
+		bridge_thing_factory_new_drawable_template_found &&
+		bridge_thing_factory_new_drawable_invoked &&
+		!bridge_thing_factory_new_drawable_exception &&
+		bridge_thing_factory_new_drawable_returned &&
+		bridge_thing_factory_new_drawable_id != INVALID_DRAWABLE_ID &&
+		bridge_thing_factory_new_drawable_lookup_found &&
+		bridge_thing_factory_new_drawable_lookup_matches &&
+		bridge_thing_factory_new_drawable_first_matches &&
+		bridge_thing_factory_new_drawable_draw_module_ready &&
+		bridge_thing_factory_new_drawable_count_after_create ==
+			bridge_thing_factory_new_drawable_count_before + 1 &&
+		bridge_thing_factory_new_drawable_destroy_invoked &&
+		bridge_thing_factory_new_drawable_count_after_destroy ==
+			bridge_thing_factory_new_drawable_count_before &&
+		bridge_thing_factory_new_drawable_lookup_after_destroy_null &&
 		!bridge_logic_generic_bridge_object_missing &&
 		update_center_invoked &&
 		bridge_vertices_after_update > 0 &&
@@ -11231,6 +11458,8 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> "
 		"ThingFactory::newObject(GenericBridge) -> "
 		"GameLogic::destroyObject/update-processDestroyList(temp GenericBridge) -> "
+		"ThingFactory::newDrawable(GenericBridge) -> "
+		"GameClient::destroyDrawable(temp GenericBridge) -> "
 		"W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> "
 		"TerrainLogic::addBridgeToLogic -> "
 		"GameLogic::findObjectByID(GenericBridge) -> "
@@ -11274,7 +11503,23 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"newObjectCountAfterCreate\":%u,"
 		"\"newObjectCountAfterDestroy\":%u,"
 		"\"newObjectDestroyedBeforeProcess\":%s,"
-		"\"newObjectLookupAfterDestroyNull\":%s},"
+		"\"newObjectLookupAfterDestroyNull\":%s,"
+		"\"newDrawableScopeReady\":%s,"
+		"\"newDrawableTemplateFound\":%s,"
+		"\"newDrawableInvoked\":%s,"
+		"\"newDrawableException\":%s,"
+		"\"newDrawableExceptionCode\":%d,"
+		"\"newDrawableReturned\":%s,"
+		"\"newDrawableID\":%d,"
+		"\"newDrawableLookupFound\":%s,"
+		"\"newDrawableLookupMatches\":%s,"
+		"\"newDrawableFirstMatches\":%s,"
+		"\"newDrawableDrawModuleReady\":%s,"
+		"\"newDrawableCountBefore\":%u,"
+		"\"newDrawableCountAfterCreate\":%u,"
+		"\"newDrawableCountAfterDestroy\":%u,"
+		"\"newDrawableDestroyInvoked\":%s,"
+		"\"newDrawableLookupAfterDestroyNull\":%s},"
 		"\"runtimeArchiveSetLoadedForSelection\":%s,"
 		"\"init\":%d,\"assetManagerCreated\":%s,\"setRenderDevice\":%d,"
 		"\"runtimeAssetSystemInstalled\":%s,"
@@ -11563,6 +11808,22 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_thing_factory_new_object_count_after_destroy,
 		bool_json(bridge_thing_factory_new_object_destroyed_before_process),
 		bool_json(bridge_thing_factory_new_object_lookup_after_destroy_null),
+		bool_json(bridge_thing_factory_new_drawable_scope_ready),
+		bool_json(bridge_thing_factory_new_drawable_template_found),
+		bool_json(bridge_thing_factory_new_drawable_invoked),
+		bool_json(bridge_thing_factory_new_drawable_exception),
+		bridge_thing_factory_new_drawable_exception_code,
+		bool_json(bridge_thing_factory_new_drawable_returned),
+		bridge_thing_factory_new_drawable_id,
+		bool_json(bridge_thing_factory_new_drawable_lookup_found),
+		bool_json(bridge_thing_factory_new_drawable_lookup_matches),
+		bool_json(bridge_thing_factory_new_drawable_first_matches),
+		bool_json(bridge_thing_factory_new_drawable_draw_module_ready),
+		bridge_thing_factory_new_drawable_count_before,
+		bridge_thing_factory_new_drawable_count_after_create,
+		bridge_thing_factory_new_drawable_count_after_destroy,
+		bool_json(bridge_thing_factory_new_drawable_destroy_invoked),
+		bool_json(bridge_thing_factory_new_drawable_lookup_after_destroy_null),
 		bool_json(runtime_archive_set_loaded_for_selection),
 		init_result,
 		bool_json(asset_manager_created),

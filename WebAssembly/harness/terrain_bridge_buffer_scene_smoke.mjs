@@ -619,7 +619,7 @@ try {
   if (!result.ok
       || result.command !== "ww3dTerrainBridgeBufferScene"
       || result.probe?.source !== "ww3d_terrain_bridge_buffer_scene_probe"
-      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> ThingFactory::newObject(GenericBridge) -> GameLogic::destroyObject/update-processDestroyList(temp GenericBridge) -> W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> TerrainLogic::addBridgeToLogic -> GameLogic::findObjectByID(GenericBridge) -> Object::attemptDamage(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::kill(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::attemptHealingFromSoleBenefactor(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::setDisabledUntil/checkDisabledStatus(GenericBridge) -> Object::goInvulnerable(GenericBridge) -> TerrainLogic::updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay -> GameLogic::destroyObject/update-processDestroyList(GenericBridge)"
+      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> ThingFactory::newObject(GenericBridge) -> GameLogic::destroyObject/update-processDestroyList(temp GenericBridge) -> ThingFactory::newDrawable(GenericBridge) -> GameClient::destroyDrawable(temp GenericBridge) -> W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> TerrainLogic::addBridgeToLogic -> GameLogic::findObjectByID(GenericBridge) -> Object::attemptDamage(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::kill(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::attemptHealingFromSoleBenefactor(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::setDisabledUntil/checkDisabledStatus(GenericBridge) -> Object::goInvulnerable(GenericBridge) -> TerrainLogic::updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay -> GameLogic::destroyObject/update-processDestroyList(GenericBridge)"
       || result.probe?.results?.runtimeAssetSystemInstalled !== true
       || result.probe?.results?.modelsFileExists !== true
       || result.probe?.results?.meshFileExists !== true
@@ -661,6 +661,20 @@ try {
       || result.probe?.results?.objectRuntime?.newObjectCountAfterDestroy !== result.probe?.results?.objectRuntime?.newObjectCountBefore
       || result.probe?.results?.objectRuntime?.newObjectDestroyedBeforeProcess !== true
       || result.probe?.results?.objectRuntime?.newObjectLookupAfterDestroyNull !== true
+      || result.probe?.results?.objectRuntime?.newDrawableScopeReady !== true
+      || result.probe?.results?.objectRuntime?.newDrawableTemplateFound !== true
+      || result.probe?.results?.objectRuntime?.newDrawableInvoked !== true
+      || result.probe?.results?.objectRuntime?.newDrawableException !== false
+      || result.probe?.results?.objectRuntime?.newDrawableReturned !== true
+      || result.probe?.results?.objectRuntime?.newDrawableID <= 0
+      || result.probe?.results?.objectRuntime?.newDrawableLookupFound !== true
+      || result.probe?.results?.objectRuntime?.newDrawableLookupMatches !== true
+      || result.probe?.results?.objectRuntime?.newDrawableFirstMatches !== true
+      || result.probe?.results?.objectRuntime?.newDrawableDrawModuleReady !== true
+      || result.probe?.results?.objectRuntime?.newDrawableCountAfterCreate !== result.probe?.results?.objectRuntime?.newDrawableCountBefore + 1
+      || result.probe?.results?.objectRuntime?.newDrawableCountAfterDestroy !== result.probe?.results?.objectRuntime?.newDrawableCountBefore
+      || result.probe?.results?.objectRuntime?.newDrawableDestroyInvoked !== true
+      || result.probe?.results?.objectRuntime?.newDrawableLookupAfterDestroyNull !== true
       || result.probe?.results?.bridgeBufferInstalled !== true
       || result.probe?.results?.loadBridgesInvoked !== true
       || result.probe?.results?.terrainLogicInstalledForDraw !== true
