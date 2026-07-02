@@ -51,6 +51,8 @@ flow below.
       device draw/layout tables, loads the non-network base GUI
       system/input/tooltip/widget plus IME draw callback table, registers
       representative original base layout callbacks, and now owns the original
+      `ControlBarObserverSystem` callback-name lookup with original
+      `ControlBarObserver.cpp` observer UI code linked, original
       `GameWinBlockInput` callback-name lookup with original
       `SelectionXlat.cpp` linked for `TheSelectionTranslator`, original
       `ExtendedMessageBoxSystem`, original W3D `MOTDSystem`, original
@@ -92,7 +94,8 @@ flow below.
       boot. The current
       linked runtime constructs original `W3DFunctionLexicon` and verifies the
       W3D device draw/layout callback tables plus the non-network base GUI
-      system/input/tooltip/widget, IME draw, original `GameWinBlockInput`
+      system/input/tooltip/widget, IME draw, original `ControlBarObserverSystem`
+      lookup, original `GameWinBlockInput`
       lookup with original `SelectionXlat.cpp` symbol ownership, original `PopupReplay`
       input/init/shutdown modal lookups, original `ExtendedMessageBoxSystem`,
       original W3D `MOTDSystem` lookup,
@@ -137,6 +140,8 @@ flow below.
 - [ ] Promote `ControlBarSystem` and `LeftHUDInput` only after the original
       control-bar command/radar/player ownership surface is ready in the
       linked runtime. The passive `ControlBarInput` callback is now registered,
+      and the observer-only `ControlBarObserverSystem` callback name is now
+      registered from original `ControlBarObserver.cpp`,
       but the broader control-bar system/HUD callbacks reach gameplay command,
       radar, mouse, player-list, and in-game UI state; keep those out of
       `cnc-port` until that ownership is real instead of weak-stubbed.

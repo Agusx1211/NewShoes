@@ -227,6 +227,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.replay_control_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("ReplayControlSystem")) == ReplayControlSystem;
+	result.control_bar_observer_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("ControlBarObserverSystem")) == ControlBarObserverSystem;
 	result.game_info_window_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("GameInfoWindowSystem")) == GameInfoWindowSystem;
@@ -679,6 +682,12 @@ bool replay_control_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &
 		result.replay_control_input_lookup;
 }
 
+bool control_bar_observer_lookup_state_ready(
+	const FunctionLexiconRuntimeProbeResult &result)
+{
+	return result.control_bar_observer_system_lookup;
+}
+
 bool game_info_window_lookup_state_ready(
 	const FunctionLexiconRuntimeProbeResult &result)
 {
@@ -695,8 +704,8 @@ bool base_layout_callback_graph_ready(const FunctionLexiconRuntimeProbeResult &)
 	// The linked runtime currently proves a shell-menu subset plus the
 	// game-window block input, MOTD, options-menu, skirmish-map-select, challenge-menu,
 	// popup-communicator, in-game popup-message, idle-worker, control-bar
-	// input, beacon-window, replay-control, map-select, replay-menu,
-	// popup-replay modal callbacks, and game-info-window callback owners.
+	// input, beacon-window, replay-control, control-bar observer, map-select,
+	// replay-menu, popup-replay modal callbacks, and game-info-window callback owners.
 	// Full ownership requires the remaining non-network layout callback graph.
 	return false;
 }
@@ -718,6 +727,7 @@ bool lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 		control_bar_input_lookup_state_ready(result) &&
 		beacon_window_lookup_state_ready(result) &&
 		replay_control_lookup_state_ready(result) &&
+		control_bar_observer_lookup_state_ready(result) &&
 		game_info_window_lookup_state_ready(result) &&
 		idle_worker_lookup_state_ready(result) &&
 		device_lookup_state_ready(result);
@@ -843,8 +853,13 @@ void finish_status(FunctionLexiconRuntimeProbeResult &result)
 		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
 		return;
 	}
-	if (!challenge_menu_lookup_state_ready(result)) {
+	if (!control_bar_observer_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_replay_control_runtime_owned";
+		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
+		return;
+	}
+	if (!challenge_menu_lookup_state_ready(result)) {
+		result.status = "base_function_lexicon_control_bar_observer_runtime_owned";
 		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
 		return;
 	}
@@ -879,7 +894,7 @@ void finish_status(FunctionLexiconRuntimeProbeResult &result)
 		return;
 	}
 	if (!base_layout_callback_graph_ready(result)) {
-		result.status = "base_function_lexicon_game_win_block_input_runtime_owned";
+		result.status = "base_function_lexicon_control_bar_observer_runtime_owned";
 		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
 		return;
 	}
@@ -1072,6 +1087,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"inGamePopupMessageSystem\":%s,"
 		"\"idleWorkerSystem\":%s,"
 		"\"replayControlSystem\":%s,"
+		"\"controlBarObserverSystem\":%s,"
 		"\"gameInfoWindowSystem\":%s,"
 		"\"gameWindowDefaultInput\":%s,"
 		"\"gameWinBlockInput\":%s,"
@@ -1206,6 +1222,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.in_game_popup_message_system_lookup),
 		json_bool(state.idle_worker_system_lookup),
 		json_bool(state.replay_control_system_lookup),
+		json_bool(state.control_bar_observer_system_lookup),
 		json_bool(state.game_info_window_system_lookup),
 		json_bool(state.game_window_default_input_lookup),
 		json_bool(state.game_window_block_input_lookup),

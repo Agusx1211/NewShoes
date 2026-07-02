@@ -2383,6 +2383,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       instead of weak browser stand-ins. Startup vertical verifies the lookup
       in the browser and reports
       `base_function_lexicon_game_win_block_input_runtime_owned`.
+- [x] Promote original `ControlBarObserverSystem` into the linked `cnc-port`
+      base `FunctionLexicon` without claiming the broader command/radar HUD
+      owner. `zh_window_layout_script_runtime` now links original
+      `GUI/ControlBar/ControlBarObserver.cpp`, the reduced wasm system table
+      registers `ControlBarObserverSystem`, and startup vertical verifies the
+      browser lookup while the broad `ControlBarSystem`/`LeftHUDInput`
+      command paths remain deferred. The FunctionLexicon frontier now reports
+      `base_function_lexicon_control_bar_observer_runtime_owned`.
 - [x] Prove the original `W3DModuleFactory` runtime path in the browser startup
       frontier without pretending the earlier `FunctionLexicon` blocker is done.
       `wasm_module_factory_runtime` now constructs original `W3DModuleFactory`

@@ -261,6 +261,7 @@ FunctionLexicon::TableEntry runtimeBaseSystemTable[] = {
 	{ NAMEKEY_INVALID, "InGamePopupMessageSystem", InGamePopupMessageSystem },
 	{ NAMEKEY_INVALID, "IdleWorkerSystem", IdleWorkerSystem },
 	{ NAMEKEY_INVALID, "ReplayControlSystem", ReplayControlSystem },
+	{ NAMEKEY_INVALID, "ControlBarObserverSystem", ControlBarObserverSystem },
 	{ NAMEKEY_INVALID, "GameInfoWindowSystem", GameInfoWindowSystem },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };

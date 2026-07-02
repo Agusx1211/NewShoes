@@ -178,12 +178,13 @@ const browserChecks = [
           && payload.archiveBackedStartup.audioManagerRuntime.music?.alreadyLoaded === true
           && payload.archiveBackedStartup.audioManagerRuntime.teardown?.tornDown === true,
         'Archive-backed startup boot did not prove real init/music/teardown');
-      expect(payload.archiveBackedStartup.functionLexiconRuntime?.status === 'base_function_lexicon_game_win_block_input_runtime_owned',
-        'Archive-backed startup boot did not report the expected GameWinBlockInput FunctionLexicon frontier');
+      expect(payload.archiveBackedStartup.functionLexiconRuntime?.status === 'base_function_lexicon_control_bar_observer_runtime_owned',
+        'Archive-backed startup boot did not report the expected ControlBarObserver FunctionLexicon frontier');
       expect(payload.archiveBackedStartup.functionLexiconRuntime?.lookups?.popupReplayInput === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.popupReplayInit === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.popupReplayShutdown === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.controlBarInput === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.controlBarObserverSystem === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.gameWinBlockInput === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.motdSystem === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.optionsMenuSystem === true
@@ -196,7 +197,7 @@ const browserChecks = [
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.skirmishMapSelectMenuInit === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.skirmishMapSelectMenuUpdate === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.skirmishMapSelectMenuShutdown === true,
-        'Archive-backed startup boot did not prove PopupReplay modal, ControlBar input, GameWinBlockInput, MOTD, OptionsMenu, and SkirmishMapSelectMenu callback lookups');
+        'Archive-backed startup boot did not prove PopupReplay modal, ControlBar input, ControlBarObserver, GameWinBlockInput, MOTD, OptionsMenu, and SkirmishMapSelectMenu callback lookups');
       expect(payload.archiveBackedStartup.functionLexiconRuntime?.lookups?.popupReplaySystem === undefined
           && payload.archiveBackedStartup.functionLexiconRuntime?.lookups?.popupReplayUpdate === undefined,
         'Archive-backed startup boot should leave PopupReplay score-screen-dependent callbacks unregistered');
@@ -427,7 +428,7 @@ console.log(JSON.stringify({
     'original ButtonUSA faction difficulty transition and ButtonDiffBack return through MainMenuSystem',
     'original ButtonLoadReplay dropdown and ButtonLoadReplayBack return through MainMenuSystem',
     'original ButtonCredits path through Shell::push into CreditsMenuInit/CreditsMenuUpdate with INIZH-backed Credits.ini',
-    'browser boot constructs original W3DFunctionLexicon, verifies W3D device callback-name tables, and loads the non-network base GUI widget/input, IME draw, original GameWinBlockInput with the original SelectionTranslator symbol owner linked, original ExtendedMessageBoxSystem, original W3D MOTD system callback, original DifficultySelect system/input/init callbacks, original KeyboardOptionsMenu system/input/init/update/shutdown callbacks with original MetaEvent global ownership, original OptionsMenu system/input/init/update/shutdown callbacks with original OptionPreferences ownership, original SkirmishMapSelectMenu system/input/init/update/shutdown callbacks, original InGamePopupMessage system/input/init callbacks, original IdleWorkerSystem callback, original BeaconWindowInput callback, original ControlBarInput callback, original ReplayControl system/input callbacks, original ChallengeMenu callbacks, original PopupCommunicator callbacks, original MapSelectMenu callbacks, original ReplayMenu callbacks, original PopupReplay modal callbacks, original GameInfoWindowSystem lookup, and original MainMenu/Credits/Skirmish/SinglePlayer shell callback tables while the remaining layout graph remains the FunctionLexicon boundary',
+    'browser boot constructs original W3DFunctionLexicon, verifies W3D device callback-name tables, and loads the non-network base GUI widget/input, IME draw, original ControlBarObserverSystem from ControlBarObserver.cpp, original GameWinBlockInput with the original SelectionTranslator symbol owner linked, original ExtendedMessageBoxSystem, original W3D MOTD system callback, original DifficultySelect system/input/init callbacks, original KeyboardOptionsMenu system/input/init/update/shutdown callbacks with original MetaEvent global ownership, original OptionsMenu system/input/init/update/shutdown callbacks with original OptionPreferences ownership, original SkirmishMapSelectMenu system/input/init/update/shutdown callbacks, original InGamePopupMessage system/input/init callbacks, original IdleWorkerSystem callback, original BeaconWindowInput callback, original ControlBarInput callback, original ReplayControl system/input callbacks, original ChallengeMenu callbacks, original PopupCommunicator callbacks, original MapSelectMenu callbacks, original ReplayMenu callbacks, original PopupReplay modal callbacks, original GameInfoWindowSystem lookup, and original MainMenu/Credits/Skirmish/SinglePlayer shell callback tables while the remaining layout graph remains the FunctionLexicon boundary',
     'browser boot constructs original W3DModuleFactory, runs W3DModuleFactory::init(), and proves public ModuleFactory lookups for representative base gameplay, client-update, and W3D draw modules',
     'browser boot constructs original W3DParticleSystemManager, runs ParticleSystemManager::init() against Data\\INI\\ParticleSystem.ini, and proves shipped particle template lookups through the public manager API',
     'source-pinned original GameLogic MSG_NEW_GAME dispatch frontier after CommandList handoff',
