@@ -42,7 +42,7 @@ class Shell;
 // Storage for original singletons referenced by linked GUI/display code outside
 // this focused probe. They stay null here because those subsystems are not booted.
 DisplayStringManager *TheDisplayStringManager = nullptr;
-InGameUI *TheInGameUI = nullptr;
+InGameUI *TheInGameUI __attribute__((weak)) = nullptr;
 Shell *TheShell __attribute__((weak)) = nullptr;
 
 // Keep this browser GUI input probe focused on event routing without linking

@@ -2240,6 +2240,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       callback-name lookup in the browser and now reports
       `base_function_lexicon_extended_message_box_runtime_owned` with
       `originalFunctionLexiconRemainingShellCallbacks` next.
+- [x] Promote the original `InGamePopupMessage` callback owner into the linked
+      `cnc-port` base `FunctionLexicon`: `zh_window_layout_script_runtime` now
+      links `InGamePopupMessage.cpp` plus the original `InGameUI.cpp` owner for
+      `InGameUI::clearPopupMessageData`, and the focused mouse-stream probe's
+      null `TheInGameUI` storage is weak so the real singleton can own the
+      global when linked. Startup vertical verifies the system/input/init
+      callback-name lookups in the browser and now reports
+      `base_function_lexicon_ingame_popup_message_runtime_owned` with
+      `originalFunctionLexiconRemainingShellCallbacks` next.
 ---
 
 ## M3 — File / data subsystem (real data)

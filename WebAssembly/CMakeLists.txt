@@ -4025,6 +4025,7 @@ add_library(zh_window_layout_script_runtime STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/HeaderTemplate.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/ExtendedMessageBox.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/IMECandidate.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/InGamePopupMessage.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/MessageBox.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/CreditsMenu.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/DifficultySelect.cpp"
@@ -4038,6 +4039,7 @@ add_library(zh_window_layout_script_runtime STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ProcessAnimateWindow.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/Shell.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/ShellMenuScheme.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/InGameUI.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/System/CampaignManager.cpp"
 )
 

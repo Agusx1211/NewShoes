@@ -239,6 +239,7 @@ FunctionLexicon::TableEntry runtimeBaseSystemTable[] = {
 	{ NAMEKEY_INVALID, "SinglePlayerMenuSystem", SinglePlayerMenuSystem },
 	{ NAMEKEY_INVALID, "DifficultySelectSystem", DifficultySelectSystem },
 	{ NAMEKEY_INVALID, "KeyboardOptionsMenuSystem", KeyboardOptionsMenuSystem },
+	{ NAMEKEY_INVALID, "InGamePopupMessageSystem", InGamePopupMessageSystem },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
@@ -262,6 +263,7 @@ FunctionLexicon::TableEntry runtimeBaseInputTable[] = {
 	{ NAMEKEY_INVALID, "SinglePlayerMenuInput", SinglePlayerMenuInput },
 	{ NAMEKEY_INVALID, "DifficultySelectInput", DifficultySelectInput },
 	{ NAMEKEY_INVALID, "KeyboardOptionsMenuInput", KeyboardOptionsMenuInput },
+	{ NAMEKEY_INVALID, "InGamePopupMessageInput", InGamePopupMessageInput },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
@@ -283,6 +285,7 @@ FunctionLexicon::TableEntry runtimeBaseLayoutInitTable[] = {
 	{ NAMEKEY_INVALID, "SinglePlayerMenuInit", SinglePlayerMenuInit },
 	{ NAMEKEY_INVALID, "DifficultySelectInit", DifficultySelectInit },
 	{ NAMEKEY_INVALID, "KeyboardOptionsMenuInit", KeyboardOptionsMenuInit },
+	{ NAMEKEY_INVALID, "InGamePopupMessageInit", InGamePopupMessageInit },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 

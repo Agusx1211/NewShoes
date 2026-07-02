@@ -54,9 +54,11 @@ flow below.
       `ExtendedMessageBoxSystem`, original `DifficultySelect`
       system/input/init callbacks, original
       `KeyboardOptionsMenu` system/input/init/update/shutdown callbacks with
-      original `MetaEvent` global ownership, plus `MainMenu`/`CreditsMenu`/
-      `SkirmishGameOptionsMenu`/`SinglePlayerMenu` shell callback names; the
-      remaining `FunctionLexicon` boundary is the rest of the shell layout
+      original `MetaEvent` global ownership, original `InGamePopupMessage`
+      system/input/init callbacks with original `InGameUI` global ownership,
+      plus `MainMenu`/`CreditsMenu`/`SkirmishGameOptionsMenu`/
+      `SinglePlayerMenu` shell callback names; the remaining
+      `FunctionLexicon` boundary is the rest of the non-network layout
       callback graph);
       archiveless or music-less boots honestly stay at line 434.
 - [ ] Own `createFunctionLexicon` (`W3DFunctionLexicon`, `GameEngine.cpp:446`)
@@ -67,13 +69,14 @@ flow below.
       system/input/tooltip/widget, IME draw, representative
       `PopupReplayShutdown`, original `ExtendedMessageBoxSystem`,
       original `DifficultySelect` system/input/init lookups, original
-      `KeyboardOptionsMenu` system/input/init/update/shutdown lookups, and
+      `KeyboardOptionsMenu` system/input/init/update/shutdown lookups,
+      original `InGamePopupMessage` system/input/init lookups, and
       original `MainMenu`/`CreditsMenu`/
       `SkirmishGameOptionsMenu`/`SinglePlayerMenu`
       system/input/init/update/shutdown lookups, but full ownership still needs
-      the remaining original base `FunctionLexicon.cpp` shell layout callback
+      the remaining original base `FunctionLexicon.cpp` non-network layout callback
       graph without pulling LAN/WOL/GameSpy/embedded-web menu callbacks into
-      `cnc-port`. Next promote the remaining non-network shell callback owners
+      `cnc-port`. Next promote the remaining non-network layout callback owners
       in small groups while leaving online/download/embedded web menus at
       explicit browser boundaries.
       The real
