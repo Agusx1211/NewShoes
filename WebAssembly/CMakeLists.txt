@@ -7977,3 +7977,19 @@ target_link_options(bink-w3d-video-buffer-browser-smoke PRIVATE
   "SHELL:-sEXPORTED_FUNCTIONS=['_run_bink_w3d_video_buffer_upload_smoke']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall','FS']"
 )
+
+# Hot-path aggregate: everything `npm run test:startup-vertical` executes.
+# The real-init boot loop builds this (via CNC_BUILD_TARGETS in
+# tools/build_wasm.sh) instead of the full probe/smoke surface, so touched
+# engine headers do not force a rebuild of every legacy smoke executable.
+# Keep this list in sync with tools/run_startup_vertical_smoke.mjs.
+add_custom_target(zh_startup_vertical_hotpath
+  DEPENDS
+    cnc-port
+    win32-gameengine-lifetime-smoke
+    win32-gameengine-original-lifetime-smoke
+    miles-audio-open-device-smoke
+    w3d-gamewindow-manager-smoke
+    w3d-window-layout-script-smoke
+    gamelogic-new-game-dispatch-smoke
+)
