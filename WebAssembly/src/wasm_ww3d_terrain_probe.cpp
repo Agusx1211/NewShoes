@@ -2659,6 +2659,8 @@ public:
 		Real actualDamageDealt = -1.0f;
 		Real actualDamageClipped = -1.0f;
 		Bool noEffect = FALSE;
+		Bool objectStillPresent = FALSE;
+		Bool destroyedStatus = FALSE;
 	};
 
 	Int bridgeCountForProbe() const
@@ -2729,6 +2731,32 @@ public:
 		attempt.actualDamageDealt = damage_info.out.m_actualDamageDealt;
 		attempt.actualDamageClipped = damage_info.out.m_actualDamageClipped;
 		attempt.noEffect = damage_info.out.m_noEffect;
+		attempt.objectStillPresent = TRUE;
+		attempt.destroyedStatus =
+			bridge_object->testStatus(OBJECT_STATUS_DESTROYED);
+		return true;
+	}
+
+	bool killFirstBridgeForProbe(BridgeDamageAttemptForProbe &attempt)
+	{
+		Object *bridge_object = firstBridgeObjectForProbe();
+		if (bridge_object == nullptr || bridge_object->getBodyModule() == nullptr) {
+			return false;
+		}
+		bridge_object->kill(DAMAGE_UNRESISTABLE, DEATH_NORMAL);
+		Object *bridge_object_after_kill = firstBridgeObjectForProbe();
+		if (bridge_object_after_kill == nullptr ||
+				bridge_object_after_kill->getBodyModule() == nullptr) {
+			attempt.objectStillPresent = FALSE;
+			return true;
+		}
+		BodyModuleInterface *body = bridge_object_after_kill->getBodyModule();
+		attempt.state = body->getDamageState();
+		attempt.health = body->getHealth();
+		attempt.maxHealth = body->getMaxHealth();
+		attempt.objectStillPresent = TRUE;
+		attempt.destroyedStatus =
+			bridge_object_after_kill->testStatus(OBJECT_STATUS_DESTROYED);
 		return true;
 	}
 
@@ -9767,7 +9795,17 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	bool bridge_logic_damage_state_changed_after_attempt_update = false;
 	bool bridge_logic_broken_after_attempt_update = false;
 	bool bridge_logic_repaired_after_attempt_update = false;
-	Int bridge_draw_first_damage_state_after_attempt_scene = -1;
+	bool bridge_logic_kill_invoked = false;
+	bool bridge_logic_kill_object_still_present = false;
+	bool bridge_logic_kill_destroyed_status = false;
+	Int bridge_logic_body_damage_state_after_kill = -1;
+	float bridge_logic_body_health_after_kill = -1.0f;
+	float bridge_logic_body_max_health_after_kill = -1.0f;
+	Int bridge_logic_damage_state_after_kill_update = -1;
+	bool bridge_logic_damage_state_changed_after_kill_update = false;
+	bool bridge_logic_broken_after_kill_update = false;
+	bool bridge_logic_repaired_after_kill_update = false;
+	Int bridge_draw_first_damage_state_after_kill_scene = -1;
 	Int bridge_logic_first_layer_after_seed = -1;
 	Int bridge_draw_terrain_logic_bridge_count = 0;
 	Int bridge_draw_enabled_bridge_count = 0;
@@ -10325,6 +10363,36 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			bridge_logic_broken_after_attempt_update = damaged_bridge_broken;
 			bridge_logic_repaired_after_attempt_update = damaged_bridge_repaired;
 		}
+		ProbeTerrainLogicForBridgeDraw::BridgeDamageAttemptForProbe killed_body_attempt;
+		if (bridge_draw_terrain_logic.killFirstBridgeForProbe(killed_body_attempt)) {
+			bridge_logic_kill_invoked = true;
+			bridge_logic_kill_object_still_present =
+				killed_body_attempt.objectStillPresent;
+			bridge_logic_kill_destroyed_status =
+				killed_body_attempt.destroyedStatus;
+			bridge_logic_body_damage_state_after_kill =
+				killed_body_attempt.state;
+			bridge_logic_body_health_after_kill =
+				killed_body_attempt.health;
+			bridge_logic_body_max_health_after_kill =
+				killed_body_attempt.maxHealth;
+		}
+		BridgeInfo killed_bridge_info;
+		PathfindLayerEnum killed_bridge_layer = LAYER_GROUND;
+		bool killed_bridge_broken = false;
+		bool killed_bridge_repaired = false;
+		if (bridge_draw_terrain_logic.updateFirstBridgeDamageStateForProbe(
+				killed_bridge_info,
+				killed_bridge_layer,
+				killed_bridge_broken,
+				killed_bridge_repaired)) {
+			bridge_logic_damage_state_after_kill_update =
+				killed_bridge_info.curDamageState;
+			bridge_logic_damage_state_changed_after_kill_update =
+				killed_bridge_info.damageStateChanged;
+			bridge_logic_broken_after_kill_update = killed_bridge_broken;
+			bridge_logic_repaired_after_kill_update = killed_bridge_repaired;
+		}
 		bridge_manual_geometry_after_load =
 			bridge_buffer->firstBridgeManualGeometry(
 				bridge_manual_vertices_after_load,
@@ -10419,7 +10487,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 					succeeded(render_result) &&
 					succeeded(end_render_result) &&
 					bridge_buffer != nullptr) {
-				bridge_draw_first_damage_state_after_attempt_scene =
+				bridge_draw_first_damage_state_after_kill_scene =
 					bridge_buffer->firstBridgeDamageState();
 			}
 			tree_need_to_draw_after_scene = tree_buffer != nullptr && tree_buffer->needToDraw();
@@ -10536,7 +10604,17 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		!bridge_logic_damage_state_changed_after_attempt_update &&
 		!bridge_logic_broken_after_attempt_update &&
 		!bridge_logic_repaired_after_attempt_update &&
-		bridge_draw_first_damage_state_after_attempt_scene == BODY_PRISTINE &&
+		bridge_logic_kill_invoked &&
+		bridge_logic_kill_object_still_present &&
+		!bridge_logic_kill_destroyed_status &&
+		bridge_logic_body_damage_state_after_kill == BODY_PRISTINE &&
+		bridge_logic_body_health_after_kill == 1.0f &&
+		bridge_logic_body_max_health_after_kill == 1.0f &&
+		bridge_logic_damage_state_after_kill_update == BODY_PRISTINE &&
+		!bridge_logic_damage_state_changed_after_kill_update &&
+		!bridge_logic_broken_after_kill_update &&
+		!bridge_logic_repaired_after_kill_update &&
+		bridge_draw_first_damage_state_after_kill_scene == BODY_PRISTINE &&
 		terrain_logic_retained_for_draw &&
 		bridge_draw_terrain_logic_bridge_count > 0 &&
 		bridge_draw_enabled_bridge_count > 0 &&
@@ -10653,6 +10731,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> "
 		"W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> "
 		"TerrainLogic::addBridgeToLogic -> Object::attemptDamage(GenericBridge) -> "
+		"TerrainLogic::updateBridgeDamageStates -> Object::kill(GenericBridge) -> "
 		"TerrainLogic::updateBridgeDamageStates/updateCenter -> "
 		"TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> "
 		"W3DBridge::renderBridge + bridge shroud overlay\","
@@ -10722,7 +10801,17 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"bridgeLogicDamageStateChangedAfterAttemptUpdate\":%s,"
 		"\"bridgeLogicBrokenAfterAttemptUpdate\":%s,"
 		"\"bridgeLogicRepairedAfterAttemptUpdate\":%s,"
-		"\"bridgeDrawFirstDamageStateAfterAttemptScene\":%d,"
+		"\"bridgeLogicKillInvoked\":%s,"
+		"\"bridgeLogicKillObjectStillPresent\":%s,"
+		"\"bridgeLogicKillDestroyedStatus\":%s,"
+		"\"bridgeLogicBodyDamageStateAfterKill\":%d,"
+		"\"bridgeLogicBodyHealthAfterKill\":%.4f,"
+		"\"bridgeLogicBodyMaxHealthAfterKill\":%.4f,"
+		"\"bridgeLogicDamageStateAfterKillUpdate\":%d,"
+		"\"bridgeLogicDamageStateChangedAfterKillUpdate\":%s,"
+		"\"bridgeLogicBrokenAfterKillUpdate\":%s,"
+		"\"bridgeLogicRepairedAfterKillUpdate\":%s,"
+		"\"bridgeDrawFirstDamageStateAfterKillScene\":%d,"
 		"\"bridgeLogicFirstLayerAfterSeed\":%d,"
 		"\"bridgeDrawTerrainLogicBridgeCount\":%d,"
 		"\"bridgeDrawEnabledBridgeCount\":%d,"
@@ -10948,7 +11037,17 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bool_json(bridge_logic_damage_state_changed_after_attempt_update),
 		bool_json(bridge_logic_broken_after_attempt_update),
 		bool_json(bridge_logic_repaired_after_attempt_update),
-		bridge_draw_first_damage_state_after_attempt_scene,
+		bool_json(bridge_logic_kill_invoked),
+		bool_json(bridge_logic_kill_object_still_present),
+		bool_json(bridge_logic_kill_destroyed_status),
+		bridge_logic_body_damage_state_after_kill,
+		bridge_logic_body_health_after_kill,
+		bridge_logic_body_max_health_after_kill,
+		bridge_logic_damage_state_after_kill_update,
+		bool_json(bridge_logic_damage_state_changed_after_kill_update),
+		bool_json(bridge_logic_broken_after_kill_update),
+		bool_json(bridge_logic_repaired_after_kill_update),
+		bridge_draw_first_damage_state_after_kill_scene,
 		bridge_logic_first_layer_after_seed,
 		bridge_draw_terrain_logic_bridge_count,
 		bridge_draw_enabled_bridge_count,

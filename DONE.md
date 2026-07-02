@@ -3991,6 +3991,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `ImmortalBody` damage accounting is reached without faking a damaged
       bridge state. Verified with
       `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
+- [x] Route focused `Object::kill` / `healCompletely` through the original body
+      damage/healing path and prove the shipped retained `GenericBridge` is not
+      destroyed by a kill request. `Object::kill` now builds the original
+      kill-flagged `DamageInfo` and calls `attemptDamage`, while
+      `healCompletely` issues the original double large healing request. The
+      bridge-buffer browser scene now calls `Object::kill(GenericBridge)`,
+      requires the bridge object to remain present with destroyed status false,
+      verifies body health/state still clamps to `MaxHealth = 1` /
+      `BODY_PRISTINE`, and re-runs `TerrainLogic::updateBridgeDamageStates`
+      before drawing to prove retained/drawn bridge state also stays pristine.
+      Verified with
+      `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
 	- [x] Feed the focused terrain road and bridge adjunct buffers from the
 	      original logical terrain map-object list. The road and bridge scene probes
 	      now call original `W3DTerrainLogic::loadMap(query=true)` against

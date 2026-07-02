@@ -277,13 +277,27 @@ Real Object::estimateDamage(DamageInfoInput &damageInfo) const
 	return body != NULL ? body->estimateDamage(damageInfo) : 0.0f;
 }
 
-void Object::kill(DamageType, DeathType)
+void Object::kill(DamageType damageType, DeathType deathType)
 {
-	onDestroy();
+	BodyModuleInterface *body = getBodyModule();
+	if (body == NULL) {
+		onDestroy();
+		return;
+	}
+
+	DamageInfo damageInfo;
+	damageInfo.in.m_damageType = damageType;
+	damageInfo.in.m_deathType = deathType;
+	damageInfo.in.m_sourceID = INVALID_ID;
+	damageInfo.in.m_amount = body->getMaxHealth();
+	damageInfo.in.m_kill = TRUE;
+	attemptDamage(&damageInfo);
 }
 
 void Object::healCompletely()
 {
+	attemptHealing(HUGE_DAMAGE_AMOUNT, NULL);
+	attemptHealing(HUGE_DAMAGE_AMOUNT, NULL);
 }
 
 void Object::notifySubdualDamage(Real)

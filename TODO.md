@@ -887,11 +887,15 @@ flow below.
       surface with the full original runtime, then find and harness-drive the
       real gameplay/script path that drives non-pristine bridge states. The
       shipped `GenericBridge` body path is now browser-verified through
-      `Object::attemptDamage` to report real attempted damage while clipping
-      health/state back to `BODY_PRISTINE` because the real object uses
-      `ImmortalBody` with `MaxHealth = 1`, so damaged/repaired bridge-state sync
-      must not be faked through direct body health changes or direct body-state
-      writes.
+      `Object::attemptDamage` and `Object::kill` to report/route real damage
+      requests while clipping health/state back to `BODY_PRISTINE` because the
+      real object uses `ImmortalBody` with `MaxHealth = 1`, so damaged/repaired
+      bridge-state sync must not be faked through direct body health changes,
+      kill/delete side effects, or direct body-state writes. The original bridge
+      tower creation block in `TerrainLogic.cpp` is currently compiled out by
+      `#define no_BRIDGE_TOWERS`, so tower damage should not be treated as the
+      shipped broken/repaired-state driver unless that original switch is
+      deliberately revisited under full runtime ownership.
 - [ ] Broaden the browser-verified terrain full-scene water/smudge/shroud
       refresh path from `test:vertical-integrations` and probe-mounted
       map/assets to real gameplay map-load, partition, and terrain logic
