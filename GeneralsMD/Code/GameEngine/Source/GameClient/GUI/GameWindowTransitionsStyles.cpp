@@ -1407,7 +1407,8 @@ void TextTypeTransition::update( Int frame )
 	if(frame >= m_frameLength)
 	{
 		m_win->winHide(FALSE);
-
+		if(m_isForward)
+			m_isFinished = TRUE;
 	}
 	if(frame > TEXTTYPETRANSITION_START && frame < m_frameLength)
 	{

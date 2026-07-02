@@ -288,6 +288,17 @@ const browserChecks = [
           && payload.realEngineInit.keyboard.up.firstKey === 0x1e
           && (payload.realEngineInit.keyboard.up.firstState & 0x0001) !== 0,
         'Real lifecycle keyboard keyup did not reach original DirectInputKeyboard');
+      const singlePlayerMenu =
+        payload.realEngineInit?.menuClick?.singlePlayer?.clientState?.mainMenu;
+      expect(payload.realEngineInit?.menuClick?.singlePlayer?.clientState?.transition?.finished === true
+          && singlePlayerMenu?.underButtonUSACenter?.window?.id === singlePlayerMenu?.buttonUSA?.id,
+        'Real Single Player menu transition did not align ButtonUSA hit-testing with the rendered menu state');
+      const difficultyMenu = payload.realEngineInit?.menuClick?.clientState?.mainMenu;
+      expect(payload.realEngineInit?.menuClick?.clientState?.transition?.finished === true
+          && difficultyMenu?.mapBorderDifficulty?.managerHidden === false
+          && difficultyMenu?.staticTextSelectDifficulty?.managerHidden === false
+          && difficultyMenu?.underButtonEasyCenter?.window?.id === difficultyMenu?.buttonEasy?.id,
+        'Real ButtonUSA transition did not align difficulty-control hit-testing with the rendered menu state');
     },
   },
 ];
@@ -688,6 +699,7 @@ console.log(JSON.stringify({
     'original MainMenuSystem input-focus handling',
     'original MainMenuUpdate first idle frame under shell GameLogic state',
     'browser DOM keyboard events feed the browser DirectInput scan-code queue and real GameClient::update proves KEY_A down/up through original DirectInputKeyboard',
+    'real MainMenu default, Single Player, and USA difficulty transitions finish before the next click, aligning engine hit-testing with the rendered menu state',
     'original ButtonUSA faction difficulty transition and ButtonDiffBack return through MainMenuSystem',
     'original ButtonLoadReplay dropdown and ButtonLoadReplayBack return through MainMenuSystem',
     'original ButtonCredits path through Shell::push into CreditsMenuInit/CreditsMenuUpdate with INIZH-backed Credits.ini',

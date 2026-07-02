@@ -2361,6 +2361,29 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       queue, steps real `Win32GameEngine::update()`, and asserts the original
       `DirectInputKeyboard` produced `KEY_A` down/up with the queue drained.
       Verified with `npm --prefix WebAssembly run test:startup-vertical`.
+- [x] Align the real `MainMenu.wnd` visual transition state with engine
+      hit-testing through the Single Player -> USA difficulty path. The
+      `cnc-port` runtime now links the real W3D main-menu draw/init owner
+      instead of satisfying `W3DMainMenuInit` from the old weak probe symbol,
+      so `Shell::push("Menus/MainMenu.wnd")` runs
+      `W3DMainMenuInit -> MainMenuInit` in the real lifecycle. The startup
+      vertical harness drives the original first-run reveal from hidden
+      button geometry, clicks `ButtonSinglePlayer`, waits until the visible
+      `ButtonUSA` hit-test is aligned, clicks `ButtonUSA`, and waits until
+      `MainMenuDifficultyMenuUS` finishes with `ButtonEasy` hit-testing
+      aligned to the rendered difficulty controls. The final blocker was the
+      original `TextTypeTransition` effective-frame path: it shortened
+      `m_frameLength` to the label length but only set `m_isFinished` at the
+      fixed frame-30 end, so the difficulty label could leave the group
+      unfinished forever. `TextTypeTransition::update()` now marks forward
+      transitions finished once the effective text length is reached, matching
+      the existing `CountUpTransition` pattern. Verified with
+      `npm --prefix WebAssembly run test:startup-vertical`,
+      `node --check WebAssembly/harness/startup_vertical_smoke.mjs`,
+      `node --check WebAssembly/tools/run_startup_vertical_smoke.mjs`,
+      `git diff --check`, `wasm-objdump` symbol checks for real
+      `W3DMainMenuInit` / `W3DMainMenuDraw`, and screenshot
+      `startup-vertical-real-init-menu-click.png`.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what

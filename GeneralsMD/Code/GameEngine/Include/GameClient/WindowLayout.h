@@ -81,6 +81,11 @@ public:
 	void setInit( WindowLayoutInitFunc init );							///< set the init callback
 	void setUpdate( WindowLayoutUpdateFunc update );				///< set the update callback
 	void setShutdown( WindowLayoutShutdownFunc shutdown);		///< set the shutdown callback
+#ifdef __EMSCRIPTEN__
+	WindowLayoutInitFunc getInitFunc( void ) const;
+	WindowLayoutUpdateFunc getUpdateFunc( void ) const;
+	WindowLayoutShutdownFunc getShutdownFunc( void ) const;
+#endif
 
 protected:
 
@@ -114,13 +119,26 @@ inline AsciiString WindowLayout::getFilename( void ) { return m_filenameString; 
 inline GameWindow *WindowLayout::getFirstWindow( void ) { return m_windowList; }
 inline Bool WindowLayout::isHidden( void ) { return m_hidden; }
 
-inline void WindowLayout::runInit( void *userData ) { if( m_init ) m_init( this, userData ); }
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_window_layout_note_run_init( const char *filename, Int hasInit );
+#endif
+
+inline void WindowLayout::runInit( void *userData ) {
+#ifdef __EMSCRIPTEN__
+	cnc_port_window_layout_note_run_init( m_filenameString.str(), m_init != NULL ? 1 : 0 );
+#endif
+	if( m_init ) m_init( this, userData );
+}
 inline void WindowLayout::runUpdate( void *userData ) { if( m_update ) m_update( this, userData ); }
 inline void WindowLayout::runShutdown( void *userData ) { if( m_shutdown ) m_shutdown( this, userData ); }
 
 inline void WindowLayout::setInit( WindowLayoutInitFunc init ) { m_init = init; }
 inline void WindowLayout::setUpdate( WindowLayoutUpdateFunc update ) { m_update = update; }
 inline void WindowLayout::setShutdown( WindowLayoutShutdownFunc shutdown ) {m_shutdown = shutdown;}
+#ifdef __EMSCRIPTEN__
+inline WindowLayoutInitFunc WindowLayout::getInitFunc( void ) const { return m_init; }
+inline WindowLayoutUpdateFunc WindowLayout::getUpdateFunc( void ) const { return m_update; }
+inline WindowLayoutShutdownFunc WindowLayout::getShutdownFunc( void ) const { return m_shutdown; }
+#endif
 
 #endif // __WINDOWLAYOUT_H_
-

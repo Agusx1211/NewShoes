@@ -48,12 +48,14 @@ residue and the next frontier.
       `GadgetPushButton` path, proves the first-run reveal with canvas pixel
       samples + screenshots, queues browser DOM `A` down/up into the browser
       DirectInput scan-code device, proves original `DirectInputKeyboard` sees
-      `KEY_A` down/up during real `GameClient::update()`, and state-proves the
-      hit-tested `ButtonUSA` click reaches difficulty controls. Remaining:
-      align the post-click visual transition with the engine hit-test state
-      (the screenshot currently returns to the visible default menu highlight
-      while state has reached the USA/difficulty path), and retire superseded
-      focused menu smokes.
+      `KEY_A` down/up during real `GameClient::update()`, links the real
+      W3D main-menu draw/init owner instead of the legacy weak probe body,
+      waits for the real default, Single Player, and USA difficulty
+      transitions to finish, and state/screenshot-proves `ButtonSinglePlayer`
+      -> `ButtonUSA` -> visible difficulty controls with engine hit-testing
+      aligned to the rendered menu. Remaining: retire superseded focused menu
+      smokes and then advance the next real startup path outside the already
+      proven shell menu slice.
 - [ ] Migrate the legacy `ensure_booted()` probe boot and its harness gates
       onto the real lifecycle path, deleting probe-local implementations as
       real init covers them. First known casualty of real ownership: the

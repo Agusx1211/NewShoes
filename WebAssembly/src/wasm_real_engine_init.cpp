@@ -24,13 +24,16 @@
 #include <windows.h>
 
 #include "Common/GameEngine.h"
+#include "Common/FunctionLexicon.h"
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
 #include "Common/NameKeyGenerator.h"
 #include "Common/SubsystemInterface.h"
 #include "GameClient/Display.h"
+#include "GameClient/GUICallbacks.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
+#include "GameClient/GameWindowTransitions.h"
 #include "GameClient/Keyboard.h"
 #include "GameClient/Mouse.h"
 #include "GameClient/Shell.h"
@@ -52,6 +55,50 @@ extern LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wparam, LPARAM
 extern HINSTANCE ApplicationHInstance;
 extern HWND ApplicationHWnd;
 extern Bool ApplicationIsWindowed;
+extern "C" Int cnc_port_main_menu_dont_allow_transitions(void);
+extern "C" Int cnc_port_main_menu_button_pushed(void);
+extern "C" Int cnc_port_main_menu_campaign_selected(void);
+extern "C" Int cnc_port_main_menu_last_selected_msg(void);
+extern "C" Int cnc_port_main_menu_last_selected_control_id(void);
+extern "C" Int cnc_port_main_menu_selected_count(void);
+extern "C" Int cnc_port_main_menu_last_selected_branch(void);
+extern "C" Int cnc_port_main_menu_last_button_pushed(void);
+extern "C" Int cnc_port_main_menu_last_dont_allow_transitions(void);
+extern "C" Int cnc_port_main_menu_last_campaign_selected(void);
+extern "C" Int cnc_port_main_menu_button_single_player_key(void);
+extern "C" Int cnc_port_main_menu_button_usa_key(void);
+extern "C" Int cnc_port_main_menu_button_easy_key(void);
+extern "C" Int cnc_port_main_menu_button_single_player_window_id(void);
+extern "C" Int cnc_port_main_menu_button_usa_window_id(void);
+extern "C" Int cnc_port_main_menu_button_easy_window_id(void);
+extern "C" Int cnc_port_main_menu_init_entry_count(void);
+extern "C" Int cnc_port_main_menu_init_complete_count(void);
+extern "C" Int cnc_port_main_menu_last_init_main_menu_id(void);
+extern "C" Int cnc_port_main_menu_last_init_single_player_id(void);
+extern "C" Int cnc_port_main_menu_last_init_usa_id(void);
+extern "C" Int cnc_port_main_menu_last_init_easy_id(void);
+extern "C" Int cnc_port_main_menu_last_init_parent_window_id(void);
+extern "C" Int cnc_port_main_menu_last_init_single_player_window_id(void);
+extern "C" Int cnc_port_main_menu_last_init_usa_window_id(void);
+extern "C" Int cnc_port_main_menu_last_init_easy_window_id(void);
+extern "C" Int cnc_port_window_layout_load_count(void);
+extern "C" Int cnc_port_window_layout_last_load_had_init(void);
+extern "C" Int cnc_port_window_layout_last_load_had_update(void);
+extern "C" Int cnc_port_window_layout_last_load_had_shutdown(void);
+extern "C" const char *cnc_port_window_layout_last_load_filename(void);
+extern "C" const char *cnc_port_window_layout_last_load_init_name(void);
+extern "C" const char *cnc_port_window_layout_last_load_update_name(void);
+extern "C" const char *cnc_port_window_layout_last_load_shutdown_name(void);
+extern "C" Int cnc_port_window_layout_run_init_count(void);
+extern "C" Int cnc_port_window_layout_last_run_init_had_init(void);
+extern "C" const char *cnc_port_window_layout_last_run_init_filename(void);
+extern "C" Int cnc_port_shell_push_count(void);
+extern "C" Int cnc_port_shell_do_push_count(void);
+extern "C" Int cnc_port_shell_do_push_run_init_count(void);
+extern "C" Int cnc_port_shell_last_do_push_had_init(void);
+extern "C" const char *cnc_port_shell_last_push_name(void);
+extern "C" const char *cnc_port_shell_last_do_push_name(void);
+extern void W3DMainMenuInit(WindowLayout *layout, void *userData);
 
 namespace {
 
@@ -224,6 +271,47 @@ GameWindow *find_window_by_name(const char *window_name)
 	return TheWindowManager->winGetWindowFromId(NULL, static_cast<Int>(id));
 }
 
+const char *system_func_name(GameWinSystemFunc system)
+{
+	if (system == NULL) {
+		return "null";
+	}
+	if (system == GameWinDefaultSystem) {
+		return "GameWinDefaultSystem";
+	}
+	if (system == PassSelectedButtonsToParentSystem) {
+		return "PassSelectedButtonsToParentSystem";
+	}
+	if (system == PassMessagesToParentSystem) {
+		return "PassMessagesToParentSystem";
+	}
+	if (system == MainMenuSystem) {
+		return "MainMenuSystem";
+	}
+	return "unknown";
+}
+
+void append_window_identity_json(std::string &json, GameWindow *window)
+{
+	if (window == NULL) {
+		json += "{\"found\":false}";
+		return;
+	}
+
+	WinInstanceData *inst_data = window->winGetInstanceData();
+	const std::string decorated_name =
+		inst_data != NULL ? inst_data->m_decoratedNameString.str() : std::string();
+	json += "{\"found\":true";
+	json += ",\"id\":" + std::to_string(window->winGetWindowId());
+	json += ",\"decoratedName\":\"" + json_escape(decorated_name) + "\"";
+	json += ",\"systemFunc\":\"";
+	json += system_func_name(window->winGetSystemFunc());
+	json += "\"";
+	json += ",\"hidden\":";
+	json += window->winIsHidden() ? "true" : "false";
+	json += "}";
+}
+
 void append_window_json(std::string &json, GameWindow *window, const char *requested_name)
 {
 	json += "{\"name\":\"";
@@ -254,6 +342,9 @@ void append_window_json(std::string &json, GameWindow *window, const char *reque
 	json += ",\"found\":true";
 	json += ",\"id\":" + std::to_string(window->winGetWindowId());
 	json += ",\"decoratedName\":\"" + json_escape(decorated_name) + "\"";
+	json += ",\"systemFunc\":\"";
+	json += system_func_name(window->winGetSystemFunc());
+	json += "\"";
 	json += ",\"x\":" + std::to_string(x);
 	json += ",\"y\":" + std::to_string(y);
 	json += ",\"width\":" + std::to_string(width);
@@ -275,6 +366,8 @@ void append_window_json(std::string &json, GameWindow *window, const char *reque
 	json += enabled ? "true" : "false";
 	json += ",\"clickable\":";
 	json += (!manager_hidden && enabled && (status & WIN_STATUS_NO_INPUT) == 0) ? "true" : "false";
+	json += ",\"owner\":";
+	append_window_identity_json(json, inst_data != NULL ? inst_data->getOwner() : NULL);
 	json += "}";
 }
 
@@ -435,6 +528,93 @@ void append_real_engine_client_state(std::string &json)
 	}
 	json += "}";
 
+	json += ",\"transition\":{";
+	json += "\"ready\":";
+	json += TheTransitionHandler != NULL ? "true" : "false";
+	json += ",\"finished\":";
+	json += (TheTransitionHandler == NULL || TheTransitionHandler->isFinished()) ? "true" : "false";
+	if (TheTransitionHandler != NULL) {
+		json += ",\"currentGroup\":\"";
+		json += json_escape(TheTransitionHandler->getCurrentGroupName().str());
+		json += "\",\"pendingGroup\":\"";
+		json += json_escape(TheTransitionHandler->getPendingGroupName().str());
+		json += "\",\"drawGroup\":\"";
+		json += json_escape(TheTransitionHandler->getDrawGroupName().str());
+		json += "\",\"secondaryDrawGroup\":\"";
+		json += json_escape(TheTransitionHandler->getSecondaryDrawGroupName().str());
+		json += "\"";
+	}
+	json += "}";
+
+	NameKeyType w3d_main_menu_init_key = NAMEKEY_INVALID;
+	WindowLayoutInitFunc w3d_main_menu_init_any = NULL;
+	WindowLayoutInitFunc w3d_main_menu_init_device = NULL;
+	if (TheFunctionLexicon != NULL && TheNameKeyGenerator != NULL) {
+		w3d_main_menu_init_key =
+			TheNameKeyGenerator->nameToKey(AsciiString("W3DMainMenuInit"));
+		w3d_main_menu_init_any =
+			TheFunctionLexicon->winLayoutInitFunc(w3d_main_menu_init_key);
+		w3d_main_menu_init_device =
+			TheFunctionLexicon->winLayoutInitFunc(
+				w3d_main_menu_init_key,
+				FunctionLexicon::TABLE_WIN_LAYOUT_DEVICEINIT);
+	}
+	json += ",\"functionLexicon\":{";
+	json += "\"ready\":";
+	json += TheFunctionLexicon != NULL ? "true" : "false";
+	json += ",\"w3dMainMenuInitKey\":" + std::to_string(static_cast<Int>(w3d_main_menu_init_key));
+	json += ",\"w3dMainMenuInitAny\":";
+	json += w3d_main_menu_init_any != NULL ? "true" : "false";
+	json += ",\"w3dMainMenuInitDevice\":";
+	json += w3d_main_menu_init_device != NULL ? "true" : "false";
+	json += ",\"w3dMainMenuInitAnyIsReal\":";
+	json += w3d_main_menu_init_any == W3DMainMenuInit ? "true" : "false";
+	json += ",\"w3dMainMenuInitDeviceIsReal\":";
+	json += w3d_main_menu_init_device == W3DMainMenuInit ? "true" : "false";
+	json += "}";
+
+	json += ",\"layoutDebug\":{";
+	json += "\"loadCount\":" + std::to_string(cnc_port_window_layout_load_count());
+	json += ",\"lastLoad\":{";
+	json += "\"filename\":\"";
+	json += json_escape(cnc_port_window_layout_last_load_filename() != NULL ?
+		cnc_port_window_layout_last_load_filename() : "");
+	json += "\",\"initName\":\"";
+	json += json_escape(cnc_port_window_layout_last_load_init_name() != NULL ?
+		cnc_port_window_layout_last_load_init_name() : "");
+	json += "\",\"updateName\":\"";
+	json += json_escape(cnc_port_window_layout_last_load_update_name() != NULL ?
+		cnc_port_window_layout_last_load_update_name() : "");
+	json += "\",\"shutdownName\":\"";
+	json += json_escape(cnc_port_window_layout_last_load_shutdown_name() != NULL ?
+		cnc_port_window_layout_last_load_shutdown_name() : "");
+	json += "\",\"hadInit\":";
+	json += cnc_port_window_layout_last_load_had_init() != 0 ? "true" : "false";
+	json += ",\"hadUpdate\":";
+	json += cnc_port_window_layout_last_load_had_update() != 0 ? "true" : "false";
+	json += ",\"hadShutdown\":";
+	json += cnc_port_window_layout_last_load_had_shutdown() != 0 ? "true" : "false";
+	json += "},\"runInit\":{";
+	json += "\"count\":" + std::to_string(cnc_port_window_layout_run_init_count());
+	json += ",\"lastFilename\":\"";
+	json += json_escape(cnc_port_window_layout_last_run_init_filename() != NULL ?
+		cnc_port_window_layout_last_run_init_filename() : "");
+	json += "\",\"lastHadInit\":";
+	json += cnc_port_window_layout_last_run_init_had_init() != 0 ? "true" : "false";
+	json += "},\"shell\":{";
+	json += "\"pushCount\":" + std::to_string(cnc_port_shell_push_count());
+	json += ",\"doPushCount\":" + std::to_string(cnc_port_shell_do_push_count());
+	json += ",\"doPushRunInitCount\":" + std::to_string(cnc_port_shell_do_push_run_init_count());
+	json += ",\"lastDoPushHadInit\":";
+	json += cnc_port_shell_last_do_push_had_init() != 0 ? "true" : "false";
+	json += ",\"lastPushName\":\"";
+	json += json_escape(cnc_port_shell_last_push_name() != NULL ?
+		cnc_port_shell_last_push_name() : "");
+	json += "\",\"lastDoPushName\":\"";
+	json += json_escape(cnc_port_shell_last_do_push_name() != NULL ?
+		cnc_port_shell_last_do_push_name() : "");
+	json += "\"}}";
+
 	json += ",\"shell\":{";
 	WindowLayout *top = TheShell != NULL ? TheShell->top() : NULL;
 	if (TheShell != NULL) {
@@ -452,18 +632,59 @@ void append_real_engine_client_state(std::string &json)
 		json += ",\"topWindowCount\":" + std::to_string(count_layout_windows(top));
 		json += ",\"topIsMainMenu\":";
 		json += filename.find("MainMenu.wnd") != std::string::npos ? "true" : "false";
+		json += ",\"topHasInit\":";
+		json += top->getInitFunc() != NULL ? "true" : "false";
+		json += ",\"topInitIsW3DMainMenuInit\":";
+		json += top->getInitFunc() == W3DMainMenuInit ? "true" : "false";
+		json += ",\"topHasUpdate\":";
+		json += top->getUpdateFunc() != NULL ? "true" : "false";
+		json += ",\"topHasShutdown\":";
+		json += top->getShutdownFunc() != NULL ? "true" : "false";
 	} else {
-		json += ",\"topFilename\":null,\"topHidden\":null,\"topWindowCount\":0,\"topIsMainMenu\":false";
+		json += ",\"topFilename\":null,\"topHidden\":null,\"topWindowCount\":0,\"topIsMainMenu\":false,"
+			"\"topHasInit\":false,\"topInitIsW3DMainMenuInit\":false,"
+			"\"topHasUpdate\":false,\"topHasShutdown\":false";
 	}
 	json += "}";
 
 	json += ",\"mainMenu\":{";
 	json += "\"queried\":";
 	json += (TheShell != NULL && top != NULL) ? "true" : "false";
+	json += ",\"debug\":{";
+	json += "\"dontAllowTransitions\":" + std::to_string(cnc_port_main_menu_dont_allow_transitions());
+	json += ",\"buttonPushed\":" + std::to_string(cnc_port_main_menu_button_pushed());
+	json += ",\"campaignSelected\":" + std::to_string(cnc_port_main_menu_campaign_selected());
+	json += ",\"selectedCount\":" + std::to_string(cnc_port_main_menu_selected_count());
+	json += ",\"lastSelectedMsg\":" + std::to_string(cnc_port_main_menu_last_selected_msg());
+	json += ",\"lastSelectedControlId\":" + std::to_string(cnc_port_main_menu_last_selected_control_id());
+	json += ",\"lastSelectedBranch\":" + std::to_string(cnc_port_main_menu_last_selected_branch());
+	json += ",\"lastButtonPushed\":" + std::to_string(cnc_port_main_menu_last_button_pushed());
+	json += ",\"lastDontAllowTransitions\":" + std::to_string(cnc_port_main_menu_last_dont_allow_transitions());
+	json += ",\"lastCampaignSelected\":" + std::to_string(cnc_port_main_menu_last_campaign_selected());
+	json += ",\"buttonSinglePlayerKey\":" + std::to_string(cnc_port_main_menu_button_single_player_key());
+	json += ",\"buttonUSAKey\":" + std::to_string(cnc_port_main_menu_button_usa_key());
+	json += ",\"buttonEasyKey\":" + std::to_string(cnc_port_main_menu_button_easy_key());
+	json += ",\"buttonSinglePlayerWindowId\":" + std::to_string(cnc_port_main_menu_button_single_player_window_id());
+	json += ",\"buttonUSAWindowId\":" + std::to_string(cnc_port_main_menu_button_usa_window_id());
+	json += ",\"buttonEasyWindowId\":" + std::to_string(cnc_port_main_menu_button_easy_window_id());
+	json += ",\"initEntryCount\":" + std::to_string(cnc_port_main_menu_init_entry_count());
+	json += ",\"initCompleteCount\":" + std::to_string(cnc_port_main_menu_init_complete_count());
+	json += ",\"lastInitMainMenuId\":" + std::to_string(cnc_port_main_menu_last_init_main_menu_id());
+	json += ",\"lastInitSinglePlayerId\":" + std::to_string(cnc_port_main_menu_last_init_single_player_id());
+	json += ",\"lastInitUSAId\":" + std::to_string(cnc_port_main_menu_last_init_usa_id());
+	json += ",\"lastInitEasyId\":" + std::to_string(cnc_port_main_menu_last_init_easy_id());
+	json += ",\"lastInitParentWindowId\":" + std::to_string(cnc_port_main_menu_last_init_parent_window_id());
+	json += ",\"lastInitSinglePlayerWindowId\":" + std::to_string(cnc_port_main_menu_last_init_single_player_window_id());
+	json += ",\"lastInitUSAWindowId\":" + std::to_string(cnc_port_main_menu_last_init_usa_window_id());
+	json += ",\"lastInitEasyWindowId\":" + std::to_string(cnc_port_main_menu_last_init_easy_window_id());
+	json += "}";
 	append_window_probe(json, "mainMenuParent", "MainMenu.wnd:MainMenuParent");
 	append_window_probe(json, "mapBorderSinglePlayer", "MainMenu.wnd:MapBorder");
+	append_window_probe(json, "earthMapSinglePlayer", "MainMenu.wnd:EarthMap");
 	append_window_probe(json, "mapBorderMain", "MainMenu.wnd:MapBorder2");
 	append_window_probe(json, "mapBorderDifficulty", "MainMenu.wnd:MapBorder4");
+	append_window_probe(json, "earthMapDifficulty", "MainMenu.wnd:EarthMap4");
+	append_window_probe(json, "staticTextSelectDifficulty", "MainMenu.wnd:StaticTextSelectDifficulty");
 	append_window_probe(json, "buttonSinglePlayer", "MainMenu.wnd:ButtonSinglePlayer");
 	append_window_probe(json, "buttonSingleBack", "MainMenu.wnd:ButtonSingleBack");
 	append_window_probe(json, "buttonUSA", "MainMenu.wnd:ButtonUSA");
@@ -480,6 +701,8 @@ void append_real_engine_client_state(std::string &json)
 	append_window_probe(json, "buttonHard", "MainMenu.wnd:ButtonHard");
 	append_window_probe(json, "buttonDiffBack", "MainMenu.wnd:ButtonDiffBack");
 	append_window_under_probe_center(json, "underButtonSinglePlayerCenter", "MainMenu.wnd:ButtonSinglePlayer");
+	append_window_under_probe_center(json, "underButtonUSACenter", "MainMenu.wnd:ButtonUSA");
+	append_window_under_probe_center(json, "underButtonEasyCenter", "MainMenu.wnd:ButtonEasy");
 	json += "}";
 
 	append_input_window_state(json);

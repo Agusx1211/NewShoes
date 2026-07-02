@@ -215,6 +215,53 @@ static Bool launchChallengeMenu = FALSE;
 
 static Bool dontAllowTransitions = FALSE;
 
+#ifdef __EMSCRIPTEN__
+static UnsignedInt g_wasmMainMenuLastSelectedMsg = 0;
+static Int g_wasmMainMenuLastSelectedControlID = 0;
+static Int g_wasmMainMenuSelectedCount = 0;
+static Int g_wasmMainMenuLastSelectedBranch = 0;
+static Bool g_wasmMainMenuLastButtonPushed = FALSE;
+static Bool g_wasmMainMenuLastDontAllowTransitions = FALSE;
+static Bool g_wasmMainMenuLastCampaignSelected = FALSE;
+static Int g_wasmMainMenuInitEntryCount = 0;
+static Int g_wasmMainMenuInitCompleteCount = 0;
+static Int g_wasmMainMenuLastInitMainMenuID = 0;
+static Int g_wasmMainMenuLastInitSinglePlayerID = 0;
+static Int g_wasmMainMenuLastInitUSAID = 0;
+static Int g_wasmMainMenuLastInitEasyID = 0;
+static Int g_wasmMainMenuLastInitParentWindowID = 0;
+static Int g_wasmMainMenuLastInitSinglePlayerWindowID = 0;
+static Int g_wasmMainMenuLastInitUSAWindowID = 0;
+static Int g_wasmMainMenuLastInitEasyWindowID = 0;
+
+extern "C" Int cnc_port_main_menu_dont_allow_transitions( void ) { return dontAllowTransitions ? 1 : 0; }
+extern "C" Int cnc_port_main_menu_button_pushed( void ) { return buttonPushed ? 1 : 0; }
+extern "C" Int cnc_port_main_menu_campaign_selected( void ) { return campaignSelected ? 1 : 0; }
+extern "C" Int cnc_port_main_menu_last_selected_msg( void ) { return static_cast<Int>(g_wasmMainMenuLastSelectedMsg); }
+extern "C" Int cnc_port_main_menu_last_selected_control_id( void ) { return g_wasmMainMenuLastSelectedControlID; }
+extern "C" Int cnc_port_main_menu_selected_count( void ) { return g_wasmMainMenuSelectedCount; }
+extern "C" Int cnc_port_main_menu_last_selected_branch( void ) { return g_wasmMainMenuLastSelectedBranch; }
+extern "C" Int cnc_port_main_menu_last_button_pushed( void ) { return g_wasmMainMenuLastButtonPushed ? 1 : 0; }
+extern "C" Int cnc_port_main_menu_last_dont_allow_transitions( void ) { return g_wasmMainMenuLastDontAllowTransitions ? 1 : 0; }
+extern "C" Int cnc_port_main_menu_last_campaign_selected( void ) { return g_wasmMainMenuLastCampaignSelected ? 1 : 0; }
+extern "C" Int cnc_port_main_menu_button_single_player_key( void ) { return static_cast<Int>(buttonSinglePlayerID); }
+extern "C" Int cnc_port_main_menu_button_usa_key( void ) { return static_cast<Int>(buttonUSAID); }
+extern "C" Int cnc_port_main_menu_button_easy_key( void ) { return static_cast<Int>(buttonEasyID); }
+extern "C" Int cnc_port_main_menu_button_single_player_window_id( void ) { return buttonSinglePlayer ? buttonSinglePlayer->winGetWindowId() : 0; }
+extern "C" Int cnc_port_main_menu_button_usa_window_id( void ) { return buttonUSA ? buttonUSA->winGetWindowId() : 0; }
+extern "C" Int cnc_port_main_menu_button_easy_window_id( void ) { return buttonEasy ? buttonEasy->winGetWindowId() : 0; }
+extern "C" Int cnc_port_main_menu_init_entry_count( void ) { return g_wasmMainMenuInitEntryCount; }
+extern "C" Int cnc_port_main_menu_init_complete_count( void ) { return g_wasmMainMenuInitCompleteCount; }
+extern "C" Int cnc_port_main_menu_last_init_main_menu_id( void ) { return g_wasmMainMenuLastInitMainMenuID; }
+extern "C" Int cnc_port_main_menu_last_init_single_player_id( void ) { return g_wasmMainMenuLastInitSinglePlayerID; }
+extern "C" Int cnc_port_main_menu_last_init_usa_id( void ) { return g_wasmMainMenuLastInitUSAID; }
+extern "C" Int cnc_port_main_menu_last_init_easy_id( void ) { return g_wasmMainMenuLastInitEasyID; }
+extern "C" Int cnc_port_main_menu_last_init_parent_window_id( void ) { return g_wasmMainMenuLastInitParentWindowID; }
+extern "C" Int cnc_port_main_menu_last_init_single_player_window_id( void ) { return g_wasmMainMenuLastInitSinglePlayerWindowID; }
+extern "C" Int cnc_port_main_menu_last_init_usa_window_id( void ) { return g_wasmMainMenuLastInitUSAWindowID; }
+extern "C" Int cnc_port_main_menu_last_init_easy_window_id( void ) { return g_wasmMainMenuLastInitEasyWindowID; }
+#endif
+
 //Added by Saad
 const Int /*TIME_OUT = 15,*/ CORNER = 10;
 void AcceptResolution();
@@ -454,6 +501,9 @@ GameWindow *win = NULL;
 //-------------------------------------------------------------------------------------------------
 void MainMenuInit( WindowLayout *layout, void *userData )
 {
+#ifdef __EMSCRIPTEN__
+	++g_wasmMainMenuInitEntryCount;
+#endif
 	TheWritableGlobalData->m_breakTheMovie = FALSE;
 
 	TheShell->showShellMap(TRUE);
@@ -542,6 +592,17 @@ void MainMenuInit( WindowLayout *layout, void *userData )
 	buttonGLALoadGame = TheWindowManager->winGetWindowFromId( parentMainMenu, buttonGLALoadGameID );
 	buttonChinaRecentSave = TheWindowManager->winGetWindowFromId( parentMainMenu, buttonChinaRecentSaveID );
 	buttonChinaLoadGame = TheWindowManager->winGetWindowFromId( parentMainMenu, buttonChinaLoadGameID );
+#ifdef __EMSCRIPTEN__
+	g_wasmMainMenuLastInitMainMenuID = static_cast<Int>(mainMenuID);
+	g_wasmMainMenuLastInitSinglePlayerID = static_cast<Int>(buttonSinglePlayerID);
+	g_wasmMainMenuLastInitUSAID = static_cast<Int>(buttonUSAID);
+	g_wasmMainMenuLastInitEasyID = static_cast<Int>(buttonEasyID);
+	g_wasmMainMenuLastInitParentWindowID = parentMainMenu ? parentMainMenu->winGetWindowId() : 0;
+	g_wasmMainMenuLastInitSinglePlayerWindowID = buttonSinglePlayer ? buttonSinglePlayer->winGetWindowId() : 0;
+	g_wasmMainMenuLastInitUSAWindowID = buttonUSA ? buttonUSA->winGetWindowId() : 0;
+	g_wasmMainMenuLastInitEasyWindowID = buttonEasy ? buttonEasy->winGetWindowId() : 0;
+	++g_wasmMainMenuInitCompleteCount;
+#endif
 
 	dropDownWindows[DROPDOWN_SINGLE] = TheWindowManager->winGetWindowFromId( parentMainMenu, TheNameKeyGenerator->nameToKey( AsciiString("MainMenu.wnd:MapBorder") ));
 	dropDownWindows[DROPDOWN_MULTIPLAYER] = TheWindowManager->winGetWindowFromId( parentMainMenu, TheNameKeyGenerator->nameToKey( AsciiString("MainMenu.wnd:MapBorder1") ) );
@@ -1308,9 +1369,23 @@ WindowMsgHandledType MainMenuSystem( GameWindow *window, UnsignedInt msg,
 			
 			GameWindow *control = (GameWindow *)mData1;
 			Int controlID = control->winGetWindowId();
+#ifdef __EMSCRIPTEN__
+			++g_wasmMainMenuSelectedCount;
+			g_wasmMainMenuLastSelectedMsg = msg;
+			g_wasmMainMenuLastSelectedControlID = controlID;
+			g_wasmMainMenuLastButtonPushed = buttonPushed;
+			g_wasmMainMenuLastDontAllowTransitions = dontAllowTransitions;
+			g_wasmMainMenuLastCampaignSelected = campaignSelected;
+			g_wasmMainMenuLastSelectedBranch = 1;
+#endif
 			
 			if(buttonPushed)
+			{
+#ifdef __EMSCRIPTEN__
+				g_wasmMainMenuLastSelectedBranch = 2;
+#endif
 				break;
+			}
 #if defined _DEBUG || defined _INTERNAL || defined _PROFILE
 			if( control == buttonCampaign )
 			{
@@ -1340,7 +1415,15 @@ WindowMsgHandledType MainMenuSystem( GameWindow *window, UnsignedInt msg,
 			if( controlID == buttonSinglePlayerID )
 			{
 				if(dontAllowTransitions)
+				{
+#ifdef __EMSCRIPTEN__
+					g_wasmMainMenuLastSelectedBranch = 4;
+#endif
 					break;
+				}
+#ifdef __EMSCRIPTEN__
+				g_wasmMainMenuLastSelectedBranch = 3;
+#endif
 				dontAllowTransitions = TRUE;
 				//buttonPushed = TRUE;
 				buttonPushed = FALSE;

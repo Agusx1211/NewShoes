@@ -637,7 +637,7 @@ public:
 	void draw( void );
 	
 	void skip ( void );
-	AsciiString getName( void ) { return m_name; }
+	AsciiString getName( void ) const { return m_name; }
 	void setName( AsciiString name){ m_name = name;	}
 	void addWindow( TransitionWindow *transWin );
 	Bool isReversed( void );
@@ -672,6 +672,10 @@ public:
 	void reverse( AsciiString groupName );// reverse the animations for the current group.
 	void remove( AsciiString groupName, Bool skipPending = FALSE );// remove the animation from the current or pending groups.
 	TransitionGroup *getNewGroup( AsciiString name );
+	AsciiString getCurrentGroupName( void ) const { return m_currentGroup ? m_currentGroup->getName() : AsciiString::TheEmptyString; }
+	AsciiString getPendingGroupName( void ) const { return m_pendingGroup ? m_pendingGroup->getName() : AsciiString::TheEmptyString; }
+	AsciiString getDrawGroupName( void ) const { return m_drawGroup ? m_drawGroup->getName() : AsciiString::TheEmptyString; }
+	AsciiString getSecondaryDrawGroupName( void ) const { return m_secondaryDrawGroup ? m_secondaryDrawGroup->getName() : AsciiString::TheEmptyString; }
 private:
 	TransitionGroup *findGroup( AsciiString groupName );
 	typedef std::list<TransitionGroup *> TransitionGroupList;
@@ -694,4 +698,3 @@ void PushButtonImageDrawThree(GameWindow *window, Int alpha );
 //-----------------------------------------------------------------------------
 extern GameWindowTransitionsHandler *TheTransitionHandler;
 #endif // __GAME_WINDOW_TRANSITIONS_H_
-

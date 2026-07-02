@@ -525,8 +525,10 @@ async function assertRealMenuCanvasVisible(page, label) {
 }
 
 async function revealRealEngineMainMenu(page, button) {
-  expect(button?.clickable === true,
-    "real engine menu button is not available for reveal movement", button);
+  expect(button?.found === true
+      && Number.isFinite(button.centerX)
+      && Number.isFinite(button.centerY),
+    "real engine menu button geometry is not available for reveal movement", button);
   const seedPoint = { x: 32, y: 32 };
   const revealPoint = { x: 96, y: 96 };
 
@@ -548,49 +550,40 @@ async function revealRealEngineMainMenu(page, button) {
   let revealFrame = await runRealEngineFrames(page, 1);
 
   for (let frameIndex = 0;
-      frameIndex < 8
+      frameIndex < 90
         && (revealFrame.frame?.clientState?.input?.mouse?.x !== revealPoint.x
           || revealFrame.frame?.clientState?.input?.mouse?.y !== revealPoint.y
-          || resolveRevealedRealMenuClickTarget(revealFrame.frame?.clientState?.mainMenu, false) == null
+          || revealFrame.frame?.clientState?.transition?.finished !== true
+          || !realMenuHitMatches(
+            revealFrame.frame?.clientState?.mainMenu,
+            "underButtonSinglePlayerCenter",
+            "buttonSinglePlayer")
           || revealFrame.frame?.clientState?.input?.mouse?.visible !== true);
       frameIndex += 1) {
     revealFrame = await runRealEngineFrames(page, 1);
   }
 
   const revealedMenu = revealFrame.frame?.clientState?.mainMenu;
-  const clickTarget = resolveRevealedRealMenuClickTarget(revealedMenu, false);
   expect(revealFrame.frame?.clientState?.input?.mouse?.x === revealPoint.x
       && revealFrame.frame?.clientState?.input?.mouse?.y === revealPoint.y,
     "real MainMenu reveal movement did not reach the original mouse state",
     { revealPoint, revealFrame: revealFrame.frame?.clientState?.input });
-  expect(clickTarget != null,
-    "real MainMenu first-run mouse movement did not reveal an interactive menu button",
+  expect(revealFrame.frame?.clientState?.transition?.finished === true,
+    "real MainMenu first-run transition did not finish after reveal movement",
+    { seedPoint, revealPoint, seedFrame: seedFrame.frame?.clientState, revealFrame: revealFrame.frame?.clientState });
+  expect(realMenuHitMatches(revealedMenu, "underButtonSinglePlayerCenter", "buttonSinglePlayer"),
+    "real MainMenu reveal did not align the visible default button with engine hit-testing",
     { seedPoint, revealPoint, seedFrame: seedFrame.frame?.clientState, revealFrame: revealFrame.frame?.clientState });
   expect(revealFrame.frame?.clientState?.input?.mouse?.visible === true,
     "real MainMenu reveal did not restore the mouse cursor", revealFrame.frame?.clientState?.input);
   expect(revealFrame.frame?.clientState?.gates?.breakTheMovie === false,
     "real MainMenu reveal left the stale movie-break render gate set",
     revealFrame.frame?.clientState?.gates);
+  const clickTarget = {
+    button: revealedMenu?.buttonSinglePlayer,
+    hitProbe: revealedMenu?.underButtonSinglePlayerCenter,
+  };
   return { seedPoint, revealPoint, seedFrame, revealFrame, clickTarget };
-}
-
-function resolveRevealedRealMenuClickTarget(menu, failOnMissing = true) {
-  const hitProbe = menu?.underButtonSinglePlayerCenter;
-  const hitWindow = hitProbe?.window;
-  const targets = [menu?.buttonSinglePlayer, menu?.buttonUSA];
-  const button = targets.find((candidate) =>
-    candidate?.clickable === true
-      && hitWindow?.found === true
-      && candidate.id === hitWindow.id);
-  if (button != null) {
-    return { button, hitProbe };
-  }
-  if (failOnMissing) {
-    expect(false,
-      "real MainMenu reveal did not expose a supported hit-tested button",
-      { hitProbe, buttonSinglePlayer: menu?.buttonSinglePlayer, buttonUSA: menu?.buttonUSA });
-  }
-  return null;
 }
 
 function assertRealMenuClickOutcome(clickedMenu, expectedTarget) {
@@ -616,6 +609,36 @@ function assertRealMenuClickOutcome(clickedMenu, expectedTarget) {
   expect(false,
     "real menu click used an unsupported target",
     { expectedTarget, clickedMenu });
+}
+
+function realMenuHitMatches(menu, hitProbeName, buttonFieldName) {
+  const hitWindow = menu?.[hitProbeName]?.window;
+  const button = menu?.[buttonFieldName];
+  return button?.clickable === true
+    && hitWindow?.found === true
+    && hitWindow.id === button.id;
+}
+
+async function waitForRealTransitionIdle(page, label, maxFrames = 90) {
+  const attempts = [];
+  for (let frameIndex = 0; frameIndex < maxFrames; frameIndex += 1) {
+    const frame = await runRealEngineFrames(page, 1);
+    attempts.push({
+      framesCompleted: frame.frame?.framesCompleted,
+      transition: frame.frame?.clientState?.transition,
+      underButtonSinglePlayerCenter:
+        frame.frame?.clientState?.mainMenu?.underButtonSinglePlayerCenter?.window?.decoratedName,
+      underButtonUSACenter:
+        frame.frame?.clientState?.mainMenu?.underButtonUSACenter?.window?.decoratedName,
+      underButtonEasyCenter:
+        frame.frame?.clientState?.mainMenu?.underButtonEasyCenter?.window?.decoratedName,
+    });
+    if (frame.frame?.clientState?.transition?.ready === true
+        && frame.frame.clientState.transition.finished === true) {
+      return frame;
+    }
+  }
+  expect(false, `${label} transition did not finish in real engine frames`, attempts);
 }
 
 function collectRealMenuWindows(clientState) {
@@ -701,7 +724,9 @@ async function clickRealEngineMenuButton(page, button, hitProbe) {
 
   await postRealEngineMouseMessage(page, win32MouseMessages.leftButtonUp, point);
   const up = await waitForRealMenuButtonReleased(page, expectedTarget);
-  const finalFrame = await runRealEngineFrames(page, 40); // lets original menu transitions settle after button-up.
+  const finalFrame = await waitForRealTransitionIdle(
+    page,
+    `real menu ${targetName} click`); // lets original menu transitions settle after button-up.
   return { point, expectedTarget, down, up, finalFrame };
 }
 
@@ -1432,15 +1457,32 @@ try {
     keyStates.up,
     "real MainMenu A keyup");
 
+  console.error("[vertical] phase3 real single-player click");
+  const realMenuSinglePlayerClick = await clickRealEngineMenuButton(
+    realInitPage,
+    realMenuReveal.clickTarget.button,
+    realMenuReveal.clickTarget.hitProbe);
+  const singlePlayerClientState = realMenuSinglePlayerClick.finalFrame.frame?.clientState;
+  const singlePlayerMenu = singlePlayerClientState?.mainMenu;
+  assertRealMenuClickOutcome(singlePlayerMenu, realMenuSinglePlayerClick.expectedTarget);
+  expect(realMenuHitMatches(singlePlayerMenu, "underButtonUSACenter", "buttonUSA"),
+    "real ButtonSinglePlayer click did not align visible ButtonUSA with engine hit-testing",
+    singlePlayerClientState);
+
   console.error("[vertical] phase3 real menu click");
-  const revealedMenu = realMenuReveal.revealFrame.frame?.clientState?.mainMenu;
-  const realMenuClickTarget = realMenuReveal.clickTarget ?? resolveRevealedRealMenuClickTarget(revealedMenu);
+  const realMenuClickTarget = {
+    button: singlePlayerMenu?.buttonUSA,
+    hitProbe: singlePlayerMenu?.underButtonUSACenter,
+  };
   const realMenuClick = await clickRealEngineMenuButton(
     realInitPage,
     realMenuClickTarget.button,
     realMenuClickTarget.hitProbe);
   const clickedMenu = realMenuClick.finalFrame.frame?.clientState?.mainMenu;
   assertRealMenuClickOutcome(clickedMenu, realMenuClick.expectedTarget);
+  expect(realMenuHitMatches(clickedMenu, "underButtonEasyCenter", "buttonEasy"),
+    "real ButtonUSA click did not align visible difficulty controls with engine hit-testing",
+    realMenuClick.finalFrame.frame?.clientState);
 
   await realInitPage.screenshot({ path: realInitMenuClickScreenshot });
   const realInitMenuClickCanvasProbe = await assertRealMenuCanvasVisible(
@@ -1488,6 +1530,12 @@ try {
       menuClick: {
         framesCompleted: realMenuClick.finalFrame.frame?.framesCompleted,
         staleMovieBreakClears: realMenuClick.finalFrame.staleMovieBreakClears,
+        singlePlayer: {
+          framesCompleted: realMenuSinglePlayerClick.finalFrame.frame?.framesCompleted,
+          point: realMenuSinglePlayerClick.point,
+          target: realMenuSinglePlayerClick.expectedTarget,
+          clientState: realMenuSinglePlayerClick.finalFrame.frame?.clientState,
+        },
         reveal: {
           seedPoint: realMenuReveal.seedPoint,
           revealPoint: realMenuReveal.revealPoint,

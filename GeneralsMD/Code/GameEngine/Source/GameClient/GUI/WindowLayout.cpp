@@ -40,6 +40,39 @@
 //#pragma MESSAGE("************************************** WARNING, optimization disabled for debugging purposes")
 #endif
 
+#ifdef __EMSCRIPTEN__
+static Int g_wasmWindowLayoutLoadCount = 0;
+static Int g_wasmWindowLayoutLastLoadHadInit = 0;
+static Int g_wasmWindowLayoutLastLoadHadUpdate = 0;
+static Int g_wasmWindowLayoutLastLoadHadShutdown = 0;
+static AsciiString g_wasmWindowLayoutLastLoadFilename;
+static AsciiString g_wasmWindowLayoutLastLoadInitName;
+static AsciiString g_wasmWindowLayoutLastLoadUpdateName;
+static AsciiString g_wasmWindowLayoutLastLoadShutdownName;
+static Int g_wasmWindowLayoutRunInitCount = 0;
+static Int g_wasmWindowLayoutLastRunInitHadInit = 0;
+static AsciiString g_wasmWindowLayoutLastRunInitFilename;
+
+extern "C" void cnc_port_window_layout_note_run_init( const char *filename, Int hasInit )
+{
+	++g_wasmWindowLayoutRunInitCount;
+	g_wasmWindowLayoutLastRunInitFilename = filename ? filename : "";
+	g_wasmWindowLayoutLastRunInitHadInit = hasInit;
+}
+
+extern "C" Int cnc_port_window_layout_load_count( void ) { return g_wasmWindowLayoutLoadCount; }
+extern "C" Int cnc_port_window_layout_last_load_had_init( void ) { return g_wasmWindowLayoutLastLoadHadInit; }
+extern "C" Int cnc_port_window_layout_last_load_had_update( void ) { return g_wasmWindowLayoutLastLoadHadUpdate; }
+extern "C" Int cnc_port_window_layout_last_load_had_shutdown( void ) { return g_wasmWindowLayoutLastLoadHadShutdown; }
+extern "C" const char *cnc_port_window_layout_last_load_filename( void ) { return g_wasmWindowLayoutLastLoadFilename.str(); }
+extern "C" const char *cnc_port_window_layout_last_load_init_name( void ) { return g_wasmWindowLayoutLastLoadInitName.str(); }
+extern "C" const char *cnc_port_window_layout_last_load_update_name( void ) { return g_wasmWindowLayoutLastLoadUpdateName.str(); }
+extern "C" const char *cnc_port_window_layout_last_load_shutdown_name( void ) { return g_wasmWindowLayoutLastLoadShutdownName.str(); }
+extern "C" Int cnc_port_window_layout_run_init_count( void ) { return g_wasmWindowLayoutRunInitCount; }
+extern "C" Int cnc_port_window_layout_last_run_init_had_init( void ) { return g_wasmWindowLayoutLastRunInitHadInit; }
+extern "C" const char *cnc_port_window_layout_last_run_init_filename( void ) { return g_wasmWindowLayoutLastRunInitFilename.str(); }
+#endif
+
 // PUBLIC FUNCTIONS ///////////////////////////////////////////////////////////////////////////////
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
@@ -256,6 +289,16 @@ Bool WindowLayout::load( AsciiString filename )
 	setInit( info.init );
 	setUpdate( info.update );
 	setShutdown( info.shutdown );
+#ifdef __EMSCRIPTEN__
+	++g_wasmWindowLayoutLoadCount;
+	g_wasmWindowLayoutLastLoadFilename = filename;
+	g_wasmWindowLayoutLastLoadInitName = info.initNameString;
+	g_wasmWindowLayoutLastLoadUpdateName = info.updateNameString;
+	g_wasmWindowLayoutLastLoadShutdownName = info.shutdownNameString;
+	g_wasmWindowLayoutLastLoadHadInit = info.init != NULL ? 1 : 0;
+	g_wasmWindowLayoutLastLoadHadUpdate = info.update != NULL ? 1 : 0;
+	g_wasmWindowLayoutLastLoadHadShutdown = info.shutdown != NULL ? 1 : 0;
+#endif
 
 	return TRUE;  // success
 

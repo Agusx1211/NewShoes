@@ -44,6 +44,22 @@
 
 #include <rts/profile.h>
 
+#ifdef __EMSCRIPTEN__
+static Int g_wasmShellPushCount = 0;
+static Int g_wasmShellDoPushCount = 0;
+static Int g_wasmShellDoPushRunInitCount = 0;
+static Int g_wasmShellLastDoPushHadInit = 0;
+static AsciiString g_wasmShellLastPushName;
+static AsciiString g_wasmShellLastDoPushName;
+
+extern "C" Int cnc_port_shell_push_count( void ) { return g_wasmShellPushCount; }
+extern "C" Int cnc_port_shell_do_push_count( void ) { return g_wasmShellDoPushCount; }
+extern "C" Int cnc_port_shell_do_push_run_init_count( void ) { return g_wasmShellDoPushRunInitCount; }
+extern "C" Int cnc_port_shell_last_do_push_had_init( void ) { return g_wasmShellLastDoPushHadInit; }
+extern "C" const char *cnc_port_shell_last_push_name( void ) { return g_wasmShellLastPushName.str(); }
+extern "C" const char *cnc_port_shell_last_do_push_name( void ) { return g_wasmShellLastDoPushName.str(); }
+#endif
+
 // PUBLIC DATA ////////////////////////////////////////////////////////////////////////////////////
 Shell *TheShell = NULL;  ///< the shell singleton definition
 
@@ -267,6 +283,10 @@ void Shell::push( AsciiString filename, Bool shutdownImmediate )
 	// sanity
 	if( filename.isEmpty() )
 		return;
+#ifdef __EMSCRIPTEN__
+	++g_wasmShellPushCount;
+	g_wasmShellLastPushName = filename;
+#endif
 	if(TheGameSpyInfo)
 			GameSpyCloseAllOverlays();
 
@@ -609,10 +629,18 @@ void Shell::doPush( AsciiString layoutFile )
 	if(TheGameSpyInfo)
 			GameSpyCloseAllOverlays();
 	WindowLayout *newScreen;
+#ifdef __EMSCRIPTEN__
+	++g_wasmShellDoPushCount;
+	g_wasmShellLastDoPushName = layoutFile;
+	g_wasmShellLastDoPushHadInit = 0;
+#endif
 	
 	// create new layout and load from window manager
 	newScreen = TheWindowManager->winCreateLayout( layoutFile );
 	DEBUG_ASSERTCRASH( newScreen != NULL, ("Shell unable to load pending push layout\n") );
+#ifdef __EMSCRIPTEN__
+	g_wasmShellLastDoPushHadInit = newScreen && newScreen->getInitFunc() != NULL ? 1 : 0;
+#endif
 
 	// link screen to the top
 	linkScreen( newScreen );
@@ -621,6 +649,9 @@ void Shell::doPush( AsciiString layoutFile )
 		TheIMEManager->detatch();
 
 	// run the init function automatically
+#ifdef __EMSCRIPTEN__
+	++g_wasmShellDoPushRunInitCount;
+#endif
 	newScreen->runInit( NULL );
 	newScreen->bringForward();
 
