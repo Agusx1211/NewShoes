@@ -262,7 +262,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
   const probe = state.functionLexiconRuntime;
   expect(probe?.attempted === true, "function lexicon runtime probe did not run", probe);
   expect(probe.ok === false, "function lexicon runtime should not claim full ownership yet", probe);
-  expect(probe.status === "base_function_lexicon_popup_communicator_runtime_owned",
+  expect(probe.status === "base_function_lexicon_map_select_menu_runtime_owned",
     "function lexicon runtime status mismatch", probe);
   expect(probe.nextRequired === "originalFunctionLexiconRemainingShellCallbacks",
     "function lexicon runtime nextRequired mismatch", probe);
@@ -308,6 +308,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.singlePlayerMenuSystem === true
       && probe.lookups.challengeMenuSystem === true
       && probe.lookups.popupCommunicatorSystem === true
+      && probe.lookups.mapSelectMenuSystem === true
       && probe.lookups.difficultySelectSystem === true
       && probe.lookups.keyboardOptionsMenuSystem === true
       && probe.lookups.inGamePopupMessageSystem === true
@@ -332,6 +333,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.singlePlayerMenuInput === true
       && probe.lookups.challengeMenuInput === true
       && probe.lookups.popupCommunicatorInput === true
+      && probe.lookups.mapSelectMenuInput === true
       && probe.lookups.difficultySelectInput === true
       && probe.lookups.keyboardOptionsMenuInput === true
       && probe.lookups.inGamePopupMessageInput === true
@@ -346,6 +348,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.singlePlayerMenuInit === true
       && probe.lookups.challengeMenuInit === true
       && probe.lookups.popupCommunicatorInit === true
+      && probe.lookups.mapSelectMenuInit === true
       && probe.lookups.difficultySelectInit === true
       && probe.lookups.keyboardOptionsMenuInit === true
       && probe.lookups.inGamePopupMessageInit === true
@@ -354,6 +357,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.skirmishGameOptionsMenuUpdate === true
       && probe.lookups.singlePlayerMenuUpdate === true
       && probe.lookups.challengeMenuUpdate === true
+      && probe.lookups.mapSelectMenuUpdate === true
       && probe.lookups.keyboardOptionsMenuUpdate === true
       && probe.lookups.mainMenuShutdown === true
       && probe.lookups.creditsMenuShutdown === true
@@ -361,6 +365,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.singlePlayerMenuShutdown === true
       && probe.lookups.challengeMenuShutdown === true
       && probe.lookups.popupCommunicatorShutdown === true
+      && probe.lookups.mapSelectMenuShutdown === true
       && probe.lookups.keyboardOptionsMenuShutdown === true
       && probe.lookups.popupReplayShutdown === true
       && probe.lookups.w3dGadgetPushButtonDraw === true
@@ -403,7 +408,7 @@ function assertAudioOwnedFrontier(state) {
       && frontier.audioManagerRuntime.tornDown === true,
     "frontier audioManagerRuntime summary mismatch", frontier.audioManagerRuntime);
   expect(frontier.functionLexiconRuntime?.ready === false
-      && frontier.functionLexiconRuntime.status === "base_function_lexicon_popup_communicator_runtime_owned"
+      && frontier.functionLexiconRuntime.status === "base_function_lexicon_map_select_menu_runtime_owned"
       && frontier.functionLexiconRuntime.w3dDeviceDrawReady === true
       && frontier.functionLexiconRuntime.w3dLayoutInitReady === true
       && frontier.functionLexiconRuntime.messageBoxSystemReady === true
@@ -589,7 +594,7 @@ try {
   // boot constructs the original MilesAudioManager and W3DFunctionLexicon,
   // runs the real AudioManager::init()/openDevice() path plus the original
   // W3DFunctionLexicon device-table load, original MainMenu/Credits/Skirmish
-  // base shell callbacks, the promoted Challenge/PopupCommunicator owners,
+  // base shell callbacks, the promoted Challenge/PopupCommunicator/MapSelect owners,
   // and honestly keeps the device-factory frontier at createFunctionLexicon
   // until the remaining shell callback graph is owned by cnc-port.
   const archives = await buildAudioOwnershipArchiveSpecs();

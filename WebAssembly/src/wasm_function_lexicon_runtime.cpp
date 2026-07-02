@@ -191,6 +191,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.popup_communicator_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("PopupCommunicatorSystem")) == PopupCommunicatorSystem;
+	result.map_select_menu_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("MapSelectMenuSystem")) == MapSelectMenuSystem;
 	result.difficulty_select_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("DifficultySelectSystem")) == DifficultySelectSystem;
@@ -265,6 +268,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.popup_communicator_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("PopupCommunicatorInput")) == PopupCommunicatorInput;
+	result.map_select_menu_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("MapSelectMenuInput")) == MapSelectMenuInput;
 	result.difficulty_select_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("DifficultySelectInput")) == DifficultySelectInput;
@@ -308,6 +314,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.popup_communicator_init_lookup =
 		TheFunctionLexicon->winLayoutInitFunc(
 			key_for("PopupCommunicatorInit")) == PopupCommunicatorInit;
+	result.map_select_menu_init_lookup =
+		TheFunctionLexicon->winLayoutInitFunc(
+			key_for("MapSelectMenuInit")) == MapSelectMenuInit;
 	result.difficulty_select_init_lookup =
 		TheFunctionLexicon->winLayoutInitFunc(
 			key_for("DifficultySelectInit")) == DifficultySelectInit;
@@ -333,6 +342,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.challenge_menu_update_lookup =
 		TheFunctionLexicon->winLayoutUpdateFunc(
 			key_for("ChallengeMenuUpdate")) == ChallengeMenuUpdate;
+	result.map_select_menu_update_lookup =
+		TheFunctionLexicon->winLayoutUpdateFunc(
+			key_for("MapSelectMenuUpdate")) == MapSelectMenuUpdate;
 	result.keyboard_options_menu_update_lookup =
 		TheFunctionLexicon->winLayoutUpdateFunc(
 			key_for("KeyboardOptionsMenuUpdate")) == KeyboardOptionsMenuUpdate;
@@ -355,6 +367,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.popup_communicator_shutdown_lookup =
 		TheFunctionLexicon->winLayoutShutdownFunc(
 			key_for("PopupCommunicatorShutdown")) == PopupCommunicatorShutdown;
+	result.map_select_menu_shutdown_lookup =
+		TheFunctionLexicon->winLayoutShutdownFunc(
+			key_for("MapSelectMenuShutdown")) == MapSelectMenuShutdown;
 	result.keyboard_options_menu_shutdown_lookup =
 		TheFunctionLexicon->winLayoutShutdownFunc(
 			key_for("KeyboardOptionsMenuShutdown")) == KeyboardOptionsMenuShutdown;
@@ -515,6 +530,16 @@ bool popup_communicator_lookup_state_ready(
 		result.popup_communicator_shutdown_lookup;
 }
 
+bool map_select_menu_lookup_state_ready(
+	const FunctionLexiconRuntimeProbeResult &result)
+{
+	return result.map_select_menu_system_lookup &&
+		result.map_select_menu_input_lookup &&
+		result.map_select_menu_init_lookup &&
+		result.map_select_menu_update_lookup &&
+		result.map_select_menu_shutdown_lookup;
+}
+
 bool in_game_popup_message_lookup_state_ready(
 	const FunctionLexiconRuntimeProbeResult &result)
 {
@@ -543,8 +568,8 @@ bool base_layout_callback_graph_ready(const FunctionLexiconRuntimeProbeResult &)
 {
 	// The linked runtime currently proves a shell-menu subset plus the
 	// challenge-menu, popup-communicator, in-game popup-message, idle-worker,
-	// beacon-window, and replay-control callback owners. Full ownership
-	// requires the remaining non-network layout callback graph.
+	// beacon-window, replay-control, and map-select callback owners. Full
+	// ownership requires the remaining non-network layout callback graph.
 	return false;
 }
 
@@ -555,6 +580,7 @@ bool lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 		shell_menu_lookup_state_ready(result) &&
 		challenge_menu_lookup_state_ready(result) &&
 		popup_communicator_lookup_state_ready(result) &&
+		map_select_menu_lookup_state_ready(result) &&
 		in_game_popup_message_lookup_state_ready(result) &&
 		beacon_window_lookup_state_ready(result) &&
 		replay_control_lookup_state_ready(result) &&
@@ -677,8 +703,13 @@ void finish_status(FunctionLexiconRuntimeProbeResult &result)
 		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
 		return;
 	}
-	if (!base_layout_callback_graph_ready(result)) {
+	if (!map_select_menu_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_popup_communicator_runtime_owned";
+		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
+		return;
+	}
+	if (!base_layout_callback_graph_ready(result)) {
+		result.status = "base_function_lexicon_map_select_menu_runtime_owned";
 		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
 		return;
 	}
@@ -861,6 +892,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"singlePlayerMenuSystem\":%s,"
 		"\"challengeMenuSystem\":%s,"
 		"\"popupCommunicatorSystem\":%s,"
+		"\"mapSelectMenuSystem\":%s,"
 		"\"difficultySelectSystem\":%s,"
 		"\"keyboardOptionsMenuSystem\":%s,"
 		"\"inGamePopupMessageSystem\":%s,"
@@ -885,6 +917,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"singlePlayerMenuInput\":%s,"
 		"\"challengeMenuInput\":%s,"
 		"\"popupCommunicatorInput\":%s,"
+		"\"mapSelectMenuInput\":%s,"
 		"\"difficultySelectInput\":%s,"
 		"\"keyboardOptionsMenuInput\":%s,"
 		"\"inGamePopupMessageInput\":%s,"
@@ -899,6 +932,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"singlePlayerMenuInit\":%s,"
 		"\"challengeMenuInit\":%s,"
 		"\"popupCommunicatorInit\":%s,"
+		"\"mapSelectMenuInit\":%s,"
 		"\"difficultySelectInit\":%s,"
 		"\"keyboardOptionsMenuInit\":%s,"
 		"\"inGamePopupMessageInit\":%s,"
@@ -907,6 +941,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"skirmishGameOptionsMenuUpdate\":%s,"
 		"\"singlePlayerMenuUpdate\":%s,"
 		"\"challengeMenuUpdate\":%s,"
+		"\"mapSelectMenuUpdate\":%s,"
 		"\"keyboardOptionsMenuUpdate\":%s,"
 		"\"mainMenuShutdown\":%s,"
 		"\"creditsMenuShutdown\":%s,"
@@ -914,6 +949,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"singlePlayerMenuShutdown\":%s,"
 		"\"challengeMenuShutdown\":%s,"
 		"\"popupCommunicatorShutdown\":%s,"
+		"\"mapSelectMenuShutdown\":%s,"
 		"\"keyboardOptionsMenuShutdown\":%s,"
 		"\"popupReplayShutdown\":%s,"
 		"\"w3dGadgetPushButtonDraw\":%s,"
@@ -969,6 +1005,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.single_player_menu_system_lookup),
 		json_bool(state.challenge_menu_system_lookup),
 		json_bool(state.popup_communicator_system_lookup),
+		json_bool(state.map_select_menu_system_lookup),
 		json_bool(state.difficulty_select_system_lookup),
 		json_bool(state.keyboard_options_menu_system_lookup),
 		json_bool(state.in_game_popup_message_system_lookup),
@@ -993,6 +1030,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.single_player_menu_input_lookup),
 		json_bool(state.challenge_menu_input_lookup),
 		json_bool(state.popup_communicator_input_lookup),
+		json_bool(state.map_select_menu_input_lookup),
 		json_bool(state.difficulty_select_input_lookup),
 		json_bool(state.keyboard_options_menu_input_lookup),
 		json_bool(state.in_game_popup_message_input_lookup),
@@ -1007,6 +1045,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.single_player_menu_init_lookup),
 		json_bool(state.challenge_menu_init_lookup),
 		json_bool(state.popup_communicator_init_lookup),
+		json_bool(state.map_select_menu_init_lookup),
 		json_bool(state.difficulty_select_init_lookup),
 		json_bool(state.keyboard_options_menu_init_lookup),
 		json_bool(state.in_game_popup_message_init_lookup),
@@ -1015,6 +1054,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.skirmish_game_options_menu_update_lookup),
 		json_bool(state.single_player_menu_update_lookup),
 		json_bool(state.challenge_menu_update_lookup),
+		json_bool(state.map_select_menu_update_lookup),
 		json_bool(state.keyboard_options_menu_update_lookup),
 		json_bool(state.main_menu_shutdown_lookup),
 		json_bool(state.credits_menu_shutdown_lookup),
@@ -1022,6 +1062,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.single_player_menu_shutdown_lookup),
 		json_bool(state.challenge_menu_shutdown_lookup),
 		json_bool(state.popup_communicator_shutdown_lookup),
+		json_bool(state.map_select_menu_shutdown_lookup),
 		json_bool(state.keyboard_options_menu_shutdown_lookup),
 		json_bool(state.popup_replay_shutdown_lookup),
 		json_bool(state.w3d_gadget_push_button_draw_lookup),

@@ -62,7 +62,8 @@ flow below.
       `SinglePlayerMenu` shell callback names, and original `ChallengeMenu`
       system/input/init/update/shutdown callbacks with original
       `ChallengeGenerals` and `WindowVideoManager` ownership, plus original
-      `PopupCommunicator` system/input/init/shutdown callbacks; the remaining
+      `PopupCommunicator` system/input/init/shutdown callbacks and original
+      `MapSelectMenu` system/input/init/update/shutdown callbacks; the remaining
       `FunctionLexicon` boundary is the rest of the non-network layout callback
       graph);
       archiveless or music-less boots honestly stay at line 434.
@@ -82,7 +83,8 @@ flow below.
       `SkirmishGameOptionsMenu`/`SinglePlayerMenu`
       system/input/init/update/shutdown lookups plus original `ChallengeMenu`
       system/input/init/update/shutdown lookups and original
-      `PopupCommunicator` system/input/init/shutdown lookups, but full
+      `PopupCommunicator` system/input/init/shutdown lookups plus original
+      `MapSelectMenu` system/input/init/update/shutdown lookups, but full
       ownership still needs the remaining original base `FunctionLexicon.cpp`
       non-network layout callback graph without pulling LAN/WOL/GameSpy/
       embedded-web menu callbacks into `cnc-port`. Next promote the remaining
