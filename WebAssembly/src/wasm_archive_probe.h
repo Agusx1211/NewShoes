@@ -151,6 +151,7 @@ struct ArchiveProbeResult
 	bool command_set_original_ini_load = false;
 	bool command_set_filtered_from_shipped = false;
 	bool control_bar_scheme_attempted = false;
+	bool control_bar_scheme_inputs_ready = false;
 	bool control_bar_scheme_ok = false;
 	bool control_bar_scheme_loaded_archives = false;
 	bool control_bar_scheme_default_file_exists = false;

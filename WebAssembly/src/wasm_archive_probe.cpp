@@ -772,6 +772,7 @@ void copy_control_bar_scheme_probe(
 	ArchiveProbeResult &result)
 {
 	result.control_bar_scheme_attempted = control_bar_scheme.attempted;
+	result.control_bar_scheme_inputs_ready = control_bar_scheme.inputs_ready;
 	result.control_bar_scheme_ok = control_bar_scheme.ok;
 	result.control_bar_scheme_loaded_archives = control_bar_scheme.loaded_archives;
 	result.control_bar_scheme_default_file_exists = control_bar_scheme.default_file_exists;
@@ -1656,10 +1657,13 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded &&
 			result.has_control_bar_scheme_ini &&
 			result.has_default_control_bar_scheme_ini) {
+		// File contract only: the ControlBarScheme PARSE contract is owned by
+		// the real engine lifecycle (cnc_port_real_engine_init drives the
+		// original GameClient::init -> ControlBar::init path with the full
+		// store environment), so it no longer gates the archive probe.
 		copy_control_bar_scheme_probe(
 			probe_original_control_bar_scheme_ini_load(archive_path),
 			result);
-		result.ok = result.ok && result.control_bar_scheme_ok;
 	}
 	if (result.loaded && result.has_water_ini) {
 		copy_water_probe(probe_original_water_ini_load(archive_path), result);

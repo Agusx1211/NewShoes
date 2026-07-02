@@ -167,7 +167,7 @@ const REQUIRED_INIT_ORDER = [
 
 const CREATE_GAME_ENGINE = {
   method: "CreateGameEngine",
-  expectedLine: 1126,
+  expectedLine: 1125,
   expectedConcrete: "Win32GameEngine",
 };
 
