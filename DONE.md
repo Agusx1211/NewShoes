@@ -4031,6 +4031,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       frame, and still renders the retained bridge in the pristine draw state.
       Verified with `npm --prefix WebAssembly run build:wasm` and
       `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
+- [x] Route focused object invulnerability through the original
+      undetected-defector state toggle and prove it on a retained shipped
+      `GenericBridge` in the browser bridge scene. The focused object runtime
+      now mirrors the original `Object::goInvulnerable` core behavior by
+      setting `UNDETECTED_DEFECTOR` for positive durations, clearing it for
+      zero duration, and starting `ObjectDefectionHelper`'s timer when that
+      helper is installed. The bridge scene now verifies the retained
+      `GenericBridge` starts without the undetected-defector bit, sets it after
+      `goInvulnerable(4)`, clears it after `goInvulnerable(0)`, and still
+      renders the bridge in the pristine draw state. Verified with
+      `npm --prefix WebAssembly run build:wasm` and
+      `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
 	- [x] Feed the focused terrain road and bridge adjunct buffers from the
 	      original logical terrain map-object list. The road and bridge scene probes
 	      now call original `W3DTerrainLogic::loadMap(query=true)` against

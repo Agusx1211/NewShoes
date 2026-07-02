@@ -2685,6 +2685,13 @@ public:
 		UnsignedInt disabledUntilAnyAfterExpiryCheck = 0;
 	};
 
+	struct BridgeInvulnerableStateForProbe
+	{
+		Bool initiallyUndetectedDefector = TRUE;
+		Bool undetectedDefectorAfterPositive = FALSE;
+		Bool undetectedDefectorAfterZero = TRUE;
+	};
+
 	Int bridgeCountForProbe() const
 	{
 		Int count = 0;
@@ -2861,6 +2868,25 @@ public:
 			bridge_object->getDisabledUntil(DISABLED_EMP);
 		timer.disabledUntilAnyAfterExpiryCheck =
 			bridge_object->getDisabledUntil(DISABLED_ANY);
+		return true;
+	}
+
+	bool exerciseFirstBridgeInvulnerableStateForProbe(
+		BridgeInvulnerableStateForProbe &state)
+	{
+		Object *bridge_object = firstBridgeObjectForProbe();
+		if (bridge_object == nullptr) {
+			return false;
+		}
+
+		state.initiallyUndetectedDefector =
+			bridge_object->getIsUndetectedDefector();
+		bridge_object->goInvulnerable(4);
+		state.undetectedDefectorAfterPositive =
+			bridge_object->getIsUndetectedDefector();
+		bridge_object->goInvulnerable(0);
+		state.undetectedDefectorAfterZero =
+			bridge_object->getIsUndetectedDefector();
 		return true;
 	}
 
@@ -9926,7 +9952,10 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	bool bridge_logic_disabled_timer_invoked = false;
 	ProbeTerrainLogicForBridgeDraw::BridgeDisabledTimerForProbe
 		bridge_logic_disabled_timer;
-	Int bridge_draw_first_damage_state_after_disabled_timer_scene = -1;
+	bool bridge_logic_invulnerable_state_invoked = false;
+	ProbeTerrainLogicForBridgeDraw::BridgeInvulnerableStateForProbe
+		bridge_logic_invulnerable_state;
+	Int bridge_draw_first_damage_state_after_invulnerable_state_scene = -1;
 	Int bridge_logic_first_layer_after_seed = -1;
 	Int bridge_draw_terrain_logic_bridge_count = 0;
 	Int bridge_draw_enabled_bridge_count = 0;
@@ -10569,6 +10598,9 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 				bridge_draw_game_logic,
 				2,
 				bridge_logic_disabled_timer);
+		bridge_logic_invulnerable_state_invoked =
+			bridge_draw_terrain_logic.exerciseFirstBridgeInvulnerableStateForProbe(
+				bridge_logic_invulnerable_state);
 		bridge_manual_geometry_after_load =
 			bridge_buffer->firstBridgeManualGeometry(
 				bridge_manual_vertices_after_load,
@@ -10663,7 +10695,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 					succeeded(render_result) &&
 					succeeded(end_render_result) &&
 					bridge_buffer != nullptr) {
-				bridge_draw_first_damage_state_after_disabled_timer_scene =
+				bridge_draw_first_damage_state_after_invulnerable_state_scene =
 					bridge_buffer->firstBridgeDamageState();
 			}
 			tree_need_to_draw_after_scene = tree_buffer != nullptr && tree_buffer->needToDraw();
@@ -10828,7 +10860,11 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		!bridge_logic_disabled_timer.disabledByEmpAfterExpiryCheck &&
 		bridge_logic_disabled_timer.disabledUntilEmpAfterExpiryCheck == 0 &&
 		bridge_logic_disabled_timer.disabledUntilAnyAfterExpiryCheck == 0 &&
-		bridge_draw_first_damage_state_after_disabled_timer_scene == BODY_PRISTINE &&
+		bridge_logic_invulnerable_state_invoked &&
+		!bridge_logic_invulnerable_state.initiallyUndetectedDefector &&
+		bridge_logic_invulnerable_state.undetectedDefectorAfterPositive &&
+		!bridge_logic_invulnerable_state.undetectedDefectorAfterZero &&
+		bridge_draw_first_damage_state_after_invulnerable_state_scene == BODY_PRISTINE &&
 		terrain_logic_retained_for_draw &&
 		bridge_draw_terrain_logic_bridge_count > 0 &&
 		bridge_draw_enabled_bridge_count > 0 &&
@@ -10950,6 +10986,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"Object::attemptHealingFromSoleBenefactor(GenericBridge) -> "
 		"TerrainLogic::updateBridgeDamageStates -> "
 		"Object::setDisabledUntil/checkDisabledStatus(GenericBridge) -> "
+		"Object::goInvulnerable(GenericBridge) -> "
 		"TerrainLogic::updateCenter -> "
 		"TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> "
 		"W3DBridge::renderBridge + bridge shroud overlay\","
@@ -11062,7 +11099,11 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"bridgeLogicDisabledTimerDisabledByEmpAfterExpiryCheck\":%s,"
 		"\"bridgeLogicDisabledTimerUntilEmpAfterExpiryCheck\":%u,"
 		"\"bridgeLogicDisabledTimerUntilAnyAfterExpiryCheck\":%u,"
-		"\"bridgeDrawFirstDamageStateAfterDisabledTimerScene\":%d,"
+		"\"bridgeLogicInvulnerableStateInvoked\":%s,"
+		"\"bridgeLogicInvulnerableInitiallyUndetectedDefector\":%s,"
+		"\"bridgeLogicInvulnerableUndetectedDefectorAfterPositive\":%s,"
+		"\"bridgeLogicInvulnerableUndetectedDefectorAfterZero\":%s,"
+		"\"bridgeDrawFirstDamageStateAfterInvulnerableStateScene\":%d,"
 		"\"bridgeLogicFirstLayerAfterSeed\":%d,"
 		"\"bridgeDrawTerrainLogicBridgeCount\":%d,"
 		"\"bridgeDrawEnabledBridgeCount\":%d,"
@@ -11331,7 +11372,11 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bool_json(bridge_logic_disabled_timer.disabledByEmpAfterExpiryCheck),
 		bridge_logic_disabled_timer.disabledUntilEmpAfterExpiryCheck,
 		bridge_logic_disabled_timer.disabledUntilAnyAfterExpiryCheck,
-		bridge_draw_first_damage_state_after_disabled_timer_scene,
+		bool_json(bridge_logic_invulnerable_state_invoked),
+		bool_json(bridge_logic_invulnerable_state.initiallyUndetectedDefector),
+		bool_json(bridge_logic_invulnerable_state.undetectedDefectorAfterPositive),
+		bool_json(bridge_logic_invulnerable_state.undetectedDefectorAfterZero),
+		bridge_draw_first_damage_state_after_invulnerable_state_scene,
 		bridge_logic_first_layer_after_seed,
 		bridge_draw_terrain_logic_bridge_count,
 		bridge_draw_enabled_bridge_count,

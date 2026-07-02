@@ -619,7 +619,7 @@ try {
   if (!result.ok
       || result.command !== "ww3dTerrainBridgeBufferScene"
       || result.probe?.source !== "ww3d_terrain_bridge_buffer_scene_probe"
-      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> TerrainLogic::addBridgeToLogic -> Object::attemptDamage(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::kill(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::attemptHealingFromSoleBenefactor(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::setDisabledUntil/checkDisabledStatus(GenericBridge) -> TerrainLogic::updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay"
+      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> TerrainLogic::addBridgeToLogic -> Object::attemptDamage(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::kill(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::attemptHealingFromSoleBenefactor(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::setDisabledUntil/checkDisabledStatus(GenericBridge) -> Object::goInvulnerable(GenericBridge) -> TerrainLogic::updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay"
       || result.probe?.results?.runtimeAssetSystemInstalled !== true
       || result.probe?.results?.modelsFileExists !== true
       || result.probe?.results?.meshFileExists !== true
@@ -706,7 +706,11 @@ try {
       || result.probe?.results?.bridgeLogicDisabledTimerDisabledByEmpAfterExpiryCheck !== false
       || result.probe?.results?.bridgeLogicDisabledTimerUntilEmpAfterExpiryCheck !== 0
       || result.probe?.results?.bridgeLogicDisabledTimerUntilAnyAfterExpiryCheck !== 0
-      || result.probe?.results?.bridgeDrawFirstDamageStateAfterDisabledTimerScene !== BODY_PRISTINE
+      || result.probe?.results?.bridgeLogicInvulnerableStateInvoked !== true
+      || result.probe?.results?.bridgeLogicInvulnerableInitiallyUndetectedDefector !== false
+      || result.probe?.results?.bridgeLogicInvulnerableUndetectedDefectorAfterPositive !== true
+      || result.probe?.results?.bridgeLogicInvulnerableUndetectedDefectorAfterZero !== false
+      || result.probe?.results?.bridgeDrawFirstDamageStateAfterInvulnerableStateScene !== BODY_PRISTINE
       || result.probe?.results?.bridgeLogicAiPathfinderAvailable !== true
       || result.probe?.results?.bridgeLogicFirstLayerAfterSeed !== 2
       || result.probe?.results?.bridgeDrawTerrainLogicBridgeCount <= 0

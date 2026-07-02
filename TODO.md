@@ -891,8 +891,9 @@ flow below.
       `Object::attemptHealingFromSoleBenefactor` to report/route real damage,
       kill, and non-stacking healer requests, and through
       `Object::setDisabledUntil` / `Object::checkDisabledStatus` to set and
-      expire timed disabled flags, while clipping health/state back to
-      `BODY_PRISTINE` because the
+      expire timed disabled flags, and through `Object::goInvulnerable` to set
+      and clear the undetected-defector invulnerability state, while clipping
+      health/state back to `BODY_PRISTINE` because the
       real object uses `ImmortalBody` with `MaxHealth = 1`, so damaged/repaired
       bridge-state sync must not be faked through direct body health changes,
       kill/delete side effects, or direct body-state writes. The original bridge

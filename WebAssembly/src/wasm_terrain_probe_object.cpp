@@ -9,6 +9,7 @@
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/Module/BehaviorModule.h"
 #include "GameLogic/Module/BodyModule.h"
+#include "GameLogic/Module/ObjectDefectionHelper.h"
 #include "GameLogic/Object.h"
 #include "GameLogic/PartitionManager.h"
 #include "GameLogic/TerrainLogic.h"
@@ -1120,8 +1121,14 @@ void Object::defect(Team *, UnsignedInt)
 {
 }
 
-void Object::goInvulnerable(UnsignedInt)
+void Object::goInvulnerable(UnsignedInt time)
 {
+	const Bool WITHOUT_DEFECTOR_FX = FALSE;
+
+	friend_setUndetectedDefector(time > 0);
+	if (m_defectionHelper != NULL) {
+		m_defectionHelper->startDefectionTimer(time, WITHOUT_DEFECTOR_FX);
+	}
 }
 
 void Object::reactToTurretChange(WhichTurretType, Real, Real)
