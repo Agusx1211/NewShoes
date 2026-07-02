@@ -105,11 +105,14 @@ flow below.
       `cnc-port` now links the real-world `SubsystemInterface.o`, but other
       targets mixing shim-INI users with real `INI.cpp` still carry the
       hazard). Move remaining shim-world INI users onto the real header.
-- [ ] Promote `ThingFactory::newObject`/`newDrawable` from the
-      `WASM_REAL_INI_THING_FACTORY_METADATA_ONLY` guard to full runtime
-      object/drawable creation once the running `TheGameLogic`/`TheGameClient`
-      match subsystems link; template parsing and by-name lookup are already
-      real in `cnc-port` (`test:object-ini`).
+- [ ] Promote `ThingFactory::newDrawable` and production-match object creation
+      from the `WASM_REAL_INI_THING_FACTORY_METADATA_ONLY` runtime slice once
+      the running `TheGameLogic`/`TheGameClient` match subsystems link. The
+      bridge-buffer scene now browser-proves original
+      `ThingFactory::newObject(GenericBridge)` under focused
+      `TheGameLogic`/`ThePartitionManager` ownership, but the object-INI slice
+      remains metadata-only and `newDrawable` still needs the real drawable
+      owner.
 - [ ] Revisit `GameWinBlockInput` once `SelectionTranslator` is runtime-owned;
       it is the only non-network base input callback intentionally left out of
       the current widget FunctionLexicon slice because it pulls

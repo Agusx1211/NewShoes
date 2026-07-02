@@ -619,7 +619,7 @@ try {
   if (!result.ok
       || result.command !== "ww3dTerrainBridgeBufferScene"
       || result.probe?.source !== "ww3d_terrain_bridge_buffer_scene_probe"
-      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> TerrainLogic::addBridgeToLogic -> GameLogic::findObjectByID(GenericBridge) -> Object::attemptDamage(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::kill(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::attemptHealingFromSoleBenefactor(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::setDisabledUntil/checkDisabledStatus(GenericBridge) -> Object::goInvulnerable(GenericBridge) -> TerrainLogic::updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay -> GameLogic::destroyObject/update-processDestroyList(GenericBridge)"
+      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> ThingFactory::newObject(GenericBridge) -> GameLogic::destroyObject/update-processDestroyList(temp GenericBridge) -> W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> TerrainLogic::addBridgeToLogic -> GameLogic::findObjectByID(GenericBridge) -> Object::attemptDamage(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::kill(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::attemptHealingFromSoleBenefactor(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::setDisabledUntil/checkDisabledStatus(GenericBridge) -> Object::goInvulnerable(GenericBridge) -> TerrainLogic::updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay -> GameLogic::destroyObject/update-processDestroyList(GenericBridge)"
       || result.probe?.results?.runtimeAssetSystemInstalled !== true
       || result.probe?.results?.modelsFileExists !== true
       || result.probe?.results?.meshFileExists !== true
@@ -640,6 +640,27 @@ try {
       || (result.probe?.results?.treeDrawCallDelta ?? 0) <= 0
       || result.probe?.results?.treeSceneDrawFlushed !== true
       || result.probe?.results?.scriptEngineReady !== true
+      || result.probe?.results?.objectRuntime?.moduleFactoryReady !== true
+      || result.probe?.results?.objectRuntime?.gameLogicReady !== true
+      || result.probe?.results?.objectRuntime?.playerListReady !== true
+      || result.probe?.results?.objectRuntime?.radarReady !== true
+      || result.probe?.results?.objectRuntime?.damageFXReady !== true
+      || result.probe?.results?.objectRuntime?.armorReady !== true
+      || result.probe?.results?.objectRuntime?.genericBridgeTemplateLoaded !== true
+      || result.probe?.results?.objectRuntime?.partitionReady !== true
+      || result.probe?.results?.objectRuntime?.objectScriptEngineReady !== true
+      || result.probe?.results?.objectRuntime?.newObjectTemplateFound !== true
+      || result.probe?.results?.objectRuntime?.newObjectInvoked !== true
+      || result.probe?.results?.objectRuntime?.newObjectException !== false
+      || result.probe?.results?.objectRuntime?.newObjectReturned !== true
+      || result.probe?.results?.objectRuntime?.newObjectID <= 0
+      || result.probe?.results?.objectRuntime?.newObjectLookupFound !== true
+      || result.probe?.results?.objectRuntime?.newObjectLookupMatches !== true
+      || result.probe?.results?.objectRuntime?.newObjectBodyReady !== true
+      || result.probe?.results?.objectRuntime?.newObjectCountAfterCreate !== result.probe?.results?.objectRuntime?.newObjectCountBefore + 1
+      || result.probe?.results?.objectRuntime?.newObjectCountAfterDestroy !== result.probe?.results?.objectRuntime?.newObjectCountBefore
+      || result.probe?.results?.objectRuntime?.newObjectDestroyedBeforeProcess !== true
+      || result.probe?.results?.objectRuntime?.newObjectLookupAfterDestroyNull !== true
       || result.probe?.results?.bridgeBufferInstalled !== true
       || result.probe?.results?.loadBridgesInvoked !== true
       || result.probe?.results?.terrainLogicInstalledForDraw !== true

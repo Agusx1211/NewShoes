@@ -4194,6 +4194,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       registered templates on wasm. Verified with
       `npm --prefix WebAssembly run build:wasm` and
       `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
+- [x] Browser-gate direct original `ThingFactory::newObject(GenericBridge)` in
+      the bridge-buffer scene. The terrain bridge probe now calls
+      `bridge_draw_thing_factory.newObject(findTemplate("GenericBridge"), NULL)`
+      inside the same script-engine/module-factory/GameLogic/PartitionManager
+      scope used by `W3DBridgeBuffer::loadBridges`, records the returned
+      object ID, `GameLogic::findObjectByID` match, body-module readiness, and
+      object-count increment, then destroys the temporary bridge and proves
+      `GameLogic::update()` removes it before the retained bridge render. The
+      browser harness rejects the scene unless the object-runtime JSON proves
+      that lifecycle, so a regression back to the metadata-only guard is caught
+      without adding a new smoke target. Verified with
+      `npm --prefix WebAssembly run build:wasm` and
+      `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
 - [x] Harness-prove the retained `GenericBridge` body-state clamp before
       chasing damaged bridge rendering. The bridge-buffer scene now reads the
       real `GenericBridge` object's `BodyModuleInterface` after

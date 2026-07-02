@@ -10006,6 +10006,19 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	Int bridge_generic_bridge_template_error_code = 0;
 	bool bridge_partition_ready = false;
 	bool bridge_object_script_engine_ready = false;
+	bool bridge_thing_factory_new_object_template_found = false;
+	bool bridge_thing_factory_new_object_invoked = false;
+	bool bridge_thing_factory_new_object_exception = false;
+	bool bridge_thing_factory_new_object_returned = false;
+	bool bridge_thing_factory_new_object_lookup_found = false;
+	bool bridge_thing_factory_new_object_lookup_matches = false;
+	bool bridge_thing_factory_new_object_body_ready = false;
+	bool bridge_thing_factory_new_object_destroyed_before_process = false;
+	bool bridge_thing_factory_new_object_lookup_after_destroy_null = false;
+	ObjectID bridge_thing_factory_new_object_id = INVALID_ID;
+	UnsignedInt bridge_thing_factory_new_object_count_before = 0;
+	UnsignedInt bridge_thing_factory_new_object_count_after_create = 0;
+	UnsignedInt bridge_thing_factory_new_object_count_after_destroy = 0;
 	bool asset_manager_created = false;
 	bool runtime_asset_system_installed = false;
 	bool texture_file_factory_installed = false;
@@ -10587,6 +10600,58 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			bridge_partition_ready) {
 		ProbeLogicalScriptEngineScope bridge_object_script_engine_scope;
 		bridge_object_script_engine_ready = bridge_object_script_engine_scope.installed();
+		const ThingTemplate *direct_generic_bridge_template = nullptr;
+		if (bridge_object_script_engine_ready) {
+			direct_generic_bridge_template =
+				bridge_draw_thing_factory.findTemplate(
+					AsciiString("GenericBridge"),
+					FALSE);
+			bridge_thing_factory_new_object_template_found =
+				direct_generic_bridge_template != nullptr;
+		}
+		if (direct_generic_bridge_template != nullptr) {
+			bridge_thing_factory_new_object_invoked = true;
+			bridge_thing_factory_new_object_count_before =
+				bridge_draw_game_logic.getObjectCount();
+			Object *direct_bridge_object = nullptr;
+			try {
+				direct_bridge_object =
+					bridge_draw_thing_factory.newObject(
+						direct_generic_bridge_template,
+						nullptr);
+			} catch (...) {
+				bridge_thing_factory_new_object_exception = true;
+			}
+			bridge_thing_factory_new_object_returned =
+				direct_bridge_object != nullptr;
+			if (direct_bridge_object != nullptr) {
+				bridge_thing_factory_new_object_id =
+					direct_bridge_object->getID();
+				Object *direct_bridge_lookup =
+					TheGameLogic != nullptr ?
+						TheGameLogic->findObjectByID(
+							bridge_thing_factory_new_object_id) :
+						nullptr;
+				bridge_thing_factory_new_object_lookup_found =
+					direct_bridge_lookup != nullptr;
+				bridge_thing_factory_new_object_lookup_matches =
+					direct_bridge_lookup == direct_bridge_object;
+				bridge_thing_factory_new_object_body_ready =
+					direct_bridge_object->getBodyModule() != nullptr;
+				bridge_thing_factory_new_object_count_after_create =
+					bridge_draw_game_logic.getObjectCount();
+				bridge_draw_game_logic.destroyObject(direct_bridge_object);
+				bridge_thing_factory_new_object_destroyed_before_process =
+					direct_bridge_object->isDestroyed();
+				bridge_draw_game_logic.update();
+				bridge_thing_factory_new_object_count_after_destroy =
+					bridge_draw_game_logic.getObjectCount();
+				bridge_thing_factory_new_object_lookup_after_destroy_null =
+					TheGameLogic != nullptr &&
+					TheGameLogic->findObjectByID(
+						bridge_thing_factory_new_object_id) == nullptr;
+			}
+		}
 		probe_bridge_phase_log("load-bridges");
 		bridge_buffer->loadBridges(&bridge_draw_terrain_logic, FALSE);
 		probe_bridge_phase_log("load-bridges-done");
@@ -11080,6 +11145,20 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridges_after_load > 0 &&
 		bridge_object_script_engine_ready &&
 		bridge_generic_bridge_template_loaded &&
+		bridge_thing_factory_new_object_template_found &&
+		bridge_thing_factory_new_object_invoked &&
+		!bridge_thing_factory_new_object_exception &&
+		bridge_thing_factory_new_object_returned &&
+		bridge_thing_factory_new_object_id != INVALID_ID &&
+		bridge_thing_factory_new_object_lookup_found &&
+		bridge_thing_factory_new_object_lookup_matches &&
+		bridge_thing_factory_new_object_body_ready &&
+		bridge_thing_factory_new_object_count_after_create ==
+			bridge_thing_factory_new_object_count_before + 1 &&
+		bridge_thing_factory_new_object_destroyed_before_process &&
+		bridge_thing_factory_new_object_count_after_destroy ==
+			bridge_thing_factory_new_object_count_before &&
+		bridge_thing_factory_new_object_lookup_after_destroy_null &&
 		!bridge_logic_generic_bridge_object_missing &&
 		update_center_invoked &&
 		bridge_vertices_after_update > 0 &&
@@ -11150,6 +11229,8 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"ok\":%s,"
 		"\"path\":\"original WorldHeightMap + HeightMapRenderObjClass::Render -> "
 		"W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> "
+		"ThingFactory::newObject(GenericBridge) -> "
+		"GameLogic::destroyObject/update-processDestroyList(temp GenericBridge) -> "
 		"W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> "
 		"TerrainLogic::addBridgeToLogic -> "
 		"GameLogic::findObjectByID(GenericBridge) -> "
@@ -11180,7 +11261,20 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"objectIniFileCount\":%d,"
 		"\"genericBridgeTemplateLoadException\":%s,"
 		"\"genericBridgeTemplateErrorCode\":%d,"
-		"\"genericBridgeTemplateError\":%s},"
+		"\"genericBridgeTemplateError\":%s,"
+		"\"newObjectTemplateFound\":%s,"
+		"\"newObjectInvoked\":%s,"
+		"\"newObjectException\":%s,"
+		"\"newObjectReturned\":%s,"
+		"\"newObjectID\":%d,"
+		"\"newObjectLookupFound\":%s,"
+		"\"newObjectLookupMatches\":%s,"
+		"\"newObjectBodyReady\":%s,"
+		"\"newObjectCountBefore\":%u,"
+		"\"newObjectCountAfterCreate\":%u,"
+		"\"newObjectCountAfterDestroy\":%u,"
+		"\"newObjectDestroyedBeforeProcess\":%s,"
+		"\"newObjectLookupAfterDestroyNull\":%s},"
 		"\"runtimeArchiveSetLoadedForSelection\":%s,"
 		"\"init\":%d,\"assetManagerCreated\":%s,\"setRenderDevice\":%d,"
 		"\"runtimeAssetSystemInstalled\":%s,"
@@ -11456,6 +11550,19 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bool_json(bridge_generic_bridge_template_load_exception),
 		bridge_generic_bridge_template_error_code,
 		bridge_generic_bridge_template_error_json.c_str(),
+		bool_json(bridge_thing_factory_new_object_template_found),
+		bool_json(bridge_thing_factory_new_object_invoked),
+		bool_json(bridge_thing_factory_new_object_exception),
+		bool_json(bridge_thing_factory_new_object_returned),
+		bridge_thing_factory_new_object_id,
+		bool_json(bridge_thing_factory_new_object_lookup_found),
+		bool_json(bridge_thing_factory_new_object_lookup_matches),
+		bool_json(bridge_thing_factory_new_object_body_ready),
+		bridge_thing_factory_new_object_count_before,
+		bridge_thing_factory_new_object_count_after_create,
+		bridge_thing_factory_new_object_count_after_destroy,
+		bool_json(bridge_thing_factory_new_object_destroyed_before_process),
+		bool_json(bridge_thing_factory_new_object_lookup_after_destroy_null),
 		bool_json(runtime_archive_set_loaded_for_selection),
 		init_result,
 		bool_json(asset_manager_created),
