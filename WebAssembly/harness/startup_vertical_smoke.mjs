@@ -777,6 +777,11 @@ try {
   // REAL engine lifecycle: fresh page, whole-file archive set, original
   // CreateGameEngine() -> GameEngine::init(-noshellmap -win) -> update()
   // frames, with the frontier computed from the actual run.
+  // Close the earlier phases' pages first: each holds a full wasm heap plus
+  // mounted archives, and keeping three alive can crash the phase-3 tab
+  // (renderer OOM) while it fetches the whole-file archive set.
+  await audioPage.close();
+  await page.close();
   console.error("[vertical] phase3 real-init page");
   const realInitPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   await realInitPage.goto(harnessUrl, { waitUntil: "networkidle" });
