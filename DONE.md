@@ -2308,6 +2308,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       reports `base_function_lexicon_game_info_window_runtime_owned` with
       `originalFunctionLexiconRemainingShellCallbacks` next; LAN game-info
       population and transport behavior remain outside the owned runtime path.
+- [x] Promote the passive original `GameInfoWindowInit` callback-name owner into
+      the linked `cnc-port` base `FunctionLexicon` alongside the already-owned
+      `GameInfoWindowSystem` lookup. The reduced layout-init table now resolves
+      the original initializer from `GameInfoWindow.cpp`; it only seeds
+      name-key/window/gadget state, while LAN game-info population remains
+      outside the owned runtime path.
 - [x] Promote the original `ReplayMenu` callback owner into the linked
       `cnc-port` base `FunctionLexicon`. `zh_window_layout_script_runtime` now
       links original `GUI/GUICallbacks/Menus/ReplayMenu.cpp`, and the reduced
@@ -2391,6 +2397,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       browser lookup while the broad `ControlBarSystem`/`LeftHUDInput`
       command paths remain deferred. The FunctionLexicon frontier now reports
       `base_function_lexicon_control_bar_observer_runtime_owned`.
+- [x] Replace the stale "remaining shell callbacks" FunctionLexicon frontier
+      label with a structured missing callback-owner inventory in the linked
+      startup runtime. `wasm_function_lexicon_runtime` now checks callback
+      names without pulling additional owners, reports
+      `missingCallbackGroups` / `missingCallbackGroupCount` for save/load,
+      quit menu, score-screen/replay-save, control-bar command/HUD, generals
+      experience points, LAN/game-network menus, WOL/GameSpy overlays,
+      direct-connect/download menus, and in-game network menus, and the startup
+      harness gates that exact inventory while the first unowned init factory
+      remains `createFunctionLexicon`.
 - [x] Prove the original `W3DModuleFactory` runtime path in the browser startup
       frontier without pretending the earlier `FunctionLexicon` blocker is done.
       `wasm_module_factory_runtime` now constructs original `W3DModuleFactory`

@@ -323,6 +323,7 @@ FunctionLexicon::TableEntry runtimeBaseLayoutInitTable[] = {
 	{ NAMEKEY_INVALID, "PopupCommunicatorInit", PopupCommunicatorInit },
 	{ NAMEKEY_INVALID, "MapSelectMenuInit", MapSelectMenuInit },
 	{ NAMEKEY_INVALID, "ReplayMenuInit", ReplayMenuInit },
+	{ NAMEKEY_INVALID, "GameInfoWindowInit", GameInfoWindowInit },
 	{ NAMEKEY_INVALID, "PopupReplayInit", PopupReplayInit },
 	{ NAMEKEY_INVALID, "DifficultySelectInit", DifficultySelectInit },
 	{ NAMEKEY_INVALID, "KeyboardOptionsMenuInit", KeyboardOptionsMenuInit },

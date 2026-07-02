@@ -1757,7 +1757,8 @@ const char *build_device_factory_frontier_json()
 		"\"functionLexiconRuntime\":{\"attempted\":%s,\"ready\":%s,"
 		"\"status\":\"%s\",\"initRan\":%s,"
 		"\"w3dDeviceDrawReady\":%s,\"w3dLayoutInitReady\":%s,"
-		"\"messageBoxSystemReady\":%s,\"nextRequired\":\"%s\"},"
+		"\"messageBoxSystemReady\":%s,\"nextRequired\":\"%s\","
+		"\"missingCallbackGroupCount\":%u},"
 		"\"moduleFactoryRuntime\":{\"attempted\":%s,\"ready\":%s,"
 		"\"status\":\"%s\",\"initRan\":%s,"
 		"\"baseBehaviorReady\":%s,\"clientUpdateReady\":%s,"
@@ -1856,6 +1857,7 @@ const char *build_device_factory_frontier_json()
 		function_lexicon_runtime.next_required != nullptr
 			? function_lexicon_runtime.next_required
 			: "",
+		function_lexicon_runtime.missing_callback_group_count,
 		json_bool(module_factory_runtime.attempted),
 		json_bool(module_factory_runtime.ok),
 		module_factory_runtime_status_json.c_str(),

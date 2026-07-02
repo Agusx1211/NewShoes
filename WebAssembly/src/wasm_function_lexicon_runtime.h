@@ -129,6 +129,7 @@ struct FunctionLexiconRuntimeProbeResult
 	bool popup_communicator_init_lookup = false;
 	bool map_select_menu_init_lookup = false;
 	bool replay_menu_init_lookup = false;
+	bool game_info_window_init_lookup = false;
 	bool popup_replay_init_lookup = false;
 	bool difficulty_select_init_lookup = false;
 	bool keyboard_options_menu_init_lookup = false;
@@ -158,6 +159,11 @@ struct FunctionLexiconRuntimeProbeResult
 	bool w3d_gadget_push_button_draw_lookup = false;
 	bool w3d_game_window_default_draw_lookup = false;
 	bool w3d_main_menu_init_lookup = false;
+
+	// Remaining original FunctionLexicon owner groups that are intentionally
+	// absent from the reduced browser runtime table.
+	unsigned missing_callback_group_count = 0;
+	std::string missing_callback_groups_json = "{}";
 };
 
 const FunctionLexiconRuntimeProbeResult &wasm_function_lexicon_runtime_install(

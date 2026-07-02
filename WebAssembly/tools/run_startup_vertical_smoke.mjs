@@ -178,13 +178,29 @@ const browserChecks = [
           && payload.archiveBackedStartup.audioManagerRuntime.music?.alreadyLoaded === true
           && payload.archiveBackedStartup.audioManagerRuntime.teardown?.tornDown === true,
         'Archive-backed startup boot did not prove real init/music/teardown');
-      expect(payload.archiveBackedStartup.functionLexiconRuntime?.status === 'base_function_lexicon_control_bar_observer_runtime_owned',
-        'Archive-backed startup boot did not report the expected ControlBarObserver FunctionLexicon frontier');
+      expect(payload.archiveBackedStartup.functionLexiconRuntime?.status === 'base_function_lexicon_remaining_callback_groups_deferred',
+        'Archive-backed startup boot did not report the expected remaining FunctionLexicon callback frontier');
+      expect(payload.archiveBackedStartup.functionLexiconRuntime?.missingCallbackGroupCount === 13
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups?.saveLoadMenu === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.quitMenu === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.popupReplayScoreState === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.scoreScreen === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.controlBarCommandHud === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.generalsExpPoints === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.lanMenus === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.inGameNetworkMenus === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.hostJoinNetworkPopups === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.onlineOverlayAndBattleHonors === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.wolShellMenus === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.networkDirectConnect === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.downloadMenu === true,
+        'Archive-backed startup boot did not report the expected missing FunctionLexicon owner groups');
       expect(payload.archiveBackedStartup.functionLexiconRuntime?.lookups?.popupReplayInput === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.popupReplayInit === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.popupReplayShutdown === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.controlBarInput === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.controlBarObserverSystem === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.gameInfoWindowInit === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.gameWinBlockInput === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.motdSystem === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.optionsMenuSystem === true
@@ -428,14 +444,14 @@ console.log(JSON.stringify({
     'original ButtonUSA faction difficulty transition and ButtonDiffBack return through MainMenuSystem',
     'original ButtonLoadReplay dropdown and ButtonLoadReplayBack return through MainMenuSystem',
     'original ButtonCredits path through Shell::push into CreditsMenuInit/CreditsMenuUpdate with INIZH-backed Credits.ini',
-    'browser boot constructs original W3DFunctionLexicon, verifies W3D device callback-name tables, and loads the non-network base GUI widget/input, IME draw, original ControlBarObserverSystem from ControlBarObserver.cpp, original GameWinBlockInput with the original SelectionTranslator symbol owner linked, original ExtendedMessageBoxSystem, original W3D MOTD system callback, original DifficultySelect system/input/init callbacks, original KeyboardOptionsMenu system/input/init/update/shutdown callbacks with original MetaEvent global ownership, original OptionsMenu system/input/init/update/shutdown callbacks with original OptionPreferences ownership, original SkirmishMapSelectMenu system/input/init/update/shutdown callbacks, original InGamePopupMessage system/input/init callbacks, original IdleWorkerSystem callback, original BeaconWindowInput callback, original ControlBarInput callback, original ReplayControl system/input callbacks, original ChallengeMenu callbacks, original PopupCommunicator callbacks, original MapSelectMenu callbacks, original ReplayMenu callbacks, original PopupReplay modal callbacks, original GameInfoWindowSystem lookup, and original MainMenu/Credits/Skirmish/SinglePlayer shell callback tables while the remaining layout graph remains the FunctionLexicon boundary',
+    'browser boot constructs original W3DFunctionLexicon, verifies W3D device callback-name tables, loads the owned base GUI/widget/shell callback tables including passive GameInfoWindow system/init names, and reports the remaining FunctionLexicon callback owner groups as structured startup state',
     'browser boot constructs original W3DModuleFactory, runs W3DModuleFactory::init(), and proves public ModuleFactory lookups for representative base gameplay, client-update, and W3D draw modules',
     'browser boot constructs original W3DParticleSystemManager, runs ParticleSystemManager::init() against Data\\INI\\ParticleSystem.ini, and proves shipped particle template lookups through the public manager API',
     'source-pinned original GameLogic MSG_NEW_GAME dispatch frontier after CommandList handoff',
     'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, and first-call startNewGame(FALSE) deferral',
   ],
   nextRequired: [
-    'replace the remaining base FunctionLexicon layout/HUD callback registrations, including PopupReplay score-screen-dependent System/Update and broader ControlBarSystem/LeftHUDInput callbacks, so GameEngine.cpp line 446 can become fully runtime-owned',
+    'replace the remaining base FunctionLexicon callback owner groups, starting with non-network owners such as PopupReplay score-screen-dependent System/Update, QuitMenuSystem, ScoreScreen, and broader ControlBarSystem/LeftHUDInput callbacks only when their real owners are runtime-owned',
     'advance the next vertical startup path outside the already-proven shell menu slice',
     'advance the post-particle startup data stores toward createThingFactory once createFunctionLexicon is fully owned',
     'supply base Generals Window.big and replace the focused runtime in-memory BlankWindow adapter before continuing deferred startNewGame into terrain/player/script load',

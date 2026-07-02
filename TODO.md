@@ -73,9 +73,13 @@ flow below.
       `MapSelectMenu` system/input/init/update/shutdown callbacks, original
       `ReplayMenu` system/input/init/update/shutdown callbacks, original
       `PopupReplay` input/init/shutdown modal callbacks, plus the passive
-      original `GameInfoWindowSystem` callback-name lookup without owning LAN
-      game-info population; the remaining `FunctionLexicon` boundary is the
-      rest of the non-network layout callback graph). The same archive-backed
+      original `GameInfoWindowSystem`/`GameInfoWindowInit` callback-name
+      lookups without owning LAN game-info population; the remaining
+      `FunctionLexicon` boundary is now
+      reported by startup JSON as explicit missing callback owner groups:
+      save/load, quit menu, score-screen/replay-save, control-bar command/HUD,
+      generals experience points, LAN/game-network menus, WOL/GameSpy overlays,
+      direct-connect/download menus, and in-game network menus). The same archive-backed
       boot now constructs original `W3DModuleFactory`, runs
       `W3DModuleFactory::init()`, and proves public `ModuleFactory` lookups for
       representative base gameplay, client-update, and W3D draw modules. It
@@ -115,12 +119,15 @@ flow below.
       `PopupCommunicator` system/input/init/shutdown lookups plus original
       `MapSelectMenu` system/input/init/update/shutdown lookups plus original
       `ReplayMenu` system/input/init/update/shutdown lookups plus the passive
-      original `GameInfoWindowSystem` callback-name lookup, but full ownership
-      still needs the remaining original base `FunctionLexicon.cpp`
-      non-network layout callback graph without pulling LAN/WOL/GameSpy/
-      embedded-web menu behavior into `cnc-port`. Next promote the remaining
-      non-network layout callback owners in small groups while leaving
-      online/download/embedded web menus at explicit browser boundaries.
+      original `GameInfoWindowSystem`/`GameInfoWindowInit` callback-name
+      lookups, but full ownership
+      still needs the remaining original base `FunctionLexicon.cpp` callback
+      owner groups without pulling LAN/WOL/GameSpy/download/embedded-web menu
+      behavior into `cnc-port`. The runtime frontier now reports those missing
+      groups as structured startup state (`missingCallbackGroups`) instead of a
+      hand-curated "remaining shell" label. Next promote non-network groups
+      only when their real owners are linked, while leaving online/download/
+      embedded-web menus at explicit browser boundaries.
       The real `W3DModuleFactory` + all 224 module registrations now reuse the
       `zh_gameengine_real_object_ini_runtime` link surface in the browser
       startup: `moduleFactoryRuntime` constructs the original module factory,
@@ -137,6 +144,17 @@ flow below.
       LAN/WOL/GameSpy into `cnc-port`. Directly registering those callbacks
       retains `LastReplayFileName` and `ScoreScreenEnableControls()` from
       original `ScoreScreen.cpp`; do not replace that with fake weak stubs.
+- [ ] Promote `QuitMenuSystem` only after the original `GameLogic`,
+      `MessageStream`, `GameState`, `Recorder`, `InGameUI`, `Shell`,
+      `ControlBar`, victory-condition, and `ScriptEngine` ownership surface is
+      ready in the linked runtime. The callback name is non-online, but the
+      original `QuitMenu.cpp` owner immediately reaches broad gameplay and UI
+      state; do not register it through weak stand-ins.
+- [ ] Promote the `ScoreScreen*` FunctionLexicon callbacks only after the
+      original score-screen owner can run with real `GameState`, `InGameUI`,
+      campaign/LOD, video/audio, `SkirmishBattleHonors`, and message-resource
+      behavior in the linked runtime instead of the current focused movie/score
+      hooks.
 - [ ] Promote `ControlBarSystem` and `LeftHUDInput` only after the original
       control-bar command/radar/player ownership surface is ready in the
       linked runtime. The passive `ControlBarInput` callback is now registered,

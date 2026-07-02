@@ -281,10 +281,25 @@ function assertFunctionLexiconRuntimeFrontier(state) {
   const probe = state.functionLexiconRuntime;
   expect(probe?.attempted === true, "function lexicon runtime probe did not run", probe);
   expect(probe.ok === false, "function lexicon runtime should not claim full ownership yet", probe);
-  expect(probe.status === "base_function_lexicon_control_bar_observer_runtime_owned",
+  expect(probe.status === "base_function_lexicon_remaining_callback_groups_deferred",
     "function lexicon runtime status mismatch", probe);
-  expect(probe.nextRequired === "originalFunctionLexiconRemainingShellCallbacks",
+  expect(probe.nextRequired === "originalFunctionLexiconRemainingCallbackOwners",
     "function lexicon runtime nextRequired mismatch", probe);
+  expect(probe.missingCallbackGroupCount === 13
+      && probe.missingCallbackGroups?.saveLoadMenu === true
+      && probe.missingCallbackGroups.quitMenu === true
+      && probe.missingCallbackGroups.popupReplayScoreState === true
+      && probe.missingCallbackGroups.scoreScreen === true
+      && probe.missingCallbackGroups.controlBarCommandHud === true
+      && probe.missingCallbackGroups.generalsExpPoints === true
+      && probe.missingCallbackGroups.lanMenus === true
+      && probe.missingCallbackGroups.inGameNetworkMenus === true
+      && probe.missingCallbackGroups.hostJoinNetworkPopups === true
+      && probe.missingCallbackGroups.onlineOverlayAndBattleHonors === true
+      && probe.missingCallbackGroups.wolShellMenus === true
+      && probe.missingCallbackGroups.networkDirectConnect === true
+      && probe.missingCallbackGroups.downloadMenu === true,
+    "function lexicon runtime did not report the expected remaining owner groups", probe);
   expect(probe.constructed === true && probe.theFunctionLexiconOwned === true,
     "original W3DFunctionLexicon was not constructed as TheFunctionLexicon", probe);
   expect(probe.initRan === true && probe.initThrew === false,
@@ -383,6 +398,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.popupCommunicatorInit === true
       && probe.lookups.mapSelectMenuInit === true
       && probe.lookups.replayMenuInit === true
+      && probe.lookups.gameInfoWindowInit === true
       && probe.lookups.popupReplayInit === true
       && probe.lookups.difficultySelectInit === true
       && probe.lookups.keyboardOptionsMenuInit === true
@@ -505,11 +521,12 @@ function assertAudioOwnedFrontier(state) {
       && frontier.audioManagerRuntime.tornDown === true,
     "frontier audioManagerRuntime summary mismatch", frontier.audioManagerRuntime);
   expect(frontier.functionLexiconRuntime?.ready === false
-      && frontier.functionLexiconRuntime.status === "base_function_lexicon_control_bar_observer_runtime_owned"
+      && frontier.functionLexiconRuntime.status === "base_function_lexicon_remaining_callback_groups_deferred"
       && frontier.functionLexiconRuntime.w3dDeviceDrawReady === true
       && frontier.functionLexiconRuntime.w3dLayoutInitReady === true
       && frontier.functionLexiconRuntime.messageBoxSystemReady === true
-      && frontier.functionLexiconRuntime.nextRequired === "originalFunctionLexiconRemainingShellCallbacks",
+      && frontier.functionLexiconRuntime.nextRequired === "originalFunctionLexiconRemainingCallbackOwners"
+      && frontier.functionLexiconRuntime.missingCallbackGroupCount === 13,
     "frontier functionLexiconRuntime summary mismatch", frontier.functionLexiconRuntime);
   expect(frontier.moduleFactoryRuntime?.ready === true
       && frontier.moduleFactoryRuntime.status === "ready"
@@ -736,7 +753,7 @@ try {
   // W3DFunctionLexicon device-table load, original ControlBarObserver/GameWinBlockInput/MOTD/MainMenu/Credits/Skirmish
   // base shell callbacks, the promoted Options/SkirmishMapSelect/Challenge/PopupCommunicator/MapSelect/Replay/PopupReplay-modal/GameInfo owners,
   // and honestly keeps the device-factory frontier at createFunctionLexicon
-  // until the remaining shell callback graph is owned by cnc-port.
+  // until the remaining callback owner groups are owned by cnc-port.
   const archives = await buildAudioOwnershipArchiveSpecs();
   const audioPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   attachConsoleLogger(audioPage, "archive");
