@@ -138,6 +138,73 @@ extern "C" void cnc_port_note_subsystem_init(const char *name, int phase)
 	std::fflush(stdout);
 }
 
+namespace {
+
+struct RealEngineFrameState {
+	int frames_attempted = 0;
+	int frames_completed = 0;
+	bool exception_caught = false;
+	std::string exception_text;
+	double last_frame_ms = 0.0;
+};
+
+RealEngineFrameState g_frame_state;
+std::string g_frame_json;
+
+} // namespace
+
+// One iteration of the original GameEngine::execute() loop: calls the real
+// (virtual) TheGameEngine->update(), i.e. Win32GameEngine::update ->
+// GameEngine::update (radar/audio/client/messages/logic) + serviceWindowsOS.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame(int frame_count)
+{
+	if (frame_count < 1) {
+		frame_count = 1;
+	}
+	if (g_state.attempted && g_state.init_returned && TheGameEngine != NULL) {
+		for (int frame = 0; frame < frame_count; ++frame) {
+			++g_frame_state.frames_attempted;
+			const double frame_started_at = emscripten_get_now();
+			try {
+				TheGameEngine->update();
+				++g_frame_state.frames_completed;
+			} catch (const char *message) {
+				g_frame_state.exception_caught = true;
+				g_frame_state.exception_text = message != nullptr ? message : "(const char* exception)";
+				break;
+			} catch (...) {
+				g_frame_state.exception_caught = true;
+				g_frame_state.exception_text = "unhandled C++ exception escaping GameEngine::update";
+				break;
+			}
+			g_frame_state.last_frame_ms = emscripten_get_now() - frame_started_at;
+		}
+	}
+
+	std::string json = "{";
+	json += "\"initReturned\":";
+	json += (g_state.attempted && g_state.init_returned) ? "true" : "false";
+	json += ",\"source\":\"GeneralsMD/Code/GameEngine/Source/Common/GameEngine.cpp::update via Win32GameEngine::update\"";
+	json += ",\"framesAttempted\":" + std::to_string(g_frame_state.frames_attempted);
+	json += ",\"framesCompleted\":" + std::to_string(g_frame_state.frames_completed);
+	json += ",\"quitting\":";
+	json += (TheGameEngine != NULL && TheGameEngine->getQuitting() != FALSE) ? "true" : "false";
+	json += ",\"exceptionCaught\":";
+	json += g_frame_state.exception_caught ? "true" : "false";
+	json += ",\"exception\":\"" + json_escape(g_frame_state.exception_text) + "\"";
+	char elapsed[64];
+	std::snprintf(elapsed, sizeof(elapsed), ",\"lastFrameMs\":%.1f", g_frame_state.last_frame_ms);
+	json += elapsed;
+	json += "}";
+	g_frame_json = json;
+	std::printf("cnc-port: real-frame attempted=%d completed=%d exception=%s\n",
+		g_frame_state.frames_attempted,
+		g_frame_state.frames_completed,
+		g_frame_state.exception_caught ? g_frame_state.exception_text.c_str() : "(none)");
+	std::fflush(stdout);
+	return g_frame_json.c_str();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frontier()
 {
 	return build_state_json();

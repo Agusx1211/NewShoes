@@ -7194,6 +7194,7 @@ async function loadWasmModule() {
       probeWin32GameEngine: module.cwrap("cnc_port_probe_win32_gameengine", "string", []),
       realEngineInit: module.cwrap("cnc_port_real_engine_init", "string", ["string"]),
       realEngineFrontier: module.cwrap("cnc_port_real_engine_frontier", "string", []),
+      realEngineFrame: module.cwrap("cnc_port_real_engine_frame", "string", ["number"]),
       probeMssStartup: module.cwrap("cnc_port_probe_mss_startup", "string", []),
       probeAudioManagerRuntime: module.cwrap("cnc_port_probe_audio_manager_runtime", "string", []),
       probeMssSampleLifecycle: module.cwrap("cnc_port_probe_mss_sample_lifecycle", "string", []),
@@ -11770,6 +11771,31 @@ async function rpc(command, payload = {}) {
       return mountArchives(payload);
     case "realEngineInit":
       return realEngineInit(payload);
+    case "realEngineFrame":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineFrame");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineFrame", error: moduleResult.error };
+        }
+        let frame = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          frame = JSON.parse(moduleResult.wasmModule.realEngineFrame(Number(payload.frames ?? 1)));
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        recordLog("real engine frame", { aborted, abortMessage, frame });
+        return {
+          ok: Boolean(frame?.framesCompleted > 0) && !aborted,
+          command: "realEngineFrame",
+          aborted,
+          abortMessage,
+          frame,
+          state: snapshotState(),
+        };
+      }
     case "mountRangeBackedArchiveSet":
       return mountRangeBackedArchiveSet(payload);
     case "mountBigArchiveEntry":
