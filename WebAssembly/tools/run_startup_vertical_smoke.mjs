@@ -164,9 +164,20 @@ const browserChecks = [
       expect(payload.originalEngineStartup?.status === 'missing_runtime_archives',
         'Startup browser frontier smoke reported the wrong original startup status');
       expect(payload.originalEngineStartup?.deviceFactoryFrontier?.firstUnownedInitFactory === 'createAudioManager',
-        'Startup browser frontier smoke did not prove createAudioManager as the first unowned factory');
+        'Archiveless startup boot should still report createAudioManager as unowned');
       expect(payload.originalEngineStartup?.deviceFactoryFrontier?.firstUnownedInitLine === 434,
-        'Startup browser frontier smoke did not prove createAudioManager line 434');
+        'Archiveless startup boot should still report createAudioManager line 434');
+      expect(payload.archiveBackedStartup?.firstUnownedInitFactory === 'createFunctionLexicon',
+        'Archive-backed startup boot did not advance the frontier past createAudioManager to createFunctionLexicon');
+      expect(payload.archiveBackedStartup?.firstUnownedInitLine === 446,
+        'Archive-backed startup boot did not advance the frontier line to 446');
+      expect(payload.archiveBackedStartup?.audioManagerRuntime?.ok === true
+          && payload.archiveBackedStartup.audioManagerRuntime.status === 'ready',
+        'Archive-backed startup boot did not prove original MilesAudioManager runtime ownership');
+      expect(payload.archiveBackedStartup.audioManagerRuntime.initRan === true
+          && payload.archiveBackedStartup.audioManagerRuntime.music?.alreadyLoaded === true
+          && payload.archiveBackedStartup.audioManagerRuntime.teardown?.tornDown === true,
+        'Archive-backed startup boot did not prove real init/music/teardown');
     },
   },
 ];
@@ -367,6 +378,7 @@ console.log(JSON.stringify({
     'original Win32GameEngine lifetime',
     'original GameEngine.cpp constructor/destructor lifetime with global TheGameEngine ownership',
     'original MilesAudioManager openDevice',
+    'browser boot ownership of GameEngine.cpp line 434 createAudioManager: original MilesAudioManager construction, real AudioManager::init() INI loads, isMusicAlreadyLoaded music-archive check, openDevice through the browser MSS shim, and real destructor teardown',
     'original W3DGameWindowManager window and gadget ownership',
     'original WindowLayout .wnd parsing through W3DFunctionLexicon layout-init lookup',
     'real WindowZH.big message-box layout loading with original callback ownership',
@@ -381,7 +393,7 @@ console.log(JSON.stringify({
     'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, and first-call startNewGame(FALSE) deferral',
   ],
   nextRequired: [
-    'advance original GameEngine.cpp init singleton ownership before createAudioManager',
+    'own GameEngine.cpp line 446 createFunctionLexicon (W3DFunctionLexicon) in the browser boot after the owned createAudioManager frontier',
     'advance the next vertical startup path outside the already-proven shell menu slice',
     'prove W3DModuleFactory module-template lookup through the original public API at runtime',
     'supply base Generals Window.big and replace the focused runtime in-memory BlankWindow adapter before continuing deferred startNewGame into terrain/player/script load',
