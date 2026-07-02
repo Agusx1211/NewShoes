@@ -4109,6 +4109,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       payload; real gameplay-owned map-load/partition/terrain ownership remains
       open in `TODO.md`. Verified with
       `npm --prefix WebAssembly run test:ww3d-terrain-full-scene`.
+- [x] Source the bounded terrain shroud partition refresh from the loaded
+      logical terrain extent. The visual-owned and full-init shroud update
+      probes now run original `W3DTerrainLogic::loadMap(query=true)` before
+      `PartitionManager::refreshShroudForLocalPlayer`, pass the loaded
+      `MD_GLA03` 3800x3800 extent into the partition metrics, record the
+      original fast-ceil full source partition count as 381x381 at
+      `MAP_XY_FACTOR`, and clamp the browser refresh to a 48x48 source-derived
+      partition window. The harness gates both shroud update paths on the
+      source extent, bounded cell counts, display/radar set calls, ordered
+      base/blend/shroud frames, texture-upload advancement, and colored WebGL2
+      screenshots. Production `PlayerList` / `Player`, target-wide
+      `GlobalData` partition-cell-size ownership, and full gameplay
+      partition/terrain ownership remain open in `TODO.md`. Verified with
+      `npm --prefix WebAssembly run test:ww3d-terrain-full-scene`.
 - [x] Apply D3D face culling before browser wireframe expansion. The
       D3D8/WebGL bridge now projects indexed triangles with the captured
       world/view/projection matrices, classifies CW/CCW winding, applies

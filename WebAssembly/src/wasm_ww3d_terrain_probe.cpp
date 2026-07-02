@@ -480,9 +480,14 @@ struct ProbePartitionShroudRefreshMetrics
 	bool displaySampleTouched = false;
 	bool radarSampleTouched = false;
 	bool renderInvoked = false;
+	bool logicalTerrainExtentSourceApplied = false;
 	Int cellCountX = 0;
 	Int cellCountY = 0;
 	Int totalCells = 0;
+	Int expectedCellCountX = 0;
+	Int expectedCellCountY = 0;
+	Int fullCellCountX = 0;
+	Int fullCellCountY = 0;
 	Int sampleX = -1;
 	Int sampleY = -1;
 	Int status = CELLSHROUD_SHROUDED;
@@ -504,6 +509,12 @@ struct ProbePartitionShroudRefreshMetrics
 	Int beginRender = WW3D_ERROR_GENERIC;
 	Int render = WW3D_ERROR_GENERIC;
 	Int endRender = WW3D_ERROR_GENERIC;
+	Real partitionCellSize = 0.0f;
+	Real sourcePartitionCellSize = 0.0f;
+	Real terrainExtentHiX = 0.0f;
+	Real terrainExtentHiY = 0.0f;
+	Real fullTerrainExtentHiX = 0.0f;
+	Real fullTerrainExtentHiY = 0.0f;
 	UnsignedInt drawIndexed = 0;
 	UnsignedInt clear = 0;
 	UnsignedInt textureUpdate = 0;
@@ -4021,14 +4032,14 @@ public:
 class ProbePartitionTerrainLogic final : public TerrainLogic
 {
 public:
-	ProbePartitionTerrainLogic(Int cells_x, Int cells_y, Real cell_size)
+	ProbePartitionTerrainLogic(Real extent_hi_x, Real extent_hi_y, Real extent_hi_z)
 	{
 		m_extent.lo.x = 0.0f;
 		m_extent.lo.y = 0.0f;
 		m_extent.lo.z = 0.0f;
-		m_extent.hi.x = static_cast<Real>(cells_x) * cell_size;
-		m_extent.hi.y = static_cast<Real>(cells_y) * cell_size;
-		m_extent.hi.z = 0.0f;
+		m_extent.hi.x = std::max<Real>(1.0f, extent_hi_x);
+		m_extent.hi.y = std::max<Real>(1.0f, extent_hi_y);
+		m_extent.hi.z = extent_hi_z;
 	}
 
 	void init() override {}
@@ -4097,7 +4108,8 @@ ProbePartitionShroudRefreshMetrics run_partition_shroud_refresh_probe(
 	W3DShroud *shroud,
 	CameraClass *camera,
 	Int sample_x,
-	Int sample_y)
+	Int sample_y,
+	const ProbeLogicalTerrainLoadMetrics *logical_terrain_load)
 {
 	ProbePartitionShroudRefreshMetrics metrics;
 	metrics.requested = true;
@@ -4138,7 +4150,62 @@ ProbePartitionShroudRefreshMetrics run_partition_shroud_refresh_probe(
 	const UnsignedByte old_shroud_alpha = TheWritableGlobalData->m_shroudAlpha;
 	const UnsignedByte old_fog_alpha = TheWritableGlobalData->m_fogAlpha;
 	const UnsignedByte old_clear_alpha = TheWritableGlobalData->m_clearAlpha;
+	const bool logical_extent_ready =
+		logical_terrain_load != nullptr &&
+		logical_terrain_load->loadReturned &&
+		logical_terrain_load->extentMatchesVisual &&
+		logical_terrain_load->extentHiX > 0.0f &&
+		logical_terrain_load->extentHiY > 0.0f;
+	const Int probe_partition_cell_window = 48;
+	const Real source_partition_cell_size =
+		logical_extent_ready ? static_cast<Real>(MAP_XY_FACTOR) : 1.0f;
+	// This focused target still has split GlobalData ownership, so keep the
+	// browser refresh on a 1-unit grid while recording the source cell size.
+	// REAL_TO_INT_CEIL bumps exact integers, so high=N-1 yields N cells.
 	const Real probe_partition_cell_size = 1.0f;
+	const Real full_extent_hi_x =
+		logical_extent_ready ?
+			static_cast<Real>(logical_terrain_load->extentHiX) :
+			static_cast<Real>(probe_partition_cell_window - 1) *
+				source_partition_cell_size;
+	const Real full_extent_hi_y =
+		logical_extent_ready ?
+			static_cast<Real>(logical_terrain_load->extentHiY) :
+			static_cast<Real>(probe_partition_cell_window - 1) *
+				source_partition_cell_size;
+	const Int full_cell_count_x =
+		std::max<Int>(
+			1,
+			REAL_TO_INT_CEIL(full_extent_hi_x / source_partition_cell_size));
+	const Int full_cell_count_y =
+		std::max<Int>(
+			1,
+			REAL_TO_INT_CEIL(full_extent_hi_y / source_partition_cell_size));
+	const Int bounded_cell_count_x =
+		std::min<Int>(probe_partition_cell_window, full_cell_count_x);
+	const Int bounded_cell_count_y =
+		std::min<Int>(probe_partition_cell_window, full_cell_count_y);
+	const Real partition_extent_hi_x =
+		static_cast<Real>(std::max<Int>(1, bounded_cell_count_x - 1)) *
+			probe_partition_cell_size;
+	const Real partition_extent_hi_y =
+		static_cast<Real>(std::max<Int>(1, bounded_cell_count_y - 1)) *
+			probe_partition_cell_size;
+	const Real partition_extent_hi_z =
+		logical_extent_ready ?
+			static_cast<Real>(logical_terrain_load->extentHiZ) :
+			0.0f;
+	metrics.logicalTerrainExtentSourceApplied = logical_extent_ready;
+	metrics.partitionCellSize = probe_partition_cell_size;
+	metrics.sourcePartitionCellSize = source_partition_cell_size;
+	metrics.terrainExtentHiX = partition_extent_hi_x;
+	metrics.terrainExtentHiY = partition_extent_hi_y;
+	metrics.fullTerrainExtentHiX = full_extent_hi_x;
+	metrics.fullTerrainExtentHiY = full_extent_hi_y;
+	metrics.expectedCellCountX = bounded_cell_count_x;
+	metrics.expectedCellCountY = bounded_cell_count_y;
+	metrics.fullCellCountX = full_cell_count_x;
+	metrics.fullCellCountY = full_cell_count_y;
 	TheWritableGlobalData->m_partitionCellSize = probe_partition_cell_size;
 	TheWritableGlobalData->m_shroudColor.red = 1.0f;
 	TheWritableGlobalData->m_shroudColor.green = 1.0f;
@@ -4146,7 +4213,10 @@ ProbePartitionShroudRefreshMetrics run_partition_shroud_refresh_probe(
 	TheWritableGlobalData->m_shroudAlpha = 0;
 	TheWritableGlobalData->m_fogAlpha = 127;
 	TheWritableGlobalData->m_clearAlpha = 255;
-	ProbePartitionTerrainLogic terrain_logic(48, 48, probe_partition_cell_size);
+	ProbePartitionTerrainLogic terrain_logic(
+		partition_extent_hi_x,
+		partition_extent_hi_y,
+		partition_extent_hi_z);
 	TheTerrainLogic = &terrain_logic;
 	metrics.terrainLogicInstalled = TheTerrainLogic == &terrain_logic;
 	{
@@ -6305,6 +6375,13 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	}
 
 	if (partition_refresh_mode &&
+			map_created &&
+			!logical_terrain_load.attempted) {
+		logical_terrain_load =
+			run_logical_terrain_load_probe(map, kArchiveTerrainMapEntry);
+	}
+
+	if (partition_refresh_mode &&
 			shroud_update_render_invoked &&
 			render_object != nullptr &&
 			camera != nullptr &&
@@ -6320,7 +6397,8 @@ const char *run_ww3d_terrain_visual_scene_probe(
 				shroud,
 				camera,
 				shroud_update_sample_x,
-				shroud_update_sample_y);
+				shroud_update_sample_y,
+				&logical_terrain_load);
 		}
 	}
 
@@ -6377,7 +6455,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		}
 	}
 
-	if (map_created) {
+	if (map_created && !logical_terrain_load.attempted) {
 		logical_terrain_load =
 			run_logical_terrain_load_probe(map, kArchiveTerrainMapEntry);
 	}
@@ -6753,6 +6831,12 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		"\"sampleChanged\":%s,\"displaySampleTouched\":%s,"
 		"\"radarSampleTouched\":%s,\"renderInvoked\":%s,"
 		"\"cellCountX\":%d,\"cellCountY\":%d,\"totalCells\":%d,"
+		"\"logicalTerrainExtentSourceApplied\":%s,"
+		"\"expectedCellCountX\":%d,\"expectedCellCountY\":%d,"
+		"\"fullCellCountX\":%d,\"fullCellCountY\":%d,"
+		"\"partitionCellSize\":%.3f,\"sourcePartitionCellSize\":%.3f,"
+		"\"terrainExtentHiX\":%.3f,\"terrainExtentHiY\":%.3f,"
+		"\"fullTerrainExtentHiX\":%.3f,\"fullTerrainExtentHiY\":%.3f,"
 		"\"sampleX\":%d,\"sampleY\":%d,\"status\":%d,"
 		"\"expectedLevel\":%d,\"sampleBefore\":%d,\"sampleAfter\":%d,"
 		"\"revealDisplaySetCalls\":%d,\"revealRadarSetCalls\":%d,"
@@ -7047,6 +7131,17 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		partition_shroud_refresh.cellCountX,
 		partition_shroud_refresh.cellCountY,
 		partition_shroud_refresh.totalCells,
+		bool_json(partition_shroud_refresh.logicalTerrainExtentSourceApplied),
+		partition_shroud_refresh.expectedCellCountX,
+		partition_shroud_refresh.expectedCellCountY,
+		partition_shroud_refresh.fullCellCountX,
+		partition_shroud_refresh.fullCellCountY,
+		static_cast<double>(partition_shroud_refresh.partitionCellSize),
+		static_cast<double>(partition_shroud_refresh.sourcePartitionCellSize),
+		static_cast<double>(partition_shroud_refresh.terrainExtentHiX),
+		static_cast<double>(partition_shroud_refresh.terrainExtentHiY),
+		static_cast<double>(partition_shroud_refresh.fullTerrainExtentHiX),
+		static_cast<double>(partition_shroud_refresh.fullTerrainExtentHiY),
 		partition_shroud_refresh.sampleX,
 		partition_shroud_refresh.sampleY,
 		partition_shroud_refresh.status,

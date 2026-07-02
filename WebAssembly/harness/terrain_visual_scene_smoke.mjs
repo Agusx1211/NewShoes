@@ -722,6 +722,19 @@ try {
       || visualShroudUpdateResult.probe?.partitionRefresh?.status !== 1
       || visualShroudUpdateResult.probe?.partitionRefresh?.expectedLevel !== visualShroudUpdateResult.probe?.partitionRefresh?.sampleAfter
       || visualShroudUpdateResult.probe?.partitionRefresh?.sampleAfter <= visualShroudUpdateResult.probe?.partitionRefresh?.sampleBefore
+      || visualShroudUpdateResult.probe?.partitionRefresh?.logicalTerrainExtentSourceApplied !== true
+      || visualShroudUpdateResult.probe?.partitionRefresh?.expectedCellCountX !== visualShroudUpdateResult.probe?.partitionRefresh?.cellCountX
+      || visualShroudUpdateResult.probe?.partitionRefresh?.expectedCellCountY !== visualShroudUpdateResult.probe?.partitionRefresh?.cellCountY
+      || visualShroudUpdateResult.probe?.partitionRefresh?.fullCellCountX !== 381
+      || visualShroudUpdateResult.probe?.partitionRefresh?.fullCellCountY !== 381
+      || visualShroudUpdateResult.probe?.partitionRefresh?.cellCountX !== 48
+      || visualShroudUpdateResult.probe?.partitionRefresh?.cellCountY !== 48
+      || visualShroudUpdateResult.probe?.partitionRefresh?.partitionCellSize !== 1
+      || visualShroudUpdateResult.probe?.partitionRefresh?.sourcePartitionCellSize !== 10
+      || visualShroudUpdateResult.probe?.partitionRefresh?.terrainExtentHiX !== visualShroudUpdateResult.probe?.partitionRefresh?.cellCountX - 1
+      || visualShroudUpdateResult.probe?.partitionRefresh?.terrainExtentHiY !== visualShroudUpdateResult.probe?.partitionRefresh?.cellCountY - 1
+      || visualShroudUpdateResult.probe?.partitionRefresh?.fullTerrainExtentHiX !== visualShroudUpdateResult.probe?.logicalTerrain?.extentHiX
+      || visualShroudUpdateResult.probe?.partitionRefresh?.fullTerrainExtentHiY !== visualShroudUpdateResult.probe?.logicalTerrain?.extentHiY
       || visualShroudUpdateResult.probe?.partitionRefresh?.totalCells <= 0
       || visualShroudUpdateResult.probe?.partitionRefresh?.displaySetCalls < visualShroudUpdateResult.probe?.partitionRefresh?.totalCells
       || visualShroudUpdateResult.probe?.partitionRefresh?.radarSetCalls < visualShroudUpdateResult.probe?.partitionRefresh?.totalCells
@@ -945,6 +958,19 @@ try {
       || fullSceneShroudUpdateResult.probe?.partitionRefresh?.displaySampleTouched !== true
       || fullSceneShroudUpdateResult.probe?.partitionRefresh?.radarSampleTouched !== true
       || fullSceneShroudUpdateResult.probe?.partitionRefresh?.expectedLevel !== fullSceneShroudUpdateResult.probe?.partitionRefresh?.sampleAfter
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.logicalTerrainExtentSourceApplied !== true
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.expectedCellCountX !== fullSceneShroudUpdateResult.probe?.partitionRefresh?.cellCountX
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.expectedCellCountY !== fullSceneShroudUpdateResult.probe?.partitionRefresh?.cellCountY
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.fullCellCountX !== 381
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.fullCellCountY !== 381
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.cellCountX !== 48
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.cellCountY !== 48
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.partitionCellSize !== 1
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.sourcePartitionCellSize !== 10
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.terrainExtentHiX !== fullSceneShroudUpdateResult.probe?.partitionRefresh?.cellCountX - 1
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.terrainExtentHiY !== fullSceneShroudUpdateResult.probe?.partitionRefresh?.cellCountY - 1
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.fullTerrainExtentHiX !== fullSceneShroudUpdateResult.probe?.logicalTerrain?.extentHiX
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.fullTerrainExtentHiY !== fullSceneShroudUpdateResult.probe?.logicalTerrain?.extentHiY
       || fullSceneShroudUpdateResult.probe?.renderFrames?.count !== 3
       || fullSceneShroudUpdateResult.probe?.renderFrames?.firstDrawIndexed < 3
       || fullSceneShroudUpdateResult.probe?.renderFrames?.shroudUpdateDrawIndexed < 6

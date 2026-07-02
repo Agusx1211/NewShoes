@@ -18923,6 +18923,19 @@ async function rpc(command, payload = {}) {
             && probe?.partitionRefresh?.status === 1
             && probe?.partitionRefresh?.expectedLevel === probe?.partitionRefresh?.sampleAfter
             && (probe?.partitionRefresh?.sampleAfter ?? 0) > (probe?.partitionRefresh?.sampleBefore ?? 0)
+            && probe?.partitionRefresh?.logicalTerrainExtentSourceApplied === true
+            && probe?.partitionRefresh?.expectedCellCountX === probe?.partitionRefresh?.cellCountX
+            && probe?.partitionRefresh?.expectedCellCountY === probe?.partitionRefresh?.cellCountY
+            && probe?.partitionRefresh?.fullCellCountX === 381
+            && probe?.partitionRefresh?.fullCellCountY === 381
+            && probe?.partitionRefresh?.cellCountX === 48
+            && probe?.partitionRefresh?.cellCountY === 48
+            && probe?.partitionRefresh?.partitionCellSize === 1
+            && probe?.partitionRefresh?.sourcePartitionCellSize === 10
+            && probe?.partitionRefresh?.terrainExtentHiX === probe?.partitionRefresh?.cellCountX - 1
+            && probe?.partitionRefresh?.terrainExtentHiY === probe?.partitionRefresh?.cellCountY - 1
+            && probe?.partitionRefresh?.fullTerrainExtentHiX === probe?.logicalTerrain?.extentHiX
+            && probe?.partitionRefresh?.fullTerrainExtentHiY === probe?.logicalTerrain?.extentHiY
             && (probe?.partitionRefresh?.totalCells ?? 0) > 0
             && (probe?.partitionRefresh?.displaySetCalls ?? 0) >= (probe?.partitionRefresh?.totalCells ?? 1)
             && (probe?.partitionRefresh?.radarSetCalls ?? 0) >= (probe?.partitionRefresh?.totalCells ?? 1)
@@ -18990,6 +19003,19 @@ async function rpc(command, payload = {}) {
             && probe?.partitionRefresh?.status === 1
             && probe?.partitionRefresh?.expectedLevel === probe?.partitionRefresh?.sampleAfter
             && (probe?.partitionRefresh?.sampleAfter ?? 0) > (probe?.partitionRefresh?.sampleBefore ?? 0)
+            && probe?.partitionRefresh?.logicalTerrainExtentSourceApplied === true
+            && probe?.partitionRefresh?.expectedCellCountX === probe?.partitionRefresh?.cellCountX
+            && probe?.partitionRefresh?.expectedCellCountY === probe?.partitionRefresh?.cellCountY
+            && probe?.partitionRefresh?.fullCellCountX === 381
+            && probe?.partitionRefresh?.fullCellCountY === 381
+            && probe?.partitionRefresh?.cellCountX === 48
+            && probe?.partitionRefresh?.cellCountY === 48
+            && probe?.partitionRefresh?.partitionCellSize === 1
+            && probe?.partitionRefresh?.sourcePartitionCellSize === 10
+            && probe?.partitionRefresh?.terrainExtentHiX === probe?.partitionRefresh?.cellCountX - 1
+            && probe?.partitionRefresh?.terrainExtentHiY === probe?.partitionRefresh?.cellCountY - 1
+            && probe?.partitionRefresh?.fullTerrainExtentHiX === probe?.logicalTerrain?.extentHiX
+            && probe?.partitionRefresh?.fullTerrainExtentHiY === probe?.logicalTerrain?.extentHiY
             && (probe?.partitionRefresh?.totalCells ?? 0) > 0
             && (probe?.partitionRefresh?.displaySetCalls ?? 0) >= (probe?.partitionRefresh?.totalCells ?? 1)
             && (probe?.partitionRefresh?.radarSetCalls ?? 0) >= (probe?.partitionRefresh?.totalCells ?? 1)

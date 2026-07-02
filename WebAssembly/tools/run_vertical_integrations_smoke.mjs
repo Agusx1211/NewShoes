@@ -1586,6 +1586,20 @@ const steps = [
           && payload.visualShroudPartitionRefresh?.render === 0
           && payload.visualShroudPartitionRefresh?.endRender === 0,
         "terrain visual shroud update smoke did not refresh through original PartitionManager state", payload.visualShroudPartitionRefresh);
+      expect(payload.visualShroudPartitionRefresh?.logicalTerrainExtentSourceApplied === true
+          && payload.visualShroudPartitionRefresh?.expectedCellCountX === payload.visualShroudPartitionRefresh?.cellCountX
+          && payload.visualShroudPartitionRefresh?.expectedCellCountY === payload.visualShroudPartitionRefresh?.cellCountY
+          && payload.visualShroudPartitionRefresh?.fullCellCountX === 381
+          && payload.visualShroudPartitionRefresh?.fullCellCountY === 381
+          && payload.visualShroudPartitionRefresh?.cellCountX === 48
+          && payload.visualShroudPartitionRefresh?.cellCountY === 48
+          && payload.visualShroudPartitionRefresh?.partitionCellSize === 1
+          && payload.visualShroudPartitionRefresh?.sourcePartitionCellSize === 10
+          && payload.visualShroudPartitionRefresh?.terrainExtentHiX === payload.visualShroudPartitionRefresh?.cellCountX - 1
+          && payload.visualShroudPartitionRefresh?.terrainExtentHiY === payload.visualShroudPartitionRefresh?.cellCountY - 1
+          && payload.visualShroudPartitionRefresh?.fullTerrainExtentHiX === payload.visualShroudUpdateLogicalTerrain?.extentHiX
+          && payload.visualShroudPartitionRefresh?.fullTerrainExtentHiY === payload.visualShroudUpdateLogicalTerrain?.extentHiY,
+        "terrain visual shroud update smoke did not size PartitionManager from the loaded logical terrain extent source", payload.visualShroudPartitionRefresh);
       expect(payload.visualShroudUpdateFrames?.count === 3
           && payload.visualShroudUpdateFrames?.firstDrawIndexed >= 3
           && payload.visualShroudUpdateFrames?.shroudUpdateDrawIndexed >= 6
@@ -1712,6 +1726,20 @@ const steps = [
           && payload.fullSceneShroudPartitionRefresh?.expectedLevel === payload.fullSceneShroudPartitionRefresh?.sampleAfter
           && payload.fullSceneShroudPartitionRefresh?.sampleAfter > payload.fullSceneShroudPartitionRefresh?.sampleBefore,
         "terrain full-scene shroud update smoke did not refresh through original PartitionManager state", payload.fullSceneShroudPartitionRefresh);
+      expect(payload.fullSceneShroudPartitionRefresh?.logicalTerrainExtentSourceApplied === true
+          && payload.fullSceneShroudPartitionRefresh?.expectedCellCountX === payload.fullSceneShroudPartitionRefresh?.cellCountX
+          && payload.fullSceneShroudPartitionRefresh?.expectedCellCountY === payload.fullSceneShroudPartitionRefresh?.cellCountY
+          && payload.fullSceneShroudPartitionRefresh?.fullCellCountX === 381
+          && payload.fullSceneShroudPartitionRefresh?.fullCellCountY === 381
+          && payload.fullSceneShroudPartitionRefresh?.cellCountX === 48
+          && payload.fullSceneShroudPartitionRefresh?.cellCountY === 48
+          && payload.fullSceneShroudPartitionRefresh?.partitionCellSize === 1
+          && payload.fullSceneShroudPartitionRefresh?.sourcePartitionCellSize === 10
+          && payload.fullSceneShroudPartitionRefresh?.terrainExtentHiX === payload.fullSceneShroudPartitionRefresh?.cellCountX - 1
+          && payload.fullSceneShroudPartitionRefresh?.terrainExtentHiY === payload.fullSceneShroudPartitionRefresh?.cellCountY - 1
+          && payload.fullSceneShroudPartitionRefresh?.fullTerrainExtentHiX === payload.fullSceneShroudUpdateLogicalTerrain?.extentHiX
+          && payload.fullSceneShroudPartitionRefresh?.fullTerrainExtentHiY === payload.fullSceneShroudUpdateLogicalTerrain?.extentHiY,
+        "terrain full-scene shroud update smoke did not size PartitionManager from the loaded logical terrain extent source", payload.fullSceneShroudPartitionRefresh);
       expect(payload.fullSceneShroudUpdateFrames?.count === 3
           && payload.fullSceneShroudUpdateFrames?.firstDrawIndexed >= 3
           && payload.fullSceneShroudUpdateFrames?.shroudUpdateDrawIndexed >= 6
