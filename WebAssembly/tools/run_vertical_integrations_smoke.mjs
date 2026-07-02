@@ -189,7 +189,7 @@ const steps = [
         "startup vertical smoke did not cover original MilesAudioManager openDevice", payload);
       expect(payload.covered?.includes("original W3DGameWindowManager window and gadget ownership"),
         "startup vertical smoke did not cover original W3DGameWindowManager ownership", payload);
-      expect(payload.covered?.includes("runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, and first-call startNewGame(FALSE) deferral"),
+      expect(payload.covered?.includes("runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, first-call startNewGame(FALSE) deferral, MapsZH.big MD_GLA03 promotion, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, and TerrainLogic->TerrainVisual load handoff"),
         "startup vertical smoke did not cover runtime original GameLogic MSG_NEW_GAME dispatch through original GlobalData/PlayerList/ScriptEngine/Shell", payload);
       expect(payload.sourceChecks?.includes("gameengine-startup-order")
           && payload.sourceChecks?.includes("w3d-module-factory-frontier")
@@ -2426,7 +2426,7 @@ console.log(JSON.stringify({
   nextRequired: [
     "advance MainMenu WindowLayout repaint from curated target visibility to unpruned production shell composition and display-owned font/image/archive lifetime",
     "thread mounted base Generals INI.big/English.big startup coverage through production original GameEngine.cpp init ownership",
-    "continue deferred startNewGame into terrain/player/script map-load ownership now that base Window.big supplies the BlankWindow background",
+    "continue startNewGame after original terrain load into side/player/script population",
     "broaden W3DTerrainVisual terrain ownership from the probe-mounted source-backed load window into production gameplay map-load, shroud, partition, and terrain logic ownership",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",

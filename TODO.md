@@ -1222,8 +1222,13 @@ flow below.
       runtime now mounts base `Window.big` and drives both the seeded shell
       layout and `prepareNewGame` background through original
       `GameWindowManager::winCreateLayout` / `WindowLayout::load` parsing for
-      `Window\Menus\BlankWindow.wnd`; continue the deferred update into
-      terrain/player/script map-load ownership.
+      `Window\Menus\BlankWindow.wnd`. It now also mounts `MapsZH.big`,
+      promotes shipped `Maps\MD_GLA03\MD_GLA03.map`, and proves original
+      `W3DTerrainLogic::loadMap(false)` / `WorldHeightMap` /
+      `TerrainLogic::loadMap` / `TerrainVisual::load` ownership over the same
+      map, including object, waypoint, side/team, time-of-day, and 3800x3800
+      extent checks; continue `startNewGame` after terrain load into
+      side/player/script population.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---

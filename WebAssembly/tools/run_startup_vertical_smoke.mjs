@@ -411,8 +411,9 @@ const steps = [
         'GameLogic new-game runtime smoke emitted the wrong path');
       expect(typeof payload.source === 'string'
           && payload.source.includes('GlobalData.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/GameLogic.cpp/GameLogicDispatch.cpp')
-          && payload.source.includes('GameWindowManagerScript.cpp/HeaderTemplate.cpp'),
-        'GameLogic new-game runtime smoke did not link the original GlobalData/PlayerList/GameLogic/WindowLayout parser sources');
+          && payload.source.includes('GameWindowManagerScript.cpp/HeaderTemplate.cpp')
+          && payload.source.includes('TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp'),
+        'GameLogic new-game runtime smoke did not link the original GlobalData/PlayerList/GameLogic/WindowLayout/Terrain parser sources');
       expect(payload.message === 'MSG_NEW_GAME' && payload.playerLookupIndex === 0,
         'GameLogic new-game runtime smoke did not process the expected MSG_NEW_GAME player lookup');
       expect(payload.playerCount === 1 && payload.neutralPlayerOwned === true,
@@ -439,12 +440,30 @@ const steps = [
       expect(payload.gameMode === 'GAME_SKIRMISH'
           && payload.loadingMap === true
           && payload.rankPoints === 7
-          && payload.mapName === 'Maps\\Smoke\\Skirmish.map'
-          && payload.pristineMapName === 'Maps\\Smoke\\Skirmish.map',
+          && payload.mapName === 'Maps\\MD_GLA03\\MD_GLA03.map'
+          && payload.pristineMapName === 'Maps\\MD_GLA03\\MD_GLA03.map',
         'GameLogic new-game runtime smoke did not prove startNewGame first-call deferral state');
-      expect(payload.runtimeBoundaries?.includes('deferred terrain/player/script load after archive-backed BlankWindow')
+      expect(payload.mapArchive === 'artifacts/real-assets/MapsZH.big'
+          && payload.mapArchiveLoaded === true
+          && payload.mapFileExists === true
+          && payload.terrainLoadMap === 'Maps\\MD_GLA03\\MD_GLA03.map'
+          && payload.terrainLoadReturned === true
+          && payload.terrainSourceFilename === 'Maps\\MD_GLA03\\MD_GLA03.map'
+          && payload.terrainVisualLoadCalled === true
+          && payload.terrainVisualLoadCalls === 1
+          && payload.terrainVisualLoadPath === 'Maps\\MD_GLA03\\MD_GLA03.map'
+          && payload.terrainMapObjects > 0
+          && payload.terrainWaypoints > 0
+          && payload.terrainSides > 0
+          && payload.terrainTeams > 0
+          && payload.terrainTimeOfDayNotified === true
+          && payload.terrainExtent?.hiX === 3800
+          && payload.terrainExtent?.hiY === 3800,
+        'GameLogic new-game runtime smoke did not prove original W3DTerrainLogic MD_GLA03 load ownership');
+      expect(payload.runtimeBoundaries?.includes('post-terrain side/player/script population after original W3DTerrainLogic::loadMap(false)')
           && !payload.runtimeBoundaries?.includes('focused in-memory BlankWindow layout adapter')
           && !payload.runtimeBoundaries?.includes('focused linker wrap for PlayerList::getNthPlayer before MSG_NEW_GAME switch')
+          && !payload.runtimeBoundaries?.includes('deferred terrain/player/script load after archive-backed BlankWindow')
           && !payload.runtimeBoundaries?.includes('shim GlobalData bridge')
           && !payload.runtimeBoundaries?.includes('focused Shell::hideShell')
           && !payload.runtimeBoundaries?.includes('focused ScriptEngine::setGlobalDifficulty'),
@@ -455,8 +474,13 @@ const steps = [
           && payload.originalOwners?.includes('HeaderTemplateManager empty template lookup')
           && payload.originalOwners?.includes('Shell::push seeded BlankWindow')
           && payload.originalOwners?.includes('GameWindowManager::winCreateLayout BlankWindow archive parse')
-          && payload.originalOwners?.includes('Shell::hideShell'),
-        'GameLogic new-game runtime smoke did not report original GlobalData/PlayerList/ScriptEngine/Shell/GameWindowManager ownership');
+          && payload.originalOwners?.includes('Shell::hideShell')
+          && payload.originalOwners?.includes('Win32BIGFileSystem MapsZH.big map archive')
+          && payload.originalOwners?.includes('W3DTerrainLogic::loadMap(false) MD_GLA03 map parse')
+          && payload.originalOwners?.includes('TerrainLogic::loadMap TerrainVisual::load handoff')
+          && payload.originalOwners?.includes('WorldHeightMap logical map-object list')
+          && payload.originalOwners?.includes('SidesList::ParseSidesDataChunk'),
+        'GameLogic new-game runtime smoke did not report original GlobalData/PlayerList/ScriptEngine/Shell/GameWindowManager/Terrain ownership');
     },
   },
 ];
@@ -489,13 +513,13 @@ console.log(JSON.stringify({
     'browser boot constructs original W3DParticleSystemManager, runs ParticleSystemManager::init() against Data\\INI\\ParticleSystem.ini, and proves shipped particle template lookups through the public manager API',
     'archive-backed startup mounts all shipped Object INI definitions and proves original W3DThingFactory parses representative unit templates through the real ThingFactory/INI path while the first unowned factory remains createFunctionLexicon',
     'source-pinned original GameLogic MSG_NEW_GAME dispatch frontier after CommandList handoff',
-    'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, and first-call startNewGame(FALSE) deferral',
+    'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, first-call startNewGame(FALSE) deferral, MapsZH.big MD_GLA03 promotion, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, and TerrainLogic->TerrainVisual load handoff',
   ],
   nextRequired: [
     'replace the remaining base FunctionLexicon callback owner groups, starting with non-network owners such as PopupReplay score-screen-dependent System/Update, QuitMenuSystem, ScoreScreen, and broader ControlBarSystem/LeftHUDInput callbacks only when their real owners are runtime-owned',
     'advance the next vertical startup path outside the already-proven shell menu slice',
     'advance the post-particle startup data stores toward createThingFactory once createFunctionLexicon is fully owned',
-    'continue deferred startNewGame into terrain/player/script map-load ownership now that base Window.big supplies the BlankWindow background',
+    'continue startNewGame after original terrain load into side/player/script population',
   ],
   sourceChecks: sourceResults.map(result => result.name),
   browserChecks: browserResults.map(result => result.name),

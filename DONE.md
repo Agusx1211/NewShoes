@@ -2120,6 +2120,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:vertical-integrations` reached the
       already-tracked `harness/runtime_archives_smoke.mjs` browser-stage hang
       after startup vertical passed and was manually interrupted.
+- [x] Advance the `MSG_NEW_GAME` runtime smoke from archive-backed
+      `BlankWindow` into the original terrain-load handoff. The smoke now uses
+      shipped `Maps\MD_GLA03\MD_GLA03.map` as the pending skirmish map, mounts
+      `MapsZH.big`, links original `SidesList.cpp` plus the W3D terrain
+      runtime, installs focused device-boundary owners for `GameClient` and
+      `TerrainVisual`, and calls original
+      `W3DTerrainLogic::loadMap(false)` on the promoted `GlobalData` map. The
+      runtime proves `WorldHeightMap` parsed 1907 map objects, 154 waypoints,
+      11 sides, 97 teams, time-of-day notification, the
+      `TerrainLogic::loadMap` -> `TerrainVisual::load` handoff, and the
+      `MD_GLA03` 3800x3800 extent. The boundary is now continuing
+      `startNewGame` after terrain load into side/player/script population.
+      Verified with
+      `cmake --build WebAssembly/build/wasm --target gamelogic-new-game-dispatch-smoke -j 4`,
+      `node dist/gamelogic-new-game-dispatch-smoke.cjs` from
+      `WebAssembly/`,
+      `npm --prefix WebAssembly run verify:gamelogic-new-game-dispatch-frontier`,
+      `npm --prefix WebAssembly run test:gamelogic-new-game-dispatch`, and
+      `npm --prefix WebAssembly run test:startup-vertical`. A bounded
+      `timeout 60s npm --prefix WebAssembly run test:vertical-integrations`
+      attempt reached `startup-vertical: ok` and then timed out at the
+      already-tracked `runtime-archives-startup-data` stage.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the

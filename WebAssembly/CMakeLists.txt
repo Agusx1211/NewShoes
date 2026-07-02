@@ -6297,6 +6297,7 @@ add_executable(gamelogic-new-game-dispatch-smoke
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ProcessAnimateWindow.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/Shell.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/ShellMenuScheme.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Map/SidesList.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/Scripts.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/ScriptEngine.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/AI/Squad.cpp"
@@ -6315,6 +6316,7 @@ target_compile_definitions(gamelogic-new-game-dispatch-smoke PRIVATE
 
 target_link_libraries(gamelogic-new-game-dispatch-smoke PRIVATE
   zh_gameclient_gui_input_runtime
+  zh_w3d_terrain_probe_runtime
 )
 
 target_include_directories(gamelogic-new-game-dispatch-smoke PRIVATE

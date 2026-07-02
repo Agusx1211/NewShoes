@@ -438,6 +438,19 @@ expect(
   /GUI\/HeaderTemplate\.cpp|GUI\\HeaderTemplate\.cpp/.test(runtimeTargetSources.block),
   "gamelogic-new-game-dispatch-smoke does not link original HeaderTemplate.cpp for archive layout parsing",
 );
+expect(
+  /Map\/SidesList\.cpp|Map\\SidesList\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original SidesList.cpp for shipped map side parsing",
+);
+const runtimeLinkLibraries = cmakeInvocationBlock(
+  cmake,
+  /target_link_libraries\s*\(\s*gamelogic-new-game-dispatch-smoke\b/,
+  "gamelogic-new-game-dispatch-smoke target_link_libraries",
+);
+expect(
+  /zh_w3d_terrain_probe_runtime/.test(runtimeLinkLibraries.block),
+  "gamelogic-new-game-dispatch-smoke does not link the W3D terrain runtime library",
+);
 const runtimeCompileDefinitions = cmakeInvocationBlock(
   cmake,
   /target_compile_definitions\s*\(\s*gamelogic-new-game-dispatch-smoke\b/,
@@ -496,7 +509,7 @@ const runtimePathLine = lineOf(
 );
 const runtimeSourceLine = lineOf(
   runtimeSmoke,
-  /GlobalData\.cpp\/FunctionLexicon\.cpp\/PlayerList\.cpp\/Player\.cpp\/GameLogic\.cpp\/GameLogicDispatch\.cpp\/GameState\.cpp\/ScriptEngine\.cpp\/Scripts\.cpp\/Shell\.cpp\/GameWindowManagerScript\.cpp\/HeaderTemplate\.cpp/,
+  /GlobalData\.cpp\/FunctionLexicon\.cpp\/PlayerList\.cpp\/Player\.cpp\/GameLogic\.cpp\/GameLogicDispatch\.cpp\/GameState\.cpp\/ScriptEngine\.cpp\/Scripts\.cpp\/Shell\.cpp\/GameWindowManagerScript\.cpp\/HeaderTemplate\.cpp\/TerrainLogic\.cpp\/W3DTerrainLogic\.cpp\/WorldHeightMap\.cpp\/TerrainVisual\.cpp\/SidesList\.cpp\/ThingFactory\.cpp/,
   "runtime smoke original source JSON",
 );
 const runtimeArchivePathLine = lineOf(
@@ -508,6 +521,16 @@ const runtimeArchiveLoadLine = lineOf(
   runtimeSmoke,
   /loadBigFilesFromDirectory\s*\(\s*archive_directory\s*,\s*archive_mask\s*\)/,
   "runtime smoke base Window.big load",
+);
+const runtimeMapsArchiveLoadLine = lineOf(
+  runtimeSmoke,
+  /loadBigFilesFromDirectory\s*\(\s*archive_directory\s*,\s*maps_archive_mask\s*\)/,
+  "runtime smoke MapsZH.big load",
+);
+const runtimePromotedMapLine = lineOf(
+  runtimeSmoke,
+  /global_data\.m_pendingFile\s*=\s*gameplay_map_path\s*;/,
+  "runtime smoke promoted shipped map assignment",
 );
 const runtimeBlankWindowExistsLine = lineOf(
   runtimeSmoke,
@@ -523,6 +546,26 @@ const runtimeArchiveBlankWindowProofLine = lineOf(
   runtimeSmoke,
   /g_prepare_blank_window_loaded_from_archive\s*&&[\s\S]*g_prepare_blank_window_root_ready/,
   "runtime smoke prepareNewGame archive-backed BlankWindow proof",
+);
+const runtimeTerrainLogicLine = lineOf(
+  runtimeSmoke,
+  /W3DTerrainLogic\s+terrain_logic\s*;/,
+  "runtime smoke original W3DTerrainLogic allocation",
+);
+const runtimeTerrainVisualLine = lineOf(
+  runtimeSmoke,
+  /SmokeTerrainVisual\s+terrain_visual\s*;/,
+  "runtime smoke TerrainVisual handoff owner",
+);
+const runtimeTerrainLoadLine = lineOf(
+  runtimeSmoke,
+  /terrain_logic\.loadMap\s*\(\s*global_data\.m_mapName\s*,\s*FALSE\s*\)/,
+  "runtime smoke original W3DTerrainLogic::loadMap(false) call",
+);
+const runtimeTerrainExtentLine = lineOf(
+  runtimeSmoke,
+  /terrain_extent_hi_x\s*==\s*3800\s*&&\s*terrain_extent_hi_y\s*==\s*3800/,
+  "runtime smoke MD_GLA03 terrain extent proof",
 );
 expect(
   !/__wrap__ZN10PlayerList12getNthPlayerEi/.test(runtimeSmoke),
@@ -699,15 +742,23 @@ console.log(JSON.stringify({
     originalShellCppLinked: true,
     originalGameWindowManagerScriptCppLinked: true,
     originalHeaderTemplateCppLinked: true,
+    originalSidesListCppLinked: true,
+    w3dTerrainRuntimeLinked: true,
     rawFilesystemForWindowBig: true,
     processCommandListLine: runtimeProcessCommandListLine,
     runtimePathLine,
     runtimeSourceLine,
     archivePathLine: runtimeArchivePathLine,
     archiveLoadLine: runtimeArchiveLoadLine,
+    mapsArchiveLoadLine: runtimeMapsArchiveLoadLine,
+    promotedMapLine: runtimePromotedMapLine,
     blankWindowExistsLine: runtimeBlankWindowExistsLine,
     winCreateLayoutDelegationLine: runtimeWinCreateLayoutDelegationLine,
     archiveBlankWindowProofLine: runtimeArchiveBlankWindowProofLine,
+    terrainLogicLine: runtimeTerrainLogicLine,
+    terrainVisualLine: runtimeTerrainVisualLine,
+    terrainLoadLine: runtimeTerrainLoadLine,
+    terrainExtentLine: runtimeTerrainExtentLine,
     playerListAllocationLine: runtimePlayerListLine,
     playerListSingletonLine: runtimePlayerListSingletonLine,
     playerListNeutralPlayerProofLine: runtimePlayerListProofLine,
@@ -736,9 +787,9 @@ console.log(JSON.stringify({
     "prepareNewGame owns original ScriptEngine difficulty, BlankWindow background, game-mode, pending-map, and original Shell::hideShell setup",
     "startNewGame(FALSE) records the pristine map and defers the first call before terrain load",
     "w3d-window-layout-script-smoke still uses a focused GameLogic shim and sentinel gameplay owners",
-    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp and calls GameLogic::processCommandList at runtime through original GlobalData, FunctionLexicon, PlayerList, ScriptEngine, Shell, and archive-backed BlankWindow ownership",
+    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/SidesList.cpp plus the W3D terrain runtime, then calls GameLogic::processCommandList at runtime through original GlobalData, FunctionLexicon, PlayerList, ScriptEngine, Shell, archive-backed BlankWindow ownership, MapsZH.big MD_GLA03 promotion, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, and TerrainLogic->TerrainVisual load handoff",
   ],
   nextRequired: [
-    "continue from the deferred startNewGame update into terrain, player, and script map-load ownership",
+    "continue startNewGame after original terrain load into side/player/script population",
   ],
 }, null, 2));

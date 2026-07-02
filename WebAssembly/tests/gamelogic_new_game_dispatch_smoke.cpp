@@ -1,9 +1,7 @@
 #include <iostream>
 #include <string>
 
-#define INSTANTIATE_WELL_KNOWN_KEYS
 #include "Common/WellKnownKeys.h"
-#undef INSTANTIATE_WELL_KNOWN_KEYS
 
 #include "Common/ArchiveFileSystem.h"
 #include "Common/FileSystem.h"
@@ -16,18 +14,25 @@
 #include "Common/MessageStream.h"
 #include "Common/NameKeyGenerator.h"
 #include "Common/PlayerList.h"
+#include "Common/ThingFactory.h"
 #include "GameClient/Display.h"
+#include "GameClient/GameClient.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/HeaderTemplate.h"
 #include "GameClient/Image.h"
+#include "GameClient/MapUtil.h"
 #include "GameClient/Shell.h"
 #include "GameClient/Snow.h"
+#include "GameClient/TerrainVisual.h"
 #include "GameClient/Water.h"
 #include "GameClient/WindowLayout.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/RankInfo.h"
 #include "GameLogic/ScriptEngine.h"
+#include "GameLogic/SidesList.h"
+#include "W3DDevice/GameClient/WorldHeightMap.h"
+#include "W3DDevice/GameLogic/W3DTerrainLogic.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
 
@@ -179,14 +184,135 @@ GameEngine *TheGameEngine = nullptr;
 GameSpyInfoInterface *TheGameSpyInfo = nullptr;
 IMEManagerInterface *TheIMEManager = nullptr;
 
+GameClient::GameClient()
+{
+	for (Int index = 0; index < MAX_CLIENT_TRANSLATORS; ++index) {
+		m_translators[index] = TRANSLATOR_ID_INVALID;
+	}
+	m_numTranslators = 0;
+	m_commandTranslator = nullptr;
+	m_frame = 0;
+	m_drawableList = nullptr;
+	m_drawableVector.clear();
+	m_nextDrawableID = static_cast<DrawableID>(1);
+	m_renderedObjectCount = 0;
+}
+
+GameClient::~GameClient()
+{
+}
+
+void GameClient::init()
+{
+}
+
+void GameClient::update()
+{
+}
+
+void GameClient::reset()
+{
+}
+
+DrawableID GameClient::allocDrawableID()
+{
+	DrawableID ret = m_nextDrawableID;
+	m_nextDrawableID = static_cast<DrawableID>(static_cast<UnsignedInt>(m_nextDrawableID) + 1);
+	return ret;
+}
+
+void GameClient::registerDrawable(Drawable *)
+{
+}
+
+void GameClient::addDrawableToLookupTable(Drawable *)
+{
+}
+
+void GameClient::removeDrawableFromLookupTable(Drawable *)
+{
+}
+
+GameMessage::Type GameClient::evaluateContextCommand(
+	Drawable *,
+	const Coord3D *,
+	CommandTranslator::CommandEvaluateType)
+{
+	return GameMessage::MSG_INVALID;
+}
+
+void GameClient::removeFromRayEffects(Drawable *)
+{
+}
+
+void GameClient::getRayEffectData(Drawable *, RayEffectData *)
+{
+}
+
+Bool GameClient::loadMap(AsciiString)
+{
+	return FALSE;
+}
+
+void GameClient::unloadMap(AsciiString)
+{
+}
+
+void GameClient::iterateDrawablesInRegion(Region3D *, GameClientFuncPtr, void *)
+{
+}
+
+void GameClient::destroyDrawable(Drawable *)
+{
+}
+
+void GameClient::setTimeOfDay(TimeOfDay)
+{
+}
+
+void GameClient::selectDrawablesInGroup(Int)
+{
+}
+
+void GameClient::assignSelectedDrawablesToGroup(Int)
+{
+}
+
+void GameClient::releaseShadows()
+{
+}
+
+void GameClient::allocateShadows()
+{
+}
+
+void GameClient::preloadAssets(TimeOfDay)
+{
+}
+
+void GameClient::crc(Xfer *)
+{
+}
+
+void GameClient::xfer(Xfer *)
+{
+}
+
+void GameClient::loadPostProcess()
+{
+}
+
 namespace {
 
 int g_blank_layout_creates = 0;
 int g_layout_shutdowns = 0;
 AsciiString g_last_layout_name;
 AsciiString g_blank_layout_archive_path;
+AsciiString g_map_archive_path;
 Bool g_blank_window_archive_loaded = FALSE;
 Bool g_blank_window_file_exists = FALSE;
+Bool g_map_archive_loaded = FALSE;
+Bool g_map_file_exists = FALSE;
 Bool g_seed_blank_window_loaded_from_archive = FALSE;
 Bool g_prepare_blank_window_loaded_from_archive = FALSE;
 Bool g_seed_blank_window_root_ready = FALSE;
@@ -216,6 +342,19 @@ std::string jsonEscape(const char *value)
 const char *jsonBool(Bool value)
 {
 	return value ? "true" : "false";
+}
+
+Int countMapObjects(Bool waypointsOnly)
+{
+	Int count = 0;
+	for (MapObject *map_object = MapObject::getFirstMapObject();
+			map_object != nullptr;
+			map_object = map_object->getNext()) {
+		if (!waypointsOnly || map_object->isWaypoint()) {
+			++count;
+		}
+	}
+	return count;
 }
 
 class SmokeGameEngine : public GameEngine
@@ -284,6 +423,120 @@ public:
 	void enableLetterBox(Bool enable) override { m_letterBoxEnabled = enable; }
 	Real getAverageFPS() override { return 0.0f; }
 	Int getLastFrameDrawCalls() override { return 0; }
+};
+
+class SmokeGameClient : public GameClient
+{
+public:
+	void init() override {}
+	void update() override {}
+	void reset() override {}
+	void createRayEffectByTemplate(const Coord3D *, const Coord3D *, const ThingTemplate *) override {}
+	void addScorch(const Coord3D *, Real, Scorches) override {}
+	Drawable *friend_createDrawable(const ThingTemplate *, DrawableStatus) override { return nullptr; }
+	void setTimeOfDay(TimeOfDay tod) override
+	{
+		m_timeOfDayNotified = TRUE;
+		m_notifiedTimeOfDay = tod;
+	}
+	void setTeamColor(Int, Int, Int) override {}
+	void adjustLOD(Int) override {}
+	void notifyTerrainObjectMoved(Object *) override {}
+
+	Bool timeOfDayNotified() const { return m_timeOfDayNotified; }
+	TimeOfDay notifiedTimeOfDay() const { return m_notifiedTimeOfDay; }
+
+protected:
+	void crc(Xfer *) override {}
+	void xfer(Xfer *) override {}
+	void loadPostProcess() override {}
+
+private:
+	Display *createGameDisplay() override { return nullptr; }
+	InGameUI *createInGameUI() override { return nullptr; }
+	GameWindowManager *createWindowManager() override { return nullptr; }
+	FontLibrary *createFontLibrary() override { return nullptr; }
+	DisplayStringManager *createDisplayStringManager() override { return nullptr; }
+	VideoPlayerInterface *createVideoPlayer() override { return nullptr; }
+	TerrainVisual *createTerrainVisual() override { return nullptr; }
+	Keyboard *createKeyboard() override { return nullptr; }
+	Mouse *createMouse() override { return nullptr; }
+	SnowManager *createSnowManager() override { return nullptr; }
+	void setFrameRate(Real) override {}
+
+	Bool m_timeOfDayNotified = FALSE;
+	TimeOfDay m_notifiedTimeOfDay = TIME_OF_DAY_INVALID;
+};
+
+class SmokeTerrainVisual : public TerrainVisual
+{
+public:
+	Bool load(AsciiString filename) override
+	{
+		++m_loadCalls;
+		m_lastLoad = filename;
+		return TerrainVisual::load(filename);
+	}
+
+	void getTerrainColorAt(Real, Real, RGBColor *color) override
+	{
+		if (color != nullptr) {
+			color->red = 0.0f;
+			color->green = 0.0f;
+			color->blue = 0.0f;
+		}
+	}
+	TerrainType *getTerrainTile(Real, Real) override { return nullptr; }
+	void enableWaterGrid(Bool) override {}
+	void setWaterGridHeightClamps(const WaterHandle *, Real, Real) override {}
+	void setWaterAttenuationFactors(const WaterHandle *, Real, Real, Real, Real) override {}
+	void setWaterTransform(const WaterHandle *, Real, Real, Real, Real) override {}
+	void setWaterTransform(const Matrix3D *) override {}
+	void getWaterTransform(const WaterHandle *, Matrix3D *) override {}
+	void setWaterGridResolution(const WaterHandle *, Real, Real, Real) override {}
+	void getWaterGridResolution(const WaterHandle *, Real *gridCellsX, Real *gridCellsY, Real *cellSize) override
+	{
+		if (gridCellsX != nullptr) {
+			*gridCellsX = 0.0f;
+		}
+		if (gridCellsY != nullptr) {
+			*gridCellsY = 0.0f;
+		}
+		if (cellSize != nullptr) {
+			*cellSize = 0.0f;
+		}
+	}
+	void changeWaterHeight(Real, Real, Real) override {}
+	void addWaterVelocity(Real, Real, Real, Real) override {}
+	Bool getWaterGridHeight(Real, Real, Real *height) override
+	{
+		if (height != nullptr) {
+			*height = 0.0f;
+		}
+		return FALSE;
+	}
+	void setTerrainTracksDetail() override {}
+	void setShoreLineDetail() override {}
+	void addFactionBib(Object *, Bool, Real) override {}
+	void removeFactionBib(Object *) override {}
+	void addFactionBibDrawable(Drawable *, Bool, Real) override {}
+	void removeFactionBibDrawable(Drawable *) override {}
+	void removeAllBibs() override {}
+	void removeBibHighlighting() override {}
+	void removeTreesAndPropsForConstruction(const Coord3D *, const GeometryInfo &, Real) override {}
+	void addProp(const ThingTemplate *, const Coord3D *, Real) override {}
+	void setRawMapHeight(const ICoord2D *, Int) override {}
+	Int getRawMapHeight(const ICoord2D *) override { return 0; }
+	void replaceSkyboxTextures(
+		const AsciiString *[NumSkyboxTextures],
+		const AsciiString *[NumSkyboxTextures]) override {}
+
+	Int loadCalls() const { return m_loadCalls; }
+	AsciiString lastLoad() const { return m_lastLoad; }
+
+private:
+	Int m_loadCalls = 0;
+	AsciiString m_lastLoad;
 };
 
 class SmokeGameWindow : public GameWindow
@@ -431,13 +684,16 @@ void GameSpyCloseAllOverlays()
 int main()
 {
 	const char *window_archive_path = "artifacts/real-assets/Window.big";
+	const char *maps_archive_path = "artifacts/real-assets/MapsZH.big";
+	const char *gameplay_map_path = "Maps\\MD_GLA03\\MD_GLA03.map";
 	AsciiString archive_directory("artifacts/real-assets/");
 	AsciiString archive_mask("Window.big");
+	AsciiString maps_archive_mask("MapsZH.big");
 
 	GlobalData global_data;
 	global_data.m_framesPerSecondLimit = 30;
 	global_data.m_mapName = "Maps\\Smoke\\Before.map";
-	global_data.m_pendingFile = "Maps\\Smoke\\Skirmish.map";
+	global_data.m_pendingFile = gameplay_map_path;
 	TheWritableGlobalData = &global_data;
 	if (!expect(TheGlobalData == &global_data,
 			"original GlobalData macro should read from TheWritableGlobalData")) {
@@ -473,6 +729,18 @@ int main()
 		file_system.doesFileExist("Window\\Menus\\BlankWindow.wnd");
 	if (!expect(g_blank_window_file_exists,
 			"base Window.big should expose Window\\Menus\\BlankWindow.wnd")) {
+		return 1;
+	}
+	g_map_archive_path = maps_archive_path;
+	g_map_archive_loaded =
+		archive_file_system.loadBigFilesFromDirectory(archive_directory, maps_archive_mask);
+	if (!expect(g_map_archive_loaded,
+			"Win32BIGFileSystem should load MapsZH.big for the promoted gameplay map")) {
+		return 1;
+	}
+	g_map_file_exists = file_system.doesFileExist(gameplay_map_path);
+	if (!expect(g_map_file_exists,
+			"MapsZH.big should expose Maps\\MD_GLA03\\MD_GLA03.map")) {
 		return 1;
 	}
 
@@ -581,7 +849,7 @@ int main()
 		"prepareNewGame should load the BlankWindow background from base Window.big") && ok;
 	ok = expect(logic->isInSkirmishGame(),
 		"prepareNewGame should switch GameLogic to GAME_SKIRMISH") && ok;
-	ok = expect(global_data.m_mapName == "Maps\\Smoke\\Skirmish.map"
+	ok = expect(global_data.m_mapName == gameplay_map_path
 			&& global_data.m_pendingFile.isEmpty(),
 		"prepareNewGame should promote pending map into GlobalData mapName") && ok;
 	ok = expect(shell->isShellActive() == FALSE
@@ -589,8 +857,8 @@ int main()
 		"prepareNewGame should drive original Shell::hideShell on the active shell layout") && ok;
 	ok = expect(game_engine.getFramesPerSecondLimit() == 55 && global_data.m_useFpsLimit == TRUE,
 		"MSG_NEW_GAME should apply the game-speed FPS limit") && ok;
-	ok = expect(game_state.getPristineMapName() == "Maps\\Smoke\\Skirmish.map",
-		"startNewGame(FALSE) should record the pristine map name") && ok;
+	ok = expect(game_state.getPristineMapName() == gameplay_map_path,
+		"startNewGame(FALSE) should record the shipped gameplay map as pristine") && ok;
 	ok = expect(logic->isLoadingMap(),
 		"first startNewGame(FALSE) call should enter loading-map state") && ok;
 	ok = expect(logic->getRankPointsToAddAtGameStart() == 7,
@@ -602,10 +870,56 @@ int main()
 		return 1;
 	}
 
+	MapCache map_cache;
+	ThingFactory thing_factory;
+	SidesList sides_list;
+	SmokeGameClient game_client;
+	SmokeTerrainVisual terrain_visual;
+	W3DTerrainLogic terrain_logic;
+	TheMapCache = &map_cache;
+	TheThingFactory = &thing_factory;
+	TheSidesList = &sides_list;
+	TheGameClient = &game_client;
+	TheTerrainVisual = &terrain_visual;
+	TheTerrainLogic = &terrain_logic;
+
+	WorldHeightMap::freeListOfMapObjects();
+	terrain_logic.init();
+	Bool terrain_load_returned = terrain_logic.loadMap(global_data.m_mapName, FALSE);
+	Region3D terrain_extent = {};
+	terrain_logic.getExtent(&terrain_extent);
+	const Int terrain_map_objects = countMapObjects(FALSE);
+	const Int terrain_waypoints = countMapObjects(TRUE);
+	const Int terrain_extent_hi_x = REAL_TO_INT_FLOOR(terrain_extent.hi.x + 0.5f);
+	const Int terrain_extent_hi_y = REAL_TO_INT_FLOOR(terrain_extent.hi.y + 0.5f);
+
+	ok = expect(terrain_load_returned,
+		"original W3DTerrainLogic::loadMap(false) should load the promoted shipped map") && ok;
+	ok = expect(terrain_logic.getSourceFilename() == gameplay_map_path,
+		"original TerrainLogic should retain the promoted map source filename") && ok;
+	ok = expect(terrain_visual.loadCalls() == 1
+			&& terrain_visual.lastLoad() == gameplay_map_path,
+		"original TerrainLogic::loadMap(false) should hand the shipped map to TerrainVisual::load") && ok;
+	ok = expect(terrain_map_objects > 0,
+		"original WorldHeightMap logical parse should populate map objects from the shipped map") && ok;
+	ok = expect(terrain_waypoints > 0,
+		"original TerrainLogic::loadMap should keep shipped map waypoint objects") && ok;
+	ok = expect(sides_list.getNumSides() > 0,
+		"original SidesList parser should populate map sides during terrain load") && ok;
+	ok = expect(game_client.timeOfDayNotified(),
+		"original W3DTerrainLogic::loadMap should notify GameClient of the map time of day") && ok;
+	ok = expect(terrain_extent_hi_x == 3800 && terrain_extent_hi_y == 3800,
+		"original W3DTerrainLogic should report the MD_GLA03 3800x3800 terrain extent") && ok;
+	WorldHeightMap::freeListOfMapObjects();
+
+	if (!ok) {
+		return 1;
+	}
+
 	std::cout
 		<< "{\"ok\":true,"
 		<< "\"path\":\"gamelogic-new-game-dispatch-runtime\","
-		<< "\"source\":\"GeneralsMD original GlobalData.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp\","
+		<< "\"source\":\"GeneralsMD original GlobalData.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp\","
 		<< "\"message\":\"MSG_NEW_GAME\","
 		<< "\"playerLookupIndex\":0,"
 		<< "\"playerCount\":" << player_list.getPlayerCount() << ","
@@ -615,6 +929,9 @@ int main()
 		<< "\"blankLayoutArchive\":\"" << jsonEscape(g_blank_layout_archive_path.str()) << "\","
 		<< "\"blankWindowArchiveLoaded\":" << jsonBool(g_blank_window_archive_loaded) << ","
 		<< "\"blankWindowFileExists\":" << jsonBool(g_blank_window_file_exists) << ","
+		<< "\"mapArchive\":\"" << jsonEscape(g_map_archive_path.str()) << "\","
+		<< "\"mapArchiveLoaded\":" << jsonBool(g_map_archive_loaded) << ","
+		<< "\"mapFileExists\":" << jsonBool(g_map_file_exists) << ","
 		<< "\"seedBlankWindowArchiveLayout\":" << jsonBool(g_seed_blank_window_loaded_from_archive) << ","
 		<< "\"prepareBlankWindowArchiveLayout\":" << jsonBool(g_prepare_blank_window_loaded_from_archive) << ","
 		<< "\"blankWindowRoot\":\"BlankWindow.wnd:BlankWindow\","
@@ -632,10 +949,28 @@ int main()
 		<< "\"rankPoints\":7,"
 		<< "\"mapName\":\"" << jsonEscape(global_data.m_mapName.str()) << "\","
 		<< "\"pristineMapName\":\"" << jsonEscape(game_state.getPristineMapName().str()) << "\","
+		<< "\"terrainLoadMap\":\"" << jsonEscape(global_data.m_mapName.str()) << "\","
+		<< "\"terrainLoadReturned\":" << jsonBool(terrain_load_returned) << ","
+		<< "\"terrainSourceFilename\":\"" << jsonEscape(terrain_logic.getSourceFilename().str()) << "\","
+		<< "\"terrainVisualLoadCalled\":" << jsonBool(terrain_visual.loadCalls() == 1) << ","
+		<< "\"terrainVisualLoadCalls\":" << terrain_visual.loadCalls() << ","
+		<< "\"terrainVisualLoadPath\":\"" << jsonEscape(terrain_visual.lastLoad().str()) << "\","
+		<< "\"terrainMapObjects\":" << terrain_map_objects << ","
+		<< "\"terrainWaypoints\":" << terrain_waypoints << ","
+		<< "\"terrainSides\":" << sides_list.getNumSides() << ","
+		<< "\"terrainTeams\":" << sides_list.getNumTeams() << ","
+		<< "\"terrainTimeOfDayNotified\":" << jsonBool(game_client.timeOfDayNotified()) << ","
+		<< "\"terrainTimeOfDay\":" << game_client.notifiedTimeOfDay() << ","
+		<< "\"terrainExtent\":{\"loX\":" << terrain_extent.lo.x
+		<< ",\"loY\":" << terrain_extent.lo.y
+		<< ",\"loZ\":" << terrain_extent.lo.z
+		<< ",\"hiX\":" << terrain_extent.hi.x
+		<< ",\"hiY\":" << terrain_extent.hi.y
+		<< ",\"hiZ\":" << terrain_extent.hi.z << "},"
 		<< "\"runtimeBoundaries\":["
-		<< "\"deferred terrain/player/script load after archive-backed BlankWindow\"],"
-		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\"],"
-		<< "\"nextRequired\":\"continue deferred startNewGame into terrain/player/script load\"}"
+		<< "\"post-terrain side/player/script population after original W3DTerrainLogic::loadMap(false)\"],"
+		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\",\"Win32BIGFileSystem MapsZH.big map archive\",\"W3DTerrainLogic::loadMap(false) MD_GLA03 map parse\",\"TerrainLogic::loadMap TerrainVisual::load handoff\",\"WorldHeightMap logical map-object list\",\"SidesList::ParseSidesDataChunk\"],"
+		<< "\"nextRequired\":\"continue startNewGame after original terrain load into side/player/script population\"}"
 		<< "\n";
 
 	return 0;
