@@ -2282,6 +2282,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       browser and now reports
       `base_function_lexicon_challenge_menu_runtime_owned` with
       `originalFunctionLexiconRemainingShellCallbacks` next.
+- [x] Promote the original `PopupCommunicator` callback owner into the linked
+      `cnc-port` base `FunctionLexicon`. `zh_window_layout_script_runtime` now
+      links original `GUI/GUICallbacks/Menus/PopupCommunicator.cpp`, and the
+      reduced wasm system/input/init/shutdown tables register
+      `PopupCommunicatorSystem`, `PopupCommunicatorInput`,
+      `PopupCommunicatorInit`, and `PopupCommunicatorShutdown`. Startup
+      vertical verifies those callback-name lookups in the browser and now
+      reports `base_function_lexicon_popup_communicator_runtime_owned` with
+      `originalFunctionLexiconRemainingShellCallbacks` next.
 ---
 
 ## M3 — File / data subsystem (real data)

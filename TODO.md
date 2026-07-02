@@ -61,9 +61,10 @@ flow below.
       plus `MainMenu`/`CreditsMenu`/`SkirmishGameOptionsMenu`/
       `SinglePlayerMenu` shell callback names, and original `ChallengeMenu`
       system/input/init/update/shutdown callbacks with original
-      `ChallengeGenerals` and `WindowVideoManager` ownership; the remaining
-      `FunctionLexicon` boundary is the rest of the non-network layout
-      callback graph);
+      `ChallengeGenerals` and `WindowVideoManager` ownership, plus original
+      `PopupCommunicator` system/input/init/shutdown callbacks; the remaining
+      `FunctionLexicon` boundary is the rest of the non-network layout callback
+      graph);
       archiveless or music-less boots honestly stay at line 434.
 - [ ] Own `createFunctionLexicon` (`W3DFunctionLexicon`, `GameEngine.cpp:446`)
       and then `createModuleFactory` (line 447) in the browser boot — the new
@@ -80,12 +81,13 @@ flow below.
       original `MainMenu`/`CreditsMenu`/
       `SkirmishGameOptionsMenu`/`SinglePlayerMenu`
       system/input/init/update/shutdown lookups plus original `ChallengeMenu`
-      system/input/init/update/shutdown lookups, but full ownership still needs
-      the remaining original base `FunctionLexicon.cpp` non-network layout
-      callback graph without pulling LAN/WOL/GameSpy/embedded-web menu
-      callbacks into `cnc-port`. Next promote the remaining non-network layout
-      callback owners in small groups while leaving online/download/embedded
-      web menus at explicit browser boundaries.
+      system/input/init/update/shutdown lookups and original
+      `PopupCommunicator` system/input/init/shutdown lookups, but full
+      ownership still needs the remaining original base `FunctionLexicon.cpp`
+      non-network layout callback graph without pulling LAN/WOL/GameSpy/
+      embedded-web menu callbacks into `cnc-port`. Next promote the remaining
+      non-network layout callback owners in small groups while leaving
+      online/download/embedded web menus at explicit browser boundaries.
       The real
       `W3DModuleFactory` + all 224 module registrations already link into
       `cnc-port` via `zh_gameengine_real_object_ini_runtime`, so lexicon/module

@@ -4035,6 +4035,7 @@ add_library(zh_window_layout_script_runtime STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/KeyboardOptionsMenu.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/MainMenu.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/ChallengeMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/PopupCommunicator.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/PopupReplay.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/SinglePlayerMenu.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/SkirmishGameOptionsMenu.cpp"
