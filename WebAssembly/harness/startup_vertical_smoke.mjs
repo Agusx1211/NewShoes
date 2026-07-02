@@ -679,12 +679,6 @@ try {
   console.error("[vertical] phase2 audio archives");
   const archives = await buildAudioOwnershipArchiveSpecs();
   const audioPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  audioPage.on("console", (msg) => {
-    const text = msg.text();
-    if (text.includes("cnc-port:") || text.includes("[wasm-harness]")) {
-      console.error("[audioPage]", text.slice(0, 220));
-    }
-  });
   await audioPage.goto(harnessUrl, { waitUntil: "networkidle" });
   await audioPage.waitForFunction(() => Boolean(window.CnCPort?.rpc));
 
