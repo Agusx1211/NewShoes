@@ -48,19 +48,25 @@ flow below.
       `Music.big`, and `openDevice()` through the browser MSS shim, so the
       archive-mounted frontier is now `createFunctionLexicon` at line 446
       (the linked runtime constructs `W3DFunctionLexicon`, proves its W3D
-      device draw/layout tables, and loads the non-network base GUI
-      system/input/tooltip/widget plus IME draw callback table; the remaining
-      `FunctionLexicon` boundary is the base layout callback graph);
+      device draw/layout tables, loads the non-network base GUI
+      system/input/tooltip/widget plus IME draw callback table, and registers
+      representative original base layout callbacks; the remaining
+      `FunctionLexicon` boundary is the shell layout callback graph);
       archiveless or music-less boots honestly stay at line 434.
 - [ ] Own `createFunctionLexicon` (`W3DFunctionLexicon`, `GameEngine.cpp:446`)
       and then `createModuleFactory` (line 447) in the browser boot — the new
       first unowned init factories now that `TheAudio` is owned. The current
       linked runtime constructs original `W3DFunctionLexicon` and verifies the
       W3D device draw/layout callback tables plus the non-network base GUI
-      system/input/tooltip/widget and IME draw callback table, but full
-      ownership still needs the remaining original base `FunctionLexicon.cpp`
+      system/input/tooltip/widget, IME draw, and representative original base
+      layout callback tables (`DifficultySelectInit`,
+      `KeyboardOptionsMenuUpdate`, `PopupReplayShutdown`), but full ownership
+      still needs the remaining original base `FunctionLexicon.cpp` shell
       layout callback graph without pulling LAN/WOL/GameSpy/embedded-web menu
-      callbacks into `cnc-port`.
+      callbacks into `cnc-port`. Start by promoting the non-network
+      `MainMenu`/`CreditsMenu`/`SkirmishGameOptionsMenu` callback owners that
+      the existing window-layout script smoke already proves, using real
+      runtime singleton ownership instead of smoke-local stubs.
       The real
       `W3DModuleFactory` + all 224 module registrations already link into
       `cnc-port` via `zh_gameengine_real_object_ini_runtime`, so lexicon/module

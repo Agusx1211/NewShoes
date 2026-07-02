@@ -262,9 +262,9 @@ function assertFunctionLexiconRuntimeFrontier(state) {
   const probe = state.functionLexiconRuntime;
   expect(probe?.attempted === true, "function lexicon runtime probe did not run", probe);
   expect(probe.ok === false, "function lexicon runtime should not claim full ownership yet", probe);
-  expect(probe.status === "base_function_lexicon_widget_draw_runtime_owned",
+  expect(probe.status === "base_function_lexicon_layout_partial_runtime_owned",
     "function lexicon runtime status mismatch", probe);
-  expect(probe.nextRequired === "originalFunctionLexiconLayoutCallbacks",
+  expect(probe.nextRequired === "originalFunctionLexiconShellLayoutCallbacks",
     "function lexicon runtime nextRequired mismatch", probe);
   expect(probe.constructed === true && probe.theFunctionLexiconOwned === true,
     "original W3DFunctionLexicon was not constructed as TheFunctionLexicon", probe);
@@ -279,8 +279,11 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.tables.gameWindowTooltip === true
       && probe.tables.gameWindowDraw === true
       && probe.tables.gameWindowDeviceDraw === true
-      && probe.tables.windowLayoutDeviceInit === true,
-    "FunctionLexicon widget/draw and W3D device tables should be loaded", probe.tables);
+      && probe.tables.windowLayoutDeviceInit === true
+      && probe.tables.windowLayoutInit === true
+      && probe.tables.windowLayoutUpdate === true
+      && probe.tables.windowLayoutShutdown === true,
+    "FunctionLexicon widget/draw, representative layout, and W3D device tables should be loaded", probe.tables);
   expect(probe.lookups?.passMessagesToParentSystem === true
       && probe.lookups.passSelectedButtonsToParentSystem === true
       && probe.lookups.gameWindowDefaultSystem === true
@@ -314,14 +317,13 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.gameWindowDefaultTooltip === true
       && probe.lookups.imeCandidateMainDraw === true
       && probe.lookups.imeCandidateTextAreaDraw === true
+      && probe.lookups.difficultySelectInit === true
+      && probe.lookups.keyboardOptionsMenuUpdate === true
+      && probe.lookups.popupReplayShutdown === true
       && probe.lookups.w3dGadgetPushButtonDraw === true
       && probe.lookups.w3dGameWindowDefaultDraw === true
       && probe.lookups.w3dMainMenuInit === true,
-    "FunctionLexicon widget/draw/W3D callback lookups did not resolve", probe.lookups);
-  expect(probe.tables.windowLayoutInit === false
-      && probe.tables.windowLayoutUpdate === false
-      && probe.tables.windowLayoutShutdown === false,
-    "base FunctionLexicon layout tables should still expose the remaining boundary", probe.tables);
+    "FunctionLexicon widget/draw/layout/W3D callback lookups did not resolve", probe.lookups);
 }
 
 function assertAudioOwnedFrontier(state) {
@@ -358,11 +360,11 @@ function assertAudioOwnedFrontier(state) {
       && frontier.audioManagerRuntime.tornDown === true,
     "frontier audioManagerRuntime summary mismatch", frontier.audioManagerRuntime);
   expect(frontier.functionLexiconRuntime?.ready === false
-      && frontier.functionLexiconRuntime.status === "base_function_lexicon_widget_draw_runtime_owned"
+      && frontier.functionLexiconRuntime.status === "base_function_lexicon_layout_partial_runtime_owned"
       && frontier.functionLexiconRuntime.w3dDeviceDrawReady === true
       && frontier.functionLexiconRuntime.w3dLayoutInitReady === true
       && frontier.functionLexiconRuntime.messageBoxSystemReady === true
-      && frontier.functionLexiconRuntime.nextRequired === "originalFunctionLexiconLayoutCallbacks",
+      && frontier.functionLexiconRuntime.nextRequired === "originalFunctionLexiconShellLayoutCallbacks",
     "frontier functionLexiconRuntime summary mismatch", frontier.functionLexiconRuntime);
   expect(startup.browserDeviceLayer?.functionLexicon === false,
     "browser device layer should not mark the full function lexicon runtime-owned", startup.browserDeviceLayer);
@@ -543,9 +545,10 @@ try {
   // Archive-backed boot: mount the startup + audio archive set and prove the
   // boot constructs the original MilesAudioManager and W3DFunctionLexicon,
   // runs the real AudioManager::init()/openDevice() path plus the original
-  // W3DFunctionLexicon device-table load, and honestly keeps the
-  // device-factory frontier at createFunctionLexicon until the base
-  // FunctionLexicon callback graph is owned by cnc-port.
+  // W3DFunctionLexicon device-table load, representative original base
+  // layout callbacks, and honestly keeps the device-factory frontier at
+  // createFunctionLexicon until the remaining shell callback graph is owned
+  // by cnc-port.
   const archives = await buildAudioOwnershipArchiveSpecs();
   const audioPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   await audioPage.goto(harnessUrl, { waitUntil: "networkidle" });

@@ -26,6 +26,8 @@
 #define EMSCRIPTEN_KEEPALIVE
 #endif
 
+extern void PopupReplayShutdown(WindowLayout *layout, void *userData);
+
 namespace {
 
 FunctionLexiconRuntimeProbeResult g_function_lexicon_state;
@@ -212,6 +214,15 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.ime_candidate_text_area_draw_lookup =
 		TheFunctionLexicon->gameWinDrawFunc(
 			key_for("IMECandidateTextAreaDraw")) == IMECandidateTextAreaDraw;
+	result.difficulty_select_init_lookup =
+		TheFunctionLexicon->winLayoutInitFunc(
+			key_for("DifficultySelectInit")) == DifficultySelectInit;
+	result.keyboard_options_menu_update_lookup =
+		TheFunctionLexicon->winLayoutUpdateFunc(
+			key_for("KeyboardOptionsMenuUpdate")) == KeyboardOptionsMenuUpdate;
+	result.popup_replay_shutdown_lookup =
+		TheFunctionLexicon->winLayoutShutdownFunc(
+			key_for("PopupReplayShutdown")) == PopupReplayShutdown;
 	result.w3d_gadget_push_button_draw_lookup =
 		TheFunctionLexicon->gameWinDrawFunc(
 			key_for("W3DGadgetPushButtonDraw")) == W3DGadgetPushButtonDraw;
@@ -309,9 +320,24 @@ bool base_widget_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &res
 		result.ime_candidate_text_area_draw_lookup;
 }
 
+bool base_layout_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
+{
+	return result.difficulty_select_init_lookup &&
+		result.keyboard_options_menu_update_lookup &&
+		result.popup_replay_shutdown_lookup;
+}
+
+bool base_layout_callback_graph_ready(const FunctionLexiconRuntimeProbeResult &)
+{
+	// The linked runtime currently proves representative non-network layout
+	// callbacks. Full ownership requires the remaining shell layout graph.
+	return false;
+}
+
 bool lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 {
 	return base_widget_lookup_state_ready(result) &&
+		base_layout_lookup_state_ready(result) &&
 		device_lookup_state_ready(result);
 }
 
@@ -388,6 +414,16 @@ void finish_status(FunctionLexiconRuntimeProbeResult &result)
 	if (!base_layout_table_state_ready(result)) {
 		result.status = "base_function_lexicon_widget_draw_runtime_owned";
 		result.next_required = "originalFunctionLexiconLayoutCallbacks";
+		return;
+	}
+	if (!base_layout_lookup_state_ready(result)) {
+		result.status = "base_function_lexicon_layout_tables_runtime_owned";
+		result.next_required = "originalFunctionLexiconRepresentativeLayoutCallbacks";
+		return;
+	}
+	if (!base_layout_callback_graph_ready(result)) {
+		result.status = "base_function_lexicon_layout_partial_runtime_owned";
+		result.next_required = "originalFunctionLexiconShellLayoutCallbacks";
 		return;
 	}
 	if (!base_table_state_ready(result)) {
@@ -525,7 +561,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 	const std::string next_required_json = json_escape(state.next_required);
 	const std::string init_error_json = json_escape(state.init_error);
 
-	static char json[8192];
+	static char json[10000];
 	std::snprintf(json, sizeof(json),
 		"{\"attempted\":%s,\"ok\":%s,\"source\":\"%s\","
 		"\"status\":\"%s\",\"nextRequired\":\"%s\","
@@ -578,6 +614,9 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"gameWindowDefaultTooltip\":%s,"
 		"\"imeCandidateMainDraw\":%s,"
 		"\"imeCandidateTextAreaDraw\":%s,"
+		"\"difficultySelectInit\":%s,"
+		"\"keyboardOptionsMenuUpdate\":%s,"
+		"\"popupReplayShutdown\":%s,"
 		"\"w3dGadgetPushButtonDraw\":%s,"
 		"\"w3dGameWindowDefaultDraw\":%s,"
 		"\"w3dMainMenuInit\":%s}}",
@@ -640,6 +679,9 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.game_window_default_tooltip_lookup),
 		json_bool(state.ime_candidate_main_draw_lookup),
 		json_bool(state.ime_candidate_text_area_draw_lookup),
+		json_bool(state.difficulty_select_init_lookup),
+		json_bool(state.keyboard_options_menu_update_lookup),
+		json_bool(state.popup_replay_shutdown_lookup),
 		json_bool(state.w3d_gadget_push_button_draw_lookup),
 		json_bool(state.w3d_game_window_default_draw_lookup),
 		json_bool(state.w3d_main_menu_init_lookup));

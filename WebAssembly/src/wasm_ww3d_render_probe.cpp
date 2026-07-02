@@ -77,6 +77,7 @@
 #endif
 
 Bool parseLayoutBlock(File *inFile, char *buffer, UnsignedInt version, WindowLayoutInfo *info);
+extern void PopupReplayShutdown(WindowLayout *layout, void *userData);
 extern const Char *g_csfFile;
 
 using WindowLayoutScriptRuntimeAnchor =
@@ -234,6 +235,21 @@ FunctionLexicon::TableEntry runtimeBaseDrawTable[] = {
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
+FunctionLexicon::TableEntry runtimeBaseLayoutInitTable[] = {
+	{ NAMEKEY_INVALID, "DifficultySelectInit", DifficultySelectInit },
+	{ NAMEKEY_INVALID, nullptr, nullptr },
+};
+
+FunctionLexicon::TableEntry runtimeBaseLayoutUpdateTable[] = {
+	{ NAMEKEY_INVALID, "KeyboardOptionsMenuUpdate", KeyboardOptionsMenuUpdate },
+	{ NAMEKEY_INVALID, nullptr, nullptr },
+};
+
+FunctionLexicon::TableEntry runtimeBaseLayoutShutdownTable[] = {
+	{ NAMEKEY_INVALID, "PopupReplayShutdown", PopupReplayShutdown },
+	{ NAMEKEY_INVALID, nullptr, nullptr },
+};
+
 } // namespace
 
 FunctionLexicon::FunctionLexicon()
@@ -251,6 +267,9 @@ void FunctionLexicon::init()
 	loadTable(runtimeBaseInputTable, TABLE_GAME_WIN_INPUT);
 	loadTable(runtimeBaseTooltipTable, TABLE_GAME_WIN_TOOLTIP);
 	loadTable(runtimeBaseDrawTable, TABLE_GAME_WIN_DRAW);
+	loadTable(runtimeBaseLayoutInitTable, TABLE_WIN_LAYOUT_INIT);
+	loadTable(runtimeBaseLayoutUpdateTable, TABLE_WIN_LAYOUT_UPDATE);
+	loadTable(runtimeBaseLayoutShutdownTable, TABLE_WIN_LAYOUT_SHUTDOWN);
 }
 
 void FunctionLexicon::reset()

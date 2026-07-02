@@ -82,6 +82,9 @@ struct FunctionLexiconRuntimeProbeResult
 	bool game_window_default_tooltip_lookup = false;
 	bool ime_candidate_main_draw_lookup = false;
 	bool ime_candidate_text_area_draw_lookup = false;
+	bool difficulty_select_init_lookup = false;
+	bool keyboard_options_menu_update_lookup = false;
+	bool popup_replay_shutdown_lookup = false;
 	bool w3d_gadget_push_button_draw_lookup = false;
 	bool w3d_game_window_default_draw_lookup = false;
 	bool w3d_main_menu_init_lookup = false;

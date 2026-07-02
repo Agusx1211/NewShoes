@@ -2172,6 +2172,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `originalFunctionLexiconLayoutCallbacks` next. `GameWinBlockInput`
       remains deferred until `SelectionTranslator` is runtime-owned, so the
       line-446 frontier stays honest.
+- [x] Move the linked `cnc-port` base `FunctionLexicon` layout frontier from
+      empty tables to representative original callback ownership:
+      `zh_window_layout_script_runtime` now links the original
+      `DifficultySelect.cpp`, `KeyboardOptionsMenu.cpp`, and `PopupReplay.cpp`,
+      and the reduced wasm `FunctionLexicon::init()` registers
+      `DifficultySelectInit`, `KeyboardOptionsMenuUpdate`, and
+      `PopupReplayShutdown` in the base layout init/update/shutdown tables.
+      The startup vertical verifies those callback-name lookups plus table
+      residency and now reports
+      `base_function_lexicon_layout_partial_runtime_owned` with
+      `originalFunctionLexiconShellLayoutCallbacks` next, keeping
+      `createFunctionLexicon`@446 unowned until the remaining non-network
+      shell callback graph is linked into the runtime.
 ---
 
 ## M3 — File / data subsystem (real data)
