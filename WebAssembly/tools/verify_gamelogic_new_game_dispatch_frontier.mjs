@@ -18,6 +18,8 @@ const paths = {
   gameLogic: "GeneralsMD/Code/GameEngine/Source/GameLogic/System/GameLogic.cpp",
   gameLogicDispatch:
     "GeneralsMD/Code/GameEngine/Source/GameLogic/System/GameLogicDispatch.cpp",
+  w3dBridgeBuffer:
+    "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DBridgeBuffer.cpp",
   shellSmoke: "WebAssembly/tests/w3d_window_layout_script_smoke.cpp",
   runtimeSmoke: "WebAssembly/tests/gamelogic_new_game_dispatch_smoke.cpp",
   gameLogicShim: "WebAssembly/shims/GameLogic/GameLogic.h",
@@ -145,6 +147,7 @@ function expect(condition, message) {
 const messageStream = readRepoText(paths.messageStream);
 const gameLogic = readRepoText(paths.gameLogic);
 const gameLogicDispatch = readRepoText(paths.gameLogicDispatch);
+const w3dBridgeBuffer = readRepoText(paths.w3dBridgeBuffer);
 const shellSmoke = readRepoText(paths.shellSmoke);
 const runtimeSmoke = readRepoText(paths.runtimeSmoke);
 const gameLogicShim = readRepoText(paths.gameLogicShim);
@@ -868,6 +871,61 @@ const runtimeTerrainNewMapProofLine = lineOf(
   /terrain_road_buffer_update_buffers[\s\S]*terrain_water_grid_calls_after_new_map\s*==\s*terrain_water_grid_calls_before_new_map\s*\+\s*1[\s\S]*nearlyEqual\s*\(\s*first_waypoint_location_after_new_map\.z\s*,\s*first_waypoint_ground_height_after_new_map/,
   "runtime smoke original W3DTerrainLogic::newMap road-buffer and TerrainLogic waypoint/water proof",
 );
+const bridgeGpuDeferralHookLine = lineOf(
+  w3dBridgeBuffer,
+  /extern\s+"C"\s+Bool\s+cnc_port_w3d_bridge_buffer_defer_gpu_buffers\s*\(\s*void\s*\)\s*__attribute__\s*\(\s*\(\s*weak\s*\)\s*\)/,
+  "W3DBridgeBuffer optional Emscripten GPU-buffer deferral hook",
+);
+const bridgeGpuDefaultAllocationLine = lineOf(
+  w3dBridgeBuffer,
+  /if\s*\(\s*!shouldDeferBridgeGpuBuffers\s*\(\s*\)\s*\)\s*\{\s*allocateBridgeBuffers\s*\(\s*\)\s*;/,
+  "W3DBridgeBuffer default real GPU-buffer allocation",
+);
+const runtimeBridgeBufferHookLine = lineOf(
+  runtimeSmoke,
+  /extern\s+"C"\s+bool\s+cnc_port_w3d_bridge_buffer_defer_gpu_buffers\s*\(\s*void\s*\)[\s\S]*return\s+true\s*;/,
+  "runtime smoke opts into deferred W3DBridgeBuffer GPU buffers",
+);
+const runtimeBridgeBufferClassLine = lineOf(
+  runtimeSmoke,
+  /class\s+SmokeW3DBridgeBuffer\s*:\s*public\s+W3DBridgeBuffer/,
+  "runtime smoke W3DBridgeBuffer test accessor",
+);
+const runtimeBridgeBufferInstallLine = lineOf(
+  runtimeSmoke,
+  /m_bridgeBuffer\s*=\s*new\s+SmokeW3DBridgeBuffer\s*;/,
+  "runtime smoke installs original W3DBridgeBuffer owner",
+);
+const runtimeBridgeBufferProofLine = lineOf(
+  runtimeSmoke,
+  /terrain_bridge_buffer_installed[\s\S]*terrain_bridge_buffer_initialized[\s\S]*terrain_bridge_point1_objects\s*==\s*0[\s\S]*terrain_bridge_buffer_bridges_after_new_map\s*==\s*terrain_bridge_point1_objects[\s\S]*terrain_bridge_buffer_vertices_after_new_map\s*==\s*0[\s\S]*terrain_bridge_buffer_indices_after_new_map\s*==\s*0[\s\S]*terrain_logic_bridges_after_new_map\s*==\s*terrain_bridge_point1_objects[\s\S]*terrain_bridge_damage_states_changed_after_new_map/,
+  "runtime smoke original W3DBridgeBuffer::loadBridges empty-map scan proof",
+);
+const runtimePathfinderNewMapLine = lineOf(
+  runtimeSmoke,
+  /pathfinder->newMap\s*\(\s*\)\s*;/,
+  "runtime smoke direct original Pathfinder::newMap call",
+);
+const runtimePathfinderProofLine = lineOf(
+  runtimeSmoke,
+  /pathfinder_expected_extent_x\s*>\s*0[\s\S]*pathfinder_new_map_called[\s\S]*pathfinder_extent_x_after_new_map\s*==\s*pathfinder_expected_extent_x[\s\S]*pathfinder_extent_y_after_new_map\s*==\s*pathfinder_expected_extent_y[\s\S]*pathfinder_center_ground_cell_ready/,
+  "runtime smoke original Pathfinder::newMap grid proof",
+);
+const runtimeBridgeOriginalOwnerLine = lineOf(
+  runtimeSmoke,
+  /W3DBridgeBuffer::loadBridges empty MD_GLA03 bridge scan/,
+  "runtime smoke W3DBridgeBuffer original-owner JSON",
+);
+const runtimePathfinderOriginalOwnerLine = lineOf(
+  runtimeSmoke,
+  /Pathfinder::newMap terrain grid allocation\/classification/,
+  "runtime smoke Pathfinder original-owner JSON",
+);
+const runtimeBridgeBoundaryLine = lineOf(
+  runtimeSmoke,
+  /bridge-like map object spawning remains focused ThingFactory\/Object ownership boundary after direct no-bridge W3DBridgeBuffer scan and Pathfinder::newMap grid proof/,
+  "runtime smoke next bridge-like map-object boundary JSON",
+);
 const runtimeAiLine = lineOf(
   runtimeSmoke,
   /AI\s+ai\s*;/,
@@ -1091,6 +1149,22 @@ console.log(JSON.stringify({
     terrainRenderAttachLine: runtimeTerrainRenderAttachLine,
     terrainNewMapLine: runtimeTerrainNewMapLine,
     terrainNewMapProofLine: runtimeTerrainNewMapProofLine,
+    bridgeBuffer: {
+      source: paths.w3dBridgeBuffer,
+      gpuDeferralHookLine: bridgeGpuDeferralHookLine,
+      defaultGpuAllocationLine: bridgeGpuDefaultAllocationLine,
+      smokeDeferralHookLine: runtimeBridgeBufferHookLine,
+      accessorClassLine: runtimeBridgeBufferClassLine,
+      installLine: runtimeBridgeBufferInstallLine,
+      loadBridgesProofLine: runtimeBridgeBufferProofLine,
+      originalOwnerLine: runtimeBridgeOriginalOwnerLine,
+      boundaryLine: runtimeBridgeBoundaryLine,
+    },
+    pathfinder: {
+      newMapLine: runtimePathfinderNewMapLine,
+      gridProofLine: runtimePathfinderProofLine,
+      originalOwnerLine: runtimePathfinderOriginalOwnerLine,
+    },
     aiLine: runtimeAiLine,
     rankInfoStoreLine: runtimeRankInfoStoreLine,
     noFocusedPlayerLookupWrap: true,
@@ -1117,9 +1191,9 @@ console.log(JSON.stringify({
     "prepareNewGame owns original ScriptEngine difficulty, BlankWindow background, game-mode, pending-map, and original Shell::hideShell setup",
     "startNewGame(FALSE) records the pristine map and defers the first call before terrain load",
     "w3d-window-layout-script-smoke still uses a focused GameLogic shim and sentinel gameplay owners",
-    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/FunctionLexicon.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/TerrainTypes.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainRoads.cpp/SidesList.cpp plus the W3D terrain runtime and original DX8Wrapper/RenderObj support, then calls GameLogic::processCommandList at runtime through original GlobalData, FunctionLexicon, PlayerList, ScriptEngine, Shell, archive-backed BlankWindow ownership, MapsZH.big MD_GLA03 promotion, original default and Zero Hour startup INI/GameData parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, TeamFactory::initFromSides, PlayerList::newGame, AIPlayer construction, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, GhostObjectManager local-player index/reset, TerrainRoadCollection/TerrainTypeCollection render-map setup, and original W3DTerrainLogic::newMap road-buffer handoff plus TerrainLogic waypoint/water setup",
+    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/FunctionLexicon.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/TerrainTypes.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainRoads.cpp/SidesList.cpp plus the W3D terrain runtime and original DX8Wrapper/RenderObj support, then calls GameLogic::processCommandList at runtime through original GlobalData, FunctionLexicon, PlayerList, ScriptEngine, Shell, archive-backed BlankWindow ownership, MapsZH.big MD_GLA03 promotion, original default and Zero Hour startup INI/GameData parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, TeamFactory::initFromSides, PlayerList::newGame, AIPlayer construction, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, GhostObjectManager local-player index/reset, TerrainRoadCollection/TerrainTypeCollection render-map setup, original W3DTerrainLogic::newMap road-buffer and W3DBridgeBuffer::loadBridges handoff, TerrainLogic waypoint/water setup, and original Pathfinder::newMap grid allocation/classification",
   ],
   nextRequired: [
-    "continue startNewGame after W3DTerrainLogic::newMap road-buffer handoff into W3DBridgeBuffer::loadBridges GenericBridge object creation, TerrainLogic bridge/map object spawning, and pathfinder newMap",
+    "promote the original post-terrain bridge-like map-object spawning loop that sits before Pathfinder::newMap, then replace the direct no-bridge pathfinder proof with the original ordered startNewGame sequence",
   ],
 }, null, 2));

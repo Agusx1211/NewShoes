@@ -99,6 +99,21 @@ static ShaderClass detailShader(SC_ALPHA_MIRROR);
 
 #define NO_USE_BRIDGE_NORMALS
 
+#ifdef __EMSCRIPTEN__
+extern "C" Bool cnc_port_w3d_bridge_buffer_defer_gpu_buffers(void) __attribute__((weak));
+
+static Bool shouldDeferBridgeGpuBuffers(void)
+{
+	return cnc_port_w3d_bridge_buffer_defer_gpu_buffers != NULL &&
+		cnc_port_w3d_bridge_buffer_defer_gpu_buffers();
+}
+#else
+static Bool shouldDeferBridgeGpuBuffers(void)
+{
+	return false;
+}
+#endif
+
 //-----------------------------------------------------------------------------
 //         Private Classes                                               
 //-----------------------------------------------------------------------------
@@ -749,7 +764,9 @@ W3DBridgeBuffer::W3DBridgeBuffer(void)
 	m_curNumBridgeVertices=0;
 	m_curNumBridgeIndices=0;
 	clearAllBridges();
-	allocateBridgeBuffers();
+	if (!shouldDeferBridgeGpuBuffers()) {
+		allocateBridgeBuffers();
+	}
 	m_initialized = true;
 }
 
@@ -1206,5 +1223,4 @@ void W3DBridgeBuffer::drawBridges(CameraClass * camera, Bool wireframe, TextureC
 		W3DShaderManager::resetShader(W3DShaderManager::ST_SHROUD_TEXTURE);
 	}
 }
-
 

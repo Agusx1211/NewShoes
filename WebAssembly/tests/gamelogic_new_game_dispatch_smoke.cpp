@@ -40,6 +40,7 @@
 #include "GameClient/Water.h"
 #include "GameClient/WindowLayout.h"
 #include "GameLogic/AI.h"
+#include "GameLogic/AIPathfind.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/GhostObject.h"
 #include "GameLogic/PartitionManager.h"
@@ -49,6 +50,7 @@
 #include "GameLogic/SidesList.h"
 #include "GameLogic/VictoryConditions.h"
 #include "W3DDevice/GameClient/BaseHeightMap.h"
+#include "W3DDevice/GameClient/W3DBridgeBuffer.h"
 #include "W3DDevice/GameClient/WorldHeightMap.h"
 #include "W3DDevice/GameLogic/W3DTerrainLogic.h"
 #include "W3DDevice/GameClient/W3DRoadBuffer.h"
@@ -436,6 +438,17 @@ Int countMapObjectsWithFlag(Int flag)
 	return count;
 }
 
+Int countLogicBridges(const TerrainLogic &terrain_logic)
+{
+	Int count = 0;
+	for (Bridge *bridge = terrain_logic.getFirstBridge();
+			bridge != nullptr;
+			bridge = bridge->getNext()) {
+		++count;
+	}
+	return count;
+}
+
 Int countScriptsInList(ScriptList *script_list)
 {
 	if (script_list == nullptr) {
@@ -727,6 +740,15 @@ public:
 	void capSegmentsForLogicHandoff() { m_maxRoadSegments = 0; }
 };
 
+class SmokeW3DBridgeBuffer : public W3DBridgeBuffer
+{
+public:
+	Bool initialized() const { return m_initialized; }
+	Int bridgeCount() const { return m_numBridges; }
+	Int bridgeVertexCount() const { return m_curNumBridgeVertices; }
+	Int bridgeIndexCount() const { return m_curNumBridgeIndices; }
+};
+
 class SmokeTerrainRenderObject : public BaseHeightMapRenderObjClass
 {
 public:
@@ -739,6 +761,7 @@ public:
 		m_roadBuffer = new SmokeW3DRoadBuffer;
 		static_cast<SmokeW3DRoadBuffer *>(m_roadBuffer)->capSegmentsForLogicHandoff();
 #endif
+		m_bridgeBuffer = new SmokeW3DBridgeBuffer;
 	}
 
 	~SmokeTerrainRenderObject() override
@@ -827,6 +850,34 @@ public:
 	}
 
 	Bool bridgeBufferInstalled() const { return m_bridgeBuffer != nullptr; }
+
+	Bool bridgeBufferInitialized() const
+	{
+		const SmokeW3DBridgeBuffer *bridge_buffer =
+			static_cast<const SmokeW3DBridgeBuffer *>(m_bridgeBuffer);
+		return bridge_buffer != nullptr && bridge_buffer->initialized();
+	}
+
+	Int bridgeCount() const
+	{
+		const SmokeW3DBridgeBuffer *bridge_buffer =
+			static_cast<const SmokeW3DBridgeBuffer *>(m_bridgeBuffer);
+		return bridge_buffer != nullptr ? bridge_buffer->bridgeCount() : 0;
+	}
+
+	Int bridgeVertexCount() const
+	{
+		const SmokeW3DBridgeBuffer *bridge_buffer =
+			static_cast<const SmokeW3DBridgeBuffer *>(m_bridgeBuffer);
+		return bridge_buffer != nullptr ? bridge_buffer->bridgeVertexCount() : 0;
+	}
+
+	Int bridgeIndexCount() const
+	{
+		const SmokeW3DBridgeBuffer *bridge_buffer =
+			static_cast<const SmokeW3DBridgeBuffer *>(m_bridgeBuffer);
+		return bridge_buffer != nullptr ? bridge_buffer->bridgeIndexCount() : 0;
+	}
 
 	void Render(RenderInfoClass &) override {}
 	void doPartialUpdate(const IRegion2D &, WorldHeightMap *, RefRenderObjListIterator *) override {}
@@ -1125,6 +1176,11 @@ void GameSpyCloseAllOverlays()
 extern "C" bool cnc_port_terrain_probe_shroud_enabled(void)
 {
 	return false;
+}
+
+extern "C" bool cnc_port_w3d_bridge_buffer_defer_gpu_buffers(void)
+{
+	return true;
 }
 
 int main()
@@ -1555,7 +1611,12 @@ int main()
 	const Bool terrain_road_buffer_map_attached = terrain_render_object->roadBufferMapAttached();
 	const Int terrain_road_segment_capacity = terrain_render_object->roadSegmentCapacity();
 	const Bool terrain_bridge_buffer_installed = terrain_render_object->bridgeBufferInstalled();
+	const Bool terrain_bridge_buffer_initialized = terrain_render_object->bridgeBufferInitialized();
 	const Int terrain_road_segments_before_new_map = terrain_render_object->roadSegments();
+	const Int terrain_bridge_buffer_bridges_before_new_map = terrain_render_object->bridgeCount();
+	const Int terrain_logic_bridges_before_new_map = countLogicBridges(terrain_logic);
+	const Bool terrain_bridge_damage_states_changed_before_new_map =
+		terrain_logic.anyBridgesDamageStatesChanged();
 	const Int terrain_water_grid_calls_before_new_map = terrain_visual.waterGridEnableCalls();
 	Waypoint *first_waypoint_before_new_map = terrain_logic.getFirstWaypoint();
 	Coord3D first_waypoint_location_before_new_map = {};
@@ -1582,8 +1643,45 @@ int main()
 			: 0.0f;
 	const Int terrain_road_segments_after_new_map = terrain_render_object->roadSegments();
 	const Bool terrain_road_buffer_update_buffers = terrain_render_object->roadBufferUpdateBuffers();
+	const Int terrain_bridge_buffer_bridges_after_new_map = terrain_render_object->bridgeCount();
+	const Int terrain_bridge_buffer_vertices_after_new_map =
+		terrain_render_object->bridgeVertexCount();
+	const Int terrain_bridge_buffer_indices_after_new_map =
+		terrain_render_object->bridgeIndexCount();
+	const Int terrain_logic_bridges_after_new_map = countLogicBridges(terrain_logic);
+	const Bool terrain_bridge_damage_states_changed_after_new_map =
+		terrain_logic.anyBridgesDamageStatesChanged();
 	const Int terrain_water_grid_calls_after_new_map = terrain_visual.waterGridEnableCalls();
 	const Bool terrain_water_grid_last_enable = terrain_visual.lastWaterGridEnable();
+	Region3D pathfinder_expected_extent_region = {};
+	terrain_logic.getMaximumPathfindExtent(&pathfinder_expected_extent_region);
+	const Int pathfinder_expected_extent_x =
+		REAL_TO_INT_FLOOR(pathfinder_expected_extent_region.hi.x / PATHFIND_CELL_SIZE_F) - 1;
+	const Int pathfinder_expected_extent_y =
+		REAL_TO_INT_FLOOR(pathfinder_expected_extent_region.hi.y / PATHFIND_CELL_SIZE_F) - 1;
+	Pathfinder *pathfinder = TheAI != nullptr ? TheAI->pathfinder() : nullptr;
+	Bool pathfinder_new_map_called = FALSE;
+	if (terrain_new_map_called && pathfinder != nullptr) {
+		pathfinder->newMap();
+		pathfinder_new_map_called = TRUE;
+	}
+	const ICoord2D *pathfinder_extent_after_new_map =
+		pathfinder != nullptr ? pathfinder->getExtent() : nullptr;
+	const Int pathfinder_extent_x_after_new_map =
+		pathfinder_extent_after_new_map != nullptr ? pathfinder_extent_after_new_map->x : -1;
+	const Int pathfinder_extent_y_after_new_map =
+		pathfinder_extent_after_new_map != nullptr ? pathfinder_extent_after_new_map->y : -1;
+	const Int pathfinder_center_cell_x = pathfinder_expected_extent_x / 2;
+	const Int pathfinder_center_cell_y = pathfinder_expected_extent_y / 2;
+	PathfindCell *pathfinder_center_ground_cell =
+		pathfinder_new_map_called
+			? pathfinder->getCell(
+				LAYER_GROUND,
+				pathfinder_center_cell_x,
+				pathfinder_center_cell_y)
+			: nullptr;
+	const Bool pathfinder_center_ground_cell_ready =
+		pathfinder_center_ground_cell != nullptr;
 	if (TheTerrainRenderObject == terrain_render_object) {
 		TheTerrainRenderObject = nullptr;
 	}
@@ -1670,10 +1768,21 @@ int main()
 			&& terrain_road_buffer_initialized
 			&& terrain_road_buffer_map_attached
 			&& terrain_road_segment_capacity == 0
-			&& !terrain_bridge_buffer_installed
+			&& terrain_bridge_buffer_installed
+			&& terrain_bridge_buffer_initialized
 			&& terrain_new_map_called
 			&& terrain_road_segments_after_new_map >= terrain_road_segments_before_new_map
 			&& terrain_road_buffer_update_buffers
+			&& terrain_bridge_buffer_bridges_before_new_map == 0
+			&& terrain_logic_bridges_before_new_map == 0
+			&& !terrain_bridge_damage_states_changed_before_new_map
+			&& terrain_bridge_point1_objects == 0
+			&& terrain_bridge_point1_objects == terrain_bridge_point2_objects
+			&& terrain_bridge_buffer_bridges_after_new_map == terrain_bridge_point1_objects
+			&& terrain_bridge_buffer_vertices_after_new_map == 0
+			&& terrain_bridge_buffer_indices_after_new_map == 0
+			&& terrain_logic_bridges_after_new_map == terrain_bridge_point1_objects
+			&& terrain_bridge_damage_states_changed_after_new_map
 			&& terrain_water_grid_calls_after_new_map == terrain_water_grid_calls_before_new_map + 1
 			&& terrain_water_grid_last_enable == terrain_waveguide_waypoint_present
 			&& first_waypoint_after_new_map != nullptr
@@ -1681,7 +1790,15 @@ int main()
 				first_waypoint_location_after_new_map.z,
 				first_waypoint_ground_height_after_new_map,
 				0.001f),
-		"original W3DTerrainLogic::newMap should hand the loaded map to the BaseHeightMap road loader and run TerrainLogic waypoint/water setup") && ok;
+		"original W3DTerrainLogic::newMap should hand the loaded map to BaseHeightMap road/bridge loaders and run TerrainLogic waypoint/water setup") && ok;
+	ok = expect(pathfinder != nullptr
+			&& pathfinder_expected_extent_x > 0
+			&& pathfinder_expected_extent_y > 0
+			&& pathfinder_new_map_called
+			&& pathfinder_extent_x_after_new_map == pathfinder_expected_extent_x
+			&& pathfinder_extent_y_after_new_map == pathfinder_expected_extent_y
+			&& pathfinder_center_ground_cell_ready,
+		"original Pathfinder::newMap should allocate and classify the loaded terrain grid after terrain newMap") && ok;
 	WorldHeightMap::freeListOfMapObjects();
 
 	if (!ok) {
@@ -1833,6 +1950,15 @@ int main()
 		<< "\"terrainRoadSegmentsAfterNewMap\":" << terrain_road_segments_after_new_map << ","
 		<< "\"terrainRoadBufferUpdateBuffers\":" << jsonBool(terrain_road_buffer_update_buffers) << ","
 		<< "\"terrainBridgeBufferInstalled\":" << jsonBool(terrain_bridge_buffer_installed) << ","
+		<< "\"terrainBridgeBufferInitialized\":" << jsonBool(terrain_bridge_buffer_initialized) << ","
+		<< "\"terrainBridgeBufferBridgesBeforeNewMap\":" << terrain_bridge_buffer_bridges_before_new_map << ","
+		<< "\"terrainBridgeBufferBridgesAfterNewMap\":" << terrain_bridge_buffer_bridges_after_new_map << ","
+		<< "\"terrainBridgeBufferVerticesAfterNewMap\":" << terrain_bridge_buffer_vertices_after_new_map << ","
+		<< "\"terrainBridgeBufferIndicesAfterNewMap\":" << terrain_bridge_buffer_indices_after_new_map << ","
+		<< "\"terrainLogicBridgesBeforeNewMap\":" << terrain_logic_bridges_before_new_map << ","
+		<< "\"terrainLogicBridgesAfterNewMap\":" << terrain_logic_bridges_after_new_map << ","
+		<< "\"terrainBridgeDamageStatesChangedBeforeNewMap\":" << jsonBool(terrain_bridge_damage_states_changed_before_new_map) << ","
+		<< "\"terrainBridgeDamageStatesChangedAfterNewMap\":" << jsonBool(terrain_bridge_damage_states_changed_after_new_map) << ","
 		<< "\"terrainNewMapCalled\":" << jsonBool(terrain_new_map_called) << ","
 		<< "\"terrainWaveGuideWaypointPresent\":" << jsonBool(terrain_waveguide_waypoint_present) << ","
 		<< "\"terrainWaterGridCallsBeforeNewMap\":" << terrain_water_grid_calls_before_new_map << ","
@@ -1841,12 +1967,21 @@ int main()
 		<< "\"terrainFirstWaypointZBeforeNewMap\":" << first_waypoint_location_before_new_map.z << ","
 		<< "\"terrainFirstWaypointZAfterNewMap\":" << first_waypoint_location_after_new_map.z << ","
 		<< "\"terrainFirstWaypointGroundHeightAfterNewMap\":" << first_waypoint_ground_height_after_new_map << ","
+		<< "\"pathfinderOwned\":" << jsonBool(pathfinder != nullptr) << ","
+		<< "\"pathfinderNewMapCalled\":" << jsonBool(pathfinder_new_map_called) << ","
+		<< "\"pathfinderExpectedExtentX\":" << pathfinder_expected_extent_x << ","
+		<< "\"pathfinderExpectedExtentY\":" << pathfinder_expected_extent_y << ","
+		<< "\"pathfinderExtentXAfterNewMap\":" << pathfinder_extent_x_after_new_map << ","
+		<< "\"pathfinderExtentYAfterNewMap\":" << pathfinder_extent_y_after_new_map << ","
+		<< "\"pathfinderCenterCellX\":" << pathfinder_center_cell_x << ","
+		<< "\"pathfinderCenterCellY\":" << pathfinder_center_cell_y << ","
+		<< "\"pathfinderCenterGroundCellReady\":" << jsonBool(pathfinder_center_ground_cell_ready) << ","
 		<< "\"runtimeBoundaries\":["
 		<< "\"InGameUI client-quiet remains focused UI boundary\","
 		<< "\"OptionPreferences user preference getters remain focused non-network browser preference boundary\","
-		<< "\"W3DBridgeBuffer::loadBridges GenericBridge object creation and map object spawning after original W3DTerrainLogic::newMap road-buffer handoff\"],"
-		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\",\"Win32BIGFileSystem MapsZH.big map archive\",\"Win32BIGFileSystem INIZH.big and INI.big startup data archives\",\"INI::load Default/GameData.ini, GameData.ini, Multiplayer.ini, Science.ini, AIData.ini, and PlayerTemplate.ini\",\"GlobalData::parseGameDataDefinition production partition cell size\",\"WeaponBonusSet::parseWeaponBonusSetPtr GameData parser\",\"MultiplayerSettings shipped color table\",\"ScienceStore shipped science table\",\"AI shipped AIData table\",\"PlayerTemplateStore shipped player templates\",\"W3DTerrainLogic::loadMap(false) MD_GLA03 map parse\",\"TerrainLogic::loadMap TerrainVisual::load handoff\",\"WorldHeightMap logical map-object list\",\"SidesList::ParseSidesDataChunk\",\"SidesList::validateSides\",\"AIPlayer construction for non-human sides\",\"TeamFactory::reset/initFromSides\",\"PlayerList::newGame side population\",\"ScriptEngine::newMap side script scan\",\"Radar::newMap terrain extent and LeftHUD ownership\",\"GameLogic width/height from terrain extent\",\"PartitionManager::init loaded-map cell grid\",\"PartitionManager::refreshShroudForLocalPlayer display/radar shroud refresh\",\"GhostObjectManager local-player index and reset\",\"TerrainTypeCollection empty texture-class lookup for render heightmap parsing\",\"TerrainRoadCollection empty road table for W3DTerrainLogic::newMap road-buffer handoff\",\"W3DTerrainLogic::newMap road-buffer handoff and TerrainLogic waypoint/water setup\"],"
-		<< "\"nextRequired\":\"continue startNewGame after W3DTerrainLogic::newMap road-buffer handoff into W3DBridgeBuffer::loadBridges GenericBridge object creation, TerrainLogic bridge/map object spawning, and pathfinder newMap\"}"
+		<< "\"bridge-like map object spawning remains focused ThingFactory/Object ownership boundary after direct no-bridge W3DBridgeBuffer scan and Pathfinder::newMap grid proof\"],"
+		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\",\"Win32BIGFileSystem MapsZH.big map archive\",\"Win32BIGFileSystem INIZH.big and INI.big startup data archives\",\"INI::load Default/GameData.ini, GameData.ini, Multiplayer.ini, Science.ini, AIData.ini, and PlayerTemplate.ini\",\"GlobalData::parseGameDataDefinition production partition cell size\",\"WeaponBonusSet::parseWeaponBonusSetPtr GameData parser\",\"MultiplayerSettings shipped color table\",\"ScienceStore shipped science table\",\"AI shipped AIData table\",\"PlayerTemplateStore shipped player templates\",\"W3DTerrainLogic::loadMap(false) MD_GLA03 map parse\",\"TerrainLogic::loadMap TerrainVisual::load handoff\",\"WorldHeightMap logical map-object list\",\"SidesList::ParseSidesDataChunk\",\"SidesList::validateSides\",\"AIPlayer construction for non-human sides\",\"TeamFactory::reset/initFromSides\",\"PlayerList::newGame side population\",\"ScriptEngine::newMap side script scan\",\"Radar::newMap terrain extent and LeftHUD ownership\",\"GameLogic width/height from terrain extent\",\"PartitionManager::init loaded-map cell grid\",\"PartitionManager::refreshShroudForLocalPlayer display/radar shroud refresh\",\"GhostObjectManager local-player index and reset\",\"TerrainTypeCollection empty texture-class lookup for render heightmap parsing\",\"TerrainRoadCollection empty road table for W3DTerrainLogic::newMap road-buffer handoff\",\"W3DTerrainLogic::newMap road-buffer handoff and TerrainLogic waypoint/water setup\",\"W3DBridgeBuffer::loadBridges empty MD_GLA03 bridge scan\",\"Pathfinder::newMap terrain grid allocation/classification\"],"
+		<< "\"nextRequired\":\"promote the original post-terrain bridge-like map-object spawning loop that sits before Pathfinder::newMap, then replace the direct no-bridge pathfinder proof with the original ordered startNewGame sequence\"}"
 		<< "\n";
 
 	return 0;

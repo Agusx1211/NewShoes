@@ -137,6 +137,12 @@ const sourceChecks = [
           && payload.runtimeTargetBoundary?.originalShellCppLinked === true
           && payload.runtimeTargetBoundary?.originalDisplayCppLinked === true,
         'GameLogic new-game dispatch frontier did not prove the focused original runtime target with GlobalData/PlayerList/ScriptEngine/Shell ownership');
+      expect(payload.runtimeTargetBoundary?.bridgeBuffer?.smokeDeferralHookLine > 0
+          && payload.runtimeTargetBoundary.bridgeBuffer.installLine > 0
+          && payload.runtimeTargetBoundary.bridgeBuffer.loadBridgesProofLine > 0
+          && payload.runtimeTargetBoundary?.pathfinder?.newMapLine > 0
+          && payload.runtimeTargetBoundary.pathfinder.gridProofLine > 0,
+        'GameLogic new-game dispatch frontier did not prove startup W3DBridgeBuffer and Pathfinder::newMap ownership');
       expect(payload.runtimeTargetBoundary?.globalDataWritableSingletonLine > 0
           && payload.runtimeTargetBoundary?.globalDataMacroProofLine > 0
           && payload.runtimeTargetBoundary?.noLocalTheGlobalDataSingleton === true,
@@ -480,7 +486,7 @@ const steps = [
           && payload.terrainWaypoints > 0
           && payload.terrainRoadPoint1Objects > 0
           && payload.terrainRoadPoint2Objects === payload.terrainRoadPoint1Objects
-          && payload.terrainBridgePoint1Objects >= 0
+          && payload.terrainBridgePoint1Objects === 0
           && payload.terrainBridgePoint2Objects === payload.terrainBridgePoint1Objects
           && payload.terrainSides === 11
           && payload.terrainTeams === 97
@@ -544,18 +550,34 @@ const steps = [
           && payload.terrainRoadSegmentCapacity === 0
           && payload.terrainRoadSegmentsAfterNewMap >= payload.terrainRoadSegmentsBeforeNewMap
           && payload.terrainRoadBufferUpdateBuffers === true
-          && payload.terrainBridgeBufferInstalled === false
+          && payload.terrainBridgeBufferInstalled === true
+          && payload.terrainBridgeBufferInitialized === true
+          && payload.terrainBridgeBufferBridgesBeforeNewMap === 0
+          && payload.terrainBridgeBufferBridgesAfterNewMap === payload.terrainBridgePoint1Objects
+          && payload.terrainBridgeBufferVerticesAfterNewMap === 0
+          && payload.terrainBridgeBufferIndicesAfterNewMap === 0
+          && payload.terrainLogicBridgesBeforeNewMap === 0
+          && payload.terrainLogicBridgesAfterNewMap === payload.terrainBridgePoint1Objects
+          && payload.terrainBridgeDamageStatesChangedBeforeNewMap === false
+          && payload.terrainBridgeDamageStatesChangedAfterNewMap === true
           && payload.terrainNewMapCalled === true
           && payload.terrainWaterGridCallsAfterNewMap === payload.terrainWaterGridCallsBeforeNewMap + 1
           && payload.terrainWaterGridLastEnable === payload.terrainWaveGuideWaypointPresent
           && Math.abs(payload.terrainFirstWaypointZAfterNewMap - payload.terrainFirstWaypointGroundHeightAfterNewMap) < 0.001
           && payload.terrainTimeOfDayNotified === true
           && payload.terrainExtent?.hiX === 3800
-          && payload.terrainExtent?.hiY === 3800,
-        'GameLogic new-game runtime smoke did not prove original W3DTerrainLogic/INI/player/script/Radar/Partition/GhostObject/newMap MD_GLA03 load ownership');
+          && payload.terrainExtent?.hiY === 3800
+          && payload.pathfinderOwned === true
+          && payload.pathfinderNewMapCalled === true
+          && payload.pathfinderExpectedExtentX > 0
+          && payload.pathfinderExpectedExtentY > 0
+          && payload.pathfinderExtentXAfterNewMap === payload.pathfinderExpectedExtentX
+          && payload.pathfinderExtentYAfterNewMap === payload.pathfinderExpectedExtentY
+          && payload.pathfinderCenterGroundCellReady === true,
+        'GameLogic new-game runtime smoke did not prove original W3DTerrainLogic/INI/player/script/Radar/Partition/GhostObject/W3DBridgeBuffer/Pathfinder MD_GLA03 load ownership');
       expect(payload.runtimeBoundaries?.includes('InGameUI client-quiet remains focused UI boundary')
           && payload.runtimeBoundaries?.includes('OptionPreferences user preference getters remain focused non-network browser preference boundary')
-          && payload.runtimeBoundaries?.includes('W3DBridgeBuffer::loadBridges GenericBridge object creation and map object spawning after original W3DTerrainLogic::newMap road-buffer handoff')
+          && payload.runtimeBoundaries?.includes('bridge-like map object spawning remains focused ThingFactory/Object ownership boundary after direct no-bridge W3DBridgeBuffer scan and Pathfinder::newMap grid proof')
           && !payload.runtimeBoundaries?.includes('focused in-memory BlankWindow layout adapter')
           && !payload.runtimeBoundaries?.includes('focused linker wrap for PlayerList::getNthPlayer before MSG_NEW_GAME switch')
           && !payload.runtimeBoundaries?.includes('deferred terrain/player/script load after archive-backed BlankWindow')
@@ -595,7 +617,9 @@ const steps = [
           && payload.originalOwners?.includes('GhostObjectManager local-player index and reset')
           && payload.originalOwners?.includes('TerrainTypeCollection empty texture-class lookup for render heightmap parsing')
           && payload.originalOwners?.includes('TerrainRoadCollection empty road table for W3DTerrainLogic::newMap road-buffer handoff')
-          && payload.originalOwners?.includes('W3DTerrainLogic::newMap road-buffer handoff and TerrainLogic waypoint/water setup'),
+          && payload.originalOwners?.includes('W3DTerrainLogic::newMap road-buffer handoff and TerrainLogic waypoint/water setup')
+          && payload.originalOwners?.includes('W3DBridgeBuffer::loadBridges empty MD_GLA03 bridge scan')
+          && payload.originalOwners?.includes('Pathfinder::newMap terrain grid allocation/classification'),
         'GameLogic new-game runtime smoke did not report original GlobalData/INI/AI/PlayerList/ScriptEngine/Shell/GameWindowManager/Terrain/Partition ownership');
     },
   },
@@ -629,13 +653,13 @@ console.log(JSON.stringify({
     'browser boot constructs original W3DParticleSystemManager, runs ParticleSystemManager::init() against Data\\INI\\ParticleSystem.ini, and proves shipped particle template lookups through the public manager API',
     'archive-backed startup mounts all shipped Object INI definitions and proves original W3DThingFactory parses representative unit templates through the real ThingFactory/INI path while the first unowned factory remains createFunctionLexicon',
     'source-pinned original GameLogic MSG_NEW_GAME dispatch frontier after CommandList handoff',
-    'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, first-call startNewGame(FALSE) deferral, MapsZH.big MD_GLA03 promotion, INIZH/INI startup data plus default and Zero Hour GameData.ini parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, AIPlayer construction, TeamFactory::initFromSides, PlayerList::newGame, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, GhostObjectManager local-player index/reset, TerrainRoadCollection/TerrainTypeCollection render-map setup, and original W3DTerrainLogic::newMap road-buffer handoff plus TerrainLogic waypoint/water setup',
+    'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, first-call startNewGame(FALSE) deferral, MapsZH.big MD_GLA03 promotion, INIZH/INI startup data plus default and Zero Hour GameData.ini parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, AIPlayer construction, TeamFactory::initFromSides, PlayerList::newGame, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, GhostObjectManager local-player index/reset, TerrainRoadCollection/TerrainTypeCollection render-map setup, original W3DTerrainLogic::newMap road-buffer and W3DBridgeBuffer::loadBridges handoff, TerrainLogic waypoint/water setup, and original Pathfinder::newMap grid allocation/classification',
   ],
   nextRequired: [
     'replace the remaining base FunctionLexicon callback owner groups, starting with non-network owners such as PopupReplay score-screen-dependent System/Update, QuitMenuSystem, ScoreScreen, and broader ControlBarSystem/LeftHUDInput callbacks only when their real owners are runtime-owned',
     'advance the next vertical startup path outside the already-proven shell menu slice',
     'advance the post-particle startup data stores toward createThingFactory once createFunctionLexicon is fully owned',
-    'continue startNewGame after W3DTerrainLogic::newMap road-buffer handoff into W3DBridgeBuffer::loadBridges GenericBridge object creation, TerrainLogic bridge/map object spawning, and pathfinder newMap',
+    'promote the original post-terrain bridge-like map-object spawning loop that sits before Pathfinder::newMap, then replace the direct no-bridge pathfinder proof with the original ordered startNewGame sequence',
   ],
   sourceChecks: sourceResults.map(result => result.name),
   browserChecks: browserResults.map(result => result.name),

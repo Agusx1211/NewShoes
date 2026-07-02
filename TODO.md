@@ -1243,10 +1243,19 @@ flow below.
       against a real `BaseHeightMapRenderObjClass` owner with original
       `TerrainTypes.cpp`, `TerrainRoads.cpp`, `DX8Wrapper.cpp`, `rendobj.cpp`,
       and save/load support linked, proving the road-buffer handoff plus base
-      `TerrainLogic::newMap` waypoint Z and water-grid setup. Next continue
-      after that road-buffer handoff into `W3DBridgeBuffer::loadBridges`
-      `GenericBridge` object creation, bridge/map object spawning, and
-      `Pathfinder::newMap`.
+      `TerrainLogic::newMap` waypoint Z and water-grid setup. It now also
+      installs the original `W3DBridgeBuffer` in the startup runtime with
+      startup-only deferred GPU buffer allocation, proves the empty
+      `MD_GLA03` `W3DBridgeBuffer::loadBridges` scan and bridge damage-state
+      update, then directly calls original `Pathfinder::newMap` to prove the
+      loaded terrain grid allocation/classification. Next promote the original
+      post-terrain bridge-like map-object spawning loop that sits before
+      `Pathfinder::newMap`, then replace the direct no-bridge pathfinder proof
+      with the original ordered `startNewGame` sequence.
+- [ ] Retire the startup-only `W3DBridgeBuffer` GPU-buffer deferral hook once
+      `gamelogic-new-game-dispatch-smoke` either runs with a browser/WebGL-backed
+      D3D8 device or promotes bridge rendering/buffer allocation into the same
+      runtime instead of proving only the no-bridge map scan in Node.
 - [ ] Retire the handoff-only road segment cap in
       `gamelogic-new-game-dispatch-smoke` once this startup runtime can own
       full road/bridge map-object spawning or render-owned road geometry

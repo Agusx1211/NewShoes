@@ -2232,6 +2232,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       focused wasm build, direct `dist/gamelogic-new-game-dispatch-smoke.cjs`
       from `WebAssembly/`, `test:gamelogic-new-game-dispatch`, and
       `test:startup-vertical`.
+- [x] Continue the startup `W3DTerrainLogic::newMap(FALSE)` handoff through
+      original `W3DBridgeBuffer::loadBridges` and a direct original
+      `Pathfinder::newMap` grid proof. `gamelogic-new-game-dispatch-smoke`
+      now installs a real `W3DBridgeBuffer` on the focused
+      `BaseHeightMapRenderObjClass` owner, with an Emscripten-only weak port
+      hook that lets the Node startup smoke defer bridge GPU vertex/index
+      allocation while the browser bridge scene keeps the default real
+      allocation path. The runtime proves `MD_GLA03` has zero bridge marker
+      pairs, the bridge buffer and `TerrainLogic` bridge lists stay empty, the
+      original bridge damage-state update is reached, and original
+      `Pathfinder::newMap` allocates/classifies the loaded 379x379 terrain
+      grid with a readable center ground cell. The frontier now advances to
+      the original bridge-like map-object spawning loop that sits before
+      `Pathfinder::newMap`; that loop must be promoted before replacing the
+      direct no-bridge pathfinder proof with the original ordered
+      `startNewGame` sequence. Verified with
+      `verify:gamelogic-new-game-dispatch-frontier`,
+      `test:gamelogic-new-game-dispatch`, and `test:startup-vertical`.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the
