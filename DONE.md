@@ -3977,6 +3977,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       state driver instead of faking it with direct body health changes.
       Verified with
       `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
+- [x] Move the retained `GenericBridge` clamp proof onto the original
+      `Object::attemptDamage` body path. The focused object runtime now routes
+      `Object::attemptDamage`, `Object::attemptHealing`, and `Object::estimateDamage`
+      to the object's `BodyModuleInterface` instead of returning no-ops, and the
+      bridge-buffer scene constructs a normal `DamageInfo` for the shipped
+      `GenericBridge`. The browser harness now requires
+      `bridgeLogicAttemptDamageInvoked === true`,
+      `bridgeLogicAttemptDamageActualDealt > 0`,
+      `bridgeLogicAttemptDamageActualClipped === 0`, and pristine body,
+      retained `TerrainLogic`, and draw-buffer bridge damage state after
+      `TerrainLogic::updateBridgeDamageStates`, proving the original
+      `ImmortalBody` damage accounting is reached without faking a damaged
+      bridge state. Verified with
+      `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
 	- [x] Feed the focused terrain road and bridge adjunct buffers from the
 	      original logical terrain map-object list. The road and bridge scene probes
 	      now call original `W3DTerrainLogic::loadMap(query=true)` against

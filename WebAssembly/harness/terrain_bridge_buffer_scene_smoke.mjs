@@ -619,7 +619,7 @@ try {
   if (!result.ok
       || result.command !== "ww3dTerrainBridgeBufferScene"
       || result.probe?.source !== "ww3d_terrain_bridge_buffer_scene_probe"
-      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> TerrainLogic::addBridgeToLogic/updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay"
+      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> TerrainLogic::addBridgeToLogic -> Object::attemptDamage(GenericBridge) -> TerrainLogic::updateBridgeDamageStates/updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay"
       || result.probe?.results?.runtimeAssetSystemInstalled !== true
       || result.probe?.results?.modelsFileExists !== true
       || result.probe?.results?.meshFileExists !== true
@@ -652,15 +652,19 @@ try {
       || result.probe?.results?.bridgeLogicFirstBodyDamageStateAfterSeed !== BODY_PRISTINE
       || result.probe?.results?.bridgeLogicFirstBodyHealthAfterSeed !== 1
       || result.probe?.results?.bridgeLogicFirstBodyMaxHealthAfterSeed !== 1
-      || result.probe?.results?.bridgeLogicDamageStateSetToDamaged !== false
-      || result.probe?.results?.bridgeLogicBodyDamageStateAfterDamageSet !== BODY_PRISTINE
-      || result.probe?.results?.bridgeLogicBodyHealthAfterDamageSet !== 1
-      || result.probe?.results?.bridgeLogicBodyMaxHealthAfterDamageSet !== 1
-      || result.probe?.results?.bridgeLogicDamageStateAfterDamageUpdate !== BODY_PRISTINE
-      || result.probe?.results?.bridgeLogicDamageStateChangedAfterDamageUpdate !== false
-      || result.probe?.results?.bridgeLogicBrokenAfterDamageUpdate !== false
-      || result.probe?.results?.bridgeLogicRepairedAfterDamageUpdate !== false
-      || result.probe?.results?.bridgeDrawFirstDamageStateAfterDamageScene !== BODY_PRISTINE
+      || result.probe?.results?.bridgeLogicAttemptDamageInvoked !== true
+      || result.probe?.results?.bridgeLogicAttemptDamageChangedState !== false
+      || result.probe?.results?.bridgeLogicAttemptDamageActualDealt <= 0
+      || result.probe?.results?.bridgeLogicAttemptDamageActualClipped !== 0
+      || result.probe?.results?.bridgeLogicAttemptDamageNoEffect !== false
+      || result.probe?.results?.bridgeLogicBodyDamageStateAfterAttemptDamage !== BODY_PRISTINE
+      || result.probe?.results?.bridgeLogicBodyHealthAfterAttemptDamage !== 1
+      || result.probe?.results?.bridgeLogicBodyMaxHealthAfterAttemptDamage !== 1
+      || result.probe?.results?.bridgeLogicDamageStateAfterAttemptUpdate !== BODY_PRISTINE
+      || result.probe?.results?.bridgeLogicDamageStateChangedAfterAttemptUpdate !== false
+      || result.probe?.results?.bridgeLogicBrokenAfterAttemptUpdate !== false
+      || result.probe?.results?.bridgeLogicRepairedAfterAttemptUpdate !== false
+      || result.probe?.results?.bridgeDrawFirstDamageStateAfterAttemptScene !== BODY_PRISTINE
       || result.probe?.results?.bridgeLogicAiPathfinderAvailable !== true
       || result.probe?.results?.bridgeLogicFirstLayerAfterSeed !== 2
       || result.probe?.results?.bridgeDrawTerrainLogicBridgeCount <= 0

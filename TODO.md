@@ -883,13 +883,15 @@ flow below.
       visual bridge. It now loads the shipped `GenericBridge` template through
       original `ThingFactory` / `ThingTemplate` parsing and requires
       `bridgeLogicGenericBridgeObjectMissing === false`. Remaining work is to
-      replace the bridge-only pathfinder and focused object creation surface
-      with the full original runtime, then find and harness-drive the real
-      gameplay/script path that drives non-pristine bridge states. The shipped
-      `GenericBridge` body path is now browser-verified to clamp an attempted
-      `BODY_DAMAGED` transition back to `BODY_PRISTINE` because the real object
-      uses `ImmortalBody` with `MaxHealth = 1`, so damaged/repaired bridge-state
-      sync must not be faked through direct body health changes.
+      replace the bridge-only pathfinder and focused object creation/runtime
+      surface with the full original runtime, then find and harness-drive the
+      real gameplay/script path that drives non-pristine bridge states. The
+      shipped `GenericBridge` body path is now browser-verified through
+      `Object::attemptDamage` to report real attempted damage while clipping
+      health/state back to `BODY_PRISTINE` because the real object uses
+      `ImmortalBody` with `MaxHealth = 1`, so damaged/repaired bridge-state sync
+      must not be faked through direct body health changes or direct body-state
+      writes.
 - [ ] Broaden the browser-verified terrain full-scene water/smudge/shroud
       refresh path from `test:vertical-integrations` and probe-mounted
       map/assets to real gameplay map-load, partition, and terrain logic

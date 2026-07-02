@@ -5,6 +5,7 @@
 #include "Common/PlayerList.h"
 #include "Common/Radar.h"
 #include "Common/ThingTemplate.h"
+#include "GameLogic/Damage.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/Module/BehaviorModule.h"
 #include "GameLogic/Module/BodyModule.h"
@@ -239,12 +240,25 @@ void Object::onDie(DamageInfo *)
 {
 }
 
-void Object::attemptDamage(DamageInfo *)
+void Object::attemptDamage(DamageInfo *damageInfo)
 {
+	BodyModuleInterface *body = getBodyModule();
+	if (body != NULL) {
+		body->attemptDamage(damageInfo);
+	}
 }
 
-void Object::attemptHealing(Real, const Object *)
+void Object::attemptHealing(Real amount, const Object *source)
 {
+	BodyModuleInterface *body = getBodyModule();
+	if (body != NULL) {
+		DamageInfo damageInfo;
+		damageInfo.in.m_damageType = DAMAGE_HEALING;
+		damageInfo.in.m_deathType = DEATH_NONE;
+		damageInfo.in.m_sourceID = source != NULL ? source->getID() : INVALID_ID;
+		damageInfo.in.m_amount = amount;
+		body->attemptHealing(&damageInfo);
+	}
 }
 
 Bool Object::attemptHealingFromSoleBenefactor(Real, const Object *, UnsignedInt)
@@ -257,9 +271,10 @@ ObjectID Object::getSoleHealingBenefactor() const
 	return m_soleHealingBenefactorID;
 }
 
-Real Object::estimateDamage(DamageInfoInput &) const
+Real Object::estimateDamage(DamageInfoInput &damageInfo) const
 {
-	return 0.0f;
+	BodyModuleInterface *body = getBodyModule();
+	return body != NULL ? body->estimateDamage(damageInfo) : 0.0f;
 }
 
 void Object::kill(DamageType, DeathType)

@@ -2651,6 +2651,16 @@ public:
 class ProbeTerrainLogicForBridgeDraw final : public W3DTerrainLogic
 {
 public:
+	struct BridgeDamageAttemptForProbe
+	{
+		BodyDamageType state = BODY_PRISTINE;
+		Real health = -1.0f;
+		Real maxHealth = -1.0f;
+		Real actualDamageDealt = -1.0f;
+		Real actualDamageClipped = -1.0f;
+		Bool noEffect = FALSE;
+	};
+
 	Int bridgeCountForProbe() const
 	{
 		Int count = 0;
@@ -2698,21 +2708,27 @@ public:
 		return true;
 	}
 
-	bool setFirstBridgeBodyDamageStateForProbe(
-		BodyDamageType desired_state,
-		BodyDamageType &actual_state,
-		Real &health,
-		Real &max_health)
+	bool attemptFirstBridgeDamageForProbe(
+		Real amount,
+		BridgeDamageAttemptForProbe &attempt)
 	{
 		Object *bridge_object = firstBridgeObjectForProbe();
 		if (bridge_object == nullptr || bridge_object->getBodyModule() == nullptr) {
 			return false;
 		}
+		DamageInfo damage_info;
+		damage_info.in.m_damageType = DAMAGE_UNRESISTABLE;
+		damage_info.in.m_deathType = DEATH_NORMAL;
+		damage_info.in.m_sourceID = INVALID_ID;
+		damage_info.in.m_amount = amount;
+		bridge_object->attemptDamage(&damage_info);
 		BodyModuleInterface *body = bridge_object->getBodyModule();
-		body->setDamageState(desired_state);
-		actual_state = body->getDamageState();
-		health = body->getHealth();
-		max_health = body->getMaxHealth();
+		attempt.state = body->getDamageState();
+		attempt.health = body->getHealth();
+		attempt.maxHealth = body->getMaxHealth();
+		attempt.actualDamageDealt = damage_info.out.m_actualDamageDealt;
+		attempt.actualDamageClipped = damage_info.out.m_actualDamageClipped;
+		attempt.noEffect = damage_info.out.m_noEffect;
 		return true;
 	}
 
@@ -9739,15 +9755,19 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	Int bridge_logic_first_body_damage_state_after_seed = -1;
 	float bridge_logic_first_body_health_after_seed = -1.0f;
 	float bridge_logic_first_body_max_health_after_seed = -1.0f;
-	bool bridge_logic_damage_state_set_to_damaged = false;
-	Int bridge_logic_body_damage_state_after_damage_set = -1;
-	float bridge_logic_body_health_after_damage_set = -1.0f;
-	float bridge_logic_body_max_health_after_damage_set = -1.0f;
-	Int bridge_logic_damage_state_after_damage_update = -1;
-	bool bridge_logic_damage_state_changed_after_damage_update = false;
-	bool bridge_logic_broken_after_damage_update = false;
-	bool bridge_logic_repaired_after_damage_update = false;
-	Int bridge_draw_first_damage_state_after_damage_scene = -1;
+	bool bridge_logic_attempt_damage_invoked = false;
+	bool bridge_logic_attempt_damage_changed_state = false;
+	float bridge_logic_attempt_damage_actual_dealt = -1.0f;
+	float bridge_logic_attempt_damage_actual_clipped = -1.0f;
+	bool bridge_logic_attempt_damage_no_effect = false;
+	Int bridge_logic_body_damage_state_after_attempt_damage = -1;
+	float bridge_logic_body_health_after_attempt_damage = -1.0f;
+	float bridge_logic_body_max_health_after_attempt_damage = -1.0f;
+	Int bridge_logic_damage_state_after_attempt_update = -1;
+	bool bridge_logic_damage_state_changed_after_attempt_update = false;
+	bool bridge_logic_broken_after_attempt_update = false;
+	bool bridge_logic_repaired_after_attempt_update = false;
+	Int bridge_draw_first_damage_state_after_attempt_scene = -1;
 	Int bridge_logic_first_layer_after_seed = -1;
 	Int bridge_draw_terrain_logic_bridge_count = 0;
 	Int bridge_draw_enabled_bridge_count = 0;
@@ -10269,19 +10289,25 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			bridge_logic_first_body_health_after_seed = first_body_health;
 			bridge_logic_first_body_max_health_after_seed = first_body_max_health;
 		}
-		BodyDamageType damaged_body_state = BODY_PRISTINE;
-		Real damaged_body_health = -1.0f;
-		Real damaged_body_max_health = -1.0f;
-		if (bridge_draw_terrain_logic.setFirstBridgeBodyDamageStateForProbe(
-				BODY_DAMAGED,
-				damaged_body_state,
-				damaged_body_health,
-				damaged_body_max_health)) {
-			bridge_logic_body_damage_state_after_damage_set = damaged_body_state;
-			bridge_logic_body_health_after_damage_set = damaged_body_health;
-			bridge_logic_body_max_health_after_damage_set = damaged_body_max_health;
-			bridge_logic_damage_state_set_to_damaged =
-				damaged_body_state == BODY_DAMAGED;
+		ProbeTerrainLogicForBridgeDraw::BridgeDamageAttemptForProbe damaged_body_attempt;
+		if (bridge_draw_terrain_logic.attemptFirstBridgeDamageForProbe(
+				1.0f,
+				damaged_body_attempt)) {
+			bridge_logic_attempt_damage_invoked = true;
+			bridge_logic_body_damage_state_after_attempt_damage =
+				damaged_body_attempt.state;
+			bridge_logic_body_health_after_attempt_damage =
+				damaged_body_attempt.health;
+			bridge_logic_body_max_health_after_attempt_damage =
+				damaged_body_attempt.maxHealth;
+			bridge_logic_attempt_damage_actual_dealt =
+				damaged_body_attempt.actualDamageDealt;
+			bridge_logic_attempt_damage_actual_clipped =
+				damaged_body_attempt.actualDamageClipped;
+			bridge_logic_attempt_damage_no_effect =
+				damaged_body_attempt.noEffect;
+			bridge_logic_attempt_damage_changed_state =
+				damaged_body_attempt.state != BODY_PRISTINE;
 		}
 		BridgeInfo damaged_bridge_info;
 		PathfindLayerEnum damaged_bridge_layer = LAYER_GROUND;
@@ -10292,12 +10318,12 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 				damaged_bridge_layer,
 				damaged_bridge_broken,
 				damaged_bridge_repaired)) {
-			bridge_logic_damage_state_after_damage_update =
+			bridge_logic_damage_state_after_attempt_update =
 				damaged_bridge_info.curDamageState;
-			bridge_logic_damage_state_changed_after_damage_update =
+			bridge_logic_damage_state_changed_after_attempt_update =
 				damaged_bridge_info.damageStateChanged;
-			bridge_logic_broken_after_damage_update = damaged_bridge_broken;
-			bridge_logic_repaired_after_damage_update = damaged_bridge_repaired;
+			bridge_logic_broken_after_attempt_update = damaged_bridge_broken;
+			bridge_logic_repaired_after_attempt_update = damaged_bridge_repaired;
 		}
 		bridge_manual_geometry_after_load =
 			bridge_buffer->firstBridgeManualGeometry(
@@ -10393,7 +10419,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 					succeeded(render_result) &&
 					succeeded(end_render_result) &&
 					bridge_buffer != nullptr) {
-				bridge_draw_first_damage_state_after_damage_scene =
+				bridge_draw_first_damage_state_after_attempt_scene =
 					bridge_buffer->firstBridgeDamageState();
 			}
 			tree_need_to_draw_after_scene = tree_buffer != nullptr && tree_buffer->needToDraw();
@@ -10498,15 +10524,19 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_logic_first_body_damage_state_after_seed == BODY_PRISTINE &&
 		bridge_logic_first_body_health_after_seed == 1.0f &&
 		bridge_logic_first_body_max_health_after_seed == 1.0f &&
-		!bridge_logic_damage_state_set_to_damaged &&
-		bridge_logic_body_damage_state_after_damage_set == BODY_PRISTINE &&
-		bridge_logic_body_health_after_damage_set == 1.0f &&
-		bridge_logic_body_max_health_after_damage_set == 1.0f &&
-		bridge_logic_damage_state_after_damage_update == BODY_PRISTINE &&
-		!bridge_logic_damage_state_changed_after_damage_update &&
-		!bridge_logic_broken_after_damage_update &&
-		!bridge_logic_repaired_after_damage_update &&
-		bridge_draw_first_damage_state_after_damage_scene == BODY_PRISTINE &&
+		bridge_logic_attempt_damage_invoked &&
+		!bridge_logic_attempt_damage_changed_state &&
+		bridge_logic_attempt_damage_actual_dealt > 0.0f &&
+		bridge_logic_attempt_damage_actual_clipped == 0.0f &&
+		!bridge_logic_attempt_damage_no_effect &&
+		bridge_logic_body_damage_state_after_attempt_damage == BODY_PRISTINE &&
+		bridge_logic_body_health_after_attempt_damage == 1.0f &&
+		bridge_logic_body_max_health_after_attempt_damage == 1.0f &&
+		bridge_logic_damage_state_after_attempt_update == BODY_PRISTINE &&
+		!bridge_logic_damage_state_changed_after_attempt_update &&
+		!bridge_logic_broken_after_attempt_update &&
+		!bridge_logic_repaired_after_attempt_update &&
+		bridge_draw_first_damage_state_after_attempt_scene == BODY_PRISTINE &&
 		terrain_logic_retained_for_draw &&
 		bridge_draw_terrain_logic_bridge_count > 0 &&
 		bridge_draw_enabled_bridge_count > 0 &&
@@ -10622,7 +10652,8 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"path\":\"original WorldHeightMap + HeightMapRenderObjClass::Render -> "
 		"W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> "
 		"W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> "
-		"TerrainLogic::addBridgeToLogic/updateCenter -> "
+		"TerrainLogic::addBridgeToLogic -> Object::attemptDamage(GenericBridge) -> "
+		"TerrainLogic::updateBridgeDamageStates/updateCenter -> "
 		"TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> "
 		"W3DBridge::renderBridge + bridge shroud overlay\","
 		"\"archives\":{\"ini\":\"%s\",\"maps\":\"%s\",\"terrain\":\"%s\","
@@ -10679,15 +10710,19 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"bridgeLogicFirstBodyDamageStateAfterSeed\":%d,"
 		"\"bridgeLogicFirstBodyHealthAfterSeed\":%.4f,"
 		"\"bridgeLogicFirstBodyMaxHealthAfterSeed\":%.4f,"
-		"\"bridgeLogicDamageStateSetToDamaged\":%s,"
-		"\"bridgeLogicBodyDamageStateAfterDamageSet\":%d,"
-		"\"bridgeLogicBodyHealthAfterDamageSet\":%.4f,"
-		"\"bridgeLogicBodyMaxHealthAfterDamageSet\":%.4f,"
-		"\"bridgeLogicDamageStateAfterDamageUpdate\":%d,"
-		"\"bridgeLogicDamageStateChangedAfterDamageUpdate\":%s,"
-		"\"bridgeLogicBrokenAfterDamageUpdate\":%s,"
-		"\"bridgeLogicRepairedAfterDamageUpdate\":%s,"
-		"\"bridgeDrawFirstDamageStateAfterDamageScene\":%d,"
+		"\"bridgeLogicAttemptDamageInvoked\":%s,"
+		"\"bridgeLogicAttemptDamageChangedState\":%s,"
+		"\"bridgeLogicAttemptDamageActualDealt\":%.4f,"
+		"\"bridgeLogicAttemptDamageActualClipped\":%.4f,"
+		"\"bridgeLogicAttemptDamageNoEffect\":%s,"
+		"\"bridgeLogicBodyDamageStateAfterAttemptDamage\":%d,"
+		"\"bridgeLogicBodyHealthAfterAttemptDamage\":%.4f,"
+		"\"bridgeLogicBodyMaxHealthAfterAttemptDamage\":%.4f,"
+		"\"bridgeLogicDamageStateAfterAttemptUpdate\":%d,"
+		"\"bridgeLogicDamageStateChangedAfterAttemptUpdate\":%s,"
+		"\"bridgeLogicBrokenAfterAttemptUpdate\":%s,"
+		"\"bridgeLogicRepairedAfterAttemptUpdate\":%s,"
+		"\"bridgeDrawFirstDamageStateAfterAttemptScene\":%d,"
 		"\"bridgeLogicFirstLayerAfterSeed\":%d,"
 		"\"bridgeDrawTerrainLogicBridgeCount\":%d,"
 		"\"bridgeDrawEnabledBridgeCount\":%d,"
@@ -10901,15 +10936,19 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_logic_first_body_damage_state_after_seed,
 		bridge_logic_first_body_health_after_seed,
 		bridge_logic_first_body_max_health_after_seed,
-		bool_json(bridge_logic_damage_state_set_to_damaged),
-		bridge_logic_body_damage_state_after_damage_set,
-		bridge_logic_body_health_after_damage_set,
-		bridge_logic_body_max_health_after_damage_set,
-		bridge_logic_damage_state_after_damage_update,
-		bool_json(bridge_logic_damage_state_changed_after_damage_update),
-		bool_json(bridge_logic_broken_after_damage_update),
-		bool_json(bridge_logic_repaired_after_damage_update),
-		bridge_draw_first_damage_state_after_damage_scene,
+		bool_json(bridge_logic_attempt_damage_invoked),
+		bool_json(bridge_logic_attempt_damage_changed_state),
+		bridge_logic_attempt_damage_actual_dealt,
+		bridge_logic_attempt_damage_actual_clipped,
+		bool_json(bridge_logic_attempt_damage_no_effect),
+		bridge_logic_body_damage_state_after_attempt_damage,
+		bridge_logic_body_health_after_attempt_damage,
+		bridge_logic_body_max_health_after_attempt_damage,
+		bridge_logic_damage_state_after_attempt_update,
+		bool_json(bridge_logic_damage_state_changed_after_attempt_update),
+		bool_json(bridge_logic_broken_after_attempt_update),
+		bool_json(bridge_logic_repaired_after_attempt_update),
+		bridge_draw_first_damage_state_after_attempt_scene,
 		bridge_logic_first_layer_after_seed,
 		bridge_draw_terrain_logic_bridge_count,
 		bridge_draw_enabled_bridge_count,
