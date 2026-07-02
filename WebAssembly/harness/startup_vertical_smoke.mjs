@@ -262,9 +262,9 @@ function assertFunctionLexiconRuntimeFrontier(state) {
   const probe = state.functionLexiconRuntime;
   expect(probe?.attempted === true, "function lexicon runtime probe did not run", probe);
   expect(probe.ok === false, "function lexicon runtime should not claim full ownership yet", probe);
-  expect(probe.status === "base_function_lexicon_partial_runtime_owned",
+  expect(probe.status === "base_function_lexicon_widget_draw_runtime_owned",
     "function lexicon runtime status mismatch", probe);
-  expect(probe.nextRequired === "originalFunctionLexiconLayoutAndDrawCallbacks",
+  expect(probe.nextRequired === "originalFunctionLexiconLayoutCallbacks",
     "function lexicon runtime nextRequired mismatch", probe);
   expect(probe.constructed === true && probe.theFunctionLexiconOwned === true,
     "original W3DFunctionLexicon was not constructed as TheFunctionLexicon", probe);
@@ -277,28 +277,51 @@ function assertFunctionLexiconRuntimeFrontier(state) {
   expect(probe.tables?.gameWindowSystem === true
       && probe.tables.gameWindowInput === true
       && probe.tables.gameWindowTooltip === true
+      && probe.tables.gameWindowDraw === true
       && probe.tables.gameWindowDeviceDraw === true
       && probe.tables.windowLayoutDeviceInit === true,
-    "FunctionLexicon core and W3D device tables should be loaded", probe.tables);
+    "FunctionLexicon widget/draw and W3D device tables should be loaded", probe.tables);
   expect(probe.lookups?.passMessagesToParentSystem === true
       && probe.lookups.passSelectedButtonsToParentSystem === true
       && probe.lookups.gameWindowDefaultSystem === true
       && probe.lookups.gadgetPushButtonSystem === true
+      && probe.lookups.gadgetCheckBoxSystem === true
+      && probe.lookups.gadgetRadioButtonSystem === true
+      && probe.lookups.gadgetTabControlSystem === true
+      && probe.lookups.gadgetListBoxSystem === true
+      && probe.lookups.gadgetComboBoxSystem === true
+      && probe.lookups.gadgetHorizontalSliderSystem === true
+      && probe.lookups.gadgetVerticalSliderSystem === true
+      && probe.lookups.gadgetProgressBarSystem === true
+      && probe.lookups.gadgetStaticTextSystem === true
+      && probe.lookups.gadgetTextEntrySystem === true
       && probe.lookups.messageBoxSystem === true
       && probe.lookups.quitMessageBoxSystem === true
+      && probe.lookups.imeCandidateWindowSystem === true
       && probe.lookups.gameWindowDefaultInput === true
       && probe.lookups.gadgetPushButtonInput === true
+      && probe.lookups.gadgetCheckBoxInput === true
+      && probe.lookups.gadgetRadioButtonInput === true
+      && probe.lookups.gadgetTabControlInput === true
+      && probe.lookups.gadgetListBoxInput === true
+      && probe.lookups.gadgetListBoxMultiInput === true
+      && probe.lookups.gadgetComboBoxInput === true
+      && probe.lookups.gadgetHorizontalSliderInput === true
+      && probe.lookups.gadgetVerticalSliderInput === true
       && probe.lookups.gadgetStaticTextInput === true
+      && probe.lookups.gadgetTextEntryInput === true
+      && probe.lookups.imeCandidateWindowInput === true
       && probe.lookups.gameWindowDefaultTooltip === true
+      && probe.lookups.imeCandidateMainDraw === true
+      && probe.lookups.imeCandidateTextAreaDraw === true
       && probe.lookups.w3dGadgetPushButtonDraw === true
       && probe.lookups.w3dGameWindowDefaultDraw === true
       && probe.lookups.w3dMainMenuInit === true,
-    "FunctionLexicon core/W3D callback lookups did not resolve", probe.lookups);
-  expect(probe.tables.gameWindowDraw === false
-      && probe.tables.windowLayoutInit === false
+    "FunctionLexicon widget/draw/W3D callback lookups did not resolve", probe.lookups);
+  expect(probe.tables.windowLayoutInit === false
       && probe.tables.windowLayoutUpdate === false
       && probe.tables.windowLayoutShutdown === false,
-    "base FunctionLexicon layout/draw tables should still expose the remaining boundary", probe.tables);
+    "base FunctionLexicon layout tables should still expose the remaining boundary", probe.tables);
 }
 
 function assertAudioOwnedFrontier(state) {
@@ -335,11 +358,11 @@ function assertAudioOwnedFrontier(state) {
       && frontier.audioManagerRuntime.tornDown === true,
     "frontier audioManagerRuntime summary mismatch", frontier.audioManagerRuntime);
   expect(frontier.functionLexiconRuntime?.ready === false
-      && frontier.functionLexiconRuntime.status === "base_function_lexicon_partial_runtime_owned"
+      && frontier.functionLexiconRuntime.status === "base_function_lexicon_widget_draw_runtime_owned"
       && frontier.functionLexiconRuntime.w3dDeviceDrawReady === true
       && frontier.functionLexiconRuntime.w3dLayoutInitReady === true
       && frontier.functionLexiconRuntime.messageBoxSystemReady === true
-      && frontier.functionLexiconRuntime.nextRequired === "originalFunctionLexiconLayoutAndDrawCallbacks",
+      && frontier.functionLexiconRuntime.nextRequired === "originalFunctionLexiconLayoutCallbacks",
     "frontier functionLexiconRuntime summary mismatch", frontier.functionLexiconRuntime);
   expect(startup.browserDeviceLayer?.functionLexicon === false,
     "browser device layer should not mark the full function lexicon runtime-owned", startup.browserDeviceLayer);

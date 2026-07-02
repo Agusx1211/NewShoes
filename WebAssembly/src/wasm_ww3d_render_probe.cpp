@@ -18,6 +18,7 @@
 #include "Common/SubsystemInterface.h"
 #include "Common/UnicodeString.h"
 #include "GameClient/DisplayStringManager.h"
+#include "GameClient/Gadget.h"
 #include "GameClient/GadgetPushButton.h"
 #include "GameClient/GadgetStaticText.h"
 #include "GameClient/GameFont.h"
@@ -189,20 +190,47 @@ FunctionLexicon::TableEntry runtimeBaseSystemTable[] = {
 	{ NAMEKEY_INVALID, "PassMessagesToParentSystem", PassMessagesToParentSystem },
 	{ NAMEKEY_INVALID, "PassSelectedButtonsToParentSystem", PassSelectedButtonsToParentSystem },
 	{ NAMEKEY_INVALID, "GadgetPushButtonSystem", GadgetPushButtonSystem },
+	{ NAMEKEY_INVALID, "GadgetCheckBoxSystem", GadgetCheckBoxSystem },
+	{ NAMEKEY_INVALID, "GadgetRadioButtonSystem", GadgetRadioButtonSystem },
+	{ NAMEKEY_INVALID, "GadgetTabControlSystem", GadgetTabControlSystem },
+	{ NAMEKEY_INVALID, "GadgetListBoxSystem", GadgetListBoxSystem },
+	{ NAMEKEY_INVALID, "GadgetComboBoxSystem", GadgetComboBoxSystem },
+	{ NAMEKEY_INVALID, "GadgetHorizontalSliderSystem", GadgetHorizontalSliderSystem },
+	{ NAMEKEY_INVALID, "GadgetVerticalSliderSystem", GadgetVerticalSliderSystem },
+	{ NAMEKEY_INVALID, "GadgetProgressBarSystem", GadgetProgressBarSystem },
+	{ NAMEKEY_INVALID, "GadgetStaticTextSystem", GadgetStaticTextSystem },
+	{ NAMEKEY_INVALID, "GadgetTextEntrySystem", GadgetTextEntrySystem },
 	{ NAMEKEY_INVALID, "MessageBoxSystem", MessageBoxSystem },
 	{ NAMEKEY_INVALID, "QuitMessageBoxSystem", QuitMessageBoxSystem },
+	{ NAMEKEY_INVALID, "IMECandidateWindowSystem", IMECandidateWindowSystem },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
 FunctionLexicon::TableEntry runtimeBaseInputTable[] = {
 	{ NAMEKEY_INVALID, "GameWinDefaultInput", GameWinDefaultInput },
 	{ NAMEKEY_INVALID, "GadgetPushButtonInput", GadgetPushButtonInput },
+	{ NAMEKEY_INVALID, "GadgetCheckBoxInput", GadgetCheckBoxInput },
+	{ NAMEKEY_INVALID, "GadgetRadioButtonInput", GadgetRadioButtonInput },
+	{ NAMEKEY_INVALID, "GadgetTabControlInput", GadgetTabControlInput },
+	{ NAMEKEY_INVALID, "GadgetListBoxInput", GadgetListBoxInput },
+	{ NAMEKEY_INVALID, "GadgetListBoxMultiInput", GadgetListBoxMultiInput },
+	{ NAMEKEY_INVALID, "GadgetComboBoxInput", GadgetComboBoxInput },
+	{ NAMEKEY_INVALID, "GadgetHorizontalSliderInput", GadgetHorizontalSliderInput },
+	{ NAMEKEY_INVALID, "GadgetVerticalSliderInput", GadgetVerticalSliderInput },
 	{ NAMEKEY_INVALID, "GadgetStaticTextInput", GadgetStaticTextInput },
+	{ NAMEKEY_INVALID, "GadgetTextEntryInput", GadgetTextEntryInput },
+	{ NAMEKEY_INVALID, "IMECandidateWindowInput", IMECandidateWindowInput },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
 FunctionLexicon::TableEntry runtimeBaseTooltipTable[] = {
 	{ NAMEKEY_INVALID, "GameWinDefaultTooltip", GameWinDefaultTooltip },
+	{ NAMEKEY_INVALID, nullptr, nullptr },
+};
+
+FunctionLexicon::TableEntry runtimeBaseDrawTable[] = {
+	{ NAMEKEY_INVALID, "IMECandidateMainDraw", IMECandidateMainDraw },
+	{ NAMEKEY_INVALID, "IMECandidateTextAreaDraw", IMECandidateTextAreaDraw },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
@@ -222,6 +250,7 @@ void FunctionLexicon::init()
 	loadTable(runtimeBaseSystemTable, TABLE_GAME_WIN_SYSTEM);
 	loadTable(runtimeBaseInputTable, TABLE_GAME_WIN_INPUT);
 	loadTable(runtimeBaseTooltipTable, TABLE_GAME_WIN_TOOLTIP);
+	loadTable(runtimeBaseDrawTable, TABLE_GAME_WIN_DRAW);
 }
 
 void FunctionLexicon::reset()

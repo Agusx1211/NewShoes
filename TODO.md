@@ -48,19 +48,19 @@ flow below.
       `Music.big`, and `openDevice()` through the browser MSS shim, so the
       archive-mounted frontier is now `createFunctionLexicon` at line 446
       (the linked runtime constructs `W3DFunctionLexicon`, proves its W3D
-      device draw/layout tables, and loads the core base GUI
-      system/input/tooltip callback table; the remaining
-      `FunctionLexicon` boundary is the base layout/draw callback graph);
+      device draw/layout tables, and loads the non-network base GUI
+      system/input/tooltip/widget plus IME draw callback table; the remaining
+      `FunctionLexicon` boundary is the base layout callback graph);
       archiveless or music-less boots honestly stay at line 434.
 - [ ] Own `createFunctionLexicon` (`W3DFunctionLexicon`, `GameEngine.cpp:446`)
       and then `createModuleFactory` (line 447) in the browser boot — the new
       first unowned init factories now that `TheAudio` is owned. The current
       linked runtime constructs original `W3DFunctionLexicon` and verifies the
-      W3D device draw/layout callback tables plus the core base GUI
-      system/input/tooltip callback table, but full ownership still needs the
-      remaining original base `FunctionLexicon.cpp` layout/draw callback graph
-      without pulling LAN/WOL/GameSpy/embedded-web menu callbacks into
-      `cnc-port`.
+      W3D device draw/layout callback tables plus the non-network base GUI
+      system/input/tooltip/widget and IME draw callback table, but full
+      ownership still needs the remaining original base `FunctionLexicon.cpp`
+      layout callback graph without pulling LAN/WOL/GameSpy/embedded-web menu
+      callbacks into `cnc-port`.
       The real
       `W3DModuleFactory` + all 224 module registrations already link into
       `cnc-port` via `zh_gameengine_real_object_ini_runtime`, so lexicon/module
@@ -83,6 +83,10 @@ flow below.
       object/drawable creation once the running `TheGameLogic`/`TheGameClient`
       match subsystems link; template parsing and by-name lookup are already
       real in `cnc-port` (`test:object-ini`).
+- [ ] Revisit `GameWinBlockInput` once `SelectionTranslator` is runtime-owned;
+      it is the only non-network base input callback intentionally left out of
+      the current widget FunctionLexicon slice because it pulls
+      `TheSelectionTranslator`.
 - [ ] Align the `bridge.js` JS-side simulation IMA ADPCM decoder with the wasm
       `Mss.H` decoder (full-precision `((2*delta+1)*step)>>3` variant proven
       bit-exact vs ffmpeg) and re-pin the `runtime_archives_smoke.mjs` decoded

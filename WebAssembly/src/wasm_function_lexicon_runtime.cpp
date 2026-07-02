@@ -122,24 +122,96 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.gadget_push_button_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("GadgetPushButtonSystem")) == GadgetPushButtonSystem;
+	result.gadget_check_box_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("GadgetCheckBoxSystem")) == GadgetCheckBoxSystem;
+	result.gadget_radio_button_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("GadgetRadioButtonSystem")) == GadgetRadioButtonSystem;
+	result.gadget_tab_control_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("GadgetTabControlSystem")) == GadgetTabControlSystem;
+	result.gadget_list_box_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("GadgetListBoxSystem")) == GadgetListBoxSystem;
+	result.gadget_combo_box_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("GadgetComboBoxSystem")) == GadgetComboBoxSystem;
+	result.gadget_horizontal_slider_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("GadgetHorizontalSliderSystem")) ==
+				GadgetHorizontalSliderSystem;
+	result.gadget_vertical_slider_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("GadgetVerticalSliderSystem")) ==
+				GadgetVerticalSliderSystem;
+	result.gadget_progress_bar_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("GadgetProgressBarSystem")) == GadgetProgressBarSystem;
+	result.gadget_static_text_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("GadgetStaticTextSystem")) == GadgetStaticTextSystem;
+	result.gadget_text_entry_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("GadgetTextEntrySystem")) == GadgetTextEntrySystem;
 	result.message_box_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("MessageBoxSystem")) == MessageBoxSystem;
 	result.quit_message_box_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("QuitMessageBoxSystem")) == QuitMessageBoxSystem;
+	result.ime_candidate_window_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("IMECandidateWindowSystem")) == IMECandidateWindowSystem;
 	result.game_window_default_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("GameWinDefaultInput")) == GameWinDefaultInput;
 	result.gadget_push_button_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("GadgetPushButtonInput")) == GadgetPushButtonInput;
+	result.gadget_check_box_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("GadgetCheckBoxInput")) == GadgetCheckBoxInput;
+	result.gadget_radio_button_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("GadgetRadioButtonInput")) == GadgetRadioButtonInput;
+	result.gadget_tab_control_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("GadgetTabControlInput")) == GadgetTabControlInput;
+	result.gadget_list_box_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("GadgetListBoxInput")) == GadgetListBoxInput;
+	result.gadget_list_box_multi_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("GadgetListBoxMultiInput")) == GadgetListBoxMultiInput;
+	result.gadget_combo_box_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("GadgetComboBoxInput")) == GadgetComboBoxInput;
+	result.gadget_horizontal_slider_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("GadgetHorizontalSliderInput")) ==
+				GadgetHorizontalSliderInput;
+	result.gadget_vertical_slider_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("GadgetVerticalSliderInput")) == GadgetVerticalSliderInput;
 	result.gadget_static_text_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("GadgetStaticTextInput")) == GadgetStaticTextInput;
+	result.gadget_text_entry_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("GadgetTextEntryInput")) == GadgetTextEntryInput;
+	result.ime_candidate_window_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("IMECandidateWindowInput")) == IMECandidateWindowInput;
 	result.game_window_default_tooltip_lookup =
 		TheFunctionLexicon->gameWinTooltipFunc(
 			key_for("GameWinDefaultTooltip")) == GameWinDefaultTooltip;
+	result.ime_candidate_main_draw_lookup =
+		TheFunctionLexicon->gameWinDrawFunc(
+			key_for("IMECandidateMainDraw")) == IMECandidateMainDraw;
+	result.ime_candidate_text_area_draw_lookup =
+		TheFunctionLexicon->gameWinDrawFunc(
+			key_for("IMECandidateTextAreaDraw")) == IMECandidateTextAreaDraw;
 	result.w3d_gadget_push_button_draw_lookup =
 		TheFunctionLexicon->gameWinDrawFunc(
 			key_for("W3DGadgetPushButtonDraw")) == W3DGadgetPushButtonDraw;
@@ -181,6 +253,13 @@ bool base_table_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 		result.window_layout_shutdown_table_loaded;
 }
 
+bool base_layout_table_state_ready(const FunctionLexiconRuntimeProbeResult &result)
+{
+	return result.window_layout_init_table_loaded &&
+		result.window_layout_update_table_loaded &&
+		result.window_layout_shutdown_table_loaded;
+}
+
 bool device_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 {
 	return result.w3d_gadget_push_button_draw_lookup &&
@@ -188,7 +267,7 @@ bool device_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 		result.w3d_main_menu_init_lookup;
 }
 
-bool base_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
+bool base_core_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 {
 	return result.pass_messages_to_parent_lookup &&
 		result.pass_selected_buttons_to_parent_lookup &&
@@ -202,9 +281,38 @@ bool base_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 		result.game_window_default_tooltip_lookup;
 }
 
+bool base_widget_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
+{
+	return base_core_lookup_state_ready(result) &&
+		result.gadget_check_box_system_lookup &&
+		result.gadget_radio_button_system_lookup &&
+		result.gadget_tab_control_system_lookup &&
+		result.gadget_list_box_system_lookup &&
+		result.gadget_combo_box_system_lookup &&
+		result.gadget_horizontal_slider_system_lookup &&
+		result.gadget_vertical_slider_system_lookup &&
+		result.gadget_progress_bar_system_lookup &&
+		result.gadget_static_text_system_lookup &&
+		result.gadget_text_entry_system_lookup &&
+		result.ime_candidate_window_system_lookup &&
+		result.gadget_check_box_input_lookup &&
+		result.gadget_radio_button_input_lookup &&
+		result.gadget_tab_control_input_lookup &&
+		result.gadget_list_box_input_lookup &&
+		result.gadget_list_box_multi_input_lookup &&
+		result.gadget_combo_box_input_lookup &&
+		result.gadget_horizontal_slider_input_lookup &&
+		result.gadget_vertical_slider_input_lookup &&
+		result.gadget_text_entry_input_lookup &&
+		result.ime_candidate_window_input_lookup &&
+		result.ime_candidate_main_draw_lookup &&
+		result.ime_candidate_text_area_draw_lookup;
+}
+
 bool lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 {
-	return base_lookup_state_ready(result) && device_lookup_state_ready(result);
+	return base_widget_lookup_state_ready(result) &&
+		device_lookup_state_ready(result);
 }
 
 bool base_core_table_state_ready(const FunctionLexiconRuntimeProbeResult &result)
@@ -212,6 +320,12 @@ bool base_core_table_state_ready(const FunctionLexiconRuntimeProbeResult &result
 	return result.game_window_system_table_loaded &&
 		result.game_window_input_table_loaded &&
 		result.game_window_tooltip_table_loaded;
+}
+
+bool base_widget_table_state_ready(const FunctionLexiconRuntimeProbeResult &result)
+{
+	return base_core_table_state_ready(result) &&
+		result.game_window_draw_table_loaded;
 }
 
 void finish_status(FunctionLexiconRuntimeProbeResult &result)
@@ -259,14 +373,26 @@ void finish_status(FunctionLexiconRuntimeProbeResult &result)
 		result.next_required = "createFunctionLexicon";
 		return;
 	}
-	if (!base_core_table_state_ready(result) || !base_lookup_state_ready(result)) {
+	if (!base_core_table_state_ready(result) ||
+		!base_core_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_probe_owned";
 		result.next_required = "originalFunctionLexiconCallbacks";
 		return;
 	}
-	if (!base_table_state_ready(result)) {
+	if (!base_widget_table_state_ready(result) ||
+		!base_widget_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_partial_runtime_owned";
-		result.next_required = "originalFunctionLexiconLayoutAndDrawCallbacks";
+		result.next_required = "originalFunctionLexiconWidgetAndDrawCallbacks";
+		return;
+	}
+	if (!base_layout_table_state_ready(result)) {
+		result.status = "base_function_lexicon_widget_draw_runtime_owned";
+		result.next_required = "originalFunctionLexiconLayoutCallbacks";
+		return;
+	}
+	if (!base_table_state_ready(result)) {
+		result.status = "base_function_lexicon_tables_missing";
+		result.next_required = "createFunctionLexicon";
 		return;
 	}
 	if (!table_state_ready(result)) {
@@ -330,8 +456,8 @@ const FunctionLexiconRuntimeProbeResult &wasm_function_lexicon_runtime_install(
 
 			// SubsystemInterfaceList::initSubsystem() ->
 			// W3DFunctionLexicon::init(). The current linked runtime proves
-			// the W3D device draw/layout tables here; the base tables remain
-			// the next ownership boundary.
+			// the W3D device draw/layout tables here; the remaining base
+			// layout tables stay as the next ownership boundary.
 			g_function_lexicon->init();
 			g_function_lexicon_init_ran = true;
 		} else {
@@ -399,7 +525,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 	const std::string next_required_json = json_escape(state.next_required);
 	const std::string init_error_json = json_escape(state.init_error);
 
-	static char json[4096];
+	static char json[8192];
 	std::snprintf(json, sizeof(json),
 		"{\"attempted\":%s,\"ok\":%s,\"source\":\"%s\","
 		"\"status\":\"%s\",\"nextRequired\":\"%s\","
@@ -423,12 +549,35 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"passSelectedButtonsToParentSystem\":%s,"
 		"\"gameWindowDefaultSystem\":%s,"
 		"\"gadgetPushButtonSystem\":%s,"
+		"\"gadgetCheckBoxSystem\":%s,"
+		"\"gadgetRadioButtonSystem\":%s,"
+		"\"gadgetTabControlSystem\":%s,"
+		"\"gadgetListBoxSystem\":%s,"
+		"\"gadgetComboBoxSystem\":%s,"
+		"\"gadgetHorizontalSliderSystem\":%s,"
+		"\"gadgetVerticalSliderSystem\":%s,"
+		"\"gadgetProgressBarSystem\":%s,"
+		"\"gadgetStaticTextSystem\":%s,"
+		"\"gadgetTextEntrySystem\":%s,"
 		"\"messageBoxSystem\":%s,"
 		"\"quitMessageBoxSystem\":%s,"
+		"\"imeCandidateWindowSystem\":%s,"
 		"\"gameWindowDefaultInput\":%s,"
 		"\"gadgetPushButtonInput\":%s,"
+		"\"gadgetCheckBoxInput\":%s,"
+		"\"gadgetRadioButtonInput\":%s,"
+		"\"gadgetTabControlInput\":%s,"
+		"\"gadgetListBoxInput\":%s,"
+		"\"gadgetListBoxMultiInput\":%s,"
+		"\"gadgetComboBoxInput\":%s,"
+		"\"gadgetHorizontalSliderInput\":%s,"
+		"\"gadgetVerticalSliderInput\":%s,"
 		"\"gadgetStaticTextInput\":%s,"
+		"\"gadgetTextEntryInput\":%s,"
+		"\"imeCandidateWindowInput\":%s,"
 		"\"gameWindowDefaultTooltip\":%s,"
+		"\"imeCandidateMainDraw\":%s,"
+		"\"imeCandidateTextAreaDraw\":%s,"
 		"\"w3dGadgetPushButtonDraw\":%s,"
 		"\"w3dGameWindowDefaultDraw\":%s,"
 		"\"w3dMainMenuInit\":%s}}",
@@ -462,12 +611,35 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.pass_selected_buttons_to_parent_lookup),
 		json_bool(state.game_window_default_system_lookup),
 		json_bool(state.gadget_push_button_system_lookup),
+		json_bool(state.gadget_check_box_system_lookup),
+		json_bool(state.gadget_radio_button_system_lookup),
+		json_bool(state.gadget_tab_control_system_lookup),
+		json_bool(state.gadget_list_box_system_lookup),
+		json_bool(state.gadget_combo_box_system_lookup),
+		json_bool(state.gadget_horizontal_slider_system_lookup),
+		json_bool(state.gadget_vertical_slider_system_lookup),
+		json_bool(state.gadget_progress_bar_system_lookup),
+		json_bool(state.gadget_static_text_system_lookup),
+		json_bool(state.gadget_text_entry_system_lookup),
 		json_bool(state.message_box_system_lookup),
 		json_bool(state.quit_message_box_system_lookup),
+		json_bool(state.ime_candidate_window_system_lookup),
 		json_bool(state.game_window_default_input_lookup),
 		json_bool(state.gadget_push_button_input_lookup),
+		json_bool(state.gadget_check_box_input_lookup),
+		json_bool(state.gadget_radio_button_input_lookup),
+		json_bool(state.gadget_tab_control_input_lookup),
+		json_bool(state.gadget_list_box_input_lookup),
+		json_bool(state.gadget_list_box_multi_input_lookup),
+		json_bool(state.gadget_combo_box_input_lookup),
+		json_bool(state.gadget_horizontal_slider_input_lookup),
+		json_bool(state.gadget_vertical_slider_input_lookup),
 		json_bool(state.gadget_static_text_input_lookup),
+		json_bool(state.gadget_text_entry_input_lookup),
+		json_bool(state.ime_candidate_window_input_lookup),
 		json_bool(state.game_window_default_tooltip_lookup),
+		json_bool(state.ime_candidate_main_draw_lookup),
+		json_bool(state.ime_candidate_text_area_draw_lookup),
 		json_bool(state.w3d_gadget_push_button_draw_lookup),
 		json_bool(state.w3d_game_window_default_draw_lookup),
 		json_bool(state.w3d_main_menu_init_lookup));

@@ -2161,6 +2161,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `originalFunctionLexiconLayoutAndDrawCallbacks` next, keeping
       `createFunctionLexicon`@446 unowned until the base layout/draw callback
       tables are runtime-owned.
+- [x] Broaden the linked `cnc-port` base `FunctionLexicon` runtime slice from
+      core callbacks to non-network widget/input plus draw callbacks:
+      `FunctionLexicon::init()` now registers the original checkbox, radio,
+      tab, listbox, combobox, horizontal/vertical slider, progress bar, static
+      text, text entry, IME system/input, and IME draw callback names, with
+      `IMECandidate.cpp` linked through `zh_window_layout_script_runtime`.
+      The startup vertical verifies every added callback-name lookup and now
+      reports `base_function_lexicon_widget_draw_runtime_owned` with
+      `originalFunctionLexiconLayoutCallbacks` next. `GameWinBlockInput`
+      remains deferred until `SelectionTranslator` is runtime-owned, so the
+      line-446 frontier stays honest.
 ---
 
 ## M3 — File / data subsystem (real data)

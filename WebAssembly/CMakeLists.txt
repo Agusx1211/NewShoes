@@ -4019,6 +4019,7 @@ target_link_libraries(zh_gameclient_gui_input_runtime PUBLIC
 add_library(zh_window_layout_script_runtime STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowManagerScript.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/HeaderTemplate.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/IMECandidate.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/MessageBox.cpp"
 )
 
