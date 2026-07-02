@@ -2692,6 +2692,16 @@ public:
 		Bool undetectedDefectorAfterZero = TRUE;
 	};
 
+	struct BridgeObjectLookupForProbe
+	{
+		ObjectID bridgeObjectID = INVALID_ID;
+		ObjectID foundObjectID = INVALID_ID;
+		Bool foundBridgeObject = FALSE;
+		Bool foundMatchesBridgeID = FALSE;
+		Bool invalidIDLookupNull = FALSE;
+		Bool highIDLookupNull = FALSE;
+	};
+
 	Int bridgeCountForProbe() const
 	{
 		Int count = 0;
@@ -2721,6 +2731,33 @@ public:
 			return nullptr;
 		}
 		return TheGameLogic->findObjectByID(info->bridgeObjectID);
+	}
+
+	bool verifyFirstBridgeObjectLookupForProbe(
+		BridgeObjectLookupForProbe &lookup) const
+	{
+		if (m_bridgeListHead == nullptr || TheGameLogic == nullptr) {
+			return false;
+		}
+		const BridgeInfo *info = m_bridgeListHead->peekBridgeInfo();
+		if (info == nullptr || info->bridgeObjectID == INVALID_ID) {
+			return false;
+		}
+
+		const ObjectID kHighUnusedObjectID = static_cast<ObjectID>(1000000);
+		lookup.bridgeObjectID = info->bridgeObjectID;
+		Object *bridge_object = TheGameLogic->findObjectByID(info->bridgeObjectID);
+		lookup.foundBridgeObject = bridge_object != nullptr;
+		if (bridge_object != nullptr) {
+			lookup.foundObjectID = bridge_object->getID();
+			lookup.foundMatchesBridgeID =
+				lookup.foundObjectID == lookup.bridgeObjectID;
+		}
+		lookup.invalidIDLookupNull =
+			TheGameLogic->findObjectByID(INVALID_ID) == nullptr;
+		lookup.highIDLookupNull =
+			TheGameLogic->findObjectByID(kHighUnusedObjectID) == nullptr;
+		return true;
 	}
 
 	bool firstBridgeBodyDamageStateForProbe(
@@ -9910,6 +9947,9 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	Int bridge_logic_count_after_seed = 0;
 	Int bridge_logic_first_index_after_seed = -1;
 	Int bridge_logic_first_damage_state_after_seed = -1;
+	bool bridge_logic_object_lookup_invoked = false;
+	ProbeTerrainLogicForBridgeDraw::BridgeObjectLookupForProbe
+		bridge_logic_object_lookup;
 	Int bridge_logic_first_body_damage_state_after_seed = -1;
 	float bridge_logic_first_body_health_after_seed = -1.0f;
 	float bridge_logic_first_body_max_health_after_seed = -1.0f;
@@ -10466,6 +10506,9 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			bridge_logic_generic_bridge_object_missing =
 				loaded_bridge_info.bridgeObjectID == INVALID_ID;
 		}
+		bridge_logic_object_lookup_invoked =
+			bridge_draw_terrain_logic.verifyFirstBridgeObjectLookupForProbe(
+				bridge_logic_object_lookup);
 		BodyDamageType first_body_state = BODY_PRISTINE;
 		Real first_body_health = -1.0f;
 		Real first_body_max_health = -1.0f;
@@ -10797,6 +10840,14 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_logic_count_after_seed > 0 &&
 		bridge_logic_first_index_after_seed == 0 &&
 		bridge_logic_first_damage_state_after_seed == BODY_PRISTINE &&
+		bridge_logic_object_lookup_invoked &&
+		bridge_logic_object_lookup.bridgeObjectID != INVALID_ID &&
+		bridge_logic_object_lookup.foundBridgeObject &&
+		bridge_logic_object_lookup.foundObjectID ==
+			bridge_logic_object_lookup.bridgeObjectID &&
+		bridge_logic_object_lookup.foundMatchesBridgeID &&
+		bridge_logic_object_lookup.invalidIDLookupNull &&
+		bridge_logic_object_lookup.highIDLookupNull &&
 		bridge_logic_first_body_damage_state_after_seed == BODY_PRISTINE &&
 		bridge_logic_first_body_health_after_seed == 1.0f &&
 		bridge_logic_first_body_max_health_after_seed == 1.0f &&
@@ -10980,7 +11031,9 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"path\":\"original WorldHeightMap + HeightMapRenderObjClass::Render -> "
 		"W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> "
 		"W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> "
-		"TerrainLogic::addBridgeToLogic -> Object::attemptDamage(GenericBridge) -> "
+		"TerrainLogic::addBridgeToLogic -> "
+		"GameLogic::findObjectByID(GenericBridge) -> "
+		"Object::attemptDamage(GenericBridge) -> "
 		"TerrainLogic::updateBridgeDamageStates -> Object::kill(GenericBridge) -> "
 		"TerrainLogic::updateBridgeDamageStates -> "
 		"Object::attemptHealingFromSoleBenefactor(GenericBridge) -> "
@@ -11041,6 +11094,13 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"bridgeLogicCountAfterSeed\":%d,"
 		"\"bridgeLogicFirstIndexAfterSeed\":%d,"
 		"\"bridgeLogicFirstDamageStateAfterSeed\":%d,"
+		"\"bridgeLogicObjectLookupInvoked\":%s,"
+		"\"bridgeLogicObjectLookupBridgeID\":%d,"
+		"\"bridgeLogicObjectLookupFoundID\":%d,"
+		"\"bridgeLogicObjectLookupFoundBridgeObject\":%s,"
+		"\"bridgeLogicObjectLookupMatchesBridgeID\":%s,"
+		"\"bridgeLogicObjectLookupInvalidIDNull\":%s,"
+		"\"bridgeLogicObjectLookupHighIDNull\":%s,"
 		"\"bridgeLogicFirstBodyDamageStateAfterSeed\":%d,"
 		"\"bridgeLogicFirstBodyHealthAfterSeed\":%.4f,"
 		"\"bridgeLogicFirstBodyMaxHealthAfterSeed\":%.4f,"
@@ -11314,6 +11374,13 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_logic_count_after_seed,
 		bridge_logic_first_index_after_seed,
 		bridge_logic_first_damage_state_after_seed,
+		bool_json(bridge_logic_object_lookup_invoked),
+		bridge_logic_object_lookup.bridgeObjectID,
+		bridge_logic_object_lookup.foundObjectID,
+		bool_json(bridge_logic_object_lookup.foundBridgeObject),
+		bool_json(bridge_logic_object_lookup.foundMatchesBridgeID),
+		bool_json(bridge_logic_object_lookup.invalidIDLookupNull),
+		bool_json(bridge_logic_object_lookup.highIDLookupNull),
 		bridge_logic_first_body_damage_state_after_seed,
 		bridge_logic_first_body_health_after_seed,
 		bridge_logic_first_body_max_health_after_seed,

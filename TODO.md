@@ -886,7 +886,9 @@ flow below.
       replace the bridge-only pathfinder and focused object creation/runtime
       surface with the full original runtime, then find and harness-drive the
       real gameplay/script path that drives non-pristine bridge states. The
-      shipped `GenericBridge` body path is now browser-verified through
+      shipped `GenericBridge` lookup/body path is now browser-verified through
+      `GameLogic::findObjectByID` resolving the retained bridge ID through the
+      standard object lookup table, through
       `Object::attemptDamage`, `Object::kill`, and
       `Object::attemptHealingFromSoleBenefactor` to report/route real damage,
       kill, and non-stacking healer requests, and through

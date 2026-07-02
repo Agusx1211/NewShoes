@@ -4043,6 +4043,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       renders the bridge in the pristine draw state. Verified with
       `npm --prefix WebAssembly run build:wasm` and
       `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
+- [x] Browser-prove the retained `GenericBridge` uses the standard
+      `GameLogic::findObjectByID` object lookup path before bridge body and
+      render-state checks. The bridge scene now requires the retained bridge's
+      `BridgeInfo::bridgeObjectID` to resolve through `TheGameLogic` to the
+      same object ID, verifies `INVALID_ID` returns null, verifies a high
+      unused ID returns null, and names the lookup in the scene path before the
+      damage/healing/disabled/invulnerable bridge object calls. Verified with
+      `npm --prefix WebAssembly run build:wasm` and
+      `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
 	- [x] Feed the focused terrain road and bridge adjunct buffers from the
 	      original logical terrain map-object list. The road and bridge scene probes
 	      now call original `W3DTerrainLogic::loadMap(query=true)` against

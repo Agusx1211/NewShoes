@@ -619,7 +619,7 @@ try {
   if (!result.ok
       || result.command !== "ww3dTerrainBridgeBufferScene"
       || result.probe?.source !== "ww3d_terrain_bridge_buffer_scene_probe"
-      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> TerrainLogic::addBridgeToLogic -> Object::attemptDamage(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::kill(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::attemptHealingFromSoleBenefactor(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::setDisabledUntil/checkDisabledStatus(GenericBridge) -> Object::goInvulnerable(GenericBridge) -> TerrainLogic::updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay"
+      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> TerrainLogic::addBridgeToLogic -> GameLogic::findObjectByID(GenericBridge) -> Object::attemptDamage(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::kill(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::attemptHealingFromSoleBenefactor(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::setDisabledUntil/checkDisabledStatus(GenericBridge) -> Object::goInvulnerable(GenericBridge) -> TerrainLogic::updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay"
       || result.probe?.results?.runtimeAssetSystemInstalled !== true
       || result.probe?.results?.modelsFileExists !== true
       || result.probe?.results?.meshFileExists !== true
@@ -649,6 +649,13 @@ try {
       || result.probe?.results?.bridgeLogicCountAfterSeed <= 0
       || result.probe?.results?.bridgeLogicFirstIndexAfterSeed !== 0
       || result.probe?.results?.bridgeLogicFirstDamageStateAfterSeed !== BODY_PRISTINE
+      || result.probe?.results?.bridgeLogicObjectLookupInvoked !== true
+      || result.probe?.results?.bridgeLogicObjectLookupBridgeID <= 0
+      || result.probe?.results?.bridgeLogicObjectLookupFoundID !== result.probe?.results?.bridgeLogicObjectLookupBridgeID
+      || result.probe?.results?.bridgeLogicObjectLookupFoundBridgeObject !== true
+      || result.probe?.results?.bridgeLogicObjectLookupMatchesBridgeID !== true
+      || result.probe?.results?.bridgeLogicObjectLookupInvalidIDNull !== true
+      || result.probe?.results?.bridgeLogicObjectLookupHighIDNull !== true
       || result.probe?.results?.bridgeLogicFirstBodyDamageStateAfterSeed !== BODY_PRISTINE
       || result.probe?.results?.bridgeLogicFirstBodyHealthAfterSeed !== 1
       || result.probe?.results?.bridgeLogicFirstBodyMaxHealthAfterSeed !== 1
