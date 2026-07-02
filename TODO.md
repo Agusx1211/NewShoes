@@ -41,11 +41,24 @@ residue and the next frontier.
       Then retire the focused menu repaint/layout smokes this supersedes.
 - [ ] Migrate the legacy `ensure_booted()` probe boot and its harness gates
       onto the real lifecycle path, deleting probe-local implementations as
-      real init covers them. First known casualty of real ownership:
-      `edgeMapperApply` in the aggregate `EXPECT_WASM` smoke now hits an OOB
-      (legacy probe vs real renderer ownership) — fix the probe to real
-      ownership or retire it; `DoParticles`/`DoShadows`-style weak-counter
-      tripwires mark the same class.
+      real init covers them. First known casualty of real ownership: the
+      aggregate `EXPECT_WASM` smoke dies at `edgeMapperApply` with a dlmalloc
+      OOB — but `edgeMapperApply` PASSES in a fresh module (verified by a
+      single-RPC boot), so an EARLIER probe in the aggregate sequence
+      corrupts the wasm heap and edge-mapper is merely the first allocation
+      to trip. Bisect the aggregate probe order to find the corrupter
+      (likely a legacy probe now dispatching into real-owned code — the
+      `DoParticles`/`DoShadows` class), fix or retire it, then re-green the
+      aggregate gate. Related fixed instance: `d6d3b79` linked real
+      `ChallengeGenerals.cpp` into the shim-flavored window-layout lib and
+      the mount-time challenge probe corrupted the stack via the shim-`INI`
+      12-byte/9,272-byte ODR hazard whenever base `INI.big` mounted before
+      `INIZH.big` (bisect-proven; fixed by compiling it real-flavored).
+      RULE: menu/GUI/engine sources added to `cnc-port`-linked libs must go
+      in a REAL-header runtime (`zh_gameengine_real_lifecycle_runtime` /
+      `zh_gameengine_real_ini_runtime`), never the shim-flavored
+      `zh_window_layout_script_runtime`; `harness/phase3_isolate.mjs` is the
+      mount-crash reproducer/bisection driver.
 - [ ] Replace the 6 remaining undefined boundary symbols
       (`DumpExceptionInfo`, `SetDeviceGammaRamp`, WWLib `RegistryClass` ×3,
       `getQR2HostingStatus`) with real browser boundary shims and restore
