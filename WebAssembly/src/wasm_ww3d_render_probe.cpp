@@ -79,6 +79,7 @@
 Bool parseLayoutBlock(File *inFile, char *buffer, UnsignedInt version, WindowLayoutInfo *info);
 extern void PopupReplayShutdown(WindowLayout *layout, void *userData);
 extern const Char *g_csfFile;
+Bool DontShowMainMenu __attribute__((weak)) = FALSE;
 
 using WindowLayoutScriptRuntimeAnchor =
 	Bool (*)(File *, char *, UnsignedInt, WindowLayoutInfo *);
@@ -204,6 +205,8 @@ FunctionLexicon::TableEntry runtimeBaseSystemTable[] = {
 	{ NAMEKEY_INVALID, "MessageBoxSystem", MessageBoxSystem },
 	{ NAMEKEY_INVALID, "QuitMessageBoxSystem", QuitMessageBoxSystem },
 	{ NAMEKEY_INVALID, "IMECandidateWindowSystem", IMECandidateWindowSystem },
+	{ NAMEKEY_INVALID, "MainMenuSystem", MainMenuSystem },
+	{ NAMEKEY_INVALID, "CreditsMenuSystem", CreditsMenuSystem },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
@@ -221,6 +224,8 @@ FunctionLexicon::TableEntry runtimeBaseInputTable[] = {
 	{ NAMEKEY_INVALID, "GadgetStaticTextInput", GadgetStaticTextInput },
 	{ NAMEKEY_INVALID, "GadgetTextEntryInput", GadgetTextEntryInput },
 	{ NAMEKEY_INVALID, "IMECandidateWindowInput", IMECandidateWindowInput },
+	{ NAMEKEY_INVALID, "MainMenuInput", MainMenuInput },
+	{ NAMEKEY_INVALID, "CreditsMenuInput", CreditsMenuInput },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
@@ -236,16 +241,22 @@ FunctionLexicon::TableEntry runtimeBaseDrawTable[] = {
 };
 
 FunctionLexicon::TableEntry runtimeBaseLayoutInitTable[] = {
+	{ NAMEKEY_INVALID, "MainMenuInit", MainMenuInit },
+	{ NAMEKEY_INVALID, "CreditsMenuInit", CreditsMenuInit },
 	{ NAMEKEY_INVALID, "DifficultySelectInit", DifficultySelectInit },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
 FunctionLexicon::TableEntry runtimeBaseLayoutUpdateTable[] = {
+	{ NAMEKEY_INVALID, "MainMenuUpdate", MainMenuUpdate },
+	{ NAMEKEY_INVALID, "CreditsMenuUpdate", CreditsMenuUpdate },
 	{ NAMEKEY_INVALID, "KeyboardOptionsMenuUpdate", KeyboardOptionsMenuUpdate },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
 FunctionLexicon::TableEntry runtimeBaseLayoutShutdownTable[] = {
+	{ NAMEKEY_INVALID, "MainMenuShutdown", MainMenuShutdown },
+	{ NAMEKEY_INVALID, "CreditsMenuShutdown", CreditsMenuShutdown },
 	{ NAMEKEY_INVALID, "PopupReplayShutdown", PopupReplayShutdown },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };

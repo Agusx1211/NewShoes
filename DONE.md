@@ -2185,6 +2185,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `originalFunctionLexiconShellLayoutCallbacks` next, keeping
       `createFunctionLexicon`@446 unowned until the remaining non-network
       shell callback graph is linked into the runtime.
+- [x] Promote the first original shell menu callback owners into the linked
+      `cnc-port` base `FunctionLexicon`: `zh_window_layout_script_runtime`
+      now links original `MainMenu.cpp`, `CreditsMenu.cpp`, `Credits.cpp`,
+      `ExtendedMessageBox.cpp`, `Shell.cpp`, `AnimateWindowManager.cpp`,
+      `ProcessAnimateWindow.cpp`, `ShellMenuScheme.cpp`,
+      `GameWindowTransitionsStyles.cpp`, and `CampaignManager.cpp`, while the
+      reduced wasm `FunctionLexicon::init()` registers original
+      `MainMenu`/`CreditsMenu` system/input/init/update/shutdown callbacks.
+      Startup vertical verifies those callback-name lookups in the browser and
+      now reports `base_function_lexicon_main_credits_runtime_owned` with
+      `originalFunctionLexiconSkirmishAndRemainingShellCallbacks` next.
+      Ignored online/download/CD branches remain weak browser boundaries
+      (`StartPatchCheck`, `HTTPThinkWrapper`, `DownloadMenuUpdate`,
+      `deleteNotificationBox`, `TheRankPointValues`, `DontShowMainMenu`,
+      `IsFirstCDPresent`) until their owning features become current.
 ---
 
 ## M3 — File / data subsystem (real data)

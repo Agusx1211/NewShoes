@@ -43,7 +43,7 @@ class Shell;
 // this focused probe. They stay null here because those subsystems are not booted.
 DisplayStringManager *TheDisplayStringManager = nullptr;
 InGameUI *TheInGameUI = nullptr;
-Shell *TheShell = nullptr;
+Shell *TheShell __attribute__((weak)) = nullptr;
 
 // Keep this browser GUI input probe focused on event routing without linking
 // the .wnd layout parser and function lexicon callback tables.

@@ -34,6 +34,7 @@
 #include "GameNetwork/NetCommandRef.h"
 #include "GameNetwork/NetCommandWrapperList.h"
 #include "GameNetwork/NetPacket.h"
+#include "GameNetwork/RankPointValue.h"
 #include "GameNetwork/Transport.h"
 
 #define private public
@@ -57,6 +58,7 @@ class PingerInterface;
 class GameSpyStagingRoom;
 class ScriptActionsInterface;
 class ScriptEngine;
+class WindowLayout;
 
 DisconnectMenu *TheDisconnectMenu __attribute__((weak)) = nullptr;
 GameState *TheGameState __attribute__((weak)) = nullptr;
@@ -64,6 +66,7 @@ NetworkInterface *TheNetwork __attribute__((weak)) = nullptr;
 PingerInterface *ThePinger __attribute__((weak)) = nullptr;
 RecorderClass *TheRecorder __attribute__((weak)) = nullptr;
 GameSpyStagingRoom *TheGameSpyGame __attribute__((weak)) = nullptr;
+RankPoints *TheRankPointValues __attribute__((weak)) = nullptr;
 ScriptActionsInterface *TheScriptActions __attribute__((weak)) = nullptr;
 ScriptEngine *TheScriptEngine __attribute__((weak)) = nullptr;
 Bool LANbuttonPushed __attribute__((weak)) = false;
@@ -181,6 +184,39 @@ __attribute__((weak)) Bool WouldMapTransfer(const AsciiString&)
 }
 __attribute__((weak)) void lanUpdateSlotList()
 {
+}
+
+__attribute__((weak)) void StartPatchCheck()
+{
+}
+
+__attribute__((weak)) void CancelPatchCheckCallback()
+{
+}
+
+__attribute__((weak)) void HTTPThinkWrapper()
+{
+}
+
+__attribute__((weak)) void StopAsyncDNSCheck()
+{
+}
+
+__attribute__((weak)) void StartDownloadingPatches()
+{
+}
+
+__attribute__((weak)) void deleteNotificationBox()
+{
+}
+
+__attribute__((weak)) void DownloadMenuUpdate(WindowLayout *, void *)
+{
+}
+
+__attribute__((weak)) Bool IsFirstCDPresent()
+{
+	return TRUE;
 }
 __attribute__((weak)) void updateGameOptions()
 {

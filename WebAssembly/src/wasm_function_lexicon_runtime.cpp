@@ -165,6 +165,12 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.ime_candidate_window_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("IMECandidateWindowSystem")) == IMECandidateWindowSystem;
+	result.main_menu_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("MainMenuSystem")) == MainMenuSystem;
+	result.credits_menu_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("CreditsMenuSystem")) == CreditsMenuSystem;
 	result.game_window_default_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("GameWinDefaultInput")) == GameWinDefaultInput;
@@ -205,6 +211,12 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.ime_candidate_window_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("IMECandidateWindowInput")) == IMECandidateWindowInput;
+	result.main_menu_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("MainMenuInput")) == MainMenuInput;
+	result.credits_menu_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("CreditsMenuInput")) == CreditsMenuInput;
 	result.game_window_default_tooltip_lookup =
 		TheFunctionLexicon->gameWinTooltipFunc(
 			key_for("GameWinDefaultTooltip")) == GameWinDefaultTooltip;
@@ -214,12 +226,30 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.ime_candidate_text_area_draw_lookup =
 		TheFunctionLexicon->gameWinDrawFunc(
 			key_for("IMECandidateTextAreaDraw")) == IMECandidateTextAreaDraw;
+	result.main_menu_init_lookup =
+		TheFunctionLexicon->winLayoutInitFunc(
+			key_for("MainMenuInit")) == MainMenuInit;
+	result.credits_menu_init_lookup =
+		TheFunctionLexicon->winLayoutInitFunc(
+			key_for("CreditsMenuInit")) == CreditsMenuInit;
 	result.difficulty_select_init_lookup =
 		TheFunctionLexicon->winLayoutInitFunc(
 			key_for("DifficultySelectInit")) == DifficultySelectInit;
+	result.main_menu_update_lookup =
+		TheFunctionLexicon->winLayoutUpdateFunc(
+			key_for("MainMenuUpdate")) == MainMenuUpdate;
+	result.credits_menu_update_lookup =
+		TheFunctionLexicon->winLayoutUpdateFunc(
+			key_for("CreditsMenuUpdate")) == CreditsMenuUpdate;
 	result.keyboard_options_menu_update_lookup =
 		TheFunctionLexicon->winLayoutUpdateFunc(
 			key_for("KeyboardOptionsMenuUpdate")) == KeyboardOptionsMenuUpdate;
+	result.main_menu_shutdown_lookup =
+		TheFunctionLexicon->winLayoutShutdownFunc(
+			key_for("MainMenuShutdown")) == MainMenuShutdown;
+	result.credits_menu_shutdown_lookup =
+		TheFunctionLexicon->winLayoutShutdownFunc(
+			key_for("CreditsMenuShutdown")) == CreditsMenuShutdown;
 	result.popup_replay_shutdown_lookup =
 		TheFunctionLexicon->winLayoutShutdownFunc(
 			key_for("PopupReplayShutdown")) == PopupReplayShutdown;
@@ -327,10 +357,24 @@ bool base_layout_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &res
 		result.popup_replay_shutdown_lookup;
 }
 
+bool shell_menu_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
+{
+	return result.main_menu_system_lookup &&
+		result.credits_menu_system_lookup &&
+		result.main_menu_input_lookup &&
+		result.credits_menu_input_lookup &&
+		result.main_menu_init_lookup &&
+		result.credits_menu_init_lookup &&
+		result.main_menu_update_lookup &&
+		result.credits_menu_update_lookup &&
+		result.main_menu_shutdown_lookup &&
+		result.credits_menu_shutdown_lookup;
+}
+
 bool base_layout_callback_graph_ready(const FunctionLexiconRuntimeProbeResult &)
 {
-	// The linked runtime currently proves representative non-network layout
-	// callbacks. Full ownership requires the remaining shell layout graph.
+	// The linked runtime currently proves a shell-menu subset. Full ownership
+	// requires the remaining non-network shell layout callback graph.
 	return false;
 }
 
@@ -338,6 +382,7 @@ bool lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 {
 	return base_widget_lookup_state_ready(result) &&
 		base_layout_lookup_state_ready(result) &&
+		shell_menu_lookup_state_ready(result) &&
 		device_lookup_state_ready(result);
 }
 
@@ -421,9 +466,14 @@ void finish_status(FunctionLexiconRuntimeProbeResult &result)
 		result.next_required = "originalFunctionLexiconRepresentativeLayoutCallbacks";
 		return;
 	}
-	if (!base_layout_callback_graph_ready(result)) {
+	if (!shell_menu_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_layout_partial_runtime_owned";
-		result.next_required = "originalFunctionLexiconShellLayoutCallbacks";
+		result.next_required = "originalFunctionLexiconShellMenuCallbacks";
+		return;
+	}
+	if (!base_layout_callback_graph_ready(result)) {
+		result.status = "base_function_lexicon_main_credits_runtime_owned";
+		result.next_required = "originalFunctionLexiconSkirmishAndRemainingShellCallbacks";
 		return;
 	}
 	if (!base_table_state_ready(result)) {
@@ -492,8 +542,8 @@ const FunctionLexiconRuntimeProbeResult &wasm_function_lexicon_runtime_install(
 
 			// SubsystemInterfaceList::initSubsystem() ->
 			// W3DFunctionLexicon::init(). The current linked runtime proves
-			// the W3D device draw/layout tables here; the remaining base
-			// layout tables stay as the next ownership boundary.
+			// the W3D device draw/layout tables plus a non-network base
+			// callback subset; the remaining shell graph stays partial.
 			g_function_lexicon->init();
 			g_function_lexicon_init_ran = true;
 		} else {
@@ -561,7 +611,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 	const std::string next_required_json = json_escape(state.next_required);
 	const std::string init_error_json = json_escape(state.init_error);
 
-	static char json[10000];
+	static char json[14000];
 	std::snprintf(json, sizeof(json),
 		"{\"attempted\":%s,\"ok\":%s,\"source\":\"%s\","
 		"\"status\":\"%s\",\"nextRequired\":\"%s\","
@@ -598,6 +648,8 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"messageBoxSystem\":%s,"
 		"\"quitMessageBoxSystem\":%s,"
 		"\"imeCandidateWindowSystem\":%s,"
+		"\"mainMenuSystem\":%s,"
+		"\"creditsMenuSystem\":%s,"
 		"\"gameWindowDefaultInput\":%s,"
 		"\"gadgetPushButtonInput\":%s,"
 		"\"gadgetCheckBoxInput\":%s,"
@@ -611,11 +663,19 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"gadgetStaticTextInput\":%s,"
 		"\"gadgetTextEntryInput\":%s,"
 		"\"imeCandidateWindowInput\":%s,"
+		"\"mainMenuInput\":%s,"
+		"\"creditsMenuInput\":%s,"
 		"\"gameWindowDefaultTooltip\":%s,"
 		"\"imeCandidateMainDraw\":%s,"
 		"\"imeCandidateTextAreaDraw\":%s,"
+		"\"mainMenuInit\":%s,"
+		"\"creditsMenuInit\":%s,"
 		"\"difficultySelectInit\":%s,"
+		"\"mainMenuUpdate\":%s,"
+		"\"creditsMenuUpdate\":%s,"
 		"\"keyboardOptionsMenuUpdate\":%s,"
+		"\"mainMenuShutdown\":%s,"
+		"\"creditsMenuShutdown\":%s,"
 		"\"popupReplayShutdown\":%s,"
 		"\"w3dGadgetPushButtonDraw\":%s,"
 		"\"w3dGameWindowDefaultDraw\":%s,"
@@ -663,6 +723,8 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.message_box_system_lookup),
 		json_bool(state.quit_message_box_system_lookup),
 		json_bool(state.ime_candidate_window_system_lookup),
+		json_bool(state.main_menu_system_lookup),
+		json_bool(state.credits_menu_system_lookup),
 		json_bool(state.game_window_default_input_lookup),
 		json_bool(state.gadget_push_button_input_lookup),
 		json_bool(state.gadget_check_box_input_lookup),
@@ -676,11 +738,19 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.gadget_static_text_input_lookup),
 		json_bool(state.gadget_text_entry_input_lookup),
 		json_bool(state.ime_candidate_window_input_lookup),
+		json_bool(state.main_menu_input_lookup),
+		json_bool(state.credits_menu_input_lookup),
 		json_bool(state.game_window_default_tooltip_lookup),
 		json_bool(state.ime_candidate_main_draw_lookup),
 		json_bool(state.ime_candidate_text_area_draw_lookup),
+		json_bool(state.main_menu_init_lookup),
+		json_bool(state.credits_menu_init_lookup),
 		json_bool(state.difficulty_select_init_lookup),
+		json_bool(state.main_menu_update_lookup),
+		json_bool(state.credits_menu_update_lookup),
 		json_bool(state.keyboard_options_menu_update_lookup),
+		json_bool(state.main_menu_shutdown_lookup),
+		json_bool(state.credits_menu_shutdown_lookup),
 		json_bool(state.popup_replay_shutdown_lookup),
 		json_bool(state.w3d_gadget_push_button_draw_lookup),
 		json_bool(state.w3d_game_window_default_draw_lookup),

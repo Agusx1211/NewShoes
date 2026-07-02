@@ -4017,13 +4017,23 @@ target_link_libraries(zh_gameclient_gui_input_runtime PUBLIC
 )
 
 add_library(zh_window_layout_script_runtime STATIC
+  "${GAMEENGINE_GAMECLIENT_DIR}/Credits.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/AnimateWindowManager.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowTransitionsStyles.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowManagerScript.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/HeaderTemplate.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/ExtendedMessageBox.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/IMECandidate.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/MessageBox.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/CreditsMenu.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/DifficultySelect.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/KeyboardOptionsMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/MainMenu.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/PopupReplay.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ProcessAnimateWindow.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/Shell.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/ShellMenuScheme.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/System/CampaignManager.cpp"
 )
 
 target_include_directories(zh_window_layout_script_runtime PUBLIC

@@ -49,9 +49,11 @@ flow below.
       archive-mounted frontier is now `createFunctionLexicon` at line 446
       (the linked runtime constructs `W3DFunctionLexicon`, proves its W3D
       device draw/layout tables, loads the non-network base GUI
-      system/input/tooltip/widget plus IME draw callback table, and registers
-      representative original base layout callbacks; the remaining
-      `FunctionLexicon` boundary is the shell layout callback graph);
+      system/input/tooltip/widget plus IME draw callback table, registers
+      representative original base layout callbacks, and now owns the
+      original `MainMenu`/`CreditsMenu` shell callback names; the remaining
+      `FunctionLexicon` boundary is Skirmish plus the rest of the shell layout
+      callback graph);
       archiveless or music-less boots honestly stay at line 434.
 - [ ] Own `createFunctionLexicon` (`W3DFunctionLexicon`, `GameEngine.cpp:446`)
       and then `createModuleFactory` (line 447) in the browser boot — the new
@@ -60,12 +62,13 @@ flow below.
       W3D device draw/layout callback tables plus the non-network base GUI
       system/input/tooltip/widget, IME draw, and representative original base
       layout callback tables (`DifficultySelectInit`,
-      `KeyboardOptionsMenuUpdate`, `PopupReplayShutdown`), but full ownership
-      still needs the remaining original base `FunctionLexicon.cpp` shell
-      layout callback graph without pulling LAN/WOL/GameSpy/embedded-web menu
-      callbacks into `cnc-port`. Start by promoting the non-network
-      `MainMenu`/`CreditsMenu`/`SkirmishGameOptionsMenu` callback owners that
-      the existing window-layout script smoke already proves, using real
+      `KeyboardOptionsMenuUpdate`, `PopupReplayShutdown`) plus original
+      `MainMenu`/`CreditsMenu` system/input/init/update/shutdown lookups, but
+      full ownership still needs `SkirmishGameOptionsMenu` and the remaining
+      original base `FunctionLexicon.cpp` shell layout callback graph without
+      pulling LAN/WOL/GameSpy/embedded-web menu callbacks into `cnc-port`.
+      Next promote the non-network `SkirmishGameOptionsMenu` callback owner
+      that the existing window-layout script smoke already proves, using real
       runtime singleton ownership instead of smoke-local stubs.
       The real
       `W3DModuleFactory` + all 224 module registrations already link into
