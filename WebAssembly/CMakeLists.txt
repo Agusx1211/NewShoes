@@ -2296,6 +2296,15 @@ target_compile_options(zh_w3d_display_drawimage_runtime PRIVATE
 )
 
 add_library(zh_w3d_terrain_probe_runtime STATIC
+  "${GAMEENGINE_COMMON_DIR}/DamageFX.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIDamageFX.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIObject.cpp"
+  "${GAMEENGINE_COMMON_DIR}/Thing/DrawModule.cpp"
+  "${GAMEENGINE_COMMON_DIR}/Thing/Module.cpp"
+  "${GAMEENGINE_COMMON_DIR}/Thing/ModuleFactory.cpp"
+  "${GAMEENGINE_COMMON_DIR}/Thing/Thing.cpp"
+  "${GAMEENGINE_COMMON_DIR}/Thing/ThingFactory.cpp"
+  "${GAMEENGINE_COMMON_DIR}/Thing/ThingTemplate.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/AcademyStats.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/Energy.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/Money.cpp"
@@ -2305,14 +2314,38 @@ add_library(zh_w3d_terrain_probe_runtime STATIC
   "${GAMEENGINE_COMMON_DIR}/RTS/Team.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/TunnelTracker.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/AI/AI.cpp"
+  src/wasm_terrain_probe_ai_update_data.cpp
   src/wasm_terrain_probe_minimal_pathfinder.cpp
+  src/wasm_terrain_probe_game_logic.cpp
+  src/wasm_terrain_probe_object.cpp
+  src/wasm_terrain_probe_object_compat.cpp
   "${GAMEENGINE_GAMELOGIC_DIR}/Map/TerrainLogic.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Map/PolygonTrigger.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/Scripts.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/ScriptEngine.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/AI/Squad.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Armor.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/FiringTracker.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/WeaponSet.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Behavior/BehaviorModule.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Behavior/BridgeBehavior.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Behavior/BridgeScaffoldBehavior.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Behavior/BridgeTowerBehavior.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Body/ActiveBody.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Body/BodyModule.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Body/ImmortalBody.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Helper/ObjectDefectionHelper.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Helper/ObjectHelper.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Helper/ObjectRepulsorHelper.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Helper/ObjectSMCHelper.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Helper/ObjectWeaponStatusHelper.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Helper/StatusDamageHelper.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Helper/SubdualDamageHelper.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Helper/TempWeaponBonusHelper.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/PartitionManager.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Update/UpdateModule.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/ObjectTypes.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/System/Damage.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/System/RankInfo.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/System/Smudge.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Terrain/TerrainVisual.cpp"
@@ -2349,6 +2382,7 @@ target_link_libraries(zh_w3d_terrain_probe_runtime PUBLIC
 
 target_compile_definitions(zh_w3d_terrain_probe_runtime PRIVATE
   CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS=1
+  CNC_PORT_TERRAIN_PROBE_FOCUSED_MODULE_FACTORY_INIT=1
   WASM_USE_ORIGINAL_GLOBALDATA=1
   __PRERTS_H__
 )
@@ -4029,6 +4063,7 @@ set_source_files_properties("${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClien
 
 target_compile_definitions(cnc-port PRIVATE
   ALLOW_DEBUG_UTILS=1
+  CNC_PORT_TERRAIN_PROBE_USE_ORIGINAL_THING_FACTORY=1
   DEBUG_LOGGING=1
   DISABLE_DEBUG_CRASHING=1
   DISABLE_DEBUG_STACKTRACE=1

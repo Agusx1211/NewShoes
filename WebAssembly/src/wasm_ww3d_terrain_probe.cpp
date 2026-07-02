@@ -22,23 +22,36 @@
 #include "Common/FileSystem.h"
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
+#include "Common/DrawModule.h"
 #include "Common/INI.h"
 #include "Common/INIException.h"
 #include "Common/LocalFileSystem.h"
 #include "Common/MapReaderWriterInfo.h"
+#include "Common/ModuleFactory.h"
 #include "Common/NameKeyGenerator.h"
 #include "Common/Player.h"
 #include "Common/PlayerList.h"
 #include "Common/Radar.h"
 #include "Common/ThingFactory.h"
+#include "Common/ThingTemplate.h"
 #include "Common/TerrainTypes.h"
+#include "Common/DamageFX.h"
 #include "GameLogic/AI.h"
+#include "GameLogic/Armor.h"
+#include "GameLogic/Damage.h"
+#include "GameLogic/GameLogic.h"
+#include "GameLogic/Module/ActiveBody.h"
+#include "GameLogic/Module/BridgeBehavior.h"
+#include "GameLogic/Module/BridgeScaffoldBehavior.h"
+#include "GameLogic/Module/BridgeTowerBehavior.h"
+#include "GameLogic/Module/ImmortalBody.h"
 #include "GameLogic/PartitionManager.h"
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/PolygonTrigger.h"
 #include "GameLogic/SidesList.h"
 #include "GameLogic/Scripts.h"
 #include "GameLogic/TerrainLogic.h"
+#include "GameClient/FXList.h"
 #include "GameClient/GameClient.h"
 #include "GameClient/MapUtil.h"
 #include "GameClient/TerrainRoads.h"
@@ -217,6 +230,7 @@ void GameClient::loadPostProcess()
 {
 }
 
+#ifndef CNC_PORT_TERRAIN_PROBE_USE_ORIGINAL_THING_FACTORY
 ThingFactory::ThingFactory() :
 	m_firstTemplate(nullptr),
 	m_nextTemplateID(1)
@@ -285,6 +299,7 @@ ThingTemplate *ThingFactory::newOverride(ThingTemplate *)
 {
 	return nullptr;
 }
+#endif
 
 namespace {
 
@@ -324,6 +339,10 @@ constexpr const char *kArchiveTerrainIniEntry = "Data\\INI\\Terrain.ini";
 constexpr const char *kArchiveWaterIniEntry = "Data\\INI\\Water.ini";
 constexpr const char *kArchiveDefaultRoadsIniEntry = "Data\\INI\\Default\\Roads.ini";
 constexpr const char *kArchiveRoadsIniEntry = "Data\\INI\\Roads.ini";
+constexpr const char *kArchiveArmorIniEntry = "Data\\INI\\Armor.ini";
+constexpr const char *kArchiveDamageFXIniEntry = "Data\\INI\\DamageFX.ini";
+constexpr const char *kArchiveObjectIniDirectory = "Data\\INI\\Object\\";
+constexpr const char *kProbeGenericBridgeIniEntry = "__wasm_generic_bridge_probe.ini";
 constexpr const char *kPropModelName = "CINE_MOON";
 constexpr const char *kPropMeshArchiveEntry = "art\\w3d\\cine_moon.w3d";
 constexpr const char *kPropTextureArchiveEntry = "art\\textures\\cine_moon.dds";
@@ -930,6 +949,230 @@ Bool load_big_archive_path(Win32BIGFileSystem &archive_file_system, const std::s
 		AsciiString(directory.c_str()),
 		AsciiString(mask.c_str()),
 		TRUE);
+}
+
+std::size_t probe_line_content_end(const std::string &text, std::size_t line_start, std::size_t line_end)
+{
+	while (line_end > line_start &&
+			(text[line_end - 1] == '\n' || text[line_end - 1] == '\r')) {
+		--line_end;
+	}
+	return line_end;
+}
+
+std::size_t probe_next_line_start(const std::string &text, std::size_t line_start)
+{
+	const std::size_t newline = text.find('\n', line_start);
+	return newline == std::string::npos ? text.size() : newline + 1;
+}
+
+bool probe_read_archive_text(FileSystem *file_system, const char *path, std::string &text)
+{
+	if (file_system == nullptr || path == nullptr || path[0] == '\0') {
+		return false;
+	}
+
+	FileInfo file_info = {};
+	if (!file_system->getFileInfo(AsciiString(path), &file_info) ||
+			file_info.sizeHigh != 0 ||
+			file_info.sizeLow <= 0) {
+		return false;
+	}
+
+	File *file = file_system->openFile(path, File::READ | File::BINARY);
+	if (file == nullptr) {
+		return false;
+	}
+
+	std::vector<char> bytes(static_cast<std::size_t>(file_info.sizeLow));
+	const Int bytes_read = file->read(bytes.data(), file_info.sizeLow);
+	file->close();
+	if (bytes_read != file_info.sizeLow) {
+		return false;
+	}
+
+	text.assign(bytes.begin(), bytes.end());
+	return true;
+}
+
+bool probe_write_ini_file(const char *path, const std::string &text)
+{
+	if (TheFileSystem == nullptr || path == nullptr || path[0] == '\0') {
+		return false;
+	}
+
+	File *file = TheFileSystem->openFile(
+		path,
+		File::WRITE | File::CREATE | File::TRUNCATE | File::BINARY);
+	if (file == nullptr) {
+		return false;
+	}
+
+	const Int bytes_written = file->write(text.data(), static_cast<Int>(text.size()));
+	file->close();
+	return bytes_written == static_cast<Int>(text.size());
+}
+
+__attribute__((noinline, used))
+void probe_keep_original_ini_object_parsers_linked(
+	INIBlockParse parse_object,
+	INIBlockParse parse_object_reskin)
+{
+	if (parse_object == nullptr || parse_object_reskin == nullptr) {
+		std::abort();
+	}
+}
+
+bool probe_line_matches_top_level_header(
+	const std::string &text,
+	std::size_t line_start,
+	std::size_t line_end,
+	const char *header)
+{
+	if (line_start >= line_end || text[line_start] == ' ' || text[line_start] == '\t') {
+		return false;
+	}
+
+	const std::size_t header_len = std::strlen(header);
+	if (line_end - line_start < header_len ||
+			text.compare(line_start, header_len, header) != 0) {
+		return false;
+	}
+
+	if (line_end - line_start == header_len) {
+		return true;
+	}
+
+	const char next = text[line_start + header_len];
+	return next == ' ' || next == '\t' || next == ';';
+}
+
+bool probe_append_top_level_object_block(
+	const std::string &source,
+	const char *object_name,
+	std::string &destination)
+{
+	const std::string header = std::string("Object ") + object_name;
+
+	for (std::size_t line_start = 0; line_start < source.size();
+			line_start = probe_next_line_start(source, line_start)) {
+		const std::size_t line_end = probe_next_line_start(source, line_start);
+		const std::size_t content_end = probe_line_content_end(source, line_start, line_end);
+		if (!probe_line_matches_top_level_header(source, line_start, content_end, header.c_str())) {
+			continue;
+		}
+
+		std::size_t block_end = line_end;
+		for (std::size_t block_line_start = line_end; block_line_start < source.size();
+				block_line_start = probe_next_line_start(source, block_line_start)) {
+			const std::size_t block_line_end = probe_next_line_start(source, block_line_start);
+			const std::size_t block_content_end =
+				probe_line_content_end(source, block_line_start, block_line_end);
+			if (probe_line_matches_top_level_header(source, block_line_start, block_content_end, "Object") ||
+					probe_line_matches_top_level_header(source, block_line_start, block_content_end, "ObjectReskin")) {
+				break;
+			}
+			block_end = block_line_end;
+		}
+
+		destination.append(source, line_start, block_end - line_start);
+		if (destination.empty() || destination.back() != '\n') {
+			destination.push_back('\n');
+		}
+		return true;
+	}
+
+	return false;
+}
+
+bool probe_load_generic_bridge_template_from_archives(
+	FileSystem *file_system,
+	Int *ini_error_code = nullptr,
+	std::string *ini_error_message = nullptr)
+{
+	if (file_system == nullptr || TheArchiveFileSystem == nullptr) {
+		if (ini_error_code != nullptr) {
+			*ini_error_code = -10;
+		}
+		if (ini_error_message != nullptr) {
+			*ini_error_message = "archive file system is not active";
+		}
+		return false;
+	}
+
+	FilenameList object_ini_files;
+	TheFileSystem->getFileListInDirectory(
+		AsciiString(kArchiveObjectIniDirectory),
+		"*.ini",
+		object_ini_files,
+		TRUE);
+
+	std::string generic_bridge_ini;
+	for (FilenameList::const_iterator it = object_ini_files.begin();
+			it != object_ini_files.end() && generic_bridge_ini.empty();
+			++it) {
+		std::string text;
+		if (probe_read_archive_text(file_system, it->str(), text)) {
+			probe_append_top_level_object_block(text, "GenericBridge", generic_bridge_ini);
+		}
+	}
+
+	if (generic_bridge_ini.empty()) {
+		if (ini_error_code != nullptr) {
+			*ini_error_code = -11;
+		}
+		if (ini_error_message != nullptr) {
+			*ini_error_message = "GenericBridge object block was not found";
+		}
+		return false;
+	}
+
+	if (!probe_write_ini_file(kProbeGenericBridgeIniEntry, generic_bridge_ini)) {
+		if (ini_error_code != nullptr) {
+			*ini_error_code = -12;
+		}
+		if (ini_error_message != nullptr) {
+			*ini_error_message = "failed to write extracted GenericBridge INI";
+		}
+		return false;
+	}
+
+	INI ini;
+	try {
+		ini.load(AsciiString(kProbeGenericBridgeIniEntry), INI_LOAD_OVERWRITE, nullptr);
+	} catch (const INIException &exception) {
+		if (ini_error_code != nullptr) {
+			*ini_error_code = -2;
+		}
+		if (ini_error_message != nullptr && exception.mFailureMessage != nullptr) {
+			*ini_error_message = exception.mFailureMessage;
+		}
+		return false;
+	} catch (int error_code) {
+		if (ini_error_code != nullptr) {
+			*ini_error_code = error_code;
+		}
+		return false;
+	} catch (...) {
+		if (ini_error_code != nullptr) {
+			*ini_error_code = -1;
+		}
+		return false;
+	}
+	if (TheThingFactory == nullptr || TheThingFactory->findTemplate("GenericBridge") == nullptr) {
+		if (ini_error_code != nullptr) {
+			*ini_error_code = -13;
+		}
+		if (ini_error_message != nullptr) {
+			const ThingTemplate *first_template =
+				TheThingFactory != nullptr ? TheThingFactory->firstTemplate() : nullptr;
+			*ini_error_message = "GenericBridge template was not registered after INI load; first template=";
+			*ini_error_message +=
+				first_template != nullptr ? first_template->getName().str() : "<none>";
+		}
+		return false;
+	}
+	return true;
 }
 
 std::size_t count_terrain_types(TerrainTypeCollection *terrain_types)
@@ -2350,6 +2593,59 @@ private:
 	GameClient *m_oldGameClient = nullptr;
 	ThingFactory *m_oldThingFactory = nullptr;
 	AI *m_oldAI = nullptr;
+};
+
+class W3DDefaultDraw : public DrawModule
+{
+	MEMORY_POOL_GLUE_WITH_USERLOOKUP_CREATE(W3DDefaultDraw, "ProbeW3DDefaultDraw")
+	MAKE_STANDARD_MODULE_MACRO(W3DDefaultDraw)
+
+public:
+	W3DDefaultDraw(Thing *thing, const ModuleData *moduleData) :
+		DrawModule(thing, moduleData)
+	{
+	}
+
+	static ModuleType getModuleType() { return MODULETYPE_DRAW; }
+	static Int getInterfaceMask() { return MODULEINTERFACE_DRAW; }
+
+	virtual void doDrawModule(const Matrix3D *) override {}
+	virtual void setShadowsEnabled(Bool) override {}
+	virtual void releaseShadows() override {}
+	virtual void allocateShadows() override {}
+	virtual void setFullyObscuredByShroud(Bool) override {}
+	virtual void reactToTransformChange(const Matrix3D *, const Coord3D *, Real) override {}
+	virtual void reactToGeometryChange() override {}
+};
+
+W3DDefaultDraw::~W3DDefaultDraw()
+{
+}
+
+void W3DDefaultDraw::crc(Xfer *)
+{
+}
+
+void W3DDefaultDraw::xfer(Xfer *)
+{
+}
+
+void W3DDefaultDraw::loadPostProcess()
+{
+}
+
+class ProbeBridgeModuleFactory final : public ModuleFactory
+{
+public:
+	void init() override
+	{
+		addModule(BridgeBehavior);
+		addModule(BridgeScaffoldBehavior);
+		addModule(BridgeTowerBehavior);
+		addModule(ActiveBody);
+		addModule(ImmortalBody);
+		addModule(W3DDefaultDraw);
+	}
 };
 
 class ProbeTerrainLogicForBridgeDraw final : public W3DTerrainLogic
@@ -4894,6 +5190,9 @@ const char *run_ww3d_terrain_tile_probe(
 	bool render_via_scene = false)
 {
 	initMemoryManager();
+	probe_keep_original_ini_object_parsers_linked(
+		&INI::parseObjectDefinition,
+		&INI::parseObjectReskinDefinition);
 	wasm_d3d8_reset_state();
 
 	GlobalData global_data;
@@ -9279,9 +9578,25 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
 	GlobalData *global_data = nullptr;
 	TerrainLogic *old_terrain_logic = TheTerrainLogic;
+	GameLogic *old_game_logic = TheGameLogic;
+	ModuleFactory *old_module_factory = TheModuleFactory;
+	PlayerList *old_player_list = ThePlayerList;
+	Radar *old_radar = TheRadar;
+	PartitionManager *old_partition_manager = ThePartitionManager;
+	FXListStore *old_fx_list_store = TheFXListStore;
+	DamageFXStore *old_damage_fx_store = TheDamageFXStore;
+	ArmorStore *old_armor_store = TheArmorStore;
 	MapCache bridge_draw_map_cache;
 	ProbeTerrainLogicGameClient bridge_draw_game_client;
 	ThingFactory bridge_draw_thing_factory;
+	ProbeBridgeModuleFactory bridge_draw_module_factory;
+	GameLogic bridge_draw_game_logic;
+	PlayerList bridge_draw_player_list;
+	ProbeShroudCountingRadar bridge_draw_radar;
+	PartitionManager bridge_draw_partition_manager;
+	FXListStore bridge_draw_fx_list_store;
+	DamageFXStore bridge_draw_damage_fx_store;
+	ArmorStore bridge_draw_armor_store;
 	ProbeTerrainLogicForBridgeDraw bridge_draw_terrain_logic;
 	AI bridge_draw_ai;
 	bridge_draw_ai.init();
@@ -9302,6 +9617,21 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	bool runtime_archive_set_loaded_for_selection = false;
 	bool map_created = false;
 	bool global_data_ready = false;
+	bool bridge_module_factory_ready = false;
+	bool bridge_game_logic_ready = false;
+	bool bridge_player_list_ready = false;
+	bool bridge_radar_ready = false;
+	bool bridge_damage_fx_ready = false;
+	bool bridge_armor_ready = false;
+	bool bridge_generic_bridge_template_loaded = false;
+	bool bridge_damage_fx_entry_available = false;
+	bool bridge_damage_fx_load_exception = false;
+	bool bridge_armor_entry_available = false;
+	bool bridge_armor_load_exception = false;
+	bool bridge_generic_bridge_template_load_exception = false;
+	Int bridge_generic_bridge_template_error_code = 0;
+	bool bridge_partition_ready = false;
+	bool bridge_object_script_engine_ready = false;
 	bool asset_manager_created = false;
 	bool runtime_asset_system_installed = false;
 	bool texture_file_factory_installed = false;
@@ -9345,6 +9675,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	Int bridge_logic_first_layer_after_seed = -1;
 	Int bridge_draw_terrain_logic_bridge_count = 0;
 	Int bridge_draw_enabled_bridge_count = 0;
+	Int bridge_object_ini_file_count = -1;
 	Int roads_after_load = -1;
 	Int road_segments_with_vertices = -1;
 	Int road_types_with_textures = -1;
@@ -9391,6 +9722,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	bool bridge_template_substituted = false;
 	std::string selected_bridge_original_name;
 	std::string selected_bridge_installed_name;
+	std::string bridge_generic_bridge_template_error_message;
 	std::string bridge_pair_candidate_summaries_json = "[]";
 	std::vector<ProbeBridgePairCandidate> bridge_pair_candidates;
 	ProbeLogicalMapObjectLoadMetrics logical_terrain_map_objects;
@@ -9410,7 +9742,6 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 				runtime_archive_directory,
 				runtime_archive_mask);
 	}
-
 	WorldHeightMap *map = nullptr;
 	if (archive_context_ready && map_load.roadsIniParsed) {
 		WorldHeightMap::freeListOfMapObjects();
@@ -9580,7 +9911,6 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			global_data_ready = true;
 		}
 	}
-
 	WaterTransparencySetting *old_water_transparency =
 		const_cast<WaterTransparencySetting *>(TheWaterTransparency.getNonOverloadedPointer());
 	WaterTransparencySetting *probe_water_transparency = nullptr;
@@ -9724,7 +10054,113 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		update_tree_invoked = render_object->updateTreePosition(kTreeProbeId, location, 0.0f);
 	}
 
-	if (bridge_buffer_initialized) {
+	if (bridge_buffer_initialized && TheNameKeyGenerator != nullptr) {
+		TheModuleFactory = &bridge_draw_module_factory;
+
+		TheGameLogic = &bridge_draw_game_logic;
+		bridge_draw_game_logic.reset();
+		bridge_game_logic_ready = TheGameLogic == &bridge_draw_game_logic;
+
+		ThePlayerList = &bridge_draw_player_list;
+		bridge_player_list_ready =
+			ThePlayerList == &bridge_draw_player_list &&
+			bridge_draw_player_list.getNeutralPlayer() != nullptr;
+
+		TheRadar = &bridge_draw_radar;
+		bridge_radar_ready = TheRadar == &bridge_draw_radar;
+
+		ThePartitionManager = &bridge_draw_partition_manager;
+		bridge_draw_partition_manager.init();
+		bridge_partition_ready = ThePartitionManager == &bridge_draw_partition_manager;
+
+		TheFXListStore = &bridge_draw_fx_list_store;
+		bridge_draw_fx_list_store.init();
+		TheDamageFXStore = &bridge_draw_damage_fx_store;
+		bridge_draw_damage_fx_store.init();
+		TheArmorStore = &bridge_draw_armor_store;
+		bridge_draw_armor_store.init();
+
+		LocalFileSystem *runtime_local_file_system = TheLocalFileSystem;
+		ArchiveFileSystem *runtime_archive_file_system = TheArchiveFileSystem;
+		FileSystem *runtime_file_system = TheFileSystem;
+		archive_context.activateGlobals();
+		bridge_draw_module_factory.init();
+		bridge_module_factory_ready = TheModuleFactory == &bridge_draw_module_factory;
+
+		FileInfo damage_fx_info = {};
+		bridge_damage_fx_entry_available =
+			TheFileSystem != nullptr &&
+			TheFileSystem->getFileInfo(AsciiString(kArchiveDamageFXIniEntry), &damage_fx_info) &&
+			damage_fx_info.sizeHigh == 0 &&
+			damage_fx_info.sizeLow > 0;
+		FileInfo armor_info = {};
+		bridge_armor_entry_available =
+			TheFileSystem != nullptr &&
+			TheFileSystem->getFileInfo(AsciiString(kArchiveArmorIniEntry), &armor_info) &&
+			armor_info.sizeHigh == 0 &&
+			armor_info.sizeLow > 0;
+		FilenameList object_ini_files;
+		if (TheFileSystem != nullptr) {
+			TheFileSystem->getFileListInDirectory(
+				AsciiString(kArchiveObjectIniDirectory),
+				"*.ini",
+				object_ini_files,
+				TRUE);
+			bridge_object_ini_file_count =
+				static_cast<Int>(std::min<std::size_t>(
+					object_ini_files.size(),
+					static_cast<std::size_t>(2147483647)));
+		}
+
+		try {
+			initDamageTypeFlags();
+			INI damage_fx_ini;
+			damage_fx_ini.load(AsciiString(kArchiveDamageFXIniEntry), INI_LOAD_OVERWRITE, nullptr);
+			bridge_damage_fx_ready =
+				TheDamageFXStore->findDamageFX(AsciiString("StructureDamageFX")) != nullptr;
+		} catch (...) {
+			bridge_damage_fx_load_exception = true;
+			bridge_damage_fx_ready = false;
+		}
+
+		try {
+			INI armor_ini;
+			armor_ini.load(AsciiString(kArchiveArmorIniEntry), INI_LOAD_OVERWRITE, nullptr);
+			bridge_armor_ready =
+				TheArmorStore->findArmorTemplate(AsciiString("StructureArmor")) != nullptr;
+		} catch (...) {
+			bridge_armor_load_exception = true;
+			bridge_armor_ready = false;
+		}
+
+		try {
+			bridge_draw_thing_factory.init();
+			bridge_generic_bridge_template_loaded =
+				probe_load_generic_bridge_template_from_archives(
+					archive_context.fileSystem(),
+					&bridge_generic_bridge_template_error_code,
+					&bridge_generic_bridge_template_error_message);
+		} catch (...) {
+			bridge_generic_bridge_template_load_exception = true;
+			bridge_generic_bridge_template_loaded = false;
+		}
+
+		TheLocalFileSystem = runtime_local_file_system;
+		TheArchiveFileSystem = runtime_archive_file_system;
+		TheFileSystem = runtime_file_system;
+	}
+
+	if (bridge_buffer_initialized &&
+			bridge_module_factory_ready &&
+			bridge_game_logic_ready &&
+			bridge_player_list_ready &&
+			bridge_radar_ready &&
+			bridge_damage_fx_ready &&
+			bridge_armor_ready &&
+			bridge_generic_bridge_template_loaded &&
+			bridge_partition_ready) {
+		ProbeLogicalScriptEngineScope bridge_object_script_engine_scope;
+		bridge_object_script_engine_ready = bridge_object_script_engine_scope.installed();
 		probe_bridge_phase_log("load-bridges");
 		bridge_buffer->loadBridges(&bridge_draw_terrain_logic, FALSE);
 		probe_bridge_phase_log("load-bridges-done");
@@ -9976,6 +10412,9 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_buffer_initialized &&
 		load_bridges_invoked &&
 		bridges_after_load > 0 &&
+		bridge_object_script_engine_ready &&
+		bridge_generic_bridge_template_loaded &&
+		!bridge_logic_generic_bridge_object_missing &&
 		update_center_invoked &&
 		bridge_vertices_after_update > 0 &&
 		bridge_indices_after_update > 0 &&
@@ -10034,6 +10473,8 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		json_string(logical_terrain_map_objects.sourceFilename);
 	const std::string logical_terrain_failure_phase_json =
 		json_string(logical_terrain_map_objects.failurePhase);
+	const std::string bridge_generic_bridge_template_error_json =
+		json_string(bridge_generic_bridge_template_error_message);
 	const std::string tree_model_json = json_string(kTreeModelName);
 	const std::string tree_texture_json = json_string(kTreeTextureName);
 
@@ -10050,6 +10491,20 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"archives\":{\"ini\":\"%s\",\"maps\":\"%s\",\"terrain\":\"%s\","
 		"\"runtimeDirectory\":%s,\"runtimeMask\":%s},"
 		"\"results\":{\"archiveContextReady\":%s,\"globalDataReady\":%s,"
+		"\"objectRuntime\":{\"moduleFactoryReady\":%s,"
+		"\"gameLogicReady\":%s,\"playerListReady\":%s,"
+		"\"radarReady\":%s,\"damageFXReady\":%s,"
+		"\"armorReady\":%s,\"genericBridgeTemplateLoaded\":%s,"
+		"\"partitionReady\":%s,"
+		"\"objectScriptEngineReady\":%s,"
+		"\"damageFXEntryAvailable\":%s,"
+		"\"damageFXLoadException\":%s,"
+		"\"armorEntryAvailable\":%s,"
+		"\"armorLoadException\":%s,"
+		"\"objectIniFileCount\":%d,"
+		"\"genericBridgeTemplateLoadException\":%s,"
+		"\"genericBridgeTemplateErrorCode\":%d,"
+		"\"genericBridgeTemplateError\":%s},"
 		"\"runtimeArchiveSetLoadedForSelection\":%s,"
 		"\"init\":%d,\"assetManagerCreated\":%s,\"setRenderDevice\":%d,"
 		"\"runtimeAssetSystemInstalled\":%s,"
@@ -10228,6 +10683,23 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		runtime_archive_mask_json.c_str(),
 		bool_json(archive_context_ready),
 		bool_json(global_data_ready),
+		bool_json(bridge_module_factory_ready),
+		bool_json(bridge_game_logic_ready),
+		bool_json(bridge_player_list_ready),
+		bool_json(bridge_radar_ready),
+		bool_json(bridge_damage_fx_ready),
+		bool_json(bridge_armor_ready),
+		bool_json(bridge_generic_bridge_template_loaded),
+		bool_json(bridge_partition_ready),
+		bool_json(bridge_object_script_engine_ready),
+		bool_json(bridge_damage_fx_entry_available),
+		bool_json(bridge_damage_fx_load_exception),
+		bool_json(bridge_armor_entry_available),
+		bool_json(bridge_armor_load_exception),
+		bridge_object_ini_file_count,
+		bool_json(bridge_generic_bridge_template_load_exception),
+		bridge_generic_bridge_template_error_code,
+		bridge_generic_bridge_template_error_json.c_str(),
 		bool_json(runtime_archive_set_loaded_for_selection),
 		init_result,
 		bool_json(asset_manager_created),
@@ -10523,6 +10995,14 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		wasm_shutdown_ww3d_probe();
 	}
 
+	TheArmorStore = old_armor_store;
+	TheDamageFXStore = old_damage_fx_store;
+	TheFXListStore = old_fx_list_store;
+	ThePartitionManager = old_partition_manager;
+	TheRadar = old_radar;
+	ThePlayerList = old_player_list;
+	TheGameLogic = old_game_logic;
+	TheModuleFactory = old_module_factory;
 	TheWritableGlobalData = old_writable_global_data;
 	g_ww3d_terrain_probe_shroud_enabled = old_shroud_enabled;
 	delete global_data;

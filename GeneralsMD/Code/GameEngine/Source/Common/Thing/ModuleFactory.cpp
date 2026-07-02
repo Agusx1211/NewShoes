@@ -324,6 +324,12 @@ ModuleFactory::~ModuleFactory( void )
 void ModuleFactory::init( void )
 {
 
+#ifdef CNC_PORT_TERRAIN_PROBE_FOCUSED_MODULE_FACTORY_INIT
+	// The browser terrain bridge probe registers its intentionally narrow module
+	// set from ProbeBridgeModuleFactory. Keeping the base all-module init out of
+	// this target prevents the ModuleFactory vtable from retaining every game
+	// module constructor before those owners are linked into cnc-port.
+#else
 	// behavior modules
 	addModule( AutoHealBehavior );
 	addModule( GrantStealthBehavior );
@@ -564,6 +570,7 @@ void ModuleFactory::init( void )
 	addModule( SwayClientUpdate );
 	addModule( BeaconClientUpdate );
 
+#endif
 }  // end init
 
 //-------------------------------------------------------------------------------------------------

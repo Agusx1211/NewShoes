@@ -3947,6 +3947,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `GenericBridge` is created by the real object-template path. Verified with
       `npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene` and
       `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`.
+- [x] Create the retained bridge-buffer `GenericBridge` through the original
+      object-template path. The terrain probe runtime now links original
+      `ThingFactory`, `ThingTemplate`, `ModuleFactory`, `DamageFX`, `Armor`,
+      bridge/body module sources, and the focused Object/GameLogic ownership
+      needed for `TerrainLogic::Bridge::Bridge` to call
+      `TheThingFactory->newObject("GenericBridge")`. The browser harness mounts
+      `Armor.ini`, `DamageFX.ini`, and `Object/System.ini` from `INIZH.big`,
+      extracts the shipped `GenericBridge` block, initializes the module factory
+      under the same `NameKeyGenerator` used by INI parsing, and now requires
+      `objectRuntime.genericBridgeTemplateLoaded === true` plus
+      `bridgeLogicGenericBridgeObjectMissing === false` before accepting the
+      bridge render. The shared original `AsciiString` hash now hashes string
+      contents under libc++ so `hash_map<AsciiString, ...>` lookups find
+      registered templates on wasm. Verified with
+      `npm --prefix WebAssembly run build:wasm` and
+      `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
 	- [x] Feed the focused terrain road and bridge adjunct buffers from the
 	      original logical terrain map-object list. The road and bridge scene probes
 	      now call original `W3DTerrainLogic::loadMap(query=true)` against

@@ -190,10 +190,15 @@ namespace rts
 
 	template<> struct hash<AsciiString>
 	{
-		size_t operator()(AsciiString ast) const
-		{ 
-			std::hash<const char *> tmp;
-			return tmp((const char *) ast.str());
+		size_t operator()(const AsciiString& ast) const
+		{
+			const unsigned char *s = reinterpret_cast<const unsigned char *>(ast.str());
+			size_t h = 2166136261u;
+			while (*s != 0) {
+				h ^= *s++;
+				h *= 16777619u;
+			}
+			return h;
 		}
 	};
 

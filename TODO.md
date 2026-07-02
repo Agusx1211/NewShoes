@@ -872,20 +872,20 @@ flow below.
       updates originate entirely from the full partition/shroud path instead of
       probe-local ownership and the bounded terrain cell window.
 - [ ] Finish bridge-buffer logic ownership by replacing the focused
-      bridge-layer pathfinder shim and probe-local `ThingFactory` with full
-      original AIPathfind/Object/ThingFactory runtime ownership. The focused
-      browser scene now keeps `TheTerrainLogic` live, passes the live
+      bridge-layer pathfinder, GameLogic/Object, and module-factory runtime
+      surfaces with full original AIPathfind/Object/ThingFactory ownership.
+      The focused browser scene now keeps `TheTerrainLogic` live, passes the live
       `W3DTerrainLogic` into
       `W3DBridgeBuffer::loadBridges(&W3DTerrainLogic, FALSE)`, and verifies
       `TerrainLogic::addBridgeToLogic` inserts the retained logical `Bridge`
       through `AI::pathfinder()->addBridge()` before
-      `W3DBridgeBuffer::drawBridges(FALSE, TheTerrainLogic)` enables the visual
-      bridge. Remaining work is to load/create the original `GenericBridge`
-      object through full object-template/ThingFactory ownership, replace the
-      bridge-only pathfinder surface with the full original pathfinder runtime,
-      require `bridgeLogicGenericBridgeObjectMissing === false`, and then
-      exercise damaged/repaired bridge-state synchronization from real gameplay
-      objects.
+      `W3DBridgeBuffer::drawBridges(FALSE, TheTerrainLogic)` enables the
+      visual bridge. It now loads the shipped `GenericBridge` template through
+      original `ThingFactory` / `ThingTemplate` parsing and requires
+      `bridgeLogicGenericBridgeObjectMissing === false`. Remaining work is to
+      replace the bridge-only pathfinder and focused object creation surface
+      with the full original runtime, then exercise damaged/repaired
+      bridge-state synchronization from real gameplay objects.
 - [ ] Broaden the browser-verified terrain full-scene water/smudge/shroud
       refresh path from `test:vertical-integrations` and probe-mounted
       map/assets to real gameplay map-load, partition, and terrain logic

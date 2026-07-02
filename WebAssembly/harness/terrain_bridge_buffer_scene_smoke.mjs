@@ -62,6 +62,9 @@ const mapsArchiveMemfsPath = `${runtimeArchivePath}/MapsZH.big`;
 const terrainArchiveMemfsMaskPath = `${runtimeArchivePath}/Terrain*.big`;
 const terrainIniEntry = "Data\\INI\\Terrain.ini";
 const roadsIniEntry = "Data\\INI\\Roads.ini";
+const armorIniEntry = "Data\\INI\\Armor.ini";
+const damageFxIniEntry = "Data\\INI\\DamageFX.ini";
+const systemObjectIniEntry = "Data\\INI\\Object\\System.ini";
 const mapEntry = process.env.CNC_PORT_BRIDGE_MAP_ENTRY ?? "Maps\\MD_CHI01\\MD_CHI01.map";
 const renderTimeoutMs = Number(process.env.CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS ?? 240000);
 const treeModelsEntry = "Art\\W3D\\Models.txt";
@@ -292,6 +295,18 @@ const roadsIniArchiveEntry = findEntry(iniArchive.entries, roadsIniEntry);
 if (!roadsIniArchiveEntry) {
   throw new Error(`INI archive is missing ${roadsIniEntry}: ${iniArchivePath}`);
 }
+const armorIniArchiveEntry = findEntry(iniArchive.entries, armorIniEntry);
+if (!armorIniArchiveEntry) {
+  throw new Error(`INI archive is missing ${armorIniEntry}: ${iniArchivePath}`);
+}
+const damageFxIniArchiveEntry = findEntry(iniArchive.entries, damageFxIniEntry);
+if (!damageFxIniArchiveEntry) {
+  throw new Error(`INI archive is missing ${damageFxIniEntry}: ${iniArchivePath}`);
+}
+const systemObjectIniArchiveEntry = findEntry(iniArchive.entries, systemObjectIniEntry);
+if (!systemObjectIniArchiveEntry) {
+  throw new Error(`INI archive is missing ${systemObjectIniEntry}: ${iniArchivePath}`);
+}
 const roadsIniText = iniArchive.archiveBytes.toString(
   "latin1",
   roadsIniArchiveEntry.sourceOffset,
@@ -485,7 +500,13 @@ try {
             name: "INIZH.big",
             expectedSourceBytes: iniArchiveStat.size,
             sourceArchive: iniArchivePath,
-            entries: [terrainIniEntry, roadsIniEntry],
+            entries: [
+              terrainIniEntry,
+              roadsIniEntry,
+              armorIniEntry,
+              damageFxIniEntry,
+              systemObjectIniEntry,
+            ],
           },
           {
             url: mapsArchiveUrl,
@@ -563,6 +584,9 @@ try {
       || mountedTextureArchives.some((archive) => archive?.entries?.length <= 0)
       || findMountedEntry(rangeIniArchive, terrainIniEntry)?.bytes !== 25758
       || findMountedEntry(rangeIniArchive, roadsIniEntry)?.bytes !== roadsIniArchiveEntry.bytes
+      || findMountedEntry(rangeIniArchive, armorIniEntry)?.bytes !== armorIniArchiveEntry.bytes
+      || findMountedEntry(rangeIniArchive, damageFxIniEntry)?.bytes !== damageFxIniArchiveEntry.bytes
+      || findMountedEntry(rangeIniArchive, systemObjectIniEntry)?.bytes !== systemObjectIniArchiveEntry.bytes
       || findMountedEntry(rangeMapsArchive, mapEntry)?.bytes !== mapArchiveEntry.bytes
       || treeTerrainMountedEntry?.bytes <= 0
       || treeModelsMountedEntry?.bytes <= 0
@@ -729,6 +753,9 @@ try {
         path: rangeIniArchive.path,
         terrainEntry: terrainIniEntry,
         roadsEntry: roadsIniEntry,
+        armorEntry: armorIniEntry,
+        damageFxEntry: damageFxIniEntry,
+        systemObjectEntry: systemObjectIniEntry,
         parser: "GameEngine/Common/INI.cpp::load + INITerrain.cpp + INITerrainRoad.cpp + INITerrainBridge.cpp + TerrainRoads.cpp",
         originalIniParser: true,
         terrainTypeCount: result.probe.ini.terrainTypeCount,

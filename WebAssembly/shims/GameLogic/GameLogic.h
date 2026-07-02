@@ -52,6 +52,8 @@ public:
 	void destroyObject(Object *) {}
 	Object *findObjectByID(ObjectID) { return nullptr; }
 	Object *getFirstObject() { return nullptr; }
+	UnsignedInt getObjectCount() { return 0; }
+	Bool getShowDynamicLOD() const { return FALSE; }
 	Int getHulkMaxLifetimeOverride() const { return 0; }
 	UnsignedInt getFrameObjectsChangedTriggerAreas() { return 0; }
 	void deselectObject(Object *, PlayerMaskType, Bool affectClient = FALSE) {}
