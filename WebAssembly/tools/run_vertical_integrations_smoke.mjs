@@ -81,10 +81,18 @@ function runNodeStep(step, root = wasmRoot) {
 
 function assertDeviceFrontier(payload, label) {
   const frontier = payload.originalEngineStartup?.deviceFactoryFrontier;
-  expect(frontier?.firstUnownedInitFactory === "createAudioManager",
-    `${label} did not preserve createAudioManager as the first unowned factory`, frontier);
-  expect(frontier.firstUnownedInitLine === 434,
-    `${label} did not preserve the createAudioManager line`, frontier);
+  const audioManagerReady = frontier?.audioManagerRuntime?.ready === true;
+  const functionLexiconReady = frontier?.functionLexiconRuntime?.ready === true;
+  const expectedFirstUnownedFactory = audioManagerReady
+    ? (functionLexiconReady ? "createModuleFactory" : "createFunctionLexicon")
+    : "createAudioManager";
+  const expectedFirstUnownedLine = audioManagerReady
+    ? (functionLexiconReady ? 447 : 446)
+    : 434;
+  expect(frontier?.firstUnownedInitFactory === expectedFirstUnownedFactory,
+    `${label} did not report the expected first unowned device factory`, frontier);
+  expect(frontier.firstUnownedInitLine === expectedFirstUnownedLine,
+    `${label} did not report the expected first unowned device factory line`, frontier);
   expect(frontier.factoryMappings?.CreateGameEngine === "Win32GameEngine",
     `${label} did not preserve the Win32GameEngine mapping`, frontier);
   expect((frontier.entries ?? []).find((entry) => entry.factory === "CreateGameEngine")?.ready === true,
@@ -124,10 +132,15 @@ function assertStartupSingletonFrontier(payload, label) {
     `${label} should keep MapCache::updateCache deferred until the post-audio GameEngine.cpp point`, frontier);
 
   if (baseIniMounted) {
+    const audioManagerReady = frontier?.audioManagerRuntime?.ready === true;
+    const functionLexiconReady = frontier?.functionLexiconRuntime?.ready === true;
+    const expectedNextRequired = audioManagerReady
+      ? (functionLexiconReady ? "createModuleFactory" : "createFunctionLexicon")
+      : "createAudioManager";
     expect(startup.status === "browser_device_layer_pending",
       `${label} with base INI mounted should advance to browser device layer pending`, startup);
-    expect(frontier.nextRequired === "originalGameEngineInitOwnership" && frontier.setupReady === true,
-      `${label} with base INI mounted should be ready for original GameEngine init ownership`, frontier);
+    expect(frontier.nextRequired === expectedNextRequired && frontier.setupReady === true,
+      `${label} with base INI mounted reported the wrong next device factory frontier`, frontier);
   } else {
     expect(startup.status === "missing_startup_files",
       `${label} without base INI should report missing startup files`, startup);

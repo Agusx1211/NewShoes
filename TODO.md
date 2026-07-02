@@ -46,11 +46,19 @@ flow below.
       `TheAudio`, runs real `AudioManager::init()` INI loads and
       `isMusicAlreadyLoaded()` over mounted archives plus base-Generals
       `Music.big`, and `openDevice()` through the browser MSS shim, so the
-      archive-mounted frontier is now `createFunctionLexicon` at line 446;
+      archive-mounted frontier is now `createFunctionLexicon` at line 446
+      (the linked runtime constructs `W3DFunctionLexicon` and proves its W3D
+      device draw/layout tables, but the base `FunctionLexicon` callback graph
+      is still probe-owned);
       archiveless or music-less boots honestly stay at line 434.
 - [ ] Own `createFunctionLexicon` (`W3DFunctionLexicon`, `GameEngine.cpp:446`)
       and then `createModuleFactory` (line 447) in the browser boot — the new
-      first unowned init factories now that `TheAudio` is owned. The real
+      first unowned init factories now that `TheAudio` is owned. The current
+      linked runtime constructs original `W3DFunctionLexicon` and verifies the
+      W3D device draw/layout callback tables, but full ownership still needs
+      the original base `FunctionLexicon.cpp` callback table graph without
+      pulling LAN/WOL/GameSpy/embedded-web menu callbacks into `cnc-port`.
+      The real
       `W3DModuleFactory` + all 224 module registrations already link into
       `cnc-port` via `zh_gameengine_real_object_ini_runtime`, so lexicon/module
       factory ownership should reuse that surface instead of relinking it.
@@ -528,7 +536,10 @@ flow below.
       still uses focused display/font/text shims and no-op branch boundaries for
       undriven campaign/GameSpy/download/options paths, so full production
       `W3DDisplay` construction and `W3DModuleFactory` module-template lookup
-      still need original public-API runtime proof.
+      still need original public-API runtime proof. The linked `cnc-port`
+      startup now constructs original `W3DFunctionLexicon` and verifies its W3D
+      device callback-name lookups, but the base `FunctionLexicon` callback
+      tables remain the honest `createFunctionLexicon` blocker.
       `verify:w3d-module-factory-frontier`
       now pins the original
       `Win32GameEngine::createModuleFactory -> W3DModuleFactory` mapping,
@@ -1650,6 +1661,12 @@ flow below.
 - [ ] Screenshot-diff regression suite for menus and in-game scenes.
 - [ ] Deterministic-replay regression (record once, assert identical playback).
 - [ ] Net-sync regression (two clients, assert no desync).
+- [ ] Add per-step and page-RPC timeouts to long browser integration smokes.
+      A 2026-07-02 `test:vertical-integrations` run reached
+      `browser-lanapi-game-start-two-contexts` after the startup/archive/audio
+      checks passed, then hung inside the Playwright RPC until manually
+      interrupted; the harness should fail with browser log/context instead of
+      leaving a silent process.
 - [ ] CI runs build + harness smoke + screenshot diffs on every change.
 - [ ] Document how to run the harness and interpret failures.
 

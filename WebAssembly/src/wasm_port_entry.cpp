@@ -16,6 +16,7 @@
 #include "wasm_globaldata_probe.h"
 #include "wasm_startup_singletons_probe.h"
 #include "wasm_audio_manager_probe.h"
+#include "wasm_function_lexicon_runtime.h"
 #include "wasm_d3d8_shim.h"
 
 #include "D3dx8core.h"
@@ -373,6 +374,24 @@ void run_audio_manager_runtime_probe()
 		result.music_already_loaded ? 1 : 0,
 		result.music_track_count,
 		result.sound_event_count);
+}
+
+void run_function_lexicon_runtime_probe()
+{
+	const AudioManagerRuntimeProbeResult &audio_runtime =
+		wasm_audio_manager_probe_state();
+	const FunctionLexiconRuntimeProbeResult &result =
+		wasm_function_lexicon_runtime_install(
+			g_archive_mount.registered,
+			audio_runtime.ok);
+	std::printf(
+		"cnc-port: function lexicon runtime probe ok=%d status=%s "
+		"messageBox=%d w3dDraw=%d next=%s\n",
+		result.ok ? 1 : 0,
+		result.status != nullptr ? result.status : "",
+		result.message_box_system_lookup ? 1 : 0,
+		result.w3d_gadget_push_button_draw_lookup ? 1 : 0,
+		result.next_required != nullptr ? result.next_required : "");
 }
 
 bool startup_boot_ini_present()
@@ -1509,7 +1528,7 @@ const char *json_bool(bool value)
 
 const char *build_device_factory_frontier_json()
 {
-	static char buffer[24000];
+	static char buffer[40000];
 	const StartupSingletonsProbeResult &startup_singletons = wasm_startup_singletons_state();
 	const bool setup_ready =
 		g_global_data_probe.ok &&
@@ -1526,22 +1545,46 @@ const char *build_device_factory_frontier_json()
 	const AudioManagerRuntimeProbeResult &audio_runtime =
 		wasm_audio_manager_probe_state();
 	const bool audio_manager_owned = audio_runtime.ok;
-	const char *first_unowned_factory =
-		audio_manager_owned ? "createFunctionLexicon" : "createAudioManager";
-	const int first_unowned_line = audio_manager_owned ? 446 : 434;
-	const char *first_unowned_subsystem =
-		audio_manager_owned ? "TheFunctionLexicon" : "TheAudio";
+	const FunctionLexiconRuntimeProbeResult &function_lexicon_runtime =
+		wasm_function_lexicon_runtime_state();
+	const bool function_lexicon_owned = function_lexicon_runtime.ok;
+	const char *first_unowned_factory = "createAudioManager";
+	int first_unowned_line = 434;
+	const char *first_unowned_subsystem = "TheAudio";
+	if (audio_manager_owned) {
+		first_unowned_factory = function_lexicon_owned
+			? "createModuleFactory"
+			: "createFunctionLexicon";
+		first_unowned_line = function_lexicon_owned ? 447 : 446;
+		first_unowned_subsystem = function_lexicon_owned
+			? "TheModuleFactory"
+			: "TheFunctionLexicon";
+	}
 	const std::string audio_runtime_status_json =
 		json_escape(audio_runtime.status != nullptr ? audio_runtime.status : "");
 	const std::string audio_runtime_selected_provider_json =
 		json_escape(audio_runtime.selected_provider_name);
+	const std::string function_lexicon_runtime_status_json =
+		json_escape(function_lexicon_runtime.status != nullptr
+			? function_lexicon_runtime.status
+			: "");
 	const char *next_required = "startupAssets";
 	if (startup_assets_ready() && !startup_files_ready) {
 		next_required = "startupFiles";
 	} else if (startup_assets_ready() && startup_files_ready && !setup_ready) {
 		next_required = "originalSetupResidency";
+	} else if (startup_assets_ready() &&
+		startup_files_ready &&
+		setup_ready &&
+		!audio_manager_owned) {
+		next_required = "createAudioManager";
+	} else if (startup_assets_ready() &&
+		startup_files_ready &&
+		setup_ready &&
+		!function_lexicon_owned) {
+		next_required = "createFunctionLexicon";
 	} else if (startup_assets_ready() && startup_files_ready && setup_ready) {
-		next_required = "originalGameEngineInitOwnership";
+		next_required = "createModuleFactory";
 	}
 
 	std::snprintf(buffer, sizeof(buffer),
@@ -1621,6 +1664,10 @@ const char *build_device_factory_frontier_json()
 		"\"samples2D\":%u,\"samples3D\":%u,\"streams\":%u,"
 		"\"musicTracks\":%u,\"soundEffects\":%u,\"streamingEvents\":%u,"
 		"\"tornDown\":%s},"
+		"\"functionLexiconRuntime\":{\"attempted\":%s,\"ready\":%s,"
+		"\"status\":\"%s\",\"initRan\":%s,"
+		"\"w3dDeviceDrawReady\":%s,\"w3dLayoutInitReady\":%s,"
+		"\"messageBoxSystemReady\":%s,\"nextRequired\":\"%s\"},"
 		"\"entries\":["
 		"{\"order\":1,\"line\":1122,\"subsystem\":\"TheGameEngine\",\"factory\":\"CreateGameEngine\",\"originalConcrete\":\"Win32GameEngine\",\"ready\":true,\"called\":true,\"status\":\"browser_focused_lifetime_constructed\"},"
 		"{\"order\":2,\"line\":297,\"subsystem\":\"TheSubsystemList\",\"factory\":\"SubsystemInterfaceList\",\"originalConcrete\":\"SubsystemInterfaceList\",\"ready\":%s,\"called\":true,\"status\":\"browser_runtime_owned\"},"
@@ -1638,7 +1685,7 @@ const char *build_device_factory_frontier_json()
 		"{\"order\":14,\"line\":422,\"subsystem\":\"PreAudioDataStores\",\"factory\":\"science_multiplayer_terrain_roads_global_language\",\"originalConcrete\":\"Original INI stores\",\"ready\":%s,\"called\":true,\"status\":\"startup_data_preflight_ready\"},"
 		"{\"order\":15,\"line\":427,\"subsystem\":\"TheCDManager\",\"factory\":\"CreateCDManager\",\"originalConcrete\":\"Win32CDManager\",\"ready\":%s,\"called\":true,\"status\":\"bootstrap_probe_ready\"},"
 		"{\"order\":16,\"line\":434,\"subsystem\":\"TheAudio\",\"factory\":\"createAudioManager\",\"originalConcrete\":\"MilesAudioManager\",\"ready\":%s,\"called\":true,\"status\":\"%s\"},"
-		"{\"order\":17,\"line\":446,\"subsystem\":\"TheFunctionLexicon\",\"factory\":\"createFunctionLexicon\",\"originalConcrete\":\"W3DFunctionLexicon\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_w3d_factory\"},"
+		"{\"order\":17,\"line\":446,\"subsystem\":\"TheFunctionLexicon\",\"factory\":\"createFunctionLexicon\",\"originalConcrete\":\"W3DFunctionLexicon\",\"ready\":%s,\"called\":true,\"status\":\"%s\"},"
 		"{\"order\":18,\"line\":447,\"subsystem\":\"TheModuleFactory\",\"factory\":\"createModuleFactory\",\"originalConcrete\":\"W3DModuleFactory\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_w3d_factory\"},"
 		"{\"order\":19,\"line\":453,\"subsystem\":\"TheParticleSystemManager\",\"factory\":\"createParticleSystemManager\",\"originalConcrete\":\"W3DParticleSystemManager\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_particle_runtime\"},"
 		"{\"order\":20,\"line\":482,\"subsystem\":\"TheThingFactory\",\"factory\":\"createThingFactory\",\"originalConcrete\":\"W3DThingFactory\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_thing_factory\"},"
@@ -1697,6 +1744,19 @@ const char *build_device_factory_frontier_json()
 		audio_runtime.sound_event_count,
 		audio_runtime.streaming_event_count,
 		json_bool(audio_runtime.torn_down),
+		json_bool(function_lexicon_runtime.attempted),
+		json_bool(function_lexicon_runtime.ok),
+		function_lexicon_runtime_status_json.c_str(),
+		json_bool(function_lexicon_runtime.init_ran),
+		json_bool(function_lexicon_runtime.game_window_device_draw_table_loaded &&
+			function_lexicon_runtime.w3d_gadget_push_button_draw_lookup &&
+			function_lexicon_runtime.w3d_game_window_default_draw_lookup),
+		json_bool(function_lexicon_runtime.window_layout_device_init_table_loaded &&
+			function_lexicon_runtime.w3d_main_menu_init_lookup),
+		json_bool(function_lexicon_runtime.message_box_system_lookup),
+		function_lexicon_runtime.next_required != nullptr
+			? function_lexicon_runtime.next_required
+			: "",
 		json_bool(startup_singletons.subsystem_list_owned),
 		json_bool(g_file_system_probe.local_ok),
 		json_bool(startup_singletons.name_key_generator_owned),
@@ -1727,6 +1787,10 @@ const char *build_device_factory_frontier_json()
 		audio_manager_owned
 			? "browser_runtime_initialized_original_audio_manager"
 			: "needs_browser_audio_manager",
+		json_bool(function_lexicon_owned),
+		function_lexicon_owned
+			? "browser_runtime_initialized_original_w3d_function_lexicon"
+			: "needs_browser_w3d_function_lexicon",
 		json_bool(startup_singletons.map_cache_loaded),
 		json_bool(file_system_ready),
 		json_bool(startup_files_ready),
@@ -1738,8 +1802,10 @@ const char *build_device_factory_frontier_json()
 
 const char *build_original_engine_startup_json()
 {
-	static char buffer[40000];
+	static char buffer[60000];
 	const StartupSingletonsProbeResult &startup_singletons = wasm_startup_singletons_state();
+	const FunctionLexiconRuntimeProbeResult &function_lexicon_runtime =
+		wasm_function_lexicon_runtime_state();
 	const std::string status_json = json_escape(original_engine_startup_status());
 	const std::string message_json = json_escape(original_engine_startup_message());
 	const std::string missing_files_json =
@@ -1780,7 +1846,7 @@ const char *build_original_engine_startup_json()
 		"\"localFileSystem\":%s,"
 		"\"archiveFileSystem\":%s,\"startupSingletons\":%s,\"gameLogic\":false,"
 		"\"gameClient\":false,\"moduleFactory\":false,"
-		"\"thingFactory\":false,\"functionLexicon\":false,\"radar\":false,"
+		"\"thingFactory\":false,\"functionLexicon\":%s,\"radar\":false,"
 		"\"webBrowser\":false,\"particleSystemManager\":false,"
 		"\"audioManager\":false,\"display\":false,\"input\":false},"
 		"\"deviceFactoryFrontier\":%s}",
@@ -1844,6 +1910,7 @@ const char *build_original_engine_startup_json()
 		g_file_system_probe.local_ok ? "true" : "false",
 		g_file_system_probe.archive_ok ? "true" : "false",
 		startup_singletons.ok ? "true" : "false",
+		function_lexicon_runtime.ok ? "true" : "false",
 		device_factory_frontier_json);
 
 	return buffer;
@@ -3124,6 +3191,7 @@ void ensure_booted()
 		probe_registered_archive_set_for_boot();
 		run_startup_singletons_probe();
 		run_audio_manager_runtime_probe();
+		run_function_lexicon_runtime_probe();
 		log_boot_state();
 	}
 }
@@ -3311,6 +3379,8 @@ const char *write_state_json()
 	const std::string browser_runtime_assets_json = wasm_browser_runtime_assets_state_json();
 	const char *startup_singletons_json = wasm_startup_singletons_state_json();
 	const char *audio_manager_runtime_json = wasm_audio_manager_probe_state_json();
+	const char *function_lexicon_runtime_json =
+		wasm_function_lexicon_runtime_state_json();
 	const std::string audio_runtime_assets_json = build_audio_runtime_assets_json();
 	const std::string startup_asset_status_json = json_escape(startup_asset_status());
 	const std::string startup_asset_message_json = json_escape(startup_asset_message());
@@ -3554,6 +3624,7 @@ const char *write_state_json()
 		"\"browserRuntimeAssets\":%s,"
 		"\"startupSingletons\":%s,"
 		"\"audioManagerRuntime\":%s,"
+		"\"functionLexiconRuntime\":%s,"
 		"\"audioRuntimeAssets\":%s,"
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
@@ -4055,6 +4126,7 @@ const char *write_state_json()
 		browser_runtime_assets_json.c_str(),
 		startup_singletons_json,
 		audio_manager_runtime_json,
+		function_lexicon_runtime_json,
 		audio_runtime_assets_json.c_str(),
 		startup_assets_ready() ? "true" : "false",
 		startup_asset_status_json.c_str(),

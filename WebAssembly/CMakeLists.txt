@@ -2219,6 +2219,7 @@ add_library(zh_w3d_display_drawimage_runtime STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/Line2D.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameFont.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/MessageStream/HotKey.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/Common/System/W3DFunctionLexicon.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DDisplay.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DDisplayString.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DVideoBuffer.cpp"
@@ -4489,6 +4490,7 @@ add_executable(cnc-port
   src/wasm_mss_stream_lifecycle_probe.cpp
   src/wasm_mss_3d_sample_lifecycle_probe.cpp
   src/wasm_audio_manager_probe.cpp
+  src/wasm_function_lexicon_runtime.cpp
   src/wasm_port_entry.cpp
   src/wasm_win32_gameengine_probe.cpp
   src/wasm_wndproc_probe.cpp
@@ -4534,6 +4536,10 @@ set_source_files_properties(src/wasm_win32_gameengine_probe.cpp PROPERTIES
 
 set_source_files_properties(src/wasm_audio_manager_probe.cpp PROPERTIES
   COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/windows.h;-include${WASM_SHIMS_DIR}/mmsystem.h;-include${WWVEGAS_PORT_SHIM};-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${MAIN_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/Miles6/include;-iquote${WWAUDIO_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${WWSAVELOAD_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR};-Wno-implicit-exception-spec-mismatch;-Wno-new-returns-null;-Wno-undefined-bool-conversion"
+)
+
+set_source_files_properties(src/wasm_function_lexicon_runtime.cpp PROPERTIES
+  COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/windows.h;-include${WASM_SHIMS_DIR}/mmsystem.h;-include${WASM_SHIMS_DIR}/PreRTS.h;-include${WWVEGAS_PORT_SHIM};-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${MAIN_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${WWSAVELOAD_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR};-Wno-implicit-exception-spec-mismatch;-Wno-new-returns-null;-Wno-undefined-bool-conversion;-Wno-unused-parameter"
 )
 
 set_source_files_properties(src/wasm_ww3d_terrain_probe.cpp PROPERTIES

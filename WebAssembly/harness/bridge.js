@@ -294,6 +294,7 @@ const harnessState = {
   browserRuntimeAssets: null,
   startupSingletons: null,
   audioManagerRuntime: null,
+  functionLexiconRuntime: null,
   audioRuntimeAssets: null,
   audioPayloadInventory: null,
   startupAssets: null,
@@ -6921,6 +6922,8 @@ function applyModuleState(moduleState) {
   harnessState.browserRuntimeAssets = moduleState.browserRuntimeAssets ?? harnessState.browserRuntimeAssets;
   harnessState.startupSingletons = moduleState.startupSingletons ?? harnessState.startupSingletons;
   harnessState.audioManagerRuntime = moduleState.audioManagerRuntime ?? harnessState.audioManagerRuntime;
+  harnessState.functionLexiconRuntime =
+    moduleState.functionLexiconRuntime ?? harnessState.functionLexiconRuntime;
   harnessState.audioRuntimeAssets = moduleState.audioRuntimeAssets ?? harnessState.audioRuntimeAssets;
   harnessState.startupAssets = moduleState.startupAssets ?? harnessState.startupAssets;
   harnessState.dataSummary = moduleState.dataSummary ?? harnessState.dataSummary;
@@ -7504,6 +7507,7 @@ function snapshotState() {
     browserRuntimeAssets: harnessState.browserRuntimeAssets,
     startupSingletons: harnessState.startupSingletons,
     audioManagerRuntime: harnessState.audioManagerRuntime,
+    functionLexiconRuntime: harnessState.functionLexiconRuntime,
     audioRuntimeAssets: harnessState.audioRuntimeAssets,
     browserAudioRuntime: summarizeBrowserAudioRuntime(),
     browserAudioMixerRuntime: summarizeBrowserAudioMixerRuntime(),

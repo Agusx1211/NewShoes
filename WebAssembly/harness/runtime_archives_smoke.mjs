@@ -3605,12 +3605,23 @@ function assertOriginalEngineStartup(
     throw new Error(`${context} original engine startup header mismatch: ${JSON.stringify(startup)}`);
   }
 
+  const frontier = startup.deviceFactoryFrontier;
+  const audioManagerRuntimeReady = frontier?.audioManagerRuntime?.ready === true;
+  const functionLexiconRuntimeReady = frontier?.functionLexiconRuntime?.ready === true;
+  const expectedFirstUnownedFactory = audioManagerRuntimeReady
+    ? (functionLexiconRuntimeReady ? "createModuleFactory" : "createFunctionLexicon")
+    : "createAudioManager";
+  const expectedFirstUnownedLine = audioManagerRuntimeReady
+    ? (functionLexiconRuntimeReady ? 447 : 446)
+    : 434;
+  const expectedFirstUnownedSubsystem = audioManagerRuntimeReady
+    ? (functionLexiconRuntimeReady ? "TheModuleFactory" : "TheFunctionLexicon")
+    : "TheAudio";
   const expectedNextRequired = expectedStatus === "browser_device_layer_pending"
-    ? (expectedSetupReady ? "originalGameEngineInitOwnership" : "originalSetupResidency")
+    ? (expectedSetupReady ? expectedFirstUnownedFactory : "originalSetupResidency")
     : expectedStatus === "missing_startup_files"
       ? "startupFiles"
       : "startupAssets";
-  const frontier = startup.deviceFactoryFrontier;
   const entries = frontier?.entries ?? [];
   const byFactory = new Map(entries.map((entry) => [entry.factory, entry]));
   const audioFiles = frontier?.audioStartupFiles;
@@ -3636,8 +3647,8 @@ function assertOriginalEngineStartup(
       || frontier.probeOnly !== true
       || frontier.ready !== false
       || frontier.nextRequired !== expectedNextRequired
-      || frontier.firstUnownedInitFactory !== "createAudioManager"
-      || frontier.firstUnownedInitLine !== 434
+      || frontier.firstUnownedInitFactory !== expectedFirstUnownedFactory
+      || frontier.firstUnownedInitLine !== expectedFirstUnownedLine
       || audioFiles?.source !== "GameAudio.cpp::AudioManager::init"
       || audioFiles?.ready !== expectedAudioStartupReady
       || audioFiles?.audioSettingsIni !== expectedAudioStartupReady
@@ -3654,7 +3665,7 @@ function assertOriginalEngineStartup(
       || expectedAudioMissing.some((path) => !audioMissing.has(path))
       || milesAudio?.source !== "MilesAudioManager.cpp::init/openDevice + Mss.H"
       || milesAudio?.ready !== false
-      || milesAudio?.runtimeReady !== false
+      || milesAudio?.runtimeReady !== audioManagerRuntimeReady
       || milesAudio?.compileOnly !== false
       || milesAudio?.probeOnly !== true
       || milesAudio?.startupBoundaryReady !== true
@@ -3702,7 +3713,7 @@ function assertOriginalEngineStartup(
       || milesCalls[5]?.ready !== true
       || milesCalls[6]?.call !== "refreshCachedVariables"
       || milesCalls[6]?.line !== 1473
-      || milesCalls[6]?.ready !== false
+      || milesCalls[6]?.ready !== audioManagerRuntimeReady
       || milesCalls[7]?.call !== "initDelayFilter"
       || milesCalls[7]?.line !== 1479
       || milesCalls[7]?.ready !== true
@@ -3727,8 +3738,9 @@ function assertOriginalEngineStartup(
       || preAudio.xferCRC.initialCRC !== (state.startupSingletons?.xferCRC?.initialCRC ?? 0)
       || preAudio.parseCommandLine?.line !== 381
       || preAudio.parseCommandLine.ready !== expectedCommandLineReady
-      || preAudio.firstUnownedFactory?.line !== 434
-      || preAudio.firstUnownedFactory.factory !== "createAudioManager"
+      || preAudio.firstUnownedFactory?.line !== expectedFirstUnownedLine
+      || preAudio.firstUnownedFactory.factory !== expectedFirstUnownedFactory
+      || preAudio.firstUnownedFactory.subsystem !== expectedFirstUnownedSubsystem
       || byFactory.get("CreateGameEngine")?.line !== 1122
       || byFactory.get("CreateGameEngine")?.ready !== true
       || byFactory.get("SubsystemInterfaceList")?.line !== 297
@@ -3748,7 +3760,9 @@ function assertOriginalEngineStartup(
       || byFactory.get("MapCache")?.line !== 606
       || byFactory.get("MapCache")?.ready !== expectedMapCacheReady
       || byFactory.get("createAudioManager")?.line !== 434
-      || byFactory.get("createAudioManager")?.ready !== false
+      || byFactory.get("createAudioManager")?.ready !== audioManagerRuntimeReady
+      || byFactory.get("createFunctionLexicon")?.line !== 446
+      || byFactory.get("createFunctionLexicon")?.ready !== functionLexiconRuntimeReady
       || byFactory.get("createThingFactory")?.line !== 482
       || byFactory.get("createGameClient")?.line !== 493
       || byFactory.get("createGameLogic")?.line !== 505
@@ -3775,6 +3789,7 @@ function assertOriginalEngineStartup(
       || startup.browserDeviceLayer?.startupSingletons !== expectedStartupSingletonsReady
       || startup.browserDeviceLayer?.gameClient !== false
       || startup.browserDeviceLayer?.audioManager !== false
+      || startup.browserDeviceLayer?.functionLexicon !== functionLexiconRuntimeReady
       || startup.browserDeviceLayer?.display !== false
       || startup.browserDeviceLayer?.input !== false) {
     throw new Error(`${context} should report browser device layer as not runtime-ready: ${JSON.stringify(startup.browserDeviceLayer)}`);

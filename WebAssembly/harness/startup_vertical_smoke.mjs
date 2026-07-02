@@ -258,13 +258,44 @@ function assertAudioManagerRuntimeOwned(state) {
     "original MilesAudioManager teardown mismatch", probe);
 }
 
+function assertFunctionLexiconRuntimeFrontier(state) {
+  const probe = state.functionLexiconRuntime;
+  expect(probe?.attempted === true, "function lexicon runtime probe did not run", probe);
+  expect(probe.ok === false, "function lexicon runtime should not claim full ownership yet", probe);
+  expect(probe.status === "base_function_lexicon_probe_owned",
+    "function lexicon runtime status mismatch", probe);
+  expect(probe.nextRequired === "originalFunctionLexiconCallbacks",
+    "function lexicon runtime nextRequired mismatch", probe);
+  expect(probe.constructed === true && probe.theFunctionLexiconOwned === true,
+    "original W3DFunctionLexicon was not constructed as TheFunctionLexicon", probe);
+  expect(probe.initRan === true && probe.initThrew === false,
+    "original W3DFunctionLexicon::init() did not complete", probe);
+  expect(probe.gameEngineInit?.factory === "createFunctionLexicon"
+      && probe.gameEngineInit.line === 446
+      && probe.gameEngineInit.originalConcrete === "W3DFunctionLexicon",
+    "GameEngine.cpp createFunctionLexicon ownership mismatch", probe);
+  expect(probe.tables?.gameWindowDeviceDraw === true
+      && probe.tables.windowLayoutDeviceInit === true,
+    "W3DFunctionLexicon device tables should be loaded", probe.tables);
+  expect(probe.lookups?.w3dGadgetPushButtonDraw === true
+      && probe.lookups.w3dGameWindowDefaultDraw === true
+      && probe.lookups.w3dMainMenuInit === true,
+    "W3DFunctionLexicon W3D callback lookups did not resolve", probe.lookups);
+  expect(probe.tables.gameWindowSystem === false
+      && probe.tables.windowLayoutUpdate === false
+      && probe.lookups.messageBoxSystem === false,
+    "base FunctionLexicon should still expose the probe-owned boundary", probe);
+}
+
 function assertAudioOwnedFrontier(state) {
   const startup = state.originalEngineStartup;
   const frontier = startup?.deviceFactoryFrontier;
   expect(frontier?.firstUnownedInitFactory === "createFunctionLexicon",
-    "audio-owned frontier should advance to createFunctionLexicon", frontier);
+    "audio-owned frontier should remain at createFunctionLexicon", frontier);
   expect(frontier.firstUnownedInitLine === 446,
-    "audio-owned frontier line should advance to 446", frontier);
+    "audio-owned frontier line should remain 446", frontier);
+  expect(frontier.nextRequired === "createFunctionLexicon",
+    "audio-owned frontier nextRequired mismatch", frontier);
   const preAudio = frontier.preAudioInitOwnership;
   expect(preAudio?.firstUnownedFactory?.line === 446
       && preAudio.firstUnownedFactory.factory === "createFunctionLexicon"
@@ -274,6 +305,10 @@ function assertAudioOwnedFrontier(state) {
   expect(audioEntry?.line === 434 && audioEntry.ready === true
       && audioEntry.status === "browser_runtime_initialized_original_audio_manager",
     "createAudioManager frontier entry should be runtime-owned", frontier);
+  const lexiconEntry = entryByFactory(frontier, "createFunctionLexicon");
+  expect(lexiconEntry?.line === 446 && lexiconEntry.ready === false
+      && lexiconEntry.status === "needs_browser_w3d_function_lexicon",
+    "createFunctionLexicon frontier entry should remain the runtime frontier", frontier);
   expect(frontier.milesAudioDeviceFrontier?.runtimeReady === true,
     "Miles frontier runtimeReady mismatch", frontier.milesAudioDeviceFrontier);
   const refresh = frontier.milesAudioDeviceFrontier?.openDeviceCalls?.[6];
@@ -285,6 +320,15 @@ function assertAudioOwnedFrontier(state) {
       && frontier.audioManagerRuntime.wouldSetQuitting === false
       && frontier.audioManagerRuntime.tornDown === true,
     "frontier audioManagerRuntime summary mismatch", frontier.audioManagerRuntime);
+  expect(frontier.functionLexiconRuntime?.ready === false
+      && frontier.functionLexiconRuntime.status === "base_function_lexicon_probe_owned"
+      && frontier.functionLexiconRuntime.w3dDeviceDrawReady === true
+      && frontier.functionLexiconRuntime.w3dLayoutInitReady === true
+      && frontier.functionLexiconRuntime.messageBoxSystemReady === false
+      && frontier.functionLexiconRuntime.nextRequired === "originalFunctionLexiconCallbacks",
+    "frontier functionLexiconRuntime summary mismatch", frontier.functionLexiconRuntime);
+  expect(startup.browserDeviceLayer?.functionLexicon === false,
+    "browser device layer should not mark the full function lexicon runtime-owned", startup.browserDeviceLayer);
 }
 
 function assertStartupSingletonsMissing(state) {
@@ -325,6 +369,8 @@ function assertOriginalStartupFrontier(state) {
   expect(browserLayer.localFileSystem === true, "browser local filesystem probe should be ready", browserLayer);
   expect(browserLayer.archiveFileSystem === false, "browser archive filesystem should lack runtime archives", browserLayer);
   expect(browserLayer.audioManager === false, "browser audio manager should not be runtime-ready", browserLayer);
+  expect(browserLayer.functionLexicon === false,
+    "browser function lexicon should not be runtime-ready without archives", browserLayer);
   expect(browserLayer.display === false, "browser display should not be production-ready", browserLayer);
 
   const frontier = startup.deviceFactoryFrontier;
@@ -414,6 +460,11 @@ function assertOriginalStartupFrontier(state) {
       && frontier.audioManagerRuntime.status === "missing_runtime_archives",
     "audio manager runtime should be blocked without archives",
     frontier.audioManagerRuntime);
+  expect(frontier.functionLexiconRuntime?.attempted === true
+      && frontier.functionLexiconRuntime.ready === false
+      && frontier.functionLexiconRuntime.status === "missing_runtime_archives",
+    "function lexicon runtime should be blocked without archives",
+    frontier.functionLexiconRuntime);
 
   expect(frontier.fileSystemReady === false, "frontier filesystem should not be archive-ready", frontier);
   expect(frontier.startupFilesReady === false, "frontier startup files should be missing", frontier);
@@ -453,9 +504,11 @@ try {
   await page.locator("#viewport").screenshot({ path: canvasScreenshot });
 
   // Archive-backed boot: mount the startup + audio archive set and prove the
-  // boot constructs the original MilesAudioManager, runs the real
-  // AudioManager::init()/openDevice() path, and honestly advances the
-  // device-factory frontier past createAudioManager to createFunctionLexicon.
+  // boot constructs the original MilesAudioManager and W3DFunctionLexicon,
+  // runs the real AudioManager::init()/openDevice() path plus the original
+  // W3DFunctionLexicon device-table load, and honestly keeps the
+  // device-factory frontier at createFunctionLexicon until the base
+  // FunctionLexicon callback graph is owned by cnc-port.
   const archives = await buildAudioOwnershipArchiveSpecs();
   const audioPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   await audioPage.goto(harnessUrl, { waitUntil: "networkidle" });
@@ -486,6 +539,7 @@ try {
     audioBootResult.state.startupSingletons);
 
   assertAudioManagerRuntimeOwned(audioBootResult.state);
+  assertFunctionLexiconRuntimeFrontier(audioBootResult.state);
   assertAudioOwnedFrontier(audioBootResult.state);
 
   await audioPage.screenshot({ path: audioBootScreenshot });
@@ -504,6 +558,7 @@ try {
       firstUnownedInitFactory: audioFrontier.firstUnownedInitFactory,
       firstUnownedInitLine: audioFrontier.firstUnownedInitLine,
       audioManagerRuntime: audioBootResult.state.audioManagerRuntime,
+      functionLexiconRuntime: audioBootResult.state.functionLexiconRuntime,
     },
   }));
 } finally {

@@ -2137,6 +2137,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       screenshot; `OptionPreferences` audio getters use the real
       `OptionsMenu.cpp` fallback logic (fresh-install defaults, no browser
       persistence yet).
+- [x] Expose the `createFunctionLexicon` (`GameEngine.cpp:446`) runtime
+      frontier in `cnc-port`: `wasm_function_lexicon_runtime.cpp` constructs
+      the original `W3DFunctionLexicon` as `TheFunctionLexicon`, runs its
+      `init()`, and verifies the W3D device draw/layout-init callback tables
+      (`W3DGadgetPushButtonDraw`, `W3DGameWinDefaultDraw`,
+      `W3DMainMenuInit`). The same probe keeps full ownership false because
+      the base `FunctionLexicon` tables still resolve through the render
+      probe-local base implementation; the startup vertical now reports
+      `base_function_lexicon_probe_owned` and keeps
+      `deviceFactoryFrontier.firstUnownedInitFactory` at
+      `createFunctionLexicon`@446 instead of pretending `createModuleFactory`
+      is reached.
 ---
 
 ## M3 — File / data subsystem (real data)
