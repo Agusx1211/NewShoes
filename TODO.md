@@ -41,8 +41,41 @@ flow below.
 - [ ] Mount the base Generals archives (`INI.big`, `English.big`,
       `Window.big`, `Terrain.big`) when supplied, resolving the known missing
       startup set (`Data\INI\Default\*.ini`, `Rank.ini`, `CommandMap.ini`,
-      `BlankWindow.wnd`) that currently blocks `init()` past
-      `createAudioManager`.
+      `BlankWindow.wnd`). `createAudioManager` at `GameEngine.cpp:434` is now
+      browser-owned: the boot constructs the original `MilesAudioManager` as
+      `TheAudio`, runs real `AudioManager::init()` INI loads and
+      `isMusicAlreadyLoaded()` over mounted archives plus base-Generals
+      `Music.big`, and `openDevice()` through the browser MSS shim, so the
+      archive-mounted frontier is now `createFunctionLexicon` at line 446;
+      archiveless or music-less boots honestly stay at line 434.
+- [ ] Own `createFunctionLexicon` (`W3DFunctionLexicon`, `GameEngine.cpp:446`)
+      and then `createModuleFactory` (line 447) in the browser boot — the new
+      first unowned init factories now that `TheAudio` is owned. The real
+      `W3DModuleFactory` + all 224 module registrations already link into
+      `cnc-port` via `zh_gameengine_real_object_ini_runtime`, so lexicon/module
+      factory ownership should reuse that surface instead of relinking it.
+- [ ] Stage base-Generals `Music.big` in `extract_zh_runtime_archives.sh`
+      (currently manually extracted via
+      `cabextract -F Music.big` from the Generals CD1 `Data1.cab` into
+      `artifacts/real-assets/base-generals/Music.big`, as documented in
+      `harness/startup_vertical_smoke.mjs`); the owned
+      `isMusicAlreadyLoaded()` startup check needs it.
+- [ ] Purge the legacy target-local `Common/INI.h` compile shim: its 12-byte
+      `INI` class ODR-collides with the real `INI.cpp` symbols at -O0, so any
+      shim-world `INI ini;` local runs the real ctor over a 12-byte slot and
+      corrupts memory (root-caused during audio-runtime bring-up;
+      `cnc-port` now links the real-world `SubsystemInterface.o`, but other
+      targets mixing shim-INI users with real `INI.cpp` still carry the
+      hazard). Move remaining shim-world INI users onto the real header.
+- [ ] Promote `ThingFactory::newObject`/`newDrawable` from the
+      `WASM_REAL_INI_THING_FACTORY_METADATA_ONLY` guard to full runtime
+      object/drawable creation once the running `TheGameLogic`/`TheGameClient`
+      match subsystems link; template parsing and by-name lookup are already
+      real in `cnc-port` (`test:object-ini`).
+- [ ] Align the `bridge.js` JS-side simulation IMA ADPCM decoder with the wasm
+      `Mss.H` decoder (full-precision `((2*delta+1)*step)>>3` variant proven
+      bit-exact vs ffmpeg) and re-pin the `runtime_archives_smoke.mjs` decoded
+      stats that currently assume the shift-add variant.
 
 ---
 
@@ -1085,8 +1118,19 @@ flow below.
       and `node WebAssembly/dist/miles-audio-open-device-smoke.cjs` now
       instantiates the original `MilesAudioManager` and drives its real
       `openDevice()` path through shared browser MSS runtime state. Full
-      `AudioManager::init` INI-driven startup plus Web Audio playback owned by
-      the original manager's event/sample/stream paths remain open.
+      `AudioManager::init` INI-driven startup now also runs inside the
+      `cnc-port` browser boot: `wasm_audio_manager_probe.cpp` constructs the
+      original manager as `TheAudio`, real `AudioManager::init()` parses 69
+      music tracks / ~1,400 sound events / ~2,570 streaming events through the
+      real INI runtime from mounted archives, the real
+      `isMusicAlreadyLoaded()` archive check passes against base-Generals
+      `Music.big`, `openDevice()` selects/opens the browser MSS provider with
+      2D/3D pools + listener + delay filter, and teardown runs the original
+      destructor (`test:startup-vertical` gates this plus the
+      frontier advance to `createFunctionLexicon`@446). Web Audio playback
+      owned by the original manager's event/sample/stream paths in the
+      browser runtime remains open beyond the focused 2D-sample and ADPCM
+      playback proofs.
 - [ ] Replace remaining `Mss.H`/`dsound.h` compatibility paths used by
       `MilesAudioManager.cpp` with a browser-backed audio device that owns real
       sample data, streams, provider/listener state, mixer state, and
@@ -1152,8 +1196,17 @@ flow below.
       retains that representative decoded cache for one live requested
       `AudioBufferSourceNode` lifecycle proof through the runtime mixer, and
       the MSS sample playback probe now schedules a valid synthetic PCM WAV
-      through the browser mixer from `AIL_start_sample`. Expand those proofs
-      into full resolved requested-payload decode/cache storage and real
+      through the browser mixer from `AIL_start_sample`. The IMA ADPCM
+      majority is now decoded at the original Miles boundary: the `Mss.H`
+      shim implements real `AIL_WAV_info` fmt/fact/data chunk parsing plus an
+      `AIL_decompress_ADPCM` IMA decoder (mono+stereo, per-block headers,
+      fact-clamped final block) proven bit-exact (0 diffs) against ffmpeg and
+      an independent reference decoder on real `AudioZH.big` payloads, and the
+      original engine branch `AudioFileCache::openFile ->
+      AIL_decompress_ADPCM` now plays decoded real ADPCM through browser Web
+      Audio inside `cnc-port`
+      (`test:browser-audio-miles-webaudio-vertical`). Remaining: MP3 decode
+      and full resolved requested-payload decode/cache storage with real
       engine-driven Web Audio scheduling/lifecycle.
 - [ ] 2D SFX playback with the engine's audio event system (INIAudioEventInfo);
       `verify:audio-playing-event-state-frontier` now pins the original

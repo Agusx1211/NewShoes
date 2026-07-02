@@ -1563,6 +1563,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       (`GameSpyChat.cpp` and `GameSpyGP.cpp`) after adding a declarative
       `GameNetwork/GameSpy.h` / `TheGameSpyChat` compile bridge and localized
       clang fixes for STL qualification plus implicit helper return types.
+- [x] Restore STLport string-content hash semantics for the wasm port:
+      libc++'s `std::hash<const char*>` hashes the pointer value while the
+      original STLport build hashed string contents (`__stl_hash_string`),
+      silently breaking every by-name `hash_map` lookup (e.g. the
+      `ThingFactory` template map made every `ObjectReskin` throw
+      `INI_INVALID_DATA`). `STLTypedefs.h` now reproduces STLport 4.5.3's
+      `h = 5*h + c` hash for `rts::hash<const char*>` and
+      `rts::hash<AsciiString>` under `__EMSCRIPTEN__`. Found independently on
+      the ThingFactory template map and the audio event maps; fixed once.
+- [x] Fix two wasm memory-corruption ODR/layout hazards on the real-init
+      path: the target-local `shims/Common/Xfer.h` fork re-declared `Xfer`
+      with a different vtable layout (passing a shim-built `XferCRC` into real
+      `INI::load` trapped with a wasm function-signature mismatch) — the shim
+      now `#include_next`s the original header and real
+      `Common/System/Xfer.cpp` links; and shim-world 12-byte `INI` locals
+      (e.g. in `SubsystemInterfaceList::initSubsystem`) could run the real
+      9,272-byte `INI` ctor over a 12-byte stack slot — `cnc-port` now links
+      the real-world `SubsystemInterface.o`. A full shim-`INI` purge is a
+      follow-up in `TODO.md`.
 ---
 
 ## M2 — Boot to a black window
@@ -2076,6 +2095,29 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       control-bar code to the current browser shim: `m_powerBarBase`,
       `m_powerBarIntervals`, and `m_powerBarYellowRange`, with defaults matching
       original `GlobalData.cpp`.
+- [x] Own `createAudioManager` (`GameEngine.cpp:434`) in the `cnc-port`
+      browser boot: `zh_miles_audio_device_compile_frontier` (the real
+      `MilesAudioManager.cpp`) plus a new real-header
+      `zh_gameengine_audio_runtime` (GameAudio/GameMusic/GameSounds/
+      AudioEventRTS/AudioRequest/DynamicAudioEventInfo/INIAudioEventInfo/
+      INIMiscAudio/SubsystemInterface) now link into `cnc-port`, and
+      `wasm_audio_manager_probe.cpp` constructs the original
+      `MilesAudioManager` as `TheAudio`, runs real `AudioManager::init()`
+      INI loads (69 music tracks, ~1,400 sound events, ~2,570 streaming
+      events through the real INI runtime), the real `isMusicAlreadyLoaded()`
+      archive check against base-Generals `Music.big`, `openDevice()` through
+      the browser MSS shim (provider selected/opened, 2D/3D pools + listener +
+      delay filter), and original-destructor teardown.
+      `deviceFactoryFrontier.firstUnownedInitFactory` advances to
+      `createFunctionLexicon`@446 only when the boot actually proved all of
+      that; archiveless or music-less boots honestly stay at
+      `createAudioManager`@434 (`missing_runtime_archives` /
+      `music_not_loaded_would_set_quitting`, with `wouldSetQuitting`
+      mirroring `GameEngine.cpp:435`). `test:startup-vertical` gates the
+      archive-backed boot with an `startup-vertical-audio-owned.png`
+      screenshot; `OptionPreferences` audio getters use the real
+      `OptionsMenu.cpp` fallback logic (fresh-install defaults, no browser
+      persistence yet).
 ---
 
 ## M3 — File / data subsystem (real data)
@@ -2389,6 +2431,30 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       parsed map counts plus known ShellMapMD and Tournament Desert entries.
 - [x] Harness state query: dump parser/template/map/string counts via
       `dataSummary` state to prove data loaded.
+- [x] Link the real `ThingFactory`/`ThingTemplate` object-template surface
+      into `cnc-port` and parse the real shipped Object INI set: new
+      `zh_gameengine_real_object_ini_runtime` links original
+      `ModuleFactory.cpp` + `W3DModuleFactory.cpp` (full 205+19 module
+      registrations), `W3DThingFactory/ThingFactory/ThingTemplate/Thing/
+      Module/DrawModule/INIObject`, `Science`, `ProductionPrerequisite`, and
+      the ~310-source module link closure (all GameLogic behavior modules,
+      all 19 W3D draw modules, `Object.cpp`, `Drawable.cpp`, Player/Team/AI
+      state machines, `PartitionSolver`, W3D shadow/view/tracks). The
+      `wasm_object_ini_runtime.cpp` driver mirrors `GameEngine.cpp:482`
+      (`initSubsystem(TheThingFactory, createThingFactory(), &xferCRC,
+      "Data\\INI\\Default\\Object.ini", NULL, "Data\\INI\\Object")`) over
+      real subsystem stores brought up in init order. `test:object-ini`
+      proves in headless Chromium: `Data\INI\Default\Object.ini` plus all 43
+      `Data\INI\Object\*.ini` parse through real
+      `INI::parseObjectDefinition` into 2,099 `ThingTemplate`s with live
+      `XferCRC`, and `findTemplate` lookups verified against real INI data
+      (`AmericaVehicleHumvee`, `GLAInfantryRebel`, `AmericaJetRaptor`,
+      `ChinaTankOverlord`, `DefaultThingTemplate`) including
+      side/cost/KindOf spot checks and module-registration checks.
+      `ThingFactory::newObject/newDrawable` stay elided under
+      `WASM_REAL_INI_THING_FACTORY_METADATA_ONLY` until the running match
+      subsystems link (follow-up in `TODO.md`); ThingFactory/Radar/
+      UserPreferences probe stubs were deleted in favor of the real sources.
 
 ---
 
@@ -5038,6 +5104,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       Web Audio completion/release, not yet same-runtime ownership by the
       original `MilesAudioManager`; the standalone original-manager leg still
       reports `browserPlaybackRequested:false`.
+- [x] Decode IMA ADPCM at the original Miles boundary: `shims/Mss.H` extends
+      `AILSOUNDINFO` to the original Miles 6 field surface, `AIL_WAV_info`
+      parses `fmt `/`fact`/`data` chunks, and `AIL_decompress_ADPCM`
+      implements the standard IMA ADPCM → PCM16 decode (step/index tables,
+      per-channel block headers, 4-byte-per-channel nibble interleave,
+      fact-clamped padded final block, mono+stereo), emitting a complete PCM
+      WAV freed by a real `AIL_mem_free_lock`. The nibble expansion uses the
+      full-precision `((2*delta+1)*step)>>3` variant, chosen because it is
+      bit-exact with ffmpeg on the real payloads. Verified: real
+      `AudioZH.big` payloads decode with **0 sample diffs** against both an
+      independent JS reference decoder and ffmpeg (mono `bairatta.wav`
+      38,528 frames; stereo `cleftria.wav` 156,272 samples); the original
+      engine branch `AudioFileCache::openFile → AIL_WAV_info →
+      AIL_decompress_ADPCM` (MilesAudioManager.cpp:3179-3189) runs over real
+      payloads in both the node smoke and inside `cnc-port` in the browser,
+      where the decoded PCM schedules through the Web Audio graph
+      (non-silent, completion/EOS/release asserted) —
+      `test:browser-audio-miles-webaudio-vertical`,
+      `verify:miles-audio-decode-frontier`, and
+      `verify:audio-format-frontier` gate it. This unblocks the 2,572-file
+      IMA ADPCM majority of the shipped audio payloads.
 
 ---
 
