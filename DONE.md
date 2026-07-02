@@ -4003,6 +4003,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       before drawing to prove retained/drawn bridge state also stays pristine.
       Verified with
       `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
+- [x] Route focused non-stacking healer requests through the original
+      `Object::attemptHealingFromSoleBenefactor` body path and prove the
+      retained shipped `GenericBridge` records its sole benefactor without
+      faking bridge damage state. The focused object runtime now matches the
+      original null-source rejection, frame-expiration gate, benefactor ID /
+      expiration update, and `DAMAGE_HEALING` `DamageInfo` call into the
+      object's `BodyModuleInterface`; the reduced terrain-probe
+      `GameLogic::update()` also advances the frame so this original gate can
+      be exercised through a public lifecycle call. The browser bridge scene
+      now rejects null-source healing, accepts the first and repeat bridge
+      source, verifies `getSoleHealingBenefactor()` matches the bridge object
+      ID, then re-runs `TerrainLogic::updateBridgeDamageStates` and draws the
+      retained bridge with body, logic, and draw damage states still pristine.
+      Verified with `npm --prefix WebAssembly run build:wasm` and
+      `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
 	- [x] Feed the focused terrain road and bridge adjunct buffers from the
 	      original logical terrain map-object list. The road and bridge scene probes
 	      now call original `W3DTerrainLogic::loadMap(query=true)` against

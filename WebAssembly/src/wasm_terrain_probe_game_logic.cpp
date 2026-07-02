@@ -88,6 +88,7 @@ void GameLogic::reset()
 
 void GameLogic::update()
 {
+	++m_frame;
 }
 
 void GameLogic::processCommandList(CommandList *)

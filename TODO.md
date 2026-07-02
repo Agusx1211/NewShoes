@@ -887,8 +887,10 @@ flow below.
       surface with the full original runtime, then find and harness-drive the
       real gameplay/script path that drives non-pristine bridge states. The
       shipped `GenericBridge` body path is now browser-verified through
-      `Object::attemptDamage` and `Object::kill` to report/route real damage
-      requests while clipping health/state back to `BODY_PRISTINE` because the
+      `Object::attemptDamage`, `Object::kill`, and
+      `Object::attemptHealingFromSoleBenefactor` to report/route real damage,
+      kill, and non-stacking healer requests while clipping health/state back
+      to `BODY_PRISTINE` because the
       real object uses `ImmortalBody` with `MaxHealth = 1`, so damaged/repaired
       bridge-state sync must not be faked through direct body health changes,
       kill/delete side effects, or direct body-state writes. The original bridge

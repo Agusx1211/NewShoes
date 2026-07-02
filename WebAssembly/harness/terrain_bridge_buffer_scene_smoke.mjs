@@ -619,7 +619,7 @@ try {
   if (!result.ok
       || result.command !== "ww3dTerrainBridgeBufferScene"
       || result.probe?.source !== "ww3d_terrain_bridge_buffer_scene_probe"
-      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> TerrainLogic::addBridgeToLogic -> Object::attemptDamage(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::kill(GenericBridge) -> TerrainLogic::updateBridgeDamageStates/updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay"
+      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> TerrainLogic::addBridgeToLogic -> Object::attemptDamage(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::kill(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::attemptHealingFromSoleBenefactor(GenericBridge) -> TerrainLogic::updateBridgeDamageStates/updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay"
       || result.probe?.results?.runtimeAssetSystemInstalled !== true
       || result.probe?.results?.modelsFileExists !== true
       || result.probe?.results?.meshFileExists !== true
@@ -674,7 +674,21 @@ try {
       || result.probe?.results?.bridgeLogicDamageStateChangedAfterKillUpdate !== false
       || result.probe?.results?.bridgeLogicBrokenAfterKillUpdate !== false
       || result.probe?.results?.bridgeLogicRepairedAfterKillUpdate !== false
-      || result.probe?.results?.bridgeDrawFirstDamageStateAfterKillScene !== BODY_PRISTINE
+      || result.probe?.results?.bridgeLogicSoleHealingInvoked !== true
+      || result.probe?.results?.bridgeLogicSoleHealingNullSourceAccepted !== false
+      || result.probe?.results?.bridgeLogicSoleHealingFirstAccepted !== true
+      || result.probe?.results?.bridgeLogicSoleHealingRepeatAccepted !== true
+      || result.probe?.results?.bridgeLogicSoleHealingBenefactorMatchesBridge !== true
+      || result.probe?.results?.bridgeLogicSoleHealingObjectStillPresent !== true
+      || result.probe?.results?.bridgeLogicSoleHealingDestroyedStatus !== false
+      || result.probe?.results?.bridgeLogicBodyDamageStateAfterSoleHealing !== BODY_PRISTINE
+      || result.probe?.results?.bridgeLogicBodyHealthAfterSoleHealing !== 1
+      || result.probe?.results?.bridgeLogicBodyMaxHealthAfterSoleHealing !== 1
+      || result.probe?.results?.bridgeLogicDamageStateAfterSoleHealingUpdate !== BODY_PRISTINE
+      || result.probe?.results?.bridgeLogicDamageStateChangedAfterSoleHealingUpdate !== false
+      || result.probe?.results?.bridgeLogicBrokenAfterSoleHealingUpdate !== false
+      || result.probe?.results?.bridgeLogicRepairedAfterSoleHealingUpdate !== false
+      || result.probe?.results?.bridgeDrawFirstDamageStateAfterSoleHealingScene !== BODY_PRISTINE
       || result.probe?.results?.bridgeLogicAiPathfinderAvailable !== true
       || result.probe?.results?.bridgeLogicFirstLayerAfterSeed !== 2
       || result.probe?.results?.bridgeDrawTerrainLogicBridgeCount <= 0

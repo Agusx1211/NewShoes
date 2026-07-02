@@ -2760,6 +2760,38 @@ public:
 		return true;
 	}
 
+	bool attemptFirstBridgeSoleHealingForProbe(
+		Real amount,
+		UnsignedInt duration,
+		Bool &null_source_accepted,
+		Bool &first_accepted,
+		Bool &repeat_accepted,
+		Bool &benefactor_matches_bridge,
+		BridgeDamageAttemptForProbe &attempt)
+	{
+		Object *bridge_object = firstBridgeObjectForProbe();
+		if (bridge_object == nullptr || bridge_object->getBodyModule() == nullptr) {
+			return false;
+		}
+		null_source_accepted =
+			bridge_object->attemptHealingFromSoleBenefactor(amount, nullptr, duration);
+		first_accepted =
+			bridge_object->attemptHealingFromSoleBenefactor(amount, bridge_object, duration);
+		repeat_accepted =
+			bridge_object->attemptHealingFromSoleBenefactor(amount, bridge_object, duration);
+		benefactor_matches_bridge =
+			bridge_object->getSoleHealingBenefactor() == bridge_object->getID();
+
+		BodyModuleInterface *body = bridge_object->getBodyModule();
+		attempt.state = body->getDamageState();
+		attempt.health = body->getHealth();
+		attempt.maxHealth = body->getMaxHealth();
+		attempt.objectStillPresent = TRUE;
+		attempt.destroyedStatus =
+			bridge_object->testStatus(OBJECT_STATUS_DESTROYED);
+		return true;
+	}
+
 	bool updateFirstBridgeDamageStateForProbe(
 		BridgeInfo &info,
 		PathfindLayerEnum &layer,
@@ -9805,7 +9837,21 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	bool bridge_logic_damage_state_changed_after_kill_update = false;
 	bool bridge_logic_broken_after_kill_update = false;
 	bool bridge_logic_repaired_after_kill_update = false;
-	Int bridge_draw_first_damage_state_after_kill_scene = -1;
+	bool bridge_logic_sole_healing_invoked = false;
+	bool bridge_logic_sole_healing_null_source_accepted = false;
+	bool bridge_logic_sole_healing_first_accepted = false;
+	bool bridge_logic_sole_healing_repeat_accepted = false;
+	bool bridge_logic_sole_healing_benefactor_matches_bridge = false;
+	bool bridge_logic_sole_healing_object_still_present = false;
+	bool bridge_logic_sole_healing_destroyed_status = false;
+	Int bridge_logic_body_damage_state_after_sole_healing = -1;
+	float bridge_logic_body_health_after_sole_healing = -1.0f;
+	float bridge_logic_body_max_health_after_sole_healing = -1.0f;
+	Int bridge_logic_damage_state_after_sole_healing_update = -1;
+	bool bridge_logic_damage_state_changed_after_sole_healing_update = false;
+	bool bridge_logic_broken_after_sole_healing_update = false;
+	bool bridge_logic_repaired_after_sole_healing_update = false;
+	Int bridge_draw_first_damage_state_after_sole_healing_scene = -1;
 	Int bridge_logic_first_layer_after_seed = -1;
 	Int bridge_draw_terrain_logic_bridge_count = 0;
 	Int bridge_draw_enabled_bridge_count = 0;
@@ -10393,6 +10439,56 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			bridge_logic_broken_after_kill_update = killed_bridge_broken;
 			bridge_logic_repaired_after_kill_update = killed_bridge_repaired;
 		}
+		ProbeTerrainLogicForBridgeDraw::BridgeDamageAttemptForProbe healed_body_attempt;
+		Bool null_source_healing_accepted = FALSE;
+		Bool first_healing_accepted = FALSE;
+		Bool repeat_healing_accepted = FALSE;
+		Bool healing_benefactor_matches_bridge = FALSE;
+		bridge_draw_game_logic.update();
+		if (bridge_draw_terrain_logic.attemptFirstBridgeSoleHealingForProbe(
+				1.0f,
+				5,
+				null_source_healing_accepted,
+				first_healing_accepted,
+				repeat_healing_accepted,
+				healing_benefactor_matches_bridge,
+				healed_body_attempt)) {
+			bridge_logic_sole_healing_invoked = true;
+			bridge_logic_sole_healing_null_source_accepted =
+				null_source_healing_accepted;
+			bridge_logic_sole_healing_first_accepted =
+				first_healing_accepted;
+			bridge_logic_sole_healing_repeat_accepted =
+				repeat_healing_accepted;
+			bridge_logic_sole_healing_benefactor_matches_bridge =
+				healing_benefactor_matches_bridge;
+			bridge_logic_sole_healing_object_still_present =
+				healed_body_attempt.objectStillPresent;
+			bridge_logic_sole_healing_destroyed_status =
+				healed_body_attempt.destroyedStatus;
+			bridge_logic_body_damage_state_after_sole_healing =
+				healed_body_attempt.state;
+			bridge_logic_body_health_after_sole_healing =
+				healed_body_attempt.health;
+			bridge_logic_body_max_health_after_sole_healing =
+				healed_body_attempt.maxHealth;
+		}
+		BridgeInfo healed_bridge_info;
+		PathfindLayerEnum healed_bridge_layer = LAYER_GROUND;
+		bool healed_bridge_broken = false;
+		bool healed_bridge_repaired = false;
+		if (bridge_draw_terrain_logic.updateFirstBridgeDamageStateForProbe(
+				healed_bridge_info,
+				healed_bridge_layer,
+				healed_bridge_broken,
+				healed_bridge_repaired)) {
+			bridge_logic_damage_state_after_sole_healing_update =
+				healed_bridge_info.curDamageState;
+			bridge_logic_damage_state_changed_after_sole_healing_update =
+				healed_bridge_info.damageStateChanged;
+			bridge_logic_broken_after_sole_healing_update = healed_bridge_broken;
+			bridge_logic_repaired_after_sole_healing_update = healed_bridge_repaired;
+		}
 		bridge_manual_geometry_after_load =
 			bridge_buffer->firstBridgeManualGeometry(
 				bridge_manual_vertices_after_load,
@@ -10487,7 +10583,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 					succeeded(render_result) &&
 					succeeded(end_render_result) &&
 					bridge_buffer != nullptr) {
-				bridge_draw_first_damage_state_after_kill_scene =
+				bridge_draw_first_damage_state_after_sole_healing_scene =
 					bridge_buffer->firstBridgeDamageState();
 			}
 			tree_need_to_draw_after_scene = tree_buffer != nullptr && tree_buffer->needToDraw();
@@ -10614,7 +10710,21 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		!bridge_logic_damage_state_changed_after_kill_update &&
 		!bridge_logic_broken_after_kill_update &&
 		!bridge_logic_repaired_after_kill_update &&
-		bridge_draw_first_damage_state_after_kill_scene == BODY_PRISTINE &&
+		bridge_logic_sole_healing_invoked &&
+		!bridge_logic_sole_healing_null_source_accepted &&
+		bridge_logic_sole_healing_first_accepted &&
+		bridge_logic_sole_healing_repeat_accepted &&
+		bridge_logic_sole_healing_benefactor_matches_bridge &&
+		bridge_logic_sole_healing_object_still_present &&
+		!bridge_logic_sole_healing_destroyed_status &&
+		bridge_logic_body_damage_state_after_sole_healing == BODY_PRISTINE &&
+		bridge_logic_body_health_after_sole_healing == 1.0f &&
+		bridge_logic_body_max_health_after_sole_healing == 1.0f &&
+		bridge_logic_damage_state_after_sole_healing_update == BODY_PRISTINE &&
+		!bridge_logic_damage_state_changed_after_sole_healing_update &&
+		!bridge_logic_broken_after_sole_healing_update &&
+		!bridge_logic_repaired_after_sole_healing_update &&
+		bridge_draw_first_damage_state_after_sole_healing_scene == BODY_PRISTINE &&
 		terrain_logic_retained_for_draw &&
 		bridge_draw_terrain_logic_bridge_count > 0 &&
 		bridge_draw_enabled_bridge_count > 0 &&
@@ -10732,6 +10842,8 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> "
 		"TerrainLogic::addBridgeToLogic -> Object::attemptDamage(GenericBridge) -> "
 		"TerrainLogic::updateBridgeDamageStates -> Object::kill(GenericBridge) -> "
+		"TerrainLogic::updateBridgeDamageStates -> "
+		"Object::attemptHealingFromSoleBenefactor(GenericBridge) -> "
 		"TerrainLogic::updateBridgeDamageStates/updateCenter -> "
 		"TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> "
 		"W3DBridge::renderBridge + bridge shroud overlay\","
@@ -10811,7 +10923,21 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"bridgeLogicDamageStateChangedAfterKillUpdate\":%s,"
 		"\"bridgeLogicBrokenAfterKillUpdate\":%s,"
 		"\"bridgeLogicRepairedAfterKillUpdate\":%s,"
-		"\"bridgeDrawFirstDamageStateAfterKillScene\":%d,"
+		"\"bridgeLogicSoleHealingInvoked\":%s,"
+		"\"bridgeLogicSoleHealingNullSourceAccepted\":%s,"
+		"\"bridgeLogicSoleHealingFirstAccepted\":%s,"
+		"\"bridgeLogicSoleHealingRepeatAccepted\":%s,"
+		"\"bridgeLogicSoleHealingBenefactorMatchesBridge\":%s,"
+		"\"bridgeLogicSoleHealingObjectStillPresent\":%s,"
+		"\"bridgeLogicSoleHealingDestroyedStatus\":%s,"
+		"\"bridgeLogicBodyDamageStateAfterSoleHealing\":%d,"
+		"\"bridgeLogicBodyHealthAfterSoleHealing\":%.4f,"
+		"\"bridgeLogicBodyMaxHealthAfterSoleHealing\":%.4f,"
+		"\"bridgeLogicDamageStateAfterSoleHealingUpdate\":%d,"
+		"\"bridgeLogicDamageStateChangedAfterSoleHealingUpdate\":%s,"
+		"\"bridgeLogicBrokenAfterSoleHealingUpdate\":%s,"
+		"\"bridgeLogicRepairedAfterSoleHealingUpdate\":%s,"
+		"\"bridgeDrawFirstDamageStateAfterSoleHealingScene\":%d,"
 		"\"bridgeLogicFirstLayerAfterSeed\":%d,"
 		"\"bridgeDrawTerrainLogicBridgeCount\":%d,"
 		"\"bridgeDrawEnabledBridgeCount\":%d,"
@@ -11047,7 +11173,21 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bool_json(bridge_logic_damage_state_changed_after_kill_update),
 		bool_json(bridge_logic_broken_after_kill_update),
 		bool_json(bridge_logic_repaired_after_kill_update),
-		bridge_draw_first_damage_state_after_kill_scene,
+		bool_json(bridge_logic_sole_healing_invoked),
+		bool_json(bridge_logic_sole_healing_null_source_accepted),
+		bool_json(bridge_logic_sole_healing_first_accepted),
+		bool_json(bridge_logic_sole_healing_repeat_accepted),
+		bool_json(bridge_logic_sole_healing_benefactor_matches_bridge),
+		bool_json(bridge_logic_sole_healing_object_still_present),
+		bool_json(bridge_logic_sole_healing_destroyed_status),
+		bridge_logic_body_damage_state_after_sole_healing,
+		bridge_logic_body_health_after_sole_healing,
+		bridge_logic_body_max_health_after_sole_healing,
+		bridge_logic_damage_state_after_sole_healing_update,
+		bool_json(bridge_logic_damage_state_changed_after_sole_healing_update),
+		bool_json(bridge_logic_broken_after_sole_healing_update),
+		bool_json(bridge_logic_repaired_after_sole_healing_update),
+		bridge_draw_first_damage_state_after_sole_healing_scene,
 		bridge_logic_first_layer_after_seed,
 		bridge_draw_terrain_logic_bridge_count,
 		bridge_draw_enabled_bridge_count,

@@ -261,13 +261,42 @@ void Object::attemptHealing(Real amount, const Object *source)
 	}
 }
 
-Bool Object::attemptHealingFromSoleBenefactor(Real, const Object *, UnsignedInt)
+Bool Object::attemptHealingFromSoleBenefactor(
+	Real amount,
+	const Object *source,
+	UnsignedInt duration)
 {
+	if (source == NULL) {
+		return FALSE;
+	}
+
+	UnsignedInt now = TheGameLogic->getFrame();
+	ObjectID id = source->getID();
+	if (now > m_soleHealingBenefactorExpirationFrame ||
+			m_soleHealingBenefactorID == id) {
+		m_soleHealingBenefactorID = id;
+		m_soleHealingBenefactorExpirationFrame = now + duration;
+
+		BodyModuleInterface *body = getBodyModule();
+		if (body != NULL) {
+			DamageInfo damageInfo;
+			damageInfo.in.m_damageType = DAMAGE_HEALING;
+			damageInfo.in.m_deathType = DEATH_NONE;
+			damageInfo.in.m_sourceID = id;
+			damageInfo.in.m_amount = amount;
+			body->attemptHealing(&damageInfo);
+		}
+		return TRUE;
+	}
 	return FALSE;
 }
 
 ObjectID Object::getSoleHealingBenefactor() const
 {
+	UnsignedInt now = TheGameLogic->getFrame();
+	if (now > m_soleHealingBenefactorExpirationFrame) {
+		return INVALID_ID;
+	}
 	return m_soleHealingBenefactorID;
 }
 
