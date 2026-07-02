@@ -11,6 +11,7 @@
 #include "Common/UserPreferences.h"
 #include "GameClient/Drawable.h"
 #include "GameClient/FXList.h"
+#include "GameClient/InGameUI.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/Object.h"
 #include "GameLogic/ScriptEngine.h"
@@ -99,6 +100,19 @@ const FXList *FXListStore::findFXList(const char *name) const
 }
 #endif
 
+// Live-match world-overlay animation referenced by the linked GameLogic
+// object modules (Object.cpp / CrateCollide.cpp / AutoHealBehavior.cpp).
+// It only fires for Objects in a running match; the real InGameUI is not part
+// of this runtime slice yet.
+void __attribute__((weak)) InGameUI::addWorldAnimation(
+	Anim2DTemplate *,
+	const Coord3D *,
+	WorldAnimationOptions,
+	Real,
+	Real)
+{
+}
+
 VeterancyLevel __attribute__((weak)) Object::getVeterancyLevel() const
 {
 	return LEVEL_REGULAR;
@@ -125,6 +139,10 @@ void __attribute__((weak)) ScriptEngine::parseScriptCondition(INI *)
 	throw INI_UNKNOWN_TOKEN;
 }
 
+#ifndef WASM_REAL_INI_OBJECT_RUNTIME
+// The real Common/UserPreferences.cpp is linked through
+// zh_gameengine_real_object_ini_runtime when the object-template runtime is
+// enabled; these focused fallbacks only exist for builds without it.
 UserPreferences::UserPreferences(void)
 {
 }
@@ -200,13 +218,16 @@ void UserPreferences::setAsciiString(AsciiString key, AsciiString value)
 {
 	(*this)[key] = value;
 }
+#endif // WASM_REAL_INI_OBJECT_RUNTIME
 
+#ifndef WASM_REAL_INI_OBJECT_RUNTIME
 ThingTemplate *__attribute__((weak)) ThingFactory::findTemplateInternal(
 	const AsciiString &,
 	Bool)
 {
 	return nullptr;
 }
+#endif
 
 OptionPreferences::OptionPreferences(void)
 {
@@ -532,11 +553,15 @@ UNUSED_INI_BLOCK_PARSER(parseMiscAudio)
 UNUSED_INI_BLOCK_PARSER(parseMouseDefinition)
 UNUSED_INI_BLOCK_PARSER(parseMouseCursorDefinition)
 UNUSED_INI_BLOCK_PARSER(parseMusicTrackDefinition)
+#ifndef WASM_REAL_INI_OBJECT_RUNTIME
 UNUSED_INI_BLOCK_PARSER(parseObjectDefinition)
+#endif
 #ifndef WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY
 UNUSED_INI_BLOCK_PARSER(parseObjectCreationListDefinition)
 #endif
+#ifndef WASM_REAL_INI_OBJECT_RUNTIME
 UNUSED_INI_BLOCK_PARSER(parseObjectReskinDefinition)
+#endif
 UNUSED_INI_BLOCK_PARSER(parseRankDefinition)
 UNUSED_INI_BLOCK_PARSER(parseShellMenuSchemeDefinition)
 UNUSED_INI_BLOCK_PARSER(parseWebpageURLDefinition)
