@@ -38,6 +38,7 @@
 #include "GameClient/WindowLayout.h"
 #include "GameLogic/AI.h"
 #include "GameLogic/GameLogic.h"
+#include "GameLogic/GhostObject.h"
 #include "GameLogic/PartitionManager.h"
 #include "GameLogic/RankInfo.h"
 #include "GameLogic/ScriptEngine.h"
@@ -80,7 +81,6 @@ class GameSpyInfoInterface;
 class GameSpyStagingRoom;
 class GameStateMap;
 class GameTextInterface;
-class GhostObjectManager;
 class GlobalLanguage;
 class IMEManagerInterface;
 class ImageCollection;
@@ -147,7 +147,6 @@ GameLODManager *TheGameLODManager WEAK_SINGLETON = nullptr;
 GameSpyStagingRoom *TheGameSpyGame WEAK_SINGLETON = nullptr;
 GameStateMap *TheGameStateMap WEAK_SINGLETON = nullptr;
 GameTextInterface *TheGameText WEAK_SINGLETON = nullptr;
-GhostObjectManager *TheGhostObjectManager WEAK_SINGLETON = nullptr;
 GlobalLanguage *TheGlobalLanguageData WEAK_SINGLETON = nullptr;
 ImageCollection *TheMappedImageCollection WEAK_SINGLETON = nullptr;
 InGameUI *TheInGameUI WEAK_SINGLETON = nullptr;
@@ -1361,6 +1360,15 @@ int main()
 	const Int partition_cell_count_y = partition_manager->getCellCountY();
 	const Int partition_total_cells = partition_cell_count_x * partition_cell_count_y;
 	partition_manager->refreshShroudForLocalPlayer();
+	GhostObjectManager *ghost_object_manager = new GhostObjectManager;
+	TheGhostObjectManager = ghost_object_manager;
+	const Int ghost_local_player_index_before = ghost_object_manager->getLocalPlayerIndex();
+	const Int local_player_index_for_ghosts =
+		local_player != nullptr ? local_player->getPlayerIndex() : -1;
+	TheGhostObjectManager->setLocalPlayerIndex(local_player_index_for_ghosts);
+	const Int ghost_local_player_index_after_set = ghost_object_manager->getLocalPlayerIndex();
+	TheGhostObjectManager->reset();
+	const Bool ghost_object_manager_reset_called = TRUE;
 
 	ok = expect(startup_player_template_count > 0,
 		"original PlayerTemplateStore should parse shipped player templates before player population") && ok;
@@ -1424,6 +1432,12 @@ int main()
 			&& g_display_clear_set_calls == 0
 			&& g_radar_clear_set_calls == 0,
 		"original PartitionManager::refreshShroudForLocalPlayer should refresh every initial shrouded cell") && ok;
+	ok = expect(TheGhostObjectManager == ghost_object_manager
+			&& ghost_local_player_index_before == 0
+			&& local_player_index_for_ghosts >= 0
+			&& ghost_local_player_index_after_set == local_player_index_for_ghosts
+			&& ghost_object_manager_reset_called,
+		"original GhostObjectManager should take the local player index and reset after partition shroud refresh") && ok;
 	WorldHeightMap::freeListOfMapObjects();
 
 	if (!ok) {
@@ -1433,7 +1447,7 @@ int main()
 	std::cout
 		<< "{\"ok\":true,"
 		<< "\"path\":\"gamelogic-new-game-dispatch-runtime\","
-		<< "\"source\":\"GeneralsMD original GlobalData.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp\","
+		<< "\"source\":\"GeneralsMD original GlobalData.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp\","
 		<< "\"message\":\"MSG_NEW_GAME\","
 		<< "\"playerLookupIndex\":0,"
 		<< "\"playerCount\":" << player_list->getPlayerCount() << ","
@@ -1551,12 +1565,16 @@ int main()
 		<< "\"radarShroudedSetCalls\":" << g_radar_shrouded_set_calls << ","
 		<< "\"radarFoggedSetCalls\":" << g_radar_fogged_set_calls << ","
 		<< "\"radarClearSetCalls\":" << g_radar_clear_set_calls << ","
+		<< "\"ghostObjectManagerOwned\":" << jsonBool(TheGhostObjectManager == ghost_object_manager) << ","
+		<< "\"ghostLocalPlayerIndexBefore\":" << ghost_local_player_index_before << ","
+		<< "\"ghostLocalPlayerIndexAfterSet\":" << ghost_local_player_index_after_set << ","
+		<< "\"ghostResetCalled\":" << jsonBool(ghost_object_manager_reset_called) << ","
 		<< "\"runtimeBoundaries\":["
 		<< "\"InGameUI client-quiet remains focused UI boundary\","
 		<< "\"OptionPreferences user preference getters remain focused non-network browser preference boundary\","
-		<< "\"GhostObjectManager reset/TerrainLogic::newMap/object-spawn path after original PartitionManager shroud refresh\"],"
-		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\",\"Win32BIGFileSystem MapsZH.big map archive\",\"Win32BIGFileSystem INIZH.big and INI.big startup data archives\",\"INI::load Default/GameData.ini, GameData.ini, Multiplayer.ini, Science.ini, AIData.ini, and PlayerTemplate.ini\",\"GlobalData::parseGameDataDefinition production partition cell size\",\"WeaponBonusSet::parseWeaponBonusSetPtr GameData parser\",\"MultiplayerSettings shipped color table\",\"ScienceStore shipped science table\",\"AI shipped AIData table\",\"PlayerTemplateStore shipped player templates\",\"W3DTerrainLogic::loadMap(false) MD_GLA03 map parse\",\"TerrainLogic::loadMap TerrainVisual::load handoff\",\"WorldHeightMap logical map-object list\",\"SidesList::ParseSidesDataChunk\",\"SidesList::validateSides\",\"AIPlayer construction for non-human sides\",\"TeamFactory::reset/initFromSides\",\"PlayerList::newGame side population\",\"ScriptEngine::newMap side script scan\",\"Radar::newMap terrain extent and LeftHUD ownership\",\"GameLogic width/height from terrain extent\",\"PartitionManager::init loaded-map cell grid\",\"PartitionManager::refreshShroudForLocalPlayer display/radar shroud refresh\"],"
-		<< "\"nextRequired\":\"continue startNewGame after PartitionManager shroud refresh into GhostObjectManager reset, TerrainLogic::newMap, and map object spawning\"}"
+		<< "\"W3DTerrainLogic::newMap road/bridge render-object path and map object spawning after original GhostObjectManager reset\"],"
+		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\",\"Win32BIGFileSystem MapsZH.big map archive\",\"Win32BIGFileSystem INIZH.big and INI.big startup data archives\",\"INI::load Default/GameData.ini, GameData.ini, Multiplayer.ini, Science.ini, AIData.ini, and PlayerTemplate.ini\",\"GlobalData::parseGameDataDefinition production partition cell size\",\"WeaponBonusSet::parseWeaponBonusSetPtr GameData parser\",\"MultiplayerSettings shipped color table\",\"ScienceStore shipped science table\",\"AI shipped AIData table\",\"PlayerTemplateStore shipped player templates\",\"W3DTerrainLogic::loadMap(false) MD_GLA03 map parse\",\"TerrainLogic::loadMap TerrainVisual::load handoff\",\"WorldHeightMap logical map-object list\",\"SidesList::ParseSidesDataChunk\",\"SidesList::validateSides\",\"AIPlayer construction for non-human sides\",\"TeamFactory::reset/initFromSides\",\"PlayerList::newGame side population\",\"ScriptEngine::newMap side script scan\",\"Radar::newMap terrain extent and LeftHUD ownership\",\"GameLogic width/height from terrain extent\",\"PartitionManager::init loaded-map cell grid\",\"PartitionManager::refreshShroudForLocalPlayer display/radar shroud refresh\",\"GhostObjectManager local-player index and reset\"],"
+		<< "\"nextRequired\":\"continue startNewGame after GhostObjectManager reset into W3DTerrainLogic::newMap road/bridge render-object ownership, TerrainLogic::newMap waypoint/water update, and map object spawning\"}"
 		<< "\n";
 
 	return 0;

@@ -2426,7 +2426,7 @@ console.log(JSON.stringify({
   nextRequired: [
     "advance MainMenu WindowLayout repaint from curated target visibility to unpruned production shell composition and display-owned font/image/archive lifetime",
     "thread mounted base Generals INI.big/English.big startup coverage through production original GameEngine.cpp init ownership",
-    "continue startNewGame after Radar::newMap into partition/ghost/terrain newMap and map object spawning",
+    "continue startNewGame after GhostObjectManager reset into W3DTerrainLogic::newMap road/bridge render-object ownership, TerrainLogic::newMap waypoint/water update, and map object spawning",
     "broaden W3DTerrainVisual terrain ownership from the probe-mounted source-backed load window into production gameplay map-load, shroud, partition, and terrain logic ownership",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",

@@ -520,6 +520,10 @@ expect(
   "gamelogic-new-game-dispatch-smoke does not link original AI/AIPlayer sources for non-human sides",
 );
 expect(
+  /Object\/GhostObject\.cpp|Object\\GhostObject\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original GhostObject.cpp for GhostObjectManager reset",
+);
+expect(
   /Object\/Weapon\.cpp|Object\\Weapon\.cpp/.test(runtimeTargetSources.block),
   "gamelogic-new-game-dispatch-smoke does not link original Weapon.cpp for GameData WeaponBonus parsing",
 );
@@ -594,7 +598,7 @@ const runtimePathLine = lineOf(
 );
 const runtimeSourceLine = lineOf(
   runtimeSmoke,
-  /GlobalData\.cpp\/INI\.cpp\/INIGameData\.cpp\/INIAiData\.cpp\/INIMultiplayer\.cpp\/UserPreferences\.cpp\/MultiplayerSettings\.cpp\/Science\.cpp\/PlayerTemplate\.cpp\/FunctionLexicon\.cpp\/PlayerList\.cpp\/Player\.cpp\/AI\.cpp\/AIPathfind\.cpp\/AIPlayer\.cpp\/Weapon\.cpp\/GameLogic\.cpp\/GameLogicDispatch\.cpp\/GameState\.cpp\/Radar\.cpp\/PartitionManager\.cpp\/ScriptEngine\.cpp\/Scripts\.cpp\/Shell\.cpp\/GameWindowManagerScript\.cpp\/HeaderTemplate\.cpp\/TerrainLogic\.cpp\/W3DTerrainLogic\.cpp\/WorldHeightMap\.cpp\/TerrainVisual\.cpp\/SidesList\.cpp\/ThingFactory\.cpp/,
+  /GlobalData\.cpp\/INI\.cpp\/INIGameData\.cpp\/INIAiData\.cpp\/INIMultiplayer\.cpp\/UserPreferences\.cpp\/MultiplayerSettings\.cpp\/Science\.cpp\/PlayerTemplate\.cpp\/FunctionLexicon\.cpp\/PlayerList\.cpp\/Player\.cpp\/AI\.cpp\/AIPathfind\.cpp\/AIPlayer\.cpp\/GhostObject\.cpp\/Weapon\.cpp\/GameLogic\.cpp\/GameLogicDispatch\.cpp\/GameState\.cpp\/Radar\.cpp\/PartitionManager\.cpp\/ScriptEngine\.cpp\/Scripts\.cpp\/Shell\.cpp\/GameWindowManagerScript\.cpp\/HeaderTemplate\.cpp\/TerrainLogic\.cpp\/W3DTerrainLogic\.cpp\/WorldHeightMap\.cpp\/TerrainVisual\.cpp\/SidesList\.cpp\/ThingFactory\.cpp/,
   "runtime smoke original source JSON",
 );
 const runtimeArchivePathLine = lineOf(
@@ -788,6 +792,31 @@ const runtimePartitionShroudProofLine = lineOf(
   /g_display_clear_shroud_calls\s*==\s*1[\s\S]*g_radar_clear_shroud_calls\s*==\s*1[\s\S]*g_display_set_shroud_calls\s*==\s*partition_total_cells[\s\S]*g_radar_set_shroud_calls\s*==\s*partition_total_cells/,
   "runtime smoke original PartitionManager shroud-refresh proof",
 );
+const runtimeGhostObjectAllocationLine = lineOf(
+  runtimeSmoke,
+  /GhostObjectManager\s*\*\s*ghost_object_manager\s*=\s*new\s+GhostObjectManager\s*;/,
+  "runtime smoke original GhostObjectManager allocation",
+);
+const runtimeGhostObjectSingletonLine = lineOf(
+  runtimeSmoke,
+  /TheGhostObjectManager\s*=\s*ghost_object_manager\s*;/,
+  "runtime smoke original TheGhostObjectManager assignment",
+);
+const runtimeGhostLocalPlayerLine = lineOf(
+  runtimeSmoke,
+  /TheGhostObjectManager->setLocalPlayerIndex\s*\(\s*local_player_index_for_ghosts\s*\)\s*;/,
+  "runtime smoke original GhostObjectManager local-player handoff",
+);
+const runtimeGhostResetLine = lineOf(
+  runtimeSmoke,
+  /TheGhostObjectManager->reset\s*\(\s*\)\s*;/,
+  "runtime smoke original GhostObjectManager::reset call",
+);
+const runtimeGhostProofLine = lineOf(
+  runtimeSmoke,
+  /ghost_local_player_index_before\s*==\s*0[\s\S]*local_player_index_for_ghosts\s*>=\s*0[\s\S]*ghost_local_player_index_after_set\s*==\s*local_player_index_for_ghosts[\s\S]*ghost_object_manager_reset_called/,
+  "runtime smoke original GhostObjectManager local-player/reset proof",
+);
 const runtimeAiLine = lineOf(
   runtimeSmoke,
   /AI\s+ai\s*;/,
@@ -938,6 +967,7 @@ console.log(JSON.stringify({
     originalGameDataIniParserLinked: true,
     originalUserPreferencesCppLinked: true,
     originalAiPlayerSourcesLinked: true,
+    originalGhostObjectCppLinked: true,
     originalWeaponCppLinked: true,
     originalGlobalDataHeaderPreincluded: true,
     preRtsOriginalGlobalDataEscapeHatch: true,
@@ -993,6 +1023,11 @@ console.log(JSON.stringify({
     partitionRefreshLine: runtimePartitionRefreshLine,
     partitionGridProofLine: runtimePartitionGridProofLine,
     partitionShroudProofLine: runtimePartitionShroudProofLine,
+    ghostObjectAllocationLine: runtimeGhostObjectAllocationLine,
+    ghostObjectSingletonLine: runtimeGhostObjectSingletonLine,
+    ghostLocalPlayerLine: runtimeGhostLocalPlayerLine,
+    ghostResetLine: runtimeGhostResetLine,
+    ghostProofLine: runtimeGhostProofLine,
     aiLine: runtimeAiLine,
     rankInfoStoreLine: runtimeRankInfoStoreLine,
     noFocusedPlayerLookupWrap: true,
@@ -1019,9 +1054,9 @@ console.log(JSON.stringify({
     "prepareNewGame owns original ScriptEngine difficulty, BlankWindow background, game-mode, pending-map, and original Shell::hideShell setup",
     "startNewGame(FALSE) records the pristine map and defers the first call before terrain load",
     "w3d-window-layout-script-smoke still uses a focused GameLogic shim and sentinel gameplay owners",
-    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/FunctionLexicon.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/SidesList.cpp plus the W3D terrain runtime, then calls GameLogic::processCommandList at runtime through original GlobalData, FunctionLexicon, PlayerList, ScriptEngine, Shell, archive-backed BlankWindow ownership, MapsZH.big MD_GLA03 promotion, original default and Zero Hour startup INI/GameData parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, TeamFactory::initFromSides, PlayerList::newGame, AIPlayer construction, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, and PartitionManager::init/refreshShroudForLocalPlayer",
+    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/FunctionLexicon.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/SidesList.cpp plus the W3D terrain runtime, then calls GameLogic::processCommandList at runtime through original GlobalData, FunctionLexicon, PlayerList, ScriptEngine, Shell, archive-backed BlankWindow ownership, MapsZH.big MD_GLA03 promotion, original default and Zero Hour startup INI/GameData parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, TeamFactory::initFromSides, PlayerList::newGame, AIPlayer construction, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, and GhostObjectManager local-player index/reset",
   ],
   nextRequired: [
-    "continue startNewGame after PartitionManager shroud refresh into GhostObjectManager reset, TerrainLogic::newMap, and map object spawning",
+    "continue startNewGame after GhostObjectManager reset into W3DTerrainLogic::newMap road/bridge render-object ownership, TerrainLogic::newMap waypoint/water update, and map object spawning",
   ],
 }, null, 2));

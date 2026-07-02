@@ -410,7 +410,7 @@ const steps = [
       expect(payload.path === 'gamelogic-new-game-dispatch-runtime',
         'GameLogic new-game runtime smoke emitted the wrong path');
       expect(typeof payload.source === 'string'
-          && payload.source.includes('GlobalData.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp')
+          && payload.source.includes('GlobalData.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp')
           && payload.source.includes('GameState.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp')
           && payload.source.includes('GameWindowManagerScript.cpp/HeaderTemplate.cpp')
           && payload.source.includes('TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp'),
@@ -522,13 +522,17 @@ const steps = [
           && payload.radarFoggedSetCalls === 0
           && payload.displayClearSetCalls === 0
           && payload.radarClearSetCalls === 0
+          && payload.ghostObjectManagerOwned === true
+          && payload.ghostLocalPlayerIndexBefore === 0
+          && payload.ghostLocalPlayerIndexAfterSet === payload.localPlayerIndex
+          && payload.ghostResetCalled === true
           && payload.terrainTimeOfDayNotified === true
           && payload.terrainExtent?.hiX === 3800
           && payload.terrainExtent?.hiY === 3800,
-        'GameLogic new-game runtime smoke did not prove original W3DTerrainLogic/INI/player/script/Radar/Partition MD_GLA03 load ownership');
+        'GameLogic new-game runtime smoke did not prove original W3DTerrainLogic/INI/player/script/Radar/Partition/GhostObject MD_GLA03 load ownership');
       expect(payload.runtimeBoundaries?.includes('InGameUI client-quiet remains focused UI boundary')
           && payload.runtimeBoundaries?.includes('OptionPreferences user preference getters remain focused non-network browser preference boundary')
-          && payload.runtimeBoundaries?.includes('GhostObjectManager reset/TerrainLogic::newMap/object-spawn path after original PartitionManager shroud refresh')
+          && payload.runtimeBoundaries?.includes('W3DTerrainLogic::newMap road/bridge render-object path and map object spawning after original GhostObjectManager reset')
           && !payload.runtimeBoundaries?.includes('focused in-memory BlankWindow layout adapter')
           && !payload.runtimeBoundaries?.includes('focused linker wrap for PlayerList::getNthPlayer before MSG_NEW_GAME switch')
           && !payload.runtimeBoundaries?.includes('deferred terrain/player/script load after archive-backed BlankWindow')
@@ -564,7 +568,8 @@ const steps = [
           && payload.originalOwners?.includes('Radar::newMap terrain extent and LeftHUD ownership')
           && payload.originalOwners?.includes('GameLogic width/height from terrain extent')
           && payload.originalOwners?.includes('PartitionManager::init loaded-map cell grid')
-          && payload.originalOwners?.includes('PartitionManager::refreshShroudForLocalPlayer display/radar shroud refresh'),
+          && payload.originalOwners?.includes('PartitionManager::refreshShroudForLocalPlayer display/radar shroud refresh')
+          && payload.originalOwners?.includes('GhostObjectManager local-player index and reset'),
         'GameLogic new-game runtime smoke did not report original GlobalData/INI/AI/PlayerList/ScriptEngine/Shell/GameWindowManager/Terrain/Partition ownership');
     },
   },
@@ -598,13 +603,13 @@ console.log(JSON.stringify({
     'browser boot constructs original W3DParticleSystemManager, runs ParticleSystemManager::init() against Data\\INI\\ParticleSystem.ini, and proves shipped particle template lookups through the public manager API',
     'archive-backed startup mounts all shipped Object INI definitions and proves original W3DThingFactory parses representative unit templates through the real ThingFactory/INI path while the first unowned factory remains createFunctionLexicon',
     'source-pinned original GameLogic MSG_NEW_GAME dispatch frontier after CommandList handoff',
-    'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, first-call startNewGame(FALSE) deferral, MapsZH.big MD_GLA03 promotion, INIZH/INI startup data plus default and Zero Hour GameData.ini parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, AIPlayer construction, TeamFactory::initFromSides, PlayerList::newGame, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, and PartitionManager::init/refreshShroudForLocalPlayer',
+    'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, first-call startNewGame(FALSE) deferral, MapsZH.big MD_GLA03 promotion, INIZH/INI startup data plus default and Zero Hour GameData.ini parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, AIPlayer construction, TeamFactory::initFromSides, PlayerList::newGame, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, and GhostObjectManager local-player index/reset',
   ],
   nextRequired: [
     'replace the remaining base FunctionLexicon callback owner groups, starting with non-network owners such as PopupReplay score-screen-dependent System/Update, QuitMenuSystem, ScoreScreen, and broader ControlBarSystem/LeftHUDInput callbacks only when their real owners are runtime-owned',
     'advance the next vertical startup path outside the already-proven shell menu slice',
     'advance the post-particle startup data stores toward createThingFactory once createFunctionLexicon is fully owned',
-    'continue startNewGame after PartitionManager shroud refresh into GhostObjectManager reset, TerrainLogic::newMap, and map object spawning',
+    'continue startNewGame after GhostObjectManager reset into W3DTerrainLogic::newMap road/bridge render-object ownership, TerrainLogic::newMap waypoint/water update, and map object spawning',
   ],
   sourceChecks: sourceResults.map(result => result.name),
   browserChecks: browserResults.map(result => result.name),

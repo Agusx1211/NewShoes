@@ -1237,10 +1237,11 @@ flow below.
       owner, proving the radar extent/sample/coordinate translation state for
       `MD_GLA03`. It now continues through original GameData-backed
       `PartitionManager::init` and `refreshShroudForLocalPlayer`, proving the
-      loaded-map partition grid and initial display/radar shroud refresh. Next
-      continue `startNewGame` after the partition shroud refresh into
-      `GhostObjectManager` reset, `TerrainLogic::newMap`, and map object
-      spawning.
+      loaded-map partition grid and initial display/radar shroud refresh. It
+      now also owns original `GhostObjectManager` local-player index assignment
+      and reset. Next continue `startNewGame` after `GhostObjectManager` reset
+      into `W3DTerrainLogic::newMap` road/bridge render-object ownership,
+      `TerrainLogic::newMap` waypoint/water update, and map object spawning.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---

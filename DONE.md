@@ -2199,6 +2199,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       focused wasm build, direct `dist/gamelogic-new-game-dispatch-smoke.cjs`
       from `WebAssembly/`, `test:gamelogic-new-game-dispatch`, and
       `test:startup-vertical`.
+- [x] Continue `GameLogic::startNewGame` after original
+      `PartitionManager::refreshShroudForLocalPlayer` into original
+      `GhostObjectManager` ownership. The `gamelogic-new-game-dispatch-smoke`
+      target now links original `Object/GhostObject.cpp`, removes the focused
+      weak `TheGhostObjectManager` singleton, constructs the original manager,
+      assigns the loaded local player index, and calls the original
+      `reset()` after the partition shroud refresh. The runtime JSON reports
+      the owned singleton, initial local-player index, assigned local-player
+      index, and reset call, and the frontier now advances to
+      `W3DTerrainLogic::newMap` road/bridge render-object ownership before
+      base `TerrainLogic::newMap` waypoint/water update and map object
+      spawning. Verified with `verify:gamelogic-new-game-dispatch-frontier`,
+      focused wasm build, direct `dist/gamelogic-new-game-dispatch-smoke.cjs`
+      from `WebAssembly/`, `test:gamelogic-new-game-dispatch`, and
+      `test:startup-vertical`.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the

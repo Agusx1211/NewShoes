@@ -6311,6 +6311,7 @@ add_executable(gamelogic-new-game-dispatch-smoke
   "${GAMEENGINE_GAMELOGIC_DIR}/AI/AI.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/AI/AIPathfind.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/AI/AIPlayer.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/GhostObject.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/Weapon.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/Scripts.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/ScriptEngine.cpp"
