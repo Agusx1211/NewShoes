@@ -1714,11 +1714,10 @@ flow below.
       A 2026-07-02 `test:vertical-integrations` run reached
       `browser-lanapi-game-start-two-contexts` after the startup/archive/audio
       checks passed, then hung inside the Playwright RPC until manually
-      interrupted. A later 2026-07-02 `test:object-ini` run likewise reached
-      `node harness/object_ini_smoke.mjs` after build and asset verification,
-      then hung silently inside the browser object-INI RPC until manually
-      interrupted twice; the harness should fail with browser log/context
-      instead of leaving a silent process.
+      interrupted. The 2026-07-02 `test:object-ini` silent hang is now fixed
+      by per-step timeouts plus range-backed archive mounting; extend that
+      same fail-with-browser-context pattern to the remaining long vertical
+      smokes instead of leaving silent Playwright RPCs.
 - [ ] CI runs build + harness smoke + screenshot diffs on every change.
 - [ ] Document how to run the harness and interpret failures.
 

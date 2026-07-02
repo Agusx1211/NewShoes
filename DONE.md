@@ -2628,6 +2628,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `WASM_REAL_INI_THING_FACTORY_METADATA_ONLY` until the running match
       subsystems link (follow-up in `TODO.md`); ThingFactory/Radar/
       UserPreferences probe stubs were deleted in favor of the real sources.
+- [x] Make the `test:object-ini` browser harness bounded and range-backed.
+      `harness/object_ini_smoke.mjs` now mounts a 54-entry synthesized
+      `INIZH.big` subset (10 prerequisite subsystem INIs, default
+      `Object.ini`, and all 43 `Data\INI\Object\*.ini` files) through
+      `mountRangeBackedArchiveSet` instead of full-archive `mountArchive`,
+      wraps page load/RPC boot/archive/object-probe steps in explicit
+      timeouts with captured browser console/page-error context, and reports
+      subset bytes/entry count in the JSON result. Verified with
+      `npm --prefix WebAssembly run test:object-ini`, proving the original
+      `Win32BIGFileSystem` + `INI::loadDirectory` path still parses 2,099
+      templates from the real 43-file object set.
 
 ---
 
