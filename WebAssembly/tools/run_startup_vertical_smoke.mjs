@@ -276,6 +276,18 @@ const browserChecks = [
         'Real GameEngine::init() set quitting');
       expect(payload.realEngineInit?.framesCompleted >= 5,
         'Real GameEngine::update() frames did not complete');
+      expect(payload.realEngineInit?.keyboard?.down?.ready === true
+          && payload.realEngineInit.keyboard.down.pendingDInputKeys === 0
+          && payload.realEngineInit.keyboard.down.eventCount >= 1
+          && payload.realEngineInit.keyboard.down.firstKey === 0x1e
+          && (payload.realEngineInit.keyboard.down.firstState & 0x0002) !== 0,
+        'Real lifecycle keyboard keydown did not reach original DirectInputKeyboard');
+      expect(payload.realEngineInit?.keyboard?.up?.ready === true
+          && payload.realEngineInit.keyboard.up.pendingDInputKeys === 0
+          && payload.realEngineInit.keyboard.up.eventCount >= 1
+          && payload.realEngineInit.keyboard.up.firstKey === 0x1e
+          && (payload.realEngineInit.keyboard.up.firstState & 0x0001) !== 0,
+        'Real lifecycle keyboard keyup did not reach original DirectInputKeyboard');
     },
   },
 ];
@@ -675,6 +687,7 @@ console.log(JSON.stringify({
     'original W3DMainMenuInit executing original MainMenuInit first-run state mutation',
     'original MainMenuSystem input-focus handling',
     'original MainMenuUpdate first idle frame under shell GameLogic state',
+    'browser DOM keyboard events feed the browser DirectInput scan-code queue and real GameClient::update proves KEY_A down/up through original DirectInputKeyboard',
     'original ButtonUSA faction difficulty transition and ButtonDiffBack return through MainMenuSystem',
     'original ButtonLoadReplay dropdown and ButtonLoadReplayBack return through MainMenuSystem',
     'original ButtonCredits path through Shell::push into CreditsMenuInit/CreditsMenuUpdate with INIZH-backed Credits.ini',

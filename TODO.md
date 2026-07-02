@@ -46,12 +46,14 @@ residue and the next frontier.
       It now posts Win32 mouse move/down/up through the original
       `WndProc`/`Win32Mouse`/`WindowXlat`/`GameWindowManager`/
       `GadgetPushButton` path, proves the first-run reveal with canvas pixel
-      samples + screenshots, and state-proves the hit-tested `ButtonUSA`
-      click reaches difficulty controls. Remaining: cover keyboard in the
-      same real lifecycle, align the post-click visual transition with the
-      engine hit-test state (the screenshot currently returns to the visible
-      default menu highlight while state has reached the USA/difficulty path),
-      and retire superseded focused menu smokes.
+      samples + screenshots, queues browser DOM `A` down/up into the browser
+      DirectInput scan-code device, proves original `DirectInputKeyboard` sees
+      `KEY_A` down/up during real `GameClient::update()`, and state-proves the
+      hit-tested `ButtonUSA` click reaches difficulty controls. Remaining:
+      align the post-click visual transition with the engine hit-test state
+      (the screenshot currently returns to the visible default menu highlight
+      while state has reached the USA/difficulty path), and retire superseded
+      focused menu smokes.
 - [ ] Migrate the legacy `ensure_booted()` probe boot and its harness gates
       onto the real lifecycle path, deleting probe-local implementations as
       real init covers them. First known casualty of real ownership: the

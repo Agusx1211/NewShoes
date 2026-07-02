@@ -2352,6 +2352,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `startup-vertical-real-init.png` /
       `startup-vertical-real-init-menu-click.png`; follow-up visual transition
       alignment after the click remains open in TODO.
+- [x] Prove browser keyboard delivery in the same real `MainMenu.wnd`
+      lifecycle. The browser bridge now maps DOM key codes into the existing
+      browser DirectInput scan-code queue while retaining the Win32 `WM_KEY*`
+      messages, and the real-frame JSON reports `TheKeyboard`'s gathered key
+      events. `startup_vertical_smoke.mjs` presses and releases `A` with
+      Playwright after the visible MainMenu reveal, waits for the DirectInput
+      queue, steps real `Win32GameEngine::update()`, and asserts the original
+      `DirectInputKeyboard` produced `KEY_A` down/up with the queue drained.
+      Verified with `npm --prefix WebAssembly run test:startup-vertical`.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what

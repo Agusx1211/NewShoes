@@ -31,6 +31,7 @@
 #include "GameClient/Display.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
+#include "GameClient/Keyboard.h"
 #include "GameClient/Mouse.h"
 #include "GameClient/Shell.h"
 #include "GameClient/WinInstanceData.h"
@@ -363,6 +364,31 @@ void append_input_window_state(std::string &json)
 			"\"leftState\":null,\"leftEvent\":null,\"leftFrame\":null,"
 			"\"middleState\":null,\"middleEvent\":null,"
 			"\"rightState\":null,\"rightEvent\":null";
+	}
+	json += "}";
+	json += ",\"keyboard\":{";
+	json += "\"ready\":";
+	json += TheKeyboard != NULL ? "true" : "false";
+	json += ",\"pendingDInputKeys\":";
+	json += std::to_string(cnc_port_dinput_queued_key_count());
+	if (TheKeyboard != NULL) {
+		KeyboardIO *first_key = TheKeyboard->getFirstKey();
+		int event_count = 0;
+		while (first_key != NULL && event_count < 256 && first_key[event_count].key != KEY_NONE) {
+			++event_count;
+		}
+		json += ",\"eventCount\":" + std::to_string(event_count);
+		json += ",\"modifiers\":" + std::to_string(TheKeyboard->getModifierFlags());
+		if (event_count > 0) {
+			json += ",\"firstKey\":" + std::to_string(static_cast<int>(first_key[0].key));
+			json += ",\"firstState\":" + std::to_string(static_cast<int>(first_key[0].state));
+			json += ",\"firstSequence\":" + std::to_string(first_key[0].sequence);
+		} else {
+			json += ",\"firstKey\":null,\"firstState\":null,\"firstSequence\":null";
+		}
+	} else {
+		json += ",\"eventCount\":0,\"modifiers\":null,"
+			"\"firstKey\":null,\"firstState\":null,\"firstSequence\":null";
 	}
 	json += "}";
 	json += "}";

@@ -429,6 +429,15 @@ const win32MouseMessages = Object.freeze({
   leftButtonUp: 0x0202,
 });
 
+const directInputKeys = Object.freeze({
+  a: 0x1e,
+});
+
+const keyStates = Object.freeze({
+  up: 0x0001,
+  down: 0x0002,
+});
+
 function win32PointLParam(point) {
   return ((point.y & 0xffff) << 16) | (point.x & 0xffff);
 }
@@ -449,6 +458,31 @@ async function postRealEngineMouseMessage(page, message, point) {
   });
   expect(result?.ok === true, "real engine mouse message was not posted", result);
   return result;
+}
+
+async function waitForBrowserDirectInputQueue(page, expectedCount, label) {
+  const handle = await page.waitForFunction((count) =>
+    (window.CnCPort?.state?.browserDirectInput?.queuedKeyCount ?? 0) >= count,
+    expectedCount,
+    { timeout: 5000 });
+  const queued = await handle.jsonValue();
+  expect(queued === true, `${label} did not queue DirectInput key input`, {
+    expectedCount,
+    directInput: await page.evaluate(() => window.CnCPort?.state?.browserDirectInput),
+  });
+}
+
+function assertRealKeyboardFrame(frameResult, expectedKey, expectedState, label) {
+  const keyboard = frameResult?.frame?.clientState?.input?.keyboard;
+  expect(keyboard?.ready === true,
+    `${label} did not have the original keyboard singleton ready`, keyboard);
+  expect(keyboard.pendingDInputKeys === 0,
+    `${label} left DirectInput keys queued after the real frame`, keyboard);
+  expect(keyboard.eventCount >= 1
+      && keyboard.firstKey === expectedKey
+      && (keyboard.firstState & expectedState) !== 0,
+    `${label} did not reach the original DirectInputKeyboard update path`,
+    keyboard);
 }
 
 async function sampleViewportPixels(page, points) {
@@ -1379,6 +1413,25 @@ try {
   await realInitPage.screenshot({ path: realInitScreenshot });
   const realInitCanvasProbe = await assertRealMenuCanvasVisible(realInitPage, "real MainMenu reveal screenshot");
 
+  console.error("[vertical] phase3 real keyboard input");
+  await realInitPage.keyboard.down("A");
+  await waitForBrowserDirectInputQueue(realInitPage, 1, "real MainMenu A keydown");
+  const realKeyboardDown = await runRealEngineFrames(realInitPage, 1);
+  assertRealKeyboardFrame(
+    realKeyboardDown,
+    directInputKeys.a,
+    keyStates.down,
+    "real MainMenu A keydown");
+
+  await realInitPage.keyboard.up("A");
+  await waitForBrowserDirectInputQueue(realInitPage, 1, "real MainMenu A keyup");
+  const realKeyboardUp = await runRealEngineFrames(realInitPage, 1);
+  assertRealKeyboardFrame(
+    realKeyboardUp,
+    directInputKeys.a,
+    keyStates.up,
+    "real MainMenu A keyup");
+
   console.error("[vertical] phase3 real menu click");
   const revealedMenu = realMenuReveal.revealFrame.frame?.clientState?.mainMenu;
   const realMenuClickTarget = realMenuReveal.clickTarget ?? resolveRevealedRealMenuClickTarget(revealedMenu);
@@ -1428,6 +1481,10 @@ try {
       elapsedMs: realInit.frontier?.elapsedMs,
       framesCompleted: realFrames.frame?.framesCompleted,
       clientState: realFrames.frame?.clientState,
+      keyboard: {
+        down: realKeyboardDown.frame?.clientState?.input?.keyboard,
+        up: realKeyboardUp.frame?.clientState?.input?.keyboard,
+      },
       menuClick: {
         framesCompleted: realMenuClick.finalFrame.frame?.framesCompleted,
         staleMovieBreakClears: realMenuClick.finalFrame.staleMovieBreakClears,
