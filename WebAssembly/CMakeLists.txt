@@ -4052,6 +4052,7 @@ add_library(zh_window_layout_script_runtime STATIC
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/GUICallbacks/W3DMOTD.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/MapUtil.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/MessageStream/MetaEvent.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/MessageStream/SelectionXlat.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ProcessAnimateWindow.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/Shell.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/ShellMenuScheme.cpp"

@@ -267,6 +267,7 @@ FunctionLexicon::TableEntry runtimeBaseSystemTable[] = {
 
 FunctionLexicon::TableEntry runtimeBaseInputTable[] = {
 	{ NAMEKEY_INVALID, "GameWinDefaultInput", GameWinDefaultInput },
+	{ NAMEKEY_INVALID, "GameWinBlockInput", GameWinBlockInput },
 	{ NAMEKEY_INVALID, "GadgetPushButtonInput", GadgetPushButtonInput },
 	{ NAMEKEY_INVALID, "GadgetCheckBoxInput", GadgetCheckBoxInput },
 	{ NAMEKEY_INVALID, "GadgetRadioButtonInput", GadgetRadioButtonInput },

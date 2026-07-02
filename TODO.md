@@ -51,6 +51,8 @@ flow below.
       device draw/layout tables, loads the non-network base GUI
       system/input/tooltip/widget plus IME draw callback table, registers
       representative original base layout callbacks, and now owns the original
+      `GameWinBlockInput` callback-name lookup with original
+      `SelectionXlat.cpp` linked for `TheSelectionTranslator`, original
       `ExtendedMessageBoxSystem`, original W3D `MOTDSystem`, original
       `DifficultySelect` system/input/init callbacks, original
       `KeyboardOptionsMenu` system/input/init/update/shutdown callbacks with
@@ -90,7 +92,8 @@ flow below.
       boot. The current
       linked runtime constructs original `W3DFunctionLexicon` and verifies the
       W3D device draw/layout callback tables plus the non-network base GUI
-      system/input/tooltip/widget, IME draw, original `PopupReplay`
+      system/input/tooltip/widget, IME draw, original `GameWinBlockInput`
+      lookup with original `SelectionXlat.cpp` symbol ownership, original `PopupReplay`
       input/init/shutdown modal lookups, original `ExtendedMessageBoxSystem`,
       original W3D `MOTDSystem` lookup,
       original `DifficultySelect` system/input/init lookups, original
@@ -175,10 +178,10 @@ flow below.
       `TheGameLogic`/`ThePartitionManager`/`TheGameClient` ownership, but the
       object-INI slice still needs the full production owner instead of the
       focused bridge-scene owner.
-- [ ] Revisit `GameWinBlockInput` once `SelectionTranslator` is runtime-owned;
-      it is the only non-network base input callback intentionally left out of
-      the current widget FunctionLexicon slice because it pulls
-      `TheSelectionTranslator`.
+- [ ] Exercise the original `GameWinBlockInput` left-button-release path after
+      the real `GameClient` init attaches original `SelectionTranslator` to the
+      message stream; the callback name now resolves in `FunctionLexicon`, but
+      behavioral coverage belongs with real input/game-client ownership.
 - [ ] Promote `GeneralsExpPointsSystem`/`GeneralsExpPointsInput` after the
       original `ControlBar` command path is runtime-owned. A direct callback
       registration links `GUI/GUICallbacks/GeneralsExpPoints.cpp` but then

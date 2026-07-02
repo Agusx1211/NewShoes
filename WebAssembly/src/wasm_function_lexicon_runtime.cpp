@@ -233,6 +233,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.game_window_default_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("GameWinDefaultInput")) == GameWinDefaultInput;
+	result.game_window_block_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("GameWinBlockInput")) == GameWinBlockInput;
 	result.gadget_push_button_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("GadgetPushButtonInput")) == GadgetPushButtonInput;
@@ -519,6 +522,7 @@ bool base_core_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &resul
 bool base_widget_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 {
 	return base_core_lookup_state_ready(result) &&
+		result.game_window_block_input_lookup &&
 		result.gadget_check_box_system_lookup &&
 		result.gadget_radio_button_system_lookup &&
 		result.gadget_tab_control_system_lookup &&
@@ -689,7 +693,7 @@ bool idle_worker_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &res
 bool base_layout_callback_graph_ready(const FunctionLexiconRuntimeProbeResult &)
 {
 	// The linked runtime currently proves a shell-menu subset plus the
-	// MOTD, options-menu, skirmish-map-select, challenge-menu,
+	// game-window block input, MOTD, options-menu, skirmish-map-select, challenge-menu,
 	// popup-communicator, in-game popup-message, idle-worker, control-bar
 	// input, beacon-window, replay-control, map-select, replay-menu,
 	// popup-replay modal callbacks, and game-info-window callback owners.
@@ -875,7 +879,7 @@ void finish_status(FunctionLexiconRuntimeProbeResult &result)
 		return;
 	}
 	if (!base_layout_callback_graph_ready(result)) {
-		result.status = "base_function_lexicon_motd_runtime_owned";
+		result.status = "base_function_lexicon_game_win_block_input_runtime_owned";
 		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
 		return;
 	}
@@ -1070,6 +1074,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"replayControlSystem\":%s,"
 		"\"gameInfoWindowSystem\":%s,"
 		"\"gameWindowDefaultInput\":%s,"
+		"\"gameWinBlockInput\":%s,"
 		"\"gadgetPushButtonInput\":%s,"
 		"\"gadgetCheckBoxInput\":%s,"
 		"\"gadgetRadioButtonInput\":%s,"
@@ -1203,6 +1208,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.replay_control_system_lookup),
 		json_bool(state.game_info_window_system_lookup),
 		json_bool(state.game_window_default_input_lookup),
+		json_bool(state.game_window_block_input_lookup),
 		json_bool(state.gadget_push_button_input_lookup),
 		json_bool(state.gadget_check_box_input_lookup),
 		json_bool(state.gadget_radio_button_input_lookup),

@@ -85,6 +85,7 @@ struct FunctionLexiconRuntimeProbeResult
 	bool replay_control_system_lookup = false;
 	bool game_info_window_system_lookup = false;
 	bool game_window_default_input_lookup = false;
+	bool game_window_block_input_lookup = false;
 	bool gadget_push_button_input_lookup = false;
 	bool gadget_check_box_input_lookup = false;
 	bool gadget_radio_button_input_lookup = false;

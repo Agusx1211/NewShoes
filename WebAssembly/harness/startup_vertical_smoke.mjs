@@ -281,7 +281,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
   const probe = state.functionLexiconRuntime;
   expect(probe?.attempted === true, "function lexicon runtime probe did not run", probe);
   expect(probe.ok === false, "function lexicon runtime should not claim full ownership yet", probe);
-  expect(probe.status === "base_function_lexicon_motd_runtime_owned",
+  expect(probe.status === "base_function_lexicon_game_win_block_input_runtime_owned",
     "function lexicon runtime status mismatch", probe);
   expect(probe.nextRequired === "originalFunctionLexiconRemainingShellCallbacks",
     "function lexicon runtime nextRequired mismatch", probe);
@@ -339,6 +339,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.replayControlSystem === true
       && probe.lookups.gameInfoWindowSystem === true
       && probe.lookups.gameWindowDefaultInput === true
+      && probe.lookups.gameWinBlockInput === true
       && probe.lookups.gadgetPushButtonInput === true
       && probe.lookups.gadgetCheckBoxInput === true
       && probe.lookups.gadgetRadioButtonInput === true
@@ -503,7 +504,7 @@ function assertAudioOwnedFrontier(state) {
       && frontier.audioManagerRuntime.tornDown === true,
     "frontier audioManagerRuntime summary mismatch", frontier.audioManagerRuntime);
   expect(frontier.functionLexiconRuntime?.ready === false
-      && frontier.functionLexiconRuntime.status === "base_function_lexicon_motd_runtime_owned"
+      && frontier.functionLexiconRuntime.status === "base_function_lexicon_game_win_block_input_runtime_owned"
       && frontier.functionLexiconRuntime.w3dDeviceDrawReady === true
       && frontier.functionLexiconRuntime.w3dLayoutInitReady === true
       && frontier.functionLexiconRuntime.messageBoxSystemReady === true
@@ -731,7 +732,7 @@ try {
   // boot constructs the original MilesAudioManager, W3DFunctionLexicon, and
   // W3DModuleFactory / W3DParticleSystemManager,
   // runs the real AudioManager::init()/openDevice() path plus the original
-  // W3DFunctionLexicon device-table load, original MOTD/MainMenu/Credits/Skirmish
+  // W3DFunctionLexicon device-table load, original GameWinBlockInput/MOTD/MainMenu/Credits/Skirmish
   // base shell callbacks, the promoted Options/SkirmishMapSelect/Challenge/PopupCommunicator/MapSelect/Replay/PopupReplay-modal/GameInfo owners,
   // and honestly keeps the device-factory frontier at createFunctionLexicon
   // until the remaining shell callback graph is owned by cnc-port.
