@@ -4139,6 +4139,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       unbounded partition ownership remain open in `TODO.md`. Verified with
       `llvm-nm -C .../PartitionManager.cpp.o`, `npm --prefix WebAssembly run build:wasm`,
       and `npm --prefix WebAssembly run test:ww3d-terrain-full-scene`.
+- [x] Replace the bounded terrain shroud player/list layout shim with original
+      `PlayerList` / `Player` ownership. `zh_w3d_terrain_probe_runtime` now
+      links original `PlayerList.cpp`, `Player.cpp`, and the required RTS
+      support owners, while `run_partition_shroud_refresh_probe` constructs the
+      real `PlayerList`, installs it as `ThePlayerList`, and uses
+      `getLocalPlayer()->getPlayerIndex()` for the original
+      `PartitionManager` reveal and shroud-refresh calls. The old
+      `ProbePlayerIndexShim` / `ProbePlayerListShim` structs are gone; the
+      remaining weak hooks only cover dormant Player AI/object/radar/resource
+      branches until the full gameplay owners link into this path. Verified
+      with `npm --prefix WebAssembly run build:wasm` and
+      `npm --prefix WebAssembly run test:ww3d-terrain-full-scene`.
 - [x] Apply D3D face culling before browser wireframe expansion. The
       D3D8/WebGL bridge now projects indexed triangles with the captured
       world/view/projection matrices, classifies CW/CCW winding, applies

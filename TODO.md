@@ -862,11 +862,16 @@ flow below.
       full-map extents from the same original `W3DTerrainLogic::loadMap(query=true)`
       result and drives the linked `PartitionManager` through original
       `Common/GlobalData.h` / `MAP_XY_FACTOR` partition-cell-size ownership
-      before clamping to a 48x48 browser gate. Remaining work is production
-      `PlayerList` / `Player`, full `TerrainLogic` extent ownership, and the
-      broader target-wide `GlobalData` layout so gameplay fog updates originate
-      entirely from the full partition/shroud owners instead of probe-local
-      layout shims and the bounded terrain cell window.
+      before clamping to a 48x48 browser gate. The same bounded refresh now
+      constructs the original `PlayerList`, publishes it through
+      `ThePlayerList`, and passes the local original `Player` index through
+      `PartitionManager::revealMapForPlayer` /
+      `refreshShroudForLocalPlayer`. Remaining work is full `TerrainLogic`
+      extent ownership, the broader target-wide `GlobalData` layout, unbounded
+      partition/shroud ownership, and replacing the dormant weak
+      Player/AI/Object/Radar branch hooks with real gameplay owners so fog
+      updates originate entirely from the full partition/shroud path instead of
+      probe-local ownership and the bounded terrain cell window.
 - [ ] Promote the bridge-buffer scene from probe-seeded retained
       `TheTerrainLogic` draw ownership into production
       `W3DBridgeBuffer::loadBridges(&W3DTerrainLogic, FALSE)` /

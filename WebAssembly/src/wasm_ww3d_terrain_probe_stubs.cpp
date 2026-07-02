@@ -8,6 +8,7 @@ struct Coord3D;
 class ScriptActionsInterface;
 class ScriptConditionsInterface;
 class TeamFactory;
+class VictoryConditionsInterface;
 
 GhostObjectManager *TheGhostObjectManager __attribute__((weak)) = nullptr;
 Radar *TheRadar __attribute__((weak)) = nullptr;
@@ -16,6 +17,7 @@ CampaignManager *TheCampaignManager __attribute__((weak)) = nullptr;
 ScriptActionsInterface *TheScriptActions __attribute__((weak)) = nullptr;
 ScriptConditionsInterface *TheScriptConditions __attribute__((weak)) = nullptr;
 TeamFactory *TheTeamFactory __attribute__((weak)) = nullptr;
+VictoryConditionsInterface *TheVictoryConditions __attribute__((weak)) = nullptr;
 
 extern "C" int __attribute__((weak)) RunBenchmark(
 	int,
@@ -49,9 +51,47 @@ extern "C" int cnc_port_team_prototype_count_instances(void *) __asm__("_ZN13Tea
 extern "C" void *cnc_port_campaign_manager_current_campaign(void *) __asm__("_ZN15CampaignManager18getCurrentCampaignEv") __attribute__((weak));
 extern "C" void cnc_port_team_get_as_ai_group(void *, void *) __asm__("_ZN4Team16getTeamAsAIGroupEP7AIGroup") __attribute__((weak));
 extern "C" void *cnc_port_team_get_controlling_player(const void *) __asm__("_ZNK4Team20getControllingPlayerEv") __attribute__((weak));
+extern "C" void cnc_port_pathfinder_classify_object_footprint(void *, void *, bool) __asm__("_ZN10Pathfinder23classifyObjectFootprintEP6Objectb") __attribute__((weak));
+extern "C" void cnc_port_pathfinder_classify_object_footprint(void *, void *, bool) {}
+extern "C" void *cnc_port_ai_player_ctor_c1(void *self, void *) __asm__("_ZN8AIPlayerC1EP6Player") __attribute__((weak));
+extern "C" void *cnc_port_ai_player_ctor_c1(void *self, void *) { return self; }
+extern "C" void *cnc_port_ai_skirmish_player_ctor_c1(void *self, void *) __asm__("_ZN16AISkirmishPlayerC1EP6Player") __attribute__((weak));
+extern "C" void *cnc_port_ai_skirmish_player_ctor_c1(void *self, void *) { return self; }
+extern "C" int cnc_port_ai_player_difficulty(const void *) __asm__("_ZNK8AIPlayer15getAIDifficultyEv") __attribute__((weak));
+extern "C" int cnc_port_ai_player_difficulty(const void *) { return 0; }
+extern "C" void cnc_port_ai_player_pre_team_destroy(void *, const void *) __asm__("_ZN8AIPlayer16aiPreTeamDestroyEPK4Team") __attribute__((weak));
+extern "C" void cnc_port_ai_player_pre_team_destroy(void *, const void *) {}
+extern "C" void *cnc_port_resource_gathering_manager_ctor_c1(void *self) __asm__("_ZN24ResourceGatheringManagerC1Ev") __attribute__((weak));
+extern "C" void *cnc_port_resource_gathering_manager_ctor_c1(void *self) { return self; }
+extern "C" void cnc_port_radar_remove_object(void *, void *) __asm__("_ZN5Radar12removeObjectEP6Object") __attribute__((weak));
+extern "C" void cnc_port_radar_remove_object(void *, void *) {}
+extern "C" void cnc_port_radar_add_object(void *, void *) __asm__("_ZN5Radar9addObjectEP6Object") __attribute__((weak));
+extern "C" void cnc_port_radar_add_object(void *, void *) {}
+extern "C" void cnc_port_object_leave_group(void *) __asm__("_ZN6Object10leaveGroupEv") __attribute__((weak));
+extern "C" void cnc_port_object_leave_group(void *) {}
+extern "C" void cnc_port_object_set_disabled(void *, int) __asm__("_ZN6Object11setDisabledE12DisabledType") __attribute__((weak));
+extern "C" void cnc_port_object_set_disabled(void *, int) {}
+extern "C" int cnc_port_object_clear_disabled(void *, int) __asm__("_ZN6Object13clearDisabledE12DisabledType") __attribute__((weak));
+extern "C" int cnc_port_object_clear_disabled(void *, int) { return 0; }
+extern "C" void cnc_port_object_update_upgrade_modules(void *) __asm__("_ZN6Object20updateUpgradeModulesEv") __attribute__((weak));
+extern "C" void cnc_port_object_update_upgrade_modules(void *) {}
+extern "C" void cnc_port_object_set_team(void *, void *) __asm__("_ZN6Object7setTeamEP4Team") __attribute__((weak));
+extern "C" void cnc_port_object_set_team(void *, void *) {}
 extern "C" void cnc_port_object_set_indicator(void *, int) __asm__("_ZN6Object23setCustomIndicatorColorEi") __attribute__((weak));
 extern "C" void cnc_port_object_remove_indicator(void *) __asm__("_ZN6Object26removeCustomIndicatorColorEv") __attribute__((weak));
 extern "C" int cnc_port_object_get_indicator(const void *) __asm__("_ZNK6Object17getIndicatorColorEv") __attribute__((weak));
+extern "C" const void *cnc_port_object_get_command_set_string(const void *) __asm__("_ZNK6Object19getCommandSetStringEv") __attribute__((weak));
+extern "C" const void *cnc_port_object_get_command_set_string(const void *) { return nullptr; }
+extern "C" int cnc_port_object_get_night_indicator_color(const void *) __asm__("_ZNK6Object22getNightIndicatorColorEv") __attribute__((weak));
+extern "C" int cnc_port_object_get_night_indicator_color(const void *) { return 0; }
+extern "C" void cnc_port_ai_group_add(void *, void *) __asm__("_ZN7AIGroup3addEP6Object") __attribute__((weak));
+extern "C" void cnc_port_ai_group_add(void *, void *) {}
+extern "C" void cnc_port_drawable_set_hidden(void *, int) __asm__("_ZN8Drawable17setDrawableHiddenEb") __attribute__((weak));
+extern "C" void cnc_port_drawable_set_hidden(void *, int) {}
+extern "C" void cnc_port_drawable_set_indicator_color(void *, int) __asm__("_ZN8Drawable17setIndicatorColorEi") __attribute__((weak));
+extern "C" void cnc_port_drawable_set_indicator_color(void *, int) {}
+extern "C" int cnc_port_thing_template_calc_cost_to_build(const void *, const void *) __asm__("_ZNK13ThingTemplate15calcCostToBuildEPK6Player") __attribute__((weak));
+extern "C" int cnc_port_thing_template_calc_cost_to_build(const void *, const void *) { return 0; }
 extern "C" void *cnc_port_player_current_enemy(void *) __asm__("_ZN6Player15getCurrentEnemyEv") __attribute__((weak));
 extern "C" void cnc_port_player_update_team_states(void *) __asm__("_ZN6Player16updateTeamStatesEv") __attribute__((weak));
 extern "C" int cnc_port_player_is_skirmish_ai(void *) __asm__("_ZN6Player18isSkirmishAIPlayerEv") __attribute__((weak));

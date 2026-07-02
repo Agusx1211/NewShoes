@@ -2296,12 +2296,22 @@ target_compile_options(zh_w3d_display_drawimage_runtime PRIVATE
 )
 
 add_library(zh_w3d_terrain_probe_runtime STATIC
+  "${GAMEENGINE_COMMON_DIR}/RTS/AcademyStats.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/Energy.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/Money.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/Player.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/PlayerList.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/ScoreKeeper.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/Team.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/TunnelTracker.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Map/TerrainLogic.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Map/PolygonTrigger.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/Scripts.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/ScriptEngine.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/AI/Squad.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/PartitionManager.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/ObjectTypes.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/System/RankInfo.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/System/Smudge.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Terrain/TerrainVisual.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DAssetManager.cpp"

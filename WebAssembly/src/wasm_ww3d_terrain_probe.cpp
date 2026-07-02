@@ -3986,49 +3986,6 @@ private:
 	CellShroudStatus m_sampleStatus = CELLSHROUD_SHROUDED;
 };
 
-struct alignas(Player) ProbePlayerIndexShim : public Snapshot
-{
-protected:
-	void crc(Xfer *) override {}
-	void xfer(Xfer *) override {}
-	void loadPostProcess() override {}
-
-public:
-	const PlayerTemplate *m_playerTemplate = nullptr;
-	UnicodeString m_playerDisplayName;
-	Handicap m_handicap;
-	AsciiString m_playerName;
-	NameKeyType m_playerNameKey = NAMEKEY_INVALID;
-	PlayerIndex m_playerIndex = 0;
-};
-
-struct alignas(PlayerList) ProbePlayerListShim : public SubsystemInterface, public Snapshot
-{
-	explicit ProbePlayerListShim(Player *localPlayer) :
-		m_local(localPlayer),
-		m_playerCount(1)
-	{
-		for (Int index = 0; index < MAX_PLAYER_COUNT; ++index) {
-			m_players[index] = nullptr;
-		}
-		m_players[0] = localPlayer;
-	}
-
-	void init() override {}
-	void reset() override {}
-	void update() override {}
-
-protected:
-	void crc(Xfer *) override {}
-	void xfer(Xfer *) override {}
-	void loadPostProcess() override {}
-
-public:
-	Player *m_local = nullptr;
-	Int m_playerCount = 0;
-	Player *m_players[MAX_PLAYER_COUNT] = {};
-};
-
 class ProbePartitionTerrainLogic final : public TerrainLogic
 {
 public:
@@ -4134,16 +4091,20 @@ ProbePartitionShroudRefreshMetrics run_partition_shroud_refresh_probe(
 
 	ProbeShroudForwardingDisplay display_adapter;
 	ProbeShroudCountingRadar radar_adapter;
-	ProbePlayerIndexShim player_shim;
-	player_shim.m_playerIndex = 0;
-	ProbePlayerListShim player_list_shim(reinterpret_cast<Player *>(&player_shim));
+	PlayerList player_list;
+	Player *local_player = player_list.getLocalPlayer();
+	const Int local_player_index =
+		local_player != nullptr ? local_player->getPlayerIndex() : PLAYER_INDEX_INVALID;
 
 	TheDisplay = &display_adapter;
 	TheRadar = &radar_adapter;
-	ThePlayerList = reinterpret_cast<PlayerList *>(&player_list_shim);
+	ThePlayerList = &player_list;
 	metrics.displayInstalled = TheDisplay == &display_adapter;
 	metrics.radarInstalled = TheRadar == &radar_adapter;
-	metrics.playerListInstalled = ThePlayerList == reinterpret_cast<PlayerList *>(&player_list_shim);
+	metrics.playerListInstalled =
+		ThePlayerList == &player_list &&
+		local_player != nullptr &&
+		local_player_index == 0;
 
 	const Real old_partition_cell_size = TheWritableGlobalData->m_partitionCellSize;
 	const RGBColor old_shroud_color = TheWritableGlobalData->m_shroudColor;
@@ -4244,13 +4205,13 @@ ProbePartitionShroudRefreshMetrics run_partition_shroud_refresh_probe(
 			metrics.cellCountY > 0 &&
 			partition_manager.getCellAt(metrics.sampleX, metrics.sampleY) != nullptr;
 		if (metrics.partitionCellsReady) {
-			partition_manager.revealMapForPlayer(player_shim.m_playerIndex);
+			partition_manager.revealMapForPlayer(local_player_index);
 			metrics.revealInvoked = true;
 			metrics.revealDisplaySetCalls = display_adapter.setCalls();
 			metrics.revealRadarSetCalls = radar_adapter.setCalls();
 			metrics.status =
 				partition_manager.getShroudStatusForPlayer(
-					player_shim.m_playerIndex,
+					local_player_index,
 					metrics.sampleX,
 					metrics.sampleY);
 			metrics.expectedLevel =
