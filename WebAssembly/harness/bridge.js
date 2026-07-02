@@ -289,9 +289,11 @@ const harnessState = {
   debugProbe: null,
   commonDebugLog: null,
   assetProbe: null,
+  objectIniProbe: null,
   archiveMount: null,
   browserRuntimeAssets: null,
   startupSingletons: null,
+  audioManagerRuntime: null,
   audioRuntimeAssets: null,
   audioPayloadInventory: null,
   startupAssets: null,
@@ -1193,7 +1195,8 @@ function readMssSampleWaveBytes(payload, heapu8) {
     throw new Error(`MSS sample payload pointer is outside wasm memory: ${dataPtr}`);
   }
   const riffSize = readU32LE(heapu8, dataPtr + 4) + 8;
-  if (riffSize < 44 || riffSize > 1024 * 1024 || dataPtr + riffSize > heapu8.byteLength) {
+  // Decoded IMA ADPCM payloads expand ~4x, so allow multi-megabyte PCM WAVs.
+  if (riffSize < 44 || riffSize > 64 * 1024 * 1024 || dataPtr + riffSize > heapu8.byteLength) {
     throw new Error(`MSS sample RIFF size is invalid: ${riffSize}`);
   }
   return heapu8.slice(dataPtr, dataPtr + riffSize);
@@ -1264,6 +1267,7 @@ function cncPortMssSampleStart(payload, heapu8) {
         sampleRate: decoded.info.samplesPerSec,
         channels: decoded.info.channels,
         bitsPerSample: decoded.info.bitsPerSample,
+        stats: summarizeDecodedSamples(decoded.samples),
       },
       sample: {
         volume,
@@ -6916,6 +6920,7 @@ function applyModuleState(moduleState) {
   harnessState.archiveMount = moduleState.archiveMount ?? harnessState.archiveMount;
   harnessState.browserRuntimeAssets = moduleState.browserRuntimeAssets ?? harnessState.browserRuntimeAssets;
   harnessState.startupSingletons = moduleState.startupSingletons ?? harnessState.startupSingletons;
+  harnessState.audioManagerRuntime = moduleState.audioManagerRuntime ?? harnessState.audioManagerRuntime;
   harnessState.audioRuntimeAssets = moduleState.audioRuntimeAssets ?? harnessState.audioRuntimeAssets;
   harnessState.startupAssets = moduleState.startupAssets ?? harnessState.startupAssets;
   harnessState.dataSummary = moduleState.dataSummary ?? harnessState.dataSummary;
@@ -7064,6 +7069,12 @@ async function loadWasmModule() {
       startMainLoop: module.cwrap("cnc_port_start_main_loop", "string", []),
       stopMainLoop: module.cwrap("cnc_port_stop_main_loop", "string", []),
       probeArchive: module.cwrap("cnc_port_probe_archive", "string", ["string"]),
+      probeObjectIni: module.cwrap("cnc_port_probe_object_ini", "string", ["string"]),
+      probeObjectIniSnippet: module.cwrap(
+        "cnc_port_probe_object_ini_snippet",
+        "string",
+        ["string", "string"],
+      ),
       registerArchiveSet: module.cwrap(
         "cnc_port_register_archive_set",
         "string",
@@ -7179,8 +7190,12 @@ async function loadWasmModule() {
       ),
       probeWin32GameEngine: module.cwrap("cnc_port_probe_win32_gameengine", "string", []),
       probeMssStartup: module.cwrap("cnc_port_probe_mss_startup", "string", []),
+      probeAudioManagerRuntime: module.cwrap("cnc_port_probe_audio_manager_runtime", "string", []),
       probeMssSampleLifecycle: module.cwrap("cnc_port_probe_mss_sample_lifecycle", "string", []),
       probeMssSamplePlaybackStart: module.cwrap("cnc_port_probe_mss_sample_playback_start", "string", []),
+      mssAdpcmPayloadBuffer: module.cwrap("cnc_port_mss_adpcm_payload_buffer", "number", ["number"]),
+      probeMssAdpcmSamplePlaybackStart: module.cwrap(
+        "cnc_port_probe_mss_adpcm_sample_playback_start", "string", ["number"]),
       probeMssSamplePlaybackFinish: module.cwrap("cnc_port_probe_mss_sample_playback_finish", "string", []),
       probeMssStreamLifecycle: module.cwrap("cnc_port_probe_mss_stream_lifecycle", "string", []),
       probeMss3DSampleLifecycle: module.cwrap("cnc_port_probe_mss_3d_sample_lifecycle", "string", []),
@@ -7416,6 +7431,7 @@ async function loadWasmModule() {
       probeGdiFont: module.cwrap("cnc_port_probe_gdi_font", "string", ["number", "string"]),
       state: module.cwrap("cnc_port_state", "string", []),
       fs: module.FS,
+      heapU8: () => module.HEAPU8,
     };
   } catch (error) {
     console.info("[wasm-harness] wasm module unavailable; using JS boot stub", error);
@@ -7487,6 +7503,7 @@ function snapshotState() {
     archiveMount: harnessState.archiveMount,
     browserRuntimeAssets: harnessState.browserRuntimeAssets,
     startupSingletons: harnessState.startupSingletons,
+    audioManagerRuntime: harnessState.audioManagerRuntime,
     audioRuntimeAssets: harnessState.audioRuntimeAssets,
     browserAudioRuntime: summarizeBrowserAudioRuntime(),
     browserAudioMixerRuntime: summarizeBrowserAudioMixerRuntime(),
@@ -9933,6 +9950,19 @@ async function writeArchiveToMemfs(wasmModule, payload, baseDirectory = "/assets
   };
 }
 
+function probeObjectIni(wasmModule, archivePath) {
+  const raw = wasmModule.probeObjectIni(archivePath);
+  let probe = null;
+  try {
+    probe = JSON.parse(raw);
+  } catch (error) {
+    probe = { ok: false, error: `object INI probe returned invalid JSON: ${error}`, raw };
+  }
+  harnessState.objectIniProbe = probe;
+  harnessState.wasm = "loaded";
+  return probe;
+}
+
 function probeArchive(wasmModule, archivePath) {
   applyModuleState(parseModuleState(wasmModule.probeArchive(archivePath)));
   harnessState.wasm = "loaded";
@@ -11616,6 +11646,43 @@ async function rpc(command, payload = {}) {
       return { ok: true, command, state: await stepFrames(payload) };
     case "mountArchive":
       return mountArchive(payload);
+    case "probeObjectIniSnippet":
+      {
+        const moduleResult = await getWasmModuleForArchives("probeObjectIniSnippet");
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        const path = typeof payload.path === "string" && payload.path.length > 0
+          ? payload.path
+          : "/assets/INIZH.big";
+        const snippetPath = "/assets/__object_ini_snippet.ini";
+        moduleResult.wasmModule.fs.writeFile(snippetPath, String(payload.snippetText ?? ""));
+        const raw = moduleResult.wasmModule.probeObjectIniSnippet(path, snippetPath);
+        let probe = null;
+        try {
+          probe = JSON.parse(raw);
+        } catch (error) {
+          probe = { ok: false, error: `snippet probe returned invalid JSON: ${error}`, raw };
+        }
+        return { ok: Boolean(probe?.ok), command, probe, state: snapshotState() };
+      }
+    case "probeObjectIni":
+      {
+        const moduleResult = await getWasmModuleForArchives("probeObjectIni");
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        const path = typeof payload.path === "string" && payload.path.length > 0
+          ? payload.path
+          : "/assets/INIZH.big";
+        const probe = probeObjectIni(moduleResult.wasmModule, path);
+        recordLog("object INI probe", {
+          path,
+          ok: Boolean(probe?.ok),
+          templateCount: probe?.templateCount ?? 0,
+        });
+        return { ok: Boolean(probe?.ok), command, probe, state: snapshotState() };
+      }
     case "mountArchives":
       return mountArchives(payload);
     case "mountRangeBackedArchiveSet":
@@ -21186,6 +21253,77 @@ async function rpc(command, payload = {}) {
         browserAudioRequestPathRuntime: summarizeBrowserAudioRequestPathRuntime(),
         state: snapshotState(),
       };
+    case "runtimeFileText":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable" };
+        }
+        try {
+          const bytes = wasmModule.fs.readFile(String(payload.path ?? ""));
+          const start = Math.max(0, bytes.length - Number(payload.tailBytes ?? 65536));
+          let text = "";
+          for (let i = start; i < bytes.length; ++i) text += String.fromCharCode(bytes[i]);
+          return { ok: true, command, path: payload.path, size: bytes.length, text };
+        } catch (error) {
+          return { ok: false, command, path: payload.path, error: String(error?.message ?? error) };
+        }
+      }
+    case "runtimeFileDigest":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; runtime file digest cannot run" };
+        }
+        try {
+          let bytes = wasmModule.fs.readFile(String(payload.path ?? ""));
+          let entryName = null;
+          if (payload.entry) {
+            const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+            const count = dv.getUint32(8, false);
+            let cursor = 16;
+            let hit = null;
+            for (let index = 0; index < count; ++index) {
+              const off = dv.getUint32(cursor, false);
+              const size = dv.getUint32(cursor + 4, false);
+              cursor += 8;
+              let end = cursor;
+              while (bytes[end] !== 0) ++end;
+              const name = String.fromCharCode(...bytes.subarray(cursor, end));
+              cursor = end + 1;
+              if (name.toLowerCase() === String(payload.entry).toLowerCase()) {
+                hit = { off, size, name };
+              }
+            }
+            if (!hit) {
+              return { ok: false, command, path: payload.path, error: `entry not found: ${payload.entry}` };
+            }
+            entryName = hit.name;
+            bytes = bytes.subarray(hit.off, hit.off + hit.size);
+          }
+          const digest = await crypto.subtle.digest("SHA-256", bytes);
+          const sha256 = Array.from(new Uint8Array(digest))
+            .map((value) => value.toString(16).padStart(2, "0"))
+            .join("");
+          return { ok: true, command, path: payload.path, entry: entryName, size: bytes.length, sha256 };
+        } catch (error) {
+          return { ok: false, command, path: payload.path, error: String(error?.message ?? error) };
+        }
+      }
+    case "audioManagerRuntimeProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; audio manager runtime probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeAudioManagerRuntime());
+        return {
+          ok: Boolean(probe.attempted),
+          command,
+          probe,
+          state: snapshotState(),
+        };
+      }
     case "mssStartupProbe":
       {
         const wasmModule = await wasmModulePromise;
@@ -21251,6 +21389,98 @@ async function rpc(command, payload = {}) {
             && runtime.ended === 1
             && runtime.released === 1,
           command,
+          startProbe,
+          completion,
+          finishProbe,
+          browserMssSamplePlaybackRuntime: runtime,
+          state: snapshotState(),
+        };
+      }
+    case "mssAdpcmSamplePlaybackProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; MSS ADPCM sample playback probe cannot run" };
+        }
+        const archiveName = String(payload.archive ?? "AudioZH.big");
+        const entryPath = String(payload.path ?? "Data\\Audio\\Sounds\\cleftria.wav");
+        const mounted = harnessState.mountedArchives.find((archive) =>
+          archive.name === archiveName || archive.sourceName === archiveName);
+        if (!mounted) {
+          return { ok: false, command, error: `archive ${archiveName} is not mounted` };
+        }
+        let payloadBytes;
+        let payloadInfo;
+        try {
+          const archiveBytes = wasmModule.fs.readFile(mounted.path);
+          const entries = readBigDirectoryFromBytes(archiveBytes, archiveName);
+          const entry = entries.find((candidate) =>
+            candidate.normalizedPath === normalizeBigPath(entryPath));
+          if (!entry) {
+            return { ok: false, command, error: `entry ${entryPath} not found in ${archiveName}` };
+          }
+          payloadBytes = archiveBytes.slice(entry.offset, entry.offset + entry.size);
+          payloadInfo = parseAudioWavPayload(payloadBytes);
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+        if (payloadInfo.wFormatTag !== 17) {
+          return {
+            ok: false,
+            command,
+            error: `entry ${entryPath} is not IMA ADPCM (wFormatTag ${payloadInfo.wFormatTag})`,
+          };
+        }
+        resetBrowserMssSamplePlaybackRuntime();
+        const stagingPtr = wasmModule.mssAdpcmPayloadBuffer(payloadBytes.byteLength);
+        if (!stagingPtr) {
+          return { ok: false, command, error: "wasm ADPCM staging buffer allocation failed" };
+        }
+        wasmModule.heapU8().set(payloadBytes, stagingPtr);
+        const startProbe = parseModuleState(
+          wasmModule.probeMssAdpcmSamplePlaybackStart(payloadBytes.byteLength));
+        let completion = null;
+        let completionError = null;
+        if (startProbe.ok && Number.isFinite(startProbe.sample?.handle)) {
+          const decodedFrames = Number(startProbe.decoded?.frames ?? 0);
+          const decodedRate = Number(startProbe.decoded?.rate ?? 44100);
+          const playbackMs = decodedRate > 0
+            ? Math.ceil((decodedFrames / decodedRate) * 1000)
+            : 0;
+          try {
+            completion = await waitForBrowserMssSamplePlayback(
+              startProbe.sample.handle, playbackMs + 3000);
+          } catch (error) {
+            completionError = error?.message ?? String(error);
+            browserMssSamplePlaybackRuntime.lastError = completionError;
+          }
+        }
+        const finishProbe = parseModuleState(wasmModule.probeMssSamplePlaybackFinish());
+        const runtime = summarizeBrowserMssSamplePlaybackRuntime();
+        const scheduledPayload = runtime.lastEvent?.payload ?? null;
+        return {
+          ok: Boolean(startProbe.ok)
+            && Boolean(finishProbe.ok)
+            && completionError === null
+            && runtime.runtimePlayback === true
+            && runtime.completed === 1
+            && runtime.ended === 1
+            && runtime.released === 1
+            && scheduledPayload?.codec === "PCM"
+            && (scheduledPayload?.stats?.nonZeroSamples ?? 0) > 0,
+          command,
+          archive: archiveName,
+          path: entryPath,
+          sourcePayload: {
+            bytes: payloadBytes.byteLength,
+            wFormatTag: payloadInfo.wFormatTag,
+            codec: payloadInfo.codec,
+            channels: payloadInfo.channels,
+            samplesPerSec: payloadInfo.samplesPerSec,
+            blockAlign: payloadInfo.blockAlign,
+            factSamples: payloadInfo.factSamples,
+            dataBytes: payloadInfo.dataBytes,
+          },
           startProbe,
           completion,
           finishProbe,

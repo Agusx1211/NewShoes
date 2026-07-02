@@ -599,6 +599,17 @@ void Object::initObject()
 }
 
 //-------------------------------------------------------------------------------------------------
+#ifdef __EMSCRIPTEN__
+void Object::cncPortReactToTransformChangeFromThing(
+	const Matrix3D* oldMtx,
+	const Coord3D* oldPos,
+	Real oldAngle)
+{
+	Object::reactToTransformChange(oldMtx, oldPos, oldAngle);
+}
+#endif
+
+//-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
 Object::~Object()
 {

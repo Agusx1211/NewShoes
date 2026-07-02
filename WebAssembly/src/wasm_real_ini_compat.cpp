@@ -3,12 +3,15 @@
 #define DEFINE_WEAPONBONUSCONDITION_NAMES
 #define DEFINE_WEAPONBONUSFIELD_NAMES
 
+#include "Common/AudioSettings.h"
+#include "Common/GameAudio.h"
 #include "Common/GlobalData.h"
 #include "Common/INI.h"
 #include "Common/ThingFactory.h"
 #include "Common/UserPreferences.h"
 #include "GameClient/Drawable.h"
 #include "GameClient/FXList.h"
+#include "GameClient/InGameUI.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/Object.h"
 #include "GameLogic/ScriptEngine.h"
@@ -97,6 +100,19 @@ const FXList *FXListStore::findFXList(const char *name) const
 }
 #endif
 
+// Live-match world-overlay animation referenced by the linked GameLogic
+// object modules (Object.cpp / CrateCollide.cpp / AutoHealBehavior.cpp).
+// It only fires for Objects in a running match; the real InGameUI is not part
+// of this runtime slice yet.
+void __attribute__((weak)) InGameUI::addWorldAnimation(
+	Anim2DTemplate *,
+	const Coord3D *,
+	WorldAnimationOptions,
+	Real,
+	Real)
+{
+}
+
 VeterancyLevel __attribute__((weak)) Object::getVeterancyLevel() const
 {
 	return LEVEL_REGULAR;
@@ -123,6 +139,10 @@ void __attribute__((weak)) ScriptEngine::parseScriptCondition(INI *)
 	throw INI_UNKNOWN_TOKEN;
 }
 
+#ifndef WASM_REAL_INI_OBJECT_RUNTIME
+// The real Common/UserPreferences.cpp is linked through
+// zh_gameengine_real_object_ini_runtime when the object-template runtime is
+// enabled; these focused fallbacks only exist for builds without it.
 UserPreferences::UserPreferences(void)
 {
 }
@@ -198,13 +218,16 @@ void UserPreferences::setAsciiString(AsciiString key, AsciiString value)
 {
 	(*this)[key] = value;
 }
+#endif // WASM_REAL_INI_OBJECT_RUNTIME
 
+#ifndef WASM_REAL_INI_OBJECT_RUNTIME
 ThingTemplate *__attribute__((weak)) ThingFactory::findTemplateInternal(
 	const AsciiString &,
 	Bool)
 {
 	return nullptr;
 }
+#endif
 
 OptionPreferences::OptionPreferences(void)
 {
@@ -290,34 +313,109 @@ Bool OptionPreferences::usesSystemMapDir(void)
 	return TRUE;
 }
 
+// The audio getters below mirror the original implementations in
+// GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/OptionsMenu.cpp.
+// The browser runtime has no persisted Options.ini yet (UserPreferences::load
+// returns FALSE), so these resolve to the fresh-install defaults parsed from
+// the real AudioSettings.ini, exactly like the original first-run path.
+// TheAudio null-guards keep probe targets without the audio runtime working.
 AsciiString OptionPreferences::getPreferred3DProvider(void)
 {
-	return AsciiString::TheEmptyString;
+	OptionPreferences::const_iterator it = find("3DAudioProvider");
+	if (it == end()) {
+		return TheAudio != nullptr
+			? TheAudio->getAudioSettings()->m_preferred3DProvider[MAX_HW_PROVIDERS]
+			: AsciiString::TheEmptyString;
+	}
+	return it->second;
 }
 
 AsciiString OptionPreferences::getSpeakerType(void)
 {
-	return AsciiString::TheEmptyString;
+	OptionPreferences::const_iterator it = find("SpeakerType");
+	if (it == end()) {
+		return TheAudio != nullptr
+			? TheAudio->translateUnsignedIntToSpeakerType(
+				TheAudio->getAudioSettings()->m_defaultSpeakerType2D)
+			: AsciiString::TheEmptyString;
+	}
+	return it->second;
 }
 
 Real OptionPreferences::getSoundVolume(void)
 {
-	return 100.0f;
+	OptionPreferences::const_iterator it = find("SFXVolume");
+	if (it == end()) {
+		if (TheAudio == nullptr) {
+			return 100.0f;
+		}
+		Real relative = TheAudio->getAudioSettings()->m_relative2DVolume;
+		if (relative < 0) {
+			Real scale = 1.0f + relative;
+			return TheAudio->getAudioSettings()->m_defaultSoundVolume * 100.0f * scale;
+		}
+		return TheAudio->getAudioSettings()->m_defaultSoundVolume * 100.0f;
+	}
+
+	Real volume = (Real) atof(it->second.str());
+	if (volume < 0.0f) {
+		volume = 0.0f;
+	}
+	return volume;
 }
 
 Real OptionPreferences::get3DSoundVolume(void)
 {
-	return 100.0f;
+	OptionPreferences::const_iterator it = find("SFX3DVolume");
+	if (it == end()) {
+		if (TheAudio == nullptr) {
+			return 100.0f;
+		}
+		Real relative = TheAudio->getAudioSettings()->m_relative2DVolume;
+		if (relative > 0) {
+			Real scale = 1.0f - relative;
+			return TheAudio->getAudioSettings()->m_default3DSoundVolume * 100.0f * scale;
+		}
+		return TheAudio->getAudioSettings()->m_default3DSoundVolume * 100.0f;
+	}
+
+	Real volume = (Real) atof(it->second.str());
+	if (volume < 0.0f) {
+		volume = 0.0f;
+	}
+	return volume;
 }
 
 Real OptionPreferences::getSpeechVolume(void)
 {
-	return 100.0f;
+	OptionPreferences::const_iterator it = find("VoiceVolume");
+	if (it == end()) {
+		return TheAudio != nullptr
+			? TheAudio->getAudioSettings()->m_defaultSpeechVolume * 100.0f
+			: 100.0f;
+	}
+
+	Real volume = (Real) atof(it->second.str());
+	if (volume < 0.0f) {
+		volume = 0.0f;
+	}
+	return volume;
 }
 
 Real OptionPreferences::getMusicVolume(void)
 {
-	return 100.0f;
+	OptionPreferences::const_iterator it = find("MusicVolume");
+	if (it == end()) {
+		return TheAudio != nullptr
+			? TheAudio->getAudioSettings()->m_defaultMusicVolume * 100.0f
+			: 100.0f;
+	}
+
+	Real volume = (Real) atof(it->second.str());
+	if (volume < 0.0f) {
+		volume = 0.0f;
+	}
+	return volume;
 }
 
 Bool OptionPreferences::saveCameraInReplays(void)
@@ -455,11 +553,15 @@ UNUSED_INI_BLOCK_PARSER(parseMiscAudio)
 UNUSED_INI_BLOCK_PARSER(parseMouseDefinition)
 UNUSED_INI_BLOCK_PARSER(parseMouseCursorDefinition)
 UNUSED_INI_BLOCK_PARSER(parseMusicTrackDefinition)
+#ifndef WASM_REAL_INI_OBJECT_RUNTIME
 UNUSED_INI_BLOCK_PARSER(parseObjectDefinition)
+#endif
 #ifndef WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY
 UNUSED_INI_BLOCK_PARSER(parseObjectCreationListDefinition)
 #endif
+#ifndef WASM_REAL_INI_OBJECT_RUNTIME
 UNUSED_INI_BLOCK_PARSER(parseObjectReskinDefinition)
+#endif
 UNUSED_INI_BLOCK_PARSER(parseRankDefinition)
 UNUSED_INI_BLOCK_PARSER(parseShellMenuSchemeDefinition)
 UNUSED_INI_BLOCK_PARSER(parseWebpageURLDefinition)

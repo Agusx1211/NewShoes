@@ -1,6 +1,8 @@
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -55,6 +57,9 @@ UnsignedInt g_audio_event_release_count = 0;
 constexpr const char *kEventName = "PortSmoke2D";
 constexpr const char *kSoundBaseName = "PortSmoke";
 constexpr const char *kSoundPath = "Data\\Audio\\Sounds\\PortSmoke.wav";
+constexpr const char *kAdpcmEventName = "PortSmokeADPCM2D";
+constexpr const char *kAdpcmSoundBaseName = "PortSmokeADPCM";
+constexpr const char *kAdpcmSoundPath = "Data\\Audio\\Sounds\\PortSmokeADPCM.wav";
 constexpr U32 kSampleRate = 44100;
 constexpr U32 kChannels = 2;
 constexpr U32 kBitsPerSample = 16;
@@ -376,6 +381,65 @@ void configureMinimalAudioSettings(SmokeMilesAudioManager &audio)
 	audio.setVolume(1.0f, AudioAffect_Sound3D);
 }
 
+// emcc 3.1.6 in this environment does not wire `main(int, char **)` into the
+// generated runtime (callMain is omitted), so command-line options are read
+// from process.argv via the JS bridge instead.
+bool getNodeArgument(const char *flag, char *out, int outSize)
+{
+#ifdef __EMSCRIPTEN__
+	return EM_ASM_INT({
+		try {
+			const flag = UTF8ToString($0);
+			const argv = typeof process !== "undefined" ? process.argv : [];
+			const index = argv.indexOf(flag);
+			if (index < 0 || index + 1 >= argv.length) {
+				return 0;
+			}
+			stringToUTF8(argv[index + 1], $1, $2);
+			return 1;
+		} catch (error) {
+			return 0;
+		}
+	}, flag, out, outSize) != 0;
+#else
+	(void)flag;
+	(void)out;
+	(void)outSize;
+	return false;
+#endif
+}
+
+std::vector<char> readFileBytes(const char *path)
+{
+	std::vector<char> bytes;
+	std::FILE *file = std::fopen(path, "rb");
+	if (file == nullptr) {
+		return bytes;
+	}
+	if (std::fseek(file, 0, SEEK_END) == 0) {
+		const long size = std::ftell(file);
+		if (size > 0 && std::fseek(file, 0, SEEK_SET) == 0) {
+			bytes.resize(static_cast<std::size_t>(size));
+			if (std::fread(bytes.data(), 1, bytes.size(), file) != bytes.size()) {
+				bytes.clear();
+			}
+		}
+	}
+	std::fclose(file);
+	return bytes;
+}
+
+bool writeFileBytes(const char *path, const void *data, std::size_t size)
+{
+	std::FILE *file = std::fopen(path, "wb");
+	if (file == nullptr) {
+		return false;
+	}
+	const bool ok = std::fwrite(data, 1, size, file) == size;
+	std::fclose(file);
+	return ok;
+}
+
 void configureAudioEventInfo(AudioEventInfo &info)
 {
 	info.m_audioName = kEventName;
@@ -661,6 +725,17 @@ Bool SoundManager::isInterrupting(AudioEventRTS *) { return FALSE; }
 
 int main()
 {
+	static char adpcm_input_buffer[1024] = {};
+	static char adpcm_dump_buffer[1024] = {};
+	const char *adpcm_input_path =
+		getNodeArgument("--adpcm", adpcm_input_buffer, sizeof(adpcm_input_buffer))
+			? adpcm_input_buffer
+			: nullptr;
+	const char *adpcm_dump_path =
+		getNodeArgument("--adpcm-dump", adpcm_dump_buffer, sizeof(adpcm_dump_buffer))
+			? adpcm_dump_buffer
+			: nullptr;
+
 	MSSBrowserRuntimeReset();
 	installMinimalGlobalData();
 	g_audio_event_release_count = 0;
@@ -736,8 +811,11 @@ int main()
 			"AIL_WAV_info did not parse the AudioFileCache payload");
 		require(parsed_info.format == WAVE_FORMAT_PCM, "parsed WAV format mismatch");
 		require(parsed_info.channels == static_cast<S32>(kChannels), "parsed WAV channel count mismatch");
-		require(parsed_info.rate == static_cast<S32>(kSampleRate), "parsed WAV sample rate mismatch");
+		require(parsed_info.rate == kSampleRate, "parsed WAV sample rate mismatch");
 		require(parsed_info.bits == static_cast<S32>(kBitsPerSample), "parsed WAV bit depth mismatch");
+		require(parsed_info.data_ptr != nullptr && parsed_info.data_len == kFrames * kChannels * 2,
+			"parsed WAV data chunk mismatch");
+		require(parsed_info.samples == kFrames, "parsed WAV frame count mismatch");
 
 		AIL_end_sample(sample);
 		require(sample_state->status == SMP_DONE, "AIL_end_sample did not mark the sample done");
@@ -747,6 +825,136 @@ int main()
 		require(audio.available2DSampleCount() == 2, "released sample did not return to the 2D pool");
 		require(sound.playing2D() == 0, "SoundManager did not observe the 2D sample completion");
 		require(g_audio_event_release_count == 1, "releasePlayingAudio did not release the AudioEventRTS");
+
+		// Optional second leg: play a real shipped IMA ADPCM WAV through the
+		// original AudioFileCache::openFile decode branch so the Miles
+		// boundary (AIL_WAV_info -> AIL_decompress_ADPCM) runs on real data.
+		std::string adpcmJson = "null";
+		if (adpcm_input_path != nullptr) {
+			std::vector<char> adpcmWave = readFileBytes(adpcm_input_path);
+			require(!adpcmWave.empty(), "could not read the real IMA ADPCM payload");
+			local_file_system.addFile(kAdpcmSoundPath, adpcmWave);
+
+			AILSOUNDINFO sourceInfo = {};
+			require(AIL_WAV_info(adpcmWave.data(), &sourceInfo) == 1,
+				"AIL_WAV_info did not parse the real ADPCM payload");
+			require(sourceInfo.format == WAVE_FORMAT_IMA_ADPCM, "real payload is not IMA ADPCM");
+			require(sourceInfo.samples > 0, "real ADPCM payload has no frame count");
+			require(sourceInfo.block_size > 0, "real ADPCM payload has no block alignment");
+
+			StackAudioEventInfo adpcmInfo;
+			configureAudioEventInfo(adpcmInfo);
+			adpcmInfo.m_audioName = kAdpcmEventName;
+			adpcmInfo.m_sounds.clear();
+			adpcmInfo.m_sounds.push_back(kAdpcmSoundBaseName);
+
+			AudioEventRTS adpcmEvent(kAdpcmEventName);
+			adpcmEvent.setAudioEventInfo(&adpcmInfo);
+			adpcmEvent.generateFilename();
+			adpcmEvent.generatePlayInfo();
+			adpcmEvent.setPlayingHandle(AHSV_FirstHandle + 1);
+			require(adpcmEvent.getFilename() == kAdpcmSoundPath,
+				"ADPCM event did not resolve through the original filename path");
+
+			StackAudioRequest adpcmRequest;
+			adpcmRequest.m_request = AR_Play;
+			adpcmRequest.m_pendingEvent = &adpcmEvent;
+			adpcmRequest.m_usePendingEvent = TRUE;
+			adpcmRequest.m_requiresCheckForSample = FALSE;
+
+			audio.processRequest(&adpcmRequest);
+
+			const HSAMPLE adpcmSample = audio.playingSampleHandle();
+			const MSSBrowserSampleState *adpcm_state = MSSBrowserFindSample(adpcmSample);
+			require(adpcmSample != 0, "ADPCM playAudioEvent did not attach a 2D sample handle");
+			require(adpcm_state != nullptr, "MSS runtime did not retain the ADPCM sample state");
+			require(adpcm_state->file_set && adpcm_state->status == SMP_PLAYING,
+				"ADPCM sample did not start playing");
+			require(adpcm_state->file_data != nullptr,
+				"AudioFileCache did not provide decoded ADPCM bytes");
+
+			AILSOUNDINFO decodedInfo = {};
+			require(AIL_WAV_info(static_cast<U8 *>(adpcm_state->file_data), &decodedInfo) == 1,
+				"AIL_WAV_info did not parse the decoded buffer");
+			require(decodedInfo.format == WAVE_FORMAT_PCM,
+				"AIL_decompress_ADPCM did not produce a PCM WAV");
+			require(decodedInfo.bits == 16, "decoded WAV is not 16-bit PCM");
+			require(decodedInfo.channels == sourceInfo.channels, "decoded channel count mismatch");
+			require(decodedInfo.rate == sourceInfo.rate, "decoded sample rate mismatch");
+			require(decodedInfo.samples == sourceInfo.samples,
+				"decoded frame count does not match the source frame count");
+			const U32 expectedDataBytes =
+				sourceInfo.samples * static_cast<U32>(sourceInfo.channels) * 2u;
+			require(decodedInfo.data_len == expectedDataBytes,
+				"decoded PCM size does not match samples*channels*2");
+
+			const U8 *decodedWave = static_cast<const U8 *>(adpcm_state->file_data);
+			const U32 decodedWaveBytes = 8u + MSSReadU32LE(decodedWave + 4);
+			require(decodedWaveBytes == 44u + expectedDataBytes, "decoded WAV image size mismatch");
+
+			const S16 *decodedSamples = static_cast<const S16 *>(decodedInfo.data_ptr);
+			U32 nonZeroSamples = 0;
+			S32 maxAbsSample = 0;
+			for (U32 i = 0; i < expectedDataBytes / 2; ++i) {
+				const S32 value = decodedSamples[i];
+				if (value != 0) {
+					++nonZeroSamples;
+				}
+				const S32 magnitude = value < 0 ? -value : value;
+				if (magnitude > maxAbsSample) {
+					maxAbsSample = magnitude;
+				}
+			}
+			require(nonZeroSamples > 0, "decoded ADPCM PCM is silent");
+
+			if (adpcm_dump_path != nullptr) {
+				require(writeFileBytes(adpcm_dump_path, decodedWave, decodedWaveBytes),
+					"could not dump the decoded PCM WAV");
+			}
+
+			AIL_end_sample(adpcmSample);
+			audio.processPlayingList();
+			require(audio.playingSoundCount() == 0,
+				"processPlayingList did not release the stopped ADPCM sample");
+			require(audio.available2DSampleCount() == 2,
+				"released ADPCM sample did not return to the 2D pool");
+			require(g_audio_event_release_count == 2,
+				"releasePlayingAudio did not release the ADPCM AudioEventRTS");
+
+			std::ostringstream adpcmOut;
+			adpcmOut << "{\"input\":";
+			writeJsonString(adpcmOut, adpcm_input_path);
+			adpcmOut
+				<< ",\"filename\":";
+			writeJsonString(adpcmOut, adpcmEvent.getFilename().str());
+			adpcmOut
+				<< ",\"source\":{\"format\":" << sourceInfo.format
+				<< ",\"channels\":" << sourceInfo.channels
+				<< ",\"rate\":" << sourceInfo.rate
+				<< ",\"blockSize\":" << sourceInfo.block_size
+				<< ",\"dataBytes\":" << sourceInfo.data_len
+				<< ",\"frames\":" << sourceInfo.samples
+				<< ",\"bytes\":" << adpcmWave.size()
+				<< "}"
+				<< ",\"decoded\":{\"format\":" << decodedInfo.format
+				<< ",\"bits\":" << decodedInfo.bits
+				<< ",\"channels\":" << decodedInfo.channels
+				<< ",\"rate\":" << decodedInfo.rate
+				<< ",\"frames\":" << decodedInfo.samples
+				<< ",\"dataBytes\":" << decodedInfo.data_len
+				<< ",\"expectedDataBytes\":" << expectedDataBytes
+				<< ",\"waveBytes\":" << decodedWaveBytes
+				<< ",\"nonZeroSamples\":" << nonZeroSamples
+				<< ",\"maxAbsSample\":" << maxAbsSample
+				<< ",\"dumped\":" << (adpcm_dump_path != nullptr ? "true" : "false")
+				<< "}"
+				<< ",\"sample\":{\"handle\":" << adpcmSample
+				<< ",\"statusAfterStart\":" << SMP_PLAYING
+				<< ",\"statusAfterEnd\":" << SMP_DONE
+				<< "}"
+				<< "}";
+			adpcmJson = adpcmOut.str();
+		}
 
 		std::cout
 			<< "{\"ok\":true"
@@ -773,6 +981,7 @@ int main()
 			<< ",\"playingSoundsAfterRelease\":" << audio.playingSoundCount()
 			<< ",\"audioEventReleases\":" << g_audio_event_release_count
 			<< "}"
+			<< ",\"adpcm\":" << adpcmJson
 			<< "}\n";
 	}
 

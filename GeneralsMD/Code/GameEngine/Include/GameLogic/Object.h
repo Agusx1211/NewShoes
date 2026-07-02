@@ -173,6 +173,9 @@ public:
 	Object(const ThingTemplate *thing, const ObjectStatusMaskType &objectStatusMask, Team *team);
 
 	void initObject();
+#ifdef __EMSCRIPTEN__
+	void cncPortReactToTransformChangeFromThing(const Matrix3D* oldMtx, const Coord3D* oldPos, Real oldAngle);
+#endif
 
 	void onDestroy();																							///< run during TheGameLogic::destroyObject
 

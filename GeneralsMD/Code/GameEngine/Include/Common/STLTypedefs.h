@@ -188,19 +188,46 @@ namespace rts
 		}
 	};
 
-	template<> struct hash<AsciiString>
+#ifdef __EMSCRIPTEN__
+	// The original build vendored STLport, whose std::hash<const char*>
+	// hashes the string contents (__stl_hash_string). libc++ hashes the
+	// pointer value instead, which breaks every AsciiString/char* keyed
+	// hash_map lookup (equal strings living in different buffers land in
+	// different buckets). Keep the original STLport hash semantics for the
+	// wasm port.
+	inline size_t __stl_port_hash_string(const char* __s)
 	{
-		size_t operator()(const AsciiString& ast) const
+		unsigned long __h = 0;
+		for ( ; *__s; ++__s)
+			__h = 5*__h + *__s;
+		return size_t(__h);
+	}
+
+	template<> struct hash<const char*>
+	{
+		size_t operator()(const char* __s) const
 		{
-			const unsigned char *s = reinterpret_cast<const unsigned char *>(ast.str());
-			size_t h = 2166136261u;
-			while (*s != 0) {
-				h ^= *s++;
-				h *= 16777619u;
-			}
-			return h;
+			return __stl_port_hash_string(__s);
 		}
 	};
+
+	template<> struct hash<AsciiString>
+	{
+		size_t operator()(AsciiString ast) const
+		{
+			return __stl_port_hash_string(ast.str());
+		}
+	};
+#else
+	template<> struct hash<AsciiString>
+	{
+		size_t operator()(AsciiString ast) const
+		{
+			std::hash<const char *> tmp;
+			return tmp((const char *) ast.str());
+		}
+	};
+#endif
 
 	template<> struct equal_to<AsciiString>
 	{

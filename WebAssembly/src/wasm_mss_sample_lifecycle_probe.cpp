@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "Mss.H"
@@ -13,7 +14,11 @@
 namespace {
 char g_mss_sample_lifecycle_probe_json[4096] = {};
 char g_mss_sample_playback_start_json[4096] = {};
+char g_mss_adpcm_sample_playback_start_json[4096] = {};
 char g_mss_sample_playback_finish_json[4096] = {};
+U8 *g_adpcm_payload_buffer = nullptr;
+U32 g_adpcm_payload_capacity = 0;
+void *g_adpcm_decoded_wave = nullptr;
 int g_sample_eos_count = 0;
 HSAMPLE g_sample_eos_last_handle = 0;
 int g_playback_sample_eos_count = 0;
@@ -327,6 +332,144 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_mss_sample_playback_start()
 		kPlaybackBitsPerSample);
 
 	return g_mss_sample_playback_start_json;
+}
+
+// Staging buffer the harness copies a real IMA ADPCM WAV payload into before
+// invoking cnc_port_probe_mss_adpcm_sample_playback_start.
+EMSCRIPTEN_KEEPALIVE U8 *cnc_port_mss_adpcm_payload_buffer(U32 length)
+{
+	if (length > g_adpcm_payload_capacity) {
+		std::free(g_adpcm_payload_buffer);
+		g_adpcm_payload_buffer = static_cast<U8 *>(std::malloc(length));
+		g_adpcm_payload_capacity = g_adpcm_payload_buffer != nullptr ? length : 0;
+	}
+	return g_adpcm_payload_buffer;
+}
+
+// Runs the real Miles decode boundary (AIL_WAV_info -> AIL_decompress_ADPCM)
+// on the staged real IMA ADPCM WAV, then hands the decoded PCM WAV to the
+// browser-backed sample path (AIL_set_sample_file -> AIL_start_sample) so Web
+// Audio schedules the decoded buffer. Finish via
+// cnc_port_probe_mss_sample_playback_finish.
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_mss_adpcm_sample_playback_start(U32 length)
+{
+	MSSBrowserRuntimeReset();
+	g_playback_sample_eos_count = 0;
+	g_playback_sample_eos_last_handle = 0;
+	g_playback_sample = 0;
+	if (g_adpcm_decoded_wave != nullptr) {
+		AIL_mem_free_lock(g_adpcm_decoded_wave);
+		g_adpcm_decoded_wave = nullptr;
+	}
+
+	AILSOUNDINFO source_info = {};
+	const bool payload_staged =
+		g_adpcm_payload_buffer != nullptr && length > 0 && length <= g_adpcm_payload_capacity;
+	const bool wav_parsed =
+		payload_staged && AIL_WAV_info(g_adpcm_payload_buffer, &source_info) == 1;
+	const bool is_adpcm = wav_parsed && source_info.format == WAVE_FORMAT_IMA_ADPCM;
+
+	U32 decoded_bytes = 0;
+	S32 decompress_result = 0;
+	if (is_adpcm) {
+		decompress_result = AIL_decompress_ADPCM(&source_info, &g_adpcm_decoded_wave, &decoded_bytes);
+	}
+
+	AILSOUNDINFO decoded_info = {};
+	const bool decoded_parsed =
+		decompress_result == 1 && g_adpcm_decoded_wave != nullptr &&
+		AIL_WAV_info(static_cast<U8 *>(g_adpcm_decoded_wave), &decoded_info) == 1;
+	const U32 expected_data_bytes =
+		source_info.samples * static_cast<U32>(source_info.channels > 0 ? source_info.channels : 0) * 2u;
+	const bool decoded_pcm =
+		decoded_parsed && decoded_info.format == WAVE_FORMAT_PCM && decoded_info.bits == 16 &&
+		decoded_info.channels == source_info.channels && decoded_info.rate == source_info.rate;
+	const bool size_matches =
+		decoded_pcm && decoded_info.data_len == expected_data_bytes &&
+		decoded_bytes == 44u + expected_data_bytes;
+
+	AIL_startup();
+	const S32 quick_startup_result = AIL_quick_startup(
+		1, 0, decoded_info.rate > 0 ? static_cast<S32>(decoded_info.rate) : 44100, 16, 2);
+
+	HDIGDRIVER digital = nullptr;
+	AIL_quick_handles(&digital, nullptr, nullptr);
+
+	g_playback_sample = AIL_allocate_sample_handle(digital);
+	const bool allocated = handle_valid(g_playback_sample);
+
+	AIL_init_sample(g_playback_sample);
+	const S32 set_file_result =
+		size_matches ? AIL_set_sample_file(g_playback_sample, g_adpcm_decoded_wave, 0) : 0;
+	AIL_register_EOS_callback(g_playback_sample, playback_sample_eos);
+	AIL_set_sample_volume_pan(g_playback_sample, 0.5f, 0.5f);
+	if (decoded_info.rate > 0) {
+		AIL_set_sample_playback_rate(g_playback_sample, static_cast<S32>(decoded_info.rate));
+	}
+	AIL_set_sample_loop_count(g_playback_sample, 1);
+
+	if (set_file_result == 1) {
+		AIL_start_sample(g_playback_sample);
+	}
+	const S32 status_after_start = AIL_sample_status(g_playback_sample);
+	const MSSBrowserSampleState *after_start = MSSBrowserFindSample(g_playback_sample);
+	const bool browser_start_requested =
+		after_start != nullptr && after_start->browser_playback_requested;
+	const bool ok =
+		payload_staged &&
+		wav_parsed &&
+		is_adpcm &&
+		decompress_result == 1 &&
+		decoded_pcm &&
+		size_matches &&
+		quick_startup_result == 1 &&
+		digital != nullptr &&
+		allocated &&
+		set_file_result == 1 &&
+		status_after_start == SMP_PLAYING &&
+		browser_start_requested;
+
+	std::snprintf(g_mss_adpcm_sample_playback_start_json, sizeof(g_mss_adpcm_sample_playback_start_json),
+		"{\"ok\":%s,"
+		"\"source\":\"Mss.H real IMA ADPCM decode + browser 2D sample Web Audio playback start probe\","
+		"\"boundary\":\"AIL_WAV_info->AIL_decompress_ADPCM->AIL_set_sample_file->AIL_start_sample\","
+		"\"payload\":{\"staged\":%s,\"bytes\":%u,\"wavParsed\":%s,"
+		"\"format\":%d,\"codec\":\"IMA_ADPCM\",\"channels\":%d,\"rate\":%u,"
+		"\"blockSize\":%u,\"dataBytes\":%u,\"frames\":%u},"
+		"\"decoded\":{\"result\":%d,\"format\":%d,\"bits\":%d,\"channels\":%d,"
+		"\"rate\":%u,\"frames\":%u,\"dataBytes\":%u,\"expectedDataBytes\":%u,"
+		"\"waveBytes\":%u,\"sizeMatches\":%s},"
+		"\"quickStartup\":{\"result\":%d,\"digitalHandle\":%s},"
+		"\"sample\":{\"handle\":%llu,\"setFile\":%d,\"statusAfterStart\":%d,"
+		"\"browserStartRequested\":%s}}",
+		ok ? "true" : "false",
+		payload_staged ? "true" : "false",
+		length,
+		wav_parsed ? "true" : "false",
+		source_info.format,
+		source_info.channels,
+		source_info.rate,
+		source_info.block_size,
+		source_info.data_len,
+		source_info.samples,
+		decompress_result,
+		decoded_info.format,
+		decoded_info.bits,
+		decoded_info.channels,
+		decoded_info.rate,
+		decoded_info.samples,
+		decoded_info.data_len,
+		expected_data_bytes,
+		decoded_bytes,
+		size_matches ? "true" : "false",
+		quick_startup_result,
+		digital != nullptr ? "true" : "false",
+		static_cast<unsigned long long>(g_playback_sample),
+		set_file_result,
+		status_after_start,
+		browser_start_requested ? "true" : "false");
+
+	return g_mss_adpcm_sample_playback_start_json;
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_mss_sample_playback_finish()

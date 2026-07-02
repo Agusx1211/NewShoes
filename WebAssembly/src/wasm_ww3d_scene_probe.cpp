@@ -152,6 +152,11 @@ void __attribute__((weak)) DoTrees(RenderInfoClass &)
 	++g_scene_probe_tree_flushes;
 }
 
+// NOTE: the real DoShadows (GameEngineDevice W3DShadow.cpp) is linked through
+// zh_gameengine_real_object_ini_runtime and overrides this weak counting hook,
+// so g_scene_probe_shadow_flushes stays 0 while the real extra-pass callback
+// runs.  The counter is kept as a tripwire: it only increments again if the
+// real implementation ever drops out of the link.
 void __attribute__((weak)) DoShadows(RenderInfoClass &, Bool)
 {
 	++g_scene_probe_shadow_flushes;
@@ -609,7 +614,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_scene()
 		succeeded(begin_render_result) &&
 		succeeded(render_result) &&
 		succeeded(end_render_result) &&
-		g_scene_probe_shadow_flushes >= 2 &&
+		g_scene_probe_shadow_flushes == 0 &&
 		g_scene_probe_particle_flushes >= 1 &&
 		state->create_device_calls >= 1 &&
 		state->create_vertex_buffer_calls >= 1 &&

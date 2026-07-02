@@ -245,7 +245,11 @@ m_bridgeInfo(theInfo)
 	m_bridgeInfo.curDamageState = BODY_PRISTINE;
 
 
+#ifdef __EMSCRIPTEN__
+	const ThingTemplate* genericBridgeTemplate = TheThingFactory->findTemplate("GenericBridge");
+#else
 	static const ThingTemplate* genericBridgeTemplate = TheThingFactory->findTemplate("GenericBridge");
+#endif
 	if (!genericBridgeTemplate) {
 		DEBUG_LOG(("*** GenericBridge template not found."));
 		return;
@@ -255,7 +259,11 @@ m_bridgeInfo(theInfo)
 	center.x = (m_bridgeInfo.fromLeft.x + m_bridgeInfo.toRight.x)/2.0f;
 	center.y = (m_bridgeInfo.fromLeft.y + m_bridgeInfo.toRight.y)/2.0f;
 	center.z = (m_bridgeInfo.fromLeft.z + m_bridgeInfo.toRight.z)/2.0f;
+#ifdef __EMSCRIPTEN__
+	bridge->cncPortSetObjectPosition(&center);
+#else
 	bridge->setPosition(&center);
+#endif
 	m_bridgeInfo.bridgeObjectID = bridge->getID();
 	bridge->updateObjValuesFromMapProperties(props);
 
@@ -266,7 +274,11 @@ m_bridgeInfo(theInfo)
 	Coord2D v;
 	v.x = m_bridgeInfo.toLeft.x - m_bridgeInfo.fromLeft.x;
 	v.y = m_bridgeInfo.toLeft.y - m_bridgeInfo.fromLeft.y;
+#ifdef __EMSCRIPTEN__
+	bridge->cncPortSetObjectOrientation( v.toAngle() );
+#else
 	bridge->setOrientation( v.toAngle() );
+#endif
 
 	v.x = m_bridgeInfo.toLeft.x - m_bridgeInfo.toRight.x;
 	v.y = m_bridgeInfo.toLeft.y - m_bridgeInfo.toRight.y;

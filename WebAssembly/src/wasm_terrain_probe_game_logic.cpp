@@ -12,7 +12,9 @@ enum { PROBE_OBJ_HASH_SIZE = 8192 };
 class ActionManager;
 
 GameLogic *TheGameLogic = NULL;
+#ifndef CNC_PORT_TERRAIN_PROBE_USE_ORIGINAL_ACTION_MANAGER
 ActionManager *TheActionManager = NULL;
+#endif
 
 GameLogic::GameLogic()
 {

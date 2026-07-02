@@ -305,6 +305,15 @@ ThingTemplate *ThingFactory::findTemplateInternal( const AsciiString& name, Bool
 //=============================================================================
 Object *ThingFactory::newObject( const ThingTemplate *tmplate, Team *team, ObjectStatusMaskType statusBits )
 {
+#ifdef WASM_REAL_INI_THING_FACTORY_METADATA_ONLY
+	// Live Object creation needs the running TheGameLogic / ThePartitionManager
+	// match subsystems, which are not part of the object-template INI runtime
+	// slice yet.  Template parsing/lookup above stays byte-for-byte real.
+	(void)tmplate;
+	(void)team;
+	(void)statusBits;
+	return NULL;
+#else
 	if (tmplate == NULL)
 		throw ERROR_BAD_ARG;
 
@@ -344,12 +353,20 @@ Object *ThingFactory::newObject( const ThingTemplate *tmplate, Team *team, Objec
 	obj->initObject();
 
 	return obj;
+#endif // WASM_REAL_INI_THING_FACTORY_METADATA_ONLY
 
-} 
+}
 
 //=============================================================================
 Drawable *ThingFactory::newDrawable(const ThingTemplate *tmplate, DrawableStatus statusBits)
 {
+#ifdef WASM_REAL_INI_THING_FACTORY_METADATA_ONLY
+	// See newObject(): live Drawable creation requires the running
+	// TheGameClient subsystem, which is outside this runtime slice.
+	(void)tmplate;
+	(void)statusBits;
+	return NULL;
+#else
 	if (tmplate == NULL)
 		throw ERROR_BAD_ARG;
 
@@ -360,6 +377,7 @@ Drawable *ThingFactory::newDrawable(const ThingTemplate *tmplate, DrawableStatus
 	all be tied together */
 
 	return draw;
+#endif // WASM_REAL_INI_THING_FACTORY_METADATA_ONLY
 
 }  // end newDrawableByType
 

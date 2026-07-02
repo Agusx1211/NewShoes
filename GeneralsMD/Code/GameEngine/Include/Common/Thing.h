@@ -110,6 +110,10 @@ public:
 
 	// physical properties
 	void setPosition( const Coord3D *pos );
+#ifdef __EMSCRIPTEN__
+	void cncPortSetObjectPosition(const Coord3D *pos);
+	void cncPortSetObjectOrientation(Real angle);
+#endif
 
 	/// the nice thing about this is that we don't have to recalc out cached terrain stuff.
 	void setPositionZ( Real z );
@@ -196,4 +200,3 @@ private:
 //-----------------------------------------------------------------------------
 
 #endif // $label
-

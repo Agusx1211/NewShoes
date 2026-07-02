@@ -37,6 +37,7 @@
 #include "Common/TerrainTypes.h"
 #include "Common/DamageFX.h"
 #include "GameLogic/AI.h"
+#include "GameLogic/AIPathfind.h"
 #include "GameLogic/Armor.h"
 #include "GameLogic/Damage.h"
 #include "GameLogic/GameLogic.h"
@@ -116,16 +117,9 @@ extern "C" bool cnc_port_terrain_probe_shroud_enabled(void)
 	return g_ww3d_terrain_probe_shroud_enabled;
 }
 
-Radar::Radar() = default;
-Radar::~Radar() = default;
-void Radar::reset() {}
-void Radar::update() {}
-void Radar::refreshTerrain(TerrainLogic *) {}
-void Radar::queueTerrainRefresh() {}
-void Radar::newMap(TerrainLogic *) {}
-void Radar::crc(Xfer *) {}
-void Radar::xfer(Xfer *) {}
-void Radar::loadPostProcess() {}
+// Radar base-class implementations now come from the real
+// GameEngine/Source/Common/System/Radar.cpp linked through
+// zh_gameengine_real_object_ini_runtime.
 
 GameClient::GameClient()
 {
@@ -159,6 +153,30 @@ void GameClient::reset()
 
 void GameClient::registerDrawable(Drawable *)
 {
+}
+
+void GameClient::addDrawableToLookupTable(Drawable *draw)
+{
+	if (draw == nullptr) {
+		return;
+	}
+	const std::size_t id = static_cast<std::size_t>(draw->getID());
+	while (id >= m_drawableVector.size()) {
+		m_drawableVector.resize(m_drawableVector.empty() ? 1 : m_drawableVector.size() * 2, nullptr);
+	}
+	m_drawableVector[id] = draw;
+}
+
+void GameClient::removeDrawableFromLookupTable(Drawable *draw)
+{
+	if (draw == nullptr) {
+		return;
+	}
+	const std::size_t id = static_cast<std::size_t>(draw->getID());
+	if (id >= m_drawableVector.size()) {
+		return;
+	}
+	m_drawableVector[id] = nullptr;
 }
 
 void GameClient::iterateDrawablesInRegion(Region3D *, GameClientFuncPtr, void *)
@@ -230,76 +248,9 @@ void GameClient::loadPostProcess()
 {
 }
 
-#ifndef CNC_PORT_TERRAIN_PROBE_USE_ORIGINAL_THING_FACTORY
-ThingFactory::ThingFactory() :
-	m_firstTemplate(nullptr),
-	m_nextTemplateID(1)
-{
-	m_templateHashMap.clear();
-}
-
-ThingFactory::~ThingFactory()
-{
-}
-
-void ThingFactory::init()
-{
-}
-
-void ThingFactory::postProcessLoad()
-{
-}
-
-void ThingFactory::reset()
-{
-}
-
-void ThingFactory::update()
-{
-}
-
-ThingTemplate *ThingFactory::newTemplate(const AsciiString &)
-{
-	return nullptr;
-}
-
-const ThingTemplate *ThingFactory::findByTemplateID(UnsignedShort)
-{
-	return nullptr;
-}
-
-Object *ThingFactory::newObject(const ThingTemplate *, Team *, ObjectStatusMaskType)
-{
-	return nullptr;
-}
-
-Drawable *ThingFactory::newDrawable(const ThingTemplate *, DrawableStatus)
-{
-	return nullptr;
-}
-
-void ThingFactory::parseObjectDefinition(INI *, const AsciiString &, const AsciiString &)
-{
-}
-
-ThingTemplate *ThingFactory::findTemplateInternal(const AsciiString &, Bool)
-{
-	return nullptr;
-}
-
-void ThingFactory::freeDatabase()
-{
-}
-
-void ThingFactory::addTemplate(ThingTemplate *)
-{
-}
-
-ThingTemplate *ThingFactory::newOverride(ThingTemplate *)
-{
-	return nullptr;
-}
-#endif
+// ThingFactory implementations now come from the real
+// GameEngine/Source/Common/Thing/ThingFactory.cpp linked through
+// zh_gameengine_real_object_ini_runtime.
 
 namespace {
 
@@ -2651,6 +2602,70 @@ public:
 class ProbeTerrainLogicForBridgeDraw final : public W3DTerrainLogic
 {
 public:
+	ProbeTerrainLogicForBridgeDraw()
+	{
+		clearProbeExtent();
+	}
+
+	void addBridgeToLogic(
+		BridgeInfo *info,
+		Dict *props,
+		AsciiString bridgeTemplateName) override
+	{
+		extendProbeExtent(info);
+		Bridge *bridge = newInstance(Bridge)(*info, props, bridgeTemplateName);
+		bridge->setNext(m_bridgeListHead);
+		m_bridgeListHead = bridge;
+		PathfindLayerEnum layer = TheAI->pathfinder()->addBridge(bridge);
+		bridge->setLayer(layer);
+	}
+
+	void updateBridgeDamageStates(void) override
+	{
+		W3DTerrainLogic::updateBridgeDamageStates();
+	}
+
+	Real getGroundHeight(Real, Real, Coord3D *normal = NULL) const override
+	{
+		if (normal != NULL) {
+			normal->x = 0.0f;
+			normal->y = 0.0f;
+			normal->z = 1.0f;
+		}
+		return 0.0f;
+	}
+
+	Real getLayerHeight(Real x, Real y, PathfindLayerEnum, Coord3D *normal = NULL, Bool = true) const override
+	{
+		return getGroundHeight(x, y, normal);
+	}
+
+	void getExtent(Region3D *extent) const override
+	{
+		if (extent == NULL) {
+			return;
+		}
+		if (!m_hasProbeExtent) {
+			extent->lo.x = 0.0f;
+			extent->lo.y = 0.0f;
+			extent->lo.z = 0.0f;
+			extent->hi.x = MAP_XY_FACTOR;
+			extent->hi.y = MAP_XY_FACTOR;
+			extent->hi.z = MAP_XY_FACTOR;
+			return;
+		}
+
+		*extent = m_probeExtent;
+		const Real margin = MAP_XY_FACTOR;
+		extent->lo.x -= margin;
+		extent->lo.y -= margin;
+		extent->hi.x += margin;
+		extent->hi.y += margin;
+	}
+
+	void getExtentIncludingBorder(Region3D *extent) const override { getExtent(extent); }
+	void getMaximumPathfindExtent(Region3D *extent) const override { getExtent(extent); }
+
 	struct BridgeDamageAttemptForProbe
 	{
 		BodyDamageType state = BODY_PRISTINE;
@@ -2980,6 +2995,49 @@ public:
 		repaired = isBridgeRepaired(bridge_object);
 		return firstBridgeForProbe(info, layer);
 	}
+
+private:
+	void clearProbeExtent()
+	{
+		m_hasProbeExtent = FALSE;
+		m_probeExtent.lo.x = 0.0f;
+		m_probeExtent.lo.y = 0.0f;
+		m_probeExtent.lo.z = 0.0f;
+		m_probeExtent.hi.x = 0.0f;
+		m_probeExtent.hi.y = 0.0f;
+		m_probeExtent.hi.z = 0.0f;
+	}
+
+	void extendProbeExtent(const BridgeInfo *info)
+	{
+		if (info == NULL) {
+			return;
+		}
+		includeProbeExtentPoint(info->fromLeft);
+		includeProbeExtentPoint(info->fromRight);
+		includeProbeExtentPoint(info->toLeft);
+		includeProbeExtentPoint(info->toRight);
+	}
+
+	void includeProbeExtentPoint(const Coord3D &point)
+	{
+		if (!m_hasProbeExtent) {
+			m_probeExtent.lo = point;
+			m_probeExtent.hi = point;
+			m_hasProbeExtent = TRUE;
+			return;
+		}
+
+		m_probeExtent.lo.x = std::min(m_probeExtent.lo.x, point.x);
+		m_probeExtent.lo.y = std::min(m_probeExtent.lo.y, point.y);
+		m_probeExtent.lo.z = std::min(m_probeExtent.lo.z, point.z);
+		m_probeExtent.hi.x = std::max(m_probeExtent.hi.x, point.x);
+		m_probeExtent.hi.y = std::max(m_probeExtent.hi.y, point.y);
+		m_probeExtent.hi.z = std::max(m_probeExtent.hi.z, point.z);
+	}
+
+	Region3D m_probeExtent;
+	Bool m_hasProbeExtent;
 };
 
 struct ProbeLogicalHeightMapParseTrace

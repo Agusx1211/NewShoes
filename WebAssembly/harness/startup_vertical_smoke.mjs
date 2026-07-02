@@ -1,14 +1,16 @@
-import { mkdir } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { access, mkdir, open, stat } from "node:fs/promises";
+import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { startStaticServer } from "./static-server.mjs";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
+const archiveRoot = resolve(wasmRoot, "artifacts/real-assets");
 const screenshotDir = resolve(wasmRoot, "artifacts/screenshots");
 const desktopScreenshot = resolve(screenshotDir, "startup-vertical-browser.png");
 const canvasScreenshot = resolve(screenshotDir, "startup-vertical-canvas.png");
+const audioBootScreenshot = resolve(screenshotDir, "startup-vertical-audio-owned.png");
 
 const allAudioStartupFiles = [
   "Data\\INI\\AudioSettings.ini",
@@ -31,6 +33,258 @@ function expect(condition, message, payload) {
 
 function entryByFactory(frontier, factory) {
   return (frontier?.entries ?? []).find((entry) => entry.factory === factory);
+}
+
+async function readBigEntryNames(path) {
+  const handle = await open(path, "r");
+  try {
+    const header = Buffer.alloc(16);
+    await handle.read(header, 0, 16, 0);
+    if (header.toString("ascii", 0, 4) !== "BIGF") {
+      throw new Error(`not a BIGF archive: ${path}`);
+    }
+    const entryCount = header.readUInt32BE(8);
+    const directorySize = header.readUInt32BE(12);
+    const directory = Buffer.alloc(directorySize + 16);
+    await handle.read(directory, 0, directory.length, 0);
+    const entries = [];
+    let cursor = 16;
+    for (let index = 0; index < entryCount; ++index) {
+      cursor += 8; // offset + size
+      let end = cursor;
+      while (end < directory.length && directory[end] !== 0) ++end;
+      entries.push(directory.toString("latin1", cursor, end));
+      cursor = end + 1;
+    }
+    return entries;
+  } finally {
+    await handle.close();
+  }
+}
+
+// GameEngine.cpp startup INI/data files served from the base Generals INI.big
+// (mounted as ZZBase_INI.big, mirroring the runtime-archives smokes).
+const baseIniStartupEntries = [
+  "Data\\INI\\Default\\GameData.ini",
+  "Data\\INI\\GameLODPresets.ini",
+  "Data\\INI\\Default\\Water.ini",
+  "Data\\INI\\Default\\Science.ini",
+  "Data\\INI\\Default\\Multiplayer.ini",
+  "Data\\INI\\Default\\Terrain.ini",
+  "Data\\INI\\Default\\Roads.ini",
+  "Data\\INI\\Rank.ini",
+  "Data\\INI\\Default\\PlayerTemplate.ini",
+  "Data\\INI\\Default\\FXList.ini",
+  "Data\\INI\\Default\\ObjectCreationList.ini",
+  "Data\\INI\\Default\\SpecialPower.ini",
+  "Data\\INI\\Default\\Upgrade.ini",
+  "Data\\INI\\Default\\Crate.ini",
+  "Data\\INI\\CommandMap.ini",
+  "Data\\INI\\Default\\Video.ini",
+];
+
+// AudioManager::init() (GameAudio.cpp) INI set that lives in base INI.big.
+const baseIniAudioStartupEntries = [
+  "Data\\INI\\AudioSettings.ini",
+  "Data\\INI\\Default\\Music.ini",
+  "Data\\INI\\Default\\Speech.ini",
+  "Data\\INI\\Default\\Voice.ini",
+];
+
+const mappedImageIniEntries = [
+  "Data\\INI\\MappedImages\\HandCreated\\HandCreatedMappedImages.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\HandCreatedMappedImages.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SAUserInterface512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SCGameUserInterface512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SCGenChallengeLoad512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SCGenChallengeSelect512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SCGenChallengeWinLoss512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SCLogosUserInterface512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SCPurchasePowers512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SCShellUserInterface512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SCSmShellUserInterface512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SNUserInterface512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SSUserInterface512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SUUserInterface512.INI",
+];
+
+const inizhStartupEntries = [
+  "Data\\INI\\Armor.ini",
+  "Data\\INI\\CommandButton.ini",
+  "Data\\INI\\CommandSet.ini",
+  "Data\\INI\\ControlBarScheme.ini",
+  "Data\\INI\\Crate.ini",
+  "Data\\INI\\DamageFX.ini",
+  "Data\\INI\\Default\\AIData.ini",
+  "Data\\INI\\Default\\ControlBarScheme.ini",
+  "Data\\INI\\Default\\Object.ini",
+  "Data\\INI\\Default\\SoundEffects.ini",
+  "Data\\INI\\Default\\Weather.ini",
+  "Data\\INI\\FXList.ini",
+  "Data\\INI\\GameData.ini",
+  "Data\\INI\\GameLOD.ini",
+  "Data\\INI\\Locomotor.ini",
+  "Data\\INI\\MiscAudio.ini",
+  "Data\\INI\\multiplayer.ini",
+  "Data\\INI\\Music.ini",
+  ...mappedImageIniEntries,
+  "Data\\INI\\ObjectCreationList.ini",
+  "Data\\INI\\Object\\AmericaInfantry.ini",
+  "Data\\INI\\ParticleSystem.ini",
+  "Data\\INI\\PlayerTemplate.ini",
+  "Data\\INI\\Roads.ini",
+  "Data\\INI\\Science.ini",
+  "Data\\INI\\SoundEffects.ini",
+  "Data\\INI\\SpecialPower.ini",
+  "Data\\INI\\Speech.ini",
+  "Data\\INI\\Terrain.ini",
+  "Data\\INI\\Upgrade.ini",
+  "Data\\INI\\Video.ini",
+  "Data\\INI\\Voice.ini",
+  "Data\\INI\\Water.ini",
+  "Data\\INI\\Weather.ini",
+  "Data\\INI\\Weapon.ini",
+];
+
+async function buildAudioOwnershipArchiveSpecs() {
+  // AudioManager::isMusicAlreadyLoaded() checks a real MusicTrack file from
+  // Music.ini, so the boot needs the base Generals Music.big (the ZH disc
+  // Music.big only carries the copy-protection payload). Staged from the base
+  // Generals Data1.cab via:
+  //   cabextract -d artifacts/real-assets/base-generals -F Music.big <Data1.cab>
+  const baseMusicPath = resolve(archiveRoot, "base-generals/Music.big");
+  await access(baseMusicPath).catch(() => {
+    throw new Error(
+      "artifacts/real-assets/base-generals/Music.big is required for the "
+      + "audio-ownership boot; extract it from the base Generals Data1.cab");
+  });
+
+  const specs = [
+    { name: "INIZH.big", entries: inizhStartupEntries },
+    {
+      name: "EnglishZH.big",
+      entries: ["Data\\English\\CommandMap.ini", "Data\\English\\Generals.csf"],
+    },
+    { name: "MapsZH.big", entries: ["Maps\\MapCache.ini"] },
+    {
+      name: "MusicZH.big",
+      entries: await readBigEntryNames(resolve(archiveRoot, "MusicZH.big")),
+    },
+    {
+      name: "Music.big",
+      sourceName: "base-generals/Music.big",
+      entries: await readBigEntryNames(baseMusicPath),
+    },
+    {
+      name: "ZZBase_INI.big",
+      sourceName: "INI.big",
+      entries: [...baseIniStartupEntries, ...baseIniAudioStartupEntries],
+    },
+    {
+      name: "ZZBase_English.big",
+      sourceName: "English.big",
+      entries: ["Data\\English\\CommandMap.ini"],
+    },
+  ];
+
+  const archives = [];
+  for (const spec of specs) {
+    const sourceName = spec.sourceName ?? spec.name;
+    const path = resolve(archiveRoot, sourceName);
+    const fileStat = await stat(path);
+    archives.push({
+      ...spec,
+      sourceName,
+      path,
+      bytes: fileStat.size,
+      urlPath: relative(wasmRoot, path).split(sep).join("/"),
+    });
+  }
+  return archives;
+}
+
+function assertAudioManagerRuntimeOwned(state) {
+  const probe = state.audioManagerRuntime;
+  expect(probe?.attempted === true, "audio manager runtime probe did not run", probe);
+  expect(probe.ok === true, "audio manager runtime probe is not ready", probe);
+  expect(probe.status === "ready", "audio manager runtime status mismatch", probe);
+  expect(probe.nextRequired === "createFunctionLexicon",
+    "audio manager runtime nextRequired mismatch", probe);
+  expect(probe.constructed === true && probe.theAudioOwned === true,
+    "original MilesAudioManager was not constructed as TheAudio", probe);
+  expect(probe.initRan === true && probe.initThrew === false,
+    "original MilesAudioManager::init() did not complete", probe);
+  expect(probe.gameEngineInit?.factory === "createAudioManager"
+      && probe.gameEngineInit.line === 434
+      && probe.gameEngineInit.musicCheckLine === 435
+      && probe.gameEngineInit.wouldSetQuitting === false,
+    "GameEngine.cpp createAudioManager ownership mismatch", probe);
+  expect(probe.audioSettings?.audioRoot === "Data\\Audio",
+    "AudioSettings.ini audio root did not parse through the real INI path", probe);
+  expect(probe.audioSettings.outputRate > 0 && probe.audioSettings.sampleCount2D > 0
+      && probe.audioSettings.sampleCount3D > 0 && probe.audioSettings.streamCount > 0,
+    "AudioSettings.ini device settings did not parse", probe);
+  expect(probe.audioEventInfo?.musicTracks >= 60,
+    "Music.ini tracks did not parse through the real INI path", probe);
+  expect(probe.audioEventInfo.soundEffects >= 1000,
+    "SoundEffects.ini events did not parse through the real INI path", probe);
+  expect(probe.audioEventInfo.streamingEvents >= 1000,
+    "Speech.ini/Voice.ini events did not parse through the real INI path", probe);
+  expect(probe.audioEventInfo.miscAudioParsed === true,
+    "MiscAudio.ini did not parse through the real INI path", probe);
+  expect(probe.music?.alreadyLoaded === true,
+    "AudioManager::isMusicAlreadyLoaded() did not find the music archive", probe);
+  expect(probe.music.osDisplayWarningPrompts === 0,
+    "music check should not raise the insert-CD prompt with archives mounted", probe);
+  expect(probe.openDevice?.startupCalled === true
+      && probe.openDevice.quickStartupOk === true
+      && probe.openDevice.fileCallbacksSet === true,
+    "MilesAudioManager::openDevice() did not drive the browser MSS runtime", probe);
+  expect(probe.openDevice.providerCount >= 2
+      && probe.openDevice.providerSelected === true
+      && probe.openDevice.selectedProviderOpen === true
+      && probe.openDevice.selectedProvider.length > 0,
+    "openDevice provider selection mismatch", probe);
+  expect(probe.openDevice.samples2D > 0
+      && probe.openDevice.samples3D > 0
+      && probe.openDevice.streams > 0
+      && probe.openDevice.mssSamples2DAllocated === probe.openDevice.samples2D
+      && probe.openDevice.mssSamples3DAllocated === probe.openDevice.samples3D
+      && probe.openDevice.mssListenersAllocated === 1,
+    "openDevice sample/listener pools mismatch", probe);
+  expect(probe.teardown?.tornDown === true
+      && probe.teardown.mssShutdownCalled === true
+      && probe.teardown.theAudioCleared === true,
+    "original MilesAudioManager teardown mismatch", probe);
+}
+
+function assertAudioOwnedFrontier(state) {
+  const startup = state.originalEngineStartup;
+  const frontier = startup?.deviceFactoryFrontier;
+  expect(frontier?.firstUnownedInitFactory === "createFunctionLexicon",
+    "audio-owned frontier should advance to createFunctionLexicon", frontier);
+  expect(frontier.firstUnownedInitLine === 446,
+    "audio-owned frontier line should advance to 446", frontier);
+  const preAudio = frontier.preAudioInitOwnership;
+  expect(preAudio?.firstUnownedFactory?.line === 446
+      && preAudio.firstUnownedFactory.factory === "createFunctionLexicon"
+      && preAudio.firstUnownedFactory.subsystem === "TheFunctionLexicon",
+    "audio-owned first unowned factory mismatch", frontier);
+  const audioEntry = entryByFactory(frontier, "createAudioManager");
+  expect(audioEntry?.line === 434 && audioEntry.ready === true
+      && audioEntry.status === "browser_runtime_initialized_original_audio_manager",
+    "createAudioManager frontier entry should be runtime-owned", frontier);
+  expect(frontier.milesAudioDeviceFrontier?.runtimeReady === true,
+    "Miles frontier runtimeReady mismatch", frontier.milesAudioDeviceFrontier);
+  const refresh = frontier.milesAudioDeviceFrontier?.openDeviceCalls?.[6];
+  expect(refresh?.call === "refreshCachedVariables" && refresh.ready === true
+      && refresh.status === "browser_audio_manager_runtime_refreshed",
+    "refreshCachedVariables should be runtime-owned", frontier.milesAudioDeviceFrontier);
+  expect(frontier.audioManagerRuntime?.ready === true
+      && frontier.audioManagerRuntime.musicAlreadyLoaded === true
+      && frontier.audioManagerRuntime.wouldSetQuitting === false
+      && frontier.audioManagerRuntime.tornDown === true,
+    "frontier audioManagerRuntime summary mismatch", frontier.audioManagerRuntime);
 }
 
 function assertStartupSingletonsMissing(state) {
@@ -152,6 +406,14 @@ function assertOriginalStartupFrontier(state) {
     "Miles startup boundary should remain covered", frontier.milesAudioDeviceFrontier);
   expect(frontier.milesAudioDeviceFrontier?.nextRequired === "audioStartupFiles",
     "Miles frontier nextRequired mismatch", frontier.milesAudioDeviceFrontier);
+  expect(frontier.milesAudioDeviceFrontier?.runtimeReady === false,
+    "Miles frontier should not claim the audio runtime without archives",
+    frontier.milesAudioDeviceFrontier);
+  expect(frontier.audioManagerRuntime?.attempted === true
+      && frontier.audioManagerRuntime.ready === false
+      && frontier.audioManagerRuntime.status === "missing_runtime_archives",
+    "audio manager runtime should be blocked without archives",
+    frontier.audioManagerRuntime);
 
   expect(frontier.fileSystemReady === false, "frontier filesystem should not be archive-ready", frontier);
   expect(frontier.startupFilesReady === false, "frontier startup files should be missing", frontier);
@@ -190,13 +452,59 @@ try {
   await page.screenshot({ path: desktopScreenshot });
   await page.locator("#viewport").screenshot({ path: canvasScreenshot });
 
+  // Archive-backed boot: mount the startup + audio archive set and prove the
+  // boot constructs the original MilesAudioManager, runs the real
+  // AudioManager::init()/openDevice() path, and honestly advances the
+  // device-factory frontier past createAudioManager to createFunctionLexicon.
+  const archives = await buildAudioOwnershipArchiveSpecs();
+  const audioPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  await audioPage.goto(harnessUrl, { waitUntil: "networkidle" });
+  await audioPage.waitForFunction(() => Boolean(window.CnCPort?.rpc));
+
+  const mountResult = await audioPage.evaluate((payload) =>
+    window.CnCPort.rpc("mountRangeBackedArchiveSet", payload), {
+    path: "/assets/startup-audio",
+    verifyEach: false,
+    archives: archives.map((archive) => ({
+      url: new URL(archive.urlPath, server.url).href,
+      name: archive.name,
+      sourceName: archive.sourceName,
+      expectedSourceBytes: archive.bytes,
+      sourceArchive: archive.path,
+      entries: archive.entries,
+    })),
+  });
+  expect(mountResult.ok === true, "audio-ownership archive mount failed", mountResult.archiveSet);
+
+  const audioBootResult = await audioPage.evaluate(() => window.CnCPort.rpc("boot", {
+    source: "startup vertical smoke (audio ownership)",
+  }));
+  expect(audioBootResult.ok === true, "audio-ownership boot RPC failed", audioBootResult);
+  expect(audioBootResult.state?.booted === true, "audio-ownership boot state mismatch", audioBootResult);
+  expect(audioBootResult.state.startupSingletons?.ok === true,
+    "audio-ownership boot should own the startup singletons",
+    audioBootResult.state.startupSingletons);
+
+  assertAudioManagerRuntimeOwned(audioBootResult.state);
+  assertAudioOwnedFrontier(audioBootResult.state);
+
+  await audioPage.screenshot({ path: audioBootScreenshot });
+
+  const audioFrontier =
+    audioBootResult.state.originalEngineStartup.deviceFactoryFrontier;
   console.log(JSON.stringify({
     ok: true,
     url: harnessUrl,
     wasm: bootResult.state.wasm,
     frame: bootResult.state.frame,
-    screenshots: [desktopScreenshot, canvasScreenshot],
+    screenshots: [desktopScreenshot, canvasScreenshot, audioBootScreenshot],
     originalEngineStartup: bootResult.state.originalEngineStartup,
+    archiveBackedStartup: {
+      archiveCount: mountResult.archiveSet?.archiveCount,
+      firstUnownedInitFactory: audioFrontier.firstUnownedInitFactory,
+      firstUnownedInitLine: audioFrontier.firstUnownedInitLine,
+      audioManagerRuntime: audioBootResult.state.audioManagerRuntime,
+    },
   }));
 } finally {
   await browser?.close();

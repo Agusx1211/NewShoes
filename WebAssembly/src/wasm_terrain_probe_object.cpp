@@ -1277,3 +1277,13 @@ void Object::reactToTransformChange(const Matrix3D *, const Coord3D *, Real)
 		m_partitionData->makeDirty(true);
 	}
 }
+
+#ifdef __EMSCRIPTEN__
+void Object::cncPortReactToTransformChangeFromThing(
+	const Matrix3D *oldMtx,
+	const Coord3D *oldPos,
+	Real oldAngle)
+{
+	reactToTransformChange(oldMtx, oldPos, oldAngle);
+}
+#endif

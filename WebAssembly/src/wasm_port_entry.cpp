@@ -15,6 +15,7 @@
 #include "wasm_gamenetwork_probe.h"
 #include "wasm_globaldata_probe.h"
 #include "wasm_startup_singletons_probe.h"
+#include "wasm_audio_manager_probe.h"
 #include "wasm_d3d8_shim.h"
 
 #include "D3dx8core.h"
@@ -354,6 +355,24 @@ void run_startup_singletons_probe()
 		result.ok ? 1 : 0,
 		result.status != nullptr ? result.status : "",
 		result.map_count);
+}
+
+bool audio_startup_files_ready();
+
+void run_audio_manager_runtime_probe()
+{
+	const AudioManagerRuntimeProbeResult &result = wasm_audio_manager_probe_install(
+		g_archive_mount.registered,
+		audio_startup_files_ready());
+	std::printf(
+		"cnc-port: audio manager runtime probe ok=%d status=%s providers=%u "
+		"music=%d tracks=%u sounds=%u\n",
+		result.ok ? 1 : 0,
+		result.status != nullptr ? result.status : "",
+		result.provider_count,
+		result.music_already_loaded ? 1 : 0,
+		result.music_track_count,
+		result.sound_event_count);
 }
 
 bool startup_boot_ini_present()
@@ -1504,6 +1523,18 @@ const char *build_device_factory_frontier_json()
 	const bool audio_files_ready = audio_startup_files_ready();
 	const std::string missing_audio_startup_files_json =
 		build_missing_audio_startup_files_json();
+	const AudioManagerRuntimeProbeResult &audio_runtime =
+		wasm_audio_manager_probe_state();
+	const bool audio_manager_owned = audio_runtime.ok;
+	const char *first_unowned_factory =
+		audio_manager_owned ? "createFunctionLexicon" : "createAudioManager";
+	const int first_unowned_line = audio_manager_owned ? 446 : 434;
+	const char *first_unowned_subsystem =
+		audio_manager_owned ? "TheFunctionLexicon" : "TheAudio";
+	const std::string audio_runtime_status_json =
+		json_escape(audio_runtime.status != nullptr ? audio_runtime.status : "");
+	const std::string audio_runtime_selected_provider_json =
+		json_escape(audio_runtime.selected_provider_name);
 	const char *next_required = "startupAssets";
 	if (startup_assets_ready() && !startup_files_ready) {
 		next_required = "startupFiles";
@@ -1517,8 +1548,8 @@ const char *build_device_factory_frontier_json()
 		"{\"source\":\"GameEngine.cpp::init + WinMain.cpp::CreateGameEngine + Win32GameEngine.h\","
 		"\"probeOnly\":true,\"ready\":false,"
 		"\"nextRequired\":\"%s\","
-		"\"firstUnownedInitFactory\":\"createAudioManager\","
-		"\"firstUnownedInitLine\":434,"
+		"\"firstUnownedInitFactory\":\"%s\","
+		"\"firstUnownedInitLine\":%d,"
 		"\"sourceFiles\":{\"gameEngineInit\":\"GeneralsMD/Code/GameEngine/Source/Common/GameEngine.cpp\","
 		"\"winMainFactory\":\"GeneralsMD/Code/Main/WinMain.cpp\","
 		"\"win32Factories\":\"GeneralsMD/Code/GameEngineDevice/Include/Win32Device/Common/Win32GameEngine.h\"},"
@@ -1539,7 +1570,7 @@ const char *build_device_factory_frontier_json()
 		"\"commandList\":{\"line\":327,\"ready\":%s,\"owned\":%s,\"initialized\":%s,\"empty\":%s,\"status\":\"browser_startup_owned\"},"
 		"\"xferCRC\":{\"line\":338,\"ready\":%s,\"initialCRC\":%u,\"status\":\"original_lightCRC_opened\"},"
 		"\"parseCommandLine\":{\"line\":381,\"ready\":%s,\"status\":\"bootstrap_probe_ready\"},"
-		"\"firstUnownedFactory\":{\"line\":434,\"factory\":\"createAudioManager\",\"subsystem\":\"TheAudio\"}},"
+		"\"firstUnownedFactory\":{\"line\":%d,\"factory\":\"%s\",\"subsystem\":\"%s\"}},"
 		"\"audioStartupFiles\":{\"source\":\"GameAudio.cpp::AudioManager::init\","
 		"\"ready\":%s,\"missing\":%s,\"audioSettingsIni\":%s,"
 		"\"defaultMusicIni\":%s,\"musicIni\":%s,"
@@ -1551,7 +1582,7 @@ const char *build_device_factory_frontier_json()
 		"\"sourceFiles\":{\"milesAudioManager\":\"GeneralsMD/Code/GameEngineDevice/Source/MilesAudioDevice/MilesAudioManager.cpp\","
 		"\"milesAudioHeader\":\"GeneralsMD/Code/GameEngineDevice/Include/MilesAudioDevice/MilesAudioManager.h\","
 		"\"mssShim\":\"WebAssembly/shims/Mss.H\"},"
-		"\"ready\":false,\"runtimeReady\":false,\"compileOnly\":false,"
+		"\"ready\":false,\"runtimeReady\":%s,\"compileOnly\":false,"
 		"\"probeOnly\":true,\"startupBoundaryReady\":true,\"playbackReady\":false,"
 		"\"browserTarget\":\"Web Audio\","
 		"\"nextRequired\":\"%s\","
@@ -1582,8 +1613,14 @@ const char *build_device_factory_frontier_json()
 		"{\"order\":4,\"line\":1461,\"call\":\"AIL_quick_handles\",\"ready\":true,\"status\":\"browser_audio_digital_handle_probe_ready\"},"
 		"{\"order\":5,\"line\":1464,\"call\":\"buildProviderList\",\"ready\":true,\"status\":\"browser_provider_enumeration_probe_ready\"},"
 		"{\"order\":6,\"line\":1470,\"call\":\"selectProvider\",\"ready\":true,\"status\":\"browser_provider_selection_probe_ready\"},"
-		"{\"order\":7,\"line\":1473,\"call\":\"refreshCachedVariables\",\"ready\":false,\"status\":\"blocked_until_original_audio_manager_runtime\"},"
+		"{\"order\":7,\"line\":1473,\"call\":\"refreshCachedVariables\",\"ready\":%s,\"status\":\"%s\"},"
 		"{\"order\":8,\"line\":1479,\"call\":\"initDelayFilter\",\"ready\":true,\"status\":\"browser_filter_enumeration_probe_ready\"}]},"
+		"\"audioManagerRuntime\":{\"attempted\":%s,\"ready\":%s,\"status\":\"%s\","
+		"\"initRan\":%s,\"musicAlreadyLoaded\":%s,\"wouldSetQuitting\":%s,"
+		"\"providerCount\":%u,\"selectedProvider\":\"%s\","
+		"\"samples2D\":%u,\"samples3D\":%u,\"streams\":%u,"
+		"\"musicTracks\":%u,\"soundEffects\":%u,\"streamingEvents\":%u,"
+		"\"tornDown\":%s},"
 		"\"entries\":["
 		"{\"order\":1,\"line\":1122,\"subsystem\":\"TheGameEngine\",\"factory\":\"CreateGameEngine\",\"originalConcrete\":\"Win32GameEngine\",\"ready\":true,\"called\":true,\"status\":\"browser_focused_lifetime_constructed\"},"
 		"{\"order\":2,\"line\":297,\"subsystem\":\"TheSubsystemList\",\"factory\":\"SubsystemInterfaceList\",\"originalConcrete\":\"SubsystemInterfaceList\",\"ready\":%s,\"called\":true,\"status\":\"browser_runtime_owned\"},"
@@ -1600,7 +1637,7 @@ const char *build_device_factory_frontier_json()
 		"{\"order\":13,\"line\":412,\"subsystem\":\"TheGameText\",\"factory\":\"CreateGameTextInterface\",\"originalConcrete\":\"GameTextInterface\",\"ready\":%s,\"called\":true,\"status\":\"startup_data_preflight_ready\"},"
 		"{\"order\":14,\"line\":422,\"subsystem\":\"PreAudioDataStores\",\"factory\":\"science_multiplayer_terrain_roads_global_language\",\"originalConcrete\":\"Original INI stores\",\"ready\":%s,\"called\":true,\"status\":\"startup_data_preflight_ready\"},"
 		"{\"order\":15,\"line\":427,\"subsystem\":\"TheCDManager\",\"factory\":\"CreateCDManager\",\"originalConcrete\":\"Win32CDManager\",\"ready\":%s,\"called\":true,\"status\":\"bootstrap_probe_ready\"},"
-		"{\"order\":16,\"line\":434,\"subsystem\":\"TheAudio\",\"factory\":\"createAudioManager\",\"originalConcrete\":\"MilesAudioManager\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_audio_manager\"},"
+		"{\"order\":16,\"line\":434,\"subsystem\":\"TheAudio\",\"factory\":\"createAudioManager\",\"originalConcrete\":\"MilesAudioManager\",\"ready\":%s,\"called\":true,\"status\":\"%s\"},"
 		"{\"order\":17,\"line\":446,\"subsystem\":\"TheFunctionLexicon\",\"factory\":\"createFunctionLexicon\",\"originalConcrete\":\"W3DFunctionLexicon\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_w3d_factory\"},"
 		"{\"order\":18,\"line\":447,\"subsystem\":\"TheModuleFactory\",\"factory\":\"createModuleFactory\",\"originalConcrete\":\"W3DModuleFactory\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_w3d_factory\"},"
 		"{\"order\":19,\"line\":453,\"subsystem\":\"TheParticleSystemManager\",\"factory\":\"createParticleSystemManager\",\"originalConcrete\":\"W3DParticleSystemManager\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_particle_runtime\"},"
@@ -1612,6 +1649,8 @@ const char *build_device_factory_frontier_json()
 		"{\"order\":25,\"line\":606,\"subsystem\":\"TheMapCache\",\"factory\":\"MapCache\",\"originalConcrete\":\"MapCache\",\"ready\":%s,\"called\":false,\"status\":\"post_audio_update_cache_deferred\"}"
 		"],\"fileSystemReady\":%s,\"startupFilesReady\":%s,\"startupSingletonsReady\":%s,\"setupReady\":%s}",
 		next_required,
+		first_unowned_factory,
+		first_unowned_line,
 		json_bool(startup_singletons.name_key_generator_owned),
 		json_bool(startup_singletons.command_list_owned &&
 			startup_singletons.command_list_initialized &&
@@ -1622,6 +1661,9 @@ const char *build_device_factory_frontier_json()
 		json_bool(startup_singletons.xfer_crc_opened),
 		startup_singletons.xfer_crc_initial,
 		json_bool(g_command_line_probe.ok),
+		first_unowned_line,
+		first_unowned_factory,
+		first_unowned_subsystem,
 		json_bool(audio_files_ready),
 		missing_audio_startup_files_json.c_str(),
 		json_bool(g_archive_probe.has_audio_settings_ini),
@@ -1634,7 +1676,27 @@ const char *build_device_factory_frontier_json()
 		json_bool(g_archive_probe.has_default_voice_ini),
 		json_bool(g_archive_probe.has_voice_ini),
 		json_bool(g_archive_probe.has_misc_audio_ini),
+		json_bool(audio_manager_owned),
 		audio_files_ready ? "webAudioPlaybackBackend" : "audioStartupFiles",
+		json_bool(audio_manager_owned),
+		audio_manager_owned
+			? "browser_audio_manager_runtime_refreshed"
+			: "blocked_until_original_audio_manager_runtime",
+		json_bool(audio_runtime.attempted),
+		json_bool(audio_runtime.ok),
+		audio_runtime_status_json.c_str(),
+		json_bool(audio_runtime.init_ran),
+		json_bool(audio_runtime.music_already_loaded),
+		json_bool(audio_runtime.would_set_quitting),
+		audio_runtime.provider_count,
+		audio_runtime_selected_provider_json.c_str(),
+		audio_runtime.num_2d_samples,
+		audio_runtime.num_3d_samples,
+		audio_runtime.num_streams,
+		audio_runtime.music_track_count,
+		audio_runtime.sound_event_count,
+		audio_runtime.streaming_event_count,
+		json_bool(audio_runtime.torn_down),
 		json_bool(startup_singletons.subsystem_list_owned),
 		json_bool(g_file_system_probe.local_ok),
 		json_bool(startup_singletons.name_key_generator_owned),
@@ -1661,6 +1723,10 @@ const char *build_device_factory_frontier_json()
 			g_archive_probe.has_default_roads_ini &&
 			g_archive_probe.has_roads_ini),
 		json_bool(g_cd_manager_probe.ok),
+		json_bool(audio_manager_owned),
+		audio_manager_owned
+			? "browser_runtime_initialized_original_audio_manager"
+			: "needs_browser_audio_manager",
 		json_bool(startup_singletons.map_cache_loaded),
 		json_bool(file_system_ready),
 		json_bool(startup_files_ready),
@@ -3057,6 +3123,7 @@ void ensure_booted()
 		run_original_game_network_probe();
 		probe_registered_archive_set_for_boot();
 		run_startup_singletons_probe();
+		run_audio_manager_runtime_probe();
 		log_boot_state();
 	}
 }
@@ -3243,6 +3310,7 @@ const char *write_state_json()
 		build_string_vector_json(g_archive_mount.archive_source_names);
 	const std::string browser_runtime_assets_json = wasm_browser_runtime_assets_state_json();
 	const char *startup_singletons_json = wasm_startup_singletons_state_json();
+	const char *audio_manager_runtime_json = wasm_audio_manager_probe_state_json();
 	const std::string audio_runtime_assets_json = build_audio_runtime_assets_json();
 	const std::string startup_asset_status_json = json_escape(startup_asset_status());
 	const std::string startup_asset_message_json = json_escape(startup_asset_message());
@@ -3485,6 +3553,7 @@ const char *write_state_json()
 		"\"bootProbe\":{\"attempted\":%s,\"ok\":%s,\"indexedFiles\":%zu}},"
 		"\"browserRuntimeAssets\":%s,"
 		"\"startupSingletons\":%s,"
+		"\"audioManagerRuntime\":%s,"
 		"\"audioRuntimeAssets\":%s,"
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
@@ -3985,6 +4054,7 @@ const char *write_state_json()
 		g_archive_mount.boot_probe_indexed_file_count,
 		browser_runtime_assets_json.c_str(),
 		startup_singletons_json,
+		audio_manager_runtime_json,
 		audio_runtime_assets_json.c_str(),
 		startup_assets_ready() ? "true" : "false",
 		startup_asset_status_json.c_str(),

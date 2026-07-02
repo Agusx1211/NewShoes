@@ -162,6 +162,50 @@ Bool GameLogic::findControlBarOverride(
 	return FALSE;
 }
 
+// Live-match GameLogic bookkeeping entry points referenced by the linked
+// GameLogic object modules.  They only run for real Objects created during a
+// match; the object-template INI runtime never creates Objects, so these stay
+// inert until the real GameLogic.cpp is linked.
+void __attribute__((weak)) GameLogic::selectObject(Object *, Bool, PlayerMaskType, Bool)
+{
+}
+
+void __attribute__((weak)) GameLogic::deselectObject(Object *, PlayerMaskType, Bool)
+{
+}
+
+void __attribute__((weak)) GameLogic::bindObjectAndDrawable(Object *, Drawable *)
+{
+}
+
+void __attribute__((weak)) GameLogic::friend_awakenUpdateModule(
+	Object *,
+	UpdateModulePtr,
+	UnsignedInt)
+{
+}
+
+// Live-match ControlBar HUD reactions referenced by Player.cpp / Radar.cpp.
+// There is no in-game control bar UI in this runtime slice yet.
+void __attribute__((weak)) ControlBar::onPlayerRankChanged(const Player *)
+{
+}
+
+void __attribute__((weak)) ControlBar::onPlayerSciencePurchasePointsChanged(const Player *)
+{
+}
+
+void __attribute__((weak)) ControlBar::triggerRadarAttackGlow()
+{
+}
+
+// Live-match targeting validation referenced by Object.cpp; only used when
+// issuing real in-game commands.
+Bool __attribute__((weak)) CommandButton::isValidObjectTarget(const Object *, const Object *) const
+{
+	return FALSE;
+}
+
 void CommandSet::friend_addToList(CommandSet **list_head)
 {
 	m_next = *list_head;

@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 
 #ifdef __EMSCRIPTEN__
@@ -60,12 +61,20 @@ struct PCMWAVEFORMAT
 	WORD wBitsPerSample;
 };
 
+// Matches the original Miles 6 AILSOUNDINFO surface (mss.h):
+// format / data_ptr / data_len / rate / bits / channels / samples /
+// block_size / initial_ptr.
 struct AILSOUNDINFO
 {
-	S32 format;
-	S32 rate;
-	S32 bits;
-	S32 channels;
+	S32 format = 0;
+	const void *data_ptr = nullptr;
+	U32 data_len = 0;
+	U32 rate = 0;
+	S32 bits = 0;
+	S32 channels = 0;
+	U32 samples = 0;
+	U32 block_size = 0;
+	const void *initial_ptr = nullptr;
 };
 
 #ifndef AILCALLBACK
@@ -643,9 +652,30 @@ static inline U32 MSSReadU32LE(const U8 *data)
 		(static_cast<U32>(data[2]) << 16) |
 		(static_cast<U32>(data[3]) << 24);
 }
+static inline void MSSWriteU16LE(U8 *data, U16 value)
+{
+	data[0] = static_cast<U8>(value & 0xffu);
+	data[1] = static_cast<U8>((value >> 8) & 0xffu);
+}
+static inline void MSSWriteU32LE(U8 *data, U32 value)
+{
+	data[0] = static_cast<U8>(value & 0xffu);
+	data[1] = static_cast<U8>((value >> 8) & 0xffu);
+	data[2] = static_cast<U8>((value >> 16) & 0xffu);
+	data[3] = static_cast<U8>((value >> 24) & 0xffu);
+}
 static inline bool MSSFourCCEquals(const U8 *data, const char *fourcc)
 {
 	return std::memcmp(data, fourcc, 4) == 0;
+}
+// Frames carried by one IMA ADPCM block: one header sample per channel plus
+// two nibbles per data byte, interleaved in 4-byte-per-channel groups.
+static inline U32 MSSImaAdpcmFramesPerBlock(U32 block_bytes, U32 channels)
+{
+	if (channels == 0 || block_bytes < channels * 4) {
+		return 0;
+	}
+	return ((block_bytes - channels * 4) * 2) / channels + 1;
 }
 static inline S32 AIL_WAV_info(U8 *data, AILSOUNDINFO *info)
 {
@@ -653,10 +683,7 @@ static inline S32 AIL_WAV_info(U8 *data, AILSOUNDINFO *info)
 		return 0;
 	}
 
-	info->format = 0;
-	info->rate = 0;
-	info->bits = 0;
-	info->channels = 0;
+	*info = AILSOUNDINFO {};
 
 	if (!MSSFourCCEquals(data, "RIFF") || !MSSFourCCEquals(data + 8, "WAVE")) {
 		return 0;
@@ -667,6 +694,9 @@ static inline S32 AIL_WAV_info(U8 *data, AILSOUNDINFO *info)
 		return 0;
 	}
 
+	bool fmt_found = false;
+	bool data_found = false;
+	U32 fact_samples = 0;
 	const U32 end = 8 + riff_size;
 	U32 offset = 12;
 	while (offset + 8 <= end) {
@@ -682,9 +712,18 @@ static inline S32 AIL_WAV_info(U8 *data, AILSOUNDINFO *info)
 			}
 			info->format = MSSReadU16LE(data + chunk_data);
 			info->channels = MSSReadU16LE(data + chunk_data + 2);
-			info->rate = static_cast<S32>(MSSReadU32LE(data + chunk_data + 4));
+			info->rate = MSSReadU32LE(data + chunk_data + 4);
+			info->block_size = MSSReadU16LE(data + chunk_data + 12);
 			info->bits = MSSReadU16LE(data + chunk_data + 14);
-			return 1;
+			fmt_found = true;
+		} else if (MSSFourCCEquals(chunk, "fact")) {
+			if (chunk_size >= 4) {
+				fact_samples = MSSReadU32LE(data + chunk_data);
+			}
+		} else if (MSSFourCCEquals(chunk, "data")) {
+			info->data_ptr = data + chunk_data;
+			info->data_len = chunk_size;
+			data_found = true;
 		}
 		const U32 next_offset = chunk_data + chunk_size + (chunk_size & 1);
 		if (next_offset <= offset) {
@@ -693,13 +732,80 @@ static inline S32 AIL_WAV_info(U8 *data, AILSOUNDINFO *info)
 		offset = next_offset;
 	}
 
-	return 0;
+	if (!fmt_found || !data_found) {
+		return 0;
+	}
+
+	info->initial_ptr = data;
+	if (fact_samples != 0) {
+		info->samples = fact_samples;
+	} else if (info->channels > 0) {
+		if (info->format == WAVE_FORMAT_PCM && info->bits >= 8) {
+			info->samples = info->data_len /
+				((static_cast<U32>(info->bits) / 8) * static_cast<U32>(info->channels));
+		} else if (info->format == WAVE_FORMAT_IMA_ADPCM && info->block_size > 0) {
+			const U32 channels = static_cast<U32>(info->channels);
+			U32 frames = 0;
+			for (U32 pos = 0; pos + channels * 4 <= info->data_len; pos += info->block_size) {
+				const U32 avail =
+					info->data_len - pos < info->block_size ? info->data_len - pos : info->block_size;
+				frames += MSSImaAdpcmFramesPerBlock(avail, channels);
+				if (avail < info->block_size) {
+					break;
+				}
+			}
+			info->samples = frames;
+		}
+	}
+	return 1;
 }
 static inline S32 AIL_WAV_info(char *data, AILSOUNDINFO *info)
 {
 	return AIL_WAV_info(reinterpret_cast<U8 *>(data), info);
 }
-static inline S32 AIL_decompress_ADPCM(AILSOUNDINFO *, void **decompressed, U32 *decompressedSize)
+// Standard IMA ADPCM nibble expansion (step/index tables, full-precision
+// (2*delta+1)*step/8 difference as used by the Microsoft ACM IMA codec;
+// verified sample-exact against independent reference decodes of the shipped
+// Zero Hour IMA ADPCM payloads).
+static inline S16 MSSImaAdpcmDecodeNibble(S32 &predictor, S32 &step_index, U32 nibble)
+{
+	static const S32 step_table[89] = {
+		7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
+		19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
+		50, 55, 60, 66, 73, 80, 88, 97, 107, 118,
+		130, 143, 157, 173, 190, 209, 230, 253, 279, 307,
+		337, 371, 408, 449, 494, 544, 598, 658, 724, 796,
+		876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066,
+		2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358,
+		5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899,
+		15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767,
+	};
+	static const S32 index_table[16] = {
+		-1, -1, -1, -1, 2, 4, 6, 8,
+		-1, -1, -1, -1, 2, 4, 6, 8,
+	};
+
+	const S32 step = step_table[step_index];
+	const S32 diff = ((2 * static_cast<S32>(nibble & 7u) + 1) * step) >> 3;
+	predictor += (nibble & 8u) != 0 ? -diff : diff;
+	if (predictor > 32767) {
+		predictor = 32767;
+	} else if (predictor < -32768) {
+		predictor = -32768;
+	}
+	step_index += index_table[nibble & 15u];
+	if (step_index < 0) {
+		step_index = 0;
+	} else if (step_index > 88) {
+		step_index = 88;
+	}
+	return static_cast<S16>(predictor);
+}
+// Decompresses an IMA ADPCM WAV described by `info` (as filled in by
+// AIL_WAV_info) into a complete 16-bit PCM WAV image, exactly like the
+// original Miles AIL_decompress_ADPCM. The returned buffer must be freed
+// with AIL_mem_free_lock.
+static inline S32 AIL_decompress_ADPCM(const AILSOUNDINFO *info, void **decompressed, U32 *decompressedSize)
 {
 	if (decompressed != nullptr) {
 		*decompressed = nullptr;
@@ -707,9 +813,131 @@ static inline S32 AIL_decompress_ADPCM(AILSOUNDINFO *, void **decompressed, U32 
 	if (decompressedSize != nullptr) {
 		*decompressedSize = 0;
 	}
-	return 0;
+	if (info == nullptr || decompressed == nullptr ||
+		info->format != WAVE_FORMAT_IMA_ADPCM || info->data_ptr == nullptr ||
+		info->channels < 1 || info->channels > 8 ||
+		info->block_size < static_cast<U32>(info->channels) * 4) {
+		return 0;
+	}
+
+	const U32 channels = static_cast<U32>(info->channels);
+	const U32 block_size = info->block_size;
+	const U32 header_bytes = channels * 4;
+	const U8 *adpcm = static_cast<const U8 *>(info->data_ptr);
+
+	// Capacity carried by the block layout; the fact-chunk sample count in
+	// info->samples clamps the final block (shipped payloads pad it).
+	U32 capacity = 0;
+	for (U32 pos = 0; pos + header_bytes <= info->data_len; pos += block_size) {
+		const U32 avail = info->data_len - pos < block_size ? info->data_len - pos : block_size;
+		capacity += MSSImaAdpcmFramesPerBlock(avail, channels);
+		if (avail < block_size) {
+			break;
+		}
+	}
+	U32 total_frames = capacity;
+	if (info->samples != 0 && info->samples < total_frames) {
+		total_frames = info->samples;
+	}
+	if (total_frames == 0) {
+		return 0;
+	}
+
+	const U32 pcm_bytes = total_frames * channels * 2;
+	const U32 wave_bytes = 44 + pcm_bytes;
+	U8 *wave = static_cast<U8 *>(std::malloc(wave_bytes));
+	if (wave == nullptr) {
+		return 0;
+	}
+
+	// Canonical 44-byte PCM WAV header.
+	std::memcpy(wave + 0, "RIFF", 4);
+	MSSWriteU32LE(wave + 4, 36 + pcm_bytes);
+	std::memcpy(wave + 8, "WAVE", 4);
+	std::memcpy(wave + 12, "fmt ", 4);
+	MSSWriteU32LE(wave + 16, 16);
+	MSSWriteU16LE(wave + 20, WAVE_FORMAT_PCM);
+	MSSWriteU16LE(wave + 22, static_cast<U16>(channels));
+	MSSWriteU32LE(wave + 24, info->rate);
+	MSSWriteU32LE(wave + 28, info->rate * channels * 2);
+	MSSWriteU16LE(wave + 32, static_cast<U16>(channels * 2));
+	MSSWriteU16LE(wave + 34, 16);
+	std::memcpy(wave + 36, "data", 4);
+	MSSWriteU32LE(wave + 40, pcm_bytes);
+
+	S16 *out = reinterpret_cast<S16 *>(wave + 44);
+	U32 frames_done = 0;
+	for (U32 pos = 0; pos + header_bytes <= info->data_len && frames_done < total_frames;
+		pos += block_size) {
+		const U32 avail = info->data_len - pos < block_size ? info->data_len - pos : block_size;
+		const U8 *block = adpcm + pos;
+
+		S32 predictor[8];
+		S32 step_index[8];
+		for (U32 channel = 0; channel < channels; ++channel) {
+			predictor[channel] =
+				static_cast<S16>(MSSReadU16LE(block + channel * 4));
+			S32 index = block[channel * 4 + 2];
+			if (index < 0) {
+				index = 0;
+			} else if (index > 88) {
+				index = 88;
+			}
+			step_index[channel] = index;
+		}
+
+		U32 block_frames = MSSImaAdpcmFramesPerBlock(avail, channels);
+		if (block_frames > total_frames - frames_done) {
+			block_frames = total_frames - frames_done;
+		}
+
+		// The block header predictor is the first output frame of the block.
+		for (U32 channel = 0; channel < channels; ++channel) {
+			out[frames_done * channels + channel] = static_cast<S16>(predictor[channel]);
+		}
+
+		// Nibble payload: 4 bytes (8 samples) per channel, channel groups
+		// interleaved across the block. Low nibble decodes first.
+		U32 written[8];
+		for (U32 channel = 0; channel < channels; ++channel) {
+			written[channel] = 1;
+		}
+		const U8 *cursor = block + header_bytes;
+		const U8 *block_end = block + avail;
+		while (cursor < block_end) {
+			for (U32 channel = 0; channel < channels && cursor < block_end; ++channel) {
+				for (U32 i = 0; i < 4 && cursor < block_end; ++i, ++cursor) {
+					const U32 byte = *cursor;
+					const S16 low =
+						MSSImaAdpcmDecodeNibble(predictor[channel], step_index[channel], byte & 0x0fu);
+					if (written[channel] < block_frames) {
+						out[(frames_done + written[channel]) * channels + channel] = low;
+					}
+					++written[channel];
+					const S16 high =
+						MSSImaAdpcmDecodeNibble(predictor[channel], step_index[channel], byte >> 4);
+					if (written[channel] < block_frames) {
+						out[(frames_done + written[channel]) * channels + channel] = high;
+					}
+					++written[channel];
+				}
+			}
+		}
+		frames_done += block_frames;
+	}
+
+	*decompressed = wave;
+	if (decompressedSize != nullptr) {
+		*decompressedSize = wave_bytes;
+	}
+	return 1;
 }
-static inline void AIL_mem_free_lock(void *) {}
+// Buffers returned by AIL_decompress_ADPCM are heap allocations; the engine
+// releases them through AIL_mem_free_lock (AudioFileCache::releaseOpenAudioFile).
+static inline void AIL_mem_free_lock(void *ptr)
+{
+	std::free(ptr);
+}
 static inline HSAMPLE AIL_allocate_sample_handle(HDIGDRIVER driver)
 {
 	if (driver == nullptr || !MSSBrowserRuntimeStarted()) {

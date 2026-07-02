@@ -2694,7 +2694,7 @@ void PartitionManager::reset()
 void PartitionManager::shutdown()
 {
 	m_updatedSinceLastReset = false;
-	ThePartitionManager->removeAllDirtyModules();
+	removeAllDirtyModules();
 
 #ifdef _DEBUG
 	// the above *should* remove all the touched cells (via unRegisterObject), but let's check:

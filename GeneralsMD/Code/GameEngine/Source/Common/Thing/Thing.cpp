@@ -194,6 +194,39 @@ void Thing::setPosition( const Coord3D *pos )
 	DEBUG_ASSERTCRASH(!(_isnan(getPosition()->x) || _isnan(getPosition()->y) || _isnan(getPosition()->z)), ("Drawable/Object position NAN! '%s'\n", m_template->getName().str() ));
 }
 
+#ifdef __EMSCRIPTEN__
+// The wasm bridge bootstrap has an Object* at the call site; route that path
+// directly to Object's transform reaction instead of relying on Thing's virtual
+// cast/reaction slots during early object construction.
+void Thing::cncPortSetObjectPosition(const Coord3D *pos)
+{
+	Object *object = static_cast<Object *>(this);
+
+	if( !m_template->isKindOf( KINDOF_STICK_TO_TERRAIN_SLOPE) )
+	{
+		Real oldAngle = m_cachedAngle;
+		Coord3D oldPos = m_cachedPos;
+		Matrix3D oldMtx = m_transform;
+
+		m_transform.Set_X_Translation( pos->x );
+		m_transform.Set_Y_Translation( pos->y );
+		m_transform.Set_Z_Translation( pos->z );
+		m_cachedPos = *pos;
+		m_cacheFlags &= ~(VALID_ALTITUDE_TERRAIN | VALID_ALTITUDE_SEALEVEL);
+
+		object->cncPortReactToTransformChangeFromThing(&oldMtx, &oldPos, oldAngle);
+	}
+	else
+	{
+		Matrix3D mtx;
+		const Bool stickToGround = true;
+		TheTerrainLogic->alignOnTerrain(getOrientation(), *pos, stickToGround, mtx );
+		setTransformMatrix(&mtx);
+	}
+	DEBUG_ASSERTCRASH(!(_isnan(getPosition()->x) || _isnan(getPosition()->y) || _isnan(getPosition()->z)), ("Drawable/Object position NAN! '%s'\n", m_template->getName().str() ));
+}
+#endif
+
 //=============================================================================
 void Thing::setOrientation( Real angle )
 {
@@ -243,6 +276,51 @@ void Thing::setOrientation( Real angle )
 	reactToTransformChange(&oldMtx, &oldPos, oldAngle);
 	DEBUG_ASSERTCRASH(!(_isnan(getPosition()->x) || _isnan(getPosition()->y) || _isnan(getPosition()->z)), ("Drawable/Object position NAN! '%s'\n", m_template->getName().str() ));
 }
+
+#ifdef __EMSCRIPTEN__
+void Thing::cncPortSetObjectOrientation(Real angle)
+{
+	Object *object = static_cast<Object *>(this);
+	Coord3D u, x, y, z, pos;
+
+	Real oldAngle = m_cachedAngle;
+	Coord3D oldPos = m_cachedPos;
+	Matrix3D oldMtx = m_transform;
+
+	pos.x = m_transform.Get_X_Translation();
+	pos.y = m_transform.Get_Y_Translation();
+	pos.z = m_transform.Get_Z_Translation();
+	if( m_template->isKindOf( KINDOF_STICK_TO_TERRAIN_SLOPE) )
+	{
+		const Bool stickToGround = true;
+		TheTerrainLogic->alignOnTerrain(angle, pos, stickToGround, m_transform );
+	}
+	else
+	{
+		z.x = 0.0f;
+		z.y = 0.0f;
+		z.z = 1.0f;
+
+		u.x = Cos(angle);
+		u.y = Sin(angle);
+		u.z = 0.0f;
+
+		y.crossProduct( &z, &u, &y );
+		x.crossProduct( &y, &z, &x );
+
+		m_transform.Set(  x.x, y.x, z.x, pos.x,
+											x.y, y.y, z.y, pos.y,
+											x.z, y.z, z.z, pos.z );
+	}
+
+	m_cachedAngle = normalizeAngle(angle);
+	m_cachedPos = pos;
+	m_cacheFlags &= ~VALID_DIRVECTOR;
+
+	object->cncPortReactToTransformChangeFromThing(&oldMtx, &oldPos, oldAngle);
+	DEBUG_ASSERTCRASH(!(_isnan(getPosition()->x) || _isnan(getPosition()->y) || _isnan(getPosition()->z)), ("Drawable/Object position NAN! '%s'\n", m_template->getName().str() ));
+}
+#endif
 
 //=============================================================================
 /** Set the world transformation matrix */
