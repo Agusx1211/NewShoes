@@ -12,6 +12,7 @@ const desktopScreenshot = resolve(screenshotDir, "startup-vertical-browser.png")
 const canvasScreenshot = resolve(screenshotDir, "startup-vertical-canvas.png");
 const audioBootScreenshot = resolve(screenshotDir, "startup-vertical-audio-owned.png");
 const realInitScreenshot = resolve(screenshotDir, "startup-vertical-real-init.png");
+const realInitMenuClickScreenshot = resolve(screenshotDir, "startup-vertical-real-init-menu-click.png");
 const debugStartupVertical = process.env.STARTUP_VERTICAL_DEBUG === "1";
 
 const allAudioStartupFiles = [
@@ -392,6 +393,138 @@ function assertRealEngineFrames(realFrames) {
   expect(frame.framesCompleted >= 5 && frame.exceptionCaught === false,
     "real GameEngine::update() frames did not complete", frame);
   expect(frame.quitting === false, "real engine quit during frames", frame);
+  const clientState = frame.clientState;
+  expect(clientState?.globalDataReady === true
+      && clientState.displayReady === true
+      && clientState.shellReady === true
+      && clientState.windowManagerReady === true,
+    "real frame client subsystem state was not exported", clientState);
+  expect(clientState.input?.windowReady === true,
+    "real frame input window is not backed by the original WndProc", clientState.input);
+  expect(clientState.gates?.playIntro === false,
+    "real GameClient::update() did not consume the intro gate", clientState);
+  expect(clientState.display?.moviePlaying === true || clientState.shell?.screenCount > 0,
+    "real frames reached neither an intro/title movie nor the shell stack", clientState);
+  if (clientState.shell?.screenCount > 0) {
+    expect(clientState.shell.topIsMainMenu === true
+        && clientState.mainMenu?.mainMenuParent?.found === true,
+      "real shell stack did not expose MainMenu.wnd", clientState);
+  }
+}
+
+const win32MouseMessages = Object.freeze({
+  mouseMove: 0x0200,
+  leftButtonDown: 0x0201,
+  leftButtonUp: 0x0202,
+});
+
+function win32PointLParam(point) {
+  return ((point.y & 0xffff) << 16) | (point.x & 0xffff);
+}
+
+async function runRealEngineFrames(page, frames) {
+  const result = await page.evaluate((frameCount) =>
+    window.CnCPort.rpc("realEngineFrame", { frames: frameCount }), frames);
+  assertRealEngineFrames(result);
+  return result;
+}
+
+async function postRealEngineMouseMessage(page, message, point) {
+  const result = await page.evaluate((payload) =>
+    window.CnCPort.rpc("postMessage", payload), {
+    message,
+    lParam: win32PointLParam(point),
+    point,
+  });
+  expect(result?.ok === true, "real engine mouse message was not posted", result);
+  return result;
+}
+
+function collectRealMenuWindows(clientState) {
+  const windows = [];
+  const mainMenu = clientState?.mainMenu ?? {};
+  for (const value of Object.values(mainMenu)) {
+    if (value?.found === true && Number.isFinite(value.id)) {
+      windows.push(value);
+    }
+    if (value?.window?.found === true && Number.isFinite(value.window.id)) {
+      windows.push(value.window);
+    }
+  }
+  for (const field of ["focusWindow", "captureWindow", "grabWindow"]) {
+    const windowRef = clientState?.input?.[field];
+    if (windowRef?.found === true && Number.isFinite(windowRef.id)) {
+      windows.push(windowRef);
+    }
+  }
+  return windows;
+}
+
+function findRealMenuWindowById(clientState, id) {
+  return collectRealMenuWindows(clientState).find((windowRef) => windowRef.id === id);
+}
+
+function compactRealClickProbe(frameResult, targetId) {
+  const clientState = frameResult?.frame?.clientState;
+  return {
+    framesCompleted: frameResult?.frame?.framesCompleted,
+    mouse: clientState?.input?.mouse,
+    grabWindow: clientState?.input?.grabWindow,
+    target: findRealMenuWindowById(clientState, targetId),
+  };
+}
+
+async function waitForRealMenuButtonDown(page, expectedTarget, maxFrames = 8) {
+  const attempts = [];
+  for (let frameIndex = 0; frameIndex < maxFrames; frameIndex += 1) {
+    const frame = await runRealEngineFrames(page, 1);
+    const downClient = frame.frame?.clientState;
+    const downTarget = findRealMenuWindowById(downClient, expectedTarget.id);
+    const downGrab = downClient?.input?.grabWindow;
+    attempts.push(compactRealClickProbe(frame, expectedTarget.id));
+    if (downGrab?.id === expectedTarget.id && downTarget?.selected === true) {
+      return { frame, downClient, downGrab, downTarget, attempts };
+    }
+  }
+  expect(false,
+    "real menu mouse down did not grab and select the hit-tested button",
+    { expectedTarget, attempts });
+}
+
+async function waitForRealMenuButtonReleased(page, expectedTarget, maxFrames = 8) {
+  const attempts = [];
+  let lastFrame = null;
+  for (let frameIndex = 0; frameIndex < maxFrames; frameIndex += 1) {
+    lastFrame = await runRealEngineFrames(page, 1);
+    const finalTarget = findRealMenuWindowById(lastFrame.frame?.clientState, expectedTarget.id);
+    attempts.push(compactRealClickProbe(lastFrame, expectedTarget.id));
+    if (finalTarget == null || finalTarget.selected === false) {
+      return { frame: lastFrame, finalTarget, attempts };
+    }
+  }
+  expect(false,
+    "real menu mouse up did not release the hit-tested button selection",
+    { expectedTarget, attempts });
+}
+
+async function clickRealEngineMenuButton(page, button, hitProbe) {
+  expect(button?.clickable === true, "real engine menu button is not clickable", button);
+  const point = hitProbe?.point ?? { x: button.centerX, y: button.centerY };
+  const expectedTarget = hitProbe?.window?.found === true ? hitProbe.window : button;
+  expect(expectedTarget?.clickable === true,
+    "real engine menu hit test did not resolve a clickable target", { button, hitProbe });
+  const targetName = expectedTarget.decoratedName || expectedTarget.name || "";
+  expect(targetName.includes(":Button"),
+    "real engine menu hit test did not resolve a button", { button, hitProbe, expectedTarget });
+
+  await postRealEngineMouseMessage(page, win32MouseMessages.mouseMove, point);
+  await postRealEngineMouseMessage(page, win32MouseMessages.leftButtonDown, point);
+  const down = await waitForRealMenuButtonDown(page, expectedTarget);
+
+  await postRealEngineMouseMessage(page, win32MouseMessages.leftButtonUp, point);
+  const up = await waitForRealMenuButtonReleased(page, expectedTarget);
+  const finalFrame = await runRealEngineFrames(page, 4); // lets menu update settle after button-up.
+  return { point, expectedTarget, down, up, finalFrame };
 }
 
 function assertAudioManagerRuntimeOwned(state) {
@@ -1091,11 +1224,25 @@ try {
   assertRealEngineInit(realInit);
 
   console.error("[vertical] phase3 frames");
-  const realFrames = await realInitPage.evaluate(() =>
-    window.CnCPort.rpc("realEngineFrame", { frames: 5 }));
-  assertRealEngineFrames(realFrames);
+  let realFrames = await runRealEngineFrames(realInitPage, 5);
+  if (realFrames.frame?.clientState?.shell?.screenCount > 0) {
+    realFrames = await runRealEngineFrames(realInitPage, 2);
+  }
 
   await realInitPage.screenshot({ path: realInitScreenshot });
+
+  console.error("[vertical] phase3 real menu click");
+  const singlePlayerButton = realFrames.frame?.clientState?.mainMenu?.buttonSinglePlayer;
+  const singlePlayerHitProbe = realFrames.frame?.clientState?.mainMenu?.underButtonSinglePlayerCenter;
+  const realMenuClick = await clickRealEngineMenuButton(realInitPage, singlePlayerButton, singlePlayerHitProbe);
+  const clickedMenu = realMenuClick.finalFrame.frame?.clientState?.mainMenu;
+  expect(clickedMenu?.mapBorderSinglePlayer?.managerHidden === false
+      && clickedMenu?.buttonSingleBack?.clickable === true
+      && clickedMenu?.buttonUSA?.clickable === true,
+    "real ButtonSinglePlayer click did not leave single-player controls reachable",
+    clickedMenu);
+
+  await realInitPage.screenshot({ path: realInitMenuClickScreenshot });
 
   const audioFrontier =
     audioBootResult.state.originalEngineStartup.deviceFactoryFrontier;
@@ -1104,7 +1251,13 @@ try {
     url: harnessUrl,
     wasm: bootResult.state.wasm,
     frame: bootResult.state.frame,
-    screenshots: [desktopScreenshot, canvasScreenshot, audioBootScreenshot, realInitScreenshot],
+    screenshots: [
+      desktopScreenshot,
+      canvasScreenshot,
+      audioBootScreenshot,
+      realInitScreenshot,
+      realInitMenuClickScreenshot,
+    ],
     originalEngineStartup: bootResult.state.originalEngineStartup,
     archiveBackedStartup: {
       archiveCount: mountResult.archiveSet?.archiveCount,
@@ -1124,6 +1277,22 @@ try {
       quittingAfterInit: realInit.frontier?.quittingAfterInit,
       elapsedMs: realInit.frontier?.elapsedMs,
       framesCompleted: realFrames.frame?.framesCompleted,
+      clientState: realFrames.frame?.clientState,
+      menuClick: {
+        framesCompleted: realMenuClick.finalFrame.frame?.framesCompleted,
+        point: realMenuClick.point,
+        hitProbe: singlePlayerHitProbe,
+        target: realMenuClick.expectedTarget,
+        downInput: realMenuClick.down.frame.frame?.clientState?.input,
+        downTarget: findRealMenuWindowById(
+          realMenuClick.down.frame.frame?.clientState,
+          realMenuClick.expectedTarget?.id),
+        downAttempts: realMenuClick.down.attempts,
+        upAttempts: realMenuClick.up.attempts,
+        button: singlePlayerButton,
+        clientState: realMenuClick.finalFrame.frame?.clientState,
+        screenshot: realInitMenuClickScreenshot,
+      },
       screenshot: realInitScreenshot,
     },
   }));

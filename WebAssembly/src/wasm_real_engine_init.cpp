@@ -26,7 +26,15 @@
 #include "Common/GameEngine.h"
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
+#include "Common/NameKeyGenerator.h"
 #include "Common/SubsystemInterface.h"
+#include "GameClient/Display.h"
+#include "GameClient/GameWindow.h"
+#include "GameClient/GameWindowManager.h"
+#include "GameClient/Mouse.h"
+#include "GameClient/Shell.h"
+#include "GameClient/WinInstanceData.h"
+#include "GameClient/WindowLayout.h"
 
 // The original app-level globals GameEngine.cpp expects WinMain.cpp to own.
 // WinMain.cpp is only partially compiled for the browser (WndProc +
@@ -39,7 +47,14 @@ CComModule _Module;
 class WebBrowser;
 WebBrowser *TheWebBrowser = NULL;
 
+extern LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+extern HINSTANCE ApplicationHInstance;
+extern HWND ApplicationHWnd;
+extern Bool ApplicationIsWindowed;
+
 namespace {
+
+constexpr const char REAL_ENGINE_WINDOW_CLASS[] = "CncPortRealEngineWindow";
 
 struct RealEngineInitState {
 	bool attempted = false;
@@ -151,6 +166,295 @@ struct RealEngineFrameState {
 RealEngineFrameState g_frame_state;
 std::string g_frame_json;
 
+bool real_engine_input_window_ready()
+{
+	return ApplicationHWnd != NULL && GetWindowLong(ApplicationHWnd, GWL_WNDPROC) != 0;
+}
+
+bool ensure_real_engine_input_window()
+{
+	ApplicationIsWindowed = TRUE;
+
+	if (real_engine_input_window_ready()) {
+		return true;
+	}
+
+	WNDCLASS window_class = {};
+	window_class.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
+	window_class.lpfnWndProc = WndProc;
+	window_class.lpszClassName = REAL_ENGINE_WINDOW_CLASS;
+	RegisterClass(&window_class);
+
+	ApplicationHWnd = CreateWindow(
+		window_class.lpszClassName,
+		"cnc-port-real-init",
+		0,
+		0,
+		0,
+		800,
+		600,
+		NULL,
+		NULL,
+		ApplicationHInstance,
+		NULL);
+
+	return real_engine_input_window_ready();
+}
+
+int count_layout_windows(WindowLayout *layout)
+{
+	int count = 0;
+	for (GameWindow *window = layout != NULL ? layout->getFirstWindow() : NULL;
+		window != NULL;
+		window = window->winGetNextInLayout()) {
+		++count;
+	}
+	return count;
+}
+
+GameWindow *find_window_by_name(const char *window_name)
+{
+	if (TheWindowManager == NULL || TheNameKeyGenerator == NULL || window_name == NULL) {
+		return NULL;
+	}
+
+	const NameKeyType id = TheNameKeyGenerator->nameToKey(window_name);
+	return TheWindowManager->winGetWindowFromId(NULL, static_cast<Int>(id));
+}
+
+void append_window_json(std::string &json, GameWindow *window, const char *requested_name)
+{
+	json += "{\"name\":\"";
+	json += json_escape(requested_name != NULL ? requested_name : "");
+	json += "\"";
+
+	if (window == NULL) {
+		json += ",\"found\":false}";
+		return;
+	}
+
+	WinInstanceData *inst_data = window->winGetInstanceData();
+	Int x = 0;
+	Int y = 0;
+	Int width = 0;
+	Int height = 0;
+	window->winGetScreenPosition(&x, &y);
+	window->winGetSize(&width, &height);
+	const UnsignedInt status = window->winGetStatus();
+	const UnsignedInt style = window->winGetStyle();
+	const Bool hidden = window->winIsHidden();
+	const Bool manager_hidden = TheWindowManager->isHidden(window);
+	const Bool enabled = TheWindowManager->isEnabled(window);
+	const UnsignedInt state = inst_data != NULL ? inst_data->getState() : 0;
+	const std::string decorated_name =
+		inst_data != NULL ? inst_data->m_decoratedNameString.str() : std::string();
+
+	json += ",\"found\":true";
+	json += ",\"id\":" + std::to_string(window->winGetWindowId());
+	json += ",\"decoratedName\":\"" + json_escape(decorated_name) + "\"";
+	json += ",\"x\":" + std::to_string(x);
+	json += ",\"y\":" + std::to_string(y);
+	json += ",\"width\":" + std::to_string(width);
+	json += ",\"height\":" + std::to_string(height);
+	json += ",\"centerX\":" + std::to_string(x + width / 2);
+	json += ",\"centerY\":" + std::to_string(y + height / 2);
+	json += ",\"status\":" + std::to_string(status);
+	json += ",\"style\":" + std::to_string(style);
+	json += ",\"state\":" + std::to_string(state);
+	json += ",\"selected\":";
+	json += (state & WIN_STATE_SELECTED) != 0 ? "true" : "false";
+	json += ",\"hilited\":";
+	json += (state & WIN_STATE_HILITED) != 0 ? "true" : "false";
+	json += ",\"hidden\":";
+	json += hidden ? "true" : "false";
+	json += ",\"managerHidden\":";
+	json += manager_hidden ? "true" : "false";
+	json += ",\"enabled\":";
+	json += enabled ? "true" : "false";
+	json += ",\"clickable\":";
+	json += (!manager_hidden && enabled && (status & WIN_STATUS_NO_INPUT) == 0) ? "true" : "false";
+	json += "}";
+}
+
+void append_window_probe(std::string &json, const char *field_name, const char *window_name)
+{
+	json += ",\"";
+	json += field_name;
+	json += "\":";
+	append_window_json(json, find_window_by_name(window_name), window_name);
+}
+
+void append_window_ref(std::string &json, const char *field_name, GameWindow *window)
+{
+	json += ",\"";
+	json += field_name;
+	json += "\":";
+	append_window_json(json, window, NULL);
+}
+
+void append_window_under_probe_center(std::string &json, const char *field_name, const char *window_name)
+{
+	json += ",\"";
+	json += field_name;
+	json += "\":{";
+
+	GameWindow *probe = find_window_by_name(window_name);
+	if (TheWindowManager == NULL || probe == NULL) {
+		json += "\"point\":null,\"window\":";
+		append_window_json(json, NULL, NULL);
+		json += "}";
+		return;
+	}
+
+	Int x = 0;
+	Int y = 0;
+	Int width = 0;
+	Int height = 0;
+	probe->winGetScreenPosition(&x, &y);
+	probe->winGetSize(&width, &height);
+	const Int center_x = x + width / 2;
+	const Int center_y = y + height / 2;
+	GameWindow *under = TheWindowManager->getWindowUnderCursor(center_x, center_y, FALSE);
+
+	json += "\"point\":{\"x\":" + std::to_string(center_x);
+	json += ",\"y\":" + std::to_string(center_y) + "}";
+	json += ",\"expectedId\":" + std::to_string(probe->winGetWindowId());
+	json += ",\"window\":";
+	append_window_json(json, under, NULL);
+	json += "}";
+}
+
+void append_input_window_state(std::string &json)
+{
+	json += ",\"input\":{";
+	json += "\"ready\":";
+	json += TheWindowManager != NULL ? "true" : "false";
+	json += ",\"windowReady\":";
+	json += real_engine_input_window_ready() ? "true" : "false";
+	if (TheWindowManager != NULL) {
+		append_window_ref(json, "focusWindow", TheWindowManager->winGetFocus());
+		append_window_ref(json, "captureWindow", TheWindowManager->winGetCapture());
+		append_window_ref(json, "grabWindow", TheWindowManager->winGetGrabWindow());
+	} else {
+		json += ",\"focusWindow\":null,\"captureWindow\":null,\"grabWindow\":null";
+	}
+	json += ",\"mouse\":{";
+	json += "\"ready\":";
+	json += TheMouse != NULL ? "true" : "false";
+	if (TheMouse != NULL) {
+		const MouseIO *mouse = TheMouse->getMouseStatus();
+		json += ",\"visible\":";
+		json += TheMouse->getVisibility() ? "true" : "false";
+		json += ",\"cursor\":" + std::to_string(static_cast<int>(TheMouse->getMouseCursor()));
+		if (mouse != NULL) {
+			json += ",\"x\":" + std::to_string(mouse->pos.x);
+			json += ",\"y\":" + std::to_string(mouse->pos.y);
+			json += ",\"leftState\":" + std::to_string(static_cast<int>(mouse->leftState));
+			json += ",\"leftEvent\":" + std::to_string(mouse->leftEvent);
+			json += ",\"leftFrame\":" + std::to_string(mouse->leftFrame);
+			json += ",\"middleState\":" + std::to_string(static_cast<int>(mouse->middleState));
+			json += ",\"middleEvent\":" + std::to_string(mouse->middleEvent);
+			json += ",\"rightState\":" + std::to_string(static_cast<int>(mouse->rightState));
+			json += ",\"rightEvent\":" + std::to_string(mouse->rightEvent);
+		}
+	} else {
+		json += ",\"visible\":null,\"cursor\":null,\"x\":null,\"y\":null,"
+			"\"leftState\":null,\"leftEvent\":null,\"leftFrame\":null,"
+			"\"middleState\":null,\"middleEvent\":null,"
+			"\"rightState\":null,\"rightEvent\":null";
+	}
+	json += "}";
+	json += "}";
+}
+
+void append_real_engine_client_state(std::string &json)
+{
+	json += ",\"clientState\":{";
+	json += "\"globalDataReady\":";
+	json += TheGlobalData != NULL ? "true" : "false";
+	json += ",\"displayReady\":";
+	json += TheDisplay != NULL ? "true" : "false";
+	json += ",\"shellReady\":";
+	json += TheShell != NULL ? "true" : "false";
+	json += ",\"windowManagerReady\":";
+	json += TheWindowManager != NULL ? "true" : "false";
+
+	json += ",\"gates\":{";
+	if (TheGlobalData != NULL) {
+		json += "\"playIntro\":";
+		json += TheGlobalData->m_playIntro ? "true" : "false";
+		json += ",\"afterIntro\":";
+		json += TheGlobalData->m_afterIntro ? "true" : "false";
+		json += ",\"playSizzle\":";
+		json += TheGlobalData->m_playSizzle ? "true" : "false";
+		json += ",\"allowExitOutOfMovies\":";
+		json += TheGlobalData->m_allowExitOutOfMovies ? "true" : "false";
+		json += ",\"breakTheMovie\":";
+		json += TheGlobalData->m_breakTheMovie ? "true" : "false";
+	} else {
+		json += "\"playIntro\":null,\"afterIntro\":null,\"playSizzle\":null,"
+			"\"allowExitOutOfMovies\":null,\"breakTheMovie\":null";
+	}
+	json += "}";
+
+	json += ",\"display\":{";
+	if (TheDisplay != NULL) {
+		json += "\"width\":" + std::to_string(TheDisplay->getWidth());
+		json += ",\"height\":" + std::to_string(TheDisplay->getHeight());
+		json += ",\"moviePlaying\":";
+		json += TheDisplay->isMoviePlaying() ? "true" : "false";
+	} else {
+		json += "\"width\":null,\"height\":null,\"moviePlaying\":null";
+	}
+	json += "}";
+
+	json += ",\"shell\":{";
+	WindowLayout *top = TheShell != NULL ? TheShell->top() : NULL;
+	if (TheShell != NULL) {
+		json += "\"active\":";
+		json += TheShell->isShellActive() ? "true" : "false";
+		json += ",\"screenCount\":" + std::to_string(TheShell->getScreenCount());
+	} else {
+		json += "\"active\":null,\"screenCount\":null";
+	}
+	if (top != NULL) {
+		const std::string filename = top->getFilename().str();
+		json += ",\"topFilename\":\"" + json_escape(filename) + "\"";
+		json += ",\"topHidden\":";
+		json += top->isHidden() ? "true" : "false";
+		json += ",\"topWindowCount\":" + std::to_string(count_layout_windows(top));
+		json += ",\"topIsMainMenu\":";
+		json += filename.find("MainMenu.wnd") != std::string::npos ? "true" : "false";
+	} else {
+		json += ",\"topFilename\":null,\"topHidden\":null,\"topWindowCount\":0,\"topIsMainMenu\":false";
+	}
+	json += "}";
+
+	json += ",\"mainMenu\":{";
+	json += "\"queried\":";
+	json += (TheShell != NULL && top != NULL) ? "true" : "false";
+	append_window_probe(json, "mainMenuParent", "MainMenu.wnd:MainMenuParent");
+	append_window_probe(json, "mapBorderSinglePlayer", "MainMenu.wnd:MapBorder");
+	append_window_probe(json, "mapBorderMain", "MainMenu.wnd:MapBorder2");
+	append_window_probe(json, "buttonSinglePlayer", "MainMenu.wnd:ButtonSinglePlayer");
+	append_window_probe(json, "buttonSingleBack", "MainMenu.wnd:ButtonSingleBack");
+	append_window_probe(json, "buttonUSA", "MainMenu.wnd:ButtonUSA");
+	append_window_probe(json, "buttonGLA", "MainMenu.wnd:ButtonGLA");
+	append_window_probe(json, "buttonChina", "MainMenu.wnd:ButtonChina");
+	append_window_probe(json, "buttonChallenge", "MainMenu.wnd:ButtonChallenge");
+	append_window_probe(json, "buttonSkirmish", "MainMenu.wnd:ButtonSkirmish");
+	append_window_probe(json, "buttonLoadReplay", "MainMenu.wnd:ButtonLoadReplay");
+	append_window_probe(json, "buttonOptions", "MainMenu.wnd:ButtonOptions");
+	append_window_probe(json, "buttonCredits", "MainMenu.wnd:ButtonCredits");
+	append_window_probe(json, "buttonExit", "MainMenu.wnd:ButtonExit");
+	append_window_under_probe_center(json, "underButtonSinglePlayerCenter", "MainMenu.wnd:ButtonSinglePlayer");
+	json += "}";
+
+	append_input_window_state(json);
+
+	json += "}";
+}
+
 } // namespace
 
 // One iteration of the original GameEngine::execute() loop: calls the real
@@ -195,6 +499,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame(int frame
 	char elapsed[64];
 	std::snprintf(elapsed, sizeof(elapsed), ",\"lastFrameMs\":%.1f", g_frame_state.last_frame_ms);
 	json += elapsed;
+	append_real_engine_client_state(json);
 	json += "}";
 	g_frame_json = json;
 	std::printf("cnc-port: real-frame attempted=%d completed=%d exception=%s\n",
@@ -229,6 +534,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_init(const char
 	if (TheMemoryPoolFactory == NULL) {
 		initMemoryManager();
 	}
+	ensure_real_engine_input_window();
 
 	static const char *argv_storage[] = {"CnCGeneralsZH", "-noshellmap", "-win"};
 	const int argc = 3;

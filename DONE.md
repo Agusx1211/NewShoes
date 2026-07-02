@@ -2319,6 +2319,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       tracked in TODO.md: title→interactive-menu, legacy-probe
       reconciliation (`edgeMapperApply` OOB), 6 undefined boundary symbols,
       ReleaseCrash teardown semantics, per-frame RPC vs main loop.
+- [x] Advance the real lifecycle from title-state into Shell-owned
+      `Menus/MainMenu.wnd` state and route a browser-posted menu click through
+      the original input stack. `cnc_port_real_engine_frame()` now exports real
+      client readiness, intro/movie gates, Shell stack/top layout, MainMenu
+      window probes, hit-test results, current focus/capture/grab windows, and
+      original `Mouse` status. The real init bridge now creates an
+      `ApplicationHWnd` backed by the original `WinMain.cpp::WndProc` before
+      constructing `Win32GameEngine`, so browser `postMessage` input is
+      dispatched by `Win32GameEngine::serviceWindowsOS()` instead of landing on
+      a null/non-procedural window. The startup vertical proves real frames
+      consume the intro gate, push `MainMenu.wnd`, hit-test
+      `MainMenu.wnd:ButtonSinglePlayer`, post Win32 mouse move/down/up, observe
+      `Mouse` move to `(644,134)`, grab the original button with
+      `WIN_STATE_SELECTED` set on down, then clear the grab/selection on up.
+      Rendering residue remains open in TODO: both real-init screenshots still
+      show the Zero Hour title pixels rather than a visible menu repaint.
+      Verified with `npm --prefix WebAssembly run test:startup-vertical` and
+      screenshots `startup-vertical-real-init.png` /
+      `startup-vertical-real-init-menu-click.png`.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what
