@@ -2235,6 +2235,11 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       browser and now reports
       `base_function_lexicon_keyboard_options_runtime_owned` with
       `originalFunctionLexiconRemainingShellCallbacks` next.
+- [x] Promote the already-linked `ExtendedMessageBoxSystem` owner into the
+      linked `cnc-port` base `FunctionLexicon`. Startup vertical verifies the
+      callback-name lookup in the browser and now reports
+      `base_function_lexicon_extended_message_box_runtime_owned` with
+      `originalFunctionLexiconRemainingShellCallbacks` next.
 ---
 
 ## M3 — File / data subsystem (real data)

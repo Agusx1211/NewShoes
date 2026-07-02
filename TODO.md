@@ -51,7 +51,8 @@ flow below.
       device draw/layout tables, loads the non-network base GUI
       system/input/tooltip/widget plus IME draw callback table, registers
       representative original base layout callbacks, and now owns the original
-      `DifficultySelect` system/input/init callbacks, original
+      `ExtendedMessageBoxSystem`, original `DifficultySelect`
+      system/input/init callbacks, original
       `KeyboardOptionsMenu` system/input/init/update/shutdown callbacks with
       original `MetaEvent` global ownership, plus `MainMenu`/`CreditsMenu`/
       `SkirmishGameOptionsMenu`/`SinglePlayerMenu` shell callback names; the
@@ -64,9 +65,10 @@ flow below.
       linked runtime constructs original `W3DFunctionLexicon` and verifies the
       W3D device draw/layout callback tables plus the non-network base GUI
       system/input/tooltip/widget, IME draw, representative
-      `PopupReplayShutdown`, original `DifficultySelect` system/input/init
-      lookups, original `KeyboardOptionsMenu` system/input/init/update/shutdown
-      lookups, and original `MainMenu`/`CreditsMenu`/
+      `PopupReplayShutdown`, original `ExtendedMessageBoxSystem`,
+      original `DifficultySelect` system/input/init lookups, original
+      `KeyboardOptionsMenu` system/input/init/update/shutdown lookups, and
+      original `MainMenu`/`CreditsMenu`/
       `SkirmishGameOptionsMenu`/`SinglePlayerMenu`
       system/input/init/update/shutdown lookups, but full ownership still needs
       the remaining original base `FunctionLexicon.cpp` shell layout callback

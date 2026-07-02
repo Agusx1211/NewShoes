@@ -78,6 +78,8 @@
 
 Bool parseLayoutBlock(File *inFile, char *buffer, UnsignedInt version, WindowLayoutInfo *info);
 extern void PopupReplayShutdown(WindowLayout *layout, void *userData);
+extern WindowMsgHandledType ExtendedMessageBoxSystem(GameWindow *window,
+	UnsignedInt msg, WindowMsgData mData1, WindowMsgData mData2);
 extern const Char *g_csfFile;
 Bool DontShowMainMenu __attribute__((weak)) = FALSE;
 
@@ -229,6 +231,7 @@ FunctionLexicon::TableEntry runtimeBaseSystemTable[] = {
 	{ NAMEKEY_INVALID, "GadgetTextEntrySystem", GadgetTextEntrySystem },
 	{ NAMEKEY_INVALID, "MessageBoxSystem", MessageBoxSystem },
 	{ NAMEKEY_INVALID, "QuitMessageBoxSystem", QuitMessageBoxSystem },
+	{ NAMEKEY_INVALID, "ExtendedMessageBoxSystem", ExtendedMessageBoxSystem },
 	{ NAMEKEY_INVALID, "IMECandidateWindowSystem", IMECandidateWindowSystem },
 	{ NAMEKEY_INVALID, "MainMenuSystem", MainMenuSystem },
 	{ NAMEKEY_INVALID, "CreditsMenuSystem", CreditsMenuSystem },

@@ -65,6 +65,7 @@ struct FunctionLexiconRuntimeProbeResult
 	bool gadget_text_entry_system_lookup = false;
 	bool message_box_system_lookup = false;
 	bool quit_message_box_system_lookup = false;
+	bool extended_message_box_system_lookup = false;
 	bool ime_candidate_window_system_lookup = false;
 	bool main_menu_system_lookup = false;
 	bool credits_menu_system_lookup = false;

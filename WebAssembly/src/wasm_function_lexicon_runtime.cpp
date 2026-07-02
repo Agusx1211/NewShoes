@@ -27,6 +27,8 @@
 #endif
 
 extern void PopupReplayShutdown(WindowLayout *layout, void *userData);
+extern WindowMsgHandledType ExtendedMessageBoxSystem(GameWindow *window,
+	UnsignedInt msg, WindowMsgData mData1, WindowMsgData mData2);
 
 namespace {
 
@@ -162,6 +164,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.quit_message_box_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("QuitMessageBoxSystem")) == QuitMessageBoxSystem;
+	result.extended_message_box_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("ExtendedMessageBoxSystem")) == ExtendedMessageBoxSystem;
 	result.ime_candidate_window_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("IMECandidateWindowSystem")) == IMECandidateWindowSystem;
@@ -369,6 +374,7 @@ bool base_core_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &resul
 		result.gadget_push_button_system_lookup &&
 		result.message_box_system_lookup &&
 		result.quit_message_box_system_lookup &&
+		result.extended_message_box_system_lookup &&
 		result.game_window_default_input_lookup &&
 		result.gadget_push_button_input_lookup &&
 		result.gadget_static_text_input_lookup &&
@@ -541,7 +547,7 @@ void finish_status(FunctionLexiconRuntimeProbeResult &result)
 		return;
 	}
 	if (!base_layout_callback_graph_ready(result)) {
-		result.status = "base_function_lexicon_keyboard_options_runtime_owned";
+		result.status = "base_function_lexicon_extended_message_box_runtime_owned";
 		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
 		return;
 	}
@@ -716,6 +722,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"gadgetTextEntrySystem\":%s,"
 		"\"messageBoxSystem\":%s,"
 		"\"quitMessageBoxSystem\":%s,"
+		"\"extendedMessageBoxSystem\":%s,"
 		"\"imeCandidateWindowSystem\":%s,"
 		"\"mainMenuSystem\":%s,"
 		"\"creditsMenuSystem\":%s,"
@@ -807,6 +814,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.gadget_text_entry_system_lookup),
 		json_bool(state.message_box_system_lookup),
 		json_bool(state.quit_message_box_system_lookup),
+		json_bool(state.extended_message_box_system_lookup),
 		json_bool(state.ime_candidate_window_system_lookup),
 		json_bool(state.main_menu_system_lookup),
 		json_bool(state.credits_menu_system_lookup),
