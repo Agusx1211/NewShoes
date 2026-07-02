@@ -4017,6 +4017,7 @@ target_link_libraries(zh_gameclient_gui_input_runtime PUBLIC
 )
 
 add_library(zh_window_layout_script_runtime STATIC
+  "${GAMEENGINE_COMMON_DIR}/SkirmishBattleHonors.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Credits.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/AnimateWindowManager.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowTransitionsStyles.cpp"
@@ -4030,6 +4031,8 @@ add_library(zh_window_layout_script_runtime STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/KeyboardOptionsMenu.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/MainMenu.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/PopupReplay.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/SkirmishGameOptionsMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/MapUtil.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ProcessAnimateWindow.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/Shell.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/ShellMenuScheme.cpp"

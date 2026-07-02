@@ -2200,6 +2200,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       (`StartPatchCheck`, `HTTPThinkWrapper`, `DownloadMenuUpdate`,
       `deleteNotificationBox`, `TheRankPointValues`, `DontShowMainMenu`,
       `IsFirstCDPresent`) until their owning features become current.
+- [x] Promote the non-network `SkirmishGameOptionsMenu` callback owner into
+      the linked `cnc-port` base `FunctionLexicon`: `zh_window_layout_script_runtime`
+      now links original `SkirmishGameOptionsMenu.cpp`,
+      `SkirmishBattleHonors.cpp`, and `MapUtil.cpp`, while the reduced wasm
+      `FunctionLexicon::init()` registers original
+      `SkirmishGameOptionsMenu` system/input/init/update/shutdown callbacks.
+      Startup vertical verifies those callback-name lookups in the browser and
+      now reports `base_function_lexicon_skirmish_runtime_owned` with
+      `originalFunctionLexiconRemainingShellCallbacks` next. The online-heavy
+      player-info battle-honor insertion/tooltips and player-template tooltips
+      remain weak browser boundaries until their owning popup/WOL surface is
+      current; the previous weak `IsFirstCDPresent` fallback is now overridden
+      by the original Skirmish owner in this linked runtime.
 ---
 
 ## M3 — File / data subsystem (real data)

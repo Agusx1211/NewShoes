@@ -185,6 +185,31 @@ __attribute__((weak)) void Display::update() {}
 
 FunctionLexicon *TheFunctionLexicon = nullptr;
 
+// These helpers are owned by the online-heavy PopupPlayerInfo menu. Keep the
+// Skirmish callback owner linkable without pulling WOL/GameSpy into cnc-port.
+__attribute__((weak)) void BattleHonorTooltip(GameWindow *, WinInstanceData *, UnsignedInt)
+{
+}
+
+__attribute__((weak)) void ResetBattleHonorInsertion()
+{
+}
+
+__attribute__((weak)) void InsertBattleHonor(
+	GameWindow *, const Image *, Bool, Int, Int &, Int &, UnicodeString, Int)
+{
+}
+
+__attribute__((weak)) void playerTemplateComboBoxTooltip(
+	GameWindow *, WinInstanceData *, UnsignedInt)
+{
+}
+
+__attribute__((weak)) void playerTemplateListBoxTooltip(
+	GameWindow *, WinInstanceData *, UnsignedInt)
+{
+}
+
 namespace {
 
 FunctionLexicon::TableEntry runtimeBaseSystemTable[] = {
@@ -207,6 +232,7 @@ FunctionLexicon::TableEntry runtimeBaseSystemTable[] = {
 	{ NAMEKEY_INVALID, "IMECandidateWindowSystem", IMECandidateWindowSystem },
 	{ NAMEKEY_INVALID, "MainMenuSystem", MainMenuSystem },
 	{ NAMEKEY_INVALID, "CreditsMenuSystem", CreditsMenuSystem },
+	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuSystem", SkirmishGameOptionsMenuSystem },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
@@ -226,6 +252,7 @@ FunctionLexicon::TableEntry runtimeBaseInputTable[] = {
 	{ NAMEKEY_INVALID, "IMECandidateWindowInput", IMECandidateWindowInput },
 	{ NAMEKEY_INVALID, "MainMenuInput", MainMenuInput },
 	{ NAMEKEY_INVALID, "CreditsMenuInput", CreditsMenuInput },
+	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuInput", SkirmishGameOptionsMenuInput },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
@@ -243,6 +270,7 @@ FunctionLexicon::TableEntry runtimeBaseDrawTable[] = {
 FunctionLexicon::TableEntry runtimeBaseLayoutInitTable[] = {
 	{ NAMEKEY_INVALID, "MainMenuInit", MainMenuInit },
 	{ NAMEKEY_INVALID, "CreditsMenuInit", CreditsMenuInit },
+	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuInit", SkirmishGameOptionsMenuInit },
 	{ NAMEKEY_INVALID, "DifficultySelectInit", DifficultySelectInit },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
@@ -250,6 +278,7 @@ FunctionLexicon::TableEntry runtimeBaseLayoutInitTable[] = {
 FunctionLexicon::TableEntry runtimeBaseLayoutUpdateTable[] = {
 	{ NAMEKEY_INVALID, "MainMenuUpdate", MainMenuUpdate },
 	{ NAMEKEY_INVALID, "CreditsMenuUpdate", CreditsMenuUpdate },
+	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuUpdate", SkirmishGameOptionsMenuUpdate },
 	{ NAMEKEY_INVALID, "KeyboardOptionsMenuUpdate", KeyboardOptionsMenuUpdate },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
@@ -257,6 +286,7 @@ FunctionLexicon::TableEntry runtimeBaseLayoutUpdateTable[] = {
 FunctionLexicon::TableEntry runtimeBaseLayoutShutdownTable[] = {
 	{ NAMEKEY_INVALID, "MainMenuShutdown", MainMenuShutdown },
 	{ NAMEKEY_INVALID, "CreditsMenuShutdown", CreditsMenuShutdown },
+	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuShutdown", SkirmishGameOptionsMenuShutdown },
 	{ NAMEKEY_INVALID, "PopupReplayShutdown", PopupReplayShutdown },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
