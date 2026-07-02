@@ -240,6 +240,7 @@ FunctionLexicon::TableEntry runtimeBaseSystemTable[] = {
 	{ NAMEKEY_INVALID, "DifficultySelectSystem", DifficultySelectSystem },
 	{ NAMEKEY_INVALID, "KeyboardOptionsMenuSystem", KeyboardOptionsMenuSystem },
 	{ NAMEKEY_INVALID, "InGamePopupMessageSystem", InGamePopupMessageSystem },
+	{ NAMEKEY_INVALID, "IdleWorkerSystem", IdleWorkerSystem },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 

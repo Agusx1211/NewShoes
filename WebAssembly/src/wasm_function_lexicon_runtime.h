@@ -74,6 +74,7 @@ struct FunctionLexiconRuntimeProbeResult
 	bool difficulty_select_system_lookup = false;
 	bool keyboard_options_menu_system_lookup = false;
 	bool in_game_popup_message_system_lookup = false;
+	bool idle_worker_system_lookup = false;
 	bool game_window_default_input_lookup = false;
 	bool gadget_push_button_input_lookup = false;
 	bool gadget_check_box_input_lookup = false;

@@ -2249,6 +2249,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       callback-name lookups in the browser and now reports
       `base_function_lexicon_ingame_popup_message_runtime_owned` with
       `originalFunctionLexiconRemainingShellCallbacks` next.
+- [x] Promote the already-linked original `IdleWorkerSystem` callback into the
+      linked `cnc-port` base `FunctionLexicon`. The callback comes from the
+      original `InGameUI.cpp` owner linked for the in-game popup slice, so this
+      only widens the reduced system table. Startup vertical verifies the
+      callback-name lookup in the browser and now reports
+      `base_function_lexicon_idle_worker_runtime_owned` with
+      `originalFunctionLexiconRemainingShellCallbacks` next.
 ---
 
 ## M3 — File / data subsystem (real data)
