@@ -6280,13 +6280,20 @@ target_link_options(w3d-window-layout-script-smoke PRIVATE
 add_executable(gamelogic-new-game-dispatch-smoke
   tests/gamelogic_new_game_dispatch_smoke.cpp
   "${GAMEENGINE_COMMON_DIR}/GlobalData.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIAiData.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INI.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIMultiplayer.cpp"
+  "${GAMEENGINE_COMMON_DIR}/MultiplayerSettings.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/FunctionLexicon.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/AcademyStats.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/Energy.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/Money.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/Player.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/PlayerList.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/PlayerTemplate.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/ResourceGatheringManager.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/ScoreKeeper.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/Science.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/Team.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/TunnelTracker.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/SaveGame/GameState.cpp"
@@ -6298,12 +6305,16 @@ add_executable(gamelogic-new-game-dispatch-smoke
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/Shell.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/ShellMenuScheme.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Map/SidesList.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/AI/AI.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/AI/AIPathfind.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/AI/AIPlayer.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/Scripts.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/ScriptEngine.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/AI/Squad.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/System/RankInfo.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/System/GameLogic.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/System/GameLogicDispatch.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/Chat.cpp"
 )
 
 set_target_properties(gamelogic-new-game-dispatch-smoke PROPERTIES

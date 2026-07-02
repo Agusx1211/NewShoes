@@ -1227,8 +1227,14 @@ flow below.
       `W3DTerrainLogic::loadMap(false)` / `WorldHeightMap` /
       `TerrainLogic::loadMap` / `TerrainVisual::load` ownership over the same
       map, including object, waypoint, side/team, time-of-day, and 3800x3800
-      extent checks; continue `startNewGame` after terrain load into
-      side/player/script population.
+      extent checks. The same runtime now mounts `INIZH.big` / base `INI.big`,
+      loads original startup `Multiplayer`, `Science`, `AIData`, and
+      `PlayerTemplate` INI data, validates the parsed 11 sides and 97 teams,
+      constructs original `AIPlayer` state, resets `TeamFactory`, populates 11
+      players through `PlayerList::newGame`, and preserves 465 side scripts
+      through `ScriptEngine::newMap`; continue `startNewGame` after
+      side/player/script population into radar/partition/ghost/terrain
+      `newMap` and map object spawning.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---

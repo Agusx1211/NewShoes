@@ -2142,6 +2142,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `timeout 60s npm --prefix WebAssembly run test:vertical-integrations`
       attempt reached `startup-vertical: ok` and then timed out at the
       already-tracked `runtime-archives-startup-data` stage.
+- [x] Continue `GameLogic::startNewGame` after the original terrain load into
+      original side/player/team/script population. The
+      `gamelogic-new-game-dispatch-smoke` runtime now mounts `INIZH.big` and
+      base `INI.big`, links original `INI`, `INIAiData`, `INIMultiplayer`,
+      `MultiplayerSettings`, `Science`, `PlayerTemplate`,
+      `ResourceGatheringManager`, `AI`, `AIPathfind`, `AIPlayer`, and the
+      `GameSpy/Chat.cpp` online-chat color parser required by shipped
+      `Multiplayer.ini`. It loads shipped startup data, preserves the
+      `MD_GLA03` terrain parse, validates 11 parsed sides and 97 teams,
+      constructs original per-player `AIPlayer` state, initializes
+      `TeamFactory` from the parsed side/team data, populates 11 players
+      through original `PlayerList::newGame`, and carries 465 side scripts
+      through original `ScriptEngine::newMap`. The boundary is now continuing
+      `startNewGame` after side/player/script population into
+      radar/partition/ghost/terrain `newMap` and map object spawning. Verified
+      with the focused wasm build, direct
+      `dist/gamelogic-new-game-dispatch-smoke.cjs` run from `WebAssembly/`,
+      `verify:gamelogic-new-game-dispatch-frontier`,
+      `test:gamelogic-new-game-dispatch`, and `test:startup-vertical`; a
+      bounded `test:vertical-integrations` attempt reached startup-vertical OK
+      and timed out at the already-tracked `runtime-archives-startup-data`
+      stage.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the

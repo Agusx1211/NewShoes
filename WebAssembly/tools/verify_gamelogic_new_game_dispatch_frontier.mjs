@@ -377,6 +377,13 @@ expect(
   "gamelogic-new-game-dispatch-smoke does not link original GlobalData.cpp",
 );
 expect(
+  /INI\/INI\.cpp|INI\\INI\.cpp/.test(runtimeTargetSources.block)
+    && /INI\/INIAiData\.cpp|INI\\INIAiData\.cpp/.test(runtimeTargetSources.block)
+    && /INI\/INIMultiplayer\.cpp|INI\\INIMultiplayer\.cpp/.test(runtimeTargetSources.block)
+    && /MultiplayerSettings\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original startup INI/MultiplayerSettings sources",
+);
+expect(
   /System\/FunctionLexicon\.cpp|System\\FunctionLexicon\.cpp/.test(runtimeTargetSources.block),
   "gamelogic-new-game-dispatch-smoke does not link original FunctionLexicon.cpp",
 );
@@ -389,7 +396,10 @@ expect(
   /RTS\/AcademyStats\.cpp|RTS\\AcademyStats\.cpp/.test(runtimeTargetSources.block)
     && /RTS\/Energy\.cpp|RTS\\Energy\.cpp/.test(runtimeTargetSources.block)
     && /RTS\/Money\.cpp|RTS\\Money\.cpp/.test(runtimeTargetSources.block)
+    && /RTS\/PlayerTemplate\.cpp|RTS\\PlayerTemplate\.cpp/.test(runtimeTargetSources.block)
+    && /RTS\/ResourceGatheringManager\.cpp|RTS\\ResourceGatheringManager\.cpp/.test(runtimeTargetSources.block)
     && /RTS\/ScoreKeeper\.cpp|RTS\\ScoreKeeper\.cpp/.test(runtimeTargetSources.block)
+    && /RTS\/Science\.cpp|RTS\\Science\.cpp/.test(runtimeTargetSources.block)
     && /RTS\/Team\.cpp|RTS\\Team\.cpp/.test(runtimeTargetSources.block)
     && /RTS\/TunnelTracker\.cpp|RTS\\TunnelTracker\.cpp/.test(runtimeTargetSources.block)
     && /AI\/Squad\.cpp|AI\\Squad\.cpp/.test(runtimeTargetSources.block)
@@ -441,6 +451,16 @@ expect(
 expect(
   /Map\/SidesList\.cpp|Map\\SidesList\.cpp/.test(runtimeTargetSources.block),
   "gamelogic-new-game-dispatch-smoke does not link original SidesList.cpp for shipped map side parsing",
+);
+expect(
+  /AI\/AI\.cpp|AI\\AI\.cpp/.test(runtimeTargetSources.block)
+    && /AI\/AIPathfind\.cpp|AI\\AIPathfind\.cpp/.test(runtimeTargetSources.block)
+    && /AI\/AIPlayer\.cpp|AI\\AIPlayer\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original AI/AIPlayer sources for non-human sides",
+);
+expect(
+  /GameSpy\/Chat\.cpp|GameSpy\\Chat\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original OnlineChatColors parser source",
 );
 const runtimeLinkLibraries = cmakeInvocationBlock(
   cmake,
@@ -509,7 +529,7 @@ const runtimePathLine = lineOf(
 );
 const runtimeSourceLine = lineOf(
   runtimeSmoke,
-  /GlobalData\.cpp\/FunctionLexicon\.cpp\/PlayerList\.cpp\/Player\.cpp\/GameLogic\.cpp\/GameLogicDispatch\.cpp\/GameState\.cpp\/ScriptEngine\.cpp\/Scripts\.cpp\/Shell\.cpp\/GameWindowManagerScript\.cpp\/HeaderTemplate\.cpp\/TerrainLogic\.cpp\/W3DTerrainLogic\.cpp\/WorldHeightMap\.cpp\/TerrainVisual\.cpp\/SidesList\.cpp\/ThingFactory\.cpp/,
+  /GlobalData\.cpp\/INI\.cpp\/INIAiData\.cpp\/INIMultiplayer\.cpp\/MultiplayerSettings\.cpp\/Science\.cpp\/PlayerTemplate\.cpp\/FunctionLexicon\.cpp\/PlayerList\.cpp\/Player\.cpp\/AI\.cpp\/AIPathfind\.cpp\/AIPlayer\.cpp\/GameLogic\.cpp\/GameLogicDispatch\.cpp\/GameState\.cpp\/ScriptEngine\.cpp\/Scripts\.cpp\/Shell\.cpp\/GameWindowManagerScript\.cpp\/HeaderTemplate\.cpp\/TerrainLogic\.cpp\/W3DTerrainLogic\.cpp\/WorldHeightMap\.cpp\/TerrainVisual\.cpp\/SidesList\.cpp\/ThingFactory\.cpp/,
   "runtime smoke original source JSON",
 );
 const runtimeArchivePathLine = lineOf(
@@ -526,6 +546,16 @@ const runtimeMapsArchiveLoadLine = lineOf(
   runtimeSmoke,
   /loadBigFilesFromDirectory\s*\(\s*archive_directory\s*,\s*maps_archive_mask\s*\)/,
   "runtime smoke MapsZH.big load",
+);
+const runtimeZhIniArchiveLoadLine = lineOf(
+  runtimeSmoke,
+  /loadBigFilesFromDirectory\s*\(\s*archive_directory\s*,\s*zh_ini_archive_mask\s*\)/,
+  "runtime smoke INIZH.big load",
+);
+const runtimeBaseIniArchiveLoadLine = lineOf(
+  runtimeSmoke,
+  /loadBigFilesFromDirectory\s*\(\s*archive_directory\s*,\s*base_ini_archive_mask\s*\)/,
+  "runtime smoke base INI.big load",
 );
 const runtimePromotedMapLine = lineOf(
   runtimeSmoke,
@@ -577,18 +607,38 @@ expect(
 );
 const runtimePlayerListLine = lineOf(
   runtimeSmoke,
-  /PlayerList\s+player_list\s*;/,
+  /PlayerList\s*\*\s*player_list\s*=\s*new\s+PlayerList\s*;/,
   "runtime smoke original PlayerList allocation",
 );
 const runtimePlayerListSingletonLine = lineOf(
   runtimeSmoke,
-  /ThePlayerList\s*=\s*&player_list\s*;/,
+  /ThePlayerList\s*=\s*player_list\s*;/,
   "runtime smoke original ThePlayerList assignment",
 );
 const runtimePlayerListProofLine = lineOf(
   runtimeSmoke,
-  /player_list\.getNthPlayer\s*\(\s*0\s*\)\s*!=\s*nullptr[\s\S]*player_list\.getNeutralPlayer\s*\(\s*\)[\s\S]*player_list\.getPlayerCount\s*\(\s*\)\s*==\s*1/,
+  /player_list->getNthPlayer\s*\(\s*0\s*\)\s*!=\s*nullptr[\s\S]*player_list->getNeutralPlayer\s*\(\s*\)[\s\S]*player_list->getPlayerCount\s*\(\s*\)\s*==\s*1/,
   "runtime smoke original PlayerList neutral-player proof",
+);
+const runtimePlayerListNewGameLine = lineOf(
+  runtimeSmoke,
+  /player_list->newGame\s*\(\s*\)\s*;/,
+  "runtime smoke original PlayerList::newGame call",
+);
+const runtimeTeamFactoryLine = lineOf(
+  runtimeSmoke,
+  /TeamFactory\s*\*\s*team_factory\s*=\s*new\s+TeamFactory\s*;/,
+  "runtime smoke original TeamFactory allocation",
+);
+const runtimeScriptNewMapLine = lineOf(
+  runtimeSmoke,
+  /script_engine->newMap\s*\(\s*\)\s*;/,
+  "runtime smoke original ScriptEngine::newMap call",
+);
+const runtimeAiLine = lineOf(
+  runtimeSmoke,
+  /AI\s+ai\s*;/,
+  "runtime smoke original AI allocation",
 );
 const runtimeRankInfoStoreLine = lineOf(
   runtimeSmoke,
@@ -731,6 +781,8 @@ console.log(JSON.stringify({
     originalPlayerListCppLinked: true,
     originalPlayerCppLinked: true,
     originalPlayerSupportSourcesLinked: true,
+    originalStartupIniSourcesLinked: true,
+    originalAiPlayerSourcesLinked: true,
     originalGlobalDataHeaderPreincluded: true,
     preRtsOriginalGlobalDataEscapeHatch: true,
     originalGameLogicCppLinked: true,
@@ -751,6 +803,8 @@ console.log(JSON.stringify({
     archivePathLine: runtimeArchivePathLine,
     archiveLoadLine: runtimeArchiveLoadLine,
     mapsArchiveLoadLine: runtimeMapsArchiveLoadLine,
+    zhIniArchiveLoadLine: runtimeZhIniArchiveLoadLine,
+    baseIniArchiveLoadLine: runtimeBaseIniArchiveLoadLine,
     promotedMapLine: runtimePromotedMapLine,
     blankWindowExistsLine: runtimeBlankWindowExistsLine,
     winCreateLayoutDelegationLine: runtimeWinCreateLayoutDelegationLine,
@@ -762,6 +816,10 @@ console.log(JSON.stringify({
     playerListAllocationLine: runtimePlayerListLine,
     playerListSingletonLine: runtimePlayerListSingletonLine,
     playerListNeutralPlayerProofLine: runtimePlayerListProofLine,
+    playerListNewGameLine: runtimePlayerListNewGameLine,
+    teamFactoryLine: runtimeTeamFactoryLine,
+    scriptNewMapLine: runtimeScriptNewMapLine,
+    aiLine: runtimeAiLine,
     rankInfoStoreLine: runtimeRankInfoStoreLine,
     noFocusedPlayerLookupWrap: true,
     noPlayerListSentinel: true,
@@ -787,9 +845,9 @@ console.log(JSON.stringify({
     "prepareNewGame owns original ScriptEngine difficulty, BlankWindow background, game-mode, pending-map, and original Shell::hideShell setup",
     "startNewGame(FALSE) records the pristine map and defers the first call before terrain load",
     "w3d-window-layout-script-smoke still uses a focused GameLogic shim and sentinel gameplay owners",
-    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/SidesList.cpp plus the W3D terrain runtime, then calls GameLogic::processCommandList at runtime through original GlobalData, FunctionLexicon, PlayerList, ScriptEngine, Shell, archive-backed BlankWindow ownership, MapsZH.big MD_GLA03 promotion, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, and TerrainLogic->TerrainVisual load handoff",
+    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/FunctionLexicon.cpp/INI.cpp/INIAiData.cpp/INIMultiplayer.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/SidesList.cpp plus the W3D terrain runtime, then calls GameLogic::processCommandList at runtime through original GlobalData, FunctionLexicon, PlayerList, ScriptEngine, Shell, archive-backed BlankWindow ownership, MapsZH.big MD_GLA03 promotion, original startup INI parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, TeamFactory::initFromSides, PlayerList::newGame, AIPlayer construction, and ScriptEngine::newMap",
   ],
   nextRequired: [
-    "continue startNewGame after original terrain load into side/player/script population",
+    "continue startNewGame after side/player/script population into radar/partition/ghost/terrain newMap and map object spawning",
   ],
 }, null, 2));

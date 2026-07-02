@@ -9,14 +9,21 @@
 #include "Common/GameEngine.h"
 #include "Common/GameState.h"
 #include "Common/GlobalData.h"
+#include "Common/INI.h"
 #include "Common/LocalFileSystem.h"
 #include "Common/MapObject.h"
 #include "Common/MessageStream.h"
+#include "Common/MultiplayerSettings.h"
 #include "Common/NameKeyGenerator.h"
+#include "Common/Player.h"
 #include "Common/PlayerList.h"
+#include "Common/PlayerTemplate.h"
+#include "Common/Science.h"
+#include "Common/Team.h"
 #include "Common/ThingFactory.h"
 #include "GameClient/Display.h"
 #include "GameClient/GameClient.h"
+#include "GameClient/GameText.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/HeaderTemplate.h"
@@ -27,9 +34,11 @@
 #include "GameClient/TerrainVisual.h"
 #include "GameClient/Water.h"
 #include "GameClient/WindowLayout.h"
+#include "GameLogic/AI.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/RankInfo.h"
 #include "GameLogic/ScriptEngine.h"
+#include "GameLogic/Scripts.h"
 #include "GameLogic/SidesList.h"
 #include "W3DDevice/GameClient/WorldHeightMap.h"
 #include "W3DDevice/GameLogic/W3DTerrainLogic.h"
@@ -309,10 +318,20 @@ int g_layout_shutdowns = 0;
 AsciiString g_last_layout_name;
 AsciiString g_blank_layout_archive_path;
 AsciiString g_map_archive_path;
+AsciiString g_zh_ini_archive_path;
+AsciiString g_base_ini_archive_path;
 Bool g_blank_window_archive_loaded = FALSE;
 Bool g_blank_window_file_exists = FALSE;
 Bool g_map_archive_loaded = FALSE;
 Bool g_map_file_exists = FALSE;
+Bool g_zh_ini_archive_loaded = FALSE;
+Bool g_base_ini_archive_loaded = FALSE;
+Bool g_player_template_default_ini_file_exists = FALSE;
+Bool g_player_template_ini_file_exists = FALSE;
+Bool g_multiplayer_default_ini_file_exists = FALSE;
+Bool g_multiplayer_ini_file_exists = FALSE;
+Bool g_ai_data_default_ini_file_exists = FALSE;
+Bool g_ai_data_ini_file_exists = FALSE;
 Bool g_seed_blank_window_loaded_from_archive = FALSE;
 Bool g_prepare_blank_window_loaded_from_archive = FALSE;
 Bool g_seed_blank_window_root_ready = FALSE;
@@ -356,6 +375,88 @@ Int countMapObjects(Bool waypointsOnly)
 	}
 	return count;
 }
+
+Int countScriptsInList(ScriptList *script_list)
+{
+	if (script_list == nullptr) {
+		return 0;
+	}
+
+	Int count = 0;
+	for (Script *script = script_list->getScript();
+			script != nullptr;
+			script = script->getNext()) {
+		++count;
+	}
+	for (ScriptGroup *group = script_list->getScriptGroup();
+			group != nullptr;
+			group = group->getNext()) {
+		for (Script *script = group->getScript();
+				script != nullptr;
+				script = script->getNext()) {
+			++count;
+		}
+	}
+	return count;
+}
+
+Int countSideScripts(SidesList &sides)
+{
+	Int count = 0;
+	for (Int index = 0; index < sides.getNumSides(); ++index) {
+		count += countScriptsInList(sides.getSideInfo(index)->getScriptList());
+	}
+	return count;
+}
+
+void seedPlayerTemplateAliasNameKeys()
+{
+	(void)NAMEKEY("FactionCivilian");
+	(void)NAMEKEY("FactionAmerica");
+	(void)NAMEKEY("FactionAmericaChooseAGeneral");
+	(void)NAMEKEY("FactionAmericaTankCommand");
+	(void)NAMEKEY("FactionAmericaSpecialForces");
+	(void)NAMEKEY("FactionAmericaAirForce");
+	(void)NAMEKEY("FactionChina");
+	(void)NAMEKEY("FactionChinaChooseAGeneral");
+	(void)NAMEKEY("FactionChinaRedArmy");
+	(void)NAMEKEY("FactionChinaSpecialWeapons");
+	(void)NAMEKEY("FactionChinaSecretPolice");
+	(void)NAMEKEY("FactionGLA");
+	(void)NAMEKEY("FactionGLAChooseAGeneral");
+	(void)NAMEKEY("FactionGLATerrorCell");
+	(void)NAMEKEY("FactionGLABiowarCommand");
+	(void)NAMEKEY("FactionGLAWarlordCommand");
+}
+
+class SmokeGameText : public GameTextInterface
+{
+public:
+	void init() override {}
+	void reset() override {}
+	void update() override {}
+
+	UnicodeString fetch(const Char *label, Bool *exists = nullptr) override
+	{
+		if (exists != nullptr) {
+			*exists = TRUE;
+		}
+		UnicodeString text;
+		text.translate(label != nullptr ? label : "");
+		return text;
+	}
+
+	UnicodeString fetch(AsciiString label, Bool *exists = nullptr) override
+	{
+		return fetch(label.str(), exists);
+	}
+
+	AsciiStringVec &getStringsWithLabelPrefix(AsciiString) override { return m_empty; }
+	void initMapStringFile(const AsciiString &) override {}
+
+private:
+	AsciiStringVec m_empty;
+};
 
 class SmokeGameEngine : public GameEngine
 {
@@ -685,10 +786,14 @@ int main()
 {
 	const char *window_archive_path = "artifacts/real-assets/Window.big";
 	const char *maps_archive_path = "artifacts/real-assets/MapsZH.big";
+	const char *zh_ini_archive_path = "artifacts/real-assets/INIZH.big";
+	const char *base_ini_archive_path = "artifacts/real-assets/INI.big";
 	const char *gameplay_map_path = "Maps\\MD_GLA03\\MD_GLA03.map";
 	AsciiString archive_directory("artifacts/real-assets/");
 	AsciiString archive_mask("Window.big");
 	AsciiString maps_archive_mask("MapsZH.big");
+	AsciiString zh_ini_archive_mask("INIZH.big");
+	AsciiString base_ini_archive_mask("INI.big");
 
 	GlobalData global_data;
 	global_data.m_framesPerSecondLimit = 30;
@@ -743,9 +848,77 @@ int main()
 			"MapsZH.big should expose Maps\\MD_GLA03\\MD_GLA03.map")) {
 		return 1;
 	}
+	g_zh_ini_archive_path = zh_ini_archive_path;
+	g_zh_ini_archive_loaded =
+		archive_file_system.loadBigFilesFromDirectory(archive_directory, zh_ini_archive_mask);
+	if (!expect(g_zh_ini_archive_loaded,
+			"Win32BIGFileSystem should load INIZH.big for gameplay startup INI data")) {
+		return 1;
+	}
+	g_base_ini_archive_path = base_ini_archive_path;
+	g_base_ini_archive_loaded =
+		archive_file_system.loadBigFilesFromDirectory(archive_directory, base_ini_archive_mask);
+	if (!expect(g_base_ini_archive_loaded,
+			"Win32BIGFileSystem should load base INI.big for default gameplay startup INI data")) {
+		return 1;
+	}
+	g_player_template_default_ini_file_exists =
+		file_system.doesFileExist("Data\\INI\\Default\\PlayerTemplate.ini");
+	g_player_template_ini_file_exists =
+		file_system.doesFileExist("Data\\INI\\PlayerTemplate.ini");
+	g_multiplayer_default_ini_file_exists =
+		file_system.doesFileExist("Data\\INI\\Default\\Multiplayer.ini");
+	g_multiplayer_ini_file_exists =
+		file_system.doesFileExist("Data\\INI\\Multiplayer.ini");
+	g_ai_data_default_ini_file_exists =
+		file_system.doesFileExist("Data\\INI\\Default\\AIData.ini");
+	g_ai_data_ini_file_exists =
+		file_system.doesFileExist("Data\\INI\\AIData.ini");
+	if (!expect(g_player_template_default_ini_file_exists && g_player_template_ini_file_exists,
+			"mounted INI archives should expose default and Zero Hour PlayerTemplate.ini")) {
+		return 1;
+	}
+	if (!expect(g_multiplayer_default_ini_file_exists && g_multiplayer_ini_file_exists,
+			"mounted INI archives should expose default and Zero Hour Multiplayer.ini")) {
+		return 1;
+	}
+	if (!expect(g_ai_data_default_ini_file_exists,
+			"mounted INI archives should expose default AIData.ini")) {
+		return 1;
+	}
+	if (!expect(g_ai_data_ini_file_exists,
+			"mounted INI archives should expose Zero Hour AIData.ini")) {
+		return 1;
+	}
 
 	FunctionLexicon function_lexicon;
 	TheFunctionLexicon = &function_lexicon;
+
+	SmokeGameText game_text;
+	TheGameText = &game_text;
+
+	MultiplayerSettings multiplayer_settings;
+	TheMultiplayerSettings = &multiplayer_settings;
+	ScienceStore science_store;
+	TheScienceStore = &science_store;
+	science_store.init();
+	AI ai;
+	TheAI = &ai;
+	ai.init();
+	PlayerTemplateStore player_template_store;
+	ThePlayerTemplateStore = &player_template_store;
+	player_template_store.init();
+	INI startup_ini;
+	startup_ini.load("Data\\INI\\Default\\Multiplayer.ini", INI_LOAD_OVERWRITE, nullptr);
+	startup_ini.load("Data\\INI\\Multiplayer.ini", INI_LOAD_OVERWRITE, nullptr);
+	startup_ini.load("Data\\INI\\Science.ini", INI_LOAD_OVERWRITE, nullptr);
+	startup_ini.load("Data\\INI\\Default\\AIData.ini", INI_LOAD_OVERWRITE, nullptr);
+	if (g_ai_data_ini_file_exists) {
+		startup_ini.load("Data\\INI\\AIData.ini", INI_LOAD_CREATE_OVERRIDES, nullptr);
+	}
+	seedPlayerTemplateAliasNameKeys();
+	startup_ini.load("Data\\INI\\Default\\PlayerTemplate.ini", INI_LOAD_OVERWRITE, nullptr);
+	startup_ini.load("Data\\INI\\PlayerTemplate.ini", INI_LOAD_OVERWRITE, nullptr);
 
 	ImageCollection image_collection;
 	TheMappedImageCollection = &image_collection;
@@ -829,15 +1002,17 @@ int main()
 		return 1;
 	}
 
-	PlayerList player_list;
-	ThePlayerList = &player_list;
+	// Keep the original PlayerList alive through process teardown; its
+	// production owner also outlives the game-start path this smoke exercises.
+	PlayerList *player_list = new PlayerList;
+	ThePlayerList = player_list;
 
 	logic->processCommandList(TheCommandList);
 
 	bool ok = true;
-	ok = expect(player_list.getNthPlayer(0) != nullptr
-			&& player_list.getNthPlayer(0) == player_list.getNeutralPlayer()
-			&& player_list.getPlayerCount() == 1,
+	ok = expect(player_list->getNthPlayer(0) != nullptr
+			&& player_list->getNthPlayer(0) == player_list->getNeutralPlayer()
+			&& player_list->getPlayerCount() == 1,
 		"original PlayerList should own the neutral player used by MSG_NEW_GAME") && ok;
 	ok = expect(script_engine->getGlobalDifficulty() == DIFFICULTY_HARD,
 		"prepareNewGame should forward MSG_NEW_GAME difficulty to original ScriptEngine") && ok;
@@ -873,12 +1048,15 @@ int main()
 	MapCache map_cache;
 	ThingFactory thing_factory;
 	SidesList sides_list;
+	// Match PlayerList lifetime for team/player cross-links created by newGame.
+	TeamFactory *team_factory = new TeamFactory;
 	SmokeGameClient game_client;
 	SmokeTerrainVisual terrain_visual;
 	W3DTerrainLogic terrain_logic;
 	TheMapCache = &map_cache;
 	TheThingFactory = &thing_factory;
 	TheSidesList = &sides_list;
+	TheTeamFactory = team_factory;
 	TheGameClient = &game_client;
 	TheTerrainVisual = &terrain_visual;
 	TheTerrainLogic = &terrain_logic;
@@ -892,6 +1070,9 @@ int main()
 	const Int terrain_waypoints = countMapObjects(TRUE);
 	const Int terrain_extent_hi_x = REAL_TO_INT_FLOOR(terrain_extent.hi.x + 0.5f);
 	const Int terrain_extent_hi_y = REAL_TO_INT_FLOOR(terrain_extent.hi.y + 0.5f);
+	const Int terrain_sides = sides_list.getNumSides();
+	const Int terrain_teams = sides_list.getNumTeams();
+	const Int terrain_side_scripts_before_new_map = countSideScripts(sides_list);
 
 	ok = expect(terrain_load_returned,
 		"original W3DTerrainLogic::loadMap(false) should load the promoted shipped map") && ok;
@@ -904,12 +1085,52 @@ int main()
 		"original WorldHeightMap logical parse should populate map objects from the shipped map") && ok;
 	ok = expect(terrain_waypoints > 0,
 		"original TerrainLogic::loadMap should keep shipped map waypoint objects") && ok;
-	ok = expect(sides_list.getNumSides() > 0,
+	ok = expect(terrain_sides > 0,
 		"original SidesList parser should populate map sides during terrain load") && ok;
+	ok = expect(terrain_teams > 0,
+		"original SidesList parser should populate map teams during terrain load") && ok;
 	ok = expect(game_client.timeOfDayNotified(),
 		"original W3DTerrainLogic::loadMap should notify GameClient of the map time of day") && ok;
 	ok = expect(terrain_extent_hi_x == 3800 && terrain_extent_hi_y == 3800,
 		"original W3DTerrainLogic should report the MD_GLA03 3800x3800 terrain extent") && ok;
+
+	Bool sides_modified = sides_list.validateSides();
+	const Int validated_sides = sides_list.getNumSides();
+	const Int validated_teams = sides_list.getNumTeams();
+	const Int startup_player_template_count = player_template_store.getPlayerTemplateCount();
+	const Int startup_multiplayer_color_count = multiplayer_settings.getNumColors();
+
+	team_factory->reset();
+	player_list->newGame();
+	const Int populated_player_count = player_list->getPlayerCount();
+	Player *local_player = player_list->getLocalPlayer();
+	Player *neutral_player = player_list->getNeutralPlayer();
+	Team *local_default_team = local_player ? local_player->getDefaultTeam() : nullptr;
+	Team *neutral_default_team = neutral_player ? neutral_player->getDefaultTeam() : nullptr;
+	const Int side_scripts_before_script_new_map = countSideScripts(sides_list);
+	script_engine->newMap();
+	const Int side_scripts_after_script_new_map = countSideScripts(sides_list);
+
+	ok = expect(startup_player_template_count > 0,
+		"original PlayerTemplateStore should parse shipped player templates before player population") && ok;
+	ok = expect(startup_multiplayer_color_count > 0,
+		"original MultiplayerSettings should parse shipped multiplayer colors before player population") && ok;
+	ok = expect(validated_sides >= terrain_sides && validated_teams >= terrain_teams,
+		"original SidesList::validateSides should preserve or repair loaded shipped map sides and teams") && ok;
+	ok = expect(populated_player_count == validated_sides,
+		"original PlayerList::newGame should create one player for each validated shipped map side") && ok;
+	ok = expect(local_player != nullptr
+			&& local_player != neutral_player
+			&& local_player->getPlayerTemplate() != nullptr,
+		"original PlayerList::newGame should select a non-neutral local player with a real PlayerTemplate") && ok;
+	ok = expect(local_default_team != nullptr
+			&& TheTeamFactory->findTeam(local_default_team->getName()) == local_default_team,
+		"original TeamFactory::initFromSides should create the local player's default team") && ok;
+	ok = expect(neutral_default_team != nullptr
+			&& TheTeamFactory->findTeam(neutral_default_team->getName()) == neutral_default_team,
+		"original TeamFactory::initFromSides should create the neutral default team") && ok;
+	ok = expect(side_scripts_before_script_new_map == side_scripts_after_script_new_map,
+		"original ScriptEngine::newMap should scan loaded side scripts without discarding them") && ok;
 	WorldHeightMap::freeListOfMapObjects();
 
 	if (!ok) {
@@ -919,10 +1140,10 @@ int main()
 	std::cout
 		<< "{\"ok\":true,"
 		<< "\"path\":\"gamelogic-new-game-dispatch-runtime\","
-		<< "\"source\":\"GeneralsMD original GlobalData.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp\","
+		<< "\"source\":\"GeneralsMD original GlobalData.cpp/INI.cpp/INIAiData.cpp/INIMultiplayer.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp\","
 		<< "\"message\":\"MSG_NEW_GAME\","
 		<< "\"playerLookupIndex\":0,"
-		<< "\"playerCount\":" << player_list.getPlayerCount() << ","
+		<< "\"playerCount\":" << player_list->getPlayerCount() << ","
 		<< "\"neutralPlayerOwned\":true,"
 		<< "\"difficulty\":" << script_engine->getGlobalDifficulty() << ","
 		<< "\"blankLayoutCreates\":" << g_blank_layout_creates << ","
@@ -932,6 +1153,19 @@ int main()
 		<< "\"mapArchive\":\"" << jsonEscape(g_map_archive_path.str()) << "\","
 		<< "\"mapArchiveLoaded\":" << jsonBool(g_map_archive_loaded) << ","
 		<< "\"mapFileExists\":" << jsonBool(g_map_file_exists) << ","
+		<< "\"zhIniArchive\":\"" << jsonEscape(g_zh_ini_archive_path.str()) << "\","
+		<< "\"zhIniArchiveLoaded\":" << jsonBool(g_zh_ini_archive_loaded) << ","
+		<< "\"baseIniArchive\":\"" << jsonEscape(g_base_ini_archive_path.str()) << "\","
+		<< "\"baseIniArchiveLoaded\":" << jsonBool(g_base_ini_archive_loaded) << ","
+		<< "\"playerTemplateDefaultIniFileExists\":" << jsonBool(g_player_template_default_ini_file_exists) << ","
+		<< "\"playerTemplateIniFileExists\":" << jsonBool(g_player_template_ini_file_exists) << ","
+		<< "\"multiplayerDefaultIniFileExists\":" << jsonBool(g_multiplayer_default_ini_file_exists) << ","
+		<< "\"multiplayerIniFileExists\":" << jsonBool(g_multiplayer_ini_file_exists) << ","
+		<< "\"aiDataDefaultIniFileExists\":" << jsonBool(g_ai_data_default_ini_file_exists) << ","
+		<< "\"aiDataIniFileExists\":" << jsonBool(g_ai_data_ini_file_exists) << ","
+		<< "\"startupPlayerTemplateCount\":" << startup_player_template_count << ","
+		<< "\"startupMultiplayerColorCount\":" << startup_multiplayer_color_count << ","
+		<< "\"startupAiTeamSeconds\":" << ai.getAiData()->m_teamSeconds << ","
 		<< "\"seedBlankWindowArchiveLayout\":" << jsonBool(g_seed_blank_window_loaded_from_archive) << ","
 		<< "\"prepareBlankWindowArchiveLayout\":" << jsonBool(g_prepare_blank_window_loaded_from_archive) << ","
 		<< "\"blankWindowRoot\":\"BlankWindow.wnd:BlankWindow\","
@@ -957,8 +1191,9 @@ int main()
 		<< "\"terrainVisualLoadPath\":\"" << jsonEscape(terrain_visual.lastLoad().str()) << "\","
 		<< "\"terrainMapObjects\":" << terrain_map_objects << ","
 		<< "\"terrainWaypoints\":" << terrain_waypoints << ","
-		<< "\"terrainSides\":" << sides_list.getNumSides() << ","
-		<< "\"terrainTeams\":" << sides_list.getNumTeams() << ","
+		<< "\"terrainSides\":" << terrain_sides << ","
+		<< "\"terrainTeams\":" << terrain_teams << ","
+		<< "\"terrainSideScriptsBeforeNewMap\":" << terrain_side_scripts_before_new_map << ","
 		<< "\"terrainTimeOfDayNotified\":" << jsonBool(game_client.timeOfDayNotified()) << ","
 		<< "\"terrainTimeOfDay\":" << game_client.notifiedTimeOfDay() << ","
 		<< "\"terrainExtent\":{\"loX\":" << terrain_extent.lo.x
@@ -967,10 +1202,21 @@ int main()
 		<< ",\"hiX\":" << terrain_extent.hi.x
 		<< ",\"hiY\":" << terrain_extent.hi.y
 		<< ",\"hiZ\":" << terrain_extent.hi.z << "},"
+		<< "\"sidesValidateModified\":" << jsonBool(sides_modified) << ","
+		<< "\"validatedSides\":" << validated_sides << ","
+		<< "\"validatedTeams\":" << validated_teams << ","
+		<< "\"populatedPlayerCount\":" << populated_player_count << ","
+		<< "\"localPlayerIndex\":" << (local_player ? local_player->getPlayerIndex() : -1) << ","
+		<< "\"localPlayerSide\":\"" << jsonEscape(local_player && local_player->getPlayerTemplate()
+			? local_player->getPlayerTemplate()->getSide().str() : "") << "\","
+		<< "\"localDefaultTeam\":\"" << jsonEscape(local_default_team ? local_default_team->getName().str() : "") << "\","
+		<< "\"neutralDefaultTeam\":\"" << jsonEscape(neutral_default_team ? neutral_default_team->getName().str() : "") << "\","
+		<< "\"sideScriptsBeforeScriptNewMap\":" << side_scripts_before_script_new_map << ","
+		<< "\"sideScriptsAfterScriptNewMap\":" << side_scripts_after_script_new_map << ","
 		<< "\"runtimeBoundaries\":["
-		<< "\"post-terrain side/player/script population after original W3DTerrainLogic::loadMap(false)\"],"
-		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\",\"Win32BIGFileSystem MapsZH.big map archive\",\"W3DTerrainLogic::loadMap(false) MD_GLA03 map parse\",\"TerrainLogic::loadMap TerrainVisual::load handoff\",\"WorldHeightMap logical map-object list\",\"SidesList::ParseSidesDataChunk\"],"
-		<< "\"nextRequired\":\"continue startNewGame after original terrain load into side/player/script population\"}"
+		<< "\"radar/partition/ghost/terrain-newMap/object-spawn path after original side/player/script population\"],"
+		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\",\"Win32BIGFileSystem MapsZH.big map archive\",\"Win32BIGFileSystem INIZH.big and INI.big startup data archives\",\"INI::load Multiplayer.ini, Science.ini, AIData.ini, and PlayerTemplate.ini\",\"MultiplayerSettings shipped color table\",\"ScienceStore shipped science table\",\"AI shipped AIData table\",\"PlayerTemplateStore shipped player templates\",\"W3DTerrainLogic::loadMap(false) MD_GLA03 map parse\",\"TerrainLogic::loadMap TerrainVisual::load handoff\",\"WorldHeightMap logical map-object list\",\"SidesList::ParseSidesDataChunk\",\"SidesList::validateSides\",\"AIPlayer construction for non-human sides\",\"TeamFactory::reset/initFromSides\",\"PlayerList::newGame side population\",\"ScriptEngine::newMap side script scan\"],"
+		<< "\"nextRequired\":\"continue startNewGame after side/player/script population into radar/partition/ghost/terrain newMap and map object spawning\"}"
 		<< "\n";
 
 	return 0;

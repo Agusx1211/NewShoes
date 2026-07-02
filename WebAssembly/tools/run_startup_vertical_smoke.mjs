@@ -410,14 +410,21 @@ const steps = [
       expect(payload.path === 'gamelogic-new-game-dispatch-runtime',
         'GameLogic new-game runtime smoke emitted the wrong path');
       expect(typeof payload.source === 'string'
-          && payload.source.includes('GlobalData.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/GameLogic.cpp/GameLogicDispatch.cpp')
+          && payload.source.includes('GlobalData.cpp/INI.cpp/INIAiData.cpp/INIMultiplayer.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GameLogic.cpp/GameLogicDispatch.cpp')
           && payload.source.includes('GameWindowManagerScript.cpp/HeaderTemplate.cpp')
           && payload.source.includes('TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp'),
-        'GameLogic new-game runtime smoke did not link the original GlobalData/PlayerList/GameLogic/WindowLayout/Terrain parser sources');
+        'GameLogic new-game runtime smoke did not link the original GlobalData/INI/AI/PlayerList/GameLogic/WindowLayout/Terrain parser sources');
       expect(payload.message === 'MSG_NEW_GAME' && payload.playerLookupIndex === 0,
         'GameLogic new-game runtime smoke did not process the expected MSG_NEW_GAME player lookup');
-      expect(payload.playerCount === 1 && payload.neutralPlayerOwned === true,
-        'GameLogic new-game runtime smoke did not prove original PlayerList neutral-player ownership');
+      expect(payload.playerCount === 11
+          && payload.populatedPlayerCount === payload.validatedSides
+          && payload.validatedSides === 11
+          && payload.neutralPlayerOwned === true
+          && payload.localPlayerIndex === 2
+          && payload.localPlayerSide === 'GLA'
+          && payload.localDefaultTeam === 'teamThePlayer'
+          && payload.neutralDefaultTeam === 'team',
+        'GameLogic new-game runtime smoke did not prove original PlayerList/TeamFactory side population');
       expect(payload.difficulty === 2
           && payload.blankLayoutCreates === 2
           && payload.shellActive === false
@@ -446,6 +453,19 @@ const steps = [
       expect(payload.mapArchive === 'artifacts/real-assets/MapsZH.big'
           && payload.mapArchiveLoaded === true
           && payload.mapFileExists === true
+          && payload.zhIniArchive === 'artifacts/real-assets/INIZH.big'
+          && payload.zhIniArchiveLoaded === true
+          && payload.baseIniArchive === 'artifacts/real-assets/INI.big'
+          && payload.baseIniArchiveLoaded === true
+          && payload.playerTemplateDefaultIniFileExists === true
+          && payload.playerTemplateIniFileExists === true
+          && payload.multiplayerDefaultIniFileExists === true
+          && payload.multiplayerIniFileExists === true
+          && payload.aiDataDefaultIniFileExists === true
+          && payload.aiDataIniFileExists === true
+          && payload.startupPlayerTemplateCount === 15
+          && payload.startupMultiplayerColorCount === 8
+          && payload.startupAiTeamSeconds === 10
           && payload.terrainLoadMap === 'Maps\\MD_GLA03\\MD_GLA03.map'
           && payload.terrainLoadReturned === true
           && payload.terrainSourceFilename === 'Maps\\MD_GLA03\\MD_GLA03.map'
@@ -454,13 +474,18 @@ const steps = [
           && payload.terrainVisualLoadPath === 'Maps\\MD_GLA03\\MD_GLA03.map'
           && payload.terrainMapObjects > 0
           && payload.terrainWaypoints > 0
-          && payload.terrainSides > 0
-          && payload.terrainTeams > 0
+          && payload.terrainSides === 11
+          && payload.terrainTeams === 97
+          && payload.terrainSideScriptsBeforeNewMap === 465
+          && payload.sidesValidateModified === false
+          && payload.validatedTeams === 97
+          && payload.sideScriptsBeforeScriptNewMap === 465
+          && payload.sideScriptsAfterScriptNewMap === 465
           && payload.terrainTimeOfDayNotified === true
           && payload.terrainExtent?.hiX === 3800
           && payload.terrainExtent?.hiY === 3800,
-        'GameLogic new-game runtime smoke did not prove original W3DTerrainLogic MD_GLA03 load ownership');
-      expect(payload.runtimeBoundaries?.includes('post-terrain side/player/script population after original W3DTerrainLogic::loadMap(false)')
+        'GameLogic new-game runtime smoke did not prove original W3DTerrainLogic/INI/player/script MD_GLA03 load ownership');
+      expect(payload.runtimeBoundaries?.includes('radar/partition/ghost/terrain-newMap/object-spawn path after original side/player/script population')
           && !payload.runtimeBoundaries?.includes('focused in-memory BlankWindow layout adapter')
           && !payload.runtimeBoundaries?.includes('focused linker wrap for PlayerList::getNthPlayer before MSG_NEW_GAME switch')
           && !payload.runtimeBoundaries?.includes('deferred terrain/player/script load after archive-backed BlankWindow')
@@ -476,11 +501,22 @@ const steps = [
           && payload.originalOwners?.includes('GameWindowManager::winCreateLayout BlankWindow archive parse')
           && payload.originalOwners?.includes('Shell::hideShell')
           && payload.originalOwners?.includes('Win32BIGFileSystem MapsZH.big map archive')
+          && payload.originalOwners?.includes('Win32BIGFileSystem INIZH.big and INI.big startup data archives')
+          && payload.originalOwners?.includes('INI::load Multiplayer.ini, Science.ini, AIData.ini, and PlayerTemplate.ini')
+          && payload.originalOwners?.includes('MultiplayerSettings shipped color table')
+          && payload.originalOwners?.includes('ScienceStore shipped science table')
+          && payload.originalOwners?.includes('AI shipped AIData table')
+          && payload.originalOwners?.includes('PlayerTemplateStore shipped player templates')
           && payload.originalOwners?.includes('W3DTerrainLogic::loadMap(false) MD_GLA03 map parse')
           && payload.originalOwners?.includes('TerrainLogic::loadMap TerrainVisual::load handoff')
           && payload.originalOwners?.includes('WorldHeightMap logical map-object list')
-          && payload.originalOwners?.includes('SidesList::ParseSidesDataChunk'),
-        'GameLogic new-game runtime smoke did not report original GlobalData/PlayerList/ScriptEngine/Shell/GameWindowManager/Terrain ownership');
+          && payload.originalOwners?.includes('SidesList::ParseSidesDataChunk')
+          && payload.originalOwners?.includes('SidesList::validateSides')
+          && payload.originalOwners?.includes('AIPlayer construction for non-human sides')
+          && payload.originalOwners?.includes('TeamFactory::reset/initFromSides')
+          && payload.originalOwners?.includes('PlayerList::newGame side population')
+          && payload.originalOwners?.includes('ScriptEngine::newMap side script scan'),
+        'GameLogic new-game runtime smoke did not report original GlobalData/INI/AI/PlayerList/ScriptEngine/Shell/GameWindowManager/Terrain ownership');
     },
   },
 ];
@@ -513,13 +549,13 @@ console.log(JSON.stringify({
     'browser boot constructs original W3DParticleSystemManager, runs ParticleSystemManager::init() against Data\\INI\\ParticleSystem.ini, and proves shipped particle template lookups through the public manager API',
     'archive-backed startup mounts all shipped Object INI definitions and proves original W3DThingFactory parses representative unit templates through the real ThingFactory/INI path while the first unowned factory remains createFunctionLexicon',
     'source-pinned original GameLogic MSG_NEW_GAME dispatch frontier after CommandList handoff',
-    'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, first-call startNewGame(FALSE) deferral, MapsZH.big MD_GLA03 promotion, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, and TerrainLogic->TerrainVisual load handoff',
+    'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, first-call startNewGame(FALSE) deferral, MapsZH.big MD_GLA03 promotion, INIZH/INI startup data parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, AIPlayer construction, TeamFactory::initFromSides, PlayerList::newGame, and ScriptEngine::newMap',
   ],
   nextRequired: [
     'replace the remaining base FunctionLexicon callback owner groups, starting with non-network owners such as PopupReplay score-screen-dependent System/Update, QuitMenuSystem, ScoreScreen, and broader ControlBarSystem/LeftHUDInput callbacks only when their real owners are runtime-owned',
     'advance the next vertical startup path outside the already-proven shell menu slice',
     'advance the post-particle startup data stores toward createThingFactory once createFunctionLexicon is fully owned',
-    'continue startNewGame after original terrain load into side/player/script population',
+    'continue startNewGame after side/player/script population into radar/partition/ghost/terrain newMap and map object spawning',
   ],
   sourceChecks: sourceResults.map(result => result.name),
   browserChecks: browserResults.map(result => result.name),
