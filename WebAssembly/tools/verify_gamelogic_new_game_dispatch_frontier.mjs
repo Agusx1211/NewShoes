@@ -364,8 +364,48 @@ const startLines = expectOrderedInBody(
       label: "terrain logic new map",
       pattern: /TheTerrainLogic->newMap\s*\(\s*loadingSaveGame\s*\)\s*;/,
     },
+    {
+      label: "bridge-like map-object scan",
+      pattern: /for\s*\(\s*pMapObj\s*=\s*MapObject::getFirstMapObject\s*\(\s*\)\s*;\s*pMapObj\s*;\s*pMapObj\s*=\s*pMapObj->getNext\s*\(\s*\)\s*\)/,
+    },
+    {
+      label: "skip terrain-owned road and bridge flags",
+      pattern: /pMapObj->getFlag\s*\(\s*FLAG_BRIDGE_FLAGS\s*\)\s*\|\|\s*pMapObj->getFlag\s*\(\s*FLAG_ROAD_FLAGS\s*\)/,
+    },
+    {
+      label: "map-object thing template lookup",
+      pattern: /thingTemplate\s*=\s*pMapObj->getThingTemplate\s*\(\s*\)\s*;/,
+    },
+    {
+      label: "bridge template classification",
+      pattern: /thingTemplate->isBridge\s*\(\s*\)/,
+    },
+    {
+      label: "walk-on-wall classification",
+      pattern: /thingTemplate->isKindOf\s*\(\s*KINDOF_WALK_ON_TOP_OF_WALL\s*\)/,
+    },
+    {
+      label: "bridge-like object creation",
+      pattern: /TheThingFactory->newObject\s*\(\s*thingTemplate\s*,\s*team\s*\)/,
+    },
+    {
+      label: "bridge object terrain handoff",
+      pattern: /TheTerrainLogic->addLandmarkBridgeToLogic\s*\(\s*obj\s*\)\s*;/,
+    },
+    {
+      label: "wall object pathfinder handoff",
+      pattern: /TheAI->pathfinder\s*\(\s*\)->addWallPiece\s*\(\s*obj\s*\)\s*;/,
+    },
+    {
+      label: "radar refresh terrain",
+      pattern: /TheRadar->refreshTerrain\s*\(\s*TheTerrainLogic\s*\)\s*;/,
+    },
+    {
+      label: "pathfinder new map",
+      pattern: /TheAI->pathfinder\s*\(\s*\)->newMap\s*\(\s*\)\s*;/,
+    },
   ],
-  "GameLogic::startNewGame first-call deferral and post-radar partition handoff",
+  "GameLogic::startNewGame first-call deferral, post-radar partition handoff, bridge-like scan, radar refresh, and pathfinder handoff",
 );
 
 const targetSources = cmakeInvocationBlock(
@@ -901,30 +941,70 @@ const runtimeBridgeBufferProofLine = lineOf(
   /terrain_bridge_buffer_installed[\s\S]*terrain_bridge_buffer_initialized[\s\S]*terrain_bridge_point1_objects\s*==\s*0[\s\S]*terrain_bridge_buffer_bridges_after_new_map\s*==\s*terrain_bridge_point1_objects[\s\S]*terrain_bridge_buffer_vertices_after_new_map\s*==\s*0[\s\S]*terrain_bridge_buffer_indices_after_new_map\s*==\s*0[\s\S]*terrain_logic_bridges_after_new_map\s*==\s*terrain_bridge_point1_objects[\s\S]*terrain_bridge_damage_states_changed_after_new_map/,
   "runtime smoke original W3DBridgeBuffer::loadBridges empty-map scan proof",
 );
+const runtimeBridgeLikeScanFunctionLine = lineOf(
+  runtimeSmoke,
+  /BridgeLikeMapObjectScan\s+scanBridgeLikeMapObjectsForStartup\s*\(\s*\)/,
+  "runtime smoke bridge-like map-object scan helper",
+);
+const runtimeBridgeLikeClassificationLine = lineOf(
+  runtimeSmoke,
+  /thing_template->isBridge\s*\(\s*\)[\s\S]*thing_template->isKindOf\s*\(\s*KINDOF_WALK_ON_TOP_OF_WALL\s*\)/,
+  "runtime smoke bridge-like map-object classification",
+);
+const runtimeBridgeLikeScanCallLine = lineOf(
+  runtimeSmoke,
+  /bridge_like_map_object_scan\s*=\s*scanBridgeLikeMapObjectsForStartup\s*\(\s*\)\s*;/,
+  "runtime smoke bridge-like map-object scan call",
+);
+const runtimeBridgeLikeScanProofLine = lineOf(
+  runtimeSmoke,
+  /bridge_like_map_object_scan_called[\s\S]*bridge_like_map_object_scan\.scanned\s*==\s*terrain_map_objects[\s\S]*bridge_like_map_object_scan\.skippedSpecialTerrainObjects\s*==[\s\S]*bridge_like_map_object_special_flag_expected[\s\S]*bridge_like_map_object_scan_accounted\s*==\s*bridge_like_map_object_scan\.scanned[\s\S]*bridge_like_map_object_scan\.bridgeLikeTemplates\s*==\s*0[\s\S]*radar_refresh_terrain_after_bridge_scan/,
+  "runtime smoke ordered bridge-like map-object no-candidate scan proof",
+);
+const runtimeRadarRefreshTerrainLine = lineOf(
+  runtimeSmoke,
+  /TheRadar->refreshTerrain\s*\(\s*TheTerrainLogic\s*\)\s*;/,
+  "runtime smoke Radar::refreshTerrain bridge-scan handoff",
+);
 const runtimePathfinderNewMapLine = lineOf(
   runtimeSmoke,
   /pathfinder->newMap\s*\(\s*\)\s*;/,
-  "runtime smoke direct original Pathfinder::newMap call",
+  "runtime smoke ordered original Pathfinder::newMap call",
 );
 const runtimePathfinderProofLine = lineOf(
   runtimeSmoke,
-  /pathfinder_expected_extent_x\s*>\s*0[\s\S]*pathfinder_new_map_called[\s\S]*pathfinder_extent_x_after_new_map\s*==\s*pathfinder_expected_extent_x[\s\S]*pathfinder_extent_y_after_new_map\s*==\s*pathfinder_expected_extent_y[\s\S]*pathfinder_center_ground_cell_ready/,
-  "runtime smoke original Pathfinder::newMap grid proof",
+  /pathfinder_expected_extent_x\s*>\s*0[\s\S]*pathfinder_new_map_ordered_after_bridge_scan[\s\S]*pathfinder_extent_x_after_new_map\s*==\s*pathfinder_expected_extent_x[\s\S]*pathfinder_extent_y_after_new_map\s*==\s*pathfinder_expected_extent_y[\s\S]*pathfinder_center_ground_cell_ready/,
+  "runtime smoke original Pathfinder::newMap ordered grid proof",
 );
 const runtimeBridgeOriginalOwnerLine = lineOf(
   runtimeSmoke,
   /W3DBridgeBuffer::loadBridges empty MD_GLA03 bridge scan/,
   "runtime smoke W3DBridgeBuffer original-owner JSON",
 );
+const runtimeBridgeLikeOriginalOwnerLine = lineOf(
+  runtimeSmoke,
+  /GameLogic bridge-like map-object scan ordered after terrain newMap/,
+  "runtime smoke bridge-like map-object scan original-owner JSON",
+);
+const runtimeRadarRefreshOriginalOwnerLine = lineOf(
+  runtimeSmoke,
+  /Radar::refreshTerrain after bridge-like map-object scan/,
+  "runtime smoke Radar::refreshTerrain original-owner JSON",
+);
 const runtimePathfinderOriginalOwnerLine = lineOf(
   runtimeSmoke,
-  /Pathfinder::newMap terrain grid allocation\/classification/,
+  /Pathfinder::newMap terrain grid allocation\/classification ordered after bridge-like scan/,
   "runtime smoke Pathfinder original-owner JSON",
 );
 const runtimeBridgeBoundaryLine = lineOf(
   runtimeSmoke,
-  /bridge-like map object spawning remains focused ThingFactory\/Object ownership boundary after direct no-bridge W3DBridgeBuffer scan and Pathfinder::newMap grid proof/,
+  /bridge-like map-object creation remains focused ThingFactory\/Object ownership boundary after ordered no-candidate startup scan/,
   "runtime smoke next bridge-like map-object boundary JSON",
+);
+const runtimeBridgeNextRequiredLine = lineOf(
+  runtimeSmoke,
+  /load real object templates into gamelogic-new-game-dispatch-smoke and promote the bridge-like map-object creation branch when a map supplies bridge or walk-on-wall templates/,
+  "runtime smoke next bridge-like map-object creation requirement JSON",
 );
 const runtimeAiLine = lineOf(
   runtimeSmoke,
@@ -1160,6 +1240,17 @@ console.log(JSON.stringify({
       originalOwnerLine: runtimeBridgeOriginalOwnerLine,
       boundaryLine: runtimeBridgeBoundaryLine,
     },
+    bridgeLikeMapObjects: {
+      scanFunctionLine: runtimeBridgeLikeScanFunctionLine,
+      classificationLine: runtimeBridgeLikeClassificationLine,
+      scanCallLine: runtimeBridgeLikeScanCallLine,
+      noCandidateProofLine: runtimeBridgeLikeScanProofLine,
+      radarRefreshTerrainLine: runtimeRadarRefreshTerrainLine,
+      originalOwnerLine: runtimeBridgeLikeOriginalOwnerLine,
+      radarRefreshOriginalOwnerLine: runtimeRadarRefreshOriginalOwnerLine,
+      boundaryLine: runtimeBridgeBoundaryLine,
+      nextRequiredLine: runtimeBridgeNextRequiredLine,
+    },
     pathfinder: {
       newMapLine: runtimePathfinderNewMapLine,
       gridProofLine: runtimePathfinderProofLine,
@@ -1189,11 +1280,11 @@ console.log(JSON.stringify({
     "MSG_NEW_GAME reads game mode, difficulty, rank points, and game speed arguments",
     "MSG_NEW_GAME applies the FPS limit, calls prepareNewGame, then calls startNewGame(FALSE)",
     "prepareNewGame owns original ScriptEngine difficulty, BlankWindow background, game-mode, pending-map, and original Shell::hideShell setup",
-    "startNewGame(FALSE) records the pristine map and defers the first call before terrain load",
+    "startNewGame(FALSE) records the pristine map, defers the first call before terrain load, then orders the original post-terrain bridge-like map-object scan, Radar::refreshTerrain, and Pathfinder::newMap sequence",
     "w3d-window-layout-script-smoke still uses a focused GameLogic shim and sentinel gameplay owners",
-    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/FunctionLexicon.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/TerrainTypes.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainRoads.cpp/SidesList.cpp plus the W3D terrain runtime and original DX8Wrapper/RenderObj support, then calls GameLogic::processCommandList at runtime through original GlobalData, FunctionLexicon, PlayerList, ScriptEngine, Shell, archive-backed BlankWindow ownership, MapsZH.big MD_GLA03 promotion, original default and Zero Hour startup INI/GameData parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, TeamFactory::initFromSides, PlayerList::newGame, AIPlayer construction, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, GhostObjectManager local-player index/reset, TerrainRoadCollection/TerrainTypeCollection render-map setup, original W3DTerrainLogic::newMap road-buffer and W3DBridgeBuffer::loadBridges handoff, TerrainLogic waypoint/water setup, and original Pathfinder::newMap grid allocation/classification",
+    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/FunctionLexicon.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/TerrainTypes.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainRoads.cpp/SidesList.cpp plus the W3D terrain runtime and original DX8Wrapper/RenderObj support, then calls GameLogic::processCommandList at runtime through original GlobalData, FunctionLexicon, PlayerList, ScriptEngine, Shell, archive-backed BlankWindow ownership, MapsZH.big MD_GLA03 promotion, original default and Zero Hour startup INI/GameData parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, TeamFactory::initFromSides, PlayerList::newGame, AIPlayer construction, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, GhostObjectManager local-player index/reset, TerrainRoadCollection/TerrainTypeCollection render-map setup, original W3DTerrainLogic::newMap road-buffer and W3DBridgeBuffer::loadBridges handoff, TerrainLogic waypoint/water setup, the ordered post-terrain bridge-like map-object no-candidate scan, Radar::refreshTerrain, and original Pathfinder::newMap grid allocation/classification",
   ],
   nextRequired: [
-    "promote the original post-terrain bridge-like map-object spawning loop that sits before Pathfinder::newMap, then replace the direct no-bridge pathfinder proof with the original ordered startNewGame sequence",
+    "load real object templates into gamelogic-new-game-dispatch-smoke and promote the bridge-like map-object creation branch when a map supplies bridge or walk-on-wall templates, then continue the original ordered startNewGame sequence beyond Pathfinder::newMap",
   ],
 }, null, 2));

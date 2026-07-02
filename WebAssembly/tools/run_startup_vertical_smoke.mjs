@@ -140,9 +140,14 @@ const sourceChecks = [
       expect(payload.runtimeTargetBoundary?.bridgeBuffer?.smokeDeferralHookLine > 0
           && payload.runtimeTargetBoundary.bridgeBuffer.installLine > 0
           && payload.runtimeTargetBoundary.bridgeBuffer.loadBridgesProofLine > 0
+          && payload.runtimeTargetBoundary?.bridgeLikeMapObjects?.scanFunctionLine > 0
+          && payload.runtimeTargetBoundary.bridgeLikeMapObjects.classificationLine > 0
+          && payload.runtimeTargetBoundary.bridgeLikeMapObjects.scanCallLine > 0
+          && payload.runtimeTargetBoundary.bridgeLikeMapObjects.noCandidateProofLine > 0
+          && payload.runtimeTargetBoundary.bridgeLikeMapObjects.radarRefreshTerrainLine > 0
           && payload.runtimeTargetBoundary?.pathfinder?.newMapLine > 0
           && payload.runtimeTargetBoundary.pathfinder.gridProofLine > 0,
-        'GameLogic new-game dispatch frontier did not prove startup W3DBridgeBuffer and Pathfinder::newMap ownership');
+        'GameLogic new-game dispatch frontier did not prove startup W3DBridgeBuffer, bridge-like scan, Radar::refreshTerrain, and Pathfinder::newMap ownership');
       expect(payload.runtimeTargetBoundary?.globalDataWritableSingletonLine > 0
           && payload.runtimeTargetBoundary?.globalDataMacroProofLine > 0
           && payload.runtimeTargetBoundary?.noLocalTheGlobalDataSingleton === true,
@@ -567,17 +572,32 @@ const steps = [
           && payload.terrainTimeOfDayNotified === true
           && payload.terrainExtent?.hiX === 3800
           && payload.terrainExtent?.hiY === 3800
+          && payload.bridgeLikeMapObjectDefaultTemplateAvailable === false
+          && payload.bridgeLikeMapObjectScanCalled === true
+          && payload.bridgeLikeMapObjectsScanned === payload.terrainMapObjects
+          && payload.bridgeLikeMapObjectsSkippedSpecialTerrainObjects === payload.bridgeLikeMapObjectsSpecialFlagExpected
+          && payload.bridgeLikeMapObjectsSpecialFlagExpected === payload.terrainRoadPoint1Objects + payload.terrainRoadPoint2Objects + payload.terrainBridgePoint1Objects + payload.terrainBridgePoint2Objects
+          && payload.bridgeLikeMapObjectsWithoutThingTemplate === payload.terrainMapObjects - payload.bridgeLikeMapObjectsSkippedSpecialTerrainObjects
+          && payload.bridgeLikeMapObjectsNonBridgeLikeTemplates === 0
+          && payload.bridgeLikeMapObjectBridgeTemplates === 0
+          && payload.bridgeLikeMapObjectWalkOnWallTemplates === 0
+          && payload.bridgeLikeMapObjectCandidates === 0
+          && payload.bridgeLikeMapObjectScanAccounted === payload.bridgeLikeMapObjectsScanned
+          && payload.bridgeLikeMapObjectCreationDeferred === true
+          && payload.radarRefreshTerrainCallsAfterBridgeScan === payload.radarRefreshTerrainCallsBeforeBridgeScan + 1
+          && payload.radarRefreshTerrainAfterBridgeScan === true
           && payload.pathfinderOwned === true
           && payload.pathfinderNewMapCalled === true
+          && payload.pathfinderNewMapOrderedAfterBridgeScan === true
           && payload.pathfinderExpectedExtentX > 0
           && payload.pathfinderExpectedExtentY > 0
           && payload.pathfinderExtentXAfterNewMap === payload.pathfinderExpectedExtentX
           && payload.pathfinderExtentYAfterNewMap === payload.pathfinderExpectedExtentY
           && payload.pathfinderCenterGroundCellReady === true,
-        'GameLogic new-game runtime smoke did not prove original W3DTerrainLogic/INI/player/script/Radar/Partition/GhostObject/W3DBridgeBuffer/Pathfinder MD_GLA03 load ownership');
+        'GameLogic new-game runtime smoke did not prove original W3DTerrainLogic/INI/player/script/Radar/Partition/GhostObject/W3DBridgeBuffer/bridge-like-scan/Pathfinder MD_GLA03 load ownership');
       expect(payload.runtimeBoundaries?.includes('InGameUI client-quiet remains focused UI boundary')
           && payload.runtimeBoundaries?.includes('OptionPreferences user preference getters remain focused non-network browser preference boundary')
-          && payload.runtimeBoundaries?.includes('bridge-like map object spawning remains focused ThingFactory/Object ownership boundary after direct no-bridge W3DBridgeBuffer scan and Pathfinder::newMap grid proof')
+          && payload.runtimeBoundaries?.includes('bridge-like map-object creation remains focused ThingFactory/Object ownership boundary after ordered no-candidate startup scan')
           && !payload.runtimeBoundaries?.includes('focused in-memory BlankWindow layout adapter')
           && !payload.runtimeBoundaries?.includes('focused linker wrap for PlayerList::getNthPlayer before MSG_NEW_GAME switch')
           && !payload.runtimeBoundaries?.includes('deferred terrain/player/script load after archive-backed BlankWindow')
@@ -619,7 +639,9 @@ const steps = [
           && payload.originalOwners?.includes('TerrainRoadCollection empty road table for W3DTerrainLogic::newMap road-buffer handoff')
           && payload.originalOwners?.includes('W3DTerrainLogic::newMap road-buffer handoff and TerrainLogic waypoint/water setup')
           && payload.originalOwners?.includes('W3DBridgeBuffer::loadBridges empty MD_GLA03 bridge scan')
-          && payload.originalOwners?.includes('Pathfinder::newMap terrain grid allocation/classification'),
+          && payload.originalOwners?.includes('GameLogic bridge-like map-object scan ordered after terrain newMap')
+          && payload.originalOwners?.includes('Radar::refreshTerrain after bridge-like map-object scan')
+          && payload.originalOwners?.includes('Pathfinder::newMap terrain grid allocation/classification ordered after bridge-like scan'),
         'GameLogic new-game runtime smoke did not report original GlobalData/INI/AI/PlayerList/ScriptEngine/Shell/GameWindowManager/Terrain/Partition ownership');
     },
   },
@@ -653,13 +675,13 @@ console.log(JSON.stringify({
     'browser boot constructs original W3DParticleSystemManager, runs ParticleSystemManager::init() against Data\\INI\\ParticleSystem.ini, and proves shipped particle template lookups through the public manager API',
     'archive-backed startup mounts all shipped Object INI definitions and proves original W3DThingFactory parses representative unit templates through the real ThingFactory/INI path while the first unowned factory remains createFunctionLexicon',
     'source-pinned original GameLogic MSG_NEW_GAME dispatch frontier after CommandList handoff',
-    'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, first-call startNewGame(FALSE) deferral, MapsZH.big MD_GLA03 promotion, INIZH/INI startup data plus default and Zero Hour GameData.ini parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, AIPlayer construction, TeamFactory::initFromSides, PlayerList::newGame, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, GhostObjectManager local-player index/reset, TerrainRoadCollection/TerrainTypeCollection render-map setup, original W3DTerrainLogic::newMap road-buffer and W3DBridgeBuffer::loadBridges handoff, TerrainLogic waypoint/water setup, and original Pathfinder::newMap grid allocation/classification',
+    'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, first-call startNewGame(FALSE) deferral, MapsZH.big MD_GLA03 promotion, INIZH/INI startup data plus default and Zero Hour GameData.ini parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, AIPlayer construction, TeamFactory::initFromSides, PlayerList::newGame, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, GhostObjectManager local-player index/reset, TerrainRoadCollection/TerrainTypeCollection render-map setup, original W3DTerrainLogic::newMap road-buffer and W3DBridgeBuffer::loadBridges handoff, TerrainLogic waypoint/water setup, the ordered post-terrain bridge-like map-object no-candidate scan, Radar::refreshTerrain, and original Pathfinder::newMap grid allocation/classification',
   ],
   nextRequired: [
     'replace the remaining base FunctionLexicon callback owner groups, starting with non-network owners such as PopupReplay score-screen-dependent System/Update, QuitMenuSystem, ScoreScreen, and broader ControlBarSystem/LeftHUDInput callbacks only when their real owners are runtime-owned',
     'advance the next vertical startup path outside the already-proven shell menu slice',
     'advance the post-particle startup data stores toward createThingFactory once createFunctionLexicon is fully owned',
-    'promote the original post-terrain bridge-like map-object spawning loop that sits before Pathfinder::newMap, then replace the direct no-bridge pathfinder proof with the original ordered startNewGame sequence',
+    'load real object templates into gamelogic-new-game-dispatch-smoke and promote the bridge-like map-object creation branch when a map supplies bridge or walk-on-wall templates, then continue the original ordered startNewGame sequence beyond Pathfinder::newMap',
   ],
   sourceChecks: sourceResults.map(result => result.name),
   browserChecks: browserResults.map(result => result.name),

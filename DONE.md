@@ -2250,6 +2250,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `startNewGame` sequence. Verified with
       `verify:gamelogic-new-game-dispatch-frontier`,
       `test:gamelogic-new-game-dispatch`, and `test:startup-vertical`.
+- [x] Promote the startup post-terrain bridge-like map-object scan before
+      `Pathfinder::newMap`. `gamelogic-new-game-dispatch-smoke` now runs the
+      original `GameLogic::startNewGame` ordering after
+      `W3DTerrainLogic::newMap(FALSE)`: scan the `WorldHeightMap`
+      `MapObject` list, skip terrain-owned road/bridge flags, classify
+      templates with `ThingTemplate::isBridge()` and
+      `KINDOF_WALK_ON_TOP_OF_WALL`, prove `MD_GLA03` has no startup-owned
+      bridge-like candidates because the remaining 1,501 map objects have no
+      resolved startup `ThingTemplate`, call original `Radar::refreshTerrain`,
+      then call original `Pathfinder::newMap`. The source frontier now pins
+      the full original creation branch through `TheThingFactory->newObject`,
+      `TerrainLogic::addLandmarkBridgeToLogic`, and
+      `Pathfinder::addWallPiece`; the remaining boundary is loading real
+      object templates into this startup runtime and promoting actual
+      bridge/wall object creation when a map supplies those templates.
+      Verified with `verify:gamelogic-new-game-dispatch-frontier` and
+      `test:gamelogic-new-game-dispatch`, and `test:startup-vertical`.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the

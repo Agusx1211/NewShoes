@@ -1247,11 +1247,16 @@ flow below.
       installs the original `W3DBridgeBuffer` in the startup runtime with
       startup-only deferred GPU buffer allocation, proves the empty
       `MD_GLA03` `W3DBridgeBuffer::loadBridges` scan and bridge damage-state
-      update, then directly calls original `Pathfinder::newMap` to prove the
-      loaded terrain grid allocation/classification. Next promote the original
-      post-terrain bridge-like map-object spawning loop that sits before
-      `Pathfinder::newMap`, then replace the direct no-bridge pathfinder proof
-      with the original ordered `startNewGame` sequence.
+      update, runs the original ordered post-terrain bridge-like map-object
+      scan over `WorldHeightMap`'s map-object list, proves `MD_GLA03` has no
+      startup-owned bridge or walk-on-wall object candidates yet, calls
+      original `Radar::refreshTerrain`, then calls original
+      `Pathfinder::newMap` to prove the loaded terrain grid
+      allocation/classification. Next load real object templates into
+      `gamelogic-new-game-dispatch-smoke` and promote the bridge-like
+      map-object creation branch when a map supplies bridge or walk-on-wall
+      templates, then continue the original ordered `startNewGame` sequence
+      beyond `Pathfinder::newMap`.
 - [ ] Retire the startup-only `W3DBridgeBuffer` GPU-buffer deferral hook once
       `gamelogic-new-game-dispatch-smoke` either runs with a browser/WebGL-backed
       D3D8 device or promotes bridge rendering/buffer allocation into the same

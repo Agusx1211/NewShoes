@@ -24,6 +24,7 @@
 #include "Common/Team.h"
 #include "Common/TerrainTypes.h"
 #include "Common/ThingFactory.h"
+#include "Common/ThingTemplate.h"
 #include "Common/UserPreferences.h"
 #include "GameClient/Display.h"
 #include "GameClient/GameClient.h"
@@ -447,6 +448,53 @@ Int countLogicBridges(const TerrainLogic &terrain_logic)
 		++count;
 	}
 	return count;
+}
+
+struct BridgeLikeMapObjectScan
+{
+	Int scanned = 0;
+	Int skippedSpecialTerrainObjects = 0;
+	Int withoutThingTemplate = 0;
+	Int nonBridgeLikeTemplates = 0;
+	Int bridgeTemplates = 0;
+	Int walkOnWallTemplates = 0;
+	Int bridgeLikeTemplates = 0;
+};
+
+BridgeLikeMapObjectScan scanBridgeLikeMapObjectsForStartup()
+{
+	BridgeLikeMapObjectScan scan;
+	for (MapObject *map_object = MapObject::getFirstMapObject();
+			map_object != nullptr;
+			map_object = map_object->getNext()) {
+		++scan.scanned;
+		if (map_object->getFlag(FLAG_BRIDGE_FLAGS) || map_object->getFlag(FLAG_ROAD_FLAGS)) {
+			++scan.skippedSpecialTerrainObjects;
+			continue;
+		}
+
+		const ThingTemplate *thing_template = map_object->getThingTemplate();
+		if (thing_template == nullptr) {
+			++scan.withoutThingTemplate;
+			continue;
+		}
+
+		Bool is_bridge = thing_template->isBridge();
+		Bool is_walk_on_wall = thing_template->isKindOf(KINDOF_WALK_ON_TOP_OF_WALL);
+		if (is_bridge) {
+			++scan.bridgeTemplates;
+		}
+		if (is_walk_on_wall) {
+			++scan.walkOnWallTemplates;
+		}
+		if (!is_bridge && !is_walk_on_wall) {
+			++scan.nonBridgeLikeTemplates;
+			continue;
+		}
+
+		++scan.bridgeLikeTemplates;
+	}
+	return scan;
 }
 
 Int countScriptsInList(ScriptList *script_list)
@@ -898,6 +946,12 @@ public:
 			g_radar_fogged_set_calls,
 			g_radar_clear_set_calls);
 	}
+	void refreshTerrain(TerrainLogic *terrain) override
+	{
+		++m_refreshTerrainCalls;
+		m_lastRefreshTerrain = terrain;
+		Radar::refreshTerrain(terrain);
+	}
 
 	Bool hasRadarWindow(GameWindow *window) { return isRadarWindow(window); }
 	Region3D mapExtent() const { return m_mapExtent; }
@@ -905,6 +959,12 @@ public:
 	Real ySample() const { return m_ySample; }
 	Real terrainAverageZ() const { return m_terrainAverageZ; }
 	Real waterAverageZ() const { return m_waterAverageZ; }
+	Int refreshTerrainCalls() const { return m_refreshTerrainCalls; }
+	TerrainLogic *lastRefreshTerrain() const { return m_lastRefreshTerrain; }
+
+private:
+	Int m_refreshTerrainCalls = 0;
+	TerrainLogic *m_lastRefreshTerrain = nullptr;
 };
 
 class SmokeVictoryConditions : public VictoryConditionsInterface
@@ -1653,6 +1713,29 @@ int main()
 		terrain_logic.anyBridgesDamageStatesChanged();
 	const Int terrain_water_grid_calls_after_new_map = terrain_visual.waterGridEnableCalls();
 	const Bool terrain_water_grid_last_enable = terrain_visual.lastWaterGridEnable();
+	const Bool bridge_like_map_object_default_template_available =
+		thing_factory.findTemplate(AsciiString("DefaultThingTemplate"), FALSE) != nullptr;
+	const Int radar_refresh_terrain_calls_before_bridge_scan = radar->refreshTerrainCalls();
+	BridgeLikeMapObjectScan bridge_like_map_object_scan = {};
+	Bool bridge_like_map_object_scan_called = FALSE;
+	if (terrain_new_map_called) {
+		bridge_like_map_object_scan = scanBridgeLikeMapObjectsForStartup();
+		bridge_like_map_object_scan_called = TRUE;
+		TheRadar->refreshTerrain(TheTerrainLogic);
+	}
+	const Int radar_refresh_terrain_calls_after_bridge_scan = radar->refreshTerrainCalls();
+	const Bool radar_refresh_terrain_after_bridge_scan =
+		radar_refresh_terrain_calls_after_bridge_scan ==
+			radar_refresh_terrain_calls_before_bridge_scan + 1
+		&& radar->lastRefreshTerrain() == &terrain_logic;
+	const Int bridge_like_map_object_scan_accounted =
+		bridge_like_map_object_scan.skippedSpecialTerrainObjects
+		+ bridge_like_map_object_scan.withoutThingTemplate
+		+ bridge_like_map_object_scan.nonBridgeLikeTemplates
+		+ bridge_like_map_object_scan.bridgeLikeTemplates;
+	const Int bridge_like_map_object_special_flag_expected =
+		terrain_road_point1_objects + terrain_road_point2_objects
+		+ terrain_bridge_point1_objects + terrain_bridge_point2_objects;
 	Region3D pathfinder_expected_extent_region = {};
 	terrain_logic.getMaximumPathfindExtent(&pathfinder_expected_extent_region);
 	const Int pathfinder_expected_extent_x =
@@ -1661,10 +1744,16 @@ int main()
 		REAL_TO_INT_FLOOR(pathfinder_expected_extent_region.hi.y / PATHFIND_CELL_SIZE_F) - 1;
 	Pathfinder *pathfinder = TheAI != nullptr ? TheAI->pathfinder() : nullptr;
 	Bool pathfinder_new_map_called = FALSE;
-	if (terrain_new_map_called && pathfinder != nullptr) {
+	if (bridge_like_map_object_scan_called
+			&& radar_refresh_terrain_after_bridge_scan
+			&& pathfinder != nullptr) {
 		pathfinder->newMap();
 		pathfinder_new_map_called = TRUE;
 	}
+	const Bool pathfinder_new_map_ordered_after_bridge_scan =
+		bridge_like_map_object_scan_called
+		&& radar_refresh_terrain_after_bridge_scan
+		&& pathfinder_new_map_called;
 	const ICoord2D *pathfinder_extent_after_new_map =
 		pathfinder != nullptr ? pathfinder->getExtent() : nullptr;
 	const Int pathfinder_extent_x_after_new_map =
@@ -1791,14 +1880,24 @@ int main()
 				first_waypoint_ground_height_after_new_map,
 				0.001f),
 		"original W3DTerrainLogic::newMap should hand the loaded map to BaseHeightMap road/bridge loaders and run TerrainLogic waypoint/water setup") && ok;
+	ok = expect(bridge_like_map_object_scan_called
+			&& bridge_like_map_object_scan.scanned == terrain_map_objects
+			&& bridge_like_map_object_scan.skippedSpecialTerrainObjects ==
+				bridge_like_map_object_special_flag_expected
+			&& bridge_like_map_object_scan_accounted == bridge_like_map_object_scan.scanned
+			&& bridge_like_map_object_scan.bridgeLikeTemplates == 0
+			&& bridge_like_map_object_scan.bridgeTemplates == 0
+			&& bridge_like_map_object_scan.walkOnWallTemplates == 0
+			&& radar_refresh_terrain_after_bridge_scan,
+		"original post-terrain bridge-like map-object scan should run before Radar::refreshTerrain and find no startup-owned bridge-like object candidates on MD_GLA03") && ok;
 	ok = expect(pathfinder != nullptr
 			&& pathfinder_expected_extent_x > 0
 			&& pathfinder_expected_extent_y > 0
-			&& pathfinder_new_map_called
+			&& pathfinder_new_map_ordered_after_bridge_scan
 			&& pathfinder_extent_x_after_new_map == pathfinder_expected_extent_x
 			&& pathfinder_extent_y_after_new_map == pathfinder_expected_extent_y
 			&& pathfinder_center_ground_cell_ready,
-		"original Pathfinder::newMap should allocate and classify the loaded terrain grid after terrain newMap") && ok;
+		"original Pathfinder::newMap should allocate and classify the loaded terrain grid after the bridge-like scan and radar terrain refresh") && ok;
 	WorldHeightMap::freeListOfMapObjects();
 
 	if (!ok) {
@@ -1967,8 +2066,24 @@ int main()
 		<< "\"terrainFirstWaypointZBeforeNewMap\":" << first_waypoint_location_before_new_map.z << ","
 		<< "\"terrainFirstWaypointZAfterNewMap\":" << first_waypoint_location_after_new_map.z << ","
 		<< "\"terrainFirstWaypointGroundHeightAfterNewMap\":" << first_waypoint_ground_height_after_new_map << ","
+		<< "\"bridgeLikeMapObjectDefaultTemplateAvailable\":" << jsonBool(bridge_like_map_object_default_template_available) << ","
+		<< "\"bridgeLikeMapObjectScanCalled\":" << jsonBool(bridge_like_map_object_scan_called) << ","
+		<< "\"bridgeLikeMapObjectsScanned\":" << bridge_like_map_object_scan.scanned << ","
+		<< "\"bridgeLikeMapObjectsSkippedSpecialTerrainObjects\":" << bridge_like_map_object_scan.skippedSpecialTerrainObjects << ","
+		<< "\"bridgeLikeMapObjectsSpecialFlagExpected\":" << bridge_like_map_object_special_flag_expected << ","
+		<< "\"bridgeLikeMapObjectsWithoutThingTemplate\":" << bridge_like_map_object_scan.withoutThingTemplate << ","
+		<< "\"bridgeLikeMapObjectsNonBridgeLikeTemplates\":" << bridge_like_map_object_scan.nonBridgeLikeTemplates << ","
+		<< "\"bridgeLikeMapObjectBridgeTemplates\":" << bridge_like_map_object_scan.bridgeTemplates << ","
+		<< "\"bridgeLikeMapObjectWalkOnWallTemplates\":" << bridge_like_map_object_scan.walkOnWallTemplates << ","
+		<< "\"bridgeLikeMapObjectCandidates\":" << bridge_like_map_object_scan.bridgeLikeTemplates << ","
+		<< "\"bridgeLikeMapObjectScanAccounted\":" << bridge_like_map_object_scan_accounted << ","
+		<< "\"bridgeLikeMapObjectCreationDeferred\":" << jsonBool(bridge_like_map_object_scan.bridgeLikeTemplates == 0) << ","
+		<< "\"radarRefreshTerrainCallsBeforeBridgeScan\":" << radar_refresh_terrain_calls_before_bridge_scan << ","
+		<< "\"radarRefreshTerrainCallsAfterBridgeScan\":" << radar_refresh_terrain_calls_after_bridge_scan << ","
+		<< "\"radarRefreshTerrainAfterBridgeScan\":" << jsonBool(radar_refresh_terrain_after_bridge_scan) << ","
 		<< "\"pathfinderOwned\":" << jsonBool(pathfinder != nullptr) << ","
 		<< "\"pathfinderNewMapCalled\":" << jsonBool(pathfinder_new_map_called) << ","
+		<< "\"pathfinderNewMapOrderedAfterBridgeScan\":" << jsonBool(pathfinder_new_map_ordered_after_bridge_scan) << ","
 		<< "\"pathfinderExpectedExtentX\":" << pathfinder_expected_extent_x << ","
 		<< "\"pathfinderExpectedExtentY\":" << pathfinder_expected_extent_y << ","
 		<< "\"pathfinderExtentXAfterNewMap\":" << pathfinder_extent_x_after_new_map << ","
@@ -1979,9 +2094,9 @@ int main()
 		<< "\"runtimeBoundaries\":["
 		<< "\"InGameUI client-quiet remains focused UI boundary\","
 		<< "\"OptionPreferences user preference getters remain focused non-network browser preference boundary\","
-		<< "\"bridge-like map object spawning remains focused ThingFactory/Object ownership boundary after direct no-bridge W3DBridgeBuffer scan and Pathfinder::newMap grid proof\"],"
-		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\",\"Win32BIGFileSystem MapsZH.big map archive\",\"Win32BIGFileSystem INIZH.big and INI.big startup data archives\",\"INI::load Default/GameData.ini, GameData.ini, Multiplayer.ini, Science.ini, AIData.ini, and PlayerTemplate.ini\",\"GlobalData::parseGameDataDefinition production partition cell size\",\"WeaponBonusSet::parseWeaponBonusSetPtr GameData parser\",\"MultiplayerSettings shipped color table\",\"ScienceStore shipped science table\",\"AI shipped AIData table\",\"PlayerTemplateStore shipped player templates\",\"W3DTerrainLogic::loadMap(false) MD_GLA03 map parse\",\"TerrainLogic::loadMap TerrainVisual::load handoff\",\"WorldHeightMap logical map-object list\",\"SidesList::ParseSidesDataChunk\",\"SidesList::validateSides\",\"AIPlayer construction for non-human sides\",\"TeamFactory::reset/initFromSides\",\"PlayerList::newGame side population\",\"ScriptEngine::newMap side script scan\",\"Radar::newMap terrain extent and LeftHUD ownership\",\"GameLogic width/height from terrain extent\",\"PartitionManager::init loaded-map cell grid\",\"PartitionManager::refreshShroudForLocalPlayer display/radar shroud refresh\",\"GhostObjectManager local-player index and reset\",\"TerrainTypeCollection empty texture-class lookup for render heightmap parsing\",\"TerrainRoadCollection empty road table for W3DTerrainLogic::newMap road-buffer handoff\",\"W3DTerrainLogic::newMap road-buffer handoff and TerrainLogic waypoint/water setup\",\"W3DBridgeBuffer::loadBridges empty MD_GLA03 bridge scan\",\"Pathfinder::newMap terrain grid allocation/classification\"],"
-		<< "\"nextRequired\":\"promote the original post-terrain bridge-like map-object spawning loop that sits before Pathfinder::newMap, then replace the direct no-bridge pathfinder proof with the original ordered startNewGame sequence\"}"
+		<< "\"bridge-like map-object creation remains focused ThingFactory/Object ownership boundary after ordered no-candidate startup scan\"],"
+		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\",\"Win32BIGFileSystem MapsZH.big map archive\",\"Win32BIGFileSystem INIZH.big and INI.big startup data archives\",\"INI::load Default/GameData.ini, GameData.ini, Multiplayer.ini, Science.ini, AIData.ini, and PlayerTemplate.ini\",\"GlobalData::parseGameDataDefinition production partition cell size\",\"WeaponBonusSet::parseWeaponBonusSetPtr GameData parser\",\"MultiplayerSettings shipped color table\",\"ScienceStore shipped science table\",\"AI shipped AIData table\",\"PlayerTemplateStore shipped player templates\",\"W3DTerrainLogic::loadMap(false) MD_GLA03 map parse\",\"TerrainLogic::loadMap TerrainVisual::load handoff\",\"WorldHeightMap logical map-object list\",\"SidesList::ParseSidesDataChunk\",\"SidesList::validateSides\",\"AIPlayer construction for non-human sides\",\"TeamFactory::reset/initFromSides\",\"PlayerList::newGame side population\",\"ScriptEngine::newMap side script scan\",\"Radar::newMap terrain extent and LeftHUD ownership\",\"GameLogic width/height from terrain extent\",\"PartitionManager::init loaded-map cell grid\",\"PartitionManager::refreshShroudForLocalPlayer display/radar shroud refresh\",\"GhostObjectManager local-player index and reset\",\"TerrainTypeCollection empty texture-class lookup for render heightmap parsing\",\"TerrainRoadCollection empty road table for W3DTerrainLogic::newMap road-buffer handoff\",\"W3DTerrainLogic::newMap road-buffer handoff and TerrainLogic waypoint/water setup\",\"W3DBridgeBuffer::loadBridges empty MD_GLA03 bridge scan\",\"GameLogic bridge-like map-object scan ordered after terrain newMap\",\"Radar::refreshTerrain after bridge-like map-object scan\",\"Pathfinder::newMap terrain grid allocation/classification ordered after bridge-like scan\"],"
+		<< "\"nextRequired\":\"load real object templates into gamelogic-new-game-dispatch-smoke and promote the bridge-like map-object creation branch when a map supplies bridge or walk-on-wall templates, then continue the original ordered startNewGame sequence beyond Pathfinder::newMap\"}"
 		<< "\n";
 
 	return 0;
