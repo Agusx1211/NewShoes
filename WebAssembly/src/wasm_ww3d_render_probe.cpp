@@ -244,6 +244,7 @@ FunctionLexicon::TableEntry runtimeBaseSystemTable[] = {
 	{ NAMEKEY_INVALID, "KeyboardOptionsMenuSystem", KeyboardOptionsMenuSystem },
 	{ NAMEKEY_INVALID, "InGamePopupMessageSystem", InGamePopupMessageSystem },
 	{ NAMEKEY_INVALID, "IdleWorkerSystem", IdleWorkerSystem },
+	{ NAMEKEY_INVALID, "ReplayControlSystem", ReplayControlSystem },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
@@ -269,6 +270,7 @@ FunctionLexicon::TableEntry runtimeBaseInputTable[] = {
 	{ NAMEKEY_INVALID, "KeyboardOptionsMenuInput", KeyboardOptionsMenuInput },
 	{ NAMEKEY_INVALID, "InGamePopupMessageInput", InGamePopupMessageInput },
 	{ NAMEKEY_INVALID, "BeaconWindowInput", BeaconWindowInput },
+	{ NAMEKEY_INVALID, "ReplayControlInput", ReplayControlInput },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 

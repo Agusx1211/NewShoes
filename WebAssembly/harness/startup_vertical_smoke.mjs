@@ -262,7 +262,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
   const probe = state.functionLexiconRuntime;
   expect(probe?.attempted === true, "function lexicon runtime probe did not run", probe);
   expect(probe.ok === false, "function lexicon runtime should not claim full ownership yet", probe);
-  expect(probe.status === "base_function_lexicon_beacon_window_runtime_owned",
+  expect(probe.status === "base_function_lexicon_replay_control_runtime_owned",
     "function lexicon runtime status mismatch", probe);
   expect(probe.nextRequired === "originalFunctionLexiconRemainingShellCallbacks",
     "function lexicon runtime nextRequired mismatch", probe);
@@ -310,6 +310,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.keyboardOptionsMenuSystem === true
       && probe.lookups.inGamePopupMessageSystem === true
       && probe.lookups.idleWorkerSystem === true
+      && probe.lookups.replayControlSystem === true
       && probe.lookups.gameWindowDefaultInput === true
       && probe.lookups.gadgetPushButtonInput === true
       && probe.lookups.gadgetCheckBoxInput === true
@@ -331,6 +332,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.keyboardOptionsMenuInput === true
       && probe.lookups.inGamePopupMessageInput === true
       && probe.lookups.beaconWindowInput === true
+      && probe.lookups.replayControlInput === true
       && probe.lookups.gameWindowDefaultTooltip === true
       && probe.lookups.imeCandidateMainDraw === true
       && probe.lookups.imeCandidateTextAreaDraw === true
@@ -392,7 +394,7 @@ function assertAudioOwnedFrontier(state) {
       && frontier.audioManagerRuntime.tornDown === true,
     "frontier audioManagerRuntime summary mismatch", frontier.audioManagerRuntime);
   expect(frontier.functionLexiconRuntime?.ready === false
-      && frontier.functionLexiconRuntime.status === "base_function_lexicon_beacon_window_runtime_owned"
+      && frontier.functionLexiconRuntime.status === "base_function_lexicon_replay_control_runtime_owned"
       && frontier.functionLexiconRuntime.w3dDeviceDrawReady === true
       && frontier.functionLexiconRuntime.w3dLayoutInitReady === true
       && frontier.functionLexiconRuntime.messageBoxSystemReady === true

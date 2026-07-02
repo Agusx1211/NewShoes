@@ -2264,6 +2264,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       Startup vertical verifies the callback-name lookup in the browser and now
       reports `base_function_lexicon_beacon_window_runtime_owned` with
       `originalFunctionLexiconRemainingShellCallbacks` next.
+- [x] Promote the original `ReplayControl` callback owner into the linked
+      `cnc-port` base `FunctionLexicon`. `zh_window_layout_script_runtime` now
+      links original `GUI/GUICallbacks/ReplayControls.cpp`, and the reduced
+      wasm system/input tables register `ReplayControlSystem` and
+      `ReplayControlInput`. Startup vertical verifies those callback-name
+      lookups in the browser and now reports
+      `base_function_lexicon_replay_control_runtime_owned` with
+      `originalFunctionLexiconRemainingShellCallbacks` next.
 ---
 
 ## M3 — File / data subsystem (real data)
