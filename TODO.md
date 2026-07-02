@@ -894,8 +894,10 @@ flow below.
       kill, and non-stacking healer requests, and through
       `Object::setDisabledUntil` / `Object::checkDisabledStatus` to set and
       expire timed disabled flags, and through `Object::goInvulnerable` to set
-      and clear the undetected-defector invulnerability state, while clipping
-      health/state back to `BODY_PRISTINE` because the
+      and clear the undetected-defector invulnerability state, and through
+      `GameLogic::destroyObject` / `GameLogic::update` to queue and process
+      bridge-object removal from the object list and lookup table, while
+      clipping health/state back to `BODY_PRISTINE` because the
       real object uses `ImmortalBody` with `MaxHealth = 1`, so damaged/repaired
       bridge-state sync must not be faked through direct body health changes,
       kill/delete side effects, or direct body-state writes. The original bridge

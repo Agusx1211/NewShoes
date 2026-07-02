@@ -2702,6 +2702,19 @@ public:
 		Bool highIDLookupNull = FALSE;
 	};
 
+	struct BridgeDestroyListForProbe
+	{
+		ObjectID bridgeObjectID = INVALID_ID;
+		UnsignedInt objectCountBeforeDestroy = 0;
+		UnsignedInt objectCountAfterDestroyObject = 0;
+		UnsignedInt objectCountAfterProcess = 0;
+		Bool lookupBeforeDestroy = FALSE;
+		Bool destroyedBeforeDestroy = TRUE;
+		Bool destroyedAfterDestroyObject = FALSE;
+		Bool lookupAfterDestroyObject = FALSE;
+		Bool lookupAfterProcessNull = FALSE;
+	};
+
 	Int bridgeCountForProbe() const
 	{
 		Int count = 0;
@@ -2757,6 +2770,34 @@ public:
 			TheGameLogic->findObjectByID(INVALID_ID) == nullptr;
 		lookup.highIDLookupNull =
 			TheGameLogic->findObjectByID(kHighUnusedObjectID) == nullptr;
+		return true;
+	}
+
+	bool exerciseFirstBridgeDestroyListForProbe(
+		GameLogic &logic,
+		BridgeDestroyListForProbe &state) const
+	{
+		Object *bridge_object = firstBridgeObjectForProbe();
+		if (bridge_object == nullptr || TheGameLogic == nullptr) {
+			return false;
+		}
+
+		state.bridgeObjectID = bridge_object->getID();
+		state.objectCountBeforeDestroy = logic.getObjectCount();
+		state.lookupBeforeDestroy =
+			TheGameLogic->findObjectByID(state.bridgeObjectID) == bridge_object;
+		state.destroyedBeforeDestroy = bridge_object->isDestroyed();
+
+		logic.destroyObject(bridge_object);
+		state.objectCountAfterDestroyObject = logic.getObjectCount();
+		state.destroyedAfterDestroyObject = bridge_object->isDestroyed();
+		state.lookupAfterDestroyObject =
+			TheGameLogic->findObjectByID(state.bridgeObjectID) == bridge_object;
+
+		logic.update();
+		state.objectCountAfterProcess = logic.getObjectCount();
+		state.lookupAfterProcessNull =
+			TheGameLogic->findObjectByID(state.bridgeObjectID) == nullptr;
 		return true;
 	}
 
@@ -9996,6 +10037,9 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	ProbeTerrainLogicForBridgeDraw::BridgeInvulnerableStateForProbe
 		bridge_logic_invulnerable_state;
 	Int bridge_draw_first_damage_state_after_invulnerable_state_scene = -1;
+	bool bridge_logic_destroy_list_invoked = false;
+	ProbeTerrainLogicForBridgeDraw::BridgeDestroyListForProbe
+		bridge_logic_destroy_list;
 	Int bridge_logic_first_layer_after_seed = -1;
 	Int bridge_draw_terrain_logic_bridge_count = 0;
 	Int bridge_draw_enabled_bridge_count = 0;
@@ -10760,6 +10804,12 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_draw_enabled_bridge_count =
 			bridge_buffer->lastDrawEnabledBridgeCount();
 	}
+	if (bridge_draw_first_damage_state_after_invulnerable_state_scene == BODY_PRISTINE) {
+		bridge_logic_destroy_list_invoked =
+			bridge_draw_terrain_logic.exerciseFirstBridgeDestroyListForProbe(
+				bridge_draw_game_logic,
+				bridge_logic_destroy_list);
+	}
 
 	ProbeWorldHeightMapInspector::recordRenderedTileMetrics(map, map_load);
 
@@ -10916,6 +10966,18 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_logic_invulnerable_state.undetectedDefectorAfterPositive &&
 		!bridge_logic_invulnerable_state.undetectedDefectorAfterZero &&
 		bridge_draw_first_damage_state_after_invulnerable_state_scene == BODY_PRISTINE &&
+		bridge_logic_destroy_list_invoked &&
+		bridge_logic_destroy_list.bridgeObjectID != INVALID_ID &&
+		bridge_logic_destroy_list.objectCountBeforeDestroy > 0 &&
+		bridge_logic_destroy_list.objectCountAfterDestroyObject ==
+			bridge_logic_destroy_list.objectCountBeforeDestroy &&
+		bridge_logic_destroy_list.objectCountAfterProcess + 1 ==
+			bridge_logic_destroy_list.objectCountBeforeDestroy &&
+		bridge_logic_destroy_list.lookupBeforeDestroy &&
+		!bridge_logic_destroy_list.destroyedBeforeDestroy &&
+		bridge_logic_destroy_list.destroyedAfterDestroyObject &&
+		bridge_logic_destroy_list.lookupAfterDestroyObject &&
+		bridge_logic_destroy_list.lookupAfterProcessNull &&
 		terrain_logic_retained_for_draw &&
 		bridge_draw_terrain_logic_bridge_count > 0 &&
 		bridge_draw_enabled_bridge_count > 0 &&
@@ -11042,7 +11104,8 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"Object::goInvulnerable(GenericBridge) -> "
 		"TerrainLogic::updateCenter -> "
 		"TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> "
-		"W3DBridge::renderBridge + bridge shroud overlay\","
+		"W3DBridge::renderBridge + bridge shroud overlay -> "
+		"GameLogic::destroyObject/update-processDestroyList(GenericBridge)\","
 		"\"archives\":{\"ini\":\"%s\",\"maps\":\"%s\",\"terrain\":\"%s\","
 		"\"runtimeDirectory\":%s,\"runtimeMask\":%s},"
 		"\"results\":{\"archiveContextReady\":%s,\"globalDataReady\":%s,"
@@ -11164,6 +11227,16 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"bridgeLogicInvulnerableUndetectedDefectorAfterPositive\":%s,"
 		"\"bridgeLogicInvulnerableUndetectedDefectorAfterZero\":%s,"
 		"\"bridgeDrawFirstDamageStateAfterInvulnerableStateScene\":%d,"
+		"\"bridgeLogicDestroyListInvoked\":%s,"
+		"\"bridgeLogicDestroyListBridgeID\":%d,"
+		"\"bridgeLogicDestroyListObjectCountBeforeDestroy\":%u,"
+		"\"bridgeLogicDestroyListObjectCountAfterDestroyObject\":%u,"
+		"\"bridgeLogicDestroyListObjectCountAfterProcess\":%u,"
+		"\"bridgeLogicDestroyListLookupBeforeDestroy\":%s,"
+		"\"bridgeLogicDestroyListDestroyedBeforeDestroy\":%s,"
+		"\"bridgeLogicDestroyListDestroyedAfterDestroyObject\":%s,"
+		"\"bridgeLogicDestroyListLookupAfterDestroyObject\":%s,"
+		"\"bridgeLogicDestroyListLookupAfterProcessNull\":%s,"
 		"\"bridgeLogicFirstLayerAfterSeed\":%d,"
 		"\"bridgeDrawTerrainLogicBridgeCount\":%d,"
 		"\"bridgeDrawEnabledBridgeCount\":%d,"
@@ -11444,6 +11517,16 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bool_json(bridge_logic_invulnerable_state.undetectedDefectorAfterPositive),
 		bool_json(bridge_logic_invulnerable_state.undetectedDefectorAfterZero),
 		bridge_draw_first_damage_state_after_invulnerable_state_scene,
+		bool_json(bridge_logic_destroy_list_invoked),
+		bridge_logic_destroy_list.bridgeObjectID,
+		bridge_logic_destroy_list.objectCountBeforeDestroy,
+		bridge_logic_destroy_list.objectCountAfterDestroyObject,
+		bridge_logic_destroy_list.objectCountAfterProcess,
+		bool_json(bridge_logic_destroy_list.lookupBeforeDestroy),
+		bool_json(bridge_logic_destroy_list.destroyedBeforeDestroy),
+		bool_json(bridge_logic_destroy_list.destroyedAfterDestroyObject),
+		bool_json(bridge_logic_destroy_list.lookupAfterDestroyObject),
+		bool_json(bridge_logic_destroy_list.lookupAfterProcessNull),
 		bridge_logic_first_layer_after_seed,
 		bridge_draw_terrain_logic_bridge_count,
 		bridge_draw_enabled_bridge_count,

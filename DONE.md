@@ -4052,6 +4052,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       damage/healing/disabled/invulnerable bridge object calls. Verified with
       `npm --prefix WebAssembly run build:wasm` and
       `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
+- [x] Route focused bridge object destruction through the original
+      end-of-frame GameLogic destroy-list contract and prove it in the browser
+      bridge scene. The focused `GameLogic::destroyObject` now queues the
+      object and runs `Object::onDestroy`, `GameLogic::update` processes the
+      pending destroy list before advancing the frame, and
+      `processDestroyList` removes queued objects from the object list and ID
+      lookup table before deleting them. The bridge scene renders the retained
+      `GenericBridge` first, then verifies `destroyObject` marks it destroyed
+      while leaving it lookup-visible for the rest of the frame, and verifies
+      the next `update` removes it from both object count and lookup. Verified
+      with `npm --prefix WebAssembly run build:wasm` and
+      `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
 	- [x] Feed the focused terrain road and bridge adjunct buffers from the
 	      original logical terrain map-object list. The road and bridge scene probes
 	      now call original `W3DTerrainLogic::loadMap(query=true)` against

@@ -619,7 +619,7 @@ try {
   if (!result.ok
       || result.command !== "ww3dTerrainBridgeBufferScene"
       || result.probe?.source !== "ww3d_terrain_bridge_buffer_scene_probe"
-      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> TerrainLogic::addBridgeToLogic -> GameLogic::findObjectByID(GenericBridge) -> Object::attemptDamage(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::kill(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::attemptHealingFromSoleBenefactor(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::setDisabledUntil/checkDisabledStatus(GenericBridge) -> Object::goInvulnerable(GenericBridge) -> TerrainLogic::updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay"
+      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> TerrainLogic::addBridgeToLogic -> GameLogic::findObjectByID(GenericBridge) -> Object::attemptDamage(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::kill(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::attemptHealingFromSoleBenefactor(GenericBridge) -> TerrainLogic::updateBridgeDamageStates -> Object::setDisabledUntil/checkDisabledStatus(GenericBridge) -> Object::goInvulnerable(GenericBridge) -> TerrainLogic::updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay -> GameLogic::destroyObject/update-processDestroyList(GenericBridge)"
       || result.probe?.results?.runtimeAssetSystemInstalled !== true
       || result.probe?.results?.modelsFileExists !== true
       || result.probe?.results?.meshFileExists !== true
@@ -718,6 +718,16 @@ try {
       || result.probe?.results?.bridgeLogicInvulnerableUndetectedDefectorAfterPositive !== true
       || result.probe?.results?.bridgeLogicInvulnerableUndetectedDefectorAfterZero !== false
       || result.probe?.results?.bridgeDrawFirstDamageStateAfterInvulnerableStateScene !== BODY_PRISTINE
+      || result.probe?.results?.bridgeLogicDestroyListInvoked !== true
+      || result.probe?.results?.bridgeLogicDestroyListBridgeID !== result.probe?.results?.bridgeLogicObjectLookupBridgeID
+      || result.probe?.results?.bridgeLogicDestroyListObjectCountBeforeDestroy <= 0
+      || result.probe?.results?.bridgeLogicDestroyListObjectCountAfterDestroyObject !== result.probe?.results?.bridgeLogicDestroyListObjectCountBeforeDestroy
+      || result.probe?.results?.bridgeLogicDestroyListObjectCountAfterProcess + 1 !== result.probe?.results?.bridgeLogicDestroyListObjectCountBeforeDestroy
+      || result.probe?.results?.bridgeLogicDestroyListLookupBeforeDestroy !== true
+      || result.probe?.results?.bridgeLogicDestroyListDestroyedBeforeDestroy !== false
+      || result.probe?.results?.bridgeLogicDestroyListDestroyedAfterDestroyObject !== true
+      || result.probe?.results?.bridgeLogicDestroyListLookupAfterDestroyObject !== true
+      || result.probe?.results?.bridgeLogicDestroyListLookupAfterProcessNull !== true
       || result.probe?.results?.bridgeLogicAiPathfinderAvailable !== true
       || result.probe?.results?.bridgeLogicFirstLayerAfterSeed !== 2
       || result.probe?.results?.bridgeDrawTerrainLogicBridgeCount <= 0

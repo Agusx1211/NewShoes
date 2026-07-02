@@ -88,6 +88,7 @@ void GameLogic::reset()
 
 void GameLogic::update()
 {
+	processDestroyList();
 	++m_frame;
 }
 
@@ -149,6 +150,7 @@ void GameLogic::destroyObject(Object *obj)
 	}
 	obj->setStatus(MAKE_OBJECT_STATUS_MASK(OBJECT_STATUS_DESTROYED));
 	m_objectsToDestroy.push_back(obj);
+	obj->onDestroy();
 }
 
 Object *GameLogic::getFirstObject()
@@ -327,14 +329,25 @@ void GameLogic::setDefaults(Bool loadingSaveGame)
 
 void GameLogic::processDestroyList()
 {
+	for (ObjectPointerListIterator it = m_objectsToDestroy.begin();
+			it != m_objectsToDestroy.end();
+			++it) {
+		Object *current_object = *it;
+		current_object->removeFromList(&m_objList);
+		removeObjectFromLookupTable(current_object);
+		current_object->friend_deleteInstance();
+	}
 	m_objectsToDestroy.clear();
 }
 
 void GameLogic::destroyAllObjectsImmediate()
 {
-	m_objectsToDestroy.clear();
-	m_objList = NULL;
-	std::fill(m_objVector.begin(), m_objVector.end(), static_cast<Object *>(NULL));
+	for (Object *obj = m_objList; obj != NULL;) {
+		Object *next_obj = obj->getNextObject();
+		destroyObject(obj);
+		obj = next_obj;
+	}
+	processDestroyList();
 }
 
 void GameLogic::pushSleepyUpdate(UpdateModulePtr u)
