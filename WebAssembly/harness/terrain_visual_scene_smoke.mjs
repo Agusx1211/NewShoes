@@ -729,10 +729,10 @@ try {
       || visualShroudUpdateResult.probe?.partitionRefresh?.fullCellCountY !== 381
       || visualShroudUpdateResult.probe?.partitionRefresh?.cellCountX !== 48
       || visualShroudUpdateResult.probe?.partitionRefresh?.cellCountY !== 48
-      || visualShroudUpdateResult.probe?.partitionRefresh?.partitionCellSize !== 1
+      || visualShroudUpdateResult.probe?.partitionRefresh?.partitionCellSize !== 10
       || visualShroudUpdateResult.probe?.partitionRefresh?.sourcePartitionCellSize !== 10
-      || visualShroudUpdateResult.probe?.partitionRefresh?.terrainExtentHiX !== visualShroudUpdateResult.probe?.partitionRefresh?.cellCountX - 1
-      || visualShroudUpdateResult.probe?.partitionRefresh?.terrainExtentHiY !== visualShroudUpdateResult.probe?.partitionRefresh?.cellCountY - 1
+      || visualShroudUpdateResult.probe?.partitionRefresh?.terrainExtentHiX !== (visualShroudUpdateResult.probe?.partitionRefresh?.cellCountX - 1) * visualShroudUpdateResult.probe?.partitionRefresh?.partitionCellSize
+      || visualShroudUpdateResult.probe?.partitionRefresh?.terrainExtentHiY !== (visualShroudUpdateResult.probe?.partitionRefresh?.cellCountY - 1) * visualShroudUpdateResult.probe?.partitionRefresh?.partitionCellSize
       || visualShroudUpdateResult.probe?.partitionRefresh?.fullTerrainExtentHiX !== visualShroudUpdateResult.probe?.logicalTerrain?.extentHiX
       || visualShroudUpdateResult.probe?.partitionRefresh?.fullTerrainExtentHiY !== visualShroudUpdateResult.probe?.logicalTerrain?.extentHiY
       || visualShroudUpdateResult.probe?.partitionRefresh?.totalCells <= 0
@@ -965,10 +965,10 @@ try {
       || fullSceneShroudUpdateResult.probe?.partitionRefresh?.fullCellCountY !== 381
       || fullSceneShroudUpdateResult.probe?.partitionRefresh?.cellCountX !== 48
       || fullSceneShroudUpdateResult.probe?.partitionRefresh?.cellCountY !== 48
-      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.partitionCellSize !== 1
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.partitionCellSize !== 10
       || fullSceneShroudUpdateResult.probe?.partitionRefresh?.sourcePartitionCellSize !== 10
-      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.terrainExtentHiX !== fullSceneShroudUpdateResult.probe?.partitionRefresh?.cellCountX - 1
-      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.terrainExtentHiY !== fullSceneShroudUpdateResult.probe?.partitionRefresh?.cellCountY - 1
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.terrainExtentHiX !== (fullSceneShroudUpdateResult.probe?.partitionRefresh?.cellCountX - 1) * fullSceneShroudUpdateResult.probe?.partitionRefresh?.partitionCellSize
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.terrainExtentHiY !== (fullSceneShroudUpdateResult.probe?.partitionRefresh?.cellCountY - 1) * fullSceneShroudUpdateResult.probe?.partitionRefresh?.partitionCellSize
       || fullSceneShroudUpdateResult.probe?.partitionRefresh?.fullTerrainExtentHiX !== fullSceneShroudUpdateResult.probe?.logicalTerrain?.extentHiX
       || fullSceneShroudUpdateResult.probe?.partitionRefresh?.fullTerrainExtentHiY !== fullSceneShroudUpdateResult.probe?.logicalTerrain?.extentHiY
       || fullSceneShroudUpdateResult.probe?.renderFrames?.count !== 3

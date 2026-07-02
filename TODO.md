@@ -860,12 +860,13 @@ flow below.
       `PartitionManager` before browser-verifying three ordered
       base/blend/shroud frames. The bounded partition refresh now sources its
       full-map extents from the same original `W3DTerrainLogic::loadMap(query=true)`
-      result and records the source `MAP_XY_FACTOR` cell size before clamping to
-      a 48x48 browser gate. Remaining work is production `PlayerList` /
-      `Player`, full `TerrainLogic` extent ownership, and the target-wide
-      `GlobalData` layout so gameplay fog updates originate from the full
-      partition/shroud owners and production partition cell size instead of the
-      probe-local layout shims and bounded terrain cell grid.
+      result and drives the linked `PartitionManager` through original
+      `Common/GlobalData.h` / `MAP_XY_FACTOR` partition-cell-size ownership
+      before clamping to a 48x48 browser gate. Remaining work is production
+      `PlayerList` / `Player`, full `TerrainLogic` extent ownership, and the
+      broader target-wide `GlobalData` layout so gameplay fog updates originate
+      entirely from the full partition/shroud owners instead of probe-local
+      layout shims and the bounded terrain cell window.
 - [ ] Promote the bridge-buffer scene from probe-seeded retained
       `TheTerrainLogic` draw ownership into production
       `W3DBridgeBuffer::loadBridges(&W3DTerrainLogic, FALSE)` /

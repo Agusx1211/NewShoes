@@ -2337,6 +2337,7 @@ target_link_libraries(zh_w3d_terrain_probe_runtime PUBLIC
 
 target_compile_definitions(zh_w3d_terrain_probe_runtime PRIVATE
   CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
   __PRERTS_H__
 )
 
@@ -2365,6 +2366,7 @@ target_compile_options(zh_w3d_terrain_probe_runtime PRIVATE
   "-include${WASM_SHIMS_DIR}/windows.h"
   "-include${WASM_SHIMS_DIR}/mmsystem.h"
   "-include${WWVEGAS_PORT_SHIM}"
+  "-include${GAMEENGINE_INCLUDE_DIR}/Common/GlobalData.h"
   "-iquote${GAMEENGINE_INCLUDE_DIR}"
   "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
   "-iquote${GAMEENGINE_DIR}/Source"

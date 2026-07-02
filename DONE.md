@@ -4123,6 +4123,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `GlobalData` partition-cell-size ownership, and full gameplay
       partition/terrain ownership remain open in `TODO.md`. Verified with
       `npm --prefix WebAssembly run test:ww3d-terrain-full-scene`.
+- [x] Drive the bounded terrain shroud partition refresh through original
+      `GlobalData::m_partitionCellSize`. The terrain probe runtime now
+      force-includes the original `Common/GlobalData.h` before the shim
+      `PreRTS.h` path and defines `WASM_USE_ORIGINAL_GLOBALDATA`, so the linked
+      original `PartitionManager.cpp` resolves `TheGlobalData` through
+      `TheWritableGlobalData` instead of the target-local shim singleton. The
+      probe removed the 1-unit grid override, writes the source
+      `MAP_XY_FACTOR` cell size to `TheWritableGlobalData`, and reports the
+      bounded 48x48 partition window at the production 10-unit cell size. The
+      browser harness now gates the visual-owned and full-init shroud update
+      paths on `partitionCellSize == sourcePartitionCellSize == 10` and
+      `terrainExtentHi == (cellCount - 1) * partitionCellSize`. Broader
+      gameplay-owned `PlayerList` / `Player`, full `TerrainLogic`, and
+      unbounded partition ownership remain open in `TODO.md`. Verified with
+      `llvm-nm -C .../PartitionManager.cpp.o`, `npm --prefix WebAssembly run build:wasm`,
+      and `npm --prefix WebAssembly run test:ww3d-terrain-full-scene`.
 - [x] Apply D3D face culling before browser wireframe expansion. The
       D3D8/WebGL bridge now projects indexed triangles with the captured
       world/view/projection matrices, classifies CW/CCW winding, applies

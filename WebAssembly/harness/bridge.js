@@ -18930,10 +18930,10 @@ async function rpc(command, payload = {}) {
             && probe?.partitionRefresh?.fullCellCountY === 381
             && probe?.partitionRefresh?.cellCountX === 48
             && probe?.partitionRefresh?.cellCountY === 48
-            && probe?.partitionRefresh?.partitionCellSize === 1
+            && probe?.partitionRefresh?.partitionCellSize === 10
             && probe?.partitionRefresh?.sourcePartitionCellSize === 10
-            && probe?.partitionRefresh?.terrainExtentHiX === probe?.partitionRefresh?.cellCountX - 1
-            && probe?.partitionRefresh?.terrainExtentHiY === probe?.partitionRefresh?.cellCountY - 1
+            && probe?.partitionRefresh?.terrainExtentHiX === (probe?.partitionRefresh?.cellCountX - 1) * probe?.partitionRefresh?.partitionCellSize
+            && probe?.partitionRefresh?.terrainExtentHiY === (probe?.partitionRefresh?.cellCountY - 1) * probe?.partitionRefresh?.partitionCellSize
             && probe?.partitionRefresh?.fullTerrainExtentHiX === probe?.logicalTerrain?.extentHiX
             && probe?.partitionRefresh?.fullTerrainExtentHiY === probe?.logicalTerrain?.extentHiY
             && (probe?.partitionRefresh?.totalCells ?? 0) > 0
@@ -19010,10 +19010,10 @@ async function rpc(command, payload = {}) {
             && probe?.partitionRefresh?.fullCellCountY === 381
             && probe?.partitionRefresh?.cellCountX === 48
             && probe?.partitionRefresh?.cellCountY === 48
-            && probe?.partitionRefresh?.partitionCellSize === 1
+            && probe?.partitionRefresh?.partitionCellSize === 10
             && probe?.partitionRefresh?.sourcePartitionCellSize === 10
-            && probe?.partitionRefresh?.terrainExtentHiX === probe?.partitionRefresh?.cellCountX - 1
-            && probe?.partitionRefresh?.terrainExtentHiY === probe?.partitionRefresh?.cellCountY - 1
+            && probe?.partitionRefresh?.terrainExtentHiX === (probe?.partitionRefresh?.cellCountX - 1) * probe?.partitionRefresh?.partitionCellSize
+            && probe?.partitionRefresh?.terrainExtentHiY === (probe?.partitionRefresh?.cellCountY - 1) * probe?.partitionRefresh?.partitionCellSize
             && probe?.partitionRefresh?.fullTerrainExtentHiX === probe?.logicalTerrain?.extentHiX
             && probe?.partitionRefresh?.fullTerrainExtentHiY === probe?.logicalTerrain?.extentHiY
             && (probe?.partitionRefresh?.totalCells ?? 0) > 0

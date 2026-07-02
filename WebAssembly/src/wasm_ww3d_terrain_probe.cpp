@@ -4159,10 +4159,8 @@ ProbePartitionShroudRefreshMetrics run_partition_shroud_refresh_probe(
 	const Int probe_partition_cell_window = 48;
 	const Real source_partition_cell_size =
 		logical_extent_ready ? static_cast<Real>(MAP_XY_FACTOR) : 1.0f;
-	// This focused target still has split GlobalData ownership, so keep the
-	// browser refresh on a 1-unit grid while recording the source cell size.
-	// REAL_TO_INT_CEIL bumps exact integers, so high=N-1 yields N cells.
-	const Real probe_partition_cell_size = 1.0f;
+	const Real probe_partition_cell_size = source_partition_cell_size;
+	// REAL_TO_INT_CEIL bumps exact integers, so high=(N-1)*cellSize yields N cells.
 	const Real full_extent_hi_x =
 		logical_extent_ready ?
 			static_cast<Real>(logical_terrain_load->extentHiX) :

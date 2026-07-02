@@ -1593,10 +1593,10 @@ const steps = [
           && payload.visualShroudPartitionRefresh?.fullCellCountY === 381
           && payload.visualShroudPartitionRefresh?.cellCountX === 48
           && payload.visualShroudPartitionRefresh?.cellCountY === 48
-          && payload.visualShroudPartitionRefresh?.partitionCellSize === 1
+          && payload.visualShroudPartitionRefresh?.partitionCellSize === 10
           && payload.visualShroudPartitionRefresh?.sourcePartitionCellSize === 10
-          && payload.visualShroudPartitionRefresh?.terrainExtentHiX === payload.visualShroudPartitionRefresh?.cellCountX - 1
-          && payload.visualShroudPartitionRefresh?.terrainExtentHiY === payload.visualShroudPartitionRefresh?.cellCountY - 1
+          && payload.visualShroudPartitionRefresh?.terrainExtentHiX === (payload.visualShroudPartitionRefresh?.cellCountX - 1) * payload.visualShroudPartitionRefresh?.partitionCellSize
+          && payload.visualShroudPartitionRefresh?.terrainExtentHiY === (payload.visualShroudPartitionRefresh?.cellCountY - 1) * payload.visualShroudPartitionRefresh?.partitionCellSize
           && payload.visualShroudPartitionRefresh?.fullTerrainExtentHiX === payload.visualShroudUpdateLogicalTerrain?.extentHiX
           && payload.visualShroudPartitionRefresh?.fullTerrainExtentHiY === payload.visualShroudUpdateLogicalTerrain?.extentHiY,
         "terrain visual shroud update smoke did not size PartitionManager from the loaded logical terrain extent source", payload.visualShroudPartitionRefresh);
@@ -1733,10 +1733,10 @@ const steps = [
           && payload.fullSceneShroudPartitionRefresh?.fullCellCountY === 381
           && payload.fullSceneShroudPartitionRefresh?.cellCountX === 48
           && payload.fullSceneShroudPartitionRefresh?.cellCountY === 48
-          && payload.fullSceneShroudPartitionRefresh?.partitionCellSize === 1
+          && payload.fullSceneShroudPartitionRefresh?.partitionCellSize === 10
           && payload.fullSceneShroudPartitionRefresh?.sourcePartitionCellSize === 10
-          && payload.fullSceneShroudPartitionRefresh?.terrainExtentHiX === payload.fullSceneShroudPartitionRefresh?.cellCountX - 1
-          && payload.fullSceneShroudPartitionRefresh?.terrainExtentHiY === payload.fullSceneShroudPartitionRefresh?.cellCountY - 1
+          && payload.fullSceneShroudPartitionRefresh?.terrainExtentHiX === (payload.fullSceneShroudPartitionRefresh?.cellCountX - 1) * payload.fullSceneShroudPartitionRefresh?.partitionCellSize
+          && payload.fullSceneShroudPartitionRefresh?.terrainExtentHiY === (payload.fullSceneShroudPartitionRefresh?.cellCountY - 1) * payload.fullSceneShroudPartitionRefresh?.partitionCellSize
           && payload.fullSceneShroudPartitionRefresh?.fullTerrainExtentHiX === payload.fullSceneShroudUpdateLogicalTerrain?.extentHiX
           && payload.fullSceneShroudPartitionRefresh?.fullTerrainExtentHiY === payload.fullSceneShroudUpdateLogicalTerrain?.extentHiY,
         "terrain full-scene shroud update smoke did not size PartitionManager from the loaded logical terrain extent source", payload.fullSceneShroudPartitionRefresh);
