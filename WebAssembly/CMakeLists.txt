@@ -2095,6 +2095,10 @@ set_source_files_properties("${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClien
   COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/atlbase.h;${WOL_BROWSER_COMPILE_BRIDGE}"
 )
 
+set_source_files_properties("${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32GameEngine.cpp" PROPERTIES
+  COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/atlbase.h"
+)
+
 target_compile_definitions(zh_gameengine_real_compile_frontier PRIVATE
   __PRERTS_H__
 )
@@ -2315,8 +2319,6 @@ add_library(zh_w3d_terrain_probe_runtime STATIC
   "${GAMEENGINE_COMMON_DIR}/RTS/Team.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/TunnelTracker.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/AI/AI.cpp"
-  src/wasm_terrain_probe_game_logic.cpp
-  src/wasm_terrain_probe_object.cpp
   "${GAMEENGINE_GAMELOGIC_DIR}/Map/TerrainLogic.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Map/PolygonTrigger.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/Scripts.cpp"
@@ -4272,6 +4274,7 @@ target_include_directories(zh_winmain_wndproc_browser PUBLIC
 target_compile_options(zh_winmain_wndproc_browser PRIVATE
   -DCNC_WASM_WNDPROC_ONLY
   -DCNC_WASM_WNDPROC_EXTERNAL_GLOBALS
+  -DCNC_WASM_ENABLE_CREATEGAMEENGINE
   -include${WASM_SHIMS_DIR}/PreRTS.h
   -fms-extensions
   -Wall
@@ -4499,6 +4502,232 @@ target_link_libraries(zh_gamenetwork_core PUBLIC
   zh_wwdownload
 )
 
+# Real engine lifecycle runtime: the original boot path (WinMain.cpp
+# CreateGameEngine -> Win32GameEngine -> GameEngine::init()) plus the remaining
+# original GameClient/GameLogic/GameNetwork/W3DDevice sources that path links,
+# compiled for cnc-port so the browser runtime drives the real engine
+# lifecycle instead of hand-authored probe frontiers.
+add_library(zh_gameengine_real_lifecycle_runtime STATIC
+  "${GAMEENGINE_COMMON_DIR}/CRCDebug.cpp"
+  "${GAMEENGINE_COMMON_DIR}/GameEngine.cpp"
+  "${GAMEENGINE_COMMON_DIR}/GameMain.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIAnimation.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIWebpageURL.cpp"
+  "${GAMEENGINE_COMMON_DIR}/SkirmishBattleHonors.cpp"
+  "${GAMEENGINE_COMMON_DIR}/StatsCollector.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/FunctionLexicon.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/SaveGame/GameState.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/SaveGame/GameStateMap.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/XferLoad.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/XferSave.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/Credits.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/Display.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/DisplayStringManager.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/Drawable/DrawableManager.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/AnimateWindowManager.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ControlBar/ControlBar.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ControlBar/ControlBarBeacon.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ControlBar/ControlBarCommand.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ControlBar/ControlBarCommandProcessing.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ControlBar/ControlBarMultiSelect.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ControlBar/ControlBarOCLTimer.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ControlBar/ControlBarObserver.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ControlBar/ControlBarPrintPositions.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ControlBar/ControlBarResizer.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ControlBar/ControlBarStructureInventory.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ControlBar/ControlBarUnderConstruction.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/DisconnectMenu/DisconnectMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/EstablishConnectionsMenu/EstablishConnectionsMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/ControlBarCallback.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/ControlBarPopupDescription.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Diplomacy.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/ExtendedMessageBox.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/GeneralsExpPoints.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/InGameChat.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/InGamePopupMessage.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/ChallengeMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/CreditsMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/DisconnectWindow.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/DownloadMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/EstablishConnectionsWindow.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/GameInfoWindow.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/LanGameOptionsMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/LanLobbyMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/LanMapSelectMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/MainMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/MapSelectMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/NetworkDirectConnect.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/OptionsMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/PopupCommunicator.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/PopupHostGame.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/PopupJoinGame.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/PopupLadderSelect.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/PopupPlayerInfo.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/PopupSaveLoad.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/QuitMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/ReplayMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/ScoreScreen.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/SinglePlayerMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/SkirmishGameOptionsMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/SkirmishMapSelectMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLBuddyOverlay.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLCustomScoreScreen.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLGameSetupMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLLadderScreen.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLLobbyMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLLocaleSelectPopup.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLLoginMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLMapSelectMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLMessageWindow.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLQMScoreScreen.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLQuickMatchMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLStatusMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLWelcomeMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/ReplayControls.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowTransitionsStyles.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/IMEManager.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/LoadScreen.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ProcessAnimateWindow.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/Shell.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/ShellMenuScheme.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/WindowVideoManager.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GameClient.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GameClientDispatch.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GraphDraw.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/InGameUI.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/MapUtil.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/MessageStream/CommandXlat.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/MessageStream/GUICommandTranslator.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/MessageStream/HintSpy.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/MessageStream/LookAtXlat.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/MessageStream/MetaEvent.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/MessageStream/PlaceEventTranslator.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/MessageStream/SelectionXlat.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/ParabolicEase.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/SelectionInfo.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/System/CampaignManager.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/System/DebugDisplay.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/System/RayEffect.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/VideoStream.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/View.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Behavior/POWTruckBehavior.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Behavior/PrisonBehavior.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Behavior/PropagandaCenterBehavior.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Destroy/DestroyModule.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/GhostObject.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Object.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/SpecialPower/DemoralizeSpecialPower.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Update/AIUpdate/POWTruckAIUpdate.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Update/DockUpdate/PrisonDockUpdate.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/ScriptActions.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/ScriptConditions.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/System/GameLogic.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/System/GameLogicDispatch.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/LobbyUtils.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/MainMenuUtils.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/Thread/GameResultsThread.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/Thread/ThreadUtils.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/GameSpyChat.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/GameSpyGP.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/Common/System/W3DRadar.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/GUICallbacks/W3DControlBar.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/GUICallbacks/W3DMOTD.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/GUICallbacks/W3DMainMenu.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DAssetManagerExposed.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DCustomEdging.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DDebugIcons.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DDisplayStringManager.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DGameClient.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DGranny.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DInGameUI.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DMouse.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DParticleSys.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DSnow.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DWebBrowser.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameLogic/W3DGameLogic.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameLogic/W3DGhostObject.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32GameEngine.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/CopyProtection.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/System/Debug Displayers/AudioDebugDisplay.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/GameClient/Win32DIKeyboard.cpp"
+)
+
+target_compile_definitions(zh_gameengine_real_lifecycle_runtime PRIVATE
+  ALLOW_DEBUG_UTILS=1
+  DEBUG_LOGGING=1
+  DISABLE_DEBUG_CRASHING=1
+  DISABLE_DEBUG_STACKTRACE=1
+  DISABLE_DEBUG_PROFILE=1
+  NO_DEBUG_CRC=1
+)
+
+target_include_directories(zh_gameengine_real_lifecycle_runtime PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWVEGAS_DIR}/Miles6/include"
+  "${WWAUDIO_DIR}"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_options(zh_gameengine_real_lifecycle_runtime PRIVATE
+  -fexceptions
+  -ffunction-sections
+  -fdata-sections
+  -Wno-non-pod-varargs
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "${WOL_BROWSER_COMPILE_BRIDGE}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWVEGAS_DIR}/Miles6/include"
+  "-iquote${WWAUDIO_DIR}"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-invalid-offsetof
+  -Wno-logical-not-parentheses
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_libraries(zh_gameengine_real_lifecycle_runtime PUBLIC
+  zh_gameengine_globaldata_runtime
+)
+
 set_source_files_properties("${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32CDManager.cpp" PROPERTIES
   COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/PreRTS.h;-Wno-implicit-exception-spec-mismatch;-Wno-new-returns-null;-Wno-undefined-bool-conversion"
 )
@@ -4523,7 +4752,9 @@ add_executable(cnc-port
   src/wasm_mss_3d_sample_lifecycle_probe.cpp
   src/wasm_audio_manager_probe.cpp
   src/wasm_function_lexicon_runtime.cpp
+  src/wasm_dinput_browser.cpp
   src/wasm_port_entry.cpp
+  src/wasm_real_engine_init.cpp
   src/wasm_win32_gameengine_probe.cpp
   src/wasm_wndproc_probe.cpp
   src/wasm_win32_gdi_browser.cpp
@@ -4563,11 +4794,19 @@ set_source_files_properties(src/wasm_wndproc_probe.cpp PROPERTIES
 )
 
 set_source_files_properties(src/wasm_win32_gameengine_probe.cpp PROPERTIES
-  COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/PreRTS.h;-iquote${WIN32_GAMEENGINE_SHIMS_DIR};-Wno-implicit-exception-spec-mismatch;-Wno-new-returns-null;-Wno-undefined-bool-conversion"
+  COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/PreRTS.h;-include${WASM_SHIMS_DIR}/atlbase.h;${WOL_BROWSER_COMPILE_BRIDGE};-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${MAIN_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/Miles6/include;-iquote${WWAUDIO_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${WWSAVELOAD_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR};-Wno-implicit-exception-spec-mismatch;-Wno-new-returns-null;-Wno-undefined-bool-conversion"
 )
 
 set_source_files_properties(src/wasm_audio_manager_probe.cpp PROPERTIES
   COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/windows.h;-include${WASM_SHIMS_DIR}/mmsystem.h;-include${WWVEGAS_PORT_SHIM};-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${MAIN_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/Miles6/include;-iquote${WWAUDIO_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${WWSAVELOAD_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR};-Wno-implicit-exception-spec-mismatch;-Wno-new-returns-null;-Wno-undefined-bool-conversion"
+)
+
+set_source_files_properties(src/wasm_startup_singletons_probe.cpp PROPERTIES
+  COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/windows.h;-include${WASM_SHIMS_DIR}/mmsystem.h;-include${WWVEGAS_PORT_SHIM};-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h;-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${MAIN_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${WWSAVELOAD_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR};-Wno-implicit-exception-spec-mismatch;-Wno-new-returns-null;-Wno-undefined-bool-conversion;-Wno-unused-parameter"
+)
+
+set_source_files_properties(src/wasm_real_engine_init.cpp PROPERTIES
+  COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/windows.h;-include${WASM_SHIMS_DIR}/mmsystem.h;-include${WWVEGAS_PORT_SHIM};-include${WASM_SHIMS_DIR}/atlbase.h;${WOL_BROWSER_COMPILE_BRIDGE};-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${MAIN_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/Miles6/include;-iquote${WWAUDIO_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${WWSAVELOAD_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR};-Wno-implicit-exception-spec-mismatch;-Wno-new-returns-null;-Wno-undefined-bool-conversion;-Wno-unused-parameter"
 )
 
 set_source_files_properties(src/wasm_function_lexicon_runtime.cpp PROPERTIES
@@ -4617,6 +4856,8 @@ target_include_directories(cnc-port PRIVATE
 )
 
 target_link_libraries(cnc-port PRIVATE
+  zh_gameengine_real_lifecycle_runtime
+  zh_bink_video_device_compile_frontier
   zh_w3d_terrain_probe_runtime
   zh_w3d_scene_probe_runtime
   zh_w3d_display_drawimage_runtime
@@ -4634,7 +4875,6 @@ target_link_libraries(cnc-port PRIVATE
   zh_wwdebug_core
   zh_browser_d3d8
   zh_winmain_wndproc_browser
-  zh_win32_gameengine_message_pump
   zh_gamenetwork_core
   zh_wwmath_lookup
   zh_wwmath_core
@@ -4660,6 +4900,8 @@ target_link_libraries(cnc-port PRIVATE
 
 target_link_options(cnc-port PRIVATE
   "SHELL:-Wl,--gc-sections"
+  "SHELL:-sERROR_ON_UNDEFINED_SYMBOLS=0"
+  "SHELL:-sWARN_ON_UNDEFINED_SYMBOLS=1"
   "SHELL:--no-entry"
   "SHELL:-sMODULARIZE=1"
   "SHELL:-sEXPORT_ES6=1"
@@ -4671,7 +4913,7 @@ target_link_options(cnc-port PRIVATE
   "SHELL:-sTOTAL_STACK=1048576"
   "SHELL:-sASSERTIONS=1"
   "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
-  "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_register_archive_set','_cnc_port_set_browser_input','_cnc_port_reset_browser_input','_cnc_port_post_browser_message','_cnc_port_probe_browser_message_queue','_cnc_port_probe_browser_input','_cnc_port_build_browser_network_relay_packet','_cnc_port_accept_browser_network_relay_packet','_cnc_port_build_browser_network_transport_packet','_cnc_port_accept_browser_network_transport_packet','_cnc_port_build_browser_network_transport_wire_packet','_cnc_port_accept_browser_network_transport_wire_packet','_cnc_port_probe_browser_network_transport_live_send','_cnc_port_probe_browser_network_transport_live_receive','_cnc_port_build_browser_lanapi_announce_packet','_cnc_port_accept_browser_lanapi_announce_packet','_cnc_port_build_browser_lanapi_join_request_packet','_cnc_port_accept_browser_lanapi_join_request_packet','_cnc_port_accept_browser_lanapi_join_accept_packet','_cnc_port_probe_browser_lanapi_live_game_start_send','_cnc_port_probe_browser_lanapi_live_game_start_receive','_cnc_port_probe_win32_gameengine','_cnc_port_probe_mss_startup','_cnc_port_probe_mss_sample_lifecycle','_cnc_port_probe_mss_sample_playback_start','_cnc_port_probe_mss_sample_playback_finish','_cnc_port_probe_mss_stream_lifecycle','_cnc_port_probe_mss_3d_sample_lifecycle','_cnc_port_probe_d3d8_clear','_cnc_port_probe_d3d8_viewport','_cnc_port_probe_d3d8_buffer_dirty','_cnc_port_probe_d3d8_buffer_hints','_cnc_port_probe_d3d8_texture_upload','_cnc_port_probe_d3d8_volume_texture_upload','_cnc_port_probe_d3d8_texture_bind','_cnc_port_probe_d3d8_textured_quad','_cnc_port_probe_d3d8_two_texture_quad','_cnc_port_probe_d3d8_two_texture_alpha_quad','_cnc_port_probe_d3d8_texture_mip_chain_draw','_cnc_port_probe_d3d8_texture_combiner','_cnc_port_probe_d3d8_texcoord_index','_cnc_port_probe_d3d8_fvf_texcoord_sizes','_cnc_port_probe_d3d8_texture_transform','_cnc_port_probe_d3d8_stage1_texture_transform','_cnc_port_probe_d3d8_stencil_state','_cnc_port_probe_d3d8_fog_state','_cnc_port_probe_d3d8_fill_mode','_cnc_port_probe_d3d8_z_bias','_cnc_port_probe_d3d8_shade_mode','_cnc_port_probe_d3d8_clip_plane','_cnc_port_probe_d3d8_lighting_ambient','_cnc_port_probe_d3d8_directional_light','_cnc_port_probe_d3d8_multi_directional_light','_cnc_port_probe_d3d8_specular_light','_cnc_port_probe_d3d8_specular_offaxis_light','_cnc_port_probe_d3d8_specular_transformed_light','_cnc_port_probe_d3d8_normalize_normals','_cnc_port_probe_d3d8_local_viewer','_cnc_port_probe_d3d8_point_light','_cnc_port_probe_d3d8_point_quadratic_light','_cnc_port_probe_d3d8_point_range_light','_cnc_port_probe_d3d8_point_mixed_light','_cnc_port_probe_d3d8_spot_light','_cnc_port_probe_d3d8_spot_falloff','_cnc_port_probe_d3d8_material','_cnc_port_probe_d3d8_material_sources','_cnc_port_probe_d3d8_lit_material_sources','_cnc_port_probe_d3d8_lit_specular_material_source','_cnc_port_probe_d3d8_lit_emissive_color1_material_source','_cnc_port_probe_d3d8_lit_emissive_color2_material_source','_cnc_port_probe_d3d8_legacy_texture_upload','_cnc_port_probe_d3d8_legacy_texture_draw','_cnc_port_probe_d3d8_dxt_texture_draw','_cnc_port_probe_ww3d_aabox','_cnc_port_probe_ww3d_scene_camera','_cnc_port_probe_ww3d_rts_scene','_cnc_port_probe_ww3d_rts_scene_clear_line','_cnc_port_probe_ww3d_display_scene','_cnc_port_probe_ww3d_render2d_textured_quad','_cnc_port_probe_ww3d_render2d_sentence','_cnc_port_probe_ww3d_display_string','_cnc_port_probe_ww3d_display_game_text','_cnc_port_probe_ww3d_display_drawimage','_cnc_port_probe_ww3d_display_video_buffer','_cnc_port_probe_ww3d_display_drawimage_additive','_cnc_port_probe_ww3d_display_drawimage_solid','_cnc_port_probe_ww3d_display_drawimage_grayscale','_cnc_port_probe_ww3d_display_drawimage_file','_cnc_port_probe_ww3d_display_mapped_image','_cnc_port_probe_ww3d_display_mapped_image_clip','_cnc_port_probe_ww3d_display_mapped_image_unrotated','_cnc_port_probe_ww3d_display_main_menu_ruler','_cnc_port_probe_ww3d_display_fillrect','_cnc_port_probe_ww3d_window_repaint','_cnc_port_probe_ww3d_window_layout_repaint','_cnc_port_probe_ww3d_main_menu_layout_repaint','_cnc_port_probe_ww3d_main_menu_layout_image_repaint','_cnc_port_probe_ww3d_main_menu_layout_disabled_button_repaint','_cnc_port_probe_ww3d_main_menu_layout_hilite_button_repaint','_cnc_port_probe_ww3d_main_menu_layout_pushed_button_repaint','_cnc_port_probe_ww3d_main_menu_layout_single_player_repaint','_cnc_port_probe_ww3d_main_menu_layout_load_replay_repaint','_cnc_port_probe_ww3d_main_menu_layout_difficulty_repaint','_cnc_port_probe_ww3d_main_menu_layout_static_text_repaint','_cnc_port_probe_ww3d_main_menu_layout_faction_logo_repaint','_cnc_port_probe_ww3d_display_line','_cnc_port_probe_ww3d_display_line_gradient','_cnc_port_probe_ww3d_display_openrect','_cnc_port_probe_ww3d_display_rectclock','_cnc_port_probe_ww3d_display_remaining_rectclock','_cnc_port_probe_ww3d_terrain_tile','_cnc_port_probe_ww3d_terrain_tile_archive','_cnc_port_probe_ww3d_terrain_tile_archive_scene','_cnc_port_probe_ww3d_terrain_map_patch_scene','_cnc_port_probe_ww3d_terrain_shroud_scene','_cnc_port_probe_ww3d_terrain_visual_scene','_cnc_port_probe_ww3d_terrain_full_scene','_cnc_port_probe_ww3d_terrain_full_scene_shroud_update','_cnc_port_probe_ww3d_terrain_visual_load_window_scene','_cnc_port_probe_ww3d_terrain_visual_camera_pan_scene','_cnc_port_probe_ww3d_terrain_bib_buffer_lifecycle','_cnc_port_probe_ww3d_terrain_prop_buffer_render','_cnc_port_probe_ww3d_terrain_prop_buffer_scene','_cnc_port_probe_ww3d_terrain_tree_buffer_scene','_cnc_port_probe_ww3d_terrain_road_buffer_scene','_cnc_port_probe_ww3d_terrain_bridge_buffer_scene','_cnc_port_probe_ww3d_textured_mesh','_cnc_port_probe_ww3d_emissive_color2_material_source','_cnc_port_probe_ww3d_shipped_mesh','_cnc_port_probe_ww3d_shipped_multi_texture_mesh','_cnc_port_probe_ww3d_source_asset_load','_cnc_port_probe_ww3d_font_chars','_cnc_port_probe_classic_environment_mapper_apply','_cnc_port_probe_edge_mapper_apply','_cnc_port_probe_environment_mapper_apply','_cnc_port_probe_grid_environment_mapper_apply','_cnc_port_probe_grid_ws_environment_mapper_apply','_cnc_port_probe_matrixmapper_apply','_cnc_port_probe_projection_state_apply','_cnc_port_probe_screen_mapper_apply','_cnc_port_probe_ws_environment_mapper_apply','_cnc_port_probe_wwshade_cubemap_apply','_cnc_port_probe_launch_web_browser','_cnc_port_init_original_wndproc_input','_cnc_port_pump_original_wndproc_input','_cnc_port_probe_original_wndproc_input','_cnc_port_probe_original_gui_mouse_stream','_cnc_port_probe_original_cursor_visibility','_cnc_port_set_original_keyboard_frame_input_enabled','_cnc_port_reset_original_keyboard_frame_input','_cnc_port_probe_original_keyboard_frame_input','_cnc_port_set_original_mouse_frame_input_enabled','_cnc_port_reset_original_mouse_frame_input','_cnc_port_probe_original_mouse_frame_input','_cnc_port_probe_original_mouse_frame_windows','_cnc_port_resolve_original_mouse_frame_window_id','_cnc_port_probe_original_keyboard_input','_cnc_port_probe_original_keyboard_frame_tick','_cnc_port_reset_original_keyboard_input','_cnc_port_queue_original_keyboard_focus_lost','_cnc_port_probe_gdi_font','_cnc_port_state','_cnc_port_probe_audio_manager_runtime','_cnc_port_mss_adpcm_payload_buffer','_cnc_port_probe_mss_adpcm_sample_playback_start','_cnc_port_probe_object_ini','_cnc_port_probe_object_ini_snippet']"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_real_engine_init','_cnc_port_real_engine_frame','_cnc_port_real_engine_frontier','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_register_archive_set','_cnc_port_set_browser_input','_cnc_port_reset_browser_input','_cnc_port_post_browser_message','_cnc_port_probe_browser_message_queue','_cnc_port_probe_browser_input','_cnc_port_build_browser_network_relay_packet','_cnc_port_accept_browser_network_relay_packet','_cnc_port_build_browser_network_transport_packet','_cnc_port_accept_browser_network_transport_packet','_cnc_port_build_browser_network_transport_wire_packet','_cnc_port_accept_browser_network_transport_wire_packet','_cnc_port_probe_browser_network_transport_live_send','_cnc_port_probe_browser_network_transport_live_receive','_cnc_port_build_browser_lanapi_announce_packet','_cnc_port_accept_browser_lanapi_announce_packet','_cnc_port_build_browser_lanapi_join_request_packet','_cnc_port_accept_browser_lanapi_join_request_packet','_cnc_port_accept_browser_lanapi_join_accept_packet','_cnc_port_probe_browser_lanapi_live_game_start_send','_cnc_port_probe_browser_lanapi_live_game_start_receive','_cnc_port_probe_win32_gameengine','_cnc_port_probe_mss_startup','_cnc_port_probe_mss_sample_lifecycle','_cnc_port_probe_mss_sample_playback_start','_cnc_port_probe_mss_sample_playback_finish','_cnc_port_probe_mss_stream_lifecycle','_cnc_port_probe_mss_3d_sample_lifecycle','_cnc_port_probe_d3d8_clear','_cnc_port_probe_d3d8_viewport','_cnc_port_probe_d3d8_buffer_dirty','_cnc_port_probe_d3d8_buffer_hints','_cnc_port_probe_d3d8_texture_upload','_cnc_port_probe_d3d8_volume_texture_upload','_cnc_port_probe_d3d8_texture_bind','_cnc_port_probe_d3d8_textured_quad','_cnc_port_probe_d3d8_two_texture_quad','_cnc_port_probe_d3d8_two_texture_alpha_quad','_cnc_port_probe_d3d8_texture_mip_chain_draw','_cnc_port_probe_d3d8_texture_combiner','_cnc_port_probe_d3d8_texcoord_index','_cnc_port_probe_d3d8_fvf_texcoord_sizes','_cnc_port_probe_d3d8_texture_transform','_cnc_port_probe_d3d8_stage1_texture_transform','_cnc_port_probe_d3d8_stencil_state','_cnc_port_probe_d3d8_fog_state','_cnc_port_probe_d3d8_fill_mode','_cnc_port_probe_d3d8_z_bias','_cnc_port_probe_d3d8_shade_mode','_cnc_port_probe_d3d8_clip_plane','_cnc_port_probe_d3d8_lighting_ambient','_cnc_port_probe_d3d8_directional_light','_cnc_port_probe_d3d8_multi_directional_light','_cnc_port_probe_d3d8_specular_light','_cnc_port_probe_d3d8_specular_offaxis_light','_cnc_port_probe_d3d8_specular_transformed_light','_cnc_port_probe_d3d8_normalize_normals','_cnc_port_probe_d3d8_local_viewer','_cnc_port_probe_d3d8_point_light','_cnc_port_probe_d3d8_point_quadratic_light','_cnc_port_probe_d3d8_point_range_light','_cnc_port_probe_d3d8_point_mixed_light','_cnc_port_probe_d3d8_spot_light','_cnc_port_probe_d3d8_spot_falloff','_cnc_port_probe_d3d8_material','_cnc_port_probe_d3d8_material_sources','_cnc_port_probe_d3d8_lit_material_sources','_cnc_port_probe_d3d8_lit_specular_material_source','_cnc_port_probe_d3d8_lit_emissive_color1_material_source','_cnc_port_probe_d3d8_lit_emissive_color2_material_source','_cnc_port_probe_d3d8_legacy_texture_upload','_cnc_port_probe_d3d8_legacy_texture_draw','_cnc_port_probe_d3d8_dxt_texture_draw','_cnc_port_probe_ww3d_aabox','_cnc_port_probe_ww3d_scene_camera','_cnc_port_probe_ww3d_rts_scene','_cnc_port_probe_ww3d_rts_scene_clear_line','_cnc_port_probe_ww3d_display_scene','_cnc_port_probe_ww3d_render2d_textured_quad','_cnc_port_probe_ww3d_render2d_sentence','_cnc_port_probe_ww3d_display_string','_cnc_port_probe_ww3d_display_game_text','_cnc_port_probe_ww3d_display_drawimage','_cnc_port_probe_ww3d_display_video_buffer','_cnc_port_probe_ww3d_display_drawimage_additive','_cnc_port_probe_ww3d_display_drawimage_solid','_cnc_port_probe_ww3d_display_drawimage_grayscale','_cnc_port_probe_ww3d_display_drawimage_file','_cnc_port_probe_ww3d_display_mapped_image','_cnc_port_probe_ww3d_display_mapped_image_clip','_cnc_port_probe_ww3d_display_mapped_image_unrotated','_cnc_port_probe_ww3d_display_main_menu_ruler','_cnc_port_probe_ww3d_display_fillrect','_cnc_port_probe_ww3d_window_repaint','_cnc_port_probe_ww3d_window_layout_repaint','_cnc_port_probe_ww3d_main_menu_layout_repaint','_cnc_port_probe_ww3d_main_menu_layout_image_repaint','_cnc_port_probe_ww3d_main_menu_layout_disabled_button_repaint','_cnc_port_probe_ww3d_main_menu_layout_hilite_button_repaint','_cnc_port_probe_ww3d_main_menu_layout_pushed_button_repaint','_cnc_port_probe_ww3d_main_menu_layout_single_player_repaint','_cnc_port_probe_ww3d_main_menu_layout_load_replay_repaint','_cnc_port_probe_ww3d_main_menu_layout_difficulty_repaint','_cnc_port_probe_ww3d_main_menu_layout_static_text_repaint','_cnc_port_probe_ww3d_main_menu_layout_faction_logo_repaint','_cnc_port_probe_ww3d_display_line','_cnc_port_probe_ww3d_display_line_gradient','_cnc_port_probe_ww3d_display_openrect','_cnc_port_probe_ww3d_display_rectclock','_cnc_port_probe_ww3d_display_remaining_rectclock','_cnc_port_probe_ww3d_terrain_tile','_cnc_port_probe_ww3d_terrain_tile_archive','_cnc_port_probe_ww3d_terrain_tile_archive_scene','_cnc_port_probe_ww3d_terrain_map_patch_scene','_cnc_port_probe_ww3d_terrain_shroud_scene','_cnc_port_probe_ww3d_terrain_visual_scene','_cnc_port_probe_ww3d_terrain_full_scene','_cnc_port_probe_ww3d_terrain_full_scene_shroud_update','_cnc_port_probe_ww3d_terrain_visual_load_window_scene','_cnc_port_probe_ww3d_terrain_visual_camera_pan_scene','_cnc_port_probe_ww3d_terrain_bib_buffer_lifecycle','_cnc_port_probe_ww3d_terrain_prop_buffer_render','_cnc_port_probe_ww3d_terrain_prop_buffer_scene','_cnc_port_probe_ww3d_terrain_tree_buffer_scene','_cnc_port_probe_ww3d_terrain_road_buffer_scene','_cnc_port_probe_ww3d_terrain_bridge_buffer_scene','_cnc_port_probe_ww3d_textured_mesh','_cnc_port_probe_ww3d_emissive_color2_material_source','_cnc_port_probe_ww3d_shipped_mesh','_cnc_port_probe_ww3d_shipped_multi_texture_mesh','_cnc_port_probe_ww3d_source_asset_load','_cnc_port_probe_ww3d_font_chars','_cnc_port_probe_classic_environment_mapper_apply','_cnc_port_probe_edge_mapper_apply','_cnc_port_probe_environment_mapper_apply','_cnc_port_probe_grid_environment_mapper_apply','_cnc_port_probe_grid_ws_environment_mapper_apply','_cnc_port_probe_matrixmapper_apply','_cnc_port_probe_projection_state_apply','_cnc_port_probe_screen_mapper_apply','_cnc_port_probe_ws_environment_mapper_apply','_cnc_port_probe_wwshade_cubemap_apply','_cnc_port_probe_launch_web_browser','_cnc_port_init_original_wndproc_input','_cnc_port_pump_original_wndproc_input','_cnc_port_probe_original_wndproc_input','_cnc_port_probe_original_gui_mouse_stream','_cnc_port_probe_original_cursor_visibility','_cnc_port_set_original_keyboard_frame_input_enabled','_cnc_port_reset_original_keyboard_frame_input','_cnc_port_probe_original_keyboard_frame_input','_cnc_port_set_original_mouse_frame_input_enabled','_cnc_port_reset_original_mouse_frame_input','_cnc_port_probe_original_mouse_frame_input','_cnc_port_probe_original_mouse_frame_windows','_cnc_port_resolve_original_mouse_frame_window_id','_cnc_port_probe_original_keyboard_input','_cnc_port_probe_original_keyboard_frame_tick','_cnc_port_reset_original_keyboard_input','_cnc_port_queue_original_keyboard_focus_lost','_cnc_port_probe_gdi_font','_cnc_port_state','_cnc_port_probe_audio_manager_runtime','_cnc_port_mss_adpcm_payload_buffer','_cnc_port_probe_mss_adpcm_sample_playback_start','_cnc_port_probe_object_ini','_cnc_port_probe_object_ini_snippet']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['cwrap','FS']"
 )
 

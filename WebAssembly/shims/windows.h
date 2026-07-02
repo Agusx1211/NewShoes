@@ -2658,6 +2658,26 @@ static inline DWORD SizeofResource(HMODULE, HRSRC)
 	return 0;
 }
 
+#ifndef EVENT_MODIFY_STATE
+#define EVENT_MODIFY_STATE 0x0002
+#endif
+
+#ifndef FILE_MAP_ALL_ACCESS
+#define FILE_MAP_ALL_ACCESS 0x000F001F
+#endif
+
+// Browser platform has no shared-memory file mappings; the original
+// CopyProtection launcher handshake takes its mapping-failed path.
+static inline LPVOID MapViewOfFileEx(HANDLE, DWORD, DWORD, DWORD, std::size_t, LPVOID)
+{
+	return NULL;
+}
+
+static inline BOOL UnmapViewOfFile(LPVOID)
+{
+	return TRUE;
+}
+
 static inline HANDLE OpenEvent(DWORD, BOOL, const char *)
 {
 	return nullptr;

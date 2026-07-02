@@ -647,6 +647,12 @@ double SimpleProfiler::getAverageTime()
 
 void ReleaseCrash(const char *reason)
 {
+#ifdef __EMSCRIPTEN__
+	// Browser port: surface the crash reason on stdout so the headless harness
+	// can capture the real failure before _exit() tears down the runtime.
+	printf("cnc-port: RELEASE_CRASH %s\n", reason != NULL ? reason : "(null)");
+	fflush(stdout);
+#endif
 	/// do additional reporting on the crash, if possible
 
 	if (!DX8Wrapper_IsWindowed) {

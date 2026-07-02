@@ -1116,9 +1116,12 @@ Int APIENTRY WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
 }  // end WinMain
 
+#endif // CNC_WASM_WNDPROC_ONLY
+
 // CreateGameEngine ===========================================================
 /** Create the Win32 game engine we're going to use */
 //=============================================================================
+#if !defined(CNC_WASM_WNDPROC_ONLY) || defined(CNC_WASM_ENABLE_CREATEGAMEENGINE)
 GameEngine *CreateGameEngine( void )
 {
 	Win32GameEngine *engine;

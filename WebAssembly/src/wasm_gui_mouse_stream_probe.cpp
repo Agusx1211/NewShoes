@@ -42,8 +42,10 @@ class Shell;
 // Storage for original singletons referenced by linked GUI/display code outside
 // this focused probe. They stay null here because those subsystems are not booted.
 DisplayStringManager *TheDisplayStringManager = nullptr;
-InGameUI *TheInGameUI __attribute__((weak)) = nullptr;
-Shell *TheShell __attribute__((weak)) = nullptr;
+// TheInGameUI is owned by the real GameEngine/Source/GameClient/InGameUI.cpp
+// linked through zh_gameengine_real_lifecycle_runtime.
+// TheShell is owned by the real GameEngine/Source/GameClient/GUI/Shell/Shell.cpp
+// linked through zh_gameengine_real_lifecycle_runtime.
 
 // Keep this browser GUI input probe focused on event routing without linking
 // the .wnd layout parser and function lexicon callback tables.

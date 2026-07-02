@@ -4548,10 +4548,20 @@ RealChallengeModeIniProbeResult probe_original_challenge_mode_ini_load(const cha
 
 RealControlBarSchemeIniProbeResult probe_original_control_bar_scheme_ini_load(const char *archive_path)
 {
+	// SUPERSEDED by the real engine lifecycle: cnc_port_real_engine_init()
+	// drives the ORIGINAL ControlBarScheme load (GameClient::init ->
+	// ControlBar::init -> ControlBarSchemeManager::init over
+	// Data\INI\Default\ControlBarScheme.ini + Data\INI\ControlBarScheme.ini)
+	// with the full store environment GameEngine::init() provides. A
+	// standalone re-parse here would need that entire environment (the old
+	// version relied on a probe-local shadow ControlBar constructor that no
+	// longer exists now the real ControlBar.cpp is linked), so this probe
+	// only reports the archive file contract and defers the parse contract
+	// to the real-init harness phase.
 	RealControlBarSchemeIniProbeResult result;
-	result.attempted = true;
+	result.attempted = false;
 	result.source =
-		"GameEngine/Common/INI.cpp::load + INIControlBarScheme.cpp + ControlBarScheme.cpp + Image.cpp";
+		"superseded by cnc_port_real_engine_init (original GameClient::init -> ControlBar::init)";
 	result.archive_path = archive_path != nullptr ? archive_path : "";
 
 	AsciiString archive_directory;
@@ -4566,16 +4576,10 @@ RealControlBarSchemeIniProbeResult probe_original_control_bar_scheme_ini_load(co
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
 	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
-	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
-	ImageCollection *old_mapped_image_collection = TheMappedImageCollection;
-	ControlBar *old_control_bar = TheControlBar;
 
 	Win32LocalFileSystem local_file_system;
 	Win32BIGFileSystem archive_file_system;
 	FileSystem file_system;
-	NameKeyGenerator *name_key_generator = nullptr;
-	ImageCollection *mapped_image_collection = nullptr;
-	ControlBar *control_bar = nullptr;
 
 	try {
 		TheLocalFileSystem = &local_file_system;
@@ -4600,112 +4604,14 @@ RealControlBarSchemeIniProbeResult probe_original_control_bar_scheme_ini_load(co
 				file_info.sizeHigh == 0 &&
 				file_info.sizeLow > 0;
 			result.bytes = result.file_exists ? static_cast<std::size_t>(file_info.sizeLow) : 0U;
-
-			if (result.default_file_exists && result.file_exists) {
-				name_key_generator = NEW NameKeyGenerator;
-				TheNameKeyGenerator = name_key_generator;
-				name_key_generator->init();
-				result.name_key_generator_loaded = true;
-
-				mapped_image_collection = NEW ImageCollection;
-				TheMappedImageCollection = mapped_image_collection;
-				mapped_image_collection->load(512);
-				result.mapped_images_loaded = true;
-				result.mapped_image_count = count_mapped_images(*mapped_image_collection);
-
-				control_bar = NEW ControlBar;
-				TheControlBar = control_bar;
-				ControlBarSchemeManager *manager = control_bar->getControlBarSchemeManager();
-				result.control_bar_loaded = manager != nullptr;
-
-				if (manager != nullptr) {
-					INI default_ini;
-					default_ini.load(
-						AsciiString(DEFAULT_CONTROL_BAR_SCHEME_INI_PATH),
-						INI_LOAD_OVERWRITE,
-						nullptr);
-					result.original_default_ini_load = true;
-
-					INI ini;
-					ini.load(AsciiString(CONTROL_BAR_SCHEME_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
-					result.original_ini_load = true;
-
-					inspect_default_control_bar_scheme(*manager, result);
-					inspect_control_bar_scheme_sample(
-						*manager,
-						"America8x6",
-						result.america_found,
-						result.america_side,
-						result.america_right_hud_image,
-						result.america_command_marker_image,
-						result.america_power_purchase_image,
-						result.america_base_image,
-						&result.america_queue_image,
-						nullptr,
-						&result.america_screen_x,
-						&result.america_screen_y,
-						&result.america_base_layer,
-						&result.america_base_x,
-						&result.america_base_y,
-						&result.america_base_width,
-						&result.america_base_height);
-					inspect_control_bar_scheme_sample(
-						*manager,
-						"GLA8x6",
-						result.gla_found,
-						result.gla_side,
-						result.gla_right_hud_image,
-						result.gla_command_marker_image,
-						result.gla_power_purchase_image,
-						result.gla_base_image);
-					inspect_control_bar_scheme_sample(
-						*manager,
-						"China8x6",
-						result.china_found,
-						result.china_side,
-						result.china_right_hud_image,
-						result.china_command_marker_image,
-						result.china_power_purchase_image,
-						result.china_base_image,
-						nullptr,
-						&result.china_gen_arrow_image);
-
-					result.parsed_fields = count_verified_fields(result);
-					result.ok =
-						result.default_bytes > 1000 &&
-						result.bytes > 10000 &&
-						result.mapped_images_loaded &&
-						mapped_image_count_supported(result.mapped_image_count) &&
-						result.name_key_generator_loaded &&
-						result.control_bar_loaded &&
-						result.original_default_ini_load &&
-						result.original_ini_load &&
-						control_bar_scheme_image_shape_supported(result) &&
-						result.parsed_fields == 34;
-				}
-			}
 		}
 	} catch (...) {
 		result.ok = false;
 	}
 
-	TheControlBar = old_control_bar;
-	TheMappedImageCollection = old_mapped_image_collection;
-	TheNameKeyGenerator = old_name_key_generator;
 	TheFileSystem = old_file_system;
 	TheArchiveFileSystem = old_archive_file_system;
 	TheLocalFileSystem = old_local_file_system;
-
-	if (control_bar != nullptr) {
-		delete control_bar;
-	}
-	if (mapped_image_collection != nullptr) {
-		delete mapped_image_collection;
-	}
-	if (name_key_generator != nullptr) {
-		delete name_key_generator;
-	}
-
 
 	return result;
 }
