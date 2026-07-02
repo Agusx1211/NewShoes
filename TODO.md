@@ -51,11 +51,23 @@ residue and the next frontier.
       `KEY_A` down/up during real `GameClient::update()`, links the real
       W3D main-menu draw/init owner instead of the legacy weak probe body,
       waits for the real default, Single Player, and USA difficulty
-      transitions to finish, and state/screenshot-proves `ButtonSinglePlayer`
+      transitions to finish, state/screenshot-proves `ButtonSinglePlayer`
       -> `ButtonUSA` -> visible difficulty controls with engine hit-testing
-      aligned to the rendered menu. Remaining: retire superseded focused menu
-      smokes and then advance the next real startup path outside the already
-      proven shell menu slice.
+      aligned to the rendered menu, then clicks real `ButtonEasy`, routes the
+      original CD check to browser-mounted `GensecZH.big`, runs original
+      `prepareCampaignGame` / `setupGameStart`, sets pending
+      `Maps\MD_USA01\MD_USA01.map`, reaches `doGameStart()`, and queues
+      `MSG_NEW_GAME` single-player/easy through the real startup lifecycle.
+      Remaining: retire superseded focused menu smokes and continue the real
+      `ButtonEasy` campaign start beyond `MSG_NEW_GAME` queueing/fade into
+      map load/rendering.
+- [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch
+      workaround in `GameEngine::update()` with the real
+      `W3DGameLogic`/`SubsystemInterface::UPDATE` wasm vtable ownership fix
+      once the next real map-load frame is current. The workaround still calls
+      original `GameLogic::update()` (the W3D subclass does not override it),
+      but it bypasses a null indirect-call slot hit on the first real logic
+      frame after shell shutdown.
 - [ ] Migrate the legacy `ensure_booted()` probe boot and its harness gates
       onto the real lifecycle path, deleting probe-local implementations as
       real init covers them. First known casualty of real ownership: the

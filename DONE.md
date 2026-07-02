@@ -2384,6 +2384,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `git diff --check`, `wasm-objdump` symbol checks for real
       `W3DMainMenuInit` / `W3DMainMenuDraw`, and screenshot
       `startup-vertical-real-init-menu-click.png`.
+- [x] Drive the real startup lifecycle from the visible difficulty menu into
+      the original easy USA campaign-start path. The startup vertical harness
+      now clicks real `ButtonEasy`, records the original `MainMenu.cpp`
+      campaign-start state, routes `FileSystem::areMusicFilesOnCD()` through
+      the browser-mounted `GensecZH.big` archive for the original CD check,
+      runs original `prepareCampaignGame()` / `setupGameStart()`, sets
+      `TheWritableGlobalData->m_pendingFile` to
+      `Maps\MD_USA01\MD_USA01.map`, reaches `doGameStart()`, and proves the
+      queued single-player/easy `MSG_NEW_GAME` arguments before the fade. The
+      browser gate also records the last `GameEngine::update()` owner on
+      aborts and uses an Emscripten-only qualified `GameLogic::update()` call
+      to keep the real logic frame moving past a wasm null indirect-call slot
+      in `SubsystemInterface::UPDATE` (tracked in TODO for the real vtable
+      ownership fix). Verified with
+      `npm --prefix WebAssembly run test:startup-vertical`, including
+      screenshot `startup-vertical-real-init-campaign-start.png`.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what

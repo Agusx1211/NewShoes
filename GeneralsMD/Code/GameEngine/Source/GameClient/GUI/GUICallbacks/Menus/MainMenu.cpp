@@ -31,6 +31,9 @@
 #include "PreRTS.h"	// This must go first in EVERY cpp file int the GameEngine
 
 #include <process.h>
+#ifdef __EMSCRIPTEN__
+#include <string.h>
+#endif
 
 #include "GameSpy/ghttp/ghttp.h"
 
@@ -233,10 +236,39 @@ static Int g_wasmMainMenuLastInitParentWindowID = 0;
 static Int g_wasmMainMenuLastInitSinglePlayerWindowID = 0;
 static Int g_wasmMainMenuLastInitUSAWindowID = 0;
 static Int g_wasmMainMenuLastInitEasyWindowID = 0;
+static Int g_wasmMainMenuCheckCDCount = 0;
+static Int g_wasmMainMenuLastCDPresent = 0;
+static Int g_wasmMainMenuLastCDDifficulty = -1;
+static Int g_wasmMainMenuPrepareCampaignCount = 0;
+static Int g_wasmMainMenuLastPrepareDifficulty = -1;
+static Int g_wasmMainMenuSetupGameStartCount = 0;
+static Int g_wasmMainMenuLastSetupDifficulty = -1;
+static Int g_wasmMainMenuDoGameStartCount = 0;
+static Int g_wasmMainMenuLastNewGameMode = -1;
+static Int g_wasmMainMenuLastNewGameDifficulty = -1;
+static Int g_wasmMainMenuLastNewGameRankPoints = -1;
+static Int g_wasmMainMenuShutdownCompleteCount = 0;
+static const Int kWasmMainMenuPathBufferSize = 512;
+static Char g_wasmMainMenuLastSetupMap[kWasmMainMenuPathBufferSize] = "";
+static Char g_wasmMainMenuLastPendingFile[kWasmMainMenuPathBufferSize] = "";
+
+static void wasm_copy_main_menu_ascii(Char *dest, const AsciiString &value)
+{
+	const Char *source = value.str();
+	if (source == NULL) {
+		source = "";
+	}
+	strncpy(dest, source, kWasmMainMenuPathBufferSize - 1);
+	dest[kWasmMainMenuPathBufferSize - 1] = '\0';
+}
 
 extern "C" Int cnc_port_main_menu_dont_allow_transitions( void ) { return dontAllowTransitions ? 1 : 0; }
 extern "C" Int cnc_port_main_menu_button_pushed( void ) { return buttonPushed ? 1 : 0; }
 extern "C" Int cnc_port_main_menu_campaign_selected( void ) { return campaignSelected ? 1 : 0; }
+extern "C" Int cnc_port_main_menu_start_game( void ) { return startGame ? 1 : 0; }
+extern "C" Int cnc_port_main_menu_is_shutting_down( void ) { return isShuttingDown ? 1 : 0; }
+extern "C" Int cnc_port_main_menu_launch_challenge_menu( void ) { return launchChallengeMenu ? 1 : 0; }
+extern "C" Int cnc_port_main_menu_show_side( void ) { return showSide; }
 extern "C" Int cnc_port_main_menu_last_selected_msg( void ) { return static_cast<Int>(g_wasmMainMenuLastSelectedMsg); }
 extern "C" Int cnc_port_main_menu_last_selected_control_id( void ) { return g_wasmMainMenuLastSelectedControlID; }
 extern "C" Int cnc_port_main_menu_selected_count( void ) { return g_wasmMainMenuSelectedCount; }
@@ -260,6 +292,20 @@ extern "C" Int cnc_port_main_menu_last_init_parent_window_id( void ) { return g_
 extern "C" Int cnc_port_main_menu_last_init_single_player_window_id( void ) { return g_wasmMainMenuLastInitSinglePlayerWindowID; }
 extern "C" Int cnc_port_main_menu_last_init_usa_window_id( void ) { return g_wasmMainMenuLastInitUSAWindowID; }
 extern "C" Int cnc_port_main_menu_last_init_easy_window_id( void ) { return g_wasmMainMenuLastInitEasyWindowID; }
+extern "C" Int cnc_port_main_menu_check_cd_count( void ) { return g_wasmMainMenuCheckCDCount; }
+extern "C" Int cnc_port_main_menu_last_cd_present( void ) { return g_wasmMainMenuLastCDPresent; }
+extern "C" Int cnc_port_main_menu_last_cd_difficulty( void ) { return g_wasmMainMenuLastCDDifficulty; }
+extern "C" Int cnc_port_main_menu_prepare_campaign_count( void ) { return g_wasmMainMenuPrepareCampaignCount; }
+extern "C" Int cnc_port_main_menu_last_prepare_difficulty( void ) { return g_wasmMainMenuLastPrepareDifficulty; }
+extern "C" Int cnc_port_main_menu_setup_game_start_count( void ) { return g_wasmMainMenuSetupGameStartCount; }
+extern "C" Int cnc_port_main_menu_last_setup_difficulty( void ) { return g_wasmMainMenuLastSetupDifficulty; }
+extern "C" const Char *cnc_port_main_menu_last_setup_map( void ) { return g_wasmMainMenuLastSetupMap; }
+extern "C" const Char *cnc_port_main_menu_last_pending_file( void ) { return g_wasmMainMenuLastPendingFile; }
+extern "C" Int cnc_port_main_menu_do_game_start_count( void ) { return g_wasmMainMenuDoGameStartCount; }
+extern "C" Int cnc_port_main_menu_last_new_game_mode( void ) { return g_wasmMainMenuLastNewGameMode; }
+extern "C" Int cnc_port_main_menu_last_new_game_difficulty( void ) { return g_wasmMainMenuLastNewGameDifficulty; }
+extern "C" Int cnc_port_main_menu_last_new_game_rank_points( void ) { return g_wasmMainMenuLastNewGameRankPoints; }
+extern "C" Int cnc_port_main_menu_shutdown_complete_count( void ) { return g_wasmMainMenuShutdownCompleteCount; }
 #endif
 
 //Added by Saad
@@ -325,6 +371,12 @@ static void quitCallback( void )
 
 void setupGameStart(AsciiString mapName, GameDifficulty diff)
 {
+#ifdef __EMSCRIPTEN__
+	++g_wasmMainMenuSetupGameStartCount;
+	g_wasmMainMenuLastSetupDifficulty = static_cast<Int>(diff);
+	wasm_copy_main_menu_ascii(g_wasmMainMenuLastSetupMap, mapName);
+	g_wasmMainMenuLastPendingFile[0] = '\0';
+#endif
 	TheCampaignManager->setGameDifficulty(diff);
 
 	if (launchChallengeMenu)
@@ -340,6 +392,9 @@ void setupGameStart(AsciiString mapName, GameDifficulty diff)
 	{
 		startGame = TRUE;
 		TheWritableGlobalData->m_pendingFile = mapName;
+#ifdef __EMSCRIPTEN__
+		wasm_copy_main_menu_ascii(g_wasmMainMenuLastPendingFile, TheWritableGlobalData->m_pendingFile);
+#endif
 		TheShell->reverseAnimatewindow();
 		TheTransitionHandler->setGroup("FadeWholeScreen");
 	}
@@ -347,6 +402,10 @@ void setupGameStart(AsciiString mapName, GameDifficulty diff)
 
 void prepareCampaignGame(GameDifficulty diff)
 {
+#ifdef __EMSCRIPTEN__
+	++g_wasmMainMenuPrepareCampaignCount;
+	g_wasmMainMenuLastPrepareDifficulty = static_cast<Int>(diff);
+#endif
 	dontAllowTransitions = TRUE;
 	OptionPreferences pref;
 	pref.setCampaignDifficulty(diff);
@@ -379,6 +438,12 @@ static MessageBoxReturnType checkCDCallback( void *userData )
 static void doGameStart( void )
 {
 	startGame = FALSE;
+#ifdef __EMSCRIPTEN__
+	++g_wasmMainMenuDoGameStartCount;
+	g_wasmMainMenuLastNewGameMode = GAME_SINGLE_PLAYER;
+	g_wasmMainMenuLastNewGameDifficulty = static_cast<Int>(TheCampaignManager->getGameDifficulty());
+	g_wasmMainMenuLastNewGameRankPoints = TheCampaignManager->getRankPoints();
+#endif
 
 	if (TheGameLogic->isInGame())
 		TheGameLogic->clearGameData();
@@ -395,7 +460,13 @@ static void doGameStart( void )
 
 static void checkCDBeforeCampaign(GameDifficulty diff)
 {
-	if (!IsFirstCDPresent())
+	Bool firstCDPresent = IsFirstCDPresent();
+#ifdef __EMSCRIPTEN__
+	++g_wasmMainMenuCheckCDCount;
+	g_wasmMainMenuLastCDPresent = firstCDPresent ? 1 : 0;
+	g_wasmMainMenuLastCDDifficulty = static_cast<Int>(diff);
+#endif
+	if (!firstCDPresent)
 	{
 		// popup a dialog asking for a CD
 		ExMessageBoxOkCancel(TheGameText->fetch("GUI:InsertCDPrompt"), TheGameText->fetch("GUI:InsertCDMessage"),
@@ -409,6 +480,9 @@ static void checkCDBeforeCampaign(GameDifficulty diff)
 
 static void shutdownComplete( WindowLayout *layout )
 {
+#ifdef __EMSCRIPTEN__
+	++g_wasmMainMenuShutdownCompleteCount;
+#endif
 	isShuttingDown = FALSE;
 	
 	// hide the layout

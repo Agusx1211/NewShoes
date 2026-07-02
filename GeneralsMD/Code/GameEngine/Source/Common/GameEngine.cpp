@@ -738,6 +738,18 @@ void GameEngine::reset( void )
 /// -----------------------------------------------------------------------------------------------
 DECLARE_PERF_TIMER(GameEngine_update)
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_update_target(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_ENGINE_UPDATE_TARGET(name) \
+	do { \
+		if (cnc_port_note_engine_update_target) { \
+			cnc_port_note_engine_update_target(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_ENGINE_UPDATE_TARGET(name) do { } while (0)
+#endif
+
 /** -----------------------------------------------------------------------------------------------
  * Update the game engine by updating the GameClient and GameLogic singletons.
  * @todo Allow the client to run as fast as possible, but limit the execution
@@ -753,27 +765,42 @@ void GameEngine::update( void )
 			// VERIFY CRC needs to be in this code block.  Please to not pull TheGameLogic->update() inside this block.
 			VERIFY_CRC
 
+			CNC_PORT_NOTE_ENGINE_UPDATE_TARGET("TheRadar");
 			TheRadar->UPDATE();
 
 			/// @todo Move audio init, update, etc, into GameClient update
 			
+			CNC_PORT_NOTE_ENGINE_UPDATE_TARGET("TheAudio");
 			TheAudio->UPDATE();
+			CNC_PORT_NOTE_ENGINE_UPDATE_TARGET("TheGameClient");
 			TheGameClient->UPDATE();
+			CNC_PORT_NOTE_ENGINE_UPDATE_TARGET("TheMessageStream.propagateMessages");
 			TheMessageStream->propagateMessages();
 
 			if (TheNetwork != NULL)
 			{
+				CNC_PORT_NOTE_ENGINE_UPDATE_TARGET("TheNetwork");
 				TheNetwork->UPDATE();
 			}
 			 
+			CNC_PORT_NOTE_ENGINE_UPDATE_TARGET("TheCDManager");
 			TheCDManager->UPDATE();
 		}
 
 
 		if ((TheNetwork == NULL && !TheGameLogic->isGamePaused()) || (TheNetwork && TheNetwork->isFrameDataReady()))
 		{
+			CNC_PORT_NOTE_ENGINE_UPDATE_TARGET("TheGameLogic");
+#ifdef __EMSCRIPTEN__
+			// W3DGameLogic does not override update(); call the original owner
+			// directly in wasm to avoid a null indirect-call slot on the first
+			// real logic frame after shell shutdown.
+			TheGameLogic->GameLogic::update();
+#else
 			TheGameLogic->UPDATE();
+#endif
 		}
+		CNC_PORT_NOTE_ENGINE_UPDATE_TARGET("idle");
 
 	}	// end perfGather
 

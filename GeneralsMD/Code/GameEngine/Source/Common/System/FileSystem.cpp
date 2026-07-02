@@ -267,6 +267,23 @@ Bool FileSystem::createDirectory(AsciiString directory)
 //============================================================================
 Bool FileSystem::areMusicFilesOnCD()
 {
+#ifdef __EMSCRIPTEN__
+	if (TheArchiveFileSystem) {
+		AsciiString archiveName =
+			TheArchiveFileSystem->getArchiveFilenameForFile("generalsbzh.sec");
+		const char *basename = archiveName.reverseFind('\\');
+		if (!basename) {
+			basename = archiveName.reverseFind('/');
+		}
+		if (basename) {
+			archiveName = basename + 1;
+		}
+		if (archiveName.compareNoCase("genseczh.big") == 0) {
+			return TRUE;
+		}
+	}
+#endif
+
 	if (!TheCDManager) {
 		DEBUG_LOG(("FileSystem::areMusicFilesOnCD() - No CD Manager; returning false\n"));
 		return FALSE;

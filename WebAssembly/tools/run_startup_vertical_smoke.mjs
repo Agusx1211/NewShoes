@@ -299,6 +299,19 @@ const browserChecks = [
           && difficultyMenu?.staticTextSelectDifficulty?.managerHidden === false
           && difficultyMenu?.underButtonEasyCenter?.window?.id === difficultyMenu?.buttonEasy?.id,
         'Real ButtonUSA transition did not align difficulty-control hit-testing with the rendered menu state');
+      const campaignStartDebug =
+        payload.realEngineInit?.campaignStart?.clientState?.mainMenu?.debug;
+      expect(payload.realEngineInit?.campaignStart?.target?.decoratedName === 'MainMenu.wnd:ButtonEasy'
+          && campaignStartDebug?.lastCDPresent === 1
+          && campaignStartDebug?.lastPrepareDifficulty === 0
+          && campaignStartDebug?.lastSetupDifficulty === 0
+          && campaignStartDebug?.lastPendingFile?.length > 0
+          && campaignStartDebug.lastPendingFile === campaignStartDebug.lastSetupMap
+          && campaignStartDebug?.lastNewGameMode === 0
+          && campaignStartDebug?.lastNewGameDifficulty === 0
+          && campaignStartDebug?.doGameStartCount > 0,
+        'Real ButtonEasy click did not reach original campaign setup and MSG_NEW_GAME queueing',
+        payload.realEngineInit?.campaignStart);
     },
   },
 ];
@@ -700,6 +713,7 @@ console.log(JSON.stringify({
     'original MainMenuUpdate first idle frame under shell GameLogic state',
     'browser DOM keyboard events feed the browser DirectInput scan-code queue and real GameClient::update proves KEY_A down/up through original DirectInputKeyboard',
     'real MainMenu default, Single Player, and USA difficulty transitions finish before the next click, aligning engine hit-testing with the rendered menu state',
+    'real ButtonEasy campaign difficulty click passes the browser asset-backed original CD check, runs prepareCampaignGame/setupGameStart, sets the pending campaign map, and reaches doGameStart MSG_NEW_GAME queueing through the real startup lifecycle',
     'original ButtonUSA faction difficulty transition and ButtonDiffBack return through MainMenuSystem',
     'original ButtonLoadReplay dropdown and ButtonLoadReplayBack return through MainMenuSystem',
     'original ButtonCredits path through Shell::push into CreditsMenuInit/CreditsMenuUpdate with INIZH-backed Credits.ini',
@@ -712,7 +726,7 @@ console.log(JSON.stringify({
   ],
   nextRequired: [
     'replace the remaining base FunctionLexicon callback owner groups, starting with non-network owners such as PopupReplay score-screen-dependent System/Update, QuitMenuSystem, ScoreScreen, and broader ControlBarSystem/LeftHUDInput callbacks only when their real owners are runtime-owned',
-    'advance the next vertical startup path outside the already-proven shell menu slice',
+    'continue the real ButtonEasy campaign start beyond MSG_NEW_GAME queueing into map load/rendering through the full real lifecycle',
     'advance the post-particle startup data stores toward createThingFactory once createFunctionLexicon is fully owned',
     'load real object templates into gamelogic-new-game-dispatch-smoke and promote the bridge-like map-object creation branch when a map supplies bridge or walk-on-wall templates, then continue the original ordered startNewGame sequence beyond Pathfinder::newMap',
   ],

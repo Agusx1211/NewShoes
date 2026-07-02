@@ -58,6 +58,10 @@ extern Bool ApplicationIsWindowed;
 extern "C" Int cnc_port_main_menu_dont_allow_transitions(void);
 extern "C" Int cnc_port_main_menu_button_pushed(void);
 extern "C" Int cnc_port_main_menu_campaign_selected(void);
+extern "C" Int cnc_port_main_menu_start_game(void);
+extern "C" Int cnc_port_main_menu_is_shutting_down(void);
+extern "C" Int cnc_port_main_menu_launch_challenge_menu(void);
+extern "C" Int cnc_port_main_menu_show_side(void);
 extern "C" Int cnc_port_main_menu_last_selected_msg(void);
 extern "C" Int cnc_port_main_menu_last_selected_control_id(void);
 extern "C" Int cnc_port_main_menu_selected_count(void);
@@ -81,6 +85,20 @@ extern "C" Int cnc_port_main_menu_last_init_parent_window_id(void);
 extern "C" Int cnc_port_main_menu_last_init_single_player_window_id(void);
 extern "C" Int cnc_port_main_menu_last_init_usa_window_id(void);
 extern "C" Int cnc_port_main_menu_last_init_easy_window_id(void);
+extern "C" Int cnc_port_main_menu_check_cd_count(void);
+extern "C" Int cnc_port_main_menu_last_cd_present(void);
+extern "C" Int cnc_port_main_menu_last_cd_difficulty(void);
+extern "C" Int cnc_port_main_menu_prepare_campaign_count(void);
+extern "C" Int cnc_port_main_menu_last_prepare_difficulty(void);
+extern "C" Int cnc_port_main_menu_setup_game_start_count(void);
+extern "C" Int cnc_port_main_menu_last_setup_difficulty(void);
+extern "C" const Char *cnc_port_main_menu_last_setup_map(void);
+extern "C" const Char *cnc_port_main_menu_last_pending_file(void);
+extern "C" Int cnc_port_main_menu_do_game_start_count(void);
+extern "C" Int cnc_port_main_menu_last_new_game_mode(void);
+extern "C" Int cnc_port_main_menu_last_new_game_difficulty(void);
+extern "C" Int cnc_port_main_menu_last_new_game_rank_points(void);
+extern "C" Int cnc_port_main_menu_shutdown_complete_count(void);
 extern "C" Int cnc_port_window_layout_load_count(void);
 extern "C" Int cnc_port_window_layout_last_load_had_init(void);
 extern "C" Int cnc_port_window_layout_last_load_had_update(void);
@@ -99,6 +117,18 @@ extern "C" Int cnc_port_shell_last_do_push_had_init(void);
 extern "C" const char *cnc_port_shell_last_push_name(void);
 extern "C" const char *cnc_port_shell_last_do_push_name(void);
 extern void W3DMainMenuInit(WindowLayout *layout, void *userData);
+
+static std::string g_last_engine_update_target;
+
+extern "C" void cnc_port_note_engine_update_target(const char *name)
+{
+	g_last_engine_update_target = name != nullptr ? name : "";
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_last_update_target()
+{
+	return g_last_engine_update_target.c_str();
+}
 
 namespace {
 
@@ -621,8 +651,12 @@ void append_real_engine_client_state(std::string &json)
 		json += "\"active\":";
 		json += TheShell->isShellActive() ? "true" : "false";
 		json += ",\"screenCount\":" + std::to_string(TheShell->getScreenCount());
+		json += ",\"animFinished\":";
+		json += TheShell->isAnimFinished() ? "true" : "false";
+		json += ",\"animReversed\":";
+		json += TheShell->isAnimReversed() ? "true" : "false";
 	} else {
-		json += "\"active\":null,\"screenCount\":null";
+		json += "\"active\":null,\"screenCount\":null,\"animFinished\":null,\"animReversed\":null";
 	}
 	if (top != NULL) {
 		const std::string filename = top->getFilename().str();
@@ -654,6 +688,10 @@ void append_real_engine_client_state(std::string &json)
 	json += "\"dontAllowTransitions\":" + std::to_string(cnc_port_main_menu_dont_allow_transitions());
 	json += ",\"buttonPushed\":" + std::to_string(cnc_port_main_menu_button_pushed());
 	json += ",\"campaignSelected\":" + std::to_string(cnc_port_main_menu_campaign_selected());
+	json += ",\"startGame\":" + std::to_string(cnc_port_main_menu_start_game());
+	json += ",\"isShuttingDown\":" + std::to_string(cnc_port_main_menu_is_shutting_down());
+	json += ",\"launchChallengeMenu\":" + std::to_string(cnc_port_main_menu_launch_challenge_menu());
+	json += ",\"showSide\":" + std::to_string(cnc_port_main_menu_show_side());
 	json += ",\"selectedCount\":" + std::to_string(cnc_port_main_menu_selected_count());
 	json += ",\"lastSelectedMsg\":" + std::to_string(cnc_port_main_menu_last_selected_msg());
 	json += ",\"lastSelectedControlId\":" + std::to_string(cnc_port_main_menu_last_selected_control_id());
@@ -677,6 +715,24 @@ void append_real_engine_client_state(std::string &json)
 	json += ",\"lastInitSinglePlayerWindowId\":" + std::to_string(cnc_port_main_menu_last_init_single_player_window_id());
 	json += ",\"lastInitUSAWindowId\":" + std::to_string(cnc_port_main_menu_last_init_usa_window_id());
 	json += ",\"lastInitEasyWindowId\":" + std::to_string(cnc_port_main_menu_last_init_easy_window_id());
+	json += ",\"checkCDCount\":" + std::to_string(cnc_port_main_menu_check_cd_count());
+	json += ",\"lastCDPresent\":" + std::to_string(cnc_port_main_menu_last_cd_present());
+	json += ",\"lastCDDifficulty\":" + std::to_string(cnc_port_main_menu_last_cd_difficulty());
+	json += ",\"prepareCampaignCount\":" + std::to_string(cnc_port_main_menu_prepare_campaign_count());
+	json += ",\"lastPrepareDifficulty\":" + std::to_string(cnc_port_main_menu_last_prepare_difficulty());
+	json += ",\"setupGameStartCount\":" + std::to_string(cnc_port_main_menu_setup_game_start_count());
+	json += ",\"lastSetupDifficulty\":" + std::to_string(cnc_port_main_menu_last_setup_difficulty());
+	json += ",\"lastSetupMap\":\"";
+	json += json_escape(cnc_port_main_menu_last_setup_map() != NULL ?
+		cnc_port_main_menu_last_setup_map() : "");
+	json += "\",\"lastPendingFile\":\"";
+	json += json_escape(cnc_port_main_menu_last_pending_file() != NULL ?
+		cnc_port_main_menu_last_pending_file() : "");
+	json += "\",\"doGameStartCount\":" + std::to_string(cnc_port_main_menu_do_game_start_count());
+	json += ",\"lastNewGameMode\":" + std::to_string(cnc_port_main_menu_last_new_game_mode());
+	json += ",\"lastNewGameDifficulty\":" + std::to_string(cnc_port_main_menu_last_new_game_difficulty());
+	json += ",\"lastNewGameRankPoints\":" + std::to_string(cnc_port_main_menu_last_new_game_rank_points());
+	json += ",\"shutdownCompleteCount\":" + std::to_string(cnc_port_main_menu_shutdown_complete_count());
 	json += "}";
 	append_window_probe(json, "mainMenuParent", "MainMenu.wnd:MainMenuParent");
 	append_window_probe(json, "mapBorderSinglePlayer", "MainMenu.wnd:MapBorder");
@@ -769,6 +825,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame(int frame
 	json += ",\"framesAttempted\":" + std::to_string(g_frame_state.frames_attempted);
 	json += ",\"framesCompleted\":" + std::to_string(g_frame_state.frames_completed);
 	json += ",\"staleMovieBreakClears\":" + std::to_string(g_frame_state.stale_movie_break_clears);
+	json += ",\"lastUpdateTarget\":\"" + json_escape(g_last_engine_update_target) + "\"";
 	json += ",\"quitting\":";
 	json += (TheGameEngine != NULL && TheGameEngine->getQuitting() != FALSE) ? "true" : "false";
 	json += ",\"exceptionCaught\":";

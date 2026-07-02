@@ -13,7 +13,16 @@ const canvasScreenshot = resolve(screenshotDir, "startup-vertical-canvas.png");
 const audioBootScreenshot = resolve(screenshotDir, "startup-vertical-audio-owned.png");
 const realInitScreenshot = resolve(screenshotDir, "startup-vertical-real-init.png");
 const realInitMenuClickScreenshot = resolve(screenshotDir, "startup-vertical-real-init-menu-click.png");
+const realInitCampaignStartScreenshot = resolve(screenshotDir, "startup-vertical-real-init-campaign-start.png");
 const debugStartupVertical = process.env.STARTUP_VERTICAL_DEBUG === "1";
+
+const gameModes = Object.freeze({
+  singlePlayer: 0,
+});
+
+const gameDifficulties = Object.freeze({
+  easy: 0,
+});
 
 const allAudioStartupFiles = [
   "Data\\INI\\AudioSettings.ini",
@@ -398,7 +407,12 @@ function assertRealEngineInit(realInit) {
 }
 
 function assertRealEngineFrames(realFrames) {
-  expect(realFrames?.aborted === false, "real engine frames aborted", realFrames?.abortMessage);
+  expect(realFrames?.aborted === false, "real engine frames aborted", {
+    abortMessage: realFrames?.abortMessage,
+    abortStack: realFrames?.abortStack,
+    lastUpdateTarget: realFrames?.lastUpdateTarget,
+    frame: realFrames?.frame,
+  });
   const frame = realFrames.frame;
   expect(frame?.initReturned === true, "real engine frame ran without init", frame);
   expect(frame.framesCompleted >= 5 && frame.exceptionCaught === false,
@@ -414,9 +428,13 @@ function assertRealEngineFrames(realFrames) {
     "real frame input window is not backed by the original WndProc", clientState.input);
   expect(clientState.gates?.playIntro === false,
     "real GameClient::update() did not consume the intro gate", clientState);
-  expect(clientState.display?.moviePlaying === true || clientState.shell?.screenCount > 0,
-    "real frames reached neither an intro/title movie nor the shell stack", clientState);
-  if (clientState.shell?.screenCount > 0) {
+  const startedGame = Number(clientState.mainMenu?.debug?.doGameStartCount ?? 0) > 0;
+  expect(clientState.display?.moviePlaying === true
+      || clientState.shell?.screenCount > 0
+      || startedGame,
+    "real frames reached neither an intro/title movie, shell stack, nor real game-start transition",
+    clientState);
+  if (clientState.shell?.screenCount > 0 && !startedGame) {
     expect(clientState.shell.topIsMainMenu === true
         && clientState.mainMenu?.mainMenuParent?.found === true,
       "real shell stack did not expose MainMenu.wnd", clientState);
@@ -708,7 +726,7 @@ async function waitForRealMenuButtonReleased(page, expectedTarget, maxFrames = 8
     { expectedTarget, attempts });
 }
 
-async function clickRealEngineMenuButton(page, button, hitProbe) {
+async function clickRealEngineMenuButton(page, button, hitProbe, settleFrames = 90) {
   expect(button?.clickable === true, "real engine menu button is not clickable", button);
   const point = hitProbe?.point ?? { x: button.centerX, y: button.centerY };
   const expectedTarget = hitProbe?.window?.found === true ? hitProbe.window : button;
@@ -726,8 +744,65 @@ async function clickRealEngineMenuButton(page, button, hitProbe) {
   const up = await waitForRealMenuButtonReleased(page, expectedTarget);
   const finalFrame = await waitForRealTransitionIdle(
     page,
-    `real menu ${targetName} click`); // lets original menu transitions settle after button-up.
+    `real menu ${targetName} click`,
+    settleFrames); // lets original menu transitions settle after button-up.
   return { point, expectedTarget, down, up, finalFrame };
+}
+
+function compactCampaignStartProbe(frameResult) {
+  const clientState = frameResult?.frame?.clientState;
+  return {
+    framesCompleted: frameResult?.frame?.framesCompleted,
+    transition: clientState?.transition,
+    shell: clientState?.shell,
+    debug: clientState?.mainMenu?.debug,
+    top: {
+      filename: clientState?.shell?.topFilename,
+      hidden: clientState?.shell?.topHidden,
+      screenCount: clientState?.shell?.screenCount,
+    },
+  };
+}
+
+async function waitForRealCampaignGameStart(page, baselineDebug, label, maxFrames = 240) {
+  const baseline = {
+    checkCDCount: Number(baselineDebug?.checkCDCount ?? 0),
+    prepareCampaignCount: Number(baselineDebug?.prepareCampaignCount ?? 0),
+    setupGameStartCount: Number(baselineDebug?.setupGameStartCount ?? 0),
+    doGameStartCount: Number(baselineDebug?.doGameStartCount ?? 0),
+  };
+  const attempts = [];
+  for (let frameIndex = 0; frameIndex < maxFrames; frameIndex += 1) {
+    const frame = await runRealEngineFrames(page, 1);
+    const debug = frame.frame?.clientState?.mainMenu?.debug;
+    attempts.push(compactCampaignStartProbe(frame));
+
+    if (Number(debug?.checkCDCount ?? 0) > baseline.checkCDCount
+        && Number(debug?.lastCDPresent ?? 0) !== 1
+        && Number(debug?.prepareCampaignCount ?? 0) <= baseline.prepareCampaignCount) {
+      expect(false,
+        `${label} stopped at the original insert-CD check instead of using browser-mounted assets`,
+        { baseline, frame: compactCampaignStartProbe(frame), attempts });
+    }
+
+    if (Number(debug?.prepareCampaignCount ?? 0) > baseline.prepareCampaignCount
+        && Number(debug?.setupGameStartCount ?? 0) > baseline.setupGameStartCount
+        && Number(debug?.doGameStartCount ?? 0) > baseline.doGameStartCount
+        && Number(debug?.lastCDPresent ?? 0) === 1
+        && Number(debug?.lastPrepareDifficulty ?? -1) === gameDifficulties.easy
+        && Number(debug?.lastSetupDifficulty ?? -1) === gameDifficulties.easy
+        && Number(debug?.lastNewGameMode ?? -1) === gameModes.singlePlayer
+        && Number(debug?.lastNewGameDifficulty ?? -1) === gameDifficulties.easy
+        && typeof debug?.lastPendingFile === "string"
+        && debug.lastPendingFile.length > 0
+        && debug.lastPendingFile === debug.lastSetupMap) {
+      return { frame, attempts };
+    }
+  }
+
+  expect(false,
+    `${label} did not reach original doGameStart()/MSG_NEW_GAME queueing`,
+    { baseline, attempts });
 }
 
 function assertAudioManagerRuntimeOwned(state) {
@@ -1489,6 +1564,29 @@ try {
     realInitPage,
     "real MainMenu click screenshot");
 
+  console.error("[vertical] phase3 real campaign easy click");
+  const campaignBaselineDebug = clickedMenu?.debug;
+  const realCampaignClickTarget = {
+    button: clickedMenu?.buttonEasy,
+    hitProbe: clickedMenu?.underButtonEasyCenter,
+  };
+  const realCampaignClick = await clickRealEngineMenuButton(
+    realInitPage,
+    realCampaignClickTarget.button,
+    realCampaignClickTarget.hitProbe,
+    240);
+  const realCampaignStart = await waitForRealCampaignGameStart(
+    realInitPage,
+    campaignBaselineDebug,
+    "real ButtonEasy campaign start");
+  await realInitPage.screenshot({ path: realInitCampaignStartScreenshot });
+  const realCampaignStartCanvasProbe = await sampleViewportPixels(realInitPage, [
+    { name: "upperLeft", x: 64, y: 64 },
+    { name: "center", x: 400, y: 300 },
+    { name: "buttonArea", x: 644, y: 134 },
+    { name: "fadeArea", x: 1030, y: 190 },
+  ]);
+
   const audioFrontier =
     audioBootResult.state.originalEngineStartup.deviceFactoryFrontier;
   console.log(JSON.stringify({
@@ -1502,6 +1600,7 @@ try {
       audioBootScreenshot,
       realInitScreenshot,
       realInitMenuClickScreenshot,
+      realInitCampaignStartScreenshot,
     ],
     originalEngineStartup: bootResult.state.originalEngineStartup,
     archiveBackedStartup: {
@@ -1555,6 +1654,24 @@ try {
         clientState: realMenuClick.finalFrame.frame?.clientState,
         canvasProbe: realInitMenuClickCanvasProbe,
         screenshot: realInitMenuClickScreenshot,
+      },
+      campaignStart: {
+        framesCompleted: realCampaignStart.frame.frame?.framesCompleted,
+        point: realCampaignClick.point,
+        hitProbe: realCampaignClickTarget.hitProbe,
+        target: realCampaignClick.expectedTarget,
+        downInput: realCampaignClick.down.frame.frame?.clientState?.input,
+        downTarget: findRealMenuWindowById(
+          realCampaignClick.down.frame.frame?.clientState,
+          realCampaignClick.expectedTarget?.id),
+        downAttempts: realCampaignClick.down.attempts,
+        upAttempts: realCampaignClick.up.attempts,
+        button: realCampaignClickTarget.button,
+        clickFinalClientState: realCampaignClick.finalFrame.frame?.clientState,
+        clientState: realCampaignStart.frame.frame?.clientState,
+        attempts: realCampaignStart.attempts,
+        canvasProbe: realCampaignStartCanvasProbe,
+        screenshot: realInitCampaignStartScreenshot,
       },
       screenshot: realInitScreenshot,
     },

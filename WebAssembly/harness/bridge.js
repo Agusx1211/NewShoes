@@ -7214,6 +7214,11 @@ async function loadWasmModule() {
       realEngineInit: module.cwrap("cnc_port_real_engine_init", "string", ["string"]),
       realEngineFrontier: module.cwrap("cnc_port_real_engine_frontier", "string", []),
       realEngineFrame: module.cwrap("cnc_port_real_engine_frame", "string", ["number"]),
+      realEngineLastUpdateTarget: module.cwrap(
+        "cnc_port_real_engine_last_update_target",
+        "string",
+        [],
+      ),
       probeMssStartup: module.cwrap("cnc_port_probe_mss_startup", "string", []),
       probeAudioManagerRuntime: module.cwrap("cnc_port_probe_audio_manager_runtime", "string", []),
       probeModuleFactoryRuntime: module.cwrap("cnc_port_probe_module_factory_runtime", "string", []),
@@ -11935,19 +11940,29 @@ async function rpc(command, payload = {}) {
         let frame = null;
         let aborted = false;
         let abortMessage = null;
+        let abortStack = null;
         try {
           frame = JSON.parse(moduleResult.wasmModule.realEngineFrame(Number(payload.frames ?? 1)));
         } catch (error) {
           aborted = true;
           abortMessage = error?.message ?? String(error);
+          abortStack = error?.stack ?? null;
+        }
+        let lastUpdateTarget = null;
+        try {
+          lastUpdateTarget = moduleResult.wasmModule.realEngineLastUpdateTarget();
+        } catch {
+          lastUpdateTarget = null;
         }
         refreshBrowserDirectInputQueue(moduleResult.wasmModule);
-        recordLog("real engine frame", { aborted, abortMessage, frame });
+        recordLog("real engine frame", { aborted, abortMessage, lastUpdateTarget, frame });
         return {
           ok: Boolean(frame?.framesCompleted > 0) && !aborted,
           command: "realEngineFrame",
           aborted,
           abortMessage,
+          abortStack,
+          lastUpdateTarget,
           frame,
           state: snapshotState(),
         };
