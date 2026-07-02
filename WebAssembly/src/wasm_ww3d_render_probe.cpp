@@ -77,7 +77,10 @@
 #endif
 
 Bool parseLayoutBlock(File *inFile, char *buffer, UnsignedInt version, WindowLayoutInfo *info);
+extern void PopupReplayInit(WindowLayout *layout, void *userData);
 extern void PopupReplayShutdown(WindowLayout *layout, void *userData);
+extern WindowMsgHandledType PopupReplayInput(GameWindow *window, UnsignedInt msg,
+	WindowMsgData mData1, WindowMsgData mData2);
 extern WindowMsgHandledType ExtendedMessageBoxSystem(GameWindow *window,
 	UnsignedInt msg, WindowMsgData mData1, WindowMsgData mData2);
 extern const Char *g_csfFile;
@@ -275,6 +278,7 @@ FunctionLexicon::TableEntry runtimeBaseInputTable[] = {
 	{ NAMEKEY_INVALID, "PopupCommunicatorInput", PopupCommunicatorInput },
 	{ NAMEKEY_INVALID, "MapSelectMenuInput", MapSelectMenuInput },
 	{ NAMEKEY_INVALID, "ReplayMenuInput", ReplayMenuInput },
+	{ NAMEKEY_INVALID, "PopupReplayInput", PopupReplayInput },
 	{ NAMEKEY_INVALID, "DifficultySelectInput", DifficultySelectInput },
 	{ NAMEKEY_INVALID, "KeyboardOptionsMenuInput", KeyboardOptionsMenuInput },
 	{ NAMEKEY_INVALID, "InGamePopupMessageInput", InGamePopupMessageInput },
@@ -303,6 +307,7 @@ FunctionLexicon::TableEntry runtimeBaseLayoutInitTable[] = {
 	{ NAMEKEY_INVALID, "PopupCommunicatorInit", PopupCommunicatorInit },
 	{ NAMEKEY_INVALID, "MapSelectMenuInit", MapSelectMenuInit },
 	{ NAMEKEY_INVALID, "ReplayMenuInit", ReplayMenuInit },
+	{ NAMEKEY_INVALID, "PopupReplayInit", PopupReplayInit },
 	{ NAMEKEY_INVALID, "DifficultySelectInit", DifficultySelectInit },
 	{ NAMEKEY_INVALID, "KeyboardOptionsMenuInit", KeyboardOptionsMenuInit },
 	{ NAMEKEY_INVALID, "InGamePopupMessageInit", InGamePopupMessageInit },

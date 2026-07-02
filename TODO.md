@@ -64,7 +64,8 @@ flow below.
       `ChallengeGenerals` and `WindowVideoManager` ownership, plus original
       `PopupCommunicator` system/input/init/shutdown callbacks and original
       `MapSelectMenu` system/input/init/update/shutdown callbacks, original
-      `ReplayMenu` system/input/init/update/shutdown callbacks, plus the passive
+      `ReplayMenu` system/input/init/update/shutdown callbacks, original
+      `PopupReplay` input/init/shutdown modal callbacks, plus the passive
       original `GameInfoWindowSystem` callback-name lookup without owning LAN
       game-info population; the remaining `FunctionLexicon` boundary is the
       rest of the non-network layout callback graph);
@@ -74,8 +75,8 @@ flow below.
       first unowned init factories now that `TheAudio` is owned. The current
       linked runtime constructs original `W3DFunctionLexicon` and verifies the
       W3D device draw/layout callback tables plus the non-network base GUI
-      system/input/tooltip/widget, IME draw, representative
-      `PopupReplayShutdown`, original `ExtendedMessageBoxSystem`,
+      system/input/tooltip/widget, IME draw, original `PopupReplay`
+      input/init/shutdown modal lookups, original `ExtendedMessageBoxSystem`,
       original `DifficultySelect` system/input/init lookups, original
       `KeyboardOptionsMenu` system/input/init/update/shutdown lookups,
       original `InGamePopupMessage` system/input/init lookups,
@@ -98,6 +99,11 @@ flow below.
       `W3DModuleFactory` + all 224 module registrations already link into
       `cnc-port` via `zh_gameengine_real_object_ini_runtime`, so lexicon/module
       factory ownership should reuse that surface instead of relinking it.
+- [ ] Promote `PopupReplaySystem` and `PopupReplayUpdate` only after the
+      ScoreScreen replay-save state is split or runtime-owned without pulling
+      LAN/WOL/GameSpy into `cnc-port`. Directly registering those callbacks
+      retains `LastReplayFileName` and `ScoreScreenEnableControls()` from
+      original `ScoreScreen.cpp`; do not replace that with fake weak stubs.
 - [ ] Replace `WebAssembly/src/wasm_game_state_time_helper.cpp` with the
       original `Common/System/SaveGame/GameState.cpp` owner once the linked
       runtime no longer needs the focused GameLogic header boundary. The helper

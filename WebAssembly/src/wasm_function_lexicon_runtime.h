@@ -102,6 +102,7 @@ struct FunctionLexiconRuntimeProbeResult
 	bool popup_communicator_input_lookup = false;
 	bool map_select_menu_input_lookup = false;
 	bool replay_menu_input_lookup = false;
+	bool popup_replay_input_lookup = false;
 	bool difficulty_select_input_lookup = false;
 	bool keyboard_options_menu_input_lookup = false;
 	bool in_game_popup_message_input_lookup = false;
@@ -118,6 +119,7 @@ struct FunctionLexiconRuntimeProbeResult
 	bool popup_communicator_init_lookup = false;
 	bool map_select_menu_init_lookup = false;
 	bool replay_menu_init_lookup = false;
+	bool popup_replay_init_lookup = false;
 	bool difficulty_select_init_lookup = false;
 	bool keyboard_options_menu_init_lookup = false;
 	bool in_game_popup_message_init_lookup = false;

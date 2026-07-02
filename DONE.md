@@ -2319,6 +2319,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `originalFunctionLexiconRemainingShellCallbacks` next. The runtime also
       owns a focused browser `SYSTEMTIME` date/time formatting helper for the
       replay list until full original `GameState.cpp` ownership can replace it.
+- [x] Promote the original `PopupReplay` modal callback names into the linked
+      `cnc-port` base `FunctionLexicon` without claiming the score-screen
+      replay-save path. `zh_window_layout_script_runtime` already linked
+      original `GUI/GUICallbacks/Menus/PopupReplay.cpp`; the reduced wasm
+      input/init/shutdown tables now register `PopupReplayInput`,
+      `PopupReplayInit`, and `PopupReplayShutdown`. Startup vertical verifies
+      those callback-name lookups in the browser and now reports
+      `base_function_lexicon_popup_replay_modal_runtime_owned` with
+      `originalFunctionLexiconRemainingShellCallbacks` next. `PopupReplaySystem`
+      and `PopupReplayUpdate` remain open because direct registration retains
+      `LastReplayFileName` and `ScoreScreenEnableControls()` from the broader
+      original `ScoreScreen.cpp` owner.
 ---
 
 ## M3 — File / data subsystem (real data)
