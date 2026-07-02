@@ -292,6 +292,7 @@ const harnessState = {
   archiveMount: null,
   browserRuntimeAssets: null,
   startupSingletons: null,
+  audioManagerRuntime: null,
   audioRuntimeAssets: null,
   audioPayloadInventory: null,
   startupAssets: null,
@@ -6916,6 +6917,7 @@ function applyModuleState(moduleState) {
   harnessState.archiveMount = moduleState.archiveMount ?? harnessState.archiveMount;
   harnessState.browserRuntimeAssets = moduleState.browserRuntimeAssets ?? harnessState.browserRuntimeAssets;
   harnessState.startupSingletons = moduleState.startupSingletons ?? harnessState.startupSingletons;
+  harnessState.audioManagerRuntime = moduleState.audioManagerRuntime ?? harnessState.audioManagerRuntime;
   harnessState.audioRuntimeAssets = moduleState.audioRuntimeAssets ?? harnessState.audioRuntimeAssets;
   harnessState.startupAssets = moduleState.startupAssets ?? harnessState.startupAssets;
   harnessState.dataSummary = moduleState.dataSummary ?? harnessState.dataSummary;
@@ -7179,6 +7181,7 @@ async function loadWasmModule() {
       ),
       probeWin32GameEngine: module.cwrap("cnc_port_probe_win32_gameengine", "string", []),
       probeMssStartup: module.cwrap("cnc_port_probe_mss_startup", "string", []),
+      probeAudioManagerRuntime: module.cwrap("cnc_port_probe_audio_manager_runtime", "string", []),
       probeMssSampleLifecycle: module.cwrap("cnc_port_probe_mss_sample_lifecycle", "string", []),
       probeMssSamplePlaybackStart: module.cwrap("cnc_port_probe_mss_sample_playback_start", "string", []),
       probeMssSamplePlaybackFinish: module.cwrap("cnc_port_probe_mss_sample_playback_finish", "string", []),
@@ -7485,6 +7488,7 @@ function snapshotState() {
     archiveMount: harnessState.archiveMount,
     browserRuntimeAssets: harnessState.browserRuntimeAssets,
     startupSingletons: harnessState.startupSingletons,
+    audioManagerRuntime: harnessState.audioManagerRuntime,
     audioRuntimeAssets: harnessState.audioRuntimeAssets,
     browserAudioRuntime: summarizeBrowserAudioRuntime(),
     browserAudioMixerRuntime: summarizeBrowserAudioMixerRuntime(),
@@ -21012,6 +21016,77 @@ async function rpc(command, payload = {}) {
         browserAudioRequestPathRuntime: summarizeBrowserAudioRequestPathRuntime(),
         state: snapshotState(),
       };
+    case "runtimeFileText":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable" };
+        }
+        try {
+          const bytes = wasmModule.fs.readFile(String(payload.path ?? ""));
+          const start = Math.max(0, bytes.length - Number(payload.tailBytes ?? 65536));
+          let text = "";
+          for (let i = start; i < bytes.length; ++i) text += String.fromCharCode(bytes[i]);
+          return { ok: true, command, path: payload.path, size: bytes.length, text };
+        } catch (error) {
+          return { ok: false, command, path: payload.path, error: String(error?.message ?? error) };
+        }
+      }
+    case "runtimeFileDigest":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; runtime file digest cannot run" };
+        }
+        try {
+          let bytes = wasmModule.fs.readFile(String(payload.path ?? ""));
+          let entryName = null;
+          if (payload.entry) {
+            const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+            const count = dv.getUint32(8, false);
+            let cursor = 16;
+            let hit = null;
+            for (let index = 0; index < count; ++index) {
+              const off = dv.getUint32(cursor, false);
+              const size = dv.getUint32(cursor + 4, false);
+              cursor += 8;
+              let end = cursor;
+              while (bytes[end] !== 0) ++end;
+              const name = String.fromCharCode(...bytes.subarray(cursor, end));
+              cursor = end + 1;
+              if (name.toLowerCase() === String(payload.entry).toLowerCase()) {
+                hit = { off, size, name };
+              }
+            }
+            if (!hit) {
+              return { ok: false, command, path: payload.path, error: `entry not found: ${payload.entry}` };
+            }
+            entryName = hit.name;
+            bytes = bytes.subarray(hit.off, hit.off + hit.size);
+          }
+          const digest = await crypto.subtle.digest("SHA-256", bytes);
+          const sha256 = Array.from(new Uint8Array(digest))
+            .map((value) => value.toString(16).padStart(2, "0"))
+            .join("");
+          return { ok: true, command, path: payload.path, entry: entryName, size: bytes.length, sha256 };
+        } catch (error) {
+          return { ok: false, command, path: payload.path, error: String(error?.message ?? error) };
+        }
+      }
+    case "audioManagerRuntimeProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; audio manager runtime probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeAudioManagerRuntime());
+        return {
+          ok: Boolean(probe.attempted),
+          command,
+          probe,
+          state: snapshotState(),
+        };
+      }
     case "mssStartupProbe":
       {
         const wasmModule = await wasmModulePromise;

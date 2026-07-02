@@ -1,6 +1,7 @@
 #include "PreRTS.h"
 
 #include "Common/GameEngine.h"
+#include "Common/GameMemory.h"
 #include "GameClient/GameClient.h"
 #include "GameClient/IMEManager.h"
 #include "GameClient/Mouse.h"
@@ -73,7 +74,21 @@ public:
 	}
 };
 
-BrowserWin32Mouse g_browser_mouse;
+// Constructed lazily: Mouse::Mouse() assigns AsciiString members, which
+// allocate through TheDynamicMemoryAllocator. A namespace-scope static would
+// run before initMemoryManager() and write through the null allocator,
+// corrupting arbitrary heap addresses.
+BrowserWin32Mouse &browser_mouse()
+{
+	static BrowserWin32Mouse *instance = nullptr;
+	if (instance == nullptr) {
+		if (!isMemoryManagerOfficiallyInited()) {
+			initMemoryManager();
+		}
+		instance = new BrowserWin32Mouse;
+	}
+	return *instance;
+}
 bool g_original_wndproc_ready = false;
 bool g_original_wndproc_register_ok = false;
 bool g_original_wndproc_window_ok = false;
@@ -109,7 +124,7 @@ const char *mouse_button_state_name(MouseButtonState state)
 bool ensure_original_wndproc_input_window(int width, int height)
 {
 	if (g_original_wndproc_ready) {
-		TheWin32Mouse = &g_browser_mouse;
+		TheWin32Mouse = &browser_mouse();
 		return true;
 	}
 
@@ -141,7 +156,7 @@ bool ensure_original_wndproc_input_window(int width, int height)
 	g_original_wndproc_window_ok = ApplicationHWnd != nullptr;
 	g_original_wndproc_ready = g_original_wndproc_register_ok && g_original_wndproc_window_ok;
 	if (g_original_wndproc_ready) {
-		TheWin32Mouse = &g_browser_mouse;
+		TheWin32Mouse = &browser_mouse();
 	}
 	return g_original_wndproc_ready;
 }
@@ -165,7 +180,7 @@ void drain_mouse_events()
 	g_original_wndproc_last_probe_drained = 0;
 
 	MouseIO event = {};
-	while (g_browser_mouse.getMouseEvent(&event, FALSE) == MOUSE_OK) {
+	while (browser_mouse().getMouseEvent(&event, FALSE) == MOUSE_OK) {
 		g_last_mouse_event = event;
 		g_last_mouse_event_available = true;
 		++g_original_wndproc_last_probe_drained;
@@ -221,10 +236,10 @@ const char *write_original_wndproc_json()
 		g_original_wndproc_pump_calls,
 		g_original_wndproc_last_pumped,
 		g_original_wndproc_messages_pumped,
-		bool_json(TheWin32Mouse == &g_browser_mouse),
-		bool_json(g_browser_mouse.isLostFocus()),
-		bool_json(g_browser_mouse.isVisibleForProbe()),
-		static_cast<int>(g_browser_mouse.currentWin32Cursor()),
+		bool_json(TheWin32Mouse == &browser_mouse()),
+		bool_json(browser_mouse().isLostFocus()),
+		bool_json(browser_mouse().isVisibleForProbe()),
+		static_cast<int>(browser_mouse().currentWin32Cursor()),
 		bool_json(WasmWin32Input::current_cursor != nullptr),
 		g_original_wndproc_mouse_events,
 		g_original_wndproc_last_probe_drained,
@@ -254,24 +269,24 @@ void cnc_port_prepare_original_wndproc_mouse_stream(int width, int height)
 	if (!g_original_wndproc_ready) {
 		ensure_original_wndproc_input_window(width, height);
 	}
-	if (g_original_wndproc_ready && TheWin32Mouse == &g_browser_mouse) {
-		g_browser_mouse.prepareStreamProbe(width, height);
+	if (g_original_wndproc_ready && TheWin32Mouse == &browser_mouse()) {
+		browser_mouse().prepareStreamProbe(width, height);
 	}
 }
 
 Bool cnc_port_original_wndproc_mouse_stream_attached()
 {
-	return TheWin32Mouse == &g_browser_mouse;
+	return TheWin32Mouse == &browser_mouse();
 }
 
 UnsignedInt cnc_port_original_wndproc_mouse_stream_input_frame()
 {
-	return g_browser_mouse.inputFrameForProbe();
+	return browser_mouse().inputFrameForProbe();
 }
 
 Int cnc_port_original_wndproc_mouse_stream_events_this_frame()
 {
-	return g_browser_mouse.eventsThisFrameForProbe();
+	return browser_mouse().eventsThisFrameForProbe();
 }
 
 extern "C" {
@@ -298,9 +313,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_original_cursor_visibility(int v
 {
 	ensure_original_wndproc_input_window(0, 0);
 	if (g_original_wndproc_ready) {
-		g_browser_mouse.ensureArrowCursorResource();
-		g_browser_mouse.setVisibility(visible ? TRUE : FALSE);
-		g_browser_mouse.setCursor(Mouse::ARROW);
+		browser_mouse().ensureArrowCursorResource();
+		browser_mouse().setVisibility(visible ? TRUE : FALSE);
+		browser_mouse().setCursor(Mouse::ARROW);
 	}
 	return write_original_wndproc_json();
 }
