@@ -2300,6 +2300,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       verifies those callback-name lookups in the browser and now reports
       `base_function_lexicon_map_select_menu_runtime_owned` with
       `originalFunctionLexiconRemainingShellCallbacks` next.
+- [x] Promote the original `GameInfoWindowSystem` callback-name owner into the
+      linked `cnc-port` base `FunctionLexicon`. `zh_window_layout_script_runtime`
+      now links original `GUI/GUICallbacks/Menus/GameInfoWindow.cpp`, and the
+      reduced wasm system table registers `GameInfoWindowSystem` only. Startup
+      vertical verifies that passive callback-name lookup in the browser and now
+      reports `base_function_lexicon_game_info_window_runtime_owned` with
+      `originalFunctionLexiconRemainingShellCallbacks` next; LAN game-info
+      population and transport behavior remain outside the owned runtime path.
 ---
 
 ## M3 — File / data subsystem (real data)

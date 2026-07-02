@@ -63,9 +63,10 @@ flow below.
       system/input/init/update/shutdown callbacks with original
       `ChallengeGenerals` and `WindowVideoManager` ownership, plus original
       `PopupCommunicator` system/input/init/shutdown callbacks and original
-      `MapSelectMenu` system/input/init/update/shutdown callbacks; the remaining
-      `FunctionLexicon` boundary is the rest of the non-network layout callback
-      graph);
+      `MapSelectMenu` system/input/init/update/shutdown callbacks, plus the
+      passive original `GameInfoWindowSystem` callback-name lookup without
+      owning LAN game-info population; the remaining `FunctionLexicon` boundary
+      is the rest of the non-network layout callback graph);
       archiveless or music-less boots honestly stay at line 434.
 - [ ] Own `createFunctionLexicon` (`W3DFunctionLexicon`, `GameEngine.cpp:446`)
       and then `createModuleFactory` (line 447) in the browser boot — the new
@@ -84,10 +85,11 @@ flow below.
       system/input/init/update/shutdown lookups plus original `ChallengeMenu`
       system/input/init/update/shutdown lookups and original
       `PopupCommunicator` system/input/init/shutdown lookups plus original
-      `MapSelectMenu` system/input/init/update/shutdown lookups, but full
+      `MapSelectMenu` system/input/init/update/shutdown lookups plus the
+      passive original `GameInfoWindowSystem` callback-name lookup, but full
       ownership still needs the remaining original base `FunctionLexicon.cpp`
       non-network layout callback graph without pulling LAN/WOL/GameSpy/
-      embedded-web menu callbacks into `cnc-port`. Next promote the remaining
+      embedded-web menu behavior into `cnc-port`. Next promote the remaining
       non-network layout callback owners in small groups while leaving
       online/download/embedded web menus at explicit browser boundaries.
       The real
