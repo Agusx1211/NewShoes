@@ -75,6 +75,7 @@ const D3DCMP_EQUAL = 3;
 const D3DTSS_TCI_CAMERASPACEPOSITION = 0x00020000;
 const D3DTTFF_COUNT2 = 2;
 const BODY_PRISTINE = 0;
+const BODY_RUBBLE = 3;
 
 function iniLayoutMatches(layout) {
   return layout?.source === "terrain-probe-tu-vs-real-ini-runtime"
@@ -771,6 +772,19 @@ try {
       || result.probe?.results?.bridgeLogicInvulnerableUndetectedDefectorAfterPositive !== true
       || result.probe?.results?.bridgeLogicInvulnerableUndetectedDefectorAfterZero !== false
       || result.probe?.results?.bridgeDrawFirstDamageStateAfterInvulnerableStateScene !== BODY_PRISTINE
+      || result.probe?.results?.bridgeDrawDamageSyncPrimed !== true
+      || result.probe?.results?.bridgeDrawDamageSyncObservedDuringDraw !== true
+      || result.probe?.results?.bridgeDrawDamageSyncForcedMismatch !== true
+      || result.probe?.results?.bridgeDrawDamageSyncMatchedTerrainAfterDraw !== true
+      || result.probe?.results?.bridgeDrawDamageSyncBridgeIndex !== result.probe?.results?.bridgeLogicFirstIndexAfterSeed
+      || result.probe?.results?.bridgeDrawDamageSyncTerrainState !== BODY_PRISTINE
+      || result.probe?.results?.bridgeDrawDamageSyncVisualStateBeforePrime !== BODY_PRISTINE
+      || result.probe?.results?.bridgeDrawDamageSyncVisualStateBeforeDraw !== BODY_RUBBLE
+      || result.probe?.results?.bridgeDrawDamageSyncVisualStateAfterDraw !== BODY_PRISTINE
+      || result.probe?.results?.bridgeDrawDamageSyncVerticesBeforeDraw <= 0
+      || result.probe?.results?.bridgeDrawDamageSyncIndicesBeforeDraw <= 0
+      || result.probe?.results?.bridgeDrawDamageSyncVerticesAfterDraw <= 0
+      || result.probe?.results?.bridgeDrawDamageSyncIndicesAfterDraw <= 0
       || result.probe?.results?.bridgeLogicDestroyListInvoked !== true
       || result.probe?.results?.bridgeLogicDestroyListBridgeID !== result.probe?.results?.bridgeLogicObjectLookupBridgeID
       || result.probe?.results?.bridgeLogicDestroyListObjectCountBeforeDestroy <= 0

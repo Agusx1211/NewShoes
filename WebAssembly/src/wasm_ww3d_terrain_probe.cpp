@@ -4594,12 +4594,61 @@ public:
 class ProbeW3DBridgeBuffer final : public W3DBridgeBuffer
 {
 public:
+	struct BridgeDamageSyncProbe {
+		Bool primed = FALSE;
+		Bool observedDuringDraw = FALSE;
+		Bool forcedMismatch = FALSE;
+		Bool matchedTerrainAfterDraw = FALSE;
+		Int bridgeIndex = -1;
+		Int terrainDamageState = -1;
+		Int visualStateBeforePrime = -1;
+		Int visualStateBeforeDraw = -1;
+		Int visualStateAfterDraw = -1;
+		Int verticesBeforeDraw = -1;
+		Int indicesBeforeDraw = -1;
+		Int verticesAfterDraw = -1;
+		Int indicesAfterDraw = -1;
+	};
+
 	bool initialized() const { return m_initialized; }
 	Int numBridges() const { return m_numBridges; }
 	Int curNumBridgeVertices() const { return m_curNumBridgeVertices; }
 	Int curNumBridgeIndices() const { return m_curNumBridgeIndices; }
 	bool hasVertexBuffer() const { return m_vertexBridge != nullptr; }
 	bool hasIndexBuffer() const { return m_indexBridge != nullptr; }
+
+	bool primeFirstBridgeDamageSyncForProbe(BodyDamageType visualState)
+	{
+		m_bridgeDamageSync = BridgeDamageSyncProbe();
+		if (TheTerrainLogic == nullptr || m_numBridges <= 0) {
+			return false;
+		}
+		for (Bridge *bridge = TheTerrainLogic->getFirstBridge();
+				bridge != nullptr;
+				bridge = bridge->getNext()) {
+			BridgeInfo info;
+			bridge->getBridgeInfo(&info);
+			if (info.bridgeIndex < 0 || info.bridgeIndex >= m_numBridges) {
+				continue;
+			}
+			m_bridgeDamageSync.primed = TRUE;
+			m_bridgeDamageSync.bridgeIndex = info.bridgeIndex;
+			m_bridgeDamageSync.terrainDamageState =
+				static_cast<Int>(info.curDamageState);
+			m_bridgeDamageSync.visualStateBeforePrime =
+				static_cast<Int>(m_bridges[info.bridgeIndex].getDamageState());
+			m_bridgeDamageSync.verticesBeforeDraw = m_curNumBridgeVertices;
+			m_bridgeDamageSync.indicesBeforeDraw = m_curNumBridgeIndices;
+			m_bridges[info.bridgeIndex].setDamageState(visualState);
+			m_bridgeDamageSync.visualStateBeforeDraw =
+				static_cast<Int>(m_bridges[info.bridgeIndex].getDamageState());
+			m_bridgeDamageSync.forcedMismatch =
+				m_bridgeDamageSync.visualStateBeforeDraw !=
+				m_bridgeDamageSync.terrainDamageState;
+			return true;
+		}
+		return false;
+	}
 
 	void drawBridgesWithProbe(CameraClass *camera, Bool wireframe, TextureClass *cloudTexture)
 	{
@@ -4614,6 +4663,19 @@ public:
 			}
 		}
 		W3DBridgeBuffer::drawBridges(camera, wireframe, cloudTexture);
+		if (m_bridgeDamageSync.primed &&
+				m_bridgeDamageSync.bridgeIndex >= 0 &&
+				m_bridgeDamageSync.bridgeIndex < m_numBridges) {
+			m_bridgeDamageSync.observedDuringDraw = TRUE;
+			m_bridgeDamageSync.visualStateAfterDraw =
+				static_cast<Int>(
+					m_bridges[m_bridgeDamageSync.bridgeIndex].getDamageState());
+			m_bridgeDamageSync.verticesAfterDraw = m_curNumBridgeVertices;
+			m_bridgeDamageSync.indicesAfterDraw = m_curNumBridgeIndices;
+			m_bridgeDamageSync.matchedTerrainAfterDraw =
+				m_bridgeDamageSync.visualStateAfterDraw ==
+				m_bridgeDamageSync.terrainDamageState;
+		}
 		m_lastDrawEnabledBridgeCount = 0;
 		for (Int index = 0; index < m_numBridges; ++index) {
 			if (m_bridges[index].isEnabled()) {
@@ -4645,6 +4707,7 @@ public:
 	bool lastDrawTerrainLogicPresent() const { return m_lastDrawTerrainLogicPresent; }
 	Int lastDrawTerrainLogicBridgeCount() const { return m_lastDrawTerrainLogicBridgeCount; }
 	Int lastDrawEnabledBridgeCount() const { return m_lastDrawEnabledBridgeCount; }
+	BridgeDamageSyncProbe bridgeDamageSyncProbe() const { return m_bridgeDamageSync; }
 
 	bool firstBridgeManualGeometry(Int &vertices, Int &indices, bool &exception)
 	{
@@ -4677,6 +4740,7 @@ private:
 	bool m_lastDrawTerrainLogicPresent = false;
 	Int m_lastDrawTerrainLogicBridgeCount = 0;
 	Int m_lastDrawEnabledBridgeCount = 0;
+	BridgeDamageSyncProbe m_bridgeDamageSync;
 };
 
 class ProbeHeightMapRenderObjWithPropBuffer final : public HeightMapRenderObjClass
@@ -10537,6 +10601,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	ProbeTerrainLogicForBridgeDraw::BridgeInvulnerableStateForProbe
 		bridge_logic_invulnerable_state;
 	Int bridge_draw_first_damage_state_after_invulnerable_state_scene = -1;
+	ProbeW3DBridgeBuffer::BridgeDamageSyncProbe bridge_draw_damage_sync;
 	bool bridge_logic_destroy_list_invoked = false;
 	ProbeTerrainLogicForBridgeDraw::BridgeDestroyListForProbe
 		bridge_logic_destroy_list;
@@ -11412,6 +11477,10 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 				render_object->getShroud()->render(camera);
 				TheTerrainRenderObject = saved_terrain_render_object;
 			}
+			if (bridge_buffer != nullptr) {
+				probe_bridge_phase_log("bridge-damage-sync-prime");
+				bridge_buffer->primeFirstBridgeDamageSyncForProbe(BODY_RUBBLE);
+			}
 			begin_render_result = WW3D::Begin_Render(true, true, Vector3(0.0f, 0.0f, 0.0f));
 			if (succeeded(begin_render_result)) {
 				render_result = WW3D::Render(scene, camera);
@@ -11423,6 +11492,8 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 					bridge_buffer != nullptr) {
 				bridge_draw_first_damage_state_after_invulnerable_state_scene =
 					bridge_buffer->firstBridgeDamageState();
+				bridge_draw_damage_sync =
+					bridge_buffer->bridgeDamageSyncProbe();
 			}
 			tree_need_to_draw_after_scene = tree_buffer != nullptr && tree_buffer->needToDraw();
 			tree_tiles_after_scene = tree_buffer != nullptr ? tree_buffer->getNumTiles() : -1;
@@ -11499,6 +11570,21 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_logic_pathfinder_map.afterRepaired.bridgeLayerCells > 0 &&
 		bridge_logic_pathfinder_map.afterRepaired.bridgeLayerClearCells > 0 &&
 		bridge_logic_pathfinder_map.afterRepaired.groundCells > 0;
+	const bool bridge_draw_damage_sync_succeeded =
+		bridge_draw_damage_sync.primed &&
+		bridge_draw_damage_sync.observedDuringDraw &&
+		bridge_draw_damage_sync.forcedMismatch &&
+		bridge_draw_damage_sync.bridgeIndex >= 0 &&
+		bridge_draw_damage_sync.terrainDamageState == BODY_PRISTINE &&
+		bridge_draw_damage_sync.visualStateBeforePrime == BODY_PRISTINE &&
+		bridge_draw_damage_sync.visualStateBeforeDraw == BODY_RUBBLE &&
+		bridge_draw_damage_sync.visualStateAfterDraw ==
+			bridge_draw_damage_sync.terrainDamageState &&
+		bridge_draw_damage_sync.matchedTerrainAfterDraw &&
+		bridge_draw_damage_sync.verticesBeforeDraw > 0 &&
+		bridge_draw_damage_sync.indicesBeforeDraw > 0 &&
+		bridge_draw_damage_sync.verticesAfterDraw > 0 &&
+		bridge_draw_damage_sync.indicesAfterDraw > 0;
 	const IniLayoutComparison ini_layout = compare_ini_layout();
 	const bool ok =
 		state != nullptr &&
@@ -11641,6 +11727,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_logic_pathfinder_map_invoked &&
 		bridge_logic_pathfinder_map.layer == bridge_logic_first_layer_after_seed &&
 		bridge_pathfinder_new_map_succeeded &&
+		bridge_draw_damage_sync_succeeded &&
 		terrain_logic_retained_for_draw &&
 		bridge_draw_terrain_logic_bridge_count > 0 &&
 		bridge_draw_enabled_bridge_count > 0 &&
@@ -11955,6 +12042,19 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"bridgeLogicInvulnerableUndetectedDefectorAfterPositive\":%s,"
 		"\"bridgeLogicInvulnerableUndetectedDefectorAfterZero\":%s,"
 		"\"bridgeDrawFirstDamageStateAfterInvulnerableStateScene\":%d,"
+		"\"bridgeDrawDamageSyncPrimed\":%s,"
+		"\"bridgeDrawDamageSyncObservedDuringDraw\":%s,"
+		"\"bridgeDrawDamageSyncForcedMismatch\":%s,"
+		"\"bridgeDrawDamageSyncMatchedTerrainAfterDraw\":%s,"
+		"\"bridgeDrawDamageSyncBridgeIndex\":%d,"
+		"\"bridgeDrawDamageSyncTerrainState\":%d,"
+		"\"bridgeDrawDamageSyncVisualStateBeforePrime\":%d,"
+		"\"bridgeDrawDamageSyncVisualStateBeforeDraw\":%d,"
+		"\"bridgeDrawDamageSyncVisualStateAfterDraw\":%d,"
+		"\"bridgeDrawDamageSyncVerticesBeforeDraw\":%d,"
+		"\"bridgeDrawDamageSyncIndicesBeforeDraw\":%d,"
+		"\"bridgeDrawDamageSyncVerticesAfterDraw\":%d,"
+		"\"bridgeDrawDamageSyncIndicesAfterDraw\":%d,"
 		"\"bridgeLogicDestroyListInvoked\":%s,"
 		"\"bridgeLogicDestroyListBridgeID\":%d,"
 		"\"bridgeLogicDestroyListObjectCountBeforeDestroy\":%u,"
@@ -12314,6 +12414,19 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bool_json(bridge_logic_invulnerable_state.undetectedDefectorAfterPositive),
 		bool_json(bridge_logic_invulnerable_state.undetectedDefectorAfterZero),
 		bridge_draw_first_damage_state_after_invulnerable_state_scene,
+		bool_json(bridge_draw_damage_sync.primed),
+		bool_json(bridge_draw_damage_sync.observedDuringDraw),
+		bool_json(bridge_draw_damage_sync.forcedMismatch),
+		bool_json(bridge_draw_damage_sync.matchedTerrainAfterDraw),
+		bridge_draw_damage_sync.bridgeIndex,
+		bridge_draw_damage_sync.terrainDamageState,
+		bridge_draw_damage_sync.visualStateBeforePrime,
+		bridge_draw_damage_sync.visualStateBeforeDraw,
+		bridge_draw_damage_sync.visualStateAfterDraw,
+		bridge_draw_damage_sync.verticesBeforeDraw,
+		bridge_draw_damage_sync.indicesBeforeDraw,
+		bridge_draw_damage_sync.verticesAfterDraw,
+		bridge_draw_damage_sync.indicesAfterDraw,
 		bool_json(bridge_logic_destroy_list_invoked),
 		bridge_logic_destroy_list.bridgeObjectID,
 		bridge_logic_destroy_list.objectCountBeforeDestroy,

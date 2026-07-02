@@ -991,8 +991,12 @@ flow below.
       sampled bridge-layer cells from clear/connected to impassable and back.
       Full water-aware pathfinder-map classification and production
       terrain/map ownership still belong in the real runtime owner rather than
-      this focused bridge visual envelope. It now loads the shipped
-      `GenericBridge` template
+      this focused bridge visual envelope. The same focused render now primes
+      only the cached `W3DBridge` visual damage enum to `BODY_RUBBLE` and
+      browser-proves original `W3DBridgeBuffer::drawBridges` synchronizes it
+      back to the retained logical `BridgeInfo.curDamageState`, so the visual
+      buffer follows terrain logic but no real non-pristine gameplay state is
+      faked. It now loads the shipped `GenericBridge` template
       through original `ThingFactory` /
       `ThingTemplate` parsing and requires
       `bridgeLogicGenericBridgeObjectMissing === false`. Remaining work is to

@@ -4250,6 +4250,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       bridge layer. Verified with
       `cmake --build WebAssembly/build/wasm --target cnc-port -j 4` and
       `npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
+- [x] Browser-prove W3D bridge visual damage-state sync from retained terrain
+      logic. The bridge scene now primes only the cached `W3DBridge` visual
+      damage enum to `BODY_RUBBLE` immediately before the normal browser render,
+      leaves the retained logical `BridgeInfo.curDamageState` at
+      `BODY_PRISTINE`, and requires original
+      `W3DBridgeBuffer::drawBridges(FALSE, TheTerrainLogic)` to observe the
+      mismatch and restore the visual bridge state to the logical terrain state.
+      The harness now reports `bridgeDrawDamageSyncVisualStateBeforeDraw=3`,
+      `bridgeDrawDamageSyncVisualStateAfterDraw=0`, matching terrain state, and
+      positive bridge vertex/index counts before and after draw. This proves the
+      render buffer follows terrain logic without faking a real damaged gameplay
+      bridge state. Verified with
+      `cmake --build WebAssembly/build/wasm --target cnc-port -j 4` and
+      `npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
 - [x] Browser-gate the bridge-buffer pathfinder-map frontier without crashing
       the render harness. The bridge scene now records an original
       `AIPathfind::newMap` preflight for the retained logical bridge layer,
