@@ -233,6 +233,7 @@ FunctionLexicon::TableEntry runtimeBaseSystemTable[] = {
 	{ NAMEKEY_INVALID, "MainMenuSystem", MainMenuSystem },
 	{ NAMEKEY_INVALID, "CreditsMenuSystem", CreditsMenuSystem },
 	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuSystem", SkirmishGameOptionsMenuSystem },
+	{ NAMEKEY_INVALID, "SinglePlayerMenuSystem", SinglePlayerMenuSystem },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
@@ -253,6 +254,7 @@ FunctionLexicon::TableEntry runtimeBaseInputTable[] = {
 	{ NAMEKEY_INVALID, "MainMenuInput", MainMenuInput },
 	{ NAMEKEY_INVALID, "CreditsMenuInput", CreditsMenuInput },
 	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuInput", SkirmishGameOptionsMenuInput },
+	{ NAMEKEY_INVALID, "SinglePlayerMenuInput", SinglePlayerMenuInput },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
@@ -271,6 +273,7 @@ FunctionLexicon::TableEntry runtimeBaseLayoutInitTable[] = {
 	{ NAMEKEY_INVALID, "MainMenuInit", MainMenuInit },
 	{ NAMEKEY_INVALID, "CreditsMenuInit", CreditsMenuInit },
 	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuInit", SkirmishGameOptionsMenuInit },
+	{ NAMEKEY_INVALID, "SinglePlayerMenuInit", SinglePlayerMenuInit },
 	{ NAMEKEY_INVALID, "DifficultySelectInit", DifficultySelectInit },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
@@ -279,6 +282,7 @@ FunctionLexicon::TableEntry runtimeBaseLayoutUpdateTable[] = {
 	{ NAMEKEY_INVALID, "MainMenuUpdate", MainMenuUpdate },
 	{ NAMEKEY_INVALID, "CreditsMenuUpdate", CreditsMenuUpdate },
 	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuUpdate", SkirmishGameOptionsMenuUpdate },
+	{ NAMEKEY_INVALID, "SinglePlayerMenuUpdate", SinglePlayerMenuUpdate },
 	{ NAMEKEY_INVALID, "KeyboardOptionsMenuUpdate", KeyboardOptionsMenuUpdate },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
@@ -287,6 +291,7 @@ FunctionLexicon::TableEntry runtimeBaseLayoutShutdownTable[] = {
 	{ NAMEKEY_INVALID, "MainMenuShutdown", MainMenuShutdown },
 	{ NAMEKEY_INVALID, "CreditsMenuShutdown", CreditsMenuShutdown },
 	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuShutdown", SkirmishGameOptionsMenuShutdown },
+	{ NAMEKEY_INVALID, "SinglePlayerMenuShutdown", SinglePlayerMenuShutdown },
 	{ NAMEKEY_INVALID, "PopupReplayShutdown", PopupReplayShutdown },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };

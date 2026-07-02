@@ -262,7 +262,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
   const probe = state.functionLexiconRuntime;
   expect(probe?.attempted === true, "function lexicon runtime probe did not run", probe);
   expect(probe.ok === false, "function lexicon runtime should not claim full ownership yet", probe);
-  expect(probe.status === "base_function_lexicon_skirmish_runtime_owned",
+  expect(probe.status === "base_function_lexicon_single_player_runtime_owned",
     "function lexicon runtime status mismatch", probe);
   expect(probe.nextRequired === "originalFunctionLexiconRemainingShellCallbacks",
     "function lexicon runtime nextRequired mismatch", probe);
@@ -304,6 +304,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.mainMenuSystem === true
       && probe.lookups.creditsMenuSystem === true
       && probe.lookups.skirmishGameOptionsMenuSystem === true
+      && probe.lookups.singlePlayerMenuSystem === true
       && probe.lookups.gameWindowDefaultInput === true
       && probe.lookups.gadgetPushButtonInput === true
       && probe.lookups.gadgetCheckBoxInput === true
@@ -320,20 +321,24 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.mainMenuInput === true
       && probe.lookups.creditsMenuInput === true
       && probe.lookups.skirmishGameOptionsMenuInput === true
+      && probe.lookups.singlePlayerMenuInput === true
       && probe.lookups.gameWindowDefaultTooltip === true
       && probe.lookups.imeCandidateMainDraw === true
       && probe.lookups.imeCandidateTextAreaDraw === true
       && probe.lookups.mainMenuInit === true
       && probe.lookups.creditsMenuInit === true
       && probe.lookups.skirmishGameOptionsMenuInit === true
+      && probe.lookups.singlePlayerMenuInit === true
       && probe.lookups.difficultySelectInit === true
       && probe.lookups.mainMenuUpdate === true
       && probe.lookups.creditsMenuUpdate === true
       && probe.lookups.skirmishGameOptionsMenuUpdate === true
+      && probe.lookups.singlePlayerMenuUpdate === true
       && probe.lookups.keyboardOptionsMenuUpdate === true
       && probe.lookups.mainMenuShutdown === true
       && probe.lookups.creditsMenuShutdown === true
       && probe.lookups.skirmishGameOptionsMenuShutdown === true
+      && probe.lookups.singlePlayerMenuShutdown === true
       && probe.lookups.popupReplayShutdown === true
       && probe.lookups.w3dGadgetPushButtonDraw === true
       && probe.lookups.w3dGameWindowDefaultDraw === true
@@ -375,7 +380,7 @@ function assertAudioOwnedFrontier(state) {
       && frontier.audioManagerRuntime.tornDown === true,
     "frontier audioManagerRuntime summary mismatch", frontier.audioManagerRuntime);
   expect(frontier.functionLexiconRuntime?.ready === false
-      && frontier.functionLexiconRuntime.status === "base_function_lexicon_skirmish_runtime_owned"
+      && frontier.functionLexiconRuntime.status === "base_function_lexicon_single_player_runtime_owned"
       && frontier.functionLexiconRuntime.w3dDeviceDrawReady === true
       && frontier.functionLexiconRuntime.w3dLayoutInitReady === true
       && frontier.functionLexiconRuntime.messageBoxSystemReady === true

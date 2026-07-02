@@ -2213,6 +2213,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       remain weak browser boundaries until their owning popup/WOL surface is
       current; the previous weak `IsFirstCDPresent` fallback is now overridden
       by the original Skirmish owner in this linked runtime.
+- [x] Promote the non-network `SinglePlayerMenu` callback owner into the linked
+      `cnc-port` base `FunctionLexicon`: `zh_window_layout_script_runtime` now
+      links original `SinglePlayerMenu.cpp`, while the reduced wasm
+      `FunctionLexicon::init()` registers original `SinglePlayerMenu`
+      system/input/init/update/shutdown callbacks. Startup vertical verifies
+      those callback-name lookups in the browser and now reports
+      `base_function_lexicon_single_player_runtime_owned` with
+      `originalFunctionLexiconRemainingShellCallbacks` next.
 ---
 
 ## M3 — File / data subsystem (real data)

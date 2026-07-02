@@ -51,9 +51,10 @@ flow below.
       device draw/layout tables, loads the non-network base GUI
       system/input/tooltip/widget plus IME draw callback table, registers
       representative original base layout callbacks, and now owns the
-      original `MainMenu`/`CreditsMenu`/`SkirmishGameOptionsMenu` shell
-      callback names; the remaining `FunctionLexicon` boundary is the rest of
-      the shell layout callback graph);
+      original `MainMenu`/`CreditsMenu`/`SkirmishGameOptionsMenu`/
+      `SinglePlayerMenu` shell callback names; the remaining
+      `FunctionLexicon` boundary is the rest of the shell layout callback
+      graph);
       archiveless or music-less boots honestly stay at line 434.
 - [ ] Own `createFunctionLexicon` (`W3DFunctionLexicon`, `GameEngine.cpp:446`)
       and then `createModuleFactory` (line 447) in the browser boot — the new
@@ -63,7 +64,7 @@ flow below.
       system/input/tooltip/widget, IME draw, and representative original base
       layout callback tables (`DifficultySelectInit`,
       `KeyboardOptionsMenuUpdate`, `PopupReplayShutdown`) plus original
-      `MainMenu`/`CreditsMenu`/`SkirmishGameOptionsMenu`
+      `MainMenu`/`CreditsMenu`/`SkirmishGameOptionsMenu`/`SinglePlayerMenu`
       system/input/init/update/shutdown lookups, but full ownership still
       needs the remaining original base `FunctionLexicon.cpp` shell layout
       callback graph without pulling LAN/WOL/GameSpy/embedded-web menu
