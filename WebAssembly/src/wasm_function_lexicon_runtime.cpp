@@ -181,6 +181,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.difficulty_select_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("DifficultySelectSystem")) == DifficultySelectSystem;
+	result.keyboard_options_menu_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("KeyboardOptionsMenuSystem")) == KeyboardOptionsMenuSystem;
 	result.game_window_default_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("GameWinDefaultInput")) == GameWinDefaultInput;
@@ -237,6 +240,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.difficulty_select_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("DifficultySelectInput")) == DifficultySelectInput;
+	result.keyboard_options_menu_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("KeyboardOptionsMenuInput")) == KeyboardOptionsMenuInput;
 	result.game_window_default_tooltip_lookup =
 		TheFunctionLexicon->gameWinTooltipFunc(
 			key_for("GameWinDefaultTooltip")) == GameWinDefaultTooltip;
@@ -262,6 +268,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.difficulty_select_init_lookup =
 		TheFunctionLexicon->winLayoutInitFunc(
 			key_for("DifficultySelectInit")) == DifficultySelectInit;
+	result.keyboard_options_menu_init_lookup =
+		TheFunctionLexicon->winLayoutInitFunc(
+			key_for("KeyboardOptionsMenuInit")) == KeyboardOptionsMenuInit;
 	result.main_menu_update_lookup =
 		TheFunctionLexicon->winLayoutUpdateFunc(
 			key_for("MainMenuUpdate")) == MainMenuUpdate;
@@ -291,6 +300,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.single_player_menu_shutdown_lookup =
 		TheFunctionLexicon->winLayoutShutdownFunc(
 			key_for("SinglePlayerMenuShutdown")) == SinglePlayerMenuShutdown;
+	result.keyboard_options_menu_shutdown_lookup =
+		TheFunctionLexicon->winLayoutShutdownFunc(
+			key_for("KeyboardOptionsMenuShutdown")) == KeyboardOptionsMenuShutdown;
 	result.popup_replay_shutdown_lookup =
 		TheFunctionLexicon->winLayoutShutdownFunc(
 			key_for("PopupReplayShutdown")) == PopupReplayShutdown;
@@ -394,7 +406,11 @@ bool base_widget_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &res
 bool base_layout_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 {
 	return result.difficulty_select_init_lookup &&
+		result.keyboard_options_menu_system_lookup &&
+		result.keyboard_options_menu_input_lookup &&
+		result.keyboard_options_menu_init_lookup &&
 		result.keyboard_options_menu_update_lookup &&
+		result.keyboard_options_menu_shutdown_lookup &&
 		result.popup_replay_shutdown_lookup;
 }
 
@@ -525,7 +541,7 @@ void finish_status(FunctionLexiconRuntimeProbeResult &result)
 		return;
 	}
 	if (!base_layout_callback_graph_ready(result)) {
-		result.status = "base_function_lexicon_difficulty_select_runtime_owned";
+		result.status = "base_function_lexicon_keyboard_options_runtime_owned";
 		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
 		return;
 	}
@@ -706,6 +722,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"skirmishGameOptionsMenuSystem\":%s,"
 		"\"singlePlayerMenuSystem\":%s,"
 		"\"difficultySelectSystem\":%s,"
+		"\"keyboardOptionsMenuSystem\":%s,"
 		"\"gameWindowDefaultInput\":%s,"
 		"\"gadgetPushButtonInput\":%s,"
 		"\"gadgetCheckBoxInput\":%s,"
@@ -724,6 +741,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"skirmishGameOptionsMenuInput\":%s,"
 		"\"singlePlayerMenuInput\":%s,"
 		"\"difficultySelectInput\":%s,"
+		"\"keyboardOptionsMenuInput\":%s,"
 		"\"gameWindowDefaultTooltip\":%s,"
 		"\"imeCandidateMainDraw\":%s,"
 		"\"imeCandidateTextAreaDraw\":%s,"
@@ -732,6 +750,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"skirmishGameOptionsMenuInit\":%s,"
 		"\"singlePlayerMenuInit\":%s,"
 		"\"difficultySelectInit\":%s,"
+		"\"keyboardOptionsMenuInit\":%s,"
 		"\"mainMenuUpdate\":%s,"
 		"\"creditsMenuUpdate\":%s,"
 		"\"skirmishGameOptionsMenuUpdate\":%s,"
@@ -741,6 +760,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"creditsMenuShutdown\":%s,"
 		"\"skirmishGameOptionsMenuShutdown\":%s,"
 		"\"singlePlayerMenuShutdown\":%s,"
+		"\"keyboardOptionsMenuShutdown\":%s,"
 		"\"popupReplayShutdown\":%s,"
 		"\"w3dGadgetPushButtonDraw\":%s,"
 		"\"w3dGameWindowDefaultDraw\":%s,"
@@ -793,6 +813,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.skirmish_game_options_menu_system_lookup),
 		json_bool(state.single_player_menu_system_lookup),
 		json_bool(state.difficulty_select_system_lookup),
+		json_bool(state.keyboard_options_menu_system_lookup),
 		json_bool(state.game_window_default_input_lookup),
 		json_bool(state.gadget_push_button_input_lookup),
 		json_bool(state.gadget_check_box_input_lookup),
@@ -811,6 +832,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.skirmish_game_options_menu_input_lookup),
 		json_bool(state.single_player_menu_input_lookup),
 		json_bool(state.difficulty_select_input_lookup),
+		json_bool(state.keyboard_options_menu_input_lookup),
 		json_bool(state.game_window_default_tooltip_lookup),
 		json_bool(state.ime_candidate_main_draw_lookup),
 		json_bool(state.ime_candidate_text_area_draw_lookup),
@@ -819,6 +841,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.skirmish_game_options_menu_init_lookup),
 		json_bool(state.single_player_menu_init_lookup),
 		json_bool(state.difficulty_select_init_lookup),
+		json_bool(state.keyboard_options_menu_init_lookup),
 		json_bool(state.main_menu_update_lookup),
 		json_bool(state.credits_menu_update_lookup),
 		json_bool(state.skirmish_game_options_menu_update_lookup),
@@ -828,6 +851,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.credits_menu_shutdown_lookup),
 		json_bool(state.skirmish_game_options_menu_shutdown_lookup),
 		json_bool(state.single_player_menu_shutdown_lookup),
+		json_bool(state.keyboard_options_menu_shutdown_lookup),
 		json_bool(state.popup_replay_shutdown_lookup),
 		json_bool(state.w3d_gadget_push_button_draw_lookup),
 		json_bool(state.w3d_game_window_default_draw_lookup),

@@ -235,6 +235,7 @@ FunctionLexicon::TableEntry runtimeBaseSystemTable[] = {
 	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuSystem", SkirmishGameOptionsMenuSystem },
 	{ NAMEKEY_INVALID, "SinglePlayerMenuSystem", SinglePlayerMenuSystem },
 	{ NAMEKEY_INVALID, "DifficultySelectSystem", DifficultySelectSystem },
+	{ NAMEKEY_INVALID, "KeyboardOptionsMenuSystem", KeyboardOptionsMenuSystem },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
@@ -257,6 +258,7 @@ FunctionLexicon::TableEntry runtimeBaseInputTable[] = {
 	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuInput", SkirmishGameOptionsMenuInput },
 	{ NAMEKEY_INVALID, "SinglePlayerMenuInput", SinglePlayerMenuInput },
 	{ NAMEKEY_INVALID, "DifficultySelectInput", DifficultySelectInput },
+	{ NAMEKEY_INVALID, "KeyboardOptionsMenuInput", KeyboardOptionsMenuInput },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
@@ -277,6 +279,7 @@ FunctionLexicon::TableEntry runtimeBaseLayoutInitTable[] = {
 	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuInit", SkirmishGameOptionsMenuInit },
 	{ NAMEKEY_INVALID, "SinglePlayerMenuInit", SinglePlayerMenuInit },
 	{ NAMEKEY_INVALID, "DifficultySelectInit", DifficultySelectInit },
+	{ NAMEKEY_INVALID, "KeyboardOptionsMenuInit", KeyboardOptionsMenuInit },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
@@ -294,6 +297,7 @@ FunctionLexicon::TableEntry runtimeBaseLayoutShutdownTable[] = {
 	{ NAMEKEY_INVALID, "CreditsMenuShutdown", CreditsMenuShutdown },
 	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuShutdown", SkirmishGameOptionsMenuShutdown },
 	{ NAMEKEY_INVALID, "SinglePlayerMenuShutdown", SinglePlayerMenuShutdown },
+	{ NAMEKEY_INVALID, "KeyboardOptionsMenuShutdown", KeyboardOptionsMenuShutdown },
 	{ NAMEKEY_INVALID, "PopupReplayShutdown", PopupReplayShutdown },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };

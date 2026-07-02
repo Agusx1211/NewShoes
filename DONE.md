@@ -2227,6 +2227,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       callback-name lookups in the browser and now reports
       `base_function_lexicon_difficulty_select_runtime_owned` with
       `originalFunctionLexiconRemainingShellCallbacks` next.
+- [x] Promote the already-linked `KeyboardOptionsMenu` callback owner from a
+      representative update lookup to its full original
+      system/input/init/update/shutdown FunctionLexicon registration, adding
+      original `MetaEvent.cpp` so `TheMetaMap` comes from the real input
+      owner. Startup vertical verifies those callback-name lookups in the
+      browser and now reports
+      `base_function_lexicon_keyboard_options_runtime_owned` with
+      `originalFunctionLexiconRemainingShellCallbacks` next.
 ---
 
 ## M3 — File / data subsystem (real data)

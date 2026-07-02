@@ -71,6 +71,7 @@ struct FunctionLexiconRuntimeProbeResult
 	bool skirmish_game_options_menu_system_lookup = false;
 	bool single_player_menu_system_lookup = false;
 	bool difficulty_select_system_lookup = false;
+	bool keyboard_options_menu_system_lookup = false;
 	bool game_window_default_input_lookup = false;
 	bool gadget_push_button_input_lookup = false;
 	bool gadget_check_box_input_lookup = false;
@@ -89,6 +90,7 @@ struct FunctionLexiconRuntimeProbeResult
 	bool skirmish_game_options_menu_input_lookup = false;
 	bool single_player_menu_input_lookup = false;
 	bool difficulty_select_input_lookup = false;
+	bool keyboard_options_menu_input_lookup = false;
 	bool game_window_default_tooltip_lookup = false;
 	bool ime_candidate_main_draw_lookup = false;
 	bool ime_candidate_text_area_draw_lookup = false;
@@ -97,6 +99,7 @@ struct FunctionLexiconRuntimeProbeResult
 	bool skirmish_game_options_menu_init_lookup = false;
 	bool single_player_menu_init_lookup = false;
 	bool difficulty_select_init_lookup = false;
+	bool keyboard_options_menu_init_lookup = false;
 	bool main_menu_update_lookup = false;
 	bool credits_menu_update_lookup = false;
 	bool skirmish_game_options_menu_update_lookup = false;
@@ -106,6 +109,7 @@ struct FunctionLexiconRuntimeProbeResult
 	bool credits_menu_shutdown_lookup = false;
 	bool skirmish_game_options_menu_shutdown_lookup = false;
 	bool single_player_menu_shutdown_lookup = false;
+	bool keyboard_options_menu_shutdown_lookup = false;
 	bool popup_replay_shutdown_lookup = false;
 	bool w3d_gadget_push_button_draw_lookup = false;
 	bool w3d_game_window_default_draw_lookup = false;
