@@ -295,6 +295,8 @@ const harnessState = {
   startupSingletons: null,
   audioManagerRuntime: null,
   functionLexiconRuntime: null,
+  moduleFactoryRuntime: null,
+  particleSystemRuntime: null,
   audioRuntimeAssets: null,
   audioPayloadInventory: null,
   startupAssets: null,
@@ -6924,6 +6926,10 @@ function applyModuleState(moduleState) {
   harnessState.audioManagerRuntime = moduleState.audioManagerRuntime ?? harnessState.audioManagerRuntime;
   harnessState.functionLexiconRuntime =
     moduleState.functionLexiconRuntime ?? harnessState.functionLexiconRuntime;
+  harnessState.moduleFactoryRuntime =
+    moduleState.moduleFactoryRuntime ?? harnessState.moduleFactoryRuntime;
+  harnessState.particleSystemRuntime =
+    moduleState.particleSystemRuntime ?? harnessState.particleSystemRuntime;
   harnessState.audioRuntimeAssets = moduleState.audioRuntimeAssets ?? harnessState.audioRuntimeAssets;
   harnessState.startupAssets = moduleState.startupAssets ?? harnessState.startupAssets;
   harnessState.dataSummary = moduleState.dataSummary ?? harnessState.dataSummary;
@@ -7197,6 +7203,8 @@ async function loadWasmModule() {
       realEngineFrame: module.cwrap("cnc_port_real_engine_frame", "string", ["number"]),
       probeMssStartup: module.cwrap("cnc_port_probe_mss_startup", "string", []),
       probeAudioManagerRuntime: module.cwrap("cnc_port_probe_audio_manager_runtime", "string", []),
+      probeModuleFactoryRuntime: module.cwrap("cnc_port_probe_module_factory_runtime", "string", []),
+      probeParticleSystemRuntime: module.cwrap("cnc_port_probe_particle_system_runtime", "string", []),
       probeMssSampleLifecycle: module.cwrap("cnc_port_probe_mss_sample_lifecycle", "string", []),
       probeMssSamplePlaybackStart: module.cwrap("cnc_port_probe_mss_sample_playback_start", "string", []),
       mssAdpcmPayloadBuffer: module.cwrap("cnc_port_mss_adpcm_payload_buffer", "number", ["number"]),
@@ -7511,6 +7519,8 @@ function snapshotState() {
     startupSingletons: harnessState.startupSingletons,
     audioManagerRuntime: harnessState.audioManagerRuntime,
     functionLexiconRuntime: harnessState.functionLexiconRuntime,
+    moduleFactoryRuntime: harnessState.moduleFactoryRuntime,
+    particleSystemRuntime: harnessState.particleSystemRuntime,
     audioRuntimeAssets: harnessState.audioRuntimeAssets,
     browserAudioRuntime: summarizeBrowserAudioRuntime(),
     browserAudioMixerRuntime: summarizeBrowserAudioMixerRuntime(),
@@ -21428,6 +21438,34 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: "Wasm module unavailable; audio manager runtime probe cannot run" };
         }
         const probe = parseModuleState(wasmModule.probeAudioManagerRuntime());
+        return {
+          ok: Boolean(probe.attempted),
+          command,
+          probe,
+          state: snapshotState(),
+        };
+      }
+    case "moduleFactoryRuntimeProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; module factory runtime probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeModuleFactoryRuntime());
+        return {
+          ok: Boolean(probe.attempted),
+          command,
+          probe,
+          state: snapshotState(),
+        };
+      }
+    case "particleSystemRuntimeProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; particle system runtime probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeParticleSystemRuntime());
         return {
           ok: Boolean(probe.attempted),
           command,

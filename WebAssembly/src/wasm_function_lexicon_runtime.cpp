@@ -85,6 +85,65 @@ NameKeyType key_for(const char *name)
 	return TheNameKeyGenerator->nameToKey(name);
 }
 
+bool system_callback_registered(const char *name)
+{
+	return TheFunctionLexicon != nullptr &&
+		TheFunctionLexicon->gameWinSystemFunc(key_for(name)) != nullptr;
+}
+
+bool input_callback_registered(const char *name)
+{
+	return TheFunctionLexicon != nullptr &&
+		TheFunctionLexicon->gameWinInputFunc(key_for(name)) != nullptr;
+}
+
+bool layout_init_callback_registered(const char *name)
+{
+	return TheFunctionLexicon != nullptr &&
+		TheFunctionLexicon->winLayoutInitFunc(
+			key_for(name), FunctionLexicon::TABLE_WIN_LAYOUT_INIT) != nullptr;
+}
+
+bool layout_update_callback_registered(const char *name)
+{
+	return TheFunctionLexicon != nullptr &&
+		TheFunctionLexicon->winLayoutUpdateFunc(key_for(name)) != nullptr;
+}
+
+bool layout_shutdown_callback_registered(const char *name)
+{
+	return TheFunctionLexicon != nullptr &&
+		TheFunctionLexicon->winLayoutShutdownFunc(key_for(name)) != nullptr;
+}
+
+bool all_callbacks_registered(const char *const *names,
+	bool (*registered)(const char *))
+{
+	for (const char *const *name = names; *name != nullptr; ++name) {
+		if (!registered(*name)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+void append_missing_callback_group(FunctionLexiconRuntimeProbeResult &result,
+	const char *name, bool ready)
+{
+	if (ready) {
+		return;
+	}
+	if (result.missing_callback_group_count == 0) {
+		result.missing_callback_groups_json = "{";
+	} else {
+		result.missing_callback_groups_json += ",";
+	}
+	result.missing_callback_groups_json += "\"";
+	result.missing_callback_groups_json += name;
+	result.missing_callback_groups_json += "\":true";
+	++result.missing_callback_group_count;
+}
+
 bool table_loaded(FunctionLexicon::TableIndex index)
 {
 	return TheFunctionLexicon != nullptr &&
@@ -177,9 +236,15 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.ime_candidate_window_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("IMECandidateWindowSystem")) == IMECandidateWindowSystem;
+	result.motd_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("MOTDSystem")) == MOTDSystem;
 	result.main_menu_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("MainMenuSystem")) == MainMenuSystem;
+	result.options_menu_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("OptionsMenuSystem")) == OptionsMenuSystem;
 	result.credits_menu_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("CreditsMenuSystem")) == CreditsMenuSystem;
@@ -187,6 +252,10 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("SkirmishGameOptionsMenuSystem")) ==
 				SkirmishGameOptionsMenuSystem;
+	result.skirmish_map_select_menu_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("SkirmishMapSelectMenuSystem")) ==
+				SkirmishMapSelectMenuSystem;
 	result.single_player_menu_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("SinglePlayerMenuSystem")) == SinglePlayerMenuSystem;
@@ -217,12 +286,18 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.replay_control_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("ReplayControlSystem")) == ReplayControlSystem;
+	result.control_bar_observer_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("ControlBarObserverSystem")) == ControlBarObserverSystem;
 	result.game_info_window_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("GameInfoWindowSystem")) == GameInfoWindowSystem;
 	result.game_window_default_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("GameWinDefaultInput")) == GameWinDefaultInput;
+	result.game_window_block_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("GameWinBlockInput")) == GameWinBlockInput;
 	result.gadget_push_button_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("GadgetPushButtonInput")) == GadgetPushButtonInput;
@@ -263,6 +338,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.main_menu_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("MainMenuInput")) == MainMenuInput;
+	result.options_menu_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("OptionsMenuInput")) == OptionsMenuInput;
 	result.credits_menu_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("CreditsMenuInput")) == CreditsMenuInput;
@@ -270,6 +348,10 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("SkirmishGameOptionsMenuInput")) ==
 				SkirmishGameOptionsMenuInput;
+	result.skirmish_map_select_menu_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("SkirmishMapSelectMenuInput")) ==
+				SkirmishMapSelectMenuInput;
 	result.single_player_menu_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("SinglePlayerMenuInput")) == SinglePlayerMenuInput;
@@ -318,6 +400,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.main_menu_init_lookup =
 		TheFunctionLexicon->winLayoutInitFunc(
 			key_for("MainMenuInit")) == MainMenuInit;
+	result.options_menu_init_lookup =
+		TheFunctionLexicon->winLayoutInitFunc(
+			key_for("OptionsMenuInit")) == OptionsMenuInit;
 	result.credits_menu_init_lookup =
 		TheFunctionLexicon->winLayoutInitFunc(
 			key_for("CreditsMenuInit")) == CreditsMenuInit;
@@ -325,6 +410,10 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 		TheFunctionLexicon->winLayoutInitFunc(
 			key_for("SkirmishGameOptionsMenuInit")) ==
 				SkirmishGameOptionsMenuInit;
+	result.skirmish_map_select_menu_init_lookup =
+		TheFunctionLexicon->winLayoutInitFunc(
+			key_for("SkirmishMapSelectMenuInit")) ==
+				SkirmishMapSelectMenuInit;
 	result.single_player_menu_init_lookup =
 		TheFunctionLexicon->winLayoutInitFunc(
 			key_for("SinglePlayerMenuInit")) == SinglePlayerMenuInit;
@@ -340,6 +429,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.replay_menu_init_lookup =
 		TheFunctionLexicon->winLayoutInitFunc(
 			key_for("ReplayMenuInit")) == ReplayMenuInit;
+	result.game_info_window_init_lookup =
+		TheFunctionLexicon->winLayoutInitFunc(
+			key_for("GameInfoWindowInit")) == GameInfoWindowInit;
 	result.popup_replay_init_lookup =
 		TheFunctionLexicon->winLayoutInitFunc(
 			key_for("PopupReplayInit")) == PopupReplayInit;
@@ -355,6 +447,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.main_menu_update_lookup =
 		TheFunctionLexicon->winLayoutUpdateFunc(
 			key_for("MainMenuUpdate")) == MainMenuUpdate;
+	result.options_menu_update_lookup =
+		TheFunctionLexicon->winLayoutUpdateFunc(
+			key_for("OptionsMenuUpdate")) == OptionsMenuUpdate;
 	result.credits_menu_update_lookup =
 		TheFunctionLexicon->winLayoutUpdateFunc(
 			key_for("CreditsMenuUpdate")) == CreditsMenuUpdate;
@@ -362,6 +457,10 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 		TheFunctionLexicon->winLayoutUpdateFunc(
 			key_for("SkirmishGameOptionsMenuUpdate")) ==
 				SkirmishGameOptionsMenuUpdate;
+	result.skirmish_map_select_menu_update_lookup =
+		TheFunctionLexicon->winLayoutUpdateFunc(
+			key_for("SkirmishMapSelectMenuUpdate")) ==
+				SkirmishMapSelectMenuUpdate;
 	result.single_player_menu_update_lookup =
 		TheFunctionLexicon->winLayoutUpdateFunc(
 			key_for("SinglePlayerMenuUpdate")) == SinglePlayerMenuUpdate;
@@ -380,6 +479,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.main_menu_shutdown_lookup =
 		TheFunctionLexicon->winLayoutShutdownFunc(
 			key_for("MainMenuShutdown")) == MainMenuShutdown;
+	result.options_menu_shutdown_lookup =
+		TheFunctionLexicon->winLayoutShutdownFunc(
+			key_for("OptionsMenuShutdown")) == OptionsMenuShutdown;
 	result.credits_menu_shutdown_lookup =
 		TheFunctionLexicon->winLayoutShutdownFunc(
 			key_for("CreditsMenuShutdown")) == CreditsMenuShutdown;
@@ -387,6 +489,10 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 		TheFunctionLexicon->winLayoutShutdownFunc(
 			key_for("SkirmishGameOptionsMenuShutdown")) ==
 				SkirmishGameOptionsMenuShutdown;
+	result.skirmish_map_select_menu_shutdown_lookup =
+		TheFunctionLexicon->winLayoutShutdownFunc(
+			key_for("SkirmishMapSelectMenuShutdown")) ==
+				SkirmishMapSelectMenuShutdown;
 	result.single_player_menu_shutdown_lookup =
 		TheFunctionLexicon->winLayoutShutdownFunc(
 			key_for("SinglePlayerMenuShutdown")) == SinglePlayerMenuShutdown;
@@ -417,6 +523,222 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.w3d_main_menu_init_lookup =
 		TheFunctionLexicon->winLayoutInitFunc(
 			key_for("W3DMainMenuInit")) == W3DMainMenuInit;
+}
+
+void capture_missing_callback_groups(FunctionLexiconRuntimeProbeResult &result)
+{
+	result.missing_callback_group_count = 0;
+	result.missing_callback_groups_json = "{}";
+	if (TheFunctionLexicon == nullptr || TheNameKeyGenerator == nullptr) {
+		return;
+	}
+
+	const char *save_load_system[] = { "SaveLoadMenuSystem", nullptr };
+	const char *save_load_input[] = { "SaveLoadMenuInput", nullptr };
+	const char *save_load_init[] = {
+		"SaveLoadMenuInit", "SaveLoadMenuFullScreenInit", nullptr };
+	const char *save_load_update[] = { "SaveLoadMenuUpdate", nullptr };
+	const char *save_load_shutdown[] = { "SaveLoadMenuShutdown", nullptr };
+	append_missing_callback_group(result, "saveLoadMenu",
+		all_callbacks_registered(save_load_system, system_callback_registered) &&
+			all_callbacks_registered(save_load_input, input_callback_registered) &&
+			all_callbacks_registered(save_load_init, layout_init_callback_registered) &&
+			all_callbacks_registered(save_load_update, layout_update_callback_registered) &&
+			all_callbacks_registered(save_load_shutdown, layout_shutdown_callback_registered));
+
+	append_missing_callback_group(result, "quitMenu",
+		system_callback_registered("QuitMenuSystem"));
+
+	const char *popup_replay_score_system[] = { "PopupReplaySystem", nullptr };
+	const char *popup_replay_score_update[] = { "PopupReplayUpdate", nullptr };
+	append_missing_callback_group(result, "popupReplayScoreState",
+		all_callbacks_registered(popup_replay_score_system, system_callback_registered) &&
+			all_callbacks_registered(
+				popup_replay_score_update, layout_update_callback_registered));
+
+	const char *score_screen_system[] = { "ScoreScreenSystem", nullptr };
+	const char *score_screen_input[] = { "ScoreScreenInput", nullptr };
+	const char *score_screen_init[] = { "ScoreScreenInit", nullptr };
+	const char *score_screen_update[] = { "ScoreScreenUpdate", nullptr };
+	const char *score_screen_shutdown[] = { "ScoreScreenShutdown", nullptr };
+	append_missing_callback_group(result, "scoreScreen",
+		all_callbacks_registered(score_screen_system, system_callback_registered) &&
+			all_callbacks_registered(score_screen_input, input_callback_registered) &&
+			all_callbacks_registered(score_screen_init, layout_init_callback_registered) &&
+			all_callbacks_registered(score_screen_update, layout_update_callback_registered) &&
+			all_callbacks_registered(
+				score_screen_shutdown, layout_shutdown_callback_registered));
+
+	const char *control_bar_command_system[] = { "ControlBarSystem", nullptr };
+	const char *control_bar_command_input[] = { "LeftHUDInput", nullptr };
+	append_missing_callback_group(result, "controlBarCommandHud",
+		all_callbacks_registered(
+			control_bar_command_system, system_callback_registered) &&
+			all_callbacks_registered(
+				control_bar_command_input, input_callback_registered));
+
+	const char *generals_exp_system[] = { "GeneralsExpPointsSystem", nullptr };
+	const char *generals_exp_input[] = { "GeneralsExpPointsInput", nullptr };
+	append_missing_callback_group(result, "generalsExpPoints",
+		all_callbacks_registered(generals_exp_system, system_callback_registered) &&
+			all_callbacks_registered(generals_exp_input, input_callback_registered));
+
+	const char *lan_system[] = {
+		"LanLobbyMenuSystem", "LanGameOptionsMenuSystem",
+		"LanMapSelectMenuSystem", nullptr };
+	const char *lan_input[] = {
+		"LanLobbyMenuInput", "LanGameOptionsMenuInput",
+		"LanMapSelectMenuInput", nullptr };
+	const char *lan_init[] = {
+		"LanLobbyMenuInit", "LanGameOptionsMenuInit",
+		"LanMapSelectMenuInit", nullptr };
+	const char *lan_update[] = {
+		"LanLobbyMenuUpdate", "LanGameOptionsMenuUpdate",
+		"LanMapSelectMenuUpdate", nullptr };
+	const char *lan_shutdown[] = {
+		"LanLobbyMenuShutdown", "LanGameOptionsMenuShutdown",
+		"LanMapSelectMenuShutdown", nullptr };
+	append_missing_callback_group(result, "lanMenus",
+		all_callbacks_registered(lan_system, system_callback_registered) &&
+			all_callbacks_registered(lan_input, input_callback_registered) &&
+			all_callbacks_registered(lan_init, layout_init_callback_registered) &&
+			all_callbacks_registered(lan_update, layout_update_callback_registered) &&
+			all_callbacks_registered(lan_shutdown, layout_shutdown_callback_registered));
+
+	const char *ingame_network_system[] = {
+		"InGameChatSystem", "DisconnectControlSystem", "DiplomacySystem",
+		"EstablishConnectionsControlSystem", nullptr };
+	const char *ingame_network_input[] = {
+		"InGameChatInput", "DisconnectControlInput", "DiplomacyInput",
+		"EstablishConnectionsControlInput", nullptr };
+	append_missing_callback_group(result, "inGameNetworkMenus",
+		all_callbacks_registered(
+			ingame_network_system, system_callback_registered) &&
+			all_callbacks_registered(
+				ingame_network_input, input_callback_registered));
+
+	const char *network_popup_system[] = {
+		"PopupHostGameSystem", "PopupJoinGameSystem",
+		"PopupLadderSelectSystem", nullptr };
+	const char *network_popup_input[] = {
+		"PopupHostGameInput", "PopupJoinGameInput",
+		"PopupLadderSelectInput", nullptr };
+	const char *network_popup_init[] = {
+		"PopupHostGameInit", "PopupJoinGameInit",
+		"PopupLadderSelectInit", nullptr };
+	const char *network_popup_update[] = { "PopupHostGameUpdate", nullptr };
+	append_missing_callback_group(result, "hostJoinNetworkPopups",
+		all_callbacks_registered(network_popup_system, system_callback_registered) &&
+			all_callbacks_registered(network_popup_input, input_callback_registered) &&
+			all_callbacks_registered(
+				network_popup_init, layout_init_callback_registered) &&
+			all_callbacks_registered(
+				network_popup_update, layout_update_callback_registered));
+
+	const char *online_overlay_system[] = {
+		"PopupBuddyNotificationSystem", "WOLBuddyOverlayRCMenuSystem",
+		"RCGameDetailsMenuSystem", "GameSpyPlayerInfoOverlaySystem", nullptr };
+	const char *online_overlay_input[] = {
+		"GameSpyPlayerInfoOverlayInput", nullptr };
+	const char *online_overlay_init[] = {
+		"WOLBuddyOverlayRCMenuInit", "RCGameDetailsMenuInit",
+		"GameSpyPlayerInfoOverlayInit", nullptr };
+	const char *online_overlay_update[] = {
+		"GameSpyPlayerInfoOverlayUpdate", nullptr };
+	const char *online_overlay_shutdown[] = {
+		"GameSpyPlayerInfoOverlayShutdown", nullptr };
+	append_missing_callback_group(result, "onlineOverlayAndBattleHonors",
+		all_callbacks_registered(online_overlay_system, system_callback_registered) &&
+			all_callbacks_registered(online_overlay_input, input_callback_registered) &&
+			all_callbacks_registered(
+				online_overlay_init, layout_init_callback_registered) &&
+			all_callbacks_registered(
+				online_overlay_update, layout_update_callback_registered) &&
+			all_callbacks_registered(
+				online_overlay_shutdown, layout_shutdown_callback_registered));
+
+	const char *wol_system[] = {
+		"WOLLadderScreenSystem", "WOLLoginMenuSystem", "WOLLocaleSelectSystem",
+		"WOLLobbyMenuSystem", "WOLGameSetupMenuSystem",
+		"WOLMapSelectMenuSystem", "WOLBuddyOverlaySystem",
+		"WOLMessageWindowSystem", "WOLQuickMatchMenuSystem",
+		"WOLWelcomeMenuSystem", "WOLStatusMenuSystem",
+		"WOLQMScoreScreenSystem", "WOLCustomScoreScreenSystem", nullptr };
+	const char *wol_input[] = {
+		"WOLLadderScreenInput", "WOLLoginMenuInput", "WOLLocaleSelectInput",
+		"WOLLobbyMenuInput", "WOLGameSetupMenuInput",
+		"WOLMapSelectMenuInput", "WOLBuddyOverlayInput",
+		"WOLMessageWindowInput", "WOLQuickMatchMenuInput",
+		"WOLWelcomeMenuInput", "WOLStatusMenuInput",
+		"WOLQMScoreScreenInput", "WOLCustomScoreScreenInput", nullptr };
+	const char *wol_init[] = {
+		"WOLLadderScreenInit", "WOLLoginMenuInit", "WOLLocaleSelectInit",
+		"WOLLobbyMenuInit", "WOLGameSetupMenuInit",
+		"WOLMapSelectMenuInit", "WOLBuddyOverlayInit",
+		"WOLMessageWindowInit", "WOLQuickMatchMenuInit",
+		"WOLWelcomeMenuInit", "WOLStatusMenuInit",
+		"WOLQMScoreScreenInit", "WOLCustomScoreScreenInit", nullptr };
+	const char *wol_update[] = {
+		"WOLLadderScreenUpdate", "WOLLoginMenuUpdate", "WOLLocaleSelectUpdate",
+		"WOLLobbyMenuUpdate", "WOLGameSetupMenuUpdate",
+		"WOLMapSelectMenuUpdate", "WOLBuddyOverlayUpdate",
+		"WOLMessageWindowUpdate", "WOLQuickMatchMenuUpdate",
+		"WOLWelcomeMenuUpdate", "WOLStatusMenuUpdate",
+		"WOLQMScoreScreenUpdate", "WOLCustomScoreScreenUpdate", nullptr };
+	const char *wol_shutdown[] = {
+		"WOLLadderScreenShutdown", "WOLLoginMenuShutdown",
+		"WOLLocaleSelectShutdown", "WOLLobbyMenuShutdown",
+		"WOLGameSetupMenuShutdown", "WOLMapSelectMenuShutdown",
+		"WOLBuddyOverlayShutdown", "WOLMessageWindowShutdown",
+		"WOLQuickMatchMenuShutdown", "WOLWelcomeMenuShutdown",
+		"WOLStatusMenuShutdown", "WOLQMScoreScreenShutdown",
+		"WOLCustomScoreScreenShutdown", nullptr };
+	append_missing_callback_group(result, "wolShellMenus",
+		all_callbacks_registered(wol_system, system_callback_registered) &&
+			all_callbacks_registered(wol_input, input_callback_registered) &&
+			all_callbacks_registered(wol_init, layout_init_callback_registered) &&
+			all_callbacks_registered(wol_update, layout_update_callback_registered) &&
+			all_callbacks_registered(wol_shutdown, layout_shutdown_callback_registered));
+
+	const char *network_direct_system[] = {
+		"NetworkDirectConnectSystem", nullptr };
+	const char *network_direct_input[] = {
+		"NetworkDirectConnectInput", nullptr };
+	const char *network_direct_init[] = {
+		"NetworkDirectConnectInit", nullptr };
+	const char *network_direct_update[] = {
+		"NetworkDirectConnectUpdate", nullptr };
+	const char *network_direct_shutdown[] = {
+		"NetworkDirectConnectShutdown", nullptr };
+	append_missing_callback_group(result, "networkDirectConnect",
+		all_callbacks_registered(
+			network_direct_system, system_callback_registered) &&
+			all_callbacks_registered(
+				network_direct_input, input_callback_registered) &&
+			all_callbacks_registered(
+				network_direct_init, layout_init_callback_registered) &&
+			all_callbacks_registered(
+				network_direct_update, layout_update_callback_registered) &&
+			all_callbacks_registered(
+				network_direct_shutdown, layout_shutdown_callback_registered));
+
+	const char *download_system[] = { "DownloadMenuSystem", nullptr };
+	const char *download_input[] = { "DownloadMenuInput", nullptr };
+	const char *download_init[] = { "DownloadMenuInit", nullptr };
+	const char *download_update[] = { "DownloadMenuUpdate", nullptr };
+	const char *download_shutdown[] = { "DownloadMenuShutdown", nullptr };
+	append_missing_callback_group(result, "downloadMenu",
+		all_callbacks_registered(download_system, system_callback_registered) &&
+			all_callbacks_registered(download_input, input_callback_registered) &&
+			all_callbacks_registered(download_init, layout_init_callback_registered) &&
+			all_callbacks_registered(
+				download_update, layout_update_callback_registered) &&
+			all_callbacks_registered(
+				download_shutdown, layout_shutdown_callback_registered));
+
+	if (result.missing_callback_group_count != 0) {
+		result.missing_callback_groups_json += "}";
+	}
 }
 
 bool table_state_ready(const FunctionLexiconRuntimeProbeResult &result)
@@ -481,6 +803,7 @@ bool base_core_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &resul
 bool base_widget_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 {
 	return base_core_lookup_state_ready(result) &&
+		result.game_window_block_input_lookup &&
 		result.gadget_check_box_system_lookup &&
 		result.gadget_radio_button_system_lookup &&
 		result.gadget_tab_control_system_lookup &&
@@ -517,6 +840,11 @@ bool base_layout_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &res
 		result.popup_replay_shutdown_lookup;
 }
 
+bool motd_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
+{
+	return result.motd_system_lookup;
+}
+
 bool shell_menu_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 {
 	return result.main_menu_system_lookup &&
@@ -541,6 +869,25 @@ bool shell_menu_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &resu
 		result.credits_menu_shutdown_lookup &&
 		result.skirmish_game_options_menu_shutdown_lookup &&
 		result.single_player_menu_shutdown_lookup;
+}
+
+bool options_menu_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
+{
+	return result.options_menu_system_lookup &&
+		result.options_menu_input_lookup &&
+		result.options_menu_init_lookup &&
+		result.options_menu_update_lookup &&
+		result.options_menu_shutdown_lookup;
+}
+
+bool skirmish_map_select_menu_lookup_state_ready(
+	const FunctionLexiconRuntimeProbeResult &result)
+{
+	return result.skirmish_map_select_menu_system_lookup &&
+		result.skirmish_map_select_menu_input_lookup &&
+		result.skirmish_map_select_menu_init_lookup &&
+		result.skirmish_map_select_menu_update_lookup &&
+		result.skirmish_map_select_menu_shutdown_lookup;
 }
 
 bool challenge_menu_lookup_state_ready(
@@ -613,10 +960,17 @@ bool replay_control_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &
 		result.replay_control_input_lookup;
 }
 
+bool control_bar_observer_lookup_state_ready(
+	const FunctionLexiconRuntimeProbeResult &result)
+{
+	return result.control_bar_observer_system_lookup;
+}
+
 bool game_info_window_lookup_state_ready(
 	const FunctionLexiconRuntimeProbeResult &result)
 {
-	return result.game_info_window_system_lookup;
+	return result.game_info_window_system_lookup &&
+		result.game_info_window_init_lookup;
 }
 
 bool idle_worker_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
@@ -624,21 +978,26 @@ bool idle_worker_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &res
 	return result.idle_worker_system_lookup;
 }
 
-bool base_layout_callback_graph_ready(const FunctionLexiconRuntimeProbeResult &)
+bool base_layout_callback_graph_ready(const FunctionLexiconRuntimeProbeResult &result)
 {
 	// The linked runtime currently proves a shell-menu subset plus the
-	// challenge-menu, popup-communicator, in-game popup-message, idle-worker,
-	// control-bar input, beacon-window, replay-control, map-select, replay-menu,
-	// popup-replay modal callbacks, and game-info-window callback owners. Full
-	// ownership requires the remaining non-network layout callback graph.
-	return false;
+	// game-window block input, MOTD, options-menu, skirmish-map-select, challenge-menu,
+	// popup-communicator, in-game popup-message, idle-worker, control-bar
+	// input, beacon-window, replay-control, control-bar observer, map-select,
+	// replay-menu, popup-replay modal callbacks, and game-info-window callback owners.
+	// Full ownership requires the remaining callback owner groups reported in
+	// missingCallbackGroups.
+	return result.missing_callback_group_count == 0;
 }
 
 bool lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 {
 	return base_widget_lookup_state_ready(result) &&
 		base_layout_lookup_state_ready(result) &&
+		motd_lookup_state_ready(result) &&
 		shell_menu_lookup_state_ready(result) &&
+		options_menu_lookup_state_ready(result) &&
+		skirmish_map_select_menu_lookup_state_ready(result) &&
 		challenge_menu_lookup_state_ready(result) &&
 		popup_communicator_lookup_state_ready(result) &&
 		map_select_menu_lookup_state_ready(result) &&
@@ -648,6 +1007,7 @@ bool lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 		control_bar_input_lookup_state_ready(result) &&
 		beacon_window_lookup_state_ready(result) &&
 		replay_control_lookup_state_ready(result) &&
+		control_bar_observer_lookup_state_ready(result) &&
 		game_info_window_lookup_state_ready(result) &&
 		idle_worker_lookup_state_ready(result) &&
 		device_lookup_state_ready(result);
@@ -733,69 +1093,90 @@ void finish_status(FunctionLexiconRuntimeProbeResult &result)
 		result.next_required = "originalFunctionLexiconRepresentativeLayoutCallbacks";
 		return;
 	}
+	if (!motd_lookup_state_ready(result)) {
+		result.status = "base_function_lexicon_layout_representative_runtime_owned";
+		result.next_required = "originalFunctionLexiconShellMenuCallbacks";
+		return;
+	}
 	if (!shell_menu_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_layout_partial_runtime_owned";
 		result.next_required = "originalFunctionLexiconShellMenuCallbacks";
 		return;
 	}
+	if (!options_menu_lookup_state_ready(result)) {
+		result.status = "base_function_lexicon_shell_menu_runtime_owned";
+		result.next_required = "originalFunctionLexiconRemainingCallbackOwners";
+		return;
+	}
+	if (!skirmish_map_select_menu_lookup_state_ready(result)) {
+		result.status = "base_function_lexicon_options_menu_runtime_owned";
+		result.next_required = "originalFunctionLexiconRemainingCallbackOwners";
+		return;
+	}
 	if (!in_game_popup_message_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_extended_message_box_runtime_owned";
-		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
+		result.next_required = "originalFunctionLexiconRemainingCallbackOwners";
 		return;
 	}
 	if (!idle_worker_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_ingame_popup_message_runtime_owned";
-		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
+		result.next_required = "originalFunctionLexiconRemainingCallbackOwners";
 		return;
 	}
 	if (!beacon_window_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_idle_worker_runtime_owned";
-		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
+		result.next_required = "originalFunctionLexiconRemainingCallbackOwners";
 		return;
 	}
 	if (!replay_control_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_beacon_window_runtime_owned";
-		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
+		result.next_required = "originalFunctionLexiconRemainingCallbackOwners";
+		return;
+	}
+	if (!control_bar_observer_lookup_state_ready(result)) {
+		result.status = "base_function_lexicon_replay_control_runtime_owned";
+		result.next_required = "originalFunctionLexiconRemainingCallbackOwners";
 		return;
 	}
 	if (!challenge_menu_lookup_state_ready(result)) {
-		result.status = "base_function_lexicon_replay_control_runtime_owned";
-		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
+		result.status = "base_function_lexicon_control_bar_observer_runtime_owned";
+		result.next_required = "originalFunctionLexiconRemainingCallbackOwners";
 		return;
 	}
 	if (!popup_communicator_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_challenge_menu_runtime_owned";
-		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
+		result.next_required = "originalFunctionLexiconRemainingCallbackOwners";
 		return;
 	}
 	if (!map_select_menu_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_popup_communicator_runtime_owned";
-		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
+		result.next_required = "originalFunctionLexiconRemainingCallbackOwners";
 		return;
 	}
 	if (!game_info_window_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_map_select_menu_runtime_owned";
-		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
+		result.next_required = "originalFunctionLexiconRemainingCallbackOwners";
 		return;
 	}
 	if (!replay_menu_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_game_info_window_runtime_owned";
-		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
+		result.next_required = "originalFunctionLexiconRemainingCallbackOwners";
 		return;
 	}
 	if (!popup_replay_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_replay_menu_runtime_owned";
-		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
+		result.next_required = "originalFunctionLexiconRemainingCallbackOwners";
 		return;
 	}
 	if (!control_bar_input_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_popup_replay_modal_runtime_owned";
-		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
+		result.next_required = "originalFunctionLexiconRemainingCallbackOwners";
 		return;
 	}
 	if (!base_layout_callback_graph_ready(result)) {
-		result.status = "base_function_lexicon_control_bar_input_runtime_owned";
-		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
+		result.status =
+			"base_function_lexicon_remaining_callback_groups_deferred";
+		result.next_required = "originalFunctionLexiconRemainingCallbackOwners";
 		return;
 	}
 	if (!base_table_state_ready(result)) {
@@ -865,7 +1246,7 @@ const FunctionLexiconRuntimeProbeResult &wasm_function_lexicon_runtime_install(
 			// SubsystemInterfaceList::initSubsystem() ->
 			// W3DFunctionLexicon::init(). The current linked runtime proves
 			// the W3D device draw/layout tables plus a non-network base
-			// callback subset; the remaining shell graph stays partial.
+			// callback subset; the remaining owner groups stay partial.
 			g_function_lexicon->init();
 			g_function_lexicon_init_ran = true;
 		} else {
@@ -876,6 +1257,7 @@ const FunctionLexiconRuntimeProbeResult &wasm_function_lexicon_runtime_install(
 		result.init_ran = g_function_lexicon_init_ran;
 		capture_table_state(result);
 		capture_lookup_state(result);
+		capture_missing_callback_groups(result);
 	} catch (ErrorCode code) {
 		result.init_threw = true;
 		char buffer[64];
@@ -933,7 +1315,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 	const std::string next_required_json = json_escape(state.next_required);
 	const std::string init_error_json = json_escape(state.init_error);
 
-	static char json[18000];
+	static char json[24000];
 	std::snprintf(json, sizeof(json),
 		"{\"attempted\":%s,\"ok\":%s,\"source\":\"%s\","
 		"\"status\":\"%s\",\"nextRequired\":\"%s\","
@@ -953,6 +1335,8 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"gameWindowDraw\":%s,\"gameWindowDeviceDraw\":%s,"
 		"\"windowLayoutInit\":%s,\"windowLayoutDeviceInit\":%s,"
 		"\"windowLayoutUpdate\":%s,\"windowLayoutShutdown\":%s},"
+		"\"missingCallbackGroupCount\":%u,"
+		"\"missingCallbackGroups\":%s,"
 		"\"lookups\":{\"passMessagesToParentSystem\":%s,"
 		"\"passSelectedButtonsToParentSystem\":%s,"
 		"\"gameWindowDefaultSystem\":%s,"
@@ -971,9 +1355,12 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"quitMessageBoxSystem\":%s,"
 		"\"extendedMessageBoxSystem\":%s,"
 		"\"imeCandidateWindowSystem\":%s,"
+		"\"motdSystem\":%s,"
 		"\"mainMenuSystem\":%s,"
+		"\"optionsMenuSystem\":%s,"
 		"\"creditsMenuSystem\":%s,"
 		"\"skirmishGameOptionsMenuSystem\":%s,"
+		"\"skirmishMapSelectMenuSystem\":%s,"
 		"\"singlePlayerMenuSystem\":%s,"
 		"\"challengeMenuSystem\":%s,"
 		"\"popupCommunicatorSystem\":%s,"
@@ -984,8 +1371,10 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"inGamePopupMessageSystem\":%s,"
 		"\"idleWorkerSystem\":%s,"
 		"\"replayControlSystem\":%s,"
+		"\"controlBarObserverSystem\":%s,"
 		"\"gameInfoWindowSystem\":%s,"
 		"\"gameWindowDefaultInput\":%s,"
+		"\"gameWinBlockInput\":%s,"
 		"\"gadgetPushButtonInput\":%s,"
 		"\"gadgetCheckBoxInput\":%s,"
 		"\"gadgetRadioButtonInput\":%s,"
@@ -999,8 +1388,10 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"gadgetTextEntryInput\":%s,"
 		"\"imeCandidateWindowInput\":%s,"
 		"\"mainMenuInput\":%s,"
+		"\"optionsMenuInput\":%s,"
 		"\"creditsMenuInput\":%s,"
 		"\"skirmishGameOptionsMenuInput\":%s,"
+		"\"skirmishMapSelectMenuInput\":%s,"
 		"\"singlePlayerMenuInput\":%s,"
 		"\"challengeMenuInput\":%s,"
 		"\"popupCommunicatorInput\":%s,"
@@ -1017,28 +1408,35 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"imeCandidateMainDraw\":%s,"
 		"\"imeCandidateTextAreaDraw\":%s,"
 		"\"mainMenuInit\":%s,"
+		"\"optionsMenuInit\":%s,"
 		"\"creditsMenuInit\":%s,"
 		"\"skirmishGameOptionsMenuInit\":%s,"
+		"\"skirmishMapSelectMenuInit\":%s,"
 		"\"singlePlayerMenuInit\":%s,"
 		"\"challengeMenuInit\":%s,"
 		"\"popupCommunicatorInit\":%s,"
 		"\"mapSelectMenuInit\":%s,"
 		"\"replayMenuInit\":%s,"
+		"\"gameInfoWindowInit\":%s,"
 		"\"popupReplayInit\":%s,"
 		"\"difficultySelectInit\":%s,"
 		"\"keyboardOptionsMenuInit\":%s,"
 		"\"inGamePopupMessageInit\":%s,"
 		"\"mainMenuUpdate\":%s,"
+		"\"optionsMenuUpdate\":%s,"
 		"\"creditsMenuUpdate\":%s,"
 		"\"skirmishGameOptionsMenuUpdate\":%s,"
+		"\"skirmishMapSelectMenuUpdate\":%s,"
 		"\"singlePlayerMenuUpdate\":%s,"
 		"\"challengeMenuUpdate\":%s,"
 		"\"mapSelectMenuUpdate\":%s,"
 		"\"replayMenuUpdate\":%s,"
 		"\"keyboardOptionsMenuUpdate\":%s,"
 		"\"mainMenuShutdown\":%s,"
+		"\"optionsMenuShutdown\":%s,"
 		"\"creditsMenuShutdown\":%s,"
 		"\"skirmishGameOptionsMenuShutdown\":%s,"
+		"\"skirmishMapSelectMenuShutdown\":%s,"
 		"\"singlePlayerMenuShutdown\":%s,"
 		"\"challengeMenuShutdown\":%s,"
 		"\"popupCommunicatorShutdown\":%s,"
@@ -1075,6 +1473,8 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.window_layout_device_init_table_loaded),
 		json_bool(state.window_layout_update_table_loaded),
 		json_bool(state.window_layout_shutdown_table_loaded),
+		state.missing_callback_group_count,
+		state.missing_callback_groups_json.c_str(),
 		json_bool(state.pass_messages_to_parent_lookup),
 		json_bool(state.pass_selected_buttons_to_parent_lookup),
 		json_bool(state.game_window_default_system_lookup),
@@ -1093,9 +1493,12 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.quit_message_box_system_lookup),
 		json_bool(state.extended_message_box_system_lookup),
 		json_bool(state.ime_candidate_window_system_lookup),
+		json_bool(state.motd_system_lookup),
 		json_bool(state.main_menu_system_lookup),
+		json_bool(state.options_menu_system_lookup),
 		json_bool(state.credits_menu_system_lookup),
 		json_bool(state.skirmish_game_options_menu_system_lookup),
+		json_bool(state.skirmish_map_select_menu_system_lookup),
 		json_bool(state.single_player_menu_system_lookup),
 		json_bool(state.challenge_menu_system_lookup),
 		json_bool(state.popup_communicator_system_lookup),
@@ -1106,8 +1509,10 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.in_game_popup_message_system_lookup),
 		json_bool(state.idle_worker_system_lookup),
 		json_bool(state.replay_control_system_lookup),
+		json_bool(state.control_bar_observer_system_lookup),
 		json_bool(state.game_info_window_system_lookup),
 		json_bool(state.game_window_default_input_lookup),
+		json_bool(state.game_window_block_input_lookup),
 		json_bool(state.gadget_push_button_input_lookup),
 		json_bool(state.gadget_check_box_input_lookup),
 		json_bool(state.gadget_radio_button_input_lookup),
@@ -1121,8 +1526,10 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.gadget_text_entry_input_lookup),
 		json_bool(state.ime_candidate_window_input_lookup),
 		json_bool(state.main_menu_input_lookup),
+		json_bool(state.options_menu_input_lookup),
 		json_bool(state.credits_menu_input_lookup),
 		json_bool(state.skirmish_game_options_menu_input_lookup),
+		json_bool(state.skirmish_map_select_menu_input_lookup),
 		json_bool(state.single_player_menu_input_lookup),
 		json_bool(state.challenge_menu_input_lookup),
 		json_bool(state.popup_communicator_input_lookup),
@@ -1139,28 +1546,35 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.ime_candidate_main_draw_lookup),
 		json_bool(state.ime_candidate_text_area_draw_lookup),
 		json_bool(state.main_menu_init_lookup),
+		json_bool(state.options_menu_init_lookup),
 		json_bool(state.credits_menu_init_lookup),
 		json_bool(state.skirmish_game_options_menu_init_lookup),
+		json_bool(state.skirmish_map_select_menu_init_lookup),
 		json_bool(state.single_player_menu_init_lookup),
 		json_bool(state.challenge_menu_init_lookup),
 		json_bool(state.popup_communicator_init_lookup),
 		json_bool(state.map_select_menu_init_lookup),
 		json_bool(state.replay_menu_init_lookup),
+		json_bool(state.game_info_window_init_lookup),
 		json_bool(state.popup_replay_init_lookup),
 		json_bool(state.difficulty_select_init_lookup),
 		json_bool(state.keyboard_options_menu_init_lookup),
 		json_bool(state.in_game_popup_message_init_lookup),
 		json_bool(state.main_menu_update_lookup),
+		json_bool(state.options_menu_update_lookup),
 		json_bool(state.credits_menu_update_lookup),
 		json_bool(state.skirmish_game_options_menu_update_lookup),
+		json_bool(state.skirmish_map_select_menu_update_lookup),
 		json_bool(state.single_player_menu_update_lookup),
 		json_bool(state.challenge_menu_update_lookup),
 		json_bool(state.map_select_menu_update_lookup),
 		json_bool(state.replay_menu_update_lookup),
 		json_bool(state.keyboard_options_menu_update_lookup),
 		json_bool(state.main_menu_shutdown_lookup),
+		json_bool(state.options_menu_shutdown_lookup),
 		json_bool(state.credits_menu_shutdown_lookup),
 		json_bool(state.skirmish_game_options_menu_shutdown_lookup),
+		json_bool(state.skirmish_map_select_menu_shutdown_lookup),
 		json_bool(state.single_player_menu_shutdown_lookup),
 		json_bool(state.challenge_menu_shutdown_lookup),
 		json_bool(state.popup_communicator_shutdown_lookup),

@@ -67,9 +67,12 @@ struct FunctionLexiconRuntimeProbeResult
 	bool quit_message_box_system_lookup = false;
 	bool extended_message_box_system_lookup = false;
 	bool ime_candidate_window_system_lookup = false;
+	bool motd_system_lookup = false;
 	bool main_menu_system_lookup = false;
+	bool options_menu_system_lookup = false;
 	bool credits_menu_system_lookup = false;
 	bool skirmish_game_options_menu_system_lookup = false;
+	bool skirmish_map_select_menu_system_lookup = false;
 	bool single_player_menu_system_lookup = false;
 	bool challenge_menu_system_lookup = false;
 	bool popup_communicator_system_lookup = false;
@@ -80,8 +83,10 @@ struct FunctionLexiconRuntimeProbeResult
 	bool in_game_popup_message_system_lookup = false;
 	bool idle_worker_system_lookup = false;
 	bool replay_control_system_lookup = false;
+	bool control_bar_observer_system_lookup = false;
 	bool game_info_window_system_lookup = false;
 	bool game_window_default_input_lookup = false;
+	bool game_window_block_input_lookup = false;
 	bool gadget_push_button_input_lookup = false;
 	bool gadget_check_box_input_lookup = false;
 	bool gadget_radio_button_input_lookup = false;
@@ -95,8 +100,10 @@ struct FunctionLexiconRuntimeProbeResult
 	bool gadget_text_entry_input_lookup = false;
 	bool ime_candidate_window_input_lookup = false;
 	bool main_menu_input_lookup = false;
+	bool options_menu_input_lookup = false;
 	bool credits_menu_input_lookup = false;
 	bool skirmish_game_options_menu_input_lookup = false;
+	bool skirmish_map_select_menu_input_lookup = false;
 	bool single_player_menu_input_lookup = false;
 	bool challenge_menu_input_lookup = false;
 	bool popup_communicator_input_lookup = false;
@@ -113,28 +120,35 @@ struct FunctionLexiconRuntimeProbeResult
 	bool ime_candidate_main_draw_lookup = false;
 	bool ime_candidate_text_area_draw_lookup = false;
 	bool main_menu_init_lookup = false;
+	bool options_menu_init_lookup = false;
 	bool credits_menu_init_lookup = false;
 	bool skirmish_game_options_menu_init_lookup = false;
+	bool skirmish_map_select_menu_init_lookup = false;
 	bool single_player_menu_init_lookup = false;
 	bool challenge_menu_init_lookup = false;
 	bool popup_communicator_init_lookup = false;
 	bool map_select_menu_init_lookup = false;
 	bool replay_menu_init_lookup = false;
+	bool game_info_window_init_lookup = false;
 	bool popup_replay_init_lookup = false;
 	bool difficulty_select_init_lookup = false;
 	bool keyboard_options_menu_init_lookup = false;
 	bool in_game_popup_message_init_lookup = false;
 	bool main_menu_update_lookup = false;
+	bool options_menu_update_lookup = false;
 	bool credits_menu_update_lookup = false;
 	bool skirmish_game_options_menu_update_lookup = false;
+	bool skirmish_map_select_menu_update_lookup = false;
 	bool single_player_menu_update_lookup = false;
 	bool challenge_menu_update_lookup = false;
 	bool map_select_menu_update_lookup = false;
 	bool replay_menu_update_lookup = false;
 	bool keyboard_options_menu_update_lookup = false;
 	bool main_menu_shutdown_lookup = false;
+	bool options_menu_shutdown_lookup = false;
 	bool credits_menu_shutdown_lookup = false;
 	bool skirmish_game_options_menu_shutdown_lookup = false;
+	bool skirmish_map_select_menu_shutdown_lookup = false;
 	bool single_player_menu_shutdown_lookup = false;
 	bool challenge_menu_shutdown_lookup = false;
 	bool popup_communicator_shutdown_lookup = false;
@@ -145,6 +159,11 @@ struct FunctionLexiconRuntimeProbeResult
 	bool w3d_gadget_push_button_draw_lookup = false;
 	bool w3d_game_window_default_draw_lookup = false;
 	bool w3d_main_menu_init_lookup = false;
+
+	// Remaining original FunctionLexicon owner groups that are intentionally
+	// absent from the reduced browser runtime table.
+	unsigned missing_callback_group_count = 0;
+	std::string missing_callback_groups_json = "{}";
 };
 
 const FunctionLexiconRuntimeProbeResult &wasm_function_lexicon_runtime_install(

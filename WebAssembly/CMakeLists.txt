@@ -1508,7 +1508,6 @@ add_library(zh_gameengine_real_compile_frontier STATIC
   "${GAMEENGINE_COMMON_DIR}/INI/INIDamageFX.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIDrawGroupInfo.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIGameData.cpp"
-  "${GAMEENGINE_COMMON_DIR}/INI/INICommandButton.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMapCache.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMapData.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMappedImage.cpp"
@@ -3420,7 +3419,9 @@ add_library(zh_gameengine_real_object_ini_runtime STATIC
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/Shadow/W3DVolumetricShadow.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DDebugDisplay.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DDynamicLight.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DParticleSys.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DPoly.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DSnow.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DTerrainTracks.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DView.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/camerashakesystem.cpp"
@@ -4498,7 +4499,6 @@ add_library(zh_gameengine_real_lifecycle_runtime STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/DisplayStringManager.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Drawable/DrawableManager.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/AnimateWindowManager.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ChallengeGenerals.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ControlBar/ControlBar.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ControlBar/ControlBarBeacon.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ControlBar/ControlBarCommand.cpp"
@@ -4615,8 +4615,6 @@ add_library(zh_gameengine_real_lifecycle_runtime STATIC
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DGranny.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DInGameUI.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DMouse.cpp"
-  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DParticleSys.cpp"
-  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DSnow.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DWebBrowser.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameLogic/W3DGameLogic.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameLogic/W3DGhostObject.cpp"
@@ -4727,6 +4725,8 @@ add_executable(cnc-port
   src/wasm_audio_manager_probe.cpp
   src/wasm_function_lexicon_runtime.cpp
   src/wasm_dinput_browser.cpp
+  src/wasm_module_factory_runtime.cpp
+  src/wasm_particle_system_runtime.cpp
   src/wasm_port_entry.cpp
   src/wasm_real_engine_init.cpp
   src/wasm_win32_gameengine_probe.cpp
@@ -4784,6 +4784,14 @@ set_source_files_properties(src/wasm_real_engine_init.cpp PROPERTIES
 )
 
 set_source_files_properties(src/wasm_function_lexicon_runtime.cpp PROPERTIES
+  COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/windows.h;-include${WASM_SHIMS_DIR}/mmsystem.h;-include${WASM_SHIMS_DIR}/PreRTS.h;-include${WWVEGAS_PORT_SHIM};-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${MAIN_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${WWSAVELOAD_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR};-Wno-implicit-exception-spec-mismatch;-Wno-new-returns-null;-Wno-undefined-bool-conversion;-Wno-unused-parameter"
+)
+
+set_source_files_properties(src/wasm_module_factory_runtime.cpp PROPERTIES
+  COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/windows.h;-include${WASM_SHIMS_DIR}/mmsystem.h;-include${WASM_SHIMS_DIR}/PreRTS.h;-include${WWVEGAS_PORT_SHIM};-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${MAIN_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${WWSAVELOAD_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR};-Wno-implicit-exception-spec-mismatch;-Wno-new-returns-null;-Wno-undefined-bool-conversion;-Wno-unused-parameter"
+)
+
+set_source_files_properties(src/wasm_particle_system_runtime.cpp PROPERTIES
   COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/windows.h;-include${WASM_SHIMS_DIR}/mmsystem.h;-include${WASM_SHIMS_DIR}/PreRTS.h;-include${WWVEGAS_PORT_SHIM};-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${MAIN_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${WWSAVELOAD_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR};-Wno-implicit-exception-spec-mismatch;-Wno-new-returns-null;-Wno-undefined-bool-conversion;-Wno-unused-parameter"
 )
 
@@ -4888,6 +4896,7 @@ target_link_options(cnc-port PRIVATE
   "SHELL:-sASSERTIONS=1"
   "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
   "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_real_engine_init','_cnc_port_real_engine_frame','_cnc_port_real_engine_frontier','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_register_archive_set','_cnc_port_set_browser_input','_cnc_port_reset_browser_input','_cnc_port_post_browser_message','_cnc_port_probe_browser_message_queue','_cnc_port_probe_browser_input','_cnc_port_build_browser_network_relay_packet','_cnc_port_accept_browser_network_relay_packet','_cnc_port_build_browser_network_transport_packet','_cnc_port_accept_browser_network_transport_packet','_cnc_port_build_browser_network_transport_wire_packet','_cnc_port_accept_browser_network_transport_wire_packet','_cnc_port_probe_browser_network_transport_live_send','_cnc_port_probe_browser_network_transport_live_receive','_cnc_port_build_browser_lanapi_announce_packet','_cnc_port_accept_browser_lanapi_announce_packet','_cnc_port_build_browser_lanapi_join_request_packet','_cnc_port_accept_browser_lanapi_join_request_packet','_cnc_port_accept_browser_lanapi_join_accept_packet','_cnc_port_probe_browser_lanapi_live_game_start_send','_cnc_port_probe_browser_lanapi_live_game_start_receive','_cnc_port_probe_win32_gameengine','_cnc_port_probe_mss_startup','_cnc_port_probe_mss_sample_lifecycle','_cnc_port_probe_mss_sample_playback_start','_cnc_port_probe_mss_sample_playback_finish','_cnc_port_probe_mss_stream_lifecycle','_cnc_port_probe_mss_3d_sample_lifecycle','_cnc_port_probe_d3d8_clear','_cnc_port_probe_d3d8_viewport','_cnc_port_probe_d3d8_buffer_dirty','_cnc_port_probe_d3d8_buffer_hints','_cnc_port_probe_d3d8_texture_upload','_cnc_port_probe_d3d8_volume_texture_upload','_cnc_port_probe_d3d8_texture_bind','_cnc_port_probe_d3d8_textured_quad','_cnc_port_probe_d3d8_two_texture_quad','_cnc_port_probe_d3d8_two_texture_alpha_quad','_cnc_port_probe_d3d8_texture_mip_chain_draw','_cnc_port_probe_d3d8_texture_combiner','_cnc_port_probe_d3d8_texcoord_index','_cnc_port_probe_d3d8_fvf_texcoord_sizes','_cnc_port_probe_d3d8_texture_transform','_cnc_port_probe_d3d8_stage1_texture_transform','_cnc_port_probe_d3d8_stencil_state','_cnc_port_probe_d3d8_fog_state','_cnc_port_probe_d3d8_fill_mode','_cnc_port_probe_d3d8_z_bias','_cnc_port_probe_d3d8_shade_mode','_cnc_port_probe_d3d8_clip_plane','_cnc_port_probe_d3d8_lighting_ambient','_cnc_port_probe_d3d8_directional_light','_cnc_port_probe_d3d8_multi_directional_light','_cnc_port_probe_d3d8_specular_light','_cnc_port_probe_d3d8_specular_offaxis_light','_cnc_port_probe_d3d8_specular_transformed_light','_cnc_port_probe_d3d8_normalize_normals','_cnc_port_probe_d3d8_local_viewer','_cnc_port_probe_d3d8_point_light','_cnc_port_probe_d3d8_point_quadratic_light','_cnc_port_probe_d3d8_point_range_light','_cnc_port_probe_d3d8_point_mixed_light','_cnc_port_probe_d3d8_spot_light','_cnc_port_probe_d3d8_spot_falloff','_cnc_port_probe_d3d8_material','_cnc_port_probe_d3d8_material_sources','_cnc_port_probe_d3d8_lit_material_sources','_cnc_port_probe_d3d8_lit_specular_material_source','_cnc_port_probe_d3d8_lit_emissive_color1_material_source','_cnc_port_probe_d3d8_lit_emissive_color2_material_source','_cnc_port_probe_d3d8_legacy_texture_upload','_cnc_port_probe_d3d8_legacy_texture_draw','_cnc_port_probe_d3d8_dxt_texture_draw','_cnc_port_probe_ww3d_aabox','_cnc_port_probe_ww3d_scene_camera','_cnc_port_probe_ww3d_rts_scene','_cnc_port_probe_ww3d_rts_scene_clear_line','_cnc_port_probe_ww3d_display_scene','_cnc_port_probe_ww3d_render2d_textured_quad','_cnc_port_probe_ww3d_render2d_sentence','_cnc_port_probe_ww3d_display_string','_cnc_port_probe_ww3d_display_game_text','_cnc_port_probe_ww3d_display_drawimage','_cnc_port_probe_ww3d_display_video_buffer','_cnc_port_probe_ww3d_display_drawimage_additive','_cnc_port_probe_ww3d_display_drawimage_solid','_cnc_port_probe_ww3d_display_drawimage_grayscale','_cnc_port_probe_ww3d_display_drawimage_file','_cnc_port_probe_ww3d_display_mapped_image','_cnc_port_probe_ww3d_display_mapped_image_clip','_cnc_port_probe_ww3d_display_mapped_image_unrotated','_cnc_port_probe_ww3d_display_main_menu_ruler','_cnc_port_probe_ww3d_display_fillrect','_cnc_port_probe_ww3d_window_repaint','_cnc_port_probe_ww3d_window_layout_repaint','_cnc_port_probe_ww3d_main_menu_layout_repaint','_cnc_port_probe_ww3d_main_menu_layout_image_repaint','_cnc_port_probe_ww3d_main_menu_layout_disabled_button_repaint','_cnc_port_probe_ww3d_main_menu_layout_hilite_button_repaint','_cnc_port_probe_ww3d_main_menu_layout_pushed_button_repaint','_cnc_port_probe_ww3d_main_menu_layout_single_player_repaint','_cnc_port_probe_ww3d_main_menu_layout_load_replay_repaint','_cnc_port_probe_ww3d_main_menu_layout_difficulty_repaint','_cnc_port_probe_ww3d_main_menu_layout_static_text_repaint','_cnc_port_probe_ww3d_main_menu_layout_faction_logo_repaint','_cnc_port_probe_ww3d_display_line','_cnc_port_probe_ww3d_display_line_gradient','_cnc_port_probe_ww3d_display_openrect','_cnc_port_probe_ww3d_display_rectclock','_cnc_port_probe_ww3d_display_remaining_rectclock','_cnc_port_probe_ww3d_terrain_tile','_cnc_port_probe_ww3d_terrain_tile_archive','_cnc_port_probe_ww3d_terrain_tile_archive_scene','_cnc_port_probe_ww3d_terrain_map_patch_scene','_cnc_port_probe_ww3d_terrain_shroud_scene','_cnc_port_probe_ww3d_terrain_visual_scene','_cnc_port_probe_ww3d_terrain_full_scene','_cnc_port_probe_ww3d_terrain_full_scene_shroud_update','_cnc_port_probe_ww3d_terrain_visual_load_window_scene','_cnc_port_probe_ww3d_terrain_visual_camera_pan_scene','_cnc_port_probe_ww3d_terrain_bib_buffer_lifecycle','_cnc_port_probe_ww3d_terrain_prop_buffer_render','_cnc_port_probe_ww3d_terrain_prop_buffer_scene','_cnc_port_probe_ww3d_terrain_tree_buffer_scene','_cnc_port_probe_ww3d_terrain_road_buffer_scene','_cnc_port_probe_ww3d_terrain_bridge_buffer_scene','_cnc_port_probe_ww3d_textured_mesh','_cnc_port_probe_ww3d_emissive_color2_material_source','_cnc_port_probe_ww3d_shipped_mesh','_cnc_port_probe_ww3d_shipped_multi_texture_mesh','_cnc_port_probe_ww3d_source_asset_load','_cnc_port_probe_ww3d_font_chars','_cnc_port_probe_classic_environment_mapper_apply','_cnc_port_probe_edge_mapper_apply','_cnc_port_probe_environment_mapper_apply','_cnc_port_probe_grid_environment_mapper_apply','_cnc_port_probe_grid_ws_environment_mapper_apply','_cnc_port_probe_matrixmapper_apply','_cnc_port_probe_projection_state_apply','_cnc_port_probe_screen_mapper_apply','_cnc_port_probe_ws_environment_mapper_apply','_cnc_port_probe_wwshade_cubemap_apply','_cnc_port_probe_launch_web_browser','_cnc_port_init_original_wndproc_input','_cnc_port_pump_original_wndproc_input','_cnc_port_probe_original_wndproc_input','_cnc_port_probe_original_gui_mouse_stream','_cnc_port_probe_original_cursor_visibility','_cnc_port_set_original_keyboard_frame_input_enabled','_cnc_port_reset_original_keyboard_frame_input','_cnc_port_probe_original_keyboard_frame_input','_cnc_port_set_original_mouse_frame_input_enabled','_cnc_port_reset_original_mouse_frame_input','_cnc_port_probe_original_mouse_frame_input','_cnc_port_probe_original_mouse_frame_windows','_cnc_port_resolve_original_mouse_frame_window_id','_cnc_port_probe_original_keyboard_input','_cnc_port_probe_original_keyboard_frame_tick','_cnc_port_reset_original_keyboard_input','_cnc_port_queue_original_keyboard_focus_lost','_cnc_port_probe_gdi_font','_cnc_port_state','_cnc_port_probe_audio_manager_runtime','_cnc_port_mss_adpcm_payload_buffer','_cnc_port_probe_mss_adpcm_sample_playback_start','_cnc_port_probe_object_ini','_cnc_port_probe_object_ini_snippet']"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_register_archive_set','_cnc_port_set_browser_input','_cnc_port_reset_browser_input','_cnc_port_post_browser_message','_cnc_port_probe_browser_message_queue','_cnc_port_probe_browser_input','_cnc_port_build_browser_network_relay_packet','_cnc_port_accept_browser_network_relay_packet','_cnc_port_build_browser_network_transport_packet','_cnc_port_accept_browser_network_transport_packet','_cnc_port_build_browser_network_transport_wire_packet','_cnc_port_accept_browser_network_transport_wire_packet','_cnc_port_probe_browser_network_transport_live_send','_cnc_port_probe_browser_network_transport_live_receive','_cnc_port_build_browser_lanapi_announce_packet','_cnc_port_accept_browser_lanapi_announce_packet','_cnc_port_build_browser_lanapi_join_request_packet','_cnc_port_accept_browser_lanapi_join_request_packet','_cnc_port_accept_browser_lanapi_join_accept_packet','_cnc_port_probe_browser_lanapi_live_game_start_send','_cnc_port_probe_browser_lanapi_live_game_start_receive','_cnc_port_probe_win32_gameengine','_cnc_port_probe_mss_startup','_cnc_port_probe_mss_sample_lifecycle','_cnc_port_probe_mss_sample_playback_start','_cnc_port_probe_mss_sample_playback_finish','_cnc_port_probe_mss_stream_lifecycle','_cnc_port_probe_mss_3d_sample_lifecycle','_cnc_port_probe_d3d8_clear','_cnc_port_probe_d3d8_viewport','_cnc_port_probe_d3d8_buffer_dirty','_cnc_port_probe_d3d8_buffer_hints','_cnc_port_probe_d3d8_texture_upload','_cnc_port_probe_d3d8_volume_texture_upload','_cnc_port_probe_d3d8_texture_bind','_cnc_port_probe_d3d8_textured_quad','_cnc_port_probe_d3d8_two_texture_quad','_cnc_port_probe_d3d8_two_texture_alpha_quad','_cnc_port_probe_d3d8_texture_mip_chain_draw','_cnc_port_probe_d3d8_texture_combiner','_cnc_port_probe_d3d8_texcoord_index','_cnc_port_probe_d3d8_fvf_texcoord_sizes','_cnc_port_probe_d3d8_texture_transform','_cnc_port_probe_d3d8_stage1_texture_transform','_cnc_port_probe_d3d8_stencil_state','_cnc_port_probe_d3d8_fog_state','_cnc_port_probe_d3d8_fill_mode','_cnc_port_probe_d3d8_z_bias','_cnc_port_probe_d3d8_shade_mode','_cnc_port_probe_d3d8_clip_plane','_cnc_port_probe_d3d8_lighting_ambient','_cnc_port_probe_d3d8_directional_light','_cnc_port_probe_d3d8_multi_directional_light','_cnc_port_probe_d3d8_specular_light','_cnc_port_probe_d3d8_specular_offaxis_light','_cnc_port_probe_d3d8_specular_transformed_light','_cnc_port_probe_d3d8_normalize_normals','_cnc_port_probe_d3d8_local_viewer','_cnc_port_probe_d3d8_point_light','_cnc_port_probe_d3d8_point_quadratic_light','_cnc_port_probe_d3d8_point_range_light','_cnc_port_probe_d3d8_point_mixed_light','_cnc_port_probe_d3d8_spot_light','_cnc_port_probe_d3d8_spot_falloff','_cnc_port_probe_d3d8_material','_cnc_port_probe_d3d8_material_sources','_cnc_port_probe_d3d8_lit_material_sources','_cnc_port_probe_d3d8_lit_specular_material_source','_cnc_port_probe_d3d8_lit_emissive_color1_material_source','_cnc_port_probe_d3d8_lit_emissive_color2_material_source','_cnc_port_probe_d3d8_legacy_texture_upload','_cnc_port_probe_d3d8_legacy_texture_draw','_cnc_port_probe_d3d8_dxt_texture_draw','_cnc_port_probe_ww3d_aabox','_cnc_port_probe_ww3d_scene_camera','_cnc_port_probe_ww3d_rts_scene','_cnc_port_probe_ww3d_rts_scene_clear_line','_cnc_port_probe_ww3d_display_scene','_cnc_port_probe_ww3d_render2d_textured_quad','_cnc_port_probe_ww3d_render2d_sentence','_cnc_port_probe_ww3d_display_string','_cnc_port_probe_ww3d_display_game_text','_cnc_port_probe_ww3d_display_drawimage','_cnc_port_probe_ww3d_display_video_buffer','_cnc_port_probe_ww3d_display_drawimage_additive','_cnc_port_probe_ww3d_display_drawimage_solid','_cnc_port_probe_ww3d_display_drawimage_grayscale','_cnc_port_probe_ww3d_display_drawimage_file','_cnc_port_probe_ww3d_display_mapped_image','_cnc_port_probe_ww3d_display_mapped_image_clip','_cnc_port_probe_ww3d_display_mapped_image_unrotated','_cnc_port_probe_ww3d_display_main_menu_ruler','_cnc_port_probe_ww3d_display_fillrect','_cnc_port_probe_ww3d_window_repaint','_cnc_port_probe_ww3d_window_layout_repaint','_cnc_port_probe_ww3d_main_menu_layout_repaint','_cnc_port_probe_ww3d_main_menu_layout_image_repaint','_cnc_port_probe_ww3d_main_menu_layout_disabled_button_repaint','_cnc_port_probe_ww3d_main_menu_layout_hilite_button_repaint','_cnc_port_probe_ww3d_main_menu_layout_pushed_button_repaint','_cnc_port_probe_ww3d_main_menu_layout_single_player_repaint','_cnc_port_probe_ww3d_main_menu_layout_load_replay_repaint','_cnc_port_probe_ww3d_main_menu_layout_difficulty_repaint','_cnc_port_probe_ww3d_main_menu_layout_static_text_repaint','_cnc_port_probe_ww3d_main_menu_layout_faction_logo_repaint','_cnc_port_probe_ww3d_display_line','_cnc_port_probe_ww3d_display_line_gradient','_cnc_port_probe_ww3d_display_openrect','_cnc_port_probe_ww3d_display_rectclock','_cnc_port_probe_ww3d_display_remaining_rectclock','_cnc_port_probe_ww3d_terrain_tile','_cnc_port_probe_ww3d_terrain_tile_archive','_cnc_port_probe_ww3d_terrain_tile_archive_scene','_cnc_port_probe_ww3d_terrain_map_patch_scene','_cnc_port_probe_ww3d_terrain_shroud_scene','_cnc_port_probe_ww3d_terrain_visual_scene','_cnc_port_probe_ww3d_terrain_full_scene','_cnc_port_probe_ww3d_terrain_full_scene_shroud_update','_cnc_port_probe_ww3d_terrain_visual_load_window_scene','_cnc_port_probe_ww3d_terrain_visual_camera_pan_scene','_cnc_port_probe_ww3d_terrain_bib_buffer_lifecycle','_cnc_port_probe_ww3d_terrain_prop_buffer_render','_cnc_port_probe_ww3d_terrain_prop_buffer_scene','_cnc_port_probe_ww3d_terrain_tree_buffer_scene','_cnc_port_probe_ww3d_terrain_road_buffer_scene','_cnc_port_probe_ww3d_terrain_bridge_buffer_scene','_cnc_port_probe_ww3d_textured_mesh','_cnc_port_probe_ww3d_emissive_color2_material_source','_cnc_port_probe_ww3d_shipped_mesh','_cnc_port_probe_ww3d_shipped_multi_texture_mesh','_cnc_port_probe_ww3d_source_asset_load','_cnc_port_probe_ww3d_font_chars','_cnc_port_probe_classic_environment_mapper_apply','_cnc_port_probe_edge_mapper_apply','_cnc_port_probe_environment_mapper_apply','_cnc_port_probe_grid_environment_mapper_apply','_cnc_port_probe_grid_ws_environment_mapper_apply','_cnc_port_probe_matrixmapper_apply','_cnc_port_probe_projection_state_apply','_cnc_port_probe_screen_mapper_apply','_cnc_port_probe_ws_environment_mapper_apply','_cnc_port_probe_wwshade_cubemap_apply','_cnc_port_probe_launch_web_browser','_cnc_port_init_original_wndproc_input','_cnc_port_pump_original_wndproc_input','_cnc_port_probe_original_wndproc_input','_cnc_port_probe_original_gui_mouse_stream','_cnc_port_probe_original_cursor_visibility','_cnc_port_set_original_keyboard_frame_input_enabled','_cnc_port_reset_original_keyboard_frame_input','_cnc_port_probe_original_keyboard_frame_input','_cnc_port_set_original_mouse_frame_input_enabled','_cnc_port_reset_original_mouse_frame_input','_cnc_port_probe_original_mouse_frame_input','_cnc_port_probe_original_mouse_frame_windows','_cnc_port_resolve_original_mouse_frame_window_id','_cnc_port_probe_original_keyboard_input','_cnc_port_probe_original_keyboard_frame_tick','_cnc_port_reset_original_keyboard_input','_cnc_port_queue_original_keyboard_focus_lost','_cnc_port_probe_gdi_font','_cnc_port_state','_cnc_port_probe_audio_manager_runtime','_cnc_port_probe_module_factory_runtime','_cnc_port_probe_particle_system_runtime','_cnc_port_mss_adpcm_payload_buffer','_cnc_port_probe_mss_adpcm_sample_playback_start','_cnc_port_probe_object_ini','_cnc_port_probe_object_ini_snippet']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['cwrap','FS']"
 )
 
@@ -6479,26 +6488,53 @@ target_link_options(w3d-window-layout-script-smoke PRIVATE
 add_executable(gamelogic-new-game-dispatch-smoke
   tests/gamelogic_new_game_dispatch_smoke.cpp
   "${GAMEENGINE_COMMON_DIR}/GlobalData.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIAiData.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIGameData.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INI.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIMultiplayer.cpp"
+  "${GAMEENGINE_COMMON_DIR}/MultiplayerSettings.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/FunctionLexicon.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/AcademyStats.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/Energy.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/Money.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/Player.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/PlayerList.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/PlayerTemplate.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/ResourceGatheringManager.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/ScoreKeeper.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/Science.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/Team.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/TunnelTracker.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/Radar.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/SaveGame/GameState.cpp"
+  "${GAMEENGINE_COMMON_DIR}/TerrainTypes.cpp"
+  "${GAMEENGINE_COMMON_DIR}/UserPreferences.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Display.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/Terrain/TerrainRoads.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/AnimateWindowManager.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowManagerScript.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/HeaderTemplate.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ProcessAnimateWindow.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/Shell.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/ShellMenuScheme.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Map/SidesList.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/AI/AI.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/AI/AIPathfind.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/AI/AIPlayer.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/GhostObject.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Weapon.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/Scripts.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/ScriptEngine.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/AI/Squad.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/System/RankInfo.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/System/GameLogic.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/System/GameLogicDispatch.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/Chat.cpp"
+  "${WWSAVELOAD_DIR}/persistfactory.cpp"
+  "${WWSAVELOAD_DIR}/pointerremap.cpp"
+  "${WWSAVELOAD_DIR}/saveload.cpp"
+  "${WWVEGAS_DIR}/WW3D2/dx8wrapper.cpp"
+  "${WWVEGAS_DIR}/WW3D2/rendobj.cpp"
 )
 
 set_target_properties(gamelogic-new-game-dispatch-smoke PROPERTIES
@@ -6511,6 +6547,7 @@ target_compile_definitions(gamelogic-new-game-dispatch-smoke PRIVATE
 
 target_link_libraries(gamelogic-new-game-dispatch-smoke PRIVATE
   zh_gameclient_gui_input_runtime
+  zh_w3d_terrain_probe_runtime
 )
 
 target_include_directories(gamelogic-new-game-dispatch-smoke PRIVATE
@@ -6579,6 +6616,7 @@ target_link_options(gamelogic-new-game-dispatch-smoke PRIVATE
   "SHELL:-sASSERTIONS=1"
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
+  "SHELL:-sNODERAWFS=1"
 )
 
 add_executable(win32-gameengine-message-pump-smoke

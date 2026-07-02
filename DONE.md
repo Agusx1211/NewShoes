@@ -2099,6 +2099,157 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:runtime-archives-browser`,
       `npm --prefix WebAssembly run test:startup-vertical`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Replace the `MSG_NEW_GAME` runtime smoke's focused in-memory
+      `Menus/BlankWindow.wnd` adapter with the archive-backed original layout
+      path. `gamelogic-new-game-dispatch-smoke` now mounts base
+      `Window.big`, links original `FunctionLexicon.cpp`,
+      `GameWindowManagerScript.cpp`, and `HeaderTemplate.cpp`, delegates
+      `SmokeGameWindowManager::winCreateLayout` to
+      `GameWindowManager::winCreateLayout`, and proves both the seeded shell
+      layout and `prepareNewGame` background parse
+      `Window\Menus\BlankWindow.wnd` from the archive with the original
+      `BlankWindow.wnd:BlankWindow` root and 800x600 geometry. The runtime
+      boundary is now the deferred terrain/player/script map-load path after
+      archive-backed BlankWindow loading. Verified with
+      `cmake --build WebAssembly/build/wasm --target gamelogic-new-game-dispatch-smoke -j 4`,
+      `node dist/gamelogic-new-game-dispatch-smoke.cjs` from
+      `WebAssembly/`,
+      `npm --prefix WebAssembly run verify:gamelogic-new-game-dispatch-frontier`,
+      `npm --prefix WebAssembly run test:gamelogic-new-game-dispatch`, and
+      `npm --prefix WebAssembly run test:startup-vertical`. An attempted
+      `npm --prefix WebAssembly run test:vertical-integrations` reached the
+      already-tracked `harness/runtime_archives_smoke.mjs` browser-stage hang
+      after startup vertical passed and was manually interrupted.
+- [x] Advance the `MSG_NEW_GAME` runtime smoke from archive-backed
+      `BlankWindow` into the original terrain-load handoff. The smoke now uses
+      shipped `Maps\MD_GLA03\MD_GLA03.map` as the pending skirmish map, mounts
+      `MapsZH.big`, links original `SidesList.cpp` plus the W3D terrain
+      runtime, installs focused device-boundary owners for `GameClient` and
+      `TerrainVisual`, and calls original
+      `W3DTerrainLogic::loadMap(false)` on the promoted `GlobalData` map. The
+      runtime proves `WorldHeightMap` parsed 1907 map objects, 154 waypoints,
+      11 sides, 97 teams, time-of-day notification, the
+      `TerrainLogic::loadMap` -> `TerrainVisual::load` handoff, and the
+      `MD_GLA03` 3800x3800 extent. The boundary is now continuing
+      `startNewGame` after terrain load into side/player/script population.
+      Verified with
+      `cmake --build WebAssembly/build/wasm --target gamelogic-new-game-dispatch-smoke -j 4`,
+      `node dist/gamelogic-new-game-dispatch-smoke.cjs` from
+      `WebAssembly/`,
+      `npm --prefix WebAssembly run verify:gamelogic-new-game-dispatch-frontier`,
+      `npm --prefix WebAssembly run test:gamelogic-new-game-dispatch`, and
+      `npm --prefix WebAssembly run test:startup-vertical`. A bounded
+      `timeout 60s npm --prefix WebAssembly run test:vertical-integrations`
+      attempt reached `startup-vertical: ok` and then timed out at the
+      already-tracked `runtime-archives-startup-data` stage.
+- [x] Continue `GameLogic::startNewGame` after the original terrain load into
+      original side/player/team/script population. The
+      `gamelogic-new-game-dispatch-smoke` runtime now mounts `INIZH.big` and
+      base `INI.big`, links original `INI`, `INIAiData`, `INIMultiplayer`,
+      `MultiplayerSettings`, `Science`, `PlayerTemplate`,
+      `ResourceGatheringManager`, `AI`, `AIPathfind`, `AIPlayer`, and the
+      `GameSpy/Chat.cpp` online-chat color parser required by shipped
+      `Multiplayer.ini`. It loads shipped startup data, preserves the
+      `MD_GLA03` terrain parse, validates 11 parsed sides and 97 teams,
+      constructs original per-player `AIPlayer` state, initializes
+      `TeamFactory` from the parsed side/team data, populates 11 players
+      through original `PlayerList::newGame`, and carries 465 side scripts
+      through original `ScriptEngine::newMap`. The boundary is now continuing
+      `startNewGame` after side/player/script population into
+      radar/partition/ghost/terrain `newMap` and map object spawning. Verified
+      with the focused wasm build, direct
+      `dist/gamelogic-new-game-dispatch-smoke.cjs` run from `WebAssembly/`,
+      `verify:gamelogic-new-game-dispatch-frontier`,
+      `test:gamelogic-new-game-dispatch`, and `test:startup-vertical`; a
+      bounded `test:vertical-integrations` attempt reached startup-vertical OK
+      and timed out at the already-tracked `runtime-archives-startup-data`
+      stage.
+- [x] Continue `GameLogic::startNewGame` from side/player/script population
+      into original `Radar::newMap`. The
+      `gamelogic-new-game-dispatch-smoke` target now links original
+      `Common/System/Radar.cpp`, installs a focused `ControlBar.wnd:LeftHUD`
+      window owner at the true GUI boundary, and calls
+      `TheRadar->newMap(TheTerrainLogic)` after original
+      `ScriptEngine::newMap`. The runtime proves the radar locates the LeftHUD
+      window, inherits the loaded `MD_GLA03` 3800x3800 terrain extent, computes
+      128x128 radar samples from that extent, and translates the terrain center
+      between world and radar coordinates. The boundary is now continuing
+      `startNewGame` after `Radar::newMap` into partition/ghost/terrain
+      `newMap` and map object spawning. Verified with the focused wasm build,
+      `verify:gamelogic-new-game-dispatch-frontier`,
+      `test:gamelogic-new-game-dispatch`, and `test:startup-vertical`; a
+      bounded `test:vertical-integrations` attempt reached startup-vertical OK
+      and timed out at the already-tracked `runtime-archives-startup-data`
+      stage.
+- [x] Continue `GameLogic::startNewGame` after original `Radar::newMap` into
+      GameData-backed partition setup and shroud refresh. The
+      `gamelogic-new-game-dispatch-smoke` target now links original
+      `INIGameData.cpp`, `UserPreferences.cpp`, `Weapon.cpp`, and
+      `PartitionManager.cpp`, loads `Default\GameData.ini` and
+      `GameData.ini` through original `INI::load`, proves the shipped
+      `PartitionCellSize = 40`, copies the terrain extent into original
+      `GameLogic` width/height, initializes original `PartitionManager` over
+      the loaded `MD_GLA03` terrain, and drives
+      `refreshShroudForLocalPlayer` through focused display/radar boundaries
+      for all 9,216 initial shrouded cells. `VictoryConditions` and
+      non-network `OptionPreferences` remain focused boundaries, and the next
+      frontier is continuing after partition shroud refresh into
+      `GhostObjectManager` reset, `TerrainLogic::newMap`, and map object
+      spawning. Verified with `verify:gamelogic-new-game-dispatch-frontier`,
+      focused wasm build, direct `dist/gamelogic-new-game-dispatch-smoke.cjs`
+      from `WebAssembly/`, `test:gamelogic-new-game-dispatch`, and
+      `test:startup-vertical`.
+- [x] Continue `GameLogic::startNewGame` after original
+      `PartitionManager::refreshShroudForLocalPlayer` into original
+      `GhostObjectManager` ownership. The `gamelogic-new-game-dispatch-smoke`
+      target now links original `Object/GhostObject.cpp`, removes the focused
+      weak `TheGhostObjectManager` singleton, constructs the original manager,
+      assigns the loaded local player index, and calls the original
+      `reset()` after the partition shroud refresh. The runtime JSON reports
+      the owned singleton, initial local-player index, assigned local-player
+      index, and reset call, and the frontier now advances to
+      `W3DTerrainLogic::newMap` road/bridge render-object ownership before
+      base `TerrainLogic::newMap` waypoint/water update and map object
+      spawning. Verified with `verify:gamelogic-new-game-dispatch-frontier`,
+      focused wasm build, direct `dist/gamelogic-new-game-dispatch-smoke.cjs`
+      from `WebAssembly/`, `test:gamelogic-new-game-dispatch`, and
+      `test:startup-vertical`.
+- [x] Continue `GameLogic::startNewGame` after original
+      `GhostObjectManager` reset into original `W3DTerrainLogic::newMap(FALSE)`
+      road-buffer handoff and base `TerrainLogic::newMap` waypoint/water setup.
+      The `gamelogic-new-game-dispatch-smoke` target now links original
+      `TerrainTypes.cpp`, `TerrainRoads.cpp`, `DX8Wrapper.cpp`, `rendobj.cpp`,
+      and WW save/load support, constructs a real `BaseHeightMapRenderObjClass`
+      owner, loads a render `WorldHeightMap` for `MD_GLA03`, installs original
+      `TerrainTypeCollection`/`TerrainRoadCollection` globals, and calls
+      original `W3DTerrainLogic::newMap(FALSE)`. The runtime JSON proves the
+      render map is attached, the road buffer is initialized and receives the
+      new-map handoff, base `TerrainLogic::newMap` updates waypoint Z from
+      `getGroundHeight`, and `enableWaterGrid` is called from the real waypoint
+      lookup. `W3DBridgeBuffer::loadBridges`, `GenericBridge` object creation,
+      bridge/map object spawning, and `Pathfinder::newMap` remain the next
+      frontier. Verified with `verify:gamelogic-new-game-dispatch-frontier`,
+      focused wasm build, direct `dist/gamelogic-new-game-dispatch-smoke.cjs`
+      from `WebAssembly/`, `test:gamelogic-new-game-dispatch`, and
+      `test:startup-vertical`.
+- [x] Continue the startup `W3DTerrainLogic::newMap(FALSE)` handoff through
+      original `W3DBridgeBuffer::loadBridges` and a direct original
+      `Pathfinder::newMap` grid proof. `gamelogic-new-game-dispatch-smoke`
+      now installs a real `W3DBridgeBuffer` on the focused
+      `BaseHeightMapRenderObjClass` owner, with an Emscripten-only weak port
+      hook that lets the Node startup smoke defer bridge GPU vertex/index
+      allocation while the browser bridge scene keeps the default real
+      allocation path. The runtime proves `MD_GLA03` has zero bridge marker
+      pairs, the bridge buffer and `TerrainLogic` bridge lists stay empty, the
+      original bridge damage-state update is reached, and original
+      `Pathfinder::newMap` allocates/classifies the loaded 379x379 terrain
+      grid with a readable center ground cell. The frontier now advances to
+      the original bridge-like map-object spawning loop that sits before
+      `Pathfinder::newMap`; that loop must be promoted before replacing the
+      direct no-bridge pathfinder proof with the original ordered
+      `startNewGame` sequence. Verified with
+      `verify:gamelogic-new-game-dispatch-frontier`,
+      `test:gamelogic-new-game-dispatch`, and `test:startup-vertical`.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the
@@ -2355,6 +2506,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       reports `base_function_lexicon_game_info_window_runtime_owned` with
       `originalFunctionLexiconRemainingShellCallbacks` next; LAN game-info
       population and transport behavior remain outside the owned runtime path.
+- [x] Promote the passive original `GameInfoWindowInit` callback-name owner into
+      the linked `cnc-port` base `FunctionLexicon` alongside the already-owned
+      `GameInfoWindowSystem` lookup. The reduced layout-init table now resolves
+      the original initializer from `GameInfoWindow.cpp`; it only seeds
+      name-key/window/gadget state, while LAN game-info population remains
+      outside the owned runtime path.
 - [x] Promote the original `ReplayMenu` callback owner into the linked
       `cnc-port` base `FunctionLexicon`. `zh_window_layout_script_runtime` now
       links original `GUI/GUICallbacks/Menus/ReplayMenu.cpp`, and the reduced
@@ -2388,6 +2545,91 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `originalFunctionLexiconRemainingShellCallbacks` next. `ControlBarSystem`
       and `LeftHUDInput` remain open until the gameplay command/radar/player
       ownership surface is runtime-owned instead of weak-stubbed.
+- [x] Promote the original `OptionsMenu` callback owner into the linked
+      `cnc-port` base `FunctionLexicon` without claiming the online/network
+      settings flows behind the same source file. `zh_window_layout_script_runtime`
+      now links original `GUI/GUICallbacks/Menus/OptionsMenu.cpp`, the reduced
+      wasm system/input/init/update/shutdown tables register the five
+      `OptionsMenu` callbacks, and the original `OptionPreferences` definitions
+      replace the old `wasm_real_ini_compat.cpp` fallback. To keep first-run
+      startup preference reads on browser-safe platform boundaries, original
+      `Common/UserPreferences.cpp` now no-ops `load()`/`write()` under
+      Emscripten until browser settings storage exists, and original
+      `IPEnumeration.cpp` returns no native local addresses under Emscripten
+      until LAN/GameSpy networking is ported. Startup vertical verifies all
+      five callback-name lookups in the browser and now reports
+      `base_function_lexicon_options_menu_runtime_owned` with
+      `originalFunctionLexiconRemainingShellCallbacks` next.
+- [x] Promote the original offline `SkirmishMapSelectMenu` callback owner into
+      the linked `cnc-port` base `FunctionLexicon`: `zh_window_layout_script_runtime`
+      now links original `GUI/GUICallbacks/Menus/SkirmishMapSelectMenu.cpp`,
+      and the reduced wasm system/input/init/update/shutdown tables register
+      its five callback names. Startup vertical verifies all five lookups in
+      the browser and now reports
+      `base_function_lexicon_skirmish_map_select_menu_runtime_owned` with
+      `originalFunctionLexiconRemainingShellCallbacks` next. The only new
+      network-adjacent boundary is the existing `LANPreferences` browser
+      fallback gaining `usesSystemMapDir()`, matching the original fresh-install
+      default while LAN lobby/GameSpy ownership remains out of scope.
+- [x] Promote original W3D `MOTDSystem` into the linked `cnc-port` base
+      `FunctionLexicon`: the callback is owned by the already-linked
+      `GameEngineDevice/Source/W3DDevice/GameClient/GUI/GUICallbacks/W3DMOTD.cpp`,
+      the reduced wasm system table registers its callback name, and startup
+      vertical verifies the lookup in the browser. At this frontier the
+      FunctionLexicon runtime reported `base_function_lexicon_motd_runtime_owned`
+      with `originalFunctionLexiconRemainingShellCallbacks` next.
+- [x] Promote original `GameWinBlockInput` into the linked `cnc-port` base
+      `FunctionLexicon`: the reduced wasm input table now registers the
+      original callback from `GUI/GameWindow.cpp`, and
+      `zh_window_layout_script_runtime` links original
+      `MessageStream/SelectionXlat.cpp` so `TheSelectionTranslator` and the
+      setter methods referenced by the callback come from original source
+      instead of weak browser stand-ins. Startup vertical verifies the lookup
+      in the browser and reports
+      `base_function_lexicon_game_win_block_input_runtime_owned`.
+- [x] Promote original `ControlBarObserverSystem` into the linked `cnc-port`
+      base `FunctionLexicon` without claiming the broader command/radar HUD
+      owner. `zh_window_layout_script_runtime` now links original
+      `GUI/ControlBar/ControlBarObserver.cpp`, the reduced wasm system table
+      registers `ControlBarObserverSystem`, and startup vertical verifies the
+      browser lookup while the broad `ControlBarSystem`/`LeftHUDInput`
+      command paths remain deferred. The FunctionLexicon frontier now reports
+      `base_function_lexicon_control_bar_observer_runtime_owned`.
+- [x] Replace the stale "remaining shell callbacks" FunctionLexicon frontier
+      label with a structured missing callback-owner inventory in the linked
+      startup runtime. `wasm_function_lexicon_runtime` now checks callback
+      names without pulling additional owners, reports
+      `missingCallbackGroups` / `missingCallbackGroupCount` for save/load,
+      quit menu, score-screen/replay-save, control-bar command/HUD, generals
+      experience points, LAN/game-network menus, WOL/GameSpy overlays,
+      direct-connect/download menus, and in-game network menus, and the startup
+      harness gates that exact inventory while the first unowned init factory
+      remains `createFunctionLexicon`.
+- [x] Prove the original `W3DModuleFactory` runtime path in the browser startup
+      frontier without pretending the earlier `FunctionLexicon` blocker is done.
+      `wasm_module_factory_runtime` now constructs original `W3DModuleFactory`
+      through the linked `cnc-port` surface, assigns `TheModuleFactory`, runs
+      `W3DModuleFactory::init()`, and verifies public
+      `ModuleFactory::findModuleInterfaceMask()` lookups for representative base
+      gameplay modules (`ActiveBody`, `DestroyDie`, `InactiveBody`), the client
+      update module `BeaconClientUpdate`, and W3D draw modules
+      (`W3DDefaultDraw`, `W3DModelDraw`, `W3DLaserDraw`, `W3DPropDraw`).
+      Startup vertical reports `moduleFactoryRuntime.status:"ready"` and marks
+      the `createModuleFactory` frontier entry runtime-owned while keeping the
+      first unowned init factory at `createFunctionLexicon` until the remaining
+      callback graph is complete.
+- [x] Prove the original `W3DParticleSystemManager` startup runtime path in the
+      browser frontier. `wasm_particle_system_runtime` now links the original
+      `W3DParticleSys.cpp` plus its original `W3DSnow.cpp` render-path
+      dependency into `cnc-port`, constructs original
+      `W3DParticleSystemManager` as `TheParticleSystemManager`, runs inherited
+      `ParticleSystemManager::init()` against `Data\INI\ParticleSystem.ini`,
+      and verifies public template lookups for shipped systems such as
+      `TsingMaTrailSmoke`, `JetContrailThin`, `ToxinLenzflare`,
+      `SmallTankStruckSmoke`, and `NukeMushroomRing`. Startup vertical reports
+      `particleSystemRuntime.status:"ready"` with 1084 templates and marks
+      `createParticleSystemManager` runtime-owned while still keeping the first
+      unowned init factory at `createFunctionLexicon`.
 ---
 
 ## M3 — File / data subsystem (real data)
@@ -2736,6 +2978,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:object-ini`, proving the original
       `Win32BIGFileSystem` + `INI::loadDirectory` path still parses 2,099
       templates from the real 43-file object set.
+- [x] Promote the shipped object-template parse proof into the startup vertical
+      archive-backed path. `startup_vertical_smoke.mjs` now mounts all 43
+      shipped `Data\INI\Object\*.ini` definitions in its runtime archive set,
+      invokes the existing `probeObjectIni` RPC after the archive-backed boot,
+      and requires the real `W3DThingFactory` / `ThingFactory` / `INI.cpp`
+      object path to parse 2,099 templates plus representative
+      `AmericaVehicleHumvee`, `GLAInfantryRebel`, `AmericaJetRaptor`, and
+      `ChinaTankOverlord` lookups. The startup frontier still honestly reports
+      `createFunctionLexicon` as the first unowned factory, so this is
+      post-particle gameplay/data evidence rather than a premature
+      `GameEngine.cpp:482` ownership claim.
 
 ---
 

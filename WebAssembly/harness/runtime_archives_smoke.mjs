@@ -3608,15 +3608,35 @@ function assertOriginalEngineStartup(
   const frontier = startup.deviceFactoryFrontier;
   const audioManagerRuntimeReady = frontier?.audioManagerRuntime?.ready === true;
   const functionLexiconRuntimeReady = frontier?.functionLexiconRuntime?.ready === true;
-  const expectedFirstUnownedFactory = audioManagerRuntimeReady
-    ? (functionLexiconRuntimeReady ? "createModuleFactory" : "createFunctionLexicon")
-    : "createAudioManager";
-  const expectedFirstUnownedLine = audioManagerRuntimeReady
-    ? (functionLexiconRuntimeReady ? 447 : 446)
-    : 434;
-  const expectedFirstUnownedSubsystem = audioManagerRuntimeReady
-    ? (functionLexiconRuntimeReady ? "TheModuleFactory" : "TheFunctionLexicon")
-    : "TheAudio";
+  const moduleFactoryRuntimeReady = frontier?.moduleFactoryRuntime?.ready === true;
+  const particleSystemRuntimeReady = frontier?.particleSystemRuntime?.ready === true;
+  const expectedFirstUnownedFactory = !audioManagerRuntimeReady
+    ? "createAudioManager"
+    : !functionLexiconRuntimeReady
+      ? "createFunctionLexicon"
+      : !moduleFactoryRuntimeReady
+        ? "createModuleFactory"
+        : !particleSystemRuntimeReady
+          ? "createParticleSystemManager"
+          : "createThingFactory";
+  const expectedFirstUnownedLine = !audioManagerRuntimeReady
+    ? 434
+    : !functionLexiconRuntimeReady
+      ? 446
+      : !moduleFactoryRuntimeReady
+        ? 447
+        : !particleSystemRuntimeReady
+          ? 453
+          : 482;
+  const expectedFirstUnownedSubsystem = !audioManagerRuntimeReady
+    ? "TheAudio"
+    : !functionLexiconRuntimeReady
+      ? "TheFunctionLexicon"
+      : !moduleFactoryRuntimeReady
+        ? "TheModuleFactory"
+        : !particleSystemRuntimeReady
+          ? "TheParticleSystemManager"
+          : "TheThingFactory";
   const expectedNextRequired = expectedStatus === "browser_device_layer_pending"
     ? (expectedSetupReady ? expectedFirstUnownedFactory : "originalSetupResidency")
     : expectedStatus === "missing_startup_files"
@@ -3763,6 +3783,10 @@ function assertOriginalEngineStartup(
       || byFactory.get("createAudioManager")?.ready !== audioManagerRuntimeReady
       || byFactory.get("createFunctionLexicon")?.line !== 446
       || byFactory.get("createFunctionLexicon")?.ready !== functionLexiconRuntimeReady
+      || byFactory.get("createModuleFactory")?.line !== 447
+      || byFactory.get("createModuleFactory")?.ready !== moduleFactoryRuntimeReady
+      || byFactory.get("createParticleSystemManager")?.line !== 453
+      || byFactory.get("createParticleSystemManager")?.ready !== particleSystemRuntimeReady
       || byFactory.get("createThingFactory")?.line !== 482
       || byFactory.get("createGameClient")?.line !== 493
       || byFactory.get("createGameLogic")?.line !== 505
@@ -3790,6 +3814,8 @@ function assertOriginalEngineStartup(
       || startup.browserDeviceLayer?.gameClient !== false
       || startup.browserDeviceLayer?.audioManager !== false
       || startup.browserDeviceLayer?.functionLexicon !== functionLexiconRuntimeReady
+      || startup.browserDeviceLayer?.moduleFactory !== moduleFactoryRuntimeReady
+      || startup.browserDeviceLayer?.particleSystemManager !== particleSystemRuntimeReady
       || startup.browserDeviceLayer?.display !== false
       || startup.browserDeviceLayer?.input !== false) {
     throw new Error(`${context} should report browser device layer as not runtime-ready: ${JSON.stringify(startup.browserDeviceLayer)}`);

@@ -125,6 +125,10 @@ __attribute__((weak)) void playerTemplateListBoxTooltip(
 {
 }
 
+__attribute__((weak)) void destroyQuitMenu()
+{
+}
+
 extern WindowMsgHandledType BeaconWindowInput(GameWindow *window, UnsignedInt msg,
 	WindowMsgData mData1, WindowMsgData mData2);
 extern WindowMsgHandledType ControlBarInput(GameWindow *window, UnsignedInt msg,
@@ -151,9 +155,12 @@ FunctionLexicon::TableEntry runtimeBaseSystemTable[] = {
 	{ NAMEKEY_INVALID, "QuitMessageBoxSystem", QuitMessageBoxSystem },
 	{ NAMEKEY_INVALID, "ExtendedMessageBoxSystem", ExtendedMessageBoxSystem },
 	{ NAMEKEY_INVALID, "IMECandidateWindowSystem", IMECandidateWindowSystem },
+	{ NAMEKEY_INVALID, "MOTDSystem", MOTDSystem },
 	{ NAMEKEY_INVALID, "MainMenuSystem", MainMenuSystem },
+	{ NAMEKEY_INVALID, "OptionsMenuSystem", OptionsMenuSystem },
 	{ NAMEKEY_INVALID, "CreditsMenuSystem", CreditsMenuSystem },
 	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuSystem", SkirmishGameOptionsMenuSystem },
+	{ NAMEKEY_INVALID, "SkirmishMapSelectMenuSystem", SkirmishMapSelectMenuSystem },
 	{ NAMEKEY_INVALID, "SinglePlayerMenuSystem", SinglePlayerMenuSystem },
 	{ NAMEKEY_INVALID, "ChallengeMenuSystem", ChallengeMenuSystem },
 	{ NAMEKEY_INVALID, "PopupCommunicatorSystem", PopupCommunicatorSystem },
@@ -164,12 +171,14 @@ FunctionLexicon::TableEntry runtimeBaseSystemTable[] = {
 	{ NAMEKEY_INVALID, "InGamePopupMessageSystem", InGamePopupMessageSystem },
 	{ NAMEKEY_INVALID, "IdleWorkerSystem", IdleWorkerSystem },
 	{ NAMEKEY_INVALID, "ReplayControlSystem", ReplayControlSystem },
+	{ NAMEKEY_INVALID, "ControlBarObserverSystem", ControlBarObserverSystem },
 	{ NAMEKEY_INVALID, "GameInfoWindowSystem", GameInfoWindowSystem },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
 FunctionLexicon::TableEntry runtimeBaseInputTable[] = {
 	{ NAMEKEY_INVALID, "GameWinDefaultInput", GameWinDefaultInput },
+	{ NAMEKEY_INVALID, "GameWinBlockInput", GameWinBlockInput },
 	{ NAMEKEY_INVALID, "GadgetPushButtonInput", GadgetPushButtonInput },
 	{ NAMEKEY_INVALID, "GadgetCheckBoxInput", GadgetCheckBoxInput },
 	{ NAMEKEY_INVALID, "GadgetRadioButtonInput", GadgetRadioButtonInput },
@@ -183,8 +192,10 @@ FunctionLexicon::TableEntry runtimeBaseInputTable[] = {
 	{ NAMEKEY_INVALID, "GadgetTextEntryInput", GadgetTextEntryInput },
 	{ NAMEKEY_INVALID, "IMECandidateWindowInput", IMECandidateWindowInput },
 	{ NAMEKEY_INVALID, "MainMenuInput", MainMenuInput },
+	{ NAMEKEY_INVALID, "OptionsMenuInput", OptionsMenuInput },
 	{ NAMEKEY_INVALID, "CreditsMenuInput", CreditsMenuInput },
 	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuInput", SkirmishGameOptionsMenuInput },
+	{ NAMEKEY_INVALID, "SkirmishMapSelectMenuInput", SkirmishMapSelectMenuInput },
 	{ NAMEKEY_INVALID, "SinglePlayerMenuInput", SinglePlayerMenuInput },
 	{ NAMEKEY_INVALID, "ChallengeMenuInput", ChallengeMenuInput },
 	{ NAMEKEY_INVALID, "PopupCommunicatorInput", PopupCommunicatorInput },
@@ -213,13 +224,16 @@ FunctionLexicon::TableEntry runtimeBaseDrawTable[] = {
 
 FunctionLexicon::TableEntry runtimeBaseLayoutInitTable[] = {
 	{ NAMEKEY_INVALID, "MainMenuInit", MainMenuInit },
+	{ NAMEKEY_INVALID, "OptionsMenuInit", OptionsMenuInit },
 	{ NAMEKEY_INVALID, "CreditsMenuInit", CreditsMenuInit },
 	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuInit", SkirmishGameOptionsMenuInit },
+	{ NAMEKEY_INVALID, "SkirmishMapSelectMenuInit", SkirmishMapSelectMenuInit },
 	{ NAMEKEY_INVALID, "SinglePlayerMenuInit", SinglePlayerMenuInit },
 	{ NAMEKEY_INVALID, "ChallengeMenuInit", ChallengeMenuInit },
 	{ NAMEKEY_INVALID, "PopupCommunicatorInit", PopupCommunicatorInit },
 	{ NAMEKEY_INVALID, "MapSelectMenuInit", MapSelectMenuInit },
 	{ NAMEKEY_INVALID, "ReplayMenuInit", ReplayMenuInit },
+	{ NAMEKEY_INVALID, "GameInfoWindowInit", GameInfoWindowInit },
 	{ NAMEKEY_INVALID, "PopupReplayInit", PopupReplayInit },
 	{ NAMEKEY_INVALID, "DifficultySelectInit", DifficultySelectInit },
 	{ NAMEKEY_INVALID, "KeyboardOptionsMenuInit", KeyboardOptionsMenuInit },
@@ -229,8 +243,10 @@ FunctionLexicon::TableEntry runtimeBaseLayoutInitTable[] = {
 
 FunctionLexicon::TableEntry runtimeBaseLayoutUpdateTable[] = {
 	{ NAMEKEY_INVALID, "MainMenuUpdate", MainMenuUpdate },
+	{ NAMEKEY_INVALID, "OptionsMenuUpdate", OptionsMenuUpdate },
 	{ NAMEKEY_INVALID, "CreditsMenuUpdate", CreditsMenuUpdate },
 	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuUpdate", SkirmishGameOptionsMenuUpdate },
+	{ NAMEKEY_INVALID, "SkirmishMapSelectMenuUpdate", SkirmishMapSelectMenuUpdate },
 	{ NAMEKEY_INVALID, "SinglePlayerMenuUpdate", SinglePlayerMenuUpdate },
 	{ NAMEKEY_INVALID, "ChallengeMenuUpdate", ChallengeMenuUpdate },
 	{ NAMEKEY_INVALID, "MapSelectMenuUpdate", MapSelectMenuUpdate },
@@ -241,8 +257,10 @@ FunctionLexicon::TableEntry runtimeBaseLayoutUpdateTable[] = {
 
 FunctionLexicon::TableEntry runtimeBaseLayoutShutdownTable[] = {
 	{ NAMEKEY_INVALID, "MainMenuShutdown", MainMenuShutdown },
+	{ NAMEKEY_INVALID, "OptionsMenuShutdown", OptionsMenuShutdown },
 	{ NAMEKEY_INVALID, "CreditsMenuShutdown", CreditsMenuShutdown },
 	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuShutdown", SkirmishGameOptionsMenuShutdown },
+	{ NAMEKEY_INVALID, "SkirmishMapSelectMenuShutdown", SkirmishMapSelectMenuShutdown },
 	{ NAMEKEY_INVALID, "SinglePlayerMenuShutdown", SinglePlayerMenuShutdown },
 	{ NAMEKEY_INVALID, "ChallengeMenuShutdown", ChallengeMenuShutdown },
 	{ NAMEKEY_INVALID, "PopupCommunicatorShutdown", PopupCommunicatorShutdown },

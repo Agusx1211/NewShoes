@@ -18,6 +18,8 @@ const paths = {
   gameLogic: "GeneralsMD/Code/GameEngine/Source/GameLogic/System/GameLogic.cpp",
   gameLogicDispatch:
     "GeneralsMD/Code/GameEngine/Source/GameLogic/System/GameLogicDispatch.cpp",
+  w3dBridgeBuffer:
+    "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DBridgeBuffer.cpp",
   shellSmoke: "WebAssembly/tests/w3d_window_layout_script_smoke.cpp",
   runtimeSmoke: "WebAssembly/tests/gamelogic_new_game_dispatch_smoke.cpp",
   gameLogicShim: "WebAssembly/shims/GameLogic/GameLogic.h",
@@ -145,6 +147,7 @@ function expect(condition, message) {
 const messageStream = readRepoText(paths.messageStream);
 const gameLogic = readRepoText(paths.gameLogic);
 const gameLogicDispatch = readRepoText(paths.gameLogicDispatch);
+const w3dBridgeBuffer = readRepoText(paths.w3dBridgeBuffer);
 const shellSmoke = readRepoText(paths.shellSmoke);
 const runtimeSmoke = readRepoText(paths.runtimeSmoke);
 const gameLogicShim = readRepoText(paths.gameLogicShim);
@@ -309,8 +312,60 @@ const startLines = expectOrderedInBody(
       label: "later terrain load",
       pattern: /TheTerrainLogic->loadMap\s*\(\s*TheGlobalData->m_mapName\s*,\s*false\s*\)\s*;/,
     },
+    {
+      label: "player list new game",
+      pattern: /ThePlayerList->newGame\s*\(\s*\)\s*;/,
+    },
+    {
+      label: "script engine new map",
+      pattern: /TheScriptEngine->newMap\s*\(\s*\)\s*;/,
+    },
+    {
+      label: "radar new map",
+      pattern: /TheRadar->newMap\s*\(\s*TheTerrainLogic\s*\)\s*;/,
+    },
+    {
+      label: "in-game ui client quiet",
+      pattern: /TheInGameUI->setClientQuiet\s*\(\s*FALSE\s*\)\s*;/,
+    },
+    {
+      label: "victory cache players",
+      pattern: /TheVictoryConditions->cachePlayerPtrs\s*\(\s*\)\s*;/,
+    },
+    {
+      label: "victory condition set",
+      pattern: /TheVictoryConditions->setVictoryConditions\s*\(\s*VICTORY_NOBUILDINGS\s*\)\s*;/,
+    },
+    {
+      label: "game logic width",
+      pattern: /TheGameLogic->setWidth\s*\(\s*extent\.hi\.x\s*-\s*extent\.lo\.x\s*\)\s*;/,
+    },
+    {
+      label: "game logic height",
+      pattern: /TheGameLogic->setHeight\s*\(\s*extent\.hi\.y\s*-\s*extent\.lo\.y\s*\)\s*;/,
+    },
+    {
+      label: "partition init",
+      pattern: /ThePartitionManager->init\s*\(\s*\)\s*;/,
+    },
+    {
+      label: "partition shroud refresh",
+      pattern: /ThePartitionManager->refreshShroudForLocalPlayer\s*\(\s*\)\s*;/,
+    },
+    {
+      label: "ghost local player",
+      pattern: /TheGhostObjectManager->setLocalPlayerIndex\s*\(\s*ThePlayerList->getLocalPlayer\s*\(\s*\)->getPlayerIndex\s*\(\s*\)\s*\)\s*;/,
+    },
+    {
+      label: "ghost reset",
+      pattern: /TheGhostObjectManager->reset\s*\(\s*\)\s*;/,
+    },
+    {
+      label: "terrain logic new map",
+      pattern: /TheTerrainLogic->newMap\s*\(\s*loadingSaveGame\s*\)\s*;/,
+    },
   ],
-  "GameLogic::startNewGame first-call deferral",
+  "GameLogic::startNewGame first-call deferral and post-radar partition handoff",
 );
 
 const targetSources = cmakeInvocationBlock(
@@ -377,6 +432,22 @@ expect(
   "gamelogic-new-game-dispatch-smoke does not link original GlobalData.cpp",
 );
 expect(
+  /INI\/INI\.cpp|INI\\INI\.cpp/.test(runtimeTargetSources.block)
+    && /INI\/INIGameData\.cpp|INI\\INIGameData\.cpp/.test(runtimeTargetSources.block)
+    && /INI\/INIAiData\.cpp|INI\\INIAiData\.cpp/.test(runtimeTargetSources.block)
+    && /INI\/INIMultiplayer\.cpp|INI\\INIMultiplayer\.cpp/.test(runtimeTargetSources.block)
+    && /MultiplayerSettings\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original startup INI/MultiplayerSettings sources",
+);
+expect(
+  /UserPreferences\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original UserPreferences.cpp for GameData preference storage",
+);
+expect(
+  /System\/FunctionLexicon\.cpp|System\\FunctionLexicon\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original FunctionLexicon.cpp",
+);
+expect(
   /RTS\/PlayerList\.cpp|RTS\\PlayerList\.cpp/.test(runtimeTargetSources.block)
     && /RTS\/Player\.cpp|RTS\\Player\.cpp/.test(runtimeTargetSources.block),
   "gamelogic-new-game-dispatch-smoke does not link original PlayerList.cpp/Player.cpp",
@@ -385,7 +456,10 @@ expect(
   /RTS\/AcademyStats\.cpp|RTS\\AcademyStats\.cpp/.test(runtimeTargetSources.block)
     && /RTS\/Energy\.cpp|RTS\\Energy\.cpp/.test(runtimeTargetSources.block)
     && /RTS\/Money\.cpp|RTS\\Money\.cpp/.test(runtimeTargetSources.block)
+    && /RTS\/PlayerTemplate\.cpp|RTS\\PlayerTemplate\.cpp/.test(runtimeTargetSources.block)
+    && /RTS\/ResourceGatheringManager\.cpp|RTS\\ResourceGatheringManager\.cpp/.test(runtimeTargetSources.block)
     && /RTS\/ScoreKeeper\.cpp|RTS\\ScoreKeeper\.cpp/.test(runtimeTargetSources.block)
+    && /RTS\/Science\.cpp|RTS\\Science\.cpp/.test(runtimeTargetSources.block)
     && /RTS\/Team\.cpp|RTS\\Team\.cpp/.test(runtimeTargetSources.block)
     && /RTS\/TunnelTracker\.cpp|RTS\\TunnelTracker\.cpp/.test(runtimeTargetSources.block)
     && /AI\/Squad\.cpp|AI\\Squad\.cpp/.test(runtimeTargetSources.block)
@@ -403,6 +477,15 @@ expect(
 expect(
   /System\/SaveGame\/GameState\.cpp|System\\SaveGame\\GameState\.cpp/.test(runtimeTargetSources.block),
   "gamelogic-new-game-dispatch-smoke does not link original GameState.cpp",
+);
+expect(
+  /System\/Radar\.cpp|System\\Radar\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original Radar.cpp",
+);
+expect(
+  /TerrainTypes\.cpp/.test(runtimeTargetSources.block)
+    && /Terrain\/TerrainRoads\.cpp|Terrain\\TerrainRoads\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original TerrainTypes.cpp/TerrainRoads.cpp",
 );
 expect(
   /ScriptEngine\/ScriptEngine\.cpp|ScriptEngine\\ScriptEngine\.cpp/.test(runtimeTargetSources.block),
@@ -425,6 +508,56 @@ expect(
     && /GUI\/ProcessAnimateWindow\.cpp|GUI\\ProcessAnimateWindow\.cpp/.test(runtimeTargetSources.block)
     && /GUI\/Shell\/ShellMenuScheme\.cpp|GUI\\Shell\\ShellMenuScheme\.cpp/.test(runtimeTargetSources.block),
   "gamelogic-new-game-dispatch-smoke does not link original Shell support sources",
+);
+expect(
+  /GUI\/GameWindowManagerScript\.cpp|GUI\\GameWindowManagerScript\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original GameWindowManagerScript.cpp for archive-backed BlankWindow layouts",
+);
+expect(
+  /GUI\/HeaderTemplate\.cpp|GUI\\HeaderTemplate\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original HeaderTemplate.cpp for archive layout parsing",
+);
+expect(
+  /Map\/SidesList\.cpp|Map\\SidesList\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original SidesList.cpp for shipped map side parsing",
+);
+expect(
+  /AI\/AI\.cpp|AI\\AI\.cpp/.test(runtimeTargetSources.block)
+    && /AI\/AIPathfind\.cpp|AI\\AIPathfind\.cpp/.test(runtimeTargetSources.block)
+    && /AI\/AIPlayer\.cpp|AI\\AIPlayer\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original AI/AIPlayer sources for non-human sides",
+);
+expect(
+  /Object\/GhostObject\.cpp|Object\\GhostObject\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original GhostObject.cpp for GhostObjectManager reset",
+);
+expect(
+  /Object\/Weapon\.cpp|Object\\Weapon\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original Weapon.cpp for GameData WeaponBonus parsing",
+);
+expect(
+  /GameSpy\/Chat\.cpp|GameSpy\\Chat\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original OnlineChatColors parser source",
+);
+expect(
+  /persistfactory\.cpp/.test(runtimeTargetSources.block)
+    && /pointerremap\.cpp/.test(runtimeTargetSources.block)
+    && /saveload\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original save/load support for RenderObjClass persistence",
+);
+expect(
+  /WW3D2\/dx8wrapper\.cpp|WW3D2\\dx8wrapper\.cpp/.test(runtimeTargetSources.block)
+    && /WW3D2\/rendobj\.cpp|WW3D2\\rendobj\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original DX8Wrapper/RenderObj support for terrain render-object ownership",
+);
+const runtimeLinkLibraries = cmakeInvocationBlock(
+  cmake,
+  /target_link_libraries\s*\(\s*gamelogic-new-game-dispatch-smoke\b/,
+  "gamelogic-new-game-dispatch-smoke target_link_libraries",
+);
+expect(
+  /zh_w3d_terrain_probe_runtime/.test(runtimeLinkLibraries.block),
+  "gamelogic-new-game-dispatch-smoke does not link the W3D terrain runtime library",
 );
 const runtimeCompileDefinitions = cmakeInvocationBlock(
   cmake,
@@ -468,6 +601,10 @@ expect(
   !runtimeLinkOptions.block.includes("--wrap=_ZN10PlayerList12getNthPlayerEi"),
   "gamelogic-new-game-dispatch-smoke still declares the focused PlayerList lookup wrap",
 );
+expect(
+  /-sNODERAWFS=1/.test(runtimeLinkOptions.block),
+  "gamelogic-new-game-dispatch-smoke does not expose raw FS access for base Window.big",
+);
 const runtimeProcessCommandListLine = lineOf(
   runtimeSmoke,
   /logic->processCommandList\s*\(\s*TheCommandList\s*\)\s*;/,
@@ -480,27 +617,319 @@ const runtimePathLine = lineOf(
 );
 const runtimeSourceLine = lineOf(
   runtimeSmoke,
-  /GlobalData\.cpp\/PlayerList\.cpp\/Player\.cpp\/GameLogic\.cpp\/GameLogicDispatch\.cpp\/ScriptEngine\.cpp/,
+  /GlobalData\.cpp\/INI\.cpp\/INIGameData\.cpp\/INIAiData\.cpp\/INIMultiplayer\.cpp\/UserPreferences\.cpp\/MultiplayerSettings\.cpp\/Science\.cpp\/PlayerTemplate\.cpp\/FunctionLexicon\.cpp\/PlayerList\.cpp\/Player\.cpp\/AI\.cpp\/AIPathfind\.cpp\/AIPlayer\.cpp\/GhostObject\.cpp\/Weapon\.cpp\/GameLogic\.cpp\/GameLogicDispatch\.cpp\/GameState\.cpp\/TerrainTypes\.cpp\/Radar\.cpp\/PartitionManager\.cpp\/ScriptEngine\.cpp\/Scripts\.cpp\/Shell\.cpp\/GameWindowManagerScript\.cpp\/HeaderTemplate\.cpp\/TerrainRoads\.cpp\/TerrainLogic\.cpp\/W3DTerrainLogic\.cpp\/WorldHeightMap\.cpp\/TerrainVisual\.cpp\/SidesList\.cpp\/ThingFactory\.cpp/,
   "runtime smoke original source JSON",
+);
+const runtimeArchivePathLine = lineOf(
+  runtimeSmoke,
+  /artifacts\/real-assets\/Window\.big/,
+  "runtime smoke base Window.big path",
+);
+const runtimeArchiveLoadLine = lineOf(
+  runtimeSmoke,
+  /loadBigFilesFromDirectory\s*\(\s*archive_directory\s*,\s*archive_mask\s*\)/,
+  "runtime smoke base Window.big load",
+);
+const runtimeMapsArchiveLoadLine = lineOf(
+  runtimeSmoke,
+  /loadBigFilesFromDirectory\s*\(\s*archive_directory\s*,\s*maps_archive_mask\s*\)/,
+  "runtime smoke MapsZH.big load",
+);
+const runtimeZhIniArchiveLoadLine = lineOf(
+  runtimeSmoke,
+  /loadBigFilesFromDirectory\s*\(\s*archive_directory\s*,\s*zh_ini_archive_mask\s*\)/,
+  "runtime smoke INIZH.big load",
+);
+const runtimeBaseIniArchiveLoadLine = lineOf(
+  runtimeSmoke,
+  /loadBigFilesFromDirectory\s*\(\s*archive_directory\s*,\s*base_ini_archive_mask\s*\)/,
+  "runtime smoke base INI.big load",
+);
+const runtimePromotedMapLine = lineOf(
+  runtimeSmoke,
+  /global_data\.m_pendingFile\s*=\s*gameplay_map_path\s*;/,
+  "runtime smoke promoted shipped map assignment",
+);
+const runtimeBlankWindowExistsLine = lineOf(
+  runtimeSmoke,
+  /doesFileExist\s*\(\s*"Window\\\\Menus\\\\BlankWindow\.wnd"\s*\)/,
+  "runtime smoke BlankWindow.wnd archive existence proof",
+);
+const runtimeWinCreateLayoutDelegationLine = lineOf(
+  runtimeSmoke,
+  /GameWindowManager::winCreateLayout\s*\(\s*filename\s*\)/,
+  "runtime smoke original GameWindowManager::winCreateLayout delegation",
+);
+const runtimeArchiveBlankWindowProofLine = lineOf(
+  runtimeSmoke,
+  /g_prepare_blank_window_loaded_from_archive\s*&&[\s\S]*g_prepare_blank_window_root_ready/,
+  "runtime smoke prepareNewGame archive-backed BlankWindow proof",
+);
+const runtimeTerrainLogicLine = lineOf(
+  runtimeSmoke,
+  /W3DTerrainLogic\s+terrain_logic\s*;/,
+  "runtime smoke original W3DTerrainLogic allocation",
+);
+const runtimeTerrainVisualLine = lineOf(
+  runtimeSmoke,
+  /SmokeTerrainVisual\s+terrain_visual\s*;/,
+  "runtime smoke TerrainVisual handoff owner",
+);
+const runtimeTerrainLoadLine = lineOf(
+  runtimeSmoke,
+  /terrain_logic\.loadMap\s*\(\s*global_data\.m_mapName\s*,\s*FALSE\s*\)/,
+  "runtime smoke original W3DTerrainLogic::loadMap(false) call",
+);
+const runtimeTerrainExtentLine = lineOf(
+  runtimeSmoke,
+  /terrain_extent_hi_x\s*==\s*3800\s*&&\s*terrain_extent_hi_y\s*==\s*3800/,
+  "runtime smoke MD_GLA03 terrain extent proof",
 );
 expect(
   !/__wrap__ZN10PlayerList12getNthPlayerEi/.test(runtimeSmoke),
   "runtime smoke still provides a focused PlayerList::getNthPlayer wrapper",
 );
+expect(
+  !/focused in-memory BlankWindow layout adapter/.test(runtimeSmoke),
+  "runtime smoke still reports the focused in-memory BlankWindow layout adapter",
+);
 const runtimePlayerListLine = lineOf(
   runtimeSmoke,
-  /PlayerList\s+player_list\s*;/,
+  /PlayerList\s*\*\s*player_list\s*=\s*new\s+PlayerList\s*;/,
   "runtime smoke original PlayerList allocation",
 );
 const runtimePlayerListSingletonLine = lineOf(
   runtimeSmoke,
-  /ThePlayerList\s*=\s*&player_list\s*;/,
+  /ThePlayerList\s*=\s*player_list\s*;/,
   "runtime smoke original ThePlayerList assignment",
 );
 const runtimePlayerListProofLine = lineOf(
   runtimeSmoke,
-  /player_list\.getNthPlayer\s*\(\s*0\s*\)\s*!=\s*nullptr[\s\S]*player_list\.getNeutralPlayer\s*\(\s*\)[\s\S]*player_list\.getPlayerCount\s*\(\s*\)\s*==\s*1/,
+  /player_list->getNthPlayer\s*\(\s*0\s*\)\s*!=\s*nullptr[\s\S]*player_list->getNeutralPlayer\s*\(\s*\)[\s\S]*player_list->getPlayerCount\s*\(\s*\)\s*==\s*1/,
   "runtime smoke original PlayerList neutral-player proof",
+);
+const runtimePlayerListNewGameLine = lineOf(
+  runtimeSmoke,
+  /player_list->newGame\s*\(\s*\)\s*;/,
+  "runtime smoke original PlayerList::newGame call",
+);
+const runtimeTeamFactoryLine = lineOf(
+  runtimeSmoke,
+  /TeamFactory\s*\*\s*team_factory\s*=\s*new\s+TeamFactory\s*;/,
+  "runtime smoke original TeamFactory allocation",
+);
+const runtimeScriptNewMapLine = lineOf(
+  runtimeSmoke,
+  /script_engine->newMap\s*\(\s*\)\s*;/,
+  "runtime smoke original ScriptEngine::newMap call",
+);
+const runtimeRadarLine = lineOf(
+  runtimeSmoke,
+  /SmokeRadar\s*\*\s*radar\s*=\s*new\s+SmokeRadar\s*;/,
+  "runtime smoke Radar allocation",
+);
+const runtimeRadarSingletonLine = lineOf(
+  runtimeSmoke,
+  /TheRadar\s*=\s*radar\s*;/,
+  "runtime smoke original TheRadar assignment",
+);
+const runtimeRadarNewMapLine = lineOf(
+  runtimeSmoke,
+  /TheRadar->newMap\s*\(\s*TheTerrainLogic\s*\)\s*;/,
+  "runtime smoke original Radar::newMap call",
+);
+const runtimeRadarWindowLine = lineOf(
+  runtimeSmoke,
+  /installRadarWindow\s*\(\s*\)\s*;/,
+  "runtime smoke ControlBar LeftHUD radar window installation",
+);
+const runtimeRadarProofLine = lineOf(
+  runtimeSmoke,
+  /radar_extent_hi_x\s*==\s*terrain_extent_hi_x[\s\S]*radar_extent_hi_y\s*==\s*terrain_extent_hi_y[\s\S]*radar->xSample\s*\(\s*\)/,
+  "runtime smoke original Radar::newMap extent/sample proof",
+);
+const runtimeDefaultGameDataLoadLine = lineOf(
+  runtimeSmoke,
+  /startup_ini\.load\s*\(\s*"Data\\\\INI\\\\Default\\\\GameData\.ini"\s*,\s*INI_LOAD_OVERWRITE\s*,\s*nullptr\s*\)\s*;/,
+  "runtime smoke original default GameData.ini load",
+);
+const runtimeGameDataLoadLine = lineOf(
+  runtimeSmoke,
+  /startup_ini\.load\s*\(\s*"Data\\\\INI\\\\GameData\.ini"\s*,\s*INI_LOAD_OVERWRITE\s*,\s*nullptr\s*\)\s*;/,
+  "runtime smoke original GameData.ini load",
+);
+if (runtimeDefaultGameDataLoadLine >= runtimeGameDataLoadLine) {
+  fail("runtime smoke should load default GameData.ini before Zero Hour GameData.ini");
+}
+const runtimeGameDataPartitionSizeLine = lineOf(
+  runtimeSmoke,
+  /startup_partition_cell_size\s*=\s*global_data\.m_partitionCellSize\s*;/,
+  "runtime smoke GlobalData partition cell-size capture",
+);
+const runtimeVictoryCacheLine = lineOf(
+  runtimeSmoke,
+  /TheVictoryConditions->cachePlayerPtrs\s*\(\s*\)\s*;/,
+  "runtime smoke victory cache boundary call",
+);
+const runtimeVictorySetLine = lineOf(
+  runtimeSmoke,
+  /TheVictoryConditions->setVictoryConditions\s*\(\s*VICTORY_NOBUILDINGS\s*\)\s*;/,
+  "runtime smoke victory condition set call",
+);
+const runtimeGameLogicWidthLine = lineOf(
+  runtimeSmoke,
+  /TheGameLogic->setWidth\s*\(\s*terrain_extent\.hi\.x\s*-\s*terrain_extent\.lo\.x\s*\)\s*;/,
+  "runtime smoke GameLogic width from terrain extent",
+);
+const runtimePartitionAllocationLine = lineOf(
+  runtimeSmoke,
+  /PartitionManager\s*\*\s*partition_manager\s*=\s*new\s+PartitionManager\s*;/,
+  "runtime smoke original PartitionManager allocation",
+);
+const runtimePartitionSingletonLine = lineOf(
+  runtimeSmoke,
+  /ThePartitionManager\s*=\s*partition_manager\s*;/,
+  "runtime smoke original ThePartitionManager assignment",
+);
+const runtimePartitionInitLine = lineOf(
+  runtimeSmoke,
+  /partition_manager->init\s*\(\s*\)\s*;/,
+  "runtime smoke original PartitionManager::init call",
+);
+const runtimePartitionRefreshLine = lineOf(
+  runtimeSmoke,
+  /partition_manager->refreshShroudForLocalPlayer\s*\(\s*\)\s*;/,
+  "runtime smoke original PartitionManager::refreshShroudForLocalPlayer call",
+);
+const runtimePartitionGridProofLine = lineOf(
+  runtimeSmoke,
+  /partition_cell_count_x\s*==\s*expected_partition_cell_count_x[\s\S]*partition_cell_count_y\s*==\s*expected_partition_cell_count_y/,
+  "runtime smoke original PartitionManager cell-grid proof",
+);
+const runtimePartitionShroudProofLine = lineOf(
+  runtimeSmoke,
+  /g_display_clear_shroud_calls\s*==\s*1[\s\S]*g_radar_clear_shroud_calls\s*==\s*1[\s\S]*g_display_set_shroud_calls\s*==\s*partition_total_cells[\s\S]*g_radar_set_shroud_calls\s*==\s*partition_total_cells/,
+  "runtime smoke original PartitionManager shroud-refresh proof",
+);
+const runtimeGhostObjectAllocationLine = lineOf(
+  runtimeSmoke,
+  /GhostObjectManager\s*\*\s*ghost_object_manager\s*=\s*new\s+GhostObjectManager\s*;/,
+  "runtime smoke original GhostObjectManager allocation",
+);
+const runtimeGhostObjectSingletonLine = lineOf(
+  runtimeSmoke,
+  /TheGhostObjectManager\s*=\s*ghost_object_manager\s*;/,
+  "runtime smoke original TheGhostObjectManager assignment",
+);
+const runtimeGhostLocalPlayerLine = lineOf(
+  runtimeSmoke,
+  /TheGhostObjectManager->setLocalPlayerIndex\s*\(\s*local_player_index_for_ghosts\s*\)\s*;/,
+  "runtime smoke original GhostObjectManager local-player handoff",
+);
+const runtimeGhostResetLine = lineOf(
+  runtimeSmoke,
+  /TheGhostObjectManager->reset\s*\(\s*\)\s*;/,
+  "runtime smoke original GhostObjectManager::reset call",
+);
+const runtimeGhostProofLine = lineOf(
+  runtimeSmoke,
+  /ghost_local_player_index_before\s*==\s*0[\s\S]*local_player_index_for_ghosts\s*>=\s*0[\s\S]*ghost_local_player_index_after_set\s*==\s*local_player_index_for_ghosts[\s\S]*ghost_object_manager_reset_called/,
+  "runtime smoke original GhostObjectManager local-player/reset proof",
+);
+const runtimeTerrainTypeCollectionLine = lineOf(
+  runtimeSmoke,
+  /TerrainTypeCollection\s+terrain_types\s*;/,
+  "runtime smoke original TerrainTypeCollection allocation",
+);
+const runtimeTerrainRoadCollectionLine = lineOf(
+  runtimeSmoke,
+  /TerrainRoadCollection\s+terrain_roads\s*;/,
+  "runtime smoke original TerrainRoadCollection allocation",
+);
+const runtimeTerrainRenderMapLine = lineOf(
+  runtimeSmoke,
+  /NEW\s+WorldHeightMap\s*\(\s*&terrain_render_map_stream\s*,\s*FALSE\s*\)/,
+  "runtime smoke original WorldHeightMap render map load",
+);
+const runtimeTerrainRenderObjectLine = lineOf(
+  runtimeSmoke,
+  /NEW_REF\s*\(\s*SmokeTerrainRenderObject\s*,\s*\(\s*\)\s*\)/,
+  "runtime smoke BaseHeightMapRenderObjClass terrain render object allocation",
+);
+const runtimeTerrainRenderAttachLine = lineOf(
+  runtimeSmoke,
+  /terrain_render_object->attachMap\s*\(\s*terrain_render_map\s*\)/,
+  "runtime smoke terrain render object map attach",
+);
+const runtimeTerrainNewMapLine = lineOf(
+  runtimeSmoke,
+  /terrain_logic\.newMap\s*\(\s*FALSE\s*\)\s*;/,
+  "runtime smoke original W3DTerrainLogic::newMap(false) call",
+);
+const runtimeTerrainNewMapProofLine = lineOf(
+  runtimeSmoke,
+  /terrain_road_buffer_update_buffers[\s\S]*terrain_water_grid_calls_after_new_map\s*==\s*terrain_water_grid_calls_before_new_map\s*\+\s*1[\s\S]*nearlyEqual\s*\(\s*first_waypoint_location_after_new_map\.z\s*,\s*first_waypoint_ground_height_after_new_map/,
+  "runtime smoke original W3DTerrainLogic::newMap road-buffer and TerrainLogic waypoint/water proof",
+);
+const bridgeGpuDeferralHookLine = lineOf(
+  w3dBridgeBuffer,
+  /extern\s+"C"\s+Bool\s+cnc_port_w3d_bridge_buffer_defer_gpu_buffers\s*\(\s*void\s*\)\s*__attribute__\s*\(\s*\(\s*weak\s*\)\s*\)/,
+  "W3DBridgeBuffer optional Emscripten GPU-buffer deferral hook",
+);
+const bridgeGpuDefaultAllocationLine = lineOf(
+  w3dBridgeBuffer,
+  /if\s*\(\s*!shouldDeferBridgeGpuBuffers\s*\(\s*\)\s*\)\s*\{\s*allocateBridgeBuffers\s*\(\s*\)\s*;/,
+  "W3DBridgeBuffer default real GPU-buffer allocation",
+);
+const runtimeBridgeBufferHookLine = lineOf(
+  runtimeSmoke,
+  /extern\s+"C"\s+bool\s+cnc_port_w3d_bridge_buffer_defer_gpu_buffers\s*\(\s*void\s*\)[\s\S]*return\s+true\s*;/,
+  "runtime smoke opts into deferred W3DBridgeBuffer GPU buffers",
+);
+const runtimeBridgeBufferClassLine = lineOf(
+  runtimeSmoke,
+  /class\s+SmokeW3DBridgeBuffer\s*:\s*public\s+W3DBridgeBuffer/,
+  "runtime smoke W3DBridgeBuffer test accessor",
+);
+const runtimeBridgeBufferInstallLine = lineOf(
+  runtimeSmoke,
+  /m_bridgeBuffer\s*=\s*new\s+SmokeW3DBridgeBuffer\s*;/,
+  "runtime smoke installs original W3DBridgeBuffer owner",
+);
+const runtimeBridgeBufferProofLine = lineOf(
+  runtimeSmoke,
+  /terrain_bridge_buffer_installed[\s\S]*terrain_bridge_buffer_initialized[\s\S]*terrain_bridge_point1_objects\s*==\s*0[\s\S]*terrain_bridge_buffer_bridges_after_new_map\s*==\s*terrain_bridge_point1_objects[\s\S]*terrain_bridge_buffer_vertices_after_new_map\s*==\s*0[\s\S]*terrain_bridge_buffer_indices_after_new_map\s*==\s*0[\s\S]*terrain_logic_bridges_after_new_map\s*==\s*terrain_bridge_point1_objects[\s\S]*terrain_bridge_damage_states_changed_after_new_map/,
+  "runtime smoke original W3DBridgeBuffer::loadBridges empty-map scan proof",
+);
+const runtimePathfinderNewMapLine = lineOf(
+  runtimeSmoke,
+  /pathfinder->newMap\s*\(\s*\)\s*;/,
+  "runtime smoke direct original Pathfinder::newMap call",
+);
+const runtimePathfinderProofLine = lineOf(
+  runtimeSmoke,
+  /pathfinder_expected_extent_x\s*>\s*0[\s\S]*pathfinder_new_map_called[\s\S]*pathfinder_extent_x_after_new_map\s*==\s*pathfinder_expected_extent_x[\s\S]*pathfinder_extent_y_after_new_map\s*==\s*pathfinder_expected_extent_y[\s\S]*pathfinder_center_ground_cell_ready/,
+  "runtime smoke original Pathfinder::newMap grid proof",
+);
+const runtimeBridgeOriginalOwnerLine = lineOf(
+  runtimeSmoke,
+  /W3DBridgeBuffer::loadBridges empty MD_GLA03 bridge scan/,
+  "runtime smoke W3DBridgeBuffer original-owner JSON",
+);
+const runtimePathfinderOriginalOwnerLine = lineOf(
+  runtimeSmoke,
+  /Pathfinder::newMap terrain grid allocation\/classification/,
+  "runtime smoke Pathfinder original-owner JSON",
+);
+const runtimeBridgeBoundaryLine = lineOf(
+  runtimeSmoke,
+  /bridge-like map object spawning remains focused ThingFactory\/Object ownership boundary after direct no-bridge W3DBridgeBuffer scan and Pathfinder::newMap grid proof/,
+  "runtime smoke next bridge-like map-object boundary JSON",
+);
+const runtimeAiLine = lineOf(
+  runtimeSmoke,
+  /AI\s+ai\s*;/,
+  "runtime smoke original AI allocation",
 );
 const runtimeRankInfoStoreLine = lineOf(
   runtimeSmoke,
@@ -574,7 +1003,7 @@ const runtimeShellPushLine = lineOf(
 );
 const runtimeShellHideProofLine = lineOf(
   runtimeSmoke,
-  /shell->isShellActive\s*\(\s*\)\s*==\s*FALSE\s*&&\s*g_layout_shutdowns\s*==\s*1/,
+  /shell->isShellActive\s*\(\s*\)\s*==\s*FALSE[\s\S]*shell->getScreenCount\s*\(\s*\)\s*==\s*1/,
   "runtime smoke original Shell::hideShell state proof",
 );
 const runtimeOriginalOwnersLine = lineOf(
@@ -639,24 +1068,104 @@ console.log(JSON.stringify({
     cmakeLinkOptionsLine: runtimeLinkOptions.line,
     preRtsHeader: paths.preRts,
     originalGlobalDataCppLinked: true,
+    originalFunctionLexiconCppLinked: true,
     originalPlayerListCppLinked: true,
     originalPlayerCppLinked: true,
     originalPlayerSupportSourcesLinked: true,
+    originalStartupIniSourcesLinked: true,
+    originalGameDataIniParserLinked: true,
+    originalUserPreferencesCppLinked: true,
+    originalAiPlayerSourcesLinked: true,
+    originalGhostObjectCppLinked: true,
+    originalWeaponCppLinked: true,
     originalGlobalDataHeaderPreincluded: true,
     preRtsOriginalGlobalDataEscapeHatch: true,
     originalGameLogicCppLinked: true,
     originalGameLogicDispatchCppLinked: true,
     originalGameStateCppLinked: true,
+    originalTerrainTypesCppLinked: true,
+    originalTerrainRoadsCppLinked: true,
+    originalDx8WrapperCppLinked: true,
+    originalRendObjCppLinked: true,
+    originalSaveLoadSupportLinked: true,
+    originalRadarCppLinked: true,
     originalScriptEngineCppLinked: true,
     originalScriptsCppLinked: true,
     originalDisplayCppLinked: true,
     originalShellCppLinked: true,
+    originalGameWindowManagerScriptCppLinked: true,
+    originalHeaderTemplateCppLinked: true,
+    originalSidesListCppLinked: true,
+    w3dTerrainRuntimeLinked: true,
+    rawFilesystemForWindowBig: true,
     processCommandListLine: runtimeProcessCommandListLine,
     runtimePathLine,
     runtimeSourceLine,
+    archivePathLine: runtimeArchivePathLine,
+    archiveLoadLine: runtimeArchiveLoadLine,
+    mapsArchiveLoadLine: runtimeMapsArchiveLoadLine,
+    zhIniArchiveLoadLine: runtimeZhIniArchiveLoadLine,
+    baseIniArchiveLoadLine: runtimeBaseIniArchiveLoadLine,
+    promotedMapLine: runtimePromotedMapLine,
+    blankWindowExistsLine: runtimeBlankWindowExistsLine,
+    winCreateLayoutDelegationLine: runtimeWinCreateLayoutDelegationLine,
+    archiveBlankWindowProofLine: runtimeArchiveBlankWindowProofLine,
+    terrainLogicLine: runtimeTerrainLogicLine,
+    terrainVisualLine: runtimeTerrainVisualLine,
+    terrainLoadLine: runtimeTerrainLoadLine,
+    terrainExtentLine: runtimeTerrainExtentLine,
     playerListAllocationLine: runtimePlayerListLine,
     playerListSingletonLine: runtimePlayerListSingletonLine,
     playerListNeutralPlayerProofLine: runtimePlayerListProofLine,
+    playerListNewGameLine: runtimePlayerListNewGameLine,
+    teamFactoryLine: runtimeTeamFactoryLine,
+    scriptNewMapLine: runtimeScriptNewMapLine,
+    radarLine: runtimeRadarLine,
+    radarSingletonLine: runtimeRadarSingletonLine,
+    radarNewMapLine: runtimeRadarNewMapLine,
+    radarWindowLine: runtimeRadarWindowLine,
+    radarProofLine: runtimeRadarProofLine,
+    defaultGameDataLoadLine: runtimeDefaultGameDataLoadLine,
+    gameDataLoadLine: runtimeGameDataLoadLine,
+    gameDataPartitionCellSizeLine: runtimeGameDataPartitionSizeLine,
+    victoryCacheLine: runtimeVictoryCacheLine,
+    victorySetLine: runtimeVictorySetLine,
+    gameLogicWidthLine: runtimeGameLogicWidthLine,
+    partitionAllocationLine: runtimePartitionAllocationLine,
+    partitionSingletonLine: runtimePartitionSingletonLine,
+    partitionInitLine: runtimePartitionInitLine,
+    partitionRefreshLine: runtimePartitionRefreshLine,
+    partitionGridProofLine: runtimePartitionGridProofLine,
+    partitionShroudProofLine: runtimePartitionShroudProofLine,
+    ghostObjectAllocationLine: runtimeGhostObjectAllocationLine,
+    ghostObjectSingletonLine: runtimeGhostObjectSingletonLine,
+    ghostLocalPlayerLine: runtimeGhostLocalPlayerLine,
+    ghostResetLine: runtimeGhostResetLine,
+    ghostProofLine: runtimeGhostProofLine,
+    terrainTypeCollectionLine: runtimeTerrainTypeCollectionLine,
+    terrainRoadCollectionLine: runtimeTerrainRoadCollectionLine,
+    terrainRenderMapLine: runtimeTerrainRenderMapLine,
+    terrainRenderObjectLine: runtimeTerrainRenderObjectLine,
+    terrainRenderAttachLine: runtimeTerrainRenderAttachLine,
+    terrainNewMapLine: runtimeTerrainNewMapLine,
+    terrainNewMapProofLine: runtimeTerrainNewMapProofLine,
+    bridgeBuffer: {
+      source: paths.w3dBridgeBuffer,
+      gpuDeferralHookLine: bridgeGpuDeferralHookLine,
+      defaultGpuAllocationLine: bridgeGpuDefaultAllocationLine,
+      smokeDeferralHookLine: runtimeBridgeBufferHookLine,
+      accessorClassLine: runtimeBridgeBufferClassLine,
+      installLine: runtimeBridgeBufferInstallLine,
+      loadBridgesProofLine: runtimeBridgeBufferProofLine,
+      originalOwnerLine: runtimeBridgeOriginalOwnerLine,
+      boundaryLine: runtimeBridgeBoundaryLine,
+    },
+    pathfinder: {
+      newMapLine: runtimePathfinderNewMapLine,
+      gridProofLine: runtimePathfinderProofLine,
+      originalOwnerLine: runtimePathfinderOriginalOwnerLine,
+    },
+    aiLine: runtimeAiLine,
     rankInfoStoreLine: runtimeRankInfoStoreLine,
     noFocusedPlayerLookupWrap: true,
     noPlayerListSentinel: true,
@@ -682,10 +1191,9 @@ console.log(JSON.stringify({
     "prepareNewGame owns original ScriptEngine difficulty, BlankWindow background, game-mode, pending-map, and original Shell::hideShell setup",
     "startNewGame(FALSE) records the pristine map and defers the first call before terrain load",
     "w3d-window-layout-script-smoke still uses a focused GameLogic shim and sentinel gameplay owners",
-    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/PlayerList.cpp/Player.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp and calls GameLogic::processCommandList at runtime through original GlobalData, PlayerList, ScriptEngine, and Shell ownership",
+    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/FunctionLexicon.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/TerrainTypes.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainRoads.cpp/SidesList.cpp plus the W3D terrain runtime and original DX8Wrapper/RenderObj support, then calls GameLogic::processCommandList at runtime through original GlobalData, FunctionLexicon, PlayerList, ScriptEngine, Shell, archive-backed BlankWindow ownership, MapsZH.big MD_GLA03 promotion, original default and Zero Hour startup INI/GameData parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, TeamFactory::initFromSides, PlayerList::newGame, AIPlayer construction, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, GhostObjectManager local-player index/reset, TerrainRoadCollection/TerrainTypeCollection render-map setup, original W3DTerrainLogic::newMap road-buffer and W3DBridgeBuffer::loadBridges handoff, TerrainLogic waypoint/water setup, and original Pathfinder::newMap grid allocation/classification",
   ],
   nextRequired: [
-    "supply base Generals Window.big and replace the runtime BlankWindow in-memory adapter with the archive-backed layout path",
-    "then continue from the deferred startNewGame update into terrain, player, and script map-load ownership",
+    "promote the original post-terrain bridge-like map-object spawning loop that sits before Pathfinder::newMap, then replace the direct no-bridge pathfinder proof with the original ordered startNewGame sequence",
   ],
 }, null, 2));

@@ -12,6 +12,7 @@ const desktopScreenshot = resolve(screenshotDir, "startup-vertical-browser.png")
 const canvasScreenshot = resolve(screenshotDir, "startup-vertical-canvas.png");
 const audioBootScreenshot = resolve(screenshotDir, "startup-vertical-audio-owned.png");
 const realInitScreenshot = resolve(screenshotDir, "startup-vertical-real-init.png");
+const debugStartupVertical = process.env.STARTUP_VERTICAL_DEBUG === "1";
 
 const allAudioStartupFiles = [
   "Data\\INI\\AudioSettings.ini",
@@ -34,6 +35,24 @@ function expect(condition, message, payload) {
 
 function entryByFactory(frontier, factory) {
   return (frontier?.entries ?? []).find((entry) => entry.factory === factory);
+}
+
+function debugLog(message) {
+  if (debugStartupVertical) {
+    console.error(`[startup-vertical] ${message}`);
+  }
+}
+
+function attachConsoleLogger(page, label) {
+  if (!debugStartupVertical) {
+    return;
+  }
+  page.on("console", (message) => {
+    console.error(`[${label} console:${message.type()}] ${message.text()}`);
+  });
+  page.on("pageerror", (error) => {
+    console.error(`[${label} pageerror] ${error.stack ?? error.message}`);
+  });
 }
 
 async function readBigEntryNames(path) {
@@ -110,6 +129,52 @@ const mappedImageIniEntries = [
   "Data\\INI\\MappedImages\\TextureSize_512\\SUUserInterface512.INI",
 ];
 
+const objectIniStartupEntries = [
+  "Data\\INI\\Object\\AirforceGeneral.ini",
+  "Data\\INI\\Object\\AmericaAir.ini",
+  "Data\\INI\\Object\\AmericaCINEUnit.ini",
+  "Data\\INI\\Object\\AmericaInfantry.ini",
+  "Data\\INI\\Object\\AmericaMiscUnit.ini",
+  "Data\\INI\\Object\\AmericaVehicle.ini",
+  "Data\\INI\\Object\\BossGeneral.ini",
+  "Data\\INI\\Object\\ChemicalGeneral.ini",
+  "Data\\INI\\Object\\ChinaAir.ini",
+  "Data\\INI\\Object\\ChinaCINEUnit.ini",
+  "Data\\INI\\Object\\ChinaInfantry.ini",
+  "Data\\INI\\Object\\ChinaMiscUnit.ini",
+  "Data\\INI\\Object\\ChinaVehicle.ini",
+  "Data\\INI\\Object\\CivilianBuilding.ini",
+  "Data\\INI\\Object\\CivilianProp.ini",
+  "Data\\INI\\Object\\CivilianUnit.ini",
+  "Data\\INI\\Object\\DemoGeneral.ini",
+  "Data\\INI\\Object\\FactionBuilding.ini",
+  "Data\\INI\\Object\\FactionUnit.ini",
+  "Data\\INI\\Object\\GC_Chem_GLABuildings.ini",
+  "Data\\INI\\Object\\GC_Chem_GLASystem.ini",
+  "Data\\INI\\Object\\GC_Chem_GLAUnits.ini",
+  "Data\\INI\\Object\\GC_Slth_GLABuildings.ini",
+  "Data\\INI\\Object\\GC_Slth_GLASystem.ini",
+  "Data\\INI\\Object\\GC_Slth_GLAUnits.ini",
+  "Data\\INI\\Object\\GLAAir.ini",
+  "Data\\INI\\Object\\GLACINEUnit.ini",
+  "Data\\INI\\Object\\GLAInfantry.ini",
+  "Data\\INI\\Object\\GLAMiscUnit.ini",
+  "Data\\INI\\Object\\GLAVehicle.ini",
+  "Data\\INI\\Object\\Hulk.ini",
+  "Data\\INI\\Object\\InfantryGeneral.ini",
+  "Data\\INI\\Object\\LaserGeneral.ini",
+  "Data\\INI\\Object\\NatureProp.ini",
+  "Data\\INI\\Object\\NatureUnit.ini",
+  "Data\\INI\\Object\\NukeGeneral.ini",
+  "Data\\INI\\Object\\SpecialPowerObjects.ini",
+  "Data\\INI\\Object\\StealthGeneral.ini",
+  "Data\\INI\\Object\\SuperWeaponGeneral.ini",
+  "Data\\INI\\Object\\System.ini",
+  "Data\\INI\\Object\\TankGeneral.ini",
+  "Data\\INI\\Object\\TechBuildings.ini",
+  "Data\\INI\\Object\\WeaponObjects.ini",
+];
+
 const inizhStartupEntries = [
   "Data\\INI\\Armor.ini",
   "Data\\INI\\CommandButton.ini",
@@ -131,7 +196,7 @@ const inizhStartupEntries = [
   "Data\\INI\\Music.ini",
   ...mappedImageIniEntries,
   "Data\\INI\\ObjectCreationList.ini",
-  "Data\\INI\\Object\\AmericaInfantry.ini",
+  ...objectIniStartupEntries,
   "Data\\INI\\ParticleSystem.ini",
   "Data\\INI\\PlayerTemplate.ini",
   "Data\\INI\\Roads.ini",
@@ -388,10 +453,25 @@ function assertFunctionLexiconRuntimeFrontier(state) {
   const probe = state.functionLexiconRuntime;
   expect(probe?.attempted === true, "function lexicon runtime probe did not run", probe);
   expect(probe.ok === false, "function lexicon runtime should not claim full ownership yet", probe);
-  expect(probe.status === "base_function_lexicon_control_bar_input_runtime_owned",
+  expect(probe.status === "base_function_lexicon_remaining_callback_groups_deferred",
     "function lexicon runtime status mismatch", probe);
-  expect(probe.nextRequired === "originalFunctionLexiconRemainingShellCallbacks",
+  expect(probe.nextRequired === "originalFunctionLexiconRemainingCallbackOwners",
     "function lexicon runtime nextRequired mismatch", probe);
+  expect(probe.missingCallbackGroupCount === 13
+      && probe.missingCallbackGroups?.saveLoadMenu === true
+      && probe.missingCallbackGroups.quitMenu === true
+      && probe.missingCallbackGroups.popupReplayScoreState === true
+      && probe.missingCallbackGroups.scoreScreen === true
+      && probe.missingCallbackGroups.controlBarCommandHud === true
+      && probe.missingCallbackGroups.generalsExpPoints === true
+      && probe.missingCallbackGroups.lanMenus === true
+      && probe.missingCallbackGroups.inGameNetworkMenus === true
+      && probe.missingCallbackGroups.hostJoinNetworkPopups === true
+      && probe.missingCallbackGroups.onlineOverlayAndBattleHonors === true
+      && probe.missingCallbackGroups.wolShellMenus === true
+      && probe.missingCallbackGroups.networkDirectConnect === true
+      && probe.missingCallbackGroups.downloadMenu === true,
+    "function lexicon runtime did not report the expected remaining owner groups", probe);
   expect(probe.constructed === true && probe.theFunctionLexiconOwned === true,
     "original W3DFunctionLexicon was not constructed as TheFunctionLexicon", probe);
   expect(probe.initRan === true && probe.initThrew === false,
@@ -428,9 +508,12 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.quitMessageBoxSystem === true
       && probe.lookups.extendedMessageBoxSystem === true
       && probe.lookups.imeCandidateWindowSystem === true
+      && probe.lookups.motdSystem === true
       && probe.lookups.mainMenuSystem === true
+      && probe.lookups.optionsMenuSystem === true
       && probe.lookups.creditsMenuSystem === true
       && probe.lookups.skirmishGameOptionsMenuSystem === true
+      && probe.lookups.skirmishMapSelectMenuSystem === true
       && probe.lookups.singlePlayerMenuSystem === true
       && probe.lookups.challengeMenuSystem === true
       && probe.lookups.popupCommunicatorSystem === true
@@ -441,8 +524,10 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.inGamePopupMessageSystem === true
       && probe.lookups.idleWorkerSystem === true
       && probe.lookups.replayControlSystem === true
+      && probe.lookups.controlBarObserverSystem === true
       && probe.lookups.gameInfoWindowSystem === true
       && probe.lookups.gameWindowDefaultInput === true
+      && probe.lookups.gameWinBlockInput === true
       && probe.lookups.gadgetPushButtonInput === true
       && probe.lookups.gadgetCheckBoxInput === true
       && probe.lookups.gadgetRadioButtonInput === true
@@ -456,8 +541,10 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.gadgetTextEntryInput === true
       && probe.lookups.imeCandidateWindowInput === true
       && probe.lookups.mainMenuInput === true
+      && probe.lookups.optionsMenuInput === true
       && probe.lookups.creditsMenuInput === true
       && probe.lookups.skirmishGameOptionsMenuInput === true
+      && probe.lookups.skirmishMapSelectMenuInput === true
       && probe.lookups.singlePlayerMenuInput === true
       && probe.lookups.challengeMenuInput === true
       && probe.lookups.popupCommunicatorInput === true
@@ -474,28 +561,35 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.imeCandidateMainDraw === true
       && probe.lookups.imeCandidateTextAreaDraw === true
       && probe.lookups.mainMenuInit === true
+      && probe.lookups.optionsMenuInit === true
       && probe.lookups.creditsMenuInit === true
       && probe.lookups.skirmishGameOptionsMenuInit === true
+      && probe.lookups.skirmishMapSelectMenuInit === true
       && probe.lookups.singlePlayerMenuInit === true
       && probe.lookups.challengeMenuInit === true
       && probe.lookups.popupCommunicatorInit === true
       && probe.lookups.mapSelectMenuInit === true
       && probe.lookups.replayMenuInit === true
+      && probe.lookups.gameInfoWindowInit === true
       && probe.lookups.popupReplayInit === true
       && probe.lookups.difficultySelectInit === true
       && probe.lookups.keyboardOptionsMenuInit === true
       && probe.lookups.inGamePopupMessageInit === true
       && probe.lookups.mainMenuUpdate === true
+      && probe.lookups.optionsMenuUpdate === true
       && probe.lookups.creditsMenuUpdate === true
       && probe.lookups.skirmishGameOptionsMenuUpdate === true
+      && probe.lookups.skirmishMapSelectMenuUpdate === true
       && probe.lookups.singlePlayerMenuUpdate === true
       && probe.lookups.challengeMenuUpdate === true
       && probe.lookups.mapSelectMenuUpdate === true
       && probe.lookups.replayMenuUpdate === true
       && probe.lookups.keyboardOptionsMenuUpdate === true
       && probe.lookups.mainMenuShutdown === true
+      && probe.lookups.optionsMenuShutdown === true
       && probe.lookups.creditsMenuShutdown === true
       && probe.lookups.skirmishGameOptionsMenuShutdown === true
+      && probe.lookups.skirmishMapSelectMenuShutdown === true
       && probe.lookups.singlePlayerMenuShutdown === true
       && probe.lookups.challengeMenuShutdown === true
       && probe.lookups.popupCommunicatorShutdown === true
@@ -507,6 +601,135 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.w3dGameWindowDefaultDraw === true
       && probe.lookups.w3dMainMenuInit === true,
     "FunctionLexicon widget/draw/layout/W3D callback lookups did not resolve", probe.lookups);
+}
+
+function assertModuleFactoryRuntimeFrontier(state) {
+  const probe = state.moduleFactoryRuntime;
+  expect(probe?.attempted === true, "module factory runtime probe did not run", probe);
+  expect(probe.ok === true, "module factory runtime did not report ready", probe);
+  expect(probe.status === "ready", "module factory runtime status mismatch", probe);
+  expect(probe.nextRequired === "createParticleSystemManager",
+    "module factory runtime nextRequired mismatch", probe);
+  expect(probe.constructed === true && probe.theModuleFactoryOwned === true,
+    "original W3DModuleFactory was not constructed as TheModuleFactory", probe);
+  expect(probe.initRan === true && probe.initThrew === false,
+    "original W3DModuleFactory::init() did not complete", probe);
+  expect(probe.gameEngineInit?.factory === "createModuleFactory"
+      && probe.gameEngineInit.line === 447
+      && probe.gameEngineInit.originalConcrete === "W3DModuleFactory",
+    "GameEngine.cpp createModuleFactory ownership mismatch", probe);
+  expect(probe.lookups?.activeBody === true
+      && probe.lookups.destroyDie === true
+      && probe.lookups.inactiveBody === true
+      && probe.lookups.beaconClientUpdate === true
+      && probe.lookups.w3dDefaultDraw === true
+      && probe.lookups.w3dModelDraw === true
+      && probe.lookups.w3dLaserDraw === true
+      && probe.lookups.w3dPropDraw === true,
+    "ModuleFactory gameplay/client-update/W3D draw lookups did not resolve", probe.lookups);
+}
+
+function assertParticleSystemRuntimeFrontier(state) {
+  const probe = state.particleSystemRuntime;
+  expect(probe?.attempted === true, "particle system runtime probe did not run", probe);
+  expect(probe.ok === true, "particle system runtime did not report ready", probe);
+  expect(probe.status === "ready", "particle system runtime status mismatch", probe);
+  expect(probe.nextRequired === "createThingFactory",
+    "particle system runtime nextRequired mismatch", probe);
+  expect(probe.constructed === true
+      && probe.w3dManagerConstructed === true
+      && probe.theParticleSystemManagerOwned === true,
+    "original W3DParticleSystemManager was not constructed as TheParticleSystemManager", probe);
+  expect(probe.initRan === true && probe.initThrew === false,
+    "original W3DParticleSystemManager::init() did not complete", probe);
+  expect(probe.gameEngineInit?.factory === "createParticleSystemManager"
+      && probe.gameEngineInit.line === 453
+      && probe.gameEngineInit.originalConcrete === "W3DParticleSystemManager",
+    "GameEngine.cpp createParticleSystemManager ownership mismatch", probe);
+  expect(probe.queueParticleRenderCalled === true,
+    "W3DParticleSystemManager virtual queue path was not exercised", probe);
+  expect(probe.templateCount > 100
+      && probe.templates?.tsingMaTrailSmoke === true
+      && probe.templates.jetContrailThin === true
+      && probe.templates.toxinLenzflare === true
+      && probe.templates.smallTankStruckSmoke === true
+      && probe.templates.nukeMushroomRing === true,
+    "ParticleSystem.ini template load did not resolve expected shipped templates", probe);
+  expect(probe.zeroLiveSystems === true && probe.zeroLiveParticles === true,
+    "particle manager should only own templates during startup init", probe);
+}
+
+function lookupByName(lookups, name) {
+  return (lookups ?? []).find((entry) => entry?.name === name);
+}
+
+function assertObjectIniThingFactoryRuntime(probe, context) {
+  expect(probe?.attempted === true
+      && probe.ok === true
+      && probe.stage === "done"
+      && probe.error === "",
+    `${context} object INI runtime did not finish cleanly`, probe);
+  expect(probe.source === "GameEngine.cpp::init initSubsystem(TheThingFactory) + "
+      + "W3DModuleFactory::init + ThingFactory::parseObjectDefinition + INI.cpp::load/loadDirectory",
+    `${context} object INI runtime source mismatch`, probe);
+  expect(probe.loadedArchives === true
+      && probe.defaultObjectIniExists === true
+      && probe.defaultObjectIniBytes === 5530
+      && probe.defaultObjectIniLoaded === true
+      && probe.objectDirectoryLoaded === true
+      && probe.objectIniFileCount === 43
+      && probe.fileSystemObjectIniFileCount === 43
+      && probe.objectIniFilesLoaded === 43,
+    `${context} object INI file coverage mismatch`, probe);
+  expect(probe.gameDataLoaded === true
+      && probe.gameTextCsfLoaded === true
+      && probe.scienceLoaded === true
+      && probe.particleSystemLoaded === true
+      && probe.fxListLoaded === true
+      && probe.weaponLoaded === true
+      && probe.objectCreationListLoaded === true
+      && probe.locomotorLoaded === true
+      && probe.specialPowerLoaded === true
+      && probe.damageFXLoaded === true
+      && probe.armorLoaded === true,
+    `${context} object-template prerequisite stores did not load`, probe);
+  expect(probe.moduleFactoryInitialized === true
+      && probe.moduleFactoryIsW3D === true
+      && probe.hasW3DDefaultDraw === true
+      && probe.hasW3DModelDraw === true
+      && probe.hasDestroyDie === true
+      && probe.hasInactiveBody === true
+      && probe.hasAIUpdateInterface === true
+      && probe.hasGarrisonContain === true
+      && probe.thingFactoryIsW3D === true,
+    `${context} W3D module/thing factory ownership mismatch`, probe);
+  expect(Number.isInteger(probe.templateCount) && probe.templateCount >= 1800,
+    `${context} object template count too low`, probe);
+
+  const humvee = lookupByName(probe.lookups, "AmericaVehicleHumvee");
+  const rebel = lookupByName(probe.lookups, "GLAInfantryRebel");
+  const raptor = lookupByName(probe.lookups, "AmericaJetRaptor");
+  const overlord = lookupByName(probe.lookups, "ChinaTankOverlord");
+  expect(lookupByName(probe.lookups, "DefaultThingTemplate")?.found === true,
+    `${context} DefaultThingTemplate lookup failed`, probe.lookups);
+  expect(humvee?.found === true
+      && humvee.side === "America"
+      && humvee.buildCost === 700
+      && humvee.transportSlotCount === 3
+      && humvee.isVehicle === true
+      && humvee.isInfantry === false
+      && humvee.isSelectable === true,
+    `${context} AmericaVehicleHumvee fields mismatch`, humvee);
+  expect(rebel?.found === true
+      && rebel.side === "GLA"
+      && rebel.buildCost === 150
+      && rebel.transportSlotCount === 1
+      && rebel.isVehicle === false
+      && rebel.isInfantry === true
+      && rebel.isSelectable === true,
+    `${context} GLAInfantryRebel fields mismatch`, rebel);
+  expect(raptor?.found === true && overlord?.found === true,
+    `${context} representative vehicle/aircraft template lookup failed`, probe.lookups);
 }
 
 function assertAudioOwnedFrontier(state) {
@@ -543,14 +766,44 @@ function assertAudioOwnedFrontier(state) {
       && frontier.audioManagerRuntime.tornDown === true,
     "frontier audioManagerRuntime summary mismatch", frontier.audioManagerRuntime);
   expect(frontier.functionLexiconRuntime?.ready === false
-      && frontier.functionLexiconRuntime.status === "base_function_lexicon_control_bar_input_runtime_owned"
+      && frontier.functionLexiconRuntime.status === "base_function_lexicon_remaining_callback_groups_deferred"
       && frontier.functionLexiconRuntime.w3dDeviceDrawReady === true
       && frontier.functionLexiconRuntime.w3dLayoutInitReady === true
       && frontier.functionLexiconRuntime.messageBoxSystemReady === true
-      && frontier.functionLexiconRuntime.nextRequired === "originalFunctionLexiconRemainingShellCallbacks",
+      && frontier.functionLexiconRuntime.nextRequired === "originalFunctionLexiconRemainingCallbackOwners"
+      && frontier.functionLexiconRuntime.missingCallbackGroupCount === 13,
     "frontier functionLexiconRuntime summary mismatch", frontier.functionLexiconRuntime);
+  expect(frontier.moduleFactoryRuntime?.ready === true
+      && frontier.moduleFactoryRuntime.status === "ready"
+      && frontier.moduleFactoryRuntime.baseBehaviorReady === true
+      && frontier.moduleFactoryRuntime.clientUpdateReady === true
+      && frontier.moduleFactoryRuntime.w3dDrawReady === true
+      && frontier.moduleFactoryRuntime.nextRequired === "createParticleSystemManager",
+    "frontier moduleFactoryRuntime summary mismatch", frontier.moduleFactoryRuntime);
+  expect(frontier.particleSystemRuntime?.ready === true
+      && frontier.particleSystemRuntime.status === "ready"
+      && frontier.particleSystemRuntime.w3dManagerReady === true
+      && frontier.particleSystemRuntime.templateCount > 100
+      && frontier.particleSystemRuntime.templateLookupsReady === true
+      && frontier.particleSystemRuntime.zeroLiveSystems === true
+      && frontier.particleSystemRuntime.nextRequired === "createThingFactory",
+    "frontier particleSystemRuntime summary mismatch", frontier.particleSystemRuntime);
+  expect(entryByFactory(frontier, "createModuleFactory")?.ready === true
+      && entryByFactory(frontier, "createModuleFactory")?.status === "browser_runtime_initialized_original_w3d_module_factory",
+    "createModuleFactory frontier entry should be runtime-owned", frontier);
+  expect(entryByFactory(frontier, "createParticleSystemManager")?.ready === true
+      && entryByFactory(frontier, "createParticleSystemManager")?.status === "browser_runtime_initialized_original_w3d_particle_system_manager",
+    "createParticleSystemManager frontier entry should be runtime-owned", frontier);
+  expect(entryByFactory(frontier, "createThingFactory")?.ready === false
+      && entryByFactory(frontier, "createThingFactory")?.status === "needs_browser_thing_factory",
+    "createThingFactory frontier entry should remain blocked until FunctionLexicon is fully owned",
+    frontier);
   expect(startup.browserDeviceLayer?.functionLexicon === false,
     "browser device layer should not mark the full function lexicon runtime-owned", startup.browserDeviceLayer);
+  expect(startup.browserDeviceLayer.moduleFactory === true,
+    "browser device layer should mark the module factory runtime-owned", startup.browserDeviceLayer);
+  expect(startup.browserDeviceLayer.particleSystemManager === true,
+    "browser device layer should mark the particle system manager runtime-owned", startup.browserDeviceLayer);
 }
 
 function assertStartupSingletonsMissing(state) {
@@ -593,6 +846,10 @@ function assertOriginalStartupFrontier(state) {
   expect(browserLayer.audioManager === false, "browser audio manager should not be runtime-ready", browserLayer);
   expect(browserLayer.functionLexicon === false,
     "browser function lexicon should not be runtime-ready without archives", browserLayer);
+  expect(browserLayer.moduleFactory === false,
+    "browser module factory should not be runtime-ready without archives", browserLayer);
+  expect(browserLayer.particleSystemManager === false,
+    "browser particle system manager should not be runtime-ready without archives", browserLayer);
   expect(browserLayer.display === false, "browser display should not be production-ready", browserLayer);
 
   const frontier = startup.deviceFactoryFrontier;
@@ -687,6 +944,16 @@ function assertOriginalStartupFrontier(state) {
       && frontier.functionLexiconRuntime.status === "missing_runtime_archives",
     "function lexicon runtime should be blocked without archives",
     frontier.functionLexiconRuntime);
+  expect(frontier.moduleFactoryRuntime?.attempted === true
+      && frontier.moduleFactoryRuntime.ready === false
+      && frontier.moduleFactoryRuntime.status === "missing_runtime_archives",
+    "module factory runtime should be blocked without archives",
+    frontier.moduleFactoryRuntime);
+  expect(frontier.particleSystemRuntime?.attempted === true
+      && frontier.particleSystemRuntime.ready === false
+      && frontier.particleSystemRuntime.status === "missing_runtime_archives",
+    "particle system runtime should be blocked without archives",
+    frontier.particleSystemRuntime);
 
   expect(frontier.fileSystemReady === false, "frontier filesystem should not be archive-ready", frontier);
   expect(frontier.startupFilesReady === false, "frontier startup files should be missing", frontier);
@@ -700,12 +967,15 @@ let browser;
 try {
   browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  attachConsoleLogger(page, "startup");
   const harnessUrl = new URL("harness/index.html", server.url).href;
 
+  debugLog("loading initial harness page");
   await page.goto(harnessUrl, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
 
   console.error("[vertical] phase1 boot");
+  debugLog("running archiveless boot");
   const bootResult = await page.evaluate(() => window.CnCPort.rpc("boot", {
     source: "startup vertical smoke",
   }));
@@ -727,10 +997,12 @@ try {
   await page.locator("#viewport").screenshot({ path: canvasScreenshot });
 
   // Archive-backed boot: mount the startup + audio archive set and prove the
-  // boot constructs the original MilesAudioManager and W3DFunctionLexicon,
+  // boot constructs the original MilesAudioManager, W3DFunctionLexicon, and
+  // W3DModuleFactory / W3DParticleSystemManager,
   // runs the real AudioManager::init()/openDevice() path plus the original
-  // W3DFunctionLexicon device-table load, original MainMenu/Credits/Skirmish
-  // base shell callbacks, the promoted Challenge/PopupCommunicator/MapSelect/Replay/PopupReplay-modal/GameInfo owners,
+  // W3DFunctionLexicon device-table load, original ControlBarObserver/GameWinBlockInput/MOTD/MainMenu/Credits/Skirmish
+  // base shell callbacks, the promoted Options/SkirmishMapSelect/Challenge/PopupCommunicator/MapSelect/Replay/PopupReplay-modal/GameInfo owners,
+  // and the post-particle W3DThingFactory/object-template parse surface,
   // and honestly keeps the device-factory frontier at createFunctionLexicon
   // until the remaining shell callback graph is owned by cnc-port.
   // W3DFunctionLexicon device-table load, representative original base
@@ -738,11 +1010,15 @@ try {
   // createFunctionLexicon until the remaining shell callback graph is owned
   // by cnc-port.
   console.error("[vertical] phase2 audio archives");
+  // until the remaining callback owner groups are owned by cnc-port.
   const archives = await buildAudioOwnershipArchiveSpecs();
   const audioPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  attachConsoleLogger(audioPage, "archive");
+  debugLog("loading archive-backed harness page");
   await audioPage.goto(harnessUrl, { waitUntil: "networkidle" });
   await audioPage.waitForFunction(() => Boolean(window.CnCPort?.rpc));
 
+  debugLog("mounting archive-backed startup set");
   const mountResult = await audioPage.evaluate((payload) =>
     window.CnCPort.rpc("mountRangeBackedArchiveSet", payload), {
     path: "/assets/startup-audio",
@@ -759,9 +1035,11 @@ try {
   expect(mountResult.ok === true, "audio-ownership archive mount failed", mountResult.archiveSet);
 
   console.error("[vertical] phase2 audio boot");
+  debugLog("running archive-backed boot");
   const audioBootResult = await audioPage.evaluate(() => window.CnCPort.rpc("boot", {
     source: "startup vertical smoke (audio ownership)",
   }));
+  debugLog("archive-backed boot returned");
   expect(audioBootResult.ok === true, "audio-ownership boot RPC failed", audioBootResult);
   expect(audioBootResult.state?.booted === true, "audio-ownership boot state mismatch", audioBootResult);
   expect(audioBootResult.state.startupSingletons?.ok === true,
@@ -770,7 +1048,16 @@ try {
 
   assertAudioManagerRuntimeOwned(audioBootResult.state);
   assertFunctionLexiconRuntimeFrontier(audioBootResult.state);
+  assertModuleFactoryRuntimeFrontier(audioBootResult.state);
+  assertParticleSystemRuntimeFrontier(audioBootResult.state);
   assertAudioOwnedFrontier(audioBootResult.state);
+
+  debugLog("probing archive-backed object INI runtime");
+  const objectIniResult = await audioPage.evaluate(() => window.CnCPort.rpc("probeObjectIni", {
+    path: "/assets/startup-audio/*.big",
+  }));
+  expect(objectIniResult.ok === true, "archive-backed object INI probe RPC failed", objectIniResult);
+  assertObjectIniThingFactoryRuntime(objectIniResult.probe, "archive-backed startup");
 
   await audioPage.screenshot({ path: audioBootScreenshot });
 
@@ -825,6 +1112,9 @@ try {
       firstUnownedInitLine: audioFrontier.firstUnownedInitLine,
       audioManagerRuntime: audioBootResult.state.audioManagerRuntime,
       functionLexiconRuntime: audioBootResult.state.functionLexiconRuntime,
+      moduleFactoryRuntime: audioBootResult.state.moduleFactoryRuntime,
+      particleSystemRuntime: audioBootResult.state.particleSystemRuntime,
+      objectIniRuntime: objectIniResult.probe,
     },
     realEngineInit: {
       archiveCount: realInitMount.archiveSet?.archiveCount,

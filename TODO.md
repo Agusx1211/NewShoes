@@ -74,10 +74,17 @@ residue and the next frontier.
       device draw/layout tables, loads the non-network base GUI
       system/input/tooltip/widget plus IME draw callback table, registers
       representative original base layout callbacks, and now owns the original
-      `ExtendedMessageBoxSystem`, original `DifficultySelect`
-      system/input/init callbacks, original
+      `ControlBarObserverSystem` callback-name lookup with original
+      `ControlBarObserver.cpp` observer UI code linked, original
+      `GameWinBlockInput` callback-name lookup with original
+      `SelectionXlat.cpp` linked for `TheSelectionTranslator`, original
+      `ExtendedMessageBoxSystem`, original W3D `MOTDSystem`, original
+      `DifficultySelect` system/input/init callbacks, original
       `KeyboardOptionsMenu` system/input/init/update/shutdown callbacks with
-      original `MetaEvent` global ownership, original `InGamePopupMessage`
+      original `MetaEvent` global ownership, original `OptionsMenu`
+      system/input/init/update/shutdown callbacks with original
+      `OptionPreferences` ownership, original `SkirmishMapSelectMenu`
+      system/input/init/update/shutdown callbacks, original `InGamePopupMessage`
       system/input/init callbacks with original `InGameUI` global ownership,
       original `IdleWorkerSystem`, original `BeaconWindowInput`, original
       `ControlBarInput`, original `ReplayControl` system/input callbacks,
@@ -89,19 +96,46 @@ residue and the next frontier.
       `MapSelectMenu` system/input/init/update/shutdown callbacks, original
       `ReplayMenu` system/input/init/update/shutdown callbacks, original
       `PopupReplay` input/init/shutdown modal callbacks, plus the passive
-      original `GameInfoWindowSystem` callback-name lookup without owning LAN
-      game-info population; the remaining `FunctionLexicon` boundary is the
-      rest of the non-network layout callback graph);
+      original `GameInfoWindowSystem`/`GameInfoWindowInit` callback-name
+      lookups without owning LAN game-info population; the remaining
+      `FunctionLexicon` boundary is now
+      reported by startup JSON as explicit missing callback owner groups:
+      save/load, quit menu, score-screen/replay-save, control-bar command/HUD,
+      generals experience points, LAN/game-network menus, WOL/GameSpy overlays,
+      direct-connect/download menus, and in-game network menus). The same archive-backed
+      boot now constructs original `W3DModuleFactory`, runs
+      `W3DModuleFactory::init()`, and proves public `ModuleFactory` lookups for
+      representative base gameplay, client-update, and W3D draw modules. It
+      also constructs original `W3DParticleSystemManager`, links the required
+      original `W3DParticleSys.cpp` / `W3DSnow.cpp` device sources, runs
+      inherited `ParticleSystemManager::init()` over
+      `Data\INI\ParticleSystem.ini`, and proves representative shipped
+      particle-template lookups. The startup vertical now also mounts all 43
+      shipped `Data\INI\Object\*.ini` definitions and runs the existing
+      original `W3DThingFactory` / `ThingFactory` object-template parse runtime
+      against that archive-backed set, proving 2,099 shipped templates plus
+      representative Humvee/Rebel/Raptor/Overlord lookups; true
+      `GameEngine.cpp:482` ownership still waits for `FunctionLexicon` to be
+      fully owned;
       archiveless or music-less boots honestly stay at line 434.
 - [ ] Own `createFunctionLexicon` (`W3DFunctionLexicon`, `GameEngine.cpp:446`)
-      and then `createModuleFactory` (line 447) in the browser boot — the new
-      first unowned init factories now that `TheAudio` is owned. The current
+      and then advance past the now-proven `createModuleFactory` (line 447) and
+      `createParticleSystemManager` (line 453) toward the post-particle
+      data-store stretch before `createThingFactory` (line 482) in the browser
+      boot. The current
       linked runtime constructs original `W3DFunctionLexicon` and verifies the
       W3D device draw/layout callback tables plus the non-network base GUI
-      system/input/tooltip/widget, IME draw, original `PopupReplay`
+      system/input/tooltip/widget, IME draw, original `ControlBarObserverSystem`
+      lookup, original `GameWinBlockInput`
+      lookup with original `SelectionXlat.cpp` symbol ownership, original `PopupReplay`
       input/init/shutdown modal lookups, original `ExtendedMessageBoxSystem`,
+      original W3D `MOTDSystem` lookup,
       original `DifficultySelect` system/input/init lookups, original
       `KeyboardOptionsMenu` system/input/init/update/shutdown lookups,
+      original `OptionsMenu` system/input/init/update/shutdown lookups with
+      the old `wasm_real_ini_compat.cpp` `OptionPreferences` fallback retired,
+      original `SkirmishMapSelectMenu` system/input/init/update/shutdown
+      lookups,
       original `InGamePopupMessage` system/input/init lookups,
       original `IdleWorkerSystem`, `BeaconWindowInput`, `ControlBarInput`, and
       `ReplayControl` system/input lookups, and
@@ -112,24 +146,50 @@ residue and the next frontier.
       `PopupCommunicator` system/input/init/shutdown lookups plus original
       `MapSelectMenu` system/input/init/update/shutdown lookups plus original
       `ReplayMenu` system/input/init/update/shutdown lookups plus the passive
-      original `GameInfoWindowSystem` callback-name lookup, but full ownership
-      still needs the remaining original base `FunctionLexicon.cpp`
-      non-network layout callback graph without pulling LAN/WOL/GameSpy/
-      embedded-web menu behavior into `cnc-port`. Next promote the remaining
-      non-network layout callback owners in small groups while leaving
-      online/download/embedded web menus at explicit browser boundaries.
-      The real
-      `W3DModuleFactory` + all 224 module registrations already link into
-      `cnc-port` via `zh_gameengine_real_object_ini_runtime`, so lexicon/module
-      factory ownership should reuse that surface instead of relinking it.
+      original `GameInfoWindowSystem`/`GameInfoWindowInit` callback-name
+      lookups, but full ownership
+      still needs the remaining original base `FunctionLexicon.cpp` callback
+      owner groups without pulling LAN/WOL/GameSpy/download/embedded-web menu
+      behavior into `cnc-port`. The runtime frontier now reports those missing
+      groups as structured startup state (`missingCallbackGroups`) instead of a
+      hand-curated "remaining shell" label. Next promote non-network groups
+      only when their real owners are linked, while leaving online/download/
+      embedded-web menus at explicit browser boundaries.
+      The real `W3DModuleFactory` + all 224 module registrations now reuse the
+      `zh_gameengine_real_object_ini_runtime` link surface in the browser
+      startup: `moduleFactoryRuntime` constructs the original module factory,
+      runs `W3DModuleFactory::init()`, and verifies representative
+      `findModuleInterfaceMask()` lookups. `particleSystemRuntime` constructs
+      original `W3DParticleSystemManager`, runs the real
+      `ParticleSystemManager::init()` INI load, and verifies 1084 shipped
+      particle templates through public lookups. The startup vertical now also
+      runs the archive-backed `W3DThingFactory` object-template parser over the
+      full shipped object INI set and verifies representative unit templates,
+      but keeps the first unowned init factory at `createFunctionLexicon` until
+      the callback graph is complete; after that the next startup owner is true
+      `createThingFactory` residency rather than the current focused
+      object-template probe.
 - [ ] Promote `PopupReplaySystem` and `PopupReplayUpdate` only after the
       ScoreScreen replay-save state is split or runtime-owned without pulling
       LAN/WOL/GameSpy into `cnc-port`. Directly registering those callbacks
       retains `LastReplayFileName` and `ScoreScreenEnableControls()` from
       original `ScoreScreen.cpp`; do not replace that with fake weak stubs.
+- [ ] Promote `QuitMenuSystem` only after the original `GameLogic`,
+      `MessageStream`, `GameState`, `Recorder`, `InGameUI`, `Shell`,
+      `ControlBar`, victory-condition, and `ScriptEngine` ownership surface is
+      ready in the linked runtime. The callback name is non-online, but the
+      original `QuitMenu.cpp` owner immediately reaches broad gameplay and UI
+      state; do not register it through weak stand-ins.
+- [ ] Promote the `ScoreScreen*` FunctionLexicon callbacks only after the
+      original score-screen owner can run with real `GameState`, `InGameUI`,
+      campaign/LOD, video/audio, `SkirmishBattleHonors`, and message-resource
+      behavior in the linked runtime instead of the current focused movie/score
+      hooks.
 - [ ] Promote `ControlBarSystem` and `LeftHUDInput` only after the original
       control-bar command/radar/player ownership surface is ready in the
       linked runtime. The passive `ControlBarInput` callback is now registered,
+      and the observer-only `ControlBarObserverSystem` callback name is now
+      registered from original `ControlBarObserver.cpp`,
       but the broader control-bar system/HUD callbacks reach gameplay command,
       radar, mouse, player-list, and in-game UI state; keep those out of
       `cnc-port` until that ownership is real instead of weak-stubbed.
@@ -139,6 +199,16 @@ residue and the next frontier.
       currently owns only the Win32-style `SYSTEMTIME` date/time formatting
       symbols needed by original `ReplayMenu.cpp`; full save/load and
       `GameState` snapshot behavior remain unowned.
+- [ ] Promote the `SaveLoadMenu*` callbacks from original
+      `GUI/GUICallbacks/Menus/PopupSaveLoad.cpp` only after the save/load,
+      `GameState`, `CampaignManager`, and persistence surfaces can be
+      runtime-owned without weak stubs. The callback group appears non-network,
+      but it should not become a FunctionLexicon frontier claim until those
+      owners are real.
+- [ ] Replace the weak `LANPreferences::usesSystemMapDir()` fresh-install
+      browser boundary used by `SkirmishMapSelectMenu` with a split original
+      LAN preferences owner or final browser preferences storage once that can
+      be done without linking the LAN lobby/GameSpy flow into `cnc-port`.
 - [ ] Stage base-Generals `Music.big` in `extract_zh_runtime_archives.sh`
       (currently manually extracted via
       `cabextract -F Music.big` from the Generals CD1 `Data1.cab` into
@@ -161,10 +231,10 @@ residue and the next frontier.
       `TheGameLogic`/`ThePartitionManager`/`TheGameClient` ownership, but the
       object-INI slice still needs the full production owner instead of the
       focused bridge-scene owner.
-- [ ] Revisit `GameWinBlockInput` once `SelectionTranslator` is runtime-owned;
-      it is the only non-network base input callback intentionally left out of
-      the current widget FunctionLexicon slice because it pulls
-      `TheSelectionTranslator`.
+- [ ] Exercise the original `GameWinBlockInput` left-button-release path after
+      the real `GameClient` init attaches original `SelectionTranslator` to the
+      message stream; the callback name now resolves in `FunctionLexicon`, but
+      behavioral coverage belongs with real input/game-client ownership.
 - [ ] Promote `GeneralsExpPointsSystem`/`GeneralsExpPointsInput` after the
       original `ControlBar` command path is runtime-owned. A direct callback
       registration links `GUI/GUICallbacks/GeneralsExpPoints.cpp` but then
@@ -195,6 +265,15 @@ residue and the next frontier.
       serialize npm scripts that share `WebAssembly/build/wasm`. Concurrent
       `build:wasm` runs can race during CMake/Ninja regeneration and fail with
       `ninja: error: failed recompaction` before the harness code runs.
+- [ ] Investigate the browser-stage hang in `test:runtime-archives-browser`.
+      On 2026-07-02, `timeout --kill-after=15s 300s npm --prefix WebAssembly
+      run test:runtime-archives-browser` reached
+      `harness/runtime_archives_smoke.mjs` and exited 124 with
+      `page.evaluate: Target crashed`; the focused startup vertical still
+      proves the W3D particle-system startup runtime. A later 2026-07-02
+      `test:vertical-integrations` attempt also reached
+      `harness/runtime_archives_smoke.mjs` after startup vertical passed and
+      stayed silent until manually interrupted.
 
 ---
 
@@ -405,11 +484,15 @@ residue and the next frontier.
 - [ ] Replace the focused command-line runtime's local
       `DX8Wrapper_PreserveFPU` compatibility definition with the original W3D
       DX8 wrapper state once the W3D runtime links into `cnc-port`.
-- [ ] Replace the focused browser-default `UserPreferences` /
-      `OptionPreferences` compatibility definitions used by the original
-      `GameData.ini` preflight with the real Options menu/user-preference
-      persistence path once browser settings storage and menu ownership are
-      linked.
+- [ ] Replace the Emscripten no-op `UserPreferences::load()`/`write()`
+      boundary in original `Common/UserPreferences.cpp` with real browser
+      settings storage. The old main-runtime `OptionPreferences` compatibility
+      fallback has been retired in favor of the original `OptionsMenu.cpp`
+      owner.
+- [ ] Replace the Emscripten no-op local `IPEnumeration` boundary with the
+      final browser networking/local-address contract once LAN/GameSpy
+      networking is in scope. The current browser path returns no native local
+      addresses so startup preference reads do not enter WinSock/DNS code.
 - [ ] Enable and route `MiniLog.cpp`'s `DEBUG_LOGGING` body to the browser log
       or harness once the real `GameLogic` frame counter is available.
 - [ ] Decide the browser copy-protection / launcher contract before compiling
@@ -635,8 +718,8 @@ residue and the next frontier.
       boundaries and avoiding download, transition, and game-start branches. It
       still uses focused display/font/text shims and no-op branch boundaries for
       undriven campaign/GameSpy/download/options paths, so full production
-      `W3DDisplay` construction and `W3DModuleFactory` module-template lookup
-      still need original public-API runtime proof. The linked `cnc-port`
+      `W3DDisplay` construction still needs original public-API runtime proof.
+      The linked `cnc-port`
       startup now constructs original `W3DFunctionLexicon` and verifies its W3D
       device callback-name lookups, but the base `FunctionLexicon` callback
       tables remain the honest `createFunctionLexicon` blocker.
@@ -645,12 +728,12 @@ residue and the next frontier.
       `Win32GameEngine::createModuleFactory -> W3DModuleFactory` mapping,
       `GameEngine.cpp` call site, and all 19 original W3D draw-module
       registrations through the public `ModuleFactory` lookup internals; the
-      attempted standalone runtime lookup pulled the base ModuleFactory / INI /
-      game-client global graph, so the full `W3DModuleFactory::init()` runtime
-      proof should follow original `GameEngine.cpp` ownership of the
-      pre-`createAudioManager` file/INI/CD frontier. Advance the next vertical
-      slice outside the already-proven shell menu path unless a new menu flow
-      is driven through real original input/navigation and asset loading.
+      startup vertical now performs the corresponding browser runtime proof by
+      running original `W3DModuleFactory::init()` and checking public
+      `findModuleInterfaceMask()` results for base gameplay, client-update, and
+      W3D draw modules. Advance the next vertical slice outside the
+      already-proven shell menu path unless a new menu flow is driven through
+      real original input/navigation and asset loading.
       `test:vertical-integrations` now gates runtime archive preload/startup
       asset consumption, range-backed startup archive delivery, WindowZH-backed
       MainMenu dropdown/back and CreditsMenu layout callbacks, mapped-image
@@ -1098,7 +1181,11 @@ residue and the next frontier.
       `WaterRenderObjClass` call-path probes once those renderer surfaces are
       linked into the browser runtime without broad compile-frontier-only
       dependencies.
-- [ ] Particles (`W3DParticleSys`), shadows, water, shroud, decals (later).
+- [ ] Particle rendering (`W3DParticleSys::doParticles` against the real W3D
+      scene/display/terrain/texture path), shadows, water, shroud, decals
+      (later). Startup ownership is already proven by `particleSystemRuntime`,
+      including original W3D particle/snow device-source linkage and
+      `ParticleSystem.ini` template loading.
 - [ ] Replace the focused particle-template metadata path's weak Object/Drawable
       compatibility bridges with the full original `ParticleSystem` /
       `ParticleSystemManager` runtime once object, drawable, game-client, and
@@ -1155,14 +1242,48 @@ residue and the next frontier.
       `PlayerList::getNthPlayer` neutral-player ownership, original
       `ScriptEngine::setGlobalDifficulty`, original `Shell::hideShell`, and
       the first-call `startNewGame(FALSE)` deferral before terrain load. That
-      runtime still uses a focused in-memory BlankWindow adapter; replace that
-      with a real owner before continuing the deferred update into
-      terrain/player/script map-load ownership. The current inventory now
-      proves base `Window.big` supplies `Window\Menus\BlankWindow.wnd` and
-      passes `--require-blank-window-layout`; remaining work is to replace the
-      in-memory BlankWindow adapter through the archive-backed
-      `WindowLayout::load` path before continuing the deferred update into
-      terrain/player/script map-load ownership.
+      runtime now mounts base `Window.big` and drives both the seeded shell
+      layout and `prepareNewGame` background through original
+      `GameWindowManager::winCreateLayout` / `WindowLayout::load` parsing for
+      `Window\Menus\BlankWindow.wnd`. It now also mounts `MapsZH.big`,
+      promotes shipped `Maps\MD_GLA03\MD_GLA03.map`, and proves original
+      `W3DTerrainLogic::loadMap(false)` / `WorldHeightMap` /
+      `TerrainLogic::loadMap` / `TerrainVisual::load` ownership over the same
+      map, including object, waypoint, side/team, time-of-day, and 3800x3800
+      extent checks. The same runtime now mounts `INIZH.big` / base `INI.big`,
+      loads original startup `Multiplayer`, `Science`, `AIData`, and
+      `PlayerTemplate` INI data, validates the parsed 11 sides and 97 teams,
+      constructs original `AIPlayer` state, resets `TeamFactory`, populates 11
+      players through `PlayerList::newGame`, and preserves 465 side scripts
+      through `ScriptEngine::newMap`. It now also calls original
+      `Radar::newMap` with the loaded terrain and a focused LeftHUD window
+      owner, proving the radar extent/sample/coordinate translation state for
+      `MD_GLA03`. It now continues through original GameData-backed
+      `PartitionManager::init` and `refreshShroudForLocalPlayer`, proving the
+      loaded-map partition grid and initial display/radar shroud refresh. It
+      now also owns original `GhostObjectManager` local-player index assignment
+      and reset. It now drives original `W3DTerrainLogic::newMap(FALSE)`
+      against a real `BaseHeightMapRenderObjClass` owner with original
+      `TerrainTypes.cpp`, `TerrainRoads.cpp`, `DX8Wrapper.cpp`, `rendobj.cpp`,
+      and save/load support linked, proving the road-buffer handoff plus base
+      `TerrainLogic::newMap` waypoint Z and water-grid setup. It now also
+      installs the original `W3DBridgeBuffer` in the startup runtime with
+      startup-only deferred GPU buffer allocation, proves the empty
+      `MD_GLA03` `W3DBridgeBuffer::loadBridges` scan and bridge damage-state
+      update, then directly calls original `Pathfinder::newMap` to prove the
+      loaded terrain grid allocation/classification. Next promote the original
+      post-terrain bridge-like map-object spawning loop that sits before
+      `Pathfinder::newMap`, then replace the direct no-bridge pathfinder proof
+      with the original ordered `startNewGame` sequence.
+- [ ] Retire the startup-only `W3DBridgeBuffer` GPU-buffer deferral hook once
+      `gamelogic-new-game-dispatch-smoke` either runs with a browser/WebGL-backed
+      D3D8 device or promotes bridge rendering/buffer allocation into the same
+      runtime instead of proving only the no-bridge map scan in Node.
+- [ ] Retire the handoff-only road segment cap in
+      `gamelogic-new-game-dispatch-smoke` once this startup runtime can own
+      full road/bridge map-object spawning or render-owned road geometry
+      without using the separate terrain road-buffer scene as the geometry
+      proof.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---

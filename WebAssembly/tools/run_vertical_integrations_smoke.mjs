@@ -83,12 +83,26 @@ function assertDeviceFrontier(payload, label) {
   const frontier = payload.originalEngineStartup?.deviceFactoryFrontier;
   const audioManagerReady = frontier?.audioManagerRuntime?.ready === true;
   const functionLexiconReady = frontier?.functionLexiconRuntime?.ready === true;
-  const expectedFirstUnownedFactory = audioManagerReady
-    ? (functionLexiconReady ? "createModuleFactory" : "createFunctionLexicon")
-    : "createAudioManager";
-  const expectedFirstUnownedLine = audioManagerReady
-    ? (functionLexiconReady ? 447 : 446)
-    : 434;
+  const moduleFactoryReady = frontier?.moduleFactoryRuntime?.ready === true;
+  const particleSystemReady = frontier?.particleSystemRuntime?.ready === true;
+  const expectedFirstUnownedFactory = !audioManagerReady
+    ? "createAudioManager"
+    : !functionLexiconReady
+      ? "createFunctionLexicon"
+      : !moduleFactoryReady
+        ? "createModuleFactory"
+        : !particleSystemReady
+          ? "createParticleSystemManager"
+          : "createThingFactory";
+  const expectedFirstUnownedLine = !audioManagerReady
+    ? 434
+    : !functionLexiconReady
+      ? 446
+      : !moduleFactoryReady
+        ? 447
+        : !particleSystemReady
+          ? 453
+          : 482;
   expect(frontier?.firstUnownedInitFactory === expectedFirstUnownedFactory,
     `${label} did not report the expected first unowned device factory`, frontier);
   expect(frontier.firstUnownedInitLine === expectedFirstUnownedLine,
@@ -134,9 +148,17 @@ function assertStartupSingletonFrontier(payload, label) {
   if (baseIniMounted) {
     const audioManagerReady = frontier?.audioManagerRuntime?.ready === true;
     const functionLexiconReady = frontier?.functionLexiconRuntime?.ready === true;
-    const expectedNextRequired = audioManagerReady
-      ? (functionLexiconReady ? "createModuleFactory" : "createFunctionLexicon")
-      : "createAudioManager";
+    const moduleFactoryReady = frontier?.moduleFactoryRuntime?.ready === true;
+    const particleSystemReady = frontier?.particleSystemRuntime?.ready === true;
+    const expectedNextRequired = !audioManagerReady
+      ? "createAudioManager"
+      : !functionLexiconReady
+        ? "createFunctionLexicon"
+        : !moduleFactoryReady
+          ? "createModuleFactory"
+          : !particleSystemReady
+            ? "createParticleSystemManager"
+            : "createThingFactory";
     expect(startup.status === "browser_device_layer_pending",
       `${label} with base INI mounted should advance to browser device layer pending`, startup);
     expect(frontier.nextRequired === expectedNextRequired && frontier.setupReady === true,
@@ -167,7 +189,7 @@ const steps = [
         "startup vertical smoke did not cover original MilesAudioManager openDevice", payload);
       expect(payload.covered?.includes("original W3DGameWindowManager window and gadget ownership"),
         "startup vertical smoke did not cover original W3DGameWindowManager ownership", payload);
-      expect(payload.covered?.includes("runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, and first-call startNewGame(FALSE) deferral"),
+      expect(payload.covered?.includes("runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, first-call startNewGame(FALSE) deferral, MapsZH.big MD_GLA03 promotion, INIZH/INI startup data plus default and Zero Hour GameData.ini parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, AIPlayer construction, TeamFactory::initFromSides, PlayerList::newGame, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, GhostObjectManager local-player index/reset, TerrainRoadCollection/TerrainTypeCollection render-map setup, original W3DTerrainLogic::newMap road-buffer and W3DBridgeBuffer::loadBridges handoff, TerrainLogic waypoint/water setup, and original Pathfinder::newMap grid allocation/classification"),
         "startup vertical smoke did not cover runtime original GameLogic MSG_NEW_GAME dispatch through original GlobalData/PlayerList/ScriptEngine/Shell", payload);
       expect(payload.sourceChecks?.includes("gameengine-startup-order")
           && payload.sourceChecks?.includes("w3d-module-factory-frontier")
@@ -2368,7 +2390,7 @@ console.log(JSON.stringify({
   ok: true,
   path: "vertical-integrations",
   covered: [
-    "aggregate startup vertical covering browser GameEngine.cpp startup frontier, original GameEngine lifetime, original Miles openDevice, W3D window/layout ownership, source-pinned GameLogic MSG_NEW_GAME dispatch frontier, and runtime original GameLogic::processCommandList first-call deferral through original GlobalData TheWritableGlobalData, PlayerList::getNthPlayer, ScriptEngine::setGlobalDifficulty, and Shell::hideShell",
+    "aggregate startup vertical covering browser GameEngine.cpp startup frontier, original GameEngine lifetime, original Miles openDevice, W3D window/layout ownership, source-pinned GameLogic MSG_NEW_GAME dispatch frontier, and runtime original GameLogic::processCommandList first-call deferral through base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, PlayerList::getNthPlayer, ScriptEngine::setGlobalDifficulty, Shell::hideShell, INIZH/INI startup data parsing, W3DTerrainLogic::loadMap(false), side/player/team/script population, PlayerList::newGame, ScriptEngine::newMap, Radar::newMap, PartitionManager/GhostObjectManager handoff, original W3DTerrainLogic::newMap road/bridge buffer handoff, TerrainLogic waypoint/water setup, and original Pathfinder::newMap grid allocation/classification",
     "runtime archive preload, boot-time startup asset consumption, MSS 2D Web Audio sample playback, and startup singleton pre-audio frontier diagnostics",
     "browser Web Audio request-path playback for source-shaped AudioManager/SoundManager/MilesAudioManager 2D sample, 3D sample, and speech stream events",
     "original MilesAudioManager processRequest/playAudioEvent/playSample 2D sample playback through AudioFileCache, AIL_WAV_info, and MSS sample completion/release",
@@ -2404,7 +2426,7 @@ console.log(JSON.stringify({
   nextRequired: [
     "advance MainMenu WindowLayout repaint from curated target visibility to unpruned production shell composition and display-owned font/image/archive lifetime",
     "thread mounted base Generals INI.big/English.big startup coverage through production original GameEngine.cpp init ownership",
-    "replace the focused runtime BlankWindow layout adapter with archive-backed WindowLayout::load from mounted base Window.big",
+    "promote the original post-terrain bridge-like map-object spawning loop that sits before Pathfinder::newMap, then replace the direct no-bridge pathfinder proof with the original ordered startNewGame sequence",
     "broaden W3DTerrainVisual terrain ownership from the probe-mounted source-backed load window into production gameplay map-load, shroud, partition, and terrain logic ownership",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",

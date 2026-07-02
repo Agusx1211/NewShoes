@@ -137,6 +137,12 @@ const sourceChecks = [
           && payload.runtimeTargetBoundary?.originalShellCppLinked === true
           && payload.runtimeTargetBoundary?.originalDisplayCppLinked === true,
         'GameLogic new-game dispatch frontier did not prove the focused original runtime target with GlobalData/PlayerList/ScriptEngine/Shell ownership');
+      expect(payload.runtimeTargetBoundary?.bridgeBuffer?.smokeDeferralHookLine > 0
+          && payload.runtimeTargetBoundary.bridgeBuffer.installLine > 0
+          && payload.runtimeTargetBoundary.bridgeBuffer.loadBridgesProofLine > 0
+          && payload.runtimeTargetBoundary?.pathfinder?.newMapLine > 0
+          && payload.runtimeTargetBoundary.pathfinder.gridProofLine > 0,
+        'GameLogic new-game dispatch frontier did not prove startup W3DBridgeBuffer and Pathfinder::newMap ownership');
       expect(payload.runtimeTargetBoundary?.globalDataWritableSingletonLine > 0
           && payload.runtimeTargetBoundary?.globalDataMacroProofLine > 0
           && payload.runtimeTargetBoundary?.noLocalTheGlobalDataSingleton === true,
@@ -178,16 +184,85 @@ const browserChecks = [
           && payload.archiveBackedStartup.audioManagerRuntime.music?.alreadyLoaded === true
           && payload.archiveBackedStartup.audioManagerRuntime.teardown?.tornDown === true,
         'Archive-backed startup boot did not prove real init/music/teardown');
-      expect(payload.archiveBackedStartup.functionLexiconRuntime?.status === 'base_function_lexicon_control_bar_input_runtime_owned',
-        'Archive-backed startup boot did not report the expected ControlBar input FunctionLexicon frontier');
+      expect(payload.archiveBackedStartup.functionLexiconRuntime?.status === 'base_function_lexicon_remaining_callback_groups_deferred',
+        'Archive-backed startup boot did not report the expected remaining FunctionLexicon callback frontier');
+      expect(payload.archiveBackedStartup.functionLexiconRuntime?.missingCallbackGroupCount === 13
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups?.saveLoadMenu === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.quitMenu === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.popupReplayScoreState === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.scoreScreen === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.controlBarCommandHud === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.generalsExpPoints === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.lanMenus === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.inGameNetworkMenus === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.hostJoinNetworkPopups === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.onlineOverlayAndBattleHonors === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.wolShellMenus === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.networkDirectConnect === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.downloadMenu === true,
+        'Archive-backed startup boot did not report the expected missing FunctionLexicon owner groups');
       expect(payload.archiveBackedStartup.functionLexiconRuntime?.lookups?.popupReplayInput === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.popupReplayInit === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.popupReplayShutdown === true
-          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.controlBarInput === true,
-        'Archive-backed startup boot did not prove PopupReplay modal and ControlBar input callback lookups');
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.controlBarInput === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.controlBarObserverSystem === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.gameInfoWindowInit === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.gameWinBlockInput === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.motdSystem === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.optionsMenuSystem === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.optionsMenuInput === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.optionsMenuInit === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.optionsMenuUpdate === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.optionsMenuShutdown === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.skirmishMapSelectMenuSystem === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.skirmishMapSelectMenuInput === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.skirmishMapSelectMenuInit === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.skirmishMapSelectMenuUpdate === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.skirmishMapSelectMenuShutdown === true,
+        'Archive-backed startup boot did not prove PopupReplay modal, ControlBar input, ControlBarObserver, GameWinBlockInput, MOTD, OptionsMenu, and SkirmishMapSelectMenu callback lookups');
       expect(payload.archiveBackedStartup.functionLexiconRuntime?.lookups?.popupReplaySystem === undefined
           && payload.archiveBackedStartup.functionLexiconRuntime?.lookups?.popupReplayUpdate === undefined,
         'Archive-backed startup boot should leave PopupReplay score-screen-dependent callbacks unregistered');
+      expect(payload.archiveBackedStartup.moduleFactoryRuntime?.status === 'ready',
+        'Archive-backed startup boot did not report the expected W3DModuleFactory runtime frontier');
+      expect(payload.archiveBackedStartup.moduleFactoryRuntime?.lookups?.activeBody === true
+          && payload.archiveBackedStartup.moduleFactoryRuntime.lookups.destroyDie === true
+          && payload.archiveBackedStartup.moduleFactoryRuntime.lookups.beaconClientUpdate === true
+          && payload.archiveBackedStartup.moduleFactoryRuntime.lookups.w3dDefaultDraw === true
+          && payload.archiveBackedStartup.moduleFactoryRuntime.lookups.w3dModelDraw === true
+          && payload.archiveBackedStartup.moduleFactoryRuntime.lookups.w3dPropDraw === true,
+        'Archive-backed startup boot did not prove ModuleFactory gameplay/client-update/W3D draw lookups');
+      expect(payload.archiveBackedStartup.particleSystemRuntime?.status === 'ready',
+        'Archive-backed startup boot did not report the expected W3DParticleSystemManager runtime frontier');
+      expect(payload.archiveBackedStartup.particleSystemRuntime?.templateCount > 100
+          && payload.archiveBackedStartup.particleSystemRuntime?.templates?.tsingMaTrailSmoke === true
+          && payload.archiveBackedStartup.particleSystemRuntime.templates.jetContrailThin === true
+          && payload.archiveBackedStartup.particleSystemRuntime.templates.nukeMushroomRing === true,
+        'Archive-backed startup boot did not prove ParticleSystem.ini template ownership');
+      expect(payload.archiveBackedStartup.objectIniRuntime?.ok === true
+          && payload.archiveBackedStartup.objectIniRuntime.stage === 'done'
+          && payload.archiveBackedStartup.objectIniRuntime.objectIniFileCount === 43
+          && payload.archiveBackedStartup.objectIniRuntime.objectIniFilesLoaded === 43
+          && payload.archiveBackedStartup.objectIniRuntime.templateCount >= 1800
+          && payload.archiveBackedStartup.objectIniRuntime.thingFactoryIsW3D === true
+          && payload.archiveBackedStartup.objectIniRuntime.hasW3DModelDraw === true
+          && payload.archiveBackedStartup.objectIniRuntime.hasDestroyDie === true
+          && payload.archiveBackedStartup.objectIniRuntime.hasAIUpdateInterface === true
+          && payload.archiveBackedStartup.objectIniRuntime.lookups?.some((entry) =>
+            entry.name === 'AmericaVehicleHumvee'
+            && entry.found === true
+            && entry.side === 'America'
+            && entry.buildCost === 700
+            && entry.isVehicle === true
+            && entry.isSelectable === true)
+          && payload.archiveBackedStartup.objectIniRuntime.lookups?.some((entry) =>
+            entry.name === 'GLAInfantryRebel'
+            && entry.found === true
+            && entry.side === 'GLA'
+            && entry.buildCost === 150
+            && entry.isInfantry === true
+            && entry.isSelectable === true),
+        'Archive-backed startup boot did not prove W3DThingFactory object-template ownership');
       expect(payload.realEngineInit?.initReturned === true,
         'Real GameEngine::init() lifecycle run did not complete');
       expect(payload.realEngineInit?.subsystemCompletedCount === 43,
@@ -348,28 +423,172 @@ const steps = [
       expect(payload.ok === true, 'GameLogic new-game runtime smoke did not report ok');
       expect(payload.path === 'gamelogic-new-game-dispatch-runtime',
         'GameLogic new-game runtime smoke emitted the wrong path');
-      expect(payload.source === 'GeneralsMD original GlobalData.cpp/PlayerList.cpp/Player.cpp/GameLogic.cpp/GameLogicDispatch.cpp/ScriptEngine.cpp',
-        'GameLogic new-game runtime smoke did not link the original GlobalData/PlayerList/GameLogic sources');
+      expect(typeof payload.source === 'string'
+          && payload.source.includes('GlobalData.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp')
+          && payload.source.includes('GameState.cpp/TerrainTypes.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp')
+          && payload.source.includes('GameWindowManagerScript.cpp/HeaderTemplate.cpp')
+          && payload.source.includes('TerrainRoads.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp'),
+        'GameLogic new-game runtime smoke did not link the original GlobalData/INI/AI/PlayerList/GameLogic/Radar/Partition/WindowLayout/Terrain parser sources');
       expect(payload.message === 'MSG_NEW_GAME' && payload.playerLookupIndex === 0,
         'GameLogic new-game runtime smoke did not process the expected MSG_NEW_GAME player lookup');
-      expect(payload.playerCount === 1 && payload.neutralPlayerOwned === true,
-        'GameLogic new-game runtime smoke did not prove original PlayerList neutral-player ownership');
+      expect(payload.playerCount === 11
+          && payload.populatedPlayerCount === payload.validatedSides
+          && payload.validatedSides === 11
+          && payload.neutralPlayerOwned === true
+          && payload.localPlayerIndex === 2
+          && payload.localPlayerSide === 'GLA'
+          && payload.localDefaultTeam === 'teamThePlayer'
+          && payload.neutralDefaultTeam === 'team',
+        'GameLogic new-game runtime smoke did not prove original PlayerList/TeamFactory side population');
       expect(payload.difficulty === 2
           && payload.blankLayoutCreates === 2
           && payload.shellActive === false
           && payload.shellScreenCount === 1
-          && payload.shellLayoutShutdowns === 1
+          && payload.shellLayoutShutdowns === 0
           && payload.fpsLimit === 55
           && payload.useFpsLimit === true,
         'GameLogic new-game runtime smoke did not prove prepareNewGame/FPS side effects');
+      expect(payload.blankLayoutArchive === 'artifacts/real-assets/Window.big'
+          && payload.blankWindowArchiveLoaded === true
+          && payload.blankWindowFileExists === true
+          && payload.seedBlankWindowArchiveLayout === true
+          && payload.prepareBlankWindowArchiveLayout === true
+          && payload.blankWindowRoot === 'BlankWindow.wnd:BlankWindow'
+          && payload.blankWindowRootGeometry?.x === 0
+          && payload.blankWindowRootGeometry?.y === 0
+          && payload.blankWindowRootGeometry?.width === 800
+          && payload.blankWindowRootGeometry?.height === 600,
+        'GameLogic new-game runtime smoke did not prove archive-backed BlankWindow.wnd loading');
       expect(payload.gameMode === 'GAME_SKIRMISH'
           && payload.loadingMap === true
           && payload.rankPoints === 7
-          && payload.mapName === 'Maps\\Smoke\\Skirmish.map'
-          && payload.pristineMapName === 'Maps\\Smoke\\Skirmish.map',
+          && payload.mapName === 'Maps\\MD_GLA03\\MD_GLA03.map'
+          && payload.pristineMapName === 'Maps\\MD_GLA03\\MD_GLA03.map',
         'GameLogic new-game runtime smoke did not prove startNewGame first-call deferral state');
-      expect(payload.runtimeBoundaries?.includes('focused in-memory BlankWindow layout adapter')
+      expect(payload.mapArchive === 'artifacts/real-assets/MapsZH.big'
+          && payload.mapArchiveLoaded === true
+          && payload.mapFileExists === true
+          && payload.zhIniArchive === 'artifacts/real-assets/INIZH.big'
+          && payload.zhIniArchiveLoaded === true
+          && payload.baseIniArchive === 'artifacts/real-assets/INI.big'
+          && payload.baseIniArchiveLoaded === true
+          && payload.playerTemplateDefaultIniFileExists === true
+          && payload.playerTemplateIniFileExists === true
+          && payload.gameDataDefaultIniFileExists === true
+          && payload.gameDataIniFileExists === true
+          && payload.multiplayerDefaultIniFileExists === true
+          && payload.multiplayerIniFileExists === true
+          && payload.aiDataDefaultIniFileExists === true
+          && payload.aiDataIniFileExists === true
+          && payload.startupPlayerTemplateCount === 15
+          && payload.startupMultiplayerColorCount === 8
+          && payload.startupPartitionCellSize === 40
+          && payload.startupAiTeamSeconds === 10
+          && payload.terrainLoadMap === 'Maps\\MD_GLA03\\MD_GLA03.map'
+          && payload.terrainLoadReturned === true
+          && payload.terrainSourceFilename === 'Maps\\MD_GLA03\\MD_GLA03.map'
+          && payload.terrainVisualLoadCalled === true
+          && payload.terrainVisualLoadCalls === 1
+          && payload.terrainVisualLoadPath === 'Maps\\MD_GLA03\\MD_GLA03.map'
+          && payload.terrainMapObjects > 0
+          && payload.terrainWaypoints > 0
+          && payload.terrainRoadPoint1Objects > 0
+          && payload.terrainRoadPoint2Objects === payload.terrainRoadPoint1Objects
+          && payload.terrainBridgePoint1Objects === 0
+          && payload.terrainBridgePoint2Objects === payload.terrainBridgePoint1Objects
+          && payload.terrainSides === 11
+          && payload.terrainTeams === 97
+          && payload.terrainSideScriptsBeforeNewMap === 465
+          && payload.sidesValidateModified === false
+          && payload.validatedTeams === 97
+          && payload.sideScriptsBeforeScriptNewMap === 465
+          && payload.sideScriptsAfterScriptNewMap === 465
+          && payload.radarLeftHudWindowInstalled === true
+          && payload.radarWindowLookupCount === 1
+          && payload.radarWindowOwned === true
+          && payload.radarExtent?.hiX === 3800
+          && payload.radarExtent?.hiY === 3800
+          && payload.radarXSample > 29
+          && payload.radarXSample < 30
+          && payload.radarYSample > 29
+          && payload.radarYSample < 30
+          && payload.radarToWorldCenterOk === true
+          && payload.worldToRadarCenterOk === true
+          && payload.radarCenterWorld?.x === 1900
+          && payload.radarCenterWorld?.y === 1900
+          && payload.terrainCenterRadar?.x === 64
+          && payload.terrainCenterRadar?.y === 64
+          && payload.victoryCachePlayerPtrsCalls === 1
+          && payload.victoryConditions === 1
+          && payload.gameLogicWidthBeforePartition === 0
+          && payload.gameLogicHeightBeforePartition === 0
+          && payload.gameLogicWidthAfterPartition === 3800
+          && payload.gameLogicHeightAfterPartition === 3800
+          && payload.partitionCellSize === 40
+          && payload.expectedPartitionCellCountX === payload.partitionCellCountX
+          && payload.expectedPartitionCellCountY === payload.partitionCellCountY
+          && payload.partitionCellCountX === 96
+          && payload.partitionCellCountY === 96
+          && payload.partitionTotalCells === 9216
+          && payload.displayClearShroudCalls === 1
+          && payload.radarClearShroudCalls === 1
+          && payload.displaySetShroudCalls === payload.partitionTotalCells
+          && payload.radarSetShroudCalls === payload.partitionTotalCells
+          && payload.displayShroudedSetCalls === payload.partitionTotalCells
+          && payload.radarShroudedSetCalls === payload.partitionTotalCells
+          && payload.displayFoggedSetCalls === 0
+          && payload.radarFoggedSetCalls === 0
+          && payload.displayClearSetCalls === 0
+          && payload.radarClearSetCalls === 0
+          && payload.ghostObjectManagerOwned === true
+          && payload.ghostLocalPlayerIndexBefore === 0
+          && payload.ghostLocalPlayerIndexAfterSet === payload.localPlayerIndex
+          && payload.ghostResetCalled === true
+          && payload.terrainRoadCollectionOwned === true
+          && payload.terrainTypeCollectionOwned === true
+          && payload.terrainRenderMapOpened === true
+          && payload.terrainRenderMapLoaded === true
+          && payload.terrainRenderObjectOwned === true
+          && payload.terrainRenderMapAttached === true
+          && payload.terrainRenderMapWidth === 480
+          && payload.terrainRenderMapHeight === 480
+          && payload.terrainRoadBufferInstalled === true
+          && payload.terrainRoadBufferInitialized === true
+          && payload.terrainRoadBufferMapAttached === true
+          && payload.terrainRoadSegmentCapacity === 0
+          && payload.terrainRoadSegmentsAfterNewMap >= payload.terrainRoadSegmentsBeforeNewMap
+          && payload.terrainRoadBufferUpdateBuffers === true
+          && payload.terrainBridgeBufferInstalled === true
+          && payload.terrainBridgeBufferInitialized === true
+          && payload.terrainBridgeBufferBridgesBeforeNewMap === 0
+          && payload.terrainBridgeBufferBridgesAfterNewMap === payload.terrainBridgePoint1Objects
+          && payload.terrainBridgeBufferVerticesAfterNewMap === 0
+          && payload.terrainBridgeBufferIndicesAfterNewMap === 0
+          && payload.terrainLogicBridgesBeforeNewMap === 0
+          && payload.terrainLogicBridgesAfterNewMap === payload.terrainBridgePoint1Objects
+          && payload.terrainBridgeDamageStatesChangedBeforeNewMap === false
+          && payload.terrainBridgeDamageStatesChangedAfterNewMap === true
+          && payload.terrainNewMapCalled === true
+          && payload.terrainWaterGridCallsAfterNewMap === payload.terrainWaterGridCallsBeforeNewMap + 1
+          && payload.terrainWaterGridLastEnable === payload.terrainWaveGuideWaypointPresent
+          && Math.abs(payload.terrainFirstWaypointZAfterNewMap - payload.terrainFirstWaypointGroundHeightAfterNewMap) < 0.001
+          && payload.terrainTimeOfDayNotified === true
+          && payload.terrainExtent?.hiX === 3800
+          && payload.terrainExtent?.hiY === 3800
+          && payload.pathfinderOwned === true
+          && payload.pathfinderNewMapCalled === true
+          && payload.pathfinderExpectedExtentX > 0
+          && payload.pathfinderExpectedExtentY > 0
+          && payload.pathfinderExtentXAfterNewMap === payload.pathfinderExpectedExtentX
+          && payload.pathfinderExtentYAfterNewMap === payload.pathfinderExpectedExtentY
+          && payload.pathfinderCenterGroundCellReady === true,
+        'GameLogic new-game runtime smoke did not prove original W3DTerrainLogic/INI/player/script/Radar/Partition/GhostObject/W3DBridgeBuffer/Pathfinder MD_GLA03 load ownership');
+      expect(payload.runtimeBoundaries?.includes('InGameUI client-quiet remains focused UI boundary')
+          && payload.runtimeBoundaries?.includes('OptionPreferences user preference getters remain focused non-network browser preference boundary')
+          && payload.runtimeBoundaries?.includes('bridge-like map object spawning remains focused ThingFactory/Object ownership boundary after direct no-bridge W3DBridgeBuffer scan and Pathfinder::newMap grid proof')
+          && !payload.runtimeBoundaries?.includes('focused in-memory BlankWindow layout adapter')
           && !payload.runtimeBoundaries?.includes('focused linker wrap for PlayerList::getNthPlayer before MSG_NEW_GAME switch')
+          && !payload.runtimeBoundaries?.includes('deferred terrain/player/script load after archive-backed BlankWindow')
           && !payload.runtimeBoundaries?.includes('shim GlobalData bridge')
           && !payload.runtimeBoundaries?.includes('focused Shell::hideShell')
           && !payload.runtimeBoundaries?.includes('focused ScriptEngine::setGlobalDifficulty'),
@@ -377,9 +596,39 @@ const steps = [
       expect(payload.originalOwners?.includes('GlobalData TheWritableGlobalData')
           && payload.originalOwners?.includes('PlayerList::getNthPlayer neutral player')
           && payload.originalOwners?.includes('ScriptEngine::setGlobalDifficulty')
+          && payload.originalOwners?.includes('HeaderTemplateManager empty template lookup')
           && payload.originalOwners?.includes('Shell::push seeded BlankWindow')
-          && payload.originalOwners?.includes('Shell::hideShell'),
-        'GameLogic new-game runtime smoke did not report original GlobalData/PlayerList/ScriptEngine/Shell ownership');
+          && payload.originalOwners?.includes('GameWindowManager::winCreateLayout BlankWindow archive parse')
+          && payload.originalOwners?.includes('Shell::hideShell')
+          && payload.originalOwners?.includes('Win32BIGFileSystem MapsZH.big map archive')
+          && payload.originalOwners?.includes('Win32BIGFileSystem INIZH.big and INI.big startup data archives')
+          && payload.originalOwners?.includes('INI::load Default/GameData.ini, GameData.ini, Multiplayer.ini, Science.ini, AIData.ini, and PlayerTemplate.ini')
+          && payload.originalOwners?.includes('GlobalData::parseGameDataDefinition production partition cell size')
+          && payload.originalOwners?.includes('WeaponBonusSet::parseWeaponBonusSetPtr GameData parser')
+          && payload.originalOwners?.includes('MultiplayerSettings shipped color table')
+          && payload.originalOwners?.includes('ScienceStore shipped science table')
+          && payload.originalOwners?.includes('AI shipped AIData table')
+          && payload.originalOwners?.includes('PlayerTemplateStore shipped player templates')
+          && payload.originalOwners?.includes('W3DTerrainLogic::loadMap(false) MD_GLA03 map parse')
+          && payload.originalOwners?.includes('TerrainLogic::loadMap TerrainVisual::load handoff')
+          && payload.originalOwners?.includes('WorldHeightMap logical map-object list')
+          && payload.originalOwners?.includes('SidesList::ParseSidesDataChunk')
+          && payload.originalOwners?.includes('SidesList::validateSides')
+          && payload.originalOwners?.includes('AIPlayer construction for non-human sides')
+          && payload.originalOwners?.includes('TeamFactory::reset/initFromSides')
+          && payload.originalOwners?.includes('PlayerList::newGame side population')
+          && payload.originalOwners?.includes('ScriptEngine::newMap side script scan')
+          && payload.originalOwners?.includes('Radar::newMap terrain extent and LeftHUD ownership')
+          && payload.originalOwners?.includes('GameLogic width/height from terrain extent')
+          && payload.originalOwners?.includes('PartitionManager::init loaded-map cell grid')
+          && payload.originalOwners?.includes('PartitionManager::refreshShroudForLocalPlayer display/radar shroud refresh')
+          && payload.originalOwners?.includes('GhostObjectManager local-player index and reset')
+          && payload.originalOwners?.includes('TerrainTypeCollection empty texture-class lookup for render heightmap parsing')
+          && payload.originalOwners?.includes('TerrainRoadCollection empty road table for W3DTerrainLogic::newMap road-buffer handoff')
+          && payload.originalOwners?.includes('W3DTerrainLogic::newMap road-buffer handoff and TerrainLogic waypoint/water setup')
+          && payload.originalOwners?.includes('W3DBridgeBuffer::loadBridges empty MD_GLA03 bridge scan')
+          && payload.originalOwners?.includes('Pathfinder::newMap terrain grid allocation/classification'),
+        'GameLogic new-game runtime smoke did not report original GlobalData/INI/AI/PlayerList/ScriptEngine/Shell/GameWindowManager/Terrain/Partition ownership');
     },
   },
 ];
@@ -407,15 +656,18 @@ console.log(JSON.stringify({
     'original ButtonUSA faction difficulty transition and ButtonDiffBack return through MainMenuSystem',
     'original ButtonLoadReplay dropdown and ButtonLoadReplayBack return through MainMenuSystem',
     'original ButtonCredits path through Shell::push into CreditsMenuInit/CreditsMenuUpdate with INIZH-backed Credits.ini',
-    'browser boot constructs original W3DFunctionLexicon, verifies W3D device callback-name tables, and loads the non-network base GUI widget/input, IME draw, original ExtendedMessageBoxSystem, original DifficultySelect system/input/init callbacks, original KeyboardOptionsMenu system/input/init/update/shutdown callbacks with original MetaEvent global ownership, original InGamePopupMessage system/input/init callbacks, original IdleWorkerSystem callback, original BeaconWindowInput callback, original ControlBarInput callback, original ReplayControl system/input callbacks, original ChallengeMenu callbacks, original PopupCommunicator callbacks, original MapSelectMenu callbacks, original ReplayMenu callbacks, original PopupReplay modal callbacks, original GameInfoWindowSystem lookup, and original MainMenu/Credits/Skirmish/SinglePlayer shell callback tables while the remaining layout graph remains the FunctionLexicon boundary',
+    'browser boot constructs original W3DFunctionLexicon, verifies W3D device callback-name tables, loads the owned base GUI/widget/shell callback tables including passive GameInfoWindow system/init names, and reports the remaining FunctionLexicon callback owner groups as structured startup state',
+    'browser boot constructs original W3DModuleFactory, runs W3DModuleFactory::init(), and proves public ModuleFactory lookups for representative base gameplay, client-update, and W3D draw modules',
+    'browser boot constructs original W3DParticleSystemManager, runs ParticleSystemManager::init() against Data\\INI\\ParticleSystem.ini, and proves shipped particle template lookups through the public manager API',
+    'archive-backed startup mounts all shipped Object INI definitions and proves original W3DThingFactory parses representative unit templates through the real ThingFactory/INI path while the first unowned factory remains createFunctionLexicon',
     'source-pinned original GameLogic MSG_NEW_GAME dispatch frontier after CommandList handoff',
-    'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, and first-call startNewGame(FALSE) deferral',
+    'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, first-call startNewGame(FALSE) deferral, MapsZH.big MD_GLA03 promotion, INIZH/INI startup data plus default and Zero Hour GameData.ini parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, AIPlayer construction, TeamFactory::initFromSides, PlayerList::newGame, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, GhostObjectManager local-player index/reset, TerrainRoadCollection/TerrainTypeCollection render-map setup, original W3DTerrainLogic::newMap road-buffer and W3DBridgeBuffer::loadBridges handoff, TerrainLogic waypoint/water setup, and original Pathfinder::newMap grid allocation/classification',
   ],
   nextRequired: [
-    'replace the remaining base FunctionLexicon shell/HUD callback registrations, including PopupReplay score-screen-dependent System/Update and broader ControlBarSystem/LeftHUDInput callbacks, so GameEngine.cpp line 446 can become fully runtime-owned',
+    'replace the remaining base FunctionLexicon callback owner groups, starting with non-network owners such as PopupReplay score-screen-dependent System/Update, QuitMenuSystem, ScoreScreen, and broader ControlBarSystem/LeftHUDInput callbacks only when their real owners are runtime-owned',
     'advance the next vertical startup path outside the already-proven shell menu slice',
-    'prove W3DModuleFactory module-template lookup through the original public API at runtime',
-    'supply base Generals Window.big and replace the focused runtime in-memory BlankWindow adapter before continuing deferred startNewGame into terrain/player/script load',
+    'advance the post-particle startup data stores toward createThingFactory once createFunctionLexicon is fully owned',
+    'promote the original post-terrain bridge-like map-object spawning loop that sits before Pathfinder::newMap, then replace the direct no-bridge pathfinder proof with the original ordered startNewGame sequence',
   ],
   sourceChecks: sourceResults.map(result => result.name),
   browserChecks: browserResults.map(result => result.name),

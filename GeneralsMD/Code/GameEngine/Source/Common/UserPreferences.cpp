@@ -123,6 +123,10 @@ UserPreferences::~UserPreferences( void )
 #define LINE_LEN 2048
 Bool UserPreferences::load(AsciiString fname)
 {
+#ifdef __EMSCRIPTEN__
+	m_filename = fname;
+	return false;
+#else
 //	if (strstr(fname.str(), "\\"))
 //		throw INI_INVALID_DATA;	// must be a leaf name
 
@@ -154,10 +158,14 @@ Bool UserPreferences::load(AsciiString fname)
 		return true;
 	}
 	return false;
+#endif
 }
 
 Bool UserPreferences::write( void )
 {
+#ifdef __EMSCRIPTEN__
+	return true;
+#else
 	if (m_filename.isEmpty())
 		return false;
 
@@ -174,6 +182,7 @@ Bool UserPreferences::write( void )
 		return true;
 	}
 	return false;
+#endif
 }
 
 Bool UserPreferences::getBool(AsciiString key, Bool defaultValue) const
