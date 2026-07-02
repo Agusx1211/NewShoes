@@ -177,6 +177,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.ime_candidate_window_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("IMECandidateWindowSystem")) == IMECandidateWindowSystem;
+	result.motd_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("MOTDSystem")) == MOTDSystem;
 	result.main_menu_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("MainMenuSystem")) == MainMenuSystem;
@@ -552,6 +555,11 @@ bool base_layout_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &res
 		result.popup_replay_shutdown_lookup;
 }
 
+bool motd_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
+{
+	return result.motd_system_lookup;
+}
+
 bool shell_menu_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 {
 	return result.main_menu_system_lookup &&
@@ -681,7 +689,7 @@ bool idle_worker_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &res
 bool base_layout_callback_graph_ready(const FunctionLexiconRuntimeProbeResult &)
 {
 	// The linked runtime currently proves a shell-menu subset plus the
-	// options-menu, skirmish-map-select, challenge-menu,
+	// MOTD, options-menu, skirmish-map-select, challenge-menu,
 	// popup-communicator, in-game popup-message, idle-worker, control-bar
 	// input, beacon-window, replay-control, map-select, replay-menu,
 	// popup-replay modal callbacks, and game-info-window callback owners.
@@ -693,6 +701,7 @@ bool lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 {
 	return base_widget_lookup_state_ready(result) &&
 		base_layout_lookup_state_ready(result) &&
+		motd_lookup_state_ready(result) &&
 		shell_menu_lookup_state_ready(result) &&
 		options_menu_lookup_state_ready(result) &&
 		skirmish_map_select_menu_lookup_state_ready(result) &&
@@ -790,6 +799,11 @@ void finish_status(FunctionLexiconRuntimeProbeResult &result)
 		result.next_required = "originalFunctionLexiconRepresentativeLayoutCallbacks";
 		return;
 	}
+	if (!motd_lookup_state_ready(result)) {
+		result.status = "base_function_lexicon_layout_representative_runtime_owned";
+		result.next_required = "originalFunctionLexiconShellMenuCallbacks";
+		return;
+	}
 	if (!shell_menu_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_layout_partial_runtime_owned";
 		result.next_required = "originalFunctionLexiconShellMenuCallbacks";
@@ -861,7 +875,7 @@ void finish_status(FunctionLexiconRuntimeProbeResult &result)
 		return;
 	}
 	if (!base_layout_callback_graph_ready(result)) {
-		result.status = "base_function_lexicon_skirmish_map_select_menu_runtime_owned";
+		result.status = "base_function_lexicon_motd_runtime_owned";
 		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
 		return;
 	}
@@ -1038,6 +1052,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"quitMessageBoxSystem\":%s,"
 		"\"extendedMessageBoxSystem\":%s,"
 		"\"imeCandidateWindowSystem\":%s,"
+		"\"motdSystem\":%s,"
 		"\"mainMenuSystem\":%s,"
 		"\"optionsMenuSystem\":%s,"
 		"\"creditsMenuSystem\":%s,"
@@ -1170,6 +1185,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.quit_message_box_system_lookup),
 		json_bool(state.extended_message_box_system_lookup),
 		json_bool(state.ime_candidate_window_system_lookup),
+		json_bool(state.motd_system_lookup),
 		json_bool(state.main_menu_system_lookup),
 		json_bool(state.options_menu_system_lookup),
 		json_bool(state.credits_menu_system_lookup),

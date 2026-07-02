@@ -4049,6 +4049,7 @@ add_library(zh_window_layout_script_runtime STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/SkirmishGameOptionsMenu.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/SkirmishMapSelectMenu.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/ReplayControls.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/GUICallbacks/W3DMOTD.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/MapUtil.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/MessageStream/MetaEvent.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ProcessAnimateWindow.cpp"

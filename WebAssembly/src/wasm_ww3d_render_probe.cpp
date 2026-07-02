@@ -245,6 +245,7 @@ FunctionLexicon::TableEntry runtimeBaseSystemTable[] = {
 	{ NAMEKEY_INVALID, "QuitMessageBoxSystem", QuitMessageBoxSystem },
 	{ NAMEKEY_INVALID, "ExtendedMessageBoxSystem", ExtendedMessageBoxSystem },
 	{ NAMEKEY_INVALID, "IMECandidateWindowSystem", IMECandidateWindowSystem },
+	{ NAMEKEY_INVALID, "MOTDSystem", MOTDSystem },
 	{ NAMEKEY_INVALID, "MainMenuSystem", MainMenuSystem },
 	{ NAMEKEY_INVALID, "OptionsMenuSystem", OptionsMenuSystem },
 	{ NAMEKEY_INVALID, "CreditsMenuSystem", CreditsMenuSystem },

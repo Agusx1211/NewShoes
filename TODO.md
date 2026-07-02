@@ -51,8 +51,8 @@ flow below.
       device draw/layout tables, loads the non-network base GUI
       system/input/tooltip/widget plus IME draw callback table, registers
       representative original base layout callbacks, and now owns the original
-      `ExtendedMessageBoxSystem`, original `DifficultySelect`
-      system/input/init callbacks, original
+      `ExtendedMessageBoxSystem`, original W3D `MOTDSystem`, original
+      `DifficultySelect` system/input/init callbacks, original
       `KeyboardOptionsMenu` system/input/init/update/shutdown callbacks with
       original `MetaEvent` global ownership, original `OptionsMenu`
       system/input/init/update/shutdown callbacks with original
@@ -92,6 +92,7 @@ flow below.
       W3D device draw/layout callback tables plus the non-network base GUI
       system/input/tooltip/widget, IME draw, original `PopupReplay`
       input/init/shutdown modal lookups, original `ExtendedMessageBoxSystem`,
+      original W3D `MOTDSystem` lookup,
       original `DifficultySelect` system/input/init lookups, original
       `KeyboardOptionsMenu` system/input/init/update/shutdown lookups,
       original `OptionsMenu` system/input/init/update/shutdown lookups with
