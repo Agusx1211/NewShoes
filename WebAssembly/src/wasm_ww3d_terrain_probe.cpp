@@ -637,15 +637,6 @@ IniLayoutComparison compare_ini_layout()
 	return layout;
 }
 
-void touch_ini_separator_table(const INI *ini)
-{
-	if (ini == nullptr) {
-		return;
-	}
-	volatile const char *ini_separators = ini->getSeps();
-	(void)ini_separators;
-}
-
 std::string json_string(const std::string &value)
 {
 	std::string escaped;
@@ -2712,7 +2703,6 @@ WorldHeightMap *load_archive_terrain_map_patch(
 					ini = NEW INI;
 					AsciiString terrain_ini_entry(kArchiveTerrainIniEntry);
 					if (ini != nullptr) {
-						touch_ini_separator_table(ini);
 						if (load.defaultTerrainIniExists) {
 							AsciiString default_terrain_ini_entry(kArchiveDefaultTerrainIniEntry);
 							ini->load(default_terrain_ini_entry, INI_LOAD_OVERWRITE, nullptr);
@@ -2885,7 +2875,6 @@ public:
 						ini = NEW INI;
 						AsciiString terrain_ini_entry(kArchiveTerrainIniEntry);
 						if (ini != nullptr) {
-							touch_ini_separator_table(ini);
 							if (load.defaultTerrainIniExists) {
 								AsciiString default_terrain_ini_entry(kArchiveDefaultTerrainIniEntry);
 								ini->load(default_terrain_ini_entry, INI_LOAD_OVERWRITE, nullptr);
@@ -2921,7 +2910,6 @@ public:
 					try {
 						ini = NEW INI;
 						if (ini != nullptr) {
-							touch_ini_separator_table(ini);
 							if (load.defaultRoadsIniExists) {
 								AsciiString default_roads_ini_entry(kArchiveDefaultRoadsIniEntry);
 								ini->load(default_roads_ini_entry, INI_LOAD_OVERWRITE, nullptr);
@@ -5958,7 +5946,6 @@ const char *run_ww3d_terrain_visual_scene_probe(
 				water_ini_info.sizeLow > 0;
 			water_ini_bytes = water_ini_entry_exists ? water_ini_info.sizeLow : 0U;
 			INI water_ini;
-			touch_ini_separator_table(&water_ini);
 			water_ini.load(AsciiString(kArchiveWaterIniEntry), INI_LOAD_OVERWRITE, nullptr);
 			water_ini_loaded = true;
 			water_setting_count = count_loaded_water_settings();

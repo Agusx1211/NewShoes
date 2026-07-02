@@ -4214,6 +4214,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:ww3d-terrain-map-patch-scene`, and
       `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Remove the terrain INI separator warm-up workaround. The terrain probe no
+      longer calls the `volatile getSeps()` helper before original
+      `INI::load`; the helper and all terrain, roads, and water call sites were
+      deleted while keeping the harness-checked `INI` layout parity report. The
+      browser smokes now prove `Terrain.ini`, `Roads.ini`, and `Water.ini`
+      parse through the original INI reader without the warm-up touch, with
+      terrain, road/bridge, water, shroud, and source-backed load-window
+      screenshots still rendered. Verified with
+      `npm --prefix WebAssembly run build:wasm`,
+      `npm --prefix WebAssembly run test:ww3d-terrain-map-patch-scene`,
+      `npm --prefix WebAssembly run test:ww3d-terrain-full-scene`, and
+      `npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
 - [x] Feed shipped map height/blend data into the terrain scene proof:
       `test:ww3d-terrain-map-patch-scene` mounts `INIZH.big`, `MapsZH.big`,
       and `TerrainZH.big`, reads real `Data\INI\Terrain.ini` terrain texture

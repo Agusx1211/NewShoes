@@ -767,11 +767,10 @@ flow below.
       presence, extents, height range, source filename, and time-of-day
       notification agreement with the visual load.
       The selected 32x32 patch remains source-backed. The terrain visual
-      harness can now
-      mount optional base Generals `Terrain.big` alongside `TerrainZH.big`
-      through the same `Terrain*.big` archive mask, while the current ZH-only
-      archive set honestly records the load window as 0/16,384 source-backed
-      terrain cells.
+      harness now mounts base Generals `Terrain.big` alongside `TerrainZH.big`
+      through the same `Terrain*.big` archive mask and gates the original
+      129x129 `W3DTerrainVisual::load` window on all 16,384 cells being
+      source-backed.
       `test:vertical-integrations` now includes that visual-owned terrain scene
       plus the visual-owned shroud pass/update payloads, no-reinit load-window
       proof, and camera-pan proof beside the lower-level tile, scene-dispatch,
@@ -788,10 +787,10 @@ flow below.
       ZH-only archive set; the same bridge scene now also keeps original
       `W3DRoadBuffer::drawRoads` and `W3DTreeBuffer::drawTrees` sidecars live
       through the browser frame. The remaining terrain vertical work is
-      production/full-map display ownership with source-backed coverage across
-      the load window, then broadening water, gameplay-owned shroud/partition
-      updates, objects, and continuous gameplay-owned camera flow on top of the
-      same original heightmap path.
+      production/full-map display ownership beyond the now source-backed load
+      window, then broadening water, gameplay-owned shroud/partition updates,
+      objects, and continuous gameplay-owned camera flow on top of the same
+      original heightmap path.
 - [ ] Replace the probe-only
       `CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS` guard and
       `wasm_ww3d_terrain_probe_stubs.cpp` weak adjacent-system symbols with
@@ -892,20 +891,6 @@ flow below.
       refresh path from `test:vertical-integrations` and probe-mounted
       map/assets to real gameplay map-load, partition, and terrain logic
       ownership.
-- [ ] Remove the `volatile getSeps()` "warm-up read" workaround in the terrain
-      INI probe and fix the real root cause of the browser `INI::load` trap.
-      The terrain smokes now report and gate a direct `INI` layout comparison
-      between the terrain probe TU and the real INI runtime: `sizeof(INI)`,
-      `m_seps` / `m_sepsPercent` / `m_sepsColon` / `m_sepsQuote` offsets, and
-      separator literals all match under the current wasm build. That rules out
-      the original suspected header/ODR member-offset mismatch for this target,
-      but removing the separator touch still makes the map-patch browser RPC
-      time out and crash after archive mounting. Keep the workaround until the
-      remaining browser/runtime root cause is isolated with a stronger
-      constructor/lifetime or optimizer proof, then drop it and keep
-      `test:ww3d-terrain-map-patch-scene`,
-      `test:ww3d-terrain-visual-scene`, and `test:vertical-integrations`
-      gating the layout parity.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.
       Current coverage: `test:ww3d-display-shell-composite` layers a focused
       `W3DDisplay::m_3DScene` render, real `WatermarkChina` mapped shell UI art,
