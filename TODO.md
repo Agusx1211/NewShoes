@@ -871,22 +871,21 @@ flow below.
       Player/AI/Object/Radar branch hooks with real gameplay owners so fog
       updates originate entirely from the full partition/shroud path instead of
       probe-local ownership and the bounded terrain cell window.
-- [ ] Promote the bridge-buffer scene from probe-seeded retained
-      `TheTerrainLogic` draw ownership into production
-      `W3DBridgeBuffer::loadBridges(&W3DTerrainLogic, FALSE)` /
-      `TerrainLogic::addBridgeToLogic` ownership. The focused browser scene now
-      keeps `TheTerrainLogic` live through `W3DBridgeBuffer::drawBridges(FALSE,
-      TheTerrainLogic)` and verifies the original draw loop consults a retained
-      logical `Bridge` node before enabling the visual bridge, but the probe
-      still seeds that `Bridge` list entry after visual load because this target
-      links metadata-only `AI` (`AI::pathfinder()` is unavailable) and the
-      probe-local `ThingFactory` cannot create the original `GenericBridge`
-      object. Remaining work is to wire full object-template/ThingFactory and
-      real AI/pathfinder runtime ownership, pass the live `W3DTerrainLogic` into
-      `W3DBridgeBuffer::loadBridges`, require
-      `bridgeLogicAiPathfinderAvailable === true` and
-      `bridgeLogicGenericBridgeObjectMissing === false`, and then exercise
-      damaged/repaired bridge-state synchronization from real gameplay objects.
+- [ ] Finish bridge-buffer logic ownership by replacing the focused
+      bridge-layer pathfinder shim and probe-local `ThingFactory` with full
+      original AIPathfind/Object/ThingFactory runtime ownership. The focused
+      browser scene now keeps `TheTerrainLogic` live, passes the live
+      `W3DTerrainLogic` into
+      `W3DBridgeBuffer::loadBridges(&W3DTerrainLogic, FALSE)`, and verifies
+      `TerrainLogic::addBridgeToLogic` inserts the retained logical `Bridge`
+      through `AI::pathfinder()->addBridge()` before
+      `W3DBridgeBuffer::drawBridges(FALSE, TheTerrainLogic)` enables the visual
+      bridge. Remaining work is to load/create the original `GenericBridge`
+      object through full object-template/ThingFactory ownership, replace the
+      bridge-only pathfinder surface with the full original pathfinder runtime,
+      require `bridgeLogicGenericBridgeObjectMissing === false`, and then
+      exercise damaged/repaired bridge-state synchronization from real gameplay
+      objects.
 - [ ] Broaden the browser-verified terrain full-scene water/smudge/shroud
       refresh path from `test:vertical-integrations` and probe-mounted
       map/assets to real gameplay map-load, partition, and terrain logic

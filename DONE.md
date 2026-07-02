@@ -3929,6 +3929,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       direct `terrain_bridge_buffer_scene_smoke.mjs` browser smoke over
       `INIZH.big`, `MapsZH.big`, `TerrainZH.big`, `W3DZH.big`, and
       `TexturesZH.big`.
+- [x] Route the retained bridge-buffer scene through
+      `W3DBridgeBuffer::loadBridges(&W3DTerrainLogic, FALSE)` and
+      `TerrainLogic::addBridgeToLogic` instead of the probe-only manual bridge
+      seed. The terrain probe runtime now links original `AI.cpp`, installs a
+      scene-local `AI` under `TheAI`, and provides a focused bridge-layer
+      pathfinder surface so `TerrainLogic::addBridgeToLogic` can assign the
+      retained logical bridge to pathfind layer 2 through
+      `AI::pathfinder()->addBridge()`. The browser bridge scene now reports
+      `bridgeLogicAiPathfinderAvailable === true`,
+      `bridgeLogicFirstLayerAfterSeed === 2`,
+      `bridgeLogicSeededForDraw === true`, and retained bridge draw counts
+      without calling `ProbeTerrainLogicForBridgeDraw::seedBridgeForDraw`. The
+      remaining production gap is full original AIPathfind/Object/ThingFactory
+      ownership: the scene still reports
+      `bridgeLogicGenericBridgeObjectMissing === true` until
+      `GenericBridge` is created by the real object-template path. Verified with
+      `npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene` and
+      `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`.
 	- [x] Feed the focused terrain road and bridge adjunct buffers from the
 	      original logical terrain map-object list. The road and bridge scene probes
 	      now call original `W3DTerrainLogic::loadMap(query=true)` against

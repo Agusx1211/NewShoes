@@ -9,6 +9,8 @@ class ScriptActionsInterface;
 class ScriptConditionsInterface;
 class TeamFactory;
 class VictoryConditionsInterface;
+class Eva;
+class BuildAssistant;
 
 GhostObjectManager *TheGhostObjectManager __attribute__((weak)) = nullptr;
 Radar *TheRadar __attribute__((weak)) = nullptr;
@@ -18,6 +20,8 @@ ScriptActionsInterface *TheScriptActions __attribute__((weak)) = nullptr;
 ScriptConditionsInterface *TheScriptConditions __attribute__((weak)) = nullptr;
 TeamFactory *TheTeamFactory __attribute__((weak)) = nullptr;
 VictoryConditionsInterface *TheVictoryConditions __attribute__((weak)) = nullptr;
+Eva *TheEva __attribute__((weak)) = nullptr;
+BuildAssistant *TheBuildAssistant __attribute__((weak)) = nullptr;
 
 extern "C" int __attribute__((weak)) RunBenchmark(
 	int,

@@ -2210,6 +2210,8 @@ const steps = [
           && payload.probe?.results?.bridgeLogicSeededForDraw === true
           && payload.probe?.results?.bridgeLogicCountAfterSeed > 0
           && payload.probe?.results?.bridgeLogicFirstIndexAfterSeed === 0
+          && payload.probe?.results?.bridgeLogicAiPathfinderAvailable === true
+          && payload.probe?.results?.bridgeLogicFirstLayerAfterSeed === 2
           && payload.logicalTerrain?.selectedTemplateSubstitutedInLogicalList === false
           && payload.bridgeObjects?.templateSubstitutedForAvailableAssets === false
           && payload.bridgeObjects?.selectedTemplateSubstitutedInLogicalList === false

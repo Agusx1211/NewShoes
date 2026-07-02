@@ -2318,20 +2318,26 @@ public:
 		MapCache *mapCache,
 		GameClient *gameClient,
 		ThingFactory *thingFactory,
-		TerrainLogic *terrainLogic) :
+		TerrainLogic *terrainLogic,
+		AI *ai = nullptr) :
 		m_oldTerrainLogic(TheTerrainLogic),
 		m_oldMapCache(TheMapCache),
 		m_oldGameClient(TheGameClient),
-		m_oldThingFactory(TheThingFactory)
+		m_oldThingFactory(TheThingFactory),
+		m_oldAI(TheAI)
 	{
 		TheMapCache = mapCache;
 		TheGameClient = gameClient;
 		TheThingFactory = thingFactory;
 		TheTerrainLogic = terrainLogic;
+		if (ai != nullptr) {
+			TheAI = ai;
+		}
 	}
 
 	~ProbeLogicalTerrainGlobalScope()
 	{
+		TheAI = m_oldAI;
 		TheTerrainLogic = m_oldTerrainLogic;
 		TheThingFactory = m_oldThingFactory;
 		TheGameClient = m_oldGameClient;
@@ -2343,33 +2349,12 @@ private:
 	MapCache *m_oldMapCache = nullptr;
 	GameClient *m_oldGameClient = nullptr;
 	ThingFactory *m_oldThingFactory = nullptr;
+	AI *m_oldAI = nullptr;
 };
 
 class ProbeTerrainLogicForBridgeDraw final : public W3DTerrainLogic
 {
 public:
-	bool seedBridgeForDraw(
-		const BridgeInfo &sourceInfo,
-		Dict *props,
-		const AsciiString &bridgeTemplateName,
-		bool &genericBridgeObjectMissing)
-	{
-		BridgeInfo bridge_info = sourceInfo;
-		Bridge *bridge = newInstance(Bridge)(bridge_info, props, bridgeTemplateName);
-		if (bridge == nullptr) {
-			return false;
-		}
-
-		bridge->setNext(m_bridgeListHead);
-		m_bridgeListHead = bridge;
-		bridge->setLayer(LAYER_GROUND);
-
-		BridgeInfo stored_info;
-		bridge->getBridgeInfo(&stored_info);
-		genericBridgeObjectMissing = stored_info.bridgeObjectID == INVALID_ID;
-		return true;
-	}
-
 	Int bridgeCountForProbe() const
 	{
 		Int count = 0;
@@ -9298,11 +9283,14 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	ProbeTerrainLogicGameClient bridge_draw_game_client;
 	ThingFactory bridge_draw_thing_factory;
 	ProbeTerrainLogicForBridgeDraw bridge_draw_terrain_logic;
+	AI bridge_draw_ai;
+	bridge_draw_ai.init();
 	ProbeLogicalTerrainGlobalScope bridge_draw_global_scope(
 		&bridge_draw_map_cache,
 		&bridge_draw_game_client,
 		&bridge_draw_thing_factory,
-		&bridge_draw_terrain_logic);
+		&bridge_draw_terrain_logic,
+		&bridge_draw_ai);
 
 	int init_result = WW3D_ERROR_GENERIC;
 	int set_device_result = WW3D_ERROR_GENERIC;
@@ -9738,32 +9726,25 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 
 	if (bridge_buffer_initialized) {
 		probe_bridge_phase_log("load-bridges");
-		bridge_buffer->loadBridges(nullptr, FALSE);
+		bridge_buffer->loadBridges(&bridge_draw_terrain_logic, FALSE);
 		probe_bridge_phase_log("load-bridges-done");
 		load_bridges_invoked = true;
 		bridges_after_load = bridge_buffer->numBridges();
 		BridgeInfo bridge_info_for_logic;
 		bridge_logic_seed_info_available = bridge_buffer->firstBridgeInfo(bridge_info_for_logic);
-		if (bridge_logic_seed_info_available) {
-			bridge_info_for_logic.bridgeIndex = 0;
-			probe_bridge_phase_log("seed-terrain-logic-bridge");
-			bridge_logic_seeded_for_draw =
-				bridge_draw_terrain_logic.seedBridgeForDraw(
-					bridge_info_for_logic,
-					nullptr,
-					bridge_buffer->firstBridgeTemplateName(),
-					bridge_logic_generic_bridge_object_missing);
-			bridge_logic_count_after_seed =
-				bridge_draw_terrain_logic.bridgeCountForProbe();
-			BridgeInfo seeded_bridge_info;
-			PathfindLayerEnum seeded_bridge_layer = LAYER_GROUND;
-			if (bridge_draw_terrain_logic.firstBridgeForProbe(
-					seeded_bridge_info,
-					seeded_bridge_layer)) {
-				bridge_logic_first_index_after_seed = seeded_bridge_info.bridgeIndex;
-				bridge_logic_first_damage_state_after_seed = seeded_bridge_info.curDamageState;
-				bridge_logic_first_layer_after_seed = seeded_bridge_layer;
-			}
+		bridge_logic_count_after_seed =
+			bridge_draw_terrain_logic.bridgeCountForProbe();
+		bridge_logic_seeded_for_draw = bridge_logic_count_after_seed > 0;
+		BridgeInfo loaded_bridge_info;
+		PathfindLayerEnum loaded_bridge_layer = LAYER_GROUND;
+		if (bridge_draw_terrain_logic.firstBridgeForProbe(
+				loaded_bridge_info,
+				loaded_bridge_layer)) {
+			bridge_logic_first_index_after_seed = loaded_bridge_info.bridgeIndex;
+			bridge_logic_first_damage_state_after_seed = loaded_bridge_info.curDamageState;
+			bridge_logic_first_layer_after_seed = loaded_bridge_layer;
+			bridge_logic_generic_bridge_object_missing =
+				loaded_bridge_info.bridgeObjectID == INVALID_ID;
 		}
 		bridge_manual_geometry_after_load =
 			bridge_buffer->firstBridgeManualGeometry(
@@ -10062,7 +10043,8 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"ok\":%s,"
 		"\"path\":\"original WorldHeightMap + HeightMapRenderObjClass::Render -> "
 		"W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> "
-		"W3DBridgeBuffer::loadBridges/updateCenter -> "
+		"W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> "
+		"TerrainLogic::addBridgeToLogic/updateCenter -> "
 		"TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> "
 		"W3DBridge::renderBridge + bridge shroud overlay\","
 		"\"archives\":{\"ini\":\"%s\",\"maps\":\"%s\",\"terrain\":\"%s\","

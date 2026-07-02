@@ -594,7 +594,7 @@ try {
   if (!result.ok
       || result.command !== "ww3dTerrainBridgeBufferScene"
       || result.probe?.source !== "ww3d_terrain_bridge_buffer_scene_probe"
-      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> W3DBridgeBuffer::loadBridges/updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay"
+      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> W3DBridgeBuffer::loadBridges(&W3DTerrainLogic,FALSE) -> TerrainLogic::addBridgeToLogic/updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay"
       || result.probe?.results?.runtimeAssetSystemInstalled !== true
       || result.probe?.results?.modelsFileExists !== true
       || result.probe?.results?.meshFileExists !== true
@@ -623,6 +623,8 @@ try {
       || result.probe?.results?.bridgeLogicSeededForDraw !== true
       || result.probe?.results?.bridgeLogicCountAfterSeed <= 0
       || result.probe?.results?.bridgeLogicFirstIndexAfterSeed !== 0
+      || result.probe?.results?.bridgeLogicAiPathfinderAvailable !== true
+      || result.probe?.results?.bridgeLogicFirstLayerAfterSeed !== 2
       || result.probe?.results?.bridgeDrawTerrainLogicBridgeCount <= 0
       || result.probe?.results?.bridgeDrawEnabledBridgeCount <= 0
       || result.probe?.results?.bridgeDrawWrapperInvoked !== true

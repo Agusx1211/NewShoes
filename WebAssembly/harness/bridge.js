@@ -19905,6 +19905,8 @@ async function rpc(command, payload = {}) {
           && probe?.results?.bridgeLogicSeededForDraw === true
           && (probe?.results?.bridgeLogicCountAfterSeed ?? 0) > 0
           && probe?.results?.bridgeLogicFirstIndexAfterSeed === 0
+          && probe?.results?.bridgeLogicAiPathfinderAvailable === true
+          && probe?.results?.bridgeLogicFirstLayerAfterSeed === 2
           && probe?.logicalTerrain?.selectedTemplateSubstitutedInLogicalList === false
           && (probe?.results?.bridgeDrawTerrainLogicBridgeCount ?? 0) > 0
           && (probe?.results?.bridgeDrawEnabledBridgeCount ?? 0) > 0

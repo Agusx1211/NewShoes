@@ -2304,6 +2304,8 @@ add_library(zh_w3d_terrain_probe_runtime STATIC
   "${GAMEENGINE_COMMON_DIR}/RTS/ScoreKeeper.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/Team.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/TunnelTracker.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/AI/AI.cpp"
+  src/wasm_terrain_probe_minimal_pathfinder.cpp
   "${GAMEENGINE_GAMELOGIC_DIR}/Map/TerrainLogic.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Map/PolygonTrigger.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/Scripts.cpp"
