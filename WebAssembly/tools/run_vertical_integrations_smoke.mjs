@@ -189,7 +189,7 @@ const steps = [
         "startup vertical smoke did not cover original MilesAudioManager openDevice", payload);
       expect(payload.covered?.includes("original W3DGameWindowManager window and gadget ownership"),
         "startup vertical smoke did not cover original W3DGameWindowManager ownership", payload);
-      expect(payload.covered?.includes("runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, first-call startNewGame(FALSE) deferral, MapsZH.big MD_GLA03 promotion, INIZH/INI startup data parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, AIPlayer construction, TeamFactory::initFromSides, PlayerList::newGame, and ScriptEngine::newMap"),
+      expect(payload.covered?.includes("runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, first-call startNewGame(FALSE) deferral, MapsZH.big MD_GLA03 promotion, INIZH/INI startup data parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, AIPlayer construction, TeamFactory::initFromSides, PlayerList::newGame, ScriptEngine::newMap, and Radar::newMap"),
         "startup vertical smoke did not cover runtime original GameLogic MSG_NEW_GAME dispatch through original GlobalData/PlayerList/ScriptEngine/Shell", payload);
       expect(payload.sourceChecks?.includes("gameengine-startup-order")
           && payload.sourceChecks?.includes("w3d-module-factory-frontier")
@@ -2390,7 +2390,7 @@ console.log(JSON.stringify({
   ok: true,
   path: "vertical-integrations",
   covered: [
-    "aggregate startup vertical covering browser GameEngine.cpp startup frontier, original GameEngine lifetime, original Miles openDevice, W3D window/layout ownership, source-pinned GameLogic MSG_NEW_GAME dispatch frontier, and runtime original GameLogic::processCommandList first-call deferral through base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, PlayerList::getNthPlayer, ScriptEngine::setGlobalDifficulty, Shell::hideShell, INIZH/INI startup data parsing, W3DTerrainLogic::loadMap(false), side/player/team/script population, PlayerList::newGame, and ScriptEngine::newMap",
+    "aggregate startup vertical covering browser GameEngine.cpp startup frontier, original GameEngine lifetime, original Miles openDevice, W3D window/layout ownership, source-pinned GameLogic MSG_NEW_GAME dispatch frontier, and runtime original GameLogic::processCommandList first-call deferral through base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, PlayerList::getNthPlayer, ScriptEngine::setGlobalDifficulty, Shell::hideShell, INIZH/INI startup data parsing, W3DTerrainLogic::loadMap(false), side/player/team/script population, PlayerList::newGame, ScriptEngine::newMap, and Radar::newMap",
     "runtime archive preload, boot-time startup asset consumption, MSS 2D Web Audio sample playback, and startup singleton pre-audio frontier diagnostics",
     "browser Web Audio request-path playback for source-shaped AudioManager/SoundManager/MilesAudioManager 2D sample, 3D sample, and speech stream events",
     "original MilesAudioManager processRequest/playAudioEvent/playSample 2D sample playback through AudioFileCache, AIL_WAV_info, and MSS sample completion/release",
@@ -2426,7 +2426,7 @@ console.log(JSON.stringify({
   nextRequired: [
     "advance MainMenu WindowLayout repaint from curated target visibility to unpruned production shell composition and display-owned font/image/archive lifetime",
     "thread mounted base Generals INI.big/English.big startup coverage through production original GameEngine.cpp init ownership",
-    "continue startNewGame after side/player/script population into radar/partition/ghost/terrain newMap and map object spawning",
+    "continue startNewGame after Radar::newMap into partition/ghost/terrain newMap and map object spawning",
     "broaden W3DTerrainVisual terrain ownership from the probe-mounted source-backed load window into production gameplay map-load, shroud, partition, and terrain logic ownership",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",

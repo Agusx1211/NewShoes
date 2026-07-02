@@ -2164,6 +2164,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       bounded `test:vertical-integrations` attempt reached startup-vertical OK
       and timed out at the already-tracked `runtime-archives-startup-data`
       stage.
+- [x] Continue `GameLogic::startNewGame` from side/player/script population
+      into original `Radar::newMap`. The
+      `gamelogic-new-game-dispatch-smoke` target now links original
+      `Common/System/Radar.cpp`, installs a focused `ControlBar.wnd:LeftHUD`
+      window owner at the true GUI boundary, and calls
+      `TheRadar->newMap(TheTerrainLogic)` after original
+      `ScriptEngine::newMap`. The runtime proves the radar locates the LeftHUD
+      window, inherits the loaded `MD_GLA03` 3800x3800 terrain extent, computes
+      128x128 radar samples from that extent, and translates the terrain center
+      between world and radar coordinates. The boundary is now continuing
+      `startNewGame` after `Radar::newMap` into partition/ghost/terrain
+      `newMap` and map object spawning. Verified with the focused wasm build,
+      `verify:gamelogic-new-game-dispatch-frontier`,
+      `test:gamelogic-new-game-dispatch`, and `test:startup-vertical`; a
+      bounded `test:vertical-integrations` attempt reached startup-vertical OK
+      and timed out at the already-tracked `runtime-archives-startup-data`
+      stage.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the

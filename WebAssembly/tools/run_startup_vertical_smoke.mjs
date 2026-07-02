@@ -411,9 +411,10 @@ const steps = [
         'GameLogic new-game runtime smoke emitted the wrong path');
       expect(typeof payload.source === 'string'
           && payload.source.includes('GlobalData.cpp/INI.cpp/INIAiData.cpp/INIMultiplayer.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GameLogic.cpp/GameLogicDispatch.cpp')
+          && payload.source.includes('GameState.cpp/Radar.cpp/ScriptEngine.cpp')
           && payload.source.includes('GameWindowManagerScript.cpp/HeaderTemplate.cpp')
           && payload.source.includes('TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp'),
-        'GameLogic new-game runtime smoke did not link the original GlobalData/INI/AI/PlayerList/GameLogic/WindowLayout/Terrain parser sources');
+        'GameLogic new-game runtime smoke did not link the original GlobalData/INI/AI/PlayerList/GameLogic/Radar/WindowLayout/Terrain parser sources');
       expect(payload.message === 'MSG_NEW_GAME' && payload.playerLookupIndex === 0,
         'GameLogic new-game runtime smoke did not process the expected MSG_NEW_GAME player lookup');
       expect(payload.playerCount === 11
@@ -481,11 +482,26 @@ const steps = [
           && payload.validatedTeams === 97
           && payload.sideScriptsBeforeScriptNewMap === 465
           && payload.sideScriptsAfterScriptNewMap === 465
+          && payload.radarLeftHudWindowInstalled === true
+          && payload.radarWindowLookupCount === 1
+          && payload.radarWindowOwned === true
+          && payload.radarExtent?.hiX === 3800
+          && payload.radarExtent?.hiY === 3800
+          && payload.radarXSample > 29
+          && payload.radarXSample < 30
+          && payload.radarYSample > 29
+          && payload.radarYSample < 30
+          && payload.radarToWorldCenterOk === true
+          && payload.worldToRadarCenterOk === true
+          && payload.radarCenterWorld?.x === 1900
+          && payload.radarCenterWorld?.y === 1900
+          && payload.terrainCenterRadar?.x === 64
+          && payload.terrainCenterRadar?.y === 64
           && payload.terrainTimeOfDayNotified === true
           && payload.terrainExtent?.hiX === 3800
           && payload.terrainExtent?.hiY === 3800,
-        'GameLogic new-game runtime smoke did not prove original W3DTerrainLogic/INI/player/script MD_GLA03 load ownership');
-      expect(payload.runtimeBoundaries?.includes('radar/partition/ghost/terrain-newMap/object-spawn path after original side/player/script population')
+        'GameLogic new-game runtime smoke did not prove original W3DTerrainLogic/INI/player/script/Radar MD_GLA03 load ownership');
+      expect(payload.runtimeBoundaries?.includes('partition/ghost/terrain-newMap/object-spawn path after original Radar::newMap')
           && !payload.runtimeBoundaries?.includes('focused in-memory BlankWindow layout adapter')
           && !payload.runtimeBoundaries?.includes('focused linker wrap for PlayerList::getNthPlayer before MSG_NEW_GAME switch')
           && !payload.runtimeBoundaries?.includes('deferred terrain/player/script load after archive-backed BlankWindow')
@@ -515,7 +531,8 @@ const steps = [
           && payload.originalOwners?.includes('AIPlayer construction for non-human sides')
           && payload.originalOwners?.includes('TeamFactory::reset/initFromSides')
           && payload.originalOwners?.includes('PlayerList::newGame side population')
-          && payload.originalOwners?.includes('ScriptEngine::newMap side script scan'),
+          && payload.originalOwners?.includes('ScriptEngine::newMap side script scan')
+          && payload.originalOwners?.includes('Radar::newMap terrain extent and LeftHUD ownership'),
         'GameLogic new-game runtime smoke did not report original GlobalData/INI/AI/PlayerList/ScriptEngine/Shell/GameWindowManager/Terrain ownership');
     },
   },
@@ -549,13 +566,13 @@ console.log(JSON.stringify({
     'browser boot constructs original W3DParticleSystemManager, runs ParticleSystemManager::init() against Data\\INI\\ParticleSystem.ini, and proves shipped particle template lookups through the public manager API',
     'archive-backed startup mounts all shipped Object INI definitions and proves original W3DThingFactory parses representative unit templates through the real ThingFactory/INI path while the first unowned factory remains createFunctionLexicon',
     'source-pinned original GameLogic MSG_NEW_GAME dispatch frontier after CommandList handoff',
-    'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, first-call startNewGame(FALSE) deferral, MapsZH.big MD_GLA03 promotion, INIZH/INI startup data parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, AIPlayer construction, TeamFactory::initFromSides, PlayerList::newGame, and ScriptEngine::newMap',
+    'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, first-call startNewGame(FALSE) deferral, MapsZH.big MD_GLA03 promotion, INIZH/INI startup data parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, AIPlayer construction, TeamFactory::initFromSides, PlayerList::newGame, ScriptEngine::newMap, and Radar::newMap',
   ],
   nextRequired: [
     'replace the remaining base FunctionLexicon callback owner groups, starting with non-network owners such as PopupReplay score-screen-dependent System/Update, QuitMenuSystem, ScoreScreen, and broader ControlBarSystem/LeftHUDInput callbacks only when their real owners are runtime-owned',
     'advance the next vertical startup path outside the already-proven shell menu slice',
     'advance the post-particle startup data stores toward createThingFactory once createFunctionLexicon is fully owned',
-    'continue startNewGame after side/player/script population into radar/partition/ghost/terrain newMap and map object spawning',
+    'continue startNewGame after Radar::newMap into partition/ghost/terrain newMap and map object spawning',
   ],
   sourceChecks: sourceResults.map(result => result.name),
   browserChecks: browserResults.map(result => result.name),

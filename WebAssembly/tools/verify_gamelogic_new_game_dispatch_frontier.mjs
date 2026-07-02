@@ -309,8 +309,20 @@ const startLines = expectOrderedInBody(
       label: "later terrain load",
       pattern: /TheTerrainLogic->loadMap\s*\(\s*TheGlobalData->m_mapName\s*,\s*false\s*\)\s*;/,
     },
+    {
+      label: "player list new game",
+      pattern: /ThePlayerList->newGame\s*\(\s*\)\s*;/,
+    },
+    {
+      label: "script engine new map",
+      pattern: /TheScriptEngine->newMap\s*\(\s*\)\s*;/,
+    },
+    {
+      label: "radar new map",
+      pattern: /TheRadar->newMap\s*\(\s*TheTerrainLogic\s*\)\s*;/,
+    },
   ],
-  "GameLogic::startNewGame first-call deferral",
+  "GameLogic::startNewGame first-call deferral and post-script radar handoff",
 );
 
 const targetSources = cmakeInvocationBlock(
@@ -417,6 +429,10 @@ expect(
 expect(
   /System\/SaveGame\/GameState\.cpp|System\\SaveGame\\GameState\.cpp/.test(runtimeTargetSources.block),
   "gamelogic-new-game-dispatch-smoke does not link original GameState.cpp",
+);
+expect(
+  /System\/Radar\.cpp|System\\Radar\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original Radar.cpp",
 );
 expect(
   /ScriptEngine\/ScriptEngine\.cpp|ScriptEngine\\ScriptEngine\.cpp/.test(runtimeTargetSources.block),
@@ -529,7 +545,7 @@ const runtimePathLine = lineOf(
 );
 const runtimeSourceLine = lineOf(
   runtimeSmoke,
-  /GlobalData\.cpp\/INI\.cpp\/INIAiData\.cpp\/INIMultiplayer\.cpp\/MultiplayerSettings\.cpp\/Science\.cpp\/PlayerTemplate\.cpp\/FunctionLexicon\.cpp\/PlayerList\.cpp\/Player\.cpp\/AI\.cpp\/AIPathfind\.cpp\/AIPlayer\.cpp\/GameLogic\.cpp\/GameLogicDispatch\.cpp\/GameState\.cpp\/ScriptEngine\.cpp\/Scripts\.cpp\/Shell\.cpp\/GameWindowManagerScript\.cpp\/HeaderTemplate\.cpp\/TerrainLogic\.cpp\/W3DTerrainLogic\.cpp\/WorldHeightMap\.cpp\/TerrainVisual\.cpp\/SidesList\.cpp\/ThingFactory\.cpp/,
+  /GlobalData\.cpp\/INI\.cpp\/INIAiData\.cpp\/INIMultiplayer\.cpp\/MultiplayerSettings\.cpp\/Science\.cpp\/PlayerTemplate\.cpp\/FunctionLexicon\.cpp\/PlayerList\.cpp\/Player\.cpp\/AI\.cpp\/AIPathfind\.cpp\/AIPlayer\.cpp\/GameLogic\.cpp\/GameLogicDispatch\.cpp\/GameState\.cpp\/Radar\.cpp\/ScriptEngine\.cpp\/Scripts\.cpp\/Shell\.cpp\/GameWindowManagerScript\.cpp\/HeaderTemplate\.cpp\/TerrainLogic\.cpp\/W3DTerrainLogic\.cpp\/WorldHeightMap\.cpp\/TerrainVisual\.cpp\/SidesList\.cpp\/ThingFactory\.cpp/,
   "runtime smoke original source JSON",
 );
 const runtimeArchivePathLine = lineOf(
@@ -634,6 +650,31 @@ const runtimeScriptNewMapLine = lineOf(
   runtimeSmoke,
   /script_engine->newMap\s*\(\s*\)\s*;/,
   "runtime smoke original ScriptEngine::newMap call",
+);
+const runtimeRadarLine = lineOf(
+  runtimeSmoke,
+  /SmokeRadar\s*\*\s*radar\s*=\s*new\s+SmokeRadar\s*;/,
+  "runtime smoke Radar allocation",
+);
+const runtimeRadarSingletonLine = lineOf(
+  runtimeSmoke,
+  /TheRadar\s*=\s*radar\s*;/,
+  "runtime smoke original TheRadar assignment",
+);
+const runtimeRadarNewMapLine = lineOf(
+  runtimeSmoke,
+  /TheRadar->newMap\s*\(\s*TheTerrainLogic\s*\)\s*;/,
+  "runtime smoke original Radar::newMap call",
+);
+const runtimeRadarWindowLine = lineOf(
+  runtimeSmoke,
+  /installRadarWindow\s*\(\s*\)\s*;/,
+  "runtime smoke ControlBar LeftHUD radar window installation",
+);
+const runtimeRadarProofLine = lineOf(
+  runtimeSmoke,
+  /radar_extent_hi_x\s*==\s*terrain_extent_hi_x[\s\S]*radar_extent_hi_y\s*==\s*terrain_extent_hi_y[\s\S]*radar->xSample\s*\(\s*\)/,
+  "runtime smoke original Radar::newMap extent/sample proof",
 );
 const runtimeAiLine = lineOf(
   runtimeSmoke,
@@ -788,6 +829,7 @@ console.log(JSON.stringify({
     originalGameLogicCppLinked: true,
     originalGameLogicDispatchCppLinked: true,
     originalGameStateCppLinked: true,
+    originalRadarCppLinked: true,
     originalScriptEngineCppLinked: true,
     originalScriptsCppLinked: true,
     originalDisplayCppLinked: true,
@@ -819,6 +861,11 @@ console.log(JSON.stringify({
     playerListNewGameLine: runtimePlayerListNewGameLine,
     teamFactoryLine: runtimeTeamFactoryLine,
     scriptNewMapLine: runtimeScriptNewMapLine,
+    radarLine: runtimeRadarLine,
+    radarSingletonLine: runtimeRadarSingletonLine,
+    radarNewMapLine: runtimeRadarNewMapLine,
+    radarWindowLine: runtimeRadarWindowLine,
+    radarProofLine: runtimeRadarProofLine,
     aiLine: runtimeAiLine,
     rankInfoStoreLine: runtimeRankInfoStoreLine,
     noFocusedPlayerLookupWrap: true,
@@ -845,9 +892,9 @@ console.log(JSON.stringify({
     "prepareNewGame owns original ScriptEngine difficulty, BlankWindow background, game-mode, pending-map, and original Shell::hideShell setup",
     "startNewGame(FALSE) records the pristine map and defers the first call before terrain load",
     "w3d-window-layout-script-smoke still uses a focused GameLogic shim and sentinel gameplay owners",
-    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/FunctionLexicon.cpp/INI.cpp/INIAiData.cpp/INIMultiplayer.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/SidesList.cpp plus the W3D terrain runtime, then calls GameLogic::processCommandList at runtime through original GlobalData, FunctionLexicon, PlayerList, ScriptEngine, Shell, archive-backed BlankWindow ownership, MapsZH.big MD_GLA03 promotion, original startup INI parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, TeamFactory::initFromSides, PlayerList::newGame, AIPlayer construction, and ScriptEngine::newMap",
+    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/FunctionLexicon.cpp/INI.cpp/INIAiData.cpp/INIMultiplayer.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/Radar.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/SidesList.cpp plus the W3D terrain runtime, then calls GameLogic::processCommandList at runtime through original GlobalData, FunctionLexicon, PlayerList, ScriptEngine, Shell, archive-backed BlankWindow ownership, MapsZH.big MD_GLA03 promotion, original startup INI parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, TeamFactory::initFromSides, PlayerList::newGame, AIPlayer construction, ScriptEngine::newMap, and Radar::newMap",
   ],
   nextRequired: [
-    "continue startNewGame after side/player/script population into radar/partition/ghost/terrain newMap and map object spawning",
+    "continue startNewGame after Radar::newMap into partition/ghost/terrain newMap and map object spawning",
   ],
 }, null, 2));

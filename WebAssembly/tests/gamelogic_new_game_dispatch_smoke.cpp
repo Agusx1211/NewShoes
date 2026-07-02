@@ -18,6 +18,7 @@
 #include "Common/Player.h"
 #include "Common/PlayerList.h"
 #include "Common/PlayerTemplate.h"
+#include "Common/Radar.h"
 #include "Common/Science.h"
 #include "Common/Team.h"
 #include "Common/ThingFactory.h"
@@ -336,6 +337,8 @@ Bool g_seed_blank_window_loaded_from_archive = FALSE;
 Bool g_prepare_blank_window_loaded_from_archive = FALSE;
 Bool g_seed_blank_window_root_ready = FALSE;
 Bool g_prepare_blank_window_root_ready = FALSE;
+Int g_radar_window_lookup_count = 0;
+Bool g_radar_left_hud_window_installed = FALSE;
 
 bool expect(bool condition, const char *message)
 {
@@ -361,6 +364,15 @@ std::string jsonEscape(const char *value)
 const char *jsonBool(Bool value)
 {
 	return value ? "true" : "false";
+}
+
+bool nearlyEqual(Real lhs, Real rhs, Real tolerance)
+{
+	Real delta = lhs - rhs;
+	if (delta < 0.0f) {
+		delta = -delta;
+	}
+	return delta <= tolerance;
 }
 
 Int countMapObjects(Bool waypointsOnly)
@@ -640,6 +652,21 @@ private:
 	AsciiString m_lastLoad;
 };
 
+class SmokeRadar : public Radar
+{
+public:
+	void draw(Int, Int, Int, Int) override {}
+	void clearShroud() override {}
+	void setShroudLevel(Int, Int, CellShroudStatus) override {}
+
+	Bool hasRadarWindow(GameWindow *window) { return isRadarWindow(window); }
+	Region3D mapExtent() const { return m_mapExtent; }
+	Real xSample() const { return m_xSample; }
+	Real ySample() const { return m_ySample; }
+	Real terrainAverageZ() const { return m_terrainAverageZ; }
+	Real waterAverageZ() const { return m_waterAverageZ; }
+};
+
 class SmokeGameWindow : public GameWindow
 {
 	MEMORY_POOL_GLUE_WITH_EXPLICIT_CREATE(SmokeGameWindow, "SmokeGameWindow", 1, 1)
@@ -683,6 +710,29 @@ public:
 	GameWinDrawFunc getTextEntryDrawFunc() override { return SmokeNoDraw; }
 	GameFont *winFindFont(AsciiString, Int, Bool) override { return nullptr; }
 
+	void installRadarWindow()
+	{
+		if (m_radarWindow != nullptr) {
+			return;
+		}
+		m_radarWindow = allocateNewWindow();
+		m_radarWindow->winSetWindowId(NAMEKEY("ControlBar.wnd:LeftHUD"));
+		m_radarWindow->winSetPosition(0, 0);
+		m_radarWindow->winSetSize(RADAR_CELL_WIDTH, RADAR_CELL_HEIGHT);
+		g_radar_left_hud_window_installed = TRUE;
+	}
+
+	GameWindow *radarWindow() const { return m_radarWindow; }
+
+	GameWindow *winGetWindowFromId(GameWindow *window, Int id) override
+	{
+		if (m_radarWindow != nullptr && id == m_radarWindow->winGetWindowId()) {
+			++g_radar_window_lookup_count;
+			return m_radarWindow;
+		}
+		return GameWindowManager::winGetWindowFromId(window, id);
+	}
+
 	WindowLayout *winCreateLayout(AsciiString filename) override
 	{
 		g_last_layout_name = filename;
@@ -705,6 +755,9 @@ public:
 		}
 		return layout;
 	}
+
+private:
+	GameWindow *m_radarWindow = nullptr;
 };
 
 } // namespace
@@ -931,6 +984,7 @@ int main()
 
 	SmokeGameWindowManager *window_manager = new SmokeGameWindowManager;
 	TheWindowManager = window_manager;
+	window_manager->installRadarWindow();
 
 	MessageStream message_stream;
 	CommandList command_list;
@@ -1110,6 +1164,22 @@ int main()
 	const Int side_scripts_before_script_new_map = countSideScripts(sides_list);
 	script_engine->newMap();
 	const Int side_scripts_after_script_new_map = countSideScripts(sides_list);
+	SmokeRadar *radar = new SmokeRadar;
+	TheRadar = radar;
+	TheRadar->newMap(TheTerrainLogic);
+	const Region3D radar_extent = radar->mapExtent();
+	const Int radar_extent_hi_x = REAL_TO_INT_FLOOR(radar_extent.hi.x + 0.5f);
+	const Int radar_extent_hi_y = REAL_TO_INT_FLOOR(radar_extent.hi.y + 0.5f);
+	const Real expected_radar_x_sample = radar_extent.width() / RADAR_CELL_WIDTH;
+	const Real expected_radar_y_sample = radar_extent.height() / RADAR_CELL_HEIGHT;
+	const ICoord2D radar_center = { RADAR_CELL_WIDTH / 2, RADAR_CELL_HEIGHT / 2 };
+	Coord3D radar_center_world = {};
+	const Bool radar_to_world_center_ok = radar->radarToWorld2D(&radar_center, &radar_center_world);
+	Coord3D terrain_center_world = {};
+	terrain_center_world.x = radar_extent.width() / 2.0f;
+	terrain_center_world.y = radar_extent.height() / 2.0f;
+	ICoord2D terrain_center_radar = {};
+	const Bool world_to_radar_center_ok = radar->worldToRadar(&terrain_center_world, &terrain_center_radar);
 
 	ok = expect(startup_player_template_count > 0,
 		"original PlayerTemplateStore should parse shipped player templates before player population") && ok;
@@ -1131,6 +1201,22 @@ int main()
 		"original TeamFactory::initFromSides should create the neutral default team") && ok;
 	ok = expect(side_scripts_before_script_new_map == side_scripts_after_script_new_map,
 		"original ScriptEngine::newMap should scan loaded side scripts without discarding them") && ok;
+	ok = expect(g_radar_left_hud_window_installed
+			&& g_radar_window_lookup_count == 1
+			&& radar->hasRadarWindow(window_manager->radarWindow()),
+		"original Radar::newMap should resolve the ControlBar LeftHUD radar window") && ok;
+	ok = expect(radar_extent_hi_x == terrain_extent_hi_x
+			&& radar_extent_hi_y == terrain_extent_hi_y
+			&& nearlyEqual(radar->xSample(), expected_radar_x_sample, 0.001f)
+			&& nearlyEqual(radar->ySample(), expected_radar_y_sample, 0.001f),
+		"original Radar::newMap should derive radar extent and sample size from TerrainLogic") && ok;
+	ok = expect(radar_to_world_center_ok
+			&& world_to_radar_center_ok
+			&& nearlyEqual(radar_center_world.x, terrain_center_world.x, 0.001f)
+			&& nearlyEqual(radar_center_world.y, terrain_center_world.y, 0.001f)
+			&& terrain_center_radar.x == radar_center.x
+			&& terrain_center_radar.y == radar_center.y,
+		"original Radar::newMap should enable radar/world coordinate translation for the loaded map") && ok;
 	WorldHeightMap::freeListOfMapObjects();
 
 	if (!ok) {
@@ -1140,7 +1226,7 @@ int main()
 	std::cout
 		<< "{\"ok\":true,"
 		<< "\"path\":\"gamelogic-new-game-dispatch-runtime\","
-		<< "\"source\":\"GeneralsMD original GlobalData.cpp/INI.cpp/INIAiData.cpp/INIMultiplayer.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp\","
+		<< "\"source\":\"GeneralsMD original GlobalData.cpp/INI.cpp/INIAiData.cpp/INIMultiplayer.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/Radar.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp\","
 		<< "\"message\":\"MSG_NEW_GAME\","
 		<< "\"playerLookupIndex\":0,"
 		<< "\"playerCount\":" << player_list->getPlayerCount() << ","
@@ -1213,10 +1299,30 @@ int main()
 		<< "\"neutralDefaultTeam\":\"" << jsonEscape(neutral_default_team ? neutral_default_team->getName().str() : "") << "\","
 		<< "\"sideScriptsBeforeScriptNewMap\":" << side_scripts_before_script_new_map << ","
 		<< "\"sideScriptsAfterScriptNewMap\":" << side_scripts_after_script_new_map << ","
+		<< "\"radarLeftHudWindowInstalled\":" << jsonBool(g_radar_left_hud_window_installed) << ","
+		<< "\"radarWindowLookupCount\":" << g_radar_window_lookup_count << ","
+		<< "\"radarWindowOwned\":" << jsonBool(radar->hasRadarWindow(window_manager->radarWindow())) << ","
+		<< "\"radarExtent\":{\"loX\":" << radar_extent.lo.x
+		<< ",\"loY\":" << radar_extent.lo.y
+		<< ",\"loZ\":" << radar_extent.lo.z
+		<< ",\"hiX\":" << radar_extent.hi.x
+		<< ",\"hiY\":" << radar_extent.hi.y
+		<< ",\"hiZ\":" << radar_extent.hi.z << "},"
+		<< "\"radarXSample\":" << radar->xSample() << ","
+		<< "\"radarYSample\":" << radar->ySample() << ","
+		<< "\"radarTerrainAverageZ\":" << radar->terrainAverageZ() << ","
+		<< "\"radarWaterAverageZ\":" << radar->waterAverageZ() << ","
+		<< "\"radarToWorldCenterOk\":" << jsonBool(radar_to_world_center_ok) << ","
+		<< "\"radarCenterWorld\":{\"x\":" << radar_center_world.x
+		<< ",\"y\":" << radar_center_world.y
+		<< ",\"z\":" << radar_center_world.z << "},"
+		<< "\"worldToRadarCenterOk\":" << jsonBool(world_to_radar_center_ok) << ","
+		<< "\"terrainCenterRadar\":{\"x\":" << terrain_center_radar.x
+		<< ",\"y\":" << terrain_center_radar.y << "},"
 		<< "\"runtimeBoundaries\":["
-		<< "\"radar/partition/ghost/terrain-newMap/object-spawn path after original side/player/script population\"],"
-		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\",\"Win32BIGFileSystem MapsZH.big map archive\",\"Win32BIGFileSystem INIZH.big and INI.big startup data archives\",\"INI::load Multiplayer.ini, Science.ini, AIData.ini, and PlayerTemplate.ini\",\"MultiplayerSettings shipped color table\",\"ScienceStore shipped science table\",\"AI shipped AIData table\",\"PlayerTemplateStore shipped player templates\",\"W3DTerrainLogic::loadMap(false) MD_GLA03 map parse\",\"TerrainLogic::loadMap TerrainVisual::load handoff\",\"WorldHeightMap logical map-object list\",\"SidesList::ParseSidesDataChunk\",\"SidesList::validateSides\",\"AIPlayer construction for non-human sides\",\"TeamFactory::reset/initFromSides\",\"PlayerList::newGame side population\",\"ScriptEngine::newMap side script scan\"],"
-		<< "\"nextRequired\":\"continue startNewGame after side/player/script population into radar/partition/ghost/terrain newMap and map object spawning\"}"
+		<< "\"partition/ghost/terrain-newMap/object-spawn path after original Radar::newMap\"],"
+		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\",\"Win32BIGFileSystem MapsZH.big map archive\",\"Win32BIGFileSystem INIZH.big and INI.big startup data archives\",\"INI::load Multiplayer.ini, Science.ini, AIData.ini, and PlayerTemplate.ini\",\"MultiplayerSettings shipped color table\",\"ScienceStore shipped science table\",\"AI shipped AIData table\",\"PlayerTemplateStore shipped player templates\",\"W3DTerrainLogic::loadMap(false) MD_GLA03 map parse\",\"TerrainLogic::loadMap TerrainVisual::load handoff\",\"WorldHeightMap logical map-object list\",\"SidesList::ParseSidesDataChunk\",\"SidesList::validateSides\",\"AIPlayer construction for non-human sides\",\"TeamFactory::reset/initFromSides\",\"PlayerList::newGame side population\",\"ScriptEngine::newMap side script scan\",\"Radar::newMap terrain extent and LeftHUD ownership\"],"
+		<< "\"nextRequired\":\"continue startNewGame after Radar::newMap into partition/ghost/terrain newMap and map object spawning\"}"
 		<< "\n";
 
 	return 0;

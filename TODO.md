@@ -1232,9 +1232,11 @@ flow below.
       `PlayerTemplate` INI data, validates the parsed 11 sides and 97 teams,
       constructs original `AIPlayer` state, resets `TeamFactory`, populates 11
       players through `PlayerList::newGame`, and preserves 465 side scripts
-      through `ScriptEngine::newMap`; continue `startNewGame` after
-      side/player/script population into radar/partition/ghost/terrain
-      `newMap` and map object spawning.
+      through `ScriptEngine::newMap`. It now also calls original
+      `Radar::newMap` with the loaded terrain and a focused LeftHUD window
+      owner, proving the radar extent/sample/coordinate translation state for
+      `MD_GLA03`; continue `startNewGame` after `Radar::newMap` into
+      partition/ghost/terrain `newMap` and map object spawning.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---
