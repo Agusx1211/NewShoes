@@ -11,6 +11,7 @@ const screenshotDir = resolve(wasmRoot, "artifacts/screenshots");
 const desktopScreenshot = resolve(screenshotDir, "startup-vertical-browser.png");
 const canvasScreenshot = resolve(screenshotDir, "startup-vertical-canvas.png");
 const audioBootScreenshot = resolve(screenshotDir, "startup-vertical-audio-owned.png");
+const debugStartupVertical = process.env.STARTUP_VERTICAL_DEBUG === "1";
 
 const allAudioStartupFiles = [
   "Data\\INI\\AudioSettings.ini",
@@ -33,6 +34,24 @@ function expect(condition, message, payload) {
 
 function entryByFactory(frontier, factory) {
   return (frontier?.entries ?? []).find((entry) => entry.factory === factory);
+}
+
+function debugLog(message) {
+  if (debugStartupVertical) {
+    console.error(`[startup-vertical] ${message}`);
+  }
+}
+
+function attachConsoleLogger(page, label) {
+  if (!debugStartupVertical) {
+    return;
+  }
+  page.on("console", (message) => {
+    console.error(`[${label} console:${message.type()}] ${message.text()}`);
+  });
+  page.on("pageerror", (error) => {
+    console.error(`[${label} pageerror] ${error.stack ?? error.message}`);
+  });
 }
 
 async function readBigEntryNames(path) {
@@ -262,7 +281,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
   const probe = state.functionLexiconRuntime;
   expect(probe?.attempted === true, "function lexicon runtime probe did not run", probe);
   expect(probe.ok === false, "function lexicon runtime should not claim full ownership yet", probe);
-  expect(probe.status === "base_function_lexicon_control_bar_input_runtime_owned",
+  expect(probe.status === "base_function_lexicon_options_menu_runtime_owned",
     "function lexicon runtime status mismatch", probe);
   expect(probe.nextRequired === "originalFunctionLexiconRemainingShellCallbacks",
     "function lexicon runtime nextRequired mismatch", probe);
@@ -303,6 +322,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.extendedMessageBoxSystem === true
       && probe.lookups.imeCandidateWindowSystem === true
       && probe.lookups.mainMenuSystem === true
+      && probe.lookups.optionsMenuSystem === true
       && probe.lookups.creditsMenuSystem === true
       && probe.lookups.skirmishGameOptionsMenuSystem === true
       && probe.lookups.singlePlayerMenuSystem === true
@@ -330,6 +350,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.gadgetTextEntryInput === true
       && probe.lookups.imeCandidateWindowInput === true
       && probe.lookups.mainMenuInput === true
+      && probe.lookups.optionsMenuInput === true
       && probe.lookups.creditsMenuInput === true
       && probe.lookups.skirmishGameOptionsMenuInput === true
       && probe.lookups.singlePlayerMenuInput === true
@@ -348,6 +369,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.imeCandidateMainDraw === true
       && probe.lookups.imeCandidateTextAreaDraw === true
       && probe.lookups.mainMenuInit === true
+      && probe.lookups.optionsMenuInit === true
       && probe.lookups.creditsMenuInit === true
       && probe.lookups.skirmishGameOptionsMenuInit === true
       && probe.lookups.singlePlayerMenuInit === true
@@ -360,6 +382,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.keyboardOptionsMenuInit === true
       && probe.lookups.inGamePopupMessageInit === true
       && probe.lookups.mainMenuUpdate === true
+      && probe.lookups.optionsMenuUpdate === true
       && probe.lookups.creditsMenuUpdate === true
       && probe.lookups.skirmishGameOptionsMenuUpdate === true
       && probe.lookups.singlePlayerMenuUpdate === true
@@ -368,6 +391,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.replayMenuUpdate === true
       && probe.lookups.keyboardOptionsMenuUpdate === true
       && probe.lookups.mainMenuShutdown === true
+      && probe.lookups.optionsMenuShutdown === true
       && probe.lookups.creditsMenuShutdown === true
       && probe.lookups.skirmishGameOptionsMenuShutdown === true
       && probe.lookups.singlePlayerMenuShutdown === true
@@ -473,7 +497,7 @@ function assertAudioOwnedFrontier(state) {
       && frontier.audioManagerRuntime.tornDown === true,
     "frontier audioManagerRuntime summary mismatch", frontier.audioManagerRuntime);
   expect(frontier.functionLexiconRuntime?.ready === false
-      && frontier.functionLexiconRuntime.status === "base_function_lexicon_control_bar_input_runtime_owned"
+      && frontier.functionLexiconRuntime.status === "base_function_lexicon_options_menu_runtime_owned"
       && frontier.functionLexiconRuntime.w3dDeviceDrawReady === true
       && frontier.functionLexiconRuntime.w3dLayoutInitReady === true
       && frontier.functionLexiconRuntime.messageBoxSystemReady === true
@@ -669,11 +693,14 @@ let browser;
 try {
   browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  attachConsoleLogger(page, "startup");
   const harnessUrl = new URL("harness/index.html", server.url).href;
 
+  debugLog("loading initial harness page");
   await page.goto(harnessUrl, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
 
+  debugLog("running archiveless boot");
   const bootResult = await page.evaluate(() => window.CnCPort.rpc("boot", {
     source: "startup vertical smoke",
   }));
@@ -699,14 +726,17 @@ try {
   // W3DModuleFactory / W3DParticleSystemManager,
   // runs the real AudioManager::init()/openDevice() path plus the original
   // W3DFunctionLexicon device-table load, original MainMenu/Credits/Skirmish
-  // base shell callbacks, the promoted Challenge/PopupCommunicator/MapSelect/Replay/PopupReplay-modal/GameInfo owners,
+  // base shell callbacks, the promoted Options/Challenge/PopupCommunicator/MapSelect/Replay/PopupReplay-modal/GameInfo owners,
   // and honestly keeps the device-factory frontier at createFunctionLexicon
   // until the remaining shell callback graph is owned by cnc-port.
   const archives = await buildAudioOwnershipArchiveSpecs();
   const audioPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  attachConsoleLogger(audioPage, "archive");
+  debugLog("loading archive-backed harness page");
   await audioPage.goto(harnessUrl, { waitUntil: "networkidle" });
   await audioPage.waitForFunction(() => Boolean(window.CnCPort?.rpc));
 
+  debugLog("mounting archive-backed startup set");
   const mountResult = await audioPage.evaluate((payload) =>
     window.CnCPort.rpc("mountRangeBackedArchiveSet", payload), {
     path: "/assets/startup-audio",
@@ -722,9 +752,11 @@ try {
   });
   expect(mountResult.ok === true, "audio-ownership archive mount failed", mountResult.archiveSet);
 
+  debugLog("running archive-backed boot");
   const audioBootResult = await audioPage.evaluate(() => window.CnCPort.rpc("boot", {
     source: "startup vertical smoke (audio ownership)",
   }));
+  debugLog("archive-backed boot returned");
   expect(audioBootResult.ok === true, "audio-ownership boot RPC failed", audioBootResult);
   expect(audioBootResult.state?.booted === true, "audio-ownership boot state mismatch", audioBootResult);
   expect(audioBootResult.state.startupSingletons?.ok === true,

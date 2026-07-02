@@ -178,13 +178,18 @@ const browserChecks = [
           && payload.archiveBackedStartup.audioManagerRuntime.music?.alreadyLoaded === true
           && payload.archiveBackedStartup.audioManagerRuntime.teardown?.tornDown === true,
         'Archive-backed startup boot did not prove real init/music/teardown');
-      expect(payload.archiveBackedStartup.functionLexiconRuntime?.status === 'base_function_lexicon_control_bar_input_runtime_owned',
-        'Archive-backed startup boot did not report the expected ControlBar input FunctionLexicon frontier');
+      expect(payload.archiveBackedStartup.functionLexiconRuntime?.status === 'base_function_lexicon_options_menu_runtime_owned',
+        'Archive-backed startup boot did not report the expected OptionsMenu FunctionLexicon frontier');
       expect(payload.archiveBackedStartup.functionLexiconRuntime?.lookups?.popupReplayInput === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.popupReplayInit === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.popupReplayShutdown === true
-          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.controlBarInput === true,
-        'Archive-backed startup boot did not prove PopupReplay modal and ControlBar input callback lookups');
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.controlBarInput === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.optionsMenuSystem === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.optionsMenuInput === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.optionsMenuInit === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.optionsMenuUpdate === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.optionsMenuShutdown === true,
+        'Archive-backed startup boot did not prove PopupReplay modal, ControlBar input, and OptionsMenu callback lookups');
       expect(payload.archiveBackedStartup.functionLexiconRuntime?.lookups?.popupReplaySystem === undefined
           && payload.archiveBackedStartup.functionLexiconRuntime?.lookups?.popupReplayUpdate === undefined,
         'Archive-backed startup boot should leave PopupReplay score-screen-dependent callbacks unregistered');
@@ -415,14 +420,14 @@ console.log(JSON.stringify({
     'original ButtonUSA faction difficulty transition and ButtonDiffBack return through MainMenuSystem',
     'original ButtonLoadReplay dropdown and ButtonLoadReplayBack return through MainMenuSystem',
     'original ButtonCredits path through Shell::push into CreditsMenuInit/CreditsMenuUpdate with INIZH-backed Credits.ini',
-    'browser boot constructs original W3DFunctionLexicon, verifies W3D device callback-name tables, and loads the non-network base GUI widget/input, IME draw, original ExtendedMessageBoxSystem, original DifficultySelect system/input/init callbacks, original KeyboardOptionsMenu system/input/init/update/shutdown callbacks with original MetaEvent global ownership, original InGamePopupMessage system/input/init callbacks, original IdleWorkerSystem callback, original BeaconWindowInput callback, original ControlBarInput callback, original ReplayControl system/input callbacks, original ChallengeMenu callbacks, original PopupCommunicator callbacks, original MapSelectMenu callbacks, original ReplayMenu callbacks, original PopupReplay modal callbacks, original GameInfoWindowSystem lookup, and original MainMenu/Credits/Skirmish/SinglePlayer shell callback tables while the remaining layout graph remains the FunctionLexicon boundary',
+    'browser boot constructs original W3DFunctionLexicon, verifies W3D device callback-name tables, and loads the non-network base GUI widget/input, IME draw, original ExtendedMessageBoxSystem, original DifficultySelect system/input/init callbacks, original KeyboardOptionsMenu system/input/init/update/shutdown callbacks with original MetaEvent global ownership, original OptionsMenu system/input/init/update/shutdown callbacks with original OptionPreferences ownership, original InGamePopupMessage system/input/init callbacks, original IdleWorkerSystem callback, original BeaconWindowInput callback, original ControlBarInput callback, original ReplayControl system/input callbacks, original ChallengeMenu callbacks, original PopupCommunicator callbacks, original MapSelectMenu callbacks, original ReplayMenu callbacks, original PopupReplay modal callbacks, original GameInfoWindowSystem lookup, and original MainMenu/Credits/Skirmish/SinglePlayer shell callback tables while the remaining layout graph remains the FunctionLexicon boundary',
     'browser boot constructs original W3DModuleFactory, runs W3DModuleFactory::init(), and proves public ModuleFactory lookups for representative base gameplay, client-update, and W3D draw modules',
     'browser boot constructs original W3DParticleSystemManager, runs ParticleSystemManager::init() against Data\\INI\\ParticleSystem.ini, and proves shipped particle template lookups through the public manager API',
     'source-pinned original GameLogic MSG_NEW_GAME dispatch frontier after CommandList handoff',
     'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, and first-call startNewGame(FALSE) deferral',
   ],
   nextRequired: [
-    'replace the remaining base FunctionLexicon shell/HUD callback registrations, including PopupReplay score-screen-dependent System/Update and broader ControlBarSystem/LeftHUDInput callbacks, so GameEngine.cpp line 446 can become fully runtime-owned',
+    'replace the remaining base FunctionLexicon layout/HUD callback registrations, including PopupReplay score-screen-dependent System/Update and broader ControlBarSystem/LeftHUDInput callbacks, so GameEngine.cpp line 446 can become fully runtime-owned',
     'advance the next vertical startup path outside the already-proven shell menu slice',
     'advance the post-particle startup data stores toward createThingFactory once createFunctionLexicon is fully owned',
     'supply base Generals Window.big and replace the focused runtime in-memory BlankWindow adapter before continuing deferred startNewGame into terrain/player/script load',

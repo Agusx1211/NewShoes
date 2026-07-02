@@ -2341,6 +2341,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `originalFunctionLexiconRemainingShellCallbacks` next. `ControlBarSystem`
       and `LeftHUDInput` remain open until the gameplay command/radar/player
       ownership surface is runtime-owned instead of weak-stubbed.
+- [x] Promote the original `OptionsMenu` callback owner into the linked
+      `cnc-port` base `FunctionLexicon` without claiming the online/network
+      settings flows behind the same source file. `zh_window_layout_script_runtime`
+      now links original `GUI/GUICallbacks/Menus/OptionsMenu.cpp`, the reduced
+      wasm system/input/init/update/shutdown tables register the five
+      `OptionsMenu` callbacks, and the original `OptionPreferences` definitions
+      replace the old `wasm_real_ini_compat.cpp` fallback. To keep first-run
+      startup preference reads on browser-safe platform boundaries, original
+      `Common/UserPreferences.cpp` now no-ops `load()`/`write()` under
+      Emscripten until browser settings storage exists, and original
+      `IPEnumeration.cpp` returns no native local addresses under Emscripten
+      until LAN/GameSpy networking is ported. Startup vertical verifies all
+      five callback-name lookups in the browser and now reports
+      `base_function_lexicon_options_menu_runtime_owned` with
+      `originalFunctionLexiconRemainingShellCallbacks` next.
 - [x] Prove the original `W3DModuleFactory` runtime path in the browser startup
       frontier without pretending the earlier `FunctionLexicon` blocker is done.
       `wasm_module_factory_runtime` now constructs original `W3DModuleFactory`

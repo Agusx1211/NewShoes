@@ -52,6 +52,9 @@ IPEnumeration::~IPEnumeration( void )
 
 EnumeratedIP * IPEnumeration::getAddresses( void )
 {
+#ifdef __EMSCRIPTEN__
+	return m_IPlist;
+#else
 	if (m_IPlist)
 		return m_IPlist;
 
@@ -151,10 +154,14 @@ EnumeratedIP * IPEnumeration::getAddresses( void )
 	}
 
 	return m_IPlist;
+#endif
 }
 
 AsciiString IPEnumeration::getMachineName( void )
 {
+#ifdef __EMSCRIPTEN__
+	return AsciiString();
+#else
 	if (!m_isWinsockInitialized)
 	{
 		WORD verReq = MAKEWORD(2, 2);
@@ -181,5 +188,5 @@ AsciiString IPEnumeration::getMachineName( void )
 	}
 
 	return AsciiString(hostname);
+#endif
 }
-

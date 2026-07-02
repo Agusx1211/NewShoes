@@ -54,7 +54,9 @@ flow below.
       `ExtendedMessageBoxSystem`, original `DifficultySelect`
       system/input/init callbacks, original
       `KeyboardOptionsMenu` system/input/init/update/shutdown callbacks with
-      original `MetaEvent` global ownership, original `InGamePopupMessage`
+      original `MetaEvent` global ownership, original `OptionsMenu`
+      system/input/init/update/shutdown callbacks with original
+      `OptionPreferences` ownership, original `InGamePopupMessage`
       system/input/init callbacks with original `InGameUI` global ownership,
       original `IdleWorkerSystem`, original `BeaconWindowInput`, original
       `ControlBarInput`, original `ReplayControl` system/input callbacks,
@@ -91,6 +93,8 @@ flow below.
       input/init/shutdown modal lookups, original `ExtendedMessageBoxSystem`,
       original `DifficultySelect` system/input/init lookups, original
       `KeyboardOptionsMenu` system/input/init/update/shutdown lookups,
+      original `OptionsMenu` system/input/init/update/shutdown lookups with
+      the old `wasm_real_ini_compat.cpp` `OptionPreferences` fallback retired,
       original `InGamePopupMessage` system/input/init lookups,
       original `IdleWorkerSystem`, `BeaconWindowInput`, `ControlBarInput`, and
       `ReplayControl` system/input lookups, and
@@ -135,6 +139,12 @@ flow below.
       currently owns only the Win32-style `SYSTEMTIME` date/time formatting
       symbols needed by original `ReplayMenu.cpp`; full save/load and
       `GameState` snapshot behavior remain unowned.
+- [ ] Promote the `SaveLoadMenu*` callbacks from original
+      `GUI/GUICallbacks/Menus/PopupSaveLoad.cpp` only after the save/load,
+      `GameState`, `CampaignManager`, and persistence surfaces can be
+      runtime-owned without weak stubs. The callback group appears non-network,
+      but it should not become a FunctionLexicon frontier claim until those
+      owners are real.
 - [ ] Stage base-Generals `Music.big` in `extract_zh_runtime_archives.sh`
       (currently manually extracted via
       `cabextract -F Music.big` from the Generals CD1 `Data1.cab` into
@@ -407,11 +417,15 @@ flow below.
 - [ ] Replace the focused command-line runtime's local
       `DX8Wrapper_PreserveFPU` compatibility definition with the original W3D
       DX8 wrapper state once the W3D runtime links into `cnc-port`.
-- [ ] Replace the focused browser-default `UserPreferences` /
-      `OptionPreferences` compatibility definitions used by the original
-      `GameData.ini` preflight with the real Options menu/user-preference
-      persistence path once browser settings storage and menu ownership are
-      linked.
+- [ ] Replace the Emscripten no-op `UserPreferences::load()`/`write()`
+      boundary in original `Common/UserPreferences.cpp` with real browser
+      settings storage. The old main-runtime `OptionPreferences` compatibility
+      fallback has been retired in favor of the original `OptionsMenu.cpp`
+      owner.
+- [ ] Replace the Emscripten no-op local `IPEnumeration` boundary with the
+      final browser networking/local-address contract once LAN/GameSpy
+      networking is in scope. The current browser path returns no native local
+      addresses so startup preference reads do not enter WinSock/DNS code.
 - [ ] Enable and route `MiniLog.cpp`'s `DEBUG_LOGGING` body to the browser log
       or harness once the real `GameLogic` frame counter is available.
 - [ ] Decide the browser copy-protection / launcher contract before compiling
