@@ -480,6 +480,11 @@ expect(
   "gamelogic-new-game-dispatch-smoke does not link original Radar.cpp",
 );
 expect(
+  /TerrainTypes\.cpp/.test(runtimeTargetSources.block)
+    && /Terrain\/TerrainRoads\.cpp|Terrain\\TerrainRoads\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original TerrainTypes.cpp/TerrainRoads.cpp",
+);
+expect(
   /ScriptEngine\/ScriptEngine\.cpp|ScriptEngine\\ScriptEngine\.cpp/.test(runtimeTargetSources.block),
   "gamelogic-new-game-dispatch-smoke does not link original ScriptEngine.cpp",
 );
@@ -530,6 +535,17 @@ expect(
 expect(
   /GameSpy\/Chat\.cpp|GameSpy\\Chat\.cpp/.test(runtimeTargetSources.block),
   "gamelogic-new-game-dispatch-smoke does not link original OnlineChatColors parser source",
+);
+expect(
+  /persistfactory\.cpp/.test(runtimeTargetSources.block)
+    && /pointerremap\.cpp/.test(runtimeTargetSources.block)
+    && /saveload\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original save/load support for RenderObjClass persistence",
+);
+expect(
+  /WW3D2\/dx8wrapper\.cpp|WW3D2\\dx8wrapper\.cpp/.test(runtimeTargetSources.block)
+    && /WW3D2\/rendobj\.cpp|WW3D2\\rendobj\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original DX8Wrapper/RenderObj support for terrain render-object ownership",
 );
 const runtimeLinkLibraries = cmakeInvocationBlock(
   cmake,
@@ -598,7 +614,7 @@ const runtimePathLine = lineOf(
 );
 const runtimeSourceLine = lineOf(
   runtimeSmoke,
-  /GlobalData\.cpp\/INI\.cpp\/INIGameData\.cpp\/INIAiData\.cpp\/INIMultiplayer\.cpp\/UserPreferences\.cpp\/MultiplayerSettings\.cpp\/Science\.cpp\/PlayerTemplate\.cpp\/FunctionLexicon\.cpp\/PlayerList\.cpp\/Player\.cpp\/AI\.cpp\/AIPathfind\.cpp\/AIPlayer\.cpp\/GhostObject\.cpp\/Weapon\.cpp\/GameLogic\.cpp\/GameLogicDispatch\.cpp\/GameState\.cpp\/Radar\.cpp\/PartitionManager\.cpp\/ScriptEngine\.cpp\/Scripts\.cpp\/Shell\.cpp\/GameWindowManagerScript\.cpp\/HeaderTemplate\.cpp\/TerrainLogic\.cpp\/W3DTerrainLogic\.cpp\/WorldHeightMap\.cpp\/TerrainVisual\.cpp\/SidesList\.cpp\/ThingFactory\.cpp/,
+  /GlobalData\.cpp\/INI\.cpp\/INIGameData\.cpp\/INIAiData\.cpp\/INIMultiplayer\.cpp\/UserPreferences\.cpp\/MultiplayerSettings\.cpp\/Science\.cpp\/PlayerTemplate\.cpp\/FunctionLexicon\.cpp\/PlayerList\.cpp\/Player\.cpp\/AI\.cpp\/AIPathfind\.cpp\/AIPlayer\.cpp\/GhostObject\.cpp\/Weapon\.cpp\/GameLogic\.cpp\/GameLogicDispatch\.cpp\/GameState\.cpp\/TerrainTypes\.cpp\/Radar\.cpp\/PartitionManager\.cpp\/ScriptEngine\.cpp\/Scripts\.cpp\/Shell\.cpp\/GameWindowManagerScript\.cpp\/HeaderTemplate\.cpp\/TerrainRoads\.cpp\/TerrainLogic\.cpp\/W3DTerrainLogic\.cpp\/WorldHeightMap\.cpp\/TerrainVisual\.cpp\/SidesList\.cpp\/ThingFactory\.cpp/,
   "runtime smoke original source JSON",
 );
 const runtimeArchivePathLine = lineOf(
@@ -817,6 +833,41 @@ const runtimeGhostProofLine = lineOf(
   /ghost_local_player_index_before\s*==\s*0[\s\S]*local_player_index_for_ghosts\s*>=\s*0[\s\S]*ghost_local_player_index_after_set\s*==\s*local_player_index_for_ghosts[\s\S]*ghost_object_manager_reset_called/,
   "runtime smoke original GhostObjectManager local-player/reset proof",
 );
+const runtimeTerrainTypeCollectionLine = lineOf(
+  runtimeSmoke,
+  /TerrainTypeCollection\s+terrain_types\s*;/,
+  "runtime smoke original TerrainTypeCollection allocation",
+);
+const runtimeTerrainRoadCollectionLine = lineOf(
+  runtimeSmoke,
+  /TerrainRoadCollection\s+terrain_roads\s*;/,
+  "runtime smoke original TerrainRoadCollection allocation",
+);
+const runtimeTerrainRenderMapLine = lineOf(
+  runtimeSmoke,
+  /NEW\s+WorldHeightMap\s*\(\s*&terrain_render_map_stream\s*,\s*FALSE\s*\)/,
+  "runtime smoke original WorldHeightMap render map load",
+);
+const runtimeTerrainRenderObjectLine = lineOf(
+  runtimeSmoke,
+  /NEW_REF\s*\(\s*SmokeTerrainRenderObject\s*,\s*\(\s*\)\s*\)/,
+  "runtime smoke BaseHeightMapRenderObjClass terrain render object allocation",
+);
+const runtimeTerrainRenderAttachLine = lineOf(
+  runtimeSmoke,
+  /terrain_render_object->attachMap\s*\(\s*terrain_render_map\s*\)/,
+  "runtime smoke terrain render object map attach",
+);
+const runtimeTerrainNewMapLine = lineOf(
+  runtimeSmoke,
+  /terrain_logic\.newMap\s*\(\s*FALSE\s*\)\s*;/,
+  "runtime smoke original W3DTerrainLogic::newMap(false) call",
+);
+const runtimeTerrainNewMapProofLine = lineOf(
+  runtimeSmoke,
+  /terrain_road_buffer_update_buffers[\s\S]*terrain_water_grid_calls_after_new_map\s*==\s*terrain_water_grid_calls_before_new_map\s*\+\s*1[\s\S]*nearlyEqual\s*\(\s*first_waypoint_location_after_new_map\.z\s*,\s*first_waypoint_ground_height_after_new_map/,
+  "runtime smoke original W3DTerrainLogic::newMap road-buffer and TerrainLogic waypoint/water proof",
+);
 const runtimeAiLine = lineOf(
   runtimeSmoke,
   /AI\s+ai\s*;/,
@@ -974,6 +1025,11 @@ console.log(JSON.stringify({
     originalGameLogicCppLinked: true,
     originalGameLogicDispatchCppLinked: true,
     originalGameStateCppLinked: true,
+    originalTerrainTypesCppLinked: true,
+    originalTerrainRoadsCppLinked: true,
+    originalDx8WrapperCppLinked: true,
+    originalRendObjCppLinked: true,
+    originalSaveLoadSupportLinked: true,
     originalRadarCppLinked: true,
     originalScriptEngineCppLinked: true,
     originalScriptsCppLinked: true,
@@ -1028,6 +1084,13 @@ console.log(JSON.stringify({
     ghostLocalPlayerLine: runtimeGhostLocalPlayerLine,
     ghostResetLine: runtimeGhostResetLine,
     ghostProofLine: runtimeGhostProofLine,
+    terrainTypeCollectionLine: runtimeTerrainTypeCollectionLine,
+    terrainRoadCollectionLine: runtimeTerrainRoadCollectionLine,
+    terrainRenderMapLine: runtimeTerrainRenderMapLine,
+    terrainRenderObjectLine: runtimeTerrainRenderObjectLine,
+    terrainRenderAttachLine: runtimeTerrainRenderAttachLine,
+    terrainNewMapLine: runtimeTerrainNewMapLine,
+    terrainNewMapProofLine: runtimeTerrainNewMapProofLine,
     aiLine: runtimeAiLine,
     rankInfoStoreLine: runtimeRankInfoStoreLine,
     noFocusedPlayerLookupWrap: true,
@@ -1054,9 +1117,9 @@ console.log(JSON.stringify({
     "prepareNewGame owns original ScriptEngine difficulty, BlankWindow background, game-mode, pending-map, and original Shell::hideShell setup",
     "startNewGame(FALSE) records the pristine map and defers the first call before terrain load",
     "w3d-window-layout-script-smoke still uses a focused GameLogic shim and sentinel gameplay owners",
-    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/FunctionLexicon.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/SidesList.cpp plus the W3D terrain runtime, then calls GameLogic::processCommandList at runtime through original GlobalData, FunctionLexicon, PlayerList, ScriptEngine, Shell, archive-backed BlankWindow ownership, MapsZH.big MD_GLA03 promotion, original default and Zero Hour startup INI/GameData parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, TeamFactory::initFromSides, PlayerList::newGame, AIPlayer construction, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, and GhostObjectManager local-player index/reset",
+    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/FunctionLexicon.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/TerrainTypes.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainRoads.cpp/SidesList.cpp plus the W3D terrain runtime and original DX8Wrapper/RenderObj support, then calls GameLogic::processCommandList at runtime through original GlobalData, FunctionLexicon, PlayerList, ScriptEngine, Shell, archive-backed BlankWindow ownership, MapsZH.big MD_GLA03 promotion, original default and Zero Hour startup INI/GameData parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, TeamFactory::initFromSides, PlayerList::newGame, AIPlayer construction, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, GhostObjectManager local-player index/reset, TerrainRoadCollection/TerrainTypeCollection render-map setup, and original W3DTerrainLogic::newMap road-buffer handoff plus TerrainLogic waypoint/water setup",
   ],
   nextRequired: [
-    "continue startNewGame after GhostObjectManager reset into W3DTerrainLogic::newMap road/bridge render-object ownership, TerrainLogic::newMap waypoint/water update, and map object spawning",
+    "continue startNewGame after W3DTerrainLogic::newMap road-buffer handoff into W3DBridgeBuffer::loadBridges GenericBridge object creation, TerrainLogic bridge/map object spawning, and pathfinder newMap",
   ],
 }, null, 2));

@@ -12,6 +12,7 @@
 #include "Common/INI.h"
 #include "Common/LocalFileSystem.h"
 #include "Common/MapObject.h"
+#include "Common/MapReaderWriterInfo.h"
 #include "Common/MessageStream.h"
 #include "Common/MultiplayerSettings.h"
 #include "Common/NameKeyGenerator.h"
@@ -21,6 +22,7 @@
 #include "Common/Radar.h"
 #include "Common/Science.h"
 #include "Common/Team.h"
+#include "Common/TerrainTypes.h"
 #include "Common/ThingFactory.h"
 #include "Common/UserPreferences.h"
 #include "GameClient/Display.h"
@@ -33,6 +35,7 @@
 #include "GameClient/MapUtil.h"
 #include "GameClient/Shell.h"
 #include "GameClient/Snow.h"
+#include "GameClient/TerrainRoads.h"
 #include "GameClient/TerrainVisual.h"
 #include "GameClient/Water.h"
 #include "GameClient/WindowLayout.h"
@@ -45,8 +48,10 @@
 #include "GameLogic/Scripts.h"
 #include "GameLogic/SidesList.h"
 #include "GameLogic/VictoryConditions.h"
+#include "W3DDevice/GameClient/BaseHeightMap.h"
 #include "W3DDevice/GameClient/WorldHeightMap.h"
 #include "W3DDevice/GameLogic/W3DTerrainLogic.h"
+#include "W3DDevice/GameClient/W3DRoadBuffer.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
 
@@ -112,13 +117,12 @@ class SpecialPowerStore;
 class StatsCollector;
 class TeamFactory;
 class TerrainLogic;
-class TerrainRoadCollection;
-class TerrainTypeCollection;
 class TerrainVisual;
 class ThingFactory;
 class UpgradeCenter;
 class VictoryConditionsInterface;
 class View;
+class W3DShadowManager;
 class WeaponStore;
 
 AI *TheAI WEAK_SINGLETON = nullptr;
@@ -178,13 +182,12 @@ SpecialPowerStore *TheSpecialPowerStore WEAK_SINGLETON = nullptr;
 StatsCollector *TheStatsCollector WEAK_SINGLETON = nullptr;
 TeamFactory *TheTeamFactory WEAK_SINGLETON = nullptr;
 TerrainLogic *TheTerrainLogic WEAK_SINGLETON = nullptr;
-TerrainRoadCollection *TheTerrainRoads WEAK_SINGLETON = nullptr;
-TerrainTypeCollection *TheTerrainTypes WEAK_SINGLETON = nullptr;
 TerrainVisual *TheTerrainVisual WEAK_SINGLETON = nullptr;
 ThingFactory *TheThingFactory WEAK_SINGLETON = nullptr;
 UpgradeCenter *TheUpgradeCenter WEAK_SINGLETON = nullptr;
 VictoryConditionsInterface *TheVictoryConditions WEAK_SINGLETON = nullptr;
 View *TheTacticalView WEAK_SINGLETON = nullptr;
+W3DShadowManager *TheW3DShadowManager WEAK_SINGLETON = nullptr;
 WeaponStore *TheWeaponStore WEAK_SINGLETON = nullptr;
 Dict MapObject::TheWorldDict WEAK_SINGLETON;
 OVERRIDE<WaterTransparencySetting> TheWaterTransparency WEAK_SINGLETON = nullptr;
@@ -420,6 +423,19 @@ Int countMapObjects(Bool waypointsOnly)
 	return count;
 }
 
+Int countMapObjectsWithFlag(Int flag)
+{
+	Int count = 0;
+	for (MapObject *map_object = MapObject::getFirstMapObject();
+			map_object != nullptr;
+			map_object = map_object->getNext()) {
+		if (map_object->getFlag(flag)) {
+			++count;
+		}
+	}
+	return count;
+}
+
 Int countScriptsInList(ScriptList *script_list)
 {
 	if (script_list == nullptr) {
@@ -640,7 +656,11 @@ public:
 		}
 	}
 	TerrainType *getTerrainTile(Real, Real) override { return nullptr; }
-	void enableWaterGrid(Bool) override {}
+	void enableWaterGrid(Bool enable) override
+	{
+		++m_waterGridEnableCalls;
+		m_lastWaterGridEnable = enable;
+	}
 	void setWaterGridHeightClamps(const WaterHandle *, Real, Real) override {}
 	void setWaterAttenuationFactors(const WaterHandle *, Real, Real, Real, Real) override {}
 	void setWaterTransform(const WaterHandle *, Real, Real, Real, Real) override {}
@@ -686,10 +706,131 @@ public:
 
 	Int loadCalls() const { return m_loadCalls; }
 	AsciiString lastLoad() const { return m_lastLoad; }
+	Int waterGridEnableCalls() const { return m_waterGridEnableCalls; }
+	Bool lastWaterGridEnable() const { return m_lastWaterGridEnable; }
 
 private:
 	Int m_loadCalls = 0;
 	AsciiString m_lastLoad;
+	Int m_waterGridEnableCalls = 0;
+	Bool m_lastWaterGridEnable = FALSE;
+};
+
+class SmokeW3DRoadBuffer : public W3DRoadBuffer
+{
+public:
+	Bool initialized() const { return m_initialized; }
+	Int roadSegments() const { return m_numRoads; }
+	Int maxRoadSegments() const { return m_maxRoadSegments; }
+	Bool updateBuffers() const { return m_updateBuffers; }
+	WorldHeightMap *map() const { return m_map; }
+	void capSegmentsForLogicHandoff() { m_maxRoadSegments = 0; }
+};
+
+class SmokeTerrainRenderObject : public BaseHeightMapRenderObjClass
+{
+public:
+	SmokeTerrainRenderObject()
+	{
+#ifdef DO_ROADS
+		if (m_roadBuffer != nullptr) {
+			delete m_roadBuffer;
+		}
+		m_roadBuffer = new SmokeW3DRoadBuffer;
+		static_cast<SmokeW3DRoadBuffer *>(m_roadBuffer)->capSegmentsForLogicHandoff();
+#endif
+	}
+
+	~SmokeTerrainRenderObject() override
+	{
+		if (TheTerrainRenderObject == this) {
+			TheTerrainRenderObject = nullptr;
+		}
+	}
+
+	Bool attachMap(WorldHeightMap *map)
+	{
+		if (map == nullptr) {
+			return FALSE;
+		}
+		redirectToHeightmap(map);
+#ifdef DO_ROADS
+		if (m_roadBuffer != nullptr) {
+			m_roadBuffer->setMap(map);
+		}
+#endif
+		return getMap() == map;
+	}
+
+	Bool roadBufferInstalled() const
+	{
+#ifdef DO_ROADS
+		return m_roadBuffer != nullptr;
+#else
+		return FALSE;
+#endif
+	}
+
+	Bool roadBufferInitialized() const
+	{
+#ifdef DO_ROADS
+		const SmokeW3DRoadBuffer *road_buffer =
+			static_cast<const SmokeW3DRoadBuffer *>(m_roadBuffer);
+		return road_buffer != nullptr && road_buffer->initialized();
+#else
+		return FALSE;
+#endif
+	}
+
+	Int roadSegments() const
+	{
+#ifdef DO_ROADS
+		const SmokeW3DRoadBuffer *road_buffer =
+			static_cast<const SmokeW3DRoadBuffer *>(m_roadBuffer);
+		return road_buffer != nullptr ? road_buffer->roadSegments() : 0;
+#else
+		return 0;
+#endif
+	}
+
+	Int roadSegmentCapacity() const
+	{
+#ifdef DO_ROADS
+		const SmokeW3DRoadBuffer *road_buffer =
+			static_cast<const SmokeW3DRoadBuffer *>(m_roadBuffer);
+		return road_buffer != nullptr ? road_buffer->maxRoadSegments() : 0;
+#else
+		return 0;
+#endif
+	}
+
+	Bool roadBufferUpdateBuffers() const
+	{
+#ifdef DO_ROADS
+		const SmokeW3DRoadBuffer *road_buffer =
+			static_cast<const SmokeW3DRoadBuffer *>(m_roadBuffer);
+		return road_buffer != nullptr && road_buffer->updateBuffers();
+#else
+		return FALSE;
+#endif
+	}
+
+	Bool roadBufferMapAttached() const
+	{
+#ifdef DO_ROADS
+		const SmokeW3DRoadBuffer *road_buffer =
+			static_cast<const SmokeW3DRoadBuffer *>(m_roadBuffer);
+		return road_buffer != nullptr && road_buffer->map() == m_map;
+#else
+		return FALSE;
+#endif
+	}
+
+	Bool bridgeBufferInstalled() const { return m_bridgeBuffer != nullptr; }
+
+	void Render(RenderInfoClass &) override {}
+	void doPartialUpdate(const IRegion2D &, WorldHeightMap *, RefRenderObjListIterator *) override {}
+	Int updateBlock(Int, Int, Int, Int, WorldHeightMap *, RefRenderObjListIterator *) override { return 0; }
 };
 
 class SmokeRadar : public Radar
@@ -979,6 +1120,11 @@ MessageStream *GameEngine::createMessageStream()
 
 void GameSpyCloseAllOverlays()
 {
+}
+
+extern "C" bool cnc_port_terrain_probe_shroud_enabled(void)
+{
+	return false;
 }
 
 int main()
@@ -1284,6 +1430,10 @@ int main()
 	const Int terrain_sides = sides_list.getNumSides();
 	const Int terrain_teams = sides_list.getNumTeams();
 	const Int terrain_side_scripts_before_new_map = countSideScripts(sides_list);
+	const Int terrain_road_point1_objects = countMapObjectsWithFlag(FLAG_ROAD_POINT1);
+	const Int terrain_road_point2_objects = countMapObjectsWithFlag(FLAG_ROAD_POINT2);
+	const Int terrain_bridge_point1_objects = countMapObjectsWithFlag(FLAG_BRIDGE_POINT1);
+	const Int terrain_bridge_point2_objects = countMapObjectsWithFlag(FLAG_BRIDGE_POINT2);
 
 	ok = expect(terrain_load_returned,
 		"original W3DTerrainLogic::loadMap(false) should load the promoted shipped map") && ok;
@@ -1369,6 +1519,76 @@ int main()
 	const Int ghost_local_player_index_after_set = ghost_object_manager->getLocalPlayerIndex();
 	TheGhostObjectManager->reset();
 	const Bool ghost_object_manager_reset_called = TRUE;
+	TerrainTypeCollection terrain_types;
+	TheTerrainTypes = &terrain_types;
+	TerrainRoadCollection terrain_roads;
+	TheTerrainRoads = &terrain_roads;
+	CachedFileInputStream terrain_render_map_stream;
+	const Bool terrain_render_map_opened = terrain_render_map_stream.open(global_data.m_mapName);
+	WorldHeightMap *terrain_render_map = nullptr;
+	Bool terrain_render_map_loaded = FALSE;
+	if (terrain_render_map_opened) {
+		try {
+			terrain_render_map = NEW WorldHeightMap(&terrain_render_map_stream, FALSE);
+			terrain_render_map_loaded = terrain_render_map != nullptr
+				&& terrain_render_map->getDataPtr() != nullptr
+				&& terrain_render_map->getXExtent() > 0
+				&& terrain_render_map->getYExtent() > 0;
+		} catch (...) {
+			terrain_render_map = nullptr;
+			terrain_render_map_loaded = FALSE;
+		}
+	}
+	SmokeTerrainRenderObject *terrain_render_object =
+		NEW_REF(SmokeTerrainRenderObject, ());
+	const Bool terrain_road_collection_owned = TheTerrainRoads == &terrain_roads;
+	const Bool terrain_type_collection_owned = TheTerrainTypes == &terrain_types;
+	const Bool terrain_render_object_owned = TheTerrainRenderObject == terrain_render_object;
+	const Bool terrain_render_map_attached =
+		terrain_render_map_loaded && terrain_render_object->attachMap(terrain_render_map);
+	const Int terrain_render_map_width =
+		terrain_render_map_attached ? terrain_render_object->getMap()->getXExtent() : 0;
+	const Int terrain_render_map_height =
+		terrain_render_map_attached ? terrain_render_object->getMap()->getYExtent() : 0;
+	const Bool terrain_road_buffer_installed = terrain_render_object->roadBufferInstalled();
+	const Bool terrain_road_buffer_initialized = terrain_render_object->roadBufferInitialized();
+	const Bool terrain_road_buffer_map_attached = terrain_render_object->roadBufferMapAttached();
+	const Int terrain_road_segment_capacity = terrain_render_object->roadSegmentCapacity();
+	const Bool terrain_bridge_buffer_installed = terrain_render_object->bridgeBufferInstalled();
+	const Int terrain_road_segments_before_new_map = terrain_render_object->roadSegments();
+	const Int terrain_water_grid_calls_before_new_map = terrain_visual.waterGridEnableCalls();
+	Waypoint *first_waypoint_before_new_map = terrain_logic.getFirstWaypoint();
+	Coord3D first_waypoint_location_before_new_map = {};
+	if (first_waypoint_before_new_map != nullptr) {
+		first_waypoint_location_before_new_map = *first_waypoint_before_new_map->getLocation();
+	}
+	const Bool terrain_waveguide_waypoint_present =
+		terrain_logic.getWaypointByName("WaveGuide1") != nullptr;
+	Bool terrain_new_map_called = FALSE;
+	if (terrain_render_map_attached) {
+		terrain_logic.newMap(FALSE);
+		terrain_new_map_called = TRUE;
+	}
+	Waypoint *first_waypoint_after_new_map = terrain_logic.getFirstWaypoint();
+	Coord3D first_waypoint_location_after_new_map = {};
+	if (first_waypoint_after_new_map != nullptr) {
+		first_waypoint_location_after_new_map = *first_waypoint_after_new_map->getLocation();
+	}
+	const Real first_waypoint_ground_height_after_new_map =
+		first_waypoint_after_new_map != nullptr
+			? terrain_logic.getGroundHeight(
+				first_waypoint_location_after_new_map.x,
+				first_waypoint_location_after_new_map.y)
+			: 0.0f;
+	const Int terrain_road_segments_after_new_map = terrain_render_object->roadSegments();
+	const Bool terrain_road_buffer_update_buffers = terrain_render_object->roadBufferUpdateBuffers();
+	const Int terrain_water_grid_calls_after_new_map = terrain_visual.waterGridEnableCalls();
+	const Bool terrain_water_grid_last_enable = terrain_visual.lastWaterGridEnable();
+	if (TheTerrainRenderObject == terrain_render_object) {
+		TheTerrainRenderObject = nullptr;
+	}
+	// Full WW3D terrain teardown is outside this GameLogic startup smoke.
+	REF_PTR_RELEASE(terrain_render_map);
 
 	ok = expect(startup_player_template_count > 0,
 		"original PlayerTemplateStore should parse shipped player templates before player population") && ok;
@@ -1438,6 +1658,30 @@ int main()
 			&& ghost_local_player_index_after_set == local_player_index_for_ghosts
 			&& ghost_object_manager_reset_called,
 		"original GhostObjectManager should take the local player index and reset after partition shroud refresh") && ok;
+	ok = expect(terrain_road_collection_owned
+			&& terrain_type_collection_owned
+			&& terrain_render_map_opened
+			&& terrain_render_map_loaded
+			&& terrain_render_object_owned
+			&& terrain_render_map_attached
+			&& terrain_render_map_width > 0
+			&& terrain_render_map_height > 0
+			&& terrain_road_buffer_installed
+			&& terrain_road_buffer_initialized
+			&& terrain_road_buffer_map_attached
+			&& terrain_road_segment_capacity == 0
+			&& !terrain_bridge_buffer_installed
+			&& terrain_new_map_called
+			&& terrain_road_segments_after_new_map >= terrain_road_segments_before_new_map
+			&& terrain_road_buffer_update_buffers
+			&& terrain_water_grid_calls_after_new_map == terrain_water_grid_calls_before_new_map + 1
+			&& terrain_water_grid_last_enable == terrain_waveguide_waypoint_present
+			&& first_waypoint_after_new_map != nullptr
+			&& nearlyEqual(
+				first_waypoint_location_after_new_map.z,
+				first_waypoint_ground_height_after_new_map,
+				0.001f),
+		"original W3DTerrainLogic::newMap should hand the loaded map to the BaseHeightMap road loader and run TerrainLogic waypoint/water setup") && ok;
 	WorldHeightMap::freeListOfMapObjects();
 
 	if (!ok) {
@@ -1447,7 +1691,7 @@ int main()
 	std::cout
 		<< "{\"ok\":true,"
 		<< "\"path\":\"gamelogic-new-game-dispatch-runtime\","
-		<< "\"source\":\"GeneralsMD original GlobalData.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp\","
+		<< "\"source\":\"GeneralsMD original GlobalData.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/TerrainTypes.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainRoads.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp\","
 		<< "\"message\":\"MSG_NEW_GAME\","
 		<< "\"playerLookupIndex\":0,"
 		<< "\"playerCount\":" << player_list->getPlayerCount() << ","
@@ -1501,6 +1745,10 @@ int main()
 		<< "\"terrainVisualLoadPath\":\"" << jsonEscape(terrain_visual.lastLoad().str()) << "\","
 		<< "\"terrainMapObjects\":" << terrain_map_objects << ","
 		<< "\"terrainWaypoints\":" << terrain_waypoints << ","
+		<< "\"terrainRoadPoint1Objects\":" << terrain_road_point1_objects << ","
+		<< "\"terrainRoadPoint2Objects\":" << terrain_road_point2_objects << ","
+		<< "\"terrainBridgePoint1Objects\":" << terrain_bridge_point1_objects << ","
+		<< "\"terrainBridgePoint2Objects\":" << terrain_bridge_point2_objects << ","
 		<< "\"terrainSides\":" << terrain_sides << ","
 		<< "\"terrainTeams\":" << terrain_teams << ","
 		<< "\"terrainSideScriptsBeforeNewMap\":" << terrain_side_scripts_before_new_map << ","
@@ -1569,12 +1817,36 @@ int main()
 		<< "\"ghostLocalPlayerIndexBefore\":" << ghost_local_player_index_before << ","
 		<< "\"ghostLocalPlayerIndexAfterSet\":" << ghost_local_player_index_after_set << ","
 		<< "\"ghostResetCalled\":" << jsonBool(ghost_object_manager_reset_called) << ","
+		<< "\"terrainRoadCollectionOwned\":" << jsonBool(terrain_road_collection_owned) << ","
+		<< "\"terrainTypeCollectionOwned\":" << jsonBool(terrain_type_collection_owned) << ","
+		<< "\"terrainRenderMapOpened\":" << jsonBool(terrain_render_map_opened) << ","
+		<< "\"terrainRenderMapLoaded\":" << jsonBool(terrain_render_map_loaded) << ","
+		<< "\"terrainRenderObjectOwned\":" << jsonBool(terrain_render_object_owned) << ","
+		<< "\"terrainRenderMapAttached\":" << jsonBool(terrain_render_map_attached) << ","
+		<< "\"terrainRenderMapWidth\":" << terrain_render_map_width << ","
+		<< "\"terrainRenderMapHeight\":" << terrain_render_map_height << ","
+		<< "\"terrainRoadBufferInstalled\":" << jsonBool(terrain_road_buffer_installed) << ","
+		<< "\"terrainRoadBufferInitialized\":" << jsonBool(terrain_road_buffer_initialized) << ","
+		<< "\"terrainRoadBufferMapAttached\":" << jsonBool(terrain_road_buffer_map_attached) << ","
+		<< "\"terrainRoadSegmentCapacity\":" << terrain_road_segment_capacity << ","
+		<< "\"terrainRoadSegmentsBeforeNewMap\":" << terrain_road_segments_before_new_map << ","
+		<< "\"terrainRoadSegmentsAfterNewMap\":" << terrain_road_segments_after_new_map << ","
+		<< "\"terrainRoadBufferUpdateBuffers\":" << jsonBool(terrain_road_buffer_update_buffers) << ","
+		<< "\"terrainBridgeBufferInstalled\":" << jsonBool(terrain_bridge_buffer_installed) << ","
+		<< "\"terrainNewMapCalled\":" << jsonBool(terrain_new_map_called) << ","
+		<< "\"terrainWaveGuideWaypointPresent\":" << jsonBool(terrain_waveguide_waypoint_present) << ","
+		<< "\"terrainWaterGridCallsBeforeNewMap\":" << terrain_water_grid_calls_before_new_map << ","
+		<< "\"terrainWaterGridCallsAfterNewMap\":" << terrain_water_grid_calls_after_new_map << ","
+		<< "\"terrainWaterGridLastEnable\":" << jsonBool(terrain_water_grid_last_enable) << ","
+		<< "\"terrainFirstWaypointZBeforeNewMap\":" << first_waypoint_location_before_new_map.z << ","
+		<< "\"terrainFirstWaypointZAfterNewMap\":" << first_waypoint_location_after_new_map.z << ","
+		<< "\"terrainFirstWaypointGroundHeightAfterNewMap\":" << first_waypoint_ground_height_after_new_map << ","
 		<< "\"runtimeBoundaries\":["
 		<< "\"InGameUI client-quiet remains focused UI boundary\","
 		<< "\"OptionPreferences user preference getters remain focused non-network browser preference boundary\","
-		<< "\"W3DTerrainLogic::newMap road/bridge render-object path and map object spawning after original GhostObjectManager reset\"],"
-		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\",\"Win32BIGFileSystem MapsZH.big map archive\",\"Win32BIGFileSystem INIZH.big and INI.big startup data archives\",\"INI::load Default/GameData.ini, GameData.ini, Multiplayer.ini, Science.ini, AIData.ini, and PlayerTemplate.ini\",\"GlobalData::parseGameDataDefinition production partition cell size\",\"WeaponBonusSet::parseWeaponBonusSetPtr GameData parser\",\"MultiplayerSettings shipped color table\",\"ScienceStore shipped science table\",\"AI shipped AIData table\",\"PlayerTemplateStore shipped player templates\",\"W3DTerrainLogic::loadMap(false) MD_GLA03 map parse\",\"TerrainLogic::loadMap TerrainVisual::load handoff\",\"WorldHeightMap logical map-object list\",\"SidesList::ParseSidesDataChunk\",\"SidesList::validateSides\",\"AIPlayer construction for non-human sides\",\"TeamFactory::reset/initFromSides\",\"PlayerList::newGame side population\",\"ScriptEngine::newMap side script scan\",\"Radar::newMap terrain extent and LeftHUD ownership\",\"GameLogic width/height from terrain extent\",\"PartitionManager::init loaded-map cell grid\",\"PartitionManager::refreshShroudForLocalPlayer display/radar shroud refresh\",\"GhostObjectManager local-player index and reset\"],"
-		<< "\"nextRequired\":\"continue startNewGame after GhostObjectManager reset into W3DTerrainLogic::newMap road/bridge render-object ownership, TerrainLogic::newMap waypoint/water update, and map object spawning\"}"
+		<< "\"W3DBridgeBuffer::loadBridges GenericBridge object creation and map object spawning after original W3DTerrainLogic::newMap road-buffer handoff\"],"
+		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\",\"Win32BIGFileSystem MapsZH.big map archive\",\"Win32BIGFileSystem INIZH.big and INI.big startup data archives\",\"INI::load Default/GameData.ini, GameData.ini, Multiplayer.ini, Science.ini, AIData.ini, and PlayerTemplate.ini\",\"GlobalData::parseGameDataDefinition production partition cell size\",\"WeaponBonusSet::parseWeaponBonusSetPtr GameData parser\",\"MultiplayerSettings shipped color table\",\"ScienceStore shipped science table\",\"AI shipped AIData table\",\"PlayerTemplateStore shipped player templates\",\"W3DTerrainLogic::loadMap(false) MD_GLA03 map parse\",\"TerrainLogic::loadMap TerrainVisual::load handoff\",\"WorldHeightMap logical map-object list\",\"SidesList::ParseSidesDataChunk\",\"SidesList::validateSides\",\"AIPlayer construction for non-human sides\",\"TeamFactory::reset/initFromSides\",\"PlayerList::newGame side population\",\"ScriptEngine::newMap side script scan\",\"Radar::newMap terrain extent and LeftHUD ownership\",\"GameLogic width/height from terrain extent\",\"PartitionManager::init loaded-map cell grid\",\"PartitionManager::refreshShroudForLocalPlayer display/radar shroud refresh\",\"GhostObjectManager local-player index and reset\",\"TerrainTypeCollection empty texture-class lookup for render heightmap parsing\",\"TerrainRoadCollection empty road table for W3DTerrainLogic::newMap road-buffer handoff\",\"W3DTerrainLogic::newMap road-buffer handoff and TerrainLogic waypoint/water setup\"],"
+		<< "\"nextRequired\":\"continue startNewGame after W3DTerrainLogic::newMap road-buffer handoff into W3DBridgeBuffer::loadBridges GenericBridge object creation, TerrainLogic bridge/map object spawning, and pathfinder newMap\"}"
 		<< "\n";
 
 	return 0;

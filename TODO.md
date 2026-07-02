@@ -1239,9 +1239,19 @@ flow below.
       `PartitionManager::init` and `refreshShroudForLocalPlayer`, proving the
       loaded-map partition grid and initial display/radar shroud refresh. It
       now also owns original `GhostObjectManager` local-player index assignment
-      and reset. Next continue `startNewGame` after `GhostObjectManager` reset
-      into `W3DTerrainLogic::newMap` road/bridge render-object ownership,
-      `TerrainLogic::newMap` waypoint/water update, and map object spawning.
+      and reset. It now drives original `W3DTerrainLogic::newMap(FALSE)`
+      against a real `BaseHeightMapRenderObjClass` owner with original
+      `TerrainTypes.cpp`, `TerrainRoads.cpp`, `DX8Wrapper.cpp`, `rendobj.cpp`,
+      and save/load support linked, proving the road-buffer handoff plus base
+      `TerrainLogic::newMap` waypoint Z and water-grid setup. Next continue
+      after that road-buffer handoff into `W3DBridgeBuffer::loadBridges`
+      `GenericBridge` object creation, bridge/map object spawning, and
+      `Pathfinder::newMap`.
+- [ ] Retire the handoff-only road segment cap in
+      `gamelogic-new-game-dispatch-smoke` once this startup runtime can own
+      full road/bridge map-object spawning or render-owned road geometry
+      without using the separate terrain road-buffer scene as the geometry
+      proof.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---

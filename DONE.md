@@ -2214,6 +2214,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       focused wasm build, direct `dist/gamelogic-new-game-dispatch-smoke.cjs`
       from `WebAssembly/`, `test:gamelogic-new-game-dispatch`, and
       `test:startup-vertical`.
+- [x] Continue `GameLogic::startNewGame` after original
+      `GhostObjectManager` reset into original `W3DTerrainLogic::newMap(FALSE)`
+      road-buffer handoff and base `TerrainLogic::newMap` waypoint/water setup.
+      The `gamelogic-new-game-dispatch-smoke` target now links original
+      `TerrainTypes.cpp`, `TerrainRoads.cpp`, `DX8Wrapper.cpp`, `rendobj.cpp`,
+      and WW save/load support, constructs a real `BaseHeightMapRenderObjClass`
+      owner, loads a render `WorldHeightMap` for `MD_GLA03`, installs original
+      `TerrainTypeCollection`/`TerrainRoadCollection` globals, and calls
+      original `W3DTerrainLogic::newMap(FALSE)`. The runtime JSON proves the
+      render map is attached, the road buffer is initialized and receives the
+      new-map handoff, base `TerrainLogic::newMap` updates waypoint Z from
+      `getGroundHeight`, and `enableWaterGrid` is called from the real waypoint
+      lookup. `W3DBridgeBuffer::loadBridges`, `GenericBridge` object creation,
+      bridge/map object spawning, and `Pathfinder::newMap` remain the next
+      frontier. Verified with `verify:gamelogic-new-game-dispatch-frontier`,
+      focused wasm build, direct `dist/gamelogic-new-game-dispatch-smoke.cjs`
+      from `WebAssembly/`, `test:gamelogic-new-game-dispatch`, and
+      `test:startup-vertical`.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the

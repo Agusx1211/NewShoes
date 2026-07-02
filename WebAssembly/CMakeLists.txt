@@ -6299,8 +6299,10 @@ add_executable(gamelogic-new-game-dispatch-smoke
   "${GAMEENGINE_COMMON_DIR}/RTS/TunnelTracker.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/Radar.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/SaveGame/GameState.cpp"
+  "${GAMEENGINE_COMMON_DIR}/TerrainTypes.cpp"
   "${GAMEENGINE_COMMON_DIR}/UserPreferences.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Display.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/Terrain/TerrainRoads.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/AnimateWindowManager.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowManagerScript.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/HeaderTemplate.cpp"
@@ -6320,6 +6322,11 @@ add_executable(gamelogic-new-game-dispatch-smoke
   "${GAMEENGINE_GAMELOGIC_DIR}/System/GameLogic.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/System/GameLogicDispatch.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/Chat.cpp"
+  "${WWSAVELOAD_DIR}/persistfactory.cpp"
+  "${WWSAVELOAD_DIR}/pointerremap.cpp"
+  "${WWSAVELOAD_DIR}/saveload.cpp"
+  "${WWVEGAS_DIR}/WW3D2/dx8wrapper.cpp"
+  "${WWVEGAS_DIR}/WW3D2/rendobj.cpp"
 )
 
 set_target_properties(gamelogic-new-game-dispatch-smoke PROPERTIES
