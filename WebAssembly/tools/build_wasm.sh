@@ -27,9 +27,24 @@ if [[ -z "${CMAKE_GENERATOR:-}" ]] && command -v ninja >/dev/null 2>&1; then
 fi
 
 emcmake cmake "${cmake_args[@]}"
-cmake --build "${build_dir}"
 
-test -f "${wasm_dir}/dist/cnc-port.js"
-test -f "${wasm_dir}/dist/cnc-port.wasm"
+# Hot-path support: when CNC_BUILD_TARGETS is set (space-separated CMake
+# target names), build only those targets instead of the full ~90-executable
+# probe/smoke surface. The real-init boot loop should use this via
+# `npm run build:port` / `npm run build:startup-vertical`; plain
+# `npm run build:wasm` still builds everything for the full regression suite.
+if [[ -n "${CNC_BUILD_TARGETS:-}" ]]; then
+  read -r -a build_targets <<<"${CNC_BUILD_TARGETS}"
+  target_args=()
+  for t in "${build_targets[@]}"; do
+    target_args+=(--target "$t")
+  done
+  cmake --build "${build_dir}" "${target_args[@]}"
+else
+  cmake --build "${build_dir}"
+
+  test -f "${wasm_dir}/dist/cnc-port.js"
+  test -f "${wasm_dir}/dist/cnc-port.wasm"
+fi
 
 echo "${wasm_dir}/dist/cnc-port.js"
