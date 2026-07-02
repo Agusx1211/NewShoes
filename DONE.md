@@ -2181,6 +2181,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       bounded `test:vertical-integrations` attempt reached startup-vertical OK
       and timed out at the already-tracked `runtime-archives-startup-data`
       stage.
+- [x] Continue `GameLogic::startNewGame` after original `Radar::newMap` into
+      GameData-backed partition setup and shroud refresh. The
+      `gamelogic-new-game-dispatch-smoke` target now links original
+      `INIGameData.cpp`, `UserPreferences.cpp`, `Weapon.cpp`, and
+      `PartitionManager.cpp`, loads `Default\GameData.ini` and
+      `GameData.ini` through original `INI::load`, proves the shipped
+      `PartitionCellSize = 40`, copies the terrain extent into original
+      `GameLogic` width/height, initializes original `PartitionManager` over
+      the loaded `MD_GLA03` terrain, and drives
+      `refreshShroudForLocalPlayer` through focused display/radar boundaries
+      for all 9,216 initial shrouded cells. `VictoryConditions` and
+      non-network `OptionPreferences` remain focused boundaries, and the next
+      frontier is continuing after partition shroud refresh into
+      `GhostObjectManager` reset, `TerrainLogic::newMap`, and map object
+      spawning. Verified with `verify:gamelogic-new-game-dispatch-frontier`,
+      focused wasm build, direct `dist/gamelogic-new-game-dispatch-smoke.cjs`
+      from `WebAssembly/`, `test:gamelogic-new-game-dispatch`, and
+      `test:startup-vertical`.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the

@@ -1235,8 +1235,12 @@ flow below.
       through `ScriptEngine::newMap`. It now also calls original
       `Radar::newMap` with the loaded terrain and a focused LeftHUD window
       owner, proving the radar extent/sample/coordinate translation state for
-      `MD_GLA03`; continue `startNewGame` after `Radar::newMap` into
-      partition/ghost/terrain `newMap` and map object spawning.
+      `MD_GLA03`. It now continues through original GameData-backed
+      `PartitionManager::init` and `refreshShroudForLocalPlayer`, proving the
+      loaded-map partition grid and initial display/radar shroud refresh. Next
+      continue `startNewGame` after the partition shroud refresh into
+      `GhostObjectManager` reset, `TerrainLogic::newMap`, and map object
+      spawning.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---

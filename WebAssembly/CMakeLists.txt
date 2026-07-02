@@ -6281,6 +6281,7 @@ add_executable(gamelogic-new-game-dispatch-smoke
   tests/gamelogic_new_game_dispatch_smoke.cpp
   "${GAMEENGINE_COMMON_DIR}/GlobalData.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIAiData.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIGameData.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INI.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMultiplayer.cpp"
   "${GAMEENGINE_COMMON_DIR}/MultiplayerSettings.cpp"
@@ -6298,6 +6299,7 @@ add_executable(gamelogic-new-game-dispatch-smoke
   "${GAMEENGINE_COMMON_DIR}/RTS/TunnelTracker.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/Radar.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/SaveGame/GameState.cpp"
+  "${GAMEENGINE_COMMON_DIR}/UserPreferences.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Display.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/AnimateWindowManager.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowManagerScript.cpp"
@@ -6309,6 +6311,7 @@ add_executable(gamelogic-new-game-dispatch-smoke
   "${GAMEENGINE_GAMELOGIC_DIR}/AI/AI.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/AI/AIPathfind.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/AI/AIPlayer.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Weapon.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/Scripts.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/ScriptEngine.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/AI/Squad.cpp"

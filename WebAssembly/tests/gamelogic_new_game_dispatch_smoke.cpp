@@ -22,6 +22,7 @@
 #include "Common/Science.h"
 #include "Common/Team.h"
 #include "Common/ThingFactory.h"
+#include "Common/UserPreferences.h"
 #include "GameClient/Display.h"
 #include "GameClient/GameClient.h"
 #include "GameClient/GameText.h"
@@ -37,10 +38,12 @@
 #include "GameClient/WindowLayout.h"
 #include "GameLogic/AI.h"
 #include "GameLogic/GameLogic.h"
+#include "GameLogic/PartitionManager.h"
 #include "GameLogic/RankInfo.h"
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/Scripts.h"
 #include "GameLogic/SidesList.h"
+#include "GameLogic/VictoryConditions.h"
 #include "W3DDevice/GameClient/WorldHeightMap.h"
 #include "W3DDevice/GameLogic/W3DTerrainLogic.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
@@ -329,6 +332,8 @@ Bool g_zh_ini_archive_loaded = FALSE;
 Bool g_base_ini_archive_loaded = FALSE;
 Bool g_player_template_default_ini_file_exists = FALSE;
 Bool g_player_template_ini_file_exists = FALSE;
+Bool g_game_data_default_ini_file_exists = FALSE;
+Bool g_game_data_ini_file_exists = FALSE;
 Bool g_multiplayer_default_ini_file_exists = FALSE;
 Bool g_multiplayer_ini_file_exists = FALSE;
 Bool g_ai_data_default_ini_file_exists = FALSE;
@@ -339,6 +344,34 @@ Bool g_seed_blank_window_root_ready = FALSE;
 Bool g_prepare_blank_window_root_ready = FALSE;
 Int g_radar_window_lookup_count = 0;
 Bool g_radar_left_hud_window_installed = FALSE;
+Int g_display_clear_shroud_calls = 0;
+Int g_display_set_shroud_calls = 0;
+Int g_display_shrouded_set_calls = 0;
+Int g_display_fogged_set_calls = 0;
+Int g_display_clear_set_calls = 0;
+Int g_radar_clear_shroud_calls = 0;
+Int g_radar_set_shroud_calls = 0;
+Int g_radar_shrouded_set_calls = 0;
+Int g_radar_fogged_set_calls = 0;
+Int g_radar_clear_set_calls = 0;
+Int g_victory_cache_player_ptrs_calls = 0;
+
+void recordShroudSet(
+	CellShroudStatus status,
+	Int &set_calls,
+	Int &shrouded_set_calls,
+	Int &fogged_set_calls,
+	Int &clear_set_calls)
+{
+	++set_calls;
+	if (status == CELLSHROUD_SHROUDED) {
+		++shrouded_set_calls;
+	} else if (status == CELLSHROUD_FOGGED) {
+		++fogged_set_calls;
+	} else if (status == CELLSHROUD_CLEAR) {
+		++clear_set_calls;
+	}
+}
 
 bool expect(bool condition, const char *message)
 {
@@ -522,8 +555,16 @@ public:
 	void drawRemainingRectClock(Int, Int, Int, Int, Int, UnsignedInt) override {}
 	void drawImage(const Image *, Int, Int, Int, Int, Color, DrawImageMode) override {}
 	void drawVideoBuffer(VideoBuffer *, Int, Int, Int, Int) override {}
-	void clearShroud() override {}
-	void setShroudLevel(Int, Int, CellShroudStatus) override {}
+	void clearShroud() override { ++g_display_clear_shroud_calls; }
+	void setShroudLevel(Int, Int, CellShroudStatus status) override
+	{
+		recordShroudSet(
+			status,
+			g_display_set_shroud_calls,
+			g_display_shrouded_set_calls,
+			g_display_fogged_set_calls,
+			g_display_clear_set_calls);
+	}
 	void setBorderShroudLevel(UnsignedByte) override {}
 #if defined(_DEBUG) || defined(_INTERNAL)
 	void dumpModelAssets(const char *) override {}
@@ -656,8 +697,16 @@ class SmokeRadar : public Radar
 {
 public:
 	void draw(Int, Int, Int, Int) override {}
-	void clearShroud() override {}
-	void setShroudLevel(Int, Int, CellShroudStatus) override {}
+	void clearShroud() override { ++g_radar_clear_shroud_calls; }
+	void setShroudLevel(Int, Int, CellShroudStatus status) override
+	{
+		recordShroudSet(
+			status,
+			g_radar_set_shroud_calls,
+			g_radar_shrouded_set_calls,
+			g_radar_fogged_set_calls,
+			g_radar_clear_set_calls);
+	}
 
 	Bool hasRadarWindow(GameWindow *window) { return isRadarWindow(window); }
 	Region3D mapExtent() const { return m_mapExtent; }
@@ -665,6 +714,23 @@ public:
 	Real ySample() const { return m_ySample; }
 	Real terrainAverageZ() const { return m_terrainAverageZ; }
 	Real waterAverageZ() const { return m_waterAverageZ; }
+};
+
+class SmokeVictoryConditions : public VictoryConditionsInterface
+{
+public:
+	void init() override { reset(); }
+	void reset() override { m_victoryConditions = VICTORY_NOBUILDINGS | VICTORY_NOUNITS; }
+	void update() override {}
+	Bool hasAchievedVictory(Player *) override { return FALSE; }
+	Bool hasBeenDefeated(Player *) override { return FALSE; }
+	Bool hasSinglePlayerBeenDefeated(Player *) override { return FALSE; }
+	void cachePlayerPtrs() override { ++g_victory_cache_player_ptrs_calls; }
+	Bool isLocalAlliedVictory() override { return FALSE; }
+	Bool isLocalAlliedDefeat() override { return FALSE; }
+	Bool isLocalDefeat() override { return FALSE; }
+	Bool amIObserver() override { return FALSE; }
+	UnsignedInt getEndFrame() override { return 0; }
 };
 
 class SmokeGameWindow : public GameWindow
@@ -761,6 +827,87 @@ private:
 };
 
 } // namespace
+
+// GlobalData parsing applies saved user preferences after reading GameData.ini.
+// Keep this smoke at the non-network preference boundary instead of linking the
+// Options menu/IP-enumeration owner.
+OptionPreferences::OptionPreferences()
+{
+}
+
+OptionPreferences::~OptionPreferences()
+{
+}
+
+Bool OptionPreferences::getAlternateMouseModeEnabled()
+{
+	return TheGlobalData->m_useAlternateMouse;
+}
+
+Bool OptionPreferences::getRetaliationModeEnabled()
+{
+	return TheGlobalData->m_clientRetaliationModeEnabled;
+}
+
+Bool OptionPreferences::getDoubleClickAttackMoveEnabled()
+{
+	return TheGlobalData->m_doubleClickAttackMove;
+}
+
+Real OptionPreferences::getScrollFactor()
+{
+	return TheGlobalData->m_keyboardDefaultScrollFactor;
+}
+
+UnsignedInt OptionPreferences::getLANIPAddress()
+{
+	return TheGlobalData->m_defaultIP;
+}
+
+Bool OptionPreferences::getSendDelay()
+{
+	return TheGlobalData->m_firewallSendDelay;
+}
+
+Int OptionPreferences::getFirewallBehavior()
+{
+	return TheGlobalData->m_firewallBehavior;
+}
+
+Short OptionPreferences::getFirewallPortAllocationDelta()
+{
+	return TheGlobalData->m_firewallPortAllocationDelta;
+}
+
+UnsignedShort OptionPreferences::getFirewallPortOverride()
+{
+	return TheGlobalData->m_firewallPortOverride;
+}
+
+Bool OptionPreferences::saveCameraInReplays()
+{
+	return TheGlobalData->m_saveCameraInReplay;
+}
+
+Bool OptionPreferences::useCameraInReplays()
+{
+	return TheGlobalData->m_useCameraInReplay;
+}
+
+Real OptionPreferences::getGammaValue()
+{
+	return 50.0f;
+}
+
+void OptionPreferences::getResolution(Int *xres, Int *yres)
+{
+	if (xres != nullptr) {
+		*xres = TheGlobalData->m_xResolution;
+	}
+	if (yres != nullptr) {
+		*yres = TheGlobalData->m_yResolution;
+	}
+}
 
 ImageCollection::ImageCollection()
 {
@@ -919,6 +1066,10 @@ int main()
 		file_system.doesFileExist("Data\\INI\\Default\\PlayerTemplate.ini");
 	g_player_template_ini_file_exists =
 		file_system.doesFileExist("Data\\INI\\PlayerTemplate.ini");
+	g_game_data_default_ini_file_exists =
+		file_system.doesFileExist("Data\\INI\\Default\\GameData.ini");
+	g_game_data_ini_file_exists =
+		file_system.doesFileExist("Data\\INI\\GameData.ini");
 	g_multiplayer_default_ini_file_exists =
 		file_system.doesFileExist("Data\\INI\\Default\\Multiplayer.ini");
 	g_multiplayer_ini_file_exists =
@@ -929,6 +1080,10 @@ int main()
 		file_system.doesFileExist("Data\\INI\\AIData.ini");
 	if (!expect(g_player_template_default_ini_file_exists && g_player_template_ini_file_exists,
 			"mounted INI archives should expose default and Zero Hour PlayerTemplate.ini")) {
+		return 1;
+	}
+	if (!expect(g_game_data_default_ini_file_exists && g_game_data_ini_file_exists,
+			"mounted INI archives should expose default and Zero Hour GameData.ini")) {
 		return 1;
 	}
 	if (!expect(g_multiplayer_default_ini_file_exists && g_multiplayer_ini_file_exists,
@@ -962,6 +1117,8 @@ int main()
 	ThePlayerTemplateStore = &player_template_store;
 	player_template_store.init();
 	INI startup_ini;
+	startup_ini.load("Data\\INI\\Default\\GameData.ini", INI_LOAD_OVERWRITE, nullptr);
+	startup_ini.load("Data\\INI\\GameData.ini", INI_LOAD_OVERWRITE, nullptr);
 	startup_ini.load("Data\\INI\\Default\\Multiplayer.ini", INI_LOAD_OVERWRITE, nullptr);
 	startup_ini.load("Data\\INI\\Multiplayer.ini", INI_LOAD_OVERWRITE, nullptr);
 	startup_ini.load("Data\\INI\\Science.ini", INI_LOAD_OVERWRITE, nullptr);
@@ -972,6 +1129,7 @@ int main()
 	seedPlayerTemplateAliasNameKeys();
 	startup_ini.load("Data\\INI\\Default\\PlayerTemplate.ini", INI_LOAD_OVERWRITE, nullptr);
 	startup_ini.load("Data\\INI\\PlayerTemplate.ini", INI_LOAD_OVERWRITE, nullptr);
+	const Real startup_partition_cell_size = global_data.m_partitionCellSize;
 
 	ImageCollection image_collection;
 	TheMappedImageCollection = &image_collection;
@@ -1180,11 +1338,36 @@ int main()
 	terrain_center_world.y = radar_extent.height() / 2.0f;
 	ICoord2D terrain_center_radar = {};
 	const Bool world_to_radar_center_ok = radar->worldToRadar(&terrain_center_world, &terrain_center_radar);
+	SmokeVictoryConditions victory_conditions;
+	TheVictoryConditions = &victory_conditions;
+	victory_conditions.init();
+	TheVictoryConditions->cachePlayerPtrs();
+	TheVictoryConditions->setVictoryConditions(VICTORY_NOBUILDINGS);
+	const Int victory_conditions_value = TheVictoryConditions->getVictoryConditions();
+	const Real game_logic_width_before_partition = logic->getWidth();
+	const Real game_logic_height_before_partition = logic->getHeight();
+	TheGameLogic->setWidth(terrain_extent.hi.x - terrain_extent.lo.x);
+	TheGameLogic->setHeight(terrain_extent.hi.y - terrain_extent.lo.y);
+	const Real partition_cell_size_for_expected =
+		startup_partition_cell_size > 0.0f ? startup_partition_cell_size : 1.0f;
+	const Int expected_partition_cell_count_x =
+		REAL_TO_INT_CEIL(terrain_extent.width() / partition_cell_size_for_expected);
+	const Int expected_partition_cell_count_y =
+		REAL_TO_INT_CEIL(terrain_extent.height() / partition_cell_size_for_expected);
+	PartitionManager *partition_manager = new PartitionManager;
+	ThePartitionManager = partition_manager;
+	partition_manager->init();
+	const Int partition_cell_count_x = partition_manager->getCellCountX();
+	const Int partition_cell_count_y = partition_manager->getCellCountY();
+	const Int partition_total_cells = partition_cell_count_x * partition_cell_count_y;
+	partition_manager->refreshShroudForLocalPlayer();
 
 	ok = expect(startup_player_template_count > 0,
 		"original PlayerTemplateStore should parse shipped player templates before player population") && ok;
 	ok = expect(startup_multiplayer_color_count > 0,
 		"original MultiplayerSettings should parse shipped multiplayer colors before player population") && ok;
+	ok = expect(nearlyEqual(startup_partition_cell_size, 40.0f, 0.001f),
+		"original GameData.ini parser should load the production partition cell size") && ok;
 	ok = expect(validated_sides >= terrain_sides && validated_teams >= terrain_teams,
 		"original SidesList::validateSides should preserve or repair loaded shipped map sides and teams") && ok;
 	ok = expect(populated_player_count == validated_sides,
@@ -1217,6 +1400,30 @@ int main()
 			&& terrain_center_radar.x == radar_center.x
 			&& terrain_center_radar.y == radar_center.y,
 		"original Radar::newMap should enable radar/world coordinate translation for the loaded map") && ok;
+	ok = expect(g_victory_cache_player_ptrs_calls == 1
+			&& victory_conditions_value == VICTORY_NOBUILDINGS,
+		"post-radar startup should set the victory-condition boundary before partition init") && ok;
+	ok = expect(nearlyEqual(game_logic_width_before_partition, 0.0f, 0.001f)
+			&& nearlyEqual(game_logic_height_before_partition, 0.0f, 0.001f)
+			&& nearlyEqual(logic->getWidth(), terrain_extent.width(), 0.001f)
+			&& nearlyEqual(logic->getHeight(), terrain_extent.height(), 0.001f),
+		"post-radar startup should copy the terrain extent into original GameLogic width/height") && ok;
+	ok = expect(partition_cell_count_x == expected_partition_cell_count_x
+			&& partition_cell_count_y == expected_partition_cell_count_y
+			&& partition_total_cells > 0
+			&& ThePartitionManager == partition_manager,
+		"original PartitionManager::init should allocate the loaded map partition grid") && ok;
+	ok = expect(g_display_clear_shroud_calls == 1
+			&& g_radar_clear_shroud_calls == 1
+			&& g_display_set_shroud_calls == partition_total_cells
+			&& g_radar_set_shroud_calls == partition_total_cells
+			&& g_display_shrouded_set_calls == partition_total_cells
+			&& g_radar_shrouded_set_calls == partition_total_cells
+			&& g_display_fogged_set_calls == 0
+			&& g_radar_fogged_set_calls == 0
+			&& g_display_clear_set_calls == 0
+			&& g_radar_clear_set_calls == 0,
+		"original PartitionManager::refreshShroudForLocalPlayer should refresh every initial shrouded cell") && ok;
 	WorldHeightMap::freeListOfMapObjects();
 
 	if (!ok) {
@@ -1226,7 +1433,7 @@ int main()
 	std::cout
 		<< "{\"ok\":true,"
 		<< "\"path\":\"gamelogic-new-game-dispatch-runtime\","
-		<< "\"source\":\"GeneralsMD original GlobalData.cpp/INI.cpp/INIAiData.cpp/INIMultiplayer.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/Radar.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp\","
+		<< "\"source\":\"GeneralsMD original GlobalData.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp\","
 		<< "\"message\":\"MSG_NEW_GAME\","
 		<< "\"playerLookupIndex\":0,"
 		<< "\"playerCount\":" << player_list->getPlayerCount() << ","
@@ -1245,12 +1452,15 @@ int main()
 		<< "\"baseIniArchiveLoaded\":" << jsonBool(g_base_ini_archive_loaded) << ","
 		<< "\"playerTemplateDefaultIniFileExists\":" << jsonBool(g_player_template_default_ini_file_exists) << ","
 		<< "\"playerTemplateIniFileExists\":" << jsonBool(g_player_template_ini_file_exists) << ","
+		<< "\"gameDataDefaultIniFileExists\":" << jsonBool(g_game_data_default_ini_file_exists) << ","
+		<< "\"gameDataIniFileExists\":" << jsonBool(g_game_data_ini_file_exists) << ","
 		<< "\"multiplayerDefaultIniFileExists\":" << jsonBool(g_multiplayer_default_ini_file_exists) << ","
 		<< "\"multiplayerIniFileExists\":" << jsonBool(g_multiplayer_ini_file_exists) << ","
 		<< "\"aiDataDefaultIniFileExists\":" << jsonBool(g_ai_data_default_ini_file_exists) << ","
 		<< "\"aiDataIniFileExists\":" << jsonBool(g_ai_data_ini_file_exists) << ","
 		<< "\"startupPlayerTemplateCount\":" << startup_player_template_count << ","
 		<< "\"startupMultiplayerColorCount\":" << startup_multiplayer_color_count << ","
+		<< "\"startupPartitionCellSize\":" << startup_partition_cell_size << ","
 		<< "\"startupAiTeamSeconds\":" << ai.getAiData()->m_teamSeconds << ","
 		<< "\"seedBlankWindowArchiveLayout\":" << jsonBool(g_seed_blank_window_loaded_from_archive) << ","
 		<< "\"prepareBlankWindowArchiveLayout\":" << jsonBool(g_prepare_blank_window_loaded_from_archive) << ","
@@ -1319,10 +1529,34 @@ int main()
 		<< "\"worldToRadarCenterOk\":" << jsonBool(world_to_radar_center_ok) << ","
 		<< "\"terrainCenterRadar\":{\"x\":" << terrain_center_radar.x
 		<< ",\"y\":" << terrain_center_radar.y << "},"
+		<< "\"victoryCachePlayerPtrsCalls\":" << g_victory_cache_player_ptrs_calls << ","
+		<< "\"victoryConditions\":" << victory_conditions_value << ","
+		<< "\"gameLogicWidthBeforePartition\":" << game_logic_width_before_partition << ","
+		<< "\"gameLogicHeightBeforePartition\":" << game_logic_height_before_partition << ","
+		<< "\"gameLogicWidthAfterPartition\":" << logic->getWidth() << ","
+		<< "\"gameLogicHeightAfterPartition\":" << logic->getHeight() << ","
+		<< "\"partitionCellSize\":" << startup_partition_cell_size << ","
+		<< "\"expectedPartitionCellCountX\":" << expected_partition_cell_count_x << ","
+		<< "\"expectedPartitionCellCountY\":" << expected_partition_cell_count_y << ","
+		<< "\"partitionCellCountX\":" << partition_cell_count_x << ","
+		<< "\"partitionCellCountY\":" << partition_cell_count_y << ","
+		<< "\"partitionTotalCells\":" << partition_total_cells << ","
+		<< "\"displayClearShroudCalls\":" << g_display_clear_shroud_calls << ","
+		<< "\"displaySetShroudCalls\":" << g_display_set_shroud_calls << ","
+		<< "\"displayShroudedSetCalls\":" << g_display_shrouded_set_calls << ","
+		<< "\"displayFoggedSetCalls\":" << g_display_fogged_set_calls << ","
+		<< "\"displayClearSetCalls\":" << g_display_clear_set_calls << ","
+		<< "\"radarClearShroudCalls\":" << g_radar_clear_shroud_calls << ","
+		<< "\"radarSetShroudCalls\":" << g_radar_set_shroud_calls << ","
+		<< "\"radarShroudedSetCalls\":" << g_radar_shrouded_set_calls << ","
+		<< "\"radarFoggedSetCalls\":" << g_radar_fogged_set_calls << ","
+		<< "\"radarClearSetCalls\":" << g_radar_clear_set_calls << ","
 		<< "\"runtimeBoundaries\":["
-		<< "\"partition/ghost/terrain-newMap/object-spawn path after original Radar::newMap\"],"
-		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\",\"Win32BIGFileSystem MapsZH.big map archive\",\"Win32BIGFileSystem INIZH.big and INI.big startup data archives\",\"INI::load Multiplayer.ini, Science.ini, AIData.ini, and PlayerTemplate.ini\",\"MultiplayerSettings shipped color table\",\"ScienceStore shipped science table\",\"AI shipped AIData table\",\"PlayerTemplateStore shipped player templates\",\"W3DTerrainLogic::loadMap(false) MD_GLA03 map parse\",\"TerrainLogic::loadMap TerrainVisual::load handoff\",\"WorldHeightMap logical map-object list\",\"SidesList::ParseSidesDataChunk\",\"SidesList::validateSides\",\"AIPlayer construction for non-human sides\",\"TeamFactory::reset/initFromSides\",\"PlayerList::newGame side population\",\"ScriptEngine::newMap side script scan\",\"Radar::newMap terrain extent and LeftHUD ownership\"],"
-		<< "\"nextRequired\":\"continue startNewGame after Radar::newMap into partition/ghost/terrain newMap and map object spawning\"}"
+		<< "\"InGameUI client-quiet remains focused UI boundary\","
+		<< "\"OptionPreferences user preference getters remain focused non-network browser preference boundary\","
+		<< "\"GhostObjectManager reset/TerrainLogic::newMap/object-spawn path after original PartitionManager shroud refresh\"],"
+		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\",\"Win32BIGFileSystem MapsZH.big map archive\",\"Win32BIGFileSystem INIZH.big and INI.big startup data archives\",\"INI::load Default/GameData.ini, GameData.ini, Multiplayer.ini, Science.ini, AIData.ini, and PlayerTemplate.ini\",\"GlobalData::parseGameDataDefinition production partition cell size\",\"WeaponBonusSet::parseWeaponBonusSetPtr GameData parser\",\"MultiplayerSettings shipped color table\",\"ScienceStore shipped science table\",\"AI shipped AIData table\",\"PlayerTemplateStore shipped player templates\",\"W3DTerrainLogic::loadMap(false) MD_GLA03 map parse\",\"TerrainLogic::loadMap TerrainVisual::load handoff\",\"WorldHeightMap logical map-object list\",\"SidesList::ParseSidesDataChunk\",\"SidesList::validateSides\",\"AIPlayer construction for non-human sides\",\"TeamFactory::reset/initFromSides\",\"PlayerList::newGame side population\",\"ScriptEngine::newMap side script scan\",\"Radar::newMap terrain extent and LeftHUD ownership\",\"GameLogic width/height from terrain extent\",\"PartitionManager::init loaded-map cell grid\",\"PartitionManager::refreshShroudForLocalPlayer display/radar shroud refresh\"],"
+		<< "\"nextRequired\":\"continue startNewGame after PartitionManager shroud refresh into GhostObjectManager reset, TerrainLogic::newMap, and map object spawning\"}"
 		<< "\n";
 
 	return 0;
