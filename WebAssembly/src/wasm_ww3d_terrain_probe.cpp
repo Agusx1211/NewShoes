@@ -2663,6 +2663,28 @@ public:
 		Bool destroyedStatus = FALSE;
 	};
 
+	struct BridgeDisabledTimerForProbe
+	{
+		Bool clearInactiveReturned = TRUE;
+		Bool initiallyDisabled = TRUE;
+		UnsignedInt initialDisabledUntilAny = 0;
+		UnsignedInt frameBeforeSet = 0;
+		UnsignedInt expirationFrame = 0;
+		Bool disabledAfterSet = FALSE;
+		Bool disabledByEmpAfterSet = FALSE;
+		UnsignedInt disabledUntilEmpAfterSet = 0;
+		UnsignedInt disabledUntilAnyAfterSet = 0;
+		Bool disabledAfterEarlyCheck = FALSE;
+		Bool disabledByEmpAfterEarlyCheck = FALSE;
+		UnsignedInt disabledUntilEmpAfterEarlyCheck = 0;
+		UnsignedInt disabledUntilAnyAfterEarlyCheck = 0;
+		UnsignedInt frameAfterExpiryCheck = 0;
+		Bool disabledAfterExpiryCheck = TRUE;
+		Bool disabledByEmpAfterExpiryCheck = TRUE;
+		UnsignedInt disabledUntilEmpAfterExpiryCheck = 0;
+		UnsignedInt disabledUntilAnyAfterExpiryCheck = 0;
+	};
+
 	Int bridgeCountForProbe() const
 	{
 		Int count = 0;
@@ -2789,6 +2811,56 @@ public:
 		attempt.objectStillPresent = TRUE;
 		attempt.destroyedStatus =
 			bridge_object->testStatus(OBJECT_STATUS_DESTROYED);
+		return true;
+	}
+
+	bool exerciseFirstBridgeDisabledTimerForProbe(
+		GameLogic &logic,
+		UnsignedInt duration,
+		BridgeDisabledTimerForProbe &timer)
+	{
+		Object *bridge_object = firstBridgeObjectForProbe();
+		if (bridge_object == nullptr) {
+			return false;
+		}
+
+		timer.initiallyDisabled = bridge_object->isDisabled();
+		timer.initialDisabledUntilAny =
+			bridge_object->getDisabledUntil(DISABLED_ANY);
+		timer.clearInactiveReturned = bridge_object->clearDisabled(DISABLED_EMP);
+		timer.frameBeforeSet = logic.getFrame();
+		timer.expirationFrame = timer.frameBeforeSet + duration;
+
+		bridge_object->setDisabledUntil(DISABLED_EMP, timer.expirationFrame);
+		timer.disabledAfterSet = bridge_object->isDisabled();
+		timer.disabledByEmpAfterSet =
+			bridge_object->isDisabledByType(DISABLED_EMP);
+		timer.disabledUntilEmpAfterSet =
+			bridge_object->getDisabledUntil(DISABLED_EMP);
+		timer.disabledUntilAnyAfterSet =
+			bridge_object->getDisabledUntil(DISABLED_ANY);
+
+		bridge_object->checkDisabledStatus();
+		timer.disabledAfterEarlyCheck = bridge_object->isDisabled();
+		timer.disabledByEmpAfterEarlyCheck =
+			bridge_object->isDisabledByType(DISABLED_EMP);
+		timer.disabledUntilEmpAfterEarlyCheck =
+			bridge_object->getDisabledUntil(DISABLED_EMP);
+		timer.disabledUntilAnyAfterEarlyCheck =
+			bridge_object->getDisabledUntil(DISABLED_ANY);
+
+		while (logic.getFrame() < timer.expirationFrame) {
+			logic.update();
+		}
+		bridge_object->checkDisabledStatus();
+		timer.frameAfterExpiryCheck = logic.getFrame();
+		timer.disabledAfterExpiryCheck = bridge_object->isDisabled();
+		timer.disabledByEmpAfterExpiryCheck =
+			bridge_object->isDisabledByType(DISABLED_EMP);
+		timer.disabledUntilEmpAfterExpiryCheck =
+			bridge_object->getDisabledUntil(DISABLED_EMP);
+		timer.disabledUntilAnyAfterExpiryCheck =
+			bridge_object->getDisabledUntil(DISABLED_ANY);
 		return true;
 	}
 
@@ -9851,7 +9923,10 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	bool bridge_logic_damage_state_changed_after_sole_healing_update = false;
 	bool bridge_logic_broken_after_sole_healing_update = false;
 	bool bridge_logic_repaired_after_sole_healing_update = false;
-	Int bridge_draw_first_damage_state_after_sole_healing_scene = -1;
+	bool bridge_logic_disabled_timer_invoked = false;
+	ProbeTerrainLogicForBridgeDraw::BridgeDisabledTimerForProbe
+		bridge_logic_disabled_timer;
+	Int bridge_draw_first_damage_state_after_disabled_timer_scene = -1;
 	Int bridge_logic_first_layer_after_seed = -1;
 	Int bridge_draw_terrain_logic_bridge_count = 0;
 	Int bridge_draw_enabled_bridge_count = 0;
@@ -10489,6 +10564,11 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			bridge_logic_broken_after_sole_healing_update = healed_bridge_broken;
 			bridge_logic_repaired_after_sole_healing_update = healed_bridge_repaired;
 		}
+		bridge_logic_disabled_timer_invoked =
+			bridge_draw_terrain_logic.exerciseFirstBridgeDisabledTimerForProbe(
+				bridge_draw_game_logic,
+				2,
+				bridge_logic_disabled_timer);
 		bridge_manual_geometry_after_load =
 			bridge_buffer->firstBridgeManualGeometry(
 				bridge_manual_vertices_after_load,
@@ -10583,7 +10663,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 					succeeded(render_result) &&
 					succeeded(end_render_result) &&
 					bridge_buffer != nullptr) {
-				bridge_draw_first_damage_state_after_sole_healing_scene =
+				bridge_draw_first_damage_state_after_disabled_timer_scene =
 					bridge_buffer->firstBridgeDamageState();
 			}
 			tree_need_to_draw_after_scene = tree_buffer != nullptr && tree_buffer->needToDraw();
@@ -10724,7 +10804,31 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		!bridge_logic_damage_state_changed_after_sole_healing_update &&
 		!bridge_logic_broken_after_sole_healing_update &&
 		!bridge_logic_repaired_after_sole_healing_update &&
-		bridge_draw_first_damage_state_after_sole_healing_scene == BODY_PRISTINE &&
+		bridge_logic_disabled_timer_invoked &&
+		!bridge_logic_disabled_timer.clearInactiveReturned &&
+		!bridge_logic_disabled_timer.initiallyDisabled &&
+		bridge_logic_disabled_timer.initialDisabledUntilAny == 0 &&
+		bridge_logic_disabled_timer.expirationFrame ==
+			bridge_logic_disabled_timer.frameBeforeSet + 2 &&
+		bridge_logic_disabled_timer.disabledAfterSet &&
+		bridge_logic_disabled_timer.disabledByEmpAfterSet &&
+		bridge_logic_disabled_timer.disabledUntilEmpAfterSet ==
+			bridge_logic_disabled_timer.expirationFrame &&
+		bridge_logic_disabled_timer.disabledUntilAnyAfterSet ==
+			bridge_logic_disabled_timer.expirationFrame &&
+		bridge_logic_disabled_timer.disabledAfterEarlyCheck &&
+		bridge_logic_disabled_timer.disabledByEmpAfterEarlyCheck &&
+		bridge_logic_disabled_timer.disabledUntilEmpAfterEarlyCheck ==
+			bridge_logic_disabled_timer.expirationFrame &&
+		bridge_logic_disabled_timer.disabledUntilAnyAfterEarlyCheck ==
+			bridge_logic_disabled_timer.expirationFrame &&
+		bridge_logic_disabled_timer.frameAfterExpiryCheck ==
+			bridge_logic_disabled_timer.expirationFrame &&
+		!bridge_logic_disabled_timer.disabledAfterExpiryCheck &&
+		!bridge_logic_disabled_timer.disabledByEmpAfterExpiryCheck &&
+		bridge_logic_disabled_timer.disabledUntilEmpAfterExpiryCheck == 0 &&
+		bridge_logic_disabled_timer.disabledUntilAnyAfterExpiryCheck == 0 &&
+		bridge_draw_first_damage_state_after_disabled_timer_scene == BODY_PRISTINE &&
 		terrain_logic_retained_for_draw &&
 		bridge_draw_terrain_logic_bridge_count > 0 &&
 		bridge_draw_enabled_bridge_count > 0 &&
@@ -10833,7 +10937,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	const std::string tree_model_json = json_string(kTreeModelName);
 	const std::string tree_texture_json = json_string(kTreeTextureName);
 
-	char buffer[48000];
+	char buffer[52000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"ww3d_terrain_bridge_buffer_scene_probe\","
 		"\"ok\":%s,"
@@ -10844,7 +10948,9 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"TerrainLogic::updateBridgeDamageStates -> Object::kill(GenericBridge) -> "
 		"TerrainLogic::updateBridgeDamageStates -> "
 		"Object::attemptHealingFromSoleBenefactor(GenericBridge) -> "
-		"TerrainLogic::updateBridgeDamageStates/updateCenter -> "
+		"TerrainLogic::updateBridgeDamageStates -> "
+		"Object::setDisabledUntil/checkDisabledStatus(GenericBridge) -> "
+		"TerrainLogic::updateCenter -> "
 		"TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> "
 		"W3DBridge::renderBridge + bridge shroud overlay\","
 		"\"archives\":{\"ini\":\"%s\",\"maps\":\"%s\",\"terrain\":\"%s\","
@@ -10937,7 +11043,26 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"bridgeLogicDamageStateChangedAfterSoleHealingUpdate\":%s,"
 		"\"bridgeLogicBrokenAfterSoleHealingUpdate\":%s,"
 		"\"bridgeLogicRepairedAfterSoleHealingUpdate\":%s,"
-		"\"bridgeDrawFirstDamageStateAfterSoleHealingScene\":%d,"
+		"\"bridgeLogicDisabledTimerInvoked\":%s,"
+		"\"bridgeLogicDisabledTimerClearInactiveReturned\":%s,"
+		"\"bridgeLogicDisabledTimerInitiallyDisabled\":%s,"
+		"\"bridgeLogicDisabledTimerInitialUntilAny\":%u,"
+		"\"bridgeLogicDisabledTimerFrameBeforeSet\":%u,"
+		"\"bridgeLogicDisabledTimerExpirationFrame\":%u,"
+		"\"bridgeLogicDisabledTimerDisabledAfterSet\":%s,"
+		"\"bridgeLogicDisabledTimerDisabledByEmpAfterSet\":%s,"
+		"\"bridgeLogicDisabledTimerUntilEmpAfterSet\":%u,"
+		"\"bridgeLogicDisabledTimerUntilAnyAfterSet\":%u,"
+		"\"bridgeLogicDisabledTimerDisabledAfterEarlyCheck\":%s,"
+		"\"bridgeLogicDisabledTimerDisabledByEmpAfterEarlyCheck\":%s,"
+		"\"bridgeLogicDisabledTimerUntilEmpAfterEarlyCheck\":%u,"
+		"\"bridgeLogicDisabledTimerUntilAnyAfterEarlyCheck\":%u,"
+		"\"bridgeLogicDisabledTimerFrameAfterExpiryCheck\":%u,"
+		"\"bridgeLogicDisabledTimerDisabledAfterExpiryCheck\":%s,"
+		"\"bridgeLogicDisabledTimerDisabledByEmpAfterExpiryCheck\":%s,"
+		"\"bridgeLogicDisabledTimerUntilEmpAfterExpiryCheck\":%u,"
+		"\"bridgeLogicDisabledTimerUntilAnyAfterExpiryCheck\":%u,"
+		"\"bridgeDrawFirstDamageStateAfterDisabledTimerScene\":%d,"
 		"\"bridgeLogicFirstLayerAfterSeed\":%d,"
 		"\"bridgeDrawTerrainLogicBridgeCount\":%d,"
 		"\"bridgeDrawEnabledBridgeCount\":%d,"
@@ -11187,7 +11312,26 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bool_json(bridge_logic_damage_state_changed_after_sole_healing_update),
 		bool_json(bridge_logic_broken_after_sole_healing_update),
 		bool_json(bridge_logic_repaired_after_sole_healing_update),
-		bridge_draw_first_damage_state_after_sole_healing_scene,
+		bool_json(bridge_logic_disabled_timer_invoked),
+		bool_json(bridge_logic_disabled_timer.clearInactiveReturned),
+		bool_json(bridge_logic_disabled_timer.initiallyDisabled),
+		bridge_logic_disabled_timer.initialDisabledUntilAny,
+		bridge_logic_disabled_timer.frameBeforeSet,
+		bridge_logic_disabled_timer.expirationFrame,
+		bool_json(bridge_logic_disabled_timer.disabledAfterSet),
+		bool_json(bridge_logic_disabled_timer.disabledByEmpAfterSet),
+		bridge_logic_disabled_timer.disabledUntilEmpAfterSet,
+		bridge_logic_disabled_timer.disabledUntilAnyAfterSet,
+		bool_json(bridge_logic_disabled_timer.disabledAfterEarlyCheck),
+		bool_json(bridge_logic_disabled_timer.disabledByEmpAfterEarlyCheck),
+		bridge_logic_disabled_timer.disabledUntilEmpAfterEarlyCheck,
+		bridge_logic_disabled_timer.disabledUntilAnyAfterEarlyCheck,
+		bridge_logic_disabled_timer.frameAfterExpiryCheck,
+		bool_json(bridge_logic_disabled_timer.disabledAfterExpiryCheck),
+		bool_json(bridge_logic_disabled_timer.disabledByEmpAfterExpiryCheck),
+		bridge_logic_disabled_timer.disabledUntilEmpAfterExpiryCheck,
+		bridge_logic_disabled_timer.disabledUntilAnyAfterExpiryCheck,
+		bridge_draw_first_damage_state_after_disabled_timer_scene,
 		bridge_logic_first_layer_after_seed,
 		bridge_draw_terrain_logic_bridge_count,
 		bridge_draw_enabled_bridge_count,

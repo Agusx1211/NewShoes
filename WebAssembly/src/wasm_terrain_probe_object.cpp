@@ -1033,24 +1033,62 @@ ObjectShroudStatus Object::getShroudedStatus(Int) const
 
 Bool Object::clearDisabled(DisabledType type)
 {
+	if (type < 0 || type >= DISABLED_COUNT) {
+		return FALSE;
+	}
+	if (!isDisabledByType(type)) {
+		return FALSE;
+	}
+	if (type != DISABLED_HELD) {
+		pauseAllSpecialPowers(FALSE);
+	}
+	m_disabledTillFrame[type] = NEVER;
 	m_disabledMask.set(type, 0);
+	checkDisabledStatus();
+	if (!isDisabled()) {
+		onDisabledEdge(FALSE);
+	}
 	return TRUE;
 }
 
 void Object::setDisabled(DisabledType type)
 {
-	m_disabledMask.set(type);
+	setDisabledUntil(type, FOREVER);
 }
 
 void Object::setDisabledUntil(DisabledType type, UnsignedInt frame)
 {
-	setDisabled(type);
-	m_disabledTillFrame[type] = frame;
+	Bool edge_case = !isDisabled();
+	if (type < 0 || type >= DISABLED_COUNT) {
+		return;
+	}
+
+	if (m_disabledTillFrame[type] != frame) {
+		if (type != DISABLED_HELD && !isDisabledByType(type)) {
+			pauseAllSpecialPowers(TRUE);
+		}
+		m_disabledTillFrame[type] = frame;
+		m_disabledMask.set(type, frame > TheGameLogic->getFrame());
+	}
+
+	if (edge_case) {
+		onDisabledEdge(TRUE);
+	}
 }
 
 UnsignedInt Object::getDisabledUntil(DisabledType type) const
 {
-	return type == DISABLED_ANY ? 0 : m_disabledTillFrame[type];
+	if (type == DISABLED_ANY) {
+		UnsignedInt highest_frame = 0;
+		for (Int i = 0; i < DISABLED_COUNT; ++i) {
+			if (m_disabledMask.test(i) &&
+					m_disabledTillFrame[i] > highest_frame) {
+				highest_frame = m_disabledTillFrame[i];
+			}
+		}
+		return highest_frame;
+	}
+	return m_disabledMask.test(type) ? m_disabledTillFrame[type] : 0;
 }
 
 void Object::pauseAllSpecialPowers(const Bool) const
@@ -1059,6 +1097,14 @@ void Object::pauseAllSpecialPowers(const Bool) const
 
 void Object::checkDisabledStatus()
 {
+	UnsignedInt now = TheGameLogic->getFrame();
+	for (Int i = 0; i < DISABLED_COUNT; ++i) {
+		DisabledType type = static_cast<DisabledType>(i);
+		if (isDisabledByType(type) && now >= m_disabledTillFrame[i]) {
+			clearDisabled(type);
+			m_disabledMask.set(type, 0);
+		}
+	}
 }
 
 void Object::clearLeechRangeModeForAllWeapons()

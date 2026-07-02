@@ -4018,6 +4018,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       retained bridge with body, logic, and draw damage states still pristine.
       Verified with `npm --prefix WebAssembly run build:wasm` and
       `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
+- [x] Route focused object disabled timers through the original frame-gated
+      mask/until-frame contract and prove a retained shipped `GenericBridge`
+      expires a timed disabled flag through the browser bridge scene. The
+      focused object runtime now uses the original core behavior for
+      `setDisabled`, `setDisabledUntil`, `getDisabledUntil(DISABLED_ANY)`,
+      inactive `clearDisabled` returns, and `checkDisabledStatus` expiry while
+      leaving audio/drawable/contain/spawn side effects for the future full
+      original owners. The bridge scene now sets `DISABLED_EMP` for two reduced
+      `GameLogic::update()` frames, verifies the flag and `getDisabledUntil`
+      values remain active before expiry, verifies both are clear at the expiry
+      frame, and still renders the retained bridge in the pristine draw state.
+      Verified with `npm --prefix WebAssembly run build:wasm` and
+      `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
 	- [x] Feed the focused terrain road and bridge adjunct buffers from the
 	      original logical terrain map-object list. The road and bridge scene probes
 	      now call original `W3DTerrainLogic::loadMap(query=true)` against
