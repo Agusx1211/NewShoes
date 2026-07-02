@@ -162,6 +162,9 @@ void __attribute__((weak)) DoShadows(RenderInfoClass &, Bool)
 	++g_scene_probe_shadow_flushes;
 }
 
+// NOTE: the real DoParticles (GameEngineDevice W3DParticleSys.cpp) is linked
+// through zh_gameengine_real_lifecycle_runtime and overrides this weak
+// counting hook, mirroring the DoShadows tripwire above.
 void __attribute__((weak)) DoParticles(RenderInfoClass &)
 {
 	++g_scene_probe_particle_flushes;
@@ -615,7 +618,12 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_scene()
 		succeeded(render_result) &&
 		succeeded(end_render_result) &&
 		g_scene_probe_shadow_flushes == 0 &&
-		g_scene_probe_particle_flushes >= 1 &&
+		// The real DoParticles (GameEngineDevice W3DParticleSys.cpp) is linked
+		// through zh_gameengine_real_lifecycle_runtime and overrides the weak
+		// counting hook above (it no-ops safely with a null
+		// TheParticleSystemManager), so this stays 0 like the DoShadows
+		// tripwire: it only increments if the real implementation drops out.
+		g_scene_probe_particle_flushes == 0 &&
 		state->create_device_calls >= 1 &&
 		state->create_vertex_buffer_calls >= 1 &&
 		state->create_index_buffer_calls >= 1 &&

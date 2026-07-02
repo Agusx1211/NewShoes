@@ -5468,7 +5468,7 @@ try {
       // The real W3DShadow.cpp DoShadows implementation is linked now, so the
       // probe's weak counting hook must stay dormant (0 = real code linked).
       || displaySceneResult.probe?.scene?.shadowFlushes !== 0
-      || displaySceneResult.probe?.scene?.particleFlushes < 1
+      || displaySceneResult.probe?.scene?.particleFlushes !== 0
       || displaySceneResult.probe?.results?.displayPrepared !== true
       || displaySceneResult.probe?.results?.sceneOwned !== true
       || displaySceneResult.probe?.results?.sceneCreated !== true
