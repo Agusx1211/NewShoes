@@ -262,7 +262,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
   const probe = state.functionLexiconRuntime;
   expect(probe?.attempted === true, "function lexicon runtime probe did not run", probe);
   expect(probe.ok === false, "function lexicon runtime should not claim full ownership yet", probe);
-  expect(probe.status === "base_function_lexicon_replay_control_runtime_owned",
+  expect(probe.status === "base_function_lexicon_challenge_menu_runtime_owned",
     "function lexicon runtime status mismatch", probe);
   expect(probe.nextRequired === "originalFunctionLexiconRemainingShellCallbacks",
     "function lexicon runtime nextRequired mismatch", probe);
@@ -306,6 +306,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.creditsMenuSystem === true
       && probe.lookups.skirmishGameOptionsMenuSystem === true
       && probe.lookups.singlePlayerMenuSystem === true
+      && probe.lookups.challengeMenuSystem === true
       && probe.lookups.difficultySelectSystem === true
       && probe.lookups.keyboardOptionsMenuSystem === true
       && probe.lookups.inGamePopupMessageSystem === true
@@ -328,6 +329,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.creditsMenuInput === true
       && probe.lookups.skirmishGameOptionsMenuInput === true
       && probe.lookups.singlePlayerMenuInput === true
+      && probe.lookups.challengeMenuInput === true
       && probe.lookups.difficultySelectInput === true
       && probe.lookups.keyboardOptionsMenuInput === true
       && probe.lookups.inGamePopupMessageInput === true
@@ -340,6 +342,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.creditsMenuInit === true
       && probe.lookups.skirmishGameOptionsMenuInit === true
       && probe.lookups.singlePlayerMenuInit === true
+      && probe.lookups.challengeMenuInit === true
       && probe.lookups.difficultySelectInit === true
       && probe.lookups.keyboardOptionsMenuInit === true
       && probe.lookups.inGamePopupMessageInit === true
@@ -347,11 +350,13 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.creditsMenuUpdate === true
       && probe.lookups.skirmishGameOptionsMenuUpdate === true
       && probe.lookups.singlePlayerMenuUpdate === true
+      && probe.lookups.challengeMenuUpdate === true
       && probe.lookups.keyboardOptionsMenuUpdate === true
       && probe.lookups.mainMenuShutdown === true
       && probe.lookups.creditsMenuShutdown === true
       && probe.lookups.skirmishGameOptionsMenuShutdown === true
       && probe.lookups.singlePlayerMenuShutdown === true
+      && probe.lookups.challengeMenuShutdown === true
       && probe.lookups.keyboardOptionsMenuShutdown === true
       && probe.lookups.popupReplayShutdown === true
       && probe.lookups.w3dGadgetPushButtonDraw === true
@@ -394,7 +399,7 @@ function assertAudioOwnedFrontier(state) {
       && frontier.audioManagerRuntime.tornDown === true,
     "frontier audioManagerRuntime summary mismatch", frontier.audioManagerRuntime);
   expect(frontier.functionLexiconRuntime?.ready === false
-      && frontier.functionLexiconRuntime.status === "base_function_lexicon_replay_control_runtime_owned"
+      && frontier.functionLexiconRuntime.status === "base_function_lexicon_challenge_menu_runtime_owned"
       && frontier.functionLexiconRuntime.w3dDeviceDrawReady === true
       && frontier.functionLexiconRuntime.w3dLayoutInitReady === true
       && frontier.functionLexiconRuntime.messageBoxSystemReady === true

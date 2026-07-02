@@ -59,7 +59,9 @@ flow below.
       original `IdleWorkerSystem`, original `BeaconWindowInput`,
       original `ReplayControl` system/input callbacks,
       plus `MainMenu`/`CreditsMenu`/`SkirmishGameOptionsMenu`/
-      `SinglePlayerMenu` shell callback names; the remaining
+      `SinglePlayerMenu` shell callback names, and original `ChallengeMenu`
+      system/input/init/update/shutdown callbacks with original
+      `ChallengeGenerals` and `WindowVideoManager` ownership; the remaining
       `FunctionLexicon` boundary is the rest of the non-network layout
       callback graph);
       archiveless or music-less boots honestly stay at line 434.
@@ -77,12 +79,13 @@ flow below.
       `ReplayControl` system/input lookups, and
       original `MainMenu`/`CreditsMenu`/
       `SkirmishGameOptionsMenu`/`SinglePlayerMenu`
+      system/input/init/update/shutdown lookups plus original `ChallengeMenu`
       system/input/init/update/shutdown lookups, but full ownership still needs
-      the remaining original base `FunctionLexicon.cpp` non-network layout callback
-      graph without pulling LAN/WOL/GameSpy/embedded-web menu callbacks into
-      `cnc-port`. Next promote the remaining non-network layout callback owners
-      in small groups while leaving online/download/embedded web menus at
-      explicit browser boundaries.
+      the remaining original base `FunctionLexicon.cpp` non-network layout
+      callback graph without pulling LAN/WOL/GameSpy/embedded-web menu
+      callbacks into `cnc-port`. Next promote the remaining non-network layout
+      callback owners in small groups while leaving online/download/embedded
+      web menus at explicit browser boundaries.
       The real
       `W3DModuleFactory` + all 224 module registrations already link into
       `cnc-port` via `zh_gameengine_real_object_ini_runtime`, so lexicon/module
@@ -109,6 +112,12 @@ flow below.
       it is the only non-network base input callback intentionally left out of
       the current widget FunctionLexicon slice because it pulls
       `TheSelectionTranslator`.
+- [ ] Promote `GeneralsExpPointsSystem`/`GeneralsExpPointsInput` after the
+      original `ControlBar` command path is runtime-owned. A direct callback
+      registration links `GUI/GUICallbacks/GeneralsExpPoints.cpp` but then
+      requires `ControlBar::hidePurchaseScience()` and
+      `ControlBar::processContextSensitiveButtonClick()`, which enters the
+      broad `ControlBar::processCommandUI()` gameplay command dispatch owner.
 - [ ] Replace the weak browser boundaries for `BattleHonorTooltip`,
       `InsertBattleHonor`, `ResetBattleHonorInsertion`,
       `playerTemplateComboBoxTooltip`, and `playerTemplateListBoxTooltip`
@@ -1703,8 +1712,11 @@ flow below.
       A 2026-07-02 `test:vertical-integrations` run reached
       `browser-lanapi-game-start-two-contexts` after the startup/archive/audio
       checks passed, then hung inside the Playwright RPC until manually
-      interrupted; the harness should fail with browser log/context instead of
-      leaving a silent process.
+      interrupted. A later 2026-07-02 `test:object-ini` run likewise reached
+      `node harness/object_ini_smoke.mjs` after build and asset verification,
+      then hung silently inside the browser object-INI RPC until manually
+      interrupted twice; the harness should fail with browser log/context
+      instead of leaving a silent process.
 - [ ] CI runs build + harness smoke + screenshot diffs on every change.
 - [ ] Document how to run the harness and interpret failures.
 

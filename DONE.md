@@ -2272,6 +2272,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       lookups in the browser and now reports
       `base_function_lexicon_replay_control_runtime_owned` with
       `originalFunctionLexiconRemainingShellCallbacks` next.
+- [x] Promote the original `ChallengeMenu` callback owner into the linked
+      `cnc-port` base `FunctionLexicon`. `zh_window_layout_script_runtime` now
+      links original `GUI/GUICallbacks/Menus/ChallengeMenu.cpp` together with
+      its original `GUI/ChallengeGenerals.cpp` data owner and
+      `GUI/WindowVideoManager.cpp` menu-video owner, and the reduced wasm
+      system/input/init/update/shutdown tables register the `ChallengeMenu`
+      callbacks. Startup vertical verifies those callback-name lookups in the
+      browser and now reports
+      `base_function_lexicon_challenge_menu_runtime_owned` with
+      `originalFunctionLexiconRemainingShellCallbacks` next.
 ---
 
 ## M3 — File / data subsystem (real data)
