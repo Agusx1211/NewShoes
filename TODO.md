@@ -47,17 +47,20 @@ flow below.
       `isMusicAlreadyLoaded()` over mounted archives plus base-Generals
       `Music.big`, and `openDevice()` through the browser MSS shim, so the
       archive-mounted frontier is now `createFunctionLexicon` at line 446
-      (the linked runtime constructs `W3DFunctionLexicon` and proves its W3D
-      device draw/layout tables, but the base `FunctionLexicon` callback graph
-      is still probe-owned);
+      (the linked runtime constructs `W3DFunctionLexicon`, proves its W3D
+      device draw/layout tables, and loads the core base GUI
+      system/input/tooltip callback table; the remaining
+      `FunctionLexicon` boundary is the base layout/draw callback graph);
       archiveless or music-less boots honestly stay at line 434.
 - [ ] Own `createFunctionLexicon` (`W3DFunctionLexicon`, `GameEngine.cpp:446`)
       and then `createModuleFactory` (line 447) in the browser boot — the new
       first unowned init factories now that `TheAudio` is owned. The current
       linked runtime constructs original `W3DFunctionLexicon` and verifies the
-      W3D device draw/layout callback tables, but full ownership still needs
-      the original base `FunctionLexicon.cpp` callback table graph without
-      pulling LAN/WOL/GameSpy/embedded-web menu callbacks into `cnc-port`.
+      W3D device draw/layout callback tables plus the core base GUI
+      system/input/tooltip callback table, but full ownership still needs the
+      remaining original base `FunctionLexicon.cpp` layout/draw callback graph
+      without pulling LAN/WOL/GameSpy/embedded-web menu callbacks into
+      `cnc-port`.
       The real
       `W3DModuleFactory` + all 224 module registrations already link into
       `cnc-port` via `zh_gameengine_real_object_ini_runtime`, so lexicon/module
@@ -95,6 +98,10 @@ flow below.
       terrain smokes can race while extracting the shared loose `Data1.cab`
       payload and fail with `errno=17` even when the renderer path itself is
       healthy.
+- [ ] Make `tools/build_wasm.sh` safe for parallel smoke-test invocations, or
+      serialize npm scripts that share `WebAssembly/build/wasm`. Concurrent
+      `build:wasm` runs can race during CMake/Ninja regeneration and fail with
+      `ninja: error: failed recompaction` before the harness code runs.
 
 ---
 

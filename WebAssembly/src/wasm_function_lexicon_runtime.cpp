@@ -112,6 +112,10 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.pass_messages_to_parent_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("PassMessagesToParentSystem")) == PassMessagesToParentSystem;
+	result.pass_selected_buttons_to_parent_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("PassSelectedButtonsToParentSystem")) ==
+				PassSelectedButtonsToParentSystem;
 	result.game_window_default_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("GameWinDefaultSystem")) == GameWinDefaultSystem;
@@ -121,6 +125,21 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.message_box_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("MessageBoxSystem")) == MessageBoxSystem;
+	result.quit_message_box_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("QuitMessageBoxSystem")) == QuitMessageBoxSystem;
+	result.game_window_default_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("GameWinDefaultInput")) == GameWinDefaultInput;
+	result.gadget_push_button_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("GadgetPushButtonInput")) == GadgetPushButtonInput;
+	result.gadget_static_text_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("GadgetStaticTextInput")) == GadgetStaticTextInput;
+	result.game_window_default_tooltip_lookup =
+		TheFunctionLexicon->gameWinTooltipFunc(
+			key_for("GameWinDefaultTooltip")) == GameWinDefaultTooltip;
 	result.w3d_gadget_push_button_draw_lookup =
 		TheFunctionLexicon->gameWinDrawFunc(
 			key_for("W3DGadgetPushButtonDraw")) == W3DGadgetPushButtonDraw;
@@ -172,14 +191,27 @@ bool device_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 bool base_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 {
 	return result.pass_messages_to_parent_lookup &&
+		result.pass_selected_buttons_to_parent_lookup &&
 		result.game_window_default_system_lookup &&
 		result.gadget_push_button_system_lookup &&
-		result.message_box_system_lookup;
+		result.message_box_system_lookup &&
+		result.quit_message_box_system_lookup &&
+		result.game_window_default_input_lookup &&
+		result.gadget_push_button_input_lookup &&
+		result.gadget_static_text_input_lookup &&
+		result.game_window_default_tooltip_lookup;
 }
 
 bool lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 {
 	return base_lookup_state_ready(result) && device_lookup_state_ready(result);
+}
+
+bool base_core_table_state_ready(const FunctionLexiconRuntimeProbeResult &result)
+{
+	return result.game_window_system_table_loaded &&
+		result.game_window_input_table_loaded &&
+		result.game_window_tooltip_table_loaded;
 }
 
 void finish_status(FunctionLexiconRuntimeProbeResult &result)
@@ -227,9 +259,14 @@ void finish_status(FunctionLexiconRuntimeProbeResult &result)
 		result.next_required = "createFunctionLexicon";
 		return;
 	}
-	if (!base_table_state_ready(result) || !base_lookup_state_ready(result)) {
+	if (!base_core_table_state_ready(result) || !base_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_probe_owned";
 		result.next_required = "originalFunctionLexiconCallbacks";
+		return;
+	}
+	if (!base_table_state_ready(result)) {
+		result.status = "base_function_lexicon_partial_runtime_owned";
+		result.next_required = "originalFunctionLexiconLayoutAndDrawCallbacks";
 		return;
 	}
 	if (!table_state_ready(result)) {
@@ -383,9 +420,15 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"windowLayoutInit\":%s,\"windowLayoutDeviceInit\":%s,"
 		"\"windowLayoutUpdate\":%s,\"windowLayoutShutdown\":%s},"
 		"\"lookups\":{\"passMessagesToParentSystem\":%s,"
+		"\"passSelectedButtonsToParentSystem\":%s,"
 		"\"gameWindowDefaultSystem\":%s,"
 		"\"gadgetPushButtonSystem\":%s,"
 		"\"messageBoxSystem\":%s,"
+		"\"quitMessageBoxSystem\":%s,"
+		"\"gameWindowDefaultInput\":%s,"
+		"\"gadgetPushButtonInput\":%s,"
+		"\"gadgetStaticTextInput\":%s,"
+		"\"gameWindowDefaultTooltip\":%s,"
 		"\"w3dGadgetPushButtonDraw\":%s,"
 		"\"w3dGameWindowDefaultDraw\":%s,"
 		"\"w3dMainMenuInit\":%s}}",
@@ -416,9 +459,15 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.window_layout_update_table_loaded),
 		json_bool(state.window_layout_shutdown_table_loaded),
 		json_bool(state.pass_messages_to_parent_lookup),
+		json_bool(state.pass_selected_buttons_to_parent_lookup),
 		json_bool(state.game_window_default_system_lookup),
 		json_bool(state.gadget_push_button_system_lookup),
 		json_bool(state.message_box_system_lookup),
+		json_bool(state.quit_message_box_system_lookup),
+		json_bool(state.game_window_default_input_lookup),
+		json_bool(state.gadget_push_button_input_lookup),
+		json_bool(state.gadget_static_text_input_lookup),
+		json_bool(state.game_window_default_tooltip_lookup),
 		json_bool(state.w3d_gadget_push_button_draw_lookup),
 		json_bool(state.w3d_game_window_default_draw_lookup),
 		json_bool(state.w3d_main_menu_init_lookup));

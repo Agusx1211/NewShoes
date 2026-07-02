@@ -2149,6 +2149,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `deviceFactoryFrontier.firstUnownedInitFactory` at
       `createFunctionLexicon`@446 instead of pretending `createModuleFactory`
       is reached.
+- [x] Load the first core base `FunctionLexicon` callback slice in linked
+      `cnc-port`: the current wasm `FunctionLexicon::init()` registers the
+      base `TABLE_GAME_WIN_SYSTEM`, `TABLE_GAME_WIN_INPUT`, and
+      `TABLE_GAME_WIN_TOOLTIP` entries for default/pass-through/message-box,
+      push-button, static-text, and tooltip callbacks while
+      `W3DFunctionLexicon::init()` continues to provide the W3D device
+      draw/layout-init tables. `test:startup-vertical` verifies those core base
+      lookups plus the W3D representative lookups and now reports
+      `base_function_lexicon_partial_runtime_owned` with
+      `originalFunctionLexiconLayoutAndDrawCallbacks` next, keeping
+      `createFunctionLexicon`@446 unowned until the base layout/draw callback
+      tables are runtime-owned.
 ---
 
 ## M3 — File / data subsystem (real data)

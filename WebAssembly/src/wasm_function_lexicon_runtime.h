@@ -50,9 +50,15 @@ struct FunctionLexiconRuntimeProbeResult
 
 	// Representative callback-name lookups from the original tables.
 	bool pass_messages_to_parent_lookup = false;
+	bool pass_selected_buttons_to_parent_lookup = false;
 	bool game_window_default_system_lookup = false;
 	bool gadget_push_button_system_lookup = false;
 	bool message_box_system_lookup = false;
+	bool quit_message_box_system_lookup = false;
+	bool game_window_default_input_lookup = false;
+	bool gadget_push_button_input_lookup = false;
+	bool gadget_static_text_input_lookup = false;
+	bool game_window_default_tooltip_lookup = false;
 	bool w3d_gadget_push_button_draw_lookup = false;
 	bool w3d_game_window_default_draw_lookup = false;
 	bool w3d_main_menu_init_lookup = false;

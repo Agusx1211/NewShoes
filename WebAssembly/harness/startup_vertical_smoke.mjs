@@ -262,9 +262,9 @@ function assertFunctionLexiconRuntimeFrontier(state) {
   const probe = state.functionLexiconRuntime;
   expect(probe?.attempted === true, "function lexicon runtime probe did not run", probe);
   expect(probe.ok === false, "function lexicon runtime should not claim full ownership yet", probe);
-  expect(probe.status === "base_function_lexicon_probe_owned",
+  expect(probe.status === "base_function_lexicon_partial_runtime_owned",
     "function lexicon runtime status mismatch", probe);
-  expect(probe.nextRequired === "originalFunctionLexiconCallbacks",
+  expect(probe.nextRequired === "originalFunctionLexiconLayoutAndDrawCallbacks",
     "function lexicon runtime nextRequired mismatch", probe);
   expect(probe.constructed === true && probe.theFunctionLexiconOwned === true,
     "original W3DFunctionLexicon was not constructed as TheFunctionLexicon", probe);
@@ -274,17 +274,31 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.gameEngineInit.line === 446
       && probe.gameEngineInit.originalConcrete === "W3DFunctionLexicon",
     "GameEngine.cpp createFunctionLexicon ownership mismatch", probe);
-  expect(probe.tables?.gameWindowDeviceDraw === true
+  expect(probe.tables?.gameWindowSystem === true
+      && probe.tables.gameWindowInput === true
+      && probe.tables.gameWindowTooltip === true
+      && probe.tables.gameWindowDeviceDraw === true
       && probe.tables.windowLayoutDeviceInit === true,
-    "W3DFunctionLexicon device tables should be loaded", probe.tables);
-  expect(probe.lookups?.w3dGadgetPushButtonDraw === true
+    "FunctionLexicon core and W3D device tables should be loaded", probe.tables);
+  expect(probe.lookups?.passMessagesToParentSystem === true
+      && probe.lookups.passSelectedButtonsToParentSystem === true
+      && probe.lookups.gameWindowDefaultSystem === true
+      && probe.lookups.gadgetPushButtonSystem === true
+      && probe.lookups.messageBoxSystem === true
+      && probe.lookups.quitMessageBoxSystem === true
+      && probe.lookups.gameWindowDefaultInput === true
+      && probe.lookups.gadgetPushButtonInput === true
+      && probe.lookups.gadgetStaticTextInput === true
+      && probe.lookups.gameWindowDefaultTooltip === true
+      && probe.lookups.w3dGadgetPushButtonDraw === true
       && probe.lookups.w3dGameWindowDefaultDraw === true
       && probe.lookups.w3dMainMenuInit === true,
-    "W3DFunctionLexicon W3D callback lookups did not resolve", probe.lookups);
-  expect(probe.tables.gameWindowSystem === false
+    "FunctionLexicon core/W3D callback lookups did not resolve", probe.lookups);
+  expect(probe.tables.gameWindowDraw === false
+      && probe.tables.windowLayoutInit === false
       && probe.tables.windowLayoutUpdate === false
-      && probe.lookups.messageBoxSystem === false,
-    "base FunctionLexicon should still expose the probe-owned boundary", probe);
+      && probe.tables.windowLayoutShutdown === false,
+    "base FunctionLexicon layout/draw tables should still expose the remaining boundary", probe.tables);
 }
 
 function assertAudioOwnedFrontier(state) {
@@ -321,11 +335,11 @@ function assertAudioOwnedFrontier(state) {
       && frontier.audioManagerRuntime.tornDown === true,
     "frontier audioManagerRuntime summary mismatch", frontier.audioManagerRuntime);
   expect(frontier.functionLexiconRuntime?.ready === false
-      && frontier.functionLexiconRuntime.status === "base_function_lexicon_probe_owned"
+      && frontier.functionLexiconRuntime.status === "base_function_lexicon_partial_runtime_owned"
       && frontier.functionLexiconRuntime.w3dDeviceDrawReady === true
       && frontier.functionLexiconRuntime.w3dLayoutInitReady === true
-      && frontier.functionLexiconRuntime.messageBoxSystemReady === false
-      && frontier.functionLexiconRuntime.nextRequired === "originalFunctionLexiconCallbacks",
+      && frontier.functionLexiconRuntime.messageBoxSystemReady === true
+      && frontier.functionLexiconRuntime.nextRequired === "originalFunctionLexiconLayoutAndDrawCallbacks",
     "frontier functionLexiconRuntime summary mismatch", frontier.functionLexiconRuntime);
   expect(startup.browserDeviceLayer?.functionLexicon === false,
     "browser device layer should not mark the full function lexicon runtime-owned", startup.browserDeviceLayer);

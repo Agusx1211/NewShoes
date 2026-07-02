@@ -182,6 +182,32 @@ __attribute__((weak)) void Display::update() {}
 
 FunctionLexicon *TheFunctionLexicon = nullptr;
 
+namespace {
+
+FunctionLexicon::TableEntry runtimeBaseSystemTable[] = {
+	{ NAMEKEY_INVALID, "GameWinDefaultSystem", GameWinDefaultSystem },
+	{ NAMEKEY_INVALID, "PassMessagesToParentSystem", PassMessagesToParentSystem },
+	{ NAMEKEY_INVALID, "PassSelectedButtonsToParentSystem", PassSelectedButtonsToParentSystem },
+	{ NAMEKEY_INVALID, "GadgetPushButtonSystem", GadgetPushButtonSystem },
+	{ NAMEKEY_INVALID, "MessageBoxSystem", MessageBoxSystem },
+	{ NAMEKEY_INVALID, "QuitMessageBoxSystem", QuitMessageBoxSystem },
+	{ NAMEKEY_INVALID, nullptr, nullptr },
+};
+
+FunctionLexicon::TableEntry runtimeBaseInputTable[] = {
+	{ NAMEKEY_INVALID, "GameWinDefaultInput", GameWinDefaultInput },
+	{ NAMEKEY_INVALID, "GadgetPushButtonInput", GadgetPushButtonInput },
+	{ NAMEKEY_INVALID, "GadgetStaticTextInput", GadgetStaticTextInput },
+	{ NAMEKEY_INVALID, nullptr, nullptr },
+};
+
+FunctionLexicon::TableEntry runtimeBaseTooltipTable[] = {
+	{ NAMEKEY_INVALID, "GameWinDefaultTooltip", GameWinDefaultTooltip },
+	{ NAMEKEY_INVALID, nullptr, nullptr },
+};
+
+} // namespace
+
 FunctionLexicon::FunctionLexicon()
 {
 	for (Int index = 0; index < MAX_FUNCTION_TABLES; ++index) {
@@ -191,7 +217,12 @@ FunctionLexicon::FunctionLexicon()
 
 FunctionLexicon::~FunctionLexicon() {}
 
-void FunctionLexicon::init() {}
+void FunctionLexicon::init()
+{
+	loadTable(runtimeBaseSystemTable, TABLE_GAME_WIN_SYSTEM);
+	loadTable(runtimeBaseInputTable, TABLE_GAME_WIN_INPUT);
+	loadTable(runtimeBaseTooltipTable, TABLE_GAME_WIN_TOOLTIP);
+}
 
 void FunctionLexicon::reset()
 {
