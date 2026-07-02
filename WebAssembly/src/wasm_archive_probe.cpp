@@ -23,7 +23,7 @@
 #include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
 
-SubsystemInterfaceList *TheSubsystemList = nullptr;
+extern SubsystemInterfaceList *TheSubsystemList; // owned by real GameEngine.cpp
 GlobalData *TheGlobalData = nullptr;
 HWND ApplicationHWnd = NULL;
 const Char *g_strFile = "Data\\Generals.str";

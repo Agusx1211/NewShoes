@@ -134,3 +134,108 @@ struct DIDEVICEOBJECTDATA
 #define DIK_PGDN 0xD1
 #define DIK_INSERT 0xD2
 #define DIK_DELETE 0xD3
+
+// ---------------------------------------------------------------------------
+// DirectInput COM surface for Win32DIKeyboard.cpp (true platform boundary).
+// The browser has no DirectInput; DirectInput8Create fails with DIERR_GENERIC
+// so DirectInputKeyboard::openKeyboard() takes its original device-missing
+// path (closeKeyboard + null device guards). Values are the public
+// DirectInput ABI constants.
+// ---------------------------------------------------------------------------
+
+#include "windows.h"
+
+#define DI_OK S_OK
+
+#define DIERR_INSUFFICIENTPRIVS ((HRESULT)0x80040200L)
+#define DIERR_DEVICEFULL ((HRESULT)0x80040201L)
+#define DIERR_MOREDATA ((HRESULT)0x80040202L)
+#define DIERR_NOTDOWNLOADED ((HRESULT)0x80040203L)
+#define DIERR_HASEFFECTS ((HRESULT)0x80040204L)
+#define DIERR_NOTEXCLUSIVEACQUIRED ((HRESULT)0x80040205L)
+#define DIERR_INCOMPLETEEFFECT ((HRESULT)0x80040206L)
+#define DIERR_NOTBUFFERED ((HRESULT)0x80040207L)
+#define DIERR_EFFECTPLAYING ((HRESULT)0x80040208L)
+#define DIERR_UNPLUGGED ((HRESULT)0x80040209L)
+#define DIERR_REPORTFULL ((HRESULT)0x8004020AL)
+#define DIERR_MAPFILEFAIL ((HRESULT)0x8004020BL)
+
+#define DIERR_DEVICENOTREG ((HRESULT)0x80040154L)
+#define DIERR_NOAGGREGATION ((HRESULT)0x80040110L)
+#define DIERR_OBJECTNOTFOUND ((HRESULT)0x80070002L)
+#define DIERR_NOTFOUND ((HRESULT)0x80070002L)
+#define DIERR_INVALIDPARAM ((HRESULT)0x80070057L)
+#define DIERR_NOINTERFACE ((HRESULT)0x80004002L)
+#define DIERR_GENERIC ((HRESULT)0x80004005L)
+#define DIERR_OUTOFMEMORY ((HRESULT)0x8007000EL)
+#define DIERR_UNSUPPORTED ((HRESULT)0x80004001L)
+#define DIERR_NOTINITIALIZED ((HRESULT)0x80070015L)
+#define DIERR_READONLY ((HRESULT)0x80070005L)
+#define DIERR_HANDLEEXISTS ((HRESULT)0x80070005L)
+#define DIERR_OTHERAPPHASPRIO ((HRESULT)0x80070005L)
+#define DIERR_ACQUIRED ((HRESULT)0x800700AAL)
+#define DIERR_NOTACQUIRED ((HRESULT)0x8007000CL)
+#define DIERR_INPUTLOST ((HRESULT)0x8007001EL)
+#define DIERR_ALREADYINITIALIZED ((HRESULT)0x800704DFL)
+#define DIERR_BADDRIVERVER ((HRESULT)0x80070077L)
+#define DIERR_BETADIRECTINPUTVERSION ((HRESULT)0x80070481L)
+#define DIERR_OLDDIRECTINPUTVERSION ((HRESULT)0x8007047EL)
+
+#define DISCL_EXCLUSIVE 0x00000001
+#define DISCL_NONEXCLUSIVE 0x00000002
+#define DISCL_FOREGROUND 0x00000004
+#define DISCL_BACKGROUND 0x00000008
+
+#define DIPH_DEVICE 0
+
+struct DIPROPHEADER
+{
+	DWORD dwSize;
+	DWORD dwHeaderSize;
+	DWORD dwObj;
+	DWORD dwHow;
+};
+
+struct DIPROPDWORD
+{
+	DIPROPHEADER diph;
+	DWORD dwData;
+};
+
+// DIPROP_* are REFGUID-cast small integers in the real header.
+#define DIPROP_BUFFERSIZE (*reinterpret_cast<const GUID *>(&cnc_port_diprop_buffersize))
+static const int cnc_port_diprop_buffersize[4] = {1, 0, 0, 0};
+
+struct DIDATAFORMAT;
+
+static const GUID GUID_SysKeyboard = {0x6F1D2B61, 0xD5A0, 0x11CF, {0xBF, 0xC7, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00}};
+static const GUID IID_IDirectInput8_Value = {0xBF798031, 0x483A, 0x4DA2, {0xAA, 0x99, 0x5D, 0x64, 0xED, 0x36, 0x97, 0x00}};
+#define IID_IDirectInput8 IID_IDirectInput8_Value
+
+static const DIDATAFORMAT *const c_dfDIKeyboard = nullptr;
+
+// Browser DirectInput keyboard device (implemented in
+// WebAssembly/src/wasm_dinput_browser.cpp): the original DirectInputKeyboard
+// runs unmodified on top of a DOM-fed DIK scan-code queue.
+struct IDirectInputDevice8
+{
+	HRESULT SetDataFormat(const DIDATAFORMAT *const *);
+	HRESULT SetCooperativeLevel(HWND, DWORD);
+	HRESULT SetProperty(const GUID &, const DIPROPHEADER *);
+	HRESULT Acquire();
+	HRESULT Unacquire();
+	HRESULT GetDeviceData(DWORD, DIDEVICEOBJECTDATA *, DWORD *, DWORD);
+	ULONG Release();
+};
+
+struct IDirectInput8
+{
+	HRESULT CreateDevice(const GUID &, IDirectInputDevice8 **device, void *);
+	ULONG Release();
+};
+
+HRESULT DirectInput8Create(HINSTANCE, DWORD, const GUID &, void **out, void *);
+
+// Queue interface for the JS bridge / port entry to feed keyboard input.
+extern "C" int cnc_port_dinput_queue_key(unsigned int dik_code, int key_down, unsigned int timestamp);
+extern "C" unsigned int cnc_port_dinput_queued_key_count(void);

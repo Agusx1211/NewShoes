@@ -292,7 +292,7 @@ function assertDeviceFactoryFrontier(startup, context, expected) {
       || preAudio.parseCommandLine.ready !== true
       || preAudio.firstUnownedFactory?.line !== 434
       || preAudio.firstUnownedFactory.factory !== "createAudioManager"
-      || byFactory.get("CreateGameEngine")?.line !== 1122
+      || byFactory.get("CreateGameEngine")?.line !== 1126
       || byFactory.get("CreateGameEngine")?.ready !== true
       || byFactory.get("SubsystemInterfaceList")?.line !== 297
       || byFactory.get("SubsystemInterfaceList")?.ready !== true

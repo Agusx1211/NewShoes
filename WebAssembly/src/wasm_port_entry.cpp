@@ -1669,7 +1669,7 @@ const char *build_device_factory_frontier_json()
 		"\"w3dDeviceDrawReady\":%s,\"w3dLayoutInitReady\":%s,"
 		"\"messageBoxSystemReady\":%s,\"nextRequired\":\"%s\"},"
 		"\"entries\":["
-		"{\"order\":1,\"line\":1122,\"subsystem\":\"TheGameEngine\",\"factory\":\"CreateGameEngine\",\"originalConcrete\":\"Win32GameEngine\",\"ready\":true,\"called\":true,\"status\":\"browser_focused_lifetime_constructed\"},"
+		"{\"order\":1,\"line\":1126,\"subsystem\":\"TheGameEngine\",\"factory\":\"CreateGameEngine\",\"originalConcrete\":\"Win32GameEngine\",\"ready\":true,\"called\":true,\"status\":\"browser_focused_lifetime_constructed\"},"
 		"{\"order\":2,\"line\":297,\"subsystem\":\"TheSubsystemList\",\"factory\":\"SubsystemInterfaceList\",\"originalConcrete\":\"SubsystemInterfaceList\",\"ready\":%s,\"called\":true,\"status\":\"browser_runtime_owned\"},"
 		"{\"order\":3,\"line\":305,\"subsystem\":\"TheFileSystem\",\"factory\":\"createFileSystem\",\"originalConcrete\":\"FileSystem\",\"ready\":%s,\"called\":true,\"status\":\"bootstrap_probe_ready\"},"
 		"{\"order\":4,\"line\":314,\"subsystem\":\"TheNameKeyGenerator\",\"factory\":\"NameKeyGenerator\",\"originalConcrete\":\"NameKeyGenerator\",\"ready\":%s,\"called\":true,\"status\":\"browser_runtime_owned\"},"

@@ -449,7 +449,7 @@ function assertOriginalStartupFrontier(state) {
       && preAudio.firstUnownedFactory.factory === "createAudioManager",
     "pre-audio first unowned factory mismatch", frontier);
 
-  expect(entryByFactory(frontier, "CreateGameEngine")?.line === 1122,
+  expect(entryByFactory(frontier, "CreateGameEngine")?.line === 1126,
     "CreateGameEngine frontier line mismatch", frontier);
   expect(entryByFactory(frontier, "CreateGameEngine")?.ready === true,
     "CreateGameEngine should be browser-construction ready", frontier);

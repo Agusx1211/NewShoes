@@ -77,7 +77,7 @@ const sourceChecks = [
     validate(payload) {
       expect(payload.ok === true && payload.orderOk === true,
         'GameEngine startup-order verifier did not report ok');
-      expect(payload.createGameEngine?.line === 1122,
+      expect(payload.createGameEngine?.line === 1126,
         'GameEngine startup-order verifier did not prove CreateGameEngine line');
       const byKey = new Map((payload.initOrder ?? []).map(entry => [entry.key, entry]));
       expect(byKey.get('createFileSystem')?.line === 305,

@@ -7192,6 +7192,8 @@ async function loadWasmModule() {
         [],
       ),
       probeWin32GameEngine: module.cwrap("cnc_port_probe_win32_gameengine", "string", []),
+      realEngineInit: module.cwrap("cnc_port_real_engine_init", "string", ["string"]),
+      realEngineFrontier: module.cwrap("cnc_port_real_engine_frontier", "string", []),
       probeMssStartup: module.cwrap("cnc_port_probe_mss_startup", "string", []),
       probeAudioManagerRuntime: module.cwrap("cnc_port_probe_audio_manager_runtime", "string", []),
       probeMssSampleLifecycle: module.cwrap("cnc_port_probe_mss_sample_lifecycle", "string", []),
@@ -10976,6 +10978,83 @@ async function getWasmModuleForArchives(command) {
   return { wasmModule };
 }
 
+// Drives the REAL engine lifecycle: original CreateGameEngine() ->
+// Win32GameEngine -> GameEngine::init(argc, argv) with -noshellmap -win.
+// The frontier is computed from the actual run (SubsystemInterfaceList
+// instrumentation + stdout trace); an abort inside init() (RELEASE_CRASH ->
+// _exit) is caught here at the JS boundary and reported with the last
+// in-flight subsystem.
+async function realEngineInit(payload = {}) {
+  const moduleResult = await getWasmModuleForArchives("realEngineInit");
+  if (moduleResult.error) {
+    return { ok: false, command: "realEngineInit", error: moduleResult.error };
+  }
+  const wasmModule = moduleResult.wasmModule;
+  const runDirectory = String(payload.runDirectory ?? "/assets/runtime");
+  const traceStart = harnessState.logs.length;
+  let frontier = null;
+  let aborted = false;
+  let abortMessage = null;
+  try {
+    frontier = JSON.parse(wasmModule.realEngineInit(runDirectory));
+  } catch (error) {
+    aborted = true;
+    abortMessage = error?.message ?? String(error);
+    try {
+      frontier = JSON.parse(wasmModule.realEngineFrontier());
+    } catch {
+      frontier = null; // runtime tore down before the frontier could be read
+    }
+  }
+  const traceLines = harnessState.logs
+    .slice(traceStart)
+    .map((entry) => entry?.data?.text)
+    .filter((text) => typeof text === "string"
+      && (text.startsWith("cnc-port: real-init") || text.startsWith("cnc-port: RELEASE_CRASH")));
+  const releaseCrash = traceLines.find((text) => text.startsWith("cnc-port: RELEASE_CRASH")) ?? null;
+  const started = traceLines
+    .filter((text) => text.startsWith("cnc-port: real-init subsystem-start "))
+    .map((text) => text.slice("cnc-port: real-init subsystem-start ".length));
+  const completed = traceLines
+    .filter((text) => text.startsWith("cnc-port: real-init subsystem-done "))
+    .map((text) => text.slice("cnc-port: real-init subsystem-done ".length));
+  const lastStarted = started.length > 0 ? started[started.length - 1] : null;
+  const inFlight = lastStarted !== null && !completed.includes(lastStarted) ? lastStarted : null;
+  recordLog("real engine init", {
+    runDirectory,
+    aborted,
+    abortMessage,
+    releaseCrash,
+    subsystemsCompleted: completed.length,
+    inFlightSubsystem: inFlight,
+    initReturned: Boolean(frontier?.initReturned),
+  });
+  harnessState.realEngineInit = {
+    attempted: true,
+    runDirectory,
+    aborted,
+    abortMessage,
+    releaseCrash,
+    trace: traceLines,
+    subsystemsCompleted: completed,
+    inFlightSubsystem: inFlight,
+    frontier,
+  };
+  return {
+    ok: Boolean(frontier?.initReturned) && !aborted,
+    command: "realEngineInit",
+    runDirectory,
+    aborted,
+    abortMessage,
+    releaseCrash,
+    trace: traceLines,
+    subsystemsCompleted: completed,
+    inFlightSubsystem: inFlight,
+    frontier,
+    state: snapshotState(),
+  };
+}
+
 async function mountArchive(payload = {}) {
   const moduleResult = await getWasmModuleForArchives("mountArchive");
   if (moduleResult.error) {
@@ -11689,6 +11768,8 @@ async function rpc(command, payload = {}) {
       }
     case "mountArchives":
       return mountArchives(payload);
+    case "realEngineInit":
+      return realEngineInit(payload);
     case "mountRangeBackedArchiveSet":
       return mountRangeBackedArchiveSet(payload);
     case "mountBigArchiveEntry":
