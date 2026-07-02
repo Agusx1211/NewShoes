@@ -5,15 +5,22 @@
 #include "Common/WellKnownKeys.h"
 #undef INSTANTIATE_WELL_KNOWN_KEYS
 
+#include "Common/ArchiveFileSystem.h"
+#include "Common/FileSystem.h"
+#include "Common/FunctionLexicon.h"
 #include "Common/GameEngine.h"
 #include "Common/GameState.h"
 #include "Common/GlobalData.h"
+#include "Common/LocalFileSystem.h"
 #include "Common/MapObject.h"
 #include "Common/MessageStream.h"
+#include "Common/NameKeyGenerator.h"
 #include "Common/PlayerList.h"
 #include "GameClient/Display.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
+#include "GameClient/HeaderTemplate.h"
+#include "GameClient/Image.h"
 #include "GameClient/Shell.h"
 #include "GameClient/Snow.h"
 #include "GameClient/Water.h"
@@ -21,6 +28,8 @@
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/RankInfo.h"
 #include "GameLogic/ScriptEngine.h"
+#include "Win32Device/Common/Win32BIGFileSystem.h"
+#include "Win32Device/Common/Win32LocalFileSystem.h"
 
 // Storage-only owners for globals referenced by unentered original
 // GameLogic/GameState sections. Real linked owners override these weak symbols.
@@ -175,6 +184,13 @@ namespace {
 int g_blank_layout_creates = 0;
 int g_layout_shutdowns = 0;
 AsciiString g_last_layout_name;
+AsciiString g_blank_layout_archive_path;
+Bool g_blank_window_archive_loaded = FALSE;
+Bool g_blank_window_file_exists = FALSE;
+Bool g_seed_blank_window_loaded_from_archive = FALSE;
+Bool g_prepare_blank_window_loaded_from_archive = FALSE;
+Bool g_seed_blank_window_root_ready = FALSE;
+Bool g_prepare_blank_window_root_ready = FALSE;
 
 bool expect(bool condition, const char *message)
 {
@@ -195,6 +211,11 @@ std::string jsonEscape(const char *value)
 		escaped.push_back(*cursor);
 	}
 	return escaped;
+}
+
+const char *jsonBool(Bool value)
+{
+	return value ? "true" : "false";
 }
 
 class SmokeGameEngine : public GameEngine
@@ -280,8 +301,6 @@ void SmokeNoDraw(GameWindow *, WinInstanceData *)
 {
 }
 
-void SmokeLayoutShutdown(WindowLayout *, void *);
-
 class SmokeGameWindowManager : public GameWindowManager
 {
 public:
@@ -313,29 +332,41 @@ public:
 	WindowLayout *winCreateLayout(AsciiString filename) override
 	{
 		g_last_layout_name = filename;
-		if (filename.compareNoCase("Menus/BlankWindow.wnd") != 0) {
-			return nullptr;
+		WindowLayout *layout = GameWindowManager::winCreateLayout(filename);
+		if (filename.compareNoCase("Menus/BlankWindow.wnd") == 0 && layout != nullptr) {
+			++g_blank_layout_creates;
+			if (g_blank_layout_creates == 1) {
+				g_seed_blank_window_loaded_from_archive = TRUE;
+				g_seed_blank_window_root_ready =
+					layout->getFirstWindow() != nullptr &&
+					layout->getFirstWindow()->winGetWindowId() ==
+						TheNameKeyGenerator->nameToKey(AsciiString("BlankWindow.wnd:BlankWindow"));
+			} else if (g_blank_layout_creates == 2) {
+				g_prepare_blank_window_loaded_from_archive = TRUE;
+				g_prepare_blank_window_root_ready =
+					layout->getFirstWindow() != nullptr &&
+					layout->getFirstWindow()->winGetWindowId() ==
+						TheNameKeyGenerator->nameToKey(AsciiString("BlankWindow.wnd:BlankWindow"));
+			}
 		}
-
-		WindowLayout *layout = newInstance(WindowLayout);
-		GameWindow *window = allocateNewWindow();
-		if (layout == nullptr || window == nullptr) {
-			return nullptr;
-		}
-
-		layout->addWindow(window);
-		layout->setShutdown(SmokeLayoutShutdown);
-		++g_blank_layout_creates;
 		return layout;
 	}
 };
 
-void SmokeLayoutShutdown(WindowLayout *, void *)
+} // namespace
+
+ImageCollection::ImageCollection()
 {
-	++g_layout_shutdowns;
 }
 
-} // namespace
+ImageCollection::~ImageCollection()
+{
+}
+
+const Image *ImageCollection::findImageByName(const AsciiString &)
+{
+	return nullptr;
+}
 
 GameEngine::GameEngine() :
 	m_maxFPS(DEFAULT_MAX_FPS),
@@ -399,6 +430,10 @@ void GameSpyCloseAllOverlays()
 
 int main()
 {
+	const char *window_archive_path = "artifacts/real-assets/Window.big";
+	AsciiString archive_directory("artifacts/real-assets/");
+	AsciiString archive_mask("Window.big");
+
 	GlobalData global_data;
 	global_data.m_framesPerSecondLimit = 30;
 	global_data.m_mapName = "Maps\\Smoke\\Before.map";
@@ -416,6 +451,39 @@ int main()
 	TheDisplay = &display;
 	display.setWidth(800);
 	display.setHeight(600);
+
+	NameKeyGenerator name_key_generator;
+	TheNameKeyGenerator = &name_key_generator;
+	name_key_generator.init();
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	TheLocalFileSystem = &local_file_system;
+	TheArchiveFileSystem = &archive_file_system;
+	TheFileSystem = &file_system;
+	g_blank_layout_archive_path = window_archive_path;
+	g_blank_window_archive_loaded =
+		archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+	if (!expect(g_blank_window_archive_loaded,
+			"Win32BIGFileSystem should load base Window.big for BlankWindow.wnd")) {
+		return 1;
+	}
+	g_blank_window_file_exists =
+		file_system.doesFileExist("Window\\Menus\\BlankWindow.wnd");
+	if (!expect(g_blank_window_file_exists,
+			"base Window.big should expose Window\\Menus\\BlankWindow.wnd")) {
+		return 1;
+	}
+
+	FunctionLexicon function_lexicon;
+	TheFunctionLexicon = &function_lexicon;
+
+	ImageCollection image_collection;
+	TheMappedImageCollection = &image_collection;
+
+	HeaderTemplateManager header_template_manager;
+	TheHeaderTemplateManager = &header_template_manager;
 
 	GameState game_state;
 	TheGameState = &game_state;
@@ -441,12 +509,32 @@ int main()
 	Shell *shell = new Shell;
 	TheShell = shell;
 	shell->push("Menus/BlankWindow.wnd");
+	WindowLayout *seed_layout = shell->top();
+	GameWindow *seed_root = seed_layout != nullptr ? seed_layout->getFirstWindow() : nullptr;
 	if (!expect(shell->isShellActive(),
 			"original Shell should start active before MSG_NEW_GAME hides it")) {
 		return 1;
 	}
 	if (!expect(shell->getScreenCount() == 1,
 			"original Shell::push should own the seeded BlankWindow layout")) {
+		return 1;
+	}
+	if (!expect(seed_layout != nullptr
+			&& seed_layout->getFilename().compareNoCase("Menus/BlankWindow.wnd") == 0
+			&& seed_root != nullptr
+			&& g_seed_blank_window_loaded_from_archive
+			&& g_seed_blank_window_root_ready,
+			"original Shell::push should load BlankWindow.wnd from base Window.big")) {
+		return 1;
+	}
+	Int seed_x = -1;
+	Int seed_y = -1;
+	Int seed_width = -1;
+	Int seed_height = -1;
+	seed_root->winGetScreenPosition(&seed_x, &seed_y);
+	seed_root->winGetSize(&seed_width, &seed_height);
+	if (!expect(seed_x == 0 && seed_y == 0 && seed_width == 800 && seed_height == 600,
+			"archive-backed BlankWindow root should preserve base layout geometry")) {
 		return 1;
 	}
 
@@ -488,12 +576,15 @@ int main()
 	ok = expect(g_blank_layout_creates == 2
 			&& g_last_layout_name.compareNoCase("Menus/BlankWindow.wnd") == 0,
 		"prepareNewGame should request the BlankWindow background after the Shell seed layout") && ok;
+	ok = expect(g_prepare_blank_window_loaded_from_archive &&
+			g_prepare_blank_window_root_ready,
+		"prepareNewGame should load the BlankWindow background from base Window.big") && ok;
 	ok = expect(logic->isInSkirmishGame(),
 		"prepareNewGame should switch GameLogic to GAME_SKIRMISH") && ok;
 	ok = expect(global_data.m_mapName == "Maps\\Smoke\\Skirmish.map"
 			&& global_data.m_pendingFile.isEmpty(),
 		"prepareNewGame should promote pending map into GlobalData mapName") && ok;
-	ok = expect(shell->isShellActive() == FALSE && g_layout_shutdowns == 1
+	ok = expect(shell->isShellActive() == FALSE
 			&& shell->getScreenCount() == 1,
 		"prepareNewGame should drive original Shell::hideShell on the active shell layout") && ok;
 	ok = expect(game_engine.getFramesPerSecondLimit() == 55 && global_data.m_useFpsLimit == TRUE,
@@ -514,13 +605,23 @@ int main()
 	std::cout
 		<< "{\"ok\":true,"
 		<< "\"path\":\"gamelogic-new-game-dispatch-runtime\","
-		<< "\"source\":\"GeneralsMD original GlobalData.cpp/PlayerList.cpp/Player.cpp/GameLogic.cpp/GameLogicDispatch.cpp/ScriptEngine.cpp\","
+		<< "\"source\":\"GeneralsMD original GlobalData.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp\","
 		<< "\"message\":\"MSG_NEW_GAME\","
 		<< "\"playerLookupIndex\":0,"
 		<< "\"playerCount\":" << player_list.getPlayerCount() << ","
 		<< "\"neutralPlayerOwned\":true,"
 		<< "\"difficulty\":" << script_engine->getGlobalDifficulty() << ","
 		<< "\"blankLayoutCreates\":" << g_blank_layout_creates << ","
+		<< "\"blankLayoutArchive\":\"" << jsonEscape(g_blank_layout_archive_path.str()) << "\","
+		<< "\"blankWindowArchiveLoaded\":" << jsonBool(g_blank_window_archive_loaded) << ","
+		<< "\"blankWindowFileExists\":" << jsonBool(g_blank_window_file_exists) << ","
+		<< "\"seedBlankWindowArchiveLayout\":" << jsonBool(g_seed_blank_window_loaded_from_archive) << ","
+		<< "\"prepareBlankWindowArchiveLayout\":" << jsonBool(g_prepare_blank_window_loaded_from_archive) << ","
+		<< "\"blankWindowRoot\":\"BlankWindow.wnd:BlankWindow\","
+		<< "\"blankWindowRootGeometry\":{\"x\":" << seed_x
+		<< ",\"y\":" << seed_y
+		<< ",\"width\":" << seed_width
+		<< ",\"height\":" << seed_height << "},"
 		<< "\"shellActive\":false,"
 		<< "\"shellScreenCount\":" << shell->getScreenCount() << ","
 		<< "\"shellLayoutShutdowns\":" << g_layout_shutdowns << ","
@@ -532,9 +633,9 @@ int main()
 		<< "\"mapName\":\"" << jsonEscape(global_data.m_mapName.str()) << "\","
 		<< "\"pristineMapName\":\"" << jsonEscape(game_state.getPristineMapName().str()) << "\","
 		<< "\"runtimeBoundaries\":["
-		<< "\"focused in-memory BlankWindow layout adapter\"],"
-		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"Shell::push seeded BlankWindow\",\"Shell::hideShell\"],"
-		<< "\"nextRequired\":\"replace in-memory BlankWindow before deferred terrain load\"}"
+		<< "\"deferred terrain/player/script load after archive-backed BlankWindow\"],"
+		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\"],"
+		<< "\"nextRequired\":\"continue deferred startNewGame into terrain/player/script load\"}"
 		<< "\n";
 
 	return 0;

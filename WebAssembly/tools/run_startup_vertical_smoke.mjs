@@ -409,8 +409,10 @@ const steps = [
       expect(payload.ok === true, 'GameLogic new-game runtime smoke did not report ok');
       expect(payload.path === 'gamelogic-new-game-dispatch-runtime',
         'GameLogic new-game runtime smoke emitted the wrong path');
-      expect(payload.source === 'GeneralsMD original GlobalData.cpp/PlayerList.cpp/Player.cpp/GameLogic.cpp/GameLogicDispatch.cpp/ScriptEngine.cpp',
-        'GameLogic new-game runtime smoke did not link the original GlobalData/PlayerList/GameLogic sources');
+      expect(typeof payload.source === 'string'
+          && payload.source.includes('GlobalData.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/GameLogic.cpp/GameLogicDispatch.cpp')
+          && payload.source.includes('GameWindowManagerScript.cpp/HeaderTemplate.cpp'),
+        'GameLogic new-game runtime smoke did not link the original GlobalData/PlayerList/GameLogic/WindowLayout parser sources');
       expect(payload.message === 'MSG_NEW_GAME' && payload.playerLookupIndex === 0,
         'GameLogic new-game runtime smoke did not process the expected MSG_NEW_GAME player lookup');
       expect(payload.playerCount === 1 && payload.neutralPlayerOwned === true,
@@ -419,17 +421,29 @@ const steps = [
           && payload.blankLayoutCreates === 2
           && payload.shellActive === false
           && payload.shellScreenCount === 1
-          && payload.shellLayoutShutdowns === 1
+          && payload.shellLayoutShutdowns === 0
           && payload.fpsLimit === 55
           && payload.useFpsLimit === true,
         'GameLogic new-game runtime smoke did not prove prepareNewGame/FPS side effects');
+      expect(payload.blankLayoutArchive === 'artifacts/real-assets/Window.big'
+          && payload.blankWindowArchiveLoaded === true
+          && payload.blankWindowFileExists === true
+          && payload.seedBlankWindowArchiveLayout === true
+          && payload.prepareBlankWindowArchiveLayout === true
+          && payload.blankWindowRoot === 'BlankWindow.wnd:BlankWindow'
+          && payload.blankWindowRootGeometry?.x === 0
+          && payload.blankWindowRootGeometry?.y === 0
+          && payload.blankWindowRootGeometry?.width === 800
+          && payload.blankWindowRootGeometry?.height === 600,
+        'GameLogic new-game runtime smoke did not prove archive-backed BlankWindow.wnd loading');
       expect(payload.gameMode === 'GAME_SKIRMISH'
           && payload.loadingMap === true
           && payload.rankPoints === 7
           && payload.mapName === 'Maps\\Smoke\\Skirmish.map'
           && payload.pristineMapName === 'Maps\\Smoke\\Skirmish.map',
         'GameLogic new-game runtime smoke did not prove startNewGame first-call deferral state');
-      expect(payload.runtimeBoundaries?.includes('focused in-memory BlankWindow layout adapter')
+      expect(payload.runtimeBoundaries?.includes('deferred terrain/player/script load after archive-backed BlankWindow')
+          && !payload.runtimeBoundaries?.includes('focused in-memory BlankWindow layout adapter')
           && !payload.runtimeBoundaries?.includes('focused linker wrap for PlayerList::getNthPlayer before MSG_NEW_GAME switch')
           && !payload.runtimeBoundaries?.includes('shim GlobalData bridge')
           && !payload.runtimeBoundaries?.includes('focused Shell::hideShell')
@@ -438,9 +452,11 @@ const steps = [
       expect(payload.originalOwners?.includes('GlobalData TheWritableGlobalData')
           && payload.originalOwners?.includes('PlayerList::getNthPlayer neutral player')
           && payload.originalOwners?.includes('ScriptEngine::setGlobalDifficulty')
+          && payload.originalOwners?.includes('HeaderTemplateManager empty template lookup')
           && payload.originalOwners?.includes('Shell::push seeded BlankWindow')
+          && payload.originalOwners?.includes('GameWindowManager::winCreateLayout BlankWindow archive parse')
           && payload.originalOwners?.includes('Shell::hideShell'),
-        'GameLogic new-game runtime smoke did not report original GlobalData/PlayerList/ScriptEngine/Shell ownership');
+        'GameLogic new-game runtime smoke did not report original GlobalData/PlayerList/ScriptEngine/Shell/GameWindowManager ownership');
     },
   },
 ];
@@ -473,13 +489,13 @@ console.log(JSON.stringify({
     'browser boot constructs original W3DParticleSystemManager, runs ParticleSystemManager::init() against Data\\INI\\ParticleSystem.ini, and proves shipped particle template lookups through the public manager API',
     'archive-backed startup mounts all shipped Object INI definitions and proves original W3DThingFactory parses representative unit templates through the real ThingFactory/INI path while the first unowned factory remains createFunctionLexicon',
     'source-pinned original GameLogic MSG_NEW_GAME dispatch frontier after CommandList handoff',
-    'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, and first-call startNewGame(FALSE) deferral',
+    'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, and first-call startNewGame(FALSE) deferral',
   ],
   nextRequired: [
     'replace the remaining base FunctionLexicon callback owner groups, starting with non-network owners such as PopupReplay score-screen-dependent System/Update, QuitMenuSystem, ScoreScreen, and broader ControlBarSystem/LeftHUDInput callbacks only when their real owners are runtime-owned',
     'advance the next vertical startup path outside the already-proven shell menu slice',
     'advance the post-particle startup data stores toward createThingFactory once createFunctionLexicon is fully owned',
-    'supply base Generals Window.big and replace the focused runtime in-memory BlankWindow adapter before continuing deferred startNewGame into terrain/player/script load',
+    'continue deferred startNewGame into terrain/player/script map-load ownership now that base Window.big supplies the BlankWindow background',
   ],
   sourceChecks: sourceResults.map(result => result.name),
   browserChecks: browserResults.map(result => result.name),

@@ -377,6 +377,10 @@ expect(
   "gamelogic-new-game-dispatch-smoke does not link original GlobalData.cpp",
 );
 expect(
+  /System\/FunctionLexicon\.cpp|System\\FunctionLexicon\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original FunctionLexicon.cpp",
+);
+expect(
   /RTS\/PlayerList\.cpp|RTS\\PlayerList\.cpp/.test(runtimeTargetSources.block)
     && /RTS\/Player\.cpp|RTS\\Player\.cpp/.test(runtimeTargetSources.block),
   "gamelogic-new-game-dispatch-smoke does not link original PlayerList.cpp/Player.cpp",
@@ -426,6 +430,14 @@ expect(
     && /GUI\/Shell\/ShellMenuScheme\.cpp|GUI\\Shell\\ShellMenuScheme\.cpp/.test(runtimeTargetSources.block),
   "gamelogic-new-game-dispatch-smoke does not link original Shell support sources",
 );
+expect(
+  /GUI\/GameWindowManagerScript\.cpp|GUI\\GameWindowManagerScript\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original GameWindowManagerScript.cpp for archive-backed BlankWindow layouts",
+);
+expect(
+  /GUI\/HeaderTemplate\.cpp|GUI\\HeaderTemplate\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original HeaderTemplate.cpp for archive layout parsing",
+);
 const runtimeCompileDefinitions = cmakeInvocationBlock(
   cmake,
   /target_compile_definitions\s*\(\s*gamelogic-new-game-dispatch-smoke\b/,
@@ -468,6 +480,10 @@ expect(
   !runtimeLinkOptions.block.includes("--wrap=_ZN10PlayerList12getNthPlayerEi"),
   "gamelogic-new-game-dispatch-smoke still declares the focused PlayerList lookup wrap",
 );
+expect(
+  /-sNODERAWFS=1/.test(runtimeLinkOptions.block),
+  "gamelogic-new-game-dispatch-smoke does not expose raw FS access for base Window.big",
+);
 const runtimeProcessCommandListLine = lineOf(
   runtimeSmoke,
   /logic->processCommandList\s*\(\s*TheCommandList\s*\)\s*;/,
@@ -480,12 +496,41 @@ const runtimePathLine = lineOf(
 );
 const runtimeSourceLine = lineOf(
   runtimeSmoke,
-  /GlobalData\.cpp\/PlayerList\.cpp\/Player\.cpp\/GameLogic\.cpp\/GameLogicDispatch\.cpp\/ScriptEngine\.cpp/,
+  /GlobalData\.cpp\/FunctionLexicon\.cpp\/PlayerList\.cpp\/Player\.cpp\/GameLogic\.cpp\/GameLogicDispatch\.cpp\/GameState\.cpp\/ScriptEngine\.cpp\/Scripts\.cpp\/Shell\.cpp\/GameWindowManagerScript\.cpp\/HeaderTemplate\.cpp/,
   "runtime smoke original source JSON",
+);
+const runtimeArchivePathLine = lineOf(
+  runtimeSmoke,
+  /artifacts\/real-assets\/Window\.big/,
+  "runtime smoke base Window.big path",
+);
+const runtimeArchiveLoadLine = lineOf(
+  runtimeSmoke,
+  /loadBigFilesFromDirectory\s*\(\s*archive_directory\s*,\s*archive_mask\s*\)/,
+  "runtime smoke base Window.big load",
+);
+const runtimeBlankWindowExistsLine = lineOf(
+  runtimeSmoke,
+  /doesFileExist\s*\(\s*"Window\\\\Menus\\\\BlankWindow\.wnd"\s*\)/,
+  "runtime smoke BlankWindow.wnd archive existence proof",
+);
+const runtimeWinCreateLayoutDelegationLine = lineOf(
+  runtimeSmoke,
+  /GameWindowManager::winCreateLayout\s*\(\s*filename\s*\)/,
+  "runtime smoke original GameWindowManager::winCreateLayout delegation",
+);
+const runtimeArchiveBlankWindowProofLine = lineOf(
+  runtimeSmoke,
+  /g_prepare_blank_window_loaded_from_archive\s*&&[\s\S]*g_prepare_blank_window_root_ready/,
+  "runtime smoke prepareNewGame archive-backed BlankWindow proof",
 );
 expect(
   !/__wrap__ZN10PlayerList12getNthPlayerEi/.test(runtimeSmoke),
   "runtime smoke still provides a focused PlayerList::getNthPlayer wrapper",
+);
+expect(
+  !/focused in-memory BlankWindow layout adapter/.test(runtimeSmoke),
+  "runtime smoke still reports the focused in-memory BlankWindow layout adapter",
 );
 const runtimePlayerListLine = lineOf(
   runtimeSmoke,
@@ -574,7 +619,7 @@ const runtimeShellPushLine = lineOf(
 );
 const runtimeShellHideProofLine = lineOf(
   runtimeSmoke,
-  /shell->isShellActive\s*\(\s*\)\s*==\s*FALSE\s*&&\s*g_layout_shutdowns\s*==\s*1/,
+  /shell->isShellActive\s*\(\s*\)\s*==\s*FALSE[\s\S]*shell->getScreenCount\s*\(\s*\)\s*==\s*1/,
   "runtime smoke original Shell::hideShell state proof",
 );
 const runtimeOriginalOwnersLine = lineOf(
@@ -639,6 +684,7 @@ console.log(JSON.stringify({
     cmakeLinkOptionsLine: runtimeLinkOptions.line,
     preRtsHeader: paths.preRts,
     originalGlobalDataCppLinked: true,
+    originalFunctionLexiconCppLinked: true,
     originalPlayerListCppLinked: true,
     originalPlayerCppLinked: true,
     originalPlayerSupportSourcesLinked: true,
@@ -651,9 +697,17 @@ console.log(JSON.stringify({
     originalScriptsCppLinked: true,
     originalDisplayCppLinked: true,
     originalShellCppLinked: true,
+    originalGameWindowManagerScriptCppLinked: true,
+    originalHeaderTemplateCppLinked: true,
+    rawFilesystemForWindowBig: true,
     processCommandListLine: runtimeProcessCommandListLine,
     runtimePathLine,
     runtimeSourceLine,
+    archivePathLine: runtimeArchivePathLine,
+    archiveLoadLine: runtimeArchiveLoadLine,
+    blankWindowExistsLine: runtimeBlankWindowExistsLine,
+    winCreateLayoutDelegationLine: runtimeWinCreateLayoutDelegationLine,
+    archiveBlankWindowProofLine: runtimeArchiveBlankWindowProofLine,
     playerListAllocationLine: runtimePlayerListLine,
     playerListSingletonLine: runtimePlayerListSingletonLine,
     playerListNeutralPlayerProofLine: runtimePlayerListProofLine,
@@ -682,10 +736,9 @@ console.log(JSON.stringify({
     "prepareNewGame owns original ScriptEngine difficulty, BlankWindow background, game-mode, pending-map, and original Shell::hideShell setup",
     "startNewGame(FALSE) records the pristine map and defers the first call before terrain load",
     "w3d-window-layout-script-smoke still uses a focused GameLogic shim and sentinel gameplay owners",
-    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/PlayerList.cpp/Player.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp and calls GameLogic::processCommandList at runtime through original GlobalData, PlayerList, ScriptEngine, and Shell ownership",
+    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp and calls GameLogic::processCommandList at runtime through original GlobalData, FunctionLexicon, PlayerList, ScriptEngine, Shell, and archive-backed BlankWindow ownership",
   ],
   nextRequired: [
-    "supply base Generals Window.big and replace the runtime BlankWindow in-memory adapter with the archive-backed layout path",
-    "then continue from the deferred startNewGame update into terrain, player, and script map-load ownership",
+    "continue from the deferred startNewGame update into terrain, player, and script map-load ownership",
   ],
 }, null, 2));

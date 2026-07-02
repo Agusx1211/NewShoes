@@ -247,7 +247,10 @@ flow below.
       run test:runtime-archives-browser` reached
       `harness/runtime_archives_smoke.mjs` and exited 124 with
       `page.evaluate: Target crashed`; the focused startup vertical still
-      proves the W3D particle-system startup runtime.
+      proves the W3D particle-system startup runtime. A later 2026-07-02
+      `test:vertical-integrations` attempt also reached
+      `harness/runtime_archives_smoke.mjs` after startup vertical passed and
+      stayed silent until manually interrupted.
 
 ---
 
@@ -1216,13 +1219,10 @@ flow below.
       `PlayerList::getNthPlayer` neutral-player ownership, original
       `ScriptEngine::setGlobalDifficulty`, original `Shell::hideShell`, and
       the first-call `startNewGame(FALSE)` deferral before terrain load. That
-      runtime still uses a focused in-memory BlankWindow adapter; replace that
-      with a real owner before continuing the deferred update into
-      terrain/player/script map-load ownership. The current inventory now
-      proves base `Window.big` supplies `Window\Menus\BlankWindow.wnd` and
-      passes `--require-blank-window-layout`; remaining work is to replace the
-      in-memory BlankWindow adapter through the archive-backed
-      `WindowLayout::load` path before continuing the deferred update into
+      runtime now mounts base `Window.big` and drives both the seeded shell
+      layout and `prepareNewGame` background through original
+      `GameWindowManager::winCreateLayout` / `WindowLayout::load` parsing for
+      `Window\Menus\BlankWindow.wnd`; continue the deferred update into
       terrain/player/script map-load ownership.
 - [ ] Touch input mapping (stretch, for mobile).
 

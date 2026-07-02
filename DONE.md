@@ -2099,6 +2099,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:runtime-archives-browser`,
       `npm --prefix WebAssembly run test:startup-vertical`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Replace the `MSG_NEW_GAME` runtime smoke's focused in-memory
+      `Menus/BlankWindow.wnd` adapter with the archive-backed original layout
+      path. `gamelogic-new-game-dispatch-smoke` now mounts base
+      `Window.big`, links original `FunctionLexicon.cpp`,
+      `GameWindowManagerScript.cpp`, and `HeaderTemplate.cpp`, delegates
+      `SmokeGameWindowManager::winCreateLayout` to
+      `GameWindowManager::winCreateLayout`, and proves both the seeded shell
+      layout and `prepareNewGame` background parse
+      `Window\Menus\BlankWindow.wnd` from the archive with the original
+      `BlankWindow.wnd:BlankWindow` root and 800x600 geometry. The runtime
+      boundary is now the deferred terrain/player/script map-load path after
+      archive-backed BlankWindow loading. Verified with
+      `cmake --build WebAssembly/build/wasm --target gamelogic-new-game-dispatch-smoke -j 4`,
+      `node dist/gamelogic-new-game-dispatch-smoke.cjs` from
+      `WebAssembly/`,
+      `npm --prefix WebAssembly run verify:gamelogic-new-game-dispatch-frontier`,
+      `npm --prefix WebAssembly run test:gamelogic-new-game-dispatch`, and
+      `npm --prefix WebAssembly run test:startup-vertical`. An attempted
+      `npm --prefix WebAssembly run test:vertical-integrations` reached the
+      already-tracked `harness/runtime_archives_smoke.mjs` browser-stage hang
+      after startup vertical passed and was manually interrupted.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the
