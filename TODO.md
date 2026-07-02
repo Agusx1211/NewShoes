@@ -51,10 +51,10 @@ flow below.
       device draw/layout tables, loads the non-network base GUI
       system/input/tooltip/widget plus IME draw callback table, registers
       representative original base layout callbacks, and now owns the
-      original `MainMenu`/`CreditsMenu`/`SkirmishGameOptionsMenu`/
-      `SinglePlayerMenu` shell callback names; the remaining
-      `FunctionLexicon` boundary is the rest of the shell layout callback
-      graph);
+      original `DifficultySelect` system/input/init callbacks plus
+      `MainMenu`/`CreditsMenu`/`SkirmishGameOptionsMenu`/`SinglePlayerMenu`
+      shell callback names; the remaining `FunctionLexicon` boundary is the
+      rest of the shell layout callback graph);
       archiveless or music-less boots honestly stay at line 434.
 - [ ] Own `createFunctionLexicon` (`W3DFunctionLexicon`, `GameEngine.cpp:446`)
       and then `createModuleFactory` (line 447) in the browser boot — the new
@@ -62,15 +62,15 @@ flow below.
       linked runtime constructs original `W3DFunctionLexicon` and verifies the
       W3D device draw/layout callback tables plus the non-network base GUI
       system/input/tooltip/widget, IME draw, and representative original base
-      layout callback tables (`DifficultySelectInit`,
-      `KeyboardOptionsMenuUpdate`, `PopupReplayShutdown`) plus original
-      `MainMenu`/`CreditsMenu`/`SkirmishGameOptionsMenu`/`SinglePlayerMenu`
-      system/input/init/update/shutdown lookups, but full ownership still
-      needs the remaining original base `FunctionLexicon.cpp` shell layout
-      callback graph without pulling LAN/WOL/GameSpy/embedded-web menu
-      callbacks into `cnc-port`. Next promote the remaining non-network shell
-      callback owners in small groups while leaving online/download/embedded
-      web menus at explicit browser boundaries.
+      layout callback tables (`KeyboardOptionsMenuUpdate`,
+      `PopupReplayShutdown`) plus original `DifficultySelect` system/input/init
+      lookups and original `MainMenu`/`CreditsMenu`/`SkirmishGameOptionsMenu`/
+      `SinglePlayerMenu` system/input/init/update/shutdown lookups, but full
+      ownership still needs the remaining original base `FunctionLexicon.cpp`
+      shell layout callback graph without pulling LAN/WOL/GameSpy/embedded-web
+      menu callbacks into `cnc-port`. Next promote the remaining non-network
+      shell callback owners in small groups while leaving online/download/
+      embedded web menus at explicit browser boundaries.
       The real
       `W3DModuleFactory` + all 224 module registrations already link into
       `cnc-port` via `zh_gameengine_real_object_ini_runtime`, so lexicon/module

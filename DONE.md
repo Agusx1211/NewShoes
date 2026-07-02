@@ -2221,6 +2221,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       those callback-name lookups in the browser and now reports
       `base_function_lexicon_single_player_runtime_owned` with
       `originalFunctionLexiconRemainingShellCallbacks` next.
+- [x] Promote the already-linked `DifficultySelect` callback owner from a
+      representative init lookup to its full original system/input/init
+      FunctionLexicon registration. Startup vertical verifies those three
+      callback-name lookups in the browser and now reports
+      `base_function_lexicon_difficulty_select_runtime_owned` with
+      `originalFunctionLexiconRemainingShellCallbacks` next.
 ---
 
 ## M3 — File / data subsystem (real data)

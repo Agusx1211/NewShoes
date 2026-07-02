@@ -262,7 +262,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
   const probe = state.functionLexiconRuntime;
   expect(probe?.attempted === true, "function lexicon runtime probe did not run", probe);
   expect(probe.ok === false, "function lexicon runtime should not claim full ownership yet", probe);
-  expect(probe.status === "base_function_lexicon_single_player_runtime_owned",
+  expect(probe.status === "base_function_lexicon_difficulty_select_runtime_owned",
     "function lexicon runtime status mismatch", probe);
   expect(probe.nextRequired === "originalFunctionLexiconRemainingShellCallbacks",
     "function lexicon runtime nextRequired mismatch", probe);
@@ -305,6 +305,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.creditsMenuSystem === true
       && probe.lookups.skirmishGameOptionsMenuSystem === true
       && probe.lookups.singlePlayerMenuSystem === true
+      && probe.lookups.difficultySelectSystem === true
       && probe.lookups.gameWindowDefaultInput === true
       && probe.lookups.gadgetPushButtonInput === true
       && probe.lookups.gadgetCheckBoxInput === true
@@ -322,6 +323,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.creditsMenuInput === true
       && probe.lookups.skirmishGameOptionsMenuInput === true
       && probe.lookups.singlePlayerMenuInput === true
+      && probe.lookups.difficultySelectInput === true
       && probe.lookups.gameWindowDefaultTooltip === true
       && probe.lookups.imeCandidateMainDraw === true
       && probe.lookups.imeCandidateTextAreaDraw === true
@@ -380,7 +382,7 @@ function assertAudioOwnedFrontier(state) {
       && frontier.audioManagerRuntime.tornDown === true,
     "frontier audioManagerRuntime summary mismatch", frontier.audioManagerRuntime);
   expect(frontier.functionLexiconRuntime?.ready === false
-      && frontier.functionLexiconRuntime.status === "base_function_lexicon_single_player_runtime_owned"
+      && frontier.functionLexiconRuntime.status === "base_function_lexicon_difficulty_select_runtime_owned"
       && frontier.functionLexiconRuntime.w3dDeviceDrawReady === true
       && frontier.functionLexiconRuntime.w3dLayoutInitReady === true
       && frontier.functionLexiconRuntime.messageBoxSystemReady === true

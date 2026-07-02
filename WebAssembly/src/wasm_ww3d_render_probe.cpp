@@ -234,6 +234,7 @@ FunctionLexicon::TableEntry runtimeBaseSystemTable[] = {
 	{ NAMEKEY_INVALID, "CreditsMenuSystem", CreditsMenuSystem },
 	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuSystem", SkirmishGameOptionsMenuSystem },
 	{ NAMEKEY_INVALID, "SinglePlayerMenuSystem", SinglePlayerMenuSystem },
+	{ NAMEKEY_INVALID, "DifficultySelectSystem", DifficultySelectSystem },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
@@ -255,6 +256,7 @@ FunctionLexicon::TableEntry runtimeBaseInputTable[] = {
 	{ NAMEKEY_INVALID, "CreditsMenuInput", CreditsMenuInput },
 	{ NAMEKEY_INVALID, "SkirmishGameOptionsMenuInput", SkirmishGameOptionsMenuInput },
 	{ NAMEKEY_INVALID, "SinglePlayerMenuInput", SinglePlayerMenuInput },
+	{ NAMEKEY_INVALID, "DifficultySelectInput", DifficultySelectInput },
 	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 

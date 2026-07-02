@@ -178,6 +178,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.single_player_menu_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("SinglePlayerMenuSystem")) == SinglePlayerMenuSystem;
+	result.difficulty_select_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("DifficultySelectSystem")) == DifficultySelectSystem;
 	result.game_window_default_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("GameWinDefaultInput")) == GameWinDefaultInput;
@@ -231,6 +234,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.single_player_menu_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("SinglePlayerMenuInput")) == SinglePlayerMenuInput;
+	result.difficulty_select_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("DifficultySelectInput")) == DifficultySelectInput;
 	result.game_window_default_tooltip_lookup =
 		TheFunctionLexicon->gameWinTooltipFunc(
 			key_for("GameWinDefaultTooltip")) == GameWinDefaultTooltip;
@@ -398,10 +404,12 @@ bool shell_menu_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &resu
 		result.credits_menu_system_lookup &&
 		result.skirmish_game_options_menu_system_lookup &&
 		result.single_player_menu_system_lookup &&
+		result.difficulty_select_system_lookup &&
 		result.main_menu_input_lookup &&
 		result.credits_menu_input_lookup &&
 		result.skirmish_game_options_menu_input_lookup &&
 		result.single_player_menu_input_lookup &&
+		result.difficulty_select_input_lookup &&
 		result.main_menu_init_lookup &&
 		result.credits_menu_init_lookup &&
 		result.skirmish_game_options_menu_init_lookup &&
@@ -517,7 +525,7 @@ void finish_status(FunctionLexiconRuntimeProbeResult &result)
 		return;
 	}
 	if (!base_layout_callback_graph_ready(result)) {
-		result.status = "base_function_lexicon_single_player_runtime_owned";
+		result.status = "base_function_lexicon_difficulty_select_runtime_owned";
 		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
 		return;
 	}
@@ -697,6 +705,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"creditsMenuSystem\":%s,"
 		"\"skirmishGameOptionsMenuSystem\":%s,"
 		"\"singlePlayerMenuSystem\":%s,"
+		"\"difficultySelectSystem\":%s,"
 		"\"gameWindowDefaultInput\":%s,"
 		"\"gadgetPushButtonInput\":%s,"
 		"\"gadgetCheckBoxInput\":%s,"
@@ -714,6 +723,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"creditsMenuInput\":%s,"
 		"\"skirmishGameOptionsMenuInput\":%s,"
 		"\"singlePlayerMenuInput\":%s,"
+		"\"difficultySelectInput\":%s,"
 		"\"gameWindowDefaultTooltip\":%s,"
 		"\"imeCandidateMainDraw\":%s,"
 		"\"imeCandidateTextAreaDraw\":%s,"
@@ -782,6 +792,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.credits_menu_system_lookup),
 		json_bool(state.skirmish_game_options_menu_system_lookup),
 		json_bool(state.single_player_menu_system_lookup),
+		json_bool(state.difficulty_select_system_lookup),
 		json_bool(state.game_window_default_input_lookup),
 		json_bool(state.gadget_push_button_input_lookup),
 		json_bool(state.gadget_check_box_input_lookup),
@@ -799,6 +810,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.credits_menu_input_lookup),
 		json_bool(state.skirmish_game_options_menu_input_lookup),
 		json_bool(state.single_player_menu_input_lookup),
+		json_bool(state.difficulty_select_input_lookup),
 		json_bool(state.game_window_default_tooltip_lookup),
 		json_bool(state.ime_candidate_main_draw_lookup),
 		json_bool(state.ime_candidate_text_area_draw_lookup),
