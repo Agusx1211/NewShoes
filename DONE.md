@@ -3963,6 +3963,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       registered templates on wasm. Verified with
       `npm --prefix WebAssembly run build:wasm` and
       `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
+- [x] Harness-prove the retained `GenericBridge` body-state clamp before
+      chasing damaged bridge rendering. The bridge-buffer scene now reads the
+      real `GenericBridge` object's `BodyModuleInterface` after
+      `W3DBridgeBuffer::loadBridges(&W3DTerrainLogic, FALSE)`, records
+      `bridgeLogicFirstBodyDamageStateAfterSeed === BODY_PRISTINE` with
+      `MaxHealth === 1`, attempts `setDamageState(BODY_DAMAGED)`, then requires
+      the original `ImmortalBody` / `ActiveBody` math to clamp the object and
+      retained `BridgeInfo` back to `BODY_PRISTINE`. The same browser render
+      proves `W3DBridgeBuffer::drawBridges(FALSE, TheTerrainLogic)` keeps the
+      visual bridge damage state pristine after that attempted transition, so
+      future damaged/repaired bridge work must locate the real gameplay/script
+      state driver instead of faking it with direct body health changes.
+      Verified with
+      `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=120000 npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
 	- [x] Feed the focused terrain road and bridge adjunct buffers from the
 	      original logical terrain map-object list. The road and bridge scene probes
 	      now call original `W3DTerrainLogic::loadMap(query=true)` against

@@ -74,6 +74,7 @@ const treeMaterialTextureEntry = "Art\\Textures\\ptdogwod01_s.dds";
 const D3DCMP_EQUAL = 3;
 const D3DTSS_TCI_CAMERASPACEPOSITION = 0x00020000;
 const D3DTTFF_COUNT2 = 2;
+const BODY_PRISTINE = 0;
 
 function iniLayoutMatches(layout) {
   return layout?.source === "terrain-probe-tu-vs-real-ini-runtime"
@@ -647,6 +648,19 @@ try {
       || result.probe?.results?.bridgeLogicSeededForDraw !== true
       || result.probe?.results?.bridgeLogicCountAfterSeed <= 0
       || result.probe?.results?.bridgeLogicFirstIndexAfterSeed !== 0
+      || result.probe?.results?.bridgeLogicFirstDamageStateAfterSeed !== BODY_PRISTINE
+      || result.probe?.results?.bridgeLogicFirstBodyDamageStateAfterSeed !== BODY_PRISTINE
+      || result.probe?.results?.bridgeLogicFirstBodyHealthAfterSeed !== 1
+      || result.probe?.results?.bridgeLogicFirstBodyMaxHealthAfterSeed !== 1
+      || result.probe?.results?.bridgeLogicDamageStateSetToDamaged !== false
+      || result.probe?.results?.bridgeLogicBodyDamageStateAfterDamageSet !== BODY_PRISTINE
+      || result.probe?.results?.bridgeLogicBodyHealthAfterDamageSet !== 1
+      || result.probe?.results?.bridgeLogicBodyMaxHealthAfterDamageSet !== 1
+      || result.probe?.results?.bridgeLogicDamageStateAfterDamageUpdate !== BODY_PRISTINE
+      || result.probe?.results?.bridgeLogicDamageStateChangedAfterDamageUpdate !== false
+      || result.probe?.results?.bridgeLogicBrokenAfterDamageUpdate !== false
+      || result.probe?.results?.bridgeLogicRepairedAfterDamageUpdate !== false
+      || result.probe?.results?.bridgeDrawFirstDamageStateAfterDamageScene !== BODY_PRISTINE
       || result.probe?.results?.bridgeLogicAiPathfinderAvailable !== true
       || result.probe?.results?.bridgeLogicFirstLayerAfterSeed !== 2
       || result.probe?.results?.bridgeDrawTerrainLogicBridgeCount <= 0

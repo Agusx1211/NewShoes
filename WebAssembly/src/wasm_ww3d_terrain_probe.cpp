@@ -2669,6 +2669,65 @@ public:
 		layer = m_bridgeListHead->getLayer();
 		return true;
 	}
+
+	Object *firstBridgeObjectForProbe() const
+	{
+		if (m_bridgeListHead == nullptr || TheGameLogic == nullptr) {
+			return nullptr;
+		}
+		const BridgeInfo *info = m_bridgeListHead->peekBridgeInfo();
+		if (info == nullptr || info->bridgeObjectID == INVALID_ID) {
+			return nullptr;
+		}
+		return TheGameLogic->findObjectByID(info->bridgeObjectID);
+	}
+
+	bool firstBridgeBodyDamageStateForProbe(
+		BodyDamageType &state,
+		Real &health,
+		Real &max_health) const
+	{
+		Object *bridge_object = firstBridgeObjectForProbe();
+		if (bridge_object == nullptr || bridge_object->getBodyModule() == nullptr) {
+			return false;
+		}
+		BodyModuleInterface *body = bridge_object->getBodyModule();
+		state = body->getDamageState();
+		health = body->getHealth();
+		max_health = body->getMaxHealth();
+		return true;
+	}
+
+	bool setFirstBridgeBodyDamageStateForProbe(
+		BodyDamageType desired_state,
+		BodyDamageType &actual_state,
+		Real &health,
+		Real &max_health)
+	{
+		Object *bridge_object = firstBridgeObjectForProbe();
+		if (bridge_object == nullptr || bridge_object->getBodyModule() == nullptr) {
+			return false;
+		}
+		BodyModuleInterface *body = bridge_object->getBodyModule();
+		body->setDamageState(desired_state);
+		actual_state = body->getDamageState();
+		health = body->getHealth();
+		max_health = body->getMaxHealth();
+		return true;
+	}
+
+	bool updateFirstBridgeDamageStateForProbe(
+		BridgeInfo &info,
+		PathfindLayerEnum &layer,
+		bool &broken,
+		bool &repaired)
+	{
+		Object *bridge_object = firstBridgeObjectForProbe();
+		updateBridgeDamageStates();
+		broken = isBridgeBroken(bridge_object);
+		repaired = isBridgeRepaired(bridge_object);
+		return firstBridgeForProbe(info, layer);
+	}
 };
 
 struct ProbeLogicalHeightMapParseTrace
@@ -3853,6 +3912,11 @@ public:
 	AsciiString firstBridgeTemplateName()
 	{
 		return m_numBridges > 0 ? m_bridges[0].getTemplateName() : AsciiString::TheEmptyString;
+	}
+
+	Int firstBridgeDamageState()
+	{
+		return m_numBridges > 0 ? m_bridges[0].getDamageState() : -1;
 	}
 
 	bool lastDrawTerrainLogicPresent() const { return m_lastDrawTerrainLogicPresent; }
@@ -9672,6 +9736,18 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	Int bridge_logic_count_after_seed = 0;
 	Int bridge_logic_first_index_after_seed = -1;
 	Int bridge_logic_first_damage_state_after_seed = -1;
+	Int bridge_logic_first_body_damage_state_after_seed = -1;
+	float bridge_logic_first_body_health_after_seed = -1.0f;
+	float bridge_logic_first_body_max_health_after_seed = -1.0f;
+	bool bridge_logic_damage_state_set_to_damaged = false;
+	Int bridge_logic_body_damage_state_after_damage_set = -1;
+	float bridge_logic_body_health_after_damage_set = -1.0f;
+	float bridge_logic_body_max_health_after_damage_set = -1.0f;
+	Int bridge_logic_damage_state_after_damage_update = -1;
+	bool bridge_logic_damage_state_changed_after_damage_update = false;
+	bool bridge_logic_broken_after_damage_update = false;
+	bool bridge_logic_repaired_after_damage_update = false;
+	Int bridge_draw_first_damage_state_after_damage_scene = -1;
 	Int bridge_logic_first_layer_after_seed = -1;
 	Int bridge_draw_terrain_logic_bridge_count = 0;
 	Int bridge_draw_enabled_bridge_count = 0;
@@ -10182,6 +10258,47 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			bridge_logic_generic_bridge_object_missing =
 				loaded_bridge_info.bridgeObjectID == INVALID_ID;
 		}
+		BodyDamageType first_body_state = BODY_PRISTINE;
+		Real first_body_health = -1.0f;
+		Real first_body_max_health = -1.0f;
+		if (bridge_draw_terrain_logic.firstBridgeBodyDamageStateForProbe(
+				first_body_state,
+				first_body_health,
+				first_body_max_health)) {
+			bridge_logic_first_body_damage_state_after_seed = first_body_state;
+			bridge_logic_first_body_health_after_seed = first_body_health;
+			bridge_logic_first_body_max_health_after_seed = first_body_max_health;
+		}
+		BodyDamageType damaged_body_state = BODY_PRISTINE;
+		Real damaged_body_health = -1.0f;
+		Real damaged_body_max_health = -1.0f;
+		if (bridge_draw_terrain_logic.setFirstBridgeBodyDamageStateForProbe(
+				BODY_DAMAGED,
+				damaged_body_state,
+				damaged_body_health,
+				damaged_body_max_health)) {
+			bridge_logic_body_damage_state_after_damage_set = damaged_body_state;
+			bridge_logic_body_health_after_damage_set = damaged_body_health;
+			bridge_logic_body_max_health_after_damage_set = damaged_body_max_health;
+			bridge_logic_damage_state_set_to_damaged =
+				damaged_body_state == BODY_DAMAGED;
+		}
+		BridgeInfo damaged_bridge_info;
+		PathfindLayerEnum damaged_bridge_layer = LAYER_GROUND;
+		bool damaged_bridge_broken = false;
+		bool damaged_bridge_repaired = false;
+		if (bridge_draw_terrain_logic.updateFirstBridgeDamageStateForProbe(
+				damaged_bridge_info,
+				damaged_bridge_layer,
+				damaged_bridge_broken,
+				damaged_bridge_repaired)) {
+			bridge_logic_damage_state_after_damage_update =
+				damaged_bridge_info.curDamageState;
+			bridge_logic_damage_state_changed_after_damage_update =
+				damaged_bridge_info.damageStateChanged;
+			bridge_logic_broken_after_damage_update = damaged_bridge_broken;
+			bridge_logic_repaired_after_damage_update = damaged_bridge_repaired;
+		}
 		bridge_manual_geometry_after_load =
 			bridge_buffer->firstBridgeManualGeometry(
 				bridge_manual_vertices_after_load,
@@ -10271,6 +10388,13 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			if (succeeded(begin_render_result)) {
 				render_result = WW3D::Render(scene, camera);
 				end_render_result = WW3D::End_Render(false);
+			}
+			if (succeeded(begin_render_result) &&
+					succeeded(render_result) &&
+					succeeded(end_render_result) &&
+					bridge_buffer != nullptr) {
+				bridge_draw_first_damage_state_after_damage_scene =
+					bridge_buffer->firstBridgeDamageState();
 			}
 			tree_need_to_draw_after_scene = tree_buffer != nullptr && tree_buffer->needToDraw();
 			tree_tiles_after_scene = tree_buffer != nullptr ? tree_buffer->getNumTiles() : -1;
@@ -10370,6 +10494,19 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_logic_seeded_for_draw &&
 		bridge_logic_count_after_seed > 0 &&
 		bridge_logic_first_index_after_seed == 0 &&
+		bridge_logic_first_damage_state_after_seed == BODY_PRISTINE &&
+		bridge_logic_first_body_damage_state_after_seed == BODY_PRISTINE &&
+		bridge_logic_first_body_health_after_seed == 1.0f &&
+		bridge_logic_first_body_max_health_after_seed == 1.0f &&
+		!bridge_logic_damage_state_set_to_damaged &&
+		bridge_logic_body_damage_state_after_damage_set == BODY_PRISTINE &&
+		bridge_logic_body_health_after_damage_set == 1.0f &&
+		bridge_logic_body_max_health_after_damage_set == 1.0f &&
+		bridge_logic_damage_state_after_damage_update == BODY_PRISTINE &&
+		!bridge_logic_damage_state_changed_after_damage_update &&
+		!bridge_logic_broken_after_damage_update &&
+		!bridge_logic_repaired_after_damage_update &&
+		bridge_draw_first_damage_state_after_damage_scene == BODY_PRISTINE &&
 		terrain_logic_retained_for_draw &&
 		bridge_draw_terrain_logic_bridge_count > 0 &&
 		bridge_draw_enabled_bridge_count > 0 &&
@@ -10539,6 +10676,18 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"bridgeLogicCountAfterSeed\":%d,"
 		"\"bridgeLogicFirstIndexAfterSeed\":%d,"
 		"\"bridgeLogicFirstDamageStateAfterSeed\":%d,"
+		"\"bridgeLogicFirstBodyDamageStateAfterSeed\":%d,"
+		"\"bridgeLogicFirstBodyHealthAfterSeed\":%.4f,"
+		"\"bridgeLogicFirstBodyMaxHealthAfterSeed\":%.4f,"
+		"\"bridgeLogicDamageStateSetToDamaged\":%s,"
+		"\"bridgeLogicBodyDamageStateAfterDamageSet\":%d,"
+		"\"bridgeLogicBodyHealthAfterDamageSet\":%.4f,"
+		"\"bridgeLogicBodyMaxHealthAfterDamageSet\":%.4f,"
+		"\"bridgeLogicDamageStateAfterDamageUpdate\":%d,"
+		"\"bridgeLogicDamageStateChangedAfterDamageUpdate\":%s,"
+		"\"bridgeLogicBrokenAfterDamageUpdate\":%s,"
+		"\"bridgeLogicRepairedAfterDamageUpdate\":%s,"
+		"\"bridgeDrawFirstDamageStateAfterDamageScene\":%d,"
 		"\"bridgeLogicFirstLayerAfterSeed\":%d,"
 		"\"bridgeDrawTerrainLogicBridgeCount\":%d,"
 		"\"bridgeDrawEnabledBridgeCount\":%d,"
@@ -10749,6 +10898,18 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_logic_count_after_seed,
 		bridge_logic_first_index_after_seed,
 		bridge_logic_first_damage_state_after_seed,
+		bridge_logic_first_body_damage_state_after_seed,
+		bridge_logic_first_body_health_after_seed,
+		bridge_logic_first_body_max_health_after_seed,
+		bool_json(bridge_logic_damage_state_set_to_damaged),
+		bridge_logic_body_damage_state_after_damage_set,
+		bridge_logic_body_health_after_damage_set,
+		bridge_logic_body_max_health_after_damage_set,
+		bridge_logic_damage_state_after_damage_update,
+		bool_json(bridge_logic_damage_state_changed_after_damage_update),
+		bool_json(bridge_logic_broken_after_damage_update),
+		bool_json(bridge_logic_repaired_after_damage_update),
+		bridge_draw_first_damage_state_after_damage_scene,
 		bridge_logic_first_layer_after_seed,
 		bridge_draw_terrain_logic_bridge_count,
 		bridge_draw_enabled_bridge_count,
