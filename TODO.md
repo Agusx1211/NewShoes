@@ -56,7 +56,7 @@ flow below.
       `KeyboardOptionsMenu` system/input/init/update/shutdown callbacks with
       original `MetaEvent` global ownership, original `InGamePopupMessage`
       system/input/init callbacks with original `InGameUI` global ownership,
-      original `IdleWorkerSystem`,
+      original `IdleWorkerSystem`, original `BeaconWindowInput`,
       plus `MainMenu`/`CreditsMenu`/`SkirmishGameOptionsMenu`/
       `SinglePlayerMenu` shell callback names; the remaining
       `FunctionLexicon` boundary is the rest of the non-network layout
@@ -72,7 +72,7 @@ flow below.
       original `DifficultySelect` system/input/init lookups, original
       `KeyboardOptionsMenu` system/input/init/update/shutdown lookups,
       original `InGamePopupMessage` system/input/init lookups,
-      original `IdleWorkerSystem` lookup, and
+      original `IdleWorkerSystem` and `BeaconWindowInput` lookups, and
       original `MainMenu`/`CreditsMenu`/
       `SkirmishGameOptionsMenu`/`SinglePlayerMenu`
       system/input/init/update/shutdown lookups, but full ownership still needs

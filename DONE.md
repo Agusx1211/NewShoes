@@ -2256,6 +2256,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       callback-name lookup in the browser and now reports
       `base_function_lexicon_idle_worker_runtime_owned` with
       `originalFunctionLexiconRemainingShellCallbacks` next.
+- [x] Promote the original `BeaconWindowInput` callback into the linked
+      `cnc-port` base `FunctionLexicon`. `zh_window_layout_script_runtime` now
+      links original `GUI/ControlBar/ControlBarBeacon.cpp`, and the reduced
+      wasm input table registers the beacon edit-window input callback while
+      retaining the existing `InGameUI` owner for its ESC deselect path.
+      Startup vertical verifies the callback-name lookup in the browser and now
+      reports `base_function_lexicon_beacon_window_runtime_owned` with
+      `originalFunctionLexiconRemainingShellCallbacks` next.
 ---
 
 ## M3 — File / data subsystem (real data)
