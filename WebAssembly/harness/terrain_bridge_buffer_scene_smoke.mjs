@@ -620,6 +620,9 @@ try {
     result.probe?.results?.bridgeLogicPathfinderNewMapInvoked === true
     && result.probe?.results?.bridgeLogicPathfinderNewMapException === false
     && result.probe?.results?.bridgeLogicPathfinderNewMapSkippedForBrowserSafety === false
+    && result.probe?.results?.bridgeLogicPathfinderTerrainCliffQueries > 0
+    && result.probe?.results?.bridgeLogicPathfinderTerrainCliffRenderObjectQueries === result.probe?.results?.bridgeLogicPathfinderTerrainCliffQueries
+    && result.probe?.results?.bridgeLogicPathfinderTerrainFlatWaterQueries > result.probe?.results?.bridgeLogicPathfinderTerrainCliffQueries
     && result.probe?.results?.bridgeLogicPathfinderAfterNewMapBridgeLayerCells > 0
     && result.probe?.results?.bridgeLogicPathfinderAfterNewMapClearCells > 0
     && result.probe?.results?.bridgeLogicPathfinderAfterNewMapGroundCells > 0

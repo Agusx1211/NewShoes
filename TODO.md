@@ -984,12 +984,15 @@ flow below.
       `W3DBridgeBuffer::drawBridges(FALSE, TheTerrainLogic)` enables the
       visual bridge. The bridge scene now runs original
       `AIPathfind::newMap()` / `classifyMap()` for the retained bridge layer
-      under an origin-based, flat focused terrain extent, then browser-proves
-      `Pathfinder::changeBridgeState(broken/repaired)` flips the sampled
-      bridge-layer cells from clear/connected to impassable and back. Full
-      pathfinder-map classification against the real loaded terrain still
-      belongs in the production terrain/map owner rather than this focused
-      bridge visual envelope. It now loads the shipped `GenericBridge` template
+      under an origin-based focused terrain extent, routes cliff checks through
+      the loaded `W3D` terrain render object, and keeps water flat until
+      `TheTerrainVisual`/water-grid ownership is runtime-owned, then
+      browser-proves `Pathfinder::changeBridgeState(broken/repaired)` flips the
+      sampled bridge-layer cells from clear/connected to impassable and back.
+      Full water-aware pathfinder-map classification and production
+      terrain/map ownership still belong in the real runtime owner rather than
+      this focused bridge visual envelope. It now loads the shipped
+      `GenericBridge` template
       through original `ThingFactory` /
       `ThingTemplate` parsing and requires
       `bridgeLogicGenericBridgeObjectMissing === false`. Remaining work is to

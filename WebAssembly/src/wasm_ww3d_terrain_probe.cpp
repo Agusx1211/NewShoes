@@ -2720,6 +2720,7 @@ public:
 	{
 		clearProbeExtent();
 		clearPathfinderProbeExtent();
+		clearPathfinderTerrainQueryMetrics();
 	}
 
 	void addBridgeToLogic(
@@ -2755,13 +2756,29 @@ public:
 		return getGroundHeight(x, y, normal);
 	}
 
-	Bool isCliffCell(Real, Real) const override
+	Bool isCliffCell(Real x, Real y) const override
 	{
-		return FALSE;
+		Bool cliff = FALSE;
+		if (TheTerrainRenderObject != nullptr) {
+			cliff = W3DTerrainLogic::isCliffCell(x, y);
+		}
+		if (m_recordPathfinderTerrainQueries) {
+			++m_pathfinderTerrainCliffQueries;
+			if (TheTerrainRenderObject != nullptr) {
+				++m_pathfinderTerrainCliffRenderObjectQueries;
+			}
+			if (cliff) {
+				++m_pathfinderTerrainCliffTrueCells;
+			}
+		}
+		return cliff;
 	}
 
 	Bool isUnderwater(Real, Real, Real *waterZ = NULL, Real *terrainZ = NULL) override
 	{
+		if (m_recordPathfinderTerrainQueries) {
+			++m_pathfinderTerrainFlatWaterQueries;
+		}
 		if (waterZ != NULL) {
 			*waterZ = 0.0f;
 		}
@@ -2878,6 +2895,10 @@ public:
 		Bool newMapSkippedForBrowserSafety = FALSE;
 		Bool newMapInvoked = FALSE;
 		Bool newMapException = FALSE;
+		Int terrainCliffQueries = 0;
+		Int terrainCliffRenderObjectQueries = 0;
+		Int terrainCliffTrueCells = 0;
+		Int terrainFlatWaterQueries = 0;
 		Bool changeToBrokenInvoked = FALSE;
 		Bool changeToRepairedInvoked = FALSE;
 		BridgePathfinderCellSampleForProbe afterNewMap;
@@ -3192,13 +3213,16 @@ public:
 
 		probe_bridge_phase_log("pathfinder-new-map");
 		state.newMapInvoked = TRUE;
+		beginPathfinderTerrainQueryMetrics();
 		try {
 			TheAI->pathfinder()->newMap();
 		} catch (...) {
+			endPathfinderTerrainQueryMetrics(state);
 			clearPathfinderProbeExtent();
 			state.newMapException = TRUE;
 			return true;
 		}
+		endPathfinderTerrainQueryMetrics(state);
 		clearPathfinderProbeExtent();
 
 		sampleFirstBridgePathfinderCellsForProbe(state.afterNewMap);
@@ -3266,6 +3290,31 @@ private:
 		m_pathfinderProbeExtent.hi.x = 0.0f;
 		m_pathfinderProbeExtent.hi.y = 0.0f;
 		m_pathfinderProbeExtent.hi.z = 0.0f;
+	}
+
+	void clearPathfinderTerrainQueryMetrics()
+	{
+		m_recordPathfinderTerrainQueries = FALSE;
+		m_pathfinderTerrainCliffQueries = 0;
+		m_pathfinderTerrainCliffRenderObjectQueries = 0;
+		m_pathfinderTerrainCliffTrueCells = 0;
+		m_pathfinderTerrainFlatWaterQueries = 0;
+	}
+
+	void beginPathfinderTerrainQueryMetrics()
+	{
+		clearPathfinderTerrainQueryMetrics();
+		m_recordPathfinderTerrainQueries = TRUE;
+	}
+
+	void endPathfinderTerrainQueryMetrics(BridgePathfinderMapForProbe &state)
+	{
+		m_recordPathfinderTerrainQueries = FALSE;
+		state.terrainCliffQueries = m_pathfinderTerrainCliffQueries;
+		state.terrainCliffRenderObjectQueries =
+			m_pathfinderTerrainCliffRenderObjectQueries;
+		state.terrainCliffTrueCells = m_pathfinderTerrainCliffTrueCells;
+		state.terrainFlatWaterQueries = m_pathfinderTerrainFlatWaterQueries;
 	}
 
 	void enableOriginPathfinderProbeExtent()
@@ -3397,6 +3446,11 @@ private:
 	Region3D m_pathfinderProbeExtent;
 	Bool m_hasProbeExtent;
 	Bool m_usePathfinderProbeExtent;
+	mutable Bool m_recordPathfinderTerrainQueries;
+	mutable Int m_pathfinderTerrainCliffQueries;
+	mutable Int m_pathfinderTerrainCliffRenderObjectQueries;
+	mutable Int m_pathfinderTerrainCliffTrueCells;
+	mutable Int m_pathfinderTerrainFlatWaterQueries;
 };
 
 struct ProbeLogicalHeightMapParseTrace
@@ -11428,6 +11482,10 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_logic_pathfinder_map.newMapInvoked &&
 		!bridge_logic_pathfinder_map.newMapException &&
 		!bridge_logic_pathfinder_map.newMapSkippedForBrowserSafety &&
+		bridge_logic_pathfinder_map.terrainCliffQueries > 0 &&
+		bridge_logic_pathfinder_map.terrainCliffRenderObjectQueries ==
+			bridge_logic_pathfinder_map.terrainCliffQueries &&
+		bridge_logic_pathfinder_map.terrainFlatWaterQueries > 0 &&
 		bridge_logic_pathfinder_map.afterNewMap.extentMaxX > 0 &&
 		bridge_logic_pathfinder_map.afterNewMap.extentMaxY > 0 &&
 		bridge_logic_pathfinder_map.afterNewMap.bridgeLayerCells > 0 &&
@@ -11441,12 +11499,6 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_logic_pathfinder_map.afterRepaired.bridgeLayerCells > 0 &&
 		bridge_logic_pathfinder_map.afterRepaired.bridgeLayerClearCells > 0 &&
 		bridge_logic_pathfinder_map.afterRepaired.groundCells > 0;
-	const bool bridge_pathfinder_new_map_deferred =
-		bridge_logic_pathfinder_map.newMapSkippedForBrowserSafety &&
-		!bridge_logic_pathfinder_map.newMapInvoked &&
-		bridge_logic_pathfinder_map.preflightEstimatedMapCells > 0 &&
-		bridge_logic_pathfinder_map.changeToBrokenInvoked &&
-		bridge_logic_pathfinder_map.changeToRepairedInvoked;
 	const IniLayoutComparison ini_layout = compare_ini_layout();
 	const bool ok =
 		state != nullptr &&
@@ -11588,8 +11640,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_logic_destroy_list.lookupAfterProcessNull &&
 		bridge_logic_pathfinder_map_invoked &&
 		bridge_logic_pathfinder_map.layer == bridge_logic_first_layer_after_seed &&
-		(bridge_pathfinder_new_map_succeeded ||
-			bridge_pathfinder_new_map_deferred) &&
+		bridge_pathfinder_new_map_succeeded &&
 		terrain_logic_retained_for_draw &&
 		bridge_draw_terrain_logic_bridge_count > 0 &&
 		bridge_draw_enabled_bridge_count > 0 &&
@@ -11925,6 +11976,10 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"bridgeLogicPathfinderPreflightMaxY\":%d,"
 		"\"bridgeLogicPathfinderPreflightEstimatedMapCells\":%u,"
 		"\"bridgeLogicPathfinderNewMapSkippedForBrowserSafety\":%s,"
+		"\"bridgeLogicPathfinderTerrainCliffQueries\":%d,"
+		"\"bridgeLogicPathfinderTerrainCliffRenderObjectQueries\":%d,"
+		"\"bridgeLogicPathfinderTerrainCliffTrueCells\":%d,"
+		"\"bridgeLogicPathfinderTerrainFlatWaterQueries\":%d,"
 		"\"bridgeLogicPathfinderExtentMaxX\":%d,"
 		"\"bridgeLogicPathfinderExtentMaxY\":%d,"
 		"\"bridgeLogicPathfinderAfterNewMapBridgeLayerCells\":%d,"
@@ -12280,6 +12335,10 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_logic_pathfinder_map.preflightMaxY,
 		bridge_logic_pathfinder_map.preflightEstimatedMapCells,
 		bool_json(bridge_logic_pathfinder_map.newMapSkippedForBrowserSafety),
+		bridge_logic_pathfinder_map.terrainCliffQueries,
+		bridge_logic_pathfinder_map.terrainCliffRenderObjectQueries,
+		bridge_logic_pathfinder_map.terrainCliffTrueCells,
+		bridge_logic_pathfinder_map.terrainFlatWaterQueries,
 		bridge_logic_pathfinder_map.afterNewMap.extentMaxX,
 		bridge_logic_pathfinder_map.afterNewMap.extentMaxY,
 		bridge_logic_pathfinder_map.afterNewMap.bridgeLayerCells,

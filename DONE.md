@@ -4237,6 +4237,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `changeBridgeState(repaired)`. Verified with
       `cmake --build WebAssembly/build/wasm --target cnc-port -j 4` and
       `npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
+- [x] Thread bridge pathfinder cliff classification through the loaded W3D
+      terrain render object. The focused bridge terrain logic now delegates
+      pathfinder `isCliffCell` queries to `W3DTerrainLogic` when the retained
+      `BaseHeightMapRenderObjClass` is installed, records the real query mix
+      around original `AIPathfind::newMap()` / `classifyMap()`, and keeps only
+      water queries flat because the original water-grid path still depends on
+      `TheTerrainVisual` ownership. The browser harness now requires all 14,112
+      cliff queries to route through the render object, reports 6,102 true cliff
+      cells on the MD_CHI01 bridge extent, and still proves
+      `Pathfinder::changeBridgeState(broken/repaired)` against the classified
+      bridge layer. Verified with
+      `cmake --build WebAssembly/build/wasm --target cnc-port -j 4` and
+      `npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
 - [x] Browser-gate the bridge-buffer pathfinder-map frontier without crashing
       the render harness. The bridge scene now records an original
       `AIPathfind::newMap` preflight for the retained logical bridge layer,
