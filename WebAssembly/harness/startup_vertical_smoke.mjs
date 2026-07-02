@@ -11,6 +11,7 @@ const screenshotDir = resolve(wasmRoot, "artifacts/screenshots");
 const desktopScreenshot = resolve(screenshotDir, "startup-vertical-browser.png");
 const canvasScreenshot = resolve(screenshotDir, "startup-vertical-canvas.png");
 const audioBootScreenshot = resolve(screenshotDir, "startup-vertical-audio-owned.png");
+const realInitScreenshot = resolve(screenshotDir, "startup-vertical-real-init.png");
 const debugStartupVertical = process.env.STARTUP_VERTICAL_DEBUG === "1";
 
 const allAudioStartupFiles = [
@@ -85,6 +86,7 @@ async function readBigEntryNames(path) {
 // (mounted as ZZBase_INI.big, mirroring the runtime-archives smokes).
 const baseIniStartupEntries = [
   "Data\\INI\\Default\\GameData.ini",
+  "Data\\INI\\Default\\CommandButton.ini",
   "Data\\INI\\GameLODPresets.ini",
   "Data\\INI\\Default\\Water.ini",
   "Data\\INI\\Default\\Science.ini",
@@ -266,6 +268,130 @@ async function buildAudioOwnershipArchiveSpecs() {
     });
   }
   return archives;
+}
+
+// Whole-file archive set for the REAL GameEngine::init() lifecycle run.
+// Original Win32BIGFileSystem::init() enumerates *.big in the run directory;
+// base-Generals archives mount under ZZBase_* so the ZH archives win the
+// original first-loaded-wins override order.
+const realInitArchiveSpecs = [
+  { name: "INIZH.big" },
+  { name: "EnglishZH.big" },
+  { name: "WindowZH.big" },
+  { name: "MapsZH.big" },
+  { name: "MusicZH.big" },
+  { name: "GensecZH.big" },
+  { name: "TerrainZH.big" },
+  { name: "TexturesZH.big" },
+  { name: "W3DZH.big" },
+  { name: "W3DEnglishZH.big" },
+  { name: "SpeechZH.big" },
+  { name: "AudioZH.big" },
+  { name: "ShadersZH.big" },
+  { name: "ZZBase_INI.big", sourceName: "INI.big" },
+  { name: "ZZBase_English.big", sourceName: "English.big" },
+  { name: "ZZBase_Window.big", sourceName: "Window.big" },
+  { name: "ZZBase_Terrain.big", sourceName: "Terrain.big" },
+  { name: "ZZBase_Music.big", sourceName: "base-generals/Music.big" },
+  { name: "Gensec.big" },
+];
+
+async function buildRealInitArchives(serverUrl) {
+  const archives = [];
+  for (const spec of realInitArchiveSpecs) {
+    const sourceName = spec.sourceName ?? spec.name;
+    const path = resolve(archiveRoot, sourceName);
+    const fileStat = await stat(path);
+    archives.push({
+      name: spec.name,
+      sourceName,
+      url: new URL(relative(wasmRoot, path).split(sep).join("/"), serverUrl).href,
+      expectedBytes: fileStat.size,
+    });
+  }
+  return archives;
+}
+
+// The 43 subsystems GameEngine::init() (GeneralsMD GameEngine.cpp) brings up
+// through SubsystemInterfaceList::initSubsystem, in original order.
+const expectedRealInitSubsystems = [
+  "TheLocalFileSystem",
+  "TheArchiveFileSystem",
+  "TheWritableGlobalData",
+  "TheGameText",
+  "TheScienceStore",
+  "TheMultiplayerSettings",
+  "TheTerrainTypes",
+  "TheTerrainRoads",
+  "TheGlobalLanguageData",
+  "TheCDManager",
+  "TheAudio",
+  "TheFunctionLexicon",
+  "TheModuleFactory",
+  "TheMessageStream",
+  "TheSidesList",
+  "TheCaveSystem",
+  "TheRankInfoStore",
+  "ThePlayerTemplateStore",
+  "TheParticleSystemManager",
+  "TheFXListStore",
+  "TheWeaponStore",
+  "TheObjectCreationListStore",
+  "TheLocomotorStore",
+  "TheSpecialPowerStore",
+  "TheDamageFXStore",
+  "TheArmorStore",
+  "TheBuildAssistant",
+  "TheThingFactory",
+  "TheUpgradeCenter",
+  "TheGameClient",
+  "TheAI",
+  "TheGameLogic",
+  "TheTeamFactory",
+  "TheCrateSystem",
+  "ThePlayerList",
+  "TheRecorder",
+  "TheRadar",
+  "TheVictoryConditions",
+  "TheMetaMap",
+  "TheActionManager",
+  "TheGameStateMap",
+  "TheGameState",
+  "TheGameResultsQueue",
+];
+
+function assertRealEngineInit(realInit) {
+  expect(realInit?.aborted === false, "real engine init aborted", {
+    abortMessage: realInit?.abortMessage,
+    releaseCrash: realInit?.releaseCrash,
+    inFlightSubsystem: realInit?.inFlightSubsystem,
+  });
+  expect(realInit.releaseCrash === null, "real engine init hit RELEASE_CRASH", realInit.releaseCrash);
+  const frontier = realInit.frontier;
+  expect(frontier?.attempted === true && frontier.initReturned === true,
+    "real GameEngine::init() did not return", frontier);
+  expect(frontier.exceptionCaught === false, "real GameEngine::init() threw", frontier);
+  expect(frontier.quittingAfterInit === false,
+    "real GameEngine::init() set quitting", frontier);
+  expect(frontier.subsystemCompletedCount === expectedRealInitSubsystems.length,
+    "real init subsystem count mismatch", {
+      expected: expectedRealInitSubsystems.length,
+      actual: frontier.subsystemCompletedCount,
+      completed: frontier.subsystemsCompleted,
+    });
+  expect(JSON.stringify(frontier.subsystemsCompleted) === JSON.stringify(expectedRealInitSubsystems),
+    "real init subsystem order mismatch", frontier.subsystemsCompleted);
+  expect(frontier.inFlightSubsystem === null,
+    "real init left a subsystem in flight", frontier.inFlightSubsystem);
+}
+
+function assertRealEngineFrames(realFrames) {
+  expect(realFrames?.aborted === false, "real engine frames aborted", realFrames?.abortMessage);
+  const frame = realFrames.frame;
+  expect(frame?.initReturned === true, "real engine frame ran without init", frame);
+  expect(frame.framesCompleted >= 5 && frame.exceptionCaught === false,
+    "real GameEngine::update() frames did not complete", frame);
+  expect(frame.quitting === false, "real engine quit during frames", frame);
 }
 
 function assertAudioManagerRuntimeOwned(state) {
@@ -763,7 +889,7 @@ function assertOriginalStartupFrontier(state) {
       && preAudio.firstUnownedFactory.factory === "createAudioManager",
     "pre-audio first unowned factory mismatch", frontier);
 
-  expect(entryByFactory(frontier, "CreateGameEngine")?.line === 1122,
+  expect(entryByFactory(frontier, "CreateGameEngine")?.line === 1125,
     "CreateGameEngine frontier line mismatch", frontier);
   expect(entryByFactory(frontier, "CreateGameEngine")?.ready === true,
     "CreateGameEngine should be browser-construction ready", frontier);
@@ -848,6 +974,7 @@ try {
   await page.goto(harnessUrl, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
 
+  console.error("[vertical] phase1 boot");
   debugLog("running archiveless boot");
   const bootResult = await page.evaluate(() => window.CnCPort.rpc("boot", {
     source: "startup vertical smoke",
@@ -877,6 +1004,12 @@ try {
   // base shell callbacks, the promoted Options/SkirmishMapSelect/Challenge/PopupCommunicator/MapSelect/Replay/PopupReplay-modal/GameInfo owners,
   // and the post-particle W3DThingFactory/object-template parse surface,
   // and honestly keeps the device-factory frontier at createFunctionLexicon
+  // until the remaining shell callback graph is owned by cnc-port.
+  // W3DFunctionLexicon device-table load, representative original base
+  // layout callbacks, and honestly keeps the device-factory frontier at
+  // createFunctionLexicon until the remaining shell callback graph is owned
+  // by cnc-port.
+  console.error("[vertical] phase2 audio archives");
   // until the remaining callback owner groups are owned by cnc-port.
   const archives = await buildAudioOwnershipArchiveSpecs();
   const audioPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -901,6 +1034,7 @@ try {
   });
   expect(mountResult.ok === true, "audio-ownership archive mount failed", mountResult.archiveSet);
 
+  console.error("[vertical] phase2 audio boot");
   debugLog("running archive-backed boot");
   const audioBootResult = await audioPage.evaluate(() => window.CnCPort.rpc("boot", {
     source: "startup vertical smoke (audio ownership)",
@@ -927,6 +1061,42 @@ try {
 
   await audioPage.screenshot({ path: audioBootScreenshot });
 
+  // REAL engine lifecycle: fresh page, whole-file archive set, original
+  // CreateGameEngine() -> GameEngine::init(-noshellmap -win) -> update()
+  // frames, with the frontier computed from the actual run.
+  // Close the earlier phases' pages first: each holds a full wasm heap plus
+  // mounted archives, and keeping three alive can crash the phase-3 tab
+  // (renderer OOM) while it fetches the whole-file archive set.
+  await audioPage.close();
+  await page.close();
+  console.error("[vertical] phase3 real-init page");
+  const realInitPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  await realInitPage.goto(harnessUrl, { waitUntil: "networkidle" });
+  await realInitPage.waitForFunction(() => Boolean(window.CnCPort?.rpc));
+
+  const realInitArchives = await buildRealInitArchives(server.url);
+  console.error("[vertical] phase3 mounting");
+  const realInitMount = await realInitPage.evaluate((payload) =>
+    window.CnCPort.rpc("mountArchives", payload), {
+    path: "/assets/real-init",
+    verifyEach: false,
+    archives: realInitArchives,
+  });
+  expect(realInitMount.archiveSet?.archiveCount === realInitArchiveSpecs.length,
+    "real-init archive mount failed", realInitMount.error ?? realInitMount.archiveSet);
+
+  console.error("[vertical] phase3 realEngineInit");
+  const realInit = await realInitPage.evaluate(() =>
+    window.CnCPort.rpc("realEngineInit", { runDirectory: "/assets/real-init" }));
+  assertRealEngineInit(realInit);
+
+  console.error("[vertical] phase3 frames");
+  const realFrames = await realInitPage.evaluate(() =>
+    window.CnCPort.rpc("realEngineFrame", { frames: 5 }));
+  assertRealEngineFrames(realFrames);
+
+  await realInitPage.screenshot({ path: realInitScreenshot });
+
   const audioFrontier =
     audioBootResult.state.originalEngineStartup.deviceFactoryFrontier;
   console.log(JSON.stringify({
@@ -934,7 +1104,7 @@ try {
     url: harnessUrl,
     wasm: bootResult.state.wasm,
     frame: bootResult.state.frame,
-    screenshots: [desktopScreenshot, canvasScreenshot, audioBootScreenshot],
+    screenshots: [desktopScreenshot, canvasScreenshot, audioBootScreenshot, realInitScreenshot],
     originalEngineStartup: bootResult.state.originalEngineStartup,
     archiveBackedStartup: {
       archiveCount: mountResult.archiveSet?.archiveCount,
@@ -945,6 +1115,16 @@ try {
       moduleFactoryRuntime: audioBootResult.state.moduleFactoryRuntime,
       particleSystemRuntime: audioBootResult.state.particleSystemRuntime,
       objectIniRuntime: objectIniResult.probe,
+    },
+    realEngineInit: {
+      archiveCount: realInitMount.archiveSet?.archiveCount,
+      runDirectory: realInit.runDirectory,
+      initReturned: realInit.frontier?.initReturned === true,
+      subsystemCompletedCount: realInit.frontier?.subsystemCompletedCount,
+      quittingAfterInit: realInit.frontier?.quittingAfterInit,
+      elapsedMs: realInit.frontier?.elapsedMs,
+      framesCompleted: realFrames.frame?.framesCompleted,
+      screenshot: realInitScreenshot,
     },
   }));
 } finally {

@@ -264,40 +264,9 @@ __attribute__((weak)) void LANPreferences::setSuperweaponRestricted(Bool)
 __attribute__((weak)) void LANPreferences::setStartingCash(const Money&)
 {
 }
-__attribute__((weak)) LoadScreen::LoadScreen() :
-	m_loadScreen(nullptr)
-{
-}
-__attribute__((weak)) LoadScreen::~LoadScreen()
-{
-}
-__attribute__((weak)) void LoadScreen::update(Int)
-{
-}
-__attribute__((weak)) MapTransferLoadScreen::MapTransferLoadScreen()
-{
-}
-__attribute__((weak)) MapTransferLoadScreen::~MapTransferLoadScreen()
-{
-}
-__attribute__((weak)) void MapTransferLoadScreen::init(GameInfo *)
-{
-}
-__attribute__((weak)) void MapTransferLoadScreen::reset()
-{
-}
-__attribute__((weak)) void MapTransferLoadScreen::update(Int)
-{
-}
-__attribute__((weak)) void MapTransferLoadScreen::processProgress(Int, Int, AsciiString)
-{
-}
-__attribute__((weak)) void MapTransferLoadScreen::processTimeout(Int)
-{
-}
-__attribute__((weak)) void MapTransferLoadScreen::setCurrentFilename(AsciiString)
-{
-}
+// LoadScreen/MapTransferLoadScreen are owned by the real
+// GameEngine/Source/GameClient/GUI/LoadScreen.cpp linked through
+// zh_gameengine_real_lifecycle_runtime.
 __attribute__((weak)) void Shell::push(AsciiString, Bool)
 {
 }

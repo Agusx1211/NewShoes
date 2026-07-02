@@ -676,6 +676,7 @@ struct RealControlBarSchemeIniProbeResult
 {
 	bool attempted = false;
 	bool ok = false;
+	bool inputs_ready = false;
 	bool loaded_archives = false;
 	bool default_file_exists = false;
 	bool file_exists = false;

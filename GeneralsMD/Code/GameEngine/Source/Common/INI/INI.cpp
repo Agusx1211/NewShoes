@@ -383,6 +383,11 @@ void INI::load( AsciiString filename, INILoadType loadType, Xfer *pXfer )
 
 					} catch (...) {
 						DEBUG_CRASH(("Error parsing block '%s' in INI file '%s'\n", token, m_filename.str()) );
+#ifdef __EMSCRIPTEN__
+						printf("cnc-port: INI block parse failure block='%s' file='%s' line=%d\n",
+							token, m_filename.str(), getLineNum());
+						fflush(stdout);
+#endif
 						char buff[1024];
 						sprintf(buff, "Error parsing INI file '%s' (Line: '%s')\n", m_filename.str(), currentLine.str());
 
@@ -396,6 +401,11 @@ void INI::load( AsciiString filename, INILoadType loadType, Xfer *pXfer )
 				{
 					DEBUG_ASSERTCRASH( 0, ("[LINE: %d - FILE: '%s'] Unknown block '%s'\n",
 														 getLineNum(), getFilename().str(), token ) );
+#ifdef __EMSCRIPTEN__
+					printf("cnc-port: INI unknown block '%s' file='%s' line=%d\n",
+						token, getFilename().str(), getLineNum());
+					fflush(stdout);
+#endif
 					throw INI_UNKNOWN_TOKEN;
 				}
 				
@@ -1493,6 +1503,11 @@ void INI::initFromINIMulti( void *what, const MultiIniFieldParse& parseTableList
 	if( what == NULL )
 	{
 		DEBUG_ASSERTCRASH( 0, ("INI::initFromINI - Invalid parameters supplied!\n") );
+#ifdef __EMSCRIPTEN__
+		printf("cnc-port: INI initFromINI null instance file='%s' line=%d\n",
+			INI::getFilename().str(), INI::getLineNum());
+		fflush(stdout);
+#endif
 		throw INI_INVALID_PARAMS;
 	}
 
@@ -1530,6 +1545,11 @@ void INI::initFromINIMulti( void *what, const MultiIniFieldParse& parseTableList
 						} catch (...) {
 							DEBUG_CRASH( ("[LINE: %d - FILE: '%s'] Error reading field '%s' of block '%s'\n",
 																 INI::getLineNum(), INI::getFilename().str(), field, m_curBlockStart) );
+#ifdef __EMSCRIPTEN__
+							printf("cnc-port: INI field parse failure field='%s' file='%s' line=%d\n",
+								field, INI::getFilename().str(), INI::getLineNum());
+							fflush(stdout);
+#endif
 
 
 							char buff[1024];
@@ -1547,6 +1567,11 @@ void INI::initFromINIMulti( void *what, const MultiIniFieldParse& parseTableList
 				{
 					DEBUG_ASSERTCRASH( 0, ("[LINE: %d - FILE: '%s'] Unknown field '%s' in block '%s'\n",
 														 INI::getLineNum(), INI::getFilename().str(), field, m_curBlockStart) );
+#ifdef __EMSCRIPTEN__
+					printf("cnc-port: INI unknown field '%s' file='%s' line=%d\n",
+						field, INI::getFilename().str(), INI::getLineNum());
+					fflush(stdout);
+#endif
 					throw INI_UNKNOWN_TOKEN;
 				}
 
@@ -1561,6 +1586,11 @@ void INI::initFromINIMulti( void *what, const MultiIniFieldParse& parseTableList
 			done = TRUE;
 			DEBUG_ASSERTCRASH( 0, ("Error parsing block '%s', in INI file '%s'.  Missing '%s' token\n",
 												 m_curBlockStart, getFilename().str(), m_blockEndToken) );
+#ifdef __EMSCRIPTEN__
+			printf("cnc-port: INI missing end token file='%s' line=%d\n",
+				getFilename().str(), getLineNum());
+			fflush(stdout);
+#endif
 			throw INI_MISSING_END_TOKEN;
 
 		}  // end if

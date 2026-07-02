@@ -77,7 +77,7 @@ const sourceChecks = [
     validate(payload) {
       expect(payload.ok === true && payload.orderOk === true,
         'GameEngine startup-order verifier did not report ok');
-      expect(payload.createGameEngine?.line === 1122,
+      expect(payload.createGameEngine?.line === 1125,
         'GameEngine startup-order verifier did not prove CreateGameEngine line');
       const byKey = new Map((payload.initOrder ?? []).map(entry => [entry.key, entry]));
       expect(byKey.get('createFileSystem')?.line === 305,
@@ -268,6 +268,14 @@ const browserChecks = [
             && entry.isInfantry === true
             && entry.isSelectable === true),
         'Archive-backed startup boot did not prove W3DThingFactory object-template ownership');
+      expect(payload.realEngineInit?.initReturned === true,
+        'Real GameEngine::init() lifecycle run did not complete');
+      expect(payload.realEngineInit?.subsystemCompletedCount === 43,
+        'Real GameEngine::init() did not complete all 43 subsystems');
+      expect(payload.realEngineInit?.quittingAfterInit === false,
+        'Real GameEngine::init() set quitting');
+      expect(payload.realEngineInit?.framesCompleted >= 5,
+        'Real GameEngine::update() frames did not complete');
     },
   },
 ];

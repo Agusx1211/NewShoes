@@ -22,22 +22,58 @@ See `AGENTS.md` "How the port advances". Probe/smoke accretion is over; these
 items supersede the per-subsystem "promote focused shim to real ownership"
 flow below.
 
-- [ ] Fold the compile-only `zh_gameengine_real_compile_frontier` (and the
-      other never-linked frontier libs) into the linked `cnc-port` runtime so
-      the full `GameEngine`/`GameEngineDevice`/`Libraries` surface links into
-      one binary, stubbed only at the true platform boundary (D3D8 device,
-      Miles, Bink, WinSock, Win32 window/input/CD).
-- [ ] Replace the probe boot sequence in `wasm_port_entry.cpp`
-      (`ensure_booted()` probe chain) with the real `main()` →
-      `GameEngine::init()` → `GameEngine::execute()` path, and remove the
-      `abort_unentered_game_engine_method()` guards on the engine virtuals.
-- [ ] Make the harness report the real-init frontier (file/line of the first
-      crash, abort, or missing dependency during `init()`/`execute()`) as the
-      single progress metric; fix the frontier, boot again, repeat.
-- [ ] Burn down the ~292 weak-symbol stubs and probe-local singletons in
+**The real lifecycle now runs**: `cnc_port_real_engine_init()` constructs the
+original `Win32GameEngine` via original `WinMain.cpp::CreateGameEngine()` and
+runs real `GameEngine::init(argc, argv)` (`-noshellmap -win`) to completion —
+all 43 `initSubsystem` stages — in headless Chromium against mounted real
+archives, then `cnc_port_real_engine_frame(n)` runs real
+`GameEngine::update()` frames (455 proven) rendering the actual Zero Hour
+title screen through `W3DGameClient`/`W3DDisplay` (see DONE.md M2). The
+frontier is computed from the run (a `SubsystemInterfaceList::initSubsystem`
+hook + stdout markers), never hand-authored. Open items below are the
+residue and the next frontier.
+
+- [ ] **Advance the real boot from the title screen to the interactive main
+      menu**: drive the shell past the title through real
+      `GameClient::update()` (Shell push of `MainMenu.wnd`), route browser
+      mouse/keyboard through the real message stream, and harness-click a
+      real menu button through the real boot with screenshot + state proof.
+      Then retire the focused menu repaint/layout smokes this supersedes.
+- [ ] Migrate the legacy `ensure_booted()` probe boot and its harness gates
+      onto the real lifecycle path, deleting probe-local implementations as
+      real init covers them. First known casualty of real ownership: the
+      aggregate `EXPECT_WASM` smoke dies at `edgeMapperApply` with a dlmalloc
+      OOB — but `edgeMapperApply` PASSES in a fresh module (verified by a
+      single-RPC boot), so an EARLIER probe in the aggregate sequence
+      corrupts the wasm heap and edge-mapper is merely the first allocation
+      to trip. Bisect the aggregate probe order to find the corrupter
+      (likely a legacy probe now dispatching into real-owned code — the
+      `DoParticles`/`DoShadows` class), fix or retire it, then re-green the
+      aggregate gate. Related fixed instance: `d6d3b79` linked real
+      `ChallengeGenerals.cpp` into the shim-flavored window-layout lib and
+      the mount-time challenge probe corrupted the stack via the shim-`INI`
+      12-byte/9,272-byte ODR hazard whenever base `INI.big` mounted before
+      `INIZH.big` (bisect-proven; fixed by compiling it real-flavored).
+      RULE: menu/GUI/engine sources added to `cnc-port`-linked libs must go
+      in a REAL-header runtime (`zh_gameengine_real_lifecycle_runtime` /
+      `zh_gameengine_real_ini_runtime`), never the shim-flavored
+      `zh_window_layout_script_runtime`; `harness/phase3_isolate.mjs` is the
+      mount-crash reproducer/bisection driver.
+- [ ] Replace the 6 remaining undefined boundary symbols
+      (`DumpExceptionInfo`, `SetDeviceGammaRamp`, WWLib `RegistryClass` ×3,
+      `getQR2HostingStatus`) with real browser boundary shims and restore
+      `-sERROR_ON_UNDEFINED_SYMBOLS` on `cnc-port`.
+- [ ] Real-lifecycle residue: browser `ReleaseCrash`/`_exit` does not
+      terminate the wasm runtime (teardown semantics differ from Windows);
+      `TheVersion` is left null; `GameEngine::execute()` is stepped by
+      per-frame RPC — move to `emscripten_set_main_loop` for continuous
+      execution once the shell menu is interactive.
+- [ ] Burn down the remaining weak-symbol stubs and probe-local singletons in
       `WebAssembly/src/` as real subsystems link in; retire `-smoke` targets
       (and their open "promote to real ownership" TODO debt) once the real
-      boot path covers what they proved.
+      boot path covers what they proved. (Real-init already deleted the probe
+      GameClient/Object/GameLogic/Display/LoadScreen/OptionPreferences
+      reimplementations and all 26 weak `UNUSED_INI_BLOCK_PARSER` stubs.)
 - [ ] Mount the base Generals archives (`INI.big`, `English.big`,
       `Window.big`, `Terrain.big`) when supplied, resolving the known missing
       startup set (`Data\INI\Default\*.ini`, `Rank.ini`, `CommandMap.ini`,

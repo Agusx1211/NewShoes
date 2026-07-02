@@ -2282,6 +2282,53 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       control-bar code to the current browser shim: `m_powerBarBase`,
       `m_powerBarIntervals`, and `m_powerBarYellowRange`, with defaults matching
       original `GlobalData.cpp`.
+- [x] **Run the real `GameEngine::init()` to completion in the browser and
+      render the Zero Hour title screen from real `update()` frames** — the
+      strategy-pivot milestone. `cnc_port_real_engine_init()` constructs the
+      original `Win32GameEngine` through original
+      `WinMain.cpp::CreateGameEngine()` (exposed under
+      `CNC_WASM_ENABLE_CREATEGAMEENGINE`), runs real
+      `GameEngine::init(argc, argv)` with `-noshellmap -win`, and completes
+      all 43 `initSubsystem` stages (TheLocalFileSystem → … → TheThingFactory
+      → TheGameClient → TheAI → TheGameLogic → … → TheGameResultsQueue) in
+      ~2.8s in headless Chromium against the mounted real archive set,
+      returning `quitting=FALSE`; `cnc_port_real_engine_frame(n)` then runs
+      the original `execute()` body per frame (`Win32GameEngine::update` →
+      `GameEngine::update`: Radar/Audio/GameClient/MessageStream/CDManager/
+      GameLogic + `serviceWindowsOS`) — 455 frames with zero exceptions, and
+      the canvas shows the real Zero Hour title screen rendered by original
+      `W3DGameClient`/`W3DDisplay` over the browser D3D8 layer
+      (`artifacts/screenshots/real-init-frames.png`,
+      `startup-vertical-real-init.png`). The frontier is computed FROM THE
+      RUN via a weak `SubsystemInterfaceList::initSubsystem` hook plus stdout
+      markers scraped by the harness across aborts — the hand-authored
+      frontier era is over. Supporting work: new
+      `zh_gameengine_real_lifecycle_runtime` links the remaining original
+      sources (GameEngine.cpp, GameMain.cpp, the GameClient tree incl.
+      Shell/InGameUI/MapUtil/menus, GameLogic.cpp, Object.cpp,
+      ScriptActions/Conditions, W3DGameClient/W3DGameLogic/W3DMouse/W3DRadar/
+      W3DInGameUI) via a real-header PreRTS prelude; browser DirectInput
+      keyboard boundary shim (`wasm_dinput_browser.cpp`, `shims/dinput.h`)
+      feeds the ORIGINAL `DirectInputKeyboard`; probe-shadow burndown
+      (probe GameClient/Object/GameLogic/Display/LoadScreen/OptionPreferences
+      reimplementations and all 26 weak `UNUSED_INI_BLOCK_PARSER` stubs
+      deleted); fourth ODR corruption bug of the known class found and fixed
+      (`wasm_startup_singletons_probe.cpp` shim-header `GlobalData` vs real
+      `OptionPreferences` ctor layout); `Debug.cpp` ReleaseCrash and INI
+      failures print reasons to stdout under `__EMSCRIPTEN__`. Known residue
+      tracked in TODO.md: title→interactive-menu, legacy-probe
+      reconciliation (`edgeMapperApply` OOB), 6 undefined boundary symbols,
+      ReleaseCrash teardown semantics, per-frame RPC vs main loop.
+- [x] Split the hot-path build from the legacy smoke surface:
+      `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
+      `zh_startup_vertical_hotpath` aggregates exactly what
+      `test:startup-vertical` runs; `npm run build:port` /
+      `build:startup-vertical` feed the boot loop. Measured after touching
+      `GlobalData.h`: hot path 39s wall / 5m22s CPU vs +80s wall / +19m35s
+      CPU for the legacy smoke surface alone (~4× CPU). AGENTS.md now pins
+      the loop rules: fix the crash the real boot reports (frontier from the
+      run), hot-path build in the inner loop, full `build:wasm` only for the
+      regression suite where legacy smokes serve as canaries.
 - [x] Own `createAudioManager` (`GameEngine.cpp:434`) in the `cnc-port`
       browser boot: `zh_miles_audio_device_compile_frontier` (the real
       `MilesAudioManager.cpp`) plus a new real-header

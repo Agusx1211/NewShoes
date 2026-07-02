@@ -42,20 +42,11 @@ ThingFactory *TheThingFactory __attribute__((weak)) = nullptr;
 FXListStore *TheFXListStore __attribute__((weak)) = nullptr;
 #endif
 
-#define UNUSED_INI_BLOCK_PARSER(name) \
-	void __attribute__((weak)) INI::name(INI *) \
-	{ \
-		throw INI_UNKNOWN_TOKEN; \
-	}
-
-void __attribute__((weak)) setFPMode(void)
-{
-}
-
-void __attribute__((weak)) parseReallyLowMHz(INI *)
-{
-	throw INI_UNKNOWN_TOKEN;
-}
+// The weak throwing INI block parsers and GameLOD helpers that used to live
+// here shadowed the REAL parsers once the full engine linked into cnc-port
+// (lld resolves an undefined symbol to an already-extracted weak definition
+// instead of pulling the real strong one from a later archive). All of them
+// are owned by original engine translation units now.
 
 #ifndef WASM_REAL_INI_FXLIST_METADATA_ONLY
 FXList::FXList()
@@ -229,43 +220,8 @@ ThingTemplate *__attribute__((weak)) ThingFactory::findTemplateInternal(
 }
 #endif
 
-UNUSED_INI_BLOCK_PARSER(parseAnim2DDefinition)
-UNUSED_INI_BLOCK_PARSER(parseAudioEventDefinition)
-UNUSED_INI_BLOCK_PARSER(parseAudioSettingsDefinition)
-UNUSED_INI_BLOCK_PARSER(parseCampaignDefinition)
-UNUSED_INI_BLOCK_PARSER(parseChallengeModeDefinition)
-UNUSED_INI_BLOCK_PARSER(parseMetaMapDefinition)
-UNUSED_INI_BLOCK_PARSER(parseControlBarResizerDefinition)
-UNUSED_INI_BLOCK_PARSER(parseCredits)
-UNUSED_INI_BLOCK_PARSER(parseWindowTransitions)
-UNUSED_INI_BLOCK_PARSER(parseDialogDefinition)
-UNUSED_INI_BLOCK_PARSER(parseEvaEvent)
-#ifndef WASM_REAL_INI_FXLIST_METADATA_ONLY
-UNUSED_INI_BLOCK_PARSER(parseFXListDefinition)
-#endif
-UNUSED_INI_BLOCK_PARSER(parseInGameUIDefinition)
-UNUSED_INI_BLOCK_PARSER(parseLanguageDefinition)
-UNUSED_INI_BLOCK_PARSER(parseMapDataDefinition)
-UNUSED_INI_BLOCK_PARSER(parseMiscAudio)
-UNUSED_INI_BLOCK_PARSER(parseMouseDefinition)
-UNUSED_INI_BLOCK_PARSER(parseMouseCursorDefinition)
-UNUSED_INI_BLOCK_PARSER(parseMusicTrackDefinition)
-#ifndef WASM_REAL_INI_OBJECT_RUNTIME
-UNUSED_INI_BLOCK_PARSER(parseObjectDefinition)
-#endif
-#ifndef WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY
-UNUSED_INI_BLOCK_PARSER(parseObjectCreationListDefinition)
-#endif
-#ifndef WASM_REAL_INI_OBJECT_RUNTIME
-UNUSED_INI_BLOCK_PARSER(parseObjectReskinDefinition)
-#endif
-UNUSED_INI_BLOCK_PARSER(parseRankDefinition)
-UNUSED_INI_BLOCK_PARSER(parseShellMenuSchemeDefinition)
-UNUSED_INI_BLOCK_PARSER(parseWebpageURLDefinition)
-UNUSED_INI_BLOCK_PARSER(parseHeaderTemplateDefinition)
-UNUSED_INI_BLOCK_PARSER(parseStaticGameLODDefinition)
-UNUSED_INI_BLOCK_PARSER(parseDynamicGameLODDefinition)
-UNUSED_INI_BLOCK_PARSER(parseLODPreset)
-UNUSED_INI_BLOCK_PARSER(parseBenchProfile)
+// OptionPreferences is owned by the real
+// GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/OptionsMenu.cpp linked
+// through zh_gameengine_real_lifecycle_runtime.
 
-#undef UNUSED_INI_BLOCK_PARSER
+

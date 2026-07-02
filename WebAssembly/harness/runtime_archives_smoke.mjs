@@ -3761,7 +3761,7 @@ function assertOriginalEngineStartup(
       || preAudio.firstUnownedFactory?.line !== expectedFirstUnownedLine
       || preAudio.firstUnownedFactory.factory !== expectedFirstUnownedFactory
       || preAudio.firstUnownedFactory.subsystem !== expectedFirstUnownedSubsystem
-      || byFactory.get("CreateGameEngine")?.line !== 1122
+      || byFactory.get("CreateGameEngine")?.line !== 1125
       || byFactory.get("CreateGameEngine")?.ready !== true
       || byFactory.get("SubsystemInterfaceList")?.line !== 297
       || byFactory.get("SubsystemInterfaceList")?.ready !== expectedSubsystemListReady

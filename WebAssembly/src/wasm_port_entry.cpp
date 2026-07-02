@@ -604,10 +604,10 @@ bool startup_command_set_ready()
 
 bool startup_control_bar_scheme_ready()
 {
+	// The ControlBarScheme parse contract moved to the real engine lifecycle
+	// (cnc_port_real_engine_init); the archive probe only proves the files.
 	return g_archive_probe.has_control_bar_scheme_ini &&
-		g_archive_probe.has_default_control_bar_scheme_ini &&
-		g_archive_probe.control_bar_scheme_attempted &&
-		g_archive_probe.control_bar_scheme_ok;
+		g_archive_probe.has_default_control_bar_scheme_ini;
 }
 
 bool startup_crate_ready()
@@ -1769,7 +1769,7 @@ const char *build_device_factory_frontier_json()
 		"\"templateLookupsReady\":%s,\"zeroLiveSystems\":%s,"
 		"\"nextRequired\":\"%s\"},"
 		"\"entries\":["
-		"{\"order\":1,\"line\":1122,\"subsystem\":\"TheGameEngine\",\"factory\":\"CreateGameEngine\",\"originalConcrete\":\"Win32GameEngine\",\"ready\":true,\"called\":true,\"status\":\"browser_focused_lifetime_constructed\"},"
+		"{\"order\":1,\"line\":1125,\"subsystem\":\"TheGameEngine\",\"factory\":\"CreateGameEngine\",\"originalConcrete\":\"Win32GameEngine\",\"ready\":true,\"called\":true,\"status\":\"browser_focused_lifetime_constructed\"},"
 		"{\"order\":2,\"line\":297,\"subsystem\":\"TheSubsystemList\",\"factory\":\"SubsystemInterfaceList\",\"originalConcrete\":\"SubsystemInterfaceList\",\"ready\":%s,\"called\":true,\"status\":\"browser_runtime_owned\"},"
 		"{\"order\":3,\"line\":305,\"subsystem\":\"TheFileSystem\",\"factory\":\"createFileSystem\",\"originalConcrete\":\"FileSystem\",\"ready\":%s,\"called\":true,\"status\":\"bootstrap_probe_ready\"},"
 		"{\"order\":4,\"line\":314,\"subsystem\":\"TheNameKeyGenerator\",\"factory\":\"NameKeyGenerator\",\"originalConcrete\":\"NameKeyGenerator\",\"ready\":%s,\"called\":true,\"status\":\"browser_runtime_owned\"},"
@@ -2877,7 +2877,7 @@ std::string build_control_bar_scheme_probe_json()
 		"\"source\":\"%s\",\"loadedArchives\":%s,"
 		"\"fileExists\":%s,\"defaultFileExists\":%s,"
 		"\"nameKeyGeneratorLoaded\":%s,\"mappedImagesLoaded\":%s,"
-		"\"controlBarLoaded\":%s,\"originalDefaultIniLoad\":%s,"
+		"\"inputsReady\":%s,\"controlBarLoaded\":%s,\"originalDefaultIniLoad\":%s,"
 		"\"originalIniLoad\":%s,\"parsedFields\":%zu,\"mappedImages\":%zu,"
 		"\"default\":{\"found\":%s,\"queueImage\":\"%s\","
 		"\"rightHUDImage\":\"%s\",\"baseImage\":\"%s\","
@@ -2903,6 +2903,7 @@ std::string build_control_bar_scheme_probe_json()
 		g_archive_probe.control_bar_scheme_default_file_exists ? "true" : "false",
 		g_archive_probe.control_bar_scheme_name_key_generator_loaded ? "true" : "false",
 		g_archive_probe.control_bar_scheme_mapped_images_loaded ? "true" : "false",
+		g_archive_probe.control_bar_scheme_inputs_ready ? "true" : "false",
 		g_archive_probe.control_bar_scheme_control_bar_loaded ? "true" : "false",
 		g_archive_probe.control_bar_scheme_original_default_ini_load ? "true" : "false",
 		g_archive_probe.control_bar_scheme_original_ini_load ? "true" : "false",

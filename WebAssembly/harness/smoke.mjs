@@ -1054,7 +1054,7 @@ function assertOriginalEngineStartup(state, label, expectedStatus) {
       || frontier.preAudioInitOwnership.parseCommandLine?.line !== 381
       || frontier.preAudioInitOwnership.parseCommandLine.ready !== true
       || frontier.preAudioInitOwnership.firstUnownedFactory?.line !== 434
-      || byFactory.get("CreateGameEngine")?.line !== 1122
+      || byFactory.get("CreateGameEngine")?.line !== 1125
       || byFactory.get("CreateGameEngine")?.ready !== true
       || byFactory.get("SubsystemInterfaceList")?.line !== 297
       || byFactory.get("SubsystemInterfaceList")?.ready !== false
@@ -5468,7 +5468,7 @@ try {
       // The real W3DShadow.cpp DoShadows implementation is linked now, so the
       // probe's weak counting hook must stay dormant (0 = real code linked).
       || displaySceneResult.probe?.scene?.shadowFlushes !== 0
-      || displaySceneResult.probe?.scene?.particleFlushes < 1
+      || displaySceneResult.probe?.scene?.particleFlushes !== 0
       || displaySceneResult.probe?.results?.displayPrepared !== true
       || displaySceneResult.probe?.results?.sceneOwned !== true
       || displaySceneResult.probe?.results?.sceneCreated !== true

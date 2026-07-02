@@ -29,6 +29,13 @@
 #include "Common/SubsystemInterface.h"
 #include "Common/Xfer.h"
 
+#ifdef __EMSCRIPTEN__
+// Browser-port instrumentation: lets the wasm runtime report which subsystem
+// GameEngine::init() is initializing so the harness can compute the real
+// boot frontier from the actual run. Weak so it links without the port entry.
+extern "C" void cnc_port_note_subsystem_init(const char *name, int phase) __attribute__((weak));
+#endif
+
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -158,6 +165,10 @@ void SubsystemInterfaceList::removeSubsystem(SubsystemInterface* sys)
 //-----------------------------------------------------------------------------
 void SubsystemInterfaceList::initSubsystem(SubsystemInterface* sys, const char* path1, const char* path2, const char* dirpath, Xfer *pXfer, AsciiString name)
 {
+#ifdef __EMSCRIPTEN__
+	if (cnc_port_note_subsystem_init != 0)
+		cnc_port_note_subsystem_init(name.str(), 0);
+#endif
 	sys->setName(name);
 	sys->init();
 
@@ -169,6 +180,10 @@ void SubsystemInterfaceList::initSubsystem(SubsystemInterface* sys, const char* 
 	if (dirpath)
 		ini.loadDirectory(dirpath, TRUE, INI_LOAD_OVERWRITE, pXfer );
 
+#ifdef __EMSCRIPTEN__
+	if (cnc_port_note_subsystem_init != 0)
+		cnc_port_note_subsystem_init(name.str(), 1);
+#endif
 	m_subsystems.push_back(sys);
 }
 

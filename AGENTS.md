@@ -68,6 +68,21 @@ existing smokes stay only as regression tests.
   goes through the harness driving the real `cnc-port` binary (boot, RPC
   queries, screenshots). Reductions in the probe/stub/weak-symbol surface are
   progress and should be committed as such.
+- **Fix the crash the real boot reports — nothing else.** The frontier is
+  whatever the last real `init()`/`execute()` run actually died on (subsystem
+  name + failure message from the run itself, never a hand-authored claim).
+  Work on that specific crash. Do **not** build ownership slices, preflights,
+  or "readiness" proofs for subsystems the real boot has not reached yet —
+  that is the probe-accretion loop this strategy retired.
+- **Use the hot-path build in the boot loop.** `npm run build:wasm` compiles
+  the full ~90-executable legacy smoke surface and pays a mass rebuild on
+  every touched engine header. The iterate loop should use
+  `npm run build:port` (just `cnc-port`) or `npm run build:startup-vertical`
+  (the `zh_startup_vertical_hotpath` aggregate — everything
+  `test:startup-vertical` runs). Full `build:wasm` is for the regression
+  suite (`test:all`, `test:vertical-integrations`), not for every iteration.
+  The legacy smokes remain canaries: they earn their keep when the regression
+  suite runs them, not by being recompiled in the inner loop.
 
 ## Hard rules
 
