@@ -26,6 +26,8 @@ const postCampaignExpectPlayerControl =
   process.env.STARTUP_VERTICAL_POST_CAMPAIGN_EXPECT_PLAYER_CONTROL === "1";
 const postCampaignCompactChunks =
   process.env.STARTUP_VERTICAL_POST_CAMPAIGN_COMPACT_CHUNKS === "1";
+const postCampaignLightweightFrames =
+  process.env.STARTUP_VERTICAL_POST_CAMPAIGN_LIGHTWEIGHT === "1";
 const postCampaignBreakpoint = process.env.STARTUP_VERTICAL_POST_CAMPAIGN_BREAKPOINT ?? "";
 const postCampaignPreBreakpointFrameCount =
   Number(process.env.STARTUP_VERTICAL_POST_CAMPAIGN_PRE_BREAKPOINT_FRAMES ?? 0);
@@ -462,6 +464,26 @@ function assertRealEngineFrames(realFrames) {
   }
 }
 
+function assertRealEngineFrameSummary(realFrames) {
+  expect(realFrames?.aborted === false, "real engine summary frames aborted", {
+    abortMessage: realFrames?.abortMessage,
+    abortStack: realFrames?.abortStack,
+    lastUpdateTarget: realFrames?.lastUpdateTarget,
+    lastGameLogicStep: realFrames?.lastGameLogicStep,
+    frame: realFrames?.frame,
+  });
+  const frame = realFrames.frame;
+  expect(frame?.summary === true && frame.initReturned === true,
+    "real engine summary frame ran without init", frame);
+  expect(frame.framesCompleted > 0 && frame.exceptionCaught === false,
+    "real GameEngine::update() summary frames did not complete", frame);
+  expect(frame.quitting === false, "real engine quit during summary frames", frame);
+  expect(frame.gameplay?.gameLogicReady === true
+      && frame.gameplay?.gameClientReady === true
+      && frame.gameplay?.scriptEngineReady === true,
+    "real summary frame gameplay state was not exported", frame.gameplay);
+}
+
 const win32MouseMessages = Object.freeze({
   mouseMove: 0x0200,
   leftButtonDown: 0x0201,
@@ -485,6 +507,13 @@ async function runRealEngineFrames(page, frames) {
   const result = await page.evaluate((frameCount) =>
     window.CnCPort.rpc("realEngineFrame", { frames: frameCount }), frames);
   assertRealEngineFrames(result);
+  return result;
+}
+
+async function runRealEngineFrameSummary(page, frames) {
+  const result = await page.evaluate((frameCount) =>
+    window.CnCPort.rpc("realEngineFrameSummary", { frames: frameCount }), frames);
+  assertRealEngineFrameSummary(result);
   return result;
 }
 
@@ -765,8 +794,56 @@ function summarizeCampaignIntroGates(scriptDebug) {
   };
 }
 
+function summarizeRealEngineSummaryFrameChunk(result, requestedFrames) {
+  const frame = result?.frame;
+  const gameplay = frame?.gameplay;
+  return {
+    requestedFrames,
+    ok: result?.ok === true,
+    framesCompleted: frame?.framesCompleted,
+    framesAttempted: frame?.framesAttempted,
+    exceptionCaught: frame?.exceptionCaught,
+    lastUpdateTarget: frame?.lastUpdateTarget,
+    lastGameLogicStep: frame?.lastGameLogicStep,
+    textureDiagnostics: frame?.textureDiagnostics,
+    display: frame?.display,
+    view: {
+      ready: frame?.view?.ready,
+      position: frame?.view?.position,
+      cameraPosition: frame?.view?.cameraPosition,
+      zoom: frame?.view?.zoom,
+      pitch: frame?.view?.pitch,
+      angle: frame?.view?.angle,
+      fieldOfView: frame?.view?.fieldOfView,
+      terrainHeightUnderCamera: frame?.view?.terrainHeightUnderCamera,
+      currentHeightAboveGround: frame?.view?.currentHeightAboveGround,
+      cameraMovementFinished: frame?.view?.cameraMovementFinished,
+      timeFrozen: frame?.view?.timeFrozen,
+      timeMultiplier: frame?.view?.timeMultiplier,
+      cameraLock: frame?.view?.cameraLock,
+    },
+    gameplay: {
+      inGame: gameplay?.inGame,
+      inputEnabled: gameplay?.inputEnabled,
+      logicFrame: gameplay?.logicFrame,
+      objectCount: gameplay?.objectCount,
+      drawableCount: gameplay?.drawableCount,
+      renderedObjectCount: gameplay?.renderedObjectCount,
+      localPlayerActive: gameplay?.localPlayer?.active,
+      localPlayerSide: gameplay?.localPlayer?.side,
+      scriptFade: gameplay?.fade,
+      scriptFadeValue: gameplay?.fadeValue,
+      campaignIntroGates: gameplay?.campaignIntroGates,
+    },
+    controlBar: frame?.controlBar,
+  };
+}
+
 function summarizeRealEngineFrameChunk(result, requestedFrames) {
   const frame = result?.frame;
+  if (frame?.summary === true) {
+    return summarizeRealEngineSummaryFrameChunk(result, requestedFrames);
+  }
   const clientState = frame?.clientState;
   const gameplay = clientState?.gameplay;
   const scriptDebug = gameplay?.scriptDebug;
@@ -855,6 +932,12 @@ function summarizeRealEngineFrameChunk(result, requestedFrames) {
 
 function summarizePlayerControlState(result) {
   const frame = result?.frame;
+  if (frame?.summary === true) {
+    return {
+      ...frame.playerControl,
+      textureDiagnostics: frame.textureDiagnostics,
+    };
+  }
   const clientState = frame?.clientState;
   const gameplay = clientState?.gameplay;
   const scriptDebug = gameplay?.scriptDebug;
@@ -1037,7 +1120,8 @@ async function runRealEngineFramesUntilPlayerControl(
   page,
   maxFrames,
   chunkFrames,
-  compactChunks = false) {
+  compactChunks = false,
+  lightweightFrames = false) {
   const framesPerChunk = chunkFrames > 0 ? chunkFrames : 60;
   const chunks = [];
   const phaseChanges = [];
@@ -1045,7 +1129,9 @@ async function runRealEngineFramesUntilPlayerControl(
   let framesRun = 0;
   for (let remaining = maxFrames; remaining > 0;) {
     const frames = Math.min(framesPerChunk, remaining);
-    lastResult = await runRealEngineFrames(page, frames);
+    lastResult = lightweightFrames
+      ? await runRealEngineFrameSummary(page, frames)
+      : await runRealEngineFrames(page, frames);
     framesRun += frames;
     const summary = summarizeRealEngineFrameChunk(lastResult, frames);
     const playerControl = summarizePlayerControlState(lastResult);
@@ -1068,6 +1154,7 @@ async function runRealEngineFramesUntilPlayerControl(
           maxFrames,
           chunkFrames: framesPerChunk,
           compactChunks,
+          lightweightFrames,
           phaseChanges: phaseChanges.map(({ key, ...phase }) => phase),
           chunks,
         },
@@ -1085,6 +1172,7 @@ async function runRealEngineFramesUntilPlayerControl(
       maxFrames,
       chunkFrames: framesPerChunk,
       compactChunks,
+      lightweightFrames,
       phaseChanges: phaseChanges.map(({ key, ...phase }) => phase),
       chunks,
     },
@@ -2286,7 +2374,8 @@ try {
       realInitPage,
       postCampaignFrameCount > 0 ? postCampaignFrameCount : 3600,
       postCampaignFrameChunkCount,
-      postCampaignCompactChunks)
+      postCampaignCompactChunks,
+      postCampaignLightweightFrames)
     : null;
   if (postCampaignExpectPlayerControl) {
     expect(realPostCampaignPlayerControlFrames?.reachedPlayerControl === true,

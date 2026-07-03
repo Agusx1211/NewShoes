@@ -2694,6 +2694,54 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       script catalog (`291` scripts), and shrinks stderr for the same 60-frame
       proof from about 24 KB to about 2 KB while retaining the active blocker
       `CINE_CameraCutTo04=632`.
+- [x] Run the compact post-campaign player-control pass past
+      `CINE_CameraCutTo04`. Verified with
+      `STARTUP_VERTICAL_REAL_INIT_ONLY=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_UNTIL_PLAYER_CONTROL=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_COMPACT_CHUNKS=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=900
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAME_CHUNK=120 node
+      WebAssembly/harness/startup_vertical_smoke.mjs` redirected to
+      `/tmp/cnc-startup-player-control-900.json`: the real path completes all
+      900 requested post-campaign frames and reaches engine frame 1,077 /
+      logic frame 900 with zero missing texture applies, 1,284
+      objects/drawables, 55 rendered objects, and the original intro still
+      correctly keeping input disabled, letterbox active, and the control bar
+      hidden. The phase history now shows `CINE_CameraCutTo04` ending between
+      logic frames 600 and 720; the active blockers after that are
+      `CINE_LaunchPadMoveDelay`, `CINE_Pt2CameraLocation01Delay`, and
+      `CINE_Pt2MoveTransportsDelay`, ending the 900-frame run at values 154,
+      274, and 94 respectively. The post-campaign screenshot remains black
+      during this original cinematic phase, but the frame state reports 55
+      rendered objects and no WW3D missing-texture applies.
+- [x] Add a lightweight real-frame summary RPC for long rendered gameplay
+      gates. `cnc_port_real_engine_frame_summary()` now calls the same
+      original `GameEngine::update()` loop as `cnc_port_real_engine_frame()`,
+      but exports a compact summary shape with display/view state, gameplay
+      counts, watched MD_USA01 intro counters/flags/scripts, minimal control
+      bar state, player-control predicates, texture diagnostics, and frame
+      timing. The browser bridge exposes it as `realEngineFrameSummary`, and
+      `startup_vertical_smoke.mjs` can opt into it with
+      `STARTUP_VERTICAL_POST_CAMPAIGN_LIGHTWEIGHT=1` for post-campaign
+      player-control chunks while preserving the verbose endpoint by default.
+      Verified with `node --check WebAssembly/harness/startup_vertical_smoke.mjs`,
+      `node --check WebAssembly/harness/bridge.js`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port`, and
+      `STARTUP_VERTICAL_REAL_INIT_ONLY=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_UNTIL_PLAYER_CONTROL=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_COMPACT_CHUNKS=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_LIGHTWEIGHT=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=120
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAME_CHUNK=60 node
+      WebAssembly/harness/startup_vertical_smoke.mjs` redirected to
+      `/tmp/cnc-startup-lightweight-120.json`: the real browser path reaches
+      logic frame 120 with `summary=true`, `lightweightFrames=true`, zero
+      missing texture applies, 1,374 objects/drawables, input still disabled,
+      letterbox/control-bar gates still locked as intended by the original
+      intro, and `CINE_CameraCutTo04` counting down from 632 to 572 across the
+      two 60-frame chunks. A larger 300-frame chunk was intentionally aborted
+      after staying CPU-active too long without a harness checkpoint; future
+      deep rendered runs should use smaller chunks or add RPC progress/timeouts.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what
@@ -5872,6 +5920,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       maps the browser Win32 cursor handle to canvas `cursor: default`
       vs `cursor: none`, and the Playwright smoke captures
       `harness-smoke-cursor-css-canvas.png`.
+- [x] Make human mouse input usable on `harness/play.html` while the real
+      W3D cursor remains unrendered. Merged `fable/browser-mouse`: the bridge
+      keeps the native CSS cursor visible as a temporary stand-in when the
+      original game hides the Win32 cursor, maps browser pointer coordinates
+      into the engine display resolution cached from real frames, and
+      coalesces queued `WM_MOUSEMOVE` messages / evicts old pending moves so
+      a slow Debug frame cannot drop button messages behind a pointermove
+      flood. Verified locally after rebuilding `cnc-port` with an inline
+      Playwright check against `harness/play.html?autostart=1&shellmap=0`:
+      CSS cursor was `default`, a 400-pointermove flood left the Win32 queue
+      unoverflowed (`beforeCount=0`, `overflowed=false`), and a real browser
+      mouse click on `ButtonSinglePlayer` selected control `4332` through the
+      original window system.
 - [x] Add a focused original GUI input proof:
       `gamewindow-input-smoke` builds a real `MessageStream` with
       `WindowTranslator`, routes

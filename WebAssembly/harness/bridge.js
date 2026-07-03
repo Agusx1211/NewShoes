@@ -7220,6 +7220,11 @@ async function loadWasmModule() {
       realEngineFrontier: module.cwrap("cnc_port_real_engine_frontier", "string", []),
       mapCacheProbe: module.cwrap("cnc_port_map_cache_probe", "string", []),
       realEngineFrame: module.cwrap("cnc_port_real_engine_frame", "string", ["number"]),
+      realEngineFrameSummary: module.cwrap(
+        "cnc_port_real_engine_frame_summary",
+        "string",
+        ["number"],
+      ),
       realEngineLastUpdateTarget: module.cwrap(
         "cnc_port_real_engine_last_update_target",
         "string",
@@ -12054,6 +12059,55 @@ async function rpc(command, payload = {}) {
         return {
           ok: Boolean(frame?.framesCompleted > 0) && !aborted,
           command: "realEngineFrame",
+          aborted,
+          abortMessage,
+          abortStack,
+          lastUpdateTarget,
+          lastGameLogicStep,
+          frame,
+          state: snapshotState(),
+        };
+      }
+    case "realEngineFrameSummary":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineFrameSummary");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineFrameSummary", error: moduleResult.error };
+        }
+        let frame = null;
+        let aborted = false;
+        let abortMessage = null;
+        let abortStack = null;
+        try {
+          frame = JSON.parse(moduleResult.wasmModule.realEngineFrameSummary(Number(payload.frames ?? 1)));
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+          abortStack = error?.stack ?? null;
+        }
+        let lastUpdateTarget = null;
+        let lastGameLogicStep = null;
+        try {
+          lastUpdateTarget = moduleResult.wasmModule.realEngineLastUpdateTarget();
+        } catch {
+          lastUpdateTarget = null;
+        }
+        try {
+          lastGameLogicStep = moduleResult.wasmModule.realEngineLastGameLogicStep();
+        } catch {
+          lastGameLogicStep = null;
+        }
+        refreshBrowserDirectInputQueue(moduleResult.wasmModule);
+        recordLog("real engine frame summary", {
+          aborted,
+          abortMessage,
+          lastUpdateTarget,
+          lastGameLogicStep,
+          frame,
+        });
+        return {
+          ok: Boolean(frame?.framesCompleted > 0) && !aborted,
+          command: "realEngineFrameSummary",
           aborted,
           abortMessage,
           abortStack,
