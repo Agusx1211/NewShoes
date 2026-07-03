@@ -2002,7 +2002,23 @@ and then start with the PROFILE, not with any individual fix.
         ring-buffer semantics (particles, UI, water live here);
       - shadow-state dedupe for SetRenderState/SetTextureStageState spam +
         generated-shader program cache keyed on the ShaderClass descriptor;
-      - batch wasm→JS GL chatter last (it is the 2x, not the 10x).
+      - draw-call collapsing, cheap version only: once dynamic draws share
+        the ring buffer, merge CONSECUTIVE draws whose state hash is
+        unchanged and whose index ranges are adjacent (extend the range,
+        skip the draw — no vertex copying). W3D already sorts render lists
+        by material, so same-state adjacency exists in the stream; UI/HUD/
+        text/particles collapse hardest. Merging adjacent-only preserves
+        blend/z ordering by construction; never reorder across state
+        changes.
+      - `WEBGL_multi_draw` for same-state draws that are not contiguous in
+        the buffer: N (offset,count) ranges in one boundary crossing — cuts
+        submission chatter with no merging logic;
+      - batch remaining wasm→JS GL chatter last (it is the 2x, not the 10x).
+      NOT on the playbook (insanity tier, needs profiler proof of a
+      submission-bound army scene first): general CPU pre-transform
+      batching to defeat per-mesh world matrices (touches every vertex
+      every frame), and WebGL2 instancing for repeated meshes (needs
+      per-instance matrices in the generated shaders — real surgery).
 - [ ] Release (-O2) cnc-port build in a SEPARATE build dir
       (`build/wasm-release`) — multiplies whatever CPU share remains after
       the above; watch for optimizer-exposed UB in era code. Do not flip the
