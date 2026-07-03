@@ -299,6 +299,23 @@ EM_JS(void, wasm_d3d8_browser_texture_bind, (
 		id: texture_id >>> 0,
 	});
 });
+EM_JS(void, wasm_d3d8_browser_fbo_bind, (
+	unsigned int color_texture_id,
+	unsigned int depth_texture_id,
+	unsigned int width,
+	unsigned int height
+), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8BindFramebuffer : null;
+	if (typeof bridge !== "function") {
+		return;
+	}
+	bridge({
+		colorTextureId: color_texture_id >>> 0,
+		depthTextureId: depth_texture_id >>> 0,
+		width: width >>> 0,
+		height: height >>> 0,
+	});
+});
 EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	int primitive_type,
 	unsigned int vertex_buffer_id,
@@ -1103,6 +1120,16 @@ void browser_texture_release(UINT texture_id)
 	g_state.last_browser_texture_lock_flags = 0;
 	g_state.last_browser_texture_checksum = 0;
 	wasm_d3d8_browser_texture_release(texture_id);
+}
+
+void browser_fbo_bind(UINT color_texture_id, UINT depth_texture_id, UINT width, UINT height)
+{
+	++g_state.browser_fbo_bind_calls;
+	g_state.last_browser_fbo_color_texture_id = color_texture_id;
+	g_state.last_browser_fbo_depth_texture_id = depth_texture_id;
+	g_state.last_browser_fbo_width = width;
+	g_state.last_browser_fbo_height = height;
+	wasm_d3d8_browser_fbo_bind(color_texture_id, depth_texture_id, width, height);
 }
 
 void browser_texture_bind(UINT stage, UINT texture_id)
@@ -2219,15 +2246,6 @@ private:
 	DWORD m_lock_flags = 0;
 };
 
-// When an offscreen render target is active (water reflection / projected
-// shadow render-to-texture), the browser layer has no framebuffer bound for it,
-// so those draws/clears would otherwise pollute the MAIN canvas color+depth
-// buffer and make the terrain fail the depth test (black terrain). Until real
-// render-to-texture is implemented, skip browser draws/clears while an offscreen
-// RT is bound. The RT textures stay unrendered (no shadows/reflections), but the
-// main scene renders correctly.
-static bool g_d3d8_offscreen_rt_active = false;
-
 class BrowserD3DDevice final : public IDirect3DDevice8
 {
 public:
@@ -2258,7 +2276,6 @@ public:
 		m_depth_stencil = new (std::nothrow) BrowserD3DSurface(this, m_parameters.BackBufferWidth,
 			m_parameters.BackBufferHeight, m_parameters.AutoDepthStencilFormat, D3DUSAGE_DEPTHSTENCIL);
 		m_default_render_target = m_back_buffer; // the real canvas target
-		g_d3d8_offscreen_rt_active = false;
 
 		g_state.back_buffer_width = m_parameters.BackBufferWidth;
 		g_state.back_buffer_height = m_parameters.BackBufferHeight;
@@ -2535,8 +2552,36 @@ public:
 		}
 		m_back_buffer = render_target;
 		m_depth_stencil = depth_stencil;
-		g_d3d8_offscreen_rt_active =
-			(render_target != nullptr && render_target != m_default_render_target);
+
+		// Resolve texture IDs for FBO binding
+		UINT color_texture_id = 0;
+		UINT depth_texture_id = 0;
+		UINT width = 0;
+		UINT height = 0;
+
+		if (render_target != nullptr && render_target != m_default_render_target) {
+			// Offscreen render target: get its texture ID and dimensions
+			BrowserD3DSurface *browser_surface = static_cast<BrowserD3DSurface *>(render_target);
+			color_texture_id = browser_surface->texture_owner_id();
+			D3DSURFACE_DESC desc;
+			if (SUCCEEDED(render_target->GetDesc(&desc))) {
+				width = desc.Width;
+				height = desc.Height;
+			}
+			// Try to get depth texture ID from depth_stencil surface if provided
+			if (depth_stencil != nullptr) {
+				BrowserD3DSurface *browser_depth = static_cast<BrowserD3DSurface *>(depth_stencil);
+				depth_texture_id = browser_depth->texture_owner_id();
+			}
+		}
+
+		// Bind the appropriate framebuffer
+		browser_fbo_bind(color_texture_id, depth_texture_id, width, height);
+
+		// Track current FBO state
+		m_current_fbo_color_texture_id = color_texture_id;
+		m_current_fbo_depth_texture_id = depth_texture_id;
+
 		return S_OK;
 	}
 
@@ -2582,10 +2627,8 @@ public:
 		// Forward the clear when ANY of color/depth/stencil is requested — a
 		// depth-only clear (DX8Wrapper::Clear(false, true, ...) => ZBUFFER without
 		// TARGET) must still reach WebGL, otherwise the depth buffer is never
-		// reset and later geometry (terrain) fails the depth test. (Skip while an
-		// offscreen render target is bound; see g_d3d8_offscreen_rt_active.)
-		if ((flags & (D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL)) != 0 &&
-			!g_d3d8_offscreen_rt_active) {
+		// reset and later geometry (terrain) fails the depth test.
+		if ((flags & (D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL)) != 0) {
 			browser_clear_target(flags, color, z, stencil);
 		}
 		return S_OK;
@@ -2847,10 +2890,8 @@ public:
 		g_state.last_draw_primitive_count = primitive_count;
 		capture_bound_draw(m_indices_base_vertex_index + min_index, vertex_count, start_index,
 			primitive_vertex_count(primitive_type, primitive_count));
-		if (!g_d3d8_offscreen_rt_active) {
-			draw_bound_indexed_primitive(primitive_type, m_indices_base_vertex_index, min_index, vertex_count,
-				start_index, primitive_vertex_count(primitive_type, primitive_count));
-		}
+		draw_bound_indexed_primitive(primitive_type, m_indices_base_vertex_index, min_index, vertex_count,
+			start_index, primitive_vertex_count(primitive_type, primitive_count));
 		return S_OK;
 	}
 	HRESULT DrawPrimitiveUP(D3DPRIMITIVETYPE, UINT, const void *, UINT) override { return D3DERR_NOTAVAILABLE; }
@@ -3311,6 +3352,8 @@ private:
 	IDirect3DSurface8 *m_back_buffer = nullptr;
 	IDirect3DSurface8 *m_depth_stencil = nullptr;
 	IDirect3DSurface8 *m_default_render_target = nullptr;
+	UINT m_current_fbo_color_texture_id = 0; // 0 = backbuffer
+	UINT m_current_fbo_depth_texture_id = 0; // 0 = default depth buffer
 	IDirect3DVertexBuffer8 *m_stream_source = nullptr;
 	IDirect3DIndexBuffer8 *m_indices = nullptr;
 	UINT m_stream_source_stride = 0;

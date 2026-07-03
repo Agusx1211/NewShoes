@@ -15,6 +15,11 @@ let d3d8DrawProgram = null;
 const d3d8Buffers = new Map();
 const d3d8Textures = new Map();
 const d3d8BoundTextures = new Map();
+// Map<colorTextureId, {fbo, depthRenderbuffer, width, height}>
+const d3d8Framebuffers = new Map();
+let d3d8CurrentFramebuffer = null;
+let d3d8CurrentFramebufferWidth = 0;
+let d3d8CurrentFramebufferHeight = 0;
 const D3DUSAGE_WRITEONLY = 0x00000008;
 const D3DUSAGE_DYNAMIC = 0x00000200;
 const D3DLOCK_DISCARD = 0x00002000;
@@ -3376,6 +3381,119 @@ function createD3D8Texture(payload = {}) {
   };
   updateD3D8TextureSummary();
   return 1;
+}
+
+function bindD3D8Framebuffer(payload = {}) {
+	if (!gl) {
+		return 0;
+	}
+	const colorTextureId = Number(payload.colorTextureId ?? 0) >>> 0;
+	const depthTextureId = Number(payload.depthTextureId ?? 0) >>> 0;
+	const width = Number(payload.width ?? 0) >>> 0;
+	const height = Number(payload.height ?? 0) >>> 0;
+
+	if (colorTextureId === 0) {
+		// Bind backbuffer (default framebuffer)
+		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+		gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+		d3d8CurrentFramebuffer = null;
+		d3d8CurrentFramebufferWidth = 0;
+		d3d8CurrentFramebufferHeight = 0;
+		return 1;
+	}
+
+	// Look up or create FBO for this color texture
+	let fboEntry = d3d8Framebuffers.get(colorTextureId);
+	if (!fboEntry) {
+		const colorTexture = d3d8Textures.get(colorTextureId);
+		if (!colorTexture || !colorTexture.texture) {
+			return 0;
+		}
+
+		const fbo = gl.createFramebuffer();
+		gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+
+		// Ensure the color texture has allocated GL storage before FBO attach.
+		// A texture created via createD3D8Texture has no storage until
+		// updateD3D8Texture uploads pixel data; attaching a bare texture to an
+		// FBO makes it INCOMPLETE and the renderer silently falls back to the
+		// backbuffer, defeating RTT entirely.
+		withPreservedD3D8TextureUnit(() => {
+			gl.bindTexture(gl.TEXTURE_2D, colorTexture.texture);
+			if (!colorTexture.rtAllocated) {
+				gl.texImage2D(
+					gl.TEXTURE_2D,
+					0,
+					gl.RGBA,
+					width,
+					height,
+					0,
+					gl.RGBA,
+					gl.UNSIGNED_BYTE,
+					null
+				);
+				colorTexture.rtAllocated = true;
+			}
+		});
+
+		// Attach color texture
+		gl.framebufferTexture2D(
+			gl.FRAMEBUFFER,
+			gl.COLOR_ATTACHMENT0,
+			gl.TEXTURE_2D,
+			colorTexture.texture,
+			0
+		);
+
+		// Create and attach depth renderbuffer
+		const depthRenderbuffer = gl.createRenderbuffer();
+		gl.bindRenderbuffer(gl.RENDERBUFFER, depthRenderbuffer);
+		gl.renderbufferStorage(
+			gl.RENDERBUFFER,
+			gl.DEPTH_COMPONENT16,
+			width,
+			height
+		);
+		gl.framebufferRenderbuffer(
+			gl.FRAMEBUFFER,
+			gl.DEPTH_ATTACHMENT,
+			gl.RENDERBUFFER,
+			depthRenderbuffer
+		);
+
+		const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+		if (status !== gl.FRAMEBUFFER_COMPLETE) {
+			console.warn(
+				`FBO incomplete for texture ${colorTextureId}: status ${status}`
+			);
+			gl.deleteFramebuffer(fbo);
+			gl.deleteRenderbuffer(depthRenderbuffer);
+			gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+			return 0;
+		}
+
+		fboEntry = {
+			fbo,
+			depthRenderbuffer,
+			width,
+			height,
+		};
+		d3d8Framebuffers.set(colorTextureId, fboEntry);
+	} else {
+		// Reuse existing FBO - just bind it
+		gl.bindFramebuffer(gl.FRAMEBUFFER, fboEntry.fbo);
+	}
+
+	// Set viewport to match RT size
+	if (fboEntry.width !== d3d8CurrentFramebufferWidth ||
+		fboEntry.height !== d3d8CurrentFramebufferHeight) {
+		gl.viewport(0, 0, fboEntry.width, fboEntry.height);
+		d3d8CurrentFramebufferWidth = fboEntry.width;
+		d3d8CurrentFramebufferHeight = fboEntry.height;
+	}
+
+	d3d8CurrentFramebuffer = fboEntry.fbo;
+	return 1;
 }
 
 function createD3D8VolumeTexture(payload = {}) {
@@ -7126,6 +7244,7 @@ async function loadWasmModule() {
       cncPortD3D8VolumeTextureUpdate: updateD3D8VolumeTexture,
       cncPortD3D8TextureRelease: releaseD3D8Texture,
       cncPortD3D8TextureBind: bindD3D8Texture,
+		cncPortD3D8BindFramebuffer: bindD3D8Framebuffer,
       cncPortD3D8DrawIndexed: paintD3D8DrawIndexed,
       cncPortMssSampleStart,
       cncPortMssSampleStop,
@@ -7564,6 +7683,7 @@ function d3d8BridgeCallbacks() {
     cncPortD3D8TextureRelease: releaseD3D8Texture,
     cncPortD3D8TextureBind: bindD3D8Texture,
     cncPortD3D8DrawIndexed: paintD3D8DrawIndexed,
+		cncPortD3D8BindFramebuffer: bindD3D8Framebuffer,
   };
 }
 

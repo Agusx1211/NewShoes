@@ -4712,6 +4712,7 @@ set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/DrawGroupInfo.cpp" PRO
 add_executable(cnc-port
   src/wasm_browser_boundary_shims.cpp
   src/wasm_archive_probe.cpp
+  src/wasm_browser_boundary_shims.cpp
   src/wasm_browser_runtime_assets.cpp
   src/wasm_cdmanager_probe.cpp
   src/wasm_filesystem_probe.cpp
