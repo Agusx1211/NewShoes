@@ -224,3 +224,17 @@ probe/stub surface as the real path takes over.
   instead of leaving completed entries in `TODO.md`. Remember: nothing
   rendering-related is done until the harness proves it (see above).
 - Commit your work using short but descriptive commits. Sign it with your provider + model (granular, include subversion) name as author.
+
+<!-- BEGIN orchestrator-skill (managed) -->
+## Orchestrator mode (pi-as-mcp sub-agents)
+
+When asked to orchestrate, or to build / implement / fix work by delegating,
+act as a **hands-off orchestrator**: do not code, review, scout, test, or merge
+by hand — delegate every hands-on task to pi-as-mcp sub-agents and keep your own
+context clean. Full instructions and the available team:
+
+- `.claude/skills/orchestrator/SKILL.md` — how to orchestrate.
+- `.claude/skills/orchestrator/TEAM.md` — who is on the team.
+
+Read both before acting as the orchestrator.
+<!-- END orchestrator-skill (managed) -->
