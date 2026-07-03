@@ -2785,6 +2785,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       preceding item was simply a too-short run, not a real activation
       mismatch. NOTE: the tactical view (terrain + world) renders black at this
       frame; see the open "Black terrain" TODO for the remaining visual bug.
+- [x] **Bisect the black-terrain bug down to degenerate terrain geometry**
+      (diagnosis only; fix still open — see TODO). Built a fast shell-map
+      iteration loop (`WebAssembly/harness/_diag_shell_terrain.mjs`, temp/
+      untracked) that boots the naval shell map through the real lifecycle,
+      renders N frames, samples a 16×12 black-pixel grid + screenshots + a
+      temporary frame-summary terrain probe. Proved the black is **terrain
+      GROUND geometry failing to rasterize** (black clear-color shows through),
+      NOT shading/texture: props and water render fine over the same area, and
+      a diffuse-only terrain override left the black regions pixel-identical
+      while changing the drawn terrain. Ruled out (each build+run): texture
+      atlas, lighting rig (healthy every frame: 3 lights, ambient≈0.22,
+      diffuse=1), renderer/LOD (it is the classic `HeightMapRenderObjClass`,
+      never Flat), the cloud/lightmap camera-space-texgen multiply pass,
+      VB-upload staleness / ring-buffer scroll (a full re-fill every frame
+      changed nothing), and depth-fade (never enabled). Isolated
+      terrain-visual smokes render the same classic terrain perfectly (even
+      under a camera pan) because their small map fits the terrain window; the
+      full boot's large map makes `updateCenter` re-origin the ring-buffer
+      window. All experimental engine changes were reverted; the sharp
+      diagnosis + next lead (dump `updateVB` vertex positions for a black tile;
+      suspect getDisplayHeight/`getXWithOrigin` bounds or ring-buffer origin
+      math at the window/map edge) live in the TODO "Black terrain" item.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what

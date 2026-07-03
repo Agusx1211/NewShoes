@@ -149,37 +149,56 @@ residue and the next frontier.
       black (see below).**
 - [ ] **Black terrain / tactical view renders black** — THE current frontier.
       At the player-control frame (logic 2,560) the HUD/control bar/radar/money
-      composite correctly but the entire 3D tactical view (terrain + units) is
-      black, with zero WW3D missing-texture applies. Originally reported as
-      "black squares trail the camera during movement" (observed
-      by the project owner playing interactively — motion-correlated, so
-      static screenshots/counters cannot see it; "zero missing texture
-      applies" does NOT cover this: the final pixel is
-      texture × lighting × pass modulates × shroud × fade, and the counter
-      only vouches for the texture factor). Code-reading findings to start
-      from (verified file:line):
-      - terrain scroll updates (`HeightMap.cpp:1062` → `updateVB` via
-        `updateCenter`) lock the WHOLE tile VB
-        (`WW3D2/dx8vertexbuffer.cpp:156`, `Lock(0,0,...)`) and the shim
-        handles whole-buffer locks correctly (`wasm_d3d8_shim.cpp:2026`) —
-        the scroll data path is not trivially broken;
-      - two real hazards in the JS buffer layer (`bridge.js` ~2115-2134):
-        grow-resize calls `gl.bufferData(newSize)` (zeroing ALL GPU
-        contents) then uploads only the incoming range; and the DISCARD
-        path zero-fills, which is only correct if every post-DISCARD draw
-        rewrites what it uses;
-      - ZH has two terrain renderers (classic `HeightMapRenderObj` vs
-        `FlatHeightMap`+`W3DTerrainBackground` square baked tiles — black
-        SQUARES suggests the tile one); which one the browser boot uses is
-        a runtime question.
-      Discriminating experiment (counters already exist:
-      `d3d8BufferStats.updates/lastUpdate`, shim `g_state` lock counters):
-      pan the camera N frames sampling stats per frame + before/after
-      screenshots. Updates tick but black persists → data path fine, check
-      tile texture bake/lighting/`map.ini` light rig/fade/shroud; updates
-      do NOT tick while terrain scrolls in → page-in never runs; a
-      grow-RESIZE fires mid-pan → the bufferData-zeroing hazard is
-      convicted.
+      composite correctly but large terrain regions render black, growing/
+      shifting as the camera moves ("dragged silhouettes" per the owner; the
+      naval **shell map** — reachable in ~30s — reproduces it, so the shell map
+      is the fast iteration loop, NOT the 20-min MD_USA01 boot). MD_USA01
+      terrain is ~fully black; the shell map is a yellow/black patchwork.
+      **Definitive diagnosis (2026-07-03, extensive GPU-harness bisection —
+      see DONE.md):** the black is **terrain GROUND geometry that does not
+      rasterize** (degenerate/collapsed triangles → black clear-color shows
+      through), NOT a shading/texture problem. Props (rocks) and water render
+      fine over the same area. Ruled OUT, each by a built+run test on the
+      SwiftShader harness sampling a 16×12 black-pixel grid + screenshots:
+      - **Texture atlas**: forcing terrain to diffuse-only (guarded
+        `CNC_PORT_TERRAIN_DIFFUSE_ONLY_DIAG` in `TerrainShader2Stage::set`,
+        `W3DShaderManager.cpp`) left the black regions **identical** (drawn
+        terrain changed, black did not) → not texture.
+      - **Lighting rig**: probe showed a healthy rig at every frame
+        (`numGlobalLights=3`, `ambient0≈[0.22,0.20,0.17]`, `diffuse0=[1,1,1]`);
+        `doTheLight` floors terrain diffuse at `ambient*255≈56`, so it can
+        never produce pure black (<12) → not lighting.
+      - **Renderer/LOD**: the active terrain renderer is the **classic
+        `HeightMapRenderObjClass`** (not Flat — a probe comparing
+        `TheTerrainRenderObject` to `TheHeightMap`/`TheFlatHeightMap` confirmed
+        "classic"). Forcing `TERRAIN_LOD_MAX` / `adjustTerrainLOD(0)` changed
+        nothing (it was already classic; the LOD=9 `DISABLE` from GameData.ini
+        never triggers a Flat swap because `adjustTerrainLOD` only runs on
+        AUTOMATIC LOD).
+      - **Cloud/lightmap camera-space texgen pass**: forcing
+        `m_useCloudMap=m_useLightMap=false` (drop `ST_TERRAIN_BASE_NOISE12` →
+        `ST_TERRAIN_BASE`) changed nothing → not the projected-texcoord pass.
+      - **VB-upload staleness / ring-buffer scroll**: forcing a full terrain
+        re-fill every frame (`staticLightingChanged()` each frame → `vbUpd`
+        rose 3299→3593, so it took effect) changed nothing → not stale/partial
+        GPU buffers. The classic `updateVB` locks the whole tile VB
+        (`Lock(0,0)`, `dx8vertexbuffer.cpp:156`) and the shim uploads the whole
+        retained `m_bytes` (`wasm_d3d8_shim.cpp:2026`), so the buffer content is
+        complete.
+      - **Depth-fade**: `m_useDepthFade` is never enabled anywhere → not it.
+      Isolated terrain-visual smokes (`test:ww3d-terrain-visual-scene`,
+      `-camera-pan-scene`) render the SAME classic terrain **perfectly**,
+      including under a camera pan — but they use a **small map that fits the
+      terrain window** so `updateCenter` early-returns ("no need to center").
+      The full boot uses a **large map** where `updateCenter` re-origins the
+      window (`HeightMap.cpp:1806-1902`, ring-buffer `m_originX/Y`).
+      **Next lead:** the black terrain triangles are degenerate/collapsed —
+      instrument `updateVB` to dump vertex positions for a black-region tile vs
+      a drawn tile; suspect getDisplayHeight/`getXWithOrigin` bounds or the
+      ring-buffer origin math producing bad positions for cells at/beyond the
+      window/map edge in the large-map scroll case (browser-specific or a
+      pre-existing edge bug). Fast repro: `WebAssembly/harness/shellmap_real_
+      init_gate.mjs` style boot + N `realEngineFrame` chunks + screenshots.
 - [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch
       workaround in `GameEngine::update()` with the real
       `W3DGameLogic`/`SubsystemInterface::UPDATE` wasm vtable ownership fix
