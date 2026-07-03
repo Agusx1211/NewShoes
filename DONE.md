@@ -2531,6 +2531,32 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `CAMERA_LETTERBOX_END` / `ENABLE_INPUT`, proving the black frame is
       explainable by the real fade/cinematic gates while the camera/script
       state is still progressing.
+- [x] Expand the MD_USA01 intro gate summary through the known return-to-player
+      chain. The post-campaign chunk summaries now watch 20 original counters:
+      `CINE_MoveTo06Delay`, `CINE_CameraCutTo04`,
+      `CINE_LaunchPadMoveDelay`, `CINE_Pt2CameraLocation01Delay`,
+      `CINE_Pt2MoveTransportsDelay`, `CINE_ScudSoundDelay`,
+      `CINE_BasePullOut01Delay`, `CINE_BackToRocket01Delay`,
+      `CINE_BackToBaseDelay`, `CINE_ZoomInMoreOnBaseDelay`,
+      `CINE_RocketAirShot01Delay`, `CINE_BackToBaseYetAgainDelay`,
+      `CINE_ZoomInMoreOnBaseDelayAgain`, `CINE_RocketAirShot02Delay`,
+      `CINE_LastBaseShotDelay`, `CINE_BlowUp`, `CINE_FlashWhiteDelay`,
+      `CINE_ReturnToPlayerStartDelay`, `CINE_ReturnToPlayerStartDelay_2`,
+      and `Give it back`; and 15 original scripts from
+      `CINE_CameraMoveTo06` through `CINE_ReturnToPlayerLocation C`,
+      `Give Player The Game`, and `ReturnToPlayerControl`. Verified with
+      `git diff --check`, `node --check
+      WebAssembly/harness/startup_vertical_smoke.mjs`, and
+      `STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=120
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAME_CHUNK=60 node
+      WebAssembly/harness/startup_vertical_smoke.mjs` redirected to
+      `/tmp/cnc-startup-expanded-gates-120.json`: the real path reaches frame
+      297 / logic frame 120 with zero missing texture applies, 20/20 watched
+      counters found, 15/15 watched scripts found, `CINE_CameraCutTo04`
+      counting down from 632 to 572, and the later
+      `CINE_FlashWhiteDelay`, `CINE_ReturnToPlayerStartDelay`, `Give it
+      back`, `Give Player The Game`, and `ReturnToPlayerControl` gates present
+      but not yet fired.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what

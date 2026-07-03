@@ -68,11 +68,12 @@ residue and the next frontier.
       letterbox/fade gates, plus full `ScriptEngine` counter/flag snapshots
       and sequential-script queue size, plus a prioritized read-only catalog
       of the loaded original `ScriptList` graph, real `TheTacticalView`
-      camera/view state, and compact watched MD_USA01 intro gates), and
-      chunk-proves 720 post-campaign loaded-map logic frames through frame 897
-      with zero WW3D missing-texture applies. The original MD_USA01 intro
-      script is still legitimately mid-cinematic rather than texture-blocked
-      or frame-stuck:
+      camera/view state, and compact watched MD_USA01 intro gates spanning the
+      camera-cut, phase-two base/rocket, flash, return-location, and final
+      player-control timers/scripts), and chunk-proves 720 post-campaign
+      loaded-map logic frames through frame 897 with zero WW3D missing-texture
+      applies. The original MD_USA01 intro script is still legitimately
+      mid-cinematic rather than texture-blocked or frame-stuck:
       a refreshed 180-frame run reaches logic frame 180 with zero missing
       texture applies, 1,374 objects/drawables, visible captioned cinematic
       rendering (`startup-vertical-real-init-post-campaign.png`, center
@@ -83,9 +84,12 @@ residue and the next frontier.
       `fadeValue=0.984`, black center/terrain pixels, `TheTacticalView`
       ready at camera position approximately `(3504.10,642.88,67)`, and the
       watched `CINE_CameraCutTo04` timer counting down from 632 to 572 across
-      two 60-frame chunks. The script catalog reports 16 sides, 35 groups, 291
-      scripts, 168 interesting scripts, and priority-includes the real future
-      gates: `CINE_CameraMoveTo06` sets
+      two 60-frame chunks; the same chunk summaries now include 20 watched
+      counters and 15 watched scripts through `CINE_FlashWhite`,
+      `CINE_ReturnToPlayerLocation`, `Give Player The Game`, and
+      `ReturnToPlayerControl`. The script catalog reports 16 sides, 35 groups,
+      291 scripts, 168 interesting scripts, and priority-includes the real
+      future gates: `CINE_CameraMoveTo06` sets
       `CINE_LaunchPadMoveDelay`, `CINE_Pt2CameraLocation01Delay`, and
       `CINE_Pt2MoveTransportsDelay`; `Give Player The Game` sets
       `INTRO_DONE`; `ReturnToPlayerControl` runs

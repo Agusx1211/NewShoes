@@ -482,10 +482,26 @@ async function runRealEngineFrames(page, frames) {
 }
 
 const campaignIntroCounterWatches = [
+  "CINE_MoveTo06Delay",
   "CINE_CameraCutTo04",
   "CINE_LaunchPadMoveDelay",
   "CINE_Pt2CameraLocation01Delay",
   "CINE_Pt2MoveTransportsDelay",
+  "CINE_ScudSoundDelay",
+  "CINE_BasePullOut01Delay",
+  "CINE_BackToRocket01Delay",
+  "CINE_BackToBaseDelay",
+  "CINE_ZoomInMoreOnBaseDelay",
+  "CINE_RocketAirShot01Delay",
+  "CINE_BackToBaseYetAgainDelay",
+  "CINE_ZoomInMoreOnBaseDelayAgain",
+  "CINE_RocketAirShot02Delay",
+  "CINE_LastBaseShotDelay",
+  "CINE_BlowUp",
+  "CINE_FlashWhiteDelay",
+  "CINE_ReturnToPlayerStartDelay",
+  "CINE_ReturnToPlayerStartDelay_2",
+  "Give it back",
 ];
 
 const campaignIntroFlagWatches = [
@@ -497,6 +513,17 @@ const campaignIntroFlagWatches = [
 const campaignIntroScriptWatches = [
   "CINE_CameraMoveTo06",
   "CINE_LaunchPad & BuggiesMove",
+  "CINE_BasePos01",
+  "CINE_MoveTransports",
+  "CINE_BasePanTo01",
+  "CINE_BackToUSBase",
+  "CINE_ZoomInMoreOnBase",
+  "CINE_BackToBaseYetAgain & DeleteRocketAir01",
+  "CINE_ZoomInMoreOnBaseAgain",
+  "CINE_LastBaseShot",
+  "CINE_FlashWhite",
+  "CINE_ReturnToPlayerLocation",
+  "CINE_ReturnToPlayerLocation C",
   "Give Player The Game",
   "ReturnToPlayerControl",
 ];
