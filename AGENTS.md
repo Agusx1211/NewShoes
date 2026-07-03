@@ -121,6 +121,54 @@ drive and observe the running build with no human in the loop:
 Grow this harness with the port: every new subsystem (rendering, input, audio,
 AI, match flow) should be reachable and checkable through it.
 
+## Real-GPU verification machine (Mac M4)
+
+A dedicated Apple M4 Mac mini (10 cores, 16GB, macOS, Chrome with Metal-backed
+WebGL2) is available for **real-GPU verification and performance measurement**.
+The dev box's headless Chromium renders via SwiftShader (software); every pixel
+proven there is CPU-rasterized. Measured on the same build: a fully loaded
+1,310-object map runs ~38fps on the Mac's real GPU vs ~1-2fps under SwiftShader
+on the (shared, busy) dev box. Use the Mac to (a) decompose "slow frames" into
+sim cost vs software-rasterization cost, (b) catch real-driver WebGL2 behavior
+SwiftShader hides, and (c) verify quickly — full boot incl. the 1.3GB archive
+mount takes ~20s there. Keep SwiftShader as the deterministic CI baseline;
+GPU runs are for perf and driver realism, not pixel-exact regression goldens.
+
+How to use it:
+
+- **SSH**: `ssh cnc-gpu` (alias in `~/.ssh/config` on the dev box →
+  `aa@192.168.106.45`, key `~/.ssh/id_ed25519_main2`).
+- **Repo copy**: `/Volumes/CnCWork/CnC_Generals_Zero_Hour`
+  (`~/workspaces/CnC_Generals_Zero_Hour` symlinks to it). This is a
+  **case-sensitive APFS volume (sparse image `~/cnc-work.sparseimage`) and
+  that is load-bearing**: the `WebAssembly/shims/` strategy ships same-name
+  headers differing only in case (`windows.h`/`Windows.h`/`Windows.H`) and
+  relies on engine includes NOT matching shim headers of different case.
+  Never place or build this repo on a case-insensitive path, and never copy
+  it through one (files collapse silently in transit).
+- **Sync** (dev box → Mac; the dev box stays the build machine):
+  `rsync -az --exclude WebAssembly/build --exclude WebAssembly/node_modules \
+    ~/personal/CnC_Generals_Zero_Hour/ cnc-gpu:/Volumes/CnCWork/CnC_Generals_Zero_Hour/`
+  Syncing `WebAssembly/dist/` this way ships fresh builds for verification.
+- **Harness server**: `HOST=0.0.0.0 PORT=8123 node harness/serve.mjs` from
+  `WebAssembly/` on the Mac (usually already running). The human-playable
+  page is `http://192.168.106.45:8123/harness/play.html` — the project owner
+  plays from this URL; keep it working.
+- **Headless GPU probes**: `~/cnc-verify/` on the Mac has `playwright-core`
+  installed; launch with
+  `executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"`
+  and `args: ["--enable-gpu", "--use-angle=metal"]`, then drive
+  `window.CnCPort.rpc(...)` exactly like the dev-box harness. Confirm the
+  renderer string reports "ANGLE Metal Renderer: Apple M4", not SwiftShader.
+- **Toolchain**: emsdk 3.1.6 (matching the dev box) is at `~/emsdk`
+  (`source ~/emsdk/emsdk_env.sh`); brew cmake/ninja/node are installed. The
+  native Mac build of `cnc-port` is currently red on a remaining
+  case-sensitivity issue (shim `STLTypedefs.h` TU) — fixing it is welcome but
+  optional; the build-on-Linux + verify-on-Mac loop works today.
+- **macOS quirks**: no `timeout(1)` (use node-side deadlines or `& sleep;
+  kill`), BSD `sed -i ''`, default shell is zsh, brew lives in
+  `/opt/homebrew/bin` (not on PATH in non-interactive ssh).
+
 ## Status
 
 `WebAssembly/` is the port work area: the Emscripten build (`CMakeLists.txt`),
