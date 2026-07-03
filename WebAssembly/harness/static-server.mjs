@@ -93,6 +93,21 @@ export async function startStaticServer({ root, port = 0, host = "127.0.0.1" } =
       }
 
       const contentType = contentTypes.get(extname(requestedPath)) ?? "application/octet-stream";
+      const lastModified = fileStat.mtime.toUTCString();
+
+      // HEAD support: the play page polls the build's Last-Modified to show
+      // a "build updated N min ago" indicator without downloading the wasm.
+      if (request.method === "HEAD") {
+        response.writeHead(200, commonHeaders({
+          "accept-ranges": "bytes",
+          "content-length": fileStat.size,
+          "content-type": contentType,
+          "last-modified": lastModified,
+        }));
+        response.end();
+        return;
+      }
+
       const range = parseRangeHeader(request.headers.range, fileStat.size);
       if (range === false) {
         response.writeHead(416, commonHeaders({
@@ -118,6 +133,7 @@ export async function startStaticServer({ root, port = 0, host = "127.0.0.1" } =
         "accept-ranges": "bytes",
         "content-length": fileStat.size,
         "content-type": contentType,
+        "last-modified": lastModified,
       }));
       createReadStream(requestedPath).pipe(response);
     } catch (error) {

@@ -36,6 +36,34 @@
       /* Without this, mobile browsers consume touches for scroll/zoom and the
          canvas never sees pointer events. */
       #viewport { touch-action: none; }
+      #buildAge.fresh { color: #7ee787; }
+      #consoleToggle {
+        font: inherit;
+        font-size: 12px;
+        padding: 0.15rem 0.6rem;
+        cursor: pointer;
+        background: #222;
+        color: #bbb;
+        border: 1px solid #444;
+        border-radius: 3px;
+      }
+      #consolePanel {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 40vh;
+        background: rgba(10, 12, 14, 0.95);
+        color: #9fd49f;
+        font: 11px/1.45 ui-monospace, monospace;
+        overflow-y: auto;
+        padding: 0.5rem 0.75rem 0.75rem;
+        border-top: 1px solid #333;
+        white-space: pre-wrap;
+        word-break: break-all;
+        z-index: 20;
+      }
+      #consolePanel.hidden { display: none; }
     </style>
   </head>
   <body>
@@ -54,8 +82,16 @@
           <span class="label">FPS</span>
           <strong id="fps">-</strong>
         </div>
+        <div>
+          <span class="label">Build</span>
+          <strong id="buildAge" title="">-</strong>
+        </div>
+        <div>
+          <button id="consoleToggle" type="button" title="Engine/harness log (also: ` key)">console</button>
+        </div>
       </aside>
     </main>
+    <div id="consolePanel" class="hidden" aria-label="Engine log"></div>
     <div id="overlay">
       <h1>C&amp;C Generals: Zero Hour — real engine, in your browser</h1>
       <div id="warning">

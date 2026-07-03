@@ -150,3 +150,111 @@ startButton.addEventListener("click", () => {
 if (new URLSearchParams(window.location.search).get("autostart") === "1") {
   void start();
 }
+
+// --- "Build: N min ago" indicator -------------------------------------------
+// Polls the wasm's Last-Modified via HEAD so a glance tells whether Codex
+// shipped something new since this page loaded (turns green + says reload).
+const buildAgeNode = document.querySelector("#buildAge");
+let firstSeenBuildMs = null;
+
+function relativeAge(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) {
+    return `${s}s ago`;
+  }
+  if (s < 3600) {
+    return `${Math.round(s / 60)} min ago`;
+  }
+  if (s < 86400) {
+    const h = Math.floor(s / 3600);
+    const m = Math.round((s % 3600) / 60);
+    return m > 0 ? `${h}h ${m}m ago` : `${h}h ago`;
+  }
+  return `${Math.round(s / 86400)}d ago`;
+}
+
+async function refreshBuildAge() {
+  try {
+    const head = await fetch(new URL("../dist/cnc-port.wasm", window.location.href), {
+      method: "HEAD",
+      cache: "no-store",
+    });
+    const lastModified = head.headers.get("last-modified");
+    if (!lastModified) {
+      buildAgeNode.textContent = "?";
+      return;
+    }
+    const builtMs = Date.parse(lastModified);
+    if (firstSeenBuildMs === null) {
+      firstSeenBuildMs = builtMs;
+    }
+    buildAgeNode.title = new Date(builtMs).toLocaleString();
+    if (builtMs > firstSeenBuildMs) {
+      buildAgeNode.textContent = `${relativeAge(Date.now() - builtMs)} — NEW, reload`;
+      buildAgeNode.classList.add("fresh");
+    } else {
+      buildAgeNode.textContent = relativeAge(Date.now() - builtMs);
+    }
+  } catch {
+    buildAgeNode.textContent = "?";
+  }
+}
+void refreshBuildAge();
+setInterval(refreshBuildAge, 30_000);
+
+// --- built-in console --------------------------------------------------------
+// Renders the tail of the live harness log (window.CnCPort.state.logs, which
+// includes wasm stdout lines like "cnc-port: ...") in an overlay panel.
+const consolePanel = document.querySelector("#consolePanel");
+const consoleToggle = document.querySelector("#consoleToggle");
+let consoleTimer = null;
+
+function formatLogEntry(entry) {
+  const time = typeof entry.time === "string" ? entry.time.slice(11, 19) : "";
+  let data = "";
+  if (entry.data != null) {
+    if (typeof entry.data.text === "string") {
+      data = ` ${entry.data.text}`;
+    } else {
+      try {
+        data = ` ${JSON.stringify(entry.data)}`;
+        if (data.length > 240) {
+          data = `${data.slice(0, 240)}…`;
+        }
+      } catch {
+        data = "";
+      }
+    }
+  }
+  return `${time} ${entry.message}${data}`;
+}
+
+function renderConsole() {
+  const logs = window.CnCPort?.state?.logs ?? [];
+  const tail = logs.slice(-250);
+  const atBottom = consolePanel.scrollHeight - consolePanel.scrollTop - consolePanel.clientHeight < 24;
+  consolePanel.textContent = tail.map(formatLogEntry).join("\n") || "(no log entries yet)";
+  if (atBottom) {
+    consolePanel.scrollTop = consolePanel.scrollHeight;
+  }
+}
+
+function toggleConsole() {
+  const show = consolePanel.classList.contains("hidden");
+  consolePanel.classList.toggle("hidden", !show);
+  if (show) {
+    renderConsole();
+    consolePanel.scrollTop = consolePanel.scrollHeight;
+    consoleTimer = setInterval(renderConsole, 1000);
+  } else if (consoleTimer) {
+    clearInterval(consoleTimer);
+    consoleTimer = null;
+  }
+}
+
+consoleToggle.addEventListener("click", toggleConsole);
+window.addEventListener("keydown", (event) => {
+  if (event.key === "`" && !event.repeat) {
+    toggleConsole();
+  }
+});
