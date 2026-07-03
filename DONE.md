@@ -2765,6 +2765,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       only loaded producer reference is unsuffixed `Start_Mission_Intro`
       setting that timer, while the late return chain enabled
       `Start_Mission_Intro SS1`, whose actions do not set it.
+- [x] **Reach original player control on the real MD_USA01 boot path.** The
+      earlier 2,400-frame runs stopped too early: the `Start_Mission_Intro SS1`
+      chain is NOT a dead end and needs no forced flags. Dynamic timer tracing
+      (weak `#ifdef __EMSCRIPTEN__` hooks in `ScriptEngine.cpp` +
+      `wasm_real_engine_init.cpp` script-event/dynamic-counter export) proved
+      the real chain resolves on its own: `ss1a`→`ss1b`→`ss2`→`ss3`→`ss_over`
+      plus the `ss* fade` counters, then `Start_Mission_Intro` sets
+      `Give it back`, `Give Player The Game` fires `INTRO_DONE`, and
+      `ReturnToPlayerControl` runs `CAMERA_LETTERBOX_END`/`ENABLE_INPUT`. A Mac
+      Chrome/Metal 3,600-frame run (`STARTUP_VERTICAL_REAL_INIT_ONLY=1`,
+      `..._UNTIL_PLAYER_CONTROL=1`, compact+lightweight, 120-frame chunks)
+      reached player control at engine frame 3,417 / logic frame 2,560:
+      `reachedPlayerControl=true`, `inputEnabled=true`, `introDone=true`,
+      `letterBoxed=false`, `controlBarClickable=true`, `objectCount=881`, and
+      zero WW3D missing-texture applies throughout. `startup-vertical-real-init-
+      post-campaign.png` confirms the HUD/control bar/radar/money composite at
+      player control. Nothing was forced — the `Give it back` diagnosis in the
+      preceding item was simply a too-short run, not a real activation
+      mismatch. NOTE: the tactical view (terrain + world) renders black at this
+      frame; see the open "Black terrain" TODO for the remaining visual bug.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what

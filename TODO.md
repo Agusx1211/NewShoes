@@ -140,16 +140,18 @@ residue and the next frontier.
       without bypassing original script semantics, keep long rendered chunks
       observable with smaller chunks or RPC timeouts/progress, and continue from
       the scripted intro toward a visibly correct, interactable in-game scene.
-- [ ] Resolve the MD_USA01 final player-control timer ownership without
-      forcing flags or counters. Current runtime evidence points at the final
-      release script waiting on `Give it back` even though the only loaded
-      timer producer is `Start_Mission_Intro`, not the suffixed
-      `Start_Mission_Intro SS1` that the late cinematic chain actually enables.
-      Investigate whether this is original map script flow, a parsed script
-      name/state issue, or a missing activation earlier in the chain; add
-      activation/timer history diagnostics if the loaded-script snapshot is not
-      enough.
-- [ ] **Black terrain squares "trail" the camera during movement** (observed
+- [x] RESOLVED — MD_USA01 reaches original player control naturally (see
+      DONE.md). The `Give it back` "stall" was just a too-short run; the real
+      `Start_Mission_Intro SS1` chain resolves on its own and a 3,600-frame Mac
+      Chrome/Metal run reached `reachedPlayerControl=true` at logic frame 2,560
+      with input/control bar enabled and zero missing texture applies. No flags
+      forced. **New frontier exposed at player control: the tactical view is
+      black (see below).**
+- [ ] **Black terrain / tactical view renders black** — THE current frontier.
+      At the player-control frame (logic 2,560) the HUD/control bar/radar/money
+      composite correctly but the entire 3D tactical view (terrain + units) is
+      black, with zero WW3D missing-texture applies. Originally reported as
+      "black squares trail the camera during movement" (observed
       by the project owner playing interactively — motion-correlated, so
       static screenshots/counters cannot see it; "zero missing texture
       applies" does NOT cover this: the final pixel is
