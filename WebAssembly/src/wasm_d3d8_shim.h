@@ -152,6 +152,11 @@ struct WasmD3D8ShimState
 	UINT set_texture_stage_state_texture_transform_count2_calls;
 	UINT last_browser_texture_bind_stage;
 	UINT last_browser_texture_bind_id;
+	UINT browser_fbo_bind_calls;
+	UINT last_browser_fbo_color_texture_id;
+	UINT last_browser_fbo_depth_texture_id;
+	UINT last_browser_fbo_width;
+	UINT last_browser_fbo_height;
 	UINT set_stream_source_calls;
 	UINT set_indices_calls;
 	UINT set_vertex_shader_calls;

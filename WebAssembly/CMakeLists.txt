@@ -4711,6 +4711,7 @@ set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/DrawGroupInfo.cpp" PRO
 
 add_executable(cnc-port
   src/wasm_archive_probe.cpp
+  src/wasm_browser_boundary_shims.cpp
   src/wasm_browser_runtime_assets.cpp
   src/wasm_cdmanager_probe.cpp
   src/wasm_filesystem_probe.cpp
@@ -4885,7 +4886,7 @@ target_link_libraries(cnc-port PRIVATE
 
 target_link_options(cnc-port PRIVATE
   "SHELL:-Wl,--gc-sections"
-  "SHELL:-sERROR_ON_UNDEFINED_SYMBOLS=0"
+  "SHELL:-sERROR_ON_UNDEFINED_SYMBOLS=1"
   "SHELL:-sWARN_ON_UNDEFINED_SYMBOLS=1"
   "SHELL:--no-entry"
   "SHELL:-sMODULARIZE=1"
