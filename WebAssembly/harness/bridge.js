@@ -3977,7 +3977,22 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
       clearBits |= gl.STENCIL_BUFFER_BIT;
     }
     if (clearBits !== 0) {
+      // D3D8's Clear ignores the depth/stencil write masks, but WebGL's
+      // gl.clear RESPECTS gl.depthMask: if a prior draw left depth writes
+      // disabled (e.g. a transparent/UI pass with ZWRITE off), the depth clear
+      // is silently skipped, leaving a stale depth buffer that later geometry
+      // (the terrain) fails the depth test against — the whole map renders
+      // black. Force the depth write mask on for the clear, then restore it.
+      // (Stencil already forces stencilMask above before clearing stencil.)
+      const restoreDepthMask =
+        (clearBits & gl.DEPTH_BUFFER_BIT) !== 0 && !gl.getParameter(gl.DEPTH_WRITEMASK);
+      if (restoreDepthMask) {
+        gl.depthMask(true);
+      }
       gl.clear(clearBits);
+      if (restoreDepthMask) {
+        gl.depthMask(false);
+      }
     }
   } else if (fallbackContext && (clearFlags & 0x1) !== 0) {
     fallbackContext.fillStyle = `rgb(${rgba[0]} ${rgba[1]} ${rgba[2]})`;

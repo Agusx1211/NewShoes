@@ -2219,6 +2219,15 @@ private:
 	DWORD m_lock_flags = 0;
 };
 
+// When an offscreen render target is active (water reflection / projected
+// shadow render-to-texture), the browser layer has no framebuffer bound for it,
+// so those draws/clears would otherwise pollute the MAIN canvas color+depth
+// buffer and make the terrain fail the depth test (black terrain). Until real
+// render-to-texture is implemented, skip browser draws/clears while an offscreen
+// RT is bound. The RT textures stay unrendered (no shadows/reflections), but the
+// main scene renders correctly.
+static bool g_d3d8_offscreen_rt_active = false;
+
 class BrowserD3DDevice final : public IDirect3DDevice8
 {
 public:
@@ -2248,6 +2257,8 @@ public:
 			m_parameters.BackBufferHeight, m_parameters.BackBufferFormat, D3DUSAGE_RENDERTARGET);
 		m_depth_stencil = new (std::nothrow) BrowserD3DSurface(this, m_parameters.BackBufferWidth,
 			m_parameters.BackBufferHeight, m_parameters.AutoDepthStencilFormat, D3DUSAGE_DEPTHSTENCIL);
+		m_default_render_target = m_back_buffer; // the real canvas target
+		g_d3d8_offscreen_rt_active = false;
 
 		g_state.back_buffer_width = m_parameters.BackBufferWidth;
 		g_state.back_buffer_height = m_parameters.BackBufferHeight;
@@ -2524,6 +2535,8 @@ public:
 		}
 		m_back_buffer = render_target;
 		m_depth_stencil = depth_stencil;
+		g_d3d8_offscreen_rt_active =
+			(render_target != nullptr && render_target != m_default_render_target);
 		return S_OK;
 	}
 
@@ -2566,7 +2579,13 @@ public:
 		g_state.last_clear_color = color;
 		g_state.last_clear_z = z;
 		g_state.last_clear_stencil = stencil;
-		if ((flags & D3DCLEAR_TARGET) != 0) {
+		// Forward the clear when ANY of color/depth/stencil is requested — a
+		// depth-only clear (DX8Wrapper::Clear(false, true, ...) => ZBUFFER without
+		// TARGET) must still reach WebGL, otherwise the depth buffer is never
+		// reset and later geometry (terrain) fails the depth test. (Skip while an
+		// offscreen render target is bound; see g_d3d8_offscreen_rt_active.)
+		if ((flags & (D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL)) != 0 &&
+			!g_d3d8_offscreen_rt_active) {
 			browser_clear_target(flags, color, z, stencil);
 		}
 		return S_OK;
@@ -2828,8 +2847,10 @@ public:
 		g_state.last_draw_primitive_count = primitive_count;
 		capture_bound_draw(m_indices_base_vertex_index + min_index, vertex_count, start_index,
 			primitive_vertex_count(primitive_type, primitive_count));
-		draw_bound_indexed_primitive(primitive_type, m_indices_base_vertex_index, min_index, vertex_count,
-			start_index, primitive_vertex_count(primitive_type, primitive_count));
+		if (!g_d3d8_offscreen_rt_active) {
+			draw_bound_indexed_primitive(primitive_type, m_indices_base_vertex_index, min_index, vertex_count,
+				start_index, primitive_vertex_count(primitive_type, primitive_count));
+		}
 		return S_OK;
 	}
 	HRESULT DrawPrimitiveUP(D3DPRIMITIVETYPE, UINT, const void *, UINT) override { return D3DERR_NOTAVAILABLE; }
@@ -3289,6 +3310,7 @@ private:
 	D3DMATERIAL8 m_material = default_d3d8_material();
 	IDirect3DSurface8 *m_back_buffer = nullptr;
 	IDirect3DSurface8 *m_depth_stencil = nullptr;
+	IDirect3DSurface8 *m_default_render_target = nullptr;
 	IDirect3DVertexBuffer8 *m_stream_source = nullptr;
 	IDirect3DIndexBuffer8 *m_indices = nullptr;
 	UINT m_stream_source_stride = 0;
