@@ -1318,6 +1318,13 @@ residue and the next frontier.
 
 ## M5 — Input & UI
 
+- [ ] Render the real in-game cursor: the game calls `SetCursor(NULL)` and
+      draws its own `W3DMouse` cursor (Mouse.ini cursor set), which the
+      browser build does not render yet. Until it does, bridge.js keeps the
+      native CSS cursor visible as a stand-in (see fable/browser-mouse);
+      when W3DMouse renders, restore honoring the engine's cursor
+      visibility, or map the engine's DX8 hardware-cursor path to CSS
+      `cursor: url(...)` custom cursors at the platform boundary.
 - [ ] Mouse: Pointer events → engine `Mouse`/`W3DMouse` (move, buttons, wheel).
 - [ ] Promote the browser-backed frame-owned `Mouse` path from
       disabled-by-default harness opt-in to the final default gameplay

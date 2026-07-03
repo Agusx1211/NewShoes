@@ -4490,11 +4490,47 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_post_browser_message(
 	int point_y)
 {
 	POINT point = {point_x, point_y};
+	const UINT msg = static_cast<UINT>(message);
+	const WPARAM wparam = static_cast<WPARAM>(static_cast<unsigned int>(w_param));
+	const LPARAM lparam = static_cast<LPARAM>(l_param);
+
+	// Real Win32 coalesces WM_MOUSEMOVE: only the latest unprocessed move
+	// stays queued. Browser pointermove fires ~60Hz while slow (Debug) frames
+	// drain the 256-slot queue rarely, so without coalescing the flood fills
+	// the queue and QueueMessage silently drops NEW messages - including the
+	// button down/up of a human click. Coalesce at this browser entry point
+	// so at most one trailing move stays pending.
+	if (msg == WM_MOUSEMOVE
+			&& WasmWin32Input::message_queue_count > 0
+			&& WasmWin32Input::message_queue[WasmWin32Input::message_queue_count - 1].message == WM_MOUSEMOVE) {
+		MSG &pending = WasmWin32Input::message_queue[WasmWin32Input::message_queue_count - 1];
+		pending.wParam = wparam;
+		pending.lParam = lparam;
+		pending.time = static_cast<DWORD>(Win32PortNowMilliseconds());
+		pending.pt = point;
+		return write_state_json();
+	}
+
+	// Never let a full queue eat a button/wheel/key message: evict the
+	// oldest pending WM_MOUSEMOVE to make room first.
+	if (msg != WM_MOUSEMOVE
+			&& WasmWin32Input::message_queue_count >= WasmWin32Input::MessageQueueCapacity()) {
+		for (unsigned int i = 0; i < WasmWin32Input::message_queue_count; ++i) {
+			if (WasmWin32Input::message_queue[i].message == WM_MOUSEMOVE) {
+				for (unsigned int j = i + 1; j < WasmWin32Input::message_queue_count; ++j) {
+					WasmWin32Input::message_queue[j - 1] = WasmWin32Input::message_queue[j];
+				}
+				--WasmWin32Input::message_queue_count;
+				break;
+			}
+		}
+	}
+
 	WasmWin32Input::QueueMessage(
 		ApplicationHWnd,
-		static_cast<UINT>(message),
-		static_cast<WPARAM>(static_cast<unsigned int>(w_param)),
-		static_cast<LPARAM>(l_param),
+		msg,
+		wparam,
+		lparam,
 		0,
 		&point);
 	return write_state_json();

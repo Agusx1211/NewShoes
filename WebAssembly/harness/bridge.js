@@ -6843,13 +6843,18 @@ function syncBrowserCursor(input = harnessState.browserInput) {
   }
 
   const cursorSet = Boolean(input.cursorSet);
-  const css = cursorSet ? "default" : "none";
+  // The original game hides the Win32 cursor (SetCursor(NULL)) because it
+  // draws its own W3D cursor - which the browser build does not render yet.
+  // Hiding the CSS cursor too would leave a human player with no cursor at
+  // all, so keep the native cursor visible as the "hardware cursor" stand-in
+  // until W3DMouse rendering is ported (then honor cursorSet again).
+  const css = "default";
   canvas.style.cursor = css;
   harnessState.browserCursor = {
     source: "browser_win32_cursor_css",
     cursorSet,
     css,
-    visible: cursorSet,
+    visible: true,
   };
 }
 
@@ -10338,10 +10343,16 @@ let browserWin32Focused = false;
 
 function canvasInputPointFromEvent(event) {
   const rect = canvas.getBoundingClientRect();
-  const scaleX = rect.width > 0 ? canvas.width / rect.width : 1;
-  const scaleY = rect.height > 0 ? canvas.height / rect.height : 1;
-  const x = Math.max(0, Math.min(canvas.width - 1, Math.round((event.clientX - rect.left) * scaleX)));
-  const y = Math.max(0, Math.min(canvas.height - 1, Math.round((event.clientY - rect.top) * scaleY)));
+  // Map into the engine's own client coordinate space (TheDisplay
+  // resolution, cached from real frames) - the engine hit-tests menus and
+  // units in that space, not in canvas pixels. Fall back to canvas size for
+  // pre-real-init probe pages.
+  const targetWidth = harnessState.engineDisplaySize?.width ?? canvas.width;
+  const targetHeight = harnessState.engineDisplaySize?.height ?? canvas.height;
+  const scaleX = rect.width > 0 ? targetWidth / rect.width : 1;
+  const scaleY = rect.height > 0 ? targetHeight / rect.height : 1;
+  const x = Math.max(0, Math.min(targetWidth - 1, Math.round((event.clientX - rect.left) * scaleX)));
+  const y = Math.max(0, Math.min(targetHeight - 1, Math.round((event.clientY - rect.top) * scaleY)));
   return { x, y };
 }
 
@@ -12007,6 +12018,19 @@ async function rpc(command, payload = {}) {
         let abortStack = null;
         try {
           frame = JSON.parse(moduleResult.wasmModule.realEngineFrame(Number(payload.frames ?? 1)));
+          // The engine renders at its own resolution (TheDisplay, e.g.
+          // 800x600) while the canvas is display-sized; browser pointer
+          // events must be mapped into ENGINE client coordinates or clicks
+          // land off-target. Cache the authoritative size for
+          // canvasInputPointFromEvent.
+          const engineDisplay = frame?.clientState?.display;
+          if (Number.isFinite(engineDisplay?.width) && engineDisplay.width > 0
+              && Number.isFinite(engineDisplay?.height) && engineDisplay.height > 0) {
+            harnessState.engineDisplaySize = {
+              width: engineDisplay.width,
+              height: engineDisplay.height,
+            };
+          }
         } catch (error) {
           aborted = true;
           abortMessage = error?.message ?? String(error);
