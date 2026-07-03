@@ -2785,6 +2785,29 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       preceding item was simply a too-short run, not a real activation
       mismatch. NOTE: the tactical view (terrain + world) renders black at this
       frame; see the open "Black terrain" TODO for the remaining visual bug.
+- [x] **FIX the black terrain (THE big in-game visual bug)** — commit
+      08a1839. Root cause: **WebGL's `gl.clear(DEPTH_BUFFER_BIT)` respects
+      `gl.depthMask`, but D3D8's `Clear` ignores the write masks.** A prior draw
+      (a transparent/UI pass with ZWRITE off) left `depthMask=false`, so the
+      per-frame depth clear was **silently skipped** → the depth buffer kept
+      stale close values → the terrain (drawn later) failed the depth test and
+      rendered black (motion-correlated "dragged black silhouettes"; MD_USA01
+      fully black). NOTHING about the terrain geometry/lighting/textures was
+      wrong — proven by `depthFunc=ALWAYS` rendering it perfectly, and by
+      Fable's depth-write kill-switch bisection whose *calibration failure*
+      (killing ALL depth writes did NOT reproduce ALWAYS) pointed from draws to
+      the clear/state. Fix: `bridge.js` `paintD3D8Clear` forces `depthMask` on
+      around `gl.clear` and restores it. Companion shim fixes
+      (`wasm_d3d8_shim.cpp`): forward `Clear` on ZBUFFER/STENCIL too (depth-only
+      clears were dropped — only D3DCLEAR_TARGET forwarded); and skip browser
+      draws/clears while an offscreen render target is bound (`SetRenderTarget`
+      is a framebuffer-less stub, so RTT/shadow/reflection passes were rendering
+      into the main canvas) — interim until real render-to-texture. Verified:
+      naval shell map 20.8%→0% black, renders beaches/water/rocks/units
+      correctly under SwiftShader; MD_USA01 renders textured cliffs, a cloudy
+      skybox, a tree, and units on the Mac GPU (Chrome/Metal), 0 missing texture
+      applies, where it was previously 100% black. General lesson for the port:
+      WebGL clears respect write masks, D3D clears do not.
 - [x] **Bisect the black-terrain bug down to degenerate terrain geometry**
       (diagnosis only; fix still open — see TODO). Built a fast shell-map
       iteration loop (`WebAssembly/harness/_diag_shell_terrain.mjs`, temp/

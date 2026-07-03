@@ -147,122 +147,16 @@ residue and the next frontier.
       with input/control bar enabled and zero missing texture applies. No flags
       forced. **New frontier exposed at player control: the tactical view is
       black (see below).**
-- [ ] **Black terrain / tactical view renders black** — THE current frontier.
-      At the player-control frame (logic 2,560) the HUD/control bar/radar/money
-      composite correctly but large terrain regions render black, growing/
-      shifting as the camera moves ("dragged silhouettes" per the owner; the
-      naval **shell map** — reachable in ~30s — reproduces it, so the shell map
-      is the fast iteration loop, NOT the 20-min MD_USA01 boot). MD_USA01
-      terrain is ~fully black; the shell map is a yellow/black patchwork.
-      **Definitive diagnosis (2026-07-03, extensive GPU-harness bisection —
-      see DONE.md):** the black is **terrain GROUND geometry that does not
-      rasterize** (degenerate/collapsed triangles → black clear-color shows
-      through), NOT a shading/texture problem. Props (rocks) and water render
-      fine over the same area. Ruled OUT, each by a built+run test on the
-      SwiftShader harness sampling a 16×12 black-pixel grid + screenshots:
-      - **Texture atlas**: forcing terrain to diffuse-only (guarded
-        `CNC_PORT_TERRAIN_DIFFUSE_ONLY_DIAG` in `TerrainShader2Stage::set`,
-        `W3DShaderManager.cpp`) left the black regions **identical** (drawn
-        terrain changed, black did not) → not texture.
-      - **Lighting rig**: probe showed a healthy rig at every frame
-        (`numGlobalLights=3`, `ambient0≈[0.22,0.20,0.17]`, `diffuse0=[1,1,1]`);
-        `doTheLight` floors terrain diffuse at `ambient*255≈56`, so it can
-        never produce pure black (<12) → not lighting.
-      - **Renderer/LOD**: the active terrain renderer is the **classic
-        `HeightMapRenderObjClass`** (not Flat — a probe comparing
-        `TheTerrainRenderObject` to `TheHeightMap`/`TheFlatHeightMap` confirmed
-        "classic"). Forcing `TERRAIN_LOD_MAX` / `adjustTerrainLOD(0)` changed
-        nothing (it was already classic; the LOD=9 `DISABLE` from GameData.ini
-        never triggers a Flat swap because `adjustTerrainLOD` only runs on
-        AUTOMATIC LOD).
-      - **Cloud/lightmap camera-space texgen pass**: forcing
-        `m_useCloudMap=m_useLightMap=false` (drop `ST_TERRAIN_BASE_NOISE12` →
-        `ST_TERRAIN_BASE`) changed nothing → not the projected-texcoord pass.
-      - **VB-upload staleness / ring-buffer scroll**: forcing a full terrain
-        re-fill every frame (`staticLightingChanged()` each frame → `vbUpd`
-        rose 3299→3593, so it took effect) changed nothing → not stale/partial
-        GPU buffers. The classic `updateVB` locks the whole tile VB
-        (`Lock(0,0)`, `dx8vertexbuffer.cpp:156`) and the shim uploads the whole
-        retained `m_bytes` (`wasm_d3d8_shim.cpp:2026`), so the buffer content is
-        complete.
-      - **Depth-fade**: `m_useDepthFade` is never enabled anywhere → not it.
-      - **Ring-buffer seam vertex collapse**: a probe counting when
-        `getXWithOrigin`/`getYWithOrigin` (`HeightMap.cpp:270,291`) hit their
-        safety clamp (which would collapse adjacent vertices) reported
-        **0 clamp hits over 1.68M lookups** → the wrap is correct, terrain
-        vertex X/Y positions are valid, no zero-area collapse from the ring
-        buffer.
-      - **Backface culling**: forcing `gl.disable(CULL_FACE)` for every draw
-        (bridge.js `applyD3D8RenderState`) left the black **identical** → the
-        terrain triangles are not being wrongly winding-culled.
-      NET: terrain geometry is valid (positions, heights, winding, diffuse) —
-      confirmed by Fable's independent read that the VB upload pipeline is
-      provably lossless (whole-buffer USAGE_DEFAULT lock/upload; no discard/
-      resize path can fire).
-      ★★★ **ROOT CAUSE IS THE DEPTH TEST — CONFIRMED.** Forcing
-      `gl.depthFunc(gl.ALWAYS)` for every draw (bridge.js `applyD3D8RenderState`)
-      dropped shell-map black from 20.8% to **0.5%** and rendered the terrain
-      **correctly** (beaches, shoreline foam). So the terrain geometry/shader are
-      fine; the terrain **fails the depth test** in the black regions and is not
-      drawn (black clear-color shows through). Further discriminators (all
-      build+run on the shell map):
-      - `depthFunc=LEQUAL` (not ALWAYS) did **NOT** fix it → terrain depth is
-        *strictly greater* than the buffer, i.e. terrain is genuinely BEHIND
-        something drawn earlier at a closer depth (not an equal-depth/z-prepass
-        LESS-vs-EQUAL issue).
-      - Forcing a depth-buffer clear alongside every color clear did **nothing**
-        → the engine already clears color+depth together; NOT stale depth.
-      - Disabling depth-write for alpha-blended draws, and for
-        color-write-disabled (z-fill) draws, both did **nothing** → the occluder
-        writes depth while opaque and color-writing, drawn before the terrain
-        (its color is later overwritten by terrain under depthFunc=ALWAYS, so it
-        is effectively black in the final image).
-      - Hiding the water render object (`TheWaterRenderObj->Set_Hidden`) did
-        **nothing** (terrain still a black patchwork with water gone) → NOT the
-        water surface. Hiding the non-active terrain global
-        (`TheHeightMap`/`TheFlatHeightMap` vs `TheTerrainRenderObject`) did
-        **nothing** → NOT a duplicate terrain render object.
-      MD_USA01 (desert, no water surface) is also fully black, so the occluder
-      is common to both maps.
-      ★ **PRIME NEXT LEAD: render-target depth isolation.** The water
-      **reflection render-to-texture** (`W3DDisplay.cpp:1890-1893`
-      `updateRenderTargetTextures`, gated on `m_waterType==2`) renders the whole
-      scene from a mirrored camera into an offscreen texture — and `Set_Hidden`
-      on the water object does NOT disable it. If the D3D8→WebGL shim does not
-      give each `SetRenderTarget`/offscreen pass its **own depth buffer** (and
-      restore the main one on switch back), that offscreen pass's depth leaks
-      into the MAIN depth buffer → terrain fails against mirror-camera depth →
-      black. Test: set `m_waterType != 2` (skip the reflection RTT) OR audit the
-      shim's render-target/depth-attachment handling. This is a classic shim
-      bug and fits every observation. Broader: audit ALL render-to-texture
-      passes (water reflection, shadow maps, terrain baked textures) for shared-
-      depth-buffer leakage.
-      Isolated terrain-visual smokes (`test:ww3d-terrain-visual-scene`,
-      `-camera-pan-scene`) render the SAME classic terrain **perfectly**,
-      including under a camera pan — but they use a **small map that fits the
-      terrain window** so `updateCenter` early-returns ("no need to center").
-      The full boot uses a **large map** where `updateCenter` re-origins the
-      window (`HeightMap.cpp:1806-1902`, ring-buffer `m_originX/Y`).
-      **Supporting data point:** forcing `m_drawEntireTerrain=TRUE` (whole map,
-      no windowed ring-buffer scroll — set post-init so it applies to the
-      later-created MD_USA01 terrain, not the shell map) made SOME textured
-      terrain fragments render on MD_USA01 that were previously fully black
-      (Mac GPU, logic frame 200 intro). Partial, not a clean fix (the frame is
-      a dark cinematic shot and drawing the whole map every frame is far too
-      slow to ship), but it corroborates that the windowed scroll is part of
-      the cause. `getDisplayHeight` (`WorldHeightMap.h:247`) is an **unchecked**
-      `m_data[x+m_drawOriginX + m_width*(y+m_drawOriginY)]` — OOB reads return
-      garbage heights → degenerate/clipped triangles.
-      **Next lead:** the black terrain triangles are degenerate/collapsed —
-      instrument `updateVB` to dump vertex positions for a black-region tile vs
-      a drawn tile; suspect getDisplayHeight/`getXWithOrigin` bounds or the
-      ring-buffer origin math producing bad positions for cells at/beyond the
-      window/map edge in the large-map scroll case (browser-specific or a
-      pre-existing edge bug). Fast repro: `WebAssembly/harness/shellmap_real_
-      init_gate.mjs` style boot + N `realEngineFrame` chunks + screenshots (see
-      the temp `_diag_shell_terrain.mjs` for the grid-sampling pattern). A
-      clean (non-cinematic) judgment needs a player-control frame, which is a
-      ~20-min boot — or disable the intro cinematic for terrain iteration.
+- [x] **Black terrain / tactical view FIXED** (commit 08a1839). WebGL's
+      `gl.clear(DEPTH_BUFFER_BIT)` respects `gl.depthMask` but D3D8's `Clear`
+      ignores the write masks; a prior ZWRITE-off draw left `depthMask=false`,
+      so the per-frame depth clear was silently skipped -> stale depth -> the
+      terrain failed the depth test and rendered black. Fix: force `depthMask`
+      on around `gl.clear` in `bridge.js`. Shell map 20.8%->0% black; MD_USA01
+      renders cliffs/sky/tree correctly on the Mac GPU. See DONE.md for the full
+      bisection history. Follow-ups: implement real render-to-texture so
+      shadows/water-reflections work (currently the RTT passes are skipped at
+      the shim; `SetRenderTarget` has no framebuffer).
 - [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch
       workaround in `GameEngine::update()` with the real
       `W3DGameLogic`/`SubsystemInterface::UPDATE` wasm vtable ownership fix
