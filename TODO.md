@@ -1977,6 +1977,17 @@ residue and the next frontier.
 ## M10 — Hardening, content, polish
 
 ### Performance & memory
+- [ ] **Ship an optimized (Release) cnc-port build** — every build so far is
+      CMAKE_BUILD_TYPE=Debug (-O0, -g, 91MB wasm; `build_wasm.sh` default),
+      and the live shell map runs ~3fps on an M4's real GPU. A Release build
+      is likely the single largest perf win available (expect 5-20x on the
+      sim). Use a SEPARATE build dir (e.g. `build/wasm-release`) so flipping
+      the type doesn't force a full rebuild in the shared Debug dir; watch
+      for optimizer-exposed UB in the era code.
+- [ ] Add a lightweight `realEngineFrame` mode that skips building the full
+      clientState JSON (it serializes gameplay/shell/script-catalog/texture
+      diagnostics on every call) for interactive frame loops like
+      `play.html`; keep the verbose mode for harness assertions.
 - [ ] Frame-time budget; profile hotspots (sim vs render).
 - [ ] Add a GPU-accelerated harness profile (Playwright with GPU flags on a
       machine with a real GPU) to decompose "slow frames" into sim cost vs
