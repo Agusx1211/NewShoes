@@ -6241,13 +6241,14 @@ function applyD3D8RenderState(renderState, options = {}) {
   };
 }
 
-// Graphics diagnostics level. "full" (default) keeps every per-draw probe,
-// texture sample, draw-history entry, and the two readPixels GPU syncs that the
-// startup-vertical gates and regression smokes assert on. "lite" skips those
-// harness-only costs on the hot path (readPixels flushes dominate render time)
-// while still doing the real draw — for the human-playable page. Never change
-// the default: existing gates depend on "full".
-let d3d8DiagLevel = "full";
+// Graphics diagnostics level. "lite" (default) skips every per-draw probe,
+// texture sample, draw-history entry, and the two readPixels GPU syncs that
+// the startup-vertical gates and regression smokes assert on. "full" keeps
+// those harness-only costs on the hot path — useful for regression smokes but
+// costly (readPixels flushes dominate render time). Production / real-engine
+// boot path defaults to "lite"; smokes that need pixel-sampling probes opt in
+// via ?diag=full URL param or __cncSetDiagLevel("full") RPC.
+let d3d8DiagLevel = "lite";
 try {
   const _diag = new URLSearchParams(globalThis.location?.search || "").get("diag");
   if (_diag === "lite" || _diag === "full") d3d8DiagLevel = _diag;
