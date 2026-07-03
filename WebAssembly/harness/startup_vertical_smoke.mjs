@@ -7,7 +7,9 @@ import { startStaticServer } from "./static-server.mjs";
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
 const archiveRoot = resolve(wasmRoot, "artifacts/real-assets");
-const screenshotDir = resolve(wasmRoot, "artifacts/screenshots");
+const screenshotDir = process.env.STARTUP_VERTICAL_SCREENSHOT_DIR
+  ? resolve(process.env.STARTUP_VERTICAL_SCREENSHOT_DIR)
+  : resolve(wasmRoot, "artifacts/screenshots");
 const desktopScreenshot = resolve(screenshotDir, "startup-vertical-browser.png");
 const canvasScreenshot = resolve(screenshotDir, "startup-vertical-canvas.png");
 const audioBootScreenshot = resolve(screenshotDir, "startup-vertical-audio-owned.png");
@@ -35,6 +37,13 @@ const postCampaignEngineBreakpoint =
   process.env.STARTUP_VERTICAL_POST_CAMPAIGN_ENGINE_BREAKPOINT ?? "";
 const postCampaignAfterGameLogicBreakpoint =
   process.env.STARTUP_VERTICAL_POST_CAMPAIGN_AFTER_GAME_LOGIC_BREAKPOINT ?? "";
+const browserExecutable =
+  process.env.STARTUP_VERTICAL_BROWSER_EXECUTABLE
+  ?? process.env.CHROME_PATH
+  ?? "";
+const browserArgs = (process.env.STARTUP_VERTICAL_BROWSER_ARGS ?? "")
+  .split(/\s+/)
+  .filter((arg) => arg.length > 0);
 
 const gameModes = Object.freeze({
   singlePlayer: 0,
@@ -61,6 +70,17 @@ function expect(condition, message, payload) {
   if (!condition) {
     throw new Error(`${message}: ${JSON.stringify(payload)}`);
   }
+}
+
+function startupBrowserLaunchOptions() {
+  const options = {};
+  if (browserExecutable.length > 0) {
+    options.executablePath = browserExecutable;
+  }
+  if (browserArgs.length > 0) {
+    options.args = browserArgs;
+  }
+  return options;
 }
 
 function pixelLooksLikeMenuChrome(pixel) {
@@ -2113,7 +2133,7 @@ const server = await startStaticServer({ root: wasmRoot });
 let browser;
 
 try {
-  browser = await chromium.launch();
+  browser = await chromium.launch(startupBrowserLaunchOptions());
   const harnessUrl = new URL("harness/index.html", server.url).href;
   await mkdir(screenshotDir, { recursive: true });
 

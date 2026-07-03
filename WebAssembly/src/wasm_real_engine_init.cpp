@@ -1219,7 +1219,7 @@ void append_script_engine_debug_state(std::string &json)
 			json += ",";
 		}
 		first_entry = false;
-		const Script *script = sequential->m_scriptToExecuteSequentially;
+		Script *script = sequential->m_scriptToExecuteSequentially;
 		json += "{\"index\":" + std::to_string(index);
 		json += ",\"scriptReady\":";
 		json += script != NULL ? "true" : "false";
@@ -1294,10 +1294,22 @@ const char *const k_campaign_intro_flag_watches[] = {
 };
 
 const char *const k_campaign_intro_script_watches[] = {
+	"CINE_CameraMoveTo06",
 	"CINE_CameraCutTo04",
 	"CINE_LaunchPad & BuggiesMove",
 	"CINE_BasePos01",
 	"CINE_MoveTransports",
+	"CINE_BasePanTo01",
+	"CINE_BackToUSBase",
+	"CINE_ZoomInMoreOnBase",
+	"CINE_BackToBaseYetAgain & DeleteRocketAir01",
+	"CINE_ZoomInMoreOnBaseAgain",
+	"CINE_LastBaseShot",
+	"CINE_FlashWhite",
+	"CINE_ReturnToPlayerLocation",
+	"CINE_ReturnToPlayerLocation C",
+	"Start_Mission_Intro",
+	"Start_Mission_Intro SS1",
 	"Give Player The Game",
 	"ReturnToPlayerControl",
 };
@@ -1370,8 +1382,41 @@ Script *find_loaded_script(const char *name)
 	return NULL;
 }
 
+bool is_campaign_intro_script_watch(const char *name)
+{
+	if (name == NULL) {
+		return false;
+	}
+	for (std::size_t index = 0;
+		index < sizeof(k_campaign_intro_script_watches) / sizeof(k_campaign_intro_script_watches[0]);
+		++index) {
+		if (std::strcmp(name, k_campaign_intro_script_watches[index]) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool is_campaign_intro_counter_watch(const char *name)
+{
+	if (name == NULL) {
+		return false;
+	}
+	for (std::size_t index = 0;
+		index < sizeof(k_campaign_intro_counter_watches) / sizeof(k_campaign_intro_counter_watches[0]);
+		++index) {
+		if (std::strcmp(name, k_campaign_intro_counter_watches[index]) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
 const char *script_for_intro_counter(const char *counter_name)
 {
+	if (std::strcmp(counter_name, "CINE_MoveTo06Delay") == 0) {
+		return "CINE_CameraMoveTo06";
+	}
 	if (std::strcmp(counter_name, "CINE_CameraCutTo04") == 0) {
 		return "CINE_CameraCutTo04";
 	}
@@ -1384,10 +1429,39 @@ const char *script_for_intro_counter(const char *counter_name)
 	if (std::strcmp(counter_name, "CINE_Pt2MoveTransportsDelay") == 0) {
 		return "CINE_MoveTransports";
 	}
-	if (std::strcmp(counter_name, "Give it back") == 0 ||
-		std::strcmp(counter_name, "CINE_ReturnToPlayerStartDelay") == 0 ||
-		std::strcmp(counter_name, "CINE_ReturnToPlayerStartDelay_2") == 0) {
-		return "ReturnToPlayerControl";
+	if (std::strcmp(counter_name, "CINE_BasePullOut01Delay") == 0) {
+		return "CINE_BasePanTo01";
+	}
+	if (std::strcmp(counter_name, "CINE_BackToRocket01Delay") == 0) {
+		return "CINE_BackToUSBase";
+	}
+	if (std::strcmp(counter_name, "CINE_BackToBaseDelay") == 0 ||
+		std::strcmp(counter_name, "CINE_ZoomInMoreOnBaseDelay") == 0) {
+		return "CINE_ZoomInMoreOnBase";
+	}
+	if (std::strcmp(counter_name, "CINE_RocketAirShot01Delay") == 0 ||
+		std::strcmp(counter_name, "CINE_BackToBaseYetAgainDelay") == 0) {
+		return "CINE_BackToBaseYetAgain & DeleteRocketAir01";
+	}
+	if (std::strcmp(counter_name, "CINE_ZoomInMoreOnBaseDelayAgain") == 0 ||
+		std::strcmp(counter_name, "CINE_RocketAirShot02Delay") == 0) {
+		return "CINE_ZoomInMoreOnBaseAgain";
+	}
+	if (std::strcmp(counter_name, "CINE_LastBaseShotDelay") == 0) {
+		return "CINE_LastBaseShot";
+	}
+	if (std::strcmp(counter_name, "CINE_BlowUp") == 0 ||
+		std::strcmp(counter_name, "CINE_FlashWhiteDelay") == 0) {
+		return "CINE_FlashWhite";
+	}
+	if (std::strcmp(counter_name, "CINE_ReturnToPlayerStartDelay") == 0) {
+		return "CINE_ReturnToPlayerLocation";
+	}
+	if (std::strcmp(counter_name, "CINE_ReturnToPlayerStartDelay_2") == 0) {
+		return "CINE_ReturnToPlayerLocation C";
+	}
+	if (std::strcmp(counter_name, "Give it back") == 0) {
+		return "Give Player The Game";
 	}
 	return "";
 }
@@ -1435,10 +1509,297 @@ void append_watched_script(std::string &json, const char *name)
 		json += ",\"oneShot\":";
 		json += script->isOneShot() ? "true" : "false";
 		json += ",\"frameToEvaluate\":" + std::to_string(script->getFrameToEvaluate());
+		json += ",\"details\":";
+		append_script_catalog_entry_json(json, script, -1, "", 2);
 	} else {
-		json += ",\"active\":null,\"oneShot\":null,\"frameToEvaluate\":null";
+		json += ",\"active\":null,\"oneShot\":null,\"frameToEvaluate\":null,"
+			"\"details\":null";
 	}
 	json += "}";
+}
+
+void append_campaign_intro_sequential_scripts(std::string &json)
+{
+	const Int sequential_count =
+		TheScriptEngine != NULL ? TheScriptEngine->debugGetSequentialScriptCount() : 0;
+	const Int sequential_limit = sequential_count < 24 ? sequential_count : 24;
+	json += ",\"sequentialScriptCount\":" + std::to_string(sequential_count);
+	json += ",\"sequentialScriptsTruncated\":";
+	json += sequential_count > sequential_limit ? "true" : "false";
+	json += ",\"sequentialScripts\":[";
+	bool first_entry = true;
+	for (Int index = 0; index < sequential_limit; ++index) {
+		const SequentialScript *sequential =
+			TheScriptEngine != NULL ? TheScriptEngine->debugGetSequentialScriptByIndex(index) : NULL;
+		if (sequential == NULL) {
+			continue;
+		}
+		if (!first_entry) {
+			json += ",";
+		}
+		first_entry = false;
+		Script *script = sequential->m_scriptToExecuteSequentially;
+		const std::string script_name = script != NULL ? script->getName().str() : "";
+		json += "{\"index\":" + std::to_string(index);
+		json += ",\"scriptReady\":";
+		json += script != NULL ? "true" : "false";
+		json += ",\"scriptName\":\"" + json_escape(script_name) + "\"";
+		json += ",\"watched\":";
+		json += is_campaign_intro_script_watch(script_name.c_str()) ? "true" : "false";
+		json += ",\"active\":";
+		json += script != NULL ? (script->isActive() ? "true" : "false") : "null";
+		json += ",\"frameToEvaluate\":";
+		json += script != NULL ? std::to_string(script->getFrameToEvaluate()) : "null";
+		json += ",\"objectId\":" +
+			std::to_string(static_cast<Int>(sequential->m_objectID));
+		json += ",\"hasTeam\":";
+		json += sequential->m_teamToExecOn != NULL ? "true" : "false";
+		json += ",\"currentInstruction\":" +
+			std::to_string(sequential->m_currentInstruction);
+		json += ",\"timesToLoop\":" + std::to_string(sequential->m_timesToLoop);
+		json += ",\"framesToWait\":" + std::to_string(sequential->m_framesToWait);
+		json += ",\"dontAdvanceInstruction\":";
+		json += sequential->m_dontAdvanceInstruction ? "true" : "false";
+		json += "}";
+	}
+	json += "]";
+}
+
+bool append_counter_reference_if_needed(
+	std::string &references_json,
+	bool &first_entry,
+	int &total_count,
+	int &included_count,
+	int include_limit,
+	Script *script,
+	Int side_index,
+	const char *group_name,
+	const char *source,
+	const char *item_internal_name,
+	int item_index,
+	int or_index,
+	int and_index,
+	const Parameter *parameter,
+	int parameter_index)
+{
+	if (parameter == NULL || !is_campaign_intro_counter_watch(parameter->getString().str())) {
+		return false;
+	}
+	++total_count;
+	if (included_count >= include_limit) {
+		return true;
+	}
+	if (!first_entry) {
+		references_json += ",";
+	}
+	first_entry = false;
+	++included_count;
+	references_json += "{\"sideIndex\":" + std::to_string(side_index);
+	references_json += ",\"groupName\":\"";
+	references_json += group_name != NULL ? json_escape(group_name) : "";
+	references_json += "\"";
+	references_json += ",\"scriptName\":\"" +
+		json_escape(script != NULL ? script->getName().str() : "") + "\"";
+	references_json += ",\"scriptActive\":";
+	references_json += script != NULL ? (script->isActive() ? "true" : "false") : "null";
+	references_json += ",\"oneShot\":";
+	references_json += script != NULL ? (script->isOneShot() ? "true" : "false") : "null";
+	references_json += ",\"frameToEvaluate\":";
+	references_json += script != NULL ? std::to_string(script->getFrameToEvaluate()) : "null";
+	references_json += ",\"source\":\"" + json_escape(source != NULL ? source : "") + "\"";
+	references_json += ",\"itemInternalName\":\"" +
+		json_escape(item_internal_name != NULL ? item_internal_name : "") + "\"";
+	references_json += ",\"itemIndex\":" + std::to_string(item_index);
+	references_json += ",\"orIndex\":" + std::to_string(or_index);
+	references_json += ",\"andIndex\":" + std::to_string(and_index);
+	references_json += ",\"parameterIndex\":" + std::to_string(parameter_index);
+	references_json += ",\"counter\":\"" +
+		json_escape(parameter->getString().str()) + "\"";
+	references_json += ",\"parameterInt\":" + std::to_string(parameter->getInt());
+	references_json += "}";
+	return true;
+}
+
+void append_campaign_intro_counter_action_references(
+	std::string &references_json,
+	bool &first_entry,
+	int &total_count,
+	int &included_count,
+	int include_limit,
+	Script *script,
+	Int side_index,
+	const char *group_name,
+	const char *source,
+	ScriptAction *first_action)
+{
+	int action_index = 0;
+	for (ScriptAction *action = first_action; action != NULL; action = action->getNext(), ++action_index) {
+		const ScriptAction::ScriptActionType type = action->getActionType();
+		const ActionTemplate *action_template =
+			TheScriptEngine != NULL ? TheScriptEngine->getActionTemplate(type) : NULL;
+		const std::string internal_name =
+			action_template != NULL ? action_template->m_internalName.str() : "";
+		const Int parameter_count = action->getNumParameters();
+		for (Int parameter_index = 0; parameter_index < parameter_count; ++parameter_index) {
+			append_counter_reference_if_needed(
+				references_json,
+				first_entry,
+				total_count,
+				included_count,
+				include_limit,
+				script,
+				side_index,
+				group_name,
+				source,
+				internal_name.c_str(),
+				action_index,
+				-1,
+				-1,
+				action->getParameter(parameter_index),
+				parameter_index);
+		}
+	}
+}
+
+void append_campaign_intro_counter_condition_references(
+	std::string &references_json,
+	bool &first_entry,
+	int &total_count,
+	int &included_count,
+	int include_limit,
+	Script *script,
+	Int side_index,
+	const char *group_name)
+{
+	int or_index = 0;
+	for (OrCondition *or_condition = script != NULL ? script->getOrCondition() : NULL;
+		or_condition != NULL;
+		or_condition = or_condition->getNextOrCondition(), ++or_index) {
+		int and_index = 0;
+		for (Condition *condition = or_condition->getFirstAndCondition();
+			condition != NULL;
+			condition = condition->getNext(), ++and_index) {
+			const Condition::ConditionType type = condition->getConditionType();
+			const ConditionTemplate *condition_template =
+				TheScriptEngine != NULL ? TheScriptEngine->getConditionTemplate(type) : NULL;
+			const std::string internal_name =
+				condition_template != NULL ? condition_template->m_internalName.str() : "";
+			const Int parameter_count = condition->getNumParameters();
+			for (Int parameter_index = 0; parameter_index < parameter_count; ++parameter_index) {
+				append_counter_reference_if_needed(
+					references_json,
+					first_entry,
+					total_count,
+					included_count,
+					include_limit,
+					script,
+					side_index,
+					group_name,
+					"conditions",
+					internal_name.c_str(),
+					-1,
+					or_index,
+					and_index,
+					condition->getParameter(parameter_index),
+					parameter_index);
+			}
+		}
+	}
+}
+
+void append_campaign_intro_counter_references_for_script(
+	std::string &references_json,
+	bool &first_entry,
+	int &total_count,
+	int &included_count,
+	int include_limit,
+	Script *script,
+	Int side_index,
+	const char *group_name)
+{
+	for (Script *current = script; current != NULL; current = current->getNext()) {
+		append_campaign_intro_counter_condition_references(
+			references_json,
+			first_entry,
+			total_count,
+			included_count,
+			include_limit,
+			current,
+			side_index,
+			group_name);
+		append_campaign_intro_counter_action_references(
+			references_json,
+			first_entry,
+			total_count,
+			included_count,
+			include_limit,
+			current,
+			side_index,
+			group_name,
+			"actions",
+			current->getAction());
+		append_campaign_intro_counter_action_references(
+			references_json,
+			first_entry,
+			total_count,
+			included_count,
+			include_limit,
+			current,
+			side_index,
+			group_name,
+			"falseActions",
+			current->getFalseAction());
+	}
+}
+
+void append_campaign_intro_counter_references(std::string &json)
+{
+	const int include_limit = 128;
+	int total_count = 0;
+	int included_count = 0;
+	bool first_entry = true;
+	std::string references_json;
+
+	if (TheSidesList != NULL) {
+		const Int side_count = TheSidesList->getNumSides();
+		for (Int side_index = 0; side_index < side_count; ++side_index) {
+			SidesInfo *side = TheSidesList->getSideInfo(side_index);
+			ScriptList *script_list = side != NULL ? side->getScriptList() : NULL;
+			if (script_list == NULL) {
+				continue;
+			}
+			append_campaign_intro_counter_references_for_script(
+				references_json,
+				first_entry,
+				total_count,
+				included_count,
+				include_limit,
+				script_list->getScript(),
+				side_index,
+				NULL);
+			for (ScriptGroup *group = script_list->getScriptGroup();
+				group != NULL;
+				group = group->getNext()) {
+				const std::string group_name = group->getName().str();
+				append_campaign_intro_counter_references_for_script(
+					references_json,
+					first_entry,
+					total_count,
+					included_count,
+					include_limit,
+					group->getScript(),
+					side_index,
+					group_name.c_str());
+			}
+		}
+	}
+
+	json += ",\"counterReferenceCount\":" + std::to_string(total_count);
+	json += ",\"counterReferencesTruncated\":";
+	json += total_count > included_count ? "true" : "false";
+	json += ",\"counterReferences\":[";
+	json += references_json;
+	json += "]";
 }
 
 void append_minimal_control_bar_state(std::string &json)
@@ -1495,7 +1856,10 @@ void append_campaign_intro_gate_summary(std::string &json)
 		}
 		append_watched_script(json, k_campaign_intro_script_watches[index]);
 	}
-	json += "],\"releaseChain\":{\"includedCount\":0,\"truncated\":false,"
+	json += "]";
+	append_campaign_intro_sequential_scripts(json);
+	append_campaign_intro_counter_references(json);
+	json += ",\"releaseChain\":{\"includedCount\":0,\"truncated\":false,"
 		"\"activeTimerWaits\":[";
 	bool first_wait = true;
 	for (std::size_t index = 0;

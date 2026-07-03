@@ -125,11 +125,30 @@ residue and the next frontier.
       `realEngineFrameSummary` RPC now drives the same real update loop while
       exporting only the state needed by long player-control gates; a 120-frame
       lightweight browser run matches the early intro countdown with zero
-      missing texture applies and keeps compact JSON output. Remaining: retire
-      superseded focused menu smokes, continue through those phase-two timers,
-      keep long rendered chunks observable with smaller chunks or RPC
-      timeouts/progress, and continue from the scripted intro toward a visibly
-      correct, interactable in-game scene.
+      missing texture applies and keeps compact JSON output. A Mac Chrome/Metal
+      2,400-frame lightweight run now reaches logic frame 2,286 with no
+      exception and zero missing texture applies, then stalls at the final
+      player-control gate: `Give Player The Game` remains active on
+      `TIMER_EXPIRED("Give it back")`, while the `Give it back` counter is
+      allocated at value `0` with `isCountdownTimer=false`, so the original
+      `evaluateTimer()` path must return false. Runtime counter references show
+      the only loaded producer is unsuffixed `Start_Mission_Intro`
+      (`SET_MILLISECOND_TIMER("Give it back")`), while the late chain enabled
+      `Start_Mission_Intro SS1`, whose actions do not set that timer.
+      Remaining: retire superseded focused menu smokes, resolve the
+      `Start_Mission_Intro` / `Start_Mission_Intro SS1` activation mismatch
+      without bypassing original script semantics, keep long rendered chunks
+      observable with smaller chunks or RPC timeouts/progress, and continue from
+      the scripted intro toward a visibly correct, interactable in-game scene.
+- [ ] Resolve the MD_USA01 final player-control timer ownership without
+      forcing flags or counters. Current runtime evidence points at the final
+      release script waiting on `Give it back` even though the only loaded
+      timer producer is `Start_Mission_Intro`, not the suffixed
+      `Start_Mission_Intro SS1` that the late cinematic chain actually enables.
+      Investigate whether this is original map script flow, a parsed script
+      name/state issue, or a missing activation earlier in the chain; add
+      activation/timer history diagnostics if the loaded-script snapshot is not
+      enough.
 - [ ] **Black terrain squares "trail" the camera during movement** (observed
       by the project owner playing interactively — motion-correlated, so
       static screenshots/counters cannot see it; "zero missing texture

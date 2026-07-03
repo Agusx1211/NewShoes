@@ -2742,6 +2742,29 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       two 60-frame chunks. A larger 300-frame chunk was intentionally aborted
       after staying CPU-active too long without a harness checkpoint; future
       deep rendered runs should use smaller chunks or add RPC progress/timeouts.
+- [x] Trace the late MD_USA01 player-control timer owner from the real loaded
+      script graph. The startup vertical can now launch a caller-selected
+      browser (`STARTUP_VERTICAL_BROWSER_EXECUTABLE` / `CHROME_PATH` plus
+      `STARTUP_VERTICAL_BROWSER_ARGS`) and write screenshots to
+      `STARTUP_VERTICAL_SCREENSHOT_DIR`, which let the Mac GPU verifier run the
+      same harness under Chrome/Metal. The real-frame JSON now includes full
+      details for watched intro scripts, sequential-script queue snapshots, and
+      a passive counter-reference scan over loaded original scripts. Verified
+      with `node --check WebAssembly/harness/startup_vertical_smoke.mjs`,
+      `node --check WebAssembly/harness/play.mjs`, `node --check
+      WebAssembly/harness/static-server.mjs`, `npm --prefix WebAssembly run
+      build:port`, `git diff --check`, and a 2,400-frame Mac Chrome/Metal
+      run using `STARTUP_VERTICAL_REAL_INIT_ONLY=1`,
+      `STARTUP_VERTICAL_POST_CAMPAIGN_UNTIL_PLAYER_CONTROL=1`,
+      `STARTUP_VERTICAL_POST_CAMPAIGN_COMPACT_CHUNKS=1`,
+      `STARTUP_VERTICAL_POST_CAMPAIGN_LIGHTWEIGHT=1`, and 120-frame chunks.
+      The run reached logic frame 2,286 with no exception and zero missing
+      texture applies, but did not reach player control: `Give Player The Game`
+      is active and waits on `TIMER_EXPIRED("Give it back")`; the `Give it
+      back` counter exists at value `0` with `isCountdownTimer=false`; and the
+      only loaded producer reference is unsuffixed `Start_Mission_Intro`
+      setting that timer, while the late return chain enabled
+      `Start_Mission_Intro SS1`, whose actions do not set it.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what
