@@ -192,13 +192,26 @@ residue and the next frontier.
       terrain window** so `updateCenter` early-returns ("no need to center").
       The full boot uses a **large map** where `updateCenter` re-origins the
       window (`HeightMap.cpp:1806-1902`, ring-buffer `m_originX/Y`).
+      **Supporting data point:** forcing `m_drawEntireTerrain=TRUE` (whole map,
+      no windowed ring-buffer scroll — set post-init so it applies to the
+      later-created MD_USA01 terrain, not the shell map) made SOME textured
+      terrain fragments render on MD_USA01 that were previously fully black
+      (Mac GPU, logic frame 200 intro). Partial, not a clean fix (the frame is
+      a dark cinematic shot and drawing the whole map every frame is far too
+      slow to ship), but it corroborates that the windowed scroll is part of
+      the cause. `getDisplayHeight` (`WorldHeightMap.h:247`) is an **unchecked**
+      `m_data[x+m_drawOriginX + m_width*(y+m_drawOriginY)]` — OOB reads return
+      garbage heights → degenerate/clipped triangles.
       **Next lead:** the black terrain triangles are degenerate/collapsed —
       instrument `updateVB` to dump vertex positions for a black-region tile vs
       a drawn tile; suspect getDisplayHeight/`getXWithOrigin` bounds or the
       ring-buffer origin math producing bad positions for cells at/beyond the
       window/map edge in the large-map scroll case (browser-specific or a
       pre-existing edge bug). Fast repro: `WebAssembly/harness/shellmap_real_
-      init_gate.mjs` style boot + N `realEngineFrame` chunks + screenshots.
+      init_gate.mjs` style boot + N `realEngineFrame` chunks + screenshots (see
+      the temp `_diag_shell_terrain.mjs` for the grid-sampling pattern). A
+      clean (non-cinematic) judgment needs a player-control frame, which is a
+      ~20-min boot — or disable the intro cinematic for terrain iteration.
 - [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch
       workaround in `GameEngine::update()` with the real
       `W3DGameLogic`/`SubsystemInterface::UPDATE` wasm vtable ownership fix
