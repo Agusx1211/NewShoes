@@ -115,6 +115,18 @@ static void drawFramerateBar(void);
 //#pragma MESSAGE("************************************** WARNING, optimization disabled for debugging purposes")
 #endif
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_update_target(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_W3D_DISPLAY_STEP(name) \
+	do { \
+		if (cnc_port_note_engine_update_target) { \
+			cnc_port_note_engine_update_target(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_W3D_DISPLAY_STEP(name) do { } while (0)
+#endif
+
 // DEFINE AND ENUMS ///////////////////////////////////////////////////////////
 #define W3D_DISPLAY_DEFAULT_BIT_DEPTH 32
 
@@ -1663,6 +1675,7 @@ Int W3DDisplay::getLastFrameDrawCalls()
 //DECLARE_PERF_TIMER(W3DDisplay_draw)
 void W3DDisplay::draw( void )
 {
+	CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.entry");
 	//USE_PERF_TIMER(W3DDisplay_draw)
 	static UnsignedInt syncTime = 0;
 
@@ -1671,8 +1684,9 @@ void W3DDisplay::draw( void )
 		return;
 	}
 
-
+	CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.fpsBefore");
 	updateAverageFPS();
+	CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.fpsAfter");
 	if (TheGlobalData->m_enableDynamicLOD && TheGameLogic->getShowDynamicLOD())
 	{
 		DynamicGameLODLevel lod=TheGameLODManager->findDynamicLODLevel(m_averageFPS);
@@ -1685,7 +1699,9 @@ void W3DDisplay::draw( void )
 
 	if (TheGlobalData->m_terrainLOD == TERRAIN_LOD_AUTOMATIC && TheTerrainRenderObject) 
 	{
+		CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.calculateTerrainLOD.before");
 		calculateTerrainLOD();
+		CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.calculateTerrainLOD.after");
 	}
 #ifdef EXTENDED_STATS
 AGAIN:
@@ -1754,6 +1770,7 @@ AGAIN:
 	Bool freezeTime = TheTacticalView->isTimeFrozen() && !TheTacticalView->isCameraMovementFinished();
 	freezeTime = freezeTime || TheScriptEngine->isTimeFrozenDebug() || TheScriptEngine->isTimeFrozenScript();
 	freezeTime = freezeTime || TheGameLogic->isGamePaused();
+	CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.freezeState.after");
 
 	// hack to let client spin fast in network games but still do effects at the same pace. -MDC
 	static UnsignedInt lastFrame = ~0;
@@ -1762,6 +1779,7 @@ AGAIN:
 
 	/// @todo: I'm assuming the first view is our main 3D view.
 	W3DView *primaryW3DView=(W3DView *)getFirstView();
+	CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.primaryView.after");
 	if (!freezeTime && TheScriptEngine->isTimeFast())
 	{
 		primaryW3DView->updateCameraMovements();  // Update camera motion effects.
@@ -1770,6 +1788,7 @@ AGAIN:
 	}
 
 	Debug_Statistics::Begin_Statistics();	//reset all counters (polygons, vertices, etc) before drawing
+	CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.beginStats.after");
 
 	//update state of all the terrain tracks (fade, remove, etc.)
 	/// @todo: Is there a better place to put per-frame updates like this?
@@ -1777,22 +1796,28 @@ AGAIN:
 	if(TheGlobalData->m_loadScreenRender != TRUE)
 	{
 
-		if (TheTerrainTracksRenderObjClassSystem)
-			TheTerrainTracksRenderObjClassSystem->update();
-
-		//Shroud data is needed to render all other views, so handle this first.
-		if (TheTerrainRenderObject)
-		{	
-			//update the shroud surface here since it may be needed by reflections
-			if (TheTerrainRenderObject->getMap())	//make sure a valid map is loaded into terrain.
+			if (TheTerrainTracksRenderObjClassSystem)
 			{
-				if (TheTerrainRenderObject->getShroud())
+				CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.terrainTracks.before");
+				TheTerrainTracksRenderObjClassSystem->update();
+				CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.terrainTracks.after");
+			}
+
+			//Shroud data is needed to render all other views, so handle this first.
+			if (TheTerrainRenderObject)
+			{
+				//update the shroud surface here since it may be needed by reflections
+				if (TheTerrainRenderObject->getMap())	//make sure a valid map is loaded into terrain.
 				{
-					TheTerrainRenderObject->getShroud()->render(primaryW3DView->get3DCamera());
+					if (TheTerrainRenderObject->getShroud())
+					{
+						CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.shroudRender.before");
+						TheTerrainRenderObject->getShroud()->render(primaryW3DView->get3DCamera());
+						CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.shroudRender.after");
+					}
 				}
 			}
 		}
-	}
 
 	if (!freezeTime) 
 	{
@@ -1802,7 +1827,9 @@ AGAIN:
 		// allow W3D to update its internals
 		//	WW3D::Sync( GetTickCount() );
 	}
-	WW3D::Sync( syncTime );
+		CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.ww3dSync.before");
+		WW3D::Sync( syncTime );
+		CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.ww3dSync.after");
 
 	// Fast & Frozen time limits the time to 33 fps.
 	Int minTime = 30;
@@ -1841,12 +1868,16 @@ AGAIN:
 		}
 
 		// update all views of the world - recomputes data which will affect drawing
-		if (DX8Wrapper::_Get_D3D_Device8() && (DX8Wrapper::_Get_D3D_Device8()->TestCooperativeLevel()) == D3D_OK)
-		{	//Checking if we have the device before updating views because the heightmap crashes otherwise while
-			//trying to refresh the visible terrain geometry.
-//			if(TheGlobalData->m_loadScreenRender != TRUE)
-				updateViews();
-     		TheParticleSystemManager->update();//LORENZEN AND WILCZYNSKI MOVED THIS FROM ITS NATIVE POSITION, ABOVE
+			if (DX8Wrapper::_Get_D3D_Device8() && (DX8Wrapper::_Get_D3D_Device8()->TestCooperativeLevel()) == D3D_OK)
+			{	//Checking if we have the device before updating views because the heightmap crashes otherwise while
+				//trying to refresh the visible terrain geometry.
+	//			if(TheGlobalData->m_loadScreenRender != TRUE)
+					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.updateViews.before");
+					updateViews();
+					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.updateViews.after");
+					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.particles.before");
+					TheParticleSystemManager->update();//LORENZEN AND WILCZYNSKI MOVED THIS FROM ITS NATIVE POSITION, ABOVE
+					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.particles.after");
                                            //FOR THE PURPOSE OF LETTING THE PARTICLE SYSTEM LOOK UP THE RENDER OBJECT"S
                                            //TRANSFORM MATRIX, WHILE IT IS STILL VALID (HAVING DONE ITS CLIENT TRANSFORMS
                                            //BUT NOT YET RESETTING TOT HE LOGICAL TRANSFORM)
@@ -1856,16 +1887,25 @@ AGAIN:
                                            //-LORENZEN
 
 
-			if (TheWaterRenderObj && TheGlobalData->m_waterType == 2)
-				TheWaterRenderObj->updateRenderTargetTextures(primaryW3DView->get3DCamera());	//do a render into each texture
+				if (TheWaterRenderObj && TheGlobalData->m_waterType == 2)
+				{
+					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.waterRTT.before");
+					TheWaterRenderObj->updateRenderTargetTextures(primaryW3DView->get3DCamera());	//do a render into each texture
+					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.waterRTT.after");
+				}
 
-			//Can't render into textures while rendering to screen so these textures need to be updated
-			//before we enter main rendering loop.
-			if (TheW3DProjectedShadowManager)
-				TheW3DProjectedShadowManager->updateRenderTargetTextures();
-		}
+				//Can't render into textures while rendering to screen so these textures need to be updated
+				//before we enter main rendering loop.
+				if (TheW3DProjectedShadowManager)
+				{
+					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.projectedShadowRTT.before");
+					TheW3DProjectedShadowManager->updateRenderTargetTextures();
+					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.projectedShadowRTT.after");
+				}
+			}
 
-		Debug_Statistics::End_Statistics();	//record number of polygons rendered in RenderTargetTextures.
+			Debug_Statistics::End_Statistics();	//record number of polygons rendered in RenderTargetTextures.
+			CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.endRTTStats.after");
 
 		//Store number of polygons rendered in renderTargetTextures.
 		Int numRenderTargetPolygons=Debug_Statistics::Get_DX8_Polygons();
@@ -1878,17 +1918,19 @@ AGAIN:
 	    if ( (TheGameLogic->getFrame() % 30 == 1) || ( ! (!TheGameLogic->isGamePaused() && TheGlobalData->m_TiVOFastMode && TheGameLogic->isInReplayGame())) )
     #endif
 		{
-			//USE_PERF_TIMER(BigAssRenderLoop)
-			static Bool couldRender = true;
-			if ((TheGlobalData->m_breakTheMovie == FALSE) && (TheGlobalData->m_disableRender == false) && WW3D::Begin_Render( true, true, Vector3( 0.0f, 0.0f, 0.0f ), TheWaterTransparency->m_minWaterOpacity ) == WW3D_ERROR_OK)		
-			{
+				//USE_PERF_TIMER(BigAssRenderLoop)
+				static Bool couldRender = true;
+				CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.beginRender.before");
+				if ((TheGlobalData->m_breakTheMovie == FALSE) && (TheGlobalData->m_disableRender == false) && WW3D::Begin_Render( true, true, Vector3( 0.0f, 0.0f, 0.0f ), TheWaterTransparency->m_minWaterOpacity ) == WW3D_ERROR_OK)
+				{
+					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.beginRender.after");
 				
 				if(TheGlobalData->m_loadScreenRender == TRUE)
 				{	
 					TheInGameUI->draw();
 					if( TheMouse )
 						TheMouse->draw();	//keep applying the current cursor style so it remains hidden if needed.
-					WW3D::End_Render();	
+					WW3D::End_Render();
 					continue;
 				}
 				couldRender = true;
@@ -1896,22 +1938,32 @@ AGAIN:
 				if (numRenderTargetPolygons || numRenderTargetVertices)
 					Debug_Statistics::Record_DX8_Polys_And_Vertices(numRenderTargetPolygons,numRenderTargetVertices,ShaderClass::_PresetOpaqueShader);
 
-				// draw all views of the world
-				drawViews();
+					// draw all views of the world
+					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.drawViews.before");
+					drawViews();
+					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.drawViews.after");
 
-				// draw the user interface
-				TheInGameUI->DRAW();
+					// draw the user interface
+					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.inGameUI.before");
+					TheInGameUI->DRAW();
+					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.inGameUI.after");
 
 				// end of video example code
 
-				// draw the mouse
-				if( TheMouse )
-					TheMouse->DRAW();
+					// draw the mouse
+					if( TheMouse )
+					{
+						CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.mouse.before");
+						TheMouse->DRAW();
+						CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.mouse.after");
+					}
 
-				if ( m_videoStream && m_videoBuffer )
-				{
-					drawVideoBuffer( m_videoBuffer, 0, 0, getWidth(), getHeight() );
-				}
+					if ( m_videoStream && m_videoBuffer )
+					{
+						CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.videoBuffer.before");
+						drawVideoBuffer( m_videoBuffer, 0, 0, getWidth(), getHeight() );
+						CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.videoBuffer.after");
+					}
 				if( m_copyrightDisplayString )
 				{
 					Int x, y, dX, dY;
@@ -1977,10 +2029,12 @@ AGAIN:
 				TheGraphDraw->render();
 				TheGraphDraw->clear();
 #endif
-				// render is all done!
-				WW3D::End_Render();	
-			}
-			else
+					// render is all done!
+					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.endRender.before");
+					WW3D::End_Render();
+					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.endRender.after");
+				}
+				else
 			{
 				if (couldRender)
 				{
@@ -1995,7 +2049,8 @@ AGAIN:
 			freezeTime = false; // We're frozen for debug or for pause, and need to continue out of the loop.
 		}
 
-	} while (freezeTime && !TheTacticalView->isCameraMovementFinished());
+		} while (freezeTime && !TheTacticalView->isCameraMovementFinished());
+	CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.complete");
 
 #ifdef EXTENDED_STATS
 	if (DX8Wrapper::stats.m_disableOverhead) {

@@ -14,7 +14,16 @@ const audioBootScreenshot = resolve(screenshotDir, "startup-vertical-audio-owned
 const realInitScreenshot = resolve(screenshotDir, "startup-vertical-real-init.png");
 const realInitMenuClickScreenshot = resolve(screenshotDir, "startup-vertical-real-init-menu-click.png");
 const realInitCampaignStartScreenshot = resolve(screenshotDir, "startup-vertical-real-init-campaign-start.png");
+const realInitPostCampaignScreenshot = resolve(screenshotDir, "startup-vertical-real-init-post-campaign.png");
 const debugStartupVertical = process.env.STARTUP_VERTICAL_DEBUG === "1";
+const postCampaignFrameCount = Number(process.env.STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES ?? 0);
+const postCampaignBreakpoint = process.env.STARTUP_VERTICAL_POST_CAMPAIGN_BREAKPOINT ?? "";
+const postCampaignPreBreakpointFrameCount =
+  Number(process.env.STARTUP_VERTICAL_POST_CAMPAIGN_PRE_BREAKPOINT_FRAMES ?? 0);
+const postCampaignEngineBreakpoint =
+  process.env.STARTUP_VERTICAL_POST_CAMPAIGN_ENGINE_BREAKPOINT ?? "";
+const postCampaignAfterGameLogicBreakpoint =
+  process.env.STARTUP_VERTICAL_POST_CAMPAIGN_AFTER_GAME_LOGIC_BREAKPOINT ?? "";
 
 const gameModes = Object.freeze({
   singlePlayer: 0,
@@ -313,6 +322,7 @@ const realInitArchiveSpecs = [
   { name: "ZZBase_English.big", sourceName: "English.big" },
   { name: "ZZBase_Window.big", sourceName: "Window.big" },
   { name: "ZZBase_Terrain.big", sourceName: "Terrain.big" },
+  { name: "ZZBase_W3D.big", sourceName: "W3D.big" },
   { name: "ZZBase_Music.big", sourceName: "base-generals/Music.big" },
   { name: "Gensec.big" },
 ];
@@ -411,6 +421,7 @@ function assertRealEngineFrames(realFrames) {
     abortMessage: realFrames?.abortMessage,
     abortStack: realFrames?.abortStack,
     lastUpdateTarget: realFrames?.lastUpdateTarget,
+    lastGameLogicStep: realFrames?.lastGameLogicStep,
     frame: realFrames?.frame,
   });
   const frame = realFrames.frame;
@@ -464,6 +475,29 @@ async function runRealEngineFrames(page, frames) {
   const result = await page.evaluate((frameCount) =>
     window.CnCPort.rpc("realEngineFrame", { frames: frameCount }), frames);
   assertRealEngineFrames(result);
+  return result;
+}
+
+async function runRealEngineFramesUnchecked(page, frames) {
+  return page.evaluate((frameCount) =>
+    window.CnCPort.rpc("realEngineFrame", { frames: frameCount }), frames);
+}
+
+async function setRealEngineUpdateBreakpoint(page, target) {
+  const result = await page.evaluate((breakpointTarget) =>
+    window.CnCPort.rpc("realEngineUpdateBreakpoint", { target: breakpointTarget }), target);
+  expect(result?.ok === true,
+    "real engine update breakpoint could not be set",
+    result);
+  return result;
+}
+
+async function setRealEngineGameLogicBreakpoint(page, step) {
+  const result = await page.evaluate((breakpointStep) =>
+    window.CnCPort.rpc("realEngineGameLogicBreakpoint", { step: breakpointStep }), step);
+  expect(result?.ok === true,
+    "real engine GameLogic breakpoint could not be set",
+    result);
   return result;
 }
 
@@ -742,10 +776,12 @@ async function clickRealEngineMenuButton(page, button, hitProbe, settleFrames = 
 
   await postRealEngineMouseMessage(page, win32MouseMessages.leftButtonUp, point);
   const up = await waitForRealMenuButtonReleased(page, expectedTarget);
-  const finalFrame = await waitForRealTransitionIdle(
-    page,
-    `real menu ${targetName} click`,
-    settleFrames); // lets original menu transitions settle after button-up.
+  const finalFrame = settleFrames == null
+    ? up.frame
+    : await waitForRealTransitionIdle(
+      page,
+      `real menu ${targetName} click`,
+      settleFrames); // lets original menu transitions settle after button-up.
   return { point, expectedTarget, down, up, finalFrame };
 }
 
@@ -1574,11 +1610,21 @@ try {
     realInitPage,
     realCampaignClickTarget.button,
     realCampaignClickTarget.hitProbe,
-    240);
-  const realCampaignStart = await waitForRealCampaignGameStart(
-    realInitPage,
-    campaignBaselineDebug,
-    "real ButtonEasy campaign start");
+    null);
+  if (postCampaignBreakpoint.length > 0) {
+    await setRealEngineGameLogicBreakpoint(realInitPage, postCampaignBreakpoint);
+  }
+  const realCampaignStart = postCampaignBreakpoint.length > 0
+    ? {
+      frame: await runRealEngineFramesUnchecked(
+        realInitPage,
+        postCampaignFrameCount > 0 ? postCampaignFrameCount : 1),
+      attempts: [],
+    }
+    : await waitForRealCampaignGameStart(
+      realInitPage,
+      campaignBaselineDebug,
+      "real ButtonEasy campaign start");
   await realInitPage.screenshot({ path: realInitCampaignStartScreenshot });
   const realCampaignStartCanvasProbe = await sampleViewportPixels(realInitPage, [
     { name: "upperLeft", x: 64, y: 64 },
@@ -1586,6 +1632,47 @@ try {
     { name: "buttonArea", x: 644, y: 134 },
     { name: "fadeArea", x: 1030, y: 190 },
   ]);
+  const hasPostCampaignAfterBreakpoint =
+    postCampaignEngineBreakpoint.length > 0 || postCampaignAfterGameLogicBreakpoint.length > 0;
+  const realPostCampaignPreBreakpointFrames =
+    postCampaignBreakpoint.length === 0
+      && hasPostCampaignAfterBreakpoint
+      && postCampaignPreBreakpointFrameCount > 0
+      ? await runRealEngineFrames(realInitPage, postCampaignPreBreakpointFrameCount)
+      : null;
+  if (postCampaignBreakpoint.length === 0 && postCampaignEngineBreakpoint.length > 0) {
+    await setRealEngineUpdateBreakpoint(realInitPage, postCampaignEngineBreakpoint);
+  }
+  if (postCampaignBreakpoint.length === 0 && postCampaignAfterGameLogicBreakpoint.length > 0) {
+    await setRealEngineGameLogicBreakpoint(realInitPage, postCampaignAfterGameLogicBreakpoint);
+  }
+  const realPostCampaignDiagnosticFrames =
+    postCampaignBreakpoint.length === 0 && hasPostCampaignAfterBreakpoint
+      ? await runRealEngineFramesUnchecked(
+        realInitPage,
+        postCampaignFrameCount > 0 ? postCampaignFrameCount : 1)
+      : null;
+  const realPostCampaignFrames = postCampaignBreakpoint.length === 0
+    && !hasPostCampaignAfterBreakpoint
+    && postCampaignFrameCount > 0
+    ? await runRealEngineFrames(realInitPage, postCampaignFrameCount)
+    : null;
+  const shouldCapturePostCampaign =
+    realPostCampaignFrames !== null || realPostCampaignDiagnosticFrames !== null;
+  const realPostCampaignScreenshotPath = shouldCapturePostCampaign
+    ? realInitPostCampaignScreenshot
+    : null;
+  if (shouldCapturePostCampaign) {
+    await realInitPage.screenshot({ path: realInitPostCampaignScreenshot });
+  }
+  const realPostCampaignCanvasProbe = shouldCapturePostCampaign
+    ? await sampleViewportPixels(realInitPage, [
+      { name: "upperLeft", x: 64, y: 64 },
+      { name: "center", x: 640, y: 360 },
+      { name: "terrainArea", x: 640, y: 500 },
+      { name: "hudArea", x: 86, y: 682 },
+    ])
+    : null;
 
   const audioFrontier =
     audioBootResult.state.originalEngineStartup.deviceFactoryFrontier;
@@ -1657,6 +1744,7 @@ try {
       },
       campaignStart: {
         framesCompleted: realCampaignStart.frame.frame?.framesCompleted,
+        frameResult: realCampaignStart.frame,
         point: realCampaignClick.point,
         hitProbe: realCampaignClickTarget.hitProbe,
         target: realCampaignClick.expectedTarget,
@@ -1673,6 +1761,11 @@ try {
         canvasProbe: realCampaignStartCanvasProbe,
         screenshot: realInitCampaignStartScreenshot,
       },
+      postCampaignFrames: realPostCampaignFrames,
+      postCampaignPreBreakpointFrames: realPostCampaignPreBreakpointFrames,
+      postCampaignDiagnosticFrames: realPostCampaignDiagnosticFrames,
+      postCampaignCanvasProbe: realPostCampaignCanvasProbe,
+      postCampaignScreenshot: realPostCampaignScreenshotPath,
       screenshot: realInitScreenshot,
     },
   }));

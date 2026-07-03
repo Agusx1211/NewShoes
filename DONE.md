@@ -2400,6 +2400,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       ownership fix). Verified with
       `npm --prefix WebAssembly run test:startup-vertical`, including
       screenshot `startup-vertical-real-init-campaign-start.png`.
+- [x] Advance the real `ButtonEasy` campaign path through first loaded-map
+      rendering frames. Added real-frame breakpoint telemetry across original
+      `GameLogic`, `GameClient`, `W3DDisplay`, `W3DView`, `RTS3DScene`,
+      WW3D static-sort lists, and `W3DWater` so the harness can stop on the
+      next real render frontier without adding probe executables. The real
+      path now dispatches `MSG_NEW_GAME`, runs `prepareNewGame`, completes the
+      deferred `startNewGame(FALSE)` load for
+      `Maps\MD_USA01\MD_USA01.map`, reaches the first loaded-map render frame,
+      and fixes the previous frame-179 browser crash in
+      `RTS3DScene::Flush` / static-sort `W3DWater` by mounting base
+      `W3D.big` as `ZZBase_W3D.big` so the original `new_skybox.W3D` asset is
+      available. The startup vertical can now request post-campaign frames and
+      captures a post-campaign screenshot plus canvas samples. Verified with
+      `npm --prefix WebAssembly run build:startup-vertical`,
+      `STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=60 node WebAssembly/harness/startup_vertical_smoke.mjs`
+      (post frame 237, no exception), `node --check
+      WebAssembly/harness/startup_vertical_smoke.mjs`, `node --check
+      WebAssembly/tools/run_startup_vertical_smoke.mjs`, and
+      `git diff --check`; screenshot
+      `startup-vertical-real-init-post-campaign.png`.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what

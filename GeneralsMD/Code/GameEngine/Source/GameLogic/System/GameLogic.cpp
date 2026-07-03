@@ -112,6 +112,18 @@
 
 #include <rts/profile.h>
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_game_logic_step(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_GAME_LOGIC_STEP(name) \
+	do { \
+		if (cnc_port_note_game_logic_step) { \
+			cnc_port_note_game_logic_step(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_GAME_LOGIC_STEP(name) do { } while (0)
+#endif
+
 DECLARE_PERF_TIMER(SleepyMaintenance)
 
 #include "Common/UnitTimings.h" //Contains the DO_UNIT_TIMINGS define jba.		 
@@ -1104,6 +1116,7 @@ void GameLogic::deleteLoadScreen( void )
 // ------------------------------------------------------------------------------------------------
 void GameLogic::startNewGame( Bool loadingSaveGame )
 {
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.entry");
 
 	#ifdef DUMP_PERF_STATS
 	__int64 startTime64;
@@ -1145,17 +1158,20 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 					m_background->deleteInstance();
 					m_background = NULL;
 				}
-				m_loadScreen = getLoadScreen( loadingSaveGame );
-				if(m_loadScreen)
-				{
-					TheWritableGlobalData->m_loadScreenRender = TRUE;	///< mark it so only a few select things are rendered during load
-					m_loadScreen->init(NULL);
+					CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.firstCall.loadScreen.before");
+					m_loadScreen = getLoadScreen( loadingSaveGame );
+					if(m_loadScreen)
+					{
+						TheWritableGlobalData->m_loadScreenRender = TRUE;	///< mark it so only a few select things are rendered during load
+						m_loadScreen->init(NULL);
+					}
+					CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.firstCall.loadScreen.after");
+
 				}
 
-			}
-
-			m_startNewGame = TRUE;
-			return;
+				m_startNewGame = TRUE;
+				CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.firstCall.defer");
+				return;
 
 		}  
 
@@ -1275,7 +1291,9 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 		m_background->deleteInstance();
 		m_background = NULL;
 	}
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.setFPMode.before");
 	setFPMode();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.setFPMode.after");
 	if(TheCampaignManager)
 		TheCampaignManager->SetVictorious(FALSE);
 	m_startNewGame = FALSE;
@@ -1288,10 +1306,14 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	m_frame = 0;
 
 	// before loading the map, load the map.ini file in the same directory.
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.loadMapINI.before");
 	loadMapINI( TheGlobalData->m_mapName );
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.loadMapINI.after");
 
 	// load a map
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.terrainLoad.before");
 	TheTerrainLogic->loadMap( TheGlobalData->m_mapName, false );
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.terrainLoad.after");
 	// anytime the world's size changes, must reset the partition mgr
 	//ThePartitionManager->init();
 
@@ -1307,6 +1329,7 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	#endif
 
 	Int progressCount = LOAD_PROGRESS_SIDE_POPULATION;
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.sidePopulation.before");
 	if (game)
 	{
 		 
@@ -1454,6 +1477,7 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 			updateLoadProgress(progressCount + i);
 		}		
 	}
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.sidePopulation.after");
 	//if(m_gameMode != GAME_REPLAY)
 	//{
 	
@@ -1482,20 +1506,25 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 		d.setBool(TheKey_teamIsSingleton, true);
 		TheSidesList->addTeam(&d);
 	//}
-	TheSidesList->validateSides();		
+	TheSidesList->validateSides();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.validateSides.after");
 
 	// update the loadscreen 
 	updateLoadProgress(LOAD_PROGRESS_POST_SIDE_LIST_INIT);
 
 	// update the player list to match the new map.
 	TheTeamFactory->reset();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.playerListNewGame.before");
 	ThePlayerList->newGame();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.playerListNewGame.after");
 	
 	// update the loadscreen 
 	updateLoadProgress(LOAD_PROGRESS_POST_PLAYER_LIST_RESET);
 
 	// Tell the script engine that a newe set of scripts is loaded.
-	TheScriptEngine->newMap();
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.scriptEngineNewMap.before");
+		TheScriptEngine->newMap();
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.scriptEngineNewMap.after");
 
 	// update the loadscreen 
 	updateLoadProgress(LOAD_PROGRESS_POST_SCRIPT_ENGINE_NEW_MAP);
@@ -1622,7 +1651,9 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	updateLoadProgress(LOAD_PROGRESS_POST_VICTORY_CONDITION_SETUP);
 
 	// set the radar as on a new map
-	TheRadar->newMap( TheTerrainLogic );
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.radarNewMap.before");
+		TheRadar->newMap( TheTerrainLogic );
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.radarNewMap.after");
 	TheInGameUI->setClientQuiet( FALSE ); // okay to start beeping and stuff
 
 	// Tell the multiplayer victory condition singleton that the players are created
@@ -1640,17 +1671,23 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	TheGameLogic->setHeight( extent.hi.y - extent.lo.y );
 
 	// anytime the world's size changes, must reset the partition mgr
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.partition.before");
 	ThePartitionManager->init();
 	ThePartitionManager->refreshShroudForLocalPlayer();// Can't do this until after init, and doesn't seem right to do in init
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.partition.after");
 
 	TheGhostObjectManager->setLocalPlayerIndex(ThePlayerList->getLocalPlayer()->getPlayerIndex());
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.ghostReset.before");
 	TheGhostObjectManager->reset();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.ghostReset.after");
 	
 	// update the loadscreen 
 	updateLoadProgress(LOAD_PROGRESS_POST_GHOST_OBJECT_MANAGER_RESET);
 
 	// update the terrain logic now that all is loaded
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.terrainNewMap.before");
 	TheTerrainLogic->newMap( loadingSaveGame );
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.terrainNewMap.after");
 
 	// update the loadscreen 
 	updateLoadProgress(LOAD_PROGRESS_POST_TERRAIN_LOGIC_NEW_MAP);
@@ -1664,6 +1701,7 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 		// Special case, load any bridge map objects.
  	const ThingTemplate *thingTemplate;
 	MapObject *pMapObj;
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.bridgeLikeScan.before");
 	for (pMapObj = MapObject::getFirstMapObject(); pMapObj; pMapObj = pMapObj->getNext()) 
 	{
 
@@ -1710,16 +1748,20 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 		}  // end if
 
 	}	// for, loading bridge map objects
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.bridgeLikeScan.after");
 
 	// update the loadscreen 
 	updateLoadProgress(LOAD_PROGRESS_POST_BRIDGE_LOAD);
 
 	// refresh the radar to reflect loaded bridges
 	TheRadar->refreshTerrain( TheTerrainLogic );
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.radarRefresh.after");
 
 	// tell the AI about it
 	// Note that it is important that the pathfinder be called before the map objects are loaded.
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.pathfinderNewMap.before");
 	TheAI->pathfinder()->newMap( );
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.pathfinderNewMap.after");
 
 	// update the loadscreen 
 	updateLoadProgress(LOAD_PROGRESS_POST_PATHFINDER_NEW_MAP);
@@ -1727,6 +1769,7 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	// reveal the map for the permanent observer
 	ThePartitionManager->revealMapForPlayerPermanently( ThePlayerList->findPlayerWithNameKey(TheNameKeyGenerator->nameToKey("ReplayObserver"))->getPlayerIndex() );
 	DEBUG_LOG(("Reveal shroud for %ls whose index is %d\n", ThePlayerList->findPlayerWithNameKey(TheNameKeyGenerator->nameToKey("ReplayObserver"))->getPlayerDisplayName().str(),ThePlayerList->findPlayerWithNameKey(TheNameKeyGenerator->nameToKey("ReplayObserver"))->getPlayerIndex()));
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.observerReveal.after");
 	
 	if (game)
 	{
@@ -1779,6 +1822,7 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 
 	progressCount = LOAD_PROGRESS_LOOP_ALL_THE_FREAKN_OBJECTS;
 	Int timer = timeGetTime();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.mapObjects.before");
 	if( loadingSaveGame ) {
 		// Loading a loadingSaveGame, need to add the trees to the client. jba. [8/11/2003]
 		for (pMapObj = MapObject::getFirstMapObject(); pMapObj; pMapObj = pMapObj->getNext()) 
@@ -1925,6 +1969,7 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 		}	// for, loading map objects
 
 	}  // end if, not loading save game
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.mapObjects.after");
 
 	#ifdef DUMP_PERF_STATS
 	GetPrecisionTimer(&endTime64);
@@ -1934,6 +1979,7 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 
 	progressCount = LOAD_PROGRESS_LOOP_INITIAL_NETWORK_BUILDINGS;
 	// place initial network buildings/units
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.initialNetworkObjects.before");
 	if (game && !loadingSaveGame)
 	{
 		for (int i=0; i<MAX_SLOTS; ++i)
@@ -2000,7 +2046,8 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 
 		}
 	}
-	// update the loadscreen 
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.initialNetworkObjects.after");
+	// update the loadscreen
 	updateLoadProgress(LOAD_PROGRESS_POST_INITIAL_NETWORK_BUILDINGS);
 
 	//
@@ -2008,6 +2055,7 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	// will build and various damage states for all the structures on the map so that we
 	// don't have big pauses when building those objects or switching to those states
 	//
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.preloadAssets.before");
 	if( TheGlobalData->m_preloadAssets )
 	{
 		if (TheGlobalData->m_preloadEverything)
@@ -2021,6 +2069,7 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 		}
 	}
 
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.preloadAssets.after");
 	//put this here somewhat randomly.
 	TheControlBar->hideCommunicator( FALSE );
 
@@ -2079,9 +2128,11 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	// update the loadscreen 
 	updateLoadProgress(LOAD_PROGRESS_POST_STARTING_CAMERA_2);
 
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.camera.after");
 	// update partition info - We need to do the initial update so that it can be queried
 	// during the first frame.  jba.
 	ThePartitionManager->update();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.partitionUpdate.after");
 
 	#ifdef DUMP_PERF_STATS
 	GetPrecisionTimer(&endTime64);
@@ -2093,6 +2144,7 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	// final step, run newMap for all players
 	if( loadingSaveGame == FALSE )
 		ThePlayerList->newMap();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.playerListNewMap.after");
 
 	if ( isChallengeCampaign )
 	{
@@ -2163,6 +2215,7 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	}
 
 	updateLoadProgress(LOAD_PROGRESS_END);
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.loadProgressEnd.after");
 
 	if(isInMultiplayerGame() && TheNetwork)
 	{
@@ -2170,6 +2223,7 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 		TheNetwork->liteupdate();
 	}
 
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.progressWait.before");
 	while(!isProgressComplete())
 	{
 		updateLoadProgress(101); // keep greater then 100
@@ -2177,10 +2231,12 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 		Sleep(100);
 	}
 
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.progressWait.after");
 	// if we're in a load game, don't fade yet
 	if( loadingSaveGame == FALSE )
 	{
 		TheTransitionHandler->setGroup("FadeWholeScreen");
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.fadeWait.before");
 		while(!TheTransitionHandler->isFinished())
 		{
 			TheWindowManager->update();
@@ -2190,8 +2246,9 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 				setFPMode();
 				Sleep(33);
 			}
-			
+
 		}
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.fadeWait.after");
 	}
 
 	if(m_loadScreen)
@@ -2207,6 +2264,7 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 		if( loadingSaveGame == FALSE )
 */
 			deleteLoadScreen();
+			CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.deleteLoadScreen.after");
 
 	}
 	
@@ -2255,6 +2313,7 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 		}
 		else
 			TheControlBar->setControlBarSchemeByPlayer(ThePlayerList->getLocalPlayer());
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.controlBarScheme.after");
 //		ShowControlBar();
 		
 	}
@@ -2342,12 +2401,14 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
       drawable = drawable->getNextDrawable();
     }
   }
+  CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.drawableLevelStart.after");
   
 	//Added By Sadullah Nader
 	//Added to fix the quit menu 
 	//ReAllows quit menu to work during loading scene
 	//setGameLoading(FALSE);
 	setLoadingMap( FALSE );
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.complete");
 
 #ifdef DUMP_PERF_STATS
 	GetPrecisionTimer(&endTime64);
@@ -2539,6 +2600,7 @@ void GameLogic::processDestroyList( void )
 //-------------------------------------------------------------------------------------------------
 void GameLogic::processCommandList( CommandList *list )
 {
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.processCommandList.entry");
 	m_cachedCRCs.clear();
 	m_shouldValidateCRCs = FALSE;
 
@@ -2549,7 +2611,9 @@ void GameLogic::processCommandList( CommandList *list )
 #ifdef _DEBUG
 		DEBUG_ASSERTCRASH(msg != NULL && msg != (GameMessage*)0xdeadbeef, ("bad msg"));
 #endif
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.processCommandList.message.before");
 		logicMessageDispatcher( msg, NULL );
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.processCommandList.message.after");
 	}
 
 	if (m_shouldValidateCRCs && !TheNetwork->sawCRCMismatch())
@@ -3571,6 +3635,7 @@ extern __int64 Total_Load_3D_Assets;
 // ------------------------------------------------------------------------------------------------
 void GameLogic::update( void )
 {
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.update.entry");
 	USE_PERF_TIMER(GameLogic_update)
 
 	LatchRestore<Bool> inUpdateLatch(m_isInUpdate, TRUE);
@@ -3583,6 +3648,7 @@ void GameLogic::update( void )
 	/// @todo remove this hack
 	if ( m_startNewGame && !TheDisplay->isMoviePlaying())
 	{
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.update.deferredStartNewGame.before");
 	#ifdef DUMP_PERF_STATS
 		Total_Get_Texture_Time=0;
 		Total_Get_HAnim_Time=0;
@@ -3594,6 +3660,7 @@ void GameLogic::update( void )
     Profile::StartRange("map_load");
 #endif
 		startNewGame( FALSE );
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.update.deferredStartNewGame.after");
 #ifdef _PROFILE
     Profile::StopRange("map_load");
 #endif
@@ -3621,7 +3688,9 @@ void GameLogic::update( void )
 
 	// update (execute) scripts
 	{
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.update.scriptEngine.before");
 		TheScriptEngine->UPDATE();
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.update.scriptEngine.after");
 	}
 
 	Bool freezeTime = TheTacticalView->isTimeFrozen() && !TheTacticalView->isCameraMovementFinished();
@@ -3643,7 +3712,9 @@ void GameLogic::update( void )
 	// Note - TerrainLogic update needs to happen after ScriptEngine update, but before object updates.  jba.
 	// This way changes in bridges are noted in the script engine before being cleared in TerrainLogic->update
 	{
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.update.terrainLogic.before");
 		TheTerrainLogic->UPDATE();
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.update.terrainLogic.after");
 	}
 
 	// force CRC calculation, so we can keep a cache of the last N CRCs.  We do this right where the recorder
@@ -3685,12 +3756,16 @@ void GameLogic::update( void )
 
 	// Update the Recorder
 	{
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.update.recorder.before");
 		TheRecorder->UPDATE();
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.update.recorder.after");
 	}
 
 	// process client commands
 	{
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.update.processCommandList.before");
 		processCommandList( TheCommandList );
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.update.processCommandList.after");
 	}
 
 #ifdef ALLOW_NONSLEEPY_UPDATES
@@ -5093,5 +5168,3 @@ void GameLogic::loadPostProcess( void )
 	remakeSleepyUpdate();
 
 }  // end loadPostProcess
-
-

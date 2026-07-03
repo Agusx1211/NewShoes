@@ -73,6 +73,18 @@
 //#pragma MESSAGE("************************************** WARNING, optimization disabled for debugging purposes")
 #endif
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_update_target(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_WATER_STEP(name) \
+	do { \
+		if (cnc_port_note_engine_update_target) { \
+			cnc_port_note_engine_update_target(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_WATER_STEP(name) do { } while (0)
+#endif
+
 #define MIPMAP_BUMP_TEXTURE
 
 // DEFINES ////////////////////////////////////////////////////////////////////////////////////////
@@ -1523,21 +1535,32 @@ void WaterRenderObjClass::renderMirror(CameraClass *cam)
 //DECLARE_PERF_TIMER(Water)
 void WaterRenderObjClass::Render(RenderInfoClass & rinfo)
 {
+	CNC_PORT_NOTE_WATER_STEP("W3DWater.render.entry");
 	//USE_PERF_TIMER(Water)
 	if (TheTerrainRenderObject && !TheTerrainRenderObject->getMap())
+	{
+		CNC_PORT_NOTE_WATER_STEP("W3DWater.render.noMap.return");
 		return;	//no map has been loaded yet.
+	}
 
 	if (((RTS3DScene *)rinfo.Camera.Get_User_Data())->getCustomPassMode() == SCENE_PASS_ALPHA_MASK ||
 		((SceneClass *)rinfo.Camera.Get_User_Data())->Get_Extra_Pass_Polygon_Mode() == SceneClass::EXTRA_PASS_CLEAR_LINE)
+	{
+		CNC_PORT_NOTE_WATER_STEP("W3DWater.render.customPass.return");
 		return;	//water is not drawn in wireframe or custom scene passes
+	}
 
 #ifdef EXTENDED_STATS
 	if (DX8Wrapper::stats.m_disableWater) {
+		CNC_PORT_NOTE_WATER_STEP("W3DWater.render.disabled.return");
 		return;
 	}
 #endif
 	if (ShaderClass::Is_Backface_Culling_Inverted())
+	{
+		CNC_PORT_NOTE_WATER_STEP("W3DWater.render.backfaceInverted.return");
 		return;	//the water object will not reflect in itself, so don't do anything if rendering a mirror.
+	}
 
 	//this water type needs to rendered after the rest of scene, so buffer it up for later
 
@@ -1547,28 +1570,40 @@ void WaterRenderObjClass::Render(RenderInfoClass & rinfo)
 
 	if (WW3D::Are_Static_Sort_Lists_Enabled() && sort_level != SORT_LEVEL_NONE) 
 	{	
+		CNC_PORT_NOTE_WATER_STEP("W3DWater.render.staticSortAdd.before");
 		WW3D::Add_To_Static_Sort_List(this, sort_level);
+		CNC_PORT_NOTE_WATER_STEP("W3DWater.render.staticSortAdd.after");
 		return;
 	}
+	CNC_PORT_NOTE_WATER_STEP("W3DWater.render.staticSortGate.after");
 
 	switch(m_waterType)
 	{
 		case WATER_TYPE_0_TRANSLUCENT:
 		case WATER_TYPE_3_GRIDMESH:
 			//Draw the water surface as a bunch of alpha blended tiles covering areas where water is visible
+			CNC_PORT_NOTE_WATER_STEP("W3DWater.render.type0or3.before");
+			CNC_PORT_NOTE_WATER_STEP("W3DWater.render.renderWater.before");
 			renderWater();
+			CNC_PORT_NOTE_WATER_STEP("W3DWater.render.renderWater.after");
 			if (!m_drawingRiver || m_disableRiver) {
+				CNC_PORT_NOTE_WATER_STEP("W3DWater.render.renderWaterMesh.before");
 				renderWaterMesh();	//Draw water surface as 3D deforming mesh if it's enabled on this map.
+				CNC_PORT_NOTE_WATER_STEP("W3DWater.render.renderWaterMesh.after");
 			}
+			CNC_PORT_NOTE_WATER_STEP("W3DWater.render.type0or3.after");
 			break;
 
 		case WATER_TYPE_2_PVSHADER:
 			//Pixel/Vertex Shader based water which uses an off-screen rendered reflection texture
+			CNC_PORT_NOTE_WATER_STEP("W3DWater.render.type2.before");
 			drawSea(rinfo);	//draw water surface
+			CNC_PORT_NOTE_WATER_STEP("W3DWater.render.type2.after");
 			break;
 
 		case WATER_TYPE_1_FB_REFLECTION:
 			{
+				CNC_PORT_NOTE_WATER_STEP("W3DWater.render.type1.before");
 				//Normal frame buffer reflection water type. Non translucent.  Legacy code we're not using anymore.
 				Matrix3D	OldCameraMatrix=rinfo.Camera.Get_Transform();
 				Matrix4x4	FullMatrix4(rinfo.Camera.Get_Transform());	//copy 3x4 matrix into a 4x4
@@ -1718,6 +1753,7 @@ void WaterRenderObjClass::Render(RenderInfoClass & rinfo)
 				ShaderClass::Invalidate();	//reset shading system so it forces full state set.
 
 				renderWater();
+				CNC_PORT_NOTE_WATER_STEP("W3DWater.render.type1.after");
 			}	//WATER_TYPE_1
 
 		default:
@@ -1729,19 +1765,28 @@ void WaterRenderObjClass::Render(RenderInfoClass & rinfo)
 		Vector3 pos=rinfo.Camera.Get_Position();
 		pos.Z = TheGlobalData->m_skyBoxPositionZ;
 		m_skyBox->Set_Position(pos);
+		CNC_PORT_NOTE_WATER_STEP("W3DWater.render.skyBox.before");
 		m_skyBox->Render(rinfo);
+		CNC_PORT_NOTE_WATER_STEP("W3DWater.render.skyBox.after");
 	}
 
 	//Clean up after any pixel shaders.
 	//Force render state apply so that the "NULL" texture gets applied to D3D, thus releasing shroud reference count.
+	CNC_PORT_NOTE_WATER_STEP("W3DWater.render.cleanup.before");
 	DX8Wrapper::Apply_Render_State_Changes();
 	DX8Wrapper::Invalidate_Cached_Render_States();
+	CNC_PORT_NOTE_WATER_STEP("W3DWater.render.cleanup.after");
 
 	if (m_waterTrackSystem)
+	{
+		CNC_PORT_NOTE_WATER_STEP("W3DWater.render.waterTracks.before");
 		m_waterTrackSystem->flush(rinfo);
+		CNC_PORT_NOTE_WATER_STEP("W3DWater.render.waterTracks.after");
+	}
 
 //	renderWaterMesh();
 //	renderWaterWave();
+	CNC_PORT_NOTE_WATER_STEP("W3DWater.render.complete");
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -1790,10 +1835,14 @@ Bool WaterRenderObjClass::getClippedWaterPlane(CameraClass *cam, AABoxClass *box
 //-------------------------------------------------------------------------------------------------
 void WaterRenderObjClass::drawSea(RenderInfoClass & rinfo)
 {
+	CNC_PORT_NOTE_WATER_STEP("W3DWater.drawSea.entry");
 	AABoxClass	seaBox;
 
 	if (!getClippedWaterPlane(&rinfo.Camera,&seaBox))
+	{
+		CNC_PORT_NOTE_WATER_STEP("W3DWater.drawSea.notVisible.return");
 		return;	//the sea is not visible
+	}
 
 	D3DXMATRIX matProj, matView, matWW3D;
 
@@ -1887,8 +1936,10 @@ void WaterRenderObjClass::drawSea(RenderInfoClass & rinfo)
 	m_pDev->SetVertexShaderConstant(CV_ZERO,   D3DXVECTOR4(0.0f, 0.0f, 0.0f, 0.0f), 1);
 	m_pDev->SetVertexShaderConstant(CV_ONE,    D3DXVECTOR4(1.0f, 1.0f, 1.0f, 1.0f), 1);
 
+	CNC_PORT_NOTE_WATER_STEP("W3DWater.drawSea.setShaders.before");
 	m_pDev->SetVertexShader(m_dwWaveVertexShader);
 	m_pDev->SetPixelShader(m_dwWavePixelShader);
+	CNC_PORT_NOTE_WATER_STEP("W3DWater.drawSea.setShaders.after");
 
 //	Make reflection brighter to compensate for darker coloring on sea floor
 //	m_pDev->SetRenderState( D3DRS_SRCBLEND, D3DBLEND_ONE );
@@ -1913,6 +1964,7 @@ void WaterRenderObjClass::drawSea(RenderInfoClass & rinfo)
 
 	m_pDev->SetStreamSource(0,m_vertexBufferD3D,sizeof(WaterRenderObjClass::SEA_PATCH_VERTEX));
 	m_pDev->SetIndices(m_indexBufferD3D,0);
+	CNC_PORT_NOTE_WATER_STEP("W3DWater.drawSea.drawPatches.before");
 
 	for (startY=patchY=(seaBox.Center.Y-seaBox.Extent.Y)/(PATCH_WIDTH*PATCH_SCALE); (patchY*PATCH_WIDTH*PATCH_SCALE)<(seaBox.Center.Y+seaBox.Extent.Y); patchY++)
 	{
@@ -1933,6 +1985,7 @@ void WaterRenderObjClass::drawSea(RenderInfoClass & rinfo)
 			m_pDev->DrawIndexedPrimitive(D3DPT_TRIANGLESTRIP,0,m_numVertices,0,m_numIndices);
 		}
 	}
+	CNC_PORT_NOTE_WATER_STEP("W3DWater.drawSea.drawPatches.after");
 //	m_pDev->SetRenderState(D3DRS_FILLMODE,D3DFILL_SOLID);
 	m_pDev->SetRenderState(D3DRS_ALPHABLENDENABLE , FALSE);
 	m_pDev->SetTexture( 0, NULL);	//release reference to bump texture
@@ -1965,6 +2018,7 @@ void WaterRenderObjClass::drawSea(RenderInfoClass & rinfo)
 	m_pDev->SetVertexShader(DX8_FVF_XYZDUV1);	//turn off custom vertex shader
 
 	DX8Wrapper::Invalidate_Cached_Render_States();
+	CNC_PORT_NOTE_WATER_STEP("W3DWater.drawSea.resetShaders.after");
 
 	if (TheTerrainRenderObject->getShroud())
 	{
@@ -1973,6 +2027,7 @@ void WaterRenderObjClass::drawSea(RenderInfoClass & rinfo)
 		W3DShaderManager::setShader(W3DShaderManager::ST_SHROUD_TEXTURE, 0);
 		m_pDev->SetStreamSource(0,m_vertexBufferD3D,sizeof(WaterRenderObjClass::SEA_PATCH_VERTEX));
 		m_pDev->SetIndices(m_indexBufferD3D,0);
+		CNC_PORT_NOTE_WATER_STEP("W3DWater.drawSea.shroudPass.before");
 		for (startY=patchY=(seaBox.Center.Y-seaBox.Extent.Y)/(PATCH_WIDTH*PATCH_SCALE); (patchY*PATCH_WIDTH*PATCH_SCALE)<(seaBox.Center.Y+seaBox.Extent.Y); patchY++)
 		{
 			for (startX=patchX=(seaBox.Center.X-seaBox.Extent.X)/(PATCH_WIDTH*PATCH_SCALE); (patchX*PATCH_WIDTH*PATCH_SCALE)<(seaBox.Center.X+seaBox.Extent.X); patchX++)
@@ -1988,8 +2043,10 @@ void WaterRenderObjClass::drawSea(RenderInfoClass & rinfo)
 				m_pDev->DrawIndexedPrimitive(D3DPT_TRIANGLESTRIP,0,m_numVertices,0,m_numIndices);
 			}
 		}
+		CNC_PORT_NOTE_WATER_STEP("W3DWater.drawSea.shroudPass.after");
 		W3DShaderManager::resetShader(W3DShaderManager::ST_SHROUD_TEXTURE);
 	}
+	CNC_PORT_NOTE_WATER_STEP("W3DWater.drawSea.complete");
 
 }
 
@@ -3511,4 +3568,3 @@ void WaterRenderObjClass::loadPostProcess( void )
 {
 
 }  // end loadPostProcess
-

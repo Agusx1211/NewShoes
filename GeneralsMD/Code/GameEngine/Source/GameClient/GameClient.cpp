@@ -89,6 +89,18 @@
 //#pragma MESSAGE("************************************** WARNING, optimization disabled for debugging purposes")
 #endif
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_update_target(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_GAME_CLIENT_STEP(name) \
+	do { \
+		if (cnc_port_note_engine_update_target) { \
+			cnc_port_note_engine_update_target(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_GAME_CLIENT_STEP(name) do { } while (0)
+#endif
+
 #define DRAWABLE_HASH_SIZE	8192
 
 /// The GameClient singleton instance
@@ -512,10 +524,12 @@ DECLARE_PERF_TIMER(GameClient_update)
 DECLARE_PERF_TIMER(GameClient_draw)
 void GameClient::update( void )
 {
+	CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.entry");
 	USE_PERF_TIMER(GameClient_update)
 	// create the FRAME_TICK message
 	GameMessage *frameMsg = TheMessageStream->appendMessage( GameMessage::MSG_FRAME_TICK );
 	frameMsg->appendTimestampArgument( getFrame() );
+	CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.frameTick.after");
 	static Bool playSizzle = FALSE;
 	// We need to show the movie first.
 	if(TheGlobalData->m_playIntro && !TheDisplay->isMoviePlaying())
@@ -582,30 +596,40 @@ void GameClient::update( void )
 	}
 
 	//Update snow particles.
+	CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.snow.before");
 	if (TheSnowManager)
 		TheSnowManager->UPDATE();
+	CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.snow.after");
 
 	// update animation 2d collection
+	CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.anim2D.before");
 	TheAnim2DCollection->UPDATE();
+	CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.anim2D.after");
 
 	// update the keyboard
+	CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.keyboard.before");
 	if( TheKeyboard )
 	{
 		TheKeyboard->UPDATE();
 		TheKeyboard->createStreamMessages();
 
 	}  // end if
+	CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.keyboard.after");
 
 	// Update the Eva stuff
+	CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.eva.before");
 	TheEva->UPDATE();
+	CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.eva.after");
 
 	// update the mouse
+	CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.mouse.before");
 	if( TheMouse )
 	{
 		TheMouse->UPDATE();
 		TheMouse->createStreamMessages();
 
 	}  // end if
+	CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.mouse.after");
 	
 
   if (TheInGameUI->isCameraTrackingDrawable())
@@ -616,30 +640,39 @@ void GameClient::update( void )
       const Coord3D *pos = draw->getPosition();
       TheTacticalView->lookAt( pos );
     }
-    else
-      TheInGameUI->setCameraTrackingDrawable( FALSE );
-  }
+	    else
+	      TheInGameUI->setCameraTrackingDrawable( FALSE );
+	  }
+	CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.cameraTracking.after");
 
 	if(TheGlobalData->m_playIntro || TheGlobalData->m_afterIntro)
 	{
 		// redraw all views, update the GUI
 		{
+			CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.earlyDisplayDraw.before");
 			TheDisplay->DRAW();
+			CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.earlyDisplayDraw.after");
 		}
 		{
+			CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.earlyDisplayUpdate.before");
 			TheDisplay->UPDATE();
+			CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.earlyDisplayUpdate.after");
 		}
 		return;
 	}
 
 	// update the window system itself
 	{
+		CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.windowManager.before");
 		TheWindowManager->UPDATE();
+		CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.windowManager.after");
 	}
 
 	// update the video player
 	{
+		CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.videoPlayer.before");
 		TheVideoPlayer->UPDATE();
+		CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.videoPlayer.after");
 	}
 
 	Bool freezeTime = TheTacticalView->isTimeFrozen() && !TheTacticalView->isCameraMovementFinished();
@@ -647,6 +680,7 @@ void GameClient::update( void )
 	freezeTime = freezeTime || TheScriptEngine->isTimeFrozenScript();
 	freezeTime = freezeTime || TheGameLogic->isGamePaused();
 	Int localPlayerIndex = ThePlayerList ? ThePlayerList->getLocalPlayer()->getPlayerIndex() : 0;
+	CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.freezeState.after");
 
 	// hack to let client spin fast in network games but still do effects at the same pace. -MDC
 	static UnsignedInt lastFrame = ~0;
@@ -676,15 +710,18 @@ void GameClient::update( void )
 			//update ghostObjects which don't have drawables or objects.
 			TheGhostObjectManager->updateOrphanedObjects(nonLocalPlayerIndices,numNonLocalPlayers);
 #else
-			TheGhostObjectManager->updateOrphanedObjects(NULL,0);
+				CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.ghostOrphans.before");
+				TheGhostObjectManager->updateOrphanedObjects(NULL,0);
+				CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.ghostOrphans.after");
 #endif
-		}
+			}
 
 
-		// call the update for all client drawables
-		Drawable* draw = firstDrawable();
-		while (draw)
-		{	// update() could free the Drawable, so go ahead and grab 'next'
+			// call the update for all client drawables
+			CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.drawables.before");
+			Drawable* draw = firstDrawable();
+			while (draw)
+			{	// update() could free the Drawable, so go ahead and grab 'next'
 			Drawable* next = draw->getNextDrawable();
 #if defined(_DEBUG) || defined(_INTERNAL)
 			if (TheGlobalData->m_shroudOn)
@@ -718,10 +755,11 @@ void GameClient::update( void )
 					draw->setFullyObscuredByShroud(ss >= OBJECTSHROUD_FOGGED);
 				}
 			}
-			draw->updateDrawable();
-			draw = next;
+				draw->updateDrawable();
+				draw = next;
+			}
+			CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.drawables.after");
 		}
-	}
 
 #if defined(_INTERNAL) || defined(_DEBUG)
 	// need to draw the first frame, then don't draw again until TheGlobalData->m_noDraw
@@ -742,12 +780,16 @@ void GameClient::update( void )
 
 	// update the terrain visuals
 	{
+		CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.terrainVisual.before");
 		TheTerrainVisual->UPDATE();
+		CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.terrainVisual.after");
 	}
 
 	// update display
 	{
+		CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.displayUpdate.before");
 		TheDisplay->UPDATE();
+		CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.displayUpdate.after");
 	}
 
 	{
@@ -756,23 +798,32 @@ void GameClient::update( void )
 	// redraw all views, update the GUI
 	//if(TheGameLogic->getFrame() >= 2)
 		
+		CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.displayDraw.before");
 		TheDisplay->DRAW();
+		CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.displayDraw.after");
 	}
 
 	{
 		// let display string factory handle its update
+		CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.displayString.before");
 		TheDisplayStringManager->update();
+		CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.displayString.after");
 	}
 
 	{
 		// update the shell
+		CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.shell.before");
 		TheShell->UPDATE();
+		CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.shell.after");
 	}
 
 	{
 		// update the in game UI 
+		CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.inGameUI.before");
 		TheInGameUI->UPDATE();
+		CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.inGameUI.after");
 	}
+	CNC_PORT_NOTE_GAME_CLIENT_STEP("GameClient.update.complete");
 }  // end update
 
 /** -----------------------------------------------------------------------------------------------

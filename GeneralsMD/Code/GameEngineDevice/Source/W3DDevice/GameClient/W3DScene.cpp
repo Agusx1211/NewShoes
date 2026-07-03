@@ -71,6 +71,18 @@
 //#pragma MESSAGE("************************************** WARNING, optimization disabled for debugging purposes")
 #endif
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_update_target(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_W3D_SCENE_STEP(name) \
+	do { \
+		if (cnc_port_note_engine_update_target) { \
+			cnc_port_note_engine_update_target(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_W3D_SCENE_STEP(name) do { } while (0)
+#endif
+
 ///////////////////////////////////////////////////////////////////////////////
 // DEFINITIONS ////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -832,43 +844,77 @@ void RTS3DScene::renderOneObject(RenderInfoClass &rinfo, RenderObjClass *robj, I
 /**Draw everything that was submitted from this scene*/
 void RTS3DScene::Flush(RenderInfoClass & rinfo)
 {
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.entry");
 	//don't draw shadows in this mode because they interfere with destination alpha or are invisible (wireframe)
 	if (m_customPassMode == SCENE_PASS_DEFAULT && Get_Extra_Pass_Polygon_Mode() == EXTRA_PASS_DISABLE)
+	{
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.shadowsDecal.before");
 		DoShadows(rinfo, false);	//draw all non-stencil shadows (decals) since they fall under other objects.
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.shadowsDecal.after");
+	}
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.meshFlush.before");
 	TheDX8MeshRenderer.Flush();	//draw all non-translucent objects.
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.meshFlush.after");
 
 	//draw all non-translucent objects which were separated because they are hidden and need custom rendering.
 #ifdef USE_NON_STENCIL_OCCLUSION
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.occluded.before");
 	flushOccludedObjects(rinfo);
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.occluded.after");
 #else
 	if (DX8Wrapper::Has_Stencil())
+	{
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.occludedStencil.before");
 		flushOccludedObjectsIntoStencil(rinfo);
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.occludedStencil.after");
+	}
 #endif
 
 	// (gth) CNC3 Flush the shader meshes	
 	SHD_FLUSH;
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.shdFlush.after");
 
 	// Draw the trees last so they alpha blend onto everything correctly.
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.trees.before");
 	DoTrees(rinfo);
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.trees.after");
 
 	//don't draw shadows in this mode because they interfere with destination alpha
 	if (m_customPassMode == SCENE_PASS_DEFAULT && Get_Extra_Pass_Polygon_Mode() == EXTRA_PASS_DISABLE)
+	{
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.shadowsStencil.before");
 		DoShadows(rinfo, true);	//draw all stencil shadows
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.shadowsStencil.after");
+	}
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.staticSort.before");
 	WW3D::Render_And_Clear_Static_Sort_Lists(rinfo);	//draws things like water
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.staticSort.after");
 
 	if (m_customPassMode == SCENE_PASS_DEFAULT && Get_Extra_Pass_Polygon_Mode() == EXTRA_PASS_DISABLE)
+	{
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.translucent.before");
 		flushTranslucentObjects(rinfo);	//draw all translucent meshes which don't need per-poly sorting.
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.translucent.after");
+	}
 
 	{
 		//USE_PERF_TIMER(translucentRender)
 
 		//don't draw transparent in this mode because they interfere with destination alpha
 		if (m_customPassMode == SCENE_PASS_DEFAULT && Get_Extra_Pass_Polygon_Mode() == EXTRA_PASS_DISABLE)
+		{
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.particles.before");
 			DoParticles(rinfo);	//queue up particles for rendering.
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.particles.after");
+		}
 
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.sortingFlush.before");
 		SortingRendererClass::Flush();	//draw sorted translucent polys like particles.
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.sortingFlush.after");
 	}
 	TheDX8MeshRenderer.Clear_Pending_Delete_Lists();
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.clearPending.after");
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.complete");
 }
 
 /**Generate a predefined light environment(s) that will be applied to many objects.  Useful for things like totally fogged
@@ -951,6 +997,7 @@ void RTS3DScene::updatePlayerColorPasses(void)
 //DECLARE_PERF_TIMER(NonTerrainRender)
 void RTS3DScene::Render(RenderInfoClass & rinfo)
 {
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.render.entry");
 	//USE_PERF_TIMER(NonTerrainRender)
 	DX8Wrapper::Set_Fog(FogEnabled, FogColor, FogStart, FogEnd);
 
@@ -961,10 +1008,18 @@ void RTS3DScene::Render(RenderInfoClass & rinfo)
 	{
 		if (m_customPassMode == SCENE_PASS_DEFAULT)
 		{	//Regular rendering pass with no effects
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.render.updatePlayerColorPasses.before");
 			updatePlayerColorPasses();///@todo: this probably doesn't need to be done each frame.
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.render.updatePlayerColorPasses.after");
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.render.updateFixedLightEnv.before");
 			updateFixedLightEnvironments(rinfo);
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.render.updateFixedLightEnv.after");
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.render.customized.before");
 			Customized_Render(rinfo);
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.render.customized.after");
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.render.flush.before");
 			Flush(rinfo);
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.render.flush.after");
 		}
 		else
 		if (m_customPassMode == SCENE_PASS_ALPHA_MASK)
@@ -1070,6 +1125,7 @@ void RTS3DScene::Render(RenderInfoClass & rinfo)
 			ShaderClass::Invalidate();
 		}
 	}
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.render.complete");
 }
 
 //=============================================================================
@@ -1080,6 +1136,7 @@ void RTS3DScene::Render(RenderInfoClass & rinfo)
 //=============================================================================
 void RTS3DScene::Customized_Render( RenderInfoClass &rinfo )
 {
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.entry");
 #ifdef DIRTY_CONDITION_FLAGS
 	StDrawableDirtyStuffLocker lockDirtyStuff;
 #endif
@@ -1094,9 +1151,13 @@ void RTS3DScene::Customized_Render( RenderInfoClass &rinfo )
 
    if (!Visibility_Checked) {
       // set the visibility bit in all render objects in all layers.
+	   CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.visibility.before");
 	   Visibility_Check(&rinfo.Camera);
+	   CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.visibility.after");
 #ifdef USE_NON_STENCIL_OCCLUSION
+	   CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.flagOccluded.before");
 	   flagOccludedObjects(&rinfo.Camera);
+	   CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.flagOccluded.after");
 #endif
    }
    Visibility_Checked = false;	
@@ -1104,6 +1165,7 @@ void RTS3DScene::Customized_Render( RenderInfoClass &rinfo )
 
 	RefRenderObjListIterator it(&UpdateList);	
 	// allow all objects in the update list to do their "every frame" processing
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.updateList.before");
 	for (it.First(); !it.Is_Done(); it.Next()) {
 		RenderObjClass * robj = it.Peek_Obj();
 		if (robj->Class_ID() == RenderObjClass::CLASSID_TILEMAP)
@@ -1115,6 +1177,7 @@ void RTS3DScene::Customized_Render( RenderInfoClass &rinfo )
 			it.Peek_Obj()->On_Frame_Update();
 		}
 	}
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.updateList.after");
 
 	//terrain needs to be rendered first
 	if (terrainObject)	// Don't check visibility - terrain is always visible. jba.
@@ -1125,30 +1188,41 @@ void RTS3DScene::Customized_Render( RenderInfoClass &rinfo )
 		if (m_customPassMode == SCENE_PASS_DEFAULT && m_shroudMaterialPass)
 		{
 			rinfo.Push_Material_Pass(m_shroudMaterialPass);
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.terrainRender.before");
 			robj->Render(rinfo);
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.terrainRender.after");
 			rinfo.Pop_Material_Pass();
 		}
 		else
 		if (m_customPassMode == SCENE_PASS_ALPHA_MASK && m_maskMaterialPass)
 		{
 			rinfo.Push_Material_Pass(m_maskMaterialPass);
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.terrainRender.before");
 			robj->Render(rinfo);
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.terrainRender.after");
 			rinfo.Pop_Material_Pass();
 		}
 		else
-		robj->Render(rinfo);
+		{
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.terrainRender.before");
+			robj->Render(rinfo);
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.terrainRender.after");
+		}
 	}
 
 	if (m_drawTerrainOnly) {
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.terrainOnly.return");
 		return;
 	}
 #ifdef EXTENDED_STATS
 	if (DX8Wrapper::stats.m_disableObjects) { 
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.objectsDisabled.return");
 		return;
 	}
 #endif
 
 	// loop through all render objects in the list:
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.renderList.before");
 	for (it.First(&RenderList); !it.Is_Done();) 
 	{
 
@@ -1172,6 +1246,7 @@ void RTS3DScene::Customized_Render( RenderInfoClass &rinfo )
 				renderOneObject(rinfo, robj, localPlayerIndex);
 		}
 	}
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.renderList.after");
 
 #ifdef	INCLUDE_GRANNY_IN_BUILD
 	if (TheGrannyRenderObjSystem)
@@ -1180,6 +1255,7 @@ void RTS3DScene::Customized_Render( RenderInfoClass &rinfo )
 		if (!ShaderClass::Is_Backface_Culling_Inverted())
 			TheGrannyRenderObjSystem->queueUpdate();
 		TheGrannyRenderObjSystem->Flush();
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.granny.after");
 	}
 #endif
 	
@@ -1187,13 +1263,19 @@ void RTS3DScene::Customized_Render( RenderInfoClass &rinfo )
 	//Don't draw shadows if there is no terrain present.
 	if (TheW3DShadowManager && terrainObject && !ShaderClass::Is_Backface_Culling_Inverted() &&
 		Get_Extra_Pass_Polygon_Mode() == EXTRA_PASS_DISABLE)
+	{
 		TheW3DShadowManager->queueShadows(TRUE);
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.queueShadows.after");
+	}
 
 	// only render particles once per frame
 	if (terrainObject != NULL && TheParticleSystemManager != NULL &&
 		Get_Extra_Pass_Polygon_Mode() == EXTRA_PASS_DISABLE)
-	{	TheParticleSystemManager->queueParticleRender();
+	{
+		TheParticleSystemManager->queueParticleRender();
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.queueParticles.after");
 	}
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.complete");
 
 }  // end Customized_Renderer
 
@@ -1709,9 +1791,12 @@ void RTS3DScene::removeDynamicLight(W3DDynamicLight * obj)
 //=============================================================================
 void RTS3DScene::doRender( CameraClass * cam )
 {
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.doRender.entry");
 	m_camera = cam;
 	DRAW();
 	m_camera = NULL;
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.doRender.draw.after");
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.doRender.complete");
 
 }  // end Customized_Render
 
@@ -1722,12 +1807,17 @@ void RTS3DScene::doRender( CameraClass * cam )
 //=============================================================================
 void RTS3DScene::draw( )
 {
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.draw.entry");
 
 	if (m_camera == NULL) {
 		DEBUG_CRASH(("Null m_camera in RTS3DScene::draw"));
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.draw.nullCamera.return");
 		return;
 	}
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.draw.ww3dRender.before");
 	WW3D::Render( this, m_camera );
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.draw.ww3dRender.after");
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.draw.complete");
 
 
 }  // end Customized_Render

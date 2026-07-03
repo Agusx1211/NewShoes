@@ -57,10 +57,14 @@ residue and the next frontier.
       original CD check to browser-mounted `GensecZH.big`, runs original
       `prepareCampaignGame` / `setupGameStart`, sets pending
       `Maps\MD_USA01\MD_USA01.map`, reaches `doGameStart()`, and queues
-      `MSG_NEW_GAME` single-player/easy through the real startup lifecycle.
-      Remaining: retire superseded focused menu smokes and continue the real
-      `ButtonEasy` campaign start beyond `MSG_NEW_GAME` queueing/fade into
-      map load/rendering.
+      `MSG_NEW_GAME` single-player/easy through the real startup lifecycle,
+      dispatches `MSG_NEW_GAME`, runs `prepareNewGame`, completes deferred
+      `startNewGame(FALSE)` for `Maps\MD_USA01\MD_USA01.map`, mounts base
+      `W3D.big` for the original `new_skybox.W3D` water/skybox render asset,
+      and harness-proves 60 post-campaign loaded-map frames through frame 237
+      with screenshot + canvas-pixel samples. Remaining: retire superseded
+      focused menu smokes and continue from loaded-map frames toward a visibly
+      correct, interactable in-game scene.
 - [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch
       workaround in `GameEngine::update()` with the real
       `W3DGameLogic`/`SubsystemInterface::UPDATE` wasm vtable ownership fix

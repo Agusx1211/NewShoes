@@ -86,6 +86,18 @@
 #include "GameNetwork/NetworkInterface.h"
 
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_game_logic_step(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_GAME_LOGIC_STEP(name) \
+	do { \
+		if (cnc_port_note_game_logic_step) { \
+			cnc_port_note_game_logic_step(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_GAME_LOGIC_STEP(name) do { } while (0)
+#endif
+
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -309,6 +321,7 @@ void GameLogic::clearGameData( Bool showScoreScreen )
 // ------------------------------------------------------------------------------------------------
 void GameLogic::prepareNewGame( Int gameMode, GameDifficulty diff, Int rankPoints )
 {
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.prepareNewGame.entry");
 	//Added By Sadullah Nader
 	//Fix for loading game scene
 
@@ -320,17 +333,21 @@ void GameLogic::prepareNewGame( Int gameMode, GameDifficulty diff, Int rankPoint
 
 	if(!m_background)
 	{
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.prepareNewGame.blankWindow.before");
 		m_background = TheWindowManager->winCreateLayout("Menus/BlankWindow.wnd");
 		DEBUG_ASSERTCRASH(m_background,("We Couldn't Load Menus/BlankWindow.wnd"));
 		m_background->hide(FALSE);
 		m_background->bringForward();
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.prepareNewGame.blankWindow.after");
 	}
 	m_background->getFirstWindow()->winClearStatus(WIN_STATUS_IMAGE);
 	TheGameLogic->setGameMode( gameMode );
 	if (!TheGlobalData->m_pendingFile.isEmpty())
 	{
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.prepareNewGame.pendingFile.before");
 		TheWritableGlobalData->m_mapName = TheGlobalData->m_pendingFile;
 		TheWritableGlobalData->m_pendingFile.clear();
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.prepareNewGame.pendingFile.after");
 	}
 
 	m_rankPointsToAddAtGameStart = rankPoints;
@@ -338,9 +355,14 @@ void GameLogic::prepareNewGame( Int gameMode, GameDifficulty diff, Int rankPoint
 
 	// If we're about to start a game, hide the shell.
 	if(!TheGameLogic->isInShellGame())
+	{
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.prepareNewGame.hideShell.before");
 		TheShell->hideShell();
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.prepareNewGame.hideShell.after");
+	}
 
 	m_startNewGame = FALSE;
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.prepareNewGame.complete");
 
 }  // end prepareNewGame
 
@@ -418,8 +440,9 @@ void GameLogic::logicMessageDispatcher( GameMessage *msg, void *userData )
 	{
 		//---------------------------------------------------------------------------------------------
 		case GameMessage::MSG_NEW_GAME:
-		{
-			//DEBUG_ASSERTCRASH(msg->getArgumentCount() == 1 || msg->getArgumentCount() == 2, ("%d arguments to MSG_NEW_GAME", msg->getArgumentCount()));
+			{
+				CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.logicMessageDispatcher.MSG_NEW_GAME.entry");
+				//DEBUG_ASSERTCRASH(msg->getArgumentCount() == 1 || msg->getArgumentCount() == 2, ("%d arguments to MSG_NEW_GAME", msg->getArgumentCount()));
 			Int gameMode = msg->getArgument( 0 )->integer;
 			Int rankPoints = 0;
 			GameDifficulty diff = DIFFICULTY_NORMAL;
@@ -438,13 +461,17 @@ void GameLogic::logicMessageDispatcher( GameMessage *msg, void *userData )
 				TheWritableGlobalData->m_useFpsLimit = true;
 			}
 
-			// prepare for new game
-			prepareNewGame( gameMode, diff, rankPoints );
+				// prepare for new game
+				CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.logicMessageDispatcher.MSG_NEW_GAME.prepare.before");
+				prepareNewGame( gameMode, diff, rankPoints );
+				CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.logicMessageDispatcher.MSG_NEW_GAME.prepare.after");
 
-			// start new game
-			startNewGame( FALSE );
+				// start new game
+				CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.logicMessageDispatcher.MSG_NEW_GAME.start.before");
+				startNewGame( FALSE );
+				CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.logicMessageDispatcher.MSG_NEW_GAME.start.after");
 
-			break;
+				break;
 
 		}  // end new game
 

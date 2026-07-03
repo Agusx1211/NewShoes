@@ -102,6 +102,18 @@
 //#pragma MESSAGE("************************************** WARNING, optimization disabled for debugging purposes")
 #endif
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_update_target(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_W3D_VIEW_STEP(name) \
+	do { \
+		if (cnc_port_note_engine_update_target) { \
+			cnc_port_note_engine_update_target(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_W3D_VIEW_STEP(name) do { } while (0)
+#endif
+
 
 
 // 30 fps
@@ -1526,12 +1538,15 @@ void W3DView::calcDeltaScroll(Coord2D &screenDelta)
 //-------------------------------------------------------------------------------------------------
 void W3DView::drawView( void )
 {
+	CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.drawView.entry");
 	DRAW();
+	CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.drawView.after");
 }
 
 //DECLARE_PERF_TIMER(W3DView_drawView)
 void W3DView::draw( void )
 {
+	CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.draw.entry");
 	//USE_PERF_TIMER(W3DView_drawView)
 	Bool skipRender = false;
 	Bool doExtraRender = false;
@@ -1543,7 +1558,9 @@ void W3DView::draw( void )
 			m_viewFilter < FT_MAX)
 	{	
 		// Most likely will redirect rendering to a texture.
+		CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.draw.filterPre.before");
 		preRenderResult=W3DShaderManager::filterPreRender(m_viewFilter, skipRender, customScenePassMode);
+		CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.draw.filterPre.after");
 		if (!skipRender && getCameraLock()) 
 		{
 			Object* cameraLockObj = TheGameLogic->findObjectByID(getCameraLock());
@@ -1561,7 +1578,9 @@ void W3DView::draw( void )
 		W3DDisplay::m_3DScene->setCustomPassMode(customScenePassMode);
 		if (m_isWireFrameEnabled)
 			W3DDisplay::m_3DScene->Set_Extra_Pass_Polygon_Mode(SceneClass::EXTRA_PASS_CLEAR_LINE);
+		CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.draw.sceneRender.before");
 		W3DDisplay::m_3DScene->doRender( m_3DCamera );
+		CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.draw.sceneRender.after");
 		W3DDisplay::m_3DScene->Set_Extra_Pass_Polygon_Mode(SceneClass::EXTRA_PASS_DISABLE);
 		m_isWireFrameEnabled = m_nextWireFrameEnabled;
 	}
@@ -1574,7 +1593,11 @@ void W3DView::draw( void )
 		calcDeltaScroll(deltaScroll);
 		Bool continueTheEffect = false;
 		if (preRenderResult)	//if prerender passed, do the post render.
+		{
+			CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.draw.filterPost.before");
 			continueTheEffect = W3DShaderManager::filterPostRender(m_viewFilter, m_viewFilterMode, deltaScroll,doExtraRender);
+			CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.draw.filterPost.after");
+		}
 		if (!skipRender && getCameraLock()) 
 		{
 			Object* cameraLockObj = TheGameLogic->findObjectByID(getCameraLock());
@@ -1609,7 +1632,9 @@ void W3DView::draw( void )
 		///@todo: Don't clear z-buffer unless shader uses z-bias or anything else that would cause <= z to fail on normal render.
 		DX8Wrapper::Clear(false, true, Vector3(0.0f,0.0f,0.0f), TheWaterTransparency->m_minWaterOpacity);	// Clear z but not color
 		W3DDisplay::m_3DScene->setCustomPassMode(SCENE_PASS_DEFAULT);
+		CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.draw.extraSceneRender.before");
 		W3DDisplay::m_3DScene->doRender( m_3DCamera );
+		CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.draw.extraSceneRender.after");
 		Coord2D deltaScroll;
 		W3DShaderManager::filterPostRender(m_viewFilter, m_viewFilterMode, deltaScroll, doExtraRender);
 	}
@@ -1760,7 +1785,9 @@ void W3DView::draw( void )
 #endif // DEBUG or INTERNAL
 
 	Region3D axisAlignedRegion;
+	CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.draw.postDrawRegion.before");
 	getAxisAlignedViewRegion(axisAlignedRegion);
+	CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.draw.postDrawRegion.after");
 
 	//
 	// there are several things we might want to do as a post pass on the objects after
@@ -1768,12 +1795,19 @@ void W3DView::draw( void )
 	/// @todo we might want to consider wiping this iterate out if there is nothing to post draw
 	//
 	TheGameClient->resetRenderedObjectCount();
+	CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.draw.drawablePostDraw.before");
 	TheGameClient->iterateDrawablesInRegion( &axisAlignedRegion, drawablePostDraw, this );
+	CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.draw.drawablePostDraw.after");
 
+	CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.draw.flushTextDrawables.before");
 	TheGameClient->flushTextBearingDrawables();
+	CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.draw.flushTextDrawables.after");
 
 	// Render 2D scene
+	CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.draw.scene2D.before");
 	W3DDisplay::m_2DScene->doRender( m_2DCamera );
+	CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.draw.scene2D.after");
+	CNC_PORT_NOTE_W3D_VIEW_STEP("W3DView.draw.complete");
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -3360,4 +3394,3 @@ void W3DView::Add_Camera_Shake (const Coord3D & position,float radius,float dura
 
 	CameraShakerSystem.Add_Camera_Shake(vpos,radius,duration,power);
 }
-

@@ -119,15 +119,48 @@ extern "C" const char *cnc_port_shell_last_do_push_name(void);
 extern void W3DMainMenuInit(WindowLayout *layout, void *userData);
 
 static std::string g_last_engine_update_target;
+static std::string g_engine_update_breakpoint;
+static std::string g_last_game_logic_step;
+static std::string g_game_logic_breakpoint;
 
 extern "C" void cnc_port_note_engine_update_target(const char *name)
 {
 	g_last_engine_update_target = name != nullptr ? name : "";
+	if (!g_engine_update_breakpoint.empty()
+		&& g_last_engine_update_target == g_engine_update_breakpoint) {
+		throw "cnc_port_engine_update_target_breakpoint";
+	}
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_last_update_target()
 {
 	return g_last_engine_update_target.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_engine_update_breakpoint(
+	const char *name)
+{
+	g_engine_update_breakpoint = name != nullptr ? name : "";
+}
+
+extern "C" void cnc_port_note_game_logic_step(const char *name)
+{
+	g_last_game_logic_step = name != nullptr ? name : "";
+	if (!g_game_logic_breakpoint.empty()
+		&& g_last_game_logic_step == g_game_logic_breakpoint) {
+		throw "cnc_port_game_logic_step_breakpoint";
+	}
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_game_logic_breakpoint(
+	const char *name)
+{
+	g_game_logic_breakpoint = name != nullptr ? name : "";
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_last_game_logic_step()
+{
+	return g_last_game_logic_step.c_str();
 }
 
 namespace {
@@ -826,6 +859,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame(int frame
 	json += ",\"framesCompleted\":" + std::to_string(g_frame_state.frames_completed);
 	json += ",\"staleMovieBreakClears\":" + std::to_string(g_frame_state.stale_movie_break_clears);
 	json += ",\"lastUpdateTarget\":\"" + json_escape(g_last_engine_update_target) + "\"";
+	json += ",\"lastGameLogicStep\":\"" + json_escape(g_last_game_logic_step) + "\"";
 	json += ",\"quitting\":";
 	json += (TheGameEngine != NULL && TheGameEngine->getQuitting() != FALSE) ? "true" : "false";
 	json += ",\"exceptionCaught\":";

@@ -7219,6 +7219,21 @@ async function loadWasmModule() {
         "string",
         [],
       ),
+      realEngineSetEngineUpdateBreakpoint: module.cwrap(
+        "cnc_port_real_engine_set_engine_update_breakpoint",
+        null,
+        ["string"],
+      ),
+      realEngineSetGameLogicBreakpoint: module.cwrap(
+        "cnc_port_real_engine_set_game_logic_breakpoint",
+        null,
+        ["string"],
+      ),
+      realEngineLastGameLogicStep: module.cwrap(
+        "cnc_port_real_engine_last_game_logic_step",
+        "string",
+        [],
+      ),
       probeMssStartup: module.cwrap("cnc_port_probe_mss_startup", "string", []),
       probeAudioManagerRuntime: module.cwrap("cnc_port_probe_audio_manager_runtime", "string", []),
       probeModuleFactoryRuntime: module.cwrap("cnc_port_probe_module_factory_runtime", "string", []),
@@ -11931,6 +11946,36 @@ async function rpc(command, payload = {}) {
       return mountArchives(payload);
     case "realEngineInit":
       return realEngineInit(payload);
+    case "realEngineUpdateBreakpoint":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineUpdateBreakpoint");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineUpdateBreakpoint", error: moduleResult.error };
+        }
+        const target = typeof payload.target === "string" ? payload.target : "";
+        moduleResult.wasmModule.realEngineSetEngineUpdateBreakpoint(target);
+        return {
+          ok: true,
+          command: "realEngineUpdateBreakpoint",
+          target,
+          state: snapshotState(),
+        };
+      }
+    case "realEngineGameLogicBreakpoint":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineGameLogicBreakpoint");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineGameLogicBreakpoint", error: moduleResult.error };
+        }
+        const step = typeof payload.step === "string" ? payload.step : "";
+        moduleResult.wasmModule.realEngineSetGameLogicBreakpoint(step);
+        return {
+          ok: true,
+          command: "realEngineGameLogicBreakpoint",
+          step,
+          state: snapshotState(),
+        };
+      }
     case "realEngineFrame":
       {
         const moduleResult = await getWasmModuleForArchives("realEngineFrame");
@@ -11949,13 +11994,25 @@ async function rpc(command, payload = {}) {
           abortStack = error?.stack ?? null;
         }
         let lastUpdateTarget = null;
+        let lastGameLogicStep = null;
         try {
           lastUpdateTarget = moduleResult.wasmModule.realEngineLastUpdateTarget();
         } catch {
           lastUpdateTarget = null;
         }
+        try {
+          lastGameLogicStep = moduleResult.wasmModule.realEngineLastGameLogicStep();
+        } catch {
+          lastGameLogicStep = null;
+        }
         refreshBrowserDirectInputQueue(moduleResult.wasmModule);
-        recordLog("real engine frame", { aborted, abortMessage, lastUpdateTarget, frame });
+        recordLog("real engine frame", {
+          aborted,
+          abortMessage,
+          lastUpdateTarget,
+          lastGameLogicStep,
+          frame,
+        });
         return {
           ok: Boolean(frame?.framesCompleted > 0) && !aborted,
           command: "realEngineFrame",
@@ -11963,6 +12020,7 @@ async function rpc(command, payload = {}) {
           abortMessage,
           abortStack,
           lastUpdateTarget,
+          lastGameLogicStep,
           frame,
           state: snapshotState(),
         };
