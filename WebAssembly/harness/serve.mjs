@@ -5,9 +5,11 @@ import { startStaticServer } from "./static-server.mjs";
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
 const port = Number(process.env.PORT ?? 8080);
-const server = await startStaticServer({ root: wasmRoot, port });
+const host = process.env.HOST ?? "127.0.0.1";
+const server = await startStaticServer({ root: wasmRoot, port, host });
 
 console.log(`Harness serving ${new URL("harness/index.html", server.url).href}`);
+console.log(`Playable page   ${new URL("harness/play.html", server.url).href}`);
 
 process.on("SIGINT", async () => {
   await server.close();

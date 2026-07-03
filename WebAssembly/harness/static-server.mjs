@@ -68,7 +68,7 @@ function parseRangeHeader(rangeHeader, fileSize) {
   return { start, end: Math.min(end, fileSize - 1) };
 }
 
-export async function startStaticServer({ root, port = 0 } = {}) {
+export async function startStaticServer({ root, port = 0, host = "127.0.0.1" } = {}) {
   if (!root) {
     throw new Error("startStaticServer requires a root directory");
   }
@@ -131,7 +131,7 @@ export async function startStaticServer({ root, port = 0 } = {}) {
 
   await new Promise((resolveListen, rejectListen) => {
     server.once("error", rejectListen);
-    server.listen(port, "127.0.0.1", () => {
+    server.listen(port, host, () => {
       server.off("error", rejectListen);
       resolveListen();
     });

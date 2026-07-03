@@ -1960,6 +1960,13 @@ residue and the next frontier.
 
 ### Performance & memory
 - [ ] Frame-time budget; profile hotspots (sim vs render).
+- [ ] Add a GPU-accelerated harness profile (Playwright with GPU flags on a
+      machine with a real GPU) to decompose "slow frames" into sim cost vs
+      SwiftShader software-rasterization cost; keep SwiftShader as the
+      deterministic CI baseline.
+- [ ] Polish `harness/play.html` (human-driveable LAN page): per-archive mount
+      progress, touch-input verification on a real phone, and a smaller
+      mobile-friendly archive set if feasible.
 - [ ] wasm memory tuning; detect/fix leaks; texture/audio memory caps.
 - [ ] Consider threads (pthreads + SharedArrayBuffer, COOP/COEP) where it helps.
 - [ ] Consider WebGPU backend as a successor to WebGL2.
