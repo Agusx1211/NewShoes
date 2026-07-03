@@ -2557,6 +2557,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `CINE_FlashWhiteDelay`, `CINE_ReturnToPlayerStartDelay`, `Give it
       back`, `Give Player The Game`, and `ReturnToPlayerControl` gates present
       but not yet fired.
+- [x] Add an opt-in real-init-only mode to the startup vertical. Setting
+      `STARTUP_VERTICAL_REAL_INIT_ONLY=1` now skips only the phase1
+      archiveless boot and phase2 audio/frontier ownership preflights, then
+      opens a fresh page and drives the same real
+      `CreateGameEngine()` / `GameEngine::init()` / menu / MD_USA01 path used
+      by the default gate. The final JSON reports `mode`, omits skipped
+      preflight screenshots/state in fast mode, and still includes the
+      post-campaign screenshot when extra frames are requested. Verified with
+      `node --check WebAssembly/harness/startup_vertical_smoke.mjs`,
+      `git diff --check`,
+      `STARTUP_VERTICAL_REAL_INIT_ONLY=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=120
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAME_CHUNK=60 node
+      WebAssembly/harness/startup_vertical_smoke.mjs` redirected to
+      `/tmp/cnc-startup-fast-realinit-120.json` (mode `real-init-only`, 21
+      real-init archives, all 43 subsystems completed, frame 297 / logic frame
+      120, zero missing-texture applies, 1,374 objects/drawables, campaign
+      screenshot captured), and a default full run redirected to
+      `/tmp/cnc-startup-full-default.json` (mode `full`, wasm loaded, phase2
+      archive count 7, `createFunctionLexicon` frontier preserved, 2,099
+      object templates, 21 real-init archives, all 43 subsystems completed).
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what

@@ -16,6 +16,7 @@ const realInitMenuClickScreenshot = resolve(screenshotDir, "startup-vertical-rea
 const realInitCampaignStartScreenshot = resolve(screenshotDir, "startup-vertical-real-init-campaign-start.png");
 const realInitPostCampaignScreenshot = resolve(screenshotDir, "startup-vertical-real-init-post-campaign.png");
 const debugStartupVertical = process.env.STARTUP_VERTICAL_DEBUG === "1";
+const realInitOnly = process.env.STARTUP_VERTICAL_REAL_INIT_ONLY === "1";
 const postCampaignFrameCount = Number(process.env.STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES ?? 0);
 const postCampaignFrameChunkCount =
   Number(process.env.STARTUP_VERTICAL_POST_CAMPAIGN_FRAME_CHUNK ?? 0);
@@ -1638,100 +1639,112 @@ let browser;
 
 try {
   browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  attachConsoleLogger(page, "startup");
   const harnessUrl = new URL("harness/index.html", server.url).href;
-
-  debugLog("loading initial harness page");
-  await page.goto(harnessUrl, { waitUntil: "networkidle" });
-  await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
-
-  console.error("[vertical] phase1 boot");
-  debugLog("running archiveless boot");
-  const bootResult = await page.evaluate(() => window.CnCPort.rpc("boot", {
-    source: "startup vertical smoke",
-  }));
-  expect(bootResult.ok === true, "boot RPC failed", bootResult);
-  expect(bootResult.state?.booted === true, "boot state mismatch", bootResult);
-  expect(bootResult.state.wasm === "loaded", "wasm module did not load", bootResult.state);
-  expect(bootResult.state.originalEngineLinked === true,
-    "original engine probes are not linked", bootResult.state);
-  expect(bootResult.state.archiveMount?.registered === false,
-    "startup vertical smoke should run without mounted archives", bootResult.state.archiveMount);
-  expect(bootResult.state.graphics?.api === "webgl2" && bootResult.state.graphics.ok === true,
-    "browser harness did not initialize WebGL2", bootResult.state.graphics);
-
-  assertStartupSingletonsMissing(bootResult.state);
-  assertOriginalStartupFrontier(bootResult.state);
-
   await mkdir(screenshotDir, { recursive: true });
-  await page.screenshot({ path: desktopScreenshot });
-  await page.locator("#viewport").screenshot({ path: canvasScreenshot });
 
-  // Archive-backed boot: mount the startup + audio archive set and prove the
-  // boot constructs the original MilesAudioManager, W3DFunctionLexicon, and
-  // W3DModuleFactory / W3DParticleSystemManager,
-  // runs the real AudioManager::init()/openDevice() path plus the original
-  // W3DFunctionLexicon device-table load, original ControlBarObserver/GameWinBlockInput/MOTD/MainMenu/Credits/Skirmish
-  // base shell callbacks, the promoted Options/SkirmishMapSelect/Challenge/PopupCommunicator/MapSelect/Replay/PopupReplay-modal/GameInfo owners,
-  // and the post-particle W3DThingFactory/object-template parse surface,
-  // and honestly keeps the device-factory frontier at createFunctionLexicon
-  // until the remaining shell callback graph is owned by cnc-port.
-  // W3DFunctionLexicon device-table load, representative original base
-  // layout callbacks, and honestly keeps the device-factory frontier at
-  // createFunctionLexicon until the remaining shell callback graph is owned
-  // by cnc-port.
-  console.error("[vertical] phase2 audio archives");
-  // until the remaining callback owner groups are owned by cnc-port.
-  const archives = await buildAudioOwnershipArchiveSpecs();
-  const audioPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  attachConsoleLogger(audioPage, "archive");
-  debugLog("loading archive-backed harness page");
-  await audioPage.goto(harnessUrl, { waitUntil: "networkidle" });
-  await audioPage.waitForFunction(() => Boolean(window.CnCPort?.rpc));
+  let page = null;
+  let audioPage = null;
+  let bootResult = null;
+  let mountResult = null;
+  let audioBootResult = null;
+  let objectIniResult = null;
 
-  debugLog("mounting archive-backed startup set");
-  const mountResult = await audioPage.evaluate((payload) =>
-    window.CnCPort.rpc("mountRangeBackedArchiveSet", payload), {
-    path: "/assets/startup-audio",
-    verifyEach: false,
-    archives: archives.map((archive) => ({
-      url: new URL(archive.urlPath, server.url).href,
-      name: archive.name,
-      sourceName: archive.sourceName,
-      expectedSourceBytes: archive.bytes,
-      sourceArchive: archive.path,
-      entries: archive.entries,
-    })),
-  });
-  expect(mountResult.ok === true, "audio-ownership archive mount failed", mountResult.archiveSet);
+  if (realInitOnly) {
+    console.error("[vertical] phase1+2 skipped (real-init only)");
+  } else {
+    page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    attachConsoleLogger(page, "startup");
 
-  console.error("[vertical] phase2 audio boot");
-  debugLog("running archive-backed boot");
-  const audioBootResult = await audioPage.evaluate(() => window.CnCPort.rpc("boot", {
-    source: "startup vertical smoke (audio ownership)",
-  }));
-  debugLog("archive-backed boot returned");
-  expect(audioBootResult.ok === true, "audio-ownership boot RPC failed", audioBootResult);
-  expect(audioBootResult.state?.booted === true, "audio-ownership boot state mismatch", audioBootResult);
-  expect(audioBootResult.state.startupSingletons?.ok === true,
-    "audio-ownership boot should own the startup singletons",
-    audioBootResult.state.startupSingletons);
+    debugLog("loading initial harness page");
+    await page.goto(harnessUrl, { waitUntil: "networkidle" });
+    await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
 
-  assertAudioManagerRuntimeOwned(audioBootResult.state);
-  assertFunctionLexiconRuntimeFrontier(audioBootResult.state);
-  assertModuleFactoryRuntimeFrontier(audioBootResult.state);
-  assertParticleSystemRuntimeFrontier(audioBootResult.state);
-  assertAudioOwnedFrontier(audioBootResult.state);
+    console.error("[vertical] phase1 boot");
+    debugLog("running archiveless boot");
+    bootResult = await page.evaluate(() => window.CnCPort.rpc("boot", {
+      source: "startup vertical smoke",
+    }));
+    expect(bootResult.ok === true, "boot RPC failed", bootResult);
+    expect(bootResult.state?.booted === true, "boot state mismatch", bootResult);
+    expect(bootResult.state.wasm === "loaded", "wasm module did not load", bootResult.state);
+    expect(bootResult.state.originalEngineLinked === true,
+      "original engine probes are not linked", bootResult.state);
+    expect(bootResult.state.archiveMount?.registered === false,
+      "startup vertical smoke should run without mounted archives", bootResult.state.archiveMount);
+    expect(bootResult.state.graphics?.api === "webgl2" && bootResult.state.graphics.ok === true,
+      "browser harness did not initialize WebGL2", bootResult.state.graphics);
 
-  debugLog("probing archive-backed object INI runtime");
-  const objectIniResult = await audioPage.evaluate(() => window.CnCPort.rpc("probeObjectIni", {
-    path: "/assets/startup-audio/*.big",
-  }));
-  expect(objectIniResult.ok === true, "archive-backed object INI probe RPC failed", objectIniResult);
-  assertObjectIniThingFactoryRuntime(objectIniResult.probe, "archive-backed startup");
+    assertStartupSingletonsMissing(bootResult.state);
+    assertOriginalStartupFrontier(bootResult.state);
 
-  await audioPage.screenshot({ path: audioBootScreenshot });
+    await page.screenshot({ path: desktopScreenshot });
+    await page.locator("#viewport").screenshot({ path: canvasScreenshot });
+
+    // Archive-backed boot: mount the startup + audio archive set and prove the
+    // boot constructs the original MilesAudioManager, W3DFunctionLexicon, and
+    // W3DModuleFactory / W3DParticleSystemManager,
+    // runs the real AudioManager::init()/openDevice() path plus the original
+    // W3DFunctionLexicon device-table load, original ControlBarObserver/GameWinBlockInput/MOTD/MainMenu/Credits/Skirmish
+    // base shell callbacks, the promoted Options/SkirmishMapSelect/Challenge/PopupCommunicator/MapSelect/Replay/PopupReplay-modal/GameInfo owners,
+    // and the post-particle W3DThingFactory/object-template parse surface,
+    // and honestly keeps the device-factory frontier at createFunctionLexicon
+    // until the remaining shell callback graph is owned by cnc-port.
+    // W3DFunctionLexicon device-table load, representative original base
+    // layout callbacks, and honestly keeps the device-factory frontier at
+    // createFunctionLexicon until the remaining shell callback graph is owned
+    // by cnc-port.
+    console.error("[vertical] phase2 audio archives");
+    // until the remaining callback owner groups are owned by cnc-port.
+    const archives = await buildAudioOwnershipArchiveSpecs();
+    audioPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    attachConsoleLogger(audioPage, "archive");
+    debugLog("loading archive-backed harness page");
+    await audioPage.goto(harnessUrl, { waitUntil: "networkidle" });
+    await audioPage.waitForFunction(() => Boolean(window.CnCPort?.rpc));
+
+    debugLog("mounting archive-backed startup set");
+    mountResult = await audioPage.evaluate((payload) =>
+      window.CnCPort.rpc("mountRangeBackedArchiveSet", payload), {
+      path: "/assets/startup-audio",
+      verifyEach: false,
+      archives: archives.map((archive) => ({
+        url: new URL(archive.urlPath, server.url).href,
+        name: archive.name,
+        sourceName: archive.sourceName,
+        expectedSourceBytes: archive.bytes,
+        sourceArchive: archive.path,
+        entries: archive.entries,
+      })),
+    });
+    expect(mountResult.ok === true, "audio-ownership archive mount failed", mountResult.archiveSet);
+
+    console.error("[vertical] phase2 audio boot");
+    debugLog("running archive-backed boot");
+    audioBootResult = await audioPage.evaluate(() => window.CnCPort.rpc("boot", {
+      source: "startup vertical smoke (audio ownership)",
+    }));
+    debugLog("archive-backed boot returned");
+    expect(audioBootResult.ok === true, "audio-ownership boot RPC failed", audioBootResult);
+    expect(audioBootResult.state?.booted === true, "audio-ownership boot state mismatch", audioBootResult);
+    expect(audioBootResult.state.startupSingletons?.ok === true,
+      "audio-ownership boot should own the startup singletons",
+      audioBootResult.state.startupSingletons);
+
+    assertAudioManagerRuntimeOwned(audioBootResult.state);
+    assertFunctionLexiconRuntimeFrontier(audioBootResult.state);
+    assertModuleFactoryRuntimeFrontier(audioBootResult.state);
+    assertParticleSystemRuntimeFrontier(audioBootResult.state);
+    assertAudioOwnedFrontier(audioBootResult.state);
+
+    debugLog("probing archive-backed object INI runtime");
+    objectIniResult = await audioPage.evaluate(() => window.CnCPort.rpc("probeObjectIni", {
+      path: "/assets/startup-audio/*.big",
+    }));
+    expect(objectIniResult.ok === true, "archive-backed object INI probe RPC failed", objectIniResult);
+    assertObjectIniThingFactoryRuntime(objectIniResult.probe, "archive-backed startup");
+
+    await audioPage.screenshot({ path: audioBootScreenshot });
+  }
 
   // REAL engine lifecycle: fresh page, whole-file archive set, original
   // CreateGameEngine() -> GameEngine::init(-noshellmap -win) -> update()
@@ -1739,8 +1752,8 @@ try {
   // Close the earlier phases' pages first: each holds a full wasm heap plus
   // mounted archives, and keeping three alive can crash the phase-3 tab
   // (renderer OOM) while it fetches the whole-file archive set.
-  await audioPage.close();
-  await page.close();
+  await audioPage?.close();
+  await page?.close();
   console.error("[vertical] phase3 real-init page");
   const realInitPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   await realInitPage.goto(harnessUrl, { waitUntil: "networkidle" });
@@ -1912,31 +1925,32 @@ try {
   }
 
   const audioFrontier =
-    audioBootResult.state.originalEngineStartup.deviceFactoryFrontier;
+    audioBootResult?.state?.originalEngineStartup?.deviceFactoryFrontier;
   console.log(JSON.stringify({
     ok: true,
+    mode: realInitOnly ? "real-init-only" : "full",
     url: harnessUrl,
-    wasm: bootResult.state.wasm,
-    frame: bootResult.state.frame,
+    wasm: bootResult?.state?.wasm ?? null,
+    frame: bootResult?.state?.frame ?? null,
     screenshots: [
-      desktopScreenshot,
-      canvasScreenshot,
-      audioBootScreenshot,
+      ...(bootResult !== null ? [desktopScreenshot, canvasScreenshot] : []),
+      ...(audioBootResult !== null ? [audioBootScreenshot] : []),
       realInitScreenshot,
       realInitMenuClickScreenshot,
       realInitCampaignStartScreenshot,
+      ...(realPostCampaignScreenshotPath !== null ? [realPostCampaignScreenshotPath] : []),
     ],
-    originalEngineStartup: bootResult.state.originalEngineStartup,
-    archiveBackedStartup: {
-      archiveCount: mountResult.archiveSet?.archiveCount,
-      firstUnownedInitFactory: audioFrontier.firstUnownedInitFactory,
-      firstUnownedInitLine: audioFrontier.firstUnownedInitLine,
+    originalEngineStartup: bootResult?.state?.originalEngineStartup ?? null,
+    archiveBackedStartup: audioBootResult !== null ? {
+      archiveCount: mountResult?.archiveSet?.archiveCount,
+      firstUnownedInitFactory: audioFrontier?.firstUnownedInitFactory,
+      firstUnownedInitLine: audioFrontier?.firstUnownedInitLine,
       audioManagerRuntime: audioBootResult.state.audioManagerRuntime,
       functionLexiconRuntime: audioBootResult.state.functionLexiconRuntime,
       moduleFactoryRuntime: audioBootResult.state.moduleFactoryRuntime,
       particleSystemRuntime: audioBootResult.state.particleSystemRuntime,
-      objectIniRuntime: objectIniResult.probe,
-    },
+      objectIniRuntime: objectIniResult?.probe,
+    } : null,
     realEngineInit: {
       archiveCount: realInitMount.archiveSet?.archiveCount,
       runDirectory: realInit.runDirectory,

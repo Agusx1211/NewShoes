@@ -96,9 +96,12 @@ residue and the next frontier.
       `CAMERA_LETTERBOX_END`/`ENABLE_INPUT`. The 720-frame run still reaches
       logic frame 720 with zero missing texture applies, object/drawable count
       advanced to 1,284, and a black screenshot while that later script phase
-      is active. Remaining: retire superseded focused menu smokes and continue
-      from the scripted intro toward a visibly correct, interactable in-game
-      scene.
+      is active. For faster deeper intro/rendering iteration,
+      `STARTUP_VERTICAL_REAL_INIT_ONLY=1` now skips only the phase1
+      archiveless and phase2 audio/frontier preflights while preserving the
+      default full startup vertical gate. Remaining: retire superseded focused
+      menu smokes and continue from the scripted intro toward a visibly
+      correct, interactable in-game scene.
 - [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch
       workaround in `GameEngine::update()` with the real
       `W3DGameLogic`/`SubsystemInterface::UPDATE` wasm vtable ownership fix
