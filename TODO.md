@@ -2032,6 +2032,23 @@ so today's fps numbers say nothing we need to act on yet. Pick these up only
 when a correctness milestone (playable skirmish) makes speed the frontier —
 and then start with the PROFILE, not with any individual fix.
 
+- [x] **Low-hanging perf: gate per-draw harness diagnostics behind a
+      graphics-diagnostics level** (Fable's audit). The hot path
+      (`bridge.js` `paintD3D8DrawIndexed`) was paying, on EVERY indexed draw,
+      for two `gl.readPixels` GPU-sync flushes (`preDrawCenterPixel` +
+      `centerPixel`), a ~40-field probe with per-draw texture sampling, and a
+      spread-copied `d3d8DrawHistory` array — plus a post-clear readPixels and
+      viewport self-verification. Added a `d3d8DiagLevel` (`full` default | `lite`),
+      settable via `?diag=` URL param and `globalThis.__cncSetDiagLevel(...)`.
+      **Default stays `full`** so every startup-vertical gate / regression smoke
+      is untouched; `lite` skips the readPixels, probe, texture sampling,
+      draw-history, post-clear sample, and viewport self-check while still doing
+      the real draw. `play.mjs` (the human page) opts into `lite` (add
+      `?diag=full` to restore) and switched its per-rAF loop from
+      `realEngineFrame` to the lightweight `realEngineFrameSummary`. Measure
+      full-vs-lite on the Mac (Metal) — readPixels removal helps most on real
+      GPU; SwiftShader shows a smaller win. (Deeper shim work — batching, Release
+      build — stays below.)
 - [ ] **Profile before touching anything**: a Chrome DevTools performance
       capture on the Mac (real GPU) of a live shell-map/skirmish session,
       splitting each ~frame into (a) engine wasm CPU, (b) GL/ANGLE wait

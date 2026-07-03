@@ -2806,8 +2806,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       naval shell map 20.8%→0% black, renders beaches/water/rocks/units
       correctly under SwiftShader; MD_USA01 renders textured cliffs, a cloudy
       skybox, a tree, and units on the Mac GPU (Chrome/Metal), 0 missing texture
-      applies, where it was previously 100% black. General lesson for the port:
-      WebGL clears respect write masks, D3D clears do not.
+      applies, where it was previously 100% black. A full boot-to-player-control
+      run on the Mac GPU (3417 engine frames / logic frame 2560) reached
+      `reachedPlayerControl=true` with `inputEnabled=true`, `introDone=true`,
+      `letterBoxed=false`, `controlBarClickable=true`, 881 objects, 0 missing
+      texture applies, and the interactive tactical view renders the full
+      MD_USA01 base scene correctly — detailed desert/farmland terrain (dirt
+      roads, a wheat field), an oil derrick, a barn, a hangar, walls, USA tanks/
+      Humvee, an infantry squad, and the complete control bar/radar/money HUD —
+      the exact frame that was pure-black before the fix. General lesson for the
+      port: WebGL clears respect write masks, D3D clears do not.
 - [x] **Bisect the black-terrain bug down to degenerate terrain geometry**
       (diagnosis only; fix still open — see TODO). Built a fast shell-map
       iteration loop (`WebAssembly/harness/_diag_shell_terrain.mjs`, temp/
