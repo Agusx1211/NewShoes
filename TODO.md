@@ -2045,10 +2045,13 @@ and then start with the PROFILE, not with any individual fix.
       draw-history, post-clear sample, and viewport self-check while still doing
       the real draw. `play.mjs` (the human page) opts into `lite` (add
       `?diag=full` to restore) and switched its per-rAF loop from
-      `realEngineFrame` to the lightweight `realEngineFrameSummary`. Measure
-      full-vs-lite on the Mac (Metal) — readPixels removal helps most on real
-      GPU; SwiftShader shows a smaller win. (Deeper shim work — batching, Release
-      build — stays below.)
+      `realEngineFrame` to the lightweight `realEngineFrameSummary`. **Measured
+      (SwiftShader shell map, 100 frames): full 1536.7 ms/frame (0.65 fps) →
+      lite 156.3 ms/frame (6.4 fps), a ~10× speedup** — the per-draw diagnostics
+      (two readPixels syncs + probe + draw-history) were ~90% of frame time, not
+      the actual rendering. Metal should gain even more from the readPixels
+      GPU-sync removal (measure there when convenient). (Deeper shim work —
+      batching, Release build — stays below.)
 - [ ] **Profile before touching anything**: a Chrome DevTools performance
       capture on the Mac (real GPU) of a live shell-map/skirmish session,
       splitting each ~frame into (a) engine wasm CPU, (b) GL/ANGLE wait

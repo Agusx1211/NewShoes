@@ -73,7 +73,9 @@ async function runFrameLoop(rpc) {
       return;
     }
     try {
-      const result = await rpc("realEngineFrame", { frames: 1 });
+      // Lightweight per-rAF stepping: the full clientState JSON is pure overhead
+      // for the human page (see realEngineFrameSummary).
+      const result = await rpc("realEngineFrameSummary", { frames: 1 });
       if (result?.ok !== true) {
         running = false;
         fail("engine frame failed", result);
@@ -99,6 +101,15 @@ async function start() {
   try {
     report("waiting for wasm bridge...");
     const rpc = await waitForRpc();
+
+    // The human-playable page runs graphics diagnostics in "lite" mode: skip the
+    // per-draw readPixels GPU syncs / probe objects / draw-history that the
+    // regression harness needs but the player does not. Add ?diag=full to
+    // restore full diagnostics for debugging.
+    const diagParam = new URLSearchParams(window.location.search).get("diag");
+    if (diagParam !== "full" && typeof window.__cncSetDiagLevel === "function") {
+      window.__cncSetDiagLevel("lite");
+    }
 
     report("downloading + mounting 21 archives (~1.3 GB, be patient)...");
     const mount = await rpc("mountArchives", {

@@ -1890,6 +1890,10 @@ function applyD3D8Viewport(reason = "draw") {
   gl.scissor(viewport.gl.x, viewport.gl.y, viewport.gl.width, viewport.gl.height);
   gl.depthRange(viewport.gl.minZ, viewport.gl.maxZ);
 
+  if (d3d8DiagLevel !== "full") {
+    return { ok: true, source: "browser_d3d8_viewport", gl: viewport.gl, lite: true };
+  }
+
   const actualViewport = Array.from(gl.getParameter(gl.VIEWPORT));
   const actualScissor = Array.from(gl.getParameter(gl.SCISSOR_BOX));
   const actualDepthRange = Array.from(gl.getParameter(gl.DEPTH_RANGE));
@@ -3997,6 +4001,9 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
   } else if (fallbackContext && (clearFlags & 0x1) !== 0) {
     fallbackContext.fillStyle = `rgb(${rgba[0]} ${rgba[1]} ${rgba[2]})`;
     fallbackContext.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  if (d3d8DiagLevel !== "full") {
+    return 1; // lite: skip the post-clear readPixels + probe
   }
   refreshCanvasState();
   const pixel = sampleCanvasPixel(0, 0);
@@ -6116,6 +6123,24 @@ function applyD3D8RenderState(renderState, options = {}) {
   };
 }
 
+// Graphics diagnostics level. "full" (default) keeps every per-draw probe,
+// texture sample, draw-history entry, and the two readPixels GPU syncs that the
+// startup-vertical gates and regression smokes assert on. "lite" skips those
+// harness-only costs on the hot path (readPixels flushes dominate render time)
+// while still doing the real draw — for the human-playable page. Never change
+// the default: existing gates depend on "full".
+let d3d8DiagLevel = "full";
+try {
+  const _diag = new URLSearchParams(globalThis.location?.search || "").get("diag");
+  if (_diag === "lite" || _diag === "full") d3d8DiagLevel = _diag;
+} catch (_e) { /* no location (node context) */ }
+if (typeof globalThis !== "undefined") {
+  globalThis.__cncSetDiagLevel = (lvl) => {
+    if (lvl === "lite" || lvl === "full") d3d8DiagLevel = lvl;
+    return d3d8DiagLevel;
+  };
+}
+
 function paintD3D8DrawIndexed(payload = {}) {
   const drawSequence = (Number(harnessState.graphics.d3d8DrawIndexedSequence ?? 0) >>> 0) + 1;
   const vertexByteSize = Number(payload.vertexBytes ?? 0) >>> 0;
@@ -6215,7 +6240,9 @@ function paintD3D8DrawIndexed(payload = {}) {
       useTransforms ? { world, view, projection } : null,
     );
   }
-  const preDrawCenterPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
+  const preDrawCenterPixel = d3d8DiagLevel === "full"
+    ? sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2))
+    : null;
   let centerPixel = preDrawCenterPixel;
 
   if (gl && baseGlPrimitive && usePersistentBuffers && vertexByteSize > 0 && indexByteSize > 0 &&
@@ -6643,9 +6670,20 @@ function paintD3D8DrawIndexed(payload = {}) {
         gl.deleteBuffer(temporaryIndexBuffer);
       }
     }
-    refreshCanvasState();
-    centerPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
-    drawOk = fillModeDraw.supported && shadeModeDraw.supported && pixelHasColor(centerPixel);
+    if (d3d8DiagLevel === "full") {
+      refreshCanvasState();
+      centerPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
+      drawOk = fillModeDraw.supported && shadeModeDraw.supported && pixelHasColor(centerPixel);
+    } else {
+      drawOk = fillModeDraw.supported && shadeModeDraw.supported;
+    }
+  }
+
+  if (d3d8DiagLevel !== "full") {
+    // lite: skip the ~40-field probe, per-draw texture sampling, and the
+    // spread-copied draw-history array — keep only the cheap sequence counter.
+    harnessState.graphics.d3d8DrawIndexedSequence = drawSequence;
+    return drawOk ? 1 : 0;
   }
 
   const probe = {
