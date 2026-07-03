@@ -4626,6 +4626,7 @@ add_library(zh_gameengine_real_lifecycle_runtime STATIC
 
 target_compile_definitions(zh_gameengine_real_lifecycle_runtime PRIVATE
   ALLOW_DEBUG_UTILS=1
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
   DEBUG_LOGGING=1
   DISABLE_DEBUG_CRASHING=1
   DISABLE_DEBUG_STACKTRACE=1
@@ -4780,6 +4781,7 @@ set_source_files_properties(src/wasm_startup_singletons_probe.cpp PROPERTIES
 )
 
 set_source_files_properties(src/wasm_real_engine_init.cpp PROPERTIES
+  COMPILE_DEFINITIONS CNC_PORT_REAL_GAMELOGIC_HEADER=1
   COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/windows.h;-include${WASM_SHIMS_DIR}/mmsystem.h;-include${WWVEGAS_PORT_SHIM};-include${WASM_SHIMS_DIR}/atlbase.h;${WOL_BROWSER_COMPILE_BRIDGE};-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${MAIN_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/Miles6/include;-iquote${WWAUDIO_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${WWSAVELOAD_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR};-Wno-implicit-exception-spec-mismatch;-Wno-new-returns-null;-Wno-undefined-bool-conversion;-Wno-unused-parameter"
 )
 

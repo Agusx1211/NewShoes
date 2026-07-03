@@ -49,6 +49,10 @@ static Int g_wasmShellPushCount = 0;
 static Int g_wasmShellDoPushCount = 0;
 static Int g_wasmShellDoPushRunInitCount = 0;
 static Int g_wasmShellLastDoPushHadInit = 0;
+static Int g_wasmShellShowShellCount = 0;
+static Int g_wasmShellShowShellMapOnCount = 0;
+static Int g_wasmShellShowShellMapOffCount = 0;
+static Int g_wasmShellHideShellCount = 0;
 static AsciiString g_wasmShellLastPushName;
 static AsciiString g_wasmShellLastDoPushName;
 
@@ -56,6 +60,10 @@ extern "C" Int cnc_port_shell_push_count( void ) { return g_wasmShellPushCount; 
 extern "C" Int cnc_port_shell_do_push_count( void ) { return g_wasmShellDoPushCount; }
 extern "C" Int cnc_port_shell_do_push_run_init_count( void ) { return g_wasmShellDoPushRunInitCount; }
 extern "C" Int cnc_port_shell_last_do_push_had_init( void ) { return g_wasmShellLastDoPushHadInit; }
+extern "C" Int cnc_port_shell_show_shell_count( void ) { return g_wasmShellShowShellCount; }
+extern "C" Int cnc_port_shell_show_shell_map_on_count( void ) { return g_wasmShellShowShellMapOnCount; }
+extern "C" Int cnc_port_shell_show_shell_map_off_count( void ) { return g_wasmShellShowShellMapOffCount; }
+extern "C" Int cnc_port_shell_hide_shell_count( void ) { return g_wasmShellHideShellCount; }
 extern "C" const char *cnc_port_shell_last_push_name( void ) { return g_wasmShellLastPushName.str(); }
 extern "C" const char *cnc_port_shell_last_do_push_name( void ) { return g_wasmShellLastDoPushName.str(); }
 #endif
@@ -429,6 +437,9 @@ void Shell::popImmediate( void )
 void Shell::showShell( Bool runInit )
 {
 	DEBUG_LOG(("Shell:showShell() - %s (%s)\n", TheGlobalData->m_initialFile.str(), (top())?top()->getFilename().str():"no top screen"));
+#ifdef __EMSCRIPTEN__
+	++g_wasmShellShowShellCount;
+#endif
 
 	if(!TheGlobalData->m_initialFile.isEmpty())
 	{
@@ -491,6 +502,12 @@ void Shell::showShell( Bool runInit )
 
 void Shell::showShellMap(Bool useShellMap )
 {
+#ifdef __EMSCRIPTEN__
+	if( useShellMap )
+		++g_wasmShellShowShellMapOnCount;
+	else
+		++g_wasmShellShowShellMapOffCount;
+#endif
 	// we don't want any of this to show if we're loading straight into a file
 	if(TheGlobalData->m_initialFile.isNotEmpty() || !TheGameLogic )
 		return;
@@ -539,6 +556,9 @@ void Shell::showShellMap(Bool useShellMap )
 //-------------------------------------------------------------------------------------------------
 void Shell::hideShell( void )
 {
+#ifdef __EMSCRIPTEN__
+	++g_wasmShellHideShellCount;
+#endif
 	// If we have the 3d background running, mark it to close
 	m_clearBackground = TRUE;
 

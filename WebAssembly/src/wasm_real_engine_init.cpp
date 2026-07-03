@@ -129,8 +129,31 @@ extern "C" Int cnc_port_shell_push_count(void);
 extern "C" Int cnc_port_shell_do_push_count(void);
 extern "C" Int cnc_port_shell_do_push_run_init_count(void);
 extern "C" Int cnc_port_shell_last_do_push_had_init(void);
+extern "C" Int cnc_port_shell_show_shell_count(void);
+extern "C" Int cnc_port_shell_show_shell_map_on_count(void);
+extern "C" Int cnc_port_shell_show_shell_map_off_count(void);
+extern "C" Int cnc_port_shell_hide_shell_count(void);
 extern "C" const char *cnc_port_shell_last_push_name(void);
 extern "C" const char *cnc_port_shell_last_do_push_name(void);
+extern "C" Int cnc_port_start_new_game_shell_branch_count(void);
+extern "C" Int cnc_port_start_new_game_shell_push_attempt_count(void);
+extern "C" Int cnc_port_start_new_game_shell_reveal_existing_count(void);
+extern "C" Int cnc_port_start_new_game_shell_last_mode(void);
+extern "C" Int cnc_port_start_new_game_shell_last_screen_count_before(void);
+extern "C" Int cnc_port_start_new_game_shell_last_screen_count_after(void);
+extern "C" const char *cnc_port_start_new_game_shell_last_action(void);
+extern "C" Int cnc_port_start_new_game_count(void);
+extern "C" Int cnc_port_start_new_game_last_entry_mode(void);
+extern "C" Int cnc_port_start_new_game_last_after_defaults_mode(void);
+extern "C" Int cnc_port_start_new_game_last_before_shell_branch_mode(void);
+extern "C" Int cnc_port_logic_dispatch_new_game_count(void);
+extern "C" Int cnc_port_logic_dispatch_last_new_game_mode(void);
+extern "C" Int cnc_port_logic_dispatch_prepare_new_game_count(void);
+extern "C" Int cnc_port_logic_dispatch_last_prepare_new_game_mode(void);
+extern "C" Int cnc_port_logic_dispatch_last_mode_after_set(void);
+extern "C" Int cnc_port_logic_dispatch_prepare_this_is_global(void);
+extern "C" Int cnc_port_logic_dispatch_prepare_hide_shell_count(void);
+extern "C" Int cnc_port_logic_dispatch_clear_game_data_count(void);
 extern void W3DMainMenuInit(WindowLayout *layout, void *userData);
 
 static std::string g_last_engine_update_target;
@@ -1576,8 +1599,19 @@ void append_real_engine_client_state(std::string &json)
 	} else {
 		json += ",\"inGame\":null,\"gameMode\":null,\"loadingMap\":null,"
 			"\"loadingSave\":null,\"clearingGameData\":null,\"gamePaused\":null,"
-			"\"logicFrame\":null,\"objectCount\":0,\"progressComplete\":null";
+		"\"logicFrame\":null,\"objectCount\":0,\"progressComplete\":null";
 	}
+	json += ",\"lifecycleDebug\":{";
+	json += "\"newGameCount\":" + std::to_string(cnc_port_logic_dispatch_new_game_count());
+	json += ",\"lastNewGameMode\":" + std::to_string(cnc_port_logic_dispatch_last_new_game_mode());
+	json += ",\"prepareNewGameCount\":" + std::to_string(cnc_port_logic_dispatch_prepare_new_game_count());
+	json += ",\"lastPrepareNewGameMode\":" + std::to_string(cnc_port_logic_dispatch_last_prepare_new_game_mode());
+	json += ",\"lastModeAfterSet\":" + std::to_string(cnc_port_logic_dispatch_last_mode_after_set());
+	json += ",\"prepareThisIsGlobal\":";
+	json += cnc_port_logic_dispatch_prepare_this_is_global() != 0 ? "true" : "false";
+	json += ",\"prepareHideShellCount\":" + std::to_string(cnc_port_logic_dispatch_prepare_hide_shell_count());
+	json += ",\"clearGameDataCount\":" + std::to_string(cnc_port_logic_dispatch_clear_game_data_count());
+	json += "}";
 
 	json += ",\"gameClientReady\":";
 	json += TheGameClient != NULL ? "true" : "false";
@@ -1745,6 +1779,10 @@ void append_real_engine_client_state(std::string &json)
 	json += "\"pushCount\":" + std::to_string(cnc_port_shell_push_count());
 	json += ",\"doPushCount\":" + std::to_string(cnc_port_shell_do_push_count());
 	json += ",\"doPushRunInitCount\":" + std::to_string(cnc_port_shell_do_push_run_init_count());
+	json += ",\"showShellCount\":" + std::to_string(cnc_port_shell_show_shell_count());
+	json += ",\"showShellMapOnCount\":" + std::to_string(cnc_port_shell_show_shell_map_on_count());
+	json += ",\"showShellMapOffCount\":" + std::to_string(cnc_port_shell_show_shell_map_off_count());
+	json += ",\"hideShellCount\":" + std::to_string(cnc_port_shell_hide_shell_count());
 	json += ",\"lastDoPushHadInit\":";
 	json += cnc_port_shell_last_do_push_had_init() != 0 ? "true" : "false";
 	json += ",\"lastPushName\":\"";
@@ -1753,7 +1791,21 @@ void append_real_engine_client_state(std::string &json)
 	json += "\",\"lastDoPushName\":\"";
 	json += json_escape(cnc_port_shell_last_do_push_name() != NULL ?
 		cnc_port_shell_last_do_push_name() : "");
-	json += "\"}}";
+	json += "\",\"startNewGameShell\":{";
+	json += "\"startNewGameCount\":" + std::to_string(cnc_port_start_new_game_count());
+	json += ",\"lastEntryMode\":" + std::to_string(cnc_port_start_new_game_last_entry_mode());
+	json += ",\"lastAfterDefaultsMode\":" + std::to_string(cnc_port_start_new_game_last_after_defaults_mode());
+	json += ",\"lastBeforeShellBranchMode\":" + std::to_string(cnc_port_start_new_game_last_before_shell_branch_mode());
+	json += ",\"branchCount\":" + std::to_string(cnc_port_start_new_game_shell_branch_count());
+	json += ",\"pushAttemptCount\":" + std::to_string(cnc_port_start_new_game_shell_push_attempt_count());
+	json += ",\"revealExistingCount\":" + std::to_string(cnc_port_start_new_game_shell_reveal_existing_count());
+	json += ",\"lastMode\":" + std::to_string(cnc_port_start_new_game_shell_last_mode());
+	json += ",\"lastScreenCountBefore\":" + std::to_string(cnc_port_start_new_game_shell_last_screen_count_before());
+	json += ",\"lastScreenCountAfter\":" + std::to_string(cnc_port_start_new_game_shell_last_screen_count_after());
+	json += ",\"lastAction\":\"";
+	json += json_escape(cnc_port_start_new_game_shell_last_action() != NULL ?
+		cnc_port_start_new_game_shell_last_action() : "");
+	json += "\"}}}";
 
 	json += ",\"shell\":{";
 	WindowLayout *top = TheShell != NULL ? TheShell->top() : NULL;

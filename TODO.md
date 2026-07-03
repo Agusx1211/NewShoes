@@ -33,18 +33,6 @@ frontier is computed from the run (a `SubsystemInterfaceList::initSubsystem`
 hook + stdout markers), never hand-authored. Open items below are the
 residue and the next frontier.
 
-- [ ] **Shell map (ShellMapMD) first frame renders black**: with
-      `realEngineInit({shellMap: true})` (commit ff74146) the 3D menu
-      background map now loads through the real boot — MapCache lookup
-      passes, `showShellMap` dispatches, 1310 objects/drawables spawn at
-      ~38fps on real GPU — but the canvas goes black (menu hidden, no 3D
-      frame) instead of the naval scene behind the menu. Probe with
-      `harness/play.html` (shell map defaults on; `?shellmap=0` opts out)
-      plus the `mapCacheProbe` RPC; suspects: shell not re-shown after
-      `prepareNewGame` (`isInShellGame` path), W3D view not aimed/activated
-      for the shell game, or startNewGame stalled at a gate. Same map-load
-      lane as the campaign work. `play.html` defaults shell map OFF until
-      this renders; pass `?shellmap=1` to reproduce.
 - [ ] **Advance the real boot from the title screen to the interactive main
       menu**: drive the shell past the title through real
       `GameClient::update()` (Shell push of `MainMenu.wnd`), route browser
@@ -158,6 +146,14 @@ residue and the next frontier.
       `zh_gameengine_real_ini_runtime`), never the shim-flavored
       `zh_window_layout_script_runtime`; `harness/phase3_isolate.mjs` is the
       mount-crash reproducer/bisection driver.
+- [ ] Audit and gate the remaining high-risk class-layout shim headers that
+      can shadow real runtime includes now that the real shell-map path proved
+      the same weak-inline hazard for `GameLogic/GameLogic.h`. Start with
+      `WebAssembly/shims/Common/GlobalData.h`,
+      `WebAssembly/shims/Common/INI.h`, and
+      `WebAssembly/shims/Common/STLTypedefs.h`; use target-scoped
+      real-header ownership for real lifecycle sources instead of broad
+      include-order churn that could break legacy probes.
 - [ ] Replace the 6 remaining undefined boundary symbols
       (`DumpExceptionInfo`, `SetDeviceGammaRamp`, WWLib `RegistryClass` ×3,
       `getQR2HostingStatus`) with real browser boundary shims and restore

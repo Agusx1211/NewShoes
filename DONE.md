@@ -2384,6 +2384,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `git diff --check`, `wasm-objdump` symbol checks for real
       `W3DMainMenuInit` / `W3DMainMenuDraw`, and screenshot
       `startup-vertical-real-init-menu-click.png`.
+- [x] Render the real ShellMapMD shell-map path instead of the black first
+      frame. The real lifecycle target now compiles `GameLogic/GameLogic.h`
+      through the original header for real-runtime sources while leaving
+      probe users on the shim header, and `GameLogic::prepareNewGame()` writes
+      `m_gameMode` directly in that original translation unit so the mixed
+      wasm link cannot coalesce the weak inline accessor through a
+      probe-flavored definition. The shell-map boot now preserves
+      `GAME_SHELL`: `lastModeAfterSet=4`, `startNewGame` enters with mode 4,
+      pushes `Menus/MainMenu.wnd` through real `W3DMainMenuInit`, and renders
+      the shell naval scene/logo in the browser. Verified by rebuilding
+      `cnc-port` and driving `harness/play.html?shellmap=1` in headless
+      Chromium against the 21 real-init archives: all 43 subsystems complete,
+      frame 16 reports 305 objects/drawables, 40 rendered objects,
+      `shellTop=Menus/MainMenu.wnd`, center pixel `[10,22,30,255]`, and
+      screenshot `artifacts/screenshots/shellmap-real-header-fix-canvas.png`.
 - [x] Drive the real startup lifecycle from the visible difficulty menu into
       the original easy USA campaign-start path. The startup vertical harness
       now clicks real `ButtonEasy`, records the original `MainMenu.cpp`

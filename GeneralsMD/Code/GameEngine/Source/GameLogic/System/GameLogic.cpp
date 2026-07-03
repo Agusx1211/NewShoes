@@ -114,6 +114,43 @@
 
 #ifdef __EMSCRIPTEN__
 extern "C" void cnc_port_note_game_logic_step(const char *name) __attribute__((weak));
+static Int g_wasmStartNewGameShellBranchCount = 0;
+static Int g_wasmStartNewGameShellPushAttemptCount = 0;
+static Int g_wasmStartNewGameShellRevealExistingCount = 0;
+static Int g_wasmStartNewGameShellLastMode = -1;
+static Int g_wasmStartNewGameShellLastScreenCountBefore = -1;
+static Int g_wasmStartNewGameShellLastScreenCountAfter = -1;
+static Int g_wasmStartNewGameCount = 0;
+static Int g_wasmStartNewGameLastEntryMode = -1;
+static Int g_wasmStartNewGameLastAfterDefaultsMode = -1;
+static Int g_wasmStartNewGameLastBeforeShellBranchMode = -1;
+static AsciiString g_wasmStartNewGameShellLastAction;
+
+extern "C" Int cnc_port_start_new_game_shell_branch_count( void ) { return g_wasmStartNewGameShellBranchCount; }
+extern "C" Int cnc_port_start_new_game_shell_push_attempt_count( void ) { return g_wasmStartNewGameShellPushAttemptCount; }
+extern "C" Int cnc_port_start_new_game_shell_reveal_existing_count( void ) { return g_wasmStartNewGameShellRevealExistingCount; }
+extern "C" Int cnc_port_start_new_game_shell_last_mode( void ) { return g_wasmStartNewGameShellLastMode; }
+extern "C" Int cnc_port_start_new_game_shell_last_screen_count_before( void ) { return g_wasmStartNewGameShellLastScreenCountBefore; }
+extern "C" Int cnc_port_start_new_game_shell_last_screen_count_after( void ) { return g_wasmStartNewGameShellLastScreenCountAfter; }
+extern "C" const char *cnc_port_start_new_game_shell_last_action( void ) { return g_wasmStartNewGameShellLastAction.str(); }
+extern "C" Int cnc_port_start_new_game_count( void ) { return g_wasmStartNewGameCount; }
+extern "C" Int cnc_port_start_new_game_last_entry_mode( void ) { return g_wasmStartNewGameLastEntryMode; }
+extern "C" Int cnc_port_start_new_game_last_after_defaults_mode( void ) { return g_wasmStartNewGameLastAfterDefaultsMode; }
+extern "C" Int cnc_port_start_new_game_last_before_shell_branch_mode( void ) { return g_wasmStartNewGameLastBeforeShellBranchMode; }
+
+static void cnc_port_note_start_new_game_shell_action( const char *action, Int mode )
+{
+	g_wasmStartNewGameShellLastAction = action;
+	g_wasmStartNewGameShellLastMode = mode;
+	g_wasmStartNewGameShellLastScreenCountBefore = TheShell ? TheShell->getScreenCount() : -1;
+	g_wasmStartNewGameShellLastScreenCountAfter = g_wasmStartNewGameShellLastScreenCountBefore;
+}
+
+static void cnc_port_note_start_new_game_shell_after( void )
+{
+	g_wasmStartNewGameShellLastScreenCountAfter = TheShell ? TheShell->getScreenCount() : -1;
+}
+
 #define CNC_PORT_NOTE_GAME_LOGIC_STEP(name) \
 	do { \
 		if (cnc_port_note_game_logic_step) { \
@@ -122,6 +159,8 @@ extern "C" void cnc_port_note_game_logic_step(const char *name) __attribute__((w
 	} while (0)
 #else
 #define CNC_PORT_NOTE_GAME_LOGIC_STEP(name) do { } while (0)
+#define cnc_port_note_start_new_game_shell_action(action, mode) do { } while (0)
+#define cnc_port_note_start_new_game_shell_after() do { } while (0)
 #endif
 
 DECLARE_PERF_TIMER(SleepyMaintenance)
@@ -1117,6 +1156,10 @@ void GameLogic::deleteLoadScreen( void )
 void GameLogic::startNewGame( Bool loadingSaveGame )
 {
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.entry");
+#ifdef __EMSCRIPTEN__
+	++g_wasmStartNewGameCount;
+	g_wasmStartNewGameLastEntryMode = m_gameMode;
+#endif
 
 	#ifdef DUMP_PERF_STATS
 	__int64 startTime64;
@@ -1179,6 +1222,9 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 
 	m_rankLevelLimit = 1000;	// this is reset every game.
 	setDefaults( loadingSaveGame );
+#ifdef __EMSCRIPTEN__
+	g_wasmStartNewGameLastAfterDefaultsMode = m_gameMode;
+#endif
 	TheWritableGlobalData->m_loadScreenRender = TRUE;	///< mark it so only a few select things are rendered during load	
 	TheWritableGlobalData->m_TiVOFastMode = FALSE;	//always disable the TIVO fast-forward mode at the start of a new game.
 
@@ -2274,14 +2320,33 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	DEBUG_LOG(("%s", Buf));
 	#endif
 
+#ifdef __EMSCRIPTEN__
+	g_wasmStartNewGameLastBeforeShellBranchMode = m_gameMode;
+#endif
 	if(m_gameMode == GAME_SHELL)
 	{
+#ifdef __EMSCRIPTEN__
+		++g_wasmStartNewGameShellBranchCount;
+		cnc_port_note_start_new_game_shell_action( "enter", m_gameMode );
+#endif
 		if(TheShell->getScreenCount() == 0)
+		{
+#ifdef __EMSCRIPTEN__
+			++g_wasmStartNewGameShellPushAttemptCount;
+			cnc_port_note_start_new_game_shell_action( "push-main-menu", m_gameMode );
+#endif
 			TheShell->push( AsciiString("Menus/MainMenu.wnd") );
+			cnc_port_note_start_new_game_shell_after();
+		}
 		else if (TheShell->top())
 		{
+#ifdef __EMSCRIPTEN__
+			++g_wasmStartNewGameShellRevealExistingCount;
+			cnc_port_note_start_new_game_shell_action( "reveal-existing", m_gameMode );
+#endif
 			TheShell->top()->hide(FALSE);
 			TheShell->top()->bringForward();
+			cnc_port_note_start_new_game_shell_after();
 		}
 		HideControlBar();
 	}

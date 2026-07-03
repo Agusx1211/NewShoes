@@ -88,6 +88,24 @@
 
 #ifdef __EMSCRIPTEN__
 extern "C" void cnc_port_note_game_logic_step(const char *name) __attribute__((weak));
+static Int g_wasmLogicDispatchNewGameCount = 0;
+static Int g_wasmLogicDispatchLastNewGameMode = -1;
+static Int g_wasmLogicDispatchPrepareNewGameCount = 0;
+static Int g_wasmLogicDispatchLastPrepareNewGameMode = -1;
+static Int g_wasmLogicDispatchLastModeAfterSet = -1;
+static Int g_wasmLogicDispatchPrepareThisIsGlobal = 0;
+static Int g_wasmLogicDispatchPrepareHideShellCount = 0;
+static Int g_wasmLogicDispatchClearGameDataCount = 0;
+
+extern "C" Int cnc_port_logic_dispatch_new_game_count( void ) { return g_wasmLogicDispatchNewGameCount; }
+extern "C" Int cnc_port_logic_dispatch_last_new_game_mode( void ) { return g_wasmLogicDispatchLastNewGameMode; }
+extern "C" Int cnc_port_logic_dispatch_prepare_new_game_count( void ) { return g_wasmLogicDispatchPrepareNewGameCount; }
+extern "C" Int cnc_port_logic_dispatch_last_prepare_new_game_mode( void ) { return g_wasmLogicDispatchLastPrepareNewGameMode; }
+extern "C" Int cnc_port_logic_dispatch_last_mode_after_set( void ) { return g_wasmLogicDispatchLastModeAfterSet; }
+extern "C" Int cnc_port_logic_dispatch_prepare_this_is_global( void ) { return g_wasmLogicDispatchPrepareThisIsGlobal; }
+extern "C" Int cnc_port_logic_dispatch_prepare_hide_shell_count( void ) { return g_wasmLogicDispatchPrepareHideShellCount; }
+extern "C" Int cnc_port_logic_dispatch_clear_game_data_count( void ) { return g_wasmLogicDispatchClearGameDataCount; }
+
 #define CNC_PORT_NOTE_GAME_LOGIC_STEP(name) \
 	do { \
 		if (cnc_port_note_game_logic_step) { \
@@ -258,6 +276,9 @@ void GameLogic::closeWindows( void )
 // ------------------------------------------------------------------------------------------------
 void GameLogic::clearGameData( Bool showScoreScreen )
 {
+#ifdef __EMSCRIPTEN__
+	++g_wasmLogicDispatchClearGameDataCount;
+#endif
 	if( !isInGame() )
 	{
 		DEBUG_CRASH(("We tried to clear the game data when we weren't in a game"));
@@ -322,6 +343,10 @@ void GameLogic::clearGameData( Bool showScoreScreen )
 void GameLogic::prepareNewGame( Int gameMode, GameDifficulty diff, Int rankPoints )
 {
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.prepareNewGame.entry");
+#ifdef __EMSCRIPTEN__
+	++g_wasmLogicDispatchPrepareNewGameCount;
+	g_wasmLogicDispatchLastPrepareNewGameMode = gameMode;
+#endif
 	//Added By Sadullah Nader
 	//Fix for loading game scene
 
@@ -341,7 +366,16 @@ void GameLogic::prepareNewGame( Int gameMode, GameDifficulty diff, Int rankPoint
 		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.prepareNewGame.blankWindow.after");
 	}
 	m_background->getFirstWindow()->winClearStatus(WIN_STATUS_IMAGE);
+#ifdef __EMSCRIPTEN__
+	// Keep this translation unit's real GameLogic layout authoritative in the
+	// mixed wasm link; inline accessors are weak and can be coalesced from
+	// probe-flavored objects.
+	m_gameMode = gameMode;
+	g_wasmLogicDispatchLastModeAfterSet = m_gameMode;
+	g_wasmLogicDispatchPrepareThisIsGlobal = this == TheGameLogic ? 1 : 0;
+#else
 	TheGameLogic->setGameMode( gameMode );
+#endif
 	if (!TheGlobalData->m_pendingFile.isEmpty())
 	{
 		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.prepareNewGame.pendingFile.before");
@@ -354,8 +388,15 @@ void GameLogic::prepareNewGame( Int gameMode, GameDifficulty diff, Int rankPoint
 	DEBUG_LOG(("GameLogic::prepareNewGame() - m_rankPointsToAddAtGameStart = %d\n", m_rankPointsToAddAtGameStart));
 
 	// If we're about to start a game, hide the shell.
+#ifdef __EMSCRIPTEN__
+	if(gameMode != GAME_SHELL)
+#else
 	if(!TheGameLogic->isInShellGame())
+#endif
 	{
+#ifdef __EMSCRIPTEN__
+		++g_wasmLogicDispatchPrepareHideShellCount;
+#endif
 		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.prepareNewGame.hideShell.before");
 		TheShell->hideShell();
 		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.prepareNewGame.hideShell.after");
@@ -443,23 +484,27 @@ void GameLogic::logicMessageDispatcher( GameMessage *msg, void *userData )
 			{
 				CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.logicMessageDispatcher.MSG_NEW_GAME.entry");
 				//DEBUG_ASSERTCRASH(msg->getArgumentCount() == 1 || msg->getArgumentCount() == 2, ("%d arguments to MSG_NEW_GAME", msg->getArgumentCount()));
-			Int gameMode = msg->getArgument( 0 )->integer;
-			Int rankPoints = 0;
-			GameDifficulty diff = DIFFICULTY_NORMAL;
-			if ( msg->getArgumentCount() >= 2 )
-				diff = (GameDifficulty)msg->getArgument( 1 )->integer;
-			if ( msg->getArgumentCount() >= 3 )
-				rankPoints = msg->getArgument( 2 )->integer;
+				Int gameMode = msg->getArgument( 0 )->integer;
+				Int rankPoints = 0;
+				GameDifficulty diff = DIFFICULTY_NORMAL;
+#ifdef __EMSCRIPTEN__
+				++g_wasmLogicDispatchNewGameCount;
+				g_wasmLogicDispatchLastNewGameMode = gameMode;
+#endif
+				if ( msg->getArgumentCount() >= 2 )
+					diff = (GameDifficulty)msg->getArgument( 1 )->integer;
+				if ( msg->getArgumentCount() >= 3 )
+					rankPoints = msg->getArgument( 2 )->integer;
 			
-			if ( msg->getArgumentCount() >= 4 )
-			{
-				Int maxFPS = msg->getArgument( 3 )->integer;
-				if (maxFPS < 1 || maxFPS > 1000)
-					maxFPS = TheGlobalData->m_framesPerSecondLimit;
-				DEBUG_LOG(("Setting max FPS limit to %d FPS\n", maxFPS));
-				TheGameEngine->setFramesPerSecondLimit(maxFPS);
-				TheWritableGlobalData->m_useFpsLimit = true;
-			}
+				if ( msg->getArgumentCount() >= 4 )
+				{
+					Int maxFPS = msg->getArgument( 3 )->integer;
+					if (maxFPS < 1 || maxFPS > 1000)
+						maxFPS = TheGlobalData->m_framesPerSecondLimit;
+					DEBUG_LOG(("Setting max FPS limit to %d FPS\n", maxFPS));
+					TheGameEngine->setFramesPerSecondLimit(maxFPS);
+					TheWritableGlobalData->m_useFpsLimit = true;
+				}
 
 				// prepare for new game
 				CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.logicMessageDispatcher.MSG_NEW_GAME.prepare.before");

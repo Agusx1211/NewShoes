@@ -1,5 +1,9 @@
 #pragma once
 
+#if defined(CNC_PORT_REAL_GAMELOGIC_HEADER)
+#include_next "GameLogic/GameLogic.h"
+#else
+
 #include "Common/GameCommon.h"
 #include "Common/GameType.h"
 
@@ -67,3 +71,5 @@ private:
 };
 
 extern GameLogic *TheGameLogic;
+
+#endif
