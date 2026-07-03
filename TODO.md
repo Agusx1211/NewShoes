@@ -192,10 +192,6 @@ residue and the next frontier.
       `WebAssembly/shims/Common/STLTypedefs.h`; use target-scoped
       real-header ownership for real lifecycle sources instead of broad
       include-order churn that could break legacy probes.
-- [ ] Replace the 6 remaining undefined boundary symbols
-      (`DumpExceptionInfo`, `SetDeviceGammaRamp`, WWLib `RegistryClass` ×3,
-      `getQR2HostingStatus`) with real browser boundary shims and restore
-      `-sERROR_ON_UNDEFINED_SYMBOLS` on `cnc-port`.
 - [ ] Real-lifecycle residue: browser `ReleaseCrash`/`_exit` does not
       terminate the wasm runtime (teardown semantics differ from Windows);
       `TheVersion` is left null; `GameEngine::execute()` is stepped by

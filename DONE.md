@@ -291,6 +291,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       buffers, shallow-copy borrowing, assignment release/borrow transfer, and
       idempotent owned-buffer reset before relying on it for asset and file
       buffers.
+- [x] Browser boundary shims for 6 undefined link symbols and re-enabled
+      `-sERROR_ON_UNDEFINED_SYMBOLS` scoped to `cnc-port`. Shims in
+      `WebAssembly/src/wasm_browser_boundary_shims.cpp`:
+      `DumpExceptionInfo(unsigned int, EXCEPTION_POINTERS*)`,
+      `SetDeviceGammaRamp(HDC,LPVOID)`, WWLib `RegistryClass` ctor/dtor/
+      `Get_Int`, and `getQR2HostingStatus`. Target-scoped via
+      `target_link_options(cnc-port PRIVATE ...)` in `WebAssembly/CMakeLists.txt`;
+      `cnc-port` links green. Merged as commit 1e69eff.
 ### Libraries (compile as-is where possible)
 - [x] `Compression/EAC` BTree, Huff, and RefPack codecs compile from original
       source and round-trip smoke runs under wasm.
