@@ -890,6 +890,67 @@ function playerControlStateReached(state) {
     && state.controlBarClickable === true;
 }
 
+function summarizePlayerControlPhase(chunk, framesRun) {
+  const activeTimerWaits =
+    chunk?.gameplay?.campaignIntroGates?.releaseChain?.activeTimerWaits ?? [];
+  const playerControl = chunk?.playerControl ?? {};
+  return {
+    afterFrames: framesRun,
+    logicFrame: playerControl.logicFrame ?? chunk?.gameplay?.logicFrame,
+    reachedPlayerControl: chunk?.reachedPlayerControl,
+    inGame: playerControl.inGame,
+    inputEnabled: playerControl.inputEnabled,
+    introDone: playerControl.introDone,
+    letterBoxed: playerControl.letterBoxed,
+    controlBarHidden: playerControl.controlBarHidden,
+    controlBarClickable: playerControl.controlBarClickable,
+    activeTimerWaits: activeTimerWaits.map((timer) => ({
+      script: timer.script,
+      counter: timer.counter,
+      value: timer.current?.value,
+      countdownTimer: timer.current?.countdownTimer,
+    })),
+  };
+}
+
+function playerControlPhaseKey(phase) {
+  return JSON.stringify({
+    reachedPlayerControl: phase.reachedPlayerControl,
+    inGame: phase.inGame,
+    inputEnabled: phase.inputEnabled,
+    introDone: phase.introDone,
+    letterBoxed: phase.letterBoxed,
+    controlBarHidden: phase.controlBarHidden,
+    controlBarClickable: phase.controlBarClickable,
+    activeTimerWaits: phase.activeTimerWaits.map((timer) => ({
+      script: timer.script,
+      counter: timer.counter,
+      countdownTimer: timer.countdownTimer,
+    })),
+  });
+}
+
+function appendPlayerControlPhaseChange(phaseChanges, chunk, framesRun) {
+  const phase = summarizePlayerControlPhase(chunk, framesRun);
+  const key = playerControlPhaseKey(phase);
+  const last = phaseChanges.at(-1);
+  if (last?.key === key) {
+    last.lastAfterFrames = framesRun;
+    last.lastLogicFrame = phase.logicFrame;
+    last.activeTimerWaits = phase.activeTimerWaits;
+    return;
+  }
+  const { afterFrames, logicFrame, ...phaseDetails } = phase;
+  phaseChanges.push({
+    key,
+    firstAfterFrames: afterFrames,
+    lastAfterFrames: afterFrames,
+    firstLogicFrame: logicFrame,
+    lastLogicFrame: logicFrame,
+    ...phaseDetails,
+  });
+}
+
 async function runRealEngineFrameBatches(page, totalFrames, chunkFrames) {
   if (chunkFrames <= 0 || chunkFrames >= totalFrames) {
     return runRealEngineFrames(page, totalFrames);
@@ -919,6 +980,7 @@ async function runRealEngineFrameBatches(page, totalFrames, chunkFrames) {
 async function runRealEngineFramesUntilPlayerControl(page, maxFrames, chunkFrames) {
   const framesPerChunk = chunkFrames > 0 ? chunkFrames : 60;
   const chunks = [];
+  const phaseChanges = [];
   let lastResult = null;
   let framesRun = 0;
   for (let remaining = maxFrames; remaining > 0;) {
@@ -934,6 +996,7 @@ async function runRealEngineFramesUntilPlayerControl(page, maxFrames, chunkFrame
       reachedPlayerControl: reached,
     };
     chunks.push(chunk);
+    appendPlayerControlPhaseChange(phaseChanges, chunk, framesRun);
     console.error("[vertical] post-campaign player-control chunk", JSON.stringify(chunk));
     if (reached) {
       return {
@@ -944,6 +1007,7 @@ async function runRealEngineFramesUntilPlayerControl(page, maxFrames, chunkFrame
           totalFrames: framesRun,
           maxFrames,
           chunkFrames: framesPerChunk,
+          phaseChanges: phaseChanges.map(({ key, ...phase }) => phase),
           chunks,
         },
       };
@@ -959,6 +1023,7 @@ async function runRealEngineFramesUntilPlayerControl(page, maxFrames, chunkFrame
       totalFrames: framesRun,
       maxFrames,
       chunkFrames: framesPerChunk,
+      phaseChanges: phaseChanges.map(({ key, ...phase }) => phase),
       chunks,
     },
   };

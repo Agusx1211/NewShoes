@@ -110,7 +110,10 @@ residue and the next frontier.
       now also emits a compact `releaseChain` built from the original loaded
       scripts, showing the active countdown blocker and the future
       `INTRO_DONE`/`ReturnToPlayerControl` release actions without parsing map
-      files out-of-band. Remaining: retire superseded
+      files out-of-band; deep player-control runs also summarize
+      `phaseChanges` so the final JSON reports real intro gate transitions
+      without requiring every chunk to be inspected manually. Remaining:
+      retire superseded
       focused menu smokes and continue from the scripted intro toward a visibly
       correct, interactable in-game scene.
 - [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch

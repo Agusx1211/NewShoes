@@ -2626,6 +2626,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       active countdown blocker as `CINE_CameraCutTo04=632` while keeping
       `Give Player The Game` and `ReturnToPlayerControl` present with their
       original release actions.
+- [x] Add compact player-control phase history to long post-campaign runs.
+      `runRealEngineFramesUntilPlayerControl()` now records
+      `chunked.phaseChanges` whenever the original player-control predicates
+      or active release-chain timer blockers change, while ignoring ordinary
+      countdown value decrements within the same phase. This keeps deep
+      MD_USA01 intro runs inspectable from the final JSON without changing
+      the original engine frame loop or script state. Verified with
+      `node --check WebAssembly/harness/startup_vertical_smoke.mjs`,
+      `git diff --check -- WebAssembly/harness/startup_vertical_smoke.mjs`,
+      and `STARTUP_VERTICAL_REAL_INIT_ONLY=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_UNTIL_PLAYER_CONTROL=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=60
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAME_CHUNK=60 node
+      WebAssembly/harness/startup_vertical_smoke.mjs` redirected to
+      `/tmp/cnc-startup-phase-history-60.json`: the real path reaches logic
+      frame 60 with zero missing texture applies, captures
+      `startup-vertical-real-init-post-campaign.png`, reports
+      `reachedPlayerControl=false`, and emits one phase covering frames
+      60/logic 60 with `INTRO_DONE=false`, input disabled, letterbox active,
+      hidden/non-clickable control bar, and active blocker
+      `CINE_CameraCutTo04=632`.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what
