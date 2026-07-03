@@ -24,6 +24,8 @@ const postCampaignUntilPlayerControl =
   process.env.STARTUP_VERTICAL_POST_CAMPAIGN_UNTIL_PLAYER_CONTROL === "1";
 const postCampaignExpectPlayerControl =
   process.env.STARTUP_VERTICAL_POST_CAMPAIGN_EXPECT_PLAYER_CONTROL === "1";
+const postCampaignCompactChunks =
+  process.env.STARTUP_VERTICAL_POST_CAMPAIGN_COMPACT_CHUNKS === "1";
 const postCampaignBreakpoint = process.env.STARTUP_VERTICAL_POST_CAMPAIGN_BREAKPOINT ?? "";
 const postCampaignPreBreakpointFrameCount =
   Number(process.env.STARTUP_VERTICAL_POST_CAMPAIGN_PRE_BREAKPOINT_FRAMES ?? 0);
@@ -951,7 +953,60 @@ function appendPlayerControlPhaseChange(phaseChanges, chunk, framesRun) {
   });
 }
 
-async function runRealEngineFrameBatches(page, totalFrames, chunkFrames) {
+function compactActiveTimerWaits(chunk) {
+  const activeTimerWaits =
+    chunk?.gameplay?.campaignIntroGates?.releaseChain?.activeTimerWaits ?? [];
+  return activeTimerWaits.map((timer) => ({
+    script: timer.script,
+    counter: timer.counter,
+    value: timer.current?.value,
+    countdownTimer: timer.current?.countdownTimer,
+  }));
+}
+
+function compactPostCampaignFrameChunk(chunk) {
+  return {
+    requestedFrames: chunk?.requestedFrames,
+    ok: chunk?.ok,
+    framesCompleted: chunk?.framesCompleted,
+    framesAttempted: chunk?.framesAttempted,
+    exceptionCaught: chunk?.exceptionCaught,
+    lastUpdateTarget: chunk?.lastUpdateTarget,
+    lastGameLogicStep: chunk?.lastGameLogicStep,
+    textureDiagnostics: chunk?.textureDiagnostics,
+    display: chunk?.display,
+    view: {
+      ready: chunk?.view?.ready,
+      cameraPosition: chunk?.view?.cameraPosition,
+      cameraMovementFinished: chunk?.view?.cameraMovementFinished,
+      timeFrozen: chunk?.view?.timeFrozen,
+      timeMultiplier: chunk?.view?.timeMultiplier,
+    },
+    gameplay: {
+      inGame: chunk?.gameplay?.inGame,
+      inputEnabled: chunk?.gameplay?.inputEnabled,
+      logicFrame: chunk?.gameplay?.logicFrame,
+      objectCount: chunk?.gameplay?.objectCount,
+      drawableCount: chunk?.gameplay?.drawableCount,
+      scriptFade: chunk?.gameplay?.scriptFade,
+      scriptFadeValue: chunk?.gameplay?.scriptFadeValue,
+      localPlayerActive: chunk?.gameplay?.localPlayerActive,
+      localPlayerSide: chunk?.gameplay?.localPlayerSide,
+      activeTimerWaits: compactActiveTimerWaits(chunk),
+    },
+    controlBar: chunk?.controlBar,
+    playerControl: chunk?.playerControl,
+    reachedPlayerControl: chunk?.reachedPlayerControl,
+  };
+}
+
+function storePostCampaignChunk(chunks, chunk, compactChunks) {
+  const storedChunk = compactChunks ? compactPostCampaignFrameChunk(chunk) : chunk;
+  chunks.push(storedChunk);
+  return storedChunk;
+}
+
+async function runRealEngineFrameBatches(page, totalFrames, chunkFrames, compactChunks = false) {
   if (chunkFrames <= 0 || chunkFrames >= totalFrames) {
     return runRealEngineFrames(page, totalFrames);
   }
@@ -962,8 +1017,8 @@ async function runRealEngineFrameBatches(page, totalFrames, chunkFrames) {
     const frames = Math.min(chunkFrames, remaining);
     lastResult = await runRealEngineFrames(page, frames);
     const summary = summarizeRealEngineFrameChunk(lastResult, frames);
-    chunks.push(summary);
-    console.error("[vertical] post-campaign chunk", JSON.stringify(summary));
+    const storedChunk = storePostCampaignChunk(chunks, summary, compactChunks);
+    console.error("[vertical] post-campaign chunk", JSON.stringify(storedChunk));
     remaining -= frames;
   }
 
@@ -972,12 +1027,17 @@ async function runRealEngineFrameBatches(page, totalFrames, chunkFrames) {
     chunked: {
       totalFrames,
       chunkFrames,
+      compactChunks,
       chunks,
     },
   };
 }
 
-async function runRealEngineFramesUntilPlayerControl(page, maxFrames, chunkFrames) {
+async function runRealEngineFramesUntilPlayerControl(
+  page,
+  maxFrames,
+  chunkFrames,
+  compactChunks = false) {
   const framesPerChunk = chunkFrames > 0 ? chunkFrames : 60;
   const chunks = [];
   const phaseChanges = [];
@@ -995,9 +1055,9 @@ async function runRealEngineFramesUntilPlayerControl(page, maxFrames, chunkFrame
       playerControl,
       reachedPlayerControl: reached,
     };
-    chunks.push(chunk);
     appendPlayerControlPhaseChange(phaseChanges, chunk, framesRun);
-    console.error("[vertical] post-campaign player-control chunk", JSON.stringify(chunk));
+    const storedChunk = storePostCampaignChunk(chunks, chunk, compactChunks);
+    console.error("[vertical] post-campaign player-control chunk", JSON.stringify(storedChunk));
     if (reached) {
       return {
         ...lastResult,
@@ -1007,6 +1067,7 @@ async function runRealEngineFramesUntilPlayerControl(page, maxFrames, chunkFrame
           totalFrames: framesRun,
           maxFrames,
           chunkFrames: framesPerChunk,
+          compactChunks,
           phaseChanges: phaseChanges.map(({ key, ...phase }) => phase),
           chunks,
         },
@@ -1023,6 +1084,7 @@ async function runRealEngineFramesUntilPlayerControl(page, maxFrames, chunkFrame
       totalFrames: framesRun,
       maxFrames,
       chunkFrames: framesPerChunk,
+      compactChunks,
       phaseChanges: phaseChanges.map(({ key, ...phase }) => phase),
       chunks,
     },
@@ -2223,7 +2285,8 @@ try {
     ? await runRealEngineFramesUntilPlayerControl(
       realInitPage,
       postCampaignFrameCount > 0 ? postCampaignFrameCount : 3600,
-      postCampaignFrameChunkCount)
+      postCampaignFrameChunkCount,
+      postCampaignCompactChunks)
     : null;
   if (postCampaignExpectPlayerControl) {
     expect(realPostCampaignPlayerControlFrames?.reachedPlayerControl === true,
@@ -2237,7 +2300,8 @@ try {
     ? await runRealEngineFrameBatches(
       realInitPage,
       postCampaignFrameCount,
-      postCampaignFrameChunkCount)
+      postCampaignFrameChunkCount,
+      postCampaignCompactChunks)
     : null;
   const shouldCapturePostCampaign =
     realPostCampaignFrames !== null

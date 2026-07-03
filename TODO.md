@@ -112,10 +112,13 @@ residue and the next frontier.
       `INTRO_DONE`/`ReturnToPlayerControl` release actions without parsing map
       files out-of-band; deep player-control runs also summarize
       `phaseChanges` so the final JSON reports real intro gate transitions
-      without requiring every chunk to be inspected manually. Remaining:
+      without requiring every chunk to be inspected manually; and
+      `STARTUP_VERTICAL_POST_CAMPAIGN_COMPACT_CHUNKS=1` keeps deep-run chunk
+      arrays/logs small while preserving the full final frame state. Remaining:
       retire superseded
-      focused menu smokes and continue from the scripted intro toward a visibly
-      correct, interactable in-game scene.
+      focused menu smokes, run a compact deep pass past `CINE_CameraCutTo04`,
+      and continue from the scripted intro toward a visibly correct,
+      interactable in-game scene.
 - [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch
       workaround in `GameEngine::update()` with the real
       `W3DGameLogic`/`SubsystemInterface::UPDATE` wasm vtable ownership fix

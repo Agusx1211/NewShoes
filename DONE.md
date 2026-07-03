@@ -2647,6 +2647,29 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       60/logic 60 with `INTRO_DONE=false`, input disabled, letterbox active,
       hidden/non-clickable control bar, and active blocker
       `CINE_CameraCutTo04=632`.
+- [x] Add opt-in compact chunk storage for deep post-campaign runs.
+      `STARTUP_VERTICAL_POST_CAMPAIGN_COMPACT_CHUNKS=1` now stores/logs a
+      compact chunk shape for post-campaign frame batches and
+      player-control runs: render texture health, display gates, minimal view
+      and gameplay counts, control-bar state, player-control state, and active
+      release-chain timer blockers. Default runs still keep the previous full
+      chunk summaries, and compact runs still preserve the full final
+      `realEngineFrame` result for detailed inspection. Verified with
+      `node --check WebAssembly/harness/startup_vertical_smoke.mjs`,
+      `git diff --check -- WebAssembly/harness/startup_vertical_smoke.mjs`,
+      and `STARTUP_VERTICAL_REAL_INIT_ONLY=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_UNTIL_PLAYER_CONTROL=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_COMPACT_CHUNKS=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=60
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAME_CHUNK=60 node
+      WebAssembly/harness/startup_vertical_smoke.mjs` redirected to
+      `/tmp/cnc-startup-compact-chunks-60.json`: the real path reaches logic
+      frame 60 with zero missing texture applies, captures
+      `startup-vertical-real-init-post-campaign.png`, reports
+      `compactChunks=true`, keeps `phaseChanges`, preserves a full final
+      script catalog (`291` scripts), and shrinks stderr for the same 60-frame
+      proof from about 24 KB to about 2 KB while retaining the active blocker
+      `CINE_CameraCutTo04=632`.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what
