@@ -44,6 +44,7 @@
 #include "GameClient/Keyboard.h"
 #include "GameClient/Mouse.h"
 #include "GameClient/Shell.h"
+#include "GameClient/View.h"
 #include "GameClient/WinInstanceData.h"
 #include "GameClient/WindowLayout.h"
 #include "GameLogic/GameLogic.h"
@@ -363,6 +364,84 @@ void append_frame_texture_diagnostics(std::string &json)
 		json += "\"" + json_escape(g_frame_missing_texture_samples[i]) + "\"";
 	}
 	json += "]}";
+}
+
+void append_coord3d_fields(
+	std::string &json,
+	const char *field_name,
+	const Coord3D &coord)
+{
+	char buffer[160];
+	std::snprintf(
+		buffer,
+		sizeof(buffer),
+		",\"%s\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f}",
+		field_name,
+		coord.x,
+		coord.y,
+		coord.z);
+	json += buffer;
+}
+
+void append_real_view_state(std::string &json)
+{
+	json += ",\"view\":{";
+	json += "\"ready\":";
+	json += TheTacticalView != NULL ? "true" : "false";
+	if (TheTacticalView == NULL) {
+		json += ",\"origin\":null,\"size\":null,\"position\":null,"
+			"\"cameraPosition\":null,\"zoom\":null,\"pitch\":null,"
+			"\"angle\":null,\"fieldOfView\":null,"
+			"\"terrainHeightUnderCamera\":null,"
+			"\"currentHeightAboveGround\":null,"
+			"\"heightAboveGround\":null,\"cameraMovementFinished\":null,"
+			"\"timeFrozen\":null,\"timeMultiplier\":null,"
+			"\"cameraLock\":null,\"zoomLimited\":null}";
+		return;
+	}
+
+	Int origin_x = 0;
+	Int origin_y = 0;
+	TheTacticalView->getOrigin(&origin_x, &origin_y);
+	Coord3D position = { 0.0f, 0.0f, 0.0f };
+	TheTacticalView->getPosition(&position);
+	const Coord3D &camera_position = TheTacticalView->get3DCameraPosition();
+	char buffer[512];
+	std::snprintf(
+		buffer,
+		sizeof(buffer),
+		",\"origin\":{\"x\":%d,\"y\":%d}"
+		",\"size\":{\"width\":%d,\"height\":%d}"
+		",\"zoom\":%.6f,\"pitch\":%.6f,\"angle\":%.6f"
+		",\"fieldOfView\":%.6f"
+		",\"terrainHeightUnderCamera\":%.6f"
+		",\"currentHeightAboveGround\":%.6f"
+		",\"heightAboveGround\":%.6f",
+		origin_x,
+		origin_y,
+		TheTacticalView->getWidth(),
+		TheTacticalView->getHeight(),
+		TheTacticalView->getZoom(),
+		TheTacticalView->getPitch(),
+		TheTacticalView->getAngle(),
+		TheTacticalView->getFieldOfView(),
+		TheTacticalView->getTerrainHeightUnderCamera(),
+		TheTacticalView->getCurrentHeightAboveGround(),
+		TheTacticalView->getHeightAboveGround());
+	json += buffer;
+	append_coord3d_fields(json, "position", position);
+	append_coord3d_fields(json, "cameraPosition", camera_position);
+	json += ",\"cameraMovementFinished\":";
+	json += TheTacticalView->isCameraMovementFinished() ? "true" : "false";
+	json += ",\"timeFrozen\":";
+	json += TheTacticalView->isTimeFrozen() ? "true" : "false";
+	json += ",\"timeMultiplier\":" +
+		std::to_string(TheTacticalView->getTimeMultiplier());
+	json += ",\"cameraLock\":" +
+		std::to_string(static_cast<Int>(TheTacticalView->getCameraLock()));
+	json += ",\"zoomLimited\":";
+	json += TheTacticalView->isZoomLimited() ? "true" : "false";
+	json += "}";
 }
 
 std::string uppercase_ascii(std::string value)
@@ -1464,6 +1543,8 @@ void append_real_engine_client_state(std::string &json)
 			"\"letterBoxed\":null,\"letterBoxFading\":null";
 	}
 	json += "}";
+
+	append_real_view_state(json);
 
 	json += ",\"gameplay\":{";
 	json += "\"gameLogicReady\":";

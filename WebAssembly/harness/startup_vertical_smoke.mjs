@@ -481,6 +481,87 @@ async function runRealEngineFrames(page, frames) {
   return result;
 }
 
+const campaignIntroCounterWatches = [
+  "CINE_CameraCutTo04",
+  "CINE_LaunchPadMoveDelay",
+  "CINE_Pt2CameraLocation01Delay",
+  "CINE_Pt2MoveTransportsDelay",
+];
+
+const campaignIntroFlagWatches = [
+  "INTRO_DONE",
+  "Inside Base",
+  "Mission_Phase_Three",
+];
+
+const campaignIntroScriptWatches = [
+  "CINE_CameraMoveTo06",
+  "CINE_LaunchPad & BuggiesMove",
+  "Give Player The Game",
+  "ReturnToPlayerControl",
+];
+
+function namedEntry(entries, name) {
+  return (entries ?? []).find((entry) => entry?.name === name);
+}
+
+function compactWatchedCounter(scriptDebug, name) {
+  const counter = namedEntry(scriptDebug?.counters, name);
+  return {
+    name,
+    found: counter != null,
+    value: counter?.value,
+    countdownTimer: counter?.countdownTimer,
+  };
+}
+
+function compactWatchedFlag(scriptDebug, name) {
+  const flag = namedEntry(scriptDebug?.flags, name);
+  return {
+    name,
+    found: flag != null,
+    value: flag?.value,
+  };
+}
+
+function compactCatalogScript(script) {
+  return {
+    name: script?.name,
+    groupName: script?.groupName,
+    active: script?.active,
+    oneShot: script?.oneShot,
+    priority: script?.priority,
+    frameToEvaluate: script?.frameToEvaluate,
+    delayEvalSeconds: script?.delayEvalSeconds,
+    conditionTypes: (script?.conditions ?? [])
+      .slice(0, 6)
+      .map((condition) => condition.internalName),
+    actionTypes: (script?.actions ?? [])
+      .slice(0, 8)
+      .map((action) => action.internalName),
+  };
+}
+
+function compactWatchedScript(scriptDebug, name) {
+  const script = namedEntry(scriptDebug?.catalog?.scripts, name);
+  return {
+    ...compactCatalogScript(script),
+    name,
+    found: script != null,
+  };
+}
+
+function summarizeCampaignIntroGates(scriptDebug) {
+  return {
+    counters: campaignIntroCounterWatches.map((name) =>
+      compactWatchedCounter(scriptDebug, name)),
+    flags: campaignIntroFlagWatches.map((name) =>
+      compactWatchedFlag(scriptDebug, name)),
+    scripts: campaignIntroScriptWatches.map((name) =>
+      compactWatchedScript(scriptDebug, name)),
+  };
+}
+
 function summarizeRealEngineFrameChunk(result, requestedFrames) {
   const frame = result?.frame;
   const clientState = frame?.clientState;
@@ -501,6 +582,21 @@ function summarizeRealEngineFrameChunk(result, requestedFrames) {
       letterBoxed: clientState?.display?.letterBoxed,
       letterBoxFading: clientState?.display?.letterBoxFading,
       moviePlaying: clientState?.display?.moviePlaying,
+    },
+    view: {
+      ready: clientState?.view?.ready,
+      position: clientState?.view?.position,
+      cameraPosition: clientState?.view?.cameraPosition,
+      zoom: clientState?.view?.zoom,
+      pitch: clientState?.view?.pitch,
+      angle: clientState?.view?.angle,
+      fieldOfView: clientState?.view?.fieldOfView,
+      terrainHeightUnderCamera: clientState?.view?.terrainHeightUnderCamera,
+      currentHeightAboveGround: clientState?.view?.currentHeightAboveGround,
+      cameraMovementFinished: clientState?.view?.cameraMovementFinished,
+      timeFrozen: clientState?.view?.timeFrozen,
+      timeMultiplier: clientState?.view?.timeMultiplier,
+      cameraLock: clientState?.view?.cameraLock,
     },
     gameplay: {
       inGame: gameplay?.inGame,
@@ -543,6 +639,7 @@ function summarizeRealEngineFrameChunk(result, requestedFrames) {
               .map((condition) => condition.internalName),
           })),
       },
+      campaignIntroGates: summarizeCampaignIntroGates(scriptDebug),
     },
     controlBar: {
       found: controlBarParent?.found,

@@ -2488,7 +2488,7 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       --check`, `node --check WebAssembly/harness/startup_vertical_smoke.mjs`,
       `npm --prefix WebAssembly run build:startup-vertical`, and
       `STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=180
-      STARTUP_VERTICAL_POST_CAMPAIGN_CHUNK_FRAMES=60 node
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAME_CHUNK=60 node
       WebAssembly/harness/startup_vertical_smoke.mjs` redirected to
       `/tmp/cnc-startup-catalog-final.json`: the real path reaches frame 357 /
       logic frame 180 with 6,267 texture applies, zero missing texture applies,
@@ -2501,6 +2501,36 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `CINE_Pt2MoveTransportsDelay`, `Give Player The Game` setting
       `INTRO_DONE`, and `ReturnToPlayerControl` running
       `CAMERA_LETTERBOX_END` / `ENABLE_INPUT`.
+- [x] Expose real tactical-view and watched MD_USA01 intro-gate diagnostics in
+      the startup vertical. The real-frame JSON now reports `TheTacticalView`
+      readiness, view origin/size, look-at position, 3D camera position, zoom,
+      pitch, angle, FOV, terrain height, current height above ground, camera
+      movement state, time multiplier/freeze state, camera lock, and zoom-limit
+      state. `startup_vertical_smoke.mjs` now includes this view state in
+      post-campaign chunk summaries and adds compact watched gates for
+      `CINE_CameraCutTo04`, `CINE_LaunchPadMoveDelay`,
+      `CINE_Pt2CameraLocation01Delay`, `CINE_Pt2MoveTransportsDelay`,
+      `INTRO_DONE`, `Inside Base`, `Mission_Phase_Three`,
+      `CINE_CameraMoveTo06`, `CINE_LaunchPad & BuggiesMove`,
+      `Give Player The Game`, and `ReturnToPlayerControl`. Verified with
+      `git diff --check`, `node --check
+      WebAssembly/harness/startup_vertical_smoke.mjs`, `npm --prefix
+      WebAssembly run build:startup-vertical`, and
+      `STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=120
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAME_CHUNK=60 node
+      WebAssembly/harness/startup_vertical_smoke.mjs` redirected to
+      `/tmp/cnc-startup-view-120.json`: the real path reaches frame 297 /
+      logic frame 120 with 2,192 texture applies, zero missing texture
+      applies, 1,374 objects/drawables, `fade=4`, `fadeValue=0.984`, black
+      center/terrain pixels, `letterBoxed=true`, `inputEnabled=false`,
+      `INTRO_DONE=false`, and a live view at position
+      `(3558.77,640.25,0)` / camera `(3504.10,642.88,67)` with
+      `cameraMovementFinished=false`. The two 60-frame chunk summaries show
+      `CINE_CameraCutTo04` counting down from 632 to 572 and keep
+      `ReturnToPlayerControl` present but inactive with
+      `CAMERA_LETTERBOX_END` / `ENABLE_INPUT`, proving the black frame is
+      explainable by the real fade/cinematic gates while the camera/script
+      state is still progressing.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what
