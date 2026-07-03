@@ -6165,6 +6165,49 @@ const TCounter *ScriptEngine::getCounter(const AsciiString& counterName)
 	return NULL;
 }
 
+#ifdef __EMSCRIPTEN__
+// Browser harness diagnostics only. These preserve the original script state
+// and avoid allocating counters/flags while observing long startup runs.
+Int ScriptEngine::debugGetCounterCount(void) const
+{
+	return m_numCounters;
+}
+
+const TCounter *ScriptEngine::debugGetCounterByIndex(Int index) const
+{
+	if (index < 0 || index >= m_numCounters) {
+		return NULL;
+	}
+	return &m_counters[index];
+}
+
+Int ScriptEngine::debugGetFlagCount(void) const
+{
+	return m_numFlags;
+}
+
+const TFlag *ScriptEngine::debugGetFlagByIndex(Int index) const
+{
+	if (index < 0 || index >= m_numFlags) {
+		return NULL;
+	}
+	return &m_flags[index];
+}
+
+Int ScriptEngine::debugGetSequentialScriptCount(void) const
+{
+	return static_cast<Int>(m_sequentialScripts.size());
+}
+
+const SequentialScript *ScriptEngine::debugGetSequentialScriptByIndex(Int index) const
+{
+	if (index < 0 || index >= static_cast<Int>(m_sequentialScripts.size())) {
+		return NULL;
+	}
+	return m_sequentialScripts[index];
+}
+#endif
+
 //-------------------------------------------------------------------------------------------------
 void ScriptEngine::createNamedMapReveal(const AsciiString& revealName, const AsciiString& waypointName, Real radiusToReveal, const AsciiString& playerName)
 {
@@ -10350,4 +10393,3 @@ static void _cleanUpVTune()
 	VTResume = NULL;
 }
 #endif	// VTUNE
-

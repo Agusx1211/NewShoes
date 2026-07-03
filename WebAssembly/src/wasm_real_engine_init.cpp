@@ -362,6 +362,100 @@ void append_frame_texture_diagnostics(std::string &json)
 	json += "]}";
 }
 
+void append_script_engine_debug_state(std::string &json)
+{
+	json += ",\"scriptDebug\":{";
+	if (TheScriptEngine == NULL) {
+		json += "\"counterCount\":0,\"countersTruncated\":false,\"counters\":[],"
+			"\"flagCount\":0,\"flagsTruncated\":false,\"flags\":[],"
+			"\"sequentialScriptCount\":0,\"sequentialScriptsTruncated\":false,"
+			"\"sequentialScripts\":[]}";
+		return;
+	}
+
+	const Int counter_count = TheScriptEngine->debugGetCounterCount();
+	json += "\"counterCount\":" + std::to_string(counter_count);
+	json += ",\"countersTruncated\":false";
+	json += ",\"counters\":[";
+	bool first_entry = true;
+	for (Int index = 1; index < counter_count; ++index) {
+		const TCounter *counter = TheScriptEngine->debugGetCounterByIndex(index);
+		if (counter == NULL || counter->name.isEmpty()) {
+			continue;
+		}
+		if (!first_entry) {
+			json += ",";
+		}
+		first_entry = false;
+		json += "{\"index\":" + std::to_string(index);
+		json += ",\"name\":\"" + json_escape(counter->name.str()) + "\"";
+		json += ",\"value\":" + std::to_string(counter->value);
+		json += ",\"countdownTimer\":";
+		json += counter->isCountdownTimer ? "true" : "false";
+		json += "}";
+	}
+	json += "]";
+
+	const Int flag_count = TheScriptEngine->debugGetFlagCount();
+	json += ",\"flagCount\":" + std::to_string(flag_count);
+	json += ",\"flagsTruncated\":false";
+	json += ",\"flags\":[";
+	first_entry = true;
+	for (Int index = 1; index < flag_count; ++index) {
+		const TFlag *flag = TheScriptEngine->debugGetFlagByIndex(index);
+		if (flag == NULL || flag->name.isEmpty()) {
+			continue;
+		}
+		if (!first_entry) {
+			json += ",";
+		}
+		first_entry = false;
+		json += "{\"index\":" + std::to_string(index);
+		json += ",\"name\":\"" + json_escape(flag->name.str()) + "\"";
+		json += ",\"value\":";
+		json += flag->value ? "true" : "false";
+		json += "}";
+	}
+	json += "]";
+
+	const Int sequential_count = TheScriptEngine->debugGetSequentialScriptCount();
+	const Int sequential_limit = sequential_count < 16 ? sequential_count : 16;
+	json += ",\"sequentialScriptCount\":" + std::to_string(sequential_count);
+	json += ",\"sequentialScriptsTruncated\":";
+	json += sequential_count > sequential_limit ? "true" : "false";
+	json += ",\"sequentialScripts\":[";
+	first_entry = true;
+	for (Int index = 0; index < sequential_limit; ++index) {
+		const SequentialScript *sequential =
+			TheScriptEngine->debugGetSequentialScriptByIndex(index);
+		if (sequential == NULL) {
+			continue;
+		}
+		if (!first_entry) {
+			json += ",";
+		}
+		first_entry = false;
+		const Script *script = sequential->m_scriptToExecuteSequentially;
+		json += "{\"index\":" + std::to_string(index);
+		json += ",\"scriptReady\":";
+		json += script != NULL ? "true" : "false";
+		json += ",\"scriptName\":\"";
+		json += script != NULL ? json_escape(script->getName().str()) : "";
+		json += "\",\"objectId\":" +
+			std::to_string(static_cast<Int>(sequential->m_objectID));
+		json += ",\"hasTeam\":";
+		json += sequential->m_teamToExecOn != NULL ? "true" : "false";
+		json += ",\"currentInstruction\":" +
+			std::to_string(sequential->m_currentInstruction);
+		json += ",\"timesToLoop\":" + std::to_string(sequential->m_timesToLoop);
+		json += ",\"framesToWait\":" + std::to_string(sequential->m_framesToWait);
+		json += ",\"dontAdvanceInstruction\":";
+		json += sequential->m_dontAdvanceInstruction ? "true" : "false";
+		json += "}";
+	}
+	json += "]}";
+}
+
 int count_game_client_drawables()
 {
 	if (TheGameClient == NULL) {
@@ -806,6 +900,7 @@ void append_real_engine_client_state(std::string &json)
 		json += ",\"fade\":null,\"fadeValue\":null,\"timeFrozenScript\":null,"
 			"\"timeFrozenDebug\":null,\"gameEnding\":null";
 	}
+	append_script_engine_debug_state(json);
 	json += "}";
 
 	json += ",\"transition\":{";

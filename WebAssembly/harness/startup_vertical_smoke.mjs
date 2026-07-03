@@ -485,6 +485,7 @@ function summarizeRealEngineFrameChunk(result, requestedFrames) {
   const frame = result?.frame;
   const clientState = frame?.clientState;
   const gameplay = clientState?.gameplay;
+  const scriptDebug = gameplay?.scriptDebug;
   const controlBarParent = clientState?.controlBarWindows?.parent;
   return {
     requestedFrames,
@@ -510,6 +511,12 @@ function summarizeRealEngineFrameChunk(result, requestedFrames) {
       localPlayerSide: gameplay?.localPlayer?.side,
       scriptFade: gameplay?.fade,
       scriptFadeValue: gameplay?.fadeValue,
+      scriptCounterCount: scriptDebug?.counterCount,
+      scriptFlagCount: scriptDebug?.flagCount,
+      scriptSequentialScriptCount: scriptDebug?.sequentialScriptCount,
+      scriptCounters: (scriptDebug?.counters ?? []).slice(0, 8),
+      scriptFlags: (scriptDebug?.flags ?? []).slice(0, 8),
+      scriptSequentialScripts: (scriptDebug?.sequentialScripts ?? []).slice(0, 4),
     },
     controlBar: {
       found: controlBarParent?.found,

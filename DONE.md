@@ -2454,6 +2454,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       America player, and the expected still-cinematic script state
       (`letterBoxed=true`, `inputEnabled=false`, control bar hidden) plus
       screenshot `startup-vertical-real-init-post-campaign.png`.
+- [x] Expose full ScriptEngine variable snapshots for the real loaded-map
+      campaign intro. Added Emscripten-only read-only `ScriptEngine`
+      accessors for counters, flags, and sequential scripts, then exports
+      the complete counter/flag set in the real-frame JSON and includes a
+      compact script summary in post-campaign chunk logs. This keeps the
+      original script execution untouched while making campaign cinematic
+      gates inspectable from the real `cnc-port` runtime. Verified with
+      `npm --prefix WebAssembly run build:startup-vertical`, `node --check
+      WebAssembly/harness/startup_vertical_smoke.mjs`, `git diff --check`,
+      and two startup-vertical browser runs: the 180-frame run reaches frame
+      357 with 94 counters/8 flags, all counters returned
+      (`countersTruncated=false`), zero missing-texture applies, and active
+      timers such as `CINE_CameraCutTo04=512`; the 720-frame run reaches
+      frame 897 / logic frame 720 with 95 counters/8 flags, zero
+      missing-texture applies, the original `INTRO_DONE=false` flag still
+      unset, active next-phase timers (`CINE_LaunchPadMoveDelay`,
+      `CINE_Pt2CameraLocation01Delay`,
+      `CINE_Pt2MoveTransportsDelay`), object/drawable count advanced to
+      1,284, and screenshot `startup-vertical-real-init-post-campaign.png`
+      capturing the current black cinematic phase.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what

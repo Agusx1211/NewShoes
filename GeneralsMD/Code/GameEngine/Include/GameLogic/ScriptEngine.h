@@ -340,6 +340,15 @@ public:
 	const AttackPriorityInfo *getAttackInfo(const AsciiString& name);
 	
 	const TCounter *getCounter(const AsciiString& counterName);	
+
+#ifdef __EMSCRIPTEN__
+	Int debugGetCounterCount(void) const;
+	const TCounter *debugGetCounterByIndex(Int index) const;
+	Int debugGetFlagCount(void) const;
+	const TFlag *debugGetFlagByIndex(Int index) const;
+	Int debugGetSequentialScriptCount(void) const;
+	const SequentialScript *debugGetSequentialScriptByIndex(Int index) const;
+#endif
 	
 	void createNamedMapReveal(const AsciiString& revealName, const AsciiString& waypointName, Real radiusToReveal, const AsciiString& playerName);
 	void doNamedMapReveal(const AsciiString& revealName);

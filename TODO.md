@@ -65,12 +65,18 @@ residue and the next frontier.
       `TextureClass::Apply` missing-texture diagnostics from the real frame
       loop, exports loaded-map gameplay/UI/script state (`GameLogic`,
       `GameClient` drawables, local player, `InGameUI`, control bar windows,
-      letterbox/fade gates), and chunk-proves 180 post-campaign loaded-map
-      logic frames through frame 357 with zero WW3D missing-texture applies,
-      1,374 objects/drawables, America as the active local player, and the
-      expected still-cinematic state: letterbox on, input disabled, and the
-      control bar hidden. Remaining: retire superseded focused menu smokes
-      and continue from the scripted intro toward a visibly correct,
+      letterbox/fade gates, plus full `ScriptEngine` counter/flag snapshots
+      and sequential-script queue size), and chunk-proves 720 post-campaign
+      loaded-map logic frames through frame 897 with zero WW3D
+      missing-texture applies. The original MD_USA01 intro script is still
+      legitimately mid-cinematic rather than texture-blocked or frame-stuck:
+      `INTRO_DONE=false`, letterbox/input/control-bar remain disabled,
+      object/drawable count advances from 1,374 to 1,284, and active timers
+      include `CINE_LaunchPadMoveDelay`,
+      `CINE_Pt2CameraLocation01Delay`, and
+      `CINE_Pt2MoveTransportsDelay`; the frame-720 screenshot is black while
+      that script phase is active. Remaining: retire superseded focused menu
+      smokes and continue from the scripted intro toward a visibly correct,
       interactable in-game scene.
 - [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch
       workaround in `GameEngine::update()` with the real
