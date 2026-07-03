@@ -130,6 +130,35 @@ residue and the next frontier.
       keep long rendered chunks observable with smaller chunks or RPC
       timeouts/progress, and continue from the scripted intro toward a visibly
       correct, interactable in-game scene.
+- [ ] **Black terrain squares "trail" the camera during movement** (observed
+      by the project owner playing interactively — motion-correlated, so
+      static screenshots/counters cannot see it; "zero missing texture
+      applies" does NOT cover this: the final pixel is
+      texture × lighting × pass modulates × shroud × fade, and the counter
+      only vouches for the texture factor). Code-reading findings to start
+      from (verified file:line):
+      - terrain scroll updates (`HeightMap.cpp:1062` → `updateVB` via
+        `updateCenter`) lock the WHOLE tile VB
+        (`WW3D2/dx8vertexbuffer.cpp:156`, `Lock(0,0,...)`) and the shim
+        handles whole-buffer locks correctly (`wasm_d3d8_shim.cpp:2026`) —
+        the scroll data path is not trivially broken;
+      - two real hazards in the JS buffer layer (`bridge.js` ~2115-2134):
+        grow-resize calls `gl.bufferData(newSize)` (zeroing ALL GPU
+        contents) then uploads only the incoming range; and the DISCARD
+        path zero-fills, which is only correct if every post-DISCARD draw
+        rewrites what it uses;
+      - ZH has two terrain renderers (classic `HeightMapRenderObj` vs
+        `FlatHeightMap`+`W3DTerrainBackground` square baked tiles — black
+        SQUARES suggests the tile one); which one the browser boot uses is
+        a runtime question.
+      Discriminating experiment (counters already exist:
+      `d3d8BufferStats.updates/lastUpdate`, shim `g_state` lock counters):
+      pan the camera N frames sampling stats per frame + before/after
+      screenshots. Updates tick but black persists → data path fine, check
+      tile texture bake/lighting/`map.ini` light rig/fade/shroud; updates
+      do NOT tick while terrain scrolls in → page-in never runs; a
+      grow-RESIZE fires mid-pan → the bufferData-zeroing hazard is
+      convicted.
 - [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch
       workaround in `GameEngine::update()` with the real
       `W3DGameLogic`/`SubsystemInterface::UPDATE` wasm vtable ownership fix
