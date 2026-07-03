@@ -5920,6 +5920,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       maps the browser Win32 cursor handle to canvas `cursor: default`
       vs `cursor: none`, and the Playwright smoke captures
       `harness-smoke-cursor-css-canvas.png`.
+- [x] Make human mouse input usable on `harness/play.html` while the real
+      W3D cursor remains unrendered. Merged `fable/browser-mouse`: the bridge
+      keeps the native CSS cursor visible as a temporary stand-in when the
+      original game hides the Win32 cursor, maps browser pointer coordinates
+      into the engine display resolution cached from real frames, and
+      coalesces queued `WM_MOUSEMOVE` messages / evicts old pending moves so
+      a slow Debug frame cannot drop button messages behind a pointermove
+      flood. Verified locally after rebuilding `cnc-port` with an inline
+      Playwright check against `harness/play.html?autostart=1&shellmap=0`:
+      CSS cursor was `default`, a 400-pointermove flood left the Win32 queue
+      unoverflowed (`beforeCount=0`, `overflowed=false`), and a real browser
+      mouse click on `ButtonSinglePlayer` selected control `4332` through the
+      original window system.
 - [x] Add a focused original GUI input proof:
       `gamewindow-input-smoke` builds a real `MessageStream` with
       `WindowTranslator`, routes
