@@ -2246,15 +2246,6 @@ private:
 	DWORD m_lock_flags = 0;
 };
 
-// When an offscreen render target is active (water reflection / projected
-// shadow render-to-texture), the browser layer has no framebuffer bound for it,
-// so those draws/clears would otherwise pollute the MAIN canvas color+depth
-// buffer and make the terrain fail the depth test (black terrain). Until real
-// render-to-texture is implemented, skip browser draws/clears while an offscreen
-// RT is bound. The RT textures stay unrendered (no shadows/reflections), but the
-// main scene renders correctly.
-static bool g_d3d8_offscreen_rt_active = false;
-
 class BrowserD3DDevice final : public IDirect3DDevice8
 {
 public:
@@ -2285,7 +2276,6 @@ public:
 		m_depth_stencil = new (std::nothrow) BrowserD3DSurface(this, m_parameters.BackBufferWidth,
 			m_parameters.BackBufferHeight, m_parameters.AutoDepthStencilFormat, D3DUSAGE_DEPTHSTENCIL);
 		m_default_render_target = m_back_buffer; // the real canvas target
-		g_d3d8_offscreen_rt_active = false;
 
 		g_state.back_buffer_width = m_parameters.BackBufferWidth;
 		g_state.back_buffer_height = m_parameters.BackBufferHeight;
@@ -2592,8 +2582,6 @@ public:
 		m_current_fbo_color_texture_id = color_texture_id;
 		m_current_fbo_depth_texture_id = depth_texture_id;
 
-		g_d3d8_offscreen_rt_active =
-			(render_target != nullptr && render_target != m_default_render_target);
 		return S_OK;
 	}
 

@@ -3395,6 +3395,7 @@ function bindD3D8Framebuffer(payload = {}) {
 	if (colorTextureId === 0) {
 		// Bind backbuffer (default framebuffer)
 		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+		gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
 		d3d8CurrentFramebuffer = null;
 		d3d8CurrentFramebufferWidth = 0;
 		d3d8CurrentFramebufferHeight = 0;
@@ -3411,6 +3412,29 @@ function bindD3D8Framebuffer(payload = {}) {
 
 		const fbo = gl.createFramebuffer();
 		gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+
+		// Ensure the color texture has allocated GL storage before FBO attach.
+		// A texture created via createD3D8Texture has no storage until
+		// updateD3D8Texture uploads pixel data; attaching a bare texture to an
+		// FBO makes it INCOMPLETE and the renderer silently falls back to the
+		// backbuffer, defeating RTT entirely.
+		withPreservedD3D8TextureUnit(() => {
+			gl.bindTexture(gl.TEXTURE_2D, colorTexture.texture);
+			if (!colorTexture.rtAllocated) {
+				gl.texImage2D(
+					gl.TEXTURE_2D,
+					0,
+					gl.RGBA,
+					width,
+					height,
+					0,
+					gl.RGBA,
+					gl.UNSIGNED_BYTE,
+					null
+				);
+				colorTexture.rtAllocated = true;
+			}
+		});
 
 		// Attach color texture
 		gl.framebufferTexture2D(
