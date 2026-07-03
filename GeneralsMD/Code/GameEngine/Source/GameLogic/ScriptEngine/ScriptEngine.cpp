@@ -74,6 +74,85 @@ static void _updateFrameNumber( void );
 static HMODULE st_DebugDLL;
 // That's it for debugger window
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_script_diag_push_context(const char *scriptName, const char *branch)
+	__attribute__((weak));
+extern "C" void cnc_port_script_diag_pop_context(void)
+	__attribute__((weak));
+extern "C" void cnc_port_script_diag_note_timer_action(
+	int actionType,
+	const char *counterName,
+	int parameterInt,
+	double parameterReal,
+	int beforeValue,
+	int beforeCountdown,
+	int afterValue,
+	int afterCountdown)
+	__attribute__((weak));
+extern "C" void cnc_port_script_diag_note_script_activation(
+	int actionType,
+	const char *targetName,
+	int foundGroup,
+	int groupActive,
+	int foundScript,
+	int scriptActive)
+	__attribute__((weak));
+
+static void scriptDiagPushContext(const AsciiString& scriptName, const char *branch)
+{
+	if (cnc_port_script_diag_push_context != NULL) {
+		cnc_port_script_diag_push_context(scriptName.str(), branch);
+	}
+}
+
+static void scriptDiagPopContext(void)
+{
+	if (cnc_port_script_diag_pop_context != NULL) {
+		cnc_port_script_diag_pop_context();
+	}
+}
+
+static void scriptDiagNoteTimerAction(
+	ScriptAction *pAction,
+	const AsciiString& counterName,
+	Int parameterInt,
+	Real parameterReal,
+	Int beforeValue,
+	Bool beforeCountdown,
+	Int afterValue,
+	Bool afterCountdown)
+{
+	if (cnc_port_script_diag_note_timer_action != NULL) {
+		cnc_port_script_diag_note_timer_action(
+			static_cast<int>(pAction->getActionType()),
+			counterName.str(),
+			parameterInt,
+			parameterReal,
+			beforeValue,
+			beforeCountdown ? 1 : 0,
+			afterValue,
+			afterCountdown ? 1 : 0);
+	}
+}
+
+static void scriptDiagNoteScriptActivation(
+	ScriptAction *pAction,
+	const AsciiString& targetName,
+	ScriptGroup *pGroup,
+	Script *pScript)
+{
+	if (cnc_port_script_diag_note_script_activation != NULL) {
+		cnc_port_script_diag_note_script_activation(
+			static_cast<int>(pAction->getActionType()),
+			targetName.str(),
+			pGroup != NULL ? 1 : 0,
+			pGroup != NULL && pGroup->isActive() ? 1 : 0,
+			pScript != NULL ? 1 : 0,
+			pScript != NULL && pScript->isActive() ? 1 : 0);
+	}
+}
+#endif
+
 // These are for particle editor
 #define DEFINE_PARTICLE_SYSTEM_NAMES 1
 #include "GameClient/ParticleSys.h"
@@ -6781,11 +6860,16 @@ Bool ScriptEngine::evaluateTimer( Condition *pCondition )
 void ScriptEngine::setTimer( ScriptAction *pAction, Bool millisecondTimer, Bool random )
 {
 	DEBUG_ASSERTCRASH(pAction->getNumParameters() >= 2, ("Not enough parameters.\n"));
+	const AsciiString counterName = pAction->getParameter(0)->getString();
 	Int counterNdx = pAction->getParameter(0)->getInt();
 	if (counterNdx == 0) {
-		counterNdx = allocateCounter(pAction->getParameter(0)->getString());
+		counterNdx = allocateCounter(counterName);
 		pAction->getParameter(0)->friend_setInt(counterNdx);
 	}
+	const Int beforeValue = m_counters[counterNdx].value;
+	const Bool beforeCountdown = m_counters[counterNdx].isCountdownTimer;
+	const Int parameterInt = pAction->getParameter(1)->getInt();
+	const Real parameterReal = pAction->getParameter(1)->getReal();
 	if (millisecondTimer) {
 		Real value = pAction->getParameter(1)->getReal();
 		if (random) {
@@ -6802,6 +6886,17 @@ void ScriptEngine::setTimer( ScriptAction *pAction, Bool millisecondTimer, Bool 
 		m_counters[counterNdx].value = value;
 	}
 	m_counters[counterNdx].isCountdownTimer = true;
+#ifdef __EMSCRIPTEN__
+	scriptDiagNoteTimerAction(
+		pAction,
+		counterName,
+		parameterInt,
+		parameterReal,
+		beforeValue,
+		beforeCountdown,
+		m_counters[counterNdx].value,
+		m_counters[counterNdx].isCountdownTimer);
+#endif
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -6810,12 +6905,26 @@ void ScriptEngine::setTimer( ScriptAction *pAction, Bool millisecondTimer, Bool 
 void ScriptEngine::pauseTimer( ScriptAction *pAction )
 {
 	DEBUG_ASSERTCRASH(pAction->getNumParameters() >= 1, ("Not enough parameters.\n"));
+	const AsciiString counterName = pAction->getParameter(0)->getString();
 	Int counterNdx = pAction->getParameter(0)->getInt();
 	if (counterNdx == 0) {
-		counterNdx = allocateCounter(pAction->getParameter(0)->getString());
+		counterNdx = allocateCounter(counterName);
 		pAction->getParameter(0)->friend_setInt(counterNdx);
 	}
+	const Int beforeValue = m_counters[counterNdx].value;
+	const Bool beforeCountdown = m_counters[counterNdx].isCountdownTimer;
 	m_counters[counterNdx].isCountdownTimer = false;
+#ifdef __EMSCRIPTEN__
+	scriptDiagNoteTimerAction(
+		pAction,
+		counterName,
+		0,
+		0.0f,
+		beforeValue,
+		beforeCountdown,
+		m_counters[counterNdx].value,
+		m_counters[counterNdx].isCountdownTimer);
+#endif
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -6824,14 +6933,28 @@ void ScriptEngine::pauseTimer( ScriptAction *pAction )
 void ScriptEngine::restartTimer( ScriptAction *pAction )
 {
 	DEBUG_ASSERTCRASH(pAction->getNumParameters() >= 1, ("Not enough parameters.\n"));
+	const AsciiString counterName = pAction->getParameter(0)->getString();
 	Int counterNdx = pAction->getParameter(0)->getInt();
 	if (counterNdx == 0) {
-		counterNdx = allocateCounter(pAction->getParameter(0)->getString());
+		counterNdx = allocateCounter(counterName);
 		pAction->getParameter(0)->friend_setInt(counterNdx);
 	}
+	const Int beforeValue = m_counters[counterNdx].value;
+	const Bool beforeCountdown = m_counters[counterNdx].isCountdownTimer;
 	if (m_counters[counterNdx].value > 0) {
 		m_counters[counterNdx].isCountdownTimer = true;
 	}
+#ifdef __EMSCRIPTEN__
+	scriptDiagNoteTimerAction(
+		pAction,
+		counterName,
+		0,
+		0.0f,
+		beforeValue,
+		beforeCountdown,
+		m_counters[counterNdx].value,
+		m_counters[counterNdx].isCountdownTimer);
+#endif
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -6840,11 +6963,16 @@ void ScriptEngine::restartTimer( ScriptAction *pAction )
 void ScriptEngine::adjustTimer( ScriptAction *pAction, Bool millisecondTimer, Bool add)
 {
 	DEBUG_ASSERTCRASH(pAction->getNumParameters() >= 2, ("Not enough parameters.\n"));
+	const AsciiString counterName = pAction->getParameter(1)->getString();
 	Int counterNdx = pAction->getParameter(1)->getInt();
 	if (counterNdx == 0) {
-		counterNdx = allocateCounter(pAction->getParameter(1)->getString());
+		counterNdx = allocateCounter(counterName);
 		pAction->getParameter(1)->friend_setInt(counterNdx);
 	}
+	const Int beforeValue = m_counters[counterNdx].value;
+	const Bool beforeCountdown = m_counters[counterNdx].isCountdownTimer;
+	const Int parameterInt = pAction->getParameter(0)->getInt();
+	const Real parameterReal = pAction->getParameter(0)->getReal();
 	if (millisecondTimer) {
 		Real value = pAction->getParameter(0)->getReal();
 		if (!add)
@@ -6856,6 +6984,17 @@ void ScriptEngine::adjustTimer( ScriptAction *pAction, Bool millisecondTimer, Bo
 			value = -value;
 		m_counters[counterNdx].value += value;
 	}
+#ifdef __EMSCRIPTEN__
+	scriptDiagNoteTimerAction(
+		pAction,
+		counterName,
+		parameterInt,
+		parameterReal,
+		beforeValue,
+		beforeCountdown,
+		m_counters[counterNdx].value,
+		m_counters[counterNdx].isCountdownTimer);
+#endif
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -6864,14 +7003,18 @@ void ScriptEngine::adjustTimer( ScriptAction *pAction, Bool millisecondTimer, Bo
 void ScriptEngine::enableScript( ScriptAction *pAction )
 {
 	DEBUG_ASSERTCRASH(pAction->getNumParameters() >= 1, ("Not enough parameters.\n"));
-	ScriptGroup *pGroup = findGroup(pAction->getParameter(0)->getString());
+	const AsciiString targetName = pAction->getParameter(0)->getString();
+	ScriptGroup *pGroup = findGroup(targetName);
 	if (pGroup) {
 		pGroup->setActive(true);
 	}
-	Script *pScript = findScript(pAction->getParameter(0)->getString());
+	Script *pScript = findScript(targetName);
 	if (pScript) {
 		pScript->setActive(true);
 	}
+#ifdef __EMSCRIPTEN__
+	scriptDiagNoteScriptActivation(pAction, targetName, pGroup, pScript);
+#endif
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -6880,14 +7023,18 @@ void ScriptEngine::enableScript( ScriptAction *pAction )
 void ScriptEngine::disableScript( ScriptAction *pAction )
 {
 	DEBUG_ASSERTCRASH(pAction->getNumParameters() >= 1, ("Not enough parameters.\n"));
-	Script *pScript = findScript(pAction->getParameter(0)->getString());
+	const AsciiString targetName = pAction->getParameter(0)->getString();
+	Script *pScript = findScript(targetName);
 	if (pScript) {
 		pScript->setActive(false);
 	}
-	ScriptGroup *pGroup = findGroup(pAction->getParameter(0)->getString());
+	ScriptGroup *pGroup = findGroup(targetName);
 	if (pGroup) {
 		pGroup->setActive(false);
 	}
+#ifdef __EMSCRIPTEN__
+	scriptDiagNoteScriptActivation(pAction, targetName, pGroup, pScript);
+#endif
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -7044,7 +7191,13 @@ void ScriptEngine::executeScript( Script *pScript )
 				// Script Debug window
 				if (pScript->getAction()) {
 					_appendMessage(pScript->getName());
+#ifdef __EMSCRIPTEN__
+					scriptDiagPushContext(pScript->getName(), "actions");
+#endif
 					executeActions(pScript->getAction());
+#ifdef __EMSCRIPTEN__
+					scriptDiagPopContext();
+#endif
 				}
 				
 				if (pScript->isOneShot()) {
@@ -7056,7 +7209,13 @@ void ScriptEngine::executeScript( Script *pScript )
 				_appendMessage(pScript->getName(), false);
 
 				// Only do this is there are actually false actions.
+#ifdef __EMSCRIPTEN__
+				scriptDiagPushContext(pScript->getName(), "falseActions");
+#endif
 				executeActions(pScript->getFalseAction());
+#ifdef __EMSCRIPTEN__
+				scriptDiagPopContext();
+#endif
       } 
 		}
 
@@ -7067,7 +7226,13 @@ void ScriptEngine::executeScript( Script *pScript )
 			if (pScript->getAction()) {
 				// Script Debug window
 				_appendMessage(pScript->getName());
+#ifdef __EMSCRIPTEN__
+				scriptDiagPushContext(pScript->getName(), "actions");
+#endif
 				executeActions(pScript->getAction());
+#ifdef __EMSCRIPTEN__
+				scriptDiagPopContext();
+#endif
 			}
 
 			if (pScript->isOneShot()) {
@@ -7079,7 +7244,13 @@ void ScriptEngine::executeScript( Script *pScript )
 			_appendMessage(pScript->getName(), false);
 
 			// Only do this is there are actually false actions.
+#ifdef __EMSCRIPTEN__
+			scriptDiagPushContext(pScript->getName(), "falseActions");
+#endif
 			executeActions(pScript->getFalseAction());
+#ifdef __EMSCRIPTEN__
+			scriptDiagPopContext();
+#endif
 			if (pScript->isOneShot()) {
 				pScript->setActive(false);
 			}

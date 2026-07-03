@@ -1412,6 +1412,286 @@ bool is_campaign_intro_counter_watch(const char *name)
 	return false;
 }
 
+struct ScriptDiagContext {
+	std::string script;
+	std::string branch;
+};
+
+struct ScriptDiagEvent {
+	int sequence = 0;
+	int frame = -1;
+	std::string kind;
+	std::string source_script;
+	std::string branch;
+	int action_type = -1;
+	std::string target;
+	int parameter_int = 0;
+	double parameter_real = 0.0;
+	int before_value = 0;
+	bool before_countdown = false;
+	int after_value = 0;
+	bool after_countdown = false;
+	bool found_group = false;
+	bool group_active = false;
+	bool found_script = false;
+	bool script_active = false;
+};
+
+std::vector<ScriptDiagContext> g_script_diag_context_stack;
+std::vector<ScriptDiagEvent> g_script_diag_events;
+std::vector<std::string> g_script_diag_dynamic_counters;
+int g_script_diag_event_count = 0;
+int g_script_diag_dropped_count = 0;
+
+int current_logic_frame_for_script_diag()
+{
+	return TheGameLogic != NULL ? TheGameLogic->getFrame() : -1;
+}
+
+bool is_script_diag_dynamic_counter_watch(const char *name)
+{
+	if (name == NULL) {
+		return false;
+	}
+	for (const std::string& counter : g_script_diag_dynamic_counters) {
+		if (counter == name) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void add_script_diag_dynamic_counter(const std::string& name)
+{
+	if (name.empty() || is_campaign_intro_counter_watch(name.c_str()) ||
+		is_script_diag_dynamic_counter_watch(name.c_str())) {
+		return;
+	}
+	g_script_diag_dynamic_counters.push_back(name);
+}
+
+bool parameter_references_script_diag_dynamic_counter(const Parameter *parameter)
+{
+	return parameter != NULL &&
+		is_script_diag_dynamic_counter_watch(parameter->getString().str());
+}
+
+bool script_actions_reference_script_diag_dynamic_counter(ScriptAction *action_head)
+{
+	for (ScriptAction *action = action_head; action != NULL; action = action->getNext()) {
+		const Int parameter_count = action->getNumParameters();
+		for (Int parameter_index = 0; parameter_index < parameter_count; ++parameter_index) {
+			if (parameter_references_script_diag_dynamic_counter(action->getParameter(parameter_index))) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool script_conditions_reference_script_diag_dynamic_counter(Script *script)
+{
+	for (OrCondition *or_condition = script != NULL ? script->getOrCondition() : NULL;
+		or_condition != NULL;
+		or_condition = or_condition->getNextOrCondition()) {
+		for (Condition *condition = or_condition->getFirstAndCondition();
+			condition != NULL;
+			condition = condition->getNext()) {
+			const Int parameter_count = condition->getNumParameters();
+			for (Int parameter_index = 0; parameter_index < parameter_count; ++parameter_index) {
+				if (parameter_references_script_diag_dynamic_counter(condition->getParameter(parameter_index))) {
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
+bool script_references_script_diag_dynamic_counter(const char *script_name)
+{
+	Script *script = find_loaded_script(script_name);
+	return script != NULL &&
+		(script_conditions_reference_script_diag_dynamic_counter(script) ||
+		 script_actions_reference_script_diag_dynamic_counter(script->getAction()) ||
+		 script_actions_reference_script_diag_dynamic_counter(script->getFalseAction()));
+}
+
+bool script_diag_context_is_watched()
+{
+	return !g_script_diag_context_stack.empty() &&
+		(is_campaign_intro_script_watch(g_script_diag_context_stack.back().script.c_str()) ||
+		 script_references_script_diag_dynamic_counter(g_script_diag_context_stack.back().script.c_str()));
+}
+
+std::string script_diag_action_name(int action_type)
+{
+	if (TheScriptEngine != NULL && action_type >= 0 && action_type < ScriptAction::NUM_ITEMS) {
+		const ActionTemplate *action_template = TheScriptEngine->getActionTemplate(action_type);
+		if (action_template != NULL) {
+			return action_template->m_internalName.str();
+		}
+	}
+	return "";
+}
+
+void reset_script_diag_trace()
+{
+	g_script_diag_context_stack.clear();
+	g_script_diag_events.clear();
+	g_script_diag_dynamic_counters.clear();
+	g_script_diag_event_count = 0;
+	g_script_diag_dropped_count = 0;
+}
+
+void append_script_diag_event(const ScriptDiagEvent& event)
+{
+	const int include_limit = 512;
+	++g_script_diag_event_count;
+	if (static_cast<int>(g_script_diag_events.size()) >= include_limit) {
+		++g_script_diag_dropped_count;
+		return;
+	}
+	g_script_diag_events.push_back(event);
+}
+
+void note_script_diag_context_push(const char *script_name, const char *branch)
+{
+	const std::string safe_script = script_name != NULL ? script_name : "";
+	const std::string safe_branch = branch != NULL ? branch : "";
+	g_script_diag_context_stack.push_back({safe_script, safe_branch});
+	if (!script_diag_context_is_watched()) {
+		return;
+	}
+	ScriptDiagEvent event;
+	event.sequence = g_script_diag_event_count + 1;
+	event.frame = current_logic_frame_for_script_diag();
+	event.kind = "scriptActions";
+	event.source_script = safe_script;
+	event.branch = safe_branch;
+	append_script_diag_event(event);
+}
+
+void note_script_diag_context_pop()
+{
+	if (!g_script_diag_context_stack.empty()) {
+		g_script_diag_context_stack.pop_back();
+	}
+}
+
+void note_script_diag_timer_action(
+	int action_type,
+	const char *counter_name,
+	int parameter_int,
+	double parameter_real,
+	int before_value,
+	bool before_countdown,
+	int after_value,
+	bool after_countdown)
+{
+	const std::string safe_counter = counter_name != NULL ? counter_name : "";
+	if (!is_campaign_intro_counter_watch(safe_counter.c_str()) &&
+		!is_script_diag_dynamic_counter_watch(safe_counter.c_str()) &&
+		!script_diag_context_is_watched()) {
+		return;
+	}
+	add_script_diag_dynamic_counter(safe_counter);
+	ScriptDiagEvent event;
+	event.sequence = g_script_diag_event_count + 1;
+	event.frame = current_logic_frame_for_script_diag();
+	event.kind = "timerAction";
+	if (!g_script_diag_context_stack.empty()) {
+		event.source_script = g_script_diag_context_stack.back().script;
+		event.branch = g_script_diag_context_stack.back().branch;
+	}
+	event.action_type = action_type;
+	event.target = safe_counter;
+	event.parameter_int = parameter_int;
+	event.parameter_real = parameter_real;
+	event.before_value = before_value;
+	event.before_countdown = before_countdown;
+	event.after_value = after_value;
+	event.after_countdown = after_countdown;
+	append_script_diag_event(event);
+}
+
+void note_script_diag_script_activation(
+	int action_type,
+	const char *target_name,
+	bool found_group,
+	bool group_active,
+	bool found_script,
+	bool script_active)
+{
+	const std::string safe_target = target_name != NULL ? target_name : "";
+	if (!is_campaign_intro_script_watch(safe_target.c_str()) && !script_diag_context_is_watched()) {
+		return;
+	}
+	ScriptDiagEvent event;
+	event.sequence = g_script_diag_event_count + 1;
+	event.frame = current_logic_frame_for_script_diag();
+	event.kind = "scriptActivation";
+	if (!g_script_diag_context_stack.empty()) {
+		event.source_script = g_script_diag_context_stack.back().script;
+		event.branch = g_script_diag_context_stack.back().branch;
+	}
+	event.action_type = action_type;
+	event.target = safe_target;
+	event.found_group = found_group;
+	event.group_active = group_active;
+	event.found_script = found_script;
+	event.script_active = script_active;
+	append_script_diag_event(event);
+}
+
+void append_campaign_intro_script_event_log(std::string &json)
+{
+	json += ",\"scriptEventLog\":{";
+	json += "\"eventCount\":" + std::to_string(g_script_diag_event_count);
+	json += ",\"includedCount\":" + std::to_string(g_script_diag_events.size());
+	json += ",\"droppedCount\":" + std::to_string(g_script_diag_dropped_count);
+	json += ",\"truncated\":";
+	json += g_script_diag_dropped_count > 0 ? "true" : "false";
+	json += ",\"contextDepth\":" + std::to_string(g_script_diag_context_stack.size());
+	json += ",\"events\":[";
+	bool first_event = true;
+	for (const ScriptDiagEvent& event : g_script_diag_events) {
+		if (!first_event) {
+			json += ",";
+		}
+		first_event = false;
+		json += "{\"sequence\":" + std::to_string(event.sequence);
+		json += ",\"frame\":" + std::to_string(event.frame);
+		json += ",\"kind\":\"" + json_escape(event.kind) + "\"";
+		json += ",\"sourceScript\":\"" + json_escape(event.source_script) + "\"";
+		json += ",\"branch\":\"" + json_escape(event.branch) + "\"";
+		json += ",\"actionType\":" + std::to_string(event.action_type);
+		json += ",\"actionName\":\"" + json_escape(script_diag_action_name(event.action_type)) + "\"";
+		json += ",\"target\":\"" + json_escape(event.target) + "\"";
+		json += ",\"parameterInt\":" + std::to_string(event.parameter_int);
+		char parameter_real[64];
+		std::snprintf(parameter_real, sizeof(parameter_real), "%.3f", event.parameter_real);
+		json += ",\"parameterReal\":";
+		json += parameter_real;
+		json += ",\"before\":{\"value\":" + std::to_string(event.before_value);
+		json += ",\"countdownTimer\":";
+		json += event.before_countdown ? "true" : "false";
+		json += "},\"after\":{\"value\":" + std::to_string(event.after_value);
+		json += ",\"countdownTimer\":";
+		json += event.after_countdown ? "true" : "false";
+		json += "},\"activation\":{\"foundGroup\":";
+		json += event.found_group ? "true" : "false";
+		json += ",\"groupActive\":";
+		json += event.group_active ? "true" : "false";
+		json += ",\"foundScript\":";
+		json += event.found_script ? "true" : "false";
+		json += ",\"scriptActive\":";
+		json += event.script_active ? "true" : "false";
+		json += "}}";
+	}
+	json += "]}";
+}
+
 const char *script_for_intro_counter(const char *counter_name)
 {
 	if (std::strcmp(counter_name, "CINE_MoveTo06Delay") == 0) {
@@ -1582,7 +1862,9 @@ bool append_counter_reference_if_needed(
 	const Parameter *parameter,
 	int parameter_index)
 {
-	if (parameter == NULL || !is_campaign_intro_counter_watch(parameter->getString().str())) {
+	if (parameter == NULL ||
+		(!is_campaign_intro_counter_watch(parameter->getString().str()) &&
+		 !is_script_diag_dynamic_counter_watch(parameter->getString().str()))) {
 		return false;
 	}
 	++total_count;
@@ -1802,6 +2084,128 @@ void append_campaign_intro_counter_references(std::string &json)
 	json += "]";
 }
 
+void append_campaign_intro_dynamic_counters(std::string &json)
+{
+	json += ",\"dynamicCounters\":[";
+	bool first_entry = true;
+	for (const std::string& name : g_script_diag_dynamic_counters) {
+		if (!first_entry) {
+			json += ",";
+		}
+		first_entry = false;
+		append_watched_counter(json, name.c_str());
+	}
+	json += "]";
+}
+
+bool script_references_any_script_diag_dynamic_counter(Script *script)
+{
+	return script != NULL &&
+		(script_conditions_reference_script_diag_dynamic_counter(script) ||
+		 script_actions_reference_script_diag_dynamic_counter(script->getAction()) ||
+		 script_actions_reference_script_diag_dynamic_counter(script->getFalseAction()));
+}
+
+void append_campaign_intro_dynamic_script_if_needed(
+	std::string &scripts_json,
+	bool &first_entry,
+	int &total_count,
+	int &included_count,
+	int include_limit,
+	Script *script,
+	Int side_index,
+	const char *group_name)
+{
+	if (script == NULL ||
+		is_campaign_intro_script_watch(script->getName().str()) ||
+		!script_references_any_script_diag_dynamic_counter(script)) {
+		return;
+	}
+	++total_count;
+	if (included_count >= include_limit) {
+		return;
+	}
+	if (!first_entry) {
+		scripts_json += ",";
+	}
+	first_entry = false;
+	++included_count;
+	append_script_catalog_entry_json(scripts_json, script, side_index, group_name, 2);
+}
+
+void append_campaign_intro_dynamic_script_chain(
+	std::string &scripts_json,
+	bool &first_entry,
+	int &total_count,
+	int &included_count,
+	int include_limit,
+	Script *first_script,
+	Int side_index,
+	const char *group_name)
+{
+	for (Script *script = first_script; script != NULL; script = script->getNext()) {
+		append_campaign_intro_dynamic_script_if_needed(
+			scripts_json,
+			first_entry,
+			total_count,
+			included_count,
+			include_limit,
+			script,
+			side_index,
+			group_name);
+	}
+}
+
+void append_campaign_intro_dynamic_scripts(std::string &json)
+{
+	const int include_limit = 32;
+	int total_count = 0;
+	int included_count = 0;
+	bool first_entry = true;
+	std::string scripts_json;
+
+	if (TheSidesList != NULL) {
+		const Int side_count = TheSidesList->getNumSides();
+		for (Int side_index = 0; side_index < side_count; ++side_index) {
+			SidesInfo *side = TheSidesList->getSideInfo(side_index);
+			ScriptList *script_list = side != NULL ? side->getScriptList() : NULL;
+			if (script_list == NULL) {
+				continue;
+			}
+			append_campaign_intro_dynamic_script_chain(
+				scripts_json,
+				first_entry,
+				total_count,
+				included_count,
+				include_limit,
+				script_list->getScript(),
+				side_index,
+				"");
+			for (ScriptGroup *group = script_list->getScriptGroup();
+				group != NULL;
+				group = group->getNext()) {
+				const std::string group_name = group->getName().str();
+				append_campaign_intro_dynamic_script_chain(
+					scripts_json,
+					first_entry,
+					total_count,
+					included_count,
+					include_limit,
+					group->getScript(),
+					side_index,
+					group_name.c_str());
+			}
+		}
+	}
+
+	json += ",\"dynamicScriptCount\":" + std::to_string(total_count);
+	json += ",\"dynamicScriptsTruncated\":";
+	json += total_count > included_count ? "true" : "false";
+	json += ",\"dynamicScripts\":[";
+	json += scripts_json;
+	json += "]";
+}
+
 void append_minimal_control_bar_state(std::string &json)
 {
 	GameWindow *window = find_window_by_name("ControlBar.wnd:ControlBarParent");
@@ -1858,7 +2262,10 @@ void append_campaign_intro_gate_summary(std::string &json)
 	}
 	json += "]";
 	append_campaign_intro_sequential_scripts(json);
+	append_campaign_intro_dynamic_counters(json);
+	append_campaign_intro_dynamic_scripts(json);
 	append_campaign_intro_counter_references(json);
+	append_campaign_intro_script_event_log(json);
 	json += ",\"releaseChain\":{\"includedCount\":0,\"truncated\":false,"
 		"\"activeTimerWaits\":[";
 	bool first_wait = true;
@@ -1879,6 +2286,22 @@ void append_campaign_intro_gate_summary(std::string &json)
 		json += ",\"current\":{\"found\":true,\"name\":\"" + json_escape(name) + "\"";
 		json += ",\"value\":" + std::to_string(counter->value);
 		json += ",\"countdownTimer\":true}}";
+	}
+	for (const std::string& dynamic_name : g_script_diag_dynamic_counters) {
+		const char *name = dynamic_name.c_str();
+		const TCounter *counter = find_script_counter(name);
+		if (counter == NULL || !counter->isCountdownTimer || counter->value <= 0) {
+			continue;
+		}
+		if (!first_wait) {
+			json += ",";
+		}
+		first_wait = false;
+		json += "{\"script\":\"\"";
+		json += ",\"active\":true,\"counter\":\"" + json_escape(name) + "\"";
+		json += ",\"current\":{\"found\":true,\"name\":\"" + json_escape(name) + "\"";
+		json += ",\"value\":" + std::to_string(counter->value);
+		json += ",\"countdownTimer\":true,\"dynamic\":true}}";
 	}
 	json += "]}}";
 }
@@ -2743,6 +3166,54 @@ void run_real_engine_frames(int frame_count)
 
 } // namespace
 
+extern "C" void cnc_port_script_diag_push_context(const char *script_name, const char *branch)
+{
+	note_script_diag_context_push(script_name, branch);
+}
+
+extern "C" void cnc_port_script_diag_pop_context(void)
+{
+	note_script_diag_context_pop();
+}
+
+extern "C" void cnc_port_script_diag_note_timer_action(
+	int action_type,
+	const char *counter_name,
+	int parameter_int,
+	double parameter_real,
+	int before_value,
+	int before_countdown,
+	int after_value,
+	int after_countdown)
+{
+	note_script_diag_timer_action(
+		action_type,
+		counter_name,
+		parameter_int,
+		parameter_real,
+		before_value,
+		before_countdown != 0,
+		after_value,
+		after_countdown != 0);
+}
+
+extern "C" void cnc_port_script_diag_note_script_activation(
+	int action_type,
+	const char *target_name,
+	int found_group,
+	int group_active,
+	int found_script,
+	int script_active)
+{
+	note_script_diag_script_activation(
+		action_type,
+		target_name,
+		found_group != 0,
+		group_active != 0,
+		found_script != 0,
+		script_active != 0);
+}
+
 // One iteration of the original GameEngine::execute() loop: calls the real
 // (virtual) TheGameEngine->update(), i.e. Win32GameEngine::update ->
 // GameEngine::update (radar/audio/client/messages/logic) + serviceWindowsOS.
@@ -2871,6 +3342,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_init(const char
 	}
 	g_state.attempted = true;
 	g_use_shell_map = use_shell_map != 0;
+	reset_script_diag_trace();
 
 	if (run_directory != nullptr && run_directory[0] != '\0') {
 		if (chdir(run_directory) == 0) {
