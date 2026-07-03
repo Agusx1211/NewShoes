@@ -62,6 +62,26 @@
 //#pragma optimize("", off)
 //#pragma MESSAGE("************************************** WARNING, optimization disabled for debugging purposes")
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_texture_apply(
+	unsigned int stage,
+	const char *name,
+	const char *full_path,
+	int missing) __attribute__((weak));
+#define CNC_PORT_NOTE_TEXTURE_APPLY(stage, texture) \
+	do { \
+		if (cnc_port_note_texture_apply) { \
+			cnc_port_note_texture_apply( \
+				(stage), \
+				(texture).Get_Texture_Name().Peek_Buffer(), \
+				(texture).Get_Full_Path().Peek_Buffer(), \
+				(texture).Is_Missing_Texture() ? 1 : 0); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_TEXTURE_APPLY(stage, texture) do { } while (0)
+#endif
+
 const unsigned DEFAULT_INACTIVATION_TIME=20000;
 
 /*
@@ -965,6 +985,7 @@ void TextureClass::Apply(unsigned int stage)
 	LastAccessed=WW3D::Get_Sync_Time();
 
 	DX8_RECORD_TEXTURE(this);
+	CNC_PORT_NOTE_TEXTURE_APPLY(stage, *this);
 
 	// Set texture itself
 	if (WW3D::Is_Texturing_Enabled()) 

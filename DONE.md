@@ -2420,6 +2420,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       WebAssembly/tools/run_startup_vertical_smoke.mjs`, and
       `git diff --check`; screenshot
       `startup-vertical-real-init-post-campaign.png`.
+- [x] Mount base texture assets for the real loaded-map startup render. Added
+      an Emscripten-only `TextureClass::Apply` diagnostic hook to the real
+      engine frame JSON, mounted base `Textures.big` as
+      `ZZBase_Textures.big` in the startup vertical whole-archive set, and
+      made the post-campaign screenshot gate fail if WW3D applies the missing
+      texture fallback. This removes the magenta sky/object fallback on the
+      loaded MD_USA01 campaign scene while preserving Zero Hour archive
+      precedence. Verified with
+      `npm --prefix WebAssembly run build:startup-vertical`, `node --check
+      WebAssembly/harness/startup_vertical_smoke.mjs`, `git diff --check`,
+      and `STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=60 node
+      WebAssembly/harness/startup_vertical_smoke.mjs`: the real path reaches
+      frame 237 with no exception, 1,867 texture applies, zero missing-texture
+      applies, nonblack sky/terrain canvas samples, and screenshot
+      `startup-vertical-real-init-post-campaign.png`.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what

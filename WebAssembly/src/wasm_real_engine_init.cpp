@@ -122,6 +122,13 @@ static std::string g_last_engine_update_target;
 static std::string g_engine_update_breakpoint;
 static std::string g_last_game_logic_step;
 static std::string g_game_logic_breakpoint;
+static unsigned int g_frame_texture_apply_count = 0;
+static unsigned int g_frame_missing_texture_apply_count = 0;
+static std::string g_frame_first_missing_texture_name;
+static std::string g_frame_first_missing_texture_path;
+static std::string g_frame_last_missing_texture_name;
+static std::string g_frame_last_missing_texture_path;
+static std::vector<std::string> g_frame_missing_texture_samples;
 
 extern "C" void cnc_port_note_engine_update_target(const char *name)
 {
@@ -161,6 +168,45 @@ extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_game_logic_breakpo
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_last_game_logic_step()
 {
 	return g_last_game_logic_step.c_str();
+}
+
+extern "C" void cnc_port_note_texture_apply(
+	unsigned int,
+	const char *name,
+	const char *full_path,
+	int missing)
+{
+	++g_frame_texture_apply_count;
+	if (!missing) {
+		return;
+	}
+
+	++g_frame_missing_texture_apply_count;
+	const std::string texture_name = name != nullptr ? name : "";
+	const std::string texture_path = full_path != nullptr ? full_path : "";
+	if (g_frame_first_missing_texture_name.empty() &&
+		g_frame_first_missing_texture_path.empty()) {
+		g_frame_first_missing_texture_name = texture_name;
+		g_frame_first_missing_texture_path = texture_path;
+	}
+	g_frame_last_missing_texture_name = texture_name;
+	g_frame_last_missing_texture_path = texture_path;
+	const std::string sample = texture_path.empty() ? texture_name : texture_path;
+	if (!sample.empty() && g_frame_missing_texture_samples.size() < 16) {
+		bool already_recorded = false;
+		for (std::vector<std::string>::const_iterator it =
+				g_frame_missing_texture_samples.begin();
+			it != g_frame_missing_texture_samples.end();
+			++it) {
+			if (*it == sample) {
+				already_recorded = true;
+				break;
+			}
+		}
+		if (!already_recorded) {
+			g_frame_missing_texture_samples.push_back(sample);
+		}
+	}
 }
 
 namespace {
@@ -277,6 +323,36 @@ struct RealEngineFrameState {
 
 RealEngineFrameState g_frame_state;
 std::string g_frame_json;
+
+void reset_frame_texture_diagnostics()
+{
+	g_frame_texture_apply_count = 0;
+	g_frame_missing_texture_apply_count = 0;
+	g_frame_first_missing_texture_name.clear();
+	g_frame_first_missing_texture_path.clear();
+	g_frame_last_missing_texture_name.clear();
+	g_frame_last_missing_texture_path.clear();
+	g_frame_missing_texture_samples.clear();
+}
+
+void append_frame_texture_diagnostics(std::string &json)
+{
+	json += ",\"textureDiagnostics\":{";
+	json += "\"applies\":" + std::to_string(g_frame_texture_apply_count);
+	json += ",\"missingApplies\":" + std::to_string(g_frame_missing_texture_apply_count);
+	json += ",\"firstMissingName\":\"" + json_escape(g_frame_first_missing_texture_name) + "\"";
+	json += ",\"firstMissingPath\":\"" + json_escape(g_frame_first_missing_texture_path) + "\"";
+	json += ",\"lastMissingName\":\"" + json_escape(g_frame_last_missing_texture_name) + "\"";
+	json += ",\"lastMissingPath\":\"" + json_escape(g_frame_last_missing_texture_path) + "\"";
+	json += ",\"samples\":[";
+	for (std::size_t i = 0; i < g_frame_missing_texture_samples.size(); ++i) {
+		if (i != 0) {
+			json += ",";
+		}
+		json += "\"" + json_escape(g_frame_missing_texture_samples[i]) + "\"";
+	}
+	json += "]}";
+}
 
 bool real_engine_input_window_ready()
 {
@@ -829,6 +905,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame(int frame
 	if (frame_count < 1) {
 		frame_count = 1;
 	}
+	reset_frame_texture_diagnostics();
 	if (g_state.attempted && g_state.init_returned && TheGameEngine != NULL) {
 		for (int frame = 0; frame < frame_count; ++frame) {
 			++g_frame_state.frames_attempted;
@@ -860,6 +937,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame(int frame
 	json += ",\"staleMovieBreakClears\":" + std::to_string(g_frame_state.stale_movie_break_clears);
 	json += ",\"lastUpdateTarget\":\"" + json_escape(g_last_engine_update_target) + "\"";
 	json += ",\"lastGameLogicStep\":\"" + json_escape(g_last_game_logic_step) + "\"";
+	append_frame_texture_diagnostics(json);
 	json += ",\"quitting\":";
 	json += (TheGameEngine != NULL && TheGameEngine->getQuitting() != FALSE) ? "true" : "false";
 	json += ",\"exceptionCaught\":";

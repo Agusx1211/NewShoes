@@ -322,6 +322,7 @@ const realInitArchiveSpecs = [
   { name: "ZZBase_English.big", sourceName: "English.big" },
   { name: "ZZBase_Window.big", sourceName: "Window.big" },
   { name: "ZZBase_Terrain.big", sourceName: "Terrain.big" },
+  { name: "ZZBase_Textures.big", sourceName: "Textures.big" },
   { name: "ZZBase_W3D.big", sourceName: "W3D.big" },
   { name: "ZZBase_Music.big", sourceName: "base-generals/Music.big" },
   { name: "Gensec.big" },
@@ -1673,6 +1674,15 @@ try {
       { name: "hudArea", x: 86, y: 682 },
     ])
     : null;
+  const realPostCampaignFrameResult =
+    realPostCampaignFrames ?? realPostCampaignDiagnosticFrames;
+  const realPostCampaignTextureDiagnostics =
+    realPostCampaignFrameResult?.frame?.textureDiagnostics;
+  if (shouldCapturePostCampaign) {
+    expect(realPostCampaignTextureDiagnostics?.missingApplies === 0,
+      "loaded-map render should not apply WW3D missing texture fallback",
+      realPostCampaignTextureDiagnostics);
+  }
 
   const audioFrontier =
     audioBootResult.state.originalEngineStartup.deviceFactoryFrontier;

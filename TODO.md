@@ -61,10 +61,13 @@ residue and the next frontier.
       dispatches `MSG_NEW_GAME`, runs `prepareNewGame`, completes deferred
       `startNewGame(FALSE)` for `Maps\MD_USA01\MD_USA01.map`, mounts base
       `W3D.big` for the original `new_skybox.W3D` water/skybox render asset,
-      and harness-proves 60 post-campaign loaded-map frames through frame 237
-      with screenshot + canvas-pixel samples. Remaining: retire superseded
-      focused menu smokes and continue from loaded-map frames toward a visibly
-      correct, interactable in-game scene.
+      mounts base `Textures.big` as `ZZBase_Textures.big`, reports
+      `TextureClass::Apply` missing-texture diagnostics from the real frame
+      loop, and harness-proves 60 post-campaign loaded-map frames through
+      frame 237 with zero WW3D missing-texture applies, screenshot, and
+      canvas-pixel samples. Remaining: retire superseded focused menu smokes
+      and continue from loaded-map frames toward a visibly correct,
+      interactable in-game scene.
 - [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch
       workaround in `GameEngine::update()` with the real
       `W3DGameLogic`/`SubsystemInterface::UPDATE` wasm vtable ownership fix
