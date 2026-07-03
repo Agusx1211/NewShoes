@@ -99,8 +99,15 @@ residue and the next frontier.
       is active. For faster deeper intro/rendering iteration,
       `STARTUP_VERTICAL_REAL_INIT_ONLY=1` now skips only the phase1
       archiveless and phase2 audio/frontier preflights while preserving the
-      default full startup vertical gate. Remaining: retire superseded focused
-      menu smokes and continue from the scripted intro toward a visibly
+      default full startup vertical gate. It can now also run post-campaign
+      chunks until original player-control gates are met
+      (`STARTUP_VERTICAL_POST_CAMPAIGN_UNTIL_PLAYER_CONTROL=1`) and optionally
+      fail if control is not reached
+      (`STARTUP_VERTICAL_POST_CAMPAIGN_EXPECT_PLAYER_CONTROL=1`). The first
+      120-frame player-control run correctly reports the scene is still
+      mid-intro (`INTRO_DONE=false`, input disabled, letterboxed, control bar
+      hidden) with zero missing texture applies. Remaining: retire superseded
+      focused menu smokes and continue from the scripted intro toward a visibly
       correct, interactable in-game scene.
 - [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch
       workaround in `GameEngine::update()` with the real

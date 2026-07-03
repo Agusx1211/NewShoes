@@ -2578,6 +2578,29 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `/tmp/cnc-startup-full-default.json` (mode `full`, wasm loaded, phase2
       archive count 7, `createFunctionLexicon` frontier preserved, 2,099
       object templates, 21 real-init archives, all 43 subsystems completed).
+- [x] Add a condition-driven post-campaign player-control runner to the startup
+      vertical. `STARTUP_VERTICAL_POST_CAMPAIGN_UNTIL_PLAYER_CONTROL=1` now
+      runs the real MD_USA01 frame loop in chunks and stops early once the
+      exported original engine state proves the loaded scene is interactable:
+      `GameLogic::isInGame()`, `TheInGameUI->getInputEnabled()`,
+      `INTRO_DONE`, no letterbox, and visible/clickable real
+      `ControlBar.wnd:ControlBarParent`. The stricter
+      `STARTUP_VERTICAL_POST_CAMPAIGN_EXPECT_PLAYER_CONTROL=1` turns that into
+      a failing gate when the frame cap expires. Chunk stderr and final JSON
+      now include a compact `playerControl` summary so long runs can explain
+      whether the intro is still legitimately mid-cinematic or has reached
+      usable gameplay. Verified with `node --check
+      WebAssembly/harness/startup_vertical_smoke.mjs`, `git diff --check`, and
+      `STARTUP_VERTICAL_REAL_INIT_ONLY=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_UNTIL_PLAYER_CONTROL=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=120
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAME_CHUNK=60 node
+      WebAssembly/harness/startup_vertical_smoke.mjs` redirected to
+      `/tmp/cnc-startup-player-control-120-final.json`: the real path reaches
+      frame 297 / logic frame 120 with two player-control chunks, zero
+      missing-texture applies, `INTRO_DONE=false`, input disabled, letterbox
+      active, control bar hidden, and `reachedPlayerControl=false`, matching
+      the known still-running original intro.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what

@@ -20,6 +20,10 @@ const realInitOnly = process.env.STARTUP_VERTICAL_REAL_INIT_ONLY === "1";
 const postCampaignFrameCount = Number(process.env.STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES ?? 0);
 const postCampaignFrameChunkCount =
   Number(process.env.STARTUP_VERTICAL_POST_CAMPAIGN_FRAME_CHUNK ?? 0);
+const postCampaignUntilPlayerControl =
+  process.env.STARTUP_VERTICAL_POST_CAMPAIGN_UNTIL_PLAYER_CONTROL === "1";
+const postCampaignExpectPlayerControl =
+  process.env.STARTUP_VERTICAL_POST_CAMPAIGN_EXPECT_PLAYER_CONTROL === "1";
 const postCampaignBreakpoint = process.env.STARTUP_VERTICAL_POST_CAMPAIGN_BREAKPOINT ?? "";
 const postCampaignPreBreakpointFrameCount =
   Number(process.env.STARTUP_VERTICAL_POST_CAMPAIGN_PRE_BREAKPOINT_FRAMES ?? 0);
@@ -678,6 +682,45 @@ function summarizeRealEngineFrameChunk(result, requestedFrames) {
   };
 }
 
+function summarizePlayerControlState(result) {
+  const frame = result?.frame;
+  const clientState = frame?.clientState;
+  const gameplay = clientState?.gameplay;
+  const scriptDebug = gameplay?.scriptDebug;
+  const introDone = namedEntry(scriptDebug?.flags, "INTRO_DONE");
+  const returnToPlayerControl = namedEntry(scriptDebug?.catalog?.scripts, "ReturnToPlayerControl");
+  const controlBarParent = clientState?.controlBarWindows?.parent;
+  return {
+    framesCompleted: frame?.framesCompleted,
+    logicFrame: gameplay?.logicFrame,
+    inGame: gameplay?.inGame,
+    inputEnabled: gameplay?.inputEnabled,
+    introDone: introDone?.value,
+    letterBoxed: clientState?.display?.letterBoxed,
+    letterBoxFading: clientState?.display?.letterBoxFading,
+    controlBarFound: controlBarParent?.found,
+    controlBarHidden: controlBarParent?.hidden,
+    controlBarManagerHidden: controlBarParent?.managerHidden,
+    controlBarClickable: controlBarParent?.clickable,
+    selectCount: gameplay?.selectCount,
+    selectedControllable: gameplay?.selectedControllable,
+    returnToPlayerControlActive: returnToPlayerControl?.active,
+    returnToPlayerControlFrameToEvaluate: returnToPlayerControl?.frameToEvaluate,
+    textureDiagnostics: frame?.textureDiagnostics,
+  };
+}
+
+function playerControlStateReached(state) {
+  return state.inGame === true
+    && state.inputEnabled === true
+    && state.introDone === true
+    && state.letterBoxed === false
+    && state.controlBarFound === true
+    && state.controlBarHidden === false
+    && state.controlBarManagerHidden === false
+    && state.controlBarClickable === true;
+}
+
 async function runRealEngineFrameBatches(page, totalFrames, chunkFrames) {
   if (chunkFrames <= 0 || chunkFrames >= totalFrames) {
     return runRealEngineFrames(page, totalFrames);
@@ -699,6 +742,54 @@ async function runRealEngineFrameBatches(page, totalFrames, chunkFrames) {
     chunked: {
       totalFrames,
       chunkFrames,
+      chunks,
+    },
+  };
+}
+
+async function runRealEngineFramesUntilPlayerControl(page, maxFrames, chunkFrames) {
+  const framesPerChunk = chunkFrames > 0 ? chunkFrames : 60;
+  const chunks = [];
+  let lastResult = null;
+  let framesRun = 0;
+  for (let remaining = maxFrames; remaining > 0;) {
+    const frames = Math.min(framesPerChunk, remaining);
+    lastResult = await runRealEngineFrames(page, frames);
+    framesRun += frames;
+    const summary = summarizeRealEngineFrameChunk(lastResult, frames);
+    const playerControl = summarizePlayerControlState(lastResult);
+    const reached = playerControlStateReached(playerControl);
+    const chunk = {
+      ...summary,
+      playerControl,
+      reachedPlayerControl: reached,
+    };
+    chunks.push(chunk);
+    console.error("[vertical] post-campaign player-control chunk", JSON.stringify(chunk));
+    if (reached) {
+      return {
+        ...lastResult,
+        reachedPlayerControl: true,
+        playerControl,
+        chunked: {
+          totalFrames: framesRun,
+          maxFrames,
+          chunkFrames: framesPerChunk,
+          chunks,
+        },
+      };
+    }
+    remaining -= frames;
+  }
+
+  return {
+    ...lastResult,
+    reachedPlayerControl: false,
+    playerControl: summarizePlayerControlState(lastResult),
+    chunked: {
+      totalFrames: framesRun,
+      maxFrames,
+      chunkFrames: framesPerChunk,
       chunks,
     },
   };
@@ -1884,14 +1975,30 @@ try {
   if (postCampaignBreakpoint.length === 0 && postCampaignAfterGameLogicBreakpoint.length > 0) {
     await setRealEngineGameLogicBreakpoint(realInitPage, postCampaignAfterGameLogicBreakpoint);
   }
+  const shouldRunUntilPlayerControl =
+    postCampaignBreakpoint.length === 0
+      && !hasPostCampaignAfterBreakpoint
+      && (postCampaignUntilPlayerControl || postCampaignExpectPlayerControl);
   const realPostCampaignDiagnosticFrames =
     postCampaignBreakpoint.length === 0 && hasPostCampaignAfterBreakpoint
       ? await runRealEngineFramesUnchecked(
         realInitPage,
         postCampaignFrameCount > 0 ? postCampaignFrameCount : 1)
       : null;
+  const realPostCampaignPlayerControlFrames = shouldRunUntilPlayerControl
+    ? await runRealEngineFramesUntilPlayerControl(
+      realInitPage,
+      postCampaignFrameCount > 0 ? postCampaignFrameCount : 3600,
+      postCampaignFrameChunkCount)
+    : null;
+  if (postCampaignExpectPlayerControl) {
+    expect(realPostCampaignPlayerControlFrames?.reachedPlayerControl === true,
+      "loaded-map intro did not return original player control before the frame limit",
+      realPostCampaignPlayerControlFrames?.playerControl);
+  }
   const realPostCampaignFrames = postCampaignBreakpoint.length === 0
     && !hasPostCampaignAfterBreakpoint
+    && !shouldRunUntilPlayerControl
     && postCampaignFrameCount > 0
     ? await runRealEngineFrameBatches(
       realInitPage,
@@ -1899,7 +2006,9 @@ try {
       postCampaignFrameChunkCount)
     : null;
   const shouldCapturePostCampaign =
-    realPostCampaignFrames !== null || realPostCampaignDiagnosticFrames !== null;
+    realPostCampaignFrames !== null
+      || realPostCampaignPlayerControlFrames !== null
+      || realPostCampaignDiagnosticFrames !== null;
   const realPostCampaignScreenshotPath = shouldCapturePostCampaign
     ? realInitPostCampaignScreenshot
     : null;
@@ -1915,7 +2024,9 @@ try {
     ])
     : null;
   const realPostCampaignFrameResult =
-    realPostCampaignFrames ?? realPostCampaignDiagnosticFrames;
+    realPostCampaignFrames
+      ?? realPostCampaignPlayerControlFrames
+      ?? realPostCampaignDiagnosticFrames;
   const realPostCampaignTextureDiagnostics =
     realPostCampaignFrameResult?.frame?.textureDiagnostics;
   if (shouldCapturePostCampaign) {
@@ -2013,6 +2124,7 @@ try {
         screenshot: realInitCampaignStartScreenshot,
       },
       postCampaignFrames: realPostCampaignFrames,
+      postCampaignPlayerControlFrames: realPostCampaignPlayerControlFrames,
       postCampaignPreBreakpointFrames: realPostCampaignPreBreakpointFrames,
       postCampaignDiagnosticFrames: realPostCampaignDiagnosticFrames,
       postCampaignCanvasProbe: realPostCampaignCanvasProbe,
