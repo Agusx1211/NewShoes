@@ -5,4 +5,8 @@
 /WebAssembly/err.txt
 /node_modules/
 /WebAssembly/node_modules/
-/assets/
+# Game assets and reference-doc library are local-only, except the library index
+/assets/*
+!/assets/docs/
+/assets/docs/*
+!/assets/docs/INDEX.md
