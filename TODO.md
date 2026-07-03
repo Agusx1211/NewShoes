@@ -186,6 +186,57 @@ residue and the next frontier.
         retained `m_bytes` (`wasm_d3d8_shim.cpp:2026`), so the buffer content is
         complete.
       - **Depth-fade**: `m_useDepthFade` is never enabled anywhere → not it.
+      - **Ring-buffer seam vertex collapse**: a probe counting when
+        `getXWithOrigin`/`getYWithOrigin` (`HeightMap.cpp:270,291`) hit their
+        safety clamp (which would collapse adjacent vertices) reported
+        **0 clamp hits over 1.68M lookups** → the wrap is correct, terrain
+        vertex X/Y positions are valid, no zero-area collapse from the ring
+        buffer.
+      - **Backface culling**: forcing `gl.disable(CULL_FACE)` for every draw
+        (bridge.js `applyD3D8RenderState`) left the black **identical** → the
+        terrain triangles are not being wrongly winding-culled.
+      NET: terrain geometry is valid (positions, heights, winding, diffuse) —
+      confirmed by Fable's independent read that the VB upload pipeline is
+      provably lossless (whole-buffer USAGE_DEFAULT lock/upload; no discard/
+      resize path can fire).
+      ★★★ **ROOT CAUSE IS THE DEPTH TEST — CONFIRMED.** Forcing
+      `gl.depthFunc(gl.ALWAYS)` for every draw (bridge.js `applyD3D8RenderState`)
+      dropped shell-map black from 20.8% to **0.5%** and rendered the terrain
+      **correctly** (beaches, shoreline foam). So the terrain geometry/shader are
+      fine; the terrain **fails the depth test** in the black regions and is not
+      drawn (black clear-color shows through). Further discriminators (all
+      build+run on the shell map):
+      - `depthFunc=LEQUAL` (not ALWAYS) did **NOT** fix it → terrain depth is
+        *strictly greater* than the buffer, i.e. terrain is genuinely BEHIND
+        something drawn earlier at a closer depth (not an equal-depth/z-prepass
+        LESS-vs-EQUAL issue).
+      - Forcing a depth-buffer clear alongside every color clear did **nothing**
+        → the engine already clears color+depth together; NOT stale depth.
+      - Disabling depth-write for alpha-blended draws, and for
+        color-write-disabled (z-fill) draws, both did **nothing** → the occluder
+        writes depth while opaque and color-writing, drawn before the terrain
+        (its color is later overwritten by terrain under depthFunc=ALWAYS, so it
+        is effectively black in the final image).
+      - Hiding the water render object (`TheWaterRenderObj->Set_Hidden`) did
+        **nothing** (terrain still a black patchwork with water gone) → NOT the
+        water surface. Hiding the non-active terrain global
+        (`TheHeightMap`/`TheFlatHeightMap` vs `TheTerrainRenderObject`) did
+        **nothing** → NOT a duplicate terrain render object.
+      MD_USA01 (desert, no water surface) is also fully black, so the occluder
+      is common to both maps.
+      ★ **PRIME NEXT LEAD: render-target depth isolation.** The water
+      **reflection render-to-texture** (`W3DDisplay.cpp:1890-1893`
+      `updateRenderTargetTextures`, gated on `m_waterType==2`) renders the whole
+      scene from a mirrored camera into an offscreen texture — and `Set_Hidden`
+      on the water object does NOT disable it. If the D3D8→WebGL shim does not
+      give each `SetRenderTarget`/offscreen pass its **own depth buffer** (and
+      restore the main one on switch back), that offscreen pass's depth leaks
+      into the MAIN depth buffer → terrain fails against mirror-camera depth →
+      black. Test: set `m_waterType != 2` (skip the reflection RTT) OR audit the
+      shim's render-target/depth-attachment handling. This is a classic shim
+      bug and fits every observation. Broader: audit ALL render-to-texture
+      passes (water reflection, shadow maps, terrain baked textures) for shared-
+      depth-buffer leakage.
       Isolated terrain-visual smokes (`test:ww3d-terrain-visual-scene`,
       `-camera-pan-scene`) render the SAME classic terrain **perfectly**,
       including under a camera pan — but they use a **small map that fits the
