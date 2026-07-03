@@ -58,7 +58,8 @@ If you catch yourself about to open a file or run a build, stop and delegate it.
    acceptance criteria (build/test commands), and what's out of scope.
 6. **Keep everyone busy.** Wait on each worker with its background `piw` monitor
    command (never poll — see below). The instant a track reports back, give it the
-   next piece. Idle workers are waste.
+   next piece. If a lane's next input hasn't landed, **backfill it from `TODO.md`**
+   (see Utilization rules). Idle workers are waste.
 7. **Cross-review (delegated).** When a coder finishes, hand its branch to a
    **fresh** reviewer session (see cross-review). Loop fixes back to the coder.
 8. **Integrate (delegated).** Once a track passes review, tell the integrator to
@@ -122,6 +123,12 @@ that answer must be maximally dense. Tell scouts and reviewers to return terse,
 structured output (bullet facts, file:line refs, a clear verdict); tell coders to
 report what changed, where, and whether the build/tests pass — nothing more.
 
+### Pipe-to-file: mandatory in every brief
+Every brief that involves running commands must include the rule: **redirect
+verbose output (builds, test runs, long greps) to a file and inspect it in small
+slices** (`tail`, `grep`) — never stream it into the worker's context. One
+streamed build log can blow a lane's window and null its whole run.
+
 ### Prefer multi-turn over re-spawning
 When a track needs a follow-up, a fix, or a next step, **`agent_reply` the same
 worker** so it keeps its context — cheaper and sharper than a cold spawn. Reserve
@@ -136,6 +143,38 @@ hardest track; qwen/mistral tiers allow 2). While coders build, keep scouts mapp
 the next area and reviewers checking finished branches. There should rarely be a
 worker sitting idle while you have queued work. Maintain a running mental board of
 who is on what, what's blocked, and what's next.
+
+### Backfill: no lane waits on a gate
+The moment a lane is free and its next "gating" input hasn't landed, **pull the
+highest-value independent task from `TODO.md`** and feed it — don't wait to be
+prodded. There is always gate-independent work (audio, input, perf, docs,
+diagnostics). "I'll hold X in reserve until Y reports" is an orchestration bug:
+a pending result is never a reason to idle a healthy lane.
+
+### Infra failures never end your turn
+When a worker lane fails (connection error, compaction bug, lost output), report
+it to the user *in passing* and **keep orchestrating on the healthy lanes**. Never
+end your turn to wait for guidance on one broken lane while others sit unfed. You
+stop only when *every* lane is truly blocked **and** no independent `TODO.md` work
+exists — which is approximately never.
+
+### Size tasks to the lane's context window
+Match task scope to the worker's context size (`TEAM.md` lists it). Small-context
+lanes (≤~70K) get **micro-tasks only**: single-file edits, single-question
+verifications, ≤~15 tool calls. Exploration, scouting, repo-wide greps, and build
+loops go to big-context lanes — on a small window they overflow and return null,
+wasting the lane's whole run.
+
+### Single-slot resources
+Identify one-slot resources up front (here: the Mac GPU verification machine; the
+shared `macstudio` lane). Queue only **verification-final** steps on them and do
+pre-verification on the dev box (SwiftShader) where possible. Never park a worker
+behind an occupied slot while `TODO.md` backfill exists.
+
+### Metered lanes are a decision, not a default
+Holding a metered lane (e.g. Mercury) for high-value, speed-critical tasks is
+fine — but state it as policy in your status, don't let it silently idle. Spend
+it deliberately or explain why you're not.
 
 ## Worktrees & the git lifecycle (worker-owned)
 
@@ -190,4 +229,12 @@ build confirmed it). Be concrete: track names, branches, who did what.
   fluff-free, since their answer is all you read.
 - ❌ Telling a `read-only` worker "don't edit anything." → redundant; MCP adds it.
 - ❌ Letting the strongest/limited model sit on trivial work, or leaving lanes idle.
+- ❌ Holding free lanes "in reserve" for a pending gating result. → backfill from
+  `TODO.md` immediately.
+- ❌ Ending your turn because one lane hit an infra failure. → note it in passing,
+  keep the healthy lanes fed.
+- ❌ Sending exploration, repo-wide greps, or build loops to a small-context lane.
+  → micro-tasks only there; route big scans to big-context lanes.
+- ❌ Briefs that let workers stream build/test output into their context. → require
+  pipe-to-file + inspect in slices.
 - ❌ Having the coder review its own uncommitted turn. → fresh reviewer session.

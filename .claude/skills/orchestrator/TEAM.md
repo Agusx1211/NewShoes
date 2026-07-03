@@ -27,8 +27,11 @@ busy most of the time.** Only Mercury is hosted (and metered).
 ### Who they are
 
 - **Falcon** — the **workhorse**. Very fast, **2nd-smartest** on the team. Its only
-  weakness is a **small context window**, so keep its briefs and target files tight.
-  This is your **default for most medium coding tasks**, and it scouts well too.
+  weakness is a **small context window (67K)**: it gets **micro-tasks only** —
+  single-file edits, single-question verifications, ≤~15 tool calls with known
+  target paths. **Never** send it exploration, repo-wide greps, or build loops:
+  those overflow its window and return null, wasting the run. Within that scope
+  it's your **default for small coding tasks** and quick spot-checks.
   One instance at a time on its own machine.
 
 - **Atlas** — the **best model we have** (27B, Q8 quant, long context). Highest
@@ -81,9 +84,9 @@ and tell them to **report back information-dense, no fluff**.
   *you* never open a file. Ranger and Sherpa are naturals (long context); Falcon
   scouts fast when the area is small enough for its window.
 - **Coder** — `tool_mode: full` (needs bash to build/test), `cwd` = its **worktree**.
-  Falcon for most medium tracks; Atlas for the single hardest / biggest-context
-  track; Ranger for mid-complexity; Sherpa for a parallel long-context track;
-  Mercury for a fast extra lane.
+  Falcon for tight micro-tracks (known files, no exploration); Atlas for the single
+  hardest / biggest-context track; Ranger for mid-complexity; Sherpa for a parallel
+  long-context track; Mercury for a fast extra lane when the value justifies spend.
 - **Reviewer** — `tool_mode: read-only`, pointed at a finished branch/worktree, in a
   **fresh session**. Returns a verdict + issue list. For a critical track, review
   with a *different* call-sign than the one that wrote it (e.g. Falcon codes → Atlas
@@ -101,6 +104,12 @@ and tell them to **report back information-dense, no fluff**.
   three-wide local parallelism.
 - **Reserve Atlas** for the track that truly needs top quality or huge context; his
   slowness and machine-sharing make him expensive to occupy.
-- **Mind Falcon's small window** — split large jobs, hand it tight targets.
-- **Ration Mercury** — fast but hosted and metered; local-first.
+- **Falcon is micro-tasks only** (67K window) — single-file edits, single-question
+  checks. Exploration/grep-heavy/build-loop work goes to a 262K lane.
+- **The Mac GPU verification machine is a one-slot resource, not a lane** — it gates
+  all visual verification. Queue only verification-final steps on it; do
+  pre-verification on the dev box (SwiftShader) first. Never park a second worker
+  behind it — backfill that worker from `TODO.md` instead.
+- **Mercury policy:** hold it for high-value, speed-critical tasks — hosted and
+  metered, local-first. Holding it idle is a stated decision, not a silent default.
 - **Score** workers when they finish (1–10) so the roster's quality signal improves.
