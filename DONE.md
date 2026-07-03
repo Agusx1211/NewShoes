@@ -2435,6 +2435,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       frame 237 with no exception, 1,867 texture applies, zero missing-texture
       applies, nonblack sky/terrain canvas samples, and screenshot
       `startup-vertical-real-init-post-campaign.png`.
+- [x] Expose loaded-map gameplay state for the real campaign startup path.
+      The real-frame JSON now reports letterbox/fade state, `GameLogic`
+      mode/loading/pause/frame/object progress, `GameClient` frame and
+      drawable counts, local player readiness/side, `InGameUI` input and
+      selection state, control-bar readiness plus key `ControlBar.wnd`
+      window probes, and `ScriptEngine` fade/freeze/end-state gates. The
+      startup vertical can now split post-campaign frames into chunks and
+      logs each chunk summary to stderr, making long loaded-map runs
+      inspectable without adding a probe target. Verified with
+      `npm --prefix WebAssembly run build:startup-vertical`, `node --check
+      WebAssembly/harness/startup_vertical_smoke.mjs`, `git diff --check`,
+      and `STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=180
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAME_CHUNK=60 node
+      WebAssembly/harness/startup_vertical_smoke.mjs`: the real path reaches
+      frame 357 with no exception, 2,208 texture applies, zero
+      missing-texture applies, 1,374 live objects/drawables, active local
+      America player, and the expected still-cinematic script state
+      (`letterBoxed=true`, `inputEnabled=false`, control bar hidden) plus
+      screenshot `startup-vertical-real-init-post-campaign.png`.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what

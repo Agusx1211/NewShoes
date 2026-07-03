@@ -63,10 +63,14 @@ residue and the next frontier.
       `W3D.big` for the original `new_skybox.W3D` water/skybox render asset,
       mounts base `Textures.big` as `ZZBase_Textures.big`, reports
       `TextureClass::Apply` missing-texture diagnostics from the real frame
-      loop, and harness-proves 60 post-campaign loaded-map frames through
-      frame 237 with zero WW3D missing-texture applies, screenshot, and
-      canvas-pixel samples. Remaining: retire superseded focused menu smokes
-      and continue from loaded-map frames toward a visibly correct,
+      loop, exports loaded-map gameplay/UI/script state (`GameLogic`,
+      `GameClient` drawables, local player, `InGameUI`, control bar windows,
+      letterbox/fade gates), and chunk-proves 180 post-campaign loaded-map
+      logic frames through frame 357 with zero WW3D missing-texture applies,
+      1,374 objects/drawables, America as the active local player, and the
+      expected still-cinematic state: letterbox on, input disabled, and the
+      control bar hidden. Remaining: retire superseded focused menu smokes
+      and continue from the scripted intro toward a visibly correct,
       interactable in-game scene.
 - [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch
       workaround in `GameEngine::update()` with the real

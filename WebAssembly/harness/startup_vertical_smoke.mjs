@@ -17,6 +17,8 @@ const realInitCampaignStartScreenshot = resolve(screenshotDir, "startup-vertical
 const realInitPostCampaignScreenshot = resolve(screenshotDir, "startup-vertical-real-init-post-campaign.png");
 const debugStartupVertical = process.env.STARTUP_VERTICAL_DEBUG === "1";
 const postCampaignFrameCount = Number(process.env.STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES ?? 0);
+const postCampaignFrameChunkCount =
+  Number(process.env.STARTUP_VERTICAL_POST_CAMPAIGN_FRAME_CHUNK ?? 0);
 const postCampaignBreakpoint = process.env.STARTUP_VERTICAL_POST_CAMPAIGN_BREAKPOINT ?? "";
 const postCampaignPreBreakpointFrameCount =
   Number(process.env.STARTUP_VERTICAL_POST_CAMPAIGN_PRE_BREAKPOINT_FRAMES ?? 0);
@@ -477,6 +479,71 @@ async function runRealEngineFrames(page, frames) {
     window.CnCPort.rpc("realEngineFrame", { frames: frameCount }), frames);
   assertRealEngineFrames(result);
   return result;
+}
+
+function summarizeRealEngineFrameChunk(result, requestedFrames) {
+  const frame = result?.frame;
+  const clientState = frame?.clientState;
+  const gameplay = clientState?.gameplay;
+  const controlBarParent = clientState?.controlBarWindows?.parent;
+  return {
+    requestedFrames,
+    ok: result?.ok === true,
+    framesCompleted: frame?.framesCompleted,
+    framesAttempted: frame?.framesAttempted,
+    exceptionCaught: frame?.exceptionCaught,
+    lastUpdateTarget: frame?.lastUpdateTarget,
+    lastGameLogicStep: frame?.lastGameLogicStep,
+    textureDiagnostics: frame?.textureDiagnostics,
+    display: {
+      letterBoxed: clientState?.display?.letterBoxed,
+      letterBoxFading: clientState?.display?.letterBoxFading,
+      moviePlaying: clientState?.display?.moviePlaying,
+    },
+    gameplay: {
+      inGame: gameplay?.inGame,
+      inputEnabled: gameplay?.inputEnabled,
+      logicFrame: gameplay?.logicFrame,
+      objectCount: gameplay?.objectCount,
+      drawableCount: gameplay?.drawableCount,
+      localPlayerActive: gameplay?.localPlayer?.active,
+      localPlayerSide: gameplay?.localPlayer?.side,
+      scriptFade: gameplay?.fade,
+      scriptFadeValue: gameplay?.fadeValue,
+    },
+    controlBar: {
+      found: controlBarParent?.found,
+      hidden: controlBarParent?.hidden,
+      managerHidden: controlBarParent?.managerHidden,
+      clickable: controlBarParent?.clickable,
+    },
+  };
+}
+
+async function runRealEngineFrameBatches(page, totalFrames, chunkFrames) {
+  if (chunkFrames <= 0 || chunkFrames >= totalFrames) {
+    return runRealEngineFrames(page, totalFrames);
+  }
+
+  const chunks = [];
+  let lastResult = null;
+  for (let remaining = totalFrames; remaining > 0;) {
+    const frames = Math.min(chunkFrames, remaining);
+    lastResult = await runRealEngineFrames(page, frames);
+    const summary = summarizeRealEngineFrameChunk(lastResult, frames);
+    chunks.push(summary);
+    console.error("[vertical] post-campaign chunk", JSON.stringify(summary));
+    remaining -= frames;
+  }
+
+  return {
+    ...lastResult,
+    chunked: {
+      totalFrames,
+      chunkFrames,
+      chunks,
+    },
+  };
 }
 
 async function runRealEngineFramesUnchecked(page, frames) {
@@ -1656,7 +1723,10 @@ try {
   const realPostCampaignFrames = postCampaignBreakpoint.length === 0
     && !hasPostCampaignAfterBreakpoint
     && postCampaignFrameCount > 0
-    ? await runRealEngineFrames(realInitPage, postCampaignFrameCount)
+    ? await runRealEngineFrameBatches(
+      realInitPage,
+      postCampaignFrameCount,
+      postCampaignFrameChunkCount)
     : null;
   const shouldCapturePostCampaign =
     realPostCampaignFrames !== null || realPostCampaignDiagnosticFrames !== null;

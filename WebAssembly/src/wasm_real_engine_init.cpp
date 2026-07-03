@@ -28,17 +28,25 @@
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
 #include "Common/NameKeyGenerator.h"
+#include "Common/Player.h"
+#include "Common/PlayerList.h"
 #include "Common/SubsystemInterface.h"
+#include "GameClient/ControlBar.h"
 #include "GameClient/Display.h"
+#include "GameClient/Drawable.h"
 #include "GameClient/GUICallbacks.h"
+#include "GameClient/GameClient.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/GameWindowTransitions.h"
+#include "GameClient/InGameUI.h"
 #include "GameClient/Keyboard.h"
 #include "GameClient/Mouse.h"
 #include "GameClient/Shell.h"
 #include "GameClient/WinInstanceData.h"
 #include "GameClient/WindowLayout.h"
+#include "GameLogic/GameLogic.h"
+#include "GameLogic/ScriptEngine.h"
 
 // The original app-level globals GameEngine.cpp expects WinMain.cpp to own.
 // WinMain.cpp is only partially compiled for the browser (WndProc +
@@ -354,6 +362,21 @@ void append_frame_texture_diagnostics(std::string &json)
 	json += "]}";
 }
 
+int count_game_client_drawables()
+{
+	if (TheGameClient == NULL) {
+		return 0;
+	}
+
+	int count = 0;
+	for (Drawable *draw = TheGameClient->firstDrawable();
+		draw != NULL && count < 10000;
+		draw = draw->getNextDrawable()) {
+		++count;
+	}
+	return count;
+}
+
 bool real_engine_input_window_ready()
 {
 	return ApplicationHWnd != NULL && GetWindowLong(ApplicationHWnd, GWL_WNDPROC) != 0;
@@ -662,8 +685,126 @@ void append_real_engine_client_state(std::string &json)
 		json += ",\"height\":" + std::to_string(TheDisplay->getHeight());
 		json += ",\"moviePlaying\":";
 		json += TheDisplay->isMoviePlaying() ? "true" : "false";
+		json += ",\"letterBoxed\":";
+		json += TheDisplay->isLetterBoxed() ? "true" : "false";
+		json += ",\"letterBoxFading\":";
+		json += TheDisplay->isLetterBoxFading() ? "true" : "false";
 	} else {
-		json += "\"width\":null,\"height\":null,\"moviePlaying\":null";
+		json += "\"width\":null,\"height\":null,\"moviePlaying\":null,"
+			"\"letterBoxed\":null,\"letterBoxFading\":null";
+	}
+	json += "}";
+
+	json += ",\"gameplay\":{";
+	json += "\"gameLogicReady\":";
+	json += TheGameLogic != NULL ? "true" : "false";
+	if (TheGameLogic != NULL) {
+		json += ",\"inGame\":";
+		json += TheGameLogic->isInGame() ? "true" : "false";
+		json += ",\"gameMode\":" + std::to_string(TheGameLogic->getGameMode());
+		json += ",\"loadingMap\":";
+		json += TheGameLogic->isLoadingMap() ? "true" : "false";
+		json += ",\"loadingSave\":";
+		json += TheGameLogic->isLoadingSave() ? "true" : "false";
+		json += ",\"clearingGameData\":";
+		json += TheGameLogic->isClearingGameData() ? "true" : "false";
+		json += ",\"gamePaused\":";
+		json += TheGameLogic->isGamePaused() ? "true" : "false";
+		json += ",\"logicFrame\":" + std::to_string(TheGameLogic->getFrame());
+		json += ",\"objectCount\":" + std::to_string(TheGameLogic->getObjectCount());
+		json += ",\"progressComplete\":";
+		json += TheGameLogic->isProgressComplete() ? "true" : "false";
+	} else {
+		json += ",\"inGame\":null,\"gameMode\":null,\"loadingMap\":null,"
+			"\"loadingSave\":null,\"clearingGameData\":null,\"gamePaused\":null,"
+			"\"logicFrame\":null,\"objectCount\":0,\"progressComplete\":null";
+	}
+
+	json += ",\"gameClientReady\":";
+	json += TheGameClient != NULL ? "true" : "false";
+	if (TheGameClient != NULL) {
+		json += ",\"clientFrame\":" + std::to_string(TheGameClient->getFrame());
+		json += ",\"drawableCount\":" + std::to_string(count_game_client_drawables());
+		json += ",\"renderedObjectCount\":" + std::to_string(TheGameClient->getRenderedObjectCount());
+	} else {
+		json += ",\"clientFrame\":null,\"drawableCount\":0,\"renderedObjectCount\":0";
+	}
+
+	json += ",\"playerListReady\":";
+	json += ThePlayerList != NULL ? "true" : "false";
+	if (ThePlayerList != NULL) {
+		Player *local_player = ThePlayerList->getLocalPlayer();
+		json += ",\"playerCount\":" + std::to_string(ThePlayerList->getPlayerCount());
+		json += ",\"localPlayer\":{";
+		json += "\"ready\":";
+		json += local_player != NULL ? "true" : "false";
+		if (local_player != NULL) {
+			json += ",\"index\":" + std::to_string(local_player->getPlayerIndex());
+			json += ",\"active\":";
+			json += local_player->isPlayerActive() ? "true" : "false";
+			json += ",\"side\":\"" + json_escape(local_player->getSide().str()) + "\"";
+		} else {
+			json += ",\"index\":null,\"active\":null,\"side\":\"\"";
+		}
+		json += "}";
+	} else {
+		json += ",\"playerCount\":0,\"localPlayer\":{\"ready\":false,"
+			"\"index\":null,\"active\":null,\"side\":\"\"}";
+	}
+
+	json += ",\"inGameUIReady\":";
+	json += TheInGameUI != NULL ? "true" : "false";
+	if (TheInGameUI != NULL) {
+		json += ",\"inputEnabled\":";
+		json += TheInGameUI->getInputEnabled() ? "true" : "false";
+		json += ",\"selectCount\":" + std::to_string(TheInGameUI->getSelectCount());
+		json += ",\"selectedControllable\":";
+		json += TheInGameUI->areSelectedObjectsControllable() ? "true" : "false";
+		json += ",\"clientQuiet\":";
+		json += TheInGameUI->isClientQuiet() ? "true" : "false";
+		json += ",\"scrolling\":";
+		json += TheInGameUI->isScrolling() ? "true" : "false";
+		json += ",\"placementAnchored\":";
+		json += TheInGameUI->isPlacementAnchored() ? "true" : "false";
+		json += ",\"mouseOverDrawableId\":" +
+			std::to_string(static_cast<Int>(TheInGameUI->getMousedOverDrawableID()));
+		json += ",\"videoBufferReady\":";
+		json += TheInGameUI->videoBuffer() != NULL ? "true" : "false";
+		json += ",\"cameoVideoBufferReady\":";
+		json += TheInGameUI->cameoVideoBuffer() != NULL ? "true" : "false";
+	} else {
+		json += ",\"inputEnabled\":null,\"selectCount\":0,\"selectedControllable\":null,"
+			"\"clientQuiet\":null,\"scrolling\":null,\"placementAnchored\":null,"
+			"\"mouseOverDrawableId\":null,\"videoBufferReady\":null,"
+			"\"cameoVideoBufferReady\":null";
+	}
+
+	json += ",\"controlBarReady\":";
+	json += TheControlBar != NULL ? "true" : "false";
+	if (TheControlBar != NULL) {
+		json += ",\"observerControlBarOn\":";
+		json += TheControlBar->isObserverControlBarOn() ? "true" : "false";
+	} else {
+		json += ",\"observerControlBarOn\":null";
+	}
+
+	json += ",\"scriptEngineReady\":";
+	json += TheScriptEngine != NULL ? "true" : "false";
+	if (TheScriptEngine != NULL) {
+		char fade_value[64];
+		std::snprintf(fade_value, sizeof(fade_value), "%.3f", TheScriptEngine->getFadeValue());
+		json += ",\"fade\":" + std::to_string(static_cast<Int>(TheScriptEngine->getFade()));
+		json += ",\"fadeValue\":";
+		json += fade_value;
+		json += ",\"timeFrozenScript\":";
+		json += TheScriptEngine->isTimeFrozenScript() ? "true" : "false";
+		json += ",\"timeFrozenDebug\":";
+		json += TheScriptEngine->isTimeFrozenDebug() ? "true" : "false";
+		json += ",\"gameEnding\":";
+		json += TheScriptEngine->isGameEnding() ? "true" : "false";
+	} else {
+		json += ",\"fade\":null,\"fadeValue\":null,\"timeFrozenScript\":null,"
+			"\"timeFrozenDebug\":null,\"gameEnding\":null";
 	}
 	json += "}";
 
@@ -868,6 +1009,15 @@ void append_real_engine_client_state(std::string &json)
 	append_window_under_probe_center(json, "underButtonSinglePlayerCenter", "MainMenu.wnd:ButtonSinglePlayer");
 	append_window_under_probe_center(json, "underButtonUSACenter", "MainMenu.wnd:ButtonUSA");
 	append_window_under_probe_center(json, "underButtonEasyCenter", "MainMenu.wnd:ButtonEasy");
+	json += "}";
+
+	json += ",\"controlBarWindows\":{\"queried\":true";
+	append_window_probe(json, "parent", "ControlBar.wnd:ControlBarParent");
+	append_window_probe(json, "rightHud", "ControlBar.wnd:RightHUD");
+	append_window_probe(json, "moneyDisplay", "ControlBar.wnd:MoneyDisplay");
+	append_window_probe(json, "powerWindow", "ControlBar.wnd:PowerWindow");
+	append_window_probe(json, "buttonGeneral", "ControlBar.wnd:ButtonGeneral");
+	append_window_probe(json, "buttonIdleWorker", "ControlBar.wnd:ButtonIdleWorker");
 	json += "}";
 
 	append_input_window_state(json);
