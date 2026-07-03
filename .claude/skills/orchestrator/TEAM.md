@@ -18,16 +18,21 @@ busy most of the time.** Only Mercury is hosted (and metered).
 
 | Call-sign | Model | Ctx | Machine | Runs |
 |---|---|---|---|---|
-| **Falcon** | `llmbench-llamacpp/qwen3.6-27b@iq2_m` | 67K | `llmbench` (192.168.66.102) | 1 at a time |
+| **Falcon** | `llmbench-llamacpp/qwen3.6-27b@iq2_m` | 58K | `llmbench` (192.168.66.102) | 1 at a time |
 | **Atlas** | `macstudio/qwen3.6-27b-mtp` | 262K | `macstudio` | 1 at a time — **shares machine with Ranger** |
 | **Ranger** | `macstudio/qwen/qwen3.6-35b-a3b` | 262K | `macstudio` | 1 at a time — **shares machine with Atlas** |
 | **Sherpa** | `vscode11/qwen3.6-35b-a3b-mtp` | 262K | `vscode11` | 1 at a time |
 | **Mercury** | `mistral/mistral-medium-3.5` | 262K | hosted (Mistral API) | up to 2 — **metered, conserve** |
 
+> ⚠️ **Not usable regardless of what the live roster claims:** `zai/glm-5.2` and
+> `macstudio/minimax-2.7` may show up in `models` output but are **not available —
+> never delegate to them**; the delegation is wasted.
+
 ### Who they are
 
 - **Falcon** — the **workhorse**. Very fast, **2nd-smartest** on the team. Its only
-  weakness is a **small context window (67K)**: it gets **micro-tasks only** —
+  weakness is a **small context window (58K — lowered from 67K after a VRAM OOM)**:
+  it gets **micro-tasks only** —
   single-file edits, single-question verifications, ≤~15 tool calls with known
   target paths. **Never** send it exploration, repo-wide greps, or build loops:
   those overflow its window and return null, wasting the run. Within that scope
@@ -104,7 +109,7 @@ and tell them to **report back information-dense, no fluff**.
   three-wide local parallelism.
 - **Reserve Atlas** for the track that truly needs top quality or huge context; his
   slowness and machine-sharing make him expensive to occupy.
-- **Falcon is micro-tasks only** (67K window) — single-file edits, single-question
+- **Falcon is micro-tasks only** (58K window) — single-file edits, single-question
   checks. Exploration/grep-heavy/build-loop work goes to a 262K lane.
 - **The Mac GPU verification machine is a one-slot resource, not a lane** — it gates
   all visual verification. Queue only verification-final steps on it; do

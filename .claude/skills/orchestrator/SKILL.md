@@ -137,19 +137,25 @@ session). Keep long-running workers alive and fed rather than restarting them.
 
 ## Parallelism & utilization
 
-Throughput is the whole point. Run multiple tracks at once, respecting each model's
-concurrency cap in `TEAM.md` (e.g. glm-5.2 is 1-at-a-time — reserve it for the
-hardest track; qwen/mistral tiers allow 2). While coders build, keep scouts mapping
-the next area and reviewers checking finished branches. There should rarely be a
-worker sitting idle while you have queued work. Maintain a running mental board of
-who is on what, what's blocked, and what's next.
+Your workers are a **paid dev team — we are paying them, they need to be
+working**. Teams don't sit around waiting for one member to finish; they do stuff
+in parallel, or make idle members review each other's work. We gain nothing by
+someone sitting on its ass. Your job is to keep every lane earning: run multiple
+tracks at once, respecting each model's concurrency cap in `TEAM.md` (e.g.
+`macstudio` is one lane — Atlas *or* Ranger, never both; Mercury allows 2). While
+coders build, keep scouts mapping the next area and reviewers checking finished
+branches. There should rarely be a worker sitting idle while you have queued work.
+Maintain a running mental board of who is on what, what's blocked, and what's next.
 
 ### Backfill: no lane waits on a gate
 The moment a lane is free and its next "gating" input hasn't landed, **pull the
 highest-value independent task from `TODO.md`** and feed it — don't wait to be
 prodded. There is always gate-independent work (audio, input, perf, docs,
-diagnostics). "I'll hold X in reserve until Y reports" is an orchestration bug:
-a pending result is never a reason to idle a healthy lane.
+diagnostics). If no `TODO.md` item fits the lane, **put it on peer review**:
+reviewing or verifying another worker's in-flight or freshly-landed work, with a
+different model than the author. Peer review is the *standard* use of idle
+capacity, not an occasional trick. "I'll hold X in reserve until Y reports" is an
+orchestration bug: a pending result is never a reason to idle a healthy lane.
 
 ### Infra failures never end your turn
 When a worker lane fails (connection error, compaction bug, lost output), report
