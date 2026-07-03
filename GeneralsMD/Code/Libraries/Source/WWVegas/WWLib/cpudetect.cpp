@@ -29,6 +29,10 @@
 # include <time.h>  // for time(), localtime() and timezone variable.
 #endif
 
+#ifdef __EMSCRIPTEN__
+# include <emscripten/emscripten.h>
+#endif
+
 struct OSInfoStruct {
 	const char* Code;
 	const char* SubCode;
@@ -174,6 +178,35 @@ static unsigned Calculate_Processor_Speed(__int64& ticks_per_second)
 
 void CPUDetectClass::Init_Processor_Speed()
 {
+#ifdef __EMSCRIPTEN__
+	// No rdtsc/cpuid in wasm; keep the original approach (time a fixed
+	// workload) but clock it with emscripten_get_now(). Downstream, GameLOD
+	// only compares this against era MHz thresholds (isReallyLowMHz() < 400),
+	// so an order-of-magnitude-honest measurement is what this boundary owes.
+	double best_ops_per_us = 0.0;
+	for (int attempt = 0; attempt < 3; ++attempt) {
+		volatile unsigned acc = 1u;
+		const int iterations = 5000000;
+		const double t0 = emscripten_get_now();
+		for (int i = 0; i < iterations; ++i) {
+			acc = acc * 1664525u + 1013904223u;
+		}
+		const double elapsed_ms = emscripten_get_now() - t0;
+		if (elapsed_ms > 0.0) {
+			const double ops_per_us = iterations / (elapsed_ms * 1000.0);
+			if (ops_per_us > best_ops_per_us) {
+				best_ops_per_us = ops_per_us;
+			}
+		}
+	}
+	// ~3 cycles per LCG iteration on the era hardware this scale mimics.
+	ProcessorSpeed = (unsigned)(best_ops_per_us * 3.0);
+	ProcessorTicksPerSecond = (__int64)ProcessorSpeed * 1000000;
+	InvProcessorTicksPerSecond = ProcessorTicksPerSecond != 0
+		? 1.0 / (double)ProcessorTicksPerSecond
+		: 0.0;
+	return;
+#else
 	if (!Has_RDTSC_Instruction()) {
 		ProcessorSpeed=0;
 		ProcessorTicksPerSecond=0;
@@ -198,6 +231,7 @@ void CPUDetectClass::Init_Processor_Speed()
 	// If no two subsequent samples where close enough, use intermediate
 	ProcessorSpeed=total_speed/6;
 	InvProcessorTicksPerSecond=1.0/double(ProcessorTicksPerSecond);
+#endif
 }
 
 void CPUDetectClass::Init_Processor_Manufacturer()

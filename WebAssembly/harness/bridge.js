@@ -7211,8 +7211,9 @@ async function loadWasmModule() {
         [],
       ),
       probeWin32GameEngine: module.cwrap("cnc_port_probe_win32_gameengine", "string", []),
-      realEngineInit: module.cwrap("cnc_port_real_engine_init", "string", ["string"]),
+      realEngineInit: module.cwrap("cnc_port_real_engine_init", "string", ["string", "number"]),
       realEngineFrontier: module.cwrap("cnc_port_real_engine_frontier", "string", []),
+      mapCacheProbe: module.cwrap("cnc_port_map_cache_probe", "string", []),
       realEngineFrame: module.cwrap("cnc_port_real_engine_frame", "string", ["number"]),
       realEngineLastUpdateTarget: module.cwrap(
         "cnc_port_real_engine_last_update_target",
@@ -11167,12 +11168,13 @@ async function realEngineInit(payload = {}) {
   }
   const wasmModule = moduleResult.wasmModule;
   const runDirectory = String(payload.runDirectory ?? "/assets/runtime");
+  const useShellMap = payload.shellMap === true ? 1 : 0;
   const traceStart = harnessState.logs.length;
   let frontier = null;
   let aborted = false;
   let abortMessage = null;
   try {
-    frontier = JSON.parse(wasmModule.realEngineInit(runDirectory));
+    frontier = JSON.parse(wasmModule.realEngineInit(runDirectory, useShellMap));
   } catch (error) {
     aborted = true;
     abortMessage = error?.message ?? String(error);
@@ -11946,6 +11948,18 @@ async function rpc(command, payload = {}) {
       return mountArchives(payload);
     case "realEngineInit":
       return realEngineInit(payload);
+    case "mapCacheProbe":
+      {
+        const moduleResult = await getWasmModuleForArchives("mapCacheProbe");
+        if (moduleResult.error) {
+          return { ok: false, command: "mapCacheProbe", error: moduleResult.error };
+        }
+        return {
+          ok: true,
+          command: "mapCacheProbe",
+          probe: JSON.parse(moduleResult.wasmModule.mapCacheProbe()),
+        };
+      }
     case "realEngineUpdateBreakpoint":
       {
         const moduleResult = await getWasmModuleForArchives("realEngineUpdateBreakpoint");

@@ -848,7 +848,11 @@ static inline void GlobalMemoryStatus(MEMORYSTATUS *status)
 	const std::size_t physical_available = dynamic_top < heap_size ? heap_size - dynamic_top : 0;
 	const std::size_t virtual_total = heap_max > 0 ? heap_max : heap_size;
 	const std::size_t virtual_available = dynamic_top < virtual_total ? virtual_total - dynamic_top : physical_available;
-	const std::size_t dword_max = static_cast<std::size_t>(~static_cast<DWORD>(0));
+	// Cap at INT_MAX like real GlobalMemoryStatus did on big machines (the
+	// reason GlobalMemoryStatusEx exists): engine code stores these in signed
+	// 32-bit Ints, and 2GB exactly would flip negative and fail min-spec
+	// checks (GameLOD's 256MB test).
+	const std::size_t dword_max = static_cast<std::size_t>(0x7fffffffu);
 	const auto clamp_dword = [dword_max](std::size_t value) -> DWORD {
 		return static_cast<DWORD>(value > dword_max ? dword_max : value);
 	};
@@ -856,8 +860,11 @@ static inline void GlobalMemoryStatus(MEMORYSTATUS *status)
 	status->dwMemoryLoad = heap_size > 0
 		? static_cast<DWORD>((static_cast<std::uint64_t>(heap_size - physical_available) * 100ULL) / heap_size)
 		: 0;
-	status->dwTotalPhys = clamp_dword(heap_size);
-	status->dwAvailPhys = clamp_dword(physical_available);
+	// "Total physical" must be the growable maximum, not the current heap:
+	// CPUDetect snapshots this at static-init (before the heap grows) and
+	// GameLOD's 256MB minimum-spec check reads that snapshot.
+	status->dwTotalPhys = clamp_dword(virtual_total);
+	status->dwAvailPhys = clamp_dword(virtual_available);
 	status->dwTotalPageFile = clamp_dword(virtual_total);
 	status->dwAvailPageFile = clamp_dword(virtual_available);
 	status->dwTotalVirtual = clamp_dword(virtual_total);

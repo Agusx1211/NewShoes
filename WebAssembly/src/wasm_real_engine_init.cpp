@@ -32,7 +32,10 @@
 #include "Common/Player.h"
 #include "Common/PlayerList.h"
 #include "Common/SubsystemInterface.h"
+#include "Common/GameLOD.h"
 #include "GameClient/ControlBar.h"
+#include "GameClient/MapUtil.h"
+#include "cpudetect.h"
 #include "GameClient/Display.h"
 #include "GameClient/Drawable.h"
 #include "GameClient/GUICallbacks.h"
@@ -239,6 +242,9 @@ struct RealEngineInitState {
 
 RealEngineInitState g_state;
 std::string g_state_json;
+// Opt-in only: default boots stay -noshellmap so harness expectations hold;
+// the human play page can request the original ShellMapMD menu background.
+static bool g_use_shell_map = false;
 
 std::string json_escape(const std::string &value)
 {
@@ -271,7 +277,9 @@ const char *build_state_json()
 	json += g_state.attempted ? "true" : "false";
 	json += ",\"source\":\"GeneralsMD/Code/GameEngine/Source/Common/GameEngine.cpp::init\"";
 	json += ",\"factory\":\"GeneralsMD/Code/Main/WinMain.cpp::CreateGameEngine\"";
-	json += ",\"commandLine\":\"-noshellmap -win\"";
+	json += ",\"commandLine\":\"";
+	json += g_use_shell_map ? "-win" : "-noshellmap -win";
+	json += "\"";
 	json += ",\"runDirectory\":\"" + json_escape(g_state.run_directory) + "\"";
 	json += ",\"initReturned\":";
 	json += g_state.init_returned ? "true" : "false";
@@ -1959,17 +1967,60 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame(int frame
 	return g_frame_json.c_str();
 }
 
+// Diagnostic for the shell-map path: GameEngine::init silently clears
+// m_shellMapOn when the shell map misses TheMapCache, so expose the cache
+// size, the lookup result, and a few shell-ish keys.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_map_cache_probe()
+{
+	static std::string json;
+	json = "{";
+	json += "\"mapCacheReady\":";
+	json += TheMapCache != NULL ? "true" : "false";
+	if (TheMapCache != NULL) {
+		json += ",\"mapCount\":" + std::to_string(static_cast<long long>(TheMapCache->size()));
+		AsciiString lowerName = TheGlobalData != NULL ? TheGlobalData->m_shellMapName : AsciiString::TheEmptyString;
+		lowerName.toLower();
+		json += ",\"shellMapName\":\"" + json_escape(lowerName.str()) + "\"";
+		json += ",\"shellMapFound\":";
+		json += TheMapCache->find(lowerName) != TheMapCache->end() ? "true" : "false";
+		json += ",\"shellMapOn\":";
+		json += (TheGlobalData != NULL && TheGlobalData->m_shellMapOn) ? "true" : "false";
+		json += ",\"cpuDetectSpeedMHz\":" + std::to_string(static_cast<long long>(CPUDetectClass::Get_Processor_Speed()));
+		json += ",\"cpuDetectRamBytes\":" + std::to_string(static_cast<unsigned long long>(CPUDetectClass::Get_Total_Physical_Memory()));
+		if (TheGameLODManager != NULL) {
+			json += ",\"lodMemPassed\":";
+			json += TheGameLODManager->didMemPass() ? "true" : "false";
+			json += ",\"lodReallyLowMHz\":";
+			json += TheGameLODManager->isReallyLowMHz() ? "true" : "false";
+			json += ",\"staticLODLevel\":" + std::to_string(static_cast<long long>(TheGameLODManager->getStaticLODLevel()));
+		}
+		json += ",\"sampleKeys\":[";
+		int emitted = 0;
+		for (MapCache::const_iterator it = TheMapCache->begin();
+				it != TheMapCache->end() && emitted < 8; ++it, ++emitted) {
+			if (emitted > 0) {
+				json += ",";
+			}
+			json += "\"" + json_escape(it->first.str()) + "\"";
+		}
+		json += "]";
+	}
+	json += "}";
+	return json.c_str();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frontier()
 {
 	return build_state_json();
 }
 
-extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_init(const char *run_directory)
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_init(const char *run_directory, int use_shell_map)
 {
 	if (g_state.attempted) {
 		return build_state_json();
 	}
 	g_state.attempted = true;
+	g_use_shell_map = use_shell_map != 0;
 
 	if (run_directory != nullptr && run_directory[0] != '\0') {
 		if (chdir(run_directory) == 0) {
@@ -1986,11 +2037,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_init(const char
 	ensure_real_engine_input_window();
 
 	static const char *argv_storage[] = {"CnCGeneralsZH", "-noshellmap", "-win"};
-	const int argc = 3;
-	char **argv = const_cast<char **>(argv_storage);
+	static const char *argv_shellmap_storage[] = {"CnCGeneralsZH", "-win"};
+	const int argc = g_use_shell_map ? 2 : 3;
+	char **argv = const_cast<char **>(g_use_shell_map ? argv_shellmap_storage : argv_storage);
 
-	std::printf("cnc-port: real-init begin dir=%s argv=-noshellmap -win\n",
-		g_state.run_directory.c_str());
+	std::printf("cnc-port: real-init begin dir=%s argv=%s\n",
+		g_state.run_directory.c_str(),
+		g_use_shell_map ? "-win" : "-noshellmap -win");
 	std::fflush(stdout);
 
 	const double started_at = emscripten_get_now();
