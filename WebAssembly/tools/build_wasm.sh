@@ -3,7 +3,8 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 wasm_dir="$(cd "${script_dir}/.." && pwd)"
-build_dir="${wasm_dir}/build/wasm"
+build_dir_suffix="${BUILD_DIR_SUFFIX:-}"
+build_dir="${wasm_dir}/build/wasm${build_dir_suffix}"
 build_type="${BUILD_TYPE:-Debug}"
 
 if ! command -v emcmake >/dev/null 2>&1; then
