@@ -121,9 +121,15 @@ residue and the next frontier.
       gates still disabled as intended by the intro, and active phase-two
       blockers `CINE_LaunchPadMoveDelay=154`,
       `CINE_Pt2CameraLocation01Delay=274`, and
-      `CINE_Pt2MoveTransportsDelay=94`. Remaining: retire superseded focused
-      menu smokes, continue through those phase-two timers, and continue from
-      the scripted intro toward a visibly correct, interactable in-game scene.
+      `CINE_Pt2MoveTransportsDelay=94`. A lightweight
+      `realEngineFrameSummary` RPC now drives the same real update loop while
+      exporting only the state needed by long player-control gates; a 120-frame
+      lightweight browser run matches the early intro countdown with zero
+      missing texture applies and keeps compact JSON output. Remaining: retire
+      superseded focused menu smokes, continue through those phase-two timers,
+      keep long rendered chunks observable with smaller chunks or RPC
+      timeouts/progress, and continue from the scripted intro toward a visibly
+      correct, interactable in-game scene.
 - [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch
       workaround in `GameEngine::update()` with the real
       `W3DGameLogic`/`SubsystemInterface::UPDATE` wasm vtable ownership fix
@@ -2078,7 +2084,11 @@ and then start with the PROFILE, not with any individual fix.
       interrupted. The 2026-07-02 `test:object-ini` silent hang is now fixed
       by per-step timeouts plus range-backed archive mounting; extend that
       same fail-with-browser-context pattern to the remaining long vertical
-      smokes instead of leaving silent Playwright RPCs.
+      smokes instead of leaving silent Playwright RPCs. A 2026-07-03
+      lightweight post-campaign run showed the same observability problem for
+      a large synchronous 300-frame rendered RPC: the browser stayed CPU-active,
+      but the harness emitted no checkpoint until the call returned, so deep
+      runs should keep small chunks or add timeout/progress instrumentation.
 - [ ] CI runs build + harness smoke + screenshot diffs on every change.
 - [ ] Document how to run the harness and interpret failures.
 

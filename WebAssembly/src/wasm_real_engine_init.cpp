@@ -1262,6 +1262,397 @@ bool real_engine_input_window_ready()
 	return ApplicationHWnd != NULL && GetWindowLong(ApplicationHWnd, GWL_WNDPROC) != 0;
 }
 
+GameWindow *find_window_by_name(const char *window_name);
+
+const char *const k_campaign_intro_counter_watches[] = {
+	"CINE_MoveTo06Delay",
+	"CINE_CameraCutTo04",
+	"CINE_LaunchPadMoveDelay",
+	"CINE_Pt2CameraLocation01Delay",
+	"CINE_Pt2MoveTransportsDelay",
+	"CINE_ScudSoundDelay",
+	"CINE_BasePullOut01Delay",
+	"CINE_BackToRocket01Delay",
+	"CINE_BackToBaseDelay",
+	"CINE_ZoomInMoreOnBaseDelay",
+	"CINE_RocketAirShot01Delay",
+	"CINE_BackToBaseYetAgainDelay",
+	"CINE_ZoomInMoreOnBaseDelayAgain",
+	"CINE_RocketAirShot02Delay",
+	"CINE_LastBaseShotDelay",
+	"CINE_BlowUp",
+	"CINE_FlashWhiteDelay",
+	"CINE_ReturnToPlayerStartDelay",
+	"CINE_ReturnToPlayerStartDelay_2",
+	"Give it back",
+};
+
+const char *const k_campaign_intro_flag_watches[] = {
+	"INTRO_DONE",
+	"Inside Base",
+	"Mission_Phase_Three",
+};
+
+const char *const k_campaign_intro_script_watches[] = {
+	"CINE_CameraCutTo04",
+	"CINE_LaunchPad & BuggiesMove",
+	"CINE_BasePos01",
+	"CINE_MoveTransports",
+	"Give Player The Game",
+	"ReturnToPlayerControl",
+};
+
+const TCounter *find_script_counter(const char *name)
+{
+	if (TheScriptEngine == NULL || name == NULL) {
+		return NULL;
+	}
+	const Int counter_count = TheScriptEngine->debugGetCounterCount();
+	for (Int index = 1; index < counter_count; ++index) {
+		const TCounter *counter = TheScriptEngine->debugGetCounterByIndex(index);
+		if (counter != NULL && !counter->name.isEmpty() &&
+			std::strcmp(counter->name.str(), name) == 0) {
+			return counter;
+		}
+	}
+	return NULL;
+}
+
+const TFlag *find_script_flag(const char *name)
+{
+	if (TheScriptEngine == NULL || name == NULL) {
+		return NULL;
+	}
+	const Int flag_count = TheScriptEngine->debugGetFlagCount();
+	for (Int index = 1; index < flag_count; ++index) {
+		const TFlag *flag = TheScriptEngine->debugGetFlagByIndex(index);
+		if (flag != NULL && !flag->name.isEmpty() &&
+			std::strcmp(flag->name.str(), name) == 0) {
+			return flag;
+		}
+	}
+	return NULL;
+}
+
+Script *find_script_in_chain(Script *script, const char *name)
+{
+	for (Script *current = script; current != NULL; current = current->getNext()) {
+		if (std::strcmp(current->getName().str(), name) == 0) {
+			return current;
+		}
+	}
+	return NULL;
+}
+
+Script *find_loaded_script(const char *name)
+{
+	if (TheSidesList == NULL || name == NULL) {
+		return NULL;
+	}
+	const Int side_count = TheSidesList->getNumSides();
+	for (Int side_index = 0; side_index < side_count; ++side_index) {
+		SidesInfo *side = TheSidesList->getSideInfo(side_index);
+		ScriptList *script_list = side != NULL ? side->getScriptList() : NULL;
+		if (script_list == NULL) {
+			continue;
+		}
+		if (Script *script = find_script_in_chain(script_list->getScript(), name)) {
+			return script;
+		}
+		for (ScriptGroup *group = script_list->getScriptGroup();
+			group != NULL;
+			group = group->getNext()) {
+			if (Script *script = find_script_in_chain(group->getScript(), name)) {
+				return script;
+			}
+		}
+	}
+	return NULL;
+}
+
+const char *script_for_intro_counter(const char *counter_name)
+{
+	if (std::strcmp(counter_name, "CINE_CameraCutTo04") == 0) {
+		return "CINE_CameraCutTo04";
+	}
+	if (std::strcmp(counter_name, "CINE_LaunchPadMoveDelay") == 0) {
+		return "CINE_LaunchPad & BuggiesMove";
+	}
+	if (std::strcmp(counter_name, "CINE_Pt2CameraLocation01Delay") == 0) {
+		return "CINE_BasePos01";
+	}
+	if (std::strcmp(counter_name, "CINE_Pt2MoveTransportsDelay") == 0) {
+		return "CINE_MoveTransports";
+	}
+	if (std::strcmp(counter_name, "Give it back") == 0 ||
+		std::strcmp(counter_name, "CINE_ReturnToPlayerStartDelay") == 0 ||
+		std::strcmp(counter_name, "CINE_ReturnToPlayerStartDelay_2") == 0) {
+		return "ReturnToPlayerControl";
+	}
+	return "";
+}
+
+void append_watched_counter(std::string &json, const char *name)
+{
+	const TCounter *counter = find_script_counter(name);
+	json += "{\"name\":\"" + json_escape(name) + "\"";
+	json += ",\"found\":";
+	json += counter != NULL ? "true" : "false";
+	if (counter != NULL) {
+		json += ",\"value\":" + std::to_string(counter->value);
+		json += ",\"countdownTimer\":";
+		json += counter->isCountdownTimer ? "true" : "false";
+	} else {
+		json += ",\"value\":null,\"countdownTimer\":null";
+	}
+	json += "}";
+}
+
+void append_watched_flag(std::string &json, const char *name)
+{
+	const TFlag *flag = find_script_flag(name);
+	json += "{\"name\":\"" + json_escape(name) + "\"";
+	json += ",\"found\":";
+	json += flag != NULL ? "true" : "false";
+	json += ",\"value\":";
+	if (flag != NULL) {
+		json += flag->value ? "true" : "false";
+	} else {
+		json += "null";
+	}
+	json += "}";
+}
+
+void append_watched_script(std::string &json, const char *name)
+{
+	Script *script = find_loaded_script(name);
+	json += "{\"name\":\"" + json_escape(name) + "\"";
+	json += ",\"found\":";
+	json += script != NULL ? "true" : "false";
+	if (script != NULL) {
+		json += ",\"active\":";
+		json += script->isActive() ? "true" : "false";
+		json += ",\"oneShot\":";
+		json += script->isOneShot() ? "true" : "false";
+		json += ",\"frameToEvaluate\":" + std::to_string(script->getFrameToEvaluate());
+	} else {
+		json += ",\"active\":null,\"oneShot\":null,\"frameToEvaluate\":null";
+	}
+	json += "}";
+}
+
+void append_minimal_control_bar_state(std::string &json)
+{
+	GameWindow *window = find_window_by_name("ControlBar.wnd:ControlBarParent");
+	json += ",\"controlBar\":{";
+	if (TheWindowManager == NULL || window == NULL) {
+		json += "\"found\":false,\"hidden\":null,\"managerHidden\":null,"
+			"\"enabled\":null,\"clickable\":false}";
+		return;
+	}
+	const UnsignedInt status = window->winGetStatus();
+	const Bool manager_hidden = TheWindowManager->isHidden(window);
+	const Bool enabled = TheWindowManager->isEnabled(window);
+	json += "\"found\":true";
+	json += ",\"hidden\":";
+	json += window->winIsHidden() ? "true" : "false";
+	json += ",\"managerHidden\":";
+	json += manager_hidden ? "true" : "false";
+	json += ",\"enabled\":";
+	json += enabled ? "true" : "false";
+	json += ",\"clickable\":";
+	json += (!manager_hidden && enabled && (status & WIN_STATUS_NO_INPUT) == 0) ? "true" : "false";
+	json += "}";
+}
+
+void append_campaign_intro_gate_summary(std::string &json)
+{
+	json += ",\"campaignIntroGates\":{";
+	json += "\"counters\":[";
+	for (std::size_t index = 0;
+		index < sizeof(k_campaign_intro_counter_watches) / sizeof(k_campaign_intro_counter_watches[0]);
+		++index) {
+		if (index != 0) {
+			json += ",";
+		}
+		append_watched_counter(json, k_campaign_intro_counter_watches[index]);
+	}
+	json += "],\"flags\":[";
+	for (std::size_t index = 0;
+		index < sizeof(k_campaign_intro_flag_watches) / sizeof(k_campaign_intro_flag_watches[0]);
+		++index) {
+		if (index != 0) {
+			json += ",";
+		}
+		append_watched_flag(json, k_campaign_intro_flag_watches[index]);
+	}
+	json += "],\"scripts\":[";
+	for (std::size_t index = 0;
+		index < sizeof(k_campaign_intro_script_watches) / sizeof(k_campaign_intro_script_watches[0]);
+		++index) {
+		if (index != 0) {
+			json += ",";
+		}
+		append_watched_script(json, k_campaign_intro_script_watches[index]);
+	}
+	json += "],\"releaseChain\":{\"includedCount\":0,\"truncated\":false,"
+		"\"activeTimerWaits\":[";
+	bool first_wait = true;
+	for (std::size_t index = 0;
+		index < sizeof(k_campaign_intro_counter_watches) / sizeof(k_campaign_intro_counter_watches[0]);
+		++index) {
+		const char *name = k_campaign_intro_counter_watches[index];
+		const TCounter *counter = find_script_counter(name);
+		if (counter == NULL || !counter->isCountdownTimer || counter->value <= 0) {
+			continue;
+		}
+		if (!first_wait) {
+			json += ",";
+		}
+		first_wait = false;
+		json += "{\"script\":\"" + json_escape(script_for_intro_counter(name)) + "\"";
+		json += ",\"active\":true,\"counter\":\"" + json_escape(name) + "\"";
+		json += ",\"current\":{\"found\":true,\"name\":\"" + json_escape(name) + "\"";
+		json += ",\"value\":" + std::to_string(counter->value);
+		json += ",\"countdownTimer\":true}}";
+	}
+	json += "]}}";
+}
+
+void append_real_engine_frame_summary_state(std::string &json)
+{
+	json += ",\"display\":{";
+	if (TheDisplay != NULL) {
+		json += "\"width\":" + std::to_string(TheDisplay->getWidth());
+		json += ",\"height\":" + std::to_string(TheDisplay->getHeight());
+		json += ",\"moviePlaying\":";
+		json += TheDisplay->isMoviePlaying() ? "true" : "false";
+		json += ",\"letterBoxed\":";
+		json += TheDisplay->isLetterBoxed() ? "true" : "false";
+		json += ",\"letterBoxFading\":";
+		json += TheDisplay->isLetterBoxFading() ? "true" : "false";
+	} else {
+		json += "\"width\":null,\"height\":null,\"moviePlaying\":null,"
+			"\"letterBoxed\":null,\"letterBoxFading\":null";
+	}
+	json += "}";
+	append_real_view_state(json);
+	json += ",\"gameplay\":{";
+	if (TheGameLogic != NULL) {
+		json += "\"gameLogicReady\":true";
+		json += ",\"inGame\":";
+		json += TheGameLogic->isInGame() ? "true" : "false";
+		json += ",\"gameMode\":" + std::to_string(TheGameLogic->getGameMode());
+		json += ",\"logicFrame\":" + std::to_string(TheGameLogic->getFrame());
+		json += ",\"objectCount\":" + std::to_string(TheGameLogic->getObjectCount());
+		json += ",\"loadingMap\":";
+		json += TheGameLogic->isLoadingMap() ? "true" : "false";
+	} else {
+		json += "\"gameLogicReady\":false,\"inGame\":null,\"gameMode\":null,"
+			"\"logicFrame\":null,\"objectCount\":0,\"loadingMap\":null";
+	}
+	if (TheGameClient != NULL) {
+		json += ",\"gameClientReady\":true";
+		json += ",\"clientFrame\":" + std::to_string(TheGameClient->getFrame());
+		json += ",\"drawableCount\":" + std::to_string(count_game_client_drawables());
+		json += ",\"renderedObjectCount\":" + std::to_string(TheGameClient->getRenderedObjectCount());
+	} else {
+		json += ",\"gameClientReady\":false,\"clientFrame\":null,"
+			"\"drawableCount\":0,\"renderedObjectCount\":0";
+	}
+	Player *local_player = ThePlayerList != NULL ? ThePlayerList->getLocalPlayer() : NULL;
+	json += ",\"localPlayer\":{\"ready\":";
+	json += local_player != NULL ? "true" : "false";
+	if (local_player != NULL) {
+		json += ",\"active\":";
+		json += local_player->isPlayerActive() ? "true" : "false";
+		json += ",\"side\":\"" + json_escape(local_player->getSide().str()) + "\"";
+	} else {
+		json += ",\"active\":null,\"side\":\"\"";
+	}
+	json += "}";
+	if (TheInGameUI != NULL) {
+		json += ",\"inGameUIReady\":true";
+		json += ",\"inputEnabled\":";
+		json += TheInGameUI->getInputEnabled() ? "true" : "false";
+		json += ",\"selectCount\":" + std::to_string(TheInGameUI->getSelectCount());
+		json += ",\"selectedControllable\":";
+		json += TheInGameUI->areSelectedObjectsControllable() ? "true" : "false";
+	} else {
+		json += ",\"inGameUIReady\":false,\"inputEnabled\":null,"
+			"\"selectCount\":0,\"selectedControllable\":null";
+	}
+	if (TheScriptEngine != NULL) {
+		char fade_value[64];
+		std::snprintf(fade_value, sizeof(fade_value), "%.3f", TheScriptEngine->getFadeValue());
+		json += ",\"scriptEngineReady\":true";
+		json += ",\"fade\":" + std::to_string(static_cast<Int>(TheScriptEngine->getFade()));
+		json += ",\"fadeValue\":";
+		json += fade_value;
+	} else {
+		json += ",\"scriptEngineReady\":false,\"fade\":null,\"fadeValue\":null";
+	}
+	append_campaign_intro_gate_summary(json);
+	json += "}";
+	append_minimal_control_bar_state(json);
+	const TFlag *intro_done = find_script_flag("INTRO_DONE");
+	Script *return_to_player_control = find_loaded_script("ReturnToPlayerControl");
+	GameWindow *control_bar = find_window_by_name("ControlBar.wnd:ControlBarParent");
+	const Bool control_bar_found = TheWindowManager != NULL && control_bar != NULL;
+	const Bool control_bar_hidden = control_bar_found ? control_bar->winIsHidden() : true;
+	const Bool control_bar_manager_hidden =
+		control_bar_found ? TheWindowManager->isHidden(control_bar) : true;
+	const Bool control_bar_enabled =
+		control_bar_found ? TheWindowManager->isEnabled(control_bar) : false;
+	const UnsignedInt control_bar_status =
+		control_bar_found ? control_bar->winGetStatus() : WIN_STATUS_NO_INPUT;
+	const Bool control_bar_clickable =
+		control_bar_found &&
+		!control_bar_manager_hidden &&
+		control_bar_enabled &&
+		(control_bar_status & WIN_STATUS_NO_INPUT) == 0;
+	json += ",\"playerControl\":{";
+	json += "\"framesCompleted\":" + std::to_string(g_frame_state.frames_completed);
+	json += ",\"logicFrame\":";
+	json += TheGameLogic != NULL ? std::to_string(TheGameLogic->getFrame()) : "null";
+	json += ",\"inGame\":";
+	json += (TheGameLogic != NULL && TheGameLogic->isInGame()) ? "true" : "false";
+	json += ",\"inputEnabled\":";
+	json += (TheInGameUI != NULL && TheInGameUI->getInputEnabled()) ? "true" : "false";
+	json += ",\"introDone\":";
+	if (intro_done != NULL) {
+		json += intro_done->value ? "true" : "false";
+	} else {
+		json += "null";
+	}
+	json += ",\"letterBoxed\":";
+	json += (TheDisplay != NULL && TheDisplay->isLetterBoxed()) ? "true" : "false";
+	json += ",\"letterBoxFading\":";
+	json += (TheDisplay != NULL && TheDisplay->isLetterBoxFading()) ? "true" : "false";
+	json += ",\"controlBarFound\":";
+	json += control_bar_found ? "true" : "false";
+	json += ",\"controlBarHidden\":";
+	json += control_bar_hidden ? "true" : "false";
+	json += ",\"controlBarManagerHidden\":";
+	json += control_bar_manager_hidden ? "true" : "false";
+	json += ",\"controlBarClickable\":";
+	json += control_bar_clickable ? "true" : "false";
+	json += ",\"selectCount\":";
+	json += TheInGameUI != NULL ? std::to_string(TheInGameUI->getSelectCount()) : "0";
+	json += ",\"selectedControllable\":";
+	json += (TheInGameUI != NULL && TheInGameUI->areSelectedObjectsControllable()) ? "true" : "false";
+	json += ",\"returnToPlayerControlActive\":";
+	if (return_to_player_control != NULL) {
+		json += return_to_player_control->isActive() ? "true" : "false";
+	} else {
+		json += "null";
+	}
+	json += ",\"returnToPlayerControlFrameToEvaluate\":";
+	json += return_to_player_control != NULL ?
+		std::to_string(return_to_player_control->getFrameToEvaluate()) : "null";
+	json += "}";
+}
+
 bool ensure_real_engine_input_window()
 {
 	ApplicationIsWindowed = TRUE;
@@ -1957,12 +2348,7 @@ void clear_stale_movie_break_for_visible_main_menu()
 	++g_frame_state.stale_movie_break_clears;
 }
 
-} // namespace
-
-// One iteration of the original GameEngine::execute() loop: calls the real
-// (virtual) TheGameEngine->update(), i.e. Win32GameEngine::update ->
-// GameEngine::update (radar/audio/client/messages/logic) + serviceWindowsOS.
-extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame(int frame_count)
+void run_real_engine_frames(int frame_count)
 {
 	if (frame_count < 1) {
 		frame_count = 1;
@@ -1989,6 +2375,16 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame(int frame
 			g_frame_state.last_frame_ms = emscripten_get_now() - frame_started_at;
 		}
 	}
+}
+
+} // namespace
+
+// One iteration of the original GameEngine::execute() loop: calls the real
+// (virtual) TheGameEngine->update(), i.e. Win32GameEngine::update ->
+// GameEngine::update (radar/audio/client/messages/logic) + serviceWindowsOS.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame(int frame_count)
+{
+	run_real_engine_frames(frame_count);
 
 	std::string json = "{";
 	json += "\"initReturned\":";
@@ -2012,6 +2408,44 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame(int frame
 	json += "}";
 	g_frame_json = json;
 	std::printf("cnc-port: real-frame attempted=%d completed=%d exception=%s\n",
+		g_frame_state.frames_attempted,
+		g_frame_state.frames_completed,
+		g_frame_state.exception_caught ? g_frame_state.exception_text.c_str() : "(none)");
+	std::fflush(stdout);
+	return g_frame_json.c_str();
+}
+
+// Same real frame stepping as cnc_port_real_engine_frame(), but only exports
+// the state needed by long gameplay/rendering gates. The verbose endpoint above
+// remains the owner for full script catalogs, window probes, and detailed
+// assertions.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_summary(int frame_count)
+{
+	run_real_engine_frames(frame_count);
+
+	std::string json = "{";
+	json += "\"summary\":true";
+	json += ",\"initReturned\":";
+	json += (g_state.attempted && g_state.init_returned) ? "true" : "false";
+	json += ",\"source\":\"GeneralsMD/Code/GameEngine/Source/Common/GameEngine.cpp::update via Win32GameEngine::update\"";
+	json += ",\"framesAttempted\":" + std::to_string(g_frame_state.frames_attempted);
+	json += ",\"framesCompleted\":" + std::to_string(g_frame_state.frames_completed);
+	json += ",\"staleMovieBreakClears\":" + std::to_string(g_frame_state.stale_movie_break_clears);
+	json += ",\"lastUpdateTarget\":\"" + json_escape(g_last_engine_update_target) + "\"";
+	json += ",\"lastGameLogicStep\":\"" + json_escape(g_last_game_logic_step) + "\"";
+	append_frame_texture_diagnostics(json);
+	json += ",\"quitting\":";
+	json += (TheGameEngine != NULL && TheGameEngine->getQuitting() != FALSE) ? "true" : "false";
+	json += ",\"exceptionCaught\":";
+	json += g_frame_state.exception_caught ? "true" : "false";
+	json += ",\"exception\":\"" + json_escape(g_frame_state.exception_text) + "\"";
+	char elapsed[64];
+	std::snprintf(elapsed, sizeof(elapsed), ",\"lastFrameMs\":%.1f", g_frame_state.last_frame_ms);
+	json += elapsed;
+	append_real_engine_frame_summary_state(json);
+	json += "}";
+	g_frame_json = json;
+	std::printf("cnc-port: real-frame-summary attempted=%d completed=%d exception=%s\n",
 		g_frame_state.frames_attempted,
 		g_frame_state.frames_completed,
 		g_frame_state.exception_caught ? g_frame_state.exception_text.c_str() : "(none)");

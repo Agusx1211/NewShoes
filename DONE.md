@@ -2714,6 +2714,34 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       274, and 94 respectively. The post-campaign screenshot remains black
       during this original cinematic phase, but the frame state reports 55
       rendered objects and no WW3D missing-texture applies.
+- [x] Add a lightweight real-frame summary RPC for long rendered gameplay
+      gates. `cnc_port_real_engine_frame_summary()` now calls the same
+      original `GameEngine::update()` loop as `cnc_port_real_engine_frame()`,
+      but exports a compact summary shape with display/view state, gameplay
+      counts, watched MD_USA01 intro counters/flags/scripts, minimal control
+      bar state, player-control predicates, texture diagnostics, and frame
+      timing. The browser bridge exposes it as `realEngineFrameSummary`, and
+      `startup_vertical_smoke.mjs` can opt into it with
+      `STARTUP_VERTICAL_POST_CAMPAIGN_LIGHTWEIGHT=1` for post-campaign
+      player-control chunks while preserving the verbose endpoint by default.
+      Verified with `node --check WebAssembly/harness/startup_vertical_smoke.mjs`,
+      `node --check WebAssembly/harness/bridge.js`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port`, and
+      `STARTUP_VERTICAL_REAL_INIT_ONLY=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_UNTIL_PLAYER_CONTROL=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_COMPACT_CHUNKS=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_LIGHTWEIGHT=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=120
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAME_CHUNK=60 node
+      WebAssembly/harness/startup_vertical_smoke.mjs` redirected to
+      `/tmp/cnc-startup-lightweight-120.json`: the real browser path reaches
+      logic frame 120 with `summary=true`, `lightweightFrames=true`, zero
+      missing texture applies, 1,374 objects/drawables, input still disabled,
+      letterbox/control-bar gates still locked as intended by the original
+      intro, and `CINE_CameraCutTo04` counting down from 632 to 572 across the
+      two 60-frame chunks. A larger 300-frame chunk was intentionally aborted
+      after staying CPU-active too long without a harness checkpoint; future
+      deep rendered runs should use smaller chunks or add RPC progress/timeouts.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what
