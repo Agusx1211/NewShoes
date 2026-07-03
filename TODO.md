@@ -184,6 +184,36 @@ residue and the next frontier.
       `zh_gameengine_real_ini_runtime`), never the shim-flavored
       `zh_window_layout_script_runtime`; `harness/phase3_isolate.mjs` is the
       mount-crash reproducer/bisection driver.
+      **Diagnosis (confirmed, not fixed):**
+      - Reproducer: `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`
+        — requires full `build:wasm` (~90-target compile); NOT cheap.
+        NOTE: `phase3_isolate.mjs` is a DIFFERENT reproducer
+        (archive-mount/real-init bisection); it does NOT exercise the probe
+        sequence that reaches `edgeMapperApply`.
+      - Prime suspect (medium confidence): the `ww3dDisplayScene` probe
+        (`WebAssembly/harness/smoke.mjs:5458`,
+        `WebAssembly/src/wasm_ww3d_scene_probe.cpp:483`), which calls
+        `WW3D::Render()` → real `DoShadows`/`DoParticles`
+        (`Generals/Code/GameEngineDevice/Source/W3DDevice/GameClient/
+        W3DScene.cpp:798,824`). Root-cause hypothesis: shim-vs-real
+        class-layout ODR hazard —
+        `wasm_ww3d_scene_probe.cpp:27` does `#define protected public` +
+        includes the SHIM `W3DDisplay.h`, while the real
+        `W3DShadow.cpp`/`W3DParticleSys.cpp` (linked via
+        `zh_gameengine_real_object_ini_runtime`, CMakeLists.txt:3418,3422)
+        are compiled against REAL headers; a
+        `RenderInfoClass`/`CameraClass`/`W3DDisplay` layout mismatch makes
+        the real DoShadows/DoParticles misread probe-local data → heap
+        corruption. Same hazard class as the ChallengeGenerals fix
+        (commit d6d3b79).
+      - Proposed fix: compile the scene probe real-flavored (real headers /
+        move to a real-runtime target), OR isolate `ww3dDisplayScene` in a
+        fresh module to confirm it's the corrupter, then bisect the probe
+        order in smoke.mjs to confirm.
+      - Caveat: the probe null-guards
+        TheParticleSystemManager/TheW3DShadowManager
+        (`wasm_ww3d_scene_probe.cpp:500-501`), which argues against — so
+        confirmation via bisection is still needed.
 - [ ] Audit and gate the remaining high-risk class-layout shim headers that
       can shadow real runtime includes now that the real shell-map path proved
       the same weak-inline hazard for `GameLogic/GameLogic.h`. Start with
