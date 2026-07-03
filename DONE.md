@@ -299,6 +299,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `Get_Int`, and `getQR2HostingStatus`. Target-scoped via
       `target_link_options(cnc-port PRIVATE ...)` in `WebAssembly/CMakeLists.txt`;
       `cnc-port` links green. Merged as commit 1e69eff.
+- [x] Separate Release (-O2) cnc-port build: `npm run build:port:release`
+      builds cnc-port at -O2 into `build/wasm-release` via env vars
+      (`BUILD_TYPE=Release`, `CNC_BUILD_DIR`, `CMAKE_CXX_FLAGS=-O2`) in
+      `WebAssembly/tools/build_wasm.sh` + `package.json`; Debug build
+      (`build/wasm`, -O0) untouched; both verified green. Merge commits
+      897c65c / 7ae5d0c.
 ### Libraries (compile as-is where possible)
 - [x] `Compression/EAC` BTree, Huff, and RefPack codecs compile from original
       source and round-trip smoke runs under wasm.
