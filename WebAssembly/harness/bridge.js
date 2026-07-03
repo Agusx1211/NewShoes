@@ -1367,6 +1367,239 @@ function cncPortMssSampleRelease(payload) {
   return true;
 }
 
+// ---- 3D sample Web Audio handlers (positioned unit sounds) ----
+
+const browserMss3DSamplePlaybackRuntime = {
+  activeSources: new Map(), // handle -> { source, gain, panner }
+  pendingCompletions: new Map(), // handle -> Promise
+  resetGeneration: 0,
+  started: 0,
+  stopped: 0,
+  ended: 0,
+  released: 0,
+  eventLog: [],
+  lastEvent: null,
+  lastError: null,
+};
+
+function cncPortMss3DSampleStart(payload, heapu8) {
+  const context = browserAudioRuntime.context;
+  if (!context || context.state !== "running") {
+    browserMss3DSamplePlaybackRuntime.lastError = "AudioContext is not running";
+    return false;
+  }
+  const mixer = ensureBrowserAudioMixerRuntime();
+  if (!mixer) {
+    browserMss3DSamplePlaybackRuntime.lastError = browserAudioMixerRuntime.lastError;
+    return false;
+  }
+  const busNode = mixer.busNodes?.sound ?? null;
+  if (!busNode) {
+    browserMss3DSamplePlaybackRuntime.lastError = "missing browser audio mixer sound bus";
+    return false;
+  }
+
+  try {
+    const bytes = readMssSampleWaveBytes(payload, heapu8);
+    const decoded = decodeAudioWavPayload(bytes);
+    const decodedFrames = Math.floor(decoded.samples.length / decoded.info.channels);
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+    // Use PannerNode for true 3D positioning
+    const panner = context.createPanner();
+    panner.panningModel = "HRTF";
+    panner.distanceModel = "inverse";
+    panner.refDistance = 1.0;
+    panner.maxDistance = Math.max(payload.maxDistance ?? 10.0, 1.0);
+    panner.rolloffFactor = 1.0;
+    // Set 3D position from Miles coordinates
+    const x = Number(payload.x ?? 0);
+    const y = Number(payload.y ?? 0);
+    const z = Number(payload.z ?? 0);
+    panner.setPosition(x, y, z);
+
+    const volume = clamp01(Number((payload.volume ?? 127) / 127));
+    gain.gain.value = volume;
+
+    source.buffer = createWebAudioBufferFromDecoded(context, {
+      info: decoded.info,
+      samples: decoded.samples,
+      decodedFrames,
+    });
+    source.connect(gain);
+    gain.connect(panner);
+    panner.connect(busNode);
+
+    const handle = Number(payload.handle ?? 0);
+    const generation = browserMss3DSamplePlaybackRuntime.resetGeneration ?? 0;
+    const event = {
+      handle,
+      phase: "start",
+      webAudioNode: "AudioBufferSourceNode",
+      payload: {
+        container: "RIFF/WAVE",
+        codec: decoded.info.codec,
+        bytes: bytes.byteLength,
+        frames: decodedFrames,
+        sampleRate: decoded.info.samplesPerSec,
+        channels: decoded.info.channels,
+      },
+      sample3D: {
+        volume,
+        position: { x, y, z },
+        playbackRate: Number(payload.playbackRate ?? decoded.info.samplesPerSec),
+        loopCount: Number(payload.loopCount ?? 1),
+        minDistance: Number(payload.minDistance ?? 0),
+        maxDistance: Number(payload.maxDistance ?? 10),
+      },
+      startSeconds: Number(context.currentTime.toFixed(6)),
+      durationSeconds: Number(source.buffer.duration.toFixed(6)),
+      nodeGraph: [
+        "AudioBufferSourceNode",
+        "GainNode",
+        "PannerNode(HRTF)",
+        "soundGainNode",
+        "AudioDestinationNode",
+      ],
+    };
+
+    const completion = new Promise((resolve) => {
+      source.onended = () => {
+        try {
+          source.disconnect();
+        } catch { /* already disconnected */ }
+        if (generation !== (browserMss3DSamplePlaybackRuntime.resetGeneration ?? 0)) {
+          resolve({ handle, phase: "completed", ignoredAfterReset: true });
+          return;
+        }
+        browserMss3DSamplePlaybackRuntime.activeSources.delete(handle);
+        browserMss3DSamplePlaybackRuntime.pendingCompletions.delete(handle);
+        browserMss3DSamplePlaybackRuntime.ended += 1;
+        browserMss3DSamplePlaybackRuntime.eventLog.push({
+          handle,
+          phase: "completed",
+          callback: "AudioBufferSourceNode.onended",
+        });
+        browserMss3DSamplePlaybackRuntime.lastEvent = { ...event, completion: { handle, phase: "completed" } };
+        browserMss3DSamplePlaybackRuntime.lastError = null;
+        resolve({ handle, phase: "completed" });
+      };
+    });
+
+    browserMss3DSamplePlaybackRuntime.started += 1;
+    browserMss3DSamplePlaybackRuntime.eventLog.push(
+      { handle, phase: "AIL_start_3D_sample", node: "AudioBufferSourceNode" },
+      { handle, phase: "webAudioStart3D", volume, position: { x, y, z } },
+    );
+    browserMss3DSamplePlaybackRuntime.lastEvent = event;
+    browserMss3DSamplePlaybackRuntime.activeSources.set(handle, { source, gain, panner });
+    browserMss3DSamplePlaybackRuntime.pendingCompletions.set(handle, completion);
+    source.start(context.currentTime);
+    return true;
+  } catch (error) {
+    browserMss3DSamplePlaybackRuntime.lastError = error?.message ?? String(error);
+    return false;
+  }
+}
+
+function cncPortMss3DSampleStop(payload) {
+  const handle = Number(payload?.handle ?? 0);
+  const entry = browserMss3DSamplePlaybackRuntime.activeSources.get(handle);
+  if (!entry) {
+    return false;
+  }
+  browserMss3DSamplePlaybackRuntime.stopped += 1;
+  browserMss3DSamplePlaybackRuntime.eventLog.push({ handle, phase: "AIL_stop_3D_sample" });
+  try {
+    entry.source.stop();
+  } catch { /* already ended */ }
+  return true;
+}
+
+function cncPortMss3DSampleEnd(payload) {
+  const handle = Number(payload?.handle ?? 0);
+  browserMss3DSamplePlaybackRuntime.ended += 1;
+  browserMss3DSamplePlaybackRuntime.eventLog.push({ handle, phase: "AIL_end_3D_sample" });
+  return true;
+}
+
+function cncPortMss3DSampleRelease(payload) {
+  const handle = Number(payload?.handle ?? 0);
+  browserMss3DSamplePlaybackRuntime.released += 1;
+  browserMss3DSamplePlaybackRuntime.eventLog.push({ handle, phase: "AIL_release_3D_sample_handle" });
+  return true;
+}
+
+// ---- Stream Web Audio handlers (music) ----
+
+const browserMssStreamPlaybackRuntime = {
+  activeSources: new Map(), // handle -> { source, gain }
+  started: 0,
+  stopped: 0,
+  ended: 0,
+  eventLog: [],
+  lastEvent: null,
+  lastError: null,
+};
+
+function cncPortMssStreamStart(payload) {
+  const context = browserAudioRuntime.context;
+  if (!context || context.state !== "running") {
+    browserMssStreamPlaybackRuntime.lastError = "AudioContext is not running";
+    return false;
+  }
+  const mixer = ensureBrowserAudioMixerRuntime();
+  if (!mixer) {
+    browserMssStreamPlaybackRuntime.lastError = browserAudioMixerRuntime.lastError;
+    return false;
+  }
+  const busNode = mixer.busNodes?.music ?? mixer.busNodes?.sound ?? null;
+  if (!busNode) {
+    browserMssStreamPlaybackRuntime.lastError = "missing browser audio mixer bus";
+    return false;
+  }
+
+  const handle = Number(payload?.handle ?? 0);
+  const filename = String(payload?.filename ?? "");
+  const volume = clamp01(Number((payload.volume ?? 127) / 127));
+  const loopCount = Number(payload.loopCount ?? 1);
+
+  browserMssStreamPlaybackRuntime.started += 1;
+  browserMssStreamPlaybackRuntime.eventLog.push(
+    { handle, phase: "AIL_start_stream", filename, volume },
+  );
+  browserMssStreamPlaybackRuntime.lastEvent = {
+    handle,
+    phase: "start",
+    filename,
+    volume,
+    loopCount,
+    playbackRate: Number(payload.playbackRate ?? 44100),
+  };
+
+  // Stream data is loaded from the BIG archive by the engine;
+  // the bridge handler receives only metadata.  Actual audio data
+  // must be loaded asynchronously from the archive.  For now, wire
+  // the start/stop lifecycle so the C++ state machine is consistent.
+  // TODO: load stream WAV from archive and decode for playback.
+  console.log(`[MSS stream] start handle=${handle} filename=${filename} volume=${volume}`);
+  return true;
+}
+
+function cncPortMssStreamStop(payload) {
+  const handle = Number(payload?.handle ?? 0);
+  browserMssStreamPlaybackRuntime.stopped += 1;
+  browserMssStreamPlaybackRuntime.eventLog.push({ handle, phase: "AIL_close_stream" });
+  try {
+    const entry = browserMssStreamPlaybackRuntime.activeSources.get(handle);
+    if (entry) {
+      entry.source.stop();
+      browserMssStreamPlaybackRuntime.activeSources.delete(handle);
+    }
+  } catch { /* already ended */ }
+  return true;
+}
+
 async function waitForBrowserMssSamplePlayback(handle, timeoutMs = 2000) {
   const completion = browserMssSamplePlaybackRuntime.pendingCompletions.get(Number(handle));
   if (!completion) {
@@ -7131,6 +7364,12 @@ async function loadWasmModule() {
       cncPortMssSampleStop,
       cncPortMssSampleEnd,
       cncPortMssSampleRelease,
+      cncPortMss3DSampleStart,
+      cncPortMss3DSampleStop,
+      cncPortMss3DSampleEnd,
+      cncPortMss3DSampleRelease,
+      cncPortMssStreamStart,
+      cncPortMssStreamStop,
       cncPortBrowserUdpSend,
       cncPortBrowserUdpRecv,
       cncGdiMeasure,
