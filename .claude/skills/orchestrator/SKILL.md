@@ -152,8 +152,9 @@ The moment a lane is free and its next "gating" input hasn't landed, **pull the
 highest-value independent task from `TODO.md`** and feed it — don't wait to be
 prodded. There is always gate-independent work (audio, input, perf, docs,
 diagnostics). If no `TODO.md` item fits the lane, **put it on peer review**:
-reviewing or verifying another worker's in-flight or freshly-landed work, with a
-different model than the author. Peer review is the *standard* use of idle
+reviewing or verifying another worker's in-flight or freshly-landed work — a
+different model than the author when practical, but same-model review beats an
+idle lane. Peer review is the *standard* use of idle
 capacity, not an occasional trick. "I'll hold X in reserve until Y reports" is an
 orchestration bug: a pending result is never a reason to idle a healthy lane.
 
