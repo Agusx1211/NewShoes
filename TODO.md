@@ -1977,17 +1977,39 @@ residue and the next frontier.
 ## M10 — Hardening, content, polish
 
 ### Performance & memory
-- [ ] **Ship an optimized (Release) cnc-port build** — every build so far is
-      CMAKE_BUILD_TYPE=Debug (-O0, -g, 91MB wasm; `build_wasm.sh` default),
-      and the live shell map runs ~3fps on an M4's real GPU. A Release build
-      is likely the single largest perf win available (expect 5-20x on the
-      sim). Use a SEPARATE build dir (e.g. `build/wasm-release`) so flipping
-      the type doesn't force a full rebuild in the shared Debug dir; watch
-      for optimizer-exposed UB in the era code.
-- [ ] Add a lightweight `realEngineFrame` mode that skips building the full
-      clientState JSON (it serializes gameplay/shell/script-catalog/texture
-      diagnostics on every call) for interactive frame loops like
-      `play.html`; keep the verbose mode for harness assertions.
+
+**DEFERRED — correctness first.** None of the items below are current work.
+The active frontier is correctness through the real boot (map load, shell/
+campaign rendering, units, input, playable skirmish — see the strategy
+section at the top). Slow frames are expected and acceptable for now: the
+whole surface is a Debug (-O0) build behind an unoptimized D3D8→WebGL2 layer,
+so today's fps numbers say nothing we need to act on yet. Pick these up only
+when a correctness milestone (playable skirmish) makes speed the frontier —
+and then start with the PROFILE, not with any individual fix.
+
+- [ ] **Profile before touching anything**: a Chrome DevTools performance
+      capture on the Mac (real GPU) of a live shell-map/skirmish session,
+      splitting each ~frame into (a) engine wasm CPU, (b) GL/ANGLE wait
+      (sync stalls), (c) harness/RPC overhead (`lastFrameMs` vs wall time
+      separates this today). Every item below is a hypothesis until this
+      assigns the milliseconds.
+- [ ] D3D8→WebGL2 shim "less naive" playbook (ordered by typical payoff,
+      all confined to the DX8Wrapper chokepoint; verify each against the
+      screenshot goldens):
+      - never-sync audit: remove per-call glGetError/validation from the hot
+        path; ensure no Lock/Present path reads back or waits on the GPU;
+      - dynamic vertex/index buffer Lock(DISCARD/NOOVERWRITE) → orphaning /
+        ring-buffer semantics (particles, UI, water live here);
+      - shadow-state dedupe for SetRenderState/SetTextureStageState spam +
+        generated-shader program cache keyed on the ShaderClass descriptor;
+      - batch wasm→JS GL chatter last (it is the 2x, not the 10x).
+- [ ] Release (-O2) cnc-port build in a SEPARATE build dir
+      (`build/wasm-release`) — multiplies whatever CPU share remains after
+      the above; watch for optimizer-exposed UB in era code. Do not flip the
+      shared Debug dir's CMAKE_BUILD_TYPE.
+- [ ] Lightweight `realEngineFrame` mode that skips the full clientState
+      JSON for interactive loops (`play.html`); keep verbose for harness
+      assertions.
 - [ ] Frame-time budget; profile hotspots (sim vs render).
 - [ ] Add a GPU-accelerated harness profile (Playwright with GPU flags on a
       machine with a real GPU) to decompose "slow frames" into sim cost vs
