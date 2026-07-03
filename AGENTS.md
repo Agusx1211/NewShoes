@@ -31,7 +31,9 @@ video, input, and networking — everything.
 
 Documentation resources for the port — reference repos (community source
 ports, engine reimplementations, D3D8 implementations, format tooling), format
-specs, and modding docs — are available locally in **`./assets/docs/`**.
+specs, modding docs, and browser-target API references (WebGL2 spec +
+conformance tests, WebGPU, Web Audio, WebCodecs, WebAssembly, MDN) — are
+available locally in **`./assets/docs/`**.
 **`./assets/docs/INDEX.md`** lists everything in there, how to access each
 resource, and what to use it for. Before reverse-engineering a format, a D3D8
 behavior, or a platform-layer question from scratch, check the index — someone
