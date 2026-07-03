@@ -3,8 +3,11 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 wasm_dir="$(cd "${script_dir}/.." && pwd)"
-build_dir_suffix="${BUILD_DIR_SUFFIX:-}"
-build_dir="${wasm_dir}/build/wasm${build_dir_suffix}"
+if [[ -n "${CNC_BUILD_DIR:-}" ]]; then
+  build_dir="$(cd "${wasm_dir}" && pwd)/${CNC_BUILD_DIR}"
+else
+  build_dir="${wasm_dir}/build/wasm"
+fi
 build_type="${BUILD_TYPE:-Debug}"
 
 if ! command -v emcmake >/dev/null 2>&1; then
@@ -22,6 +25,10 @@ cmake_args=(
   -B "${build_dir}"
   -DCMAKE_BUILD_TYPE="${build_type}"
 )
+
+if [[ -n "${CMAKE_CXX_FLAGS:-}" ]]; then
+  cmake_args+=("-DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}")
+fi
 
 if [[ -z "${CMAKE_GENERATOR:-}" ]] && command -v ninja >/dev/null 2>&1; then
   cmake_args+=(-G Ninja)
