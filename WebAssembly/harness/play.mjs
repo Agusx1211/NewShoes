@@ -111,9 +111,10 @@ async function start() {
       return;
     }
 
-    // ?shellmap=0 opts out of the original ShellMapMD 3D menu background
-    // (the naval scene); default is on for the human page.
-    const shellMap = new URLSearchParams(window.location.search).get("shellmap") !== "0";
+    // ?shellmap=1 opts into the original ShellMapMD 3D menu background (the
+    // naval scene). Off by default until the in-shell first frame renders
+    // (see TODO: shell map black-frame frontier).
+    const shellMap = new URLSearchParams(window.location.search).get("shellmap") === "1";
     report(`running real GameEngine::init() (~10-30s, shell map ${shellMap ? "on" : "off"})...`);
     const init = await rpc("realEngineInit", { runDirectory: "/assets/real-init", shellMap });
     if (init?.ok !== true || init?.frontier?.initReturned !== true) {

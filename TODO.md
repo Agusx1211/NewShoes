@@ -43,7 +43,8 @@ residue and the next frontier.
       plus the `mapCacheProbe` RPC; suspects: shell not re-shown after
       `prepareNewGame` (`isInShellGame` path), W3D view not aimed/activated
       for the shell game, or startNewGame stalled at a gate. Same map-load
-      lane as the campaign work.
+      lane as the campaign work. `play.html` defaults shell map OFF until
+      this renders; pass `?shellmap=1` to reproduce.
 - [ ] **Advance the real boot from the title screen to the interactive main
       menu**: drive the shell past the title through real
       `GameClient::update()` (Shell push of `MainMenu.wnd`), route browser
