@@ -2474,6 +2474,33 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `CINE_Pt2MoveTransportsDelay`), object/drawable count advanced to
       1,284, and screenshot `startup-vertical-real-init-post-campaign.png`
       capturing the current black cinematic phase.
+- [x] Expose a prioritized loaded-script catalog for the real MD_USA01
+      campaign intro. The real-frame JSON now walks the original loaded
+      `TheSidesList` / `ScriptList` / `ScriptGroup` / `Script` objects and
+      exports a capped catalog of interesting scripts, conditions, true/false
+      actions, parameter values, action/condition template internal names, and
+      runtime script flags (`active`, `oneShot`, delay/frame/evaluation
+      counters) without parsing `.map` files out-of-band or mutating original
+      script state. The catalog prioritizes current/release gates so the cap
+      includes both active cinematic branches and the future release path.
+      `startup_vertical_smoke.mjs` now summarizes catalog counts and included
+      script names in post-campaign chunk logs. Verified with `git diff
+      --check`, `node --check WebAssembly/harness/startup_vertical_smoke.mjs`,
+      `npm --prefix WebAssembly run build:startup-vertical`, and
+      `STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=180
+      STARTUP_VERTICAL_POST_CAMPAIGN_CHUNK_FRAMES=60 node
+      WebAssembly/harness/startup_vertical_smoke.mjs` redirected to
+      `/tmp/cnc-startup-catalog-final.json`: the real path reaches frame 357 /
+      logic frame 180 with 6,267 texture applies, zero missing texture applies,
+      1,374 objects/drawables, visible captioned MD_USA01 intro rendering
+      (center pixel `[152,164,189,255]`), `INTRO_DONE=false`,
+      `letterBoxed=true`, `inputEnabled=false`, and a catalog of 16 sides, 35
+      groups, 291 scripts, 168 interesting scripts, and 96 priority-included
+      scripts. The priority set includes `CINE_CameraMoveTo06` setting
+      `CINE_LaunchPadMoveDelay`, `CINE_Pt2CameraLocation01Delay`, and
+      `CINE_Pt2MoveTransportsDelay`, `Give Player The Game` setting
+      `INTRO_DONE`, and `ReturnToPlayerControl` running
+      `CAMERA_LETTERBOX_END` / `ENABLE_INPUT`.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what

@@ -486,6 +486,7 @@ function summarizeRealEngineFrameChunk(result, requestedFrames) {
   const clientState = frame?.clientState;
   const gameplay = clientState?.gameplay;
   const scriptDebug = gameplay?.scriptDebug;
+  const scriptCatalog = scriptDebug?.catalog;
   const controlBarParent = clientState?.controlBarWindows?.parent;
   return {
     requestedFrames,
@@ -517,6 +518,31 @@ function summarizeRealEngineFrameChunk(result, requestedFrames) {
       scriptCounters: (scriptDebug?.counters ?? []).slice(0, 8),
       scriptFlags: (scriptDebug?.flags ?? []).slice(0, 8),
       scriptSequentialScripts: (scriptDebug?.sequentialScripts ?? []).slice(0, 4),
+      scriptCatalog: {
+        ready: scriptCatalog?.ready,
+        sideCount: scriptCatalog?.sideCount,
+        groupCount: scriptCatalog?.groupCount,
+        scriptCount: scriptCatalog?.scriptCount,
+        interestingScriptCount: scriptCatalog?.interestingScriptCount,
+        includedCount: scriptCatalog?.includedCount,
+        includedTruncated: scriptCatalog?.includedTruncated,
+        includedScripts: (scriptCatalog?.scripts ?? [])
+          .slice(0, 8)
+          .map((script) => ({
+            sideIndex: script.sideIndex,
+            groupName: script.groupName,
+            name: script.name,
+            active: script.active,
+            oneShot: script.oneShot,
+            frameToEvaluate: script.frameToEvaluate,
+            actionTypes: (script.actions ?? [])
+              .slice(0, 6)
+              .map((action) => action.internalName),
+            conditionTypes: (script.conditions ?? [])
+              .slice(0, 6)
+              .map((condition) => condition.internalName),
+          })),
+      },
     },
     controlBar: {
       found: controlBarParent?.found,

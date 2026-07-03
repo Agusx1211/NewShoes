@@ -14,6 +14,7 @@
 
 #include <unistd.h>
 
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -47,6 +48,8 @@
 #include "GameClient/WindowLayout.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/ScriptEngine.h"
+#include "GameLogic/Scripts.h"
+#include "GameLogic/SidesList.h"
 
 // The original app-level globals GameEngine.cpp expects WinMain.cpp to own.
 // WinMain.cpp is only partially compiled for the browser (WndProc +
@@ -362,6 +365,674 @@ void append_frame_texture_diagnostics(std::string &json)
 	json += "]}";
 }
 
+std::string uppercase_ascii(std::string value)
+{
+	for (std::string::iterator it = value.begin(); it != value.end(); ++it) {
+		*it = static_cast<char>(
+			std::toupper(static_cast<unsigned char>(*it)));
+	}
+	return value;
+}
+
+bool contains_any_upper_token(
+	const std::string &value,
+	const char *const tokens[])
+{
+	const std::string upper = uppercase_ascii(value);
+	for (const char *const *token = tokens; *token != NULL; ++token) {
+		if (upper.find(*token) != std::string::npos) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool contains_script_catalog_token(const std::string &value)
+{
+	static const char *const tokens[] = {
+		"CINE",
+		"INTRO",
+		"LAUNCHPAD",
+		"PT2",
+		"TRANSPORT",
+		"LETTERBOX",
+		"INPUT",
+		"CAMERA",
+		"FADE",
+		"BLACK",
+		"DONE",
+		NULL
+	};
+
+	return contains_any_upper_token(value, tokens);
+}
+
+bool contains_script_priority_token(const std::string &value)
+{
+	static const char *const tokens[] = {
+		"INTRO_DONE",
+		"RETURN",
+		"INSIDE BASE",
+		"LAUNCHPAD",
+		"PT2",
+		"LETTERBOX",
+		NULL
+	};
+
+	return contains_any_upper_token(value, tokens);
+}
+
+const char *script_parameter_type_name(Parameter::ParameterType type)
+{
+	switch (type) {
+	case Parameter::INT: return "INT";
+	case Parameter::REAL: return "REAL";
+	case Parameter::SCRIPT: return "SCRIPT";
+	case Parameter::TEAM: return "TEAM";
+	case Parameter::COUNTER: return "COUNTER";
+	case Parameter::FLAG: return "FLAG";
+	case Parameter::COMPARISON: return "COMPARISON";
+	case Parameter::WAYPOINT: return "WAYPOINT";
+	case Parameter::BOOLEAN: return "BOOLEAN";
+	case Parameter::TRIGGER_AREA: return "TRIGGER_AREA";
+	case Parameter::TEXT_STRING: return "TEXT_STRING";
+	case Parameter::SIDE: return "SIDE";
+	case Parameter::SOUND: return "SOUND";
+	case Parameter::SCRIPT_SUBROUTINE: return "SCRIPT_SUBROUTINE";
+	case Parameter::UNIT: return "UNIT";
+	case Parameter::OBJECT_TYPE: return "OBJECT_TYPE";
+	case Parameter::COORD3D: return "COORD3D";
+	case Parameter::ANGLE: return "ANGLE";
+	case Parameter::TEAM_STATE: return "TEAM_STATE";
+	case Parameter::RELATION: return "RELATION";
+	case Parameter::AI_MOOD: return "AI_MOOD";
+	case Parameter::DIALOG: return "DIALOG";
+	case Parameter::MUSIC: return "MUSIC";
+	case Parameter::MOVIE: return "MOVIE";
+	case Parameter::WAYPOINT_PATH: return "WAYPOINT_PATH";
+	case Parameter::LOCALIZED_TEXT: return "LOCALIZED_TEXT";
+	case Parameter::BRIDGE: return "BRIDGE";
+	case Parameter::KIND_OF_PARAM: return "KIND_OF_PARAM";
+	case Parameter::ATTACK_PRIORITY_SET: return "ATTACK_PRIORITY_SET";
+	case Parameter::RADAR_EVENT_TYPE: return "RADAR_EVENT_TYPE";
+	case Parameter::SPECIAL_POWER: return "SPECIAL_POWER";
+	case Parameter::SCIENCE: return "SCIENCE";
+	case Parameter::UPGRADE: return "UPGRADE";
+	case Parameter::COMMANDBUTTON_ABILITY: return "COMMANDBUTTON_ABILITY";
+	case Parameter::BOUNDARY: return "BOUNDARY";
+	case Parameter::BUILDABLE: return "BUILDABLE";
+	case Parameter::SURFACES_ALLOWED: return "SURFACES_ALLOWED";
+	case Parameter::SHAKE_INTENSITY: return "SHAKE_INTENSITY";
+	case Parameter::COMMAND_BUTTON: return "COMMAND_BUTTON";
+	case Parameter::FONT_NAME: return "FONT_NAME";
+	case Parameter::OBJECT_STATUS: return "OBJECT_STATUS";
+	case Parameter::COMMANDBUTTON_ALL_ABILITIES: return "COMMANDBUTTON_ALL_ABILITIES";
+	case Parameter::SKIRMISH_WAYPOINT_PATH: return "SKIRMISH_WAYPOINT_PATH";
+	case Parameter::COLOR: return "COLOR";
+	case Parameter::EMOTICON: return "EMOTICON";
+	case Parameter::OBJECT_PANEL_FLAG: return "OBJECT_PANEL_FLAG";
+	case Parameter::FACTION_NAME: return "FACTION_NAME";
+	case Parameter::OBJECT_TYPE_LIST: return "OBJECT_TYPE_LIST";
+	case Parameter::REVEALNAME: return "REVEALNAME";
+	case Parameter::SCIENCE_AVAILABILITY: return "SCIENCE_AVAILABILITY";
+	case Parameter::LEFT_OR_RIGHT: return "LEFT_OR_RIGHT";
+	case Parameter::PERCENT: return "PERCENT";
+	case Parameter::NUM_ITEMS: return "NUM_ITEMS";
+	default: return "UNKNOWN";
+	}
+}
+
+bool parameter_has_script_catalog_token(const Parameter *parameter)
+{
+	return parameter != NULL
+		&& contains_script_catalog_token(parameter->getString().str());
+}
+
+bool parameter_has_script_priority_token(const Parameter *parameter)
+{
+	return parameter != NULL
+		&& contains_script_priority_token(parameter->getString().str());
+}
+
+bool cinematic_action_type(ScriptAction::ScriptActionType type)
+{
+	switch (type) {
+	case ScriptAction::MOVE_CAMERA_TO:
+	case ScriptAction::ZOOM_CAMERA:
+	case ScriptAction::CAMERA_FADE_ADD:
+	case ScriptAction::CAMERA_FADE_SUBTRACT:
+	case ScriptAction::CAMERA_FADE_MULTIPLY:
+	case ScriptAction::CAMERA_FADE_SATURATE:
+	case ScriptAction::PITCH_CAMERA:
+	case ScriptAction::CAMERA_FOLLOW_NAMED:
+	case ScriptAction::CAMERA_STOP_FOLLOW:
+	case ScriptAction::SETUP_CAMERA:
+	case ScriptAction::CAMERA_LETTERBOX_BEGIN:
+	case ScriptAction::CAMERA_LETTERBOX_END:
+	case ScriptAction::CAMERA_BW_MODE_BEGIN:
+	case ScriptAction::CAMERA_BW_MODE_END:
+	case ScriptAction::CAMERA_MOTION_BLUR:
+	case ScriptAction::CAMERA_MOTION_BLUR_JUMP:
+	case ScriptAction::CAMERA_MOTION_BLUR_FOLLOW:
+	case ScriptAction::CAMERA_MOTION_BLUR_END_FOLLOW:
+	case ScriptAction::CAMERA_SET_AUDIBLE_DISTANCE:
+	case ScriptAction::CAMERA_TETHER_NAMED:
+	case ScriptAction::CAMERA_STOP_TETHER_NAMED:
+	case ScriptAction::CAMERA_SET_DEFAULT:
+	case ScriptAction::CAMERA_LOOK_TOWARD_OBJECT:
+	case ScriptAction::CAMERA_LOOK_TOWARD_WAYPOINT:
+	case ScriptAction::CAMERA_ENABLE_SLAVE_MODE:
+	case ScriptAction::CAMERA_DISABLE_SLAVE_MODE:
+	case ScriptAction::DISABLE_INPUT:
+	case ScriptAction::ENABLE_INPUT:
+	case ScriptAction::FREEZE_TIME:
+	case ScriptAction::UNFREEZE_TIME:
+	case ScriptAction::MOVIE_PLAY_FULLSCREEN:
+	case ScriptAction::MOVIE_PLAY_RADAR:
+	case ScriptAction::SPEECH_PLAY:
+	case ScriptAction::SHOW_MILITARY_CAPTION:
+	case ScriptAction::DISPLAY_CINEMATIC_TEXT:
+		return true;
+	default:
+		return false;
+	}
+}
+
+bool condition_type_needs_script_catalog_context(Condition::ConditionType type)
+{
+	switch (type) {
+	case Condition::FLAG:
+	case Condition::TIMER_EXPIRED:
+	case Condition::HAS_FINISHED_VIDEO:
+	case Condition::HAS_FINISHED_SPEECH:
+	case Condition::HAS_FINISHED_AUDIO:
+	case Condition::MUSIC_TRACK_HAS_COMPLETED:
+		return true;
+	default:
+		return false;
+	}
+}
+
+bool action_has_script_catalog_priority(ScriptAction *action)
+{
+	if (action == NULL) {
+		return false;
+	}
+
+	switch (action->getActionType()) {
+	case ScriptAction::CAMERA_LETTERBOX_END:
+	case ScriptAction::ENABLE_INPUT:
+		return true;
+	default:
+		break;
+	}
+
+	for (Int index = 0; index < action->getNumParameters(); ++index) {
+		if (parameter_has_script_priority_token(action->getParameter(index))) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool action_has_script_catalog_interest(ScriptAction *action)
+{
+	if (action == NULL) {
+		return false;
+	}
+
+	if (cinematic_action_type(action->getActionType())) {
+		return true;
+	}
+
+	for (Int index = 0; index < action->getNumParameters(); ++index) {
+		if (parameter_has_script_catalog_token(action->getParameter(index))) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool condition_has_script_catalog_priority(Condition *condition)
+{
+	if (condition == NULL) {
+		return false;
+	}
+
+	for (Int index = 0; index < condition->getNumParameters(); ++index) {
+		if (parameter_has_script_priority_token(condition->getParameter(index))) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool condition_has_script_catalog_interest(Condition *condition)
+{
+	if (condition == NULL) {
+		return false;
+	}
+
+	if (condition->getConditionType() == Condition::CAMERA_MOVEMENT_FINISHED) {
+		return true;
+	}
+
+	if (!condition_type_needs_script_catalog_context(condition->getConditionType())) {
+		return false;
+	}
+
+	for (Int index = 0; index < condition->getNumParameters(); ++index) {
+		if (parameter_has_script_catalog_token(condition->getParameter(index))) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool action_list_has_script_catalog_priority(ScriptAction *action)
+{
+	for (ScriptAction *current = action; current != NULL; current = current->getNext()) {
+		if (action_has_script_catalog_priority(current)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool action_list_has_script_catalog_interest(ScriptAction *action)
+{
+	for (ScriptAction *current = action; current != NULL; current = current->getNext()) {
+		if (action_has_script_catalog_interest(current)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool conditions_have_script_catalog_priority(OrCondition *condition)
+{
+	for (OrCondition *or_condition = condition;
+		or_condition != NULL;
+		or_condition = or_condition->getNextOrCondition()) {
+		for (Condition *and_condition = or_condition->getFirstAndCondition();
+			and_condition != NULL;
+			and_condition = and_condition->getNext()) {
+			if (condition_has_script_catalog_priority(and_condition)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool conditions_have_script_catalog_interest(OrCondition *condition)
+{
+	for (OrCondition *or_condition = condition;
+		or_condition != NULL;
+		or_condition = or_condition->getNextOrCondition()) {
+		for (Condition *and_condition = or_condition->getFirstAndCondition();
+			and_condition != NULL;
+			and_condition = and_condition->getNext()) {
+			if (condition_has_script_catalog_interest(and_condition)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool script_has_catalog_interest(Script *script, const char *group_name)
+{
+	if (script == NULL) {
+		return false;
+	}
+
+	return contains_script_catalog_token(script->getName().str())
+		|| contains_script_catalog_token(script->getComment().str())
+		|| contains_script_catalog_token(script->getConditionComment().str())
+		|| contains_script_catalog_token(script->getActionComment().str())
+		|| (group_name != NULL && contains_script_catalog_token(group_name))
+		|| conditions_have_script_catalog_interest(script->getOrCondition())
+		|| action_list_has_script_catalog_interest(script->getAction())
+		|| action_list_has_script_catalog_interest(script->getFalseAction());
+}
+
+int script_catalog_priority(Script *script, const char *group_name)
+{
+	if (script == NULL) {
+		return 0;
+	}
+
+	if (contains_script_priority_token(script->getName().str())
+		|| contains_script_priority_token(script->getComment().str())
+		|| contains_script_priority_token(script->getConditionComment().str())
+		|| contains_script_priority_token(script->getActionComment().str())
+		|| (group_name != NULL && contains_script_priority_token(group_name))
+		|| conditions_have_script_catalog_priority(script->getOrCondition())
+		|| action_list_has_script_catalog_priority(script->getAction())
+		|| action_list_has_script_catalog_priority(script->getFalseAction())) {
+		return 2;
+	}
+
+	return script->isActive() ? 1 : 0;
+}
+
+void append_parameter_json(std::string &json, const Parameter *parameter, Int index)
+{
+	json += "{\"index\":" + std::to_string(index);
+	if (parameter == NULL) {
+		json += ",\"ready\":false}";
+		return;
+	}
+
+	const Parameter::ParameterType type = parameter->getParameterType();
+	json += ",\"ready\":true";
+	json += ",\"type\":" + std::to_string(static_cast<Int>(type));
+	json += ",\"typeName\":\"";
+	json += script_parameter_type_name(type);
+	json += "\"";
+	json += ",\"string\":\"" + json_escape(parameter->getString().str()) + "\"";
+	json += ",\"int\":" + std::to_string(parameter->getInt());
+	char number[64];
+	std::snprintf(number, sizeof(number), "%.6f", parameter->getReal());
+	json += ",\"real\":";
+	json += number;
+	if (type == Parameter::COORD3D) {
+		Coord3D coord = { 0.0f, 0.0f, 0.0f };
+		parameter->getCoord3D(&coord);
+		char coord_buf[128];
+		std::snprintf(
+			coord_buf,
+			sizeof(coord_buf),
+			",\"coord\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f}",
+			coord.x,
+			coord.y,
+			coord.z);
+		json += coord_buf;
+	}
+	json += "}";
+}
+
+void append_action_parameters_json(std::string &json, ScriptAction *action)
+{
+	json += ",\"parameters\":[";
+	const Int count = action != NULL ? action->getNumParameters() : 0;
+	for (Int index = 0; index < count; ++index) {
+		if (index != 0) {
+			json += ",";
+		}
+		append_parameter_json(json, action->getParameter(index), index);
+	}
+	json += "]";
+}
+
+void append_condition_parameters_json(std::string &json, Condition *condition)
+{
+	json += ",\"parameters\":[";
+	const Int count = condition != NULL ? condition->getNumParameters() : 0;
+	for (Int index = 0; index < count; ++index) {
+		if (index != 0) {
+			json += ",";
+		}
+		append_parameter_json(json, condition->getParameter(index), index);
+	}
+	json += "]";
+}
+
+void append_script_action_list_json(
+	std::string &json,
+	const char *field_name,
+	ScriptAction *first_action)
+{
+	const int action_limit = 16;
+	int total_count = 0;
+	int included_count = 0;
+
+	json += ",\"";
+	json += field_name;
+	json += "\":[";
+	for (ScriptAction *action = first_action; action != NULL; action = action->getNext()) {
+		++total_count;
+		if (included_count >= action_limit) {
+			continue;
+		}
+		if (included_count != 0) {
+			json += ",";
+		}
+		++included_count;
+		const ScriptAction::ScriptActionType type = action->getActionType();
+		const ActionTemplate *action_template =
+			TheScriptEngine != NULL ? TheScriptEngine->getActionTemplate(type) : NULL;
+		json += "{\"index\":" + std::to_string(total_count - 1);
+		json += ",\"type\":" + std::to_string(static_cast<Int>(type));
+		json += ",\"internalName\":\"";
+		json += action_template != NULL ?
+			json_escape(action_template->m_internalName.str()) : "";
+		json += "\",\"uiName\":\"";
+		json += action_template != NULL ?
+			json_escape(action_template->getName().str()) : "";
+		json += "\"";
+		append_action_parameters_json(json, action);
+		json += "}";
+	}
+	json += "]";
+	json += ",\"";
+	json += field_name;
+	json += "Count\":" + std::to_string(total_count);
+	json += ",\"";
+	json += field_name;
+	json += "Truncated\":";
+	json += total_count > included_count ? "true" : "false";
+}
+
+void append_script_conditions_json(std::string &json, OrCondition *first_condition)
+{
+	const int condition_limit = 16;
+	int total_count = 0;
+	int included_count = 0;
+	int or_index = 0;
+
+	json += ",\"conditions\":[";
+	for (OrCondition *or_condition = first_condition;
+		or_condition != NULL;
+		or_condition = or_condition->getNextOrCondition(), ++or_index) {
+		int and_index = 0;
+		for (Condition *condition = or_condition->getFirstAndCondition();
+			condition != NULL;
+			condition = condition->getNext(), ++and_index) {
+			++total_count;
+			if (included_count >= condition_limit) {
+				continue;
+			}
+			if (included_count != 0) {
+				json += ",";
+			}
+			++included_count;
+			const Condition::ConditionType type = condition->getConditionType();
+			const ConditionTemplate *condition_template =
+				TheScriptEngine != NULL ? TheScriptEngine->getConditionTemplate(type) : NULL;
+			json += "{\"orIndex\":" + std::to_string(or_index);
+			json += ",\"andIndex\":" + std::to_string(and_index);
+			json += ",\"type\":" + std::to_string(static_cast<Int>(type));
+			json += ",\"internalName\":\"";
+			json += condition_template != NULL ?
+				json_escape(condition_template->m_internalName.str()) : "";
+			json += "\",\"uiName\":\"";
+			json += condition_template != NULL ?
+				json_escape(condition_template->getName().str()) : "";
+			json += "\"";
+			append_condition_parameters_json(json, condition);
+			json += "}";
+		}
+	}
+	json += "]";
+	json += ",\"conditionCount\":" + std::to_string(total_count);
+	json += ",\"conditionsTruncated\":";
+	json += total_count > included_count ? "true" : "false";
+}
+
+void append_script_catalog_entry_json(
+	std::string &json,
+	Script *script,
+	Int side_index,
+	const char *group_name,
+	int priority)
+{
+	json += "{\"sideIndex\":" + std::to_string(side_index);
+	json += ",\"priority\":" + std::to_string(priority);
+	json += ",\"groupName\":\"";
+	json += group_name != NULL ? json_escape(group_name) : "";
+	json += "\"";
+	json += ",\"name\":\"" + json_escape(script->getName().str()) + "\"";
+	json += ",\"comment\":\"" + json_escape(script->getComment().str()) + "\"";
+	json += ",\"conditionComment\":\"" +
+		json_escape(script->getConditionComment().str()) + "\"";
+	json += ",\"actionComment\":\"" +
+		json_escape(script->getActionComment().str()) + "\"";
+	json += ",\"active\":";
+	json += script->isActive() ? "true" : "false";
+	json += ",\"oneShot\":";
+	json += script->isOneShot() ? "true" : "false";
+	json += ",\"subroutine\":";
+	json += script->isSubroutine() ? "true" : "false";
+	json += ",\"easy\":";
+	json += script->isEasy() ? "true" : "false";
+	json += ",\"normal\":";
+	json += script->isNormal() ? "true" : "false";
+	json += ",\"hard\":";
+	json += script->isHard() ? "true" : "false";
+	json += ",\"delayEvalSeconds\":" +
+		std::to_string(script->getDelayEvalSeconds());
+	json += ",\"frameToEvaluate\":" +
+		std::to_string(script->getFrameToEvaluate());
+	json += ",\"conditionEvaluations\":" +
+		std::to_string(script->getConditionCount());
+	char time_buf[128];
+	std::snprintf(
+		time_buf,
+		sizeof(time_buf),
+		",\"conditionTime\":%.6f,\"curTime\":%.6f",
+		script->getConditionTime(),
+		script->getCurTime());
+	json += time_buf;
+	append_script_conditions_json(json, script->getOrCondition());
+	append_script_action_list_json(json, "actions", script->getAction());
+	append_script_action_list_json(json, "falseActions", script->getFalseAction());
+	json += "}";
+}
+
+struct ScriptCatalogCandidate {
+	Script *script = NULL;
+	Int side_index = 0;
+	std::string group_name;
+	int priority = 0;
+};
+
+void note_script_for_catalog(
+	std::vector<ScriptCatalogCandidate> &candidates,
+	Script *script,
+	Int side_index,
+	const char *group_name,
+	int &script_count,
+	int &interesting_count)
+{
+	for (Script *current = script; current != NULL; current = current->getNext()) {
+		++script_count;
+		if (!script_has_catalog_interest(current, group_name)) {
+			continue;
+		}
+		++interesting_count;
+		ScriptCatalogCandidate candidate;
+		candidate.script = current;
+		candidate.side_index = side_index;
+		candidate.group_name = group_name != NULL ? group_name : "";
+		candidate.priority = script_catalog_priority(current, group_name);
+		candidates.push_back(candidate);
+	}
+}
+
+void append_loaded_script_catalog(std::string &json)
+{
+	json += ",\"catalog\":{";
+	if (TheSidesList == NULL) {
+		json += "\"ready\":false,\"sideCount\":0,\"groupCount\":0,"
+			"\"scriptCount\":0,\"interestingScriptCount\":0,"
+			"\"includedCount\":0,\"includedTruncated\":false,\"scripts\":[]}";
+		return;
+	}
+
+	const Int side_count = TheSidesList->getNumSides();
+	int group_count = 0;
+	int script_count = 0;
+	int interesting_count = 0;
+	int included_count = 0;
+	std::string scripts_json;
+	std::vector<ScriptCatalogCandidate> candidates;
+
+	for (Int side_index = 0; side_index < side_count; ++side_index) {
+		SidesInfo *side = TheSidesList->getSideInfo(side_index);
+		ScriptList *script_list = side != NULL ? side->getScriptList() : NULL;
+		if (script_list == NULL) {
+			continue;
+		}
+
+		note_script_for_catalog(
+			candidates,
+			script_list->getScript(),
+			side_index,
+			NULL,
+			script_count,
+			interesting_count);
+
+		for (ScriptGroup *group = script_list->getScriptGroup();
+			group != NULL;
+			group = group->getNext()) {
+			++group_count;
+			const std::string group_name = group->getName().str();
+			note_script_for_catalog(
+				candidates,
+				group->getScript(),
+				side_index,
+				group_name.c_str(),
+				script_count,
+				interesting_count);
+		}
+	}
+
+	const int include_limit = 96;
+	for (int priority = 2; priority >= 0; --priority) {
+		for (std::vector<ScriptCatalogCandidate>::const_iterator it = candidates.begin();
+			it != candidates.end() && included_count < include_limit;
+			++it) {
+			if (it->priority != priority) {
+				continue;
+			}
+			if (included_count != 0) {
+				scripts_json += ",";
+			}
+			++included_count;
+			append_script_catalog_entry_json(
+				scripts_json,
+				it->script,
+				it->side_index,
+				it->group_name.c_str(),
+				it->priority);
+		}
+	}
+
+	json += "\"ready\":true";
+	json += ",\"sideCount\":" + std::to_string(side_count);
+	json += ",\"groupCount\":" + std::to_string(group_count);
+	json += ",\"scriptCount\":" + std::to_string(script_count);
+	json += ",\"interestingScriptCount\":" + std::to_string(interesting_count);
+	json += ",\"includedCount\":" + std::to_string(included_count);
+	json += ",\"includedTruncated\":";
+	json += interesting_count > included_count ? "true" : "false";
+	json += ",\"scripts\":[";
+	json += scripts_json;
+	json += "]}";
+}
+
 void append_script_engine_debug_state(std::string &json)
 {
 	json += ",\"scriptDebug\":{";
@@ -369,7 +1040,10 @@ void append_script_engine_debug_state(std::string &json)
 		json += "\"counterCount\":0,\"countersTruncated\":false,\"counters\":[],"
 			"\"flagCount\":0,\"flagsTruncated\":false,\"flags\":[],"
 			"\"sequentialScriptCount\":0,\"sequentialScriptsTruncated\":false,"
-			"\"sequentialScripts\":[]}";
+			"\"sequentialScripts\":[],"
+			"\"catalog\":{\"ready\":false,\"sideCount\":0,\"groupCount\":0,"
+			"\"scriptCount\":0,\"interestingScriptCount\":0,"
+			"\"includedCount\":0,\"includedTruncated\":false,\"scripts\":[]}}";
 		return;
 	}
 
@@ -453,7 +1127,9 @@ void append_script_engine_debug_state(std::string &json)
 		json += sequential->m_dontAdvanceInstruction ? "true" : "false";
 		json += "}";
 	}
-	json += "]}";
+	json += "]";
+	append_loaded_script_catalog(json);
+	json += "}";
 }
 
 int count_game_client_drawables()

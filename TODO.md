@@ -66,18 +66,28 @@ residue and the next frontier.
       loop, exports loaded-map gameplay/UI/script state (`GameLogic`,
       `GameClient` drawables, local player, `InGameUI`, control bar windows,
       letterbox/fade gates, plus full `ScriptEngine` counter/flag snapshots
-      and sequential-script queue size), and chunk-proves 720 post-campaign
-      loaded-map logic frames through frame 897 with zero WW3D
+      and sequential-script queue size, plus a prioritized read-only catalog
+      of the loaded original `ScriptList` graph), and chunk-proves 720
+      post-campaign loaded-map logic frames through frame 897 with zero WW3D
       missing-texture applies. The original MD_USA01 intro script is still
       legitimately mid-cinematic rather than texture-blocked or frame-stuck:
-      `INTRO_DONE=false`, letterbox/input/control-bar remain disabled,
-      object/drawable count advances from 1,374 to 1,284, and active timers
-      include `CINE_LaunchPadMoveDelay`,
-      `CINE_Pt2CameraLocation01Delay`, and
-      `CINE_Pt2MoveTransportsDelay`; the frame-720 screenshot is black while
-      that script phase is active. Remaining: retire superseded focused menu
-      smokes and continue from the scripted intro toward a visibly correct,
-      interactable in-game scene.
+      a refreshed 180-frame run reaches logic frame 180 with zero missing
+      texture applies, 1,374 objects/drawables, visible captioned cinematic
+      rendering (`startup-vertical-real-init-post-campaign.png`, center
+      pixel `[152,164,189,255]`), `INTRO_DONE=false`,
+      letterbox/input/control-bar still disabled, and active timers including
+      `CINE_CameraCutTo04=512`. The script catalog reports 16 sides, 35
+      groups, 291 scripts, 168 interesting scripts, and priority-includes the
+      real future gates: `CINE_CameraMoveTo06` sets
+      `CINE_LaunchPadMoveDelay`, `CINE_Pt2CameraLocation01Delay`, and
+      `CINE_Pt2MoveTransportsDelay`; `Give Player The Game` sets
+      `INTRO_DONE`; `ReturnToPlayerControl` runs
+      `CAMERA_LETTERBOX_END`/`ENABLE_INPUT`. The 720-frame run still reaches
+      logic frame 720 with zero missing texture applies, object/drawable count
+      advanced to 1,284, and a black screenshot while that later script phase
+      is active. Remaining: retire superseded focused menu smokes and continue
+      from the scripted intro toward a visibly correct, interactable in-game
+      scene.
 - [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch
       workaround in `GameEngine::update()` with the real
       `W3DGameLogic`/`SubsystemInterface::UPDATE` wasm vtable ownership fix
