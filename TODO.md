@@ -33,6 +33,17 @@ frontier is computed from the run (a `SubsystemInterfaceList::initSubsystem`
 hook + stdout markers), never hand-authored. Open items below are the
 residue and the next frontier.
 
+- [ ] **Shell map (ShellMapMD) first frame renders black**: with
+      `realEngineInit({shellMap: true})` (commit ff74146) the 3D menu
+      background map now loads through the real boot — MapCache lookup
+      passes, `showShellMap` dispatches, 1310 objects/drawables spawn at
+      ~38fps on real GPU — but the canvas goes black (menu hidden, no 3D
+      frame) instead of the naval scene behind the menu. Probe with
+      `harness/play.html` (shell map defaults on; `?shellmap=0` opts out)
+      plus the `mapCacheProbe` RPC; suspects: shell not re-shown after
+      `prepareNewGame` (`isInShellGame` path), W3D view not aimed/activated
+      for the shell game, or startNewGame stalled at a gate. Same map-load
+      lane as the campaign work.
 - [ ] **Advance the real boot from the title screen to the interactive main
       menu**: drive the shell past the title through real
       `GameClient::update()` (Shell push of `MainMenu.wnd`), route browser
