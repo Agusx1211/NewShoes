@@ -34,7 +34,7 @@ ports, engine reimplementations, D3D8 implementations, format tooling), format
 specs, modding docs, and browser-target API references (WebGL2 spec +
 conformance tests, WebGPU, Web Audio, WebCodecs, WebAssembly, MDN) — are
 available locally in **`./assets/docs/`**. Search it with
-`python3 WebAssembly/tools/docsearch.py search "<terms>"` (ranked full-text;
+`python3 assets/docs/docsearch.py search "<terms>"` (ranked full-text;
 see the `/docs-search` skill), or `rg` for exact strings.
 **`./assets/docs/INDEX.md`** lists everything in there, how to access each
 resource, and what to use it for. Before reverse-engineering a format, a D3D8

@@ -10,3 +10,4 @@
 !/assets/docs/
 /assets/docs/*
 !/assets/docs/INDEX.md
+!/assets/docs/docsearch.py

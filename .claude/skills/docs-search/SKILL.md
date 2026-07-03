@@ -12,9 +12,9 @@ relevant section of it first to pick the right corpus.
 ## Ranked search (BM25, whole library)
 
 ```
-python3 WebAssembly/tools/docsearch.py search "<terms>"            # top 10
-python3 WebAssembly/tools/docsearch.py search --cat graphics -n 5 "<terms>"
-python3 WebAssembly/tools/docsearch.py search '"exact phrase"'
+python3 assets/docs/docsearch.py search "<terms>"            # top 10
+python3 assets/docs/docsearch.py search --cat graphics -n 5 "<terms>"
+python3 assets/docs/docsearch.py search '"exact phrase"'
 ```
 
 - Categories for `--cat`: `community-cnc`, `superhackers`, `ea-official`,
@@ -22,7 +22,7 @@ python3 WebAssembly/tools/docsearch.py search '"exact phrase"'
 - Identifiers are split on `_`: searching `zwriteenable` matches
   `D3DRS_ZWRITEENABLE`. FTS5 syntax works: `AND`, `OR`, `NOT`, `NEAR(a b, 5)`.
 - If the index is missing or stale (new repos added / pulled), rebuild:
-  `python3 WebAssembly/tools/docsearch.py build` (a few minutes).
+  `python3 assets/docs/docsearch.py build` (a few minutes).
 
 ## When to use what
 

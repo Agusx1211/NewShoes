@@ -2,12 +2,12 @@
 """Ranked full-text search over the assets/docs reference library.
 
 Build the index (a few minutes, run after adding/pulling library repos):
-    python3 WebAssembly/tools/docsearch.py build
+    python3 assets/docs/docsearch.py build
 
 Search (BM25-ranked, FTS5 query syntax: AND/OR/NOT, "exact phrase", NEAR):
-    python3 WebAssembly/tools/docsearch.py search "zwriteenable clear depth"
-    python3 WebAssembly/tools/docsearch.py search --cat graphics -n 5 lockrect
-    python3 WebAssembly/tools/docsearch.py search '"texture stage state"'
+    python3 assets/docs/docsearch.py search "zwriteenable clear depth"
+    python3 assets/docs/docsearch.py search --cat graphics -n 5 lockrect
+    python3 assets/docs/docsearch.py search '"texture stage state"'
 
 Notes:
 - The default tokenizer splits identifiers on '_', so searching
@@ -100,7 +100,7 @@ def build():
 
 def search(query, cat, limit, snippets):
     if not os.path.exists(DB_PATH):
-        sys.exit("no index; run: python3 WebAssembly/tools/docsearch.py build")
+        sys.exit("no index; run: python3 assets/docs/docsearch.py build")
     db = sqlite3.connect(DB_PATH)
     sql = (
         "SELECT path, cat, snippet(docs, 2, '>>>', '<<<', ' ... ', 18) "

@@ -1,9 +1,10 @@
 # assets/docs/ — Reference documentation & code index
 
 Local library of reference repos, docs, and format specs for the wasm/browser
-port. Everything here is **gitignored** (lives under `/assets/`) and is a
-**local resource only** — never copy code from these into checked-in files
-without checking its license, and don't cite these repos in checked-in docs.
+port. The library contents are **gitignored** (only this index and
+`docsearch.py` are checked in) — never copy code from these into checked-in
+files without checking its license; cherry-picks need attribution in the
+commit message.
 
 All repos are shallow clones (`--depth 1`); `git -C <dir> pull` refreshes one.
 Entries marked *sparse* are partial checkouts (`git -C <dir> sparse-checkout
@@ -18,9 +19,9 @@ reverse-engineering from scratch.
 Ranked full-text search (SQLite FTS5, BM25) across all of it:
 
 ```
-python3 WebAssembly/tools/docsearch.py search "zwriteenable clear depth"
-python3 WebAssembly/tools/docsearch.py search --cat graphics -n 5 lockrect
-python3 WebAssembly/tools/docsearch.py build   # rebuild after adding/pulling repos
+python3 assets/docs/docsearch.py search "zwriteenable clear depth"
+python3 assets/docs/docsearch.py search --cat graphics -n 5 lockrect
+python3 assets/docs/docsearch.py build   # rebuild after adding/pulling repos
 ```
 
 The `/docs-search` skill documents query syntax and which corpus answers which
