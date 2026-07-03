@@ -509,6 +509,8 @@ const campaignIntroCounterWatches = [
   "Give it back",
 ];
 
+const campaignIntroCounterWatchNames = new Set(campaignIntroCounterWatches);
+
 const campaignIntroFlagWatches = [
   "INTRO_DONE",
   "Inside Base",
@@ -533,6 +535,25 @@ const campaignIntroScriptWatches = [
   "ReturnToPlayerControl",
 ];
 
+const campaignIntroScriptWatchNames = new Set(campaignIntroScriptWatches);
+
+const scriptTimerActionLayouts = Object.freeze({
+  SET_TIMER: { counterIndex: 0, valueIndex: 1, units: "frames" },
+  SET_RANDOM_TIMER: { counterIndex: 0, minIndex: 1, maxIndex: 2, units: "frames" },
+  SET_MILLISECOND_TIMER: { counterIndex: 0, valueIndex: 1, units: "seconds" },
+  SET_RANDOM_MSEC_TIMER: { counterIndex: 0, minIndex: 1, maxIndex: 2, units: "seconds" },
+  ADD_TO_MSEC_TIMER: { counterIndex: 1, valueIndex: 0, units: "seconds" },
+  SUB_FROM_MSEC_TIMER: { counterIndex: 1, valueIndex: 0, units: "seconds" },
+});
+
+const campaignIntroReleaseActionNames = new Set([
+  "SET_FLAG",
+  "ENABLE_SCRIPT",
+  "CAMERA_LETTERBOX_END",
+  "ENABLE_INPUT",
+  "DRAW_SKYBOX_END",
+]);
+
 function namedEntry(entries, name) {
   return (entries ?? []).find((entry) => entry?.name === name);
 }
@@ -541,6 +562,15 @@ function compactWatchedCounter(scriptDebug, name) {
   const counter = namedEntry(scriptDebug?.counters, name);
   return {
     name,
+    found: counter != null,
+    value: counter?.value,
+    countdownTimer: counter?.countdownTimer,
+  };
+}
+
+function compactCurrentCounter(scriptDebug, name) {
+  const counter = namedEntry(scriptDebug?.counters, name);
+  return {
     found: counter != null,
     value: counter?.value,
     countdownTimer: counter?.countdownTimer,
@@ -574,6 +604,144 @@ function compactCatalogScript(script) {
   };
 }
 
+function scriptParameterValue(parameter) {
+  if (parameter == null) {
+    return undefined;
+  }
+  if (typeof parameter.string === "string" && parameter.string.length > 0) {
+    return parameter.string;
+  }
+  if (parameter.typeName === "BOOLEAN") {
+    return parameter.int !== 0;
+  }
+  if (parameter.typeName === "REAL" || parameter.typeName === "PERCENT") {
+    return parameter.real;
+  }
+  if (parameter.typeName === "INT") {
+    return parameter.int;
+  }
+  return parameter.real !== 0 ? parameter.real : parameter.int;
+}
+
+function scriptParameterString(parameter) {
+  return typeof parameter?.string === "string" && parameter.string.length > 0
+    ? parameter.string
+    : undefined;
+}
+
+function compactTimerCondition(scriptDebug, condition) {
+  const counter = scriptParameterString((condition?.parameters ?? [])[0]);
+  return {
+    condition: condition?.internalName,
+    counter,
+    current: counter !== undefined
+      ? compactCurrentCounter(scriptDebug, counter)
+      : undefined,
+  };
+}
+
+function compactTimerAction(scriptDebug, action) {
+  const layout = scriptTimerActionLayouts[action?.internalName];
+  if (layout == null) {
+    return null;
+  }
+  const parameters = action?.parameters ?? [];
+  const counter = scriptParameterString(parameters[layout.counterIndex]);
+  const compact = {
+    index: action?.index,
+    action: action?.internalName,
+    counter,
+    units: layout.units,
+    current: counter !== undefined
+      ? compactCurrentCounter(scriptDebug, counter)
+      : undefined,
+  };
+  if (layout.valueIndex !== undefined) {
+    compact.value = scriptParameterValue(parameters[layout.valueIndex]);
+  }
+  if (layout.minIndex !== undefined) {
+    compact.min = scriptParameterValue(parameters[layout.minIndex]);
+    compact.max = scriptParameterValue(parameters[layout.maxIndex]);
+  }
+  return compact;
+}
+
+function compactReleaseAction(action) {
+  const parameters = action?.parameters ?? [];
+  return {
+    index: action?.index,
+    action: action?.internalName,
+    target: scriptParameterValue(parameters[0]),
+    value: scriptParameterValue(parameters[1]),
+  };
+}
+
+function scriptTouchesWatchedIntroGate(script) {
+  const waitsOnWatchedCounter = (script?.conditions ?? [])
+    .some((condition) =>
+      condition?.internalName === "TIMER_EXPIRED"
+        && campaignIntroCounterWatchNames.has(
+          scriptParameterString((condition.parameters ?? [])[0])));
+  const setsWatchedCounter = (script?.actions ?? [])
+    .some((action) => {
+      const layout = scriptTimerActionLayouts[action?.internalName];
+      if (layout == null) {
+        return false;
+      }
+      return campaignIntroCounterWatchNames.has(
+        scriptParameterString((action.parameters ?? [])[layout.counterIndex]));
+    });
+  return waitsOnWatchedCounter || setsWatchedCounter;
+}
+
+function compactCampaignIntroReleaseScript(scriptDebug, script) {
+  const timerConditions = (script?.conditions ?? [])
+    .filter((condition) => condition?.internalName === "TIMER_EXPIRED")
+    .map((condition) => compactTimerCondition(scriptDebug, condition));
+  const timerActions = (script?.actions ?? [])
+    .map((action) => compactTimerAction(scriptDebug, action))
+    .filter((action) => action !== null);
+  const releaseActions = (script?.actions ?? [])
+    .filter((action) => campaignIntroReleaseActionNames.has(action?.internalName))
+    .map((action) => compactReleaseAction(action));
+  return {
+    name: script?.name,
+    groupName: script?.groupName,
+    active: script?.active,
+    oneShot: script?.oneShot,
+    frameToEvaluate: script?.frameToEvaluate,
+    waitTimers: timerConditions,
+    timerActions,
+    releaseActions,
+  };
+}
+
+function summarizeCampaignIntroReleaseChain(scriptDebug) {
+  const scripts = (scriptDebug?.catalog?.scripts ?? [])
+    .filter((script) =>
+      campaignIntroScriptWatchNames.has(script?.name) || scriptTouchesWatchedIntroGate(script))
+    .map((script) => compactCampaignIntroReleaseScript(scriptDebug, script));
+  const includedScripts = scripts.slice(0, 40);
+  const activeTimerWaits = includedScripts
+    .flatMap((script) => (script.waitTimers ?? []).map((timer) => ({
+      script: script.name,
+      active: script.active,
+      counter: timer.counter,
+      current: timer.current,
+    })))
+    .filter((timer) =>
+      timer.active === true
+        && timer.current?.found === true
+        && (timer.current.countdownTimer === true || timer.current.value > 0))
+    .slice(0, 12);
+  return {
+    includedCount: includedScripts.length,
+    truncated: scripts.length > includedScripts.length,
+    activeTimerWaits,
+    scripts: includedScripts,
+  };
+}
+
 function compactWatchedScript(scriptDebug, name) {
   const script = namedEntry(scriptDebug?.catalog?.scripts, name);
   return {
@@ -591,6 +759,7 @@ function summarizeCampaignIntroGates(scriptDebug) {
       compactWatchedFlag(scriptDebug, name)),
     scripts: campaignIntroScriptWatches.map((name) =>
       compactWatchedScript(scriptDebug, name)),
+    releaseChain: summarizeCampaignIntroReleaseChain(scriptDebug),
   };
 }
 

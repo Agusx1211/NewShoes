@@ -106,7 +106,11 @@ residue and the next frontier.
       (`STARTUP_VERTICAL_POST_CAMPAIGN_EXPECT_PLAYER_CONTROL=1`). The first
       120-frame player-control run correctly reports the scene is still
       mid-intro (`INTRO_DONE=false`, input disabled, letterboxed, control bar
-      hidden) with zero missing texture applies. Remaining: retire superseded
+      hidden) with zero missing texture applies. The player-control chunk JSON
+      now also emits a compact `releaseChain` built from the original loaded
+      scripts, showing the active countdown blocker and the future
+      `INTRO_DONE`/`ReturnToPlayerControl` release actions without parsing map
+      files out-of-band. Remaining: retire superseded
       focused menu smokes and continue from the scripted intro toward a visibly
       correct, interactable in-game scene.
 - [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch

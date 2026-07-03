@@ -2601,6 +2601,31 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       missing-texture applies, `INTRO_DONE=false`, input disabled, letterbox
       active, control bar hidden, and `reachedPlayerControl=false`, matching
       the known still-running original intro.
+- [x] Add focused release-chain diagnostics to the post-campaign
+      player-control chunks. `startup_vertical_smoke.mjs` now mines the
+      existing read-only loaded-script catalog for timer actions and
+      `TIMER_EXPIRED` conditions touching the watched MD_USA01 intro counters,
+      plus the explicit `Give Player The Game` / `ReturnToPlayerControl`
+      release scripts. Chunk JSON reports timer units/values, current counter
+      state, active countdown blockers, and final release actions such as
+      `SET_FLAG INTRO_DONE`, `ENABLE_SCRIPT ReturnToPlayerControl`,
+      `CAMERA_LETTERBOX_END`, and `ENABLE_INPUT`, without mutating original
+      script state or parsing map files outside the engine. Verified with
+      `node --check WebAssembly/harness/startup_vertical_smoke.mjs`,
+      `git diff --check -- WebAssembly/harness/startup_vertical_smoke.mjs`,
+      and `STARTUP_VERTICAL_REAL_INIT_ONLY=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_UNTIL_PLAYER_CONTROL=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=60
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAME_CHUNK=60 node
+      WebAssembly/harness/startup_vertical_smoke.mjs` redirected to
+      `/tmp/cnc-startup-release-chain-final-60.json`: the real path reaches
+      logic frame 60 with zero missing texture applies, captures
+      `startup-vertical-real-init-post-campaign.png`, reports
+      `reachedPlayerControl=false`, includes 22 focused release-chain scripts
+      with no unrelated `Player Succeeds` script, and identifies the sole
+      active countdown blocker as `CINE_CameraCutTo04=632` while keeping
+      `Give Player The Game` and `ReturnToPlayerControl` present with their
+      original release actions.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what
