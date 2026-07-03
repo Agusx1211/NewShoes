@@ -2399,6 +2399,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       frame 16 reports 305 objects/drawables, 40 rendered objects,
       `shellTop=Menus/MainMenu.wnd`, center pixel `[10,22,30,255]`, and
       screenshot `artifacts/screenshots/shellmap-real-header-fix-canvas.png`.
+- [x] Add a durable real-lifecycle ShellMapMD browser gate. The new
+      `test:real-shellmap` package script builds `cnc-port`, mounts the same
+      21 whole-file real-init archives, runs original `GameEngine::init()` with
+      the shell map enabled, checks the exact 43-subsystem init order, proves
+      `MapCache` still contains `Maps\ShellMapMD\ShellMapMD.map`, steps real
+      `GameEngine::update()` frames, and asserts `GAME_SHELL`, real
+      `Menus/MainMenu.wnd`, the `startNewGame` shell branch, nonzero original
+      object/drawable/rendered-object counts, and a nonblank canvas center
+      before saving `artifacts/screenshots/shellmap-real-init-gate-canvas.png`.
 - [x] Drive the real startup lifecycle from the visible difficulty menu into
       the original easy USA campaign-start path. The startup vertical harness
       now clicks real `ButtonEasy`, records the original `MainMenu.cpp`
