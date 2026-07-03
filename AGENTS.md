@@ -27,6 +27,19 @@ video, input, and networking — everything.
   - `Libraries/Source/` — vendored deps: `DX90SDK`, `WWVegas` (W3D), `GameSpy`
     (networking), `Compression`, `STLport`, etc.
 
+## Reference documentation & code library
+
+Documentation resources for the port — reference repos (community source
+ports, engine reimplementations, D3D8 implementations, format tooling), format
+specs, and modding docs — are available locally in **`./assets/docs/`**.
+**`./assets/docs/INDEX.md`** lists everything in there, how to access each
+resource, and what to use it for. Before reverse-engineering a format, a D3D8
+behavior, or a platform-layer question from scratch, check the index — someone
+has usually already solved or documented it. When you add a resource to
+`assets/docs/`, add an entry to `INDEX.md`. The directory is gitignored
+(local-only): treat it as read-only reference material and never copy code
+from it into checked-in files without checking its license.
+
 ## The port strategy
 
 The game logic is already separated from the platform. **Keep the original game
