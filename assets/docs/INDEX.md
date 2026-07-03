@@ -13,6 +13,21 @@ list` shows what's included; `... set <paths>` changes it).
 for how the original engine/platform layer behaved, search this library before
 reverse-engineering from scratch.
 
+## Searching this library
+
+Ranked full-text search (SQLite FTS5, BM25) across all of it:
+
+```
+python3 WebAssembly/tools/docsearch.py search "zwriteenable clear depth"
+python3 WebAssembly/tools/docsearch.py search --cat graphics -n 5 lockrect
+python3 WebAssembly/tools/docsearch.py build   # rebuild after adding/pulling repos
+```
+
+The `/docs-search` skill documents query syntax and which corpus answers which
+kind of question. For exact strings/regex use `rg` on this directory directly.
+The index is `.docsearch.db` here (gitignored); rebuild it after changing the
+library.
+
 ---
 
 ## community-cnc/ — Generals/ZH source forks & engine reimplementations
