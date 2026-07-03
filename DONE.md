@@ -2694,6 +2694,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       script catalog (`291` scripts), and shrinks stderr for the same 60-frame
       proof from about 24 KB to about 2 KB while retaining the active blocker
       `CINE_CameraCutTo04=632`.
+- [x] Run the compact post-campaign player-control pass past
+      `CINE_CameraCutTo04`. Verified with
+      `STARTUP_VERTICAL_REAL_INIT_ONLY=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_UNTIL_PLAYER_CONTROL=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_COMPACT_CHUNKS=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=900
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAME_CHUNK=120 node
+      WebAssembly/harness/startup_vertical_smoke.mjs` redirected to
+      `/tmp/cnc-startup-player-control-900.json`: the real path completes all
+      900 requested post-campaign frames and reaches engine frame 1,077 /
+      logic frame 900 with zero missing texture applies, 1,284
+      objects/drawables, 55 rendered objects, and the original intro still
+      correctly keeping input disabled, letterbox active, and the control bar
+      hidden. The phase history now shows `CINE_CameraCutTo04` ending between
+      logic frames 600 and 720; the active blockers after that are
+      `CINE_LaunchPadMoveDelay`, `CINE_Pt2CameraLocation01Delay`, and
+      `CINE_Pt2MoveTransportsDelay`, ending the 900-frame run at values 154,
+      274, and 94 respectively. The post-campaign screenshot remains black
+      during this original cinematic phase, but the frame state reports 55
+      rendered objects and no WW3D missing-texture applies.
 - [x] Split the hot-path build from the legacy smoke surface:
       `CNC_BUILD_TARGETS` in `tools/build_wasm.sh` selects CMake targets;
       `zh_startup_vertical_hotpath` aggregates exactly what

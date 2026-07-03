@@ -114,11 +114,16 @@ residue and the next frontier.
       `phaseChanges` so the final JSON reports real intro gate transitions
       without requiring every chunk to be inspected manually; and
       `STARTUP_VERTICAL_POST_CAMPAIGN_COMPACT_CHUNKS=1` keeps deep-run chunk
-      arrays/logs small while preserving the full final frame state. Remaining:
-      retire superseded
-      focused menu smokes, run a compact deep pass past `CINE_CameraCutTo04`,
-      and continue from the scripted intro toward a visibly correct,
-      interactable in-game scene.
+      arrays/logs small while preserving the full final frame state. A
+      900-frame compact player-control run now passes `CINE_CameraCutTo04`;
+      logic frame 900 still has zero missing texture applies, 1,284
+      objects/drawables, 55 rendered objects, letterbox/input/control-bar
+      gates still disabled as intended by the intro, and active phase-two
+      blockers `CINE_LaunchPadMoveDelay=154`,
+      `CINE_Pt2CameraLocation01Delay=274`, and
+      `CINE_Pt2MoveTransportsDelay=94`. Remaining: retire superseded focused
+      menu smokes, continue through those phase-two timers, and continue from
+      the scripted intro toward a visibly correct, interactable in-game scene.
 - [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch
       workaround in `GameEngine::update()` with the real
       `W3DGameLogic`/`SubsystemInterface::UPDATE` wasm vtable ownership fix
