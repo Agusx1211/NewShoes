@@ -154,9 +154,51 @@ residue and the next frontier.
       terrain failed the depth test and rendered black. Fix: force `depthMask`
       on around `gl.clear` in `bridge.js`. Shell map 20.8%->0% black; MD_USA01
       renders cliffs/sky/tree correctly on the Mac GPU. See DONE.md for the full
-      bisection history. Follow-ups: implement real render-to-texture so
-      shadows/water-reflections work (currently the RTT passes are skipped at
-      the shim; `SetRenderTarget` has no framebuffer).
+      bisection history. Follow-up landed: real FBO-backed render targets merged
+      (`deaeb7a`, ead0880/f253179) — but see the unverified-RTT item below.
+- [ ] **Reconcile `d3d8DiagLevel="lite"` default (26e79bc) with the regression
+      gates** (Fable audit 2026-07-04, verified live). The flip deleted the
+      guard comment "Never change the default: existing gates depend on 'full'"
+      and updated zero smokes: with the lite default, `d3d8Clear` returns
+      `ok:false, browserProbe:null` and `d3d8TexturedQuad` returns `ok:false,
+      centerPixel:null`, breaking probe assertions in `harness/smoke.mjs`
+      (test:all) and ~21 display/terrain smokes in test:vertical-integrations.
+      (`test:startup-vertical` is unaffected — it samples pixels via the
+      `screenshot` RPC.) Either restore `full` as the default (play.mjs already
+      forces lite for the human page, so the flip bought it nothing) or make
+      every probe-asserting smoke opt into `?diag=full` /
+      `__cncSetDiagLevel("full")`.
+- [ ] **Fix `mac_verify.mjs` player-control probe — it can never report
+      success** (3 commits in, still broken): it reads `s?.playerControl` but
+      the RPC nests it as `frame.playerControl` (see bridge.js return shape and
+      `wasm_real_engine_init.cpp:2401`), so `reachedPlayerControl` is always
+      false; it also double-steps the engine by calling
+      `realEngineFrameSummary(frames)` after already stepping.
+- [ ] **RTT/FBO follow-ups from adversarial review** (landed unverified;
+      TODO/DONE never updated by the track): (1) `releaseD3D8Texture` in
+      bridge.js never deletes the `d3d8Framebuffers` entry — FBO + depth
+      renderbuffer leak, and a stale FBO if a texture id is reused; (2)
+      `bindD3D8Framebuffer` failure returns 0 but the C++ EM_JS caller ignores
+      it — on FBO-incomplete the reflection/shadow passes silently draw into
+      the last-bound framebuffer (same bug class as the black-terrain
+      incident); (3) `depthTextureId` is accepted but ignored; (4) no harness
+      gate asserts an RTT pixel or `browser_fbo_bind_calls` — add one.
+- [ ] **`harness/smoke.mjs` (EXPECT_WASM=1) has been red since e97628f**
+      (cursor-CSS probe, pre-dating the swarm window) and stayed red through
+      nine merges — the full regression lane is not being run by anyone. Fix
+      the cursor probe expectation, then make the lane part of the merge
+      routine again; a red gate nobody runs protects nothing (this is how
+      26e79bc landed unnoticed).
+- [ ] **Audio honesty gap from 6d433cc**: 3D sample path is real, but music
+      does NOT reach the AudioContext — `cncPortMssStreamStart` is a
+      console.log metadata stub with a "TODO: load stream WAV from archive";
+      the commit message overclaims. Implement the stream path and add a smoke
+      asserting an audible-graph node exists for music. Also `refDistance` is
+      hardcoded 1.0 while Miles `minDistance` is passed but unused.
+- [ ] Debug and Release builds both link into the same `dist/cnc-port.js` and
+      silently clobber each other — give the Release lane its own dist output
+      (or an explicit copy step) so a `build:port:release` doesn't invalidate
+      the Debug artifacts CI just verified.
 - [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch
       workaround in `GameEngine::update()` with the real
       `W3DGameLogic`/`SubsystemInterface::UPDATE` wasm vtable ownership fix
