@@ -7443,5 +7443,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `SetTransform` emission. Verified with the wasm `cnc-port` build, the
       `EXPECT_WASM=1` aggregate smoke, `test:vertical-integrations`, the
       shroud terrain scene smoke, and the bridge-buffer terrain scene smoke.
+- [x] **Reverted the `d3d8DiagLevel="lite"` default flip (26e79bc → revert
+      6726096).** The flip had deleted the guard comment ("Never change the
+      default: existing gates depend on 'full'") and broke probe assertions
+      (`browserProbe`/`centerPixel` null) in `harness/smoke.mjs` and ~21
+      display/terrain smokes, while buying the player page nothing — play.mjs
+      already forces lite itself. `full` default and guard comment restored;
+      the `?diag=` / `__cncSetDiagLevel` opt-in machinery and the play-page
+      lite perf win are kept. Found by the 2026-07-04 adversarial audit
+      (verified live against the build, both modes).
 
 ## Cross-cutting: project hygiene

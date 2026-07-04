@@ -156,18 +156,6 @@ residue and the next frontier.
       renders cliffs/sky/tree correctly on the Mac GPU. See DONE.md for the full
       bisection history. Follow-up landed: real FBO-backed render targets merged
       (`deaeb7a`, ead0880/f253179) — but see the unverified-RTT item below.
-- [ ] **Reconcile `d3d8DiagLevel="lite"` default (26e79bc) with the regression
-      gates** (Fable audit 2026-07-04, verified live). The flip deleted the
-      guard comment "Never change the default: existing gates depend on 'full'"
-      and updated zero smokes: with the lite default, `d3d8Clear` returns
-      `ok:false, browserProbe:null` and `d3d8TexturedQuad` returns `ok:false,
-      centerPixel:null`, breaking probe assertions in `harness/smoke.mjs`
-      (test:all) and ~21 display/terrain smokes in test:vertical-integrations.
-      (`test:startup-vertical` is unaffected — it samples pixels via the
-      `screenshot` RPC.) Either restore `full` as the default (play.mjs already
-      forces lite for the human page, so the flip bought it nothing) or make
-      every probe-asserting smoke opt into `?diag=full` /
-      `__cncSetDiagLevel("full")`.
 - [ ] **Fix `mac_verify.mjs` player-control probe — it can never report
       success** (3 commits in, still broken): it reads `s?.playerControl` but
       the RPC nests it as `frame.playerControl` (see bridge.js return shape and
