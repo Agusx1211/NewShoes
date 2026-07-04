@@ -63,7 +63,8 @@ If you catch yourself about to open a file or run a build, stop and delegate it.
 7. **Cross-review (delegated).** When a coder finishes, hand its branch to a
    **fresh** reviewer session (see cross-review). Loop fixes back to the coder.
 8. **Integrate (delegated).** Once a track passes review, tell the integrator to
-   merge it and verify the build — never by hand.
+   merge it, **run the gates**, and verify the build — never by hand (see Gate
+   integrity).
 9. **Clean up (delegated).** A janitor worker removes worktrees and stale branches.
 10. **Report** crisp status to the user and score the workers.
 
@@ -208,6 +209,32 @@ own turn). Fresh context removes the author's bias; the reviewer sees the diff
 cold. So "self-review" is allowed only through a clean, separate delegation. For
 critical tracks, use a *different* model as reviewer for a second perspective.
 
+## Gate integrity: protect the project's ability to notice breakage
+
+The regression gates are the only thing standing between a busy swarm and a
+quietly rotting main. Treat them as load-bearing:
+
+- **Merges run the gates.** The integrator runs the relevant regression lane(s)
+  before merging a track to main (here: `test:startup-vertical` always; the
+  probe-asserting smokes when the track touches rendering or the harness) and
+  reports pass/fail. A red gate is **stop-the-line**: merge only once it's green,
+  or the failure is proven pre-existing *and* filed in `TODO.md`. A gate that
+  was already red when you arrived is a bug to staff, not background noise —
+  every merge that lands past a red gate is unverified by definition.
+- **Verification infrastructure is high-risk by default.** Any diff touching
+  the harness, smokes, probes, diagnostic defaults, or verify scripts gets the
+  strictest review you can stage, anchored on one question: *"does this weaken
+  what the project can notice?"* A worker deleting or contradicting a guard
+  comment ("never change this default — gates depend on it") is an automatic
+  reject — route it back, don't negotiate.
+- **Check claims against the diff.** Reviewers must verify the commit message
+  and the worker's report against what the code actually does: no "X works"
+  when X is a stub, no "verified" without a gate run or screenshot behind it,
+  `TODO.md`/`DONE.md` updated to match reality, no stray files outside the
+  track's scope. A verify tool that cannot ever report success (wrong field,
+  dead RPC) is worse than none — when adopting new verification tooling, demand
+  proof it fails *and* succeeds on known cases.
+
 ## Trust local workers with secrets
 
 These are **local** workers on your machine, not third parties. Hand them the keys,
@@ -245,3 +272,7 @@ build confirmed it). Be concrete: track names, branches, who did what.
 - ❌ Briefs that let workers stream build/test output into their context. → require
   pipe-to-file + inspect in slices.
 - ❌ Having the coder review its own uncommitted turn. → fresh reviewer session.
+- ❌ Merging past a red gate, or landing a diff that flips/weakens a gate default.
+  → stop-the-line; harness/verification diffs get the strictest review.
+- ❌ Taking "done / green / verified" from a worker at face value. → a reviewer
+  checks the claim against the diff and an actual gate run or screenshot.
