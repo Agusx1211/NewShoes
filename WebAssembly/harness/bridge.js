@@ -1202,6 +1202,33 @@ function summarizeBrowserMssSamplePlaybackRuntime() {
   };
 }
 
+function summarizeBrowserMssStreamPlaybackRuntime() {
+  return {
+    source: browserMssStreamPlaybackRuntime.source,
+    ready:
+      browserAudioRuntime.context?.state === "running" &&
+      browserAudioMixerRuntime.created === true,
+    runtimePlayback: browserMssStreamPlaybackRuntime.started > 0,
+    engineDriven: false,
+    mssDriven: true,
+    nextRequired: "realMilesAudioManagerStreamPlayback",
+    nodeGraph: [
+      "AudioBufferSourceNode",
+      "GainNode",
+      "musicGainNode",
+      "AudioDestinationNode",
+    ],
+    started: browserMssStreamPlaybackRuntime.started,
+    stopped: browserMssStreamPlaybackRuntime.stopped,
+    ended: browserMssStreamPlaybackRuntime.ended,
+    activeSources: browserMssStreamPlaybackRuntime.activeSources.size,
+    musicSourceActive: browserMssStreamPlaybackRuntime.musicSourceActive ?? false,
+    lastEvent: browserMssStreamPlaybackRuntime.lastEvent,
+    eventLog: [...browserMssStreamPlaybackRuntime.eventLog],
+    lastError: browserMssStreamPlaybackRuntime.lastError,
+  };
+}
+
 function readMssSampleWaveBytes(payload, heapu8) {
   const dataPtr = Number(payload?.dataPtr ?? 0) >>> 0;
   if (!dataPtr || !(heapu8 instanceof Uint8Array)) {
@@ -1415,7 +1442,7 @@ function cncPortMss3DSampleStart(payload, heapu8) {
     const panner = context.createPanner();
     panner.panningModel = "HRTF";
     panner.distanceModel = "inverse";
-    panner.refDistance = 1.0;
+    panner.refDistance = Number(payload.minDistance ?? 1.0);
     panner.maxDistance = Math.max(payload.maxDistance ?? 10.0, 1.0);
     panner.rolloffFactor = 1.0;
     // Set 3D position from Miles coordinates
@@ -1549,20 +1576,28 @@ const browserMssStreamPlaybackRuntime = {
 };
 
 function cncPortMssStreamStart(payload) {
+  // Kick off async load; return true immediately to keep C++ state machine happy.
+  _startMssStreamAsync(payload).catch((err) => {
+    browserMssStreamPlaybackRuntime.lastError = err?.message ?? String(err);
+  });
+  return true;
+}
+
+async function _startMssStreamAsync(payload) {
   const context = browserAudioRuntime.context;
   if (!context || context.state !== "running") {
     browserMssStreamPlaybackRuntime.lastError = "AudioContext is not running";
-    return false;
+    return;
   }
   const mixer = ensureBrowserAudioMixerRuntime();
   if (!mixer) {
     browserMssStreamPlaybackRuntime.lastError = browserAudioMixerRuntime.lastError;
-    return false;
+    return;
   }
   const busNode = mixer.busNodes?.music ?? mixer.busNodes?.sound ?? null;
   if (!busNode) {
     browserMssStreamPlaybackRuntime.lastError = "missing browser audio mixer bus";
-    return false;
+    return;
   }
 
   const handle = Number(payload?.handle ?? 0);
@@ -1583,13 +1618,75 @@ function cncPortMssStreamStart(payload) {
     playbackRate: Number(payload.playbackRate ?? 44100),
   };
 
-  // Stream data is loaded from the BIG archive by the engine;
-  // the bridge handler receives only metadata.  Actual audio data
-  // must be loaded asynchronously from the archive.  For now, wire
-  // the start/stop lifecycle so the C++ state machine is consistent.
-  // TODO: load stream WAV from archive and decode for playback.
-  console.log(`[MSS stream] start handle=${handle} filename=${filename} volume=${volume}`);
-  return true;
+  // Load WAV bytes from mounted archive (stream data is in BIG archives).
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    browserMssStreamPlaybackRuntime.lastError = "WASM module not available";
+    return;
+  }
+
+  // Search mounted audio archives for the stream file.
+  const normalizedFilename = filename.toLowerCase();
+  let archiveBytes = null;
+  let entry = null;
+
+  for (const mounted of harnessState.mountedArchives) {
+    if (!isAudioPayloadRelevantArchive(mounted)) {
+      continue;
+    }
+    try {
+      archiveBytes = wasmModule.fs.readFile(mounted.path);
+      const entries = readBigDirectoryFromBytes(archiveBytes, mounted.name);
+      entry = entries.find((candidate) => {
+        const c = candidate.normalizedPath.toLowerCase();
+        return (
+          c === normalizedFilename ||
+          c.endsWith("\\" + normalizedFilename) ||
+          c.endsWith("/" + normalizedFilename)
+        );
+      });
+      if (entry) break;
+    } catch { /* skip unreadable archive */ }
+  }
+
+  if (!entry || !archiveBytes) {
+    browserMssStreamPlaybackRuntime.lastError =
+      `Stream file not found in any mounted archive: ${filename}`;
+    return;
+  }
+
+  // Extract WAV bytes from archive entry.
+  const wavBytes = archiveBytes.subarray(entry.offset, entry.offset + entry.size);
+
+  // Decode WAV payload (PCM or IMA ADPCM) — reuses the same path as sample playback.
+  let decoded;
+  try {
+    decoded = decodeAudioWavPayload(wavBytes);
+  } catch (err) {
+    browserMssStreamPlaybackRuntime.lastError =
+      `Failed to decode stream WAV: ${err?.message ?? String(err)}`;
+    return;
+  }
+
+  const decodedFrames = Math.floor(decoded.samples.length / decoded.info.channels);
+
+  // Build audio graph: source → gain → music bus.
+  const source = context.createBufferSource();
+  const gain = context.createGain();
+  source.buffer = createWebAudioBufferFromDecoded(context, {
+    info: decoded.info,
+    samples: decoded.samples,
+    decodedFrames,
+  });
+  // Music streams loop by default; honour loopCount > 1.
+  source.loop = loopCount < 0 || loopCount > 1;
+  gain.gain.value = volume;
+  source.connect(gain);
+  gain.connect(busNode);
+  source.start(0);
+
+  browserMssStreamPlaybackRuntime.activeSources.set(handle, { source, gain });
+  browserMssStreamPlaybackRuntime.musicSourceActive = true;
 }
 
 function cncPortMssStreamStop(payload) {
@@ -1603,6 +1700,9 @@ function cncPortMssStreamStop(payload) {
       browserMssStreamPlaybackRuntime.activeSources.delete(handle);
     }
   } catch { /* already ended */ }
+  if (browserMssStreamPlaybackRuntime.activeSources.size === 0) {
+    browserMssStreamPlaybackRuntime.musicSourceActive = false;
+  }
   return true;
 }
 
@@ -8001,6 +8101,7 @@ function snapshotState() {
     browserAudioRuntime: summarizeBrowserAudioRuntime(),
     browserAudioMixerRuntime: summarizeBrowserAudioMixerRuntime(),
     browserMssSamplePlaybackRuntime: summarizeBrowserMssSamplePlaybackRuntime(),
+    browserMssStreamPlaybackRuntime: summarizeBrowserMssStreamPlaybackRuntime(),
     browserAudioLiveEventRuntime: summarizeBrowserAudioLiveEventRuntime(),
     browserAudioRequestPathRuntime: summarizeBrowserAudioRequestPathRuntime(),
     browserNetworkRelayRuntime: summarizeBrowserNetworkRelayRuntime(),
