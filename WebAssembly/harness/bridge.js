@@ -211,6 +211,7 @@ const d3d8BufferStats = {
   lastRelease: null,
 };
 let d3d8ViewportState = null;
+let browser_fbo_incomplete_count = 0;
 const d3d8ViewportStats = {
   sets: 0,
   applications: 0,
@@ -1201,6 +1202,34 @@ function summarizeBrowserMssSamplePlaybackRuntime() {
   };
 }
 
+function summarizeBrowserMssStreamPlaybackRuntime() {
+  return {
+    source: browserMssStreamPlaybackRuntime.source,
+    ready:
+      browserAudioRuntime.context?.state === "running" &&
+      browserAudioMixerRuntime.created === true,
+    runtimePlayback: browserMssStreamPlaybackRuntime.started > 0,
+    engineDriven: false,
+    mssDriven: true,
+    nextRequired: "realMilesAudioManagerStreamPlayback",
+    nodeGraph: [
+      "AudioBufferSourceNode",
+      "GainNode",
+      "musicGainNode",
+      "AudioDestinationNode",
+    ],
+    started: browserMssStreamPlaybackRuntime.started,
+    stopped: browserMssStreamPlaybackRuntime.stopped,
+    ended: browserMssStreamPlaybackRuntime.ended,
+    activeSources: browserMssStreamPlaybackRuntime.activeSources.size,
+    pendingStarts: browserMssStreamPlaybackRuntime.pendingStarts?.size ?? 0,
+    musicSourceActive: browserMssStreamPlaybackRuntime.musicSourceActive ?? false,
+    lastEvent: browserMssStreamPlaybackRuntime.lastEvent,
+    eventLog: [...browserMssStreamPlaybackRuntime.eventLog],
+    lastError: browserMssStreamPlaybackRuntime.lastError,
+  };
+}
+
 function readMssSampleWaveBytes(payload, heapu8) {
   const dataPtr = Number(payload?.dataPtr ?? 0) >>> 0;
   if (!dataPtr || !(heapu8 instanceof Uint8Array)) {
@@ -1414,7 +1443,7 @@ function cncPortMss3DSampleStart(payload, heapu8) {
     const panner = context.createPanner();
     panner.panningModel = "HRTF";
     panner.distanceModel = "inverse";
-    panner.refDistance = 1.0;
+    panner.refDistance = Number(payload.minDistance ?? 1.0);
     panner.maxDistance = Math.max(payload.maxDistance ?? 10.0, 1.0);
     panner.rolloffFactor = 1.0;
     // Set 3D position from Miles coordinates
@@ -1539,6 +1568,7 @@ function cncPortMss3DSampleRelease(payload) {
 
 const browserMssStreamPlaybackRuntime = {
   activeSources: new Map(), // handle -> { source, gain }
+  pendingStarts: new Map(), // handle -> { cancelled: bool }
   started: 0,
   stopped: 0,
   ended: 0,
@@ -1548,26 +1578,37 @@ const browserMssStreamPlaybackRuntime = {
 };
 
 function cncPortMssStreamStart(payload) {
+  // Kick off async load; return true immediately to keep C++ state machine happy.
+  _startMssStreamAsync(payload).catch((err) => {
+    browserMssStreamPlaybackRuntime.lastError = err?.message ?? String(err);
+  });
+  return true;
+}
+
+async function _startMssStreamAsync(payload) {
   const context = browserAudioRuntime.context;
   if (!context || context.state !== "running") {
     browserMssStreamPlaybackRuntime.lastError = "AudioContext is not running";
-    return false;
+    return;
   }
   const mixer = ensureBrowserAudioMixerRuntime();
   if (!mixer) {
     browserMssStreamPlaybackRuntime.lastError = browserAudioMixerRuntime.lastError;
-    return false;
+    return;
   }
   const busNode = mixer.busNodes?.music ?? mixer.busNodes?.sound ?? null;
   if (!busNode) {
     browserMssStreamPlaybackRuntime.lastError = "missing browser audio mixer bus";
-    return false;
+    return;
   }
 
   const handle = Number(payload?.handle ?? 0);
   const filename = String(payload?.filename ?? "");
   const volume = clamp01(Number((payload.volume ?? 127) / 127));
   const loopCount = Number(payload.loopCount ?? 1);
+
+  // Register pending start for stop-before-start race guard.
+  browserMssStreamPlaybackRuntime.pendingStarts.set(handle, { cancelled: false });
 
   browserMssStreamPlaybackRuntime.started += 1;
   browserMssStreamPlaybackRuntime.eventLog.push(
@@ -1582,26 +1623,124 @@ function cncPortMssStreamStart(payload) {
     playbackRate: Number(payload.playbackRate ?? 44100),
   };
 
-  // Stream data is loaded from the BIG archive by the engine;
-  // the bridge handler receives only metadata.  Actual audio data
-  // must be loaded asynchronously from the archive.  For now, wire
-  // the start/stop lifecycle so the C++ state machine is consistent.
-  // TODO: load stream WAV from archive and decode for playback.
-  console.log(`[MSS stream] start handle=${handle} filename=${filename} volume=${volume}`);
-  return true;
+  // Load WAV bytes from mounted archive (stream data is in BIG archives).
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    browserMssStreamPlaybackRuntime.lastError = "WASM module not available";
+    return;
+  }
+
+  // Race guard: stop was called before async load completed.
+  const pending = browserMssStreamPlaybackRuntime.pendingStarts.get(handle);
+  if (pending?.cancelled) {
+    browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
+    return;
+  }
+  browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
+
+  // Search mounted audio archives for the stream file.
+  const normalizedFilename = filename.toLowerCase();
+  let archiveBytes = null;
+  let entry = null;
+
+  for (const mounted of harnessState.mountedArchives) {
+    if (!isAudioPayloadRelevantArchive(mounted)) {
+      continue;
+    }
+    try {
+      archiveBytes = wasmModule.fs.readFile(mounted.path);
+      const entries = readBigDirectoryFromBytes(archiveBytes, mounted.name);
+      entry = entries.find((candidate) => {
+        const c = candidate.normalizedPath.toLowerCase();
+        return (
+          c === normalizedFilename ||
+          c.endsWith("\\" + normalizedFilename) ||
+          c.endsWith("/" + normalizedFilename)
+        );
+      });
+      if (entry) break;
+    } catch { /* skip unreadable archive */ }
+  }
+
+  if (!entry || !archiveBytes) {
+    browserMssStreamPlaybackRuntime.lastError =
+      `Stream file not found in any mounted archive: ${filename}`;
+    return;
+  }
+
+  // Extract WAV bytes from archive entry.
+  const wavBytes = archiveBytes.subarray(entry.offset, entry.offset + entry.size);
+
+  // Decode WAV payload (PCM or IMA ADPCM) — reuses the same path as sample playback.
+  let decoded;
+  try {
+    decoded = decodeAudioWavPayload(wavBytes);
+  } catch (err) {
+    browserMssStreamPlaybackRuntime.lastError =
+      `Failed to decode stream WAV: ${err?.message ?? String(err)}`;
+    return;
+  }
+
+  const decodedFrames = Math.floor(decoded.samples.length / decoded.info.channels);
+
+  // Build audio graph: source → gain → music bus.
+  const source = context.createBufferSource();
+  const gain = context.createGain();
+  source.buffer = createWebAudioBufferFromDecoded(context, {
+    info: decoded.info,
+    samples: decoded.samples,
+    decodedFrames,
+  });
+  // Music streams loop by default; honour loopCount > 1.
+  source.loop = loopCount < 0 || loopCount > 1;
+  gain.gain.value = volume;
+  source.connect(gain);
+  gain.connect(busNode);
+  source.start(0);
+
+  // Mirror the sample path's onended cleanup so non-looping streams
+  // are removed from activeSources and musicSourceActive is updated.
+  source.onended = () => {
+    try {
+      source.disconnect();
+    } catch { /* already disconnected */ }
+    browserMssStreamPlaybackRuntime.activeSources.delete(handle);
+    browserMssStreamPlaybackRuntime.ended += 1;
+    browserMssStreamPlaybackRuntime.musicSourceActive =
+      browserMssStreamPlaybackRuntime.activeSources.size > 0;
+    browserMssStreamPlaybackRuntime.eventLog.push({
+      handle,
+      phase: "completed",
+      callback: "AudioBufferSourceNode.onended",
+      order: browserMssStreamPlaybackRuntime.ended,
+    });
+    browserMssStreamPlaybackRuntime.lastError = null;
+  };
+
+  browserMssStreamPlaybackRuntime.activeSources.set(handle, { source, gain });
+  browserMssStreamPlaybackRuntime.musicSourceActive = true;
 }
 
 function cncPortMssStreamStop(payload) {
   const handle = Number(payload?.handle ?? 0);
   browserMssStreamPlaybackRuntime.stopped += 1;
   browserMssStreamPlaybackRuntime.eventLog.push({ handle, phase: "AIL_close_stream" });
+  // Cancel in-flight async start if this stop races ahead of it.
+  const entry = browserMssStreamPlaybackRuntime.pendingStarts?.get(handle);
+  if (entry) {
+    entry.cancelled = true;
+    browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
+  }
   try {
-    const entry = browserMssStreamPlaybackRuntime.activeSources.get(handle);
-    if (entry) {
-      entry.source.stop();
+    const active = browserMssStreamPlaybackRuntime.activeSources.get(handle);
+    if (active) {
+      active.source.stop();
       browserMssStreamPlaybackRuntime.activeSources.delete(handle);
     }
   } catch { /* already ended */ }
+  if (browserMssStreamPlaybackRuntime.activeSources.size === 0) {
+    browserMssStreamPlaybackRuntime.musicSourceActive = false;
+  }
   return true;
 }
 
@@ -3530,6 +3669,7 @@ function updateD3D8TextureSummary() {
   }
   harnessState.graphics = {
     ...harnessState.graphics,
+    browserFboIncompleteCount: browser_fbo_incomplete_count,
     d3d8Textures: {
       creates: d3d8TextureStats.creates,
       updates: d3d8TextureStats.updates,
@@ -3621,6 +3761,9 @@ function bindD3D8Framebuffer(payload = {}) {
 		return 0;
 	}
 	const colorTextureId = Number(payload.colorTextureId ?? 0) >>> 0;
+	// NOTE: depthTextureId is intentionally unused — depth is always provided via
+	// an internal renderbuffer. This is a known limitation pending depth-texture
+	// attachment support. TODO: implement depth texture attachment.
 	const depthTextureId = Number(payload.depthTextureId ?? 0) >>> 0;
 	const width = Number(payload.width ?? 0) >>> 0;
 	const height = Number(payload.height ?? 0) >>> 0;
@@ -3696,6 +3839,7 @@ function bindD3D8Framebuffer(payload = {}) {
 
 		const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
 		if (status !== gl.FRAMEBUFFER_COMPLETE) {
+			browser_fbo_incomplete_count += 1;
 			const statusName = status === gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT
 				? 'INCOMPLETE_ATTACHMENT'
 				: status === gl.FRAMEBUFFER_MISSING_ATTACHMENT
@@ -4100,13 +4244,16 @@ function releaseD3D8Texture(payload = {}) {
     }
   }
   gl.deleteTexture(resource.texture);
-  d3d8Textures.delete(id);
-  d3d8TextureStats.releases += 1;
   if (releasedBindings.length > 0) {
     d3d8TextureStats.releaseUnbinds += releasedBindings.length;
     d3d8TextureStats.lastReleaseUnbind = { id, stages: releasedBindings };
   }
   d3d8TextureStats.lastRelease = { id, type: resource.type || "2d", depth: resource.depth ?? 1, releasedBindings };
+  // Release FBO + depth renderbuffer if one was created for this texture
+  const fb = d3d8Framebuffers.get(id);
+  if (fb) { gl.deleteFramebuffer(fb.fbo); if (fb.depthRenderbuffer) gl.deleteRenderbuffer(fb.depthRenderbuffer); d3d8Framebuffers.delete(id); }
+  d3d8Textures.delete(id);
+  d3d8TextureStats.releases += 1;
   updateD3D8TextureSummary();
   return 1;
 }
@@ -7999,6 +8146,7 @@ function snapshotState() {
     browserAudioRuntime: summarizeBrowserAudioRuntime(),
     browserAudioMixerRuntime: summarizeBrowserAudioMixerRuntime(),
     browserMssSamplePlaybackRuntime: summarizeBrowserMssSamplePlaybackRuntime(),
+    browserMssStreamPlaybackRuntime: summarizeBrowserMssStreamPlaybackRuntime(),
     browserAudioLiveEventRuntime: summarizeBrowserAudioLiveEventRuntime(),
     browserAudioRequestPathRuntime: summarizeBrowserAudioRequestPathRuntime(),
     browserNetworkRelayRuntime: summarizeBrowserNetworkRelayRuntime(),
