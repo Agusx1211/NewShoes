@@ -291,6 +291,7 @@ const harnessState = {
     contextLost: false,
     drawingBufferWidth: canvas.width,
     drawingBufferHeight: canvas.height,
+    lastD3D8StateHash: 0,
   },
   originalEngineLinked: false,
   originalCoreProbe: null,
@@ -3757,6 +3758,8 @@ function createD3D8Texture(payload = {}) {
 }
 
 function bindD3D8Framebuffer(payload = {}) {
+	// Reset state hash: framebuffer/viewport change outside the draw path.
+	harnessState.graphics.lastD3D8StateHash = 0;
 	if (!gl) {
 		return 0;
 	}
@@ -4428,6 +4431,8 @@ function floatVectorApproximatelyEqual(left, right, tolerance = 0.00001) {
 }
 
 function paintCanvasRgba(rgba) {
+  // Reset state hash: clear changes GL state outside the draw path.
+  harnessState.graphics.lastD3D8StateHash = 0;
   syncCanvasSize();
   if (gl) {
     gl.clearColor(rgba[0] / 255, rgba[1] / 255, rgba[2] / 255, rgba[3] / 255);
@@ -4462,6 +4467,8 @@ function clearCanvas(payload = {}) {
 }
 
 function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
+  // Reset state hash: clear changes GL state outside the draw path.
+  harnessState.graphics.lastD3D8StateHash = 0;
   const clearFlags = flags >>> 0;
   const rgba = [
     clampColorByte(red, 0),
@@ -6754,38 +6761,12 @@ function paintD3D8DrawIndexed(payload = {}) {
       vertexStride >= 12 && indexCount > 0 && (indexSize === 2 || indexSize === 4)) {
     const bridgeProgram = ensureD3D8DrawProgram();
     gl.useProgram(bridgeProgram.program);
-    appliedRenderState = applyD3D8RenderState(renderState, {
-      invertCullWinding: false,
-    });
-    appliedRenderState.clipPlanes = d3d8ClipPlaneInfo(renderState, clipPlanes);
-    appliedRenderState.lighting = {
-      ...appliedRenderState.lighting,
-      shaderEnabled: appliedRenderState.lighting.enabled && fixedFunctionLights.length > 0,
-      normalTransform: {
-        source: useTransforms ? "inverseTransposeWorld" : "attribute",
-        inverseTransposeWorld: Boolean(useTransforms),
-        normalizeNormals: renderState.normalizeNormals !== 0,
-      },
-      viewDirection: {
-        source: renderState.localViewer !== 0 ? "cameraRelative" : "orthogonal",
-        localViewer: renderState.localViewer !== 0,
-      },
-      specular: {
-        enabled: renderState.specularEnable !== 0,
-        material: material.specular.slice(),
-        power: material.power,
-        source: renderState.specularMaterialSource,
-        sourceName: d3dMaterialSourceName(renderState.specularMaterialSource),
-      },
-      fixedFunctionLightSupported: fixedFunctionLights.length > 0,
-      fixedFunctionLightCount: fixedFunctionLights.length,
-      fixedFunctionLights,
-      directionalLightSupported: directionalLights.length > 0,
-      directionalLightCount: directionalLights.length,
-      directionalLights,
-      firstDirectionalLight,
-    };
-    const fillModeDraw = createD3D8FillModeDrawInfo(
+    const stateHash = Number(payload.stateHash ?? 0) >>> 0;
+    const stateUnchanged = stateHash === (harnessState.graphics.lastD3D8StateHash ?? 0);
+    let fillModeDraw, shadeModeDraw;
+    // Per-draw geometry setup: ALWAYS executed (not skippable — geometry changes
+    // every draw even when render state is identical).
+    fillModeDraw = createD3D8FillModeDrawInfo(
       renderState,
       payload.primitiveType,
       indexResource,
@@ -6799,7 +6780,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         transforms: useTransforms ? { world, view, projection } : null,
       },
     );
-    const shadeModeDraw = createD3D8ShadeModeDrawInfo(
+    shadeModeDraw = createD3D8ShadeModeDrawInfo(
       renderState,
       payload.primitiveType,
       indexResource,
@@ -6851,6 +6832,63 @@ function paintD3D8DrawIndexed(payload = {}) {
       gl.disableVertexAttribArray(bridgeProgram.texCoord1);
       gl.vertexAttrib2f(bridgeProgram.texCoord1, 0, 0);
     }
+    // Per-draw texture binding: ALWAYS executed (texture handles are NOT in
+    // the state hash — same render state can draw with different textures).
+    if (canSampleTexture0) {
+      const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, texture0Resource.texture);
+      appliedTexture0Sampler = applyD3D8TextureSamplerToBoundTexture(
+        0,
+        renderState.textureStages[0],
+        texture0Resource,
+      );
+      gl.activeTexture(previousActiveTexture);
+    }
+    if (canSampleTexture1) {
+      const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, texture1Resource.texture);
+      appliedTexture1Sampler = applyD3D8TextureSamplerToBoundTexture(
+        1,
+        renderState.textureStages[1],
+        texture1Resource,
+      );
+      gl.activeTexture(previousActiveTexture);
+    }
+    // Per-draw GL state application: skip when render state hash is unchanged.
+    if (!stateUnchanged) {
+    appliedRenderState = applyD3D8RenderState(renderState, {
+      invertCullWinding: false,
+    });
+    appliedRenderState.clipPlanes = d3d8ClipPlaneInfo(renderState, clipPlanes);
+    appliedRenderState.lighting = {
+      ...appliedRenderState.lighting,
+      shaderEnabled: appliedRenderState.lighting.enabled && fixedFunctionLights.length > 0,
+      normalTransform: {
+        source: useTransforms ? "inverseTransposeWorld" : "attribute",
+        inverseTransposeWorld: Boolean(useTransforms),
+        normalizeNormals: renderState.normalizeNormals !== 0,
+      },
+      viewDirection: {
+        source: renderState.localViewer !== 0 ? "cameraRelative" : "orthogonal",
+        localViewer: renderState.localViewer !== 0,
+      },
+      specular: {
+        enabled: renderState.specularEnable !== 0,
+        material: material.specular.slice(),
+        power: material.power,
+        source: renderState.specularMaterialSource,
+        sourceName: d3dMaterialSourceName(renderState.specularMaterialSource),
+      },
+      fixedFunctionLightSupported: fixedFunctionLights.length > 0,
+      fixedFunctionLightCount: fixedFunctionLights.length,
+      fixedFunctionLights,
+      directionalLightSupported: directionalLights.length > 0,
+      directionalLightCount: directionalLights.length,
+      directionalLights,
+      firstDirectionalLight,
+    };
     gl.uniform1f(bridgeProgram.scale, 1.0);
     gl.uniform1i(bridgeProgram.useTransforms, useTransforms ? 1 : 0);
     if (bridgeProgram.depthBias) {
@@ -7091,28 +7129,6 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.stage1AlphaArg2) {
       gl.uniform1i(bridgeProgram.stage1AlphaArg2, renderState.textureStages[1].alphaArg2);
     }
-    if (canSampleTexture0) {
-      const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, texture0Resource.texture);
-      appliedTexture0Sampler = applyD3D8TextureSamplerToBoundTexture(
-        0,
-        renderState.textureStages[0],
-        texture0Resource,
-      );
-      gl.activeTexture(previousActiveTexture);
-    }
-    if (canSampleTexture1) {
-      const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, texture1Resource.texture);
-      appliedTexture1Sampler = applyD3D8TextureSamplerToBoundTexture(
-        1,
-        renderState.textureStages[1],
-        texture1Resource,
-      );
-      gl.activeTexture(previousActiveTexture);
-    }
     if (bridgeProgram.alphaTestEnabled) {
       gl.uniform1i(bridgeProgram.alphaTestEnabled, appliedRenderState.alphaTest.enabled ? 1 : 0);
     }
@@ -7137,6 +7153,8 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.fogEnd) {
       gl.uniform1f(bridgeProgram.fogEnd, appliedRenderState.fog.end);
     }
+    harnessState.graphics.lastD3D8StateHash = stateHash;
+    } // end if (!stateUnchanged)
     const temporaryIndices = fillModeDraw.lineIndices ?? shadeModeDraw.triangleIndices ?? null;
     let temporaryIndexBuffer = null;
     let restoreProvokingVertex = false;

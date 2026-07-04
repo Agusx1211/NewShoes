@@ -197,6 +197,7 @@ struct WasmD3D8ShimState
 	float last_draw_clip_planes[WASM_D3D8_CLIP_PLANE_COUNT][4];
 	WasmD3D8DrawMaterial last_draw_material;
 	WasmD3D8DrawLight last_draw_lights[WASM_D3D8_LIGHT_COUNT];
+	UINT last_draw_state_hash;
 	UINT begin_scene_calls;
 	UINT end_scene_calls;
 	UINT clear_calls;
