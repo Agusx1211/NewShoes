@@ -329,8 +329,22 @@ try {
     console.error("[probe] running frames until player control...");
     const playerControlResult = await page.evaluate((maxFrames) => {
       return new Promise(async (resolve) => {
-        const pc = await window.CnCPort.rpc("realEngineFramesUntilPlayerControl", { maxFrames: maxFrames });
-        resolve(pc);
+        const BATCH_FRAMES = 50;
+        let totalFrames = 0;
+        let reached = false;
+        while (totalFrames < maxFrames && !reached) {
+          const batch = Math.min(BATCH_FRAMES, maxFrames - totalFrames);
+          await window.CnCPort.rpc("realEngineFrame", { frames: batch });
+          totalFrames += batch;
+          const s = await window.CnCPort.rpc("realEngineFrameSummary", { frames: batch });
+          const pc = s?.playerControl || {};
+          if (pc.introDone === true && pc.inputEnabled === true && pc.controlBarClickable === true &&
+              (pc.letterBoxed !== true || pc.letterBoxed === undefined) &&
+              (pc.fade === 0 || pc.fade === undefined)) {
+            reached = true;
+          }
+        }
+        resolve({ reachedPlayerControl: reached, frame: { framesCompleted: totalFrames } });
       });
     }, 3600);
 
