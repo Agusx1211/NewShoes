@@ -2580,11 +2580,27 @@ try {
     console.error("[interact] picked unit:", JSON.stringify(summary.unitPicked));
 
     // 3. Left-click to select: mouseMove → leftButtonDown → step → leftButtonUp.
+    // Click-select sequence. Win32Mouse->addWin32Event() only ENQUEUES a
+    // GameMessage into TheMessageStream; the queue is processed on the NEXT
+    // GameClient::update() frame: SelectionTranslator converts RAW mouse
+    // down→up into MSG_MOUSE_LEFT_CLICK, which is itself processed on the
+    // frame AFTER that. The original harness only stepped 1 frame between
+    // left-Down and left-Up (and zero frames after left-Up) so the click was
+    // never delivered to SelectionTranslator and selectCount stayed 0 — the
+    // pre-fix probe5 returned `selectCount: 0, moveDelta: 0`. Step a few
+    // frames on each side of every mouse-button transition so the click is
+    // guaranteed to run through Mouse → MessageStream → SelectionTranslator
+    // → TheInGameUI->selectDrawable / pickDrawable → MSG_CREATE_SELECTED_GROUP,
+    // and right-click through CommandTranslator issueMoveToLocationCommand →
+    // MSG_DO_MOVETO → Object::issueMoveToLocation.
+    const CLICK_FORWARD_FRAMES = 5;
     const clickPoint = { x: unit.screenPos.x, y: unit.screenPos.y };
     await postRealEngineMouseMessage(page, win32MouseMessages.mouseMove, clickPoint);
+    await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
     await postRealEngineMouseMessage(page, win32MouseMessages.leftButtonDown, clickPoint);
-    await runRealEngineFrames(page, 1);
+    await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
     await postRealEngineMouseMessage(page, win32MouseMessages.leftButtonUp, clickPoint);
+    await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
 
     // 4. querySelection → assert selectCount >= 1.
     const selBefore = await page.evaluate(() =>
@@ -2597,9 +2613,11 @@ try {
     const destX = Math.min(unit.screenPos.x + 200, viewportWidth - 1);
     const destPoint = { x: destX, y: unit.screenPos.y };
     await postRealEngineMouseMessage(page, win32MouseMessages.mouseMove, destPoint);
+    await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
     await postRealEngineMouseMessage(page, win32MouseMessages.rightButtonDown, destPoint);
-    await runRealEngineFrames(page, 1);
+    await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
     await postRealEngineMouseMessage(page, win32MouseMessages.rightButtonUp, destPoint);
+    await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
 
     // 6. Step ~90 frames.
     console.error("[interact] stepping 90 frames for unit to move...");
