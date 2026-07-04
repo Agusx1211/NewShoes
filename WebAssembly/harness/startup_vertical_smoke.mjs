@@ -17,6 +17,8 @@ const realInitScreenshot = resolve(screenshotDir, "startup-vertical-real-init.pn
 const realInitMenuClickScreenshot = resolve(screenshotDir, "startup-vertical-real-init-menu-click.png");
 const realInitCampaignStartScreenshot = resolve(screenshotDir, "startup-vertical-real-init-campaign-start.png");
 const realInitPostCampaignScreenshot = resolve(screenshotDir, "startup-vertical-real-init-post-campaign.png");
+const interactScreenshot = resolve(screenshotDir, "interact-milestone.png");
+const proveInteract = process.env.STARTUP_VERTICAL_PROVE_INTERACT === "1";
 const debugStartupVertical = process.env.STARTUP_VERTICAL_DEBUG === "1";
 const realInitOnly = process.env.STARTUP_VERTICAL_REAL_INIT_ONLY === "1";
 const postCampaignFrameCount = Number(process.env.STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES ?? 0);
@@ -508,6 +510,8 @@ const win32MouseMessages = Object.freeze({
   mouseMove: 0x0200,
   leftButtonDown: 0x0201,
   leftButtonUp: 0x0202,
+  rightButtonDown: 0x0204,
+  rightButtonUp: 0x0205,
 });
 
 const directInputKeys = Object.freeze({
@@ -2442,6 +2446,125 @@ try {
       realPostCampaignTextureDiagnostics);
   }
 
+  // Phase 2: select-and-move unit interactivity proof, gated by env flag.
+  const interactResult = proveInteract
+    ? await selectAndMoveUnit(realInitPage)
+    : null;
+
+  // ---- selectAndMoveUnit: Phase 2 interactivity proof ----
+  /**
+   * Reach player control, pick a local-owned non-structure unit on screen,
+   * left-click to select it, right-click a destination, step ~90 frames,
+   * verify the unit moved, and screenshot.
+   */
+  async function selectAndMoveUnit(page) {
+    const summary = {
+      reachedControl: false,
+      unitPicked: null,
+      selectCount: 0,
+      moveDelta: null,
+      screenshotPath: null,
+    };
+
+    // 1. Reach player control.
+    console.error("[interact] reaching player control...");
+    const pcResult = await runRealEngineFramesUntilPlayerControl(
+      page,
+      3600,
+      60,
+      false,
+      false
+    );
+    summary.reachedControl = pcResult.reachedPlayerControl === true;
+    console.error("[interact] reachedPlayerControl:", summary.reachedControl);
+    if (!summary.reachedControl) {
+      console.error("[interact] did not reach player control, aborting");
+      return summary;
+    }
+
+    // 2. queryDrawables → pick first local-owned, non-structure, non-hidden, on-screen unit.
+    const dr = await page.evaluate(() =>
+      window.CnCPort.rpc("queryDrawables"));
+    console.error("[interact] queryDrawables ok:", dr?.ok, "ready:", dr?.result?.ready);
+    const drawables = dr?.result?.drawables ?? [];
+    const localUnits = drawables.filter(
+      (d) => d.localOwned === true && d.structure === false && d.hidden === false && d.onScreen === true
+    );
+    console.error(
+      "[interact] drawables:", drawables.length,
+      "localOwned units:", drawables.filter((d) => d.localOwned).length,
+      "on-screen local units:", localUnits.length
+    );
+    if (localUnits.length === 0) {
+      // Log all localOwned units and their onScreen flags for debugging.
+      const localOwnedUnits = drawables.filter((d) => d.localOwned);
+      console.error(
+        "[interact] no on-screen local unit found; localOwned units and onScreen flags:",
+        JSON.stringify(localOwnedUnits.map((d) => ({ id: d.id, name: d.name, onScreen: d.onScreen, structure: d.structure, hidden: d.hidden })))
+      );
+      return summary;
+    }
+    const unit = localUnits[0];
+    summary.unitPicked = { id: unit.id, name: unit.name, screenPos: unit.screenPos, worldPos: unit.worldPos };
+    console.error("[interact] picked unit:", JSON.stringify(summary.unitPicked));
+
+    // 3. Left-click to select: mouseMove → leftButtonDown → step → leftButtonUp.
+    const clickPoint = { x: unit.screenPos.x, y: unit.screenPos.y };
+    await postRealEngineMouseMessage(page, win32MouseMessages.mouseMove, clickPoint);
+    await postRealEngineMouseMessage(page, win32MouseMessages.leftButtonDown, clickPoint);
+    await runRealEngineFrames(page, 1);
+    await postRealEngineMouseMessage(page, win32MouseMessages.leftButtonUp, clickPoint);
+
+    // 4. querySelection → assert selectCount >= 1.
+    const selBefore = await page.evaluate(() =>
+      window.CnCPort.rpc("querySelection"));
+    console.error("[interact] querySelection before move ok:", selBefore?.ok, "selectCount:", selBefore?.result?.selectCount);
+    summary.selectCount = selBefore?.result?.selectCount ?? 0;
+
+    // 5. Right-click a destination offset: +200px x on-screen, clamped.
+    const viewportWidth = 1024;
+    const destX = Math.min(unit.screenPos.x + 200, viewportWidth - 1);
+    const destPoint = { x: destX, y: unit.screenPos.y };
+    await postRealEngineMouseMessage(page, win32MouseMessages.mouseMove, destPoint);
+    await postRealEngineMouseMessage(page, win32MouseMessages.rightButtonDown, destPoint);
+    await runRealEngineFrames(page, 1);
+    await postRealEngineMouseMessage(page, win32MouseMessages.rightButtonUp, destPoint);
+
+    // 6. Step ~90 frames.
+    console.error("[interact] stepping 90 frames for unit to move...");
+    await runRealEngineFrames(page, 90);
+
+    // 7. queryDrawables again → find same unit by id → compute worldPos delta.
+    const dr2 = await page.evaluate(() =>
+      window.CnCPort.rpc("queryDrawables"));
+    const drawables2 = dr2?.result?.drawables ?? [];
+    const unit2 = drawables2.find((d) => d.id === unit.id);
+    if (unit2 && unit2.worldPos) {
+      const dx = unit2.worldPos.x - unit.worldPos.x;
+      const dy = unit2.worldPos.y - unit.worldPos.y;
+      const delta = Math.sqrt(dx * dx + dy * dy);
+      summary.moveDelta = delta;
+      console.error(
+        "[interact] unit moved delta:", delta,
+        "dx:", dx, "dy:", dy
+      );
+    } else {
+      console.error("[interact] unit not found in drawables2 or no worldPos");
+    }
+
+    // 8. Screenshot.
+    await mkdir(screenshotDir, { recursive: true });
+    await page.screenshot({ path: interactScreenshot });
+    summary.screenshotPath = interactScreenshot;
+    console.error("[interact] screenshot saved to", interactScreenshot);
+
+    return summary;
+  }
+
+  const interactResult = proveInteract
+    ? await selectAndMoveUnit(realInitPage)
+    : null;
+
   const audioFrontier =
     audioBootResult?.state?.originalEngineStartup?.deviceFactoryFrontier;
   console.log(JSON.stringify({
@@ -2536,6 +2659,7 @@ try {
       postCampaignDiagnosticFrames: realPostCampaignDiagnosticFrames,
       postCampaignCanvasProbe: realPostCampaignCanvasProbe,
       postCampaignScreenshot: realPostCampaignScreenshotPath,
+      interactResult: interactResult,
       screenshot: realInitScreenshot,
     },
   }));
