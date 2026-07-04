@@ -3696,8 +3696,15 @@ function bindD3D8Framebuffer(payload = {}) {
 
 		const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
 		if (status !== gl.FRAMEBUFFER_COMPLETE) {
+			const statusName = status === gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT
+				? 'INCOMPLETE_ATTACHMENT'
+				: status === gl.FRAMEBUFFER_MISSING_ATTACHMENT
+					? 'MISSING_ATTACHMENT'
+					: status === gl.FRAMEBUFFER_UNSUPPORTED
+						? 'UNSUPPORTED'
+						: 'UNKNOWN';
 			console.warn(
-				`FBO incomplete for texture ${colorTextureId}: status ${status}`
+				`FBO incomplete for texture ${colorTextureId}: status ${statusName} (0x${status.toString(16)})`
 			);
 			gl.deleteFramebuffer(fbo);
 			gl.deleteRenderbuffer(depthRenderbuffer);
