@@ -2446,10 +2446,8 @@ try {
       realPostCampaignTextureDiagnostics);
   }
 
-  // Phase 2: select-and-move unit interactivity proof, gated by env flag.
-  const interactResult = proveInteract
-    ? await selectAndMoveUnit(realInitPage)
-    : null;
+  // Phase 2: select-and-move unit interactivity proof (gated by env flag).
+  // The function def is below; the invocation is placed after it.
 
   // ---- selectAndMoveUnit: Phase 2 interactivity proof ----
   /**
@@ -2550,6 +2548,15 @@ try {
       );
     } else {
       console.error("[interact] unit not found in drawables2 or no worldPos");
+    }
+
+    // 7b. Load-bearing assertion: unit MUST have moved.
+    const MOVE_DELTA_THRESHOLD = 1.0; // world units — units move noticeably in 90 frames
+    if (summary.moveDelta == null || summary.moveDelta <= MOVE_DELTA_THRESHOLD) {
+      throw new Error(
+        `[interact] unit did not move: delta=${summary.moveDelta} (threshold=${MOVE_DELTA_THRESHOLD}); ` +
+        `unitPicked=${JSON.stringify(summary.unitPicked)}`
+      );
     }
 
     // 8. Screenshot.
