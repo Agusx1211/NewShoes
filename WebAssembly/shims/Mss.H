@@ -243,6 +243,9 @@ struct MSSBrowserStreamState
 	bool started = false;
 	bool paused = false;
 	bool resumed = false;
+	bool browser_playback_requested = false;
+	bool browser_playback_stopped = false;
+	bool browser_playback_ended = false;
 	HSTREAM handle = 0;
 	HDIGDRIVER driver = nullptr;
 	HSAMPLE sample = 0;
@@ -278,6 +281,10 @@ struct MSSBrowser3DSampleState
 	bool stopped = false;
 	bool resumed = false;
 	bool ended = false;
+	bool browser_playback_requested = false;
+	bool browser_playback_stopped = false;
+	bool browser_playback_ended = false;
+	bool browser_playback_released = false;
 	H3DSAMPLE handle = 0;
 	HPROVIDER provider = 0;
 	void *file_data = nullptr;
@@ -464,6 +471,168 @@ static inline S32 MSSBrowserNotifySampleRelease(HSAMPLE sample)
 	}, static_cast<unsigned int>(sample));
 #else
 	(void)sample;
+	return 0;
+#endif
+}
+
+// ---- 3D sample browser notifications (mirrors 2D sample path) ----
+
+static inline S32 MSSBrowserNotify3DSampleStart(const MSSBrowser3DSampleState &sample)
+{
+#ifdef __EMSCRIPTEN__
+	return EM_ASM_INT({
+		const bridge = typeof Module !== "undefined" ? Module.cncPortMss3DSampleStart : null;
+		if (typeof bridge !== "function" || typeof Module === "undefined" || !Module.HEAPU8) {
+			return 0;
+		}
+		try {
+			return bridge({
+				handle: $0 >>> 0,
+				dataPtr: $1 >>> 0,
+				volume: $2 | 0,
+				x: Number($3),
+				y: Number($4),
+				z: Number($5),
+				playbackRate: $6 | 0,
+				loopCount: $7 | 0,
+				minDistance: Number($8),
+				maxDistance: Number($9),
+			}, Module.HEAPU8) ? 1 : 0;
+		} catch (error) {
+			console.error("cncPortMss3DSampleStart failed", error);
+			return 0;
+		}
+	},
+		static_cast<unsigned int>(sample.handle),
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(sample.file_data)),
+		sample.volume,
+		static_cast<double>(sample.position.x),
+		static_cast<double>(sample.position.y),
+		static_cast<double>(sample.position.z),
+		sample.playback_rate,
+		sample.loop_count,
+		static_cast<double>(sample.min_distance),
+		static_cast<double>(sample.max_distance));
+#else
+	(void)sample;
+	return 0;
+#endif
+}
+
+static inline S32 MSSBrowserNotify3DSampleStop(H3DSAMPLE sample)
+{
+#ifdef __EMSCRIPTEN__
+	return EM_ASM_INT({
+		const bridge = typeof Module !== "undefined" ? Module.cncPortMss3DSampleStop : null;
+		if (typeof bridge !== "function") {
+			return 0;
+		}
+		try {
+			return bridge({ handle: $0 >>> 0 }) ? 1 : 0;
+		} catch (error) {
+			console.error("cncPortMss3DSampleStop failed", error);
+			return 0;
+		}
+	}, static_cast<unsigned int>(sample));
+#else
+	(void)sample;
+	return 0;
+#endif
+}
+
+static inline S32 MSSBrowserNotify3DSampleEnd(H3DSAMPLE sample)
+{
+#ifdef __EMSCRIPTEN__
+	return EM_ASM_INT({
+		const bridge = typeof Module !== "undefined" ? Module.cncPortMss3DSampleEnd : null;
+		if (typeof bridge !== "function") {
+			return 0;
+		}
+		try {
+			return bridge({ handle: $0 >>> 0 }) ? 1 : 0;
+		} catch (error) {
+			console.error("cncPortMss3DSampleEnd failed", error);
+			return 0;
+		}
+	}, static_cast<unsigned int>(sample));
+#else
+	(void)sample;
+	return 0;
+#endif
+}
+
+static inline S32 MSSBrowserNotify3DSampleRelease(H3DSAMPLE sample)
+{
+#ifdef __EMSCRIPTEN__
+	return EM_ASM_INT({
+		const bridge = typeof Module !== "undefined" ? Module.cncPortMss3DSampleRelease : null;
+		if (typeof bridge !== "function") {
+			return 0;
+		}
+		try {
+			return bridge({ handle: $0 >>> 0 }) ? 1 : 0;
+		} catch (error) {
+			console.error("cncPortMss3DSampleRelease failed", error);
+			return 0;
+		}
+	}, static_cast<unsigned int>(sample));
+#else
+	(void)sample;
+	return 0;
+#endif
+}
+
+// ---- Stream browser notifications ----
+
+static inline S32 MSSBrowserNotifyStreamStart(const MSSBrowserStreamState &stream)
+{
+#ifdef __EMSCRIPTEN__
+	return EM_ASM_INT({
+		const bridge = typeof Module !== "undefined" ? Module.cncPortMssStreamStart : null;
+		if (typeof bridge !== "function") {
+			return 0;
+		}
+		try {
+			return bridge({
+				handle: $0 >>> 0,
+				filename: UTF8ToString($1),
+				volume: $2 | 0,
+				loopCount: $3 | 0,
+				playbackRate: $4 | 0,
+			} ) ? 1 : 0;
+		} catch (error) {
+			console.error("cncPortMssStreamStart failed", error);
+			return 0;
+		}
+	},
+		static_cast<unsigned int>(stream.handle),
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(stream.filename)),
+		stream.volume,
+		stream.loop_count,
+		stream.playback_rate);
+#else
+	(void)stream;
+	return 0;
+#endif
+}
+
+static inline S32 MSSBrowserNotifyStreamStop(HSTREAM stream)
+{
+#ifdef __EMSCRIPTEN__
+	return EM_ASM_INT({
+		const bridge = typeof Module !== "undefined" ? Module.cncPortMssStreamStop : null;
+		if (typeof bridge !== "function") {
+			return 0;
+		}
+		try {
+			return bridge({ handle: $0 >>> 0 }) ? 1 : 0;
+		} catch (error) {
+			console.error("cncPortMssStreamStop failed", error);
+			return 0;
+		}
+	}, static_cast<unsigned int>(stream));
+#else
+	(void)stream;
 	return 0;
 #endif
 }
@@ -1165,6 +1334,7 @@ static inline void AIL_release_3D_sample_handle(H3DSAMPLE sample)
 {
 	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
 	if (state != nullptr) {
+		state->browser_playback_released = MSSBrowserNotify3DSampleRelease(sample) != 0;
 		state->released = true;
 		state->allocated = false;
 		state->status = SMP_DONE;
@@ -1195,6 +1365,7 @@ static inline void AIL_start_3D_sample(H3DSAMPLE sample)
 		state->resumed = false;
 		state->ended = false;
 		state->status = SMP_PLAYING;
+		state->browser_playback_requested = MSSBrowserNotify3DSampleStart(*state) != 0;
 	}
 }
 static inline void AIL_stop_3D_sample(H3DSAMPLE sample)
@@ -1203,6 +1374,7 @@ static inline void AIL_stop_3D_sample(H3DSAMPLE sample)
 	if (state != nullptr) {
 		state->stopped = true;
 		state->status = SMP_STOPPED;
+		state->browser_playback_stopped = MSSBrowserNotify3DSampleStop(sample) != 0;
 	}
 }
 static inline void AIL_resume_3D_sample(H3DSAMPLE sample)
@@ -1220,6 +1392,7 @@ static inline void AIL_end_3D_sample(H3DSAMPLE sample)
 	if (state != nullptr) {
 		state->ended = true;
 		state->status = SMP_DONE;
+		state->browser_playback_ended = MSSBrowserNotify3DSampleEnd(sample) != 0;
 		if (state->eos_callback != nullptr) {
 			state->eos_callback(sample);
 		}
@@ -1513,6 +1686,7 @@ static inline void AIL_start_stream(HSTREAM stream)
 		state->paused = false;
 		state->resumed = false;
 		state->status = SMP_PLAYING;
+		state->browser_playback_requested = MSSBrowserNotifyStreamStart(*state) != 0;
 	}
 }
 static inline void AIL_pause_stream(HSTREAM stream, S32 pause)
@@ -1535,6 +1709,7 @@ static inline void AIL_close_stream(HSTREAM stream)
 {
 	MSSBrowserStreamState *state = MSSBrowserFindStream(stream);
 	if (state != nullptr) {
+		state->browser_playback_stopped = MSSBrowserNotifyStreamStop(stream) != 0;
 		state->closed = true;
 		state->allocated = false;
 		state->status = SMP_DONE;
