@@ -157,11 +157,18 @@ residue and the next frontier.
       bisection history. Follow-up landed: real FBO-backed render targets merged
       (`deaeb7a`, ead0880/f253179) — but see the unverified-RTT item below.
 - [ ] **Fix `mac_verify.mjs` player-control probe — it can never report
-      success** (3 commits in, still broken): it reads `s?.playerControl` but
-      the RPC nests it as `frame.playerControl` (see bridge.js return shape and
-      `wasm_real_engine_init.cpp:2401`), so `reachedPlayerControl` is always
-      false; it also double-steps the engine by calling
-      `realEngineFrameSummary(frames)` after already stepping.
+      success** (3 commits in, still broken): (a) read-bug (`s?.playerControl`
+      vs `frame.playerControl`) and double-step (`realEngineFrameSummary`
+      after already stepping) — FIXED and merged. (b) NEW GAP: the probe boots
+      via `play.html?autostart=1` which lands on the shell-map MAIN MENU, then
+      frame-steps waiting for player control WITHOUT ever navigating
+      Single Player → USA → Easy to start the MD_USA01 campaign. No mission is
+      running, so `introDone`/`inputEnabled`/`controlBarClickable` never become
+      true. Fix options: add the campaign-start click sequence (mirroring
+      `startup_vertical_smoke.mjs`'s `clickRealEngineMenuButton` flow →
+      `doGameStart`/`MSG_NEW_GAME`) before the player-control frame loop, OR
+      run the startup-vertical interactivity proof on the Mac instead of
+      `mac_verify`'s player-control mode.
 - [ ] **RTT/FBO follow-ups from adversarial review** (landed unverified;
       TODO/DONE never updated by the track): (1) `releaseD3D8Texture` in
       bridge.js never deletes the `d3d8Framebuffers` entry — FBO + depth
