@@ -2838,18 +2838,20 @@ function decodeDxt1Block(blockBytes, target, width, height, x, y) {
   const g1 = scale6((c1 >> 5) & 0x3F);
   const b1 = scale5(c1 & 0x1F);
   
-  // Generate 4-color palette
+  // Generate color palette per BC1 spec:
+  // c0 > c1: 4-color mode: [c0, c1, (2*c0 + c1)/3, (c0 + 2*c1)/3]
+  // c0 <= c1: 3-color + transparent mode: [c0, c1, (c0 + c1)/2, transparent black]
   const colors = [
     { r: r0, g: g0, b: b0, a: 255 },
     { r: r1, g: g1, b: b1, a: 255 },
-    { r: c0 <= c1 ? Math.round((2 * r0 + r1) / 3) : Math.round((r0 + r1) / 2),
-      g: c0 <= c1 ? Math.round((2 * g0 + g1) / 3) : Math.round((g0 + g1) / 2),
-      b: c0 <= c1 ? Math.round((2 * b0 + b1) / 3) : Math.round((b0 + b1) / 2),
+    { r: c0 > c1 ? Math.round((2 * r0 + r1) / 3) : Math.round((r0 + r1) / 2),
+      g: c0 > c1 ? Math.round((2 * g0 + g1) / 3) : Math.round((g0 + g1) / 2),
+      b: c0 > c1 ? Math.round((2 * b0 + b1) / 3) : Math.round((b0 + b1) / 2),
       a: 255 },
-    { r: c0 <= c1 ? Math.round((r0 + 2 * r1) / 3) : 0,
-      g: c0 <= c1 ? Math.round((g0 + 2 * g1) / 3) : 0,
-      b: c0 <= c1 ? Math.round((b0 + 2 * b1) / 3) : 0,
-      a: c0 <= c1 ? 255 : 0 }
+    { r: c0 > c1 ? Math.round((r0 + 2 * r1) / 3) : 0,
+      g: c0 > c1 ? Math.round((g0 + 2 * g1) / 3) : 0,
+      b: c0 > c1 ? Math.round((b0 + 2 * b1) / 3) : 0,
+      a: c0 > c1 ? 255 : 0 }
   ];
   
   // Extract 2-bit indices (16 pixels, 2 bits each = 4 bytes)
@@ -2908,15 +2910,18 @@ function decodeDxt3Block(blockData, blockBytes, target, width, height, x, y) {
   const g1 = scale6((c1 >> 5) & 0x3F);
   const b1 = scale5(c1 & 0x1F);
   
+  // Generate color palette per BC1 spec:
+  // c0 > c1: 4-color mode: [c0, c1, (2*c0 + c1)/3, (c0 + 2*c1)/3]
+  // c0 <= c1: 3-color + transparent mode: [c0, c1, (c0 + c1)/2, transparent black]
   const colors = [
     { r: r0, g: g0, b: b0 },
     { r: r1, g: g1, b: b1 },
-    { r: c0 <= c1 ? Math.round((2 * r0 + r1) / 3) : Math.round((r0 + r1) / 2),
-      g: c0 <= c1 ? Math.round((2 * g0 + g1) / 3) : Math.round((g0 + g1) / 2),
-      b: c0 <= c1 ? Math.round((2 * b0 + b1) / 3) : Math.round((b0 + b1) / 2) },
-    { r: c0 <= c1 ? Math.round((r0 + 2 * r1) / 3) : 0,
-      g: c0 <= c1 ? Math.round((g0 + 2 * g1) / 3) : 0,
-      b: c0 <= c1 ? Math.round((b0 + 2 * b1) / 3) : 0 }
+    { r: c0 > c1 ? Math.round((2 * r0 + r1) / 3) : Math.round((r0 + r1) / 2),
+      g: c0 > c1 ? Math.round((2 * g0 + g1) / 3) : Math.round((g0 + g1) / 2),
+      b: c0 > c1 ? Math.round((2 * b0 + b1) / 3) : Math.round((b0 + b1) / 2) },
+    { r: c0 > c1 ? Math.round((r0 + 2 * r1) / 3) : 0,
+      g: c0 > c1 ? Math.round((g0 + 2 * g1) / 3) : 0,
+      b: c0 > c1 ? Math.round((b0 + 2 * b1) / 3) : 0 }
   ];
   
   // Extract color indices
@@ -2955,16 +2960,18 @@ function decodeDxt5Block(blockData, blockBytes, target, width, height, x, y) {
   const alphaIndices = blockBytes[2] | (blockBytes[3] << 8) | (blockBytes[4] << 16) | 
                       (blockBytes[5] << 24) | (blockBytes[6] << 32) | (blockBytes[7] << 40);
   
-  // Generate 8 alpha values
+  // Generate 8 alpha values per BC3 spec:
+  // alpha0 > alpha1: 8-value interpolation mode
+  // alpha0 <= alpha1: 6-value interpolation + 0 and 255 mode
   const alphaValues = [
     alpha0,
     alpha1,
-    alpha0 >= alpha1 ? Math.round((6 * alpha0 + alpha1) / 7) : Math.round((4 * alpha0 + alpha1) / 5),
-    alpha0 >= alpha1 ? Math.round((5 * alpha0 + 2 * alpha1) / 7) : Math.round((3 * alpha0 + 2 * alpha1) / 5),
-    alpha0 >= alpha1 ? Math.round((4 * alpha0 + 3 * alpha1) / 7) : Math.round((2 * alpha0 + 3 * alpha1) / 5),
-    alpha0 >= alpha1 ? Math.round((3 * alpha0 + 4 * alpha1) / 7) : Math.round((alpha0 + 4 * alpha1) / 5),
-    alpha0 >= alpha1 ? Math.round((2 * alpha0 + 5 * alpha1) / 7) : 0,
-    alpha0 >= alpha1 ? Math.round((alpha0 + 6 * alpha1) / 7) : 255
+    alpha0 > alpha1 ? Math.round((6 * alpha0 + alpha1) / 7) : Math.round((4 * alpha0 + alpha1) / 5),
+    alpha0 > alpha1 ? Math.round((5 * alpha0 + 2 * alpha1) / 7) : Math.round((3 * alpha0 + 2 * alpha1) / 5),
+    alpha0 > alpha1 ? Math.round((4 * alpha0 + 3 * alpha1) / 7) : Math.round((2 * alpha0 + 3 * alpha1) / 5),
+    alpha0 > alpha1 ? Math.round((3 * alpha0 + 4 * alpha1) / 7) : Math.round((alpha0 + 4 * alpha1) / 5),
+    alpha0 > alpha1 ? Math.round((2 * alpha0 + 5 * alpha1) / 7) : 0,
+    alpha0 > alpha1 ? Math.round((alpha0 + 6 * alpha1) / 7) : 255
   ];
   
   // Last 8 bytes: DXT1 color data
@@ -2982,15 +2989,18 @@ function decodeDxt5Block(blockData, blockBytes, target, width, height, x, y) {
   const g1 = scale6((c1 >> 5) & 0x3F);
   const b1 = scale5(c1 & 0x1F);
   
+  // Generate color palette per BC1 spec:
+  // c0 > c1: 4-color mode: [c0, c1, (2*c0 + c1)/3, (c0 + 2*c1)/3]
+  // c0 <= c1: 3-color + transparent mode: [c0, c1, (c0 + c1)/2, transparent black]
   const colors = [
     { r: r0, g: g0, b: b0 },
     { r: r1, g: g1, b: b1 },
-    { r: c0 <= c1 ? Math.round((2 * r0 + r1) / 3) : Math.round((r0 + r1) / 2),
-      g: c0 <= c1 ? Math.round((2 * g0 + g1) / 3) : Math.round((g0 + g1) / 2),
-      b: c0 <= c1 ? Math.round((2 * b0 + b1) / 3) : Math.round((b0 + b1) / 2) },
-    { r: c0 <= c1 ? Math.round((r0 + 2 * r1) / 3) : 0,
-      g: c0 <= c1 ? Math.round((g0 + 2 * g1) / 3) : 0,
-      b: c0 <= c1 ? Math.round((b0 + 2 * b1) / 3) : 0 }
+    { r: c0 > c1 ? Math.round((2 * r0 + r1) / 3) : Math.round((r0 + r1) / 2),
+      g: c0 > c1 ? Math.round((2 * g0 + g1) / 3) : Math.round((g0 + g1) / 2),
+      b: c0 > c1 ? Math.round((2 * b0 + b1) / 3) : Math.round((b0 + b1) / 2) },
+    { r: c0 > c1 ? Math.round((r0 + 2 * r1) / 3) : 0,
+      g: c0 > c1 ? Math.round((g0 + 2 * g1) / 3) : 0,
+      b: c0 > c1 ? Math.round((b0 + 2 * b1) / 3) : 0 }
   ];
   
   // Extract color indices
