@@ -299,7 +299,7 @@ EM_JS(void, wasm_d3d8_browser_texture_bind, (
 		id: texture_id >>> 0,
 	});
 });
-EM_JS(void, wasm_d3d8_browser_fbo_bind, (
+EM_JS(int, wasm_d3d8_browser_fbo_bind, (
 	unsigned int color_texture_id,
 	unsigned int depth_texture_id,
 	unsigned int width,
@@ -307,14 +307,14 @@ EM_JS(void, wasm_d3d8_browser_fbo_bind, (
 ), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8BindFramebuffer : null;
 	if (typeof bridge !== "function") {
-		return;
+		return 0;
 	}
-	bridge({
+	return bridge({
 		colorTextureId: color_texture_id >>> 0,
 		depthTextureId: depth_texture_id >>> 0,
 		width: width >>> 0,
 		height: height >>> 0,
-	});
+	}) | 0;
 });
 EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	int primitive_type,
@@ -1129,7 +1129,10 @@ void browser_fbo_bind(UINT color_texture_id, UINT depth_texture_id, UINT width, 
 	g_state.last_browser_fbo_depth_texture_id = depth_texture_id;
 	g_state.last_browser_fbo_width = width;
 	g_state.last_browser_fbo_height = height;
-	wasm_d3d8_browser_fbo_bind(color_texture_id, depth_texture_id, width, height);
+	int ok = wasm_d3d8_browser_fbo_bind(color_texture_id, depth_texture_id, width, height);
+	if (!ok) {
+		++g_state.browser_fbo_bind_failures;
+	}
 }
 
 void browser_texture_bind(UINT stage, UINT texture_id)
