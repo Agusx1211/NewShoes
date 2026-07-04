@@ -2394,12 +2394,21 @@ try {
         postCampaignFrameCount > 0 ? postCampaignFrameCount : 1)
       : null;
   const realPostCampaignPlayerControlFrames = shouldRunUntilPlayerControl
-    ? await runRealEngineFramesUntilPlayerControl(
-      realInitPage,
-      postCampaignFrameCount > 0 ? postCampaignFrameCount : 3600,
-      postCampaignFrameChunkCount,
-      postCampaignCompactChunks,
-      postCampaignLightweightFrames)
+    ? (() => {
+        await page.evaluate(() => {
+          if (window.__cncSetDiagLevel) window.__cncSetDiagLevel("lite");
+        });
+        const result = await runRealEngineFramesUntilPlayerControl(
+          realInitPage,
+          postCampaignFrameCount > 0 ? postCampaignFrameCount : 3600,
+          postCampaignFrameChunkCount,
+          postCampaignCompactChunks,
+          postCampaignLightweightFrames);
+        await page.evaluate(() => {
+          if (window.__cncSetDiagLevel) window.__cncSetDiagLevel("full");
+        });
+        return result;
+      })()
     : null;
   if (postCampaignExpectPlayerControl) {
     expect(realPostCampaignPlayerControlFrames?.reachedPlayerControl === true,
@@ -2466,6 +2475,9 @@ try {
 
     // 1. Reach player control.
     console.error("[interact] reaching player control...");
+    await page.evaluate(() => {
+      if (window.__cncSetDiagLevel) window.__cncSetDiagLevel("lite");
+    });
     const pcResult = await runRealEngineFramesUntilPlayerControl(
       page,
       3600,
@@ -2473,6 +2485,9 @@ try {
       false,
       false
     );
+    await page.evaluate(() => {
+      if (window.__cncSetDiagLevel) window.__cncSetDiagLevel("full");
+    });
     summary.reachedControl = pcResult.reachedPlayerControl === true;
     console.error("[interact] reachedPlayerControl:", summary.reachedControl);
     if (!summary.reachedControl) {
