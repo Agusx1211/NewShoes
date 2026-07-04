@@ -70,12 +70,12 @@ function sshLong(cmd, timeoutMs) {
   });
 }
 function rsync(src, dst, extra = "") {
-  return execSync(`rsync -az --delete ${extra} ${src} ${args.sshHost}:${dst}`, {
+  return execSync(`rsync -az ${extra} ${src} ${args.sshHost}:${dst}`, {
     encoding: "utf-8", stdio: "inherit", timeout: 300_000,
   });
 }
 function rsyncDryRun(src, dst, extra = "") {
-  return execSync(`rsync -az --delete --dry-run ${extra} ${src} ${args.sshHost}:${dst}`, {
+  return execSync(`rsync -az --dry-run ${extra} ${src} ${args.sshHost}:${dst}`, {
     encoding: "utf-8", stdio: "inherit", timeout: 30_000,
   });
 }
@@ -133,6 +133,14 @@ if (args.rsyncDryRun) {
       process.exit(1);
     }
     console.error("[mac-verify] RSYNC DRY-RUN: ok (would transfer local dist)");
+    // Also dry-run harness/ sync (no --delete to preserve Mac-side probe files)
+    const harnessSrc = join(WASM_ROOT, "harness/") + "/";
+    const harnessDst = join(args.macWorktree, "WebAssembly/harness/") + "/";
+    try { rsyncDryRun(harnessSrc, harnessDst); } catch (e) {
+      console.error(`[mac-verify] RSYNC DRY-RUN: fail — ${e.message.split("\n")[0]}`);
+      process.exit(1);
+    }
+    console.error("[mac-verify] RSYNC DRY-RUN: ok (would transfer local harness)");
   } else {
     try {
       const macFiles = ssh(`ls ${dst} 2>/dev/null | wc -l`);
@@ -152,6 +160,18 @@ if (localDistExists) {
     console.error("[mac-verify] step2: rsync ok");
   } catch (e) {
     console.error(`[mac-verify] ERROR: rsync failed — ${e.message.split("\n")[0]}`);
+    process.exit(1);
+  }
+  // Also sync harness/ so bridge.js / play.mjs match the synced dist.
+  // NO --delete: preserves Mac-side probe files (mac_verify_probe.mjs etc).
+  const harnessSrc = join(WASM_ROOT, "harness/") + "/";
+  const harnessDst = join(args.macWorktree, "WebAssembly/harness/") + "/";
+  console.error("[mac-verify] step2: rsyncing harness/ to Mac (no --delete)...");
+  try {
+    rsync(harnessSrc, harnessDst);
+    console.error("[mac-verify] step2: harness/ rsync ok");
+  } catch (e) {
+    console.error(`[mac-verify] ERROR: harness rsync failed — ${e.message.split("\n")[0]}`);
     process.exit(1);
   }
 } else {
