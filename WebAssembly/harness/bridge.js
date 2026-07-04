@@ -6832,6 +6832,30 @@ function paintD3D8DrawIndexed(payload = {}) {
       gl.disableVertexAttribArray(bridgeProgram.texCoord1);
       gl.vertexAttrib2f(bridgeProgram.texCoord1, 0, 0);
     }
+    // Per-draw texture binding: ALWAYS executed (texture handles are NOT in
+    // the state hash — same render state can draw with different textures).
+    if (canSampleTexture0) {
+      const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, texture0Resource.texture);
+      appliedTexture0Sampler = applyD3D8TextureSamplerToBoundTexture(
+        0,
+        renderState.textureStages[0],
+        texture0Resource,
+      );
+      gl.activeTexture(previousActiveTexture);
+    }
+    if (canSampleTexture1) {
+      const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, texture1Resource.texture);
+      appliedTexture1Sampler = applyD3D8TextureSamplerToBoundTexture(
+        1,
+        renderState.textureStages[1],
+        texture1Resource,
+      );
+      gl.activeTexture(previousActiveTexture);
+    }
     // Per-draw GL state application: skip when render state hash is unchanged.
     if (!stateUnchanged) {
     appliedRenderState = applyD3D8RenderState(renderState, {
@@ -7104,28 +7128,6 @@ function paintD3D8DrawIndexed(payload = {}) {
     }
     if (bridgeProgram.stage1AlphaArg2) {
       gl.uniform1i(bridgeProgram.stage1AlphaArg2, renderState.textureStages[1].alphaArg2);
-    }
-    if (canSampleTexture0) {
-      const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, texture0Resource.texture);
-      appliedTexture0Sampler = applyD3D8TextureSamplerToBoundTexture(
-        0,
-        renderState.textureStages[0],
-        texture0Resource,
-      );
-      gl.activeTexture(previousActiveTexture);
-    }
-    if (canSampleTexture1) {
-      const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, texture1Resource.texture);
-      appliedTexture1Sampler = applyD3D8TextureSamplerToBoundTexture(
-        1,
-        renderState.textureStages[1],
-        texture1Resource,
-      );
-      gl.activeTexture(previousActiveTexture);
     }
     if (bridgeProgram.alphaTestEnabled) {
       gl.uniform1i(bridgeProgram.alphaTestEnabled, appliedRenderState.alphaTest.enabled ? 1 : 0);
