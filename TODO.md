@@ -196,13 +196,25 @@ residue and the next frontier.
       first official multiplayer key, selected game-options map, and the exact
       point where `getDefaultOfficialMap()`/`loadMap("")` goes wrong, then fix
       that real path without inventing map data.
-- [ ] Add browser depth-texture attachment support for D3D8 render targets when
-      `SetRenderTarget` receives a texture-owned depth/stencil surface. The
-      current `CreateDepthStencilSurface` path is harness-proven with an
-      internal depth renderbuffer, FBO cleanup, FBO bind-failure propagation,
-      offscreen RTT pixel sampling, restored backbuffer pixels, zero leaked
-      browser FBOs, and zero incomplete-FBO events; `depthTextureId` is still
-      accepted by the bridge but ignored.
+- [ ] **Fix the MD_USA01 first-scene air/water/ship ordering regression**:
+      the helicopter is above the water but appears behind the battleship.
+      Capture the scene with harness screenshot + draw-history/depth-state
+      evidence, determine whether the fault is pass order, depth writes/tests,
+      water/RTT state, alpha sorting, or projection/depth-range mapping, then
+      add a gate proving the helicopter/ship/water ordering is correct.
+- [ ] **Restore visible explosion/weapon impact effects through the real
+      particle/effect path**: current gameplay has missing explosions. Prove
+      the original weapon impact triggers a real particle/system draw and a
+      visible nonblank effect in the harness; do not substitute fake effects.
+- [ ] **Fix white/broken foot-soldier textures**: infantry render as mostly
+      white. Diagnose the real W3D material/texture/shader path for infantry
+      models (texture lookup, DXT/decode, UV/FVF/skinning, stage state, and
+      lighting/material fallback), then add a harness screenshot/state proof
+      that soldiers render with their intended textures.
+- [ ] Add remaining D3D8 depth/stencil texture formats if runtime evidence
+      needs them. The WebGL2 bridge now supports texture-owned D16,
+      D16_LOCKABLE, D24X8, and D24S8 depth attachments; D15S1, D24X4S4, and
+      D32 currently fail explicitly instead of binding an incorrect FBO.
 - [ ] **`harness/smoke.mjs` (EXPECT_WASM=1) has been red since e97628f**
       (cursor-CSS probe, pre-dating the swarm window) and stayed red through
       nine merges — the full regression lane is not being run by anyone. Fix

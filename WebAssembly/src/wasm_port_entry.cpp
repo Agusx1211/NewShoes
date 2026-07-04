@@ -4921,6 +4921,252 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_render_target()
 	return g_d3d8_probe_json.c_str();
 }
 
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_depth_texture_render_target()
+{
+	wasm_d3d8_reset_state();
+
+	const D3DCOLOR render_target_color = 0xff443322UL;
+	const D3DCOLOR backbuffer_color = 0xff102030UL;
+	unsigned char texture_sample[4] = {};
+	const unsigned char expected_texture_sample[4] = {68, 51, 34, 255};
+	const unsigned char expected_backbuffer_sample[4] = {16, 32, 48, 255};
+
+	IDirect3D8 *d3d = Direct3DCreate8(D3D_SDK_VERSION);
+	IDirect3DDevice8 *device = nullptr;
+	IDirect3DTexture8 *render_texture = nullptr;
+	IDirect3DTexture8 *depth_texture = nullptr;
+	IDirect3DSurface8 *render_surface = nullptr;
+	IDirect3DSurface8 *depth_surface = nullptr;
+	IDirect3DSurface8 *default_render_surface = nullptr;
+	IDirect3DSurface8 *default_depth_surface = nullptr;
+	bool ok = d3d != nullptr;
+	UINT render_texture_id = 0;
+	UINT depth_texture_id = 0;
+	UINT first_fbo_color_texture_id = 0;
+	UINT first_fbo_depth_texture_id = 0;
+	UINT first_fbo_width = 0;
+	UINT first_fbo_height = 0;
+	HRESULT create_result = E_FAIL;
+	HRESULT get_default_rt_result = E_FAIL;
+	HRESULT get_default_depth_result = E_FAIL;
+	HRESULT render_texture_create_result = E_FAIL;
+	HRESULT depth_texture_create_result = E_FAIL;
+	HRESULT get_render_surface_result = E_FAIL;
+	HRESULT get_depth_surface_result = E_FAIL;
+	HRESULT set_render_target_result = E_FAIL;
+	HRESULT clear_render_target_result = E_FAIL;
+	HRESULT restore_result = E_FAIL;
+	HRESULT clear_backbuffer_result = E_FAIL;
+	HRESULT present_result = E_FAIL;
+	int sample_result = 0;
+
+	if (d3d != nullptr) {
+		D3DPRESENT_PARAMETERS parameters = {};
+		parameters.BackBufferWidth = 800;
+		parameters.BackBufferHeight = 600;
+		parameters.BackBufferFormat = D3DFMT_A8R8G8B8;
+		parameters.BackBufferCount = 1;
+		parameters.MultiSampleType = D3DMULTISAMPLE_NONE;
+		parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
+		parameters.Windowed = TRUE;
+		parameters.EnableAutoDepthStencil = TRUE;
+		parameters.AutoDepthStencilFormat = D3DFMT_D24S8;
+
+		create_result = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr,
+			D3DCREATE_SOFTWARE_VERTEXPROCESSING, &parameters, &device);
+		ok = ok && SUCCEEDED(create_result) && device != nullptr;
+	}
+
+	if (device != nullptr) {
+		get_default_rt_result = device->GetRenderTarget(&default_render_surface);
+		get_default_depth_result = device->GetDepthStencilSurface(&default_depth_surface);
+		render_texture_create_result = device->CreateTexture(64, 32, 1, D3DUSAGE_RENDERTARGET,
+			D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &render_texture);
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		render_texture_id = state != nullptr ? state->last_browser_texture_id : 0;
+		depth_texture_create_result = device->CreateTexture(64, 32, 1, D3DUSAGE_DEPTHSTENCIL,
+			D3DFMT_D24S8, D3DPOOL_DEFAULT, &depth_texture);
+		state = wasm_d3d8_get_state();
+		depth_texture_id = state != nullptr ? state->last_browser_texture_id : 0;
+		ok = ok &&
+			SUCCEEDED(get_default_rt_result) &&
+			SUCCEEDED(get_default_depth_result) &&
+			SUCCEEDED(render_texture_create_result) &&
+			SUCCEEDED(depth_texture_create_result) &&
+			render_texture != nullptr &&
+			depth_texture != nullptr &&
+			render_texture_id != 0 &&
+			depth_texture_id != 0 &&
+			render_texture_id != depth_texture_id;
+	}
+
+	if (render_texture != nullptr) {
+		get_render_surface_result = render_texture->GetSurfaceLevel(0, &render_surface);
+		ok = ok && SUCCEEDED(get_render_surface_result) && render_surface != nullptr;
+	}
+
+	if (depth_texture != nullptr) {
+		get_depth_surface_result = depth_texture->GetSurfaceLevel(0, &depth_surface);
+		ok = ok && SUCCEEDED(get_depth_surface_result) && depth_surface != nullptr;
+	}
+
+	if (device != nullptr && render_surface != nullptr && depth_surface != nullptr) {
+		set_render_target_result = device->SetRenderTarget(render_surface, depth_surface);
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		if (state != nullptr) {
+			first_fbo_color_texture_id = state->last_browser_fbo_color_texture_id;
+			first_fbo_depth_texture_id = state->last_browser_fbo_depth_texture_id;
+			first_fbo_width = state->last_browser_fbo_width;
+			first_fbo_height = state->last_browser_fbo_height;
+		}
+		clear_render_target_result = device->Clear(0, nullptr,
+			D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL,
+			render_target_color, 0.25f, 7);
+		ok = ok &&
+			SUCCEEDED(set_render_target_result) &&
+			SUCCEEDED(clear_render_target_result) &&
+			first_fbo_color_texture_id == render_texture_id &&
+			first_fbo_depth_texture_id == depth_texture_id &&
+			first_fbo_width == 64 &&
+			first_fbo_height == 32;
+	}
+
+	if (device != nullptr && default_render_surface != nullptr && default_depth_surface != nullptr) {
+		restore_result = device->SetRenderTarget(default_render_surface, default_depth_surface);
+		clear_backbuffer_result = device->Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
+			backbuffer_color, 1.0f, 0);
+		present_result = device->Present(nullptr, nullptr, nullptr, nullptr);
+		ok = ok &&
+			SUCCEEDED(restore_result) &&
+			SUCCEEDED(clear_backbuffer_result) &&
+			SUCCEEDED(present_result);
+	}
+
+	if (render_texture_id != 0) {
+		sample_result = wasm_d3d8_browser_sample_texture_center(render_texture_id, texture_sample);
+		ok = ok &&
+			sample_result == 1 &&
+			texture_sample[0] == expected_texture_sample[0] &&
+			texture_sample[1] == expected_texture_sample[1] &&
+			texture_sample[2] == expected_texture_sample[2] &&
+			texture_sample[3] == expected_texture_sample[3];
+	}
+
+	if (default_depth_surface != nullptr) {
+		default_depth_surface->Release();
+	}
+	if (default_render_surface != nullptr) {
+		default_render_surface->Release();
+	}
+	if (depth_surface != nullptr) {
+		depth_surface->Release();
+	}
+	if (render_surface != nullptr) {
+		render_surface->Release();
+	}
+	if (depth_texture != nullptr) {
+		depth_texture->Release();
+	}
+	if (render_texture != nullptr) {
+		render_texture->Release();
+	}
+	if (device != nullptr) {
+		device->Release();
+	}
+	if (d3d != nullptr) {
+		d3d->Release();
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	ok = ok &&
+		state != nullptr &&
+		state->direct3d_create_calls == 1 &&
+		state->create_device_calls == 1 &&
+		state->create_texture_calls == 2 &&
+		state->browser_texture_create_calls == 2 &&
+		state->browser_texture_release_calls == 2 &&
+		state->browser_fbo_bind_calls == 2 &&
+		state->browser_fbo_bind_failures == 0 &&
+		state->clear_calls == 2 &&
+		state->present_calls == 1 &&
+		state->last_browser_fbo_color_texture_id == 0 &&
+		state->last_browser_fbo_depth_texture_id == 0 &&
+		state->last_browser_fbo_width == 0 &&
+		state->last_browser_fbo_height == 0 &&
+		state->last_clear_color == backbuffer_color;
+
+	char buffer[2600];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_d3d8_depth_texture_render_target_probe\","
+		"\"ok\":%s,"
+		"\"renderTextureId\":%u,"
+		"\"depthTextureId\":%u,"
+		"\"results\":{\"create\":%ld,\"getDefaultRenderTarget\":%ld,"
+		"\"getDefaultDepthStencil\":%ld,\"renderTextureCreate\":%ld,"
+		"\"depthTextureCreate\":%ld,\"getRenderSurface\":%ld,"
+		"\"getDepthSurface\":%ld,\"setRenderTarget\":%ld,"
+		"\"clearRenderTarget\":%ld,\"restore\":%ld,\"clearBackbuffer\":%ld,"
+		"\"present\":%ld,\"sample\":%d},"
+		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,"
+		"\"createTexture\":%u,\"browserTextureCreate\":%u,"
+		"\"browserTextureRelease\":%u,\"browserFboBind\":%u,"
+		"\"browserFboBindFailures\":%u,\"clear\":%u,\"present\":%u},"
+		"\"firstBrowserFbo\":{\"colorTextureId\":%u,\"depthTextureId\":%u,"
+		"\"width\":%u,\"height\":%u},"
+		"\"lastBrowserFbo\":{\"colorTextureId\":%u,\"depthTextureId\":%u,"
+		"\"width\":%u,\"height\":%u},"
+		"\"textureSample\":[%u,%u,%u,%u],"
+		"\"expectedTextureCenter\":[%u,%u,%u,%u],"
+		"\"expectedBackbufferCenter\":[%u,%u,%u,%u]}",
+		ok ? "true" : "false",
+		render_texture_id,
+		depth_texture_id,
+		static_cast<long>(create_result),
+		static_cast<long>(get_default_rt_result),
+		static_cast<long>(get_default_depth_result),
+		static_cast<long>(render_texture_create_result),
+		static_cast<long>(depth_texture_create_result),
+		static_cast<long>(get_render_surface_result),
+		static_cast<long>(get_depth_surface_result),
+		static_cast<long>(set_render_target_result),
+		static_cast<long>(clear_render_target_result),
+		static_cast<long>(restore_result),
+		static_cast<long>(clear_backbuffer_result),
+		static_cast<long>(present_result),
+		sample_result,
+		state != nullptr ? state->direct3d_create_calls : 0,
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_texture_calls : 0,
+		state != nullptr ? state->browser_texture_create_calls : 0,
+		state != nullptr ? state->browser_texture_release_calls : 0,
+		state != nullptr ? state->browser_fbo_bind_calls : 0,
+		state != nullptr ? state->browser_fbo_bind_failures : 0,
+		state != nullptr ? state->clear_calls : 0,
+		state != nullptr ? state->present_calls : 0,
+		first_fbo_color_texture_id,
+		first_fbo_depth_texture_id,
+		first_fbo_width,
+		first_fbo_height,
+		state != nullptr ? state->last_browser_fbo_color_texture_id : 0,
+		state != nullptr ? state->last_browser_fbo_depth_texture_id : 0,
+		state != nullptr ? state->last_browser_fbo_width : 0,
+		state != nullptr ? state->last_browser_fbo_height : 0,
+		static_cast<unsigned int>(texture_sample[0]),
+		static_cast<unsigned int>(texture_sample[1]),
+		static_cast<unsigned int>(texture_sample[2]),
+		static_cast<unsigned int>(texture_sample[3]),
+		static_cast<unsigned int>(expected_texture_sample[0]),
+		static_cast<unsigned int>(expected_texture_sample[1]),
+		static_cast<unsigned int>(expected_texture_sample[2]),
+		static_cast<unsigned int>(expected_texture_sample[3]),
+		static_cast<unsigned int>(expected_backbuffer_sample[0]),
+		static_cast<unsigned int>(expected_backbuffer_sample[1]),
+		static_cast<unsigned int>(expected_backbuffer_sample[2]),
+		static_cast<unsigned int>(expected_backbuffer_sample[3]));
+	g_d3d8_probe_json = buffer;
+	return g_d3d8_probe_json.c_str();
+}
+
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_viewport()
 {
 	wasm_d3d8_reset_state();

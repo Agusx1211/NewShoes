@@ -15,12 +15,13 @@ let d3d8DrawProgram = null;
 const d3d8Buffers = new Map();
 const d3d8Textures = new Map();
 const d3d8BoundTextures = new Map();
-// Map<colorTextureId, {fbo, depthRenderbuffer, width, height}>
+// Map<`${colorTextureId}:${depthTextureId}`, {fbo, depthRenderbuffer, width, height}>
 const d3d8Framebuffers = new Map();
 let d3d8CurrentFramebuffer = null;
 let d3d8CurrentFramebufferWidth = 0;
 let d3d8CurrentFramebufferHeight = 0;
 const D3DUSAGE_WRITEONLY = 0x00000008;
+const D3DUSAGE_DEPTHSTENCIL = 0x00000002;
 const D3DUSAGE_DYNAMIC = 0x00000200;
 const D3DLOCK_DISCARD = 0x00002000;
 const D3DLOCK_NOOVERWRITE = 0x00001000;
@@ -36,6 +37,13 @@ const D3DFMT_X4R4G4B4 = 30;
 const D3DFMT_P8 = 41;
 const D3DFMT_L8 = 50;
 const D3DFMT_A8L8 = 51;
+const D3DFMT_D16_LOCKABLE = 70;
+const D3DFMT_D32 = 71;
+const D3DFMT_D15S1 = 73;
+const D3DFMT_D24S8 = 75;
+const D3DFMT_D24X8 = 77;
+const D3DFMT_D24X4S4 = 79;
+const D3DFMT_D16 = 80;
 const D3DFMT_DXT1 = 0x31545844;
 const D3DFMT_DXT2 = 0x32545844;
 const D3DFMT_DXT3 = 0x33545844;
@@ -238,6 +246,7 @@ const d3d8TextureStats = {
   lastMissingBind: null,
   lastUnsupported: null,
   lastSampler: null,
+  lastTextureDepthFboBind: null,
 };
 
 const harnessState = {
@@ -2763,6 +2772,56 @@ function d3d8TextureFormatInfo(format) {
   }
 }
 
+function d3d8DepthStencilFormatInfo(format) {
+  const d3dFormat = Number(format ?? 0) >>> 0;
+  switch (d3dFormat) {
+    case D3DFMT_D16_LOCKABLE:
+    case D3DFMT_D16:
+      return {
+        d3dFormat,
+        supported: true,
+        internalFormat: gl.DEPTH_COMPONENT16,
+        format: gl.DEPTH_COMPONENT,
+        type: gl.UNSIGNED_SHORT,
+        attachment: gl.DEPTH_ATTACHMENT,
+        storage: "depth16",
+      };
+    case D3DFMT_D24X8:
+      return {
+        d3dFormat,
+        supported: true,
+        internalFormat: gl.DEPTH_COMPONENT24,
+        format: gl.DEPTH_COMPONENT,
+        type: gl.UNSIGNED_INT,
+        attachment: gl.DEPTH_ATTACHMENT,
+        storage: "depth24",
+      };
+    case D3DFMT_D24S8:
+      return {
+        d3dFormat,
+        supported: true,
+        internalFormat: gl.DEPTH24_STENCIL8,
+        format: gl.DEPTH_STENCIL,
+        type: gl.UNSIGNED_INT_24_8,
+        attachment: gl.DEPTH_STENCIL_ATTACHMENT,
+        storage: "depth24-stencil8",
+      };
+    case D3DFMT_D15S1:
+    case D3DFMT_D24X4S4:
+    case D3DFMT_D32:
+    default:
+      return {
+        d3dFormat,
+        supported: false,
+        reason: "depth/stencil format is not implemented by the WebGL2 FBO bridge",
+      };
+  }
+}
+
+function isD3D8DepthStencilTexture(resource) {
+  return Boolean(resource) && (Number(resource.usage ?? 0) & D3DUSAGE_DEPTHSTENCIL) !== 0;
+}
+
 function convertD3D8TextureBytes(format, bytes, width, height, depth = 1) {
   const d3dFormat = Number(format ?? 0) >>> 0;
   const pixelCount = width * height * depth;
@@ -4022,6 +4081,7 @@ function updateD3D8TextureSummary() {
       lastMissingBind: d3d8TextureStats.lastMissingBind,
       lastUnsupported: d3d8TextureStats.lastUnsupported,
       lastSampler: d3d8TextureStats.lastSampler,
+      lastTextureDepthFboBind: d3d8TextureStats.lastTextureDepthFboBind,
     },
   };
 }
@@ -4041,6 +4101,7 @@ function createD3D8Texture(payload = {}) {
 
   const existing = d3d8Textures.get(id);
   if (existing) {
+    releaseD3D8FramebufferEntriesForTexture(id);
     gl.deleteTexture(existing.texture);
   }
 
@@ -4086,6 +4147,79 @@ function createD3D8Texture(payload = {}) {
   return 1;
 }
 
+function d3d8FramebufferKey(colorTextureId, depthTextureId) {
+  return `${Number(colorTextureId ?? 0) >>> 0}:${Number(depthTextureId ?? 0) >>> 0}`;
+}
+
+function deleteD3D8FramebufferEntry(key, entry) {
+  if (!gl || !entry) {
+    return;
+  }
+  if (d3d8CurrentFramebuffer === entry.fbo) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    d3d8CurrentFramebuffer = null;
+    d3d8CurrentFramebufferWidth = 0;
+    d3d8CurrentFramebufferHeight = 0;
+  }
+  if (entry.fbo) {
+    gl.deleteFramebuffer(entry.fbo);
+  }
+  if (entry.depthRenderbuffer) {
+    gl.deleteRenderbuffer(entry.depthRenderbuffer);
+  }
+  d3d8Framebuffers.delete(key);
+}
+
+function releaseD3D8FramebufferEntriesForTexture(textureId) {
+  const id = Number(textureId ?? 0) >>> 0;
+  if (id === 0) {
+    return;
+  }
+  for (const [key, entry] of Array.from(d3d8Framebuffers.entries())) {
+    if (entry?.colorTextureId === id || entry?.depthTextureId === id) {
+      deleteD3D8FramebufferEntry(key, entry);
+    }
+  }
+}
+
+function ensureD3D8DepthTextureStorage(resource) {
+  if (!gl || !resource || (resource.target ?? gl.TEXTURE_2D) !== gl.TEXTURE_2D) {
+    return null;
+  }
+  const info = d3d8DepthStencilFormatInfo(resource.format);
+  if (!info.supported) {
+    d3d8TextureStats.unsupportedUpdates += 1;
+    d3d8TextureStats.lastUnsupported = {
+      id: resource.id,
+      format: resource.format,
+      reason: info.reason,
+    };
+    updateD3D8TextureSummary();
+    return null;
+  }
+  withPreservedD3D8TextureUnit(() => {
+    gl.bindTexture(gl.TEXTURE_2D, resource.texture);
+    if (!resource.rtAllocated || resource.storage !== info.storage) {
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        info.internalFormat,
+        resource.width,
+        resource.height,
+        0,
+        info.format,
+        info.type,
+        null
+      );
+      resource.rtAllocated = true;
+      resource.initializedLevels.add("0");
+      resource.levelFormats.set("0", info.storage);
+      resource.storage = info.storage;
+    }
+  });
+  return info;
+}
+
 function bindD3D8Framebuffer(payload = {}) {
 	// Reset state hash: framebuffer/viewport change outside the draw path.
 	harnessState.graphics.lastD3D8StateHash = 0;
@@ -4093,9 +4227,6 @@ function bindD3D8Framebuffer(payload = {}) {
 		return 0;
 	}
 	const colorTextureId = Number(payload.colorTextureId ?? 0) >>> 0;
-	// NOTE: depthTextureId is intentionally unused — depth is always provided via
-	// an internal renderbuffer. This is a known limitation pending depth-texture
-	// attachment support. TODO: implement depth texture attachment.
 	const depthTextureId = Number(payload.depthTextureId ?? 0) >>> 0;
 	const width = Number(payload.width ?? 0) >>> 0;
 	const height = Number(payload.height ?? 0) >>> 0;
@@ -4110,12 +4241,45 @@ function bindD3D8Framebuffer(payload = {}) {
 		return 1;
 	}
 
-	// Look up or create FBO for this color texture
-	let fboEntry = d3d8Framebuffers.get(colorTextureId);
+	const framebufferKey = d3d8FramebufferKey(colorTextureId, depthTextureId);
+	let fboEntry = d3d8Framebuffers.get(framebufferKey);
 	if (!fboEntry) {
 		const colorTexture = d3d8Textures.get(colorTextureId);
 		if (!colorTexture || !colorTexture.texture) {
 			return 0;
+		}
+		let depthTexture = null;
+		let depthInfo = null;
+		if (depthTextureId !== 0) {
+			depthTexture = d3d8Textures.get(depthTextureId);
+			if (!depthTexture || !depthTexture.texture || !isD3D8DepthStencilTexture(depthTexture)) {
+				d3d8TextureStats.unsupportedUpdates += 1;
+				d3d8TextureStats.lastUnsupported = {
+					id: depthTextureId,
+					format: depthTexture?.format ?? 0,
+					reason: "depth FBO attachment requires a D3DUSAGE_DEPTHSTENCIL 2D texture",
+				};
+				updateD3D8TextureSummary();
+				return 0;
+			}
+			if (depthTexture.width < width || depthTexture.height < height) {
+				d3d8TextureStats.unsupportedUpdates += 1;
+				d3d8TextureStats.lastUnsupported = {
+					id: depthTextureId,
+					format: depthTexture.format,
+					width: depthTexture.width,
+					height: depthTexture.height,
+					colorWidth: width,
+					colorHeight: height,
+					reason: "D3D8 depth-stencil surface is smaller than the render target",
+				};
+				updateD3D8TextureSummary();
+				return 0;
+			}
+			depthInfo = ensureD3D8DepthTextureStorage(depthTexture);
+			if (!depthInfo) {
+				return 0;
+			}
 		}
 
 		const fbo = gl.createFramebuffer();
@@ -4153,21 +4317,35 @@ function bindD3D8Framebuffer(payload = {}) {
 			0
 		);
 
-		// Create and attach depth renderbuffer
-		const depthRenderbuffer = gl.createRenderbuffer();
-		gl.bindRenderbuffer(gl.RENDERBUFFER, depthRenderbuffer);
-		gl.renderbufferStorage(
-			gl.RENDERBUFFER,
-			gl.DEPTH_COMPONENT16,
-			width,
-			height
-		);
-		gl.framebufferRenderbuffer(
-			gl.FRAMEBUFFER,
-			gl.DEPTH_ATTACHMENT,
-			gl.RENDERBUFFER,
-			depthRenderbuffer
-		);
+		let depthRenderbuffer = null;
+		let depthAttachment = "renderbuffer";
+		let depthStorage = "depth16";
+		if (depthTextureId !== 0 && depthTexture && depthInfo) {
+			gl.framebufferTexture2D(
+				gl.FRAMEBUFFER,
+				depthInfo.attachment,
+				gl.TEXTURE_2D,
+				depthTexture.texture,
+				0
+			);
+			depthAttachment = "texture";
+			depthStorage = depthInfo.storage;
+		} else {
+			depthRenderbuffer = gl.createRenderbuffer();
+			gl.bindRenderbuffer(gl.RENDERBUFFER, depthRenderbuffer);
+			gl.renderbufferStorage(
+				gl.RENDERBUFFER,
+				gl.DEPTH_COMPONENT16,
+				width,
+				height
+			);
+			gl.framebufferRenderbuffer(
+				gl.FRAMEBUFFER,
+				gl.DEPTH_ATTACHMENT,
+				gl.RENDERBUFFER,
+				depthRenderbuffer
+			);
+		}
 
 		const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
 		if (status !== gl.FRAMEBUFFER_COMPLETE) {
@@ -4183,7 +4361,9 @@ function bindD3D8Framebuffer(payload = {}) {
 				`FBO incomplete for texture ${colorTextureId}: status ${statusName} (0x${status.toString(16)})`
 			);
 			gl.deleteFramebuffer(fbo);
-			gl.deleteRenderbuffer(depthRenderbuffer);
+			if (depthRenderbuffer) {
+				gl.deleteRenderbuffer(depthRenderbuffer);
+			}
 			// Do NOT fall back to the default framebuffer — that would
 			// make offscreen draws pollute the main color+depth buffer
 			// (the root cause of objects rendering behind terrain).
@@ -4194,11 +4374,15 @@ function bindD3D8Framebuffer(payload = {}) {
 
 		fboEntry = {
 			fbo,
+			colorTextureId,
+			depthTextureId,
 			depthRenderbuffer,
+			depthAttachment,
+			depthStorage,
 			width,
 			height,
 		};
-		d3d8Framebuffers.set(colorTextureId, fboEntry);
+		d3d8Framebuffers.set(framebufferKey, fboEntry);
 	} else {
 		// Reuse existing FBO - verify it's still complete (texture
 		// format may have changed since creation, e.g. a lazy upload
@@ -4216,7 +4400,7 @@ function bindD3D8Framebuffer(payload = {}) {
 			if (fboEntry.depthRenderbuffer) {
 				gl.deleteRenderbuffer(fboEntry.depthRenderbuffer);
 			}
-			d3d8Framebuffers.delete(colorTextureId);
+			d3d8Framebuffers.delete(framebufferKey);
 			// Restore the previous framebuffer before retrying.
 			gl.bindFramebuffer(gl.FRAMEBUFFER, d3d8CurrentFramebuffer);
 			return bindD3D8Framebuffer(payload);
@@ -4232,6 +4416,17 @@ function bindD3D8Framebuffer(payload = {}) {
 	}
 
 	d3d8CurrentFramebuffer = fboEntry.fbo;
+	if (depthTextureId !== 0) {
+		d3d8TextureStats.lastTextureDepthFboBind = {
+			colorTextureId,
+			depthTextureId,
+			width,
+			height,
+			attachment: fboEntry.depthAttachment,
+			storage: fboEntry.depthStorage,
+		};
+		updateD3D8TextureSummary();
+	}
 	return 1;
 }
 
@@ -4251,6 +4446,7 @@ function createD3D8VolumeTexture(payload = {}) {
 
   const existing = d3d8Textures.get(id);
   if (existing) {
+    releaseD3D8FramebufferEntriesForTexture(id);
     gl.deleteTexture(existing.texture);
   }
 
@@ -4669,9 +4865,7 @@ function releaseD3D8Texture(payload = {}) {
     d3d8TextureStats.lastReleaseUnbind = { id, stages: releasedBindings };
   }
   d3d8TextureStats.lastRelease = { id, type: resource.type || "2d", depth: resource.depth ?? 1, releasedBindings };
-  // Release FBO + depth renderbuffer if one was created for this texture
-  const fb = d3d8Framebuffers.get(id);
-  if (fb) { gl.deleteFramebuffer(fb.fbo); if (fb.depthRenderbuffer) gl.deleteRenderbuffer(fb.depthRenderbuffer); d3d8Framebuffers.delete(id); }
+  releaseD3D8FramebufferEntriesForTexture(id);
   d3d8Textures.delete(id);
   d3d8TextureStats.releases += 1;
   updateD3D8TextureSummary();
@@ -8283,6 +8477,7 @@ async function loadWasmModule() {
       probeMss3DSampleLifecycle: module.cwrap("cnc_port_probe_mss_3d_sample_lifecycle", "string", []),
       probeD3D8Clear: module.cwrap("cnc_port_probe_d3d8_clear", "string", ["number"]),
       probeD3D8RenderTarget: module.cwrap("cnc_port_probe_d3d8_render_target", "string", []),
+      probeD3D8DepthTextureRenderTarget: module.cwrap("cnc_port_probe_d3d8_depth_texture_render_target", "string", []),
       probeD3D8Viewport: module.cwrap("cnc_port_probe_d3d8_viewport", "string", []),
       probeD3D8BufferDirty: module.cwrap("cnc_port_probe_d3d8_buffer_dirty", "string", []),
       probeD3D8BufferHints: module.cwrap("cnc_port_probe_d3d8_buffer_hints", "string", []),
@@ -13476,6 +13671,64 @@ async function rpc(command, payload = {}) {
           && pixelsApproximatelyEqual(screenshot.centerPixel, expectedBackbufferCenter, 1)
           && textureDelta.creates === 1
           && textureDelta.releases === 1
+          && textureDelta.live === 0
+          && textureDelta.browserFboCount === 0
+          && textureDelta.fboIncomplete === 0;
+        return {
+          ok,
+          command,
+          probe,
+          textureProbe,
+          textureDelta,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8DepthTextureRenderTarget":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 depth-texture render target probe cannot run" };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        const beforeTextures = harnessState.graphics.d3d8Textures ?? {};
+        const beforeFboIncomplete = harnessState.graphics.browserFboIncompleteCount ?? 0;
+        const probe = parseModuleState(wasmModule.probeD3D8DepthTextureRenderTarget());
+        const textureProbe = harnessState.graphics.d3d8Textures ?? null;
+        const afterFboIncomplete = harnessState.graphics.browserFboIncompleteCount ?? 0;
+        const screenshot = snapshotCanvas();
+        const expectedTextureCenter = probe?.expectedTextureCenter ?? [68, 51, 34, 255];
+        const expectedBackbufferCenter = probe?.expectedBackbufferCenter ?? [16, 32, 48, 255];
+        const textureDelta = {
+          creates: (textureProbe?.creates ?? 0) - (beforeTextures.creates ?? 0),
+          releases: (textureProbe?.releases ?? 0) - (beforeTextures.releases ?? 0),
+          unsupportedUpdates: (textureProbe?.unsupportedUpdates ?? 0) - (beforeTextures.unsupportedUpdates ?? 0),
+          live: textureProbe?.live ?? null,
+          browserFboCount: textureProbe?.browserFboCount ?? null,
+          fboIncomplete: afterFboIncomplete - beforeFboIncomplete,
+        };
+        const lastTextureDepthFboBind = textureProbe?.lastTextureDepthFboBind ?? null;
+        const ok = Boolean(probe?.ok)
+          && probe?.source === "browser_d3d8_depth_texture_render_target_probe"
+          && probe?.renderTextureId > 0
+          && probe?.depthTextureId > 0
+          && probe?.calls?.browserFboBind === 2
+          && probe?.calls?.browserFboBindFailures === 0
+          && probe?.calls?.browserTextureCreate === 2
+          && probe?.calls?.browserTextureRelease === 2
+          && probe?.firstBrowserFbo?.colorTextureId === probe?.renderTextureId
+          && probe?.firstBrowserFbo?.depthTextureId === probe?.depthTextureId
+          && probe?.lastBrowserFbo?.colorTextureId === 0
+          && probe?.lastBrowserFbo?.depthTextureId === 0
+          && pixelsApproximatelyEqual(probe?.textureSample, expectedTextureCenter, 1)
+          && pixelsApproximatelyEqual(screenshot.centerPixel, expectedBackbufferCenter, 1)
+          && lastTextureDepthFboBind?.colorTextureId === probe?.renderTextureId
+          && lastTextureDepthFboBind?.depthTextureId === probe?.depthTextureId
+          && lastTextureDepthFboBind?.attachment === "texture"
+          && lastTextureDepthFboBind?.storage === "depth24-stencil8"
+          && textureDelta.creates === 2
+          && textureDelta.releases === 2
+          && textureDelta.unsupportedUpdates === 0
           && textureDelta.live === 0
           && textureDelta.browserFboCount === 0
           && textureDelta.fboIncomplete === 0;

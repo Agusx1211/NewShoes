@@ -2850,6 +2850,32 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `EXPECT_WASM=1 node harness/smoke.mjs` through the new assertion. The
       aggregate smoke still fails later at the tracked legacy
       `edgeMapperApply` dlmalloc OOB.
+- [x] **Add texture-owned depth/stencil attachments to D3D8 render-target
+      FBOs.** The browser bridge now maps D3D8 depth textures with
+      `D3DUSAGE_DEPTHSTENCIL` to WebGL2 depth attachments for D16/
+      D16_LOCKABLE, D24X8, and D24S8; D24S8 uses
+      `DEPTH24_STENCIL8` + `DEPTH_STENCIL_ATTACHMENT`. FBO cache keys now
+      include both color and depth texture ids, so rebinding the same color RT
+      with a different depth surface cannot alias stale depth state. FBO
+      cleanup now removes entries that reference a released or recreated texture
+      as either color or depth. Added the `d3d8DepthTextureRenderTarget` RPC
+      and smoke assertion around the real D3D8 path:
+      `CreateTexture(D3DUSAGE_RENDERTARGET)` plus
+      `CreateTexture(D3DUSAGE_DEPTHSTENCIL, D3DFMT_D24S8)` -> `GetSurfaceLevel`
+      -> `SetRenderTarget` -> clear color/depth/stencil -> restore default
+      backbuffer/depth -> clear/present. Focused Playwright proof:
+      render texture id `1`, depth texture id `2`, first FBO bind `{color:1,
+      depth:2, 64x32}`, browser attachment `"texture"` with storage
+      `"depth24-stencil8"`, offscreen center `[68,51,34,255]`, restored
+      backbuffer center `[16,32,48,255]`, 2 browser texture creates/releases,
+      2 FBO binds, 0 FBO bind failures, 0 unsupported updates, 0 incomplete-FBO
+      events, live texture count `0`, and browser FBO count `0`. Verified with
+      `node --check WebAssembly/harness/bridge.js`, `node --check
+      WebAssembly/harness/smoke.mjs`, `git diff --check`, `npm --prefix
+      WebAssembly run build:port`, the focused Playwright RPC, and
+      `EXPECT_WASM=1 node harness/smoke.mjs` through the new assertion. The
+      aggregate smoke still fails later at the tracked `edgeMapperApply`
+      dlmalloc OOB.
 - [x] **Prove real select-to-move at MD_USA01 player control on Mac/Metal.**
       The startup vertical interactivity mode now uses the original input
       setting (`GlobalData::m_useAlternateMouse`) to choose the move button,
