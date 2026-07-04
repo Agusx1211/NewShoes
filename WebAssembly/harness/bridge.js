@@ -1222,6 +1222,7 @@ function summarizeBrowserMssStreamPlaybackRuntime() {
     stopped: browserMssStreamPlaybackRuntime.stopped,
     ended: browserMssStreamPlaybackRuntime.ended,
     activeSources: browserMssStreamPlaybackRuntime.activeSources.size,
+    pendingStarts: browserMssStreamPlaybackRuntime.pendingStarts?.size ?? 0,
     musicSourceActive: browserMssStreamPlaybackRuntime.musicSourceActive ?? false,
     lastEvent: browserMssStreamPlaybackRuntime.lastEvent,
     eventLog: [...browserMssStreamPlaybackRuntime.eventLog],
@@ -1567,6 +1568,7 @@ function cncPortMss3DSampleRelease(payload) {
 
 const browserMssStreamPlaybackRuntime = {
   activeSources: new Map(), // handle -> { source, gain }
+  pendingStarts: new Map(), // handle -> { cancelled: bool }
   started: 0,
   stopped: 0,
   ended: 0,
@@ -1605,6 +1607,9 @@ async function _startMssStreamAsync(payload) {
   const volume = clamp01(Number((payload.volume ?? 127) / 127));
   const loopCount = Number(payload.loopCount ?? 1);
 
+  // Register pending start for stop-before-start race guard.
+  browserMssStreamPlaybackRuntime.pendingStarts.set(handle, { cancelled: false });
+
   browserMssStreamPlaybackRuntime.started += 1;
   browserMssStreamPlaybackRuntime.eventLog.push(
     { handle, phase: "AIL_start_stream", filename, volume },
@@ -1624,6 +1629,14 @@ async function _startMssStreamAsync(payload) {
     browserMssStreamPlaybackRuntime.lastError = "WASM module not available";
     return;
   }
+
+  // Race guard: stop was called before async load completed.
+  const pending = browserMssStreamPlaybackRuntime.pendingStarts.get(handle);
+  if (pending?.cancelled) {
+    browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
+    return;
+  }
+  browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
 
   // Search mounted audio archives for the stream file.
   const normalizedFilename = filename.toLowerCase();
@@ -1685,6 +1698,25 @@ async function _startMssStreamAsync(payload) {
   gain.connect(busNode);
   source.start(0);
 
+  // Mirror the sample path's onended cleanup so non-looping streams
+  // are removed from activeSources and musicSourceActive is updated.
+  source.onended = () => {
+    try {
+      source.disconnect();
+    } catch { /* already disconnected */ }
+    browserMssStreamPlaybackRuntime.activeSources.delete(handle);
+    browserMssStreamPlaybackRuntime.ended += 1;
+    browserMssStreamPlaybackRuntime.musicSourceActive =
+      browserMssStreamPlaybackRuntime.activeSources.size > 0;
+    browserMssStreamPlaybackRuntime.eventLog.push({
+      handle,
+      phase: "completed",
+      callback: "AudioBufferSourceNode.onended",
+      order: browserMssStreamPlaybackRuntime.ended,
+    });
+    browserMssStreamPlaybackRuntime.lastError = null;
+  };
+
   browserMssStreamPlaybackRuntime.activeSources.set(handle, { source, gain });
   browserMssStreamPlaybackRuntime.musicSourceActive = true;
 }
@@ -1693,10 +1725,16 @@ function cncPortMssStreamStop(payload) {
   const handle = Number(payload?.handle ?? 0);
   browserMssStreamPlaybackRuntime.stopped += 1;
   browserMssStreamPlaybackRuntime.eventLog.push({ handle, phase: "AIL_close_stream" });
+  // Cancel in-flight async start if this stop races ahead of it.
+  const entry = browserMssStreamPlaybackRuntime.pendingStarts?.get(handle);
+  if (entry) {
+    entry.cancelled = true;
+    browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
+  }
   try {
-    const entry = browserMssStreamPlaybackRuntime.activeSources.get(handle);
-    if (entry) {
-      entry.source.stop();
+    const active = browserMssStreamPlaybackRuntime.activeSources.get(handle);
+    if (active) {
+      active.source.stop();
       browserMssStreamPlaybackRuntime.activeSources.delete(handle);
     }
   } catch { /* already ended */ }
