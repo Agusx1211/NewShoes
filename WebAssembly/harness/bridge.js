@@ -20,6 +20,11 @@ const d3d8Framebuffers = new Map();
 let d3d8CurrentFramebuffer = null;
 let d3d8CurrentFramebufferWidth = 0;
 let d3d8CurrentFramebufferHeight = 0;
+let d3d8CurrentProgram = null;
+let d3d8CurrentArrayBuffer = null;
+let d3d8CurrentElementArrayBuffer = null;
+let d3d8TemporaryIndexBuffer = null;
+let d3d8TemporaryIndexBufferBytes = 0;
 const D3DUSAGE_WRITEONLY = 0x00000008;
 const D3DUSAGE_DEPTHSTENCIL = 0x00000002;
 const D3DUSAGE_DYNAMIC = 0x00000200;
@@ -2380,6 +2385,59 @@ function d3d8BufferTarget(kind) {
   return d3d8BufferKindName(kind) === "index" ? gl.ELEMENT_ARRAY_BUFFER : gl.ARRAY_BUFFER;
 }
 
+function bindD3D8Program(program) {
+  if (!gl || d3d8CurrentProgram === program) {
+    return;
+  }
+  gl.useProgram(program);
+  d3d8CurrentProgram = program;
+}
+
+function bindD3D8ArrayBuffer(buffer) {
+  if (!gl || d3d8CurrentArrayBuffer === buffer) {
+    return;
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  d3d8CurrentArrayBuffer = buffer;
+}
+
+function bindD3D8ElementArrayBuffer(buffer) {
+  if (!gl || d3d8CurrentElementArrayBuffer === buffer) {
+    return;
+  }
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer);
+  d3d8CurrentElementArrayBuffer = buffer;
+}
+
+function forgetD3D8BufferBinding(buffer) {
+  if (d3d8CurrentArrayBuffer === buffer) {
+    d3d8CurrentArrayBuffer = null;
+  }
+  if (d3d8CurrentElementArrayBuffer === buffer) {
+    d3d8CurrentElementArrayBuffer = null;
+  }
+}
+
+function getD3D8TemporaryIndexBuffer(byteLength) {
+  const requiredBytes = Number(byteLength ?? 0) >>> 0;
+  if (!gl || requiredBytes === 0) {
+    return null;
+  }
+  if (!d3d8TemporaryIndexBuffer) {
+    d3d8TemporaryIndexBuffer = gl.createBuffer();
+    d3d8TemporaryIndexBufferBytes = 0;
+  }
+  if (!d3d8TemporaryIndexBuffer) {
+    return null;
+  }
+  bindD3D8ElementArrayBuffer(d3d8TemporaryIndexBuffer);
+  if (requiredBytes > d3d8TemporaryIndexBufferBytes) {
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, requiredBytes, gl.STREAM_DRAW);
+    d3d8TemporaryIndexBufferBytes = requiredBytes;
+  }
+  return d3d8TemporaryIndexBuffer;
+}
+
 function d3d8BufferUsageInfo(usage) {
   const d3dUsage = Number(usage ?? 0) >>> 0;
   const dynamic = Boolean(d3dUsage & D3DUSAGE_DYNAMIC);
@@ -2438,11 +2496,16 @@ function createD3D8Buffer(payload = {}) {
   const key = d3d8BufferKey(kind, id);
   const existing = d3d8Buffers.get(key);
   if (existing) {
+    forgetD3D8BufferBinding(existing.buffer);
     gl.deleteBuffer(existing.buffer);
   }
 
   const buffer = gl.createBuffer();
-  gl.bindBuffer(target, buffer);
+  if (target === gl.ARRAY_BUFFER) {
+    bindD3D8ArrayBuffer(buffer);
+  } else {
+    bindD3D8ElementArrayBuffer(buffer);
+  }
   gl.bufferData(target, byteSize, usageInfo.glUsage);
   const record = {
     id,
@@ -2501,7 +2564,11 @@ function updateD3D8Buffer(payload = {}) {
     return 0;
   }
 
-  gl.bindBuffer(resource.target, resource.buffer);
+  if (resource.target === gl.ARRAY_BUFFER) {
+    bindD3D8ArrayBuffer(resource.buffer);
+  } else {
+    bindD3D8ElementArrayBuffer(resource.buffer);
+  }
   let resized = false;
   let orphaned = false;
   if (requiredByteSize > resource.byteSize) {
@@ -2555,6 +2622,7 @@ function releaseD3D8Buffer(payload = {}) {
   if (!resource) {
     return 0;
   }
+  forgetD3D8BufferBinding(resource.buffer);
   gl.deleteBuffer(resource.buffer);
   d3d8Buffers.delete(key);
   d3d8BufferStats.releases += 1;
@@ -7384,7 +7452,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   if (gl && baseGlPrimitive && usePersistentBuffers && vertexByteSize > 0 && indexByteSize > 0 &&
       vertexStride >= 12 && indexCount > 0 && (indexSize === 2 || indexSize === 4)) {
     const bridgeProgram = ensureD3D8DrawProgram();
-    gl.useProgram(bridgeProgram.program);
+    bindD3D8Program(bridgeProgram.program);
     const stateHash = Number(payload.stateHash ?? 0) >>> 0;
     const stateUnchanged = stateHash === (harnessState.graphics.lastD3D8StateHash ?? 0);
     let fillModeDraw, shadeModeDraw;
@@ -7413,7 +7481,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       indexSize,
       fillModeDraw,
     );
-    gl.bindBuffer(gl.ARRAY_BUFFER, vertexResource.buffer);
+    bindD3D8ArrayBuffer(vertexResource.buffer);
     gl.enableVertexAttribArray(bridgeProgram.position);
     gl.vertexAttribPointer(bridgeProgram.position, 3, gl.FLOAT, false, vertexStride, vertexByteOffset);
     if (bridgeProgram.normal >= 0 && vertexLayout.normalOffset !== null) {
@@ -7788,16 +7856,15 @@ function paintD3D8DrawIndexed(payload = {}) {
       }
       if (shadeModeDraw.supported &&
           (temporaryIndices instanceof Uint16Array || temporaryIndices instanceof Uint32Array)) {
-        temporaryIndexBuffer = gl.createBuffer();
+        temporaryIndexBuffer = getD3D8TemporaryIndexBuffer(temporaryIndices.byteLength);
         if (temporaryIndexBuffer) {
-          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, temporaryIndexBuffer);
-          gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, temporaryIndices, gl.STREAM_DRAW);
+          gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, temporaryIndices);
         } else {
           shadeModeDraw.supported = false;
           shadeModeDraw.fallbackReason = "temporaryIndexBufferCreateFailed";
         }
       } else {
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexResource.buffer);
+        bindD3D8ElementArrayBuffer(indexResource.buffer);
       }
       appliedFillMode = d3d8FillModeProbeInfo(fillModeDraw);
       appliedShadeMode = d3d8ShadeModeProbeInfo(shadeModeDraw);
@@ -7812,9 +7879,6 @@ function paintD3D8DrawIndexed(payload = {}) {
     } finally {
       if (restoreProvokingVertex) {
         setD3D8FirstVertexConvention(false);
-      }
-      if (temporaryIndexBuffer) {
-        gl.deleteBuffer(temporaryIndexBuffer);
       }
     }
     if (d3d8DiagLevel === "full") {

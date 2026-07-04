@@ -27,7 +27,10 @@ READY pending apply: music fix — `feat/audio-ini-fix` commit 78eb925 rewrites 
 IN PROGRESS: skirmish-load diagnosis beyond the now-proven real-init
 `TheMapCache`/`MapsZH.big` path.
 
-QUEUED perf (high-FPS): perf-win-1 = cache reusable STREAM_DRAW index buffer (bridge.js ~7149-7180); perf-win-2 = cache lastProgram/lastArrayBuffer to skip redundant per-draw useProgram/bindBuffer (bridge.js L6756/6811). Both self-contained, no conflict with perf-drawstate; do after it settles in main.
+PERF next: the queued bridge micro-wins are done; before more broad renderer
+optimization, take a Mac Chrome/Metal performance capture of a live
+shell-map/campaign/skirmish scene and separate simulation cost from WebGL
+draw/upload/readback cost.
 
 QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), control-bar HUD (controlBarCommandHud, top missing-UI), DXT premultiplied-alpha (DXT2/4) + volume textures.
 

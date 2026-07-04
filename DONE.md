@@ -7488,6 +7488,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 ## M10 — Hardening, content, polish
 
 ### Performance & memory
+- [x] Cache hot D3D8 WebGL draw-path bindings and temporary index buffers.
+      `bridge.js` now tracks the currently bound D3D8 draw program,
+      ARRAY_BUFFER, and ELEMENT_ARRAY_BUFFER to skip redundant
+      `gl.useProgram`/`gl.bindBuffer` calls on repeated draws. The wireframe
+      fill-mode and flat-shade paths now reuse one grow-only STREAM_DRAW
+      element buffer and update it with `bufferSubData`, instead of creating
+      and deleting a temporary index buffer every draw. Buffer creation,
+      update, release, and id reuse go through the same binding helpers so
+      cached bindings are invalidated when the underlying GL buffer is deleted.
+      Verified with `node --check WebAssembly/harness/bridge.js`, `git diff
+      --check`, and a focused Playwright boot/RPC run covering
+      `d3d8TexturedQuad`, `d3d8FillMode`, and `d3d8ShadeMode`: the normal
+      textured draw stayed red `[255,0,0,255]`, wireframe temporary-index draw
+      stayed green `[0,255,0,255]`, and flat-shade temporary-index draw stayed
+      red `[255,0,0,255]`.
+
 ### Content completeness (Zero Hour)
 ### Robustness & compatibility
 ### Base game
