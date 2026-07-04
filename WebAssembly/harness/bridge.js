@@ -291,6 +291,7 @@ const harnessState = {
     contextLost: false,
     drawingBufferWidth: canvas.width,
     drawingBufferHeight: canvas.height,
+    lastD3D8StateHash: 0,
   },
   originalEngineLinked: false,
   originalCoreProbe: null,
@@ -3757,6 +3758,8 @@ function createD3D8Texture(payload = {}) {
 }
 
 function bindD3D8Framebuffer(payload = {}) {
+	// Reset state hash: framebuffer/viewport change outside the draw path.
+	harnessState.graphics.lastD3D8StateHash = 0;
 	if (!gl) {
 		return 0;
 	}
@@ -4428,6 +4431,8 @@ function floatVectorApproximatelyEqual(left, right, tolerance = 0.00001) {
 }
 
 function paintCanvasRgba(rgba) {
+  // Reset state hash: clear changes GL state outside the draw path.
+  harnessState.graphics.lastD3D8StateHash = 0;
   syncCanvasSize();
   if (gl) {
     gl.clearColor(rgba[0] / 255, rgba[1] / 255, rgba[2] / 255, rgba[3] / 255);
@@ -4462,6 +4467,8 @@ function clearCanvas(payload = {}) {
 }
 
 function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
+  // Reset state hash: clear changes GL state outside the draw path.
+  harnessState.graphics.lastD3D8StateHash = 0;
   const clearFlags = flags >>> 0;
   const rgba = [
     clampColorByte(red, 0),
@@ -6754,6 +6761,10 @@ function paintD3D8DrawIndexed(payload = {}) {
       vertexStride >= 12 && indexCount > 0 && (indexSize === 2 || indexSize === 4)) {
     const bridgeProgram = ensureD3D8DrawProgram();
     gl.useProgram(bridgeProgram.program);
+    const stateHash = Number(payload.stateHash ?? 0) >>> 0;
+    const stateUnchanged = stateHash === (harnessState.graphics.lastD3D8StateHash ?? 0);
+    let fillModeDraw, shadeModeDraw;
+    if (!stateUnchanged) {
     appliedRenderState = applyD3D8RenderState(renderState, {
       invertCullWinding: false,
     });
@@ -6785,7 +6796,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       directionalLights,
       firstDirectionalLight,
     };
-    const fillModeDraw = createD3D8FillModeDrawInfo(
+    fillModeDraw = createD3D8FillModeDrawInfo(
       renderState,
       payload.primitiveType,
       indexResource,
@@ -6799,7 +6810,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         transforms: useTransforms ? { world, view, projection } : null,
       },
     );
-    const shadeModeDraw = createD3D8ShadeModeDrawInfo(
+    shadeModeDraw = createD3D8ShadeModeDrawInfo(
       renderState,
       payload.primitiveType,
       indexResource,
@@ -7137,6 +7148,8 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.fogEnd) {
       gl.uniform1f(bridgeProgram.fogEnd, appliedRenderState.fog.end);
     }
+    harnessState.graphics.lastD3D8StateHash = stateHash;
+    } // end if (!stateUnchanged)
     const temporaryIndices = fillModeDraw.lineIndices ?? shadeModeDraw.triangleIndices ?? null;
     let temporaryIndexBuffer = null;
     let restoreProvokingVertex = false;

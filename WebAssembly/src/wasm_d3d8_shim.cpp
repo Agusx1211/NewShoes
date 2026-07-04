@@ -338,7 +338,8 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	unsigned int render_state_ptr,
 	unsigned int clip_planes_ptr,
 	unsigned int lights_ptr,
-	unsigned int material_ptr
+	unsigned int material_ptr,
+	unsigned int state_hash
 ), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8DrawIndexed : null;
 	if (typeof bridge !== "function" || typeof Module === "undefined") {
@@ -529,6 +530,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 		clipPlanes: copyClipPlanes(clip_planes_ptr),
 		lights: copyLights(lights_ptr),
 		material: copyMaterial(material_ptr),
+		stateHash: state_hash >>> 0,
 	});
 });
 #else
@@ -548,7 +550,7 @@ void wasm_d3d8_browser_texture_bind(unsigned int, unsigned int) {}
 void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
-	unsigned int) {}
+	unsigned int, unsigned int) {}
 #endif
 
 namespace {
@@ -1165,7 +1167,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT vertex_buffer_id
 	const D3DMATRIX *view_transform, const D3DMATRIX *projection_transform,
 	const D3DMATRIX *texture0_transform, const D3DMATRIX *texture1_transform,
 	const WasmD3D8DrawRenderState *render_state, const float *clip_planes,
-	const WasmD3D8DrawLight *lights, const WasmD3D8DrawMaterial *material)
+	const WasmD3D8DrawLight *lights, const WasmD3D8DrawMaterial *material, UINT state_hash)
 {
 	if (vertex_buffer_id == 0 || vertex_byte_size == 0 || index_buffer_id == 0 || index_byte_size == 0 ||
 		index_count == 0 || vertex_stride == 0) {
@@ -1193,7 +1195,8 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT vertex_buffer_id
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(render_state)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(clip_planes)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(lights)),
-		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(material)));
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(material)),
+		state_hash);
 }
 
 struct BrowserD3DResource
@@ -3267,6 +3270,106 @@ private:
 			g_state.last_draw_texture1_transform);
 		capture_draw_render_state();
 		capture_draw_material();
+
+		// Compute FNV-1a 32-bit hash over all render state fields (NOT geometry).
+		// This lets the JS side skip re-applying unchanged GL state.
+		constexpr UINT FNV1A_OFFSET_BASIS = 0x811c9dc5u;
+		constexpr UINT FNV1A_PRIME = 0x01000193u;
+		union FloatUInt { float f; UINT u; };
+		auto hashf = [](float v) -> UINT { FloatUInt x; x.f = v; return x.u; };
+		auto fnv1a_step = [](UINT h, UINT v) -> UINT { return (h ^ v) * FNV1A_PRIME; };
+		UINT state_hash = FNV1A_OFFSET_BASIS;
+		// 5 transform matrices (5 * 16 floats = 80 floats)
+		auto hash_matrix = [&](const D3DMATRIX &m) {
+			for (UINT r = 0; r < 4; ++r)
+				for (UINT c = 0; c < 4; ++c)
+					state_hash = fnv1a_step(state_hash, hashf(m.m[r][c]));
+		};
+		hash_matrix(g_state.last_draw_world_transform);
+		hash_matrix(g_state.last_draw_view_transform);
+		hash_matrix(g_state.last_draw_projection_transform);
+		hash_matrix(g_state.last_draw_texture0_transform);
+		hash_matrix(g_state.last_draw_texture1_transform);
+		// render state (DWORD fields + texture stages)
+		const auto &rs = g_state.last_draw_render_state;
+		#define HASH_RS_FIELD(field) state_hash = fnv1a_step(state_hash, static_cast<UINT>(rs.field));
+		HASH_RS_FIELD(cull_mode); HASH_RS_FIELD(z_enable); HASH_RS_FIELD(z_write_enable);
+		HASH_RS_FIELD(z_func); HASH_RS_FIELD(alpha_blend_enable); HASH_RS_FIELD(src_blend);
+		HASH_RS_FIELD(dest_blend); HASH_RS_FIELD(blend_op); HASH_RS_FIELD(alpha_test_enable);
+		HASH_RS_FIELD(alpha_func); HASH_RS_FIELD(alpha_ref); HASH_RS_FIELD(color_write_enable);
+		HASH_RS_FIELD(texture_factor); HASH_RS_FIELD(stencil_enable); HASH_RS_FIELD(stencil_fail);
+		HASH_RS_FIELD(stencil_z_fail); HASH_RS_FIELD(stencil_pass); HASH_RS_FIELD(stencil_func);
+		HASH_RS_FIELD(stencil_ref); HASH_RS_FIELD(stencil_mask); HASH_RS_FIELD(stencil_write_mask);
+		HASH_RS_FIELD(fog_enable); HASH_RS_FIELD(fog_color); HASH_RS_FIELD(fog_start);
+		HASH_RS_FIELD(fog_end); HASH_RS_FIELD(fog_vertex_mode); HASH_RS_FIELD(range_fog_enable);
+		HASH_RS_FIELD(fill_mode); HASH_RS_FIELD(z_bias); HASH_RS_FIELD(shade_mode);
+		HASH_RS_FIELD(lighting); HASH_RS_FIELD(ambient); HASH_RS_FIELD(color_vertex);
+		HASH_RS_FIELD(diffuse_material_source); HASH_RS_FIELD(specular_material_source);
+		HASH_RS_FIELD(ambient_material_source); HASH_RS_FIELD(emissive_material_source);
+		HASH_RS_FIELD(clipping); HASH_RS_FIELD(clip_plane_enable); HASH_RS_FIELD(specular_enable);
+		HASH_RS_FIELD(normalize_normals); HASH_RS_FIELD(local_viewer);
+		#undef HASH_RS_FIELD
+		// texture stage states (8 stages * 29 DWORDs)
+		for (UINT s = 0; s < WASM_D3D8_TEXTURE_STAGE_COUNT; ++s)
+			for (UINT i = 0; i < WASM_D3D8_TEXTURE_STAGE_STATE_SLOTS; ++i)
+				state_hash = fnv1a_step(state_hash, rs.texture_stages[s].values[i]);
+		// clip planes (6 * 4 floats)
+		for (UINT p = 0; p < WASM_D3D8_CLIP_PLANE_COUNT; ++p)
+			for (UINT c = 0; c < 4; ++c)
+				state_hash = fnv1a_step(state_hash, hashf(g_state.last_draw_clip_planes[p][c]));
+		// material (4 D3DCOLORVALUE + 1 float power)
+		const auto &mat = g_state.last_draw_material;
+		state_hash = fnv1a_step(state_hash, hashf(mat.diffuse.r));
+		state_hash = fnv1a_step(state_hash, hashf(mat.diffuse.g));
+		state_hash = fnv1a_step(state_hash, hashf(mat.diffuse.b));
+		state_hash = fnv1a_step(state_hash, hashf(mat.diffuse.a));
+		state_hash = fnv1a_step(state_hash, hashf(mat.ambient.r));
+		state_hash = fnv1a_step(state_hash, hashf(mat.ambient.g));
+		state_hash = fnv1a_step(state_hash, hashf(mat.ambient.b));
+		state_hash = fnv1a_step(state_hash, hashf(mat.ambient.a));
+		state_hash = fnv1a_step(state_hash, hashf(mat.specular.r));
+		state_hash = fnv1a_step(state_hash, hashf(mat.specular.g));
+		state_hash = fnv1a_step(state_hash, hashf(mat.specular.b));
+		state_hash = fnv1a_step(state_hash, hashf(mat.specular.a));
+		state_hash = fnv1a_step(state_hash, hashf(mat.emissive.r));
+		state_hash = fnv1a_step(state_hash, hashf(mat.emissive.g));
+		state_hash = fnv1a_step(state_hash, hashf(mat.emissive.b));
+		state_hash = fnv1a_step(state_hash, hashf(mat.emissive.a));
+		state_hash = fnv1a_step(state_hash, hashf(mat.power));
+		// lights (8 lights, each: type, enabled, then float fields)
+		for (UINT l = 0; l < WASM_D3D8_LIGHT_COUNT; ++l) {
+			const auto &lt = g_state.last_draw_lights[l];
+			state_hash = fnv1a_step(state_hash, lt.type);
+			state_hash = fnv1a_step(state_hash, lt.enabled);
+			state_hash = fnv1a_step(state_hash, hashf(lt.diffuse.r));
+			state_hash = fnv1a_step(state_hash, hashf(lt.diffuse.g));
+			state_hash = fnv1a_step(state_hash, hashf(lt.diffuse.b));
+			state_hash = fnv1a_step(state_hash, hashf(lt.diffuse.a));
+			state_hash = fnv1a_step(state_hash, hashf(lt.specular.r));
+			state_hash = fnv1a_step(state_hash, hashf(lt.specular.g));
+			state_hash = fnv1a_step(state_hash, hashf(lt.specular.b));
+			state_hash = fnv1a_step(state_hash, hashf(lt.specular.a));
+			state_hash = fnv1a_step(state_hash, hashf(lt.ambient.r));
+			state_hash = fnv1a_step(state_hash, hashf(lt.ambient.g));
+			state_hash = fnv1a_step(state_hash, hashf(lt.ambient.b));
+			state_hash = fnv1a_step(state_hash, hashf(lt.ambient.a));
+			state_hash = fnv1a_step(state_hash, hashf(lt.position.x));
+			state_hash = fnv1a_step(state_hash, hashf(lt.position.y));
+			state_hash = fnv1a_step(state_hash, hashf(lt.position.z));
+			state_hash = fnv1a_step(state_hash, hashf(lt.direction.x));
+			state_hash = fnv1a_step(state_hash, hashf(lt.direction.y));
+			state_hash = fnv1a_step(state_hash, hashf(lt.direction.z));
+			state_hash = fnv1a_step(state_hash, hashf(lt.range));
+			state_hash = fnv1a_step(state_hash, hashf(lt.falloff));
+			state_hash = fnv1a_step(state_hash, hashf(lt.attenuation0));
+			state_hash = fnv1a_step(state_hash, hashf(lt.attenuation1));
+			state_hash = fnv1a_step(state_hash, hashf(lt.attenuation2));
+			state_hash = fnv1a_step(state_hash, hashf(lt.theta));
+			state_hash = fnv1a_step(state_hash, hashf(lt.phi));
+		}
+		// transform mask
+		state_hash = fnv1a_step(state_hash, g_state.last_draw_transform_mask);
+		g_state.last_draw_state_hash = state_hash;
 		const WasmD3D8DrawTextureStageState &stage0 =
 			g_state.last_draw_render_state.texture_stages[0];
 		if (g_state.last_draw_render_state.z_func == D3DCMP_EQUAL &&
@@ -3303,7 +3406,8 @@ private:
 			&g_state.last_draw_render_state,
 			&g_state.last_draw_clip_planes[0][0],
 			g_state.last_draw_lights,
-			&g_state.last_draw_material);
+			&g_state.last_draw_material,
+			g_state.last_draw_state_hash);
 	}
 
 	void capture_draw_transform(D3DTRANSFORMSTATETYPE state, UINT mask_bit, D3DMATRIX &destination) const
