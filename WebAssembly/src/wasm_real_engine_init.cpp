@@ -3306,9 +3306,33 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 	bool first = true;
 
 	for (Drawable *d = TheGameClient->firstDrawable(); d; d = d->getNextDrawable()) {
+		if (d == nullptr) {
+			continue;
+		}
 		Object *obj = d->getObject();
 		if (obj == nullptr) {
 			continue;
+		}
+
+		// Defensive: guard against corrupted objects mid-game (destroyed/invalidating)
+		const ThingTemplate *tpl = obj->getTemplate();
+		const Coord3D *pos = obj->getPosition();
+		if (!pos) {
+			continue;
+		}
+
+		// Guard: isfinite check on all position components
+		if (!std::isfinite(pos->x) || !std::isfinite(pos->y) || !std::isfinite(pos->z)) {
+			continue;
+		}
+
+		// Guard: worldToScreen may fail if pos is out of bounds
+		ICoord2D screenPos = { 0, 0 };
+		Bool onScreen = false;
+		try {
+			onScreen = TheTacticalView->worldToScreen(pos, &screenPos);
+		} catch (...) {
+			onScreen = false;
 		}
 
 		if (!first) {
@@ -3316,18 +3340,27 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 		}
 		first = false;
 
-		const Coord3D *pos = obj->getPosition();
-		if (!pos) {
-			continue;
-		}
-		ICoord2D screenPos;
-		Bool onScreen = TheTacticalView->worldToScreen(pos, &screenPos);
-
 		json += "{";
-		json += "\"id\":" + std::to_string(static_cast<long long>(obj->getID()));
-		json += ",\"name\":\"" + json_escape(obj->getTemplate() ? obj->getTemplate()->getName().str() : "") + "\"";
 
-		Player *owner = obj->getControllingPlayer();
+		// Guard: getID() can crash if obj vtable is corrupted
+		long long objId = 0;
+		try {
+			objId = static_cast<long long>(obj->getID());
+		} catch (...) {
+			objId = -1;
+		}
+		json += "\"id\":" + std::to_string(objId);
+
+		// Guard: getTemplate() may return NULL; cache the result to avoid double-call
+		json += ",\"name\":\"" + json_escape(tpl ? tpl->getName().str() : "unknown") + "\"";
+
+		// Guard: getControllingPlayer() can be NULL (neutral/civilian objects)
+		Player *owner = nullptr;
+		try {
+			owner = obj->getControllingPlayer();
+		} catch (...) {
+			owner = nullptr;
+		}
 		if (owner != nullptr) {
 			json += ",\"playerIndex\":" + std::to_string(owner->getPlayerIndex());
 			json += ",\"localOwned\":";
@@ -3336,14 +3369,29 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 			json += ",\"playerIndex\":-1,\"localOwned\":false";
 		}
 
+		// Guard: isKindOf() can crash if obj kindOf flags are corrupted
+		bool isStructure = false;
+		try {
+			isStructure = obj->isKindOf(KINDOF_STRUCTURE);
+		} catch (...) {
+			isStructure = false;
+		}
 		json += ",\"structure\":";
-		json += obj->isKindOf(KINDOF_STRUCTURE) ? "true" : "false";
-		json += ",\"hidden\":";
-		json += d->isDrawableEffectivelyHidden() ? "true" : "false";
+		json += isStructure ? "true" : "false";
 
-		json += ",\"worldPos\":{\"x\":" + std::to_string(std::isfinite(pos->x) ? pos->x : 0.0);
-		json += ",\"y\":" + std::to_string(std::isfinite(pos->y) ? pos->y : 0.0);
-		json += ",\"z\":" + std::to_string(std::isfinite(pos->z) ? pos->z : 0.0) + "}";
+		// Guard: isDrawableEffectivelyHidden() can crash on bad drawable state
+		bool isHidden = false;
+		try {
+			isHidden = d->isDrawableEffectivelyHidden();
+		} catch (...) {
+			isHidden = false;
+		}
+		json += ",\"hidden\":";
+		json += isHidden ? "true" : "false";
+
+		json += ",\"worldPos\":{\"x\":" + std::to_string(pos->x);
+		json += ",\"y\":" + std::to_string(pos->y);
+		json += ",\"z\":" + std::to_string(pos->z) + "}";
 
 		json += ",\"onScreen\":";
 		json += onScreen ? "true" : "false";
@@ -3366,8 +3414,18 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 		return json.c_str();
 	}
 
-	Int selectCount = TheInGameUI->getSelectCount();
-	const DrawableList *sel = TheInGameUI->getAllSelectedDrawables();
+	Int selectCount = 0;
+	try {
+		selectCount = TheInGameUI->getSelectCount();
+	} catch (...) {
+		selectCount = 0;
+	}
+	const DrawableList *sel = nullptr;
+	try {
+		sel = TheInGameUI->getAllSelectedDrawables();
+	} catch (...) {
+		sel = nullptr;
+	}
 
 	json = "{\"ready\":true,\"selectCount\":" + std::to_string(selectCount) + ",\"selected\":[";
 	bool first = true;
@@ -3376,8 +3434,22 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 			if (d == nullptr) {
 				continue;
 			}
-			Object *obj = d->getObject();
+			Object *obj = nullptr;
+			try {
+				obj = d->getObject();
+			} catch (...) {
+				obj = nullptr;
+			}
 			if (obj == nullptr) {
+				continue;
+			}
+
+			const Coord3D *pos = obj->getPosition();
+			if (!pos) {
+				continue;
+			}
+			// Guard: isfinite check on all position components
+			if (!std::isfinite(pos->x) || !std::isfinite(pos->y) || !std::isfinite(pos->z)) {
 				continue;
 			}
 
@@ -3386,15 +3458,18 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 			}
 			first = false;
 
-			const Coord3D *pos = obj->getPosition();
-			if (!pos) {
-				continue;
-			}
 			json += "{";
-			json += "\"id\":" + std::to_string(static_cast<long long>(obj->getID()));
-			json += ",\"worldPos\":{\"x\":" + std::to_string(std::isfinite(pos->x) ? pos->x : 0.0);
-			json += ",\"y\":" + std::to_string(std::isfinite(pos->y) ? pos->y : 0.0);
-			json += ",\"z\":" + std::to_string(std::isfinite(pos->z) ? pos->z : 0.0) + "}";
+			// Guard: getID() can crash if obj vtable is corrupted
+			long long objId = 0;
+			try {
+				objId = static_cast<long long>(obj->getID());
+			} catch (...) {
+				objId = -1;
+			}
+			json += "\"id\":" + std::to_string(objId);
+			json += ",\"worldPos\":{\"x\":" + std::to_string(pos->x);
+			json += ",\"y\":" + std::to_string(pos->y);
+			json += ",\"z\":" + std::to_string(pos->z) + "}";
 			json += "}";
 		}
 	}
