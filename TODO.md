@@ -196,15 +196,13 @@ residue and the next frontier.
       first official multiplayer key, selected game-options map, and the exact
       point where `getDefaultOfficialMap()`/`loadMap("")` goes wrong, then fix
       that real path without inventing map data.
-- [ ] **RTT/FBO follow-ups from adversarial review** (landed unverified;
-      TODO/DONE never updated by the track): (1) `releaseD3D8Texture` in
-      bridge.js never deletes the `d3d8Framebuffers` entry — FBO + depth
-      renderbuffer leak, and a stale FBO if a texture id is reused; (2)
-      `bindD3D8Framebuffer` failure returns 0 but the C++ EM_JS caller ignores
-      it — on FBO-incomplete the reflection/shadow passes silently draw into
-      the last-bound framebuffer (same bug class as the black-terrain
-      incident); (3) `depthTextureId` is accepted but ignored; (4) no harness
-      gate asserts an RTT pixel or `browser_fbo_bind_calls` — add one.
+- [ ] Add browser depth-texture attachment support for D3D8 render targets when
+      `SetRenderTarget` receives a texture-owned depth/stencil surface. The
+      current `CreateDepthStencilSurface` path is harness-proven with an
+      internal depth renderbuffer, FBO cleanup, FBO bind-failure propagation,
+      offscreen RTT pixel sampling, restored backbuffer pixels, zero leaked
+      browser FBOs, and zero incomplete-FBO events; `depthTextureId` is still
+      accepted by the bridge but ignored.
 - [ ] **`harness/smoke.mjs` (EXPECT_WASM=1) has been red since e97628f**
       (cursor-CSS probe, pre-dating the swarm window) and stayed red through
       nine merges — the full regression lane is not being run by anyone. Fix

@@ -2830,6 +2830,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       Humvee, an infantry squad, and the complete control bar/radar/money HUD —
       the exact frame that was pure-black before the fix. General lesson for the
       port: WebGL clears respect write masks, D3D clears do not.
+- [x] **Prove D3D8 render-target/FBO correctness in the harness.** Added the
+      `d3d8RenderTarget` RPC and smoke assertion around the real D3D8 shim path:
+      `CreateTexture(D3DUSAGE_RENDERTARGET)` -> `GetSurfaceLevel(0)` ->
+      `CreateDepthStencilSurface` -> `SetRenderTarget` -> `Clear` -> restore
+      default backbuffer/depth -> `Clear` -> `Present`. The harness samples the
+      offscreen render texture center as `[34,85,170,255]`, then samples the
+      restored backbuffer center as `[16,32,48,255]`. The C++ probe and browser
+      bridge also assert two FBO binds, zero FBO bind failures, default FBO
+      restored to texture ids `0/0`, one texture create/release delta, live
+      texture count `0`, browser FBO count `0`, and zero new incomplete-FBO
+      events. Direct inspection also confirmed the stale adversarial-review
+      claims for FBO release cleanup and bind-failure counting were already
+      fixed; the remaining open depth-related task is only texture-owned depth
+      attachment support. Verified with `node --check
+      WebAssembly/harness/bridge.js`, `node --check
+      WebAssembly/harness/smoke.mjs`, `npm --prefix WebAssembly run
+      build:port`, a focused Playwright `d3d8RenderTarget` boot/RPC, and
+      `EXPECT_WASM=1 node harness/smoke.mjs` through the new assertion. The
+      aggregate smoke still fails later at the tracked legacy
+      `edgeMapperApply` dlmalloc OOB.
 - [x] **Prove real select-to-move at MD_USA01 player control on Mac/Metal.**
       The startup vertical interactivity mode now uses the original input
       setting (`GlobalData::m_useAlternateMouse`) to choose the move button,

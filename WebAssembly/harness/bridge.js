@@ -3975,6 +3975,19 @@ function sampleD3D8TextureProbe(resource) {
   };
 }
 
+function sampleD3D8TextureCenter(textureId) {
+  const id = Number(textureId ?? 0) >>> 0;
+  const resource = d3d8Textures.get(id);
+  if (!resource?.width || !resource?.height) {
+    return null;
+  }
+  return sampleD3D8TexturePixel(
+    resource,
+    Math.floor(resource.width / 2),
+    Math.floor(resource.height / 2),
+  );
+}
+
 function updateD3D8TextureSummary() {
   d3d8TextureStats.live = d3d8Textures.size;
   const boundTextures = {};
@@ -3984,6 +3997,7 @@ function updateD3D8TextureSummary() {
   harnessState.graphics = {
     ...harnessState.graphics,
     browserFboIncompleteCount: browser_fbo_incomplete_count,
+    browserFboCount: d3d8Framebuffers.size,
     d3d8Textures: {
       creates: d3d8TextureStats.creates,
       updates: d3d8TextureStats.updates,
@@ -3996,6 +4010,7 @@ function updateD3D8TextureSummary() {
       samplerApplications: d3d8TextureStats.samplerApplications,
       dxtDecodes: d3d8TextureStats.dxtDecodes,
       live: d3d8TextureStats.live,
+      browserFboCount: d3d8Framebuffers.size,
       legacyUploads: d3d8TextureStats.legacyUploads,
       boundTextures,
       lastCreate: d3d8TextureStats.lastCreate,
@@ -8064,6 +8079,7 @@ async function loadWasmModule() {
       cncPortD3D8VolumeTextureUpdate: updateD3D8VolumeTexture,
       cncPortD3D8TextureRelease: releaseD3D8Texture,
       cncPortD3D8TextureBind: bindD3D8Texture,
+      cncPortD3D8TextureSampleCenter: sampleD3D8TextureCenter,
 		cncPortD3D8BindFramebuffer: bindD3D8Framebuffer,
       cncPortD3D8DrawIndexed: paintD3D8DrawIndexed,
       cncPortMssSampleStart,
@@ -8266,6 +8282,7 @@ async function loadWasmModule() {
       probeMssStreamLifecycle: module.cwrap("cnc_port_probe_mss_stream_lifecycle", "string", []),
       probeMss3DSampleLifecycle: module.cwrap("cnc_port_probe_mss_3d_sample_lifecycle", "string", []),
       probeD3D8Clear: module.cwrap("cnc_port_probe_d3d8_clear", "string", ["number"]),
+      probeD3D8RenderTarget: module.cwrap("cnc_port_probe_d3d8_render_target", "string", []),
       probeD3D8Viewport: module.cwrap("cnc_port_probe_d3d8_viewport", "string", []),
       probeD3D8BufferDirty: module.cwrap("cnc_port_probe_d3d8_buffer_dirty", "string", []),
       probeD3D8BufferHints: module.cwrap("cnc_port_probe_d3d8_buffer_hints", "string", []),
@@ -8518,6 +8535,7 @@ function d3d8BridgeCallbacks() {
     cncPortD3D8VolumeTextureUpdate: updateD3D8VolumeTexture,
     cncPortD3D8TextureRelease: releaseD3D8Texture,
     cncPortD3D8TextureBind: bindD3D8Texture,
+    cncPortD3D8TextureSampleCenter: sampleD3D8TextureCenter,
     cncPortD3D8DrawIndexed: paintD3D8DrawIndexed,
 		cncPortD3D8BindFramebuffer: bindD3D8Framebuffer,
   };
@@ -13420,6 +13438,53 @@ async function rpc(command, payload = {}) {
           command,
           probe,
           browserProbe,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8RenderTarget":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 render target probe cannot run" };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        const beforeTextures = harnessState.graphics.d3d8Textures ?? {};
+        const beforeFboIncomplete = harnessState.graphics.browserFboIncompleteCount ?? 0;
+        const probe = parseModuleState(wasmModule.probeD3D8RenderTarget());
+        const textureProbe = harnessState.graphics.d3d8Textures ?? null;
+        const afterFboIncomplete = harnessState.graphics.browserFboIncompleteCount ?? 0;
+        const screenshot = snapshotCanvas();
+        const expectedTextureCenter = probe?.expectedTextureCenter ?? [34, 85, 170, 255];
+        const expectedBackbufferCenter = probe?.expectedBackbufferCenter ?? [16, 32, 48, 255];
+        const textureDelta = {
+          creates: (textureProbe?.creates ?? 0) - (beforeTextures.creates ?? 0),
+          releases: (textureProbe?.releases ?? 0) - (beforeTextures.releases ?? 0),
+          live: textureProbe?.live ?? null,
+          browserFboCount: textureProbe?.browserFboCount ?? null,
+          fboIncomplete: afterFboIncomplete - beforeFboIncomplete,
+        };
+        const ok = Boolean(probe?.ok)
+          && probe?.source === "browser_d3d8_render_target_probe"
+          && probe?.textureId > 0
+          && probe?.calls?.browserFboBind === 2
+          && probe?.calls?.browserFboBindFailures === 0
+          && probe?.calls?.browserTextureRelease === 1
+          && probe?.lastBrowserFbo?.colorTextureId === 0
+          && probe?.lastBrowserFbo?.depthTextureId === 0
+          && pixelsApproximatelyEqual(probe?.textureSample, expectedTextureCenter, 1)
+          && pixelsApproximatelyEqual(screenshot.centerPixel, expectedBackbufferCenter, 1)
+          && textureDelta.creates === 1
+          && textureDelta.releases === 1
+          && textureDelta.live === 0
+          && textureDelta.browserFboCount === 0
+          && textureDelta.fboIncomplete === 0;
+        return {
+          ok,
+          command,
+          probe,
+          textureProbe,
+          textureDelta,
           screenshot,
           state: snapshotState(),
         };

@@ -3492,6 +3492,26 @@ try {
     throw new Error(`D3D8 volume texture upload probe failed: ${JSON.stringify(d3d8VolumeTextureUploadResult)}`);
   }
 
+  const d3d8RenderTargetResult = await page.evaluate(() =>
+    window.CnCPort.rpc("d3d8RenderTarget"));
+  if (!d3d8RenderTargetResult.ok
+      || d3d8RenderTargetResult.probe?.source !== "browser_d3d8_render_target_probe"
+      || d3d8RenderTargetResult.probe?.textureId <= 0
+      || d3d8RenderTargetResult.probe?.calls?.browserFboBind !== 2
+      || d3d8RenderTargetResult.probe?.calls?.browserFboBindFailures !== 0
+      || d3d8RenderTargetResult.probe?.calls?.browserTextureRelease !== 1
+      || d3d8RenderTargetResult.probe?.lastBrowserFbo?.colorTextureId !== 0
+      || d3d8RenderTargetResult.probe?.lastBrowserFbo?.depthTextureId !== 0
+      || d3d8RenderTargetResult.probe?.textureSample?.join(",") !== "34,85,170,255"
+      || d3d8RenderTargetResult.textureDelta?.creates !== 1
+      || d3d8RenderTargetResult.textureDelta?.releases !== 1
+      || d3d8RenderTargetResult.textureDelta?.live !== 0
+      || d3d8RenderTargetResult.textureDelta?.browserFboCount !== 0
+      || d3d8RenderTargetResult.textureDelta?.fboIncomplete !== 0
+      || d3d8RenderTargetResult.screenshot?.centerPixel?.join(",") !== "16,32,48,255") {
+    throw new Error(`D3D8 render-target/FBO probe failed: ${JSON.stringify(d3d8RenderTargetResult)}`);
+  }
+
   const d3d8TextureBindResult = await page.evaluate(() => window.CnCPort.rpc("d3d8TextureBind"));
   if (!d3d8TextureBindResult.ok
       || d3d8TextureBindResult.probe?.source !== "browser_d3d8_texture_bind_probe"
