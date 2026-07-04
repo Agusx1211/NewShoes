@@ -4449,7 +4449,7 @@ function updateD3D8Texture(payload = {}) {
     pitch: Number(payload.pitch ?? 0) >>> 0,
     rowBytes: Number(payload.rowBytes ?? 0) >>> 0,
     byteSize: payload.bytes.byteLength,
-    convertedByteSize: convertedBytes.byteLength,
+    convertedByteSize: uploadBytes.byteLength,
     usage: Number(payload.usage ?? 0) >>> 0,
     lockFlags: Number(payload.lockFlags ?? 0) >>> 0,
     uploads: resource.uploads,
