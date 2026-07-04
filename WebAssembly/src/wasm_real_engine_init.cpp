@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -3316,6 +3317,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 		first = false;
 
 		const Coord3D *pos = obj->getPosition();
+		if (!pos) {
+			continue;
+		}
 		ICoord2D screenPos;
 		Bool onScreen = TheTacticalView->worldToScreen(pos, &screenPos);
 
@@ -3337,9 +3341,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 		json += ",\"hidden\":";
 		json += d->isDrawableEffectivelyHidden() ? "true" : "false";
 
-		json += ",\"worldPos\":{\"x\":" + std::to_string(pos->x);
-		json += ",\"y\":" + std::to_string(pos->y);
-		json += ",\"z\":" + std::to_string(pos->z) + "}";
+		json += ",\"worldPos\":{\"x\":" + std::to_string(std::isfinite(pos->x) ? pos->x : 0.0);
+		json += ",\"y\":" + std::to_string(std::isfinite(pos->y) ? pos->y : 0.0);
+		json += ",\"z\":" + std::to_string(std::isfinite(pos->z) ? pos->z : 0.0) + "}";
 
 		json += ",\"onScreen\":";
 		json += onScreen ? "true" : "false";
@@ -3383,11 +3387,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 			first = false;
 
 			const Coord3D *pos = obj->getPosition();
+			if (!pos) {
+				continue;
+			}
 			json += "{";
 			json += "\"id\":" + std::to_string(static_cast<long long>(obj->getID()));
-			json += ",\"worldPos\":{\"x\":" + std::to_string(pos->x);
-			json += ",\"y\":" + std::to_string(pos->y);
-			json += ",\"z\":" + std::to_string(pos->z) + "}";
+			json += ",\"worldPos\":{\"x\":" + std::to_string(std::isfinite(pos->x) ? pos->x : 0.0);
+			json += ",\"y\":" + std::to_string(std::isfinite(pos->y) ? pos->y : 0.0);
+			json += ",\"z\":" + std::to_string(std::isfinite(pos->z) ? pos->z : 0.0) + "}";
 			json += "}";
 		}
 	}
