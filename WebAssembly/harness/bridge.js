@@ -7790,6 +7790,16 @@ async function loadWasmModule() {
         "string",
         ["number"],
       ),
+      queryDrawables: module.cwrap(
+        "cnc_port_query_drawables",
+        "string",
+        [],
+      ),
+      querySelection: module.cwrap(
+        "cnc_port_query_selection",
+        "string",
+        [],
+      ),
       realEngineLastUpdateTarget: module.cwrap(
         "cnc_port_real_engine_last_update_target",
         "string",
@@ -12681,6 +12691,54 @@ async function rpc(command, payload = {}) {
           lastUpdateTarget,
           lastGameLogicStep,
           frame,
+          state: snapshotState(),
+        };
+      }
+    case "queryDrawables":
+      {
+        const moduleResult = await getWasmModuleForArchives("queryDrawables");
+        if (moduleResult.error) {
+          return { ok: false, command: "queryDrawables", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.queryDrawables());
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        return {
+          ok: Boolean(result?.ready) && !aborted,
+          command: "queryDrawables",
+          aborted,
+          abortMessage,
+          result,
+          state: snapshotState(),
+        };
+      }
+    case "querySelection":
+      {
+        const moduleResult = await getWasmModuleForArchives("querySelection");
+        if (moduleResult.error) {
+          return { ok: false, command: "querySelection", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.querySelection());
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        return {
+          ok: Boolean(result?.ready) && !aborted,
+          command: "querySelection",
+          aborted,
+          abortMessage,
+          result,
           state: snapshotState(),
         };
       }

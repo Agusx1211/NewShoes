@@ -54,6 +54,8 @@
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/Scripts.h"
 #include "GameLogic/SidesList.h"
+#include "GameLogic/Object.h"
+#include "Common/ThingTemplate.h"
 
 // The original app-level globals GameEngine.cpp expects WinMain.cpp to own.
 // WinMain.cpp is only partially compiled for the browser (WndProc +
@@ -3286,6 +3288,111 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_summary(i
 		g_frame_state.exception_caught ? g_frame_state.exception_text.c_str() : "(none)");
 	std::fflush(stdout);
 	return g_frame_json.c_str();
+}
+
+// Query all drawables in the game client, returning position, ownership, and
+// screen-space info. Safe to call before init — returns {"ready":false}.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
+{
+	static std::string json;
+	if (TheGameClient == nullptr || ThePlayerList == nullptr || TheTacticalView == nullptr) {
+		json = "{\"ready\":false}";
+		return json.c_str();
+	}
+
+	const Player *localPlayer = ThePlayerList->getLocalPlayer();
+	json = "{\"ready\":true,\"drawables\":[";
+	bool first = true;
+
+	for (Drawable *d = TheGameClient->firstDrawable(); d; d = d->getNextDrawable()) {
+		Object *obj = d->getObject();
+		if (obj == nullptr) {
+			continue;
+		}
+
+		if (!first) {
+			json += ",";
+		}
+		first = false;
+
+		const Coord3D *pos = obj->getPosition();
+		ICoord2D screenPos;
+		Bool onScreen = TheTacticalView->worldToScreen(pos, &screenPos);
+
+		json += "{";
+		json += "\"id\":" + std::to_string(static_cast<long long>(obj->getID()));
+		json += ",\"name\":\"" + json_escape(obj->getTemplate() ? obj->getTemplate()->getName().str() : "") + "\"";
+
+		Player *owner = obj->getControllingPlayer();
+		if (owner != nullptr) {
+			json += ",\"playerIndex\":" + std::to_string(owner->getPlayerIndex());
+			json += ",\"localOwned\":";
+			json += (owner == localPlayer) ? "true" : "false";
+		} else {
+			json += ",\"playerIndex\":-1,\"localOwned\":false";
+		}
+
+		json += ",\"structure\":";
+		json += obj->isKindOf(KINDOF_STRUCTURE) ? "true" : "false";
+		json += ",\"hidden\":";
+		json += d->isDrawableEffectivelyHidden() ? "true" : "false";
+
+		json += ",\"worldPos\":{\"x\":" + std::to_string(pos->x);
+		json += ",\"y\":" + std::to_string(pos->y);
+		json += ",\"z\":" + std::to_string(pos->z) + "}";
+
+		json += ",\"onScreen\":";
+		json += onScreen ? "true" : "false";
+		json += ",\"screenPos\":{\"x\":" + std::to_string(screenPos.x);
+		json += ",\"y\":" + std::to_string(screenPos.y) + "}";
+
+		json += "}";
+	}
+
+	json += "]}";
+	return json.c_str();
+}
+
+// Query the current selection state from InGameUI.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
+{
+	static std::string json;
+	if (TheInGameUI == nullptr) {
+		json = "{\"ready\":false}";
+		return json.c_str();
+	}
+
+	Int selectCount = TheInGameUI->getSelectCount();
+	const DrawableList *sel = TheInGameUI->getAllSelectedDrawables();
+
+	json = "{\"ready\":true,\"selectCount\":" + std::to_string(selectCount) + ",\"selected\":[";
+	bool first = true;
+	if (sel != nullptr) {
+		for (Drawable *d : *sel) {
+			if (d == nullptr) {
+				continue;
+			}
+			Object *obj = d->getObject();
+			if (obj == nullptr) {
+				continue;
+			}
+
+			if (!first) {
+				json += ",";
+			}
+			first = false;
+
+			const Coord3D *pos = obj->getPosition();
+			json += "{";
+			json += "\"id\":" + std::to_string(static_cast<long long>(obj->getID()));
+			json += ",\"worldPos\":{\"x\":" + std::to_string(pos->x);
+			json += ",\"y\":" + std::to_string(pos->y);
+			json += ",\"z\":" + std::to_string(pos->z) + "}";
+			json += "}";
+		}
+	}
+	json += "]}";
+	return json.c_str();
 }
 
 // Diagnostic for the shell-map path: GameEngine::init silently clears
