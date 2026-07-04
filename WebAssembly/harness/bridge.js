@@ -3855,7 +3855,11 @@ function bindD3D8Framebuffer(payload = {}) {
 			);
 			gl.deleteFramebuffer(fbo);
 			gl.deleteRenderbuffer(depthRenderbuffer);
-			gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+			// Do NOT fall back to the default framebuffer — that would
+			// make offscreen draws pollute the main color+depth buffer
+			// (the root cause of objects rendering behind terrain).
+			// Restore the previous framebuffer instead.
+			gl.bindFramebuffer(gl.FRAMEBUFFER, d3d8CurrentFramebuffer);
 			return 0;
 		}
 
@@ -3867,8 +3871,27 @@ function bindD3D8Framebuffer(payload = {}) {
 		};
 		d3d8Framebuffers.set(colorTextureId, fboEntry);
 	} else {
-		// Reuse existing FBO - just bind it
+		// Reuse existing FBO - verify it's still complete (texture
+		// format may have changed since creation, e.g. a lazy upload
+		// replaced our RGBA pre-allocation with a compressed format
+		// that is not color-renderable in WebGL2).
 		gl.bindFramebuffer(gl.FRAMEBUFFER, fboEntry.fbo);
+		const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+		if (status !== gl.FRAMEBUFFER_COMPLETE) {
+			browser_fbo_incomplete_count += 1;
+			console.warn(
+				`FBO for texture ${colorTextureId} became incomplete after creation (status 0x${status.toString(16)}); recreating`
+			);
+			// Recreate: free the stale FBO and retry from scratch.
+			gl.deleteFramebuffer(fboEntry.fbo);
+			if (fboEntry.depthRenderbuffer) {
+				gl.deleteRenderbuffer(fboEntry.depthRenderbuffer);
+			}
+			d3d8Framebuffers.delete(colorTextureId);
+			// Restore the previous framebuffer before retrying.
+			gl.bindFramebuffer(gl.FRAMEBUFFER, d3d8CurrentFramebuffer);
+			return bindD3D8Framebuffer(payload);
+		}
 	}
 
 	// Set viewport to match RT size
@@ -4437,7 +4460,20 @@ function paintCanvasRgba(rgba) {
   if (gl) {
     gl.clearColor(rgba[0] / 255, rgba[1] / 255, rgba[2] / 255, rgba[3] / 255);
     gl.clearDepth(1);
+    // D3D8's Clear ignores the depth/stencil write masks, but WebGL's
+    // gl.clear RESPECTS gl.depthMask: if a prior draw left depth writes
+    // disabled, the depth clear is silently skipped, leaving stale depth
+    // that later geometry fails the depth test against (same class as the
+    // black-terrain bug fixed in 08a1839). Force the depth write mask on
+    // for the clear, then restore it.
+    const restoreDepthMask = !gl.getParameter(gl.DEPTH_WRITEMASK);
+    if (restoreDepthMask) {
+      gl.depthMask(true);
+    }
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    if (restoreDepthMask) {
+      gl.depthMask(false);
+    }
   } else if (fallbackContext) {
     fallbackContext.fillStyle = `rgb(${rgba[0]} ${rgba[1]} ${rgba[2]})`;
     fallbackContext.fillRect(0, 0, canvas.width, canvas.height);
