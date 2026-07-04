@@ -2394,7 +2394,7 @@ try {
         postCampaignFrameCount > 0 ? postCampaignFrameCount : 1)
       : null;
   const realPostCampaignPlayerControlFrames = shouldRunUntilPlayerControl
-    ? (() => {
+    ? await (async () => {
         await page.evaluate(() => {
           if (window.__cncSetDiagLevel) window.__cncSetDiagLevel("lite");
         });
