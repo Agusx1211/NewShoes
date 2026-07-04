@@ -2498,7 +2498,7 @@ try {
     // 2. queryDrawables → pick first local-owned, non-structure, non-hidden, on-screen unit.
     const dr = await page.evaluate(() =>
       window.CnCPort.rpc("queryDrawables"));
-    console.error("[interact] queryDrawables ok:", dr?.ok, "ready:", dr?.result?.ready);
+    console.error("[interact] queryDrawables ok:", dr?.ok, "aborted:", dr?.aborted, "abortMessage:", dr?.abortMessage, "ready:", dr?.result?.ready, "rawResult:", dr?.result);
     const drawables = dr?.result?.drawables ?? [];
     const localUnits = drawables.filter(
       (d) => d.localOwned === true && d.structure === false && d.hidden === false && d.onScreen === true
@@ -2531,7 +2531,7 @@ try {
     // 4. querySelection → assert selectCount >= 1.
     const selBefore = await page.evaluate(() =>
       window.CnCPort.rpc("querySelection"));
-    console.error("[interact] querySelection before move ok:", selBefore?.ok, "selectCount:", selBefore?.result?.selectCount);
+    console.error("[interact] querySelection before move ok:", selBefore?.ok, "aborted:", selBefore?.aborted, "abortMessage:", selBefore?.abortMessage, "selectCount:", selBefore?.result?.selectCount, "rawResult:", selBefore?.result);
     summary.selectCount = selBefore?.result?.selectCount ?? 0;
 
     // 5. Right-click a destination offset: +200px x on-screen, clamped.
@@ -2550,6 +2550,7 @@ try {
     // 7. queryDrawables again → find same unit by id → compute worldPos delta.
     const dr2 = await page.evaluate(() =>
       window.CnCPort.rpc("queryDrawables"));
+    console.error("[interact] queryDrawables (2nd) ok:", dr2?.ok, "aborted:", dr2?.aborted, "abortMessage:", dr2?.abortMessage, "ready:", dr2?.result?.ready, "rawResult:", dr2?.result);
     const drawables2 = dr2?.result?.drawables ?? [];
     const unit2 = drawables2.find((d) => d.id === unit.id);
     if (unit2 && unit2.worldPos) {

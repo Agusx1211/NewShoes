@@ -3296,21 +3296,40 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_summary(i
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 {
 	static std::string json;
-	if (TheGameClient == nullptr || ThePlayerList == nullptr || TheTacticalView == nullptr) {
-		json = "{\"ready\":false}";
+	if (TheGameClient == nullptr) {
+		json = "{\"ready\":false,\"guard\":\"TheGameClient\"}";
+		return json.c_str();
+	}
+	if (ThePlayerList == nullptr) {
+		json = "{\"ready\":false,\"guard\":\"ThePlayerList\"}";
+		return json.c_str();
+	}
+	if (TheTacticalView == nullptr) {
+		json = "{\"ready\":false,\"guard\":\"TheTacticalView\"}";
 		return json.c_str();
 	}
 
 	const Player *localPlayer = ThePlayerList->getLocalPlayer();
+
+	// Filter counters for diagnostics
+	int totalDrawables = 0;
+	int noObject = 0;
+	int notOwned = 0;
+	int offScreen = 0;
+	int hidden = 0;
+	int kept = 0;
+
 	json = "{\"ready\":true,\"drawables\":[";
 	bool first = true;
 
 	for (Drawable *d = TheGameClient->firstDrawable(); d; d = d->getNextDrawable()) {
+		totalDrawables++;
 		if (d == nullptr) {
 			continue;
 		}
 		Object *obj = d->getObject();
 		if (obj == nullptr) {
+			noObject++;
 			continue;
 		}
 
@@ -3335,6 +3354,38 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 			onScreen = false;
 		}
 
+		// Filter: not local-owned
+		Player *owner = nullptr;
+		try {
+			owner = obj->getControllingPlayer();
+		} catch (...) {
+			owner = nullptr;
+		}
+		if (owner != nullptr && owner != localPlayer) {
+			notOwned++;
+			continue;
+		}
+
+		// Filter: off-screen
+		if (!onScreen) {
+			offScreen++;
+			continue;
+		}
+
+		// Filter: hidden
+		bool isHidden = false;
+		try {
+			isHidden = d->isDrawableEffectivelyHidden();
+		} catch (...) {
+			isHidden = false;
+		}
+		if (isHidden) {
+			hidden++;
+			continue;
+		}
+
+		kept++;
+
 		if (!first) {
 			json += ",";
 		}
@@ -3354,13 +3405,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 		// Guard: getTemplate() may return NULL; cache the result to avoid double-call
 		json += ",\"name\":\"" + json_escape(tpl ? tpl->getName().str() : "unknown") + "\"";
 
-		// Guard: getControllingPlayer() can be NULL (neutral/civilian objects)
-		Player *owner = nullptr;
-		try {
-			owner = obj->getControllingPlayer();
-		} catch (...) {
-			owner = nullptr;
-		}
+		// Use the owner computed earlier for filtering
 		if (owner != nullptr) {
 			json += ",\"playerIndex\":" + std::to_string(owner->getPlayerIndex());
 			json += ",\"localOwned\":";
@@ -3379,13 +3424,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 		json += ",\"structure\":";
 		json += isStructure ? "true" : "false";
 
-		// Guard: isDrawableEffectivelyHidden() can crash on bad drawable state
-		bool isHidden = false;
-		try {
-			isHidden = d->isDrawableEffectivelyHidden();
-		} catch (...) {
-			isHidden = false;
-		}
+		// Use the isHidden computed earlier for filtering
 		json += ",\"hidden\":";
 		json += isHidden ? "true" : "false";
 
@@ -3401,7 +3440,15 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 		json += "}";
 	}
 
-	json += "]}";
+	json += "]";
+	json += ",\"stats\":{\"total\":" + std::to_string(totalDrawables);
+	json += ",\"noObject\":" + std::to_string(noObject);
+	json += ",\"notOwned\":" + std::to_string(notOwned);
+	json += ",\"offScreen\":" + std::to_string(offScreen);
+	json += ",\"hidden\":" + std::to_string(hidden);
+	json += ",\"kept\":" + std::to_string(kept);
+	json += "}}";
+	json += "}";
 	return json.c_str();
 }
 
@@ -3410,7 +3457,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 {
 	static std::string json;
 	if (TheInGameUI == nullptr) {
-		json = "{\"ready\":false}";
+		json = "{\"ready\":false,\"guard\":\"TheInGameUI\"}";
 		return json.c_str();
 	}
 
@@ -3473,7 +3520,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 			json += "}";
 		}
 	}
-	json += "]}";
+	json += "]";
+	json += "}";
 	return json.c_str();
 }
 
