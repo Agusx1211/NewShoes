@@ -6764,38 +6764,8 @@ function paintD3D8DrawIndexed(payload = {}) {
     const stateHash = Number(payload.stateHash ?? 0) >>> 0;
     const stateUnchanged = stateHash === (harnessState.graphics.lastD3D8StateHash ?? 0);
     let fillModeDraw, shadeModeDraw;
-    if (!stateUnchanged) {
-    appliedRenderState = applyD3D8RenderState(renderState, {
-      invertCullWinding: false,
-    });
-    appliedRenderState.clipPlanes = d3d8ClipPlaneInfo(renderState, clipPlanes);
-    appliedRenderState.lighting = {
-      ...appliedRenderState.lighting,
-      shaderEnabled: appliedRenderState.lighting.enabled && fixedFunctionLights.length > 0,
-      normalTransform: {
-        source: useTransforms ? "inverseTransposeWorld" : "attribute",
-        inverseTransposeWorld: Boolean(useTransforms),
-        normalizeNormals: renderState.normalizeNormals !== 0,
-      },
-      viewDirection: {
-        source: renderState.localViewer !== 0 ? "cameraRelative" : "orthogonal",
-        localViewer: renderState.localViewer !== 0,
-      },
-      specular: {
-        enabled: renderState.specularEnable !== 0,
-        material: material.specular.slice(),
-        power: material.power,
-        source: renderState.specularMaterialSource,
-        sourceName: d3dMaterialSourceName(renderState.specularMaterialSource),
-      },
-      fixedFunctionLightSupported: fixedFunctionLights.length > 0,
-      fixedFunctionLightCount: fixedFunctionLights.length,
-      fixedFunctionLights,
-      directionalLightSupported: directionalLights.length > 0,
-      directionalLightCount: directionalLights.length,
-      directionalLights,
-      firstDirectionalLight,
-    };
+    // Per-draw geometry setup: ALWAYS executed (not skippable — geometry changes
+    // every draw even when render state is identical).
     fillModeDraw = createD3D8FillModeDrawInfo(
       renderState,
       payload.primitiveType,
@@ -6862,6 +6832,39 @@ function paintD3D8DrawIndexed(payload = {}) {
       gl.disableVertexAttribArray(bridgeProgram.texCoord1);
       gl.vertexAttrib2f(bridgeProgram.texCoord1, 0, 0);
     }
+    // Per-draw GL state application: skip when render state hash is unchanged.
+    if (!stateUnchanged) {
+    appliedRenderState = applyD3D8RenderState(renderState, {
+      invertCullWinding: false,
+    });
+    appliedRenderState.clipPlanes = d3d8ClipPlaneInfo(renderState, clipPlanes);
+    appliedRenderState.lighting = {
+      ...appliedRenderState.lighting,
+      shaderEnabled: appliedRenderState.lighting.enabled && fixedFunctionLights.length > 0,
+      normalTransform: {
+        source: useTransforms ? "inverseTransposeWorld" : "attribute",
+        inverseTransposeWorld: Boolean(useTransforms),
+        normalizeNormals: renderState.normalizeNormals !== 0,
+      },
+      viewDirection: {
+        source: renderState.localViewer !== 0 ? "cameraRelative" : "orthogonal",
+        localViewer: renderState.localViewer !== 0,
+      },
+      specular: {
+        enabled: renderState.specularEnable !== 0,
+        material: material.specular.slice(),
+        power: material.power,
+        source: renderState.specularMaterialSource,
+        sourceName: d3dMaterialSourceName(renderState.specularMaterialSource),
+      },
+      fixedFunctionLightSupported: fixedFunctionLights.length > 0,
+      fixedFunctionLightCount: fixedFunctionLights.length,
+      fixedFunctionLights,
+      directionalLightSupported: directionalLights.length > 0,
+      directionalLightCount: directionalLights.length,
+      directionalLights,
+      firstDirectionalLight,
+    };
     gl.uniform1f(bridgeProgram.scale, 1.0);
     gl.uniform1i(bridgeProgram.useTransforms, useTransforms ? 1 : 0);
     if (bridgeProgram.depthBias) {
