@@ -169,8 +169,14 @@ const baseIniStartupEntries = [
 const baseIniAudioStartupEntries = [
   "Data\\INI\\AudioSettings.ini",
   "Data\\INI\\Default\\Music.ini",
+  "Data\\INI\\Music.ini",
+  "Data\\INI\\Default\\SoundEffects.ini",
+  "Data\\INI\\SoundEffects.ini",
   "Data\\INI\\Default\\Speech.ini",
+  "Data\\INI\\Speech.ini",
   "Data\\INI\\Default\\Voice.ini",
+  "Data\\INI\\Voice.ini",
+  "Data\\INI\\MiscAudio.ini",
 ];
 
 const mappedImageIniEntries = [
