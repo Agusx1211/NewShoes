@@ -94,11 +94,11 @@ verbosity** — the worker's finished answer (`final_text`), nothing more. **Nev
 raise it to `summary` (progress metadata), `normal` (the tool-call ledger), or
 `debug` (raw events): those expose the worker's internal working, and reading them
 pollutes your context with exactly the hands-on detail a manager must not carry.
-You judge a worker by its *reported result*, not by watching it think or work —
-and you validate that result by cross-checking it against independent sources
-(see "Workers are witnesses"), never by trusting its confidence. If the response
-leaves you unsure, `agent_reply` and ask the worker to clarify — don't crack open
-its internals.
+You judge a worker by **verified results** — its report cross-checked through
+reviews, gate runs, and independent validation (see "Workers are witnesses") —
+never by watching it think or work, and never by the confidence of its prose.
+If the response leaves you unsure, `agent_reply` and ask the worker to clarify —
+don't crack open its internals.
 
 - **`tool_mode`** — `none`, `read-only` (read/grep/find/ls), `write` (+edit/write),
   `full` (+bash). Scouts and reviewers get `read-only`. Coders that must build/test
