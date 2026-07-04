@@ -24,7 +24,6 @@ data_archives=(
   GensecZH.big
   INIZH.big
   MapsZH.big
-  Music.big
   MusicZH.big
   ShadersZH.big
   SpeechZH.big
@@ -63,6 +62,12 @@ base_disc1_data_archives=(
   INI.big
   Window.big
 )
+
+# Music.big must be extracted separately into base_work_dir (base-generals/)
+# because the harness mounts it from base-generals/Music.big, not real-assets/Music.big.
+# The ZH Data1.cab contains a 786KB stub Music.big with only generalsa.sec.
+# The real base-Generals Music.big (~158MB) contains Data\Audio\Tracks\*.mp3.
+base_music_big="Music.big"
 
 base_disc2_data_archives=(
   Terrain.big
@@ -302,6 +307,14 @@ extract_optional_base_startup_archives() {
   extract_optional_archives_from_cab "${base_data1_source}" "Data1.cab" "${base_disc1_data_archives[@]}"
   extract_optional_archives_from_cab "${base_data2_source}" "Data2.cab" "${base_disc2_data_archives[@]}"
   extract_optional_archives_from_cab "${base_language_source}" "Language.cab" "${base_language_archives[@]}"
+
+  # Extract Music.big from base Generals Data1.cab into base_work_dir (base-generals/)
+  # because the harness mounts it from base-generals/Music.big.
+  # The ZH Data1.cab contains a 786KB stub Music.big with only generalsa.sec.
+  # The real base-Generals Music.big (~158MB) contains Data\Audio\Tracks\*.mp3.
+  if [[ -n "${base_data1_source}" && -f "${base_data1_source}" ]]; then
+    7z e -y "-o${base_work_dir}" "${base_data1_source}" "${base_music_big}" >/dev/null
+  fi
 }
 
 mkdir -p "${out_dir}"
