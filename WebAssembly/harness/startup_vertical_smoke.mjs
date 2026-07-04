@@ -965,6 +965,7 @@ function summarizePlayerControlState(result) {
   if (frame?.summary === true) {
     return {
       ...frame.playerControl,
+      useAlternateMouse: frame.inputSettings?.useAlternateMouse,
       textureDiagnostics: frame.textureDiagnostics,
     };
   }
@@ -988,6 +989,7 @@ function summarizePlayerControlState(result) {
     controlBarClickable: controlBarParent?.clickable,
     selectCount: gameplay?.selectCount,
     selectedControllable: gameplay?.selectedControllable,
+    useAlternateMouse: clientState?.inputSettings?.useAlternateMouse,
     returnToPlayerControlActive: returnToPlayerControl?.active,
     returnToPlayerControlFrameToEvaluate: returnToPlayerControl?.frameToEvaluate,
     textureDiagnostics: frame?.textureDiagnostics,
@@ -2414,7 +2416,7 @@ try {
       : null;
   const realPostCampaignPlayerControlFrames = shouldRunUntilPlayerControl
     ? await (async () => {
-        await page.evaluate(() => {
+        await realInitPage.evaluate(() => {
           if (window.__cncSetDiagLevel) window.__cncSetDiagLevel("lite");
         });
         const result = await runRealEngineFramesUntilPlayerControl(
@@ -2423,7 +2425,7 @@ try {
           postCampaignFrameChunkCount,
           postCampaignCompactChunks,
           postCampaignLightweightFrames);
-        await page.evaluate(() => {
+        await realInitPage.evaluate(() => {
           if (window.__cncSetDiagLevel) window.__cncSetDiagLevel("full");
         });
         return result;
@@ -2614,16 +2616,93 @@ try {
     console.error("[interact] querySelection before move ok:", selBefore?.ok, "aborted:", selBefore?.aborted, "abortMessage:", selBefore?.abortMessage, "selectCount:", selBefore?.result?.selectCount, "rawResult:", selBefore?.result);
     summary.selectCount = selBefore?.result?.selectCount ?? 0;
 
-    // 5. Right-click a destination offset: +200px x on-screen, clamped.
-    const viewportWidth = 1024;
-    const destX = Math.min(unit.screenPos.x + 200, viewportWidth - 1);
-    const destPoint = { x: destX, y: unit.screenPos.y };
-    await postRealEngineMouseMessage(page, win32MouseMessages.mouseMove, destPoint);
-    await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
-    await postRealEngineMouseMessage(page, win32MouseMessages.rightButtonDown, destPoint);
-    await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
-    await postRealEngineMouseMessage(page, win32MouseMessages.rightButtonUp, destPoint);
-    await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+    // 5. Click a destination offset: +200px x on-screen, clamped. The original
+    // CommandTranslator only actions MSG_MOUSE_RIGHT_CLICK when alternate mouse
+    // mode is enabled; otherwise the default move command is a left-click.
+    const useAlternateMouse = summarizePlayerControlState(pcResult).useAlternateMouse === true;
+    const moveClick = useAlternateMouse
+      ? {
+          name: "right",
+          down: win32MouseMessages.rightButtonDown,
+          up: win32MouseMessages.rightButtonUp,
+        }
+      : {
+          name: "left",
+          down: win32MouseMessages.leftButtonDown,
+          up: win32MouseMessages.leftButtonUp,
+        };
+    console.error(
+      "[interact] move input scheme: useAlternateMouse",
+      useAlternateMouse,
+      "moveButton", moveClick.name
+    );
+    const displayWidth = pcResult?.frame?.clientState?.display?.width
+      ?? pcResult?.frame?.display?.width
+      ?? 800;
+    const displayHeight = pcResult?.frame?.clientState?.display?.height
+      ?? pcResult?.frame?.display?.height
+      ?? 600;
+    const clampPoint = (point) => ({
+      x: Math.max(16, Math.min(Math.round(point.x), displayWidth - 16)),
+      y: Math.max(16, Math.min(Math.round(point.y), displayHeight - 140)),
+    });
+    const candidateDestinations = [
+      clampPoint({ x: unit.screenPos.x + 200, y: unit.screenPos.y }),
+      clampPoint({ x: unit.screenPos.x + 220, y: unit.screenPos.y + 80 }),
+      clampPoint({ x: unit.screenPos.x + 160, y: unit.screenPos.y + 140 }),
+      clampPoint({ x: unit.screenPos.x - 200, y: unit.screenPos.y }),
+      clampPoint({ x: unit.screenPos.x - 220, y: unit.screenPos.y + 80 }),
+      clampPoint({ x: unit.screenPos.x, y: unit.screenPos.y + 180 }),
+      clampPoint({ x: displayWidth - 96, y: Math.floor(displayHeight * 0.45) }),
+      clampPoint({ x: Math.floor(displayWidth * 0.5), y: Math.floor(displayHeight * 0.55) }),
+      clampPoint({ x: 96, y: Math.floor(displayHeight * 0.45) }),
+    ].filter((point, index, points) =>
+      points.findIndex((candidate) => candidate.x === point.x && candidate.y === point.y) === index);
+    const beforeMoveAppendCount = selBefore?.result?.commandPath?.moveAppendCount ?? 0;
+    const beforeDispatchMoveCount = selBefore?.result?.commandPath?.dispatchMoveCommandCount ?? 0;
+    let selAfterMoveClick = null;
+    let destPoint = null;
+    for (const candidate of candidateDestinations) {
+      await postRealEngineMouseMessage(page, win32MouseMessages.mouseMove, candidate);
+      await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+      await postRealEngineMouseMessage(page, moveClick.down, candidate);
+      await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+      await postRealEngineMouseMessage(page, moveClick.up, candidate);
+      await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+      selAfterMoveClick = await page.evaluate(() =>
+        window.CnCPort.rpc("querySelection"));
+      const commandPath = selAfterMoveClick?.result?.commandPath ?? {};
+      console.error(
+        "[interact] querySelection after move click candidate:",
+        JSON.stringify(candidate),
+        "ok:", selAfterMoveClick?.ok,
+        "selectCount:", selAfterMoveClick?.result?.selectCount,
+        "selectedControllable:", selAfterMoveClick?.result?.selectedControllable,
+        "commandPath:", JSON.stringify(commandPath));
+      if ((commandPath.moveAppendCount ?? 0) > beforeMoveAppendCount
+          || (commandPath.dispatchMoveCommandCount ?? 0) > beforeDispatchMoveCount) {
+        destPoint = candidate;
+        break;
+      }
+
+      const stillSelected = (selAfterMoveClick?.result?.selected ?? [])
+        .some((selected) => selected.id === unit.id);
+      if (!stillSelected) {
+        await postRealEngineMouseMessage(page, win32MouseMessages.mouseMove, clickPoint);
+        await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+        await postRealEngineMouseMessage(page, win32MouseMessages.leftButtonDown, clickPoint);
+        await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+        await postRealEngineMouseMessage(page, win32MouseMessages.leftButtonUp, clickPoint);
+        await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+      }
+    }
+    if (destPoint == null) {
+      throw new Error(
+        `[interact] no move command was created for any destination candidate; ` +
+        `lastCommandPath=${JSON.stringify(selAfterMoveClick?.result?.commandPath)}`
+      );
+    }
+    console.error("[interact] accepted move destination:", JSON.stringify(destPoint));
 
     // 6. Step ~90 frames.
     console.error("[interact] stepping 90 frames for unit to move...");
@@ -2635,6 +2714,14 @@ try {
     console.error("[interact] queryDrawables (2nd) ok:", dr2?.ok, "aborted:", dr2?.aborted, "abortMessage:", dr2?.abortMessage, "started:", dr2?.result?.started, "ready:", dr2?.result?.ready, "guard:", dr2?.result?.guard, "localPlayerIndex:", dr2?.result?.localPlayerIndex, "stats:", JSON.stringify(dr2?.result?.stats), "drawables:", (dr2?.result?.drawables ?? []).length);
     const drawables2 = dr2?.result?.drawables ?? [];
     const unit2 = drawables2.find((d) => d.id === unit.id);
+    const selAfterMoveStep = await page.evaluate(() =>
+      window.CnCPort.rpc("querySelection"));
+    console.error(
+      "[interact] querySelection after move frames ok:",
+      selAfterMoveStep?.ok,
+      "selectCount:", selAfterMoveStep?.result?.selectCount,
+      "selectedControllable:", selAfterMoveStep?.result?.selectedControllable,
+      "commandPath:", JSON.stringify(selAfterMoveStep?.result?.commandPath));
     if (unit2 && unit2.worldPos) {
       const dx = unit2.worldPos.x - unit.worldPos.x;
       const dy = unit2.worldPos.y - unit.worldPos.y;
@@ -2653,7 +2740,8 @@ try {
     if (summary.moveDelta == null || summary.moveDelta <= MOVE_DELTA_THRESHOLD) {
       throw new Error(
         `[interact] unit did not move: delta=${summary.moveDelta} (threshold=${MOVE_DELTA_THRESHOLD}); ` +
-        `unitPicked=${JSON.stringify(summary.unitPicked)}`
+        `unitPicked=${JSON.stringify(summary.unitPicked)}; ` +
+        `commandPath=${JSON.stringify(selAfterMoveStep?.result?.commandPath)}`
       );
     }
 

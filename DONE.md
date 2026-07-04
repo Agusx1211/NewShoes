@@ -2830,6 +2830,36 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       Humvee, an infantry squad, and the complete control bar/radar/money HUD —
       the exact frame that was pure-black before the fix. General lesson for the
       port: WebGL clears respect write masks, D3D clears do not.
+- [x] **Prove real select-to-move at MD_USA01 player control on Mac/Metal.**
+      The startup vertical interactivity mode now uses the original input
+      setting (`GlobalData::m_useAlternateMouse`) to choose the move button,
+      retries bounded in-world destination candidates, and exposes
+      Emscripten-only command-path counters from the original
+      `CommandTranslator` and `GameLogicDispatch` through
+      `querySelection`. A Chrome/Metal run on the M4 verifier reached player
+      control (`inputEnabled=true`, `introDone=true`, `localPlayerIndex=2`),
+      selected local `AmericaTankPaladin` object `934`, proved it was
+      controllable and locally controlled, then found a valid destination at
+      screen `{x:656,y:400}`. The click produced original command path evidence:
+      `lastClickType=21`, `lastClickIsPoint=1`, `lastClickControllable=1`,
+      `lastClickUseAlternateMouse=0`, `lastClickIssuedType=1068`
+      (`MSG_DO_MOVETO`), `moveAppendCount=1`,
+      `dispatchMoveCommandCount=1`, and `dispatchLastMoveHadGroup=1` at world
+      `{x:2211.542969,y:638.956665,z:15.625}`. After 90 real frames the unit
+      moved `73.53576040202283` world units (`dx=45.590088`,
+      `dy=-57.697937`) and the harness saved
+      `/tmp/cnc-metal-verify-20260704d/interact-milestone.png`. Verified with
+      `node --check WebAssembly/harness/play.mjs`, `node --check
+      WebAssembly/harness/startup_vertical_smoke.mjs`, `npm --prefix
+      WebAssembly run build:port`, and
+      `STARTUP_VERTICAL_REAL_INIT_ONLY=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_UNTIL_PLAYER_CONTROL=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_EXPECT_PLAYER_CONTROL=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=3600
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAME_CHUNK=60
+      STARTUP_VERTICAL_POST_CAMPAIGN_COMPACT_CHUNKS=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_LIGHTWEIGHT=1
+      STARTUP_VERTICAL_PROVE_INTERACT=1` on Chrome/Metal, exiting `0`.
 - [x] **Bisect the black-terrain bug down to degenerate terrain geometry**
       (diagnosis only; fix still open — see TODO). Built a fast shell-map
       iteration loop (`WebAssembly/harness/_diag_shell_terrain.mjs`, temp/

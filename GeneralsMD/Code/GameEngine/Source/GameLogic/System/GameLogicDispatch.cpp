@@ -96,6 +96,12 @@ static Int g_wasmLogicDispatchLastModeAfterSet = -1;
 static Int g_wasmLogicDispatchPrepareThisIsGlobal = 0;
 static Int g_wasmLogicDispatchPrepareHideShellCount = 0;
 static Int g_wasmLogicDispatchClearGameDataCount = 0;
+static Int g_wasmLogicDispatchMoveCommandCount = 0;
+static Int g_wasmLogicDispatchLastMoveCommandType = -1;
+static Int g_wasmLogicDispatchLastMoveHadGroup = -1;
+static Real g_wasmLogicDispatchLastMoveX = 0.0f;
+static Real g_wasmLogicDispatchLastMoveY = 0.0f;
+static Real g_wasmLogicDispatchLastMoveZ = 0.0f;
 
 extern "C" Int cnc_port_logic_dispatch_new_game_count( void ) { return g_wasmLogicDispatchNewGameCount; }
 extern "C" Int cnc_port_logic_dispatch_last_new_game_mode( void ) { return g_wasmLogicDispatchLastNewGameMode; }
@@ -105,6 +111,25 @@ extern "C" Int cnc_port_logic_dispatch_last_mode_after_set( void ) { return g_wa
 extern "C" Int cnc_port_logic_dispatch_prepare_this_is_global( void ) { return g_wasmLogicDispatchPrepareThisIsGlobal; }
 extern "C" Int cnc_port_logic_dispatch_prepare_hide_shell_count( void ) { return g_wasmLogicDispatchPrepareHideShellCount; }
 extern "C" Int cnc_port_logic_dispatch_clear_game_data_count( void ) { return g_wasmLogicDispatchClearGameDataCount; }
+extern "C" Int cnc_port_logic_dispatch_move_command_count( void ) { return g_wasmLogicDispatchMoveCommandCount; }
+extern "C" Int cnc_port_logic_dispatch_last_move_command_type( void ) { return g_wasmLogicDispatchLastMoveCommandType; }
+extern "C" Int cnc_port_logic_dispatch_last_move_had_group( void ) { return g_wasmLogicDispatchLastMoveHadGroup; }
+extern "C" Real cnc_port_logic_dispatch_last_move_x( void ) { return g_wasmLogicDispatchLastMoveX; }
+extern "C" Real cnc_port_logic_dispatch_last_move_y( void ) { return g_wasmLogicDispatchLastMoveY; }
+extern "C" Real cnc_port_logic_dispatch_last_move_z( void ) { return g_wasmLogicDispatchLastMoveZ; }
+
+static void cnc_port_note_logic_dispatch_move_command(
+	GameMessage::Type type,
+	AIGroup *currentlySelectedGroup,
+	const Coord3D &dest)
+{
+	++g_wasmLogicDispatchMoveCommandCount;
+	g_wasmLogicDispatchLastMoveCommandType = static_cast<Int>(type);
+	g_wasmLogicDispatchLastMoveHadGroup = currentlySelectedGroup != NULL ? 1 : 0;
+	g_wasmLogicDispatchLastMoveX = dest.x;
+	g_wasmLogicDispatchLastMoveY = dest.y;
+	g_wasmLogicDispatchLastMoveZ = dest.z;
+}
 
 #define CNC_PORT_NOTE_GAME_LOGIC_STEP(name) \
 	do { \
@@ -846,6 +871,9 @@ void GameLogic::logicMessageDispatcher( GameMessage *msg, void *userData )
 		case GameMessage::MSG_DO_ATTACKMOVETO:
 		{
 			Coord3D dest = msg->getArgument( 0 )->location;
+#ifdef __EMSCRIPTEN__
+			cnc_port_note_logic_dispatch_move_command(msg->getType(), currentlySelectedGroup, dest);
+#endif
 
 			if (currentlySelectedGroup)
 			{
@@ -860,6 +888,9 @@ void GameLogic::logicMessageDispatcher( GameMessage *msg, void *userData )
 		case GameMessage::MSG_DO_FORCEMOVETO:
 		{
 			Coord3D dest = msg->getArgument( 0 )->location;
+#ifdef __EMSCRIPTEN__
+			cnc_port_note_logic_dispatch_move_command(msg->getType(), currentlySelectedGroup, dest);
+#endif
 
 			if (currentlySelectedGroup)
 			{
@@ -876,6 +907,9 @@ void GameLogic::logicMessageDispatcher( GameMessage *msg, void *userData )
 		case GameMessage::MSG_DO_MOVETO:
 		{
 			Coord3D dest = msg->getArgument( 0 )->location;
+#ifdef __EMSCRIPTEN__
+			cnc_port_note_logic_dispatch_move_command(msg->getType(), currentlySelectedGroup, dest);
+#endif
 
 			if( currentlySelectedGroup )
 			{
@@ -891,6 +925,9 @@ void GameLogic::logicMessageDispatcher( GameMessage *msg, void *userData )
 		case GameMessage::MSG_ADD_WAYPOINT:
 		{
 			Coord3D dest = msg->getArgument( 0 )->location;
+#ifdef __EMSCRIPTEN__
+			cnc_port_note_logic_dispatch_move_command(msg->getType(), currentlySelectedGroup, dest);
+#endif
 
 			if( currentlySelectedGroup )
 			{

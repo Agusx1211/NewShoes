@@ -163,8 +163,8 @@ if (new URLSearchParams(window.location.search).get("autostart") === "1") {
 }
 
 // --- "Build: N min ago" indicator -------------------------------------------
-// Polls the wasm's Last-Modified via HEAD so a glance tells whether Codex
-// shipped something new since this page loaded (turns green + says reload).
+// Polls both wasm and bridge.js Last-Modified values via HEAD so a glance
+// tells whether Codex shipped something new since this page loaded.
 const buildAgeNode = document.querySelector("#buildAge");
 let firstSeenBuildMs = null;
 
@@ -184,18 +184,27 @@ function relativeAge(ms) {
   return `${Math.round(s / 86400)}d ago`;
 }
 
+async function headLastModifiedMs(url) {
+  try {
+    const head = await fetch(url, { method: "HEAD", cache: "no-store" });
+    const lastModified = head.headers.get("last-modified");
+    return lastModified ? Date.parse(lastModified) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function refreshBuildAge() {
   try {
-    const head = await fetch(new URL("../dist/cnc-port.wasm", window.location.href), {
-      method: "HEAD",
-      cache: "no-store",
-    });
-    const lastModified = head.headers.get("last-modified");
-    if (!lastModified) {
+    const [wasmBuiltMs, bridgeBuiltMs] = await Promise.all([
+      headLastModifiedMs(new URL("../dist/cnc-port.wasm", window.location.href)),
+      headLastModifiedMs(new URL("./bridge.js", window.location.href)),
+    ]);
+    const builtMs = Math.max(wasmBuiltMs ?? 0, bridgeBuiltMs ?? 0);
+    if (builtMs === 0) {
       buildAgeNode.textContent = "?";
       return;
     }
-    const builtMs = Date.parse(lastModified);
     if (firstSeenBuildMs === null) {
       firstSeenBuildMs = builtMs;
     }

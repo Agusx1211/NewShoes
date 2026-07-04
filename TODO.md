@@ -24,7 +24,8 @@ VERIFIED pending merge: dxt-cpu-fallback (CPU DXT1/3/5→RGBA fallback for missi
 
 READY pending apply: music fix — `feat/audio-ini-fix` commit 78eb925 rewrites `tools/extract_zh_runtime_archives.sh` to stage the REAL 158MB base-Generals Music.big (from `assets/Generals-CD1/Data1.cab`) instead of the 786KB ZH copy-protection stub. Extraction dry-run-verified. Running it fixes the pre-existing phase2 `music_not_loaded_would_set_quitting` gate failure and makes music play. Apply after concurrent harness boots settle.
 
-IN PROGRESS: commanding-units fix (feat/commanding-fix), skirmish-load fix (feat/skirmish-load).
+IN PROGRESS: skirmish-load diagnosis beyond the now-proven real-init
+`TheMapCache`/`MapsZH.big` path.
 
 QUEUED perf (high-FPS): perf-win-1 = cache reusable STREAM_DRAW index buffer (bridge.js ~7149-7180); perf-win-2 = cache lastProgram/lastArrayBuffer to skip redundant per-draw useProgram/bindBuffer (bridge.js L6756/6811). Both self-contained, no conflict with perf-drawstate; do after it settles in main.
 
@@ -185,6 +186,16 @@ residue and the next frontier.
       `doGameStart`/`MSG_NEW_GAME`) before the player-control frame loop, OR
       run the startup-vertical interactivity proof on the Mac instead of
       `mac_verify`'s player-control mode.
+- [ ] **Fix skirmish load/default-map flow with runtime evidence**: current
+      main proves the real-init archive set mounts `MapsZH.big`, loads all 43
+      subsystems, finds `Maps\ShellMapMD\ShellMapMD.map` through `TheMapCache`,
+      and renders the shell map via `harness/shellmap_real_init_gate.mjs`.
+      Do not treat the remaining skirmish failure as a global MapCache/archive
+      absence unless a fresh skirmish harness run contradicts that gate. Add a
+      skirmish-menu/game-options probe that logs `TheMapCache` counts,
+      first official multiplayer key, selected game-options map, and the exact
+      point where `getDefaultOfficialMap()`/`loadMap("")` goes wrong, then fix
+      that real path without inventing map data.
 - [ ] **RTT/FBO follow-ups from adversarial review** (landed unverified;
       TODO/DONE never updated by the track): (1) `releaseD3D8Texture` in
       bridge.js never deletes the `d3d8Framebuffers` entry — FBO + depth
@@ -1099,6 +1110,12 @@ residue and the next frontier.
       parity proof, and the original-runtime WW3D emissive/`COLOR2` proof,
       and other fixed-function lighting/render-state variants) and other W3D
       draw states → GL/shader state.
+- [ ] Audit D3D8 `ZBIAS` enum/range fidelity against the official DX8 docs
+      and d3d8to9/dxvk references before relying on decals/shadows that use it:
+      DX8 documents `D3DRS_ZBIAS` as render state `47` with integer range
+      `0..16`, while `WebAssembly/shims/d3d8.h` currently has the D3D9-era
+      value `195` and `bridge.js` clamps to `15`. Add a z-bias-16 harness
+      proof and rebuild-backed C++ coverage before changing the header.
 - [ ] Fixed-function pipeline emulation via generated GLSL ES shaders.
 - [ ] Port/translate `wwshade` shaders + `W3DShaderManager` to GLSL ES.
 - [ ] Matrix/transform stack and viewport/camera setup.

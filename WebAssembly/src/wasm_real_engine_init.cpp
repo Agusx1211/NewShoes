@@ -157,6 +157,29 @@ extern "C" Int cnc_port_logic_dispatch_last_mode_after_set(void);
 extern "C" Int cnc_port_logic_dispatch_prepare_this_is_global(void);
 extern "C" Int cnc_port_logic_dispatch_prepare_hide_shell_count(void);
 extern "C" Int cnc_port_logic_dispatch_clear_game_data_count(void);
+extern "C" Int cnc_port_logic_dispatch_move_command_count(void);
+extern "C" Int cnc_port_logic_dispatch_last_move_command_type(void);
+extern "C" Int cnc_port_logic_dispatch_last_move_had_group(void);
+extern "C" Real cnc_port_logic_dispatch_last_move_x(void);
+extern "C" Real cnc_port_logic_dispatch_last_move_y(void);
+extern "C" Real cnc_port_logic_dispatch_last_move_z(void);
+extern "C" Int cnc_port_command_xlat_last_click_type(void);
+extern "C" Int cnc_port_command_xlat_last_click_is_point(void);
+extern "C" Int cnc_port_command_xlat_last_click_controllable(void);
+extern "C" Int cnc_port_command_xlat_last_click_use_alternate_mouse(void);
+extern "C" Int cnc_port_command_xlat_last_click_issued_type(void);
+extern "C" Int cnc_port_command_xlat_last_click_draw_id(void);
+extern "C" Real cnc_port_command_xlat_last_click_x(void);
+extern "C" Real cnc_port_command_xlat_last_click_y(void);
+extern "C" Real cnc_port_command_xlat_last_click_z(void);
+extern "C" Int cnc_port_command_xlat_move_issue_count(void);
+extern "C" Int cnc_port_command_xlat_move_append_count(void);
+extern "C" Int cnc_port_command_xlat_move_last_msg_type(void);
+extern "C" Int cnc_port_command_xlat_move_last_command_type(void);
+extern "C" Int cnc_port_command_xlat_move_last_team_exists(void);
+extern "C" Real cnc_port_command_xlat_move_last_x(void);
+extern "C" Real cnc_port_command_xlat_move_last_y(void);
+extern "C" Real cnc_port_command_xlat_move_last_z(void);
 extern void W3DMainMenuInit(WindowLayout *layout, void *userData);
 
 static std::string g_last_engine_update_target;
@@ -2311,6 +2334,13 @@ void append_campaign_intro_gate_summary(std::string &json)
 
 void append_real_engine_frame_summary_state(std::string &json)
 {
+	json += ",\"inputSettings\":{\"useAlternateMouse\":";
+	if (TheGlobalData != NULL) {
+		json += TheGlobalData->m_useAlternateMouse ? "true" : "false";
+	} else {
+		json += "null";
+	}
+	json += "}";
 	json += ",\"display\":{";
 	if (TheDisplay != NULL) {
 		json += "\"width\":" + std::to_string(TheDisplay->getWidth());
@@ -2721,6 +2751,13 @@ void append_real_engine_client_state(std::string &json)
 	json += TheShell != NULL ? "true" : "false";
 	json += ",\"windowManagerReady\":";
 	json += TheWindowManager != NULL ? "true" : "false";
+	json += ",\"inputSettings\":{\"useAlternateMouse\":";
+	if (TheGlobalData != NULL) {
+		json += TheGlobalData->m_useAlternateMouse ? "true" : "false";
+	} else {
+		json += "null";
+	}
+	json += "}";
 
 	json += ",\"gates\":{";
 	if (TheGlobalData != NULL) {
@@ -3549,7 +3586,58 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 		sel = nullptr;
 	}
 
-	json = "{\"ready\":true,\"selectCount\":" + std::to_string(selectCount) + ",\"selected\":[";
+	json = "{\"ready\":true,\"selectCount\":" + std::to_string(selectCount);
+	json += ",\"selectedControllable\":";
+	try {
+		json += TheInGameUI->areSelectedObjectsControllable() ? "true" : "false";
+	} catch (...) {
+		json += "false";
+	}
+	json += ",\"inputSettings\":{\"useAlternateMouse\":";
+	if (TheGlobalData != nullptr) {
+		json += TheGlobalData->m_useAlternateMouse ? "true" : "false";
+	} else {
+		json += "null";
+	}
+	json += "}";
+	json += ",\"modes\":{";
+	json += "\"waypoint\":";
+	json += TheInGameUI->isInWaypointMode() ? "true" : "false";
+	json += ",\"attackMoveTo\":";
+	json += TheInGameUI->isInAttackMoveToMode() ? "true" : "false";
+	json += ",\"forceMoveTo\":";
+	json += TheInGameUI->isInForceMoveToMode() ? "true" : "false";
+	json += ",\"forceAttack\":";
+	json += TheInGameUI->isInForceAttackMode() ? "true" : "false";
+	json += ",\"preferSelection\":";
+	json += TheInGameUI->isInPreferSelectionMode() ? "true" : "false";
+	json += "}";
+	json += ",\"commandPath\":{";
+	json += "\"lastClickType\":" + std::to_string(cnc_port_command_xlat_last_click_type());
+	json += ",\"lastClickIsPoint\":" + std::to_string(cnc_port_command_xlat_last_click_is_point());
+	json += ",\"lastClickControllable\":" + std::to_string(cnc_port_command_xlat_last_click_controllable());
+	json += ",\"lastClickUseAlternateMouse\":" + std::to_string(cnc_port_command_xlat_last_click_use_alternate_mouse());
+	json += ",\"lastClickIssuedType\":" + std::to_string(cnc_port_command_xlat_last_click_issued_type());
+	json += ",\"lastClickDrawId\":" + std::to_string(cnc_port_command_xlat_last_click_draw_id());
+	json += ",\"lastClickWorldPos\":{\"x\":" + std::to_string(cnc_port_command_xlat_last_click_x());
+	json += ",\"y\":" + std::to_string(cnc_port_command_xlat_last_click_y());
+	json += ",\"z\":" + std::to_string(cnc_port_command_xlat_last_click_z()) + "}";
+	json += ",\"moveIssueCount\":" + std::to_string(cnc_port_command_xlat_move_issue_count());
+	json += ",\"moveAppendCount\":" + std::to_string(cnc_port_command_xlat_move_append_count());
+	json += ",\"moveLastMsgType\":" + std::to_string(cnc_port_command_xlat_move_last_msg_type());
+	json += ",\"moveLastCommandType\":" + std::to_string(cnc_port_command_xlat_move_last_command_type());
+	json += ",\"moveLastTeamExists\":" + std::to_string(cnc_port_command_xlat_move_last_team_exists());
+	json += ",\"moveLastWorldPos\":{\"x\":" + std::to_string(cnc_port_command_xlat_move_last_x());
+	json += ",\"y\":" + std::to_string(cnc_port_command_xlat_move_last_y());
+	json += ",\"z\":" + std::to_string(cnc_port_command_xlat_move_last_z()) + "}";
+	json += ",\"dispatchMoveCommandCount\":" + std::to_string(cnc_port_logic_dispatch_move_command_count());
+	json += ",\"dispatchLastMoveCommandType\":" + std::to_string(cnc_port_logic_dispatch_last_move_command_type());
+	json += ",\"dispatchLastMoveHadGroup\":" + std::to_string(cnc_port_logic_dispatch_last_move_had_group());
+	json += ",\"dispatchLastMoveWorldPos\":{\"x\":" + std::to_string(cnc_port_logic_dispatch_last_move_x());
+	json += ",\"y\":" + std::to_string(cnc_port_logic_dispatch_last_move_y());
+	json += ",\"z\":" + std::to_string(cnc_port_logic_dispatch_last_move_z()) + "}";
+	json += "}";
+	json += ",\"selected\":[";
 	bool first = true;
 	if (sel != nullptr) {
 		for (Drawable *d : *sel) {
@@ -3589,6 +3677,20 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 				objId = -1;
 			}
 			json += "\"id\":" + std::to_string(objId);
+			Player *owner = nullptr;
+			try {
+				owner = obj->getControllingPlayer();
+			} catch (...) {
+				owner = nullptr;
+			}
+			json += ",\"playerIndex\":";
+			json += owner != nullptr ? std::to_string(owner->getPlayerIndex()) : "-1";
+			json += ",\"locallyControlled\":";
+			try {
+				json += obj->isLocallyControlled() ? "true" : "false";
+			} catch (...) {
+				json += "false";
+			}
 			json += ",\"worldPos\":{\"x\":" + std::to_string(pos->x);
 			json += ",\"y\":" + std::to_string(pos->y);
 			json += ",\"z\":" + std::to_string(pos->z) + "}";

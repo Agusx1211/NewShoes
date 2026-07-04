@@ -86,6 +86,90 @@
 #include "GameNetwork/GameSpyOverlay.h"
 #include "GameNetwork/GameSpy/BuddyThread.h"
 
+#ifdef __EMSCRIPTEN__
+static Int g_wasmCommandLastClickType = -1;
+static Int g_wasmCommandLastClickIsPoint = -1;
+static Int g_wasmCommandLastClickControllable = -1;
+static Int g_wasmCommandLastClickUseAlternateMouse = -1;
+static Int g_wasmCommandLastClickIssuedType = -1;
+static Int g_wasmCommandLastClickDrawId = -1;
+static Real g_wasmCommandLastClickX = 0.0f;
+static Real g_wasmCommandLastClickY = 0.0f;
+static Real g_wasmCommandLastClickZ = 0.0f;
+static Int g_wasmCommandMoveIssueCount = 0;
+static Int g_wasmCommandMoveAppendCount = 0;
+static Int g_wasmCommandMoveLastMsgType = -1;
+static Int g_wasmCommandMoveLastCommandType = -1;
+static Int g_wasmCommandMoveLastTeamExists = -1;
+static Real g_wasmCommandMoveLastX = 0.0f;
+static Real g_wasmCommandMoveLastY = 0.0f;
+static Real g_wasmCommandMoveLastZ = 0.0f;
+
+static void cnc_port_record_command_click(
+	GameMessage::Type clickType,
+	Bool isPoint,
+	Bool controllable,
+	Bool useAlternateMouse,
+	GameMessage::Type issuedType,
+	Drawable *draw,
+	const Coord3D *pos)
+{
+	g_wasmCommandLastClickType = static_cast<Int>(clickType);
+	g_wasmCommandLastClickIsPoint = isPoint ? 1 : 0;
+	g_wasmCommandLastClickControllable = controllable ? 1 : 0;
+	g_wasmCommandLastClickUseAlternateMouse = useAlternateMouse ? 1 : 0;
+	g_wasmCommandLastClickIssuedType = static_cast<Int>(issuedType);
+	g_wasmCommandLastClickDrawId = -1;
+	if (draw != NULL && draw->getObject() != NULL) {
+		g_wasmCommandLastClickDrawId = static_cast<Int>(draw->getObject()->getID());
+	}
+	if (pos != NULL) {
+		g_wasmCommandLastClickX = pos->x;
+		g_wasmCommandLastClickY = pos->y;
+		g_wasmCommandLastClickZ = pos->z;
+	}
+}
+
+static void cnc_port_record_move_issue(
+	GameMessage::Type msgType,
+	CommandTranslator::CommandEvaluateType commandType,
+	Bool teamExists,
+	Bool appended,
+	const Coord3D *pos)
+{
+	++g_wasmCommandMoveIssueCount;
+	if (appended) {
+		++g_wasmCommandMoveAppendCount;
+	}
+	g_wasmCommandMoveLastMsgType = static_cast<Int>(msgType);
+	g_wasmCommandMoveLastCommandType = static_cast<Int>(commandType);
+	g_wasmCommandMoveLastTeamExists = teamExists ? 1 : 0;
+	if (pos != NULL) {
+		g_wasmCommandMoveLastX = pos->x;
+		g_wasmCommandMoveLastY = pos->y;
+		g_wasmCommandMoveLastZ = pos->z;
+	}
+}
+
+extern "C" Int cnc_port_command_xlat_last_click_type( void ) { return g_wasmCommandLastClickType; }
+extern "C" Int cnc_port_command_xlat_last_click_is_point( void ) { return g_wasmCommandLastClickIsPoint; }
+extern "C" Int cnc_port_command_xlat_last_click_controllable( void ) { return g_wasmCommandLastClickControllable; }
+extern "C" Int cnc_port_command_xlat_last_click_use_alternate_mouse( void ) { return g_wasmCommandLastClickUseAlternateMouse; }
+extern "C" Int cnc_port_command_xlat_last_click_issued_type( void ) { return g_wasmCommandLastClickIssuedType; }
+extern "C" Int cnc_port_command_xlat_last_click_draw_id( void ) { return g_wasmCommandLastClickDrawId; }
+extern "C" Real cnc_port_command_xlat_last_click_x( void ) { return g_wasmCommandLastClickX; }
+extern "C" Real cnc_port_command_xlat_last_click_y( void ) { return g_wasmCommandLastClickY; }
+extern "C" Real cnc_port_command_xlat_last_click_z( void ) { return g_wasmCommandLastClickZ; }
+extern "C" Int cnc_port_command_xlat_move_issue_count( void ) { return g_wasmCommandMoveIssueCount; }
+extern "C" Int cnc_port_command_xlat_move_append_count( void ) { return g_wasmCommandMoveAppendCount; }
+extern "C" Int cnc_port_command_xlat_move_last_msg_type( void ) { return g_wasmCommandMoveLastMsgType; }
+extern "C" Int cnc_port_command_xlat_move_last_command_type( void ) { return g_wasmCommandMoveLastCommandType; }
+extern "C" Int cnc_port_command_xlat_move_last_team_exists( void ) { return g_wasmCommandMoveLastTeamExists; }
+extern "C" Real cnc_port_command_xlat_move_last_x( void ) { return g_wasmCommandMoveLastX; }
+extern "C" Real cnc_port_command_xlat_move_last_y( void ) { return g_wasmCommandMoveLastY; }
+extern "C" Real cnc_port_command_xlat_move_last_z( void ) { return g_wasmCommandMoveLastZ; }
+#endif
+
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -905,6 +989,14 @@ GameMessage::Type CommandTranslator::issueMoveToLocationCommand( const Coord3D *
 
 		}  // end if
 	} 
+#ifdef __EMSCRIPTEN__
+	cnc_port_record_move_issue(
+		msgType,
+		commandType,
+		m_teamExists,
+		commandType == DO_COMMAND && msgType != GameMessage::MSG_INVALID && m_teamExists,
+		pos);
+#endif
 	
 	// only make sounds if we really did the command messages
 	if( commandType == DO_COMMAND )
@@ -3704,15 +3796,27 @@ GameMessageDisposition CommandTranslator::translateGameMessage(const GameMessage
 					Drawable *draw = TheTacticalView->pickDrawable(&msg->getArgument(0)->pixelRegion.lo, 
 																													TheInGameUI->isInForceAttackMode(), 
 																													(PickType) pickType);
+					GameMessage::Type issuedType;
 					if (TheInGameUI->isInForceAttackMode()) {
-						evaluateForceAttack( draw, &pos, DO_COMMAND );
+						issuedType = evaluateForceAttack( draw, &pos, DO_COMMAND );
 					} else {
-						evaluateContextCommand( draw, &pos, DO_COMMAND );
+						issuedType = evaluateContextCommand( draw, &pos, DO_COMMAND );
 					}
+#ifdef __EMSCRIPTEN__
+					cnc_port_record_command_click(t, isPoint, controllable,
+						TheGlobalData->m_useAlternateMouse, issuedType, draw, &pos);
+#endif
 
 					disp = DESTROY_MESSAGE;
 					TheInGameUI->clearAttackMoveToMode();
 				}
+#ifdef __EMSCRIPTEN__
+				else
+				{
+					cnc_port_record_command_click(t, isPoint, controllable,
+						TheGlobalData->m_useAlternateMouse, GameMessage::MSG_INVALID, NULL, &pos);
+				}
+#endif
 			}
 
 			break;					
@@ -3776,17 +3880,29 @@ GameMessageDisposition CommandTranslator::translateGameMessage(const GameMessage
 																												TheInGameUI->isInForceAttackMode(), 
 																												(PickType) pickType);
 
+				GameMessage::Type issuedType;
 				if (TheInGameUI->isInForceAttackMode()) {
-					evaluateForceAttack( draw, &pos, DO_COMMAND );
+					issuedType = evaluateForceAttack( draw, &pos, DO_COMMAND );
 				} else {
-					evaluateContextCommand( draw, &pos, DO_COMMAND );
+					issuedType = evaluateContextCommand( draw, &pos, DO_COMMAND );
 				}
+#ifdef __EMSCRIPTEN__
+				cnc_port_record_command_click(t, isPoint, controllable,
+					TheGlobalData->m_useAlternateMouse, issuedType, draw, &pos);
+#endif
 
 				disp = DESTROY_MESSAGE;
 				TheInGameUI->clearAttackMoveToMode();
 
 				//issueMoveToLocationCommand( &pos, draw, DO_COMMAND );
 			}
+#ifdef __EMSCRIPTEN__
+			else
+			{
+				cnc_port_record_command_click(t, isPoint, controllable,
+					TheGlobalData->m_useAlternateMouse, GameMessage::MSG_INVALID, NULL, &pos);
+			}
+#endif
 			break;
 
 		}  // end case GameMessage::MSG_MOUSE_LEFT_CLICK
