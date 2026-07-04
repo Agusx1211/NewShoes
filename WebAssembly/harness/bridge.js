@@ -211,6 +211,7 @@ const d3d8BufferStats = {
   lastRelease: null,
 };
 let d3d8ViewportState = null;
+let browser_fbo_incomplete_count = 0;
 const d3d8ViewportStats = {
   sets: 0,
   applications: 0,
@@ -3530,6 +3531,7 @@ function updateD3D8TextureSummary() {
   }
   harnessState.graphics = {
     ...harnessState.graphics,
+    browserFboIncompleteCount: browser_fbo_incomplete_count,
     d3d8Textures: {
       creates: d3d8TextureStats.creates,
       updates: d3d8TextureStats.updates,
@@ -3621,6 +3623,9 @@ function bindD3D8Framebuffer(payload = {}) {
 		return 0;
 	}
 	const colorTextureId = Number(payload.colorTextureId ?? 0) >>> 0;
+	// NOTE: depthTextureId is intentionally unused — depth is always provided via
+	// an internal renderbuffer. This is a known limitation pending depth-texture
+	// attachment support. TODO: implement depth texture attachment.
 	const depthTextureId = Number(payload.depthTextureId ?? 0) >>> 0;
 	const width = Number(payload.width ?? 0) >>> 0;
 	const height = Number(payload.height ?? 0) >>> 0;
@@ -3696,8 +3701,9 @@ function bindD3D8Framebuffer(payload = {}) {
 
 		const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
 		if (status !== gl.FRAMEBUFFER_COMPLETE) {
-			console.warn(
-				`FBO incomplete for texture ${colorTextureId}: status ${status}`
+			browser_fbo_incomplete_count += 1;
+			console.error(
+				`FBO incomplete for texture ${colorTextureId}: status ${status} (${gl.FRAMEBUFFER_COMPLETE ? 'COMPLETE' : status === gl.FRAMEBUFFER_ATTACHMENT_OBJECT_INVALID ? 'ATTACHMENT_OBJECT_INVALID' : status === gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT ? 'INCOMPLETE_ATTACHMENT' : status === gl.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT ? 'INCOMPLETE_MISSING_ATTACHMENT' : status === gl.FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER ? 'INCOMPLETE_DRAW_BUFFER' : status === gl.FRAMEBUFFER_INCOMPLETE_READ_BUFFER ? 'INCOMPLETE_READ_BUFFER' : status === gl.FRAMEBUFFER_UNSUPPORTED ? 'UNSUPPORTED' : 'UNKNOWN'})`
 			);
 			gl.deleteFramebuffer(fbo);
 			gl.deleteRenderbuffer(depthRenderbuffer);
@@ -4093,13 +4099,16 @@ function releaseD3D8Texture(payload = {}) {
     }
   }
   gl.deleteTexture(resource.texture);
-  d3d8Textures.delete(id);
-  d3d8TextureStats.releases += 1;
   if (releasedBindings.length > 0) {
     d3d8TextureStats.releaseUnbinds += releasedBindings.length;
     d3d8TextureStats.lastReleaseUnbind = { id, stages: releasedBindings };
   }
   d3d8TextureStats.lastRelease = { id, type: resource.type || "2d", depth: resource.depth ?? 1, releasedBindings };
+  // Release FBO + depth renderbuffer if one was created for this texture
+  const fb = d3d8Framebuffers.get(id);
+  if (fb) { gl.deleteFramebuffer(fb.fbo); if (fb.depthRenderbuffer) gl.deleteRenderbuffer(fb.depthRenderbuffer); d3d8Framebuffers.delete(id); }
+  d3d8Textures.delete(id);
+  d3d8TextureStats.releases += 1;
   updateD3D8TextureSummary();
   return 1;
 }
