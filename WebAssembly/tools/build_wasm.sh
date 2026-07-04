@@ -10,6 +10,11 @@ else
 fi
 build_type="${BUILD_TYPE:-Debug}"
 
+dist_dir="dist"
+if [[ "${build_type}" == "Release" ]]; then
+  dist_dir="dist-release"
+fi
+
 if ! command -v emcmake >/dev/null 2>&1; then
   echo "emcmake is required. Activate Emscripten before running this script." >&2
   exit 1
@@ -25,6 +30,10 @@ cmake_args=(
   -B "${build_dir}"
   -DCMAKE_BUILD_TYPE="${build_type}"
 )
+
+if [[ "${build_type}" == "Release" ]]; then
+  cmake_args+=("-DCNC_DIST_DIR=${dist_dir}")
+fi
 
 if [[ -n "${CMAKE_CXX_FLAGS:-}" ]]; then
   cmake_args+=("-DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}")
@@ -51,8 +60,8 @@ if [[ -n "${CNC_BUILD_TARGETS:-}" ]]; then
 else
   cmake --build "${build_dir}"
 
-  test -f "${wasm_dir}/dist/cnc-port.js"
-  test -f "${wasm_dir}/dist/cnc-port.wasm"
+  test -f "${wasm_dir}/${dist_dir}/cnc-port.js"
+  test -f "${wasm_dir}/${dist_dir}/cnc-port.wasm"
 fi
 
-echo "${wasm_dir}/dist/cnc-port.js"
+echo "${wasm_dir}/${dist_dir}/cnc-port.js"
