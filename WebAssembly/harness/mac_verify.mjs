@@ -334,10 +334,9 @@ try {
         let reached = false;
         while (totalFrames < maxFrames && !reached) {
           const batch = Math.min(BATCH_FRAMES, maxFrames - totalFrames);
-          await window.CnCPort.rpc("realEngineFrame", { frames: batch });
           totalFrames += batch;
           const s = await window.CnCPort.rpc("realEngineFrameSummary", { frames: batch });
-          const pc = s?.playerControl || {};
+          const pc = s?.frame?.playerControl || {};
           if (pc.introDone === true && pc.inputEnabled === true && pc.controlBarClickable === true &&
               (pc.letterBoxed !== true || pc.letterBoxed === undefined) &&
               (pc.fade === 0 || pc.fade === undefined)) {
