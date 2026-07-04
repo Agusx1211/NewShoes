@@ -3293,23 +3293,37 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_summary(i
 
 // Query all drawables in the game client, returning position, ownership, and
 // screen-space info. Safe to call before init — returns {"ready":false}.
+//
+// Diagnostic protocol (stdout phase markers survive a hard wasm trap, which
+// Emscripten try/catch does NOT catch):
+//   "cnc-port: query_drawables START ..." is printed just before the loop
+//   "cnc-port: query_drawables DONE ..."  is printed after the loop returns
+// If START prints and DONE does not, the iteration TRAPPED (hard abort) and
+// the resulting null/aborted JSON seen on the JS side is therefore a trap.
+// When the JSON parses, the WTS breakdown in `stats` distinguishes a null
+// TheTacticalView camera (WTS_INVALID), an off-frustum unit (WTS_OUTSIDE),
+// or a genuinely on-screen unit (WTS_INSIDE).
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 {
 	static std::string json;
 	if (TheGameClient == nullptr) {
-		json = "{\"ready\":false,\"guard\":\"TheGameClient\"}";
+		std::printf("cnc-port: query_drawables GUARD TheGameClient\n"); std::fflush(stdout);
+		json = "{\"ready\":false,\"guard\":\"TheGameClient\",\"started\":false}";
 		return json.c_str();
 	}
 	if (ThePlayerList == nullptr) {
-		json = "{\"ready\":false,\"guard\":\"ThePlayerList\"}";
+		std::printf("cnc-port: query_drawables GUARD ThePlayerList\n"); std::fflush(stdout);
+		json = "{\"ready\":false,\"guard\":\"ThePlayerList\",\"started\":false}";
 		return json.c_str();
 	}
 	if (TheTacticalView == nullptr) {
-		json = "{\"ready\":false,\"guard\":\"TheTacticalView\"}";
+		std::printf("cnc-port: query_drawables GUARD TheTacticalView\n"); std::fflush(stdout);
+		json = "{\"ready\":false,\"guard\":\"TheTacticalView\",\"started\":false}";
 		return json.c_str();
 	}
 
 	const Player *localPlayer = ThePlayerList->getLocalPlayer();
+	const int localIdx = localPlayer ? localPlayer->getPlayerIndex() : -1;
 
 	// Filter counters for diagnostics
 	int totalDrawables = 0;
@@ -3318,8 +3332,20 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 	int offScreen = 0;
 	int hidden = 0;
 	int kept = 0;
+	// Detailed ownership (computed BEFORE the offScreen filter so we know
+	// whether the query is being killed by ownership or by worldToScreen)
+	int ownedNull = 0;     // owner == nullptr (unowned / hazard object)
+	int ownedLocal = 0;    // owner == localPlayer
+	int ownedNotLocal = 0; // owner != nullptr && owner != localPlayer
+	// worldToScreen tri-return breakdowns (View::WorldToScreenReturn enums).
+	int wtsInside = 0;
+	int wtsOutside = 0;
+	int wtsInvalid = 0;
 
-	json = "{\"ready\":true,\"drawables\":[";
+	std::printf("cnc-port: query_drawables START localIdx=%d gC=1 gP=1 gV=1\n", localIdx);
+	std::fflush(stdout);
+
+	json = "{\"ready\":true,\"started\":true,\"guard\":\"none\",\"localPlayerIndex\":" + std::to_string(localIdx) + ",\"drawables\":[";
 	bool first = true;
 
 	for (Drawable *d = TheGameClient->firstDrawable(); d; d = d->getNextDrawable()) {
@@ -3345,28 +3371,59 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 			continue;
 		}
 
-		// Guard: worldToScreen may fail if pos is out of bounds
+		// Diagnose worldToScreen via the tri-return virtual so we can distinguish
+		// WTS_INVALID (most likely m_3DCamera==NULL on the WASM WW3D device, a
+		// trap-safe condition) from WTS_OUTSIDE_FRUSTUM (off-screen but valid
+		// transform) from WTS_INSIDE_FRUSTUM (genuinely on-screen). On the WASM
+		// build this path is deref-safe: View::worldToScreenTriReturn nulls w/s
+		// and W3DView::worldToScreenTriReturn nulls m_3DCamera in WTS_INVALID.
 		ICoord2D screenPos = { 0, 0 };
-		Bool onScreen = false;
+		int wtsStatus = -1; // -1 = could not query (try threw)
 		try {
-			onScreen = TheTacticalView->worldToScreen(pos, &screenPos);
+			wtsStatus = (int)TheTacticalView->worldToScreenTriReturn(pos, &screenPos);
 		} catch (...) {
+			wtsStatus = -1;
+		}
+		bool onScreen;
+		if (wtsStatus == (int)View::WTS_INSIDE_FRUSTUM) {
+			wtsInside++;
+			onScreen = true;
+		} else if (wtsStatus == (int)View::WTS_OUTSIDE_FRUSTUM) {
+			wtsOutside++;
+			onScreen = false;
+		} else {
+			// WTS_INVALID or try/no-virtual failure -> treat as off-screen.
+			wtsInvalid++;
 			onScreen = false;
 		}
 
-		// Filter: not local-owned
+		// Filter: not local-owned. obj->getControllingPlayer() is deref-safe
+		// (Object.cpp) and returns NULL when there is no team; we never deref
+		// the returned pointer before this NULL check, so a corrupt owner
+		// pointer cannot trap the RPC.
 		Player *owner = nullptr;
 		try {
 			owner = obj->getControllingPlayer();
 		} catch (...) {
 			owner = nullptr;
 		}
-		if (owner != nullptr && owner != localPlayer) {
+		if (owner == nullptr) {
+			ownedNull++;
+		} else if (owner == localPlayer) {
+			ownedLocal++;
+		} else {
+			ownedNotLocal++;
 			notOwned++;
 			continue;
 		}
+		// NOTE: ownedNull units (e.g. terrain blobs, ambient effects) survive
+		// the ownership filter but are usually off-screen or hidden, so they
+		// naturally funnel into offScreen/hidden counters below. We keep this
+		// loose in diagnostics so the JSON reports them in `stats` rather
+		// than silently dropping — the harness's `localOwned === true`==kept
+		// predicate then naturally filters them out at the JS layer.
 
-		// Filter: off-screen
+		// Filter: off-screen (or WTS_INVALID — see breakdown above)
 		if (!onScreen) {
 			offScreen++;
 			continue;
@@ -3444,11 +3501,28 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 	json += ",\"stats\":{\"total\":" + std::to_string(totalDrawables);
 	json += ",\"noObject\":" + std::to_string(noObject);
 	json += ",\"notOwned\":" + std::to_string(notOwned);
+	json += ",\"ownedNull\":" + std::to_string(ownedNull);
+	json += ",\"ownedLocal\":" + std::to_string(ownedLocal);
+	json += ",\"ownedNotLocal\":" + std::to_string(ownedNotLocal);
 	json += ",\"offScreen\":" + std::to_string(offScreen);
 	json += ",\"hidden\":" + std::to_string(hidden);
 	json += ",\"kept\":" + std::to_string(kept);
+	json += ",\"wtsInside\":" + std::to_string(wtsInside);
+	json += ",\"wtsOutside\":" + std::to_string(wtsOutside);
+	json += ",\"wtsInvalid\":" + std::to_string(wtsInvalid);
+	// Close `stats` and the root object in a single `}}`. NOTE: a previous
+	// instrumentation revision emitted `}}` then a stray `}` here, producing
+	// a trailing brace after a complete JSON value (`Unexpected non-whitespace
+	// character after JSON at position N`) so JSON.parse failed, the bridge
+	// caught it as `aborted:true`, and `cnc_port_query_drawables` was therefore
+	// returning `{ ok:false, ready:undefined, drawables:0 }` to the harness
+	// even though the wasm call had fully succeeded — see scout Mac trace and
+	// /tmp/runs/interact-probe1.log `[interact] queryDrawables ok: false aborted:
+	// true abortMessage: Unexpected non-whitespace character after JSON …`.
 	json += "}}";
-	json += "}";
+	std::printf("cnc-port: query_drawables DONE total=%d noObject=%d notOwned=%d ownedNull=%d ownedLocal=%d ownedNotLocal=%d offScreen=%d hidden=%d kept=%d wtsI=%d wtsO=%d wtsInv=%d\n",
+		totalDrawables, noObject, notOwned, ownedNull, ownedLocal, ownedNotLocal, offScreen, hidden, kept, wtsInside, wtsOutside, wtsInvalid);
+	std::fflush(stdout);
 	return json.c_str();
 }
 
@@ -3457,7 +3531,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 {
 	static std::string json;
 	if (TheInGameUI == nullptr) {
-		json = "{\"ready\":false,\"guard\":\"TheInGameUI\"}";
+		std::printf("cnc-port: query_selection GUARD TheInGameUI\n"); std::fflush(stdout);
+		json = "{\"ready\":false,\"started\":false,\"guard\":\"TheInGameUI\"}";
 		return json.c_str();
 	}
 

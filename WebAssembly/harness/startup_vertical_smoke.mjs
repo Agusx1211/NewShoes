@@ -2255,6 +2255,19 @@ try {
   await page?.close();
   console.error("[vertical] phase3 real-init page");
   const realInitPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  // Always-on console listener for the real-init page so that wasm stdout
+  // phase markers (e.g. `cnc-port: query_drawables START ...`) survive a
+  // hard wasm trap, which the JS try/catch in the bridge cannot intercept.
+  // Only echo lines tagged with the `cnc-port:` trace prefix to stay quiet.
+  realInitPage.on("console", (message) => {
+    const text = message.text();
+    if (typeof text === "string" && text.startsWith("cnc-port:")) {
+      console.error(`[realinit console:${message.type()}] ${text}`);
+    }
+  });
+  realInitPage.on("pageerror", (error) => {
+    console.error(`[realinit pageerror] ${error.stack ?? error.message}`);
+  });
   await realInitPage.goto(harnessUrl, { waitUntil: "networkidle" });
   await realInitPage.waitForFunction(() => Boolean(window.CnCPort?.rpc));
 
@@ -2473,22 +2486,67 @@ try {
       screenshotPath: null,
     };
 
-    // 1. Reach player control.
+    // 1. Reach player control. While we walk toward it we also probe
+    //    queryDrawables directly so the WTS/auto-guard breakdown is captured
+    //    at the real md_USA01 scene, NOT just at the final reachedControl
+    //    gate — that turns out to matter on WASM because the campaign intro
+    //    movie can stall GameLogic before INTRO_DONE releases input, in which
+    //    case the harness never reaches control and the query is the only
+    //    runnable probe we have to diagnose a 0-drawable return.
     console.error("[interact] reaching player control...");
     await page.evaluate(() => {
       if (window.__cncSetDiagLevel) window.__cncSetDiagLevel("lite");
     });
-    const pcResult = await runRealEngineFramesUntilPlayerControl(
-      page,
-      3600,
-      60,
-      false,
-      false
-    );
+    // Inline a reach-control loop so we can probe queryDrawables each chunk.
+    const reachMax = 3600;
+    const reachChunk = 60;
+    let pcResult = null;
+    for (let remaining = reachMax; remaining > 0;) {
+      const frames = Math.min(reachChunk, remaining);
+      pcResult = await runRealEngineFrames(page, frames);
+      const pc = summarizePlayerControlState(pcResult);
+      const reached = playerControlStateReached(pc);
+      // Probe queryDrawables once per chunk. "Aborted/ready:undefined" or zero
+      // kept drawables with all-offScreen is what we need to capture.
+      let probe = null;
+      try {
+        probe = await page.evaluate(() =>
+          window.CnCPort.rpc("queryDrawables"));
+      } catch (error) {
+        probe = { ok: false, error: error?.message ?? String(error) };
+      }
+      const stats = probe?.result?.stats;
+      const guard = probe?.result?.guard;
+      console.error(
+        "[interact] reach-chunk frames",
+        pcResult?.frame?.framesCompleted,
+        "logicFrame", pc.logicFrame,
+        "objects", pcResult?.frame?.clientState?.gameplay?.objectCount,
+        "reached", reached,
+        "inGame", pc.inGame,
+        "inputEnabled", pc.inputEnabled,
+        "letterBoxed", pc.letterBoxed,
+        "introDone", pc.introDone,
+        "| queryDrawables",
+        "ok", probe?.ok, "aborted", probe?.aborted,
+        "abortMsg", probe?.abortMessage,
+        "ready", probe?.result?.ready, "guard", guard,
+        "localIdx", probe?.result?.localPlayerIndex,
+        "kept", stats?.kept,
+        "wtsI/O/Inv", stats?.wtsInside, stats?.wtsOutside, stats?.wtsInvalid,
+        "ownedLocal", stats?.ownedLocal,
+        "ownedNotNullLocal", stats?.ownedNotLocal,
+        "ownedNull", stats?.ownedNull,
+        "noObject", stats?.noObject);
+      if (reached) {
+        break;
+      }
+      remaining -= frames;
+    }
     await page.evaluate(() => {
       if (window.__cncSetDiagLevel) window.__cncSetDiagLevel("full");
     });
-    summary.reachedControl = pcResult.reachedPlayerControl === true;
+    summary.reachedControl = pcResult != null && playerControlStateReached(summarizePlayerControlState(pcResult));
     console.error("[interact] reachedPlayerControl:", summary.reachedControl);
     if (!summary.reachedControl) {
       console.error("[interact] did not reach player control, aborting");
@@ -2498,7 +2556,7 @@ try {
     // 2. queryDrawables → pick first local-owned, non-structure, non-hidden, on-screen unit.
     const dr = await page.evaluate(() =>
       window.CnCPort.rpc("queryDrawables"));
-    console.error("[interact] queryDrawables ok:", dr?.ok, "aborted:", dr?.aborted, "abortMessage:", dr?.abortMessage, "ready:", dr?.result?.ready, "rawResult:", dr?.result);
+    console.error("[interact] queryDrawables ok:", dr?.ok, "aborted:", dr?.aborted, "abortMessage:", dr?.abortMessage, "started:", dr?.result?.started, "ready:", dr?.result?.ready, "guard:", dr?.result?.guard, "localPlayerIndex:", dr?.result?.localPlayerIndex, "stats:", JSON.stringify(dr?.result?.stats), "drawables:", (dr?.result?.drawables ?? []).length);
     const drawables = dr?.result?.drawables ?? [];
     const localUnits = drawables.filter(
       (d) => d.localOwned === true && d.structure === false && d.hidden === false && d.onScreen === true
@@ -2550,7 +2608,7 @@ try {
     // 7. queryDrawables again → find same unit by id → compute worldPos delta.
     const dr2 = await page.evaluate(() =>
       window.CnCPort.rpc("queryDrawables"));
-    console.error("[interact] queryDrawables (2nd) ok:", dr2?.ok, "aborted:", dr2?.aborted, "abortMessage:", dr2?.abortMessage, "ready:", dr2?.result?.ready, "rawResult:", dr2?.result);
+    console.error("[interact] queryDrawables (2nd) ok:", dr2?.ok, "aborted:", dr2?.aborted, "abortMessage:", dr2?.abortMessage, "started:", dr2?.result?.started, "ready:", dr2?.result?.ready, "guard:", dr2?.result?.guard, "localPlayerIndex:", dr2?.result?.localPlayerIndex, "stats:", JSON.stringify(dr2?.result?.stats), "drawables:", (dr2?.result?.drawables ?? []).length);
     const drawables2 = dr2?.result?.drawables ?? [];
     const unit2 = drawables2.find((d) => d.id === unit.id);
     if (unit2 && unit2.worldPos) {
