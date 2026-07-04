@@ -226,6 +226,7 @@ const d3d8TextureStats = {
   missingBinds: 0,
   unsupportedUpdates: 0,
   samplerApplications: 0,
+  dxtDecodes: 0,
   live: 0,
   legacyUploads: [],
   lastCreate: null,
@@ -2647,8 +2648,14 @@ function d3d8TextureFormatInfo(format) {
         blockBytes: 8,
       } : {
         d3dFormat,
-        supported: false,
-        reason: "WEBGL_compressed_texture_s3tc is unavailable for DXT1 upload",
+        supported: true,
+        compressed: false,
+        internalFormat: gl.RGBA8,
+        format: gl.RGBA,
+        type: gl.UNSIGNED_BYTE,
+        storage: "rgba8",
+        dxtDecode: "DXT1",
+        blockBytes: 8,
       };
     case D3DFMT_DXT2:
       return s3tc ? {
@@ -2664,8 +2671,15 @@ function d3d8TextureFormatInfo(format) {
         blockBytes: 16,
       } : {
         d3dFormat,
-        supported: false,
-        reason: "WEBGL_compressed_texture_s3tc is unavailable for DXT2 upload",
+        supported: true,
+        compressed: false,
+        internalFormat: gl.RGBA8,
+        format: gl.RGBA,
+        type: gl.UNSIGNED_BYTE,
+        storage: "rgba8",
+        dxtDecode: "DXT3",
+        blockBytes: 16,
+        premultipliedAlpha: true,
       };
     case D3DFMT_DXT3:
       return s3tc ? {
@@ -2679,8 +2693,14 @@ function d3d8TextureFormatInfo(format) {
         blockBytes: 16,
       } : {
         d3dFormat,
-        supported: false,
-        reason: "WEBGL_compressed_texture_s3tc is unavailable for DXT3 upload",
+        supported: true,
+        compressed: false,
+        internalFormat: gl.RGBA8,
+        format: gl.RGBA,
+        type: gl.UNSIGNED_BYTE,
+        storage: "rgba8",
+        dxtDecode: "DXT3",
+        blockBytes: 16,
       };
     case D3DFMT_DXT4:
       return s3tc ? {
@@ -2696,8 +2716,15 @@ function d3d8TextureFormatInfo(format) {
         blockBytes: 16,
       } : {
         d3dFormat,
-        supported: false,
-        reason: "WEBGL_compressed_texture_s3tc is unavailable for DXT4 upload",
+        supported: true,
+        compressed: false,
+        internalFormat: gl.RGBA8,
+        format: gl.RGBA,
+        type: gl.UNSIGNED_BYTE,
+        storage: "rgba8",
+        dxtDecode: "DXT5",
+        blockBytes: 16,
+        premultipliedAlpha: true,
       };
     case D3DFMT_DXT5:
       return s3tc ? {
@@ -2711,8 +2738,14 @@ function d3d8TextureFormatInfo(format) {
         blockBytes: 16,
       } : {
         d3dFormat,
-        supported: false,
-        reason: "WEBGL_compressed_texture_s3tc is unavailable for DXT5 upload",
+        supported: true,
+        compressed: false,
+        internalFormat: gl.RGBA8,
+        format: gl.RGBA,
+        type: gl.UNSIGNED_BYTE,
+        storage: "rgba8",
+        dxtDecode: "DXT5",
+        blockBytes: 16,
       };
     case D3DFMT_P8:
       return {
@@ -2783,6 +2816,276 @@ function convertD3D8TextureBytes(format, bytes, width, height, depth = 1) {
     return output;
   }
   return bytes;
+}
+
+// DXT/BCn block decoders - CPU fallback when WEBGL_compressed_texture_s3tc unavailable
+// Reference: Wine wined3d/utils.c:440, standard DXT spec
+
+/**
+ * Decode a single DXT1 (BC1) block to 4x4 RGBA8
+ * DXT1: 8 bytes -> 4x4 pixels. Two RGB565 endpoints + 4-color palette + 16×2-bit indices
+ */
+function decodeDxt1Block(blockBytes, target, width, height, x, y) {
+  const c0 = (blockBytes[0] | (blockBytes[1] << 8));
+  const c1 = (blockBytes[2] | (blockBytes[3] << 8));
+  
+  // Extract RGB565 components
+  const r0 = scale5((c0 >> 11) & 0x1F);
+  const g0 = scale6((c0 >> 5) & 0x3F);
+  const b0 = scale5(c0 & 0x1F);
+  
+  const r1 = scale5((c1 >> 11) & 0x1F);
+  const g1 = scale6((c1 >> 5) & 0x3F);
+  const b1 = scale5(c1 & 0x1F);
+  
+  // Generate 4-color palette
+  const colors = [
+    { r: r0, g: g0, b: b0, a: 255 },
+    { r: r1, g: g1, b: b1, a: 255 },
+    { r: c0 <= c1 ? Math.round((2 * r0 + r1) / 3) : Math.round((r0 + r1) / 2),
+      g: c0 <= c1 ? Math.round((2 * g0 + g1) / 3) : Math.round((g0 + g1) / 2),
+      b: c0 <= c1 ? Math.round((2 * b0 + b1) / 3) : Math.round((b0 + b1) / 2),
+      a: 255 },
+    { r: c0 <= c1 ? Math.round((r0 + 2 * r1) / 3) : 0,
+      g: c0 <= c1 ? Math.round((g0 + 2 * g1) / 3) : 0,
+      b: c0 <= c1 ? Math.round((b0 + 2 * b1) / 3) : 0,
+      a: c0 <= c1 ? 255 : 0 }
+  ];
+  
+  // Extract 2-bit indices (16 pixels, 2 bits each = 4 bytes)
+  const indices = blockBytes[4] | (blockBytes[5] << 8) | (blockBytes[6] << 16) | (blockBytes[7] << 24);
+  
+  // Write 4x4 block
+  for (let py = 0; py < 4; py++) {
+    for (let px = 0; px < 4; px++) {
+      const pixelIndex = py * 4 + px;
+      const colorIndex = (indices >> (pixelIndex * 2)) & 0x03;
+      const color = colors[colorIndex];
+      
+      const tx = x + px;
+      const ty = y + py;
+      
+      if (tx < width && ty < height) {
+        const offset = (ty * width + tx) * 4;
+        target[offset] = color.r;
+        target[offset + 1] = color.g;
+        target[offset + 2] = color.b;
+        target[offset + 3] = color.a;
+      }
+    }
+  }
+}
+
+/**
+ * Decode a single DXT3 (BC2) block to 4x4 RGBA8
+ * DXT3: 16 bytes -> 4x4 pixels. 8 bytes explicit alpha (4-bit per pixel) + 8 bytes DXT1 color
+ */
+function decodeDxt3Block(blockData, blockBytes, target, width, height, x, y) {
+  // First 8 bytes: alpha values (4-bit each, 4 values per byte)
+  const alphaBytes = blockBytes.subarray(0, 8);
+  // Last 8 bytes: DXT1 color data
+  const colorBytes = blockBytes.subarray(8, 16);
+  
+  // Decode alpha values
+  const alphaValues = [];
+  for (let i = 0; i < 8; i++) {
+    const byte = alphaBytes[i];
+    alphaValues.push(
+      scale4(byte & 0x0F), // scale4 for alpha: 0-15 -> 0-255
+      scale4((byte >> 4) & 0x0F)
+    );
+  }
+  
+  // Decode color data (same as DXT1)
+  const c0 = (colorBytes[0] | (colorBytes[1] << 8));
+  const c1 = (colorBytes[2] | (colorBytes[3] << 8));
+  
+  const r0 = scale5((c0 >> 11) & 0x1F);
+  const g0 = scale6((c0 >> 5) & 0x3F);
+  const b0 = scale5(c0 & 0x1F);
+  
+  const r1 = scale5((c1 >> 11) & 0x1F);
+  const g1 = scale6((c1 >> 5) & 0x3F);
+  const b1 = scale5(c1 & 0x1F);
+  
+  const colors = [
+    { r: r0, g: g0, b: b0 },
+    { r: r1, g: g1, b: b1 },
+    { r: c0 <= c1 ? Math.round((2 * r0 + r1) / 3) : Math.round((r0 + r1) / 2),
+      g: c0 <= c1 ? Math.round((2 * g0 + g1) / 3) : Math.round((g0 + g1) / 2),
+      b: c0 <= c1 ? Math.round((2 * b0 + b1) / 3) : Math.round((b0 + b1) / 2) },
+    { r: c0 <= c1 ? Math.round((r0 + 2 * r1) / 3) : 0,
+      g: c0 <= c1 ? Math.round((g0 + 2 * g1) / 3) : 0,
+      b: c0 <= c1 ? Math.round((b0 + 2 * b1) / 3) : 0 }
+  ];
+  
+  // Extract color indices
+  const colorIndices = colorBytes[4] | (colorBytes[5] << 8) | (colorBytes[6] << 16) | (colorBytes[7] << 24);
+  
+  // Write 4x4 block
+  for (let py = 0; py < 4; py++) {
+    for (let px = 0; px < 4; px++) {
+      const pixelIndex = py * 4 + px;
+      const colorIndex = (colorIndices >> (pixelIndex * 2)) & 0x03;
+      const color = colors[colorIndex];
+      const alphaIndex = pixelIndex;
+      
+      const tx = x + px;
+      const ty = y + py;
+      
+      if (tx < width && ty < height) {
+        const offset = (ty * width + tx) * 4;
+        target[offset] = color.r;
+        target[offset + 1] = color.g;
+        target[offset + 2] = color.b;
+        target[offset + 3] = alphaValues[alphaIndex];
+      }
+    }
+  }
+}
+
+/**
+ * Decode a single DXT5 (BC3) block to 4x4 RGBA8
+ * DXT5: 16 bytes -> 4x4 pixels. 8 bytes alpha (2 endpoints + 6×3-bit indices) + 8 bytes DXT1 color
+ */
+function decodeDxt5Block(blockData, blockBytes, target, width, height, x, y) {
+  // First 8 bytes: alpha data
+  const alpha0 = blockBytes[0];
+  const alpha1 = blockBytes[1];
+  const alphaIndices = blockBytes[2] | (blockBytes[3] << 8) | (blockBytes[4] << 16) | 
+                      (blockBytes[5] << 24) | (blockBytes[6] << 32) | (blockBytes[7] << 40);
+  
+  // Generate 8 alpha values
+  const alphaValues = [
+    alpha0,
+    alpha1,
+    alpha0 >= alpha1 ? Math.round((6 * alpha0 + alpha1) / 7) : Math.round((4 * alpha0 + alpha1) / 5),
+    alpha0 >= alpha1 ? Math.round((5 * alpha0 + 2 * alpha1) / 7) : Math.round((3 * alpha0 + 2 * alpha1) / 5),
+    alpha0 >= alpha1 ? Math.round((4 * alpha0 + 3 * alpha1) / 7) : Math.round((2 * alpha0 + 3 * alpha1) / 5),
+    alpha0 >= alpha1 ? Math.round((3 * alpha0 + 4 * alpha1) / 7) : Math.round((alpha0 + 4 * alpha1) / 5),
+    alpha0 >= alpha1 ? Math.round((2 * alpha0 + 5 * alpha1) / 7) : 0,
+    alpha0 >= alpha1 ? Math.round((alpha0 + 6 * alpha1) / 7) : 255
+  ];
+  
+  // Last 8 bytes: DXT1 color data
+  const colorBytes = blockBytes.subarray(8, 16);
+  
+  // Decode color data (same as DXT1)
+  const c0 = (colorBytes[0] | (colorBytes[1] << 8));
+  const c1 = (colorBytes[2] | (colorBytes[3] << 8));
+  
+  const r0 = scale5((c0 >> 11) & 0x1F);
+  const g0 = scale6((c0 >> 5) & 0x3F);
+  const b0 = scale5(c0 & 0x1F);
+  
+  const r1 = scale5((c1 >> 11) & 0x1F);
+  const g1 = scale6((c1 >> 5) & 0x3F);
+  const b1 = scale5(c1 & 0x1F);
+  
+  const colors = [
+    { r: r0, g: g0, b: b0 },
+    { r: r1, g: g1, b: b1 },
+    { r: c0 <= c1 ? Math.round((2 * r0 + r1) / 3) : Math.round((r0 + r1) / 2),
+      g: c0 <= c1 ? Math.round((2 * g0 + g1) / 3) : Math.round((g0 + g1) / 2),
+      b: c0 <= c1 ? Math.round((2 * b0 + b1) / 3) : Math.round((b0 + b1) / 2) },
+    { r: c0 <= c1 ? Math.round((r0 + 2 * r1) / 3) : 0,
+      g: c0 <= c1 ? Math.round((g0 + 2 * g1) / 3) : 0,
+      b: c0 <= c1 ? Math.round((b0 + 2 * b1) / 3) : 0 }
+  ];
+  
+  // Extract color indices
+  const colorIndices = colorBytes[4] | (colorBytes[5] << 8) | (colorBytes[6] << 16) | (colorBytes[7] << 24);
+  
+  // Write 4x4 block
+  for (let py = 0; py < 4; py++) {
+    for (let px = 0; px < 4; px++) {
+      const pixelIndex = py * 4 + px;
+      const colorIndex = (colorIndices >> (pixelIndex * 2)) & 0x03;
+      const alphaIndex = (alphaIndices >> (pixelIndex * 3)) & 0x07;
+      const color = colors[colorIndex];
+      const alpha = alphaValues[alphaIndex];
+      
+      const tx = x + px;
+      const ty = y + py;
+      
+      if (tx < width && ty < height) {
+        const offset = (ty * width + tx) * 4;
+        target[offset] = color.r;
+        target[offset + 1] = color.g;
+        target[offset + 2] = color.b;
+        target[offset + 3] = alpha;
+      }
+    }
+  }
+}
+
+/**
+ * Main DXT decoder function
+ * Decodes DXT1/DXT3/DXT5 compressed texture data to RGBA8
+ * Handles non-multiple-of-4 dimensions by clamping block writes
+ */
+function decodeDxtToRgba8(bytes, width, height, dxtKind) {
+  if (!bytes || !width || !height) {
+    return null;
+  }
+  d3d8TextureStats.dxtDecodes += 1;
+  
+  const pixelCount = width * height;
+  const target = new Uint8Array(pixelCount * 4);
+  
+  // Calculate number of blocks in each dimension
+  const blockWidth = Math.ceil(width / 4);
+  const blockHeight = Math.ceil(height / 4);
+  
+  let bytesPerBlock = 8;
+  let decoder;
+  
+  switch (dxtKind) {
+    case "DXT1":
+      bytesPerBlock = 8;
+      decoder = decodeDxt1Block;
+      break;
+    case "DXT3":
+    case "DXT2": // Treat DXT2 like DXT3 (premultiplied alpha handled as straight for now)
+      bytesPerBlock = 16;
+      decoder = decodeDxt3Block;
+      break;
+    case "DXT5":
+    case "DXT4": // Treat DXT4 like DXT5 (premultiplied alpha handled as straight for now)
+      bytesPerBlock = 16;
+      decoder = decodeDxt5Block;
+      break;
+    default:
+      console.warn(`Unknown DXT format: ${dxtKind}`);
+      return null;
+  }
+  
+  const totalBlocks = blockWidth * blockHeight;
+  const expectedBytes = totalBlocks * bytesPerBlock;
+  
+  if (bytes.length < expectedBytes) {
+    console.warn(`DXT data too short: expected ${expectedBytes} bytes, got ${bytes.length}`);
+    return null;
+  }
+  
+  // Decode each block
+  for (let by = 0; by < blockHeight; by++) {
+    for (let bx = 0; bx < blockWidth; bx++) {
+      const blockOffset = (by * blockWidth + bx) * bytesPerBlock;
+      const blockBytes = bytes.subarray(blockOffset, blockOffset + bytesPerBlock);
+      const x = bx * 4;
+      const y = by * 4;
+      
+      decoder(null, blockBytes, target, width, height, x, y);
+    }
+  }
+  
+  return target;
+}
+
+// Helper functions for DXT decoding
+function scale6(value) {
+  return (value << 2) | (value >> 4);
 }
 
 function d3d8TextureUploadView(info, bytes) {
@@ -3680,6 +3983,7 @@ function updateD3D8TextureSummary() {
       missingBinds: d3d8TextureStats.missingBinds,
       unsupportedUpdates: d3d8TextureStats.unsupportedUpdates,
       samplerApplications: d3d8TextureStats.samplerApplications,
+      dxtDecodes: d3d8TextureStats.dxtDecodes,
       live: d3d8TextureStats.live,
       legacyUploads: d3d8TextureStats.legacyUploads,
       boundTextures,
@@ -3983,22 +4287,72 @@ function updateD3D8Texture(payload = {}) {
     return 0;
   }
 
-  if (info.compressed && (x !== 0 || y !== 0 || width !== levelSize.width || height !== levelSize.height)) {
-    d3d8TextureStats.unsupportedUpdates += 1;
-    d3d8TextureStats.lastUnsupported = {
-      id,
-      level,
-      format,
-      reason: "compressed DXT sub-rectangle updates are not implemented",
-    };
-    updateD3D8TextureSummary();
-    return 0;
-  }
+  // Handle DXT CPU decoding fallback
+  let uploadBytes;
+  if (info.dxtDecode) {
+    // For DXT CPU path, we need to decode the entire level, not just the sub-rect
+    // This is because DXT compression works on 4x4 blocks
+    if (x !== 0 || y !== 0 || width !== levelSize.width || height !== levelSize.height) {
+      // For sub-rect updates with DXT, decode the full level and extract the sub-rect
+      const fullLevelBytes = decodeDxtToRgba8(payload.bytes, levelSize.width, levelSize.height, info.dxtDecode);
+      if (!fullLevelBytes) {
+        d3d8TextureStats.unsupportedUpdates += 1;
+        d3d8TextureStats.lastUnsupported = {
+          id,
+          level,
+          format,
+          reason: "DXT CPU decode failed for sub-rect update",
+        };
+        updateD3D8TextureSummary();
+        return 0;
+      }
+      
+      // Extract the sub-rect from the decoded full level
+      const subRectBytes = new Uint8Array(width * height * 4);
+      for (let sy = 0; sy < height; sy++) {
+        for (let sx = 0; sx < width; sx++) {
+          const srcOffset = ((y + sy) * levelSize.width + (x + sx)) * 4;
+          const dstOffset = (sy * width + sx) * 4;
+          subRectBytes[dstOffset] = fullLevelBytes[srcOffset];
+          subRectBytes[dstOffset + 1] = fullLevelBytes[srcOffset + 1];
+          subRectBytes[dstOffset + 2] = fullLevelBytes[srcOffset + 2];
+          subRectBytes[dstOffset + 3] = fullLevelBytes[srcOffset + 3];
+        }
+      }
+      uploadBytes = subRectBytes;
+    } else {
+      // Full level update - decode directly
+      uploadBytes = decodeDxtToRgba8(payload.bytes, width, height, info.dxtDecode);
+      if (!uploadBytes) {
+        d3d8TextureStats.unsupportedUpdates += 1;
+        d3d8TextureStats.lastUnsupported = {
+          id,
+          level,
+          format,
+          reason: "DXT CPU decode failed",
+        };
+        updateD3D8TextureSummary();
+        return 0;
+      }
+    }
+  } else {
+    if (info.compressed && (x !== 0 || y !== 0 || width !== levelSize.width || height !== levelSize.height)) {
+      d3d8TextureStats.unsupportedUpdates += 1;
+      d3d8TextureStats.lastUnsupported = {
+        id,
+        level,
+        format,
+        reason: "compressed DXT sub-rectangle updates are not implemented",
+      };
+      updateD3D8TextureSummary();
+      return 0;
+    }
 
-  const convertedBytes = info.compressed
-    ? payload.bytes
-    : convertD3D8TextureBytes(format, payload.bytes, width, height);
-  const uploadBytes = info.compressed ? convertedBytes : d3d8TextureUploadView(info, convertedBytes);
+    const convertedBytes = info.compressed
+      ? payload.bytes
+      : convertD3D8TextureBytes(format, payload.bytes, width, height);
+    uploadBytes = info.compressed ? convertedBytes : d3d8TextureUploadView(info, convertedBytes);
+  }
   resource.storage = info.storage;
   resource.semantic = info.semantic || null;
   const levelKey = String(level);
@@ -4009,7 +4363,7 @@ function updateD3D8Texture(payload = {}) {
     gl.bindTexture(gl.TEXTURE_2D, resource.texture);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     if (!levelInitialized || levelFormat !== info.storage) {
-      if (info.compressed) {
+      if (info.compressed && !info.dxtDecode) {
         gl.compressedTexImage2D(gl.TEXTURE_2D, level, info.internalFormat, width, height, 0, uploadBytes);
       } else if (x === 0 && y === 0 && width === levelSize.width && height === levelSize.height) {
         gl.texImage2D(gl.TEXTURE_2D, level, info.internalFormat, width, height, 0,
@@ -4022,7 +4376,7 @@ function updateD3D8Texture(payload = {}) {
       resource.initializedLevels.add(levelKey);
       resource.levelFormats.set(levelKey, info.storage);
     } else {
-      if (info.compressed) {
+      if (info.compressed && !info.dxtDecode) {
         gl.compressedTexImage2D(gl.TEXTURE_2D, level, info.internalFormat, width, height, 0, uploadBytes);
       } else {
         gl.texSubImage2D(gl.TEXTURE_2D, level, x, y, width, height, info.format, info.type, uploadBytes);
@@ -4135,7 +4489,7 @@ function updateD3D8VolumeTexture(payload = {}) {
     updateD3D8TextureSummary();
     return 0;
   }
-  if (info.compressed) {
+  if (info.compressed && !info.dxtDecode) {
     d3d8TextureStats.unsupportedUpdates += 1;
     d3d8TextureStats.lastUnsupported = {
       id,
@@ -4143,6 +4497,21 @@ function updateD3D8VolumeTexture(payload = {}) {
       format,
       type: resource.type,
       reason: "compressed volume texture updates are not implemented",
+    };
+    updateD3D8TextureSummary();
+    return 0;
+  }
+  
+  // Handle DXT CPU decoding for volume textures
+  if (info.dxtDecode) {
+    // Volume DXT decoding is not implemented - reject for now
+    d3d8TextureStats.unsupportedUpdates += 1;
+    d3d8TextureStats.lastUnsupported = {
+      id,
+      level,
+      format,
+      type: resource.type,
+      reason: "DXT CPU decode for volume textures not implemented",
     };
     updateD3D8TextureSummary();
     return 0;
