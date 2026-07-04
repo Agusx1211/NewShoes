@@ -177,6 +177,10 @@ residue and the next frontier.
       the cursor probe expectation, then make the lane part of the merge
       routine again; a red gate nobody runs protects nothing (this is how
       26e79bc landed unnoticed).
+- [ ] Restore the real cursor-hide behavior in bridge.js syncBrowserCursor and
+      the smoke.mjs cursor-hidden probe assertion once W3DMouse cursor rendering
+      (the game's own cursor) is ported — currently hardcoded css="default" to
+      avoid a cursorless UI (see e97628f).
 - [ ] **Audio honesty gap from 6d433cc**: 3D sample path is real, but music
       does NOT reach the AudioContext — `cncPortMssStreamStart` is a
       console.log metadata stub with a "TODO: load stream WAV from archive";
