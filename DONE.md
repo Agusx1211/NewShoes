@@ -6185,6 +6185,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## M6 — Playable skirmish (no audio/video)
 
+- [x] Expose skirmish map/cache state through the real-engine harness.
+      `cnc_port_map_cache_probe()` now reports the live `TheMapCache`
+      official/multiplayer counts, first official multiplayer map plus
+      metadata, `TheSkirmishGameInfo`, and `TheGameInfo`, and
+      `realEngineFrameSummary` includes the skirmish game-options widgets
+      needed for click-path diagnosis. A focused Playwright real-init probe
+      verifies the runtime archive set has 103 maps, 47 official multiplayer
+      maps, enabled `Maps\ShellMapMD\ShellMapMD.map`, and first official MP
+      map `maps\alpine assault\alpine assault.map` with CRC 3735677156; both
+      skirmish/game-info pointers are still absent before opening the
+      skirmish menu. Remaining skirmish work is the live menu/options/start
+      transition, not global map-cache or archive absence.
+
 ---
 
 ## M7 — Audio (Miles → Web Audio)

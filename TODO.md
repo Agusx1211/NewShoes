@@ -25,7 +25,11 @@ VERIFIED pending merge: dxt-cpu-fallback (CPU DXT1/3/5→RGBA fallback for missi
 READY pending apply: music fix — `feat/audio-ini-fix` commit 78eb925 rewrites `tools/extract_zh_runtime_archives.sh` to stage the REAL 158MB base-Generals Music.big (from `assets/Generals-CD1/Data1.cab`) instead of the 786KB ZH copy-protection stub. Extraction dry-run-verified. Running it fixes the pre-existing phase2 `music_not_loaded_would_set_quitting` gate failure and makes music play. Apply after concurrent harness boots settle.
 
 IN PROGRESS: skirmish-load diagnosis beyond the now-proven real-init
-`TheMapCache`/`MapsZH.big` path.
+`TheMapCache`/`MapsZH.big` path. The runtime map-cache probe now shows
+103 maps, 47 official multiplayer maps, `Maps\ShellMapMD\ShellMapMD.map`
+enabled, and first official MP map
+`maps\alpine assault\alpine assault.map`; remaining evidence must come from
+the live skirmish menu/options/start transition.
 
 PERF next: the queued bridge micro-wins are done; before more broad renderer
 optimization, take a Mac Chrome/Metal performance capture of a live
@@ -194,11 +198,17 @@ residue and the next frontier.
       subsystems, finds `Maps\ShellMapMD\ShellMapMD.map` through `TheMapCache`,
       and renders the shell map via `harness/shellmap_real_init_gate.mjs`.
       Do not treat the remaining skirmish failure as a global MapCache/archive
-      absence unless a fresh skirmish harness run contradicts that gate. Add a
-      skirmish-menu/game-options probe that logs `TheMapCache` counts,
-      first official multiplayer key, selected game-options map, and the exact
-      point where `getDefaultOfficialMap()`/`loadMap("")` goes wrong, then fix
-      that real path without inventing map data.
+      absence unless a fresh skirmish harness run contradicts that gate. The
+      map-cache probe now exposes skirmish menu widgets plus map counts,
+      official/multiplayer counts, first official multiplayer key/metadata,
+      `TheSkirmishGameInfo`, and `TheGameInfo`; a focused local browser run
+      after real init reports 103 maps, 47 official multiplayer maps, default
+      first official MP map `maps\alpine assault\alpine assault.map`
+      (2-player, CRC 3735677156), and no skirmish/game-info object before the
+      menu opens. Next: run the live Single Player -> Skirmish -> Start path
+      on Mac Chrome/Metal, log when `TheSkirmishGameInfo` appears and which
+      map/CRC/size it carries, then fix the first real failing transition
+      without inventing map data.
 - [ ] **Fix the MD_USA01 first-scene air/water/ship ordering regression**:
       the helicopter is above the water but appears behind the battleship.
       Capture the scene with harness screenshot + draw-history/depth-state

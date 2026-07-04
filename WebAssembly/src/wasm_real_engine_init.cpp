@@ -51,6 +51,7 @@
 #include "GameClient/View.h"
 #include "GameClient/WinInstanceData.h"
 #include "GameClient/WindowLayout.h"
+#include "GameNetwork/GameInfo.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/Scripts.h"
@@ -2332,6 +2333,59 @@ void append_campaign_intro_gate_summary(std::string &json)
 	json += "]}}";
 }
 
+void append_map_metadata_json(std::string &json, const char *field_name, const MapMetaData *metadata)
+{
+	json += ",\"";
+	json += field_name != NULL ? field_name : "map";
+	json += "\":{";
+	json += "\"found\":";
+	json += metadata != NULL ? "true" : "false";
+	if (metadata != NULL) {
+		json += ",\"fileName\":\"" + json_escape(metadata->m_fileName.str()) + "\"";
+		json += ",\"isOfficial\":";
+		json += metadata->m_isOfficial ? "true" : "false";
+		json += ",\"isMultiplayer\":";
+		json += metadata->m_isMultiplayer ? "true" : "false";
+		json += ",\"numPlayers\":" + std::to_string(static_cast<long long>(metadata->m_numPlayers));
+		json += ",\"fileSize\":" + std::to_string(static_cast<unsigned long long>(metadata->m_filesize));
+		json += ",\"crc\":" + std::to_string(static_cast<unsigned long long>(metadata->m_CRC));
+		json += ",\"extentMin\":{\"x\":" + std::to_string(metadata->m_extent.lo.x);
+		json += ",\"y\":" + std::to_string(metadata->m_extent.lo.y);
+		json += ",\"z\":" + std::to_string(metadata->m_extent.lo.z) + "}";
+		json += ",\"extentMax\":{\"x\":" + std::to_string(metadata->m_extent.hi.x);
+		json += ",\"y\":" + std::to_string(metadata->m_extent.hi.y);
+		json += ",\"z\":" + std::to_string(metadata->m_extent.hi.z) + "}";
+	}
+	json += "}";
+}
+
+void append_game_info_json(std::string &json, const char *field_name, const GameInfo *game)
+{
+	json += ",\"";
+	json += field_name != NULL ? field_name : "gameInfo";
+	json += "\":{";
+	json += "\"present\":";
+	json += game != NULL ? "true" : "false";
+	if (game != NULL) {
+		AsciiString map = game->getMap();
+		const MapMetaData *metadata = TheMapCache != NULL ? TheMapCache->findMap(map) : NULL;
+		json += ",\"map\":\"" + json_escape(map.str()) + "\"";
+		json += ",\"inGame\":";
+		json += game->isInGame() ? "true" : "false";
+		json += ",\"gameInProgress\":";
+		json += game->isGameInProgress() ? "true" : "false";
+		json += ",\"gameId\":" + std::to_string(static_cast<long long>(game->getGameID()));
+		json += ",\"localSlot\":" + std::to_string(static_cast<long long>(game->getLocalSlotNum()));
+		json += ",\"numPlayers\":" + std::to_string(static_cast<long long>(game->getNumPlayers()));
+		json += ",\"mapCRC\":" + std::to_string(static_cast<unsigned long long>(game->getMapCRC()));
+		json += ",\"mapSize\":" + std::to_string(static_cast<unsigned long long>(game->getMapSize()));
+		json += ",\"mapContentsMask\":" + std::to_string(static_cast<long long>(game->getMapContentsMask()));
+		json += ",\"seed\":" + std::to_string(static_cast<long long>(game->getSeed()));
+		append_map_metadata_json(json, "metadata", metadata);
+	}
+	json += "}";
+}
+
 void append_real_engine_frame_summary_state(std::string &json)
 {
 	json += ",\"inputSettings\":{\"useAlternateMouse\":";
@@ -3141,6 +3195,15 @@ void append_real_engine_client_state(std::string &json)
 	append_window_under_probe_center(json, "underButtonEasyCenter", "MainMenu.wnd:ButtonEasy");
 	json += "}";
 
+	json += ",\"skirmishMenu\":{\"queried\":true";
+	append_window_probe(json, "parent", "SkirmishGameOptionsMenu.wnd:SkirmishGameOptionsMenuParent");
+	append_window_probe(json, "buttonStart", "SkirmishGameOptionsMenu.wnd:ButtonStart");
+	append_window_probe(json, "buttonBack", "SkirmishGameOptionsMenu.wnd:ButtonBack");
+	append_window_probe(json, "mapWindow", "SkirmishGameOptionsMenu.wnd:MapWindow");
+	append_window_probe(json, "sliderGameSpeed", "SkirmishGameOptionsMenu.wnd:SliderGameSpeed");
+	append_window_under_probe_center(json, "underButtonStartCenter", "SkirmishGameOptionsMenu.wnd:ButtonStart");
+	json += "}";
+
 	json += ",\"controlBarWindows\":{\"queried\":true";
 	append_window_probe(json, "parent", "ControlBar.wnd:ControlBarParent");
 	append_window_probe(json, "rightHud", "ControlBar.wnd:RightHUD");
@@ -3720,14 +3783,47 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_map_cache_probe()
 		json += TheMapCache->find(lowerName) != TheMapCache->end() ? "true" : "false";
 		json += ",\"shellMapOn\":";
 		json += (TheGlobalData != NULL && TheGlobalData->m_shellMapOn) ? "true" : "false";
+		json += ",\"globalMapName\":\"";
+		json += TheGlobalData != NULL ? json_escape(TheGlobalData->m_mapName.str()) : "";
+		json += "\"";
+		int official_count = 0;
+		int multiplayer_count = 0;
+		int official_multiplayer_count = 0;
+		AsciiString first_official_multiplayer = AsciiString::TheEmptyString;
+		const MapMetaData *first_official_multiplayer_metadata = NULL;
+		for (MapCache::const_iterator it = TheMapCache->begin(); it != TheMapCache->end(); ++it) {
+			if (it->second.m_isOfficial) {
+				++official_count;
+			}
+			if (it->second.m_isMultiplayer) {
+				++multiplayer_count;
+			}
+			if (it->second.m_isOfficial && it->second.m_isMultiplayer) {
+				++official_multiplayer_count;
+				if (first_official_multiplayer.isEmpty()) {
+					first_official_multiplayer = it->first;
+					first_official_multiplayer_metadata = &it->second;
+				}
+			}
+		}
+		json += ",\"officialCount\":" + std::to_string(static_cast<long long>(official_count));
+		json += ",\"multiplayerCount\":" + std::to_string(static_cast<long long>(multiplayer_count));
+		json += ",\"officialMultiplayerCount\":"
+			+ std::to_string(static_cast<long long>(official_multiplayer_count));
+		json += ",\"firstOfficialMultiplayerMap\":\"" + json_escape(first_official_multiplayer.str()) + "\"";
+		append_map_metadata_json(json, "firstOfficialMultiplayerMetadata", first_official_multiplayer_metadata);
+		append_game_info_json(json, "skirmishGameInfo", TheSkirmishGameInfo);
+		append_game_info_json(json, "gameInfo", TheGameInfo);
 		json += ",\"cpuDetectSpeedMHz\":" + std::to_string(static_cast<long long>(CPUDetectClass::Get_Processor_Speed()));
-		json += ",\"cpuDetectRamBytes\":" + std::to_string(static_cast<unsigned long long>(CPUDetectClass::Get_Total_Physical_Memory()));
+		json += ",\"cpuDetectRamBytes\":"
+			+ std::to_string(static_cast<unsigned long long>(CPUDetectClass::Get_Total_Physical_Memory()));
 		if (TheGameLODManager != NULL) {
 			json += ",\"lodMemPassed\":";
 			json += TheGameLODManager->didMemPass() ? "true" : "false";
 			json += ",\"lodReallyLowMHz\":";
 			json += TheGameLODManager->isReallyLowMHz() ? "true" : "false";
-			json += ",\"staticLODLevel\":" + std::to_string(static_cast<long long>(TheGameLODManager->getStaticLODLevel()));
+			json += ",\"staticLODLevel\":"
+				+ std::to_string(static_cast<long long>(TheGameLODManager->getStaticLODLevel()));
 		}
 		json += ",\"sampleKeys\":[";
 		int emitted = 0;
@@ -3737,6 +3833,22 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_map_cache_probe()
 				json += ",";
 			}
 			json += "\"" + json_escape(it->first.str()) + "\"";
+		}
+		json += "]";
+		json += ",\"sampleMaps\":[";
+		emitted = 0;
+		for (MapCache::const_iterator it = TheMapCache->begin();
+				it != TheMapCache->end() && emitted < 8; ++it, ++emitted) {
+			if (emitted > 0) {
+				json += ",";
+			}
+			json += "{\"key\":\"" + json_escape(it->first.str()) + "\"";
+			json += ",\"official\":";
+			json += it->second.m_isOfficial ? "true" : "false";
+			json += ",\"multiplayer\":";
+			json += it->second.m_isMultiplayer ? "true" : "false";
+			json += ",\"players\":" + std::to_string(static_cast<long long>(it->second.m_numPlayers));
+			json += "}";
 		}
 		json += "]";
 	}
