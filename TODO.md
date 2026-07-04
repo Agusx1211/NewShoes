@@ -16,6 +16,22 @@ shares structure and follows behind.
 
 ---
 
+## Current integration status (autonomous session)
+
+MERGED to `main` (verified, clean, green build): perf-drawstate (state-skip perf + geometry/texture correctness fixes), zorder-fix (RTT null-FBO depth-pollution fix — 0 FBO failures), audio-ini-fix (non-Default audio INI entries → audio subsystem inits).
+
+VERIFIED pending merge: dxt-cpu-fallback (CPU DXT1/3/5→RGBA fallback for missing textures; decode correctness proven by exact-value tests; render-verify in progress).
+
+READY pending apply: music fix — `feat/audio-ini-fix` commit 78eb925 rewrites `tools/extract_zh_runtime_archives.sh` to stage the REAL 158MB base-Generals Music.big (from `assets/Generals-CD1/Data1.cab`) instead of the 786KB ZH copy-protection stub. Extraction dry-run-verified. Running it fixes the pre-existing phase2 `music_not_loaded_would_set_quitting` gate failure and makes music play. Apply after concurrent harness boots settle.
+
+IN PROGRESS: commanding-units fix (feat/commanding-fix), skirmish-load fix (feat/skirmish-load).
+
+QUEUED perf (high-FPS): perf-win-1 = cache reusable STREAM_DRAW index buffer (bridge.js ~7149-7180); perf-win-2 = cache lastProgram/lastArrayBuffer to skip redundant per-draw useProgram/bindBuffer (bridge.js L6756/6811). Both self-contained, no conflict with perf-drawstate; do after it settles in main.
+
+QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), control-bar HUD (controlBarCommandHud, top missing-UI), DXT premultiplied-alpha (DXT2/4) + volume textures.
+
+Dev-box render-verify: symlink worktree `dist/` → main's built `dist/` renders JS-only fixes without the Mac (~4min boot).
+
 ## Strategy pivot — real `init()` whole-program link (current focus)
 
 See `AGENTS.md` "How the port advances". Probe/smoke accretion is over; these
