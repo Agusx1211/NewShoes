@@ -17,6 +17,8 @@ const realInitScreenshot = resolve(screenshotDir, "startup-vertical-real-init.pn
 const realInitMenuClickScreenshot = resolve(screenshotDir, "startup-vertical-real-init-menu-click.png");
 const realInitCampaignStartScreenshot = resolve(screenshotDir, "startup-vertical-real-init-campaign-start.png");
 const realInitPostCampaignScreenshot = resolve(screenshotDir, "startup-vertical-real-init-post-campaign.png");
+const interactScreenshot = resolve(screenshotDir, "interact-milestone.png");
+const proveInteract = process.env.STARTUP_VERTICAL_PROVE_INTERACT === "1";
 const debugStartupVertical = process.env.STARTUP_VERTICAL_DEBUG === "1";
 const realInitOnly = process.env.STARTUP_VERTICAL_REAL_INIT_ONLY === "1";
 const postCampaignFrameCount = Number(process.env.STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES ?? 0);
@@ -514,6 +516,8 @@ const win32MouseMessages = Object.freeze({
   mouseMove: 0x0200,
   leftButtonDown: 0x0201,
   leftButtonUp: 0x0202,
+  rightButtonDown: 0x0204,
+  rightButtonUp: 0x0205,
 });
 
 const directInputKeys = Object.freeze({
@@ -2257,6 +2261,19 @@ try {
   await page?.close();
   console.error("[vertical] phase3 real-init page");
   const realInitPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  // Always-on console listener for the real-init page so that wasm stdout
+  // phase markers (e.g. `cnc-port: query_drawables START ...`) survive a
+  // hard wasm trap, which the JS try/catch in the bridge cannot intercept.
+  // Only echo lines tagged with the `cnc-port:` trace prefix to stay quiet.
+  realInitPage.on("console", (message) => {
+    const text = message.text();
+    if (typeof text === "string" && text.startsWith("cnc-port:")) {
+      console.error(`[realinit console:${message.type()}] ${text}`);
+    }
+  });
+  realInitPage.on("pageerror", (error) => {
+    console.error(`[realinit pageerror] ${error.stack ?? error.message}`);
+  });
   await realInitPage.goto(harnessUrl, { waitUntil: "networkidle" });
   await realInitPage.waitForFunction(() => Boolean(window.CnCPort?.rpc));
 
@@ -2396,12 +2413,21 @@ try {
         postCampaignFrameCount > 0 ? postCampaignFrameCount : 1)
       : null;
   const realPostCampaignPlayerControlFrames = shouldRunUntilPlayerControl
-    ? await runRealEngineFramesUntilPlayerControl(
-      realInitPage,
-      postCampaignFrameCount > 0 ? postCampaignFrameCount : 3600,
-      postCampaignFrameChunkCount,
-      postCampaignCompactChunks,
-      postCampaignLightweightFrames)
+    ? await (async () => {
+        await page.evaluate(() => {
+          if (window.__cncSetDiagLevel) window.__cncSetDiagLevel("lite");
+        });
+        const result = await runRealEngineFramesUntilPlayerControl(
+          realInitPage,
+          postCampaignFrameCount > 0 ? postCampaignFrameCount : 3600,
+          postCampaignFrameChunkCount,
+          postCampaignCompactChunks,
+          postCampaignLightweightFrames);
+        await page.evaluate(() => {
+          if (window.__cncSetDiagLevel) window.__cncSetDiagLevel("full");
+        });
+        return result;
+      })()
     : null;
   if (postCampaignExpectPlayerControl) {
     expect(realPostCampaignPlayerControlFrames?.reachedPlayerControl === true,
@@ -2447,6 +2473,202 @@ try {
       "loaded-map render should not apply WW3D missing texture fallback",
       realPostCampaignTextureDiagnostics);
   }
+
+  // Phase 2: select-and-move unit interactivity proof (gated by env flag).
+  // The function def is below; the invocation is placed after it.
+
+  // ---- selectAndMoveUnit: Phase 2 interactivity proof ----
+  /**
+   * Reach player control, pick a local-owned non-structure unit on screen,
+   * left-click to select it, right-click a destination, step ~90 frames,
+   * verify the unit moved, and screenshot.
+   */
+  async function selectAndMoveUnit(page) {
+    const summary = {
+      reachedControl: false,
+      unitPicked: null,
+      selectCount: 0,
+      moveDelta: null,
+      screenshotPath: null,
+    };
+
+    // 1. Reach player control. While we walk toward it we also probe
+    //    queryDrawables directly so the WTS/auto-guard breakdown is captured
+    //    at the real md_USA01 scene, NOT just at the final reachedControl
+    //    gate — that turns out to matter on WASM because the campaign intro
+    //    movie can stall GameLogic before INTRO_DONE releases input, in which
+    //    case the harness never reaches control and the query is the only
+    //    runnable probe we have to diagnose a 0-drawable return.
+    console.error("[interact] reaching player control...");
+    await page.evaluate(() => {
+      if (window.__cncSetDiagLevel) window.__cncSetDiagLevel("lite");
+    });
+    // Inline a reach-control loop so we can probe queryDrawables each chunk.
+    const reachMax = 3600;
+    const reachChunk = 60;
+    let pcResult = null;
+    for (let remaining = reachMax; remaining > 0;) {
+      const frames = Math.min(reachChunk, remaining);
+      pcResult = await runRealEngineFrames(page, frames);
+      const pc = summarizePlayerControlState(pcResult);
+      const reached = playerControlStateReached(pc);
+      // Probe queryDrawables once per chunk. "Aborted/ready:undefined" or zero
+      // kept drawables with all-offScreen is what we need to capture.
+      let probe = null;
+      try {
+        probe = await page.evaluate(() =>
+          window.CnCPort.rpc("queryDrawables"));
+      } catch (error) {
+        probe = { ok: false, error: error?.message ?? String(error) };
+      }
+      const stats = probe?.result?.stats;
+      const guard = probe?.result?.guard;
+      console.error(
+        "[interact] reach-chunk frames",
+        pcResult?.frame?.framesCompleted,
+        "logicFrame", pc.logicFrame,
+        "objects", pcResult?.frame?.clientState?.gameplay?.objectCount,
+        "reached", reached,
+        "inGame", pc.inGame,
+        "inputEnabled", pc.inputEnabled,
+        "letterBoxed", pc.letterBoxed,
+        "introDone", pc.introDone,
+        "| queryDrawables",
+        "ok", probe?.ok, "aborted", probe?.aborted,
+        "abortMsg", probe?.abortMessage,
+        "ready", probe?.result?.ready, "guard", guard,
+        "localIdx", probe?.result?.localPlayerIndex,
+        "kept", stats?.kept,
+        "wtsI/O/Inv", stats?.wtsInside, stats?.wtsOutside, stats?.wtsInvalid,
+        "ownedLocal", stats?.ownedLocal,
+        "ownedNotNullLocal", stats?.ownedNotLocal,
+        "ownedNull", stats?.ownedNull,
+        "noObject", stats?.noObject);
+      if (reached) {
+        break;
+      }
+      remaining -= frames;
+    }
+    await page.evaluate(() => {
+      if (window.__cncSetDiagLevel) window.__cncSetDiagLevel("full");
+    });
+    summary.reachedControl = pcResult != null && playerControlStateReached(summarizePlayerControlState(pcResult));
+    console.error("[interact] reachedPlayerControl:", summary.reachedControl);
+    if (!summary.reachedControl) {
+      console.error("[interact] did not reach player control, aborting");
+      return summary;
+    }
+
+    // 2. queryDrawables → pick first local-owned, non-structure, non-hidden, on-screen unit.
+    const dr = await page.evaluate(() =>
+      window.CnCPort.rpc("queryDrawables"));
+    console.error("[interact] queryDrawables ok:", dr?.ok, "aborted:", dr?.aborted, "abortMessage:", dr?.abortMessage, "started:", dr?.result?.started, "ready:", dr?.result?.ready, "guard:", dr?.result?.guard, "localPlayerIndex:", dr?.result?.localPlayerIndex, "stats:", JSON.stringify(dr?.result?.stats), "drawables:", (dr?.result?.drawables ?? []).length);
+    const drawables = dr?.result?.drawables ?? [];
+    const localUnits = drawables.filter(
+      (d) => d.localOwned === true && d.structure === false && d.hidden === false && d.onScreen === true
+    );
+    console.error(
+      "[interact] drawables:", drawables.length,
+      "localOwned units:", drawables.filter((d) => d.localOwned).length,
+      "on-screen local units:", localUnits.length
+    );
+    if (localUnits.length === 0) {
+      // Log all localOwned units and their onScreen flags for debugging.
+      const localOwnedUnits = drawables.filter((d) => d.localOwned);
+      console.error(
+        "[interact] no on-screen local unit found; localOwned units and onScreen flags:",
+        JSON.stringify(localOwnedUnits.map((d) => ({ id: d.id, name: d.name, onScreen: d.onScreen, structure: d.structure, hidden: d.hidden })))
+      );
+      return summary;
+    }
+    const unit = localUnits[0];
+    summary.unitPicked = { id: unit.id, name: unit.name, screenPos: unit.screenPos, worldPos: unit.worldPos };
+    console.error("[interact] picked unit:", JSON.stringify(summary.unitPicked));
+
+    // 3. Left-click to select: mouseMove → leftButtonDown → step → leftButtonUp.
+    // Click-select sequence. Win32Mouse->addWin32Event() only ENQUEUES a
+    // GameMessage into TheMessageStream; the queue is processed on the NEXT
+    // GameClient::update() frame: SelectionTranslator converts RAW mouse
+    // down→up into MSG_MOUSE_LEFT_CLICK, which is itself processed on the
+    // frame AFTER that. The original harness only stepped 1 frame between
+    // left-Down and left-Up (and zero frames after left-Up) so the click was
+    // never delivered to SelectionTranslator and selectCount stayed 0 — the
+    // pre-fix probe5 returned `selectCount: 0, moveDelta: 0`. Step a few
+    // frames on each side of every mouse-button transition so the click is
+    // guaranteed to run through Mouse → MessageStream → SelectionTranslator
+    // → TheInGameUI->selectDrawable / pickDrawable → MSG_CREATE_SELECTED_GROUP,
+    // and right-click through CommandTranslator issueMoveToLocationCommand →
+    // MSG_DO_MOVETO → Object::issueMoveToLocation.
+    const CLICK_FORWARD_FRAMES = 5;
+    const clickPoint = { x: unit.screenPos.x, y: unit.screenPos.y };
+    await postRealEngineMouseMessage(page, win32MouseMessages.mouseMove, clickPoint);
+    await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+    await postRealEngineMouseMessage(page, win32MouseMessages.leftButtonDown, clickPoint);
+    await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+    await postRealEngineMouseMessage(page, win32MouseMessages.leftButtonUp, clickPoint);
+    await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+
+    // 4. querySelection → assert selectCount >= 1.
+    const selBefore = await page.evaluate(() =>
+      window.CnCPort.rpc("querySelection"));
+    console.error("[interact] querySelection before move ok:", selBefore?.ok, "aborted:", selBefore?.aborted, "abortMessage:", selBefore?.abortMessage, "selectCount:", selBefore?.result?.selectCount, "rawResult:", selBefore?.result);
+    summary.selectCount = selBefore?.result?.selectCount ?? 0;
+
+    // 5. Right-click a destination offset: +200px x on-screen, clamped.
+    const viewportWidth = 1024;
+    const destX = Math.min(unit.screenPos.x + 200, viewportWidth - 1);
+    const destPoint = { x: destX, y: unit.screenPos.y };
+    await postRealEngineMouseMessage(page, win32MouseMessages.mouseMove, destPoint);
+    await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+    await postRealEngineMouseMessage(page, win32MouseMessages.rightButtonDown, destPoint);
+    await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+    await postRealEngineMouseMessage(page, win32MouseMessages.rightButtonUp, destPoint);
+    await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+
+    // 6. Step ~90 frames.
+    console.error("[interact] stepping 90 frames for unit to move...");
+    await runRealEngineFrames(page, 90);
+
+    // 7. queryDrawables again → find same unit by id → compute worldPos delta.
+    const dr2 = await page.evaluate(() =>
+      window.CnCPort.rpc("queryDrawables"));
+    console.error("[interact] queryDrawables (2nd) ok:", dr2?.ok, "aborted:", dr2?.aborted, "abortMessage:", dr2?.abortMessage, "started:", dr2?.result?.started, "ready:", dr2?.result?.ready, "guard:", dr2?.result?.guard, "localPlayerIndex:", dr2?.result?.localPlayerIndex, "stats:", JSON.stringify(dr2?.result?.stats), "drawables:", (dr2?.result?.drawables ?? []).length);
+    const drawables2 = dr2?.result?.drawables ?? [];
+    const unit2 = drawables2.find((d) => d.id === unit.id);
+    if (unit2 && unit2.worldPos) {
+      const dx = unit2.worldPos.x - unit.worldPos.x;
+      const dy = unit2.worldPos.y - unit.worldPos.y;
+      const delta = Math.sqrt(dx * dx + dy * dy);
+      summary.moveDelta = delta;
+      console.error(
+        "[interact] unit moved delta:", delta,
+        "dx:", dx, "dy:", dy
+      );
+    } else {
+      console.error("[interact] unit not found in drawables2 or no worldPos");
+    }
+
+    // 7b. Load-bearing assertion: unit MUST have moved.
+    const MOVE_DELTA_THRESHOLD = 1.0; // world units — units move noticeably in 90 frames
+    if (summary.moveDelta == null || summary.moveDelta <= MOVE_DELTA_THRESHOLD) {
+      throw new Error(
+        `[interact] unit did not move: delta=${summary.moveDelta} (threshold=${MOVE_DELTA_THRESHOLD}); ` +
+        `unitPicked=${JSON.stringify(summary.unitPicked)}`
+      );
+    }
+
+    // 8. Screenshot.
+    await mkdir(screenshotDir, { recursive: true });
+    await page.screenshot({ path: interactScreenshot });
+    summary.screenshotPath = interactScreenshot;
+    console.error("[interact] screenshot saved to", interactScreenshot);
+
+    return summary;
+  }
+
+  const interactResult = proveInteract
+    ? await selectAndMoveUnit(realInitPage)
+    : null;
 
   const audioFrontier =
     audioBootResult?.state?.originalEngineStartup?.deviceFactoryFrontier;
@@ -2542,6 +2764,7 @@ try {
       postCampaignDiagnosticFrames: realPostCampaignDiagnosticFrames,
       postCampaignCanvasProbe: realPostCampaignCanvasProbe,
       postCampaignScreenshot: realPostCampaignScreenshotPath,
+      interactResult: interactResult,
       screenshot: realInitScreenshot,
     },
   }));
