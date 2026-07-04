@@ -1,5 +1,15 @@
 # HANDOFF — DELETE AFTER READING
 
+> **LATE UPDATE (end of session):** `feat/commanding-fix` was **merged into `main`**,
+> rebuilt (fresh wasm ~now), and synced to the Mac — so §2's "commanding is unmerged"
+> is now stale: it IS on `main` and on the Mac. The merge was clean (auto-merged
+> bridge.js + startup_vertical_smoke.mjs). It compiles + boots (Goliath reached LF2100),
+> but **select→move is still UNVERIFIED** — run a long-deadline Mac `PROVE_INTERACT` to
+> confirm units select+move (both prior runs died in the intro before player control).
+> The Mac now has: full integration (perf/zorder/DXT/audio/music) + commanding query fix.
+> Everything else below stands, especially §0 (the render fixes are SwiftShader-targeted /
+> invisible on Metal — the owner's real Metal bugs are undiagnosed).
+
 Orchestrator handoff for the C&C Generals/Zero Hour → WebAssembly port. Written at
 the end of a long autonomous orchestration session. This captures **everything in my
 head**: current state, what's real vs unverified, the branches, the traps, and the
