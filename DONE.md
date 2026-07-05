@@ -6120,6 +6120,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       full-screen `(0,0)-(800,600)` image with `W3DDisplay::drawImage`, and
       verifies browser WebGL2 edge pixels from the alpha ruler overlay while
       the transparent center remains black.
+- [x] Fix in-game command-bar HUD background frame rendering black. Root cause:
+      the `__attribute__((weak))` no-op stubs in
+      `wasm_ww3d_render_probe.cpp` for the W3D HUD draw callbacks
+      (`W3DCommandBarBackgroundDraw`/`W3DLeftHUDDraw`/`W3DRightHUDDraw`/
+      `W3DPowerDraw`/etc.) were not gated behind
+      `CNC_PORT_LINKS_REAL_W3D_MAIN_MENU`, unlike the `W3DMainMenu*` stubs.
+      cnc-port defines that macro so the real
+      `GeneralsMD/.../W3DControlBar.cpp` owners are available in the
+      `zh_gameengine_real_lifecycle_runtime` archive — but because the weak
+      stubs already satisfied every reference, the linker never pulled
+      `W3DControlBar.o`, so every bound HUD draw callback was the empty stub.
+      Fix: gate all those stubs with the same `#ifndef
+      CNC_PORT_LINKS_REAL_W3D_MAIN_MENU` guard so probe-only builds keep the
+      stubs while cnc-port pulls the real strong definitions. Before: the
+      metallic command-bar background frame art rendered solid black (center
+      region ~74% black). After: `bgDrawCalled=29`, the 1024x256
+      `SN/SA/SUCommandBar.tga` atlas binds every frame, center region drops to
+      ~14.4% black (metallic frame paints), bottom 20% HUD strip goes from
+      22.1%→66.4% non-black. E2e-proven via skirmish smoke screenshot.
 
 ---
 

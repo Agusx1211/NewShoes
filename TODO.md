@@ -29,7 +29,7 @@ real-GPU perf measurement on Mac is a pending follow-up. Before broad D3D8
 shim surgery, take a DevTools trace only if the next chosen optimization
 needs async ANGLE/GPU stall detail beyond the live harness counters.
 
-QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), control-bar HUD (controlBarCommandHud, top missing-UI), compressed/DXT volume textures.
+QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), control-bar HUD (controlBarCommandHud/gameplay commands still missing — the background frame art is now linked and paints), compressed/DXT volume textures.
 
 Dev-box render-verify: symlink worktree `dist/` → main's built `dist/` renders JS-only fixes without the Mac (~4min boot).
 
