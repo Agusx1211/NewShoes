@@ -6197,6 +6197,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       skirmish/game-info pointers are still absent before opening the
       skirmish menu. Remaining skirmish work is the live menu/options/start
       transition, not global map-cache or archive absence.
+- [x] Drive live Skirmish Start into an active real match on Mac Chrome/Metal.
+      Added the real AI player sources to `cnc-port`'s lifecycle runtime and
+      routed Player-owned AI callbacks through explicit wasm dispatch where the
+      inherited AI vtable slots trapped during `GameLogic::startNewGame`.
+      A Mac M4 Chrome/Metal run drove Main Menu -> Single Player -> Skirmish
+      -> Start through the original Win32 input path, selected
+      `maps\alpine assault\alpine assault.map` (2-player, CRC 3735677156),
+      and completed post-start frames with `GAME_SKIRMISH`, `loadingMap=false`,
+      223 logic objects/drawables, live input/control bar, and a selected
+      controllable object. Screenshot evidence is
+      `/Users/aa/cnc-verify/cnc-skirmish-loaded-after-ai-dispatch.png`
+      with a nonblank 1280x656 canvas center pixel `[158,144,135,255]`.
+- [x] Load a skirmish map through the real map loader.
+      Covered by the live Skirmish Start run above: Alpine Assault reaches
+      in-game state through the real menu, `SkirmishGameInfo::startGame`,
+      `GameLogic::startNewGame`, map load, player/object setup, and post-start
+      frame stepping rather than a standalone map probe.
+- [x] Units/structures spawn and render on terrain in a skirmish.
+      The same Mac/Metal screenshot and state query show a rendered USA base,
+      a vehicle, terrain/roads, `objectCount=223`, `drawableCount=223`, and a
+      visible/clickable control bar after the map load.
 
 ---
 

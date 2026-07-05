@@ -101,6 +101,18 @@
 
 #include "GameNetwork/GameInfo.h"
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_game_logic_step(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP(name) \
+	do { \
+		if (cnc_port_note_game_logic_step) { \
+			cnc_port_note_game_logic_step(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP(name) do { } while (0)
+#endif
+
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -710,8 +722,17 @@ void Player::addToPriorityBuildList(AsciiString templateName, Coord3D *pos, Real
 //=============================================================================
 void Player::update()
 {
-	if (m_ai)
+	if (m_ai) {
+#ifdef __EMSCRIPTEN__
+		if (AISkirmishPlayer *skirmishAI = dynamic_cast<AISkirmishPlayer *>(m_ai)) {
+			skirmishAI->AISkirmishPlayer::update();
+		} else {
+			m_ai->AIPlayer::update();
+		}
+#else
 		m_ai->update();
+#endif
+	}
 
 	// Allow the teams this player owns to update themselves.
 	for( PlayerTeamList::iterator it = m_playerTeamPrototypes.begin(); it != m_playerTeamPrototypes.end(); ++it ) 
@@ -760,8 +781,19 @@ void Player::update()
 //=============================================================================
 void Player::newMap()
 {
-	if (m_ai)
+	if (m_ai) {
+#ifdef __EMSCRIPTEN__
+		CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.newMap.ai.before");
+		if (AISkirmishPlayer *skirmishAI = dynamic_cast<AISkirmishPlayer *>(m_ai)) {
+			skirmishAI->AISkirmishPlayer::newMap();
+		} else {
+			m_ai->AIPlayer::newMap();
+		}
+		CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.newMap.ai.after");
+#else
 		m_ai->newMap();
+#endif
+	}
 }
 
 //=============================================================================
@@ -1589,16 +1621,30 @@ void Player::repairStructure(ObjectID structureID)
 //-------------------------------------------------------------------------------------------------
 void Player::onUnitCreated( Object *factory, Object *unit )
 {
+	CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onUnitCreated.entry");
+
 	// When a a unit is completed, it becomes "real" as far as scripting is 
 	// concerned. jba.
+	CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onUnitCreated.scriptNotify.before");
 	TheScriptEngine->notifyOfObjectCreationOrDestruction();
+	CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onUnitCreated.scriptNotify.after");
 
 	// increment our scorekeeper
+	CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onUnitCreated.scoreBuilt.before");
 	m_scoreKeeper.addObjectBuilt(unit);
+	CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onUnitCreated.scoreBuilt.after");
 
 	// ai notification callback
-	if( m_ai )
+	if( m_ai ) {
+		CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onUnitCreated.aiProduced.before");
+#ifdef __EMSCRIPTEN__
+		// AISkirmishPlayer forwards this exact callback to AIPlayer.
+		m_ai->AIPlayer::onUnitProduced( factory, unit );
+#else
 		m_ai->onUnitProduced( factory, unit );
+#endif
+		CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onUnitCreated.aiProduced.after");
+	}
 }  // end onUnitCreated
 
 
@@ -1667,32 +1713,59 @@ void Player::onStructureCreated( Object *builder, Object *structure )
 //-------------------------------------------------------------------------------------------------
 void Player::onStructureConstructionComplete( Object *builder, Object *structure, Bool isRebuild )
 {
+	CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onStructureConstructionComplete.entry");
+
 	// When a a structure is completed, it becomes "real" as far as scripting is 
 	// concerned. jba.
+	CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onStructureConstructionComplete.scriptNotify.before");
 	TheScriptEngine->notifyOfObjectCreationOrDestruction();
+	CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onStructureConstructionComplete.scriptNotify.after");
 
 	// Update the pathfind footprint.  Sometimes when rubble has to be removed
 	// to build, the initial footprint while building is goofy.  jba.
+	CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onStructureConstructionComplete.pathRemove.before");
 	TheAI->pathfinder()->removeObjectFromPathfindMap(structure);
+	CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onStructureConstructionComplete.pathRemove.after");
+	CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onStructureConstructionComplete.pathAdd.before");
 	TheAI->pathfinder()->addObjectToPathfindMap(structure);
+	CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onStructureConstructionComplete.pathAdd.after");
 
 	// increment our scorekeeper
 	if (isRebuild == FALSE) {
+		CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onStructureConstructionComplete.scoreBuilt.before");
 		m_scoreKeeper.addObjectBuilt(structure);
+		CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onStructureConstructionComplete.scoreBuilt.after");
+		CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onStructureConstructionComplete.scoreSpent.before");
 		m_scoreKeeper.addMoneySpent(structure->getTemplate()->calcCostToBuild(this));
+		CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onStructureConstructionComplete.scoreSpent.after");
 	}
 
+	CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onStructureConstructionComplete.power.before");
 	structure->friend_adjustPowerForPlayer(TRUE);
+	CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onStructureConstructionComplete.power.after");
 
 	// ai notification callback
-	if( m_ai )
+	if( m_ai ) {
+		CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onStructureConstructionComplete.aiProduced.before");
+#ifdef __EMSCRIPTEN__
+		// AISkirmishPlayer inherits this exact implementation; the wasm build has
+		// trapped through the inherited vtable slot during skirmish startup.
+		m_ai->AIPlayer::onStructureProduced( builder, structure );
+#else
 		m_ai->onStructureProduced( builder, structure );
+#endif
+		CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onStructureConstructionComplete.aiProduced.after");
+	}
 
 	// the GUI needs to re-evaluate the information being displayed to the user now
-	if( TheControlBar )
+	if( TheControlBar ) {
+		CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onStructureConstructionComplete.controlBarDirty.before");
 		TheControlBar->markUIDirty();
+		CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onStructureConstructionComplete.controlBarDirty.after");
+	}
 	
 	// This object may require us to play some EVA sounds.
+	CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onStructureConstructionComplete.eva.before");
 	Player *localPlayer = ThePlayerList->getLocalPlayer();
 
 	if( structure->hasSpecialPower( SPECIAL_PARTICLE_UPLINK_CANNON ) || 
@@ -1749,6 +1822,7 @@ void Player::onStructureConstructionComplete( Object *builder, Object *structure
       TheEva->setShouldPlay(EVA_SuperweaponDetected_Enemy_ScudStorm);
     }
   }
+	CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.onStructureConstructionComplete.eva.after");
 }  // end onStructureConstructionComplete
 
 //=============================================================================

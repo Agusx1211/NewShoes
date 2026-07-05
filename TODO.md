@@ -193,22 +193,6 @@ residue and the next frontier.
       `doGameStart`/`MSG_NEW_GAME`) before the player-control frame loop, OR
       run the startup-vertical interactivity proof on the Mac instead of
       `mac_verify`'s player-control mode.
-- [ ] **Fix skirmish load/default-map flow with runtime evidence**: current
-      main proves the real-init archive set mounts `MapsZH.big`, loads all 43
-      subsystems, finds `Maps\ShellMapMD\ShellMapMD.map` through `TheMapCache`,
-      and renders the shell map via `harness/shellmap_real_init_gate.mjs`.
-      Do not treat the remaining skirmish failure as a global MapCache/archive
-      absence unless a fresh skirmish harness run contradicts that gate. The
-      map-cache probe now exposes skirmish menu widgets plus map counts,
-      official/multiplayer counts, first official multiplayer key/metadata,
-      `TheSkirmishGameInfo`, and `TheGameInfo`; a focused local browser run
-      after real init reports 103 maps, 47 official multiplayer maps, default
-      first official MP map `maps\alpine assault\alpine assault.map`
-      (2-player, CRC 3735677156), and no skirmish/game-info object before the
-      menu opens. Next: run the live Single Player -> Skirmish -> Start path
-      on Mac Chrome/Metal, log when `TheSkirmishGameInfo` appears and which
-      map/CRC/size it carries, then fix the first real failing transition
-      without inventing map data.
 - [ ] **Fix the MD_USA01 first-scene air/water/ship ordering regression**:
       the helicopter is above the water but appears behind the battleship.
       Capture the scene with harness screenshot + draw-history/depth-state
@@ -1571,9 +1555,7 @@ residue and the next frontier.
 
 ## M6 — Playable skirmish (no audio/video)
 
-- [ ] Load a skirmish map through the real map loader.
 - [ ] Players/factions/generals set up from INI.
-- [ ] Units/structures spawn and render on terrain.
 - [ ] Selection (single, box, double-click) works.
 - [ ] Movement orders + pathfinding (`AI`, locomotors) execute.
 - [ ] Combat: weapons, damage, armor, FX resolve correctly.

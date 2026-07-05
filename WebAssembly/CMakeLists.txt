@@ -4585,6 +4585,8 @@ add_library(zh_gameengine_real_lifecycle_runtime STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/System/RayEffect.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/VideoStream.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/View.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/AI/AIPlayer.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/AI/AISkirmishPlayer.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/Behavior/POWTruckBehavior.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/Behavior/PrisonBehavior.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/Behavior/PropagandaCenterBehavior.cpp"
