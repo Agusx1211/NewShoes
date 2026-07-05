@@ -64,6 +64,8 @@ void W3DCameoMovieDraw( GameWindow *window, WinInstanceData *instData )
 //-------------------------------------------------------------------------------------------------
 void W3DLeftHUDDraw( GameWindow *window, WinInstanceData *instData )
 {
+	extern unsigned long cnc_port_cb_left_hud_draw_called;
+	cnc_port_cb_left_hud_draw_called++;
 	// draw the default stuff
 //
 	Player *player = ThePlayerList->getLocalPlayer();
@@ -635,10 +637,13 @@ void W3DCommandBarTopDraw( GameWindow *window, WinInstanceData *instData )
 
 void W3DCommandBarBackgroundDraw( GameWindow *window, WinInstanceData *instData )
 {
+	extern unsigned long cnc_port_cb_bg_called, cnc_port_cb_bg_man_ok, cnc_port_cb_bg_win_ok;
+	cnc_port_cb_bg_called++;
 
 	ControlBarSchemeManager *man = TheControlBar->getControlBarSchemeManager();
 	if(!man)
 		return;
+	cnc_port_cb_bg_man_ok++;
 	static NameKeyType winNamekey	= TheNameKeyGenerator->nameToKey( AsciiString( "ControlBar.wnd:BackgroundMarker" ) );
 	GameWindow *win =  TheWindowManager->winGetWindowFromId(NULL,winNamekey);
 	static ICoord2D basePos;
@@ -647,11 +652,19 @@ void W3DCommandBarBackgroundDraw( GameWindow *window, WinInstanceData *instData 
 		return;
 		//win = TheWindowManager->winGetWindowFromId(NULL,TheNameKeyGenerator->nameToKey( AsciiString( "ControlBar.wnd:BackgroundMarker" ) ));
 	}
+	cnc_port_cb_bg_win_ok++;
 	TheControlBar->getBackgroundMarkerPos(&basePos.x, &basePos.y);
 	ICoord2D pos, offset;
 	win->winGetScreenPosition(&pos.x,&pos.y);
 	offset.x = pos.x - basePos.x;
 	offset.y = pos.y - basePos.y;
+
+	// ADD-ONLY Stage-1 diagnostic counters (reversible; gate nothing). Counts
+	// how often this draw callback reaches the scheme background draw vs. bails
+	// early, so the black-background root cause can be localized. The companion
+	// probe reads these via cnc_port_cb_bg_*.
+	extern unsigned long cnc_port_cb_bg_reached_drawbackground;
+	cnc_port_cb_bg_reached_drawbackground++;
 
 	man->drawBackground(offset);
 }

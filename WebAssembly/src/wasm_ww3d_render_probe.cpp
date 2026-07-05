@@ -1606,11 +1606,20 @@ void configure_ww3d_probe_camera(CameraClass &camera)
 
 } // namespace
 
+#ifndef CNC_PORT_LINKS_REAL_W3D_MAIN_MENU
+// When the real W3D device GameClient GUI-callback owners are linked
+// (cnc-port defines CNC_PORT_LINKS_REAL_W3D_MAIN_MENU), the strong definitions
+// from GeneralsMD/.../W3DControlBar.cpp MUST win so the in-game HUD actually
+// paints. Without this guard these weak stubs satisfy every reference and the
+// archive member (W3DControlBar.o) is never pulled, leaving every command-bar /
+// HUD draw callback (background frame art, left/right HUD, power bar, command
+// grid) as an empty no-op -> the metallic command-bar background renders solid
+// black. Probe-only builds (which do not link the real owners) still get these
+// stubs.
 __attribute__((weak)) void W3DLeftHUDDraw(GameWindow *, WinInstanceData *) {}
 __attribute__((weak)) void W3DCameoMovieDraw(GameWindow *, WinInstanceData *) {}
 __attribute__((weak)) void W3DRightHUDDraw(GameWindow *, WinInstanceData *) {}
 __attribute__((weak)) void W3DPowerDraw(GameWindow *, WinInstanceData *) {}
-#ifndef CNC_PORT_LINKS_REAL_W3D_MAIN_MENU
 __attribute__((weak)) void W3DMainMenuDraw(GameWindow *, WinInstanceData *) {}
 __attribute__((weak)) void W3DMainMenuFourDraw(GameWindow *, WinInstanceData *) {}
 __attribute__((weak)) void W3DMetalBarMenuDraw(GameWindow *, WinInstanceData *) {}
@@ -1621,7 +1630,6 @@ __attribute__((weak)) void W3DMainMenuButtonDropShadowDraw(GameWindow *, WinInst
 __attribute__((weak)) void W3DMainMenuRandomTextDraw(GameWindow *, WinInstanceData *) {}
 __attribute__((weak)) void W3DThinBorderDraw(GameWindow *, WinInstanceData *) {}
 __attribute__((weak)) void W3DShellMenuSchemeDraw(GameWindow *, WinInstanceData *) {}
-#endif
 __attribute__((weak)) void W3DCommandBarBackgroundDraw(GameWindow *, WinInstanceData *) {}
 __attribute__((weak)) void W3DCommandBarTopDraw(GameWindow *, WinInstanceData *) {}
 __attribute__((weak)) void W3DCommandBarGenExpDraw(GameWindow *, WinInstanceData *) {}
@@ -1630,6 +1638,7 @@ __attribute__((weak)) void W3DCommandBarGridDraw(GameWindow *, WinInstanceData *
 __attribute__((weak)) void W3DCommandBarForegroundDraw(GameWindow *, WinInstanceData *) {}
 __attribute__((weak)) void W3DNoDraw(GameWindow *, WinInstanceData *) {}
 __attribute__((weak)) void W3DDrawMapPreview(GameWindow *, WinInstanceData *) {}
+#endif
 #ifndef CNC_PORT_LINKS_REAL_W3D_MAIN_MENU
 __attribute__((weak)) void W3DMainMenuInit(WindowLayout *, void *) {}
 #endif

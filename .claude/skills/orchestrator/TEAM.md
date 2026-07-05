@@ -10,9 +10,9 @@ capable than you but able to work in parallel while you manage. You reach them w
 **None of these workers can access the web.** If a task needs the internet, that's
 not a job for this team.
 
-**Four of the five are local, spread across three physical machines** (`llmbench`,
+**Four of the six are local, spread across three physical machines** (`llmbench`,
 `macstudio`, `vscode11`). Your throughput goal is simple: **keep all three machines
-busy most of the time.** Only Mercury is hosted (and metered).
+busy most of the time.** Goliath and Mercury are the two hosted (metered) lanes.
 
 ## The team
 
@@ -22,11 +22,14 @@ busy most of the time.** Only Mercury is hosted (and metered).
 | **Atlas** | `macstudio/qwen3.6-27b-mtp` | 262K | `macstudio` | 1 at a time — **shares machine with Ranger** |
 | **Ranger** | `macstudio/qwen/qwen3.6-35b-a3b` | 262K | `macstudio` | 1 at a time — **shares machine with Atlas** |
 | **Sherpa** | `vscode11/qwen3.6-35b-a3b-mtp` | 262K | `vscode11` | 1 at a time |
+| **Goliath** | `zai/glm-5.2` | 1M | hosted (z.ai) | 1 at a time — **metered, conserve** |
 | **Mercury** | `mistral/mistral-medium-3.5` | 262K | hosted (Mistral API) | up to 2 — **metered, conserve** |
 
-> ⚠️ **Not usable regardless of what the live roster claims:** `zai/glm-5.2` and
-> `macstudio/minimax-2.7` may show up in `models` output but are **not available —
-> never delegate to them**; the delegation is wasted.
+> ⚠️ **Not usable regardless of what the live roster claims:**
+> `macstudio/minimax-2.7` may show up in `models` output but is **not available —
+> never delegate to it**; the delegation is wasted. (GLM-5.2 **is** usable now, via
+> the **`zai/glm-5.2`** path — that's Goliath. The old `opencode-go/glm-5.2` path is
+> no longer the one we use.)
 
 ### Who they are
 
@@ -56,14 +59,21 @@ busy most of the time.** Only Mercury is hosted (and metered).
   free parallel capacity. Best for **long-context** scouting/coding you want running
   independently while `macstudio` is busy with Atlas or Ranger.
 
+- **Goliath** — **the strongest model on the team, full stop.** `zai/glm-5.2`, a
+  hosted frontier model on the z.ai subscription, with a **huge 1M context window**.
+  This is the **heavy artillery**: reserve it for the single hardest track, the
+  biggest-context job, or mission-critical review — not trivia. It's **hosted and
+  metered**, so it's local-first by default; pull Goliath in when the problem genuinely
+  demands top intelligence or a context no local lane can hold. One instance at a time.
+
 - **Mercury** — the **hosted wildcard**. **Very fast**, a **mixed bag** on quality.
-  It's the only non-local worker and **we're already heavy on API usage**, so lean
+  It's a non-local worker and **we're already heavy on API usage**, so lean
   on the local three first and pull Mercury in when you need speed or a spare lane —
   not by default.
 
-Rough intelligence order: **Atlas** (best, slow) → **Falcon** (2nd, fast, small ctx)
-→ **Ranger** → **Sherpa** (35B twin, a bit weaker/slower). **Mercury** is off to the
-side: fast but inconsistent, and metered.
+Rough intelligence order: **Goliath** (strongest, 1M ctx, metered) → **Atlas** (best
+local, slow) → **Falcon** (fast, small ctx) → **Ranger** → **Sherpa** (35B twin, a bit
+weaker/slower). **Mercury** is off to the side: fast but inconsistent, and metered.
 
 ## Keeping the machines busy
 
@@ -73,7 +83,9 @@ is **three local lanes running at once**:
 - **Lane 1 — `llmbench`:** Falcon on a medium coding task or a scout.
 - **Lane 2 — `macstudio`:** Atlas *or* Ranger (pick one — never both).
 - **Lane 3 — `vscode11`:** Sherpa on a long-context job.
-- **Lane 4 — hosted:** Mercury only when you need a fast extra hand and the API
+- **Lane 4 — hosted (premium):** Goliath on the single hardest / biggest-context
+  track, when the value justifies the metered spend.
+- **Lane 5 — hosted:** Mercury only when you need a fast extra hand and the API
   budget allows.
 
 If a machine goes idle while you have queued work, that's wasted throughput — feed

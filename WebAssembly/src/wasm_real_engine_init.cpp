@@ -41,6 +41,8 @@
 #include "Common/GameLOD.h"
 #include "GameClient/ControlBar.h"
 #include "GameClient/ControlBarScheme.h"
+#include "WW3D2/assetmgr.h"
+#include "WW3D2/texture.h"
 #include "GameClient/MapUtil.h"
 #include "cpudetect.h"
 #include "GameClient/Display.h"
@@ -212,6 +214,12 @@ static int g_last_script_condition_type = -1;
 static int g_last_script_action_type = -1;
 static unsigned int g_frame_texture_apply_count = 0;
 static unsigned int g_frame_missing_texture_apply_count = 0;
+// ADD-ONLY Stage-1 diagnostic counters, incremented by W3DCommandBarBackgroundDraw.
+unsigned long cnc_port_cb_bg_reached_drawbackground = 0;
+unsigned long cnc_port_cb_bg_called = 0;
+unsigned long cnc_port_cb_bg_man_ok = 0;
+unsigned long cnc_port_cb_bg_win_ok = 0;
+unsigned long cnc_port_cb_left_hud_draw_called = 0;
 static std::string g_frame_first_missing_texture_name;
 static std::string g_frame_first_missing_texture_path;
 static std::string g_frame_last_missing_texture_name;
@@ -2460,6 +2468,11 @@ void append_minimal_control_bar_state(std::string &json)
 		if (man != NULL) {
 			json += ",\"schemeListSize\":";
 			json += std::to_string(man->diagGetSchemeListSize());
+			json += ",\"bgDrawReachedDrawbackground\":" + std::to_string(cnc_port_cb_bg_reached_drawbackground);
+			json += ",\"bgDrawCalled\":" + std::to_string(cnc_port_cb_bg_called);
+			json += ",\"bgDrawManOk\":" + std::to_string(cnc_port_cb_bg_man_ok);
+			json += ",\"bgDrawWinOk\":" + std::to_string(cnc_port_cb_bg_win_ok);
+			json += ",\"leftHudDrawCalled\":" + std::to_string(cnc_port_cb_left_hud_draw_called);
 			ControlBarScheme *scheme = man->diagGetCurrentScheme();
 			json += ",\"currentScheme\":";
 			if (scheme == NULL) {
@@ -2498,7 +2511,32 @@ void append_minimal_control_bar_state(std::string &json)
 							json += json_escape((*it)->m_image->getFilename().str());
 							json += "\",\"status\":";
 							json += std::to_string((*it)->m_image->getStatus());
-							json += "}";
+							// ADD-ONLY Stage-1: probe the TextureClass that Render2DClass
+							// would resolve for this image's filename. If Initialized is
+							// false or Peek_D3D_Base_Texture is NULL, the 2D drawImage
+							// binds no texture -> black quad (the command-bar background
+							// failure mode). Read-only (Get_Texture caches in TextureHash).
+							json += ",\"tex\":";
+							try {
+								const char *tex_name = (*it)->m_image->getFilename().str();
+								TextureClass *tc = (WW3DAssetManager::Get_Instance() != NULL)
+									? WW3DAssetManager::Get_Instance()->Get_Texture(tex_name, MIP_LEVELS_1) : NULL;
+								if (tc == NULL) {
+									json += "{\"found\":false}";
+								} else {
+									json += "{\"found\":true,\"initialized\":";
+									json += tc->Is_Initialized() ? "true" : "false";
+									json += ",\"width\":" + std::to_string(tc->Get_Width());
+									json += ",\"height\":" + std::to_string(tc->Get_Height());
+									json += ",\"hasD3dTex\":";
+									json += (tc->Peek_D3D_Base_Texture() != NULL) ? "true" : "false";
+									json += "}";
+									tc->Release_Ref();
+								}
+							} catch (...) {
+								json += "{\"found\":\"threw\"}";
+							}
+							json += "}";  // close the per-image object
 						}
 					}
 					json += "],\"total\":";

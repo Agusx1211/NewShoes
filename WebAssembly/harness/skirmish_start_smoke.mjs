@@ -409,7 +409,14 @@ async function main() {
       null);
 
     console.error("[skirmish-start] wait for active match");
-    const active = await waitForSkirmishMatch(page);
+    let active;
+    try {
+      active = await waitForSkirmishMatch(page);
+    } catch (error) {
+      const ctx = await page.evaluate(() => window.__lastBadJsonContext ?? null).catch(() => null);
+      console.error("WAIT FAILED; badJsonContext:", JSON.stringify(ctx));
+      throw error;
+    }
     await page.locator("#viewport").screenshot({ path: screenshotPath });
 
     // ADD-ONLY HUD geometry probe: one full realEngineFrame to capture the
@@ -418,6 +425,8 @@ async function main() {
     let controlBarWindows = null;
     let controlBarWindowFull = null;
     let textureDiagnostics = null;
+    let uiDrawCaptures = null;
+    let badJsonContext = null;
     try {
       const full = await runFrames(page, 1, "hud geometry probe");
       const locate = (obj, keys, depth = 0) => {
@@ -437,11 +446,24 @@ async function main() {
       // that resolves to a valid Image* but still draws black can be traced to
       // a missing/failed texture upload. Read-only.
       textureDiagnostics = locate(full.frame, ["textureDiagnostics"]) ?? null;
+      // ADD-ONLY Stage-1: the per-draw render-state capture for the command-bar
+      // atlas (1024x256) background draws vs small UI icon draws, collected by
+      // bridge.js during the frame.
+      uiDrawCaptures = full.state?.graphics?.uiDrawCaptures ?? null;
+      badJsonContext = await page.evaluate(() => window.__lastBadJsonContext ?? null).catch(() => null);
     } catch (error) {
       controlBarWindows = { error: error?.message ?? String(error) };
     }
 
     const mapCache = await rpc(page, "mapCacheProbe");
+    // ADD-ONLY Stage-1: full live D3D8 texture inventory, to determine whether
+    // the command-bar atlas (1024x256 SN/SA/SUCommandBar.tga) was ever uploaded.
+    let d3d8TextureInventory = null;
+    try {
+      d3d8TextureInventory = await rpc(page, "d3d8TextureInventory");
+    } catch (error) {
+      d3d8TextureInventory = { error: error?.message ?? String(error) };
+    }
     const result = {
       ok: true,
       source: "skirmish-start-smoke",
@@ -491,6 +513,10 @@ async function main() {
           rawShellKeys: Object.keys(shell),
           controlBarWindows,
           textureDiagnostics,
+          uiDrawCaptures,
+          d3d8TextureInventory: d3d8TextureInventory?.inventory ?? null,
+          d3d8TextureLiveCount: d3d8TextureInventory?.liveCount ?? null,
+          badJsonContext,
         };
       })(),
       samples: active.samples.slice(-12),

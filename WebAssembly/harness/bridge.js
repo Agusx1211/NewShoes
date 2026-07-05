@@ -8043,6 +8043,83 @@ function paintD3D8DrawIndexed(payload = {}) {
     };
   }
   // ---------------------------------------------------------------------------
+  // ADD-ONLY Stage-1 diagnostic: capture the render state used for the command-bar
+  // background atlas draw (1024x256 SN/SA/SUCommandBar.tga) vs a small textured UI
+  // draw, so the BLACK-background root cause can be pinpointed. Read-only; gates
+  // nothing. Also keeps a census of every distinct texture (w,h) seen across
+  // draws so we can tell whether the command-bar atlas is drawn at all.
+  if (texture0Resource) {
+    const caps = (harnessState.graphics.uiDrawCaptures ??= { atlas: [], small: [], census: {} });
+    const dimKey = `${texture0Resource.width}x${texture0Resource.height}`;
+    const census = caps.census;
+    if (!census[dimKey]) {
+      census[dimKey] = {
+        count: 0,
+        ready: texture0Ready,
+        uploads: texture0Resource.uploads ?? 0,
+        initializedLevels: Array.from(texture0Resource.initializedLevels ?? []),
+        firstDrawSeq: drawSequence,
+        pixelSample: texture0Ready
+          ? sampleD3D8TexturePixel(texture0Resource,
+              Math.floor(texture0Resource.width / 2),
+              Math.floor(texture0Resource.height / 2))
+          : null,
+        renderState: {
+          zEnable: renderState.zEnable, zWriteEnable: renderState.zWriteEnable, zFunc: renderState.zFunc,
+          alphaBlendEnable: renderState.alphaBlendEnable, srcBlend: renderState.srcBlend,
+          destBlend: renderState.destBlend, textureFactor: renderState.textureFactor,
+        },
+        stage0: d3d8TextureStageDrawSummary(renderState.textureStages[0]),
+      };
+    }
+    census[dimKey].count += 1;
+    if (texture0Resource.width === 1024 && texture0Resource.height === 256 && caps.atlas.length < 8) {
+      caps.atlas.push({
+        drawSeq: drawSequence,
+        frame: harnessState.frame,
+        texture0: {
+          id: texture0Id,
+          width: texture0Resource.width,
+          height: texture0Resource.height,
+          uploads: texture0Resource.uploads ?? 0,
+          ready: texture0Ready,
+          initializedLevels: Array.from(texture0Resource.initializedLevels ?? []),
+          format: texture0Resource.format,
+        },
+        canSampleTexture0,
+        texture0PixelSample: texture0Ready
+          ? sampleD3D8TexturePixel(texture0Resource, 400, 160)
+          : null,
+        primitiveType: Number(payload.primitiveType ?? 0) >>> 0,
+        vertexCount,
+        indexCount,
+        renderState: {
+          zEnable: renderState.zEnable,
+          zWriteEnable: renderState.zWriteEnable,
+          zFunc: renderState.zFunc,
+          alphaBlendEnable: renderState.alphaBlendEnable,
+          srcBlend: renderState.srcBlend,
+          destBlend: renderState.destBlend,
+          alphaTestEnable: renderState.alphaTestEnable,
+          textureFactor: renderState.textureFactor,
+        },
+        stage0: d3d8TextureStageDrawSummary(renderState.textureStages[0]),
+        stage1: d3d8TextureStageDrawSummary(renderState.textureStages[1]),
+      });
+    } else if (texture0Resource.width > 0 && texture0Resource.width <= 128 && texture0Ready && caps.small.length < 4) {
+      caps.small.push({
+        drawSeq: drawSequence,
+        texture0: { width: texture0Resource.width, height: texture0Resource.height, uploads: texture0Resource.uploads ?? 0 },
+        renderState: {
+          zEnable: renderState.zEnable, zWriteEnable: renderState.zWriteEnable, zFunc: renderState.zFunc,
+          alphaBlendEnable: renderState.alphaBlendEnable, srcBlend: renderState.srcBlend, destBlend: renderState.destBlend,
+          textureFactor: renderState.textureFactor,
+        },
+        stage0: d3d8TextureStageDrawSummary(renderState.textureStages[0]),
+        texture0PixelSample: sampleD3D8TexturePixel(texture0Resource, Math.floor(texture0Resource.width / 2), Math.floor(texture0Resource.height / 2)),
+      });
+    }
+  }
   let appliedViewport = null;
   let appliedRenderState = null;
   let appliedTexture0Sampler = null;
@@ -14060,6 +14137,40 @@ async function rpc(command, payload = {}) {
           probe: JSON.parse(moduleResult.wasmModule.mapCacheProbe()),
         };
       }
+    case "d3d8TextureInventory":
+      {
+        // ADD-ONLY Stage-1 diagnostic: enumerate every live D3D8 texture and,
+        // for the command-bar atlas candidate sizes (1024x256), sample the actual
+        // GL pixels to detect a black/stub upload (silent 2D-texture-load
+        // failure). Read-only; no wasm call.
+        const inventory = {};
+        for (const [texId, res] of d3d8Textures.entries()) {
+          const key = `${res.width}x${res.height}`;
+          if (!inventory[key]) {
+            inventory[key] = { count: 0, samples: [] };
+          }
+          inventory[key].count += 1;
+          const isAtlas = res.width === 1024 && res.height === 256;
+          if ((isAtlas) && inventory[key].samples.length < 4) {
+            const ready = Boolean(res.initializedLevels?.has("0"));
+            inventory[key].samples.push({
+              id: texId,
+              uploads: res.uploads ?? 0,
+              ready,
+              format: res.format,
+              pool: res.pool,
+              usage: res.usage,
+              centerPixel: ready
+                ? sampleD3D8TexturePixel(res, 512, 128)
+                : null,
+              cornerPixels: ready
+                ? [sampleD3D8TexturePixel(res, 4, 4), sampleD3D8TexturePixel(res, 200, 160)]
+                : null,
+            });
+          }
+        }
+        return { ok: true, command: "d3d8TextureInventory", inventory, liveCount: d3d8Textures.size };
+      }
     case "realEngineSetSkirmishMap":
       {
         const moduleResult = await getWasmModuleForArchives("realEngineSetSkirmishMap");
@@ -14189,12 +14300,22 @@ async function rpc(command, payload = {}) {
         let aborted = false;
         let abortMessage = null;
         let abortStack = null;
+        let __rawSummary = null;
         try {
-          frame = JSON.parse(moduleResult.wasmModule.realEngineFrameSummary(Number(payload.frames ?? 1)));
+          __rawSummary = moduleResult.wasmModule.realEngineFrameSummary(Number(payload.frames ?? 1));
+          frame = JSON.parse(__rawSummary);
         } catch (error) {
           aborted = true;
           abortMessage = error?.message ?? String(error);
           abortStack = error?.stack ?? null;
+          // ADD-ONLY Stage-1 debug: capture the raw JSON region around the parse
+          // failure so a malformed probe field can be located. Read-only.
+          try {
+            const pos = Number((error?.message?.match(/position (\d+)/) ?? [])[1] ?? -1);
+            if (pos >= 0 && typeof __rawSummary === "string") {
+              window.__lastBadJsonContext = { pos, snippet: __rawSummary.substring(Math.max(0, pos - 400), pos + 200) };
+            }
+          } catch {}
         }
         let lastUpdateTarget = null;
         let lastGameLogicStep = null;
