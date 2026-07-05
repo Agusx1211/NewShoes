@@ -5,8 +5,9 @@
 #pragma once
 
 #include "Win32Device/GameClient/Win32Mouse.h"
+#include <cstring>
 
-// cursorResources is defined in WinMain.cpp; declared extern here so
+// cursorResources is defined in Win32Mouse.cpp; declared extern here so
 // BrowserWin32Mouse::ensureArrowCursorResource() can reference it.
 extern HCURSOR cursorResources[Mouse::NUM_MOUSE_CURSORS][MAX_2D_CURSOR_DIRECTIONS];
 
