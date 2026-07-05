@@ -67,7 +67,9 @@ PingerInterface *ThePinger __attribute__((weak)) = nullptr;
 RecorderClass *TheRecorder __attribute__((weak)) = nullptr;
 GameSpyStagingRoom *TheGameSpyGame __attribute__((weak)) = nullptr;
 RankPoints *TheRankPointValues __attribute__((weak)) = nullptr;
+#ifndef CNC_PORT_LINKS_REAL_SCRIPT_ACTIONS_SINGLETON
 ScriptActionsInterface *TheScriptActions __attribute__((weak)) = nullptr;
+#endif
 #ifndef CNC_PORT_LINKS_REAL_SCRIPT_ENGINE_SINGLETON
 ScriptEngine *TheScriptEngine __attribute__((weak)) = nullptr;
 #endif

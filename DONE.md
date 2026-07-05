@@ -8096,6 +8096,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       verify:cnc-port-weak-stubs`, `EXPECT_WASM=1 node
       WebAssembly/harness/smoke.mjs`, and `node
       WebAssembly/harness/startup_vertical_smoke.mjs`.
+- [x] Gate the top W3D terrain-stub singleton weak globals out of the real
+      `cnc-port` runtime. `cnc-port` now defines
+      `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_SINGLETONS`, so
+      `wasm_ww3d_terrain_probe_stubs.cpp` keeps extern declarations but no
+      longer emits weak storage for `TheGhostObjectManager`, `TheRadar`,
+      `ThePlayerList`, `TheCampaignManager`, `TheScriptActions`,
+      `TheScriptConditions`, `TheTeamFactory`, `TheVictoryConditions`,
+      `TheEva`, or `TheBuildAssistant` in the real link; `RunBenchmark`
+      remains the adjacent no-provider weak boundary. The direct
+      `wasm_gamenetwork_probe.cpp` weak `TheScriptActions` storage is also
+      gated behind `CNC_PORT_LINKS_REAL_SCRIPT_ACTIONS_SINGLETON`. The weak
+      audit now reports 128 compiled weak definitions, 58 gated-out
+      declarations, and 126 strong-provider overlaps, with
+      `wasm_ww3d_terrain_probe_stubs.cpp` down to 120 compiled explicit weak
+      declarations. Direct `llvm-nm` checks show the terrain-stub object only
+      defines `RunBenchmark` from the top block and the game-network probe
+      object no longer defines `TheScriptActions` or `TheScriptEngine`.
+      Verified with `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly --silent run verify:cnc-port-weak-stubs`,
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and
+      `node WebAssembly/harness/startup_vertical_smoke.mjs`.
 - [x] Add a `cnc-port` weak-stub audit for the Fable weak-symbol burn-down.
       `WebAssembly/tools/verify_cnc_port_weak_stubs.mjs` parses the explicit
       `__attribute__((weak))` declarations in the W3D render/scene/terrain

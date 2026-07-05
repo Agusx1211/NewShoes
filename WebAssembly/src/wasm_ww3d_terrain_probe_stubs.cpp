@@ -12,6 +12,18 @@ class VictoryConditionsInterface;
 class Eva;
 class BuildAssistant;
 
+extern GhostObjectManager *TheGhostObjectManager;
+extern Radar *TheRadar;
+extern PlayerList *ThePlayerList;
+extern CampaignManager *TheCampaignManager;
+extern ScriptActionsInterface *TheScriptActions;
+extern ScriptConditionsInterface *TheScriptConditions;
+extern TeamFactory *TheTeamFactory;
+extern VictoryConditionsInterface *TheVictoryConditions;
+extern Eva *TheEva;
+extern BuildAssistant *TheBuildAssistant;
+
+#ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_SINGLETONS
 GhostObjectManager *TheGhostObjectManager __attribute__((weak)) = nullptr;
 Radar *TheRadar __attribute__((weak)) = nullptr;
 PlayerList *ThePlayerList __attribute__((weak)) = nullptr;
@@ -22,6 +34,7 @@ TeamFactory *TheTeamFactory __attribute__((weak)) = nullptr;
 VictoryConditionsInterface *TheVictoryConditions __attribute__((weak)) = nullptr;
 Eva *TheEva __attribute__((weak)) = nullptr;
 BuildAssistant *TheBuildAssistant __attribute__((weak)) = nullptr;
+#endif
 
 extern "C" int __attribute__((weak)) RunBenchmark(
 	int,
