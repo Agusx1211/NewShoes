@@ -8265,6 +8265,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly --silent run verify:cnc-port-weak-stubs`,
       `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and
       `node WebAssembly/harness/startup_vertical_smoke.mjs`.
+- [x] Gate the W3D terrain-stub water weak group out of the real `cnc-port`
+      runtime. `cnc-port` now defines
+      `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_WATER_RUNTIME`, so
+      `wasm_ww3d_terrain_probe_stubs.cpp` no longer emits weak declarations or
+      fallback bodies for the 23 `WaterRenderObjClass` helpers: constructors,
+      destructors, `init`, `reset`, `load`, `update`, grid enable/update/height,
+      resource release/reacquire, grid clamp/velocity/change/attenuation,
+      transform, resolution, and skybox texture replacement. The linked strong
+      provider comes from real `W3DWater.cpp` runtime objects. The weak audit
+      now reports 50 compiled weak definitions, 136 gated-out declarations, and
+      48 strong-provider overlaps, with `wasm_ww3d_terrain_probe_stubs.cpp`
+      down to 42 compiled explicit weak declarations. Direct `llvm-nm` checks
+      show the terrain-stub object no longer defines `WaterRenderObjClass`
+      symbols. Verified with `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly --silent run verify:cnc-port-weak-stubs`,
+      direct `llvm-nm --demangle` checks, `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs`, `node
+      WebAssembly/harness/startup_vertical_smoke.mjs`, and a focused
+      pi-as-mcp micro-review of the guard pairing.
 - [x] Add a `cnc-port` weak-stub audit for the Fable weak-symbol burn-down.
       `WebAssembly/tools/verify_cnc_port_weak_stubs.mjs` parses the explicit
       `__attribute__((weak))` declarations in the W3D render/scene/terrain

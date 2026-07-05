@@ -147,6 +147,7 @@ extern "C" void cnc_port_w3d_shadow_reset(void *) __asm__("_ZN16W3DShadowManager
 extern "C" void *cnc_port_projected_shadow_dtor_c1(void *) __asm__("_ZN18W3DProjectedShadowD1Ev") __attribute__((weak));
 extern "C" void *cnc_port_projected_shadow_dtor_c2(void *) __asm__("_ZN18W3DProjectedShadowD2Ev") __attribute__((weak));
 #endif
+#ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_WATER_RUNTIME
 extern "C" void *cnc_port_water_ctor_c1(void *) __asm__("_ZN19WaterRenderObjClassC1Ev") __attribute__((weak));
 extern "C" void *cnc_port_water_ctor_c2(void *) __asm__("_ZN19WaterRenderObjClassC2Ev") __attribute__((weak));
 extern "C" void *cnc_port_water_dtor_c1(void *) __asm__("_ZN19WaterRenderObjClassD1Ev") __attribute__((weak));
@@ -170,6 +171,7 @@ extern "C" void cnc_port_water_get_grid_transform(void *, void *) __asm__("_ZN19
 extern "C" void cnc_port_water_set_grid_resolution(void *, float, float, float) __asm__("_ZN19WaterRenderObjClass17setGridResolutionEfff") __attribute__((weak));
 extern "C" void cnc_port_water_get_grid_resolution(void *, float *, float *, float *) __asm__("_ZN19WaterRenderObjClass17getGridResolutionEPfS0_S0_") __attribute__((weak));
 extern "C" void cnc_port_water_replace_skybox_texture(void *, const void *, const void *) __asm__("_ZN19WaterRenderObjClass20replaceSkyboxTextureERK11AsciiStringS2_") __attribute__((weak));
+#endif
 extern "C" void cnc_port_projected_shadow_queue_decal(void *, void *) __asm__("_ZN25W3DProjectedShadowManager10queueDecalEP18W3DProjectedShadow") __attribute__((weak));
 extern "C" void cnc_port_projected_shadow_flush_decals(void *, void *, int) __asm__("_ZN25W3DProjectedShadowManager11flushDecalsEP16W3DShadowTexture10ShadowType") __attribute__((weak));
 extern "C" void *cnc_port_projected_shadow_create_decal(void *, void *) __asm__("_ZN25W3DProjectedShadowManager17createDecalShadowEPN6Shadow14ShadowTypeInfoE") __attribute__((weak));
@@ -268,6 +270,7 @@ extern "C" void cnc_port_w3d_smudge_reacquire(void *) {}
 extern "C" void *cnc_port_projected_shadow_dtor_c1(void *self) { return self; }
 extern "C" void *cnc_port_projected_shadow_dtor_c2(void *self) { return self; }
 #endif
+#ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_WATER_RUNTIME
 extern "C" void *cnc_port_water_ctor_c1(void *self) { return self; }
 extern "C" void *cnc_port_water_ctor_c2(void *self) { return self; }
 extern "C" void *cnc_port_water_dtor_c1(void *self) { return self; }
@@ -302,6 +305,7 @@ extern "C" void cnc_port_water_get_grid_resolution(void *, float *grid_cells_x, 
 	}
 }
 extern "C" void cnc_port_water_replace_skybox_texture(void *, const void *, const void *) {}
+#endif
 extern "C" void cnc_port_projected_shadow_queue_decal(void *, void *) {}
 extern "C" void cnc_port_projected_shadow_flush_decals(void *, void *, int) {}
 extern "C" void *cnc_port_projected_shadow_create_decal(void *, void *) { return nullptr; }
