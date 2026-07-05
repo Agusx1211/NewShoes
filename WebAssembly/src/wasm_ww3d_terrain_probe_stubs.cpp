@@ -92,6 +92,7 @@ extern "C" void cnc_port_radar_remove_object(void *, void *) {}
 extern "C" void cnc_port_radar_add_object(void *, void *) __asm__("_ZN5Radar9addObjectEP6Object") __attribute__((weak));
 extern "C" void cnc_port_radar_add_object(void *, void *) {}
 #endif
+#ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_OBJECT_HELPERS
 extern "C" void cnc_port_object_leave_group(void *) __asm__("_ZN6Object10leaveGroupEv") __attribute__((weak));
 extern "C" void cnc_port_object_leave_group(void *) {}
 extern "C" void cnc_port_object_set_disabled(void *, int) __asm__("_ZN6Object11setDisabledE12DisabledType") __attribute__((weak));
@@ -109,6 +110,7 @@ extern "C" const void *cnc_port_object_get_command_set_string(const void *) __as
 extern "C" const void *cnc_port_object_get_command_set_string(const void *) { return nullptr; }
 extern "C" int cnc_port_object_get_night_indicator_color(const void *) __asm__("_ZNK6Object22getNightIndicatorColorEv") __attribute__((weak));
 extern "C" int cnc_port_object_get_night_indicator_color(const void *) { return 0; }
+#endif
 extern "C" void cnc_port_ai_group_add(void *, void *) __asm__("_ZN7AIGroup3addEP6Object") __attribute__((weak));
 extern "C" void cnc_port_ai_group_add(void *, void *) {}
 extern "C" void cnc_port_drawable_set_hidden(void *, int) __asm__("_ZN8Drawable17setDrawableHiddenEb") __attribute__((weak));
@@ -219,9 +221,11 @@ extern "C" void *cnc_port_campaign_manager_current_campaign(void *) { return nul
 extern "C" void cnc_port_team_get_as_ai_group(void *, void *) {}
 extern "C" void *cnc_port_team_get_controlling_player(const void *) { return nullptr; }
 #endif
+#ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_OBJECT_HELPERS
 extern "C" void cnc_port_object_set_indicator(void *, int) {}
 extern "C" void cnc_port_object_remove_indicator(void *) {}
 extern "C" int cnc_port_object_get_indicator(const void *) { return 0; }
+#endif
 extern "C" void *cnc_port_player_current_enemy(void *) { return nullptr; }
 extern "C" void cnc_port_player_update_team_states(void *) {}
 extern "C" int cnc_port_player_is_skirmish_ai(void *) { return 0; }
