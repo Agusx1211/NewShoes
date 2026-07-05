@@ -1176,6 +1176,47 @@ residue and the next frontier.
 - [ ] Matrix/transform stack and viewport/camera setup.
 
 ### Increasing fidelity (each step verified by screenshot)
+- [ ] **Texture stages 2+ are silently dropped by the browser D3D8 bridge**
+      (Fable graphics audit 2026-07-05): the uber-shader implements only
+      `uStage0*`/`uStage1*` (bridge.js:5939-5955) while the shim caps claim
+      `MaxTextureBlendStages=8` (`wasm_d3d8_shim.cpp:655`). `W3DWater.cpp`
+      sets stage-2 state unconditionally (lines 277-278, 1885-1886) — water
+      renders with a missing layer by construction. Either implement stages
+      2-3 in the shader or report honest 2-stage caps and verify W3D's
+      multi-pass fallback; add a one-time console warning when a draw
+      arrives with an active stage ≥2 so this class is visible.
+- [ ] **Missing combiner ops silently no-op the stage**: the GLSL
+      dispatcher (bridge.js:6050-6095) handles D3DTOP 1-14, 16, 24-26 and
+      falls through to `currentColor` for 15 (BLENDTEXTUREALPHAPM) and
+      17-23 (PREMODULATE, the four MODULATE*_ADD* ops, BUMPENVMAP,
+      BUMPENVMAPLUMINANCE). Caps honestly don't claim them, so
+      `ShaderClass::Apply` picks fallbacks (dx8caps.cpp:637 verified) —
+      but any direct-device path that isn't caps-gated breaks silently.
+      Add a one-time warn on unsupported op; implement the cheap ones
+      (15, 17-21 are one-liners) for fidelity.
+- [ ] **Implicit alpha-cutout heuristic diverges from original D3D8**
+      (f01d587, `d3d8ImplicitAlphaCutoutThreshold`): real D3D8 never
+      discards zero-alpha texels on unblended z-writing draws — the
+      original battleship/chinook draws that motivated the hack cannot
+      have reached the real device with alphaTest AND blend both off, so
+      some state is being lost between the engine and the captured
+      render-state (prime suspect: DX8Wrapper's redundant-set filtering
+      desyncing from the shim's snapshot). Find the lost state, then
+      retire the heuristic — it will punch holes in any opaque texture
+      whose unused alpha channel is zero.
+- [ ] **Per-map cool-blue scene tint** (seen in
+      `artifacts/screenshots/sweep-tournament-city.png`; mountain-guns
+      renders warm/correct): whole 3D scene is blue-shifted with a
+      brighter radius near the base, while the UI map thumbnail shows
+      correct warm colors — so texture decode and vertex-color swizzle
+      (aDiffuseBgra, verified) are fine and the tint enters via per-map
+      lighting/shroud state (night-ish time-of-day lighting or shroud
+      modulate). Next diagnostic: dump `m_timeOfDay` + terrain lighting
+      values and the shroud state for tournament-city vs mountain-guns in
+      the sweep, and rerun with fog/shroud disabled to bisect.
+- [ ] Fragment shader is `precision mediump float`
+      (bridge.js:5917) — fp16 on mobile/some ANGLE configs causes banding
+      in fog/gradient math; switch to highp (desktop cost ~zero).
 - [ ] Generalize the browser range-backed BIG archive reader into the
       original file/archive registration path so normal engine startup
       can stream user-supplied runtime archives without focused harness
