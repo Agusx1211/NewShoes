@@ -172,6 +172,7 @@ extern "C" void cnc_port_water_set_grid_resolution(void *, float, float, float) 
 extern "C" void cnc_port_water_get_grid_resolution(void *, float *, float *, float *) __asm__("_ZN19WaterRenderObjClass17getGridResolutionEPfS0_S0_") __attribute__((weak));
 extern "C" void cnc_port_water_replace_skybox_texture(void *, const void *, const void *) __asm__("_ZN19WaterRenderObjClass20replaceSkyboxTextureERK11AsciiStringS2_") __attribute__((weak));
 #endif
+#ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_PROJECTED_SHADOW_TRACKS_RUNTIME
 extern "C" void cnc_port_projected_shadow_queue_decal(void *, void *) __asm__("_ZN25W3DProjectedShadowManager10queueDecalEP18W3DProjectedShadow") __attribute__((weak));
 extern "C" void cnc_port_projected_shadow_flush_decals(void *, void *, int) __asm__("_ZN25W3DProjectedShadowManager11flushDecalsEP16W3DShadowTexture10ShadowType") __attribute__((weak));
 extern "C" void *cnc_port_projected_shadow_create_decal(void *, void *) __asm__("_ZN25W3DProjectedShadowManager17createDecalShadowEPN6Shadow14ShadowTypeInfoE") __attribute__((weak));
@@ -183,6 +184,7 @@ extern "C" void *cnc_port_terrain_tracks_dtor_c1(void *) __asm__("_ZN33TerrainTr
 extern "C" void cnc_port_terrain_tracks_init(void *, void *) __asm__("_ZN33TerrainTracksRenderObjClassSystem4initEP10SceneClass") __attribute__((weak));
 extern "C" void cnc_port_terrain_tracks_reset(void *) __asm__("_ZN33TerrainTracksRenderObjClassSystem5ResetEv") __attribute__((weak));
 extern "C" void cnc_port_terrain_tracks_set_detail(void *) __asm__("_ZN33TerrainTracksRenderObjClassSystem9setDetailEv") __attribute__((weak));
+#endif
 extern "C" int cnc_port_game_logic_is_paused(void *) __asm__("_ZN9GameLogic12isGamePausedEv") __attribute__((weak));
 extern "C" const void *cnc_port_ai_state_goal_path_position(const void *, int) __asm__("_ZNK14AIStateMachine19getGoalPathPositionEi") __attribute__((weak));
 extern "C" int cnc_port_partition_geom_collides(const void *, const void *, const void *, float, const void *, const void *, float) __asm__("_ZNK16PartitionManager20geomCollidesWithGeomEPK7Coord3DRK12GeometryInfofS2_S5_f") __attribute__((weak));
@@ -306,6 +308,7 @@ extern "C" void cnc_port_water_get_grid_resolution(void *, float *grid_cells_x, 
 }
 extern "C" void cnc_port_water_replace_skybox_texture(void *, const void *, const void *) {}
 #endif
+#ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_PROJECTED_SHADOW_TRACKS_RUNTIME
 extern "C" void cnc_port_projected_shadow_queue_decal(void *, void *) {}
 extern "C" void cnc_port_projected_shadow_flush_decals(void *, void *, int) {}
 extern "C" void *cnc_port_projected_shadow_create_decal(void *, void *) { return nullptr; }
@@ -317,6 +320,7 @@ extern "C" void *cnc_port_terrain_tracks_dtor_c1(void *self) { return self; }
 extern "C" void cnc_port_terrain_tracks_init(void *, void *) {}
 extern "C" void cnc_port_terrain_tracks_reset(void *) {}
 extern "C" void cnc_port_terrain_tracks_set_detail(void *) {}
+#endif
 extern "C" int cnc_port_game_logic_is_paused(void *) { return 0; }
 extern "C" const void *cnc_port_ai_state_goal_path_position(const void *, int) { return nullptr; }
 extern "C" int cnc_port_partition_geom_collides(const void *, const void *, const void *, float, const void *, const void *, float) { return 0; }
