@@ -57,11 +57,13 @@ extern "C" int __attribute__((weak)) RunBenchmark(
 
 // Probe-only weak ABI hooks for adjacent terrain systems that are not created
 // by the focused HeightMapRenderObjClass smoke yet.
+#ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_BRIDGE_SCRIPT_RUNTIME
 extern "C" void *cnc_port_bridge_info_ctor_c1(void *) __asm__("_ZN10BridgeInfoC1Ev") __attribute__((weak));
 extern "C" void *cnc_port_bridge_info_ctor_c2(void *) __asm__("_ZN10BridgeInfoC2Ev") __attribute__((weak));
 extern "C" void cnc_port_reload_all_textures(void) __asm__("_Z17ReloadAllTexturesv") __attribute__((weak));
 extern "C" int cnc_port_script_engine_time_frozen_debug(void *) __asm__("_ZN12ScriptEngine17isTimeFrozenDebugEv") __attribute__((weak));
 extern "C" int cnc_port_script_engine_time_frozen_script(void *) __asm__("_ZN12ScriptEngine18isTimeFrozenScriptEv") __attribute__((weak));
+#endif
 #ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_TEAM_RUNTIME
 extern "C" void *cnc_port_team_factory_find_team_by_id(void *, unsigned int) __asm__("_ZN11TeamFactory12findTeamByIDEj") __attribute__((weak));
 extern "C" void *cnc_port_team_factory_find_prototype(void *, const void *) __asm__("_ZN11TeamFactory17findTeamPrototypeERK11AsciiString") __attribute__((weak));
@@ -198,11 +200,13 @@ extern "C" void *cnc_port_bridge_tower_behavior_interface(void *) __asm__("_ZN19
 extern "C" void cnc_port_game_logic_destroy_object(void *, void *) __asm__("_ZN9GameLogic13destroyObjectEP6Object") __attribute__((weak));
 extern "C" void *cnc_port_game_logic_get_first_object(void *) __asm__("_ZN9GameLogic14getFirstObjectEv") __attribute__((weak));
 
+#ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_BRIDGE_SCRIPT_RUNTIME
 extern "C" void *cnc_port_bridge_info_ctor_c1(void *self) { return self; }
 extern "C" void *cnc_port_bridge_info_ctor_c2(void *self) { return self; }
 extern "C" void cnc_port_reload_all_textures(void) {}
 extern "C" int cnc_port_script_engine_time_frozen_debug(void *) { return 0; }
 extern "C" int cnc_port_script_engine_time_frozen_script(void *) { return 0; }
+#endif
 #ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_TEAM_RUNTIME
 extern "C" void *cnc_port_team_factory_find_team_by_id(void *, unsigned int) { return nullptr; }
 extern "C" void *cnc_port_team_factory_find_prototype(void *, const void *) { return nullptr; }
