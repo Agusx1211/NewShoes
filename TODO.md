@@ -23,8 +23,10 @@ MERGED to `main` (verified, clean, green build): perf-drawstate (state-skip perf
 RECENT: the live skirmish menu/options/start transition now loads all 47 official multiplayer maps into active match state (`loadingMap=false`, `inputEnabled=true`, `objects > 0`, no traps). Remaining skirmish work is AI behavior tuning and map-specific script fixes.
 
 PERF next: runtime profiling now separates real-engine frame time from tracked
-browser D3D8 draw/upload/readback/FBO costs on Mac Chrome/Metal. Before broad
-D3D8 shim surgery, take a DevTools trace only if the next chosen optimization
+browser D3D8 draw/upload/readback/FBO costs on Mac Chrome/Metal. The draw-
+state cache (normalize*/uniform block skip on unchanged key) is merged but
+real-GPU perf measurement on Mac is a pending follow-up. Before broad D3D8
+shim surgery, take a DevTools trace only if the next chosen optimization
 needs async ANGLE/GPU stall detail beyond the live harness counters.
 
 QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), control-bar HUD (controlBarCommandHud, top missing-UI), compressed/DXT volume textures.

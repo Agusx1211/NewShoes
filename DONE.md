@@ -2846,6 +2846,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `git diff --check`, and Mac Chrome/Metal title verification
       (`ANGLE Metal Renderer: Apple M4`, 43 subsystems, shell-map screenshot
       refreshed at `/home/agusx1211/cnc-mac-verify/mac-verify-title.png`).
+- [x] Extend the bridge.js stateHash draw-state cache to skip per-draw
+      `normalizeD3D8*` / `textureStage*` JS object rebuilds and the
+      texture-availability uniform block when
+      `(stateHash, tex0Id, tex1Id, fvf, stride, primitiveType)` is unchanged
+      from the previous draw. GL retains state between identical draws,
+      making re-issuing redundant. Point-sprite uniforms are always
+      reissued (viewport not in stateHash). Correctness-reviewed; render-
+      verified clean (Alpine Assault screenshot, 223 objects). Mac perf-
+      number measurement pending as follow-up.
 - [x] Fix white/broken foot-soldier textures by implementing the D3DX
       surface-copy path used by original W3D house-color texture generation.
       Mac shell-map texture-label captures isolated the broken soldiers to
