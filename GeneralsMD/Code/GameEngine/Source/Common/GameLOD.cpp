@@ -498,7 +498,17 @@ Bool GameLODManager::setStaticLODLevel(StaticGameLODLevel level)
 		return FALSE;
 	}
 
-	if (level == STATIC_GAME_LOD_UNKNOWN || (level != STATIC_GAME_LOD_CUSTOM && m_currentStaticLOD == level))
+	// If no user-specified LOD level (UNKNOWN), default to the benchmark result
+	// or HIGH.  This ensures shadow volumes/decals and all LOD settings are applied
+	// even on first boot when Options.ini doesn't exist (browser builds in particular).
+	if (level == STATIC_GAME_LOD_UNKNOWN) {
+		if (m_idealDetailLevel != STATIC_GAME_LOD_UNKNOWN)
+			level = m_idealDetailLevel;
+		else
+			level = STATIC_GAME_LOD_HIGH;
+	}
+
+	if (level != STATIC_GAME_LOD_CUSTOM && m_currentStaticLOD == level)
 		return FALSE;	//level is already applied.  Custom levels are always applied since random options could change.
 
 	applyStaticLODLevel(level);
