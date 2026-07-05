@@ -131,14 +131,16 @@ const sourceChecks = [
           && payload.runtimeTargetBoundary?.originalPlayerListCppLinked === true
           && payload.runtimeTargetBoundary?.originalPlayerCppLinked === true
           && payload.runtimeTargetBoundary?.originalPlayerSupportSourcesLinked === true
-          && payload.runtimeTargetBoundary?.originalGlobalDataHeaderPreincluded === true
+          && payload.runtimeTargetBoundary?.originalGlobalDataHeaderFromRealPrelude === true
+          && payload.runtimeTargetBoundary?.originalGameLogicHeaderCompileDefinition === true
+          && payload.runtimeTargetBoundary?.shimPreRtsFallbackAbsent === true
           && payload.runtimeTargetBoundary?.originalGameLogicDispatchCppLinked === true
           && payload.runtimeTargetBoundary?.originalGameStateCppLinked === true
           && payload.runtimeTargetBoundary?.originalScriptEngineCppLinked === true
           && payload.runtimeTargetBoundary?.originalScriptsCppLinked === true
           && payload.runtimeTargetBoundary?.originalShellCppLinked === true
           && payload.runtimeTargetBoundary?.originalDisplayCppLinked === true,
-        'GameLogic new-game dispatch frontier did not prove the focused original runtime target with GlobalData/PlayerList/ScriptEngine/Shell ownership');
+        'GameLogic new-game dispatch frontier did not prove the real-prelude original runtime target with GlobalData/PlayerList/ScriptEngine/Shell ownership');
       expect(payload.runtimeTargetBoundary?.bridgeBuffer?.smokeDeferralHookLine > 0
           && payload.runtimeTargetBoundary.bridgeBuffer.installLine > 0
           && payload.runtimeTargetBoundary.bridgeBuffer.loadBridgesProofLine > 0

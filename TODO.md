@@ -275,16 +275,24 @@ residue and the next frontier.
       `zh_w3d_terrain_probe_runtime` to the real PreRTS/GameLogic prelude, so
       the actual `cnc-port` link now has 0 direct and 0 linked shadow-header
       offenders; `verify:cnc-port-real-headers` now runs with
-      `--fail-on-linked` by default. Remaining cleanup: the non-linked legacy
-      source-file property `ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES` still forces
-      `-U__PRERTS_H__; -include shims/PreRTS.h` for compile-only/frontier
-      smokes. Delete that shim-class fallback path at the root (define the
-      real-header switches globally for those sources, delete the shim class
-      bodies once no linked or compile-only target needs them, and fix the
-      fallout) so real headers become the only option. This is the same hazard
-      class as the confirmed d6d3b79 ChallengeGenerals stack corruption and
-      the fixed edgeMapperApply aggregate-smoke incident above — fix it once
-      at the root instead of per-incident.
+      `--fail-on-linked` by default. The next burn-down moved the non-linked
+      `ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES` and
+      `ZH_LEGACY_GAMESPY_PRERTS_FRONTIER_SOURCES` source-file properties from
+      shim `PreRTS.h` to `wasm_prerts_real.h`, and moved
+      `gamelogic-new-game-dispatch-smoke` off its explicit shim `PreRTS.h`
+      include. The real compile frontier and dispatch smoke now use real
+      `Common/INI.h`, `Common/STLTypedefs.h`, `Common/GlobalData.h`, and
+      `GameLogic/GameLogic.h` for representative GameLogic/GameSpy objects.
+      Remaining cleanup: old utility/smoke targets still have shadow-header
+      deps outside the real frontier, led by `zh_gameclient_utility`,
+      `w3d-window-layout-script-smoke`,
+      `zh_gameclient_gui_input_shim_runtime`, and
+      `w3d-gamewindow-manager-smoke`. Migrate or retire those legacy targets
+      as the real lifecycle covers them, then delete the shim class bodies
+      once no linked or compile-only target needs them. This is the same
+      hazard class as the confirmed d6d3b79 ChallengeGenerals stack corruption
+      and the fixed edgeMapperApply aggregate-smoke incident above — fix it
+      once at the root instead of per-incident.
 - [ ] Real-lifecycle residue: browser `ReleaseCrash`/`_exit` does not
       terminate the wasm runtime (teardown semantics differ from Windows);
       `TheVersion` is left null; `GameEngine::execute()` is stepped by

@@ -8593,6 +8593,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       --prefix WebAssembly run verify:cnc-port-real-headers`
       reporting 44 direct objects, 53 linked archive targets, 0 direct
       offenders, and 0 linked offenders.
+- [x] Remove the legacy `shims/PreRTS.h` source-file fallback from the real
+      compile frontier. Changed `ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES` and
+      `ZH_LEGACY_GAMESPY_PRERTS_FRONTIER_SOURCES` to force-include
+      `wasm_prerts_real.h` instead of shim `PreRTS.h`, and moved
+      `gamelogic-new-game-dispatch-smoke` from its explicit
+      `Common/GlobalData.h` + shim `PreRTS.h` prelude to the same real prelude
+      with the original `GameLogic` header switch. `zh_gameengine_real_compile_frontier`
+      now has zero audited shadow-header deps, and representative
+      `ScriptEngine.cpp`, `GameLogic.cpp`, `WeaponSet.cpp`, `GameSpyGP.cpp`,
+      and `zh_w3d_terrain_probe_runtime` objects resolve the ABI-sensitive
+      engine headers to the real originals. Verified with focused
+      `zh_gameengine_real_compile_frontier`,
+      `zh_gameengine_real_object_ini_runtime`, and
+      `gamelogic-new-game-dispatch-smoke` builds, targeted `ninja -t deps`
+      checks, `npm --prefix WebAssembly run build:port`, `npm --prefix
+      WebAssembly run build:startup-vertical`, `npm --prefix WebAssembly run
+      verify:cnc-port-real-headers`, `npm --prefix WebAssembly run
+      verify:cnc-port-weak-stubs`,
+      `node WebAssembly/tools/verify_gamelogic_new_game_dispatch_frontier.mjs`,
+      `node WebAssembly/tools/run_startup_vertical_smoke.mjs`, and
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an

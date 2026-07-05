@@ -2096,7 +2096,7 @@ set(ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES
 )
 
 set_source_files_properties(${ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES} PROPERTIES
-  COMPILE_OPTIONS "-U__PRERTS_H__;-include${WASM_SHIMS_DIR}/PreRTS.h"
+  COMPILE_OPTIONS "-U__PRERTS_H__;-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
 )
 
 set(ZH_LEGACY_GAMESPY_PRERTS_FRONTIER_SOURCES
@@ -2105,7 +2105,7 @@ set(ZH_LEGACY_GAMESPY_PRERTS_FRONTIER_SOURCES
 )
 
 set_source_files_properties(${ZH_LEGACY_GAMESPY_PRERTS_FRONTIER_SOURCES} PROPERTIES
-  COMPILE_OPTIONS "-U__PRERTS_H__;-include${WASM_SHIMS_DIR}/PreRTS.h"
+  COMPILE_OPTIONS "-U__PRERTS_H__;-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
 )
 
 # Browser-owned WOL declarations must not route real-header targets through
@@ -6850,6 +6850,7 @@ set_target_properties(gamelogic-new-game-dispatch-smoke PROPERTIES
 )
 
 target_compile_definitions(gamelogic-new-game-dispatch-smoke PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
   WASM_USE_ORIGINAL_GLOBALDATA=1
 )
 
@@ -6881,8 +6882,7 @@ target_compile_options(gamelogic-new-game-dispatch-smoke PRIVATE
   "-include${WASM_SHIMS_DIR}/windows.h"
   "-include${WASM_SHIMS_DIR}/mmsystem.h"
   "-include${WWVEGAS_PORT_SHIM}"
-  "-include${GAMEENGINE_INCLUDE_DIR}/Common/GlobalData.h"
-  "-include${WASM_SHIMS_DIR}/PreRTS.h"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
   "-iquote${GAMEENGINE_INCLUDE_DIR}"
   "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
   "-iquote${GAMEENGINE_DIR}/Source"

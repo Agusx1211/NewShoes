@@ -24,6 +24,7 @@ const paths = {
   runtimeSmoke: "WebAssembly/tests/gamelogic_new_game_dispatch_smoke.cpp",
   gameLogicShim: "WebAssembly/shims/GameLogic/GameLogic.h",
   preRts: "WebAssembly/shims/PreRTS.h",
+  realPreRts: "WebAssembly/src/wasm_prerts_real.h",
   cmake: "WebAssembly/CMakeLists.txt",
 };
 
@@ -152,6 +153,7 @@ const shellSmoke = readRepoText(paths.shellSmoke);
 const runtimeSmoke = readRepoText(paths.runtimeSmoke);
 const gameLogicShim = readRepoText(paths.gameLogicShim);
 const preRts = readRepoText(paths.preRts);
+const realPreRts = readRepoText(paths.realPreRts);
 const cmake = readRepoText(paths.cmake);
 
 const propagate = functionBody(
@@ -608,6 +610,10 @@ expect(
   /WASM_USE_ORIGINAL_GLOBALDATA\s*=\s*1/.test(runtimeCompileDefinitions.block),
   "gamelogic-new-game-dispatch-smoke does not opt into original GlobalData headers",
 );
+expect(
+  /CNC_PORT_REAL_GAMELOGIC_HEADER\s*=\s*1/.test(runtimeCompileDefinitions.block),
+  "gamelogic-new-game-dispatch-smoke does not opt into original GameLogic headers",
+);
 const runtimeCompileOptions = cmakeInvocationBlock(
   cmake,
   /target_compile_options\s*\(\s*gamelogic-new-game-dispatch-smoke\b/,
@@ -615,18 +621,26 @@ const runtimeCompileOptions = cmakeInvocationBlock(
 );
 const originalGlobalDataHeaderIndex =
   runtimeCompileOptions.block.indexOf("-include${GAMEENGINE_INCLUDE_DIR}/Common/GlobalData.h");
-const preRtsHeaderIndex = runtimeCompileOptions.block.indexOf("-include${WASM_SHIMS_DIR}/PreRTS.h");
+const shimPreRtsHeaderIndex = runtimeCompileOptions.block.indexOf("-include${WASM_SHIMS_DIR}/PreRTS.h");
+const realPreRtsHeaderIndex =
+  runtimeCompileOptions.block.indexOf("-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h");
 expect(
-  originalGlobalDataHeaderIndex !== -1,
-  "gamelogic-new-game-dispatch-smoke does not force-include original GlobalData.h",
+  realPreRtsHeaderIndex !== -1,
+  "gamelogic-new-game-dispatch-smoke does not force-include the real PreRTS prelude",
 );
 expect(
-  preRtsHeaderIndex !== -1,
-  "gamelogic-new-game-dispatch-smoke does not force-include PreRTS.h",
+  shimPreRtsHeaderIndex === -1,
+  "gamelogic-new-game-dispatch-smoke still force-includes the shim PreRTS.h fallback",
 );
 expect(
-  originalGlobalDataHeaderIndex < preRtsHeaderIndex,
-  "gamelogic-new-game-dispatch-smoke does not include original GlobalData.h before PreRTS.h",
+  originalGlobalDataHeaderIndex === -1,
+  "gamelogic-new-game-dispatch-smoke still force-includes GlobalData.h directly instead of using the real prelude",
+);
+expect(
+  /#include\s+"Common\/GlobalData\.h"/.test(realPreRts)
+    && /#include\s+"Common\/INI\.h"/.test(realPreRts)
+    && /#include\s+"Common\/STLTypedefs\.h"/.test(realPreRts),
+  "wasm_prerts_real.h does not pull the ABI-sensitive engine headers from the real include path",
 );
 expect(
   /#if\s+defined\s*\(\s*WASM_USE_ORIGINAL_GLOBALDATA\s*\)[\s\S]*#include_next\s+"Common\/GlobalData\.h"[\s\S]*#else[\s\S]*#include\s+"Common\/GlobalData\.h"/.test(preRts),
@@ -1146,7 +1160,8 @@ console.log(JSON.stringify({
     cmakeCompileDefinitionsLine: runtimeCompileDefinitions.line,
     cmakeCompileOptionsLine: runtimeCompileOptions.line,
     cmakeLinkOptionsLine: runtimeLinkOptions.line,
-    preRtsHeader: paths.preRts,
+    realPreRtsHeader: paths.realPreRts,
+    legacyShimPreRtsHeader: paths.preRts,
     originalGlobalDataCppLinked: true,
     originalFunctionLexiconCppLinked: true,
     originalPlayerListCppLinked: true,
@@ -1158,7 +1173,9 @@ console.log(JSON.stringify({
     originalAiPlayerSourcesLinked: true,
     originalGhostObjectCppLinked: true,
     originalWeaponCppLinked: true,
-    originalGlobalDataHeaderPreincluded: true,
+    originalGlobalDataHeaderFromRealPrelude: true,
+    originalGameLogicHeaderCompileDefinition: true,
+    shimPreRtsFallbackAbsent: true,
     preRtsOriginalGlobalDataEscapeHatch: true,
     originalGameLogicCppLinked: true,
     originalGameLogicDispatchCppLinked: true,
