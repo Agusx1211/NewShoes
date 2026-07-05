@@ -4717,6 +4717,7 @@ set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/DrawGroupInfo.cpp" PRO
 add_executable(cnc-port
   src/wasm_browser_boundary_shims.cpp
   src/wasm_archive_probe.cpp
+  src/wasm_benchmark_shim.cpp
   src/wasm_browser_boundary_shims.cpp
   src/wasm_browser_runtime_assets.cpp
   src/wasm_cdmanager_probe.cpp
@@ -4825,6 +4826,7 @@ set_source_files_properties("${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClien
 
 target_compile_definitions(cnc-port PRIVATE
   ALLOW_DEBUG_UTILS=1
+  CNC_PORT_LINKS_BROWSER_BENCHMARK_SHIM=1
   CNC_PORT_LINKS_REAL_SCRIPT_ACTIONS_SINGLETON=1
   CNC_PORT_LINKS_REAL_SCRIPT_ENGINE_SINGLETON=1
   CNC_PORT_LINKS_REAL_W3D_RENDER_MENU_CALLBACK_HELPERS=1

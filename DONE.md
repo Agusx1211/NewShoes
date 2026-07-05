@@ -8363,6 +8363,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       verify:cnc-port-weak-stubs`, direct `llvm-nm --demangle` checks,
       `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and `node
       WebAssembly/harness/startup_vertical_smoke.mjs`.
+- [x] Replace the final `RunBenchmark` weak boundary in the real `cnc-port`
+      runtime with an explicit browser-owned Benchmark shim. The original
+      `Benchmark.dsp` lists third-party C sources (`emfloat.c`, `misc.c`,
+      `nbench0.c`, `nbench1.c`, `sysspec.c`) that are absent from this source
+      release, so `cnc-port` now links `wasm_benchmark_shim.cpp` as the strong
+      `RunBenchmark` provider and defines `CNC_PORT_LINKS_BROWSER_BENCHMARK_SHIM`
+      to keep the old weak fallback probe-only. The shim preserves the prior
+      deterministic "benchmark unavailable" output indices while making the
+      platform boundary explicit. The weak audit now reports zero compiled weak
+      definitions, 186 gated-out declarations, zero strong-provider overlaps,
+      and zero no-final symbols. Direct `llvm-nm` checks show
+      `wasm_ww3d_terrain_probe_stubs.cpp.o` no longer defines `RunBenchmark`,
+      while `wasm_benchmark_shim.cpp.o` provides the strong symbol. Verified
+      with `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly --silent run verify:cnc-port-weak-stubs`,
+      direct `llvm-nm --demangle` checks, `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs`, and `node
+      WebAssembly/harness/startup_vertical_smoke.mjs`.
 - [x] Add a `cnc-port` weak-stub audit for the Fable weak-symbol burn-down.
       `WebAssembly/tools/verify_cnc_port_weak_stubs.mjs` parses the explicit
       `__attribute__((weak))` declarations in the W3D render/scene/terrain

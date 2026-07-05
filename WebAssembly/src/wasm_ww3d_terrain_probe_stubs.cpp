@@ -36,6 +36,7 @@ Eva *TheEva __attribute__((weak)) = nullptr;
 BuildAssistant *TheBuildAssistant __attribute__((weak)) = nullptr;
 #endif
 
+#ifndef CNC_PORT_LINKS_BROWSER_BENCHMARK_SHIM
 extern "C" int __attribute__((weak)) RunBenchmark(
 	int,
 	char **,
@@ -54,6 +55,7 @@ extern "C" int __attribute__((weak)) RunBenchmark(
 	}
 	return 0;
 }
+#endif
 
 // Probe-only weak ABI hooks for adjacent terrain systems that are not created
 // by the focused HeightMapRenderObjClass smoke yet.

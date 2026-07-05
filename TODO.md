@@ -292,14 +292,14 @@ residue and the next frontier.
       exact final body provenance (Emscripten filters wasm-ld maps and final
       wasm symbols are not enough). As of 2026-07-05 it finds 186 explicit
       weak declarations across the render/scene/terrain probe files plus
-      `wasm_ww3d_terrain_probe_stubs.cpp`, 1 compiled weak definition, 185
-      gated-out declarations, and zero strong-provider overlaps. The only
-      compiled explicit weak definition left in the current audit is the
-      no-provider `RunBenchmark` boundary. The Benchmark project file references
+      `wasm_ww3d_terrain_probe_stubs.cpp`, zero compiled weak definitions, 186
+      gated-out declarations, and zero strong-provider overlaps. The Benchmark
+      project file references
       missing third-party C sources (`emfloat.c`, `misc.c`, `nbench0.c`,
-      `nbench1.c`, `sysspec.c`), so this is a true missing-library/platform
-      boundary until a browser-owned benchmark or LOD policy replaces it. The
-      W3D render-probe menu callback helper weak group
+      `nbench1.c`, `sysspec.c`), so `cnc-port` now owns `RunBenchmark` through
+      `wasm_benchmark_shim.cpp` and
+      `CNC_PORT_LINKS_BROWSER_BENCHMARK_SHIM` instead of compiling the weak
+      fallback. The W3D render-probe menu callback helper weak group
       (`DontShowMainMenu`, `destroyQuitMenu`, the battle-honor helpers, and
       the player-template tooltip helpers) is gated out by
       `CNC_PORT_LINKS_REAL_W3D_RENDER_MENU_CALLBACK_HELPERS`, leaving
@@ -326,8 +326,9 @@ residue and the next frontier.
       linked real `View`, W3D terrain/water/smudge/projected-shadow,
       `W3DScene`, `ScriptList`, and `PolygonTrigger` owners. The top ten
       `wasm_ww3d_terrain_probe_stubs.cpp` weak singleton globals are gated out
-      by `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_SINGLETONS`; `RunBenchmark`
-      stays as the nearby no-provider weak boundary. The direct
+      by `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_SINGLETONS`; the nearby
+      `RunBenchmark` weak fallback is gated out by
+      `CNC_PORT_LINKS_BROWSER_BENCHMARK_SHIM`. The direct
       `wasm_gamenetwork_probe.cpp` weak `TheScriptActions` definition is also
       gated out by `CNC_PORT_LINKS_REAL_SCRIPT_ACTIONS_SINGLETON` even though
       that file is outside the current audit source list. The
