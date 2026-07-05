@@ -292,8 +292,8 @@ residue and the next frontier.
       exact final body provenance (Emscripten filters wasm-ld maps and final
       wasm symbols are not enough). As of 2026-07-05 it finds 186 explicit
       weak declarations across the render/scene/terrain probe files plus
-      `wasm_ww3d_terrain_probe_stubs.cpp`, 128 compiled weak definitions, 58
-      gated-out declarations, and 126 strong-provider overlaps to burn down
+      `wasm_ww3d_terrain_probe_stubs.cpp`, 122 compiled weak definitions, 64
+      gated-out declarations, and 120 strong-provider overlaps to burn down
       next. The `DoTrees` / `DoShadows` / `DoParticles` scene extra-pass weak
       hooks are now gated out of `cnc-port` by
       `CNC_PORT_LINKS_REAL_W3D_SCENE_EXTRA_PASSES`, and the scene-probe
@@ -320,8 +320,12 @@ residue and the next frontier.
       stays as the nearby no-provider weak boundary. The direct
       `wasm_gamenetwork_probe.cpp` weak `TheScriptActions` definition is also
       gated out by `CNC_PORT_LINKS_REAL_SCRIPT_ACTIONS_SINGLETON` even though
-      that file is outside the current audit source list. (Real-init already
-      deleted the probe
+      that file is outside the current audit source list. The
+      `TeamFactory`/`TeamPrototype`/`CampaignManager`/`Team` terrain-stub
+      method group is gated out by
+      `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_TEAM_RUNTIME`, leaving
+      `wasm_ww3d_terrain_probe_stubs.cpp` at 114 compiled explicit weak
+      declarations. (Real-init already deleted the probe
       GameClient/Object/GameLogic/Display/LoadScreen/OptionPreferences
       reimplementations and all 26 weak `UNUSED_INI_BLOCK_PARSER` stubs.)
 - [ ] Mount the base Generals archives (`INI.big`, `English.big`,
