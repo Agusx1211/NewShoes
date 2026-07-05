@@ -2892,6 +2892,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `chinookCutouts:3`, `comancheBlends:9`, and `shockwaveBlends:105`
       with the assertion passing and screenshot
       `/Users/aa/cnc-verify/shellmap-order-frame240-cutout-assert/shellmap-frame-240.png`.
+- [x] Add a real shell-map generated-infantry texture assertion to the existing
+      texture-label capture harness. `SHELLMAP_ASSERT_INFANTRY_TEXTURES=1`
+      now scans the real `WW3DAssetManager`/`HLodClass` draw path for
+      generated house-color textures (`#-16711936#zhca_ui*.tga`) and requires
+      them to be ready, sampled, uploaded as `rgba8`, and backed by non-white
+      sampled texels. This deliberately avoids a bare `MeshClass` probe for
+      `AIRNGR_SKN`, because the body mesh is skinned and belongs to the
+      original HLOD ownership path. Verified with `node --check
+      WebAssembly/harness/shellmap_texture_label_capture.mjs` and a Mac
+      Chrome/Metal combined shell-map run:
+      `SHELLMAP_CAPTURE_FRAMES=240,720 SHELLMAP_DRAW_HISTORY_LIMIT=4096
+      SHELLMAP_ASSERT_CUTOUT_DEPTH=1 SHELLMAP_ASSERT_INFANTRY_TEXTURES=1
+      /opt/homebrew/bin/node harness/shellmap_texture_label_capture.mjs`,
+      which reported `ANGLE Metal Renderer: Apple M4`, cutout counts
+      `battleshipCutouts:12`, `chinookCutouts:3`, `comancheBlends:8`,
+      `shockwaveBlends:324`, and infantry counts `drawCount:49`,
+      `uniqueTextureCount:4`, `notReady/notSampled/badStorage/missingUploads/
+      whiteOnly:0` for `#-16711936#zhca_uirguard.tga`,
+      `#-16711936#zhca_uirtunfan.tga`, `#-16711936#zhca_uiter.tga`, and
+      `#-16711936#zhca_uiworker.tga`. Screenshots:
+      `/Users/aa/cnc-verify/shellmap-nightly-combined-assert/shellmap-frame-240.png`
+      and `/Users/aa/cnc-verify/shellmap-nightly-combined-assert/shellmap-frame-720.png`.
 - [x] **Prove D3D8 render-target/FBO correctness in the harness.** Added the
       `d3d8RenderTarget` RPC and smoke assertion around the real D3D8 shim path:
       `CreateTexture(D3DUSAGE_RENDERTARGET)` -> `GetSurfaceLevel(0)` ->

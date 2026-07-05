@@ -13,6 +13,7 @@ const captureFrames = (process.env.SHELLMAP_CAPTURE_FRAMES ?? "360,720")
   .filter((value) => Number.isFinite(value) && value > 0);
 const drawHistoryLimit = Number(process.env.SHELLMAP_DRAW_HISTORY_LIMIT ?? 256);
 const assertCutoutDepth = process.env.SHELLMAP_ASSERT_CUTOUT_DEPTH === "1";
+const assertInfantryTextures = process.env.SHELLMAP_ASSERT_INFANTRY_TEXTURES === "1";
 
 const archiveSpecs = [
   { name: "INIZH.big" },
@@ -108,6 +109,47 @@ function hasImplicitCutout(draw) {
   return draw.appliedRenderState?.implicitAlphaCutout?.enabled === true;
 }
 
+function pixelLooksWhite(pixel) {
+  return Array.isArray(pixel)
+    && pixel[0] >= 220
+    && pixel[1] >= 220
+    && pixel[2] >= 220
+    && pixel[3] >= 200;
+}
+
+function pixelLooksBlack(pixel) {
+  return Array.isArray(pixel)
+    && pixel[0] <= 8
+    && pixel[1] <= 8
+    && pixel[2] <= 8
+    && pixel[3] >= 200;
+}
+
+function pixelHasVisibleColor(pixel) {
+  return Array.isArray(pixel)
+    && pixel[3] > 0
+    && Math.max(pixel[0], pixel[1], pixel[2]) > 8;
+}
+
+function isGeneratedInfantryTexture(texture) {
+  return textureLabelName(texture).startsWith("#-16711936#zhca_ui");
+}
+
+function textureSamplePixels(texture) {
+  const pixels = [];
+  for (const pixel of Object.values(texture?.samplePixels ?? {})) {
+    if (Array.isArray(pixel)) {
+      pixels.push(pixel);
+    }
+  }
+  for (const sample of texture?.sampleVertexPixels ?? []) {
+    if (Array.isArray(sample?.pixel)) {
+      pixels.push(sample.pixel);
+    }
+  }
+  return pixels;
+}
+
 function assertShellmapCutoutDepth(captures) {
   const errors = [];
   const draws = captures.flatMap((capture) =>
@@ -160,6 +202,104 @@ function assertShellmapCutoutDepth(captures) {
       comancheBlends: comancheBlends.length,
       shockwaveBlends: shockwaveBlends.length,
     },
+  };
+}
+
+function assertShellmapInfantryTextures(captures) {
+  const errors = [];
+  const textureRecords = [];
+  const draws = captures.flatMap((capture) =>
+    capture.history.map((draw) => ({ ...draw, targetFrame: capture.targetFrame })));
+
+  for (const draw of draws) {
+    for (const texture of [draw.texture0, draw.texture1]) {
+      if (isGeneratedInfantryTexture(texture)) {
+        textureRecords.push({ draw, texture });
+      }
+    }
+  }
+
+  const uniqueTextures = new Set(textureRecords.map(({ texture }) =>
+    textureLabelName(texture)));
+  if (textureRecords.length < 8) {
+    errors.push(`expected at least 8 generated infantry texture draws, got ${textureRecords.length}`);
+  }
+  if (uniqueTextures.size < 3) {
+    errors.push(`expected at least 3 generated infantry texture names, got ${uniqueTextures.size}`);
+  }
+
+  const notReady = [];
+  const notSampled = [];
+  const badStorage = [];
+  const missingUploads = [];
+  const whiteOnly = [];
+
+  for (const { draw, texture } of textureRecords) {
+    const name = textureLabelName(texture);
+    if (texture.ready !== true) {
+      notReady.push({ seq: draw.seq, name });
+    }
+    if (texture.sampled !== true) {
+      notSampled.push({ seq: draw.seq, name });
+    }
+    if (texture.storage !== "rgba8") {
+      badStorage.push({ seq: draw.seq, name, storage: texture.storage ?? null });
+    }
+    if (Number(texture.uploads ?? 0) < 1) {
+      missingUploads.push({ seq: draw.seq, name, uploads: texture.uploads ?? null });
+    }
+    const hasNonWhiteSample = textureSamplePixels(texture).some((pixel) =>
+      pixelHasVisibleColor(pixel) && !pixelLooksWhite(pixel) && !pixelLooksBlack(pixel));
+    if (!hasNonWhiteSample) {
+      whiteOnly.push({ seq: draw.seq, name });
+    }
+  }
+
+  if (notReady.length) {
+    errors.push(`generated infantry textures not ready at seq ${notReady.slice(0, 8).map((item) => item.seq).join(",")}`);
+  }
+  if (notSampled.length) {
+    errors.push(`generated infantry textures not sampled at seq ${notSampled.slice(0, 8).map((item) => item.seq).join(",")}`);
+  }
+  if (badStorage.length) {
+    errors.push(`generated infantry textures not rgba8 at seq ${badStorage.slice(0, 8).map((item) => item.seq).join(",")}`);
+  }
+  if (missingUploads.length) {
+    errors.push(`generated infantry textures missing uploads at seq ${missingUploads.slice(0, 8).map((item) => item.seq).join(",")}`);
+  }
+  if (whiteOnly.length) {
+    errors.push(`generated infantry textures only exposed white/black samples at seq ${whiteOnly.slice(0, 8).map((item) => item.seq).join(",")}`);
+  }
+
+  return {
+    source: "shellmap-infantry-textures",
+    ok: errors.length === 0,
+    errors,
+    counts: {
+      drawCount: textureRecords.length,
+      uniqueTextureCount: uniqueTextures.size,
+      notReady: notReady.length,
+      notSampled: notSampled.length,
+      badStorage: badStorage.length,
+      missingUploads: missingUploads.length,
+      whiteOnly: whiteOnly.length,
+    },
+    textures: Array.from(uniqueTextures).sort(),
+  };
+}
+
+function combineAssertions(results) {
+  if (results.length === 0) {
+    return null;
+  }
+  if (results.length === 1) {
+    return results[0];
+  }
+  return {
+    source: "shellmap-combined",
+    ok: results.every((result) => result.ok),
+    errors: results.flatMap((result) => result.errors ?? []),
+    results,
   };
 }
 
@@ -262,7 +402,10 @@ async function main() {
       const debugInfo = gl?.getExtension("WEBGL_debug_renderer_info");
       return debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : null;
     });
-    const assertions = assertCutoutDepth ? assertShellmapCutoutDepth(captures) : null;
+    const assertions = combineAssertions([
+      assertCutoutDepth ? assertShellmapCutoutDepth(captures) : null,
+      assertInfantryTextures ? assertShellmapInfantryTextures(captures) : null,
+    ].filter(Boolean));
     const summary = { ok: assertions?.ok ?? true, renderer, assertions, captures };
     await writeFile(resolve(outDir, "summary.json"), JSON.stringify(summary, null, 2));
     console.log(JSON.stringify({
