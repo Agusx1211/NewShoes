@@ -1423,6 +1423,62 @@ public:
 		return true;
 	}
 
+	bool copy_scaled_rect_from(const BrowserD3DSurface &source, const RECT &source_rect,
+		const RECT &destination_rect)
+	{
+		if (m_locked || source.is_locked() ||
+			m_desc.Format != source.desc().Format ||
+			is_block_compressed_format(m_desc.Format)) {
+			return false;
+		}
+		if (source_rect.left < 0 || source_rect.top < 0 ||
+			source_rect.right < source_rect.left ||
+			source_rect.bottom < source_rect.top ||
+			static_cast<UINT>(source_rect.right) > source.desc().Width ||
+			static_cast<UINT>(source_rect.bottom) > source.desc().Height ||
+			destination_rect.left < 0 || destination_rect.top < 0 ||
+			destination_rect.right < destination_rect.left ||
+			destination_rect.bottom < destination_rect.top ||
+			static_cast<UINT>(destination_rect.right) > m_desc.Width ||
+			static_cast<UINT>(destination_rect.bottom) > m_desc.Height) {
+			return false;
+		}
+
+		const UINT source_width = static_cast<UINT>(source_rect.right - source_rect.left);
+		const UINT source_height = static_cast<UINT>(source_rect.bottom - source_rect.top);
+		const UINT destination_width = static_cast<UINT>(destination_rect.right - destination_rect.left);
+		const UINT destination_height = static_cast<UINT>(destination_rect.bottom - destination_rect.top);
+		const UINT texel_size = bytes_per_pixel(m_desc.Format);
+		if (source_width == 0 || source_height == 0 ||
+			destination_width == 0 || destination_height == 0 ||
+			texel_size == 0) {
+			return false;
+		}
+
+		for (UINT y = 0; y < destination_height; ++y) {
+			const UINT source_y = static_cast<UINT>(source_rect.top) +
+				static_cast<UINT>((static_cast<std::uint64_t>(y) * source_height) / destination_height);
+			BYTE *destination_row = m_pixels.data() +
+				texture_offset(static_cast<UINT>(destination_rect.left),
+					static_cast<UINT>(destination_rect.top) + y);
+			if (source_width == destination_width) {
+				const BYTE *source_row = source.m_pixels.data() +
+					source.texture_offset(static_cast<UINT>(source_rect.left), source_y);
+				std::memcpy(destination_row, source_row, destination_width * texel_size);
+				continue;
+			}
+			for (UINT x = 0; x < destination_width; ++x) {
+				const UINT source_x = static_cast<UINT>(source_rect.left) +
+					static_cast<UINT>((static_cast<std::uint64_t>(x) * source_width) / destination_width);
+				const BYTE *source_texel = source.m_pixels.data() +
+					source.texture_offset(source_x, source_y);
+				BYTE *destination_texel = destination_row + x * texel_size;
+				std::memcpy(destination_texel, source_texel, texel_size);
+			}
+		}
+		return true;
+	}
+
 	void set_texture_owner(UINT texture_id, UINT level, D3DFORMAT format, DWORD usage)
 	{
 		m_owner_texture_id = texture_id;
@@ -1813,6 +1869,35 @@ public:
 		return S_OK;
 	}
 
+	HRESULT generate_mip_chain(UINT source_level)
+	{
+		if (source_level >= m_levels.size()) {
+			return E_FAIL;
+		}
+		for (std::size_t level = static_cast<std::size_t>(source_level) + 1;
+			level < m_levels.size();
+			++level) {
+			D3DSURFACE_DESC source_desc = {};
+			D3DSURFACE_DESC destination_desc = {};
+			if (FAILED(m_levels[level - 1]->GetDesc(&source_desc)) ||
+				FAILED(m_levels[level]->GetDesc(&destination_desc))) {
+				return E_FAIL;
+			}
+			RECT source_rect = {};
+			source_rect.right = static_cast<LONG>(source_desc.Width);
+			source_rect.bottom = static_cast<LONG>(source_desc.Height);
+			RECT destination_rect = {};
+			destination_rect.right = static_cast<LONG>(destination_desc.Width);
+			destination_rect.bottom = static_cast<LONG>(destination_desc.Height);
+			if (!m_levels[level]->copy_scaled_rect_from(*m_levels[level - 1],
+				source_rect, destination_rect)) {
+				return E_FAIL;
+			}
+			m_levels[level]->upload_owned_texture();
+		}
+		return S_OK;
+	}
+
 	void create_browser_texture()
 	{
 		if (m_browser_texture_created || m_levels.empty()) {
@@ -2027,6 +2112,26 @@ private:
 	UINT m_browser_texture_id = 0;
 	bool m_browser_texture_created = false;
 };
+
+extern "C" UINT cnc_port_d3d8_browser_texture_id(void *texture)
+{
+	if (texture == nullptr) {
+		return 0;
+	}
+	IDirect3DBaseTexture8 *base_texture = static_cast<IDirect3DBaseTexture8 *>(texture);
+	const D3DRESOURCETYPE texture_type = base_texture->GetType();
+	if (texture_type == D3DRTYPE_TEXTURE) {
+		BrowserD3DTexture *browser_texture =
+			static_cast<BrowserD3DTexture *>(static_cast<IDirect3DTexture8 *>(base_texture));
+		return browser_texture->browser_texture_id();
+	}
+	if (texture_type == D3DRTYPE_VOLUMETEXTURE) {
+		BrowserD3DVolumeTexture *browser_texture =
+			static_cast<BrowserD3DVolumeTexture *>(static_cast<IDirect3DVolumeTexture8 *>(base_texture));
+		return browser_texture->browser_texture_id();
+	}
+	return 0;
+}
 
 class BrowserD3DVertexBuffer final : public IDirect3DVertexBuffer8, private BrowserD3DResource
 {
@@ -3612,16 +3717,60 @@ IDirect3D8 *Direct3DCreate8(UINT sdk_version)
 }
 
 HRESULT D3DXLoadSurfaceFromSurface(
-	IDirect3DSurface8 *,
+	IDirect3DSurface8 *destination_surface,
 	const void *,
-	const RECT *,
-	IDirect3DSurface8 *,
+	const RECT *destination_rect,
+	IDirect3DSurface8 *source_surface,
 	const void *,
-	const RECT *,
+	const RECT *source_rect,
 	DWORD,
 	D3DCOLOR)
 {
-	return D3DERR_NOTAVAILABLE;
+	if (destination_surface == nullptr || source_surface == nullptr) {
+		return E_FAIL;
+	}
+
+	BrowserD3DSurface *source = static_cast<BrowserD3DSurface *>(source_surface);
+	BrowserD3DSurface *destination = static_cast<BrowserD3DSurface *>(destination_surface);
+	D3DSURFACE_DESC source_desc = {};
+	D3DSURFACE_DESC destination_desc = {};
+	if (FAILED(source->GetDesc(&source_desc)) ||
+		FAILED(destination->GetDesc(&destination_desc)) ||
+		source_desc.Format != destination_desc.Format) {
+		return E_FAIL;
+	}
+
+	RECT effective_source_rect = {};
+	if (source_rect != nullptr) {
+		effective_source_rect = *source_rect;
+	} else {
+		effective_source_rect.right = static_cast<LONG>(source_desc.Width);
+		effective_source_rect.bottom = static_cast<LONG>(source_desc.Height);
+	}
+
+	RECT effective_destination_rect = {};
+	if (destination_rect != nullptr) {
+		effective_destination_rect = *destination_rect;
+	} else {
+		effective_destination_rect.right = static_cast<LONG>(destination_desc.Width);
+		effective_destination_rect.bottom = static_cast<LONG>(destination_desc.Height);
+	}
+
+	if (!destination->copy_scaled_rect_from(*source, effective_source_rect, effective_destination_rect)) {
+		return E_FAIL;
+	}
+	destination->upload_owned_texture();
+
+	++g_state.copy_rects_calls;
+	g_state.last_copy_rects_rect_count = 1;
+	g_state.last_copy_rects_width =
+		static_cast<UINT>(effective_source_rect.right - effective_source_rect.left);
+	g_state.last_copy_rects_height =
+		static_cast<UINT>(effective_source_rect.bottom - effective_source_rect.top);
+	g_state.last_copy_rects_format = source_desc.Format;
+	g_state.last_copy_rects_uploaded_texture_id = destination->texture_owner_id();
+
+	return S_OK;
 }
 
 HRESULT D3DXCreateTexture(
@@ -3667,9 +3816,17 @@ HRESULT D3DXCreateTextureFromFileExA(
 	return D3DERR_NOTAVAILABLE;
 }
 
-HRESULT D3DXFilterTexture(IDirect3DBaseTexture8 *, const void *, UINT, DWORD)
+HRESULT D3DXFilterTexture(IDirect3DBaseTexture8 *texture, const void *, UINT source_level, DWORD)
 {
-	return D3DERR_NOTAVAILABLE;
+	if (texture == nullptr) {
+		return E_FAIL;
+	}
+	if (texture->GetType() != D3DRTYPE_TEXTURE) {
+		return D3DERR_NOTAVAILABLE;
+	}
+	BrowserD3DTexture *browser_texture =
+		static_cast<BrowserD3DTexture *>(static_cast<IDirect3DTexture8 *>(texture));
+	return browser_texture->generate_mip_chain(source_level);
 }
 
 HRESULT D3DXCreateCubeTexture(

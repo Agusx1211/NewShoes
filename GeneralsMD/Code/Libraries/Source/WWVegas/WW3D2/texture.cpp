@@ -63,16 +63,25 @@
 //#pragma MESSAGE("************************************** WARNING, optimization disabled for debugging purposes")
 
 #ifdef __EMSCRIPTEN__
+extern "C" unsigned int cnc_port_d3d8_browser_texture_id(
+	void *texture) __attribute__((weak));
 extern "C" void cnc_port_note_texture_apply(
 	unsigned int stage,
+	unsigned int texture_id,
 	const char *name,
 	const char *full_path,
 	int missing) __attribute__((weak));
 #define CNC_PORT_NOTE_TEXTURE_APPLY(stage, texture) \
 	do { \
 		if (cnc_port_note_texture_apply) { \
+			IDirect3DBaseTexture8 *cnc_port_d3d_texture = (texture).Peek_D3D_Base_Texture(); \
+			unsigned int cnc_port_browser_texture_id = \
+				cnc_port_d3d8_browser_texture_id \
+					? cnc_port_d3d8_browser_texture_id(cnc_port_d3d_texture) \
+					: 0u; \
 			cnc_port_note_texture_apply( \
 				(stage), \
+				cnc_port_browser_texture_id, \
 				(texture).Get_Texture_Name().Peek_Buffer(), \
 				(texture).Get_Full_Path().Peek_Buffer(), \
 				(texture).Is_Missing_Texture() ? 1 : 0); \

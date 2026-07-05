@@ -194,6 +194,14 @@ static std::string g_frame_first_missing_texture_path;
 static std::string g_frame_last_missing_texture_name;
 static std::string g_frame_last_missing_texture_path;
 static std::vector<std::string> g_frame_missing_texture_samples;
+struct FrameTextureLabel {
+	unsigned int texture_id = 0;
+	unsigned int stage = 0;
+	std::string name;
+	std::string path;
+	bool missing = false;
+};
+static std::vector<FrameTextureLabel> g_frame_texture_labels;
 
 extern "C" void cnc_port_note_engine_update_target(const char *name)
 {
@@ -236,12 +244,37 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_last_game_logic
 }
 
 extern "C" void cnc_port_note_texture_apply(
-	unsigned int,
+	unsigned int stage,
+	unsigned int texture_id,
 	const char *name,
 	const char *full_path,
 	int missing)
 {
 	++g_frame_texture_apply_count;
+	if (texture_id != 0) {
+		const std::string texture_name = name != nullptr ? name : "";
+		const std::string texture_path = full_path != nullptr ? full_path : "";
+		bool updated = false;
+		for (FrameTextureLabel &label : g_frame_texture_labels) {
+			if (label.texture_id == texture_id) {
+				label.stage = stage;
+				label.name = texture_name;
+				label.path = texture_path;
+				label.missing = missing != 0;
+				updated = true;
+				break;
+			}
+		}
+		if (!updated && g_frame_texture_labels.size() < 512) {
+			FrameTextureLabel label;
+			label.texture_id = texture_id;
+			label.stage = stage;
+			label.name = texture_name;
+			label.path = texture_path;
+			label.missing = missing != 0;
+			g_frame_texture_labels.push_back(label);
+		}
+	}
 	if (!missing) {
 		return;
 	}
@@ -403,6 +436,7 @@ void reset_frame_texture_diagnostics()
 	g_frame_last_missing_texture_name.clear();
 	g_frame_last_missing_texture_path.clear();
 	g_frame_missing_texture_samples.clear();
+	g_frame_texture_labels.clear();
 }
 
 void append_frame_texture_diagnostics(std::string &json)
@@ -420,6 +454,21 @@ void append_frame_texture_diagnostics(std::string &json)
 			json += ",";
 		}
 		json += "\"" + json_escape(g_frame_missing_texture_samples[i]) + "\"";
+	}
+	json += "],\"labels\":[";
+	for (std::size_t i = 0; i < g_frame_texture_labels.size(); ++i) {
+		if (i != 0) {
+			json += ",";
+		}
+		const FrameTextureLabel &label = g_frame_texture_labels[i];
+		json += "{";
+		json += "\"id\":" + std::to_string(label.texture_id);
+		json += ",\"stage\":" + std::to_string(label.stage);
+		json += ",\"name\":\"" + json_escape(label.name) + "\"";
+		json += ",\"path\":\"" + json_escape(label.path) + "\"";
+		json += ",\"missing\":";
+		json += label.missing ? "true" : "false";
+		json += "}";
 	}
 	json += "]}";
 }

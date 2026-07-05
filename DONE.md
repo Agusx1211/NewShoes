@@ -2846,6 +2846,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `git diff --check`, and Mac Chrome/Metal title verification
       (`ANGLE Metal Renderer: Apple M4`, 43 subsystems, shell-map screenshot
       refreshed at `/home/agusx1211/cnc-mac-verify/mac-verify-title.png`).
+- [x] Fix white/broken foot-soldier textures by implementing the D3DX
+      surface-copy path used by original W3D house-color texture generation.
+      Mac shell-map texture-label captures isolated the broken soldiers to
+      generated names like `#-16711936#zhca_uirguard.tga` and
+      `#-16711936#zhca_uiworker.tga`: the original W3D asset manager had
+      allocated the generated `A8R8G8B8` textures but the wasm D3D8 shim still
+      returned `D3DERR_NOTAVAILABLE` from `D3DXLoadSurfaceFromSurface`, so the
+      recolored surface pixels never reached WebGL (`ready:false`,
+      `sampled:false`, `uploads:0`). The shim now copies/scales same-format
+      browser surfaces, uploads texture-owned destination levels, and implements
+      2D `D3DXFilterTexture` mip-chain generation from the previous level. A
+      new shell-map texture-label capture joins original `TextureClass::Apply`
+      names to browser texture ids and draw-history metadata. Verified with
+      `node --check WebAssembly/harness/shellmap_texture_label_capture.mjs`,
+      `npm --prefix WebAssembly run build:port`, `git diff --check`, and Mac
+      Chrome/Metal shell-map captures at frames 360/720: the same generated
+      infantry textures now report `ready:true`, `sampled:true`,
+      `storage:"rgba8"`, `uploads:1`, and the frame-720 screenshot at
+      `/home/agusx1211/cnc-mac-verify/shellmap-texture-labels/shellmap-frame-720.png`
+      shows colored infantry instead of white silhouettes.
 - [x] **Prove D3D8 render-target/FBO correctness in the harness.** Added the
       `d3d8RenderTarget` RPC and smoke assertion around the real D3D8 shim path:
       `CreateTexture(D3DUSAGE_RENDERTARGET)` -> `GetSurfaceLevel(0)` ->
