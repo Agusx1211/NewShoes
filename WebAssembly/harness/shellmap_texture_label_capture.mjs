@@ -11,9 +11,11 @@ const captureFrames = (process.env.SHELLMAP_CAPTURE_FRAMES ?? "360,720")
   .split(",")
   .map((value) => Number(value.trim()))
   .filter((value) => Number.isFinite(value) && value > 0);
-const drawHistoryLimit = Number(process.env.SHELLMAP_DRAW_HISTORY_LIMIT ?? 256);
 const assertCutoutDepth = process.env.SHELLMAP_ASSERT_CUTOUT_DEPTH === "1";
 const assertInfantryTextures = process.env.SHELLMAP_ASSERT_INFANTRY_TEXTURES === "1";
+const assertBattleFxTextures = process.env.SHELLMAP_ASSERT_BATTLE_FX_TEXTURES === "1";
+const assertionMode = assertCutoutDepth || assertInfantryTextures || assertBattleFxTextures;
+const drawHistoryLimit = Number(process.env.SHELLMAP_DRAW_HISTORY_LIMIT ?? (assertionMode ? 4096 : 256));
 
 const archiveSpecs = [
   { name: "INIZH.big" },
@@ -288,6 +290,91 @@ function assertShellmapInfantryTextures(captures) {
   };
 }
 
+function assertShellmapBattleFxTextures(captures) {
+  const errors = [];
+  const effectFragments = new Map([
+    ["shockwave", "exshockwav"],
+    ["cloud", "excloud"],
+    ["wave", "exwave"],
+    ["explosion", "exexplo"],
+  ]);
+  const requiredFragments = ["shockwave", "cloud", "wave"];
+  const textureRecords = [];
+  const draws = captures.flatMap((capture) =>
+    capture.history.map((draw) => ({ ...draw, targetFrame: capture.targetFrame })));
+
+  for (const draw of draws) {
+    for (const texture of [draw.texture0, draw.texture1]) {
+      const name = textureLabelName(texture);
+      const kind = Array.from(effectFragments.entries())
+        .find(([, fragment]) => name.includes(fragment))?.[0] ?? null;
+      if (kind != null) {
+        textureRecords.push({ draw, texture, kind, name });
+      }
+    }
+  }
+
+  const recordsByKind = new Map();
+  for (const record of textureRecords) {
+    const records = recordsByKind.get(record.kind) ?? [];
+    records.push(record);
+    recordsByKind.set(record.kind, records);
+  }
+
+  if (textureRecords.length < 16) {
+    errors.push(`expected at least 16 shell-map battle FX texture draws, got ${textureRecords.length}`);
+  }
+  for (const kind of requiredFragments) {
+    const count = recordsByKind.get(kind)?.length ?? 0;
+    if (count < 1) {
+      errors.push(`expected at least one ${kind} battle FX texture draw`);
+    }
+  }
+
+  const notReady = [];
+  const notSampled = [];
+  const missingUploads = [];
+  const notBlended = [];
+  for (const record of textureRecords) {
+    const { draw, texture, name, kind } = record;
+    if (texture.ready !== true) {
+      notReady.push({ seq: draw.seq, name });
+    }
+    if (texture.sampled !== true) {
+      notSampled.push({ seq: draw.seq, name });
+    }
+    if (Number(texture.uploads ?? 0) < 1) {
+      missingUploads.push({ seq: draw.seq, name, uploads: texture.uploads ?? null });
+    }
+    if (kind !== "explosion" && !isBlendedDraw(draw)) {
+      notBlended.push({ seq: draw.seq, name });
+    }
+  }
+
+  if (notReady.length) {
+    errors.push(`battle FX textures not ready at seq ${notReady.slice(0, 8).map((item) => item.seq).join(",")}`);
+  }
+  if (notSampled.length) {
+    errors.push(`battle FX textures not sampled at seq ${notSampled.slice(0, 8).map((item) => item.seq).join(",")}`);
+  }
+  if (missingUploads.length) {
+    errors.push(`battle FX textures missing uploads at seq ${missingUploads.slice(0, 8).map((item) => item.seq).join(",")}`);
+  }
+  if (notBlended.length) {
+    errors.push(`transparent battle FX textures were not blended at seq ${notBlended.slice(0, 8).map((item) => item.seq).join(",")}`);
+  }
+
+  return {
+    source: "shellmap-battle-fx-textures",
+    ok: errors.length === 0,
+    errors,
+    counts: Object.fromEntries(Array.from(effectFragments.keys()).map((kind) =>
+      [kind, recordsByKind.get(kind)?.length ?? 0])),
+    drawCount: textureRecords.length,
+    textures: Array.from(new Set(textureRecords.map((record) => record.name))).sort(),
+  };
+}
+
 function combineAssertions(results) {
   if (results.length === 0) {
     return null;
@@ -405,6 +492,7 @@ async function main() {
     const assertions = combineAssertions([
       assertCutoutDepth ? assertShellmapCutoutDepth(captures) : null,
       assertInfantryTextures ? assertShellmapInfantryTextures(captures) : null,
+      assertBattleFxTextures ? assertShellmapBattleFxTextures(captures) : null,
     ].filter(Boolean));
     const summary = { ok: assertions?.ok ?? true, renderer, assertions, captures };
     await writeFile(resolve(outDir, "summary.json"), JSON.stringify(summary, null, 2));
@@ -422,7 +510,7 @@ async function main() {
       })),
     }, null, 2));
     if (assertions && !assertions.ok) {
-      throw new Error(`shell-map cutout-depth assertions failed: ${assertions.errors.join("; ")}`);
+      throw new Error(`shell-map assertions failed: ${assertions.errors.join("; ")}`);
     }
   } finally {
     await browser.close();

@@ -2914,6 +2914,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `#-16711936#zhca_uiworker.tga`. Screenshots:
       `/Users/aa/cnc-verify/shellmap-nightly-combined-assert/shellmap-frame-240.png`
       and `/Users/aa/cnc-verify/shellmap-nightly-combined-assert/shellmap-frame-720.png`.
+- [x] Add a live shell-map battle-FX texture assertion for the reported
+      missing explosions. `SHELLMAP_ASSERT_BATTLE_FX_TEXTURES=1` now scans the
+      same real shell-map draw history for shipped explosion/shockwave/cloud
+      textures, requires the expected transparent FX passes to be blended, and
+      verifies the textures are ready, sampled, and uploaded. Assertion mode
+      now defaults the draw-history limit to 4096 so busy shell-map frames keep
+      enough 3D/effect evidence. Verified on Mac M4 Chrome/Metal with:
+      `SHELLMAP_CAPTURE_DIR=/Users/aa/cnc-verify/shellmap-nightly-battle-fx
+      SHELLMAP_CAPTURE_FRAMES=240,720 SHELLMAP_ASSERT_CUTOUT_DEPTH=1
+      SHELLMAP_ASSERT_INFANTRY_TEXTURES=1
+      SHELLMAP_ASSERT_BATTLE_FX_TEXTURES=1 /opt/homebrew/bin/node
+      harness/shellmap_texture_label_capture.mjs`, which reported
+      `ANGLE Metal Renderer: Apple M4` and passing battle-FX counts
+      `shockwave:302`, `cloud:130`, `wave:25`, `explosion:106` for
+      `excloud01.tga`, `exexplo03.tga`, `exshockwav.tga`, and `exwave01.tga`.
+      Screenshot evidence was copied to
+      `WebAssembly/artifacts/screenshots/mac-nightly/shellmap-battle-fx-frame240.png`.
 - [x] **Prove D3D8 render-target/FBO correctness in the harness.** Added the
       `d3d8RenderTarget` RPC and smoke assertion around the real D3D8 shim path:
       `CreateTexture(D3DUSAGE_RENDERTARGET)` -> `GetSurfaceLevel(0)` ->
