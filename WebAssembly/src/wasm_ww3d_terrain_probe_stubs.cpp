@@ -111,6 +111,7 @@ extern "C" const void *cnc_port_object_get_command_set_string(const void *) { re
 extern "C" int cnc_port_object_get_night_indicator_color(const void *) __asm__("_ZNK6Object22getNightIndicatorColorEv") __attribute__((weak));
 extern "C" int cnc_port_object_get_night_indicator_color(const void *) { return 0; }
 #endif
+#ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_PLAYER_DRAWABLE_HELPERS
 extern "C" void cnc_port_ai_group_add(void *, void *) __asm__("_ZN7AIGroup3addEP6Object") __attribute__((weak));
 extern "C" void cnc_port_ai_group_add(void *, void *) {}
 extern "C" void cnc_port_drawable_set_hidden(void *, int) __asm__("_ZN8Drawable17setDrawableHiddenEb") __attribute__((weak));
@@ -126,6 +127,7 @@ extern "C" int cnc_port_player_difficulty(const void *) __asm__("_ZNK6Player19ge
 extern "C" void *cnc_port_ai_group_ctor_c1(void *) __asm__("_ZN7AIGroupC1Ev") __attribute__((weak));
 extern "C" int cnc_port_ai_group_is_dead(const void *) __asm__("_ZNK7AIGroup13isGroupAiDeadEv") __attribute__((weak));
 extern "C" int cnc_port_ai_group_is_idle(const void *) __asm__("_ZNK7AIGroup6isIdleEv") __attribute__((weak));
+#endif
 extern "C" void cnc_port_w3d_snow_release(void *) __asm__("_ZN14W3DSnowManager16ReleaseResourcesEv") __attribute__((weak));
 extern "C" int cnc_port_w3d_snow_reacquire(void *) __asm__("_ZN14W3DSnowManager18ReAcquireResourcesEv") __attribute__((weak));
 extern "C" void *cnc_port_simple_object_iterator_ctor_c1(void *) __asm__("_ZN20SimpleObjectIteratorC1Ev") __attribute__((weak));
@@ -226,6 +228,7 @@ extern "C" void cnc_port_object_set_indicator(void *, int) {}
 extern "C" void cnc_port_object_remove_indicator(void *) {}
 extern "C" int cnc_port_object_get_indicator(const void *) { return 0; }
 #endif
+#ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_PLAYER_DRAWABLE_HELPERS
 extern "C" void *cnc_port_player_current_enemy(void *) { return nullptr; }
 extern "C" void cnc_port_player_update_team_states(void *) {}
 extern "C" int cnc_port_player_is_skirmish_ai(void *) { return 0; }
@@ -233,6 +236,7 @@ extern "C" int cnc_port_player_difficulty(const void *) { return 1; }
 extern "C" void *cnc_port_ai_group_ctor_c1(void *self) { return self; }
 extern "C" int cnc_port_ai_group_is_dead(const void *) { return 1; }
 extern "C" int cnc_port_ai_group_is_idle(const void *) { return 1; }
+#endif
 extern "C" void cnc_port_w3d_snow_release(void *) {}
 extern "C" int cnc_port_w3d_snow_reacquire(void *) { return 1; }
 extern "C" void *cnc_port_simple_object_iterator_ctor_c1(void *self) { return self; }
