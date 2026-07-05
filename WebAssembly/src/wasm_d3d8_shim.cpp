@@ -360,7 +360,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			return null;
 		}
 		const offset = ptr >>> 2;
-		const renderStateSlots = 42;
+		const renderStateSlots = 50;
 		const textureStageCount = 8;
 		const textureStageStateSlots = 29;
 		const state = Module.HEAPU32.subarray(offset, offset + renderStateSlots);
@@ -445,6 +445,14 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			specularEnable: state[39] >>> 0,
 			normalizeNormals: state[40] >>> 0,
 			localViewer: state[41] >>> 0,
+			pointSize: state[42] >>> 0,
+			pointSizeMin: state[43] >>> 0,
+			pointSizeMax: state[44] >>> 0,
+			pointSpriteEnable: state[45] >>> 0,
+			pointScaleEnable: state[46] >>> 0,
+			pointScaleA: state[47] >>> 0,
+			pointScaleB: state[48] >>> 0,
+			pointScaleC: state[49] >>> 0,
 			textureStages,
 		};
 	};
@@ -3005,8 +3013,15 @@ public:
 		g_state.last_draw_primitive_type = primitive_type;
 		g_state.last_draw_start_vertex = start_vertex;
 		g_state.last_draw_primitive_count = primitive_count;
-		capture_bound_draw(start_vertex, primitive_vertex_count(primitive_type, primitive_count), 0, 0);
-		return S_OK;
+		const UINT vertex_count = primitive_vertex_count(primitive_type, primitive_count);
+		g_state.last_draw_min_vertex_index = 0;
+		g_state.last_draw_vertex_count = vertex_count;
+		g_state.last_draw_start_index = 0;
+		if (primitive_count == 0 || vertex_count == 0) {
+			capture_bound_draw(start_vertex, vertex_count, 0, 0);
+			return S_OK;
+		}
+		return draw_bound_sequential_primitive(primitive_type, start_vertex, vertex_count);
 	}
 	HRESULT DrawIndexedPrimitive(D3DPRIMITIVETYPE primitive_type, UINT min_index, UINT vertex_count,
 		UINT start_index, UINT primitive_count) override
@@ -3333,6 +3348,35 @@ private:
 		return upload_user_pointer_index_data(m_user_pointer_index_bytes.data(), byte_size, format);
 	}
 
+	HRESULT draw_bound_sequential_primitive(D3DPRIMITIVETYPE primitive_type, UINT start_vertex, UINT vertex_count)
+	{
+		if (m_stream_source == nullptr || m_stream_source_stride == 0) {
+			capture_bound_draw(start_vertex, vertex_count, 0, 0);
+			return S_OK;
+		}
+		if (start_vertex > std::numeric_limits<UINT>::max() / m_stream_source_stride ||
+				vertex_count > std::numeric_limits<UINT>::max() / m_stream_source_stride) {
+			return E_FAIL;
+		}
+		if (FAILED(upload_sequential_user_pointer_indices(vertex_count))) {
+			return E_FAIL;
+		}
+
+		IDirect3DIndexBuffer8 *saved_indices = m_indices;
+		const UINT saved_base_vertex_index = m_indices_base_vertex_index;
+		if (saved_indices != nullptr) {
+			saved_indices->AddRef();
+		}
+
+		bind_indices(m_user_pointer_index_buffer, 0);
+		capture_bound_draw(start_vertex, vertex_count, 0, vertex_count);
+		draw_bound_indexed_primitive(primitive_type, start_vertex, 0, vertex_count, 0, vertex_count);
+		clear_indices();
+		m_indices = saved_indices;
+		m_indices_base_vertex_index = saved_indices != nullptr ? saved_base_vertex_index : 0;
+		return S_OK;
+	}
+
 	void capture_bound_draw(UINT first_vertex, UINT vertex_count, UINT first_index, UINT index_count)
 	{
 		g_state.last_draw_vertex_buffer_length = 0;
@@ -3457,6 +3501,20 @@ private:
 				return TRUE;
 			case D3DRS_LOCALVIEWER:
 				return TRUE;
+			case D3DRS_POINTSIZE:
+				return 0x3f800000UL;
+			case D3DRS_POINTSIZE_MIN:
+				return 0;
+			case D3DRS_POINTSIZE_MAX:
+				return 0x42800000UL;
+			case D3DRS_POINTSPRITEENABLE:
+			case D3DRS_POINTSCALEENABLE:
+				return FALSE;
+			case D3DRS_POINTSCALE_A:
+				return 0x3f800000UL;
+			case D3DRS_POINTSCALE_B:
+			case D3DRS_POINTSCALE_C:
+				return 0;
 			case D3DRS_AMBIENT:
 				return 0;
 			case D3DRS_COLORVERTEX:
@@ -3587,6 +3645,14 @@ private:
 		state.specular_enable = render_state_value(D3DRS_SPECULARENABLE);
 		state.normalize_normals = render_state_value(D3DRS_NORMALIZENORMALS);
 		state.local_viewer = render_state_value(D3DRS_LOCALVIEWER);
+		state.point_size = render_state_value(D3DRS_POINTSIZE);
+		state.point_size_min = render_state_value(D3DRS_POINTSIZE_MIN);
+		state.point_size_max = render_state_value(D3DRS_POINTSIZE_MAX);
+		state.point_sprite_enable = render_state_value(D3DRS_POINTSPRITEENABLE);
+		state.point_scale_enable = render_state_value(D3DRS_POINTSCALEENABLE);
+		state.point_scale_a = render_state_value(D3DRS_POINTSCALE_A);
+		state.point_scale_b = render_state_value(D3DRS_POINTSCALE_B);
+		state.point_scale_c = render_state_value(D3DRS_POINTSCALE_C);
 		std::memcpy(g_state.last_draw_clip_planes, m_clip_planes, sizeof(g_state.last_draw_clip_planes));
 		for (UINT index = 0; index < WASM_D3D8_LIGHT_COUNT; ++index) {
 			g_state.last_draw_lights[index] = draw_light_from_d3d(m_lights[index], m_light_enabled[index]);
@@ -3677,6 +3743,9 @@ private:
 		HASH_RS_FIELD(ambient_material_source); HASH_RS_FIELD(emissive_material_source);
 		HASH_RS_FIELD(clipping); HASH_RS_FIELD(clip_plane_enable); HASH_RS_FIELD(specular_enable);
 		HASH_RS_FIELD(normalize_normals); HASH_RS_FIELD(local_viewer);
+		HASH_RS_FIELD(point_size); HASH_RS_FIELD(point_size_min); HASH_RS_FIELD(point_size_max);
+		HASH_RS_FIELD(point_sprite_enable); HASH_RS_FIELD(point_scale_enable);
+		HASH_RS_FIELD(point_scale_a); HASH_RS_FIELD(point_scale_b); HASH_RS_FIELD(point_scale_c);
 		#undef HASH_RS_FIELD
 		// texture stage states (8 stages * 29 DWORDs)
 		for (UINT s = 0; s < WASM_D3D8_TEXTURE_STAGE_COUNT; ++s)

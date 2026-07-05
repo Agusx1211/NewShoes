@@ -1420,6 +1420,9 @@ residue and the next frontier.
       through harness screenshots/state.
 - [ ] Snow/weather rendering through original `SnowManager` / W3D weather
       paths, including map weather overrides, verified by harness screenshots.
+      The generic D3D8 bridge support for bound-buffer `DrawPrimitive` and
+      fixed-function point sprites is now proven; the remaining work is a real
+      SnowManager/weather scene driven through original W3D ownership.
 - [ ] Reach the **main menu rendering** end-to-end; screenshot it.
 
 ---

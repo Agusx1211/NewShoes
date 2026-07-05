@@ -56,6 +56,14 @@ struct WasmD3D8DrawRenderState
 	DWORD specular_enable;
 	DWORD normalize_normals;
 	DWORD local_viewer;
+	DWORD point_size;
+	DWORD point_size_min;
+	DWORD point_size_max;
+	DWORD point_sprite_enable;
+	DWORD point_scale_enable;
+	DWORD point_scale_a;
+	DWORD point_scale_b;
+	DWORD point_scale_c;
 	WasmD3D8DrawTextureStageState texture_stages[WASM_D3D8_TEXTURE_STAGE_COUNT];
 };
 

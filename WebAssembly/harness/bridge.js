@@ -5498,6 +5498,14 @@ function ensureD3D8DrawProgram() {
     uniform mat4 uTexture1Transform;
     uniform int uTexture1TransformComponentCount;
     uniform bool uTexture1TransformProjected;
+    uniform float uPointSize;
+    uniform float uPointSizeMin;
+    uniform float uPointSizeMax;
+    uniform bool uPointScaleEnable;
+    uniform float uPointScaleA;
+    uniform float uPointScaleB;
+    uniform float uPointScaleC;
+    uniform float uPointViewportHeight;
     uniform bool uLightingEnabled;
     uniform bool uSpecularEnabled;
     uniform bool uNormalizeNormals;
@@ -5687,6 +5695,17 @@ function ensureD3D8DrawProgram() {
         vFogRangeDistance = 0.0;
       }
       gl_Position.z -= uDepthBias * gl_Position.w;
+      float d3dPointSize = max(uPointSize, 0.0);
+      if (uPointScaleEnable) {
+        float eyeDistance = max(length(viewPosition.xyz), 0.000001);
+        float attenuation = max(
+          uPointScaleA + uPointScaleB * eyeDistance + uPointScaleC * eyeDistance * eyeDistance,
+          0.000001);
+        d3dPointSize = max(uPointViewportHeight, 1.0) * d3dPointSize * inversesqrt(attenuation);
+      }
+      float d3dPointSizeMin = max(uPointSizeMin, 0.0);
+      float d3dPointSizeMax = max(uPointSizeMax, d3dPointSizeMin);
+      gl_PointSize = clamp(d3dPointSize, d3dPointSizeMin, d3dPointSizeMax);
       vClipPosition = worldPosition;
       vec4 color1 = vec4(aDiffuseBgra.b, aDiffuseBgra.g, aDiffuseBgra.r, aDiffuseBgra.a);
       vec4 color2 = vec4(aSpecularBgra.b, aSpecularBgra.g, aSpecularBgra.r, aSpecularBgra.a);
@@ -5734,6 +5753,8 @@ function ensureD3D8DrawProgram() {
     uniform int uClipPlaneMask;
     uniform vec4 uClipPlanes[6];
     uniform bool uUseFlatShade;
+    uniform bool uDrawingPoints;
+    uniform bool uPointSpriteEnable;
     uniform bool uUseTexture0;
     uniform sampler2D uTexture0;
     uniform float uTexture0LodBias;
@@ -6005,11 +6026,14 @@ function ensureD3D8DrawProgram() {
           discard;
         }
       }
+      vec2 pointTexCoord = gl_PointCoord;
+      vec2 texture0Coord = (uDrawingPoints && uPointSpriteEnable) ? pointTexCoord : vTexCoord0;
+      vec2 texture1Coord = (uDrawingPoints && uPointSpriteEnable) ? pointTexCoord : vTexCoord1;
       vec4 texture0Color = uUseTexture0
-        ? d3dTextureSample(texture(uTexture0, vTexCoord0, uTexture0LodBias), uTexture0Semantic)
+        ? d3dTextureSample(texture(uTexture0, texture0Coord, uTexture0LodBias), uTexture0Semantic)
         : vec4(1.0);
       vec4 texture1Color = uUseTexture1
-        ? d3dTextureSample(texture(uTexture1, vTexCoord1, uTexture1LodBias), uTexture1Semantic)
+        ? d3dTextureSample(texture(uTexture1, texture1Coord, uTexture1LodBias), uTexture1Semantic)
         : vec4(1.0);
       vec4 diffuseColor = uUseFlatShade ? vFlatColor : vColor;
       vec4 stage0ComputedColor = vec4(
@@ -6076,6 +6100,14 @@ function ensureD3D8DrawProgram() {
     texture1Transform: gl.getUniformLocation(program, "uTexture1Transform"),
     texture1TransformComponentCount: gl.getUniformLocation(program, "uTexture1TransformComponentCount"),
     texture1TransformProjected: gl.getUniformLocation(program, "uTexture1TransformProjected"),
+    pointSize: gl.getUniformLocation(program, "uPointSize"),
+    pointSizeMin: gl.getUniformLocation(program, "uPointSizeMin"),
+    pointSizeMax: gl.getUniformLocation(program, "uPointSizeMax"),
+    pointScaleEnable: gl.getUniformLocation(program, "uPointScaleEnable"),
+    pointScaleA: gl.getUniformLocation(program, "uPointScaleA"),
+    pointScaleB: gl.getUniformLocation(program, "uPointScaleB"),
+    pointScaleC: gl.getUniformLocation(program, "uPointScaleC"),
+    pointViewportHeight: gl.getUniformLocation(program, "uPointViewportHeight"),
     lightingEnabled: gl.getUniformLocation(program, "uLightingEnabled"),
     specularEnabled: gl.getUniformLocation(program, "uSpecularEnabled"),
     normalizeNormals: gl.getUniformLocation(program, "uNormalizeNormals"),
@@ -6101,6 +6133,8 @@ function ensureD3D8DrawProgram() {
     fixedLightRangeAttenuation: gl.getUniformLocation(program, "uFixedLightRangeAttenuation[0]"),
     fixedLightSpot: gl.getUniformLocation(program, "uFixedLightSpot[0]"),
     useTexture0: gl.getUniformLocation(program, "uUseTexture0"),
+    drawingPoints: gl.getUniformLocation(program, "uDrawingPoints"),
+    pointSpriteEnable: gl.getUniformLocation(program, "uPointSpriteEnable"),
     texture0: gl.getUniformLocation(program, "uTexture0"),
     texture0LodBias: gl.getUniformLocation(program, "uTexture0LodBias"),
     texture0Semantic: gl.getUniformLocation(program, "uTexture0Semantic"),
@@ -6141,7 +6175,7 @@ function ensureD3D8DrawProgram() {
 
 function d3dPrimitiveToGl(primitiveType) {
   if (!gl) {
-    return 0;
+    return null;
   }
   switch (Number(primitiveType)) {
     case D3DPT_POINTLIST:
@@ -6157,8 +6191,19 @@ function d3dPrimitiveToGl(primitiveType) {
     case D3DPT_TRIANGLEFAN:
       return gl.TRIANGLE_FAN;
     default:
-      return 0;
+      return null;
   }
+}
+
+function d3d8GlPrimitiveSupported(primitive) {
+  return gl && (
+    primitive === gl.POINTS ||
+    primitive === gl.LINES ||
+    primitive === gl.LINE_STRIP ||
+    primitive === gl.TRIANGLES ||
+    primitive === gl.TRIANGLE_STRIP ||
+    primitive === gl.TRIANGLE_FAN
+  );
 }
 
 function glPrimitiveName(primitive) {
@@ -6229,6 +6274,31 @@ function d3d8DepthBiasInfo(zBias) {
     raw,
     clamped,
     ndc: clamped / 65536.0,
+  };
+}
+
+function d3d8PointSpriteInfo(renderState, primitiveType, viewport) {
+  const pointSize = Math.max(0, d3dDwordToFloat(renderState.pointSize));
+  const pointSizeMin = Math.max(0, d3dDwordToFloat(renderState.pointSizeMin));
+  const pointSizeMax = Math.max(pointSizeMin, d3dDwordToFloat(renderState.pointSizeMax));
+  const scaleA = Math.max(0, d3dDwordToFloat(renderState.pointScaleA));
+  const scaleB = Math.max(0, d3dDwordToFloat(renderState.pointScaleB));
+  const scaleC = Math.max(0, d3dDwordToFloat(renderState.pointScaleC));
+  const viewportHeight = Math.max(
+    1,
+    Number(viewport?.gl?.height ?? viewport?.d3d?.height ?? viewport?.requested?.height ?? 1),
+  );
+  return {
+    drawingPoints: (Number(primitiveType ?? 0) >>> 0) === D3DPT_POINTLIST,
+    spriteEnable: Number(renderState.pointSpriteEnable ?? 0) !== 0,
+    scaleEnable: Number(renderState.pointScaleEnable ?? 0) !== 0,
+    pointSize,
+    pointSizeMin,
+    pointSizeMax,
+    scaleA,
+    scaleB,
+    scaleC,
+    viewportHeight,
   };
 }
 
@@ -6525,8 +6595,8 @@ function createD3D8FillModeDrawInfo(
     temporaryIndexBuffer: false,
     pointFill: false,
     wireframe: false,
-    supported: baseGlPrimitive !== 0,
-    fallbackReason: baseGlPrimitive !== 0 ? null : "unsupportedPrimitive",
+    supported: d3d8GlPrimitiveSupported(baseGlPrimitive),
+    fallbackReason: d3d8GlPrimitiveSupported(baseGlPrimitive) ? null : "unsupportedPrimitive",
   };
 
   if (!info.supported) {
@@ -7353,6 +7423,14 @@ function normalizeD3D8RenderState(renderState = {}) {
     emissiveMaterialSource: Number(renderState.emissiveMaterialSource ?? D3DMCS_MATERIAL) >>> 0,
     clipping: Number(renderState.clipping ?? 1) >>> 0,
     clipPlaneEnable: Number(renderState.clipPlaneEnable ?? 0) >>> 0,
+    pointSize: Number(renderState.pointSize ?? D3D_FLOAT_ONE_BITS) >>> 0,
+    pointSizeMin: Number(renderState.pointSizeMin ?? 0) >>> 0,
+    pointSizeMax: Number(renderState.pointSizeMax ?? 0x42800000) >>> 0,
+    pointSpriteEnable: Number(renderState.pointSpriteEnable ?? 0) >>> 0,
+    pointScaleEnable: Number(renderState.pointScaleEnable ?? 0) >>> 0,
+    pointScaleA: Number(renderState.pointScaleA ?? D3D_FLOAT_ONE_BITS) >>> 0,
+    pointScaleB: Number(renderState.pointScaleB ?? 0) >>> 0,
+    pointScaleC: Number(renderState.pointScaleC ?? 0) >>> 0,
     textureStages: normalizeD3D8TextureStages(renderState.textureStages),
   };
 }
@@ -7705,8 +7783,13 @@ function paintD3D8DrawIndexed(payload = {}) {
     vertexLayout,
     texture1Transform,
   );
-  const canSampleTexture0 = Boolean(texture0Ready && texture0Coordinates.supported);
-  const canSampleTexture1 = Boolean(texture1Ready && texture1Coordinates.supported);
+  const drawUsesPointSpriteCoordinates =
+    (Number(payload.primitiveType ?? 0) >>> 0) === D3DPT_POINTLIST &&
+    Number(renderState.pointSpriteEnable ?? 0) !== 0;
+  const canSampleTexture0 = Boolean(
+    texture0Ready && (texture0Coordinates.supported || drawUsesPointSpriteCoordinates));
+  const canSampleTexture1 = Boolean(
+    texture1Ready && (texture1Coordinates.supported || drawUsesPointSpriteCoordinates));
   const texture0SemanticMode = canSampleTexture0 ? d3d8TextureSemanticMode(texture0Resource) : 0;
   const texture1SemanticMode = canSampleTexture1 ? d3d8TextureSemanticMode(texture1Resource) : 0;
   const appliedTexture0Combiner = textureStageCombinerInfo(renderState.textureStages[0], 0, canSampleTexture0);
@@ -7724,11 +7807,13 @@ function paintD3D8DrawIndexed(payload = {}) {
   let appliedTexture1Sampler = null;
   let appliedFillMode = null;
   let appliedShadeMode = null;
+  let appliedPointSprite = null;
   let vertexDiagnostics = null;
   let drawOk = false;
   const collectDrawDiagnostics = d3d8DiagLevel === "full";
   syncCanvasSize();
   appliedViewport = applyD3D8Viewport("draw");
+  appliedPointSprite = d3d8PointSpriteInfo(renderState, payload.primitiveType, appliedViewport);
   if (collectDrawDiagnostics) {
     vertexDiagnostics = inspectD3D8DrawVertices(
       vertexResource,
@@ -7762,7 +7847,8 @@ function paintD3D8DrawIndexed(payload = {}) {
     : null;
   let centerPixel = preDrawCenterPixel;
 
-  if (gl && baseGlPrimitive && usePersistentBuffers && vertexByteSize > 0 && indexByteSize > 0 &&
+  if (gl && d3d8GlPrimitiveSupported(baseGlPrimitive) && usePersistentBuffers &&
+      vertexByteSize > 0 && indexByteSize > 0 &&
       vertexStride >= 12 && indexCount > 0 && (indexSize === 2 || indexSize === 4)) {
     const bridgeProgram = ensureD3D8DrawProgram();
     bindD3D8Program(bridgeProgram.program);
@@ -7821,7 +7907,8 @@ function paintD3D8DrawIndexed(payload = {}) {
       gl.disableVertexAttribArray(bridgeProgram.specular);
       gl.vertexAttrib4f(bridgeProgram.specular, 0, 0, 0, 1);
     }
-    if (bridgeProgram.texCoord0 >= 0 && canSampleTexture0 && texture0Coordinates.usesVertexTexCoord) {
+    if (bridgeProgram.texCoord0 >= 0 && canSampleTexture0 &&
+        texture0Coordinates.usesVertexTexCoord && texture0Coordinates.offset !== null) {
       gl.enableVertexAttribArray(bridgeProgram.texCoord0);
       gl.vertexAttribPointer(bridgeProgram.texCoord0, 2, gl.FLOAT, false,
         vertexStride, vertexByteOffset + texture0Coordinates.offset);
@@ -7829,7 +7916,8 @@ function paintD3D8DrawIndexed(payload = {}) {
       gl.disableVertexAttribArray(bridgeProgram.texCoord0);
       gl.vertexAttrib2f(bridgeProgram.texCoord0, 0, 0);
     }
-    if (bridgeProgram.texCoord1 >= 0 && canSampleTexture1 && texture1Coordinates.usesVertexTexCoord) {
+    if (bridgeProgram.texCoord1 >= 0 && canSampleTexture1 &&
+        texture1Coordinates.usesVertexTexCoord && texture1Coordinates.offset !== null) {
       gl.enableVertexAttribArray(bridgeProgram.texCoord1);
       gl.vertexAttribPointer(bridgeProgram.texCoord1, 2, gl.FLOAT, false,
         vertexStride, vertexByteOffset + texture1Coordinates.offset);
@@ -8081,6 +8169,36 @@ function paintD3D8DrawIndexed(payload = {}) {
     } else {
       appliedRenderState = harnessState.graphics.lastD3D8AppliedRenderState;
     }
+    if (bridgeProgram.drawingPoints !== null) {
+      gl.uniform1i(bridgeProgram.drawingPoints, appliedPointSprite.drawingPoints ? 1 : 0);
+    }
+    if (bridgeProgram.pointSpriteEnable !== null) {
+      gl.uniform1i(bridgeProgram.pointSpriteEnable, appliedPointSprite.spriteEnable ? 1 : 0);
+    }
+    if (bridgeProgram.pointSize !== null) {
+      gl.uniform1f(bridgeProgram.pointSize, appliedPointSprite.pointSize);
+    }
+    if (bridgeProgram.pointSizeMin !== null) {
+      gl.uniform1f(bridgeProgram.pointSizeMin, appliedPointSprite.pointSizeMin);
+    }
+    if (bridgeProgram.pointSizeMax !== null) {
+      gl.uniform1f(bridgeProgram.pointSizeMax, appliedPointSprite.pointSizeMax);
+    }
+    if (bridgeProgram.pointScaleEnable !== null) {
+      gl.uniform1i(bridgeProgram.pointScaleEnable, appliedPointSprite.scaleEnable ? 1 : 0);
+    }
+    if (bridgeProgram.pointScaleA !== null) {
+      gl.uniform1f(bridgeProgram.pointScaleA, appliedPointSprite.scaleA);
+    }
+    if (bridgeProgram.pointScaleB !== null) {
+      gl.uniform1f(bridgeProgram.pointScaleB, appliedPointSprite.scaleB);
+    }
+    if (bridgeProgram.pointScaleC !== null) {
+      gl.uniform1f(bridgeProgram.pointScaleC, appliedPointSprite.scaleC);
+    }
+    if (bridgeProgram.pointViewportHeight !== null) {
+      gl.uniform1f(bridgeProgram.pointViewportHeight, appliedPointSprite.viewportHeight);
+    }
     // Bound texture identity/availability is not part of the state hash, so
     // these uniforms must be refreshed even when the rest of the draw state is
     // cached.
@@ -8252,6 +8370,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     appliedMaterial: material,
     fillMode: appliedFillMode,
     shadeMode: appliedShadeMode,
+    pointSprite: appliedPointSprite,
     boundTextures: Object.fromEntries(d3d8BoundTextures),
     texture0: {
       id: texture0Id,
@@ -8936,6 +9055,8 @@ async function loadWasmModule() {
       probeD3D8TextureUpload: module.cwrap("cnc_port_probe_d3d8_texture_upload", "string", []),
       probeD3D8VolumeTextureUpload: module.cwrap("cnc_port_probe_d3d8_volume_texture_upload", "string", []),
       probeD3D8TextureBind: module.cwrap("cnc_port_probe_d3d8_texture_bind", "string", []),
+      probeD3D8NonindexedDraw: module.cwrap("cnc_port_probe_d3d8_nonindexed_draw", "string", []),
+      probeD3D8PointSpriteDraw: module.cwrap("cnc_port_probe_d3d8_point_sprite_draw", "string", []),
       probeD3D8UserPointerDraw: module.cwrap("cnc_port_probe_d3d8_user_pointer_draw", "string", []),
       probeD3D8TexturedQuad: module.cwrap("cnc_port_probe_d3d8_textured_quad", "string", []),
       probeD3D8TwoTextureQuad: module.cwrap("cnc_port_probe_d3d8_two_texture_quad", "string", []),
@@ -14649,6 +14770,143 @@ async function rpc(command, payload = {}) {
           browserProbe,
           textureProbe,
           textureDelta,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8NonindexedDraw":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return {
+            ok: false,
+            command,
+            error: "Wasm module unavailable; D3D8 non-indexed draw probe cannot run",
+          };
+        }
+        const beforeSequence = Number(harnessState.graphics.d3d8DrawIndexedSequence ?? 0) >>> 0;
+        const probe = parseModuleState(wasmModule.probeD3D8NonindexedDraw());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const afterSequence = Number(harnessState.graphics.d3d8DrawIndexedSequence ?? 0) >>> 0;
+        const centerPixelOk = pixelHasColor(browserProbe?.centerPixel ?? [0, 0, 0, 0]);
+        const ok = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && afterSequence - beforeSequence === 1
+          && probe.calls?.createVertexBuffer === 1
+          && probe.calls?.createIndexBuffer === 0
+          && probe.calls?.browserBufferCreate === 2
+          && probe.calls?.browserBufferUpdate === 2
+          && probe.calls?.browserBufferRelease === 2
+          && probe.calls?.setStreamSource === 1
+          && probe.calls?.setIndices === 0
+          && probe.calls?.drawPrimitive === 1
+          && probe.calls?.drawIndexed === 0
+          && probe.draw?.primitiveType === D3DPT_TRIANGLESTRIP
+          && probe.draw?.startVertex === 0
+          && probe.draw?.vertexCount === 4
+          && probe.draw?.primitiveCount === 2
+          && probe.draw?.vertexStride === 16
+          && probe.draw?.vertexShaderFvf === (D3DFVF_XYZ | D3DFVF_DIFFUSE)
+          && probe.draw?.vertexBufferId !== 0
+          && probe.draw?.indexBufferId !== 0
+          && probe.draw?.vertexBytes === 64
+          && probe.draw?.indexBytes === 8
+          && browserProbe?.primitiveType === D3DPT_TRIANGLESTRIP
+          && browserProbe?.baseVertexIndex === 0
+          && browserProbe?.minVertexIndex === 0
+          && browserProbe?.firstIndex === 0
+          && browserProbe?.vertexCount === 4
+          && browserProbe?.indexCount === 4
+          && browserProbe?.vertexStride === 16
+          && browserProbe?.vertexShaderFvf === (D3DFVF_XYZ | D3DFVF_DIFFUSE)
+          && browserProbe?.vertexLayout?.diffuseOffset === 12
+          && browserProbe?.renderState?.lighting === 0
+          && browserProbe?.renderState?.textureStages?.[0]?.colorOp === D3DTOP_SELECTARG1
+          && browserProbe?.renderState?.textureStages?.[0]?.colorArg1 === D3DTA_DIFFUSE
+          && browserProbe?.renderState?.textureStages?.[0]?.alphaOp === D3DTOP_SELECTARG1
+          && browserProbe?.renderState?.textureStages?.[0]?.alphaArg1 === D3DTA_DIFFUSE
+          && centerPixelOk;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          sequenceDelta: afterSequence - beforeSequence,
+          centerPixelOk,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8PointSpriteDraw":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return {
+            ok: false,
+            command,
+            error: "Wasm module unavailable; D3D8 point-sprite draw probe cannot run",
+          };
+        }
+        const beforeSequence = Number(harnessState.graphics.d3d8DrawIndexedSequence ?? 0) >>> 0;
+        const probe = parseModuleState(wasmModule.probeD3D8PointSpriteDraw());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const afterSequence = Number(harnessState.graphics.d3d8DrawIndexedSequence ?? 0) >>> 0;
+        const offsetPixel = sampleCanvasPixel(
+          Math.floor(canvas.width / 2) + 12,
+          Math.floor(canvas.height / 2),
+        );
+        const centerPixelOk = pixelLooksRed(browserProbe?.centerPixel ?? [0, 0, 0, 0]);
+        const pointSizeOk = pixelLooksRed(offsetPixel);
+        const ok = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && afterSequence - beforeSequence === 1
+          && probe.calls?.createTexture === 1
+          && probe.calls?.browserTextureCreate === 1
+          && probe.calls?.browserTextureUpdate === 1
+          && probe.calls?.browserTextureBind === 1
+          && probe.calls?.browserTextureRelease === 1
+          && probe.calls?.createVertexBuffer === 1
+          && probe.calls?.createIndexBuffer === 0
+          && probe.calls?.browserBufferCreate === 2
+          && probe.calls?.browserBufferUpdate === 2
+          && probe.calls?.browserBufferRelease === 2
+          && probe.calls?.setTexture === 1
+          && probe.calls?.setStreamSource === 1
+          && probe.calls?.setIndices === 0
+          && probe.calls?.drawPrimitive === 1
+          && probe.calls?.drawIndexed === 0
+          && probe.draw?.primitiveType === D3DPT_POINTLIST
+          && probe.draw?.vertexCount === 1
+          && probe.draw?.primitiveCount === 1
+          && probe.draw?.vertexStride === 12
+          && probe.draw?.vertexShaderFvf === D3DFVF_XYZ
+          && probe.draw?.renderState?.pointSpriteEnable === 1
+          && probe.draw?.renderState?.pointScaleEnable === 0
+          && browserProbe?.primitiveType === D3DPT_POINTLIST
+          && browserProbe?.vertexCount === 1
+          && browserProbe?.indexCount === 1
+          && browserProbe?.vertexStride === 12
+          && browserProbe?.vertexShaderFvf === D3DFVF_XYZ
+          && browserProbe?.texture0?.sampled === true
+          && browserProbe?.texture0?.texCoordSupported === false
+          && browserProbe?.pointSprite?.drawingPoints === true
+          && browserProbe?.pointSprite?.spriteEnable === true
+          && browserProbe?.pointSprite?.scaleEnable === false
+          && Math.abs((browserProbe?.pointSprite?.pointSize ?? 0) - 32) < 0.001
+          && centerPixelOk
+          && pointSizeOk;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          sequenceDelta: afterSequence - beforeSequence,
+          centerPixelOk,
+          pointSizeOk,
+          pointPixels: {
+            center: browserProbe?.centerPixel ?? null,
+            offset: offsetPixel,
+          },
           state: snapshotState(),
         };
       }

@@ -3869,6 +3869,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       reuse two transient buffers without public `SetStreamSource`/`SetIndices`
       calls. This unblocks original W3D paths that use UP draws for shader
       manager, smudge, scene overlay, and volumetric-shadow quads.
+- [x] Implement browser-backed D3D8 non-indexed and point-sprite draws. The
+      shim now routes bound-buffer `DrawPrimitive` calls through the existing
+      WebGL2 indexed bridge using an internal sequential index buffer without
+      mutating public `SetIndices` state, and the browser shader path captures
+      DX8 point render states (`POINTSIZE`, min/max, sprite/scaling flags, and
+      scale coefficients) so `D3DPT_POINTLIST` sprites sample textures through
+      `gl_PointCoord` even when the FVF has no UVs. Added
+      `d3d8NonindexedDraw` and `d3d8PointSpriteDraw` RPC/smoke coverage: a
+      browser Playwright run verifies a triangle strip and a textured point
+      sprite reach WebGL, sample expected pixels, and report point-sprite
+      render-state metadata. This unblocks original W3D paths such as
+      `W3DSnow.cpp` that draw texture-backed point lists through fixed-function
+      point-sprite state.
 - [x] Capture D3D8 `SetTextureStageState` writes through the current
       `DrawIndexedPrimitive` bridge payload, including combiner arguments,
       texture-coordinate index, address modes, and min/mag/mip filters for all

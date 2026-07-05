@@ -4042,6 +4042,80 @@ try {
   }
   await page.locator("#viewport").screenshot({ path: d3d8Stage1TextureTransformCanvasScreenshot });
 
+  const d3d8NonindexedDrawResult = await page.evaluate(() => window.CnCPort.rpc("d3d8NonindexedDraw"));
+  if (!d3d8NonindexedDrawResult.ok
+      || d3d8NonindexedDrawResult.probe?.source !== "browser_d3d8_nonindexed_draw_probe"
+      || d3d8NonindexedDrawResult.sequenceDelta !== 1
+      || d3d8NonindexedDrawResult.probe?.calls?.createVertexBuffer !== 1
+      || d3d8NonindexedDrawResult.probe?.calls?.createIndexBuffer !== 0
+      || d3d8NonindexedDrawResult.probe?.calls?.browserBufferCreate !== 2
+      || d3d8NonindexedDrawResult.probe?.calls?.browserBufferUpdate !== 2
+      || d3d8NonindexedDrawResult.probe?.calls?.browserBufferRelease !== 2
+      || d3d8NonindexedDrawResult.probe?.calls?.setStreamSource !== 1
+      || d3d8NonindexedDrawResult.probe?.calls?.setIndices !== 0
+      || d3d8NonindexedDrawResult.probe?.calls?.drawPrimitive !== 1
+      || d3d8NonindexedDrawResult.probe?.calls?.drawIndexed !== 0
+      || d3d8NonindexedDrawResult.probe?.draw?.primitiveType !== D3DPT_TRIANGLESTRIP
+      || d3d8NonindexedDrawResult.probe?.draw?.startVertex !== 0
+      || d3d8NonindexedDrawResult.probe?.draw?.vertexCount !== 4
+      || d3d8NonindexedDrawResult.probe?.draw?.primitiveCount !== 2
+      || d3d8NonindexedDrawResult.probe?.draw?.vertexStride !== 16
+      || d3d8NonindexedDrawResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || d3d8NonindexedDrawResult.browserProbe?.usedPersistentBuffers !== true
+      || d3d8NonindexedDrawResult.browserProbe?.primitiveType !== D3DPT_TRIANGLESTRIP
+      || d3d8NonindexedDrawResult.browserProbe?.vertexCount !== 4
+      || d3d8NonindexedDrawResult.browserProbe?.indexCount !== 4
+      || d3d8NonindexedDrawResult.browserProbe?.vertexStride !== 16
+      || d3d8NonindexedDrawResult.browserProbe?.vertexLayout?.diffuseOffset !== 12
+      || d3d8NonindexedDrawResult.browserProbe?.renderState?.lighting !== 0
+      || d3d8NonindexedDrawResult.browserProbe?.renderState?.textureStages?.[0]?.colorOp !==
+        D3DTOP_SELECTARG1
+      || d3d8NonindexedDrawResult.browserProbe?.renderState?.textureStages?.[0]?.colorArg1 !==
+        D3DTA_DIFFUSE
+      || d3d8NonindexedDrawResult.centerPixelOk !== true) {
+    throw new Error(`D3D8 non-indexed draw probe failed: ${JSON.stringify(d3d8NonindexedDrawResult)}`);
+  }
+
+  const d3d8PointSpriteDrawResult = await page.evaluate(() => window.CnCPort.rpc("d3d8PointSpriteDraw"));
+  if (!d3d8PointSpriteDrawResult.ok
+      || d3d8PointSpriteDrawResult.probe?.source !== "browser_d3d8_point_sprite_draw_probe"
+      || d3d8PointSpriteDrawResult.sequenceDelta !== 1
+      || d3d8PointSpriteDrawResult.probe?.calls?.createTexture !== 1
+      || d3d8PointSpriteDrawResult.probe?.calls?.browserTextureCreate !== 1
+      || d3d8PointSpriteDrawResult.probe?.calls?.browserTextureUpdate !== 1
+      || d3d8PointSpriteDrawResult.probe?.calls?.browserTextureBind !== 1
+      || d3d8PointSpriteDrawResult.probe?.calls?.browserTextureRelease !== 1
+      || d3d8PointSpriteDrawResult.probe?.calls?.createVertexBuffer !== 1
+      || d3d8PointSpriteDrawResult.probe?.calls?.createIndexBuffer !== 0
+      || d3d8PointSpriteDrawResult.probe?.calls?.browserBufferCreate !== 2
+      || d3d8PointSpriteDrawResult.probe?.calls?.browserBufferUpdate !== 2
+      || d3d8PointSpriteDrawResult.probe?.calls?.browserBufferRelease !== 2
+      || d3d8PointSpriteDrawResult.probe?.calls?.setTexture !== 1
+      || d3d8PointSpriteDrawResult.probe?.calls?.setStreamSource !== 1
+      || d3d8PointSpriteDrawResult.probe?.calls?.setIndices !== 0
+      || d3d8PointSpriteDrawResult.probe?.calls?.drawPrimitive !== 1
+      || d3d8PointSpriteDrawResult.probe?.calls?.drawIndexed !== 0
+      || d3d8PointSpriteDrawResult.probe?.draw?.primitiveType !== D3DPT_POINTLIST
+      || d3d8PointSpriteDrawResult.probe?.draw?.vertexCount !== 1
+      || d3d8PointSpriteDrawResult.probe?.draw?.primitiveCount !== 1
+      || d3d8PointSpriteDrawResult.probe?.draw?.vertexStride !== 12
+      || d3d8PointSpriteDrawResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || d3d8PointSpriteDrawResult.browserProbe?.usedPersistentBuffers !== true
+      || d3d8PointSpriteDrawResult.browserProbe?.primitiveType !== D3DPT_POINTLIST
+      || d3d8PointSpriteDrawResult.browserProbe?.vertexCount !== 1
+      || d3d8PointSpriteDrawResult.browserProbe?.indexCount !== 1
+      || d3d8PointSpriteDrawResult.browserProbe?.vertexStride !== 12
+      || d3d8PointSpriteDrawResult.browserProbe?.texture0?.sampled !== true
+      || d3d8PointSpriteDrawResult.browserProbe?.texture0?.texCoordSupported !== false
+      || d3d8PointSpriteDrawResult.browserProbe?.pointSprite?.drawingPoints !== true
+      || d3d8PointSpriteDrawResult.browserProbe?.pointSprite?.spriteEnable !== true
+      || d3d8PointSpriteDrawResult.browserProbe?.pointSprite?.scaleEnable !== false
+      || Math.abs((d3d8PointSpriteDrawResult.browserProbe?.pointSprite?.pointSize ?? 0) - 32) > 0.001
+      || !pixelLooksRed(d3d8PointSpriteDrawResult.pointPixels?.center)
+      || !pixelLooksRed(d3d8PointSpriteDrawResult.pointPixels?.offset)) {
+    throw new Error(`D3D8 point-sprite draw probe failed: ${JSON.stringify(d3d8PointSpriteDrawResult)}`);
+  }
+
   const d3d8UserPointerDrawResult = await page.evaluate(() => window.CnCPort.rpc("d3d8UserPointerDraw"));
   if (!d3d8UserPointerDrawResult.ok
       || d3d8UserPointerDrawResult.probe?.source !== "browser_d3d8_user_pointer_draw_probe"
