@@ -265,19 +265,11 @@ residue and the next frontier.
       `TheVersion` is left null; `GameEngine::execute()` is stepped by
       per-frame RPC — move to `emscripten_set_main_loop` for continuous
       execution once the shell menu is interactive.
-      **Game-speed correctness (Fable audit 2026-07-05):** `play.mjs:78-96`
-      steps one full `GameEngine::update()` (client + logic) per
-      `requestAnimationFrame` with NO pacing — the original
-      `GameEngine::execute()` loop paces logic via
-      `setFramesPerSecondLimit`/`timeGetTime`, and that limiter is bypassed
-      entirely by RPC stepping. Consequence today (Debug, ~70-100ms
-      frames): game time runs 2-3× SLOW (rAF paces to frame cost, ~10-14
-      logic fps vs the original rate) — the game feels sluggish beyond raw
-      fps because sim time itself is dilated. After the Release build makes
-      frames cheap, the same loop flips to 2×+ FAST (and 4× on a 120Hz
-      display). Fix: accumulate wall time in the rAF loop and step
-      `update()` on the original logic cadence (with catch-up cap), or move
-      to `emscripten_set_main_loop` and let the engine's own limiter pace.
+      The Fable game-speed correctness issue in `play.mjs` is fixed for the
+      current RPC-driven human page: it now accumulates wall time and steps
+      `realEngineFrameTick` on the original 30 Hz logic cadence with a bounded
+      catch-up cap. Remaining here is the eventual ownership move to
+      `emscripten_set_main_loop`.
 - [ ] Delete `WebAssembly/src/wasm_terrain_probe_object.cpp` (1,289 lines):
       a full alternate implementation of `Object` (own
       `reactToTransformChange`, `addThreat`, …) referenced by NO CMake

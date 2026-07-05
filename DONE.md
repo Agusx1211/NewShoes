@@ -7885,6 +7885,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       engine `lastFrameMs`; `realEngineFrameTick` measured 77.4 ms/frame wall
       with 76.5 ms engine `lastFrameMs`, removing most wrapper overhead from
       the interactive loop.
+- [x] Pace the human play loop to the original logic cadence. The `play.mjs`
+      rAF loop no longer steps one `GameEngine::update()` per display frame.
+      It accumulates wall time, calls `realEngineFrameTick` at the shipped
+      30 Hz logic rate, caps catch-up work to avoid a runaway backlog, skips
+      catch-up when the previous engine frame already exceeded the frame
+      budget, and reports completed engine ticks instead of browser refresh
+      rate. This removes the Fable audit bug where simulation speed was
+      coupled to display refresh; overloaded Debug/SwiftShader remains
+      throughput-bound until the Release/perf work lands. Verified with
+      `node --check WebAssembly/harness/play.mjs`, a local
+      `harness/play.html?autostart=1&shellmap=0&logicFps=10` rate check
+      measuring 31 frames over 3.08s (10.05 logic fps), and a Mac Chrome/Metal
+      `harness/play.html?autostart=1&shellmap=0` rate check measuring 78
+      frames over 3.03s (25.7 logic fps) on
+      `ANGLE Metal Renderer: Apple M4`.
 - [x] Remove leftover per-draw diagnostic work from the `diag=lite` runtime
       path. `paintD3D8DrawIndexed` no longer walks vertex/index buffers to
       build projected bounds and triangle diagnostics when those probe objects

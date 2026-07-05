@@ -31,6 +31,15 @@ const overlay = document.querySelector("#overlay");
 const startButton = document.querySelector("#start");
 const progressNode = document.querySelector("#progress");
 const fpsNode = document.querySelector("#fps");
+const queryParams = new URLSearchParams(window.location.search);
+
+const DEFAULT_LOGIC_FPS = 30;
+const DEFAULT_CATCHUP_FRAMES = 2;
+
+function positiveNumberParam(name, fallback) {
+  const value = Number(queryParams.get(name));
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
 
 function report(message) {
   progressNode.textContent = message;
@@ -64,18 +73,45 @@ function buildArchives() {
 }
 
 async function runFrameLoop(rpc) {
-  let lastStamp = performance.now();
+  const logicFps = Math.min(240, positiveNumberParam("logicFps", DEFAULT_LOGIC_FPS));
+  const logicFrameMs = 1000 / logicFps;
+  const maxCatchupFrames = Math.max(
+    1,
+    Math.min(8, Math.floor(positiveNumberParam("catchup", DEFAULT_CATCHUP_FRAMES))),
+  );
+  const maxAccumulatedMs = logicFrameMs * maxCatchupFrames;
+  let lastAnimationStamp = null;
+  let lastTickStamp = performance.now();
+  let lastFramesCompleted = null;
+  let lastEngineFrameMs = 0;
+  let accumulatedMs = logicFrameMs;
   let smoothedFps = 0;
   let running = true;
 
-  const step = async () => {
+  const step = async (animationStamp) => {
     if (!running) {
       return;
     }
+    const stamp = Number.isFinite(animationStamp) ? animationStamp : performance.now();
+    const elapsedMs = lastAnimationStamp === null ? 0 : Math.max(0, stamp - lastAnimationStamp);
+    lastAnimationStamp = stamp;
+    accumulatedMs = Math.min(accumulatedMs + elapsedMs, maxAccumulatedMs);
+
+    const dueFrames = Math.floor(accumulatedMs / logicFrameMs);
+    const catchupLimit = lastEngineFrameMs > logicFrameMs ? 1 : maxCatchupFrames;
+    const framesToRun = Math.min(catchupLimit, dueFrames);
+    if (framesToRun <= 0) {
+      requestAnimationFrame(step);
+      return;
+    }
+    accumulatedMs -= framesToRun * logicFrameMs;
+
+    let result = null;
     try {
-      // Minimal per-rAF stepping: verification harnesses use the richer frame
-      // summary, but the human page only needs success/failure and frame time.
-      const result = await rpc("realEngineFrameTick", { frames: 1 });
+      // The original execute loop caps update cadence at the INI FPS limit.
+      // RPC stepping bypasses that limiter, so pace the human page here until
+      // the runtime owns a browser main loop.
+      result = await rpc("realEngineFrameTick", { frames: framesToRun });
       if (result?.ok !== true) {
         running = false;
         fail("engine frame failed", result);
@@ -86,11 +122,26 @@ async function runFrameLoop(rpc) {
       fail("engine frame threw", error);
       return;
     }
+
     const now = performance.now();
-    const instant = 1000 / Math.max(1, now - lastStamp);
-    lastStamp = now;
-    smoothedFps = smoothedFps === 0 ? instant : smoothedFps * 0.9 + instant * 0.1;
-    fpsNode.textContent = smoothedFps.toFixed(1);
+    const reportedFrameMs = Number(result?.frame?.lastFrameMs);
+    lastEngineFrameMs = Number.isFinite(reportedFrameMs)
+      ? reportedFrameMs
+      : (now - lastTickStamp) / Math.max(1, framesToRun);
+    const framesCompleted = Number(result?.frame?.framesCompleted);
+    let completedDelta = framesToRun;
+    if (Number.isFinite(framesCompleted)) {
+      if (lastFramesCompleted !== null && framesCompleted >= lastFramesCompleted) {
+        completedDelta = framesCompleted - lastFramesCompleted;
+      }
+      lastFramesCompleted = framesCompleted;
+    }
+    if (completedDelta > 0) {
+      const instant = (completedDelta * 1000) / Math.max(1, now - lastTickStamp);
+      smoothedFps = smoothedFps === 0 ? instant : smoothedFps * 0.9 + instant * 0.1;
+      fpsNode.textContent = smoothedFps.toFixed(1);
+    }
+    lastTickStamp = now;
     requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
@@ -106,7 +157,7 @@ async function start() {
     // per-draw readPixels GPU syncs / probe objects / draw-history that the
     // regression harness needs but the player does not. Add ?diag=full to
     // restore full diagnostics for debugging.
-    const diagParam = new URLSearchParams(window.location.search).get("diag");
+    const diagParam = queryParams.get("diag");
     if (diagParam !== "full" && typeof window.__cncSetDiagLevel === "function") {
       window.__cncSetDiagLevel("lite");
     }
@@ -125,7 +176,7 @@ async function start() {
     // The original ShellMapMD 3D menu background (the naval scene) renders
     // through the real lifecycle since fd3cea3 — default on; ?shellmap=0
     // opts out (faster boot, static backdrop).
-    const shellMap = new URLSearchParams(window.location.search).get("shellmap") !== "0";
+    const shellMap = queryParams.get("shellmap") !== "0";
     report(`running real GameEngine::init() (~10-30s, shell map ${shellMap ? "on" : "off"})...`);
     const init = await rpc("realEngineInit", { runDirectory: "/assets/real-init", shellMap });
     if (init?.ok !== true || init?.frontier?.initReturned !== true) {
@@ -158,7 +209,7 @@ startButton.addEventListener("click", () => {
   void start();
 });
 
-if (new URLSearchParams(window.location.search).get("autostart") === "1") {
+if (queryParams.get("autostart") === "1") {
   void start();
 }
 
