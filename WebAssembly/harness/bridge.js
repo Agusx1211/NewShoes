@@ -9489,6 +9489,12 @@ function normalizeBigPath(path) {
   return String(path ?? "").replaceAll("/", "\\").toLowerCase();
 }
 
+function archiveNameLeaf(name) {
+  const normalized = normalizeBigPath(name);
+  const slash = normalized.lastIndexOf("\\");
+  return slash >= 0 ? normalized.slice(slash + 1) : normalized;
+}
+
 const optionalBaseAudioStartupPaths = new Set([
   "data\\ini\\audiosettings.ini",
   "data\\ini\\default\\music.ini",
@@ -9498,9 +9504,16 @@ const optionalBaseAudioStartupPaths = new Set([
 ]);
 
 function isAudioPayloadRelevantArchive(archive) {
+  const relevantNames = new Set(audioPayloadArchiveNames.map((name) => name.toLowerCase()));
   const names = [archive.name, archive.sourceName].filter(Boolean);
-  return names.some((name) =>
-    name === "INIZH.big" || name === "INI.big" || audioPayloadArchiveNames.includes(name));
+  return names.some((name) => {
+    const normalized = normalizeBigPath(name);
+    const leaf = archiveNameLeaf(name);
+    return normalized === "inizh.big"
+      || normalized === "ini.big"
+      || relevantNames.has(normalized)
+      || relevantNames.has(leaf);
+  });
 }
 
 function buildAudioStartupArchiveContract(iniFiles, mountedArchives) {

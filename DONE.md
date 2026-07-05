@@ -6805,12 +6805,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `AudioBufferSourceNode -> GainNode -> musicGainNode ->
       AudioDestinationNode` graph. The smoke also exposes
       `realEngineStopAudioEvent`, which calls the original
-      `TheAudio->removeAudioEvent(handle)` path and frame-pumps until
-      `cncPortMssStreamStop` records stream stop state, while preserving any
-      concurrently active shell music. The 2D/3D sample assertions now pump
-      real frames while waiting so the gate observes the original audio request
-      drain instead of relying on immediate timing. Verified with
-      `npm --prefix WebAssembly run test:real-audio-event`.
+      `TheAudio->removeAudioEvent(...)` path; the gate uses the original
+      `AHSV_StopTheMusic` sentinel and frame-pumps until `cncPortMssStreamStop`
+      records stream stop state while preserving concurrently active shell
+      music. The bridge now treats mounted archive source names by leaf name, so
+      base music mounted as `ZZBase_Music.big` with source
+      `base-generals/Music.big` is searched by the stream backend; the same
+      smoke proves `Game_USA_01` decodes
+      `Data\Audio\Tracks\USA_01.mp3` from `ZZBase_Music.big`. The 2D/3D sample
+      assertions now pump real frames while waiting so the gate observes the
+      original audio request drain instead of relying on immediate timing.
+      Verified with `npm --prefix WebAssembly run test:real-audio-event`.
 
 ---
 

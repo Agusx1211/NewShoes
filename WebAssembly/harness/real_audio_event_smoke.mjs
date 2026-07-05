@@ -32,6 +32,7 @@ const archiveSpecs = [
   { name: "ZZBase_Music.big", sourceName: "base-generals/Music.big" },
   { name: "Gensec.big" },
 ];
+const AHSV_STOP_THE_MUSIC = 4;
 
 function expect(condition, message, payload) {
   if (!condition) {
@@ -141,17 +142,66 @@ async function waitForDecodedMusicStream(page, filename, before, timeoutMs = 150
 async function waitForMusicStreamStop(page, before, timeoutMs = 5000) {
   const start = Date.now();
   const beforeStopped = before?.stopped ?? 0;
-  const beforeActive = before?.activeSources ?? 0;
   while (Date.now() - start < timeoutMs) {
     const runtime = await streamRuntime(page);
-    if ((runtime?.stopped ?? 0) > beforeStopped
-        && (runtime?.activeSources ?? 0) < beforeActive) {
+    if ((runtime?.stopped ?? 0) > beforeStopped) {
       return runtime;
     }
     await rpc(page, "realEngineFrameSummary", { frames: 1 });
     await page.waitForTimeout(50);
   }
   throw new Error(`music stream did not stop within ${timeoutMs}ms`);
+}
+
+async function playAndMaybeStopMusicEvent(
+  page,
+  eventName,
+  expectedFilename,
+  expectedArchive,
+  { stop = true } = {},
+) {
+  const musicBefore = await streamRuntime(page);
+  const music = await rpc(page, "realEnginePlayAudioEvent", {
+    name: eventName,
+    positional: false,
+    useViewPosition: false,
+    pumpFrames: 2,
+  });
+  expect(music?.ok === true
+      && music.result?.handleAccepted === true
+      && music.result?.audioType === "AT_Music"
+      && music.result?.filename === expectedFilename,
+    `${eventName} did not reach the original audio manager as music`, music);
+  const musicStream = await waitForDecodedMusicStream(
+    page,
+    music.result.filename,
+    musicBefore,
+  );
+  expect(musicStream.lastEvent?.archive === expectedArchive
+      && musicStream.lastEvent?.path === music.result.filename
+      && musicStream.lastEvent?.payload?.extension === "mp3"
+      && musicStream.lastEvent?.payload?.decodedBy === "WebAudio.decodeAudioData"
+      && (musicStream.lastEvent?.payload?.decodedFrames ?? 0) > 0
+      && Array.isArray(musicStream.lastEvent?.nodeGraph)
+      && musicStream.lastEvent.nodeGraph.includes("musicGainNode")
+      && musicStream.activeSources > (musicBefore?.activeSources ?? 0)
+      && musicStream.musicSourceActive === true
+      && Number.isFinite(musicStream.lastEvent?.volume),
+    `${eventName} did not schedule through the browser MSS stream backend`, musicStream);
+
+  let stoppedMusicStream = null;
+  if (stop) {
+    const stopHandle = stop === "music" ? AHSV_STOP_THE_MUSIC : music.result.handle;
+    const musicStop = await rpc(page, "realEngineStopAudioEvent", {
+      handle: stopHandle,
+      pumpFrames: 2,
+    });
+    expect(musicStop?.ok === true && musicStop.result?.handle === stopHandle,
+      `${eventName} stop did not reach the original audio manager`, musicStop);
+    stoppedMusicStream = await waitForMusicStreamStop(page, musicStream);
+  }
+
+  return { music, musicStream, stoppedMusicStream };
 }
 
 const server = await startStaticServer({ root: wasmRoot });
@@ -248,42 +298,20 @@ try {
     "soundGainNode",
   );
 
-  const musicBefore = await streamRuntime(page);
-  const music = await rpc(page, "realEnginePlayAudioEvent", {
-    name: "Game_USA_10",
-    positional: false,
-    useViewPosition: false,
-    pumpFrames: 2,
-  });
-  expect(music?.ok === true
-      && music.result?.handleAccepted === true
-      && music.result?.audioType === "AT_Music"
-      && music.result?.filename === "Data\\Audio\\Tracks\\USA_10.mp3",
-    "real music event did not reach the original audio manager", music);
-  const musicStream = await waitForDecodedMusicStream(
+  const zhMusic = await playAndMaybeStopMusicEvent(
     page,
-    music.result.filename,
-    musicBefore,
+    "Game_USA_10",
+    "Data\\Audio\\Tracks\\USA_10.mp3",
+    "MusicZH.big",
+    { stop: "music" },
   );
-  expect(musicStream.lastEvent?.archive === "MusicZH.big"
-      && musicStream.lastEvent?.path === music.result.filename
-      && musicStream.lastEvent?.payload?.extension === "mp3"
-      && musicStream.lastEvent?.payload?.decodedBy === "WebAudio.decodeAudioData"
-      && (musicStream.lastEvent?.payload?.decodedFrames ?? 0) > 0
-      && Array.isArray(musicStream.lastEvent?.nodeGraph)
-      && musicStream.lastEvent.nodeGraph.includes("musicGainNode")
-      && musicStream.activeSources > (musicBefore?.activeSources ?? 0)
-      && musicStream.musicSourceActive === true
-      && Number.isFinite(musicStream.lastEvent?.volume),
-    "real music event did not schedule through the browser MSS stream backend", musicStream);
-
-  const musicStop = await rpc(page, "realEngineStopAudioEvent", {
-    handle: music.result.handle,
-    pumpFrames: 2,
-  });
-  expect(musicStop?.ok === true && musicStop.result?.handle === music.result.handle,
-    "real music event stop did not reach the original audio manager", musicStop);
-  const stoppedMusicStream = await waitForMusicStreamStop(page, musicStream);
+  const baseMusic = await playAndMaybeStopMusicEvent(
+    page,
+    "Game_USA_01",
+    "Data\\Audio\\Tracks\\USA_01.mp3",
+    "ZZBase_Music.big",
+    { stop: false },
+  );
 
   console.log(JSON.stringify({
     ok: true,
@@ -301,17 +329,29 @@ try {
       nodeGraph: uiSoundRuntime.lastEvent.nodeGraph,
       frames: uiSoundRuntime.lastEvent.payload.frames,
     },
-    music: {
-      event: music.result.requested,
-      filename: music.result.filename,
-      handle: music.result.handle,
-      archive: musicStream.lastEvent.archive,
-      decodedBy: musicStream.lastEvent.payload.decodedBy,
-      decodedFrames: musicStream.lastEvent.payload.decodedFrames,
-      durationSeconds: musicStream.lastEvent.durationSeconds,
-      nodeGraph: musicStream.lastEvent.nodeGraph,
-      stopped: stoppedMusicStream.stopped,
-      activeSourcesAfterStop: stoppedMusicStream.activeSources,
+    zhMusic: {
+      event: zhMusic.music.result.requested,
+      filename: zhMusic.music.result.filename,
+      handle: zhMusic.music.result.handle,
+      archive: zhMusic.musicStream.lastEvent.archive,
+      decodedBy: zhMusic.musicStream.lastEvent.payload.decodedBy,
+      decodedFrames: zhMusic.musicStream.lastEvent.payload.decodedFrames,
+      durationSeconds: zhMusic.musicStream.lastEvent.durationSeconds,
+      nodeGraph: zhMusic.musicStream.lastEvent.nodeGraph,
+      stopped: zhMusic.stoppedMusicStream?.stopped ?? null,
+      activeSourcesAfterStop: zhMusic.stoppedMusicStream?.activeSources ?? null,
+    },
+    baseMusic: {
+      event: baseMusic.music.result.requested,
+      filename: baseMusic.music.result.filename,
+      handle: baseMusic.music.result.handle,
+      archive: baseMusic.musicStream.lastEvent.archive,
+      decodedBy: baseMusic.musicStream.lastEvent.payload.decodedBy,
+      decodedFrames: baseMusic.musicStream.lastEvent.payload.decodedFrames,
+      durationSeconds: baseMusic.musicStream.lastEvent.durationSeconds,
+      nodeGraph: baseMusic.musicStream.lastEvent.nodeGraph,
+      stopped: baseMusic.stoppedMusicStream?.stopped ?? null,
+      activeSourcesAfterStop: baseMusic.stoppedMusicStream?.activeSources ?? null,
     },
   }, null, 2));
 } finally {
