@@ -8226,6 +8226,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly --silent run verify:cnc-port-weak-stubs`,
       `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and
       `node WebAssembly/harness/startup_vertical_smoke.mjs`.
+- [x] Gate the W3D terrain-stub snow/iterator/Object helper weak group out of
+      the real `cnc-port` runtime. `cnc-port` now defines
+      `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_SNOW_ITERATOR_OBJECT_HELPERS`, so
+      `wasm_ww3d_terrain_probe_stubs.cpp` no longer emits weak declarations or
+      fallback bodies for `W3DSnowManager::ReleaseResources`,
+      `W3DSnowManager::ReAcquireResources`,
+      `SimpleObjectIterator::SimpleObjectIterator`,
+      `SimpleObjectIterator::insert`, `SimpleObjectIterator::sort`,
+      `Object::onPartitionCellChange`, or `Object::onCollide` in the real
+      link. The linked strong providers come from real `W3DSnow.cpp`,
+      `SimpleObjectIterator.cpp`, and `Object.cpp` runtime objects. The weak
+      audit now reports 81 compiled weak definitions, 105 gated-out
+      declarations, and 79 strong-provider overlaps, with
+      `wasm_ww3d_terrain_probe_stubs.cpp` down to 73 compiled explicit weak
+      declarations. Direct `llvm-nm` checks show the terrain-stub object no
+      longer defines the seven helper symbols. Verified with
+      `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly --silent run verify:cnc-port-weak-stubs`,
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and
+      `node WebAssembly/harness/startup_vertical_smoke.mjs`.
 - [x] Add a `cnc-port` weak-stub audit for the Fable weak-symbol burn-down.
       `WebAssembly/tools/verify_cnc_port_weak_stubs.mjs` parses the explicit
       `__attribute__((weak))` declarations in the W3D render/scene/terrain
