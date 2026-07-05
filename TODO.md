@@ -308,6 +308,19 @@ residue and the next frontier.
       `TheVersion` is left null; `GameEngine::execute()` is stepped by
       per-frame RPC — move to `emscripten_set_main_loop` for continuous
       execution once the shell menu is interactive.
+      **Game-speed correctness (Fable audit 2026-07-05):** `play.mjs:78-96`
+      steps one full `GameEngine::update()` (client + logic) per
+      `requestAnimationFrame` with NO pacing — the original
+      `GameEngine::execute()` loop paces logic via
+      `setFramesPerSecondLimit`/`timeGetTime`, and that limiter is bypassed
+      entirely by RPC stepping. Consequence today (Debug, ~70-100ms
+      frames): game time runs 2-3× SLOW (rAF paces to frame cost, ~10-14
+      logic fps vs the original rate) — the game feels sluggish beyond raw
+      fps because sim time itself is dilated. After the Release build makes
+      frames cheap, the same loop flips to 2×+ FAST (and 4× on a 120Hz
+      display). Fix: accumulate wall time in the rAF loop and step
+      `update()` on the original logic cadence (with catch-up cap), or move
+      to `emscripten_set_main_loop` and let the engine's own limiter pace.
 - [ ] Delete `WebAssembly/src/wasm_terrain_probe_object.cpp` (1,289 lines):
       a full alternate implementation of `Object` (own
       `reactToTransformChange`, `addThreat`, …) referenced by NO CMake
@@ -329,7 +342,12 @@ residue and the next frontier.
       stub — prefer that pattern, or add a retirement TODO if injection
       stays.
 - [ ] Burn down the remaining weak-symbol stubs and probe-local singletons in
-      `WebAssembly/src/` as real subsystems link in; retire `-smoke` targets
+      `WebAssembly/src/` as real subsystems link in — current count linked
+      into cnc-port (Fable audit): 30 `__attribute__((weak))` in
+      `wasm_ww3d_render_probe.cpp`, 15 in `wasm_ww3d_scene_probe.cpp`, 11 in
+      `wasm_ww3d_terrain_probe.cpp`; each is a potential
+      "real .o never pulled" trap of the 18a9ea4 class — enumerate which
+      weak bodies actually won at link and gate/retire them; retire `-smoke` targets
       (and their open "promote to real ownership" TODO debt) once the real
       boot path covers what they proved. (Real-init already deleted the probe
       GameClient/Object/GameLogic/Display/LoadScreen/OptionPreferences
@@ -2210,6 +2228,32 @@ and then start with the PROFILE, not with any individual fix.
 - [ ] D3D8→WebGL2 shim "less naive" playbook (ordered by typical payoff,
       all confined to the DX8Wrapper chokepoint; verify each against the
       screenshot goldens):
+      - **switch JS-based exception handling to native wasm EH first**
+        (Fable audit): cnc-port links with `-fexceptions` +
+        `-sDISABLE_EXCEPTION_CATCHING=0`, i.e. Emscripten JS-EH — every
+        potentially-throwing call goes through `invoke_*` JS trampolines, a
+        classic 2-5× tax on ALL engine wasm CPU, independent of -O level.
+        emsdk 3.1.6 and Chrome support `-fwasm-exceptions`; flip and
+        measure. Evidence engine CPU is the bottleneck: steady-state
+        shell-map profile shows 103 draws/frame with drawMs≈0.05 and zero
+        uploads, while engine `lastFrameMs` is 36-43ms — the frame is
+        wasm CPU, not GL submission.
+      - draw-state marshaling (Fable audit of `wasm_d3d8_shim.cpp:319-565`):
+        the per-draw state cache is a SINGLE slot keyed on an FNV hash that
+        includes the per-object WORLD matrix, so it misses on nearly every
+        distinct object and rebuilds a ~600-property JS object graph
+        (5×`Array.from(16)` matrices + 50-field renderState + 8×28
+        texture-stage objects + 8×27-field lights + material) per draw.
+        Split transforms out of the hashed payload (pass HEAPF32
+        offsets/preallocated Float32Arrays instead of `Array.from`) and key
+        a small Map/LRU on the state-only hash. Also
+        `wasm_d3d8_browser_buffer_update` (`wasm_d3d8_shim.cpp:95`) does
+        `HEAPU8.slice()` (full copy + GC garbage) per Lock when
+        `gl.bufferSubData` accepts a zero-copy `subarray` view, and
+        `updateD3D8Buffer` (`bridge.js:2801-2812`) maintains a full
+        CPU-side mirror per buffer (`resource.bytes`, `fill(0)` on every
+        DISCARD lock) that appears to have no non-diagnostic consumer —
+        gate it behind `diag=full` or delete it.
       - never-sync audit: remove per-call glGetError/validation from the hot
         path; ensure no Lock/Present path reads back or waits on the GPU;
       - dynamic vertex/index buffer Lock(DISCARD/NOOVERWRITE) → orphaning /
