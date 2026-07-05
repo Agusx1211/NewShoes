@@ -4328,6 +4328,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       first, then proves a green same-depth quad with `D3DCMP_LESS` only wins
       after `ZBIAS=8` is applied. Playwright verifies the captured state, GL
       depth function, clamped bias metadata, and green center pixel.
+- [x] Fix draw-order/z-order bug: correct `D3DRS_ZBIAS` 24-bit depth-bias
+      scale in `WebAssembly/harness/bridge.js` `d3d8DepthBiasInfo`. The
+      original code used `2^16` (65536.0) denominator with clamp-to-15,
+      pulling decals/shadows/overlay passes ~8× too far toward the camera
+      (punching through nearby opaque geometry). Replace with the d3d8to9
+      24-bit `CalcDepthBias` denominator `(1<<20)-1` and clamp to D3D8 max 16,
+      yielding `ndc = 2*clamped / ((1<<20)-1)`. Verified: `propAfterTerrain`
+      / `treeAfterTerrain` / `shroudAfterTerrain` all correct; skirmish smoke
+      223 drawables no regression; `RENDERS-OK`. Commit 33641ab.
 - [x] Add D3D8 `D3DRS_SHADEMODE` capture and flat-shade emulation to the
       browser draw bridge. The shim now carries shade mode in the draw payload,
       the WebGL2 shader keeps both smooth and `flat` diffuse varyings, and the
@@ -6383,6 +6392,9 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       CRC `368459242`, reached `GAME_SKIRMISH`, `loadingMap=false`,
       `inputEnabled=true`, 146 objects/drawables, and captured
       `WebAssembly/artifacts/screenshots/skirmish-start-tournament-desert.png`.
+- [x] Official multiplayer map sweep: all 47 official maps boot to skirmish
+      with `loadingMap=false`, `inputEnabled=true`, `objects > 0`, no traps.
+      Verified via `skirmish_start_smoke` across the full map set.
 
 ---
 

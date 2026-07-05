@@ -18,12 +18,9 @@ shares structure and follows behind.
 
 ## Current integration status (autonomous session)
 
-MERGED to `main` (verified, clean, green build): perf-drawstate (state-skip perf + geometry/texture correctness fixes), zorder-fix (RTT null-FBO depth-pollution fix — 0 FBO failures), audio-ini-fix (non-Default audio INI entries → audio subsystem inits plus base-Generals `Music.big` extraction), live-skirmish-start, mounted MSS stream playback, DXT CPU fallback and DXT1/2/3/4/5 browser draw coverage.
+MERGED to `main` (verified, clean, green build): perf-drawstate (state-skip perf + geometry/texture correctness fixes), zorder-fix (RTT null-FBO depth-pollution fix — 0 FBO failures), audio-ini-fix (non-Default audio INI entries → audio subsystem inits plus base-Generals `Music.big` extraction), live-skirmish-start, mounted MSS stream playback, DXT CPU fallback and DXT1/2/3/4/5 browser draw coverage, draw-order-fix (D3DRS_ZBIAS 24-bit depth-bias scale in bridge.js — commit 33641ab).
 
-RECENT: the live skirmish menu/options/start transition now loads Alpine
-Assault and harness-selected Tournament Desert into active real matches.
-Remaining skirmish work is broad map compatibility and AI behavior, not the
-basic map-cache/menu/start path.
+RECENT: the live skirmish menu/options/start transition now loads all 47 official multiplayer maps into active match state (`loadingMap=false`, `inputEnabled=true`, `objects > 0`, no traps). Remaining skirmish work is AI behavior tuning and map-specific script fixes.
 
 PERF next: runtime profiling now separates real-engine frame time from tracked
 browser D3D8 draw/upload/readback/FBO costs on Mac Chrome/Metal. Before broad
@@ -1084,12 +1081,11 @@ residue and the next frontier.
       parity proof, and the original-runtime WW3D emissive/`COLOR2` proof,
       and other fixed-function lighting/render-state variants) and other W3D
       draw states → GL/shader state.
-- [ ] Audit D3D8 `ZBIAS` enum/range fidelity against the official DX8 docs
-      and d3d8to9/dxvk references before relying on decals/shadows that use it:
-      DX8 documents `D3DRS_ZBIAS` as render state `47` with integer range
-      `0..16`, while `WebAssembly/shims/d3d8.h` currently has the D3D9-era
-      value `195` and `bridge.js` clamps to `15`. Add a z-bias-16 harness
-      proof and rebuild-backed C++ coverage before changing the header.
+- [x] Audit D3D8 `ZBIAS` enum/range fidelity against the official DX8 docs
+      and d3d8to9/dxvk references: resolved by the draw-order fix (commit
+      33641ab) — `d3d8DepthBiasInfo` now uses the D3D8 integer range `0..16`
+      (clamp to 16) and the d3d8to9 24-bit `CalcDepthBias` denominator
+      `(1<<20)-1` in `bridge.js`.
 - [ ] Fixed-function pipeline emulation via generated GLSL ES shaders.
 - [ ] Port/translate `wwshade` shaders + `W3DShaderManager` to GLSL ES.
       Fixed-function `W3DShaderManager::init()` now reaches
@@ -2196,10 +2192,9 @@ and then start with the PROFILE, not with any individual fix.
       `Weapon::createLaser` / point-defense laser behavior from real objects
       and assert the same beam texture draws through normal gameplay.
 - [ ] All skirmish maps load. The harness can now select a specific official
-      multiplayer map with `SKIRMISH_START_MAP`; Alpine Assault and Tournament
-      Desert pass through active match state, including Tournament Desert's
-      supply-dock map script path. Next: run a broader official-map sweep and
-      fix the next map-specific script/render/runtime failure.
+      multiplayer map with `SKIRMISH_START_MAP`; all 47 official maps boot to
+      skirmish with `loadingMap=false`, `inputEnabled=true`, `objects > 0`,
+      no traps. Remaining: AI behavior tuning and map-specific script fixes.
 - [ ] Single-player campaign(s) playable (scripts, objectives, cinematics).
 - [ ] Challenge mode (Zero Hour generals challenge).
 - [ ] Save / load a game (serialization round-trips correctly).
