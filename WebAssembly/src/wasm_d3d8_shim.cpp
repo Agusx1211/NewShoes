@@ -2424,6 +2424,14 @@ public:
 			m_indices->Release();
 			m_indices = nullptr;
 		}
+		if (m_user_pointer_vertex_buffer != nullptr) {
+			m_user_pointer_vertex_buffer->Release();
+			m_user_pointer_vertex_buffer = nullptr;
+		}
+		if (m_user_pointer_index_buffer != nullptr) {
+			m_user_pointer_index_buffer->Release();
+			m_user_pointer_index_buffer = nullptr;
+		}
 		// Release device-held references on all still-bound textures, matching
 		// the DX8 device-reset / teardown contract (see
 		// DX8Wrapper::Invalidate_Cached_Render_States).
@@ -3015,11 +3023,89 @@ public:
 			start_index, primitive_vertex_count(primitive_type, primitive_count));
 		return S_OK;
 	}
-	HRESULT DrawPrimitiveUP(D3DPRIMITIVETYPE, UINT, const void *, UINT) override { return D3DERR_NOTAVAILABLE; }
-	HRESULT DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE, UINT, UINT, UINT, const void *, D3DFORMAT,
-		const void *, UINT) override
+	HRESULT DrawPrimitiveUP(D3DPRIMITIVETYPE primitive_type, UINT primitive_count,
+		const void *vertex_stream_zero_data, UINT vertex_stream_zero_stride) override
 	{
-		return D3DERR_NOTAVAILABLE;
+		++g_state.draw_primitive_calls;
+		g_state.last_draw_primitive_type = primitive_type;
+		g_state.last_draw_start_vertex = 0;
+		g_state.last_draw_primitive_count = primitive_count;
+
+		clear_stream_source_zero();
+		const UINT vertex_count = primitive_vertex_count(primitive_type, primitive_count);
+		if (primitive_count == 0 || vertex_stream_zero_stride == 0 || vertex_count == 0) {
+			return S_OK;
+		}
+		if (vertex_stream_zero_data == nullptr ||
+				vertex_count > std::numeric_limits<UINT>::max() / vertex_stream_zero_stride) {
+			return E_FAIL;
+		}
+		const UINT vertex_byte_size = vertex_count * vertex_stream_zero_stride;
+		if (FAILED(upload_user_pointer_vertex_data(vertex_stream_zero_data, vertex_byte_size)) ||
+				FAILED(upload_sequential_user_pointer_indices(vertex_count))) {
+			return E_FAIL;
+		}
+
+		IDirect3DIndexBuffer8 *saved_indices = m_indices;
+		const UINT saved_base_vertex_index = m_indices_base_vertex_index;
+		if (saved_indices != nullptr) {
+			saved_indices->AddRef();
+		}
+
+		bind_stream_source_zero(m_user_pointer_vertex_buffer, vertex_stream_zero_stride);
+		bind_indices(m_user_pointer_index_buffer, 0);
+		capture_bound_draw(0, vertex_count, 0, vertex_count);
+		draw_bound_indexed_primitive(primitive_type, 0, 0, vertex_count, 0, vertex_count);
+
+		clear_stream_source_zero();
+		clear_indices();
+		m_indices = saved_indices;
+		m_indices_base_vertex_index = saved_indices != nullptr ? saved_base_vertex_index : 0;
+		return S_OK;
+	}
+	HRESULT DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE primitive_type, UINT min_vertex_index, UINT vertex_count,
+		UINT primitive_count, const void *index_data, D3DFORMAT index_data_format,
+		const void *vertex_stream_zero_data, UINT vertex_stream_zero_stride) override
+	{
+		++g_state.draw_indexed_primitive_calls;
+		g_state.last_draw_primitive_type = primitive_type;
+		g_state.last_draw_min_vertex_index = min_vertex_index;
+		g_state.last_draw_vertex_count = vertex_count;
+		g_state.last_draw_start_index = 0;
+		g_state.last_draw_primitive_count = primitive_count;
+
+		clear_stream_source_zero();
+		clear_indices();
+		const UINT index_count = primitive_vertex_count(primitive_type, primitive_count);
+		if (primitive_count == 0 || vertex_stream_zero_stride == 0 || index_count == 0) {
+			return S_OK;
+		}
+		if (index_data_format != D3DFMT_INDEX16 && index_data_format != D3DFMT_INDEX32) {
+			return E_FAIL;
+		}
+		const UINT index_size = index_data_format == D3DFMT_INDEX32 ? 4 : 2;
+		if (index_data == nullptr || vertex_stream_zero_data == nullptr ||
+				index_count > std::numeric_limits<UINT>::max() / index_size ||
+				min_vertex_index > std::numeric_limits<UINT>::max() - vertex_count ||
+				(min_vertex_index + vertex_count) >
+					std::numeric_limits<UINT>::max() / vertex_stream_zero_stride) {
+			return E_FAIL;
+		}
+
+		const UINT index_byte_size = index_count * index_size;
+		const UINT vertex_byte_size = (min_vertex_index + vertex_count) * vertex_stream_zero_stride;
+		if (FAILED(upload_user_pointer_vertex_data(vertex_stream_zero_data, vertex_byte_size)) ||
+				FAILED(upload_user_pointer_index_data(index_data, index_byte_size, index_data_format))) {
+			return E_FAIL;
+		}
+
+		bind_stream_source_zero(m_user_pointer_vertex_buffer, vertex_stream_zero_stride);
+		bind_indices(m_user_pointer_index_buffer, 0);
+		capture_bound_draw(min_vertex_index, vertex_count, 0, index_count);
+		draw_bound_indexed_primitive(primitive_type, 0, min_vertex_index, vertex_count, 0, index_count);
+		clear_stream_source_zero();
+		clear_indices();
+		return S_OK;
 	}
 	HRESULT ProcessVertices(UINT, UINT, UINT, IDirect3DVertexBuffer8 *, DWORD) override
 	{
@@ -3047,14 +3133,7 @@ public:
 		++g_state.set_stream_source_calls;
 		g_state.last_stream_source_stride = stride;
 		if (stream_number == 0) {
-			if (stream_data != nullptr) {
-				stream_data->AddRef();
-			}
-			if (m_stream_source != nullptr) {
-				m_stream_source->Release();
-			}
-			m_stream_source = stream_data;
-			m_stream_source_stride = stride;
+			bind_stream_source_zero(stream_data, stride);
 		}
 		return S_OK;
 	}
@@ -3062,14 +3141,7 @@ public:
 	{
 		++g_state.set_indices_calls;
 		g_state.last_indices_base_vertex_index = base_vertex_index;
-		if (index_data != nullptr) {
-			index_data->AddRef();
-		}
-		if (m_indices != nullptr) {
-			m_indices->Release();
-		}
-		m_indices = index_data;
-		m_indices_base_vertex_index = base_vertex_index;
+		bind_indices(index_data, base_vertex_index);
 		return S_OK;
 	}
 
@@ -3085,6 +3157,182 @@ public:
 	}
 
 private:
+	void bind_stream_source_zero(IDirect3DVertexBuffer8 *stream_data, UINT stride)
+	{
+		if (stream_data != nullptr) {
+			stream_data->AddRef();
+		}
+		if (m_stream_source != nullptr) {
+			m_stream_source->Release();
+		}
+		m_stream_source = stream_data;
+		m_stream_source_stride = stream_data != nullptr ? stride : 0;
+	}
+
+	void clear_stream_source_zero()
+	{
+		bind_stream_source_zero(nullptr, 0);
+	}
+
+	void bind_indices(IDirect3DIndexBuffer8 *index_data, UINT base_vertex_index)
+	{
+		if (index_data != nullptr) {
+			index_data->AddRef();
+		}
+		if (m_indices != nullptr) {
+			m_indices->Release();
+		}
+		m_indices = index_data;
+		m_indices_base_vertex_index = index_data != nullptr ? base_vertex_index : 0;
+	}
+
+	void clear_indices()
+	{
+		bind_indices(nullptr, 0);
+	}
+
+	UINT user_pointer_buffer_capacity(UINT current_capacity, UINT required_capacity) const
+	{
+		constexpr UINT MIN_USER_POINTER_BUFFER_CAPACITY = 4096;
+		if (required_capacity < MIN_USER_POINTER_BUFFER_CAPACITY) {
+			required_capacity = MIN_USER_POINTER_BUFFER_CAPACITY;
+		}
+		if (current_capacity >= required_capacity) {
+			return current_capacity;
+		}
+		if (current_capacity != 0 &&
+				current_capacity <= std::numeric_limits<UINT>::max() / 2) {
+			const UINT doubled = current_capacity * 2;
+			if (doubled >= required_capacity) {
+				return doubled;
+			}
+		}
+		return required_capacity;
+	}
+
+	HRESULT ensure_user_pointer_vertex_buffer(UINT byte_size)
+	{
+		if (byte_size == 0) {
+			return S_OK;
+		}
+		if (m_user_pointer_vertex_buffer != nullptr &&
+				m_user_pointer_vertex_buffer_capacity >= byte_size) {
+			return S_OK;
+		}
+		const UINT previous_capacity = m_user_pointer_vertex_buffer_capacity;
+		if (m_user_pointer_vertex_buffer != nullptr) {
+			m_user_pointer_vertex_buffer->Release();
+			m_user_pointer_vertex_buffer = nullptr;
+			m_user_pointer_vertex_buffer_capacity = 0;
+		}
+		const UINT capacity = user_pointer_buffer_capacity(previous_capacity, byte_size);
+		m_user_pointer_vertex_buffer = new (std::nothrow) BrowserD3DVertexBuffer(
+			this, capacity, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT);
+		if (m_user_pointer_vertex_buffer == nullptr || !m_user_pointer_vertex_buffer->is_valid()) {
+			if (m_user_pointer_vertex_buffer != nullptr) {
+				m_user_pointer_vertex_buffer->Release();
+				m_user_pointer_vertex_buffer = nullptr;
+			}
+			return D3DERR_OUTOFVIDEOMEMORY;
+		}
+		m_user_pointer_vertex_buffer->create_browser_buffer();
+		m_user_pointer_vertex_buffer_capacity = capacity;
+		return S_OK;
+	}
+
+	HRESULT ensure_user_pointer_index_buffer(UINT byte_size, D3DFORMAT format)
+	{
+		if (byte_size == 0) {
+			return S_OK;
+		}
+		if (m_user_pointer_index_buffer != nullptr &&
+				m_user_pointer_index_buffer_capacity >= byte_size &&
+				m_user_pointer_index_buffer_format == format) {
+			return S_OK;
+		}
+		const UINT previous_capacity = m_user_pointer_index_buffer_capacity;
+		if (m_user_pointer_index_buffer != nullptr) {
+			m_user_pointer_index_buffer->Release();
+			m_user_pointer_index_buffer = nullptr;
+			m_user_pointer_index_buffer_capacity = 0;
+		}
+		const UINT capacity = user_pointer_buffer_capacity(previous_capacity, byte_size);
+		m_user_pointer_index_buffer = new (std::nothrow) BrowserD3DIndexBuffer(
+			this, capacity, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, format, D3DPOOL_DEFAULT);
+		if (m_user_pointer_index_buffer == nullptr || !m_user_pointer_index_buffer->is_valid()) {
+			if (m_user_pointer_index_buffer != nullptr) {
+				m_user_pointer_index_buffer->Release();
+				m_user_pointer_index_buffer = nullptr;
+			}
+			return D3DERR_OUTOFVIDEOMEMORY;
+		}
+		m_user_pointer_index_buffer->create_browser_buffer();
+		m_user_pointer_index_buffer_capacity = capacity;
+		m_user_pointer_index_buffer_format = format;
+		return S_OK;
+	}
+
+	HRESULT upload_user_pointer_vertex_data(const void *data, UINT byte_size)
+	{
+		if (data == nullptr || byte_size == 0) {
+			return E_FAIL;
+		}
+		if (FAILED(ensure_user_pointer_vertex_buffer(byte_size))) {
+			return E_FAIL;
+		}
+		BYTE *target = nullptr;
+		if (FAILED(m_user_pointer_vertex_buffer->Lock(0, byte_size, &target, D3DLOCK_DISCARD)) ||
+				target == nullptr) {
+			return E_FAIL;
+		}
+		std::memcpy(target, data, byte_size);
+		return m_user_pointer_vertex_buffer->Unlock();
+	}
+
+	HRESULT upload_user_pointer_index_data(const void *data, UINT byte_size, D3DFORMAT format)
+	{
+		if (data == nullptr || byte_size == 0) {
+			return E_FAIL;
+		}
+		if (FAILED(ensure_user_pointer_index_buffer(byte_size, format))) {
+			return E_FAIL;
+		}
+		BYTE *target = nullptr;
+		if (FAILED(m_user_pointer_index_buffer->Lock(0, byte_size, &target, D3DLOCK_DISCARD)) ||
+				target == nullptr) {
+			return E_FAIL;
+		}
+		std::memcpy(target, data, byte_size);
+		return m_user_pointer_index_buffer->Unlock();
+	}
+
+	HRESULT upload_sequential_user_pointer_indices(UINT index_count)
+	{
+		if (index_count == 0) {
+			return E_FAIL;
+		}
+		const D3DFORMAT format = index_count > std::numeric_limits<std::uint16_t>::max() ?
+			D3DFMT_INDEX32 : D3DFMT_INDEX16;
+		const UINT index_size = format == D3DFMT_INDEX32 ? 4 : 2;
+		if (index_count > std::numeric_limits<UINT>::max() / index_size) {
+			return E_FAIL;
+		}
+		const UINT byte_size = index_count * index_size;
+		m_user_pointer_index_bytes.resize(byte_size);
+		if (format == D3DFMT_INDEX32) {
+			std::uint32_t *indices = reinterpret_cast<std::uint32_t *>(m_user_pointer_index_bytes.data());
+			for (UINT index = 0; index < index_count; ++index) {
+				indices[index] = index;
+			}
+		} else {
+			std::uint16_t *indices = reinterpret_cast<std::uint16_t *>(m_user_pointer_index_bytes.data());
+			for (UINT index = 0; index < index_count; ++index) {
+				indices[index] = static_cast<std::uint16_t>(index);
+			}
+		}
+		return upload_user_pointer_index_data(m_user_pointer_index_bytes.data(), byte_size, format);
+	}
+
 	void capture_bound_draw(UINT first_vertex, UINT vertex_count, UINT first_index, UINT index_count)
 	{
 		g_state.last_draw_vertex_buffer_length = 0;
@@ -3586,6 +3834,12 @@ private:
 	IDirect3DIndexBuffer8 *m_indices = nullptr;
 	UINT m_stream_source_stride = 0;
 	UINT m_indices_base_vertex_index = 0;
+	BrowserD3DVertexBuffer *m_user_pointer_vertex_buffer = nullptr;
+	BrowserD3DIndexBuffer *m_user_pointer_index_buffer = nullptr;
+	UINT m_user_pointer_vertex_buffer_capacity = 0;
+	UINT m_user_pointer_index_buffer_capacity = 0;
+	D3DFORMAT m_user_pointer_index_buffer_format = D3DFMT_INDEX16;
+	std::vector<BYTE> m_user_pointer_index_bytes;
 	DWORD m_vertex_shader = 0;
 };
 

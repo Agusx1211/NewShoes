@@ -3859,6 +3859,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       harness bridge slice only: no generalized FVF declaration decoding,
       sampler-state translation, texture-stage combiner mapping, multi-stage
       blending, or original textured mesh/menu rendering yet.
+- [x] Implement browser-backed D3D8 user-memory primitive draws. The shim now
+      supports `DrawPrimitiveUP` and `DrawIndexedPrimitiveUP` by uploading the
+      caller's transient vertex/index data into reusable browser buffers,
+      preserving D3D8's stream/index clearing side effects and routing both
+      paths through the existing WebGL2 indexed draw bridge. Added
+      `d3d8UserPointerDraw` RPC/smoke coverage: a browser Playwright run
+      verifies two UP draws reach WebGL, produce a colored center pixel, and
+      reuse two transient buffers without public `SetStreamSource`/`SetIndices`
+      calls. This unblocks original W3D paths that use UP draws for shader
+      manager, smudge, scene overlay, and volumetric-shadow quads.
 - [x] Capture D3D8 `SetTextureStageState` writes through the current
       `DrawIndexedPrimitive` bridge payload, including combiner arguments,
       texture-coordinate index, address modes, and min/mag/mip filters for all

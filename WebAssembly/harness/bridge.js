@@ -8936,6 +8936,7 @@ async function loadWasmModule() {
       probeD3D8TextureUpload: module.cwrap("cnc_port_probe_d3d8_texture_upload", "string", []),
       probeD3D8VolumeTextureUpload: module.cwrap("cnc_port_probe_d3d8_volume_texture_upload", "string", []),
       probeD3D8TextureBind: module.cwrap("cnc_port_probe_d3d8_texture_bind", "string", []),
+      probeD3D8UserPointerDraw: module.cwrap("cnc_port_probe_d3d8_user_pointer_draw", "string", []),
       probeD3D8TexturedQuad: module.cwrap("cnc_port_probe_d3d8_textured_quad", "string", []),
       probeD3D8TwoTextureQuad: module.cwrap("cnc_port_probe_d3d8_two_texture_quad", "string", []),
       probeD3D8TwoTextureAlphaQuad: module.cwrap("cnc_port_probe_d3d8_two_texture_alpha_quad", "string", []),
@@ -14648,6 +14649,65 @@ async function rpc(command, payload = {}) {
           browserProbe,
           textureProbe,
           textureDelta,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8UserPointerDraw":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return {
+            ok: false,
+            command,
+            error: "Wasm module unavailable; D3D8 user-pointer draw probe cannot run",
+          };
+        }
+        const beforeSequence = Number(harnessState.graphics.d3d8DrawIndexedSequence ?? 0) >>> 0;
+        const probe = parseModuleState(wasmModule.probeD3D8UserPointerDraw());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const afterSequence = Number(harnessState.graphics.d3d8DrawIndexedSequence ?? 0) >>> 0;
+        const centerPixelOk = pixelHasColor(browserProbe?.centerPixel ?? [0, 0, 0, 0]);
+        const ok = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && afterSequence - beforeSequence === 2
+          && probe.calls?.createVertexBuffer === 0
+          && probe.calls?.createIndexBuffer === 0
+          && probe.calls?.browserBufferCreate === 2
+          && probe.calls?.browserBufferUpdate === 4
+          && probe.calls?.browserBufferRelease === 2
+          && probe.calls?.setStreamSource === 0
+          && probe.calls?.setIndices === 0
+          && probe.calls?.drawPrimitive === 1
+          && probe.calls?.drawIndexed === 1
+          && probe.primitiveDraw?.vertexBufferId !== 0
+          && probe.primitiveDraw?.indexBufferId !== 0
+          && probe.primitiveDraw?.vertexBytes === 64
+          && probe.primitiveDraw?.indexBytes === 8
+          && probe.draw?.primitiveType === D3DPT_TRIANGLELIST
+          && probe.draw?.vertexCount === 4
+          && probe.draw?.primitiveCount === 2
+          && probe.draw?.vertexStride === 16
+          && probe.draw?.vertexShaderFvf === (D3DFVF_XYZ | D3DFVF_DIFFUSE)
+          && browserProbe?.primitiveType === D3DPT_TRIANGLELIST
+          && browserProbe?.vertexCount === 4
+          && browserProbe?.indexCount === 6
+          && browserProbe?.vertexStride === 16
+          && browserProbe?.vertexShaderFvf === (D3DFVF_XYZ | D3DFVF_DIFFUSE)
+          && browserProbe?.vertexLayout?.diffuseOffset === 12
+          && browserProbe?.renderState?.lighting === 0
+          && browserProbe?.renderState?.textureStages?.[0]?.colorOp === D3DTOP_SELECTARG1
+          && browserProbe?.renderState?.textureStages?.[0]?.colorArg1 === D3DTA_DIFFUSE
+          && browserProbe?.renderState?.textureStages?.[0]?.alphaOp === D3DTOP_SELECTARG1
+          && browserProbe?.renderState?.textureStages?.[0]?.alphaArg1 === D3DTA_DIFFUSE
+          && centerPixelOk;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          sequenceDelta: afterSequence - beforeSequence,
+          centerPixelOk,
           state: snapshotState(),
         };
       }

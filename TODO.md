@@ -30,7 +30,7 @@ optimization, take a Mac Chrome/Metal performance capture of a live
 shell-map/campaign/skirmish scene and separate simulation cost from WebGL
 draw/upload/readback cost.
 
-QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), control-bar HUD (controlBarCommandHud, top missing-UI), DXT premultiplied-alpha (DXT2/4) + volume textures.
+QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), control-bar HUD (controlBarCommandHud, top missing-UI), compressed/DXT volume textures.
 
 Dev-box render-verify: symlink worktree `dist/` → main's built `dist/` renders JS-only fixes without the Mac (~4min boot).
 
