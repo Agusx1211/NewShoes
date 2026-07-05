@@ -8055,6 +8055,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `PreRTS.h` for the render/GUI/edge probe objects, `git diff --check`,
       `npm --prefix WebAssembly run build:port`, and
       `EXPECT_WASM=1 node harness/smoke.mjs`.
+- [x] Move the Fable-audited direct real-engine `cnc-port` objects
+      (`GameNetwork/Network.cpp`, `GameClient/Input/Keyboard.cpp`, and
+      `Win32CDManager.cpp`) into the real-header lifecycle runtime. These
+      sources no longer compile as executable-owned shim-layout objects;
+      `zh_gameengine_real_lifecycle_runtime` owns them with real
+      `Common/GlobalData.h`, and `Network.cpp` also uses real
+      `GameLogic/GameLogic.h`, `Common/Xfer.h`, and `Common/GameAudio.h`.
+      Verified with `npm --prefix WebAssembly run build:port`,
+      `ninja -t cleandead`, targeted `ninja -t deps` checks proving the real
+      headers, absence of the old direct `CMakeFiles/cnc-port.dir/...`
+      objects, `git diff --check`, `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs`, and `node
+      WebAssembly/harness/startup_vertical_smoke.mjs`.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an

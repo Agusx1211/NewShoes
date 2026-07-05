@@ -229,27 +229,34 @@ residue and the next frontier.
       per-TU (include order + identical include guards + `#include_next` in
       `shims/PreRTS.h:75` + per-target `WASM_USE_ORIGINAL_GLOBALDATA` /
       `CNC_PORT_REAL_GAMELOGIC_HEADER` defines) with no enforcement.
-      Evidence in today's build: `TheGlobalData` is constructed real-layout
+      Original Fable audit evidence: `TheGlobalData` was constructed real-layout
       (338 fields, `SubsystemInterface` base → vptr) by
       `zh_gameengine_globaldata_runtime`, while ~30 cnc-port TUs — including
       real engine sources `GameNetwork/Network.cpp`,
       `GameClient/Input/Keyboard.cpp`, `Win32CDManager.cpp` (compiled
-      directly into `cnc-port`, which lacks the define) — use the SHIM layout
+      directly into `cnc-port`, which lacked the define) — used the SHIM layout
       (125 fields, no base, no vptr; every offset differs). `Network.cpp`
-      also gets the shim `GameLogic` (0 virtuals, inline `getFrame()` at a
-      fake `m_frame` offset) and makes 10 `TheGlobalData->m_network*` member
+      also got the shim `GameLogic` (0 virtuals, inline `getFrame()` at a
+      fake `m_frame` offset) and made 10 `TheGlobalData->m_network*` member
       reads at wrong offsets — latent garbage that will detonate as fake
       "network bugs" the moment M9 work starts. The shim GlobalData also
       silently drops 213/338 fields (BuildSpeed, RefundPercent, regen,
       camera, the `m_autoFire/Smoke/AflameParticle*` family).
-      Partial fix: the red 2026-07-05 aggregate smoke was caused by this
+      Partial fixes: the red 2026-07-05 aggregate smoke was caused by this
       hazard class, and `wasm_ww3d_scene_probe.cpp`,
       `wasm_ww3d_render_probe.cpp`, `wasm_edge_mapper_probe.cpp`, and
       `wasm_gui_mouse_stream_probe.cpp` now force-include
       `wasm_prerts_real.h` with real engine include dirs; `ninja -t deps`
       verifies the affected render/GUI/edge objects use real `Common/INI.h`,
-      real `Common/GlobalData.h`, and real `PreRTS.h`. The broader
-      seven-header cleanup remains open.
+      real `Common/GlobalData.h`, and real `PreRTS.h`. `Network.cpp`,
+      `GameClient/Input/Keyboard.cpp`, and `Win32CDManager.cpp` have now been
+      moved out of the `cnc-port` executable object list and into
+      `zh_gameengine_real_lifecycle_runtime`; after `ninja -t cleandead`, the
+      old direct `CMakeFiles/cnc-port.dir/...` objects are gone, and deps verify
+      those lifecycle objects use real `Common/GlobalData.h` (plus real
+      `GameLogic/GameLogic.h`, `Xfer.h`, and `GameAudio.h` for `Network.cpp`).
+      The broader seven-header cleanup remains open for probe/local `cnc-port`
+      TUs and linked shim-world libraries still depending on shadow headers.
       Fix: the real headers all already compile under Emscripten — make them
       the ONLY option (define the real-header switches globally, delete the
       shim class bodies for these 7, fix the fallout), and add a CI gate that

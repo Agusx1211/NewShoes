@@ -4569,6 +4569,7 @@ add_library(zh_gameengine_real_lifecycle_runtime STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/GameClientDispatch.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GraphDraw.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/InGameUI.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/Input/Keyboard.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/MapUtil.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/MessageStream/CommandXlat.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/MessageStream/GUICommandTranslator.cpp"
@@ -4605,6 +4606,7 @@ add_library(zh_gameengine_real_lifecycle_runtime STATIC
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/Thread/ThreadUtils.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpyChat.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpyGP.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/Network.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/Common/System/W3DRadar.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/GUICallbacks/W3DControlBar.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/GUICallbacks/W3DMOTD.cpp"
@@ -4620,6 +4622,7 @@ add_library(zh_gameengine_real_lifecycle_runtime STATIC
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DWebBrowser.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameLogic/W3DGameLogic.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameLogic/W3DGhostObject.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32CDManager.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32GameEngine.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/CopyProtection.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/System/Debug Displayers/AudioDebugDisplay.cpp"
@@ -4755,10 +4758,7 @@ add_executable(cnc-port
   src/wasm_ww3d_terrain_probe_stubs.cpp
   src/wasm_ww3d_textured_mesh_probe.cpp
   src/wasm_wwshade_probe.cpp
-  "${GAMEENGINE_GAMENETWORK_DIR}/Network.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/Input/Keyboard.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DFileSystem.cpp"
-  "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32CDManager.cpp"
 )
 
 set_target_properties(cnc-port PROPERTIES
