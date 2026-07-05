@@ -58,6 +58,7 @@
 #include "GameClient/WinInstanceData.h"
 #include "GameClient/WindowLayout.h"
 #include "GameNetwork/GameInfo.h"
+#include "wasm_browser_mouse.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/PartitionManager.h"
 #include "GameLogic/ScriptEngine.h"
@@ -86,6 +87,7 @@ extern LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wparam, LPARAM
 extern HINSTANCE ApplicationHInstance;
 extern HWND ApplicationHWnd;
 extern Bool ApplicationIsWindowed;
+extern Win32Mouse *TheWin32Mouse;
 extern "C" Int cnc_port_main_menu_dont_allow_transitions(void);
 extern "C" Int cnc_port_main_menu_button_pushed(void);
 extern "C" Int cnc_port_main_menu_campaign_selected(void);
@@ -2738,6 +2740,9 @@ bool ensure_real_engine_input_window()
 		NULL,
 		ApplicationHInstance,
 		NULL);
+
+	// Wire TheWin32Mouse so WndProc mouse cases don't silently drop events.
+	TheWin32Mouse = &browser_mouse();
 
 	return real_engine_input_window_ready();
 }
