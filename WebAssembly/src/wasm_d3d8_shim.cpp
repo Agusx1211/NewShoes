@@ -516,6 +516,28 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			power: Module.HEAPF32[offset + 16],
 		};
 	};
+	const current_state_hash = state_hash >>> 0;
+	let cached_state = null;
+	if (Module.__cncPortD3D8LastDrawStateHash === current_state_hash &&
+			Module.__cncPortD3D8LastDrawStatePayload) {
+		cached_state = Module.__cncPortD3D8LastDrawStatePayload;
+	} else {
+		cached_state = {
+			transforms: {
+				world: copyMatrix(world_ptr),
+				view: copyMatrix(view_ptr),
+				projection: copyMatrix(projection_ptr),
+				texture0: copyMatrix(texture0_transform_ptr),
+				texture1: copyMatrix(texture1_transform_ptr),
+			},
+			renderState: copyRenderState(render_state_ptr),
+			clipPlanes: copyClipPlanes(clip_planes_ptr),
+			lights: copyLights(lights_ptr),
+			material: copyMaterial(material_ptr),
+		};
+		Module.__cncPortD3D8LastDrawStateHash = current_state_hash;
+		Module.__cncPortD3D8LastDrawStatePayload = cached_state;
+	}
 	bridge({
 		primitiveType: primitive_type,
 		baseVertexIndex: base_vertex_index >>> 0,
@@ -533,20 +555,14 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 		indexCount: index_count >>> 0,
 		indexSize: index_size >>> 0,
 		transformMask: transform_mask >>> 0,
-		transforms: {
-			world: copyMatrix(world_ptr),
-			view: copyMatrix(view_ptr),
-			projection: copyMatrix(projection_ptr),
-			texture0: copyMatrix(texture0_transform_ptr),
-			texture1: copyMatrix(texture1_transform_ptr),
-		},
-		renderState: copyRenderState(render_state_ptr),
-		clipPlanes: copyClipPlanes(clip_planes_ptr),
-		lights: copyLights(lights_ptr),
-		material: copyMaterial(material_ptr),
-		stateHash: state_hash >>> 0,
+		transforms: cached_state.transforms,
+		renderState: cached_state.renderState,
+		clipPlanes: cached_state.clipPlanes,
+		lights: cached_state.lights,
+		material: cached_state.material,
+		stateHash: current_state_hash,
 	});
-});
+	});
 #else
 void wasm_d3d8_browser_clear_target(unsigned int, unsigned int, double, unsigned int) {}
 void wasm_d3d8_browser_set_viewport(unsigned int, unsigned int, unsigned int, unsigned int, double, double,

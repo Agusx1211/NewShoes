@@ -7752,6 +7752,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       on the shared software renderer. The synced Mac M4 Chrome/Metal run
       (`ANGLE Metal Renderer: Apple M4`) reports 27.8 ms/frame wall average and
       26.3 ms median engine time for the same 15 measured post-settle frames.
+- [x] Cache repeated D3D8 draw state and sampler setup on the browser hot path.
+      The EM_JS `wasm_d3d8_browser_draw_indexed` bridge now reuses the copied
+      transform/render-state/clip-plane/light/material payload when the native
+      draw `stateHash` is unchanged, avoiding repeated WASM-memory copies for
+      same-state render-list runs. The WebGL sampler bridge now keys texture
+      sampler state and skips redundant `texParameteri` calls on cache hits,
+      while preserving full-diagnostic `lastSampler` behavior. Also restored
+      missing local D3D enum constants in `harness/smoke.mjs` so the aggregate
+      smoke reaches its later known `edgeMapperApply` heap-corruption TODO
+      instead of dying in the JS assertions. Verified with
+      `npm --prefix WebAssembly run build:port`, focused Playwright RPCs for
+      `d3d8TexturedQuad`, `d3d8TwoTextureQuad`,
+      `d3d8TwoTextureAlphaQuad`, `d3d8TextureMipChainDraw`,
+      `d3d8NonindexedDraw`, `d3d8PointSpriteDraw`, and
+      `d3d8UserPointerDraw`, plus Mac M4 Chrome/Metal
+      `runtime_frame_profile.mjs`. The 60-frame `realEngineFrameTick`
+      profile improved from the pre-change 35.46 ms/frame wall average
+      (34.68 ms engine) to 33.42 ms/frame wall average (32.64 ms engine).
+      The same Mac build passed the combined shell-map assertion:
+      battleship cutouts 12, chinook cutouts 3, comanche blends 8,
+      shockwave blends 336, and infantry textures 49 draws / 4 unique
+      `#-16711936#zhca_ui*.tga` textures with zero white-only samples.
 
 ### Content completeness (Zero Hour)
 - [x] Restore original `FXList::doFXPos` playback in the linked `cnc-port`
