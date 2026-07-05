@@ -1,0 +1,4 @@
+interface:
+  display_name: "Issue Dump Analysis"
+  short_description: "Decode and replay CnC issue dumps"
+  default_prompt: "Use $issue-dump-analysis to inspect this .cncdump.json report and extract the evidence needed for a fix."

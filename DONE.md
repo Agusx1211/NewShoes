@@ -8034,6 +8034,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       artifacts under `WebAssembly/artifacts/issue-replays/` (the old dump's
       pre-fix `markerFrame:0` correctly limits that smoke to dump ingestion
       rather than exact scene replay).
+- [x] Add repo-local AI skills for issue-dump analysis. Both
+      `.claude/skills/issue-dump-analysis` and
+      `.codex/skills/issue-dump-analysis` now explain how agents should decode
+      `.cncdump.json` / `.cncdump.json.zip` reports, prioritize evidence,
+      extract screenshots/annotations/logs/deep snapshots, compare build
+      metadata, and run `harness/replay_issue_dump.mjs` when the marker frame is
+      useful. Each skill copy includes
+      `scripts/decode_issue_dump.py`, a dependency-free decoder that handles raw
+      JSON or zip reports, writes `summary.json`, extracts embedded PNG/WebM
+      media, redacts base64 data URLs in JSON evidence, and emits timeline/log
+      artifacts. Verified with `quick_validate.py` for both skill copies,
+      `python3 -m py_compile` for both decoder copies, and a real decode smoke
+      against `/tmp/cnc-2026-07-05T18-16-00-194Z-manual.cncdump.json.zip`.
 - [x] Fix `mac_verify.mjs --target=player-control` so it actually starts
       MD_USA01 before waiting for player-control predicates. The generated
       Mac-side probe now reuses the real Win32 message path to reveal the real
