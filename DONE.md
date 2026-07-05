@@ -8042,6 +8042,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       WebAssembly/harness/smoke.mjs` (`ok: true`, W3D scene screenshot set
       refreshed), and `node WebAssembly/harness/startup_vertical_smoke.mjs`
       (`ok: true`, real menu/campaign-start screenshots refreshed).
+- [x] Gate W3D scene singleton weak globals out of the real `cnc-port`
+      runtime. `cnc-port` now defines
+      `CNC_PORT_LINKS_REAL_W3D_SCENE_SINGLETONS`, so
+      `wasm_ww3d_scene_probe.cpp` keeps only extern declarations for
+      `TheParticleSystemManager`, `TheW3DShadowManager`,
+      `TheWritableGlobalData`, and `TheScriptEngine` while probe-only builds
+      still get the weak storage definitions. The direct
+      `wasm_gamenetwork_probe.cpp` weak `TheScriptEngine` storage is also
+      gated behind `CNC_PORT_LINKS_REAL_SCRIPT_ENGINE_SINGLETON`. The weak
+      audit now reports 156 compiled weak definitions, 30 gated-out
+      declarations, and 154 strong-provider overlaps; direct `llvm-nm` checks
+      show the scene and game-network probe objects no longer define those
+      weak globals, while the linked real archives provide the strong
+      `TheParticleSystemManager`, `TheW3DShadowManager`,
+      `TheWritableGlobalData`, and `TheScriptEngine` owners. Verified with
+      `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly --silent run verify:cnc-port-weak-stubs`,
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and
+      `node WebAssembly/harness/startup_vertical_smoke.mjs`.
 - [x] Add a `cnc-port` weak-stub audit for the Fable weak-symbol burn-down.
       `WebAssembly/tools/verify_cnc_port_weak_stubs.mjs` parses the explicit
       `__attribute__((weak))` declarations in the W3D render/scene/terrain

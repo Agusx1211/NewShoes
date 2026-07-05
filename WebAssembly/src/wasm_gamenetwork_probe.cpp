@@ -68,7 +68,9 @@ RecorderClass *TheRecorder __attribute__((weak)) = nullptr;
 GameSpyStagingRoom *TheGameSpyGame __attribute__((weak)) = nullptr;
 RankPoints *TheRankPointValues __attribute__((weak)) = nullptr;
 ScriptActionsInterface *TheScriptActions __attribute__((weak)) = nullptr;
+#ifndef CNC_PORT_LINKS_REAL_SCRIPT_ENGINE_SINGLETON
 ScriptEngine *TheScriptEngine __attribute__((weak)) = nullptr;
+#endif
 Bool LANbuttonPushed __attribute__((weak)) = false;
 Bool LANSocketErrorDetected __attribute__((weak)) = FALSE;
 Int NET_CRC_INTERVAL __attribute__((weak)) = 100;

@@ -164,7 +164,7 @@ void __attribute__((weak)) DoShadows(RenderInfoClass &, Bool)
 }
 
 // NOTE: the real DoParticles (GameEngineDevice W3DParticleSys.cpp) is linked
-// through zh_gameengine_real_lifecycle_runtime and overrides this weak
+// through zh_gameengine_real_object_ini_runtime and overrides this weak
 // counting hook, mirroring the DoShadows tripwire above.
 void __attribute__((weak)) DoParticles(RenderInfoClass &)
 {
@@ -172,10 +172,17 @@ void __attribute__((weak)) DoParticles(RenderInfoClass &)
 }
 #endif
 
+extern ParticleSystemManager *TheParticleSystemManager;
+extern W3DShadowManager *TheW3DShadowManager;
+extern GlobalData *TheWritableGlobalData;
+extern ScriptEngine *TheScriptEngine;
+
+#ifndef CNC_PORT_LINKS_REAL_W3D_SCENE_SINGLETONS
 ParticleSystemManager *TheParticleSystemManager __attribute__((weak)) = nullptr;
 W3DShadowManager *TheW3DShadowManager __attribute__((weak)) = nullptr;
 GlobalData *TheWritableGlobalData __attribute__((weak)) = nullptr;
 ScriptEngine *TheScriptEngine __attribute__((weak)) = nullptr;
+#endif
 
 // Probe-only weak definitions for cold drawable/object/tree branches linked by
 // RTS3DScene::renderOneObject and BaseHeightMap::DoTrees. The AABox path below

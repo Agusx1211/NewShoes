@@ -292,13 +292,23 @@ residue and the next frontier.
       exact final body provenance (Emscripten filters wasm-ld maps and final
       wasm symbols are not enough). As of 2026-07-05 it finds 186 explicit
       weak declarations across the render/scene/terrain probe files plus
-      `wasm_ww3d_terrain_probe_stubs.cpp`, 160 compiled weak definitions, 26
-      gated-out declarations, and 158 strong-provider overlaps to burn down
+      `wasm_ww3d_terrain_probe_stubs.cpp`, 156 compiled weak definitions, 30
+      gated-out declarations, and 154 strong-provider overlaps to burn down
       next. The `DoTrees` / `DoShadows` / `DoParticles` scene extra-pass weak
       hooks are now gated out of `cnc-port` by
-      `CNC_PORT_LINKS_REAL_W3D_SCENE_EXTRA_PASSES`, leaving the real
-      `BaseHeightMap.cpp`, `W3DShadow.cpp`, and `W3DParticleSys.cpp` owners to
-      satisfy the runtime link. (Real-init already deleted the probe
+      `CNC_PORT_LINKS_REAL_W3D_SCENE_EXTRA_PASSES`, and the scene-probe
+      `TheParticleSystemManager`, `TheW3DShadowManager`,
+      `TheWritableGlobalData`, and `TheScriptEngine` weak globals are gated out
+      by `CNC_PORT_LINKS_REAL_W3D_SCENE_SINGLETONS`; the direct
+      `wasm_gamenetwork_probe.cpp` weak `TheScriptEngine` definition is also
+      gated out by `CNC_PORT_LINKS_REAL_SCRIPT_ENGINE_SINGLETON` even though
+      that file is outside the current audit source list. Remaining near-term
+      scene work: burn down the eight compiled `wasm_ww3d_scene_probe.cpp`
+      weak methods/globals that remain (`W3DTreeBuffer::drawTrees`, the
+      `Drawable` color/dirty helpers, `Thing::isKindOf`,
+      `Object::getControllingPlayer`, and
+      `ParticleSystemManager::queueParticleRender`, whose real provider status
+      still needs separate treatment). (Real-init already deleted the probe
       GameClient/Object/GameLogic/Display/LoadScreen/OptionPreferences
       reimplementations and all 26 weak `UNUSED_INI_BLOCK_PARSER` stubs.)
 - [ ] Mount the base Generals archives (`INI.big`, `English.big`,
