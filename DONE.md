@@ -6327,6 +6327,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       Playwright harness verifies both the C++ probe fields and the
       engine-reported window list move the target from hidden to visible
       after `clickOriginalMouseFrameWidget("frameMouseProbeButton")`.
+- [x] Fix in-game input-clicks: set `TheWin32Mouse = &browser_mouse()`
+      in the real-engine-init path (`wasm_real_engine_init.cpp`), moving
+      `BrowserWin32Mouse` and `browser_mouse()` out of anonymous namespace
+      into a shared header (`wasm_browser_mouse.h`) so both
+      `wasm_real_engine_init.cpp` and `wasm_wndproc_probe.cpp` reference the
+      same instance. Before the fix, `TheWin32Mouse` was NULL in the
+      real-engine-init path, so WndProc mouse cases silently dropped events.
+      After the fix, in-game drag box-select produces `selectCount > 0`.
+      E2e-proven via `input_fix_verification.mjs` (mouse.attached === true).
 ---
 
 ## M6 — Playable skirmish (no audio/video)
