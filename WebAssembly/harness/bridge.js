@@ -9208,6 +9208,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_terrain_road_buffer_scene", "string", ["string", "string", "string", "string", "string", "string"]),
       probeWW3DTerrainBridgeBufferScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_bridge_buffer_scene", "string", ["string", "string", "string", "string", "string", "string"]),
+      probeWW3DShaderManager: module.cwrap(
+        "cnc_port_probe_ww3d_shader_manager", "string", []),
       probeWW3DTexturedMesh: module.cwrap(
         "cnc_port_probe_ww3d_textured_mesh", "string", []),
       probeWW3DEmissiveColor2MaterialSource: module.cwrap(
@@ -21085,6 +21087,31 @@ async function rpc(command, payload = {}) {
           bufferDelta,
           bufferProbe: bufferAfter,
           screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dShaderManager":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; WW3D shader manager cannot initialize" };
+        }
+        const probe = parseModuleState(wasmModule.probeWW3DShaderManager());
+        const ok = Boolean(probe.ok)
+          && probe.source === "ww3d_shader_manager_probe"
+          && probe.adapter?.vendorId === 0x121a
+          && probe.adapter?.deviceId === 0x0009
+          && probe.caps?.pixelShaderVersion === 0
+          && probe.chipsetAfter === probe.expectedChipset
+          && probe.canRenderToTexture === true
+          && (probe.shaderPasses?.terrainBase ?? 0) > 0
+          && (probe.shaderPasses?.terrainNoise12 ?? 0) > 0
+          && probe.calls?.createTexture >= 1
+          && probe.calls?.createPixelShaderUnavailable === true;
+        return {
+          ok,
+          command,
+          probe,
           state: snapshotState(),
         };
       }

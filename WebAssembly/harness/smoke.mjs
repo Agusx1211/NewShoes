@@ -5383,6 +5383,21 @@ try {
     throw new Error(`D3D8 DXT texture draw probe failed: ${JSON.stringify(d3d8DxtTextureDrawResult)}`);
   }
 
+  const ww3dShaderManagerResult = await page.evaluate(() => window.CnCPort.rpc("ww3dShaderManager"));
+  if (!ww3dShaderManagerResult.ok
+      || ww3dShaderManagerResult.probe?.source !== "ww3d_shader_manager_probe"
+      || ww3dShaderManagerResult.probe?.adapter?.vendorId !== 0x121a
+      || ww3dShaderManagerResult.probe?.adapter?.deviceId !== 0x0009
+      || ww3dShaderManagerResult.probe?.caps?.pixelShaderVersion !== 0
+      || ww3dShaderManagerResult.probe?.chipsetAfter !== ww3dShaderManagerResult.probe?.expectedChipset
+      || ww3dShaderManagerResult.probe?.canRenderToTexture !== true
+      || ww3dShaderManagerResult.probe?.shaderPasses?.terrainBase <= 0
+      || ww3dShaderManagerResult.probe?.shaderPasses?.terrainNoise12 <= 0
+      || ww3dShaderManagerResult.probe?.calls?.createTexture < 1
+      || ww3dShaderManagerResult.probe?.calls?.createPixelShaderUnavailable !== true) {
+    throw new Error(`WW3D shader manager probe failed: ${JSON.stringify(ww3dShaderManagerResult)}`);
+  }
+
   const aaBoxResult = await page.evaluate(() => window.CnCPort.rpc("ww3dAABox"));
   // AABoxRenderObjClass uses VertexFormatXYZNDUV2: 8 vertices at stride 44,
   // 12 triangles, 36 16-bit indices, and captures world/view/projection

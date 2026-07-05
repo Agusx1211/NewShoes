@@ -1099,6 +1099,11 @@ residue and the next frontier.
       proof and rebuild-backed C++ coverage before changing the header.
 - [ ] Fixed-function pipeline emulation via generated GLSL ES shaders.
 - [ ] Port/translate `wwshade` shaders + `W3DShaderManager` to GLSL ES.
+      Fixed-function `W3DShaderManager::init()` now reaches
+      `canRenderToTexture=true` on the browser D3D8 shim without claiming pixel
+      shader support; remaining work is real screen-filter
+      `filterPreRender`/`filterPostRender` screenshot coverage and actual
+      programmable shader translation.
 - [ ] Matrix/transform stack and viewport/camera setup.
 
 ### Increasing fidelity (each step verified by screenshot)

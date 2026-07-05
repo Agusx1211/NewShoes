@@ -2938,6 +2938,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `EXPECT_WASM=1 node harness/smoke.mjs` through the new assertion. The
       aggregate smoke still fails later at the tracked `edgeMapperApply`
       dlmalloc OOB.
+- [x] Let original `W3DShaderManager::init()` acquire its RTT surface on the
+      browser D3D8 device without advertising unsupported pixel shaders. The
+      D3D8 adapter identity now reports a known fixed-function 3dfx Voodoo5
+      class device (`VendorId=0x121a`, `DeviceId=0x0009`) so original
+      `W3DShaderManager::getChipset()` returns nonzero and can allocate its
+      render-to-texture target, while `PixelShaderVersion` remains `0` and
+      `CreatePixelShader` still returns `D3DERR_NOTAVAILABLE`. Added the
+      `ww3dShaderManager` RPC/smoke proof: browser Playwright verifies
+      `canRenderToTexture=true`, terrain fixed-function shader pass counts are
+      populated (`ST_TERRAIN_BASE=2`, `ST_TERRAIN_BASE_NOISE12=3`,
+      `ST_FLAT_TERRAIN_BASE=1`), at least one D3D render-target texture is
+      created, and the DXT draw probe still passes, proving the adapter
+      identity did not regress compressed texture support.
 - [x] **Prove real select-to-move at MD_USA01 player control on Mac/Metal.**
       The startup vertical interactivity mode now uses the original input
       setting (`GlobalData::m_useAlternateMouse`) to choose the move button,

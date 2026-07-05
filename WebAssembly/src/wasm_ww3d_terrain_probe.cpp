@@ -153,6 +153,7 @@ std::string g_ww3d_terrain_prop_buffer_scene_probe_json;
 std::string g_ww3d_terrain_tree_buffer_scene_probe_json;
 std::string g_ww3d_terrain_road_buffer_scene_probe_json;
 std::string g_ww3d_terrain_bridge_buffer_scene_probe_json;
+std::string g_ww3d_shader_manager_probe_json;
 
 constexpr int kMapCells = 16;
 constexpr int kMapVertices = kMapCells + 1;
@@ -12592,6 +12593,138 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	return target_json.c_str();
 }
 
+const char *run_ww3d_shader_manager_probe(std::string &target_json)
+{
+	initMemoryManager();
+	wasm_d3d8_reset_state();
+
+	GlobalData *old_writable_global_data = TheWritableGlobalData;
+	GlobalData *global_data = NEW GlobalData;
+	bool global_data_ready = global_data != nullptr;
+	if (global_data_ready) {
+		configure_global_data(*global_data);
+		TheWritableGlobalData = global_data;
+	}
+
+	int init_result = WW3D_ERROR_GENERIC;
+	int set_device_result = WW3D_ERROR_GENERIC;
+	HRESULT adapter_result = E_FAIL;
+	HRESULT caps_result = E_FAIL;
+	HRESULT create_pixel_shader_result = E_FAIL;
+	D3DADAPTER_IDENTIFIER8 adapter;
+	D3DCAPS8 caps;
+	::ZeroMemory(&adapter, sizeof(adapter));
+	::ZeroMemory(&caps, sizeof(caps));
+	DWORD pixel_shader_handle = 0;
+	ChipsetType chipset_before = DC_UNKNOWN;
+	ChipsetType chipset_after = DC_UNKNOWN;
+	bool shader_manager_initialized = false;
+	bool can_render_to_texture = false;
+	Int terrain_base_passes = 0;
+	Int terrain_noise12_passes = 0;
+	Int flat_terrain_base_passes = 0;
+
+	init_result = WW3D::Init(nullptr, nullptr, false);
+	if (succeeded(init_result)) {
+		set_device_result = WW3D::Set_Render_Device(0, kViewportWidth, kViewportHeight, 32, 1, false, false, true);
+	}
+
+	if (succeeded(set_device_result)) {
+		IDirect3D8 *direct3d = DX8Wrapper::_Get_D3D8();
+		IDirect3DDevice8 *device = DX8Wrapper::_Get_D3D_Device8();
+		if (direct3d != nullptr) {
+			adapter_result = direct3d->GetAdapterIdentifier(0, D3DENUM_NO_WHQL_LEVEL, &adapter);
+		}
+		if (device != nullptr) {
+			caps_result = device->GetDeviceCaps(&caps);
+			create_pixel_shader_result = device->CreatePixelShader(nullptr, &pixel_shader_handle);
+		}
+
+		chipset_before = W3DShaderManager::getChipset();
+		W3DShaderManager::init();
+		shader_manager_initialized = true;
+		chipset_after = W3DShaderManager::getChipset();
+		can_render_to_texture = W3DShaderManager::canRenderToTexture();
+		terrain_base_passes = W3DShaderManager::getShaderPasses(W3DShaderManager::ST_TERRAIN_BASE);
+		terrain_noise12_passes = W3DShaderManager::getShaderPasses(W3DShaderManager::ST_TERRAIN_BASE_NOISE12);
+		flat_terrain_base_passes = W3DShaderManager::getShaderPasses(W3DShaderManager::ST_FLAT_TERRAIN_BASE);
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const bool ok =
+		global_data_ready &&
+		succeeded(init_result) &&
+		succeeded(set_device_result) &&
+		adapter_result == S_OK &&
+		caps_result == S_OK &&
+		adapter.VendorId == 0x121a &&
+		adapter.DeviceId == 0x0009 &&
+		caps.PixelShaderVersion == 0 &&
+		create_pixel_shader_result == D3DERR_NOTAVAILABLE &&
+		chipset_after == DC_VOODOO5 &&
+		can_render_to_texture &&
+		terrain_base_passes > 0 &&
+		terrain_noise12_passes > 0 &&
+		flat_terrain_base_passes > 0 &&
+		state != nullptr &&
+		state->create_texture_calls >= 1;
+
+	const std::string description_json = json_string(adapter.Description);
+	const std::string driver_json = json_string(adapter.Driver);
+	char buffer[4096];
+	std::snprintf(
+		buffer,
+		sizeof(buffer),
+		"{\"source\":\"ww3d_shader_manager_probe\",\"ok\":%s,"
+		"\"globalDataReady\":%s,\"initResult\":%d,\"setDeviceResult\":%d,"
+		"\"adapterResult\":%ld,\"capsResult\":%ld,\"createPixelShaderResult\":%ld,"
+		"\"adapter\":{\"description\":%s,\"driver\":%s,\"vendorId\":%lu,\"deviceId\":%lu},"
+		"\"caps\":{\"maxSimultaneousTextures\":%lu,\"pixelShaderVersion\":%lu,"
+		"\"vertexShaderVersion\":%lu,\"maxTextureBlendStages\":%lu},"
+		"\"chipsetBefore\":%d,\"chipsetAfter\":%d,\"expectedChipset\":%d,"
+		"\"shaderManagerInitialized\":%s,\"canRenderToTexture\":%s,"
+		"\"shaderPasses\":{\"terrainBase\":%d,\"terrainNoise12\":%d,\"flatTerrainBase\":%d},"
+		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,\"createPixelShaderUnavailable\":%s}}",
+		bool_json(ok),
+		bool_json(global_data_ready),
+		init_result,
+		set_device_result,
+		static_cast<long>(adapter_result),
+		static_cast<long>(caps_result),
+		static_cast<long>(create_pixel_shader_result),
+		description_json.c_str(),
+		driver_json.c_str(),
+		static_cast<unsigned long>(adapter.VendorId),
+		static_cast<unsigned long>(adapter.DeviceId),
+		static_cast<unsigned long>(caps.MaxSimultaneousTextures),
+		static_cast<unsigned long>(caps.PixelShaderVersion),
+		static_cast<unsigned long>(caps.VertexShaderVersion),
+		static_cast<unsigned long>(caps.MaxTextureBlendStages),
+		static_cast<int>(chipset_before),
+		static_cast<int>(chipset_after),
+		static_cast<int>(DC_VOODOO5),
+		bool_json(shader_manager_initialized),
+		bool_json(can_render_to_texture),
+		terrain_base_passes,
+		terrain_noise12_passes,
+		flat_terrain_base_passes,
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_texture_calls : 0,
+		bool_json(create_pixel_shader_result == D3DERR_NOTAVAILABLE));
+	target_json = buffer;
+
+	if (succeeded(init_result)) {
+		if (shader_manager_initialized) {
+			W3DShaderManager::shutdown();
+		}
+		wasm_shutdown_ww3d_probe();
+	}
+
+	TheWritableGlobalData = old_writable_global_data;
+	delete global_data;
+	return target_json.c_str();
+}
+
 const char *run_ww3d_terrain_prop_buffer_render_probe(
 	std::string &target_json,
 	const char *archive_path,
@@ -13180,6 +13313,12 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_bridge_buffer_scene
 		runtime_archive_directory,
 		runtime_archive_mask,
 		map_entry);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shader_manager()
+{
+	return run_ww3d_shader_manager_probe(
+		g_ww3d_shader_manager_probe_json);
 }
 
 }

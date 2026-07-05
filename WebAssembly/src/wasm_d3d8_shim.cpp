@@ -3926,10 +3926,12 @@ public:
 			return E_FAIL;
 		}
 		std::memset(identifier, 0, sizeof(*identifier));
-		std::strncpy(identifier->Driver, "browser-d3d8", sizeof(identifier->Driver) - 1);
-		std::strncpy(identifier->Description, "Browser Direct3D8 compatibility shim",
+		std::strncpy(identifier->Driver, "3dfxvgl", sizeof(identifier->Driver) - 1);
+		std::strncpy(identifier->Description, "Browser Direct3D8 fixed-function shim",
 			sizeof(identifier->Description) - 1);
 		std::strncpy(identifier->DeviceName, "webgl2", sizeof(identifier->DeviceName) - 1);
+		identifier->VendorId = 0x121a;
+		identifier->DeviceId = 0x0009;
 		return S_OK;
 	}
 
