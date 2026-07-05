@@ -1586,9 +1586,9 @@ residue and the next frontier.
       2D/3D pools + listener + delay filter, and teardown runs the original
       destructor (`test:startup-vertical` gates this plus the
       frontier advance to `createFunctionLexicon`@446). Web Audio playback
-      owned by the original manager's event/sample/stream paths in the
-      browser runtime remains open beyond the focused 2D-sample and ADPCM
-      playback proofs.
+      owned by the original manager now reaches real engine-driven 2D and 3D
+      sample events in `test:real-audio-event`; music/stream transitions,
+      broader speech/voice coverage, and Bink-sharing handles remain open.
 - [ ] Replace remaining `Mss.H`/`dsound.h` compatibility paths used by
       `MilesAudioManager.cpp` with a browser-backed audio device that owns real
       sample data, streams, provider/listener state, mixer state, and
@@ -1617,29 +1617,21 @@ residue and the next frontier.
       speaker type, listener position/orientation/velocity, 3D sample
       allocation/user data/file/callback/distance/position/volume/rate/loop/
       offset/occlusion/effects state, start/stop/resume/end callback, and
-      release while still leaving real Web Audio panning and scheduling open.
+      release, and real engine-driven 3D sample scheduling now routes through
+      `PannerNode -> sound3DGainNode` in `test:real-audio-event`.
       The startup probe now also resolves the original `initDelayFilter`
       `AIL_enumerate_filters` lookup to a browser-owned `Mono Delay Filter`
       handle, and the focused original-manager `openDevice()` smoke verifies
       the same provider/listener/sample/filter state from `MilesAudioManager`
       itself, without implementing the filter DSP path.
-- [ ] Harness-drive `MilesAudioManager` through the engine audio event path and
-      assert observable playback state, mixer volume changes, completion
-      callbacks, and 2D/3D sample lifecycle once the original manager 2D
-      sample leg is merged with the browser Web Audio completion harness and
-      the stream/3D playback backends exist; `verify:audio-sound-manager-
-      counters-frontier` now pins the source-only `SoundManager` counter
-      contract that runtime playback must satisfy.
-- [ ] Move original `MilesAudioManager` 2D sample playback into the same
-      browser `cnc-port` runtime/Web Audio backend. The paired
-      `test:browser-audio-miles-webaudio-vertical` gate now runs the original
-      `processRequest -> playAudioEvent -> playSample` smoke beside a browser
-      MSS `AudioBufferSourceNode` completion/release proof in one Playwright
-      harness, but the original manager still runs as a standalone node smoke.
-      Next, link that manager-owned 2D sample leg into the browser runtime so
-      its `AudioFileCache` bytes call `AIL_start_sample`, schedule Web Audio,
-      observe `onended`, drive the MSS EOS callback, and release
-      `PlayingAudio` without the paired standalone/browser split.
+- [ ] Broaden engine-driven `MilesAudioManager` sample playback coverage beyond
+      the two-event harness gate. `test:real-audio-event` now proves
+      `TheAudio->addAudioEvent -> SoundManager::addAudioEvent ->
+      MilesAudioManager::processRequest -> playSample/playSample3D ->
+      AIL_start_sample/AIL_start_3D_sample -> Web Audio` for
+      `CIAAgentVoiceAttack` and `ArtilleryBarrageIncomingWhistle`; remaining
+      work is completion/EOS drainage under sustained gameplay, more unit voice
+      families, and regression coverage in the broader vertical suite.
 - [ ] Decode original audio formats (MP3, PCM WAV, and the current 2,572
       IMA ADPCM WAV payloads) before Web Audio playback; the current
       `verify:audio-format-frontier` / harness `payloadFormats` checks prove
@@ -1666,19 +1658,11 @@ residue and the next frontier.
       (`test:browser-audio-miles-webaudio-vertical`). Remaining: MP3 decode
       and full resolved requested-payload decode/cache storage with real
       engine-driven Web Audio scheduling/lifecycle.
-- [ ] 2D SFX playback with the engine's audio event system (INIAudioEventInfo);
-      `verify:audio-playing-event-state-frontier` now pins the original
-      `PlayingAudio` active-event record, list insertion, completion marker,
-      and release/erase drainage that engine-driven Web Audio playback must
-      preserve.
-- [ ] 3D positional audio (panning/attenuation) tied to camera/world;
-      `verify:audio-3d-position-frontier` now pins the source listener/sample
-      position contract that the browser Web Audio backend must satisfy, and
-      `requestedPayloadDecodeCacheProof.browserAudio3DPositioningProof` now
-      proves one real requested world SFX can render through a browser
-      `PannerNode`. `verify:audio-3d-zoom-volume-frontier` pins the source
-      zoom-volume recompute and already-playing 3D volume re-push path.
-      Engine-driven 3D playback and zoom-volume binding are still open.
+- [ ] Complete dynamic 3D audio behavior after the engine-driven positional
+      sample start path. `test:real-audio-event` proves one real world SFX
+      reaches `PannerNode -> sound3DGainNode`; remaining work is listener
+      updates, attenuation/zoom-volume recompute for already-playing samples,
+      and camera/world movement validation during gameplay.
 - [ ] Music playback + transitions; `verify:audio-music-manager-frontier` now
       pins the source-only `MusicTrack` / `MusicManager` / Miles stream route,
       volume bus, Music.ini parse path, and next/previous/completion state
@@ -1695,17 +1679,11 @@ residue and the next frontier.
       runtime `GainNode` bus updates from source-shaped script/system volume
       values, but the engine/options UI still does not drive that browser
       mixer.
-- [ ] Harness: assert engine-driven audio events fire (state/log), not just
-      sound; the current browser live-event proof logs request/start/ended/
-      completion/release for one real requested decoded payload, and
-      `browserAudioRequestPathRuntime` now proves the ordered
-      `AudioManager::addAudioEvent` / `SoundManager::addAudioEvent` /
-      `MilesAudioManager::processRequest` source contract around live
-      playback for representative 2D sample, 3D sample, and stream playing
-      types. `test:browser-audio-request-path` now isolates that proof as a
-      focused browser smoke and `test:vertical-integrations` includes it as an
-      independent audio vertical. It is still harness-driven rather than
-      executed by the original `MilesAudioManager` runtime.
+- [ ] Harness: add sustained gameplay audio assertions beyond direct event
+      triggering. `test:real-audio-event` proves direct engine-driven 2D/3D
+      sample events; remaining harness work is to observe naturally triggered
+      unit/weapon/UI audio during skirmish/campaign input and assert completion
+      drainage over multiple frames.
 
 ---
 

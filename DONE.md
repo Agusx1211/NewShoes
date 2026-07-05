@@ -6734,6 +6734,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `verify:miles-audio-decode-frontier`, and
       `verify:audio-format-frontier` gate it. This unblocks the 2,572-file
       IMA ADPCM majority of the shipped audio payloads.
+- [x] Play real engine-driven 2D and 3D sample events through Web Audio in
+      `cnc-port`. `cnc_port_real_engine_play_audio_event` now invokes the
+      original `TheAudio->addAudioEvent` path and pumps real frames through
+      `SoundManager::addAudioEvent -> MilesAudioManager::processRequest ->
+      playSample/playSample3D -> AIL_start_sample/AIL_start_3D_sample`.
+      The browser bridge exposes `realEnginePlayAudioEvent` plus
+      `browserMss3DSamplePlaybackRuntime`, and the MSS 3D sample bridge now
+      routes through `PannerNode(HRTF) -> sound3DGainNode` instead of the 2D
+      sound bus. `real_audio_event_smoke.mjs` proves
+      `ArtilleryBarrageIncomingWhistle` as a positional 3D sample and
+      `CIAAgentVoiceAttack` as a non-positional 2D sample, both decoded from
+      mounted shipped audio archives and scheduled by the real engine audio
+      manager. Verified locally with
+      `npm --prefix WebAssembly run test:real-audio-event` and on the Mac M4
+      Metal-backed Chrome with `REAL_AUDIO_BROWSER_EXECUTABLE="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" REAL_AUDIO_BROWSER_ARGS="--enable-gpu --use-angle=metal" /opt/homebrew/bin/node harness/real_audio_event_smoke.mjs`.
 
 ---
 

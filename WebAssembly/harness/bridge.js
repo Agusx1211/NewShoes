@@ -1219,6 +1219,34 @@ function summarizeBrowserMssSamplePlaybackRuntime() {
   };
 }
 
+function summarizeBrowserMss3DSamplePlaybackRuntime() {
+  return {
+    source: "MSS 3D sample Web Audio backend proof",
+    ready:
+      browserAudioRuntime.context?.state === "running" &&
+      browserAudioMixerRuntime.created === true,
+    runtimePlayback: browserMss3DSamplePlaybackRuntime.started > 0,
+    engineDriven: false,
+    mssDriven: true,
+    nextRequired: "realMilesAudioManager3DSamplePlayback",
+    nodeGraph: [
+      "AudioBufferSourceNode",
+      "GainNode",
+      "PannerNode(HRTF)",
+      "sound3DGainNode",
+      "AudioDestinationNode",
+    ],
+    started: browserMss3DSamplePlaybackRuntime.started,
+    stopped: browserMss3DSamplePlaybackRuntime.stopped,
+    ended: browserMss3DSamplePlaybackRuntime.ended,
+    released: browserMss3DSamplePlaybackRuntime.released,
+    activeSources: browserMss3DSamplePlaybackRuntime.activeSources.size,
+    lastEvent: browserMss3DSamplePlaybackRuntime.lastEvent,
+    eventLog: [...browserMss3DSamplePlaybackRuntime.eventLog],
+    lastError: browserMss3DSamplePlaybackRuntime.lastError,
+  };
+}
+
 function summarizeBrowserMssStreamPlaybackRuntime() {
   return {
     source: browserMssStreamPlaybackRuntime.source,
@@ -1446,9 +1474,9 @@ function cncPortMss3DSampleStart(payload, heapu8) {
     browserMss3DSamplePlaybackRuntime.lastError = browserAudioMixerRuntime.lastError;
     return false;
   }
-  const busNode = mixer.busNodes?.sound ?? null;
+  const busNode = mixer.busNodes?.sound3D ?? null;
   if (!busNode) {
-    browserMss3DSamplePlaybackRuntime.lastError = "missing browser audio mixer sound bus";
+    browserMss3DSamplePlaybackRuntime.lastError = "missing browser audio mixer sound3D bus";
     return false;
   }
 
@@ -1511,7 +1539,7 @@ function cncPortMss3DSampleStart(payload, heapu8) {
         "AudioBufferSourceNode",
         "GainNode",
         "PannerNode(HRTF)",
-        "soundGainNode",
+        "sound3DGainNode",
         "AudioDestinationNode",
       ],
     };
@@ -8843,6 +8871,11 @@ async function loadWasmModule() {
         "string",
         ["string", "number", "number", "number", "number", "number"],
       ),
+      realEnginePlayAudioEvent: module.cwrap(
+        "cnc_port_real_engine_play_audio_event",
+        "string",
+        ["string", "number", "number", "number", "number", "number", "number", "number"],
+      ),
       queryDrawables: module.cwrap(
         "cnc_port_query_drawables",
         "string",
@@ -9212,6 +9245,7 @@ function snapshotState() {
     browserAudioRuntime: summarizeBrowserAudioRuntime(),
     browserAudioMixerRuntime: summarizeBrowserAudioMixerRuntime(),
     browserMssSamplePlaybackRuntime: summarizeBrowserMssSamplePlaybackRuntime(),
+    browserMss3DSamplePlaybackRuntime: summarizeBrowserMss3DSamplePlaybackRuntime(),
     browserMssStreamPlaybackRuntime: summarizeBrowserMssStreamPlaybackRuntime(),
     browserAudioLiveEventRuntime: summarizeBrowserAudioLiveEventRuntime(),
     browserAudioRequestPathRuntime: summarizeBrowserAudioRequestPathRuntime(),
@@ -13779,6 +13813,43 @@ async function rpc(command, payload = {}) {
           aborted,
           abortMessage,
           result,
+          state: snapshotState(),
+        };
+      }
+    case "realEnginePlayAudioEvent":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEnginePlayAudioEvent");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEnginePlayAudioEvent", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.realEnginePlayAudioEvent(
+            String(payload.name ?? "ArtilleryBarrageIncomingWhistle"),
+            Number(payload.x ?? 0),
+            Number(payload.y ?? 0),
+            Number(payload.z ?? 0),
+            payload.useViewPosition === false ? 0 : 1,
+            payload.positional === false ? 0 : 1,
+            payload.forceOn === false ? 0 : 1,
+            Number(payload.pumpFrames ?? 2),
+          ));
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        recordLog("real engine play audio event", { aborted, abortMessage, result });
+        return {
+          ok: Boolean(result?.ok) && !aborted,
+          command: "realEnginePlayAudioEvent",
+          aborted,
+          abortMessage,
+          result,
+          browserMssSamplePlaybackRuntime: summarizeBrowserMssSamplePlaybackRuntime(),
+          browserMss3DSamplePlaybackRuntime: summarizeBrowserMss3DSamplePlaybackRuntime(),
+          browserMssStreamPlaybackRuntime: summarizeBrowserMssStreamPlaybackRuntime(),
           state: snapshotState(),
         };
       }
@@ -23501,6 +23572,13 @@ async function rpc(command, payload = {}) {
         ok: true,
         command,
         browserAudioRequestPathRuntime: summarizeBrowserAudioRequestPathRuntime(),
+        state: snapshotState(),
+      };
+    case "browserMss3DSamplePlaybackRuntime":
+      return {
+        ok: true,
+        command,
+        browserMss3DSamplePlaybackRuntime: summarizeBrowserMss3DSamplePlaybackRuntime(),
         state: snapshotState(),
       };
     case "runtimeFileText":

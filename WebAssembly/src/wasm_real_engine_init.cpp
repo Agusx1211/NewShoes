@@ -26,7 +26,12 @@
 #include <windows.h>
 
 #include "Common/GameEngine.h"
+#include "Common/AudioAffect.h"
+#include "Common/AudioEventInfo.h"
+#include "Common/AudioEventRTS.h"
+#include "Common/AudioHandleSpecialValues.h"
 #include "Common/FunctionLexicon.h"
+#include "Common/GameAudio.h"
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
 #include "Common/NameKeyGenerator.h"
@@ -611,6 +616,19 @@ void append_real_particle_state(std::string &json)
 		++emitted;
 	}
 	json += "]}";
+}
+
+const char *audio_type_name(AudioType type)
+{
+	switch (type) {
+		case AT_Music:
+			return "AT_Music";
+		case AT_Streaming:
+			return "AT_Streaming";
+		case AT_SoundEffect:
+			return "AT_SoundEffect";
+	}
+	return "AT_Unknown";
 }
 
 std::string uppercase_ascii(std::string value)
@@ -3581,6 +3599,91 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_do_fx(
 	json += ",\"systemsAfter\":" + std::to_string(systems_after);
 	json += ",\"particlesBefore\":" + std::to_string(particles_before);
 	json += ",\"particlesAfter\":" + std::to_string(particles_after);
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_play_audio_event(
+	const char *event_name,
+	float x,
+	float y,
+	float z,
+	int use_view_position,
+	int positional,
+	int force_on,
+	int pump_frames)
+{
+	static std::string json;
+	const char *requested_name = (event_name != NULL && event_name[0] != '\0')
+		? event_name : "ArtilleryBarrageIncomingWhistle";
+	json = "{\"ok\":false,\"source\":\"real-engine-audio-event\"";
+	json += ",\"requested\":\"" + json_escape(requested_name) + "\"";
+	if (TheAudio == NULL) {
+		json += ",\"guard\":\"TheAudio\"}";
+		return json.c_str();
+	}
+	if (ThePlayerList == NULL || ThePlayerList->getLocalPlayer() == NULL) {
+		json += ",\"guard\":\"ThePlayerList.localPlayer\"}";
+		return json.c_str();
+	}
+
+	Coord3D pos = { x, y, z };
+	if (use_view_position != 0) {
+		if (TheTacticalView == NULL) {
+			json += ",\"guard\":\"TheTacticalView\"}";
+			return json.c_str();
+		}
+		TheTacticalView->getPosition(&pos);
+	} else if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z)) {
+		json += ",\"guard\":\"invalidPosition\"}";
+		return json.c_str();
+	}
+	if (TheTerrainLogic != NULL) {
+		pos.z = TheTerrainLogic->getGroundHeight(pos.x, pos.y);
+	}
+
+	AsciiString name(requested_name);
+	AudioEventRTS event = positional != 0
+		? AudioEventRTS(name, &pos)
+		: AudioEventRTS(name);
+	event.setPlayerIndex(ThePlayerList->getLocalPlayer()->getPlayerIndex());
+	TheAudio->getInfoForAudioEvent(&event);
+	const AudioEventInfo *info = event.getAudioEventInfo();
+	if (info == NULL) {
+		json += ",\"guard\":\"missingAudioEventInfo\"";
+		append_coord3d_fields(json, "position", pos);
+		json += "}";
+		return json.c_str();
+	}
+
+	AudioEventRTS filename_event(event);
+	filename_event.generateFilename();
+	const AsciiString filename = filename_event.getFilename();
+
+	if (force_on != 0) {
+		TheAudio->setOn(TRUE, AudioAffect_All);
+	}
+	const AudioHandle handle = TheAudio->addAudioEvent(&event);
+	if (pump_frames > 0) {
+		run_real_engine_frames(pump_frames);
+	}
+
+	json = "{\"ok\":";
+	json += handle >= AHSV_FirstHandle ? "true" : "false";
+	json += ",\"source\":\"real-engine-audio-event\"";
+	json += ",\"requested\":\"" + json_escape(requested_name) + "\"";
+	json += ",\"handle\":" + std::to_string(static_cast<unsigned long long>(handle));
+	json += ",\"handleAccepted\":";
+	json += handle >= AHSV_FirstHandle ? "true" : "false";
+	json += ",\"audioType\":\"" + json_escape(audio_type_name(info->m_soundType)) + "\"";
+	json += ",\"soundTypeBits\":" + std::to_string(static_cast<unsigned long long>(info->m_type));
+	json += ",\"controlBits\":" + std::to_string(static_cast<unsigned long long>(info->m_control));
+	json += ",\"positional\":";
+	json += event.isPositionalAudio() ? "true" : "false";
+	json += ",\"filename\":\"" + json_escape(filename.str()) + "\"";
+	json += ",\"pumpFrames\":" + std::to_string(pump_frames > 0 ? pump_frames : 0);
+	json += ",\"framesCompleted\":" + std::to_string(g_frame_state.frames_completed);
+	append_coord3d_fields(json, "position", pos);
 	json += "}";
 	return json.c_str();
 }
