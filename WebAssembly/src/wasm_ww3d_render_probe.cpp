@@ -927,17 +927,17 @@ bool load_original_mapped_image_directory(ImageCollection &images, Int texture_s
 		return false;
 	}
 
-	GlobalData *old_global_data = TheGlobalData;
+	GlobalData *old_global_data = TheWritableGlobalData;
 	// Keep browser probes on the mounted shipped INI directory; user-data probing
 	// behind TheGlobalData is not available in this harness.
-	TheGlobalData = nullptr;
+	TheWritableGlobalData = nullptr;
 	try {
 		images.load(texture_size);
 	} catch (...) {
-		TheGlobalData = old_global_data;
+		TheWritableGlobalData = old_global_data;
 		return false;
 	}
-	TheGlobalData = old_global_data;
+	TheWritableGlobalData = old_global_data;
 	return count_mapped_images(images) > 0;
 }
 
@@ -3137,9 +3137,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage()
 	constexpr unsigned int texture_width = 2;
 	constexpr unsigned int texture_height = 2;
 	GlobalData global_data;
-	GlobalData *old_global_data = TheGlobalData;
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
-	TheGlobalData = &global_data;
 	TheWritableGlobalData = &global_data;
 
 	const int init_result = WW3D::Init(nullptr, nullptr, false);
@@ -3260,7 +3258,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage()
 	}
 
 	TheWritableGlobalData = old_writable_global_data;
-	TheGlobalData = old_global_data;
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
 	const WasmD3D8DrawRenderState *draw_state =
@@ -3433,9 +3430,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_video_buffer()
 	constexpr Int draw_bottom = 364;
 
 	GlobalData global_data;
-	GlobalData *old_global_data = TheGlobalData;
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
-	TheGlobalData = &global_data;
 	TheWritableGlobalData = &global_data;
 
 	const int init_result = WW3D::Init(nullptr, nullptr, false);
@@ -3509,7 +3504,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_video_buffer()
 	}
 
 	TheWritableGlobalData = old_writable_global_data;
-	TheGlobalData = old_global_data;
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
 	const WasmD3D8DrawRenderState *draw_state =
@@ -3669,9 +3663,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage_additive(
 	constexpr unsigned int texture_width = 2;
 	constexpr unsigned int texture_height = 2;
 	GlobalData global_data;
-	GlobalData *old_global_data = TheGlobalData;
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
-	TheGlobalData = &global_data;
 	TheWritableGlobalData = &global_data;
 
 	const int init_result = WW3D::Init(nullptr, nullptr, false);
@@ -3792,7 +3784,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage_additive(
 	}
 
 	TheWritableGlobalData = old_writable_global_data;
-	TheGlobalData = old_global_data;
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
 	const WasmD3D8DrawRenderState *draw_state =
@@ -3962,9 +3953,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage_solid()
 	constexpr unsigned int texture_width = 2;
 	constexpr unsigned int texture_height = 2;
 	GlobalData global_data;
-	GlobalData *old_global_data = TheGlobalData;
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
-	TheGlobalData = &global_data;
 	TheWritableGlobalData = &global_data;
 
 	const int init_result = WW3D::Init(nullptr, nullptr, false);
@@ -4085,7 +4074,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage_solid()
 	}
 
 	TheWritableGlobalData = old_writable_global_data;
-	TheGlobalData = old_global_data;
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
 	const WasmD3D8DrawRenderState *draw_state =
@@ -4255,9 +4243,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage_grayscale
 	constexpr unsigned int texture_width = 2;
 	constexpr unsigned int texture_height = 2;
 	GlobalData global_data;
-	GlobalData *old_global_data = TheGlobalData;
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
-	TheGlobalData = &global_data;
 	TheWritableGlobalData = &global_data;
 
 	const int init_result = WW3D::Init(nullptr, nullptr, false);
@@ -4378,7 +4364,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage_grayscale
 	}
 
 	TheWritableGlobalData = old_writable_global_data;
-	TheGlobalData = old_global_data;
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
 	const WasmD3D8DrawRenderState *draw_state =
@@ -4566,7 +4551,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage_file(
 	wasm_d3d8_reset_state();
 
 	GlobalData *probe_global_data = nullptr;
-	GlobalData *old_global_data = nullptr;
 	GlobalData *old_writable_global_data = nullptr;
 	bool global_data_installed = false;
 
@@ -4663,9 +4647,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage_file(
 
 	if (asset_manager != nullptr && texture_dds_available) {
 		probe_global_data = new GlobalData;
-		old_global_data = TheGlobalData;
 		old_writable_global_data = TheWritableGlobalData;
-		TheGlobalData = probe_global_data;
 		TheWritableGlobalData = probe_global_data;
 		global_data_installed = true;
 		display = display_storage.prepare_for_2d_probe();
@@ -4771,7 +4753,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage_file(
 
 	if (global_data_installed) {
 		TheWritableGlobalData = old_writable_global_data;
-		TheGlobalData = old_global_data;
 	}
 	delete probe_global_data;
 
@@ -4998,10 +4979,8 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 	wasm_d3d8_reset_state();
 
 	ImageCollection *old_mapped_image_collection = TheMappedImageCollection;
-	GlobalData *old_global_data = TheGlobalData;
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
 	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
-	TheGlobalData = nullptr;
 	TheWritableGlobalData = nullptr;
 
 	const int init_result = WW3D::Init(nullptr, nullptr, false);
@@ -5318,7 +5297,6 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		TheNameKeyGenerator = old_name_key_generator;
 	}
 	TheWritableGlobalData = old_writable_global_data;
-	TheGlobalData = old_global_data;
 
 	if (succeeded(init_result)) {
 		wasm_shutdown_ww3d_probe();
@@ -5850,7 +5828,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_window_repaint()
 	GlobalData global_data;
 	SubsystemInterfaceList subsystem_list;
 	ProbeFontLibrary font_library;
-	GlobalData *old_global_data = TheGlobalData;
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
 	SubsystemInterfaceList *old_subsystem_list = TheSubsystemList;
 	Display *old_display = TheDisplay;
@@ -5858,7 +5835,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_window_repaint()
 	GameWindowManager *old_window_manager = TheWindowManager;
 	GameWindowTransitionsHandler *old_transition_handler = TheTransitionHandler;
 
-	TheGlobalData = &global_data;
 	TheWritableGlobalData = &global_data;
 	TheSubsystemList = &subsystem_list;
 	TheFontLibrary = &font_library;
@@ -5997,7 +5973,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_window_repaint()
 	TheDisplay = old_display;
 	TheSubsystemList = old_subsystem_list;
 	TheWritableGlobalData = old_writable_global_data;
-	TheGlobalData = old_global_data;
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
 	const WasmD3D8DrawRenderState *draw_state =
@@ -6175,7 +6150,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_window_layout_repaint(const
 	ProbeW3DWindowLayoutFunctionLexicon function_lexicon;
 	ImageCollection *mapped_image_collection = nullptr;
 
-	GlobalData *old_global_data = TheGlobalData;
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
 	SubsystemInterfaceList *old_subsystem_list = TheSubsystemList;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -6200,7 +6174,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_window_layout_repaint(const
 	std::string effective_archive_directory;
 	std::string effective_archive_mask;
 
-	TheGlobalData = &global_data;
 	TheWritableGlobalData = &global_data;
 	TheSubsystemList = &subsystem_list;
 	TheFontLibrary = &font_library;
@@ -6453,7 +6426,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_window_layout_repaint(const
 	TheLocalFileSystem = old_local_file_system;
 	TheSubsystemList = old_subsystem_list;
 	TheWritableGlobalData = old_writable_global_data;
-	TheGlobalData = old_global_data;
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
 	const WasmD3D8DrawRenderState *draw_state =
@@ -6699,7 +6671,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_repaint(co
 	ProbeW3DWindowLayoutFunctionLexicon function_lexicon;
 	ImageCollection *mapped_image_collection = nullptr;
 
-	GlobalData *old_global_data = TheGlobalData;
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
 	SubsystemInterfaceList *old_subsystem_list = TheSubsystemList;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -6724,7 +6695,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_repaint(co
 	std::string effective_archive_directory;
 	std::string effective_archive_mask;
 
-	TheGlobalData = &global_data;
 	TheWritableGlobalData = &global_data;
 	TheSubsystemList = &subsystem_list;
 	TheFontLibrary = &font_library;
@@ -6995,7 +6965,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_repaint(co
 	TheLocalFileSystem = old_local_file_system;
 	TheSubsystemList = old_subsystem_list;
 	TheWritableGlobalData = old_writable_global_data;
-	TheGlobalData = old_global_data;
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
 	const WasmD3D8DrawRenderState *draw_state =
@@ -7242,7 +7211,6 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	GameTextInterface *game_text = nullptr;
 	const Char *old_csf_file = g_csfFile;
 
-	GlobalData *old_global_data = TheGlobalData;
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
 	SubsystemInterfaceList *old_subsystem_list = TheSubsystemList;
 	Display *old_display = TheDisplay;
@@ -7258,7 +7226,6 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	NameKeyGenerator name_key_generator;
 	name_key_generator.init();
 
-	TheGlobalData = &global_data;
 	TheWritableGlobalData = &global_data;
 	TheSubsystemList = &subsystem_list;
 	TheFontLibrary = &font_library;
@@ -9188,7 +9155,6 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	TheDisplay = old_display;
 	TheSubsystemList = old_subsystem_list;
 	TheWritableGlobalData = old_writable_global_data;
-	TheGlobalData = old_global_data;
 
 	if (asset_manager_created && asset_manager != nullptr) {
 		delete asset_manager;

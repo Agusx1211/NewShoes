@@ -190,12 +190,10 @@ residue and the next frontier.
       needs them. The WebGL2 bridge now supports texture-owned D16,
       D16_LOCKABLE, D24X8, and D24S8 depth attachments; D15S1, D24X4S4, and
       D32 currently fail explicitly instead of binding an incorrect FBO.
-- [ ] **`harness/smoke.mjs` (EXPECT_WASM=1) has been red since e97628f**
-      (cursor-CSS probe, pre-dating the swarm window) and stayed red through
-      nine merges — the full regression lane is not being run by anyone. Fix
-      the cursor probe expectation, then make the lane part of the merge
-      routine again; a red gate nobody runs protects nothing (this is how
-      26e79bc landed unnoticed).
+- [ ] Keep `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs` in the regular
+      merge routine now that the aggregate lane is green again (2026-07-05).
+      If it fails, fix or quarantine the specific probe immediately instead of
+      letting the suite become "known red" again.
 - [ ] Restore the real cursor-hide behavior in bridge.js syncBrowserCursor and
       the smoke.mjs cursor-hidden probe assertion once W3DMouse cursor rendering
       (the game's own cursor) is ported — currently hardcoded css="default" to
@@ -222,54 +220,18 @@ residue and the next frontier.
       dispatch.
 - [ ] Migrate the legacy `ensure_booted()` probe boot and its harness gates
       onto the real lifecycle path, deleting probe-local implementations as
-      real init covers them. First known casualty of real ownership: the
-      aggregate `EXPECT_WASM` smoke dies at `edgeMapperApply` with a dlmalloc
-      OOB — but `edgeMapperApply` PASSES in a fresh module (verified by a
-      single-RPC boot), so an EARLIER probe in the aggregate sequence
-      corrupts the wasm heap and edge-mapper is merely the first allocation
-      to trip. Bisect the aggregate probe order to find the corrupter
-      (likely a legacy probe now dispatching into real-owned code — the
-      `DoParticles`/`DoShadows` class), fix or retire it, then re-green the
-      aggregate gate. Related fixed instance: `d6d3b79` linked real
-      `ChallengeGenerals.cpp` into the shim-flavored window-layout lib and
-      the mount-time challenge probe corrupted the stack via the shim-`INI`
-      12-byte/9,272-byte ODR hazard whenever base `INI.big` mounted before
-      `INIZH.big` (bisect-proven; fixed by compiling it real-flavored).
+      real init covers them. The 2026-07-05 aggregate-smoke
+      `edgeMapperApply` dlmalloc OOB is fixed (see DONE.md): edge-mapper was
+      only the first allocation to trip after earlier probe heap corruption,
+      and the live corruptors were mixed real/shim headers in the W3D
+      draw-image and original GUI mouse stream probes. Keep retiring the
+      remaining probe-local implementations instead of adding new smokes.
       RULE: menu/GUI/engine sources added to `cnc-port`-linked libs must go
       in a REAL-header runtime (`zh_gameengine_real_lifecycle_runtime` /
       `zh_gameengine_real_ini_runtime`), never the shim-flavored
-      `zh_window_layout_script_runtime`; `harness/phase3_isolate.mjs` is the
-      mount-crash reproducer/bisection driver.
-      **Diagnosis (confirmed, not fixed):**
-      - Reproducer: `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`
-        — requires full `build:wasm` (~90-target compile); NOT cheap.
-        NOTE: `phase3_isolate.mjs` is a DIFFERENT reproducer
-        (archive-mount/real-init bisection); it does NOT exercise the probe
-        sequence that reaches `edgeMapperApply`.
-      - Prime suspect (medium confidence): the `ww3dDisplayScene` probe
-        (`WebAssembly/harness/smoke.mjs:5458`,
-        `WebAssembly/src/wasm_ww3d_scene_probe.cpp:483`), which calls
-        `WW3D::Render()` → real `DoShadows`/`DoParticles`
-        (`Generals/Code/GameEngineDevice/Source/W3DDevice/GameClient/
-        W3DScene.cpp:798,824`). Root-cause hypothesis: shim-vs-real
-        class-layout ODR hazard —
-        `wasm_ww3d_scene_probe.cpp:27` does `#define protected public` +
-        includes the SHIM `W3DDisplay.h`, while the real
-        `W3DShadow.cpp`/`W3DParticleSys.cpp` (linked via
-        `zh_gameengine_real_object_ini_runtime`, CMakeLists.txt:3418,3422)
-        are compiled against REAL headers; a
-        `RenderInfoClass`/`CameraClass`/`W3DDisplay` layout mismatch makes
-        the real DoShadows/DoParticles misread probe-local data → heap
-        corruption. Same hazard class as the ChallengeGenerals fix
-        (commit d6d3b79).
-      - Proposed fix: compile the scene probe real-flavored (real headers /
-        move to a real-runtime target), OR isolate `ww3dDisplayScene` in a
-        fresh module to confirm it's the corrupter, then bisect the probe
-        order in smoke.mjs to confirm.
-      - Caveat: the probe null-guards
-        TheParticleSystemManager/TheW3DShadowManager
-        (`wasm_ww3d_scene_probe.cpp:500-501`), which argues against — so
-        confirmation via bisection is still needed.
+      `zh_window_layout_script_runtime`; `harness/phase3_isolate.mjs` remains
+      the archive-mount crash reproducer/bisection driver for that separate
+      class.
 - [ ] **Kill the mixed-ABI shim-header system — PROVEN LIVE in the current
       `cnc-port` link** (Fable audit 2026-07-05, verified via
       `ninja -t deps` in `build/wasm`, not inferred). Seven shim headers
@@ -293,6 +255,14 @@ residue and the next frontier.
       "network bugs" the moment M9 work starts. The shim GlobalData also
       silently drops 213/338 fields (BuildSpeed, RefundPercent, regen,
       camera, the `m_autoFire/Smoke/AflameParticle*` family).
+      Partial fix: the red 2026-07-05 aggregate smoke was caused by this
+      hazard class, and `wasm_ww3d_scene_probe.cpp`,
+      `wasm_ww3d_render_probe.cpp`, `wasm_edge_mapper_probe.cpp`, and
+      `wasm_gui_mouse_stream_probe.cpp` now force-include
+      `wasm_prerts_real.h` with real engine include dirs; `ninja -t deps`
+      verifies the affected render/GUI/edge objects use real `Common/INI.h`,
+      real `Common/GlobalData.h`, and real `PreRTS.h`. The broader
+      seven-header cleanup remains open.
       Fix: the real headers all already compile under Emscripten — make them
       the ONLY option (define the real-header switches globally, delete the
       shim class bodies for these 7, fix the fallout), and add a CI gate that
@@ -300,9 +270,9 @@ residue and the next frontier.
       depends on an engine-path-shadowing shim header:
       `ninja -t deps | awk '/: #deps/{tu=$1} /shims\/(Common\/(GlobalData|INI|STLTypedefs|GameAudio|Xfer)|GameLogic\/GameLogic)\.h/{print tu}' | grep cnc-port`
       must come back empty. This is the same hazard class as the confirmed
-      d6d3b79 ChallengeGenerals stack corruption and the suspected
-      edgeMapperApply corrupter above — fix it once at the root instead of
-      per-incident.
+      d6d3b79 ChallengeGenerals stack corruption and the fixed
+      edgeMapperApply aggregate-smoke incident above — fix it once at the
+      root instead of per-incident.
 - [ ] Real-lifecycle residue: browser `ReleaseCrash`/`_exit` does not
       terminate the wasm runtime (teardown semantics differ from Windows);
       `TheVersion` is left null; `GameEngine::execute()` is stepped by

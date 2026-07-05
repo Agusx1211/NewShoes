@@ -7981,6 +7981,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Cross-cutting: harness & verification (ongoing, never "done")
 
+- [x] Re-green the `EXPECT_WASM=1` aggregate smoke after the
+      `edgeMapperApply` heap-corruption failure. Bisection showed
+      `edgeMapperApply` was only the first allocation to trip after earlier
+      probe heap corruption; the live corruptors were mixed real/shim header
+      probe TUs in `wasm_ww3d_render_probe.cpp` and
+      `wasm_gui_mouse_stream_probe.cpp`. Forced `wasm_ww3d_scene_probe.cpp`,
+      `wasm_ww3d_render_probe.cpp`, `wasm_edge_mapper_probe.cpp`, and
+      `wasm_gui_mouse_stream_probe.cpp` through `wasm_prerts_real.h` plus
+      real engine include dirs with `CNC_PORT_REAL_GAMELOGIC_HEADER=1`, and
+      switched render-probe `GlobalData` handoffs to the real
+      `TheWritableGlobalData` singleton. Verified with `ninja -t deps`
+      proving real `Common/INI.h`, real `Common/GlobalData.h`, and real
+      `PreRTS.h` for the render/GUI/edge probe objects, `git diff --check`,
+      `npm --prefix WebAssembly run build:port`, and
+      `EXPECT_WASM=1 node harness/smoke.mjs`.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an

@@ -4806,7 +4806,17 @@ set_source_files_properties(src/wasm_ww3d_terrain_probe.cpp PROPERTIES
 )
 
 set_source_files_properties(src/wasm_ww3d_scene_probe.cpp PROPERTIES
-  COMPILE_OPTIONS "-Wno-non-pod-varargs;-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${MAIN_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${WWSAVELOAD_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR}"
+  COMPILE_DEFINITIONS CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  COMPILE_OPTIONS "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h;-Wno-non-pod-varargs;-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${MAIN_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${WWSAVELOAD_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR}"
+)
+
+set_source_files_properties(
+  src/wasm_edge_mapper_probe.cpp
+  src/wasm_gui_mouse_stream_probe.cpp
+  src/wasm_ww3d_render_probe.cpp
+  PROPERTIES
+  COMPILE_DEFINITIONS CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  COMPILE_OPTIONS "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h;-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${MAIN_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${WWSAVELOAD_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR}"
 )
 
 set_source_files_properties("${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DFileSystem.cpp" PROPERTIES
