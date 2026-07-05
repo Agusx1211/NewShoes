@@ -18,18 +18,16 @@ shares structure and follows behind.
 
 ## Current integration status (autonomous session)
 
-MERGED to `main` (verified, clean, green build): perf-drawstate (state-skip perf + geometry/texture correctness fixes), zorder-fix (RTT null-FBO depth-pollution fix — 0 FBO failures), audio-ini-fix (non-Default audio INI entries → audio subsystem inits).
+MERGED to `main` (verified, clean, green build): perf-drawstate (state-skip perf + geometry/texture correctness fixes), zorder-fix (RTT null-FBO depth-pollution fix — 0 FBO failures), audio-ini-fix (non-Default audio INI entries → audio subsystem inits), live-skirmish-start, mounted MSS stream playback.
 
 VERIFIED pending merge: dxt-cpu-fallback (CPU DXT1/3/5→RGBA fallback for missing textures; decode correctness proven by exact-value tests; render-verify in progress).
 
 READY pending apply: music fix — `feat/audio-ini-fix` commit 78eb925 rewrites `tools/extract_zh_runtime_archives.sh` to stage the REAL 158MB base-Generals Music.big (from `assets/Generals-CD1/Data1.cab`) instead of the 786KB ZH copy-protection stub. Extraction dry-run-verified. Running it fixes the pre-existing phase2 `music_not_loaded_would_set_quitting` gate failure and makes music play. Apply after concurrent harness boots settle.
 
-IN PROGRESS: skirmish-load diagnosis beyond the now-proven real-init
-`TheMapCache`/`MapsZH.big` path. The runtime map-cache probe now shows
-103 maps, 47 official multiplayer maps, `Maps\ShellMapMD\ShellMapMD.map`
-enabled, and first official MP map
-`maps\alpine assault\alpine assault.map`; remaining evidence must come from
-the live skirmish menu/options/start transition.
+RECENT: the live skirmish menu/options/start transition now loads Alpine
+Assault into an active real match on Mac Chrome/Metal. Remaining skirmish work
+is broad compatibility and AI behavior, not the basic map-cache/menu/start
+path.
 
 PERF next: the queued bridge micro-wins are done; before more broad renderer
 optimization, take a Mac Chrome/Metal performance capture of a live
@@ -207,7 +205,13 @@ residue and the next frontier.
       white. Diagnose the real W3D material/texture/shader path for infantry
       models (texture lookup, DXT/decode, UV/FVF/skinning, stage state, and
       lighting/material fallback), then add a harness screenshot/state proof
-      that soldiers render with their intended textures.
+      that soldiers render with their intended textures. Current evidence:
+      the D3D8 bridge now refreshes texture-bound shader uniforms outside the
+      render-state hash cache, but Mac shell-map captures still show white
+      soldier/effect silhouettes; scene draw history points at ready/complete
+      DXT textured transformed draws whose CPU-side diagnostic sampler cannot
+      read texels, so the next step is to capture texture names and isolate the
+      exact draw(s) rather than treating this as a missing archive.
 - [ ] Add remaining D3D8 depth/stencil texture formats if runtime evidence
       needs them. The WebGL2 bridge now supports texture-owned D16,
       D16_LOCKABLE, D24X8, and D24S8 depth attachments; D15S1, D24X4S4, and

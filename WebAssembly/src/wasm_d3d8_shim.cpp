@@ -3274,8 +3274,11 @@ private:
 		capture_draw_render_state();
 		capture_draw_material();
 
-		// Compute FNV-1a 32-bit hash over all render state fields (NOT geometry).
-		// This lets the JS side skip re-applying unchanged GL state.
+		// Compute FNV-1a 32-bit hash over the draw-state fields copied to JS:
+		// transforms, render state, texture-stage state, clip planes, material,
+		// lights, and transform mask. Bound texture identity is intentionally not
+		// part of this hash because the D3D8 device tracks texture binding
+		// separately.
 		constexpr UINT FNV1A_OFFSET_BASIS = 0x811c9dc5u;
 		constexpr UINT FNV1A_PRIME = 0x01000193u;
 		union FloatUInt { float f; UINT u; };

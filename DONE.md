@@ -2830,6 +2830,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       Humvee, an infantry squad, and the complete control bar/radar/money HUD —
       the exact frame that was pure-black before the fix. General lesson for the
       port: WebGL clears respect write masks, D3D clears do not.
+- [x] Refresh texture-bound shader uniforms outside the D3D8 render-state hash
+      cache. The native draw-state hash covers transforms, material, lights,
+      render states, texture-stage states, clip planes, and transform masks, but
+      not `SetTexture` bindings; the browser bridge now keeps a cached applied
+      render-state object while always rebinding the texture availability,
+      sampler-unit, texture-semantic, LOD-bias, and texture-coordinate transform
+      uniforms per draw. Framebuffer/clear paths invalidate the cached applied
+      state alongside the hash, and transformed draw diagnostics now keep a
+      scene-history ring with texture readiness/format/storage metadata so UI
+      quads do not evict the last 3D draw evidence. Verified with
+      `node --check WebAssembly/harness/bridge.js`, `npm --prefix WebAssembly
+      run build:port`, `node harness/shipped_mesh_render_smoke.mjs
+      artifacts/real-assets/W3DZH.big artifacts/real-assets/TexturesZH.big`,
+      `git diff --check`, and Mac Chrome/Metal title verification
+      (`ANGLE Metal Renderer: Apple M4`, 43 subsystems, shell-map screenshot
+      refreshed at `/home/agusx1211/cnc-mac-verify/mac-verify-title.png`).
 - [x] **Prove D3D8 render-target/FBO correctness in the harness.** Added the
       `d3d8RenderTarget` RPC and smoke assertion around the real D3D8 shim path:
       `CreateTexture(D3DUSAGE_RENDERTARGET)` -> `GetSurfaceLevel(0)` ->
