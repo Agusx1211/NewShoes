@@ -67,7 +67,9 @@
 #include "GameLogic/Weapon.h"
 #include "GameLogic/Object.h"
 #include "Common/ThingTemplate.h"
+#include "Common/ThingFactory.h"
 #include "GameClient/ParticleSys.h"
+#include "GameLogic/Module/LaserUpdate.h"
 
 // The original app-level globals GameEngine.cpp expects WinMain.cpp to own.
 // WinMain.cpp is only partially compiled for the browser (WndProc +
@@ -436,6 +438,7 @@ struct RealEngineFrameState {
 
 RealEngineFrameState g_frame_state;
 std::string g_frame_json;
+DrawableID g_probe_laser_drawable_id = INVALID_DRAWABLE_ID;
 
 void reset_frame_texture_diagnostics()
 {
@@ -3547,6 +3550,119 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_tick(int 
 	json += "}";
 	g_frame_json = json;
 	return g_frame_json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_spawn_laser(
+	const char *template_name,
+	float x,
+	float y,
+	float z,
+	int use_view_position,
+	int clamp_to_terrain,
+	float length,
+	float height)
+{
+	static std::string json;
+	const char *requested_name = (template_name != NULL && template_name[0] != '\0')
+		? template_name : "LaserBeam";
+	json = "{\"ok\":false,\"source\":\"real-engine-laser-draw\"";
+	json += ",\"requested\":\"" + json_escape(requested_name) + "\"";
+	if (TheThingFactory == NULL) {
+		json += ",\"guard\":\"TheThingFactory\"}";
+		return json.c_str();
+	}
+	if (TheGameClient == NULL) {
+		json += ",\"guard\":\"TheGameClient\"}";
+		return json.c_str();
+	}
+	if (TheParticleSystemManager == NULL) {
+		json += ",\"guard\":\"TheParticleSystemManager\"}";
+		return json.c_str();
+	}
+
+	Drawable *previous = TheGameClient->findDrawableByID(g_probe_laser_drawable_id);
+	if (previous != NULL) {
+		TheGameClient->destroyDrawable(previous);
+	}
+	g_probe_laser_drawable_id = INVALID_DRAWABLE_ID;
+
+	const ThingTemplate *tmpl = TheThingFactory->findTemplate(AsciiString(requested_name));
+	if (tmpl == NULL) {
+		json += ",\"guard\":\"missingTemplate\"}";
+		return json.c_str();
+	}
+
+	Coord3D center = { x, y, z };
+	if (use_view_position != 0) {
+		if (TheTacticalView == NULL) {
+			json += ",\"guard\":\"TheTacticalView\"}";
+			return json.c_str();
+		}
+		TheTacticalView->getPosition(&center);
+	} else if (!std::isfinite(center.x) || !std::isfinite(center.y) || !std::isfinite(center.z)) {
+		json += ",\"guard\":\"invalidPosition\"}";
+		return json.c_str();
+	}
+	if (clamp_to_terrain != 0 && TheTerrainLogic != NULL) {
+		center.z = TheTerrainLogic->getGroundHeight(center.x, center.y);
+	}
+
+	const Real safe_length = std::isfinite(length) && length > 0.0f ? length : 120.0f;
+	const Real safe_height = std::isfinite(height) ? height : 35.0f;
+	Coord3D start = center;
+	Coord3D end = center;
+	start.x -= safe_length * 0.5f;
+	end.x += safe_length * 0.5f;
+	start.z += safe_height;
+	end.z += safe_height;
+
+	Drawable *draw = TheThingFactory->newDrawable(tmpl);
+	if (draw == NULL) {
+		json += ",\"guard\":\"newDrawable\"}";
+		return json.c_str();
+	}
+	draw->setPosition(&center);
+	g_probe_laser_drawable_id = draw->getID();
+
+	static NameKeyType key_laser_update = NAMEKEY("LaserUpdate");
+	LaserUpdate *update = NULL;
+	for (ClientUpdateModule **client_modules = draw->getClientUpdateModules();
+		client_modules != NULL && *client_modules != NULL; ++client_modules) {
+		if ((*client_modules)->getModuleNameKey() == key_laser_update) {
+			update = static_cast<LaserUpdate *>(*client_modules);
+			break;
+		}
+	}
+	if (update == NULL) {
+		const DrawableID failed_drawable_id = draw->getID();
+		TheGameClient->destroyDrawable(draw);
+		g_probe_laser_drawable_id = INVALID_DRAWABLE_ID;
+		json += ",\"guard\":\"LaserUpdate\"";
+		json += ",\"drawableId\":" + std::to_string(static_cast<Int>(failed_drawable_id));
+		json += "}";
+		return json.c_str();
+	}
+
+	const UnsignedInt systems_before = TheParticleSystemManager->getParticleSystemCount();
+	const UnsignedInt particles_before = TheParticleSystemManager->getParticleCount();
+	update->initLaser(NULL, NULL, &start, &end, AsciiString(""));
+	const UnsignedInt systems_after = TheParticleSystemManager->getParticleSystemCount();
+	const UnsignedInt particles_after = TheParticleSystemManager->getParticleCount();
+
+	json = "{\"ok\":true,\"source\":\"real-engine-laser-draw\"";
+	json += ",\"requested\":\"" + json_escape(requested_name) + "\"";
+	json += ",\"drawableId\":" + std::to_string(static_cast<Int>(g_probe_laser_drawable_id));
+	json += ",\"systemsBefore\":" + std::to_string(systems_before);
+	json += ",\"systemsAfter\":" + std::to_string(systems_after);
+	json += ",\"particlesBefore\":" + std::to_string(particles_before);
+	json += ",\"particlesAfter\":" + std::to_string(particles_after);
+	append_coord3d_fields(json, "center", center);
+	append_coord3d_fields(json, "start", start);
+	append_coord3d_fields(json, "end", end);
+	json += ",\"length\":" + std::to_string(safe_length);
+	json += ",\"height\":" + std::to_string(safe_height);
+	json += "}";
+	return json.c_str();
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_do_fx(

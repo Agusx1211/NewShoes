@@ -9150,6 +9150,11 @@ async function loadWasmModule() {
         "string",
         ["string", "number", "number", "number", "number", "number"],
       ),
+      realEngineSpawnLaser: module.cwrap(
+        "cnc_port_real_engine_spawn_laser",
+        "string",
+        ["string", "number", "number", "number", "number", "number", "number", "number"],
+      ),
       realEngineDetonateWeapon: module.cwrap(
         "cnc_port_real_engine_detonate_weapon",
         "string",
@@ -14151,6 +14156,40 @@ async function rpc(command, payload = {}) {
         return {
           ok: Boolean(result?.ok) && !aborted,
           command: "realEngineDoFX",
+          aborted,
+          abortMessage,
+          result,
+          state: snapshotState(),
+        };
+      }
+    case "realEngineSpawnLaser":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineSpawnLaser");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineSpawnLaser", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.realEngineSpawnLaser(
+            String(payload.templateName ?? "LaserBeam"),
+            Number(payload.x ?? 0),
+            Number(payload.y ?? 0),
+            Number(payload.z ?? 0),
+            payload.useViewPosition === false ? 0 : 1,
+            payload.clampToTerrain === false ? 0 : 1,
+            Number(payload.length ?? 120),
+            Number(payload.height ?? 35),
+          ));
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        recordLog("real engine spawn laser", { aborted, abortMessage, result });
+        return {
+          ok: Boolean(result?.ok) && !aborted,
+          command: "realEngineSpawnLaser",
           aborted,
           abortMessage,
           result,

@@ -2188,6 +2188,11 @@ and then start with the PROFILE, not with any individual fix.
 
 ### Content completeness (Zero Hour)
 - [ ] All factions + all generals' powers/upgrades/units load and play.
+- [ ] Prove gameplay-fired laser weapons through the original object/weapon
+      path. The runtime can now spawn and render shipped `W3DLaserDraw` +
+      `LaserUpdate` beam drawables directly; a later gate should drive
+      `Weapon::createLaser` / point-defense laser behavior from real objects
+      and assert the same beam texture draws through normal gameplay.
 - [ ] All skirmish maps load.
 - [ ] Single-player campaign(s) playable (scripts, objectives, cinematics).
 - [ ] Challenge mode (Zero Hour generals challenge).

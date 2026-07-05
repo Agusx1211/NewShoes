@@ -7853,6 +7853,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       Verified locally with `npm --prefix WebAssembly run test:weapon-impact-fx`
       and on the Mac M4 real-GPU path with Google Chrome reporting
       `ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)`.
+- [x] Prove shipped `W3DLaserDraw` / `LaserUpdate` beam rendering through the
+      linked `cnc-port` runtime. Added the `realEngineSpawnLaser` RPC, which
+      creates a real shipped `ThingTemplate` drawable through
+      `TheThingFactory`, finds its original `LaserUpdate` client module,
+      initializes start/end points, and lets `W3DLaserDraw` update its
+      `SegmentedLineClass` render objects in the normal scene. The new
+      `real_laser_draw_smoke.mjs` harness mounts the real archive set, boots
+      the shell map, spawns `LaserBeam`, advances real frames with full draw
+      diagnostics, asserts 6 `exlaser.tga` scene draws, captures
+      `artifacts/screenshots/real-laser-draw-smoke.png`, and clears the probe
+      drawable through the same runtime command. Verified with
+      `node --check WebAssembly/harness/bridge.js
+      WebAssembly/harness/real_laser_draw_smoke.mjs`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port`, and
+      `npm --prefix WebAssembly run test:real-laser-draw`.
 ### Robustness & compatibility
 ### Base game
 ---
