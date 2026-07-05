@@ -8025,6 +8025,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Cross-cutting: harness & verification (ongoing, never "done")
 
+- [x] Add a `cnc-port` weak-stub audit for the Fable weak-symbol burn-down.
+      `WebAssembly/tools/verify_cnc_port_weak_stubs.mjs` parses the explicit
+      `__attribute__((weak))` declarations in the W3D render/scene/terrain
+      probe files plus `wasm_ww3d_terrain_probe_stubs.cpp`, reads the current
+      `cnc-port` link inputs from `ninja -t query`, inspects probe objects and
+      linked archives with `llvm-nm`, demangles with `llvm-cxxfilt`, and
+      reports compiled weak definitions, source declarations gated out by
+      preprocessor guards, and strong-provider overlaps by mangled symbol. It
+      deliberately does not claim exact final body provenance because Emscripten
+      3.1.6 filters wasm-ld map flags and final wasm symbol visibility is too
+      stripped for the C++ probe names. Current output reports 186 explicit weak
+      declarations, 163 compiled weak definitions, 23 gated-out declarations,
+      and 161 strong-provider overlaps. Verified with `node --check
+      WebAssembly/tools/verify_cnc_port_weak_stubs.mjs`, package JSON parsing,
+      `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly --silent run verify:cnc-port-weak-stubs`,
+      `git diff --check`, and `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs` (`ok: true`, screenshot set written under
+      `WebAssembly/artifacts/screenshots/`).
 - [x] Add the human-play issue-dump flight recorder and report flow. The
       playable `harness/play.html` now has record/report/save/upload controls,
       deep/video toggles, a screenshot annotation dialog, comment/title fields,

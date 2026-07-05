@@ -285,9 +285,18 @@ residue and the next frontier.
       "real .o never pulled" trap of the 18a9ea4 class — enumerate which
       weak bodies actually won at link and gate/retire them; retire `-smoke` targets
       (and their open "promote to real ownership" TODO debt) once the real
-      boot path covers what they proved. (Real-init already deleted the probe
-      GameClient/Object/GameLogic/Display/LoadScreen/OptionPreferences
-      reimplementations and all 26 weak `UNUSED_INI_BLOCK_PARSER` stubs.)
+      boot path covers what they proved. Current audit command:
+      `npm --prefix WebAssembly run verify:cnc-port-weak-stubs` reports the
+      explicit weak declarations compiled into the real `cnc-port` link and
+      the linked strong providers with the same mangled names without claiming
+      exact final body provenance (Emscripten filters wasm-ld maps and final
+      wasm symbols are not enough). As of 2026-07-05 it finds 186 explicit
+      weak declarations across the render/scene/terrain probe files plus
+      `wasm_ww3d_terrain_probe_stubs.cpp`, 163 compiled weak definitions, 23
+      gated-out render declarations, and 161 strong-provider overlaps to burn
+      down next. (Real-init already deleted the probe GameClient/Object/
+      GameLogic/Display/LoadScreen/OptionPreferences reimplementations and
+      all 26 weak `UNUSED_INI_BLOCK_PARSER` stubs.)
 - [ ] Mount the base Generals archives (`INI.big`, `English.big`,
       `Window.big`, `Terrain.big`) when supplied, resolving the known missing
       startup set (`Data\INI\Default\*.ini`, `Rank.ini`, `CommandMap.ini`,
