@@ -1454,11 +1454,22 @@ target_include_directories(zh_gameengine_common_core PUBLIC
   "${WASM_SHIMS_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
   "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
   "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
   "${WWVEGAS_DIR}"
   "${WWLIB_DIR}"
   "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_definitions(zh_gameengine_common_core PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
 )
 
 target_compile_options(zh_gameengine_common_core PRIVATE
@@ -1473,6 +1484,22 @@ target_compile_options(zh_gameengine_common_core PRIVATE
   -Wno-unknown-pragmas
   -Wno-unused-parameter
   -Wno-writable-strings
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
 )
 
 target_link_libraries(zh_gameengine_common_core PUBLIC
@@ -3128,29 +3155,38 @@ add_library(zh_gameengine_debug_runtime STATIC
 )
 
 target_compile_definitions(zh_gameengine_debug_runtime PRIVATE
-  __PRERTS_H__
   ALLOW_DEBUG_UTILS=1
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
   DEBUG_LOGGING=1
   DISABLE_DEBUG_CRASHING=1
   DISABLE_DEBUG_STACKTRACE=1
   DISABLE_DEBUG_PROFILE=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
 )
 
 target_include_directories(zh_gameengine_debug_runtime PUBLIC
   "${WASM_SHIMS_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
   "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
   "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
   "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
   "${WWMATH_DIR}"
   "${WWLIB_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
 )
 
 target_compile_options(zh_gameengine_debug_runtime PRIVATE
   "-include${WASM_SHIMS_DIR}/windows.h"
   "-include${WASM_SHIMS_DIR}/mmsystem.h"
   "-include${WWVEGAS_PORT_SHIM}"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
   -fms-extensions
   -Wall
   -Wextra
@@ -3161,6 +3197,21 @@ target_compile_options(zh_gameengine_debug_runtime PRIVATE
   -Wno-unknown-pragmas
   -Wno-unused-parameter
   -Wno-writable-strings
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
 )
 
 target_link_libraries(zh_gameengine_debug_runtime PUBLIC
@@ -3292,18 +3343,15 @@ set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/System/ParticleSys.cpp
   COMPILE_OPTIONS "-include;${WWVEGAS_PORT_SHIM};-include;${GAMEENGINE_INCLUDE_DIR}/Common/GlobalData.h"
 )
 
-set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/GUI/ChallengeGenerals.cpp" PROPERTIES
-  COMPILE_OPTIONS "-U__PRERTS_H__;-include${WASM_SHIMS_DIR}/PreRTS.h"
-)
-
 target_compile_definitions(zh_gameengine_real_ini_runtime PRIVATE
-  __PRERTS_H__
   ALLOW_DEBUG_UTILS=1
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
   DEBUG_LOGGING=1
   DISABLE_DEBUG_CRASHING=1
   DISABLE_DEBUG_STACKTRACE=1
   DISABLE_DEBUG_PROFILE=1
   NO_DEBUG_CRC=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
   WASM_REAL_INI_AI_METADATA_ONLY=1
   WASM_REAL_INI_LOCOMOTOR_METADATA_ONLY=1
   WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY=1
@@ -3335,6 +3383,7 @@ target_compile_options(zh_gameengine_real_ini_runtime PRIVATE
   "-include${WASM_SHIMS_DIR}/windows.h"
   "-include${WASM_SHIMS_DIR}/mmsystem.h"
   "-include${WWVEGAS_PORT_SHIM}"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
   "-iquote${GAMEENGINE_INCLUDE_DIR}"
   "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
   "-iquote${GAMEENGINE_DIR}/Source"
@@ -3696,18 +3745,15 @@ set(ZH_OBJECT_INI_PRERTS_SOURCES
   "${GAMEENGINE_GAMENETWORK_DIR}/NAT.cpp"
 )
 
-set_source_files_properties(${ZH_OBJECT_INI_PRERTS_SOURCES} PROPERTIES
-  COMPILE_OPTIONS "-U__PRERTS_H__;-include${WASM_SHIMS_DIR}/PreRTS.h"
-)
-
 target_compile_definitions(zh_gameengine_real_object_ini_runtime PRIVATE
-  __PRERTS_H__
   ALLOW_DEBUG_UTILS=1
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
   DEBUG_LOGGING=1
   DISABLE_DEBUG_CRASHING=1
   DISABLE_DEBUG_STACKTRACE=1
   DISABLE_DEBUG_PROFILE=1
   NO_DEBUG_CRC=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
   WASM_REAL_INI_THING_FACTORY_METADATA_ONLY=1
 )
 
@@ -3738,6 +3784,7 @@ target_compile_options(zh_gameengine_real_object_ini_runtime PRIVATE
   "-include${WASM_SHIMS_DIR}/windows.h"
   "-include${WASM_SHIMS_DIR}/mmsystem.h"
   "-include${WWVEGAS_PORT_SHIM}"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
   "-iquote${GAMEENGINE_INCLUDE_DIR}"
   "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
   "-iquote${GAMEENGINE_DIR}/Source"
@@ -3992,11 +4039,24 @@ target_include_directories(zh_gameclient_gui_input_runtime PUBLIC
   "${WASM_SHIMS_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
   "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
   "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
   "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
   "${WWMATH_DIR}"
   "${WWLIB_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_definitions(zh_gameclient_gui_input_runtime PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
 )
 
 target_compile_options(zh_gameclient_gui_input_runtime PRIVATE
@@ -4013,9 +4073,79 @@ target_compile_options(zh_gameclient_gui_input_runtime PRIVATE
   -Wno-unknown-pragmas
   -Wno-unused-parameter
   -Wno-writable-strings
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
 )
 
 target_link_libraries(zh_gameclient_gui_input_runtime PUBLIC
+  zh_gameengine_common_core
+)
+
+add_library(zh_gameclient_gui_input_shim_runtime STATIC
+  "${GAMEENGINE_GAMECLIENT_DIR}/Color.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetCheckBox.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetComboBox.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetHorizontalSlider.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetListBox.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetProgressBar.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetPushButton.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetRadioButton.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetStaticText.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetTabControl.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetTextEntry.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetVerticalSlider.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindow.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowGlobal.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowManager.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowTransitions.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/WindowLayout.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/WinInstanceData.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/Input/Mouse.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/MessageStream/WindowXlat.cpp"
+)
+
+target_include_directories(zh_gameclient_gui_input_shim_runtime PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${WWVEGAS_DIR}"
+  "${WWMATH_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_gameclient_gui_input_shim_runtime PRIVATE
+  -fms-extensions
+  -ffunction-sections
+  -fdata-sections
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_libraries(zh_gameclient_gui_input_shim_runtime PUBLIC
   zh_gameengine_common_core
 )
 
@@ -4448,11 +4578,24 @@ target_include_directories(zh_gamenetwork_core PUBLIC
   "${WASM_SHIMS_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
   "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
   "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
   "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
   "${WWMATH_DIR}"
   "${WWLIB_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_definitions(zh_gamenetwork_core PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
 )
 
 target_compile_options(zh_gamenetwork_core PRIVATE
@@ -4469,6 +4612,22 @@ target_compile_options(zh_gamenetwork_core PRIVATE
   -Wno-unknown-pragmas
   -Wno-unused-parameter
   -Wno-writable-strings
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
 )
 
 target_link_libraries(zh_gamenetwork_core PUBLIC
@@ -4774,7 +4933,7 @@ set_source_files_properties(src/wasm_wndproc_probe.cpp PROPERTIES
 )
 
 set_source_files_properties(src/wasm_win32_gameengine_probe.cpp PROPERTIES
-  COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/PreRTS.h;-include${WASM_SHIMS_DIR}/atlbase.h;${WOL_BROWSER_COMPILE_BRIDGE};-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${MAIN_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/Miles6/include;-iquote${WWAUDIO_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${WWSAVELOAD_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR};-Wno-implicit-exception-spec-mismatch;-Wno-new-returns-null;-Wno-undefined-bool-conversion"
+  COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/PreRTS.h;-include${WASM_SHIMS_DIR}/atlbase.h;-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${MAIN_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/Miles6/include;-iquote${WWAUDIO_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${WWSAVELOAD_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR};-Wno-implicit-exception-spec-mismatch;-Wno-new-returns-null;-Wno-undefined-bool-conversion"
 )
 
 set_source_files_properties(src/wasm_audio_manager_probe.cpp PROPERTIES
@@ -4787,7 +4946,7 @@ set_source_files_properties(src/wasm_startup_singletons_probe.cpp PROPERTIES
 
 set_source_files_properties(src/wasm_real_engine_init.cpp PROPERTIES
   COMPILE_DEFINITIONS CNC_PORT_REAL_GAMELOGIC_HEADER=1
-  COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/windows.h;-include${WASM_SHIMS_DIR}/mmsystem.h;-include${WWVEGAS_PORT_SHIM};-include${WASM_SHIMS_DIR}/atlbase.h;${WOL_BROWSER_COMPILE_BRIDGE};-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${MAIN_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/Miles6/include;-iquote${WWAUDIO_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${WWSAVELOAD_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR};-Wno-implicit-exception-spec-mismatch;-Wno-new-returns-null;-Wno-undefined-bool-conversion;-Wno-unused-parameter"
+  COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/windows.h;-include${WASM_SHIMS_DIR}/mmsystem.h;-include${WWVEGAS_PORT_SHIM};-include${WASM_SHIMS_DIR}/atlbase.h;-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${MAIN_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/Miles6/include;-iquote${WWAUDIO_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${WWSAVELOAD_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR};-Wno-implicit-exception-spec-mismatch;-Wno-new-returns-null;-Wno-undefined-bool-conversion;-Wno-unused-parameter"
 )
 
 set_source_files_properties(src/wasm_function_lexicon_runtime.cpp PROPERTIES
@@ -4827,6 +4986,7 @@ set_source_files_properties("${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClien
 target_compile_definitions(cnc-port PRIVATE
   ALLOW_DEBUG_UTILS=1
   CNC_PORT_LINKS_BROWSER_BENCHMARK_SHIM=1
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
   CNC_PORT_LINKS_REAL_SCRIPT_ACTIONS_SINGLETON=1
   CNC_PORT_LINKS_REAL_SCRIPT_ENGINE_SINGLETON=1
   CNC_PORT_LINKS_REAL_W3D_RENDER_MENU_CALLBACK_HELPERS=1
@@ -4853,6 +5013,7 @@ target_compile_definitions(cnc-port PRIVATE
   DISABLE_DEBUG_CRASHING=1
   DISABLE_DEBUG_STACKTRACE=1
   DISABLE_DEBUG_PROFILE=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
 )
 
 target_compile_options(cnc-port PRIVATE
@@ -4864,6 +5025,25 @@ target_compile_options(cnc-port PRIVATE
   -Wno-non-pod-varargs
   -Wno-register
   -Wno-writable-strings
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_webbrowser_boundary.h"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/Miles6/include"
+  "-iquote${WWAUDIO_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
 )
 
 target_include_directories(cnc-port PRIVATE
@@ -6454,7 +6634,7 @@ set_target_properties(w3d-window-layout-script-smoke PROPERTIES
 )
 
 target_link_libraries(w3d-window-layout-script-smoke PRIVATE
-  zh_gameclient_gui_input_runtime
+  zh_gameclient_gui_input_shim_runtime
 )
 
 target_include_directories(w3d-window-layout-script-smoke PRIVATE

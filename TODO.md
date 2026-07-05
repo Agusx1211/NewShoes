@@ -255,18 +255,27 @@ residue and the next frontier.
       old direct `CMakeFiles/cnc-port.dir/...` objects are gone, and deps verify
       those lifecycle objects use real `Common/GlobalData.h` (plus real
       `GameLogic/GameLogic.h`, `Xfer.h`, and `GameAudio.h` for `Network.cpp`).
-      The broader seven-header cleanup remains open for probe/local `cnc-port`
-      TUs and linked shim-world libraries still depending on shadow headers.
+      Current direct-runtime gate: `cnc-port` now forces the real PreRTS /
+      GlobalData / GameLogic prelude for direct executable objects, removes the
+      fake probe-local `TheGlobalData` provider, adapts the network probe to the
+      original `GameLogic` layout, uses a non-shadow browser `WebBrowser`
+      boundary, and adds `npm --prefix WebAssembly run
+      verify:cnc-port-real-headers`. That audit currently checks 44 direct
+      `cnc-port` objects with 0 direct shadow-header offenders, so new direct
+      regressions fail immediately. It still reports 167 linked archive
+      offenders (informational unless `--fail-on-linked`), so the broader
+      seven-header cleanup remains open for linked shim-world libraries still
+      depending on shadow headers.
       Fix: the real headers all already compile under Emscripten — make them
       the ONLY option (define the real-header switches globally, delete the
       shim class bodies for these 7, fix the fallout), and add a CI gate that
-      runs the deps audit after every build and fails if any cnc-port TU
-      depends on an engine-path-shadowing shim header:
-      `ninja -t deps | awk '/: #deps/{tu=$1} /shims\/(Common\/(GlobalData|INI|STLTypedefs|GameAudio|Xfer)|GameLogic\/GameLogic)\.h/{print tu}' | grep cnc-port`
-      must come back empty. This is the same hazard class as the confirmed
-      d6d3b79 ChallengeGenerals stack corruption and the fixed
-      edgeMapperApply aggregate-smoke incident above — fix it once at the
-      root instead of per-incident.
+      runs the deps audit after every build and fails if any direct
+      `cnc-port` TU depends on an engine-path-shadowing shim header; then burn
+      the linked archive offender count to zero and enable
+      `verify_cnc_port_real_headers.mjs --fail-on-linked`. This is the same
+      hazard class as the confirmed d6d3b79 ChallengeGenerals stack corruption
+      and the fixed edgeMapperApply aggregate-smoke incident above — fix it
+      once at the root instead of per-incident.
 - [ ] Real-lifecycle residue: browser `ReleaseCrash`/`_exit` does not
       terminate the wasm runtime (teardown semantics differ from Windows);
       `TheVersion` is left null; `GameEngine::execute()` is stepped by

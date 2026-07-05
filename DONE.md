@@ -8493,6 +8493,30 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       objects, `git diff --check`, `EXPECT_WASM=1 node
       WebAssembly/harness/smoke.mjs`, and `node
       WebAssembly/harness/startup_vertical_smoke.mjs`.
+- [x] Gate the remaining direct `cnc-port` mixed-ABI shadow-header risk. The
+      executable now forces the real PreRTS / original `GlobalData` /
+      original `GameLogic` prelude for direct objects, removes the probe-local
+      fake `TheGlobalData` provider, adapts the GameNetwork probe to the
+      original `GameLogic` frame layout, and uses a browser-owned
+      `wasm_webbrowser_boundary.h` instead of the shadow
+      `GameNetwork/WOLBrowser/WebBrowser.h` shim. Added
+      `verify_cnc_port_real_headers.mjs` plus the package script
+      `verify:cnc-port-real-headers`; the audit checks the actual Ninja
+      `cnc-port` link inputs and fails direct objects that depend on any of
+      the seven Fable-audited shadow headers. Current output: 44 direct
+      `cnc-port` objects checked, 0 direct offenders, 167 linked archive
+      offenders left as the next open cleanup. Also raised the startup-vertical
+      wrapper stdout buffer so the 2 MB browser result parses instead of
+      truncating at Node's default 1 MiB `spawnSync` cap. Verified with
+      `npm --prefix WebAssembly run build:port`, `npm --prefix WebAssembly run
+      build:startup-vertical`, `npm --prefix WebAssembly run
+      verify:cnc-port-real-headers`, `npm --prefix WebAssembly run
+      verify:cnc-port-weak-stubs`, `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs`, `node
+      WebAssembly/tools/run_startup_vertical_smoke.mjs`,
+      `node --check WebAssembly/tools/verify_cnc_port_real_headers.mjs`,
+      `node --check WebAssembly/tools/run_startup_vertical_smoke.mjs`, and
+      `git diff --check`.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an

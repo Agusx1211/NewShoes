@@ -46,7 +46,9 @@
 #include "GameNetwork/LANGameInfo.h"
 #include "GameNetwork/GameSpy/ThreadUtils.h"
 #include "GameNetwork/NetworkUtil.h"
+#define private public
 #include "GameLogic/GameLogic.h"
+#undef private
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
@@ -307,6 +309,13 @@ __attribute__((weak)) std::string WideCharStringToMultiByte(const WideChar *orig
 }
 
 namespace {
+void set_probe_logic_frame(GameLogic *logic, UnsignedInt frame)
+{
+	if (logic != nullptr) {
+		logic->m_frame = frame;
+	}
+}
+
 char g_browser_network_relay_build_json[4096] = {};
 char g_browser_network_relay_receive_json[4096] = {};
 char g_browser_network_relay_packet_hex[(MAX_PACKET_SIZE * 2) + 1] = {};
@@ -1078,7 +1087,7 @@ public:
 			s_probeLogic = new GameLogic;
 		}
 		s_probeLogic->setGameMode(GAME_NONE);
-		s_probeLogic->setFrameForProbe(0);
+		set_probe_logic_frame(s_probeLogic, 0);
 		m_messageStream.init();
 		m_commandList.init();
 		TheGameLogic = s_probeLogic;
@@ -1111,7 +1120,7 @@ public:
 	void setLogicFrame(UnsignedInt frame)
 	{
 		if (s_probeLogic != nullptr) {
-			s_probeLogic->setFrameForProbe(frame);
+			set_probe_logic_frame(s_probeLogic, frame);
 		}
 	}
 

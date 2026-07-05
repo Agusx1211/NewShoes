@@ -24,7 +24,6 @@
 #include "Win32Device/Common/Win32LocalFileSystem.h"
 
 extern SubsystemInterfaceList *TheSubsystemList; // owned by real GameEngine.cpp
-GlobalData *TheGlobalData = nullptr;
 HWND ApplicationHWnd = NULL;
 const Char *g_strFile = "Data\\Generals.str";
 const Char *g_csfFile = "Data\\%s\\Generals.csf";

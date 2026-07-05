@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const wasmRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const distRoot = path.join(wasmRoot, 'dist');
+const nodeStepMaxBuffer = 64 * 1024 * 1024;
 
 function fail(message) {
   console.error(message);
@@ -32,6 +33,7 @@ function runNodeStep(step, root) {
   const result = spawnSync(process.execPath, [executable], {
     cwd: wasmRoot,
     encoding: 'utf8',
+    maxBuffer: nodeStepMaxBuffer,
   });
 
   if (result.stdout) {
