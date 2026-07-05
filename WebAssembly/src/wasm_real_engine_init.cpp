@@ -39,6 +39,7 @@
 #include "cpudetect.h"
 #include "GameClient/Display.h"
 #include "GameClient/Drawable.h"
+#include "GameClient/FXList.h"
 #include "GameClient/GUICallbacks.h"
 #include "GameClient/GameClient.h"
 #include "GameClient/GameWindow.h"
@@ -53,11 +54,14 @@
 #include "GameClient/WindowLayout.h"
 #include "GameNetwork/GameInfo.h"
 #include "GameLogic/GameLogic.h"
+#include "GameLogic/PartitionManager.h"
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/Scripts.h"
 #include "GameLogic/SidesList.h"
+#include "GameLogic/TerrainLogic.h"
 #include "GameLogic/Object.h"
 #include "Common/ThingTemplate.h"
+#include "GameClient/ParticleSys.h"
 
 // The original app-level globals GameEngine.cpp expects WinMain.cpp to own.
 // WinMain.cpp is only partially compiled for the browser (WndProc +
@@ -549,6 +553,64 @@ void append_real_view_state(std::string &json)
 	json += ",\"zoomLimited\":";
 	json += TheTacticalView->isZoomLimited() ? "true" : "false";
 	json += "}";
+}
+
+void append_real_particle_state(std::string &json)
+{
+	json += ",\"particles\":{";
+	json += "\"managerReady\":";
+	json += TheParticleSystemManager != NULL ? "true" : "false";
+	if (TheParticleSystemManager == NULL) {
+		json += ",\"systemCount\":0,\"particleCount\":0,\"fieldParticleCount\":0,"
+			"\"onScreenParticleCount\":0,\"samples\":[]}";
+		return;
+	}
+
+	json += ",\"systemCount\":" +
+		std::to_string(TheParticleSystemManager->getParticleSystemCount());
+	json += ",\"particleCount\":" +
+		std::to_string(TheParticleSystemManager->getParticleCount());
+	json += ",\"fieldParticleCount\":" +
+		std::to_string(TheParticleSystemManager->getFieldParticleCount());
+	json += ",\"onScreenParticleCount\":" +
+		std::to_string(TheParticleSystemManager->getOnScreenParticleCount());
+	json += ",\"samples\":[";
+	ParticleSystemManager::ParticleSystemList &systems =
+		TheParticleSystemManager->getAllParticleSystems();
+	std::size_t emitted = 0;
+	for (ParticleSystemManager::ParticleSystemListIt it = systems.begin();
+		it != systems.end() && emitted < 8; ++it) {
+		ParticleSystem *system = *it;
+		if (system == NULL) {
+			continue;
+		}
+		if (emitted != 0) {
+			json += ",";
+		}
+		const ParticleSystemTemplate *templ = system->getTemplate();
+		Coord3D pos = { 0.0f, 0.0f, 0.0f };
+		system->getPosition(&pos);
+		json += "{";
+		json += "\"id\":" + std::to_string(static_cast<Int>(system->getSystemID()));
+		json += ",\"template\":\"" +
+			json_escape(templ != NULL ? templ->getName().str() : "") + "\"";
+		json += ",\"particleType\":\"" +
+			json_escape(system->getParticleTypeName().str()) + "\"";
+		json += ",\"particleCount\":" +
+			std::to_string(system->getParticleCount());
+		json += ",\"startFrame\":" +
+			std::to_string(static_cast<unsigned long long>(system->getStartFrame()));
+		json += ",\"destroyed\":";
+		json += system->isDestroyed() ? "true" : "false";
+		json += ",\"usingDrawables\":";
+		json += system->isUsingDrawables() ? "true" : "false";
+		json += ",\"usingStreak\":";
+		json += system->isUsingStreak() ? "true" : "false";
+		append_coord3d_fields(json, "position", pos);
+		json += "}";
+		++emitted;
+	}
+	json += "]}";
 }
 
 std::string uppercase_ascii(std::string value)
@@ -2460,6 +2522,7 @@ void append_real_engine_frame_summary_state(std::string &json)
 	}
 	json += "}";
 	append_real_view_state(json);
+	append_real_particle_state(json);
 	json += ",\"gameplay\":{";
 	if (TheGameLogic != NULL) {
 		json += "\"gameLogicReady\":true";
@@ -2897,6 +2960,7 @@ void append_real_engine_client_state(std::string &json)
 	json += "}";
 
 	append_real_view_state(json);
+	append_real_particle_state(json);
 
 	json += ",\"gameplay\":{";
 	json += "\"gameLogicReady\":";
@@ -3438,6 +3502,87 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_summary(i
 		g_frame_state.exception_caught ? g_frame_state.exception_text.c_str() : "(none)");
 	std::fflush(stdout);
 	return g_frame_json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_do_fx(
+	const char *fx_name,
+	float x,
+	float y,
+	float z,
+	int use_view_position,
+	int clamp_to_terrain)
+{
+	static std::string json;
+	const char *requested_name = (fx_name != NULL && fx_name[0] != '\0')
+		? fx_name : "WeaponFX_MOAB_Blast";
+	json = "{\"ok\":false,\"source\":\"real-engine-fx-list\"";
+	json += ",\"requested\":\"" + json_escape(requested_name) + "\"";
+	if (TheFXListStore == NULL) {
+		json += ",\"guard\":\"TheFXListStore\"}";
+		return json.c_str();
+	}
+	if (TheParticleSystemManager == NULL) {
+		json += ",\"guard\":\"TheParticleSystemManager\"}";
+		return json.c_str();
+	}
+	if (ThePartitionManager == NULL) {
+		json += ",\"guard\":\"ThePartitionManager\"}";
+		return json.c_str();
+	}
+	if (ThePlayerList == NULL || ThePlayerList->getLocalPlayer() == NULL) {
+		json += ",\"guard\":\"ThePlayerList.localPlayer\"}";
+		return json.c_str();
+	}
+
+	const FXList *fx = TheFXListStore->findFXList(requested_name);
+	if (fx == NULL) {
+		json += ",\"guard\":\"missingFXList\"}";
+		return json.c_str();
+	}
+
+	Coord3D pos = { x, y, z };
+	if (use_view_position != 0) {
+		if (TheTacticalView == NULL) {
+			json += ",\"guard\":\"TheTacticalView\"}";
+			return json.c_str();
+		}
+		TheTacticalView->getPosition(&pos);
+	} else if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z)) {
+		json += ",\"guard\":\"invalidPosition\"}";
+		return json.c_str();
+	}
+	if (clamp_to_terrain != 0 && TheTerrainLogic != NULL) {
+		pos.z = TheTerrainLogic->getGroundHeight(pos.x, pos.y);
+	}
+
+	const Player *local_player = ThePlayerList->getLocalPlayer();
+	const Int player_index = local_player != NULL ? local_player->getPlayerIndex() : -1;
+	const CellShroudStatus shroud =
+		ThePartitionManager->getShroudStatusForPlayer(player_index, &pos);
+	if (shroud != CELLSHROUD_CLEAR) {
+		json += ",\"guard\":\"shrouded\"";
+		json += ",\"shroud\":" + std::to_string(static_cast<Int>(shroud));
+		append_coord3d_fields(json, "position", pos);
+		json += "}";
+		return json.c_str();
+	}
+
+	const UnsignedInt systems_before = TheParticleSystemManager->getParticleSystemCount();
+	const UnsignedInt particles_before = TheParticleSystemManager->getParticleCount();
+	FXList::doFXPos(fx, &pos, NULL, 0.0f, NULL, 0.0f);
+	const UnsignedInt systems_after = TheParticleSystemManager->getParticleSystemCount();
+	const UnsignedInt particles_after = TheParticleSystemManager->getParticleCount();
+
+	json = "{\"ok\":true,\"source\":\"real-engine-fx-list\"";
+	json += ",\"requested\":\"" + json_escape(requested_name) + "\"";
+	json += ",\"shroud\":" + std::to_string(static_cast<Int>(shroud));
+	append_coord3d_fields(json, "position", pos);
+	json += ",\"systemsBefore\":" + std::to_string(systems_before);
+	json += ",\"systemsAfter\":" + std::to_string(systems_after);
+	json += ",\"particlesBefore\":" + std::to_string(particles_before);
+	json += ",\"particlesAfter\":" + std::to_string(particles_after);
+	json += "}";
+	return json.c_str();
 }
 
 // Query all drawables in the game client, returning position, ownership, and

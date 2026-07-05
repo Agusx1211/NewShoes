@@ -191,10 +191,12 @@ residue and the next frontier.
       `doGameStart`/`MSG_NEW_GAME`) before the player-control frame loop, OR
       run the startup-vertical interactivity proof on the Mac instead of
       `mac_verify`'s player-control mode.
-- [ ] **Restore visible explosion/weapon impact effects through the real
-      particle/effect path**: current gameplay has missing explosions. Prove
-      the original weapon impact triggers a real particle/system draw and a
-      visible nonblank effect in the harness; do not substitute fake effects.
+- [ ] **Prove weapon-impact explosions through the restored real FX path**:
+      real `FXList::doFXPos` playback now creates particle systems and renders
+      effect textures in `test:real-fx-render`. Next, drive an original weapon
+      projectile/detonation into a target and prove that gameplay impact
+      triggers the same real particle/system draw and visible nonblank effect;
+      do not substitute fake effects.
 - [ ] Add remaining D3D8 depth/stencil texture formats if runtime evidence
       needs them. The WebGL2 bridge now supports texture-owned D16,
       D16_LOCKABLE, D24X8, and D24S8 depth attachments; D15S1, D24X4S4, and

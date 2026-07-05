@@ -7613,6 +7613,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       red `[255,0,0,255]`.
 
 ### Content completeness (Zero Hour)
+- [x] Restore original `FXList::doFXPos` playback in the linked `cnc-port`
+      runtime and prove visible effect rendering through the browser harness.
+      The real INI runtime no longer compiles `GameClient/FXList.cpp` with the
+      `WASM_REAL_INI_FXLIST_METADATA_ONLY` no-op path, and the legacy weak
+      `FXList` compatibility definitions were removed so the original
+      implementation owns playback. `real_fx_render_smoke.mjs` boots the real
+      shell map, triggers shipped `WeaponFX_MOAB_Blast` through the real
+      `TheFXListStore`, and verifies particle-system creation plus effect
+      texture draws (`exwave01.tga`, `exshockwav.tga`, `exexplo03.tga`,
+      etc.) with a screenshot at
+      `WebAssembly/artifacts/screenshots/real-fx-render-smoke.png`. Verified
+      locally with `npm --prefix WebAssembly run test:real-fx-render` and on
+      the Mac M4 real-GPU path (`ANGLE Metal Renderer: Apple M4`) with
+      `REAL_FX_BROWSER_EXECUTABLE` pointing at Google Chrome,
+      `REAL_FX_BROWSER_ARGS="--enable-gpu --use-angle=metal"`, and
+      `/opt/homebrew/bin/node harness/real_fx_render_smoke.mjs`.
 ### Robustness & compatibility
 ### Base game
 ---

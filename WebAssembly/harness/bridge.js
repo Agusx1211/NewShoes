@@ -8838,6 +8838,11 @@ async function loadWasmModule() {
         "string",
         ["number"],
       ),
+      realEngineDoFX: module.cwrap(
+        "cnc_port_real_engine_do_fx",
+        "string",
+        ["string", "number", "number", "number", "number", "number"],
+      ),
       queryDrawables: module.cwrap(
         "cnc_port_query_drawables",
         "string",
@@ -13742,6 +13747,38 @@ async function rpc(command, payload = {}) {
           lastUpdateTarget,
           lastGameLogicStep,
           frame,
+          state: snapshotState(),
+        };
+      }
+    case "realEngineDoFX":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineDoFX");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineDoFX", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.realEngineDoFX(
+            String(payload.name ?? "WeaponFX_MOAB_Blast"),
+            Number(payload.x ?? 0),
+            Number(payload.y ?? 0),
+            Number(payload.z ?? 0),
+            payload.useViewPosition === false ? 0 : 1,
+            payload.clampToTerrain === false ? 0 : 1,
+          ));
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        recordLog("real engine do fx", { aborted, abortMessage, result });
+        return {
+          ok: Boolean(result?.ok) && !aborted,
+          command: "realEngineDoFX",
+          aborted,
+          abortMessage,
+          result,
           state: snapshotState(),
         };
       }

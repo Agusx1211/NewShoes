@@ -38,58 +38,12 @@ ObjectCreationListStore *TheObjectCreationListStore __attribute__((weak)) = null
 PartitionManager *ThePartitionManager __attribute__((weak)) = nullptr;
 TerrainLogic *TheTerrainLogic __attribute__((weak)) = nullptr;
 ThingFactory *TheThingFactory __attribute__((weak)) = nullptr;
-#ifndef WASM_REAL_INI_FXLIST_METADATA_ONLY
-FXListStore *TheFXListStore __attribute__((weak)) = nullptr;
-#endif
 
 // The weak throwing INI block parsers and GameLOD helpers that used to live
 // here shadowed the REAL parsers once the full engine linked into cnc-port
 // (lld resolves an undefined symbol to an already-extracted weak definition
 // instead of pulling the real strong one from a later archive). All of them
 // are owned by original engine translation units now.
-
-#ifndef WASM_REAL_INI_FXLIST_METADATA_ONLY
-FXList::FXList()
-{
-}
-
-FXList::~FXList()
-{
-}
-
-void FXList::clear()
-{
-}
-
-void FXList::doFXPos(
-	const Coord3D *,
-	const Matrix3D *,
-	const Real,
-	const Coord3D *,
-	const Real) const
-{
-}
-
-void FXList::doFXObj(const Object *, const Object *) const
-{
-}
-
-FXListStore::FXListStore()
-{
-}
-
-FXListStore::~FXListStore()
-{
-}
-
-const FXList *FXListStore::findFXList(const char *name) const
-{
-	if (name != nullptr && stricmp(name, "None") == 0) {
-		return nullptr;
-	}
-	return nullptr;
-}
-#endif
 
 // Live-match world-overlay animation referenced by the linked GameLogic
 // object modules (Object.cpp / CrateCollide.cpp / AutoHealBehavior.cpp).
@@ -223,5 +177,4 @@ ThingTemplate *__attribute__((weak)) ThingFactory::findTemplateInternal(
 // OptionPreferences is owned by the real
 // GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/OptionsMenu.cpp linked
 // through zh_gameengine_real_lifecycle_runtime.
-
 
