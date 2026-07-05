@@ -25274,7 +25274,30 @@ canvas.addEventListener("lostpointercapture", (event) => {
     lostEvents: harnessState.browserPointerCapture.lostEvents + 1,
   });
 });
+
+function browserKeyboardEventBelongsToDomUi(event) {
+  if (document.querySelector("#issueModal:not(.hidden)")) {
+    return true;
+  }
+  if (document.querySelector("#overlay:not(.hidden)")) {
+    return true;
+  }
+
+  const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+  const nodes = path.length > 0 ? path : [event.target, document.activeElement];
+  return nodes.some((node) => {
+    if (!(node instanceof Element)) {
+      return false;
+    }
+    return node.isContentEditable ||
+      Boolean(node.closest("input, textarea, select, button, [contenteditable=''], [contenteditable='true']"));
+  });
+}
+
 window.addEventListener("keydown", (event) => {
+  if (browserKeyboardEventBelongsToDomUi(event)) {
+    return;
+  }
   void resumeBrowserAudioRuntime("window.keydown");
   const virtualKey = virtualKeyFromEvent(event);
   if (virtualKey < 0) {
@@ -25304,6 +25327,9 @@ window.addEventListener("keydown", (event) => {
   })();
 });
 window.addEventListener("keyup", (event) => {
+  if (browserKeyboardEventBelongsToDomUi(event)) {
+    return;
+  }
   const virtualKey = virtualKeyFromEvent(event);
   if (virtualKey < 0) {
     return;

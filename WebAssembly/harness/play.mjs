@@ -3,6 +3,8 @@
 // realEngineInit -> realEngineFrame loop). Mouse/keyboard/touch input already
 // flows through bridge.js canvas listeners into the engine's Win32 queue.
 
+import { createIssueRecorder } from "./issue-recorder.mjs";
+
 const archiveSpecs = [
   { name: "INIZH.big" },
   { name: "EnglishZH.big" },
@@ -32,6 +34,7 @@ const startButton = document.querySelector("#start");
 const progressNode = document.querySelector("#progress");
 const fpsNode = document.querySelector("#fps");
 const queryParams = new URLSearchParams(window.location.search);
+const viewportCanvas = document.querySelector("#viewport");
 
 const DEFAULT_LOGIC_FPS = 30;
 const DEFAULT_CATCHUP_FRAMES = 2;
@@ -41,12 +44,55 @@ function positiveNumberParam(name, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+let configuredDiagLevel = "full";
+
+function setConfiguredDiagLevel(level, { updateBridge = true } = {}) {
+  if (level !== "full" && level !== "lite") {
+    return configuredDiagLevel;
+  }
+  configuredDiagLevel = level;
+  if (updateBridge && typeof window.__cncSetDiagLevel === "function") {
+    window.__cncSetDiagLevel(level);
+  }
+  return configuredDiagLevel;
+}
+
+const issueRecorder = createIssueRecorder({
+  canvas: viewportCanvas,
+  archiveSpecs,
+  buildArchives,
+  statusNode: document.querySelector("#dumpStatus"),
+  getConfiguredDiagLevel: () => configuredDiagLevel,
+  setConfiguredDiagLevel,
+  controls: {
+    recordToggle: document.querySelector("#recordToggle"),
+    issueButton: document.querySelector("#issueButton"),
+    saveDumpButton: document.querySelector("#saveDump"),
+    uploadDumpButton: document.querySelector("#uploadDump"),
+    detailToggle: document.querySelector("#deepCapture"),
+    videoToggle: document.querySelector("#videoCapture"),
+    issueModal: document.querySelector("#issueModal"),
+    issueTitle: document.querySelector("#issueTitle"),
+    issueComment: document.querySelector("#issueComment"),
+    issueCancel: document.querySelector("#issueCancel"),
+    issueSave: document.querySelector("#issueSave"),
+    issueClear: document.querySelector("#issueClear"),
+    issueColor: document.querySelector("#issueColor"),
+    issueStroke: document.querySelector("#issueStroke"),
+    screenshotCanvas: document.querySelector("#issueScreenshotCanvas"),
+    annotationCanvas: document.querySelector("#issueAnnotationCanvas"),
+  },
+});
+const recorderReady = issueRecorder.init();
+window.CnCIssueRecorder = issueRecorder;
+
 function report(message) {
   progressNode.textContent = message;
 }
 
 function fail(message, detail) {
   console.error("[play]", message, detail ?? "");
+  issueRecorder.noteFailure(message, detail);
   report(`FAILED: ${message}`);
   startButton.disabled = false;
 }
@@ -110,8 +156,13 @@ async function runFrameLoop(rpc) {
     try {
       // The original execute loop caps update cadence at the INI FPS limit.
       // RPC stepping bypasses that limiter, so pace the human page here until
-      // the runtime owns a browser main loop.
-      result = await rpc("realEngineFrameTick", { frames: framesToRun });
+      // the runtime owns a browser main loop; the recorder can occasionally
+      // swap in the richer frame-summary RPC for issue evidence.
+      const command = issueRecorder.frameCommand();
+      const payload = { frames: framesToRun };
+      const startedAt = performance.now();
+      result = await rpc(command, payload);
+      issueRecorder.noteFrame(command, payload, result, performance.now() - startedAt);
       if (result?.ok !== true) {
         running = false;
         fail("engine frame failed", result);
@@ -150,17 +201,26 @@ async function runFrameLoop(rpc) {
 async function start() {
   startButton.disabled = true;
   try {
+    await recorderReady;
     report("waiting for wasm bridge...");
-    const rpc = await waitForRpc();
+    const rawRpc = await waitForRpc();
+    const rpc = issueRecorder.setRpc(rawRpc);
 
     // The human-playable page runs graphics diagnostics in "lite" mode: skip the
     // per-draw readPixels GPU syncs / probe objects / draw-history that the
     // regression harness needs but the player does not. Add ?diag=full to
     // restore full diagnostics for debugging.
     const diagParam = queryParams.get("diag");
-    if (diagParam !== "full" && typeof window.__cncSetDiagLevel === "function") {
-      window.__cncSetDiagLevel("lite");
+    if (diagParam !== "full") {
+      setConfiguredDiagLevel("lite");
+    } else {
+      setConfiguredDiagLevel("full");
     }
+    issueRecorder.setSessionContext({
+      phase: "starting",
+      diagLevel: configuredDiagLevel,
+      pageParams: Object.fromEntries(queryParams),
+    });
 
     report("downloading + mounting 21 archives (~1.3 GB, be patient)...");
     const mount = await rpc("mountArchives", {
@@ -172,17 +232,35 @@ async function start() {
       fail("archive mount failed", mount?.error ?? mount?.archiveSet);
       return;
     }
+    issueRecorder.setSessionContext({
+      phase: "archives-mounted",
+      archiveMount: {
+        path: mount.path ?? "/assets/real-init",
+        archiveCount: mount.archiveSet?.archiveCount,
+        bytes: mount.archiveSet?.bytes,
+        names: mount.archiveSet?.archives?.map((archive) => archive.name),
+      },
+    });
 
     // The original ShellMapMD 3D menu background (the naval scene) renders
     // through the real lifecycle since fd3cea3 — default on; ?shellmap=0
     // opts out (faster boot, static backdrop).
     const shellMap = queryParams.get("shellmap") !== "0";
+    issueRecorder.setSessionContext({ shellMap });
     report(`running real GameEngine::init() (~10-30s, shell map ${shellMap ? "on" : "off"})...`);
     const init = await rpc("realEngineInit", { runDirectory: "/assets/real-init", shellMap });
     if (init?.ok !== true || init?.frontier?.initReturned !== true) {
       fail("real engine init failed", init);
       return;
     }
+    issueRecorder.setSessionContext({
+      phase: "engine-initialized",
+      init: {
+        ok: init.ok,
+        initReturned: init.frontier?.initReturned,
+        subsystemCount: init.frontier?.subsystemsCompleted,
+      },
+    });
 
     // The original menu waits for mouse movement before finishing its
     // first-run reveal transition; post two synthetic moves so the buttons
@@ -198,7 +276,12 @@ async function start() {
 
     report("");
     overlay.classList.add("hidden");
-    document.querySelector("#viewport").focus();
+    issueRecorder.setSessionContext({ phase: "running" });
+    viewportCanvas.focus();
+    if (new URLSearchParams(window.location.search).get("replay") === "1") {
+      issueRecorder.setSessionContext({ phase: "replay-ready" });
+      return;
+    }
     await runFrameLoop(rpc);
   } catch (error) {
     fail(error?.message ?? String(error), error);
@@ -323,8 +406,23 @@ function toggleConsole() {
   }
 }
 
+function keyboardEventBelongsToEditableTarget(event) {
+  const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+  const nodes = path.length > 0 ? path : [event.target, document.activeElement];
+  return nodes.some((node) => {
+    if (!(node instanceof Element)) {
+      return false;
+    }
+    return node.isContentEditable ||
+      Boolean(node.closest("input, textarea, select, button, [contenteditable=''], [contenteditable='true']"));
+  });
+}
+
 consoleToggle.addEventListener("click", toggleConsole);
 window.addEventListener("keydown", (event) => {
+  if (keyboardEventBelongsToEditableTarget(event)) {
+    return;
+  }
   if (event.key === "`" && !event.repeat) {
     toggleConsole();
   }

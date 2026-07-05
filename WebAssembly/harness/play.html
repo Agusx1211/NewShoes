@@ -64,6 +64,145 @@
         z-index: 20;
       }
       #consolePanel.hidden { display: none; }
+      .debugControls {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.35rem;
+        min-width: 10rem;
+      }
+      .debugControls button {
+        font: inherit;
+        font-size: 12px;
+        padding: 0.25rem 0.45rem;
+        cursor: pointer;
+        background: #20262c;
+        color: #d6e2ea;
+        border: 1px solid #43515e;
+        border-radius: 3px;
+      }
+      .debugControls button.active {
+        background: #633322;
+        border-color: #b66a4a;
+      }
+      .debugOptions {
+        grid-column: 1 / -1;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem 0.75rem;
+        color: #aebdcc;
+        font: 11px/1.35 ui-monospace, monospace;
+      }
+      .debugOptions input {
+        vertical-align: middle;
+      }
+      #dumpStatus {
+        grid-column: 1 / -1;
+        min-height: 1rem;
+        color: #9fb6c9;
+        font-size: 11px;
+      }
+      #issueModal {
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+        display: grid;
+        place-items: center;
+        background: rgba(0, 0, 0, 0.72);
+        padding: 1rem;
+      }
+      #issueModal.hidden { display: none; }
+      #issueDialog {
+        width: min(96vw, 980px);
+        max-height: 94vh;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        gap: 0.6rem;
+        background: #111820;
+        color: #dbe7ef;
+        border: 1px solid #40515f;
+        border-radius: 6px;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+        padding: 0.8rem;
+      }
+      .issueTop {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 0.6rem;
+        align-items: center;
+      }
+      .issueTop input[type="text"] {
+        min-width: 0;
+        background: #0c1117;
+        border: 1px solid #3c4a55;
+        color: #eef6fb;
+        border-radius: 3px;
+        padding: 0.45rem 0.55rem;
+        font: 13px/1.4 ui-monospace, monospace;
+      }
+      .issuePaint {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        color: #b9c7d1;
+        font: 12px/1.3 ui-monospace, monospace;
+      }
+      .issueCanvasWrap {
+        position: relative;
+        min-height: 0;
+        overflow: auto;
+        background: #05070a;
+        border: 1px solid #2a343d;
+      }
+      #issueScreenshotCanvas,
+      #issueAnnotationCanvas {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      #issueAnnotationCanvas {
+        position: absolute;
+        inset: 0;
+        cursor: crosshair;
+      }
+      .issueBottom {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.6rem;
+        align-items: end;
+      }
+      #issueComment {
+        min-height: 5rem;
+        resize: vertical;
+        background: #0c1117;
+        color: #eef6fb;
+        border: 1px solid #3c4a55;
+        border-radius: 3px;
+        padding: 0.55rem;
+        font: 13px/1.45 ui-monospace, monospace;
+      }
+      .issueActions {
+        display: flex;
+        gap: 0.45rem;
+      }
+      .issueActions button,
+      .issueTop button {
+        font: 12px/1.3 ui-monospace, monospace;
+        padding: 0.45rem 0.65rem;
+        cursor: pointer;
+        background: #20262c;
+        color: #e7f1f7;
+        border: 1px solid #4a5864;
+        border-radius: 3px;
+      }
+      @media (max-width: 760px) {
+        .issueTop,
+        .issueBottom {
+          grid-template-columns: 1fr;
+        }
+        .issueActions {
+          justify-content: end;
+        }
+      }
     </style>
   </head>
   <body>
@@ -89,9 +228,41 @@
         <div>
           <button id="consoleToggle" type="button" title="Engine/harness log (also: ` key)">console</button>
         </div>
+        <div class="debugControls" aria-label="Issue dump controls">
+          <button id="recordToggle" type="button" title="Record a rolling debug dump">record</button>
+          <button id="issueButton" type="button" title="Capture screenshot, annotation, comment, and deep state">report issue</button>
+          <button id="saveDump" type="button" title="Download the current .cncdump.json">save dump</button>
+          <button id="uploadDump" type="button" title="Upload to the local harness server when available">upload</button>
+          <div class="debugOptions">
+            <label><input id="deepCapture" type="checkbox" checked> deep</label>
+            <label><input id="videoCapture" type="checkbox" checked> video</label>
+          </div>
+          <strong id="dumpStatus">idle</strong>
+        </div>
       </aside>
     </main>
     <div id="consolePanel" class="hidden" aria-label="Engine log"></div>
+    <div id="issueModal" class="hidden" aria-label="Report issue dialog">
+      <div id="issueDialog" role="dialog" aria-modal="true">
+        <div class="issueTop">
+          <input id="issueTitle" type="text" maxlength="120" placeholder="Short issue title">
+          <label class="issuePaint">color <input id="issueColor" type="color" value="#ff3b30"></label>
+          <label class="issuePaint">stroke <input id="issueStroke" type="range" min="2" max="16" value="5"></label>
+        </div>
+        <div class="issueCanvasWrap">
+          <canvas id="issueScreenshotCanvas" width="1280" height="720"></canvas>
+          <canvas id="issueAnnotationCanvas" width="1280" height="720"></canvas>
+        </div>
+        <div class="issueBottom">
+          <textarea id="issueComment" placeholder="What is wrong? What did you expect instead?"></textarea>
+          <div class="issueActions">
+            <button id="issueClear" type="button">clear</button>
+            <button id="issueCancel" type="button">cancel</button>
+            <button id="issueSave" type="button">add issue</button>
+          </div>
+        </div>
+      </div>
+    </div>
     <div id="overlay">
       <h1>C&amp;C Generals: Zero Hour — real engine, in your browser</h1>
       <div id="warning">

@@ -61,6 +61,7 @@
     "verify:websocket-transport-frontier": "node tools/verify_websocket_transport_frontier.mjs",
     "test:w3d-material-scan": "node tools/scan_w3d_material_pass_test.mjs",
     "serve:harness": "node harness/serve.mjs",
+    "test:issue-recorder": "node harness/issue_recorder_unit.mjs && node harness/issue_dump_upload_smoke.mjs && node harness/issue_recorder_ui_smoke.mjs",
     "test:startup-vertical": "npm run build:startup-vertical && node tools/run_startup_vertical_smoke.mjs",
     "test:startup-vertical-browser": "npm run build:port && node harness/startup_vertical_smoke.mjs",
     "test:real-shellmap": "npm run build:port && node harness/shellmap_real_init_gate.mjs",

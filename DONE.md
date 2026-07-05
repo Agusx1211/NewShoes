@@ -8025,6 +8025,56 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Cross-cutting: harness & verification (ongoing, never "done")
 
+- [x] Add the human-play issue-dump flight recorder and report flow. The
+      playable `harness/play.html` now has record/report/save/upload controls,
+      deep/video toggles, a screenshot annotation dialog, comment/title fields,
+      and local IndexedDB draft persistence. `issue-recorder.mjs` records
+      date/time/timezone, page URL, browser/device/WebGL renderer, build asset
+      Last-Modified/size metadata, archive specs, boot/session context, input
+      events with engine-space coordinates and replayable Win32 messages, RPC
+      summaries, throttled frame summaries, logs, screenshots, annotation
+      strokes, optional WebM canvas video, and deep issue snapshots using the
+      existing `screenshot`, `state`, `realEngineFrameSummary`,
+      `queryDrawables`, `querySelection`, and `d3d8TextureInventory` RPCs. The
+      harness server can optionally accept `POST /__cnc_issue_dump` and writes
+      dumps under `WebAssembly/artifacts/issue-dumps/`; browser download still
+      works without the server endpoint. `replay_issue_dump.mjs` consumes a
+      `.cncdump.json`, boots `play.html?replay=1`, replays captured inputs by
+      frame, and writes repro screenshot/state artifacts. Verified with
+      `node --check` on the new/modified harness modules, `git diff --check`,
+      and `npm --prefix WebAssembly run test:issue-recorder`.
+- [x] Fix the first human issue-dump report feedback loop. The sample
+      `/tmp/cnc-2026-07-05T18-16-00-194Z-manual.cncdump.json.zip` parsed
+      cleanly with 1,233 timeline events, 347 frame samples, 109 logs, one
+      annotated issue screenshot, and a deep snapshot, but it exposed two
+      gaps: the bridge's global keyboard handler prevented typing into the
+      report dialog, and issue markers could fall back to the shallow
+      `state.frame` value of `0`. `bridge.js` now leaves keyboard events alone
+      while DOM UI/overlays own focus, `play.mjs` does the same for the console
+      shortcut, `issue-recorder.mjs` keeps a monotonic last engine-frame marker,
+      and the recorder now captures harness server build/version metadata from
+      `GET /__cnc_build_info` (git commit/branch/dirty plus server runtime) in
+      `manifest.build.server`. The UI smoke now uses real Playwright keyboard
+      typing and asserts the saved issue comment/title plus marker frame.
+      Verified with `npm --prefix WebAssembly run test:issue-recorder`,
+      `git diff --check`, `node --check` on the touched harness modules, and a
+      replay smoke that consumed the sample dump and wrote screenshot/state
+      artifacts under `WebAssembly/artifacts/issue-replays/` (the old dump's
+      pre-fix `markerFrame:0` correctly limits that smoke to dump ingestion
+      rather than exact scene replay).
+- [x] Add repo-local AI skills for issue-dump analysis. Both
+      `.claude/skills/issue-dump-analysis` and
+      `.codex/skills/issue-dump-analysis` now explain how agents should decode
+      `.cncdump.json` / `.cncdump.json.zip` reports, prioritize evidence,
+      extract screenshots/annotations/logs/deep snapshots, compare build
+      metadata, and run `harness/replay_issue_dump.mjs` when the marker frame is
+      useful. Each skill copy includes
+      `scripts/decode_issue_dump.py`, a dependency-free decoder that handles raw
+      JSON or zip reports, writes `summary.json`, extracts embedded PNG/WebM
+      media, redacts base64 data URLs in JSON evidence, and emits timeline/log
+      artifacts. Verified with `quick_validate.py` for both skill copies,
+      `python3 -m py_compile` for both decoder copies, and a real decode smoke
+      against `/tmp/cnc-2026-07-05T18-16-00-194Z-manual.cncdump.json.zip`.
 - [x] Fix `mac_verify.mjs --target=player-control` so it actually starts
       MD_USA01 before waiting for player-control predicates. The generated
       Mac-side probe now reuses the real Win32 message path to reveal the real
