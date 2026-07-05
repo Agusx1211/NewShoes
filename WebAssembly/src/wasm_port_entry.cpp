@@ -9043,6 +9043,66 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 			expected_g = 0;
 			expected_b = 0;
 			break;
+		case 36:
+			case_name = "blendTextureAlphaPremultiplied";
+			color_op = D3DTOP_BLENDTEXTUREALPHAPM;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			texture_red = 0x40;
+			texture_alpha = 0x40;
+			diffuse = 0xff00ff00UL;
+			expected_r = 64;
+			expected_g = 191;
+			expected_b = 0;
+			break;
+		case 37:
+			case_name = "modulateAlphaAddColor";
+			color_op = D3DTOP_MODULATEALPHA_ADDCOLOR;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			texture_red = 0x40;
+			texture_alpha = 0x80;
+			diffuse = 0xff00ff00UL;
+			expected_r = 64;
+			expected_g = 128;
+			expected_b = 0;
+			break;
+		case 38:
+			case_name = "modulateColorAddAlpha";
+			color_op = D3DTOP_MODULATECOLOR_ADDALPHA;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			texture_red = 0x40;
+			texture_alpha = 0x40;
+			diffuse = 0xff00ff00UL;
+			expected_r = 64;
+			expected_g = 64;
+			expected_b = 64;
+			break;
+		case 39:
+			case_name = "modulateInvAlphaAddColor";
+			color_op = D3DTOP_MODULATEINVALPHA_ADDCOLOR;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			texture_red = 0x40;
+			texture_alpha = 0x40;
+			diffuse = 0xff00ff00UL;
+			expected_r = 64;
+			expected_g = 191;
+			expected_b = 0;
+			break;
+		case 40:
+			case_name = "modulateInvColorAddAlpha";
+			color_op = D3DTOP_MODULATEINVCOLOR_ADDALPHA;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			texture_red = 0x40;
+			texture_alpha = 0x20;
+			diffuse = 0xff00ff00UL;
+			expected_r = 32;
+			expected_g = 255;
+			expected_b = 32;
+			break;
 		default:
 			known_case = false;
 			break;

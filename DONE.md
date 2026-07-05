@@ -4051,6 +4051,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       case that keeps RGB from `CURRENT`, overrides alpha from
       `D3DRS_TEXTUREFACTOR`, and verifies the result through normal
       `SRCALPHA` blending against black.
+- [x] Close the first Fable graphics-audit combiner gap in the browser D3D8
+      shader. The fixed-function bridge now implements
+      `D3DTOP_BLENDTEXTUREALPHAPM` plus the color-only
+      `D3DTOP_MODULATEALPHA_ADDCOLOR`,
+      `D3DTOP_MODULATECOLOR_ADDALPHA`,
+      `D3DTOP_MODULATEINVALPHA_ADDCOLOR`, and
+      `D3DTOP_MODULATEINVCOLOR_ADDALPHA` formulas, carries `D3DTA_SPECULAR`
+      into the combiner source table, switches the fragment shader to
+      `precision highp float`, and records one-time `d3d8Warnings`/console
+      diagnostics for unsupported combiner state or active stages beyond the
+      currently rendered 0/1 shader path. The browser combiner probe now runs
+      41 cases, including the five new formulas, with pinned center-pixel
+      assertions. Verified with `node --check WebAssembly/harness/bridge.js`,
+      `node --check WebAssembly/harness/smoke.mjs`, `npm --prefix
+      WebAssembly run build:port`, and `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs`.
 - [x] Apply captured stage-0 `D3DTSS_TEXCOORDINDEX` passthrough UV selection
       in the current WebGL2 textured draw bridge for `VertexFormatXYZNDUV1/2`
       layouts, choosing UV0 or UV1 attribute offsets from the D3D8 stage state

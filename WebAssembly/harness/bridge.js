@@ -157,7 +157,15 @@ const D3DTOP_ADDSMOOTH = 11;
 const D3DTOP_BLENDDIFFUSEALPHA = 12;
 const D3DTOP_BLENDTEXTUREALPHA = 13;
 const D3DTOP_BLENDFACTORALPHA = 14;
+const D3DTOP_BLENDTEXTUREALPHAPM = 15;
 const D3DTOP_BLENDCURRENTALPHA = 16;
+const D3DTOP_PREMODULATE = 17;
+const D3DTOP_MODULATEALPHA_ADDCOLOR = 18;
+const D3DTOP_MODULATECOLOR_ADDALPHA = 19;
+const D3DTOP_MODULATEINVALPHA_ADDCOLOR = 20;
+const D3DTOP_MODULATEINVCOLOR_ADDALPHA = 21;
+const D3DTOP_BUMPENVMAP = 22;
+const D3DTOP_BUMPENVMAPLUMINANCE = 23;
 const D3DTOP_DOTPRODUCT3 = 24;
 const D3DTOP_MULTIPLYADD = 25;
 const D3DTOP_LERP = 26;
@@ -166,6 +174,7 @@ const D3DTA_DIFFUSE = 0;
 const D3DTA_CURRENT = 1;
 const D3DTA_TEXTURE = 2;
 const D3DTA_TFACTOR = 3;
+const D3DTA_SPECULAR = 4;
 const D3DTA_TEMP = 5;
 const D3DTA_COMPLEMENT = 0x00000010;
 const D3DTA_ALPHAREPLICATE = 0x00000020;
@@ -406,6 +415,26 @@ const harnessState = {
   mountedArchives: [],
   logs: [],
 };
+
+const d3d8WarnedOnce = new Set();
+
+function warnD3D8Once(key, message, detail = {}) {
+  if (d3d8WarnedOnce.has(key)) {
+    return;
+  }
+  d3d8WarnedOnce.add(key);
+  const warning = {
+    key,
+    message,
+    ...detail,
+  };
+  const warnings = Array.isArray(harnessState.graphics.d3d8Warnings)
+    ? harnessState.graphics.d3d8Warnings.slice(-63)
+    : [];
+  warnings.push(warning);
+  harnessState.graphics.d3d8Warnings = warnings;
+  console.warn(`[D3D8 bridge] ${message}`, detail);
+}
 
 const browserAudioRuntime = {
   source: "browser Web Audio runtime user-gesture proof",
@@ -3865,8 +3894,24 @@ function d3dTextureCombinerOpName(op) {
       return "blendTextureAlpha";
     case D3DTOP_BLENDFACTORALPHA:
       return "blendFactorAlpha";
+    case D3DTOP_BLENDTEXTUREALPHAPM:
+      return "blendTextureAlphaPremultiplied";
     case D3DTOP_BLENDCURRENTALPHA:
       return "blendCurrentAlpha";
+    case D3DTOP_PREMODULATE:
+      return "premodulate";
+    case D3DTOP_MODULATEALPHA_ADDCOLOR:
+      return "modulateAlphaAddColor";
+    case D3DTOP_MODULATECOLOR_ADDALPHA:
+      return "modulateColorAddAlpha";
+    case D3DTOP_MODULATEINVALPHA_ADDCOLOR:
+      return "modulateInvAlphaAddColor";
+    case D3DTOP_MODULATEINVCOLOR_ADDALPHA:
+      return "modulateInvColorAddAlpha";
+    case D3DTOP_BUMPENVMAP:
+      return "bumpEnvMap";
+    case D3DTOP_BUMPENVMAPLUMINANCE:
+      return "bumpEnvMapLuminance";
     case D3DTOP_DOTPRODUCT3:
       return "dotProduct3";
     case D3DTOP_MULTIPLYADD:
@@ -3878,7 +3923,7 @@ function d3dTextureCombinerOpName(op) {
   }
 }
 
-function d3dTextureCombinerOpSupported(op) {
+function d3dTextureCombinerOpSupported(op, target = "color") {
   switch (Number(op) >>> 0) {
     case D3DTOP_DISABLE:
     case D3DTOP_SELECTARG1:
@@ -3894,11 +3939,17 @@ function d3dTextureCombinerOpSupported(op) {
     case D3DTOP_BLENDDIFFUSEALPHA:
     case D3DTOP_BLENDTEXTUREALPHA:
     case D3DTOP_BLENDFACTORALPHA:
+    case D3DTOP_BLENDTEXTUREALPHAPM:
     case D3DTOP_BLENDCURRENTALPHA:
     case D3DTOP_DOTPRODUCT3:
     case D3DTOP_MULTIPLYADD:
     case D3DTOP_LERP:
       return true;
+    case D3DTOP_MODULATEALPHA_ADDCOLOR:
+    case D3DTOP_MODULATECOLOR_ADDALPHA:
+    case D3DTOP_MODULATEINVALPHA_ADDCOLOR:
+    case D3DTOP_MODULATEINVCOLOR_ADDALPHA:
+      return target === "color";
     default:
       return false;
   }
@@ -3923,7 +3974,15 @@ function d3dTextureCombinerOpUsesArg1(op) {
     case D3DTOP_BLENDDIFFUSEALPHA:
     case D3DTOP_BLENDTEXTUREALPHA:
     case D3DTOP_BLENDFACTORALPHA:
+    case D3DTOP_BLENDTEXTUREALPHAPM:
     case D3DTOP_BLENDCURRENTALPHA:
+    case D3DTOP_PREMODULATE:
+    case D3DTOP_MODULATEALPHA_ADDCOLOR:
+    case D3DTOP_MODULATECOLOR_ADDALPHA:
+    case D3DTOP_MODULATEINVALPHA_ADDCOLOR:
+    case D3DTOP_MODULATEINVCOLOR_ADDALPHA:
+    case D3DTOP_BUMPENVMAP:
+    case D3DTOP_BUMPENVMAPLUMINANCE:
     case D3DTOP_DOTPRODUCT3:
     case D3DTOP_MULTIPLYADD:
     case D3DTOP_LERP:
@@ -3947,7 +4006,15 @@ function d3dTextureCombinerOpUsesArg2(op) {
     case D3DTOP_BLENDDIFFUSEALPHA:
     case D3DTOP_BLENDTEXTUREALPHA:
     case D3DTOP_BLENDFACTORALPHA:
+    case D3DTOP_BLENDTEXTUREALPHAPM:
     case D3DTOP_BLENDCURRENTALPHA:
+    case D3DTOP_PREMODULATE:
+    case D3DTOP_MODULATEALPHA_ADDCOLOR:
+    case D3DTOP_MODULATECOLOR_ADDALPHA:
+    case D3DTOP_MODULATEINVALPHA_ADDCOLOR:
+    case D3DTOP_MODULATEINVCOLOR_ADDALPHA:
+    case D3DTOP_BUMPENVMAP:
+    case D3DTOP_BUMPENVMAPLUMINANCE:
     case D3DTOP_DOTPRODUCT3:
     case D3DTOP_MULTIPLYADD:
     case D3DTOP_LERP:
@@ -3967,6 +4034,8 @@ function d3dTextureCombinerArgBaseName(arg) {
       return "texture";
     case D3DTA_TFACTOR:
       return "textureFactor";
+    case D3DTA_SPECULAR:
+      return "specular";
     case D3DTA_TEMP:
       return "temp";
     default:
@@ -4227,7 +4296,7 @@ function textureStageCombinerInfo(textureStage, stage, canSampleTexture) {
   const colorNeedsArg0 = d3dTextureCombinerOpUsesArg0(colorOp);
   const colorNeedsArg1 = d3dTextureCombinerOpUsesArg1(colorOp);
   const colorNeedsArg2 = d3dTextureCombinerOpUsesArg2(colorOp);
-  const supportedOp = d3dTextureCombinerOpSupported(colorOp);
+  const supportedOp = d3dTextureCombinerOpSupported(colorOp, "color");
   const supportedArg0 = !colorNeedsArg0 || d3dTextureCombinerArgSupported(colorArg0);
   const supportedArg1 = !colorNeedsArg1 || d3dTextureCombinerArgSupported(colorArg1);
   const supportedArg2 = !colorNeedsArg2 || d3dTextureCombinerArgSupported(colorArg2);
@@ -4247,7 +4316,7 @@ function textureStageCombinerInfo(textureStage, stage, canSampleTexture) {
   const alphaNeedsArg1 = d3dTextureCombinerOpUsesArg1(alphaOp);
   const alphaNeedsArg2 = d3dTextureCombinerOpUsesArg2(alphaOp);
   const supportedAlphaOp = stage <= 1
-    ? d3dTextureCombinerOpSupported(alphaOp)
+    ? d3dTextureCombinerOpSupported(alphaOp, "alpha")
     : alphaOp === D3DTOP_DISABLE || stageAlphaPassesCurrent;
   const supportedAlphaArg0 = !alphaNeedsArg0 || d3dTextureCombinerArgSupported(alphaArg0);
   const supportedAlphaArg1 = !alphaNeedsArg1 || d3dTextureCombinerArgSupported(alphaArg1);
@@ -4280,6 +4349,7 @@ function textureStageCombinerInfo(textureStage, stage, canSampleTexture) {
     supportsResultArg: supportedResultArg,
     supportsAlphaOp: supportedAlphaOp,
     supportsAlphaArgs: supportedAlphaArg0 && supportedAlphaArg1 && supportedAlphaArg2,
+    needsTexture,
     needsTextureAlpha,
     textureAvailable: Boolean(canSampleTexture),
     supported: supportedOp && supportedArg0 && supportedArg1 && supportedArg2 && supportedResultArg
@@ -4287,6 +4357,76 @@ function textureStageCombinerInfo(textureStage, stage, canSampleTexture) {
       && (!needsTexture || canSampleTexture)
       && (!needsTextureAlpha || canSampleTexture),
   };
+}
+
+function warnD3D8CombinerDiagnostics(renderState, stage0Combiner, stage1Combiner, drawSequence) {
+  for (const combiner of [stage0Combiner, stage1Combiner]) {
+    if (!combiner || combiner.supported) {
+      continue;
+    }
+    const reasons = [];
+    if (!combiner.supportsColorOp) {
+      reasons.push(`colorOp=${combiner.opName}`);
+    }
+    if (!combiner.supportsColorArgs) {
+      reasons.push("colorArgs");
+    }
+    if (!combiner.supportsResultArg) {
+      reasons.push(`resultArg=${combiner.resultArgName}`);
+    }
+    if (!combiner.supportsAlphaOp) {
+      reasons.push(`alphaOp=${combiner.alphaOpName}`);
+    }
+    if (!combiner.supportsAlphaArgs) {
+      reasons.push("alphaArgs");
+    }
+    if ((combiner.needsTexture || combiner.needsTextureAlpha) && !combiner.textureAvailable) {
+      reasons.push("textureUnavailable");
+    }
+    warnD3D8Once(
+      `combiner:${combiner.stage}:${combiner.colorOp}:${combiner.alphaOp}:${reasons.join(",")}`,
+      `texture combiner stage ${combiner.stage} is not fully supported`,
+      {
+        drawSequence,
+        stage: combiner.stage,
+        reasons,
+        colorOp: combiner.colorOp,
+        colorOpName: combiner.opName,
+        alphaOp: combiner.alphaOp,
+        alphaOpName: combiner.alphaOpName,
+        colorArgs: [combiner.arg0Name, combiner.arg1Name, combiner.arg2Name],
+        alphaArgs: [combiner.alphaArg0Name, combiner.alphaArg1Name, combiner.alphaArg2Name],
+      },
+    );
+  }
+
+  for (let stage = 2; stage < D3D8_TEXTURE_STAGE_COUNT; ++stage) {
+    const textureStage = renderState?.textureStages?.[stage];
+    if (!textureStage) {
+      continue;
+    }
+    const colorOp = Number(textureStage.colorOp ?? D3DTOP_DISABLE) >>> 0;
+    const alphaOp = Number(textureStage.alphaOp ?? D3DTOP_DISABLE) >>> 0;
+    if (colorOp === D3DTOP_DISABLE && alphaOp === D3DTOP_DISABLE) {
+      continue;
+    }
+    warnD3D8Once(
+      `stage:${stage}:${colorOp}:${alphaOp}`,
+      `texture stage ${stage} is active but the browser shader currently renders only stages 0 and 1`,
+      {
+        drawSequence,
+        stage,
+        colorOp,
+        colorOpName: d3dTextureCombinerOpName(colorOp),
+        alphaOp,
+        alphaOpName: d3dTextureCombinerOpName(alphaOp),
+        colorArg1: d3dTextureCombinerArgName(textureStage.colorArg1),
+        colorArg2: d3dTextureCombinerArgName(textureStage.colorArg2),
+        alphaArg1: d3dTextureCombinerArgName(textureStage.alphaArg1),
+        alphaArg2: d3dTextureCombinerArgName(textureStage.alphaArg2),
+      },
+    );
+  }
 }
 
 function d3d8TextureFormatHasAlpha(format) {
@@ -5703,6 +5843,7 @@ function ensureD3D8DrawProgram() {
     uniform vec4 uFixedLightRangeAttenuation[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
     uniform vec3 uFixedLightSpot[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
     out vec4 vColor;
+    out vec4 vSpecularColor;
     flat out vec4 vFlatColor;
     out vec2 vTexCoord0;
     out vec2 vTexCoord1;
@@ -5881,6 +6022,7 @@ function ensureD3D8DrawProgram() {
       vClipPosition = worldPosition;
       vec4 color1 = vec4(aDiffuseBgra.b, aDiffuseBgra.g, aDiffuseBgra.r, aDiffuseBgra.a);
       vec4 color2 = vec4(aSpecularBgra.b, aSpecularBgra.g, aSpecularBgra.r, aSpecularBgra.a);
+      vSpecularColor = color2;
       vColor = uLightingEnabled ? d3dApplyLighting(color1, color2, worldPosition.xyz, worldNormal, viewDirection) : color1;
       vFlatColor = vColor;
       vec4 texture0Coordinate = d3dTextureCoordinateSource(
@@ -5914,8 +6056,9 @@ function ensureD3D8DrawProgram() {
     }
   `);
   const fragmentShader = compileShader(gl.FRAGMENT_SHADER, `#version 300 es
-    precision mediump float;
+    precision highp float;
     in vec4 vColor;
+    in vec4 vSpecularColor;
     flat in vec4 vFlatColor;
     in vec2 vTexCoord0;
     in vec2 vTexCoord1;
@@ -6000,9 +6143,10 @@ function ensureD3D8DrawProgram() {
       return rawSample;
     }
     // D3DTA_DIFFUSE == 0, D3DTA_CURRENT == 1, D3DTA_TEXTURE == 2,
-    // D3DTA_TFACTOR == 3, D3DTA_TEMP == 5.
+    // D3DTA_TFACTOR == 3, D3DTA_SPECULAR == 4, D3DTA_TEMP == 5.
     // D3DTA_COMPLEMENT == 0x10, D3DTA_ALPHAREPLICATE == 0x20.
-    vec4 d3dCombinerSource(int arg, vec4 textureColor, vec4 currentColor, vec4 diffuseColor, vec4 tempColor) {
+    vec4 d3dCombinerSource(int arg, vec4 textureColor, vec4 currentColor, vec4 diffuseColor,
+        vec4 specularColor, vec4 tempColor) {
       int source = arg & 15;
       if (source == 0) {
         return diffuseColor;
@@ -6016,13 +6160,17 @@ function ensureD3D8DrawProgram() {
       if (source == 3) {
         return uTextureFactor;
       }
+      if (source == 4) {
+        return specularColor;
+      }
       if (source == 5) {
         return tempColor;
       }
       return currentColor;
     }
-    vec3 d3dCombinerColorArg(int arg, vec4 textureColor, vec4 currentColor, vec4 diffuseColor, vec4 tempColor) {
-      vec4 source = d3dCombinerSource(arg, textureColor, currentColor, diffuseColor, tempColor);
+    vec3 d3dCombinerColorArg(int arg, vec4 textureColor, vec4 currentColor, vec4 diffuseColor,
+        vec4 specularColor, vec4 tempColor) {
+      vec4 source = d3dCombinerSource(arg, textureColor, currentColor, diffuseColor, specularColor, tempColor);
       vec3 value = (arg & 32) != 0 ? vec3(source.a) : source.rgb;
       if ((arg & 16) != 0) {
         value = vec3(1.0) - value;
@@ -6047,7 +6195,9 @@ function ensureD3D8DrawProgram() {
       }
       return 0.0;
     }
-    vec3 d3dApplyColorOp(int op, vec3 arg0, vec3 arg1, vec3 arg2,
+    float d3dCombinerAlphaArg(int arg, vec4 textureColor, vec4 currentColor, vec4 diffuseColor,
+        vec4 specularColor, vec4 tempColor);
+    vec3 d3dApplyColorOp(int op, vec3 arg0, vec3 arg1, float arg1Alpha, vec3 arg2,
         vec4 textureColor, vec4 currentColor, vec4 diffuseColor) {
       if (op == 2) {
         return arg1;
@@ -6082,6 +6232,21 @@ function ensureD3D8DrawProgram() {
       if (op == 12 || op == 13 || op == 14 || op == 16) {
         float factor = d3dCombinerBlendFactor(op, textureColor, currentColor, diffuseColor);
         return mix(arg2, arg1, factor);
+      }
+      if (op == 15) {
+        return clamp(arg1 + arg2 * (1.0 - textureColor.a), 0.0, 1.0);
+      }
+      if (op == 18) {
+        return clamp(arg1 + arg1Alpha * arg2, 0.0, 1.0);
+      }
+      if (op == 19) {
+        return clamp(arg1 * arg2 + vec3(arg1Alpha), 0.0, 1.0);
+      }
+      if (op == 20) {
+        return clamp((1.0 - arg1Alpha) * arg2 + arg1, 0.0, 1.0);
+      }
+      if (op == 21) {
+        return clamp((vec3(1.0) - arg1) * arg2 + vec3(arg1Alpha), 0.0, 1.0);
       }
       if (op == 24) {
         return d3dDotProduct3(arg1, arg2);
@@ -6130,6 +6295,9 @@ function ensureD3D8DrawProgram() {
         float factor = d3dCombinerBlendFactor(op, textureColor, currentColor, diffuseColor);
         return mix(arg2, arg1, factor);
       }
+      if (op == 15) {
+        return clamp(arg1 + arg2 * (1.0 - textureColor.a), 0.0, 1.0);
+      }
       if (op == 25) {
         return clamp(arg0 + arg1 * arg2, 0.0, 1.0);
       }
@@ -6142,13 +6310,20 @@ function ensureD3D8DrawProgram() {
       if (uStage0ColorOp == 1) {
         return diffuseColor.rgb;
       }
-      vec3 arg0 = d3dCombinerColorArg(uStage0ColorArg0, textureColor, diffuseColor, diffuseColor, tempColor);
-      vec3 arg1 = d3dCombinerColorArg(uStage0ColorArg1, textureColor, diffuseColor, diffuseColor, tempColor);
-      vec3 arg2 = d3dCombinerColorArg(uStage0ColorArg2, textureColor, diffuseColor, diffuseColor, tempColor);
-      return d3dApplyColorOp(uStage0ColorOp, arg0, arg1, arg2, textureColor, diffuseColor, diffuseColor);
+      vec3 arg0 = d3dCombinerColorArg(
+        uStage0ColorArg0, textureColor, diffuseColor, diffuseColor, vSpecularColor, tempColor);
+      vec3 arg1 = d3dCombinerColorArg(
+        uStage0ColorArg1, textureColor, diffuseColor, diffuseColor, vSpecularColor, tempColor);
+      float arg1Alpha = d3dCombinerAlphaArg(
+        uStage0ColorArg1, textureColor, diffuseColor, diffuseColor, vSpecularColor, tempColor);
+      vec3 arg2 = d3dCombinerColorArg(
+        uStage0ColorArg2, textureColor, diffuseColor, diffuseColor, vSpecularColor, tempColor);
+      return d3dApplyColorOp(
+        uStage0ColorOp, arg0, arg1, arg1Alpha, arg2, textureColor, diffuseColor, diffuseColor);
     }
-    float d3dCombinerAlphaArg(int arg, vec4 textureColor, vec4 currentColor, vec4 diffuseColor, vec4 tempColor) {
-      vec4 source = d3dCombinerSource(arg, textureColor, currentColor, diffuseColor, tempColor);
+    float d3dCombinerAlphaArg(int arg, vec4 textureColor, vec4 currentColor, vec4 diffuseColor,
+        vec4 specularColor, vec4 tempColor) {
+      vec4 source = d3dCombinerSource(arg, textureColor, currentColor, diffuseColor, specularColor, tempColor);
       float value = source.a;
       if ((arg & 16) != 0) {
         value = 1.0 - value;
@@ -6159,12 +6334,17 @@ function ensureD3D8DrawProgram() {
       if (uStage0AlphaOp == 1) {
         return diffuseColor.a;
       }
-      float arg0 = d3dCombinerAlphaArg(uStage0AlphaArg0, textureColor, diffuseColor, diffuseColor, tempColor);
-      float arg1 = d3dCombinerAlphaArg(uStage0AlphaArg1, textureColor, diffuseColor, diffuseColor, tempColor);
-      float arg2 = d3dCombinerAlphaArg(uStage0AlphaArg2, textureColor, diffuseColor, diffuseColor, tempColor);
+      float arg0 = d3dCombinerAlphaArg(
+        uStage0AlphaArg0, textureColor, diffuseColor, diffuseColor, vSpecularColor, tempColor);
+      float arg1 = d3dCombinerAlphaArg(
+        uStage0AlphaArg1, textureColor, diffuseColor, diffuseColor, vSpecularColor, tempColor);
+      float arg2 = d3dCombinerAlphaArg(
+        uStage0AlphaArg2, textureColor, diffuseColor, diffuseColor, vSpecularColor, tempColor);
       if (uStage0AlphaOp == 24) {
-        vec3 colorArg1 = d3dCombinerColorArg(uStage0AlphaArg1, textureColor, diffuseColor, diffuseColor, tempColor);
-        vec3 colorArg2 = d3dCombinerColorArg(uStage0AlphaArg2, textureColor, diffuseColor, diffuseColor, tempColor);
+        vec3 colorArg1 = d3dCombinerColorArg(
+          uStage0AlphaArg1, textureColor, diffuseColor, diffuseColor, vSpecularColor, tempColor);
+        vec3 colorArg2 = d3dCombinerColorArg(
+          uStage0AlphaArg2, textureColor, diffuseColor, diffuseColor, vSpecularColor, tempColor);
         return d3dDotProduct3(colorArg1, colorArg2).r;
       }
       return d3dApplyAlphaOp(uStage0AlphaOp, arg0, arg1, arg2, textureColor, diffuseColor, diffuseColor);
@@ -6173,21 +6353,32 @@ function ensureD3D8DrawProgram() {
       if (uStage1ColorOp == 1) {
         return currentColor.rgb;
       }
-      vec3 arg0 = d3dCombinerColorArg(uStage1ColorArg0, textureColor, currentColor, diffuseColor, tempColor);
-      vec3 arg1 = d3dCombinerColorArg(uStage1ColorArg1, textureColor, currentColor, diffuseColor, tempColor);
-      vec3 arg2 = d3dCombinerColorArg(uStage1ColorArg2, textureColor, currentColor, diffuseColor, tempColor);
-      return d3dApplyColorOp(uStage1ColorOp, arg0, arg1, arg2, textureColor, currentColor, diffuseColor);
+      vec3 arg0 = d3dCombinerColorArg(
+        uStage1ColorArg0, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
+      vec3 arg1 = d3dCombinerColorArg(
+        uStage1ColorArg1, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
+      float arg1Alpha = d3dCombinerAlphaArg(
+        uStage1ColorArg1, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
+      vec3 arg2 = d3dCombinerColorArg(
+        uStage1ColorArg2, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
+      return d3dApplyColorOp(
+        uStage1ColorOp, arg0, arg1, arg1Alpha, arg2, textureColor, currentColor, diffuseColor);
     }
     float d3dStage1Alpha(vec4 diffuseColor, vec4 textureColor, vec4 currentColor, vec4 tempColor) {
       if (uStage1AlphaOp == 1) {
         return currentColor.a;
       }
-      float arg0 = d3dCombinerAlphaArg(uStage1AlphaArg0, textureColor, currentColor, diffuseColor, tempColor);
-      float arg1 = d3dCombinerAlphaArg(uStage1AlphaArg1, textureColor, currentColor, diffuseColor, tempColor);
-      float arg2 = d3dCombinerAlphaArg(uStage1AlphaArg2, textureColor, currentColor, diffuseColor, tempColor);
+      float arg0 = d3dCombinerAlphaArg(
+        uStage1AlphaArg0, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
+      float arg1 = d3dCombinerAlphaArg(
+        uStage1AlphaArg1, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
+      float arg2 = d3dCombinerAlphaArg(
+        uStage1AlphaArg2, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
       if (uStage1AlphaOp == 24) {
-        vec3 colorArg1 = d3dCombinerColorArg(uStage1AlphaArg1, textureColor, currentColor, diffuseColor, tempColor);
-        vec3 colorArg2 = d3dCombinerColorArg(uStage1AlphaArg2, textureColor, currentColor, diffuseColor, tempColor);
+        vec3 colorArg1 = d3dCombinerColorArg(
+          uStage1AlphaArg1, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
+        vec3 colorArg2 = d3dCombinerColorArg(
+          uStage1AlphaArg2, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
         return d3dDotProduct3(colorArg1, colorArg2).r;
       }
       return d3dApplyAlphaOp(uStage1AlphaOp, arg0, arg1, arg2, textureColor, currentColor, diffuseColor);
@@ -8042,6 +8233,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       implicitAlphaCutoutThreshold,
     };
   }
+  warnD3D8CombinerDiagnostics(renderState, appliedTexture0Combiner, appliedStage1Combiner, drawSequence);
   // ---------------------------------------------------------------------------
   // ADD-ONLY Stage-1 diagnostic: capture the render state used for the command-bar
   // background atlas draw (1024x256 SN/SA/SUCommandBar.tga) vs a small textured UI
@@ -15754,7 +15946,7 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: "Wasm module unavailable; D3D8 texture combiner probe cannot run" };
         }
         const cases = [];
-        for (let caseId = 0; caseId < 36; ++caseId) {
+        for (let caseId = 0; caseId < 41; ++caseId) {
           const beforeTextures = harnessState.graphics.d3d8Textures ?? {};
           const probe = parseModuleState(wasmModule.probeD3D8TextureCombiner(caseId));
           const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;

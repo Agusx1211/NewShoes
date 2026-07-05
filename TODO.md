@@ -1140,17 +1140,16 @@ residue and the next frontier.
       sets stage-2 state unconditionally (lines 277-278, 1885-1886) — water
       renders with a missing layer by construction. Either implement stages
       2-3 in the shader or report honest 2-stage caps and verify W3D's
-      multi-pass fallback; add a one-time console warning when a draw
-      arrives with an active stage ≥2 so this class is visible.
-- [ ] **Missing combiner ops silently no-op the stage**: the GLSL
-      dispatcher (bridge.js:6050-6095) handles D3DTOP 1-14, 16, 24-26 and
-      falls through to `currentColor` for 15 (BLENDTEXTUREALPHAPM) and
-      17-23 (PREMODULATE, the four MODULATE*_ADD* ops, BUMPENVMAP,
-      BUMPENVMAPLUMINANCE). Caps honestly don't claim them, so
-      `ShaderClass::Apply` picks fallbacks (dx8caps.cpp:637 verified) —
-      but any direct-device path that isn't caps-gated breaks silently.
-      Add a one-time warn on unsupported op; implement the cheap ones
-      (15, 17-21 are one-liners) for fidelity.
+      multi-pass fallback. Current coverage: active stages 2-7 now emit a
+      one-time `d3d8Warnings`/console diagnostic so this class is visible.
+- [ ] **Remaining unsupported combiner ops must not silently degrade**:
+      the browser bridge now implements and screenshot-smoke-proves
+      `BLENDTEXTUREALPHAPM` plus the four `MODULATE*_ADD*` color ops from the
+      Fable audit, and unsupported combiners/args now emit one-time
+      `d3d8Warnings` diagnostics. Remaining: decide whether `PREMODULATE` and
+      `BUMPENVMAP`/`BUMPENVMAPLUMINANCE` should be implemented in the current
+      fixed-function shader, lowered to an original W3D fallback by caps, or
+      handled by a later generated-shader path.
 - [ ] **Implicit alpha-cutout heuristic diverges from original D3D8**
       (f01d587, `d3d8ImplicitAlphaCutoutThreshold`): real D3D8 never
       discards zero-alpha texels on unblended z-writing draws — the
@@ -1171,9 +1170,6 @@ residue and the next frontier.
       modulate). Next diagnostic: dump `m_timeOfDay` + terrain lighting
       values and the shroud state for tournament-city vs mountain-guns in
       the sweep, and rerun with fog/shroud disabled to bisect.
-- [ ] Fragment shader is `precision mediump float`
-      (bridge.js:5917) — fp16 on mobile/some ANGLE configs causes banding
-      in fog/gradient math; switch to highp (desktop cost ~zero).
 - [ ] Generalize the browser range-backed BIG archive reader into the
       original file/archive registration path so normal engine startup
       can stream user-supplied runtime archives without focused harness
