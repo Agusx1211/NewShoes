@@ -7981,6 +7981,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Cross-cutting: harness & verification (ongoing, never "done")
 
+- [x] Fix `mac_verify.mjs --target=player-control` so it actually starts
+      MD_USA01 before waiting for player-control predicates. The generated
+      Mac-side probe now reuses the real Win32 message path to reveal the real
+      shell menu, click `ButtonSinglePlayer` -> `ButtonUSA` -> `ButtonEasy`,
+      and wait for the original `doGameStart()` / `MSG_NEW_GAME` debug
+      counters to prove the Easy USA campaign was queued before running the
+      long player-control frame loop. Verified with `node --check
+      WebAssembly/harness/mac_verify.mjs`, `node
+      WebAssembly/harness/mac_verify.mjs --no-build --target=title`
+      (`ANGLE Metal Renderer: Apple M4`, 43 subsystems, title screenshot), and
+      `node WebAssembly/harness/mac_verify.mjs --no-build
+      --target=player-control`, which reported Apple M4 Metal,
+      `playerControl: YES`, 3,150 frames, and saved
+      `/home/agusx1211/cnc-mac-verify/mac-verify-player-control.png` showing
+      the rendered MD_USA01 scene with HUD/control bar visible.
 - [x] Re-green the `EXPECT_WASM=1` aggregate smoke after the
       `edgeMapperApply` heap-corruption failure. Bisection showed
       `edgeMapperApply` was only the first allocation to trip after earlier

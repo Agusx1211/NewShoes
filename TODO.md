@@ -173,19 +173,6 @@ residue and the next frontier.
       renders cliffs/sky/tree correctly on the Mac GPU. See DONE.md for the full
       bisection history. Follow-up landed: real FBO-backed render targets merged
       (`deaeb7a`, ead0880/f253179) — but see the unverified-RTT item below.
-- [ ] **Fix `mac_verify.mjs` player-control probe — it can never report
-      success** (3 commits in, still broken): (a) read-bug (`s?.playerControl`
-      vs `frame.playerControl`) and double-step (`realEngineFrameSummary`
-      after already stepping) — FIXED and merged. (b) NEW GAP: the probe boots
-      via `play.html?autostart=1` which lands on the shell-map MAIN MENU, then
-      frame-steps waiting for player control WITHOUT ever navigating
-      Single Player → USA → Easy to start the MD_USA01 campaign. No mission is
-      running, so `introDone`/`inputEnabled`/`controlBarClickable` never become
-      true. Fix options: add the campaign-start click sequence (mirroring
-      `startup_vertical_smoke.mjs`'s `clickRealEngineMenuButton` flow →
-      `doGameStart`/`MSG_NEW_GAME`) before the player-control frame loop, OR
-      run the startup-vertical interactivity proof on the Mac instead of
-      `mac_verify`'s player-control mode.
 - [ ] Add remaining D3D8 depth/stencil texture formats if runtime evidence
       needs them. The WebGL2 bridge now supports texture-owned D16,
       D16_LOCKABLE, D24X8, and D24S8 depth attachments; D15S1, D24X4S4, and

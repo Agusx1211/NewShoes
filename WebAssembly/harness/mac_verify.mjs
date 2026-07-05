@@ -243,6 +243,283 @@ let renderer = "";
 let screenshotPath = "";
 let result = { ok: false, target: TARGET, renderer: "", m4Metal: false, frame: null, playerControlReached: false, missingTextureApplies: null, missingTextureBailouts: null, screenshot: "", archivesMounted: 0 };
 
+const GAME_SINGLE_PLAYER = 0;
+const DIFFICULTY_EASY = 0;
+const WM_MOUSEMOVE = 0x0200;
+const WM_LBUTTONDOWN = 0x0201;
+const WM_LBUTTONUP = 0x0202;
+
+function expectProbe(condition, message, payload = null) {
+  if (!condition) {
+    throw new Error(message + ": " + JSON.stringify(payload));
+  }
+}
+
+function win32PointLParam(point) {
+  return ((point.y & 0xffff) << 16) | (point.x & 0xffff);
+}
+
+async function rpc(name, payload = {}) {
+  return page.evaluate(([command, data]) => window.CnCPort.rpc(command, data), [name, payload]);
+}
+
+function assertFrameResult(frameResult, label) {
+  expectProbe(frameResult?.ok === true && frameResult?.aborted !== true,
+    label + " frame RPC failed", {
+      aborted: frameResult?.aborted,
+      abortMessage: frameResult?.abortMessage,
+      lastUpdateTarget: frameResult?.lastUpdateTarget,
+      lastGameLogicStep: frameResult?.lastGameLogicStep,
+      frame: frameResult?.frame,
+    });
+  expectProbe(frameResult.frame?.exceptionCaught === false,
+    label + " frame caught a C++ exception", frameResult.frame);
+  expectProbe(frameResult.frame?.quitting === false,
+    label + " frame requested quit", frameResult.frame);
+  return frameResult;
+}
+
+async function runFrames(frames, label = "real engine") {
+  return assertFrameResult(await rpc("realEngineFrame", { frames }), label);
+}
+
+async function runSummary(frames, label = "real engine summary") {
+  return assertFrameResult(await rpc("realEngineFrameSummary", { frames }), label);
+}
+
+async function postMouse(message, point) {
+  const posted = await rpc("postMessage", {
+    message,
+    lParam: win32PointLParam(point),
+    point,
+  });
+  expectProbe(posted?.ok === true, "mouse message was not posted", posted);
+  return posted;
+}
+
+function realMenuHitMatches(menu, hitProbeName, buttonFieldName) {
+  const hitWindow = menu?.[hitProbeName]?.window;
+  const button = menu?.[buttonFieldName];
+  return button?.clickable === true && hitWindow?.found === true && hitWindow.id === button.id;
+}
+
+function collectWindowRefs(clientState) {
+  const refs = [];
+  for (const group of [clientState?.mainMenu]) {
+    for (const value of Object.values(group ?? {})) {
+      if (value?.found === true && Number.isFinite(value.id)) {
+        refs.push(value);
+      }
+      if (value?.window?.found === true && Number.isFinite(value.window.id)) {
+        refs.push(value.window);
+      }
+    }
+  }
+  for (const field of ["focusWindow", "captureWindow", "grabWindow"]) {
+    const ref = clientState?.input?.[field];
+    if (ref?.found === true && Number.isFinite(ref.id)) {
+      refs.push(ref);
+    }
+  }
+  return refs;
+}
+
+function findWindowById(clientState, id) {
+  return collectWindowRefs(clientState).find((ref) => ref.id === id) ?? null;
+}
+
+function compactMenuFrame(frameResult) {
+  const clientState = frameResult?.frame?.clientState ?? {};
+  return {
+    framesCompleted: frameResult?.frame?.framesCompleted ?? null,
+    shell: {
+      topFilename: clientState.shell?.topFilename ?? null,
+      topIsMainMenu: clientState.shell?.topIsMainMenu ?? null,
+      topHidden: clientState.shell?.topHidden ?? null,
+    },
+    transition: clientState.transition ?? null,
+    mouse: clientState.input?.mouse ?? null,
+    grabWindow: clientState.input?.grabWindow ?? null,
+    mainMenu: {
+      buttonSinglePlayer: clientState.mainMenu?.buttonSinglePlayer ?? null,
+      buttonUSA: clientState.mainMenu?.buttonUSA ?? null,
+      buttonEasy: clientState.mainMenu?.buttonEasy ?? null,
+      debug: clientState.mainMenu?.debug ?? null,
+    },
+  };
+}
+
+async function waitForCondition(label, predicate, maxFrames = 180) {
+  const attempts = [];
+  let last = null;
+  for (let frame = 0; frame < maxFrames; frame += 1) {
+    last = await runFrames(1, label);
+    attempts.push(compactMenuFrame(last));
+    if (predicate(last.frame?.clientState ?? {}, last)) {
+      return last;
+    }
+  }
+  expectProbe(false, label + " did not satisfy condition", {
+    attempts: attempts.slice(-12),
+    last: compactMenuFrame(last),
+  });
+}
+
+async function waitForTransitionIdle(label, maxFrames = 120) {
+  return waitForCondition(
+    label,
+    (clientState) => clientState.transition?.ready === true &&
+      clientState.transition?.finished === true,
+    maxFrames);
+}
+
+async function revealMainMenu() {
+  const seedPoint = { x: 32, y: 32 };
+  const revealPoint = { x: 96, y: 96 };
+  await postMouse(WM_MOUSEMOVE, seedPoint);
+  await waitForCondition(
+    "main-menu seed mouse move",
+    (clientState) => clientState.input?.mouse?.x === seedPoint.x &&
+      clientState.input?.mouse?.y === seedPoint.y,
+    12);
+
+  await postMouse(WM_MOUSEMOVE, revealPoint);
+  return waitForCondition(
+    "main-menu reveal",
+    (clientState) => clientState.input?.mouse?.x === revealPoint.x &&
+      clientState.input?.mouse?.y === revealPoint.y &&
+      clientState.transition?.finished === true &&
+      clientState.input?.mouse?.visible === true &&
+      clientState.gates?.breakTheMovie === false &&
+      realMenuHitMatches(clientState.mainMenu, "underButtonSinglePlayerCenter", "buttonSinglePlayer"),
+    120);
+}
+
+async function waitForButtonDown(target, label, maxFrames = 12) {
+  return waitForCondition(
+    label + " down",
+    (clientState) => {
+      const downTarget = findWindowById(clientState, target.id);
+      return clientState.input?.grabWindow?.id === target.id && downTarget?.selected === true;
+    },
+    maxFrames);
+}
+
+async function waitForButtonReleased(target, label, maxFrames = 12) {
+  return waitForCondition(
+    label + " release",
+    (clientState) => {
+      const finalTarget = findWindowById(clientState, target.id);
+      return finalTarget == null || finalTarget.selected === false;
+    },
+    maxFrames);
+}
+
+async function clickButton(button, hitProbe, label, settleFrames = 120) {
+  expectProbe(button?.clickable === true, label + " button is not clickable", button);
+  const point = hitProbe?.point ?? { x: button.centerX, y: button.centerY };
+  expectProbe(Number.isFinite(point.x) && Number.isFinite(point.y),
+    label + " click point is invalid", { button, hitProbe, point });
+  const target = hitProbe?.window?.found === true ? hitProbe.window : button;
+  expectProbe(target?.clickable === true,
+    label + " target is not clickable", { button, hitProbe, target });
+
+  await postMouse(WM_MOUSEMOVE, point);
+  await postMouse(WM_LBUTTONDOWN, point);
+  await waitForButtonDown(target, label);
+  await postMouse(WM_LBUTTONUP, point);
+  const released = await waitForButtonReleased(target, label);
+  const settled = settleFrames == null ? released : await waitForTransitionIdle(label, settleFrames);
+  return { point, target, released, settled };
+}
+
+async function waitForCampaignStartDispatch(baselineDebug, maxFrames = 300) {
+  const baseline = {
+    checkCDCount: Number(baselineDebug?.checkCDCount ?? 0),
+    prepareCampaignCount: Number(baselineDebug?.prepareCampaignCount ?? 0),
+    setupGameStartCount: Number(baselineDebug?.setupGameStartCount ?? 0),
+    doGameStartCount: Number(baselineDebug?.doGameStartCount ?? 0),
+  };
+  return waitForCondition(
+    "easy USA campaign start dispatch",
+    (clientState) => {
+      const debug = clientState.mainMenu?.debug;
+      if (Number(debug?.checkCDCount ?? 0) > baseline.checkCDCount
+          && Number(debug?.lastCDPresent ?? 0) !== 1
+          && Number(debug?.prepareCampaignCount ?? 0) <= baseline.prepareCampaignCount) {
+        throw new Error("campaign start stopped at original insert-CD check: " + JSON.stringify({ baseline, debug }));
+      }
+      return Number(debug?.prepareCampaignCount ?? 0) > baseline.prepareCampaignCount
+        && Number(debug?.setupGameStartCount ?? 0) > baseline.setupGameStartCount
+        && Number(debug?.doGameStartCount ?? 0) > baseline.doGameStartCount
+        && Number(debug?.lastCDPresent ?? 0) === 1
+        && Number(debug?.lastPrepareDifficulty ?? -1) === DIFFICULTY_EASY
+        && Number(debug?.lastSetupDifficulty ?? -1) === DIFFICULTY_EASY
+        && Number(debug?.lastNewGameMode ?? -1) === GAME_SINGLE_PLAYER
+        && Number(debug?.lastNewGameDifficulty ?? -1) === DIFFICULTY_EASY
+        && typeof debug?.lastPendingFile === "string"
+        && debug.lastPendingFile.length > 0
+        && debug.lastPendingFile === debug.lastSetupMap;
+    },
+    maxFrames);
+}
+
+async function startEasyUsaCampaign() {
+  console.error("[probe] preparing real MainMenu campaign path...");
+  let frame = await runFrames(5, "initial menu frames");
+  if (frame.frame?.clientState?.shell?.topIsMainMenu !== true) {
+    frame = await waitForCondition(
+      "main menu available",
+      (clientState) => clientState.shell?.topIsMainMenu === true &&
+        clientState.shell?.topHidden === false,
+      120);
+  }
+  expectProbe(frame.frame?.clientState?.mainMenu?.buttonSinglePlayer?.found === true,
+    "main menu Single Player button geometry is unavailable",
+    frame.frame?.clientState?.mainMenu?.buttonSinglePlayer);
+
+  const revealed = await revealMainMenu();
+
+  console.error("[probe] clicking real ButtonSinglePlayer...");
+  const singlePlayerClick = await clickButton(
+    revealed.frame.clientState.mainMenu.buttonSinglePlayer,
+    revealed.frame.clientState.mainMenu.underButtonSinglePlayerCenter,
+    "single-player");
+  const singlePlayerMenu = singlePlayerClick.settled.frame?.clientState?.mainMenu;
+  expectProbe(realMenuHitMatches(singlePlayerMenu, "underButtonUSACenter", "buttonUSA"),
+    "single-player click did not expose USA campaign button", singlePlayerMenu);
+
+  console.error("[probe] clicking real ButtonUSA...");
+  const usaClick = await clickButton(
+    singlePlayerMenu.buttonUSA,
+    singlePlayerMenu.underButtonUSACenter,
+    "usa");
+  const difficultyMenu = usaClick.settled.frame?.clientState?.mainMenu;
+  expectProbe(realMenuHitMatches(difficultyMenu, "underButtonEasyCenter", "buttonEasy"),
+    "USA click did not expose Easy difficulty button", difficultyMenu);
+
+  console.error("[probe] clicking real ButtonEasy...");
+  const baselineDebug = difficultyMenu?.debug;
+  const easyClick = await clickButton(
+    difficultyMenu.buttonEasy,
+    difficultyMenu.underButtonEasyCenter,
+    "easy",
+    null);
+  const dispatch = await waitForCampaignStartDispatch(baselineDebug);
+  const dispatchDebug = dispatch.frame?.clientState?.mainMenu?.debug ?? null;
+  console.error("[probe] campaign start queued:", JSON.stringify({
+    pendingFile: dispatchDebug?.lastPendingFile,
+    newGameMode: dispatchDebug?.lastNewGameMode,
+    difficulty: dispatchDebug?.lastNewGameDifficulty,
+  }));
+  return {
+    singlePlayer: compactMenuFrame(singlePlayerClick.settled),
+    usa: compactMenuFrame(usaClick.settled),
+    easy: compactMenuFrame(easyClick.released),
+    dispatch: compactMenuFrame(dispatch),
+  };
+}
+
 try {
   console.error("[probe] navigating to harness...");
   await page.goto(HARNESS_URL, { waitUntil: "domcontentloaded" });
@@ -326,6 +603,7 @@ try {
     };
 
   } else if (TARGET === "player-control") {
+    result.campaignStart = await startEasyUsaCampaign();
     console.error("[probe] running frames until player control...");
     const playerControlResult = await page.evaluate((maxFrames) => {
       return new Promise(async (resolve) => {
