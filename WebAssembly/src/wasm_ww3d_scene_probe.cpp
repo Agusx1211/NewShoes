@@ -147,6 +147,7 @@ struct ProbeW3DDisplaySceneStorage
 
 } // namespace
 
+#ifndef CNC_PORT_LINKS_REAL_W3D_SCENE_EXTRA_PASSES
 void __attribute__((weak)) DoTrees(RenderInfoClass &)
 {
 	++g_scene_probe_tree_flushes;
@@ -169,6 +170,7 @@ void __attribute__((weak)) DoParticles(RenderInfoClass &)
 {
 	++g_scene_probe_particle_flushes;
 }
+#endif
 
 ParticleSystemManager *TheParticleSystemManager __attribute__((weak)) = nullptr;
 W3DShadowManager *TheW3DShadowManager __attribute__((weak)) = nullptr;

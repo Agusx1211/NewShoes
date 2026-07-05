@@ -8025,6 +8025,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Cross-cutting: harness & verification (ongoing, never "done")
 
+- [x] Gate the W3D scene extra-pass weak hooks out of the real `cnc-port`
+      runtime. `cnc-port` now defines
+      `CNC_PORT_LINKS_REAL_W3D_SCENE_EXTRA_PASSES`, and
+      `wasm_ww3d_scene_probe.cpp` only emits its weak `DoTrees`,
+      `DoShadows`, and `DoParticles` counting hooks for probe-only builds.
+      This removes three direct-object weak definitions from the real runtime
+      link so `BaseHeightMap.cpp`, `W3DShadow.cpp`, and
+      `W3DParticleSys.cpp` can satisfy the same extra-pass symbols. The weak
+      audit now reports 160 compiled weak definitions, 26 gated-out
+      declarations, and 158 strong-provider overlaps. Verified with
+      `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly --silent run verify:cnc-port-weak-stubs`,
+      direct `llvm-nm` checks that the `cnc-port` scene probe object no longer
+      defines those three weak symbols, `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs` (`ok: true`, W3D scene screenshot set
+      refreshed), and `node WebAssembly/harness/startup_vertical_smoke.mjs`
+      (`ok: true`, real menu/campaign-start screenshots refreshed).
 - [x] Add a `cnc-port` weak-stub audit for the Fable weak-symbol burn-down.
       `WebAssembly/tools/verify_cnc_port_weak_stubs.mjs` parses the explicit
       `__attribute__((weak))` declarations in the W3D render/scene/terrain
@@ -8035,7 +8052,7 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       preprocessor guards, and strong-provider overlaps by mangled symbol. It
       deliberately does not claim exact final body provenance because Emscripten
       3.1.6 filters wasm-ld map flags and final wasm symbol visibility is too
-      stripped for the C++ probe names. Current output reports 186 explicit weak
+      stripped for the C++ probe names. Initial output reported 186 explicit weak
       declarations, 163 compiled weak definitions, 23 gated-out declarations,
       and 161 strong-provider overlaps. Verified with `node --check
       WebAssembly/tools/verify_cnc_port_weak_stubs.mjs`, package JSON parsing,

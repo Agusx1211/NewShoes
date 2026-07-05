@@ -292,11 +292,15 @@ residue and the next frontier.
       exact final body provenance (Emscripten filters wasm-ld maps and final
       wasm symbols are not enough). As of 2026-07-05 it finds 186 explicit
       weak declarations across the render/scene/terrain probe files plus
-      `wasm_ww3d_terrain_probe_stubs.cpp`, 163 compiled weak definitions, 23
-      gated-out render declarations, and 161 strong-provider overlaps to burn
-      down next. (Real-init already deleted the probe GameClient/Object/
-      GameLogic/Display/LoadScreen/OptionPreferences reimplementations and
-      all 26 weak `UNUSED_INI_BLOCK_PARSER` stubs.)
+      `wasm_ww3d_terrain_probe_stubs.cpp`, 160 compiled weak definitions, 26
+      gated-out declarations, and 158 strong-provider overlaps to burn down
+      next. The `DoTrees` / `DoShadows` / `DoParticles` scene extra-pass weak
+      hooks are now gated out of `cnc-port` by
+      `CNC_PORT_LINKS_REAL_W3D_SCENE_EXTRA_PASSES`, leaving the real
+      `BaseHeightMap.cpp`, `W3DShadow.cpp`, and `W3DParticleSys.cpp` owners to
+      satisfy the runtime link. (Real-init already deleted the probe
+      GameClient/Object/GameLogic/Display/LoadScreen/OptionPreferences
+      reimplementations and all 26 weak `UNUSED_INI_BLOCK_PARSER` stubs.)
 - [ ] Mount the base Generals archives (`INI.big`, `English.big`,
       `Window.big`, `Terrain.big`) when supplied, resolving the known missing
       startup set (`Data\INI\Default\*.ini`, `Rank.ini`, `CommandMap.ini`,
