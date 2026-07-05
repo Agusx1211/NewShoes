@@ -84,7 +84,9 @@ extern WindowMsgHandledType PopupReplayInput(GameWindow *window, UnsignedInt msg
 extern WindowMsgHandledType ExtendedMessageBoxSystem(GameWindow *window,
 	UnsignedInt msg, WindowMsgData mData1, WindowMsgData mData2);
 extern const Char *g_csfFile;
+#ifndef CNC_PORT_LINKS_REAL_W3D_RENDER_MENU_CALLBACK_HELPERS
 Bool DontShowMainMenu __attribute__((weak)) = FALSE;
+#endif
 
 using WindowLayoutScriptRuntimeAnchor =
 	Bool (*)(File *, char *, UnsignedInt, WindowLayoutInfo *);
@@ -100,8 +102,9 @@ __attribute__((used)) static WindowLayoutScriptRuntimeAnchor
 
 FunctionLexicon *TheFunctionLexicon = nullptr;
 
-// These helpers are owned by the online-heavy PopupPlayerInfo menu. Keep the
-// Skirmish callback owner linkable without pulling WOL/GameSpy into cnc-port.
+// These helpers are owned by online/menu callback sources. Probe-only builds use
+// weak fallbacks; cnc-port links the real providers so the archive members win.
+#ifndef CNC_PORT_LINKS_REAL_W3D_RENDER_MENU_CALLBACK_HELPERS
 __attribute__((weak)) void BattleHonorTooltip(GameWindow *, WinInstanceData *, UnsignedInt)
 {
 }
@@ -128,6 +131,7 @@ __attribute__((weak)) void playerTemplateListBoxTooltip(
 __attribute__((weak)) void destroyQuitMenu()
 {
 }
+#endif
 
 extern WindowMsgHandledType BeaconWindowInput(GameWindow *window, UnsignedInt msg,
 	WindowMsgData mData1, WindowMsgData mData2);

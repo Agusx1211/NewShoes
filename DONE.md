@@ -8327,6 +8327,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       direct `llvm-nm --demangle` checks, `EXPECT_WASM=1 node
       WebAssembly/harness/smoke.mjs`, and `node
       WebAssembly/harness/startup_vertical_smoke.mjs`.
+- [x] Gate the W3D render-probe menu callback helper weak group out of the real
+      `cnc-port` runtime. `cnc-port` now defines
+      `CNC_PORT_LINKS_REAL_W3D_RENDER_MENU_CALLBACK_HELPERS`, so
+      `wasm_ww3d_render_probe.cpp` no longer emits the weak `DontShowMainMenu`,
+      `BattleHonorTooltip`, `ResetBattleHonorInsertion`, `InsertBattleHonor`,
+      `playerTemplateComboBoxTooltip`, `playerTemplateListBoxTooltip`, or
+      `destroyQuitMenu` fallback definitions in the real link. The real
+      providers come from the original menu/lobby callback sources already in
+      `zh_gameengine_real_lifecycle_runtime`. The weak audit now reports 2
+      compiled weak definitions, 184 gated-out declarations, and zero
+      strong-provider overlaps; the only compiled explicit weak definitions
+      left in the audit are the no-final `ParticleSystemManager::queueParticleRender`
+      and `RunBenchmark` boundaries. Direct `llvm-nm` checks show the render-probe
+      object no longer defines the menu callback helper weak symbols. Verified
+      with `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly --silent run verify:cnc-port-weak-stubs`,
+      direct `llvm-nm --demangle` checks, `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs`, and `node
+      WebAssembly/harness/startup_vertical_smoke.mjs`.
 - [x] Add a `cnc-port` weak-stub audit for the Fable weak-symbol burn-down.
       `WebAssembly/tools/verify_cnc_port_weak_stubs.mjs` parses the explicit
       `__attribute__((weak))` declarations in the W3D render/scene/terrain

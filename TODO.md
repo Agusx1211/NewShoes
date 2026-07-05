@@ -281,7 +281,7 @@ residue and the next frontier.
       `WebAssembly/src/` as real subsystems link in — current count linked
       into cnc-port (Fable audit): 30 `__attribute__((weak))` in
       `wasm_ww3d_render_probe.cpp`, 15 in `wasm_ww3d_scene_probe.cpp`, 11 in
-      `wasm_ww3d_terrain_probe.cpp`; each is a potential
+      `wasm_ww3d_terrain_probe.cpp`; each compiled weak body is a potential
       "real .o never pulled" trap of the 18a9ea4 class — enumerate which
       weak bodies actually won at link and gate/retire them; retire `-smoke` targets
       (and their open "promote to real ownership" TODO debt) once the real
@@ -292,9 +292,16 @@ residue and the next frontier.
       exact final body provenance (Emscripten filters wasm-ld maps and final
       wasm symbols are not enough). As of 2026-07-05 it finds 186 explicit
       weak declarations across the render/scene/terrain probe files plus
-      `wasm_ww3d_terrain_probe_stubs.cpp`, 9 compiled weak definitions, 177
-      gated-out declarations, and 7 strong-provider overlaps to burn down
-      next. The `DoTrees` / `DoShadows` / `DoParticles` scene extra-pass weak
+      `wasm_ww3d_terrain_probe_stubs.cpp`, 2 compiled weak definitions, 184
+      gated-out declarations, and zero strong-provider overlaps. The only
+      compiled explicit weak definitions left in the current audit are the
+      no-final `ParticleSystemManager::queueParticleRender` and `RunBenchmark`
+      boundaries. The W3D render-probe menu callback helper weak group
+      (`DontShowMainMenu`, `destroyQuitMenu`, the battle-honor helpers, and
+      the player-template tooltip helpers) is gated out by
+      `CNC_PORT_LINKS_REAL_W3D_RENDER_MENU_CALLBACK_HELPERS`, leaving
+      `wasm_ww3d_render_probe.cpp` with zero compiled explicit weak
+      declarations. The `DoTrees` / `DoShadows` / `DoParticles` scene extra-pass weak
       hooks are now gated out of `cnc-port` by
       `CNC_PORT_LINKS_REAL_W3D_SCENE_EXTRA_PASSES`, and the scene-probe
       `TheParticleSystemManager`, `TheW3DShadowManager`,
