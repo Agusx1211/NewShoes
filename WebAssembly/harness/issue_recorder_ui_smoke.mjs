@@ -16,14 +16,24 @@ try {
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc && window.CnCIssueRecorder));
   await page.evaluate(() => {
     window.CnCIssueRecorder.setRpc(window.CnCPort.rpc.bind(window.CnCPort));
+    window.CnCIssueRecorder.noteFrame(
+      "realEngineFrameTick",
+      { frames: 1 },
+      { ok: true, frame: { framesCompleted: 77 }, state: { frame: 0 } },
+      1.5,
+    );
     document.querySelector("#overlay")?.classList.add("hidden");
   });
   await page.locator("#deepCapture").uncheck();
   await page.locator("#videoCapture").uncheck();
   await page.locator("#issueButton").click();
   await page.locator("#issueModal:not(.hidden)").waitFor();
-  await page.locator("#issueTitle").fill("UI smoke");
-  await page.locator("#issueComment").fill("Annotated issue capture without booting wasm.");
+  await page.locator("#issueTitle").click();
+  await page.keyboard.type("UI smoke");
+  await page.locator("#issueComment").click();
+  await page.keyboard.type("Annotated issue capture without booting wasm.");
+  await expectInputValue(page, "#issueTitle", "UI smoke");
+  await expectInputValue(page, "#issueComment", "Annotated issue capture without booting wasm.");
   const box = await page.locator("#issueAnnotationCanvas").boundingBox();
   assert.ok(box, "annotation canvas should be visible");
   await page.mouse.move(box.x + 50, box.y + 50);
@@ -38,6 +48,7 @@ try {
       id: saved.id,
       title: saved.title,
       comment: saved.comment,
+      markerFrame: saved.markerFrame,
       strokeCount: saved.annotation.strokeCount,
       hasScreenshot: typeof saved.screenshot.dataUrl === "string" && saved.screenshot.dataUrl.startsWith("data:image/png"),
       hasAnnotated: typeof saved.annotation.annotatedDataUrl === "string" && saved.annotation.annotatedDataUrl.startsWith("data:image/png"),
@@ -46,6 +57,7 @@ try {
   assert.equal(issue.id, "issue-001");
   assert.equal(issue.title, "UI smoke");
   assert.ok(issue.comment.includes("Annotated"));
+  assert.equal(issue.markerFrame, 77);
   assert.equal(issue.strokeCount, 1);
   assert.equal(issue.hasScreenshot, true);
   assert.equal(issue.hasAnnotated, true);
@@ -53,4 +65,9 @@ try {
 } finally {
   await browser.close();
   await server.close();
+}
+
+async function expectInputValue(page, selector, expected) {
+  const value = await page.locator(selector).inputValue();
+  assert.equal(value, expected);
 }

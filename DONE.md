@@ -8015,6 +8015,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       frame, and writes repro screenshot/state artifacts. Verified with
       `node --check` on the new/modified harness modules, `git diff --check`,
       and `npm --prefix WebAssembly run test:issue-recorder`.
+- [x] Fix the first human issue-dump report feedback loop. The sample
+      `/tmp/cnc-2026-07-05T18-16-00-194Z-manual.cncdump.json.zip` parsed
+      cleanly with 1,233 timeline events, 347 frame samples, 109 logs, one
+      annotated issue screenshot, and a deep snapshot, but it exposed two
+      gaps: the bridge's global keyboard handler prevented typing into the
+      report dialog, and issue markers could fall back to the shallow
+      `state.frame` value of `0`. `bridge.js` now leaves keyboard events alone
+      while DOM UI/overlays own focus, `play.mjs` does the same for the console
+      shortcut, `issue-recorder.mjs` keeps a monotonic last engine-frame marker,
+      and the recorder now captures harness server build/version metadata from
+      `GET /__cnc_build_info` (git commit/branch/dirty plus server runtime) in
+      `manifest.build.server`. The UI smoke now uses real Playwright keyboard
+      typing and asserts the saved issue comment/title plus marker frame.
+      Verified with `npm --prefix WebAssembly run test:issue-recorder`,
+      `git diff --check`, `node --check` on the touched harness modules, and a
+      replay smoke that consumed the sample dump and wrote screenshot/state
+      artifacts under `WebAssembly/artifacts/issue-replays/` (the old dump's
+      pre-fix `markerFrame:0` correctly limits that smoke to dump ingestion
+      rather than exact scene replay).
 - [x] Fix `mac_verify.mjs --target=player-control` so it actually starts
       MD_USA01 before waiting for player-control predicates. The generated
       Mac-side probe now reuses the real Win32 message path to reveal the real

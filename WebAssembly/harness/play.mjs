@@ -353,8 +353,23 @@ function toggleConsole() {
   }
 }
 
+function keyboardEventBelongsToEditableTarget(event) {
+  const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+  const nodes = path.length > 0 ? path : [event.target, document.activeElement];
+  return nodes.some((node) => {
+    if (!(node instanceof Element)) {
+      return false;
+    }
+    return node.isContentEditable ||
+      Boolean(node.closest("input, textarea, select, button, [contenteditable=''], [contenteditable='true']"));
+  });
+}
+
 consoleToggle.addEventListener("click", toggleConsole);
 window.addEventListener("keydown", (event) => {
+  if (keyboardEventBelongsToEditableTarget(event)) {
+    return;
+  }
   if (event.key === "`" && !event.repeat) {
     toggleConsole();
   }

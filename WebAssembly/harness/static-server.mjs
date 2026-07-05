@@ -1,7 +1,12 @@
 import { createReadStream } from "node:fs";
 import { mkdir, stat, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { createServer } from "node:http";
 import { basename, extname, relative, resolve, sep } from "node:path";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+const serverStartedAt = new Date().toISOString();
 
 const contentTypes = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -42,6 +47,50 @@ function sendJson(response, statusCode, payload) {
     "content-type": "application/json; charset=utf-8",
   }));
   response.end(JSON.stringify(payload));
+}
+
+async function gitOutput(root, args) {
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", root, ...args], {
+      timeout: 2000,
+      maxBuffer: 1024 * 1024,
+    });
+    return stdout.trimEnd();
+  } catch {
+    return null;
+  }
+}
+
+async function collectBuildInfo(root) {
+  const [commit, branch, describe, statusText] = await Promise.all([
+    gitOutput(root, ["rev-parse", "HEAD"]),
+    gitOutput(root, ["branch", "--show-current"]),
+    gitOutput(root, ["describe", "--always", "--dirty", "--tags"]),
+    gitOutput(root, ["status", "--short"]),
+  ]);
+  const status = statusText == null || statusText === ""
+    ? []
+    : statusText.split("\n").slice(0, 200);
+  return {
+    schema: "cnc.harness-build-info.v1",
+    generatedAt: new Date().toISOString(),
+    server: {
+      startedAt: serverStartedAt,
+      node: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      pid: process.pid,
+    },
+    git: {
+      available: commit != null,
+      commit,
+      shortCommit: commit ? commit.slice(0, 12) : null,
+      branch: branch || null,
+      describe: describe || null,
+      dirty: statusText == null ? null : status.length > 0,
+      status,
+    },
+  };
 }
 
 function sanitizeUploadName(name) {
@@ -124,6 +173,11 @@ export async function startStaticServer({
     try {
       const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
       const pathname = decodeURIComponent(requestUrl.pathname);
+
+      if (request.method === "GET" && pathname === "/__cnc_build_info") {
+        sendJson(response, 200, await collectBuildInfo(staticRoot));
+        return;
+      }
 
       if (request.method === "POST" && pathname === "/__cnc_issue_dump") {
         if (!issueDumpRoot) {

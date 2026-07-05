@@ -17,6 +17,12 @@ const server = await startStaticServer({
 });
 
 try {
+  const buildInfoResponse = await fetch(new URL("__cnc_build_info", server.url));
+  assert.equal(buildInfoResponse.status, 200);
+  const buildInfo = await buildInfoResponse.json();
+  assert.equal(buildInfo.schema, "cnc.harness-build-info.v1");
+  assert.equal(typeof buildInfo.server.startedAt, "string");
+
   const body = JSON.stringify({
     schema: "cnc.issue-dump.v1",
     id: "test-dump",

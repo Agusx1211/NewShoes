@@ -101,6 +101,11 @@ function compactCanvas(canvas) {
   };
 }
 
+function numericFrame(value) {
+  const frame = Number(value);
+  return Number.isFinite(frame) && frame >= 0 ? frame : null;
+}
+
 function compactGameplay(gameplay) {
   if (!gameplay) {
     return null;
@@ -395,6 +400,29 @@ async function queryAssetMetadata(url) {
   }
 }
 
+async function queryServerBuildInfo() {
+  try {
+    const response = await fetch(new URL("/__cnc_build_info", window.location.href), {
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+      };
+    }
+    return {
+      ok: true,
+      ...(await response.json()),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 async function collectBuildAssets() {
   const base = window.location.href;
   const urls = [
@@ -406,13 +434,17 @@ async function collectBuildAssets() {
     "./play.html",
     "./harness.css",
   ].map((path) => new URL(path, base).href);
-  const assets = await Promise.all(urls.map(queryAssetMetadata));
+  const [assets, server] = await Promise.all([
+    Promise.all(urls.map(queryAssetMetadata)),
+    queryServerBuildInfo(),
+  ]);
   const latestMs = assets.reduce((latest, asset) => {
     const ms = asset.lastModified ? Date.parse(asset.lastModified) : 0;
     return Number.isFinite(ms) ? Math.max(latest, ms) : latest;
   }, 0);
   return {
     assets,
+    server,
     latestLastModified: latestMs > 0 ? new Date(latestMs).toISOString() : null,
   };
 }
@@ -560,6 +592,7 @@ class IssueRecorder {
     this.lastPersist = null;
     this.sequence = 0;
     this.frameCounter = 0;
+    this.lastFrameMarker = null;
     this.deepIssueCapture = true;
     this.includeVideo = true;
     this.mediaRecorder = null;
@@ -659,6 +692,7 @@ class IssueRecorder {
       frame: compactFrame(result?.frame),
       state: compactState(result?.state),
     };
+    this.noteEngineFrame(sample.frame?.framesCompleted ?? sample.state?.frame);
     pushBounded(this.frameSamples, sample, DEFAULT_LIMITS.frameSamples);
     this.record("frame.sample", sample);
   }
@@ -853,14 +887,32 @@ class IssueRecorder {
     if (!this.recording && !force && this.events.length >= DEFAULT_LIMITS.preRecordEvents) {
       this.events.shift();
     }
+    const base = eventBase(type);
     const event = {
       seq: ++this.sequence,
-      ...eventBase(type),
+      ...base,
+      frame: this.currentEngineFrame(base.frame),
       data: redactLarge(data),
     };
     pushBounded(this.events, event, this.recording ? DEFAULT_LIMITS.events : DEFAULT_LIMITS.preRecordEvents);
     this.refreshStatus();
     return event;
+  }
+
+  noteEngineFrame(value) {
+    const frame = numericFrame(value);
+    if (frame == null) {
+      return;
+    }
+    this.lastFrameMarker = Math.max(this.lastFrameMarker ?? 0, frame);
+  }
+
+  currentEngineFrame(fallback = null) {
+    const liveFrame = numericFrame(fallback ?? window.CnCPort?.state?.frame);
+    if (liveFrame != null) {
+      this.noteEngineFrame(liveFrame);
+    }
+    return this.lastFrameMarker ?? liveFrame;
   }
 
   async startRecording(reason = "manual") {
@@ -986,7 +1038,7 @@ class IssueRecorder {
     this.currentIssue = {
       id: issueId,
       createdAt: nowIso(),
-      markerFrame: window.CnCPort?.state?.frame ?? null,
+      markerFrame: this.currentEngineFrame(),
       screenshot: {
         dataUrl,
         width: screenshot?.screenshot?.width ?? this.canvas?.width ?? null,
