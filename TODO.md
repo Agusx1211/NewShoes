@@ -262,10 +262,14 @@ residue and the next frontier.
       boundary, and adds `npm --prefix WebAssembly run
       verify:cnc-port-real-headers`. That audit currently checks 44 direct
       `cnc-port` objects with 0 direct shadow-header offenders, so new direct
-      regressions fail immediately. It still reports 167 linked archive
-      offenders (informational unless `--fail-on-linked`), so the broader
-      seven-header cleanup remains open for linked shim-world libraries still
-      depending on shadow headers.
+      regressions fail immediately. Follow-up burn-down moved the lifecycle
+      runtime off the shadow WOL `WebBrowser.h`, migrated `zh_gameclient_text`
+      and `zh_win32_mouse_browser_real` to the real PreRTS/header prelude, and
+      drops the linked archive count to 19 offenders (informational unless
+      `--fail-on-linked`). Remaining groups are `zh_window_layout_script_runtime`,
+      `zh_w3d_terrain_probe_runtime`, `zh_w3d_device_utility`,
+      `zh_winmain_wndproc_browser`, and the `zh_gameengine_common_core`
+      `INICommonCompat.cpp` compatibility shim.
       Fix: the real headers all already compile under Emscripten — make them
       the ONLY option (define the real-header switches globally, delete the
       shim class bodies for these 7, fix the fallout), and add a CI gate that

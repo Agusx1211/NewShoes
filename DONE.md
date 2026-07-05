@@ -8517,6 +8517,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `node --check WebAssembly/tools/verify_cnc_port_real_headers.mjs`,
       `node --check WebAssembly/tools/run_startup_vertical_smoke.mjs`, and
       `git diff --check`.
+- [x] Burn down the linked real-header shadow dependency count from 167 to 19.
+      Repointed the shared WOL browser compile bridge and
+      `zh_gameengine_real_lifecycle_runtime` at the browser-owned
+      `wasm_webbrowser_boundary.h` instead of the shadow
+      `GameNetwork/WOLBrowser/WebBrowser.h` shim, which removed the large
+      lifecycle offender group. Migrated `zh_gameclient_text` and
+      `zh_win32_mouse_browser_real` to the real PreRTS / original
+      `GlobalData` / original `GameLogic` header prelude with real source and
+      library quote include ordering. Current `verify:cnc-port-real-headers`
+      output: 44 direct `cnc-port` objects checked, 0 direct offenders, 19
+      linked archive offenders left for the broader cleanup. Verified with
+      `npm --prefix WebAssembly run build:port`, `npm --prefix WebAssembly run
+      build:startup-vertical`, `npm --prefix WebAssembly run
+      verify:cnc-port-real-headers`, `npm --prefix WebAssembly run
+      verify:cnc-port-weak-stubs`, `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs`, `node
+      WebAssembly/tools/run_startup_vertical_smoke.mjs`, and
+      `git diff --check`.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an
