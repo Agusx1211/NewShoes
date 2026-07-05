@@ -8876,6 +8876,11 @@ async function loadWasmModule() {
         "string",
         ["string", "number", "number", "number", "number", "number"],
       ),
+      realEngineDetonateWeapon: module.cwrap(
+        "cnc_port_real_engine_detonate_weapon",
+        "string",
+        ["string", "number", "number", "number", "number", "number", "number", "number", "number"],
+      ),
       realEnginePlayAudioEvent: module.cwrap(
         "cnc_port_real_engine_play_audio_event",
         "string",
@@ -13849,6 +13854,41 @@ async function rpc(command, payload = {}) {
         return {
           ok: Boolean(result?.ok) && !aborted,
           command: "realEngineDoFX",
+          aborted,
+          abortMessage,
+          result,
+          state: snapshotState(),
+        };
+      }
+    case "realEngineDetonateWeapon":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineDetonateWeapon");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineDetonateWeapon", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.realEngineDetonateWeapon(
+            String(payload.name ?? "auto"),
+            Number(payload.sourceObjectId ?? 0),
+            Number(payload.x ?? 0),
+            Number(payload.y ?? 0),
+            Number(payload.z ?? 0),
+            payload.useSourcePosition === true ? 1 : 0,
+            payload.clampToTerrain === false ? 0 : 1,
+            payload.inflictDamage === true ? 1 : 0,
+            Number(payload.pumpFrames ?? 0),
+          ));
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        recordLog("real engine detonate weapon", { aborted, abortMessage, result });
+        return {
+          ok: Boolean(result?.ok) && !aborted,
+          command: "realEngineDetonateWeapon",
           aborted,
           abortMessage,
           result,

@@ -848,6 +848,14 @@ public:
 	
 	static void parseWeaponTemplateDefinition(INI* ini);
 
+#ifdef __EMSCRIPTEN__
+	Int wasmGetTemplateCount() const { return static_cast<Int>(m_weaponTemplateVector.size()); }
+	const WeaponTemplate *wasmGetTemplateByIndex(Int index) const
+	{
+		return (index >= 0 && index < static_cast<Int>(m_weaponTemplateVector.size())) ? m_weaponTemplateVector[index] : NULL;
+	}
+#endif
+
 protected:
 
 	WeaponTemplate *findWeaponTemplatePrivate( NameKeyType key ) const;	

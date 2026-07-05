@@ -587,6 +587,10 @@ public:
 #endif
 	}
 
+#ifdef __EMSCRIPTEN__
+	virtual Int wasmGetParticleNuggetCount() const { return m_count > 0 ? m_count : 0; }
+#endif
+
 	virtual void doFXObj(const Object* primary, const Object* secondary) const
 	{
 #ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
@@ -787,6 +791,13 @@ public:
 		}
 #endif
 	}
+
+#ifdef __EMSCRIPTEN__
+	virtual Int wasmGetParticleNuggetCount() const
+	{
+		return m_fx != NULL ? m_fx->wasmGetParticleNuggetCount() : 0;
+	}
+#endif
 
 	static void parse(INI *ini, void *instance, void* /*store*/, const void* /*userData*/)
 	{

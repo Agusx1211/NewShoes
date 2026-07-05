@@ -7663,6 +7663,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `REAL_FX_BROWSER_EXECUTABLE` pointing at Google Chrome,
       `REAL_FX_BROWSER_ARGS="--enable-gpu --use-angle=metal"`, and
       `/opt/homebrew/bin/node harness/real_fx_render_smoke.mjs`.
+- [x] Prove original weapon-impact explosions through the restored real FX
+      path. Added the `realEngineDetonateWeapon` RPC backed by
+      `WeaponStore::handleProjectileDetonation`, plus wasm-only
+      WeaponStore/FXList inspection helpers so the browser harness can select
+      a real loaded `ProjectileDetonationFX` weapon instead of hard-coding test
+      data. `weapon_impact_fx_smoke.mjs` boots the real shell map, chooses a
+      shroud-clear original source object, auto-selected `MarauderTankGun`,
+      and proved the detonation created particle systems and rendered shipped
+      impact textures (`EXScorch01.tga`, `exwave01.tga`, `exexplo03.tga`,
+      `excloud01.tga`, `exshockwav.tga`) through the normal draw history, with
+      a screenshot at
+      `WebAssembly/artifacts/screenshots/weapon-impact-fx-smoke.png`.
+      Verified locally with `npm --prefix WebAssembly run test:weapon-impact-fx`
+      and on the Mac M4 real-GPU path with Google Chrome reporting
+      `ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)`.
 ### Robustness & compatibility
 ### Base game
 ---

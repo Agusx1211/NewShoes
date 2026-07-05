@@ -90,6 +90,10 @@ public:
 	*/
 	virtual void doFXObj(const Object* primary, const Object* secondary = NULL) const;
 
+#ifdef __EMSCRIPTEN__
+	virtual Int wasmGetParticleNuggetCount() const { return 0; }
+#endif
+
 private:
 
 };  
@@ -122,6 +126,7 @@ EMPTY_DTOR(FXNugget)
 */
 class FXList
 {
+	typedef std::list< FXNugget* > FXNuggetList;
 
 public:
 
@@ -142,6 +147,18 @@ public:
 	}
 
 	Int wasmGetNuggetCount() const { return static_cast<Int>(m_nuggets.size()); }
+#ifdef __EMSCRIPTEN__
+	Int wasmGetParticleNuggetCount() const
+	{
+		Int count = 0;
+		for (FXNuggetList::const_iterator it = m_nuggets.begin(); it != m_nuggets.end(); ++it) {
+			if (*it) {
+				count += (*it)->wasmGetParticleNuggetCount();
+			}
+		}
+		return count;
+	}
+#endif
 
 	/// inline convenience method to avoid having to check for null.
 	inline static void doFXPos(const FXList* fx, const Coord3D *primary, const Matrix3D* primaryMtx = NULL, const Real primarySpeed = 0.0f, const Coord3D *secondary = NULL, const Real overrideRadius = 0.0f)
@@ -180,8 +197,6 @@ protected:
 	void doFXObj(const Object* primary, const Object* secondary = NULL) const;
 
 private:
-
-	typedef std::list< FXNugget* > FXNuggetList;
 
 	FXNuggetList m_nuggets;
 

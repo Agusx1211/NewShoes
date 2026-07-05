@@ -64,6 +64,7 @@
 #include "GameLogic/Scripts.h"
 #include "GameLogic/SidesList.h"
 #include "GameLogic/TerrainLogic.h"
+#include "GameLogic/Weapon.h"
 #include "GameLogic/Object.h"
 #include "Common/ThingTemplate.h"
 #include "GameClient/ParticleSys.h"
@@ -3625,6 +3626,271 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_do_fx(
 	json += ",\"systemsAfter\":" + std::to_string(systems_after);
 	json += ",\"particlesBefore\":" + std::to_string(particles_before);
 	json += ",\"particlesAfter\":" + std::to_string(particles_after);
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_detonate_weapon(
+	const char *weapon_name,
+	int source_object_id,
+	float x,
+	float y,
+	float z,
+	int use_source_position,
+	int clamp_to_terrain,
+	int inflict_damage,
+	int pump_frames)
+{
+	static std::string json;
+	const char *requested_name = (weapon_name != NULL && weapon_name[0] != '\0')
+		? weapon_name : "auto";
+	const AsciiString requested_ascii(requested_name);
+	const Bool auto_select_weapon = requested_ascii.compareNoCase("auto") == 0 ||
+		requested_ascii.compareNoCase("*") == 0;
+	json = "{\"ok\":false,\"source\":\"real-engine-weapon-detonation\"";
+	json += ",\"requested\":\"" + json_escape(requested_name) + "\"";
+	if (TheWeaponStore == NULL) {
+		json += ",\"guard\":\"TheWeaponStore\"}";
+		return json.c_str();
+	}
+	if (TheGameLogic == NULL) {
+		json += ",\"guard\":\"TheGameLogic\"}";
+		return json.c_str();
+	}
+	if (TheParticleSystemManager == NULL) {
+		json += ",\"guard\":\"TheParticleSystemManager\"}";
+		return json.c_str();
+	}
+
+	Object *source = TheGameLogic->findObjectByID(static_cast<ObjectID>(source_object_id));
+	if (source == NULL && source_object_id <= 0 && TheGameClient != NULL && TheTacticalView != NULL) {
+		Object *fallback = NULL;
+		Object *clear_fallback = NULL;
+		const Player *local_player = ThePlayerList != NULL ? ThePlayerList->getLocalPlayer() : NULL;
+		const Int local_player_index = local_player != NULL ? local_player->getPlayerIndex() : -1;
+		for (Drawable *drawable = TheGameClient->firstDrawable(); drawable != NULL; drawable = drawable->getNextDrawable()) {
+			Object *candidate = drawable->getObject();
+			const Coord3D *candidate_pos = candidate != NULL ? candidate->getPosition() : NULL;
+			if (candidate == NULL || candidate_pos == NULL || candidate->getDrawable() == NULL) {
+				continue;
+			}
+			if (!std::isfinite(candidate_pos->x) ||
+				!std::isfinite(candidate_pos->y) ||
+				!std::isfinite(candidate_pos->z)) {
+				continue;
+			}
+			if (fallback == NULL) {
+				fallback = candidate;
+			}
+			const Bool shroud_clear = ThePartitionManager == NULL || local_player_index < 0 ||
+				ThePartitionManager->getShroudStatusForPlayer(local_player_index, candidate_pos) == CELLSHROUD_CLEAR;
+			if (shroud_clear && clear_fallback == NULL) {
+				clear_fallback = candidate;
+			}
+			ICoord2D screen_pos = { 0, 0 };
+			try {
+				if (TheTacticalView->worldToScreenTriReturn(candidate_pos, &screen_pos) == View::WTS_INSIDE_FRUSTUM) {
+					fallback = candidate;
+					if (shroud_clear) {
+						clear_fallback = candidate;
+						break;
+					}
+				}
+			} catch (...) {
+			}
+		}
+		source = clear_fallback != NULL ? clear_fallback : fallback;
+		if (source != NULL) {
+			source_object_id = static_cast<int>(source->getID());
+		}
+	}
+	if (source == NULL) {
+		json += ",\"guard\":\"sourceObject\"";
+		json += ",\"sourceObjectId\":" + std::to_string(source_object_id) + "}";
+		return json.c_str();
+	}
+	if (source->getDrawable() == NULL) {
+		json += ",\"guard\":\"sourceDrawable\"";
+		json += ",\"sourceObjectId\":" + std::to_string(source_object_id) + "}";
+		return json.c_str();
+	}
+
+	Coord3D pos = { x, y, z };
+	if (use_source_position != 0) {
+		const Coord3D *source_pos = source->getPosition();
+		if (source_pos == NULL) {
+			json += ",\"guard\":\"sourcePosition\"";
+			json += ",\"sourceObjectId\":" + std::to_string(source_object_id) + "}";
+			return json.c_str();
+		}
+		pos = *source_pos;
+	} else if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z)) {
+		json += ",\"guard\":\"invalidPosition\"";
+		json += ",\"sourceObjectId\":" + std::to_string(source_object_id) + "}";
+		return json.c_str();
+	}
+	if (clamp_to_terrain != 0 && TheTerrainLogic != NULL) {
+		pos.z = TheTerrainLogic->getGroundHeight(pos.x, pos.y);
+	}
+	Int position_shroud = -1;
+	if (ThePartitionManager != NULL && ThePlayerList != NULL && ThePlayerList->getLocalPlayer() != NULL) {
+		position_shroud = static_cast<Int>(
+			ThePartitionManager->getShroudStatusForPlayer(
+				ThePlayerList->getLocalPlayer()->getPlayerIndex(),
+				&pos));
+		if (position_shroud != static_cast<Int>(CELLSHROUD_CLEAR)) {
+			json += ",\"guard\":\"shroudedPosition\"";
+			json += ",\"sourceObjectId\":" + std::to_string(source_object_id);
+			json += ",\"shroud\":" + std::to_string(position_shroud);
+			append_coord3d_fields(json, "position", pos);
+			json += "}";
+			return json.c_str();
+		}
+	}
+
+	const WeaponTemplate *weapon = NULL;
+	const FXList *detonation_fx = NULL;
+	UnsignedInt systems_before = TheParticleSystemManager->getParticleSystemCount();
+	UnsignedInt particles_before = TheParticleSystemManager->getParticleCount();
+	UnsignedInt systems_after = systems_before;
+	UnsignedInt particles_after = particles_before;
+	Int weapon_template_count = TheWeaponStore->wasmGetTemplateCount();
+	Int inspected_weapons = 0;
+	Int skipped_no_fx = 0;
+	Int skipped_no_particle_fx = 0;
+	Int skipped_suspended = 0;
+	Int attempted_weapons = 0;
+	Int selected_particle_nuggets = 0;
+	std::vector<std::string> attempted_weapon_names;
+	if (auto_select_weapon) {
+		for (Int i = 0; i < weapon_template_count; ++i) {
+			const WeaponTemplate *candidate = TheWeaponStore->wasmGetTemplateByIndex(i);
+			++inspected_weapons;
+			if (candidate == NULL) {
+				++skipped_no_fx;
+				continue;
+			}
+			const FXList *candidate_fx = candidate->getProjectileDetonateFX(LEVEL_REGULAR);
+			if (candidate_fx == NULL || candidate_fx->wasmGetNuggetCount() <= 0) {
+				++skipped_no_fx;
+				continue;
+			}
+			const Int candidate_particle_nuggets = candidate_fx->wasmGetParticleNuggetCount();
+			if (candidate_particle_nuggets <= 0) {
+				++skipped_no_particle_fx;
+				continue;
+			}
+			if (candidate->getSuspendFXDelay() > 0) {
+				++skipped_suspended;
+				continue;
+			}
+			const UnsignedInt candidate_systems_before = TheParticleSystemManager->getParticleSystemCount();
+			const UnsignedInt candidate_particles_before = TheParticleSystemManager->getParticleCount();
+			TheWeaponStore->handleProjectileDetonation(
+				candidate,
+				source,
+				&pos,
+				static_cast<WeaponBonusConditionFlags>(0),
+				inflict_damage != 0);
+			const UnsignedInt candidate_systems_after = TheParticleSystemManager->getParticleSystemCount();
+			const UnsignedInt candidate_particles_after = TheParticleSystemManager->getParticleCount();
+			++attempted_weapons;
+			if (attempted_weapon_names.size() < 12) {
+				attempted_weapon_names.push_back(candidate->getName().str());
+			}
+			if (candidate_systems_after > candidate_systems_before ||
+				candidate_particles_after > candidate_particles_before) {
+				weapon = candidate;
+				detonation_fx = candidate_fx;
+				selected_particle_nuggets = candidate_particle_nuggets;
+				systems_before = candidate_systems_before;
+				particles_before = candidate_particles_before;
+				systems_after = candidate_systems_after;
+				particles_after = candidate_particles_after;
+				break;
+			}
+		}
+		if (weapon == NULL) {
+			json += ",\"guard\":\"noEffectiveProjectileDetonationWeapon\"";
+			json += ",\"weaponTemplateCount\":" + std::to_string(weapon_template_count);
+			json += ",\"inspectedWeapons\":" + std::to_string(inspected_weapons);
+			json += ",\"skippedNoProjectileDetonationFX\":" + std::to_string(skipped_no_fx);
+			json += ",\"skippedNoParticleProjectileDetonationFX\":" + std::to_string(skipped_no_particle_fx);
+			json += ",\"skippedSuspendedFX\":" + std::to_string(skipped_suspended);
+			json += ",\"attemptedWeapons\":" + std::to_string(attempted_weapons);
+			json += ",\"attemptedWeaponNames\":[";
+			for (std::size_t i = 0; i < attempted_weapon_names.size(); ++i) {
+				if (i > 0) {
+					json += ",";
+				}
+				json += "\"" + json_escape(attempted_weapon_names[i]) + "\"";
+			}
+			json += "]";
+			json += ",\"sourceObjectId\":" + std::to_string(source_object_id);
+			append_coord3d_fields(json, "position", pos);
+			json += "}";
+			return json.c_str();
+		}
+	} else {
+		weapon = TheWeaponStore->findWeaponTemplate(AsciiString(requested_name));
+		if (weapon == NULL) {
+			json += ",\"guard\":\"missingWeaponTemplate\"}";
+			return json.c_str();
+		}
+		detonation_fx = weapon->getProjectileDetonateFX(LEVEL_REGULAR);
+		if (detonation_fx == NULL) {
+			json += ",\"guard\":\"missingProjectileDetonationFX\"}";
+			return json.c_str();
+		}
+		selected_particle_nuggets = detonation_fx->wasmGetParticleNuggetCount();
+		TheWeaponStore->handleProjectileDetonation(
+			weapon,
+			source,
+			&pos,
+			static_cast<WeaponBonusConditionFlags>(0),
+			inflict_damage != 0);
+		systems_after = TheParticleSystemManager->getParticleSystemCount();
+		particles_after = TheParticleSystemManager->getParticleCount();
+		++attempted_weapons;
+	}
+	if (pump_frames > 0) {
+		run_real_engine_frames(pump_frames);
+		systems_after = TheParticleSystemManager->getParticleSystemCount();
+		particles_after = TheParticleSystemManager->getParticleCount();
+	}
+
+	json = "{\"ok\":";
+	json += (systems_after > systems_before || particles_after > particles_before) ? "true" : "false";
+	json += ",\"source\":\"real-engine-weapon-detonation\"";
+	json += ",\"requested\":\"" + json_escape(requested_name) + "\"";
+	json += ",\"selectedWeapon\":\"" + json_escape(weapon != NULL ? weapon->getName().str() : "") + "\"";
+	json += ",\"autoSelected\":";
+	json += auto_select_weapon ? "true" : "false";
+	json += ",\"weaponTemplateCount\":" + std::to_string(weapon_template_count);
+	json += ",\"inspectedWeapons\":" + std::to_string(inspected_weapons);
+	json += ",\"skippedNoProjectileDetonationFX\":" + std::to_string(skipped_no_fx);
+	json += ",\"skippedNoParticleProjectileDetonationFX\":" + std::to_string(skipped_no_particle_fx);
+	json += ",\"skippedSuspendedFX\":" + std::to_string(skipped_suspended);
+	json += ",\"attemptedWeapons\":" + std::to_string(attempted_weapons);
+	json += ",\"sourceObjectId\":" + std::to_string(source_object_id);
+	json += ",\"sourceTemplate\":\"";
+	const ThingTemplate *source_template = source->getTemplate();
+	json += json_escape(source_template != NULL ? source_template->getName().str() : "");
+	json += "\"";
+	json += ",\"shroud\":" + std::to_string(position_shroud);
+	json += ",\"projectileDetonationFX\":true";
+	json += ",\"detonationNuggets\":" + std::to_string(detonation_fx->wasmGetNuggetCount());
+	json += ",\"detonationParticleNuggets\":" + std::to_string(selected_particle_nuggets);
+	json += ",\"weaponSuspendFXDelay\":" + std::to_string(weapon != NULL ? weapon->getSuspendFXDelay() : 0);
+	json += ",\"inflictDamage\":";
+	json += inflict_damage != 0 ? "true" : "false";
+	json += ",\"systemsBefore\":" + std::to_string(systems_before);
+	json += ",\"systemsAfter\":" + std::to_string(systems_after);
+	json += ",\"particlesBefore\":" + std::to_string(particles_before);
+	json += ",\"particlesAfter\":" + std::to_string(particles_after);
+	json += ",\"pumpFrames\":" + std::to_string(pump_frames > 0 ? pump_frames : 0);
+	json += ",\"framesCompleted\":" + std::to_string(g_frame_state.frames_completed);
+	append_coord3d_fields(json, "position", pos);
 	json += "}";
 	return json.c_str();
 }
