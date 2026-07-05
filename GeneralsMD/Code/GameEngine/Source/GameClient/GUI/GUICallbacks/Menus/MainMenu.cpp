@@ -35,6 +35,10 @@
 #include <string.h>
 #endif
 
+#include "Common/GameAudio.h"
+#include "Common/AudioEventRTS.h"
+#include "Common/AudioHandleSpecialValues.h"
+
 #include "GameSpy/ghttp/ghttp.h"
 
 #include "Lib/BaseType.h"
@@ -778,6 +782,15 @@ void MainMenuInit( WindowLayout *layout, void *userData )
 	*/
 	
 	TheShell->loadScheme("MainMenu");
+
+	// Start main menu music
+	if (TheAudio) {
+		TheAudio->removeAudioEvent(AHSV_StopTheMusicFade);
+		AudioEventRTS shellMusicEvent(AsciiString("Shell"));
+		shellMusicEvent.setShouldFade(TRUE);
+		TheAudio->addAudioEvent(&shellMusicEvent);
+	}
+
 	raiseMessageBoxes = TRUE;
 
 //	if(!localAnimateWindowManager)
