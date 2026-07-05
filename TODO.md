@@ -292,11 +292,14 @@ residue and the next frontier.
       exact final body provenance (Emscripten filters wasm-ld maps and final
       wasm symbols are not enough). As of 2026-07-05 it finds 186 explicit
       weak declarations across the render/scene/terrain probe files plus
-      `wasm_ww3d_terrain_probe_stubs.cpp`, 2 compiled weak definitions, 184
+      `wasm_ww3d_terrain_probe_stubs.cpp`, 1 compiled weak definition, 185
       gated-out declarations, and zero strong-provider overlaps. The only
-      compiled explicit weak definitions left in the current audit are the
-      no-final `ParticleSystemManager::queueParticleRender` and `RunBenchmark`
-      boundaries. The W3D render-probe menu callback helper weak group
+      compiled explicit weak definition left in the current audit is the
+      no-provider `RunBenchmark` boundary. The Benchmark project file references
+      missing third-party C sources (`emfloat.c`, `misc.c`, `nbench0.c`,
+      `nbench1.c`, `sysspec.c`), so this is a true missing-library/platform
+      boundary until a browser-owned benchmark or LOD policy replaces it. The
+      W3D render-probe menu callback helper weak group
       (`DontShowMainMenu`, `destroyQuitMenu`, the battle-honor helpers, and
       the player-template tooltip helpers) is gated out by
       `CNC_PORT_LINKS_REAL_W3D_RENDER_MENU_CALLBACK_HELPERS`, leaving
@@ -313,11 +316,11 @@ residue and the next frontier.
       scene-probe gameplay method weak bodies with real providers
       (`W3DTreeBuffer::drawTrees`, the `Drawable` color/dirty helpers,
       `Thing::isKindOf`, and `Object::getControllingPlayer`) are gated out by
-      `CNC_PORT_LINKS_REAL_W3D_SCENE_GAMEPLAY_METHODS`. Remaining near-term
-      scene work: `wasm_ww3d_scene_probe.cpp` now compiles only one explicit
-      weak declaration into `cnc-port`,
-      `ParticleSystemManager::queueParticleRender`, whose base-class provider
-      status still needs separate treatment. All 11 explicit
+      `CNC_PORT_LINKS_REAL_W3D_SCENE_GAMEPLAY_METHODS`. The pure-virtual
+      `ParticleSystemManager::queueParticleRender` base fallback is gated out by
+      `CNC_PORT_LINKS_REAL_W3D_SCENE_PARTICLE_QUEUE`, leaving
+      `wasm_ww3d_scene_probe.cpp` with zero compiled explicit weak declarations.
+      All 11 explicit
       `wasm_ww3d_terrain_probe.cpp` weak declarations are now gated out of
       `cnc-port` by `CNC_PORT_LINKS_REAL_W3D_TERRAIN_OWNERS`, leaving the
       linked real `View`, W3D terrain/water/smudge/projected-shadow,

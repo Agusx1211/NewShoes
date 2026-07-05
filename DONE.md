@@ -8346,6 +8346,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       direct `llvm-nm --demangle` checks, `EXPECT_WASM=1 node
       WebAssembly/harness/smoke.mjs`, and `node
       WebAssembly/harness/startup_vertical_smoke.mjs`.
+- [x] Gate the W3D scene-probe pure-virtual particle queue fallback out of the
+      real `cnc-port` runtime. `cnc-port` now defines
+      `CNC_PORT_LINKS_REAL_W3D_SCENE_PARTICLE_QUEUE`, so
+      `wasm_ww3d_scene_probe.cpp` no longer emits the weak
+      `ParticleSystemManager::queueParticleRender` base-class fallback in the
+      real link; probe-only builds still keep it. The base method is pure
+      virtual in original `ParticleSys.h`, and the real runtime path uses
+      `W3DParticleSystemManager::queueParticleRender` from original
+      `W3DParticleSys.cpp`. The weak audit now reports 1 compiled weak
+      definition, 185 gated-out declarations, and zero strong-provider overlaps,
+      with only the no-provider `RunBenchmark` boundary still compiled. Direct
+      `llvm-nm` checks show the scene-probe object no longer defines the
+      particle queue fallback. Verified with `npm --prefix WebAssembly run
+      build:port`, `npm --prefix WebAssembly --silent run
+      verify:cnc-port-weak-stubs`, direct `llvm-nm --demangle` checks,
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and `node
+      WebAssembly/harness/startup_vertical_smoke.mjs`.
 - [x] Add a `cnc-port` weak-stub audit for the Fable weak-symbol burn-down.
       `WebAssembly/tools/verify_cnc_port_weak_stubs.mjs` parses the explicit
       `__attribute__((weak))` declarations in the W3D render/scene/terrain

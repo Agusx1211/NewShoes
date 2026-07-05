@@ -221,9 +221,11 @@ Player *__attribute__((weak)) Object::getControllingPlayer() const
 }
 #endif
 
+#ifndef CNC_PORT_LINKS_REAL_W3D_SCENE_PARTICLE_QUEUE
 void __attribute__((weak)) ParticleSystemManager::queueParticleRender()
 {
 }
+#endif
 
 extern "C" {
 
