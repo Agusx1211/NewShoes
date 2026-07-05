@@ -15,6 +15,11 @@ let d3d8DrawProgram = null;
 const d3d8Buffers = new Map();
 const d3d8Textures = new Map();
 const d3d8BoundTextures = new Map();
+// Draw-cache: skips normalize* JS object rebuilds and the point-sprite +
+// texture-availability uniform blocks when the draw-state key is unchanged
+// from the previous draw. GL retains state between identical draws.
+let d3d8LastDrawKey = null;
+let d3d8CachedDerived = null; // {renderState, clipPlanes, material, lights, fixedFunctionLights, directionalLights, firstDirectionalLight, vertexLayout, texture0Id, texture1Id, canSampleTexture0, canSampleTexture1, texture0Coordinates, texture1Coordinates, texture0SemanticMode, texture1SemanticMode, appliedTexture0Combiner, appliedStage1Combiner, implicitAlphaCutoutThreshold, appliedPointSprite}
 // Map<`${colorTextureId}:${depthTextureId}`, {fbo, depthRenderbuffer, width, height}>
 const d3d8Framebuffers = new Map();
 let d3d8CurrentFramebuffer = null;
@@ -4642,6 +4647,8 @@ function bindD3D8Framebuffer(payload = {}) {
   // Reset state hash: framebuffer/viewport change outside the draw path.
   harnessState.graphics.lastD3D8StateHash = 0;
   harnessState.graphics.lastD3D8AppliedRenderState = null;
+  d3d8LastDrawKey = null;
+  d3d8CachedDerived = null;
   if (!gl) {
     return 0;
   }
@@ -5495,6 +5502,8 @@ function paintCanvasRgba(rgba) {
   // Reset state hash: clear changes GL state outside the draw path.
   harnessState.graphics.lastD3D8StateHash = 0;
   harnessState.graphics.lastD3D8AppliedRenderState = null;
+  d3d8LastDrawKey = null;
+  d3d8CachedDerived = null;
   syncCanvasSize();
   if (gl) {
     gl.clearColor(rgba[0] / 255, rgba[1] / 255, rgba[2] / 255, rgba[3] / 255);
@@ -5545,6 +5554,8 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
   // Reset state hash: clear changes GL state outside the draw path.
   harnessState.graphics.lastD3D8StateHash = 0;
   harnessState.graphics.lastD3D8AppliedRenderState = null;
+  d3d8LastDrawKey = null;
+  d3d8CachedDerived = null;
   const clearFlags = flags >>> 0;
   const rgba = [
     clampColorByte(red, 0),
@@ -7912,56 +7923,126 @@ function paintD3D8DrawIndexed(payload = {}) {
     isIdentityD3DMatrix(world) &&
     isIdentityD3DMatrix(view) &&
     isIdentityD3DMatrix(projection);
-  const renderState = normalizeD3D8RenderState(payload.renderState);
-  const clipPlanes = normalizeD3D8ClipPlanes(payload.clipPlanes);
-  const material = normalizeD3D8Material(payload.material);
-  const lights = normalizeD3D8Lights(payload.lights);
-  const fixedFunctionLights = d3d8FixedFunctionLights(lights);
-  const directionalLights = d3d8DirectionalLights(lights);
-  const firstDirectionalLight = directionalLights[0] ?? null;
-  const vertexLayout = d3d8VertexLayoutInfo(vertexShaderFvf, vertexStride);
-  const texture0Id = Number(d3d8BoundTextures.get(0) ?? 0) >>> 0;
-  const texture0Resource = texture0Id !== 0 ? d3d8Textures.get(texture0Id) : null;
-  const texture0Ready = Boolean(
-    (texture0Resource?.target ?? gl?.TEXTURE_2D) === gl?.TEXTURE_2D &&
-    texture0Resource?.initializedLevels?.has("0"));
-  const texture1Id = Number(d3d8BoundTextures.get(1) ?? 0) >>> 0;
-  const texture1Resource = texture1Id !== 0 ? d3d8Textures.get(texture1Id) : null;
-  const texture1Ready = Boolean(
-    (texture1Resource?.target ?? gl?.TEXTURE_2D) === gl?.TEXTURE_2D &&
-    texture1Resource?.initializedLevels?.has("0"));
-  const texture0Coordinates = textureStageCoordinateInfo(
-    renderState.textureStages[0],
-    0,
-    vertexStride,
-    vertexLayout,
-    texture0Transform,
-  );
-  const texture1Coordinates = textureStageCoordinateInfo(
-    renderState.textureStages[1],
-    1,
-    vertexStride,
-    vertexLayout,
-    texture1Transform,
-  );
-  const drawUsesPointSpriteCoordinates =
-    (Number(payload.primitiveType ?? 0) >>> 0) === D3DPT_POINTLIST &&
-    Number(renderState.pointSpriteEnable ?? 0) !== 0;
-  const canSampleTexture0 = Boolean(
-    texture0Ready && (texture0Coordinates.supported || drawUsesPointSpriteCoordinates));
-  const canSampleTexture1 = Boolean(
-    texture1Ready && (texture1Coordinates.supported || drawUsesPointSpriteCoordinates));
-  const texture0SemanticMode = canSampleTexture0 ? d3d8TextureSemanticMode(texture0Resource) : 0;
-  const texture1SemanticMode = canSampleTexture1 ? d3d8TextureSemanticMode(texture1Resource) : 0;
-  const appliedTexture0Combiner = textureStageCombinerInfo(renderState.textureStages[0], 0, canSampleTexture0);
-  const appliedStage1Combiner = textureStageCombinerInfo(renderState.textureStages[1], 1, canSampleTexture1);
-  const implicitAlphaCutoutThreshold = d3d8ImplicitAlphaCutoutThreshold(
-    renderState,
-    canSampleTexture0,
-    texture0Resource,
-    canSampleTexture1,
-    texture1Resource,
-  );
+  // --- Draw-cache: compute key and gate normalize* + derived-object rebuilds ---
+  // Key = (stateHash, tex0Id, tex1Id, fvf, stride, primitiveType).
+  // primitiveType is added because it affects point-sprite semantics and is NOT
+  // covered by the native state hash. Texture transforms ARE in stateHash
+  // (wasm_d3d8_shim.cpp ~3734-3738), so the key transitively covers them.
+  const drawCacheKey = `${Number(payload.stateHash ?? 0) >>> 0},`
+    + `${Number(d3d8BoundTextures.get(0) ?? 0) >>> 0},`
+    + `${Number(d3d8BoundTextures.get(1) ?? 0) >>> 0},`
+    + `${vertexShaderFvf},`
+    + `${vertexStride},`
+    + `${Number(payload.primitiveType ?? 0) >>> 0}`;
+  const drawCacheHit = drawCacheKey === d3d8LastDrawKey && d3d8CachedDerived !== null;
+
+  let renderState, clipPlanes, material, lights;
+  let fixedFunctionLights, directionalLights, firstDirectionalLight;
+  let vertexLayout;
+  let texture0Id, texture0Resource, texture0Ready;
+  let texture1Id, texture1Resource, texture1Ready;
+  let texture0Coordinates, texture1Coordinates;
+  let drawUsesPointSpriteCoordinates;
+  let canSampleTexture0, canSampleTexture1;
+  let texture0SemanticMode, texture1SemanticMode;
+  let appliedTexture0Combiner, appliedStage1Combiner;
+  let implicitAlphaCutoutThreshold;
+
+  if (drawCacheHit) {
+    // Reuse cached derived objects — GL retains state between identical draws,
+    // so re-issuing normalize* allocations and uniform writes is redundant.
+    const c = d3d8CachedDerived;
+    renderState = c.renderState;
+    clipPlanes = c.clipPlanes;
+    material = c.material;
+    lights = c.lights;
+    fixedFunctionLights = c.fixedFunctionLights;
+    directionalLights = c.directionalLights;
+    firstDirectionalLight = c.firstDirectionalLight;
+    vertexLayout = c.vertexLayout;
+    texture0Id = c.texture0Id;
+    texture0Resource = texture0Id !== 0 ? d3d8Textures.get(texture0Id) : null;
+    texture0Ready = c.texture0Ready;
+    texture1Id = c.texture1Id;
+    texture1Resource = texture1Id !== 0 ? d3d8Textures.get(texture1Id) : null;
+    texture1Ready = c.texture1Ready;
+    texture0Coordinates = c.texture0Coordinates;
+    texture1Coordinates = c.texture1Coordinates;
+    drawUsesPointSpriteCoordinates = c.drawUsesPointSpriteCoordinates;
+    canSampleTexture0 = c.canSampleTexture0;
+    canSampleTexture1 = c.canSampleTexture1;
+    texture0SemanticMode = c.texture0SemanticMode;
+    texture1SemanticMode = c.texture1SemanticMode;
+    appliedTexture0Combiner = c.appliedTexture0Combiner;
+    appliedStage1Combiner = c.appliedStage1Combiner;
+    implicitAlphaCutoutThreshold = c.implicitAlphaCutoutThreshold;
+  } else {
+    renderState = normalizeD3D8RenderState(payload.renderState);
+    clipPlanes = normalizeD3D8ClipPlanes(payload.clipPlanes);
+    material = normalizeD3D8Material(payload.material);
+    lights = normalizeD3D8Lights(payload.lights);
+    fixedFunctionLights = d3d8FixedFunctionLights(lights);
+    directionalLights = d3d8DirectionalLights(lights);
+    firstDirectionalLight = directionalLights[0] ?? null;
+    vertexLayout = d3d8VertexLayoutInfo(vertexShaderFvf, vertexStride);
+    texture0Id = Number(d3d8BoundTextures.get(0) ?? 0) >>> 0;
+    texture0Resource = texture0Id !== 0 ? d3d8Textures.get(texture0Id) : null;
+    texture0Ready = Boolean(
+      (texture0Resource?.target ?? gl?.TEXTURE_2D) === gl?.TEXTURE_2D &&
+      texture0Resource?.initializedLevels?.has("0"));
+    texture1Id = Number(d3d8BoundTextures.get(1) ?? 0) >>> 0;
+    texture1Resource = texture1Id !== 0 ? d3d8Textures.get(texture1Id) : null;
+    texture1Ready = Boolean(
+      (texture1Resource?.target ?? gl?.TEXTURE_2D) === gl?.TEXTURE_2D &&
+      texture1Resource?.initializedLevels?.has("0"));
+    texture0Coordinates = textureStageCoordinateInfo(
+      renderState.textureStages[0],
+      0,
+      vertexStride,
+      vertexLayout,
+      texture0Transform,
+    );
+    texture1Coordinates = textureStageCoordinateInfo(
+      renderState.textureStages[1],
+      1,
+      vertexStride,
+      vertexLayout,
+      texture1Transform,
+    );
+    drawUsesPointSpriteCoordinates =
+      (Number(payload.primitiveType ?? 0) >>> 0) === D3DPT_POINTLIST &&
+      Number(renderState.pointSpriteEnable ?? 0) !== 0;
+    canSampleTexture0 = Boolean(
+      texture0Ready && (texture0Coordinates.supported || drawUsesPointSpriteCoordinates));
+    canSampleTexture1 = Boolean(
+      texture1Ready && (texture1Coordinates.supported || drawUsesPointSpriteCoordinates));
+    texture0SemanticMode = canSampleTexture0 ? d3d8TextureSemanticMode(texture0Resource) : 0;
+    texture1SemanticMode = canSampleTexture1 ? d3d8TextureSemanticMode(texture1Resource) : 0;
+    appliedTexture0Combiner = textureStageCombinerInfo(renderState.textureStages[0], 0, canSampleTexture0);
+    appliedStage1Combiner = textureStageCombinerInfo(renderState.textureStages[1], 1, canSampleTexture1);
+    implicitAlphaCutoutThreshold = d3d8ImplicitAlphaCutoutThreshold(
+      renderState,
+      canSampleTexture0,
+      texture0Resource,
+      canSampleTexture1,
+      texture1Resource,
+    );
+    // Update draw-cache for next draw
+    d3d8LastDrawKey = drawCacheKey;
+    d3d8CachedDerived = {
+      renderState, clipPlanes, material, lights,
+      fixedFunctionLights, directionalLights, firstDirectionalLight,
+      vertexLayout,
+      texture0Id, texture0Ready, texture1Id, texture1Ready,
+      texture0Coordinates, texture1Coordinates,
+      drawUsesPointSpriteCoordinates,
+      canSampleTexture0, canSampleTexture1,
+      texture0SemanticMode, texture1SemanticMode,
+      appliedTexture0Combiner, appliedStage1Combiner,
+      implicitAlphaCutoutThreshold,
+    };
+  }
+  // ---------------------------------------------------------------------------
   let appliedViewport = null;
   let appliedRenderState = null;
   let appliedTexture0Sampler = null;
@@ -8330,6 +8411,10 @@ function paintD3D8DrawIndexed(payload = {}) {
     } else {
       appliedRenderState = harnessState.graphics.lastD3D8AppliedRenderState;
     }
+    // Point-sprite uniforms: ALWAYS reissued (not cached). The viewport is NOT
+    // in stateHash, so pointViewportHeight could go stale on a cache hit if the
+    // viewport changed with matching state. Point-sprite draws are rare
+    // (particles/point lists) and ~10 uniforms is negligible cost.
     if (bridgeProgram.drawingPoints !== null) {
       gl.uniform1i(bridgeProgram.drawingPoints, appliedPointSprite.drawingPoints ? 1 : 0);
     }
@@ -8360,9 +8445,11 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.pointViewportHeight !== null) {
       gl.uniform1f(bridgeProgram.pointViewportHeight, appliedPointSprite.viewportHeight);
     }
-    // Bound texture identity/availability is not part of the state hash, so
-    // these uniforms must be refreshed even when the rest of the draw state is
-    // cached.
+    // Texture-availability uniforms: skip on draw-cache hit (GL retains them).
+    // Safe because stateHash covers texture transforms (wasm_d3d8_shim.cpp
+    // ~3734-3738) and D3DTSS_TEXTURETRANSFORMFLAGS, so the key transitively
+    // guards these uniforms.
+    if (!drawCacheHit) {
     if (bridgeProgram.texture0CoordinateMode) {
       gl.uniform1i(bridgeProgram.texture0CoordinateMode,
         canSampleTexture0 ? texture0Coordinates.mode : D3DTSS_TCI_PASSTHRU);
@@ -8446,6 +8533,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.texture1Semantic) {
       gl.uniform1i(bridgeProgram.texture1Semantic, texture1SemanticMode);
     }
+    } // !drawCacheHit
     const temporaryIndices = fillModeDraw.lineIndices ?? shadeModeDraw.triangleIndices ?? null;
     let temporaryIndexBuffer = null;
     let restoreProvokingVertex = false;
