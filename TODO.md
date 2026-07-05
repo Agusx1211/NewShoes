@@ -1545,7 +1545,9 @@ residue and the next frontier.
 - [ ] Fixed-timestep simulation is **deterministic** (same seed → same result).
 - [ ] AI opponent plays a skirmish.
 - [ ] Win/lose conditions trigger.
-- [ ] Harness: start match, step N frames, move/attack, assert state changes.
+- [ ] Harness: from the skirmish-start smoke's active match state, issue
+      move/attack orders through the original input/command path and assert
+      object state changes.
 - [ ] Replay/recorder (`Recorder.cpp`) records and plays back deterministically.
 
 ---

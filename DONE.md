@@ -6329,6 +6329,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       controllable object. Screenshot evidence is
       `/Users/aa/cnc-verify/cnc-skirmish-loaded-after-ai-dispatch.png`
       with a nonblank 1280x656 canvas center pixel `[158,144,135,255]`.
+- [x] Gate Skirmish Start with a repeatable focused harness smoke.
+      Added `harness/skirmish_start_smoke.mjs` and `npm run
+      test:skirmish-start`, which mount the full runtime archive set, boot the
+      real shell map, drive Main Menu -> Single Player -> Skirmish -> Start via
+      original Win32 mouse messages, and assert the first official multiplayer
+      map reaches an active match. The Mac M4 Chrome/Metal run selected
+      `maps\alpine assault\alpine assault.map` (2-player, CRC 3735677156) and
+      reached `GAME_SKIRMISH`, `loadingMap=false`, `inputEnabled=true`, 223
+      logic objects, and 223 drawables within 30 post-start frames. Screenshot
+      evidence was copied to
+      `WebAssembly/artifacts/screenshots/skirmish-start-smoke.png`.
 - [x] Load a skirmish map through the real map loader.
       Covered by the live Skirmish Start run above: Alpine Assault reaches
       in-game state through the real menu, `SkirmishGameInfo::startGame`,
