@@ -253,6 +253,65 @@ const d3d8TextureStats = {
   lastSampler: null,
   lastTextureDepthFboBind: null,
 };
+const d3d8PerfStats = {
+  draws: 0,
+  drawElements: 0,
+  drawIndices: 0,
+  drawMs: 0,
+  clears: 0,
+  clearMs: 0,
+  textureUploads: 0,
+  textureUploadBytes: 0,
+  textureUploadPixels: 0,
+  textureUploadMs: 0,
+  textureConvertBytes: 0,
+  textureConvertMs: 0,
+  dxtDecodeMs: 0,
+  volumeTextureUploads: 0,
+  readPixels: 0,
+  readPixelsPixels: 0,
+  readPixelsMs: 0,
+  fboBinds: 0,
+  fboBindMs: 0,
+  fboCreates: 0,
+  fboIncomplete: 0,
+};
+
+function perfNow() {
+  return typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+}
+
+function roundedPerfMs(value) {
+  return Math.round(Number(value ?? 0) * 1000) / 1000;
+}
+
+function d3d8PerfSummary() {
+  return {
+    draws: d3d8PerfStats.draws,
+    drawElements: d3d8PerfStats.drawElements,
+    drawIndices: d3d8PerfStats.drawIndices,
+    drawMs: roundedPerfMs(d3d8PerfStats.drawMs),
+    clears: d3d8PerfStats.clears,
+    clearMs: roundedPerfMs(d3d8PerfStats.clearMs),
+    textureUploads: d3d8PerfStats.textureUploads,
+    textureUploadBytes: d3d8PerfStats.textureUploadBytes,
+    textureUploadPixels: d3d8PerfStats.textureUploadPixels,
+    textureUploadMs: roundedPerfMs(d3d8PerfStats.textureUploadMs),
+    textureConvertBytes: d3d8PerfStats.textureConvertBytes,
+    textureConvertMs: roundedPerfMs(d3d8PerfStats.textureConvertMs),
+    dxtDecodeMs: roundedPerfMs(d3d8PerfStats.dxtDecodeMs),
+    volumeTextureUploads: d3d8PerfStats.volumeTextureUploads,
+    readPixels: d3d8PerfStats.readPixels,
+    readPixelsPixels: d3d8PerfStats.readPixelsPixels,
+    readPixelsMs: roundedPerfMs(d3d8PerfStats.readPixelsMs),
+    fboBinds: d3d8PerfStats.fboBinds,
+    fboBindMs: roundedPerfMs(d3d8PerfStats.fboBindMs),
+    fboCreates: d3d8PerfStats.fboCreates,
+    fboIncomplete: d3d8PerfStats.fboIncomplete,
+  };
+}
 
 const harnessState = {
   booted: false,
@@ -2264,6 +2323,7 @@ function refreshCanvasState(displaySize = getCanvasDisplaySize()) {
     contextLost: gl ? gl.isContextLost() : false,
     drawingBufferWidth: gl ? gl.drawingBufferWidth : canvas.width,
     drawingBufferHeight: gl ? gl.drawingBufferHeight : canvas.height,
+    d3d8Perf: d3d8PerfSummary(),
   };
 }
 
@@ -4325,6 +4385,21 @@ function withPreservedD3D8TextureUnit(callback) {
   return withPreservedD3D8TextureBinding(gl.TEXTURE_2D, callback);
 }
 
+function timedReadPixels(x, y, width, height, format, type, pixels) {
+  const startedAt = perfNow();
+  gl.readPixels(x, y, width, height, format, type, pixels);
+  d3d8PerfStats.readPixels += 1;
+  d3d8PerfStats.readPixelsPixels += Math.max(0, Number(width ?? 0) * Number(height ?? 0));
+  d3d8PerfStats.readPixelsMs += perfNow() - startedAt;
+}
+
+function timedGlClear(bits) {
+  const startedAt = perfNow();
+  gl.clear(bits);
+  d3d8PerfStats.clears += 1;
+  d3d8PerfStats.clearMs += perfNow() - startedAt;
+}
+
 function sampleD3D8TexturePixel(resource, x, y) {
   if (!gl || !resource?.texture || (resource.target ?? gl.TEXTURE_2D) !== gl.TEXTURE_2D) {
     return null;
@@ -4339,7 +4414,7 @@ function sampleD3D8TexturePixel(resource, x, y) {
     const readX = Math.max(0, Math.min(resource.width - 1, Math.trunc(x)));
     const readY = Math.max(0, Math.min(resource.height - 1, Math.trunc(y)));
     const pixels = new Uint8Array(4);
-    gl.readPixels(readX, readY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    timedReadPixels(readX, readY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
     pixel = Array.from(pixels);
   }
   gl.bindFramebuffer(gl.FRAMEBUFFER, previousFramebuffer);
@@ -4411,6 +4486,7 @@ function updateD3D8TextureSummary() {
       lastSampler: d3d8TextureStats.lastSampler,
       lastTextureDepthFboBind: d3d8TextureStats.lastTextureDepthFboBind,
     },
+    d3d8Perf: d3d8PerfSummary(),
   };
 }
 
@@ -4550,214 +4626,223 @@ function ensureD3D8DepthTextureStorage(resource) {
 }
 
 function bindD3D8Framebuffer(payload = {}) {
-	// Reset state hash: framebuffer/viewport change outside the draw path.
-	harnessState.graphics.lastD3D8StateHash = 0;
-	harnessState.graphics.lastD3D8AppliedRenderState = null;
-	if (!gl) {
-		return 0;
-	}
-	const colorTextureId = Number(payload.colorTextureId ?? 0) >>> 0;
-	const depthTextureId = Number(payload.depthTextureId ?? 0) >>> 0;
-	const width = Number(payload.width ?? 0) >>> 0;
-	const height = Number(payload.height ?? 0) >>> 0;
+  // Reset state hash: framebuffer/viewport change outside the draw path.
+  harnessState.graphics.lastD3D8StateHash = 0;
+  harnessState.graphics.lastD3D8AppliedRenderState = null;
+  if (!gl) {
+    return 0;
+  }
+  const bindStartedAt = perfNow();
+  const finishFboBind = (result) => {
+    d3d8PerfStats.fboBinds += 1;
+    d3d8PerfStats.fboBindMs += perfNow() - bindStartedAt;
+    d3d8PerfStats.fboIncomplete = browser_fbo_incomplete_count;
+    harnessState.graphics.d3d8Perf = d3d8PerfSummary();
+    return result;
+  };
+  const colorTextureId = Number(payload.colorTextureId ?? 0) >>> 0;
+  const depthTextureId = Number(payload.depthTextureId ?? 0) >>> 0;
+  const width = Number(payload.width ?? 0) >>> 0;
+  const height = Number(payload.height ?? 0) >>> 0;
 
-	if (colorTextureId === 0) {
-		// Bind backbuffer (default framebuffer)
-		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-		gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
-		d3d8CurrentFramebuffer = null;
-		d3d8CurrentFramebufferWidth = 0;
-		d3d8CurrentFramebufferHeight = 0;
-		return 1;
-	}
+  if (colorTextureId === 0) {
+    // Bind backbuffer (default framebuffer)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    d3d8CurrentFramebuffer = null;
+    d3d8CurrentFramebufferWidth = 0;
+    d3d8CurrentFramebufferHeight = 0;
+    return finishFboBind(1);
+  }
 
-	const framebufferKey = d3d8FramebufferKey(colorTextureId, depthTextureId);
-	let fboEntry = d3d8Framebuffers.get(framebufferKey);
-	if (!fboEntry) {
-		const colorTexture = d3d8Textures.get(colorTextureId);
-		if (!colorTexture || !colorTexture.texture) {
-			return 0;
-		}
-		let depthTexture = null;
-		let depthInfo = null;
-		if (depthTextureId !== 0) {
-			depthTexture = d3d8Textures.get(depthTextureId);
-			if (!depthTexture || !depthTexture.texture || !isD3D8DepthStencilTexture(depthTexture)) {
-				d3d8TextureStats.unsupportedUpdates += 1;
-				d3d8TextureStats.lastUnsupported = {
-					id: depthTextureId,
-					format: depthTexture?.format ?? 0,
-					reason: "depth FBO attachment requires a D3DUSAGE_DEPTHSTENCIL 2D texture",
-				};
-				updateD3D8TextureSummary();
-				return 0;
-			}
-			if (depthTexture.width < width || depthTexture.height < height) {
-				d3d8TextureStats.unsupportedUpdates += 1;
-				d3d8TextureStats.lastUnsupported = {
-					id: depthTextureId,
-					format: depthTexture.format,
-					width: depthTexture.width,
-					height: depthTexture.height,
-					colorWidth: width,
-					colorHeight: height,
-					reason: "D3D8 depth-stencil surface is smaller than the render target",
-				};
-				updateD3D8TextureSummary();
-				return 0;
-			}
-			depthInfo = ensureD3D8DepthTextureStorage(depthTexture);
-			if (!depthInfo) {
-				return 0;
-			}
-		}
+  const framebufferKey = d3d8FramebufferKey(colorTextureId, depthTextureId);
+  let fboEntry = d3d8Framebuffers.get(framebufferKey);
+  if (!fboEntry) {
+    const colorTexture = d3d8Textures.get(colorTextureId);
+    if (!colorTexture || !colorTexture.texture) {
+      return finishFboBind(0);
+    }
+    let depthTexture = null;
+    let depthInfo = null;
+    if (depthTextureId !== 0) {
+      depthTexture = d3d8Textures.get(depthTextureId);
+      if (!depthTexture || !depthTexture.texture || !isD3D8DepthStencilTexture(depthTexture)) {
+        d3d8TextureStats.unsupportedUpdates += 1;
+        d3d8TextureStats.lastUnsupported = {
+          id: depthTextureId,
+          format: depthTexture?.format ?? 0,
+          reason: "depth FBO attachment requires a D3DUSAGE_DEPTHSTENCIL 2D texture",
+        };
+        updateD3D8TextureSummary();
+        return finishFboBind(0);
+      }
+      if (depthTexture.width < width || depthTexture.height < height) {
+        d3d8TextureStats.unsupportedUpdates += 1;
+        d3d8TextureStats.lastUnsupported = {
+          id: depthTextureId,
+          format: depthTexture.format,
+          width: depthTexture.width,
+          height: depthTexture.height,
+          colorWidth: width,
+          colorHeight: height,
+          reason: "D3D8 depth-stencil surface is smaller than the render target",
+        };
+        updateD3D8TextureSummary();
+        return finishFboBind(0);
+      }
+      depthInfo = ensureD3D8DepthTextureStorage(depthTexture);
+      if (!depthInfo) {
+        return finishFboBind(0);
+      }
+    }
 
-		const fbo = gl.createFramebuffer();
-		gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
 
-		// Ensure the color texture has allocated GL storage before FBO attach.
-		// A texture created via createD3D8Texture has no storage until
-		// updateD3D8Texture uploads pixel data; attaching a bare texture to an
-		// FBO makes it INCOMPLETE and the renderer silently falls back to the
-		// backbuffer, defeating RTT entirely.
-		withPreservedD3D8TextureUnit(() => {
-			gl.bindTexture(gl.TEXTURE_2D, colorTexture.texture);
-			if (!colorTexture.rtAllocated) {
-				gl.texImage2D(
-					gl.TEXTURE_2D,
-					0,
-					gl.RGBA,
-					width,
-					height,
-					0,
-					gl.RGBA,
-					gl.UNSIGNED_BYTE,
-					null
-				);
-				colorTexture.rtAllocated = true;
-			}
-		});
+    // Ensure the color texture has allocated GL storage before FBO attach.
+    // A texture created via createD3D8Texture has no storage until
+    // updateD3D8Texture uploads pixel data; attaching a bare texture to an
+    // FBO makes it INCOMPLETE and the renderer silently falls back to the
+    // backbuffer, defeating RTT entirely.
+    withPreservedD3D8TextureUnit(() => {
+      gl.bindTexture(gl.TEXTURE_2D, colorTexture.texture);
+      if (!colorTexture.rtAllocated) {
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGBA,
+          width,
+          height,
+          0,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          null
+        );
+        colorTexture.rtAllocated = true;
+      }
+    });
 
-		// Attach color texture
-		gl.framebufferTexture2D(
-			gl.FRAMEBUFFER,
-			gl.COLOR_ATTACHMENT0,
-			gl.TEXTURE_2D,
-			colorTexture.texture,
-			0
-		);
+    // Attach color texture
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      colorTexture.texture,
+      0
+    );
 
-		let depthRenderbuffer = null;
-		let depthAttachment = "renderbuffer";
-		let depthStorage = "depth16";
-		if (depthTextureId !== 0 && depthTexture && depthInfo) {
-			gl.framebufferTexture2D(
-				gl.FRAMEBUFFER,
-				depthInfo.attachment,
-				gl.TEXTURE_2D,
-				depthTexture.texture,
-				0
-			);
-			depthAttachment = "texture";
-			depthStorage = depthInfo.storage;
-		} else {
-			depthRenderbuffer = gl.createRenderbuffer();
-			gl.bindRenderbuffer(gl.RENDERBUFFER, depthRenderbuffer);
-			gl.renderbufferStorage(
-				gl.RENDERBUFFER,
-				gl.DEPTH_COMPONENT16,
-				width,
-				height
-			);
-			gl.framebufferRenderbuffer(
-				gl.FRAMEBUFFER,
-				gl.DEPTH_ATTACHMENT,
-				gl.RENDERBUFFER,
-				depthRenderbuffer
-			);
-		}
+    let depthRenderbuffer = null;
+    let depthAttachment = "renderbuffer";
+    let depthStorage = "depth16";
+    if (depthTextureId !== 0 && depthTexture && depthInfo) {
+      gl.framebufferTexture2D(
+        gl.FRAMEBUFFER,
+        depthInfo.attachment,
+        gl.TEXTURE_2D,
+        depthTexture.texture,
+        0
+      );
+      depthAttachment = "texture";
+      depthStorage = depthInfo.storage;
+    } else {
+      depthRenderbuffer = gl.createRenderbuffer();
+      gl.bindRenderbuffer(gl.RENDERBUFFER, depthRenderbuffer);
+      gl.renderbufferStorage(
+        gl.RENDERBUFFER,
+        gl.DEPTH_COMPONENT16,
+        width,
+        height
+      );
+      gl.framebufferRenderbuffer(
+        gl.FRAMEBUFFER,
+        gl.DEPTH_ATTACHMENT,
+        gl.RENDERBUFFER,
+        depthRenderbuffer
+      );
+    }
 
-		const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-		if (status !== gl.FRAMEBUFFER_COMPLETE) {
-			browser_fbo_incomplete_count += 1;
-			const statusName = status === gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT
-				? 'INCOMPLETE_ATTACHMENT'
-				: status === gl.FRAMEBUFFER_MISSING_ATTACHMENT
-					? 'MISSING_ATTACHMENT'
-					: status === gl.FRAMEBUFFER_UNSUPPORTED
-						? 'UNSUPPORTED'
-						: 'UNKNOWN';
-			console.warn(
-				`FBO incomplete for texture ${colorTextureId}: status ${statusName} (0x${status.toString(16)})`
-			);
-			gl.deleteFramebuffer(fbo);
-			if (depthRenderbuffer) {
-				gl.deleteRenderbuffer(depthRenderbuffer);
-			}
-			// Do NOT fall back to the default framebuffer — that would
-			// make offscreen draws pollute the main color+depth buffer
-			// (the root cause of objects rendering behind terrain).
-			// Restore the previous framebuffer instead.
-			gl.bindFramebuffer(gl.FRAMEBUFFER, d3d8CurrentFramebuffer);
-			return 0;
-		}
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      browser_fbo_incomplete_count += 1;
+      const statusName = status === gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT
+        ? "INCOMPLETE_ATTACHMENT"
+        : status === gl.FRAMEBUFFER_MISSING_ATTACHMENT
+          ? "MISSING_ATTACHMENT"
+          : status === gl.FRAMEBUFFER_UNSUPPORTED
+            ? "UNSUPPORTED"
+            : "UNKNOWN";
+      console.warn(
+        `FBO incomplete for texture ${colorTextureId}: status ${statusName} (0x${status.toString(16)})`
+      );
+      gl.deleteFramebuffer(fbo);
+      if (depthRenderbuffer) {
+        gl.deleteRenderbuffer(depthRenderbuffer);
+      }
+      // Do NOT fall back to the default framebuffer — that would make offscreen
+      // draws pollute the main color+depth buffer. Restore the previous
+      // framebuffer instead.
+      gl.bindFramebuffer(gl.FRAMEBUFFER, d3d8CurrentFramebuffer);
+      return finishFboBind(0);
+    }
 
-		fboEntry = {
-			fbo,
-			colorTextureId,
-			depthTextureId,
-			depthRenderbuffer,
-			depthAttachment,
-			depthStorage,
-			width,
-			height,
-		};
-		d3d8Framebuffers.set(framebufferKey, fboEntry);
-	} else {
-		// Reuse existing FBO - verify it's still complete (texture
-		// format may have changed since creation, e.g. a lazy upload
-		// replaced our RGBA pre-allocation with a compressed format
-		// that is not color-renderable in WebGL2).
-		gl.bindFramebuffer(gl.FRAMEBUFFER, fboEntry.fbo);
-		const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-		if (status !== gl.FRAMEBUFFER_COMPLETE) {
-			browser_fbo_incomplete_count += 1;
-			console.warn(
-				`FBO for texture ${colorTextureId} became incomplete after creation (status 0x${status.toString(16)}); recreating`
-			);
-			// Recreate: free the stale FBO and retry from scratch.
-			gl.deleteFramebuffer(fboEntry.fbo);
-			if (fboEntry.depthRenderbuffer) {
-				gl.deleteRenderbuffer(fboEntry.depthRenderbuffer);
-			}
-			d3d8Framebuffers.delete(framebufferKey);
-			// Restore the previous framebuffer before retrying.
-			gl.bindFramebuffer(gl.FRAMEBUFFER, d3d8CurrentFramebuffer);
-			return bindD3D8Framebuffer(payload);
-		}
-	}
+    fboEntry = {
+      fbo,
+      colorTextureId,
+      depthTextureId,
+      depthRenderbuffer,
+      depthAttachment,
+      depthStorage,
+      width,
+      height,
+    };
+    d3d8Framebuffers.set(framebufferKey, fboEntry);
+    d3d8PerfStats.fboCreates += 1;
+  } else {
+    // Reuse existing FBO - verify it's still complete (texture format may have
+    // changed since creation, e.g. a lazy upload replaced our RGBA
+    // pre-allocation with a compressed format that is not color-renderable in
+    // WebGL2).
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboEntry.fbo);
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      browser_fbo_incomplete_count += 1;
+      console.warn(
+        `FBO for texture ${colorTextureId} became incomplete after creation (status 0x${status.toString(16)}); recreating`
+      );
+      // Recreate: free the stale FBO and retry from scratch.
+      gl.deleteFramebuffer(fboEntry.fbo);
+      if (fboEntry.depthRenderbuffer) {
+        gl.deleteRenderbuffer(fboEntry.depthRenderbuffer);
+      }
+      d3d8Framebuffers.delete(framebufferKey);
+      // Restore the previous framebuffer before retrying.
+      gl.bindFramebuffer(gl.FRAMEBUFFER, d3d8CurrentFramebuffer);
+      finishFboBind(0);
+      return bindD3D8Framebuffer(payload);
+    }
+  }
 
-	// Set viewport to match RT size
-	if (fboEntry.width !== d3d8CurrentFramebufferWidth ||
-		fboEntry.height !== d3d8CurrentFramebufferHeight) {
-		gl.viewport(0, 0, fboEntry.width, fboEntry.height);
-		d3d8CurrentFramebufferWidth = fboEntry.width;
-		d3d8CurrentFramebufferHeight = fboEntry.height;
-	}
+  // Set viewport to match RT size
+  if (fboEntry.width !== d3d8CurrentFramebufferWidth ||
+      fboEntry.height !== d3d8CurrentFramebufferHeight) {
+    gl.viewport(0, 0, fboEntry.width, fboEntry.height);
+    d3d8CurrentFramebufferWidth = fboEntry.width;
+    d3d8CurrentFramebufferHeight = fboEntry.height;
+  }
 
-	d3d8CurrentFramebuffer = fboEntry.fbo;
-	if (depthTextureId !== 0) {
-		d3d8TextureStats.lastTextureDepthFboBind = {
-			colorTextureId,
-			depthTextureId,
-			width,
-			height,
-			attachment: fboEntry.depthAttachment,
-			storage: fboEntry.depthStorage,
-		};
-		updateD3D8TextureSummary();
-	}
-	return 1;
+  d3d8CurrentFramebuffer = fboEntry.fbo;
+  if (depthTextureId !== 0) {
+    d3d8TextureStats.lastTextureDepthFboBind = {
+      colorTextureId,
+      depthTextureId,
+      width,
+      height,
+      attachment: fboEntry.depthAttachment,
+      storage: fboEntry.depthStorage,
+    };
+    updateD3D8TextureSummary();
+  }
+  return finishFboBind(1);
 }
 
 function createD3D8VolumeTexture(payload = {}) {
@@ -4865,6 +4950,7 @@ function updateD3D8Texture(payload = {}) {
     return 0;
   }
 
+  const convertStartedAt = perfNow();
   // Handle DXT CPU decoding fallback
   let uploadBytes;
   if (info.dxtDecode) {
@@ -4872,7 +4958,9 @@ function updateD3D8Texture(payload = {}) {
     // This is because DXT compression works on 4x4 blocks
     if (x !== 0 || y !== 0 || width !== levelSize.width || height !== levelSize.height) {
       // For sub-rect updates with DXT, decode the full level and extract the sub-rect
+      const decodeStartedAt = perfNow();
       const fullLevelBytes = decodeDxtToRgba8(payload.bytes, levelSize.width, levelSize.height, info.dxtDecode);
+      d3d8PerfStats.dxtDecodeMs += perfNow() - decodeStartedAt;
       if (!fullLevelBytes) {
         d3d8TextureStats.unsupportedUpdates += 1;
         d3d8TextureStats.lastUnsupported = {
@@ -4900,7 +4988,9 @@ function updateD3D8Texture(payload = {}) {
       uploadBytes = subRectBytes;
     } else {
       // Full level update - decode directly
+      const decodeStartedAt = perfNow();
       uploadBytes = decodeDxtToRgba8(payload.bytes, width, height, info.dxtDecode);
+      d3d8PerfStats.dxtDecodeMs += perfNow() - decodeStartedAt;
       if (!uploadBytes) {
         d3d8TextureStats.unsupportedUpdates += 1;
         d3d8TextureStats.lastUnsupported = {
@@ -4931,12 +5021,15 @@ function updateD3D8Texture(payload = {}) {
       : convertD3D8TextureBytes(format, payload.bytes, width, height);
     uploadBytes = info.compressed ? convertedBytes : d3d8TextureUploadView(info, convertedBytes);
   }
+  d3d8PerfStats.textureConvertBytes += Number(payload.bytes.byteLength ?? 0) >>> 0;
+  d3d8PerfStats.textureConvertMs += perfNow() - convertStartedAt;
   resource.storage = info.storage;
   resource.semantic = info.semantic || null;
   const levelKey = String(level);
   const levelInitialized = resource.initializedLevels.has(levelKey);
   const levelFormat = resource.levelFormats.get(levelKey);
   let swizzleApplied = resource.swizzleApplied || null;
+  const uploadStartedAt = perfNow();
   withPreservedD3D8TextureUnit(() => {
     gl.bindTexture(gl.TEXTURE_2D, resource.texture);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
@@ -4962,12 +5055,16 @@ function updateD3D8Texture(payload = {}) {
     }
     swizzleApplied = applyD3D8TextureSwizzleIfChanged(resource, info);
   });
+  d3d8PerfStats.textureUploads += 1;
+  d3d8PerfStats.textureUploadBytes += Number(uploadBytes.byteLength ?? 0) >>> 0;
+  d3d8PerfStats.textureUploadPixels += Math.max(0, width * height);
+  d3d8PerfStats.textureUploadMs += perfNow() - uploadStartedAt;
 
   resource.uploads += 1;
   d3d8TextureStats.updates += 1;
   let samplePixel = null;
   let legacySamplePixel = null;
-  if (level === 0 && !info.compressed) {
+  if (d3d8DiagLevel === "full" && level === 0 && !info.compressed) {
     samplePixel = sampleD3D8TexturePixel(resource, x, y);
     if (samplePixel && info.semantic) {
       legacySamplePixel = decodeLegacyD3D8PixelFromRgba(samplePixel, info.semantic);
@@ -5100,14 +5197,18 @@ function updateD3D8VolumeTexture(payload = {}) {
     return 0;
   }
 
+  const convertStartedAt = perfNow();
   const convertedBytes = convertD3D8TextureBytes(format, payload.bytes, width, height, depth);
   const uploadBytes = d3d8TextureUploadView(info, convertedBytes);
+  d3d8PerfStats.textureConvertBytes += Number(payload.bytes.byteLength ?? 0) >>> 0;
+  d3d8PerfStats.textureConvertMs += perfNow() - convertStartedAt;
   resource.storage = info.storage;
   resource.semantic = info.semantic || null;
   const levelKey = String(level);
   const levelInitialized = resource.initializedLevels.has(levelKey);
   const levelFormat = resource.levelFormats.get(levelKey);
   let swizzleApplied = resource.swizzleApplied || null;
+  const uploadStartedAt = perfNow();
   withPreservedD3D8TextureBinding(gl.TEXTURE_3D, () => {
     gl.bindTexture(gl.TEXTURE_3D, resource.texture);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
@@ -5130,6 +5231,11 @@ function updateD3D8VolumeTexture(payload = {}) {
     }
     swizzleApplied = applyD3D8TextureSwizzleIfChanged(resource, info);
   });
+  d3d8PerfStats.textureUploads += 1;
+  d3d8PerfStats.volumeTextureUploads += 1;
+  d3d8PerfStats.textureUploadBytes += Number(uploadBytes.byteLength ?? 0) >>> 0;
+  d3d8PerfStats.textureUploadPixels += Math.max(0, width * height * depth);
+  d3d8PerfStats.textureUploadMs += perfNow() - uploadStartedAt;
 
   resource.uploads += 1;
   d3d8TextureStats.updates += 1;
@@ -5287,7 +5393,7 @@ function sampleCanvasPixel(x = 0, y = 0) {
   if (gl) {
     const readX = Math.max(0, Math.min(gl.drawingBufferWidth - 1, Math.trunc(x)));
     const readY = Math.max(0, Math.min(gl.drawingBufferHeight - 1, Math.trunc(y)));
-    gl.readPixels(readX, gl.drawingBufferHeight - 1 - readY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    timedReadPixels(readX, gl.drawingBufferHeight - 1 - readY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
   } else if (fallbackContext) {
     const readX = Math.max(0, Math.min(canvas.width - 1, Math.trunc(x)));
     const readY = Math.max(0, Math.min(canvas.height - 1, Math.trunc(y)));
@@ -5336,7 +5442,7 @@ function sampleCanvasRegion(rect = {}, threshold = 8) {
   if (gl) {
     data = new Uint8Array(width * height * 4);
     const readY = Math.max(0, gl.drawingBufferHeight - bottom);
-    gl.readPixels(left, readY, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    timedReadPixels(left, readY, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
   } else if (fallbackContext) {
     data = fallbackContext.getImageData(left, top, width, height).data;
   } else {
@@ -5390,7 +5496,7 @@ function paintCanvasRgba(rgba) {
     if (restoreDepthMask) {
       gl.depthMask(true);
     }
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    timedGlClear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     if (restoreDepthMask) {
       gl.depthMask(false);
     }
@@ -5462,7 +5568,7 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
       if (restoreDepthMask) {
         gl.depthMask(true);
       }
-      gl.clear(clearBits);
+      timedGlClear(clearBits);
       if (restoreDepthMask) {
         gl.depthMask(false);
       }
@@ -7762,6 +7868,7 @@ if (typeof globalThis !== "undefined") {
     }
     return d3d8SceneDrawHistoryLimit;
   };
+  globalThis.__cncD3D8PerfSummary = () => d3d8PerfSummary();
 }
 
 function paintD3D8DrawIndexed(payload = {}) {
@@ -8349,12 +8456,17 @@ function paintD3D8DrawIndexed(payload = {}) {
       appliedFillMode = d3d8FillModeProbeInfo(fillModeDraw);
       appliedShadeMode = d3d8ShadeModeProbeInfo(shadeModeDraw);
       if (fillModeDraw.supported && shadeModeDraw.supported) {
+        const drawStartedAt = perfNow();
         gl.drawElements(
           shadeModeDraw.glPrimitive,
           shadeModeDraw.drawIndexCount,
           indexSize === 4 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
           shadeModeDraw.drawIndexByteOffset,
         );
+        d3d8PerfStats.draws += 1;
+        d3d8PerfStats.drawElements += 1;
+        d3d8PerfStats.drawIndices += Number(shadeModeDraw.drawIndexCount ?? 0) >>> 0;
+        d3d8PerfStats.drawMs += perfNow() - drawStartedAt;
       }
     } finally {
       if (restoreProvokingVertex) {
@@ -8374,6 +8486,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     // lite: skip the ~40-field probe, per-draw texture sampling, and the
     // spread-copied draw-history array — keep only the cheap sequence counter.
     harnessState.graphics.d3d8DrawIndexedSequence = drawSequence;
+    harnessState.graphics.d3d8Perf = d3d8PerfSummary();
     return drawOk ? 1 : 0;
   }
 
@@ -8610,6 +8723,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     d3d8DrawHistory: drawHistory,
     d3d8SceneDrawHistory: sceneDrawHistory,
     lastD3D8DrawIndexed: probe,
+    d3d8Perf: d3d8PerfSummary(),
   };
   return drawOk ? 1 : 0;
 }

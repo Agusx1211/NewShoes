@@ -25,10 +25,10 @@ Assault into an active real match on Mac Chrome/Metal. Remaining skirmish work
 is broad compatibility and AI behavior, not the basic map-cache/menu/start
 path.
 
-PERF next: the queued bridge micro-wins are done; before more broad renderer
-optimization, take a Mac Chrome/Metal performance capture of a live
-shell-map/campaign/skirmish scene and separate simulation cost from WebGL
-draw/upload/readback cost.
+PERF next: runtime profiling now separates real-engine frame time from tracked
+browser D3D8 draw/upload/readback/FBO costs on Mac Chrome/Metal. Before broad
+D3D8 shim surgery, take a DevTools trace only if the next chosen optimization
+needs async ANGLE/GPU stall detail beyond the live harness counters.
 
 QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), control-bar HUD (controlBarCommandHud, top missing-UI), compressed/DXT volume textures.
 
@@ -2142,9 +2142,11 @@ and then start with the PROFILE, not with any individual fix.
       capture on the Mac (real GPU) of a live shell-map/skirmish session,
       splitting each ~frame into (a) engine wasm CPU, (b) GL/ANGLE wait
       (sync stalls), (c) harness/RPC overhead (`lastFrameMs` vs wall time
-      separates this today). The runtime frame profile now assigns the
-      summary-RPC overhead, but DevTools is still needed before changing
-      buffer/shader/draw submission internals.
+      separates this today). The runtime frame profile now also reports
+      cumulative browser D3D8 draw/upload/readback/FBO call deltas and proved
+      `diag=lite` has no warmup readbacks; DevTools is still needed before
+      changing buffer/shader/draw submission internals that might be dominated
+      by asynchronous ANGLE/GPU stalls.
 - [ ] D3D8→WebGL2 shim "less naive" playbook (ordered by typical payoff,
       all confined to the DX8Wrapper chokepoint; verify each against the
       screenshot goldens):

@@ -222,6 +222,76 @@ function readDrawSequence(state) {
   return Number.isFinite(value) ? value : null;
 }
 
+async function queryBrowserPerf(page) {
+  return page.evaluate(() => window.__cncD3D8PerfSummary?.() ?? null);
+}
+
+const browserPerfFields = [
+  "draws",
+  "drawElements",
+  "drawIndices",
+  "drawMs",
+  "clears",
+  "clearMs",
+  "textureUploads",
+  "textureUploadBytes",
+  "textureUploadPixels",
+  "textureUploadMs",
+  "textureConvertBytes",
+  "textureConvertMs",
+  "dxtDecodeMs",
+  "volumeTextureUploads",
+  "readPixels",
+  "readPixelsPixels",
+  "readPixelsMs",
+  "fboBinds",
+  "fboBindMs",
+  "fboCreates",
+  "fboIncomplete",
+];
+
+function browserPerfDelta(before, after, framesAdvanced) {
+  if (!before || !after) {
+    return null;
+  }
+  const delta = {};
+  for (const field of browserPerfFields) {
+    const beforeValue = Number(before[field] ?? 0);
+    const afterValue = Number(after[field] ?? 0);
+    delta[field] = Number.isFinite(beforeValue) && Number.isFinite(afterValue)
+      ? afterValue - beforeValue
+      : null;
+  }
+  const trackedGlCallMs =
+    Number(delta.drawMs ?? 0) +
+    Number(delta.clearMs ?? 0) +
+    Number(delta.textureUploadMs ?? 0) +
+    Number(delta.readPixelsMs ?? 0) +
+    Number(delta.fboBindMs ?? 0);
+  const trackedBrowserMs = trackedGlCallMs +
+    Number(delta.textureConvertMs ?? 0);
+  return {
+    before,
+    after,
+    delta,
+    trackedGlCallMs,
+    trackedBrowserMs,
+    perFrame: framesAdvanced > 0
+      ? {
+          draws: Number(delta.draws ?? 0) / framesAdvanced,
+          drawMs: Number(delta.drawMs ?? 0) / framesAdvanced,
+          clearMs: Number(delta.clearMs ?? 0) / framesAdvanced,
+          textureUploadMs: Number(delta.textureUploadMs ?? 0) / framesAdvanced,
+          textureConvertMs: Number(delta.textureConvertMs ?? 0) / framesAdvanced,
+          readPixelsMs: Number(delta.readPixelsMs ?? 0) / framesAdvanced,
+          fboBindMs: Number(delta.fboBindMs ?? 0) / framesAdvanced,
+          trackedGlCallMs: trackedGlCallMs / framesAdvanced,
+          trackedBrowserMs: trackedBrowserMs / framesAdvanced,
+        }
+      : null,
+  };
+}
+
 async function runFramePass(page, frameCount, batchSize, label, command = "realEngineFrameSummary") {
   const samples = [];
   let completedBefore = null;
@@ -229,6 +299,7 @@ async function runFramePass(page, frameCount, batchSize, label, command = "realE
   let completedAfter = null;
   let drawSequenceAfter = null;
   let finalFrame = null;
+  const browserPerfBefore = await queryBrowserPerf(page);
 
   for (let remaining = frameCount; remaining > 0;) {
     const frames = Math.min(batchSize, remaining);
@@ -263,6 +334,7 @@ async function runFramePass(page, frameCount, batchSize, label, command = "realE
 
   const totalWallMs = samples.reduce((total, sample) => total + sample.wallMs, 0);
   const framesAdvanced = Math.max(0, (completedAfter ?? 0) - (completedBefore ?? 0));
+  const browserPerfAfter = await queryBrowserPerf(page);
   const drawCalls = drawSequenceBefore !== null && drawSequenceAfter !== null
     ? Math.max(0, drawSequenceAfter - drawSequenceBefore)
     : null;
@@ -282,6 +354,7 @@ async function runFramePass(page, frameCount, batchSize, label, command = "realE
     engineLastFrameMs: stats(samples.map((sample) => sample.engineLastFrameMs)),
     drawCalls,
     drawCallsPerFrame: drawCalls !== null && framesAdvanced > 0 ? drawCalls / framesAdvanced : null,
+    browserPerf: browserPerfDelta(browserPerfBefore, browserPerfAfter, framesAdvanced),
     finalState: compactFrameState(finalFrame),
     sampleCount: samples.length,
     firstSample: samples[0] ?? null,
@@ -299,6 +372,7 @@ async function runUntilSettled(page, maxFrames, shellMap) {
   let finalFrame = null;
   let settled = false;
   const startedAt = performance.now();
+  const browserPerfBefore = await queryBrowserPerf(page);
   for (let index = 0; index < maxFrames; index += 1) {
     const frameStartedAt = performance.now();
     const result = await rpc(page, "realEngineFrameSummary", { frames: 1 });
@@ -326,6 +400,7 @@ async function runUntilSettled(page, maxFrames, shellMap) {
   }
 
   const totalWallMs = performance.now() - startedAt;
+  const browserPerfAfter = await queryBrowserPerf(page);
   const result = {
     label: "settle",
     requestedFrames: maxFrames,
@@ -335,6 +410,7 @@ async function runUntilSettled(page, maxFrames, shellMap) {
     wallMsPerFrame: samples.length > 0 ? totalWallMs / samples.length : null,
     rpcWallMs: stats(samples.map((sample) => sample.wallMs)),
     engineLastFrameMs: stats(samples.map((sample) => sample.engineLastFrameMs)),
+    browserPerf: browserPerfDelta(browserPerfBefore, browserPerfAfter, samples.length),
     finalState: compactFrameState(finalFrame),
     sampleCount: samples.length,
     firstSample: samples[0] ?? null,

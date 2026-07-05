@@ -7802,6 +7802,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       battleship cutouts 12, chinook cutouts 3, comanche blends 8,
       shockwave blends 336, and infantry textures 49 draws / 4 unique
       `#-16711936#zhca_ui*.tga` textures with zero white-only samples.
+- [x] Add browser-side D3D8 performance counters to the runtime frame profile
+      and remove `diag=lite` upload readback stalls. The harness now exposes
+      cumulative WebGL call counters/timers for indexed draws, clears, texture
+      conversion/uploads, DXT decode, readPixels, and FBO binds/creates, and
+      `runtime_frame_profile.mjs` snapshots those counters around warmup,
+      settle, and measured frame passes. `diag=lite` now skips the level-0
+      texture sample readback after each upload while `diag=full` keeps the
+      existing texture diagnostics for regression probes. Verified with
+      `node --check WebAssembly/harness/bridge.js
+      WebAssembly/harness/runtime_frame_profile.mjs`, `git diff --check`,
+      focused Playwright RPC coverage for `d3d8RenderTarget` and
+      `d3d8DepthTextureRenderTarget` (`fboIncomplete=0`), a local SwiftShader
+      `PERF_PROFILE_FRAME_COMMAND=realEngineFrameTick` runtime profile, and a
+      Mac M4 Chrome/Metal 60-frame profile. The Mac run reported
+      `ANGLE Metal Renderer: Apple M4`, zero warmup readPixels, zero measured
+      readPixels, ~192.4 indexed draws/frame, 33.76 ms/frame wall average,
+      32.99 ms average engine `lastFrameMs`, and only ~0.053 ms/frame in the
+      tracked browser D3D8 draw/upload/readback/FBO calls.
 
 ### Content completeness (Zero Hour)
 - [x] Restore original `FXList::doFXPos` playback in the linked `cnc-port`
