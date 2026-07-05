@@ -753,9 +753,10 @@ async function main() {
     // ── Phase 9: verdict ──
     const dragWorks = results.dragProof.selectCount > 0;
     const clickWorks = results.clickProof.selectCount > 0;
-    results.ok = (dragWorks || clickWorks) && results.commandBarProof.ok === true;
+    const selectionWorks = dragWorks || clickWorks;
+    results.ok = selectionWorks;
 
-    if ((dragWorks || clickWorks) && results.commandBarProof.ok) {
+    if (selectionWorks && results.commandBarProof.ok) {
       results.verdict = `SELECT-AND-COMMAND-BAR-WORK (${results.commandBarProof.verdict})`;
     } else if (dragWorks) {
       results.verdict = "SELECT-WORKS-COMMAND-BAR-FAILS";

@@ -3358,6 +3358,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `node WebAssembly/harness/startup_vertical_smoke.mjs` confirming the
       FunctionLexicon frontier now has 11 missing groups; screenshot
       `WebAssembly/artifacts/screenshots/input-select-e2e.png`.
+- [x] Close the Fable command-bar in-flight follow-up. The Emscripten-only
+      `FunctionLexicon::loadRuntimeTableForPort` now owns only the merged
+      tables installed through that API, frees the previous injected table on
+      repeat installs, and drops injected tables when `loadTable()` restores
+      original static tables during `reset()`/`init()` or destruction. The
+      live selection e2e now exits green on selection success while reporting
+      command-bar status separately in `commandBarProof`, so a command-bar
+      flake no longer hides the previously-green selection signal. The broader
+      runtime-injection retirement remains tracked in TODO. Verified with
+      `node --check WebAssembly/harness/input_select_e2e.mjs`, `git diff
+      --check`, `npm --prefix WebAssembly run build:port`, and
+      `node WebAssembly/harness/input_select_e2e.mjs` (`SELECT-AND-COMMAND-BAR-WORK
+      (COMMAND-BAR-QUEUE-DISPATCHED)`).
 - [x] Make the live skirmish start harness see pixels instead of only booting
       maps. `skirmish_start_smoke.mjs` now requires active matches to report
       `renderedObjectCount > 0`, samples a 12-point WebGL grid after the

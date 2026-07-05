@@ -270,21 +270,6 @@ residue and the next frontier.
       `realEngineFrameTick` on the original 30 Hz logic cadence with a bounded
       catch-up cap. Remaining here is the eventual ownership move to
       `emscripten_set_main_loop`.
-- [ ] In-flight command-bar build-dispatch change (uncommitted on main as of
-      2026-07-05) — fix before landing: (a)
-      `FunctionLexicon::loadRuntimeTableForPort` (`FunctionLexicon.h:104`)
-      leaks the previously-injected table on repeat calls and the
-      once-per-lexicon guard lives in the caller
-      (`wasm_function_lexicon_runtime.cpp:122`) while the footgun is public
-      API in an engine header — move the guard into the method or free the
-      old runtime table; (b) `input_select_e2e.mjs:756` hard-gates the
-      selection e2e's `ok` on `commandBarProof.ok === true`, so any
-      command-bar flake regresses the previously-green selection signal —
-      gate `ok` on selection and report command-bar separately until proven
-      stable; (c) runtime lexicon injection is a second mechanism against
-      the same weak-stub/linker-GC root cause 18a9ea4 fixed by gating the
-      stub — prefer that pattern, or add a retirement TODO if injection
-      stays.
 - [ ] Burn down the remaining weak-symbol stubs and probe-local singletons in
       `WebAssembly/src/` as real subsystems link in — current count linked
       into cnc-port (Fable audit): 30 `__attribute__((weak))` in

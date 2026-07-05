@@ -103,12 +103,17 @@ public:
 	/// reload a runtime-owned process-lifetime table from the wasm port after linker-GC repair
 	void loadRuntimeTableForPort( TableEntry *table, TableIndex tableIndex )
 	{
-		if( table == NULL || TheNameKeyGenerator == NULL )
+		if( table == NULL || TheNameKeyGenerator == NULL ||
+				tableIndex < 0 || tableIndex >= MAX_FUNCTION_TABLES )
 			return;
 
 		for( TableEntry *entry = table; entry->name != NULL; ++entry )
 			entry->key = TheNameKeyGenerator->nameToKey( entry->name );
 
+		if( m_runtimeTables[ tableIndex ] != NULL &&
+				m_runtimeTables[ tableIndex ] != table )
+			delete [] m_runtimeTables[ tableIndex ];
+		m_runtimeTables[ tableIndex ] = table;
 		m_tables[ tableIndex ] = table;
 	}
 #endif
@@ -151,6 +156,9 @@ protected:
 	void *keyToFunc( NameKeyType key, TableEntry *table );  ///< internal searching
 
 	TableEntry *m_tables[ MAX_FUNCTION_TABLES ];  ///< the lookup tables
+#ifdef __EMSCRIPTEN__
+	TableEntry *m_runtimeTables[ MAX_FUNCTION_TABLES ];  ///< wasm-owned merged tables
+#endif
 
 };  // end class FunctionLexicon
 

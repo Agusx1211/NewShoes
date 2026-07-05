@@ -389,6 +389,15 @@ void FunctionLexicon::loadTable( TableEntry *table,
 	if( table == NULL )
 		return;
 
+#ifdef __EMSCRIPTEN__
+	if( tableIndex >= 0 && tableIndex < MAX_FUNCTION_TABLES &&
+			m_runtimeTables[ tableIndex ] != NULL )
+	{
+		delete [] m_runtimeTables[ tableIndex ];
+		m_runtimeTables[ tableIndex ] = NULL;
+	}
+#endif
+
 	// loop through all entries
 	TableEntry *entry = table;
 	while( entry->name )
@@ -515,7 +524,12 @@ FunctionLexicon::FunctionLexicon( void )
 
 	// empty the tables
 	for( i = 0; i < MAX_FUNCTION_TABLES; i++ )
+	{
 		m_tables[ i ] = NULL;
+#ifdef __EMSCRIPTEN__
+		m_runtimeTables[ i ] = NULL;
+#endif
+	}
 
 }  // end FunctionLexicon
 
@@ -523,6 +537,13 @@ FunctionLexicon::FunctionLexicon( void )
 //-------------------------------------------------------------------------------------------------
 FunctionLexicon::~FunctionLexicon( void )
 {
+#ifdef __EMSCRIPTEN__
+	for( Int i = 0; i < MAX_FUNCTION_TABLES; i++ )
+	{
+		delete [] m_runtimeTables[ i ];
+		m_runtimeTables[ i ] = NULL;
+	}
+#endif
 
 }  // end ~FunctionLexicon
 
