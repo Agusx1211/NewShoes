@@ -73,9 +73,9 @@ async function runFrameLoop(rpc) {
       return;
     }
     try {
-      // Lightweight per-rAF stepping: the full clientState JSON is pure overhead
-      // for the human page (see realEngineFrameSummary).
-      const result = await rpc("realEngineFrameSummary", { frames: 1 });
+      // Minimal per-rAF stepping: verification harnesses use the richer frame
+      // summary, but the human page only needs success/failure and frame time.
+      const result = await rpc("realEngineFrameTick", { frames: 1 });
       if (result?.ok !== true) {
         running = false;
         fail("engine frame failed", result);

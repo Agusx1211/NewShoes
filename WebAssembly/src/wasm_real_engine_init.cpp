@@ -3522,6 +3522,32 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_summary(i
 	return g_frame_json.c_str();
 }
 
+// Minimal frame stepping for the human/play loop. The richer frame endpoints
+// remain the verification surface; this one intentionally avoids client-state
+// JSON and stdout chatter on every animation frame.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_tick(int frame_count)
+{
+	run_real_engine_frames(frame_count);
+
+	std::string json = "{";
+	json += "\"tick\":true";
+	json += ",\"initReturned\":";
+	json += (g_state.attempted && g_state.init_returned) ? "true" : "false";
+	json += ",\"framesAttempted\":" + std::to_string(g_frame_state.frames_attempted);
+	json += ",\"framesCompleted\":" + std::to_string(g_frame_state.frames_completed);
+	json += ",\"quitting\":";
+	json += (TheGameEngine != NULL && TheGameEngine->getQuitting() != FALSE) ? "true" : "false";
+	json += ",\"exceptionCaught\":";
+	json += g_frame_state.exception_caught ? "true" : "false";
+	json += ",\"exception\":\"" + json_escape(g_frame_state.exception_text) + "\"";
+	char elapsed[64];
+	std::snprintf(elapsed, sizeof(elapsed), ",\"lastFrameMs\":%.1f", g_frame_state.last_frame_ms);
+	json += elapsed;
+	json += "}";
+	g_frame_json = json;
+	return g_frame_json.c_str();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_do_fx(
 	const char *fx_name,
 	float x,

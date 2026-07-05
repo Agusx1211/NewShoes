@@ -2117,20 +2117,40 @@ and then start with the PROFILE, not with any individual fix.
       is untouched; `lite` skips the readPixels, probe, texture sampling,
       draw-history, post-clear sample, and viewport self-check while still doing
       the real draw. `play.mjs` (the human page) opts into `lite` (add
-      `?diag=full` to restore) and switched its per-rAF loop from
-      `realEngineFrame` to the lightweight `realEngineFrameSummary`. **Measured
+      `?diag=full` to restore) and now uses the minimal
+      `realEngineFrameTick` RPC for its per-rAF loop. **Measured
       (SwiftShader shell map, 100 frames): full 1536.7 ms/frame (0.65 fps) →
       lite 156.3 ms/frame (6.4 fps), a ~10× speedup** — the per-draw diagnostics
       (two readPixels syncs + probe + draw-history) were ~90% of frame time, not
       the actual rendering. Metal should gain even more from the readPixels
       GPU-sync removal (measure there when convenient). (Deeper shim work —
       batching, Release build — stays below.)
-- [ ] **Profile before touching anything**: a Chrome DevTools performance
+- [x] Add a GPU-accelerated runtime frame profile harness.
+      `harness/runtime_frame_profile.mjs` boots the real shell-map lifecycle,
+      forces the requested graphics diagnostics level, runs warmup/settle
+      frames until the scene is drawing, then emits renderer, wall-time,
+      engine `lastFrameMs`, draw/scene counters when using the summary RPC,
+      and a screenshot. It can run on SwiftShader or Mac Chrome/Metal via
+      `PERF_PROFILE_BROWSER_EXECUTABLE` / `PERF_PROFILE_BROWSER_ARGS`, and
+      `profile:runtime-frames` gates the build + profile command.
+- [x] Lightweight `realEngineFrame` mode for interactive loops.
+      `cnc_port_real_engine_frame_tick` / `realEngineFrameTick` run the same
+      real `GameEngine::update()` frame path but return only the minimal
+      frame/exception timing JSON and skip stdout frame logging,
+      `snapshotState()`, and expanded client-state summary serialization.
+      `play.html` now uses that RPC for the human rAF loop while the verbose
+      `realEngineFrame` and `realEngineFrameSummary` endpoints remain the
+      verification surface. Mac M4 Chrome/Metal shell-map profile:
+      summary single-frame mode measured 99.5 ms/frame wall with 76.6 ms
+      engine `lastFrameMs`; tick mode measured 77.4 ms/frame wall with
+      76.5 ms engine `lastFrameMs`.
+- [ ] **Deep profile before D3D8 shim surgery**: a Chrome DevTools performance
       capture on the Mac (real GPU) of a live shell-map/skirmish session,
       splitting each ~frame into (a) engine wasm CPU, (b) GL/ANGLE wait
       (sync stalls), (c) harness/RPC overhead (`lastFrameMs` vs wall time
-      separates this today). Every item below is a hypothesis until this
-      assigns the milliseconds.
+      separates this today). The runtime frame profile now assigns the
+      summary-RPC overhead, but DevTools is still needed before changing
+      buffer/shader/draw submission internals.
 - [ ] D3D8→WebGL2 shim "less naive" playbook (ordered by typical payoff,
       all confined to the DX8Wrapper chokepoint; verify each against the
       screenshot goldens):
@@ -2161,14 +2181,7 @@ and then start with the PROFILE, not with any individual fix.
       (`build/wasm-release`) — multiplies whatever CPU share remains after
       the above; watch for optimizer-exposed UB in era code. Do not flip the
       shared Debug dir's CMAKE_BUILD_TYPE.
-- [ ] Lightweight `realEngineFrame` mode that skips the full clientState
-      JSON for interactive loops (`play.html`); keep verbose for harness
-      assertions.
 - [ ] Frame-time budget; profile hotspots (sim vs render).
-- [ ] Add a GPU-accelerated harness profile (Playwright with GPU flags on a
-      machine with a real GPU) to decompose "slow frames" into sim cost vs
-      SwiftShader software-rasterization cost; keep SwiftShader as the
-      deterministic CI baseline.
 - [ ] Polish `harness/play.html` (human-driveable LAN page): per-archive mount
       progress, touch-input verification on a real phone, and a smaller
       mobile-friendly archive set if feasible.

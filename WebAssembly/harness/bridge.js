@@ -8866,6 +8866,11 @@ async function loadWasmModule() {
         "string",
         ["number"],
       ),
+      realEngineFrameTick: module.cwrap(
+        "cnc_port_real_engine_frame_tick",
+        "string",
+        ["number"],
+      ),
       realEngineDoFX: module.cwrap(
         "cnc_port_real_engine_do_fx",
         "string",
@@ -13782,6 +13787,40 @@ async function rpc(command, payload = {}) {
           lastGameLogicStep,
           frame,
           state: snapshotState(),
+        };
+      }
+    case "realEngineFrameTick":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineFrameTick");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineFrameTick", error: moduleResult.error };
+        }
+        let frame = null;
+        let aborted = false;
+        let abortMessage = null;
+        let abortStack = null;
+        try {
+          frame = JSON.parse(moduleResult.wasmModule.realEngineFrameTick(Number(payload.frames ?? 1)));
+          const framesCompleted = Number(frame?.framesCompleted);
+          if (Number.isFinite(framesCompleted)) {
+            harnessState.frame = framesCompleted;
+            framesNode.textContent = String(framesCompleted);
+          }
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+          abortStack = error?.stack ?? null;
+        }
+        return {
+          ok: Boolean(frame?.initReturned === true
+            && frame?.framesCompleted > 0
+            && frame?.quitting !== true
+            && frame?.exceptionCaught !== true) && !aborted,
+          command: "realEngineFrameTick",
+          aborted,
+          abortMessage,
+          abortStack,
+          frame,
         };
       }
     case "realEngineDoFX":

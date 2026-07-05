@@ -7626,6 +7626,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       textured draw stayed red `[255,0,0,255]`, wireframe temporary-index draw
       stayed green `[0,255,0,255]`, and flat-shade temporary-index draw stayed
       red `[255,0,0,255]`.
+- [x] Add a repeatable runtime frame profile and remove per-frame summary
+      overhead from the human play loop. `runtime_frame_profile.mjs` boots the
+      real shell-map lifecycle, runs warmup/settle frames until the scene is
+      drawing, records renderer/wall time/engine `lastFrameMs`/scene counters,
+      captures `runtime-frame-profile.png`, and can target either the verbose
+      summary RPC or the new minimal tick RPC. `cnc_port_real_engine_frame_tick`
+      and bridge RPC `realEngineFrameTick` run the same real
+      `GameEngine::update()` path but skip full client-state JSON,
+      `snapshotState()`, per-frame bridge log recording, and stdout frame
+      logging. `play.html` now uses `realEngineFrameTick`; verbose frame RPCs
+      stay available for harness assertions. Verified with
+      `npm --prefix WebAssembly run build:port`, local SwiftShader
+      `PERF_PROFILE_FRAME_COMMAND=realEngineFrameTick node
+      harness/runtime_frame_profile.mjs`, and Mac M4 Chrome/Metal
+      `runtime_frame_profile.mjs` runs. Mac shell-map single-frame profile:
+      `realEngineFrameSummary` measured 99.5 ms/frame wall with 76.6 ms
+      engine `lastFrameMs`; `realEngineFrameTick` measured 77.4 ms/frame wall
+      with 76.5 ms engine `lastFrameMs`, removing most wrapper overhead from
+      the interactive loop.
 
 ### Content completeness (Zero Hour)
 - [x] Restore original `FXList::doFXPos` playback in the linked `cnc-port`
