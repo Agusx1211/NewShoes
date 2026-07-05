@@ -8553,6 +8553,30 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       build:startup-vertical`, `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`,
       `node WebAssembly/tools/run_startup_vertical_smoke.mjs`, and
       `git diff --check`.
+- [x] Burn down the linked real-header shadow dependency count from 17 to 7.
+      Moved the INI science compatibility provider from
+      `WebAssembly/shims/INICommonCompat.cpp` to
+      `WebAssembly/src/wasm_ini_common_compat.cpp` so the provider resolves
+      real `PreRTS.h` / `Common/INI.h` while preserving its existing symbols.
+      Migrated `zh_winmain_wndproc_browser` to `wasm_prerts_real.h` with
+      real `GlobalData` / `GameLogic` header switches and quote dirs that keep
+      only the intentional narrow WndProc/Win32GameEngine shims ahead of the
+      real engine headers. Migrated `zh_window_layout_script_runtime` to the
+      real PreRTS/header prelude. Current `verify:cnc-port-real-headers`
+      output: 44 direct `cnc-port` objects checked, 0 direct offenders, 7
+      linked archive offenders left, all in `zh_w3d_terrain_probe_runtime`
+      through the broad `ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES` source-file
+      `shims/PreRTS.h` override. Verified with `npm --prefix WebAssembly run
+      build:port`, focused `zh_gameengine_common_core`,
+      `zh_winmain_wndproc_browser`, and `zh_window_layout_script_runtime`
+      builds, targeted `ninja -t deps` checks proving the migrated objects use
+      real audited headers, `node WebAssembly/dist/winmain-wndproc-mouse-smoke.cjs`,
+      `node dist/w3d-window-layout-script-smoke.cjs` from `WebAssembly/`,
+      `npm --prefix WebAssembly run verify:cnc-port-real-headers`, `npm
+      --prefix WebAssembly run verify:cnc-port-weak-stubs`, `npm --prefix
+      WebAssembly run build:startup-vertical`, `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs`, `node
+      WebAssembly/tools/run_startup_vertical_smoke.mjs`, and `git diff --check`.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an

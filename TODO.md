@@ -266,11 +266,19 @@ residue and the next frontier.
       runtime off the shadow WOL `WebBrowser.h`, migrated `zh_gameclient_text`
       and `zh_win32_mouse_browser_real` to the real PreRTS/header prelude, and
       then migrated `zh_w3d_device_utility` plus its focused smoke to the real
-      `GlobalData` owner/path. That drops the linked archive count to 17
-      offenders (informational unless `--fail-on-linked`). Remaining groups
-      are `zh_window_layout_script_runtime`, `zh_w3d_terrain_probe_runtime`,
-      `zh_winmain_wndproc_browser`, and the `zh_gameengine_common_core`
-      `INICommonCompat.cpp` compatibility shim.
+      `GlobalData` owner/path. The next burn-down moved the INI science
+      compatibility provider out of `shims/`, migrated
+      `zh_winmain_wndproc_browser` to a real-header prelude while preserving
+      its intentional narrow Win32/WndProc shims, and migrated
+      `zh_window_layout_script_runtime` to the real PreRTS/header prelude. That
+      drops the linked archive count to 7 offenders (informational unless
+      `--fail-on-linked`). The only remaining group is
+      `zh_w3d_terrain_probe_runtime`: its seven offenders are inherited from
+      the broad `ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES` source-file property
+      that still forces `-U__PRERTS_H__; -include shims/PreRTS.h` for
+      `ScriptEngine.cpp`, `Scripts.cpp`, `ObjectTypes.cpp`,
+      `PartitionManager.cpp`, `Squad.cpp`, `WeaponSet.cpp`, and
+      `BridgeBehavior.cpp`.
       Fix: the real headers all already compile under Emscripten — make them
       the ONLY option (define the real-header switches globally, delete the
       shim class bodies for these 7, fix the fallout), and add a CI gate that

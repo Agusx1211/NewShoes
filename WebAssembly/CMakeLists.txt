@@ -1358,7 +1358,7 @@ target_compile_options(zh_wwdownload PRIVATE
 )
 
 add_library(zh_gameengine_common_core STATIC
-  "${WASM_SHIMS_DIR}/INICommonCompat.cpp"
+  src/wasm_ini_common_compat.cpp
   "${GAMEENGINE_COMMON_DIR}/System/GameMemory.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/MemoryInit.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/CriticalSection.cpp"
@@ -4215,12 +4215,16 @@ target_include_directories(zh_window_layout_script_runtime PUBLIC
   "${COMPRESSION_EAC_DIR}"
 )
 
+target_compile_definitions(zh_window_layout_script_runtime PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+)
+
 target_compile_options(zh_window_layout_script_runtime PRIVATE
   "-include${WASM_SHIMS_DIR}/windows.h"
   "-include${WASM_SHIMS_DIR}/mmsystem.h"
   "-include${WWVEGAS_PORT_SHIM}"
-  "-include${WASM_SHIMS_DIR}/PreRTS.h"
-  "-iquote${WASM_SHIMS_DIR}"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
   "-iquote${GAMEENGINE_INCLUDE_DIR}"
   "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
   "-iquote${GAMEENGINE_DIR}/Source"
@@ -4438,11 +4442,33 @@ target_include_directories(zh_winmain_wndproc_browser PUBLIC
   "${WWLIB_DIR}"
 )
 
+target_compile_definitions(zh_winmain_wndproc_browser PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+)
+
 target_compile_options(zh_winmain_wndproc_browser PRIVATE
   -DCNC_WASM_WNDPROC_ONLY
   -DCNC_WASM_WNDPROC_EXTERNAL_GLOBALS
   -DCNC_WASM_ENABLE_CREATEGAMEENGINE
-  -include${WASM_SHIMS_DIR}/PreRTS.h
+  -include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h
+  "-iquote${WINMAIN_WNDPROC_SHIMS_DIR}"
+  "-iquote${WIN32_GAMEENGINE_SHIMS_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
   -fms-extensions
   -Wall
   -Wextra
