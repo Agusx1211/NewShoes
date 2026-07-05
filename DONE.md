@@ -8577,6 +8577,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       WebAssembly run build:startup-vertical`, `EXPECT_WASM=1 node
       WebAssembly/harness/smoke.mjs`, `node
       WebAssembly/tools/run_startup_vertical_smoke.mjs`, and `git diff --check`.
+- [x] Burn down the linked real-header shadow dependency count from 7 to 0 and
+      enforce the linked gate. Migrated `zh_w3d_terrain_probe_runtime` from its
+      partial real `GlobalData` force-include to the full
+      `wasm_prerts_real.h` / original `GameLogic` prelude, removing the last
+      linked archive dependencies on the audited shadow
+      `Common/INI.h`/`Common/STLTypedefs.h` headers. The inherited legacy
+      source-file `shims/PreRTS.h` override is still visible on non-linked
+      frontier/probe paths, but every `cnc-port` direct and linked object now
+      resolves the ABI-sensitive engine headers to the real originals. Updated
+      `verify:cnc-port-real-headers` to pass `--fail-on-linked` by default.
+      Verified with `ninja -C WebAssembly/build/wasm
+      zh_w3d_terrain_probe_runtime`, targeted `ninja -t deps` checks for
+      `ScriptEngine.cpp`, `WeaponSet.cpp`, and `BridgeBehavior.cpp`, and `npm
+      --prefix WebAssembly run verify:cnc-port-real-headers`
+      reporting 44 direct objects, 53 linked archive targets, 0 direct
+      offenders, and 0 linked offenders.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an

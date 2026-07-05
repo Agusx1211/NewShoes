@@ -59,7 +59,7 @@
     "verify:audio-options-volume-readback-frontier": "node tools/verify_audio_options_volume_readback_frontier.mjs",
     "verify:audio-filename-frontier": "node tools/verify_audio_filename_frontier.mjs",
     "verify:websocket-transport-frontier": "node tools/verify_websocket_transport_frontier.mjs",
-    "verify:cnc-port-real-headers": "node tools/verify_cnc_port_real_headers.mjs",
+    "verify:cnc-port-real-headers": "node tools/verify_cnc_port_real_headers.mjs --fail-on-linked",
     "verify:cnc-port-weak-stubs": "node tools/verify_cnc_port_weak_stubs.mjs",
     "test:w3d-material-scan": "node tools/scan_w3d_material_pass_test.mjs",
     "serve:harness": "node harness/serve.mjs",

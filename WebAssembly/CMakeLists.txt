@@ -2411,10 +2411,10 @@ target_link_libraries(zh_w3d_terrain_probe_runtime PUBLIC
 )
 
 target_compile_definitions(zh_w3d_terrain_probe_runtime PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
   CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS=1
   CNC_PORT_TERRAIN_PROBE_USE_ORIGINAL_ACTION_MANAGER=1
   WASM_USE_ORIGINAL_GLOBALDATA=1
-  __PRERTS_H__
 )
 
 target_include_directories(zh_w3d_terrain_probe_runtime PRIVATE
@@ -2442,7 +2442,7 @@ target_compile_options(zh_w3d_terrain_probe_runtime PRIVATE
   "-include${WASM_SHIMS_DIR}/windows.h"
   "-include${WASM_SHIMS_DIR}/mmsystem.h"
   "-include${WWVEGAS_PORT_SHIM}"
-  "-include${GAMEENGINE_INCLUDE_DIR}/Common/GlobalData.h"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
   "-iquote${GAMEENGINE_INCLUDE_DIR}"
   "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
   "-iquote${GAMEENGINE_DIR}/Source"

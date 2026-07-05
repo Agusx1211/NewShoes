@@ -271,24 +271,20 @@ residue and the next frontier.
       `zh_winmain_wndproc_browser` to a real-header prelude while preserving
       its intentional narrow Win32/WndProc shims, and migrated
       `zh_window_layout_script_runtime` to the real PreRTS/header prelude. That
-      drops the linked archive count to 7 offenders (informational unless
-      `--fail-on-linked`). The only remaining group is
-      `zh_w3d_terrain_probe_runtime`: its seven offenders are inherited from
-      the broad `ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES` source-file property
-      that still forces `-U__PRERTS_H__; -include shims/PreRTS.h` for
-      `ScriptEngine.cpp`, `Scripts.cpp`, `ObjectTypes.cpp`,
-      `PartitionManager.cpp`, `Squad.cpp`, `WeaponSet.cpp`, and
-      `BridgeBehavior.cpp`.
-      Fix: the real headers all already compile under Emscripten — make them
-      the ONLY option (define the real-header switches globally, delete the
-      shim class bodies for these 7, fix the fallout), and add a CI gate that
-      runs the deps audit after every build and fails if any direct
-      `cnc-port` TU depends on an engine-path-shadowing shim header; then burn
-      the linked archive offender count to zero and enable
-      `verify_cnc_port_real_headers.mjs --fail-on-linked`. This is the same
-      hazard class as the confirmed d6d3b79 ChallengeGenerals stack corruption
-      and the fixed edgeMapperApply aggregate-smoke incident above — fix it
-      once at the root instead of per-incident.
+      drops the linked archive count to 7 offenders. The next burn-down moved
+      `zh_w3d_terrain_probe_runtime` to the real PreRTS/GameLogic prelude, so
+      the actual `cnc-port` link now has 0 direct and 0 linked shadow-header
+      offenders; `verify:cnc-port-real-headers` now runs with
+      `--fail-on-linked` by default. Remaining cleanup: the non-linked legacy
+      source-file property `ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES` still forces
+      `-U__PRERTS_H__; -include shims/PreRTS.h` for compile-only/frontier
+      smokes. Delete that shim-class fallback path at the root (define the
+      real-header switches globally for those sources, delete the shim class
+      bodies once no linked or compile-only target needs them, and fix the
+      fallout) so real headers become the only option. This is the same hazard
+      class as the confirmed d6d3b79 ChallengeGenerals stack corruption and
+      the fixed edgeMapperApply aggregate-smoke incident above — fix it once
+      at the root instead of per-incident.
 - [ ] Real-lifecycle residue: browser `ReleaseCrash`/`_exit` does not
       terminate the wasm runtime (teardown semantics differ from Windows);
       `TheVersion` is left null; `GameEngine::execute()` is stepped by
