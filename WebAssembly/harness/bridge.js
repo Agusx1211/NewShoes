@@ -7926,10 +7926,9 @@ function paintD3D8DrawIndexed(payload = {}) {
     isIdentityD3DMatrix(projection);
   // --- Draw-cache: compute key and gate normalize* + derived-object rebuilds ---
   // Key = (stateHash, tex0Id, tex1Id, fvf, stride, primitiveType).
-  // primitiveType is added because it affects point-sprite uniforms and is NOT
-  // covered by the native state hash. Texture transforms are NOT in the key for
-  // safety (unclear if stateHash covers them); if transforms change but the key
-  // matches, the texture-availability uniforms may be stale — flagged for review.
+  // primitiveType is added because it affects point-sprite semantics and is NOT
+  // covered by the native state hash. Texture transforms ARE in stateHash
+  // (wasm_d3d8_shim.cpp ~3734-3738), so the key transitively covers them.
   const drawCacheKey = `${Number(payload.stateHash ?? 0) >>> 0},`
     + `${Number(d3d8BoundTextures.get(0) ?? 0) >>> 0},`
     + `${Number(d3d8BoundTextures.get(1) ?? 0) >>> 0},`
@@ -8413,8 +8412,10 @@ function paintD3D8DrawIndexed(payload = {}) {
     } else {
       appliedRenderState = harnessState.graphics.lastD3D8AppliedRenderState;
     }
-    // Point-sprite uniforms: skip on draw-cache hit (GL retains them).
-    if (!drawCacheHit) {
+    // Point-sprite uniforms: ALWAYS reissued (not cached). The viewport is NOT
+    // in stateHash, so pointViewportHeight could go stale on a cache hit if the
+    // viewport changed with matching state. Point-sprite draws are rare
+    // (particles/point lists) and ~10 uniforms is negligible cost.
     if (bridgeProgram.drawingPoints !== null) {
       gl.uniform1i(bridgeProgram.drawingPoints, appliedPointSprite.drawingPoints ? 1 : 0);
     }
@@ -8445,11 +8446,10 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.pointViewportHeight !== null) {
       gl.uniform1f(bridgeProgram.pointViewportHeight, appliedPointSprite.viewportHeight);
     }
-    } // !drawCacheHit
     // Texture-availability uniforms: skip on draw-cache hit (GL retains them).
-    // NOTE: texture transforms are NOT in the draw-cache key (unclear if
-    // stateHash covers them). If transforms change but the key matches, these
-    // uniforms may be stale — flagged for reviewer verification.
+    // Safe because stateHash covers texture transforms (wasm_d3d8_shim.cpp
+    // ~3734-3738) and D3DTSS_TEXTURETRANSFORMFLAGS, so the key transitively
+    // guards these uniforms.
     if (!drawCacheHit) {
     if (bridgeProgram.texture0CoordinateMode) {
       gl.uniform1i(bridgeProgram.texture0CoordinateMode,
