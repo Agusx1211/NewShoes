@@ -8246,6 +8246,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly --silent run verify:cnc-port-weak-stubs`,
       `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and
       `node WebAssembly/harness/startup_vertical_smoke.mjs`.
+- [x] Gate the W3D terrain-stub shadow/projected-shadow weak group out of the
+      real `cnc-port` runtime. `cnc-port` now defines
+      `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_SHADOW_RUNTIME`, so
+      `wasm_ww3d_terrain_probe_stubs.cpp` no longer emits weak declarations or
+      fallback bodies for `W3DShadowManager::ReleaseResources`,
+      `W3DShadowManager::ReAcquireResources`, `W3DShadowManager::W3DShadowManager`,
+      `W3DShadowManager::~W3DShadowManager`, `W3DShadowManager::init`,
+      `W3DShadowManager::Reset`, or the `W3DProjectedShadow` D1/D2 destructor
+      aliases in the real link. The linked strong providers come from real
+      `W3DShadow.cpp` and `W3DProjectedShadow.cpp` runtime objects. The weak
+      audit now reports 73 compiled weak definitions, 113 gated-out
+      declarations, and 71 strong-provider overlaps, with
+      `wasm_ww3d_terrain_probe_stubs.cpp` down to 65 compiled explicit weak
+      declarations. Direct `llvm-nm` checks show the terrain-stub object no
+      longer defines the eight shadow symbols. Verified with
+      `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly --silent run verify:cnc-port-weak-stubs`,
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and
+      `node WebAssembly/harness/startup_vertical_smoke.mjs`.
 - [x] Add a `cnc-port` weak-stub audit for the Fable weak-symbol burn-down.
       `WebAssembly/tools/verify_cnc_port_weak_stubs.mjs` parses the explicit
       `__attribute__((weak))` declarations in the W3D render/scene/terrain

@@ -137,6 +137,7 @@ extern "C" void cnc_port_simple_object_iterator_sort(void *, int) __asm__("_ZN20
 extern "C" void cnc_port_object_on_partition_cell_change(void *) __asm__("_ZN6Object21onPartitionCellChangeEv") __attribute__((weak));
 extern "C" void cnc_port_object_on_collide(void *, void *, const Coord3D *, const Coord3D *) __asm__("_ZN6Object9onCollideEPS_PK7Coord3DS3_") __attribute__((weak));
 #endif
+#ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_SHADOW_RUNTIME
 extern "C" void cnc_port_w3d_shadow_release(void *) __asm__("_ZN16W3DShadowManager16ReleaseResourcesEv") __attribute__((weak));
 extern "C" int cnc_port_w3d_shadow_reacquire(void *) __asm__("_ZN16W3DShadowManager18ReAcquireResourcesEv") __attribute__((weak));
 extern "C" void *cnc_port_w3d_shadow_ctor_c1(void *) __asm__("_ZN16W3DShadowManagerC1Ev") __attribute__((weak));
@@ -145,6 +146,7 @@ extern "C" int cnc_port_w3d_shadow_init(void *) __asm__("_ZN16W3DShadowManager4i
 extern "C" void cnc_port_w3d_shadow_reset(void *) __asm__("_ZN16W3DShadowManager5ResetEv") __attribute__((weak));
 extern "C" void *cnc_port_projected_shadow_dtor_c1(void *) __asm__("_ZN18W3DProjectedShadowD1Ev") __attribute__((weak));
 extern "C" void *cnc_port_projected_shadow_dtor_c2(void *) __asm__("_ZN18W3DProjectedShadowD2Ev") __attribute__((weak));
+#endif
 extern "C" void *cnc_port_water_ctor_c1(void *) __asm__("_ZN19WaterRenderObjClassC1Ev") __attribute__((weak));
 extern "C" void *cnc_port_water_ctor_c2(void *) __asm__("_ZN19WaterRenderObjClassC2Ev") __attribute__((weak));
 extern "C" void *cnc_port_water_dtor_c1(void *) __asm__("_ZN19WaterRenderObjClassD1Ev") __attribute__((weak));
@@ -248,20 +250,24 @@ extern "C" void cnc_port_simple_object_iterator_sort(void *, int) {}
 extern "C" void cnc_port_object_on_partition_cell_change(void *) {}
 extern "C" void cnc_port_object_on_collide(void *, void *, const Coord3D *, const Coord3D *) {}
 #endif
+#ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_SHADOW_RUNTIME
 extern "C" void cnc_port_w3d_shadow_release(void *) {}
 extern "C" int cnc_port_w3d_shadow_reacquire(void *) { return 1; }
 extern "C" void *cnc_port_w3d_shadow_ctor_c1(void *self) { return self; }
 extern "C" void *cnc_port_w3d_shadow_dtor_c1(void *self) { return self; }
 extern "C" int cnc_port_w3d_shadow_init(void *) { return 1; }
 extern "C" void cnc_port_w3d_shadow_reset(void *) {}
+#endif
 extern "C" void *cnc_port_w3d_smudge_ctor_c1(void *self) { return self; }
 extern "C" void *cnc_port_w3d_smudge_dtor_c1(void *self) { return self; }
 extern "C" void cnc_port_w3d_smudge_init(void *) {}
 extern "C" void cnc_port_w3d_smudge_reset(void *) {}
 extern "C" void cnc_port_w3d_smudge_release(void *) {}
 extern "C" void cnc_port_w3d_smudge_reacquire(void *) {}
+#ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_SHADOW_RUNTIME
 extern "C" void *cnc_port_projected_shadow_dtor_c1(void *self) { return self; }
 extern "C" void *cnc_port_projected_shadow_dtor_c2(void *self) { return self; }
+#endif
 extern "C" void *cnc_port_water_ctor_c1(void *self) { return self; }
 extern "C" void *cnc_port_water_ctor_c2(void *self) { return self; }
 extern "C" void *cnc_port_water_dtor_c1(void *self) { return self; }

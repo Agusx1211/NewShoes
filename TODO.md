@@ -292,8 +292,8 @@ residue and the next frontier.
       exact final body provenance (Emscripten filters wasm-ld maps and final
       wasm symbols are not enough). As of 2026-07-05 it finds 186 explicit
       weak declarations across the render/scene/terrain probe files plus
-      `wasm_ww3d_terrain_probe_stubs.cpp`, 81 compiled weak definitions, 105
-      gated-out declarations, and 79 strong-provider overlaps to burn down
+      `wasm_ww3d_terrain_probe_stubs.cpp`, 73 compiled weak definitions, 113
+      gated-out declarations, and 71 strong-provider overlaps to burn down
       next. The `DoTrees` / `DoShadows` / `DoParticles` scene extra-pass weak
       hooks are now gated out of `cnc-port` by
       `CNC_PORT_LINKS_REAL_W3D_SCENE_EXTRA_PASSES`, and the scene-probe
@@ -350,6 +350,9 @@ residue and the next frontier.
       partition/collision helper weak group is gated out by
       `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_SNOW_ITERATOR_OBJECT_HELPERS`,
       leaving `wasm_ww3d_terrain_probe_stubs.cpp` at 73 compiled explicit weak
+      declarations. The W3D shadow/projected-shadow helper weak group is gated
+      out by `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_SHADOW_RUNTIME`, leaving
+      `wasm_ww3d_terrain_probe_stubs.cpp` at 65 compiled explicit weak
       declarations. (Real-init already deleted the probe
       GameClient/Object/GameLogic/Display/LoadScreen/OptionPreferences
       reimplementations and all 26 weak `UNUSED_INI_BLOCK_PARSER` stubs.)
