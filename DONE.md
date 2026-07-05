@@ -8061,6 +8061,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly --silent run verify:cnc-port-weak-stubs`,
       `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and
       `node WebAssembly/harness/startup_vertical_smoke.mjs`.
+- [x] Gate the W3D scene gameplay method weak bodies out of the real
+      `cnc-port` runtime. `cnc-port` now defines
+      `CNC_PORT_LINKS_REAL_W3D_SCENE_GAMEPLAY_METHODS`, so
+      `wasm_ww3d_scene_probe.cpp` no longer emits weak bodies for
+      `W3DTreeBuffer::drawTrees`, `Drawable` dirty-lock and color helpers,
+      `Thing::isKindOf`, or `Object::getControllingPlayer` in the real link;
+      probe-only builds keep those bodies. The weak audit now reports 149
+      compiled weak definitions, 37 gated-out declarations, and 147
+      strong-provider overlaps, with the scene probe down to one compiled weak
+      declaration (`ParticleSystemManager::queueParticleRender`). Direct
+      `llvm-nm` checks show only that particle queue stub remains in the
+      `cnc-port` scene-probe object, and linked real archives provide the
+      gated method owners. Verified with `npm --prefix WebAssembly run
+      build:port`, `npm --prefix WebAssembly --silent run
+      verify:cnc-port-weak-stubs`, `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs`, and `node
+      WebAssembly/harness/startup_vertical_smoke.mjs`.
 - [x] Add a `cnc-port` weak-stub audit for the Fable weak-symbol burn-down.
       `WebAssembly/tools/verify_cnc_port_weak_stubs.mjs` parses the explicit
       `__attribute__((weak))` declarations in the W3D render/scene/terrain

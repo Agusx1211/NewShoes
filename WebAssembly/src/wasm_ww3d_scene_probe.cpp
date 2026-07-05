@@ -187,6 +187,7 @@ ScriptEngine *TheScriptEngine __attribute__((weak)) = nullptr;
 // Probe-only weak definitions for cold drawable/object/tree branches linked by
 // RTS3DScene::renderOneObject and BaseHeightMap::DoTrees. The AABox path below
 // does not enter those gameplay branches; real linked implementations win.
+#ifndef CNC_PORT_LINKS_REAL_W3D_SCENE_GAMEPLAY_METHODS
 void __attribute__((weak)) W3DTreeBuffer::drawTrees(CameraClass *, RefRenderObjListIterator *)
 {
 }
@@ -218,6 +219,7 @@ Player *__attribute__((weak)) Object::getControllingPlayer() const
 {
 	return nullptr;
 }
+#endif
 
 void __attribute__((weak)) ParticleSystemManager::queueParticleRender()
 {
