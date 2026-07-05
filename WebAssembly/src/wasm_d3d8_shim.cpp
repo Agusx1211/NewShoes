@@ -318,6 +318,9 @@ EM_JS(int, wasm_d3d8_browser_fbo_bind, (
 });
 EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	int primitive_type,
+	unsigned int base_vertex_index,
+	unsigned int min_vertex_index,
+	unsigned int first_index,
 	unsigned int vertex_buffer_id,
 	unsigned int vertex_byte_offset,
 	unsigned int vertex_byte_size,
@@ -507,6 +510,9 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	};
 	bridge({
 		primitiveType: primitive_type,
+		baseVertexIndex: base_vertex_index >>> 0,
+		minVertexIndex: min_vertex_index >>> 0,
+		firstIndex: first_index >>> 0,
 		vertexBufferId: vertex_buffer_id >>> 0,
 		vertexByteOffset: vertex_byte_offset >>> 0,
 		vertexBytes: vertex_byte_size >>> 0,
@@ -550,7 +556,7 @@ void wasm_d3d8_browser_texture_bind(unsigned int, unsigned int) {}
 void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
-	unsigned int, unsigned int) {}
+	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int) {}
 #endif
 
 namespace {
@@ -1163,7 +1169,8 @@ UINT allocate_browser_texture_id()
 	return id;
 }
 
-void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT vertex_buffer_id, UINT vertex_byte_offset,
+void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_index, UINT min_vertex_index,
+	UINT first_index, UINT vertex_buffer_id, UINT vertex_byte_offset,
 	UINT vertex_byte_size, UINT vertex_count, UINT vertex_stride, DWORD vertex_shader_fvf,
 	UINT index_buffer_id, UINT index_byte_offset,
 	UINT index_byte_size, UINT index_count, UINT index_size, UINT transform_mask, const D3DMATRIX *world_transform,
@@ -1178,6 +1185,9 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT vertex_buffer_id
 	}
 	wasm_d3d8_browser_draw_indexed(
 		static_cast<int>(primitive_type),
+		base_vertex_index,
+		min_vertex_index,
+		first_index,
 		vertex_buffer_id,
 		vertex_byte_offset,
 		vertex_byte_size,
@@ -3497,6 +3507,9 @@ private:
 
 		browser_draw_indexed(
 			primitive_type,
+			base_vertex_index,
+			min_vertex_index,
+			first_index,
 			stream->browser_buffer_id(),
 			vertex_offset,
 			vertex_bytes,

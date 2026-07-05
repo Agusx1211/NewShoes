@@ -11,6 +11,8 @@ const captureFrames = (process.env.SHELLMAP_CAPTURE_FRAMES ?? "360,720")
   .split(",")
   .map((value) => Number(value.trim()))
   .filter((value) => Number.isFinite(value) && value > 0);
+const drawHistoryLimit = Number(process.env.SHELLMAP_DRAW_HISTORY_LIMIT ?? 256);
+const assertCutoutDepth = process.env.SHELLMAP_ASSERT_CUTOUT_DEPTH === "1";
 
 const archiveSpecs = [
   { name: "INIZH.big" },
@@ -81,6 +83,86 @@ function topTextureNames(history) {
     .map(([name, count]) => ({ name, count }));
 }
 
+function textureLabelName(texture) {
+  return String(texture?.label?.name ?? texture?.label?.path ?? "").toLowerCase();
+}
+
+function drawUsesTexture(draw, nameFragment) {
+  return textureLabelName(draw.texture0).includes(nameFragment) ||
+    textureLabelName(draw.texture1).includes(nameFragment);
+}
+
+function isOpaqueDepthWritingDraw(draw) {
+  const state = draw.renderState ?? {};
+  return Number(state.alphaTestEnable ?? 0) === 0 &&
+    Number(state.alphaBlendEnable ?? 0) === 0 &&
+    Number(state.zEnable ?? 0) !== 0 &&
+    Number(state.zWriteEnable ?? 0) !== 0;
+}
+
+function isBlendedDraw(draw) {
+  return Number(draw.renderState?.alphaBlendEnable ?? 0) !== 0;
+}
+
+function hasImplicitCutout(draw) {
+  return draw.appliedRenderState?.implicitAlphaCutout?.enabled === true;
+}
+
+function assertShellmapCutoutDepth(captures) {
+  const errors = [];
+  const draws = captures.flatMap((capture) =>
+    capture.history.map((draw) => ({ ...draw, targetFrame: capture.targetFrame })));
+  const battleshipCutouts = draws.filter((draw) =>
+    drawUsesTexture(draw, "avbattlesh") && isOpaqueDepthWritingDraw(draw));
+  const chinookCutouts = draws.filter((draw) =>
+    drawUsesTexture(draw, "avchinook") && isOpaqueDepthWritingDraw(draw));
+  const comancheBlends = draws.filter((draw) =>
+    drawUsesTexture(draw, "avcomanche_p") && isBlendedDraw(draw));
+  const shockwaveBlends = draws.filter((draw) =>
+    drawUsesTexture(draw, "exshockwav") && isBlendedDraw(draw));
+
+  if (battleshipCutouts.length < 6) {
+    errors.push(`expected several opaque depth-writing avbattlesh draws, got ${battleshipCutouts.length}`);
+  }
+  if (chinookCutouts.length < 1) {
+    errors.push("expected at least one opaque depth-writing avchinook draw");
+  }
+  if (comancheBlends.length < 1) {
+    errors.push("expected at least one blended avcomanche_p draw");
+  }
+  if (shockwaveBlends.length < 1) {
+    errors.push("expected at least one blended exshockwav draw");
+  }
+
+  const missingCutout = [...battleshipCutouts, ...chinookCutouts]
+    .filter((draw) => !hasImplicitCutout(draw))
+    .map((draw) => draw.seq)
+    .slice(0, 16);
+  if (missingCutout.length) {
+    errors.push(`opaque texture-alpha depth draws missing implicit cutout at seq ${missingCutout.join(",")}`);
+  }
+
+  const blendedWithCutout = [...comancheBlends, ...shockwaveBlends]
+    .filter((draw) => hasImplicitCutout(draw))
+    .map((draw) => draw.seq)
+    .slice(0, 16);
+  if (blendedWithCutout.length) {
+    errors.push(`blended effect/air draws unexpectedly used implicit cutout at seq ${blendedWithCutout.join(",")}`);
+  }
+
+  return {
+    source: "shellmap-cutout-depth",
+    ok: errors.length === 0,
+    errors,
+    counts: {
+      battleshipCutouts: battleshipCutouts.length,
+      chinookCutouts: chinookCutouts.length,
+      comancheBlends: comancheBlends.length,
+      shockwaveBlends: shockwaveBlends.length,
+    },
+  };
+}
+
 async function main() {
   if (captureFrames.length === 0) {
     throw new Error("no capture frames requested");
@@ -111,6 +193,7 @@ async function main() {
     await page.goto(new URL("harness/index.html", server.url).href, { waitUntil: "networkidle" });
     await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
     await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
+    await page.evaluate((limit) => window.__cncSetD3D8SceneDrawHistoryLimit?.(limit), drawHistoryLimit);
 
     console.error("[shellmap-labels] mounting archives");
     const mount = await rpc("mountArchives", {
@@ -179,11 +262,13 @@ async function main() {
       const debugInfo = gl?.getExtension("WEBGL_debug_renderer_info");
       return debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : null;
     });
-    const summary = { ok: true, renderer, captures };
+    const assertions = assertCutoutDepth ? assertShellmapCutoutDepth(captures) : null;
+    const summary = { ok: assertions?.ok ?? true, renderer, assertions, captures };
     await writeFile(resolve(outDir, "summary.json"), JSON.stringify(summary, null, 2));
     console.log(JSON.stringify({
-      ok: true,
+      ok: summary.ok,
       renderer,
+      assertions,
       captures: captures.map((capture) => ({
         targetFrame: capture.targetFrame,
         frameCompleted: capture.frameCompleted,
@@ -193,6 +278,9 @@ async function main() {
         topTextures: capture.topTextures.slice(0, 8),
       })),
     }, null, 2));
+    if (assertions && !assertions.ok) {
+      throw new Error(`shell-map cutout-depth assertions failed: ${assertions.errors.join("; ")}`);
+    }
   } finally {
     await browser.close();
     await server.close();

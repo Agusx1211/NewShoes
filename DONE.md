@@ -2866,6 +2866,32 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `storage:"rgba8"`, `uploads:1`, and the frame-720 screenshot at
       `/home/agusx1211/cnc-mac-verify/shellmap-texture-labels/shellmap-frame-720.png`
       shows colored infantry instead of white silhouettes.
+- [x] Fix the MD_USA01/shell-map first-scene air/water/ship ordering
+      regression by preventing transparent texels in opaque texture-alpha
+      cutouts from writing depth. The repro frame showed the battleship and
+      Chinook as unblended, depth-writing DXT alpha-texture draws whose final
+      alpha came from the texture combiner while explicit alpha test was off,
+      so WebGL was accepting fully transparent texels into the depth buffer and
+      hiding later air/effect draws. The browser D3D8 bridge now derives a
+      narrow implicit cutout threshold for only those unblended, depth-writing
+      texture-alpha draws, refreshes that uniform outside the render-state hash
+      cache because texture identity is per-draw, and leaves blended effect
+      passes on the normal blend path. The native shim forwards indexed draw
+      base/min/first-index metadata so the harness draw-history bounds match
+      the actual indexed triangles. Verified with `node --check
+      WebAssembly/harness/bridge.js`, `node --check
+      WebAssembly/harness/shellmap_texture_label_capture.mjs`,
+      `npm --prefix WebAssembly run build:port`, `node
+      harness/shipped_mesh_render_smoke.mjs
+      artifacts/real-assets/W3DZH.big artifacts/real-assets/TexturesZH.big`,
+      `git diff --check`, and a Mac Chrome/Metal shell-map repro capture:
+      `SHELLMAP_CAPTURE_FRAMES=240 SHELLMAP_DRAW_HISTORY_LIMIT=4096
+      SHELLMAP_ASSERT_CUTOUT_DEPTH=1 node
+      harness/shellmap_texture_label_capture.mjs` reported
+      `ANGLE Metal Renderer: Apple M4`, `battleshipCutouts:12`,
+      `chinookCutouts:3`, `comancheBlends:9`, and `shockwaveBlends:105`
+      with the assertion passing and screenshot
+      `/Users/aa/cnc-verify/shellmap-order-frame240-cutout-assert/shellmap-frame-240.png`.
 - [x] **Prove D3D8 render-target/FBO correctness in the harness.** Added the
       `d3d8RenderTarget` RPC and smoke assertion around the real D3D8 shim path:
       `CreateTexture(D3DUSAGE_RENDERTARGET)` -> `GetSurfaceLevel(0)` ->

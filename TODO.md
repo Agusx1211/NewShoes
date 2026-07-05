@@ -191,12 +191,6 @@ residue and the next frontier.
       `doGameStart`/`MSG_NEW_GAME`) before the player-control frame loop, OR
       run the startup-vertical interactivity proof on the Mac instead of
       `mac_verify`'s player-control mode.
-- [ ] **Fix the MD_USA01 first-scene air/water/ship ordering regression**:
-      the helicopter is above the water but appears behind the battleship.
-      Capture the scene with harness screenshot + draw-history/depth-state
-      evidence, determine whether the fault is pass order, depth writes/tests,
-      water/RTT state, alpha sorting, or projection/depth-range mapping, then
-      add a gate proving the helicopter/ship/water ordering is correct.
 - [ ] **Restore visible explosion/weapon impact effects through the real
       particle/effect path**: current gameplay has missing explosions. Prove
       the original weapon impact triggers a real particle/system draw and a

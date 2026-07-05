@@ -4134,12 +4134,91 @@ function textureStageCombinerInfo(textureStage, stage, canSampleTexture) {
     supportsResultArg: supportedResultArg,
     supportsAlphaOp: supportedAlphaOp,
     supportsAlphaArgs: supportedAlphaArg0 && supportedAlphaArg1 && supportedAlphaArg2,
+    needsTextureAlpha,
     textureAvailable: Boolean(canSampleTexture),
     supported: supportedOp && supportedArg0 && supportedArg1 && supportedArg2 && supportedResultArg
       && supportedAlphaOp && supportedAlphaArg0 && supportedAlphaArg1 && supportedAlphaArg2
       && (!needsTexture || canSampleTexture)
       && (!needsTextureAlpha || canSampleTexture),
   };
+}
+
+function d3d8TextureFormatHasAlpha(format) {
+  switch (Number(format) >>> 0) {
+    case D3DFMT_A8R8G8B8:
+    case D3DFMT_A1R5G5B5:
+    case D3DFMT_A4R4G4B4:
+    case D3DFMT_A8:
+    case D3DFMT_A8L8:
+    case D3DFMT_DXT1:
+    case D3DFMT_DXT2:
+    case D3DFMT_DXT3:
+    case D3DFMT_DXT4:
+    case D3DFMT_DXT5:
+      return true;
+    default:
+      return false;
+  }
+}
+
+function d3d8TextureStageAlphaUsesBase(textureStage, base) {
+  if (!textureStage || Number(textureStage.alphaOp) >>> 0 === D3DTOP_DISABLE) {
+    return false;
+  }
+  const alphaOp = Number(textureStage.alphaOp) >>> 0;
+  const alphaArg0 = Number(textureStage.alphaArg0) >>> 0;
+  const alphaArg1 = Number(textureStage.alphaArg1) >>> 0;
+  const alphaArg2 = Number(textureStage.alphaArg2) >>> 0;
+  return (d3dTextureCombinerOpUsesArg0(alphaOp) && (alphaArg0 & D3DTA_SELECTMASK) === base)
+    || (d3dTextureCombinerOpUsesArg1(alphaOp) && (alphaArg1 & D3DTA_SELECTMASK) === base)
+    || (d3dTextureCombinerOpUsesArg2(alphaOp) && (alphaArg2 & D3DTA_SELECTMASK) === base);
+}
+
+function d3d8FinalAlphaMayUseTexture(renderState, canSampleTexture0, texture0Resource,
+    canSampleTexture1, texture1Resource) {
+  const stage0 = renderState?.textureStages?.[0] ?? null;
+  const stage1 = renderState?.textureStages?.[1] ?? null;
+  const stage0TextureAlpha = Boolean(
+    canSampleTexture0 &&
+    d3d8TextureFormatHasAlpha(texture0Resource?.format) &&
+    d3d8TextureStageAlphaUsesBase(stage0, D3DTA_TEXTURE),
+  );
+  const stage0CurrentAlpha = stage0TextureAlpha &&
+    ((Number(stage0?.resultArg ?? D3DTA_CURRENT) >>> 0) !== D3DTA_TEMP);
+  const stage0TempAlpha = stage0TextureAlpha &&
+    ((Number(stage0?.resultArg ?? D3DTA_CURRENT) >>> 0) === D3DTA_TEMP);
+
+  const stage1AlphaOp = Number(stage1?.alphaOp ?? D3DTOP_DISABLE) >>> 0;
+  if (stage1AlphaOp === D3DTOP_DISABLE) {
+    return stage0CurrentAlpha;
+  }
+
+  const stage1TextureAlpha = Boolean(
+    canSampleTexture1 &&
+    d3d8TextureFormatHasAlpha(texture1Resource?.format) &&
+    d3d8TextureStageAlphaUsesBase(stage1, D3DTA_TEXTURE),
+  );
+  return stage1TextureAlpha ||
+    (stage0CurrentAlpha && d3d8TextureStageAlphaUsesBase(stage1, D3DTA_CURRENT)) ||
+    (stage0TempAlpha && d3d8TextureStageAlphaUsesBase(stage1, D3DTA_TEMP));
+}
+
+function d3d8ImplicitAlphaCutoutThreshold(renderState, canSampleTexture0, texture0Resource,
+    canSampleTexture1, texture1Resource) {
+  if (!renderState ||
+      renderState.alphaTestEnable !== 0 ||
+      renderState.alphaBlendEnable !== 0 ||
+      renderState.zEnable === D3DZB_FALSE ||
+      renderState.zWriteEnable === 0) {
+    return -1;
+  }
+  return d3d8FinalAlphaMayUseTexture(
+    renderState,
+    canSampleTexture0,
+    texture0Resource,
+    canSampleTexture1,
+    texture1Resource,
+  ) ? (1 / 255) : -1;
 }
 
 function d3d8TextureSemanticMode(resource) {
@@ -5656,6 +5735,7 @@ function ensureD3D8DrawProgram() {
     uniform bool uAlphaTestEnabled;
     uniform int uAlphaFunc;
     uniform float uAlphaRef;
+    uniform float uImplicitAlphaCutoutThreshold;
     uniform bool uFogEnabled;
     uniform bool uFogRangeEnabled;
     uniform vec3 uFogColor;
@@ -5914,6 +5994,10 @@ function ensureD3D8DrawProgram() {
         d3dStage1Color(diffuseColor, texture1Color, stage0CurrentColor, stage0TempColor),
         d3dStage1Alpha(diffuseColor, texture1Color, stage0CurrentColor, stage0TempColor)
       );
+      if (!uAlphaTestEnabled && uImplicitAlphaCutoutThreshold >= 0.0 &&
+          color.a <= uImplicitAlphaCutoutThreshold) {
+        discard;
+      }
       if (uAlphaTestEnabled && !d3dAlphaCompare(color.a, uAlphaRef)) {
         discard;
       }
@@ -6017,6 +6101,7 @@ function ensureD3D8DrawProgram() {
     alphaTestEnabled: gl.getUniformLocation(program, "uAlphaTestEnabled"),
     alphaFunc: gl.getUniformLocation(program, "uAlphaFunc"),
     alphaRef: gl.getUniformLocation(program, "uAlphaRef"),
+    implicitAlphaCutoutThreshold: gl.getUniformLocation(program, "uImplicitAlphaCutoutThreshold"),
     fogEnabled: gl.getUniformLocation(program, "uFogEnabled"),
     fogRangeEnabled: gl.getUniformLocation(program, "uFogRangeEnabled"),
     fogColor: gl.getUniformLocation(program, "uFogColor"),
@@ -6735,8 +6820,44 @@ function d3d8DiffuseRgbaFromBytes(bytes, offset) {
   ];
 }
 
+function collectD3D8IndexedVertexIndices(indexResource, indexByteOffset, indexCount, indexSize, availableVertices) {
+  const indexBytes = indexResource?.bytes;
+  const requiredByteSize = indexByteOffset + indexCount * indexSize;
+  if (!(indexBytes instanceof Uint8Array) ||
+      requiredByteSize > indexBytes.byteLength ||
+      (indexSize !== 2 && indexSize !== 4) ||
+      availableVertices <= 0) {
+    return null;
+  }
+
+  const indices = new Set();
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  let outOfRange = 0;
+  for (let index = 0; index < indexCount; ++index) {
+    const vertexIndex = readD3D8Index(indexBytes, indexByteOffset, index, indexSize);
+    if (!Number.isInteger(vertexIndex) || vertexIndex < 0 || vertexIndex >= availableVertices) {
+      outOfRange += 1;
+      continue;
+    }
+    indices.add(vertexIndex);
+    min = Math.min(min, vertexIndex);
+    max = Math.max(max, vertexIndex);
+  }
+
+  if (indices.size === 0) {
+    return { indices: [], min: null, max: null, outOfRange };
+  }
+  return {
+    indices: Array.from(indices).sort((left, right) => left - right),
+    min,
+    max,
+    outOfRange,
+  };
+}
+
 function inspectD3D8DrawVertices(resource, byteOffset, vertexStride, vertexCount, vertexLayout,
-    transforms, viewport) {
+    transforms, viewport, indexResource = null, indexByteOffset = 0, indexCount = 0, indexSize = 0) {
   const bytes = resource?.bytes;
   if (!(bytes instanceof Uint8Array) || vertexStride < 12 || vertexCount === 0) {
     return null;
@@ -6748,6 +6869,16 @@ function inspectD3D8DrawVertices(resource, byteOffset, vertexStride, vertexCount
   if (availableVertices <= 0) {
     return null;
   }
+  const indexedVertices = collectD3D8IndexedVertexIndices(
+    indexResource,
+    indexByteOffset,
+    indexCount,
+    indexSize,
+    availableVertices,
+  );
+  const inspectedVertexIndices = indexedVertices?.indices?.length
+    ? indexedVertices.indices
+    : Array.from({ length: availableVertices }, (_, index) => index);
 
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const bounds = {
@@ -6774,10 +6905,14 @@ function inspectD3D8DrawVertices(resource, byteOffset, vertexStride, vertexCount
     clipWMax: Number.NEGATIVE_INFINITY,
   } : null;
   const samples = [];
-  const sampleIndices = new Set(Array.from({ length: Math.min(8, availableVertices) }, (_, index) =>
-    Math.min(availableVertices - 1, Math.floor((index * (availableVertices - 1)) / 7))));
+  const sampleCount = Math.min(8, inspectedVertexIndices.length);
+  const sampleIndices = new Set(Array.from({ length: sampleCount }, (_, index) =>
+    inspectedVertexIndices[Math.min(
+      inspectedVertexIndices.length - 1,
+      Math.floor((index * (inspectedVertexIndices.length - 1)) / 7),
+    )]));
 
-  for (let vertexIndex = 0; vertexIndex < availableVertices; ++vertexIndex) {
+  for (const vertexIndex of inspectedVertexIndices) {
     const base = byteOffset + vertexIndex * vertexStride;
     const position = [
       readD3D8Float32(view, base),
@@ -6870,6 +7005,12 @@ function inspectD3D8DrawVertices(resource, byteOffset, vertexStride, vertexCount
 
   return {
     availableVertices,
+    inspectedVertices: inspectedVertexIndices.length,
+    indexRange: indexedVertices ? {
+      min: indexedVertices.min,
+      max: indexedVertices.max,
+      outOfRange: indexedVertices.outOfRange,
+    } : null,
     positionBounds: bounds,
     diffuse,
     projected,
@@ -6983,6 +7124,8 @@ function d3d8DrawVertexSummary(vertexDiagnostics) {
   }
   return {
     availableVertices: vertexDiagnostics.availableVertices,
+    inspectedVertices: vertexDiagnostics.inspectedVertices,
+    indexRange: vertexDiagnostics.indexRange,
     positionBounds: vertexDiagnostics.positionBounds,
     diffuse: vertexDiagnostics.diffuse,
     projected: vertexDiagnostics.projected,
@@ -7450,14 +7593,26 @@ function applyD3D8RenderState(renderState, options = {}) {
 // while still doing the real draw — for the human-playable page. Never change
 // the default: existing gates depend on "full".
 let d3d8DiagLevel = "full";
+let d3d8SceneDrawHistoryLimit = 256;
 try {
   const _diag = new URLSearchParams(globalThis.location?.search || "").get("diag");
   if (_diag === "lite" || _diag === "full") d3d8DiagLevel = _diag;
+  const _historyLimit = Number(new URLSearchParams(globalThis.location?.search || "").get("drawHistoryLimit"));
+  if (Number.isFinite(_historyLimit) && _historyLimit > 0) {
+    d3d8SceneDrawHistoryLimit = Math.min(8192, Math.max(1, Math.trunc(_historyLimit)));
+  }
 } catch (_e) { /* no location (node context) */ }
 if (typeof globalThis !== "undefined") {
   globalThis.__cncSetDiagLevel = (lvl) => {
     if (lvl === "lite" || lvl === "full") d3d8DiagLevel = lvl;
     return d3d8DiagLevel;
+  };
+  globalThis.__cncSetD3D8SceneDrawHistoryLimit = (limit) => {
+    const numericLimit = Number(limit);
+    if (Number.isFinite(numericLimit) && numericLimit > 0) {
+      d3d8SceneDrawHistoryLimit = Math.min(8192, Math.max(1, Math.trunc(numericLimit)));
+    }
+    return d3d8SceneDrawHistoryLimit;
   };
 }
 
@@ -7528,6 +7683,13 @@ function paintD3D8DrawIndexed(payload = {}) {
   const texture1SemanticMode = canSampleTexture1 ? d3d8TextureSemanticMode(texture1Resource) : 0;
   const appliedTexture0Combiner = textureStageCombinerInfo(renderState.textureStages[0], 0, canSampleTexture0);
   const appliedStage1Combiner = textureStageCombinerInfo(renderState.textureStages[1], 1, canSampleTexture1);
+  const implicitAlphaCutoutThreshold = d3d8ImplicitAlphaCutoutThreshold(
+    renderState,
+    canSampleTexture0,
+    texture0Resource,
+    canSampleTexture1,
+    texture1Resource,
+  );
   let appliedViewport = null;
   let appliedRenderState = null;
   let appliedTexture0Sampler = null;
@@ -7546,6 +7708,10 @@ function paintD3D8DrawIndexed(payload = {}) {
     vertexLayout,
     useTransforms ? { world, view, projection } : null,
     appliedViewport,
+    indexResource,
+    indexByteOffset,
+    indexCount,
+    indexSize,
   );
   if (vertexDiagnostics) {
     vertexDiagnostics.triangles = inspectD3D8IndexedTriangles(
@@ -7944,6 +8110,9 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.useTexture0) {
       gl.uniform1i(bridgeProgram.useTexture0, canSampleTexture0 ? 1 : 0);
     }
+    if (bridgeProgram.implicitAlphaCutoutThreshold) {
+      gl.uniform1f(bridgeProgram.implicitAlphaCutoutThreshold, implicitAlphaCutoutThreshold);
+    }
     if (bridgeProgram.texture0) {
       gl.uniform1i(bridgeProgram.texture0, 0);
     }
@@ -8028,6 +8197,9 @@ function paintD3D8DrawIndexed(payload = {}) {
     api: harnessState.graphics.api,
     viewport: appliedViewport,
     primitiveType: Number(payload.primitiveType ?? 0),
+    baseVertexIndex: Number(payload.baseVertexIndex ?? 0) >>> 0,
+    minVertexIndex: Number(payload.minVertexIndex ?? 0) >>> 0,
+    firstIndex: Number(payload.firstIndex ?? 0) >>> 0,
     vertexBufferId,
     vertexByteOffset,
     vertexBytes: vertexByteSize,
@@ -8138,6 +8310,10 @@ function paintD3D8DrawIndexed(payload = {}) {
     },
     stage1Combiner: appliedStage1Combiner,
     textureFactor: renderState.textureFactor,
+    implicitAlphaCutout: {
+      enabled: implicitAlphaCutoutThreshold >= 0,
+      threshold: implicitAlphaCutoutThreshold >= 0 ? implicitAlphaCutoutThreshold : null,
+    },
     preDrawCenterPixel,
     centerPixel,
   };
@@ -8145,6 +8321,9 @@ function paintD3D8DrawIndexed(payload = {}) {
       ok: probe.ok,
       drawSequence: probe.drawSequence,
       primitiveType: probe.primitiveType,
+      baseVertexIndex: probe.baseVertexIndex,
+      minVertexIndex: probe.minVertexIndex,
+      firstIndex: probe.firstIndex,
       vertexBufferId: probe.vertexBufferId,
       vertexCount: probe.vertexCount,
       vertexStride: probe.vertexStride,
@@ -8159,7 +8338,13 @@ function paintD3D8DrawIndexed(payload = {}) {
         alphaBlendEnable: renderState.alphaBlendEnable,
         srcBlend: renderState.srcBlend,
         destBlend: renderState.destBlend,
+        alphaTestEnable: renderState.alphaTestEnable,
+        alphaFunc: renderState.alphaFunc,
+        alphaRef: renderState.alphaRef,
         colorWriteEnable: renderState.colorWriteEnable,
+        fillMode: renderState.fillMode,
+        zBias: renderState.zBias,
+        shadeMode: renderState.shadeMode,
         lighting: renderState.lighting,
         textureStage0: d3d8TextureStageDrawSummary(renderState.textureStages[0]),
         textureStage1: d3d8TextureStageDrawSummary(renderState.textureStages[1]),
@@ -8168,6 +8353,8 @@ function paintD3D8DrawIndexed(payload = {}) {
         cull: appliedRenderState?.cull ?? null,
         depth: appliedRenderState?.depth ?? null,
         blend: appliedRenderState?.blend ?? null,
+        alphaTest: appliedRenderState?.alphaTest ?? null,
+        implicitAlphaCutout: probe.implicitAlphaCutout,
         colorWrite: appliedRenderState?.colorWrite ?? null,
       },
       boundTextures: probe.boundTextures,
@@ -8225,7 +8412,7 @@ function paintD3D8DrawIndexed(payload = {}) {
           ? harnessState.graphics.d3d8SceneDrawHistory
           : []),
         drawHistoryEntry,
-      ].slice(-256)
+      ].slice(-d3d8SceneDrawHistoryLimit)
     : (Array.isArray(harnessState.graphics.d3d8SceneDrawHistory)
         ? harnessState.graphics.d3d8SceneDrawHistory
         : []);
