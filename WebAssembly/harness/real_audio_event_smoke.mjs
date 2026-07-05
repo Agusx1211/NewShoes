@@ -40,6 +40,10 @@ function expect(condition, message, payload) {
   }
 }
 
+function normalizeAudioPath(path) {
+  return String(path ?? "").replace(/[\\/]+/g, "\\").toLowerCase();
+}
+
 function buildArchives(baseUrl) {
   return archiveSpecs.map((spec) => {
     const sourceName = spec.sourceName ?? spec.name;
@@ -115,18 +119,18 @@ async function waitForDecodedSample(page, key, expectedNode, before, timeoutMs =
   throw new Error(`${key} did not decode and start within ${timeoutMs}ms`);
 }
 
-async function waitForDecodedMusicStream(page, filename, before, timeoutMs = 15000) {
+async function waitForDecodedStream(page, filename, before, label = "stream", timeoutMs = 15000) {
   const start = Date.now();
   const beforeScheduled = before?.scheduled ?? 0;
+  const normalizedFilename = normalizeAudioPath(filename);
   while (Date.now() - start < timeoutMs) {
     const runtime = await streamRuntime(page);
     const decoded = runtime?.eventLog?.some((event) =>
       event.phase === "webAudioDecode"
-        && event.filename === filename
-        && event.decodedBy === "WebAudio.decodeAudioData"
+        && normalizeAudioPath(event.filename) === normalizedFilename
         && (event.decodedFrames ?? 0) > 0);
     const scheduled = runtime?.lastEvent?.phase === "scheduled"
-      && runtime.lastEvent.filename === filename
+      && normalizeAudioPath(runtime.lastEvent.filename) === normalizedFilename
       && runtime.scheduled > beforeScheduled;
     if (decoded && scheduled) {
       return runtime;
@@ -136,10 +140,10 @@ async function waitForDecodedMusicStream(page, filename, before, timeoutMs = 150
     }
     await page.waitForTimeout(50);
   }
-  throw new Error(`${filename} stream did not decode and schedule within ${timeoutMs}ms`);
+  throw new Error(`${label} ${filename} stream did not decode and schedule within ${timeoutMs}ms`);
 }
 
-async function waitForMusicStreamStop(page, before, timeoutMs = 5000) {
+async function waitForStreamStop(page, before, label = "stream", timeoutMs = 5000) {
   const start = Date.now();
   const beforeStopped = before?.stopped ?? 0;
   while (Date.now() - start < timeoutMs) {
@@ -150,7 +154,7 @@ async function waitForMusicStreamStop(page, before, timeoutMs = 5000) {
     await rpc(page, "realEngineFrameSummary", { frames: 1 });
     await page.waitForTimeout(50);
   }
-  throw new Error(`music stream did not stop within ${timeoutMs}ms`);
+  throw new Error(`${label} did not stop within ${timeoutMs}ms`);
 }
 
 async function playAndMaybeStopMusicEvent(
@@ -170,15 +174,16 @@ async function playAndMaybeStopMusicEvent(
   expect(music?.ok === true
       && music.result?.handleAccepted === true
       && music.result?.audioType === "AT_Music"
-      && music.result?.filename === expectedFilename,
+      && normalizeAudioPath(music.result?.filename) === normalizeAudioPath(expectedFilename),
     `${eventName} did not reach the original audio manager as music`, music);
-  const musicStream = await waitForDecodedMusicStream(
+  const musicStream = await waitForDecodedStream(
     page,
     music.result.filename,
     musicBefore,
+    eventName,
   );
   expect(musicStream.lastEvent?.archive === expectedArchive
-      && musicStream.lastEvent?.path === music.result.filename
+      && normalizeAudioPath(musicStream.lastEvent?.path) === normalizeAudioPath(music.result.filename)
       && musicStream.lastEvent?.payload?.extension === "mp3"
       && musicStream.lastEvent?.payload?.decodedBy === "WebAudio.decodeAudioData"
       && (musicStream.lastEvent?.payload?.decodedFrames ?? 0) > 0
@@ -198,10 +203,50 @@ async function playAndMaybeStopMusicEvent(
     });
     expect(musicStop?.ok === true && musicStop.result?.handle === stopHandle,
       `${eventName} stop did not reach the original audio manager`, musicStop);
-    stoppedMusicStream = await waitForMusicStreamStop(page, musicStream);
+    stoppedMusicStream = await waitForStreamStop(page, musicStream, eventName);
   }
 
   return { music, musicStream, stoppedMusicStream };
+}
+
+async function playAndStopSpeechEvent(page, eventName, expectedFilename, expectedArchive) {
+  const speechBefore = await streamRuntime(page);
+  const speech = await rpc(page, "realEnginePlayAudioEvent", {
+    name: eventName,
+    positional: false,
+    useViewPosition: false,
+    pumpFrames: 2,
+  });
+  expect(speech?.ok === true
+      && speech.result?.handleAccepted === true
+      && speech.result?.audioType === "AT_Streaming"
+      && normalizeAudioPath(speech.result?.filename) === normalizeAudioPath(expectedFilename),
+    `${eventName} did not reach the original audio manager as streaming speech`, speech);
+  const speechStream = await waitForDecodedStream(
+    page,
+    speech.result.filename,
+    speechBefore,
+    eventName,
+  );
+  expect(speechStream.lastEvent?.archive === expectedArchive
+      && normalizeAudioPath(speechStream.lastEvent?.path) === normalizeAudioPath(speech.result.filename)
+      && speechStream.lastEvent?.bus === "speech"
+      && speechStream.lastEvent?.payload?.extension === "wav"
+      && (speechStream.lastEvent?.payload?.decodedFrames ?? 0) > 0
+      && Array.isArray(speechStream.lastEvent?.nodeGraph)
+      && speechStream.lastEvent.nodeGraph.includes("speechGainNode")
+      && speechStream.activeSources > (speechBefore?.activeSources ?? 0)
+      && Number.isFinite(speechStream.lastEvent?.volume),
+    `${eventName} did not schedule through the browser MSS speech stream backend`, speechStream);
+
+  const speechStop = await rpc(page, "realEngineStopAudioEvent", {
+    handle: speech.result.handle,
+    pumpFrames: 2,
+  });
+  expect(speechStop?.ok === true && speechStop.result?.handle === speech.result.handle,
+    `${eventName} stop did not reach the original audio manager`, speechStop);
+  const stoppedSpeechStream = await waitForStreamStop(page, speechStream, eventName);
+  return { speech, speechStream, stoppedSpeechStream };
 }
 
 const server = await startStaticServer({ root: wasmRoot });
@@ -298,6 +343,13 @@ try {
     "soundGainNode",
   );
 
+  const speech = await playAndStopSpeechEvent(
+    page,
+    "MisGLA01Scorpion105",
+    "Data\\Audio\\Speech\\English\\mg1sc105.wav",
+    "SpeechEnglishZH.big",
+  );
+
   const zhMusic = await playAndMaybeStopMusicEvent(
     page,
     "Game_USA_10",
@@ -328,6 +380,19 @@ try {
       handle: uiSound.result.handle,
       nodeGraph: uiSoundRuntime.lastEvent.nodeGraph,
       frames: uiSoundRuntime.lastEvent.payload.frames,
+    },
+    speech: {
+      event: speech.speech.result.requested,
+      filename: speech.speech.result.filename,
+      handle: speech.speech.result.handle,
+      archive: speech.speechStream.lastEvent.archive,
+      bus: speech.speechStream.lastEvent.bus,
+      decodedBy: speech.speechStream.lastEvent.payload.decodedBy,
+      decodedFrames: speech.speechStream.lastEvent.payload.decodedFrames,
+      durationSeconds: speech.speechStream.lastEvent.durationSeconds,
+      nodeGraph: speech.speechStream.lastEvent.nodeGraph,
+      stopped: speech.stoppedSpeechStream?.stopped ?? null,
+      activeSourcesAfterStop: speech.stoppedSpeechStream?.activeSources ?? null,
     },
     zhMusic: {
       event: zhMusic.music.result.requested,

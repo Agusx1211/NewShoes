@@ -1717,6 +1717,18 @@ function cncPortMssStreamStart(payload) {
   return true;
 }
 
+function normalizeBrowserAudioLookupPath(path) {
+  return String(path ?? "").replace(/[\\/]+/g, "\\").toLowerCase();
+}
+
+function browserAudioStreamBusForFilename(filename) {
+  const normalized = normalizeBrowserAudioLookupPath(filename);
+  if (normalized.includes("\\speech\\")) {
+    return "speech";
+  }
+  return "music";
+}
+
 async function _startMssStreamAsync(payload) {
   const context = browserAudioRuntime.context;
   if (!context || context.state !== "running") {
@@ -1728,14 +1740,15 @@ async function _startMssStreamAsync(payload) {
     browserMssStreamPlaybackRuntime.lastError = browserAudioMixerRuntime.lastError;
     return;
   }
-  const busNode = mixer.busNodes?.music ?? mixer.busNodes?.sound ?? null;
+  const filename = String(payload?.filename ?? "");
+  const busName = browserAudioStreamBusForFilename(filename);
+  const busNode = mixer.busNodes?.[busName] ?? mixer.busNodes?.music ?? mixer.busNodes?.sound ?? null;
   if (!busNode) {
     browserMssStreamPlaybackRuntime.lastError = "missing browser audio mixer bus";
     return;
   }
 
   const handle = Number(payload?.handle ?? 0);
-  const filename = String(payload?.filename ?? "");
   const volume = clamp01(Number((payload.volume ?? 127) / 127));
   const loopCount = Number(payload.loopCount ?? 1);
 
@@ -1771,7 +1784,7 @@ async function _startMssStreamAsync(payload) {
   browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
 
   // Search mounted audio archives for the stream file.
-  const normalizedFilename = filename.toLowerCase();
+  const normalizedFilename = normalizeBrowserAudioLookupPath(filename);
   let archiveBytes = null;
   let entry = null;
 
@@ -1783,11 +1796,10 @@ async function _startMssStreamAsync(payload) {
       archiveBytes = wasmModule.fs.readFile(mounted.path);
       const entries = readBigDirectoryFromBytes(archiveBytes, mounted.name);
       entry = entries.find((candidate) => {
-        const c = candidate.normalizedPath.toLowerCase();
+        const c = normalizeBrowserAudioLookupPath(candidate.normalizedPath);
         return (
           c === normalizedFilename ||
-          c.endsWith("\\" + normalizedFilename) ||
-          c.endsWith("/" + normalizedFilename)
+          c.endsWith("\\" + normalizedFilename)
         );
       });
       if (entry) break;
@@ -1823,11 +1835,11 @@ async function _startMssStreamAsync(payload) {
     decodedFrames: decoded.decodedFrames,
   });
 
-  // Build audio graph: source → gain → music bus.
+  // Build audio graph: source -> gain -> stream bus.
   const source = context.createBufferSource();
   const gain = context.createGain();
   source.buffer = createWebAudioBufferFromDecoded(context, decoded);
-  // Music streams loop by default; honour loopCount > 1.
+  // Stream loops follow the Miles loop count.
   source.loop = loopCount < 0 || loopCount > 1;
   gain.gain.value = volume;
   source.connect(gain);
@@ -1865,6 +1877,7 @@ async function _startMssStreamAsync(payload) {
     volume,
     loopCount,
     playbackRate: Number(payload.playbackRate ?? decoded.info.samplesPerSec),
+    bus: busName,
     payload: {
       extension: audioPayloadExtension(entry.path),
       magic: audioPayloadMagic(payloadBytes.subarray(0, Math.min(64, payloadBytes.byteLength))),
@@ -1878,7 +1891,7 @@ async function _startMssStreamAsync(payload) {
     },
     startSeconds: Number(context.currentTime.toFixed(6)),
     durationSeconds: Number(source.buffer.duration.toFixed(6)),
-    nodeGraph: ["AudioBufferSourceNode", "GainNode", "musicGainNode", "AudioDestinationNode"],
+    nodeGraph: ["AudioBufferSourceNode", "GainNode", `${busName}GainNode`, "AudioDestinationNode"],
   };
   browserMssStreamPlaybackRuntime.lastError = null;
 }

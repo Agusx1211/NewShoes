@@ -6866,6 +6866,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       assertions now pump real frames while waiting so the gate observes the
       original audio request drain instead of relying on immediate timing.
       Verified with `npm --prefix WebAssembly run test:real-audio-event`.
+- [x] Route real engine-owned speech streams through the browser Web Audio
+      speech bus. The MSS stream backend now canonicalizes engine filenames and
+      BIG directory paths before archive lookup, so mixed-case paths with
+      repeated separators such as `Data\Audio\Speech\english\\mg1sc105.wav`
+      resolve to shipped speech payloads. Stream bus selection now maps
+      `Data\Audio\Speech\...` to `speechGainNode`, while music streams continue
+      to use `musicGainNode`. `real_audio_event_smoke.mjs` plays
+      `MisGLA01Scorpion105` through the original
+      `TheAudio->addAudioEvent -> MilesAudioManager::processRequest ->
+      playAudioEvent -> AIL_open_stream / AIL_start_stream` route, verifies
+      `AT_Streaming`, decodes `mg1sc105.wav` from `SpeechEnglishZH.big` with
+      the browser WAV decoder, asserts the
+      `AudioBufferSourceNode -> GainNode -> speechGainNode ->
+      AudioDestinationNode` graph, and stops it through the original
+      `TheAudio->removeAudioEvent(...)` handle path. Verified with
+      `node --check WebAssembly/harness/bridge.js`,
+      `node --check WebAssembly/harness/real_audio_event_smoke.mjs`,
+      `git diff --check`, `npm --prefix WebAssembly run build:port`, and
+      `npm --prefix WebAssembly run test:real-audio-event`.
 
 ---
 

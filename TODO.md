@@ -1575,8 +1575,8 @@ residue and the next frontier.
       frontier advance to `createFunctionLexicon`@446). Web Audio playback
       owned by the original manager now reaches real engine-driven 2D and 3D
       sample events plus one ZH `MusicTrack` stream start/stop in
-      `test:real-audio-event`; broader music transitions, speech/voice
-      coverage, and Bink-sharing handles remain open.
+      `test:real-audio-event`; broader music transitions, additional
+      speech/voice coverage, and Bink-sharing handles remain open.
 - [ ] Replace remaining `Mss.H`/`dsound.h` compatibility paths used by
       `MilesAudioManager.cpp` with a browser-backed audio device that owns real
       sample data, streams, provider/listener state, mixer state, and
@@ -1601,7 +1601,9 @@ residue and the next frontier.
       registration, volume/pan/rate/loop/position state, start/pause/resume,
       status, and close, and real engine-driven music stream scheduling/stop now
       reaches `cncPortMssStreamStart` / `cncPortMssStreamStop` through
-      `test:real-audio-event`. The 3D sample/listener/provider lifecycle is now
+      `test:real-audio-event`; the same gate now proves one real speech stream
+      routes through the speech mixer bus. The 3D sample/listener/provider
+      lifecycle is now
       stateful and
       harness-probed by `mss3DSampleLifecycleProbe`, covering provider open and
       speaker type, listener position/orientation/velocity, 3D sample
@@ -1646,8 +1648,8 @@ residue and the next frontier.
       AIL_decompress_ADPCM` now plays decoded real ADPCM through browser Web
       Audio inside `cnc-port`
       (`test:browser-audio-miles-webaudio-vertical`), and one real
-      engine-driven MP3 `MusicTrack` stream now decodes through
-      `AudioContext.decodeAudioData` in `test:real-audio-event`. Remaining:
+      engine-driven MP3 `MusicTrack` stream plus one real speech WAV stream now
+      decode through browser audio in `test:real-audio-event`. Remaining:
       full resolved requested-payload decode/cache storage with broad real
       engine-driven Web Audio scheduling/lifecycle coverage.
 - [ ] Complete dynamic 3D audio behavior after the engine-driven positional
