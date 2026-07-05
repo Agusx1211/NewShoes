@@ -270,11 +270,6 @@ residue and the next frontier.
       `realEngineFrameTick` on the original 30 Hz logic cadence with a bounded
       catch-up cap. Remaining here is the eventual ownership move to
       `emscripten_set_main_loop`.
-- [ ] Delete `WebAssembly/src/wasm_terrain_probe_object.cpp` (1,289 lines):
-      a full alternate implementation of `Object` (own
-      `reactToTransformChange`, `addThreat`, …) referenced by NO CMake
-      target — dead shadow-implementation waiting to be re-linked by
-      accident (Fable audit 2026-07-05).
 - [ ] In-flight command-bar build-dispatch change (uncommitted on main as of
       2026-07-05) — fix before landing: (a)
       `FunctionLexicon::loadRuntimeTableForPort` (`FunctionLexicon.h:104`)

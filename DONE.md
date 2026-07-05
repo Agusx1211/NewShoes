@@ -8077,3 +8077,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       (verified live against the build, both modes).
 
 ## Cross-cutting: project hygiene
+
+- [x] Delete the dead alternate `Object` implementation in
+      `WebAssembly/src/wasm_terrain_probe_object.cpp`. The 1,289-line file
+      defined shadow `Object` behavior (`addThreat`,
+      `reactToTransformChange`, etc.) but was referenced by no CMake target,
+      generated Ninja rule, or tracked source outside the Fable TODO. Verified
+      with `rg -n "wasm_terrain_probe_object"` over tracked source/build files
+      and generated `WebAssembly/build/wasm/build.ninja` before removal, plus
+      `npm --prefix WebAssembly run build:port` after removal.
