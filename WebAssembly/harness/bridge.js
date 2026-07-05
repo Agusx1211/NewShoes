@@ -9004,6 +9004,11 @@ async function loadWasmModule() {
         "string",
         ["string", "number", "number", "number", "number", "number", "number", "number"],
       ),
+      realEngineStopAudioEvent: module.cwrap(
+        "cnc_port_real_engine_stop_audio_event",
+        "string",
+        ["number", "number"],
+      ),
       queryDrawables: module.cwrap(
         "cnc_port_query_drawables",
         "string",
@@ -14046,6 +14051,37 @@ async function rpc(command, payload = {}) {
         return {
           ok: Boolean(result?.ok) && !aborted,
           command: "realEnginePlayAudioEvent",
+          aborted,
+          abortMessage,
+          result,
+          browserMssSamplePlaybackRuntime: summarizeBrowserMssSamplePlaybackRuntime(),
+          browserMss3DSamplePlaybackRuntime: summarizeBrowserMss3DSamplePlaybackRuntime(),
+          browserMssStreamPlaybackRuntime: summarizeBrowserMssStreamPlaybackRuntime(),
+          state: snapshotState(),
+        };
+      }
+    case "realEngineStopAudioEvent":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineStopAudioEvent");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineStopAudioEvent", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.realEngineStopAudioEvent(
+            Number(payload.handle ?? 0),
+            Number(payload.pumpFrames ?? 2),
+          ));
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        recordLog("real engine stop audio event", { aborted, abortMessage, result });
+        return {
+          ok: Boolean(result?.ok) && !aborted,
+          command: "realEngineStopAudioEvent",
           aborted,
           abortMessage,
           result,

@@ -201,13 +201,6 @@ residue and the next frontier.
       the smoke.mjs cursor-hidden probe assertion once W3DMouse cursor rendering
       (the game's own cursor) is ported — currently hardcoded css="default" to
       avoid a cursorless UI (see e97628f).
-- [ ] Harness-drive live original `MilesAudioManager` music/stream requests
-      from real boot or skirmish into the browser MSS stream backend. The
-      bridge now decodes mounted `Music.big` MP3 streams through Web Audio, but
-      the remaining proof must show an engine-owned `AudioManager::addAudioEvent`
-      / `MilesAudioManager::processRequest` stream reaches
-      `cncPortMssStreamStart` during real gameplay, with volume/fade/stop state
-      observable through the harness.
 - [ ] Debug and Release builds both link into the same `dist/cnc-port.js` and
       silently clobber each other — give the Release lane its own dist output
       (or an explicit copy step) so a `build:port:release` doesn't invalidate
@@ -1579,8 +1572,9 @@ residue and the next frontier.
       destructor (`test:startup-vertical` gates this plus the
       frontier advance to `createFunctionLexicon`@446). Web Audio playback
       owned by the original manager now reaches real engine-driven 2D and 3D
-      sample events in `test:real-audio-event`; music/stream transitions,
-      broader speech/voice coverage, and Bink-sharing handles remain open.
+      sample events plus one ZH `MusicTrack` stream start/stop in
+      `test:real-audio-event`; broader music transitions, speech/voice
+      coverage, and Bink-sharing handles remain open.
 - [ ] Replace remaining `Mss.H`/`dsound.h` compatibility paths used by
       `MilesAudioManager.cpp` with a browser-backed audio device that owns real
       sample data, streams, provider/listener state, mixer state, and
@@ -1603,8 +1597,10 @@ residue and the next frontier.
       lifecycle is now stateful and harness-probed by
       `mssStreamLifecycleProbe`, covering open/open-by-sample, callback
       registration, volume/pan/rate/loop/position state, start/pause/resume,
-      status, and close while still leaving real Web Audio stream scheduling
-      open. The 3D sample/listener/provider lifecycle is now stateful and
+      status, and close, and real engine-driven music stream scheduling/stop now
+      reaches `cncPortMssStreamStart` / `cncPortMssStreamStop` through
+      `test:real-audio-event`. The 3D sample/listener/provider lifecycle is now
+      stateful and
       harness-probed by `mss3DSampleLifecycleProbe`, covering provider open and
       speaker type, listener position/orientation/velocity, 3D sample
       allocation/user data/file/callback/distance/position/volume/rate/loop/
@@ -1647,9 +1643,11 @@ residue and the next frontier.
       original engine branch `AudioFileCache::openFile ->
       AIL_decompress_ADPCM` now plays decoded real ADPCM through browser Web
       Audio inside `cnc-port`
-      (`test:browser-audio-miles-webaudio-vertical`). Remaining: MP3 decode
-      and full resolved requested-payload decode/cache storage with real
-      engine-driven Web Audio scheduling/lifecycle.
+      (`test:browser-audio-miles-webaudio-vertical`), and one real
+      engine-driven MP3 `MusicTrack` stream now decodes through
+      `AudioContext.decodeAudioData` in `test:real-audio-event`. Remaining:
+      full resolved requested-payload decode/cache storage with broad real
+      engine-driven Web Audio scheduling/lifecycle coverage.
 - [ ] Complete dynamic 3D audio behavior after the engine-driven positional
       sample start path. `test:real-audio-event` proves one real world SFX
       reaches `PannerNode -> sound3DGainNode`; remaining work is listener
@@ -1659,7 +1657,9 @@ residue and the next frontier.
       pins the source-only `MusicTrack` / `MusicManager` / Miles stream route,
       volume bus, Music.ini parse path, and next/previous/completion state
       contracts that the Web Audio stream backend must satisfy. Engine-driven
-      music playback and transitions are still open.
+      playback for `Game_USA_10` now reaches the browser MSS stream backend and
+      stops through the original remove-audio-event path; next/previous,
+      fading, completion, and gameplay-triggered transitions remain open.
 - [ ] EVA voice / unit voices.
 - [ ] Volume/mixer controls wired to options UI; `verify:audio-options-volume-frontier`
       now pins the original Zero Hour OptionsMenu slider-to-`TheAudio->setVolume`
@@ -1673,9 +1673,9 @@ residue and the next frontier.
       mixer.
 - [ ] Harness: add sustained gameplay audio assertions beyond direct event
       triggering. `test:real-audio-event` proves direct engine-driven 2D/3D
-      sample events; remaining harness work is to observe naturally triggered
-      unit/weapon/UI audio during skirmish/campaign input and assert completion
-      drainage over multiple frames.
+      sample events and one music stream; remaining harness work is to observe
+      naturally triggered unit/weapon/UI/music audio during skirmish/campaign
+      input and assert completion drainage over multiple frames.
 
 ---
 

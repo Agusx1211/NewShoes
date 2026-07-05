@@ -82,6 +82,78 @@ function assertDecodedSample(runtime, eventName, expectedNode) {
     `${eventName} did not schedule a decoded Web Audio buffer on ${expectedNode}`, last);
 }
 
+async function streamRuntime(page) {
+  const runtime = await rpc(page, "browserAudioRuntime");
+  return runtime.state?.browserMssStreamPlaybackRuntime ?? null;
+}
+
+async function sampleRuntime(page, key) {
+  const runtime = await rpc(page, "browserAudioRuntime");
+  return runtime.state?.[key] ?? null;
+}
+
+async function waitForDecodedSample(page, key, expectedNode, before, timeoutMs = 10000) {
+  const start = Date.now();
+  const beforeStarted = before?.started ?? 0;
+  while (Date.now() - start < timeoutMs) {
+    const runtime = await sampleRuntime(page, key);
+    const last = runtime?.lastEvent;
+    if ((runtime?.started ?? 0) > beforeStarted
+        && last?.payload?.container === "RIFF/WAVE"
+        && last.payload.frames > 0
+        && Array.isArray(last.nodeGraph)
+        && last.nodeGraph.includes(expectedNode)) {
+      return runtime;
+    }
+    if (runtime?.lastError) {
+      throw new Error(`${key} sample decode failed: ${runtime.lastError}`);
+    }
+    await rpc(page, "realEngineFrameSummary", { frames: 1 });
+    await page.waitForTimeout(25);
+  }
+  throw new Error(`${key} did not decode and start within ${timeoutMs}ms`);
+}
+
+async function waitForDecodedMusicStream(page, filename, before, timeoutMs = 15000) {
+  const start = Date.now();
+  const beforeScheduled = before?.scheduled ?? 0;
+  while (Date.now() - start < timeoutMs) {
+    const runtime = await streamRuntime(page);
+    const decoded = runtime?.eventLog?.some((event) =>
+      event.phase === "webAudioDecode"
+        && event.filename === filename
+        && event.decodedBy === "WebAudio.decodeAudioData"
+        && (event.decodedFrames ?? 0) > 0);
+    const scheduled = runtime?.lastEvent?.phase === "scheduled"
+      && runtime.lastEvent.filename === filename
+      && runtime.scheduled > beforeScheduled;
+    if (decoded && scheduled) {
+      return runtime;
+    }
+    if (runtime?.lastError) {
+      throw new Error(`${filename} stream decode failed: ${runtime.lastError}`);
+    }
+    await page.waitForTimeout(50);
+  }
+  throw new Error(`${filename} stream did not decode and schedule within ${timeoutMs}ms`);
+}
+
+async function waitForMusicStreamStop(page, before, timeoutMs = 5000) {
+  const start = Date.now();
+  const beforeStopped = before?.stopped ?? 0;
+  const beforeActive = before?.activeSources ?? 0;
+  while (Date.now() - start < timeoutMs) {
+    const runtime = await streamRuntime(page);
+    if ((runtime?.stopped ?? 0) > beforeStopped
+        && (runtime?.activeSources ?? 0) < beforeActive) {
+      return runtime;
+    }
+    await rpc(page, "realEngineFrameSummary", { frames: 1 });
+    await page.waitForTimeout(50);
+  }
+  throw new Error(`music stream did not stop within ${timeoutMs}ms`);
+}
+
 const server = await startStaticServer({ root: wasmRoot });
 let browser;
 try {
@@ -130,6 +202,7 @@ try {
 
   await rpc(page, "realEngineFrameSummary", { frames: 2 });
 
+  const worldSoundBefore = await sampleRuntime(page, "browserMss3DSamplePlaybackRuntime");
   const worldSound = await rpc(page, "realEnginePlayAudioEvent", {
     name: "ArtilleryBarrageIncomingWhistle",
     positional: true,
@@ -140,12 +213,19 @@ try {
       && worldSound.result?.handleAccepted === true
       && worldSound.result?.positional === true,
     "real positional audio event did not reach the original audio manager", worldSound);
+  const worldSoundRuntime = await waitForDecodedSample(
+    page,
+    "browserMss3DSamplePlaybackRuntime",
+    "sound3DGainNode",
+    worldSoundBefore,
+  );
   assertDecodedSample(
-    worldSound.browserMss3DSamplePlaybackRuntime,
+    worldSoundRuntime,
     "ArtilleryBarrageIncomingWhistle",
     "sound3DGainNode",
   );
 
+  const uiSoundBefore = await sampleRuntime(page, "browserMssSamplePlaybackRuntime");
   const uiSound = await rpc(page, "realEnginePlayAudioEvent", {
     name: "CIAAgentVoiceAttack",
     positional: false,
@@ -156,11 +236,54 @@ try {
       && uiSound.result?.handleAccepted === true
       && uiSound.result?.positional === false,
     "real 2D audio event did not reach the original audio manager", uiSound);
+  const uiSoundRuntime = await waitForDecodedSample(
+    page,
+    "browserMssSamplePlaybackRuntime",
+    "soundGainNode",
+    uiSoundBefore,
+  );
   assertDecodedSample(
-    uiSound.browserMssSamplePlaybackRuntime,
+    uiSoundRuntime,
     "CIAAgentVoiceAttack",
     "soundGainNode",
   );
+
+  const musicBefore = await streamRuntime(page);
+  const music = await rpc(page, "realEnginePlayAudioEvent", {
+    name: "Game_USA_10",
+    positional: false,
+    useViewPosition: false,
+    pumpFrames: 2,
+  });
+  expect(music?.ok === true
+      && music.result?.handleAccepted === true
+      && music.result?.audioType === "AT_Music"
+      && music.result?.filename === "Data\\Audio\\Tracks\\USA_10.mp3",
+    "real music event did not reach the original audio manager", music);
+  const musicStream = await waitForDecodedMusicStream(
+    page,
+    music.result.filename,
+    musicBefore,
+  );
+  expect(musicStream.lastEvent?.archive === "MusicZH.big"
+      && musicStream.lastEvent?.path === music.result.filename
+      && musicStream.lastEvent?.payload?.extension === "mp3"
+      && musicStream.lastEvent?.payload?.decodedBy === "WebAudio.decodeAudioData"
+      && (musicStream.lastEvent?.payload?.decodedFrames ?? 0) > 0
+      && Array.isArray(musicStream.lastEvent?.nodeGraph)
+      && musicStream.lastEvent.nodeGraph.includes("musicGainNode")
+      && musicStream.activeSources > (musicBefore?.activeSources ?? 0)
+      && musicStream.musicSourceActive === true
+      && Number.isFinite(musicStream.lastEvent?.volume),
+    "real music event did not schedule through the browser MSS stream backend", musicStream);
+
+  const musicStop = await rpc(page, "realEngineStopAudioEvent", {
+    handle: music.result.handle,
+    pumpFrames: 2,
+  });
+  expect(musicStop?.ok === true && musicStop.result?.handle === music.result.handle,
+    "real music event stop did not reach the original audio manager", musicStop);
+  const stoppedMusicStream = await waitForMusicStreamStop(page, musicStream);
 
   console.log(JSON.stringify({
     ok: true,
@@ -168,15 +291,27 @@ try {
       event: worldSound.result.requested,
       filename: worldSound.result.filename,
       handle: worldSound.result.handle,
-      nodeGraph: worldSound.browserMss3DSamplePlaybackRuntime.lastEvent.nodeGraph,
-      frames: worldSound.browserMss3DSamplePlaybackRuntime.lastEvent.payload.frames,
+      nodeGraph: worldSoundRuntime.lastEvent.nodeGraph,
+      frames: worldSoundRuntime.lastEvent.payload.frames,
     },
     uiSound: {
       event: uiSound.result.requested,
       filename: uiSound.result.filename,
       handle: uiSound.result.handle,
-      nodeGraph: uiSound.browserMssSamplePlaybackRuntime.lastEvent.nodeGraph,
-      frames: uiSound.browserMssSamplePlaybackRuntime.lastEvent.payload.frames,
+      nodeGraph: uiSoundRuntime.lastEvent.nodeGraph,
+      frames: uiSoundRuntime.lastEvent.payload.frames,
+    },
+    music: {
+      event: music.result.requested,
+      filename: music.result.filename,
+      handle: music.result.handle,
+      archive: musicStream.lastEvent.archive,
+      decodedBy: musicStream.lastEvent.payload.decodedBy,
+      decodedFrames: musicStream.lastEvent.payload.decodedFrames,
+      durationSeconds: musicStream.lastEvent.durationSeconds,
+      nodeGraph: musicStream.lastEvent.nodeGraph,
+      stopped: stoppedMusicStream.stopped,
+      activeSourcesAfterStop: stoppedMusicStream.activeSources,
     },
   }, null, 2));
 } finally {

@@ -3980,6 +3980,32 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_play_audio_even
 	return json.c_str();
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_stop_audio_event(
+	unsigned int audio_handle,
+	int pump_frames)
+{
+	static std::string json;
+	json = "{\"ok\":false,\"source\":\"real-engine-audio-stop\"";
+	json += ",\"handle\":" + std::to_string(static_cast<unsigned long long>(audio_handle));
+	if (TheAudio == NULL) {
+		json += ",\"guard\":\"TheAudio\"}";
+		return json.c_str();
+	}
+
+	const AudioHandle handle = static_cast<AudioHandle>(audio_handle);
+	TheAudio->removeAudioEvent(handle);
+	if (pump_frames > 0) {
+		run_real_engine_frames(pump_frames);
+	}
+
+	json = "{\"ok\":true,\"source\":\"real-engine-audio-stop\"";
+	json += ",\"handle\":" + std::to_string(static_cast<unsigned long long>(handle));
+	json += ",\"pumpFrames\":" + std::to_string(pump_frames > 0 ? pump_frames : 0);
+	json += ",\"framesCompleted\":" + std::to_string(g_frame_state.frames_completed);
+	json += "}";
+	return json.c_str();
+}
+
 // Query all drawables in the game client, returning position, ownership, and
 // screen-space info. Safe to call before init — returns {"ready":false}.
 //

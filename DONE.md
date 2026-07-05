@@ -6794,6 +6794,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       manager. Verified locally with
       `npm --prefix WebAssembly run test:real-audio-event` and on the Mac M4
       Metal-backed Chrome with `REAL_AUDIO_BROWSER_EXECUTABLE="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" REAL_AUDIO_BROWSER_ARGS="--enable-gpu --use-angle=metal" /opt/homebrew/bin/node harness/real_audio_event_smoke.mjs`.
+- [x] Drive a real engine-owned music stream through the browser MSS Web Audio
+      backend in `cnc-port`. `real_audio_event_smoke.mjs` now plays the shipped
+      ZH `MusicTrack` `Game_USA_10` through the original
+      `TheAudio->addAudioEvent -> MusicManager::addAudioEvent ->
+      MilesAudioManager::processRequest -> playAudioEvent -> AIL_open_stream /
+      AIL_start_stream` route, waits for `cncPortMssStreamStart` to decode
+      `Data\Audio\Tracks\USA_10.mp3` from `MusicZH.big` with
+      `AudioContext.decodeAudioData`, and asserts the live
+      `AudioBufferSourceNode -> GainNode -> musicGainNode ->
+      AudioDestinationNode` graph. The smoke also exposes
+      `realEngineStopAudioEvent`, which calls the original
+      `TheAudio->removeAudioEvent(handle)` path and frame-pumps until
+      `cncPortMssStreamStop` records stream stop state, while preserving any
+      concurrently active shell music. The 2D/3D sample assertions now pump
+      real frames while waiting so the gate observes the original audio request
+      drain instead of relying on immediate timing. Verified with
+      `npm --prefix WebAssembly run test:real-audio-event`.
 
 ---
 
