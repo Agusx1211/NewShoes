@@ -52,6 +52,17 @@ GameSpy) have already been solved by at least one of them.
 - **GeneralsX/** — [fbraz3/GeneralsX](https://github.com/fbraz3/GeneralsX).
   Cross-platform (macOS/Linux) port with LAN rework. Another data point for
   platform-layer replacements and networking.
+- **Generals-Mac-iOS-iPad/** — [ammaarreshi/Generals-Mac-iOS-iPad](https://github.com/ammaarreshi/Generals-Mac-iOS-iPad).
+  Native Apple Silicon (macOS) **and iOS/iPadOS** port of the real 2003 engine,
+  built on GeneralsX/Fighter19/TheSuperHackers. Renders via a full translation
+  chain — **D3D8 → DXVK → Vulkan → MoltenVK → Metal** (no emulation) — so it's a
+  strong reference for the same D3D8-behavior questions our WebGL2 shim faces,
+  and for platform-layer problems iOS shares with the browser: read-only bundle
+  filesystem rerouting, seized GPU drawable on backgrounding, and SDL3 raw-touch
+  → RTS input semantics. Notable root-caused engine bugs (minimap black from a
+  texture-format alpha fallback, EVA-mute from a stuck audio stream) are written
+  up in `docs/port/PORTING_PLAYBOOK.md` and the reusable patterns in
+  `docs/port/PORTING_PATTERNS.md`. (Also a Claude Code / Fable-built port.)
 - **Thyme/** — [TheAssemblyArmada/Thyme](https://github.com/TheAssemblyArmada/Thyme).
   Pre-source-release clean-room reimplementation of the ZH engine in portable
   C++. Excellent for understanding *intended behavior* of engine subsystems
