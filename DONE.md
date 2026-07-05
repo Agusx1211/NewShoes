@@ -3358,6 +3358,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `node WebAssembly/harness/startup_vertical_smoke.mjs` confirming the
       FunctionLexicon frontier now has 11 missing groups; screenshot
       `WebAssembly/artifacts/screenshots/input-select-e2e.png`.
+- [x] Make the live skirmish start harness see pixels instead of only booting
+      maps. `skirmish_start_smoke.mjs` now requires active matches to report
+      `renderedObjectCount > 0`, samples a 12-point WebGL grid after the
+      screenshot, and fails unless the canvas has visible non-black pixel
+      variance. Verified with `node WebAssembly/harness/skirmish_start_smoke.mjs`
+      on Alpine Assault: `renderedObjectCount=3`, 12 visible samples, 12
+      unique colors, screenshot
+      `WebAssembly/artifacts/screenshots/skirmish-start-smoke.png`.
 - [x] Replace the stale "remaining shell callbacks" FunctionLexicon frontier
       label with a structured missing callback-owner inventory in the linked
       startup runtime. `wasm_function_lexicon_runtime` now checks callback

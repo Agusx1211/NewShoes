@@ -92,6 +92,64 @@ function compactGameplay(frame) {
   };
 }
 
+function pixelHasVisibleColor(pixel, threshold = 8) {
+  return Array.isArray(pixel)
+    && pixel.length >= 4
+    && pixel[3] >= 200
+    && pixel.slice(0, 3).some((component) => component > threshold);
+}
+
+async function sampleViewportGrid(page) {
+  return page.evaluate(() => {
+    const canvas = document.querySelector("#viewport");
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      return { ok: false, error: "viewport canvas is missing" };
+    }
+    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+    if (gl == null) {
+      return { ok: false, error: "viewport WebGL context is missing" };
+    }
+
+    const samplePoints = [
+      { name: "upperLeft", x: 0.18, y: 0.18 },
+      { name: "upperCenter", x: 0.50, y: 0.18 },
+      { name: "upperRight", x: 0.82, y: 0.18 },
+      { name: "midLeft", x: 0.18, y: 0.44 },
+      { name: "center", x: 0.50, y: 0.44 },
+      { name: "midRight", x: 0.82, y: 0.44 },
+      { name: "lowerLeft", x: 0.18, y: 0.68 },
+      { name: "lowerCenter", x: 0.50, y: 0.68 },
+      { name: "lowerRight", x: 0.82, y: 0.68 },
+      { name: "hudLeft", x: 0.22, y: 0.88 },
+      { name: "hudCenter", x: 0.50, y: 0.88 },
+      { name: "hudRight", x: 0.78, y: 0.88 },
+    ];
+    const pixels = {};
+    const pixel = new Uint8Array(4);
+    for (const point of samplePoints) {
+      const x = Math.max(0, Math.min(canvas.width - 1, Math.floor(point.x * canvas.width)));
+      const y = Math.max(0, Math.min(canvas.height - 1, Math.floor(point.y * canvas.height)));
+      gl.readPixels(x, canvas.height - y - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+      pixels[point.name] = Array.from(pixel);
+    }
+
+    const colors = Object.values(pixels).map((value) => value.join(","));
+    const visible = Object.values(pixels).filter((value) =>
+      value.length >= 4 &&
+      value[3] >= 200 &&
+      (value[0] > 8 || value[1] > 8 || value[2] > 8));
+    return {
+      ok: true,
+      width: canvas.width,
+      height: canvas.height,
+      sampleCount: samplePoints.length,
+      visibleSampleCount: visible.length,
+      uniqueColorCount: new Set(colors).size,
+      pixels,
+    };
+  });
+}
+
 function compactClickFrame(frameResult) {
   const clientState = frameResult?.frame?.clientState ?? {};
   return {
@@ -285,7 +343,8 @@ async function waitForSkirmishMatch(page) {
         gameplay?.loadingMap === false &&
         gameplay?.inputEnabled === true &&
         Number(gameplay?.objectCount ?? 0) > 0 &&
-        Number(gameplay?.drawableCount ?? 0) > 0) {
+        Number(gameplay?.drawableCount ?? 0) > 0 &&
+        Number(gameplay?.renderedObjectCount ?? 0) > 0) {
       return { result, framesAdvanced, samples };
     }
   }
@@ -418,6 +477,13 @@ async function main() {
       throw error;
     }
     await page.locator("#viewport").screenshot({ path: screenshotPath });
+    const renderProbe = await sampleViewportGrid(page);
+    expect(renderProbe.ok === true,
+      "active skirmish canvas pixels could not be sampled", renderProbe);
+    const visibleSamples = Object.values(renderProbe.pixels ?? {}).filter((pixel) =>
+      pixelHasVisibleColor(pixel));
+    expect(visibleSamples.length > 0 && renderProbe.uniqueColorCount > 1,
+      "active skirmish canvas did not expose visible non-black pixel variance", renderProbe);
 
     // ADD-ONLY HUD geometry probe: one full realEngineFrame to capture the
     // per-window control-bar geometry (drawFunc/systemFunc/x/y/w/h/hidden) so
@@ -479,6 +545,7 @@ async function main() {
       officialMultiplayerMaps: mapCache?.probe?.officialMultiplayerMaps ?? [],
       framesAdvancedAfterStart: active.framesAdvanced,
       finalGameplay: compactGameplay(active.result.frame),
+      renderProbe,
       // ADD-ONLY HUD diagnostics: full control-bar / shell / startNewGame state
       // from the final active-match frame (read-only; does not gate anything).
       hudDiagnostics: (() => {

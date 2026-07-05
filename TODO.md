@@ -20,7 +20,7 @@ shares structure and follows behind.
 
 MERGED to `main` (verified, clean, green build): perf-drawstate (state-skip perf + geometry/texture correctness fixes), zorder-fix (RTT null-FBO depth-pollution fix — 0 FBO failures), audio-ini-fix (non-Default audio INI entries → audio subsystem inits plus base-Generals `Music.big` extraction), live-skirmish-start, mounted MSS stream playback, DXT CPU fallback and DXT1/2/3/4/5 browser draw coverage, draw-order-fix (D3DRS_ZBIAS 24-bit depth-bias scale in bridge.js — commit 33641ab).
 
-RECENT: the live skirmish menu/options/start transition now loads all 47 official multiplayer maps into active match state (`loadingMap=false`, `inputEnabled=true`, `objects > 0`, no traps). Remaining skirmish work is AI behavior tuning and map-specific script fixes.
+RECENT: the live skirmish menu/options/start transition now loads all 47 official multiplayer maps into active match state and the harness now requires `renderedObjectCount > 0` plus visible non-black canvas variance. Remaining skirmish work is AI behavior tuning and map-specific script fixes.
 
 PERF next: runtime profiling now separates real-engine frame time from tracked
 browser D3D8 draw/upload/readback/FBO costs on Mac Chrome/Metal. The draw-
@@ -2202,7 +2202,8 @@ and then start with the PROFILE, not with any individual fix.
 - [ ] All skirmish maps load. The harness can now select a specific official
       multiplayer map with `SKIRMISH_START_MAP`; all 47 official maps boot to
       skirmish with `loadingMap=false`, `inputEnabled=true`, `objects > 0`,
-      no traps. Remaining: AI behavior tuning and map-specific script fixes.
+      `renderedObjectCount > 0`, visible non-black canvas variance, and no
+      traps. Remaining: AI behavior tuning and map-specific script fixes.
 - [ ] Single-player campaign(s) playable (scripts, objectives, cinematics).
 - [ ] Challenge mode (Zero Hour generals challenge).
 - [ ] Save / load a game (serialization round-trips correctly).
