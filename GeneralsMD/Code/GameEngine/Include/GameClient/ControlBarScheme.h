@@ -273,6 +273,12 @@ public:
 
 	void preloadAssets( TimeOfDay timeOfDay );									///< preload the assets
 
+	// ADD-ONLY diagnostic accessor (no behavior change) for HUD render probes:
+	// exposes the resolved scheme + list size so a probe can report whether the
+	// command-bar background draw has a loaded scheme. Read-only.
+	ControlBarScheme *diagGetCurrentScheme() const { return m_currentScheme; }
+	size_t diagGetSchemeListSize() const { return m_schemeList.size(); }
+
 private:
 	ControlBarScheme *m_currentScheme;													///< the current scheme that everythign uses
 	Coord2D m_multiplyer;																	

@@ -40,6 +40,7 @@
 #include "Common/SubsystemInterface.h"
 #include "Common/GameLOD.h"
 #include "GameClient/ControlBar.h"
+#include "GameClient/ControlBarScheme.h"
 #include "GameClient/MapUtil.h"
 #include "cpudetect.h"
 #include "GameClient/Display.h"
@@ -2427,7 +2428,7 @@ void append_minimal_control_bar_state(std::string &json)
 	json += ",\"controlBar\":{";
 	if (TheWindowManager == NULL || window == NULL) {
 		json += "\"found\":false,\"hidden\":null,\"managerHidden\":null,"
-			"\"enabled\":null,\"clickable\":false}";
+			"\"enabled\":null,\"clickable\":false,\"scheme\":null}";
 		return;
 	}
 	const UnsignedInt status = window->winGetStatus();
@@ -2442,6 +2443,75 @@ void append_minimal_control_bar_state(std::string &json)
 	json += enabled ? "true" : "false";
 	json += ",\"clickable\":";
 	json += (!manager_hidden && enabled && (status & WIN_STATUS_NO_INPUT) == 0) ? "true" : "false";
+
+	// ADD-ONLY Stage-0 probe of the command-bar scheme manager (read-only).
+	// Reports the resolved scheme name/side, the number of schemes parsed from
+	// ControlBarScheme.ini, and per image layer (3..5 are BACKGROUND layers,
+	// 0..2 foreground) how many scheme images exist and how many actually
+	// resolved to a loaded Image*. NULL images => the command-bar background
+	// frame draws nothing (cause c'-image-not-loaded).
+	json += ",\"scheme\":";
+	if (TheControlBar == NULL) {
+		json += "null";
+	} else {
+		ControlBarSchemeManager *man = TheControlBar->getControlBarSchemeManager();
+		json += "{\"managerReady\":";
+		json += man != NULL ? "true" : "false";
+		if (man != NULL) {
+			json += ",\"schemeListSize\":";
+			json += std::to_string(man->diagGetSchemeListSize());
+			ControlBarScheme *scheme = man->diagGetCurrentScheme();
+			json += ",\"currentScheme\":";
+			if (scheme == NULL) {
+				json += "null";
+			} else {
+				json += "{\"name\":\"";
+				json += json_escape(scheme->m_name.str());
+				json += "\",\"side\":\"";
+				json += json_escape(scheme->m_side.str());
+				json += "\",\"screenCreationRes\":{\"x\":";
+				json += std::to_string(scheme->m_ScreenCreationRes.x);
+				json += ",\"y\":";
+				json += std::to_string(scheme->m_ScreenCreationRes.y);
+				json += "},\"layers\":{";
+				for (Int li = 0; li < MAX_CONTROL_BAR_SCHEME_IMAGE_LAYERS; ++li) {
+					if (li != 0) {
+						json += ",";
+					}
+					json += "\"";
+					json += std::to_string(li);
+					json += "\":{";
+					std::size_t total = 0;
+					std::size_t loaded = 0;
+					json += "\"images\":[";
+					bool first_image = true;
+					for (ControlBarScheme::ControlBarSchemeImageList::iterator it = scheme->m_layer[li].begin();
+						it != scheme->m_layer[li].end(); ++it) {
+						++total;
+						if (*it != NULL && (*it)->m_image != NULL) {
+							++loaded;
+							if (!first_image) json += ",";
+							first_image = false;
+							json += "{\"name\":\"";
+							json += json_escape((*it)->m_name.str());
+							json += "\",\"file\":\"";
+							json += json_escape((*it)->m_image->getFilename().str());
+							json += "\",\"status\":";
+							json += std::to_string((*it)->m_image->getStatus());
+							json += "}";
+						}
+					}
+					json += "],\"total\":";
+					json += std::to_string(total);
+					json += ",\"loaded\":";
+					json += std::to_string(loaded);
+					json += "}";
+				}
+				json += "}}";
+			}
+		}
+		json += "}";
+	}
 	json += "}";
 }
 
@@ -3450,6 +3520,13 @@ void append_real_engine_client_state(std::string &json)
 	append_window_probe(json, "powerWindow", "ControlBar.wnd:PowerWindow");
 	append_window_probe(json, "buttonGeneral", "ControlBar.wnd:ButtonGeneral");
 	append_window_probe(json, "buttonIdleWorker", "ControlBar.wnd:ButtonIdleWorker");
+	// ADD-ONLY Stage-0b: the command-bar background/foreground/top frame windows.
+	// BackgroundMarker drives the metallic background frame art (W3DCommandBarBackgroundDraw).
+	append_window_probe(json, "backgroundMarker", "ControlBar.wnd:BackgroundMarker");
+	append_window_probe(json, "foregroundMarker", "ControlBar.wnd:ForegroundMarker");
+	append_window_probe(json, "generalsExp", "ControlBar.wnd:GeneralsExp");
+	append_window_probe(json, "winUnitSelected", "ControlBar.wnd:WinUnitSelected");
+	append_window_probe(json, "onTopDraw", "ControlBar.wnd:OnTopDraw");
 	json += "}";
 
 	append_input_window_state(json);

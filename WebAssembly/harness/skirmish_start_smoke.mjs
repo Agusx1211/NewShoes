@@ -417,6 +417,7 @@ async function main() {
     // the bottom-strip pixels can be mapped to specific HUD windows. Read-only.
     let controlBarWindows = null;
     let controlBarWindowFull = null;
+    let textureDiagnostics = null;
     try {
       const full = await runFrames(page, 1, "hud geometry probe");
       const locate = (obj, keys, depth = 0) => {
@@ -432,6 +433,10 @@ async function main() {
       };
       controlBarWindowFull = locate(full.frame, ["controlBarWindows"]) ?? null;
       controlBarWindows = controlBarWindowFull;
+      // ADD-ONLY: also surface the frame's texture diagnostics so a background
+      // that resolves to a valid Image* but still draws black can be traced to
+      // a missing/failed texture upload. Read-only.
+      textureDiagnostics = locate(full.frame, ["textureDiagnostics"]) ?? null;
     } catch (error) {
       controlBarWindows = { error: error?.message ?? String(error) };
     }
@@ -485,6 +490,7 @@ async function main() {
           rawControlBar: cb,
           rawShellKeys: Object.keys(shell),
           controlBarWindows,
+          textureDiagnostics,
         };
       })(),
       samples: active.samples.slice(-12),
