@@ -102,6 +102,14 @@ static Int g_wasmLogicDispatchLastMoveHadGroup = -1;
 static Real g_wasmLogicDispatchLastMoveX = 0.0f;
 static Real g_wasmLogicDispatchLastMoveY = 0.0f;
 static Real g_wasmLogicDispatchLastMoveZ = 0.0f;
+static Int g_wasmLogicDispatchBuildCommandCount = 0;
+static Int g_wasmLogicDispatchLastBuildCommandType = -1;
+static Int g_wasmLogicDispatchLastBuildHadGroup = -1;
+static Int g_wasmLogicDispatchLastBuildArg0 = -1;
+static Int g_wasmLogicDispatchQueueUpgradeCount = 0;
+static Int g_wasmLogicDispatchQueueUnitCreateCount = 0;
+static Int g_wasmLogicDispatchDozerConstructCount = 0;
+static Int g_wasmLogicDispatchPurchaseScienceCount = 0;
 
 extern "C" Int cnc_port_logic_dispatch_new_game_count( void ) { return g_wasmLogicDispatchNewGameCount; }
 extern "C" Int cnc_port_logic_dispatch_last_new_game_mode( void ) { return g_wasmLogicDispatchLastNewGameMode; }
@@ -117,6 +125,14 @@ extern "C" Int cnc_port_logic_dispatch_last_move_had_group( void ) { return g_wa
 extern "C" Real cnc_port_logic_dispatch_last_move_x( void ) { return g_wasmLogicDispatchLastMoveX; }
 extern "C" Real cnc_port_logic_dispatch_last_move_y( void ) { return g_wasmLogicDispatchLastMoveY; }
 extern "C" Real cnc_port_logic_dispatch_last_move_z( void ) { return g_wasmLogicDispatchLastMoveZ; }
+extern "C" Int cnc_port_logic_dispatch_build_command_count( void ) { return g_wasmLogicDispatchBuildCommandCount; }
+extern "C" Int cnc_port_logic_dispatch_last_build_command_type( void ) { return g_wasmLogicDispatchLastBuildCommandType; }
+extern "C" Int cnc_port_logic_dispatch_last_build_had_group( void ) { return g_wasmLogicDispatchLastBuildHadGroup; }
+extern "C" Int cnc_port_logic_dispatch_last_build_arg0( void ) { return g_wasmLogicDispatchLastBuildArg0; }
+extern "C" Int cnc_port_logic_dispatch_queue_upgrade_count( void ) { return g_wasmLogicDispatchQueueUpgradeCount; }
+extern "C" Int cnc_port_logic_dispatch_queue_unit_create_count( void ) { return g_wasmLogicDispatchQueueUnitCreateCount; }
+extern "C" Int cnc_port_logic_dispatch_dozer_construct_count( void ) { return g_wasmLogicDispatchDozerConstructCount; }
+extern "C" Int cnc_port_logic_dispatch_purchase_science_count( void ) { return g_wasmLogicDispatchPurchaseScienceCount; }
 
 static void cnc_port_note_logic_dispatch_move_command(
 	GameMessage::Type type,
@@ -129,6 +145,39 @@ static void cnc_port_note_logic_dispatch_move_command(
 	g_wasmLogicDispatchLastMoveX = dest.x;
 	g_wasmLogicDispatchLastMoveY = dest.y;
 	g_wasmLogicDispatchLastMoveZ = dest.z;
+}
+
+static void cnc_port_note_logic_dispatch_build_command(
+	GameMessage *msg,
+	AIGroup *currentlySelectedGroup)
+{
+	if (msg == NULL) {
+		return;
+	}
+	++g_wasmLogicDispatchBuildCommandCount;
+	const GameMessage::Type type = msg->getType();
+	g_wasmLogicDispatchLastBuildCommandType = static_cast<Int>(type);
+	g_wasmLogicDispatchLastBuildHadGroup = currentlySelectedGroup != NULL ? 1 : 0;
+	g_wasmLogicDispatchLastBuildArg0 =
+		msg->getArgumentCount() > 0 ? msg->getArgument(0)->integer : -1;
+
+	switch (type) {
+		case GameMessage::MSG_QUEUE_UPGRADE:
+			++g_wasmLogicDispatchQueueUpgradeCount;
+			break;
+		case GameMessage::MSG_QUEUE_UNIT_CREATE:
+			++g_wasmLogicDispatchQueueUnitCreateCount;
+			break;
+		case GameMessage::MSG_DOZER_CONSTRUCT:
+		case GameMessage::MSG_DOZER_CONSTRUCT_LINE:
+			++g_wasmLogicDispatchDozerConstructCount;
+			break;
+		case GameMessage::MSG_PURCHASE_SCIENCE:
+			++g_wasmLogicDispatchPurchaseScienceCount;
+			break;
+		default:
+			break;
+	}
 }
 
 #define CNC_PORT_NOTE_GAME_LOGIC_STEP(name) \
@@ -1396,6 +1445,9 @@ void GameLogic::logicMessageDispatcher( GameMessage *msg, void *userData )
 		//---------------------------------------------------------------------------------------------
 		case GameMessage::MSG_QUEUE_UPGRADE:
 		{
+#ifdef __EMSCRIPTEN__
+			cnc_port_note_logic_dispatch_build_command(msg, currentlySelectedGroup);
+#endif
 			const UpgradeTemplate *upgradeT = TheUpgradeCenter->findUpgradeByKey( (NameKeyType)(msg->getArgument( 1 )->integer) );
 			if (!upgradeT)	// sanity
 				break;
@@ -1436,6 +1488,9 @@ void GameLogic::logicMessageDispatcher( GameMessage *msg, void *userData )
 		//---------------------------------------------------------------------------------------------
 		case GameMessage::MSG_QUEUE_UNIT_CREATE:
 		{
+#ifdef __EMSCRIPTEN__
+			cnc_port_note_logic_dispatch_build_command(msg, currentlySelectedGroup);
+#endif
 			Object *producer = getSingleObjectFromSelection(currentlySelectedGroup);
 			const ThingTemplate *whatToCreate;
 			ProductionID productionID;
@@ -1496,6 +1551,9 @@ void GameLogic::logicMessageDispatcher( GameMessage *msg, void *userData )
 		case GameMessage::MSG_DOZER_CONSTRUCT:
 		case GameMessage::MSG_DOZER_CONSTRUCT_LINE:
 		{
+#ifdef __EMSCRIPTEN__
+			cnc_port_note_logic_dispatch_build_command(msg, currentlySelectedGroup);
+#endif
 			const ThingTemplate *place;
 			Coord3D loc;
 			Real angle;
@@ -2086,6 +2144,9 @@ void GameLogic::logicMessageDispatcher( GameMessage *msg, void *userData )
 		//---------------------------------------------------------------------------------------------
 		case GameMessage::MSG_PURCHASE_SCIENCE:
 		{
+#ifdef __EMSCRIPTEN__
+			cnc_port_note_logic_dispatch_build_command(msg, currentlySelectedGroup);
+#endif
 			ScienceType science = (ScienceType)msg->getArgument( 0 )->integer;
 
 			// sanity

@@ -166,7 +166,7 @@ function realMenuHitMatches(menu, hitProbeName, buttonFieldName) {
 
 function collectWindowRefs(clientState) {
   const refs = [];
-  for (const group of [clientState?.mainMenu, clientState?.skirmishMenu]) {
+  for (const group of [clientState?.mainMenu, clientState?.skirmishMenu, clientState?.controlBarWindows]) {
     for (const value of Object.values(group ?? {})) {
       if (value?.found === true && Number.isFinite(value.id)) {
         refs.push(value);
@@ -183,6 +183,85 @@ function collectWindowRefs(clientState) {
     }
   }
   return refs;
+}
+
+function commandButtonEntries(controlBarWindows) {
+  return Object.entries(controlBarWindows ?? {})
+    .filter(([key, value]) => /^buttonCommand\d+$/.test(key) &&
+      value?.found === true &&
+      value?.clickable === true &&
+      value?.command != null)
+    .map(([slot, button]) => ({ slot, button }));
+}
+
+function chooseBuildCommandButton(entries) {
+  const preferredBuildNames = [
+    /DemoTrap/i,
+    /Tunnel/i,
+    /Stinger/i,
+    /Barracks/i,
+    /Supply/i,
+  ];
+  const dozerButtons = entries.filter(({ button }) =>
+    button.command?.typeName === "GUI_COMMAND_DOZER_CONSTRUCT");
+  for (const pattern of preferredBuildNames) {
+    const match = dozerButtons.find(({ button }) =>
+      pattern.test(button.command?.buildTemplate ?? "") ||
+      pattern.test(button.command?.name ?? ""));
+    if (match) {
+      return match;
+    }
+  }
+  if (dozerButtons.length > 0) {
+    return dozerButtons[0];
+  }
+
+  return entries.find(({ button }) =>
+    button.command?.typeName === "GUI_COMMAND_UNIT_BUILD" ||
+    button.command?.typeName === "GUI_COMMAND_PLAYER_UPGRADE" ||
+    button.command?.typeName === "GUI_COMMAND_OBJECT_UPGRADE" ||
+    button.command?.typeName === "GUI_COMMAND_PURCHASE_SCIENCE") ?? null;
+}
+
+function compactCommandPath(selectionResult) {
+  const path = selectionResult?.commandPath ?? {};
+  return {
+    dispatchBuildCommandCount: path.dispatchBuildCommandCount ?? null,
+    dispatchLastBuildCommandType: path.dispatchLastBuildCommandType ?? null,
+    dispatchLastBuildHadGroup: path.dispatchLastBuildHadGroup ?? null,
+    dispatchLastBuildArg0: path.dispatchLastBuildArg0 ?? null,
+    dispatchQueueUpgradeCount: path.dispatchQueueUpgradeCount ?? null,
+    dispatchQueueUnitCreateCount: path.dispatchQueueUnitCreateCount ?? null,
+    dispatchDozerConstructCount: path.dispatchDozerConstructCount ?? null,
+    dispatchPurchaseScienceCount: path.dispatchPurchaseScienceCount ?? null,
+  };
+}
+
+function buildDispatchDelta(before, after) {
+  return {
+    build: (after.dispatchBuildCommandCount ?? 0) - (before.dispatchBuildCommandCount ?? 0),
+    queueUpgrade: (after.dispatchQueueUpgradeCount ?? 0) - (before.dispatchQueueUpgradeCount ?? 0),
+    queueUnit: (after.dispatchQueueUnitCreateCount ?? 0) - (before.dispatchQueueUnitCreateCount ?? 0),
+    dozerConstruct: (after.dispatchDozerConstructCount ?? 0) - (before.dispatchDozerConstructCount ?? 0),
+    purchaseScience: (after.dispatchPurchaseScienceCount ?? 0) - (before.dispatchPurchaseScienceCount ?? 0),
+  };
+}
+
+async function waitForCommandButtons(page) {
+  return waitForCondition(
+    page,
+    "command bar buttons after selection",
+    (clientState) => commandButtonEntries(clientState.controlBarWindows).length > 0,
+    90);
+}
+
+async function clickMapPoint(page, point, label) {
+  await postMouse(page, WM_MOUSEMOVE, point);
+  await runFrames(page, 1, `${label} move`);
+  await postMouse(page, WM_LBUTTONDOWN, point);
+  await runFrames(page, 1, `${label} down`);
+  await postMouse(page, WM_LBUTTONUP, point);
+  return runFrames(page, 8, `${label} up`);
 }
 
 function findWindowById(clientState, id) {
@@ -337,6 +416,21 @@ async function main() {
     matchState: null,
     dragProof: { selectCount: null, selectedCount: 0, selected: [] },
     clickProof: { selectCount: null, selectedCount: 0, selected: [] },
+    commandBarProof: {
+      ok: false,
+      selectedTemplate: null,
+      selectedKindOf: null,
+      visibleCommandCount: 0,
+      chosen: null,
+      beforeCommandPath: null,
+      afterClickCommandPath: null,
+      afterPlacementCommandPath: null,
+      dispatchDeltaAfterClick: null,
+      dispatchDeltaAfterPlacement: null,
+      pendingAfterClick: null,
+      placementAttempts: [],
+      verdict: null,
+    },
     screenshot: null,
     verdict: null,
   };
@@ -496,6 +590,7 @@ async function main() {
     console.error("[input-select-e2e] querying selection after drag...");
     const selQuery = await rpc(page, "querySelection");
     const selResult = selQuery?.result ?? {};
+    let currentSelectionResult = selResult;
     results.dragProof.selectCount = selResult.selectCount ?? 0;
     results.dragProof.selectedCount = (selResult.selected ?? []).length;
     results.dragProof.selected = (selResult.selected ?? []).map((s) => ({
@@ -523,6 +618,7 @@ async function main() {
 
       const selQuery2 = await rpc(page, "querySelection");
       const selResult2 = selQuery2?.result ?? {};
+      currentSelectionResult = selResult2;
       results.clickProof.selectCount = selResult2.selectCount ?? 0;
       results.clickProof.selectedCount = (selResult2.selected ?? []).length;
       results.clickProof.selected = (selResult2.selected ?? []).map((s) => ({
@@ -538,21 +634,133 @@ async function main() {
       }
     }
 
-    // ── Phase 7: screenshot ──
+    // ── Phase 7: COMMAND BAR BUILD/QUEUE BUTTON ──
+    const selectionWorksNow = Number(currentSelectionResult.selectCount ?? 0) > 0;
+    if (selectionWorksNow) {
+      console.error("[input-select-e2e] === COMMAND BAR BUILD/QUEUE BUTTON ===");
+      const firstSelected = currentSelectionResult.selected?.[0] ?? null;
+      results.commandBarProof.selectedTemplate = firstSelected?.templateName ?? null;
+      results.commandBarProof.selectedKindOf = firstSelected?.kindOf ?? null;
+      results.commandBarProof.beforeCommandPath = compactCommandPath(currentSelectionResult);
+
+      const commandReady = await waitForCommandButtons(page);
+      const entries = commandButtonEntries(commandReady.frame?.clientState?.controlBarWindows);
+      results.commandBarProof.visibleCommandCount = entries.length;
+      results.commandBarProof.visibleCommands = entries.map(({ slot, button }) => ({
+        slot,
+        id: button.id,
+        centerX: button.centerX,
+        centerY: button.centerY,
+        clickable: button.clickable,
+        command: button.command,
+      }));
+      console.error(`[input-select-e2e] visible command buttons: ${entries.length}`);
+
+      const chosen = chooseBuildCommandButton(entries);
+      expect(chosen != null,
+        "no build/queue command button was visible after selecting a controllable object",
+        results.commandBarProof.visibleCommands);
+      results.commandBarProof.chosen = {
+        slot: chosen.slot,
+        id: chosen.button.id,
+        centerX: chosen.button.centerX,
+        centerY: chosen.button.centerY,
+        command: chosen.button.command,
+      };
+      console.error(`[input-select-e2e] clicking ${chosen.slot}: ${JSON.stringify(chosen.button.command)}`);
+
+      await clickButton(page, chosen.button, null,
+        `command-bar ${chosen.slot} ${chosen.button.command?.name ?? "command"}`,
+        null);
+      await runFrames(page, 3, "command-bar click settle");
+
+      const afterClickQuery = await rpc(page, "querySelection");
+      const afterClickResult = afterClickQuery?.result ?? {};
+      results.commandBarProof.afterClickCommandPath = compactCommandPath(afterClickResult);
+      results.commandBarProof.dispatchDeltaAfterClick = buildDispatchDelta(
+        results.commandBarProof.beforeCommandPath,
+        results.commandBarProof.afterClickCommandPath);
+      results.commandBarProof.pendingAfterClick = {
+        pendingPlaceType: afterClickResult.modes?.pendingPlaceType ?? null,
+        pendingPlaceSourceObjectId: afterClickResult.modes?.pendingPlaceSourceObjectId ?? null,
+        placementAnchored: afterClickResult.modes?.placementAnchored ?? null,
+      };
+
+      const clickDispatched = Object.values(results.commandBarProof.dispatchDeltaAfterClick)
+        .some((value) => value > 0);
+      const pendingMatchesCommand =
+        afterClickResult.modes?.pendingPlaceType != null &&
+        (chosen.button.command?.buildTemplate == null ||
+          afterClickResult.modes.pendingPlaceType === chosen.button.command.buildTemplate);
+
+      let placementDispatched = false;
+      if (!clickDispatched && pendingMatchesCommand &&
+          chosen.button.command?.typeName === "GUI_COMMAND_DOZER_CONSTRUCT") {
+        const placementCandidates = [
+          { x: 760, y: 360 },
+          { x: 860, y: 390 },
+          { x: 690, y: 420 },
+          { x: 930, y: 430 },
+          { x: 570, y: 360 },
+        ];
+        for (const point of placementCandidates) {
+          console.error(`[input-select-e2e] trying placement click at (${point.x},${point.y})`);
+          await clickMapPoint(page, point, "dozer placement");
+          const placementQuery = await rpc(page, "querySelection");
+          const placementResult = placementQuery?.result ?? {};
+          const placementPath = compactCommandPath(placementResult);
+          const delta = buildDispatchDelta(
+            results.commandBarProof.beforeCommandPath,
+            placementPath);
+          const attempt = {
+            point,
+            pendingPlaceType: placementResult.modes?.pendingPlaceType ?? null,
+            commandPath: placementPath,
+            delta,
+          };
+          results.commandBarProof.placementAttempts.push(attempt);
+          if (delta.dozerConstruct > 0 || delta.build > 0) {
+            results.commandBarProof.afterPlacementCommandPath = placementPath;
+            results.commandBarProof.dispatchDeltaAfterPlacement = delta;
+            placementDispatched = true;
+            break;
+          }
+          if (placementResult.modes?.pendingPlaceType == null) {
+            break;
+          }
+        }
+      }
+
+      results.commandBarProof.ok = clickDispatched || pendingMatchesCommand || placementDispatched;
+      if (placementDispatched) {
+        results.commandBarProof.verdict = "COMMAND-BAR-BUILD-DISPATCHED";
+      } else if (clickDispatched) {
+        results.commandBarProof.verdict = "COMMAND-BAR-QUEUE-DISPATCHED";
+      } else if (pendingMatchesCommand) {
+        results.commandBarProof.verdict = "COMMAND-BAR-BUILD-PLACEMENT-PENDING";
+      } else {
+        results.commandBarProof.verdict = "COMMAND-BAR-CLICK-NO-BUILD-EFFECT";
+      }
+      console.error(`[input-select-e2e] command-bar verdict: ${results.commandBarProof.verdict}`);
+    }
+
+    // ── Phase 8: screenshot ──
     console.error("[input-select-e2e] capturing screenshot...");
     await page.locator("#viewport").screenshot({ path: screenshotPath });
     results.screenshot = screenshotPath;
     console.error(`[input-select-e2e] screenshot saved to ${screenshotPath}`);
 
-    // ── Phase 8: verdict ──
+    // ── Phase 9: verdict ──
     const dragWorks = results.dragProof.selectCount > 0;
     const clickWorks = results.clickProof.selectCount > 0;
-    results.ok = dragWorks || clickWorks;
+    results.ok = (dragWorks || clickWorks) && results.commandBarProof.ok === true;
 
-    if (dragWorks) {
-      results.verdict = "SELECT-WORKS (selectCount>0 after drag box-select in live match)";
+    if ((dragWorks || clickWorks) && results.commandBarProof.ok) {
+      results.verdict = `SELECT-AND-COMMAND-BAR-WORK (${results.commandBarProof.verdict})`;
+    } else if (dragWorks) {
+      results.verdict = "SELECT-WORKS-COMMAND-BAR-FAILS";
     } else if (clickWorks) {
-      results.verdict = "SELECT-WORKS (selectCount>0 after direct click in live match)";
+      results.verdict = "SELECT-WORKS-COMMAND-BAR-FAILS";
     } else {
       results.verdict = "SELECT-FAILS (selectCount=0 in live match with units present — needs more investigation, e.g. coordinate scaling)";
     }
@@ -562,6 +770,7 @@ async function main() {
     console.error(`[input-select-e2e] Match state: ${JSON.stringify(results.matchState)}`);
     console.error(`[input-select-e2e] Drag proof: selectCount=${results.dragProof.selectCount}, selectedCount=${results.dragProof.selectedCount}`);
     console.error(`[input-select-e2e] Click proof: selectCount=${results.clickProof.selectCount}, selectedCount=${results.clickProof.selectedCount}`);
+    console.error(`[input-select-e2e] Command proof: ${JSON.stringify(results.commandBarProof)}`);
     console.error(`[input-select-e2e] Screenshot: ${results.screenshot}`);
     console.error(`[input-select-e2e] VERDICT: ${results.verdict}`);
 

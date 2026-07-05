@@ -84,6 +84,8 @@ struct FunctionLexiconRuntimeProbeResult
 	bool idle_worker_system_lookup = false;
 	bool replay_control_system_lookup = false;
 	bool control_bar_observer_system_lookup = false;
+	bool control_bar_system_lookup = false;
+	bool generals_exp_points_system_lookup = false;
 	bool game_info_window_system_lookup = false;
 	bool game_window_default_input_lookup = false;
 	bool game_window_block_input_lookup = false;
@@ -114,6 +116,8 @@ struct FunctionLexiconRuntimeProbeResult
 	bool keyboard_options_menu_input_lookup = false;
 	bool in_game_popup_message_input_lookup = false;
 	bool control_bar_input_lookup = false;
+	bool left_hud_input_lookup = false;
+	bool generals_exp_points_input_lookup = false;
 	bool beacon_window_input_lookup = false;
 	bool replay_control_input_lookup = false;
 	bool game_window_default_tooltip_lookup = false;
@@ -169,6 +173,7 @@ struct FunctionLexiconRuntimeProbeResult
 const FunctionLexiconRuntimeProbeResult &wasm_function_lexicon_runtime_install(
 	bool runtime_archive_registered,
 	bool audio_manager_ready);
+void wasm_function_lexicon_register_command_bar_callback_owners();
 const FunctionLexiconRuntimeProbeResult &wasm_function_lexicon_runtime_state();
 const char *wasm_function_lexicon_runtime_state_json();
 

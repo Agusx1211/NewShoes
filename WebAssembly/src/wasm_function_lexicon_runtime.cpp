@@ -17,6 +17,7 @@
 #include "W3DDevice/GameClient/W3DGUICallbacks.h"
 #include "W3DDevice/GameClient/W3DGameWindow.h"
 
+#include <cstring>
 #include <cstdio>
 #include <string>
 
@@ -37,11 +38,108 @@ extern WindowMsgHandledType ControlBarInput(GameWindow *window, UnsignedInt msg,
 extern WindowMsgHandledType ExtendedMessageBoxSystem(GameWindow *window,
 	UnsignedInt msg, WindowMsgData mData1, WindowMsgData mData2);
 
+#ifdef __EMSCRIPTEN__
+__attribute__((used)) static GameWinSystemFunc g_keep_control_bar_system =
+	ControlBarSystem;
+__attribute__((used)) static GameWinInputFunc g_keep_left_hud_input =
+	LeftHUDInput;
+__attribute__((used)) static GameWinSystemFunc g_keep_generals_exp_points_system =
+	GeneralsExpPointsSystem;
+__attribute__((used)) static GameWinInputFunc g_keep_generals_exp_points_input =
+	GeneralsExpPointsInput;
+#endif
+
 namespace {
 
 FunctionLexiconRuntimeProbeResult g_function_lexicon_state;
 W3DFunctionLexicon *g_function_lexicon = nullptr;
 bool g_function_lexicon_init_ran = false;
+FunctionLexicon *g_command_bar_callbacks_registered_for = nullptr;
+
+struct RuntimeLexiconEntry
+{
+	const char *name;
+	FunctionLexicon::TableFunction func;
+};
+
+bool runtime_entry_name_matches(const char *name,
+	const RuntimeLexiconEntry *entries, Int entry_count)
+{
+	if (name == nullptr) {
+		return false;
+	}
+	for (Int i = 0; i < entry_count; ++i) {
+		if (std::strcmp(name, entries[i].name) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void load_runtime_table_with_entries(FunctionLexicon::TableIndex index,
+	const RuntimeLexiconEntry *entries, Int entry_count)
+{
+	if (TheFunctionLexicon == nullptr || entries == nullptr || entry_count <= 0) {
+		return;
+	}
+
+	FunctionLexicon::TableEntry *old_table = TheFunctionLexicon->getTable(index);
+	Int old_count = 0;
+	if (old_table != nullptr) {
+		while (old_table[old_count].name != nullptr) {
+			++old_count;
+		}
+	}
+
+	FunctionLexicon::TableEntry *new_table =
+		NEW FunctionLexicon::TableEntry[old_count + entry_count + 1];
+	Int out = 0;
+	for (Int i = 0; i < entry_count; ++i) {
+		new_table[out].key = NAMEKEY_INVALID;
+		new_table[out].name = entries[i].name;
+		new_table[out].func = entries[i].func;
+		++out;
+	}
+	for (Int i = 0; i < old_count; ++i) {
+		if (runtime_entry_name_matches(old_table[i].name, entries, entry_count)) {
+			continue;
+		}
+		new_table[out++] = old_table[i];
+	}
+	new_table[out].key = NAMEKEY_INVALID;
+	new_table[out].name = nullptr;
+	new_table[out].func = nullptr;
+
+	TheFunctionLexicon->loadRuntimeTableForPort(new_table, index);
+}
+
+void register_command_bar_callback_owners()
+{
+	if (TheFunctionLexicon == nullptr ||
+		TheNameKeyGenerator == nullptr) {
+		return;
+	}
+	if (g_command_bar_callbacks_registered_for == TheFunctionLexicon) {
+		return;
+	}
+
+	const RuntimeLexiconEntry system_entries[] = {
+		{ "ControlBarSystem", FunctionLexicon::TableFunction(ControlBarSystem) },
+		{ "GeneralsExpPointsSystem",
+			FunctionLexicon::TableFunction(GeneralsExpPointsSystem) },
+	};
+	const RuntimeLexiconEntry input_entries[] = {
+		{ "LeftHUDInput", FunctionLexicon::TableFunction(LeftHUDInput) },
+		{ "GeneralsExpPointsInput",
+			FunctionLexicon::TableFunction(GeneralsExpPointsInput) },
+	};
+
+	load_runtime_table_with_entries(FunctionLexicon::TABLE_GAME_WIN_SYSTEM,
+		system_entries, sizeof(system_entries) / sizeof(system_entries[0]));
+	load_runtime_table_with_entries(FunctionLexicon::TABLE_GAME_WIN_INPUT,
+		input_entries, sizeof(input_entries) / sizeof(input_entries[0]));
+	g_command_bar_callbacks_registered_for = TheFunctionLexicon;
+}
 
 const char *json_bool(bool value)
 {
@@ -289,6 +387,12 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.control_bar_observer_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("ControlBarObserverSystem")) == ControlBarObserverSystem;
+	result.control_bar_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("ControlBarSystem")) == ControlBarSystem;
+	result.generals_exp_points_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("GeneralsExpPointsSystem")) == GeneralsExpPointsSystem;
 	result.game_info_window_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("GameInfoWindowSystem")) == GameInfoWindowSystem;
@@ -382,6 +486,12 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.control_bar_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("ControlBarInput")) == ControlBarInput;
+	result.left_hud_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("LeftHUDInput")) == LeftHUDInput;
+	result.generals_exp_points_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("GeneralsExpPointsInput")) == GeneralsExpPointsInput;
 	result.beacon_window_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("BeaconWindowInput")) == BeaconWindowInput;
@@ -983,8 +1093,9 @@ bool base_layout_callback_graph_ready(const FunctionLexiconRuntimeProbeResult &r
 	// The linked runtime currently proves a shell-menu subset plus the
 	// game-window block input, MOTD, options-menu, skirmish-map-select, challenge-menu,
 	// popup-communicator, in-game popup-message, idle-worker, control-bar
-	// input, beacon-window, replay-control, control-bar observer, map-select,
-	// replay-menu, popup-replay modal callbacks, and game-info-window callback owners.
+	// input/command/HUD, generals-experience points, beacon-window,
+	// replay-control, control-bar observer, map-select, replay-menu,
+	// popup-replay modal callbacks, and game-info-window callback owners.
 	// Full ownership requires the remaining callback owner groups reported in
 	// missingCallbackGroups.
 	return result.missing_callback_group_count == 0;
@@ -1254,6 +1365,7 @@ const FunctionLexiconRuntimeProbeResult &wasm_function_lexicon_runtime_install(
 			result.constructed = true;
 			result.the_function_lexicon_owned = true;
 		}
+		register_command_bar_callback_owners();
 		result.init_ran = g_function_lexicon_init_ran;
 		capture_table_state(result);
 		capture_lookup_state(result);
@@ -1300,6 +1412,11 @@ const FunctionLexiconRuntimeProbeResult &wasm_function_lexicon_runtime_install(
 const FunctionLexiconRuntimeProbeResult &wasm_function_lexicon_runtime_state()
 {
 	return g_function_lexicon_state;
+}
+
+void wasm_function_lexicon_register_command_bar_callback_owners()
+{
+	register_command_bar_callback_owners();
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_function_lexicon_runtime()
@@ -1372,6 +1489,8 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"idleWorkerSystem\":%s,"
 		"\"replayControlSystem\":%s,"
 		"\"controlBarObserverSystem\":%s,"
+		"\"controlBarSystem\":%s,"
+		"\"generalsExpPointsSystem\":%s,"
 		"\"gameInfoWindowSystem\":%s,"
 		"\"gameWindowDefaultInput\":%s,"
 		"\"gameWinBlockInput\":%s,"
@@ -1402,6 +1521,8 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"keyboardOptionsMenuInput\":%s,"
 		"\"inGamePopupMessageInput\":%s,"
 		"\"controlBarInput\":%s,"
+		"\"leftHUDInput\":%s,"
+		"\"generalsExpPointsInput\":%s,"
 		"\"beaconWindowInput\":%s,"
 		"\"replayControlInput\":%s,"
 		"\"gameWindowDefaultTooltip\":%s,"
@@ -1510,6 +1631,8 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.idle_worker_system_lookup),
 		json_bool(state.replay_control_system_lookup),
 		json_bool(state.control_bar_observer_system_lookup),
+		json_bool(state.control_bar_system_lookup),
+		json_bool(state.generals_exp_points_system_lookup),
 		json_bool(state.game_info_window_system_lookup),
 		json_bool(state.game_window_default_input_lookup),
 		json_bool(state.game_window_block_input_lookup),
@@ -1540,6 +1663,8 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.keyboard_options_menu_input_lookup),
 		json_bool(state.in_game_popup_message_input_lookup),
 		json_bool(state.control_bar_input_lookup),
+		json_bool(state.left_hud_input_lookup),
+		json_bool(state.generals_exp_points_input_lookup),
 		json_bool(state.beacon_window_input_lookup),
 		json_bool(state.replay_control_input_lookup),
 		json_bool(state.game_window_default_tooltip_lookup),

@@ -3344,13 +3344,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       browser lookup while the broad `ControlBarSystem`/`LeftHUDInput`
       command paths remain deferred. The FunctionLexicon frontier now reports
       `base_function_lexicon_control_bar_observer_runtime_owned`.
+- [x] Promote the original command-bar/HUD callback owners into the linked
+      `cnc-port` runtime and prove the real gameplay dispatch path in a live
+      skirmish. The wasm runtime repairs the original `FunctionLexicon` tables
+      early enough for `ControlBar.wnd` creation to bind `ControlBarSystem`,
+      `LeftHUDInput`, `GeneralsExpPointsSystem`, and
+      `GeneralsExpPointsInput`; `input_select_e2e.mjs` now selects a real GLA
+      worker, clicks an original command-bar dozer button, enters
+      `GLABarracks` placement, clicks the map, and observes original
+      `GameLogicDispatch.cpp` route `MSG_DOZER_CONSTRUCT`. Verified with
+      `npm --prefix WebAssembly run build:port` and
+      `node WebAssembly/harness/input_select_e2e.mjs`, plus
+      `node WebAssembly/harness/startup_vertical_smoke.mjs` confirming the
+      FunctionLexicon frontier now has 11 missing groups; screenshot
+      `WebAssembly/artifacts/screenshots/input-select-e2e.png`.
 - [x] Replace the stale "remaining shell callbacks" FunctionLexicon frontier
       label with a structured missing callback-owner inventory in the linked
       startup runtime. `wasm_function_lexicon_runtime` now checks callback
       names without pulling additional owners, reports
       `missingCallbackGroups` / `missingCallbackGroupCount` for save/load,
-      quit menu, score-screen/replay-save, control-bar command/HUD, generals
-      experience points, LAN/game-network menus, WOL/GameSpy overlays,
+      quit menu, score-screen/replay-save, LAN/game-network menus,
+      WOL/GameSpy overlays,
       direct-connect/download menus, and in-game network menus, and the startup
       harness gates that exact inventory while the first unowned init factory
       remains `createFunctionLexicon`.

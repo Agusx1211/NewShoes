@@ -41,6 +41,8 @@
 #include "Common/GameLOD.h"
 #include "GameClient/ControlBar.h"
 #include "GameClient/ControlBarScheme.h"
+#include "GameClient/Gadget.h"
+#include "GameClient/GadgetPushButton.h"
 #include "WW3D2/assetmgr.h"
 #include "WW3D2/texture.h"
 #include "GameClient/MapUtil.h"
@@ -76,6 +78,7 @@
 #include "Common/ThingFactory.h"
 #include "GameClient/ParticleSys.h"
 #include "GameLogic/Module/LaserUpdate.h"
+#include "wasm_function_lexicon_runtime.h"
 
 // The original app-level globals GameEngine.cpp expects WinMain.cpp to own.
 // WinMain.cpp is only partially compiled for the browser (WndProc +
@@ -183,6 +186,14 @@ extern "C" Int cnc_port_logic_dispatch_last_move_had_group(void);
 extern "C" Real cnc_port_logic_dispatch_last_move_x(void);
 extern "C" Real cnc_port_logic_dispatch_last_move_y(void);
 extern "C" Real cnc_port_logic_dispatch_last_move_z(void);
+extern "C" Int cnc_port_logic_dispatch_build_command_count(void);
+extern "C" Int cnc_port_logic_dispatch_last_build_command_type(void);
+extern "C" Int cnc_port_logic_dispatch_last_build_had_group(void);
+extern "C" Int cnc_port_logic_dispatch_last_build_arg0(void);
+extern "C" Int cnc_port_logic_dispatch_queue_upgrade_count(void);
+extern "C" Int cnc_port_logic_dispatch_queue_unit_create_count(void);
+extern "C" Int cnc_port_logic_dispatch_dozer_construct_count(void);
+extern "C" Int cnc_port_logic_dispatch_purchase_science_count(void);
 extern "C" Int cnc_port_command_xlat_last_click_type(void);
 extern "C" Int cnc_port_command_xlat_last_click_is_point(void);
 extern "C" Int cnc_port_command_xlat_last_click_controllable(void);
@@ -472,6 +483,9 @@ extern "C" void cnc_port_note_subsystem_init(const char *name, int phase)
 	} else {
 		g_state.in_flight.clear();
 		g_state.completed.push_back(safe_name);
+		if (std::strcmp(safe_name, "TheFunctionLexicon") == 0) {
+			wasm_function_lexicon_register_command_bar_callback_owners();
+		}
 		std::printf("cnc-port: real-init subsystem-done %s\n", safe_name);
 	}
 	std::fflush(stdout);
@@ -2892,10 +2906,88 @@ const char *system_func_name(GameWinSystemFunc system)
 	if (system == PassMessagesToParentSystem) {
 		return "PassMessagesToParentSystem";
 	}
+	if (system == GadgetPushButtonSystem) {
+		return "GadgetPushButtonSystem";
+	}
 	if (system == MainMenuSystem) {
 		return "MainMenuSystem";
 	}
+	if (system == ControlBarSystem) {
+		return "ControlBarSystem";
+	}
+	if (system == ControlBarObserverSystem) {
+		return "ControlBarObserverSystem";
+	}
+	if (system == GeneralsExpPointsSystem) {
+		return "GeneralsExpPointsSystem";
+	}
 	return "unknown";
+}
+
+const char *input_func_name(GameWinInputFunc input)
+{
+	if (input == NULL) {
+		return "null";
+	}
+	if (input == GameWinDefaultInput) {
+		return "GameWinDefaultInput";
+	}
+	if (input == GameWinBlockInput) {
+		return "GameWinBlockInput";
+	}
+	if (input == GadgetPushButtonInput) {
+		return "GadgetPushButtonInput";
+	}
+	if (input == ControlBarInput) {
+		return "ControlBarInput";
+	}
+	if (input == LeftHUDInput) {
+		return "LeftHUDInput";
+	}
+	if (input == GeneralsExpPointsInput) {
+		return "GeneralsExpPointsInput";
+	}
+	return "unknown";
+}
+
+const char *gui_command_type_name(GUICommandType command)
+{
+	switch (command) {
+		case GUI_COMMAND_NONE:
+			return "GUI_COMMAND_NONE";
+		case GUI_COMMAND_DOZER_CONSTRUCT:
+			return "GUI_COMMAND_DOZER_CONSTRUCT";
+		case GUI_COMMAND_DOZER_CONSTRUCT_CANCEL:
+			return "GUI_COMMAND_DOZER_CONSTRUCT_CANCEL";
+		case GUI_COMMAND_UNIT_BUILD:
+			return "GUI_COMMAND_UNIT_BUILD";
+		case GUI_COMMAND_CANCEL_UNIT_BUILD:
+			return "GUI_COMMAND_CANCEL_UNIT_BUILD";
+		case GUI_COMMAND_PLAYER_UPGRADE:
+			return "GUI_COMMAND_PLAYER_UPGRADE";
+		case GUI_COMMAND_OBJECT_UPGRADE:
+			return "GUI_COMMAND_OBJECT_UPGRADE";
+		case GUI_COMMAND_CANCEL_UPGRADE:
+			return "GUI_COMMAND_CANCEL_UPGRADE";
+		case GUI_COMMAND_ATTACK_MOVE:
+			return "GUI_COMMAND_ATTACK_MOVE";
+		case GUI_COMMAND_GUARD:
+			return "GUI_COMMAND_GUARD";
+		case GUI_COMMAND_STOP:
+			return "GUI_COMMAND_STOP";
+		case GUI_COMMAND_SET_RALLY_POINT:
+			return "GUI_COMMAND_SET_RALLY_POINT";
+		case GUI_COMMAND_SELL:
+			return "GUI_COMMAND_SELL";
+		case GUI_COMMAND_SPECIAL_POWER:
+			return "GUI_COMMAND_SPECIAL_POWER";
+		case GUI_COMMAND_PURCHASE_SCIENCE:
+			return "GUI_COMMAND_PURCHASE_SCIENCE";
+		case GUI_COMMAND_SPECIAL_POWER_CONSTRUCT:
+			return "GUI_COMMAND_SPECIAL_POWER_CONSTRUCT";
+		default:
+			return "GUI_COMMAND_OTHER";
+	}
 }
 
 // ADD-ONLY Stage-0b diagnostic: resolve a window's draw callback to a symbolic
@@ -2931,6 +3023,15 @@ const char *draw_func_name(GameWinDrawFunc draw)
 	if (draw == W3DCommandBarGridDraw) {
 		return "W3DCommandBarGridDraw";
 	}
+	if (draw == W3DCommandBarForegroundDraw) {
+		return "W3DCommandBarForegroundDraw";
+	}
+	if (draw == W3DCommandBarGenExpDraw) {
+		return "W3DCommandBarGenExpDraw";
+	}
+	if (draw == W3DCommandBarHelpPopupDraw) {
+		return "W3DCommandBarHelpPopupDraw";
+	}
 	if (draw == W3DNoDraw) {
 		return "W3DNoDraw";
 	}
@@ -2952,6 +3053,9 @@ void append_window_identity_json(std::string &json, GameWindow *window)
 	json += ",\"decoratedName\":\"" + json_escape(decorated_name) + "\"";
 	json += ",\"systemFunc\":\"";
 	json += system_func_name(window->winGetSystemFunc());
+	json += "\"";
+	json += ",\"inputFunc\":\"";
+	json += input_func_name(window->winGetInputFunc());
 	json += "\"";
 	json += ",\"drawFunc\":\"";
 	json += draw_func_name(window->winGetDrawFunc());
@@ -2994,6 +3098,9 @@ void append_window_json(std::string &json, GameWindow *window, const char *reque
 	json += ",\"systemFunc\":\"";
 	json += system_func_name(window->winGetSystemFunc());
 	json += "\"";
+	json += ",\"inputFunc\":\"";
+	json += input_func_name(window->winGetInputFunc());
+	json += "\"";
 	json += ",\"drawFunc\":\"";
 	json += draw_func_name(window->winGetDrawFunc());
 	json += "\"";
@@ -3020,6 +3127,31 @@ void append_window_json(std::string &json, GameWindow *window, const char *reque
 	json += (!manager_hidden && enabled && (status & WIN_STATUS_NO_INPUT) == 0) ? "true" : "false";
 	json += ",\"owner\":";
 	append_window_identity_json(json, inst_data != NULL ? inst_data->getOwner() : NULL);
+	const char *command_button_prefix = "ControlBar.wnd:ButtonCommand";
+	if (requested_name != NULL && std::strncmp(requested_name,
+		command_button_prefix, std::strlen(command_button_prefix)) == 0) {
+		const CommandButton *command =
+			static_cast<const CommandButton *>(GadgetButtonGetData(window));
+		json += ",\"command\":";
+		if (command == NULL) {
+			json += "null";
+		} else {
+			const ThingTemplate *build_template = command->getThingTemplate();
+			json += "{\"name\":\"" + json_escape(command->getName().str()) + "\"";
+			json += ",\"type\":" + std::to_string(static_cast<int>(command->getCommandType()));
+			json += ",\"typeName\":\"";
+			json += gui_command_type_name(command->getCommandType());
+			json += "\"";
+			json += ",\"options\":" + std::to_string(command->getOptions());
+			json += ",\"buildTemplate\":";
+			if (build_template != NULL) {
+				json += "\"" + json_escape(build_template->getName().str()) + "\"";
+			} else {
+				json += "null";
+			}
+			json += "}";
+		}
+	}
 	json += "}";
 }
 
@@ -3564,6 +3696,21 @@ void append_real_engine_client_state(std::string &json)
 	append_window_probe(json, "foregroundMarker", "ControlBar.wnd:ForegroundMarker");
 	append_window_probe(json, "generalsExp", "ControlBar.wnd:GeneralsExp");
 	append_window_probe(json, "winUnitSelected", "ControlBar.wnd:WinUnitSelected");
+	append_window_probe(json, "commandWindow", "ControlBar.wnd:CommandWindow");
+	append_window_probe(json, "buttonCommand01", "ControlBar.wnd:ButtonCommand01");
+	append_window_probe(json, "buttonCommand02", "ControlBar.wnd:ButtonCommand02");
+	append_window_probe(json, "buttonCommand03", "ControlBar.wnd:ButtonCommand03");
+	append_window_probe(json, "buttonCommand04", "ControlBar.wnd:ButtonCommand04");
+	append_window_probe(json, "buttonCommand05", "ControlBar.wnd:ButtonCommand05");
+	append_window_probe(json, "buttonCommand06", "ControlBar.wnd:ButtonCommand06");
+	append_window_probe(json, "buttonCommand07", "ControlBar.wnd:ButtonCommand07");
+	append_window_probe(json, "buttonCommand08", "ControlBar.wnd:ButtonCommand08");
+	append_window_probe(json, "buttonCommand09", "ControlBar.wnd:ButtonCommand09");
+	append_window_probe(json, "buttonCommand10", "ControlBar.wnd:ButtonCommand10");
+	append_window_probe(json, "buttonCommand11", "ControlBar.wnd:ButtonCommand11");
+	append_window_probe(json, "buttonCommand12", "ControlBar.wnd:ButtonCommand12");
+	append_window_under_probe_center(
+		json, "underButtonCommand01Center", "ControlBar.wnd:ButtonCommand01");
 	append_window_probe(json, "onTopDraw", "ControlBar.wnd:OnTopDraw");
 	json += "}";
 
@@ -4626,6 +4773,18 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 	json += TheInGameUI->isInForceAttackMode() ? "true" : "false";
 	json += ",\"preferSelection\":";
 	json += TheInGameUI->isInPreferSelectionMode() ? "true" : "false";
+	json += ",\"placementAnchored\":";
+	json += TheInGameUI->isPlacementAnchored() ? "true" : "false";
+	json += ",\"pendingPlaceType\":";
+	const ThingTemplate *pending_place_type = TheInGameUI->getPendingPlaceType();
+	if (pending_place_type != NULL) {
+		json += "\"" + json_escape(pending_place_type->getName().str()) + "\"";
+	} else {
+		json += "null";
+	}
+	json += ",\"pendingPlaceSourceObjectId\":" +
+		std::to_string(static_cast<long long>(
+			TheInGameUI->getPendingPlaceSourceObjectID()));
 	json += "}";
 	json += ",\"commandPath\":{";
 	json += "\"lastClickType\":" + std::to_string(cnc_port_command_xlat_last_click_type());
@@ -4651,6 +4810,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 	json += ",\"dispatchLastMoveWorldPos\":{\"x\":" + std::to_string(cnc_port_logic_dispatch_last_move_x());
 	json += ",\"y\":" + std::to_string(cnc_port_logic_dispatch_last_move_y());
 	json += ",\"z\":" + std::to_string(cnc_port_logic_dispatch_last_move_z()) + "}";
+	json += ",\"dispatchBuildCommandCount\":" + std::to_string(cnc_port_logic_dispatch_build_command_count());
+	json += ",\"dispatchLastBuildCommandType\":" + std::to_string(cnc_port_logic_dispatch_last_build_command_type());
+	json += ",\"dispatchLastBuildHadGroup\":" + std::to_string(cnc_port_logic_dispatch_last_build_had_group());
+	json += ",\"dispatchLastBuildArg0\":" + std::to_string(cnc_port_logic_dispatch_last_build_arg0());
+	json += ",\"dispatchQueueUpgradeCount\":" + std::to_string(cnc_port_logic_dispatch_queue_upgrade_count());
+	json += ",\"dispatchQueueUnitCreateCount\":" + std::to_string(cnc_port_logic_dispatch_queue_unit_create_count());
+	json += ",\"dispatchDozerConstructCount\":" + std::to_string(cnc_port_logic_dispatch_dozer_construct_count());
+	json += ",\"dispatchPurchaseScienceCount\":" + std::to_string(cnc_port_logic_dispatch_purchase_science_count());
 	json += "}";
 	json += ",\"selected\":[";
 	bool first = true;
@@ -4692,6 +4859,25 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 				objId = -1;
 			}
 			json += "\"id\":" + std::to_string(objId);
+			const ThingTemplate *selected_template = NULL;
+			try {
+				selected_template = obj->getTemplate();
+			} catch (...) {
+				selected_template = NULL;
+			}
+			json += ",\"templateName\":";
+			if (selected_template != NULL) {
+				json += "\"" + json_escape(selected_template->getName().str()) + "\"";
+			} else {
+				json += "null";
+			}
+			json += ",\"kindOf\":{\"dozer\":";
+			json += selected_template != NULL && selected_template->isKindOf(KINDOF_DOZER)
+				? "true" : "false";
+			json += ",\"structure\":";
+			json += selected_template != NULL &&
+				selected_template->isKindOf(KINDOF_STRUCTURE) ? "true" : "false";
+			json += "}";
 			Player *owner = nullptr;
 			try {
 				owner = obj->getControllingPlayer();
@@ -4921,6 +5107,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_init(const char
 		// browser tab has focus; WinMain mirrors focus state into the engine.
 		TheGameEngine->setIsActive(TRUE);
 		TheGameEngine->init(argc, argv);
+		wasm_function_lexicon_register_command_bar_callback_owners();
 		g_state.init_returned = true;
 		g_state.quitting_after_init = TheGameEngine->getQuitting() != FALSE;
 	} catch (const char *message) {

@@ -191,13 +191,13 @@ const browserChecks = [
         'Archive-backed startup boot did not prove real init/music/teardown');
       expect(payload.archiveBackedStartup.functionLexiconRuntime?.status === 'base_function_lexicon_remaining_callback_groups_deferred',
         'Archive-backed startup boot did not report the expected remaining FunctionLexicon callback frontier');
-      expect(payload.archiveBackedStartup.functionLexiconRuntime?.missingCallbackGroupCount === 13
+      expect(payload.archiveBackedStartup.functionLexiconRuntime?.missingCallbackGroupCount === 11
           && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups?.saveLoadMenu === true
           && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.quitMenu === true
           && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.popupReplayScoreState === true
           && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.scoreScreen === true
-          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.controlBarCommandHud === true
-          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.generalsExpPoints === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.controlBarCommandHud !== true
+          && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.generalsExpPoints !== true
           && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.lanMenus === true
           && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.inGameNetworkMenus === true
           && payload.archiveBackedStartup.functionLexiconRuntime.missingCallbackGroups.hostJoinNetworkPopups === true
@@ -210,6 +210,10 @@ const browserChecks = [
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.popupReplayInit === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.popupReplayShutdown === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.controlBarInput === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.controlBarSystem === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.leftHUDInput === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.generalsExpPointsSystem === true
+          && payload.archiveBackedStartup.functionLexiconRuntime.lookups.generalsExpPointsInput === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.controlBarObserverSystem === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.gameInfoWindowInit === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.gameWinBlockInput === true
@@ -224,7 +228,7 @@ const browserChecks = [
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.skirmishMapSelectMenuInit === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.skirmishMapSelectMenuUpdate === true
           && payload.archiveBackedStartup.functionLexiconRuntime.lookups.skirmishMapSelectMenuShutdown === true,
-        'Archive-backed startup boot did not prove PopupReplay modal, ControlBar input, ControlBarObserver, GameWinBlockInput, MOTD, OptionsMenu, and SkirmishMapSelectMenu callback lookups');
+        'Archive-backed startup boot did not prove PopupReplay modal, ControlBar command/HUD, ControlBarObserver, GameWinBlockInput, MOTD, OptionsMenu, and SkirmishMapSelectMenu callback lookups');
       expect(payload.archiveBackedStartup.functionLexiconRuntime?.lookups?.popupReplaySystem === undefined
           && payload.archiveBackedStartup.functionLexiconRuntime?.lookups?.popupReplayUpdate === undefined,
         'Archive-backed startup boot should leave PopupReplay score-screen-dependent callbacks unregistered');
@@ -725,7 +729,7 @@ console.log(JSON.stringify({
     'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, first-call startNewGame(FALSE) deferral, MapsZH.big MD_GLA03 promotion, INIZH/INI startup data plus default and Zero Hour GameData.ini parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, AIPlayer construction, TeamFactory::initFromSides, PlayerList::newGame, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, GhostObjectManager local-player index/reset, TerrainRoadCollection/TerrainTypeCollection render-map setup, original W3DTerrainLogic::newMap road-buffer and W3DBridgeBuffer::loadBridges handoff, TerrainLogic waypoint/water setup, the ordered post-terrain bridge-like map-object no-candidate scan, Radar::refreshTerrain, and original Pathfinder::newMap grid allocation/classification',
   ],
   nextRequired: [
-    'replace the remaining base FunctionLexicon callback owner groups, starting with non-network owners such as PopupReplay score-screen-dependent System/Update, QuitMenuSystem, ScoreScreen, and broader ControlBarSystem/LeftHUDInput callbacks only when their real owners are runtime-owned',
+    'replace the remaining base FunctionLexicon callback owner groups, starting with non-network owners such as PopupReplay score-screen-dependent System/Update, QuitMenuSystem, and ScoreScreen when their real owners are runtime-owned',
     'continue the real ButtonEasy campaign start beyond MSG_NEW_GAME queueing into map load/rendering through the full real lifecycle',
     'advance the post-particle startup data stores toward createThingFactory once createFunctionLexicon is fully owned',
     'load real object templates into gamelogic-new-game-dispatch-smoke and promote the bridge-like map-object creation branch when a map supplies bridge or walk-on-wall templates, then continue the original ordered startNewGame sequence beyond Pathfinder::newMap',

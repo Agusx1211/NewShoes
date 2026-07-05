@@ -1637,13 +1637,13 @@ function assertFunctionLexiconRuntimeFrontier(state) {
     "function lexicon runtime status mismatch", probe);
   expect(probe.nextRequired === "originalFunctionLexiconRemainingCallbackOwners",
     "function lexicon runtime nextRequired mismatch", probe);
-  expect(probe.missingCallbackGroupCount === 13
+  expect(probe.missingCallbackGroupCount === 11
       && probe.missingCallbackGroups?.saveLoadMenu === true
       && probe.missingCallbackGroups.quitMenu === true
       && probe.missingCallbackGroups.popupReplayScoreState === true
       && probe.missingCallbackGroups.scoreScreen === true
-      && probe.missingCallbackGroups.controlBarCommandHud === true
-      && probe.missingCallbackGroups.generalsExpPoints === true
+      && probe.missingCallbackGroups.controlBarCommandHud !== true
+      && probe.missingCallbackGroups.generalsExpPoints !== true
       && probe.missingCallbackGroups.lanMenus === true
       && probe.missingCallbackGroups.inGameNetworkMenus === true
       && probe.missingCallbackGroups.hostJoinNetworkPopups === true
@@ -1654,6 +1654,11 @@ function assertFunctionLexiconRuntimeFrontier(state) {
     "function lexicon runtime did not report the expected remaining owner groups", probe);
   expect(probe.constructed === true && probe.theFunctionLexiconOwned === true,
     "original W3DFunctionLexicon was not constructed as TheFunctionLexicon", probe);
+  expect(probe.lookups?.controlBarSystem === true
+      && probe.lookups.leftHUDInput === true
+      && probe.lookups.generalsExpPointsSystem === true
+      && probe.lookups.generalsExpPointsInput === true,
+    "control-bar command/HUD FunctionLexicon callbacks were not registered", probe);
   expect(probe.initRan === true && probe.initThrew === false,
     "original W3DFunctionLexicon::init() did not complete", probe);
   expect(probe.gameEngineInit?.factory === "createFunctionLexicon"
@@ -1951,7 +1956,7 @@ function assertAudioOwnedFrontier(state) {
       && frontier.functionLexiconRuntime.w3dLayoutInitReady === true
       && frontier.functionLexiconRuntime.messageBoxSystemReady === true
       && frontier.functionLexiconRuntime.nextRequired === "originalFunctionLexiconRemainingCallbackOwners"
-      && frontier.functionLexiconRuntime.missingCallbackGroupCount === 13,
+      && frontier.functionLexiconRuntime.missingCallbackGroupCount === 11,
     "frontier functionLexiconRuntime summary mismatch", frontier.functionLexiconRuntime);
   expect(frontier.moduleFactoryRuntime?.ready === true
       && frontier.moduleFactoryRuntime.status === "ready"

@@ -99,6 +99,20 @@ public:
 	/// get internal function table
 	TableEntry *getTable( TableIndex index );
 
+#ifdef __EMSCRIPTEN__
+	/// reload a runtime-owned process-lifetime table from the wasm port after linker-GC repair
+	void loadRuntimeTableForPort( TableEntry *table, TableIndex tableIndex )
+	{
+		if( table == NULL || TheNameKeyGenerator == NULL )
+			return;
+
+		for( TableEntry *entry = table; entry->name != NULL; ++entry )
+			entry->key = TheNameKeyGenerator->nameToKey( entry->name );
+
+		m_tables[ tableIndex ] = table;
+	}
+#endif
+
 	//
 	// !NOTE! We do NOT have a functionToName() method becuase we assume
 	// that functions in the tables are unique and that there is a 1 to 1

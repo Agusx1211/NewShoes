@@ -29,7 +29,7 @@ real-GPU perf measurement on Mac is a pending follow-up. Before broad D3D8
 shim surgery, take a DevTools trace only if the next chosen optimization
 needs async ANGLE/GPU stall detail beyond the live harness counters.
 
-QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), control-bar HUD (controlBarCommandHud/gameplay commands still missing — the background frame art is now linked and paints), compressed/DXT volume textures.
+QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), broader control-bar HUD/radar and generals-experience behavior after command-button dispatch proof, compressed/DXT volume textures.
 
 Dev-box render-verify: symlink worktree `dist/` → main's built `dist/` renders JS-only fixes without the Mac (~4min boot).
 
@@ -316,11 +316,15 @@ residue and the next frontier.
       `ReplayMenu` system/input/init/update/shutdown callbacks, original
       `PopupReplay` input/init/shutdown modal callbacks, plus the passive
       original `GameInfoWindowSystem`/`GameInfoWindowInit` callback-name
-      lookups without owning LAN game-info population; the remaining
+      lookups without owning LAN game-info population, plus original
+      `ControlBarSystem`/`LeftHUDInput` and
+      `GeneralsExpPointsSystem`/`GeneralsExpPointsInput` callback-name lookups
+      after the live skirmish command bar proved real dozer construction
+      dispatch; the remaining
       `FunctionLexicon` boundary is now
       reported by startup JSON as explicit missing callback owner groups:
-      save/load, quit menu, score-screen/replay-save, control-bar command/HUD,
-      generals experience points, LAN/game-network menus, WOL/GameSpy overlays,
+      save/load, quit menu, score-screen/replay-save, LAN/game-network menus,
+      WOL/GameSpy overlays,
       direct-connect/download menus, and in-game network menus). The same archive-backed
       boot now constructs original `W3DModuleFactory`, runs
       `W3DModuleFactory::init()`, and proves public `ModuleFactory` lookups for
@@ -356,7 +360,9 @@ residue and the next frontier.
       original `SkirmishMapSelectMenu` system/input/init/update/shutdown
       lookups,
       original `InGamePopupMessage` system/input/init lookups,
-      original `IdleWorkerSystem`, `BeaconWindowInput`, `ControlBarInput`, and
+      original `IdleWorkerSystem`, `BeaconWindowInput`, `ControlBarInput`,
+      `ControlBarSystem`, `LeftHUDInput`,
+      `GeneralsExpPointsSystem`, `GeneralsExpPointsInput`, and
       `ReplayControl` system/input lookups, and
       original `MainMenu`/`CreditsMenu`/
       `SkirmishGameOptionsMenu`/`SinglePlayerMenu`
@@ -404,14 +410,16 @@ residue and the next frontier.
       campaign/LOD, video/audio, `SkirmishBattleHonors`, and message-resource
       behavior in the linked runtime instead of the current focused movie/score
       hooks.
-- [ ] Promote `ControlBarSystem` and `LeftHUDInput` only after the original
-      control-bar command/radar/player ownership surface is ready in the
-      linked runtime. The passive `ControlBarInput` callback is now registered,
-      and the observer-only `ControlBarObserverSystem` callback name is now
-      registered from original `ControlBarObserver.cpp`,
-      but the broader control-bar system/HUD callbacks reach gameplay command,
-      radar, mouse, player-list, and in-game UI state; keep those out of
-      `cnc-port` until that ownership is real instead of weak-stubbed.
+- [ ] Exercise the broader `ControlBarSystem`/`LeftHUDInput` HUD behavior
+      after the command-button path proof: radar clicks, player-list HUD
+      affordances, and any left-HUD mouse routing should run through the live
+      skirmish harness and expose state queries or screenshots, not isolated
+      probes.
+- [ ] Retire the Emscripten-only runtime `FunctionLexicon` table injection
+      once the command-bar/HUD callback owner TUs are naturally retained by
+      the linked `cnc-port` graph; the current injected tables are
+      process-lifetime storage and should stay a bounded bridge, not a second
+      permanent registration path.
 - [ ] Replace `WebAssembly/src/wasm_game_state_time_helper.cpp` with the
       original `Common/System/SaveGame/GameState.cpp` owner once the linked
       runtime no longer needs the focused GameLogic header boundary. The helper
@@ -448,12 +456,10 @@ residue and the next frontier.
       the real `GameClient` init attaches original `SelectionTranslator` to the
       message stream; the callback name now resolves in `FunctionLexicon`, but
       behavioral coverage belongs with real input/game-client ownership.
-- [ ] Promote `GeneralsExpPointsSystem`/`GeneralsExpPointsInput` after the
-      original `ControlBar` command path is runtime-owned. A direct callback
-      registration links `GUI/GUICallbacks/GeneralsExpPoints.cpp` but then
-      requires `ControlBar::hidePurchaseScience()` and
-      `ControlBar::processContextSensitiveButtonClick()`, which enters the
-      broad `ControlBar::processCommandUI()` gameplay command dispatch owner.
+- [ ] Exercise `GeneralsExpPointsSystem`/`GeneralsExpPointsInput` behavior in
+      the live skirmish harness once a player state with a purchasable science
+      is reachable; verify purchase-science command dispatch and UI state
+      rather than only callback-name registration.
 - [ ] Replace the weak browser boundaries for `BattleHonorTooltip`,
       `InsertBattleHonor`, `ResetBattleHonorInsertion`,
       `playerTemplateComboBoxTooltip`, and `playerTemplateListBoxTooltip`
