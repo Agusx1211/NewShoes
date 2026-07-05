@@ -80,9 +80,15 @@ void W3DSupplyDraw::updateDrawModuleSupplyStatus( Int maxSupply, Int currentSupp
 	}
 
 	// Figure the % of our bones we should show, and if it is a different % than last time
-	// start showing and hiding them.
-	Int bonesToShow = ceil(m_totalBones * ( currentSupply / (float)maxSupply ));
-	bonesToShow = min( bonesToShow, m_totalBones );
+	// start showing and hiding them. Some map scripts assign warehouse cash to objects whose
+	// template starts at zero boxes; keep the visual update finite while preserving the cash value.
+	Int safeMaxSupply = maxSupply > 0 ? maxSupply : currentSupply;
+	Int bonesToShow = 0;
+	if( safeMaxSupply > 0 )
+	{
+		bonesToShow = ceil(m_totalBones * ( currentSupply / (float)safeMaxSupply ));
+	}
+	bonesToShow = max( 0, min( bonesToShow, m_totalBones ) );
 
 	if( bonesToShow != m_lastNumberShown )
 	{
@@ -151,5 +157,4 @@ void W3DSupplyDraw::loadPostProcess( void )
 	W3DModelDraw::loadPostProcess();
 
 }  // end loadPostProcess
-
 

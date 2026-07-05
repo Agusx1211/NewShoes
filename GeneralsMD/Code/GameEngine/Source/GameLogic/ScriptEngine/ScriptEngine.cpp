@@ -97,9 +97,67 @@ extern "C" void cnc_port_script_diag_note_script_activation(
 	int foundScript,
 	int scriptActive)
 	__attribute__((weak));
+extern "C" void cnc_port_note_game_logic_step(const char *name)
+	__attribute__((weak));
+extern "C" void cnc_port_note_script_step(
+	const char *phase,
+	const char *scriptName,
+	int playerIndex,
+	int sideIndex,
+	int conditionType,
+	int actionType)
+	__attribute__((weak));
+
+static Int st_scriptDiagSideIndex = -1;
+static AsciiString st_scriptDiagActionContextScriptName;
+
+static void scriptDiagNoteStep(const char *name)
+{
+	if (cnc_port_note_game_logic_step != NULL) {
+		cnc_port_note_game_logic_step(name);
+	}
+}
+
+static void scriptDiagSetSideIndex(Int sideIndex)
+{
+	st_scriptDiagSideIndex = sideIndex;
+}
+
+static void scriptDiagNoteScriptStep(
+	const char *phase,
+	const AsciiString& scriptName,
+	Player *player,
+	Int conditionType,
+	Int actionType)
+{
+	if (cnc_port_note_script_step != NULL) {
+		cnc_port_note_script_step(
+			phase,
+			scriptName.str(),
+			player != NULL ? player->getPlayerIndex() : -1,
+			st_scriptDiagSideIndex,
+			conditionType,
+			actionType);
+	}
+}
+
+static void scriptDiagNoteScriptStep(
+	const char *phase,
+	Script *script,
+	Player *player,
+	Int conditionType,
+	Int actionType)
+{
+	AsciiString scriptName;
+	if (script != NULL) {
+		scriptName = script->getName();
+	}
+	scriptDiagNoteScriptStep(phase, scriptName, player, conditionType, actionType);
+}
 
 static void scriptDiagPushContext(const AsciiString& scriptName, const char *branch)
 {
+	st_scriptDiagActionContextScriptName = scriptName;
 	if (cnc_port_script_diag_push_context != NULL) {
 		cnc_port_script_diag_push_context(scriptName.str(), branch);
 	}
@@ -107,6 +165,7 @@ static void scriptDiagPushContext(const AsciiString& scriptName, const char *bra
 
 static void scriptDiagPopContext(void)
 {
+	st_scriptDiagActionContextScriptName.clear();
 	if (cnc_port_script_diag_pop_context != NULL) {
 		cnc_port_script_diag_pop_context();
 	}
@@ -151,6 +210,8 @@ static void scriptDiagNoteScriptActivation(
 			pScript != NULL && pScript->isActive() ? 1 : 0);
 	}
 }
+#else
+static void scriptDiagNoteStep(const char *) {}
 #endif
 
 // These are for particle editor
@@ -5582,6 +5643,7 @@ DECLARE_PERF_TIMER(ScriptEngine)
 void ScriptEngine::update( void )
 {
 	USE_PERF_TIMER(ScriptEngine)
+	scriptDiagNoteStep("ScriptEngine.update.entry");
 #ifdef SPECIAL_SCRIPT_PROFILING
 #ifdef DEBUG_LOGGING
 	__int64 startTime64;
@@ -5601,11 +5663,17 @@ void ScriptEngine::update( void )
 #endif
 #endif
 	if (m_firstUpdate) {
+		scriptDiagNoteStep("ScriptEngine.update.firstUpdate.createNamedCache.before");
 		createNamedCache();
+		scriptDiagNoteStep("ScriptEngine.update.firstUpdate.createNamedCache.after");
+		scriptDiagNoteStep("ScriptEngine.update.firstUpdate.particleEditor.before");
 		particleEditorUpdate();
+		scriptDiagNoteStep("ScriptEngine.update.firstUpdate.particleEditor.after");
 		m_firstUpdate = false;
 	} else {
+		scriptDiagNoteStep("ScriptEngine.update.particleEditor.before");
 		particleEditorUpdate();
+		scriptDiagNoteStep("ScriptEngine.update.particleEditor.after");
 	}
 	
 	if (m_closeWindowTimer>0) {
@@ -5629,7 +5697,9 @@ void ScriptEngine::update( void )
 	}
 
 	if (m_fade!=FADE_NONE) {
+		scriptDiagNoteStep("ScriptEngine.update.fades.before");
 		updateFades(); 
+		scriptDiagNoteStep("ScriptEngine.update.fades.after");
 	}
 
 	if (m_endGameTimer>=0) {
@@ -5637,14 +5707,19 @@ void ScriptEngine::update( void )
 	}
 	
 	if (TheScriptActions) {
+		scriptDiagNoteStep("ScriptEngine.update.actions.before");
 		TheScriptActions->update();
+		scriptDiagNoteStep("ScriptEngine.update.actions.after");
 	}
 	if (TheScriptConditions) {
+		scriptDiagNoteStep("ScriptEngine.update.conditions.before");
 		TheScriptConditions->update();
+		scriptDiagNoteStep("ScriptEngine.update.conditions.after");
 	}
 	// Update any countdown timers.
 	Int i;
 	// Note - counters start at 1.  0 means not assigned.
+	scriptDiagNoteStep("ScriptEngine.update.counters.before");
 	for (i=1; i<m_numCounters; i++) {
 		if (m_counters[i].isCountdownTimer) {
 			// If counter has any time left, decrement.  Counters go to -1 and stop.
@@ -5653,13 +5728,30 @@ void ScriptEngine::update( void )
 			}
 		}
 	}
+	scriptDiagNoteStep("ScriptEngine.update.counters.after");
 
 	// Evaluate the scripts.
+	scriptDiagNoteStep("ScriptEngine.update.scripts.before");
 	for (i=0; i<TheSidesList->getNumSides(); i++) {
 		m_currentPlayer = ThePlayerList->getNthPlayer(i);
+#ifdef __EMSCRIPTEN__
+		scriptDiagSetSideIndex(i);
+		scriptDiagNoteScriptStep("ScriptEngine.update.side.before", NULL, m_currentPlayer, -1, -1);
+#endif
 		ScriptList *pSL = TheSidesList->getSideInfo(i)->getScriptList();
-		if (!pSL) continue;
+		if (!pSL) {
+#ifdef __EMSCRIPTEN__
+			scriptDiagNoteScriptStep("ScriptEngine.update.side.noScripts", NULL, m_currentPlayer, -1, -1);
+#endif
+			continue;
+		}
+#ifdef __EMSCRIPTEN__
+		scriptDiagNoteScriptStep("ScriptEngine.update.side.scripts.before", NULL, m_currentPlayer, -1, -1);
+#endif
 		executeScripts(pSL->getScript());
+#ifdef __EMSCRIPTEN__
+		scriptDiagNoteScriptStep("ScriptEngine.update.side.scripts.after", NULL, m_currentPlayer, -1, -1);
+#endif
 		ScriptGroup *pGroup;
 		for (pGroup = pSL->getScriptGroup(); pGroup; pGroup=pGroup->getNext()) {
 			if (!pGroup->isActive()) {
@@ -5668,20 +5760,37 @@ void ScriptEngine::update( void )
 			if (pGroup->isSubroutine()) {
 				continue; // Don't execute subroutine groups.
 			}
+#ifdef __EMSCRIPTEN__
+			scriptDiagNoteScriptStep("ScriptEngine.update.group.before", NULL, m_currentPlayer, -1, -1);
+#endif
 			executeScripts(pGroup->getScript());
+#ifdef __EMSCRIPTEN__
+			scriptDiagNoteScriptStep("ScriptEngine.update.group.after", NULL, m_currentPlayer, -1, -1);
+#endif
 		}
+#ifdef __EMSCRIPTEN__
+		scriptDiagNoteScriptStep("ScriptEngine.update.side.after", NULL, m_currentPlayer, -1, -1);
+#endif
 		m_currentPlayer = NULL;
 	}
+#ifdef __EMSCRIPTEN__
+	scriptDiagSetSideIndex(-1);
+#endif
+	scriptDiagNoteStep("ScriptEngine.update.scripts.after");
 	
 	// Reset the entered/exited flag in teams, so the next update sets them 
 	// correctly.  Also, execute any team created scripts.
+	scriptDiagNoteStep("ScriptEngine.update.teamStates.before");
 	ThePlayerList->updateTeamStates();
+	scriptDiagNoteStep("ScriptEngine.update.teamStates.after");
 
 	// Clear the UI Interaction flags.
 	m_uiInteractions.clear();
 
 	// update all sequential stuff.
+	scriptDiagNoteStep("ScriptEngine.update.sequential.before");
 	evaluateAndProgressAllSequentialScripts();
+	scriptDiagNoteStep("ScriptEngine.update.sequential.after");
 
 	// Script debugger stuff
 	st_CurrentFrame++;
@@ -7140,9 +7249,15 @@ void ScriptEngine::checkConditionsForTeamNames(Script *pScript)
 void ScriptEngine::executeScript( Script *pScript )
 {
 
+#ifdef __EMSCRIPTEN__
+	scriptDiagNoteScriptStep("executeScript.entry", pScript, m_currentPlayer, -1, -1);
+#endif
 	pScript->setCurTime(0);
 	// If script is not active, return.
 	if (!pScript->isActive()) {
+#ifdef __EMSCRIPTEN__
+		scriptDiagNoteScriptStep("executeScript.inactive", pScript, m_currentPlayer, -1, -1);
+#endif
 		return;
 	}
 	enum GameDifficulty difficulty = getGlobalDifficulty();
@@ -7151,12 +7266,36 @@ void ScriptEngine::executeScript( Script *pScript )
 	}
 	// If script doesn't match difficulty level, return.
 	switch (difficulty) {
-		case DIFFICULTY_EASY : if (!pScript->isEasy()) return;  break;
-		case DIFFICULTY_NORMAL : if (!pScript->isNormal()) return;  break;
-		case DIFFICULTY_HARD : if (!pScript->isHard()) return;  break;
+		case DIFFICULTY_EASY :
+			if (!pScript->isEasy()) {
+#ifdef __EMSCRIPTEN__
+				scriptDiagNoteScriptStep("executeScript.difficultySkip", pScript, m_currentPlayer, -1, -1);
+#endif
+				return;
+			}
+			break;
+		case DIFFICULTY_NORMAL :
+			if (!pScript->isNormal()) {
+#ifdef __EMSCRIPTEN__
+				scriptDiagNoteScriptStep("executeScript.difficultySkip", pScript, m_currentPlayer, -1, -1);
+#endif
+				return;
+			}
+			break;
+		case DIFFICULTY_HARD :
+			if (!pScript->isHard()) {
+#ifdef __EMSCRIPTEN__
+				scriptDiagNoteScriptStep("executeScript.difficultySkip", pScript, m_currentPlayer, -1, -1);
+#endif
+				return;
+			}
+			break;
 	}
 	// If we are doing peridic evaluation, check the frame.
 	if (TheGameLogic->getFrame()<pScript->getFrameToEvaluate()) {
+#ifdef __EMSCRIPTEN__
+		scriptDiagNoteScriptStep("executeScript.frameSkip", pScript, m_currentPlayer, -1, -1);
+#endif
 		return;
 	}
 	Int delaySeconds = pScript->getDelayEvalSeconds();
@@ -7187,16 +7326,24 @@ void ScriptEngine::executeScript( Script *pScript )
 		for (DLINK_ITERATOR<Team> iter = pProto->iterate_TeamInstanceList(); !iter.done(); iter.advance()) {
 			m_conditionTeam = iter.cur();
 			// If conditions evaluate to true, execute actions.
+#ifdef __EMSCRIPTEN__
+			scriptDiagNoteScriptStep("executeScript.conditions.before", pScript, m_currentPlayer, -1, -1);
+#endif
 			if (evaluateConditions(pScript)) {
+#ifdef __EMSCRIPTEN__
+				scriptDiagNoteScriptStep("executeScript.conditions.true", pScript, m_currentPlayer, -1, -1);
+#endif
 				// Script Debug window
 				if (pScript->getAction()) {
 					_appendMessage(pScript->getName());
 #ifdef __EMSCRIPTEN__
+					scriptDiagNoteScriptStep("executeScript.actions.before", pScript, m_currentPlayer, -1, -1);
 					scriptDiagPushContext(pScript->getName(), "actions");
 #endif
 					executeActions(pScript->getAction());
 #ifdef __EMSCRIPTEN__
 					scriptDiagPopContext();
+					scriptDiagNoteScriptStep("executeScript.actions.after", pScript, m_currentPlayer, -1, -1);
 #endif
 				}
 				
@@ -7204,17 +7351,26 @@ void ScriptEngine::executeScript( Script *pScript )
 					pScript->setActive(false);
 				}
 			}	else if (pScript->getFalseAction()) {
+#ifdef __EMSCRIPTEN__
+				scriptDiagNoteScriptStep("executeScript.conditions.false", pScript, m_currentPlayer, -1, -1);
+#endif
 
 				// Script Debug window
 				_appendMessage(pScript->getName(), false);
 
 				// Only do this is there are actually false actions.
 #ifdef __EMSCRIPTEN__
+				scriptDiagNoteScriptStep("executeScript.falseActions.before", pScript, m_currentPlayer, -1, -1);
 				scriptDiagPushContext(pScript->getName(), "falseActions");
 #endif
 				executeActions(pScript->getFalseAction());
 #ifdef __EMSCRIPTEN__
 				scriptDiagPopContext();
+				scriptDiagNoteScriptStep("executeScript.falseActions.after", pScript, m_currentPlayer, -1, -1);
+#endif
+      } else {
+#ifdef __EMSCRIPTEN__
+				scriptDiagNoteScriptStep("executeScript.conditions.false", pScript, m_currentPlayer, -1, -1);
 #endif
       } 
 		}
@@ -7222,16 +7378,24 @@ void ScriptEngine::executeScript( Script *pScript )
 	} else {
 		m_conditionTeam = NULL;
 		// If conditions evaluate to true, execute actions.
+#ifdef __EMSCRIPTEN__
+		scriptDiagNoteScriptStep("executeScript.conditions.before", pScript, m_currentPlayer, -1, -1);
+#endif
 		if (evaluateConditions(pScript)) {
+#ifdef __EMSCRIPTEN__
+			scriptDiagNoteScriptStep("executeScript.conditions.true", pScript, m_currentPlayer, -1, -1);
+#endif
 			if (pScript->getAction()) {
 				// Script Debug window
 				_appendMessage(pScript->getName());
 #ifdef __EMSCRIPTEN__
+				scriptDiagNoteScriptStep("executeScript.actions.before", pScript, m_currentPlayer, -1, -1);
 				scriptDiagPushContext(pScript->getName(), "actions");
 #endif
 				executeActions(pScript->getAction());
 #ifdef __EMSCRIPTEN__
 				scriptDiagPopContext();
+				scriptDiagNoteScriptStep("executeScript.actions.after", pScript, m_currentPlayer, -1, -1);
 #endif
 			}
 
@@ -7239,21 +7403,30 @@ void ScriptEngine::executeScript( Script *pScript )
 				pScript->setActive(false);
 			}
 		}	else if (pScript->getFalseAction()) {
+#ifdef __EMSCRIPTEN__
+			scriptDiagNoteScriptStep("executeScript.conditions.false", pScript, m_currentPlayer, -1, -1);
+#endif
 
 			// Script Debug window
 			_appendMessage(pScript->getName(), false);
 
 			// Only do this is there are actually false actions.
 #ifdef __EMSCRIPTEN__
+			scriptDiagNoteScriptStep("executeScript.falseActions.before", pScript, m_currentPlayer, -1, -1);
 			scriptDiagPushContext(pScript->getName(), "falseActions");
 #endif
 			executeActions(pScript->getFalseAction());
 #ifdef __EMSCRIPTEN__
 			scriptDiagPopContext();
+			scriptDiagNoteScriptStep("executeScript.falseActions.after", pScript, m_currentPlayer, -1, -1);
 #endif
 			if (pScript->isOneShot()) {
 				pScript->setActive(false);
 			}
+		} else {
+#ifdef __EMSCRIPTEN__
+			scriptDiagNoteScriptStep("executeScript.conditions.false", pScript, m_currentPlayer, -1, -1);
+#endif
 		}
 	}
 #ifdef DEBUG_LOGGING
@@ -7265,6 +7438,9 @@ void ScriptEngine::executeScript( Script *pScript )
 #endif
 
 	m_conditionTeam = pSavConditionTeam;
+#ifdef __EMSCRIPTEN__
+	scriptDiagNoteScriptStep("executeScript.exit", pScript, m_currentPlayer, -1, -1);
+#endif
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -7818,6 +7994,14 @@ Bool ScriptEngine::evaluateConditions( Script *pScript, Team *thisTeam, Player *
 		if (!pCondition) continue; // No conditions, so go to the next or.
 		Bool andTerm = true; 
 		while (pCondition && andTerm) {
+#ifdef __EMSCRIPTEN__
+			scriptDiagNoteScriptStep(
+				"evaluateConditions.condition",
+				pScript,
+				m_currentPlayer,
+				static_cast<Int>(pCondition->getConditionType()),
+				-1);
+#endif
 			if (!evaluateCondition(pCondition)) {
 				andTerm = false;
 				break; // Short circuit the and evauation - after the first false, we can quit.
@@ -7849,6 +8033,14 @@ void ScriptEngine::executeActions( ScriptAction *pActionHead )
 	ScriptAction *pCurAction;
 	UnicodeString uStr1;
 	for (pCurAction = pActionHead; pCurAction; pCurAction = pCurAction->getNext()) {
+#ifdef __EMSCRIPTEN__
+		scriptDiagNoteScriptStep(
+			"executeActions.action",
+			st_scriptDiagActionContextScriptName,
+			m_currentPlayer,
+			-1,
+			static_cast<Int>(pCurAction->getActionType()));
+#endif
 		switch (pCurAction->getActionType()) {
 			default: if (TheScriptActions) TheScriptActions->executeAction(pCurAction); break;
 			case ScriptAction::SET_COUNTER: setCounter(pCurAction);	break;
@@ -7897,7 +8089,13 @@ void ScriptEngine::executeScripts( Script *pScriptHead )
 		if (pCurScript->isSubroutine()) {
 			continue; // Don't execute subroutines, except when called by other scripts.
 		}
+#ifdef __EMSCRIPTEN__
+		scriptDiagNoteScriptStep("executeScripts.beforeScript", pCurScript, m_currentPlayer, -1, -1);
+#endif
 		executeScript(pCurScript);
+#ifdef __EMSCRIPTEN__
+		scriptDiagNoteScriptStep("executeScripts.afterScript", pCurScript, m_currentPlayer, -1, -1);
+#endif
 	}
 }  // end update
 

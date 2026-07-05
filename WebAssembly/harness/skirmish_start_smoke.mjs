@@ -47,6 +47,7 @@ const outputPath = resolve(
     resolve(artifactsRoot, "skirmish-start-smoke.json"));
 const maxStartFrames = parsePositiveInt("SKIRMISH_START_MAX_FRAMES", 4200);
 const frameChunk = parsePositiveInt("SKIRMISH_START_FRAME_CHUNK", 30);
+const requestedSkirmishMap = String(process.env.SKIRMISH_START_MAP ?? "").trim();
 
 function parsePositiveInt(name, fallback) {
   const value = Number.parseInt(process.env[name] ?? "", 10);
@@ -387,6 +388,18 @@ async function main() {
     expect(skirmishMenu?.parent?.found === true && skirmishMenu?.buttonStart?.clickable === true,
       "skirmish game options menu did not become startable", skirmishMenu);
 
+    let skirmishMapSet = null;
+    if (requestedSkirmishMap) {
+      console.error(`[skirmish-start] set skirmish map ${requestedSkirmishMap}`);
+      skirmishMapSet = await rpc(page, "realEngineSetSkirmishMap", {
+        map: requestedSkirmishMap,
+      });
+      expect(skirmishMapSet?.ok === true
+          && skirmishMapSet.result?.applied,
+        "requested skirmish map was not applied", skirmishMapSet);
+      await runSummary(page, 1, "skirmish map apply settle");
+    }
+
     console.error("[skirmish-start] click start");
     await clickButton(
       page,
@@ -404,8 +417,15 @@ async function main() {
       ok: true,
       source: "skirmish-start-smoke",
       archiveCount: mount.archiveSet.archiveCount,
-      selectedMap: mapCache?.probe?.firstOfficialMultiplayerMap ?? null,
+      requestedMap: requestedSkirmishMap || null,
+      selectedMap: mapCache?.probe?.skirmishGameInfo?.map
+        ?? mapCache?.probe?.gameInfo?.map
+        ?? mapCache?.probe?.firstOfficialMultiplayerMap
+        ?? null,
+      skirmishMapSet: skirmishMapSet?.result ?? null,
       firstOfficialMultiplayerMetadata: mapCache?.probe?.firstOfficialMultiplayerMetadata ?? null,
+      officialMultiplayerCount: mapCache?.probe?.officialMultiplayerCount ?? null,
+      officialMultiplayerMaps: mapCache?.probe?.officialMultiplayerMaps ?? [],
       framesAdvancedAfterStart: active.framesAdvanced,
       finalGameplay: compactGameplay(active.result.frame),
       samples: active.samples.slice(-12),

@@ -21,9 +21,9 @@ shares structure and follows behind.
 MERGED to `main` (verified, clean, green build): perf-drawstate (state-skip perf + geometry/texture correctness fixes), zorder-fix (RTT null-FBO depth-pollution fix — 0 FBO failures), audio-ini-fix (non-Default audio INI entries → audio subsystem inits plus base-Generals `Music.big` extraction), live-skirmish-start, mounted MSS stream playback, DXT CPU fallback and DXT1/2/3/4/5 browser draw coverage.
 
 RECENT: the live skirmish menu/options/start transition now loads Alpine
-Assault into an active real match on Mac Chrome/Metal. Remaining skirmish work
-is broad compatibility and AI behavior, not the basic map-cache/menu/start
-path.
+Assault and harness-selected Tournament Desert into active real matches.
+Remaining skirmish work is broad map compatibility and AI behavior, not the
+basic map-cache/menu/start path.
 
 PERF next: runtime profiling now separates real-engine frame time from tracked
 browser D3D8 draw/upload/readback/FBO costs on Mac Chrome/Metal. Before broad
@@ -2195,7 +2195,11 @@ and then start with the PROFILE, not with any individual fix.
       `LaserUpdate` beam drawables directly; a later gate should drive
       `Weapon::createLaser` / point-defense laser behavior from real objects
       and assert the same beam texture draws through normal gameplay.
-- [ ] All skirmish maps load.
+- [ ] All skirmish maps load. The harness can now select a specific official
+      multiplayer map with `SKIRMISH_START_MAP`; Alpine Assault and Tournament
+      Desert pass through active match state, including Tournament Desert's
+      supply-dock map script path. Next: run a broader official-map sweep and
+      fix the next map-specific script/render/runtime failure.
 - [ ] Single-player campaign(s) playable (scripts, objectives, cinematics).
 - [ ] Challenge mode (Zero Hour generals challenge).
 - [ ] Save / load a game (serialization round-trips correctly).

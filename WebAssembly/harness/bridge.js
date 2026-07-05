@@ -9147,6 +9147,11 @@ async function loadWasmModule() {
       realEngineInit: module.cwrap("cnc_port_real_engine_init", "string", ["string", "number"]),
       realEngineFrontier: module.cwrap("cnc_port_real_engine_frontier", "string", []),
       mapCacheProbe: module.cwrap("cnc_port_map_cache_probe", "string", []),
+      realEngineSetSkirmishMap: module.cwrap(
+        "cnc_port_real_engine_set_skirmish_map",
+        "string",
+        ["string"],
+      ),
       realEngineFrame: module.cwrap("cnc_port_real_engine_frame", "string", ["number"]),
       realEngineFrameSummary: module.cwrap(
         "cnc_port_real_engine_frame_summary",
@@ -13966,6 +13971,33 @@ async function rpc(command, payload = {}) {
           ok: true,
           command: "mapCacheProbe",
           probe: JSON.parse(moduleResult.wasmModule.mapCacheProbe()),
+        };
+      }
+    case "realEngineSetSkirmishMap":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineSetSkirmishMap");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineSetSkirmishMap", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.realEngineSetSkirmishMap(
+            String(payload.map ?? payload.mapName ?? ""),
+          ));
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        recordLog("real engine set skirmish map", { aborted, abortMessage, result });
+        return {
+          ok: Boolean(result?.ok) && !aborted,
+          command: "realEngineSetSkirmishMap",
+          aborted,
+          abortMessage,
+          result,
+          state: snapshotState(),
         };
       }
     case "realEngineUpdateBreakpoint":

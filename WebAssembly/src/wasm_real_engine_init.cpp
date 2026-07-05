@@ -199,6 +199,12 @@ static std::string g_last_engine_update_target;
 static std::string g_engine_update_breakpoint;
 static std::string g_last_game_logic_step;
 static std::string g_game_logic_breakpoint;
+static std::string g_last_script_phase;
+static std::string g_last_script_name;
+static int g_last_script_player_index = -1;
+static int g_last_script_side_index = -1;
+static int g_last_script_condition_type = -1;
+static int g_last_script_action_type = -1;
 static unsigned int g_frame_texture_apply_count = 0;
 static unsigned int g_frame_missing_texture_apply_count = 0;
 static std::string g_frame_first_missing_texture_name;
@@ -253,6 +259,22 @@ extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_game_logic_breakpo
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_last_game_logic_step()
 {
 	return g_last_game_logic_step.c_str();
+}
+
+extern "C" void cnc_port_note_script_step(
+	const char *phase,
+	const char *script_name,
+	int player_index,
+	int side_index,
+	int condition_type,
+	int action_type)
+{
+	g_last_script_phase = phase != nullptr ? phase : "";
+	g_last_script_name = script_name != nullptr ? script_name : "";
+	g_last_script_player_index = player_index;
+	g_last_script_side_index = side_index;
+	g_last_script_condition_type = condition_type;
+	g_last_script_action_type = action_type;
 }
 
 extern "C" void cnc_port_note_texture_apply(
@@ -363,6 +385,23 @@ std::string json_escape(const std::string &value)
 		}
 	}
 	return out;
+}
+
+std::string script_diag_action_name(int action_type);
+std::string script_diag_condition_name(int condition_type);
+
+void append_last_script_step_json(std::string &json)
+{
+	json += ",\"lastScriptStep\":{";
+	json += "\"phase\":\"" + json_escape(g_last_script_phase) + "\"";
+	json += ",\"script\":\"" + json_escape(g_last_script_name) + "\"";
+	json += ",\"playerIndex\":" + std::to_string(g_last_script_player_index);
+	json += ",\"sideIndex\":" + std::to_string(g_last_script_side_index);
+	json += ",\"conditionType\":" + std::to_string(g_last_script_condition_type);
+	json += ",\"conditionName\":\"" + json_escape(script_diag_condition_name(g_last_script_condition_type)) + "\"";
+	json += ",\"actionType\":" + std::to_string(g_last_script_action_type);
+	json += ",\"actionName\":\"" + json_escape(script_diag_action_name(g_last_script_action_type)) + "\"";
+	json += "}";
 }
 
 const char *build_state_json()
@@ -1690,6 +1729,18 @@ std::string script_diag_action_name(int action_type)
 		const ActionTemplate *action_template = TheScriptEngine->getActionTemplate(action_type);
 		if (action_template != NULL) {
 			return action_template->m_internalName.str();
+		}
+	}
+	return "";
+}
+
+std::string script_diag_condition_name(int condition_type)
+{
+	if (TheScriptEngine != NULL && condition_type >= 0 && condition_type < Condition::NUM_ITEMS) {
+		const ConditionTemplate *condition_template =
+			TheScriptEngine->getConditionTemplate(condition_type);
+		if (condition_template != NULL) {
+			return condition_template->m_internalName.str();
 		}
 	}
 	return "";
@@ -3468,6 +3519,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame(int frame
 	json += ",\"staleMovieBreakClears\":" + std::to_string(g_frame_state.stale_movie_break_clears);
 	json += ",\"lastUpdateTarget\":\"" + json_escape(g_last_engine_update_target) + "\"";
 	json += ",\"lastGameLogicStep\":\"" + json_escape(g_last_game_logic_step) + "\"";
+	append_last_script_step_json(json);
 	append_frame_texture_diagnostics(json);
 	json += ",\"quitting\":";
 	json += (TheGameEngine != NULL && TheGameEngine->getQuitting() != FALSE) ? "true" : "false";
@@ -3506,6 +3558,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_summary(i
 	json += ",\"staleMovieBreakClears\":" + std::to_string(g_frame_state.stale_movie_break_clears);
 	json += ",\"lastUpdateTarget\":\"" + json_escape(g_last_engine_update_target) + "\"";
 	json += ",\"lastGameLogicStep\":\"" + json_escape(g_last_game_logic_step) + "\"";
+	append_last_script_step_json(json);
 	append_frame_texture_diagnostics(json);
 	json += ",\"quitting\":";
 	json += (TheGameEngine != NULL && TheGameEngine->getQuitting() != FALSE) ? "true" : "false";
@@ -4543,6 +4596,23 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_map_cache_probe()
 			+ std::to_string(static_cast<long long>(official_multiplayer_count));
 		json += ",\"firstOfficialMultiplayerMap\":\"" + json_escape(first_official_multiplayer.str()) + "\"";
 		append_map_metadata_json(json, "firstOfficialMultiplayerMetadata", first_official_multiplayer_metadata);
+		json += ",\"officialMultiplayerMaps\":[";
+		int emitted = 0;
+		for (MapCache::const_iterator it = TheMapCache->begin(); it != TheMapCache->end(); ++it) {
+			if (!(it->second.m_isOfficial && it->second.m_isMultiplayer)) {
+				continue;
+			}
+			if (emitted > 0) {
+				json += ",";
+			}
+			json += "{\"key\":\"" + json_escape(it->first.str()) + "\"";
+			json += ",\"players\":" + std::to_string(static_cast<long long>(it->second.m_numPlayers));
+			json += ",\"fileSize\":" + std::to_string(static_cast<unsigned long long>(it->second.m_filesize));
+			json += ",\"crc\":" + std::to_string(static_cast<unsigned long long>(it->second.m_CRC));
+			json += "}";
+			++emitted;
+		}
+		json += "]";
 		append_game_info_json(json, "skirmishGameInfo", TheSkirmishGameInfo);
 		append_game_info_json(json, "gameInfo", TheGameInfo);
 		json += ",\"cpuDetectSpeedMHz\":" + std::to_string(static_cast<long long>(CPUDetectClass::Get_Processor_Speed()));
@@ -4557,7 +4627,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_map_cache_probe()
 				+ std::to_string(static_cast<long long>(TheGameLODManager->getStaticLODLevel()));
 		}
 		json += ",\"sampleKeys\":[";
-		int emitted = 0;
+		emitted = 0;
 		for (MapCache::const_iterator it = TheMapCache->begin();
 				it != TheMapCache->end() && emitted < 8; ++it, ++emitted) {
 			if (emitted > 0) {
@@ -4583,6 +4653,58 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_map_cache_probe()
 		}
 		json += "]";
 	}
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_skirmish_map(const char *map_name)
+{
+	static std::string json;
+	const char *raw_map_name = map_name != NULL ? map_name : "";
+	AsciiString requested(raw_map_name);
+	AsciiString lookup = requested;
+	lookup.toLower();
+
+	json = "{";
+	json += "\"ok\":false";
+	json += ",\"requested\":\"" + json_escape(requested.str()) + "\"";
+
+	if (TheMapCache == NULL) {
+		json += ",\"error\":\"mapCacheNotReady\"";
+		json += "}";
+		return json.c_str();
+	}
+	if (TheSkirmishGameInfo == NULL) {
+		json += ",\"error\":\"skirmishGameInfoNotReady\"";
+		json += "}";
+		return json.c_str();
+	}
+
+	MapCache::const_iterator it = TheMapCache->find(lookup);
+	if (it == TheMapCache->end()) {
+		json += ",\"error\":\"mapNotFound\"";
+		json += ",\"lookup\":\"" + json_escape(lookup.str()) + "\"";
+		json += "}";
+		return json.c_str();
+	}
+	if (!it->second.m_isMultiplayer) {
+		json += ",\"error\":\"mapIsNotMultiplayer\"";
+		json += ",\"lookup\":\"" + json_escape(it->first.str()) + "\"";
+		append_map_metadata_json(json, "metadata", &it->second);
+		json += "}";
+		return json.c_str();
+	}
+
+	TheSkirmishGameInfo->setMap(it->first);
+	TheSkirmishGameInfo->setMapCRC(it->second.m_CRC);
+	TheSkirmishGameInfo->setMapSize(it->second.m_filesize);
+
+	json = "{";
+	json += "\"ok\":true";
+	json += ",\"requested\":\"" + json_escape(requested.str()) + "\"";
+	json += ",\"applied\":\"" + json_escape(it->first.str()) + "\"";
+	append_map_metadata_json(json, "metadata", &it->second);
+	append_game_info_json(json, "skirmishGameInfo", TheSkirmishGameInfo);
 	json += "}";
 	return json.c_str();
 }

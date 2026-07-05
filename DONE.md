@@ -6366,6 +6366,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       The same Mac/Metal screenshot and state query show a rendered USA base,
       a vehicle, terrain/roads, `objectCount=223`, `drawableCount=223`, and a
       visible/clickable control bar after the map load.
+- [x] Load Tournament Desert through the real Skirmish Start path.
+      `skirmish_start_smoke.mjs` now accepts `SKIRMISH_START_MAP`, the browser
+      bridge exposes `realEngineSetSkirmishMap`, and `cnc_port_map_cache_probe`
+      lists all 47 official multiplayer maps for sweep selection. The first
+      Tournament Desert repro reached active gameplay but trapped while the map
+      script `Supply Dock SE Corner` executed `WAREHOUSE_SET_VALUE`; the new
+      wasm-only script-step diagnostic reported the script/action directly.
+      Fixed the trap in `W3DSupplyDraw::updateDrawModuleSupplyStatus` by
+      keeping supply-bone visual percentage math finite when a map script sets
+      warehouse cash on an object whose starting-box maximum is zero. Verified
+      with `npm --prefix WebAssembly run build:port`, `npm --prefix
+      WebAssembly run test:skirmish-start`, and
+      `SKIRMISH_START_MAP='maps\tournament desert\tournament desert.map' node
+      harness/skirmish_start_smoke.mjs`; Tournament Desert selected
+      CRC `368459242`, reached `GAME_SKIRMISH`, `loadingMap=false`,
+      `inputEnabled=true`, 146 objects/drawables, and captured
+      `WebAssembly/artifacts/screenshots/skirmish-start-tournament-desert.png`.
 
 ---
 
