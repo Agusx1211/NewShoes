@@ -84,12 +84,14 @@ extern "C" int cnc_port_ai_player_difficulty(const void *) { return 0; }
 extern "C" void cnc_port_ai_player_pre_team_destroy(void *, const void *) __asm__("_ZN8AIPlayer16aiPreTeamDestroyEPK4Team") __attribute__((weak));
 extern "C" void cnc_port_ai_player_pre_team_destroy(void *, const void *) {}
 #endif
+#ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_RADAR_RESOURCE_RUNTIME
 extern "C" void *cnc_port_resource_gathering_manager_ctor_c1(void *self) __asm__("_ZN24ResourceGatheringManagerC1Ev") __attribute__((weak));
 extern "C" void *cnc_port_resource_gathering_manager_ctor_c1(void *self) { return self; }
 extern "C" void cnc_port_radar_remove_object(void *, void *) __asm__("_ZN5Radar12removeObjectEP6Object") __attribute__((weak));
 extern "C" void cnc_port_radar_remove_object(void *, void *) {}
 extern "C" void cnc_port_radar_add_object(void *, void *) __asm__("_ZN5Radar9addObjectEP6Object") __attribute__((weak));
 extern "C" void cnc_port_radar_add_object(void *, void *) {}
+#endif
 extern "C" void cnc_port_object_leave_group(void *) __asm__("_ZN6Object10leaveGroupEv") __attribute__((weak));
 extern "C" void cnc_port_object_leave_group(void *) {}
 extern "C" void cnc_port_object_set_disabled(void *, int) __asm__("_ZN6Object11setDisabledE12DisabledType") __attribute__((weak));
