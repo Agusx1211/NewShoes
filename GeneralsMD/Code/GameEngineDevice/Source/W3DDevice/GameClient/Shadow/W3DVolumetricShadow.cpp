@@ -3561,7 +3561,7 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 		m_pDev->SetVertexShader(SHADOW_DYNAMIC_VOLUME_FVF);
 
 		m_pDev->SetRenderState(D3DRS_CULLMODE,D3DCULL_CW);
-//		m_pDev->SetRenderState(D3DRS_ZBIAS,1);	///@todo: See if this helps or makes things worse.
+		m_pDev->SetRenderState(D3DRS_ZBIAS,1);	// depth bias to prevent z-fighting on shadow volumes
 		//m_pDev->SetRenderState(D3DRS_FILLMODE,D3DFILL_WIREFRAME);
 
 
@@ -3645,7 +3645,7 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 		}
 
 		m_pDev->SetRenderState(D3DRS_CULLMODE,D3DCULL_CW);
-//		m_pDev->SetRenderState(D3DRS_ZBIAS,0);	///@todo: See if this helps or makes things worse.
+		m_pDev->SetRenderState(D3DRS_ZBIAS,0);	// restore ZBIAS after shadow volumes
 		//m_pDev->SetRenderState(D3DRS_FILLMODE,D3DFILL_SOLID);
 
 
