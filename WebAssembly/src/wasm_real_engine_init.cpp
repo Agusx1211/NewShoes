@@ -49,6 +49,8 @@
 #include "GameClient/GameClient.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
+#include "W3DDevice/GameClient/W3DGUICallbacks.h"
+#include "W3DDevice/GameClient/W3DGameWindow.h"
 #include "GameClient/GameWindowTransitions.h"
 #include "GameClient/InGameUI.h"
 #include "GameClient/Keyboard.h"
@@ -2788,6 +2790,45 @@ const char *system_func_name(GameWinSystemFunc system)
 	return "unknown";
 }
 
+// ADD-ONLY Stage-0b diagnostic: resolve a window's draw callback to a symbolic
+// name by direct pointer comparison against the linked W3D draw functions.
+// NULL or GameWinDefaultDraw here would indicate cause (c'-draw missing); a
+// real W3D*Draw confirms the HUD paint path is wired (paints-or-overdraw).
+const char *draw_func_name(GameWinDrawFunc draw)
+{
+	if (draw == NULL) {
+		return "null";
+	}
+	if (draw == GameWinDefaultDraw) {
+		return "GameWinDefaultDraw";
+	}
+	if (draw == W3DGameWinDefaultDraw) {
+		return "W3DGameWinDefaultDraw";
+	}
+	if (draw == W3DLeftHUDDraw) {
+		return "W3DLeftHUDDraw";
+	}
+	if (draw == W3DRightHUDDraw) {
+		return "W3DRightHUDDraw";
+	}
+	if (draw == W3DPowerDraw) {
+		return "W3DPowerDraw";
+	}
+	if (draw == W3DCommandBarBackgroundDraw) {
+		return "W3DCommandBarBackgroundDraw";
+	}
+	if (draw == W3DCommandBarTopDraw) {
+		return "W3DCommandBarTopDraw";
+	}
+	if (draw == W3DCommandBarGridDraw) {
+		return "W3DCommandBarGridDraw";
+	}
+	if (draw == W3DNoDraw) {
+		return "W3DNoDraw";
+	}
+	return "unknown";
+}
+
 void append_window_identity_json(std::string &json, GameWindow *window)
 {
 	if (window == NULL) {
@@ -2803,6 +2844,9 @@ void append_window_identity_json(std::string &json, GameWindow *window)
 	json += ",\"decoratedName\":\"" + json_escape(decorated_name) + "\"";
 	json += ",\"systemFunc\":\"";
 	json += system_func_name(window->winGetSystemFunc());
+	json += "\"";
+	json += ",\"drawFunc\":\"";
+	json += draw_func_name(window->winGetDrawFunc());
 	json += "\"";
 	json += ",\"hidden\":";
 	json += window->winIsHidden() ? "true" : "false";
@@ -2841,6 +2885,9 @@ void append_window_json(std::string &json, GameWindow *window, const char *reque
 	json += ",\"decoratedName\":\"" + json_escape(decorated_name) + "\"";
 	json += ",\"systemFunc\":\"";
 	json += system_func_name(window->winGetSystemFunc());
+	json += "\"";
+	json += ",\"drawFunc\":\"";
+	json += draw_func_name(window->winGetDrawFunc());
 	json += "\"";
 	json += ",\"x\":" + std::to_string(x);
 	json += ",\"y\":" + std::to_string(y);
@@ -3397,6 +3444,7 @@ void append_real_engine_client_state(std::string &json)
 
 	json += ",\"controlBarWindows\":{\"queried\":true";
 	append_window_probe(json, "parent", "ControlBar.wnd:ControlBarParent");
+	append_window_probe(json, "leftHud", "ControlBar.wnd:LeftHUD");
 	append_window_probe(json, "rightHud", "ControlBar.wnd:RightHUD");
 	append_window_probe(json, "moneyDisplay", "ControlBar.wnd:MoneyDisplay");
 	append_window_probe(json, "powerWindow", "ControlBar.wnd:PowerWindow");

@@ -412,6 +412,30 @@ async function main() {
     const active = await waitForSkirmishMatch(page);
     await page.locator("#viewport").screenshot({ path: screenshotPath });
 
+    // ADD-ONLY HUD geometry probe: one full realEngineFrame to capture the
+    // per-window control-bar geometry (drawFunc/systemFunc/x/y/w/h/hidden) so
+    // the bottom-strip pixels can be mapped to specific HUD windows. Read-only.
+    let controlBarWindows = null;
+    let controlBarWindowFull = null;
+    try {
+      const full = await runFrames(page, 1, "hud geometry probe");
+      const locate = (obj, keys, depth = 0) => {
+        if (!obj || typeof obj !== "object" || depth > 6) return undefined;
+        for (const k of keys) { if (obj[k] !== undefined) return obj[k]; }
+        for (const v of Object.values(obj)) {
+          if (v && typeof v === "object") {
+            const found = locate(v, keys, depth + 1);
+            if (found !== undefined) return found;
+          }
+        }
+        return undefined;
+      };
+      controlBarWindowFull = locate(full.frame, ["controlBarWindows"]) ?? null;
+      controlBarWindows = controlBarWindowFull;
+    } catch (error) {
+      controlBarWindows = { error: error?.message ?? String(error) };
+    }
+
     const mapCache = await rpc(page, "mapCacheProbe");
     const result = {
       ok: true,
@@ -428,6 +452,41 @@ async function main() {
       officialMultiplayerMaps: mapCache?.probe?.officialMultiplayerMaps ?? [],
       framesAdvancedAfterStart: active.framesAdvanced,
       finalGameplay: compactGameplay(active.result.frame),
+      // ADD-ONLY HUD diagnostics: full control-bar / shell / startNewGame state
+      // from the final active-match frame (read-only; does not gate anything).
+      hudDiagnostics: (() => {
+        // ADD-ONLY: walk the final frame to find the control-bar / shell /
+        // startNewGame state regardless of the exact nesting used by the RPC.
+        const f = active.result.frame ?? {};
+        const locate = (obj, keys, depth = 0) => {
+          if (!obj || typeof obj !== "object" || depth > 6) return undefined;
+          for (const k of keys) {
+            if (obj[k] !== undefined) return obj[k];
+          }
+          for (const v of Object.values(obj)) {
+            if (v && typeof v === "object") {
+              const found = locate(v, keys, depth + 1);
+              if (found !== undefined) return found;
+            }
+          }
+          return undefined;
+        };
+        const cb = locate(f, ["controlBar"]) ?? {};
+        const summary = locate(f, ["summary"]) ?? {};
+        const shell = locate(f, ["shell"]) ?? {};
+        return {
+          controlBarFound: cb.controlBarFound ?? summary.controlBarFound ?? null,
+          controlBarHidden: cb.controlBarHidden ?? summary.controlBarHidden ?? null,
+          controlBarManagerHidden: cb.controlBarManagerHidden ?? summary.controlBarManagerHidden ?? null,
+          controlBarClickable: cb.controlBarClickable ?? summary.controlBarClickable ?? null,
+          shellTopHidden: shell.topHidden ?? null,
+          shellTopFilename: shell.topFilename ?? null,
+          startNewGameShell: shell.startNewGameShell ?? null,
+          rawControlBar: cb,
+          rawShellKeys: Object.keys(shell),
+          controlBarWindows,
+        };
+      })(),
       samples: active.samples.slice(-12),
       screenshot: screenshotPath,
     };
