@@ -72,6 +72,7 @@ extern "C" void *cnc_port_campaign_manager_current_campaign(void *) __asm__("_ZN
 extern "C" void cnc_port_team_get_as_ai_group(void *, void *) __asm__("_ZN4Team16getTeamAsAIGroupEP7AIGroup") __attribute__((weak));
 extern "C" void *cnc_port_team_get_controlling_player(const void *) __asm__("_ZNK4Team20getControllingPlayerEv") __attribute__((weak));
 #endif
+#ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_AI_PATHFIND_RUNTIME
 extern "C" void cnc_port_pathfinder_classify_object_footprint(void *, void *, bool) __asm__("_ZN10Pathfinder23classifyObjectFootprintEP6Objectb") __attribute__((weak));
 extern "C" void cnc_port_pathfinder_classify_object_footprint(void *, void *, bool) {}
 extern "C" void *cnc_port_ai_player_ctor_c1(void *self, void *) __asm__("_ZN8AIPlayerC1EP6Player") __attribute__((weak));
@@ -82,6 +83,7 @@ extern "C" int cnc_port_ai_player_difficulty(const void *) __asm__("_ZNK8AIPlaye
 extern "C" int cnc_port_ai_player_difficulty(const void *) { return 0; }
 extern "C" void cnc_port_ai_player_pre_team_destroy(void *, const void *) __asm__("_ZN8AIPlayer16aiPreTeamDestroyEPK4Team") __attribute__((weak));
 extern "C" void cnc_port_ai_player_pre_team_destroy(void *, const void *) {}
+#endif
 extern "C" void *cnc_port_resource_gathering_manager_ctor_c1(void *self) __asm__("_ZN24ResourceGatheringManagerC1Ev") __attribute__((weak));
 extern "C" void *cnc_port_resource_gathering_manager_ctor_c1(void *self) { return self; }
 extern "C" void cnc_port_radar_remove_object(void *, void *) __asm__("_ZN5Radar12removeObjectEP6Object") __attribute__((weak));
