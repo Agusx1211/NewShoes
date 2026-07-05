@@ -32,6 +32,12 @@ draw/upload/readback cost.
 
 QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), control-bar HUD (controlBarCommandHud, top missing-UI), compressed/DXT volume textures.
 
+QUEUED render correctness: extend `shellmap_texture_label_capture.mjs` with a
+generated infantry texture assertion on the real shell-map/HLOD path (for
+`#-16711936#zhca_ui*.tga` ready/sampled/uploaded/non-white draws). Do not add a
+bare `MeshClass` probe for `AIRNGR_SKN`: the body mesh is skinned and should be
+verified through the original `WW3DAssetManager`/`HLodClass` ownership path.
+
 Dev-box render-verify: symlink worktree `dist/` → main's built `dist/` renders JS-only fixes without the Mac (~4min boot).
 
 ## Strategy pivot — real `init()` whole-program link (current focus)
