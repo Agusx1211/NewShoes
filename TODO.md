@@ -210,7 +210,16 @@ residue and the next frontier.
       once the next real map-load frame is current. The workaround still calls
       original `GameLogic::update()` (the W3D subclass does not override it),
       but it bypasses a null indirect-call slot hit on the first real logic
-      frame after shell shutdown.
+      frame after shell shutdown. NOTE (Fable audit): a null/wrong vtable
+      slot is exactly what a caller compiled against a different class
+      layout sees — likely a symptom of the mixed-ABI shim-header item
+      below. Its siblings `Thing::cncPortSetObjectPosition/Orientation`
+      (`Thing.cpp:197,280`, raw `static_cast<Object*>(this)` because
+      "virtual cast/reaction slots" failed) and
+      `Object::cncPortReactToTransformChangeFromThing` (`Object.cpp:602`)
+      are the same disease. After the shim-header unification lands, try
+      deleting all three workarounds and restoring original virtual
+      dispatch.
 - [ ] Migrate the legacy `ensure_booted()` probe boot and its harness gates
       onto the real lifecycle path, deleting probe-local implementations as
       real init covers them. First known casualty of real ownership: the
@@ -261,19 +270,64 @@ residue and the next frontier.
         TheParticleSystemManager/TheW3DShadowManager
         (`wasm_ww3d_scene_probe.cpp:500-501`), which argues against — so
         confirmation via bisection is still needed.
-- [ ] Audit and gate the remaining high-risk class-layout shim headers that
-      can shadow real runtime includes now that the real shell-map path proved
-      the same weak-inline hazard for `GameLogic/GameLogic.h`. Start with
-      `WebAssembly/shims/Common/GlobalData.h`,
-      `WebAssembly/shims/Common/INI.h`, and
-      `WebAssembly/shims/Common/STLTypedefs.h`; use target-scoped
-      real-header ownership for real lifecycle sources instead of broad
-      include-order churn that could break legacy probes.
+- [ ] **Kill the mixed-ABI shim-header system — PROVEN LIVE in the current
+      `cnc-port` link** (Fable audit 2026-07-05, verified via
+      `ninja -t deps` in `build/wasm`, not inferred). Seven shim headers
+      shadow real engine headers at identical include paths:
+      `shims/Common/{GlobalData,INI,STLTypedefs,GameAudio,Xfer}.h`,
+      `shims/GameLogic/GameLogic.h`,
+      `shims/GameNetwork/WOLBrowser/WebBrowser.h`. Which one a TU gets is
+      per-TU (include order + identical include guards + `#include_next` in
+      `shims/PreRTS.h:75` + per-target `WASM_USE_ORIGINAL_GLOBALDATA` /
+      `CNC_PORT_REAL_GAMELOGIC_HEADER` defines) with no enforcement.
+      Evidence in today's build: `TheGlobalData` is constructed real-layout
+      (338 fields, `SubsystemInterface` base → vptr) by
+      `zh_gameengine_globaldata_runtime`, while ~30 cnc-port TUs — including
+      real engine sources `GameNetwork/Network.cpp`,
+      `GameClient/Input/Keyboard.cpp`, `Win32CDManager.cpp` (compiled
+      directly into `cnc-port`, which lacks the define) — use the SHIM layout
+      (125 fields, no base, no vptr; every offset differs). `Network.cpp`
+      also gets the shim `GameLogic` (0 virtuals, inline `getFrame()` at a
+      fake `m_frame` offset) and makes 10 `TheGlobalData->m_network*` member
+      reads at wrong offsets — latent garbage that will detonate as fake
+      "network bugs" the moment M9 work starts. The shim GlobalData also
+      silently drops 213/338 fields (BuildSpeed, RefundPercent, regen,
+      camera, the `m_autoFire/Smoke/AflameParticle*` family).
+      Fix: the real headers all already compile under Emscripten — make them
+      the ONLY option (define the real-header switches globally, delete the
+      shim class bodies for these 7, fix the fallout), and add a CI gate that
+      runs the deps audit after every build and fails if any cnc-port TU
+      depends on an engine-path-shadowing shim header:
+      `ninja -t deps | awk '/: #deps/{tu=$1} /shims\/(Common\/(GlobalData|INI|STLTypedefs|GameAudio|Xfer)|GameLogic\/GameLogic)\.h/{print tu}' | grep cnc-port`
+      must come back empty. This is the same hazard class as the confirmed
+      d6d3b79 ChallengeGenerals stack corruption and the suspected
+      edgeMapperApply corrupter above — fix it once at the root instead of
+      per-incident.
 - [ ] Real-lifecycle residue: browser `ReleaseCrash`/`_exit` does not
       terminate the wasm runtime (teardown semantics differ from Windows);
       `TheVersion` is left null; `GameEngine::execute()` is stepped by
       per-frame RPC — move to `emscripten_set_main_loop` for continuous
       execution once the shell menu is interactive.
+- [ ] Delete `WebAssembly/src/wasm_terrain_probe_object.cpp` (1,289 lines):
+      a full alternate implementation of `Object` (own
+      `reactToTransformChange`, `addThreat`, …) referenced by NO CMake
+      target — dead shadow-implementation waiting to be re-linked by
+      accident (Fable audit 2026-07-05).
+- [ ] In-flight command-bar build-dispatch change (uncommitted on main as of
+      2026-07-05) — fix before landing: (a)
+      `FunctionLexicon::loadRuntimeTableForPort` (`FunctionLexicon.h:104`)
+      leaks the previously-injected table on repeat calls and the
+      once-per-lexicon guard lives in the caller
+      (`wasm_function_lexicon_runtime.cpp:122`) while the footgun is public
+      API in an engine header — move the guard into the method or free the
+      old runtime table; (b) `input_select_e2e.mjs:756` hard-gates the
+      selection e2e's `ok` on `commandBarProof.ok === true`, so any
+      command-bar flake regresses the previously-green selection signal —
+      gate `ok` on selection and report command-bar separately until proven
+      stable; (c) runtime lexicon injection is a second mechanism against
+      the same weak-stub/linker-GC root cause 18a9ea4 fixed by gating the
+      stub — prefer that pattern, or add a retirement TODO if injection
+      stays.
 - [ ] Burn down the remaining weak-symbol stubs and probe-local singletons in
       `WebAssembly/src/` as real subsystems link in; retire `-smoke` targets
       (and their open "promote to real ownership" TODO debt) once the real
@@ -2182,7 +2236,13 @@ and then start with the PROFILE, not with any individual fix.
 - [ ] Release (-O2) cnc-port build in a SEPARATE build dir
       (`build/wasm-release`) — multiplies whatever CPU share remains after
       the above; watch for optimizer-exposed UB in era code. Do not flip the
-      shared Debug dir's CMAKE_BUILD_TYPE.
+      shared Debug dir's CMAKE_BUILD_TYPE. (Fable audit: ALL current perf
+      numbers — Mac M4 "~38fps"/76.6ms `lastFrameMs`, SwiftShader medians —
+      were measured on the Debug `-O0 -g` build with `-sASSERTIONS=1` and
+      exception catching on; `build:port:release` exists but is never what
+      gets deployed. Re-measure on Release with `ASSERTIONS=0` BEFORE any
+      shim playbook surgery, and make Release the flavor rsynced to the Mac
+      `play.html` page — the owner is currently play-testing at -O0.)
 - [ ] Frame-time budget; profile hotspots (sim vs render).
 - [ ] Polish `harness/play.html` (human-driveable LAN page): per-archive mount
       progress, touch-input verification on a real phone, and a smaller
@@ -2226,6 +2286,17 @@ and then start with the PROFILE, not with any individual fix.
 - [ ] Keep the RPC command surface growing with each subsystem (boot, menu nav,
       unit select/move/order, match start/step, state + log readback).
 - [ ] Screenshot-diff regression suite for menus and in-game scenes.
+      Extend the pixel gating that skirmish-start already has
+      (`renderedObjectCount > 0` + non-black variance) to the per-map sweep
+      artifacts (`artifacts/skirmish/sweep-*.json` currently record
+      `renderedObjectCount` without asserting it), then add per-map
+      SwiftShader screenshot goldens with a tolerance diff. First golden to
+      add: a z-bias scene (bridges/overlays) so the 33641ab draw-order fix
+      can't silently regress.
+- [ ] Wire `setListenerPosition`/listener orientation updates from the real
+      camera into the browser MSS 3D path during gameplay — 3D panners
+      exist but the listener never moves, so positional audio won't track
+      the camera (Fable audit; M7 follow-up).
 - [ ] Deterministic-replay regression (record once, assert identical playback).
 - [ ] Net-sync regression (two clients, assert no desync).
 - [ ] Add per-step and page-RPC timeouts to long browser integration smokes.
@@ -2246,6 +2317,16 @@ and then start with the PROFILE, not with any individual fix.
 ## Cross-cutting: project hygiene
 
 - [ ] Keep `PROJECT.md`, `TODO.md`, and `DONE.md` updated as milestones move.
+- [ ] TODO.md cleanup pass: move the resolved `[x]` entries embedded in the
+      strategy-pivot section (MD_USA01 player control, black terrain) to
+      DONE.md, and retire the M1–M3 probe-era "promote to real ownership"
+      items the strategy pivot superseded.
+- [ ] `WebAssembly/shims/` contains a file literally named
+      `GameLogic\Weaponset.h` (backslash IN the filename, matching a
+      Windows-style `#include "GameLogic\WeaponSet.h"`). It works on
+      byte-sensitive filesystems but is a tooling/rsync/case-volume
+      landmine — verify intent, document it in shims/README, or replace
+      with `-include`/path normalization.
 - [ ] Track which original files are compiled, shimmed, or re-targeted (avoid
       accidental rewrites of platform-independent logic — see the hard rules).
 - [ ] Record every browser-API bridge so the original-vs-port boundary stays clear.
