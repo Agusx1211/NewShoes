@@ -185,6 +185,7 @@ extern "C" void cnc_port_terrain_tracks_init(void *, void *) __asm__("_ZN33Terra
 extern "C" void cnc_port_terrain_tracks_reset(void *) __asm__("_ZN33TerrainTracksRenderObjClassSystem5ResetEv") __attribute__((weak));
 extern "C" void cnc_port_terrain_tracks_set_detail(void *) __asm__("_ZN33TerrainTracksRenderObjClassSystem9setDetailEv") __attribute__((weak));
 #endif
+#ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_GAMEPLAY_QUERY_HELPERS
 extern "C" int cnc_port_game_logic_is_paused(void *) __asm__("_ZN9GameLogic12isGamePausedEv") __attribute__((weak));
 extern "C" const void *cnc_port_ai_state_goal_path_position(const void *, int) __asm__("_ZNK14AIStateMachine19getGoalPathPositionEi") __attribute__((weak));
 extern "C" int cnc_port_partition_geom_collides(const void *, const void *, const void *, float, const void *, const void *, float) __asm__("_ZNK16PartitionManager20geomCollidesWithGeomEPK7Coord3DRK12GeometryInfofS2_S5_f") __attribute__((weak));
@@ -215,6 +216,7 @@ extern "C" void *cnc_port_bridge_behavior_interface(void *) __asm__("_ZN14Bridge
 extern "C" void *cnc_port_bridge_tower_behavior_interface(void *) __asm__("_ZN19BridgeTowerBehavior41getBridgeTowerBehaviorInterfaceFromObjectEP6Object") __attribute__((weak));
 extern "C" void cnc_port_game_logic_destroy_object(void *, void *) __asm__("_ZN9GameLogic13destroyObjectEP6Object") __attribute__((weak));
 extern "C" void *cnc_port_game_logic_get_first_object(void *) __asm__("_ZN9GameLogic14getFirstObjectEv") __attribute__((weak));
+#endif
 
 #ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_BRIDGE_SCRIPT_RUNTIME
 extern "C" void *cnc_port_bridge_info_ctor_c1(void *self) { return self; }
@@ -321,6 +323,7 @@ extern "C" void cnc_port_terrain_tracks_init(void *, void *) {}
 extern "C" void cnc_port_terrain_tracks_reset(void *) {}
 extern "C" void cnc_port_terrain_tracks_set_detail(void *) {}
 #endif
+#ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_GAMEPLAY_QUERY_HELPERS
 extern "C" int cnc_port_game_logic_is_paused(void *) { return 0; }
 extern "C" const void *cnc_port_ai_state_goal_path_position(const void *, int) { return nullptr; }
 extern "C" int cnc_port_partition_geom_collides(const void *, const void *, const void *, float, const void *, const void *, float) { return 0; }
@@ -351,3 +354,4 @@ extern "C" void *cnc_port_bridge_behavior_interface(void *) { return nullptr; }
 extern "C" void *cnc_port_bridge_tower_behavior_interface(void *) { return nullptr; }
 extern "C" void cnc_port_game_logic_destroy_object(void *, void *) {}
 extern "C" void *cnc_port_game_logic_get_first_object(void *) { return nullptr; }
+#endif

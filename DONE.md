@@ -8304,6 +8304,29 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       direct `llvm-nm --demangle` checks, `EXPECT_WASM=1 node
       WebAssembly/harness/smoke.mjs`, and `node
       WebAssembly/harness/startup_vertical_smoke.mjs`.
+- [x] Gate the remaining W3D terrain-stub gameplay/query helper weak group out
+      of the real `cnc-port` runtime. `cnc-port` now defines
+      `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_GAMEPLAY_QUERY_HELPERS`, so
+      `wasm_ww3d_terrain_probe_stubs.cpp` no longer emits weak declarations or
+      fallback bodies for `GameLogic::isGamePaused`,
+      `AIStateMachine::getGoalPathPosition`, the six `PartitionManager`
+      query/shroud helpers, `AIUpdateInterface::friend_getWaypointGoalPathSize`,
+      `W3DModelDrawModuleData::getBestModelNameForWB`, `Thing::getTemplate`,
+      `Thing::setPosition`, `Thing::setOrientation`, `Drawable::getID`, the
+      eight `Object` query/damage/boundary helpers, the four `Pathfinder`
+      wall/bridge helpers, `BridgeBehavior::getBridgeBehaviorInterfaceFromObject`,
+      `BridgeTowerBehavior::getBridgeTowerBehaviorInterfaceFromObject`,
+      `GameLogic::destroyObject`, or `GameLogic::getFirstObject` in the real
+      link. The weak audit now reports 9 compiled weak definitions, 177
+      gated-out declarations, and 7 strong-provider overlaps, with
+      `wasm_ww3d_terrain_probe_stubs.cpp` reduced to the single no-provider
+      `RunBenchmark` weak boundary. Direct `llvm-nm` checks show the terrain-stub
+      object no longer defines any gameplay/query C++ weak aliases. Verified with
+      `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly --silent run verify:cnc-port-weak-stubs`,
+      direct `llvm-nm --demangle` checks, `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs`, and `node
+      WebAssembly/harness/startup_vertical_smoke.mjs`.
 - [x] Add a `cnc-port` weak-stub audit for the Fable weak-symbol burn-down.
       `WebAssembly/tools/verify_cnc_port_weak_stubs.mjs` parses the explicit
       `__attribute__((weak))` declarations in the W3D render/scene/terrain
