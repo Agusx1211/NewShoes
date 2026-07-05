@@ -1224,7 +1224,7 @@ function summarizeBrowserMssStreamPlaybackRuntime() {
     ready:
       browserAudioRuntime.context?.state === "running" &&
       browserAudioMixerRuntime.created === true,
-    runtimePlayback: browserMssStreamPlaybackRuntime.started > 0,
+    runtimePlayback: browserMssStreamPlaybackRuntime.scheduled > 0,
     engineDriven: false,
     mssDriven: true,
     nextRequired: "realMilesAudioManagerStreamPlayback",
@@ -1235,6 +1235,8 @@ function summarizeBrowserMssStreamPlaybackRuntime() {
       "AudioDestinationNode",
     ],
     started: browserMssStreamPlaybackRuntime.started,
+    decoded: browserMssStreamPlaybackRuntime.decoded,
+    scheduled: browserMssStreamPlaybackRuntime.scheduled,
     stopped: browserMssStreamPlaybackRuntime.stopped,
     ended: browserMssStreamPlaybackRuntime.ended,
     activeSources: browserMssStreamPlaybackRuntime.activeSources.size,
@@ -1583,15 +1585,41 @@ function cncPortMss3DSampleRelease(payload) {
 // ---- Stream Web Audio handlers (music) ----
 
 const browserMssStreamPlaybackRuntime = {
+  source: "MSS stream Web Audio backend proof",
   activeSources: new Map(), // handle -> { source, gain }
   pendingStarts: new Map(), // handle -> { cancelled: bool }
   started: 0,
+  decoded: 0,
+  scheduled: 0,
   stopped: 0,
   ended: 0,
   eventLog: [],
   lastEvent: null,
   lastError: null,
 };
+
+function resetBrowserMssStreamPlaybackRuntime() {
+  for (const active of browserMssStreamPlaybackRuntime.activeSources.values()) {
+    try {
+      active.source.onended = null;
+      active.source.stop();
+      active.source.disconnect();
+    } catch {
+      // Already stopped or ended.
+    }
+  }
+  browserMssStreamPlaybackRuntime.activeSources.clear();
+  browserMssStreamPlaybackRuntime.pendingStarts.clear();
+  browserMssStreamPlaybackRuntime.started = 0;
+  browserMssStreamPlaybackRuntime.decoded = 0;
+  browserMssStreamPlaybackRuntime.scheduled = 0;
+  browserMssStreamPlaybackRuntime.stopped = 0;
+  browserMssStreamPlaybackRuntime.ended = 0;
+  browserMssStreamPlaybackRuntime.musicSourceActive = false;
+  browserMssStreamPlaybackRuntime.eventLog = [];
+  browserMssStreamPlaybackRuntime.lastEvent = null;
+  browserMssStreamPlaybackRuntime.lastError = null;
+}
 
 function cncPortMssStreamStart(payload) {
   // Kick off async load; return true immediately to keep C++ state machine happy.
@@ -1639,7 +1667,7 @@ async function _startMssStreamAsync(payload) {
     playbackRate: Number(payload.playbackRate ?? 44100),
   };
 
-  // Load WAV bytes from mounted archive (stream data is in BIG archives).
+  // Load stream bytes from mounted BIG archives.
   const wasmModule = await wasmModulePromise;
   if (!wasmModule) {
     browserMssStreamPlaybackRuntime.lastError = "WASM module not available";
@@ -1684,35 +1712,39 @@ async function _startMssStreamAsync(payload) {
     return;
   }
 
-  // Extract WAV bytes from archive entry.
-  const wavBytes = archiveBytes.subarray(entry.offset, entry.offset + entry.size);
+  const payloadBytes = archiveBytes.subarray(entry.offset, entry.offset + entry.size);
 
-  // Decode WAV payload (PCM or IMA ADPCM) — reuses the same path as sample playback.
   let decoded;
   try {
-    decoded = decodeAudioWavPayload(wavBytes);
+    decoded = await decodeMssStreamPayload(context, payloadBytes, entry);
   } catch (err) {
     browserMssStreamPlaybackRuntime.lastError =
-      `Failed to decode stream WAV: ${err?.message ?? String(err)}`;
+      `Failed to decode stream payload: ${err?.message ?? String(err)}`;
     return;
   }
 
-  const decodedFrames = Math.floor(decoded.samples.length / decoded.info.channels);
+  browserMssStreamPlaybackRuntime.decoded += 1;
+  browserMssStreamPlaybackRuntime.eventLog.push({
+    handle,
+    phase: "webAudioDecode",
+    filename,
+    archive: entry.archive,
+    path: entry.path,
+    codec: decoded.info.codec,
+    decodedBy: decoded.decodedBy,
+    decodedFrames: decoded.decodedFrames,
+  });
 
   // Build audio graph: source → gain → music bus.
   const source = context.createBufferSource();
   const gain = context.createGain();
-  source.buffer = createWebAudioBufferFromDecoded(context, {
-    info: decoded.info,
-    samples: decoded.samples,
-    decodedFrames,
-  });
+  source.buffer = createWebAudioBufferFromDecoded(context, decoded);
   // Music streams loop by default; honour loopCount > 1.
   source.loop = loopCount < 0 || loopCount > 1;
   gain.gain.value = volume;
   source.connect(gain);
   gain.connect(busNode);
-  source.start(0);
+  source.start(context.currentTime);
 
   // Mirror the sample path's onended cleanup so non-looping streams
   // are removed from activeSources and musicSourceActive is updated.
@@ -1735,6 +1767,32 @@ async function _startMssStreamAsync(payload) {
 
   browserMssStreamPlaybackRuntime.activeSources.set(handle, { source, gain });
   browserMssStreamPlaybackRuntime.musicSourceActive = true;
+  browserMssStreamPlaybackRuntime.scheduled += 1;
+  browserMssStreamPlaybackRuntime.lastEvent = {
+    handle,
+    phase: "scheduled",
+    filename,
+    archive: entry.archive,
+    path: entry.path,
+    volume,
+    loopCount,
+    playbackRate: Number(payload.playbackRate ?? decoded.info.samplesPerSec),
+    payload: {
+      extension: audioPayloadExtension(entry.path),
+      magic: audioPayloadMagic(payloadBytes.subarray(0, Math.min(64, payloadBytes.byteLength))),
+      bytes: payloadBytes.byteLength,
+      codec: decoded.info.codec,
+      channels: decoded.info.channels,
+      samplesPerSec: decoded.info.samplesPerSec,
+      decodedBy: decoded.decodedBy,
+      decodedFrames: decoded.decodedFrames,
+      decodedFloatBytes: decoded.decodedFloatBytes ?? audioBufferDecodedFloatBytes(source.buffer),
+    },
+    startSeconds: Number(context.currentTime.toFixed(6)),
+    durationSeconds: Number(source.buffer.duration.toFixed(6)),
+    nodeGraph: ["AudioBufferSourceNode", "GainNode", "musicGainNode", "AudioDestinationNode"],
+  };
+  browserMssStreamPlaybackRuntime.lastError = null;
 }
 
 function cncPortMssStreamStop(payload) {
@@ -1758,6 +1816,60 @@ function cncPortMssStreamStop(payload) {
     browserMssStreamPlaybackRuntime.musicSourceActive = false;
   }
   return true;
+}
+
+async function decodeMssStreamPayload(context, bytes, entry) {
+  const extension = audioPayloadExtension(entry.path);
+  const magic = audioPayloadMagic(bytes.subarray(0, Math.min(64, bytes.byteLength)));
+  if (extension === "mp3" && (magic === "mp3-id3" || magic === "mp3-frame")) {
+    if (typeof context.decodeAudioData !== "function") {
+      throw new Error("AudioContext.decodeAudioData is unavailable for MP3 stream");
+    }
+    const audioBuffer = await context.decodeAudioData(clonePayloadArrayBuffer(bytes));
+    return {
+      audioBuffer,
+      info: {
+        codec: magic,
+        channels: audioBuffer.numberOfChannels,
+        samplesPerSec: audioBuffer.sampleRate,
+        webAudioDecoded: true,
+      },
+      decodedBy: "WebAudio.decodeAudioData",
+      decodedFrames: audioBuffer.length,
+      decodedFloatBytes: audioBufferDecodedFloatBytes(audioBuffer),
+    };
+  }
+
+  if (extension === "wav" && magic === "riff-wave") {
+    const decoded = decodeAudioWavPayload(bytes);
+    return {
+      ...decoded,
+      decodedBy: "browser WAV decoder",
+      decodedFrames: Math.floor(decoded.samples.length / decoded.info.channels),
+    };
+  }
+
+  throw new Error(`unsupported stream payload ${entry.path} (${extension || "no-extension"}, ${magic})`);
+}
+
+function delay(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+async function waitForBrowserMssStreamStart(handle, timeoutMs = 5000) {
+  const start = performance.now();
+  while (performance.now() - start < timeoutMs) {
+    if (browserMssStreamPlaybackRuntime.activeSources.has(Number(handle))) {
+      return true;
+    }
+    if (browserMssStreamPlaybackRuntime.lastError) {
+      throw new Error(browserMssStreamPlaybackRuntime.lastError);
+    }
+    await delay(25);
+  }
+  throw new Error(`MSS stream ${handle} Web Audio start timed out`);
 }
 
 async function waitForBrowserMssSamplePlayback(handle, timeoutMs = 2000) {
@@ -23403,6 +23515,72 @@ async function rpc(command, payload = {}) {
             && probe.nextRequired === "webAudioPlaybackBackend",
           command,
           probe,
+          state: snapshotState(),
+        };
+      }
+    case "mssStreamPlaybackProbe":
+      {
+        const archiveName = String(payload.archive ?? "Music.big");
+        const entryPath = String(payload.path ?? "Data\\Audio\\Tracks\\USA_01.mp3");
+        const mounted = harnessState.mountedArchives.find((archive) =>
+          archive.name === archiveName || archive.sourceName === archiveName);
+        if (!mounted) {
+          return { ok: false, command, error: `archive ${archiveName} is not mounted` };
+        }
+        if (browserAudioRuntime.context?.state !== "running") {
+          return { ok: false, command, error: "AudioContext is not running" };
+        }
+        resetBrowserMssStreamPlaybackRuntime();
+        const handle = Number(payload.handle ?? 33001);
+        const started = cncPortMssStreamStart({
+          handle,
+          filename: entryPath,
+          volume: Number(payload.volume ?? 96),
+          loopCount: Number(payload.loopCount ?? 1),
+          playbackRate: Number(payload.playbackRate ?? 44100),
+        });
+        let startError = null;
+        try {
+          await waitForBrowserMssStreamStart(handle, Number(payload.timeoutMs ?? 8000));
+        } catch (error) {
+          startError = error?.message ?? String(error);
+          browserMssStreamPlaybackRuntime.lastError = startError;
+        }
+        const afterStart = summarizeBrowserMssStreamPlaybackRuntime();
+        const stopAfterStart = payload.stopAfterStart !== false;
+        let afterStop = null;
+        if (stopAfterStart) {
+          cncPortMssStreamStop({ handle });
+          await delay(50);
+          afterStop = summarizeBrowserMssStreamPlaybackRuntime();
+        }
+        const scheduledPayload = afterStart.lastEvent?.payload ?? null;
+        const ok = started === true
+          && startError === null
+          && afterStart.ready === true
+          && afterStart.runtimePlayback === true
+          && afterStart.decoded === 1
+          && afterStart.scheduled === 1
+          && afterStart.activeSources === 1
+          && afterStart.musicSourceActive === true
+          && afterStart.lastError === null
+          && afterStart.lastEvent?.path === entryPath
+          && scheduledPayload?.extension === "mp3"
+          && (scheduledPayload?.magic === "mp3-id3" || scheduledPayload?.magic === "mp3-frame")
+          && scheduledPayload?.decodedBy === "WebAudio.decodeAudioData"
+          && (scheduledPayload?.decodedFrames ?? 0) > 0
+          && (!stopAfterStart
+            || (afterStop?.activeSources === 0
+              && afterStop?.musicSourceActive === false
+              && afterStop?.stopped === 1));
+        return {
+          ok,
+          command,
+          archive: archiveName,
+          path: entryPath,
+          startError,
+          afterStart,
+          afterStop,
           state: snapshotState(),
         };
       }

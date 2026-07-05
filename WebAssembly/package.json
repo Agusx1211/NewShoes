@@ -158,6 +158,7 @@
     "test:miles-audio-open-device": "npm run build:wasm && node dist/miles-audio-open-device-smoke.cjs",
     "test:miles-audio-play-sample": "npm run build:wasm && node dist/miles-audio-play-sample-smoke.cjs",
     "test:browser-audio-request-path": "npm run build:wasm && npm run extract:runtime-archives && node harness/audio_request_path_smoke.mjs",
+    "test:browser-audio-mss-stream": "npm run build:port && npm run extract:runtime-archives && node harness/mss_stream_playback_smoke.mjs",
     "test:browser-audio-miles-webaudio-vertical": "npm run build:wasm && npm run extract:runtime-archives && node harness/audio_miles_webaudio_vertical_smoke.mjs",
     "test:gamenetwork-core": "npm run build:wasm && node dist/gamenetwork-core-smoke.cjs",
     "test:browser-network-two-contexts": "npm run build:wasm && node harness/network_two_contexts_smoke.mjs",

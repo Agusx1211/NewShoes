@@ -222,12 +222,13 @@ residue and the next frontier.
       the smoke.mjs cursor-hidden probe assertion once W3DMouse cursor rendering
       (the game's own cursor) is ported — currently hardcoded css="default" to
       avoid a cursorless UI (see e97628f).
-- [ ] **Audio honesty gap from 6d433cc**: 3D sample path is real, but music
-      does NOT reach the AudioContext — `cncPortMssStreamStart` is a
-      console.log metadata stub with a "TODO: load stream WAV from archive";
-      the commit message overclaims. Implement the stream path and add a smoke
-      asserting an audible-graph node exists for music. Also `refDistance` is
-      hardcoded 1.0 while Miles `minDistance` is passed but unused.
+- [ ] Harness-drive live original `MilesAudioManager` music/stream requests
+      from real boot or skirmish into the browser MSS stream backend. The
+      bridge now decodes mounted `Music.big` MP3 streams through Web Audio, but
+      the remaining proof must show an engine-owned `AudioManager::addAudioEvent`
+      / `MilesAudioManager::processRequest` stream reaches
+      `cncPortMssStreamStart` during real gameplay, with volume/fade/stop state
+      observable through the harness.
 - [ ] Debug and Release builds both link into the same `dist/cnc-port.js` and
       silently clobber each other — give the Release lane its own dist output
       (or an explicit copy step) so a `build:port:release` doesn't invalidate

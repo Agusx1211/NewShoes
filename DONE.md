@@ -6480,6 +6480,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       Verified with `npm --prefix WebAssembly run test:runtime-archives-browser`,
       `npm --prefix WebAssembly run test:startup-vertical`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Add browser-backed MSS music stream playback for mounted MP3 tracks.
+      `cncPortMssStreamStart` now loads the requested stream from mounted BIG
+      archives, decodes MP3 payloads through `AudioContext.decodeAudioData`
+      and WAV payloads through the existing browser WAV decoder, then schedules
+      an `AudioBufferSourceNode -> GainNode -> musicGainNode ->
+      AudioDestinationNode` graph. The new `mssStreamPlaybackProbe` RPC and
+      `harness/mss_stream_playback_smoke.mjs` mount the full base
+      `base-generals/Music.big` as `Music.big`, resume Web Audio through the
+      canvas gesture path, decode `Data\Audio\Tracks\USA_01.mp3`, prove
+      9,489,345 decoded MP3 frames / 197.694687 seconds, and stop the active
+      stream cleanly. Verified with
+      `npm --prefix WebAssembly run test:browser-audio-mss-stream`.
 - [x] Make the first MSS startup/device boundary stateful and
       harness-observable. `Mss.H` now records redist directory, startup,
       shutdown, quick-startup arguments, and file callbacks, and returns
