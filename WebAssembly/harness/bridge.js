@@ -6430,12 +6430,11 @@ function d3dMaterialSourceName(source) {
 
 function d3d8DepthBiasInfo(zBias) {
   const raw = Number(zBias ?? 0) >>> 0;
-  const clamped = Math.max(0, Math.min(15, raw));
-  return {
-    raw,
-    clamped,
-    ndc: clamped / 65536.0,
-  };
+  const clamped = Math.max(0, Math.min(16, raw));
+  // Shader applies gl_Position.z -= ndc * w (constant NDC bias of -ndc) => [0,1] depth bias = -ndc/2.
+  // D3D8 24/32-bit target uses -ZBias/((1<<20)-1) (d3d8to9 CalcDepthBias). So ndc = 2*clamped/((1<<20)-1).
+  const D3D8_DEPTH_BIAS_DENOM = (1 << 20) - 1;
+  return { raw, clamped, ndc: (2.0 * clamped) / D3D8_DEPTH_BIAS_DENOM };
 }
 
 function d3d8PointSpriteInfo(renderState, primitiveType, viewport) {
