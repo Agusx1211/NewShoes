@@ -7645,6 +7645,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       engine `lastFrameMs`; `realEngineFrameTick` measured 77.4 ms/frame wall
       with 76.5 ms engine `lastFrameMs`, removing most wrapper overhead from
       the interactive loop.
+- [x] Remove leftover per-draw diagnostic work from the `diag=lite` runtime
+      path. `paintD3D8DrawIndexed` no longer walks vertex/index buffers to
+      build projected bounds and triangle diagnostics when those probe objects
+      are immediately discarded, and the hot draw path no longer queries and
+      restores `ACTIVE_TEXTURE` around stage 0/1 binds. Full diagnostics still
+      collect the same draw-history fields for regression harnesses. Verified
+      with `node --check WebAssembly/harness/bridge.js`,
+      `PERF_PROFILE_FRAMES=15 PERF_PROFILE_WARMUP_FRAMES=2
+      PERF_PROFILE_SETTLE_FRAMES=8 PERF_PROFILE_BATCH=1
+      PERF_PROFILE_FRAME_COMMAND=realEngineFrameTick node
+      harness/runtime_frame_profile.mjs`, and
+      `node harness/weapon_impact_fx_smoke.mjs`. The local SwiftShader
+      shell-map tick profile now reports measured post-settle engine frames in
+      the 29.0-39.9 ms range (32.7 ms median); wall time still shows a one-time
+      first-frame upload stall, with steady measured frames around 100 ms wall
+      on the shared software renderer. The synced Mac M4 Chrome/Metal run
+      (`ANGLE Metal Renderer: Apple M4`) reports 27.8 ms/frame wall average and
+      26.3 ms median engine time for the same 15 measured post-settle frames.
 
 ### Content completeness (Zero Hour)
 - [x] Restore original `FXList::doFXPos` playback in the linked `cnc-port`

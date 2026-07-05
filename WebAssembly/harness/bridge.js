@@ -7726,35 +7726,38 @@ function paintD3D8DrawIndexed(payload = {}) {
   let appliedShadeMode = null;
   let vertexDiagnostics = null;
   let drawOk = false;
+  const collectDrawDiagnostics = d3d8DiagLevel === "full";
   syncCanvasSize();
   appliedViewport = applyD3D8Viewport("draw");
-  vertexDiagnostics = inspectD3D8DrawVertices(
-    vertexResource,
-    vertexByteOffset,
-    vertexStride,
-    vertexCount,
-    vertexLayout,
-    useTransforms ? { world, view, projection } : null,
-    appliedViewport,
-    indexResource,
-    indexByteOffset,
-    indexCount,
-    indexSize,
-  );
-  if (vertexDiagnostics) {
-    vertexDiagnostics.triangles = inspectD3D8IndexedTriangles(
+  if (collectDrawDiagnostics) {
+    vertexDiagnostics = inspectD3D8DrawVertices(
       vertexResource,
       vertexByteOffset,
       vertexStride,
+      vertexCount,
+      vertexLayout,
+      useTransforms ? { world, view, projection } : null,
+      appliedViewport,
       indexResource,
       indexByteOffset,
       indexCount,
       indexSize,
-      payload.primitiveType,
-      useTransforms ? { world, view, projection } : null,
     );
+    if (vertexDiagnostics) {
+      vertexDiagnostics.triangles = inspectD3D8IndexedTriangles(
+        vertexResource,
+        vertexByteOffset,
+        vertexStride,
+        indexResource,
+        indexByteOffset,
+        indexCount,
+        indexSize,
+        payload.primitiveType,
+        useTransforms ? { world, view, projection } : null,
+      );
+    }
   }
-  const preDrawCenterPixel = d3d8DiagLevel === "full"
+  const preDrawCenterPixel = collectDrawDiagnostics
     ? sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2))
     : null;
   let centerPixel = preDrawCenterPixel;
@@ -7837,7 +7840,6 @@ function paintD3D8DrawIndexed(payload = {}) {
     // Per-draw texture binding: ALWAYS executed (texture handles are NOT in
     // the state hash — same render state can draw with different textures).
     if (canSampleTexture0) {
-      const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, texture0Resource.texture);
       appliedTexture0Sampler = applyD3D8TextureSamplerToBoundTexture(
@@ -7845,10 +7847,8 @@ function paintD3D8DrawIndexed(payload = {}) {
         renderState.textureStages[0],
         texture0Resource,
       );
-      gl.activeTexture(previousActiveTexture);
     }
     if (canSampleTexture1) {
-      const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, texture1Resource.texture);
       appliedTexture1Sampler = applyD3D8TextureSamplerToBoundTexture(
@@ -7856,7 +7856,6 @@ function paintD3D8DrawIndexed(payload = {}) {
         renderState.textureStages[1],
         texture1Resource,
       );
-      gl.activeTexture(previousActiveTexture);
     }
     // Apply hash-covered GL state and shader uniforms only when changed. The
     // native hash covers transforms, material, lights, render states,
