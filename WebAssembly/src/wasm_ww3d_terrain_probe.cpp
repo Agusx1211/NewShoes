@@ -5849,11 +5849,19 @@ ProbeLogicalMapObjectLoadMetrics load_probe_logical_terrain_map_objects(
 
 } // namespace
 
-View *TheTacticalView __attribute__((weak)) = nullptr;
 class WaterRenderObjClass;
 class TerrainTracksRenderObjClassSystem;
 class W3DSmudgeManager;
 class W3DProjectedShadowManager;
+
+extern View *TheTacticalView;
+extern WaterRenderObjClass *TheWaterRenderObj;
+extern TerrainTracksRenderObjClassSystem *TheTerrainTracksRenderObjClassSystem;
+extern W3DSmudgeManager *TheSmudgeManager;
+extern W3DProjectedShadowManager *TheW3DProjectedShadowManager;
+
+#ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_OWNERS
+View *TheTacticalView __attribute__((weak)) = nullptr;
 WaterRenderObjClass *TheWaterRenderObj __attribute__((weak)) = nullptr;
 TerrainTracksRenderObjClassSystem *TheTerrainTracksRenderObjClassSystem __attribute__((weak)) = nullptr;
 W3DSmudgeManager *TheSmudgeManager __attribute__((weak)) = nullptr;
@@ -5889,6 +5897,7 @@ Bool __attribute__((weak)) PolygonTrigger::ParsePolygonTriggersDataChunk(DataChu
 void __attribute__((weak)) PolygonTrigger::deleteTriggers(void)
 {
 }
+#endif
 
 const char *run_ww3d_terrain_tile_probe(
 	std::string &target_json,

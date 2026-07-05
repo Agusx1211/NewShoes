@@ -8078,6 +8078,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       verify:cnc-port-weak-stubs`, `EXPECT_WASM=1 node
       WebAssembly/harness/smoke.mjs`, and `node
       WebAssembly/harness/startup_vertical_smoke.mjs`.
+- [x] Gate the W3D terrain probe weak owner block out of the real
+      `cnc-port` runtime. `cnc-port` now defines
+      `CNC_PORT_LINKS_REAL_W3D_TERRAIN_OWNERS`, so
+      `wasm_ww3d_terrain_probe.cpp` keeps extern declarations but no longer
+      emits weak definitions for `TheTacticalView`, `TheWaterRenderObj`,
+      `TheTerrainTracksRenderObjClassSystem`, `TheSmudgeManager`,
+      `TheW3DProjectedShadowManager`, the `RTS3DScene` light-iterator
+      helpers, `ScriptList` script chunk helpers, or `PolygonTrigger` chunk
+      helpers in the real link. The weak audit now reports 138 compiled weak
+      definitions, 48 gated-out declarations, and 136 strong-provider
+      overlaps, with the terrain probe at zero compiled explicit weak
+      declarations. Direct `llvm-nm` checks show the `cnc-port` terrain-probe
+      object no longer defines those weak symbols, while linked real archives
+      provide the owner symbols. Verified with `npm --prefix WebAssembly run
+      build:port`, `npm --prefix WebAssembly --silent run
+      verify:cnc-port-weak-stubs`, `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs`, and `node
+      WebAssembly/harness/startup_vertical_smoke.mjs`.
 - [x] Add a `cnc-port` weak-stub audit for the Fable weak-symbol burn-down.
       `WebAssembly/tools/verify_cnc_port_weak_stubs.mjs` parses the explicit
       `__attribute__((weak))` declarations in the W3D render/scene/terrain
