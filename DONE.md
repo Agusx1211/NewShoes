@@ -6542,6 +6542,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       Verified with `npm --prefix WebAssembly run test:runtime-archives-browser`,
       `npm --prefix WebAssembly run test:startup-vertical`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Stage the real base-Generals `Music.big` through
+      `extract_zh_runtime_archives.sh`. The script extracts `Music.big` from
+      base Generals CD1 `Data1.cab` into
+      `artifacts/real-assets/base-generals/Music.big`, avoiding the 786KB Zero
+      Hour copy-protection stub at `artifacts/real-assets/Music.big`; the
+      current artifact is 158,818,808 bytes and is the archive mounted by the
+      MSS stream playback harness. Verified by direct script inspection,
+      `git merge-base --is-ancestor 78eb925 main`, and the existing
+      `test:browser-audio-mss-stream` proof below.
 - [x] Add browser-backed MSS music stream playback for mounted MP3 tracks.
       `cncPortMssStreamStart` now loads the requested stream from mounted BIG
       archives, decodes MP3 payloads through `AudioContext.decodeAudioData`

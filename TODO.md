@@ -18,11 +18,7 @@ shares structure and follows behind.
 
 ## Current integration status (autonomous session)
 
-MERGED to `main` (verified, clean, green build): perf-drawstate (state-skip perf + geometry/texture correctness fixes), zorder-fix (RTT null-FBO depth-pollution fix — 0 FBO failures), audio-ini-fix (non-Default audio INI entries → audio subsystem inits), live-skirmish-start, mounted MSS stream playback.
-
-VERIFIED pending merge: dxt-cpu-fallback (CPU DXT1/3/5→RGBA fallback for missing textures; decode correctness proven by exact-value tests; render-verify in progress).
-
-READY pending apply: music fix — `feat/audio-ini-fix` commit 78eb925 rewrites `tools/extract_zh_runtime_archives.sh` to stage the REAL 158MB base-Generals Music.big (from `assets/Generals-CD1/Data1.cab`) instead of the 786KB ZH copy-protection stub. Extraction dry-run-verified. Running it fixes the pre-existing phase2 `music_not_loaded_would_set_quitting` gate failure and makes music play. Apply after concurrent harness boots settle.
+MERGED to `main` (verified, clean, green build): perf-drawstate (state-skip perf + geometry/texture correctness fixes), zorder-fix (RTT null-FBO depth-pollution fix — 0 FBO failures), audio-ini-fix (non-Default audio INI entries → audio subsystem inits plus base-Generals `Music.big` extraction), live-skirmish-start, mounted MSS stream playback, DXT CPU fallback and DXT1/2/3/4/5 browser draw coverage.
 
 RECENT: the live skirmish menu/options/start transition now loads Alpine
 Assault into an active real match on Mac Chrome/Metal. Remaining skirmish work
@@ -440,12 +436,6 @@ residue and the next frontier.
       browser boundary used by `SkirmishMapSelectMenu` with a split original
       LAN preferences owner or final browser preferences storage once that can
       be done without linking the LAN lobby/GameSpy flow into `cnc-port`.
-- [ ] Stage base-Generals `Music.big` in `extract_zh_runtime_archives.sh`
-      (currently manually extracted via
-      `cabextract -F Music.big` from the Generals CD1 `Data1.cab` into
-      `artifacts/real-assets/base-generals/Music.big`, as documented in
-      `harness/startup_vertical_smoke.mjs`); the owned
-      `isMusicAlreadyLoaded()` startup check needs it.
 - [ ] Purge the legacy target-local `Common/INI.h` compile shim: its 12-byte
       `INI` class ODR-collides with the real `INI.cpp` symbols at -O0, so any
       shim-world `INI ini;` local runs the real ctor over a 12-byte slot and
