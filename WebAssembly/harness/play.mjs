@@ -3,6 +3,8 @@
 // realEngineInit -> realEngineFrame loop). Mouse/keyboard/touch input already
 // flows through bridge.js canvas listeners into the engine's Win32 queue.
 
+import { createIssueRecorder } from "./issue-recorder.mjs";
+
 const archiveSpecs = [
   { name: "INIZH.big" },
   { name: "EnglishZH.big" },
@@ -31,6 +33,48 @@ const overlay = document.querySelector("#overlay");
 const startButton = document.querySelector("#start");
 const progressNode = document.querySelector("#progress");
 const fpsNode = document.querySelector("#fps");
+const viewportCanvas = document.querySelector("#viewport");
+let configuredDiagLevel = "full";
+
+function setConfiguredDiagLevel(level, { updateBridge = true } = {}) {
+  if (level !== "full" && level !== "lite") {
+    return configuredDiagLevel;
+  }
+  configuredDiagLevel = level;
+  if (updateBridge && typeof window.__cncSetDiagLevel === "function") {
+    window.__cncSetDiagLevel(level);
+  }
+  return configuredDiagLevel;
+}
+
+const issueRecorder = createIssueRecorder({
+  canvas: viewportCanvas,
+  archiveSpecs,
+  buildArchives,
+  statusNode: document.querySelector("#dumpStatus"),
+  getConfiguredDiagLevel: () => configuredDiagLevel,
+  setConfiguredDiagLevel,
+  controls: {
+    recordToggle: document.querySelector("#recordToggle"),
+    issueButton: document.querySelector("#issueButton"),
+    saveDumpButton: document.querySelector("#saveDump"),
+    uploadDumpButton: document.querySelector("#uploadDump"),
+    detailToggle: document.querySelector("#deepCapture"),
+    videoToggle: document.querySelector("#videoCapture"),
+    issueModal: document.querySelector("#issueModal"),
+    issueTitle: document.querySelector("#issueTitle"),
+    issueComment: document.querySelector("#issueComment"),
+    issueCancel: document.querySelector("#issueCancel"),
+    issueSave: document.querySelector("#issueSave"),
+    issueClear: document.querySelector("#issueClear"),
+    issueColor: document.querySelector("#issueColor"),
+    issueStroke: document.querySelector("#issueStroke"),
+    screenshotCanvas: document.querySelector("#issueScreenshotCanvas"),
+    annotationCanvas: document.querySelector("#issueAnnotationCanvas"),
+  },
+});
+const recorderReady = issueRecorder.init();
+window.CnCIssueRecorder = issueRecorder;
 
 function report(message) {
   progressNode.textContent = message;
@@ -38,6 +82,7 @@ function report(message) {
 
 function fail(message, detail) {
   console.error("[play]", message, detail ?? "");
+  issueRecorder.noteFailure(message, detail);
   report(`FAILED: ${message}`);
   startButton.disabled = false;
 }
@@ -75,7 +120,11 @@ async function runFrameLoop(rpc) {
     try {
       // Minimal per-rAF stepping: verification harnesses use the richer frame
       // summary, but the human page only needs success/failure and frame time.
-      const result = await rpc("realEngineFrameTick", { frames: 1 });
+      const command = issueRecorder.frameCommand();
+      const payload = { frames: 1 };
+      const startedAt = performance.now();
+      const result = await rpc(command, payload);
+      issueRecorder.noteFrame(command, payload, result, performance.now() - startedAt);
       if (result?.ok !== true) {
         running = false;
         fail("engine frame failed", result);
@@ -99,17 +148,26 @@ async function runFrameLoop(rpc) {
 async function start() {
   startButton.disabled = true;
   try {
+    await recorderReady;
     report("waiting for wasm bridge...");
-    const rpc = await waitForRpc();
+    const rawRpc = await waitForRpc();
+    const rpc = issueRecorder.setRpc(rawRpc);
 
     // The human-playable page runs graphics diagnostics in "lite" mode: skip the
     // per-draw readPixels GPU syncs / probe objects / draw-history that the
     // regression harness needs but the player does not. Add ?diag=full to
     // restore full diagnostics for debugging.
     const diagParam = new URLSearchParams(window.location.search).get("diag");
-    if (diagParam !== "full" && typeof window.__cncSetDiagLevel === "function") {
-      window.__cncSetDiagLevel("lite");
+    if (diagParam !== "full") {
+      setConfiguredDiagLevel("lite");
+    } else {
+      setConfiguredDiagLevel("full");
     }
+    issueRecorder.setSessionContext({
+      phase: "starting",
+      diagLevel: configuredDiagLevel,
+      pageParams: Object.fromEntries(new URLSearchParams(window.location.search)),
+    });
 
     report("downloading + mounting 21 archives (~1.3 GB, be patient)...");
     const mount = await rpc("mountArchives", {
@@ -121,17 +179,35 @@ async function start() {
       fail("archive mount failed", mount?.error ?? mount?.archiveSet);
       return;
     }
+    issueRecorder.setSessionContext({
+      phase: "archives-mounted",
+      archiveMount: {
+        path: mount.path ?? "/assets/real-init",
+        archiveCount: mount.archiveSet?.archiveCount,
+        bytes: mount.archiveSet?.bytes,
+        names: mount.archiveSet?.archives?.map((archive) => archive.name),
+      },
+    });
 
     // The original ShellMapMD 3D menu background (the naval scene) renders
     // through the real lifecycle since fd3cea3 — default on; ?shellmap=0
     // opts out (faster boot, static backdrop).
     const shellMap = new URLSearchParams(window.location.search).get("shellmap") !== "0";
+    issueRecorder.setSessionContext({ shellMap });
     report(`running real GameEngine::init() (~10-30s, shell map ${shellMap ? "on" : "off"})...`);
     const init = await rpc("realEngineInit", { runDirectory: "/assets/real-init", shellMap });
     if (init?.ok !== true || init?.frontier?.initReturned !== true) {
       fail("real engine init failed", init);
       return;
     }
+    issueRecorder.setSessionContext({
+      phase: "engine-initialized",
+      init: {
+        ok: init.ok,
+        initReturned: init.frontier?.initReturned,
+        subsystemCount: init.frontier?.subsystemsCompleted,
+      },
+    });
 
     // The original menu waits for mouse movement before finishing its
     // first-run reveal transition; post two synthetic moves so the buttons
@@ -147,7 +223,12 @@ async function start() {
 
     report("");
     overlay.classList.add("hidden");
-    document.querySelector("#viewport").focus();
+    issueRecorder.setSessionContext({ phase: "running" });
+    viewportCanvas.focus();
+    if (new URLSearchParams(window.location.search).get("replay") === "1") {
+      issueRecorder.setSessionContext({ phase: "replay-ready" });
+      return;
+    }
     await runFrameLoop(rpc);
   } catch (error) {
     fail(error?.message ?? String(error), error);

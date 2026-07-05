@@ -1,7 +1,7 @@
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { extname, relative, resolve, sep } from "node:path";
+import { basename, extname, relative, resolve, sep } from "node:path";
 
 const contentTypes = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -9,9 +9,13 @@ const contentTypes = new Map([
   [".js", "text/javascript; charset=utf-8"],
   [".mjs", "text/javascript; charset=utf-8"],
   [".png", "image/png"],
+  [".json", "application/json; charset=utf-8"],
+  [".cncdump", "application/json; charset=utf-8"],
   [".wasm", "application/wasm"],
   [".webm", "video/webm"],
 ]);
+
+const maxDumpUploadBytes = 256 * 1024 * 1024;
 
 function isInside(parent, child) {
   const path = relative(parent, child);
@@ -31,6 +35,42 @@ function sendError(response, statusCode, message) {
     "content-type": "text/plain; charset=utf-8",
   }));
   response.end(message);
+}
+
+function sendJson(response, statusCode, payload) {
+  response.writeHead(statusCode, commonHeaders({
+    "content-type": "application/json; charset=utf-8",
+  }));
+  response.end(JSON.stringify(payload));
+}
+
+function sanitizeUploadName(name) {
+  const clean = basename(String(name || "cnc-issue-dump.cncdump.json"))
+    .replace(/[^a-zA-Z0-9_.-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 140);
+  if (!clean) {
+    return "cnc-issue-dump.cncdump.json";
+  }
+  return /\.(json|cncdump)$/i.test(clean) ? clean : `${clean}.cncdump.json`;
+}
+
+function readRequestBody(request, maxBytes = maxDumpUploadBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let bytes = 0;
+    request.on("data", (chunk) => {
+      bytes += chunk.length;
+      if (bytes > maxBytes) {
+        reject(new Error(`Upload exceeds ${maxBytes} bytes`));
+        request.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on("end", () => resolve(Buffer.concat(chunks)));
+    request.on("error", reject);
+  });
 }
 
 function parseRangeHeader(rangeHeader, fileSize) {
@@ -68,7 +108,12 @@ function parseRangeHeader(rangeHeader, fileSize) {
   return { start, end: Math.min(end, fileSize - 1) };
 }
 
-export async function startStaticServer({ root, port = 0, host = "127.0.0.1" } = {}) {
+export async function startStaticServer({
+  root,
+  port = 0,
+  host = "127.0.0.1",
+  issueDumpRoot = null,
+} = {}) {
   if (!root) {
     throw new Error("startStaticServer requires a root directory");
   }
@@ -79,6 +124,33 @@ export async function startStaticServer({ root, port = 0, host = "127.0.0.1" } =
     try {
       const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
       const pathname = decodeURIComponent(requestUrl.pathname);
+
+      if (request.method === "POST" && pathname === "/__cnc_issue_dump") {
+        if (!issueDumpRoot) {
+          sendJson(response, 404, { ok: false, error: "issue dump uploads are disabled" });
+          return;
+        }
+        const uploadRoot = resolve(issueDumpRoot);
+        await mkdir(uploadRoot, { recursive: true });
+        const preferredName = request.headers["x-cnc-dump-name"] ?? requestUrl.searchParams.get("name");
+        const filename = sanitizeUploadName(preferredName);
+        const targetPath = resolve(uploadRoot, filename);
+        if (!isInside(uploadRoot, targetPath)) {
+          sendJson(response, 400, { ok: false, error: "invalid dump filename" });
+          return;
+        }
+        const body = await readRequestBody(request);
+        await writeFile(targetPath, body);
+        sendJson(response, 200, {
+          ok: true,
+          bytes: body.length,
+          filename,
+          path: relative(staticRoot, targetPath),
+          url: `/artifacts/issue-dumps/${filename}`,
+        });
+        return;
+      }
+
       const requestedPath = resolve(staticRoot, pathname === "/" ? "index.html" : pathname.slice(1));
 
       if (!isInside(staticRoot, requestedPath)) {

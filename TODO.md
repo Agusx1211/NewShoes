@@ -2336,6 +2336,11 @@ and then start with the PROFILE, not with any individual fix.
       exist but the listener never moves, so positional audio won't track
       the camera (Fable audit; M7 follow-up).
 - [ ] Deterministic-replay regression (record once, assert identical playback).
+- [ ] Promote issue-dump replay from browser input/frame reproduction to an
+      original-engine checkpoint once `Recorder.cpp`/save-load ownership is
+      browser-safe: embed a real replay/savegame snapshot in `.cncdump.json`
+      so agents can reproduce late-game reports even after long nondeterministic
+      play sessions.
 - [ ] Net-sync regression (two clients, assert no desync).
 - [ ] Add per-step and page-RPC timeouts to long browser integration smokes.
       A 2026-07-02 `test:vertical-integrations` run reached

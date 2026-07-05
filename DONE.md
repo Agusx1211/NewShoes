@@ -7997,6 +7997,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Cross-cutting: harness & verification (ongoing, never "done")
 
+- [x] Add the human-play issue-dump flight recorder and report flow. The
+      playable `harness/play.html` now has record/report/save/upload controls,
+      deep/video toggles, a screenshot annotation dialog, comment/title fields,
+      and local IndexedDB draft persistence. `issue-recorder.mjs` records
+      date/time/timezone, page URL, browser/device/WebGL renderer, build asset
+      Last-Modified/size metadata, archive specs, boot/session context, input
+      events with engine-space coordinates and replayable Win32 messages, RPC
+      summaries, throttled frame summaries, logs, screenshots, annotation
+      strokes, optional WebM canvas video, and deep issue snapshots using the
+      existing `screenshot`, `state`, `realEngineFrameSummary`,
+      `queryDrawables`, `querySelection`, and `d3d8TextureInventory` RPCs. The
+      harness server can optionally accept `POST /__cnc_issue_dump` and writes
+      dumps under `WebAssembly/artifacts/issue-dumps/`; browser download still
+      works without the server endpoint. `replay_issue_dump.mjs` consumes a
+      `.cncdump.json`, boots `play.html?replay=1`, replays captured inputs by
+      frame, and writes repro screenshot/state artifacts. Verified with
+      `node --check` on the new/modified harness modules, `git diff --check`,
+      and `npm --prefix WebAssembly run test:issue-recorder`.
 - [x] Fix `mac_verify.mjs --target=player-control` so it actually starts
       MD_USA01 before waiting for player-control predicates. The generated
       Mac-side probe now reuses the real Win32 message path to reveal the real
