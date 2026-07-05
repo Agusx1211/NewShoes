@@ -265,9 +265,10 @@ residue and the next frontier.
       regressions fail immediately. Follow-up burn-down moved the lifecycle
       runtime off the shadow WOL `WebBrowser.h`, migrated `zh_gameclient_text`
       and `zh_win32_mouse_browser_real` to the real PreRTS/header prelude, and
-      drops the linked archive count to 19 offenders (informational unless
-      `--fail-on-linked`). Remaining groups are `zh_window_layout_script_runtime`,
-      `zh_w3d_terrain_probe_runtime`, `zh_w3d_device_utility`,
+      then migrated `zh_w3d_device_utility` plus its focused smoke to the real
+      `GlobalData` owner/path. That drops the linked archive count to 17
+      offenders (informational unless `--fail-on-linked`). Remaining groups
+      are `zh_window_layout_script_runtime`, `zh_w3d_terrain_probe_runtime`,
       `zh_winmain_wndproc_browser`, and the `zh_gameengine_common_core`
       `INICommonCompat.cpp` compatibility shim.
       Fix: the real headers all already compile under Emscripten — make them

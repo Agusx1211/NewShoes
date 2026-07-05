@@ -1,6 +1,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <vector>
 #include <sys/stat.h>
 
@@ -19,7 +20,11 @@
 #include "W3DDevice/GameClient/W3DPoly.h"
 
 SubsystemInterfaceList *TheSubsystemList = nullptr;
-GlobalData *TheGlobalData = nullptr;
+#ifdef TheGlobalData
+#undef TheGlobalData
+#endif
+extern GlobalData *TheWritableGlobalData;
+HWND ApplicationHWnd = nullptr;
 
 namespace {
 bool near(float actual, float expected, float epsilon = 0.0001f)
@@ -244,6 +249,13 @@ bool write_local_file(const char *path, const char *payload)
 	return write_binary_file(path, payload, std::strlen(payload));
 }
 
+bool write_user_file(const GlobalData &global_data, const char *relative_path, const char *payload)
+{
+	std::string path = global_data.getPath_UserData().str();
+	path += relative_path;
+	return write_local_file(path.c_str(), payload);
+}
+
 bool expect_w3d_file(FileFactoryClass *factory, const char *name, const char *expected_payload)
 {
 	FileClass *file = factory->Get_File(name);
@@ -298,17 +310,14 @@ bool smoke_w3d_file_system()
 		!write_local_file("Data/english/Art/Textures/LocalizedTexture.tga", "localized-tga") ||
 		!write_local_file("Art/W3D/SharedModel.w3d", "shared-w3d") ||
 		!write_local_file("Art/Textures/SharedTexture.dds", "shared-dds") ||
-		!write_local_file("Loose/Config.dat", "loose-data") ||
-		!write_local_file("UserData/W3D/UserModel.w3d", "user-w3d") ||
-		!write_local_file("UserData/Textures/UserTexture.tga", "user-tga") ||
-		!write_local_file("UserData/MapPreviews/Preview.tga", "preview-tga")) {
+		!write_local_file("Loose/Config.dat", "loose-data")) {
 		return false;
 	}
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
 	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
-	GlobalData *old_global_data = TheGlobalData;
+	GlobalData *old_global_data = TheWritableGlobalData;
 	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
 	FileFactoryClass *old_file_factory = _TheFileFactory;
 
@@ -317,12 +326,17 @@ bool smoke_w3d_file_system()
 	FileSystem file_system;
 	GlobalData global_data;
 	NameKeyGenerator name_key_generator;
-	global_data.setPath_UserData(AsciiString("UserData/"));
+
+	if (!write_user_file(global_data, "W3D/UserModel.w3d", "user-w3d") ||
+		!write_user_file(global_data, "Textures/UserTexture.tga", "user-tga") ||
+		!write_user_file(global_data, "MapPreviews/Preview.tga", "preview-tga")) {
+		return false;
+	}
 
 	TheLocalFileSystem = &local_file_system;
 	TheArchiveFileSystem = &archive_file_system;
 	TheFileSystem = &file_system;
-	TheGlobalData = &global_data;
+	TheWritableGlobalData = &global_data;
 	TheNameKeyGenerator = &name_key_generator;
 	name_key_generator.init();
 
@@ -349,7 +363,7 @@ bool smoke_w3d_file_system()
 	_TheFileFactory = old_file_factory;
 	name_key_generator.reset();
 	TheNameKeyGenerator = old_name_key_generator;
-	TheGlobalData = old_global_data;
+	TheWritableGlobalData = old_global_data;
 	TheFileSystem = old_file_system;
 	TheArchiveFileSystem = old_archive_file_system;
 	TheLocalFileSystem = old_local_file_system;
@@ -375,7 +389,7 @@ bool smoke_w3d_file_system_archive()
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
 	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
 	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
-	GlobalData *old_global_data = TheGlobalData;
+	GlobalData *old_global_data = TheWritableGlobalData;
 	FileFactoryClass *old_file_factory = _TheFileFactory;
 
 	Win32LocalFileSystem local_file_system;
@@ -388,7 +402,7 @@ bool smoke_w3d_file_system_archive()
 	TheArchiveFileSystem = &archive_file_system;
 	TheFileSystem = &file_system;
 	TheNameKeyGenerator = &name_key_generator;
-	TheGlobalData = &global_data;
+	TheWritableGlobalData = &global_data;
 	name_key_generator.init();
 
 	bool lookup_ok = false;
@@ -430,7 +444,7 @@ bool smoke_w3d_file_system_archive()
 	_TheFileFactory = old_file_factory;
 	name_key_generator.reset();
 	TheNameKeyGenerator = old_name_key_generator;
-	TheGlobalData = old_global_data;
+	TheWritableGlobalData = old_global_data;
 	TheFileSystem = old_file_system;
 	TheArchiveFileSystem = old_archive_file_system;
 	TheLocalFileSystem = old_local_file_system;

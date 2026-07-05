@@ -8535,6 +8535,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       WebAssembly/harness/smoke.mjs`, `node
       WebAssembly/tools/run_startup_vertical_smoke.mjs`, and
       `git diff --check`.
+- [x] Migrate `zh_w3d_device_utility` to the real-header prelude. The target
+      now force-includes `wasm_prerts_real.h`, defines the original
+      `GlobalData`/`GameLogic` header switches, and no longer uses the broad
+      shim quote directory. Updated `w3d-device-utility-smoke` to link the
+      original GlobalData/debug owners and to write user-data fixtures through
+      the real `GlobalData::getPath_UserData()` path instead of shim-only
+      setters. Current `verify:cnc-port-real-headers` output: 44 direct
+      `cnc-port` objects checked, 0 direct offenders, 17 linked archive
+      offenders left. Verified with `npm --prefix WebAssembly run build:port`,
+      targeted `ninja -t deps` checks for `TileData.cpp` and `W3DFileSystem.cpp`
+      proving the real headers, `ninja -C WebAssembly/build/wasm
+      w3d-device-utility-smoke`, `node
+      WebAssembly/dist/w3d-device-utility-smoke.cjs`, `npm --prefix
+      WebAssembly run verify:cnc-port-real-headers`, `npm --prefix WebAssembly
+      run verify:cnc-port-weak-stubs`, `npm --prefix WebAssembly run
+      build:startup-vertical`, `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`,
+      `node WebAssembly/tools/run_startup_vertical_smoke.mjs`, and
+      `git diff --check`.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an

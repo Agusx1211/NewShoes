@@ -2207,10 +2207,15 @@ target_include_directories(zh_w3d_device_utility PUBLIC
   "${COMPRESSION_EAC_DIR}"
 )
 
+target_compile_definitions(zh_w3d_device_utility PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+)
+
 target_compile_options(zh_w3d_device_utility PRIVATE
   "-include${WASM_SHIMS_DIR}/windows.h"
   "-include${WWVEGAS_PORT_SHIM}"
-  "-iquote${WASM_SHIMS_DIR}"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
   "-iquote${GAMEENGINE_INCLUDE_DIR}"
   "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
   "-iquote${GAMEENGINE_DIR}/Source"
@@ -7036,9 +7041,31 @@ set_target_properties(w3d-device-utility-smoke PROPERTIES
 
 target_link_libraries(w3d-device-utility-smoke PRIVATE
   zh_w3d_device_utility
+  zh_gameengine_globaldata_runtime
+  zh_gameengine_debug_runtime
+)
+
+target_compile_definitions(w3d-device-utility-smoke PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
 )
 
 target_compile_options(w3d-device-utility-smoke PRIVATE
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
   -fms-extensions
   -Wall
   -Wextra
