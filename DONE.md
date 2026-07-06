@@ -8362,6 +8362,29 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `RTS3DScene.flush.shadowsDecal.before` 1.29 ms, and
       `HeightMap.render.shoreLines.before` 1.22 ms; terrain roads/scorches/
       extra blends/tracks are sub-millisecond.
+- [x] Merge adjacent same-state sorted translucent draw runs. The original
+      `SortingRenderer::Flush_Sorting_Pool` replay still emitted one
+      `Draw_Triangles` call at every sorted source-node boundary even when
+      adjacent sorted ranges had identical shader/material/texture/light/
+      world/view replay state. The draw loop now merges consecutive same-state
+      ranges in the already sorted dynamic index buffer, preserves the exact
+      per-triangle order, and expands the submitted `MinVertexIndex`/
+      `NumVertices` range to the conservative union of the merged source
+      nodes. Verified with `npm --prefix WebAssembly run build:port:release`,
+      `npm --prefix WebAssembly run build:port`, and
+      `node harness/weapon_impact_fx_smoke.mjs`, which selected
+      `MarauderTankGun`, created weapon detonation FX, and captured a visible
+      effect screenshot. Synced `dist-release` to the Mac M4 and profiled
+      Chrome/Metal with `PERF_PROFILE_FRAME_COMMAND=realEngineFrameTick`,
+      10 warmup frames, 60 measured frames, batch 10, and
+      `PERF_PROFILE_ENGINE_PROFILE=1`. The run reported
+      `ANGLE Metal Renderer: Apple M4`, 47.56 ms/frame wall, 50.07 ms average
+      engine `lastFrameMs`, ~481.4 D3D8 draws/frame, zero measured readPixels,
+      and a visible shell-map screenshot with terrain, water, wakes, units,
+      ships, and the Zero Hour overlay. The merge is correct but only a small
+      sampled perf win: `SortingRenderer.pool.draw.before` remains the leading
+      bucket at 25.365 ms, with `W3DWater.render.waterTracks.before` at
+      10.9 ms and `HeightMap.render.tilePasses.before` at 7.375 ms.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`

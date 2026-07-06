@@ -459,6 +459,56 @@ static bool Replay_State_Matches(const RenderStateStruct& lhs, const RenderState
 	return true;
 }
 
+static void Extend_Vertex_Range(
+	const SortingNodeStruct* state,
+	unsigned& min_vertex_index,
+	unsigned& vertex_limit)
+{
+	unsigned node_min = state->min_vertex_index;
+	unsigned node_limit = node_min + state->vertex_count;
+
+	if (node_min < min_vertex_index) {
+		min_vertex_index = node_min;
+	}
+	if (node_limit > vertex_limit) {
+		vertex_limit = node_limit;
+	}
+}
+
+static void Draw_Sorted_Run(
+	unsigned start_index,
+	unsigned polygon_count,
+	unsigned min_vertex_index,
+	unsigned vertex_limit,
+	SortingNodeStruct* state,
+	SortingNodeStruct*& last_applied_state_node)
+{
+	if (!polygon_count) {
+		return;
+	}
+
+	if (last_applied_state_node == NULL
+		|| !Replay_State_Matches(
+			state->sorting_state,
+			last_applied_state_node->sorting_state)) {
+		Apply_Render_State(state->sorting_state);
+		last_applied_state_node = state;
+	}
+
+	WWASSERT(vertex_limit >= min_vertex_index);
+	unsigned vertex_count = vertex_limit - min_vertex_index;
+	WWASSERT(start_index <= 0xffffu / 3u);
+	WWASSERT(polygon_count <= 0xffffu);
+	WWASSERT(min_vertex_index <= 0xffffu);
+	WWASSERT(vertex_count <= 0xffffu);
+
+	DX8Wrapper::Draw_Triangles(
+		(unsigned short)(start_index * 3),
+		(unsigned short)polygon_count,
+		(unsigned short)min_vertex_index,
+		(unsigned short)vertex_count);
+}
+
 // ----------------------------------------------------------------------------
 
 void SortingRendererClass::Flush_Sorting_Pool()
@@ -622,48 +672,44 @@ void SortingRendererClass::Flush_Sorting_Pool()
 	unsigned count_to_render=1;
 	unsigned start_index=0;
 	unsigned node_id=tis[0].idx;
+	SortingNodeStruct* run_state=overlapping_nodes[node_id];
+	unsigned run_min_vertex_index=run_state->min_vertex_index;
+	unsigned run_vertex_limit=run_min_vertex_index + run_state->vertex_count;
 	SortingNodeStruct* last_applied_state_node = NULL;
 	for (unsigned i=1;i<overlapping_polygon_count;++i) {
 		if (node_id!=tis[i].idx) {
-			SortingNodeStruct* state=overlapping_nodes[node_id];
-			if (last_applied_state_node == NULL
-				|| !Replay_State_Matches(
-					state->sorting_state,
-					last_applied_state_node->sorting_state)) {
-				Apply_Render_State(state->sorting_state);
-				last_applied_state_node = state;
+			SortingNodeStruct* next_state=overlapping_nodes[tis[i].idx];
+			if (Replay_State_Matches(run_state->sorting_state,next_state->sorting_state)) {
+				Extend_Vertex_Range(next_state,run_min_vertex_index,run_vertex_limit);
+				node_id=tis[i].idx;
+			} else {
+				Draw_Sorted_Run(
+					start_index,
+					count_to_render,
+					run_min_vertex_index,
+					run_vertex_limit,
+					run_state,
+					last_applied_state_node);
+
+				count_to_render=0;
+				start_index=i;
+				node_id=tis[i].idx;
+				run_state=next_state;
+				run_min_vertex_index=run_state->min_vertex_index;
+				run_vertex_limit=run_min_vertex_index + run_state->vertex_count;
 			}
-
-			DX8Wrapper::Draw_Triangles(
-				start_index*3,
-				count_to_render,
-				state->min_vertex_index,
-				state->vertex_count);
-
-			count_to_render=0;
-			start_index=i;
-			node_id=tis[i].idx;
 		}
 		count_to_render++;	//keep track of number of polygons of same kind
 	}
 
 	// Render any remaining polygons...
-	if (count_to_render) {
-		SortingNodeStruct* state=overlapping_nodes[node_id];
-		if (last_applied_state_node == NULL
-			|| !Replay_State_Matches(
-				state->sorting_state,
-				last_applied_state_node->sorting_state)) {
-			Apply_Render_State(state->sorting_state);
-			last_applied_state_node = state;
-		}
-
-		DX8Wrapper::Draw_Triangles(
-			start_index*3,
-			count_to_render,
-			state->min_vertex_index,
-			state->vertex_count);
-	}
+	Draw_Sorted_Run(
+		start_index,
+		count_to_render,
+		run_min_vertex_index,
+		run_vertex_limit,
+		run_state,
+		last_applied_state_node);
 	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.pool.draw.after");
 
 	// Release all references and return nodes back to the clean list for the frame...
