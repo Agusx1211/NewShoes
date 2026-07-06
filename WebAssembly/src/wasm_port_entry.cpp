@@ -256,15 +256,21 @@ void run_original_debug_probe()
 	WWRELEASE_SAY(("cnc-port wwdebug info frame=%u", g_frame));
 	WWRELEASE_WARNING(("cnc-port wwdebug warning frame=%u", g_frame));
 	WWRELEASE_ERROR(("cnc-port wwdebug error frame=%u", g_frame));
+#ifdef WWDEBUG
 	WWDebug_Assert_Fail_Print(
 		"cnc_port_debug_probe",
 		"wasm_port_entry.cpp",
 		1,
 		"browser handler installed");
+#endif
 	g_debug_probe_ok =
 		g_debug_handlers_installed &&
 		g_debug_message_count >= starting_messages + 3 &&
+#ifdef WWDEBUG
 		g_debug_assert_count >= starting_asserts + 1;
+#else
+		g_debug_assert_count == starting_asserts;
+#endif
 }
 
 void run_original_debug_log_probe()

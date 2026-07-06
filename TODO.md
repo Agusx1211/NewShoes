@@ -29,7 +29,11 @@ the Mac. A synchronous WebGL `DEPTH_WRITEMASK` query in the D3D8 clear bridge
 was the post-release shell-map stall; the shim now tracks the depth-write mask
 and the Mac tick profile dropped from ~69.6 ms/frame to ~48.8 ms/frame, with
 `DX8Wrapper.Clear.deviceClear` falling to ~0.015 ms in the opt-in engine
-profile. Next measured bottleneck is original WW3D scene work, especially
+profile. Release `cnc-port` now strips runtime `DEBUG_LOGGING` and `WWDEBUG`
+compile paths while preserving Debug diagnostics; Mac Chrome/Metal verified
+the optimized release build still boots and renders the shell map at ~47.1
+ms/frame over a 60-frame summary profile. Next measured bottleneck is original
+WW3D scene work, especially
 `RTS3DScene.flush.sortingFlush` and terrain render, not raw WebGL draw calls.
 Broad D3D8 shim work still needs either a Release/native-wasm-EH comparison or
 a DevTools trace if async ANGLE/GPU stall detail is needed beyond the live
@@ -2326,13 +2330,6 @@ and then start with the PROFILE, not with any individual fix.
       `diag=lite` has no warmup readbacks; DevTools is still needed before
       changing buffer/shader/draw submission internals that might be dominated
       by asynchronous ANGLE/GPU stalls.
-- [ ] **A/B debug logging and WWDEBUG build flags before deeper render
-      surgery.** The current CMake still force-enables `DEBUG_LOGGING=1`,
-      `ALLOW_DEBUG_UTILS=1`, and `WWDEBUG=1` through broad runtime targets,
-      which can keep retail-stripped `DEBUG_LOG` / `WWDEBUG_SAY` paths live in
-      Debug and Release builds. Measure a build with those off (or with
-      `DISABLE_DEBUG_LOGGING`/related disables) on the same Mac shell-map
-      profile before assuming O0/O2 or WebGL draw count is the whole bottleneck.
 - [ ] D3D8→WebGL2 shim "less naive" playbook (ordered by typical payoff,
       all confined to the DX8Wrapper chokepoint; verify each against the
       screenshot goldens):

@@ -8258,6 +8258,30 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       clear total time down to ~0.014 ms/frame and the C++ clear bucket down
       to ~0.015 ms. The next top measured buckets are
       `RTS3DScene.flush.sortingFlush` and terrain render.
+- [x] Strip debug logging and WWDebug profiling/assert macro paths from the
+      Release `cnc-port` build while preserving Debug diagnostics. CMake now
+      centralizes the engine debug definitions so Debug keeps
+      `DEBUG_LOGGING=1` / `WWDEBUG=1`, while Release uses
+      `DISABLE_DEBUG_LOGGING=1`, disables crash/stack/profile debug paths, and
+      exports no `WWDEBUG` compile definition from `zh_wwdebug_core` or
+      `zh_wwdebug_profile`. The direct `wasm_port_entry.cpp` WWDebug probe now
+      gates the assert-hook exercise behind `#ifdef WWDEBUG`, so Release still
+      proves release-level WWDebug message routing without requiring the debug
+      assert symbols. Verified with `npm --prefix WebAssembly run
+      build:port:release`, `npm --prefix WebAssembly run build:port`, release
+      compile-command audits (`0` `-DWWDEBUG` matches and `566`
+      `-DDISABLE_DEBUG_LOGGING=1` matches for `cnc-port`, while Debug still has
+      `220` `-DWWDEBUG=1` and `566` `-DDEBUG_LOGGING=1` matches), local
+      SwiftShader `PERF_PROFILE_DIST=dist-release PERF_PROFILE_FRAMES=5
+      PERF_PROFILE_WARMUP_FRAMES=5 PERF_PROFILE_SETTLE_FRAMES=5
+      PERF_PROFILE_BATCH=1 node WebAssembly/harness/runtime_frame_profile.mjs`,
+      and a Mac M4 Chrome/Metal profile after syncing `dist-release`
+      (`ANGLE Metal Renderer: Apple M4`, 60 measured frames, batch 10). The Mac
+      release summary profile rendered the shell map, advanced from frame 10 to
+      frame 70, reported 335 objects / 335 drawables / 88 rendered objects, and
+      measured 47.1 ms/frame wall with 49.4 ms average engine `lastFrameMs`,
+      ~482 D3D8 draws/frame, zero measured readPixels, and ~1.39 ms/frame in
+      tracked browser D3D8 work.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`
