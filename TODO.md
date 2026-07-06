@@ -2288,11 +2288,12 @@ and then start with the PROFILE, not with any individual fix.
         of the native draw-state cache key while preserving the full hash for
         GL state/uniform correctness, promoted the EM_JS state-only payload
         cache to a small LRU, passes world/view/projection as transient HEAPF32
-        views, and uses `HEAPU8.subarray()` for buffer-update uploads. Remaining
-        work: remove/collapse the remaining copied texture-transform, clip,
-        material, and light payloads and audit `updateD3D8Buffer`
-        (`bridge.js`) CPU mirrors (`resource.bytes`, DISCARD `fill(0)`) so
-        non-diagnostic hot paths do not maintain full buffer copies.
+        views, uses `HEAPU8.subarray()` for buffer-update uploads, and avoids
+        lite-mode vertex-buffer CPU mirrors while keeping index mirrors for
+        fallback draw paths. Remaining work: remove/collapse the remaining
+        copied texture-transform, clip, material, and light payloads and keep
+        buffer profiling active while replacing dynamic uploads with real
+        ring-buffer semantics.
       - never-sync audit: remove per-call glGetError/validation from the hot
         path; ensure no Lock/Present path reads back or waits on the GPU;
       - dynamic vertex/index buffer Lock(DISCARD/NOOVERWRITE) → orphaning /

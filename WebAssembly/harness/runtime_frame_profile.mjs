@@ -259,6 +259,13 @@ const browserPerfFields = [
   "fboBindMs",
   "fboCreates",
   "fboIncomplete",
+  "bufferUpdates",
+  "bufferUploadBytes",
+  "bufferUpdateMs",
+  "bufferSubDataMs",
+  "bufferMirrorBytes",
+  "bufferMirrorMs",
+  "bufferMirrorSkippedBytes",
 ];
 
 function browserPerfDelta(before, after, framesAdvanced) {
@@ -278,9 +285,11 @@ function browserPerfDelta(before, after, framesAdvanced) {
     Number(delta.clearMs ?? 0) +
     Number(delta.textureUploadMs ?? 0) +
     Number(delta.readPixelsMs ?? 0) +
-    Number(delta.fboBindMs ?? 0);
+    Number(delta.fboBindMs ?? 0) +
+    Number(delta.bufferSubDataMs ?? 0);
   const trackedBrowserMs = trackedGlCallMs +
-    Number(delta.textureConvertMs ?? 0);
+    Number(delta.textureConvertMs ?? 0) +
+    Math.max(0, Number(delta.bufferUpdateMs ?? 0) - Number(delta.bufferSubDataMs ?? 0));
   return {
     before,
     after,
@@ -305,6 +314,13 @@ function browserPerfDelta(before, after, framesAdvanced) {
           textureConvertMs: Number(delta.textureConvertMs ?? 0) / framesAdvanced,
           readPixelsMs: Number(delta.readPixelsMs ?? 0) / framesAdvanced,
           fboBindMs: Number(delta.fboBindMs ?? 0) / framesAdvanced,
+          bufferUpdates: Number(delta.bufferUpdates ?? 0) / framesAdvanced,
+          bufferUploadBytes: Number(delta.bufferUploadBytes ?? 0) / framesAdvanced,
+          bufferUpdateMs: Number(delta.bufferUpdateMs ?? 0) / framesAdvanced,
+          bufferSubDataMs: Number(delta.bufferSubDataMs ?? 0) / framesAdvanced,
+          bufferMirrorBytes: Number(delta.bufferMirrorBytes ?? 0) / framesAdvanced,
+          bufferMirrorMs: Number(delta.bufferMirrorMs ?? 0) / framesAdvanced,
+          bufferMirrorSkippedBytes: Number(delta.bufferMirrorSkippedBytes ?? 0) / framesAdvanced,
           trackedGlCallMs: trackedGlCallMs / framesAdvanced,
           trackedBrowserMs: trackedBrowserMs / framesAdvanced,
         }
@@ -454,6 +470,7 @@ const viewportWidth = parsePositiveInt("PERF_PROFILE_WIDTH", 1280);
 const viewportHeight = parsePositiveInt("PERF_PROFILE_HEIGHT", 720);
 const includeSamples = process.env.PERF_PROFILE_SAMPLES === "1";
 const d3d8AdjacentBatching = process.env.PERF_PROFILE_D3D8_BATCH !== "0";
+const d3d8LiteVertexMirrors = process.env.PERF_PROFILE_D3D8_VERTEX_MIRRORS === "1";
 
 const server = await startStaticServer({ root: wasmRoot });
 let browser;
@@ -490,6 +507,8 @@ try {
   await page.evaluate((level) => window.__cncSetDiagLevel?.(level), diagLevel);
   const d3d8AdjacentBatchingActive = await page.evaluate((enabled) =>
     window.__cncSetD3D8AdjacentBatching?.(enabled) ?? null, d3d8AdjacentBatching);
+  const d3d8LiteVertexMirrorsActive = await page.evaluate((enabled) =>
+    window.__cncSetD3D8LiteVertexMirrors?.(enabled) ?? null, d3d8LiteVertexMirrors);
 
   const mount = await rpc(page, "mountArchives", {
     path: "/assets/runtime-frame-profile",
@@ -536,6 +555,7 @@ try {
     swiftShader: /SwiftShader/i.test(renderer),
     diagLevel,
     d3d8AdjacentBatching: d3d8AdjacentBatchingActive,
+    d3d8LiteVertexMirrors: d3d8LiteVertexMirrorsActive,
     measuredFrameCommand,
     shellMap,
     viewport: { width: viewportWidth, height: viewportHeight },

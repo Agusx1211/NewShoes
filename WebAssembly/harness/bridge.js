@@ -231,6 +231,12 @@ const d3d8BufferStats = {
   creates: 0,
   updates: 0,
   releases: 0,
+  uploadBytes: 0,
+  updateMs: 0,
+  bufferSubDataMs: 0,
+  mirrorBytes: 0,
+  mirrorMs: 0,
+  mirrorSkippedBytes: 0,
   lastCreate: null,
   lastStaticCreate: null,
   lastDynamicCreate: null,
@@ -300,6 +306,13 @@ const d3d8PerfStats = {
   fboBindMs: 0,
   fboCreates: 0,
   fboIncomplete: 0,
+  bufferUpdates: 0,
+  bufferUploadBytes: 0,
+  bufferUpdateMs: 0,
+  bufferSubDataMs: 0,
+  bufferMirrorBytes: 0,
+  bufferMirrorMs: 0,
+  bufferMirrorSkippedBytes: 0,
 };
 
 function perfNow() {
@@ -346,6 +359,13 @@ function d3d8PerfSummary() {
     fboBindMs: roundedPerfMs(d3d8PerfStats.fboBindMs),
     fboCreates: d3d8PerfStats.fboCreates,
     fboIncomplete: d3d8PerfStats.fboIncomplete,
+    bufferUpdates: d3d8PerfStats.bufferUpdates,
+    bufferUploadBytes: d3d8PerfStats.bufferUploadBytes,
+    bufferUpdateMs: roundedPerfMs(d3d8PerfStats.bufferUpdateMs),
+    bufferSubDataMs: roundedPerfMs(d3d8PerfStats.bufferSubDataMs),
+    bufferMirrorBytes: d3d8PerfStats.bufferMirrorBytes,
+    bufferMirrorMs: roundedPerfMs(d3d8PerfStats.bufferMirrorMs),
+    bufferMirrorSkippedBytes: d3d8PerfStats.bufferMirrorSkippedBytes,
   };
 }
 
@@ -2751,6 +2771,12 @@ function updateD3D8BufferSummary() {
       creates: d3d8BufferStats.creates,
       updates: d3d8BufferStats.updates,
       releases: d3d8BufferStats.releases,
+      uploadBytes: d3d8BufferStats.uploadBytes,
+      updateMs: roundedPerfMs(d3d8BufferStats.updateMs),
+      bufferSubDataMs: roundedPerfMs(d3d8BufferStats.bufferSubDataMs),
+      mirrorBytes: d3d8BufferStats.mirrorBytes,
+      mirrorMs: roundedPerfMs(d3d8BufferStats.mirrorMs),
+      mirrorSkippedBytes: d3d8BufferStats.mirrorSkippedBytes,
       liveVertex,
       liveIndex,
       lastCreate: d3d8BufferStats.lastCreate,
@@ -2760,6 +2786,22 @@ function updateD3D8BufferSummary() {
       lastRelease: d3d8BufferStats.lastRelease,
     },
   };
+}
+
+function shouldMirrorD3D8Buffer(resource) {
+  if (!resource) {
+    return false;
+  }
+  if (d3d8DiagLevel === "full") {
+    return true;
+  }
+  if (resource.kindName === "vertex") {
+    return d3d8LiteVertexBufferMirrorsEnabled;
+  }
+  // Lite-mode rendering does not inspect normal vertex buffers. Keep index
+  // mirrors so flat-shade/wireframe fallback paths can still build temporary
+  // element arrays without falling out of the real render path.
+  return resource.kindName === "index";
 }
 
 function createD3D8Buffer(payload = {}) {
@@ -2797,7 +2839,7 @@ function createD3D8Buffer(payload = {}) {
     byteSize,
     target,
     buffer,
-    bytes: new Uint8Array(byteSize),
+    bytes: null,
     d3dUsage: usageInfo.d3dUsage,
     dynamic: usageInfo.dynamic,
     writeOnly: usageInfo.writeOnly,
@@ -2829,6 +2871,7 @@ function updateD3D8Buffer(payload = {}) {
   if (!gl || !(payload.bytes instanceof Uint8Array)) {
     return 0;
   }
+  const updateStartedAt = perfNow();
   flushD3D8PendingDrawBatch("bufferUpdate");
   const kind = Number(payload.kind ?? 0) >>> 0;
   const id = Number(payload.id ?? 0) >>> 0;
@@ -2855,28 +2898,56 @@ function updateD3D8Buffer(payload = {}) {
   }
   let resized = false;
   let orphaned = false;
+  const discard = Boolean(resource.dynamic && (lockFlags & D3DLOCK_DISCARD));
   if (requiredByteSize > resource.byteSize) {
     gl.bufferData(resource.target, requiredByteSize, resource.glUsage);
     resource.byteSize = requiredByteSize;
     resized = true;
-  } else if (resource.dynamic && (lockFlags & D3DLOCK_DISCARD)) {
+  } else if (discard) {
     gl.bufferData(resource.target, resource.byteSize, resource.glUsage);
     orphaned = true;
   }
-  if (!(resource.bytes instanceof Uint8Array)) {
-    resource.bytes = new Uint8Array(resource.byteSize);
-  } else if (resource.bytes.byteLength < resource.byteSize) {
-    const mirror = new Uint8Array(resource.byteSize);
-    mirror.set(resource.bytes.subarray(0, Math.min(resource.bytes.byteLength, mirror.byteLength)));
-    resource.bytes = mirror;
+  const mirrorStartedAt = perfNow();
+  let mirroredBytes = 0;
+  let skippedMirrorBytes = 0;
+  if (shouldMirrorD3D8Buffer(resource)) {
+    if (!(resource.bytes instanceof Uint8Array)) {
+      resource.bytes = new Uint8Array(resource.byteSize);
+    } else if (resource.bytes.byteLength < resource.byteSize) {
+      const mirror = new Uint8Array(resource.byteSize);
+      mirror.set(resource.bytes.subarray(0, Math.min(resource.bytes.byteLength, mirror.byteLength)));
+      resource.bytes = mirror;
+    }
+    if (discard) {
+      resource.bytes.fill(0);
+      mirroredBytes += resource.byteSize;
+    }
+    resource.bytes.set(bytes, byteOffset);
+    mirroredBytes += bytes.byteLength;
+  } else {
+    resource.bytes = null;
+    skippedMirrorBytes += bytes.byteLength + (discard ? resource.byteSize : 0);
   }
-  if (resource.dynamic && (lockFlags & D3DLOCK_DISCARD)) {
-    resource.bytes.fill(0);
-  }
-  resource.bytes.set(bytes, byteOffset);
+  const mirrorMs = perfNow() - mirrorStartedAt;
+  const subDataStartedAt = perfNow();
   gl.bufferSubData(resource.target, byteOffset, bytes);
+  const subDataMs = perfNow() - subDataStartedAt;
+  const updateMs = perfNow() - updateStartedAt;
   resource.uploads += 1;
   d3d8BufferStats.updates += 1;
+  d3d8BufferStats.uploadBytes += bytes.byteLength;
+  d3d8BufferStats.updateMs += updateMs;
+  d3d8BufferStats.bufferSubDataMs += subDataMs;
+  d3d8BufferStats.mirrorBytes += mirroredBytes;
+  d3d8BufferStats.mirrorMs += mirrorMs;
+  d3d8BufferStats.mirrorSkippedBytes += skippedMirrorBytes;
+  d3d8PerfStats.bufferUpdates += 1;
+  d3d8PerfStats.bufferUploadBytes += bytes.byteLength;
+  d3d8PerfStats.bufferUpdateMs += updateMs;
+  d3d8PerfStats.bufferSubDataMs += subDataMs;
+  d3d8PerfStats.bufferMirrorBytes += mirroredBytes;
+  d3d8PerfStats.bufferMirrorMs += mirrorMs;
+  d3d8PerfStats.bufferMirrorSkippedBytes += skippedMirrorBytes;
   d3d8BufferStats.lastUpdate = {
     id,
     kind: resource.kindName,
@@ -2889,6 +2960,12 @@ function updateD3D8Buffer(payload = {}) {
     noOverwrite: Boolean(lockFlags & D3DLOCK_NOOVERWRITE),
     orphaned,
     resized,
+    mirrored: mirroredBytes > 0,
+    mirrorBytes: mirroredBytes,
+    mirrorSkippedBytes: skippedMirrorBytes,
+    mirrorMs: roundedPerfMs(mirrorMs),
+    bufferSubDataMs: roundedPerfMs(subDataMs),
+    updateMs: roundedPerfMs(updateMs),
     uploads: resource.uploads,
   };
   updateD3D8BufferSummary();
@@ -8103,6 +8180,7 @@ function applyD3D8RenderState(renderState, options = {}) {
 let d3d8DiagLevel = "full";
 let d3d8SceneDrawHistoryLimit = 256;
 let d3d8AdjacentDrawBatchingEnabled = true;
+let d3d8LiteVertexBufferMirrorsEnabled = false;
 try {
   const _params = new URLSearchParams(globalThis.location?.search || "");
   const _diag = _params.get("diag");
@@ -8114,6 +8192,10 @@ try {
   const _batchAdjacent = _params.get("d3d8Batch");
   if (_batchAdjacent === "0" || _batchAdjacent === "false" || _batchAdjacent === "off") {
     d3d8AdjacentDrawBatchingEnabled = false;
+  }
+  const _liteVertexMirrors = _params.get("d3d8LiteVertexMirrors");
+  if (_liteVertexMirrors === "1" || _liteVertexMirrors === "true" || _liteVertexMirrors === "on") {
+    d3d8LiteVertexBufferMirrorsEnabled = true;
   }
 } catch (_e) { /* no location (node context) */ }
 if (typeof globalThis !== "undefined") {
@@ -8141,6 +8223,11 @@ if (typeof globalThis !== "undefined") {
     return d3d8AdjacentDrawBatchingEnabled;
   };
   globalThis.__cncGetD3D8AdjacentBatching = () => d3d8AdjacentDrawBatchingEnabled;
+  globalThis.__cncSetD3D8LiteVertexMirrors = (enabled) => {
+    d3d8LiteVertexBufferMirrorsEnabled = enabled === true || enabled === 1 || enabled === "1";
+    return d3d8LiteVertexBufferMirrorsEnabled;
+  };
+  globalThis.__cncGetD3D8LiteVertexMirrors = () => d3d8LiteVertexBufferMirrorsEnabled;
   globalThis.__cncFlushD3D8PendingDrawBatch = () => flushD3D8PendingDrawBatch("manual");
 }
 

@@ -8081,6 +8081,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `PERF_PROFILE_D3D8_BATCH=0`: 73.51 ms/frame and 533.9
       drawElements/frame, showing the first adjacent-only pass saves about
       49 WebGL draw calls/frame and ~1.2 ms/frame on this shell-map slice.
+- [x] Profile and trim lite-mode D3D8 buffer CPU mirrors. `bridge.js` now
+      exposes buffer update/upload/subData/mirror counters through
+      `d3d8PerfSummary()` and keeps full CPU mirrors for default `diag=full`
+      diagnostics while skipping vertex-buffer mirrors in `diag=lite`; index
+      mirrors remain enabled so flat-shade and wireframe fallback paths can
+      still build temporary element arrays. `runtime_frame_profile.mjs` now
+      reports buffer update costs and can force old lite vertex mirrors with
+      `PERF_PROFILE_D3D8_VERTEX_MIRRORS=1` for A/B comparisons. Verified with
+      `node --check WebAssembly/harness/bridge.js`, `node --check
+      WebAssembly/harness/runtime_frame_profile.mjs`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port`, and Mac M4 Chrome/Metal
+      profile runs (`ANGLE Metal Renderer: Apple M4`, `diag=lite`,
+      `realEngineFrameSummary`, 10 warmup + 60 measured frames, batch 10).
+      Default optimized run measured 73.15 ms/frame with 362.9 buffer
+      updates/frame, 2.21 MB uploaded/frame, 0.52 ms/frame total buffer-update
+      time, 0.36 MB/frame mirrored, and 3.97 MB/frame of skipped vertex mirror
+      writes. Forcing old lite vertex mirrors measured 73.39 ms/frame,
+      4.33 MB/frame mirrored, 0 skipped mirror bytes, and 0.57 ms/frame total
+      buffer-update time. This removes unnecessary JS heap writes but also
+      proves dynamic buffer upload/mirror work is not the dominant current
+      frame-time bottleneck.
 - [x] Cache hot D3D8 WebGL draw-path bindings and temporary index buffers.
       `bridge.js` now tracks the currently bound D3D8 draw program,
       ARRAY_BUFFER, and ELEMENT_ARRAY_BUFFER to skip redundant
