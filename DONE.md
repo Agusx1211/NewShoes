@@ -8606,6 +8606,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       ~168.3 misses/frame. Remaining measured sorted-uniform costs are
       material uniforms 0.513, render-state application 0.282, and
       texture-layout uniforms 0.015 ms/frame.
+- [x] Replace sorted material uniform string-key generation with exact cached
+      material snapshots. The browser D3D8 bridge now compares the same
+      material inputs that feed the shader uniforms (scene ambient DWORD,
+      diffuse/ambient/specular/emissive arrays, power, and material-source
+      selectors) against a copied cache snapshot instead of allocating and
+      joining a per-draw string key. Upload behavior is unchanged: misses still
+      send the same WebGL uniforms and refresh the snapshot, while hits skip
+      the material block. Verified with `node --check
+      WebAssembly/harness/bridge.js`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port`, a Mac M4 Chrome/Metal runtime
+      profile with visible shell-map screenshot, and a second identical Mac
+      profile for bucket stability. The second run reported an Apple M4 Metal
+      renderer string, 43.66 ms/frame wall, 46.77 ms average engine
+      `lastFrameMs`, zero measured readPixels, ~65.3 profiled sorted draws per
+      frame, sorted bridge work at 2.996 ms/frame, sorted uniform setup at
+      1.419 ms/frame, and material uniforms at 0.214 ms/frame with
+      ~44.6 material-cache hits/frame vs ~29.7 misses. Remaining measured
+      bridge targets are viewport application 0.798, render-state application
+      0.647, and residual transform uploads 0.342 ms/frame.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`

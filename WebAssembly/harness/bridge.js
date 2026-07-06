@@ -107,7 +107,7 @@ let d3d8LastTransformUniformProjection = null;
 let d3d8LastPointSpriteUniformInfo = null;
 let d3d8LastVertexAttribKey = null;
 let d3d8LastBaseUniformKey = null;
-let d3d8LastMaterialUniformKey = null;
+let d3d8LastMaterialUniformInfo = null;
 let d3d8LastFixedLightUniformKey = null;
 let d3d8LastStageUniformKey = null;
 let d3d8LastAlphaFogUniformKey = null;
@@ -483,7 +483,7 @@ function roundedPerfMs(value) {
 
 function resetD3D8UniformSubgroupCaches() {
   d3d8LastBaseUniformKey = null;
-  d3d8LastMaterialUniformKey = null;
+  d3d8LastMaterialUniformInfo = null;
   d3d8LastFixedLightUniformKey = null;
   d3d8LastStageUniformKey = null;
   d3d8LastAlphaFogUniformKey = null;
@@ -4071,21 +4071,6 @@ function d3d8BaseUniformKey(useTransforms, appliedRenderState, clipPlanes, shade
     }
   }
   return values.join(",");
-}
-
-function d3d8MaterialUniformKey(renderState, material) {
-  return [
-    renderState.ambient,
-    ...material.diffuse,
-    ...material.ambient,
-    ...material.specular,
-    ...material.emissive,
-    material.power,
-    renderState.diffuseMaterialSource,
-    renderState.specularMaterialSource,
-    renderState.ambientMaterialSource,
-    renderState.emissiveMaterialSource,
-  ].join(",");
 }
 
 function d3d8StageUniformKey(renderState) {
@@ -7768,6 +7753,21 @@ function d3d8MatrixEquals(left, right) {
   return true;
 }
 
+function d3d8NumericArrayEquals(left, right) {
+  if (left === right) {
+    return true;
+  }
+  if (!left || !right || left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; ++index) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function d3d8TransformUniformsEqual(world, view, projection) {
   return d3d8MatrixEquals(d3d8LastTransformUniformWorld, world) &&
     d3d8MatrixEquals(d3d8LastTransformUniformView, view) &&
@@ -7784,6 +7784,36 @@ function rememberD3D8TransformUniforms(world, view, projection) {
   d3d8LastTransformUniformWorld = new Float32Array(world);
   d3d8LastTransformUniformView = new Float32Array(view);
   d3d8LastTransformUniformProjection = new Float32Array(projection);
+}
+
+function d3d8MaterialUniformsEqual(renderState, material) {
+  const cached = d3d8LastMaterialUniformInfo;
+  return cached !== null &&
+    cached.ambient === renderState.ambient &&
+    cached.power === material.power &&
+    cached.diffuseMaterialSource === renderState.diffuseMaterialSource &&
+    cached.specularMaterialSource === renderState.specularMaterialSource &&
+    cached.ambientMaterialSource === renderState.ambientMaterialSource &&
+    cached.emissiveMaterialSource === renderState.emissiveMaterialSource &&
+    d3d8NumericArrayEquals(cached.diffuse, material.diffuse) &&
+    d3d8NumericArrayEquals(cached.materialAmbient, material.ambient) &&
+    d3d8NumericArrayEquals(cached.specular, material.specular) &&
+    d3d8NumericArrayEquals(cached.emissive, material.emissive);
+}
+
+function rememberD3D8MaterialUniforms(renderState, material) {
+  d3d8LastMaterialUniformInfo = {
+    ambient: renderState.ambient,
+    diffuse: material.diffuse.slice(),
+    materialAmbient: material.ambient.slice(),
+    specular: material.specular.slice(),
+    emissive: material.emissive.slice(),
+    power: material.power,
+    diffuseMaterialSource: renderState.diffuseMaterialSource,
+    specularMaterialSource: renderState.specularMaterialSource,
+    ambientMaterialSource: renderState.ambientMaterialSource,
+    emissiveMaterialSource: renderState.emissiveMaterialSource,
+  };
 }
 
 function isIdentityD3DMatrix(matrix) {
@@ -9366,8 +9396,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         d3d8LastBaseUniformKey = baseUniformKey;
       }
       recordRenderUniformDetail?.("sortedDrawRenderBaseUniformMs");
-      const materialUniformKey = d3d8MaterialUniformKey(renderState, material);
-      if (materialUniformKey === d3d8LastMaterialUniformKey) {
+      if (d3d8MaterialUniformsEqual(renderState, material)) {
         d3d8PerfStats.drawMaterialUniformCacheHits += 1;
       } else {
         d3d8PerfStats.drawMaterialUniformCacheMisses += 1;
@@ -9401,7 +9430,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         if (bridgeProgram.emissiveMaterialSource) {
           gl.uniform1i(bridgeProgram.emissiveMaterialSource, renderState.emissiveMaterialSource);
         }
-        d3d8LastMaterialUniformKey = materialUniformKey;
+        rememberD3D8MaterialUniforms(renderState, material);
       }
       recordRenderUniformDetail?.("sortedDrawRenderMaterialUniformMs");
       const fixedLightUniformKey = d3d8FixedLightUniformKey(fixedFunctionLights);
