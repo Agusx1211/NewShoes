@@ -49,11 +49,24 @@
 #include "statistics.h"
 #include <wwprofile.h>
 #include <algorithm>
+#include <cstring>
 
 #ifdef _INTERNAL
 // for occasional debugging...
 // #pragma optimize("", off)
 // #pragma MESSAGE("************************************** WARNING, optimization disabled for debugging purposes")
+#endif
+
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_profile_marker(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_SORTING_STEP(name) \
+	do { \
+		if (cnc_port_note_engine_profile_marker) { \
+			cnc_port_note_engine_profile_marker(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_SORTING_STEP(name) do { } while (0)
 #endif
 
 bool SortingRendererClass::_EnableTriangleDraw=true;
@@ -409,6 +422,45 @@ static void Apply_Render_State(RenderStateStruct& render_state)
 
 // ----------------------------------------------------------------------------
 
+static bool Matrix4x4_Matches(const Matrix4x4& lhs, const Matrix4x4& rhs)
+{
+	return std::memcmp(&lhs, &rhs, sizeof(Matrix4x4)) == 0;
+}
+
+static bool Active_Lights_Match(const RenderStateStruct& lhs, const RenderStateStruct& rhs)
+{
+	for (int i = 0; i < 4; ++i) {
+		if (lhs.LightEnable[i] != rhs.LightEnable[i]) {
+			return false;
+		}
+		if (lhs.LightEnable[i]
+			&& std::memcmp(&lhs.Lights[i], &rhs.Lights[i], sizeof(D3DLIGHT8)) != 0) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static bool Replay_State_Matches(const RenderStateStruct& lhs, const RenderStateStruct& rhs)
+{
+	if (lhs.shader.Get_Bits() != rhs.shader.Get_Bits()
+		|| lhs.material != rhs.material
+		|| !Matrix4x4_Matches(lhs.world, rhs.world)
+		|| !Matrix4x4_Matches(lhs.view, rhs.view)
+		|| !Active_Lights_Match(lhs, rhs)) {
+		return false;
+	}
+
+	for (int i = 0; i < DX8Wrapper::Get_Current_Caps()->Get_Max_Textures_Per_Pass(); ++i) {
+		if (lhs.Textures[i] != rhs.Textures[i]) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// ----------------------------------------------------------------------------
+
 void SortingRendererClass::Flush_Sorting_Pool()
 {
 	if (!overlapping_node_count) return;
@@ -416,7 +468,9 @@ void SortingRendererClass::Flush_Sorting_Pool()
 	SNAPSHOT_SAY(("SortingSystem - Flush \n"));
 
 	// Fill dynamic index buffer with sorting index buffer vertices
+	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.pool.tempArray.before");
 	TempIndexStruct* tis=Get_Temp_Index_Array(overlapping_polygon_count);
+	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.pool.tempArray.after");
 
 	unsigned vertexAllocCount = overlapping_vertex_count;
 	if (DynamicVBAccessClass::Get_Default_Vertex_Count() < DEFAULT_SORTING_VERTEX_COUNT)
@@ -424,6 +478,7 @@ void SortingRendererClass::Flush_Sorting_Pool()
 	if (overlapping_vertex_count > vertexAllocCount)
 		vertexAllocCount = overlapping_vertex_count;
 	WWASSERT(DEFAULT_SORTING_VERTEX_COUNT == 1 || vertexAllocCount <= DEFAULT_SORTING_VERTEX_COUNT);
+	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.pool.vertexPack.before");
 	DynamicVBAccessClass dyn_vb_access(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,vertexAllocCount/*overlapping_vertex_count*/);
 	{
 		DynamicVBAccessClass::WriteLockClass lock(&dyn_vb_access);
@@ -512,8 +567,11 @@ void SortingRendererClass::Flush_Sorting_Pool()
 			vertex_array_offset+=state->vertex_count;
 		}
 	}
+	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.pool.vertexPack.after");
 
+	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.pool.sort.before");
 	Sort(tis, tis + overlapping_polygon_count);
+	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.pool.sort.after");
 
 /*	///@todo: Add code to break up rendering into multiple index buffer fills to allow more than 65536/3 triangles.  -MW
 	int total_overlapping_polygon_count = overlapping_polygon_count;
@@ -538,6 +596,7 @@ void SortingRendererClass::Flush_Sorting_Pool()
 		polygonAllocCount = overlapping_polygon_count;
 	WWASSERT(DEFAULT_SORTING_POLY_COUNT <= 1 || polygonAllocCount <= DEFAULT_SORTING_POLY_COUNT);
 
+	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.pool.indexPack.before");
 	DynamicIBAccessClass dyn_ib_access(BUFFER_TYPE_DYNAMIC_DX8,polygonAllocCount*3);
 	{
 		DynamicIBAccessClass::WriteLockClass lock(&dyn_ib_access);
@@ -552,9 +611,11 @@ void SortingRendererClass::Flush_Sorting_Pool()
 			IndexBufferExceptionFunc();
 		}
 	}
+	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.pool.indexPack.after");
 
 	// Set index buffer and render!
 
+	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.pool.draw.before");
 	DX8Wrapper::Set_Index_Buffer(dyn_ib_access,0); // Override with this buffer (do something to prevent need for this!)
 	DX8Wrapper::Set_Vertex_Buffer(dyn_vb_access); // Override with this buffer (do something to prevent need for this!)
 
@@ -563,10 +624,17 @@ void SortingRendererClass::Flush_Sorting_Pool()
 	unsigned count_to_render=1;
 	unsigned start_index=0;
 	unsigned node_id=tis[0].idx;
+	SortingNodeStruct* last_applied_state_node = NULL;
 	for (unsigned i=1;i<overlapping_polygon_count;++i) {
 		if (node_id!=tis[i].idx) {
 			SortingNodeStruct* state=overlapping_nodes[node_id];
-			Apply_Render_State(state->sorting_state);
+			if (last_applied_state_node == NULL
+				|| !Replay_State_Matches(
+					state->sorting_state,
+					last_applied_state_node->sorting_state)) {
+				Apply_Render_State(state->sorting_state);
+				last_applied_state_node = state;
+			}
 
 			DX8Wrapper::Draw_Triangles(
 				start_index*3,
@@ -584,7 +652,13 @@ void SortingRendererClass::Flush_Sorting_Pool()
 	// Render any remaining polygons...
 	if (count_to_render) {
 		SortingNodeStruct* state=overlapping_nodes[node_id];
-		Apply_Render_State(state->sorting_state);
+		if (last_applied_state_node == NULL
+			|| !Replay_State_Matches(
+				state->sorting_state,
+				last_applied_state_node->sorting_state)) {
+			Apply_Render_State(state->sorting_state);
+			last_applied_state_node = state;
+		}
 
 		DX8Wrapper::Draw_Triangles(
 			start_index*3,
@@ -592,8 +666,10 @@ void SortingRendererClass::Flush_Sorting_Pool()
 			state->min_vertex_index,
 			state->vertex_count);
 	}
+	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.pool.draw.after");
 
 	// Release all references and return nodes back to the clean list for the frame...
+	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.pool.release.before");
 	for (node_id=0;node_id<overlapping_node_count;++node_id) {
 		SortingNodeStruct* state=overlapping_nodes[node_id];
 		Release_Refs(state);
@@ -602,6 +678,7 @@ void SortingRendererClass::Flush_Sorting_Pool()
 	overlapping_node_count=0;
 	overlapping_polygon_count=0;
 	overlapping_vertex_count=0;
+	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.pool.release.after");
 
 	SNAPSHOT_SAY(("SortingSystem - Done flushing\n"));
 
@@ -612,11 +689,13 @@ void SortingRendererClass::Flush_Sorting_Pool()
 void SortingRendererClass::Flush()
 {
 	WWPROFILE("SortingRenderer::Flush");
+	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.flush.entry");
 	Matrix4x4 old_view;
 	Matrix4x4 old_world;
 	DX8Wrapper::Get_Transform(D3DTS_VIEW,old_view);
 	DX8Wrapper::Get_Transform(D3DTS_WORLD,old_world);
 
+	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.flush.collect.before");
 	while (SortingNodeStruct* state=sorted_list.Head()) {
 		state->Remove();
 		
@@ -632,12 +711,16 @@ void SortingRendererClass::Flush()
 			clean_list.Add_Head(state);
 		}
 	}
+	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.flush.collect.after");
 
 	bool old_enable=DX8Wrapper::_Is_Triangle_Draw_Enabled();
 	DX8Wrapper::_Enable_Triangle_Draw(_EnableTriangleDraw);
+	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.flush.pool.before");
 	Flush_Sorting_Pool();
+	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.flush.pool.after");
 	DX8Wrapper::_Enable_Triangle_Draw(old_enable);
 
+	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.flush.reset.before");
 	DX8Wrapper::Set_Index_Buffer(0,0);
 	DX8Wrapper::Set_Vertex_Buffer(0);
 	total_sorting_vertices=0;
@@ -648,6 +731,7 @@ void SortingRendererClass::Flush()
 
 	DX8Wrapper::Set_Transform(D3DTS_VIEW,old_view);
 	DX8Wrapper::Set_Transform(D3DTS_WORLD,old_world);
+	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.flush.reset.after");
 
 }
 

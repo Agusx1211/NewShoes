@@ -36,9 +36,16 @@ ms/frame over a 60-frame summary profile. Release native-wasm-EH vs JS-EH
 A/B is also complete on Mac Chrome/Metal: native-EH measured 47.99 ms/frame
 wall over 120 tick frames and JS-EH measured 48.35 ms/frame, both with zero
 measured readPixels and only ~1.3-1.4 ms/frame in tracked browser D3D8 work.
-Next measured bottleneck is original WW3D scene work, especially
-`RTS3DScene.flush.sortingFlush` and terrain render, not raw WebGL draw calls.
-Further broad D3D8 shim work should wait for a DevTools trace if async
+The first original-WW3D hot-bucket pass split `SortingRenderer::Flush` and
+proved z-sort itself is cheap (~0.01 ms); the expensive part is replaying
+sorted draw state. Sorted translucent replay now skips exact duplicate
+shader/material/texture/light/world/view state applications while preserving
+per-triangle sort order. Mac Chrome/Metal no-profile release shell-map runs
+improved from the prior 47.99 ms/frame native-EH baseline to 44.88 ms/frame
+and then 40.41 ms/frame over repeated 120-frame tick profiles, with zero
+measured readPixels and visible shell-map screenshots. Remaining measured
+bottlenecks are the still-expensive sorted draw replay and terrain render;
+further broad D3D8 shim work should wait for a DevTools trace if async
 ANGLE/GPU stall detail is needed beyond the live harness counters.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`

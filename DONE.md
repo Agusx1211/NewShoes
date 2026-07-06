@@ -8307,6 +8307,35 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       and the Zero Hour overlay. Conclusion: exception handling mode is not a
       remaining large perf tax in the current Release runtime; keep native-EH
       as the default and profile original WW3D scene buckets / terrain next.
+- [x] Reduce sorted translucent WW3D draw-state replay cost in
+      `SortingRenderer::Flush_Sorting_Pool`. Added opt-in C++ frame-profile
+      markers inside the original WW3D sorting renderer, then used the Mac M4
+      Chrome/Metal release profile to split the prior
+      `RTS3DScene.flush.sortingFlush` bucket: the actual z-sort measured only
+      about 0.01 ms on the sampled shell-map frame, while
+      `SortingRenderer.pool.draw.before` dominated the bucket. The sorted
+      replay loop now compares the state actually replayed by
+      `Apply_Render_State` (shader bits, material, bound textures, active
+      lights, world matrix, and view matrix) and skips re-applying exact
+      duplicate state across consecutive sorted runs, while preserving the
+      sorted triangle order, run ranges, vertex/index buffers, and draw calls.
+      Verified with `npm --prefix WebAssembly run build:port:release`,
+      synced `dist-release` to the Mac, and profiled
+      `PERF_PROFILE_FRAME_COMMAND=realEngineFrameTick` on
+      `ANGLE Metal Renderer: Apple M4`. The profiled diagnostic run dropped
+      the sampled sorted draw-replay bucket from ~38.69 ms to ~33.64 ms.
+      Normal no-engine-profile 120-frame release shell-map profiles then
+      measured 44.88 ms/frame and 40.41 ms/frame wall, versus the prior
+      native-EH baseline of 47.99 ms/frame, with zero measured readPixels,
+      ~523-526 D3D8 draws/frame, and ~1.19-1.27 ms/frame tracked browser D3D8
+      work on the repeat run. The screenshot showed visible terrain, water,
+      units/ships, wakes, and the Zero Hour overlay. Also verified the Debug
+      build with `npm --prefix WebAssembly run build:port` and the sorted
+      particle/FX path with the weapon-impact FX smoke, which selected
+      `MarauderTankGun`, created additional particle systems, and captured
+      visible
+      `EXScorch01.tga`, `exwave01.tga`, `exexplo03.tga`, `excloud01.tga`,
+      and `exshockwav.tga` effect draws.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`
