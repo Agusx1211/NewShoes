@@ -8810,6 +8810,20 @@ let d3d8DiagLevel = "full";
 let d3d8SceneDrawHistoryLimit = 256;
 let d3d8AdjacentDrawBatchingEnabled = true;
 let d3d8LiteVertexBufferMirrorsEnabled = false;
+let d3d8BoundDrawDiagnosticsSetter = null;
+let d3d8BoundDrawDiagnosticsEnabled = true;
+function setD3D8BoundDrawDiagnostics(enabled) {
+  d3d8BoundDrawDiagnosticsEnabled = !(enabled === false || enabled === 0 || enabled === "0");
+  if (typeof d3d8BoundDrawDiagnosticsSetter === "function") {
+    d3d8BoundDrawDiagnosticsSetter(d3d8BoundDrawDiagnosticsEnabled ? 1 : 0);
+  }
+  return d3d8BoundDrawDiagnosticsEnabled;
+}
+function applyD3D8BoundDrawDiagnosticsLevel() {
+  // Keep this independent from diag=lite: disabling these CPU-side checksums
+  // makes M4/Metal runs stall later in terrain GL work and increases frame time.
+  return setD3D8BoundDrawDiagnostics(true);
+}
 try {
   const _params = new URLSearchParams(globalThis.location?.search || "");
   const _diag = _params.get("diag");
@@ -8832,6 +8846,7 @@ if (typeof globalThis !== "undefined") {
     if (lvl === "lite" || lvl === "full") {
       flushD3D8PendingDrawBatch("setDiagLevel");
       d3d8DiagLevel = lvl;
+      applyD3D8BoundDrawDiagnosticsLevel();
     }
     return d3d8DiagLevel;
   };
@@ -8857,6 +8872,8 @@ if (typeof globalThis !== "undefined") {
     return d3d8LiteVertexBufferMirrorsEnabled;
   };
   globalThis.__cncGetD3D8LiteVertexMirrors = () => d3d8LiteVertexBufferMirrorsEnabled;
+  globalThis.__cncSetD3D8BoundDrawDiagnostics = setD3D8BoundDrawDiagnostics;
+  globalThis.__cncGetD3D8BoundDrawDiagnostics = () => d3d8BoundDrawDiagnosticsEnabled;
   globalThis.__cncFlushD3D8PendingDrawBatch = () => flushD3D8PendingDrawBatch("manual");
 }
 
@@ -10646,6 +10663,12 @@ async function loadWasmModule() {
       cncGdiRasterizeGlyph,
     });
     harnessState.moduleDistDir = distDir;
+    d3d8BoundDrawDiagnosticsSetter = module.cwrap(
+      "cnc_port_d3d8_set_bound_draw_diagnostics",
+      null,
+      ["number"],
+    );
+    applyD3D8BoundDrawDiagnosticsLevel();
 
     return {
       boot: module.cwrap("cnc_port_boot", "string", []),

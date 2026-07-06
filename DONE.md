@@ -8061,6 +8061,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 ## M10 — Hardening, content, polish
 
 ### Performance & memory
+- [x] Split real heightmap tile draw profiling and pin the D3D8 bound-diagnostic
+      A/B result. `HeightMapRenderObjClass::Render` and
+      `renderTerrainPass` now add profile-gated markers around terrain tile
+      shader, vertex-buffer bind, and draw submission, with tile polygon/count
+      constants and hidden-state checks hoisted out of the inner loops.
+      `wasm_d3d8_shim.cpp` exposes an explicit bound-draw diagnostic checksum
+      switch and `runtime_frame_profile.mjs` can force it with
+      `PERF_PROFILE_D3D8_BOUND_DIAG`, but `bridge.js` keeps the default enabled
+      even in `diag=lite`. Mac M4 Chrome/Metal A/B showed disabling the
+      checksum path removes `WasmD3D8.DrawIndexedPrimitive.captureBound.before`
+      (~7.5 ms/frame -> ~0.03 ms/frame) but regresses total frame time
+      (38.32 ms/frame forced-on vs 46.34 ms/frame forced-off) by moving stalls
+      into later terrain/GL buckets. Verified with `git diff --check`,
+      `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly run build:port:release`, Mac M4 Chrome/Metal
+      sampled runtime profiles, and a visible shell-map terrain/water
+      screenshot. The conservative default measured 38.34 ms/frame wall /
+      36.92 ms average engine `lastFrameMs`.
 - [x] Split the D3D8 draw-state cache hash from per-object transforms.
       `wasm_d3d8_shim.cpp` now computes both the original full draw hash and a
       derived-state hash that excludes world/view/projection but still covers

@@ -98,14 +98,41 @@
 
 #ifdef __EMSCRIPTEN__
 extern "C" void cnc_port_note_engine_profile_marker(const char *name) __attribute__((weak));
+extern "C" int cnc_port_is_engine_frame_profile_enabled() __attribute__((weak));
+extern "C" void cnc_port_begin_sorted_draw_submit_profile_scope() __attribute__((weak));
+extern "C" void cnc_port_end_sorted_draw_submit_profile_scope() __attribute__((weak));
 #define CNC_PORT_NOTE_TERRAIN_STEP(name) \
 	do { \
 		if (cnc_port_note_engine_profile_marker) { \
 			cnc_port_note_engine_profile_marker(name); \
 		} \
 	} while (0)
+#define CNC_PORT_TERRAIN_PROFILE_ENABLED() \
+	(cnc_port_is_engine_frame_profile_enabled && cnc_port_is_engine_frame_profile_enabled())
+#define CNC_PORT_NOTE_TERRAIN_PROFILE_STEP(enabled, name) \
+	do { \
+		if ((enabled) && cnc_port_note_engine_profile_marker) { \
+			cnc_port_note_engine_profile_marker(name); \
+		} \
+	} while (0)
+#define CNC_PORT_BEGIN_TERRAIN_SUBMIT_PROFILE_SCOPE(enabled) \
+	do { \
+		if ((enabled) && cnc_port_begin_sorted_draw_submit_profile_scope) { \
+			cnc_port_begin_sorted_draw_submit_profile_scope(); \
+		} \
+	} while (0)
+#define CNC_PORT_END_TERRAIN_SUBMIT_PROFILE_SCOPE(enabled) \
+	do { \
+		if ((enabled) && cnc_port_end_sorted_draw_submit_profile_scope) { \
+			cnc_port_end_sorted_draw_submit_profile_scope(); \
+		} \
+	} while (0)
 #else
 #define CNC_PORT_NOTE_TERRAIN_STEP(name) do { } while (0)
+#define CNC_PORT_TERRAIN_PROFILE_ENABLED() false
+#define CNC_PORT_NOTE_TERRAIN_PROFILE_STEP(enabled, name) do { } while (0)
+#define CNC_PORT_BEGIN_TERRAIN_SUBMIT_PROFILE_SCOPE(enabled) do { } while (0)
+#define CNC_PORT_END_TERRAIN_SUBMIT_PROFILE_SCOPE(enabled) do { } while (0)
 #endif
 
 #ifdef _INTERNAL
@@ -2070,17 +2097,27 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 
 	Int pass;
 	CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.tilePasses.before");
+	const bool profileTerrainSubmit = CNC_PORT_TERRAIN_PROFILE_ENABLED();
+	Int numPolys = VERTEX_BUFFER_TILE_LENGTH*VERTEX_BUFFER_TILE_LENGTH*2;
+	Int numVertex = (VERTEX_BUFFER_TILE_LENGTH*2)*(VERTEX_BUFFER_TILE_LENGTH*2);
+	if (HALF_RES_MESH) {
+		numPolys /= 4;
+		numVertex /= 4;
+	}
+	const bool terrainHidden = Is_Hidden() != 0;
  	for (pass=0; pass<devicePasses; pass++) {
 #ifdef TIMING_TESTS
 #endif
 		if (!doMultiPassWireFrame)	//multi-pass wireframe doesn't use regular shaders.
 		{
+			CNC_PORT_NOTE_TERRAIN_PROFILE_STEP(profileTerrainSubmit, "HeightMap.tilePasses.passShader.before");
  			if (m_disableTextures ) {
  				DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaque2DShader);
  				DX8Wrapper::Set_Texture(0,NULL);
    			} else {
  				W3DShaderManager::setShader(st, pass);
 			}
+			CNC_PORT_NOTE_TERRAIN_PROFILE_STEP(profileTerrainSubmit, "HeightMap.tilePasses.passShader.after");
 		}
 
 		for (j=0; j<m_numVBTilesY; j++)
@@ -2088,13 +2125,9 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 			{
 				static int count = 0;
 				count++;
-				Int numPolys = VERTEX_BUFFER_TILE_LENGTH*VERTEX_BUFFER_TILE_LENGTH*2;
-				Int numVertex = (VERTEX_BUFFER_TILE_LENGTH*2)*(VERTEX_BUFFER_TILE_LENGTH*2);
-				if (HALF_RES_MESH) {
-					numPolys /= 4;
-					numVertex /= 4;
-				}
+				CNC_PORT_NOTE_TERRAIN_PROFILE_STEP(profileTerrainSubmit, "HeightMap.tilePasses.tileVB.before");
 				DX8Wrapper::Set_Vertex_Buffer(m_vertexBufferTiles[j*m_numVBTilesX+i]);
+				CNC_PORT_NOTE_TERRAIN_PROFILE_STEP(profileTerrainSubmit, "HeightMap.tilePasses.tileVB.after");
 #ifdef PRE_TRANSFORM_VERTEX
 				if (m_xformedVertexBuffer && pass==0) {
 					// Note - m_xformedVertexBuffer should only be used for non T&L hardware.  jba.
@@ -2112,8 +2145,12 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 					DX8Wrapper::_Get_D3D_Device8()->SetVertexShader(D3DFVF_XYZRHW |D3DFVF_DIFFUSE|D3DFVF_TEX2);
 				}
 #endif				
-				if (Is_Hidden() == 0) {
+				if (!terrainHidden) {
+					CNC_PORT_NOTE_TERRAIN_PROFILE_STEP(profileTerrainSubmit, "HeightMap.tilePasses.tileDraw.before");
+					CNC_PORT_BEGIN_TERRAIN_SUBMIT_PROFILE_SCOPE(profileTerrainSubmit);
 					DX8Wrapper::Draw_Triangles(	0,numPolys, 0,	numVertex);
+					CNC_PORT_END_TERRAIN_SUBMIT_PROFILE_SCOPE(profileTerrainSubmit);
+					CNC_PORT_NOTE_TERRAIN_PROFILE_STEP(profileTerrainSubmit, "HeightMap.tilePasses.tileDraw.after");
 				}
 
 			}
@@ -2267,18 +2304,22 @@ void HeightMapRenderObjClass::renderTerrainPass(CameraClass *pCamera)
 	DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
 
 	CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.renderTerrainPass.tiles.before");
+	const bool profileTerrainSubmit = CNC_PORT_TERRAIN_PROFILE_ENABLED();
+	Int numPolys = VERTEX_BUFFER_TILE_LENGTH*VERTEX_BUFFER_TILE_LENGTH*2;
+	Int numVertex = (VERTEX_BUFFER_TILE_LENGTH*2)*(VERTEX_BUFFER_TILE_LENGTH*2);
+	if (HALF_RES_MESH) {
+		numPolys /= 4;
+		numVertex /= 4;
+	}
+	const bool terrainHidden = Is_Hidden() != 0;
 	for (Int j=0; j<m_numVBTilesY; j++)
 		for (Int i=0; i<m_numVBTilesX; i++)
 		{
 			static int count = 0;
 			count++;
-			Int numPolys = VERTEX_BUFFER_TILE_LENGTH*VERTEX_BUFFER_TILE_LENGTH*2;
-			Int numVertex = (VERTEX_BUFFER_TILE_LENGTH*2)*(VERTEX_BUFFER_TILE_LENGTH*2);
-			if (HALF_RES_MESH) {
-				numPolys /= 4;
-				numVertex /= 4;
-			}
+			CNC_PORT_NOTE_TERRAIN_PROFILE_STEP(profileTerrainSubmit, "HeightMap.renderTerrainPass.tileVB.before");
 			DX8Wrapper::Set_Vertex_Buffer(m_vertexBufferTiles[j*m_numVBTilesX+i]);
+			CNC_PORT_NOTE_TERRAIN_PROFILE_STEP(profileTerrainSubmit, "HeightMap.renderTerrainPass.tileVB.after");
 #ifdef PRE_TRANSFORM_VERTEX
 			if (m_xformedVertexBuffer && pass==0) {
 				// Note - m_xformedVertexBuffer should only be used for non T&L hardware.  jba.
@@ -2296,8 +2337,12 @@ void HeightMapRenderObjClass::renderTerrainPass(CameraClass *pCamera)
 				DX8Wrapper::_Get_D3D_Device8()->SetVertexShader(D3DFVF_XYZRHW |D3DFVF_DIFFUSE|D3DFVF_TEX2);
 			}
 #endif				
-			if (Is_Hidden() == 0) {
+			if (!terrainHidden) {
+				CNC_PORT_NOTE_TERRAIN_PROFILE_STEP(profileTerrainSubmit, "HeightMap.renderTerrainPass.tileDraw.before");
+				CNC_PORT_BEGIN_TERRAIN_SUBMIT_PROFILE_SCOPE(profileTerrainSubmit);
 				DX8Wrapper::Draw_Triangles(	0,numPolys, 0,	numVertex);
+				CNC_PORT_END_TERRAIN_SUBMIT_PROFILE_SCOPE(profileTerrainSubmit);
+				CNC_PORT_NOTE_TERRAIN_PROFILE_STEP(profileTerrainSubmit, "HeightMap.renderTerrainPass.tileDraw.after");
 			}
 		}
 	CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.renderTerrainPass.tiles.after");

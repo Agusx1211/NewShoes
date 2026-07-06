@@ -12,6 +12,9 @@
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
 #endif
+#ifndef EMSCRIPTEN_KEEPALIVE
+#define EMSCRIPTEN_KEEPALIVE
+#endif
 
 #ifdef __EMSCRIPTEN__
 extern "C" void cnc_port_note_engine_profile_marker(const char *name) __attribute__((weak));
@@ -636,6 +639,7 @@ static_assert(sizeof(WasmD3D8DrawLight) == 108,
 	"WasmD3D8DrawLight memory layout must match bridge.js copyLights");
 
 WasmD3D8ShimState g_state = {};
+bool g_bound_draw_diagnostics_enabled = true;
 int g_d3d8_module = 0;
 UINT g_next_browser_buffer_id = 1;
 UINT g_next_browser_texture_id = 1;
@@ -3469,13 +3473,15 @@ private:
 		g_state.last_draw_vertex_shader = m_vertex_shader;
 		g_state.last_draw_transform_mask = 0;
 		g_state.last_draw_texture_transform_mask = 0;
-		identity_matrix(g_state.last_draw_world_transform);
-		identity_matrix(g_state.last_draw_view_transform);
-		identity_matrix(g_state.last_draw_projection_transform);
-		identity_matrix(g_state.last_draw_texture0_transform);
-		identity_matrix(g_state.last_draw_texture1_transform);
-		g_state.last_draw_render_state = {};
-		g_state.last_draw_material = draw_material_from_d3d(m_material);
+		if (g_bound_draw_diagnostics_enabled) {
+			identity_matrix(g_state.last_draw_world_transform);
+			identity_matrix(g_state.last_draw_view_transform);
+			identity_matrix(g_state.last_draw_projection_transform);
+			identity_matrix(g_state.last_draw_texture0_transform);
+			identity_matrix(g_state.last_draw_texture1_transform);
+			g_state.last_draw_render_state = {};
+			g_state.last_draw_material = draw_material_from_d3d(m_material);
+		}
 
 		if (m_stream_source != nullptr && m_stream_source_stride != 0) {
 			const BrowserD3DVertexBuffer *stream =
@@ -3487,7 +3493,9 @@ private:
 			g_state.last_draw_vertex_buffer_length = stream->length();
 			g_state.last_draw_vertex_buffer_offset = offset;
 			g_state.last_draw_vertex_buffer_bytes = captured_bytes;
-			g_state.last_draw_vertex_buffer_checksum = stream->checksum(offset, captured_bytes);
+			if (g_bound_draw_diagnostics_enabled) {
+				g_state.last_draw_vertex_buffer_checksum = stream->checksum(offset, captured_bytes);
+			}
 			g_state.last_draw_vertex_buffer_id = stream->browser_buffer_id();
 		}
 
@@ -3500,7 +3508,9 @@ private:
 			g_state.last_draw_index_buffer_length = indices->length();
 			g_state.last_draw_index_buffer_offset = offset;
 			g_state.last_draw_index_buffer_bytes = captured_bytes;
-			g_state.last_draw_index_buffer_checksum = indices->checksum(offset, captured_bytes);
+			if (g_bound_draw_diagnostics_enabled) {
+				g_state.last_draw_index_buffer_checksum = indices->checksum(offset, captured_bytes);
+			}
 			g_state.last_draw_index_format = indices->format();
 			g_state.last_draw_index_buffer_id = indices->browser_buffer_id();
 		}
@@ -4122,6 +4132,11 @@ extern "C" void wasm_d3d8_reset_state()
 extern "C" const WasmD3D8ShimState *wasm_d3d8_get_state()
 {
 	return &g_state;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_d3d8_set_bound_draw_diagnostics(int enabled)
+{
+	g_bound_draw_diagnostics_enabled = enabled != 0;
 }
 
 extern "C" HMODULE wasm_d3d8_load_library_a(LPCSTR library_name)

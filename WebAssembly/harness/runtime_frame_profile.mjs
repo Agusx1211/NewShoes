@@ -49,6 +49,20 @@ function parseDistDir() {
   return value;
 }
 
+function parseOptionalBoolean(name) {
+  const value = process.env[name];
+  if (value == null || value === "") {
+    return null;
+  }
+  if (/^(1|true|yes|on)$/i.test(value)) {
+    return true;
+  }
+  if (/^(0|false|no|off)$/i.test(value)) {
+    return false;
+  }
+  throw new Error(`Invalid ${name}: ${value}`);
+}
+
 function expect(condition, message, payload) {
   if (!condition) {
     throw new Error(`${message}: ${JSON.stringify(payload)}`);
@@ -665,6 +679,7 @@ const viewportHeight = parsePositiveInt("PERF_PROFILE_HEIGHT", 720);
 const includeSamples = process.env.PERF_PROFILE_SAMPLES === "1";
 const d3d8AdjacentBatching = process.env.PERF_PROFILE_D3D8_BATCH !== "0";
 const d3d8LiteVertexMirrors = process.env.PERF_PROFILE_D3D8_VERTEX_MIRRORS === "1";
+const d3d8BoundDrawDiagnostics = parseOptionalBoolean("PERF_PROFILE_D3D8_BOUND_DIAG");
 const engineFrameProfile = process.env.PERF_PROFILE_ENGINE_PROFILE === "1";
 
 const server = await startStaticServer({ root: wasmRoot });
@@ -706,6 +721,10 @@ try {
     window.__cncSetD3D8AdjacentBatching?.(enabled) ?? null, d3d8AdjacentBatching);
   const d3d8LiteVertexMirrorsActive = await page.evaluate((enabled) =>
     window.__cncSetD3D8LiteVertexMirrors?.(enabled) ?? null, d3d8LiteVertexMirrors);
+  const d3d8BoundDrawDiagnosticsActive = d3d8BoundDrawDiagnostics == null
+    ? await page.evaluate(() => window.__cncGetD3D8BoundDrawDiagnostics?.() ?? null)
+    : await page.evaluate((enabled) =>
+      window.__cncSetD3D8BoundDrawDiagnostics?.(enabled) ?? null, d3d8BoundDrawDiagnostics);
 
   const mount = await rpc(page, "mountArchives", {
     path: "/assets/runtime-frame-profile",
@@ -762,6 +781,7 @@ try {
     distDir,
     d3d8AdjacentBatching: d3d8AdjacentBatchingActive,
     d3d8LiteVertexMirrors: d3d8LiteVertexMirrorsActive,
+    d3d8BoundDrawDiagnostics: d3d8BoundDrawDiagnosticsActive,
     engineFrameProfile,
     measuredFrameCommand,
     shellMap,

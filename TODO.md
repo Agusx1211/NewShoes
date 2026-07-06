@@ -155,8 +155,19 @@ temporary-index fallback draws. The latest Mac Chrome/Metal profile measured
 submit bridge work at 4.140 ms/frame and vertex-attribute setup down to
 0.406 ms/frame; the final sampled frame had `WasmD3D8.browserDrawIndexed.before`
 at 2.23 ms and `W3DProjectedShadow.renderShadows.meshFlush.before` at
-1.26 ms. The next measured render frontier is back in heightmap/terrain
-rendering; the user-reported shadow flicker remains an open correctness bug.
+1.26 ms. A follow-up terrain tile submit split added profile-gated markers
+around `HeightMapRenderObjClass` tile shader/buffer/draw work and an explicit
+`PERF_PROFILE_D3D8_BOUND_DIAG` A/B switch for D3D8 bound-buffer checksums. Mac
+Chrome/Metal proved the checksum bypass is a regression despite removing the
+`WasmD3D8.DrawIndexedPrimitive.captureBound.before` CPU bucket: forced-on
+measured 38.32 ms/frame while forced-off measured 46.34 ms/frame and shifted
+stalls into shoreline/extra-blend/terrain-track buckets. The conservative
+default keeps bound diagnostics enabled; the latest default terrain profile
+measured 38.34 ms/frame wall / 36.92 ms average engine `lastFrameMs`, with
+`captureBound` still ~7.55 ms/frame, `browserDrawIndexed` ~4.78 ms/frame, and
+visible shell-map water/terrain. The measured render frontier remains
+heightmap/terrain, but raw checksum removal is not the next optimization; the
+user-reported shadow flicker remains an open correctness bug.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
@@ -2479,9 +2490,13 @@ and then start with the PROFILE, not with any individual fix.
       `HeightMap.render.shoreLines.before` at 12.16 ms and
       `HeightMap.render.terrainTracks.before` at 4.255 ms, so reprofile and
       split heightmap tile/shore/track submission before assuming which terrain
-      subpath is recurrent versus sample variance. Next pass should split tile
-      draw submission/state/buffer-update costs around
-      `HeightMapRenderObjClass` tile rendering and the D3D8 draw bridge.
+      subpath is recurrent versus sample variance. The profile-only tile split
+      and D3D8 bound-checksum A/B proved raw `capture_bound_draw()` checksum
+      removal is a measured regression on M4/Metal: it drops the CPU
+      `captureBound` bucket but increases wall time by shifting stalls into
+      later terrain/GL buckets. Keep bound diagnostics enabled by default. Next
+      pass should inspect terrain shoreline/extra-blend/track bursts and the
+      real tile draw/submit shape rather than disabling D3D8 bound checksums.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing
