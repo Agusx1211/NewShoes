@@ -31,7 +31,6 @@
 // TheMessageStream and TheKeyboard, which are wired per-test below.
 HINSTANCE ApplicationHInstance = nullptr;
 HWND ApplicationHWnd = nullptr;
-GlobalData *TheGlobalData = nullptr;
 SubsystemInterfaceList *TheSubsystemList = nullptr;
 
 namespace {
@@ -136,9 +135,9 @@ bool exercise_basic_key_down(SmokeKeyboard &keyboard)
 	bool ok = true;
 	{
 		GlobalData globalData;
-		GlobalData *oldGlobalData = TheGlobalData;
+		GlobalData *oldGlobalData = TheWritableGlobalData;
 		Keyboard *oldKeyboard = TheKeyboard;
-		TheGlobalData = &globalData;
+		TheWritableGlobalData = &globalData;
 		TheKeyboard = &keyboard;
 
 		MessageStream stream;
@@ -169,7 +168,7 @@ bool exercise_basic_key_down(SmokeKeyboard &keyboard)
 
 		TheMessageStream = oldMessageStream;
 		TheKeyboard = oldKeyboard;
-		TheGlobalData = oldGlobalData;
+		TheWritableGlobalData = oldGlobalData;
 	}
 	return ok;
 }
@@ -179,9 +178,9 @@ bool exercise_key_down_then_up(SmokeKeyboard &keyboard)
 	bool ok = true;
 	{
 		GlobalData globalData;
-		GlobalData *oldGlobalData = TheGlobalData;
+		GlobalData *oldGlobalData = TheWritableGlobalData;
 		Keyboard *oldKeyboard = TheKeyboard;
-		TheGlobalData = &globalData;
+		TheWritableGlobalData = &globalData;
 		TheKeyboard = &keyboard;
 
 		MessageStream stream;
@@ -222,7 +221,7 @@ bool exercise_key_down_then_up(SmokeKeyboard &keyboard)
 
 		TheMessageStream = oldMessageStream;
 		TheKeyboard = oldKeyboard;
-		TheGlobalData = oldGlobalData;
+		TheWritableGlobalData = oldGlobalData;
 	}
 	return ok;
 }
@@ -235,9 +234,9 @@ bool exercise_shift_modifier_folding(SmokeKeyboard &keyboard)
 	bool ok = true;
 	{
 		GlobalData globalData;
-		GlobalData *oldGlobalData = TheGlobalData;
+		GlobalData *oldGlobalData = TheWritableGlobalData;
 		Keyboard *oldKeyboard = TheKeyboard;
-		TheGlobalData = &globalData;
+		TheWritableGlobalData = &globalData;
 		TheKeyboard = &keyboard;
 
 		MessageStream stream;
@@ -284,7 +283,7 @@ bool exercise_shift_modifier_folding(SmokeKeyboard &keyboard)
 
 		TheMessageStream = oldMessageStream;
 		TheKeyboard = oldKeyboard;
-		TheGlobalData = oldGlobalData;
+		TheWritableGlobalData = oldGlobalData;
 	}
 	return ok;
 }
@@ -294,9 +293,9 @@ bool exercise_empty_frame(SmokeKeyboard &keyboard)
 	bool ok = true;
 	{
 		GlobalData globalData;
-		GlobalData *oldGlobalData = TheGlobalData;
+		GlobalData *oldGlobalData = TheWritableGlobalData;
 		Keyboard *oldKeyboard = TheKeyboard;
-		TheGlobalData = &globalData;
+		TheWritableGlobalData = &globalData;
 		TheKeyboard = &keyboard;
 
 		MessageStream stream;
@@ -312,7 +311,7 @@ bool exercise_empty_frame(SmokeKeyboard &keyboard)
 
 		TheMessageStream = oldMessageStream;
 		TheKeyboard = oldKeyboard;
-		TheGlobalData = oldGlobalData;
+		TheWritableGlobalData = oldGlobalData;
 	}
 	return ok;
 }

@@ -48,7 +48,6 @@
 // TheMessageStream and TheKeyboard, which are wired per-frame below.
 HINSTANCE ApplicationHInstance = nullptr;
 HWND ApplicationHWnd = nullptr;
-GlobalData *TheGlobalData = nullptr;
 SubsystemInterfaceList *TheSubsystemList = nullptr;
 
 namespace {
@@ -139,8 +138,8 @@ Int count_messages(GameMessage *first)
 	return count;
 }
 
-// RAII holder for TheGlobalData + TheKeyboard across one exercise. The keyboard
-// is owned by the caller so its cached state persists across frames.
+// RAII holder for TheWritableGlobalData + TheKeyboard across one exercise. The
+// keyboard is owned by the caller so its cached state persists across frames.
 struct ScopedKeyboardGlobals
 {
 	GlobalData globalData;
@@ -149,16 +148,16 @@ struct ScopedKeyboardGlobals
 
 	ScopedKeyboardGlobals(Keyboard *keyboard)
 	{
-		oldGlobalData = TheGlobalData;
+		oldGlobalData = TheWritableGlobalData;
 		oldKeyboard = TheKeyboard;
-		TheGlobalData = &globalData;
+		TheWritableGlobalData = &globalData;
 		TheKeyboard = keyboard;
 	}
 
 	~ScopedKeyboardGlobals()
 	{
 		TheKeyboard = oldKeyboard;
-		TheGlobalData = oldGlobalData;
+		TheWritableGlobalData = oldGlobalData;
 	}
 };
 

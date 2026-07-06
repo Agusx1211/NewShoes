@@ -8680,6 +8680,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       run verify:cnc-port-real-headers`, `npm --prefix WebAssembly run
       verify:cnc-port-weak-stubs`, and `npm --prefix WebAssembly run
       build:port`.
+- [x] Migrate the Win32 keyboard smokes to the real-header keyboard runtime.
+      `win32-keyboard-smoke` and `win32-keyboard-focus-repeat-smoke` now force
+      `wasm_prerts_real.h`, define the original `GlobalData`/`GameLogic`
+      header switches, and link the already-real `zh_gameclient_utility`
+      closure plus original GlobalData/debug owners and focused real-layout INI
+      support. The keyboard fixtures now write `TheWritableGlobalData` instead
+      of owning a shim-layout `TheGlobalData` symbol. Verified with focused
+      Ninja builds for both smokes, a focused `ninja -t deps` audit reporting
+      0 audited shadow-header offenders, both Node smoke executables, `npm
+      --prefix WebAssembly run verify:cnc-port-real-headers`, `npm --prefix
+      WebAssembly run verify:cnc-port-weak-stubs`, and `npm --prefix
+      WebAssembly run build:port`.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an

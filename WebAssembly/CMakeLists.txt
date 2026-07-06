@@ -6559,6 +6559,7 @@ target_link_options(win32-mouse-cursor-smoke PRIVATE
 
 add_executable(win32-keyboard-smoke
   tests/win32_keyboard_smoke.cpp
+  src/wasm_gameclient_utility_smoke_ini_support.cpp
 )
 
 set_target_properties(win32-keyboard-smoke PROPERTIES
@@ -6567,10 +6568,32 @@ set_target_properties(win32-keyboard-smoke PROPERTIES
 
 target_link_libraries(win32-keyboard-smoke PRIVATE
   zh_gameclient_utility
+  zh_gameengine_globaldata_runtime
+  zh_gameengine_debug_runtime
+)
+
+target_compile_definitions(win32-keyboard-smoke PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
 )
 
 target_compile_options(win32-keyboard-smoke PRIVATE
-  -include${WASM_SHIMS_DIR}/PreRTS.h
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
   -fms-extensions
   -Wall
   -Wextra
@@ -6589,6 +6612,7 @@ target_link_options(win32-keyboard-smoke PRIVATE
 
 add_executable(win32-keyboard-focus-repeat-smoke
   tests/win32_keyboard_focus_repeat_smoke.cpp
+  src/wasm_gameclient_utility_smoke_ini_support.cpp
 )
 
 set_target_properties(win32-keyboard-focus-repeat-smoke PROPERTIES
@@ -6597,10 +6621,32 @@ set_target_properties(win32-keyboard-focus-repeat-smoke PROPERTIES
 
 target_link_libraries(win32-keyboard-focus-repeat-smoke PRIVATE
   zh_gameclient_utility
+  zh_gameengine_globaldata_runtime
+  zh_gameengine_debug_runtime
+)
+
+target_compile_definitions(win32-keyboard-focus-repeat-smoke PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
 )
 
 target_compile_options(win32-keyboard-focus-repeat-smoke PRIVATE
-  -include${WASM_SHIMS_DIR}/PreRTS.h
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
   -fms-extensions
   -Wall
   -Wextra

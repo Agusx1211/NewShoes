@@ -295,7 +295,11 @@ residue and the next frontier.
       `win32-mouse-cursor-smoke`, and `gamewindow-input-smoke` off shim
       `PreRTS.h` and onto the real-header `zh_win32_mouse_browser_real` path,
       sharing the already-real `zh_gameclient_utility` closure plus original
-      GlobalData/debug owners. Remaining cleanup: audit and delete the shadow
+      GlobalData/debug owners. The next burn-down migrated
+      `win32-keyboard-smoke` and `win32-keyboard-focus-repeat-smoke` off shim
+      `PreRTS.h` and onto the same real-header `zh_gameclient_utility` closure
+      plus original GlobalData/debug owners and focused real-layout INI support.
+      Remaining cleanup: audit and delete the shadow
       shim class headers/bodies once no linked or compile-only target needs
       them, and migrate or retire any future legacy target that still depends
       on them. This is the same hazard class as the confirmed d6d3b79
