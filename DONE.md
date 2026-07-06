@@ -8702,6 +8702,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       244 triangles/frame, and `W3DDisplay.draw.inGameUI.before` at 61.355 ms
       on the sampled frame. This confirms GUI Render2D batching, not sorted
       draw-uniform setup, is the active shell-map performance frontier.
+- [x] Batch the real W3DDisplay 2D GUI primitives across the in-game UI draw
+      scope while preserving UI z-order. `W3DDisplay` now starts a scoped
+      Emscripten-only 2D primitive batch around `TheInGameUI` rendering,
+      coalesces adjacent same-state display-owned `drawImage`/line/rect/clock
+      primitives into the existing `Render2DClass`, and drains the batch before
+      any other `Render2DClass` owner renders so display strings still appear in
+      original order. The primitive wrappers preserve their original geometry
+      generation and fall back to immediate rendering outside the scoped batch;
+      non-wasm builds remain immediate-mode because the drain hook is wasm-only.
+      Verified with `git diff --check`, `npm --prefix WebAssembly run
+      build:port`, `npm --prefix WebAssembly run build:port:release`, and Mac
+      M4 Chrome/Metal runtime profiles plus visible main-menu screenshots. The
+      final 60-frame menu profile reported an Apple M4 Metal renderer string,
+      54.68 ms/frame wall, 53.21 ms average engine `lastFrameMs`, zero
+      measured readPixels, 16 Render2D draws/frame (15 textured + 1 untextured)
+      instead of 97, the same 488 Render2D vertices / 244 triangles/frame, and
+      `W3DDisplay.draw.inGameUI.before` down to 10.005 ms on the sampled frame.
+      The new top sampled bucket is `W3DWater.render.waterTracks.before` at
+      21.37 ms.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`

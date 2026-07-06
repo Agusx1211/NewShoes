@@ -383,6 +383,18 @@ RTS2DScene *W3DDisplay::m_2DScene = NULL;
 RTS3DInterfaceScene *W3DDisplay::m_3DInterfaceScene = NULL;
 W3DAssetManager *W3DDisplay::m_assetManager = NULL;
 
+#ifdef __EMSCRIPTEN__
+static W3DDisplay *s_active2DPrimitiveBatchDisplay = NULL;
+
+extern "C" void cnc_port_flush_w3d_display_2d_batch(const void *renderer)
+{
+	if (s_active2DPrimitiveBatchDisplay)
+	{
+		s_active2DPrimitiveBatchDisplay->flush2DPrimitiveBatch((const Render2DClass *)renderer);
+	}
+}
+#endif
+
 //=============================================================================
 	// note, can't use the ones from PerfTimer.h 'cuz they are currently
 	// only valid when "-vtune" is used... (srj)
@@ -419,6 +431,12 @@ W3DDisplay::W3DDisplay()
 	for (i=0; i<LightEnvironmentClass::MAX_LIGHTS; i++)
 		m_myLight[i] = NULL;
 	m_2DRender = NULL;
+	m_2DRenderBatchDepth = 0;
+	m_2DRenderBatchHasState = FALSE;
+	m_2DRenderBatchHasGeometry = FALSE;
+	m_2DRenderBatchTextured = FALSE;
+	m_2DRenderBatchTexture = NULL;
+	m_2DRenderBatchMode = DRAW_IMAGE_ALPHA;
 	m_isClippedEnabled = FALSE;
 	m_clipRegion.lo.x = 0;
 	m_clipRegion.lo.y = 0;
@@ -435,6 +453,12 @@ W3DDisplay::W3DDisplay()
 //=============================================================================
 W3DDisplay::~W3DDisplay()
 {
+#ifdef __EMSCRIPTEN__
+	if (s_active2DPrimitiveBatchDisplay == this)
+	{
+		s_active2DPrimitiveBatchDisplay = NULL;
+	}
+#endif
 
 	// get rid of the debug display
 	delete m_debugDisplay;
@@ -1927,7 +1951,9 @@ AGAIN:
 				
 				if(TheGlobalData->m_loadScreenRender == TRUE)
 				{	
+					begin2DPrimitiveBatch();
 					TheInGameUI->draw();
+					end2DPrimitiveBatch();
 					if( TheMouse )
 						TheMouse->draw();	//keep applying the current cursor style so it remains hidden if needed.
 					WW3D::End_Render();
@@ -1945,7 +1971,9 @@ AGAIN:
 
 					// draw the user interface
 					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.inGameUI.before");
+					begin2DPrimitiveBatch();
 					TheInGameUI->DRAW();
+					end2DPrimitiveBatch();
 					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.inGameUI.after");
 
 				// end of video example code
@@ -2232,6 +2260,130 @@ void W3DDisplay::setTimeOfDay( TimeOfDay tod )
 	}
 }
 
+void W3DDisplay::begin2DPrimitiveBatch(void)
+{
+#ifdef __EMSCRIPTEN__
+	if (m_2DRenderBatchDepth == 0)
+	{
+		s_active2DPrimitiveBatchDisplay = this;
+	}
+	++m_2DRenderBatchDepth;
+#endif
+}
+
+void W3DDisplay::end2DPrimitiveBatch(void)
+{
+	if (m_2DRenderBatchDepth <= 0)
+	{
+		return;
+	}
+
+	--m_2DRenderBatchDepth;
+	if (m_2DRenderBatchDepth == 0)
+	{
+		flush2DPrimitiveBatch();
+#ifdef __EMSCRIPTEN__
+		if (s_active2DPrimitiveBatchDisplay == this)
+		{
+			s_active2DPrimitiveBatchDisplay = NULL;
+		}
+#endif
+	}
+}
+
+void W3DDisplay::flush2DPrimitiveBatch(const Render2DClass *rendererToSkip)
+{
+	if (rendererToSkip == m_2DRender)
+	{
+		return;
+	}
+
+	if (!m_2DRenderBatchHasState)
+	{
+		return;
+	}
+
+	if (m_2DRenderBatchHasGeometry)
+	{
+		m_2DRender->Render();
+	}
+
+	m_2DRender->Reset();
+	m_2DRenderBatchHasState = FALSE;
+	m_2DRenderBatchHasGeometry = FALSE;
+	m_2DRenderBatchTextured = FALSE;
+	m_2DRenderBatchTexture = NULL;
+	m_2DRenderBatchMode = DRAW_IMAGE_ALPHA;
+}
+
+void W3DDisplay::apply2DPrimitiveState(Bool textured, TextureClass *texture, DrawImageMode mode)
+{
+	m_2DRender->Enable_Texturing(textured);
+	if (!textured)
+	{
+		m_2DRender->Enable_Alpha(TRUE);
+		m_2DRender->Set_Texture((TextureClass *)NULL);
+		return;
+	}
+
+	m_2DRender->Enable_Alpha(TRUE);
+	switch (mode)
+	{
+		case DRAW_IMAGE_GRAYSCALE:
+			m_2DRender->Enable_Grayscale(true);
+			break;
+		case DRAW_IMAGE_ADDITIVE:
+			m_2DRender->Enable_Additive(true);
+			break;
+		case DRAW_IMAGE_SOLID:
+			m_2DRender->Enable_Additive(false);
+			m_2DRender->Enable_Alpha(false);
+			break;
+		case DRAW_IMAGE_ALPHA:
+		default:
+			break;
+	}
+	m_2DRender->Set_Texture(texture);
+}
+
+void W3DDisplay::prepare2DPrimitive(Bool textured, TextureClass *texture, DrawImageMode mode)
+{
+	if (m_2DRenderBatchDepth > 0)
+	{
+		if (m_2DRenderBatchHasState &&
+			 m_2DRenderBatchTextured == textured &&
+			 m_2DRenderBatchTexture == texture &&
+			 (!textured || m_2DRenderBatchMode == mode))
+		{
+			return;
+		}
+
+		flush2DPrimitiveBatch();
+		m_2DRender->Reset();
+		apply2DPrimitiveState(textured, texture, mode);
+		m_2DRenderBatchHasState = TRUE;
+		m_2DRenderBatchHasGeometry = FALSE;
+		m_2DRenderBatchTextured = textured;
+		m_2DRenderBatchTexture = texture;
+		m_2DRenderBatchMode = mode;
+		return;
+	}
+
+	m_2DRender->Reset();
+	apply2DPrimitiveState(textured, texture, mode);
+}
+
+void W3DDisplay::finish2DPrimitive(void)
+{
+	if (m_2DRenderBatchDepth > 0)
+	{
+		m_2DRenderBatchHasGeometry = TRUE;
+		return;
+	}
+
+	m_2DRender->Render();
+}
+
 // W3DDisplay::drawLine =======================================================
 /** draw a line on the display in pixel coordinates with the specified color */
 //=============================================================================
@@ -2241,12 +2393,10 @@ void W3DDisplay::drawLine( Int startX, Int startY,
 													 UnsignedInt lineColor )
 {
 	
-	/// @todo we need to consider the efficiency of the 2D renderer
-	m_2DRender->Reset();
-	m_2DRender->Enable_Texturing( FALSE );
+	prepare2DPrimitive(FALSE, NULL, DRAW_IMAGE_ALPHA);
 	m_2DRender->Add_Line( Vector2( startX, startY ), Vector2( endX, endY ), 
 												lineWidth, lineColor );
-	m_2DRender->Render();
+	finish2DPrimitive();
 
 }  // end drawLine
 
@@ -2259,12 +2409,10 @@ void W3DDisplay::drawLine( Int startX, Int startY,
 													 UnsignedInt lineColor1,UnsignedInt lineColor2 )
 {
 	
-	/// @todo we need to consider the efficiency of the 2D renderer
-	m_2DRender->Reset();
-	m_2DRender->Enable_Texturing( FALSE );
+	prepare2DPrimitive(FALSE, NULL, DRAW_IMAGE_ALPHA);
 	m_2DRender->Add_Line( Vector2( startX, startY ), Vector2( endX, endY ), 
 												lineWidth, lineColor1, lineColor2 );
-	m_2DRender->Render();
+	finish2DPrimitive();
 
 }  // end drawLine
 
@@ -2307,16 +2455,13 @@ void W3DDisplay::drawOpenRect( Int startX, Int startY, Int width, Int height,
 	}
 	else
 	{
-		/// @todo we need to consider the efficiency of the 2D renderer
-		m_2DRender->Reset();		
-		m_2DRender->Enable_Texturing( FALSE );
+		prepare2DPrimitive(FALSE, NULL, DRAW_IMAGE_ALPHA);
 		
 		m_2DRender->Add_Outline( RectClass( startX, startY, 
 																				startX + width, startY + height ), 
 														 lineWidth, lineColor );
 
-		// render it now!
-		m_2DRender->Render();
+		finish2DPrimitive();
 	}
 
 }  // end drawOpenRect
@@ -2327,15 +2472,12 @@ void W3DDisplay::drawFillRect( Int startX, Int startY, Int width, Int height,
 															 UnsignedInt color )
 {
 
-	/// @todo we need to consider the efficiency of the 2D renderer
-	m_2DRender->Reset();		
-	m_2DRender->Enable_Texturing( FALSE );
+	prepare2DPrimitive(FALSE, NULL, DRAW_IMAGE_ALPHA);
 	m_2DRender->Add_Rect( RectClass( startX, startY, 
 																	 startX + width, startY + height ), 
 												0, 0, color );
 
-	// render it now!
-	m_2DRender->Render();
+	finish2DPrimitive();
 
 }  // end drawFillRect
 
@@ -2345,8 +2487,7 @@ void W3DDisplay::drawRectClock(Int startX, Int startY, Int width, Int height, In
 	if(percent < 1 || percent > 100)
 		return;
 
-	m_2DRender->Reset();		
-	m_2DRender->Enable_Texturing( FALSE );
+	prepare2DPrimitive(FALSE, NULL, DRAW_IMAGE_ALPHA);
 
 // The rectanges are numberd as follows
 //(x,y)	|---------|
@@ -2491,8 +2632,7 @@ void W3DDisplay::drawRectClock(Int startX, Int startY, Int width, Int height, In
 		}
 	}
 
-	// render it now!
-	m_2DRender->Render();
+	finish2DPrimitive();
 
 }
 
@@ -2509,8 +2649,7 @@ void W3DDisplay::drawRemainingRectClock(Int startX, Int startY, Int width, Int h
 	if( percent < 0 || percent > 99 )
 		return;
 
-	m_2DRender->Reset();		
-	m_2DRender->Enable_Texturing( FALSE );
+	prepare2DPrimitive(FALSE, NULL, DRAW_IMAGE_ALPHA);
 
 // The rectanges are numbered as follows
 //(x,y)	|---------|
@@ -2671,7 +2810,7 @@ void W3DDisplay::drawRemainingRectClock(Int startX, Int startY, Int width, Int h
 	}
 
 	// render it now!
-	m_2DRender->Render();
+	finish2DPrimitive();
 }
 
 
@@ -2694,37 +2833,6 @@ void W3DDisplay::drawImage( const Image *image, Int startX, Int startY,
 	// !!
 
 	const Region2D *uv = image->getUV();
-
-	m_2DRender->Reset();
-	m_2DRender->Enable_Texturing( TRUE );
-
-	Bool doAlphaReset=FALSE;
-
-	///@todo: Why are we alpha blending all images?  Reduces our fillrate. -MW
-	switch (mode)
-	{
-		case DRAW_IMAGE_ALPHA:	//nothing to do since alpha is the default state
-			break;
-		case DRAW_IMAGE_GRAYSCALE:
-			m_2DRender->Enable_Grayscale(true);
-			break;
-		case DRAW_IMAGE_ADDITIVE:
-			m_2DRender->Enable_Additive(true);
-			doAlphaReset = TRUE;
-			break;
-		case DRAW_IMAGE_SOLID:
-			m_2DRender->Enable_Additive(false);
-			m_2DRender->Enable_Alpha(false);
-			doAlphaReset = TRUE;
-		default:
-			break;
-	}
-
-	// if we have raw texture data we will use it, otherwise we are referencing filenames
-	if( BitTest( image->getStatus(), IMAGE_STATUS_RAW_TEXTURE ) )
-		m_2DRender->Set_Texture( (TextureClass *)(image->getRawTextureData()) );
-	else
-		m_2DRender->Set_Texture( image->getFilename().str() );
 
 	RectClass screen_rect(startX,startY,endX,endY);
 	RectClass uv_rect(uv->lo.x,uv->lo.y,uv->hi.x,uv->hi.y);
@@ -2810,6 +2918,18 @@ void W3DDisplay::drawImage( const Image *image, Int startX, Int startY,
 		}
 	}
 
+	// if we have raw texture data we will use it, otherwise we are referencing filenames
+	TextureClass *texture = NULL;
+	Bool releaseTexture = FALSE;
+	if( BitTest( image->getStatus(), IMAGE_STATUS_RAW_TEXTURE ) )
+		texture = (TextureClass *)(image->getRawTextureData());
+	else
+	{
+		texture = WW3DAssetManager::Get_Instance()->Get_Texture( image->getFilename().str(), MIP_LEVELS_1 );
+		releaseTexture = TRUE;
+	}
+	prepare2DPrimitive(TRUE, texture, mode);
+
 	// if rotated 90 degrees clockwise we have to adjust the uv coords
 	if( BitTest( image->getStatus(), IMAGE_STATUS_ROTATED_90_CLOCKWISE ) )
 	{
@@ -2839,12 +2959,11 @@ void W3DDisplay::drawImage( const Image *image, Int startX, Int startY,
 
 	}  // end else
 
-	m_2DRender->Render();
-
-	//reset to default states for next time this method is called.
-	m_2DRender->Enable_Grayscale(false);	//never leave it in this mode
-	if (doAlphaReset)
-		m_2DRender->Enable_Alpha(true);
+	finish2DPrimitive();
+	if (releaseTexture && texture)
+	{
+		texture->Release_Ref();
+	}
 
 }  // end drawImage
 
@@ -2909,6 +3028,7 @@ void W3DDisplay::drawVideoBuffer( VideoBuffer *buffer, Int startX, Int startY, I
 {
 	W3DVideoBuffer *vbuffer = (W3DVideoBuffer*) buffer;
 
+	flush2DPrimitiveBatch();
 	m_2DRender->Reset();
 	m_2DRender->Enable_Texturing( TRUE );
 	m_2DRender->Set_Texture( vbuffer->texture() );

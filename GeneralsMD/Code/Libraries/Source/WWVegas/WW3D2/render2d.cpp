@@ -60,6 +60,7 @@
 
 #ifdef __EMSCRIPTEN__
 extern "C" int cnc_port_is_engine_frame_profile_enabled() __attribute__((weak));
+extern "C" void cnc_port_flush_w3d_display_2d_batch(const void *renderer) __attribute__((weak));
 extern "C" void cnc_port_note_render2d_render(
 	int vertex_count,
 	int index_count,
@@ -79,8 +80,15 @@ extern "C" void cnc_port_note_render2d_render(
 				(hidden)); \
 		} \
 	} while (0)
+#define CNC_PORT_FLUSH_W3D_DISPLAY_2D_BATCH(renderer) \
+	do { \
+		if (cnc_port_flush_w3d_display_2d_batch) { \
+			cnc_port_flush_w3d_display_2d_batch((renderer)); \
+		} \
+	} while (0)
 #else
 #define CNC_PORT_NOTE_RENDER2D_RENDER(vertex_count, index_count, textured, grayscale, hidden) do { } while (0)
+#define CNC_PORT_FLUSH_W3D_DISPLAY_2D_BATCH(renderer) do { } while (0)
 #endif
 
 //#pragma optimize("", off)
@@ -628,6 +636,7 @@ void	Render2DClass::Add_Outline( const RectClass & rect, float width, const Rect
 
 void Render2DClass::Render(void)
 {
+	CNC_PORT_FLUSH_W3D_DISPLAY_2D_BATCH(this);
 	CNC_PORT_NOTE_RENDER2D_RENDER(
 		Vertices.Count(),
 		Indices.Count(),

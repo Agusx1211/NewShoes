@@ -45,10 +45,14 @@ class DisplayString;
 class W3DAssetManager;
 class LightClass;
 class Render2DClass;
+class TextureClass;
 class RTS3DScene;
 class RTS2DScene;
 class RTS3DInterfaceScene;
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_flush_w3d_display_2d_batch(const void *renderer);
+#endif
 
 //=============================================================================
 /** W3D implementation of the game display which is responsible for creating
@@ -58,6 +62,10 @@ class W3DDisplay : public Display
 {
 
 public:
+#ifdef __EMSCRIPTEN__
+	friend void cnc_port_flush_w3d_display_2d_batch(const void *renderer);
+#endif
+
 	W3DDisplay();
 	~W3DDisplay();
 
@@ -160,10 +168,22 @@ protected:
 	void calculateTerrainLOD(void);						///< Calculate terrain LOD.
 	void renderLetterBox(UnsignedInt time);							///< draw letter box border
 	void updateAverageFPS(void);	///< figure out the average fps over the last 30 frames.
+	void begin2DPrimitiveBatch(void);
+	void end2DPrimitiveBatch(void);
+	void flush2DPrimitiveBatch(const Render2DClass *rendererToSkip = NULL);
+	void prepare2DPrimitive(Bool textured, TextureClass *texture, DrawImageMode mode);
+	void finish2DPrimitive(void);
+	void apply2DPrimitiveState(Bool textured, TextureClass *texture, DrawImageMode mode);
 
 	Byte m_initialized;												///< TRUE when system is initialized
 	LightClass *m_myLight[LightEnvironmentClass::MAX_LIGHTS];										///< light hack for now
 	Render2DClass *m_2DRender;								///< interface for common 2D functions
+	Int m_2DRenderBatchDepth;
+	Bool m_2DRenderBatchHasState;
+	Bool m_2DRenderBatchHasGeometry;
+	Bool m_2DRenderBatchTextured;
+	TextureClass *m_2DRenderBatchTexture;
+	DrawImageMode m_2DRenderBatchMode;
 	IRegion2D m_clipRegion;									///< the clipping region for images
 	Bool m_isClippedEnabled;	///<used by 2D drawing operations to define clip re
 	Real m_averageFPS;		///<average fps over the last 30 frames.
