@@ -8,6 +8,7 @@ const gl = canvas.getContext("webgl2", {
 });
 const s3tc = gl ? gl.getExtension("WEBGL_compressed_texture_s3tc") : null;
 const provokingVertex = gl ? gl.getExtension("WEBGL_provoking_vertex") : null;
+const d3d8HasStencilBuffer = gl ? Boolean(gl.getContextAttributes()?.stencil) : false;
 const fallbackContext = gl ? null : canvas.getContext("2d", { alpha: false });
 const stateNode = document.querySelector("#state");
 const framesNode = document.querySelector("#frames");
@@ -123,6 +124,7 @@ let d3d8TemporaryIndexBuffer = null;
 let d3d8TemporaryIndexBufferBytes = 0;
 let d3d8CurrentDepthMask = true;
 let d3d8LastAppliedViewportKey = null;
+let d3d8CurrentRenderGlState = null;
 
 function setD3D8DepthMask(enabled) {
   if (!gl) {
@@ -132,6 +134,40 @@ function setD3D8DepthMask(enabled) {
   if (d3d8CurrentDepthMask !== next) {
     gl.depthMask(next);
     d3d8CurrentDepthMask = next;
+  }
+}
+
+function invalidateD3D8RenderGlStateCache() {
+  d3d8CurrentRenderGlState = null;
+}
+
+function d3d8RenderGlStateValueChanged(key, value) {
+  if (!d3d8CurrentRenderGlState) {
+    d3d8CurrentRenderGlState = {};
+  }
+  if (d3d8CurrentRenderGlState[key] === value) {
+    d3d8PerfStats.drawRenderStateGlCacheHits += 1;
+    return false;
+  }
+  d3d8CurrentRenderGlState[key] = value;
+  d3d8PerfStats.drawRenderStateGlCacheMisses += 1;
+  return true;
+}
+
+function setD3D8TrackedCapability(capability, key, enabled) {
+  const next = Boolean(enabled);
+  if (d3d8RenderGlStateValueChanged(key, next)) {
+    if (next) {
+      gl.enable(capability);
+    } else {
+      gl.disable(capability);
+    }
+  }
+}
+
+function applyD3D8TrackedGlState(key, value, apply) {
+  if (d3d8RenderGlStateValueChanged(key, value)) {
+    apply();
   }
 }
 
@@ -410,6 +446,8 @@ const d3d8PerfStats = {
   drawVertexAttribCacheMisses: 0,
   drawViewportCacheHits: 0,
   drawViewportCacheMisses: 0,
+  drawRenderStateGlCacheHits: 0,
+  drawRenderStateGlCacheMisses: 0,
   drawBaseUniformCacheHits: 0,
   drawBaseUniformCacheMisses: 0,
   drawMaterialUniformCacheHits: 0,
@@ -551,6 +589,8 @@ function d3d8PerfSummary() {
     drawVertexAttribCacheMisses: d3d8PerfStats.drawVertexAttribCacheMisses,
     drawViewportCacheHits: d3d8PerfStats.drawViewportCacheHits,
     drawViewportCacheMisses: d3d8PerfStats.drawViewportCacheMisses,
+    drawRenderStateGlCacheHits: d3d8PerfStats.drawRenderStateGlCacheHits,
+    drawRenderStateGlCacheMisses: d3d8PerfStats.drawRenderStateGlCacheMisses,
     drawBaseUniformCacheHits: d3d8PerfStats.drawBaseUniformCacheHits,
     drawBaseUniformCacheMisses: d3d8PerfStats.drawBaseUniformCacheMisses,
     drawMaterialUniformCacheHits: d3d8PerfStats.drawMaterialUniformCacheHits,
@@ -725,6 +765,7 @@ function invalidateD3D8DrawStateCache() {
   d3d8LastPointSpriteUniformInfo = null;
   d3d8LastVertexAttribKey = null;
   invalidateD3D8AppliedViewportCache();
+  invalidateD3D8RenderGlStateCache();
   resetD3D8UniformSubgroupCaches();
 }
 
@@ -8541,7 +8582,7 @@ function applyD3D8RenderState(renderState, options = {}) {
   const srcBlend = d3dBlendFactorToGl(state.srcBlend);
   const destBlend = d3dBlendFactorToGl(state.destBlend);
   const blendEquation = d3dBlendOpToGl(state.blendOp);
-  const stencilAvailable = Boolean(gl.getContextAttributes()?.stencil);
+  const stencilAvailable = d3d8HasStencilBuffer;
   const stencilEnabled = stencilAvailable && state.stencilEnable !== 0;
   const stencilFunc = d3dCmpToGl(state.stencilFunc);
   const stencilFail = d3dStencilOpToGl(state.stencilFail);
@@ -8563,40 +8604,41 @@ function applyD3D8RenderState(renderState, options = {}) {
     a: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_ALPHA),
   };
 
-  gl.frontFace(gl.CCW);
+  applyD3D8TrackedGlState("frontFace", gl.CCW, () => gl.frontFace(gl.CCW));
+  setD3D8TrackedCapability(gl.CULL_FACE, "cullEnabled", cullEnabled);
   if (cullEnabled) {
-    gl.enable(gl.CULL_FACE);
-    gl.cullFace(cullFace);
-  } else {
-    gl.disable(gl.CULL_FACE);
+    applyD3D8TrackedGlState("cullFace", cullFace, () => gl.cullFace(cullFace));
   }
 
-  if (depthEnabled) {
-    gl.enable(gl.DEPTH_TEST);
-  } else {
-    gl.disable(gl.DEPTH_TEST);
-  }
+  setD3D8TrackedCapability(gl.DEPTH_TEST, "depthEnabled", depthEnabled);
   setD3D8DepthMask(state.zWriteEnable !== 0);
-  gl.depthFunc(depthFunc);
+  applyD3D8TrackedGlState("depthFunc", depthFunc, () => gl.depthFunc(depthFunc));
 
-  if (blendEnabled) {
-    gl.enable(gl.BLEND);
-  } else {
-    gl.disable(gl.BLEND);
-  }
-  gl.blendFunc(srcBlend, destBlend);
-  gl.blendEquation(blendEquation);
-  gl.colorMask(colorMask.r, colorMask.g, colorMask.b, colorMask.a);
+  setD3D8TrackedCapability(gl.BLEND, "blendEnabled", blendEnabled);
+  applyD3D8TrackedGlState("blendFunc", `${srcBlend},${destBlend}`,
+    () => gl.blendFunc(srcBlend, destBlend));
+  applyD3D8TrackedGlState("blendEquation", blendEquation,
+    () => gl.blendEquation(blendEquation));
+  applyD3D8TrackedGlState(
+    "colorMask",
+    `${colorMask.r ? 1 : 0},${colorMask.g ? 1 : 0},${colorMask.b ? 1 : 0},${colorMask.a ? 1 : 0}`,
+    () => gl.colorMask(colorMask.r, colorMask.g, colorMask.b, colorMask.a),
+  );
+  setD3D8TrackedCapability(gl.STENCIL_TEST, "stencilEnabled", stencilEnabled);
   if (stencilEnabled) {
-    gl.enable(gl.STENCIL_TEST);
-    gl.stencilFunc(stencilFunc, state.stencilRef, state.stencilMask);
-    gl.stencilOp(stencilFail, stencilZFail, stencilPass);
-    gl.stencilMask(state.stencilWriteMask);
+    applyD3D8TrackedGlState("stencilFunc", `${stencilFunc},${state.stencilRef},${state.stencilMask}`,
+      () => gl.stencilFunc(stencilFunc, state.stencilRef, state.stencilMask));
+    applyD3D8TrackedGlState("stencilOp", `${stencilFail},${stencilZFail},${stencilPass}`,
+      () => gl.stencilOp(stencilFail, stencilZFail, stencilPass));
+    applyD3D8TrackedGlState("stencilMask", state.stencilWriteMask,
+      () => gl.stencilMask(state.stencilWriteMask));
   } else {
-    gl.disable(gl.STENCIL_TEST);
-    gl.stencilFunc(gl.ALWAYS, 0, 0xffffffff);
-    gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
-    gl.stencilMask(0xffffffff);
+    applyD3D8TrackedGlState("stencilFunc", `${gl.ALWAYS},0,${0xffffffff}`,
+      () => gl.stencilFunc(gl.ALWAYS, 0, 0xffffffff));
+    applyD3D8TrackedGlState("stencilOp", `${gl.KEEP},${gl.KEEP},${gl.KEEP}`,
+      () => gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP));
+    applyD3D8TrackedGlState("stencilMask", 0xffffffff,
+      () => gl.stencilMask(0xffffffff));
   }
 
   return {

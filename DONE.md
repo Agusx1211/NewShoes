@@ -8665,6 +8665,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       ~482.6 hits vs ~3.5 misses. Remaining measured sorted-uniform costs are
       render-state application 0.512, material uniforms 0.131, and
       texture-layout uniforms 0.016 ms/frame.
+- [x] Cache redundant sorted WebGL render-state setter calls in the browser D3D8
+      bridge. `applyD3D8RenderState` now tracks the current GL front-face,
+      cull, depth, blend, color-mask, and stencil state and skips repeated
+      setter calls while preserving conservative invalidation through the draw
+      state reset path. Stencil availability is cached from the immutable
+      context attributes, and `runtime_frame_profile.mjs` now reports
+      render-state GL cache hit/miss counters. Verified with `node --check
+      WebAssembly/harness/bridge.js`, `node --check
+      WebAssembly/harness/runtime_frame_profile.mjs`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port`, and two Mac M4 Chrome/Metal
+      runtime profiles with visible shell-map screenshots. The second stability
+      run reported an Apple M4 Metal renderer string, 44.63 ms/frame wall,
+      36.72 ms average engine `lastFrameMs`, zero measured readPixels, ~69.2
+      profiled sorted draws/frame, sorted bridge work at 2.073 ms/frame, sorted
+      uniform setup at 0.897 ms/frame, and `sortedDrawApplyRenderStateMs` down
+      to 0.179 ms/frame with ~840.1 render-state GL cache hits/frame vs
+      ~121.5 misses. Remaining measured sorted-uniform costs are residual
+      transform uploads 0.212, material uniforms 0.157, and texture-layout
+      uniforms 0.015 ms/frame.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`

@@ -122,7 +122,13 @@ world/view/projection transform uploads then reduced transform uploads to
 constant view/projection uniforms current across per-object world changes. The
 remaining measured sorted-uniform costs are render-state application
 0.512 ms/frame, residual transform uploads 0.172 ms/frame, and material
-uniforms 0.131 ms/frame.
+uniforms 0.131 ms/frame. Caching redundant WebGL render-state setter calls then
+reduced render-state application to 0.179 ms/frame and sorted bridge work to
+2.073 ms/frame in the second stability run, with ~840 skipped state setters per
+frame vs ~121 applied changes. The remaining measured sorted-uniform costs are
+residual transform uploads 0.212 ms/frame, render-state application
+0.179 ms/frame, material uniforms 0.157 ms/frame, and texture-layout uniforms
+0.015 ms/frame; no single sorted-uniform bucket is the current frontier.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
@@ -2415,19 +2421,6 @@ and then start with the PROFILE, not with any individual fix.
       `diag=lite` has no warmup readbacks; DevTools is still needed before
       changing buffer/shader/draw submission internals that might be dominated
       by asynchronous ANGLE/GPU stalls.
-- [ ] **Optimize remaining sorted browser uniform setup**: after the
-      per-matrix transform upload split, Mac Chrome/Metal measures sorted
-      bridge work at 2.065 ms/frame across ~66.4 profiled sorted draws/frame.
-      Transform uploads are no longer a primary frontier
-      (`sortedDrawTransformUniformMs` 0.172 ms/frame): world still changes
-      often (~168.1 misses/frame), while view/projection are mostly stable
-      (~7.7 and ~3.5 misses/frame). Viewport setup remains low
-      (`sortedDrawViewportMs` 0.090 ms/frame), material uniforms remain low
-      (`sortedDrawRenderMaterialUniformMs` 0.131 ms/frame), and texture layout
-      remains drained (`sortedDrawTextureUniformMs` 0.016 ms/frame). The
-      remaining uniform target is render-state application
-      (`sortedDrawApplyRenderStateMs` 0.512 ms/frame). Cache or split only
-      these proven repeated work groups, preserving original sorted draw order.
 - [ ] **Batch the 2D GUI/menu draws — the menu is the real shell-map
       bottleneck, not the 3D scene.** Owner-observed: on the shell map the
       first ~seconds render at ~30fps with no menu widgets, then FPS drops to
