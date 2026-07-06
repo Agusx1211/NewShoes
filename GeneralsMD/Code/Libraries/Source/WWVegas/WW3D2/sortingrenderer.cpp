@@ -60,6 +60,8 @@
 #ifdef __EMSCRIPTEN__
 extern "C" void cnc_port_note_engine_profile_marker(const char *name) __attribute__((weak));
 extern "C" int cnc_port_is_engine_frame_profile_enabled() __attribute__((weak));
+extern "C" void cnc_port_begin_sorted_draw_submit_profile_scope() __attribute__((weak));
+extern "C" void cnc_port_end_sorted_draw_submit_profile_scope() __attribute__((weak));
 #define CNC_PORT_NOTE_SORTING_STEP(name) \
 	do { \
 		if (cnc_port_note_engine_profile_marker) { \
@@ -72,9 +74,23 @@ extern "C" int cnc_port_is_engine_frame_profile_enabled() __attribute__((weak));
 			cnc_port_note_engine_profile_marker(name); \
 		} \
 	} while (0)
+#define CNC_PORT_BEGIN_SORTED_DRAW_SUBMIT_PROFILE_SCOPE(enabled) \
+	do { \
+		if ((enabled) && cnc_port_begin_sorted_draw_submit_profile_scope) { \
+			cnc_port_begin_sorted_draw_submit_profile_scope(); \
+		} \
+	} while (0)
+#define CNC_PORT_END_SORTED_DRAW_SUBMIT_PROFILE_SCOPE(enabled) \
+	do { \
+		if ((enabled) && cnc_port_end_sorted_draw_submit_profile_scope) { \
+			cnc_port_end_sorted_draw_submit_profile_scope(); \
+		} \
+	} while (0)
 #else
 #define CNC_PORT_NOTE_SORTING_STEP(name) do { } while (0)
 #define CNC_PORT_NOTE_SORTING_PROFILE_STEP(enabled, name) do { } while (0)
+#define CNC_PORT_BEGIN_SORTED_DRAW_SUBMIT_PROFILE_SCOPE(enabled) do { } while (0)
+#define CNC_PORT_END_SORTED_DRAW_SUBMIT_PROFILE_SCOPE(enabled) do { } while (0)
 #endif
 
 bool SortingRendererClass::_EnableTriangleDraw=true;
@@ -513,11 +529,13 @@ static void Draw_Sorted_Run(
 	WWASSERT(min_vertex_index <= 0xffffu);
 	WWASSERT(vertex_count <= 0xffffu);
 
+	CNC_PORT_BEGIN_SORTED_DRAW_SUBMIT_PROFILE_SCOPE(profile_draw_steps);
 	DX8Wrapper::Draw_Triangles(
 		(unsigned short)(start_index * 3),
 		(unsigned short)polygon_count,
 		(unsigned short)min_vertex_index,
 		(unsigned short)vertex_count);
+	CNC_PORT_END_SORTED_DRAW_SUBMIT_PROFILE_SCOPE(profile_draw_steps);
 	CNC_PORT_NOTE_SORTING_PROFILE_STEP(profile_draw_steps,"SortingRenderer.pool.draw.submit.after");
 }
 

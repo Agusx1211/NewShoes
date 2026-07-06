@@ -14,6 +14,24 @@
 #endif
 
 #ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_profile_marker(const char *name) __attribute__((weak));
+extern "C" int cnc_port_is_sorted_draw_submit_profile_scope() __attribute__((weak));
+static bool wasm_d3d8_sorted_draw_profile_enabled()
+{
+	return cnc_port_is_sorted_draw_submit_profile_scope && cnc_port_is_sorted_draw_submit_profile_scope();
+}
+#define WASM_D3D8_NOTE_SORTED_DRAW_STEP(enabled, name) \
+	do { \
+		if ((enabled) && cnc_port_note_engine_profile_marker) { \
+			cnc_port_note_engine_profile_marker(name); \
+		} \
+	} while (0)
+#else
+static bool wasm_d3d8_sorted_draw_profile_enabled() { return false; }
+#define WASM_D3D8_NOTE_SORTED_DRAW_STEP(enabled, name) do { } while (0)
+#endif
+
+#ifdef __EMSCRIPTEN__
 EM_JS(void, wasm_d3d8_browser_clear_target, (unsigned int flags, unsigned int color_arg, double z, unsigned int stencil), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8Clear : null;
 	if (typeof bridge !== "function") {
@@ -343,7 +361,8 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	unsigned int lights_ptr,
 	unsigned int material_ptr,
 	unsigned int state_hash,
-	unsigned int derived_state_hash
+	unsigned int derived_state_hash,
+	int sorted_draw_profile_scope
 ), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8DrawIndexed : null;
 	if (typeof bridge !== "function" || typeof Module === "undefined") {
@@ -588,6 +607,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 		material: cached_state.material,
 		stateHash: current_state_hash,
 		derivedStateHash: current_derived_state_hash,
+		sortedDrawSubmitProfile: sorted_draw_profile_scope !== 0,
 	});
 	});
 #else
@@ -607,7 +627,7 @@ void wasm_d3d8_browser_texture_bind(unsigned int, unsigned int) {}
 void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
-	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int) {}
+	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, int) {}
 #endif
 
 namespace {
@@ -1231,10 +1251,13 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 	const WasmD3D8DrawLight *lights, const WasmD3D8DrawMaterial *material, UINT state_hash,
 	UINT derived_state_hash)
 {
+	const bool profile_sorted_draw_submit = wasm_d3d8_sorted_draw_profile_enabled();
 	if (vertex_buffer_id == 0 || vertex_byte_size == 0 || index_buffer_id == 0 || index_byte_size == 0 ||
 		index_count == 0 || vertex_stride == 0) {
+		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.browserDrawIndexed.complete");
 		return;
 	}
+	WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.browserDrawIndexed.before");
 	wasm_d3d8_browser_draw_indexed(
 		static_cast<int>(primitive_type),
 		base_vertex_index,
@@ -1262,7 +1285,9 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(lights)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(material)),
 		state_hash,
-		derived_state_hash);
+		derived_state_hash,
+		profile_sorted_draw_submit ? 1 : 0);
+	WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.browserDrawIndexed.after");
 }
 
 struct BrowserD3DResource
@@ -3071,16 +3096,21 @@ public:
 	HRESULT DrawIndexedPrimitive(D3DPRIMITIVETYPE primitive_type, UINT min_index, UINT vertex_count,
 		UINT start_index, UINT primitive_count) override
 	{
+		const bool profile_sorted_draw_submit = wasm_d3d8_sorted_draw_profile_enabled();
+		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.DrawIndexedPrimitive.entry");
 		++g_state.draw_indexed_primitive_calls;
 		g_state.last_draw_primitive_type = primitive_type;
 		g_state.last_draw_min_vertex_index = min_index;
 		g_state.last_draw_vertex_count = vertex_count;
 		g_state.last_draw_start_index = start_index;
 		g_state.last_draw_primitive_count = primitive_count;
+		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.DrawIndexedPrimitive.captureBound.before");
 		capture_bound_draw(m_indices_base_vertex_index + min_index, vertex_count, start_index,
 			primitive_vertex_count(primitive_type, primitive_count));
+		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.DrawIndexedPrimitive.drawBound.before");
 		draw_bound_indexed_primitive(primitive_type, m_indices_base_vertex_index, min_index, vertex_count,
 			start_index, primitive_vertex_count(primitive_type, primitive_count));
+		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.DrawIndexedPrimitive.drawBound.after");
 		return S_OK;
 	}
 	HRESULT DrawPrimitiveUP(D3DPRIMITIVETYPE primitive_type, UINT primitive_count,
@@ -3713,22 +3743,28 @@ private:
 	void draw_bound_indexed_primitive(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_index, UINT min_vertex_index,
 		UINT vertex_count, UINT first_index, UINT index_count)
 	{
+		const bool profile_sorted_draw_submit = wasm_d3d8_sorted_draw_profile_enabled();
+		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.entry");
 		if (m_stream_source == nullptr || m_indices == nullptr || m_stream_source_stride == 0 || index_count == 0) {
+			WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.complete");
 			return;
 		}
 
 		const BrowserD3DVertexBuffer *stream = static_cast<const BrowserD3DVertexBuffer *>(m_stream_source);
 		const BrowserD3DIndexBuffer *indices = static_cast<const BrowserD3DIndexBuffer *>(m_indices);
 		if (min_vertex_index > std::numeric_limits<UINT>::max() - vertex_count) {
+			WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.complete");
 			return;
 		}
 
+		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.range.before");
 		// Keep the D3D index buffer bytes unchanged for this first browser bridge.
 		// Upload from BaseVertexIndex and include the MinVertexIndex range so raw
 		// D3D indices still address the intended vertices in WebGL.
 		const UINT uploaded_vertex_count = min_vertex_index + vertex_count;
 		if (base_vertex_index > std::numeric_limits<UINT>::max() / m_stream_source_stride ||
 				uploaded_vertex_count > std::numeric_limits<UINT>::max() / m_stream_source_stride) {
+			WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.complete");
 			return;
 		}
 		const UINT vertex_offset = base_vertex_index * m_stream_source_stride;
@@ -3738,6 +3774,7 @@ private:
 		const UINT index_offset = first_index * index_size;
 		const UINT requested_index_bytes = index_count * index_size;
 		const UINT index_bytes = checked_range_size(indices->length(), index_offset, requested_index_bytes);
+		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.capture.before");
 		capture_draw_transform(D3DTS_WORLD, DRAW_TRANSFORM_WORLD, g_state.last_draw_world_transform);
 		capture_draw_transform(D3DTS_VIEW, DRAW_TRANSFORM_VIEW, g_state.last_draw_view_transform);
 		capture_draw_transform(D3DTS_PROJECTION, DRAW_TRANSFORM_PROJECTION, g_state.last_draw_projection_transform);
@@ -3747,6 +3784,7 @@ private:
 			g_state.last_draw_texture1_transform);
 		capture_draw_render_state();
 		capture_draw_material();
+		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.hash.before");
 
 		// Compute FNV-1a 32-bit hashes over the draw-state fields copied to JS.
 		// The full hash includes all transforms and drives GL state/uniform
@@ -3868,6 +3906,7 @@ private:
 		// transform mask
 		hash_shared_uint(g_state.last_draw_transform_mask);
 		g_state.last_draw_state_hash = state_hash;
+		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.hash.after");
 		const WasmD3D8DrawTextureStageState &stage0 =
 			g_state.last_draw_render_state.texture_stages[0];
 		if (g_state.last_draw_render_state.z_func == D3DCMP_EQUAL &&
@@ -3879,9 +3918,11 @@ private:
 		}
 
 		if (vertex_bytes == 0 || index_bytes == 0) {
+			WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.complete");
 			return;
 		}
 
+		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.bridge.before");
 		browser_draw_indexed(
 			primitive_type,
 			base_vertex_index,
@@ -3910,6 +3951,8 @@ private:
 			&g_state.last_draw_material,
 			g_state.last_draw_state_hash,
 			derived_state_hash);
+		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.bridge.after");
+		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.complete");
 	}
 
 	void capture_draw_transform(D3DTRANSFORMSTATETYPE state, UINT mask_bit, D3DMATRIX &destination) const

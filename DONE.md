@@ -8404,6 +8404,34 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `SortingRenderer.pool.draw.state.before` 0.085 ms, and
       `SortingRenderer.pool.draw.submit.after` 0.070 ms. The next work is to
       split/optimize the sorted `DX8Wrapper::Draw_Triangles` submit path.
+- [x] Split sorted `DX8Wrapper::Draw_Triangles` submit cost through the native
+      wrapper, wasm D3D8 shim, browser bridge call, and JS draw bridge phases.
+      Added a nested sorted-submit profile scope around each sorted
+      `DX8Wrapper::Draw_Triangles` call and used it to emit opt-in markers in
+      `DX8Wrapper::Draw`, `DrawIndexedPrimitive`, `draw_bound_indexed_primitive`,
+      and `browser_draw_indexed`. The same scope now tags the EM_JS payload so
+      `paintD3D8DrawIndexed` accumulates sorted-only per-phase counters for
+      pre-batch work, derived state, texture diagnostics, viewport setup,
+      diagnostics, geometry setup, uniform/state setup, draw/batch handling,
+      and tail accounting; `runtime_frame_profile.mjs` reports those counters
+      in delta and per-frame summaries. Verified with
+      `node --check WebAssembly/harness/bridge.js`,
+      `node --check WebAssembly/harness/runtime_frame_profile.mjs`,
+      `git diff --check`, `npm --prefix WebAssembly run build:port:release`,
+      `npm --prefix WebAssembly run build:port`, and a Mac M4 Chrome/Metal
+      runtime profile using `realEngineFrameTick`, 10 warmup frames,
+      60 measured frames, batch 10, and `PERF_PROFILE_ENGINE_PROFILE=1`.
+      The run reported `ANGLE Metal Renderer: Apple M4`, 47.58 ms/frame wall,
+      47.03 ms average engine `lastFrameMs`, ~486.6 D3D8 draws/frame, zero
+      measured readPixels, and a visible shell-map screenshot. The native-side
+      split showed the expensive section remains the JS bridge
+      (`WasmD3D8.browserDrawIndexed.before` 20.23 ms on the sampled frame),
+      not wrapper state apply, D3D shim capture, hashing, or the final draw
+      call. The JS phase counters narrow the next target to uniform/state
+      setup: sorted bridge work is 13.825 ms/frame across ~66.9 profiled
+      sorted draws/frame, with `sortedDrawUniformMs` 11.924 ms/frame,
+      `sortedDrawGeometryMs` 0.950 ms/frame, `sortedDrawDerivedMs`
+      0.421 ms/frame, and `sortedDrawDrawOrBatchMs` 0.022 ms/frame.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`

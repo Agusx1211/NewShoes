@@ -81,14 +81,22 @@
 
 #ifdef __EMSCRIPTEN__
 extern "C" void cnc_port_note_engine_profile_marker(const char *name) __attribute__((weak));
+extern "C" int cnc_port_is_sorted_draw_submit_profile_scope() __attribute__((weak));
 #define CNC_PORT_NOTE_DX8_STEP(name) \
 	do { \
 		if (cnc_port_note_engine_profile_marker) { \
 			cnc_port_note_engine_profile_marker(name); \
 		} \
 	} while (0)
+#define CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(enabled, name) \
+	do { \
+		if ((enabled) && cnc_port_note_engine_profile_marker) { \
+			cnc_port_note_engine_profile_marker(name); \
+		} \
+	} while (0)
 #else
 #define CNC_PORT_NOTE_DX8_STEP(name) do { } while (0)
+#define CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(enabled, name) do { } while (0)
 #endif
 #include "bound.h"
 #include "dx8webbrowser.h"
@@ -2079,10 +2087,22 @@ void DX8Wrapper::Draw(
 	DX8_THREAD_ASSERT();
 	SNAPSHOT_SAY(("DX8 - draw\n"));
 
+	bool profile_sorted_draw_submit =
+#ifdef __EMSCRIPTEN__
+		cnc_port_is_sorted_draw_submit_profile_scope && cnc_port_is_sorted_draw_submit_profile_scope();
+#else
+		false;
+#endif
+	CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Draw.entry");
+	CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Draw.apply.before");
 	Apply_Render_State_Changes();
+	CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Draw.apply.after");
 
 	// Debug feature to disable triangle drawing...
-	if (!_Is_Triangle_Draw_Enabled()) return;
+	if (!_Is_Triangle_Draw_Enabled()) {
+		CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Draw.complete");
+		return;
+	}
 
 #ifdef MESH_RENDER_SNAPSHOT_ENABLED
 	if (WW3D::Is_Snapshot_Activated()) {
@@ -2165,12 +2185,14 @@ void DX8Wrapper::Draw(
 				}*/
 				DX8_RECORD_RENDER(polygon_count,vertex_count,render_state.shader);
 				DX8_RECORD_DRAW_CALLS();
+				CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Draw.dip.before");
 				DX8CALL(DrawIndexedPrimitive(
 					(D3DPRIMITIVETYPE)primitive_type,
 					min_vertex_index,
 					vertex_count,
 					start_index+render_state.iba_offset,
 					polygon_count));
+				CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Draw.dip.after");
 			}
 			break;
 		case BUFFER_TYPE_SORTING:
@@ -2202,6 +2224,7 @@ void DX8Wrapper::Draw(
 		WWASSERT(0);
 		break;
 	}
+	CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Draw.complete");
 }
 
 // ----------------------------------------------------------------------------

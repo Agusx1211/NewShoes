@@ -276,6 +276,7 @@ static bool g_engine_frame_profile_enabled = false;
 static double g_engine_frame_profile_started_ms = 0.0;
 static double g_engine_frame_profile_last_mark_ms = 0.0;
 static int g_engine_frame_profile_transitions = 0;
+static int g_engine_frame_profile_sorted_draw_submit_depth = 0;
 static std::string g_engine_frame_profile_last_label;
 static std::vector<EngineFrameProfileBucket> g_engine_frame_profile_buckets;
 
@@ -445,6 +446,25 @@ extern "C" int cnc_port_is_engine_frame_profile_enabled()
 	return g_engine_frame_profile_enabled ? 1 : 0;
 }
 
+extern "C" void cnc_port_begin_sorted_draw_submit_profile_scope()
+{
+	if (g_engine_frame_profile_enabled) {
+		++g_engine_frame_profile_sorted_draw_submit_depth;
+	}
+}
+
+extern "C" void cnc_port_end_sorted_draw_submit_profile_scope()
+{
+	if (g_engine_frame_profile_sorted_draw_submit_depth > 0) {
+		--g_engine_frame_profile_sorted_draw_submit_depth;
+	}
+}
+
+extern "C" int cnc_port_is_sorted_draw_submit_profile_scope()
+{
+	return g_engine_frame_profile_enabled && g_engine_frame_profile_sorted_draw_submit_depth > 0 ? 1 : 0;
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_frame_profile(int enabled)
 {
 	g_engine_frame_profile_enabled = enabled != 0;
@@ -454,6 +474,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_frame_profile(int 
 		g_engine_frame_profile_started_ms = 0.0;
 		g_engine_frame_profile_last_mark_ms = 0.0;
 		g_engine_frame_profile_transitions = 0;
+		g_engine_frame_profile_sorted_draw_submit_depth = 0;
 	}
 }
 

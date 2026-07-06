@@ -62,7 +62,15 @@ submission, not state replay: `SortingRenderer.pool.draw.submit.before`
 24.525 ms across 132 submits, `SortingRenderer.pool.draw.state.before`
 0.085 ms, and `SortingRenderer.pool.draw.submit.after` 0.070 ms on the sampled
 frame. Further broad D3D8 shim work should wait for a DevTools trace if async
-ANGLE/GPU stall detail is needed beyond the live harness counters.
+ANGLE/GPU stall detail is needed beyond the live harness counters. A deeper
+profile-gated submit split now scopes sorted draw submissions through
+`DX8Wrapper::Draw`, the wasm D3D8 shim, `browser_draw_indexed`, and the JS
+`paintD3D8DrawIndexed` bridge. Mac Chrome/Metal measured 47.58 ms/frame wall,
+with the sampled frame still led by `WasmD3D8.browserDrawIndexed.before`
+20.23 ms and `HeightMap.render.tilePasses.before` 7.22 ms; the JS phase
+counters show sorted bridge work at 13.825 ms/frame, dominated by
+`sortedDrawUniformMs` 11.924 ms/frame, while geometry setup is 0.950 ms/frame
+and actual draw/batch handling is only 0.022 ms/frame.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
@@ -2355,16 +2363,17 @@ and then start with the PROFILE, not with any individual fix.
       `diag=lite` has no warmup readbacks; DevTools is still needed before
       changing buffer/shader/draw submission internals that might be dominated
       by asynchronous ANGLE/GPU stalls.
-- [ ] **Split/optimize sorted `DX8Wrapper::Draw_Triangles` submission**:
-      profile-only markers inside `SortingRenderer::Flush_Sorting_Pool` now
-      prove the sampled sorted replay cost is almost entirely inside each
-      `DX8Wrapper::Draw_Triangles` submit, not replay-state application
-      (`submit.before` 24.525 ms over 132 submits, `state.before` 0.085 ms).
-      Next pass should split the submit path itself:
-      `DX8Wrapper::Draw` / `Apply_Render_State_Changes` /
-      `DrawIndexedPrimitive` / `browser_draw_indexed` state hashing and
-      dynamic buffer upload. Keep the raw Direct3D bind audit in mind before
-      adding wrapper-level buffer identity caches.
+- [ ] **Optimize sorted browser D3D8 uniform/state setup**: the scoped sorted
+      submit profile now proves native `DX8Wrapper::Draw`, wasm
+      `DrawIndexedPrimitive`, state hashing, and actual GL draw/batch time are
+      cheap; the remaining sorted bridge cost is concentrated in
+      `paintD3D8DrawIndexed` uniform/state setup. Mac Chrome/Metal measured
+      sorted bridge work at 13.825 ms/frame across ~66.9 profiled sorted
+      draws/frame, with `sortedDrawUniformMs` 11.924 ms/frame,
+      `sortedDrawGeometryMs` 0.950 ms/frame, `sortedDrawDerivedMs`
+      0.421 ms/frame, and `sortedDrawDrawOrBatchMs` 0.022 ms/frame. Next pass
+      should split/cache the uniform block inside `paintD3D8DrawIndexed`
+      without changing original sorted draw order.
 - [ ] **Split the real `W3DWater.render.waterTracks` bucket**: the latest
       Mac Chrome/Metal shell-map profile sampled water tracks at 10.9 ms,
       second only to sorted draw replay and ahead of heightmap tile passes on

@@ -383,6 +383,17 @@ const d3d8PerfStats = {
   drawDerivedCacheMisses: 0,
   drawUniformCacheHits: 0,
   drawUniformCacheMisses: 0,
+  sortedDrawProfiledCalls: 0,
+  sortedDrawProfiledMs: 0,
+  sortedDrawPreBatchMs: 0,
+  sortedDrawDerivedMs: 0,
+  sortedDrawTextureDiagMs: 0,
+  sortedDrawViewportMs: 0,
+  sortedDrawDiagnosticsMs: 0,
+  sortedDrawGeometryMs: 0,
+  sortedDrawUniformMs: 0,
+  sortedDrawDrawOrBatchMs: 0,
+  sortedDrawTailMs: 0,
   clears: 0,
   clearMs: 0,
   clearTotalMs: 0,
@@ -444,6 +455,17 @@ function d3d8PerfSummary() {
     drawDerivedCacheMisses: d3d8PerfStats.drawDerivedCacheMisses,
     drawUniformCacheHits: d3d8PerfStats.drawUniformCacheHits,
     drawUniformCacheMisses: d3d8PerfStats.drawUniformCacheMisses,
+    sortedDrawProfiledCalls: d3d8PerfStats.sortedDrawProfiledCalls,
+    sortedDrawProfiledMs: roundedPerfMs(d3d8PerfStats.sortedDrawProfiledMs),
+    sortedDrawPreBatchMs: roundedPerfMs(d3d8PerfStats.sortedDrawPreBatchMs),
+    sortedDrawDerivedMs: roundedPerfMs(d3d8PerfStats.sortedDrawDerivedMs),
+    sortedDrawTextureDiagMs: roundedPerfMs(d3d8PerfStats.sortedDrawTextureDiagMs),
+    sortedDrawViewportMs: roundedPerfMs(d3d8PerfStats.sortedDrawViewportMs),
+    sortedDrawDiagnosticsMs: roundedPerfMs(d3d8PerfStats.sortedDrawDiagnosticsMs),
+    sortedDrawGeometryMs: roundedPerfMs(d3d8PerfStats.sortedDrawGeometryMs),
+    sortedDrawUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawUniformMs),
+    sortedDrawDrawOrBatchMs: roundedPerfMs(d3d8PerfStats.sortedDrawDrawOrBatchMs),
+    sortedDrawTailMs: roundedPerfMs(d3d8PerfStats.sortedDrawTailMs),
     clears: d3d8PerfStats.clears,
     clearMs: roundedPerfMs(d3d8PerfStats.clearMs),
     clearTotalMs: roundedPerfMs(d3d8PerfStats.clearTotalMs),
@@ -8510,6 +8532,19 @@ function paintD3D8DrawIndexed(payload = {}) {
   const indexSize = Number(payload.indexSize ?? 0) >>> 0;
   const indexCount = Number(payload.indexCount ?? 0) >>> 0;
   const primitiveType = Number(payload.primitiveType ?? 0) >>> 0;
+  const sortedDrawProfiled = payload.sortedDrawSubmitProfile === true;
+  const sortedDrawStartedAt = sortedDrawProfiled ? perfNow() : 0;
+  let sortedDrawPhaseStartedAt = sortedDrawStartedAt;
+  const recordSortedDrawPhase = sortedDrawProfiled
+    ? (field) => {
+        const now = perfNow();
+        d3d8PerfStats[field] += now - sortedDrawPhaseStartedAt;
+        sortedDrawPhaseStartedAt = now;
+      }
+    : null;
+  if (sortedDrawProfiled) {
+    d3d8PerfStats.sortedDrawProfiledCalls += 1;
+  }
   const baseGlPrimitive = d3dPrimitiveToGl(primitiveType);
   const vertexResource = d3d8Buffers.get(d3d8BufferKey(1, vertexBufferId));
   const indexResource = d3d8Buffers.get(d3d8BufferKey(2, indexBufferId));
@@ -8535,11 +8570,14 @@ function paintD3D8DrawIndexed(payload = {}) {
     renderState: payload.renderState,
   });
   if (tryMergeD3D8PendingDrawBatch(earlyBatchInfo)) {
+    recordSortedDrawPhase?.("sortedDrawPreBatchMs");
+    d3d8PerfStats.sortedDrawProfiledMs += sortedDrawProfiled ? perfNow() - sortedDrawStartedAt : 0;
     harnessState.graphics.d3d8DrawIndexedSequence = drawSequence;
     harnessState.graphics.d3d8Perf = d3d8PerfSummary();
     return 1;
   }
   flushD3D8PendingDrawBatch("drawBreak");
+  recordSortedDrawPhase?.("sortedDrawPreBatchMs");
   const world = normalizeD3DMatrix(payload.transforms?.world);
   const view = normalizeD3DMatrix(payload.transforms?.view);
   const projection = normalizeD3DMatrix(payload.transforms?.projection);
@@ -8677,6 +8715,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       implicitAlphaCutoutThreshold,
     };
   }
+  recordSortedDrawPhase?.("sortedDrawDerivedMs");
   warnD3D8CombinerDiagnostics(renderState, appliedTexture0Combiner, appliedStage1Combiner, drawSequence);
   if (d3d8DiagLevel === "full" && texture0Resource) {
     const caps = (harnessState.graphics.uiDrawCaptures ??= { atlas: [], small: [], census: {} });
@@ -8750,6 +8789,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       });
     }
   }
+  recordSortedDrawPhase?.("sortedDrawTextureDiagMs");
   let appliedViewport = null;
   let appliedRenderState = null;
   let appliedTexture0Sampler = null;
@@ -8763,6 +8803,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   syncCanvasSize();
   appliedViewport = applyD3D8Viewport("draw");
   appliedPointSprite = d3d8PointSpriteInfo(renderState, payload.primitiveType, appliedViewport);
+  recordSortedDrawPhase?.("sortedDrawViewportMs");
   if (collectDrawDiagnostics) {
     vertexDiagnostics = inspectD3D8DrawVertices(
       vertexResource,
@@ -8795,6 +8836,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     ? sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2))
     : null;
   let centerPixel = preDrawCenterPixel;
+  recordSortedDrawPhase?.("sortedDrawDiagnosticsMs");
 
   if (gl && d3d8GlPrimitiveSupported(baseGlPrimitive) && usePersistentBuffers &&
       vertexByteSize > 0 && indexByteSize > 0 &&
@@ -8901,6 +8943,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         texture1Resource,
       );
     }
+    recordSortedDrawPhase?.("sortedDrawGeometryMs");
     // Apply non-transform GL state and shader uniforms only when changed. The
     // uniform key excludes world/view/projection so moving objects still update
     // matrices below without resending material/light/render-state uniforms.
@@ -9247,6 +9290,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       gl.uniform1i(bridgeProgram.texture1Semantic, texture1SemanticMode);
     }
     } // !drawCacheHit
+    recordSortedDrawPhase?.("sortedDrawUniformMs");
     const temporaryIndices = fillModeDraw.lineIndices ?? shadeModeDraw.triangleIndices ?? null;
     let temporaryIndexBuffer = null;
     let restoreProvokingVertex = false;
@@ -9298,6 +9342,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         setD3D8FirstVertexConvention(false);
       }
     }
+    recordSortedDrawPhase?.("sortedDrawDrawOrBatchMs");
     if (d3d8DiagLevel === "full") {
       refreshCanvasState();
       centerPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
@@ -9310,6 +9355,8 @@ function paintD3D8DrawIndexed(payload = {}) {
   if (d3d8DiagLevel !== "full") {
     // lite: skip the ~40-field probe, per-draw texture sampling, and the
     // spread-copied draw-history array — keep only the cheap sequence counter.
+    recordSortedDrawPhase?.("sortedDrawTailMs");
+    d3d8PerfStats.sortedDrawProfiledMs += sortedDrawProfiled ? perfNow() - sortedDrawStartedAt : 0;
     harnessState.graphics.d3d8DrawIndexedSequence = drawSequence;
     harnessState.graphics.d3d8Perf = d3d8PerfSummary();
     return drawOk ? 1 : 0;
@@ -9550,6 +9597,9 @@ function paintD3D8DrawIndexed(payload = {}) {
     lastD3D8DrawIndexed: probe,
     d3d8Perf: d3d8PerfSummary(),
   };
+  recordSortedDrawPhase?.("sortedDrawTailMs");
+  d3d8PerfStats.sortedDrawProfiledMs += sortedDrawProfiled ? perfNow() - sortedDrawStartedAt : 0;
+  harnessState.graphics.d3d8Perf = d3d8PerfSummary();
   return drawOk ? 1 : 0;
 }
 
