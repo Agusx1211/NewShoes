@@ -22,6 +22,9 @@ const DEFAULT_DIST_JS = resolve(wasmRoot, "dist/cnc-port.js");
 const DEFAULT_DIST_WASM = resolve(wasmRoot, "dist/cnc-port.wasm");
 
 const trackedSources = [
+  "WebAssembly/src/wasm_gamenetwork_probe.cpp",
+  "WebAssembly/src/wasm_wndproc_probe.cpp",
+  "WebAssembly/src/wasm_startup_singletons_probe.cpp",
   "WebAssembly/src/wasm_ww3d_render_probe.cpp",
   "WebAssembly/src/wasm_ww3d_scene_probe.cpp",
   "WebAssembly/src/wasm_ww3d_terrain_probe.cpp",

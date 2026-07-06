@@ -281,6 +281,7 @@ void finish_status(StartupSingletonsProbeResult &result)
 }
 } // namespace
 
+#ifndef CNC_PORT_LINKS_REAL_MINIMUM_REQUIREMENTS
 Bool __attribute__((weak)) testMinimumRequirements(
 	ChipsetType *video_chip_type,
 	CpuType *cpu_type,
@@ -313,6 +314,7 @@ Bool __attribute__((weak)) testMinimumRequirements(
 	}
 	return TRUE;
 }
+#endif
 
 const StartupSingletonsProbeResult &wasm_startup_singletons_install(
 	const char *archive_directory,

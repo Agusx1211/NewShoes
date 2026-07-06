@@ -28,12 +28,19 @@ extern HWND ApplicationHWnd;
 HINSTANCE ApplicationHInstance = NULL;
 Bool ApplicationIsWindowed = TRUE;
 extern Keyboard *TheKeyboard;
+extern IMEManagerInterface *TheIMEManager;
+extern Mouse *TheMouse;
+#ifndef CNC_PORT_LINKS_REAL_WNDPROC_SINGLETONS
 IMEManagerInterface *TheIMEManager __attribute__((weak)) = NULL;
 Mouse *TheMouse __attribute__((weak)) = NULL;
+#endif
 Win32Mouse *TheWin32Mouse = NULL;
 DWORD TheMessageTime = 0;
 
+extern GameEngine *TheGameEngine;
+#ifndef CNC_PORT_LINKS_REAL_WNDPROC_SINGLETONS
 GameEngine *TheGameEngine __attribute__((weak)) = nullptr;
+#endif
 
 // Constructed lazily: Mouse::Mouse() assigns AsciiString members, which
 // allocate through TheDynamicMemoryAllocator. A namespace-scope static would

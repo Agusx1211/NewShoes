@@ -8744,6 +8744,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       verify:cnc-port-real-headers`, `npm --prefix WebAssembly run
       build:startup-vertical`, and `EXPECT_WASM=1 node
       WebAssembly/harness/smoke.mjs`.
+- [x] Broaden the `cnc-port` weak-stub verifier to the direct GameNetwork,
+      WndProc, and startup probe objects, then gate the WndProc/startup
+      fallbacks now that the real owners are linked. The tracked explicit weak
+      declaration count is now 264; the audit reports 78 compiled weak
+      definitions, 192 gated-out declarations, zero active weak boundaries, 76
+      strong-provider overlaps, and 2 no-final-visible helpers. WndProc and
+      startup now contribute zero compiled tracked weak definitions; the
+      remaining compiled tracked weak surface is all in
+      `wasm_gamenetwork_probe.cpp`, with `outputCRCDebugLines()` and
+      `outputCRCDumpLines()` as the no-final-visible helpers. The archive-owned
+      INI compatibility weak shims remain outside this direct-object verifier
+      and are recorded as the next archive-aware audit cleanup. Verified with
+      `npm --prefix WebAssembly run build:port`, `npm --prefix WebAssembly run
+      verify:cnc-port-weak-stubs`, direct `llvm-nm` checks for the WndProc and
+      startup fallback symbols, `npm --prefix WebAssembly run
+      verify:cnc-port-real-headers`, `npm --prefix WebAssembly run
+      build:startup-vertical`, `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs`, `node --check
+      WebAssembly/tools/verify_cnc_port_weak_stubs.mjs`, and `git diff
+      --check`.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an

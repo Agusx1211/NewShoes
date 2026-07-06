@@ -347,25 +347,31 @@ residue and the next frontier.
       explicit weak declarations compiled into the real `cnc-port` link and
       the linked strong providers with the same mangled names without claiming
       exact final body provenance (Emscripten filters wasm-ld maps and final
-      wasm symbols are not enough). As of 2026-07-06 it finds 186 explicit
-      weak declarations across the render/scene/terrain probe files plus
-      `wasm_ww3d_terrain_probe_stubs.cpp`, zero compiled weak definitions,
-      186 gated-out declarations, zero active weak boundaries, and zero
-      strong-provider overlaps. The former `RunBenchmark` weak fallback is now
-      replaced by the explicit browser-owned `wasm_benchmark_shim.cpp`; the W3D
-      render, scene, terrain, and terrain-stub weak groups are all gated out of
-      `cnc-port` by the relevant `CNC_PORT_LINKS_*` macros. A follow-up cleanup
-      also deleted six unreferenced `cnc_port_w3d_smudge_*` no-op helper bodies
-      from `wasm_ww3d_terrain_probe_stubs.cpp`; the real smudge implementation is
-      linked through original `Smudge.cpp` / `W3DSmudge.cpp`. Remaining cleanup:
-      broaden the verifier beyond the current W3D tracked source list to the
-      other direct `cnc-port` probe files with weak declarations
-      (`wasm_gamenetwork_probe.cpp`, `wasm_wndproc_probe.cpp`,
-      `wasm_startup_singletons_probe.cpp`, `wasm_real_ini_probe.cpp`, and
-      compatibility shims), then gate/delete those probe-local boundaries as the
-      real owners are linked. (Real-init already deleted the probe
-      GameClient/Object/GameLogic/Display/LoadScreen/OptionPreferences
-      reimplementations and all 26 weak `UNUSED_INI_BLOCK_PARSER` stubs.)
+      wasm symbols are not enough). As of 2026-07-06 it tracks 264 explicit
+      weak declarations across the direct GameNetwork/WndProc/startup probe
+      files plus the W3D render/scene/terrain probe files and
+      `wasm_ww3d_terrain_probe_stubs.cpp`: 78 compiled weak definitions, 192
+      gated-out declarations, zero active weak boundaries, 76 strong-provider
+      overlaps, and 2 no-final-visible helpers. The remaining compiled tracked
+      weak definitions are all in `wasm_gamenetwork_probe.cpp`; the
+      `wasm_wndproc_probe.cpp`, `wasm_startup_singletons_probe.cpp`, W3D
+      render/scene/terrain, and terrain-stub groups are gated out of `cnc-port`
+      by the relevant `CNC_PORT_LINKS_*` macros. The two no-final-visible
+      GameNetwork helpers are `outputCRCDebugLines()` and
+      `outputCRCDumpLines()`. The former `RunBenchmark` weak fallback is now
+      replaced by the explicit browser-owned `wasm_benchmark_shim.cpp`; a
+      follow-up cleanup also deleted six unreferenced
+      `cnc_port_w3d_smudge_*` no-op helper bodies from
+      `wasm_ww3d_terrain_probe_stubs.cpp`, and the real smudge implementation
+      is linked through original `Smudge.cpp` / `W3DSmudge.cpp`. Remaining
+      cleanup: gate/delete the `wasm_gamenetwork_probe.cpp` weak surface, and
+      audit the archive-owned weak compatibility shims that are not direct
+      `CMakeFiles/cnc-port.dir/src/*.o` objects
+      (`wasm_real_ini_probe.cpp`, `wasm_real_ini_compat.cpp`,
+      `wasm_ini_mapped_image_compat.cpp`) with an archive-aware verifier.
+      (Real-init already deleted the probe GameClient/Object/GameLogic/
+      Display/LoadScreen/OptionPreferences reimplementations and all 26 weak
+      `UNUSED_INI_BLOCK_PARSER` stubs.)
 - [ ] Mount the base Generals archives (`INI.big`, `English.big`,
       `Window.big`, `Terrain.big`) when supplied, resolving the known missing
       startup set (`Data\INI\Default\*.ini`, `Rank.ini`, `CommandMap.ini`,
