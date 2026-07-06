@@ -3,6 +3,7 @@
 /WebAssembly/build/
 /WebAssembly/dist/
 /WebAssembly/dist-release/
+/WebAssembly/dist-release-*/
 /WebAssembly/err.txt
 /node_modules/
 /WebAssembly/node_modules/

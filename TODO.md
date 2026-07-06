@@ -32,12 +32,14 @@ and the Mac tick profile dropped from ~69.6 ms/frame to ~48.8 ms/frame, with
 profile. Release `cnc-port` now strips runtime `DEBUG_LOGGING` and `WWDEBUG`
 compile paths while preserving Debug diagnostics; Mac Chrome/Metal verified
 the optimized release build still boots and renders the shell map at ~47.1
-ms/frame over a 60-frame summary profile. Next measured bottleneck is original
-WW3D scene work, especially
+ms/frame over a 60-frame summary profile. Release native-wasm-EH vs JS-EH
+A/B is also complete on Mac Chrome/Metal: native-EH measured 47.99 ms/frame
+wall over 120 tick frames and JS-EH measured 48.35 ms/frame, both with zero
+measured readPixels and only ~1.3-1.4 ms/frame in tracked browser D3D8 work.
+Next measured bottleneck is original WW3D scene work, especially
 `RTS3DScene.flush.sortingFlush` and terrain render, not raw WebGL draw calls.
-Broad D3D8 shim work still needs either a Release/native-wasm-EH comparison or
-a DevTools trace if async ANGLE/GPU stall detail is needed beyond the live
-harness counters.
+Further broad D3D8 shim work should wait for a DevTools trace if async
+ANGLE/GPU stall detail is needed beyond the live harness counters.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
@@ -2333,16 +2335,6 @@ and then start with the PROFILE, not with any individual fix.
 - [ ] D3D8→WebGL2 shim "less naive" playbook (ordered by typical payoff,
       all confined to the DX8Wrapper chokepoint; verify each against the
       screenshot goldens):
-      - **switch JS-based exception handling to native wasm EH first**
-        (Fable audit): cnc-port links with `-fexceptions` +
-        `-sDISABLE_EXCEPTION_CATCHING=0`, i.e. Emscripten JS-EH — every
-        potentially-throwing call goes through `invoke_*` JS trampolines, a
-        classic 2-5× tax on ALL engine wasm CPU, independent of -O level.
-        emsdk 3.1.6 and Chrome support `-fwasm-exceptions`; flip and
-        measure. Evidence engine CPU is the bottleneck: steady-state
-        shell-map profile shows 103 draws/frame with drawMs≈0.05 and zero
-        uploads, while engine `lastFrameMs` is 36-43ms — the frame is
-        wasm CPU, not GL submission.
       - draw-state marshaling (Fable audit of `wasm_d3d8_shim.cpp:319-565`):
         the first passes split per-object world/view/projection transforms out
         of the native draw-state cache key while preserving the full hash for
@@ -2376,16 +2368,6 @@ and then start with the PROFILE, not with any individual fix.
       batching to defeat per-mesh world matrices (touches every vertex
       every frame), and WebGL2 instancing for repeated meshes (needs
       per-instance matrices in the generated shaders — real surgery).
-- [ ] Release (-O2) cnc-port build in a SEPARATE build dir
-      (`build/wasm-release`) — multiplies whatever CPU share remains after
-      the above; watch for optimizer-exposed UB in era code. Do not flip the
-      shared Debug dir's CMAKE_BUILD_TYPE. (Fable audit: ALL current perf
-      numbers — Mac M4 "~38fps"/76.6ms `lastFrameMs`, SwiftShader medians —
-      were measured on the Debug `-O0 -g` build with `-sASSERTIONS=1` and
-      exception catching on; `build:port:release` exists but is never what
-      gets deployed. Re-measure on Release with `ASSERTIONS=0` BEFORE any
-      shim playbook surgery, and make Release the flavor rsynced to the Mac
-      `play.html` page — the owner is currently play-testing at -O0.)
 - [ ] Frame-time budget; profile hotspots (sim vs render).
 - [ ] Polish `harness/play.html` (human-driveable LAN page): per-archive mount
       progress, touch-input verification on a real phone, and a smaller

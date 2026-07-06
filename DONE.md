@@ -8282,6 +8282,31 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       measured 47.1 ms/frame wall with 49.4 ms average engine `lastFrameMs`,
       ~482 D3D8 draws/frame, zero measured readPixels, and ~1.39 ms/frame in
       tracked browser D3D8 work.
+- [x] Compare Release native-wasm-EH against Release JS-EH on the Mac M4
+      real-GPU verifier and close the stale separate Release build-dir TODO.
+      `build:port:release` already emits the deployed `build/wasm-release` /
+      `dist-release` native-EH runtime, and `harness/play.html` defaults to
+      that Release dist. Built the comparison runtime with
+      `npm --prefix WebAssembly run build:port:release:js-eh`, then audited
+      flags: native Release command output contained `1239`
+      `-fwasm-exceptions` matches, while `wasm-release-js-eh` had no
+      `-fwasm-exceptions` matches and linked with
+      `DISABLE_EXCEPTION_CATCHING=0`. Synced both `dist-release` and
+      `dist-release-js-eh` to the Mac and profiled them with
+      `PERF_PROFILE_FRAME_COMMAND=realEngineFrameTick`,
+      10 warmup frames, 120 measured frames, batch 10, Chrome
+      `--enable-gpu --use-angle=metal` on
+      `ANGLE Metal Renderer: Apple M4`. Native-EH measured 47.99 ms/frame
+      wall, 50.47 ms average engine `lastFrameMs`, ~525.7 draws/frame, zero
+      measured readPixels, and ~1.34 ms/frame tracked browser D3D8 work.
+      JS-EH measured 48.35 ms/frame wall, 47.29 ms average engine
+      `lastFrameMs`, ~525.7 draws/frame, zero measured readPixels, and
+      ~1.44 ms/frame tracked browser D3D8 work. The JS-EH artifact was also
+      larger (`7.9M` wasm vs native `6.8M`). Screenshot inspection confirmed
+      the JS-EH run rendered the shell map with terrain, water, ships, wakes,
+      and the Zero Hour overlay. Conclusion: exception handling mode is not a
+      remaining large perf tax in the current Release runtime; keep native-EH
+      as the default and profile original WW3D scene buckets / terrain next.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`
