@@ -8916,6 +8916,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `ninja -t deps` audit showing `GlobalData.h` / `INI.h` /
       `STLTypedefs.h` at 21 object users, `GameAudio.h` at 3, and no active
       `Common/Xfer.h` or `GameLogic/GameLogic.h` shadow users.
+- [x] Delete the retired `Common/GameAudio.h` shadow header after migrating the
+      three remaining Bink smoke users to the real PreRTS/header prelude. The
+      Bink VideoPlayer Node/browser smokes and Bink W3D video-buffer browser
+      smoke now link the original GlobalData/debug owners, write the original
+      `TheWritableGlobalData` singleton instead of owning a shim-layout
+      `TheGlobalData`, and keep their focused local `AudioManager` stubs.
+      `bink_w3d_video_buffer_upload_smoke.cpp` now includes the WWLib
+      `Vector.H` dependency that real `render2d.h` requires instead of
+      inheriting it from the shadow prelude. The real-header verifier treats
+      `Common/GameAudio.h` as a retired stale-dependency failure. Verified with
+      `cmake --build WebAssembly/build/wasm --target
+      bink-videoplayer-runtime-smoke bink-videoplayer-browser-runtime-smoke
+      bink-w3d-video-buffer-browser-smoke`, `npm --prefix WebAssembly run
+      verify:cnc-port-real-headers`, and a fresh `ninja -t deps` audit showing
+      `GlobalData.h` / `INI.h` / `STLTypedefs.h` at 18 object users and no
+      active `Common/GameAudio.h`, `Common/Xfer.h`, or
+      `GameLogic/GameLogic.h` shadow users. The direct Node Bink smoke still
+      exits nonzero on its pre-existing asset/copy-hook gate, though it reaches
+      the GC/VS frame checks.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an

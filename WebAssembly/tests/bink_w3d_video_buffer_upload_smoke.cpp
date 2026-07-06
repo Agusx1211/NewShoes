@@ -57,6 +57,7 @@
 #include "ww3dformat.h"
 #include "W3DDevice/GameClient/W3DVideoBuffer.h"
 #include "bink.h"
+#include "Vector.H"
 #include "rect.h"
 #include "render2d.h"
 #include "wasm_d3d8_shim.h"
@@ -64,11 +65,7 @@
 #include "ww3d.h"
 
 SubsystemInterfaceList *TheSubsystemList = nullptr;
-GlobalData *TheGlobalData = nullptr;
-#ifdef TheWritableGlobalData
-#undef TheWritableGlobalData
-#endif
-GlobalData *TheWritableGlobalData = nullptr;
+HWND ApplicationHWnd = nullptr;
 AudioManager *TheAudio = nullptr;
 GameEngine *TheGameEngine = nullptr;
 GameLODManager *TheGameLODManager = nullptr;
@@ -2861,14 +2858,12 @@ extern "C" int run_bink_w3d_video_buffer_upload_smoke()
 	SmokeAudioManager audio;
 	GlobalData global_data;
 	AudioManager *old_audio = TheAudio;
-	GlobalData *old_global_data = TheGlobalData;
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
 	VideoPlayerInterface *old_video_player = TheVideoPlayer;
 
 	BinkVideoPlayer *player = nullptr;
 	if (ok) {
 		TheAudio = &audio;
-		TheGlobalData = &global_data;
 		TheWritableGlobalData = &global_data;
 
 		player = NEW BinkVideoPlayer;
@@ -2906,7 +2901,6 @@ extern "C" int run_bink_w3d_video_buffer_upload_smoke()
 
 	TheVideoPlayer = old_video_player;
 	TheAudio = old_audio;
-	TheGlobalData = old_global_data;
 	TheWritableGlobalData = old_writable_global_data;
 
 	ok = expect(audio.release_count >= 1, "BinkVideoPlayer did not release its Bink audio handle") && ok;

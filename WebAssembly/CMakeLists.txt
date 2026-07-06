@@ -8676,11 +8676,32 @@ set_target_properties(bink-videoplayer-runtime-smoke PROPERTIES
 
 target_link_libraries(bink-videoplayer-runtime-smoke PRIVATE
   zh_bink_video_device_compile_frontier
+  zh_gameengine_globaldata_runtime
+  zh_gameengine_debug_runtime
   zh_gameclient_utility
   zh_gameclient_utility_smoke_ini_support
 )
 
+target_compile_definitions(bink-videoplayer-runtime-smoke PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+)
+
 target_compile_options(bink-videoplayer-runtime-smoke PRIVATE
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WASM_SHIMS_DIR}"
   -fms-extensions
   -Wall
   -Wextra
@@ -8709,15 +8730,33 @@ set_target_properties(bink-videoplayer-browser-runtime-smoke PROPERTIES
 
 target_link_libraries(bink-videoplayer-browser-runtime-smoke PRIVATE
   zh_bink_video_device_compile_frontier
+  zh_gameengine_globaldata_runtime
+  zh_gameengine_debug_runtime
   zh_gameclient_utility
   zh_gameclient_utility_smoke_ini_support
 )
 
 target_compile_definitions(bink-videoplayer-browser-runtime-smoke PRIVATE
   BINK_VIDEOPLAYER_RUNTIME_SMOKE_NO_MAIN
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
 )
 
 target_compile_options(bink-videoplayer-browser-runtime-smoke PRIVATE
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WASM_SHIMS_DIR}"
   -fms-extensions
   -Wall
   -Wextra
@@ -8805,6 +8844,8 @@ set_target_properties(bink-w3d-video-buffer-browser-smoke PROPERTIES
 target_link_libraries(bink-w3d-video-buffer-browser-smoke PRIVATE
   zh_score_screen_movie_runtime
   zh_bink_video_device_compile_frontier
+  zh_gameengine_globaldata_runtime
+  zh_gameengine_debug_runtime
   zh_gameclient_utility
   zh_gamenetwork_core
   zh_w3d_display_drawimage_runtime
@@ -8832,11 +8873,16 @@ target_link_libraries(bink-w3d-video-buffer-browser-smoke PRIVATE
   zh_compression_eac
 )
 
+target_compile_definitions(bink-w3d-video-buffer-browser-smoke PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+)
+
 target_compile_options(bink-w3d-video-buffer-browser-smoke PRIVATE
   "-include${WASM_SHIMS_DIR}/windows.h"
   "-include${WASM_SHIMS_DIR}/mmsystem.h"
   "-include${WWVEGAS_PORT_SHIM}"
-  "-iquote${WASM_SHIMS_DIR}"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
   "-iquote${GAMEENGINE_INCLUDE_DIR}"
   "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
   "-iquote${GAMEENGINE_DIR}/Source"
@@ -8852,6 +8898,7 @@ target_compile_options(bink-w3d-video-buffer-browser-smoke PRIVATE
   "-iquote${WWSAVELOAD_DIR}"
   "-iquote${COMPRESSION_DIR}"
   "-iquote${COMPRESSION_EAC_DIR}"
+  "-iquote${WASM_SHIMS_DIR}"
   -fms-extensions
   -Wall
   -Wextra

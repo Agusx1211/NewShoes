@@ -17,7 +17,6 @@ const activeShadowHeaderSuffixes = [
   "WebAssembly/shims/Common/GlobalData.h",
   "WebAssembly/shims/Common/INI.h",
   "WebAssembly/shims/Common/STLTypedefs.h",
-  "WebAssembly/shims/Common/GameAudio.h",
 ];
 
 // Retired shadow paths should never appear in fresh deps, but keeping the
@@ -26,6 +25,7 @@ const retiredShadowHeaderSuffixes = [
   "WebAssembly/shims/GameNetwork/WOLBrowser/WebBrowser.h",
   "WebAssembly/shims/Common/Xfer.h",
   "WebAssembly/shims/GameLogic/GameLogic.h",
+  "WebAssembly/shims/Common/GameAudio.h",
 ];
 
 const shadowHeaderSuffixes = [

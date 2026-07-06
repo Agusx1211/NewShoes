@@ -223,9 +223,9 @@ residue and the next frontier.
       `wasm_webbrowser_boundary.h` replacement left it with zero build-dep
       users. `shims/Common/Xfer.h` and `shims/GameLogic/GameLogic.h` are now
       deleted after reaching zero build-dep users, and the real-header
-      verifier treats those retired paths as stale-dependency failures. Four
+      verifier treats those retired paths as stale-dependency failures. Three
       active shadow real-engine headers remain:
-      `shims/Common/{GlobalData,INI,STLTypedefs,GameAudio}.h`. Which one a TU gets is
+      `shims/Common/{GlobalData,INI,STLTypedefs}.h`. Which one a TU gets is
       per-TU (include order + identical include guards + `#include_next` in
       `shims/PreRTS.h:75` + per-target `WASM_USE_ORIGINAL_GLOBALDATA` /
       `CNC_PORT_REAL_GAMELOGIC_HEADER` defines) with no enforcement.
@@ -339,11 +339,19 @@ residue and the next frontier.
       full `build:wasm` no longer resurrects the retired Xfer shadow. A fresh
       deps audit leaves `GlobalData.h` / `INI.h` / `STLTypedefs.h` at 21
       object users, `GameAudio.h` at 3, and no active `Common/Xfer.h` or
+      `GameLogic/GameLogic.h` shadow users. The next burn-down migrated the
+      three Bink runtime/browser smoke objects to the real PreRTS/header
+      prelude, original `TheWritableGlobalData` owner, and original
+      GlobalData/debug runtime owners, then deleted the now-zero-user
+      `Common/GameAudio.h` shadow and made the verifier treat it as another
+      retired stale-dependency failure. A fresh deps audit leaves
+      `GlobalData.h` / `INI.h` / `STLTypedefs.h` at 18 object users and no
+      active `Common/GameAudio.h`, `Common/Xfer.h`, or
       `GameLogic/GameLogic.h` shadow users.
       Remaining cleanup: audit and delete the remaining shadow shim class
       headers/bodies once no linked or compile-only target needs them; migrate
       or retire any future legacy target that still depends on the remaining
-      `GlobalData`/`INI`/`STLTypedefs`/`GameAudio` shadows. This is the same
+      `GlobalData`/`INI`/`STLTypedefs` shadows. This is the same
       hazard class as the confirmed d6d3b79
       ChallengeGenerals stack corruption and the fixed edgeMapperApply
       aggregate-smoke incident above — fix it once at the root instead of
@@ -682,10 +690,11 @@ residue and the next frontier.
 
 ### GameEngine — Common
 - [ ] Replace the remaining target-local `Common/INI.h`, `Common/GlobalData.h`,
-      `Common/STLTypedefs.h`, and `Common/GameAudio.h` compile shims with the
-      original headers/sources as each real subsystem comes online. The
-      `Common/Xfer.h` and `GameLogic/GameLogic.h` shadows are retired/deleted
-      and guarded by the real-header verifier; the runtime now links original
+      and `Common/STLTypedefs.h` compile shims with the original
+      headers/sources as each real subsystem comes online. The `Common/Xfer.h`,
+      `Common/GameAudio.h`, and `GameLogic/GameLogic.h` shadows are
+      retired/deleted and guarded by the real-header verifier; the runtime now
+      links original
       `Common/System/XferCRC.cpp` for the pre-audio `XferCRC("lightCRC")`
       startup proof, but the full original `Common/Xfer` save/load transfer
       behavior still remains open behind the broader save/load wiring.

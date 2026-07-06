@@ -15,11 +15,7 @@
 #include "bink.h"
 
 SubsystemInterfaceList *TheSubsystemList = nullptr;
-GlobalData *TheGlobalData = nullptr;
-#ifdef TheWritableGlobalData
-#undef TheWritableGlobalData
-#endif
-GlobalData *TheWritableGlobalData = nullptr;
+HWND ApplicationHWnd = nullptr;
 AudioManager *TheAudio = nullptr;
 
 // Keep this smoke focused on Bink by satisfying AudioManager locally instead of
@@ -279,12 +275,10 @@ int run_runtime_smoke(bool expect_decode_ready, bool expect_copied_pixels)
 	SmokeAudioManager audio;
 	GlobalData global_data;
 	AudioManager *old_audio = TheAudio;
-	GlobalData *old_global_data = TheGlobalData;
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
 	VideoPlayerInterface *old_video_player = TheVideoPlayer;
 
 	TheAudio = &audio;
-	TheGlobalData = &global_data;
 	TheWritableGlobalData = &global_data;
 
 	BinkVideoPlayer *player = NEW BinkVideoPlayer;
@@ -307,7 +301,6 @@ int run_runtime_smoke(bool expect_decode_ready, bool expect_copied_pixels)
 	delete player;
 	TheVideoPlayer = old_video_player;
 	TheAudio = old_audio;
-	TheGlobalData = old_global_data;
 	TheWritableGlobalData = old_writable_global_data;
 
 	ok = expect(audio.release_count >= 1, "BinkVideoPlayer did not release its Bink audio handle") && ok;
