@@ -8487,6 +8487,33 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       5.163, `sortedDrawTextureUniformMs` 1.784). The run measured ~103.2
       vertex-attribute cache hits/frame vs ~378.6 misses/frame across all D3D8
       draws.
+- [x] Split the sorted browser render-uniform bucket into concrete upload
+      groups. The sorted profile now separately reports `applyD3D8RenderState`,
+      render-state/lighting object build, base shader uniforms, material
+      uniforms, fixed-function light uniforms, texture-stage combiner uniforms,
+      and alpha/fog uniforms inside the existing render-uniform block. This
+      was a profile-only change; two local cache experiments against GL render
+      state and render-uniform typed-array payloads were measured on the Mac
+      and not kept because they worsened the sorted uniform bucket. Verified
+      with `node --check WebAssembly/harness/bridge.js`, `node --check
+      WebAssembly/harness/runtime_frame_profile.mjs`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port:release`,
+      `npm --prefix WebAssembly run build:port`, and a Mac M4 Chrome/Metal
+      runtime profile using `realEngineFrameTick`, 10 warmup frames,
+      60 measured frames, batch 10, and `PERF_PROFILE_ENGINE_PROFILE=1`.
+      The run reported `ANGLE Metal Renderer: Apple M4`, 45.85 ms/frame wall,
+      49.37 ms average engine `lastFrameMs`, zero measured readPixels, and a
+      visible shell-map screenshot. Sorted bridge work measured
+      8.936 ms/frame across ~63.4 profiled sorted draws/frame, with
+      `sortedDrawUniformMs` 7.030 ms/frame. The remaining render-uniform
+      breakdown is now specific: `sortedDrawApplyRenderStateMs` 0.199,
+      `sortedDrawRenderBuildMs` 0.023, `sortedDrawRenderBaseUniformMs` 0.417,
+      `sortedDrawRenderMaterialUniformMs` 0.934,
+      `sortedDrawRenderLightUniformMs` 1.596,
+      `sortedDrawRenderStageUniformMs` 0.679,
+      `sortedDrawRenderAlphaFogUniformMs` 0.401,
+      `sortedDrawTransformUniformMs` 0.973, and
+      `sortedDrawTextureUniformMs` 1.737 ms/frame.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`

@@ -410,6 +410,13 @@ const d3d8PerfStats = {
   sortedDrawVertexAttribMs: 0,
   sortedDrawTextureBindMs: 0,
   sortedDrawUniformMs: 0,
+  sortedDrawApplyRenderStateMs: 0,
+  sortedDrawRenderBuildMs: 0,
+  sortedDrawRenderBaseUniformMs: 0,
+  sortedDrawRenderMaterialUniformMs: 0,
+  sortedDrawRenderLightUniformMs: 0,
+  sortedDrawRenderStageUniformMs: 0,
+  sortedDrawRenderAlphaFogUniformMs: 0,
   sortedDrawRenderUniformMs: 0,
   sortedDrawTransformUniformMs: 0,
   sortedDrawPointSpriteUniformMs: 0,
@@ -498,6 +505,13 @@ function d3d8PerfSummary() {
     sortedDrawVertexAttribMs: roundedPerfMs(d3d8PerfStats.sortedDrawVertexAttribMs),
     sortedDrawTextureBindMs: roundedPerfMs(d3d8PerfStats.sortedDrawTextureBindMs),
     sortedDrawUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawUniformMs),
+    sortedDrawApplyRenderStateMs: roundedPerfMs(d3d8PerfStats.sortedDrawApplyRenderStateMs),
+    sortedDrawRenderBuildMs: roundedPerfMs(d3d8PerfStats.sortedDrawRenderBuildMs),
+    sortedDrawRenderBaseUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawRenderBaseUniformMs),
+    sortedDrawRenderMaterialUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawRenderMaterialUniformMs),
+    sortedDrawRenderLightUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawRenderLightUniformMs),
+    sortedDrawRenderStageUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawRenderStageUniformMs),
+    sortedDrawRenderAlphaFogUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawRenderAlphaFogUniformMs),
     sortedDrawRenderUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawRenderUniformMs),
     sortedDrawTransformUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawTransformUniformMs),
     sortedDrawPointSpriteUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawPointSpriteUniformMs),
@@ -9084,9 +9098,21 @@ function paintD3D8DrawIndexed(payload = {}) {
     // world/view/projection and bound texture IDs; those have narrower caches
     // below.
     if (!renderUniformUnchanged) {
+      const applyRenderStateStartedAt = sortedDrawProfiled ? perfNow() : 0;
       appliedRenderState = applyD3D8RenderState(renderState, {
         invertCullWinding: false,
       });
+      if (sortedDrawProfiled) {
+        d3d8PerfStats.sortedDrawApplyRenderStateMs += perfNow() - applyRenderStateStartedAt;
+      }
+      let renderUniformDetailStartedAt = sortedDrawProfiled ? perfNow() : 0;
+      const recordRenderUniformDetail = sortedDrawProfiled
+        ? (field) => {
+            const now = perfNow();
+            d3d8PerfStats[field] += now - renderUniformDetailStartedAt;
+            renderUniformDetailStartedAt = now;
+          }
+        : null;
       appliedRenderState.clipPlanes = d3d8ClipPlaneInfo(renderState, clipPlanes);
       appliedRenderState.lighting = {
         ...appliedRenderState.lighting,
@@ -9115,6 +9141,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         directionalLights,
         firstDirectionalLight,
       };
+      recordRenderUniformDetail?.("sortedDrawRenderBuildMs");
       gl.uniform1f(bridgeProgram.scale, 1.0);
       gl.uniform1i(bridgeProgram.useTransforms, useTransforms ? 1 : 0);
       if (bridgeProgram.depthBias) {
@@ -9148,6 +9175,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       gl.uniform1i(bridgeProgram.colorVertexEnabled,
         appliedRenderState.materialSources.colorVertex.enabled ? 1 : 0);
     }
+    recordRenderUniformDetail?.("sortedDrawRenderBaseUniformMs");
     if (bridgeProgram.sceneAmbient) {
       gl.uniform4fv(bridgeProgram.sceneAmbient, new Float32Array(appliedRenderState.ambient.rgba));
     }
@@ -9178,6 +9206,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.emissiveMaterialSource) {
       gl.uniform1i(bridgeProgram.emissiveMaterialSource, renderState.emissiveMaterialSource);
     }
+    recordRenderUniformDetail?.("sortedDrawRenderMaterialUniformMs");
     if (bridgeProgram.fixedLightCount) {
       gl.uniform1i(bridgeProgram.fixedLightCount, fixedFunctionLights.length);
     }
@@ -9212,6 +9241,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.fixedLightSpot) {
       gl.uniform3fv(bridgeProgram.fixedLightSpot, flattenD3D8LightSpot(fixedFunctionLights));
     }
+    recordRenderUniformDetail?.("sortedDrawRenderLightUniformMs");
     if (bridgeProgram.textureFactor) {
       gl.uniform4fv(bridgeProgram.textureFactor,
         new Float32Array(d3dColorToNormalizedRgba(renderState.textureFactor)));
@@ -9267,6 +9297,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.stage1AlphaArg2) {
       gl.uniform1i(bridgeProgram.stage1AlphaArg2, renderState.textureStages[1].alphaArg2);
     }
+    recordRenderUniformDetail?.("sortedDrawRenderStageUniformMs");
     if (bridgeProgram.alphaTestEnabled) {
       gl.uniform1i(bridgeProgram.alphaTestEnabled, appliedRenderState.alphaTest.enabled ? 1 : 0);
     }
@@ -9291,6 +9322,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.fogEnd) {
       gl.uniform1f(bridgeProgram.fogEnd, appliedRenderState.fog.end);
     }
+      recordRenderUniformDetail?.("sortedDrawRenderAlphaFogUniformMs");
       harnessState.graphics.lastD3D8AppliedRenderState = appliedRenderState;
       harnessState.graphics.lastD3D8UniformKey = renderUniformKey;
     } else {
