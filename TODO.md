@@ -312,7 +312,15 @@ residue and the next frontier.
       real-header target preludes, and a focused `ninja -t deps` audit reports
       zero hits on the seven Fable-audited shadow headers for the migrated
       direct/lifecycle objects. No explicit CMake `shims/PreRTS.h`
-      force-include users remain in `WebAssembly/CMakeLists.txt`.
+      force-include users remain in `WebAssembly/CMakeLists.txt`. The next
+      burn-down migrated `gameengine-header-case-smoke` to the same real
+      PreRTS/GameLogic/GlobalData prelude while keeping its deliberate
+      case-redirect checks; it now depends on real `Common/Xfer.h`, real
+      `Common/GameAudio.h`, and real `GameLogic/GameLogic.h` instead of the
+      Fable-audited shadow headers. A fresh full deps count leaves
+      `GlobalData.h` / `INI.h` / `STLTypedefs.h` at 23 object users,
+      `GameAudio.h` at 4, and `Xfer.h` plus `GameLogic/GameLogic.h` at only
+      `gameengine-common-core-smoke`.
       Remaining cleanup: audit and delete the six remaining shadow
       shim class headers/bodies once no linked or compile-only target needs
       them, and migrate or retire any future legacy target that still depends

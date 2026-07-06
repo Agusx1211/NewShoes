@@ -8860,6 +8860,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       WebAssembly/tools/run_startup_vertical_smoke.mjs`, `node --check
       WebAssembly/tools/verify_cnc_port_weak_stubs.mjs`, and `git diff
       --check`.
+- [x] Move `gameengine-header-case-smoke` off the active Fable shadow-header
+      path. The target now force-includes `wasm_prerts_real.h`, defines the
+      original `GlobalData` / `GameLogic` header switches, and adds quote
+      include dirs so its intentionally odd-case include wrappers still
+      resolve into the original engine headers. Verified with
+      `cmake --build WebAssembly/build/wasm --target
+      gameengine-header-case-smoke`, `node
+      WebAssembly/dist/gameengine-header-case-smoke.cjs`, and a focused
+      `ninja -t deps` audit proving it no longer depends on
+      `shims/Common/{GlobalData,INI,STLTypedefs,GameAudio,Xfer}.h` or
+      `shims/GameLogic/GameLogic.h`; the remaining active `Xfer.h` and
+      `GameLogic.h` shadow users are down to `gameengine-common-core-smoke`
+      only.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an
