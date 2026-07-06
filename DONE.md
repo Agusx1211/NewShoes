@@ -8935,6 +8935,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `GameLogic/GameLogic.h` shadow users. The direct Node Bink smoke still
       exits nonzero on its pre-existing asset/copy-hook gate, though it reaches
       the GC/VS frame checks.
+- [x] Burn down the remaining Fable shadow-header smoke surface from 18 object
+      users to 3 by migrating the WW3D2 / WWShade mapper, texture, light,
+      DX8Wrapper, ShatterPlanes, and shipped-mesh smoke batch to the real
+      PreRTS/header prelude. A target list now applies
+      `wasm_prerts_real.h`, original GlobalData/GameLogic header switches, and
+      real quote dirs to the batch. The shipped-mesh smoke no longer owns
+      shim-layout `TheGlobalData` or `TheAudio`, links the original
+      GlobalData/debug owners, and the asset-manager smokes include WWLib
+      `Vector.H` before `assetmgr.h` so the real header contract is explicit.
+      Verified with the focused 15-target CMake build, `npm --prefix
+      WebAssembly run verify:cnc-port-real-headers`, representative Node
+      smokes (`matrixmapper-apply`, `ww3d2-texture-loader`,
+      `wwshade-cubemap-apply`, `ww3d2-shatterplanes-loader`), the shipped-mesh
+      smoke against `WebAssembly/artifacts/real-assets/W3DZH.big`, and a fresh
+      `ninja -t deps` audit showing only `gameengine-real-big-smoke`,
+      `gameengine-real-big-browser-smoke`, and
+      `gamenetwork-download-manager-smoke` still use
+      `shims/Common/{GlobalData,INI,STLTypedefs}.h`.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an

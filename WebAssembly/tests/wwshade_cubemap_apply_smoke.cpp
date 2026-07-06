@@ -40,6 +40,7 @@
 #include "PreRTS.h"
 
 #include "Common/GameMemory.h"
+#include "Vector.H"
 #include "assetmgr.h"
 #include "camera.h"
 #include "dx8fvf.h"

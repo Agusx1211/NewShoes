@@ -8231,6 +8231,8 @@ set_target_properties(ww3d2-shipped-mesh-loader-smoke PROPERTIES
 target_link_libraries(ww3d2-shipped-mesh-loader-smoke PRIVATE
   zh_ww3d2_compile_frontier
   zh_browser_d3d8
+  zh_gameengine_globaldata_runtime
+  zh_gameengine_debug_runtime
   zh_gameengine_common_core
   zh_wwmath_lookup
   zh_wwmath_core
@@ -8273,6 +8275,50 @@ target_link_options(ww3d2-shipped-mesh-loader-smoke PRIVATE
   "SHELL:-sEXPORTED_FUNCTIONS=['_run_ww3d2_shipped_mesh_loader_smoke']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall']"
 )
+
+set(WW3D2_REAL_HEADER_SMOKE_TARGETS
+  ww3d2-light-render-smoke
+  ww3d2-dx8wrapper-loader-smoke
+  ww3d2-dx8wrapper-render-smoke
+  ww3d2-texture-loader-smoke
+  wwshade-cubemap-apply-smoke
+  matrixmapper-apply-smoke
+  classic-environment-mapper-apply-smoke
+  environment-mapper-apply-smoke
+  screen-mapper-apply-smoke
+  edge-mapper-apply-smoke
+  ws-environment-mapper-apply-smoke
+  grid-environment-mapper-apply-smoke
+  grid-ws-environment-mapper-apply-smoke
+  ww3d2-shatterplanes-loader-smoke
+  ww3d2-shipped-mesh-loader-smoke
+)
+
+foreach(target IN LISTS WW3D2_REAL_HEADER_SMOKE_TARGETS)
+  target_compile_definitions(${target} PRIVATE
+    CNC_PORT_REAL_GAMELOGIC_HEADER=1
+    WASM_USE_ORIGINAL_GLOBALDATA=1
+  )
+  target_compile_options(${target} PRIVATE
+    "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+    "-iquote${GAMEENGINE_INCLUDE_DIR}"
+    "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+    "-iquote${GAMEENGINE_DIR}/Source"
+    "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+    "-iquote${MAIN_DIR}"
+    "-iquote${ZH_LIB_INCLUDE_DIR}"
+    "-iquote${ZH_CODE_DIR}/Libraries/Source"
+    "-iquote${WWVEGAS_DIR}"
+    "-iquote${WWVEGAS_DIR}/WW3D2"
+    "-iquote${WWDEBUG_DIR}"
+    "-iquote${WWLIB_DIR}"
+    "-iquote${WWMATH_DIR}"
+    "-iquote${WWSAVELOAD_DIR}"
+    "-iquote${COMPRESSION_DIR}"
+    "-iquote${COMPRESSION_EAC_DIR}"
+    "-iquote${WASM_SHIMS_DIR}"
+  )
+endforeach()
 
 add_executable(gameengine-common-core-smoke
   tests/gameengine_common_core_smoke.cpp

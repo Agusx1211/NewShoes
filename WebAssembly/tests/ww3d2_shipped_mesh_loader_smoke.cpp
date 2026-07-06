@@ -16,6 +16,7 @@
 #include "Common/SubsystemInterface.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
+#include "Vector.H"
 #include "assetmgr.h"
 #include "chunkio.h"
 #include "mesh.h"
@@ -25,9 +26,7 @@
 #include "w3d_file.h"
 
 SubsystemInterfaceList *TheSubsystemList = nullptr;
-GlobalData *TheGlobalData = nullptr;
-class AudioManager;
-AudioManager *TheAudio = nullptr;
+HWND ApplicationHWnd = nullptr;
 
 namespace {
 

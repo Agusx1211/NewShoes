@@ -347,7 +347,12 @@ residue and the next frontier.
       retired stale-dependency failure. A fresh deps audit leaves
       `GlobalData.h` / `INI.h` / `STLTypedefs.h` at 18 object users and no
       active `Common/GameAudio.h`, `Common/Xfer.h`, or
-      `GameLogic/GameLogic.h` shadow users.
+      `GameLogic/GameLogic.h` shadow users. The next burn-down migrated the
+      WW3D2 / WWShade mapper, texture, light, DX8Wrapper, ShatterPlanes, and
+      shipped-mesh smoke batch to the real PreRTS/header prelude. A fresh deps
+      audit leaves only 3 object users for each remaining shadow:
+      `gameengine-real-big-smoke`, `gameengine-real-big-browser-smoke`, and
+      `gamenetwork-download-manager-smoke`.
       Remaining cleanup: audit and delete the remaining shadow shim class
       headers/bodies once no linked or compile-only target needs them; migrate
       or retire any future legacy target that still depends on the remaining

@@ -24,6 +24,7 @@
 #include "PreRTS.h"
 
 #include "Common/GameMemory.h"
+#include "Vector.H"
 #include "assetmgr.h"
 #include "dx8wrapper.h"
 #include "texture.h"
