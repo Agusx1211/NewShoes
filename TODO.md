@@ -98,7 +98,11 @@ alpha-fog uniforms reduced sorted bridge work to 7.521 ms/frame and sorted
 uniform setup to 5.295 ms/frame on Mac Chrome/Metal. The remaining measured
 uniform costs are transform uploads 1.701 ms/frame, texture-layout uniforms
 1.557 ms/frame, render-state application 0.950 ms/frame, and material uniforms
-0.632 ms/frame.
+0.632 ms/frame. A narrower texture-layout key then dropped texture-layout
+uniforms to 0.015 ms/frame and sorted bridge work to 5.130 ms/frame. The
+remaining measured sorted-uniform costs are transform uploads 1.371 ms/frame,
+render-state application 0.551 ms/frame, and material uniforms
+0.479 ms/frame.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
@@ -2391,19 +2395,18 @@ and then start with the PROFILE, not with any individual fix.
       `diag=lite` has no warmup readbacks; DevTools is still needed before
       changing buffer/shader/draw submission internals that might be dominated
       by asynchronous ANGLE/GPU stalls.
-- [ ] **Optimize remaining sorted browser uniform setup**: after the
-      base/material/stage/alpha-fog uniform subgroup cache, Mac Chrome/Metal
-      measures sorted bridge work at 7.521 ms/frame across ~64.8 profiled
-      sorted draws/frame. Stage and alpha/fog are no longer meaningful
-      frontiers (`sortedDrawRenderStageUniformMs` 0.012 ms/frame,
-      `sortedDrawRenderAlphaFogUniformMs` 0.013 ms/frame), and fixed-light
-      remains low (`sortedDrawRenderLightUniformMs` 0.043 ms/frame). The next
-      concrete targets are transform uploads (`sortedDrawTransformUniformMs`
-      1.701 ms/frame), texture-layout uniforms (`sortedDrawTextureUniformMs`
-      1.557 ms/frame), render-state application
-      (`sortedDrawApplyRenderStateMs` 0.950 ms/frame), and material uniforms
-      (`sortedDrawRenderMaterialUniformMs` 0.632 ms/frame). Cache or split only
-      these proven repeated work groups, preserving original sorted draw order.
+- [ ] **Optimize remaining sorted browser uniform setup**: after the narrower
+      texture-layout uniform key, Mac Chrome/Metal measures sorted bridge work
+      at 5.130 ms/frame across ~68.0 profiled sorted draws/frame. Texture
+      layout is no longer a meaningful frontier
+      (`sortedDrawTextureUniformMs` 0.015 ms/frame, with ~472.0 texture-uniform
+      cache hits/frame and ~15.7 misses/frame), stage/alpha-fog remain drained,
+      and fixed-light remains low. The next concrete targets are transform
+      uploads (`sortedDrawTransformUniformMs` 1.371 ms/frame), render-state
+      application (`sortedDrawApplyRenderStateMs` 0.551 ms/frame), and material
+      uniforms (`sortedDrawRenderMaterialUniformMs` 0.479 ms/frame). Cache or
+      split only these proven repeated work groups, preserving original sorted
+      draw order.
 - [ ] **Batch the 2D GUI/menu draws — the menu is the real shell-map
       bottleneck, not the 3D scene.** Owner-observed: on the shell map the
       first ~seconds render at ~30fps with no menu widgets, then FPS drops to

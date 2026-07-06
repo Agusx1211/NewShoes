@@ -4126,6 +4126,51 @@ function d3d8AlphaFogUniformKey(renderState, appliedRenderState) {
   ].join(",");
 }
 
+function d3d8TextureLayoutUniformKey({
+  renderState,
+  canSampleTexture0,
+  canSampleTexture1,
+  texture0Coordinates,
+  texture1Coordinates,
+  texture0SemanticMode,
+  texture1SemanticMode,
+  implicitAlphaCutoutThreshold,
+  texture0Transform,
+  texture1Transform,
+}) {
+  const values = [implicitAlphaCutoutThreshold];
+  const pushStage = (stage, canSampleTexture, coordinates, semanticMode, textureTransform) => {
+    const transformApplied = Boolean(canSampleTexture && coordinates.transformApplied);
+    values.push(
+      canSampleTexture ? 1 : 0,
+      canSampleTexture ? coordinates.mode : D3DTSS_TCI_PASSTHRU,
+      transformApplied ? 1 : 0,
+      transformApplied ? coordinates.textureTransformComponentCount : 0,
+      transformApplied && coordinates.textureTransformProjected ? 1 : 0,
+      canSampleTexture ? Number(stage.mipMapLodBias ?? 0) >>> 0 : 0,
+      canSampleTexture ? semanticMode : 0,
+    );
+    if (transformApplied) {
+      values.push(...textureTransform);
+    }
+  };
+  pushStage(
+    renderState.textureStages[0],
+    canSampleTexture0,
+    texture0Coordinates,
+    texture0SemanticMode,
+    texture0Transform,
+  );
+  pushStage(
+    renderState.textureStages[1],
+    canSampleTexture1,
+    texture1Coordinates,
+    texture1SemanticMode,
+    texture1Transform,
+  );
+  return values.join(",");
+}
+
 function flattenD3D8LightType(lights) {
   const values = [];
   for (let index = 0; index < D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT; ++index) {
@@ -9096,7 +9141,18 @@ function paintD3D8DrawIndexed(payload = {}) {
     const bridgeProgram = ensureD3D8DrawProgram();
     bindD3D8Program(bridgeProgram.program);
     const renderUniformKey = `${derivedStateHash},${primitiveType}`;
-    const textureUniformKey = drawCacheKey;
+    const textureUniformKey = d3d8TextureLayoutUniformKey({
+      renderState,
+      canSampleTexture0,
+      canSampleTexture1,
+      texture0Coordinates,
+      texture1Coordinates,
+      texture0SemanticMode,
+      texture1SemanticMode,
+      implicitAlphaCutoutThreshold,
+      texture0Transform,
+      texture1Transform,
+    });
     const renderUniformUnchanged =
       renderUniformKey === harnessState.graphics.lastD3D8UniformKey &&
       harnessState.graphics.lastD3D8AppliedRenderState != null;
@@ -9550,92 +9606,93 @@ function paintD3D8DrawIndexed(payload = {}) {
       d3d8LastPointSpriteUniformInfo = { ...appliedPointSprite };
     }
     recordSortedDrawSubphase?.("sortedDrawPointSpriteUniformMs");
-    // Texture-availability uniforms change when bound texture identity,
-    // texture transform, vertex texture layout, or texture stage state changes.
+    // Texture-layout uniforms change when sampling availability, texture
+    // coordinate generation, texture transforms, semantic mode, LOD bias, or
+    // implicit alpha cutoff changes. Texture object binding is handled above.
     if (!textureUniformUnchanged) {
-    if (bridgeProgram.texture0CoordinateMode) {
-      gl.uniform1i(bridgeProgram.texture0CoordinateMode,
-        canSampleTexture0 ? texture0Coordinates.mode : D3DTSS_TCI_PASSTHRU);
-    }
-    if (bridgeProgram.useTexture0Transform) {
-      gl.uniform1i(bridgeProgram.useTexture0Transform,
-        canSampleTexture0 && texture0Coordinates.transformApplied ? 1 : 0);
-    }
-    if (bridgeProgram.texture0TransformComponentCount) {
-      gl.uniform1i(bridgeProgram.texture0TransformComponentCount,
-        canSampleTexture0 && texture0Coordinates.transformApplied
-          ? texture0Coordinates.textureTransformComponentCount
-          : 0);
-    }
-    if (bridgeProgram.texture0TransformProjected) {
-      gl.uniform1i(bridgeProgram.texture0TransformProjected,
-        canSampleTexture0 &&
-          texture0Coordinates.transformApplied &&
-          texture0Coordinates.textureTransformProjected
-          ? 1
-          : 0);
-    }
-    if (bridgeProgram.texture0Transform && canSampleTexture0 && texture0Coordinates.transformApplied) {
-      gl.uniformMatrix4fv(bridgeProgram.texture0Transform, false, texture0Transform);
-    }
-    if (bridgeProgram.texture1CoordinateMode) {
-      gl.uniform1i(bridgeProgram.texture1CoordinateMode,
-        canSampleTexture1 ? texture1Coordinates.mode : D3DTSS_TCI_PASSTHRU);
-    }
-    if (bridgeProgram.useTexture1Transform) {
-      gl.uniform1i(bridgeProgram.useTexture1Transform,
-        canSampleTexture1 && texture1Coordinates.transformApplied ? 1 : 0);
-    }
-    if (bridgeProgram.texture1TransformComponentCount) {
-      gl.uniform1i(bridgeProgram.texture1TransformComponentCount,
-        canSampleTexture1 && texture1Coordinates.transformApplied
-          ? texture1Coordinates.textureTransformComponentCount
-          : 0);
-    }
-    if (bridgeProgram.texture1TransformProjected) {
-      gl.uniform1i(bridgeProgram.texture1TransformProjected,
-        canSampleTexture1 &&
-          texture1Coordinates.transformApplied &&
-          texture1Coordinates.textureTransformProjected
-          ? 1
-          : 0);
-    }
-    if (bridgeProgram.texture1Transform && canSampleTexture1 && texture1Coordinates.transformApplied) {
-      gl.uniformMatrix4fv(bridgeProgram.texture1Transform, false, texture1Transform);
-    }
-    if (bridgeProgram.useTexture0) {
-      gl.uniform1i(bridgeProgram.useTexture0, canSampleTexture0 ? 1 : 0);
-    }
-    if (bridgeProgram.implicitAlphaCutoutThreshold) {
-      gl.uniform1f(bridgeProgram.implicitAlphaCutoutThreshold, implicitAlphaCutoutThreshold);
-    }
-    if (bridgeProgram.texture0) {
-      gl.uniform1i(bridgeProgram.texture0, 0);
-    }
-    if (bridgeProgram.texture0LodBias) {
-      const texture0LodBias = canSampleTexture0
-        ? d3dDwordToFloat(renderState.textureStages[0].mipMapLodBias)
-        : 0.0;
-      gl.uniform1f(bridgeProgram.texture0LodBias, texture0LodBias);
-    }
-    if (bridgeProgram.texture0Semantic) {
-      gl.uniform1i(bridgeProgram.texture0Semantic, texture0SemanticMode);
-    }
-    if (bridgeProgram.useTexture1) {
-      gl.uniform1i(bridgeProgram.useTexture1, canSampleTexture1 ? 1 : 0);
-    }
-    if (bridgeProgram.texture1) {
-      gl.uniform1i(bridgeProgram.texture1, 1);
-    }
-    if (bridgeProgram.texture1LodBias) {
-      const texture1LodBias = canSampleTexture1
-        ? d3dDwordToFloat(renderState.textureStages[1].mipMapLodBias)
-        : 0.0;
-      gl.uniform1f(bridgeProgram.texture1LodBias, texture1LodBias);
-    }
-    if (bridgeProgram.texture1Semantic) {
-      gl.uniform1i(bridgeProgram.texture1Semantic, texture1SemanticMode);
-    }
+      if (bridgeProgram.texture0CoordinateMode) {
+        gl.uniform1i(bridgeProgram.texture0CoordinateMode,
+          canSampleTexture0 ? texture0Coordinates.mode : D3DTSS_TCI_PASSTHRU);
+      }
+      if (bridgeProgram.useTexture0Transform) {
+        gl.uniform1i(bridgeProgram.useTexture0Transform,
+          canSampleTexture0 && texture0Coordinates.transformApplied ? 1 : 0);
+      }
+      if (bridgeProgram.texture0TransformComponentCount) {
+        gl.uniform1i(bridgeProgram.texture0TransformComponentCount,
+          canSampleTexture0 && texture0Coordinates.transformApplied
+            ? texture0Coordinates.textureTransformComponentCount
+            : 0);
+      }
+      if (bridgeProgram.texture0TransformProjected) {
+        gl.uniform1i(bridgeProgram.texture0TransformProjected,
+          canSampleTexture0 &&
+            texture0Coordinates.transformApplied &&
+            texture0Coordinates.textureTransformProjected
+            ? 1
+            : 0);
+      }
+      if (bridgeProgram.texture0Transform && canSampleTexture0 && texture0Coordinates.transformApplied) {
+        gl.uniformMatrix4fv(bridgeProgram.texture0Transform, false, texture0Transform);
+      }
+      if (bridgeProgram.texture1CoordinateMode) {
+        gl.uniform1i(bridgeProgram.texture1CoordinateMode,
+          canSampleTexture1 ? texture1Coordinates.mode : D3DTSS_TCI_PASSTHRU);
+      }
+      if (bridgeProgram.useTexture1Transform) {
+        gl.uniform1i(bridgeProgram.useTexture1Transform,
+          canSampleTexture1 && texture1Coordinates.transformApplied ? 1 : 0);
+      }
+      if (bridgeProgram.texture1TransformComponentCount) {
+        gl.uniform1i(bridgeProgram.texture1TransformComponentCount,
+          canSampleTexture1 && texture1Coordinates.transformApplied
+            ? texture1Coordinates.textureTransformComponentCount
+            : 0);
+      }
+      if (bridgeProgram.texture1TransformProjected) {
+        gl.uniform1i(bridgeProgram.texture1TransformProjected,
+          canSampleTexture1 &&
+            texture1Coordinates.transformApplied &&
+            texture1Coordinates.textureTransformProjected
+            ? 1
+            : 0);
+      }
+      if (bridgeProgram.texture1Transform && canSampleTexture1 && texture1Coordinates.transformApplied) {
+        gl.uniformMatrix4fv(bridgeProgram.texture1Transform, false, texture1Transform);
+      }
+      if (bridgeProgram.useTexture0) {
+        gl.uniform1i(bridgeProgram.useTexture0, canSampleTexture0 ? 1 : 0);
+      }
+      if (bridgeProgram.implicitAlphaCutoutThreshold) {
+        gl.uniform1f(bridgeProgram.implicitAlphaCutoutThreshold, implicitAlphaCutoutThreshold);
+      }
+      if (bridgeProgram.texture0) {
+        gl.uniform1i(bridgeProgram.texture0, 0);
+      }
+      if (bridgeProgram.texture0LodBias) {
+        const texture0LodBias = canSampleTexture0
+          ? d3dDwordToFloat(renderState.textureStages[0].mipMapLodBias)
+          : 0.0;
+        gl.uniform1f(bridgeProgram.texture0LodBias, texture0LodBias);
+      }
+      if (bridgeProgram.texture0Semantic) {
+        gl.uniform1i(bridgeProgram.texture0Semantic, texture0SemanticMode);
+      }
+      if (bridgeProgram.useTexture1) {
+        gl.uniform1i(bridgeProgram.useTexture1, canSampleTexture1 ? 1 : 0);
+      }
+      if (bridgeProgram.texture1) {
+        gl.uniform1i(bridgeProgram.texture1, 1);
+      }
+      if (bridgeProgram.texture1LodBias) {
+        const texture1LodBias = canSampleTexture1
+          ? d3dDwordToFloat(renderState.textureStages[1].mipMapLodBias)
+          : 0.0;
+        gl.uniform1f(bridgeProgram.texture1LodBias, texture1LodBias);
+      }
+      if (bridgeProgram.texture1Semantic) {
+        gl.uniform1i(bridgeProgram.texture1Semantic, texture1SemanticMode);
+      }
       harnessState.graphics.lastD3D8TextureUniformKey = textureUniformKey;
     }
     recordSortedDrawSubphase?.("sortedDrawTextureUniformMs");

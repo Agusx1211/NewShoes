@@ -8565,6 +8565,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `sortedDrawRenderAlphaFogUniformMs` 0.013 ms/frame); remaining measured
       sorted uniform costs are transform uploads 1.701, texture-layout 1.557,
       render-state application 0.950, and material uniforms 0.632 ms/frame.
+- [x] Narrow the sorted texture-layout uniform cache key to shader-visible
+      texture inputs instead of the broad draw-cache key. The key now covers
+      sampling availability, coordinate generation mode, texture-transform
+      flags and matrices, LOD-bias bits, semantic mode, and implicit alpha
+      cutoff; texture object identity stays on the existing per-draw bind path
+      because the uniform block only selects sampler units and texture-layout
+      shader state. Verified with `node --check
+      WebAssembly/harness/bridge.js`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port:release`,
+      `npm --prefix WebAssembly run build:port`, and a Mac M4 Chrome/Metal
+      runtime profile using `realEngineFrameTick`, 10 warmup frames,
+      60 measured frames, batch 10, and `PERF_PROFILE_ENGINE_PROFILE=1`. The
+      run reported an Apple M4 Metal renderer string, 46.04 ms/frame wall,
+      48.78 ms average engine `lastFrameMs`, zero measured readPixels, and a
+      visible shell-map screenshot. Texture-uniform
+      cache hit rate rose to ~472.0 hits/frame vs ~15.7 misses, sorted bridge
+      work fell from 7.521 to 5.130 ms/frame, sorted uniform setup fell from
+      5.295 to 2.728 ms/frame, and `sortedDrawTextureUniformMs` fell from
+      1.557 to 0.015 ms/frame. Remaining measured sorted-uniform costs are
+      transform uploads 1.371, render-state application 0.551, and material
+      uniforms 0.479 ms/frame.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`
