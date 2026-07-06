@@ -6602,6 +6602,32 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       WebAssembly/harness/startup_vertical_smoke.mjs`. Renderer was
       `ANGLE Metal Renderer: Apple M4`; screenshot:
       `WebAssembly/artifacts/screenshots/attack-milestone.png`.
+- [x] Prove real attack-move command dispatch and movement at MD_USA01 player
+      control.
+      `startup_vertical_smoke.mjs` now supports
+      `STARTUP_VERTICAL_PROVE_ATTACK_MOVE=1`, reaches original player control,
+      selects a local `AmericaTankPaladin`, clicks the original control-bar
+      `ButtonCommand11` populated from `Command_AttackMove`
+      (`GUI_COMMAND_ATTACK_MOVE`), and then clicks a map destination through the
+      same Win32 mouse queue. `querySelection` now exports pending GUI command
+      data plus message-type names for command/dispatch counters so the harness
+      can assert the real message path without hard-coded enum numbers. The Mac
+      Chrome/Metal run accepted destination `(697,260)`, reported
+      `guiCommandBeforeDestination=Command_AttackMove`,
+      `dispatchMoveCommandCount 0 -> 1`,
+      `dispatchLastMoveCommandTypeName=MSG_DO_ATTACKMOVETO`,
+      `dispatchLastMoveHadGroup=1`, and dispatch world position
+      `(2260.420898,745.552307,15.625)`. After 120 real frames the selected
+      Paladin moved 87.18 world units from `(2145,745,15.625)` to
+      `(2223.51709,782.886169,15.625)`. Verified with `node --check
+      WebAssembly/harness/startup_vertical_smoke.mjs`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port`, and on the Mac M4 real GPU:
+      `STARTUP_VERTICAL_REAL_INIT_ONLY=1 STARTUP_VERTICAL_PROVE_ATTACK_MOVE=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_COMPACT_CHUNKS=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_LIGHTWEIGHT=1 node
+      WebAssembly/harness/startup_vertical_smoke.mjs`. Renderer was
+      `ANGLE Metal Renderer: Apple M4`; screenshot:
+      `WebAssembly/artifacts/screenshots/attack-move-milestone.png`.
 
 ---
 

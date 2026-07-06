@@ -19,9 +19,11 @@ const realInitCampaignStartScreenshot = resolve(screenshotDir, "startup-vertical
 const realInitPostCampaignScreenshot = resolve(screenshotDir, "startup-vertical-real-init-post-campaign.png");
 const interactScreenshot = resolve(screenshotDir, "interact-milestone.png");
 const attackScreenshot = resolve(screenshotDir, "attack-milestone.png");
+const attackMoveScreenshot = resolve(screenshotDir, "attack-move-milestone.png");
 const proveInteract = process.env.STARTUP_VERTICAL_PROVE_INTERACT === "1";
 const proveRadar = process.env.STARTUP_VERTICAL_PROVE_RADAR === "1";
 const proveAttack = process.env.STARTUP_VERTICAL_PROVE_ATTACK === "1";
+const proveAttackMove = process.env.STARTUP_VERTICAL_PROVE_ATTACK_MOVE === "1";
 const debugStartupVertical = process.env.STARTUP_VERTICAL_DEBUG === "1";
 const realInitOnly = process.env.STARTUP_VERTICAL_REAL_INIT_ONLY === "1";
 const postCampaignFrameCount = Number(process.env.STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES ?? 0);
@@ -2499,6 +2501,7 @@ try {
       unitPicked: null,
       selectCount: 0,
       attackOrder: null,
+      attackMoveOrder: null,
       radarMove: null,
       moveSource: null,
       moveDelta: null,
@@ -3114,6 +3117,247 @@ try {
       clampPoint({ x: 96, y: Math.floor(displayHeight * 0.45) }),
     ].filter((point, index, points) =>
       points.findIndex((candidate) => candidate.x === point.x && candidate.y === point.y) === index);
+
+    const leftClick = {
+      name: "left",
+      down: win32MouseMessages.leftButtonDown,
+      up: win32MouseMessages.leftButtonUp,
+    };
+    const isAttackMoveArmed = (selection) =>
+      selection?.result?.modes?.attackMoveTo === true
+        || selection?.result?.guiCommand?.typeName === "GUI_COMMAND_ATTACK_MOVE";
+    const commandButtonEntries = (controlBarWindows) =>
+      Object.entries(controlBarWindows ?? {})
+        .filter(([name, button]) =>
+          /^buttonCommand\d+$/.test(name) && button?.found === true);
+    const compactCommandButton = ([name, button]) => ({
+      slot: name,
+      id: button.id,
+      x: button.x,
+      y: button.y,
+      width: button.width,
+      height: button.height,
+      centerX: button.centerX,
+      centerY: button.centerY,
+      clickable: button.clickable,
+      hidden: button.hidden,
+      enabled: button.enabled,
+      inputFunc: button.inputFunc,
+      command: button.command,
+    });
+    const clickGameWindowButton = async (button) => {
+      const point = {
+        x: Math.round(button.centerX ?? (button.x + button.width / 2)),
+        y: Math.round(button.centerY ?? (button.y + button.height / 2)),
+      };
+      await postRealEngineMouseMessage(page, win32MouseMessages.mouseMove, point);
+      await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+      await postRealEngineMouseMessage(page, win32MouseMessages.leftButtonDown, point);
+      await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+      await postRealEngineMouseMessage(page, win32MouseMessages.leftButtonUp, point);
+      await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+      return point;
+    };
+
+    async function findAttackMoveButton() {
+      const frame = await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+      const buttons = commandButtonEntries(frame?.frame?.clientState?.controlBarWindows)
+        .map(compactCommandButton);
+      const attackMoveButton = buttons.find((button) =>
+        button.clickable === true
+          && button.hidden !== true
+          && button.command?.typeName === "GUI_COMMAND_ATTACK_MOVE");
+      return { frame, buttons, attackMoveButton };
+    }
+
+    async function armAttackMoveCommand() {
+      let selection = await page.evaluate(() =>
+        window.CnCPort.rpc("querySelection"));
+      if (isAttackMoveArmed(selection)) {
+        return {
+          alreadyArmed: true,
+          buttonPoint: null,
+          attackMoveButton: null,
+          buttons: [],
+          selection,
+        };
+      }
+
+      const buttonState = await findAttackMoveButton();
+      expect(buttonState.attackMoveButton != null,
+        "[interact] selected unit command bar does not expose a clickable attack-move button",
+        {
+          buttons: buttonState.buttons,
+          selectCount: selection?.result?.selectCount,
+          selected: selection?.result?.selected,
+        });
+
+      const buttonPoint = await clickGameWindowButton(buttonState.attackMoveButton);
+      selection = await page.evaluate(() =>
+        window.CnCPort.rpc("querySelection"));
+      if (!isAttackMoveArmed(selection)) {
+        await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+        selection = await page.evaluate(() =>
+          window.CnCPort.rpc("querySelection"));
+      }
+      expect(isAttackMoveArmed(selection),
+        "[interact] attack-move command button did not arm attack-move",
+        {
+          button: buttonState.attackMoveButton,
+          buttonPoint,
+          buttons: buttonState.buttons,
+          selection: selection?.result,
+        });
+
+      return {
+        alreadyArmed: false,
+        buttonPoint,
+        attackMoveButton: buttonState.attackMoveButton,
+        buttons: buttonState.buttons,
+        selection,
+      };
+    }
+
+    async function proveAttackMoveOrder() {
+      const attempts = [];
+      let accepted = null;
+      for (const candidate of candidateDestinations) {
+        const armed = await armAttackMoveCommand();
+        const beforeCommandPath = armed.selection?.result?.commandPath ?? {};
+        const beforeDispatchMoveCount = beforeCommandPath.dispatchMoveCommandCount ?? 0;
+        const destinationClick =
+          armed.selection?.result?.guiCommand?.typeName === "GUI_COMMAND_ATTACK_MOVE"
+            ? leftClick
+            : moveClick;
+
+        await postRealEngineMouseMessage(page, win32MouseMessages.mouseMove, candidate);
+        await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+        await postRealEngineMouseMessage(page, destinationClick.down, candidate);
+        await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+        await postRealEngineMouseMessage(page, destinationClick.up, candidate);
+        await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+
+        const afterClickSelection = await page.evaluate(() =>
+          window.CnCPort.rpc("querySelection"));
+        const commandPath = afterClickSelection?.result?.commandPath ?? {};
+        const attempt = {
+          destination: candidate,
+          destinationClick: destinationClick.name,
+          armedByButton: armed.alreadyArmed !== true,
+          buttonPoint: armed.buttonPoint,
+          button: armed.attackMoveButton,
+          modeBeforeDestination: armed.selection?.result?.modes,
+          guiCommandBeforeDestination: armed.selection?.result?.guiCommand,
+          selectCount: afterClickSelection?.result?.selectCount,
+          selectedIds: (afterClickSelection?.result?.selected ?? [])
+            .map((selected) => selected.id),
+          dispatchMoveCommandCount: commandPath.dispatchMoveCommandCount,
+          dispatchLastMoveCommandTypeName: commandPath.dispatchLastMoveCommandTypeName,
+          dispatchLastMoveHadGroup: commandPath.dispatchLastMoveHadGroup,
+          moveLastMsgTypeName: commandPath.moveLastMsgTypeName,
+        };
+        attempts.push(attempt);
+        console.error("[interact] attack-move destination candidate:", JSON.stringify(attempt));
+
+        const moveDispatchAdvanced =
+          (commandPath.dispatchMoveCommandCount ?? 0) > beforeDispatchMoveCount;
+        if (moveDispatchAdvanced
+            && commandPath.dispatchLastMoveCommandTypeName === "MSG_DO_ATTACKMOVETO"
+            && commandPath.dispatchLastMoveHadGroup === 1) {
+          accepted = {
+            destination: candidate,
+            destinationClick: destinationClick.name,
+            button: armed.attackMoveButton,
+            buttonPoint: armed.buttonPoint,
+            beforeCommandPath,
+            afterCommandPath: commandPath,
+            attempts,
+          };
+          break;
+        }
+
+        if (moveDispatchAdvanced) {
+          throw new Error(
+            `[interact] attack-move destination dispatched ` +
+            `${commandPath.dispatchLastMoveCommandTypeName} instead of MSG_DO_ATTACKMOVETO; ` +
+            `attempt=${JSON.stringify(attempt)}`
+          );
+        }
+
+        const stillSelected = (afterClickSelection?.result?.selected ?? [])
+          .some((selected) => selected.id === unit.id);
+        if (!stillSelected) {
+          await reselectPickedUnit();
+        }
+      }
+
+      if (accepted == null) {
+        throw new Error(
+          `[interact] no attack-move destination produced MSG_DO_ATTACKMOVETO; ` +
+          `attempts=${JSON.stringify(attempts)}`
+        );
+      }
+
+      console.error("[interact] accepted attack-move destination:", JSON.stringify({
+        destination: accepted.destination,
+        destinationClick: accepted.destinationClick,
+        button: accepted.button,
+        afterCommandPath: accepted.afterCommandPath,
+      }));
+      console.error("[interact] stepping 120 frames for attack-move order to affect unit state...");
+      await runRealEngineFrames(page, 120);
+
+      const afterDrawables = await page.evaluate(() =>
+        window.CnCPort.rpc("queryDrawables"));
+      const afterUnit = (afterDrawables?.result?.drawables ?? [])
+        .find((candidate) => candidate.id === unit.id);
+      const unitDelta = worldDistance2d(unit.worldPos, afterUnit?.worldPos);
+      const afterSelection = await page.evaluate(() =>
+        window.CnCPort.rpc("querySelection"));
+      const postState = {
+        unitDelta,
+        beforeWorldPos: unit.worldPos,
+        afterWorldPos: afterUnit?.worldPos ?? null,
+        selectCount: afterSelection?.result?.selectCount,
+        modes: afterSelection?.result?.modes,
+        commandPath: afterSelection?.result?.commandPath,
+      };
+      console.error("[interact] attack-move post-state:", JSON.stringify(postState));
+      if (!Number.isFinite(unitDelta) || unitDelta <= 1.0) {
+        throw new Error(
+          `[interact] attack-move dispatch did not move the unit: ` +
+          `postState=${JSON.stringify(postState)}; accepted=${JSON.stringify(accepted)}`
+        );
+      }
+
+      await mkdir(screenshotDir, { recursive: true });
+      await page.screenshot({ path: attackMoveScreenshot });
+      return {
+        destination: accepted.destination,
+        destinationClick: accepted.destinationClick,
+        button: accepted.button,
+        buttonPoint: accepted.buttonPoint,
+        beforeCommandPath: accepted.beforeCommandPath,
+        afterCommandPath: accepted.afterCommandPath,
+        attempts: accepted.attempts,
+        postState,
+        screenshotPath: attackMoveScreenshot,
+      };
+    }
+
+    if (proveAttackMove) {
+      summary.attackMoveOrder = await proveAttackMoveOrder();
+      summary.moveSource = "attackMove";
+      summary.moveDelta = summary.attackMoveOrder.postState?.unitDelta ?? null;
+      summary.screenshotPath = summary.attackMoveOrder.screenshotPath;
+      console.error("[interact] attack-move proof accepted:", JSON.stringify(summary.attackMoveOrder));
+      if (!proveInteract && !proveRadar) {
+        return summary;
+      }
+      selBefore = await page.evaluate(() =>
+        window.CnCPort.rpc("querySelection"));
+    }
+
     const beforeMoveAppendCount = selBefore?.result?.commandPath?.moveAppendCount ?? 0;
     const beforeDispatchMoveCount = selBefore?.result?.commandPath?.dispatchMoveCommandCount ?? 0;
     let selAfterMoveClick = null;
@@ -3211,7 +3455,7 @@ try {
     return summary;
   }
 
-  const interactResult = (proveInteract || proveRadar || proveAttack)
+  const interactResult = (proveInteract || proveRadar || proveAttack || proveAttackMove)
     ? await selectAndMoveUnit(realInitPage)
     : null;
 

@@ -1665,13 +1665,6 @@ residue and the next frontier.
 - [ ] Harness: from the skirmish-start smoke's active match state, issue
       move/attack orders through the original input/command path and assert
       object state changes.
-- [ ] Extend the real attack proof to a true hostile target or attack-move
-      mode after the force-attack-object fallback: the MD_USA01 player-control
-      handoff currently exposes zero visible `ENEMIES` relationship drawables,
-      so the next cut should use a skirmish/mission state with a visible hostile
-      object for `MSG_DO_ATTACK_OBJECT`, or enter attack-move mode and assert
-      `MSG_DO_ATTACKMOVETO` through the move dispatch counters; then step frames
-      and verify object movement, damage, or target state changes.
 - [ ] Replay/recorder (`Recorder.cpp`) records and plays back deterministically.
 
 ---

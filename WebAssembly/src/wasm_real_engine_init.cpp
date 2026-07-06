@@ -34,6 +34,7 @@
 #include "Common/GameAudio.h"
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
+#include "Common/MessageStream.h"
 #include "Common/NameKeyGenerator.h"
 #include "Common/Player.h"
 #include "Common/PlayerList.h"
@@ -2999,6 +3000,36 @@ const char *gui_command_type_name(GUICommandType command)
 	}
 }
 
+const char *game_message_type_name(Int message_type)
+{
+	switch (static_cast<GameMessage::Type>(message_type)) {
+		case GameMessage::MSG_INVALID:
+			return "MSG_INVALID";
+		case GameMessage::MSG_META_TOGGLE_ATTACKMOVE:
+			return "MSG_META_TOGGLE_ATTACKMOVE";
+		case GameMessage::MSG_DO_ATTACK_OBJECT:
+			return "MSG_DO_ATTACK_OBJECT";
+		case GameMessage::MSG_DO_FORCE_ATTACK_OBJECT:
+			return "MSG_DO_FORCE_ATTACK_OBJECT";
+		case GameMessage::MSG_DO_FORCE_ATTACK_GROUND:
+			return "MSG_DO_FORCE_ATTACK_GROUND";
+		case GameMessage::MSG_DO_MOVETO:
+			return "MSG_DO_MOVETO";
+		case GameMessage::MSG_DO_ATTACKMOVETO:
+			return "MSG_DO_ATTACKMOVETO";
+		case GameMessage::MSG_DO_FORCEMOVETO:
+			return "MSG_DO_FORCEMOVETO";
+		case GameMessage::MSG_ADD_WAYPOINT:
+			return "MSG_ADD_WAYPOINT";
+		case GameMessage::MSG_DO_GUARD_POSITION:
+			return "MSG_DO_GUARD_POSITION";
+		case GameMessage::MSG_DO_STOP:
+			return "MSG_DO_STOP";
+		default:
+			return "MSG_OTHER";
+	}
+}
+
 // ADD-ONLY Stage-0b diagnostic: resolve a window's draw callback to a symbolic
 // name by direct pointer comparison against the linked W3D draw functions.
 // NULL or GameWinDefaultDraw here would indicate cause (c'-draw missing); a
@@ -3074,6 +3105,31 @@ void append_window_identity_json(std::string &json, GameWindow *window)
 	json += "}";
 }
 
+void append_command_button_json(std::string &json, const CommandButton *command)
+{
+	if (command == NULL) {
+		json += "null";
+		return;
+	}
+
+	const ThingTemplate *build_template = command->getThingTemplate();
+	json += "{\"name\":\"" + json_escape(command->getName().str()) + "\"";
+	json += ",\"type\":" + std::to_string(static_cast<int>(command->getCommandType()));
+	json += ",\"typeName\":\"";
+	json += gui_command_type_name(command->getCommandType());
+	json += "\"";
+	json += ",\"options\":" + std::to_string(command->getOptions());
+	json += ",\"contextCommand\":";
+	json += command->isContextCommand() ? "true" : "false";
+	json += ",\"buildTemplate\":";
+	if (build_template != NULL) {
+		json += "\"" + json_escape(build_template->getName().str()) + "\"";
+	} else {
+		json += "null";
+	}
+	json += "}";
+}
+
 void append_window_json(std::string &json, GameWindow *window, const char *requested_name)
 {
 	json += "{\"name\":\"";
@@ -3142,24 +3198,7 @@ void append_window_json(std::string &json, GameWindow *window, const char *reque
 		const CommandButton *command =
 			static_cast<const CommandButton *>(GadgetButtonGetData(window));
 		json += ",\"command\":";
-		if (command == NULL) {
-			json += "null";
-		} else {
-			const ThingTemplate *build_template = command->getThingTemplate();
-			json += "{\"name\":\"" + json_escape(command->getName().str()) + "\"";
-			json += ",\"type\":" + std::to_string(static_cast<int>(command->getCommandType()));
-			json += ",\"typeName\":\"";
-			json += gui_command_type_name(command->getCommandType());
-			json += "\"";
-			json += ",\"options\":" + std::to_string(command->getOptions());
-			json += ",\"buildTemplate\":";
-			if (build_template != NULL) {
-				json += "\"" + json_escape(build_template->getName().str()) + "\"";
-			} else {
-				json += "null";
-			}
-			json += "}";
-		}
+		append_command_button_json(json, command);
 	}
 	json += "}";
 }
@@ -4941,6 +4980,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 		std::to_string(static_cast<long long>(
 			TheInGameUI->getPendingPlaceSourceObjectID()));
 	json += "}";
+	json += ",\"guiCommand\":";
+	append_command_button_json(json, TheInGameUI->getGUICommand());
 	json += ",\"commandPath\":{";
 	json += "\"lastClickType\":" + std::to_string(cnc_port_command_xlat_last_click_type());
 	json += ",\"lastClickIsPoint\":" + std::to_string(cnc_port_command_xlat_last_click_is_point());
@@ -4954,6 +4995,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 	json += ",\"moveIssueCount\":" + std::to_string(cnc_port_command_xlat_move_issue_count());
 	json += ",\"moveAppendCount\":" + std::to_string(cnc_port_command_xlat_move_append_count());
 	json += ",\"moveLastMsgType\":" + std::to_string(cnc_port_command_xlat_move_last_msg_type());
+	json += ",\"moveLastMsgTypeName\":\"";
+	json += game_message_type_name(cnc_port_command_xlat_move_last_msg_type());
+	json += "\"";
 	json += ",\"moveLastCommandType\":" + std::to_string(cnc_port_command_xlat_move_last_command_type());
 	json += ",\"moveLastTeamExists\":" + std::to_string(cnc_port_command_xlat_move_last_team_exists());
 	json += ",\"moveLastWorldPos\":{\"x\":" + std::to_string(cnc_port_command_xlat_move_last_x());
@@ -4961,12 +5005,18 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 	json += ",\"z\":" + std::to_string(cnc_port_command_xlat_move_last_z()) + "}";
 	json += ",\"dispatchMoveCommandCount\":" + std::to_string(cnc_port_logic_dispatch_move_command_count());
 	json += ",\"dispatchLastMoveCommandType\":" + std::to_string(cnc_port_logic_dispatch_last_move_command_type());
+	json += ",\"dispatchLastMoveCommandTypeName\":\"";
+	json += game_message_type_name(cnc_port_logic_dispatch_last_move_command_type());
+	json += "\"";
 	json += ",\"dispatchLastMoveHadGroup\":" + std::to_string(cnc_port_logic_dispatch_last_move_had_group());
 	json += ",\"dispatchLastMoveWorldPos\":{\"x\":" + std::to_string(cnc_port_logic_dispatch_last_move_x());
 	json += ",\"y\":" + std::to_string(cnc_port_logic_dispatch_last_move_y());
 	json += ",\"z\":" + std::to_string(cnc_port_logic_dispatch_last_move_z()) + "}";
 	json += ",\"dispatchAttackCommandCount\":" + std::to_string(cnc_port_logic_dispatch_attack_command_count());
 	json += ",\"dispatchLastAttackCommandType\":" + std::to_string(cnc_port_logic_dispatch_last_attack_command_type());
+	json += ",\"dispatchLastAttackCommandTypeName\":\"";
+	json += game_message_type_name(cnc_port_logic_dispatch_last_attack_command_type());
+	json += "\"";
 	json += ",\"dispatchLastAttackHadGroup\":" + std::to_string(cnc_port_logic_dispatch_last_attack_had_group());
 	json += ",\"dispatchLastAttackTargetId\":" + std::to_string(cnc_port_logic_dispatch_last_attack_target_id());
 	json += ",\"dispatchLastAttackTargetWorldPos\":{\"x\":" + std::to_string(cnc_port_logic_dispatch_last_attack_target_x());
