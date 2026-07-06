@@ -201,6 +201,11 @@ reproduce in the harness and verify each fix with a screenshot / state check.
       follow the moving object; they appear baked at a fixed spot instead of
       trailing the vehicle (clearly visible in the intro). Check the
       track/decal transform + emitter attachment (world vs object space).
+      2026-07-06: `W3DTerrainTracks::flush()` now renders the already
+      world-space edge vertices with an identity world transform instead of
+      reusing a track render object's transform, and keeps the original static
+      index strip topology. Still needs a targeted moving-vehicle harness repro
+      / screenshot before closing this user bug.
 - [ ] **Text renders truncated** — some strings show only one letter or a few
       letters instead of the full text. Investigate the text/font glyph
       layout + string draw path (partial render, not missing text).
@@ -2494,9 +2499,16 @@ and then start with the PROFILE, not with any individual fix.
       and D3D8 bound-checksum A/B proved raw `capture_bound_draw()` checksum
       removal is a measured regression on M4/Metal: it drops the CPU
       `captureBound` bucket but increases wall time by shifting stalls into
-      later terrain/GL buckets. Keep bound diagnostics enabled by default. Next
-      pass should inspect terrain shoreline/extra-blend/track bursts and the
-      real tile draw/submit shape rather than disabling D3D8 bound checksums.
+      later terrain/GL buckets. Keep bound diagnostics enabled by default.
+      2026-07-06 terrain-track pass: final static-index/identity-transform
+      profile measured 38.26 ms/frame wall / 36.82 ms average engine
+      `lastFrameMs` on Mac M4 Metal, with `W3DTerrainTracks.flush.unlock.before`
+      visible at 3.05 ms/frame and `WasmD3D8.browserDrawIndexed.before` at
+      5.10 ms/frame. A dynamic per-frame terrain-track index batching attempt
+      reduced browser draw-submit cost but added a larger buffer-unlock spike,
+      so it was not kept. Next pass should continue with base tile/shoreline
+      bursts or a separate padded/static terrain-track batching experiment,
+      not per-frame index uploads.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing

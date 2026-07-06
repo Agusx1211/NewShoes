@@ -60,6 +60,38 @@
 #include "GameLogic/Object.h"
 #include "GameClient/Drawable.h"
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_profile_marker(const char *name) __attribute__((weak));
+extern "C" int cnc_port_is_engine_frame_profile_enabled() __attribute__((weak));
+extern "C" void cnc_port_begin_sorted_draw_submit_profile_scope() __attribute__((weak));
+extern "C" void cnc_port_end_sorted_draw_submit_profile_scope() __attribute__((weak));
+#define CNC_PORT_TERRAIN_TRACK_PROFILE_ENABLED() \
+	(cnc_port_is_engine_frame_profile_enabled && cnc_port_is_engine_frame_profile_enabled())
+#define CNC_PORT_NOTE_TERRAIN_TRACK_PROFILE_STEP(enabled, name) \
+	do { \
+		if ((enabled) && cnc_port_note_engine_profile_marker) { \
+			cnc_port_note_engine_profile_marker(name); \
+		} \
+	} while (0)
+#define CNC_PORT_BEGIN_TERRAIN_TRACK_SUBMIT_PROFILE_SCOPE(enabled) \
+	do { \
+		if ((enabled) && cnc_port_begin_sorted_draw_submit_profile_scope) { \
+			cnc_port_begin_sorted_draw_submit_profile_scope(); \
+		} \
+	} while (0)
+#define CNC_PORT_END_TERRAIN_TRACK_SUBMIT_PROFILE_SCOPE(enabled) \
+	do { \
+		if ((enabled) && cnc_port_end_sorted_draw_submit_profile_scope) { \
+			cnc_port_end_sorted_draw_submit_profile_scope(); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_TERRAIN_TRACK_PROFILE_ENABLED() false
+#define CNC_PORT_NOTE_TERRAIN_TRACK_PROFILE_STEP(enabled, name) do { } while (0)
+#define CNC_PORT_BEGIN_TERRAIN_TRACK_SUBMIT_PROFILE_SCOPE(enabled) do { } while (0)
+#define CNC_PORT_END_TERRAIN_TRACK_SUBMIT_PROFILE_SCOPE(enabled) do { } while (0)
+#endif
+
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -432,6 +464,25 @@ void TerrainTracksRenderObjClass::Render(RenderInfoClass & rinfo)
 		TheTerrainTracksRenderObjClassSystem->m_edgesToFlush += m_activeEdgeCount;
 }
 
+static void DrawTerrainTrack(TextureClass *texture, Int vertexStart, Int activeEdgeCount,
+	bool profileTerrainTracks)
+{
+	if (activeEdgeCount < 2)
+		return;
+
+	DX8Wrapper::Set_Texture(0,texture);
+	CNC_PORT_NOTE_TERRAIN_TRACK_PROFILE_STEP(profileTerrainTracks, "W3DTerrainTracks.flush.draw.before");
+	CNC_PORT_BEGIN_TERRAIN_TRACK_SUBMIT_PROFILE_SCOPE(profileTerrainTracks);
+	DX8Wrapper::Set_Index_Buffer_Index_Offset(static_cast<unsigned short>(vertexStart));
+	DX8Wrapper::Draw_Triangles(
+		0,
+		static_cast<unsigned short>((activeEdgeCount-1)*2),
+		0,
+		static_cast<unsigned short>(activeEdgeCount*2));
+	CNC_PORT_END_TERRAIN_TRACK_SUBMIT_PROFILE_SCOPE(profileTerrainTracks);
+	CNC_PORT_NOTE_TERRAIN_TRACK_PROFILE_STEP(profileTerrainTracks, "W3DTerrainTracks.flush.draw.after");
+}
+
 #define DEFAULT_TRACK_SPACING  (MAP_XY_FACTOR  * 1.4f)
 #define DEFAULT_TRACK_WIDTH	4.0f;
 
@@ -598,10 +649,11 @@ void TerrainTracksRenderObjClassSystem::ReAcquireResources(void)
 	REF_PTR_RELEASE(m_indexBuffer);
 	REF_PTR_RELEASE(m_vertexBuffer);
 
-	//Create static index buffers.  These will index the vertex buffers holding the track segments
-	m_indexBuffer=NEW_REF(DX8IndexBufferClass,((m_maxTankTrackEdges-1)*6));
+	DEBUG_ASSERTCRASH(numModules*m_maxTankTrackEdges*2 < 65535, ("Too many terrain track edges"));
 
-	// Fill up the IB
+	// Static indices cover one track strip; each draw supplies a base-vertex
+	// offset into the per-frame vertex buffer for that track's edge run.
+	m_indexBuffer=NEW_REF(DX8IndexBufferClass,((m_maxTankTrackEdges-1)*6));
 	{
 		DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexBuffer);
 		UnsignedShort *ib=lockIdxBuffer.Get_Index_Array();
@@ -612,11 +664,9 @@ void TerrainTracksRenderObjClassSystem::ReAcquireResources(void)
 			ib[1]=i*2+1;
 			ib[4]=ib[2]=(i+1)*2+1;
 			ib[5]=(i+1)*2;
-			ib+=6;	//skip the 6 indices we just filled
+			ib+=6;
 		}
 	}
-
-	DEBUG_ASSERTCRASH(numModules*m_maxTankTrackEdges*2 < 65535, ("Too many terrain track edges"));
 
 	m_vertexBuffer=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZDUV1,numModules*m_maxTankTrackEdges*2,DX8VertexBufferClass::USAGE_DYNAMIC));
 }
@@ -806,6 +856,8 @@ Try improving the fit to vertical surfaces like cliffs.
 
 	Int	trackStartIndex;
 	Real distanceFade;
+	Int totalVertexCount=0;
+	const bool profileTerrainTracks = CNC_PORT_TERRAIN_TRACK_PROFILE_ENABLED();
 
 	if (ShaderClass::Is_Backface_Culling_Inverted())
 		return;	//don't render track marks in reflections.
@@ -828,7 +880,10 @@ Try improving the fit to vertical surfaces like cliffs.
 	//check if there is anything to draw and fill vertex buffer
 	if (m_edgesToFlush >= 2)
 	{
+		CNC_PORT_NOTE_TERRAIN_TRACK_PROFILE_STEP(profileTerrainTracks, "W3DTerrainTracks.flush.lock.before");
 		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexBuffer);
+		CNC_PORT_NOTE_TERRAIN_TRACK_PROFILE_STEP(profileTerrainTracks, "W3DTerrainTracks.flush.lock.after");
+		CNC_PORT_NOTE_TERRAIN_TRACK_PROFILE_STEP(profileTerrainTracks, "W3DTerrainTracks.flush.write.before");
 		VertexFormatXYZDUV1 *verts = (VertexFormatXYZDUV1*)lockVtxBuffer.Get_Vertex_Array();
 		trackStartIndex=0;
 
@@ -884,32 +939,35 @@ Try improving the fit to vertical surfaces like cliffs.
 					verts->diffuse=diffuseLight | ( REAL_TO_INT(distanceFade*255.0f) <<24);
 					verts++;
 				}//for
+				totalVertexCount += mod->m_activeEdgeCount*2;
 			}// mod has edges to render
 			mod = mod->m_nextSystem;
 		}	//while (mod)
+		CNC_PORT_NOTE_TERRAIN_TRACK_PROFILE_STEP(profileTerrainTracks, "W3DTerrainTracks.flush.write.after");
+		CNC_PORT_NOTE_TERRAIN_TRACK_PROFILE_STEP(profileTerrainTracks, "W3DTerrainTracks.flush.unlock.before");
 	}//edges to flush
+	CNC_PORT_NOTE_TERRAIN_TRACK_PROFILE_STEP(profileTerrainTracks, "W3DTerrainTracks.flush.unlock.after");
 
 	//draw the filled vertex buffers
-	if (m_edgesToFlush >= 2)
+	if (totalVertexCount >= 4)
 	{
+		CNC_PORT_NOTE_TERRAIN_TRACK_PROFILE_STEP(profileTerrainTracks, "W3DTerrainTracks.flush.drawSetup.before");
 		ShaderClass::Invalidate();
 		DX8Wrapper::Set_Material(m_vertexMaterialClass);
 		DX8Wrapper::Set_Shader(m_shaderClass);
 		DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
 		DX8Wrapper::Set_Vertex_Buffer(m_vertexBuffer);
+		DX8Wrapper::Set_Transform(D3DTS_WORLD,Matrix3D(1));
+		CNC_PORT_NOTE_TERRAIN_TRACK_PROFILE_STEP(profileTerrainTracks, "W3DTerrainTracks.flush.drawSetup.after");
 
 		trackStartIndex=0;
 		mod=m_usedModules;
-		Matrix3D tm(mod->Transform);
-		DX8Wrapper::Set_Transform(D3DTS_WORLD,tm);
 		while (mod)
 		{
 			if (mod->m_activeEdgeCount >= 2 && mod->Is_Really_Visible())
 			{
-				DX8Wrapper::Set_Texture(0,mod->m_stageZeroTexture);
-				DX8Wrapper::Set_Index_Buffer_Index_Offset(trackStartIndex);
-				DX8Wrapper::Draw_Triangles(	0,(mod->m_activeEdgeCount-1)*2, 0, mod->m_activeEdgeCount*2);
-
+				DrawTerrainTrack(mod->m_stageZeroTexture,trackStartIndex,
+					mod->m_activeEdgeCount,profileTerrainTracks);
 				trackStartIndex += mod->m_activeEdgeCount*2;
 			}
 			mod=mod->m_nextSystem;

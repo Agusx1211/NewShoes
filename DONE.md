@@ -8061,6 +8061,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 ## M10 — Hardening, content, polish
 
 ### Performance & memory
+- [x] Correct the terrain-track render transform and split its real shell-map
+      profile bucket. `TerrainTracksRenderObjClassSystem::flush()` now keeps
+      the original static one-track index buffer, writes the same real
+      world-space edge/fade vertices, and draws those vertices with an identity
+      `D3DTS_WORLD` transform instead of applying a track render object's
+      transform to already-world-space decal geometry. Added profile-gated
+      markers around terrain-track vertex-buffer lock/write/unlock/setup and
+      per-track draw submission. A dynamic per-frame index-buffer batching
+      attempt was measured and rejected: it reduced
+      `WasmD3D8.browserDrawIndexed.before` but introduced a larger
+      `W3DTerrainTracks.flush.unlock.before` upload spike. Verified with
+      `git diff --check`, `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly run build:port:release`, and Mac M4
+      Chrome/Metal release profiling (`ANGLE Metal Renderer: Apple M4`,
+      `realEngineFrameTick`, 60 warmup + 60 measured frames). The kept
+      static-index run measured 38.26 ms/frame wall / 36.82 ms average engine
+      `lastFrameMs`, with a visible shell-map screenshot; the direct
+      moving-vehicle tire-track bug remains open pending a targeted harness
+      repro.
 - [x] Split real heightmap tile draw profiling and pin the D3D8 bound-diagnostic
       A/B result. `HeightMapRenderObjClass::Render` and
       `renderTerrainPass` now add profile-gated markers around terrain tile
