@@ -8553,6 +8553,8 @@ set_target_properties(gamenetwork-download-manager-smoke PROPERTIES
 )
 
 target_link_libraries(gamenetwork-download-manager-smoke PRIVATE
+  zh_gameengine_globaldata_runtime
+  zh_gameengine_debug_runtime
   zh_gamenetwork_core
   zh_gameclient_text
 )
@@ -8583,6 +8585,8 @@ set_target_properties(gameengine-real-big-smoke PROPERTIES
 )
 
 target_link_libraries(gameengine-real-big-smoke PRIVATE
+  zh_gameengine_globaldata_runtime
+  zh_gameengine_debug_runtime
   zh_gameengine_common_core
 )
 
@@ -8616,6 +8620,8 @@ set_target_properties(gameengine-real-big-browser-smoke PROPERTIES
 )
 
 target_link_libraries(gameengine-real-big-browser-smoke PRIVATE
+  zh_gameengine_globaldata_runtime
+  zh_gameengine_debug_runtime
   zh_gameengine_common_core
 )
 
@@ -8644,6 +8650,38 @@ target_link_options(gameengine-real-big-browser-smoke PRIVATE
   "SHELL:-sEXPORTED_FUNCTIONS=['_run_real_big_smoke','_run_real_big_index_smoke']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall','FS']"
 )
+
+set(FINAL_REAL_HEADER_SMOKE_TARGETS
+  gamenetwork-download-manager-smoke
+  gameengine-real-big-smoke
+  gameengine-real-big-browser-smoke
+)
+
+foreach(target IN LISTS FINAL_REAL_HEADER_SMOKE_TARGETS)
+  target_compile_definitions(${target} PRIVATE
+    CNC_PORT_REAL_GAMELOGIC_HEADER=1
+    WASM_USE_ORIGINAL_GLOBALDATA=1
+  )
+  target_compile_options(${target} PRIVATE
+    "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+    "-iquote${GAMEENGINE_INCLUDE_DIR}"
+    "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+    "-iquote${GAMEENGINE_DIR}/Source"
+    "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+    "-iquote${MAIN_DIR}"
+    "-iquote${ZH_LIB_INCLUDE_DIR}"
+    "-iquote${ZH_CODE_DIR}/Libraries/Source"
+    "-iquote${WWVEGAS_DIR}"
+    "-iquote${WWVEGAS_DIR}/WW3D2"
+    "-iquote${WWDEBUG_DIR}"
+    "-iquote${WWLIB_DIR}"
+    "-iquote${WWMATH_DIR}"
+    "-iquote${WWSAVELOAD_DIR}"
+    "-iquote${COMPRESSION_DIR}"
+    "-iquote${COMPRESSION_EAC_DIR}"
+    "-iquote${WASM_SHIMS_DIR}"
+  )
+endforeach()
 
 add_executable(bink-video-provider-smoke
   tests/bink_video_provider_smoke.cpp

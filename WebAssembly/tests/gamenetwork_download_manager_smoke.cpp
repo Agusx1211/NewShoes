@@ -19,7 +19,6 @@ class GameLogic;
 class Display;
 
 SubsystemInterfaceList *TheSubsystemList = nullptr;
-GlobalData *TheGlobalData = nullptr;
 GameLogic *TheGameLogic = nullptr;
 Display *TheDisplay = nullptr;
 HWND ApplicationHWnd = NULL;

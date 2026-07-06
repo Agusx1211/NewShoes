@@ -13,11 +13,7 @@ const repoRoot = resolve(wasmRoot, "..");
 const DEFAULT_BUILD_DIR = resolve(wasmRoot, "build/wasm");
 const DEFAULT_DIST_JS = resolve(wasmRoot, "dist/cnc-port.js");
 
-const activeShadowHeaderSuffixes = [
-  "WebAssembly/shims/Common/GlobalData.h",
-  "WebAssembly/shims/Common/INI.h",
-  "WebAssembly/shims/Common/STLTypedefs.h",
-];
+const activeShadowHeaderSuffixes = [];
 
 // Retired shadow paths should never appear in fresh deps, but keeping the
 // suffix here makes stale/misrouted build objects fail loudly.
@@ -26,6 +22,9 @@ const retiredShadowHeaderSuffixes = [
   "WebAssembly/shims/Common/Xfer.h",
   "WebAssembly/shims/GameLogic/GameLogic.h",
   "WebAssembly/shims/Common/GameAudio.h",
+  "WebAssembly/shims/Common/GlobalData.h",
+  "WebAssembly/shims/Common/INI.h",
+  "WebAssembly/shims/Common/STLTypedefs.h",
 ];
 
 const shadowHeaderSuffixes = [

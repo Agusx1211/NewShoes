@@ -8953,6 +8953,29 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `gameengine-real-big-browser-smoke`, and
       `gamenetwork-download-manager-smoke` still use
       `shims/Common/{GlobalData,INI,STLTypedefs}.h`.
+- [x] Finish and delete the Fable-audited mixed-ABI common shadow-header
+      system. `gamenetwork-download-manager-smoke`,
+      `gameengine-real-big-smoke`, and `gameengine-real-big-browser-smoke`
+      now force the real PreRTS/header prelude, link the original
+      GlobalData/debug owners, and no longer define shim-layout
+      `TheGlobalData`; `gameengine_real_big_smoke.cpp` also no longer owns a
+      fake `TheAudio`. With the final three objects migrated, a fresh deps
+      audit reported zero users of `shims/Common/{GlobalData,INI,STLTypedefs}.h`,
+      so those headers were deleted and moved into
+      `verify_cnc_port_real_headers.mjs`'s retired stale-dependency list. This
+      closes the active `shims/Common/{GlobalData,INI,STLTypedefs,GameAudio,Xfer}.h`,
+      `shims/GameLogic/GameLogic.h`, and
+      `shims/GameNetwork/WOLBrowser/WebBrowser.h` mixed-ABI hazard; the
+      remaining TODO is only to keep the verifier gate from regressing.
+      Verified with `cmake --build WebAssembly/build/wasm --target
+      gamenetwork-download-manager-smoke gameengine-real-big-smoke
+      gameengine-real-big-browser-smoke`, `node
+      WebAssembly/dist/gamenetwork-download-manager-smoke.cjs`, `node
+      WebAssembly/dist/gameengine-real-big-smoke.cjs
+      WebAssembly/artifacts/real-assets/INIZH.big`, `npm --prefix
+      WebAssembly run build:port`, `npm --prefix WebAssembly run
+      verify:cnc-port-real-headers`, and a final `ninja -t deps` audit with no
+      hits on the seven retired shadow headers.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an

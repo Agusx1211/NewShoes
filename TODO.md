@@ -212,7 +212,7 @@ residue and the next frontier.
       `zh_window_layout_script_runtime`; `harness/phase3_isolate.mjs` remains
       the archive-mount crash reproducer/bisection driver for that separate
       class.
-- [ ] **Kill the mixed-ABI shim-header system — PROVEN LIVE in the current
+- [ ] **Keep the retired mixed-ABI shim-header system dead — PROVEN LIVE in the current
       `cnc-port` link** (Fable audit 2026-07-05, verified via
       `ninja -t deps` in `build/wasm`, not inferred). Originally seven shim
       headers shadowed real engine headers at identical include paths:
@@ -221,14 +221,9 @@ residue and the next frontier.
       `shims/GameNetwork/WOLBrowser/WebBrowser.h`. The stale WOL WebBrowser
       shadow is now deleted after the browser-owned
       `wasm_webbrowser_boundary.h` replacement left it with zero build-dep
-      users. `shims/Common/Xfer.h` and `shims/GameLogic/GameLogic.h` are now
-      deleted after reaching zero build-dep users, and the real-header
-      verifier treats those retired paths as stale-dependency failures. Three
-      active shadow real-engine headers remain:
-      `shims/Common/{GlobalData,INI,STLTypedefs}.h`. Which one a TU gets is
-      per-TU (include order + identical include guards + `#include_next` in
-      `shims/PreRTS.h:75` + per-target `WASM_USE_ORIGINAL_GLOBALDATA` /
-      `CNC_PORT_REAL_GAMELOGIC_HEADER` defines) with no enforcement.
+      users. All seven audited shadow headers are now deleted after reaching
+      zero build-dep users, and the real-header verifier treats the retired
+      paths as stale-dependency failures.
       Original Fable audit evidence: `TheGlobalData` was constructed real-layout
       (338 fields, `SubsystemInterface` base → vptr) by
       `zh_gameengine_globaldata_runtime`, while ~30 cnc-port TUs — including
@@ -352,11 +347,11 @@ residue and the next frontier.
       shipped-mesh smoke batch to the real PreRTS/header prelude. A fresh deps
       audit leaves only 3 object users for each remaining shadow:
       `gameengine-real-big-smoke`, `gameengine-real-big-browser-smoke`, and
-      `gamenetwork-download-manager-smoke`.
-      Remaining cleanup: audit and delete the remaining shadow shim class
-      headers/bodies once no linked or compile-only target needs them; migrate
-      or retire any future legacy target that still depends on the remaining
-      `GlobalData`/`INI`/`STLTypedefs` shadows. This is the same
+      `gamenetwork-download-manager-smoke`. The final burn-down migrated those
+      three targets, deleted `shims/Common/{GlobalData,INI,STLTypedefs}.h`,
+      and left a fresh deps audit with zero users of the seven retired shadow
+      headers. Ongoing guard: keep `verify:cnc-port-real-headers` in the gate
+      and do not add new engine-path shadow headers. This is the same
       hazard class as the confirmed d6d3b79
       ChallengeGenerals stack corruption and the fixed edgeMapperApply
       aggregate-smoke incident above — fix it once at the root instead of
@@ -562,13 +557,6 @@ residue and the next frontier.
       browser boundary used by `SkirmishMapSelectMenu` with a split original
       LAN preferences owner or final browser preferences storage once that can
       be done without linking the LAN lobby/GameSpy flow into `cnc-port`.
-- [ ] Purge the legacy target-local `Common/INI.h` compile shim: its 12-byte
-      `INI` class ODR-collides with the real `INI.cpp` symbols at -O0, so any
-      shim-world `INI ini;` local runs the real ctor over a 12-byte slot and
-      corrupts memory (root-caused during audio-runtime bring-up;
-      `cnc-port` now links the real-world `SubsystemInterface.o`, but other
-      targets mixing shim-INI users with real `INI.cpp` still carry the
-      hazard). Move remaining shim-world INI users onto the real header.
 - [ ] Promote production-match object/drawable creation from the
       `WASM_REAL_INI_THING_FACTORY_METADATA_ONLY` runtime slice once the
       running `TheGameLogic`/`TheGameClient`/`TheInGameUI` match subsystems
@@ -694,15 +682,6 @@ residue and the next frontier.
       all profile consumers link the original profiling manager target.
 
 ### GameEngine — Common
-- [ ] Replace the remaining target-local `Common/INI.h`, `Common/GlobalData.h`,
-      and `Common/STLTypedefs.h` compile shims with the original
-      headers/sources as each real subsystem comes online. The `Common/Xfer.h`,
-      `Common/GameAudio.h`, and `GameLogic/GameLogic.h` shadows are
-      retired/deleted and guarded by the real-header verifier; the runtime now
-      links original
-      `Common/System/XferCRC.cpp` for the pre-audio `XferCRC("lightCRC")`
-      startup proof, but the full original `Common/Xfer` save/load transfer
-      behavior still remains open behind the broader save/load wiring.
 - [ ] Link and smoke-test original `Common/Xfer` and save-game behavior after
       `GameState`, `GameStateMap`, real `GlobalData`, browser persistence, and
       the full snapshot subsystem can link into the runtime.
@@ -719,7 +698,7 @@ residue and the next frontier.
       minimum boot archive set once engine startup uses fetched archives.
 - [ ] Re-run original `DataChunkOutput` write/temp-file coverage after the real
       `GlobalData` user-data directory and browser persistence layer replace
-      the current target-local `Common/GlobalData.h` shim.
+      the remaining focused local smoke globals.
 - [ ] Link and smoke-test original release-crash reporting and function-lexicon
       callback lookup after browser assert/dialog routing, `GameWindowManager`,
       and the real GUI callback runtime are linked without compile-only
@@ -824,10 +803,6 @@ residue and the next frontier.
 - [ ] Link and smoke-test original message-stream behavior after the real
       `Thing`, player/list, recorder, InGameUI, GameLogic, and network command
       dependencies replace the current compile-only surface.
-- [ ] Replace the remaining target-local `Common/GlobalData.h` singleton shim
-      in the broader linked runtime after the focused `GlobalData` /
-      command-line bootstrap probes are folded into the main engine startup
-      path.
 - [ ] Replace the focused command-line runtime's local
       `DX8Wrapper_PreserveFPU` compatibility definition with the original W3D
       DX8 wrapper state once the W3D runtime links into `cnc-port`.
@@ -898,10 +873,6 @@ residue and the next frontier.
       once browser archive/file lookup fully preserves the original Windows
       case-insensitive CSF path contract (`data\%s\Generals.csf` versus the
       indexed `data\english\generals.csf` entry).
-- [ ] Replace the current temporary `Common/INI.h` GameClient bridge helpers
-      (`LookupListRec`, lookup-list parsing, coordinate parsing,
-      `parseMappedImage`, credits and shell scheme declarations) with the
-      original INI parser surface once `Common/INI` can compile and link.
 - [ ] Link and smoke-test original campaign progression/save-load behavior
       after the real campaign INI reader, `Xfer::xferSnapshot`, and full
       GameClient singleton surface are available without target-local stubs.

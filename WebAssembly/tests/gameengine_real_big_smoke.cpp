@@ -17,9 +17,7 @@
 #include "Win32Device/Common/Win32LocalFileSystem.h"
 
 SubsystemInterfaceList *TheSubsystemList = nullptr;
-GlobalData *TheGlobalData = nullptr;
-class AudioManager;
-AudioManager *TheAudio = nullptr;
+HWND ApplicationHWnd = nullptr;
 
 namespace {
 bool expect(bool condition, const char *message)
