@@ -347,93 +347,24 @@ residue and the next frontier.
       explicit weak declarations compiled into the real `cnc-port` link and
       the linked strong providers with the same mangled names without claiming
       exact final body provenance (Emscripten filters wasm-ld maps and final
-      wasm symbols are not enough). As of 2026-07-05 it finds 186 explicit
+      wasm symbols are not enough). As of 2026-07-06 it finds 186 explicit
       weak declarations across the render/scene/terrain probe files plus
-      `wasm_ww3d_terrain_probe_stubs.cpp`, zero compiled weak definitions, 186
-      gated-out declarations, and zero strong-provider overlaps. The Benchmark
-      project file references
-      missing third-party C sources (`emfloat.c`, `misc.c`, `nbench0.c`,
-      `nbench1.c`, `sysspec.c`), so `cnc-port` now owns `RunBenchmark` through
-      `wasm_benchmark_shim.cpp` and
-      `CNC_PORT_LINKS_BROWSER_BENCHMARK_SHIM` instead of compiling the weak
-      fallback. The W3D render-probe menu callback helper weak group
-      (`DontShowMainMenu`, `destroyQuitMenu`, the battle-honor helpers, and
-      the player-template tooltip helpers) is gated out by
-      `CNC_PORT_LINKS_REAL_W3D_RENDER_MENU_CALLBACK_HELPERS`, leaving
-      `wasm_ww3d_render_probe.cpp` with zero compiled explicit weak
-      declarations. The `DoTrees` / `DoShadows` / `DoParticles` scene extra-pass weak
-      hooks are now gated out of `cnc-port` by
-      `CNC_PORT_LINKS_REAL_W3D_SCENE_EXTRA_PASSES`, and the scene-probe
-      `TheParticleSystemManager`, `TheW3DShadowManager`,
-      `TheWritableGlobalData`, and `TheScriptEngine` weak globals are gated out
-      by `CNC_PORT_LINKS_REAL_W3D_SCENE_SINGLETONS`; the direct
-      `wasm_gamenetwork_probe.cpp` weak `TheScriptEngine` definition is also
-      gated out by `CNC_PORT_LINKS_REAL_SCRIPT_ENGINE_SINGLETON` even though
-      that file is outside the current audit source list. The seven
-      scene-probe gameplay method weak bodies with real providers
-      (`W3DTreeBuffer::drawTrees`, the `Drawable` color/dirty helpers,
-      `Thing::isKindOf`, and `Object::getControllingPlayer`) are gated out by
-      `CNC_PORT_LINKS_REAL_W3D_SCENE_GAMEPLAY_METHODS`. The pure-virtual
-      `ParticleSystemManager::queueParticleRender` base fallback is gated out by
-      `CNC_PORT_LINKS_REAL_W3D_SCENE_PARTICLE_QUEUE`, leaving
-      `wasm_ww3d_scene_probe.cpp` with zero compiled explicit weak declarations.
-      All 11 explicit
-      `wasm_ww3d_terrain_probe.cpp` weak declarations are now gated out of
-      `cnc-port` by `CNC_PORT_LINKS_REAL_W3D_TERRAIN_OWNERS`, leaving the
-      linked real `View`, W3D terrain/water/smudge/projected-shadow,
-      `W3DScene`, `ScriptList`, and `PolygonTrigger` owners. The top ten
-      `wasm_ww3d_terrain_probe_stubs.cpp` weak singleton globals are gated out
-      by `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_SINGLETONS`; the nearby
-      `RunBenchmark` weak fallback is gated out by
-      `CNC_PORT_LINKS_BROWSER_BENCHMARK_SHIM`. The direct
-      `wasm_gamenetwork_probe.cpp` weak `TheScriptActions` definition is also
-      gated out by `CNC_PORT_LINKS_REAL_SCRIPT_ACTIONS_SINGLETON` even though
-      that file is outside the current audit source list. The
-      `TeamFactory`/`TeamPrototype`/`CampaignManager`/`Team` terrain-stub
-      method group is gated out by
-      `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_TEAM_RUNTIME`, leaving
-      `wasm_ww3d_terrain_probe_stubs.cpp` at 114 compiled explicit weak
-      declarations. The adjacent `BridgeInfo` constructors,
-      `ReloadAllTextures`, and `ScriptEngine` time-freeze query weak stubs are
-      gated out by
-      `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_BRIDGE_SCRIPT_RUNTIME`, leaving
-      `wasm_ww3d_terrain_probe_stubs.cpp` at 109 compiled explicit weak
-      declarations. The `Pathfinder::classifyObjectFootprint` plus
-      `AIPlayer`/`AISkirmishPlayer` constructor/difficulty/pre-team-destroy
-      weak group is gated out by
-      `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_AI_PATHFIND_RUNTIME`, leaving
-      `wasm_ww3d_terrain_probe_stubs.cpp` at 104 compiled explicit weak
-      declarations. The `ResourceGatheringManager` constructor and
-      `Radar::addObject`/`removeObject` weak stubs are gated out by
-      `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_RADAR_RESOURCE_RUNTIME`, leaving
-      `wasm_ww3d_terrain_probe_stubs.cpp` at 101 compiled explicit weak
-      declarations. The Object state/team/indicator helper weak group is gated
-      out by `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_OBJECT_HELPERS`, leaving
-      `wasm_ww3d_terrain_probe_stubs.cpp` at 91 compiled explicit weak
-      declarations. The AIGroup/Drawable/ThingTemplate/Player helper weak
-      group is gated out by
-      `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_PLAYER_DRAWABLE_HELPERS`, leaving
-      `wasm_ww3d_terrain_probe_stubs.cpp` at 80 compiled explicit weak
-      declarations. The W3D snow/SimpleObjectIterator/Object
-      partition/collision helper weak group is gated out by
-      `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_SNOW_ITERATOR_OBJECT_HELPERS`,
-      leaving `wasm_ww3d_terrain_probe_stubs.cpp` at 73 compiled explicit weak
-      declarations. The W3D shadow/projected-shadow helper weak group is gated
-      out by `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_SHADOW_RUNTIME`, leaving
-      `wasm_ww3d_terrain_probe_stubs.cpp` at 65 compiled explicit weak
-      declarations. The `WaterRenderObjClass` weak group is gated out by
-      `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_WATER_RUNTIME`, leaving
-      `wasm_ww3d_terrain_probe_stubs.cpp` at 42 compiled explicit weak
-      declarations. The projected-shadow manager and terrain-track weak group
-      is gated out by
-      `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_PROJECTED_SHADOW_TRACKS_RUNTIME`,
-      leaving `wasm_ww3d_terrain_probe_stubs.cpp` at 31 compiled explicit weak
-      declarations. The remaining terrain-stub gameplay/query helper weak
-      group is gated out by
-      `CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_GAMEPLAY_QUERY_HELPERS`, leaving
-      `wasm_ww3d_terrain_probe_stubs.cpp` with only the no-provider
-      `RunBenchmark` weak boundary compiled into `cnc-port`. (Real-init already
-      deleted the probe GameClient/Object/GameLogic/Display/LoadScreen/OptionPreferences
+      `wasm_ww3d_terrain_probe_stubs.cpp`, zero compiled weak definitions,
+      186 gated-out declarations, zero active weak boundaries, and zero
+      strong-provider overlaps. The former `RunBenchmark` weak fallback is now
+      replaced by the explicit browser-owned `wasm_benchmark_shim.cpp`; the W3D
+      render, scene, terrain, and terrain-stub weak groups are all gated out of
+      `cnc-port` by the relevant `CNC_PORT_LINKS_*` macros. A follow-up cleanup
+      also deleted six unreferenced `cnc_port_w3d_smudge_*` no-op helper bodies
+      from `wasm_ww3d_terrain_probe_stubs.cpp`; the real smudge implementation is
+      linked through original `Smudge.cpp` / `W3DSmudge.cpp`. Remaining cleanup:
+      broaden the verifier beyond the current W3D tracked source list to the
+      other direct `cnc-port` probe files with weak declarations
+      (`wasm_gamenetwork_probe.cpp`, `wasm_wndproc_probe.cpp`,
+      `wasm_startup_singletons_probe.cpp`, `wasm_real_ini_probe.cpp`, and
+      compatibility shims), then gate/delete those probe-local boundaries as the
+      real owners are linked. (Real-init already deleted the probe
+      GameClient/Object/GameLogic/Display/LoadScreen/OptionPreferences
       reimplementations and all 26 weak `UNUSED_INI_BLOCK_PARSER` stubs.)
 - [ ] Mount the base Generals archives (`INI.big`, `English.big`,
       `Window.big`, `Terrain.big`) when supplied, resolving the known missing

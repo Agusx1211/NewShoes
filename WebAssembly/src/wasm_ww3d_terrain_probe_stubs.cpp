@@ -266,12 +266,6 @@ extern "C" void *cnc_port_w3d_shadow_dtor_c1(void *self) { return self; }
 extern "C" int cnc_port_w3d_shadow_init(void *) { return 1; }
 extern "C" void cnc_port_w3d_shadow_reset(void *) {}
 #endif
-extern "C" void *cnc_port_w3d_smudge_ctor_c1(void *self) { return self; }
-extern "C" void *cnc_port_w3d_smudge_dtor_c1(void *self) { return self; }
-extern "C" void cnc_port_w3d_smudge_init(void *) {}
-extern "C" void cnc_port_w3d_smudge_reset(void *) {}
-extern "C" void cnc_port_w3d_smudge_release(void *) {}
-extern "C" void cnc_port_w3d_smudge_reacquire(void *) {}
 #ifndef CNC_PORT_LINKS_REAL_W3D_TERRAIN_STUB_SHADOW_RUNTIME
 extern "C" void *cnc_port_projected_shadow_dtor_c1(void *self) { return self; }
 extern "C" void *cnc_port_projected_shadow_dtor_c2(void *self) { return self; }

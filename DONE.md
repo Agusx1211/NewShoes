@@ -8729,6 +8729,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       verify:cnc-port-real-headers`, `npm --prefix WebAssembly run
       verify:cnc-port-weak-stubs`, and `npm --prefix WebAssembly run
       build:startup-vertical`.
+- [x] Delete the last unguarded W3D terrain-stub smudge helper bodies from the
+      real `cnc-port` direct object. `wasm_ww3d_terrain_probe_stubs.cpp` no
+      longer emits the unused `cnc_port_w3d_smudge_*` no-op helpers; `rg`
+      found no callers, and the original `Smudge.cpp` / `W3DSmudge.cpp`
+      objects provide the real smudge owners. The weak-stub verifier still
+      reports 186 tracked weak declarations, zero compiled weak definitions,
+      186 gated-out declarations, zero active weak boundaries, and zero
+      strong-provider overlaps. Direct `llvm-nm` checks show the
+      `wasm_ww3d_terrain_probe_stubs.cpp.o` object no longer defines the
+      `cnc_port_w3d_smudge_*` helper symbols. Verified with `npm --prefix
+      WebAssembly run build:port`, `npm --prefix WebAssembly run
+      verify:cnc-port-weak-stubs`, `npm --prefix WebAssembly run
+      verify:cnc-port-real-headers`, `npm --prefix WebAssembly run
+      build:startup-vertical`, and `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs`.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an
