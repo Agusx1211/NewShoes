@@ -59,14 +59,22 @@
 
 #ifdef __EMSCRIPTEN__
 extern "C" void cnc_port_note_engine_profile_marker(const char *name) __attribute__((weak));
+extern "C" int cnc_port_is_engine_frame_profile_enabled() __attribute__((weak));
 #define CNC_PORT_NOTE_SORTING_STEP(name) \
 	do { \
 		if (cnc_port_note_engine_profile_marker) { \
 			cnc_port_note_engine_profile_marker(name); \
 		} \
 	} while (0)
+#define CNC_PORT_NOTE_SORTING_PROFILE_STEP(enabled, name) \
+	do { \
+		if ((enabled) && cnc_port_note_engine_profile_marker) { \
+			cnc_port_note_engine_profile_marker(name); \
+		} \
+	} while (0)
 #else
 #define CNC_PORT_NOTE_SORTING_STEP(name) do { } while (0)
+#define CNC_PORT_NOTE_SORTING_PROFILE_STEP(enabled, name) do { } while (0)
 #endif
 
 bool SortingRendererClass::_EnableTriangleDraw=true;
@@ -481,12 +489,14 @@ static void Draw_Sorted_Run(
 	unsigned min_vertex_index,
 	unsigned vertex_limit,
 	SortingNodeStruct* state,
-	SortingNodeStruct*& last_applied_state_node)
+	SortingNodeStruct*& last_applied_state_node,
+	bool profile_draw_steps)
 {
 	if (!polygon_count) {
 		return;
 	}
 
+	CNC_PORT_NOTE_SORTING_PROFILE_STEP(profile_draw_steps,"SortingRenderer.pool.draw.state.before");
 	if (last_applied_state_node == NULL
 		|| !Replay_State_Matches(
 			state->sorting_state,
@@ -494,6 +504,7 @@ static void Draw_Sorted_Run(
 		Apply_Render_State(state->sorting_state);
 		last_applied_state_node = state;
 	}
+	CNC_PORT_NOTE_SORTING_PROFILE_STEP(profile_draw_steps,"SortingRenderer.pool.draw.submit.before");
 
 	WWASSERT(vertex_limit >= min_vertex_index);
 	unsigned vertex_count = vertex_limit - min_vertex_index;
@@ -507,6 +518,7 @@ static void Draw_Sorted_Run(
 		(unsigned short)polygon_count,
 		(unsigned short)min_vertex_index,
 		(unsigned short)vertex_count);
+	CNC_PORT_NOTE_SORTING_PROFILE_STEP(profile_draw_steps,"SortingRenderer.pool.draw.submit.after");
 }
 
 // ----------------------------------------------------------------------------
@@ -676,6 +688,12 @@ void SortingRendererClass::Flush_Sorting_Pool()
 	unsigned run_min_vertex_index=run_state->min_vertex_index;
 	unsigned run_vertex_limit=run_min_vertex_index + run_state->vertex_count;
 	SortingNodeStruct* last_applied_state_node = NULL;
+	bool profile_draw_steps =
+#ifdef __EMSCRIPTEN__
+		cnc_port_is_engine_frame_profile_enabled && cnc_port_is_engine_frame_profile_enabled();
+#else
+		false;
+#endif
 	for (unsigned i=1;i<overlapping_polygon_count;++i) {
 		if (node_id!=tis[i].idx) {
 			SortingNodeStruct* next_state=overlapping_nodes[tis[i].idx];
@@ -689,7 +707,8 @@ void SortingRendererClass::Flush_Sorting_Pool()
 					run_min_vertex_index,
 					run_vertex_limit,
 					run_state,
-					last_applied_state_node);
+					last_applied_state_node,
+					profile_draw_steps);
 
 				count_to_render=0;
 				start_index=i;
@@ -709,7 +728,8 @@ void SortingRendererClass::Flush_Sorting_Pool()
 		run_min_vertex_index,
 		run_vertex_limit,
 		run_state,
-		last_applied_state_node);
+		last_applied_state_node,
+		profile_draw_steps);
 	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.pool.draw.after");
 
 	// Release all references and return nodes back to the clean list for the frame...

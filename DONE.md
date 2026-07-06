@@ -8385,6 +8385,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       sampled perf win: `SortingRenderer.pool.draw.before` remains the leading
       bucket at 25.365 ms, with `W3DWater.render.waterTracks.before` at
       10.9 ms and `HeightMap.render.tilePasses.before` at 7.375 ms.
+- [x] Split the remaining sorted draw replay bucket into state replay vs draw
+      submission. Added a cheap `cnc_port_is_engine_frame_profile_enabled`
+      query to the linked wasm runtime and used it once per
+      `SortingRenderer::Flush_Sorting_Pool` so fine per-run markers only emit
+      during opt-in engine-profile runs. The sorted draw loop now marks
+      replay-state application, `DX8Wrapper::Draw_Triangles` submission, and
+      post-submit loop overhead around each merged sorted run. Verified with
+      `npm --prefix WebAssembly run build:port:release`,
+      `npm --prefix WebAssembly run build:port`, and a Mac M4 Chrome/Metal
+      runtime profile using `realEngineFrameTick`, 10 warmup frames,
+      60 measured frames, batch 10, and `PERF_PROFILE_ENGINE_PROFILE=1`.
+      The run reported 47.07 ms/frame wall, 48.47 ms average engine
+      `lastFrameMs`, ~485.0 D3D8 draws/frame, zero measured readPixels,
+      and a visible shell-map screenshot. The sampled frame proves the sorted
+      frontier is draw submission, not state replay:
+      `SortingRenderer.pool.draw.submit.before` 24.525 ms across 132 samples,
+      `SortingRenderer.pool.draw.state.before` 0.085 ms, and
+      `SortingRenderer.pool.draw.submit.after` 0.070 ms. The next work is to
+      split/optimize the sorted `DX8Wrapper::Draw_Triangles` submit path.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`

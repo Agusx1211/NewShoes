@@ -440,6 +440,11 @@ extern "C" void cnc_port_note_engine_profile_marker(const char *name)
 	note_engine_frame_profile_marker(name);
 }
 
+extern "C" int cnc_port_is_engine_frame_profile_enabled()
+{
+	return g_engine_frame_profile_enabled ? 1 : 0;
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_frame_profile(int enabled)
 {
 	g_engine_frame_profile_enabled = enabled != 0;
