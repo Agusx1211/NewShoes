@@ -48,6 +48,47 @@ QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), r
 
 Dev-box render-verify: symlink worktree `dist/` → main's built `dist/` renders JS-only fixes without the Mac (~4min boot).
 
+## User-reported play bugs (2026-07-06 session)
+
+Observed by the project owner playing real skirmish + intro on the Mac GPU
+build. All are user-facing regressions/gaps against the original game;
+reproduce in the harness and verify each fix with a screenshot / state check.
+
+- [ ] **Audio dropped across the board** — many sounds never play: intro
+      music does not play, and skirmish effect/ambient/unit sounds do not
+      play. Sounds get dropped rather than mixed. Audit the Miles→Web Audio
+      path (voice allocation, stream vs sample routing, drop policy) against
+      the real `AudioManager` request flow. Related: [[frontier-2026-07-05-skirmish-sweep]] audio bug.
+- [ ] **Shadows render incorrectly** — shadows flicker in and out and
+      sometimes break entirely. Ties into the QUEUED shadows phased plan
+      (blob→stencil→shaders); treat flicker/stability as the concrete symptom
+      to chase, not just fidelity.
+- [ ] **Tire tracks render in place ("pre-rendered")** — track decals do not
+      follow the moving object; they appear baked at a fixed spot instead of
+      trailing the vehicle (clearly visible in the intro). Check the
+      track/decal transform + emitter attachment (world vs object space).
+- [ ] **Text renders truncated** — some strings show only one letter or a few
+      letters instead of the full text. Investigate the text/font glyph
+      layout + string draw path (partial render, not missing text).
+- [ ] **Loading screens never show** — starting a skirmish or loading the game
+      freezes the display, then eventually loads, but the loading screen is
+      never drawn. The load path blocks the render/present loop; the loading
+      screen UI/progress must pump frames while loading.
+- [ ] **Lightning/lighting effects flat** — special/lightning effects look
+      flat vs the original; the game's richer effect set is missing or
+      degraded. Pin down which effect systems (particle/lightning/FX) are
+      under-rendering. (Ambiguous "lightning" vs "lighting" — confirm which on
+      repro.)
+- [ ] **Skirmish auto-loses after a few seconds** — a few seconds into a
+      skirmish the match ends and the player automatically loses; all player
+      buildings disappear. No "you lost" screen is shown. Likely a game-logic
+      defeat-condition / building-ownership bug firing spuriously (investigate
+      player/team assignment, building existence check, victory conditions).
+- [ ] **Minimap never renders** — the radar/minimap does not draw at all.
+      Related to the QUEUED radar proof.
+- [ ] **Fog of war renders incorrectly** — the shroud/fog-of-war does not
+      render correctly (shroud pass / partial-vision reveal path).
+
 ## Strategy pivot — real `init()` whole-program link (current focus)
 
 See `AGENTS.md` "How the port advances". Probe/smoke accretion is over; these
