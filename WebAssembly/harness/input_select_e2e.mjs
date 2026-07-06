@@ -10,9 +10,11 @@
  *   1. Select a local object through Win32 mouse messages and querySelection.
  *   2. Issue a map-ground move command through the original input path and
  *      assert MSG_DO_MOVETO plus world-position delta.
- *   3. Click a real command-bar build button, place the structure, and assert
- *      MSG_DOZER_CONSTRUCT plus a newly-created local structure drawable.
- *   4. Capture screenshot to artifacts/screenshots/input-select-e2e.png.
+ *   3. Click a real command-bar build button, place the structure, assert
+ *      MSG_DOZER_CONSTRUCT, then wait for completion.
+ *   4. Select the completed producer, click a real unit-build command, and
+ *      assert MSG_QUEUE_UNIT_CREATE plus a newly-created local unit drawable.
+ *   5. Capture screenshot to artifacts/screenshots/input-select-e2e.png.
  *
  * On errno=17/EEXIST wait 30s and retry up to 3x.
  */
@@ -252,6 +254,12 @@ function localStructureMatches(drawable, templateName) {
     drawable?.name === templateName;
 }
 
+function localUnitMatches(drawable, templateName) {
+  return drawable?.localOwned === true &&
+    drawable?.structure === false &&
+    drawable?.name === templateName;
+}
+
 async function queryDrawablesChecked(page, label) {
   const query = await rpc(page, "queryDrawables");
   expect(query?.ok === true,
@@ -266,6 +274,28 @@ async function queryDrawablesChecked(page, label) {
     `${label} queryDrawables was not ready`,
     query.result);
   return query;
+}
+
+function chooseUnitBuildCommandButton(entries) {
+  const unitButtons = entries.filter(({ button }) =>
+    button.command?.typeName === "GUI_COMMAND_UNIT_BUILD" &&
+    button.command?.buildTemplate != null);
+  const preferredUnits = [
+    /Ranger/i,
+    /Rebel/i,
+    /RedGuard/i,
+    /TankHunter/i,
+    /Missile/i,
+  ];
+  for (const pattern of preferredUnits) {
+    const match = unitButtons.find(({ button }) =>
+      pattern.test(button.command?.buildTemplate ?? "") ||
+      pattern.test(button.command?.name ?? ""));
+    if (match) {
+      return match;
+    }
+  }
+  return unitButtons[0] ?? null;
 }
 
 function compactCommandPath(selectionResult) {
@@ -787,6 +817,8 @@ async function proveStructureProgress(page, created, results) {
       progress.verdict = "STRUCTURE-CONSTRUCTION-PROGRESSED";
       console.error(`[input-select-e2e] construction progress proved ${created.name}#${created.id}: ` +
         `${initialHealth} -> ${currentHealth}`);
+      const completed = await proveStructureCompletion(page, progress.observed, results);
+      await proveUnitProduction(page, completed, results);
       return progress;
     }
   }
@@ -796,6 +828,205 @@ async function proveStructureProgress(page, created, results) {
     {
       created,
       samples: progress.samples.slice(-12),
+    });
+}
+
+async function proveStructureCompletion(page, structure, results) {
+  const startingHealth = Number(structure?.body?.health);
+  const maxHealth = Number(structure?.body?.maxHealth);
+  expect(Number.isFinite(startingHealth) && Number.isFinite(maxHealth) && maxHealth > 0,
+    "constructed structure did not expose usable body health for completion proof",
+    structure);
+
+  console.error(`[input-select-e2e] waiting for construction completion on ` +
+    `${structure.name}#${structure.id} from ${startingHealth}/${maxHealth}`);
+  const maxFrames = parsePositiveInt("E2E_CONSTRUCTION_COMPLETE_MAX_FRAMES", 3600);
+  const frameChunk = parsePositiveInt("E2E_CONSTRUCTION_COMPLETE_FRAME_CHUNK", 60);
+  const completion = {
+    ok: false,
+    objectId: structure.id,
+    startingHealth,
+    maxHealth,
+    maxFrames,
+    frameChunk,
+    framesAdvanced: null,
+    samples: [],
+    observed: null,
+    verdict: null,
+  };
+  results.productionProof.completion = completion;
+
+  let framesAdvanced = 0;
+  while (framesAdvanced <= maxFrames) {
+    const drawablesQuery = await queryDrawablesChecked(page, "construction completion");
+    const current = (drawablesQuery.result?.drawables ?? [])
+      .find((drawable) => drawable.id === structure.id);
+    const currentHealth = Number(current?.body?.health);
+    const sample = {
+      framesAdvanced,
+      found: current != null,
+      health: Number.isFinite(currentHealth) ? currentHealth : null,
+      maxHealth: current?.body?.maxHealth ?? null,
+      damageState: current?.body?.damageState ?? null,
+      screenPos: current?.screenPos ?? null,
+      worldPos: current?.worldPos ?? null,
+    };
+    completion.samples.push(sample);
+    console.error(`[input-select-e2e] construction completion sample ${framesAdvanced}/${maxFrames}: ` +
+      `found=${sample.found}, health=${sample.health}/${sample.maxHealth}`);
+
+    if (current != null && Number.isFinite(currentHealth) && currentHealth >= maxHealth - 0.5) {
+      completion.ok = true;
+      completion.framesAdvanced = framesAdvanced;
+      completion.observed = compactDrawable(current);
+      completion.verdict = "STRUCTURE-CONSTRUCTION-COMPLETE";
+      console.error(`[input-select-e2e] construction complete ${structure.name}#${structure.id}: ` +
+        `${currentHealth}/${maxHealth}`);
+      return completion.observed;
+    }
+
+    if (framesAdvanced >= maxFrames) {
+      break;
+    }
+    const frames = Math.min(frameChunk, maxFrames - framesAdvanced);
+    await runSummary(page, frames, "construction completion wait");
+    framesAdvanced += frames;
+  }
+
+  expect(false,
+    "constructed structure did not reach full health before the completion deadline",
+    {
+      structure,
+      samples: completion.samples.slice(-12),
+    });
+}
+
+async function proveUnitProduction(page, completedStructure, results) {
+  console.error(`[input-select-e2e] selecting completed producer ` +
+    `${completedStructure.name}#${completedStructure.id}`);
+  const selectPoint = {
+    x: Math.round(completedStructure.screenPos.x),
+    y: Math.round(completedStructure.screenPos.y),
+  };
+  await clickSelectPoint(page, selectPoint, "unit production select producer", 5);
+
+  const selection = await rpc(page, "querySelection");
+  expect(selection?.ok === true,
+    "unit-production querySelection failed after selecting producer",
+    selection);
+  expect((selection.result?.selected ?? []).some((selected) => selected.id === completedStructure.id),
+    "unit-production click did not select the completed producer",
+    {
+      completedStructure,
+      selection: selection.result,
+    });
+
+  const beforeCommandPath = compactCommandPath(selection.result);
+  const commandReady = await waitForCommandButtons(page);
+  const entries = commandButtonEntries(commandReady.frame?.clientState?.controlBarWindows);
+  const unitCommand = chooseUnitBuildCommandButton(entries);
+  const proof = {
+    ok: false,
+    producer: completedStructure,
+    visibleCommandCount: entries.length,
+    visibleCommands: entries.map(({ slot, button }) => ({
+      slot,
+      id: button.id,
+      centerX: button.centerX,
+      centerY: button.centerY,
+      clickable: button.clickable,
+      command: button.command,
+    })),
+    chosen: unitCommand == null ? null : {
+      slot: unitCommand.slot,
+      id: unitCommand.button.id,
+      centerX: unitCommand.button.centerX,
+      centerY: unitCommand.button.centerY,
+      command: unitCommand.button.command,
+    },
+    beforeCommandPath,
+    afterClickCommandPath: null,
+    dispatchDeltaAfterClick: null,
+    beforeMatchingIds: [],
+    beforeMatching: [],
+    framesAdvanced: null,
+    samples: [],
+    created: null,
+    verdict: null,
+  };
+  results.productionProof.unitProduction = proof;
+  expect(unitCommand != null,
+    "completed producer did not expose a unit-build command",
+    proof.visibleCommands);
+
+  const unitTemplate = unitCommand.button.command.buildTemplate;
+  const beforeDrawablesQuery = await queryDrawablesChecked(page, "before unit build");
+  const beforeMatches = (beforeDrawablesQuery.result?.drawables ?? [])
+    .filter((drawable) => localUnitMatches(drawable, unitTemplate));
+  const beforeIds = new Set(beforeMatches.map((drawable) => drawable.id));
+  proof.beforeMatchingIds = [...beforeIds];
+  proof.beforeMatching = beforeMatches.map(compactDrawable);
+
+  console.error(`[input-select-e2e] clicking unit build ${unitCommand.slot}: ` +
+    `${JSON.stringify(unitCommand.button.command)}`);
+  await clickButton(page, unitCommand.button, null,
+    `unit production ${unitCommand.slot} ${unitCommand.button.command?.name ?? "command"}`,
+    null);
+  await runFrames(page, 5, "unit production click settle");
+
+  const afterClickQuery = await rpc(page, "querySelection");
+  proof.afterClickCommandPath = compactCommandPath(afterClickQuery?.result);
+  proof.dispatchDeltaAfterClick = buildDispatchDelta(
+    proof.beforeCommandPath,
+    proof.afterClickCommandPath);
+  expect(proof.dispatchDeltaAfterClick.queueUnit > 0,
+    "unit-build command did not dispatch MSG_QUEUE_UNIT_CREATE",
+    proof);
+
+  const maxFrames = parsePositiveInt("E2E_UNIT_CREATE_MAX_FRAMES", 2400);
+  const frameChunk = parsePositiveInt("E2E_UNIT_CREATE_FRAME_CHUNK", 30);
+  let framesAdvanced = 0;
+  while (framesAdvanced <= maxFrames) {
+    const drawablesQuery = await queryDrawablesChecked(page, "unit create proof");
+    const matches = (drawablesQuery.result?.drawables ?? [])
+      .filter((drawable) => localUnitMatches(drawable, unitTemplate));
+    const newMatches = matches.filter((drawable) => !beforeIds.has(drawable.id));
+    const sample = {
+      framesAdvanced,
+      stats: drawablesQuery.result?.stats ?? null,
+      matchingCount: matches.length,
+      newMatchingCount: newMatches.length,
+      matching: matches.map(compactDrawable),
+    };
+    proof.samples.push(sample);
+    console.error(`[input-select-e2e] unit create sample ${framesAdvanced}/${maxFrames}: ` +
+      `${unitTemplate} matches=${matches.length}, new=${newMatches.length}`);
+
+    if (newMatches.length > 0) {
+      proof.ok = true;
+      proof.framesAdvanced = framesAdvanced;
+      proof.created = compactDrawable(newMatches[0]);
+      proof.verdict = "UNIT-PRODUCTION-CREATED-OBJECT";
+      console.error(`[input-select-e2e] unit production created ${unitTemplate}#${proof.created.id}`);
+      return proof;
+    }
+
+    if (framesAdvanced >= maxFrames) {
+      break;
+    }
+    const frames = Math.min(frameChunk, maxFrames - framesAdvanced);
+    await runSummary(page, frames, "unit create wait");
+    framesAdvanced += frames;
+  }
+
+  expect(false,
+    "queued unit did not create a new local unit before the deadline",
+    {
+      unitTemplate,
+      proof: {
+        ...proof,
+        samples: proof.samples.slice(-12),
+      },
     });
 }
 
@@ -857,6 +1088,8 @@ async function main() {
       created: null,
       samples: [],
       progress: null,
+      completion: null,
+      unitProduction: null,
       verdict: null,
     },
     moveOrderProof: {
@@ -1211,11 +1444,16 @@ async function main() {
     const constructionRequired =
       results.commandBarProof.verdict === "COMMAND-BAR-BUILD-DISPATCHED" &&
       results.productionProof.buildTemplate != null;
+    const unitProductionRequired = results.productionProof.unitProduction?.chosen != null;
     results.ok = selectionWorks &&
       results.moveOrderProof.ok === true &&
-      (!constructionRequired || results.productionProof.ok === true);
+      (!constructionRequired || results.productionProof.ok === true) &&
+      (!unitProductionRequired || results.productionProof.unitProduction?.ok === true);
 
     if (selectionWorks && results.moveOrderProof.ok &&
+        results.commandBarProof.ok && results.productionProof.unitProduction?.ok) {
+      results.verdict = `SELECT-MOVE-CONSTRUCT-AND-UNIT-PRODUCTION-WORK (${results.commandBarProof.verdict})`;
+    } else if (selectionWorks && results.moveOrderProof.ok &&
         results.commandBarProof.ok && results.productionProof.ok) {
       results.verdict = `SELECT-MOVE-COMMAND-BAR-AND-CONSTRUCTION-WORK (${results.commandBarProof.verdict})`;
     } else if (selectionWorks && results.moveOrderProof.ok && results.commandBarProof.ok) {

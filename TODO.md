@@ -210,15 +210,6 @@ reproduce in the harness and verify each fix with a screenshot / state check.
       degraded. Pin down which effect systems (particle/lightning/FX) are
       under-rendering. (Ambiguous "lightning" vs "lighting" — confirm which on
       repro.)
-- [ ] **Skirmish auto-loses after a few seconds** — a few seconds into a
-      skirmish the match ends and the player automatically loses; all player
-      buildings disappear. No "you lost" screen is shown. Likely a game-logic
-      defeat-condition / building-ownership bug firing spuriously (investigate
-      player/team assignment, building existence check, victory conditions).
-      2026-07-06 harness note: Alpine Assault survived 300 post-active frames
-      and Tournament Desert survived 900 post-active frames without triggering
-      this, so keep this open for an issue dump or exact human repro settings.
-
 ## Strategy pivot — real `init()` whole-program link (current focus)
 
 See `AGENTS.md` "How the port advances". Probe/smoke accretion is over; these
@@ -978,9 +969,6 @@ residue and the next frontier.
       addresses so startup preference reads do not enter WinSock/DNS code.
 - [ ] Enable and route `MiniLog.cpp`'s `DEBUG_LOGGING` body to the browser log
       or harness once the real `GameLogic` frame counter is available.
-- [ ] Decide the browser copy-protection / launcher contract before compiling
-      original `Common/System/CopyProtection.cpp`; it currently depends on
-      Win32 mutex, message-queue, event, and shared-memory APIs.
 - [ ] Re-enable and compile the active `INCLUDE_GRANNY_IN_BUILD` code path in
       original `W3DGranny.cpp` after the Granny SDK surface, WW3D render-object
       dependencies, and browser asset/texture bindings have a real port
@@ -1832,9 +1820,11 @@ residue and the next frontier.
 - [ ] Production: build structures/units, resources (supplies) flow. A live
       skirmish e2e now proves selected builder units can place real command-bar
       barracks commands through `MSG_DOZER_CONSTRUCT`, create new local
-      structure objects, and advance construction health after real frame
-      stepping; keep this open for build completion, unit queues, supply
-      spending/income, and broader faction/build cases.
+      structure objects, advance construction health, complete the structure,
+      queue a barracks infantry unit through `MSG_QUEUE_UNIT_CREATE`, and
+      observe the produced local unit object; keep this open for supply
+      spending/income, production UI/cancel/rally behavior, and broader
+      faction/build cases.
 - [ ] `ScriptEngine` runs map scripts.
 - [ ] Fixed-timestep simulation is **deterministic** (same seed → same result).
 - [ ] AI opponent plays a skirmish.

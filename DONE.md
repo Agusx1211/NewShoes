@@ -3570,6 +3570,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `Slth_Command_ConstructGLABarracks` through `MSG_DOZER_CONSTRUCT`, created
       `Slth_GLABarracks#224` at body health `1/1000`, and then observed health
       `14.333334/1000` after 180 real frames.
+- [x] Disable the obsolete Win32 copy-protection self-destruct path for browser
+      builds. `CopyProtection.h` now leaves `DO_COPY_PROTECTION` enabled for
+      native builds but not for Emscripten, matching the browser contract where
+      the game runs from user-mounted assets without a Windows launcher/CD
+      handshake. This fixes the skirmish auto-lose symptom where local player
+      objects disappeared after the original frame-1024 `CopyProtect::validate`
+      check posted `MSG_SELF_DESTRUCT`. Verified with `npm run build:port` and
+      the live skirmish production e2e below running past frame 1024 with local
+      objects intact.
+- [x] Prove live skirmish barracks completion and unit production through the
+      original command bar. `input_select_e2e.mjs` now waits for the newly placed
+      barracks to reach full health, selects the completed producer, clicks a
+      real `GUI_COMMAND_UNIT_BUILD` button, requires `MSG_QUEUE_UNIT_CREATE`,
+      and polls live drawables for the produced unit template. Verified with
+      local Chromium:
+      `E2E_BROWSER_EXECUTABLE=/home/agusx1211/.cache/ms-playwright/chromium-1228/chrome-linux/chrome E2E_BROWSER_ARGS='--headless=new' node harness/input_select_e2e.mjs`.
+      The run selected `GLAInfantryWorker#209`, built `GLABarracks#224` to
+      `1000/1000` health after 600 completion frames, clicked
+      `Command_ConstructGLAInfantryRebel`, observed `dispatchQueueUnitCreateCount`
+      advance by 1, and created local `GLAInfantryRebel#225` after 300 unit
+      production frames.
 - [x] Close the Fable command-bar in-flight follow-up. The Emscripten-only
       `FunctionLexicon::loadRuntimeTableForPort` now owns only the merged
       tables installed through that API, frees the previous injected table on

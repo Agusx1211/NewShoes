@@ -34,8 +34,12 @@
 
 #include "Lib/BaseType.h"
 
-// Comment out the following line to disable copy protection checks
+// Browser builds run from user-mounted assets and have no Win32 launcher/CD
+// handshake. Keep the original check for native builds, but do not compile the
+// frame-1024 self-destruct path into the Emscripten runtime.
+#ifndef __EMSCRIPTEN__
 #define DO_COPY_PROTECTION
+#endif
 
 #ifdef DO_COPY_PROTECTION
 
