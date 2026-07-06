@@ -138,8 +138,18 @@ frame. Scoped W3DDisplay 2D primitive batching now reduces the visible menu to
 16 Render2D draws/frame while preserving the same 488 vertices / 244 triangles
 and visible main-menu ordering. The latest Mac Chrome/Metal profile measured
 54.68 ms/frame wall / 53.21 ms average engine `lastFrameMs`, with
-`W3DDisplay.draw.inGameUI.before` down to 10.005 ms. The active sampled
-shell-map frontier is now `W3DWater.render.waterTracks.before` at 21.37 ms.
+`W3DDisplay.draw.inGameUI.before` down to 10.005 ms. Splitting the water-track
+bucket proved 190 active water-track objects, with the old cost dominated by
+per-object draw submission (`W3DWaterTracks.obj.draw.before` 19.93 ms), not
+geometry/update work. Water tracks now batch contiguous same-texture quads into
+one triangle-list draw; the latest Mac Chrome/Metal profile measured 39.06
+ms/frame wall / 37.66 ms average engine `lastFrameMs`, with
+`W3DWaterTracks.flush.batchDraw.before` at 0.055 ms and visible shell-map
+water/wake rendering. The active sampled leaders are now
+`RTS3DScene.flush.shadowsStencil.before` at 10.11 ms,
+`W3DDisplay.draw.inGameUI.before` at 9.3 ms,
+`HeightMap.render.tilePasses.before` at 7.495 ms, and
+`RTS3DScene.flush.shadowsDecal.before` at 6.765 ms.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
@@ -2453,22 +2463,24 @@ and then start with the PROFILE, not with any individual fix.
       help remaining ordered Render2D/text draws after the W3DDisplay GUI batch.
       Verify against shell-map goldens; re-measure
       `sortedDrawUniformMs`/`browserDrawIndexed` + particle-count-vs-FPS. (by Claude)
-- [ ] **Split the real `W3DWater.render.waterTracks` bucket**: the latest
-      Mac Chrome/Metal shell-map profile after W3DDisplay GUI batching sampled
-      water tracks at 21.37 ms, now the top frame bucket ahead of the reduced
-      10.005 ms `W3DDisplay.draw.inGameUI.before` bucket and the 8.235 ms
-      heightmap tile pass. Add markers around the original water-track
-      submission, state changes, dynamic geometry updates, and draw calls
-      before changing water rendering behavior.
+- [ ] **Split and optimize the real shadow stencil/decal buckets**: the latest
+      Mac Chrome/Metal shell-map profile after water-track batching sampled
+      `RTS3DScene.flush.shadowsStencil.before` at 10.11 ms and
+      `RTS3DScene.flush.shadowsDecal.before` at 6.765 ms, making shadows the
+      current measured render frontier and tying directly to the user-reported
+      shadow flicker/breakage bug. Add markers around projected-shadow state,
+      stencil/decal draw submission, raw D3D8 binds, and depth/stencil changes
+      before changing behavior.
 - [ ] **Optimize the real `HeightMap.render.tilePasses` bucket, not terrain
       sidecars**: recent Mac profiles prove base terrain tile passes remain a
       recurring real render bucket (`HeightMap.render.tilePasses.before`
-      sampled at 17.1 ms before sorted-run merging and 7.375 ms after on the
-      current shell-map frame), while shoreline is ~1.2 ms and roads/scorches/
-      extra-blend/terrain-tracks are cheap. Next pass should split tile draw
-      submission/state/buffer-update costs around `HeightMapRenderObjClass`
-      tile rendering and the D3D8 draw bridge; do not chase road/prop/track
-      sidecars until the real profile says they moved.
+      sampled at 17.1 ms before sorted-run merging, 7.375 ms after sorted-run
+      merging, and 7.495 ms after water-track batching on the current shell-map
+      frame), while shoreline is ~1.5 ms and roads/scorches/extra-blend/
+      terrain-tracks are cheap. Next pass should split tile draw submission/
+      state/buffer-update costs around `HeightMapRenderObjClass` tile rendering
+      and the D3D8 draw bridge; do not chase road/prop/track sidecars until
+      the real profile says they moved.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing

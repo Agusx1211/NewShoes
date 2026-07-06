@@ -52,7 +52,7 @@ public:
 	void init( Real width, Real length, Vector2 &start, Vector2 &end, Char *texturename, Int waveTimeOffset);	///<allocate W3D resources and set size
 	void init( Real width, Vector2 &start, Vector2 &end, Char *texturename);	///<allocate W3D resources and set size
 	Int	update(Int msElapsed);	///< update animation state
-	Int render(DX8VertexBufferClass	*vertexBuffer, Int batchStart);	///<draw this object
+	Int render(DX8VertexBufferClass	*vertexBuffer, Int batchStart);	///<append this object's vertices to the shared render batch
 
 protected:
 	TextureClass *m_stageZeroTexture;	///<primary texture

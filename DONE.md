@@ -8721,6 +8721,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `W3DDisplay.draw.inGameUI.before` down to 10.005 ms on the sampled frame.
       The new top sampled bucket is `W3DWater.render.waterTracks.before` at
       21.37 ms.
+- [x] Split and batch the real water-track render path. Profile-only markers
+      first proved the 21.37 ms `W3DWater.render.waterTracks.before` bucket was
+      overwhelmingly per-track draw submission: 190 water-track objects on the
+      sampled shell-map frame, `W3DWaterTracks.obj.draw.before` at 19.93 ms,
+      and sub-millisecond update, lock, water-height, vertex-write, and cleanup
+      buckets. `W3DWaterTracks.cpp` now keeps the original wave math and dynamic
+      vertex writes but replaces the per-quad triangle-strip index buffer with
+      a per-page quad triangle-list index buffer, batches contiguous same-texture
+      tracks, and submits each group through one `DX8Wrapper::Draw_Triangles`
+      call. Verified with `git diff --check`, `npm --prefix WebAssembly run
+      build:port`, `npm --prefix WebAssembly run build:port:release`, and a
+      Mac M4 Chrome/Metal release runtime profile with a visible main-menu /
+      shell-map water screenshot. The final 60-frame profile reported an Apple
+      M4 Metal renderer string, 39.06 ms/frame wall, 37.66 ms average engine
+      `lastFrameMs`, the preserved 16 Render2D draws/frame and 488 Render2D
+      vertices / 244 triangles/frame, and `W3DWaterTracks.flush.batchDraw.before`
+      at 0.055 ms. The old per-object water draw bucket is gone; the new
+      sampled leaders are `RTS3DScene.flush.shadowsStencil.before` at 10.11 ms,
+      `W3DDisplay.draw.inGameUI.before` at 9.3 ms,
+      `HeightMap.render.tilePasses.before` at 7.495 ms, and
+      `RTS3DScene.flush.shadowsDecal.before` at 6.765 ms.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`

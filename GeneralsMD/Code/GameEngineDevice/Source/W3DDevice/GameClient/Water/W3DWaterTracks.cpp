@@ -62,6 +62,18 @@
 #include "assetmgr.h"
 #include "WW3D2/DX8Wrapper.h"
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_update_target(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_WATER_TRACK_STEP(name) \
+	do { \
+		if (cnc_port_note_engine_update_target) { \
+			cnc_port_note_engine_update_target(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_WATER_TRACK_STEP(name) do { } while (0)
+#endif
+
 //#pragma optimize("", off)
 
 //#define ALLOW_WATER_TRACK_EDIT
@@ -304,12 +316,13 @@ Int WaterTracksObj::update(Int msElapsed)
 //=============================================================================
 // WaterTracksObj::render
 //=============================================================================
-/** Draws the object in it's current state.
+/** Appends this object's vertices in its current state to the shared dynamic VB.
  */
 //=============================================================================
 
 Int WaterTracksObj::render(DX8VertexBufferClass	*vertexBuffer, Int batchStart)
 {
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.entry");
 	VertexFormatXYZDUV1 *vb;
 	Vector2	waveTailOrigin,waveFrontOrigin;
 	Real	ooWaveDirLen=1.0f/m_waveDir.Length();	//one over length
@@ -320,13 +333,23 @@ Int WaterTracksObj::render(DX8VertexBufferClass	*vertexBuffer, Int batchStart)
 
 	if (batchStart < (WATER_VB_PAGES*WATER_STRIP_X*WATER_STRIP_Y-m_x*m_y))
 	{	//we have room in current VB, append new verts
+		CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.lockNoOverwrite.before");
 		if(vertexBuffer->Get_DX8_Vertex_Buffer()->Lock(batchStart*vertexBuffer->FVF_Info().Get_FVF_Size(),m_x*m_y*vertexBuffer->FVF_Info().Get_FVF_Size(),(unsigned char**)&vb,D3DLOCK_NOOVERWRITE) != D3D_OK)
+		{
+			CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.lockNoOverwrite.failed");
 			return batchStart;
+		}
+		CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.lockNoOverwrite.after");
 	}
 	else
 	{	//ran out of room in last VB, request a substitute VB.
+		CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.lockDiscard.before");
 		if(vertexBuffer->Get_DX8_Vertex_Buffer()->Lock(0,m_x*m_y*vertexBuffer->FVF_Info().Get_FVF_Size(),(unsigned char**)&vb,D3DLOCK_DISCARD) != D3D_OK)
+		{
+			CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.lockDiscard.failed");
 			return batchStart;
+		}
+		CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.lockDiscard.after");
 		batchStart=0;	//reset start of page to first vertex
 	}
 
@@ -339,6 +362,7 @@ Int WaterTracksObj::render(DX8VertexBufferClass	*vertexBuffer, Int batchStart)
 	heightFrac=1.0f;
 	widthFrac = 1.0f;
 
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.position.before");
 	if (m_type == WaveTypeStationary)
 	{	//stationary wave
 		waveFrontOrigin = m_startPos;
@@ -432,10 +456,14 @@ Int WaterTracksObj::render(DX8VertexBufferClass	*vertexBuffer, Int batchStart)
 			waveTailOrigin = waveFrontOrigin - m_waveInitialHeight * ooWaveDirLen*m_waveDir;
 		}
 	}
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.position.after");
 
 	//First insert tail of wave:
 	Vector2 testPoint(waveTailOrigin);
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.waterHeight.before");
 	TheTerrainLogic->isUnderwater(testPoint.X,testPoint.Y,&waterHeight);
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.waterHeight.after");
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.vertexWrite.before");
 	vb->x=	testPoint.X;
 	vb->y=	testPoint.Y;
 	vb->z=waterHeight+1.5f;
@@ -480,15 +508,25 @@ Int WaterTracksObj::render(DX8VertexBufferClass	*vertexBuffer, Int batchStart)
 		vb->u1=1.0f;
 	vb->v1=1.0f;
 	vb++;
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.vertexWrite.after");
 
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.unlock.before");
 	vertexBuffer->Get_DX8_Vertex_Buffer()->Unlock();
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.unlock.after");
 
-	Int idxCount=(m_y-1)*(m_x*2+2) - 2;	//index count
-
-	DX8Wrapper::Set_Index_Buffer(TheWaterTracksRenderSystem->m_indexBuffer,batchStart);
-	DX8Wrapper::Draw_Strip(0,idxCount-2,0,m_x*m_y);	//there are always n-2 primitives for n index strip.
-
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.complete");
 	return batchStart+m_x*m_y;	//return new offset into unused area of vertex buffer
+}
+
+static void DrawWaterTrackBatch(DX8IndexBufferClass *indexBuffer, Int batchDrawStart, Int batchTrackCount, Int trianglesPerTrack, Int verticesPerTrack)
+{
+	if (batchTrackCount <= 0)
+		return;
+
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.batchDraw.before");
+	DX8Wrapper::Set_Index_Buffer(indexBuffer,(UnsignedShort)batchDrawStart);
+	DX8Wrapper::Draw_Triangles(0,trianglesPerTrack*batchTrackCount,0,verticesPerTrack*batchTrackCount);
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.batchDraw.after");
 }
 
 //=============================================================================
@@ -644,46 +682,49 @@ WaterTracksRenderSystem::~WaterTracksRenderSystem( void )
 //=============================================================================
 void WaterTracksRenderSystem::ReAcquireResources(void)
 {
-	Int i,j,k;
 //	const Int numModules=16;	///@todo: Get a value out of gdf
 
 	// just for paranoia's sake.
 	REF_PTR_RELEASE(m_indexBuffer);
 	REF_PTR_RELEASE(m_vertexBuffer);
 
-	//Will need m_y-1 strips, each of length m_x*2.
-	//Will also need 2 extra indices to connect each strip to next one (except last strip)
-	//Total index buffer size = (m_y-1)*(m_x*2+2) - 2 (drop the extra 2 indices from last strip)
+	const Int vertsPerTrack = m_stripSizeX * m_stripSizeY;
+	const Int trisPerTrack = (m_stripSizeX - 1) * (m_stripSizeY - 1) * 2;
+	const Int idxCount = trisPerTrack * 3 * WATER_VB_PAGES;
 
-	Int idxCount=(m_stripSizeY-1)*(m_stripSizeX*2+2) - 2;
-
-	m_indexBuffer=NEW_REF(DX8IndexBufferClass,(idxCount));
+	m_indexBuffer = NEW_REF(DX8IndexBufferClass,(idxCount));
 
 	// Fill up the IB
 	{
 		DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexBuffer);
 		UnsignedShort *ib=lockIdxBuffer.Get_Index_Array();
 		
-		for (i=0,j=0,k=0; i<idxCount; j++)
+		for (Int page = 0; page < WATER_VB_PAGES; ++page)
 		{
-			for (;k<(m_stripSizeX*(j+1)); k++,i+=2)
+			const Int vertexBase = page * vertsPerTrack;
+
+			for (Int y = 0; y < m_stripSizeY - 1; ++y)
 			{
-				ib[i]=(UnsignedShort) k+m_stripSizeX;
-				ib[i+1]=(UnsignedShort) k;
-			}
-			//Generate 4 degenerate triangle to connect current strip to next strip/row of map
-			//To do this, we just repeat the last index of first strip and first index of new strip.
-			//Any triangles with repeated vertices will be skipped during rendering.
-			if (i<idxCount) //check if there is at least 1 more strip to go
-			{
-				ib[i]=k-1;
-				ib[i+1]=k+m_stripSizeX;
-				i+=2;
+				for (Int x = 0; x < m_stripSizeX - 1; ++x)
+				{
+					const Int indexBase = (page * trisPerTrack + (y * (m_stripSizeX - 1) + x) * 2) * 3;
+					const UnsignedShort upperLeft = (UnsignedShort)(vertexBase + y * m_stripSizeX + x);
+					const UnsignedShort upperRight = (UnsignedShort)(vertexBase + y * m_stripSizeX + x + 1);
+					const UnsignedShort lowerLeft = (UnsignedShort)(vertexBase + (y + 1) * m_stripSizeX + x);
+					const UnsignedShort lowerRight = (UnsignedShort)(vertexBase + (y + 1) * m_stripSizeX + x + 1);
+
+					ib[indexBase + 0] = lowerLeft;
+					ib[indexBase + 1] = upperLeft;
+					ib[indexBase + 2] = lowerRight;
+					ib[indexBase + 3] = lowerRight;
+					ib[indexBase + 4] = upperLeft;
+					ib[indexBase + 5] = upperRight;
+				}
 			}
 		}
 	}
 
-	m_vertexBuffer=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZDUV1,m_stripSizeX*m_stripSizeY*WATER_VB_PAGES,DX8VertexBufferClass::USAGE_DYNAMIC));
+	m_vertexBuffer=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZDUV1,vertsPerTrack*WATER_VB_PAGES,DX8VertexBufferClass::USAGE_DYNAMIC));
 	m_batchStart=0;
 }
 
@@ -867,26 +908,42 @@ void WaterTracksRenderSystem::flush(RenderInfoClass & rinfo)
 May also try rendering all tracks with one call to W3D/D3D by grouping them by texture.
 Try improving the fit to vertical surfaces like cliffs.
 */
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.entry");
 	Int	diffuseLight;
 
 	if (!TheGlobalData->m_showSoftWaterEdge || TheWaterTransparency->m_transparentWaterDepth ==0 )
+	{
+		CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.disabled.return");
 		return;
+	}
 
 	if (TheGlobalData->m_usingWaterTrackEditor)
+	{
+		CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.editor.before");
 		TestWaterUpdate();
+		CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.editor.after");
+	}
 
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.update.before");
 	update();	//update positions of all the tracks
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.update.after");
 
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.cameraApply.before");
 	rinfo.Camera.Apply();
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.cameraApply.after");
 
 	if (!m_usedModules || ShaderClass::Is_Backface_Culling_Inverted())
+	{
+		CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.emptyOrReflection.return");
 		return;	//don't render track marks in reflections.
+	}
 
  	//According to Nvidia there's a D3D bug that happens if you don't start with a
  	//new dynamic VB each frame - so we force a DISCARD by overflowing the counter.
  	m_batchStart = 0xffff;
 
 	// adjust shading for time of day.
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.shade.before");
 	Real shadeR, shadeG, shadeB;
 	shadeR = TheGlobalData->m_terrainAmbient[0].red;
 	shadeG = TheGlobalData->m_terrainAmbient[0].green;
@@ -899,7 +956,9 @@ Try improving the fit to vertical surfaces like cliffs.
 	shadeB*=255.0f;
 
 	diffuseLight=REAL_TO_INT(shadeB) | (REAL_TO_INT(shadeG) << 8) | (REAL_TO_INT(shadeR) << 16);
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.shade.after");
 
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.stateSetup.before");
 	Matrix3D tm(1);	///set to identity
 	DX8Wrapper::Set_Transform(D3DTS_WORLD,tm);	//position the water surface
 
@@ -910,9 +969,11 @@ Try improving the fit to vertical surfaces like cliffs.
 	DX8Wrapper::Set_DX8_Render_State(D3DRS_ZBIAS,8);
 	//Force apply of render states so we can override them.
 	DX8Wrapper::Apply_Render_State_Changes();
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.stateSetup.after");
 
 	if (TheTerrainRenderObject->getShroud())
 	{	
+		CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.shroudSetup.before");
 		W3DShaderManager::setTexture(0,TheTerrainRenderObject->getShroud()->getShroudTexture());
 		W3DShaderManager::setShader(W3DShaderManager::ST_SHROUD_TEXTURE, 1);
 
@@ -925,24 +986,59 @@ Try improving the fit to vertical surfaces like cliffs.
 		//Shroud shader uses z-compare of EQUAL which wouldn't work on water because it doesn't
 		//write to the zbuffer.  Change to LESSEQUAL.
 		DX8Wrapper::Set_DX8_Render_State(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
+		CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.shroudSetup.after");
 	}
 
-	Int LastTextureType=-1;
+	const Int verticesPerTrack = m_stripSizeX * m_stripSizeY;
+	const Int trianglesPerTrack = (m_stripSizeX - 1) * (m_stripSizeY - 1) * 2;
+	const Int maxBatchStart = WATER_VB_PAGES * verticesPerTrack - verticesPerTrack;
+	Int batchDrawStart = 0;
+	Int batchTrackCount = 0;
+	TextureClass *lastTexture = NULL;
+	Bool hasTexture = FALSE;
 
 	WaterTracksObj *mod=m_usedModules;
 
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.drawLoop.before");
 	while( mod )
 	{
-		if (LastTextureType != mod->m_type)
-			DX8Wrapper::Set_Texture(0,mod->m_stageZeroTexture);
+		if (!hasTexture || lastTexture != mod->m_stageZeroTexture)
+		{
+			DrawWaterTrackBatch(m_indexBuffer,batchDrawStart,batchTrackCount,trianglesPerTrack,verticesPerTrack);
+			batchTrackCount = 0;
 
+			CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.texture.before");
+			DX8Wrapper::Set_Texture(0,mod->m_stageZeroTexture);
+			CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.texture.after");
+			lastTexture = mod->m_stageZeroTexture;
+			hasTexture = TRUE;
+		}
+
+		if (m_batchStart >= maxBatchStart && batchTrackCount > 0)
+		{
+			DrawWaterTrackBatch(m_indexBuffer,batchDrawStart,batchTrackCount,trianglesPerTrack,verticesPerTrack);
+			batchTrackCount = 0;
+		}
+
+		const Int writeStart = (m_batchStart < maxBatchStart) ? m_batchStart : 0;
 		Int vertsRendered=mod->render(m_vertexBuffer,m_batchStart);
 
-		m_batchStart = vertsRendered;	//advance past vertices already in buffer
+		if (vertsRendered != m_batchStart)
+		{
+			if (batchTrackCount == 0)
+			{
+				batchDrawStart = writeStart;
+			}
+			++batchTrackCount;
+			m_batchStart = vertsRendered;	//advance past vertices already in buffer
+		}
 
 		mod = mod->m_nextSystem;
 	}	//while (mod)
+	DrawWaterTrackBatch(m_indexBuffer,batchDrawStart,batchTrackCount,trianglesPerTrack,verticesPerTrack);
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.drawLoop.after");
 
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.cleanup.before");
 	DX8Wrapper::Set_DX8_Render_State(D3DRS_ZBIAS,0);
 
 	if (TheTerrainRenderObject->getShroud())
@@ -950,6 +1046,8 @@ Try improving the fit to vertical surfaces like cliffs.
 		DX8Wrapper::Set_DX8_Render_State(D3DRS_ZFUNC, D3DCMP_EQUAL);
 		W3DShaderManager::resetShader(W3DShaderManager::ST_SHROUD_TEXTURE);
 	}
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.cleanup.after");
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.complete");
 }
 
 WaterTracksObj *WaterTracksRenderSystem::findTrack(Vector2 &start, Vector2 &end, waveType type)
