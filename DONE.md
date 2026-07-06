@@ -8460,6 +8460,33 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       ~383.9 texture-uniform hits/frame vs 99.4 misses, ~272.4 transform
       hits/frame vs 210.9 misses, and ~479.8 point-sprite hits/frame vs
       3.5 misses.
+- [x] Split the remaining sorted browser draw setup and cache repeated vertex
+      attribute layout state. The sorted profile now reports program bind,
+      fill/shade info, vertex-attribute setup, texture bind, render-uniform,
+      transform-uniform, point-sprite, and texture-uniform subphases inside
+      `paintD3D8DrawIndexed`, and `runtime_frame_profile.mjs` reports
+      vertex-attribute cache hit/miss counters. The draw bridge now skips
+      repeated `enableVertexAttribArray` / `vertexAttribPointer` / fallback
+      constant setup when the full vertex-buffer id, byte offset, stride,
+      shader attribute locations, FVF-derived offsets, and texture-coordinate
+      source key is unchanged; the cache is invalidated on bridge state reset,
+      program changes, and buffer object lifetime changes. Verified with
+      `node --check WebAssembly/harness/bridge.js`, `node --check
+      WebAssembly/harness/runtime_frame_profile.mjs`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port:release`, and a Mac M4
+      Chrome/Metal runtime profile using `realEngineFrameTick`, 10 warmup
+      frames, 60 measured frames, batch 10, and
+      `PERF_PROFILE_ENGINE_PROFILE=1`. The pre-cache subphase profile measured
+      `sortedDrawVertexAttribMs` 1.439 ms/frame; after the cache the final run
+      reported `ANGLE Metal Renderer: Apple M4`, 45.66 ms/frame wall, 48.07 ms
+      average engine `lastFrameMs`, zero measured readPixels, and a visible
+      shell-map screenshot. Sorted bridge work fell to 9.129 ms/frame;
+      `sortedDrawVertexAttribMs` is 0.067 ms/frame, `sortedDrawGeometryMs` is
+      0.165 ms/frame, and the remaining sorted cost is uniform setup:
+      `sortedDrawUniformMs` 7.671 ms/frame (`sortedDrawRenderUniformMs`
+      5.163, `sortedDrawTextureUniformMs` 1.784). The run measured ~103.2
+      vertex-attribute cache hits/frame vs ~378.6 misses/frame across all D3D8
+      draws.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`

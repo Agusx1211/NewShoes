@@ -76,7 +76,13 @@ checks, caches point-sprite uniforms, and splits render/material/light uniforms
 from texture-availability uniforms. Final Mac Chrome/Metal profile measured
 46.70 ms/frame wall; sorted bridge work is 11.914 ms/frame, with
 `sortedDrawUniformMs` down to 8.811 ms/frame and actual draw/batch handling
-still only 0.022 ms/frame.
+still only 0.022 ms/frame. A follow-up sorted subphase split and vertex
+attribute layout cache measured 45.66 ms/frame wall on Mac Chrome/Metal;
+sorted bridge work is now 9.129 ms/frame, with sorted vertex-attribute setup
+reduced to 0.067 ms/frame and sorted geometry setup reduced to
+0.165 ms/frame. The remaining sorted bridge cost is uniform setup:
+`sortedDrawUniformMs` 7.671 ms/frame, led by render/material/light uniforms
+at 5.163 ms/frame and texture/layout uniforms at 1.784 ms/frame.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
@@ -2369,15 +2375,16 @@ and then start with the PROFILE, not with any individual fix.
       `diag=lite` has no warmup readbacks; DevTools is still needed before
       changing buffer/shader/draw submission internals that might be dominated
       by asynchronous ANGLE/GPU stalls.
-- [ ] **Split/optimize remaining sorted browser draw setup**: after the first
-      uniform-cache pass, Mac Chrome/Metal still measures sorted bridge work
-      at 11.914 ms/frame across ~63.6 profiled sorted draws/frame. The
-      remaining cost is `sortedDrawUniformMs` 8.811 ms/frame plus
-      `sortedDrawGeometryMs` 1.896 ms/frame, while actual draw/batch handling
-      remains 0.022 ms/frame. Next pass should add sorted-only subphase
-      counters inside the render-uniform, transform-uniform, texture-uniform,
-      and vertex-attribute setup sections, then cache the next proven repeated
-      setup without changing original sorted draw order.
+- [ ] **Optimize remaining sorted browser uniform setup**: after the sorted
+      subphase split and vertex-attribute cache, Mac Chrome/Metal measures
+      sorted bridge work at 9.129 ms/frame across ~62.1 profiled sorted
+      draws/frame. Vertex attribute setup is no longer the frontier
+      (`sortedDrawVertexAttribMs` 0.067 ms/frame, `sortedDrawGeometryMs`
+      0.165 ms/frame); the remaining cost is `sortedDrawUniformMs`
+      7.671 ms/frame, led by `sortedDrawRenderUniformMs` 5.163 ms/frame and
+      `sortedDrawTextureUniformMs` 1.784 ms/frame. Next pass should split or
+      cache the repeated render/material/light and texture-layout uniform data
+      proven by this profile without changing original sorted draw order.
 - [ ] **Split the real `W3DWater.render.waterTracks` bucket**: the latest
       Mac Chrome/Metal shell-map profile sampled water tracks at 10.9 ms,
       second only to sorted draw replay and ahead of heightmap tile passes on
