@@ -167,7 +167,8 @@ measured 38.34 ms/frame wall / 36.92 ms average engine `lastFrameMs`, with
 `captureBound` still ~7.55 ms/frame, `browserDrawIndexed` ~4.78 ms/frame, and
 visible shell-map water/terrain. The measured render frontier remains
 heightmap/terrain, but raw checksum removal is not the next optimization; the
-user-reported shadow flicker remains an open correctness bug.
+user-reported shadow flicker/breakage symptom is fixed in the live skirmish
+path, while broader shadow fidelity remains in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
@@ -193,10 +194,6 @@ reproduce in the harness and verify each fix with a screenshot / state check.
       play. Sounds get dropped rather than mixed. Audit the Miles→Web Audio
       path (voice allocation, stream vs sample routing, drop policy) against
       the real `AudioManager` request flow. Related: [[frontier-2026-07-05-skirmish-sweep]] audio bug.
-- [ ] **Shadows render incorrectly** — shadows flicker in and out and
-      sometimes break entirely. Ties into the QUEUED shadows phased plan
-      (blob→stencil→shaders); treat flicker/stability as the concrete symptom
-      to chase, not just fidelity.
 - [ ] **Text renders truncated** — some strings show only one letter or a few
       letters instead of the full text. Investigate the text/font glyph
       layout + string draw path (partial render, not missing text).

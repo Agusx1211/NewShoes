@@ -51,6 +51,7 @@ const postActiveFrames = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_FRAMES", 0
 const postActiveFrameChunk = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_CHUNK", frameChunk);
 const expectPostActiveSurvival = process.env.SKIRMISH_START_EXPECT_SURVIVE === "1";
 const requestedSkirmishMap = String(process.env.SKIRMISH_START_MAP ?? "").trim();
+const captureD3D8History = process.env.SKIRMISH_START_CAPTURE_D3D8_HISTORY === "1";
 
 function parsePositiveInt(name, fallback) {
   const value = Number.parseInt(process.env[name] ?? "", 10);
@@ -545,8 +546,14 @@ async function main() {
     let fullFrameShroudDiagnostics = null;
     let textureDiagnostics = null;
     let uiDrawCaptures = null;
+    let d3d8SceneDrawHistory = null;
+    let lastD3D8Clear = null;
     let badJsonContext = null;
     try {
+      if (captureD3D8History) {
+        await page.evaluate(() => window.__cncSetD3D8SceneDrawHistoryLimit?.(8192));
+        await page.evaluate(() => window.__cncSetDiagLevel?.("full"));
+      }
       const full = await runFrames(page, 1, "hud geometry probe");
       controlBarWindowFull = locateNested(full.frame, ["controlBarWindows"]) ?? null;
       controlBarWindows = controlBarWindowFull;
@@ -559,6 +566,12 @@ async function main() {
       // atlas (1024x256) background draws vs small UI icon draws, collected by
       // bridge.js during the frame.
       uiDrawCaptures = full.state?.graphics?.uiDrawCaptures ?? null;
+      d3d8SceneDrawHistory = captureD3D8History
+        ? (full.state?.graphics?.d3d8SceneDrawHistory ?? null)
+        : null;
+      lastD3D8Clear = captureD3D8History
+        ? (full.state?.graphics?.lastD3D8Clear ?? null)
+        : null;
       badJsonContext = await page.evaluate(() => window.__lastBadJsonContext ?? null).catch(() => null);
     } catch (error) {
       controlBarWindows = { error: error?.message ?? String(error) };
@@ -649,6 +662,8 @@ async function main() {
           controlBarWindows,
           textureDiagnostics,
           uiDrawCaptures,
+          d3d8SceneDrawHistory,
+          lastD3D8Clear,
           fullFrameShroudDiagnostics,
           d3d8TextureInventory: d3d8TextureInventory?.inventory ?? null,
           d3d8TextureLiveCount: d3d8TextureInventory?.liveCount ?? null,

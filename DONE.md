@@ -10,6 +10,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## User-reported play bugs (2026-07-06 session)
 
+- [x] Fix live skirmish shadow flicker/breakage. The browser D3D8 bridge now
+      masks D3D8 stencil reference/read/write masks to the actual WebGL
+      stencil-bit width before `gl.stencilFunc`, `gl.stencilMask`, and stencil
+      clears. This preserves the original D3D8 masked-test behavior for the
+      gameplay shadow pass that submits `0x80808080` with mask `0xC0`; WebGL
+      was previously clamping the raw reference to 255 instead of applying the
+      low 8-bit value 128, so masked volumetric shadows could flicker or break.
+      The skirmish and shell-map harness captures can now include D3D8 draw
+      history, applied stencil state, and the last D3D8 clear. Verified with
+      `node --check WebAssembly/harness/bridge.js`, `node --check
+      WebAssembly/harness/skirmish_start_smoke.mjs`, `node --check
+      WebAssembly/harness/shellmap_texture_label_capture.mjs`, `node
+      harness/smoke.mjs`, and `SKIRMISH_START_MAP='maps\tournament
+      desert\tournament desert.map' SKIRMISH_START_POST_ACTIVE_FRAMES=60
+      SKIRMISH_START_EXPECT_SURVIVE=1
+      SKIRMISH_START_CAPTURE_D3D8_HISTORY=1
+      SKIRMISH_START_OUTPUT=/tmp/skirmish-shadow-history-fixed.json
+      SKIRMISH_START_SCREENSHOT=/tmp/skirmish-shadow-history-fixed.png node
+      harness/skirmish_start_smoke.mjs`: Tournament Desert survived to frame
+      205 with active skirmish state, the applied shadow stencil state was
+      `ref=128`, `mask=192`, `writeMask=255`, and the screenshot no longer
+      showed the large invalid dark shadow blob over the local base.
 - [x] Fix the live skirmish minimap terrain render. The browser D3D8 caps now
       stop advertising `D3DFMT_R8G8B8` as a supported texture format, so
       original `W3DRadar::initializeTextureFormats()` selects `X8R8G8B8`

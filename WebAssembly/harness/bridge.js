@@ -9,6 +9,7 @@ const gl = canvas.getContext("webgl2", {
 const s3tc = gl ? gl.getExtension("WEBGL_compressed_texture_s3tc") : null;
 const provokingVertex = gl ? gl.getExtension("WEBGL_provoking_vertex") : null;
 const d3d8HasStencilBuffer = gl ? Boolean(gl.getContextAttributes()?.stencil) : false;
+let d3d8StencilValueMaskCache = null;
 const fallbackContext = gl ? null : canvas.getContext("2d", { alpha: false });
 const stateNode = document.querySelector("#state");
 const framesNode = document.querySelector("#frames");
@@ -6355,8 +6356,8 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
       d3d8PerfStats.clearContextAttrMs += perfNow() - contextAttrStartedAt;
     }
     if ((clearFlags & 0x4) !== 0 && hasStencilBuffer) {
-      gl.stencilMask(0xffffffff);
-      gl.clearStencil(stencil >>> 0);
+      gl.stencilMask(d3d8EffectiveStencilValue(0xffffffff));
+      gl.clearStencil(d3d8EffectiveStencilValue(stencil));
       clearBits |= gl.STENCIL_BUFFER_BIT;
     }
     d3d8PerfStats.clearSetupMs += perfNow() - setupStartedAt;
@@ -8633,6 +8634,24 @@ function d3dStencilOpToGl(stencilOp) {
   }
 }
 
+function d3d8StencilValueMask() {
+  if (!gl || !d3d8HasStencilBuffer) {
+    return 0;
+  }
+  if (d3d8StencilValueMaskCache != null) {
+    return d3d8StencilValueMaskCache;
+  }
+  const bits = Math.max(0, Math.min(32, Number(gl.getParameter(gl.STENCIL_BITS) ?? 0)));
+  d3d8StencilValueMaskCache = bits >= 32
+    ? 0xffffffff
+    : ((2 ** bits) - 1) >>> 0;
+  return d3d8StencilValueMaskCache;
+}
+
+function d3d8EffectiveStencilValue(value) {
+  return (((Number(value ?? 0) >>> 0) & d3d8StencilValueMask()) >>> 0);
+}
+
 function applyD3D8RenderState(renderState, options = {}) {
   const state = normalizeD3D8RenderState(renderState);
   const cullEnabled = state.cullMode === D3DCULL_CW || state.cullMode === D3DCULL_CCW;
@@ -8651,6 +8670,9 @@ function applyD3D8RenderState(renderState, options = {}) {
   const stencilFail = d3dStencilOpToGl(state.stencilFail);
   const stencilZFail = d3dStencilOpToGl(state.stencilZFail);
   const stencilPass = d3dStencilOpToGl(state.stencilPass);
+  const stencilRef = d3d8EffectiveStencilValue(state.stencilRef);
+  const stencilMask = d3d8EffectiveStencilValue(state.stencilMask);
+  const stencilWriteMask = d3d8EffectiveStencilValue(state.stencilWriteMask);
   const fogStart = d3dDwordToFloat(state.fogStart);
   const fogEnd = d3dDwordToFloat(state.fogEnd);
   const fogEnabled = state.fogEnable !== 0 &&
@@ -8689,19 +8711,20 @@ function applyD3D8RenderState(renderState, options = {}) {
   );
   setD3D8TrackedCapability(gl.STENCIL_TEST, "stencilEnabled", stencilEnabled);
   if (stencilEnabled) {
-    applyD3D8TrackedGlState("stencilFunc", `${stencilFunc},${state.stencilRef},${state.stencilMask}`,
-      () => gl.stencilFunc(stencilFunc, state.stencilRef, state.stencilMask));
+    applyD3D8TrackedGlState("stencilFunc", `${stencilFunc},${stencilRef},${stencilMask}`,
+      () => gl.stencilFunc(stencilFunc, stencilRef, stencilMask));
     applyD3D8TrackedGlState("stencilOp", `${stencilFail},${stencilZFail},${stencilPass}`,
       () => gl.stencilOp(stencilFail, stencilZFail, stencilPass));
-    applyD3D8TrackedGlState("stencilMask", state.stencilWriteMask,
-      () => gl.stencilMask(state.stencilWriteMask));
+    applyD3D8TrackedGlState("stencilMask", stencilWriteMask,
+      () => gl.stencilMask(stencilWriteMask));
   } else {
-    applyD3D8TrackedGlState("stencilFunc", `${gl.ALWAYS},0,${0xffffffff}`,
-      () => gl.stencilFunc(gl.ALWAYS, 0, 0xffffffff));
+    const resetStencilMask = d3d8EffectiveStencilValue(0xffffffff);
+    applyD3D8TrackedGlState("stencilFunc", `${gl.ALWAYS},0,${resetStencilMask}`,
+      () => gl.stencilFunc(gl.ALWAYS, 0, resetStencilMask));
     applyD3D8TrackedGlState("stencilOp", `${gl.KEEP},${gl.KEEP},${gl.KEEP}`,
       () => gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP));
-    applyD3D8TrackedGlState("stencilMask", 0xffffffff,
-      () => gl.stencilMask(0xffffffff));
+    applyD3D8TrackedGlState("stencilMask", resetStencilMask,
+      () => gl.stencilMask(resetStencilMask));
   }
 
   return {
@@ -8731,9 +8754,12 @@ function applyD3D8RenderState(renderState, options = {}) {
       fail: stencilFail,
       zFail: stencilZFail,
       pass: stencilPass,
-      ref: state.stencilRef,
-      mask: state.stencilMask,
-      writeMask: state.stencilWriteMask,
+      ref: stencilRef,
+      mask: stencilMask,
+      writeMask: stencilWriteMask,
+      d3dRef: state.stencilRef,
+      d3dMask: state.stencilMask,
+      d3dWriteMask: state.stencilWriteMask,
     },
     alphaTest: {
       enabled: state.alphaTestEnable !== 0,
@@ -10300,6 +10326,14 @@ function paintD3D8DrawIndexed(payload = {}) {
         alphaFunc: renderState.alphaFunc,
         alphaRef: renderState.alphaRef,
         colorWriteEnable: renderState.colorWriteEnable,
+        stencilEnable: renderState.stencilEnable,
+        stencilFail: renderState.stencilFail,
+        stencilZFail: renderState.stencilZFail,
+        stencilPass: renderState.stencilPass,
+        stencilFunc: renderState.stencilFunc,
+        stencilRef: renderState.stencilRef,
+        stencilMask: renderState.stencilMask,
+        stencilWriteMask: renderState.stencilWriteMask,
         fillMode: renderState.fillMode,
         zBias: renderState.zBias,
         shadeMode: renderState.shadeMode,
@@ -10311,6 +10345,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         cull: appliedRenderState?.cull ?? null,
         depth: appliedRenderState?.depth ?? null,
         blend: appliedRenderState?.blend ?? null,
+        stencil: appliedRenderState?.stencil ?? null,
         alphaTest: appliedRenderState?.alphaTest ?? null,
         implicitAlphaCutout: probe.implicitAlphaCutout,
         colorWrite: appliedRenderState?.colorWrite ?? null,

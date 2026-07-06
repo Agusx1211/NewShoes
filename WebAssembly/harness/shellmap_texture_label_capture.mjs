@@ -474,6 +474,7 @@ async function main() {
         frameCompleted: completedFrames,
         screenshotPath,
         textureDiagnostics: result?.frame?.textureDiagnostics ?? null,
+        lastD3D8Clear: result?.state?.graphics?.lastD3D8Clear ?? null,
         historyLength: history.length,
         historySeqRange: history.length ? [history[0].seq, history[history.length - 1].seq] : [],
         topTextures: topTextureNames(history),
