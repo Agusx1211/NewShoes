@@ -8538,6 +8538,33 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `sortedDrawUniformMs` 6.708 ms/frame, including base uniforms 1.284,
       material 0.998, alpha/fog 0.725, stage 0.631, transform 1.200, and
       texture-layout 1.267 ms/frame.
+- [x] Cache repeated sorted base/material/stage/alpha-fog uniform subgroups in
+      the browser D3D8 bridge. The sorted draw path now tracks separate exact
+      keys for base shader flags/clip planes, material + ambient uniforms,
+      texture-stage combiner uniforms, and alpha/fog uniforms; each cache is
+      invalidated with the draw-state cache and on shader program changes, and
+      the runtime profile reports hit/miss counters for each subgroup. Verified
+      with `node --check WebAssembly/harness/bridge.js`, `node --check
+      WebAssembly/harness/runtime_frame_profile.mjs`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port:release`,
+      `npm --prefix WebAssembly run build:port`, and a Mac M4
+      Chrome/Metal runtime profile using `realEngineFrameTick`, 10 warmup
+      frames, 60 measured frames, batch 10, and
+      `PERF_PROFILE_ENGINE_PROFILE=1`. The final run reported a renderer
+      string containing `ANGLE Metal Renderer: Apple M4`, 47.00 ms/frame wall,
+      47.35 ms average engine `lastFrameMs`, zero measured readPixels, and a
+      visible shell-map screenshot. Sorted bridge work measured
+      7.521 ms/frame across ~64.8 profiled sorted draws/frame, down from
+      8.650 ms/frame after the fixed-light cache. Sorted uniform setup fell
+      from 6.708 to 5.295 ms/frame and render-uniform work fell from
+      4.192 to 1.993 ms/frame. The new subgroup hit rates were ~58.9
+      base hits/frame vs ~13.1 misses, ~43.2 material hits vs ~28.8 misses,
+      ~50.5 stage hits vs ~21.6 misses, and ~65.3 alpha/fog hits vs
+      ~6.7 misses. Stage and alpha/fog are now effectively drained
+      (`sortedDrawRenderStageUniformMs` 0.012,
+      `sortedDrawRenderAlphaFogUniformMs` 0.013 ms/frame); remaining measured
+      sorted uniform costs are transform uploads 1.701, texture-layout 1.557,
+      render-state application 0.950, and material uniforms 0.632 ms/frame.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`
