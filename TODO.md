@@ -128,7 +128,13 @@ reduced render-state application to 0.179 ms/frame and sorted bridge work to
 frame vs ~121 applied changes. The remaining measured sorted-uniform costs are
 residual transform uploads 0.212 ms/frame, render-state application
 0.179 ms/frame, material uniforms 0.157 ms/frame, and texture-layout uniforms
-0.015 ms/frame; no single sorted-uniform bucket is the current frontier.
+0.015 ms/frame; no single sorted-uniform bucket is the current frontier. The
+runtime frame profile now mirrors the human play page's synthetic mouse moves
+after init, so the real main-menu widgets appear before profiling. That menu
+profile measured 94.43 ms/frame wall / 92.57 ms average engine `lastFrameMs` on
+Mac Chrome/Metal, with `W3DDisplay.draw.inGameUI.before` at 61.355 ms on the
+sampled frame and exactly 97 `Render2DClass::Render()` flushes every sampled
+frame. The GUI batching item is now the active shell-map frontier.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
@@ -2448,9 +2454,13 @@ and then start with the PROFILE, not with any individual fix.
       per-texture/per-shader batches and flush a handful of `Render()` calls at
       the end instead of hundreds. 2D UI has explicit author-controlled z-order
       (no depth-sort constraint), so it is far more batchable than the 3D sorted
-      path — likely the biggest, cheapest single shell-map win. First add a
-      per-frame counter of `Render2DClass::Render()` calls for the hard number,
-      then batch and re-measure the menu-vs-no-menu FPS delta. (by Claude)
+      path — likely the biggest, cheapest single shell-map win. The hard
+      counter now proves the menu path hits exactly 97
+      `Render2DClass::Render()` flushes/frame on the visible main menu, all
+      textured, totaling 488 vertices / 244 triangles, while
+      `W3DDisplay.draw.inGameUI.before` alone costs 61.355 ms on the sampled
+      Mac Chrome/Metal frame. Next: batch those Render2D primitives while
+      preserving UI z-order, then re-measure the menu-vs-no-menu FPS delta.
 - [ ] **Try a per-frame draw command buffer to collapse per-draw wasm↔JS
       crossings (structural complement to the per-draw uniform caching above).**
       Profiles prove the sorted cost is *submission* (`sortedDrawUniformMs`

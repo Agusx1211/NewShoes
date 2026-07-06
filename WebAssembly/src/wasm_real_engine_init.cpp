@@ -279,6 +279,34 @@ static int g_engine_frame_profile_transitions = 0;
 static int g_engine_frame_profile_sorted_draw_submit_depth = 0;
 static std::string g_engine_frame_profile_last_label;
 static std::vector<EngineFrameProfileBucket> g_engine_frame_profile_buckets;
+static unsigned int g_engine_frame_render2d_calls = 0;
+static unsigned int g_engine_frame_render2d_draws = 0;
+static unsigned int g_engine_frame_render2d_empty_calls = 0;
+static unsigned int g_engine_frame_render2d_hidden_calls = 0;
+static unsigned int g_engine_frame_render2d_textured_draws = 0;
+static unsigned int g_engine_frame_render2d_untextured_draws = 0;
+static unsigned int g_engine_frame_render2d_grayscale_draws = 0;
+static unsigned int g_engine_frame_render2d_max_vertices = 0;
+static unsigned int g_engine_frame_render2d_max_indices = 0;
+static unsigned long g_engine_frame_render2d_vertices = 0;
+static unsigned long g_engine_frame_render2d_indices = 0;
+static unsigned long g_engine_frame_render2d_triangles = 0;
+
+void reset_engine_frame_render2d_profile()
+{
+	g_engine_frame_render2d_calls = 0;
+	g_engine_frame_render2d_draws = 0;
+	g_engine_frame_render2d_empty_calls = 0;
+	g_engine_frame_render2d_hidden_calls = 0;
+	g_engine_frame_render2d_textured_draws = 0;
+	g_engine_frame_render2d_untextured_draws = 0;
+	g_engine_frame_render2d_grayscale_draws = 0;
+	g_engine_frame_render2d_max_vertices = 0;
+	g_engine_frame_render2d_max_indices = 0;
+	g_engine_frame_render2d_vertices = 0;
+	g_engine_frame_render2d_indices = 0;
+	g_engine_frame_render2d_triangles = 0;
+}
 
 void append_engine_frame_profile_json_string(std::string &json, const std::string &value)
 {
@@ -332,6 +360,7 @@ void reset_engine_frame_profile()
 	if (!g_engine_frame_profile_enabled) {
 		return;
 	}
+	reset_engine_frame_render2d_profile();
 	g_engine_frame_profile_buckets.clear();
 	g_engine_frame_profile_started_ms = emscripten_get_now();
 	g_engine_frame_profile_last_mark_ms = g_engine_frame_profile_started_ms;
@@ -368,6 +397,24 @@ void finish_engine_frame_profile()
 	g_engine_frame_profile_last_label = "frame.complete";
 }
 
+void append_engine_frame_render2d_json(std::string &json)
+{
+	json += ",\"render2D\":{";
+	json += "\"calls\":" + std::to_string(g_engine_frame_render2d_calls);
+	json += ",\"draws\":" + std::to_string(g_engine_frame_render2d_draws);
+	json += ",\"emptyCalls\":" + std::to_string(g_engine_frame_render2d_empty_calls);
+	json += ",\"hiddenCalls\":" + std::to_string(g_engine_frame_render2d_hidden_calls);
+	json += ",\"texturedDraws\":" + std::to_string(g_engine_frame_render2d_textured_draws);
+	json += ",\"untexturedDraws\":" + std::to_string(g_engine_frame_render2d_untextured_draws);
+	json += ",\"grayscaleDraws\":" + std::to_string(g_engine_frame_render2d_grayscale_draws);
+	json += ",\"vertices\":" + std::to_string(g_engine_frame_render2d_vertices);
+	json += ",\"indices\":" + std::to_string(g_engine_frame_render2d_indices);
+	json += ",\"triangles\":" + std::to_string(g_engine_frame_render2d_triangles);
+	json += ",\"maxVertices\":" + std::to_string(g_engine_frame_render2d_max_vertices);
+	json += ",\"maxIndices\":" + std::to_string(g_engine_frame_render2d_max_indices);
+	json += "}";
+}
+
 void append_engine_frame_profile_json(std::string &json)
 {
 	json += ",\"profile\":{\"enabled\":";
@@ -378,6 +425,7 @@ void append_engine_frame_profile_json(std::string &json)
 	}
 	char number[128];
 	const double elapsed_ms = g_engine_frame_profile_last_mark_ms - g_engine_frame_profile_started_ms;
+	append_engine_frame_render2d_json(json);
 	std::snprintf(number, sizeof(number),
 		",\"transitionCount\":%d,\"elapsedMs\":%.3f,\"bucketCount\":%zu,\"top\":[",
 		g_engine_frame_profile_transitions,
@@ -446,6 +494,49 @@ extern "C" int cnc_port_is_engine_frame_profile_enabled()
 	return g_engine_frame_profile_enabled ? 1 : 0;
 }
 
+extern "C" void cnc_port_note_render2d_render(
+	int vertex_count,
+	int index_count,
+	int textured,
+	int grayscale,
+	int hidden)
+{
+	if (!g_engine_frame_profile_enabled) {
+		return;
+	}
+	++g_engine_frame_render2d_calls;
+	const unsigned int vertices = vertex_count > 0 ? static_cast<unsigned int>(vertex_count) : 0u;
+	const unsigned int indices = index_count > 0 ? static_cast<unsigned int>(index_count) : 0u;
+	if (indices == 0) {
+		++g_engine_frame_render2d_empty_calls;
+	}
+	if (hidden != 0) {
+		++g_engine_frame_render2d_hidden_calls;
+	}
+	if (indices == 0 || hidden != 0) {
+		return;
+	}
+
+	++g_engine_frame_render2d_draws;
+	g_engine_frame_render2d_vertices += vertices;
+	g_engine_frame_render2d_indices += indices;
+	g_engine_frame_render2d_triangles += indices / 3u;
+	if (textured != 0) {
+		++g_engine_frame_render2d_textured_draws;
+	} else {
+		++g_engine_frame_render2d_untextured_draws;
+	}
+	if (grayscale != 0) {
+		++g_engine_frame_render2d_grayscale_draws;
+	}
+	if (vertices > g_engine_frame_render2d_max_vertices) {
+		g_engine_frame_render2d_max_vertices = vertices;
+	}
+	if (indices > g_engine_frame_render2d_max_indices) {
+		g_engine_frame_render2d_max_indices = indices;
+	}
+}
+
 extern "C" void cnc_port_begin_sorted_draw_submit_profile_scope()
 {
 	if (g_engine_frame_profile_enabled) {
@@ -475,6 +566,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_frame_profile(int 
 		g_engine_frame_profile_last_mark_ms = 0.0;
 		g_engine_frame_profile_transitions = 0;
 		g_engine_frame_profile_sorted_draw_submit_depth = 0;
+		reset_engine_frame_render2d_profile();
 	}
 }
 

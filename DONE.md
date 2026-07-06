@@ -8684,6 +8684,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       ~121.5 misses. Remaining measured sorted-uniform costs are residual
       transform uploads 0.212, material uniforms 0.157, and texture-layout
       uniforms 0.015 ms/frame.
+- [x] Add real menu `Render2DClass::Render()` flush counters to the runtime
+      frame profile and make the profile harness reach the same menu-reveal path
+      as `play.html`. `render2d.cpp` now reports frame-local Render2D call/draw,
+      texture, vertex, index, and triangle counts only while the opt-in engine
+      frame profile is enabled. `runtime_frame_profile.mjs` summarizes those
+      counters across sampled frames and posts the same synthetic mouse moves as
+      the human play page after real engine init, so the main-menu widgets are
+      visible before measurement. Verified with `node --check
+      WebAssembly/harness/runtime_frame_profile.mjs`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly run build:port:release`, and Mac M4
+      Chrome/Metal profiles with visible main-menu screenshots. The full
+      60-frame menu profile reported an Apple M4 Metal renderer string,
+      94.43 ms/frame wall, 92.57 ms average engine `lastFrameMs`, zero
+      readPixels, exactly 97 Render2D flushes/frame, 488 Render2D vertices /
+      244 triangles/frame, and `W3DDisplay.draw.inGameUI.before` at 61.355 ms
+      on the sampled frame. This confirms GUI Render2D batching, not sorted
+      draw-uniform setup, is the active shell-map performance frontier.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`

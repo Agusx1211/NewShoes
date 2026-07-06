@@ -94,6 +94,35 @@ function stats(values) {
   };
 }
 
+const render2DProfileFields = [
+  "calls",
+  "draws",
+  "emptyCalls",
+  "hiddenCalls",
+  "texturedDraws",
+  "untexturedDraws",
+  "grayscaleDraws",
+  "vertices",
+  "indices",
+  "triangles",
+  "maxVertices",
+  "maxIndices",
+];
+
+function summarizeProfileGroup(samples, groupName, fields) {
+  const summary = {};
+  for (const field of fields) {
+    summary[field] = stats(samples.map((sample) => Number(sample.profile?.[groupName]?.[field] ?? Number.NaN)));
+  }
+  return summary;
+}
+
+function summarizeProfileCounters(samples) {
+  return {
+    render2D: summarizeProfileGroup(samples, "render2D", render2DProfileFields),
+  };
+}
+
 function compactGameplay(gameplay) {
   if (!gameplay) {
     return null;
@@ -206,6 +235,22 @@ async function buildArchives(serverUrl) {
 
 async function rpc(page, command, payload = {}) {
   return page.evaluate(([name, args]) => window.CnCPort.rpc(name, args), [command, payload]);
+}
+
+async function revealShellMenu(page, shellMap) {
+  if (!shellMap) {
+    return;
+  }
+  for (const point of [{ x: 32, y: 32 }, { x: 96, y: 96 }]) {
+    await rpc(page, "postMessage", {
+      message: 0x0200,
+      lParam: ((point.y & 0xffff) << 16) | (point.x & 0xffff),
+      point,
+    });
+    const frame = await rpc(page, "realEngineFrameTick", { frames: 2 });
+    expect(frame?.ok === true && frame.aborted === false,
+      "runtime frame profile menu reveal frame failed", frame);
+  }
 }
 
 async function queryRenderer(page) {
@@ -506,6 +551,7 @@ async function runFramePass(page, frameCount, batchSize, label, command = "realE
       drawableCount: Number(frame.gameplay?.drawableCount ?? Number.NaN),
       renderedObjectCount: Number(frame.gameplay?.renderedObjectCount ?? Number.NaN),
       particleSystemCount: Number(frame.particles?.systemCount ?? Number.NaN),
+      profile: frame.profile ?? null,
     });
     remaining -= frames;
   }
@@ -533,6 +579,7 @@ async function runFramePass(page, frameCount, batchSize, label, command = "realE
     drawCalls,
     drawCallsPerFrame: drawCalls !== null && framesAdvanced > 0 ? drawCalls / framesAdvanced : null,
     browserPerf: browserPerfDelta(browserPerfBefore, browserPerfAfter, framesAdvanced),
+    profileCounters: profile ? summarizeProfileCounters(samples) : null,
     finalState: compactFrameState(finalFrame),
     sampleCount: samples.length,
     firstSample: samples[0] ?? null,
@@ -672,6 +719,7 @@ try {
   const initWallMs = performance.now() - initStartedAt;
   expect(init?.ok === true && init.aborted === false && init.frontier?.initReturned === true,
     "runtime frame profile failed real engine init", init);
+  await revealShellMenu(page, shellMap);
 
   const warmup = await runFramePass(page, warmupFrames, batchSize, "warmup");
   const settle = sceneIsSettled(warmup.rawFinalFrame, shellMap)

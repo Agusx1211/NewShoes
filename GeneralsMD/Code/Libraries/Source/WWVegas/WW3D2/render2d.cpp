@@ -58,6 +58,31 @@
 #include "wwmemlog.h"
 #include "assetmgr.h"
 
+#ifdef __EMSCRIPTEN__
+extern "C" int cnc_port_is_engine_frame_profile_enabled() __attribute__((weak));
+extern "C" void cnc_port_note_render2d_render(
+	int vertex_count,
+	int index_count,
+	int textured,
+	int grayscale,
+	int hidden) __attribute__((weak));
+#define CNC_PORT_NOTE_RENDER2D_RENDER(vertex_count, index_count, textured, grayscale, hidden) \
+	do { \
+		if (cnc_port_note_render2d_render \
+			&& cnc_port_is_engine_frame_profile_enabled \
+			&& cnc_port_is_engine_frame_profile_enabled()) { \
+			cnc_port_note_render2d_render( \
+				(vertex_count), \
+				(index_count), \
+				(textured), \
+				(grayscale), \
+				(hidden)); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_RENDER2D_RENDER(vertex_count, index_count, textured, grayscale, hidden) do { } while (0)
+#endif
+
 //#pragma optimize("", off)
 //#pragma MESSAGE("************************************** WARNING, optimization disabled for debugging purposes")
 
@@ -603,6 +628,12 @@ void	Render2DClass::Add_Outline( const RectClass & rect, float width, const Rect
 
 void Render2DClass::Render(void)
 {
+	CNC_PORT_NOTE_RENDER2D_RENDER(
+		Vertices.Count(),
+		Indices.Count(),
+		Texture != NULL ? 1 : 0,
+		IsGrayScale ? 1 : 0,
+		IsHidden ? 1 : 0);
 	if ( !Indices.Count() || IsHidden) {
 		return;
 	}
@@ -860,4 +891,3 @@ Vector2	Render2DTextClass::Get_Text_Extents( const WCHAR * text )
 
 	return extent;
 }
-
