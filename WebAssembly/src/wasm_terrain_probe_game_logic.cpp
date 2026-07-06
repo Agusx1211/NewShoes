@@ -1,9 +1,17 @@
+#ifdef CNC_PORT_GAMELOGIC_SUPPORT_REAL_PRERTS
+#include "wasm_prerts_real.h"
+#else
 #include "PreRTS.h"
+#endif
 
+#ifndef CNC_PORT_GAMELOGIC_SUPPORT_NO_OBJECT_RUNTIME
 #include "Common/ThingTemplate.h"
 #include "Common/Xfer.h"
+#endif
 #include "GameLogic/GameLogic.h"
+#ifndef CNC_PORT_GAMELOGIC_SUPPORT_NO_OBJECT_RUNTIME
 #include "GameLogic/Object.h"
+#endif
 
 #include <algorithm>
 
@@ -110,15 +118,22 @@ void GameLogic::logicMessageDispatcher(GameMessage *, void *)
 
 void GameLogic::registerObject(Object *obj)
 {
+#ifdef CNC_PORT_GAMELOGIC_SUPPORT_NO_OBJECT_RUNTIME
+	(void)obj;
+#else
 	if (obj == NULL) {
 		return;
 	}
 	obj->prependToList(&m_objList);
 	addObjectToLookupTable(obj);
+#endif
 }
 
 void GameLogic::addObjectToLookupTable(Object *obj)
 {
+#ifdef CNC_PORT_GAMELOGIC_SUPPORT_NO_OBJECT_RUNTIME
+	(void)obj;
+#else
 	if (obj == NULL) {
 		return;
 	}
@@ -127,14 +142,19 @@ void GameLogic::addObjectToLookupTable(Object *obj)
 		m_objVector.resize(m_objVector.size() * 2, NULL);
 	}
 	m_objVector[new_id] = obj;
+#endif
 }
 
 void GameLogic::removeObjectFromLookupTable(Object *obj)
 {
+#ifdef CNC_PORT_GAMELOGIC_SUPPORT_NO_OBJECT_RUNTIME
+	(void)obj;
+#else
 	if (obj == NULL || obj->getID() >= m_objVector.size()) {
 		return;
 	}
 	m_objVector[obj->getID()] = NULL;
+#endif
 }
 
 Object *GameLogic::friend_createObject(
@@ -142,17 +162,28 @@ Object *GameLogic::friend_createObject(
 	const ObjectStatusMaskType &statusBits,
 	Team *team)
 {
+#ifdef CNC_PORT_GAMELOGIC_SUPPORT_NO_OBJECT_RUNTIME
+	(void)thing;
+	(void)statusBits;
+	(void)team;
+	return NULL;
+#else
 	return newInstance(Object)(thing, statusBits, team);
+#endif
 }
 
 void GameLogic::destroyObject(Object *obj)
 {
+#ifdef CNC_PORT_GAMELOGIC_SUPPORT_NO_OBJECT_RUNTIME
+	(void)obj;
+#else
 	if (obj == NULL || obj->isDestroyed()) {
 		return;
 	}
 	obj->setStatus(MAKE_OBJECT_STATUS_MASK(OBJECT_STATUS_DESTROYED));
 	m_objectsToDestroy.push_back(obj);
 	obj->onDestroy();
+#endif
 }
 
 Object *GameLogic::getFirstObject()
@@ -264,11 +295,15 @@ void GameLogic::initTimeOutValues()
 
 UnsignedInt GameLogic::getObjectCount()
 {
+#ifdef CNC_PORT_GAMELOGIC_SUPPORT_NO_OBJECT_RUNTIME
+	return 0;
+#else
 	UnsignedInt count = 0;
 	for (Object *obj = m_objList; obj != NULL; obj = obj->getNextObject()) {
 		++count;
 	}
 	return count;
+#endif
 }
 
 void GameLogic::setSuperweaponRestriction()
@@ -331,6 +366,7 @@ void GameLogic::setDefaults(Bool loadingSaveGame)
 
 void GameLogic::processDestroyList()
 {
+#ifndef CNC_PORT_GAMELOGIC_SUPPORT_NO_OBJECT_RUNTIME
 	for (ObjectPointerListIterator it = m_objectsToDestroy.begin();
 			it != m_objectsToDestroy.end();
 			++it) {
@@ -339,17 +375,23 @@ void GameLogic::processDestroyList()
 		removeObjectFromLookupTable(current_object);
 		current_object->friend_deleteInstance();
 	}
+#endif
 	m_objectsToDestroy.clear();
 }
 
 void GameLogic::destroyAllObjectsImmediate()
 {
+#ifdef CNC_PORT_GAMELOGIC_SUPPORT_NO_OBJECT_RUNTIME
+	m_objList = NULL;
+	m_objectsToDestroy.clear();
+#else
 	for (Object *obj = m_objList; obj != NULL;) {
 		Object *next_obj = obj->getNextObject();
 		destroyObject(obj);
 		obj = next_obj;
 	}
 	processDestroyList();
+#endif
 }
 
 void GameLogic::pushSleepyUpdate(UpdateModulePtr u)

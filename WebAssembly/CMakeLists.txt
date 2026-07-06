@@ -4161,60 +4161,6 @@ target_link_libraries(zh_gameclient_gui_input_runtime PUBLIC
   zh_gameengine_common_core
 )
 
-add_library(zh_gameclient_gui_input_shim_runtime STATIC
-  "${GAMEENGINE_GAMECLIENT_DIR}/Color.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetCheckBox.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetComboBox.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetHorizontalSlider.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetListBox.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetProgressBar.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetPushButton.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetRadioButton.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetStaticText.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetTabControl.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetTextEntry.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetVerticalSlider.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindow.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowGlobal.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowManager.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowTransitions.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/WindowLayout.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/WinInstanceData.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/Input/Mouse.cpp"
-  "${GAMEENGINE_GAMECLIENT_DIR}/MessageStream/WindowXlat.cpp"
-)
-
-target_include_directories(zh_gameclient_gui_input_shim_runtime PUBLIC
-  "${WASM_SHIMS_DIR}"
-  "${GAMEENGINE_INCLUDE_DIR}"
-  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
-  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
-  "${ZH_LIB_INCLUDE_DIR}"
-  "${WWVEGAS_DIR}"
-  "${WWMATH_DIR}"
-  "${WWLIB_DIR}"
-)
-
-target_compile_options(zh_gameclient_gui_input_shim_runtime PRIVATE
-  -fms-extensions
-  -ffunction-sections
-  -fdata-sections
-  -Wall
-  -Wextra
-  -Wno-extra-tokens
-  -Wno-implicit-exception-spec-mismatch
-  -Wno-new-returns-null
-  -Wno-register
-  -Wno-undefined-bool-conversion
-  -Wno-unknown-pragmas
-  -Wno-unused-parameter
-  -Wno-writable-strings
-)
-
-target_link_libraries(zh_gameclient_gui_input_shim_runtime PUBLIC
-  zh_gameengine_common_core
-)
-
 add_library(zh_window_layout_script_runtime STATIC
   src/wasm_game_state_time_helper.cpp
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowManagerScript.cpp"
@@ -6775,6 +6721,8 @@ target_link_options(w3d-gamewindow-manager-smoke PRIVATE
 
 add_executable(w3d-window-layout-script-smoke
   tests/w3d_window_layout_script_smoke.cpp
+  src/wasm_gameclient_utility_smoke_ini_support.cpp
+  src/wasm_terrain_probe_game_logic.cpp
   "${GAMEENGINE_COMMON_DIR}/System/FunctionLexicon.cpp"
   "${GAMEENGINE_COMMON_DIR}/SkirmishBattleHonors.cpp"
   "${GAMEENGINE_COMMON_DIR}/UserPreferences.cpp"
@@ -6805,10 +6753,13 @@ set_target_properties(w3d-window-layout-script-smoke PROPERTIES
 )
 
 target_link_libraries(w3d-window-layout-script-smoke PRIVATE
-  zh_gameclient_gui_input_shim_runtime
+  zh_gameclient_gui_input_runtime
+  zh_gameengine_globaldata_runtime
+  zh_gameengine_debug_runtime
 )
 
 target_include_directories(w3d-window-layout-script-smoke PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/src"
   "${WASM_SHIMS_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
@@ -6827,12 +6778,18 @@ target_include_directories(w3d-window-layout-script-smoke PRIVATE
   "${COMPRESSION_EAC_DIR}"
 )
 
+target_compile_definitions(w3d-window-layout-script-smoke PRIVATE
+  CNC_PORT_GAMELOGIC_SUPPORT_NO_OBJECT_RUNTIME=1
+  CNC_PORT_GAMELOGIC_SUPPORT_REAL_PRERTS=1
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+)
+
 target_compile_options(w3d-window-layout-script-smoke PRIVATE
   "-include${WASM_SHIMS_DIR}/windows.h"
   "-include${WASM_SHIMS_DIR}/mmsystem.h"
   "-include${WWVEGAS_PORT_SHIM}"
-  "-include${WASM_SHIMS_DIR}/PreRTS.h"
-  "-iquote${WASM_SHIMS_DIR}"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
   "-iquote${GAMEENGINE_INCLUDE_DIR}"
   "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
   "-iquote${GAMEENGINE_DIR}/Source"

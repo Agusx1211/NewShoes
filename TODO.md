@@ -283,15 +283,17 @@ residue and the next frontier.
       include. The real compile frontier and dispatch smoke now use real
       `Common/INI.h`, `Common/STLTypedefs.h`, `Common/GlobalData.h`, and
       `GameLogic/GameLogic.h` for representative GameLogic/GameSpy objects.
-      Remaining cleanup: old utility/smoke targets still have shadow-header
-      deps outside the real frontier, now narrowed to
-      `w3d-window-layout-script-smoke` (24 offender objects after
-      `ninja -t cleandead`) and `zh_gameclient_gui_input_shim_runtime` (20
-      offender objects). `zh_gameclient_utility`, `gameclient-utility-smoke`,
-      and `w3d-gamewindow-manager-smoke` now verify at 0 offender objects.
-      Migrate or retire the remaining legacy targets as the real lifecycle
-      covers them, then delete the shim class bodies once no linked or
-      compile-only target needs them. This is the same hazard class as the
+      The next burn-down deleted the duplicate
+      `zh_gameclient_gui_input_shim_runtime` archive and migrated
+      `w3d-window-layout-script-smoke` to the real PreRTS/header prelude, the
+      existing real GUI-input archive, original GlobalData/debug owners, and
+      narrow real-layout INI/GameLogic support. After `ninja -t cleandead`,
+      the focused audit for `w3d-window-layout-script-smoke`,
+      `zh_gameclient_gui_input_runtime`, and the removed shim runtime reports
+      0 audited shadow-header offender objects. Remaining cleanup: audit and
+      delete the shadow shim class headers/bodies once no linked or
+      compile-only target needs them, and migrate or retire any future legacy
+      target that still depends on them. This is the same hazard class as the
       confirmed d6d3b79 ChallengeGenerals stack corruption and the fixed
       edgeMapperApply aggregate-smoke incident above — fix it once at the root
       instead of per-incident.

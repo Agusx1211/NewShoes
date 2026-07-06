@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "PreRTS.h"
+#include "wasm_prerts_real.h"
 
 // Original headers use "= NULL" for pure virtual declarations.
 #ifdef NULL
@@ -116,10 +116,8 @@ WindowMsgHandledType MessageBoxSystem(GameWindow *window, UnsignedInt msg,
 WindowMsgHandledType QuitMessageBoxSystem(GameWindow *window, UnsignedInt msg,
 	WindowMsgData mData1, WindowMsgData mData2);
 
-GlobalData *TheGlobalData = nullptr;
 SubsystemInterfaceList *TheSubsystemList = nullptr;
 AudioManager *TheAudio = nullptr;
-GameLogic *TheGameLogic = nullptr;
 GameTextInterface *TheGameText = nullptr;
 GlobalLanguage *TheGlobalLanguageData = nullptr;
 IMEManagerInterface *TheIMEManager = nullptr;
@@ -830,7 +828,7 @@ bool exercise_w3d_layout_script()
 	SmokeGameWindowManager window_manager;
 	W3DFunctionLexicon function_lexicon;
 
-	GlobalData *old_global_data = TheGlobalData;
+	GlobalData *old_global_data = TheWritableGlobalData;
 	SubsystemInterfaceList *old_subsystem_list = TheSubsystemList;
 	NameKeyGenerator *old_name_keys = TheNameKeyGenerator;
 	FileSystem *old_file_system = TheFileSystem;
@@ -843,7 +841,7 @@ bool exercise_w3d_layout_script()
 	GameWindowManager *old_window_manager = TheWindowManager;
 	FunctionLexicon *old_function_lexicon = TheFunctionLexicon;
 
-	TheGlobalData = &global_data;
+	TheWritableGlobalData = &global_data;
 	TheSubsystemList = &subsystem_list;
 	TheNameKeyGenerator = &name_key_generator;
 	TheFileSystem = &file_system;
@@ -913,7 +911,7 @@ bool exercise_w3d_layout_script()
 	TheFileSystem = old_file_system;
 	TheNameKeyGenerator = old_name_keys;
 	TheSubsystemList = old_subsystem_list;
-	TheGlobalData = old_global_data;
+	TheWritableGlobalData = old_global_data;
 
 	return ok;
 }
@@ -1013,7 +1011,7 @@ bool exercise_w3d_archive_layout_script(const char *archive_path)
 	SmokeGameWindowManager window_manager;
 	W3DFunctionLexicon function_lexicon;
 
-	GlobalData *old_global_data = TheGlobalData;
+	GlobalData *old_global_data = TheWritableGlobalData;
 	SubsystemInterfaceList *old_subsystem_list = TheSubsystemList;
 	NameKeyGenerator *old_name_keys = TheNameKeyGenerator;
 	FileSystem *old_file_system = TheFileSystem;
@@ -1027,7 +1025,7 @@ bool exercise_w3d_archive_layout_script(const char *archive_path)
 	GameWindowManager *old_window_manager = TheWindowManager;
 	FunctionLexicon *old_function_lexicon = TheFunctionLexicon;
 
-	TheGlobalData = &global_data;
+	TheWritableGlobalData = &global_data;
 	TheSubsystemList = &subsystem_list;
 	TheNameKeyGenerator = &name_key_generator;
 	TheLocalFileSystem = &local_file_system;
@@ -1091,7 +1089,7 @@ bool exercise_w3d_archive_layout_script(const char *archive_path)
 	TheLocalFileSystem = old_local_file_system;
 	TheNameKeyGenerator = old_name_keys;
 	TheSubsystemList = old_subsystem_list;
-	TheGlobalData = old_global_data;
+	TheWritableGlobalData = old_global_data;
 
 	return ok;
 }
@@ -1135,7 +1133,7 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	SmokeGameWindowManager window_manager;
 	W3DFunctionLexicon function_lexicon;
 
-	GlobalData *old_global_data = TheGlobalData;
+	GlobalData *old_global_data = TheWritableGlobalData;
 	SubsystemInterfaceList *old_subsystem_list = TheSubsystemList;
 	GameEngine *old_game_engine = TheGameEngine;
 	NameKeyGenerator *old_name_keys = TheNameKeyGenerator;
@@ -1178,7 +1176,7 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	char *old_skirmish_entered_hook =
 		TheShellHookNames[SHELL_SCRIPT_HOOK_SKIRMISH_ENTERED_FROM_GAME];
 
-	TheGlobalData = &global_data;
+	TheWritableGlobalData = &global_data;
 	TheSubsystemList = &subsystem_list;
 	TheGameEngine = &game_engine;
 	TheNameKeyGenerator = &name_key_generator;
@@ -1962,7 +1960,7 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	TheNameKeyGenerator = old_name_keys;
 	TheGameEngine = old_game_engine;
 	TheSubsystemList = old_subsystem_list;
-	TheGlobalData = old_global_data;
+	TheWritableGlobalData = old_global_data;
 	TheShellHookNames[SHELL_SCRIPT_HOOK_MAIN_MENU_SKIRMISH_SELECTED] =
 		old_skirmish_shell_hook;
 	TheShellHookNames[SHELL_SCRIPT_HOOK_SKIRMISH_OPENED] =

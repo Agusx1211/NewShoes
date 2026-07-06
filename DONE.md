@@ -8639,6 +8639,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       test:startup-vertical`, `npm --prefix WebAssembly run
       verify:cnc-port-real-headers`, `npm --prefix WebAssembly run
       verify:cnc-port-weak-stubs`, and `git diff --check`.
+- [x] Remove the last named non-frontier mixed-header offender targets.
+      Deleted the duplicate `zh_gameclient_gui_input_shim_runtime` archive now
+      that the same source set already builds as
+      `zh_gameclient_gui_input_runtime` under the real PreRTS/header prelude.
+      Migrated `w3d-window-layout-script-smoke` to link that real GUI-input
+      archive, force the real prelude/original `GlobalData` and `GameLogic`
+      header switches, use the real GlobalData/debug owners, and reuse focused
+      real-layout INI support. The smoke's local singleton now writes
+      `TheWritableGlobalData` instead of owning shim `TheGlobalData`; its
+      focused GameLogic support keeps original object behavior by default and
+      enables a no-object path only for this layout smoke. After `ninja -t
+      cleandead`, a focused Ninja deps audit across
+      `w3d-window-layout-script-smoke`, `zh_gameclient_gui_input_runtime`, and
+      the removed shim runtime reports 0 audited shadow-header offender
+      objects. Verified with `ninja -C WebAssembly/build/wasm
+      w3d-window-layout-script-smoke`, `node
+      dist/w3d-window-layout-script-smoke.cjs` from `WebAssembly/`, `npm
+      --prefix WebAssembly run build:port`, `npm --prefix WebAssembly run
+      verify:cnc-port-real-headers`, `npm --prefix WebAssembly run
+      verify:cnc-port-weak-stubs`, the focused `ninja -t deps` offender audit,
+      and `git diff --check`.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an
