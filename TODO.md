@@ -1829,7 +1829,12 @@ residue and the next frontier.
       `PartitionManager`, `ThingFactory`, `ObjectCreationList`, `Drawable`,
       `Player`, `WeaponSet`, and update-module ownership; harness-test real
       attack orders and resulting damage/state changes.
-- [ ] Production: build structures/units, resources (supplies) flow.
+- [ ] Production: build structures/units, resources (supplies) flow. A live
+      skirmish e2e now proves selected `AmericaVehicleDozer`
+      `Command_ConstructAmericaBarracks` placement dispatches
+      `MSG_DOZER_CONSTRUCT` and creates a new local `AmericaBarracks`
+      structure object; keep this open for build completion, unit queues,
+      supply spending/income, and broader faction/build cases.
 - [ ] `ScriptEngine` runs map scripts.
 - [ ] Fixed-timestep simulation is **deterministic** (same seed → same result).
 - [ ] AI opponent plays a skirmish.

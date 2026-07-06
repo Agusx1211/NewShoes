@@ -3549,6 +3549,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `(1415,1885,18.75)` to `(1493.630,1893.000,18.75)`, a 79.0 world-unit
       delta, before the existing command-bar construction proof dispatched
       `MSG_DOZER_CONSTRUCT`.
+- [x] Prove live skirmish dozer construction creates a real structure object.
+      `input_select_e2e.mjs` now snapshots local structure drawables before the
+      command-bar click, clicks the original
+      `Command_ConstructAmericaBarracks` button, places through Win32 mouse
+      messages, requires the original `MSG_DOZER_CONSTRUCT` dispatch, then
+      polls `queryDrawables` for a newly-created local `AmericaBarracks`.
+      Verified with local Chromium:
+      `E2E_BROWSER_EXECUTABLE=/home/agusx1211/.cache/ms-playwright/chromium-1228/chrome-linux/chrome E2E_BROWSER_ARGS='--headless=new' node harness/input_select_e2e.mjs`.
+      The run created `AmericaBarracks#224` at screen `(759,360)`, world
+      `(1244.230,329.251,18.75)`, body health `1/1000`, and ended with
+      `SELECT-MOVE-COMMAND-BAR-AND-CONSTRUCTION-WORK`.
 - [x] Close the Fable command-bar in-flight follow-up. The Emscripten-only
       `FunctionLexicon::loadRuntimeTableForPort` now owns only the merged
       tables installed through that API, frees the previous injected table on

@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 /**
- * END-TO-END proof: click in a REAL loaded skirmish match actually SELECTS units.
+ * END-TO-END proof: real loaded skirmish input selects, moves, and constructs.
  *
  * Reuses the full boot flow from skirmish_start_smoke.mjs:
  *   mountArchives → realEngineInit → main-menu reveal → Single Player → Skirmish → Start
  *   → wait for GAME_SKIRMISH + inputEnabled + objectCount > 0.
  *
  * Then:
- *   1. Post a WM_LBUTTONDOWN → WM_MOUSEMOVE × 2 → WM_LBUTTONUP drag box-select
- *      over the central play area where the base sits.
- *   2. Step ~10 frames, call querySelection → report selectCount + selected ids/worldPos.
- *   3. If drag selects nothing, try a direct click at ~(640,250) and re-query.
+ *   1. Select a local object through Win32 mouse messages and querySelection.
+ *   2. Issue a map-ground move command through the original input path and
+ *      assert MSG_DO_MOVETO plus world-position delta.
+ *   3. Click a real command-bar build button, place the structure, and assert
+ *      MSG_DOZER_CONSTRUCT plus a newly-created local structure drawable.
  *   4. Capture screenshot to artifacts/screenshots/input-select-e2e.png.
  *
  * On errno=17/EEXIST wait 30s and retry up to 3x.
@@ -225,6 +226,46 @@ function chooseBuildCommandButton(entries) {
     button.command?.typeName === "GUI_COMMAND_PLAYER_UPGRADE" ||
     button.command?.typeName === "GUI_COMMAND_OBJECT_UPGRADE" ||
     button.command?.typeName === "GUI_COMMAND_PURCHASE_SCIENCE") ?? null;
+}
+
+function compactDrawable(drawable) {
+  if (drawable == null) {
+    return null;
+  }
+  return {
+    id: drawable.id ?? null,
+    name: drawable.name ?? null,
+    playerIndex: drawable.playerIndex ?? null,
+    localOwned: drawable.localOwned ?? null,
+    structure: drawable.structure ?? null,
+    hidden: drawable.hidden ?? null,
+    onScreen: drawable.onScreen ?? null,
+    screenPos: drawable.screenPos ?? null,
+    worldPos: drawable.worldPos ?? null,
+    body: drawable.body ?? null,
+  };
+}
+
+function localStructureMatches(drawable, templateName) {
+  return drawable?.localOwned === true &&
+    drawable?.structure === true &&
+    drawable?.name === templateName;
+}
+
+async function queryDrawablesChecked(page, label) {
+  const query = await rpc(page, "queryDrawables");
+  expect(query?.ok === true,
+    `${label} queryDrawables failed`,
+    {
+      ok: query?.ok,
+      aborted: query?.aborted,
+      abortMessage: query?.abortMessage,
+      result: query?.result,
+    });
+  expect(query.result?.ready === true,
+    `${label} queryDrawables was not ready`,
+    query.result);
+  return query;
 }
 
 function compactCommandPath(selectionResult) {
@@ -631,6 +672,65 @@ async function proveMoveOrder(page, activeFrame, results) {
   return settledSelection?.result ?? afterSelection?.result ?? selection.result;
 }
 
+async function proveStructureCreated(page, buildTemplate, beforeDrawablesQuery, results) {
+  console.error(`[input-select-e2e] waiting for constructed structure ${buildTemplate}`);
+  const maxFrames = parsePositiveInt("E2E_CONSTRUCTION_MAX_FRAMES", 900);
+  const frameChunk = parsePositiveInt("E2E_CONSTRUCTION_FRAME_CHUNK", 30);
+  const beforeMatches = (beforeDrawablesQuery?.result?.drawables ?? [])
+    .filter((drawable) => localStructureMatches(drawable, buildTemplate));
+  const beforeIds = new Set(beforeMatches.map((drawable) => drawable.id));
+
+  results.productionProof.buildTemplate = buildTemplate;
+  results.productionProof.beforeMatchingIds = [...beforeIds];
+  results.productionProof.beforeMatching = beforeMatches.map(compactDrawable);
+  results.productionProof.maxFrames = maxFrames;
+  results.productionProof.frameChunk = frameChunk;
+
+  let framesAdvanced = 0;
+  while (framesAdvanced <= maxFrames) {
+    const drawablesQuery = await queryDrawablesChecked(page, "construction proof");
+    const drawables = drawablesQuery.result?.drawables ?? [];
+    const matches = drawables.filter((drawable) =>
+      localStructureMatches(drawable, buildTemplate));
+    const newMatches = matches.filter((drawable) => !beforeIds.has(drawable.id));
+    const sample = {
+      framesAdvanced,
+      stats: drawablesQuery.result?.stats ?? null,
+      matchingCount: matches.length,
+      newMatchingCount: newMatches.length,
+      matching: matches.map(compactDrawable),
+    };
+    results.productionProof.samples.push(sample);
+    console.error(`[input-select-e2e] construction sample ${framesAdvanced}/${maxFrames}: ` +
+      `${buildTemplate} matches=${matches.length}, new=${newMatches.length}`);
+
+    if (newMatches.length > 0) {
+      const created = compactDrawable(newMatches[0]);
+      results.productionProof.ok = true;
+      results.productionProof.created = created;
+      results.productionProof.framesAdvanced = framesAdvanced;
+      results.productionProof.verdict = "STRUCTURE-OBJECT-CREATED";
+      console.error(`[input-select-e2e] construction proof created ${buildTemplate}#${created.id}`);
+      return results.productionProof;
+    }
+
+    if (framesAdvanced >= maxFrames) {
+      break;
+    }
+    const frames = Math.min(frameChunk, maxFrames - framesAdvanced);
+    await runSummary(page, frames, "construction proof wait");
+    framesAdvanced += frames;
+  }
+
+  expect(false,
+    "dozer construction dispatch did not create a visible local structure object",
+    {
+      buildTemplate,
+      beforeMatchingIds: [...beforeIds],
+      samples: results.productionProof.samples.slice(-10),
+    });
+}
+
 /**
  * Retry wrapper for extraction race (errno=17/EEXIST).
  */
@@ -676,6 +776,18 @@ async function main() {
       dispatchDeltaAfterPlacement: null,
       pendingAfterClick: null,
       placementAttempts: [],
+      verdict: null,
+    },
+    productionProof: {
+      ok: false,
+      buildTemplate: null,
+      beforeMatchingIds: [],
+      beforeMatching: [],
+      maxFrames: null,
+      frameChunk: null,
+      framesAdvanced: null,
+      created: null,
+      samples: [],
       verdict: null,
     },
     moveOrderProof: {
@@ -934,6 +1046,9 @@ async function main() {
       };
       console.error(`[input-select-e2e] clicking ${chosen.slot}: ${JSON.stringify(chosen.button.command)}`);
 
+      const beforeConstructionDrawables =
+        await queryDrawablesChecked(page, "before command-bar build");
+
       await clickButton(page, chosen.button, null,
         `command-bar ${chosen.slot} ${chosen.button.command?.name ?? "command"}`,
         null);
@@ -988,6 +1103,11 @@ async function main() {
             results.commandBarProof.afterPlacementCommandPath = placementPath;
             results.commandBarProof.dispatchDeltaAfterPlacement = delta;
             placementDispatched = true;
+            await proveStructureCreated(
+              page,
+              chosen.button.command.buildTemplate,
+              beforeConstructionDrawables,
+              results);
             break;
           }
           if (placementResult.modes?.pendingPlaceType == null) {
@@ -1019,9 +1139,17 @@ async function main() {
     const dragWorks = results.dragProof.selectCount > 0;
     const clickWorks = results.clickProof.selectCount > 0;
     const selectionWorks = dragWorks || clickWorks;
-    results.ok = selectionWorks && results.moveOrderProof.ok === true;
+    const constructionRequired =
+      results.commandBarProof.verdict === "COMMAND-BAR-BUILD-DISPATCHED" &&
+      results.productionProof.buildTemplate != null;
+    results.ok = selectionWorks &&
+      results.moveOrderProof.ok === true &&
+      (!constructionRequired || results.productionProof.ok === true);
 
-    if (selectionWorks && results.moveOrderProof.ok && results.commandBarProof.ok) {
+    if (selectionWorks && results.moveOrderProof.ok &&
+        results.commandBarProof.ok && results.productionProof.ok) {
+      results.verdict = `SELECT-MOVE-COMMAND-BAR-AND-CONSTRUCTION-WORK (${results.commandBarProof.verdict})`;
+    } else if (selectionWorks && results.moveOrderProof.ok && results.commandBarProof.ok) {
       results.verdict = `SELECT-MOVE-AND-COMMAND-BAR-WORK (${results.commandBarProof.verdict})`;
     } else if (selectionWorks && results.moveOrderProof.ok) {
       results.verdict = "SELECT-AND-MOVE-WORK-COMMAND-BAR-FAILS";
@@ -1040,6 +1168,7 @@ async function main() {
     console.error(`[input-select-e2e] Click proof: selectCount=${results.clickProof.selectCount}, selectedCount=${results.clickProof.selectedCount}`);
     console.error(`[input-select-e2e] Move proof: ${JSON.stringify(results.moveOrderProof)}`);
     console.error(`[input-select-e2e] Command proof: ${JSON.stringify(results.commandBarProof)}`);
+    console.error(`[input-select-e2e] Production proof: ${JSON.stringify(results.productionProof)}`);
     console.error(`[input-select-e2e] Screenshot: ${results.screenshot}`);
     console.error(`[input-select-e2e] VERDICT: ${results.verdict}`);
 
