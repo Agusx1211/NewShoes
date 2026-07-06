@@ -2385,6 +2385,56 @@ and then start with the PROFILE, not with any individual fix.
       `sortedDrawTextureUniformMs` 1.784 ms/frame. Next pass should split or
       cache the repeated render/material/light and texture-layout uniform data
       proven by this profile without changing original sorted draw order.
+- [ ] **Batch the 2D GUI/menu draws — the menu is the real shell-map
+      bottleneck, not the 3D scene.** Owner-observed: on the shell map the
+      first ~seconds render at ~30fps with no menu widgets, then FPS drops to
+      ~8fps *the instant the menu entries render*; during menu fade-out
+      transitions FPS shoots back up (uncapped, because the render load
+      momentarily lifts). So the dominant shell-map cost is the 2D GUI, not
+      particles/terrain. Mechanism: every `W3DDisplay::draw*` primitive
+      (`drawImage`/`drawFillRect`/`drawRect`/`drawLine`, W3DDisplay.cpp:2235+)
+      does `m_2DRender->Reset(); Add_*(one primitive); m_2DRender->Render();` —
+      **one full `Render2DClass::Render()` flush per primitive**. Each
+      `Render()` (render2d.cpp:604) does a full state setup (Set_Viewport/
+      Texture/Material/World+View identity/Transform(PROJECTION)/Vertex+Index
+      buffer/Shader) + draw = one wasm↔JS `browser_draw_indexed` crossing with
+      full matrix/uniform marshaling (same `sortedDrawUniformMs` cost path).
+      Each gadget draws several primitives (a push button ≈ border + fill +
+      button image + overlays + border rect + text ≈ 5-8 `Render()` calls), so
+      a full menu = **hundreds of per-primitive crossings/frame** → 8fps. These
+      go **direct to `DX8Wrapper::Draw`, NOT through the sorting pool**, so they
+      were never in the profiled `SortingRenderer.pool.draw` bucket — they hid
+      in the un-split `browserDrawIndexed` total, which is why the marker-based
+      profiles under-attributed the GUI (the owner's fade-the-menu test is
+      better evidence). Fix: `Render2DClass` already supports batching (Add many
+      quads, `Render()` once); the `W3DDisplay` wrappers defeat it by flushing
+      per primitive. Accumulate GUI primitives across the whole GUI pass into
+      per-texture/per-shader batches and flush a handful of `Render()` calls at
+      the end instead of hundreds. 2D UI has explicit author-controlled z-order
+      (no depth-sort constraint), so it is far more batchable than the 3D sorted
+      path — likely the biggest, cheapest single shell-map win. First add a
+      per-frame counter of `Render2DClass::Render()` calls for the hard number,
+      then batch and re-measure the menu-vs-no-menu FPS delta. (by Claude)
+- [ ] **Try a per-frame draw command buffer to collapse per-draw wasm↔JS
+      crossings (structural complement to the per-draw uniform caching above).**
+      Profiles prove the sorted cost is *submission* (`sortedDrawUniformMs`
+      ~7.7 ms, `browserDrawIndexed`), not the sort (~0.01 ms) or the GL draw
+      (~0.02 ms): it is the per-draw EM_JS boundary crossing (27-arg call, ~5
+      matrix copies + state block, ~500/frame). The W3D `SortingRenderer` is
+      designed around D3D8's "thousands of tiny state-changing draws are free"
+      (transparent polys are depth-sorted → can't batch by material → ~1
+      draw/particle); D3D8 ate that, the wasm↔JS boundary does not, so cost
+      scales linearly with particle count — the root of the shell-map particle
+      FPS death-spiral (goal is to *handle* the particles, NOT cull via
+      dynamic-LOD `m_dynamicParticleSkipMask`). Idea: have
+      `DX8Wrapper::Draw`/`browser_draw_indexed` *append* each draw (indices into
+      the shared dynamic VB + a state/uniform token) into a wasm-heap command
+      list, then cross to JS **once per frame** and replay into WebGL. WebGL
+      still issues N `drawElements` (cheap), but you kill N boundary crossings +
+      ~N×5 matrix allocations. Attacks the *number* of crossings; the uniform
+      cache attacks *cost per* crossing — they compose (and the same buffer
+      fixes the GUI item above). Verify against shell-map goldens; re-measure
+      `sortedDrawUniformMs`/`browserDrawIndexed` + particle-count-vs-FPS. (by Claude)
 - [ ] **Split the real `W3DWater.render.waterTracks` bucket**: the latest
       Mac Chrome/Metal shell-map profile sampled water tracks at 10.9 ms,
       second only to sorted draw replay and ahead of heightmap tile passes on
