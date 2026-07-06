@@ -29,7 +29,7 @@
 //     whatever the browser last observed.
 //
 // This smoke links the same original Win32Mouse translation unit
-// (zh_win32_mouse) used by the cnc-port WndProc harness; it does NOT touch the
+// (zh_win32_mouse_browser_real) used by the browser WndProc harness; it does NOT touch the
 // browser keyboard bridge or win32_keyboard_smoke (owned by another worktree).
 
 #include <iostream>
@@ -38,13 +38,15 @@
 
 #include <windows.h>
 
+#include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
 #include "GameClient/Mouse.h"
 #include "Win32Device/GameClient/Win32Mouse.h"
 
 HINSTANCE ApplicationHInstance = nullptr;
 HWND ApplicationHWnd = nullptr;
-GlobalData *TheGlobalData = nullptr;
+class DisplayStringManager;
+DisplayStringManager *TheDisplayStringManager = nullptr;
 SubsystemInterfaceList *TheSubsystemList = nullptr;
 Win32Mouse *TheWin32Mouse = nullptr;
 
@@ -83,8 +85,8 @@ bool exercise_redraw_mode_decision()
 	{
 		GlobalData globalData;
 		globalData.m_winCursors = TRUE;
-		GlobalData *oldGlobalData = TheGlobalData;
-		TheGlobalData = &globalData;
+		GlobalData *oldGlobalData = TheWritableGlobalData;
+		TheWritableGlobalData = &globalData;
 
 		SmokeWin32Mouse mouse;
 		ok = expect(mouse.getRedrawMode() == Mouse::RM_WINDOWS,
@@ -96,14 +98,14 @@ bool exercise_redraw_mode_decision()
 		ok = expect(mouse.getMouseCursor() == Mouse::ARROW,
 			"Mouse should default to ARROW cursor") && ok;
 
-		TheGlobalData = oldGlobalData;
+		TheWritableGlobalData = oldGlobalData;
 	}
 
 	{
 		GlobalData globalData;
 		globalData.m_winCursors = FALSE;
-		GlobalData *oldGlobalData = TheGlobalData;
-		TheGlobalData = &globalData;
+		GlobalData *oldGlobalData = TheWritableGlobalData;
+		TheWritableGlobalData = &globalData;
 
 		SmokeWin32Mouse mouse;
 		ok = expect(mouse.getRedrawMode() == Mouse::RM_W3D,
@@ -111,7 +113,7 @@ bool exercise_redraw_mode_decision()
 			"TheGlobalData->m_winCursors is false — the browser-port "
 			"engine-drawn cursor contract") && ok;
 
-		TheGlobalData = oldGlobalData;
+		TheWritableGlobalData = oldGlobalData;
 	}
 
 	return ok;
@@ -152,8 +154,8 @@ bool exercise_cursor_handle_lifecycle()
 
 	GlobalData globalData;
 	globalData.m_winCursors = TRUE;
-	GlobalData *oldGlobalData = TheGlobalData;
-	TheGlobalData = &globalData;
+	GlobalData *oldGlobalData = TheWritableGlobalData;
+	TheWritableGlobalData = &globalData;
 
 	SmokeWin32Mouse mouse;
 
@@ -223,7 +225,7 @@ bool exercise_cursor_handle_lifecycle()
 		"Win32Mouse::setCursor(NONE) should clear the browser Win32 "
 		"cursor handle once focus is restored") && ok;
 
-	TheGlobalData = oldGlobalData;
+	TheWritableGlobalData = oldGlobalData;
 	WasmWin32Input::Reset();
 	return ok;
 }
@@ -232,10 +234,12 @@ bool exercise_cursor_handle_lifecycle()
 
 int main()
 {
+	initMemoryManager();
 	bool ok = true;
 	ok = exercise_redraw_mode_decision() && ok;
 	ok = exercise_win32_capture_bookkeeping() && ok;
 	ok = exercise_cursor_handle_lifecycle() && ok;
+	shutdownMemoryManager();
 
 	if (!ok) {
 		std::cerr << "win32-mouse-cursor-smoke: FAILED\n";

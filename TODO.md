@@ -290,13 +290,18 @@ residue and the next frontier.
       narrow real-layout INI/GameLogic support. After `ninja -t cleandead`,
       the focused audit for `w3d-window-layout-script-smoke`,
       `zh_gameclient_gui_input_runtime`, and the removed shim runtime reports
-      0 audited shadow-header offender objects. Remaining cleanup: audit and
-      delete the shadow shim class headers/bodies once no linked or
-      compile-only target needs them, and migrate or retire any future legacy
-      target that still depends on them. This is the same hazard class as the
-      confirmed d6d3b79 ChallengeGenerals stack corruption and the fixed
-      edgeMapperApply aggregate-smoke incident above — fix it once at the root
-      instead of per-incident.
+      0 audited shadow-header offender objects. The next burn-down migrated
+      `win32-mouse-smoke`,
+      `win32-mouse-cursor-smoke`, and `gamewindow-input-smoke` off shim
+      `PreRTS.h` and onto the real-header `zh_win32_mouse_browser_real` path,
+      sharing the already-real `zh_gameclient_utility` closure plus original
+      GlobalData/debug owners. Remaining cleanup: audit and delete the shadow
+      shim class headers/bodies once no linked or compile-only target needs
+      them, and migrate or retire any future legacy target that still depends
+      on them. This is the same hazard class as the confirmed d6d3b79
+      ChallengeGenerals stack corruption and the fixed edgeMapperApply
+      aggregate-smoke incident above — fix it once at the root instead of
+      per-incident.
 - [ ] Real-lifecycle residue: browser `ReleaseCrash`/`_exit` does not
       terminate the wasm runtime (teardown semantics differ from Windows);
       `TheVersion` is left null; `GameEngine::execute()` is stepped by

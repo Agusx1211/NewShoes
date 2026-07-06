@@ -8660,6 +8660,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       verify:cnc-port-real-headers`, `npm --prefix WebAssembly run
       verify:cnc-port-weak-stubs`, the focused `ninja -t deps` offender audit,
       and `git diff --check`.
+- [x] Migrate the Win32 mouse/input smokes to the real-header mouse runtime.
+      `win32-mouse-smoke`, `win32-mouse-cursor-smoke`, and
+      `gamewindow-input-smoke` now force `wasm_prerts_real.h`, define the
+      original `GlobalData`/`GameLogic` header switches, and link
+      `zh_win32_mouse_browser_real` plus the same real GlobalData/debug and
+      narrow INI support used by `gameclient-utility-smoke`. The focused smoke
+      fixtures now write `TheWritableGlobalData`; the cursor smoke initializes
+      the original memory manager before constructing real `GlobalData`.
+      `zh_win32_mouse_browser_real` now shares the already-real
+      `zh_gameclient_utility` closure instead of the smaller GUI-input archive,
+      matching the symbols these smokes already exercised without returning to
+      shim `PreRTS.h`. Verified with focused Ninja builds for the three smokes,
+      a focused `ninja -t deps` audit across the migrated smoke objects and
+      `zh_win32_mouse_browser_real` reporting 0 audited shadow-header offenders,
+      `node WebAssembly/dist/win32-mouse-smoke.cjs`, `node
+      WebAssembly/dist/win32-mouse-cursor-smoke.cjs`, `node
+      WebAssembly/dist/gamewindow-input-smoke.cjs`, `npm --prefix WebAssembly
+      run verify:cnc-port-real-headers`, `npm --prefix WebAssembly run
+      verify:cnc-port-weak-stubs`, and `npm --prefix WebAssembly run
+      build:port`.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an

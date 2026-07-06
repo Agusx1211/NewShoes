@@ -12,7 +12,7 @@
 
 HINSTANCE ApplicationHInstance = nullptr;
 HWND ApplicationHWnd = nullptr;
-GlobalData *TheGlobalData = nullptr;
+DisplayStringManager *TheDisplayStringManager = nullptr;
 SubsystemInterfaceList *TheSubsystemList = nullptr;
 Win32Mouse *TheWin32Mouse = nullptr;
 GameClient *TheGameClient = nullptr;
@@ -213,10 +213,10 @@ bool exercise_mouse_stream_messages(SmokeWin32Mouse &mouse)
 		GlobalData globalData;
 		SmokeKeyboard keyboard;
 
-		GlobalData *oldGlobalData = TheGlobalData;
+		GlobalData *oldGlobalData = TheWritableGlobalData;
 		Keyboard *oldKeyboard = TheKeyboard;
 		MessageStream *oldMessageStream = TheMessageStream;
-		TheGlobalData = &globalData;
+		TheWritableGlobalData = &globalData;
 		TheKeyboard = &keyboard;
 
 		{
@@ -364,7 +364,7 @@ bool exercise_mouse_stream_messages(SmokeWin32Mouse &mouse)
 
 		TheMessageStream = oldMessageStream;
 		TheKeyboard = oldKeyboard;
-		TheGlobalData = oldGlobalData;
+		TheWritableGlobalData = oldGlobalData;
 	}
 	return ok;
 }
@@ -376,13 +376,13 @@ bool exercise_engine_global_mouse_stream_messages(SmokeWin32Mouse &mouse)
 		GlobalData globalData;
 		SmokeKeyboard keyboard;
 
-		GlobalData *oldGlobalData = TheGlobalData;
+		GlobalData *oldGlobalData = TheWritableGlobalData;
 		Keyboard *oldKeyboard = TheKeyboard;
 		MessageStream *oldMessageStream = TheMessageStream;
 		Mouse *oldMouse = TheMouse;
 		Win32Mouse *oldWin32Mouse = TheWin32Mouse;
 
-		TheGlobalData = &globalData;
+		TheWritableGlobalData = &globalData;
 		TheKeyboard = &keyboard;
 		TheMouse = &mouse;
 		TheWin32Mouse = &mouse;
@@ -546,7 +546,7 @@ bool exercise_engine_global_mouse_stream_messages(SmokeWin32Mouse &mouse)
 		TheWin32Mouse = oldWin32Mouse;
 		TheMouse = oldMouse;
 		TheKeyboard = oldKeyboard;
-		TheGlobalData = oldGlobalData;
+		TheWritableGlobalData = oldGlobalData;
 	}
 	return ok;
 }
@@ -559,14 +559,14 @@ bool exercise_engine_global_mouse_with_gameclient_frame_source(SmokeWin32Mouse &
 		SmokeKeyboard keyboard;
 		SmokeGameClient gameClient;
 
-		GlobalData *oldGlobalData = TheGlobalData;
+		GlobalData *oldGlobalData = TheWritableGlobalData;
 		Keyboard *oldKeyboard = TheKeyboard;
 		MessageStream *oldMessageStream = TheMessageStream;
 		Mouse *oldMouse = TheMouse;
 		Win32Mouse *oldWin32Mouse = TheWin32Mouse;
 		GameClient *oldGameClient = TheGameClient;
 
-		TheGlobalData = &globalData;
+		TheWritableGlobalData = &globalData;
 		TheKeyboard = &keyboard;
 		TheMouse = &mouse;
 		TheWin32Mouse = &mouse;
@@ -629,7 +629,7 @@ bool exercise_engine_global_mouse_with_gameclient_frame_source(SmokeWin32Mouse &
 		TheWin32Mouse = oldWin32Mouse;
 		TheMouse = oldMouse;
 		TheKeyboard = oldKeyboard;
-		TheGlobalData = oldGlobalData;
+		TheWritableGlobalData = oldGlobalData;
 	}
 	return ok;
 }

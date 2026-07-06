@@ -18,7 +18,8 @@
 
 HINSTANCE ApplicationHInstance = nullptr;
 HWND ApplicationHWnd = nullptr;
-GlobalData *TheGlobalData = nullptr;
+class DisplayStringManager;
+DisplayStringManager *TheDisplayStringManager = nullptr;
 SubsystemInterfaceList *TheSubsystemList = nullptr;
 Win32Mouse *TheWin32Mouse = nullptr;
 
@@ -255,14 +256,14 @@ bool exercise_window_translator_click()
 	SmokeGameWindowManager manager;
 	SmokeWin32Mouse mouse;
 
-	GlobalData *oldGlobalData = TheGlobalData;
+	GlobalData *oldGlobalData = TheWritableGlobalData;
 	CommandList *oldCommandList = TheCommandList;
 	MessageStream *oldMessageStream = TheMessageStream;
 	GameWindowManager *oldWindowManager = TheWindowManager;
 	Mouse *oldMouse = TheMouse;
 	Win32Mouse *oldWin32Mouse = TheWin32Mouse;
 
-	TheGlobalData = &globalData;
+	TheWritableGlobalData = &globalData;
 	TheCommandList = &commandList;
 	TheMessageStream = &stream;
 	TheWindowManager = &manager;
@@ -307,7 +308,7 @@ bool exercise_window_translator_click()
 	TheWindowManager = oldWindowManager;
 	TheMessageStream = oldMessageStream;
 	TheCommandList = oldCommandList;
-	TheGlobalData = oldGlobalData;
+	TheWritableGlobalData = oldGlobalData;
 
 	return ok;
 }
@@ -322,14 +323,14 @@ bool exercise_push_button_widget_click()
 	SmokeGameWindowManager manager;
 	SmokeWin32Mouse mouse;
 
-	GlobalData *oldGlobalData = TheGlobalData;
+	GlobalData *oldGlobalData = TheWritableGlobalData;
 	CommandList *oldCommandList = TheCommandList;
 	MessageStream *oldMessageStream = TheMessageStream;
 	GameWindowManager *oldWindowManager = TheWindowManager;
 	Mouse *oldMouse = TheMouse;
 	Win32Mouse *oldWin32Mouse = TheWin32Mouse;
 
-	TheGlobalData = &globalData;
+	TheWritableGlobalData = &globalData;
 	TheCommandList = &commandList;
 	TheMessageStream = &stream;
 	TheWindowManager = &manager;
@@ -409,7 +410,7 @@ bool exercise_push_button_widget_click()
 	TheWindowManager = oldWindowManager;
 	TheMessageStream = oldMessageStream;
 	TheCommandList = oldCommandList;
-	TheGlobalData = oldGlobalData;
+	TheWritableGlobalData = oldGlobalData;
 
 	return ok;
 }
@@ -425,7 +426,7 @@ bool exercise_mouse_stream_to_window_translator_click()
 	SmokeGameWindowManager manager;
 	SmokeWin32Mouse mouse;
 
-	GlobalData *oldGlobalData = TheGlobalData;
+	GlobalData *oldGlobalData = TheWritableGlobalData;
 	Keyboard *oldKeyboard = TheKeyboard;
 	CommandList *oldCommandList = TheCommandList;
 	MessageStream *oldMessageStream = TheMessageStream;
@@ -433,7 +434,7 @@ bool exercise_mouse_stream_to_window_translator_click()
 	Mouse *oldMouse = TheMouse;
 	Win32Mouse *oldWin32Mouse = TheWin32Mouse;
 
-	TheGlobalData = &globalData;
+	TheWritableGlobalData = &globalData;
 	TheKeyboard = &keyboard;
 	TheCommandList = &commandList;
 	TheMessageStream = &stream;
@@ -504,7 +505,7 @@ bool exercise_mouse_stream_to_window_translator_click()
 	TheMessageStream = oldMessageStream;
 	TheCommandList = oldCommandList;
 	TheKeyboard = oldKeyboard;
-	TheGlobalData = oldGlobalData;
+	TheWritableGlobalData = oldGlobalData;
 
 	return ok;
 }
