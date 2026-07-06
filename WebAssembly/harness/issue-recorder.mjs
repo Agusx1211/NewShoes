@@ -425,9 +425,10 @@ async function queryServerBuildInfo() {
 
 async function collectBuildAssets() {
   const base = window.location.href;
+  const selectedDistDir = selectedCncPortDistDir();
   const urls = [
-    "../dist/cnc-port.wasm",
-    "../dist/cnc-port.js",
+    `../${selectedDistDir}/cnc-port.wasm`,
+    `../${selectedDistDir}/cnc-port.js`,
     "./bridge.js",
     "./play.mjs",
     "./issue-recorder.mjs",
@@ -443,10 +444,26 @@ async function collectBuildAssets() {
     return Number.isFinite(ms) ? Math.max(latest, ms) : latest;
   }, 0);
   return {
+    distDir: selectedDistDir,
     assets,
     server,
     latestLastModified: latestMs > 0 ? new Date(latestMs).toISOString() : null,
   };
+}
+
+function validCncPortDistDir(value) {
+  return typeof value === "string" && /^dist(?:[-_][A-Za-z0-9_-]+)?$/.test(value);
+}
+
+function selectedCncPortDistDir() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const fallback = window.location.pathname.endsWith("/play.html") ? "dist-release" : "dist";
+    const value = params.get("dist") || fallback;
+    return validCncPortDistDir(value) ? value : fallback;
+  } catch {
+    return "dist-release";
+  }
 }
 
 function collectBrowserMetadata(canvas) {

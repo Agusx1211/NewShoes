@@ -361,6 +361,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       WebAssembly/harness/smoke.mjs`, and `node
       WebAssembly/tools/run_startup_vertical_smoke.mjs`. The separate
       Release/perf deployment/re-measurement TODO remains open.
+- [x] Switch the human `harness/play.html` path to the optimized release
+      runtime by default and keep it playable on the Mac. The bridge and issue
+      recorder now select `dist-release` for `play.html` unless `?dist=...`
+      overrides it, the release build uses native wasm exceptions and
+      `ASSERTIONS=0`, and `play.mjs` defaults to the static main-menu path
+      while the Release shell-map `GAME_SHELL` load remains an open
+      follow-up. Verified `npm --prefix WebAssembly run build:port:release`,
+      `npm --prefix WebAssembly run build:port`, JS syntax checks, and Mac M4
+      Chrome/Metal `harness/play.html?autostart=1`: `moduleDistDir` was
+      `dist-release`, `TheShell` reached `Menus/MainMenu.wnd`,
+      `loadingMap=false`, and screenshot
+      `WebAssembly/artifacts/screenshots/play-default-dist-release-main-menu.png`
+      showed the interactive main menu.
 ### Libraries (compile as-is where possible)
 - [x] `Compression/EAC` BTree, Huff, and RefPack codecs compile from original
       source and round-trip smoke runs under wasm.

@@ -79,6 +79,18 @@
 #include "GameClient/Line2D.h"
 #include "GameClient/ControlBar.h"
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_game_logic_step(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_PARTITION_STEP(name) \
+	do { \
+		if (cnc_port_note_game_logic_step) { \
+			cnc_port_note_game_logic_step(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_PARTITION_STEP(name) do { } while (0)
+#endif
+
 #ifdef _DEBUG
 //#include "GameClient/InGameUI.h"	// for debugHints
 #include "Common/PlayerList.h"
@@ -3692,15 +3704,21 @@ Bool PartitionManager::isColliding( const Object *a, const Object *b ) const
 //-----------------------------------------------------------------------------
 SimpleObjectIterator *PartitionManager::iterateAllObjects(PartitionFilter **filters)
 {
+	CNC_PORT_NOTE_PARTITION_STEP("PartitionManager.iterateAllObjects.entry");
 	MemoryPoolObjectHolder iterHolder;
+	CNC_PORT_NOTE_PARTITION_STEP("PartitionManager.iterateAllObjects.new.before");
 	SimpleObjectIterator *iter = newInstance(SimpleObjectIterator);
+	CNC_PORT_NOTE_PARTITION_STEP("PartitionManager.iterateAllObjects.new.after");
 	iterHolder.hold(iter);
+	CNC_PORT_NOTE_PARTITION_STEP("PartitionManager.iterateAllObjects.hold.after");
 
 	// no distance constraints; we're gonna have to process 'em all anyway,
 	// so go thru in the fastest way we know how.
 	PartitionData *mod, *nextMod;
+	CNC_PORT_NOTE_PARTITION_STEP("PartitionManager.iterateAllObjects.loop.before");
 	for( mod = m_moduleList; mod; mod = nextMod )
 	{
+		CNC_PORT_NOTE_PARTITION_STEP("PartitionManager.iterateAllObjects.module");
 		nextMod = mod->getNext();
 		Object *obj = mod->getObject();
 		if (obj && filtersAllow(filters, obj))
@@ -3708,8 +3726,10 @@ SimpleObjectIterator *PartitionManager::iterateAllObjects(PartitionFilter **filt
 			iter->insert( obj );
 		}
 	}
+	CNC_PORT_NOTE_PARTITION_STEP("PartitionManager.iterateAllObjects.loop.after");
 
 	iterHolder.release();
+	CNC_PORT_NOTE_PARTITION_STEP("PartitionManager.iterateAllObjects.release.after");
 	return iter;
 }
 

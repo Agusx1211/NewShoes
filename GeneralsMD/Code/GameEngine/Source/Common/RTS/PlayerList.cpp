@@ -60,6 +60,18 @@
 #include "GameLogic/SidesList.h"
 #include "GameNetwork/NetworkDefs.h"
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_game_logic_step(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_PLAYER_LIST_STEP(name) \
+	do { \
+		if (cnc_port_note_game_logic_step) { \
+			cnc_port_note_game_logic_step(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_PLAYER_LIST_STEP(name) do { } while (0)
+#endif
+
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -74,10 +86,16 @@ PlayerList::PlayerList() :
 	m_local(NULL),
 	m_playerCount(0)
 {
+	CNC_PORT_NOTE_PLAYER_LIST_STEP("PlayerList.ctor.entry");
 	// we only allocate a few of these, so don't bother pooling 'em
-	for (Int i = 0; i < MAX_PLAYER_COUNT; i++)
+	for (Int i = 0; i < MAX_PLAYER_COUNT; i++) {
+		CNC_PORT_NOTE_PLAYER_LIST_STEP("PlayerList.ctor.player.new.before");
 		m_players[ i ] = NEW Player( i );
+		CNC_PORT_NOTE_PLAYER_LIST_STEP("PlayerList.ctor.player.new.after");
+	}
+	CNC_PORT_NOTE_PLAYER_LIST_STEP("PlayerList.ctor.init.before");
 	init();
+	CNC_PORT_NOTE_PLAYER_LIST_STEP("PlayerList.ctor.init.after");
 }
 
 //-----------------------------------------------------------------------------
@@ -238,14 +256,22 @@ void PlayerList::newGame()
 //-----------------------------------------------------------------------------
 void PlayerList::init()
 {
+	CNC_PORT_NOTE_PLAYER_LIST_STEP("PlayerList.init.entry");
 	m_playerCount = 1;
+	CNC_PORT_NOTE_PLAYER_LIST_STEP("PlayerList.init.neutral.before");
 	m_players[0]->init(NULL);
+	CNC_PORT_NOTE_PLAYER_LIST_STEP("PlayerList.init.neutral.after");
 
-	for (int i = 1; i < MAX_PLAYER_COUNT; i++)
+	for (int i = 1; i < MAX_PLAYER_COUNT; i++) {
+		CNC_PORT_NOTE_PLAYER_LIST_STEP("PlayerList.init.player.before");
 		m_players[i]->init(NULL);
+		CNC_PORT_NOTE_PLAYER_LIST_STEP("PlayerList.init.player.after");
+	}
 
 	// call setLocalPlayer so that becomingLocalPlayer() gets called appropriately
+	CNC_PORT_NOTE_PLAYER_LIST_STEP("PlayerList.init.setLocal.before");
 	setLocalPlayer(m_players[0]);
+	CNC_PORT_NOTE_PLAYER_LIST_STEP("PlayerList.init.complete");
 
 }
 
@@ -490,4 +516,3 @@ void PlayerList::loadPostProcess( void )
 {
 
 }  // end postProcessLoad
-

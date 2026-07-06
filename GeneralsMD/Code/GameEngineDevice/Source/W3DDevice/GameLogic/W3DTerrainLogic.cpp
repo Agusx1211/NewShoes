@@ -41,6 +41,18 @@
 #include "GameLogic/AI.h"
 #include "GameLogic/AIPathfind.h"
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_game_logic_step(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_TERRAIN_RESET_STEP(name) \
+	do { \
+		if (cnc_port_note_game_logic_step) { \
+			cnc_port_note_game_logic_step(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_TERRAIN_RESET_STEP(name) do { } while (0)
+#endif
+
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -85,12 +97,17 @@ void W3DTerrainLogic::init( void )
 //-------------------------------------------------------------------------------------------------
 void W3DTerrainLogic::reset( void )
 {
+	CNC_PORT_NOTE_TERRAIN_RESET_STEP("W3DTerrainLogic.reset.entry");
+	CNC_PORT_NOTE_TERRAIN_RESET_STEP("W3DTerrainLogic.reset.base.before");
 	TerrainLogic::reset();
+	CNC_PORT_NOTE_TERRAIN_RESET_STEP("W3DTerrainLogic.reset.base.after");
 	m_mapDX = 0;
 	m_mapDY = 0;
 	m_mapMinZ = 0;
 	m_mapMaxZ = 1;
+	CNC_PORT_NOTE_TERRAIN_RESET_STEP("W3DTerrainLogic.reset.freeMapObjects.before");
 	WorldHeightMap::freeListOfMapObjects();
+	CNC_PORT_NOTE_TERRAIN_RESET_STEP("W3DTerrainLogic.reset.freeMapObjects.after");
 }  // end reset
 
 //-------------------------------------------------------------------------------------------------

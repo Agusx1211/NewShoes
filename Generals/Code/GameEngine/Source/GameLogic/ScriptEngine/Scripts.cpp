@@ -199,7 +199,10 @@ void ScriptList::reset(void)
 	{
 		ScriptList* pList = TheSidesList->getSideInfo(i)->getScriptList();
 		TheSidesList->getSideInfo(i)->setScriptList(NULL);
-		pList->deleteInstance();
+		if (pList)
+		{
+			pList->deleteInstance();
+		}
 	}
 }
 

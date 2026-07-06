@@ -10,8 +10,8 @@ else
 fi
 build_type="${BUILD_TYPE:-Debug}"
 
-dist_dir="dist"
-if [[ "${build_type}" == "Release" ]]; then
+dist_dir="${CNC_DIST_DIR:-dist}"
+if [[ "${build_type}" == "Release" && -z "${CNC_DIST_DIR:-}" ]]; then
   dist_dir="dist-release"
 fi
 
@@ -31,12 +31,18 @@ cmake_args=(
   -DCMAKE_BUILD_TYPE="${build_type}"
 )
 
-if [[ "${build_type}" == "Release" ]]; then
+if [[ "${build_type}" == "Release" || -n "${CNC_DIST_DIR:-}" ]]; then
   cmake_args+=("-DCNC_DIST_DIR=${dist_dir}")
 fi
 
 if [[ -n "${CMAKE_CXX_FLAGS:-}" ]]; then
   cmake_args+=("-DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}")
+fi
+
+if [[ "${WASM_EXCEPTIONS:-0}" == "1" || "${WASM_EXCEPTIONS:-0}" == "ON" || "${WASM_EXCEPTIONS:-0}" == "true" ]]; then
+  cmake_args+=("-DCNC_WASM_NATIVE_EXCEPTIONS=ON")
+else
+  cmake_args+=("-DCNC_WASM_NATIVE_EXCEPTIONS=OFF")
 fi
 
 if [[ -z "${CMAKE_GENERATOR:-}" ]] && command -v ninja >/dev/null 2>&1; then

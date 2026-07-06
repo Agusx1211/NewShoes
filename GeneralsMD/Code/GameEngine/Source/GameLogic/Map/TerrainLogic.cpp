@@ -60,6 +60,18 @@
 #include "WWMath/plane.h"
 #include "WWMath/tri.h"
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_game_logic_step(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_TERRAIN_LOGIC_STEP(name) \
+	do { \
+		if (cnc_port_note_game_logic_step) { \
+			cnc_port_note_game_logic_step(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_TERRAIN_LOGIC_STEP(name) do { } while (0)
+#endif
+
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -1019,10 +1031,18 @@ void TerrainLogic::init( void )
 void TerrainLogic::reset( void )
 {
 
+	CNC_PORT_NOTE_TERRAIN_LOGIC_STEP("TerrainLogic.reset.entry");
+	CNC_PORT_NOTE_TERRAIN_LOGIC_STEP("TerrainLogic.reset.deleteWaypoints.before");
 	deleteWaypoints();
+	CNC_PORT_NOTE_TERRAIN_LOGIC_STEP("TerrainLogic.reset.deleteWaypoints.after");
+	CNC_PORT_NOTE_TERRAIN_LOGIC_STEP("TerrainLogic.reset.deleteBridges.before");
 	deleteBridges();
+	CNC_PORT_NOTE_TERRAIN_LOGIC_STEP("TerrainLogic.reset.deleteBridges.after");
+	CNC_PORT_NOTE_TERRAIN_LOGIC_STEP("TerrainLogic.reset.deleteTriggers.before");
 	PolygonTrigger::deleteTriggers();
+	CNC_PORT_NOTE_TERRAIN_LOGIC_STEP("TerrainLogic.reset.deleteTriggers.after");
 	m_numWaterToUpdate = 0;
+	CNC_PORT_NOTE_TERRAIN_LOGIC_STEP("TerrainLogic.reset.complete");
 
 }  // end reset
 

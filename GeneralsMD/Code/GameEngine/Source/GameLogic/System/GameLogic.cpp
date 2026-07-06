@@ -425,33 +425,54 @@ GameLogic::~GameLogic()
 void GameLogic::init( void )
 {
 
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.entry");
 	setFPMode();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.setFPMode.after");
 
 	/// @todo Clear object and destroy lists
 	setDefaults( FALSE );
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.setDefaults.after");
 
 	// create the partition manager
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.partition.new.before");
 	ThePartitionManager = NEW PartitionManager;
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.partition.new.after");
 	ThePartitionManager->init();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.partition.init.after");
 	ThePartitionManager->setName("ThePartitionManager");
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.partition.setName.after");
 
 
 	// Create system for holding deleted objects that are
 	// still in the partition manager because player has a fogged
 	// view of them.
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.ghost.new.before");
 	TheGhostObjectManager = createGhostObjectManager();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.ghost.new.after");
 
 	// create the terrain logic
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.terrain.new.before");
 	TheTerrainLogic = createTerrainLogic();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.terrain.new.after");
 	TheTerrainLogic->init();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.terrain.init.after");
 	TheTerrainLogic->setName("TheTerrainLogic");
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.terrain.setName.after");
 
 	// Create script engine system.
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.scriptActions.new.before");
 	TheScriptActions = NEW ScriptActions;		 // Basically, a subsystem of TheScriptEngine.
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.scriptActions.new.after");
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.scriptConditions.new.before");
 	TheScriptConditions = NEW ScriptConditions;	 // Basically, a subsystem of TheScriptEngine.
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.scriptConditions.new.after");
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.scriptEngine.new.before");
 	TheScriptEngine = NEW ScriptEngine;
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.scriptEngine.new.after");
 	TheScriptEngine->init();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.scriptEngine.init.after");
 	TheScriptEngine->setName("TheScriptEngine");
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.scriptEngine.setName.after");
 
 	// create a team for the player
 	//DEBUG_ASSERTCRASH(ThePlayerList, ("null ThePlayerList"));
@@ -477,6 +498,7 @@ void GameLogic::init( void )
 	m_isInUpdate = FALSE;
 
 	m_rankPointsToAddAtGameStart = 0;
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.init.complete");
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -484,32 +506,48 @@ void GameLogic::init( void )
 //-------------------------------------------------------------------------------------------------
 void GameLogic::reset( void )
 {
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.entry");
 	m_thingTemplateBuildableOverrides.clear();
 	m_controlBarOverrides.clear();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.overridesClear.after");
 
 	// set the hash to be rather large. We need to optimize this value later.
 //	m_objHash.clear();
 //	m_objHash.resize(OBJ_HASH_SIZE);
 	m_objVector.clear();
 	m_objVector.resize(OBJ_HASH_SIZE, NULL);
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.objVector.after");
 
 	m_gamePaused = FALSE;
 	m_inputEnabledMemory = TRUE;
 	m_mouseVisibleMemory = TRUE;
 	setFPMode();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.setFPMode.after");
 
 	// destroy all objects
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.destroyAllObjectsImmediate.before");
 	destroyAllObjectsImmediate();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.destroyAllObjectsImmediate.after");
 
 	m_nextObjID = (ObjectID)1;
 
 	m_frameObjectsChangedTriggerAreas = 0;
 
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.ghost.reset.before");
 	TheGhostObjectManager->reset();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.ghost.reset.after");
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.partition.reset.before");
 	ThePartitionManager->reset();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.partition.reset.after");
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.terrain.reset.before");
 	TheTerrainLogic->reset();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.terrain.reset.after");
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.ai.reset.before");
 	TheAI->reset();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.ai.reset.after");
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.scriptEngine.reset.before");
 	TheScriptEngine->reset();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.scriptEngine.reset.after");
 
 	m_CRC = 0;
 	for(Int i = 0; i < MAX_SLOTS; ++i)
@@ -524,11 +562,14 @@ void GameLogic::reset( void )
 		delete TheStatsCollector;
 		TheStatsCollector = NULL;
 	}
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.statsCollector.after");
 
 	// clear any table of contents we have
 	m_objectTOC.clear();
 
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.setDefaults.before");
 	setDefaults( FALSE );
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.setDefaults.after");
 
 	m_isScoringEnabled = TRUE;
 	m_showBehindBuildingMarkers = TRUE;
@@ -537,14 +578,19 @@ void GameLogic::reset( void )
 	m_scriptHulkMaxLifetimeOverride = -1;
 
 	// Clean up any water transparency overrides that were generated for this map.
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.waterOverrides.before");
 	WaterTransparencySetting *wt = (WaterTransparencySetting*) TheWaterTransparency.getNonOverloadedPointer();
 	TheWaterTransparency = (WaterTransparencySetting*) wt->deleteOverrides();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.waterOverrides.after");
 
 	// Clean up any weather overrides that were generated for this map.
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.weatherOverrides.before");
 	WeatherSetting *ws = (WeatherSetting*) TheWeatherSetting.getNonOverloadedPointer();
 	TheWeatherSetting = (WeatherSetting*) ws->deleteOverrides();
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.weatherOverrides.after");
 
 	m_rankPointsToAddAtGameStart = 0;
+	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.complete");
 }  // end reset
 
 static Object * placeObjectAtPosition(Int slotNum, AsciiString objectTemplateName, Coord3D& pos, Player *pPlayer,

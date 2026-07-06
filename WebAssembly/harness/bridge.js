@@ -11,6 +11,39 @@ const provokingVertex = gl ? gl.getExtension("WEBGL_provoking_vertex") : null;
 const fallbackContext = gl ? null : canvas.getContext("2d", { alpha: false });
 const stateNode = document.querySelector("#state");
 const framesNode = document.querySelector("#frames");
+
+function validCncPortDistDir(value) {
+  return typeof value === "string" && /^dist(?:[-_][A-Za-z0-9_-]+)?$/.test(value);
+}
+
+function defaultCncPortDistDir() {
+  try {
+    if (validCncPortDistDir(globalThis.__cncDefaultDistDir)) {
+      return globalThis.__cncDefaultDistDir;
+    }
+    if ((globalThis.location?.pathname || "").endsWith("/play.html")) {
+      return "dist-release";
+    }
+  } catch (_error) {
+    // No browser location in some unit-test contexts.
+  }
+  return "dist";
+}
+
+function selectedCncPortDistDir() {
+  const fallbackDistDir = defaultCncPortDistDir();
+  try {
+    const params = new URLSearchParams(globalThis.location?.search || "");
+    const distDir = params.get("dist") || fallbackDistDir;
+    if (validCncPortDistDir(distDir)) {
+      return distDir;
+    }
+  } catch (_error) {
+    // No browser location in some unit-test contexts.
+  }
+  return fallbackDistDir;
+}
+
 let d3d8DrawProgram = null;
 const d3d8Buffers = new Map();
 const d3d8Textures = new Map();
@@ -9655,10 +9688,11 @@ function cncGdiRasterizeGlyph(
 
 async function loadWasmModule() {
   try {
-    const moduleExports = await import("../dist/cnc-port.js");
+    const distDir = selectedCncPortDistDir();
+    const moduleExports = await import(`../${distDir}/cnc-port.js`);
     const createModule = moduleExports.default ?? moduleExports.createCncPortModule;
     const module = await createModule({
-      locateFile: (path) => path.endsWith(".wasm") ? `../dist/${path}` : path,
+      locateFile: (path) => path.endsWith(".wasm") ? `../${distDir}/${path}` : path,
       print: (text) => recordLog("wasm stdout", { text: String(text) }),
       printErr: (text) => recordLog("wasm stderr", { text: String(text) }),
       cncPortD3D8Clear: paintD3D8Clear,
@@ -9690,6 +9724,7 @@ async function loadWasmModule() {
       cncGdiMeasure,
       cncGdiRasterizeGlyph,
     });
+    harnessState.moduleDistDir = distDir;
 
     return {
       boot: module.cwrap("cnc_port_boot", "string", []),
@@ -13893,6 +13928,9 @@ async function realEngineInit(payload = {}) {
   const completed = traceLines
     .filter((text) => text.startsWith("cnc-port: real-init subsystem-done "))
     .map((text) => text.slice("cnc-port: real-init subsystem-done ".length));
+  const pushed = traceLines
+    .filter((text) => text.startsWith("cnc-port: real-init subsystem-push-after "))
+    .map((text) => text.slice("cnc-port: real-init subsystem-push-after ".length));
   const lastStarted = started.length > 0 ? started[started.length - 1] : null;
   const inFlight = lastStarted !== null && !completed.includes(lastStarted) ? lastStarted : null;
   recordLog("real engine init", {
@@ -13912,6 +13950,7 @@ async function realEngineInit(payload = {}) {
     releaseCrash,
     trace: traceLines,
     subsystemsCompleted: completed,
+    subsystemsPushed: pushed,
     inFlightSubsystem: inFlight,
     frontier,
   };
@@ -13924,6 +13963,7 @@ async function realEngineInit(payload = {}) {
     releaseCrash,
     trace: traceLines,
     subsystemsCompleted: completed,
+    subsystemsPushed: pushed,
     inFlightSubsystem: inFlight,
     frontier,
     state: snapshotState(),

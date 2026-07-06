@@ -108,6 +108,18 @@
 
 #include "Common/Version.h"
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_game_logic_step(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_ENGINE_INIT_STEP(name) \
+	do { \
+		if (cnc_port_note_game_logic_step) { \
+			cnc_port_note_game_logic_step(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_ENGINE_INIT_STEP(name) do { } while (0)
+#endif
+
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -160,11 +172,12 @@ SubsystemInterfaceList* TheSubsystemList = NULL;
 
 //-------------------------------------------------------------------------------------------------
 template<class SUBSYSTEM>
-void initSubsystem(SUBSYSTEM*& sysref, AsciiString name, SUBSYSTEM* sys, Xfer *pXfer,  const char* path1 = NULL, 
+void initSubsystem(SUBSYSTEM*& sysref, const AsciiString& name, SUBSYSTEM* sys, Xfer *pXfer,  const char* path1 = NULL,
 									 const char* path2 = NULL, const char* dirpath = NULL)
 {
 	sysref = sys;
 	TheSubsystemList->initSubsystem(sys, path1, path2, dirpath, pXfer, name);
+	CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.initSubsystem.wrapper.after");
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -505,7 +518,9 @@ void GameEngine::init( int argc, char *argv[] )
 		initSubsystem(TheGameLogic,"TheGameLogic", createGameLogic(), NULL);
 		initSubsystem(TheTeamFactory,"TheTeamFactory", MSGNEW("GameEngineSubsystem") TeamFactory(), NULL);
 		initSubsystem(TheCrateSystem,"TheCrateSystem", MSGNEW("GameEngineSubsystem") CrateSystem(), &xferCRC, "Data\\INI\\Default\\Crate.ini", "Data\\INI\\Crate.ini");
+		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.playerList.new.before");
 		initSubsystem(ThePlayerList,"ThePlayerList", MSGNEW("GameEngineSubsystem") PlayerList(), NULL);
+		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.playerList.initSubsystem.after");
 		initSubsystem(TheRecorder,"TheRecorder", createRecorder(), NULL);
 		initSubsystem(TheRadar,"TheRadar", createRadar(), NULL);
 		initSubsystem(TheVictoryConditions,"TheVictoryConditions", createVictoryConditions(), NULL);
@@ -550,18 +565,26 @@ void GameEngine::init( int argc, char *argv[] )
 	#endif/////////////////////////////////////////////////////////////////////////////////////////////
 
 
+		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.xferCRC.close.before");
 		xferCRC.close();
+		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.xferCRC.close.after");
 		TheWritableGlobalData->m_iniCRC = xferCRC.getCRC();
 		DEBUG_LOG(("INI CRC is 0x%8.8X\n", TheGlobalData->m_iniCRC));
 
+		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.postProcessLoadAll.before");
 		TheSubsystemList->postProcessLoadAll();
+		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.postProcessLoadAll.after");
 
+		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.fps.before");
 		setFramesPerSecondLimit(TheGlobalData->m_framesPerSecondLimit);
+		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.fps.after");
 
+		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.audioSetOn.before");
 		TheAudio->setOn(TheGlobalData->m_audioOn && TheGlobalData->m_musicOn, AudioAffect_Music);
 		TheAudio->setOn(TheGlobalData->m_audioOn && TheGlobalData->m_soundsOn, AudioAffect_Sound);
 		TheAudio->setOn(TheGlobalData->m_audioOn && TheGlobalData->m_sounds3DOn, AudioAffect_Sound3D);
 		TheAudio->setOn(TheGlobalData->m_audioOn && TheGlobalData->m_speechOn, AudioAffect_Speech);
+		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.audioSetOn.after");
 			
 		// We're not in a network game yet, so set the network singleton to NULL.
 		TheNetwork = NULL;
@@ -579,6 +602,7 @@ void GameEngine::init( int argc, char *argv[] )
 
 
 #if !defined(_INTERNAL) && !defined(_DEBUG)
+		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.fingerprint.before");
 		AsciiString dirName;
     dirName = TheArchiveFileSystem->getArchiveFilenameForFile("generalsbzh.sec");
 
@@ -599,12 +623,17 @@ void GameEngine::init( int argc, char *argv[] )
 			DEBUG_LOG(("generalsazh.sec was not found in musiczh.big - it was in '%s'\n", dirName.str()));
 			m_quitting = TRUE;
 		}
+		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.fingerprint.after");
 #endif
 
 
 		// initialize the MapCache
+		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.mapCache.new.before");
 		TheMapCache = MSGNEW("GameEngineSubsystem") MapCache;
+		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.mapCache.new.after");
+		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.mapCache.update.before");
 		TheMapCache->updateCache();
+		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.mapCache.update.after");
 
 
 	#ifdef DUMP_PERF_STATS///////////////////////////////////////////////////////////////////////////
@@ -656,6 +685,7 @@ void GameEngine::init( int argc, char *argv[] )
 		// 
 		if (TheMapCache && TheGlobalData->m_shellMapOn)
 		{
+			CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.shellMapCacheCheck.before");
 			AsciiString lowerName = TheGlobalData->m_shellMapName;
 			lowerName.toLower();
 
@@ -664,6 +694,7 @@ void GameEngine::init( int argc, char *argv[] )
 			{
 				TheWritableGlobalData->m_shellMapOn = FALSE;
 			}
+			CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.shellMapCacheCheck.after");
 		}
 
 		if(!TheGlobalData->m_playIntro)
@@ -695,12 +726,22 @@ void GameEngine::init( int argc, char *argv[] )
 	if(!TheGlobalData->m_playIntro)
 		TheWritableGlobalData->m_afterIntro = TRUE;
 
+	CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.kindOfMasks.before");
 	initKindOfMasks();
+	CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.kindOfMasks.after");
+	CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.disabledMasks.before");
 	initDisabledMasks();
+	CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.disabledMasks.after");
+	CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.damageTypeFlags.before");
 	initDamageTypeFlags();
+	CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.damageTypeFlags.after");
 
+	CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.resetAll.before");
 	TheSubsystemList->resetAll();
+	CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.resetAll.after");
+	CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.hideControlBar.before");
 	HideControlBar();
+	CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.hideControlBar.after");
 }  // end init
 
 /** -----------------------------------------------------------------------------------------------

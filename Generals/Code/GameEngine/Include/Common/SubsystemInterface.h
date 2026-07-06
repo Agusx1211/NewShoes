@@ -134,7 +134,7 @@ protected:
 	AsciiString m_name;	
 public:
 	AsciiString getName(void) {return m_name;}
-	void setName(AsciiString name) {m_name = name;}
+	void setName(const AsciiString& name) {m_name = name;}
 
 };  // end SubsystemInterface
 
@@ -146,7 +146,7 @@ public:
 	SubsystemInterfaceList();
 	~SubsystemInterfaceList();
 
-	void initSubsystem(SubsystemInterface* sys, const char* path1, const char* path2, const char* dirpath, Xfer *pXfer, AsciiString name="");
+	void initSubsystem(SubsystemInterface* sys, const char* path1, const char* path2, const char* dirpath, Xfer *pXfer, const AsciiString& name=AsciiString::TheEmptyString);
 	void addSubsystem(SubsystemInterface* sys);
 	void removeSubsystem(SubsystemInterface* sys);
 	void postProcessLoadAll();
@@ -167,4 +167,3 @@ private:
 extern SubsystemInterfaceList* TheSubsystemList;
 
 #endif // __SUBSYSTEMINTERFACE_H_
-

@@ -1141,22 +1141,29 @@ void Player::becomingTeamMember(Object *obj, Bool yes)
 //=============================================================================
 void Player::becomingLocalPlayer(Bool yes)
 {
+	CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.becomingLocalPlayer.entry");
 	if (yes)
 	{
 		// This changes the color of the little dot on the upper right side of the screen indicating
 		// which team is under control.
 		if( TheGameClient )
 		{
+			CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.becomingLocalPlayer.teamColor.before");
 			RGBColor rgb;
 			rgb.setFromInt(m_color);
 			TheGameClient->setTeamColor(REAL_TO_INT(rgb.red*255), REAL_TO_INT(rgb.green*255), REAL_TO_INT(rgb.blue*255));
+			CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.becomingLocalPlayer.teamColor.after");
 		}
 
 		if( ThePartitionManager )
 		{
+			CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.becomingLocalPlayer.partition.iterate.before");
 			ObjectIterator *iter = ThePartitionManager->iterateAllObjects();
+			CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.becomingLocalPlayer.partition.iterate.after");
+			CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.becomingLocalPlayer.partition.first.before");
 			for( Object* object = iter->first(); object; object = iter->next() )
 			{
+				CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.becomingLocalPlayer.partition.object");
 				// Added support for updating the perceptions of garrisoned buildings containing enemy stealth units.
 				// When changing teams, it is necessary to update this information.
 				ContainModuleInterface *contain = object->getContain();
@@ -1202,16 +1209,22 @@ void Player::becomingLocalPlayer(Bool yes)
 					}
 				}
 			}
+			CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.becomingLocalPlayer.partition.loop.after");
 			iter->deleteInstance();
+			CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.becomingLocalPlayer.partition.delete.after");
 		}
 
-		if( TheControlBar )
+		if( TheControlBar ) {
+			CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.becomingLocalPlayer.controlBar.before");
 			TheControlBar->markUIDirty();
+			CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.becomingLocalPlayer.controlBar.after");
+		}
 	}
 	else
 	{
 		// nothing to do
 	}
+	CNC_PORT_NOTE_PLAYER_STRUCTURE_STEP("Player.becomingLocalPlayer.complete");
 }
 
 //-------------------------------------------------------------------------------------------------

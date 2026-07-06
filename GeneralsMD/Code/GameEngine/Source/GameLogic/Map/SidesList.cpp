@@ -58,6 +58,18 @@ static const Int K_SIDES_DATA_VERSION_1 = 1;
 static const Int K_SIDES_DATA_VERSION_2 = 2;	// includes Team list.
 static const Int K_SIDES_DATA_VERSION_3 = 3;	// includes Team list.
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_game_logic_step(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_SIDES_LIST_STEP(name) \
+	do { \
+		if (cnc_port_note_game_logic_step) { \
+			cnc_port_note_game_logic_step(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_SIDES_LIST_STEP(name) do { } while (0)
+#endif
+
 /* ********* SidesInfo class ****************************/
 /**
  SidesInfo - Constructor.
@@ -85,14 +97,39 @@ SidesInfo::~SidesInfo(void)
 
 void SidesInfo::init(const Dict* d)
 {
-	m_pBuildList->deleteInstance();
+	CNC_PORT_NOTE_SIDES_LIST_STEP("SidesInfo.init.entry");
+	if (m_pBuildList)
+	{
+		CNC_PORT_NOTE_SIDES_LIST_STEP("SidesInfo.init.buildList.delete.before");
+		m_pBuildList->deleteInstance();
+		CNC_PORT_NOTE_SIDES_LIST_STEP("SidesInfo.init.buildList.delete.after");
+	}
+	else
+	{
+		CNC_PORT_NOTE_SIDES_LIST_STEP("SidesInfo.init.buildList.empty");
+	}
 	m_pBuildList = NULL;
+	CNC_PORT_NOTE_SIDES_LIST_STEP("SidesInfo.init.dict.clear.before");
 	m_dict.clear();
+	CNC_PORT_NOTE_SIDES_LIST_STEP("SidesInfo.init.dict.clear.after");
 	if (m_scripts) 
+	{
+		CNC_PORT_NOTE_SIDES_LIST_STEP("SidesInfo.init.scripts.delete.before");
 		m_scripts->deleteInstance();
+		CNC_PORT_NOTE_SIDES_LIST_STEP("SidesInfo.init.scripts.delete.after");
+	}
+	else
+	{
+		CNC_PORT_NOTE_SIDES_LIST_STEP("SidesInfo.init.scripts.empty");
+	}
 	m_scripts = NULL;
 	if (d)
+	{
+		CNC_PORT_NOTE_SIDES_LIST_STEP("SidesInfo.init.dict.assign.before");
 		m_dict = *d;
+		CNC_PORT_NOTE_SIDES_LIST_STEP("SidesInfo.init.dict.assign.after");
+	}
+	CNC_PORT_NOTE_SIDES_LIST_STEP("SidesInfo.init.complete");
 }
 
 // ug, I hate having to overload stuff, but this makes it a lot easier to make copies safely
@@ -219,7 +256,9 @@ SidesList::~SidesList(void)
 */
 void SidesList::reset(void)
 {
+	CNC_PORT_NOTE_SIDES_LIST_STEP("SidesList.reset.entry");
 	clear();
+	CNC_PORT_NOTE_SIDES_LIST_STEP("SidesList.reset.complete");
 }
 
 /**
@@ -227,8 +266,12 @@ void SidesList::reset(void)
 */
 void SidesList::clear(void)
 {
+	CNC_PORT_NOTE_SIDES_LIST_STEP("SidesList.clear.emptySides.before");
 	emptySides();
+	CNC_PORT_NOTE_SIDES_LIST_STEP("SidesList.clear.emptySides.after");
+	CNC_PORT_NOTE_SIDES_LIST_STEP("SidesList.clear.emptyTeams.before");
 	emptyTeams();
+	CNC_PORT_NOTE_SIDES_LIST_STEP("SidesList.clear.emptyTeams.after");
 }
 
 
@@ -585,18 +628,28 @@ void SidesList::emptySides()
 { 
 	Int i;
 
+	CNC_PORT_NOTE_SIDES_LIST_STEP("SidesList.emptySides.entry");
 	m_numSides = 0; 
 	m_numSkirmishSides = 0; 
 	for (i = 0; i < MAX_PLAYER_COUNT; i++) {
+		CNC_PORT_NOTE_SIDES_LIST_STEP("SidesList.emptySides.side.clear.before");
 		m_sides[i].clear(); 
+		CNC_PORT_NOTE_SIDES_LIST_STEP("SidesList.emptySides.side.clear.after");
+		CNC_PORT_NOTE_SIDES_LIST_STEP("SidesList.emptySides.skirmish.clear.before");
 		m_skirmishSides[i].clear();
+		CNC_PORT_NOTE_SIDES_LIST_STEP("SidesList.emptySides.skirmish.clear.after");
 	}
+	CNC_PORT_NOTE_SIDES_LIST_STEP("SidesList.emptySides.complete");
 }
 
 void SidesList::emptyTeams() 
 { 
+	CNC_PORT_NOTE_SIDES_LIST_STEP("SidesList.emptyTeams.teamrec.clear.before");
 	m_teamrec.clear();
+	CNC_PORT_NOTE_SIDES_LIST_STEP("SidesList.emptyTeams.teamrec.clear.after");
+	CNC_PORT_NOTE_SIDES_LIST_STEP("SidesList.emptyTeams.skirmishTeamrec.clear.before");
 	m_skirmishTeamrec.clear();
+	CNC_PORT_NOTE_SIDES_LIST_STEP("SidesList.emptyTeams.skirmishTeamrec.clear.after");
 }
 
 void SidesList::addSide(const Dict* d)

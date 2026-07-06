@@ -41,6 +41,14 @@ function parsePositiveInt(name, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+function parseDistDir() {
+  const value = process.env.PERF_PROFILE_DIST ?? "dist";
+  if (!/^dist(?:[-_][A-Za-z0-9_-]+)?$/.test(value)) {
+    throw new Error(`Invalid PERF_PROFILE_DIST: ${value}`);
+  }
+  return value;
+}
+
 function expect(condition, message, payload) {
   if (!condition) {
     throw new Error(`${message}: ${JSON.stringify(payload)}`);
@@ -465,6 +473,7 @@ const settleFrames = parsePositiveInt("PERF_PROFILE_SETTLE_FRAMES", 30);
 const batchSize = parsePositiveInt("PERF_PROFILE_BATCH", 1);
 const diagLevel = process.env.PERF_PROFILE_DIAG ?? "lite";
 const measuredFrameCommand = process.env.PERF_PROFILE_FRAME_COMMAND ?? "realEngineFrameSummary";
+const distDir = parseDistDir();
 const shellMap = process.env.PERF_PROFILE_SHELLMAP !== "0";
 const viewportWidth = parsePositiveInt("PERF_PROFILE_WIDTH", 1280);
 const viewportHeight = parsePositiveInt("PERF_PROFILE_HEIGHT", 720);
@@ -501,7 +510,9 @@ try {
     }
   });
 
-  await page.goto(new URL("harness/index.html", server.url).href, { waitUntil: "networkidle" });
+  const harnessUrl = new URL("harness/index.html", server.url);
+  harnessUrl.searchParams.set("dist", distDir);
+  await page.goto(harnessUrl.href, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
   const renderer = await queryRenderer(page);
   await page.evaluate((level) => window.__cncSetDiagLevel?.(level), diagLevel);
@@ -525,7 +536,7 @@ try {
   });
   const initWallMs = performance.now() - initStartedAt;
   expect(init?.ok === true && init.aborted === false && init.frontier?.initReturned === true,
-    "runtime frame profile failed real engine init", init?.frontier ?? init);
+    "runtime frame profile failed real engine init", init);
 
   const warmup = await runFramePass(page, warmupFrames, batchSize, "warmup");
   const settle = sceneIsSettled(warmup.rawFinalFrame, shellMap)
@@ -554,6 +565,7 @@ try {
     m4Metal: renderer.includes("Apple M4") && renderer.includes("Metal"),
     swiftShader: /SwiftShader/i.test(renderer),
     diagLevel,
+    distDir,
     d3d8AdjacentBatching: d3d8AdjacentBatchingActive,
     d3d8LiteVertexMirrors: d3d8LiteVertexMirrorsActive,
     measuredFrameCommand,

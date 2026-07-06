@@ -671,18 +671,21 @@ ScriptEngine::~ScriptEngine()
 //-------------------------------------------------------------------------------------------------
 void ScriptEngine::init( void )
 {
+	scriptDiagNoteStep("ScriptEngine.init.entry");
 	if (TheGlobalData->m_windowed)
 		if (TheGlobalData->m_scriptDebug) {
 			st_DebugDLL = LoadLibrary("DebugWindow.dll");
 		} else {
 			st_DebugDLL = NULL;
 		}
+	scriptDiagNoteStep("ScriptEngine.init.debugDll.after");
 		
 		if (TheGlobalData->m_particleEdit) {
 			st_ParticleDLL = LoadLibrary("ParticleEditor.dll");
 		} else {
 			st_ParticleDLL = NULL;
 		}
+	scriptDiagNoteStep("ScriptEngine.init.particleDll.after");
 
 		if (st_DebugDLL) {
 			FARPROC proc = GetProcAddress(st_DebugDLL, "CreateDebugDialog");
@@ -690,6 +693,7 @@ void ScriptEngine::init( void )
 				proc();
 			}
 		}
+	scriptDiagNoteStep("ScriptEngine.init.debugDialog.after");
 
 	if (st_ParticleDLL) {
 		FARPROC proc = GetProcAddress(st_ParticleDLL, "CreateParticleSystemDialog");
@@ -697,6 +701,7 @@ void ScriptEngine::init( void )
 			proc();
 		}
 	}
+	scriptDiagNoteStep("ScriptEngine.init.particleDialog.after");
 
 #ifdef DO_VTUNE_STUFF
 	_initVTune();
@@ -711,10 +716,14 @@ void ScriptEngine::init( void )
 #endif
 	
 	if (TheScriptActions) {
+		scriptDiagNoteStep("ScriptEngine.init.scriptActions.before");
 		TheScriptActions->init();
+		scriptDiagNoteStep("ScriptEngine.init.scriptActions.after");
 	}
 	if (TheScriptConditions) {
+		scriptDiagNoteStep("ScriptEngine.init.scriptConditions.before");
 		TheScriptConditions->init();
+		scriptDiagNoteStep("ScriptEngine.init.scriptConditions.after");
 	}
 	/* Recipe for adding an action:
 			1. In Scripts.h, add an enum element to enum ScriptActionType just before NUM_ITEMS.
@@ -725,6 +734,7 @@ void ScriptEngine::init( void )
 	*/
 
 	// Set up the script action templates.
+	scriptDiagNoteStep("ScriptEngine.init.actionTemplates.begin");
 	Template *curTemplate = &m_actionTemplates[ScriptAction::DEBUG_MESSAGE_BOX];
 	curTemplate->m_internalName = "DEBUG_MESSAGE_BOX";
 	curTemplate->m_uiName = "Scripting_/Debug/Display message and pause";

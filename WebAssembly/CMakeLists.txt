@@ -10,7 +10,21 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CNC_DIST_DIR "dist" CACHE STRING "dist dir for wasm artifacts")
+option(CNC_WASM_NATIVE_EXCEPTIONS "Use native WebAssembly exception handling instead of Emscripten JS exception catching" OFF)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/${CNC_DIST_DIR}")
+
+set(CNC_EXCEPTION_COMPILE_OPTION "-fexceptions")
+set(CNC_EXCEPTION_LINK_OPTION "SHELL:-sDISABLE_EXCEPTION_CATCHING=0")
+if(CNC_WASM_NATIVE_EXCEPTIONS)
+  set(CNC_EXCEPTION_COMPILE_OPTION "-fwasm-exceptions")
+  set(CNC_EXCEPTION_LINK_OPTION "SHELL:-fwasm-exceptions")
+  add_compile_options(-fwasm-exceptions)
+endif()
+
+set(CNC_ASSERTIONS_LINK_OPTION "SHELL:-sASSERTIONS=1")
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+  set(CNC_ASSERTIONS_LINK_OPTION "SHELL:-sASSERTIONS=0")
+endif()
 
 set(ZH_CODE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../GeneralsMD/Code")
 set(ZH_LIB_INCLUDE_DIR "${ZH_CODE_DIR}/Libraries/Include")
@@ -1449,6 +1463,10 @@ set_source_files_properties("${GAMEENGINE_COMMON_DIR}/Audio/urllaunch.cpp" PROPE
   COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/windows.h"
 )
 
+set_source_files_properties("${GAMEENGINE_COMMON_DIR}/System/GameMemory.cpp" PROPERTIES
+  COMPILE_OPTIONS "-fno-assume-sane-operator-new;-O0"
+)
+
 target_include_directories(zh_gameengine_common_core PUBLIC
   "${WASM_SHIMS_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}"
@@ -2586,7 +2604,7 @@ target_compile_definitions(zh_gameengine_audio_runtime PRIVATE
 )
 
 target_compile_options(zh_gameengine_audio_runtime PRIVATE
-  -fexceptions
+  ${CNC_EXCEPTION_COMPILE_OPTION}
   -ffunction-sections
   -fdata-sections
   "-include${WASM_SHIMS_DIR}/windows.h"
@@ -3413,7 +3431,7 @@ target_include_directories(zh_gameengine_real_ini_runtime PUBLIC
 )
 
 target_compile_options(zh_gameengine_real_ini_runtime PRIVATE
-  -fexceptions
+  ${CNC_EXCEPTION_COMPILE_OPTION}
   -ffunction-sections
   -fdata-sections
   "-include${WASM_SHIMS_DIR}/windows.h"
@@ -3813,7 +3831,7 @@ target_include_directories(zh_gameengine_real_object_ini_runtime PUBLIC
 )
 
 target_compile_options(zh_gameengine_real_object_ini_runtime PRIVATE
-  -fexceptions
+  ${CNC_EXCEPTION_COMPILE_OPTION}
   -ffunction-sections
   -fdata-sections
   -Wno-non-pod-varargs
@@ -4812,7 +4830,7 @@ target_include_directories(zh_gameengine_real_lifecycle_runtime PUBLIC
 )
 
 target_compile_options(zh_gameengine_real_lifecycle_runtime PRIVATE
-  -fexceptions
+  ${CNC_EXCEPTION_COMPILE_OPTION}
   -ffunction-sections
   -fdata-sections
   -Wno-non-pod-varargs
@@ -5012,7 +5030,7 @@ target_compile_definitions(cnc-port PRIVATE
 )
 
 target_compile_options(cnc-port PRIVATE
-  -fexceptions
+  ${CNC_EXCEPTION_COMPILE_OPTION}
   -fms-extensions
   -Wall
   -Wextra
@@ -5107,8 +5125,8 @@ target_link_options(cnc-port PRIVATE
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sMAXIMUM_MEMORY=2147483648"
   "SHELL:-sTOTAL_STACK=1048576"
-  "SHELL:-sASSERTIONS=1"
-  "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  ${CNC_EXCEPTION_LINK_OPTION}
   "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_real_engine_init','_cnc_port_real_engine_frame','_cnc_port_real_engine_frame_summary','_cnc_port_query_drawables','_cnc_port_query_selection','_cnc_port_real_engine_frontier','_cnc_port_map_cache_probe','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_register_archive_set','_cnc_port_set_browser_input','_cnc_port_reset_browser_input','_cnc_port_post_browser_message','_cnc_port_probe_browser_message_queue','_cnc_port_probe_browser_input','_cnc_port_build_browser_network_relay_packet','_cnc_port_accept_browser_network_relay_packet','_cnc_port_build_browser_network_transport_packet','_cnc_port_accept_browser_network_transport_packet','_cnc_port_build_browser_network_transport_wire_packet','_cnc_port_accept_browser_network_transport_wire_packet','_cnc_port_probe_browser_network_transport_live_send','_cnc_port_probe_browser_network_transport_live_receive','_cnc_port_build_browser_lanapi_announce_packet','_cnc_port_accept_browser_lanapi_announce_packet','_cnc_port_build_browser_lanapi_join_request_packet','_cnc_port_accept_browser_lanapi_join_request_packet','_cnc_port_accept_browser_lanapi_join_accept_packet','_cnc_port_probe_browser_lanapi_live_game_start_send','_cnc_port_probe_browser_lanapi_live_game_start_receive','_cnc_port_probe_win32_gameengine','_cnc_port_probe_mss_startup','_cnc_port_probe_mss_sample_lifecycle','_cnc_port_probe_mss_sample_playback_start','_cnc_port_probe_mss_sample_playback_finish','_cnc_port_probe_mss_stream_lifecycle','_cnc_port_probe_mss_3d_sample_lifecycle','_cnc_port_probe_d3d8_clear','_cnc_port_probe_d3d8_viewport','_cnc_port_probe_d3d8_buffer_dirty','_cnc_port_probe_d3d8_buffer_hints','_cnc_port_probe_d3d8_texture_upload','_cnc_port_probe_d3d8_volume_texture_upload','_cnc_port_probe_d3d8_texture_bind','_cnc_port_probe_d3d8_textured_quad','_cnc_port_probe_d3d8_two_texture_quad','_cnc_port_probe_d3d8_two_texture_alpha_quad','_cnc_port_probe_d3d8_texture_mip_chain_draw','_cnc_port_probe_d3d8_texture_combiner','_cnc_port_probe_d3d8_texcoord_index','_cnc_port_probe_d3d8_fvf_texcoord_sizes','_cnc_port_probe_d3d8_texture_transform','_cnc_port_probe_d3d8_stage1_texture_transform','_cnc_port_probe_d3d8_stencil_state','_cnc_port_probe_d3d8_fog_state','_cnc_port_probe_d3d8_fill_mode','_cnc_port_probe_d3d8_z_bias','_cnc_port_probe_d3d8_shade_mode','_cnc_port_probe_d3d8_clip_plane','_cnc_port_probe_d3d8_lighting_ambient','_cnc_port_probe_d3d8_directional_light','_cnc_port_probe_d3d8_multi_directional_light','_cnc_port_probe_d3d8_specular_light','_cnc_port_probe_d3d8_specular_offaxis_light','_cnc_port_probe_d3d8_specular_transformed_light','_cnc_port_probe_d3d8_normalize_normals','_cnc_port_probe_d3d8_local_viewer','_cnc_port_probe_d3d8_point_light','_cnc_port_probe_d3d8_point_quadratic_light','_cnc_port_probe_d3d8_point_range_light','_cnc_port_probe_d3d8_point_mixed_light','_cnc_port_probe_d3d8_spot_light','_cnc_port_probe_d3d8_spot_falloff','_cnc_port_probe_d3d8_material','_cnc_port_probe_d3d8_material_sources','_cnc_port_probe_d3d8_lit_material_sources','_cnc_port_probe_d3d8_lit_specular_material_source','_cnc_port_probe_d3d8_lit_emissive_color1_material_source','_cnc_port_probe_d3d8_lit_emissive_color2_material_source','_cnc_port_probe_d3d8_legacy_texture_upload','_cnc_port_probe_d3d8_legacy_texture_draw','_cnc_port_probe_d3d8_dxt_texture_draw','_cnc_port_probe_ww3d_aabox','_cnc_port_probe_ww3d_scene_camera','_cnc_port_probe_ww3d_rts_scene','_cnc_port_probe_ww3d_rts_scene_clear_line','_cnc_port_probe_ww3d_display_scene','_cnc_port_probe_ww3d_render2d_textured_quad','_cnc_port_probe_ww3d_render2d_sentence','_cnc_port_probe_ww3d_display_string','_cnc_port_probe_ww3d_display_game_text','_cnc_port_probe_ww3d_display_drawimage','_cnc_port_probe_ww3d_display_video_buffer','_cnc_port_probe_ww3d_display_drawimage_additive','_cnc_port_probe_ww3d_display_drawimage_solid','_cnc_port_probe_ww3d_display_drawimage_grayscale','_cnc_port_probe_ww3d_display_drawimage_file','_cnc_port_probe_ww3d_display_mapped_image','_cnc_port_probe_ww3d_display_mapped_image_clip','_cnc_port_probe_ww3d_display_mapped_image_unrotated','_cnc_port_probe_ww3d_display_main_menu_ruler','_cnc_port_probe_ww3d_display_fillrect','_cnc_port_probe_ww3d_window_repaint','_cnc_port_probe_ww3d_window_layout_repaint','_cnc_port_probe_ww3d_main_menu_layout_repaint','_cnc_port_probe_ww3d_main_menu_layout_image_repaint','_cnc_port_probe_ww3d_main_menu_layout_disabled_button_repaint','_cnc_port_probe_ww3d_main_menu_layout_hilite_button_repaint','_cnc_port_probe_ww3d_main_menu_layout_pushed_button_repaint','_cnc_port_probe_ww3d_main_menu_layout_single_player_repaint','_cnc_port_probe_ww3d_main_menu_layout_load_replay_repaint','_cnc_port_probe_ww3d_main_menu_layout_difficulty_repaint','_cnc_port_probe_ww3d_main_menu_layout_static_text_repaint','_cnc_port_probe_ww3d_main_menu_layout_faction_logo_repaint','_cnc_port_probe_ww3d_display_line','_cnc_port_probe_ww3d_display_line_gradient','_cnc_port_probe_ww3d_display_openrect','_cnc_port_probe_ww3d_display_rectclock','_cnc_port_probe_ww3d_display_remaining_rectclock','_cnc_port_probe_ww3d_terrain_tile','_cnc_port_probe_ww3d_terrain_tile_archive','_cnc_port_probe_ww3d_terrain_tile_archive_scene','_cnc_port_probe_ww3d_terrain_map_patch_scene','_cnc_port_probe_ww3d_terrain_shroud_scene','_cnc_port_probe_ww3d_terrain_visual_scene','_cnc_port_probe_ww3d_terrain_full_scene','_cnc_port_probe_ww3d_terrain_full_scene_shroud_update','_cnc_port_probe_ww3d_terrain_visual_load_window_scene','_cnc_port_probe_ww3d_terrain_visual_camera_pan_scene','_cnc_port_probe_ww3d_terrain_bib_buffer_lifecycle','_cnc_port_probe_ww3d_terrain_prop_buffer_render','_cnc_port_probe_ww3d_terrain_prop_buffer_scene','_cnc_port_probe_ww3d_terrain_tree_buffer_scene','_cnc_port_probe_ww3d_terrain_road_buffer_scene','_cnc_port_probe_ww3d_terrain_bridge_buffer_scene','_cnc_port_probe_ww3d_textured_mesh','_cnc_port_probe_ww3d_emissive_color2_material_source','_cnc_port_probe_ww3d_shipped_mesh','_cnc_port_probe_ww3d_shipped_multi_texture_mesh','_cnc_port_probe_ww3d_source_asset_load','_cnc_port_probe_ww3d_font_chars','_cnc_port_probe_classic_environment_mapper_apply','_cnc_port_probe_edge_mapper_apply','_cnc_port_probe_environment_mapper_apply','_cnc_port_probe_grid_environment_mapper_apply','_cnc_port_probe_grid_ws_environment_mapper_apply','_cnc_port_probe_matrixmapper_apply','_cnc_port_probe_projection_state_apply','_cnc_port_probe_screen_mapper_apply','_cnc_port_probe_ws_environment_mapper_apply','_cnc_port_probe_wwshade_cubemap_apply','_cnc_port_probe_launch_web_browser','_cnc_port_init_original_wndproc_input','_cnc_port_pump_original_wndproc_input','_cnc_port_probe_original_wndproc_input','_cnc_port_probe_original_gui_mouse_stream','_cnc_port_probe_original_cursor_visibility','_cnc_port_set_original_keyboard_frame_input_enabled','_cnc_port_reset_original_keyboard_frame_input','_cnc_port_probe_original_keyboard_frame_input','_cnc_port_set_original_mouse_frame_input_enabled','_cnc_port_reset_original_mouse_frame_input','_cnc_port_probe_original_mouse_frame_input','_cnc_port_probe_original_mouse_frame_windows','_cnc_port_resolve_original_mouse_frame_window_id','_cnc_port_probe_original_keyboard_input','_cnc_port_probe_original_keyboard_frame_tick','_cnc_port_reset_original_keyboard_input','_cnc_port_queue_original_keyboard_focus_lost','_cnc_port_probe_gdi_font','_cnc_port_state','_cnc_port_probe_audio_manager_runtime','_cnc_port_mss_adpcm_payload_buffer','_cnc_port_probe_mss_adpcm_sample_playback_start','_cnc_port_probe_object_ini','_cnc_port_probe_object_ini_snippet']"
   "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_frame','_cnc_port_query_drawables','_cnc_port_query_selection','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_register_archive_set','_cnc_port_set_browser_input','_cnc_port_reset_browser_input','_cnc_port_post_browser_message','_cnc_port_probe_browser_message_queue','_cnc_port_probe_browser_input','_cnc_port_build_browser_network_relay_packet','_cnc_port_accept_browser_network_relay_packet','_cnc_port_build_browser_network_transport_packet','_cnc_port_accept_browser_network_transport_packet','_cnc_port_build_browser_network_transport_wire_packet','_cnc_port_accept_browser_network_transport_wire_packet','_cnc_port_probe_browser_network_transport_live_send','_cnc_port_probe_browser_network_transport_live_receive','_cnc_port_build_browser_lanapi_announce_packet','_cnc_port_accept_browser_lanapi_announce_packet','_cnc_port_build_browser_lanapi_join_request_packet','_cnc_port_accept_browser_lanapi_join_request_packet','_cnc_port_accept_browser_lanapi_join_accept_packet','_cnc_port_probe_browser_lanapi_live_game_start_send','_cnc_port_probe_browser_lanapi_live_game_start_receive','_cnc_port_probe_win32_gameengine','_cnc_port_probe_mss_startup','_cnc_port_probe_mss_sample_lifecycle','_cnc_port_probe_mss_sample_playback_start','_cnc_port_probe_mss_sample_playback_finish','_cnc_port_probe_mss_stream_lifecycle','_cnc_port_probe_mss_3d_sample_lifecycle','_cnc_port_probe_d3d8_clear','_cnc_port_probe_d3d8_viewport','_cnc_port_probe_d3d8_buffer_dirty','_cnc_port_probe_d3d8_buffer_hints','_cnc_port_probe_d3d8_texture_upload','_cnc_port_probe_d3d8_volume_texture_upload','_cnc_port_probe_d3d8_texture_bind','_cnc_port_probe_d3d8_textured_quad','_cnc_port_probe_d3d8_two_texture_quad','_cnc_port_probe_d3d8_two_texture_alpha_quad','_cnc_port_probe_d3d8_texture_mip_chain_draw','_cnc_port_probe_d3d8_texture_combiner','_cnc_port_probe_d3d8_texcoord_index','_cnc_port_probe_d3d8_fvf_texcoord_sizes','_cnc_port_probe_d3d8_texture_transform','_cnc_port_probe_d3d8_stage1_texture_transform','_cnc_port_probe_d3d8_stencil_state','_cnc_port_probe_d3d8_fog_state','_cnc_port_probe_d3d8_fill_mode','_cnc_port_probe_d3d8_z_bias','_cnc_port_probe_d3d8_shade_mode','_cnc_port_probe_d3d8_clip_plane','_cnc_port_probe_d3d8_lighting_ambient','_cnc_port_probe_d3d8_directional_light','_cnc_port_probe_d3d8_multi_directional_light','_cnc_port_probe_d3d8_specular_light','_cnc_port_probe_d3d8_specular_offaxis_light','_cnc_port_probe_d3d8_specular_transformed_light','_cnc_port_probe_d3d8_normalize_normals','_cnc_port_probe_d3d8_local_viewer','_cnc_port_probe_d3d8_point_light','_cnc_port_probe_d3d8_point_quadratic_light','_cnc_port_probe_d3d8_point_range_light','_cnc_port_probe_d3d8_point_mixed_light','_cnc_port_probe_d3d8_spot_light','_cnc_port_probe_d3d8_spot_falloff','_cnc_port_probe_d3d8_material','_cnc_port_probe_d3d8_material_sources','_cnc_port_probe_d3d8_lit_material_sources','_cnc_port_probe_d3d8_lit_specular_material_source','_cnc_port_probe_d3d8_lit_emissive_color1_material_source','_cnc_port_probe_d3d8_lit_emissive_color2_material_source','_cnc_port_probe_d3d8_legacy_texture_upload','_cnc_port_probe_d3d8_legacy_texture_draw','_cnc_port_probe_d3d8_dxt_texture_draw','_cnc_port_probe_ww3d_aabox','_cnc_port_probe_ww3d_scene_camera','_cnc_port_probe_ww3d_rts_scene','_cnc_port_probe_ww3d_rts_scene_clear_line','_cnc_port_probe_ww3d_display_scene','_cnc_port_probe_ww3d_render2d_textured_quad','_cnc_port_probe_ww3d_render2d_sentence','_cnc_port_probe_ww3d_display_string','_cnc_port_probe_ww3d_display_game_text','_cnc_port_probe_ww3d_display_drawimage','_cnc_port_probe_ww3d_display_video_buffer','_cnc_port_probe_ww3d_display_drawimage_additive','_cnc_port_probe_ww3d_display_drawimage_solid','_cnc_port_probe_ww3d_display_drawimage_grayscale','_cnc_port_probe_ww3d_display_drawimage_file','_cnc_port_probe_ww3d_display_mapped_image','_cnc_port_probe_ww3d_display_mapped_image_clip','_cnc_port_probe_ww3d_display_mapped_image_unrotated','_cnc_port_probe_ww3d_display_main_menu_ruler','_cnc_port_probe_ww3d_display_fillrect','_cnc_port_probe_ww3d_window_repaint','_cnc_port_probe_ww3d_window_layout_repaint','_cnc_port_probe_ww3d_main_menu_layout_repaint','_cnc_port_probe_ww3d_main_menu_layout_image_repaint','_cnc_port_probe_ww3d_main_menu_layout_disabled_button_repaint','_cnc_port_probe_ww3d_main_menu_layout_hilite_button_repaint','_cnc_port_probe_ww3d_main_menu_layout_pushed_button_repaint','_cnc_port_probe_ww3d_main_menu_layout_single_player_repaint','_cnc_port_probe_ww3d_main_menu_layout_load_replay_repaint','_cnc_port_probe_ww3d_main_menu_layout_difficulty_repaint','_cnc_port_probe_ww3d_main_menu_layout_static_text_repaint','_cnc_port_probe_ww3d_main_menu_layout_faction_logo_repaint','_cnc_port_probe_ww3d_display_line','_cnc_port_probe_ww3d_display_line_gradient','_cnc_port_probe_ww3d_display_openrect','_cnc_port_probe_ww3d_display_rectclock','_cnc_port_probe_ww3d_display_remaining_rectclock','_cnc_port_probe_ww3d_terrain_tile','_cnc_port_probe_ww3d_terrain_tile_archive','_cnc_port_probe_ww3d_terrain_tile_archive_scene','_cnc_port_probe_ww3d_terrain_map_patch_scene','_cnc_port_probe_ww3d_terrain_shroud_scene','_cnc_port_probe_ww3d_terrain_visual_scene','_cnc_port_probe_ww3d_terrain_full_scene','_cnc_port_probe_ww3d_terrain_full_scene_shroud_update','_cnc_port_probe_ww3d_terrain_visual_load_window_scene','_cnc_port_probe_ww3d_terrain_visual_camera_pan_scene','_cnc_port_probe_ww3d_terrain_bib_buffer_lifecycle','_cnc_port_probe_ww3d_terrain_prop_buffer_render','_cnc_port_probe_ww3d_terrain_prop_buffer_scene','_cnc_port_probe_ww3d_terrain_tree_buffer_scene','_cnc_port_probe_ww3d_terrain_road_buffer_scene','_cnc_port_probe_ww3d_terrain_bridge_buffer_scene','_cnc_port_probe_ww3d_textured_mesh','_cnc_port_probe_ww3d_emissive_color2_material_source','_cnc_port_probe_ww3d_shipped_mesh','_cnc_port_probe_ww3d_shipped_multi_texture_mesh','_cnc_port_probe_ww3d_source_asset_load','_cnc_port_probe_ww3d_font_chars','_cnc_port_probe_classic_environment_mapper_apply','_cnc_port_probe_edge_mapper_apply','_cnc_port_probe_environment_mapper_apply','_cnc_port_probe_grid_environment_mapper_apply','_cnc_port_probe_grid_ws_environment_mapper_apply','_cnc_port_probe_matrixmapper_apply','_cnc_port_probe_projection_state_apply','_cnc_port_probe_screen_mapper_apply','_cnc_port_probe_ws_environment_mapper_apply','_cnc_port_probe_wwshade_cubemap_apply','_cnc_port_probe_launch_web_browser','_cnc_port_init_original_wndproc_input','_cnc_port_pump_original_wndproc_input','_cnc_port_probe_original_wndproc_input','_cnc_port_probe_original_gui_mouse_stream','_cnc_port_probe_original_cursor_visibility','_cnc_port_set_original_keyboard_frame_input_enabled','_cnc_port_reset_original_keyboard_frame_input','_cnc_port_probe_original_keyboard_frame_input','_cnc_port_set_original_mouse_frame_input_enabled','_cnc_port_reset_original_mouse_frame_input','_cnc_port_probe_original_mouse_frame_input','_cnc_port_probe_original_mouse_frame_windows','_cnc_port_resolve_original_mouse_frame_window_id','_cnc_port_probe_original_keyboard_input','_cnc_port_probe_original_keyboard_frame_tick','_cnc_port_reset_original_keyboard_input','_cnc_port_queue_original_keyboard_focus_lost','_cnc_port_probe_gdi_font','_cnc_port_state','_cnc_port_probe_audio_manager_runtime','_cnc_port_probe_module_factory_runtime','_cnc_port_probe_particle_system_runtime','_cnc_port_mss_adpcm_payload_buffer','_cnc_port_probe_mss_adpcm_sample_playback_start','_cnc_port_probe_object_ini','_cnc_port_probe_object_ini_snippet']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['cwrap','FS']"
@@ -5136,7 +5154,7 @@ target_compile_options(compression-eac-smoke PRIVATE
 target_link_options(compression-eac-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(compression-manager-smoke
@@ -5164,7 +5182,7 @@ target_compile_options(compression-manager-smoke PRIVATE
 target_link_options(compression-manager-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwdebug-core-smoke
@@ -5188,7 +5206,7 @@ target_compile_options(wwdebug-core-smoke PRIVATE
 target_link_options(wwdebug-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwdebug-profile-smoke
@@ -5218,7 +5236,7 @@ target_compile_options(wwdebug-profile-smoke PRIVATE
 target_link_options(wwdebug-profile-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-base64-smoke
@@ -5244,7 +5262,7 @@ target_compile_options(wwlib-base64-smoke PRIVATE
 target_link_options(wwlib-base64-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-image-misc-smoke
@@ -5274,7 +5292,7 @@ target_compile_options(wwlib-image-misc-smoke PRIVATE
 target_link_options(wwlib-image-misc-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-platform-compat-smoke
@@ -5307,7 +5325,7 @@ target_compile_options(wwlib-platform-compat-smoke PRIVATE
 target_link_options(wwlib-platform-compat-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-surface-core-smoke
@@ -5336,7 +5354,7 @@ target_compile_options(wwlib-surface-core-smoke PRIVATE
 target_link_options(wwlib-surface-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-convert-globals-smoke
@@ -5365,7 +5383,7 @@ target_compile_options(wwlib-convert-globals-smoke PRIVATE
 target_link_options(wwlib-convert-globals-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-font-smoke
@@ -5394,7 +5412,7 @@ target_compile_options(wwlib-font-smoke PRIVATE
 target_link_options(wwlib-font-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-launchweb-smoke
@@ -5423,7 +5441,7 @@ target_compile_options(wwlib-launchweb-smoke PRIVATE
 target_link_options(wwlib-launchweb-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-crc-smoke
@@ -5449,7 +5467,7 @@ target_compile_options(wwlib-crc-smoke PRIVATE
 target_link_options(wwlib-crc-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-fixed-smoke
@@ -5476,7 +5494,7 @@ target_compile_options(wwlib-fixed-smoke PRIVATE
 target_link_options(wwlib-fixed-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-file-core-smoke
@@ -5502,7 +5520,7 @@ target_compile_options(wwlib-file-core-smoke PRIVATE
 target_link_options(wwlib-file-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-buffer-ownership-smoke
@@ -5528,7 +5546,7 @@ target_compile_options(wwlib-buffer-ownership-smoke PRIVATE
 target_link_options(wwlib-buffer-ownership-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-ramfile-smoke
@@ -5554,7 +5572,7 @@ target_compile_options(wwlib-ramfile-smoke PRIVATE
 target_link_options(wwlib-ramfile-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-utility-core-smoke
@@ -5584,7 +5602,7 @@ target_compile_options(wwlib-utility-core-smoke PRIVATE
 target_link_options(wwlib-utility-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-stream-core-smoke
@@ -5613,7 +5631,7 @@ target_compile_options(wwlib-stream-core-smoke PRIVATE
 target_link_options(wwlib-stream-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-lzo-smoke
@@ -5642,7 +5660,7 @@ target_compile_options(wwlib-lzo-smoke PRIVATE
 target_link_options(wwlib-lzo-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-public-key-smoke
@@ -5671,7 +5689,7 @@ target_compile_options(wwlib-public-key-smoke PRIVATE
 target_link_options(wwlib-public-key-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-file-ini-smoke
@@ -5704,7 +5722,7 @@ target_compile_options(wwlib-file-ini-smoke PRIVATE
 target_link_options(wwlib-file-ini-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-mixfile-smoke
@@ -5737,7 +5755,7 @@ target_compile_options(wwlib-mixfile-smoke PRIVATE
 target_link_options(wwlib-mixfile-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-mutex-smoke
@@ -5766,7 +5784,7 @@ target_compile_options(wwlib-mutex-smoke PRIVATE
 target_link_options(wwlib-mutex-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-regex-smoke
@@ -5795,7 +5813,7 @@ target_compile_options(wwlib-regex-smoke PRIVATE
 target_link_options(wwlib-regex-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-thread-smoke
@@ -5828,7 +5846,7 @@ target_compile_options(wwlib-thread-smoke PRIVATE
 target_link_options(wwlib-thread-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-mpu-smoke
@@ -5857,7 +5875,7 @@ target_compile_options(wwlib-mpu-smoke PRIVATE
 target_link_options(wwlib-mpu-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-cpudetect-smoke
@@ -5886,7 +5904,7 @@ target_compile_options(wwlib-cpudetect-smoke PRIVATE
 target_link_options(wwlib-cpudetect-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
@@ -5919,7 +5937,7 @@ target_compile_options(wwlib-legacy-platform-smoke PRIVATE
 target_link_options(wwlib-legacy-platform-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-containers-smoke
@@ -5952,7 +5970,7 @@ target_compile_options(wwlib-containers-smoke PRIVATE
 target_link_options(wwlib-containers-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-string-smoke
@@ -5978,7 +5996,7 @@ target_compile_options(wwlib-string-smoke PRIVATE
 target_link_options(wwlib-string-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-hash-smoke
@@ -6004,7 +6022,7 @@ target_compile_options(wwlib-hash-smoke PRIVATE
 target_link_options(wwlib-hash-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-md5-smoke
@@ -6030,7 +6048,7 @@ target_compile_options(wwlib-md5-smoke PRIVATE
 target_link_options(wwlib-md5-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwlib-sha-smoke
@@ -6056,7 +6074,7 @@ target_compile_options(wwlib-sha-smoke PRIVATE
 target_link_options(wwlib-sha-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwmath-core-smoke
@@ -6090,7 +6108,7 @@ target_compile_options(wwmath-core-smoke PRIVATE
 target_link_options(wwmath-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwmath-curves-smoke
@@ -6125,7 +6143,7 @@ target_compile_options(wwmath-curves-smoke PRIVATE
 target_link_options(wwmath-curves-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwmath-lookup-smoke
@@ -6160,7 +6178,7 @@ target_compile_options(wwmath-lookup-smoke PRIVATE
 target_link_options(wwmath-lookup-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwsaveload-full-smoke
@@ -6198,7 +6216,7 @@ target_compile_options(wwsaveload-full-smoke PRIVATE
 target_link_options(wwsaveload-full-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwutil-smoke
@@ -6230,7 +6248,7 @@ target_compile_options(wwutil-smoke PRIVATE
 target_link_options(wwutil-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(wwdownload-smoke
@@ -6260,7 +6278,7 @@ target_compile_options(wwdownload-smoke PRIVATE
 target_link_options(wwdownload-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
 add_executable(gameengine-header-case-smoke
@@ -6322,7 +6340,7 @@ target_compile_options(gameengine-header-case-smoke PRIVATE
 target_link_options(gameengine-header-case-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sEXIT_RUNTIME=1"
 )
 
@@ -6452,7 +6470,7 @@ target_compile_options(gameclient-utility-smoke PRIVATE
 target_link_options(gameclient-utility-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
@@ -6505,7 +6523,7 @@ target_compile_options(win32-mouse-smoke PRIVATE
 target_link_options(win32-mouse-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
@@ -6558,7 +6576,7 @@ target_compile_options(win32-mouse-cursor-smoke PRIVATE
 target_link_options(win32-mouse-cursor-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
@@ -6611,7 +6629,7 @@ target_compile_options(win32-keyboard-smoke PRIVATE
 target_link_options(win32-keyboard-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
@@ -6664,7 +6682,7 @@ target_compile_options(win32-keyboard-focus-repeat-smoke PRIVATE
 target_link_options(win32-keyboard-focus-repeat-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
@@ -6717,7 +6735,7 @@ target_compile_options(gamewindow-input-smoke PRIVATE
 target_link_options(gamewindow-input-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
@@ -6835,7 +6853,7 @@ target_link_options(w3d-gamewindow-manager-smoke PRIVATE
   "SHELL:-Wl,--gc-sections"
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
@@ -6947,7 +6965,7 @@ target_link_options(w3d-window-layout-script-smoke PRIVATE
   "SHELL:-Wl,--gc-sections"
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sNODERAWFS=1"
@@ -7081,7 +7099,7 @@ target_link_options(gamelogic-new-game-dispatch-smoke PRIVATE
   "SHELL:-sWARN_ON_UNDEFINED_SYMBOLS=0"
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sNODERAWFS=1"
@@ -7133,7 +7151,7 @@ target_compile_options(win32-gameengine-message-pump-smoke PRIVATE
 target_link_options(win32-gameengine-message-pump-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
@@ -7186,7 +7204,7 @@ target_link_options(win32-gameengine-lifetime-smoke PRIVATE
   "SHELL:-Wl,--gc-sections"
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
@@ -7244,7 +7262,7 @@ target_link_options(win32-gameengine-original-lifetime-smoke PRIVATE
   "SHELL:-sWARN_ON_UNDEFINED_SYMBOLS=0"
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
@@ -7300,7 +7318,7 @@ target_compile_options(winmain-wndproc-mouse-smoke PRIVATE
 target_link_options(winmain-wndproc-mouse-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
@@ -7351,7 +7369,7 @@ target_compile_options(w3d-device-utility-smoke PRIVATE
 target_link_options(w3d-device-utility-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -7397,7 +7415,7 @@ target_compile_options(ww3d2-light-render-smoke PRIVATE
 target_link_options(ww3d2-light-render-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -7424,7 +7442,7 @@ target_compile_options(d3d8-shim-smoke PRIVATE
 target_link_options(d3d8-shim-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -7451,7 +7469,7 @@ target_compile_options(water-projection-state-smoke PRIVATE
 target_link_options(water-projection-state-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -7478,7 +7496,7 @@ target_compile_options(d3d8-render-state-mapping-smoke PRIVATE
 target_link_options(d3d8-render-state-mapping-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -7505,7 +7523,7 @@ target_compile_options(d3d8-texture-upload-readiness-smoke PRIVATE
 target_link_options(d3d8-texture-upload-readiness-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -7532,7 +7550,7 @@ target_compile_options(d3d8-texture-stage-state-mapping-smoke PRIVATE
 target_link_options(d3d8-texture-stage-state-mapping-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -7559,7 +7577,7 @@ target_compile_options(d3d8-texture-lifetime-smoke PRIVATE
 target_link_options(d3d8-texture-lifetime-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -7609,7 +7627,7 @@ target_compile_options(ww3d2-dx8wrapper-loader-smoke PRIVATE
 target_link_options(ww3d2-dx8wrapper-loader-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -7660,7 +7678,7 @@ target_compile_options(ww3d2-dx8wrapper-render-smoke PRIVATE
 target_link_options(ww3d2-dx8wrapper-render-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -7712,7 +7730,7 @@ target_compile_options(ww3d2-texture-loader-smoke PRIVATE
 target_link_options(ww3d2-texture-loader-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -7764,7 +7782,7 @@ target_compile_options(wwshade-cubemap-apply-smoke PRIVATE
 target_link_options(wwshade-cubemap-apply-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -7814,7 +7832,7 @@ target_compile_options(matrixmapper-apply-smoke PRIVATE
 target_link_options(matrixmapper-apply-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -7864,7 +7882,7 @@ target_compile_options(classic-environment-mapper-apply-smoke PRIVATE
 target_link_options(classic-environment-mapper-apply-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -7914,7 +7932,7 @@ target_compile_options(environment-mapper-apply-smoke PRIVATE
 target_link_options(environment-mapper-apply-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -7964,7 +7982,7 @@ target_compile_options(screen-mapper-apply-smoke PRIVATE
 target_link_options(screen-mapper-apply-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -8014,7 +8032,7 @@ target_compile_options(edge-mapper-apply-smoke PRIVATE
 target_link_options(edge-mapper-apply-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -8064,7 +8082,7 @@ target_compile_options(ws-environment-mapper-apply-smoke PRIVATE
 target_link_options(ws-environment-mapper-apply-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -8114,7 +8132,7 @@ target_compile_options(grid-environment-mapper-apply-smoke PRIVATE
 target_link_options(grid-environment-mapper-apply-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -8164,7 +8182,7 @@ target_compile_options(grid-ws-environment-mapper-apply-smoke PRIVATE
 target_link_options(grid-ws-environment-mapper-apply-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -8210,8 +8228,8 @@ target_compile_options(ww3d2-shatterplanes-loader-smoke PRIVATE
 target_link_options(ww3d2-shatterplanes-loader-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
-  "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  ${CNC_EXCEPTION_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
@@ -8266,8 +8284,8 @@ target_compile_options(ww3d2-shipped-mesh-loader-smoke PRIVATE
 target_link_options(ww3d2-shipped-mesh-loader-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
-  "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  ${CNC_EXCEPTION_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sNODERAWFS=1"
@@ -8370,7 +8388,7 @@ target_compile_options(gameengine-common-core-smoke PRIVATE
 target_link_options(gameengine-common-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
@@ -8427,7 +8445,7 @@ target_compile_options(miles-audio-open-device-smoke PRIVATE
 target_link_options(miles-audio-open-device-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
@@ -8484,7 +8502,7 @@ target_compile_options(miles-audio-play-sample-smoke PRIVATE
 target_link_options(miles-audio-play-sample-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   # Real IMA ADPCM payloads are read from disk (--adpcm) and the decoded PCM
@@ -8539,7 +8557,7 @@ target_compile_options(gamenetwork-core-smoke PRIVATE
 target_link_options(gamenetwork-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
@@ -8571,7 +8589,7 @@ target_compile_options(gamenetwork-download-manager-smoke PRIVATE
 target_link_options(gamenetwork-download-manager-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
@@ -8602,8 +8620,8 @@ target_compile_options(gameengine-real-big-smoke PRIVATE
 target_link_options(gameengine-real-big-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
-  "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  ${CNC_EXCEPTION_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sNODERAWFS=1"
@@ -8643,8 +8661,8 @@ target_link_options(gameengine-real-big-browser-smoke PRIVATE
   "SHELL:-sMODULARIZE=1"
   "SHELL:-sEXPORT_ES6=1"
   "SHELL:-sEXPORT_NAME=createGameEngineRealBigBrowserSmokeModule"
-  "SHELL:-sASSERTIONS=1"
-  "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  ${CNC_EXCEPTION_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXPORTED_FUNCTIONS=['_run_real_big_smoke','_run_real_big_index_smoke']"
@@ -8708,7 +8726,7 @@ target_compile_options(bink-video-provider-smoke PRIVATE
 target_link_options(bink-video-provider-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=33554432"
   "SHELL:-sNODERAWFS=1"
@@ -8743,7 +8761,7 @@ target_link_options(bink-video-provider-browser-smoke PRIVATE
   "SHELL:-sMODULARIZE=1"
   "SHELL:-sEXPORT_ES6=1"
   "SHELL:-sEXPORT_NAME=createBinkVideoProviderBrowserSmokeModule"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=33554432"
   "SHELL:-sEXPORTED_FUNCTIONS=['_run_bink_video_provider_smoke','_run_bink_video_sidecar_provider_smoke','_run_bink_video_sidecar_copy_bridge_smoke']"
@@ -8797,7 +8815,7 @@ target_compile_options(bink-videoplayer-runtime-smoke PRIVATE
 target_link_options(bink-videoplayer-runtime-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sNODERAWFS=1"
@@ -8854,7 +8872,7 @@ target_link_options(bink-videoplayer-browser-runtime-smoke PRIVATE
   "SHELL:-sMODULARIZE=1"
   "SHELL:-sEXPORT_ES6=1"
   "SHELL:-sEXPORT_NAME=createBinkVideoPlayerBrowserRuntimeSmokeModule"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXPORTED_FUNCTIONS=['_run_bink_videoplayer_sidecar_copy_bridge_smoke']"
@@ -9003,7 +9021,7 @@ target_link_options(bink-w3d-video-buffer-browser-smoke PRIVATE
   "SHELL:-sMODULARIZE=1"
   "SHELL:-sEXPORT_ES6=1"
   "SHELL:-sEXPORT_NAME=createBinkW3DVideoBufferBrowserSmokeModule"
-  "SHELL:-sASSERTIONS=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=134217728"
   "SHELL:-Wl,--gc-sections"

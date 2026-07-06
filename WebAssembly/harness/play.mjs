@@ -35,6 +35,7 @@ const progressNode = document.querySelector("#progress");
 const fpsNode = document.querySelector("#fps");
 const queryParams = new URLSearchParams(window.location.search);
 const viewportCanvas = document.querySelector("#viewport");
+const selectedDistDir = selectedCncPortDistDir();
 
 const DEFAULT_LOGIC_FPS = 30;
 const DEFAULT_CATCHUP_FRAMES = 2;
@@ -42,6 +43,15 @@ const DEFAULT_CATCHUP_FRAMES = 2;
 function positiveNumberParam(name, fallback) {
   const value = Number(queryParams.get(name));
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function validCncPortDistDir(value) {
+  return typeof value === "string" && /^dist(?:[-_][A-Za-z0-9_-]+)?$/.test(value);
+}
+
+function selectedCncPortDistDir() {
+  const value = queryParams.get("dist") || "dist-release";
+  return validCncPortDistDir(value) ? value : "dist-release";
 }
 
 let configuredDiagLevel = "full";
@@ -219,6 +229,7 @@ async function start() {
     issueRecorder.setSessionContext({
       phase: "starting",
       diagLevel: configuredDiagLevel,
+      distDir: selectedDistDir,
       pageParams: Object.fromEntries(queryParams),
     });
 
@@ -242,10 +253,10 @@ async function start() {
       },
     });
 
-    // The original ShellMapMD 3D menu background (the naval scene) renders
-    // through the real lifecycle since fd3cea3 — default on; ?shellmap=0
-    // opts out (faster boot, static backdrop).
-    const shellMap = queryParams.get("shellmap") !== "0";
+    // The human page defaults to the static main-menu path because the Release
+    // shell-map load can stall in GAME_SHELL loading on Mac Chrome/Metal. The
+    // shell-map path remains available for targeted debugging with ?shellmap=1.
+    const shellMap = queryParams.get("shellmap") === "1";
     issueRecorder.setSessionContext({ shellMap });
     report(`running real GameEngine::init() (~10-30s, shell map ${shellMap ? "on" : "off"})...`);
     const init = await rpc("realEngineInit", { runDirectory: "/assets/real-init", shellMap });
@@ -331,7 +342,7 @@ async function headLastModifiedMs(url) {
 async function refreshBuildAge() {
   try {
     const [wasmBuiltMs, bridgeBuiltMs] = await Promise.all([
-      headLastModifiedMs(new URL("../dist/cnc-port.wasm", window.location.href)),
+      headLastModifiedMs(new URL(`../${selectedDistDir}/cnc-port.wasm`, window.location.href)),
       headLastModifiedMs(new URL("./bridge.js", window.location.href)),
     ]);
     const builtMs = Math.max(wasmBuiltMs ?? 0, bridgeBuiltMs ?? 0);
@@ -342,7 +353,7 @@ async function refreshBuildAge() {
     if (firstSeenBuildMs === null) {
       firstSeenBuildMs = builtMs;
     }
-    buildAgeNode.title = new Date(builtMs).toLocaleString();
+    buildAgeNode.title = `${selectedDistDir}/cnc-port.wasm, bridge.js\n${new Date(builtMs).toLocaleString()}`;
     if (builtMs > firstSeenBuildMs) {
       buildAgeNode.textContent = `${relativeAge(Date.now() - builtMs)} — NEW, reload`;
       buildAgeNode.classList.add("fresh");

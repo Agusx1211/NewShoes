@@ -288,6 +288,15 @@ extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_engine_update_brea
 extern "C" void cnc_port_note_game_logic_step(const char *name)
 {
 	g_last_game_logic_step = name != nullptr ? name : "";
+	if (g_last_game_logic_step.rfind("GameEngine.init.", 0) == 0
+		|| g_last_game_logic_step.rfind("GameLogic.reset.", 0) == 0
+		|| g_last_game_logic_step.rfind("W3DTerrainLogic.reset.", 0) == 0
+		|| g_last_game_logic_step.rfind("TerrainLogic.reset.", 0) == 0
+		|| g_last_game_logic_step.rfind("SidesList.", 0) == 0
+		|| g_last_game_logic_step.rfind("SidesInfo.", 0) == 0) {
+		std::printf("cnc-port: real-init step %s\n", g_last_game_logic_step.c_str());
+		std::fflush(stdout);
+	}
 	if (!g_game_logic_breakpoint.empty()
 		&& g_last_game_logic_step == g_game_logic_breakpoint) {
 		throw "cnc_port_game_logic_step_breakpoint";
@@ -483,6 +492,7 @@ const char *build_state_json()
 	} else {
 		json += ",\"inFlightSubsystem\":\"" + json_escape(g_state.in_flight) + "\"";
 	}
+	json += ",\"lastGameLogicStep\":\"" + json_escape(g_last_game_logic_step) + "\"";
 	json += "}";
 	g_state_json = json;
 	return g_state_json.c_str();
@@ -493,20 +503,35 @@ const char *build_state_json()
 // Called by the real SubsystemInterfaceList::initSubsystem()
 // (GameEngine/Source/Common/System/SubsystemInterface.cpp) for every
 // subsystem GameEngine::init() brings up. phase 0 = starting (about to run
-// sys->init() + its INI loads), phase 1 = completed.
+// sys->init() + its INI loads), phase 1 = completed, phase 2/3 = vector append.
 extern "C" void cnc_port_note_subsystem_init(const char *name, int phase)
 {
 	const char *safe_name = name != nullptr ? name : "(unnamed)";
 	if (phase == 0) {
 		g_state.in_flight = safe_name;
 		std::printf("cnc-port: real-init subsystem-start %s\n", safe_name);
-	} else {
+	} else if (phase == 1) {
 		g_state.in_flight.clear();
 		g_state.completed.push_back(safe_name);
 		if (std::strcmp(safe_name, "TheFunctionLexicon") == 0) {
 			wasm_function_lexicon_register_command_bar_callback_owners();
 		}
 		std::printf("cnc-port: real-init subsystem-done %s\n", safe_name);
+	} else if (phase == 2) {
+		g_last_game_logic_step = std::string("SubsystemInterfaceList.initSubsystem.push.before:") + safe_name;
+		std::printf("cnc-port: real-init subsystem-push-before %s\n", safe_name);
+	} else if (phase == 3) {
+		g_last_game_logic_step = std::string("SubsystemInterfaceList.initSubsystem.push.after:") + safe_name;
+		std::printf("cnc-port: real-init subsystem-push-after %s\n", safe_name);
+	} else if (phase == 4) {
+		g_last_game_logic_step = std::string("SubsystemInterfaceList.initSubsystem.ini.after:") + safe_name;
+		std::printf("cnc-port: real-init subsystem-ini-after %s\n", safe_name);
+	} else if (phase == 5) {
+		g_last_game_logic_step = std::string("SubsystemInterfaceList.reset.before:") + safe_name;
+		std::printf("cnc-port: real-init subsystem-reset-before %s\n", safe_name);
+	} else if (phase == 6) {
+		g_last_game_logic_step = std::string("SubsystemInterfaceList.reset.after:") + safe_name;
+		std::printf("cnc-port: real-init subsystem-reset-after %s\n", safe_name);
 	}
 	std::fflush(stdout);
 }

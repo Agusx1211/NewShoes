@@ -34,6 +34,14 @@
 // GameEngine::init() is initializing so the harness can compute the real
 // boot frontier from the actual run. Weak so it links without the port entry.
 extern "C" void cnc_port_note_subsystem_init(const char *name, int phase) __attribute__((weak));
+#define CNC_PORT_NOTE_SUBSYSTEM_STEP(name, phase) \
+	do { \
+		if (cnc_port_note_subsystem_init) { \
+			cnc_port_note_subsystem_init(name, phase); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_SUBSYSTEM_STEP(name, phase) do { } while (0)
 #endif
 
 #ifdef _INTERNAL
@@ -133,6 +141,10 @@ void SubsystemInterface::DRAW(void)
 //-----------------------------------------------------------------------------
 SubsystemInterfaceList::SubsystemInterfaceList()
 {
+	m_subsystems.reserve(64);
+#ifdef DUMP_PERF_STATS
+	m_allSubsystems.reserve(64);
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -163,7 +175,7 @@ void SubsystemInterfaceList::removeSubsystem(SubsystemInterface* sys)
 #endif
 }
 //-----------------------------------------------------------------------------
-void SubsystemInterfaceList::initSubsystem(SubsystemInterface* sys, const char* path1, const char* path2, const char* dirpath, Xfer *pXfer, AsciiString name)
+void SubsystemInterfaceList::initSubsystem(SubsystemInterface* sys, const char* path1, const char* path2, const char* dirpath, Xfer *pXfer, const AsciiString& name)
 {
 #ifdef __EMSCRIPTEN__
 	if (cnc_port_note_subsystem_init != 0)
@@ -172,19 +184,24 @@ void SubsystemInterfaceList::initSubsystem(SubsystemInterface* sys, const char* 
 	sys->setName(name);
 	sys->init();
 
-	INI ini;
-	if (path1)
-		ini.load(path1, INI_LOAD_OVERWRITE, pXfer );
-	if (path2)
-		ini.load(path2, INI_LOAD_OVERWRITE, pXfer );
-	if (dirpath)
-		ini.loadDirectory(dirpath, TRUE, INI_LOAD_OVERWRITE, pXfer );
+	{
+		INI ini;
+		if (path1)
+			ini.load(path1, INI_LOAD_OVERWRITE, pXfer );
+		if (path2)
+			ini.load(path2, INI_LOAD_OVERWRITE, pXfer );
+		if (dirpath)
+			ini.loadDirectory(dirpath, TRUE, INI_LOAD_OVERWRITE, pXfer );
+	}
+	CNC_PORT_NOTE_SUBSYSTEM_STEP(name.str(), 4);
 
 #ifdef __EMSCRIPTEN__
 	if (cnc_port_note_subsystem_init != 0)
 		cnc_port_note_subsystem_init(name.str(), 1);
 #endif
+	CNC_PORT_NOTE_SUBSYSTEM_STEP(name.str(), 2);
 	m_subsystems.push_back(sys);
+	CNC_PORT_NOTE_SUBSYSTEM_STEP(name.str(), 3);
 }
 
 //-----------------------------------------------------------------------------
@@ -202,7 +219,12 @@ void SubsystemInterfaceList::resetAll()
 //	for (SubsystemList::iterator it = m_subsystems.begin(); it != m_subsystems.end(); ++it)
 	for (SubsystemList::reverse_iterator it = m_subsystems.rbegin(); it != m_subsystems.rend(); ++it)
 	{
-		(*it)->reset();
+		SubsystemInterface *sys = *it;
+		AsciiString name = sys ? sys->getName() : AsciiString("(null)");
+		CNC_PORT_NOTE_SUBSYSTEM_STEP(name.str(), 5);
+		if (sys)
+			sys->reset();
+		CNC_PORT_NOTE_SUBSYSTEM_STEP(name.str(), 6);
 	}
 }
 

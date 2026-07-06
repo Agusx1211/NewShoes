@@ -117,6 +117,10 @@ void SubsystemInterface::DRAW(void)
 //-----------------------------------------------------------------------------
 SubsystemInterfaceList::SubsystemInterfaceList()
 {
+	m_subsystems.reserve(64);
+#ifdef DUMP_PERF_STATS
+	m_allSubsystems.reserve(64);
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -147,7 +151,7 @@ void SubsystemInterfaceList::removeSubsystem(SubsystemInterface* sys)
 #endif
 }
 //-----------------------------------------------------------------------------
-void SubsystemInterfaceList::initSubsystem(SubsystemInterface* sys, const char* path1, const char* path2, const char* dirpath, Xfer *pXfer, AsciiString name)
+void SubsystemInterfaceList::initSubsystem(SubsystemInterface* sys, const char* path1, const char* path2, const char* dirpath, Xfer *pXfer, const AsciiString& name)
 {
 	sys->setName(name);
 	sys->init();
