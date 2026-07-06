@@ -8,6 +8,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## User-reported play bugs (2026-07-06 session)
+
+- [x] Fix the live skirmish minimap terrain render. The browser D3D8 caps now
+      stop advertising `D3DFMT_R8G8B8` as a supported texture format, so
+      original `W3DRadar::initializeTextureFormats()` selects `X8R8G8B8`
+      instead of a 24-bit surface that `SurfaceClass::DrawPixel()` cannot
+      write. `W3DRadar::buildTerrainTexture()` now locks the terrain surface
+      once and writes the same packed radar colors into it, reducing the
+      Tournament Desert radar terrain texture from 65,540 tiny uploads to 8.
+      The existing skirmish harness can request `128x128` D3D8 texture samples
+      and post-active survival frames. Verified with `npm run build:port` and
+      `SKIRMISH_START_MAP='maps\tournament desert\tournament desert.map'
+      SKIRMISH_START_POST_ACTIVE_FRAMES=60 SKIRMISH_START_POST_ACTIVE_CHUNK=30
+      SKIRMISH_START_EXPECT_SURVIVE=1
+      SKIRMISH_START_OUTPUT=/tmp/skirmish-tournament-desert-radar-batched.json
+      SKIRMISH_START_SCREENSHOT=/tmp/skirmish-tournament-desert-radar-batched.png
+      node harness/skirmish_start_smoke.mjs`: active skirmish survived to frame
+      205, the radar terrain texture sampled non-black pixels, and the
+      screenshot shows terrain in the LeftHUD minimap.
+
 ## M0 — Build skeleton & asset pipeline
 
 ### Toolchain

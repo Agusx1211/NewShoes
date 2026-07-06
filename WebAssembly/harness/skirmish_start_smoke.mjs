@@ -47,6 +47,9 @@ const outputPath = resolve(
     resolve(artifactsRoot, "skirmish-start-smoke.json"));
 const maxStartFrames = parsePositiveInt("SKIRMISH_START_MAX_FRAMES", 4200);
 const frameChunk = parsePositiveInt("SKIRMISH_START_FRAME_CHUNK", 30);
+const postActiveFrames = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_FRAMES", 0);
+const postActiveFrameChunk = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_CHUNK", frameChunk);
+const expectPostActiveSurvival = process.env.SKIRMISH_START_EXPECT_SURVIVE === "1";
 const requestedSkirmishMap = String(process.env.SKIRMISH_START_MAP ?? "").trim();
 
 function parsePositiveInt(name, fallback) {
@@ -354,6 +357,19 @@ async function waitForSkirmishMatch(page) {
   });
 }
 
+async function runPostActiveFrames(page, totalFrames, chunkSize) {
+  const samples = [];
+  let framesAdvanced = 0;
+  let last = null;
+  while (framesAdvanced < totalFrames) {
+    const frames = Math.min(chunkSize, totalFrames - framesAdvanced);
+    last = await runSummary(page, frames, "skirmish post-active wait");
+    framesAdvanced += frames;
+    samples.push(compactGameplay(last.frame));
+  }
+  return { result: last, framesAdvanced, samples };
+}
+
 async function main() {
   await mkdir(dirname(screenshotPath), { recursive: true });
   await mkdir(dirname(outputPath), { recursive: true });
@@ -476,6 +492,25 @@ async function main() {
       console.error("WAIT FAILED; badJsonContext:", JSON.stringify(ctx));
       throw error;
     }
+    let postActive = null;
+    if (postActiveFrames > 0) {
+      console.error(`[skirmish-start] run ${postActiveFrames} post-active frames`);
+      postActive = await runPostActiveFrames(page, postActiveFrames, postActiveFrameChunk);
+      if (expectPostActiveSurvival) {
+        const gameplay = postActive.result?.frame?.gameplay;
+        expect(gameplay?.gameMode === GAME_SKIRMISH &&
+            gameplay?.inGame === true &&
+            gameplay?.loadingMap === false &&
+            gameplay?.inputEnabled === true &&
+            Number(gameplay?.objectCount ?? 0) > 0 &&
+            Number(gameplay?.drawableCount ?? 0) > 0 &&
+            Number(gameplay?.renderedObjectCount ?? 0) > 0,
+          "skirmish did not survive post-active frames", {
+            postActiveFrames,
+            samples: postActive.samples.slice(-12),
+          });
+      }
+    }
     await page.locator("#viewport").screenshot({ path: screenshotPath });
     const renderProbe = await sampleViewportGrid(page);
     expect(renderProbe.ok === true,
@@ -526,7 +561,10 @@ async function main() {
     // the command-bar atlas (1024x256 SN/SA/SUCommandBar.tga) was ever uploaded.
     let d3d8TextureInventory = null;
     try {
-      d3d8TextureInventory = await rpc(page, "d3d8TextureInventory");
+      d3d8TextureInventory = await rpc(page, "d3d8TextureInventory", {
+        sizes: ["1024x256", "128x128"],
+        sampleLimit: 128,
+      });
     } catch (error) {
       d3d8TextureInventory = { error: error?.message ?? String(error) };
     }
@@ -545,6 +583,11 @@ async function main() {
       officialMultiplayerMaps: mapCache?.probe?.officialMultiplayerMaps ?? [],
       framesAdvancedAfterStart: active.framesAdvanced,
       finalGameplay: compactGameplay(active.result.frame),
+      postActive: postActive == null ? null : {
+        framesAdvanced: postActive.framesAdvanced,
+        finalGameplay: compactGameplay(postActive.result?.frame),
+        samples: postActive.samples,
+      },
       renderProbe,
       // ADD-ONLY HUD diagnostics: full control-bar / shell / startNewGame state
       // from the final active-match frame (read-only; does not gate anything).

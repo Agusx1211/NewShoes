@@ -214,8 +214,9 @@ reproduce in the harness and verify each fix with a screenshot / state check.
       buildings disappear. No "you lost" screen is shown. Likely a game-logic
       defeat-condition / building-ownership bug firing spuriously (investigate
       player/team assignment, building existence check, victory conditions).
-- [ ] **Minimap never renders** — the radar/minimap does not draw at all.
-      Related to the QUEUED radar proof.
+      2026-07-06 harness note: Alpine Assault survived 300 post-active frames
+      and Tournament Desert survived 900 post-active frames without triggering
+      this, so keep this open for an issue dump or exact human repro settings.
 - [ ] **Fog of war renders incorrectly** — the shroud/fog-of-war does not
       render correctly (shroud pass / partial-vision reveal path).
 

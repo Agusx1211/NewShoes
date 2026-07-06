@@ -15649,9 +15649,13 @@ async function rpc(command, payload = {}) {
     case "d3d8TextureInventory":
       {
         // ADD-ONLY Stage-1 diagnostic: enumerate every live D3D8 texture and,
-        // for the command-bar atlas candidate sizes (1024x256), sample the actual
-        // GL pixels to detect a black/stub upload (silent 2D-texture-load
-        // failure). Read-only; no wasm call.
+        // for requested diagnostic sizes, sample the actual GL pixels to detect
+        // a black/stub upload (silent 2D-texture-load failure). Read-only; no
+        // wasm call.
+        const requestedSizes = Array.isArray(payload.sizes)
+          ? new Set(payload.sizes.map((size) => String(size)))
+          : new Set(["1024x256"]);
+        const sampleLimit = Math.max(0, Math.min(256, Number(payload.sampleLimit ?? 4) >>> 0));
         const inventory = {};
         for (const [texId, res] of d3d8Textures.entries()) {
           const key = `${res.width}x${res.height}`;
@@ -15659,9 +15663,14 @@ async function rpc(command, payload = {}) {
             inventory[key] = { count: 0, samples: [] };
           }
           inventory[key].count += 1;
-          const isAtlas = res.width === 1024 && res.height === 256;
-          if ((isAtlas) && inventory[key].samples.length < 4) {
+          if (requestedSizes.has(key) && inventory[key].samples.length < sampleLimit) {
             const ready = Boolean(res.initializedLevels?.has("0"));
+            const centerX = Math.max(0, Math.min(res.width - 1, Math.floor(res.width / 2)));
+            const centerY = Math.max(0, Math.min(res.height - 1, Math.floor(res.height / 2)));
+            const cornerX = Math.max(0, Math.min(res.width - 1, 4));
+            const cornerY = Math.max(0, Math.min(res.height - 1, 4));
+            const lowerX = Math.max(0, Math.min(res.width - 1, Math.floor(res.width * 0.78)));
+            const lowerY = Math.max(0, Math.min(res.height - 1, Math.floor(res.height * 0.62)));
             inventory[key].samples.push({
               id: texId,
               uploads: res.uploads ?? 0,
@@ -15670,10 +15679,10 @@ async function rpc(command, payload = {}) {
               pool: res.pool,
               usage: res.usage,
               centerPixel: ready
-                ? sampleD3D8TexturePixel(res, 512, 128)
+                ? sampleD3D8TexturePixel(res, centerX, centerY)
                 : null,
               cornerPixels: ready
-                ? [sampleD3D8TexturePixel(res, 4, 4), sampleD3D8TexturePixel(res, 200, 160)]
+                ? [sampleD3D8TexturePixel(res, cornerX, cornerY), sampleD3D8TexturePixel(res, lowerX, lowerY)]
                 : null,
             });
           }

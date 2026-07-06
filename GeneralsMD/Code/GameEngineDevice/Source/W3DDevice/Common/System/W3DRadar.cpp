@@ -76,6 +76,46 @@ inline Bool legalRadarPoint( Int px, Int py )
 
 }
 
+static UnsignedInt writableRadarPixelSize( WW3DFormat format )
+{
+	switch( format )
+	{
+		case WW3D_FORMAT_A8R8G8B8:
+		case WW3D_FORMAT_X8R8G8B8:
+			return 4;
+		case WW3D_FORMAT_R5G6B5:
+		case WW3D_FORMAT_X1R5G5B5:
+		case WW3D_FORMAT_A1R5G5B5:
+		case WW3D_FORMAT_A4R4G4B4:
+			return 2;
+		case WW3D_FORMAT_A8:
+		case WW3D_FORMAT_L8:
+			return 1;
+		default:
+			return 0;
+	}
+}
+
+static void writeRadarPixel( UnsignedByte *surfaceBits, Int pitch, UnsignedInt pixelSize,
+														 Int x, Int y, UnsignedInt color )
+{
+	UnsignedByte *pixel = surfaceBits + y * pitch + x * pixelSize;
+	switch( pixelSize )
+	{
+		case 1:
+			*pixel = (UnsignedByte)( color & 0xFF );
+			break;
+		case 2:
+			*(UnsignedShort *)pixel = (UnsignedShort)( color & 0xFFFF );
+			break;
+		case 4:
+			*(UnsignedInt *)pixel = color;
+			break;
+		default:
+			break;
+	}
+}
+
 //-------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 static WW3DFormat findFormat(const WW3DFormat formats[])
@@ -1034,6 +1074,13 @@ void W3DRadar::buildTerrainTexture( TerrainLogic *terrain )
 	// get the terrain surface to draw in
 	surface = m_terrainTexture->Get_Surface_Level();
 	DEBUG_ASSERTCRASH( surface, ("W3DRadar: Can't get surface for terrain texture\n") );
+	SurfaceClass::SurfaceDescription surfaceDescription;
+	surface->Get_Description( surfaceDescription );
+	UnsignedInt terrainPixelSize = writableRadarPixelSize( surfaceDescription.Format );
+	Int terrainPitch = 0;
+	UnsignedByte *terrainBits = NULL;
+	if( terrainPixelSize != 0 )
+		terrainBits = (UnsignedByte *)surface->Lock( &terrainPitch );
 
 	// build the terrain
 	RGBColor sampleColor;
@@ -1236,17 +1283,26 @@ void W3DRadar::buildTerrainTexture( TerrainLogic *terrain )
 			// and locking only once ... but it made absolutely *no* performance difference,
 			// the sampling and interpolation algorithm for generating pretty looking terrain
 			// and water for the radar is just, well, expensive.
+			// On the browser D3D8 bridge, locking once is significant: each DrawPixel
+			// unlock is a JS/WebGL texture upload. Keep the same packed color bytes
+			// but submit one texture update for the completed radar terrain.
 			//
-			surface->DrawPixel( x, y, GameMakeColor( color.red * 255, 
-																							 color.green * 255,
-																							 color.blue * 255,
-																							 255 ) );
+			UnsignedInt radarColor = GameMakeColor( color.red * 255,
+																							color.green * 255,
+																							color.blue * 255,
+																							255 );
+			if( terrainBits != NULL )
+				writeRadarPixel( terrainBits, terrainPitch, terrainPixelSize, x, y, radarColor );
+			else
+				surface->DrawPixel( x, y, radarColor );
 
 		}  // end for x
 
 	}  // end for y
 
 	// all done with the surface
+	if( terrainBits != NULL )
+		surface->Unlock();
 	REF_PTR_RELEASE(surface);
 
 }  // end buildTerrainTexture

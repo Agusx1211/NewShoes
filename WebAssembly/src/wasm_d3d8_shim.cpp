@@ -748,6 +748,60 @@ bool is_block_compressed_format(D3DFORMAT format)
 	}
 }
 
+bool is_browser_texture_format_supported(D3DFORMAT format)
+{
+	switch (format) {
+		// D3DFMT_R8G8B8 deliberately stays out of caps advertising. The WebGL
+		// bridge can upload 24-bit rows, but WW3D's SurfaceClass::DrawPixel()
+		// has no 3-byte pixel write path; advertising it makes W3DRadar choose
+		// a terrain texture format that remains black.
+		case D3DFMT_A8R8G8B8:
+		case D3DFMT_X8R8G8B8:
+		case D3DFMT_R5G6B5:
+		case D3DFMT_X1R5G5B5:
+		case D3DFMT_A1R5G5B5:
+		case D3DFMT_A4R4G4B4:
+		case D3DFMT_X4R4G4B4:
+		case D3DFMT_A8:
+		case D3DFMT_L8:
+		case D3DFMT_A8L8:
+		case D3DFMT_DXT1:
+		case D3DFMT_DXT2:
+		case D3DFMT_DXT3:
+		case D3DFMT_DXT4:
+		case D3DFMT_DXT5:
+			return true;
+		default:
+			return false;
+	}
+}
+
+bool is_browser_render_target_format_supported(D3DFORMAT format)
+{
+	switch (format) {
+		case D3DFMT_X1R5G5B5:
+		case D3DFMT_R5G6B5:
+		case D3DFMT_X8R8G8B8:
+		case D3DFMT_A8R8G8B8:
+			return true;
+		default:
+			return false;
+	}
+}
+
+bool is_browser_depth_stencil_format_supported(D3DFORMAT format)
+{
+	switch (format) {
+		case D3DFMT_D16_LOCKABLE:
+		case D3DFMT_D16:
+		case D3DFMT_D24X8:
+		case D3DFMT_D24S8:
+			return true;
+		default:
+			return false;
+	}
+}
+
 UINT block_bytes(D3DFORMAT format)
 {
 	switch (format) {
@@ -4074,9 +4128,25 @@ public:
 		return adapter == D3DADAPTER_DEFAULT ? S_OK : D3DERR_NOTAVAILABLE;
 	}
 
-	HRESULT CheckDeviceFormat(UINT adapter, DWORD, D3DFORMAT, DWORD, D3DRESOURCETYPE, D3DFORMAT) override
+	HRESULT CheckDeviceFormat(UINT adapter, DWORD, D3DFORMAT, DWORD usage, D3DRESOURCETYPE resource_type,
+		D3DFORMAT check_format) override
 	{
-		return adapter == D3DADAPTER_DEFAULT ? S_OK : D3DERR_NOTAVAILABLE;
+		if (adapter != D3DADAPTER_DEFAULT) {
+			return D3DERR_NOTAVAILABLE;
+		}
+		if ((usage & D3DUSAGE_DEPTHSTENCIL) != 0) {
+			return (resource_type == D3DRTYPE_SURFACE || resource_type == D3DRTYPE_TEXTURE) &&
+				is_browser_depth_stencil_format_supported(check_format) ? S_OK : D3DERR_NOTAVAILABLE;
+		}
+		if ((usage & D3DUSAGE_RENDERTARGET) != 0) {
+			return (resource_type == D3DRTYPE_SURFACE || resource_type == D3DRTYPE_TEXTURE) &&
+				is_browser_render_target_format_supported(check_format) ? S_OK : D3DERR_NOTAVAILABLE;
+		}
+		if (resource_type == D3DRTYPE_TEXTURE || resource_type == D3DRTYPE_VOLUMETEXTURE ||
+			resource_type == D3DRTYPE_SURFACE) {
+			return is_browser_texture_format_supported(check_format) ? S_OK : D3DERR_NOTAVAILABLE;
+		}
+		return D3DERR_NOTAVAILABLE;
 	}
 
 	HRESULT CheckDepthStencilMatch(UINT adapter, DWORD, D3DFORMAT, D3DFORMAT, D3DFORMAT) override
