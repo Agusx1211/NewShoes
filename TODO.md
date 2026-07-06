@@ -284,15 +284,17 @@ residue and the next frontier.
       `Common/INI.h`, `Common/STLTypedefs.h`, `Common/GlobalData.h`, and
       `GameLogic/GameLogic.h` for representative GameLogic/GameSpy objects.
       Remaining cleanup: old utility/smoke targets still have shadow-header
-      deps outside the real frontier, led by `zh_gameclient_utility`,
-      `w3d-window-layout-script-smoke`,
-      `zh_gameclient_gui_input_shim_runtime`, and
-      `w3d-gamewindow-manager-smoke`. Migrate or retire those legacy targets
-      as the real lifecycle covers them, then delete the shim class bodies
-      once no linked or compile-only target needs them. This is the same
-      hazard class as the confirmed d6d3b79 ChallengeGenerals stack corruption
-      and the fixed edgeMapperApply aggregate-smoke incident above — fix it
-      once at the root instead of per-incident.
+      deps outside the real frontier, now narrowed to
+      `w3d-window-layout-script-smoke` (24 offender objects after
+      `ninja -t cleandead`) and `zh_gameclient_gui_input_shim_runtime` (20
+      offender objects). `zh_gameclient_utility`, `gameclient-utility-smoke`,
+      and `w3d-gamewindow-manager-smoke` now verify at 0 offender objects.
+      Migrate or retire the remaining legacy targets as the real lifecycle
+      covers them, then delete the shim class bodies once no linked or
+      compile-only target needs them. This is the same hazard class as the
+      confirmed d6d3b79 ChallengeGenerals stack corruption and the fixed
+      edgeMapperApply aggregate-smoke incident above — fix it once at the root
+      instead of per-incident.
 - [ ] Real-lifecycle residue: browser `ReleaseCrash`/`_exit` does not
       terminate the wasm runtime (teardown semantics differ from Windows);
       `TheVersion` is left null; `GameEngine::execute()` is stepped by

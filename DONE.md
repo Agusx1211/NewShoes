@@ -8614,6 +8614,31 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `node WebAssembly/tools/verify_gamelogic_new_game_dispatch_frontier.mjs`,
       `node WebAssembly/tools/run_startup_vertical_smoke.mjs`, and
       `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`.
+- [x] Migrate the GameClient utility and W3D window-manager legacy smokes to
+      the real PreRTS/header prelude. `zh_gameclient_utility` now uses
+      `src/wasm_ini_mapped_image_compat.cpp` instead of
+      `shims/INICompat.cpp`, forces original `GlobalData`/`GameLogic` headers,
+      and gives `VideoStream.cpp` the real prelude. `gameclient-utility-smoke`
+      now links the original GlobalData/debug owners and a narrow real-layout
+      INI parser support file for the utility coverage it exercises.
+      `w3d-gamewindow-manager-smoke` now force-includes `wasm_prerts_real.h`,
+      links the GUI input runtime instead of the broad utility archive, and
+      gets focused real-layout `Display`/`FontLibrary`/`ImageCollection`
+      support instead of a local fake `TheGlobalData`. After `ninja -t
+      cleandead`, `zh_gameclient_utility`, `gameclient-utility-smoke`, and
+      `w3d-gamewindow-manager-smoke` all audit at 0 shadow-header offender
+      objects; the remaining non-frontier offenders are
+      `w3d-window-layout-script-smoke` and
+      `zh_gameclient_gui_input_shim_runtime`. Verified with focused Ninja
+      builds for `zh_gameclient_utility`, `gameclient-utility-smoke`,
+      `w3d-gamewindow-manager-smoke`, and `w3d-window-layout-script-smoke`;
+      `node WebAssembly/dist/gameclient-utility-smoke.cjs`, `node
+      WebAssembly/dist/w3d-gamewindow-manager-smoke.cjs`, `node
+      dist/w3d-window-layout-script-smoke.cjs` from `WebAssembly/`, `npm
+      --prefix WebAssembly run build:port`, `npm --prefix WebAssembly run
+      test:startup-vertical`, `npm --prefix WebAssembly run
+      verify:cnc-port-real-headers`, `npm --prefix WebAssembly run
+      verify:cnc-port-weak-stubs`, and `git diff --check`.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an

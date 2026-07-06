@@ -3856,7 +3856,7 @@ target_link_libraries(zh_gameengine_real_object_ini_runtime PUBLIC
 
 
 add_library(zh_gameclient_utility STATIC
-  "${WASM_SHIMS_DIR}/INICompat.cpp"
+  src/wasm_ini_mapped_image_compat.cpp
   "${GAMEENGINE_GAMECLIENT_DIR}/Color.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Credits.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Display.cpp"
@@ -4012,7 +4012,7 @@ add_library(zh_gameclient_utility STATIC
 )
 
 set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/VideoStream.cpp" PROPERTIES
-  COMPILE_OPTIONS "-include;${WASM_SHIMS_DIR}/PreRTS.h"
+  COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
 )
 
 set_property(SOURCE "${GAMEENGINE_GAMECLIENT_DIR}/GUI/LoadScreen.cpp" APPEND PROPERTY
@@ -4023,14 +4023,44 @@ target_include_directories(zh_gameclient_utility PUBLIC
   "${WASM_SHIMS_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
   "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
   "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
   "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
   "${WWMATH_DIR}"
   "${WWLIB_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_definitions(zh_gameclient_utility PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
 )
 
 target_compile_options(zh_gameclient_utility PRIVATE
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_webbrowser_boundary.h"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
   -fms-extensions
   -Wall
   -Wextra
@@ -6401,6 +6431,7 @@ target_link_options(gameengine-header-case-smoke PRIVATE
 
 add_executable(gameclient-utility-smoke
   tests/gameclient_utility_smoke.cpp
+  src/wasm_gameclient_utility_smoke_ini_support.cpp
 )
 
 set_target_properties(gameclient-utility-smoke PROPERTIES
@@ -6409,9 +6440,55 @@ set_target_properties(gameclient-utility-smoke PROPERTIES
 
 target_link_libraries(gameclient-utility-smoke PRIVATE
   zh_gameclient_utility
+  zh_gameengine_globaldata_runtime
+  zh_gameengine_debug_runtime
+)
+
+target_compile_definitions(gameclient-utility-smoke PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+)
+
+target_include_directories(gameclient-utility-smoke PRIVATE
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+set_source_files_properties(src/wasm_gameclient_utility_smoke_ini_support.cpp PROPERTIES
+  COMPILE_OPTIONS "-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${MAIN_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${WWSAVELOAD_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR}"
 )
 
 target_compile_options(gameclient-utility-smoke PRIVATE
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
   -fms-extensions
   -Wall
   -Wextra
@@ -6580,6 +6657,7 @@ target_link_options(gamewindow-input-smoke PRIVATE
 
 add_executable(w3d-gamewindow-manager-smoke
   tests/w3d_gamewindow_manager_smoke.cpp
+  src/wasm_w3d_gamewindow_manager_smoke_support.cpp
   src/wasm_win32_gdi_stub.cpp
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/W3DGameWindow.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/W3DGameWindowManager.cpp"
@@ -6600,8 +6678,13 @@ set_target_properties(w3d-gamewindow-manager-smoke PROPERTIES
   SUFFIX ".cjs"
 )
 
+target_compile_definitions(w3d-gamewindow-manager-smoke PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+)
+
 target_link_libraries(w3d-gamewindow-manager-smoke PRIVATE
-  zh_gameclient_utility
+  zh_gameclient_gui_input_runtime
   zh_ww3d2_compile_frontier
   zh_browser_d3d8
   zh_wwmath_lookup
@@ -6648,8 +6731,7 @@ target_compile_options(w3d-gamewindow-manager-smoke PRIVATE
   "-include${WASM_SHIMS_DIR}/windows.h"
   "-include${WASM_SHIMS_DIR}/mmsystem.h"
   "-include${WWVEGAS_PORT_SHIM}"
-  "-include${WASM_SHIMS_DIR}/PreRTS.h"
-  "-iquote${WASM_SHIMS_DIR}"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
   "-iquote${GAMEENGINE_INCLUDE_DIR}"
   "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
   "-iquote${GAMEENGINE_DIR}/Source"

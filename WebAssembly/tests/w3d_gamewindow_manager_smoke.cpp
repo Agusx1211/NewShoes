@@ -1,7 +1,6 @@
 #include <iostream>
 
 #include "Common/GameMemory.h"
-#include "Common/GlobalData.h"
 #include "Common/SubsystemInterface.h"
 #include "GameClient/Display.h"
 #include "GameClient/GadgetPushButton.h"
@@ -14,7 +13,6 @@
 #include "W3DDevice/GameClient/W3DGameWindow.h"
 #include "W3DDevice/GameClient/W3DGameWindowManager.h"
 
-GlobalData *TheGlobalData = nullptr;
 SubsystemInterfaceList *TheSubsystemList = nullptr;
 
 GameWindow *GameWindowManager::winCreateFromScript(AsciiString, WindowLayoutInfo *)
@@ -142,15 +140,12 @@ bool exercise_w3d_window_manager()
 {
 	bool ok = true;
 
-	GlobalData global_data;
 	SubsystemInterfaceList subsystem_list;
-	GlobalData *old_global_data = TheGlobalData;
 	SubsystemInterfaceList *old_subsystem_list = TheSubsystemList;
 	Display *old_display = TheDisplay;
 	FontLibrary *old_font_library = TheFontLibrary;
 	GameWindowManager *old_window_manager = TheWindowManager;
 
-	TheGlobalData = &global_data;
 	TheSubsystemList = &subsystem_list;
 
 	{
@@ -232,7 +227,6 @@ bool exercise_w3d_window_manager()
 	TheFontLibrary = old_font_library;
 	TheDisplay = old_display;
 	TheSubsystemList = old_subsystem_list;
-	TheGlobalData = old_global_data;
 
 	return ok;
 }

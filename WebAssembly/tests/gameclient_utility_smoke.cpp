@@ -43,7 +43,6 @@
 
 class GameLogic;
 SubsystemInterfaceList *TheSubsystemList = nullptr;
-GlobalData *TheGlobalData = nullptr;
 GameLogic *TheGameLogic = nullptr;
 HWND ApplicationHWnd = NULL;
 class Display;
@@ -858,7 +857,8 @@ bool exercise_draw_group_info()
 bool exercise_global_language()
 {
 	GlobalData global_data;
-	TheGlobalData = &global_data;
+	GlobalData *old_global_data = TheWritableGlobalData;
+	TheWritableGlobalData = &global_data;
 
 	GlobalLanguage language;
 	const bool defaults_ok = expect(language.m_unicodeFontName.isEmpty(), "GlobalLanguage unicode font default failed") &&
@@ -880,7 +880,7 @@ bool exercise_global_language()
 	const bool clamp_low_ok = expect(language.adjustFontSize(10) == 10,
 		"GlobalLanguage low font scaling clamp failed");
 
-	TheGlobalData = nullptr;
+	TheWritableGlobalData = old_global_data;
 	return defaults_ok && base_ok && high_ok && clamp_high_ok && clamp_low_ok;
 }
 
