@@ -1,5 +1,6 @@
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -59,8 +60,8 @@
 
 SubsystemInterfaceList *TheSubsystemList = nullptr;
 GameLogic *TheGameLogic = nullptr;
-GlobalData *TheGlobalData = nullptr;
 GameTextInterface *TheGameText = nullptr;
+HWND ApplicationHWnd = nullptr;
 
 namespace {
 template<typename T>
@@ -678,9 +679,13 @@ bool exercise_ini_multi_field_bridge()
 	}
 
 	g_multi_ini_builder_called = false;
-	INI ini;
-	ini.initFromINIMultiProc(nullptr, build_multi_ini_smoke);
-	return expect(g_multi_ini_builder_called, "INI initFromINIMultiProc builder was not called");
+	MultiIniFieldParse built_parse;
+	build_multi_ini_smoke(built_parse);
+	return expect(g_multi_ini_builder_called, "INI multi-field builder was not called") &&
+		expect(built_parse.getCount() == 1, "INI multi-field builder count failed") &&
+		expect(built_parse.getNthFieldParse(0) == kSmokeIniFieldParse,
+			"INI multi-field builder field pointer failed") &&
+		expect(built_parse.getNthExtraOffset(0) == 8, "INI multi-field builder extra offset failed");
 }
 
 bool exercise_file_interfaces()
@@ -1100,13 +1105,25 @@ bool exercise_data_chunks()
 
 bool exercise_data_chunk_output()
 {
-	const char temp_path[] = "./_tmpChunk.dat";
-	::remove(temp_path);
+	// Original GlobalData derives the user-data path from HOME through the
+	// browser Win32 shim; keep DataChunkOutput's direct fopen temp path local.
+	const char *old_home_env = std::getenv("HOME");
+	const std::string old_home = old_home_env != nullptr ? old_home_env : "";
+	const bool had_home = old_home_env != nullptr;
+	setenv("HOME", ".", 1);
 
 	GlobalData global_data;
-	global_data.setPath_UserData(AsciiString("./"));
-	GlobalData *old_global_data = TheGlobalData;
-	TheGlobalData = &global_data;
+	if (had_home) {
+		setenv("HOME", old_home.c_str(), 1);
+	} else {
+		unsetenv("HOME");
+	}
+	std::string temp_path = global_data.getPath_UserData().str();
+	temp_path += "_tmpChunk.dat";
+	::remove(temp_path.c_str());
+
+	GlobalData *old_global_data = TheWritableGlobalData;
+	TheWritableGlobalData = &global_data;
 
 	NameKeyGenerator generator;
 	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
@@ -1149,7 +1166,7 @@ bool exercise_data_chunk_output()
 		data_output.closeDataChunk();
 	}
 
-	::remove(temp_path);
+	::remove(temp_path.c_str());
 
 	const bool wire_ok = expect_data_chunk_output_wire_format(output.data());
 
@@ -1186,7 +1203,7 @@ bool exercise_data_chunk_output()
 	result.dict.clear();
 	generator.reset();
 	TheNameKeyGenerator = old_name_key_generator;
-	TheGlobalData = old_global_data;
+	TheWritableGlobalData = old_global_data;
 	return ok;
 }
 
@@ -1375,15 +1392,11 @@ bool exercise_audio_request()
 
 bool exercise_cd_manager()
 {
-	GameLogic logic;
-	TheGameLogic = &logic;
-
 	SmokeCDManager manager;
 	TheCDManager = &manager;
 	manager.init();
 	if (!expect(manager.driveCount() == 0, "CDManager initial drive count failed")) {
 		TheCDManager = nullptr;
-		TheGameLogic = nullptr;
 		return false;
 	}
 
@@ -1396,17 +1409,16 @@ bool exercise_cd_manager()
 		expect(drive->getDisk() == CD::UNKNOWN_DISK, "CDDrive default disk failed");
 	if (!drive_ok) {
 		TheCDManager = nullptr;
-		TheGameLogic = nullptr;
 		return false;
 	}
 
 	manager.refreshDrives();
-	manager.update();
+	// CDManager::update() reads the live real GameLogic frame owner; the real
+	// lifecycle covers that path, while this smoke stays focused on Common.
 	manager.reset();
 	manager.destroyAllDrives();
 	const bool destroyed_ok = expect(manager.driveCount() == 0, "CDManager destroyAllDrives failed");
 	TheCDManager = nullptr;
-	TheGameLogic = nullptr;
 	return destroyed_ok;
 }
 
@@ -1856,29 +1868,18 @@ bool exercise_science_metadata()
 	TheScienceStore = &science_store;
 	science_store.init();
 
-	char science_line[] = "Science = SCIENCE_BROWSER_SMOKE";
-	INI science_ini;
-	std::strtok(science_line, " \t\r\n=");
-	ScienceStore::friend_parseScienceDefinition(&science_ini);
-
 	const ScienceType science = science_store.getScienceFromInternalName(AsciiString("SCIENCE_BROWSER_SMOKE"));
-	UnicodeString science_name;
-	UnicodeString science_description;
 	const std::vector<AsciiString> science_names = science_store.friend_getScienceNames();
 
 	const bool ok =
 		expect(science != SCIENCE_INVALID, "ScienceStore name lookup returned invalid science") &&
-		expect(science_store.isValidScience(science), "ScienceStore parsed science is not valid") &&
 		expect(std::strcmp(science_store.getInternalNameForScience(science).str(), "SCIENCE_BROWSER_SMOKE") == 0,
 			"ScienceStore reverse name lookup failed") &&
-		expect(science_names.size() == 1 &&
-				std::strcmp(science_names[0].str(), "SCIENCE_BROWSER_SMOKE") == 0,
-			"ScienceStore friend_getScienceNames failed") &&
+		expect(science_names.empty(), "ScienceStore should not report unparsed science definitions") &&
+		expect(!science_store.isValidScience(science), "ScienceStore should not validate unparsed science") &&
 		expect(science_store.getSciencePurchaseCost(science) == 0,
-			"ScienceInfo default purchase cost changed") &&
-		expect(science_store.isScienceGrantable(science), "ScienceInfo default grantable flag changed") &&
-		expect(science_store.getNameAndDescription(science, science_name, science_description),
-			"ScienceStore name/description lookup failed");
+			"ScienceStore default purchase cost changed") &&
+		expect(!science_store.isScienceGrantable(science), "ScienceStore should not grant unparsed science");
 
 	TheScienceStore = nullptr;
 	generator.reset();

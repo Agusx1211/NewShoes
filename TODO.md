@@ -320,11 +320,20 @@ residue and the next frontier.
       Fable-audited shadow headers. A fresh full deps count leaves
       `GlobalData.h` / `INI.h` / `STLTypedefs.h` at 23 object users,
       `GameAudio.h` at 4, and `Xfer.h` plus `GameLogic/GameLogic.h` at only
-      `gameengine-common-core-smoke`.
-      Remaining cleanup: audit and delete the six remaining shadow
-      shim class headers/bodies once no linked or compile-only target needs
-      them, and migrate or retire any future legacy target that still depends
-      on them. This is the same hazard class as the confirmed d6d3b79
+      `gameengine-common-core-smoke`. The next burn-down migrated
+      `gameengine-common-core-smoke` to the real PreRTS/GameLogic/GlobalData
+      prelude, original `TheWritableGlobalData` owner/path, and real INI
+      runtime link order. A fresh deps audit leaves
+      `GlobalData.h` / `INI.h` / `STLTypedefs.h` at 22 object users,
+      `GameAudio.h` at 3, and `Common/Xfer.h` plus
+      `GameLogic/GameLogic.h` at 0 active build-dep users.
+      Remaining cleanup: audit and delete the remaining shadow shim class
+      headers/bodies once no linked or compile-only target needs them, with
+      `shims/Common/Xfer.h` and `shims/GameLogic/GameLogic.h` now first
+      candidates because their active build-dep count is zero; migrate or
+      retire any future legacy target that still depends on the remaining
+      `GlobalData`/`INI`/`STLTypedefs`/`GameAudio` shadows. This is the same
+      hazard class as the confirmed d6d3b79
       ChallengeGenerals stack corruption and the fixed edgeMapperApply
       aggregate-smoke incident above — fix it once at the root instead of
       per-incident.

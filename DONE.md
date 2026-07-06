@@ -8873,6 +8873,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `shims/GameLogic/GameLogic.h`; the remaining active `Xfer.h` and
       `GameLogic.h` shadow users are down to `gameengine-common-core-smoke`
       only.
+- [x] Move `gameengine-common-core-smoke` off the active Fable shadow-header
+      path. The target now force-includes `wasm_prerts_real.h`, defines the
+      original `GlobalData` / `GameLogic` header switches, links the original
+      `GlobalData` and debug owners, and puts the real INI runtime before
+      `zh_gameengine_common_core` so original `INI.cpp` satisfies parser
+      symbols before the legacy compat archive can be pulled. The smoke now
+      writes fixtures through `TheWritableGlobalData` and
+      `GlobalData::getPath_UserData()`, exercises the multi-field builder
+      directly instead of calling real INI with a null target, and keeps
+      CD-manager coverage below the live `GameLogic::getFrame()` boundary
+      already covered by the real lifecycle. Verified with
+      `cmake --build WebAssembly/build/wasm --target
+      gameengine-common-core-smoke`, `node
+      WebAssembly/dist/gameengine-common-core-smoke.cjs`, `npm --prefix
+      WebAssembly run build:port`, `npm --prefix WebAssembly run
+      verify:cnc-port-real-headers`, and a full focused `ninja -t deps` audit:
+      the smoke now uses real `Common/{GlobalData,INI,STLTypedefs,GameAudio,Xfer}.h`
+      and real `GameLogic/GameLogic.h`. The remaining active shadow-header
+      counts are `GlobalData.h` / `INI.h` / `STLTypedefs.h` at 22 object users,
+      `GameAudio.h` at 3, and `Xfer.h` plus `GameLogic/GameLogic.h` at zero
+      active build-dep users.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an
