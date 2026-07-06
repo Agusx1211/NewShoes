@@ -711,6 +711,7 @@ async function proveStructureCreated(page, buildTemplate, beforeDrawablesQuery, 
       results.productionProof.framesAdvanced = framesAdvanced;
       results.productionProof.verdict = "STRUCTURE-OBJECT-CREATED";
       console.error(`[input-select-e2e] construction proof created ${buildTemplate}#${created.id}`);
+      await proveStructureProgress(page, created, results);
       return results.productionProof;
     }
 
@@ -728,6 +729,73 @@ async function proveStructureCreated(page, buildTemplate, beforeDrawablesQuery, 
       buildTemplate,
       beforeMatchingIds: [...beforeIds],
       samples: results.productionProof.samples.slice(-10),
+    });
+}
+
+async function proveStructureProgress(page, created, results) {
+  const initialHealth = Number(created?.body?.health);
+  const maxHealth = Number(created?.body?.maxHealth);
+  expect(Number.isFinite(initialHealth) && Number.isFinite(maxHealth) && maxHealth > initialHealth,
+    "constructed structure did not expose usable body health for progress proof",
+    created);
+
+  console.error(`[input-select-e2e] waiting for construction health progress on ` +
+    `${created.name}#${created.id} from ${initialHealth}/${maxHealth}`);
+  const maxFrames = parsePositiveInt("E2E_CONSTRUCTION_PROGRESS_MAX_FRAMES", 900);
+  const frameChunk = parsePositiveInt("E2E_CONSTRUCTION_PROGRESS_FRAME_CHUNK", 30);
+  const progress = {
+    ok: false,
+    objectId: created.id,
+    initialHealth,
+    maxHealth,
+    maxFrames,
+    frameChunk,
+    framesAdvanced: null,
+    samples: [],
+    observed: null,
+    verdict: null,
+  };
+  results.productionProof.progress = progress;
+
+  let framesAdvanced = 0;
+  while (framesAdvanced < maxFrames) {
+    const frames = Math.min(frameChunk, maxFrames - framesAdvanced);
+    await runSummary(page, frames, "construction progress wait");
+    framesAdvanced += frames;
+
+    const drawablesQuery = await queryDrawablesChecked(page, "construction progress");
+    const current = (drawablesQuery.result?.drawables ?? [])
+      .find((drawable) => drawable.id === created.id);
+    const currentHealth = Number(current?.body?.health);
+    const sample = {
+      framesAdvanced,
+      found: current != null,
+      health: Number.isFinite(currentHealth) ? currentHealth : null,
+      maxHealth: current?.body?.maxHealth ?? null,
+      damageState: current?.body?.damageState ?? null,
+      screenPos: current?.screenPos ?? null,
+      worldPos: current?.worldPos ?? null,
+    };
+    progress.samples.push(sample);
+    console.error(`[input-select-e2e] construction progress sample ${framesAdvanced}/${maxFrames}: ` +
+      `found=${sample.found}, health=${sample.health}/${sample.maxHealth}`);
+
+    if (current != null && Number.isFinite(currentHealth) && currentHealth > initialHealth) {
+      progress.ok = true;
+      progress.framesAdvanced = framesAdvanced;
+      progress.observed = compactDrawable(current);
+      progress.verdict = "STRUCTURE-CONSTRUCTION-PROGRESSED";
+      console.error(`[input-select-e2e] construction progress proved ${created.name}#${created.id}: ` +
+        `${initialHealth} -> ${currentHealth}`);
+      return progress;
+    }
+  }
+
+  expect(false,
+    "constructed structure did not gain health after frame stepping",
+    {
+      created,
+      samples: progress.samples.slice(-12),
     });
 }
 
@@ -788,6 +856,7 @@ async function main() {
       framesAdvanced: null,
       created: null,
       samples: [],
+      progress: null,
       verdict: null,
     },
     moveOrderProof: {

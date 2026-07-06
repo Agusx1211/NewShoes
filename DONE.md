@@ -3560,6 +3560,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       The run created `AmericaBarracks#224` at screen `(759,360)`, world
       `(1244.230,329.251,18.75)`, body health `1/1000`, and ended with
       `SELECT-MOVE-COMMAND-BAR-AND-CONSTRUCTION-WORK`.
+- [x] Prove live skirmish placed structures begin construction after creation.
+      `input_select_e2e.mjs` now continues after finding the new local
+      structure, steps real frames, re-queries the same drawable/object id, and
+      requires body health to rise above its initial placement value. Verified
+      with local Chromium:
+      `E2E_BROWSER_EXECUTABLE=/home/agusx1211/.cache/ms-playwright/chromium-1228/chrome-linux/chrome E2E_BROWSER_ARGS='--headless=new' node harness/input_select_e2e.mjs`.
+      The run selected `Slth_GLAInfantryWorker#209`, dispatched
+      `Slth_Command_ConstructGLABarracks` through `MSG_DOZER_CONSTRUCT`, created
+      `Slth_GLABarracks#224` at body health `1/1000`, and then observed health
+      `14.333334/1000` after 180 real frames.
 - [x] Close the Fable command-bar in-flight follow-up. The Emscripten-only
       `FunctionLexicon::loadRuntimeTableForPort` now owns only the merged
       tables installed through that API, frees the previous injected table on
