@@ -29,7 +29,7 @@ real-GPU perf measurement on Mac is a pending follow-up. Before broad D3D8
 shim surgery, take a DevTools trace only if the next chosen optimization
 needs async ANGLE/GPU stall detail beyond the live harness counters.
 
-QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), broader control-bar HUD/radar and generals-experience behavior after command-button dispatch proof, compressed/DXT volume textures.
+QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), remaining control-bar player-list/generals-experience behavior after command-button and radar dispatch proofs, compressed/DXT volume textures.
 
 Dev-box render-verify: symlink worktree `dist/` → main's built `dist/` renders JS-only fixes without the Mac (~4min boot).
 
@@ -157,22 +157,6 @@ residue and the next frontier.
       Remaining: keep long rendered chunks observable with smaller chunks or
       RPC timeouts/progress, and continue from the scripted intro toward a
       visibly correct, interactable in-game scene.
-- [x] RESOLVED — MD_USA01 reaches original player control naturally (see
-      DONE.md). The `Give it back` "stall" was just a too-short run; the real
-      `Start_Mission_Intro SS1` chain resolves on its own and a 3,600-frame Mac
-      Chrome/Metal run reached `reachedPlayerControl=true` at logic frame 2,560
-      with input/control bar enabled and zero missing texture applies. No flags
-      forced. **New frontier exposed at player control: the tactical view is
-      black (see below).**
-- [x] **Black terrain / tactical view FIXED** (commit 08a1839). WebGL's
-      `gl.clear(DEPTH_BUFFER_BIT)` respects `gl.depthMask` but D3D8's `Clear`
-      ignores the write masks; a prior ZWRITE-off draw left `depthMask=false`,
-      so the per-frame depth clear was silently skipped -> stale depth -> the
-      terrain failed the depth test and rendered black. Fix: force `depthMask`
-      on around `gl.clear` in `bridge.js`. Shell map 20.8%->0% black; MD_USA01
-      renders cliffs/sky/tree correctly on the Mac GPU. See DONE.md for the full
-      bisection history. Follow-up landed: real FBO-backed render targets merged
-      (`deaeb7a`, ead0880/f253179) — but see the unverified-RTT item below.
 - [ ] Add remaining D3D8 depth/stencil texture formats if runtime evidence
       needs them. The WebGL2 bridge now supports texture-owned D16,
       D16_LOCKABLE, D24X8, and D24S8 depth attachments; D15S1, D24X4S4, and
@@ -518,11 +502,11 @@ residue and the next frontier.
       campaign/LOD, video/audio, `SkirmishBattleHonors`, and message-resource
       behavior in the linked runtime instead of the current focused movie/score
       hooks.
-- [ ] Exercise the broader `ControlBarSystem`/`LeftHUDInput` HUD behavior
-      after the command-button path proof: radar clicks, player-list HUD
-      affordances, and any left-HUD mouse routing should run through the live
-      skirmish harness and expose state queries or screenshots, not isolated
-      probes.
+- [ ] Exercise the remaining broader `ControlBarSystem`/`LeftHUDInput` HUD
+      behavior after the command-button and radar-click path proofs:
+      player-list HUD affordances, generals-experience affordances, and any
+      non-radar left-HUD mouse routing should run through the live skirmish
+      harness and expose state queries or screenshots, not isolated probes.
 - [ ] Retire the Emscripten-only runtime `FunctionLexicon` table injection
       once the command-bar/HUD callback owner TUs are naturally retained by
       the linked `cnc-port` graph; the current injected tables are
@@ -1681,6 +1665,11 @@ residue and the next frontier.
 - [ ] Harness: from the skirmish-start smoke's active match state, issue
       move/attack orders through the original input/command path and assert
       object state changes.
+- [ ] Prove a real attack/attack-move order end-to-end after the select-to-move
+      and LeftHUD radar-move proofs: select a local combat unit, target an
+      enemy drawable through original mouse input, assert the original command
+      path dispatches the attack/move order, then step frames and verify object
+      movement, damage, or target state changes.
 - [ ] Replay/recorder (`Recorder.cpp`) records and plays back deterministically.
 
 ---
@@ -2423,10 +2412,6 @@ and then start with the PROFILE, not with any individual fix.
 ## Cross-cutting: project hygiene
 
 - [ ] Keep `PROJECT.md`, `TODO.md`, and `DONE.md` updated as milestones move.
-- [ ] TODO.md cleanup pass: move the resolved `[x]` entries embedded in the
-      strategy-pivot section (MD_USA01 player control, black terrain) to
-      DONE.md, and retire the M1–M3 probe-era "promote to real ownership"
-      items the strategy pivot superseded.
 - [ ] `WebAssembly/shims/` contains a file literally named
       `GameLogic\Weaponset.h` (backslash IN the filename, matching a
       Windows-style `#include "GameLogic\WeaponSet.h"`). It works on

@@ -19,6 +19,7 @@ const realInitCampaignStartScreenshot = resolve(screenshotDir, "startup-vertical
 const realInitPostCampaignScreenshot = resolve(screenshotDir, "startup-vertical-real-init-post-campaign.png");
 const interactScreenshot = resolve(screenshotDir, "interact-milestone.png");
 const proveInteract = process.env.STARTUP_VERTICAL_PROVE_INTERACT === "1";
+const proveRadar = process.env.STARTUP_VERTICAL_PROVE_RADAR === "1";
 const debugStartupVertical = process.env.STARTUP_VERTICAL_DEBUG === "1";
 const realInitOnly = process.env.STARTUP_VERTICAL_REAL_INIT_ONLY === "1";
 const postCampaignFrameCount = Number(process.env.STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES ?? 0);
@@ -2495,6 +2496,8 @@ try {
       reachedControl: false,
       unitPicked: null,
       selectCount: 0,
+      radarMove: null,
+      moveSource: null,
       moveDelta: null,
       screenshotPath: null,
     };
@@ -2562,8 +2565,10 @@ try {
     summary.reachedControl = pcResult != null && playerControlStateReached(summarizePlayerControlState(pcResult));
     console.error("[interact] reachedPlayerControl:", summary.reachedControl);
     if (!summary.reachedControl) {
-      console.error("[interact] did not reach player control, aborting");
-      return summary;
+      throw new Error(
+        `[interact] did not reach player control before interaction proof; ` +
+        `lastState=${JSON.stringify(summarizePlayerControlState(pcResult))}`
+      );
     }
 
     // 2. queryDrawables → pick first local-owned, non-structure, non-hidden, on-screen unit.
@@ -2616,10 +2621,13 @@ try {
     await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
 
     // 4. querySelection → assert selectCount >= 1.
-    const selBefore = await page.evaluate(() =>
+    let selBefore = await page.evaluate(() =>
       window.CnCPort.rpc("querySelection"));
     console.error("[interact] querySelection before move ok:", selBefore?.ok, "aborted:", selBefore?.aborted, "abortMessage:", selBefore?.abortMessage, "selectCount:", selBefore?.result?.selectCount, "rawResult:", selBefore?.result);
     summary.selectCount = selBefore?.result?.selectCount ?? 0;
+    expect(summary.selectCount >= 1,
+      "[interact] unit click did not select any controllable drawable",
+      selBefore?.result);
 
     // 5. Click a destination offset: +200px x on-screen, clamped. The original
     // CommandTranslator only actions MSG_MOUSE_RIGHT_CLICK when alternate mouse
@@ -2641,6 +2649,143 @@ try {
       useAlternateMouse,
       "moveButton", moveClick.name
     );
+
+    async function proveLeftHudRadarMove() {
+      const currentFrame = await runRealEngineFrames(page, 1);
+      const clientState = currentFrame?.frame?.clientState;
+      const radar = clientState?.radar;
+      const leftHud = clientState?.controlBarWindows?.leftHud;
+      expect(radar?.ready === true && radar.usable === true,
+        "[interact] radar is not usable for LeftHUD input",
+        { radar, gameplay: clientState?.gameplay });
+      expect(leftHud?.found === true
+          && leftHud.clickable === true
+          && leftHud.inputFunc === "LeftHUDInput",
+        "[interact] ControlBar LeftHUD is not routed to LeftHUDInput",
+        leftHud);
+
+      const beforeCommandPath = selBefore?.result?.commandPath ?? {};
+      const beforeMoveAppendCount = beforeCommandPath.moveAppendCount ?? 0;
+      const beforeDispatchMoveCount = beforeCommandPath.dispatchMoveCommandCount ?? 0;
+      const clampHudPoint = (point) => ({
+        x: Math.max(leftHud.x + 3, Math.min(Math.round(point.x), leftHud.x + leftHud.width - 4)),
+        y: Math.max(leftHud.y + 3, Math.min(Math.round(point.y), leftHud.y + leftHud.height - 4)),
+      });
+      const hudPoint = (fx, fy) => clampHudPoint({
+        x: leftHud.x + leftHud.width * fx,
+        y: leftHud.y + leftHud.height * fy,
+      });
+      const radarCandidates = [
+        hudPoint(0.25, 0.25),
+        hudPoint(0.75, 0.25),
+        hudPoint(0.25, 0.75),
+        hudPoint(0.75, 0.75),
+        hudPoint(0.50, 0.20),
+        hudPoint(0.80, 0.50),
+        hudPoint(0.50, 0.80),
+        hudPoint(0.20, 0.50),
+        hudPoint(0.50, 0.50),
+      ].filter((point, index, points) =>
+        points.findIndex((candidate) => candidate.x === point.x && candidate.y === point.y) === index);
+
+      const attempts = [];
+      let acceptedPoint = null;
+      let acceptedSelection = null;
+      for (const candidate of radarCandidates) {
+        await postRealEngineMouseMessage(page, win32MouseMessages.mouseMove, candidate);
+        await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+        await postRealEngineMouseMessage(page, moveClick.down, candidate);
+        await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+        await postRealEngineMouseMessage(page, moveClick.up, candidate);
+        await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+
+        const radarSelection = await page.evaluate(() =>
+          window.CnCPort.rpc("querySelection"));
+        const commandPath = radarSelection?.result?.commandPath ?? {};
+        const attempt = {
+          point: candidate,
+          ok: radarSelection?.ok === true,
+          selectCount: radarSelection?.result?.selectCount,
+          moveAppendCount: commandPath.moveAppendCount,
+          dispatchMoveCommandCount: commandPath.dispatchMoveCommandCount,
+        };
+        attempts.push(attempt);
+        console.error(
+          "[interact] LeftHUD radar move candidate:",
+          JSON.stringify(attempt));
+        if ((commandPath.moveAppendCount ?? 0) > beforeMoveAppendCount
+            || (commandPath.dispatchMoveCommandCount ?? 0) > beforeDispatchMoveCount) {
+          acceptedPoint = candidate;
+          acceptedSelection = radarSelection;
+          break;
+        }
+      }
+
+      if (acceptedPoint == null) {
+        throw new Error(
+          `[interact] LeftHUD radar click did not queue a move command; ` +
+          `beforeCommandPath=${JSON.stringify(beforeCommandPath)}; ` +
+          `attempts=${JSON.stringify(attempts)}`
+        );
+      }
+
+      return {
+        point: acceptedPoint,
+        button: moveClick.name,
+        radar,
+        leftHud: {
+          id: leftHud.id,
+          x: leftHud.x,
+          y: leftHud.y,
+          width: leftHud.width,
+          height: leftHud.height,
+          inputFunc: leftHud.inputFunc,
+          drawFunc: leftHud.drawFunc,
+        },
+        beforeCommandPath,
+        afterCommandPath: acceptedSelection?.result?.commandPath ?? null,
+        attempts,
+      };
+    }
+
+    if (proveRadar) {
+      summary.radarMove = await proveLeftHudRadarMove();
+      console.error("[interact] LeftHUD radar move accepted:", JSON.stringify(summary.radarMove));
+      selBefore = await page.evaluate(() =>
+        window.CnCPort.rpc("querySelection"));
+      if (!proveInteract) {
+        summary.moveSource = "leftHudRadar";
+        console.error("[interact] stepping 90 frames for radar-issued move...");
+        await runRealEngineFrames(page, 90);
+        const radarMoveDrawables = await page.evaluate(() =>
+          window.CnCPort.rpc("queryDrawables"));
+        const radarMovedUnit = (radarMoveDrawables?.result?.drawables ?? [])
+          .find((d) => d.id === unit.id);
+        if (radarMovedUnit?.worldPos != null) {
+          const dx = radarMovedUnit.worldPos.x - unit.worldPos.x;
+          const dy = radarMovedUnit.worldPos.y - unit.worldPos.y;
+          summary.moveDelta = Math.sqrt(dx * dx + dy * dy);
+          console.error(
+            "[interact] radar-issued unit move delta:",
+            summary.moveDelta,
+            "dx:", dx, "dy:", dy);
+        }
+        const MOVE_DELTA_THRESHOLD = 1.0;
+        if (summary.moveDelta == null || summary.moveDelta <= MOVE_DELTA_THRESHOLD) {
+          throw new Error(
+            `[interact] radar-issued move did not move unit: delta=${summary.moveDelta} ` +
+            `(threshold=${MOVE_DELTA_THRESHOLD}); ` +
+            `radarMove=${JSON.stringify(summary.radarMove)}`
+          );
+        }
+        await mkdir(screenshotDir, { recursive: true });
+        await page.screenshot({ path: interactScreenshot });
+        summary.screenshotPath = interactScreenshot;
+        console.error("[interact] screenshot saved to", interactScreenshot);
+        return summary;
+      }
+    }
+
     const displayWidth = pcResult?.frame?.clientState?.display?.width
       ?? pcResult?.frame?.display?.width
       ?? 800;
@@ -2708,6 +2853,7 @@ try {
       );
     }
     console.error("[interact] accepted move destination:", JSON.stringify(destPoint));
+    summary.moveSource = proveRadar ? "screenAfterLeftHudRadar" : "screen";
 
     // 6. Step ~90 frames.
     console.error("[interact] stepping 90 frames for unit to move...");
@@ -2759,7 +2905,7 @@ try {
     return summary;
   }
 
-  const interactResult = proveInteract
+  const interactResult = (proveInteract || proveRadar)
     ? await selectAndMoveUnit(realInitPage)
     : null;
 
@@ -2778,6 +2924,7 @@ try {
       realInitMenuClickScreenshot,
       realInitCampaignStartScreenshot,
       ...(realPostCampaignScreenshotPath !== null ? [realPostCampaignScreenshotPath] : []),
+      ...(interactResult?.screenshotPath != null ? [interactResult.screenshotPath] : []),
     ],
     originalEngineStartup: bootResult?.state?.originalEngineStartup ?? null,
     archiveBackedStartup: audioBootResult !== null ? {

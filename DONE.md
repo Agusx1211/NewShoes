@@ -6552,6 +6552,29 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 - [x] Official multiplayer map sweep: all 47 official maps boot to skirmish
       with `loadingMap=false`, `inputEnabled=true`, `objects > 0`, no traps.
       Verified via `skirmish_start_smoke` across the full map set.
+- [x] Prove real LeftHUD/radar movement dispatch at MD_USA01 player control.
+      `startup_vertical_smoke.mjs` now supports
+      `STARTUP_VERTICAL_PROVE_RADAR=1`, reaches original player control,
+      selects a real local `AmericaTankPaladin`, asserts
+      `ControlBar.wnd:LeftHUD` is routed through original `LeftHUDInput` /
+      `W3DLeftHUDDraw`, verifies the exported radar state is usable for the
+      local player, clicks the minimap through the same Win32 mouse queue as
+      the rest of the harness, and requires the original command path to
+      dispatch a move. The verified run accepted LeftHUD point `(49,481)` in
+      the 167x152 HUD window at `(7,443)`, reported
+      `dispatchMoveCommandCount` `0 -> 1`,
+      `dispatchLastMoveWorldPos=(570.9375,1897.5,56.484375)`, then stepped 90
+      real frames and measured the selected Paladin moving 133.03 world units.
+      `wasm_real_engine_init.cpp` now exports read-only radar readiness,
+      hidden/forced, local-player-has-radar, and usable state for harness
+      assertions. Verified with `node --check
+      WebAssembly/harness/startup_vertical_smoke.mjs`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port`, and
+      `STARTUP_VERTICAL_REAL_INIT_ONLY=1 STARTUP_VERTICAL_PROVE_RADAR=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_COMPACT_CHUNKS=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_LIGHTWEIGHT=1 node
+      WebAssembly/harness/startup_vertical_smoke.mjs`; screenshot:
+      `WebAssembly/artifacts/screenshots/interact-milestone.png`.
 
 ---
 
@@ -9052,3 +9075,10 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       with `rg -n "wasm_terrain_probe_object"` over tracked source/build files
       and generated `WebAssembly/build/wasm/build.ninja` before removal, plus
       `npm --prefix WebAssembly run build:port` after removal.
+- [x] Clean up stale completed entries in `TODO.md`. The resolved MD_USA01
+      player-control and black-terrain strategy-pivot entries were already
+      fully recorded in `DONE.md`, so `TODO.md` now carries only open work in
+      that section. The remaining ControlBar/HUD item was narrowed after the
+      LeftHUD radar proof, and the next attack/attack-move interaction proof is
+      listed explicitly under M6. Verified with `rg` against `TODO.md` /
+      `DONE.md` and `git diff --check`.

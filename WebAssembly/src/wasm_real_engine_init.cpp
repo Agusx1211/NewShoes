@@ -37,6 +37,7 @@
 #include "Common/NameKeyGenerator.h"
 #include "Common/Player.h"
 #include "Common/PlayerList.h"
+#include "Common/Radar.h"
 #include "Common/SubsystemInterface.h"
 #include "Common/GameLOD.h"
 #include "GameClient/ControlBar.h"
@@ -3271,6 +3272,37 @@ void append_input_window_state(std::string &json)
 	json += "}";
 }
 
+void append_radar_state(std::string &json)
+{
+	json += ",\"radar\":{";
+	json += "\"ready\":";
+	json += TheRadar != NULL ? "true" : "false";
+
+	Player *local_player = ThePlayerList != NULL ? ThePlayerList->getLocalPlayer() : NULL;
+	json += ",\"localPlayerReady\":";
+	json += local_player != NULL ? "true" : "false";
+
+	if (TheRadar == NULL) {
+		json += ",\"hidden\":null,\"forced\":null,"
+			"\"localPlayerHasRadar\":null,\"usable\":false}";
+		return;
+	}
+
+	const Bool hidden = TheRadar->isRadarHidden();
+	const Bool forced = TheRadar->isRadarForced();
+	const Bool local_player_has_radar =
+		local_player != NULL ? local_player->hasRadar() : FALSE;
+	json += ",\"hidden\":";
+	json += hidden ? "true" : "false";
+	json += ",\"forced\":";
+	json += forced ? "true" : "false";
+	json += ",\"localPlayerHasRadar\":";
+	json += local_player_has_radar ? "true" : "false";
+	json += ",\"usable\":";
+	json += (forced || (!hidden && local_player_has_radar)) ? "true" : "false";
+	json += "}";
+}
+
 void append_real_engine_client_state(std::string &json)
 {
 	json += ",\"clientState\":{";
@@ -3326,6 +3358,7 @@ void append_real_engine_client_state(std::string &json)
 
 	append_real_view_state(json);
 	append_real_particle_state(json);
+	append_radar_state(json);
 
 	json += ",\"gameplay\":{";
 	json += "\"gameLogicReady\":";
