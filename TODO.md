@@ -185,22 +185,19 @@ residue and the next frontier.
       the smoke.mjs cursor-hidden probe assertion once W3DMouse cursor rendering
       (the game's own cursor) is ported — currently hardcoded css="default" to
       avoid a cursorless UI (see e97628f).
-- [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch
-      workaround in `GameEngine::update()` with the real
-      `W3DGameLogic`/`SubsystemInterface::UPDATE` wasm vtable ownership fix
-      once the next real map-load frame is current. The workaround still calls
-      original `GameLogic::update()` (the W3D subclass does not override it),
-      but it bypasses a null indirect-call slot hit on the first real logic
-      frame after shell shutdown. NOTE (Fable audit): a null/wrong vtable
-      slot is exactly what a caller compiled against a different class
-      layout sees — likely a symptom of the mixed-ABI shim-header item
-      below. Its siblings `Thing::cncPortSetObjectPosition/Orientation`
-      (`Thing.cpp:197,280`, raw `static_cast<Object*>(this)` because
-      "virtual cast/reaction slots" failed) and
-      `Object::cncPortReactToTransformChangeFromThing` (`Object.cpp:602`)
-      are the same disease. After the shim-header unification lands, try
-      deleting all three workarounds and restoring original virtual
-      dispatch.
+- [ ] Replace the remaining Emscripten-only bridge transform dispatch
+      workaround with the real virtual `Thing`/`Object` transform-reaction
+      path. The direct `GameLogic::update()` workaround in
+      `GameEngine::update()` is gone (see DONE.md): the real
+      `TheGameLogic->UPDATE()` path now survives the shell-to-MD_USA01
+      post-campaign frame gate. Remaining siblings are
+      `Thing::cncPortSetObjectPosition/Orientation` (`Thing.cpp:197,280`,
+      raw `static_cast<Object*>(this)` because "virtual cast/reaction slots"
+      failed) and `Object::cncPortReactToTransformChangeFromThing`
+      (`Object.cpp:602`). A deletion attempt on 2026-07-06 still crashed the
+      bridge-buffer scene while loading logical bridge map objects, so keep
+      these helpers until bridge creation has a real vtable-safe fix and
+      `terrain_bridge_buffer_scene_smoke.mjs` proves it.
 - [ ] Migrate the legacy `ensure_booted()` probe boot and its harness gates
       onto the real lifecycle path, deleting probe-local implementations as
       real init covers them. The 2026-07-05 aggregate-smoke

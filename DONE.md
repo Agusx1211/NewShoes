@@ -78,6 +78,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 ### Harness (bootstrap)
 - [x] Stand up Playwright/Puppeteer headless harness that loads the page.
 - [x] Screenshot capture utility writing to `artifacts/screenshots/`.
+- [x] Restore original `GameLogic` update dispatch in `GameEngine::update`.
+      Removed the Emscripten-only qualified `TheGameLogic->GameLogic::update()`
+      bypass and returned the real path to `TheGameLogic->UPDATE()`, now that
+      the mixed-ABI header burn-down leaves `cnc-port` with zero direct and
+      zero linked shadow-header offenders. Verified the old null
+      indirect-call frontier with the real startup browser path:
+      `STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=60
+      node WebAssembly/harness/startup_vertical_smoke.mjs` reaches
+      post-campaign MD_USA01 frames and captures
+      `startup-vertical-real-init-post-campaign.png`. Also verified with
+      `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly run verify:cnc-port-real-headers`,
+      `npm --prefix WebAssembly run verify:cnc-port-weak-stubs`,
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and
+      `git diff --check`. The related
+      `Thing::cncPortSetObjectPosition/Orientation` and
+      `Object::cncPortReactToTransformChangeFromThing` bridge helpers remain
+      open in TODO because removing them still crashes the bridge-buffer scene
+      while loading logical bridge map objects.
 - [x] A JS↔engine RPC/command channel stub (`boot`, `log`, `state`,
       `screenshot`).
 - [x] Add a bounded harness `frame` RPC that drives the exported wasm

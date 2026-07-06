@@ -791,14 +791,7 @@ void GameEngine::update( void )
 		if ((TheNetwork == NULL && !TheGameLogic->isGamePaused()) || (TheNetwork && TheNetwork->isFrameDataReady()))
 		{
 			CNC_PORT_NOTE_ENGINE_UPDATE_TARGET("TheGameLogic");
-#ifdef __EMSCRIPTEN__
-			// W3DGameLogic does not override update(); call the original owner
-			// directly in wasm to avoid a null indirect-call slot on the first
-			// real logic frame after shell shutdown.
-			TheGameLogic->GameLogic::update();
-#else
 			TheGameLogic->UPDATE();
-#endif
 		}
 		CNC_PORT_NOTE_ENGINE_UPDATE_TARGET("idle");
 
