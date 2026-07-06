@@ -101,6 +101,11 @@ const d3d8BoundTextures = new Map();
 // from the previous draw. GL retains state between identical draws.
 let d3d8LastDrawKey = null;
 let d3d8CachedDerived = null; // {renderState, clipPlanes, material, lights, fixedFunctionLights, directionalLights, firstDirectionalLight, vertexLayout, texture0Id, texture1Id, canSampleTexture0, canSampleTexture1, texture0Coordinates, texture1Coordinates, texture0SemanticMode, texture1SemanticMode, appliedTexture0Combiner, appliedStage1Combiner, implicitAlphaCutoutThreshold, appliedPointSprite}
+let d3d8LastTransformUniformStateHash = null;
+let d3d8LastTransformUniformWorld = null;
+let d3d8LastTransformUniformView = null;
+let d3d8LastTransformUniformProjection = null;
+let d3d8LastPointSpriteUniformInfo = null;
 // Map<`${colorTextureId}:${depthTextureId}`, {fbo, depthRenderbuffer, width, height}>
 const d3d8Framebuffers = new Map();
 let d3d8CurrentFramebuffer = null;
@@ -383,6 +388,12 @@ const d3d8PerfStats = {
   drawDerivedCacheMisses: 0,
   drawUniformCacheHits: 0,
   drawUniformCacheMisses: 0,
+  drawTransformUniformCacheHits: 0,
+  drawTransformUniformCacheMisses: 0,
+  drawPointSpriteUniformCacheHits: 0,
+  drawPointSpriteUniformCacheMisses: 0,
+  drawTextureUniformCacheHits: 0,
+  drawTextureUniformCacheMisses: 0,
   sortedDrawProfiledCalls: 0,
   sortedDrawProfiledMs: 0,
   sortedDrawPreBatchMs: 0,
@@ -455,6 +466,12 @@ function d3d8PerfSummary() {
     drawDerivedCacheMisses: d3d8PerfStats.drawDerivedCacheMisses,
     drawUniformCacheHits: d3d8PerfStats.drawUniformCacheHits,
     drawUniformCacheMisses: d3d8PerfStats.drawUniformCacheMisses,
+    drawTransformUniformCacheHits: d3d8PerfStats.drawTransformUniformCacheHits,
+    drawTransformUniformCacheMisses: d3d8PerfStats.drawTransformUniformCacheMisses,
+    drawPointSpriteUniformCacheHits: d3d8PerfStats.drawPointSpriteUniformCacheHits,
+    drawPointSpriteUniformCacheMisses: d3d8PerfStats.drawPointSpriteUniformCacheMisses,
+    drawTextureUniformCacheHits: d3d8PerfStats.drawTextureUniformCacheHits,
+    drawTextureUniformCacheMisses: d3d8PerfStats.drawTextureUniformCacheMisses,
     sortedDrawProfiledCalls: d3d8PerfStats.sortedDrawProfiledCalls,
     sortedDrawProfiledMs: roundedPerfMs(d3d8PerfStats.sortedDrawProfiledMs),
     sortedDrawPreBatchMs: roundedPerfMs(d3d8PerfStats.sortedDrawPreBatchMs),
@@ -555,6 +572,7 @@ const harnessState = {
     drawingBufferHeight: canvas.height,
     lastD3D8StateHash: 0,
     lastD3D8UniformKey: null,
+    lastD3D8TextureUniformKey: null,
     lastD3D8AppliedRenderState: null,
   },
   originalEngineLinked: false,
@@ -595,9 +613,12 @@ function invalidateD3D8DrawStateCache() {
   flushD3D8PendingDrawBatch("stateInvalidated");
   harnessState.graphics.lastD3D8StateHash = 0;
   harnessState.graphics.lastD3D8UniformKey = null;
+  harnessState.graphics.lastD3D8TextureUniformKey = null;
   harnessState.graphics.lastD3D8AppliedRenderState = null;
   d3d8LastDrawKey = null;
   d3d8CachedDerived = null;
+  resetD3D8TransformUniformCache();
+  d3d8LastPointSpriteUniformInfo = null;
 }
 
 const d3d8WarnedOnce = new Set();
@@ -6933,6 +6954,22 @@ function d3d8PointSpriteInfo(renderState, primitiveType, viewport) {
   };
 }
 
+function d3d8PointSpriteUniformsEqual(left, right) {
+  return Boolean(
+    left && right &&
+    left.drawingPoints === right.drawingPoints &&
+    left.spriteEnable === right.spriteEnable &&
+    left.scaleEnable === right.scaleEnable &&
+    left.pointSize === right.pointSize &&
+    left.pointSizeMin === right.pointSizeMin &&
+    left.pointSizeMax === right.pointSizeMax &&
+    left.scaleA === right.scaleA &&
+    left.scaleB === right.scaleB &&
+    left.scaleC === right.scaleC &&
+    left.viewportHeight === right.viewportHeight
+  );
+}
+
 function d3dPrimitiveIsTriangle(primitiveType) {
   const type = Number(primitiveType) >>> 0;
   return type === D3DPT_TRIANGLELIST || type === D3DPT_TRIANGLESTRIP || type === D3DPT_TRIANGLEFAN;
@@ -7504,6 +7541,39 @@ function normalizeD3DMatrix(matrix) {
     }
   }
   return matrix instanceof Float32Array ? matrix : new Float32Array(matrix);
+}
+
+function d3d8MatrixEquals(left, right) {
+  if (!left || !right || left.length !== 16 || right.length !== 16) {
+    return false;
+  }
+  for (let index = 0; index < 16; ++index) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function d3d8TransformUniformsEqual(stateHash, world, view, projection) {
+  return d3d8LastTransformUniformStateHash === stateHash &&
+    d3d8MatrixEquals(d3d8LastTransformUniformWorld, world) &&
+    d3d8MatrixEquals(d3d8LastTransformUniformView, view) &&
+    d3d8MatrixEquals(d3d8LastTransformUniformProjection, projection);
+}
+
+function resetD3D8TransformUniformCache() {
+  d3d8LastTransformUniformStateHash = null;
+  d3d8LastTransformUniformWorld = null;
+  d3d8LastTransformUniformView = null;
+  d3d8LastTransformUniformProjection = null;
+}
+
+function rememberD3D8TransformUniforms(stateHash, world, view, projection) {
+  d3d8LastTransformUniformStateHash = stateHash;
+  d3d8LastTransformUniformWorld = new Float32Array(world);
+  d3d8LastTransformUniformView = new Float32Array(view);
+  d3d8LastTransformUniformProjection = new Float32Array(projection);
 }
 
 function isIdentityD3DMatrix(matrix) {
@@ -8843,14 +8913,22 @@ function paintD3D8DrawIndexed(payload = {}) {
       vertexStride >= 12 && indexCount > 0 && (indexSize === 2 || indexSize === 4)) {
     const bridgeProgram = ensureD3D8DrawProgram();
     bindD3D8Program(bridgeProgram.program);
-    const uniformKey = drawCacheKey;
-    const uniformUnchanged =
-      uniformKey === harnessState.graphics.lastD3D8UniformKey &&
+    const renderUniformKey = `${derivedStateHash},${primitiveType}`;
+    const textureUniformKey = drawCacheKey;
+    const renderUniformUnchanged =
+      renderUniformKey === harnessState.graphics.lastD3D8UniformKey &&
       harnessState.graphics.lastD3D8AppliedRenderState != null;
-    if (uniformUnchanged) {
+    const textureUniformUnchanged =
+      textureUniformKey === harnessState.graphics.lastD3D8TextureUniformKey;
+    if (renderUniformUnchanged) {
       d3d8PerfStats.drawUniformCacheHits += 1;
     } else {
       d3d8PerfStats.drawUniformCacheMisses += 1;
+    }
+    if (textureUniformUnchanged) {
+      d3d8PerfStats.drawTextureUniformCacheHits += 1;
+    } else {
+      d3d8PerfStats.drawTextureUniformCacheMisses += 1;
     }
     let fillModeDraw, shadeModeDraw;
     // Per-draw geometry setup: ALWAYS executed (not skippable — geometry changes
@@ -8944,10 +9022,10 @@ function paintD3D8DrawIndexed(payload = {}) {
       );
     }
     recordSortedDrawPhase?.("sortedDrawGeometryMs");
-    // Apply non-transform GL state and shader uniforms only when changed. The
-    // uniform key excludes world/view/projection so moving objects still update
-    // matrices below without resending material/light/render-state uniforms.
-    if (!uniformUnchanged) {
+    // Apply render/material/light uniforms only when changed. This key excludes
+    // world/view/projection and bound texture IDs; those have narrower caches
+    // below.
+    if (!renderUniformUnchanged) {
       appliedRenderState = applyD3D8RenderState(renderState, {
         invertCullWinding: false,
       });
@@ -9156,56 +9234,67 @@ function paintD3D8DrawIndexed(payload = {}) {
       gl.uniform1f(bridgeProgram.fogEnd, appliedRenderState.fog.end);
     }
       harnessState.graphics.lastD3D8AppliedRenderState = appliedRenderState;
-      harnessState.graphics.lastD3D8UniformKey = uniformKey;
+      harnessState.graphics.lastD3D8UniformKey = renderUniformKey;
     } else {
       appliedRenderState = harnessState.graphics.lastD3D8AppliedRenderState;
     }
     if (useTransforms) {
       // Direct3D stores row-vector matrices row-major; WebGL interprets this
       // memory as column-major, giving the transpose needed for GLSL
-      // column-vector multiplication. These are intentionally per-draw: the
-      // uniform cache above excludes object transforms.
-      gl.uniformMatrix4fv(bridgeProgram.world, false, world);
-      gl.uniformMatrix4fv(bridgeProgram.view, false, view);
-      gl.uniformMatrix4fv(bridgeProgram.projection, false, projection);
+      // column-vector multiplication. The broad uniform cache excludes object
+      // transforms, so matrix uploads use the full transform-bearing hash.
+      if (d3d8TransformUniformsEqual(stateHash, world, view, projection)) {
+        d3d8PerfStats.drawTransformUniformCacheHits += 1;
+      } else {
+        d3d8PerfStats.drawTransformUniformCacheMisses += 1;
+        gl.uniformMatrix4fv(bridgeProgram.world, false, world);
+        gl.uniformMatrix4fv(bridgeProgram.view, false, view);
+        gl.uniformMatrix4fv(bridgeProgram.projection, false, projection);
+        rememberD3D8TransformUniforms(stateHash, world, view, projection);
+      }
+    } else {
+      resetD3D8TransformUniformCache();
     }
     harnessState.graphics.lastD3D8StateHash = stateHash;
-    // Point-sprite uniforms: ALWAYS reissued (not cached). The viewport is NOT
-    // in stateHash, so pointViewportHeight could go stale on a cache hit if the
-    // viewport changed with matching state. Point-sprite draws are rare
-    // (particles/point lists) and ~10 uniforms is negligible cost.
-    if (bridgeProgram.drawingPoints !== null) {
-      gl.uniform1i(bridgeProgram.drawingPoints, appliedPointSprite.drawingPoints ? 1 : 0);
+    if (d3d8PointSpriteUniformsEqual(d3d8LastPointSpriteUniformInfo, appliedPointSprite)) {
+      d3d8PerfStats.drawPointSpriteUniformCacheHits += 1;
+    } else {
+      d3d8PerfStats.drawPointSpriteUniformCacheMisses += 1;
+      if (bridgeProgram.drawingPoints !== null) {
+        gl.uniform1i(bridgeProgram.drawingPoints, appliedPointSprite.drawingPoints ? 1 : 0);
+      }
+      if (bridgeProgram.pointSpriteEnable !== null) {
+        gl.uniform1i(bridgeProgram.pointSpriteEnable, appliedPointSprite.spriteEnable ? 1 : 0);
+      }
+      if (bridgeProgram.pointSize !== null) {
+        gl.uniform1f(bridgeProgram.pointSize, appliedPointSprite.pointSize);
+      }
+      if (bridgeProgram.pointSizeMin !== null) {
+        gl.uniform1f(bridgeProgram.pointSizeMin, appliedPointSprite.pointSizeMin);
+      }
+      if (bridgeProgram.pointSizeMax !== null) {
+        gl.uniform1f(bridgeProgram.pointSizeMax, appliedPointSprite.pointSizeMax);
+      }
+      if (bridgeProgram.pointScaleEnable !== null) {
+        gl.uniform1i(bridgeProgram.pointScaleEnable, appliedPointSprite.scaleEnable ? 1 : 0);
+      }
+      if (bridgeProgram.pointScaleA !== null) {
+        gl.uniform1f(bridgeProgram.pointScaleA, appliedPointSprite.scaleA);
+      }
+      if (bridgeProgram.pointScaleB !== null) {
+        gl.uniform1f(bridgeProgram.pointScaleB, appliedPointSprite.scaleB);
+      }
+      if (bridgeProgram.pointScaleC !== null) {
+        gl.uniform1f(bridgeProgram.pointScaleC, appliedPointSprite.scaleC);
+      }
+      if (bridgeProgram.pointViewportHeight !== null) {
+        gl.uniform1f(bridgeProgram.pointViewportHeight, appliedPointSprite.viewportHeight);
+      }
+      d3d8LastPointSpriteUniformInfo = { ...appliedPointSprite };
     }
-    if (bridgeProgram.pointSpriteEnable !== null) {
-      gl.uniform1i(bridgeProgram.pointSpriteEnable, appliedPointSprite.spriteEnable ? 1 : 0);
-    }
-    if (bridgeProgram.pointSize !== null) {
-      gl.uniform1f(bridgeProgram.pointSize, appliedPointSprite.pointSize);
-    }
-    if (bridgeProgram.pointSizeMin !== null) {
-      gl.uniform1f(bridgeProgram.pointSizeMin, appliedPointSprite.pointSizeMin);
-    }
-    if (bridgeProgram.pointSizeMax !== null) {
-      gl.uniform1f(bridgeProgram.pointSizeMax, appliedPointSprite.pointSizeMax);
-    }
-    if (bridgeProgram.pointScaleEnable !== null) {
-      gl.uniform1i(bridgeProgram.pointScaleEnable, appliedPointSprite.scaleEnable ? 1 : 0);
-    }
-    if (bridgeProgram.pointScaleA !== null) {
-      gl.uniform1f(bridgeProgram.pointScaleA, appliedPointSprite.scaleA);
-    }
-    if (bridgeProgram.pointScaleB !== null) {
-      gl.uniform1f(bridgeProgram.pointScaleB, appliedPointSprite.scaleB);
-    }
-    if (bridgeProgram.pointScaleC !== null) {
-      gl.uniform1f(bridgeProgram.pointScaleC, appliedPointSprite.scaleC);
-    }
-    if (bridgeProgram.pointViewportHeight !== null) {
-      gl.uniform1f(bridgeProgram.pointViewportHeight, appliedPointSprite.viewportHeight);
-    }
-    // Texture-availability uniforms are part of the non-transform uniform key.
-    if (!uniformUnchanged) {
+    // Texture-availability uniforms change when bound texture identity,
+    // texture transform, vertex texture layout, or texture stage state changes.
+    if (!textureUniformUnchanged) {
     if (bridgeProgram.texture0CoordinateMode) {
       gl.uniform1i(bridgeProgram.texture0CoordinateMode,
         canSampleTexture0 ? texture0Coordinates.mode : D3DTSS_TCI_PASSTHRU);
@@ -9289,7 +9378,8 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.texture1Semantic) {
       gl.uniform1i(bridgeProgram.texture1Semantic, texture1SemanticMode);
     }
-    } // !drawCacheHit
+      harnessState.graphics.lastD3D8TextureUniformKey = textureUniformKey;
+    }
     recordSortedDrawPhase?.("sortedDrawUniformMs");
     const temporaryIndices = fillModeDraw.lineIndices ?? shadeModeDraw.triangleIndices ?? null;
     let temporaryIndexBuffer = null;

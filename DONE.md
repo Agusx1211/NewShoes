@@ -8432,6 +8432,34 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       sorted draws/frame, with `sortedDrawUniformMs` 11.924 ms/frame,
       `sortedDrawGeometryMs` 0.950 ms/frame, `sortedDrawDerivedMs`
       0.421 ms/frame, and `sortedDrawDrawOrBatchMs` 0.022 ms/frame.
+- [x] Cache repeated browser D3D8 transform, point-sprite, and split
+      render-vs-texture uniform setup on the sorted draw bridge. The hot draw
+      path now skips repeated world/view/projection uploads using the full
+      transform-bearing state hash plus exact matrix comparison, so hash
+      collisions cannot reuse stale transforms. Point-sprite uniforms are now
+      keyed by their resolved viewport-sensitive values instead of being
+      resent on every triangle draw. The old broad non-transform uniform key
+      is split so render/material/light uniforms no longer reapply merely
+      because the bound texture changes; texture availability, semantic, LOD,
+      and texture-transform uniforms keep their texture/layout-sensitive key.
+      `runtime_frame_profile.mjs` now reports transform, point-sprite, and
+      texture-uniform cache counters. Verified with `node --check
+      WebAssembly/harness/bridge.js`, `node --check
+      WebAssembly/harness/runtime_frame_profile.mjs`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port:release`,
+      `npm --prefix WebAssembly run build:port`, and a Mac M4 Chrome/Metal
+      runtime profile using `realEngineFrameTick`, 10 warmup frames,
+      60 measured frames, batch 10, and `PERF_PROFILE_ENGINE_PROFILE=1`.
+      The final run reported `ANGLE Metal Renderer: Apple M4`, 46.70 ms/frame
+      wall, 48.85 ms average engine `lastFrameMs`, ~483.3 D3D8 draws/frame,
+      zero measured readPixels, and a visible shell-map screenshot. The
+      sorted JS bridge work fell from the pre-pass 13.825 ms/frame to
+      11.914 ms/frame, with `sortedDrawUniformMs` reduced from 11.924 to
+      8.811 ms/frame; actual draw/batch time remained 0.022 ms/frame. The
+      measured cache rates are ~409 render-uniform hits/frame vs 74.3 misses,
+      ~383.9 texture-uniform hits/frame vs 99.4 misses, ~272.4 transform
+      hits/frame vs 210.9 misses, and ~479.8 point-sprite hits/frame vs
+      3.5 misses.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`

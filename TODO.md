@@ -70,7 +70,13 @@ with the sampled frame still led by `WasmD3D8.browserDrawIndexed.before`
 20.23 ms and `HeightMap.render.tilePasses.before` 7.22 ms; the JS phase
 counters show sorted bridge work at 13.825 ms/frame, dominated by
 `sortedDrawUniformMs` 11.924 ms/frame, while geometry setup is 0.950 ms/frame
-and actual draw/batch handling is only 0.022 ms/frame.
+and actual draw/batch handling is only 0.022 ms/frame. The first uniform-cache
+optimization now skips repeated transform matrix uploads with exact matrix
+checks, caches point-sprite uniforms, and splits render/material/light uniforms
+from texture-availability uniforms. Final Mac Chrome/Metal profile measured
+46.70 ms/frame wall; sorted bridge work is 11.914 ms/frame, with
+`sortedDrawUniformMs` down to 8.811 ms/frame and actual draw/batch handling
+still only 0.022 ms/frame.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
@@ -2363,17 +2369,15 @@ and then start with the PROFILE, not with any individual fix.
       `diag=lite` has no warmup readbacks; DevTools is still needed before
       changing buffer/shader/draw submission internals that might be dominated
       by asynchronous ANGLE/GPU stalls.
-- [ ] **Optimize sorted browser D3D8 uniform/state setup**: the scoped sorted
-      submit profile now proves native `DX8Wrapper::Draw`, wasm
-      `DrawIndexedPrimitive`, state hashing, and actual GL draw/batch time are
-      cheap; the remaining sorted bridge cost is concentrated in
-      `paintD3D8DrawIndexed` uniform/state setup. Mac Chrome/Metal measured
-      sorted bridge work at 13.825 ms/frame across ~66.9 profiled sorted
-      draws/frame, with `sortedDrawUniformMs` 11.924 ms/frame,
-      `sortedDrawGeometryMs` 0.950 ms/frame, `sortedDrawDerivedMs`
-      0.421 ms/frame, and `sortedDrawDrawOrBatchMs` 0.022 ms/frame. Next pass
-      should split/cache the uniform block inside `paintD3D8DrawIndexed`
-      without changing original sorted draw order.
+- [ ] **Split/optimize remaining sorted browser draw setup**: after the first
+      uniform-cache pass, Mac Chrome/Metal still measures sorted bridge work
+      at 11.914 ms/frame across ~63.6 profiled sorted draws/frame. The
+      remaining cost is `sortedDrawUniformMs` 8.811 ms/frame plus
+      `sortedDrawGeometryMs` 1.896 ms/frame, while actual draw/batch handling
+      remains 0.022 ms/frame. Next pass should add sorted-only subphase
+      counters inside the render-uniform, transform-uniform, texture-uniform,
+      and vertex-attribute setup sections, then cache the next proven repeated
+      setup without changing original sorted draw order.
 - [ ] **Split the real `W3DWater.render.waterTracks` bucket**: the latest
       Mac Chrome/Metal shell-map profile sampled water tracks at 10.9 ms,
       second only to sorted draw replay and ahead of heightmap tile passes on
