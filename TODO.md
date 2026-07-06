@@ -193,7 +193,11 @@ reproduce in the harness and verify each fix with a screenshot / state check.
       music does not play, and skirmish effect/ambient/unit sounds do not
       play. Sounds get dropped rather than mixed. Audit the Miles→Web Audio
       path (voice allocation, stream vs sample routing, drop policy) against
-      the real `AudioManager` request flow. Related: [[frontier-2026-07-05-skirmish-sweep]] audio bug.
+      the real `AudioManager` request flow. 2026-07-06: the human `play.html`
+      Start-button path now resumes Web Audio, creates default mixer buses, and
+      verified natural main-menu music streams; keep open for natural skirmish
+      SFX/ambient/unit-sound verification and any remaining drop policy bugs.
+      Related: [[frontier-2026-07-05-skirmish-sweep]] audio bug.
 - [ ] **Text renders truncated** — some strings show only one letter or a few
       letters instead of the full text. Investigate the text/font glyph
       layout + string draw path (partial render, not missing text).

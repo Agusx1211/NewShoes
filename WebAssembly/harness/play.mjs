@@ -215,6 +215,12 @@ async function start() {
     report("waiting for wasm bridge...");
     const rawRpc = await waitForRpc();
     const rpc = issueRecorder.setRpc(rawRpc);
+    const startAudioRuntime = await rpc("resumeBrowserAudioRuntime", {
+      trigger: "play.start",
+    }).catch((error) => ({ ok: false, error: error?.message ?? String(error) }));
+    const startAudioMixer = await rpc("setBrowserAudioMixerVolumes", {
+      trigger: "play.start",
+    }).catch((error) => ({ ok: false, error: error?.message ?? String(error) }));
 
     // The human-playable page runs graphics diagnostics in "lite" mode: skip the
     // per-draw readPixels GPU syncs / probe objects / draw-history that the
@@ -231,6 +237,10 @@ async function start() {
       diagLevel: configuredDiagLevel,
       distDir: selectedDistDir,
       pageParams: Object.fromEntries(queryParams),
+      audio: {
+        runtime: startAudioRuntime?.browserAudioRuntime ?? startAudioRuntime,
+        mixer: startAudioMixer?.browserAudioMixerRuntime ?? startAudioMixer,
+      },
     });
 
     report("downloading + mounting 21 archives (~1.3 GB, be patient)...");

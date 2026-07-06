@@ -1028,6 +1028,7 @@ async function resumeBrowserAudioRuntime(trigger = "rpc.resumeBrowserAudioRuntim
     if (context.state === "running") {
       browserAudioRuntime.resumeSuccesses += 1;
       browserAudioRuntime.lastResumeError = null;
+      ensureBrowserAudioMixerRuntime();
     } else {
       browserAudioRuntime.lastResumeError = `AudioContext remained ${context.state}`;
     }
@@ -26593,6 +26594,10 @@ canvas.addEventListener("compositionend", async (event) => {
 
   await postBrowserTextToWasm(text);
 });
+window.addEventListener("pointerdown", () => {
+  void resumeBrowserAudioRuntime("window.pointerdown");
+}, { capture: true });
+
 canvas.addEventListener("pointermove", (event) => {
   const point = canvasInputPointFromEvent(event);
   void pushBrowserInputToWasm({
@@ -26605,7 +26610,6 @@ canvas.addEventListener("pointermove", (event) => {
   });
 });
 canvas.addEventListener("pointerdown", (event) => {
-  void resumeBrowserAudioRuntime("canvas.pointerdown");
   canvas.focus();
   const point = canvasInputPointFromEvent(event);
   const message = mouseButtonMessage(event, true, point);

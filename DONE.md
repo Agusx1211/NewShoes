@@ -10,6 +10,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## User-reported play bugs (2026-07-06 session)
 
+- [x] Fix human-play startup audio readiness for natural menu music. The
+      playable `harness/play.html` path now resumes Web Audio from any page
+      pointer gesture, including the overlay Start button, and creates the
+      default `music` / `sound` / `sound3D` / `speech` mixer `GainNode` buses as
+      soon as the context is running. `play.mjs` also requests audio runtime and
+      mixer readiness at startup and records the result in issue-recorder
+      session context. This prevents original init/menu audio requests from
+      being dropped before the player ever clicks the canvas. Verified with
+      `node --check WebAssembly/harness/bridge.js`, `node --check
+      WebAssembly/harness/play.mjs`, a Playwright `play.html` Start-button
+      check that reported `AudioContext` running with all four mixer buses
+      connected, `REAL_AUDIO_BROWSER_ARGS='--headless=new' node
+      harness/real_audio_event_smoke.mjs` with local Chromium, and a full
+      `play.html?diag=lite` init that scheduled three natural music streams,
+      ending on
+      `Data\Audio\Tracks\USA_11.mp3` through
+      `AudioBufferSourceNode -> GainNode -> musicGainNode ->
+      AudioDestinationNode` with no stream error.
 - [x] Fix live skirmish shadow flicker/breakage. The browser D3D8 bridge now
       masks D3D8 stencil reference/read/write masks to the actual WebGL
       stencil-bit width before `gl.stencilFunc`, `gl.stencilMask`, and stencil
