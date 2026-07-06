@@ -44,9 +44,16 @@ per-triangle sort order. Mac Chrome/Metal no-profile release shell-map runs
 improved from the prior 47.99 ms/frame native-EH baseline to 44.88 ms/frame
 and then 40.41 ms/frame over repeated 120-frame tick profiles, with zero
 measured readPixels and visible shell-map screenshots. Remaining measured
-bottlenecks are the still-expensive sorted draw replay and terrain render;
-further broad D3D8 shim work should wait for a DevTools trace if async
-ANGLE/GPU stall detail is needed beyond the live harness counters.
+bottlenecks are the still-expensive sorted draw replay and terrain render. The
+next profile split added `HeightMapRenderObjClass::Render` phase markers and
+removed one redundant eager `DX8Wrapper::Apply_Render_State_Changes()` in
+`SortingRenderer::Flush_Sorting_Pool`; the final Mac Chrome/Metal release
+profile measured 48.50 ms/frame wall over 60 tick frames. The sampled C++
+frame still has `SortingRenderer.pool.draw.before` at 25.8 ms and
+`HeightMap.render.tilePasses.before` at 17.1 ms; shoreline is ~1.2 ms and
+roads/scorches/extra-blend/terrain-tracks are all sub-millisecond. Further
+broad D3D8 shim work should wait for a DevTools trace if async ANGLE/GPU stall
+detail is needed beyond the live harness counters.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
@@ -2339,6 +2346,30 @@ and then start with the PROFILE, not with any individual fix.
       `diag=lite` has no warmup readbacks; DevTools is still needed before
       changing buffer/shader/draw submission internals that might be dominated
       by asynchronous ANGLE/GPU stalls.
+- [ ] **Continue sorted translucent replay batching from the real measured
+      bucket**: the current replay loop skips duplicate state application and
+      no longer eagerly applies the dynamic sorted VB/IB before the first draw,
+      but it still flushes a `Draw_Triangles` run at every sorted source-node
+      boundary. Next targeted optimization is to merge consecutive same-state
+      runs inside `SortingRenderer::Flush_Sorting_Pool` while preserving the
+      per-triangle sorted index order and expanding the min/max vertex range
+      correctly. Verify only through the real shell-map runtime profile plus a
+      screenshot.
+- [ ] **Optimize the real `HeightMap.render.tilePasses` bucket, not terrain
+      sidecars**: the Mac profile now proves base terrain tile passes dominate
+      terrain render time (`HeightMap.render.tilePasses.before` ~17 ms on the
+      sampled profiled frame), while shoreline is ~1.2 ms and roads/scorches/
+      extra-blend/terrain-tracks are cheap. Next pass should split tile draw
+      submission/state/buffer-update costs around `HeightMapRenderObjClass`
+      tile rendering and the D3D8 draw bridge; do not chase road/prop/track
+      sidecars until the real profile says they moved.
+- [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
+      identity caches**: water, snow, and shadow code call
+      `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing
+      `DX8Wrapper`'s cached render state. Any future buffer-bind dedupe in
+      `DX8Wrapper::Set_Vertex_Buffer` / `Set_Index_Buffer` must first mark
+      these raw bind sites dirty or route them through the wrapper; otherwise
+      the wrapper can skip a restore after a bypassed bind.
 - [ ] D3D8→WebGL2 shim "less naive" playbook (ordered by typical payoff,
       all confined to the DX8Wrapper chokepoint; verify each against the
       screenshot goldens):

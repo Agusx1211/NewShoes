@@ -8336,6 +8336,32 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       visible
       `EXScorch01.tga`, `exwave01.tga`, `exexplo03.tga`, `excloud01.tga`,
       and `exshockwav.tga` effect draws.
+- [x] Split the real shell-map terrain render bucket and trim one redundant
+      sorted replay state apply. `HeightMapRenderObjClass::Render` now emits
+      opt-in Emscripten frame-profile markers around setup, base tile passes,
+      shader reset, shorelines, extra blends, roads, props, scorches, bridges,
+      terrain tracks, shroud, post-apply, waypoints, bibs, and cleanup, plus
+      the shroud `renderTerrainPass` tile loop. `SortingRenderer::Flush_Sorting_Pool`
+      no longer eagerly calls `DX8Wrapper::Apply_Render_State_Changes()` after
+      binding the dynamic sorted VB/IB because the first `Draw_Triangles`
+      applies the same pending VB/IB changes together with the first replayed
+      shader/material/texture/light/transform state. Verified with
+      `npm --prefix WebAssembly run build:port:release`,
+      `npm --prefix WebAssembly run build:port`, and a synced Mac M4
+      Chrome/Metal runtime profile using `realEngineFrameTick`, 10 warmup
+      frames, 60 measured frames, batch 10, and
+      `PERF_PROFILE_ENGINE_PROFILE=1`. The final run reported
+      `ANGLE Metal Renderer: Apple M4`, 48.50 ms/frame wall, 51.2 ms average
+      engine `lastFrameMs`, zero measured readPixels, and a visible shell-map
+      screenshot with terrain/water/units/logo. The sampled profiled frame now
+      identifies the remaining render frontier precisely:
+      `SortingRenderer.pool.draw.before` 25.8 ms,
+      `HeightMap.render.tilePasses.before` 17.1 ms,
+      `W3DWater.render.waterTracks.before` 2.1 ms,
+      `RTS3DScene.flush.shadowsStencil.before` 1.45 ms,
+      `RTS3DScene.flush.shadowsDecal.before` 1.29 ms, and
+      `HeightMap.render.shoreLines.before` 1.22 ms; terrain roads/scorches/
+      extra blends/tracks are sub-millisecond.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`

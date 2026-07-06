@@ -96,6 +96,18 @@
 #include "Common/PerfTimer.h"
 #include "Common/UnitTimings.h" //Contains the DO_UNIT_TIMINGS define jba.		 
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_profile_marker(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_TERRAIN_STEP(name) \
+	do { \
+		if (cnc_port_note_engine_profile_marker) { \
+			cnc_port_note_engine_profile_marker(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_TERRAIN_STEP(name) do { } while (0)
+#endif
+
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -1915,6 +1927,7 @@ void HeightMapRenderObjClass::updateCenter(CameraClass *camera , RefRenderObjLis
 void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 {
 	//USE_PERF_TIMER(Terrain_Render)
+	CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.entry");
 	
 	Int i,j,devicePasses;
 	W3DShaderManager::ShaderTypes st;
@@ -1956,6 +1969,7 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 
 	DX8Wrapper::Set_Light_Environment(rinfo.light_environment);
 
+	CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.setup.before");
 	// Force shaders to update.
 	m_stageTwoTexture->restore();
 	DX8Wrapper::Set_Texture(0,NULL);
@@ -1970,6 +1984,7 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 	DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
 
 	Bool doMultiPassWireFrame=FALSE;
+	CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.setup.after");
 
 	if (((RTS3DScene *)rinfo.Camera.Get_User_Data())->getCustomPassMode() == SCENE_PASS_ALPHA_MASK ||
 		((SceneClass *)rinfo.Camera.Get_User_Data())->Get_Extra_Pass_Polygon_Mode() == SceneClass::EXTRA_PASS_CLEAR_LINE)
@@ -2054,6 +2069,7 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 	}
 
 	Int pass;
+	CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.tilePasses.before");
  	for (pass=0; pass<devicePasses; pass++) {
 #ifdef TIMING_TESTS
 #endif
@@ -2102,18 +2118,26 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 
 			}
 	}		
+	CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.tilePasses.after");
 
 	if (!doMultiPassWireFrame)
 	{
+		CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.shaderReset.before");
 		if (pass)	//shader was applied at least once?
  			W3DShaderManager::resetShader(st);
+		CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.shaderReset.after");
 
 		//Draw feathered shorelines
+		CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.shoreLines.before");
 		renderShoreLines(&rinfo.Camera);
+		CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.shoreLines.after");
 
 		//Do additional pass over any tiles that have 3 textures blended together.
-		if (TheGlobalData->m_use3WayTerrainBlends)
+		if (TheGlobalData->m_use3WayTerrainBlends) {
+			CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.extraBlend.before");
 			renderExtraBlendTiles();
+			CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.extraBlend.after");
+		}
 
 		Int yCoordMin = m_map->getDrawOrgY();
 		Int yCoordMax = m_y+m_map->getDrawOrgY()-1;
@@ -2136,15 +2160,19 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 		if (!ShaderClass::Is_Backface_Culling_Inverted()) {
 			DX8Wrapper::Set_Material(m_vertexMaterialClass);
 			if (Scene) {
+				CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.roads.before");
 				RTS3DScene *pMyScene = (RTS3DScene *)Scene;
 				RefRenderObjListIterator pDynamicLightsIterator(pMyScene->getDynamicLights());
 				m_roadBuffer->drawRoads(&rinfo.Camera, doCloud?m_stageTwoTexture:NULL, TheGlobalData->m_useLightMap?m_stageThreeTexture:NULL,
 					m_disableTextures,xCoordMin-m_map->getBorderSizeInline(), xCoordMax-m_map->getBorderSizeInline(), yCoordMin-m_map->getBorderSizeInline(), yCoordMax-m_map->getBorderSizeInline(), &pDynamicLightsIterator);
+				CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.roads.after");
 			}
 		}
 	#endif
 	if (m_propBuffer) {
+		CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.props.before");
 		m_propBuffer->drawProps(rinfo);
+		CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.props.after");
 	}
 	#ifdef DO_SCORCH
 		DX8Wrapper::Set_Texture(0,NULL);
@@ -2153,7 +2181,9 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 
 		ShaderClass::Invalidate();
 		if (!ShaderClass::Is_Backface_Culling_Inverted()) {
+			CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.scorches.before");
 			drawScorches();
+			CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.scorches.after");
 		}
 	#endif
 		DX8Wrapper::Set_Texture(0,NULL);
@@ -2162,43 +2192,65 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 		ShaderClass::Invalidate();
 		DX8Wrapper::Apply_Render_State_Changes();
 
-		if (m_bridgeBuffer)
+		if (m_bridgeBuffer) {
+			CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.bridges.before");
 			m_bridgeBuffer->drawBridges(&rinfo.Camera, m_disableTextures, doCloud?m_stageTwoTexture:NULL);
+			CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.bridges.after");
+		}
 
-		if (TheTerrainTracksRenderObjClassSystem)
+		if (TheTerrainTracksRenderObjClassSystem) {
+			CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.terrainTracks.before");
 			TheTerrainTracksRenderObjClassSystem->flush();
+			CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.terrainTracks.after");
+		}
 
 		if (m_shroud && rinfo.Additional_Pass_Count())
 		{
+			CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.shroudPass.before");
 			BaseHeightMapRenderObjClass *oldTerrainRenderObject=TheTerrainRenderObject;
 			TheTerrainRenderObject=this;
 			rinfo.Peek_Additional_Pass(0)->Install_Materials();
 			renderTerrainPass(&rinfo.Camera);
 			rinfo.Peek_Additional_Pass(0)->UnInstall_Materials();
 			TheTerrainRenderObject=oldTerrainRenderObject;
+			CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.shroudPass.after");
 		}
 
+		CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.postApply.before");
 		ShaderClass::Invalidate();
 		DX8Wrapper::Apply_Render_State_Changes();
+		CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.postApply.after");
 	}
 	else
 	{
-		if (m_bridgeBuffer)
+		if (m_bridgeBuffer) {
+			CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.bridges.before");
 			m_bridgeBuffer->drawBridges(&rinfo.Camera, m_disableTextures, m_stageTwoTexture);
+			CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.bridges.after");
+		}
 	}
 
-  if ( m_waypointBuffer ) 
+  if ( m_waypointBuffer ) {
+	  CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.waypoints.before");
 	  m_waypointBuffer->drawWaypoints(rinfo);
+	  CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.waypoints.after");
+  }
 
-	if (m_bibBuffer)
+	if (m_bibBuffer) {
+		CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.bibs.before");
 		m_bibBuffer->renderBibs();
+		CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.bibs.after");
+	}
 
 	// We do some custom blending, so tell the shader class to reset everything.
+	CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.cleanup.before");
 	DX8Wrapper::Set_Texture(0,NULL);
 	DX8Wrapper::Set_Texture(1,NULL);
 	m_stageTwoTexture->restore();
 	ShaderClass::Invalidate();
 	DX8Wrapper::Set_Material(NULL);
+	CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.cleanup.after");
+	CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.complete");
 
 }
 
@@ -2207,12 +2259,14 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 ///Performs additional terrain rendering pass, blending in the black shroud texture.
 void HeightMapRenderObjClass::renderTerrainPass(CameraClass *pCamera)
 {
+	CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.renderTerrainPass.entry");
 	DX8Wrapper::Set_Transform(D3DTS_WORLD,Matrix3D(1));
 
 	//Apply the shader and material
 	
 	DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
 
+	CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.renderTerrainPass.tiles.before");
 	for (Int j=0; j<m_numVBTilesY; j++)
 		for (Int i=0; i<m_numVBTilesX; i++)
 		{
@@ -2246,6 +2300,8 @@ void HeightMapRenderObjClass::renderTerrainPass(CameraClass *pCamera)
 				DX8Wrapper::Draw_Triangles(	0,numPolys, 0,	numVertex);
 			}
 		}
+	CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.renderTerrainPass.tiles.after");
+	CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.renderTerrainPass.complete");
 }
 
 //=============================================================================
