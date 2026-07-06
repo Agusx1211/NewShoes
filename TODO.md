@@ -1818,7 +1818,10 @@ residue and the next frontier.
 
 - [ ] Players/factions/generals set up from INI.
 - [ ] Selection (single, box, double-click) works.
-- [ ] Movement orders + pathfinding (`AI`, locomotors) execute.
+- [ ] Movement orders + pathfinding (`AI`, locomotors) execute. A live
+      skirmish e2e now proves one selected local dozer receives
+      `MSG_DO_MOVETO` through the original input/command path and changes world
+      position; keep this open for broader locomotor/pathfinding cases.
 - [ ] Combat: weapons, damage, armor, FX resolve correctly.
 - [ ] Replace the focused `Weapon.cpp` metadata-only browser build with the
       full original `Weapon` / `WeaponStore` fire, delayed-damage, projectile,
@@ -1832,8 +1835,10 @@ residue and the next frontier.
 - [ ] AI opponent plays a skirmish.
 - [ ] Win/lose conditions trigger.
 - [ ] Harness: from the skirmish-start smoke's active match state, issue
-      move/attack orders through the original input/command path and assert
-      object state changes.
+      attack orders through the original input/command path and assert object
+      state changes. The live skirmish e2e now covers map-ground movement:
+      `AmericaVehicleDozer` selection -> `MSG_DO_MOVETO` dispatch -> measured
+      world-position delta after frame stepping.
 - [ ] Replay/recorder (`Recorder.cpp`) records and plays back deterministically.
 
 ---

@@ -3536,6 +3536,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `node WebAssembly/harness/startup_vertical_smoke.mjs` confirming the
       FunctionLexicon frontier now has 11 missing groups; screenshot
       `WebAssembly/artifacts/screenshots/input-select-e2e.png`.
+- [x] Prove live skirmish map-ground movement dispatch and state change through
+      the existing e2e harness. `input_select_e2e.mjs` now queries on-screen
+      local non-structure drawables after the real Skirmish Start path reaches
+      active gameplay, selects a movable unit through Win32 mouse messages,
+      chooses left/right move input based on `m_useAlternateMouse`, requires the
+      original `CommandXlat` / `GameLogicDispatch` counters to advance through
+      `MSG_DO_MOVETO` with a selected group, then steps frames and requires the
+      selected unit's world position to change. Verified with local Chromium:
+      `AmericaVehicleDozer#209` dispatched `MSG_DO_MOVETO` to
+      `(1518.338,1885.405,18.75)` and moved from
+      `(1415,1885,18.75)` to `(1493.630,1893.000,18.75)`, a 79.0 world-unit
+      delta, before the existing command-bar construction proof dispatched
+      `MSG_DOZER_CONSTRUCT`.
 - [x] Close the Fable command-bar in-flight follow-up. The Emscripten-only
       `FunctionLexicon::loadRuntimeTableForPort` now owns only the merged
       tables installed through that API, frees the previous injected table on

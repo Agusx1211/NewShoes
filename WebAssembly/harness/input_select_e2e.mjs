@@ -30,6 +30,8 @@ const GAME_SKIRMISH = 2;
 const WM_MOUSEMOVE = 0x0200;
 const WM_LBUTTONDOWN = 0x0201;
 const WM_LBUTTONUP = 0x0202;
+const WM_RBUTTONDOWN = 0x0204;
+const WM_RBUTTONUP = 0x0205;
 
 const screenshotPath = resolve(screenshotsRoot, "input-select-e2e.png");
 const outputPath = resolve(wasmRoot, "artifacts/input-select-e2e.json");
@@ -239,6 +241,27 @@ function compactCommandPath(selectionResult) {
   };
 }
 
+function compactMoveCommandPath(selectionResult) {
+  const path = selectionResult?.commandPath ?? {};
+  return {
+    lastClickType: path.lastClickType ?? null,
+    lastClickIssuedType: path.lastClickIssuedType ?? null,
+    lastClickWorldPos: path.lastClickWorldPos ?? null,
+    moveIssueCount: path.moveIssueCount ?? null,
+    moveAppendCount: path.moveAppendCount ?? null,
+    moveLastMsgType: path.moveLastMsgType ?? null,
+    moveLastMsgTypeName: path.moveLastMsgTypeName ?? null,
+    moveLastCommandType: path.moveLastCommandType ?? null,
+    moveLastTeamExists: path.moveLastTeamExists ?? null,
+    moveLastWorldPos: path.moveLastWorldPos ?? null,
+    dispatchMoveCommandCount: path.dispatchMoveCommandCount ?? null,
+    dispatchLastMoveCommandType: path.dispatchLastMoveCommandType ?? null,
+    dispatchLastMoveCommandTypeName: path.dispatchLastMoveCommandTypeName ?? null,
+    dispatchLastMoveHadGroup: path.dispatchLastMoveHadGroup ?? null,
+    dispatchLastMoveWorldPos: path.dispatchLastMoveWorldPos ?? null,
+  };
+}
+
 function buildDispatchDelta(before, after) {
   return {
     build: (after.dispatchBuildCommandCount ?? 0) - (before.dispatchBuildCommandCount ?? 0),
@@ -247,6 +270,40 @@ function buildDispatchDelta(before, after) {
     dozerConstruct: (after.dispatchDozerConstructCount ?? 0) - (before.dispatchDozerConstructCount ?? 0),
     purchaseScience: (after.dispatchPurchaseScienceCount ?? 0) - (before.dispatchPurchaseScienceCount ?? 0),
   };
+}
+
+function buildMoveDispatchDelta(before, after) {
+  return {
+    issue: (after.moveIssueCount ?? 0) - (before.moveIssueCount ?? 0),
+    append: (after.moveAppendCount ?? 0) - (before.moveAppendCount ?? 0),
+    dispatch: (after.dispatchMoveCommandCount ?? 0) - (before.dispatchMoveCommandCount ?? 0),
+  };
+}
+
+function worldDistance2d(a, b) {
+  if (a == null || b == null) {
+    return null;
+  }
+  const dx = Number(b.x) - Number(a.x);
+  const dy = Number(b.y) - Number(a.y);
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) {
+    return null;
+  }
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function chooseMovableDrawable(drawables) {
+  const localUnits = (drawables ?? []).filter((drawable) =>
+    drawable?.localOwned === true &&
+    drawable?.structure === false &&
+    drawable?.hidden === false &&
+    drawable?.onScreen === true &&
+    drawable?.screenPos != null &&
+    drawable?.worldPos != null);
+  const preferred = /Worker|Dozer|Tank|Technical|Humvee|Ranger|Missile|Quad|Scorpion|Marauder|Rebel|Terror|Combat|Bike|Truck/i;
+  return localUnits.find((drawable) => preferred.test(drawable.name ?? "")) ??
+    localUnits[0] ??
+    null;
 }
 
 async function waitForCommandButtons(page) {
@@ -264,6 +321,15 @@ async function clickMapPoint(page, point, label) {
   await runFrames(page, 1, `${label} down`);
   await postMouse(page, WM_LBUTTONUP, point);
   return runFrames(page, 8, `${label} up`);
+}
+
+async function clickSelectPoint(page, point, label, settleFrames = 5) {
+  await postMouse(page, WM_MOUSEMOVE, point);
+  await runFrames(page, settleFrames, `${label} move`);
+  await postMouse(page, WM_LBUTTONDOWN, point);
+  await runFrames(page, settleFrames, `${label} down`);
+  await postMouse(page, WM_LBUTTONUP, point);
+  return runFrames(page, settleFrames, `${label} up`);
 }
 
 function findWindowById(clientState, id) {
@@ -386,6 +452,185 @@ async function waitForSkirmishMatch(page) {
   });
 }
 
+async function proveMoveOrder(page, activeFrame, results) {
+  console.error("[input-select-e2e] === MOVE ORDER ===");
+  const drawablesQuery = await rpc(page, "queryDrawables");
+  expect(drawablesQuery?.ok === true,
+    "queryDrawables failed before move-order proof",
+    drawablesQuery);
+  const drawables = drawablesQuery.result?.drawables ?? [];
+  let unit = chooseMovableDrawable(drawables);
+  expect(unit != null,
+    "no on-screen local movable unit was available for move-order proof",
+    {
+      stats: drawablesQuery.result?.stats,
+      localOwned: drawables
+        .filter((drawable) => drawable?.localOwned === true)
+        .map((drawable) => ({
+          id: drawable.id,
+          name: drawable.name,
+          structure: drawable.structure,
+          hidden: drawable.hidden,
+          onScreen: drawable.onScreen,
+          screenPos: drawable.screenPos,
+        })),
+    });
+
+  let selectedPoint = {
+    x: Math.round(unit.screenPos.x),
+    y: Math.round(unit.screenPos.y),
+  };
+  console.error(`[input-select-e2e] selecting movable unit ${unit.name}#${unit.id} at ` +
+    `(${selectedPoint.x},${selectedPoint.y})`);
+  await clickSelectPoint(page, selectedPoint, "move proof select unit");
+
+  let selection = await rpc(page, "querySelection");
+  expect(selection?.ok === true && Number(selection.result?.selectCount ?? 0) > 0,
+    "move-order proof unit click did not select a controllable drawable",
+    selection);
+  if (!(selection.result?.selected ?? []).some((selected) => selected.id === unit.id)) {
+    const selectedIds = new Set((selection.result?.selected ?? []).map((selected) => selected.id));
+    const selectedMovable = drawables.find((drawable) =>
+      selectedIds.has(drawable.id) &&
+      drawable?.localOwned === true &&
+      drawable?.structure === false &&
+      drawable?.worldPos != null);
+    expect(selectedMovable != null,
+      "move-order proof selected a different object, but not a movable local unit",
+      {
+        clickedUnit: unit,
+        selection: selection.result,
+      });
+    console.error(`[input-select-e2e] clicked unit ${unit.id} selected nearby ` +
+      `${selectedMovable.name}#${selectedMovable.id}; tracking selected unit`);
+    unit = selectedMovable;
+    selectedPoint = {
+      x: Math.round(unit.screenPos.x),
+      y: Math.round(unit.screenPos.y),
+    };
+  }
+
+  const beforeCommandPath = compactMoveCommandPath(selection.result);
+  const useAlternateMouse = selection.result?.inputSettings?.useAlternateMouse === true;
+  const moveClick = useAlternateMouse
+    ? {
+        name: "right",
+        down: WM_RBUTTONDOWN,
+        up: WM_RBUTTONUP,
+      }
+    : {
+        name: "left",
+        down: WM_LBUTTONDOWN,
+        up: WM_LBUTTONUP,
+      };
+  const displayWidth = activeFrame?.frame?.clientState?.display?.width ??
+    activeFrame?.frame?.display?.width ??
+    1280;
+  const displayHeight = activeFrame?.frame?.clientState?.display?.height ??
+    activeFrame?.frame?.display?.height ??
+    656;
+  const clampPoint = (point) => ({
+    x: Math.max(16, Math.min(Math.round(point.x), displayWidth - 16)),
+    y: Math.max(16, Math.min(Math.round(point.y), displayHeight - 140)),
+  });
+  const candidateDestinations = [
+    clampPoint({ x: unit.screenPos.x + 200, y: unit.screenPos.y }),
+    clampPoint({ x: unit.screenPos.x + 220, y: unit.screenPos.y + 80 }),
+    clampPoint({ x: unit.screenPos.x + 160, y: unit.screenPos.y + 140 }),
+    clampPoint({ x: unit.screenPos.x - 200, y: unit.screenPos.y }),
+    clampPoint({ x: unit.screenPos.x - 220, y: unit.screenPos.y + 80 }),
+    clampPoint({ x: unit.screenPos.x, y: unit.screenPos.y + 180 }),
+    clampPoint({ x: displayWidth - 96, y: Math.floor(displayHeight * 0.45) }),
+    clampPoint({ x: Math.floor(displayWidth * 0.5), y: Math.floor(displayHeight * 0.55) }),
+    clampPoint({ x: 96, y: Math.floor(displayHeight * 0.45) }),
+  ];
+
+  let accepted = null;
+  let afterCommandPath = null;
+  let afterSelection = null;
+  for (const destination of candidateDestinations) {
+    console.error(`[input-select-e2e] trying ${moveClick.name}-click move at ` +
+      `(${destination.x},${destination.y})`);
+    await postMouse(page, WM_MOUSEMOVE, destination);
+    await runFrames(page, 5, "move-order mouse move");
+    await postMouse(page, moveClick.down, destination);
+    await runFrames(page, 5, "move-order down");
+    await postMouse(page, moveClick.up, destination);
+    await runFrames(page, 5, "move-order up");
+
+    afterSelection = await rpc(page, "querySelection");
+    afterCommandPath = compactMoveCommandPath(afterSelection?.result);
+    const delta = buildMoveDispatchDelta(beforeCommandPath, afterCommandPath);
+    const attempt = {
+      destination,
+      moveButton: moveClick.name,
+      commandPath: afterCommandPath,
+      delta,
+      selectCount: afterSelection?.result?.selectCount ?? null,
+    };
+    results.moveOrderProof.attempts.push(attempt);
+    console.error(`[input-select-e2e] move attempt: ${JSON.stringify(attempt)}`);
+
+    if (delta.dispatch > 0) {
+      expect(afterCommandPath.dispatchLastMoveCommandTypeName === "MSG_DO_MOVETO",
+        "move-order proof dispatched the wrong command type",
+        afterCommandPath);
+      expect(afterCommandPath.dispatchLastMoveHadGroup === 1,
+        "move-order proof dispatched without a selected group",
+        afterCommandPath);
+      accepted = { destination, delta };
+      break;
+    }
+
+    const stillSelected = (afterSelection?.result?.selected ?? [])
+      .some((selected) => selected.id === unit.id);
+    if (!stillSelected) {
+      await clickSelectPoint(page, selectedPoint, "move proof reselect unit");
+      selection = await rpc(page, "querySelection");
+    }
+  }
+
+  expect(accepted != null,
+    "no candidate destination produced a real MSG_DO_MOVETO dispatch",
+    results.moveOrderProof.attempts);
+
+  console.error("[input-select-e2e] stepping 90 frames for move order to affect world position");
+  await runFrames(page, 90, "move-order post-dispatch");
+  const afterDrawables = await rpc(page, "queryDrawables");
+  const afterUnit = (afterDrawables?.result?.drawables ?? [])
+    .find((drawable) => drawable.id === unit.id);
+  const worldDelta = worldDistance2d(unit.worldPos, afterUnit?.worldPos);
+  expect(Number.isFinite(worldDelta) && worldDelta > 1.0,
+    "move-order proof dispatched but the unit did not move",
+    {
+      unit,
+      afterUnit,
+      worldDelta,
+      accepted,
+      afterCommandPath,
+    });
+
+  const settledSelection = await rpc(page, "querySelection");
+  results.moveOrderProof.ok = true;
+  results.moveOrderProof.selectedUnit = {
+    id: unit.id,
+    name: unit.name,
+    screenPos: unit.screenPos,
+    worldPos: unit.worldPos,
+  };
+  results.moveOrderProof.beforeCommandPath = beforeCommandPath;
+  results.moveOrderProof.afterCommandPath = afterCommandPath;
+  results.moveOrderProof.dispatchDelta = accepted.delta;
+  results.moveOrderProof.destination = accepted.destination;
+  results.moveOrderProof.moveButton = moveClick.name;
+  results.moveOrderProof.beforeWorldPos = unit.worldPos;
+  results.moveOrderProof.afterWorldPos = afterUnit?.worldPos ?? null;
+  results.moveOrderProof.worldDelta = worldDelta;
+  results.moveOrderProof.verdict = "MOVE-ORDER-DISPATCHED-AND-UNIT-MOVED";
+  console.error(`[input-select-e2e] move proof world delta: ${worldDelta}`);
+  return settledSelection?.result ?? afterSelection?.result ?? selection.result;
+}
+
 /**
  * Retry wrapper for extraction race (errno=17/EEXIST).
  */
@@ -431,6 +676,20 @@ async function main() {
       dispatchDeltaAfterPlacement: null,
       pendingAfterClick: null,
       placementAttempts: [],
+      verdict: null,
+    },
+    moveOrderProof: {
+      ok: false,
+      selectedUnit: null,
+      beforeCommandPath: null,
+      afterCommandPath: null,
+      dispatchDelta: null,
+      destination: null,
+      moveButton: null,
+      beforeWorldPos: null,
+      afterWorldPos: null,
+      worldDelta: null,
+      attempts: [],
       verdict: null,
     },
     screenshot: null,
@@ -636,7 +895,11 @@ async function main() {
       }
     }
 
-    // ── Phase 7: COMMAND BAR BUILD/QUEUE BUTTON ──
+    // ── Phase 7: MOVE ORDER ──
+    const moveSelectionResult = await proveMoveOrder(page, active.result, results);
+    currentSelectionResult = moveSelectionResult;
+
+    // ── Phase 8: COMMAND BAR BUILD/QUEUE BUTTON ──
     const selectionWorksNow = Number(currentSelectionResult.selectCount ?? 0) > 0;
     if (selectionWorksNow) {
       console.error("[input-select-e2e] === COMMAND BAR BUILD/QUEUE BUTTON ===");
@@ -746,24 +1009,26 @@ async function main() {
       console.error(`[input-select-e2e] command-bar verdict: ${results.commandBarProof.verdict}`);
     }
 
-    // ── Phase 8: screenshot ──
+    // ── Phase 9: screenshot ──
     console.error("[input-select-e2e] capturing screenshot...");
     await page.locator("#viewport").screenshot({ path: screenshotPath });
     results.screenshot = screenshotPath;
     console.error(`[input-select-e2e] screenshot saved to ${screenshotPath}`);
 
-    // ── Phase 9: verdict ──
+    // ── Phase 10: verdict ──
     const dragWorks = results.dragProof.selectCount > 0;
     const clickWorks = results.clickProof.selectCount > 0;
     const selectionWorks = dragWorks || clickWorks;
-    results.ok = selectionWorks;
+    results.ok = selectionWorks && results.moveOrderProof.ok === true;
 
-    if (selectionWorks && results.commandBarProof.ok) {
-      results.verdict = `SELECT-AND-COMMAND-BAR-WORK (${results.commandBarProof.verdict})`;
+    if (selectionWorks && results.moveOrderProof.ok && results.commandBarProof.ok) {
+      results.verdict = `SELECT-MOVE-AND-COMMAND-BAR-WORK (${results.commandBarProof.verdict})`;
+    } else if (selectionWorks && results.moveOrderProof.ok) {
+      results.verdict = "SELECT-AND-MOVE-WORK-COMMAND-BAR-FAILS";
     } else if (dragWorks) {
-      results.verdict = "SELECT-WORKS-COMMAND-BAR-FAILS";
+      results.verdict = "SELECT-WORKS-MOVE-FAILS";
     } else if (clickWorks) {
-      results.verdict = "SELECT-WORKS-COMMAND-BAR-FAILS";
+      results.verdict = "SELECT-WORKS-MOVE-FAILS";
     } else {
       results.verdict = "SELECT-FAILS (selectCount=0 in live match with units present — needs more investigation, e.g. coordinate scaling)";
     }
@@ -773,6 +1038,7 @@ async function main() {
     console.error(`[input-select-e2e] Match state: ${JSON.stringify(results.matchState)}`);
     console.error(`[input-select-e2e] Drag proof: selectCount=${results.dragProof.selectCount}, selectedCount=${results.dragProof.selectedCount}`);
     console.error(`[input-select-e2e] Click proof: selectCount=${results.clickProof.selectCount}, selectedCount=${results.clickProof.selectedCount}`);
+    console.error(`[input-select-e2e] Move proof: ${JSON.stringify(results.moveOrderProof)}`);
     console.error(`[input-select-e2e] Command proof: ${JSON.stringify(results.commandBarProof)}`);
     console.error(`[input-select-e2e] Screenshot: ${results.screenshot}`);
     console.error(`[input-select-e2e] VERDICT: ${results.verdict}`);
