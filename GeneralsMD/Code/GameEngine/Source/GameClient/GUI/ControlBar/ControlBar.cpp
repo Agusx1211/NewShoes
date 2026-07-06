@@ -92,6 +92,72 @@
 // PUBLIC /////////////////////////////////////////////////////////////////////////////////////////
 ControlBar *TheControlBar = NULL;
 
+// Wasm harness diagnostics for the real in-game HUD path. These live in the
+// original owner so the browser harness can distinguish input routing failures
+// from ControlBar state changes without sending synthetic GUI commands.
+#ifdef __EMSCRIPTEN__
+static Int g_wasmPurchaseScienceShowCount = 0;
+static Int g_wasmPurchaseScienceHideCount = 0;
+static Int g_wasmPurchaseScienceToggleCount = 0;
+static Int g_wasmPurchaseScienceLastToggleBeforeHidden = -1;
+static Int g_wasmPurchaseScienceLastToggleAfterHidden = -1;
+static Int g_wasmPurchaseScienceLastShowBeforeHidden = -1;
+static Int g_wasmPurchaseScienceLastShowAfterHidden = -1;
+static Int g_wasmPurchaseScienceLastHideBeforeHidden = -1;
+static Int g_wasmPurchaseScienceLastHideAfterHidden = -1;
+static Int g_wasmPurchaseScienceShowGameEndingReturns = 0;
+
+extern "C" Int cnc_port_purchase_science_show_count(void)
+{
+	return g_wasmPurchaseScienceShowCount;
+}
+
+extern "C" Int cnc_port_purchase_science_hide_count(void)
+{
+	return g_wasmPurchaseScienceHideCount;
+}
+
+extern "C" Int cnc_port_purchase_science_toggle_count(void)
+{
+	return g_wasmPurchaseScienceToggleCount;
+}
+
+extern "C" Int cnc_port_purchase_science_last_toggle_before_hidden(void)
+{
+	return g_wasmPurchaseScienceLastToggleBeforeHidden;
+}
+
+extern "C" Int cnc_port_purchase_science_last_toggle_after_hidden(void)
+{
+	return g_wasmPurchaseScienceLastToggleAfterHidden;
+}
+
+extern "C" Int cnc_port_purchase_science_last_show_before_hidden(void)
+{
+	return g_wasmPurchaseScienceLastShowBeforeHidden;
+}
+
+extern "C" Int cnc_port_purchase_science_last_show_after_hidden(void)
+{
+	return g_wasmPurchaseScienceLastShowAfterHidden;
+}
+
+extern "C" Int cnc_port_purchase_science_last_hide_before_hidden(void)
+{
+	return g_wasmPurchaseScienceLastHideBeforeHidden;
+}
+
+extern "C" Int cnc_port_purchase_science_last_hide_after_hidden(void)
+{
+	return g_wasmPurchaseScienceLastHideAfterHidden;
+}
+
+extern "C" Int cnc_port_purchase_science_show_game_ending_returns(void)
+{
+	return g_wasmPurchaseScienceShowGameEndingReturns;
+}
+#endif
+
 const Image* ControlBar::m_rankVeteranIcon	= NULL;
 const Image* ControlBar::m_rankEliteIcon		= NULL;
 const Image* ControlBar::m_rankHeroicIcon		= NULL;
@@ -2942,14 +3008,27 @@ void ControlBar::updatePurchaseScience( void )
 void ControlBar::showPurchaseScience( void )
 {
 	
-	if(TheScriptEngine->isGameEnding())
+	if(TheScriptEngine->isGameEnding()) {
+#ifdef __EMSCRIPTEN__
+		++g_wasmPurchaseScienceShowGameEndingReturns;
+#endif
 		return;
+	}
+#ifdef __EMSCRIPTEN__
+	++g_wasmPurchaseScienceShowCount;
+	g_wasmPurchaseScienceLastShowBeforeHidden =
+		m_contextParent[ CP_PURCHASE_SCIENCE ]->winIsHidden() ? 1 : 0;
+#endif
 	populatePurchaseScience(ThePlayerList->getLocalPlayer());
 	m_genStarFlash = FALSE;
 	if(!m_contextParent[ CP_PURCHASE_SCIENCE ]->winIsHidden())
 		return;
 	//switchToContext(CB_CONTEXT_PURCHASE_SCIENCE, NULL);
 	m_contextParent[ CP_PURCHASE_SCIENCE ]->winHide(FALSE);
+#ifdef __EMSCRIPTEN__
+	g_wasmPurchaseScienceLastShowAfterHidden =
+		m_contextParent[ CP_PURCHASE_SCIENCE ]->winIsHidden() ? 1 : 0;
+#endif
 	if (TheGlobalData->m_animateWindows)
 		TheTransitionHandler->setGroup("GenExpFade");
 		//m_generalsScreenAnimate->registerGameWindow( m_contextParent[ CP_PURCHASE_SCIENCE ], WIN_ANIMATION_SLIDE_TOP, TRUE, 200 );
@@ -2958,6 +3037,11 @@ void ControlBar::showPurchaseScience( void )
 
 void ControlBar::hidePurchaseScience( void )
 {
+#ifdef __EMSCRIPTEN__
+	++g_wasmPurchaseScienceHideCount;
+	g_wasmPurchaseScienceLastHideBeforeHidden =
+		m_contextParent[ CP_PURCHASE_SCIENCE ]->winIsHidden() ? 1 : 0;
+#endif
 	if(m_contextParent[ CP_PURCHASE_SCIENCE ]->winIsHidden())
 		return;
 
@@ -2965,6 +3049,10 @@ void ControlBar::hidePurchaseScience( void )
 	{
 		m_contextParent[ CP_PURCHASE_SCIENCE ]->winHide( TRUE );
 	}
+#ifdef __EMSCRIPTEN__
+	g_wasmPurchaseScienceLastHideAfterHidden =
+		m_contextParent[ CP_PURCHASE_SCIENCE ]->winIsHidden() ? 1 : 0;
+#endif
 //	if (!TheGlobalData->m_animateWindows)
 //		{
 //			if( m_contextParent[ CP_PURCHASE_SCIENCE ] )
@@ -2983,10 +3071,21 @@ void ControlBar::hidePurchaseScience( void )
 
 void ControlBar::togglePurchaseScience( void )
 {
+#ifdef __EMSCRIPTEN__
+	++g_wasmPurchaseScienceToggleCount;
+	g_wasmPurchaseScienceLastToggleBeforeHidden =
+		m_contextParent[ CP_PURCHASE_SCIENCE ] != NULL &&
+		m_contextParent[ CP_PURCHASE_SCIENCE ]->winIsHidden() ? 1 : 0;
+#endif
 	if(m_contextParent[ CP_PURCHASE_SCIENCE ]->winIsHidden())
 		showPurchaseScience();
 	else
 		hidePurchaseScience();
+#ifdef __EMSCRIPTEN__
+	g_wasmPurchaseScienceLastToggleAfterHidden =
+		m_contextParent[ CP_PURCHASE_SCIENCE ] != NULL &&
+		m_contextParent[ CP_PURCHASE_SCIENCE ]->winIsHidden() ? 1 : 0;
+#endif
 }
 
 void ControlBar::toggleControlBarStage( void )

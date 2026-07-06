@@ -9554,6 +9554,11 @@ async function loadWasmModule() {
         "string",
         [],
       ),
+      clickWindowByName: module.cwrap(
+        "cnc_port_click_window_by_name",
+        "string",
+        ["string"],
+      ),
       realEngineLastUpdateTarget: module.cwrap(
         "cnc_port_real_engine_last_update_target",
         "string",
@@ -14786,6 +14791,30 @@ async function rpc(command, payload = {}) {
         return {
           ok: Boolean(result?.ready) && !aborted,
           command: "querySelection",
+          aborted,
+          abortMessage,
+          result,
+          state: snapshotState(),
+        };
+      }
+    case "clickWindowByName":
+      {
+        const moduleResult = await getWasmModuleForArchives("clickWindowByName");
+        if (moduleResult.error) {
+          return { ok: false, command: "clickWindowByName", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.clickWindowByName(String(payload.name ?? "")));
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        return {
+          ok: Boolean(result?.ready) && result?.clicked === true && !aborted,
+          command: "clickWindowByName",
           aborted,
           abortMessage,
           result,

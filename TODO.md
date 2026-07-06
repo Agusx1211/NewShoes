@@ -29,7 +29,7 @@ real-GPU perf measurement on Mac is a pending follow-up. Before broad D3D8
 shim surgery, take a DevTools trace only if the next chosen optimization
 needs async ANGLE/GPU stall detail beyond the live harness counters.
 
-QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), remaining control-bar player-list/generals-experience behavior after command-button and radar dispatch proofs, compressed/DXT volume textures.
+QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), remaining control-bar player-list/purchase-science behavior after command-button, radar, and Generals Experience open/close proofs, compressed/DXT volume textures.
 
 Dev-box render-verify: symlink worktree `dist/` → main's built `dist/` renders JS-only fixes without the Mac (~4min boot).
 
@@ -504,9 +504,11 @@ residue and the next frontier.
       hooks.
 - [ ] Exercise the remaining broader `ControlBarSystem`/`LeftHUDInput` HUD
       behavior after the command-button and radar-click path proofs:
-      player-list HUD affordances, generals-experience affordances, and any
-      non-radar left-HUD mouse routing should run through the live skirmish
-      harness and expose state queries or screenshots, not isolated probes.
+      player-list HUD affordances and any non-radar left-HUD mouse routing
+      should run through the real in-game harness and expose state queries or
+      screenshots, not isolated probes. The Generals Experience open/close
+      affordance is now browser-proven in the startup vertical; purchasable
+      science dispatch remains a separate item below.
 - [ ] Retire the Emscripten-only runtime `FunctionLexicon` table injection
       once the command-bar/HUD callback owner TUs are naturally retained by
       the linked `cnc-port` graph; the current injected tables are
@@ -541,10 +543,12 @@ residue and the next frontier.
       the real `GameClient` init attaches original `SelectionTranslator` to the
       message stream; the callback name now resolves in `FunctionLexicon`, but
       behavioral coverage belongs with real input/game-client ownership.
-- [ ] Exercise `GeneralsExpPointsSystem`/`GeneralsExpPointsInput` behavior in
-      the live skirmish harness once a player state with a purchasable science
-      is reachable; verify purchase-science command dispatch and UI state
-      rather than only callback-name registration.
+- [ ] Exercise purchasable-science dispatch from
+      `GeneralsExpPointsSystem`/`GeneralsExpPointsInput` once a player state
+      with an enabled science choice is reachable. The panel open/close,
+      `GenExpFade`, and Done-button visibility state are now browser-proven;
+      remaining coverage should verify enabled science button state,
+      `MSG_PURCHASE_SCIENCE` dispatch, and player science/rank-point updates.
 - [ ] Replace the weak browser boundaries for `BattleHonorTooltip`,
       `InsertBattleHonor`, `ResetBattleHonorInsertion`,
       `playerTemplateComboBoxTooltip`, and `playerTemplateListBoxTooltip`

@@ -6628,6 +6628,31 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       WebAssembly/harness/startup_vertical_smoke.mjs`. Renderer was
       `ANGLE Metal Renderer: Apple M4`; screenshot:
       `WebAssembly/artifacts/screenshots/attack-move-milestone.png`.
+- [x] Prove the real Generals Experience HUD open/close path at MD_USA01
+      player control.
+      `startup_vertical_smoke.mjs` now supports
+      `STARTUP_VERTICAL_PROVE_GENERALS_EXP=1`, reaches original player
+      control, selects a local `AmericaTankPaladin`, clicks
+      `ControlBar.wnd:ButtonGeneral` through the original
+      `GadgetPushButtonInput` path, and waits for the shipped `GenExpFade`
+      transition instead of treating its temporary hidden state as a failure.
+      The Mac Chrome/Metal run showed the panel hidden while `GenExpFade` was
+      current (`openFirstAttempt` at frame 3378), then visible/clickable with
+      `GeneralsExpPointsSystem`/`GeneralsExpPointsInput` ownership after 10
+      real frames (`openFinalAttempt` at frame 3387), with `showCount=1` and
+      `toggleCount=1`. The same proof clicked
+      `GeneralsExpPoints.wnd:ButtonExit` through `GadgetPushButtonInput` and
+      verified the panel hidden again at frame 3388 with `hideCount=4`.
+      Verified with `node --check
+      WebAssembly/harness/startup_vertical_smoke.mjs`, `git diff --check`,
+      `npm --prefix WebAssembly run build:startup-vertical`, and on the Mac
+      M4 real GPU with Chrome/Metal:
+      `STARTUP_VERTICAL_PROVE_GENERALS_EXP=1
+      STARTUP_VERTICAL_REAL_INIT_ONLY=1
+      STARTUP_VERTICAL_BROWSER_EXECUTABLE="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+      STARTUP_VERTICAL_BROWSER_ARGS="--enable-gpu --use-angle=metal" node
+      WebAssembly/harness/startup_vertical_smoke.mjs`. Screenshot:
+      `WebAssembly/artifacts/screenshots/generals-exp-milestone.png`.
 
 ---
 

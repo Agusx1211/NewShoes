@@ -20,10 +20,12 @@ const realInitPostCampaignScreenshot = resolve(screenshotDir, "startup-vertical-
 const interactScreenshot = resolve(screenshotDir, "interact-milestone.png");
 const attackScreenshot = resolve(screenshotDir, "attack-milestone.png");
 const attackMoveScreenshot = resolve(screenshotDir, "attack-move-milestone.png");
+const generalsExpScreenshot = resolve(screenshotDir, "generals-exp-milestone.png");
 const proveInteract = process.env.STARTUP_VERTICAL_PROVE_INTERACT === "1";
 const proveRadar = process.env.STARTUP_VERTICAL_PROVE_RADAR === "1";
 const proveAttack = process.env.STARTUP_VERTICAL_PROVE_ATTACK === "1";
 const proveAttackMove = process.env.STARTUP_VERTICAL_PROVE_ATTACK_MOVE === "1";
+const proveGeneralsExp = process.env.STARTUP_VERTICAL_PROVE_GENERALS_EXP === "1";
 const debugStartupVertical = process.env.STARTUP_VERTICAL_DEBUG === "1";
 const realInitOnly = process.env.STARTUP_VERTICAL_REAL_INIT_ONLY === "1";
 const postCampaignFrameCount = Number(process.env.STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES ?? 0);
@@ -2502,6 +2504,7 @@ try {
       selectCount: 0,
       attackOrder: null,
       attackMoveOrder: null,
+      generalsExp: null,
       radarMove: null,
       moveSource: null,
       moveDelta: null,
@@ -2664,6 +2667,48 @@ try {
       ?? pcResult?.frame?.display?.height
       ?? 600;
 
+    const compactWindowProbe = (window) => window == null ? null : ({
+      name: window.name,
+      found: window.found,
+      id: window.id,
+      decoratedName: window.decoratedName,
+      x: window.x,
+      y: window.y,
+      width: window.width,
+      height: window.height,
+      centerX: window.centerX,
+      centerY: window.centerY,
+      systemFunc: window.systemFunc,
+      inputFunc: window.inputFunc,
+      drawFunc: window.drawFunc,
+      hidden: window.hidden,
+      managerHidden: window.managerHidden,
+      enabled: window.enabled,
+      clickable: window.clickable,
+      owner: window.owner == null ? null : {
+        found: window.owner.found,
+        id: window.owner.id,
+        decoratedName: window.owner.decoratedName,
+        systemFunc: window.owner.systemFunc,
+        inputFunc: window.owner.inputFunc,
+        drawFunc: window.owner.drawFunc,
+        hidden: window.owner.hidden,
+      },
+      command: window.command ?? undefined,
+    });
+    const visibleWindow = (window) =>
+      window?.found === true && window.hidden !== true && window.managerHidden !== true;
+    const hiddenWindow = (window) =>
+      window?.found === true && (window.hidden === true || window.managerHidden === true);
+    const clickNamedWindow = async (name) => {
+      const result = await page.evaluate((windowName) =>
+        window.CnCPort.rpc("clickWindowByName", { name: windowName }), name);
+      expect(result?.ok === true,
+        "[interact] named GameWindow click failed",
+        { name, result });
+      return result.result;
+    };
+
     const worldDistance2d = (a, b) => {
       if (a == null || b == null) {
         return null;
@@ -2695,6 +2740,116 @@ try {
       await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
       return page.evaluate(() =>
         window.CnCPort.rpc("querySelection"));
+    }
+
+    async function proveGeneralsExpHud() {
+      const generalsExpRouted = (windows) => {
+        const parent = windows?.parent;
+        const exitButton = windows?.buttonExit;
+        return parent?.systemFunc === "GeneralsExpPointsSystem"
+          || parent?.inputFunc === "GeneralsExpPointsInput"
+          || exitButton?.owner?.systemFunc === "GeneralsExpPointsSystem"
+          || exitButton?.owner?.inputFunc === "GeneralsExpPointsInput";
+      };
+      const compactGeneralsExpAttempt = (frame) => {
+        const clientState = frame?.frame?.clientState;
+        const windows = clientState?.generalsExpWindows;
+        const parent = windows?.parent;
+        const buttonExit = windows?.buttonExit;
+        return {
+          framesCompleted: frame?.frame?.framesCompleted,
+          transition: clientState?.transition,
+          parent: parent == null ? null : {
+            found: parent.found,
+            hidden: parent.hidden,
+            managerHidden: parent.managerHidden,
+            clickable: parent.clickable,
+            systemFunc: parent.systemFunc,
+            inputFunc: parent.inputFunc,
+          },
+          buttonExit: buttonExit == null ? null : {
+            found: buttonExit.found,
+            hidden: buttonExit.hidden,
+            managerHidden: buttonExit.managerHidden,
+            clickable: buttonExit.clickable,
+            inputFunc: buttonExit.inputFunc,
+            ownerHidden: buttonExit.owner?.hidden,
+            ownerSystemFunc: buttonExit.owner?.systemFunc,
+          },
+          purchaseScience: clientState?.purchaseScience,
+        };
+      };
+      const waitForGeneralsExpPanelState = async (expectedVisible, label, maxFrames = 45) => {
+        const attempts = [];
+        for (let frameIndex = 0; frameIndex < maxFrames; frameIndex += 1) {
+          const frame = await runRealEngineFrames(page, 1);
+          const clientState = frame?.frame?.clientState;
+          const windows = clientState?.generalsExpWindows;
+          const parent = windows?.parent;
+          const visible = visibleWindow(parent);
+          const hidden = hiddenWindow(parent);
+          const routed = generalsExpRouted(windows);
+          attempts.push(compactGeneralsExpAttempt(frame));
+          if ((expectedVisible ? visible : hidden) && routed) {
+            return { frame, clientState, windows, parent, attempts };
+          }
+        }
+        expect(false,
+          `[interact] Generals Experience panel did not become ${label}`,
+          attempts);
+      };
+
+      const beforeFrame = await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+      const beforeClientState = beforeFrame?.frame?.clientState;
+      const buttonGeneral = beforeClientState?.controlBarWindows?.buttonGeneral;
+      const beforeParent = beforeClientState?.generalsExpWindows?.parent;
+      expect(buttonGeneral?.found === true
+          && buttonGeneral.clickable === true
+          && buttonGeneral.inputFunc === "GadgetPushButtonInput"
+          && buttonGeneral.owner?.systemFunc === "ControlBarSystem",
+        "[interact] General button is not routed through the original control-bar callback owner",
+        compactWindowProbe(buttonGeneral));
+      expect(hiddenWindow(beforeParent),
+        "[interact] Generals Experience panel should start hidden before ButtonGeneral click",
+        compactWindowProbe(beforeParent));
+
+      const openClick = await clickNamedWindow("ControlBar.wnd:ButtonGeneral");
+      const openResult = await waitForGeneralsExpPanelState(true, "visible");
+      const openClientState = openResult.clientState;
+      const openParent = openResult.parent;
+      const exitButton = openResult.windows?.buttonExit;
+      expect(exitButton?.found === true
+          && exitButton.clickable === true
+          && exitButton.inputFunc === "GadgetPushButtonInput",
+        "[interact] Generals Experience exit button is not clickable",
+        compactWindowProbe(exitButton));
+
+      await mkdir(screenshotDir, { recursive: true });
+      await page.screenshot({ path: generalsExpScreenshot });
+      const closeClick = await clickNamedWindow("GeneralsExpPoints.wnd:ButtonExit");
+      const closeResult = await waitForGeneralsExpPanelState(false, "hidden", CLICK_FORWARD_FRAMES);
+      const closedFrame = closeResult.frame;
+      const closedParent = closeResult.parent;
+
+      return {
+        buttonGeneral: compactWindowProbe(buttonGeneral),
+        beforeParent: compactWindowProbe(beforeParent),
+        openMethod: "gadgetInput",
+        openClick,
+        openAttemptCount: openResult.attempts.length,
+        openFirstAttempt: openResult.attempts[0] ?? null,
+        openFinalAttempt: openResult.attempts.at(-1) ?? null,
+        openParent: compactWindowProbe(openParent),
+        buttonExit: compactWindowProbe(exitButton),
+        openPurchaseScience: openClientState?.purchaseScience,
+        closeMethod: "gadgetInput",
+        closeClick,
+        closeAttemptCount: closeResult.attempts.length,
+        closeFinalAttempt: closeResult.attempts.at(-1) ?? null,
+        closedParent: compactWindowProbe(closedParent),
+        closedPurchaseScience: closedFrame?.frame?.clientState?.purchaseScience,
+        screenshotPath: generalsExpScreenshot,
+      };
     }
 
     async function proveAttackObjectOrder() {
@@ -2950,6 +3105,17 @@ try {
         postState,
         screenshotPath: attackScreenshot,
       };
+    }
+
+    if (proveGeneralsExp) {
+      summary.generalsExp = await proveGeneralsExpHud();
+      summary.screenshotPath = summary.generalsExp.screenshotPath;
+      console.error("[interact] Generals Experience HUD proof accepted:", JSON.stringify(summary.generalsExp));
+      if (!proveInteract && !proveRadar && !proveAttack && !proveAttackMove) {
+        return summary;
+      }
+      selBefore = await page.evaluate(() =>
+        window.CnCPort.rpc("querySelection"));
     }
 
     if (proveAttack) {
@@ -3455,7 +3621,7 @@ try {
     return summary;
   }
 
-  const interactResult = (proveInteract || proveRadar || proveAttack || proveAttackMove)
+  const interactResult = (proveInteract || proveRadar || proveAttack || proveAttackMove || proveGeneralsExp)
     ? await selectAndMoveUnit(realInitPage)
     : null;
 

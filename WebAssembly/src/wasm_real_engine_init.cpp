@@ -204,6 +204,16 @@ extern "C" Int cnc_port_logic_dispatch_queue_upgrade_count(void);
 extern "C" Int cnc_port_logic_dispatch_queue_unit_create_count(void);
 extern "C" Int cnc_port_logic_dispatch_dozer_construct_count(void);
 extern "C" Int cnc_port_logic_dispatch_purchase_science_count(void);
+extern "C" Int cnc_port_purchase_science_show_count(void);
+extern "C" Int cnc_port_purchase_science_hide_count(void);
+extern "C" Int cnc_port_purchase_science_toggle_count(void);
+extern "C" Int cnc_port_purchase_science_last_toggle_before_hidden(void);
+extern "C" Int cnc_port_purchase_science_last_toggle_after_hidden(void);
+extern "C" Int cnc_port_purchase_science_last_show_before_hidden(void);
+extern "C" Int cnc_port_purchase_science_last_show_after_hidden(void);
+extern "C" Int cnc_port_purchase_science_last_hide_before_hidden(void);
+extern "C" Int cnc_port_purchase_science_last_hide_after_hidden(void);
+extern "C" Int cnc_port_purchase_science_show_game_ending_returns(void);
 extern "C" Int cnc_port_command_xlat_last_click_type(void);
 extern "C" Int cnc_port_command_xlat_last_click_is_point(void);
 extern "C" Int cnc_port_command_xlat_last_click_controllable(void);
@@ -3193,8 +3203,14 @@ void append_window_json(std::string &json, GameWindow *window, const char *reque
 	json += ",\"owner\":";
 	append_window_identity_json(json, inst_data != NULL ? inst_data->getOwner() : NULL);
 	const char *command_button_prefix = "ControlBar.wnd:ButtonCommand";
-	if (requested_name != NULL && std::strncmp(requested_name,
-		command_button_prefix, std::strlen(command_button_prefix)) == 0) {
+	const char *science_button_prefix = "GeneralsExpPoints.wnd:ButtonRank";
+	const char *general_button_name = "ControlBar.wnd:ButtonGeneral";
+	if (requested_name != NULL
+		&& ((std::strncmp(requested_name,
+			command_button_prefix, std::strlen(command_button_prefix)) == 0)
+			|| (std::strncmp(requested_name,
+				science_button_prefix, std::strlen(science_button_prefix)) == 0)
+			|| std::strcmp(requested_name, general_button_name) == 0)) {
 		const CommandButton *command =
 			static_cast<const CommandButton *>(GadgetButtonGetData(window));
 		json += ",\"command\":";
@@ -3209,6 +3225,18 @@ void append_window_probe(std::string &json, const char *field_name, const char *
 	json += field_name;
 	json += "\":";
 	append_window_json(json, find_window_by_name(window_name), window_name);
+}
+
+void append_generals_exp_rank_window_probes(
+	std::string &json, const char *field_prefix, const char *window_prefix, int count)
+{
+	for (int i = 0; i < count; ++i) {
+		char field_name[64];
+		char window_name[96];
+		std::snprintf(field_name, sizeof(field_name), "%s%d", field_prefix, i);
+		std::snprintf(window_name, sizeof(window_name), "%s%d", window_prefix, i);
+		append_window_probe(json, field_name, window_name);
+	}
 }
 
 void append_window_ref(std::string &json, const char *field_name, GameWindow *window)
@@ -3790,8 +3818,48 @@ void append_real_engine_client_state(std::string &json)
 	append_window_probe(json, "buttonCommand11", "ControlBar.wnd:ButtonCommand11");
 	append_window_probe(json, "buttonCommand12", "ControlBar.wnd:ButtonCommand12");
 	append_window_under_probe_center(
+		json, "underButtonGeneralCenter", "ControlBar.wnd:ButtonGeneral");
+	append_window_under_probe_center(
 		json, "underButtonCommand01Center", "ControlBar.wnd:ButtonCommand01");
 	append_window_probe(json, "onTopDraw", "ControlBar.wnd:OnTopDraw");
+	json += "}";
+
+	json += ",\"generalsExpWindows\":{\"queried\":true";
+	append_window_probe(json, "parent", "GeneralsExpPoints.wnd:GenExpParent");
+	append_window_probe(json, "buttonExit", "GeneralsExpPoints.wnd:ButtonExit");
+	append_window_under_probe_center(
+		json, "underButtonExitCenter", "GeneralsExpPoints.wnd:ButtonExit");
+	append_window_probe(
+		json, "staticTextRankPointsAvailable", "GeneralsExpPoints.wnd:StaticTextRankPointsAvailable");
+	append_window_probe(json, "staticTextLevel", "GeneralsExpPoints.wnd:StaticTextLevel");
+	append_window_probe(json, "progressBarExperience", "GeneralsExpPoints.wnd:ProgressBarExperience");
+	append_window_probe(json, "staticTextTitle", "GeneralsExpPoints.wnd:StaticTextTitle");
+	append_generals_exp_rank_window_probes(
+		json, "buttonRank1Number", "GeneralsExpPoints.wnd:ButtonRank1Number", 4);
+	append_generals_exp_rank_window_probes(
+		json, "buttonRank3Number", "GeneralsExpPoints.wnd:ButtonRank3Number", 15);
+	append_generals_exp_rank_window_probes(
+		json, "buttonRank8Number", "GeneralsExpPoints.wnd:ButtonRank8Number", 4);
+	json += "}";
+
+	json += ",\"purchaseScience\":{\"queried\":true";
+	json += ",\"showCount\":" + std::to_string(cnc_port_purchase_science_show_count());
+	json += ",\"hideCount\":" + std::to_string(cnc_port_purchase_science_hide_count());
+	json += ",\"toggleCount\":" + std::to_string(cnc_port_purchase_science_toggle_count());
+	json += ",\"lastToggleBeforeHidden\":"
+		+ std::to_string(cnc_port_purchase_science_last_toggle_before_hidden());
+	json += ",\"lastToggleAfterHidden\":"
+		+ std::to_string(cnc_port_purchase_science_last_toggle_after_hidden());
+	json += ",\"lastShowBeforeHidden\":"
+		+ std::to_string(cnc_port_purchase_science_last_show_before_hidden());
+	json += ",\"lastShowAfterHidden\":"
+		+ std::to_string(cnc_port_purchase_science_last_show_after_hidden());
+	json += ",\"lastHideBeforeHidden\":"
+		+ std::to_string(cnc_port_purchase_science_last_hide_before_hidden());
+	json += ",\"lastHideAfterHidden\":"
+		+ std::to_string(cnc_port_purchase_science_last_hide_after_hidden());
+	json += ",\"showGameEndingReturns\":"
+		+ std::to_string(cnc_port_purchase_science_show_game_ending_returns());
 	json += "}";
 
 	append_input_window_state(json);
@@ -5111,6 +5179,56 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 		}
 	}
 	json += "]";
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_click_window_by_name(const char *window_name)
+{
+	static std::string json;
+	json = "{";
+	json += "\"ready\":";
+	json += TheWindowManager != NULL ? "true" : "false";
+	json += ",\"requestedName\":\"";
+	json += json_escape(window_name != NULL ? window_name : "");
+	json += "\"";
+
+	if (TheWindowManager == NULL) {
+		json += ",\"clicked\":false,\"guard\":\"TheWindowManager\"}";
+		return json.c_str();
+	}
+	if (window_name == NULL || window_name[0] == '\0') {
+		json += ",\"clicked\":false,\"guard\":\"windowName\"}";
+		return json.c_str();
+	}
+
+	GameWindow *window = find_window_by_name(window_name);
+	if (window == NULL) {
+		json += ",\"clicked\":false,\"guard\":\"window\"}";
+		return json.c_str();
+	}
+
+	Int x = 0;
+	Int y = 0;
+	Int width = 0;
+	Int height = 0;
+	window->winGetScreenPosition(&x, &y);
+	window->winGetSize(&width, &height);
+	const Int center_x = x + width / 2;
+	const Int center_y = y + height / 2;
+	const UnsignedInt packed_mouse_coords = SHORTTOLONG(center_x, center_y);
+	const WindowMsgHandledType down_result =
+		TheWindowManager->winSendInputMsg(window, GWM_LEFT_DOWN, packed_mouse_coords, 0);
+	const WindowMsgHandledType up_result =
+		TheWindowManager->winSendInputMsg(window, GWM_LEFT_UP, packed_mouse_coords, 0);
+
+	json += ",\"clicked\":true";
+	json += ",\"point\":{\"x\":" + std::to_string(center_x);
+	json += ",\"y\":" + std::to_string(center_y) + "}";
+	json += ",\"downResult\":" + std::to_string(static_cast<int>(down_result));
+	json += ",\"upResult\":" + std::to_string(static_cast<int>(up_result));
+	json += ",\"window\":";
+	append_window_json(json, window, window_name);
 	json += "}";
 	return json.c_str();
 }
