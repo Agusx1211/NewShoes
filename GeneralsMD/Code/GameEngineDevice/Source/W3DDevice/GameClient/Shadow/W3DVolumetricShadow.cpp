@@ -61,6 +61,38 @@
 #include "wwshade/shdmesh.h"
 #include "wwshade/shdsubmesh.h"
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_update_target(const char *name) __attribute__((weak));
+extern "C" int cnc_port_is_engine_frame_profile_enabled() __attribute__((weak));
+extern "C" void cnc_port_begin_sorted_draw_submit_profile_scope() __attribute__((weak));
+extern "C" void cnc_port_end_sorted_draw_submit_profile_scope() __attribute__((weak));
+#define CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP(name) \
+	do { \
+		if (cnc_port_note_engine_update_target) { \
+			cnc_port_note_engine_update_target(name); \
+		} \
+	} while (0)
+#define CNC_PORT_SHADOW_PROFILE_SUBMIT_ENABLED() \
+	(cnc_port_is_engine_frame_profile_enabled && cnc_port_is_engine_frame_profile_enabled())
+#define CNC_PORT_BEGIN_SHADOW_SUBMIT_PROFILE_SCOPE(enabled) \
+	do { \
+		if ((enabled) && cnc_port_begin_sorted_draw_submit_profile_scope) { \
+			cnc_port_begin_sorted_draw_submit_profile_scope(); \
+		} \
+	} while (0)
+#define CNC_PORT_END_SHADOW_SUBMIT_PROFILE_SCOPE(enabled) \
+	do { \
+		if ((enabled) && cnc_port_end_sorted_draw_submit_profile_scope) { \
+			cnc_port_end_sorted_draw_submit_profile_scope(); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP(name) do { } while (0)
+#define CNC_PORT_SHADOW_PROFILE_SUBMIT_ENABLED() false
+#define CNC_PORT_BEGIN_SHADOW_SUBMIT_PROFILE_SCOPE(enabled) do { } while (0)
+#define CNC_PORT_END_SHADOW_SUBMIT_PROFILE_SCOPE(enabled) do { } while (0)
+#endif
+
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -1374,6 +1406,7 @@ void W3DVolumetricShadow::RenderVolume(Int meshIndex, Int lightIndex)
 
 void W3DVolumetricShadow::RenderMeshVolume(Int meshIndex, Int lightIndex, const Matrix3D *meshXform)
 {
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.entry");
 	Geometry *geometry;
 	Int numVerts, numPolys, numIndex;
 
@@ -1381,7 +1414,10 @@ void W3DVolumetricShadow::RenderMeshVolume(Int meshIndex, Int lightIndex, const 
 	LPDIRECT3DDEVICE8 m_pDev=DX8Wrapper::_Get_D3D_Device8();
 
 	if (!m_pDev)
+	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.noDevice.return");
 		return;
+	}
 
 	geometry = m_shadowVolume[lightIndex][ meshIndex ];
 
@@ -1398,43 +1434,65 @@ void W3DVolumetricShadow::RenderMeshVolume(Int meshIndex, Int lightIndex, const 
 
 	// reject shadows with no data
 	if( numVerts == 0 || numPolys == 0 )
+	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.empty.return");
 		return;
+	}
 
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.transform.before");
 	Matrix4x4 mWorld(*meshXform);
 
 	///@todo: W3D always does transpose on all of matrix sets.  Slow???  Better to hack view matrix.
 	Matrix4x4 transposedWorld = mWorld.Transpose();
 	m_pDev->SetTransform(D3DTS_WORLD,(_D3DMATRIX *)&transposedWorld);
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.transform.after");
 	
 	W3DBufferManager::W3DVertexBufferSlot *vbSlot=m_shadowVolumeVB[lightIndex][ meshIndex ];
 	if (!vbSlot)
+	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.noVB.return");
 		return;
+	}
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.vbBind.before");
 	if (vbSlot->m_VB->m_DX8VertexBuffer->Get_DX8_Vertex_Buffer() != lastActiveVertexBuffer)
 	{	lastActiveVertexBuffer=vbSlot->m_VB->m_DX8VertexBuffer->Get_DX8_Vertex_Buffer();
 		m_pDev->SetStreamSource(0,lastActiveVertexBuffer,
 			vbSlot->m_VB->m_DX8VertexBuffer->FVF_Info().Get_FVF_Size());	//12 bytes per vertex.
 	}
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.vbBind.after");
 
 	DEBUG_ASSERTCRASH(vbSlot->m_size >= numVerts,("Overflowing Shadow Vertex Buffer Slot"));
 
 	W3DBufferManager::W3DIndexBufferSlot *ibSlot=m_shadowVolumeIB[lightIndex][ meshIndex ];
 	if (!ibSlot)
+	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.noIB.return");
 		return;
+	}
 
 	DEBUG_ASSERTCRASH(ibSlot->m_size >= numIndex,("Overflowing Shadow Index Buffer Slot"));
 
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.ibBind.before");
 	m_pDev->SetIndices(ibSlot->m_IB->m_DX8IndexBuffer->Get_DX8_Index_Buffer(),vbSlot->m_start);
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.ibBind.after");
 
 	if (DX8Wrapper::_Is_Triangle_Draw_Enabled())
 	{
 		Debug_Statistics::Record_DX8_Polys_And_Vertices(numPolys,numVerts,ShaderClass::_PresetOpaqueShader);
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.draw.before");
+		const bool profile_submit = CNC_PORT_SHADOW_PROFILE_SUBMIT_ENABLED();
+		CNC_PORT_BEGIN_SHADOW_SUBMIT_PROFILE_SCOPE(profile_submit);
 		m_pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST,0,numVerts,ibSlot->m_start,numPolys);
+		CNC_PORT_END_SHADOW_SUBMIT_PROFILE_SCOPE(profile_submit);
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.draw.after");
 	}
 
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.complete");
 }
 
 void W3DVolumetricShadow::RenderDynamicMeshVolume(Int meshIndex, Int lightIndex, const Matrix3D *meshXform)
 {
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.entry");
 	Geometry *geometry;
 	Int numVerts, numPolys, numIndex;
 	SHADOW_DYNAMIC_VOLUME_VERTEX* pvVertices;
@@ -1444,7 +1502,10 @@ void W3DVolumetricShadow::RenderDynamicMeshVolume(Int meshIndex, Int lightIndex,
 	LPDIRECT3DDEVICE8 m_pDev=DX8Wrapper::_Get_D3D_Device8();
 
 	if (!m_pDev)
+	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.noDevice.return");
 		return;
+	}
 
 
 	geometry = m_shadowVolume[lightIndex][ meshIndex ];
@@ -1462,25 +1523,36 @@ void W3DVolumetricShadow::RenderDynamicMeshVolume(Int meshIndex, Int lightIndex,
 
 	// reject shadows with no data
 	if( numVerts == 0 || numPolys == 0 )
+	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.empty.return");
 		return;
+	}
 
-
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.vbLock.before");
 	if (nShadowVertsInBuf > (SHADOW_VERTEX_SIZE-numVerts))	//check if room for model verts
 	{	//flush the buffer by drawing the contents and re-locking again
 		if (shadowVertexBufferD3D->Lock(0,numVerts*sizeof(SHADOW_DYNAMIC_VOLUME_VERTEX),(unsigned char**)&pvVertices,D3DLOCK_DISCARD) != D3D_OK)
+		{
+			CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.vbLock.failed");
 			return;
+		}
 		nShadowVertsInBuf=0;
 		nShadowStartBatchVertex=0;
 	}
 	else
 	{	if (shadowVertexBufferD3D->Lock(nShadowVertsInBuf*sizeof(SHADOW_DYNAMIC_VOLUME_VERTEX),numVerts*sizeof(SHADOW_DYNAMIC_VOLUME_VERTEX), (unsigned char**)&pvVertices,D3DLOCK_NOOVERWRITE) != D3D_OK)
+		{
+			CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.vbLock.failed");
 			return;
+		}
 	}
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.vbLock.after");
 #ifdef SV_DEBUG
 	srand(0x1345465);
 #endif
 	if(pvVertices)
 	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.vertexWrite.before");
 #ifdef SV_DEBUG
 		for (Int i=0; i<numVerts; i++)
 		{
@@ -1491,35 +1563,51 @@ void W3DVolumetricShadow::RenderDynamicMeshVolume(Int meshIndex, Int lightIndex,
 #else
 		memcpy(pvVertices,geometry->GetVertex(0),numVerts*sizeof(SHADOW_DYNAMIC_VOLUME_VERTEX));
 #endif
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.vertexWrite.after");
 	}
 
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.vbUnlock.before");
 	shadowVertexBufferD3D->Unlock();
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.vbUnlock.after");
 
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.ibLock.before");
 	if (nShadowIndicesInBuf > (SHADOW_INDEX_SIZE-numIndex))	//check if room for model verts
 	{	//flush the buffer by drawing the contents and re-locking again
 		if (shadowIndexBufferD3D->Lock(0,numIndex*sizeof(short),(unsigned char**)&pvIndices,D3DLOCK_DISCARD) != D3D_OK)
+		{
+			CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.ibLock.failed");
 			return;
+		}
 		nShadowIndicesInBuf=0;
 		nShadowStartBatchIndex=0;
 	}
 	else
 	{	if (shadowIndexBufferD3D->Lock(nShadowIndicesInBuf*sizeof(short),numIndex*sizeof(short), (unsigned char**)&pvIndices,D3DLOCK_NOOVERWRITE) != D3D_OK)
+		{
+			CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.ibLock.failed");
 			return;
+		}
 	}
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.ibLock.after");
 
 
 	try {
 	if(pvIndices)
 	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.indexWrite.before");
 		memcpy(pvIndices,geometry->GetPolygonIndex(0,(short *)pvIndices),numPolys*3*sizeof(short));
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.indexWrite.after");
 	}
 	IndexBufferExceptionFunc();
 	} catch(...) {
 		IndexBufferExceptionFunc();
 	}
 
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.ibUnlock.before");
 	shadowIndexBufferD3D->Unlock();
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.ibUnlock.after");
 
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.bind.before");
 	m_pDev->SetIndices(shadowIndexBufferD3D,nShadowStartBatchVertex);
 	
 	Matrix4x4 mWorld(*meshXform);
@@ -1531,11 +1619,17 @@ void W3DVolumetricShadow::RenderDynamicMeshVolume(Int meshIndex, Int lightIndex,
 	{	m_pDev->SetStreamSource(0,shadowVertexBufferD3D,sizeof(SHADOW_DYNAMIC_VOLUME_VERTEX));
 		lastActiveVertexBuffer = shadowVertexBufferD3D;
 	}
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.bind.after");
 
 	if (DX8Wrapper::_Is_Triangle_Draw_Enabled())
 	{
 		Debug_Statistics::Record_DX8_Polys_And_Vertices(numPolys,numVerts,ShaderClass::_PresetOpaqueShader);
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.draw.before");
+		const bool profile_submit = CNC_PORT_SHADOW_PROFILE_SUBMIT_ENABLED();
+		CNC_PORT_BEGIN_SHADOW_SUBMIT_PROFILE_SCOPE(profile_submit);
 		m_pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST,0,numVerts,nShadowStartBatchIndex,numPolys);
+		CNC_PORT_END_SHADOW_SUBMIT_PROFILE_SCOPE(profile_submit);
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.draw.after");
 	}
 
 	nShadowVertsInBuf += numVerts;
@@ -1543,6 +1637,7 @@ void W3DVolumetricShadow::RenderDynamicMeshVolume(Int meshIndex, Int lightIndex,
 
 	nShadowIndicesInBuf += numIndex;
 	nShadowStartBatchIndex=nShadowIndicesInBuf;
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.complete");
 }
 
 /** Debug function to draw bounding boxes around shadow volumes */
@@ -3389,10 +3484,14 @@ void W3DVolumetricShadow::resetSilhouette( Int meshIndex )
 // ============================================================================
 void W3DVolumetricShadowManager::renderStencilShadows( void )
 {
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderStencilShadows.entry");
 	LPDIRECT3DDEVICE8 m_pDev=DX8Wrapper::_Get_D3D_Device8();
 
 	if (!m_pDev)
+	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderStencilShadows.noDevice.return");
 		return;	//need device to render anything.
+	}
 
 	struct _TRANSLITVERTEX {
 	    D3DXVECTOR4 p;
@@ -3416,6 +3515,7 @@ void W3DVolumetricShadowManager::renderStencilShadows( void )
 
 	//draw polygons like this is very inefficient but for only 2 triangles, it's
 	//not worth bothering with index/vertex buffers.
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderStencilShadows.state.before");
 	m_pDev->SetVertexShader(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
 
 	// Use alpha blending to draw the transparent shadow
@@ -3442,19 +3542,28 @@ void W3DVolumetricShadowManager::renderStencilShadows( void )
 
 
 	m_pDev->SetRenderState(D3DRS_SHADEMODE, D3DSHADE_FLAT);
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderStencilShadows.state.after");
 
 	if (DX8Wrapper::_Is_Triangle_Draw_Enabled())
+	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderStencilShadows.drawUP.before");
 		m_pDev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, v, sizeof(_TRANSLITVERTEX));
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderStencilShadows.drawUP.after");
+	}
 
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderStencilShadows.cleanup.before");
 	m_pDev->SetRenderState(D3DRS_SHADEMODE, D3DSHADE_GOURAUD);
 	m_pDev->SetRenderState( D3DRS_ALPHABLENDENABLE, FALSE );
 	// turn off the stencil buffer
 	m_pDev->SetRenderState( D3DRS_STENCILENABLE, FALSE );
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderStencilShadows.cleanup.after");
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderStencilShadows.complete");
 
 }  // end renderStencilShadows
 
 void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 {
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.entry");
 	W3DVolumetricShadow *shadow;
 	Int numRenderedShadows = 0;
 
@@ -3465,7 +3574,9 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
  	//so much tighter fitting volume than what's actually visible.  This will cull
  	//particles falling under the ground.
  
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.visibleBox.before");
  	TheTerrainRenderObject->getMaximumVisibleBox(*shadowCameraFrustum, &bbox, TRUE);
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.visibleBox.after");
  
  	bcX = bbox.Center.X;
  	bcY = bbox.Center.Y;
@@ -3480,7 +3591,10 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 		LPDIRECT3DDEVICE8 m_pDev=DX8Wrapper::_Get_D3D_Device8();
 
 		if (!m_pDev)
+		{
+			CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.noDevice.return");
 			return;	//need device to render anything.
+		}
 
  		//According to Nvidia there's a D3D bug that happens if you don't start with a
  		//new dynamic VB each frame - so we force a DISCARD by overflowing the counter.
@@ -3488,6 +3602,7 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
  		nShadowVertsInBuf = 0xffff;
 
 		//Set W3D to some known state
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.setup.before");
 		VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
 		DX8Wrapper::Set_Material(vmat);
 		REF_PTR_RELEASE(vmat);
@@ -3563,6 +3678,7 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 		m_pDev->SetRenderState(D3DRS_CULLMODE,D3DCULL_CW);
 		m_pDev->SetRenderState(D3DRS_ZBIAS,1);	// depth bias to prevent z-fighting on shadow volumes
 		//m_pDev->SetRenderState(D3DRS_FILLMODE,D3DFILL_WIREFRAME);
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.setup.after");
 
 
 		lastActiveVertexBuffer=NULL;	//reset
@@ -3571,6 +3687,7 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 		W3DVolumetricShadowRenderTask *shadowDynamicTasksStart,*shadowDynamicTask;
 		
 		// step through each of our shadows and render
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.dynamicIncrement.before");
 		for( shadow = m_shadowList; shadow; shadow = shadow->m_next )
 		{
 			if (shadow->m_isEnabled && !shadow->m_isInvisibleEnabled)
@@ -3590,6 +3707,7 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 				}
 			}
 		}  // end for
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.dynamicIncrement.after");
 
 		// Set vertex format to that used by static shadow volumes
 		m_pDev->SetVertexShader(W3DBufferManager::getDX8Format(W3DBufferManager::VBM_FVF_XYZ));
@@ -3597,6 +3715,7 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 		//Empty queue of static shadow volumes to render.
 		W3DBufferManager::W3DVertexBuffer *nextVb;
 		W3DVolumetricShadowRenderTask *nextTask;
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.staticIncrement.before");
 		for (nextVb=TheW3DBufferManager->getNextVertexBuffer(NULL,W3DBufferManager::VBM_FVF_XYZ);nextVb != NULL; nextVb=TheW3DBufferManager->getNextVertexBuffer(nextVb,W3DBufferManager::VBM_FVF_XYZ))
 		{
 			nextTask=(W3DVolumetricShadowRenderTask *)nextVb->m_renderTaskList;
@@ -3607,6 +3726,7 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 				numRenderedShadows++;
 			}
 		}
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.staticIncrement.after");
 
 		// change the stencil op to decrement
 		m_pDev->SetRenderState( D3DRS_STENCILPASS,  D3DSTENCILOP_DECRSAT);
@@ -3618,6 +3738,7 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 
 		m_pDev->SetRenderState(D3DRS_CULLMODE,D3DCULL_CCW);
 
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.staticDecrement.before");
 		for (nextVb=TheW3DBufferManager->getNextVertexBuffer(NULL,W3DBufferManager::VBM_FVF_XYZ);nextVb != NULL; nextVb=TheW3DBufferManager->getNextVertexBuffer(nextVb,W3DBufferManager::VBM_FVF_XYZ))
 		{
 			nextTask=(W3DVolumetricShadowRenderTask *)nextVb->m_renderTaskList;
@@ -3627,23 +3748,29 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 				nextTask=(W3DVolumetricShadowRenderTask *)nextTask->m_nextTask;
 			}
 		}
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.staticDecrement.after");
 
 		m_pDev->SetVertexShader(SHADOW_DYNAMIC_VOLUME_FVF);
 		//flush any dynamic shadow volumes
 		shadowDynamicTask=m_dynamicShadowVolumesToRender;
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.dynamicDecrement.before");
 		while (shadowDynamicTask)
 		{	//dynamic shadow columes don't need to wait in queue since they
 			//all use the same vertex buffer.  Flush them ASAP.
 			shadowDynamicTask->m_parentShadow->RenderVolume(shadowDynamicTask->m_meshIndex,shadowDynamicTask->m_lightIndex);
 			shadowDynamicTask=(W3DVolumetricShadowRenderTask *)shadowDynamicTask->m_nextTask;
 		}
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.dynamicDecrement.after");
 
 		//Reset all render tasks for next frame.
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.resetTasks.before");
 		for (nextVb=TheW3DBufferManager->getNextVertexBuffer(NULL,W3DBufferManager::VBM_FVF_XYZ);nextVb != NULL; nextVb=TheW3DBufferManager->getNextVertexBuffer(nextVb,W3DBufferManager::VBM_FVF_XYZ))
 		{
 			nextVb->m_renderTaskList=NULL;
 		}
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.resetTasks.after");
 
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.cleanup.before");
 		m_pDev->SetRenderState(D3DRS_CULLMODE,D3DCULL_CW);
 		m_pDev->SetRenderState(D3DRS_ZBIAS,0);	// restore ZBIAS after shadow volumes
 		//m_pDev->SetRenderState(D3DRS_FILLMODE,D3DFILL_SOLID);
@@ -3651,6 +3778,7 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 
 		if (oldColorWriteEnable != 0x12345678)
 			DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,oldColorWriteEnable);
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.cleanup.after");
 
 		//
 		// render the big transparent square of shadows in the stencil buffer
@@ -3658,13 +3786,17 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 		//
 ///@todo: Put this check back in after water is fixed so it doesn't require shadow rendering to fix alpha.
 //		if (numRenderedShadows)
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.composite.before");
 			renderStencilShadows();
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.composite.after");
 
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.postState.before");
 		m_pDev->SetRenderState(D3DRS_SHADEMODE, D3DSHADE_GOURAUD);
 		m_pDev->SetRenderState(D3DRS_ALPHABLENDENABLE , FALSE);
 		m_pDev->SetRenderState(D3DRS_LIGHTING, FALSE);
 
 		DX8Wrapper::Invalidate_Cached_Render_States();
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.postState.after");
 	}
 	else
 	if (forceStencilFill)
@@ -3672,6 +3804,7 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 		//for other effects.
 
 		//Set W3D to some known state
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.forceFill.before");
 		VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
 		DX8Wrapper::Set_Material(vmat);
 		REF_PTR_RELEASE(vmat);
@@ -3682,8 +3815,10 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 		renderStencilShadows();
 
 		DX8Wrapper::Invalidate_Cached_Render_States();
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.forceFill.after");
 	}
 
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.complete");
 }  // end RenderShadows
 
 /** This class will manage shadow geometry for each render object.  Shadow geometry may

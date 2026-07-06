@@ -8742,6 +8742,32 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `W3DDisplay.draw.inGameUI.before` at 9.3 ms,
       `HeightMap.render.tilePasses.before` at 7.495 ms, and
       `RTS3DScene.flush.shadowsDecal.before` at 6.765 ms.
+- [x] Split and optimize the real shadow stencil/decal submit path. Added
+      opt-in Emscripten profile markers around projected-shadow decal queueing,
+      projected mesh flush, volumetric static and dynamic shadow volumes,
+      stencil composite fill, and raw D3D8 draw submission. The split showed
+      projected decal queueing and dynamic shadow geometry were not the main
+      perf cost: the measured hot path was persistent indexed D3D8 submission
+      for static volumetric shadow volumes, with native capture/hash/range work
+      small compared with the browser bridge. `bridge.js` now caches WebGL2
+      vertex array objects for persistent indexed D3D8 draws, keeps generic
+      index-buffer updates on the default VAO so cached VAOs cannot be mutated,
+      excludes temporary-index/fill-mode fallback draws, and caches fixed
+      default vertex attribute constants. `runtime_frame_profile.mjs` now
+      reports VAO cache hit/miss counters. Verified with `git diff --check`,
+      `node --check WebAssembly/harness/bridge.js`, `node --check
+      WebAssembly/harness/runtime_frame_profile.mjs`, `npm --prefix
+      WebAssembly run build:port`, `npm --prefix WebAssembly run
+      build:port:release`, and Mac M4 Chrome/Metal release profiles with
+      visible main-menu / shell-map water screenshots. The final 60-frame
+      profile reported an Apple M4 Metal renderer string, 38.06 ms/frame wall,
+      36.60 ms average engine `lastFrameMs`, 112.9 VAO-cache hits/frame,
+      scoped shadow submit bridge work at 4.140 ms/frame, and
+      `sortedDrawVertexAttribMs` down to 0.406 ms/frame. The final sampled frame
+      had `WasmD3D8.browserDrawIndexed.before` at 2.23 ms,
+      `W3DProjectedShadow.renderShadows.meshFlush.before` at 1.26 ms, and the
+      recurring perf frontier moved back to heightmap/terrain rendering. This
+      pass did not claim to fix the separate user-reported shadow flicker bug.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`

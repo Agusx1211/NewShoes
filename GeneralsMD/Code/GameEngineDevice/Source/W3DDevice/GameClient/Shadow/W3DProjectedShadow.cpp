@@ -59,6 +59,18 @@
 #include "W3DDevice/GameClient/W3DShadow.h"
 #include "W3DDevice/GameClient/Heightmap.h"
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_update_target(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_PROJECTED_SHADOW_STEP(name) \
+	do { \
+		if (cnc_port_note_engine_update_target) { \
+			cnc_port_note_engine_update_target(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_PROJECTED_SHADOW_STEP(name) do { } while (0)
+#endif
+
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -684,16 +696,23 @@ void TestBlendRender(RenderInfoClass & rinfo)
 
 void W3DProjectedShadowManager::flushDecals(W3DShadowTexture *texture, ShadowType type)
 {
+	CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.flushDecals.entry");
 	static	Matrix4x4 mWorld(true);	//initialize to identity matrix
 
 	if (nShadowDecalVertsInBatch == 0 && nShadowDecalPolysInBatch == 0)
 	{	//nothing to render
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.flushDecals.empty.return");
 		return;
 	}
 
 	LPDIRECT3DDEVICE8 m_pDev=DX8Wrapper::_Get_D3D_Device8();
-	if (!m_pDev)	return;	//no D3D Device to render
+	if (!m_pDev)
+	{
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.flushDecals.noDevice.return");
+		return;	//no D3D Device to render
+	}
 
+	CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.flushDecals.state.before");
 	VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
 	DX8Wrapper::Set_Material(vmat);
 	REF_PTR_RELEASE(vmat);
@@ -712,12 +731,15 @@ void W3DProjectedShadowManager::flushDecals(W3DShadowTexture *texture, ShadowTyp
 			DX8Wrapper::Set_Shader(ShaderClass::_PresetAdditiveShader);
 			break;
 	}
+	CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.flushDecals.state.after");
 
 //	DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHAREF,0x60);
 //	DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHAFUNC,D3DCMP_GREATEREQUAL);
 	//_PresetAlphaSpriteShader
 
+	CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.flushDecals.apply.before");
 	DX8Wrapper::Apply_Render_State_Changes();	//force update of view and projection matrices
+	CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.flushDecals.apply.after");
 
 //Alpha Blended Shadows
 //	m_pDev->SetRenderState( D3DRS_SRCBLEND,  D3DBLEND_SRCALPHA );
@@ -734,11 +756,13 @@ void W3DProjectedShadowManager::flushDecals(W3DShadowTexture *texture, ShadowTyp
 */
 	 
 
+	CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.flushDecals.bind.before");
 	m_pDev->SetIndices(shadowDecalIndexBufferD3D,nShadowDecalStartBatchVertex);
 	m_pDev->SetTransform(D3DTS_WORLD,(_D3DMATRIX *)&mWorld);
 
 	m_pDev->SetStreamSource(0,shadowDecalVertexBufferD3D,sizeof(SHADOW_DECAL_VERTEX));
 	m_pDev->SetVertexShader(SHADOW_DECAL_FVF);
+	CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.flushDecals.bind.after");
 
 //Hard Shadows using stencil
 /*	m_pDev->SetRenderState( D3DRS_SRCBLEND,  D3DBLEND_ZERO);
@@ -760,7 +784,9 @@ void W3DProjectedShadowManager::flushDecals(W3DShadowTexture *texture, ShadowTyp
 	if (DX8Wrapper::_Is_Triangle_Draw_Enabled())
 	{
 		Debug_Statistics::Record_DX8_Polys_And_Vertices(nShadowDecalPolysInBatch,nShadowDecalVertsInBatch,ShaderClass::_PresetOpaqueShader);
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.flushDecals.draw.before");
 		m_pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST,0,nShadowDecalVertsInBatch,nShadowDecalStartBatchIndex,nShadowDecalPolysInBatch);
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.flushDecals.draw.after");
 	}
 
 //	m_pDev->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);	//should reject background pixels
@@ -783,6 +809,7 @@ void W3DProjectedShadowManager::flushDecals(W3DShadowTexture *texture, ShadowTyp
 	nShadowDecalStartBatchIndex=nShadowDecalIndicesInBuf;
 	nShadowDecalPolysInBatch=0;	//reset number of polys in texture batch
 	nShadowDecalVertsInBatch=0;
+	CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.flushDecals.complete");
 }
 
 /*
@@ -811,6 +838,7 @@ is an optimized system that only uses the render objects bounding box to determi
 */
 void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 {
+	CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.entry");
 	int i,j,k;
 	Vector3 hmapVertex,objPos;
 	AABoxClass box;
@@ -828,10 +856,15 @@ void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 	{
 		LPDIRECT3DDEVICE8 m_pDev=DX8Wrapper::_Get_D3D_Device8();
 
-		if (!m_pDev)	return;	//no D3D Device to render
+		if (!m_pDev)
+		{
+			CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.noDevice.return");
+			return;	//no D3D Device to render
+		}
 
 		WorldHeightMap *hmap=TheTerrainRenderObject->getMap();
 		borderSize=hmap->getBorderSizeInline();
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.bounds.before");
 		if (robj)
 		{
 			objPos=robj->Get_Position();
@@ -1001,19 +1034,27 @@ void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 		Int vertsPerColumn=endY-startY+1;	//number of cells +1
 
 		if (vertsPerRow <= 1 || vertsPerColumn <= 1)
+		{
+			CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.emptyBounds.return");
 			return;	//nothing to render
+		}
 
 		Int numVerts = vertsPerRow *vertsPerColumn;	//number of terrain vertices
 		Int numIndex=(endX - startX) * (endY-startY)*6;	//6 indices per terrain cell (2 triangles).
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.bounds.after");
 
 		SHADOW_DECAL_VERTEX* pvVertices;
 		UnsignedShort *pvIndices;
 
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.vbLock.before");
 		if (nShadowDecalVertsInBuf > (SHADOW_DECAL_VERTEX_SIZE-numVerts))	//check if room for model verts
 		{	//flush the buffer by drawing the contents and re-locking again
 			flushDecals(shadow->m_shadowTexture[0], shadow->m_type);
 			if (shadowDecalVertexBufferD3D->Lock(0,numVerts*sizeof(SHADOW_DECAL_VERTEX),(unsigned char**)&pvVertices,D3DLOCK_DISCARD) != D3D_OK)
+			{
+				CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.vbLock.failed");
 				return;
+			}
 
 			nShadowDecalStartBatchVertex=0;
 			nShadowDecalPolysInBatch=0;	//reset number of polys in texture batch
@@ -1022,8 +1063,12 @@ void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 		}
 		else
 		{	if (shadowDecalVertexBufferD3D->Lock(nShadowDecalVertsInBuf*sizeof(SHADOW_DECAL_VERTEX),numVerts*sizeof(SHADOW_DECAL_VERTEX), (unsigned char**)&pvVertices,D3DLOCK_NOOVERWRITE) != D3D_OK)
+			{
+				CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.vbLock.failed");
 				return;
+			}
 		}
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.vbLock.after");
 
 		//code to deal with rotated shadows based on sun direction, fix this later.  For now shadow rotates with object rotation.
 		//shadow->m_shadowTexture[0]->getDecalUVAxis(&uVector,&vVector);
@@ -1040,6 +1085,7 @@ void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 
 		if(pvVertices)
 		{
+			CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.vertexWrite.before");
 			if (layerHeight)
 				for (j=startY; j <= endY; j++)
 				{
@@ -1077,16 +1123,23 @@ void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 					pvVertices++;
 				}
 			}
+			CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.vertexWrite.after");
 		}
 
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.vbUnlock.before");
 		shadowDecalVertexBufferD3D->Unlock();
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.vbUnlock.after");
 
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.ibLock.before");
 		if (nShadowDecalIndicesInBuf > (SHADOW_DECAL_INDEX_SIZE-numIndex))	//check if room for model verts
 		{	//flush the buffer by drawing the contents and re-locking again
 			flushDecals(shadow->m_shadowTexture[0], shadow->m_type);
 
 			if (shadowDecalIndexBufferD3D->Lock(0,numIndex*sizeof(short),(unsigned char**)&pvIndices,D3DLOCK_DISCARD) != D3D_OK)
+			{
+				CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.ibLock.failed");
 				return;
+			}
 
 			nShadowDecalStartBatchIndex=0;
 			nShadowDecalPolysInBatch=0;	//reset number of polys in texture batch
@@ -1095,12 +1148,17 @@ void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 		}
 		else
 		{	if (shadowDecalIndexBufferD3D->Lock(nShadowDecalIndicesInBuf*sizeof(short),numIndex*sizeof(short), (unsigned char**)&pvIndices,D3DLOCK_NOOVERWRITE) != D3D_OK)
+			{
+				CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.ibLock.failed");
 				return;
+			}
 		}
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.ibLock.after");
 
 		try {
 		if(pvIndices)
 		{	//fill each cell's vertex indices
+			CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.indexWrite.before");
 			Int rowStart;
 			for (j=startY,rowStart=0; j<endY; j++,rowStart+=vertsPerRow)
 			{
@@ -1126,12 +1184,15 @@ void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 					pvIndices += 6;
 				}
 			}
+			CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.indexWrite.after");
 		}
 		IndexBufferExceptionFunc();
 		} catch(...) {
 			IndexBufferExceptionFunc();
 		}
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.ibUnlock.before");
 		shadowDecalIndexBufferD3D->Unlock();
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.ibUnlock.after");
 
 		Int numPolys = (endX - startX)*(endY - startY)*2;	//2 triangles per cell
 		nShadowDecalPolysInBatch += numPolys;
@@ -1142,9 +1203,11 @@ void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 
 		nShadowDecalIndicesInBuf += numIndex;
 //		nShadowDecalStartBatchIndex=nShadowDecalIndicesInBuf;
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.complete");
 		return;
 	}
 
+	CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.queueDecal.noTerrain.return");
 }
 
 /**Simpler/faster decal system that always uses 2 triangles that are roughly oriented
@@ -1294,6 +1357,7 @@ void W3DProjectedShadowManager::queueSimpleDecal(W3DProjectedShadow *shadow)
 
 Int W3DProjectedShadowManager::renderShadows(RenderInfoClass & rinfo)
 {
+	CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.renderShadows.entry");
 	///@todo: implement this method.
 	W3DProjectedShadow *shadow;
 	static AABoxClass aaBox;
@@ -1301,11 +1365,15 @@ Int W3DProjectedShadowManager::renderShadows(RenderInfoClass & rinfo)
 	Int projectionCount=0;
 
 	if (!m_shadowList && !m_decalList)
+	{
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.renderShadows.empty.return");
 		return	projectionCount;	//there are no shadows to render.
+	}
 
 	//Find extents of visible terrain
 	if (TheTerrainRenderObject)
 	{
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.renderShadows.extents.before");
 		WorldHeightMap *hmap=TheTerrainRenderObject->getMap();
 
 		drawEdgeY=hmap->getDrawOrgY()+hmap->getDrawHeight()-1;
@@ -1316,9 +1384,13 @@ Int W3DProjectedShadowManager::renderShadows(RenderInfoClass & rinfo)
 			drawEdgeY = hmap->getYExtent()-1;
 		drawStartX=hmap->getDrawOrgX();
 		drawStartY=hmap->getDrawOrgY();
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.renderShadows.extents.after");
 	}
 	else
+	{
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.renderShadows.noTerrain.return");
 		return projectionCount;
+	}
 
 	//According to Nvidia there's a D3D bug that happens if you don't start with a
  	//new dynamic VB each frame - so we force a DISCARD by overflowing the counter.
@@ -1327,6 +1399,7 @@ Int W3DProjectedShadowManager::renderShadows(RenderInfoClass & rinfo)
 
 	if (TheGlobalData->m_useShadowDecals)
 	{
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.renderShadows.shadowList.before");
 		// Render the object
 		TheDX8MeshRenderer.Set_Camera(&rinfo.Camera);
 
@@ -1440,10 +1513,14 @@ Int W3DProjectedShadowManager::renderShadows(RenderInfoClass & rinfo)
 		}
 
 		flushDecals(lastShadowDecalTexture,lastShadowType);	//make sure there are not any unrendered decals left over.
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.renderShadows.shadowList.after");
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.renderShadows.meshFlush.before");
 		TheDX8MeshRenderer.Flush();	//draw all the shadow receiving objects
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.renderShadows.meshFlush.after");
 	}//rendering shadows
 	if (m_decalList)
 	{
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.renderShadows.decalList.before");
 		//keep track of active decal texture so we can render all decals at once.
 		W3DShadowTexture *lastShadowDecalTexture=NULL;
 		ShadowType lastShadowType = SHADOW_NONE;
@@ -1473,7 +1550,9 @@ Int W3DProjectedShadowManager::renderShadows(RenderInfoClass & rinfo)
 		}
 
 		flushDecals(lastShadowDecalTexture,lastShadowType);	//make sure there are not any unrendered decals left over.
+		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.renderShadows.decalList.after");
 	}
+	CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.renderShadows.complete");
 	return projectionCount;
 }
 

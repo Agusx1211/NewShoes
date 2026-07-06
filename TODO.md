@@ -145,11 +145,18 @@ geometry/update work. Water tracks now batch contiguous same-texture quads into
 one triangle-list draw; the latest Mac Chrome/Metal profile measured 39.06
 ms/frame wall / 37.66 ms average engine `lastFrameMs`, with
 `W3DWaterTracks.flush.batchDraw.before` at 0.055 ms and visible shell-map
-water/wake rendering. The active sampled leaders are now
-`RTS3DScene.flush.shadowsStencil.before` at 10.11 ms,
-`W3DDisplay.draw.inGameUI.before` at 9.3 ms,
-`HeightMap.render.tilePasses.before` at 7.495 ms, and
-`RTS3DScene.flush.shadowsDecal.before` at 6.765 ms.
+water/wake rendering. The shadow pass then split projected decals, volumetric
+stencil volume draws, and raw D3D8 draw submission, proving static volumetric
+shadow submission was the expensive subpath while projected decal and dynamic
+geometry work were small. A WebGL2 VAO cache for persistent indexed D3D8 draws
+now reuses repeated vertex attribute layouts across frames without touching
+temporary-index fallback draws. The latest Mac Chrome/Metal profile measured
+38.06 ms/frame wall / 36.60 ms average engine `lastFrameMs`, with scoped shadow
+submit bridge work at 4.140 ms/frame and vertex-attribute setup down to
+0.406 ms/frame; the final sampled frame had `WasmD3D8.browserDrawIndexed.before`
+at 2.23 ms and `W3DProjectedShadow.renderShadows.meshFlush.before` at
+1.26 ms. The next measured render frontier is back in heightmap/terrain
+rendering; the user-reported shadow flicker remains an open correctness bug.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
@@ -2463,24 +2470,18 @@ and then start with the PROFILE, not with any individual fix.
       help remaining ordered Render2D/text draws after the W3DDisplay GUI batch.
       Verify against shell-map goldens; re-measure
       `sortedDrawUniformMs`/`browserDrawIndexed` + particle-count-vs-FPS. (by Claude)
-- [ ] **Split and optimize the real shadow stencil/decal buckets**: the latest
-      Mac Chrome/Metal shell-map profile after water-track batching sampled
-      `RTS3DScene.flush.shadowsStencil.before` at 10.11 ms and
-      `RTS3DScene.flush.shadowsDecal.before` at 6.765 ms, making shadows the
-      current measured render frontier and tying directly to the user-reported
-      shadow flicker/breakage bug. Add markers around projected-shadow state,
-      stencil/decal draw submission, raw D3D8 binds, and depth/stencil changes
-      before changing behavior.
 - [ ] **Optimize the real `HeightMap.render.tilePasses` bucket, not terrain
       sidecars**: recent Mac profiles prove base terrain tile passes remain a
       recurring real render bucket (`HeightMap.render.tilePasses.before`
       sampled at 17.1 ms before sorted-run merging, 7.375 ms after sorted-run
-      merging, and 7.495 ms after water-track batching on the current shell-map
-      frame), while shoreline is ~1.5 ms and roads/scorches/extra-blend/
-      terrain-tracks are cheap. Next pass should split tile draw submission/
-      state/buffer-update costs around `HeightMapRenderObjClass` tile rendering
-      and the D3D8 draw bridge; do not chase road/prop/track sidecars until
-      the real profile says they moved.
+      merging, 7.495 ms after water-track batching, and 7.115 ms on the final
+      shadow-VAO sampled frame). The final shadow-VAO sample also showed
+      `HeightMap.render.shoreLines.before` at 12.16 ms and
+      `HeightMap.render.terrainTracks.before` at 4.255 ms, so reprofile and
+      split heightmap tile/shore/track submission before assuming which terrain
+      subpath is recurrent versus sample variance. Next pass should split tile
+      draw submission/state/buffer-update costs around
+      `HeightMapRenderObjClass` tile rendering and the D3D8 draw bridge.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing
