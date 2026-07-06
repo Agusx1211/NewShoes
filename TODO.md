@@ -197,15 +197,6 @@ reproduce in the harness and verify each fix with a screenshot / state check.
       sometimes break entirely. Ties into the QUEUED shadows phased plan
       (blob→stencil→shaders); treat flicker/stability as the concrete symptom
       to chase, not just fidelity.
-- [ ] **Tire tracks render in place ("pre-rendered")** — track decals do not
-      follow the moving object; they appear baked at a fixed spot instead of
-      trailing the vehicle (clearly visible in the intro). Check the
-      track/decal transform + emitter attachment (world vs object space).
-      2026-07-06: `W3DTerrainTracks::flush()` now renders the already
-      world-space edge vertices with an identity world transform instead of
-      reusing a track render object's transform, and keeps the original static
-      index strip topology. Still needs a targeted moving-vehicle harness repro
-      / screenshot before closing this user bug.
 - [ ] **Text renders truncated** — some strings show only one letter or a few
       letters instead of the full text. Investigate the text/font glyph
       layout + string draw path (partial render, not missing text).
