@@ -172,6 +172,7 @@ function compactFrameState(frame) {
     display: compactDisplay(frame.display),
     view: compactView(frame.view),
     particles: compactParticles(frame.particles),
+    profile: frame.profile ?? null,
   };
 }
 
@@ -252,6 +253,14 @@ const browserPerfFields = [
   "drawUniformCacheMisses",
   "clears",
   "clearMs",
+  "clearTotalMs",
+  "clearInvalidateMs",
+  "clearSyncCanvasMs",
+  "clearSetupMs",
+  "clearContextAttrMs",
+  "clearDepthMaskCheckMs",
+  "clearDepthMaskToggleMs",
+  "clearPostDiagMs",
   "textureUploads",
   "textureUploadBytes",
   "textureUploadPixels",
@@ -288,6 +297,7 @@ function browserPerfDelta(before, after, framesAdvanced) {
       ? afterValue - beforeValue
       : null;
   }
+  const clearBridgeMs = Math.max(0, Number(delta.clearTotalMs ?? 0) - Number(delta.clearMs ?? 0));
   const trackedGlCallMs =
     Number(delta.drawMs ?? 0) +
     Number(delta.clearMs ?? 0) +
@@ -296,6 +306,7 @@ function browserPerfDelta(before, after, framesAdvanced) {
     Number(delta.fboBindMs ?? 0) +
     Number(delta.bufferSubDataMs ?? 0);
   const trackedBrowserMs = trackedGlCallMs +
+    clearBridgeMs +
     Number(delta.textureConvertMs ?? 0) +
     Math.max(0, Number(delta.bufferUpdateMs ?? 0) - Number(delta.bufferSubDataMs ?? 0));
   return {
@@ -318,6 +329,15 @@ function browserPerfDelta(before, after, framesAdvanced) {
           drawUniformCacheHits: Number(delta.drawUniformCacheHits ?? 0) / framesAdvanced,
           drawUniformCacheMisses: Number(delta.drawUniformCacheMisses ?? 0) / framesAdvanced,
           clearMs: Number(delta.clearMs ?? 0) / framesAdvanced,
+          clearTotalMs: Number(delta.clearTotalMs ?? 0) / framesAdvanced,
+          clearInvalidateMs: Number(delta.clearInvalidateMs ?? 0) / framesAdvanced,
+          clearSyncCanvasMs: Number(delta.clearSyncCanvasMs ?? 0) / framesAdvanced,
+          clearSetupMs: Number(delta.clearSetupMs ?? 0) / framesAdvanced,
+          clearContextAttrMs: Number(delta.clearContextAttrMs ?? 0) / framesAdvanced,
+          clearDepthMaskCheckMs: Number(delta.clearDepthMaskCheckMs ?? 0) / framesAdvanced,
+          clearDepthMaskToggleMs: Number(delta.clearDepthMaskToggleMs ?? 0) / framesAdvanced,
+          clearPostDiagMs: Number(delta.clearPostDiagMs ?? 0) / framesAdvanced,
+          clearBridgeMs: clearBridgeMs / framesAdvanced,
           textureUploadMs: Number(delta.textureUploadMs ?? 0) / framesAdvanced,
           textureConvertMs: Number(delta.textureConvertMs ?? 0) / framesAdvanced,
           readPixelsMs: Number(delta.readPixelsMs ?? 0) / framesAdvanced,
@@ -336,7 +356,7 @@ function browserPerfDelta(before, after, framesAdvanced) {
   };
 }
 
-async function runFramePass(page, frameCount, batchSize, label, command = "realEngineFrameSummary") {
+async function runFramePass(page, frameCount, batchSize, label, command = "realEngineFrameSummary", profile = false) {
   const samples = [];
   let completedBefore = null;
   let drawSequenceBefore = null;
@@ -348,7 +368,7 @@ async function runFramePass(page, frameCount, batchSize, label, command = "realE
   for (let remaining = frameCount; remaining > 0;) {
     const frames = Math.min(batchSize, remaining);
     const startedAt = performance.now();
-    const result = await rpc(page, command, { frames });
+    const result = await rpc(page, command, profile ? { frames, profile: true } : { frames });
     const wallMs = performance.now() - startedAt;
     expect(result?.ok === true && result.aborted === false,
       `${label} ${command} failed`, result);
@@ -480,6 +500,7 @@ const viewportHeight = parsePositiveInt("PERF_PROFILE_HEIGHT", 720);
 const includeSamples = process.env.PERF_PROFILE_SAMPLES === "1";
 const d3d8AdjacentBatching = process.env.PERF_PROFILE_D3D8_BATCH !== "0";
 const d3d8LiteVertexMirrors = process.env.PERF_PROFILE_D3D8_VERTEX_MIRRORS === "1";
+const engineFrameProfile = process.env.PERF_PROFILE_ENGINE_PROFILE === "1";
 
 const server = await startStaticServer({ root: wasmRoot });
 let browser;
@@ -551,7 +572,14 @@ try {
       }
     : await runUntilSettled(page, settleFrames, shellMap);
   expect(settle.settled === true, "runtime frame profile scene did not settle", settle);
-  const measured = await runFramePass(page, measuredFrames, batchSize, "measured", measuredFrameCommand);
+  const measured = await runFramePass(
+    page,
+    measuredFrames,
+    batchSize,
+    "measured",
+    measuredFrameCommand,
+    engineFrameProfile,
+  );
   const screenshot = await rpc(page, "screenshot");
   expect(screenshot?.ok === true && screenshotHasVisibleSample(screenshot.screenshot),
     "runtime frame profile screenshot stayed blank", summarizeScreenshot(screenshot));
@@ -568,6 +596,7 @@ try {
     distDir,
     d3d8AdjacentBatching: d3d8AdjacentBatchingActive,
     d3d8LiteVertexMirrors: d3d8LiteVertexMirrorsActive,
+    engineFrameProfile,
     measuredFrameCommand,
     shellMap,
     viewport: { width: viewportWidth, height: viewportHeight },

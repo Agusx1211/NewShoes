@@ -118,6 +118,18 @@
 #include "dx8texman.h"
 #include "formconv.h"
 #include "animatedsoundmgr.h"
+
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_profile_marker(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_WW3D_STEP(name) \
+	do { \
+		if (cnc_port_note_engine_profile_marker) { \
+			cnc_port_note_engine_profile_marker(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_WW3D_STEP(name) do { } while (0)
+#endif
 #include "static_sort_list.h"
 
 #include "shdlib.h"
@@ -802,6 +814,7 @@ WW3DErrorType WW3D::Begin_Render(bool clear,bool clearz,const Vector3 & color, f
 	SNAPSHOT_SAY(("========== WW3D::Begin_Render ============\r\n"));
 	SNAPSHOT_SAY(("==========================================\r\n\r\n"));
 
+	CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.cooperative.before");
 	if (DX8Wrapper::_Get_D3D_Device8() && (hr=DX8Wrapper::_Get_D3D_Device8()->TestCooperativeLevel()) != D3D_OK)
 	{
         // If the device was lost, do not render until we get it back
@@ -816,23 +829,38 @@ WW3DErrorType WW3D::Begin_Render(bool clear,bool clearz,const Vector3 & color, f
 
 		return WW3D_ERROR_GENERIC;
 	}
+	CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.cooperative.after");
 
 	// Memory allocation statistics
+	CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.memoryStats.before");
 	LastFrameMemoryAllocations=WWMemoryLogClass::Get_Allocate_Count();
 	LastFrameMemoryFrees=WWMemoryLogClass::Get_Free_Count();
 	WWMemoryLogClass::Reset_Counters();
+	CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.memoryStats.after");
 
+	CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.textureLoader.before");
 	TextureLoader::Update(network_callback);
+	CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.textureLoader.after");
 //	TextureClass::_Reset_Time_Stamp();
+	CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.dynamicVBReset.before");
 	DynamicVBAccessClass::_Reset(true);
+	CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.dynamicVBReset.after");
+	CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.dynamicIBReset.before");
 	DynamicIBAccessClass::_Reset(true);
+	CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.dynamicIBReset.after");
 #ifdef WW3D_DX8
+	CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.textureFlash.before");
 	TextureFileClass::Update_Texture_Flash();
+	CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.textureFlash.after");
 #endif //WW3D_DX8
+	CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.debugStats.before");
 	Debug_Statistics::Begin_Statistics();
+	CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.debugStats.after");
 
 	if (IsCapturing && (!PauseRecord || RecordNextFrame)) {
+		CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.movieCapture.before");
 		Update_Movie_Capture();
+		CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.movieCapture.after");
 		RecordNextFrame = false;
 	}
 
@@ -844,19 +872,27 @@ WW3DErrorType WW3D::Begin_Render(bool clear,bool clearz,const Vector3 & color, f
 		D3DVIEWPORT8 vp;
 		int width, height, bits;
 		bool windowed;
+		CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.resolution.before");
 		WW3D::Get_Render_Target_Resolution(width, height, bits, windowed);
+		CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.resolution.after");
 		vp.X = 0;
 		vp.Y = 0;
 		vp.Width = width;
 		vp.Height = height;
 		vp.MinZ = 0.0f;;
 		vp.MaxZ = 1.0f;
+		CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.viewport.before");
 		DX8Wrapper::Set_Viewport(&vp);
+		CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.viewport.after");
+		CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.clear.before");
 		DX8Wrapper::Clear(clear, clearz, color, dest_alpha);
+		CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.clear.after");
 	}
 
 	// Notify D3D that we are beginning to render the frame
+	CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.beginScene.before");
 	DX8Wrapper::Begin_Scene();
+	CNC_PORT_NOTE_WW3D_STEP("WW3D.BeginRender.beginScene.after");
 
 	return WW3D_ERROR_OK;
 }

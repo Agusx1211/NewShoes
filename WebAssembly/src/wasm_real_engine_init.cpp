@@ -265,12 +265,190 @@ struct FrameTextureLabel {
 };
 static std::vector<FrameTextureLabel> g_frame_texture_labels;
 
+struct EngineFrameProfileBucket {
+	std::string name;
+	int samples = 0;
+	double total_ms = 0.0;
+	double max_ms = 0.0;
+};
+
+static bool g_engine_frame_profile_enabled = false;
+static double g_engine_frame_profile_started_ms = 0.0;
+static double g_engine_frame_profile_last_mark_ms = 0.0;
+static int g_engine_frame_profile_transitions = 0;
+static std::string g_engine_frame_profile_last_label;
+static std::vector<EngineFrameProfileBucket> g_engine_frame_profile_buckets;
+
+void append_engine_frame_profile_json_string(std::string &json, const std::string &value)
+{
+	for (char c : value) {
+		switch (c) {
+		case '"': json += "\\\""; break;
+		case '\\': json += "\\\\"; break;
+		case '\n': json += "\\n"; break;
+		case '\r': json += "\\r"; break;
+		case '\t': json += "\\t"; break;
+		default:
+			if (static_cast<unsigned char>(c) < 0x20) {
+				char buf[8];
+				std::snprintf(buf, sizeof(buf), "\\u%04x", static_cast<unsigned char>(c));
+				json += buf;
+			} else {
+				json += c;
+			}
+			break;
+		}
+	}
+}
+
+void add_engine_frame_profile_sample(const std::string &label, double elapsed_ms)
+{
+	if (!g_engine_frame_profile_enabled || elapsed_ms < 0.0) {
+		return;
+	}
+	const std::string &safe_label = label.empty() ? g_engine_frame_profile_last_label : label;
+	for (std::vector<EngineFrameProfileBucket>::iterator it = g_engine_frame_profile_buckets.begin();
+		it != g_engine_frame_profile_buckets.end(); ++it) {
+		if (it->name == safe_label) {
+			++it->samples;
+			it->total_ms += elapsed_ms;
+			if (elapsed_ms > it->max_ms) {
+				it->max_ms = elapsed_ms;
+			}
+			return;
+		}
+	}
+	EngineFrameProfileBucket bucket;
+	bucket.name = safe_label;
+	bucket.samples = 1;
+	bucket.total_ms = elapsed_ms;
+	bucket.max_ms = elapsed_ms;
+	g_engine_frame_profile_buckets.push_back(bucket);
+}
+
+void reset_engine_frame_profile()
+{
+	if (!g_engine_frame_profile_enabled) {
+		return;
+	}
+	g_engine_frame_profile_buckets.clear();
+	g_engine_frame_profile_started_ms = emscripten_get_now();
+	g_engine_frame_profile_last_mark_ms = g_engine_frame_profile_started_ms;
+	g_engine_frame_profile_transitions = 0;
+	g_engine_frame_profile_last_label = "frame.start";
+}
+
+void note_engine_frame_profile_marker(const char *name)
+{
+	if (!g_engine_frame_profile_enabled) {
+		return;
+	}
+	const double now_ms = emscripten_get_now();
+	if (!g_engine_frame_profile_last_label.empty()) {
+		add_engine_frame_profile_sample(
+			g_engine_frame_profile_last_label,
+			now_ms - g_engine_frame_profile_last_mark_ms);
+	}
+	g_engine_frame_profile_last_label = name != nullptr ? name : "(null)";
+	g_engine_frame_profile_last_mark_ms = now_ms;
+	++g_engine_frame_profile_transitions;
+}
+
+void finish_engine_frame_profile()
+{
+	if (!g_engine_frame_profile_enabled || g_engine_frame_profile_last_label.empty()) {
+		return;
+	}
+	const double now_ms = emscripten_get_now();
+	add_engine_frame_profile_sample(
+		g_engine_frame_profile_last_label,
+		now_ms - g_engine_frame_profile_last_mark_ms);
+	g_engine_frame_profile_last_mark_ms = now_ms;
+	g_engine_frame_profile_last_label = "frame.complete";
+}
+
+void append_engine_frame_profile_json(std::string &json)
+{
+	json += ",\"profile\":{\"enabled\":";
+	json += g_engine_frame_profile_enabled ? "true" : "false";
+	if (!g_engine_frame_profile_enabled) {
+		json += "}";
+		return;
+	}
+	char number[128];
+	const double elapsed_ms = g_engine_frame_profile_last_mark_ms - g_engine_frame_profile_started_ms;
+	std::snprintf(number, sizeof(number),
+		",\"transitionCount\":%d,\"elapsedMs\":%.3f,\"bucketCount\":%zu,\"top\":[",
+		g_engine_frame_profile_transitions,
+		elapsed_ms,
+		g_engine_frame_profile_buckets.size());
+	json += number;
+
+	std::vector<int> emitted;
+	const int bucket_limit = 32;
+	for (int output_index = 0; output_index < bucket_limit; ++output_index) {
+		int best_index = -1;
+		double best_ms = -1.0;
+		for (int i = 0; i < static_cast<int>(g_engine_frame_profile_buckets.size()); ++i) {
+			bool already_emitted = false;
+			for (std::vector<int>::const_iterator it = emitted.begin(); it != emitted.end(); ++it) {
+				if (*it == i) {
+					already_emitted = true;
+					break;
+				}
+			}
+			if (already_emitted) {
+				continue;
+			}
+			if (g_engine_frame_profile_buckets[i].total_ms > best_ms) {
+				best_ms = g_engine_frame_profile_buckets[i].total_ms;
+				best_index = i;
+			}
+		}
+		if (best_index < 0 || best_ms <= 0.0) {
+			break;
+		}
+		const EngineFrameProfileBucket &bucket = g_engine_frame_profile_buckets[best_index];
+		if (!emitted.empty()) {
+			json += ",";
+		}
+		std::snprintf(number, sizeof(number),
+			"{\"samples\":%d,\"totalMs\":%.3f,\"maxMs\":%.3f,\"name\":\"",
+			bucket.samples,
+			bucket.total_ms,
+			bucket.max_ms);
+		json += number;
+		append_engine_frame_profile_json_string(json, bucket.name);
+		json += "\"}";
+		emitted.push_back(best_index);
+	}
+	json += "]}";
+}
+
 extern "C" void cnc_port_note_engine_update_target(const char *name)
 {
 	g_last_engine_update_target = name != nullptr ? name : "";
+	note_engine_frame_profile_marker(name);
 	if (!g_engine_update_breakpoint.empty()
 		&& g_last_engine_update_target == g_engine_update_breakpoint) {
 		throw "cnc_port_engine_update_target_breakpoint";
+	}
+}
+
+extern "C" void cnc_port_note_engine_profile_marker(const char *name)
+{
+	note_engine_frame_profile_marker(name);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_frame_profile(int enabled)
+{
+	g_engine_frame_profile_enabled = enabled != 0;
+	if (!g_engine_frame_profile_enabled) {
+		g_engine_frame_profile_buckets.clear();
+		g_engine_frame_profile_last_label.clear();
+		g_engine_frame_profile_started_ms = 0.0;
+		g_engine_frame_profile_last_mark_ms = 0.0;
+		g_engine_frame_profile_transitions = 0;
 	}
 }
 
@@ -3922,6 +4100,7 @@ void run_real_engine_frames(int frame_count)
 		for (int frame = 0; frame < frame_count; ++frame) {
 			++g_frame_state.frames_attempted;
 			const double frame_started_at = emscripten_get_now();
+			reset_engine_frame_profile();
 			try {
 				clear_stale_movie_break_for_visible_main_menu();
 				TheGameEngine->update();
@@ -3930,13 +4109,16 @@ void run_real_engine_frames(int frame_count)
 			} catch (const char *message) {
 				g_frame_state.exception_caught = true;
 				g_frame_state.exception_text = message != nullptr ? message : "(const char* exception)";
+				finish_engine_frame_profile();
 				break;
 			} catch (...) {
 				g_frame_state.exception_caught = true;
 				g_frame_state.exception_text = "unhandled C++ exception escaping GameEngine::update";
+				finish_engine_frame_profile();
 				break;
 			}
 			g_frame_state.last_frame_ms = emscripten_get_now() - frame_started_at;
+			finish_engine_frame_profile();
 		}
 	}
 }
@@ -4009,6 +4191,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame(int frame
 	json += ",\"lastGameLogicStep\":\"" + json_escape(g_last_game_logic_step) + "\"";
 	append_last_script_step_json(json);
 	append_frame_texture_diagnostics(json);
+	append_engine_frame_profile_json(json);
 	json += ",\"quitting\":";
 	json += (TheGameEngine != NULL && TheGameEngine->getQuitting() != FALSE) ? "true" : "false";
 	json += ",\"exceptionCaught\":";
@@ -4048,6 +4231,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_summary(i
 	json += ",\"lastGameLogicStep\":\"" + json_escape(g_last_game_logic_step) + "\"";
 	append_last_script_step_json(json);
 	append_frame_texture_diagnostics(json);
+	append_engine_frame_profile_json(json);
 	json += ",\"quitting\":";
 	json += (TheGameEngine != NULL && TheGameEngine->getQuitting() != FALSE) ? "true" : "false";
 	json += ",\"exceptionCaught\":";
@@ -4088,6 +4272,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_tick(int 
 	char elapsed[64];
 	std::snprintf(elapsed, sizeof(elapsed), ",\"lastFrameMs\":%.1f", g_frame_state.last_frame_ms);
 	json += elapsed;
+	append_engine_frame_profile_json(json);
 	json += "}";
 	g_frame_json = json;
 	return g_frame_json.c_str();

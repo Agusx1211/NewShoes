@@ -63,6 +63,19 @@ let d3d8CurrentArrayBuffer = null;
 let d3d8CurrentElementArrayBuffer = null;
 let d3d8TemporaryIndexBuffer = null;
 let d3d8TemporaryIndexBufferBytes = 0;
+let d3d8CurrentDepthMask = true;
+
+function setD3D8DepthMask(enabled) {
+  if (!gl) {
+    return;
+  }
+  const next = Boolean(enabled);
+  if (d3d8CurrentDepthMask !== next) {
+    gl.depthMask(next);
+    d3d8CurrentDepthMask = next;
+  }
+}
+
 const D3DUSAGE_WRITEONLY = 0x00000008;
 const D3DUSAGE_DEPTHSTENCIL = 0x00000002;
 const D3DUSAGE_DYNAMIC = 0x00000200;
@@ -324,6 +337,14 @@ const d3d8PerfStats = {
   drawUniformCacheMisses: 0,
   clears: 0,
   clearMs: 0,
+  clearTotalMs: 0,
+  clearInvalidateMs: 0,
+  clearSyncCanvasMs: 0,
+  clearSetupMs: 0,
+  clearContextAttrMs: 0,
+  clearDepthMaskCheckMs: 0,
+  clearDepthMaskToggleMs: 0,
+  clearPostDiagMs: 0,
   textureUploads: 0,
   textureUploadBytes: 0,
   textureUploadPixels: 0,
@@ -377,6 +398,14 @@ function d3d8PerfSummary() {
     drawUniformCacheMisses: d3d8PerfStats.drawUniformCacheMisses,
     clears: d3d8PerfStats.clears,
     clearMs: roundedPerfMs(d3d8PerfStats.clearMs),
+    clearTotalMs: roundedPerfMs(d3d8PerfStats.clearTotalMs),
+    clearInvalidateMs: roundedPerfMs(d3d8PerfStats.clearInvalidateMs),
+    clearSyncCanvasMs: roundedPerfMs(d3d8PerfStats.clearSyncCanvasMs),
+    clearSetupMs: roundedPerfMs(d3d8PerfStats.clearSetupMs),
+    clearContextAttrMs: roundedPerfMs(d3d8PerfStats.clearContextAttrMs),
+    clearDepthMaskCheckMs: roundedPerfMs(d3d8PerfStats.clearDepthMaskCheckMs),
+    clearDepthMaskToggleMs: roundedPerfMs(d3d8PerfStats.clearDepthMaskToggleMs),
+    clearPostDiagMs: roundedPerfMs(d3d8PerfStats.clearPostDiagMs),
     textureUploads: d3d8PerfStats.textureUploads,
     textureUploadBytes: d3d8PerfStats.textureUploadBytes,
     textureUploadPixels: d3d8PerfStats.textureUploadPixels,
@@ -5804,13 +5833,13 @@ function paintCanvasRgba(rgba) {
     // that later geometry fails the depth test against (same class as the
     // black-terrain bug fixed in 08a1839). Force the depth write mask on
     // for the clear, then restore it.
-    const restoreDepthMask = !gl.getParameter(gl.DEPTH_WRITEMASK);
+    const restoreDepthMask = !d3d8CurrentDepthMask;
     if (restoreDepthMask) {
-      gl.depthMask(true);
+      setD3D8DepthMask(true);
     }
     timedGlClear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     if (restoreDepthMask) {
-      gl.depthMask(false);
+      setD3D8DepthMask(false);
     }
   } else if (fallbackContext) {
     fallbackContext.fillStyle = `rgb(${rgba[0]} ${rgba[1]} ${rgba[2]})`;
@@ -5841,8 +5870,11 @@ function clearCanvas(payload = {}) {
 }
 
 function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
+  const clearTotalStartedAt = perfNow();
   // Reset state hash: clear changes GL state outside the draw path.
+  const invalidateStartedAt = perfNow();
   invalidateD3D8DrawStateCache();
+  d3d8PerfStats.clearInvalidateMs += perfNow() - invalidateStartedAt;
   const clearFlags = flags >>> 0;
   const rgba = [
     clampColorByte(red, 0),
@@ -5850,8 +5882,11 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
     clampColorByte(blue, 0),
     clampColorByte(alpha, 255),
   ];
+  const syncStartedAt = perfNow();
   syncCanvasSize();
+  d3d8PerfStats.clearSyncCanvasMs += perfNow() - syncStartedAt;
   if (gl) {
+    const setupStartedAt = perfNow();
     let clearBits = 0;
     if ((clearFlags & 0x1) !== 0) {
       gl.clearColor(rgba[0] / 255, rgba[1] / 255, rgba[2] / 255, rgba[3] / 255);
@@ -5861,11 +5896,18 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
       gl.clearDepth(Number(z));
       clearBits |= gl.DEPTH_BUFFER_BIT;
     }
-    if ((clearFlags & 0x4) !== 0 && gl.getContextAttributes()?.stencil) {
+    let hasStencilBuffer = false;
+    if ((clearFlags & 0x4) !== 0) {
+      const contextAttrStartedAt = perfNow();
+      hasStencilBuffer = Boolean(gl.getContextAttributes()?.stencil);
+      d3d8PerfStats.clearContextAttrMs += perfNow() - contextAttrStartedAt;
+    }
+    if ((clearFlags & 0x4) !== 0 && hasStencilBuffer) {
       gl.stencilMask(0xffffffff);
       gl.clearStencil(stencil >>> 0);
       clearBits |= gl.STENCIL_BUFFER_BIT;
     }
+    d3d8PerfStats.clearSetupMs += perfNow() - setupStartedAt;
     if (clearBits !== 0) {
       // D3D8's Clear ignores the depth/stencil write masks, but WebGL's
       // gl.clear RESPECTS gl.depthMask: if a prior draw left depth writes
@@ -5874,14 +5916,20 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
       // (the terrain) fails the depth test against — the whole map renders
       // black. Force the depth write mask on for the clear, then restore it.
       // (Stencil already forces stencilMask above before clearing stencil.)
+      const depthMaskCheckStartedAt = perfNow();
       const restoreDepthMask =
-        (clearBits & gl.DEPTH_BUFFER_BIT) !== 0 && !gl.getParameter(gl.DEPTH_WRITEMASK);
+        (clearBits & gl.DEPTH_BUFFER_BIT) !== 0 && !d3d8CurrentDepthMask;
+      d3d8PerfStats.clearDepthMaskCheckMs += perfNow() - depthMaskCheckStartedAt;
       if (restoreDepthMask) {
-        gl.depthMask(true);
+        const depthMaskToggleStartedAt = perfNow();
+        setD3D8DepthMask(true);
+        d3d8PerfStats.clearDepthMaskToggleMs += perfNow() - depthMaskToggleStartedAt;
       }
       timedGlClear(clearBits);
       if (restoreDepthMask) {
-        gl.depthMask(false);
+        const depthMaskToggleStartedAt = perfNow();
+        setD3D8DepthMask(false);
+        d3d8PerfStats.clearDepthMaskToggleMs += perfNow() - depthMaskToggleStartedAt;
       }
     }
   } else if (fallbackContext && (clearFlags & 0x1) !== 0) {
@@ -5889,8 +5937,10 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
     fallbackContext.fillRect(0, 0, canvas.width, canvas.height);
   }
   if (d3d8DiagLevel !== "full") {
+    d3d8PerfStats.clearTotalMs += perfNow() - clearTotalStartedAt;
     return 1; // lite: skip the post-clear readPixels + probe
   }
+  const postDiagStartedAt = perfNow();
   refreshCanvasState();
   const pixel = sampleCanvasPixel(0, 0);
   const colorOk = (clearFlags & 0x1) === 0 || pixelsApproximatelyEqual(pixel, rgba);
@@ -5911,6 +5961,8 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
     lastClearPixel: pixel,
     lastClearOk: colorOk,
   };
+  d3d8PerfStats.clearPostDiagMs += perfNow() - postDiagStartedAt;
+  d3d8PerfStats.clearTotalMs += perfNow() - clearTotalStartedAt;
   return colorOk ? 1 : 0;
 }
 
@@ -8085,7 +8137,7 @@ function applyD3D8RenderState(renderState, options = {}) {
   } else {
     gl.disable(gl.DEPTH_TEST);
   }
-  gl.depthMask(state.zWriteEnable !== 0);
+  setD3D8DepthMask(state.zWriteEnable !== 0);
   gl.depthFunc(depthFunc);
 
   if (blendEnabled) {
@@ -9875,6 +9927,11 @@ async function loadWasmModule() {
       realEngineFrameTick: module.cwrap(
         "cnc_port_real_engine_frame_tick",
         "string",
+        ["number"],
+      ),
+      realEngineSetFrameProfile: module.cwrap(
+        "cnc_port_real_engine_set_frame_profile",
+        null,
         ["number"],
       ),
       realEngineDoFX: module.cwrap(
@@ -14798,6 +14855,7 @@ async function rpc(command, payload = {}) {
         let aborted = false;
         let abortMessage = null;
         let abortStack = null;
+        moduleResult.wasmModule.realEngineSetFrameProfile?.(payload.profile === true ? 1 : 0);
         try {
           frame = JSON.parse(moduleResult.wasmModule.realEngineFrame(Number(payload.frames ?? 1)));
           // The engine renders at its own resolution (TheDisplay, e.g.
@@ -14862,6 +14920,7 @@ async function rpc(command, payload = {}) {
         let abortMessage = null;
         let abortStack = null;
         let __rawSummary = null;
+        moduleResult.wasmModule.realEngineSetFrameProfile?.(payload.profile === true ? 1 : 0);
         try {
           __rawSummary = moduleResult.wasmModule.realEngineFrameSummary(Number(payload.frames ?? 1));
           frame = JSON.parse(__rawSummary);
@@ -14921,6 +14980,7 @@ async function rpc(command, payload = {}) {
         let aborted = false;
         let abortMessage = null;
         let abortStack = null;
+        moduleResult.wasmModule.realEngineSetFrameProfile?.(payload.profile === true ? 1 : 0);
         try {
           frame = JSON.parse(moduleResult.wasmModule.realEngineFrameTick(Number(payload.frames ?? 1)));
           const framesCompleted = Number(frame?.framesCompleted);

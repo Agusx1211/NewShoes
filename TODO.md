@@ -25,9 +25,15 @@ RECENT: the live skirmish menu/options/start transition now loads all 47 officia
 PERF latest: runtime profiling separates real-engine frame time from tracked
 browser D3D8 draw/upload/readback/FBO costs on Mac Chrome/Metal. The draw-state
 cache and the first conservative adjacent draw-batching pass are measured on
-the Mac; broad D3D8 shim work still needs either a Release/native-wasm-EH
-comparison or a DevTools trace if async ANGLE/GPU stall detail is needed beyond
-the live harness counters.
+the Mac. A synchronous WebGL `DEPTH_WRITEMASK` query in the D3D8 clear bridge
+was the post-release shell-map stall; the shim now tracks the depth-write mask
+and the Mac tick profile dropped from ~69.6 ms/frame to ~48.8 ms/frame, with
+`DX8Wrapper.Clear.deviceClear` falling to ~0.015 ms in the opt-in engine
+profile. Next measured bottleneck is original WW3D scene work, especially
+`RTS3DScene.flush.sortingFlush` and terrain render, not raw WebGL draw calls.
+Broad D3D8 shim work still needs either a Release/native-wasm-EH comparison or
+a DevTools trace if async ANGLE/GPU stall detail is needed beyond the live
+harness counters.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`

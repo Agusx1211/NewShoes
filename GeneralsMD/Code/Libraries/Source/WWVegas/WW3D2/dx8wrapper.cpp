@@ -78,6 +78,18 @@
 #include "dx8caps.h"
 #include "formconv.h"
 #include "dx8texman.h"
+
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_profile_marker(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_DX8_STEP(name) \
+	do { \
+		if (cnc_port_note_engine_profile_marker) { \
+			cnc_port_note_engine_profile_marker(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_DX8_STEP(name) do { } while (0)
+#endif
 #include "bound.h"
 #include "dx8webbrowser.h"
 
@@ -1806,6 +1818,7 @@ void DX8Wrapper::Flip_To_Primary(void)
 void DX8Wrapper::Clear(bool clear_color, bool clear_z_stencil, const Vector3 &color, float dest_alpha, float z, unsigned int stencil)
 {
 	DX8_THREAD_ASSERT();
+	CNC_PORT_NOTE_DX8_STEP("DX8Wrapper.Clear.entry");
 
 	// If we try to clear a stencil buffer which is not there, the entire call will fail
 	// KJM fixed this to get format from back buffer (incase render to texture is used)
@@ -1815,13 +1828,17 @@ void DX8Wrapper::Clear(bool clear_color, bool clear_z_stencil, const Vector3 &co
 	bool has_stencil=false;
 	IDirect3DSurface8* depthbuffer;
 
+	CNC_PORT_NOTE_DX8_STEP("DX8Wrapper.Clear.getDepth.before");
 	_Get_D3D_Device8()->GetDepthStencilSurface(&depthbuffer);
+	CNC_PORT_NOTE_DX8_STEP("DX8Wrapper.Clear.getDepth.after");
 	number_of_DX8_calls++;
 
 	if (depthbuffer)
 	{
 		D3DSURFACE_DESC desc;
+		CNC_PORT_NOTE_DX8_STEP("DX8Wrapper.Clear.getDesc.before");
 		depthbuffer->GetDesc(&desc);
+		CNC_PORT_NOTE_DX8_STEP("DX8Wrapper.Clear.getDesc.after");
 		has_stencil=
 		(
 			desc.Format==D3DFMT_D15S1 ||
@@ -1830,17 +1847,27 @@ void DX8Wrapper::Clear(bool clear_color, bool clear_z_stencil, const Vector3 &co
 		);
 
 		// release ref
+		CNC_PORT_NOTE_DX8_STEP("DX8Wrapper.Clear.releaseDepth.before");
 		depthbuffer->Release();
+		CNC_PORT_NOTE_DX8_STEP("DX8Wrapper.Clear.releaseDepth.after");
 	}
 
+	CNC_PORT_NOTE_DX8_STEP("DX8Wrapper.Clear.flags.before");
 	DWORD flags = 0;
 	if (clear_color) flags |= D3DCLEAR_TARGET;
 	if (clear_z_stencil) flags |= D3DCLEAR_ZBUFFER;
 	if (clear_z_stencil && has_stencil) flags |= D3DCLEAR_STENCIL;
+	CNC_PORT_NOTE_DX8_STEP("DX8Wrapper.Clear.flags.after");
 	if (flags)
 	{
-		DX8CALL(Clear(0, NULL, flags, Convert_Color(color,dest_alpha), z, stencil));
+		CNC_PORT_NOTE_DX8_STEP("DX8Wrapper.Clear.convertColor.before");
+		const D3DCOLOR clear_argb = Convert_Color(color,dest_alpha);
+		CNC_PORT_NOTE_DX8_STEP("DX8Wrapper.Clear.convertColor.after");
+		CNC_PORT_NOTE_DX8_STEP("DX8Wrapper.Clear.deviceClear.before");
+		DX8CALL(Clear(0, NULL, flags, clear_argb, z, stencil));
+		CNC_PORT_NOTE_DX8_STEP("DX8Wrapper.Clear.deviceClear.after");
 	}
+	CNC_PORT_NOTE_DX8_STEP("DX8Wrapper.Clear.complete");
 }
 
 void DX8Wrapper::Set_Viewport(CONST D3DVIEWPORT8* pViewport)

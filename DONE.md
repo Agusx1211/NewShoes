@@ -8236,6 +8236,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       readPixels, ~192.4 indexed draws/frame, 33.76 ms/frame wall average,
       32.99 ms average engine `lastFrameMs`, and only ~0.053 ms/frame in the
       tracked browser D3D8 draw/upload/readback/FBO calls.
+- [x] Remove the Mac shell-map D3D8 clear depth-mask query stall. The real
+      engine frame RPCs now have an opt-in C++ frame profiler
+      (`cnc_port_real_engine_set_frame_profile`) that buckets elapsed time
+      between engine/render markers, and the runtime frame profile can request
+      it with `PERF_PROFILE_ENGINE_PROFILE=1`. That profiler isolated the
+      release shell-map stall to `DX8Wrapper.Clear.deviceClear.before`; the
+      browser-side clear breakdown then showed almost all of that time was
+      `gl.getParameter(gl.DEPTH_WRITEMASK)` in `paintD3D8Clear`, while the raw
+      `gl.clear` timer stayed near zero. `bridge.js` now tracks the D3D8
+      depth-write mask when applying render state and uses the cached value to
+      force/restore depth writes around D3D clears, preserving D3D8 clear
+      semantics without a synchronous WebGL state query. Verified with
+      `node --check WebAssembly/harness/bridge.js`,
+      `node --check WebAssembly/harness/runtime_frame_profile.mjs`, Mac M4
+      Chrome/Metal `runtime_frame_profile.mjs` release shell-map runs, and an
+      actual `harness/play.html?autostart=1&dist=dist-release&shellmap=1`
+      probe that crossed frame 344 and reached frame 526/523. The measured
+      Mac tick profile improved from ~69.6 ms/frame with
+      ~48.7 ms/frame in the depth-mask query to ~48.8 ms/frame, with D3D8
+      clear total time down to ~0.014 ms/frame and the C++ clear bucket down
+      to ~0.015 ms. The next top measured buckets are
+      `RTS3DScene.flush.sortingFlush` and terrain render.
 
 ### Content completeness (Zero Hour)
 - [x] Restore original `FXList::doFXPos` playback in the linked `cnc-port`
