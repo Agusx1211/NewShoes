@@ -253,10 +253,7 @@ async function start() {
       },
     });
 
-    // The human page defaults to the static main-menu path because the Release
-    // shell-map load can stall in GAME_SHELL loading on Mac Chrome/Metal. The
-    // shell-map path remains available for targeted debugging with ?shellmap=1.
-    const shellMap = queryParams.get("shellmap") === "1";
+    const shellMap = queryParams.get("shellmap") !== "0";
     issueRecorder.setSessionContext({ shellMap });
     report(`running real GameEngine::init() (~10-30s, shell map ${shellMap ? "on" : "off"})...`);
     const init = await rpc("realEngineInit", { runDirectory: "/assets/real-init", shellMap });

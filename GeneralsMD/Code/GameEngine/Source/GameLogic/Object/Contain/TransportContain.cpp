@@ -240,7 +240,7 @@ void TransportContain::letRidersUpgradeWeaponSet( void )
 		ContainedItemsList::const_iterator it;
 		it = riderList->begin();
 
-		while( *it )
+		while( it != riderList->end() && *it )
 		{
 			Object *rider = *it;
 
@@ -494,7 +494,7 @@ UpdateSleepTime TransportContain::update()
 				ContainedItemsList::const_iterator it;
 				it = items->begin();
 
-				while( *it )
+				while( it != items->end() && *it )
 				{
 					Object *object = *it;
 

@@ -555,7 +555,7 @@ void OverlordContain::clientVisibleContainedFlashAsSelected()
 		ContainedItemsList::const_iterator it;
 		it = items->begin();
 
-		while( *it )
+		while( it != items->end() && *it )
 		{
 			Object *object = *it;
 			if ( object && object->isKindOf( KINDOF_PORTABLE_STRUCTURE ) )

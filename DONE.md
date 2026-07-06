@@ -374,6 +374,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `loadingMap=false`, and screenshot
       `WebAssembly/artifacts/screenshots/play-default-dist-release-main-menu.png`
       showed the interactive main menu.
+- [x] Restore the optimized Release shell-map path as the default human
+      `harness/play.html` flow and fix the Mac frame-344 freeze. The Release
+      shell-map load first needed a null guard when map side script lists are
+      replaced, then the frame-344 abort was traced with a symbolized Mac build
+      to `OpenContain::processDamageToContained()`: old STLport-era loops were
+      dereferencing `std::list<Object*>::end()` and relying on a null sentinel
+      when empty containers took damage. The affected containment/passenger
+      loops now check `it != end()` before `*it`, and `play.html` defaults to
+      shellmap-on with `?shellmap=0` as the opt-out. Verified with
+      `npm --prefix WebAssembly run build:port:release`, Mac M4 Chrome/Metal
+      `harness/runtime_frame_profile.mjs` at 380 measured frames (400 completed
+      total, logic frame 398, no abort), and a longer 1,000-measured-frame run
+      (1,020 completed total, logic frame 1,018, `loadingMap=false`,
+      `inputEnabled=true`, no abort).
 ### Libraries (compile as-is where possible)
 - [x] `Compression/EAC` BTree, Huff, and RefPack codecs compile from original
       source and round-trip smoke runs under wasm.

@@ -30,12 +30,10 @@ comparison or a DevTools trace if async ANGLE/GPU stall detail is needed beyond
 the live harness counters.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
-runtime by default. The human page temporarily defaults to the static
-main-menu path (`shellmap=0` behavior) because the Release shell-map path enters
-`GAME_SHELL`, leaves `TheGameLogic->isLoadingMap()` true, keeps the shell stack
-empty, and visually sticks on the Zero Hour title/progress screen on Mac
-Chrome/Metal. Use `?shellmap=1` only for targeted shell-map debugging until the
-open shell-map load completion bug is fixed.
+runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
+is supplied. The Release shell-map path now reaches live `GAME_SHELL`
+state on Mac Chrome/Metal and survives long real-frame runs past the former
+frame-344 abort.
 
 QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), remaining control-bar player-list/purchase-science behavior after command-button, radar, and Generals Experience open/close proofs, compressed/DXT volume textures.
 
@@ -165,13 +163,6 @@ residue and the next frontier.
       Remaining: keep long rendered chunks observable with smaller chunks or
       RPC timeouts/progress, and continue from the scripted intro toward a
       visibly correct, interactable in-game scene.
-- [ ] Fix the Release shell-map startup path used by `?shellmap=1`: on Mac
-      Chrome/Metal with `dist-release`, `Shell::showShellMap(TRUE)` queues
-      `GAME_SHELL`, but the live state remains `loadingMap=true`,
-      `progressComplete=true`, no movie playing, and `TheShell` has
-      `screenCount=0`, leaving the title/progress screen visible. Until this
-      completes, keep `harness/play.html` defaulting to the static main-menu
-      path so the human-playable page remains usable.
 - [ ] Add remaining D3D8 depth/stencil texture formats if runtime evidence
       needs them. The WebGL2 bridge now supports texture-owned D16,
       D16_LOCKABLE, D24X8, and D24S8 depth attachments; D15S1, D24X4S4, and
