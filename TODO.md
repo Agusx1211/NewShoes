@@ -214,11 +214,14 @@ residue and the next frontier.
       class.
 - [ ] **Kill the mixed-ABI shim-header system — PROVEN LIVE in the current
       `cnc-port` link** (Fable audit 2026-07-05, verified via
-      `ninja -t deps` in `build/wasm`, not inferred). Seven shim headers
-      shadow real engine headers at identical include paths:
+      `ninja -t deps` in `build/wasm`, not inferred). Originally seven shim
+      headers shadowed real engine headers at identical include paths:
       `shims/Common/{GlobalData,INI,STLTypedefs,GameAudio,Xfer}.h`,
-      `shims/GameLogic/GameLogic.h`,
-      `shims/GameNetwork/WOLBrowser/WebBrowser.h`. Which one a TU gets is
+      `shims/GameLogic/GameLogic.h`, and
+      `shims/GameNetwork/WOLBrowser/WebBrowser.h`. The stale WOL WebBrowser
+      shadow is now deleted after the browser-owned
+      `wasm_webbrowser_boundary.h` replacement left it with zero build-dep
+      users. Six shadow real-engine headers remain. Which one a TU gets is
       per-TU (include order + identical include guards + `#include_next` in
       `shims/PreRTS.h:75` + per-target `WASM_USE_ORIGINAL_GLOBALDATA` /
       `CNC_PORT_REAL_GAMELOGIC_HEADER` defines) with no enforcement.
@@ -310,7 +313,7 @@ residue and the next frontier.
       zero hits on the seven Fable-audited shadow headers for the migrated
       direct/lifecycle objects. No explicit CMake `shims/PreRTS.h`
       force-include users remain in `WebAssembly/CMakeLists.txt`.
-      Remaining cleanup: audit and delete the shadow
+      Remaining cleanup: audit and delete the six remaining shadow
       shim class headers/bodies once no linked or compile-only target needs
       them, and migrate or retire any future legacy target that still depends
       on them. This is the same hazard class as the confirmed d6d3b79
@@ -874,10 +877,11 @@ residue and the next frontier.
       `MessageStream`, input, FX/display, GameInfo/LAN, and original
       INI/GlobalData/Xfer runtime paths replace the current target-local
       compile bridges.
-- [ ] Replace the compile-only `GameNetwork/WOLBrowser/WebBrowser.h` bridge
-      with a browser DOM/iframe or external-link contract before running the
-      original WOL ladder/login/welcome browser panes or URL definitions at
-      runtime.
+- [ ] Replace the current compile-only WOL browser boundary
+      (`wasm_webbrowser_boundary.h`, force-included before the original
+      `GameNetwork/WOLBrowser/WebBrowser.h`) with a browser DOM/iframe or
+      external-link contract before running the original WOL ladder/login/
+      welcome browser panes or URL definitions at runtime.
 - [ ] Replace the compile-only `_spawnl` no-spawn process fallback with an
       explicit browser policy for the Main Menu WorldBuilder button before
       driving that menu at runtime.

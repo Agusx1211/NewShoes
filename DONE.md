@@ -8572,6 +8572,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       WebAssembly/harness/smoke.mjs`, `node
       WebAssembly/tools/run_startup_vertical_smoke.mjs`, and
       `git diff --check`.
+- [x] Delete the unused Fable-audited WOL WebBrowser shadow header. The
+      compile bridge had already moved to the browser-owned
+      `WebAssembly/src/wasm_webbrowser_boundary.h`; a fresh tracked-source and
+      Ninja dependency audit found no users of
+      `WebAssembly/shims/GameNetwork/WOLBrowser/WebBrowser.h`, so the stale
+      same-include-path shim class header is gone instead of remaining as a
+      future mixed-ABI footgun. The runtime WOL browser behavior remains open
+      in TODO as a DOM/iframe/external-link browser contract. Verified with
+      `npm --prefix WebAssembly run build:port`, `node --check
+      WebAssembly/tools/verify_cnc_port_real_headers.mjs`, `npm --prefix
+      WebAssembly run verify:cnc-port-real-headers`, `npm --prefix
+      WebAssembly run verify:cnc-port-weak-stubs`, `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs`, and `git diff --check`.
 - [x] Migrate `zh_w3d_device_utility` to the real-header prelude. The target
       now force-includes `wasm_prerts_real.h`, defines the original
       `GlobalData`/`GameLogic` header switches, and no longer uses the broad
