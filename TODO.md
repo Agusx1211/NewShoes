@@ -306,11 +306,17 @@ residue and the next frontier.
       `win32-gameengine-message-pump-smoke`,
       `win32-gameengine-lifetime-smoke`,
       `win32-gameengine-original-lifetime-smoke`, and
-      `winmain-wndproc-mouse-smoke` off explicit shim `PreRTS.h`. Remaining
-      explicit CMake shim `PreRTS.h` users are now source-file overrides for
-      `Win32CDManager.cpp`, `wasm_win32_gameengine_probe.cpp`,
-      `wasm_function_lexicon_runtime.cpp`, `wasm_module_factory_runtime.cpp`,
-      and `wasm_particle_system_runtime.cpp`.
+      `winmain-wndproc-mouse-smoke` off explicit shim `PreRTS.h`. The next
+      burn-down removed the final explicit CMake shim `PreRTS.h` source-file
+      overrides from the hot runtime set: `Win32CDManager.cpp`,
+      `wasm_win32_gameengine_probe.cpp`,
+      `wasm_function_lexicon_runtime.cpp`,
+      `wasm_module_factory_runtime.cpp`, and
+      `wasm_particle_system_runtime.cpp`. Those objects now inherit the
+      real-header target preludes, and a focused `ninja -t deps` audit reports
+      zero hits on the seven Fable-audited shadow headers for the migrated
+      direct/lifecycle objects. No explicit CMake `shims/PreRTS.h`
+      force-include users remain in `WebAssembly/CMakeLists.txt`.
       Remaining cleanup: audit and delete the shadow
       shim class headers/bodies once no linked or compile-only target needs
       them, and migrate or retire any future legacy target that still depends

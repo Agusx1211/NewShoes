@@ -8713,6 +8713,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       verify:cnc-port-real-headers`, `npm --prefix WebAssembly run
       verify:cnc-port-weak-stubs`, `npm --prefix WebAssembly run build:port`,
       and `npm --prefix WebAssembly run build:startup-vertical`.
+- [x] Remove the final explicit CMake shim `PreRTS.h` source-file overrides
+      from the hot runtime set. `Win32CDManager.cpp`,
+      `wasm_win32_gameengine_probe.cpp`,
+      `wasm_function_lexicon_runtime.cpp`,
+      `wasm_module_factory_runtime.cpp`, and
+      `wasm_particle_system_runtime.cpp` no longer force-include
+      `shims/PreRTS.h` or carry duplicated real-engine quote paths in their
+      source-local properties; they inherit the real-header target preludes
+      instead. A focused `ninja -t deps` audit across the migrated direct and
+      lifecycle objects reports zero hits on the seven Fable-audited shadow
+      headers, while representative deps show `wasm_prerts_real.h` and the
+      original engine headers. Verified with `npm --prefix WebAssembly run
+      build:port`, `npm --prefix WebAssembly run
+      verify:cnc-port-real-headers`, `npm --prefix WebAssembly run
+      verify:cnc-port-weak-stubs`, and `npm --prefix WebAssembly run
+      build:startup-vertical`.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an
