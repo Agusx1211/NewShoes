@@ -2,6 +2,7 @@
 
 #include "Common/INI.h"
 #include "GameClient/Color.h"
+#include "GameClient/Image.h"
 
 #include <cmath>
 #include <cstdio>
@@ -188,6 +189,15 @@ void INI::parseColorInt(INI *ini, void *, void *store, const void *)
 {
 	if (store != nullptr) {
 		*static_cast<Color *>(store) = static_cast<Color>(scanUnsignedInt(ini != nullptr ? ini->getNextToken() : nullptr));
+	}
+}
+
+void INI::parseMappedImage(INI *ini, void *, void *store, const void *)
+{
+	const char *token = ini != nullptr ? ini->getNextToken() : nullptr;
+	if (store != nullptr && TheMappedImageCollection != nullptr) {
+		*static_cast<const Image **>(store) =
+			TheMappedImageCollection->findImageByName(AsciiString(token));
 	}
 }
 

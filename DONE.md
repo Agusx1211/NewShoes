@@ -8894,6 +8894,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       counts are `GlobalData.h` / `INI.h` / `STLTypedefs.h` at 22 object users,
       `GameAudio.h` at 3, and `Xfer.h` plus `GameLogic/GameLogic.h` at zero
       active build-dep users.
+- [x] Delete the retired `Common/Xfer.h` and `GameLogic/GameLogic.h` shadow
+      headers. The odd-case `GameLOgic`/`Gamelogic` wrappers now use
+      `include_next` to reach the original header, and
+      `verify_cnc_port_real_headers.mjs` treats both deleted paths as retired
+      stale-dependency failures. Full `build:wasm` exposed one remaining
+      shim-era consumer, so `gamenetwork-core-smoke` now force-includes the
+      real prelude, uses the original `TheWritableGlobalData` owner, and links
+      the real debug runtime; the legacy GameClient/Bink smokes now link a
+      real-header INI support archive instead of relying on the retired Xfer
+      shadow. Verified with `cmake --build WebAssembly/build/wasm --target
+      gamenetwork-core-smoke`, `node WebAssembly/dist/gamenetwork-core-smoke.cjs`,
+      `cmake --build WebAssembly/build/wasm --target gameclient-utility-smoke
+      bink-videoplayer-runtime-smoke bink-videoplayer-browser-runtime-smoke
+      bink-w3d-video-buffer-browser-smoke`, `npm --prefix WebAssembly run
+      build:wasm`, `npm --prefix WebAssembly run verify:cnc-port-real-headers`,
+      `npm --prefix WebAssembly run verify:cnc-port-weak-stubs`,
+      `npm --prefix WebAssembly run verify:gamelogic-new-game-dispatch-frontier`,
+      `node WebAssembly/dist/gameclient-utility-smoke.cjs`, `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs`, `git diff --check`, and a fresh
+      `ninja -t deps` audit showing `GlobalData.h` / `INI.h` /
+      `STLTypedefs.h` at 21 object users, `GameAudio.h` at 3, and no active
+      `Common/Xfer.h` or `GameLogic/GameLogic.h` shadow users.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an

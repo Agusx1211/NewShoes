@@ -221,7 +221,11 @@ residue and the next frontier.
       `shims/GameNetwork/WOLBrowser/WebBrowser.h`. The stale WOL WebBrowser
       shadow is now deleted after the browser-owned
       `wasm_webbrowser_boundary.h` replacement left it with zero build-dep
-      users. Six shadow real-engine headers remain. Which one a TU gets is
+      users. `shims/Common/Xfer.h` and `shims/GameLogic/GameLogic.h` are now
+      deleted after reaching zero build-dep users, and the real-header
+      verifier treats those retired paths as stale-dependency failures. Four
+      active shadow real-engine headers remain:
+      `shims/Common/{GlobalData,INI,STLTypedefs,GameAudio}.h`. Which one a TU gets is
       per-TU (include order + identical include guards + `#include_next` in
       `shims/PreRTS.h:75` + per-target `WASM_USE_ORIGINAL_GLOBALDATA` /
       `CNC_PORT_REAL_GAMELOGIC_HEADER` defines) with no enforcement.
@@ -326,12 +330,19 @@ residue and the next frontier.
       runtime link order. A fresh deps audit leaves
       `GlobalData.h` / `INI.h` / `STLTypedefs.h` at 22 object users,
       `GameAudio.h` at 3, and `Common/Xfer.h` plus
-      `GameLogic/GameLogic.h` at 0 active build-dep users.
+      `GameLogic/GameLogic.h` at 0 active build-dep users. The next burn-down
+      deleted the zero-user `Common/Xfer.h` and `GameLogic/GameLogic.h`
+      shadows, redirected the odd-case GameLogic wrappers through
+      `include_next`, migrated `gamenetwork-core-smoke` onto the real
+      PreRTS/GameLogic/GlobalData/debug owners, and isolated the legacy
+      GameClient/Bink smoke INI support into a real-header support archive so
+      full `build:wasm` no longer resurrects the retired Xfer shadow. A fresh
+      deps audit leaves `GlobalData.h` / `INI.h` / `STLTypedefs.h` at 21
+      object users, `GameAudio.h` at 3, and no active `Common/Xfer.h` or
+      `GameLogic/GameLogic.h` shadow users.
       Remaining cleanup: audit and delete the remaining shadow shim class
-      headers/bodies once no linked or compile-only target needs them, with
-      `shims/Common/Xfer.h` and `shims/GameLogic/GameLogic.h` now first
-      candidates because their active build-dep count is zero; migrate or
-      retire any future legacy target that still depends on the remaining
+      headers/bodies once no linked or compile-only target needs them; migrate
+      or retire any future legacy target that still depends on the remaining
       `GlobalData`/`INI`/`STLTypedefs`/`GameAudio` shadows. This is the same
       hazard class as the confirmed d6d3b79
       ChallengeGenerals stack corruption and the fixed edgeMapperApply
@@ -670,13 +681,14 @@ residue and the next frontier.
       all profile consumers link the original profiling manager target.
 
 ### GameEngine — Common
-- [ ] Replace the target-local `Common/INI.h`, `Common/Xfer.h`,
-      `Common/GlobalData.h`, and `GameLogic/GameLogic.h` compile shims with the
-      original headers/sources as each real subsystem comes online. The runtime
-      now links original `Common/System/XferCRC.cpp` for the pre-audio
-      `XferCRC("lightCRC")` startup proof, but the full original `Common/Xfer`
-      base and save/load transfer stack still remain behind the current
-      focused shim.
+- [ ] Replace the remaining target-local `Common/INI.h`, `Common/GlobalData.h`,
+      `Common/STLTypedefs.h`, and `Common/GameAudio.h` compile shims with the
+      original headers/sources as each real subsystem comes online. The
+      `Common/Xfer.h` and `GameLogic/GameLogic.h` shadows are retired/deleted
+      and guarded by the real-header verifier; the runtime now links original
+      `Common/System/XferCRC.cpp` for the pre-audio `XferCRC("lightCRC")`
+      startup proof, but the full original `Common/Xfer` save/load transfer
+      behavior still remains open behind the broader save/load wiring.
 - [ ] Link and smoke-test original `Common/Xfer` and save-game behavior after
       `GameState`, `GameStateMap`, real `GlobalData`, browser persistence, and
       the full snapshot subsystem can link into the runtime.

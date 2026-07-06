@@ -1,3 +1,3 @@
 #pragma once
 
-#include "GameLogic/GameLogic.h"
+#include_next "GameLogic/GameLogic.h"

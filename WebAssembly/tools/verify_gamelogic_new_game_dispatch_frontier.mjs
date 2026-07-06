@@ -20,9 +20,9 @@ const paths = {
     "GeneralsMD/Code/GameEngine/Source/GameLogic/System/GameLogicDispatch.cpp",
   w3dBridgeBuffer:
     "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DBridgeBuffer.cpp",
+  gameLogicHeader: "GeneralsMD/Code/GameEngine/Include/GameLogic/GameLogic.h",
   shellSmoke: "WebAssembly/tests/w3d_window_layout_script_smoke.cpp",
   runtimeSmoke: "WebAssembly/tests/gamelogic_new_game_dispatch_smoke.cpp",
-  gameLogicShim: "WebAssembly/shims/GameLogic/GameLogic.h",
   preRts: "WebAssembly/shims/PreRTS.h",
   realPreRts: "WebAssembly/src/wasm_prerts_real.h",
   cmake: "WebAssembly/CMakeLists.txt",
@@ -149,9 +149,9 @@ const messageStream = readRepoText(paths.messageStream);
 const gameLogic = readRepoText(paths.gameLogic);
 const gameLogicDispatch = readRepoText(paths.gameLogicDispatch);
 const w3dBridgeBuffer = readRepoText(paths.w3dBridgeBuffer);
+const gameLogicHeader = readRepoText(paths.gameLogicHeader);
 const shellSmoke = readRepoText(paths.shellSmoke);
 const runtimeSmoke = readRepoText(paths.runtimeSmoke);
-const gameLogicShim = readRepoText(paths.gameLogicShim);
 const preRts = readRepoText(paths.preRts);
 const realPreRts = readRepoText(paths.realPreRts);
 const cmake = readRepoText(paths.cmake);
@@ -420,6 +420,16 @@ const targetIncludes = cmakeInvocationBlock(
   /target_include_directories\s*\(\s*w3d-window-layout-script-smoke\b/,
   "w3d-window-layout-script-smoke target_include_directories",
 );
+const shellCompileDefinitions = cmakeInvocationBlock(
+  cmake,
+  /target_compile_definitions\s*\(\s*w3d-window-layout-script-smoke\b/,
+  "w3d-window-layout-script-smoke target_compile_definitions",
+);
+const shellCompileOptions = cmakeInvocationBlock(
+  cmake,
+  /target_compile_options\s*\(\s*w3d-window-layout-script-smoke\b/,
+  "w3d-window-layout-script-smoke target_compile_options",
+);
 const shimIncludeIndex = targetIncludes.block.indexOf("${WASM_SHIMS_DIR}");
 const originalIncludeIndex = targetIncludes.block.indexOf("${GAMEENGINE_INCLUDE_DIR}");
 expect(shimIncludeIndex !== -1, "w3d-window-layout-script-smoke does not include WASM_SHIMS_DIR");
@@ -436,15 +446,36 @@ expect(
   !/System\/GameLogicDispatch\.cpp|System\\GameLogicDispatch\.cpp/.test(targetSources.block),
   "w3d-window-layout-script-smoke unexpectedly links original GameLogicDispatch.cpp",
 );
-
-const shimPrepareLine = lineOf(
-  gameLogicShim,
-  /void\s+prepareNewGame\s*\(\s*Int\s*,\s*GameDifficulty\s*,\s*Int\s*\)\s*\{\s*\}/,
-  "focused GameLogic shim no-op prepareNewGame",
+expect(
+  /CNC_PORT_REAL_GAMELOGIC_HEADER=1/.test(shellCompileDefinitions.block),
+  "w3d-window-layout-script-smoke does not opt into the original GameLogic header",
 );
 expect(
-  !/processCommandList\s*\(/.test(gameLogicShim),
-  "focused GameLogic shim now exposes processCommandList; update this frontier before claiming runtime coverage",
+  /WASM_USE_ORIGINAL_GLOBALDATA=1/.test(shellCompileDefinitions.block),
+  "w3d-window-layout-script-smoke does not opt into the original GlobalData header",
+);
+expect(
+  /wasm_prerts_real\.h/.test(shellCompileOptions.block),
+  "w3d-window-layout-script-smoke does not force-include the real PreRTS prelude",
+);
+expect(
+  !/shims\/PreRTS\.h|WASM_SHIMS_DIR\}\/PreRTS\.h/.test(shellCompileOptions.block),
+  "w3d-window-layout-script-smoke still force-includes the shim PreRTS.h fallback",
+);
+const originalGameLogicHeaderLine = lineOf(
+  gameLogicHeader,
+  /class\s+GameLogic\s*:\s*public\s+SubsystemInterface\s*,\s*public\s+Snapshot/,
+  "original GameLogic class declaration",
+);
+const originalHeaderProcessCommandListLine = lineOf(
+  gameLogicHeader,
+  /void\s+processCommandList\s*\(\s*CommandList\s*\*\s*list\s*\)\s*;/,
+  "original GameLogic processCommandList declaration",
+);
+const originalHeaderPrepareNewGameLine = lineOf(
+  gameLogicHeader,
+  /void\s+prepareNewGame\s*\(\s*Int\s+gameMode\s*,\s*GameDifficulty\s+diff\s*,\s*Int\s+rankPoints\s*\)\s*;/,
+  "original GameLogic prepareNewGame declaration",
 );
 
 const gameStateSentinelLine = lineOf(
@@ -1146,8 +1177,12 @@ console.log(JSON.stringify({
     smokeSource: paths.shellSmoke,
     cmakeTargetLine: targetSources.line,
     cmakeIncludeLine: targetIncludes.line,
-    shimHeader: paths.gameLogicShim,
-    shimPrepareNewGameLine: shimPrepareLine,
+    cmakeCompileDefinitionsLine: shellCompileDefinitions.line,
+    cmakeCompileOptionsLine: shellCompileOptions.line,
+    originalGameLogicHeader: paths.gameLogicHeader,
+    originalGameLogicHeaderLine,
+    originalHeaderProcessCommandListLine,
+    originalHeaderPrepareNewGameLine,
     originalGameLogicCppLinked: false,
     originalGameLogicDispatchCppLinked: false,
     gameStateSentinelLine,
@@ -1298,7 +1333,7 @@ console.log(JSON.stringify({
     "MSG_NEW_GAME applies the FPS limit, calls prepareNewGame, then calls startNewGame(FALSE)",
     "prepareNewGame owns original ScriptEngine difficulty, BlankWindow background, game-mode, pending-map, and original Shell::hideShell setup",
     "startNewGame(FALSE) records the pristine map, defers the first call before terrain load, then orders the original post-terrain bridge-like map-object scan, Radar::refreshTerrain, and Pathfinder::newMap sequence",
-    "w3d-window-layout-script-smoke still uses a focused GameLogic shim and sentinel gameplay owners",
+    "w3d-window-layout-script-smoke uses the original GameLogic header while keeping sentinel gameplay owners and not linking original GameLogic.cpp/GameLogicDispatch.cpp",
     "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/FunctionLexicon.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/TerrainTypes.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainRoads.cpp/SidesList.cpp plus the W3D terrain runtime and original DX8Wrapper/RenderObj support, then calls GameLogic::processCommandList at runtime through original GlobalData, FunctionLexicon, PlayerList, ScriptEngine, Shell, archive-backed BlankWindow ownership, MapsZH.big MD_GLA03 promotion, original default and Zero Hour startup INI/GameData parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, TeamFactory::initFromSides, PlayerList::newGame, AIPlayer construction, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, GhostObjectManager local-player index/reset, TerrainRoadCollection/TerrainTypeCollection render-map setup, original W3DTerrainLogic::newMap road-buffer and W3DBridgeBuffer::loadBridges handoff, TerrainLogic waypoint/water setup, the ordered post-terrain bridge-like map-object no-candidate scan, Radar::refreshTerrain, and original Pathfinder::newMap grid allocation/classification",
   ],
   nextRequired: [

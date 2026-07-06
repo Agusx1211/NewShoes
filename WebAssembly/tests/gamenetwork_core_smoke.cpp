@@ -24,8 +24,9 @@
 #include "winsock2.h"
 
 class Display;
+HWND ApplicationHWnd = nullptr;
 Display *TheDisplay = nullptr;
-GlobalData *TheGlobalData = nullptr;
+SubsystemInterfaceList *TheSubsystemList = nullptr;
 
 namespace {
 bool expect(bool condition, const char *message)
@@ -1141,7 +1142,8 @@ bool exerciseFrameMetrics()
 	global_data.m_networkFPSHistoryLength = 4;
 	global_data.m_networkLatencyHistoryLength = 4;
 	global_data.m_networkCushionHistoryLength = 3;
-	TheGlobalData = &global_data;
+	GlobalData *old_global_data = TheWritableGlobalData;
+	TheWritableGlobalData = &global_data;
 
 	bool ok = false;
 	{
@@ -1172,7 +1174,7 @@ bool exerciseFrameMetrics()
 		ok = init_ok && first_cushion_ok && lower_cushion_ok && wrapped_cushion_ok && reset_ok;
 	}
 
-	TheGlobalData = nullptr;
+	TheWritableGlobalData = old_global_data;
 	return ok;
 }
 

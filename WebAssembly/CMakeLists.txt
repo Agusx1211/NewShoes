@@ -6326,9 +6326,63 @@ target_link_options(gameengine-header-case-smoke PRIVATE
   "SHELL:-sEXIT_RUNTIME=1"
 )
 
+add_library(zh_gameclient_utility_smoke_ini_support STATIC
+  src/wasm_gameclient_utility_smoke_ini_support.cpp
+)
+
+target_include_directories(zh_gameclient_utility_smoke_ini_support PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_definitions(zh_gameclient_utility_smoke_ini_support PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+)
+
+target_compile_options(zh_gameclient_utility_smoke_ini_support PRIVATE
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-writable-strings
+)
+
 add_executable(gameclient-utility-smoke
   tests/gameclient_utility_smoke.cpp
-  src/wasm_gameclient_utility_smoke_ini_support.cpp
 )
 
 set_target_properties(gameclient-utility-smoke PROPERTIES
@@ -6337,6 +6391,7 @@ set_target_properties(gameclient-utility-smoke PROPERTIES
 
 target_link_libraries(gameclient-utility-smoke PRIVATE
   zh_gameclient_utility
+  zh_gameclient_utility_smoke_ini_support
   zh_gameengine_globaldata_runtime
   zh_gameengine_debug_runtime
 )
@@ -8401,9 +8456,32 @@ set_target_properties(gamenetwork-core-smoke PROPERTIES
 
 target_link_libraries(gamenetwork-core-smoke PRIVATE
   zh_gamenetwork_core
+  zh_gameengine_globaldata_runtime
+  zh_gameengine_debug_runtime
+)
+
+target_compile_definitions(gamenetwork-core-smoke PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
 )
 
 target_compile_options(gamenetwork-core-smoke PRIVATE
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
   -fms-extensions
   -Wall
   -Wextra
@@ -8599,6 +8677,7 @@ set_target_properties(bink-videoplayer-runtime-smoke PROPERTIES
 target_link_libraries(bink-videoplayer-runtime-smoke PRIVATE
   zh_bink_video_device_compile_frontier
   zh_gameclient_utility
+  zh_gameclient_utility_smoke_ini_support
 )
 
 target_compile_options(bink-videoplayer-runtime-smoke PRIVATE
@@ -8631,6 +8710,7 @@ set_target_properties(bink-videoplayer-browser-runtime-smoke PROPERTIES
 target_link_libraries(bink-videoplayer-browser-runtime-smoke PRIVATE
   zh_bink_video_device_compile_frontier
   zh_gameclient_utility
+  zh_gameclient_utility_smoke_ini_support
 )
 
 target_compile_definitions(bink-videoplayer-browser-runtime-smoke PRIVATE
@@ -8728,6 +8808,7 @@ target_link_libraries(bink-w3d-video-buffer-browser-smoke PRIVATE
   zh_gameclient_utility
   zh_gamenetwork_core
   zh_w3d_display_drawimage_runtime
+  zh_gameclient_utility_smoke_ini_support
   zh_ww3d2_compile_frontier
   zh_browser_d3d8
   zh_wwmath_lookup

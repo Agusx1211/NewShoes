@@ -18,14 +18,14 @@ const activeShadowHeaderSuffixes = [
   "WebAssembly/shims/Common/INI.h",
   "WebAssembly/shims/Common/STLTypedefs.h",
   "WebAssembly/shims/Common/GameAudio.h",
-  "WebAssembly/shims/Common/Xfer.h",
-  "WebAssembly/shims/GameLogic/GameLogic.h",
 ];
 
 // Retired shadow paths should never appear in fresh deps, but keeping the
 // suffix here makes stale/misrouted build objects fail loudly.
 const retiredShadowHeaderSuffixes = [
   "WebAssembly/shims/GameNetwork/WOLBrowser/WebBrowser.h",
+  "WebAssembly/shims/Common/Xfer.h",
+  "WebAssembly/shims/GameLogic/GameLogic.h",
 ];
 
 const shadowHeaderSuffixes = [
