@@ -55,7 +55,9 @@ residue and the next frontier.
       `GameClient::update()` (Shell push of `MainMenu.wnd`), route browser
       mouse/keyboard through the real message stream, and harness-click a
       real menu button through the real boot with screenshot + state proof.
-      Then retire the focused menu repaint/layout smokes this supersedes.
+      The superseded focused menu repaint/layout npm and vertical-integration
+      gates are now retired; keep future menu verification on the real startup
+      path unless it is explicitly ad-hoc diagnostic coverage.
       Current state: startup vertical now proves real frames reach
       Shell-owned `Menus/MainMenu.wnd`, clears the stale movie-break render
       gate once the real display has no active movie, and visibly repaints the
@@ -152,11 +154,9 @@ residue and the next frontier.
       the only loaded producer is unsuffixed `Start_Mission_Intro`
       (`SET_MILLISECOND_TIMER("Give it back")`), while the late chain enabled
       `Start_Mission_Intro SS1`, whose actions do not set that timer.
-      Remaining: retire superseded focused menu smokes, resolve the
-      `Start_Mission_Intro` / `Start_Mission_Intro SS1` activation mismatch
-      without bypassing original script semantics, keep long rendered chunks
-      observable with smaller chunks or RPC timeouts/progress, and continue from
-      the scripted intro toward a visibly correct, interactable in-game scene.
+      Remaining: keep long rendered chunks observable with smaller chunks or
+      RPC timeouts/progress, and continue from the scripted intro toward a
+      visibly correct, interactable in-game scene.
 - [x] RESOLVED — MD_USA01 reaches original player control naturally (see
       DONE.md). The `Give it back` "stall" was just a too-short run; the real
       `Start_Mission_Intro SS1` chain resolves on its own and a 3,600-frame Mac
@@ -1531,9 +1531,10 @@ residue and the next frontier.
       `GameWindowManager::winRepaint` and real `W3DDisplay`/WebGL2 pixels, and
       `test:ww3d-window-layout-repaint` now proves an archive-loaded
       `WindowZH.big` `WindowLayout` can repaint through the same browser W3D
-      path; `test:ww3d-main-menu-layout-repaint` now extends that to the real
-      `Menus/MainMenu.wnd` `MapBorder4` rectangle. Keep the next scene/camera
-      work focused on either fuller shell composition or terrain first pixels.
+      path. The now-retired focused MainMenu layout repaint diagnostic proved
+      the same browser W3D path against `Menus/MainMenu.wnd` `MapBorder4`;
+      keep the next scene/camera work focused on either fuller shell
+      composition or terrain first pixels.
 - [ ] Add a vtable-safe original `W3DDisplay::setWidth` / `setHeight`
       or `setDisplayMode()` proof. Raw storage is not enough because the
       original setters call virtual `getWidth()` / `getHeight()`;

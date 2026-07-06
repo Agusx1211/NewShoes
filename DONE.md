@@ -6208,6 +6208,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       full-screen `(0,0)-(800,600)` image with `W3DDisplay::drawImage`, and
       verifies browser WebGL2 edge pixels from the alpha ruler overlay while
       the transparent center remains black.
+- [x] Retire the superseded focused MainMenu repaint/ruler gates after real
+      startup vertical coverage took ownership of the MainMenu path. The
+      active npm scripts no longer advertise
+      `test:ww3d-main-menu-layout-repaint`,
+      `test:ww3d-main-menu-layout-image-repaint`, or
+      `test:ww3d-display-main-menu-ruler`, and
+      `test:vertical-integrations` no longer spends time on the curated
+      MainMenu image/ruler repaint harnesses. The probe files remain available
+      as ad-hoc diagnostics, while the active gate is the real
+      `cnc-port` lifecycle: real `GameEngine::init()`, Shell-owned
+      `Menus/MainMenu.wnd`, real mouse/keyboard input, visible menu pixels,
+      Single Player/USA/difficulty transitions, and `ButtonEasy`
+      campaign-start queueing.
 - [x] Fix in-game command-bar HUD background frame rendering black. Root cause:
       the `__attribute__((weak))` no-op stubs in
       `wasm_ww3d_render_probe.cpp` for the W3D HUD draw callbacks
