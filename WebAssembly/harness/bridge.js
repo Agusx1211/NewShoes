@@ -44,6 +44,54 @@ function selectedCncPortDistDir() {
   return fallbackDistDir;
 }
 
+function browserAssetUrl(path, cacheToken = "") {
+  try {
+    const base = globalThis.location?.href
+      ?? (typeof document !== "undefined" ? document.baseURI : undefined);
+    const url = new URL(path, base);
+    if (cacheToken) {
+      url.searchParams.set("v", cacheToken);
+    }
+    return url.href;
+  } catch (_error) {
+    if (!cacheToken) {
+      return path;
+    }
+    return `${path}${path.includes("?") ? "&" : "?"}v=${encodeURIComponent(cacheToken)}`;
+  }
+}
+
+async function browserAssetVersion(path) {
+  if (typeof fetch !== "function") {
+    return "";
+  }
+  try {
+    const response = await fetch(browserAssetUrl(path), { method: "HEAD", cache: "no-store" });
+    if (!response.ok) {
+      return "";
+    }
+    const modified = response.headers.get("last-modified");
+    const length = response.headers.get("content-length");
+    const modifiedMs = modified ? Date.parse(modified) : 0;
+    const parts = [
+      Number.isFinite(modifiedMs) && modifiedMs > 0 ? String(modifiedMs) : "",
+      length || "",
+    ].filter(Boolean);
+    return parts.join("-");
+  } catch (_error) {
+    return "";
+  }
+}
+
+async function cncPortRuntimeCacheToken(distDir) {
+  const [jsVersion, wasmVersion] = await Promise.all([
+    browserAssetVersion(`../${distDir}/cnc-port.js`),
+    browserAssetVersion(`../${distDir}/cnc-port.wasm`),
+  ]);
+  const token = [jsVersion, wasmVersion].filter(Boolean).join(".");
+  return token || String(Date.now());
+}
+
 let d3d8DrawProgram = null;
 const d3d8Buffers = new Map();
 const d3d8Textures = new Map();
@@ -9741,10 +9789,13 @@ function cncGdiRasterizeGlyph(
 async function loadWasmModule() {
   try {
     const distDir = selectedCncPortDistDir();
-    const moduleExports = await import(`../${distDir}/cnc-port.js`);
+    const runtimeCacheToken = await cncPortRuntimeCacheToken(distDir);
+    const moduleExports = await import(browserAssetUrl(`../${distDir}/cnc-port.js`, runtimeCacheToken));
     const createModule = moduleExports.default ?? moduleExports.createCncPortModule;
     const module = await createModule({
-      locateFile: (path) => path.endsWith(".wasm") ? `../${distDir}/${path}` : path,
+      locateFile: (path) => path.endsWith(".wasm")
+        ? browserAssetUrl(`../${distDir}/${path}`, runtimeCacheToken)
+        : path,
       print: (text) => recordLog("wasm stdout", { text: String(text) }),
       printErr: (text) => recordLog("wasm stderr", { text: String(text) }),
       cncPortD3D8Clear: paintD3D8Clear,

@@ -39,7 +39,10 @@ PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
 is supplied. The Release shell-map path now reaches live `GAME_SHELL`
 state on Mac Chrome/Metal and survives long real-frame runs past the former
-frame-344 abort.
+frame-344 abort. The play harness now cache-busts the selected `cnc-port`
+runtime JS/wasm by file metadata and the Mac harness server no-stores live
+harness/runtime assets, so a reload cannot silently keep an older frame-344
+build while preserving browser caching for the 1.3 GB archive payloads.
 
 QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), remaining control-bar player-list/purchase-science behavior after command-button, radar, and Generals Experience open/close proofs, compressed/DXT volume textures.
 
@@ -2282,6 +2285,13 @@ and then start with the PROFILE, not with any individual fix.
       `diag=lite` has no warmup readbacks; DevTools is still needed before
       changing buffer/shader/draw submission internals that might be dominated
       by asynchronous ANGLE/GPU stalls.
+- [ ] **A/B debug logging and WWDEBUG build flags before deeper render
+      surgery.** The current CMake still force-enables `DEBUG_LOGGING=1`,
+      `ALLOW_DEBUG_UTILS=1`, and `WWDEBUG=1` through broad runtime targets,
+      which can keep retail-stripped `DEBUG_LOG` / `WWDEBUG_SAY` paths live in
+      Debug and Release builds. Measure a build with those off (or with
+      `DISABLE_DEBUG_LOGGING`/related disables) on the same Mac shell-map
+      profile before assuming O0/O2 or WebGL draw count is the whole bottleneck.
 - [ ] D3D8→WebGL2 shim "less naive" playbook (ordered by typical payoff,
       all confined to the DX8Wrapper chokepoint; verify each against the
       screenshot goldens):

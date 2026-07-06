@@ -21,6 +21,7 @@ const contentTypes = new Map([
 ]);
 
 const maxDumpUploadBytes = 256 * 1024 * 1024;
+const liveCacheExtensions = new Set([".css", ".html", ".js", ".mjs", ".wasm"]);
 
 function isInside(parent, child) {
   const path = relative(parent, child);
@@ -33,6 +34,16 @@ function commonHeaders(extra = {}) {
     "cross-origin-embedder-policy": "require-corp",
     ...extra,
   };
+}
+
+function liveAssetCacheHeaders(staticRoot, requestedPath) {
+  const relativePath = relative(staticRoot, requestedPath).split(sep).join("/");
+  const extension = extname(requestedPath);
+  const liveExtension = liveCacheExtensions.has(extension);
+  const livePath = relativePath.startsWith("harness/") || /^dist(?:[-_][A-Za-z0-9_-]+)?\//.test(relativePath);
+  return livePath && liveExtension
+    ? { "cache-control": "no-store" }
+    : {};
 }
 
 function sendError(response, statusCode, message) {
@@ -226,6 +237,7 @@ export async function startStaticServer({
       if (request.method === "HEAD") {
         response.writeHead(200, commonHeaders({
           "accept-ranges": "bytes",
+          ...liveAssetCacheHeaders(staticRoot, requestedPath),
           "content-length": fileStat.size,
           "content-type": contentType,
           "last-modified": lastModified,
@@ -247,6 +259,7 @@ export async function startStaticServer({
         const length = range.end - range.start + 1;
         response.writeHead(206, commonHeaders({
           "accept-ranges": "bytes",
+          ...liveAssetCacheHeaders(staticRoot, requestedPath),
           "content-length": length,
           "content-range": `bytes ${range.start}-${range.end}/${fileStat.size}`,
           "content-type": contentType,
@@ -257,6 +270,7 @@ export async function startStaticServer({
 
       response.writeHead(200, commonHeaders({
         "accept-ranges": "bytes",
+        ...liveAssetCacheHeaders(staticRoot, requestedPath),
         "content-length": fileStat.size,
         "content-type": contentType,
         "last-modified": lastModified,

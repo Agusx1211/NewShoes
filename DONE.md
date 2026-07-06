@@ -8258,6 +8258,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       clear total time down to ~0.014 ms/frame and the C++ clear bucket down
       to ~0.015 ms. The next top measured buckets are
       `RTS3DScene.flush.sortingFlush` and terrain render.
+- [x] Harden the human play harness against stale frame-344 builds. The Mac
+      repro path did not reproduce the old shell-map abort on current bits:
+      `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`
+      crossed frame 344, and a full summary at frame 363 reported
+      `loadingMap=false`, `inGame=true`, 350 objects, 352 drawables,
+      171 rendered objects, `inputEnabled=true`, `moviePlaying=false`, and no
+      abort. The visible recurrence was therefore consistent with a stale
+      browser/server asset path. `bridge.js` now HEADs the selected
+      `cnc-port.js`/`.wasm` files with `cache:"no-store"` and imports/locates
+      them with a metadata cache token, while `static-server.mjs` sends
+      `cache-control: no-store` for live `harness/` and `dist*` JS/HTML/CSS/
+      wasm assets without disabling archive caching. Restarted the Mac
+      harness server, confirmed `__cnc_build_info` and no-store headers, then
+      reran the same Mac Chrome/Metal play path through frame 701 with
+      `dist-release`, no abort, and frame-363 state still fully loaded.
 
 ### Content completeness (Zero Hour)
 - [x] Restore original `FXList::doFXPos` playback in the linked `cnc-port`
