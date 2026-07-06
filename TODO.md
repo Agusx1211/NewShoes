@@ -2284,14 +2284,12 @@ and then start with the PROFILE, not with any individual fix.
         uploads, while engine `lastFrameMs` is 36-43ms — the frame is
         wasm CPU, not GL submission.
       - draw-state marshaling (Fable audit of `wasm_d3d8_shim.cpp:319-565`):
-        the per-draw state cache is a SINGLE slot keyed on an FNV hash that
-        includes the per-object WORLD matrix, so it misses on nearly every
-        distinct object and rebuilds a ~600-property JS object graph
-        (5×`Array.from(16)` matrices + 50-field renderState + 8×28
-        texture-stage objects + 8×27-field lights + material) per draw.
-        Split transforms out of the hashed payload (pass HEAPF32
-        offsets/preallocated Float32Arrays instead of `Array.from`) and key
-        a small Map/LRU on the state-only hash. Also
+        the first pass split per-object world/view/projection transforms out
+        of the native draw-state cache key while preserving the full hash for
+        GL state/uniform correctness and promoted the EM_JS state-only payload
+        cache to a small LRU. Remaining work: pass HEAPF32 offsets/preallocated
+        Float32Arrays instead of `Array.from` and keep driving this with the
+        M4 `runtime_frame_profile.mjs` comparison. Also
         `wasm_d3d8_browser_buffer_update` (`wasm_d3d8_shim.cpp:95`) does
         `HEAPU8.slice()` (full copy + GC garbage) per Lock when
         `gl.bufferSubData` accepts a zero-copy `subarray` view, and

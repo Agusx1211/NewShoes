@@ -272,6 +272,8 @@ const d3d8PerfStats = {
   drawElements: 0,
   drawIndices: 0,
   drawMs: 0,
+  drawDerivedCacheHits: 0,
+  drawDerivedCacheMisses: 0,
   clears: 0,
   clearMs: 0,
   textureUploads: 0,
@@ -307,6 +309,8 @@ function d3d8PerfSummary() {
     drawElements: d3d8PerfStats.drawElements,
     drawIndices: d3d8PerfStats.drawIndices,
     drawMs: roundedPerfMs(d3d8PerfStats.drawMs),
+    drawDerivedCacheHits: d3d8PerfStats.drawDerivedCacheHits,
+    drawDerivedCacheMisses: d3d8PerfStats.drawDerivedCacheMisses,
     clears: d3d8PerfStats.clears,
     clearMs: roundedPerfMs(d3d8PerfStats.clearMs),
     textureUploads: d3d8PerfStats.textureUploads,
@@ -8115,17 +8119,24 @@ function paintD3D8DrawIndexed(payload = {}) {
     isIdentityD3DMatrix(view) &&
     isIdentityD3DMatrix(projection);
   // --- Draw-cache: compute key and gate normalize* + derived-object rebuilds ---
-  // Key = (stateHash, tex0Id, tex1Id, fvf, stride, primitiveType).
+  // Key = (derivedStateHash, tex0Id, tex1Id, fvf, stride, primitiveType).
   // primitiveType is added because it affects point-sprite semantics and is NOT
-  // covered by the native state hash. Texture transforms ARE in stateHash
-  // (wasm_d3d8_shim.cpp ~3734-3738), so the key transitively covers them.
-  const drawCacheKey = `${Number(payload.stateHash ?? 0) >>> 0},`
+  // covered by the native state hash. The derived hash excludes per-draw
+  // world/view/projection transforms but still includes texture transforms and
+  // all render/material/light state used by the derived JS objects below.
+  const derivedStateHash = Number(payload.derivedStateHash ?? payload.stateHash ?? 0) >>> 0;
+  const drawCacheKey = `${derivedStateHash},`
     + `${Number(d3d8BoundTextures.get(0) ?? 0) >>> 0},`
     + `${Number(d3d8BoundTextures.get(1) ?? 0) >>> 0},`
     + `${vertexShaderFvf},`
     + `${vertexStride},`
     + `${Number(payload.primitiveType ?? 0) >>> 0}`;
   const drawCacheHit = drawCacheKey === d3d8LastDrawKey && d3d8CachedDerived !== null;
+  if (drawCacheHit) {
+    d3d8PerfStats.drawDerivedCacheHits += 1;
+  } else {
+    d3d8PerfStats.drawDerivedCacheMisses += 1;
+  }
 
   let renderState, clipPlanes, material, lights;
   let fixedFunctionLights, directionalLights, firstDirectionalLight;

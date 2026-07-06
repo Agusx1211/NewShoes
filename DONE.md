@@ -8034,6 +8034,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 ## M10 — Hardening, content, polish
 
 ### Performance & memory
+- [x] Split the D3D8 draw-state cache hash from per-object transforms.
+      `wasm_d3d8_shim.cpp` now computes both the original full draw hash and a
+      derived-state hash that excludes world/view/projection but still covers
+      texture transforms, render state, clip planes, material, lights, and the
+      transform mask. The EM_JS draw bridge copies world/view/projection every
+      draw for correctness while reusing the expensive render-state/light/
+      material payload when only object placement changes, with a 64-entry LRU
+      behind the previous-draw fast path. `bridge.js` keys its derived-object
+      cache on the same derived hash while keeping the full `stateHash` for GL
+      state/uniform updates. The runtime profile now reports derived-cache
+      hits/misses. Verified with `node --check
+      WebAssembly/harness/bridge.js`, `node --check
+      WebAssembly/harness/runtime_frame_profile.mjs`, `git diff --check`,
+      and `npm --prefix WebAssembly run build:port`. A forced baseline/current
+      Mac M4 Chrome/Metal comparison (`ANGLE Metal Renderer: Apple M4`,
+      `realEngineFrameSummary`, 10 warmup + 60 measured frames, batch 10)
+      improved measured wall time from 77.16 ms/frame at 533.4 draws/frame to
+      74.37 ms/frame at 529.8 draws/frame; the optimized measured section
+      reported 430.9 derived-cache hits/frame and 98.8 misses/frame. The
+      harness captured `runtime-frame-profile.png` during the run.
 - [x] Cache hot D3D8 WebGL draw-path bindings and temporary index buffers.
       `bridge.js` now tracks the currently bound D3D8 draw program,
       ARRAY_BUFFER, and ELEMENT_ARRAY_BUFFER to skip redundant

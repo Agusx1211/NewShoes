@@ -231,6 +231,8 @@ const browserPerfFields = [
   "drawElements",
   "drawIndices",
   "drawMs",
+  "drawDerivedCacheHits",
+  "drawDerivedCacheMisses",
   "clears",
   "clearMs",
   "textureUploads",
@@ -280,6 +282,8 @@ function browserPerfDelta(before, after, framesAdvanced) {
       ? {
           draws: Number(delta.draws ?? 0) / framesAdvanced,
           drawMs: Number(delta.drawMs ?? 0) / framesAdvanced,
+          drawDerivedCacheHits: Number(delta.drawDerivedCacheHits ?? 0) / framesAdvanced,
+          drawDerivedCacheMisses: Number(delta.drawDerivedCacheMisses ?? 0) / framesAdvanced,
           clearMs: Number(delta.clearMs ?? 0) / framesAdvanced,
           textureUploadMs: Number(delta.textureUploadMs ?? 0) / framesAdvanced,
           textureConvertMs: Number(delta.textureConvertMs ?? 0) / framesAdvanced,
