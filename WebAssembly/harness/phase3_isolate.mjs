@@ -20,6 +20,7 @@ const specs = [
   { name: "TexturesZH.big" }, { name: "W3D.big" }, { name: "W3DZH.big" },
   { name: "W3DEnglishZH.big" }, { name: "MapsZH.big" }, { name: "Music.big", sourceName: "base-generals/Music.big" },
   { name: "MusicZH.big" }, { name: "AudioZH.big" }, { name: "AudioEnglishZH.big" }, { name: "SpeechZH.big" },
+  { name: "SpeechEnglishZH.big" },
 ];
 
 const server = await startStaticServer({ root: wasmRoot });

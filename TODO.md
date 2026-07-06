@@ -1963,9 +1963,12 @@ residue and the next frontier.
       mixer.
 - [ ] Harness: add sustained gameplay audio assertions beyond direct event
       triggering. `test:real-audio-event` proves direct engine-driven 2D/3D
-      sample events and one music stream; remaining harness work is to observe
-      naturally triggered unit/weapon/UI/music audio during skirmish/campaign
-      input and assert completion drainage over multiple frames.
+      sample events and one music stream, and the human/skirmish real-init
+      archive lists now mount all required audio payload BIGs including
+      `AudioEnglishZH.big` and `SpeechEnglishZH.big`; remaining harness work is
+      to observe naturally triggered unit/weapon/UI/music audio during
+      skirmish/campaign input and assert completion drainage over multiple
+      frames.
 
 ---
 

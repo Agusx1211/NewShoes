@@ -17,7 +17,9 @@ const archiveSpecs = [
   { name: "W3DZH.big" },
   { name: "W3DEnglishZH.big" },
   { name: "SpeechZH.big" },
+  { name: "SpeechEnglishZH.big" },
   { name: "AudioZH.big" },
+  { name: "AudioEnglishZH.big" },
   { name: "ShadersZH.big" },
   { name: "ZZBase_INI.big", sourceName: "INI.big" },
   { name: "ZZBase_English.big", sourceName: "English.big" },
@@ -243,7 +245,7 @@ async function start() {
       },
     });
 
-    report("downloading + mounting 21 archives (~1.3 GB, be patient)...");
+    report(`downloading + mounting ${archiveSpecs.length} archives (~1.6 GB, be patient)...`);
     const mount = await rpc("mountArchives", {
       path: "/assets/real-init",
       verifyEach: false,

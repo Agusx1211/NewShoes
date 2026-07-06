@@ -10,6 +10,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## User-reported play bugs (2026-07-06 session)
 
+- [x] Mount localized English audio/speech archives in the human and real
+      skirmish boot paths. `play.mjs`, startup/skirmish/input/perf/shellmap and
+      real FX harness archive specs now include `SpeechEnglishZH.big` and
+      `AudioEnglishZH.big` alongside the existing ZH audio archives, matching
+      the native `audio_payload_archives_ready()` contract. The playable page
+      status text now reports the dynamic 23-archive mount count. Before this,
+      a play-style boot reported `audioRuntimeAssets.ready=false` with
+      `audioEnglishZH=false` and `speechEnglishZH=false`; after the change,
+      `play.html?diag=lite` reports `audioRuntimeAssets.ready=true` with all six
+      required audio archives present and the mixer buses connected. Verified
+      with `node --check` on all edited harness scripts,
+      `REAL_AUDIO_BROWSER_ARGS='--headless=new' node
+      harness/real_audio_event_smoke.mjs`, and a Playwright
+      `play.html?diag=lite` Start-button boot that reached the ready audio
+      archive contract.
 - [x] Fix human-play startup audio readiness for natural menu music. The
       playable `harness/play.html` path now resumes Web Audio from any page
       pointer gesture, including the overlay Start button, and creates the
