@@ -22,12 +22,12 @@ MERGED to `main` (verified, clean, green build): perf-drawstate (state-skip perf
 
 RECENT: the live skirmish menu/options/start transition now loads all 47 official multiplayer maps into active match state and the harness now requires `renderedObjectCount > 0` plus visible non-black canvas variance. Remaining skirmish work is AI behavior tuning and map-specific script fixes.
 
-PERF next: runtime profiling now separates real-engine frame time from tracked
-browser D3D8 draw/upload/readback/FBO costs on Mac Chrome/Metal. The draw-
-state cache (normalize*/uniform block skip on unchanged key) is merged but
-real-GPU perf measurement on Mac is a pending follow-up. Before broad D3D8
-shim surgery, take a DevTools trace only if the next chosen optimization
-needs async ANGLE/GPU stall detail beyond the live harness counters.
+PERF latest: runtime profiling separates real-engine frame time from tracked
+browser D3D8 draw/upload/readback/FBO costs on Mac Chrome/Metal. The draw-state
+cache and the first conservative adjacent draw-batching pass are measured on
+the Mac; broad D3D8 shim work still needs either a Release/native-wasm-EH
+comparison or a DevTools trace if async ANGLE/GPU stall detail is needed beyond
+the live harness counters.
 
 QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), remaining control-bar player-list/purchase-science behavior after command-button, radar, and Generals Experience open/close proofs, compressed/DXT volume textures.
 
@@ -2284,33 +2284,28 @@ and then start with the PROFILE, not with any individual fix.
         uploads, while engine `lastFrameMs` is 36-43ms — the frame is
         wasm CPU, not GL submission.
       - draw-state marshaling (Fable audit of `wasm_d3d8_shim.cpp:319-565`):
-        the first pass split per-object world/view/projection transforms out
+        the first passes split per-object world/view/projection transforms out
         of the native draw-state cache key while preserving the full hash for
-        GL state/uniform correctness and promoted the EM_JS state-only payload
-        cache to a small LRU. Remaining work: pass HEAPF32 offsets/preallocated
-        Float32Arrays instead of `Array.from` and keep driving this with the
-        M4 `runtime_frame_profile.mjs` comparison. Also
-        `wasm_d3d8_browser_buffer_update` (`wasm_d3d8_shim.cpp:95`) does
-        `HEAPU8.slice()` (full copy + GC garbage) per Lock when
-        `gl.bufferSubData` accepts a zero-copy `subarray` view, and
-        `updateD3D8Buffer` (`bridge.js:2801-2812`) maintains a full
-        CPU-side mirror per buffer (`resource.bytes`, `fill(0)` on every
-        DISCARD lock) that appears to have no non-diagnostic consumer —
-        gate it behind `diag=full` or delete it.
+        GL state/uniform correctness, promoted the EM_JS state-only payload
+        cache to a small LRU, passes world/view/projection as transient HEAPF32
+        views, and uses `HEAPU8.subarray()` for buffer-update uploads. Remaining
+        work: remove/collapse the remaining copied texture-transform, clip,
+        material, and light payloads and audit `updateD3D8Buffer`
+        (`bridge.js`) CPU mirrors (`resource.bytes`, DISCARD `fill(0)`) so
+        non-diagnostic hot paths do not maintain full buffer copies.
       - never-sync audit: remove per-call glGetError/validation from the hot
         path; ensure no Lock/Present path reads back or waits on the GPU;
       - dynamic vertex/index buffer Lock(DISCARD/NOOVERWRITE) → orphaning /
         ring-buffer semantics (particles, UI, water live here);
       - shadow-state dedupe for SetRenderState/SetTextureStageState spam +
         generated-shader program cache keyed on the ShaderClass descriptor;
-      - draw-call collapsing, cheap version only: once dynamic draws share
-        the ring buffer, merge CONSECUTIVE draws whose state hash is
-        unchanged and whose index ranges are adjacent (extend the range,
-        skip the draw — no vertex copying). W3D already sorts render lists
-        by material, so same-state adjacency exists in the stream; UI/HUD/
-        text/particles collapse hardest. Merging adjacent-only preserves
-        blend/z ordering by construction; never reorder across state
-        changes.
+      - draw-call collapsing follow-up: the first `diag=lite` pass now merges
+        conservative adjacent solid/Gouraud `D3DPT_TRIANGLELIST` draws with the
+        same full state hash, buffers/layout, texture bindings, and contiguous
+        index ranges. Remaining work is to make dynamic Lock(DISCARD/
+        NOOVERWRITE) data share larger ring-buffer ranges, then broaden the
+        same ordered-adjacent strategy where topology permits it. Never reorder
+        across state changes.
       - `WEBGL_multi_draw` for same-state draws that are not contiguous in
         the buffer: N (offset,count) ranges in one boundary crossing — cuts
         submission chatter with no merging logic;

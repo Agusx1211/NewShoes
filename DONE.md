@@ -8054,6 +8054,33 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       74.37 ms/frame at 529.8 draws/frame; the optimized measured section
       reported 430.9 derived-cache hits/frame and 98.8 misses/frame. The
       harness captured `runtime-frame-profile.png` during the run.
+- [x] Reduce D3D8 per-draw uniform/copy overhead and add conservative adjacent
+      draw batching. `bridge.js` now separates non-transform uniform/state
+      reuse from the full transform-bearing `stateHash`: world/view/projection
+      matrices still upload per draw, while material/light/render-state/
+      texture-stage uniforms are skipped on a repeated derived key. The hot
+      path also gates the old UI texture census behind `diag=full`, accepts
+      transient typed-array matrix views, flushes pending draws at buffer,
+      texture, clear, FBO, viewport, readback, and frame-RPC boundaries, and
+      batches only ordered-adjacent `diag=lite` solid/Gouraud
+      `D3DPT_TRIANGLELIST` draws with the same full native state hash, same
+      buffers/layout, same texture bindings, and contiguous index ranges.
+      `wasm_d3d8_shim.cpp` now passes world/view/projection as HEAPF32 views
+      instead of `Array.from` copies and uses `HEAPU8.subarray()` for buffer
+      update uploads; cached texture transforms remain copied because the LRU
+      owns them. `runtime_frame_profile.mjs` reports uniform-cache and
+      batching counters plus a `PERF_PROFILE_D3D8_BATCH=0` comparison switch.
+      Verified with `node --check WebAssembly/harness/bridge.js`, `node
+      --check WebAssembly/harness/runtime_frame_profile.mjs`, `git diff
+      --check`, `npm --prefix WebAssembly run build:port`, and Mac M4
+      Chrome/Metal profile runs (`ANGLE Metal Renderer: Apple M4`,
+      `realEngineFrameSummary`, 10 warmup + 60 measured frames, batch 10).
+      Final batched run: 72.30 ms/frame, 485.0 WebGL drawElements/frame,
+      44.8 merged D3D draws/frame, 383.9 uniform-cache hits/frame, screenshot
+      verified visible terrain/water/wakes/units/logo. Same code with
+      `PERF_PROFILE_D3D8_BATCH=0`: 73.51 ms/frame and 533.9
+      drawElements/frame, showing the first adjacent-only pass saves about
+      49 WebGL draw calls/frame and ~1.2 ms/frame on this shell-map slice.
 - [x] Cache hot D3D8 WebGL draw-path bindings and temporary index buffers.
       `bridge.js` now tracks the currently bound D3D8 draw program,
       ARRAY_BUFFER, and ELEMENT_ARRAY_BUFFER to skip redundant

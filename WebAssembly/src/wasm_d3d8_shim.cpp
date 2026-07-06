@@ -92,7 +92,7 @@ EM_JS(void, wasm_d3d8_browser_buffer_update, (
 		byteSize: byte_size >>> 0,
 		usage: usage >>> 0,
 		lockFlags: lock_flags >>> 0,
-		bytes: Module.HEAPU8.slice(data_ptr, data_ptr + byte_size),
+		bytes: Module.HEAPU8.subarray(data_ptr, data_ptr + byte_size),
 	});
 });
 EM_JS(void, wasm_d3d8_browser_buffer_release, (
@@ -356,6 +356,13 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 		const offset = ptr >>> 2;
 		return Array.from(Module.HEAPF32.subarray(offset, offset + 16));
 	};
+	const heapMatrixView = (ptr) => {
+		if (!ptr || !Module.HEAPF32) {
+			return null;
+		}
+		const offset = ptr >>> 2;
+		return Module.HEAPF32.subarray(offset, offset + 16);
+	};
 	const copyRenderState = (ptr) => {
 		if (!ptr || !Module.HEAPU32) {
 			return null;
@@ -551,9 +558,9 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 		Module.__cncPortD3D8LastDrawStatePayload = cached_state;
 	}
 	const transforms = {
-		world: copyMatrix(world_ptr),
-		view: copyMatrix(view_ptr),
-		projection: copyMatrix(projection_ptr),
+		world: heapMatrixView(world_ptr),
+		view: heapMatrixView(view_ptr),
+		projection: heapMatrixView(projection_ptr),
 		texture0: cached_state.texture0Transform,
 		texture1: cached_state.texture1Transform,
 	};

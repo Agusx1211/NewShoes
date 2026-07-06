@@ -272,8 +272,17 @@ const d3d8PerfStats = {
   drawElements: 0,
   drawIndices: 0,
   drawMs: 0,
+  drawBatchCandidates: 0,
+  drawBatchQueued: 0,
+  drawBatchMerged: 0,
+  drawBatchFlushes: 0,
+  drawBatchSavedDrawElements: 0,
+  drawBatchMergedIndices: 0,
+  drawBatchMaxRunLength: 0,
   drawDerivedCacheHits: 0,
   drawDerivedCacheMisses: 0,
+  drawUniformCacheHits: 0,
+  drawUniformCacheMisses: 0,
   clears: 0,
   clearMs: 0,
   textureUploads: 0,
@@ -309,8 +318,17 @@ function d3d8PerfSummary() {
     drawElements: d3d8PerfStats.drawElements,
     drawIndices: d3d8PerfStats.drawIndices,
     drawMs: roundedPerfMs(d3d8PerfStats.drawMs),
+    drawBatchCandidates: d3d8PerfStats.drawBatchCandidates,
+    drawBatchQueued: d3d8PerfStats.drawBatchQueued,
+    drawBatchMerged: d3d8PerfStats.drawBatchMerged,
+    drawBatchFlushes: d3d8PerfStats.drawBatchFlushes,
+    drawBatchSavedDrawElements: d3d8PerfStats.drawBatchSavedDrawElements,
+    drawBatchMergedIndices: d3d8PerfStats.drawBatchMergedIndices,
+    drawBatchMaxRunLength: d3d8PerfStats.drawBatchMaxRunLength,
     drawDerivedCacheHits: d3d8PerfStats.drawDerivedCacheHits,
     drawDerivedCacheMisses: d3d8PerfStats.drawDerivedCacheMisses,
+    drawUniformCacheHits: d3d8PerfStats.drawUniformCacheHits,
+    drawUniformCacheMisses: d3d8PerfStats.drawUniformCacheMisses,
     clears: d3d8PerfStats.clears,
     clearMs: roundedPerfMs(d3d8PerfStats.clearMs),
     textureUploads: d3d8PerfStats.textureUploads,
@@ -384,6 +402,7 @@ const harnessState = {
     drawingBufferWidth: canvas.width,
     drawingBufferHeight: canvas.height,
     lastD3D8StateHash: 0,
+    lastD3D8UniformKey: null,
     lastD3D8AppliedRenderState: null,
   },
   originalEngineLinked: false,
@@ -419,6 +438,15 @@ const harnessState = {
   mountedArchives: [],
   logs: [],
 };
+
+function invalidateD3D8DrawStateCache() {
+  flushD3D8PendingDrawBatch("stateInvalidated");
+  harnessState.graphics.lastD3D8StateHash = 0;
+  harnessState.graphics.lastD3D8UniformKey = null;
+  harnessState.graphics.lastD3D8AppliedRenderState = null;
+  d3d8LastDrawKey = null;
+  d3d8CachedDerived = null;
+}
 
 const d3d8WarnedOnce = new Set();
 
@@ -2379,6 +2407,7 @@ function refreshCanvasState(displaySize = getCanvasDisplaySize()) {
 }
 
 function syncCanvasSize() {
+  flushD3D8PendingDrawBatch("syncCanvasSize");
   const displaySize = getCanvasDisplaySize();
   if (canvas.width !== displaySize.width || canvas.height !== displaySize.height) {
     canvas.width = displaySize.width;
@@ -2577,6 +2606,7 @@ function applyD3D8Viewport(reason = "draw") {
 
 function setD3D8Viewport(payload = {}) {
   d3d8ViewportStats.sets += 1;
+  invalidateD3D8DrawStateCache();
   d3d8ViewportState = {
     x: Number(payload.x ?? 0) >>> 0,
     y: Number(payload.y ?? 0) >>> 0,
@@ -2736,6 +2766,7 @@ function createD3D8Buffer(payload = {}) {
   if (!gl) {
     return 0;
   }
+  flushD3D8PendingDrawBatch("bufferCreate");
   const kind = Number(payload.kind ?? 0) >>> 0;
   const id = Number(payload.id ?? 0) >>> 0;
   const byteSize = Number(payload.byteSize ?? 0) >>> 0;
@@ -2798,6 +2829,7 @@ function updateD3D8Buffer(payload = {}) {
   if (!gl || !(payload.bytes instanceof Uint8Array)) {
     return 0;
   }
+  flushD3D8PendingDrawBatch("bufferUpdate");
   const kind = Number(payload.kind ?? 0) >>> 0;
   const id = Number(payload.id ?? 0) >>> 0;
   const bytes = payload.bytes;
@@ -2867,6 +2899,7 @@ function releaseD3D8Buffer(payload = {}) {
   if (!gl) {
     return 0;
   }
+  flushD3D8PendingDrawBatch("bufferRelease");
   const kind = Number(payload.kind ?? 0) >>> 0;
   const id = Number(payload.id ?? 0) >>> 0;
   const key = d3d8BufferKey(kind, id);
@@ -4528,6 +4561,7 @@ function withPreservedD3D8TextureBinding(target, callback) {
   if (!gl) {
     return null;
   }
+  flushD3D8PendingDrawBatch("preserveTextureBinding");
   const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
   gl.activeTexture(gl.TEXTURE0);
   const binding = target === gl.TEXTURE_3D ? gl.TEXTURE_BINDING_3D : gl.TEXTURE_BINDING_2D;
@@ -4548,6 +4582,7 @@ function withPreservedD3D8TextureUnit(callback) {
 }
 
 function timedReadPixels(x, y, width, height, format, type, pixels) {
+  flushD3D8PendingDrawBatch("readPixels");
   const startedAt = perfNow();
   gl.readPixels(x, y, width, height, format, type, pixels);
   d3d8PerfStats.readPixels += 1;
@@ -4566,6 +4601,7 @@ function sampleD3D8TexturePixel(resource, x, y) {
   if (!gl || !resource?.texture || (resource.target ?? gl.TEXTURE_2D) !== gl.TEXTURE_2D) {
     return null;
   }
+  flushD3D8PendingDrawBatch("sampleTexturePixel");
   const framebuffer = gl.createFramebuffer();
   const previousFramebuffer = gl.getParameter(gl.FRAMEBUFFER_BINDING);
   gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
@@ -4789,10 +4825,7 @@ function ensureD3D8DepthTextureStorage(resource) {
 
 function bindD3D8Framebuffer(payload = {}) {
   // Reset state hash: framebuffer/viewport change outside the draw path.
-  harnessState.graphics.lastD3D8StateHash = 0;
-  harnessState.graphics.lastD3D8AppliedRenderState = null;
-  d3d8LastDrawKey = null;
-  d3d8CachedDerived = null;
+  invalidateD3D8DrawStateCache();
   if (!gl) {
     return 0;
   }
@@ -5077,6 +5110,7 @@ function updateD3D8Texture(payload = {}) {
   if (!gl || !(payload.bytes instanceof Uint8Array)) {
     return 0;
   }
+  flushD3D8PendingDrawBatch("textureUpdate");
   const id = Number(payload.id ?? 0) >>> 0;
   const level = Number(payload.level ?? 0) >>> 0;
   const x = Number(payload.x ?? 0) >>> 0;
@@ -5223,6 +5257,7 @@ function updateD3D8Texture(payload = {}) {
   d3d8PerfStats.textureUploadBytes += Number(uploadBytes.byteLength ?? 0) >>> 0;
   d3d8PerfStats.textureUploadPixels += Math.max(0, width * height);
   d3d8PerfStats.textureUploadMs += perfNow() - uploadStartedAt;
+  invalidateD3D8DrawStateCache();
 
   resource.uploads += 1;
   d3d8TextureStats.updates += 1;
@@ -5286,6 +5321,7 @@ function updateD3D8VolumeTexture(payload = {}) {
   if (!gl || !(payload.bytes instanceof Uint8Array)) {
     return 0;
   }
+  flushD3D8PendingDrawBatch("volumeTextureUpdate");
   const id = Number(payload.id ?? 0) >>> 0;
   const level = Number(payload.level ?? 0) >>> 0;
   const x = Number(payload.x ?? 0) >>> 0;
@@ -5400,6 +5436,7 @@ function updateD3D8VolumeTexture(payload = {}) {
   d3d8PerfStats.textureUploadBytes += Number(uploadBytes.byteLength ?? 0) >>> 0;
   d3d8PerfStats.textureUploadPixels += Math.max(0, width * height * depth);
   d3d8PerfStats.textureUploadMs += perfNow() - uploadStartedAt;
+  invalidateD3D8DrawStateCache();
 
   resource.uploads += 1;
   d3d8TextureStats.updates += 1;
@@ -5443,6 +5480,7 @@ function releaseD3D8Texture(payload = {}) {
   if (!gl) {
     return 0;
   }
+  flushD3D8PendingDrawBatch("textureRelease");
   const id = Number(payload.id ?? 0) >>> 0;
   const resource = d3d8Textures.get(id);
   if (!resource) {
@@ -5477,6 +5515,7 @@ function bindD3D8Texture(payload = {}) {
   if (!gl) {
     return 0;
   }
+  flushD3D8PendingDrawBatch("textureBind");
   const stage = Number(payload.stage ?? 0) >>> 0;
   const id = Number(payload.id ?? 0) >>> 0;
   const maxTextureUnits = gl.getParameter(gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS);
@@ -5644,10 +5683,7 @@ function floatVectorApproximatelyEqual(left, right, tolerance = 0.00001) {
 
 function paintCanvasRgba(rgba) {
   // Reset state hash: clear changes GL state outside the draw path.
-  harnessState.graphics.lastD3D8StateHash = 0;
-  harnessState.graphics.lastD3D8AppliedRenderState = null;
-  d3d8LastDrawKey = null;
-  d3d8CachedDerived = null;
+  invalidateD3D8DrawStateCache();
   syncCanvasSize();
   if (gl) {
     gl.clearColor(rgba[0] / 255, rgba[1] / 255, rgba[2] / 255, rgba[3] / 255);
@@ -5696,10 +5732,7 @@ function clearCanvas(payload = {}) {
 
 function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
   // Reset state hash: clear changes GL state outside the draw path.
-  harnessState.graphics.lastD3D8StateHash = 0;
-  harnessState.graphics.lastD3D8AppliedRenderState = null;
-  d3d8LastDrawKey = null;
-  d3d8CachedDerived = null;
+  invalidateD3D8DrawStateCache();
   const clearFlags = flags >>> 0;
   const rgba = [
     clampColorByte(red, 0),
@@ -7229,13 +7262,16 @@ function pixelLooksMessageBoxBlueTint(pixel) {
 }
 
 function normalizeD3DMatrix(matrix) {
-  if (!Array.isArray(matrix) || matrix.length !== 16) {
+  const isSequence = Array.isArray(matrix) || ArrayBuffer.isView(matrix);
+  if (!isSequence || matrix.length !== 16) {
     return null;
   }
-  if (!matrix.every(Number.isFinite)) {
-    return null;
+  for (let index = 0; index < 16; ++index) {
+    if (!Number.isFinite(matrix[index])) {
+      return null;
+    }
   }
-  return new Float32Array(matrix);
+  return matrix instanceof Float32Array ? matrix : new Float32Array(matrix);
 }
 
 function isIdentityD3DMatrix(matrix) {
@@ -8066,17 +8102,26 @@ function applyD3D8RenderState(renderState, options = {}) {
 // the default: existing gates depend on "full".
 let d3d8DiagLevel = "full";
 let d3d8SceneDrawHistoryLimit = 256;
+let d3d8AdjacentDrawBatchingEnabled = true;
 try {
-  const _diag = new URLSearchParams(globalThis.location?.search || "").get("diag");
+  const _params = new URLSearchParams(globalThis.location?.search || "");
+  const _diag = _params.get("diag");
   if (_diag === "lite" || _diag === "full") d3d8DiagLevel = _diag;
-  const _historyLimit = Number(new URLSearchParams(globalThis.location?.search || "").get("drawHistoryLimit"));
+  const _historyLimit = Number(_params.get("drawHistoryLimit"));
   if (Number.isFinite(_historyLimit) && _historyLimit > 0) {
     d3d8SceneDrawHistoryLimit = Math.min(8192, Math.max(1, Math.trunc(_historyLimit)));
+  }
+  const _batchAdjacent = _params.get("d3d8Batch");
+  if (_batchAdjacent === "0" || _batchAdjacent === "false" || _batchAdjacent === "off") {
+    d3d8AdjacentDrawBatchingEnabled = false;
   }
 } catch (_e) { /* no location (node context) */ }
 if (typeof globalThis !== "undefined") {
   globalThis.__cncSetDiagLevel = (lvl) => {
-    if (lvl === "lite" || lvl === "full") d3d8DiagLevel = lvl;
+    if (lvl === "lite" || lvl === "full") {
+      flushD3D8PendingDrawBatch("setDiagLevel");
+      d3d8DiagLevel = lvl;
+    }
     return d3d8DiagLevel;
   };
   globalThis.__cncSetD3D8SceneDrawHistoryLimit = (limit) => {
@@ -8086,7 +8131,149 @@ if (typeof globalThis !== "undefined") {
     }
     return d3d8SceneDrawHistoryLimit;
   };
-  globalThis.__cncD3D8PerfSummary = () => d3d8PerfSummary();
+  globalThis.__cncD3D8PerfSummary = () => {
+    flushD3D8PendingDrawBatch("perfSummary");
+    return d3d8PerfSummary();
+  };
+  globalThis.__cncSetD3D8AdjacentBatching = (enabled) => {
+    flushD3D8PendingDrawBatch("setAdjacentBatching");
+    d3d8AdjacentDrawBatchingEnabled = !(enabled === false || enabled === 0 || enabled === "0");
+    return d3d8AdjacentDrawBatchingEnabled;
+  };
+  globalThis.__cncGetD3D8AdjacentBatching = () => d3d8AdjacentDrawBatchingEnabled;
+  globalThis.__cncFlushD3D8PendingDrawBatch = () => flushD3D8PendingDrawBatch("manual");
+}
+
+let d3d8PendingDrawBatch = null;
+
+function d3d8AdjacentDrawBatchingActive() {
+  return Boolean(gl && d3d8AdjacentDrawBatchingEnabled && d3d8DiagLevel !== "full");
+}
+
+function d3d8AdjacentDrawBatchInfo({
+  stateHash,
+  derivedStateHash,
+  primitiveType,
+  baseGlPrimitive,
+  vertexBufferId,
+  indexBufferId,
+  vertexByteOffset,
+  vertexStride,
+  vertexShaderFvf,
+  vertexByteSize,
+  indexByteSize,
+  indexSize,
+  indexByteOffset,
+  indexCount,
+  usePersistentBuffers,
+  renderState,
+}) {
+  if (!d3d8AdjacentDrawBatchingActive()) {
+    return null;
+  }
+  const rawRenderState = renderState ?? {};
+  const fillMode = Number(rawRenderState.fillMode ?? D3DFILL_SOLID) >>> 0;
+  const shadeMode = Number(rawRenderState.shadeMode ?? D3DSHADE_GOURAUD) >>> 0;
+  if (fillMode !== D3DFILL_SOLID || shadeMode !== D3DSHADE_GOURAUD) {
+    return null;
+  }
+  if ((Number(primitiveType ?? 0) >>> 0) !== D3DPT_TRIANGLELIST || baseGlPrimitive !== gl.TRIANGLES) {
+    return null;
+  }
+  if ((Number(stateHash ?? 0) >>> 0) === 0 || (Number(derivedStateHash ?? 0) >>> 0) === 0) {
+    return null;
+  }
+  if (!usePersistentBuffers ||
+      vertexBufferId === 0 || indexBufferId === 0 || vertexStride < 12 ||
+      indexCount === 0 || (indexCount % 3) !== 0 ||
+      !(indexSize === 2 || indexSize === 4) ||
+      vertexByteSize === 0 || indexByteSize === 0) {
+    return null;
+  }
+  const texture0Id = Number(d3d8BoundTextures.get(0) ?? 0) >>> 0;
+  const texture1Id = Number(d3d8BoundTextures.get(1) ?? 0) >>> 0;
+  const indexEndByteOffset = indexByteOffset + indexCount * indexSize;
+  if (!Number.isSafeInteger(indexEndByteOffset)) {
+    return null;
+  }
+  const key = [
+    Number(stateHash) >>> 0,
+    Number(derivedStateHash) >>> 0,
+    Number(primitiveType) >>> 0,
+    vertexBufferId,
+    indexBufferId,
+    vertexByteOffset,
+    vertexStride,
+    vertexShaderFvf,
+    indexSize,
+    texture0Id,
+    texture1Id,
+  ].join(",");
+  return {
+    key,
+    glPrimitive: baseGlPrimitive,
+    indexType: indexSize === 4 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
+    indexSize,
+    indexByteOffset,
+    indexCount,
+    nextIndexByteOffset: indexEndByteOffset,
+  };
+}
+
+function tryMergeD3D8PendingDrawBatch(batchInfo) {
+  const pending = d3d8PendingDrawBatch;
+  if (!pending || !batchInfo || pending.key !== batchInfo.key ||
+      pending.nextIndexByteOffset !== batchInfo.indexByteOffset) {
+    return false;
+  }
+  pending.indexCount += batchInfo.indexCount;
+  pending.nextIndexByteOffset = batchInfo.nextIndexByteOffset;
+  pending.logicalDraws += 1;
+  d3d8PerfStats.drawBatchCandidates += 1;
+  d3d8PerfStats.drawBatchMerged += 1;
+  d3d8PerfStats.drawBatchSavedDrawElements += 1;
+  d3d8PerfStats.drawBatchMergedIndices += batchInfo.indexCount;
+  d3d8PerfStats.drawBatchMaxRunLength = Math.max(
+    d3d8PerfStats.drawBatchMaxRunLength,
+    pending.logicalDraws,
+  );
+  return true;
+}
+
+function queueD3D8PendingDrawBatch(batchInfo) {
+  if (!batchInfo) {
+    return false;
+  }
+  d3d8PendingDrawBatch = {
+    ...batchInfo,
+    logicalDraws: 1,
+  };
+  d3d8PerfStats.drawBatchCandidates += 1;
+  d3d8PerfStats.drawBatchQueued += 1;
+  d3d8PerfStats.drawBatchMaxRunLength = Math.max(d3d8PerfStats.drawBatchMaxRunLength, 1);
+  return true;
+}
+
+function flushD3D8PendingDrawBatch(_reason = "flush") {
+  const pending = d3d8PendingDrawBatch;
+  if (!pending || !gl) {
+    d3d8PendingDrawBatch = null;
+    return 0;
+  }
+  d3d8PendingDrawBatch = null;
+  const drawStartedAt = perfNow();
+  gl.drawElements(
+    pending.glPrimitive,
+    pending.indexCount,
+    pending.indexType,
+    pending.indexByteOffset,
+  );
+  d3d8PerfStats.draws += 1;
+  d3d8PerfStats.drawElements += 1;
+  d3d8PerfStats.drawIndices += Number(pending.indexCount ?? 0) >>> 0;
+  d3d8PerfStats.drawMs += perfNow() - drawStartedAt;
+  d3d8PerfStats.drawBatchFlushes += 1;
+  return 1;
 }
 
 function paintD3D8DrawIndexed(payload = {}) {
@@ -8102,10 +8289,37 @@ function paintD3D8DrawIndexed(payload = {}) {
   const vertexCount = Number(payload.vertexCount ?? 0) >>> 0;
   const indexSize = Number(payload.indexSize ?? 0) >>> 0;
   const indexCount = Number(payload.indexCount ?? 0) >>> 0;
-  const baseGlPrimitive = d3dPrimitiveToGl(payload.primitiveType);
+  const primitiveType = Number(payload.primitiveType ?? 0) >>> 0;
+  const baseGlPrimitive = d3dPrimitiveToGl(primitiveType);
   const vertexResource = d3d8Buffers.get(d3d8BufferKey(1, vertexBufferId));
   const indexResource = d3d8Buffers.get(d3d8BufferKey(2, indexBufferId));
   const usePersistentBuffers = Boolean(vertexResource && indexResource);
+  const stateHash = Number(payload.stateHash ?? 0) >>> 0;
+  const derivedStateHash = Number(payload.derivedStateHash ?? payload.stateHash ?? 0) >>> 0;
+  const earlyBatchInfo = d3d8AdjacentDrawBatchInfo({
+    stateHash,
+    derivedStateHash,
+    primitiveType,
+    baseGlPrimitive,
+    vertexBufferId,
+    indexBufferId,
+    vertexByteOffset,
+    vertexStride,
+    vertexShaderFvf,
+    vertexByteSize,
+    indexByteSize,
+    indexSize,
+    indexByteOffset,
+    indexCount,
+    usePersistentBuffers,
+    renderState: payload.renderState,
+  });
+  if (tryMergeD3D8PendingDrawBatch(earlyBatchInfo)) {
+    harnessState.graphics.d3d8DrawIndexedSequence = drawSequence;
+    harnessState.graphics.d3d8Perf = d3d8PerfSummary();
+    return 1;
+  }
+  flushD3D8PendingDrawBatch("drawBreak");
   const world = normalizeD3DMatrix(payload.transforms?.world);
   const view = normalizeD3DMatrix(payload.transforms?.view);
   const projection = normalizeD3DMatrix(payload.transforms?.projection);
@@ -8124,13 +8338,12 @@ function paintD3D8DrawIndexed(payload = {}) {
   // covered by the native state hash. The derived hash excludes per-draw
   // world/view/projection transforms but still includes texture transforms and
   // all render/material/light state used by the derived JS objects below.
-  const derivedStateHash = Number(payload.derivedStateHash ?? payload.stateHash ?? 0) >>> 0;
   const drawCacheKey = `${derivedStateHash},`
     + `${Number(d3d8BoundTextures.get(0) ?? 0) >>> 0},`
     + `${Number(d3d8BoundTextures.get(1) ?? 0) >>> 0},`
     + `${vertexShaderFvf},`
     + `${vertexStride},`
-    + `${Number(payload.primitiveType ?? 0) >>> 0}`;
+    + `${primitiveType}`;
   const drawCacheHit = drawCacheKey === d3d8LastDrawKey && d3d8CachedDerived !== null;
   if (drawCacheHit) {
     d3d8PerfStats.drawDerivedCacheHits += 1;
@@ -8245,13 +8458,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     };
   }
   warnD3D8CombinerDiagnostics(renderState, appliedTexture0Combiner, appliedStage1Combiner, drawSequence);
-  // ---------------------------------------------------------------------------
-  // ADD-ONLY Stage-1 diagnostic: capture the render state used for the command-bar
-  // background atlas draw (1024x256 SN/SA/SUCommandBar.tga) vs a small textured UI
-  // draw, so the BLACK-background root cause can be pinpointed. Read-only; gates
-  // nothing. Also keeps a census of every distinct texture (w,h) seen across
-  // draws so we can tell whether the command-bar atlas is drawn at all.
-  if (texture0Resource) {
+  if (d3d8DiagLevel === "full" && texture0Resource) {
     const caps = (harnessState.graphics.uiDrawCaptures ??= { atlas: [], small: [], census: {} });
     const dimKey = `${texture0Resource.width}x${texture0Resource.height}`;
     const census = caps.census;
@@ -8374,8 +8581,15 @@ function paintD3D8DrawIndexed(payload = {}) {
       vertexStride >= 12 && indexCount > 0 && (indexSize === 2 || indexSize === 4)) {
     const bridgeProgram = ensureD3D8DrawProgram();
     bindD3D8Program(bridgeProgram.program);
-    const stateHash = Number(payload.stateHash ?? 0) >>> 0;
-    const stateUnchanged = stateHash === (harnessState.graphics.lastD3D8StateHash ?? 0);
+    const uniformKey = drawCacheKey;
+    const uniformUnchanged =
+      uniformKey === harnessState.graphics.lastD3D8UniformKey &&
+      harnessState.graphics.lastD3D8AppliedRenderState != null;
+    if (uniformUnchanged) {
+      d3d8PerfStats.drawUniformCacheHits += 1;
+    } else {
+      d3d8PerfStats.drawUniformCacheMisses += 1;
+    }
     let fillModeDraw, shadeModeDraw;
     // Per-draw geometry setup: ALWAYS executed (not skippable — geometry changes
     // every draw even when render state is identical).
@@ -8467,10 +8681,10 @@ function paintD3D8DrawIndexed(payload = {}) {
         texture1Resource,
       );
     }
-    // Apply hash-covered GL state and shader uniforms only when changed. The
-    // native hash covers transforms, material, lights, render states,
-    // texture-stage states, and clip planes, but not bound texture identity.
-    if (!stateUnchanged || harnessState.graphics.lastD3D8AppliedRenderState == null) {
+    // Apply non-transform GL state and shader uniforms only when changed. The
+    // uniform key excludes world/view/projection so moving objects still update
+    // matrices below without resending material/light/render-state uniforms.
+    if (!uniformUnchanged) {
       appliedRenderState = applyD3D8RenderState(renderState, {
         invertCullWinding: false,
       });
@@ -8515,14 +8729,6 @@ function paintD3D8DrawIndexed(payload = {}) {
       }
       if (bridgeProgram.useFlatShade) {
         gl.uniform1i(bridgeProgram.useFlatShade, shadeModeDraw.usesFlatShader ? 1 : 0);
-      }
-      if (useTransforms) {
-        // Direct3D stores row-vector matrices row-major; WebGL interprets this
-        // memory as column-major, giving the transpose needed for GLSL
-        // column-vector multiplication.
-        gl.uniformMatrix4fv(bridgeProgram.world, false, world);
-        gl.uniformMatrix4fv(bridgeProgram.view, false, view);
-        gl.uniformMatrix4fv(bridgeProgram.projection, false, projection);
       }
     if (bridgeProgram.lightingEnabled) {
       gl.uniform1i(bridgeProgram.lightingEnabled, appliedRenderState.lighting.shaderEnabled ? 1 : 0);
@@ -8687,10 +8893,20 @@ function paintD3D8DrawIndexed(payload = {}) {
       gl.uniform1f(bridgeProgram.fogEnd, appliedRenderState.fog.end);
     }
       harnessState.graphics.lastD3D8AppliedRenderState = appliedRenderState;
-      harnessState.graphics.lastD3D8StateHash = stateHash;
+      harnessState.graphics.lastD3D8UniformKey = uniformKey;
     } else {
       appliedRenderState = harnessState.graphics.lastD3D8AppliedRenderState;
     }
+    if (useTransforms) {
+      // Direct3D stores row-vector matrices row-major; WebGL interprets this
+      // memory as column-major, giving the transpose needed for GLSL
+      // column-vector multiplication. These are intentionally per-draw: the
+      // uniform cache above excludes object transforms.
+      gl.uniformMatrix4fv(bridgeProgram.world, false, world);
+      gl.uniformMatrix4fv(bridgeProgram.view, false, view);
+      gl.uniformMatrix4fv(bridgeProgram.projection, false, projection);
+    }
+    harnessState.graphics.lastD3D8StateHash = stateHash;
     // Point-sprite uniforms: ALWAYS reissued (not cached). The viewport is NOT
     // in stateHash, so pointViewportHeight could go stale on a cache hit if the
     // viewport changed with matching state. Point-sprite draws are rare
@@ -8725,11 +8941,8 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.pointViewportHeight !== null) {
       gl.uniform1f(bridgeProgram.pointViewportHeight, appliedPointSprite.viewportHeight);
     }
-    // Texture-availability uniforms: skip on draw-cache hit (GL retains them).
-    // Safe because stateHash covers texture transforms (wasm_d3d8_shim.cpp
-    // ~3734-3738) and D3DTSS_TEXTURETRANSFORMFLAGS, so the key transitively
-    // guards these uniforms.
-    if (!drawCacheHit) {
+    // Texture-availability uniforms are part of the non-transform uniform key.
+    if (!uniformUnchanged) {
     if (bridgeProgram.texture0CoordinateMode) {
       gl.uniform1i(bridgeProgram.texture0CoordinateMode,
         canSampleTexture0 ? texture0Coordinates.mode : D3DTSS_TCI_PASSTHRU);
@@ -8836,17 +9049,29 @@ function paintD3D8DrawIndexed(payload = {}) {
       appliedFillMode = d3d8FillModeProbeInfo(fillModeDraw);
       appliedShadeMode = d3d8ShadeModeProbeInfo(shadeModeDraw);
       if (fillModeDraw.supported && shadeModeDraw.supported) {
-        const drawStartedAt = perfNow();
-        gl.drawElements(
-          shadeModeDraw.glPrimitive,
-          shadeModeDraw.drawIndexCount,
-          indexSize === 4 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
-          shadeModeDraw.drawIndexByteOffset,
+        const canQueueAdjacentBatch = Boolean(
+          earlyBatchInfo &&
+          temporaryIndices == null &&
+          shadeModeDraw.usesFirstVertexConvention !== true &&
+          shadeModeDraw.glPrimitive === earlyBatchInfo.glPrimitive &&
+          shadeModeDraw.drawIndexCount === earlyBatchInfo.indexCount &&
+          shadeModeDraw.drawIndexByteOffset === earlyBatchInfo.indexByteOffset,
         );
-        d3d8PerfStats.draws += 1;
-        d3d8PerfStats.drawElements += 1;
-        d3d8PerfStats.drawIndices += Number(shadeModeDraw.drawIndexCount ?? 0) >>> 0;
-        d3d8PerfStats.drawMs += perfNow() - drawStartedAt;
+        if (canQueueAdjacentBatch) {
+          queueD3D8PendingDrawBatch(earlyBatchInfo);
+        } else {
+          const drawStartedAt = perfNow();
+          gl.drawElements(
+            shadeModeDraw.glPrimitive,
+            shadeModeDraw.drawIndexCount,
+            indexSize === 4 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
+            shadeModeDraw.drawIndexByteOffset,
+          );
+          d3d8PerfStats.draws += 1;
+          d3d8PerfStats.drawElements += 1;
+          d3d8PerfStats.drawIndices += Number(shadeModeDraw.drawIndexCount ?? 0) >>> 0;
+          d3d8PerfStats.drawMs += perfNow() - drawStartedAt;
+        }
       }
     } finally {
       if (restoreProvokingVertex) {
@@ -14466,6 +14691,7 @@ async function rpc(command, payload = {}) {
           abortMessage = error?.message ?? String(error);
           abortStack = error?.stack ?? null;
         }
+        flushD3D8PendingDrawBatch("realEngineFrame");
         let lastUpdateTarget = null;
         let lastGameLogicStep = null;
         try {
@@ -14525,6 +14751,7 @@ async function rpc(command, payload = {}) {
             }
           } catch {}
         }
+        flushD3D8PendingDrawBatch("realEngineFrameSummary");
         let lastUpdateTarget = null;
         let lastGameLogicStep = null;
         try {
@@ -14579,6 +14806,7 @@ async function rpc(command, payload = {}) {
           abortMessage = error?.message ?? String(error);
           abortStack = error?.stack ?? null;
         }
+        flushD3D8PendingDrawBatch("realEngineFrameTick");
         return {
           ok: Boolean(frame?.initReturned === true
             && frame?.framesCompleted > 0

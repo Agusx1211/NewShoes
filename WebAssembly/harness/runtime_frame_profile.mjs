@@ -231,8 +231,17 @@ const browserPerfFields = [
   "drawElements",
   "drawIndices",
   "drawMs",
+  "drawBatchCandidates",
+  "drawBatchQueued",
+  "drawBatchMerged",
+  "drawBatchFlushes",
+  "drawBatchSavedDrawElements",
+  "drawBatchMergedIndices",
+  "drawBatchMaxRunLength",
   "drawDerivedCacheHits",
   "drawDerivedCacheMisses",
+  "drawUniformCacheHits",
+  "drawUniformCacheMisses",
   "clears",
   "clearMs",
   "textureUploads",
@@ -282,8 +291,15 @@ function browserPerfDelta(before, after, framesAdvanced) {
       ? {
           draws: Number(delta.draws ?? 0) / framesAdvanced,
           drawMs: Number(delta.drawMs ?? 0) / framesAdvanced,
+          drawBatchCandidates: Number(delta.drawBatchCandidates ?? 0) / framesAdvanced,
+          drawBatchMerged: Number(delta.drawBatchMerged ?? 0) / framesAdvanced,
+          drawBatchFlushes: Number(delta.drawBatchFlushes ?? 0) / framesAdvanced,
+          drawBatchSavedDrawElements: Number(delta.drawBatchSavedDrawElements ?? 0) / framesAdvanced,
+          drawBatchMergedIndices: Number(delta.drawBatchMergedIndices ?? 0) / framesAdvanced,
           drawDerivedCacheHits: Number(delta.drawDerivedCacheHits ?? 0) / framesAdvanced,
           drawDerivedCacheMisses: Number(delta.drawDerivedCacheMisses ?? 0) / framesAdvanced,
+          drawUniformCacheHits: Number(delta.drawUniformCacheHits ?? 0) / framesAdvanced,
+          drawUniformCacheMisses: Number(delta.drawUniformCacheMisses ?? 0) / framesAdvanced,
           clearMs: Number(delta.clearMs ?? 0) / framesAdvanced,
           textureUploadMs: Number(delta.textureUploadMs ?? 0) / framesAdvanced,
           textureConvertMs: Number(delta.textureConvertMs ?? 0) / framesAdvanced,
@@ -437,6 +453,7 @@ const shellMap = process.env.PERF_PROFILE_SHELLMAP !== "0";
 const viewportWidth = parsePositiveInt("PERF_PROFILE_WIDTH", 1280);
 const viewportHeight = parsePositiveInt("PERF_PROFILE_HEIGHT", 720);
 const includeSamples = process.env.PERF_PROFILE_SAMPLES === "1";
+const d3d8AdjacentBatching = process.env.PERF_PROFILE_D3D8_BATCH !== "0";
 
 const server = await startStaticServer({ root: wasmRoot });
 let browser;
@@ -471,6 +488,8 @@ try {
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
   const renderer = await queryRenderer(page);
   await page.evaluate((level) => window.__cncSetDiagLevel?.(level), diagLevel);
+  const d3d8AdjacentBatchingActive = await page.evaluate((enabled) =>
+    window.__cncSetD3D8AdjacentBatching?.(enabled) ?? null, d3d8AdjacentBatching);
 
   const mount = await rpc(page, "mountArchives", {
     path: "/assets/runtime-frame-profile",
@@ -516,6 +535,7 @@ try {
     m4Metal: renderer.includes("Apple M4") && renderer.includes("Metal"),
     swiftShader: /SwiftShader/i.test(renderer),
     diagLevel,
+    d3d8AdjacentBatching: d3d8AdjacentBatchingActive,
     measuredFrameCommand,
     shellMap,
     viewport: { width: viewportWidth, height: viewportHeight },
