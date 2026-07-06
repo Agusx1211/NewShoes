@@ -107,6 +107,7 @@ let d3d8LastTransformUniformView = null;
 let d3d8LastTransformUniformProjection = null;
 let d3d8LastPointSpriteUniformInfo = null;
 let d3d8LastVertexAttribKey = null;
+let d3d8LastFixedLightUniformKey = null;
 // Map<`${colorTextureId}:${depthTextureId}`, {fbo, depthRenderbuffer, width, height}>
 const d3d8Framebuffers = new Map();
 let d3d8CurrentFramebuffer = null;
@@ -397,6 +398,8 @@ const d3d8PerfStats = {
   drawTextureUniformCacheMisses: 0,
   drawVertexAttribCacheHits: 0,
   drawVertexAttribCacheMisses: 0,
+  drawFixedLightUniformCacheHits: 0,
+  drawFixedLightUniformCacheMisses: 0,
   sortedDrawProfiledCalls: 0,
   sortedDrawProfiledMs: 0,
   sortedDrawPreBatchMs: 0,
@@ -492,6 +495,8 @@ function d3d8PerfSummary() {
     drawTextureUniformCacheMisses: d3d8PerfStats.drawTextureUniformCacheMisses,
     drawVertexAttribCacheHits: d3d8PerfStats.drawVertexAttribCacheHits,
     drawVertexAttribCacheMisses: d3d8PerfStats.drawVertexAttribCacheMisses,
+    drawFixedLightUniformCacheHits: d3d8PerfStats.drawFixedLightUniformCacheHits,
+    drawFixedLightUniformCacheMisses: d3d8PerfStats.drawFixedLightUniformCacheMisses,
     sortedDrawProfiledCalls: d3d8PerfStats.sortedDrawProfiledCalls,
     sortedDrawProfiledMs: roundedPerfMs(d3d8PerfStats.sortedDrawProfiledMs),
     sortedDrawPreBatchMs: roundedPerfMs(d3d8PerfStats.sortedDrawPreBatchMs),
@@ -655,6 +660,7 @@ function invalidateD3D8DrawStateCache() {
   resetD3D8TransformUniformCache();
   d3d8LastPointSpriteUniformInfo = null;
   d3d8LastVertexAttribKey = null;
+  d3d8LastFixedLightUniformKey = null;
 }
 
 const d3d8WarnedOnce = new Set();
@@ -2883,6 +2889,7 @@ function bindD3D8Program(program) {
   gl.useProgram(program);
   d3d8CurrentProgram = program;
   d3d8LastVertexAttribKey = null;
+  d3d8LastFixedLightUniformKey = null;
 }
 
 function bindD3D8ArrayBuffer(buffer) {
@@ -3994,6 +4001,28 @@ function d3d8FixedFunctionLights(lights) {
         || light.type === D3DLIGHT_SPOT
         || light.type === D3DLIGHT_DIRECTIONAL))
     .slice(0, D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT);
+}
+
+function d3d8FixedLightUniformKey(lights) {
+  const values = [lights.length];
+  for (const light of lights) {
+    values.push(light.type);
+    values.push(...light.diffuse);
+    values.push(...light.specular);
+    values.push(...light.ambient);
+    values.push(...light.position);
+    values.push(...light.direction);
+    values.push(
+      light.range,
+      light.attenuation0,
+      light.attenuation1,
+      light.attenuation2,
+      light.theta,
+      light.phi,
+      light.falloff,
+    );
+  }
+  return values.join(",");
 }
 
 function flattenD3D8LightType(lights) {
@@ -9207,39 +9236,46 @@ function paintD3D8DrawIndexed(payload = {}) {
       gl.uniform1i(bridgeProgram.emissiveMaterialSource, renderState.emissiveMaterialSource);
     }
     recordRenderUniformDetail?.("sortedDrawRenderMaterialUniformMs");
-    if (bridgeProgram.fixedLightCount) {
-      gl.uniform1i(bridgeProgram.fixedLightCount, fixedFunctionLights.length);
-    }
-    if (bridgeProgram.fixedLightType) {
-      gl.uniform1iv(bridgeProgram.fixedLightType, flattenD3D8LightType(fixedFunctionLights));
-    }
-    if (bridgeProgram.fixedLightDiffuse) {
-      gl.uniform4fv(bridgeProgram.fixedLightDiffuse,
-        flattenD3D8LightColor(fixedFunctionLights, "diffuse", D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
-    }
-    if (bridgeProgram.fixedLightSpecular) {
-      gl.uniform4fv(bridgeProgram.fixedLightSpecular,
-        flattenD3D8LightColor(fixedFunctionLights, "specular", D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
-    }
-    if (bridgeProgram.fixedLightAmbient) {
-      gl.uniform4fv(bridgeProgram.fixedLightAmbient,
-        flattenD3D8LightColor(fixedFunctionLights, "ambient", D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
-    }
-    if (bridgeProgram.fixedLightPosition) {
-      gl.uniform3fv(bridgeProgram.fixedLightPosition,
-        flattenD3D8LightVector(fixedFunctionLights, "position", [0, 0, 0],
-          D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
-    }
-    if (bridgeProgram.fixedLightDirection) {
-      gl.uniform3fv(bridgeProgram.fixedLightDirection,
-        flattenD3D8LightDirection(fixedFunctionLights, D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
-    }
-    if (bridgeProgram.fixedLightRangeAttenuation) {
-      gl.uniform4fv(bridgeProgram.fixedLightRangeAttenuation,
-        flattenD3D8LightRangeAttenuation(fixedFunctionLights));
-    }
-    if (bridgeProgram.fixedLightSpot) {
-      gl.uniform3fv(bridgeProgram.fixedLightSpot, flattenD3D8LightSpot(fixedFunctionLights));
+    const fixedLightUniformKey = d3d8FixedLightUniformKey(fixedFunctionLights);
+    if (fixedLightUniformKey === d3d8LastFixedLightUniformKey) {
+      d3d8PerfStats.drawFixedLightUniformCacheHits += 1;
+    } else {
+      d3d8PerfStats.drawFixedLightUniformCacheMisses += 1;
+      if (bridgeProgram.fixedLightCount) {
+        gl.uniform1i(bridgeProgram.fixedLightCount, fixedFunctionLights.length);
+      }
+      if (bridgeProgram.fixedLightType) {
+        gl.uniform1iv(bridgeProgram.fixedLightType, flattenD3D8LightType(fixedFunctionLights));
+      }
+      if (bridgeProgram.fixedLightDiffuse) {
+        gl.uniform4fv(bridgeProgram.fixedLightDiffuse,
+          flattenD3D8LightColor(fixedFunctionLights, "diffuse", D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
+      }
+      if (bridgeProgram.fixedLightSpecular) {
+        gl.uniform4fv(bridgeProgram.fixedLightSpecular,
+          flattenD3D8LightColor(fixedFunctionLights, "specular", D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
+      }
+      if (bridgeProgram.fixedLightAmbient) {
+        gl.uniform4fv(bridgeProgram.fixedLightAmbient,
+          flattenD3D8LightColor(fixedFunctionLights, "ambient", D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
+      }
+      if (bridgeProgram.fixedLightPosition) {
+        gl.uniform3fv(bridgeProgram.fixedLightPosition,
+          flattenD3D8LightVector(fixedFunctionLights, "position", [0, 0, 0],
+            D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
+      }
+      if (bridgeProgram.fixedLightDirection) {
+        gl.uniform3fv(bridgeProgram.fixedLightDirection,
+          flattenD3D8LightDirection(fixedFunctionLights, D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
+      }
+      if (bridgeProgram.fixedLightRangeAttenuation) {
+        gl.uniform4fv(bridgeProgram.fixedLightRangeAttenuation,
+          flattenD3D8LightRangeAttenuation(fixedFunctionLights));
+      }
+      if (bridgeProgram.fixedLightSpot) {
+        gl.uniform3fv(bridgeProgram.fixedLightSpot, flattenD3D8LightSpot(fixedFunctionLights));
+      }
+      d3d8LastFixedLightUniformKey = fixedLightUniformKey;
     }
     recordRenderUniformDetail?.("sortedDrawRenderLightUniformMs");
     if (bridgeProgram.textureFactor) {

@@ -8514,6 +8514,30 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `sortedDrawRenderAlphaFogUniformMs` 0.401,
       `sortedDrawTransformUniformMs` 0.973, and
       `sortedDrawTextureUniformMs` 1.737 ms/frame.
+- [x] Cache repeated sorted fixed-function light uniform uploads in the browser
+      D3D8 bridge. The sorted draw path now keys the normalized active
+      fixed-function light count/type/color/vector/range/attenuation/spot
+      payload and skips the matching WebGL uniform uploads when consecutive
+      draws use the same fixed-light state; the cache is invalidated with the
+      draw-state cache and on shader program changes. The runtime profile now
+      also reports `drawFixedLightUniformCacheHits` and
+      `drawFixedLightUniformCacheMisses` so future profiles can prove hit rate.
+      Verified with `node --check WebAssembly/harness/bridge.js`, `node
+      --check WebAssembly/harness/runtime_frame_profile.mjs`, `git diff
+      --check`, `npm --prefix WebAssembly run build:port:release`, and a Mac
+      M4 Chrome/Metal runtime profile using `realEngineFrameTick`, 10 warmup
+      frames, 60 measured frames, batch 10, and
+      `PERF_PROFILE_ENGINE_PROFILE=1`. The run reported a renderer string
+      containing `ANGLE Metal Renderer: Apple M4`, 47.69 ms/frame wall,
+      49.27 ms average engine `lastFrameMs`, zero measured readPixels, and a
+      visible shell-map screenshot. Sorted bridge work measured
+      8.650 ms/frame across ~64.7 profiled sorted
+      draws/frame; `sortedDrawRenderLightUniformMs` fell from 1.596 to
+      0.045 ms/frame, with ~68.8 fixed-light uniform cache hits/frame and
+      ~4.5 misses/frame. The remaining measured sorted uniform cost is
+      `sortedDrawUniformMs` 6.708 ms/frame, including base uniforms 1.284,
+      material 0.998, alpha/fog 0.725, stage 0.631, transform 1.200, and
+      texture-layout 1.267 ms/frame.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`
