@@ -8625,6 +8625,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       ~44.6 material-cache hits/frame vs ~29.7 misses. Remaining measured
       bridge targets are viewport application 0.798, render-state application
       0.647, and residual transform uploads 0.342 ms/frame.
+- [x] Skip redundant sorted D3D viewport application on the browser draw path.
+      `syncCanvasSize()` now keeps the full-canvas restore behavior by default
+      for clears, snapshots, and diagnostics, while indexed draws can sync size
+      without resetting GL viewport/scissor/depth immediately before
+      `applyD3D8Viewport("draw")`. The D3D viewport application path now caches
+      the resolved GL viewport/scissor/depth-range values keyed by drawing
+      buffer size and invalidates conservatively through draw-state resets,
+      full-canvas restores, FBO/viewport changes, and canvas resizes. Verified
+      with `node --check WebAssembly/harness/bridge.js`, `node --check
+      WebAssembly/harness/runtime_frame_profile.mjs`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port`, and a Mac M4 Chrome/Metal
+      runtime profile with visible shell-map screenshot. The run reported an
+      Apple M4 Metal renderer string, 43.34 ms/frame wall, 48.32 ms average
+      engine `lastFrameMs`, zero measured readPixels, ~64.3 profiled sorted
+      draws/frame, ~484 viewport-cache hits/frame vs ~5.5 misses, sorted
+      bridge work at 2.255 ms/frame, and `sortedDrawViewportMs` down from
+      0.798 to 0.076 ms/frame. Remaining measured sorted-uniform costs are
+      residual transform uploads 0.553, render-state application 0.280, and
+      material uniforms 0.190 ms/frame.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`

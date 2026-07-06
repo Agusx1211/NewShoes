@@ -122,6 +122,7 @@ let d3d8CurrentElementArrayBuffer = null;
 let d3d8TemporaryIndexBuffer = null;
 let d3d8TemporaryIndexBufferBytes = 0;
 let d3d8CurrentDepthMask = true;
+let d3d8LastAppliedViewportKey = null;
 
 function setD3D8DepthMask(enabled) {
   if (!gl) {
@@ -401,6 +402,8 @@ const d3d8PerfStats = {
   drawTextureUniformCacheMisses: 0,
   drawVertexAttribCacheHits: 0,
   drawVertexAttribCacheMisses: 0,
+  drawViewportCacheHits: 0,
+  drawViewportCacheMisses: 0,
   drawBaseUniformCacheHits: 0,
   drawBaseUniformCacheMisses: 0,
   drawMaterialUniformCacheHits: 0,
@@ -489,6 +492,26 @@ function resetD3D8UniformSubgroupCaches() {
   d3d8LastAlphaFogUniformKey = null;
 }
 
+function d3d8ViewportCacheKey(viewport) {
+  if (!viewport?.gl || !viewport?.drawingBuffer) {
+    return null;
+  }
+  return [
+    viewport.gl.x,
+    viewport.gl.y,
+    viewport.gl.width,
+    viewport.gl.height,
+    viewport.gl.minZ,
+    viewport.gl.maxZ,
+    viewport.drawingBuffer.width,
+    viewport.drawingBuffer.height,
+  ].join(",");
+}
+
+function invalidateD3D8AppliedViewportCache() {
+  d3d8LastAppliedViewportKey = null;
+}
+
 function d3d8PerfSummary() {
   return {
     draws: d3d8PerfStats.draws,
@@ -514,6 +537,8 @@ function d3d8PerfSummary() {
     drawTextureUniformCacheMisses: d3d8PerfStats.drawTextureUniformCacheMisses,
     drawVertexAttribCacheHits: d3d8PerfStats.drawVertexAttribCacheHits,
     drawVertexAttribCacheMisses: d3d8PerfStats.drawVertexAttribCacheMisses,
+    drawViewportCacheHits: d3d8PerfStats.drawViewportCacheHits,
+    drawViewportCacheMisses: d3d8PerfStats.drawViewportCacheMisses,
     drawBaseUniformCacheHits: d3d8PerfStats.drawBaseUniformCacheHits,
     drawBaseUniformCacheMisses: d3d8PerfStats.drawBaseUniformCacheMisses,
     drawMaterialUniformCacheHits: d3d8PerfStats.drawMaterialUniformCacheHits,
@@ -687,6 +712,7 @@ function invalidateD3D8DrawStateCache() {
   resetD3D8TransformUniformCache();
   d3d8LastPointSpriteUniformInfo = null;
   d3d8LastVertexAttribKey = null;
+  invalidateD3D8AppliedViewportCache();
   resetD3D8UniformSubgroupCaches();
 }
 
@@ -2648,15 +2674,20 @@ function refreshCanvasState(displaySize = getCanvasDisplaySize()) {
   };
 }
 
-function syncCanvasSize() {
+function syncCanvasSize(options = {}) {
   flushD3D8PendingDrawBatch("syncCanvasSize");
   const displaySize = getCanvasDisplaySize();
+  const restoreViewport = options.restoreViewport !== false;
+  let resized = false;
   if (canvas.width !== displaySize.width || canvas.height !== displaySize.height) {
     canvas.width = displaySize.width;
     canvas.height = displaySize.height;
+    resized = true;
   }
-  if (gl) {
+  if (gl && restoreViewport) {
     restoreFullCanvasViewport();
+  } else if (resized) {
+    invalidateD3D8AppliedViewportCache();
   }
   refreshCanvasState(displaySize);
 }
@@ -2684,6 +2715,7 @@ function restoreFullCanvasViewport() {
   gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
   gl.disable(gl.SCISSOR_TEST);
   gl.depthRange(0, 1);
+  invalidateD3D8AppliedViewportCache();
 }
 
 function defaultD3D8Viewport() {
@@ -2779,6 +2811,7 @@ function expectedD3D8ViewportGlBox(d3dViewport = {}, renderTarget = {}, drawingB
 function applyD3D8Viewport(reason = "draw") {
   const viewport = normalizeD3D8Viewport(d3d8ViewportState ?? defaultD3D8Viewport());
   d3d8ViewportStats.applications += 1;
+  const viewportKey = d3d8ViewportCacheKey(viewport);
   if (!gl) {
     const probe = {
       ok: false,
@@ -2801,13 +2834,26 @@ function applyD3D8Viewport(reason = "draw") {
     return probe;
   }
 
-  gl.viewport(viewport.gl.x, viewport.gl.y, viewport.gl.width, viewport.gl.height);
-  gl.enable(gl.SCISSOR_TEST);
-  gl.scissor(viewport.gl.x, viewport.gl.y, viewport.gl.width, viewport.gl.height);
-  gl.depthRange(viewport.gl.minZ, viewport.gl.maxZ);
+  const cacheHit = viewportKey !== null && viewportKey === d3d8LastAppliedViewportKey;
+  if (cacheHit) {
+    d3d8PerfStats.drawViewportCacheHits += 1;
+  } else {
+    d3d8PerfStats.drawViewportCacheMisses += 1;
+    gl.viewport(viewport.gl.x, viewport.gl.y, viewport.gl.width, viewport.gl.height);
+    gl.enable(gl.SCISSOR_TEST);
+    gl.scissor(viewport.gl.x, viewport.gl.y, viewport.gl.width, viewport.gl.height);
+    gl.depthRange(viewport.gl.minZ, viewport.gl.maxZ);
+    d3d8LastAppliedViewportKey = viewportKey;
+  }
 
   if (d3d8DiagLevel !== "full") {
-    return { ok: true, source: "browser_d3d8_viewport", gl: viewport.gl, lite: true };
+    return {
+      ok: true,
+      source: "browser_d3d8_viewport",
+      gl: viewport.gl,
+      lite: true,
+      cacheHit,
+    };
   }
 
   const actualViewport = Array.from(gl.getParameter(gl.VIEWPORT));
@@ -2826,6 +2872,7 @@ function applyD3D8Viewport(reason = "draw") {
     reason,
     sets: d3d8ViewportStats.sets,
     applications: d3d8ViewportStats.applications,
+    cacheHit,
     requested: viewport.requested,
     d3d: viewport.d3d,
     gl: viewport.gl,
@@ -9123,7 +9170,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   let vertexDiagnostics = null;
   let drawOk = false;
   const collectDrawDiagnostics = d3d8DiagLevel === "full";
-  syncCanvasSize();
+  syncCanvasSize({ restoreViewport: false });
   appliedViewport = applyD3D8Viewport("draw");
   appliedPointSprite = d3d8PointSpriteInfo(renderState, payload.primitiveType, appliedViewport);
   recordSortedDrawPhase?.("sortedDrawViewportMs");
