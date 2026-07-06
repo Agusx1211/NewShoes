@@ -95,6 +95,20 @@ function compactGameplay(frame) {
   };
 }
 
+function locateNested(obj, keys, depth = 0) {
+  if (!obj || typeof obj !== "object" || depth > 6) return undefined;
+  for (const k of keys) {
+    if (obj[k] !== undefined) return obj[k];
+  }
+  for (const v of Object.values(obj)) {
+    if (v && typeof v === "object") {
+      const found = locateNested(v, keys, depth + 1);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
 function pixelHasVisibleColor(pixel, threshold = 8) {
   return Array.isArray(pixel)
     && pixel.length >= 4
@@ -523,30 +537,24 @@ async function main() {
     // ADD-ONLY HUD geometry probe: one full realEngineFrame to capture the
     // per-window control-bar geometry (drawFunc/systemFunc/x/y/w/h/hidden) so
     // the bottom-strip pixels can be mapped to specific HUD windows. Read-only.
+    const shroudDiagnostics = locateNested(active.result.frame, ["shroud"]) ?? null;
+    const postActiveShroudDiagnostics =
+      postActive == null ? null : locateNested(postActive.result?.frame, ["shroud"]) ?? null;
     let controlBarWindows = null;
     let controlBarWindowFull = null;
+    let fullFrameShroudDiagnostics = null;
     let textureDiagnostics = null;
     let uiDrawCaptures = null;
     let badJsonContext = null;
     try {
       const full = await runFrames(page, 1, "hud geometry probe");
-      const locate = (obj, keys, depth = 0) => {
-        if (!obj || typeof obj !== "object" || depth > 6) return undefined;
-        for (const k of keys) { if (obj[k] !== undefined) return obj[k]; }
-        for (const v of Object.values(obj)) {
-          if (v && typeof v === "object") {
-            const found = locate(v, keys, depth + 1);
-            if (found !== undefined) return found;
-          }
-        }
-        return undefined;
-      };
-      controlBarWindowFull = locate(full.frame, ["controlBarWindows"]) ?? null;
+      controlBarWindowFull = locateNested(full.frame, ["controlBarWindows"]) ?? null;
       controlBarWindows = controlBarWindowFull;
+      fullFrameShroudDiagnostics = locateNested(full.frame, ["shroud"]) ?? null;
       // ADD-ONLY: also surface the frame's texture diagnostics so a background
       // that resolves to a valid Image* but still draws black can be traced to
       // a missing/failed texture upload. Read-only.
-      textureDiagnostics = locate(full.frame, ["textureDiagnostics"]) ?? null;
+      textureDiagnostics = locateNested(full.frame, ["textureDiagnostics"]) ?? null;
       // ADD-ONLY Stage-1: the per-draw render-state capture for the command-bar
       // atlas (1024x256) background draws vs small UI icon draws, collected by
       // bridge.js during the frame.
@@ -561,8 +569,23 @@ async function main() {
     // the command-bar atlas (1024x256 SN/SA/SUCommandBar.tga) was ever uploaded.
     let d3d8TextureInventory = null;
     try {
+      const textureSizes = new Set([
+        "1024x256",
+        "128x128",
+        "256x256",
+        "256x512",
+        "512x256",
+        "512x512",
+      ]);
+      for (const shroud of [shroudDiagnostics, postActiveShroudDiagnostics, fullFrameShroudDiagnostics]) {
+        const width = Number(shroud?.visual?.textureWidth ?? 0);
+        const height = Number(shroud?.visual?.textureHeight ?? 0);
+        if (width > 0 && height > 0) {
+          textureSizes.add(`${width}x${height}`);
+        }
+      }
       d3d8TextureInventory = await rpc(page, "d3d8TextureInventory", {
-        sizes: ["1024x256", "128x128"],
+        sizes: Array.from(textureSizes),
         sampleLimit: 128,
       });
     } catch (error) {
@@ -583,9 +606,11 @@ async function main() {
       officialMultiplayerMaps: mapCache?.probe?.officialMultiplayerMaps ?? [],
       framesAdvancedAfterStart: active.framesAdvanced,
       finalGameplay: compactGameplay(active.result.frame),
+      shroudDiagnostics,
       postActive: postActive == null ? null : {
         framesAdvanced: postActive.framesAdvanced,
         finalGameplay: compactGameplay(postActive.result?.frame),
+        shroudDiagnostics: postActiveShroudDiagnostics,
         samples: postActive.samples,
       },
       renderProbe,
@@ -624,6 +649,7 @@ async function main() {
           controlBarWindows,
           textureDiagnostics,
           uiDrawCaptures,
+          fullFrameShroudDiagnostics,
           d3d8TextureInventory: d3d8TextureInventory?.inventory ?? null,
           d3d8TextureLiveCount: d3d8TextureInventory?.liveCount ?? null,
           badJsonContext,

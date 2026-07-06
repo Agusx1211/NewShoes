@@ -124,6 +124,11 @@ extern "C" bool cnc_port_terrain_probe_shroud_enabled(void)
 	return g_ww3d_terrain_probe_shroud_enabled;
 }
 
+extern "C" void cnc_port_terrain_probe_set_shroud_enabled(bool enabled)
+{
+	g_ww3d_terrain_probe_shroud_enabled = enabled;
+}
+
 // Radar base-class implementations now come from the real
 // GameEngine/Source/Common/System/Radar.cpp linked through
 // zh_gameengine_real_object_ini_runtime.

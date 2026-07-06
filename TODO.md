@@ -217,8 +217,6 @@ reproduce in the harness and verify each fix with a screenshot / state check.
       2026-07-06 harness note: Alpine Assault survived 300 post-active frames
       and Tournament Desert survived 900 post-active frames without triggering
       this, so keep this open for an issue dump or exact human repro settings.
-- [ ] **Fog of war renders incorrectly** — the shroud/fog-of-war does not
-      render correctly (shroud pass / partial-vision reveal path).
 
 ## Strategy pivot — real `init()` whole-program link (current focus)
 
@@ -1599,38 +1597,17 @@ residue and the next frontier.
       `ThingFactory`, and `ScriptEngine` ownership plus weak adjacent-script
       symbols only to reach query-mode map load; replace those with full
       original runtime ownership before treating the path as gameplay-owned.
-- [ ] Promote the browser-proven terrain shroud path from probe-mounted
-      ownership into production partition gameplay ownership. The current
-      `test:ww3d-terrain-shroud-scene` harness mounts real `INIZH.big`,
-      `MapsZH.big`, and `TerrainZH.big`, initializes a `BaseHeightMap`-owned
-      `W3DShroud` in shroud mode, and verifies the original
-      `HeightMapRenderObjClass::Render` extra-pass dispatch submits a
-      browser-visible `W3DShroudMaterialPassClass` terrain draw without the old
-      probe direct-D3D fallback. `test:ww3d-terrain-visual-scene` now also
-      proves the same shroud material pass under `W3DTerrainVisual::load` /
-      `W3DDisplay::m_3DScene` ownership for the selected source-backed patch,
-      and separately proves visual-owned shroud data updates through original
-      `W3DDisplay::setShroudLevel` plus original
-      `PartitionManager::revealMapForPlayer` /
-      `refreshShroudForLocalPlayer` in a bounded probe grid. The full-scene
-      smoke now also runs full `W3DTerrainVisual::init`, uses the original
-      `HeightMapRenderObjClass::getShroud()` owner, drives
-      `W3DDisplay::setShroudLevel`, and refreshes shroud through original
-      `PartitionManager` before browser-verifying three ordered
-      base/blend/shroud frames. The bounded partition refresh now sources its
-      full-map extents from the same original `W3DTerrainLogic::loadMap(query=true)`
-      result and drives the linked `PartitionManager` through original
-      `Common/GlobalData.h` / `MAP_XY_FACTOR` partition-cell-size ownership
-      before clamping to a 48x48 browser gate. The same bounded refresh now
-      constructs the original `PlayerList`, publishes it through
-      `ThePlayerList`, and passes the local original `Player` index through
-      `PartitionManager::revealMapForPlayer` /
-      `refreshShroudForLocalPlayer`. Remaining work is full `TerrainLogic`
-      extent ownership, the broader target-wide `GlobalData` layout, unbounded
-      partition/shroud ownership, and replacing the dormant weak
-      Player/AI/Object/Radar branch hooks with real gameplay owners so fog
-      updates originate entirely from the full partition/shroud path instead of
-      probe-local ownership and the bounded terrain cell window.
+- [ ] Retire the residual terrain-probe shroud enable gate from the production
+      `cnc-port` terrain build. Real skirmish boot now enables the original
+      heightmap-owned `W3DShroud` before `CreateGameEngine()` and verifies
+      production `PartitionManager::refreshShroudForLocalPlayer` ->
+      `W3DDisplay::setShroudLevel` -> terrain shroud texture ownership on
+      Tournament Desert, with a live 64x128 shroud texture and zero sampled
+      visual mismatches. The remaining cleanup is to remove the
+      `CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS` shroud-disabled
+      default / setter once the adjacent heightmap probe compile guard is no
+      longer needed by focused terrain smokes, and keep the skirmish harness
+      asserting that real boot creates a shroud object and texture.
 - [ ] Finish bridge-buffer logic ownership by replacing the focused
       bridge-layer pathfinder, GameLogic/Object, and module-factory runtime
       surfaces with full original AIPathfind/Object/ThingFactory ownership.

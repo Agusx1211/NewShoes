@@ -27,6 +27,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       node harness/skirmish_start_smoke.mjs`: active skirmish survived to frame
       205, the radar terrain texture sampled non-black pixels, and the
       screenshot shows terrain in the LeftHUD minimap.
+- [x] Fix live skirmish fog-of-war rendering. `cnc-port` now enables the
+      original heightmap-owned `W3DShroud` before real engine creation, so the
+      production `PartitionManager::refreshShroudForLocalPlayer` path drives
+      `W3DDisplay::setShroudLevel` into the terrain shroud texture instead of
+      leaving `BaseHeightMapRenderObjClass::m_shroud` null under the probe-era
+      minimal-heightmap gate. The skirmish harness now records shroud
+      diagnostics from frame summaries, samples the live texture size, and
+      includes those dimensions in D3D8 texture inventory checks. Verified with
+      `npm run build:port` and
+      `SKIRMISH_START_MAP='maps\tournament desert\tournament desert.map'
+      SKIRMISH_START_POST_ACTIVE_FRAMES=60 SKIRMISH_START_POST_ACTIVE_CHUNK=30
+      SKIRMISH_START_EXPECT_SURVIVE=1
+      SKIRMISH_START_OUTPUT=/tmp/skirmish-shroud-enabled.json
+      SKIRMISH_START_SCREENSHOT=/tmp/skirmish-shroud-enabled.png node
+      harness/skirmish_start_smoke.mjs`: Tournament Desert survived to frame
+      205, `shroudReady` and `textureReady` were true for a 64x128 shroud
+      texture, the 5x5 logic/visual grid had zero mismatches, local Command
+      Center and Worker cells were clear at visual level 255, fogged samples
+      read around 125, and the screenshot shows the local base clear with
+      surrounding fogged terrain.
 
 ## M0 — Build skeleton & asset pipeline
 

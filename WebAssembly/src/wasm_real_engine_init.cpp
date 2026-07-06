@@ -81,6 +81,8 @@
 #include "Common/ThingFactory.h"
 #include "GameClient/ParticleSys.h"
 #include "GameLogic/Module/LaserUpdate.h"
+#include "W3DDevice/GameClient/BaseHeightMap.h"
+#include "W3DDevice/GameClient/W3DShroud.h"
 #include "wasm_function_lexicon_runtime.h"
 
 // The original app-level globals GameEngine.cpp expects WinMain.cpp to own.
@@ -138,6 +140,7 @@ extern "C" Int cnc_port_main_menu_setup_game_start_count(void);
 extern "C" Int cnc_port_main_menu_last_setup_difficulty(void);
 extern "C" const Char *cnc_port_main_menu_last_setup_map(void);
 extern "C" const Char *cnc_port_main_menu_last_pending_file(void);
+extern "C" void cnc_port_terrain_probe_set_shroud_enabled(bool enabled);
 extern "C" Int cnc_port_main_menu_do_game_start_count(void);
 extern "C" Int cnc_port_main_menu_last_new_game_mode(void);
 extern "C" Int cnc_port_main_menu_last_new_game_difficulty(void);
@@ -1027,6 +1030,399 @@ void append_real_particle_state(std::string &json)
 		++emitted;
 	}
 	json += "]}";
+}
+
+const char *cell_shroud_status_name(CellShroudStatus status)
+{
+	switch (status) {
+		case CELLSHROUD_CLEAR:
+			return "clear";
+		case CELLSHROUD_FOGGED:
+			return "fogged";
+		case CELLSHROUD_SHROUDED:
+			return "shrouded";
+		default:
+			return "unknown";
+	}
+}
+
+Int expected_shroud_visual_level(CellShroudStatus status)
+{
+	if (TheGlobalData == NULL) {
+		return -1;
+	}
+
+	Int level = TheGlobalData->m_clearAlpha;
+	if (status == CELLSHROUD_SHROUDED) {
+		level = TheGlobalData->m_shroudAlpha;
+	} else if (status == CELLSHROUD_FOGGED) {
+		level = TheGlobalData->m_fogAlpha;
+	}
+	if (level < TheGlobalData->m_shroudAlpha) {
+		level = TheGlobalData->m_shroudAlpha;
+	}
+	return level;
+}
+
+Bool shroud_level_matches(Int visual_level, Int expected_level)
+{
+	if (visual_level < 0 || expected_level < 0) {
+		return FALSE;
+	}
+	Int delta = visual_level - expected_level;
+	if (delta < 0) {
+		delta = -delta;
+	}
+	return delta <= 4;
+}
+
+void append_shroud_cell_sample(
+	std::string &json,
+	const char *name,
+	Int cell_x,
+	Int cell_y,
+	Int local_player_index,
+	Int partition_cells_x,
+	Int partition_cells_y,
+	W3DShroud *visual_shroud,
+	Bool &first)
+{
+	if (!first) {
+		json += ",";
+	}
+	first = FALSE;
+
+	const Bool in_partition =
+		ThePartitionManager != NULL &&
+		cell_x >= 0 &&
+		cell_y >= 0 &&
+		cell_x < partition_cells_x &&
+		cell_y < partition_cells_y;
+	const Bool in_visual =
+		visual_shroud != NULL &&
+		cell_x >= 0 &&
+		cell_y >= 0 &&
+		cell_x < visual_shroud->getNumShroudCellsX() &&
+		cell_y < visual_shroud->getNumShroudCellsY();
+
+	json += "{";
+	json += "\"name\":\"" + json_escape(name != NULL ? name : "") + "\"";
+	json += ",\"cell\":{\"x\":" + std::to_string(cell_x);
+	json += ",\"y\":" + std::to_string(cell_y) + "}";
+	json += ",\"inPartition\":";
+	json += in_partition ? "true" : "false";
+	json += ",\"inVisual\":";
+	json += in_visual ? "true" : "false";
+
+	if (in_partition) {
+		Real world_x = 0.0f;
+		Real world_y = 0.0f;
+		ThePartitionManager->getCellCenterPos(cell_x, cell_y, world_x, world_y);
+		char buffer[192];
+		std::snprintf(
+			buffer,
+			sizeof(buffer),
+			",\"world\":{\"x\":%.6f,\"y\":%.6f}",
+			world_x,
+			world_y);
+		json += buffer;
+
+		const CellShroudStatus status =
+			ThePartitionManager->getShroudStatusForPlayer(
+				local_player_index,
+				cell_x,
+				cell_y);
+		const Int expected_level = expected_shroud_visual_level(status);
+		json += ",\"logicStatus\":" + std::to_string(static_cast<Int>(status));
+		json += ",\"logicStatusName\":\"" +
+			json_escape(cell_shroud_status_name(status)) + "\"";
+		json += ",\"expectedLevel\":" + std::to_string(expected_level);
+
+		if (in_visual) {
+			const Int visual_level = visual_shroud->getShroudLevel(cell_x, cell_y);
+			json += ",\"visualLevel\":" + std::to_string(visual_level);
+			json += ",\"visualMatchesExpected\":";
+			json += shroud_level_matches(visual_level, expected_level) ? "true" : "false";
+		} else {
+			json += ",\"visualLevel\":null,\"visualMatchesExpected\":null";
+		}
+	} else {
+		json += ",\"world\":null,\"logicStatus\":null,"
+			"\"logicStatusName\":null,\"expectedLevel\":null,"
+			"\"visualLevel\":null,\"visualMatchesExpected\":null";
+	}
+
+	json += "}";
+}
+
+void append_shroud_state(std::string &json)
+{
+	const Bool gameplay_ready =
+		TheGameLogic != NULL &&
+		TheGameLogic->isInGame() &&
+		!TheGameLogic->isLoadingMap();
+	Player *local_player = ThePlayerList != NULL ? ThePlayerList->getLocalPlayer() : NULL;
+	const Int local_player_index =
+		local_player != NULL ? local_player->getPlayerIndex() : -1;
+	BaseHeightMapRenderObjClass *terrain = TheTerrainRenderObject;
+	W3DShroud *visual_shroud =
+		terrain != NULL ? terrain->getShroud() : NULL;
+	TextureClass *shroud_texture =
+		visual_shroud != NULL ? visual_shroud->getShroudTexture() : NULL;
+
+	json += ",\"shroud\":{";
+	json += "\"gameplayReady\":";
+	json += gameplay_ready ? "true" : "false";
+	json += ",\"globalDataReady\":";
+	json += TheGlobalData != NULL ? "true" : "false";
+	if (TheGlobalData != NULL) {
+		json += ",\"shroudOn\":";
+#if defined(_DEBUG) || defined(_INTERNAL)
+		json += TheGlobalData->m_shroudOn ? "true" : "false";
+#else
+		json += "null";
+#endif
+		json += ",\"fogOfWarOn\":";
+#if defined(_DEBUG) || defined(_INTERNAL)
+		json += TheGlobalData->m_fogOfWarOn ? "true" : "false";
+#else
+		json += "null";
+#endif
+		json += ",\"clearAlpha\":" + std::to_string(static_cast<Int>(TheGlobalData->m_clearAlpha));
+		json += ",\"fogAlpha\":" + std::to_string(static_cast<Int>(TheGlobalData->m_fogAlpha));
+		json += ",\"shroudAlpha\":" + std::to_string(static_cast<Int>(TheGlobalData->m_shroudAlpha));
+		json += ",\"partitionCellSize\":" + std::to_string(TheGlobalData->m_partitionCellSize);
+		json += ",\"shroudColor\":" +
+			std::to_string(static_cast<unsigned long long>(TheGlobalData->m_shroudColor.getAsInt()));
+	} else {
+		json += ",\"shroudOn\":null,\"fogOfWarOn\":null,"
+			"\"clearAlpha\":null,\"fogAlpha\":null,\"shroudAlpha\":null,"
+			"\"partitionCellSize\":null,\"shroudColor\":null";
+	}
+
+	const Bool partition_ready = gameplay_ready && ThePartitionManager != NULL;
+	Int partition_cells_x = 0;
+	Int partition_cells_y = 0;
+	Real partition_cell_size = 0.0f;
+	if (partition_ready) {
+		partition_cells_x = ThePartitionManager->getCellCountX();
+		partition_cells_y = ThePartitionManager->getCellCountY();
+		partition_cell_size = ThePartitionManager->getCellSize();
+	}
+
+	json += ",\"partition\":{\"ready\":";
+	json += partition_ready ? "true" : "false";
+	json += ",\"localPlayerIndex\":" + std::to_string(local_player_index);
+	json += ",\"cellsX\":" + std::to_string(partition_cells_x);
+	json += ",\"cellsY\":" + std::to_string(partition_cells_y);
+	json += ",\"cellSize\":" + std::to_string(partition_cell_size);
+	json += "}";
+
+	json += ",\"visual\":{\"terrainReady\":";
+	json += terrain != NULL ? "true" : "false";
+	json += ",\"mapReady\":";
+	json += (terrain != NULL && terrain->getMap() != NULL) ? "true" : "false";
+	json += ",\"shroudReady\":";
+	json += visual_shroud != NULL ? "true" : "false";
+	if (visual_shroud != NULL) {
+		json += ",\"cellsX\":" + std::to_string(visual_shroud->getNumShroudCellsX());
+		json += ",\"cellsY\":" + std::to_string(visual_shroud->getNumShroudCellsY());
+		json += ",\"cellWidth\":" + std::to_string(visual_shroud->getCellWidth());
+		json += ",\"cellHeight\":" + std::to_string(visual_shroud->getCellHeight());
+		json += ",\"textureWidth\":" + std::to_string(visual_shroud->getTextureWidth());
+		json += ",\"textureHeight\":" + std::to_string(visual_shroud->getTextureHeight());
+		json += ",\"drawOriginX\":" + std::to_string(visual_shroud->getDrawOriginX());
+		json += ",\"drawOriginY\":" + std::to_string(visual_shroud->getDrawOriginY());
+		json += ",\"textureReady\":";
+		json += shroud_texture != NULL ? "true" : "false";
+		if (shroud_texture != NULL) {
+			json += ",\"textureId\":" +
+				std::to_string(static_cast<unsigned long long>(shroud_texture->Get_ID()));
+			json += ",\"textureClassWidth\":" + std::to_string(shroud_texture->Get_Width());
+			json += ",\"textureClassHeight\":" + std::to_string(shroud_texture->Get_Height());
+			json += ",\"textureInitialized\":";
+			json += shroud_texture->Is_Initialized() ? "true" : "false";
+		} else {
+			json += ",\"textureId\":null,\"textureClassWidth\":null,"
+				"\"textureClassHeight\":null,\"textureInitialized\":null";
+		}
+	} else {
+		json += ",\"cellsX\":0,\"cellsY\":0,\"cellWidth\":0,"
+			"\"cellHeight\":0,\"textureWidth\":0,\"textureHeight\":0,"
+			"\"drawOriginX\":0,\"drawOriginY\":0,\"textureReady\":false,"
+			"\"textureId\":null,\"textureClassWidth\":null,"
+			"\"textureClassHeight\":null,\"textureInitialized\":null";
+	}
+	json += "}";
+
+	Int grid_sampled = 0;
+	Int grid_clear = 0;
+	Int grid_fogged = 0;
+	Int grid_shrouded = 0;
+	Int grid_visual_matches = 0;
+	Int grid_visual_mismatches = 0;
+	if (partition_ready && partition_cells_x > 0 && partition_cells_y > 0) {
+		for (Int gy = 0; gy < 5; ++gy) {
+			const Int y = (partition_cells_y - 1) * gy / 4;
+			for (Int gx = 0; gx < 5; ++gx) {
+				const Int x = (partition_cells_x - 1) * gx / 4;
+				const CellShroudStatus status =
+					ThePartitionManager->getShroudStatusForPlayer(
+						local_player_index,
+						x,
+						y);
+				++grid_sampled;
+				if (status == CELLSHROUD_CLEAR) {
+					++grid_clear;
+				} else if (status == CELLSHROUD_FOGGED) {
+					++grid_fogged;
+				} else if (status == CELLSHROUD_SHROUDED) {
+					++grid_shrouded;
+				}
+				if (visual_shroud != NULL &&
+					x < visual_shroud->getNumShroudCellsX() &&
+					y < visual_shroud->getNumShroudCellsY()) {
+					const Int visual_level = visual_shroud->getShroudLevel(x, y);
+					if (shroud_level_matches(
+						visual_level,
+						expected_shroud_visual_level(status))) {
+						++grid_visual_matches;
+					} else {
+						++grid_visual_mismatches;
+					}
+				}
+			}
+		}
+	}
+	json += ",\"gridSummary\":{";
+	json += "\"sampled\":" + std::to_string(grid_sampled);
+	json += ",\"clear\":" + std::to_string(grid_clear);
+	json += ",\"fogged\":" + std::to_string(grid_fogged);
+	json += ",\"shrouded\":" + std::to_string(grid_shrouded);
+	json += ",\"visualMatchesExpected\":" + std::to_string(grid_visual_matches);
+	json += ",\"visualMismatches\":" + std::to_string(grid_visual_mismatches);
+	json += "}";
+
+	json += ",\"samples\":[";
+	Bool first_sample = TRUE;
+	if (partition_ready && partition_cells_x > 0 && partition_cells_y > 0) {
+		append_shroud_cell_sample(
+			json,
+			"upperLeft",
+			0,
+			0,
+			local_player_index,
+			partition_cells_x,
+			partition_cells_y,
+			visual_shroud,
+			first_sample);
+		append_shroud_cell_sample(
+			json,
+			"center",
+			partition_cells_x / 2,
+			partition_cells_y / 2,
+			local_player_index,
+			partition_cells_x,
+			partition_cells_y,
+			visual_shroud,
+			first_sample);
+		append_shroud_cell_sample(
+			json,
+			"lowerRight",
+			partition_cells_x - 1,
+			partition_cells_y - 1,
+			local_player_index,
+			partition_cells_x,
+			partition_cells_y,
+			visual_shroud,
+			first_sample);
+		if (TheTacticalView != NULL) {
+			Coord3D view_position = { 0.0f, 0.0f, 0.0f };
+			Int view_cell_x = 0;
+			Int view_cell_y = 0;
+			TheTacticalView->getPosition(&view_position);
+			ThePartitionManager->worldToCell(
+				view_position.x,
+				view_position.y,
+				&view_cell_x,
+				&view_cell_y);
+			append_shroud_cell_sample(
+				json,
+				"tacticalView",
+				view_cell_x,
+				view_cell_y,
+				local_player_index,
+				partition_cells_x,
+				partition_cells_y,
+				visual_shroud,
+				first_sample);
+		}
+	}
+	json += "]";
+
+	json += ",\"localObjectSamples\":[";
+	Bool first_object = TRUE;
+	if (partition_ready && local_player != NULL && TheGameLogic != NULL) {
+		Int emitted = 0;
+		for (Object *obj = TheGameLogic->getFirstObject();
+			obj != NULL && emitted < 6;
+			obj = obj->getNextObject()) {
+			if (obj->getControllingPlayer() != local_player) {
+				continue;
+			}
+			const Coord3D *pos = obj->getPosition();
+			if (pos == NULL) {
+				continue;
+			}
+			Int cell_x = 0;
+			Int cell_y = 0;
+			ThePartitionManager->worldToCell(pos->x, pos->y, &cell_x, &cell_y);
+			if (!first_object) {
+				json += ",";
+			}
+			first_object = FALSE;
+			json += "{";
+			json += "\"id\":" +
+				std::to_string(static_cast<unsigned long long>(obj->getID()));
+			const ThingTemplate *templ = obj->getTemplate();
+			json += ",\"template\":\"" +
+				json_escape(templ != NULL ? templ->getName().str() : "") + "\"";
+			append_coord3d_fields(json, "position", *pos);
+			json += ",\"cell\":{\"x\":" + std::to_string(cell_x);
+			json += ",\"y\":" + std::to_string(cell_y) + "}";
+			const Bool in_partition =
+				cell_x >= 0 &&
+				cell_y >= 0 &&
+				cell_x < partition_cells_x &&
+				cell_y < partition_cells_y;
+			if (in_partition) {
+				const CellShroudStatus status =
+					ThePartitionManager->getShroudStatusForPlayer(
+						local_player_index,
+						cell_x,
+						cell_y);
+				json += ",\"logicStatus\":" + std::to_string(static_cast<Int>(status));
+				json += ",\"logicStatusName\":\"" +
+					json_escape(cell_shroud_status_name(status)) + "\"";
+				if (visual_shroud != NULL &&
+					cell_x < visual_shroud->getNumShroudCellsX() &&
+					cell_y < visual_shroud->getNumShroudCellsY()) {
+					json += ",\"visualLevel\":" +
+						std::to_string(static_cast<Int>(
+							visual_shroud->getShroudLevel(cell_x, cell_y)));
+				} else {
+					json += ",\"visualLevel\":null";
+				}
+			} else {
+				json += ",\"logicStatus\":null,\"logicStatusName\":null,"
+					"\"visualLevel\":null";
+			}
+			json += "}";
+			++emitted;
+		}
+	}
+	json += "]";
+	json += "}";
 }
 
 const char *audio_type_name(AudioType type)
@@ -3063,6 +3459,7 @@ void append_real_engine_frame_summary_state(std::string &json)
 	json += "}";
 	append_real_view_state(json);
 	append_real_particle_state(json);
+	append_shroud_state(json);
 	json += ",\"gameplay\":{";
 	if (TheGameLogic != NULL) {
 		json += "\"gameLogicReady\":true";
@@ -3754,6 +4151,7 @@ void append_real_engine_client_state(std::string &json)
 
 	append_real_view_state(json);
 	append_real_particle_state(json);
+	append_shroud_state(json);
 	append_radar_state(json);
 
 	json += ",\"gameplay\":{";
@@ -5748,6 +6146,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_init(const char
 		initMemoryManager();
 	}
 	ensure_real_engine_input_window();
+	cnc_port_terrain_probe_set_shroud_enabled(true);
 
 	static const char *argv_storage[] = {"CnCGeneralsZH", "-noshellmap", "-win"};
 	static const char *argv_shellmap_storage[] = {"CnCGeneralsZH", "-win"};
