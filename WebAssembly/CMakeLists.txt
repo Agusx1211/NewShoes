@@ -37,7 +37,6 @@ set(GAMEENGINE_DEVICE_DIR "${ZH_CODE_DIR}/GameEngineDevice")
 set(GAMEENGINE_DEVICE_INCLUDE_DIR "${GAMEENGINE_DEVICE_DIR}/Include")
 set(WASM_SHIMS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shims")
 set(WIN32_GAMEENGINE_SHIMS_DIR "${WASM_SHIMS_DIR}/win32_gameengine")
-set(WIN32_MOUSE_BROWSER_SHIMS_DIR "${WASM_SHIMS_DIR}/win32_mouse_browser")
 set(WINMAIN_WNDPROC_SHIMS_DIR "${WASM_SHIMS_DIR}/winmain_wndproc")
 set(WWVEGAS_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_port.h")
 set(WWVEGAS_MUTEX_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_mutex_port.h")
@@ -4237,40 +4236,6 @@ target_link_libraries(zh_window_layout_script_runtime PUBLIC
   zh_gameclient_text
 )
 
-add_library(zh_win32_mouse STATIC
-  "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/GameClient/Win32Mouse.cpp"
-)
-
-target_include_directories(zh_win32_mouse PUBLIC
-  "${WASM_SHIMS_DIR}"
-  "${MAIN_DIR}"
-  "${GAMEENGINE_INCLUDE_DIR}"
-  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
-  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
-  "${ZH_LIB_INCLUDE_DIR}"
-  "${WWVEGAS_DIR}"
-  "${WWMATH_DIR}"
-  "${WWLIB_DIR}"
-)
-
-target_compile_options(zh_win32_mouse PRIVATE
-  -include${WASM_SHIMS_DIR}/PreRTS.h
-  -fms-extensions
-  -Wall
-  -Wextra
-  -Wno-extra-tokens
-  -Wno-implicit-exception-spec-mismatch
-  -Wno-new-returns-null
-  -Wno-register
-  -Wno-unknown-pragmas
-  -Wno-unused-parameter
-  -Wno-writable-strings
-)
-
-target_link_libraries(zh_win32_mouse PUBLIC
-  zh_gameclient_utility
-)
-
 add_library(zh_win32_mouse_browser_real STATIC
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/GameClient/Win32Mouse.cpp"
 )
@@ -4330,74 +4295,6 @@ target_compile_options(zh_win32_mouse_browser_real PRIVATE
 
 target_link_libraries(zh_win32_mouse_browser_real PUBLIC
   zh_gameclient_utility
-)
-
-add_library(zh_win32_mouse_browser STATIC
-  "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/GameClient/Win32Mouse.cpp"
-)
-
-target_include_directories(zh_win32_mouse_browser PUBLIC
-  "${WIN32_MOUSE_BROWSER_SHIMS_DIR}"
-  "${WASM_SHIMS_DIR}"
-  "${MAIN_DIR}"
-  "${GAMEENGINE_INCLUDE_DIR}"
-  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
-  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
-  "${ZH_LIB_INCLUDE_DIR}"
-  "${WWVEGAS_DIR}"
-  "${WWMATH_DIR}"
-  "${WWLIB_DIR}"
-)
-
-target_compile_options(zh_win32_mouse_browser PRIVATE
-  -include${WASM_SHIMS_DIR}/PreRTS.h
-  -fms-extensions
-  -Wall
-  -Wextra
-  -Wno-extra-tokens
-  -Wno-implicit-exception-spec-mismatch
-  -Wno-new-returns-null
-  -Wno-register
-  -Wno-unknown-pragmas
-  -Wno-unused-parameter
-  -Wno-writable-strings
-)
-
-add_library(zh_winmain_wndproc STATIC
-  "${MAIN_DIR}/WinMain.cpp"
-)
-
-target_include_directories(zh_winmain_wndproc PUBLIC
-  "${WINMAIN_WNDPROC_SHIMS_DIR}"
-  "${WIN32_GAMEENGINE_SHIMS_DIR}"
-  "${WASM_SHIMS_DIR}"
-  "${MAIN_DIR}"
-  "${GAMEENGINE_INCLUDE_DIR}"
-  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
-  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
-  "${ZH_LIB_INCLUDE_DIR}"
-  "${WWVEGAS_DIR}"
-  "${WWMATH_DIR}"
-  "${WWLIB_DIR}"
-)
-
-target_compile_options(zh_winmain_wndproc PRIVATE
-  -DCNC_WASM_WNDPROC_ONLY
-  -include${WASM_SHIMS_DIR}/PreRTS.h
-  -fms-extensions
-  -Wall
-  -Wextra
-  -Wno-extra-tokens
-  -Wno-implicit-exception-spec-mismatch
-  -Wno-new-returns-null
-  -Wno-register
-  -Wno-unknown-pragmas
-  -Wno-unused-parameter
-  -Wno-writable-strings
-)
-
-target_link_libraries(zh_winmain_wndproc PUBLIC
-  zh_win32_mouse
 )
 
 add_library(zh_winmain_wndproc_browser STATIC
@@ -4471,15 +4368,43 @@ target_include_directories(zh_win32_gameengine_message_pump PUBLIC
   "${MAIN_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
   "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
   "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
   "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
   "${WWMATH_DIR}"
   "${WWLIB_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_definitions(zh_win32_gameengine_message_pump PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
 )
 
 target_compile_options(zh_win32_gameengine_message_pump PRIVATE
-  -include${WASM_SHIMS_DIR}/PreRTS.h
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${WIN32_GAMEENGINE_SHIMS_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
   -fms-extensions
   -Wall
   -Wextra
@@ -7093,8 +7018,29 @@ target_link_libraries(win32-gameengine-message-pump-smoke PRIVATE
   zh_win32_gameengine_message_pump
 )
 
+target_compile_definitions(win32-gameengine-message-pump-smoke PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+)
+
 target_compile_options(win32-gameengine-message-pump-smoke PRIVATE
-  -include${WASM_SHIMS_DIR}/PreRTS.h
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${WIN32_GAMEENGINE_SHIMS_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
   -fms-extensions
   -Wall
   -Wextra
@@ -7124,8 +7070,29 @@ target_link_libraries(win32-gameengine-lifetime-smoke PRIVATE
   zh_gameengine_common_core
 )
 
+target_compile_definitions(win32-gameengine-lifetime-smoke PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+)
+
 target_compile_options(win32-gameengine-lifetime-smoke PRIVATE
-  -include${WASM_SHIMS_DIR}/PreRTS.h
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${WIN32_GAMEENGINE_SHIMS_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
   -fms-extensions
   -Wall
   -Wextra
@@ -7157,8 +7124,29 @@ target_link_libraries(win32-gameengine-original-lifetime-smoke PRIVATE
   zh_gameengine_original_drawable_lifetime
 )
 
+target_compile_definitions(win32-gameengine-original-lifetime-smoke PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+)
+
 target_compile_options(win32-gameengine-original-lifetime-smoke PRIVATE
-  -include${WASM_SHIMS_DIR}/PreRTS.h
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${WIN32_GAMEENGINE_SHIMS_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
   -ffunction-sections
   -fdata-sections
   -fms-extensions
@@ -7182,6 +7170,7 @@ target_link_options(win32-gameengine-original-lifetime-smoke PRIVATE
 
 add_executable(winmain-wndproc-mouse-smoke
   tests/winmain_wndproc_mouse_smoke.cpp
+  src/wasm_gameclient_utility_smoke_ini_support.cpp
 )
 
 set_target_properties(winmain-wndproc-mouse-smoke PROPERTIES
@@ -7189,12 +7178,36 @@ set_target_properties(winmain-wndproc-mouse-smoke PROPERTIES
 )
 
 target_link_libraries(winmain-wndproc-mouse-smoke PRIVATE
-  zh_winmain_wndproc
+  zh_winmain_wndproc_browser
   zh_win32_gameengine_message_pump
+  zh_gameengine_globaldata_runtime
+  zh_gameengine_debug_runtime
+)
+
+target_compile_definitions(winmain-wndproc-mouse-smoke PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
 )
 
 target_compile_options(winmain-wndproc-mouse-smoke PRIVATE
-  -include${WASM_SHIMS_DIR}/PreRTS.h
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${WINMAIN_WNDPROC_SHIMS_DIR}"
+  "-iquote${WIN32_GAMEENGINE_SHIMS_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
   -fms-extensions
   -Wall
   -Wextra

@@ -15,11 +15,15 @@
 
 extern LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 extern "C" void cnc_port_win32_service_windows_os_message_pump();
-extern Bool ApplicationIsWindowed;
-extern DWORD TheMessageTime;
 
+HINSTANCE ApplicationHInstance = nullptr;
+HWND ApplicationHWnd = nullptr;
+Bool ApplicationIsWindowed = false;
+Win32Mouse *TheWin32Mouse = nullptr;
+DWORD TheMessageTime = 0;
+const Char *g_strFile = "data\\Generals.str";
+const Char *g_csfFile = "data\\%s\\Generals.csf";
 SubsystemInterfaceList *TheSubsystemList = nullptr;
-GlobalData *TheGlobalData = nullptr;
 GameEngine *TheGameEngine = nullptr;
 GameLogic *TheGameLogic = nullptr;
 

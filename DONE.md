@@ -8692,6 +8692,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       --prefix WebAssembly run verify:cnc-port-real-headers`, `npm --prefix
       WebAssembly run verify:cnc-port-weak-stubs`, and `npm --prefix
       WebAssembly run build:port`.
+- [x] Retire the obsolete Win32 mouse/WndProc shim target trio and migrate the
+      Win32GameEngine message-pump smokes to the real-header prelude. Removed
+      unused/superseded `zh_win32_mouse`, `zh_win32_mouse_browser`, and
+      `zh_winmain_wndproc` so the old shim-only Win32 mouse/WndProc path is no
+      longer a default-build artifact. `zh_win32_gameengine_message_pump` now
+      force-includes `wasm_prerts_real.h`, defines the original
+      `GlobalData`/`GameLogic` header switches, and keeps only the narrow
+      Win32GameEngine shim ahead of the real engine headers. The
+      `win32-gameengine-message-pump-smoke`,
+      `win32-gameengine-lifetime-smoke`,
+      `win32-gameengine-original-lifetime-smoke`, and
+      `winmain-wndproc-mouse-smoke` targets now use the same real-header
+      prelude; the WndProc smoke links the already-real
+      `zh_winmain_wndproc_browser`/`zh_win32_mouse_browser_real` path, original
+      GlobalData/debug owners, and focused real-layout INI support. Verified
+      with focused Ninja builds for all four smokes, all four Node smoke
+      executables, `ninja -t cleandead`, a focused deps audit reporting 0
+      audited shadow-header offenders, `npm --prefix WebAssembly run
+      verify:cnc-port-real-headers`, `npm --prefix WebAssembly run
+      verify:cnc-port-weak-stubs`, `npm --prefix WebAssembly run build:port`,
+      and `npm --prefix WebAssembly run build:startup-vertical`.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an

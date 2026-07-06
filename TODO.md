@@ -299,6 +299,18 @@ residue and the next frontier.
       `win32-keyboard-smoke` and `win32-keyboard-focus-repeat-smoke` off shim
       `PreRTS.h` and onto the same real-header `zh_gameclient_utility` closure
       plus original GlobalData/debug owners and focused real-layout INI support.
+      The next burn-down deleted the obsolete shim-only
+      `zh_win32_mouse`, `zh_win32_mouse_browser`, and `zh_winmain_wndproc`
+      targets, migrated `zh_win32_gameengine_message_pump` to the real
+      PreRTS/GameLogic/GlobalData prelude, and moved
+      `win32-gameengine-message-pump-smoke`,
+      `win32-gameengine-lifetime-smoke`,
+      `win32-gameengine-original-lifetime-smoke`, and
+      `winmain-wndproc-mouse-smoke` off explicit shim `PreRTS.h`. Remaining
+      explicit CMake shim `PreRTS.h` users are now source-file overrides for
+      `Win32CDManager.cpp`, `wasm_win32_gameengine_probe.cpp`,
+      `wasm_function_lexicon_runtime.cpp`, `wasm_module_factory_runtime.cpp`,
+      and `wasm_particle_system_runtime.cpp`.
       Remaining cleanup: audit and delete the shadow
       shim class headers/bodies once no linked or compile-only target needs
       them, and migrate or retire any future legacy target that still depends
