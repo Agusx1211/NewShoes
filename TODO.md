@@ -185,19 +185,6 @@ residue and the next frontier.
       the smoke.mjs cursor-hidden probe assertion once W3DMouse cursor rendering
       (the game's own cursor) is ported — currently hardcoded css="default" to
       avoid a cursorless UI (see e97628f).
-- [ ] Replace the remaining Emscripten-only bridge transform dispatch
-      workaround with the real virtual `Thing`/`Object` transform-reaction
-      path. The direct `GameLogic::update()` workaround in
-      `GameEngine::update()` is gone (see DONE.md): the real
-      `TheGameLogic->UPDATE()` path now survives the shell-to-MD_USA01
-      post-campaign frame gate. Remaining siblings are
-      `Thing::cncPortSetObjectPosition/Orientation` (`Thing.cpp:197,280`,
-      raw `static_cast<Object*>(this)` because "virtual cast/reaction slots"
-      failed) and `Object::cncPortReactToTransformChangeFromThing`
-      (`Object.cpp:602`). A deletion attempt on 2026-07-06 still crashed the
-      bridge-buffer scene while loading logical bridge map objects, so keep
-      these helpers until bridge creation has a real vtable-safe fix and
-      `terrain_bridge_buffer_scene_smoke.mjs` proves it.
 - [ ] Migrate the legacy `ensure_booted()` probe boot and its harness gates
       onto the real lifecycle path, deleting probe-local implementations as
       real init covers them. The 2026-07-05 aggregate-smoke
@@ -1508,9 +1495,13 @@ residue and the next frontier.
       `Object::setDisabledUntil` / `Object::checkDisabledStatus` to set and
       expire timed disabled flags, and through `Object::goInvulnerable` to set
       and clear the undetected-defector invulnerability state, and through
-      `GameLogic::destroyObject` / `GameLogic::update` to queue and process
-      bridge-object removal from the object list and lookup table, while
-      clipping health/state back to `BODY_PRISTINE` because the
+      `GameLogic::destroyObject` / the original destroy-list processing path
+      to queue and process bridge-object removal from the object list and
+      lookup table, while the bridge construction path now uses the real
+      virtual `Thing::setPosition` / `Thing::setOrientation` →
+      `Object::reactToTransformChange` dispatch instead of the deleted
+      Emscripten-only transform helpers. The remaining focused probe still
+      clips health/state back to `BODY_PRISTINE` because the
       real object uses `ImmortalBody` with `MaxHealth = 1`, so damaged/repaired
       bridge-state sync must not be faked through direct body health changes,
       kill/delete side effects, or direct body-state writes. The original bridge

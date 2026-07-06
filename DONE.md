@@ -92,11 +92,30 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run verify:cnc-port-real-headers`,
       `npm --prefix WebAssembly run verify:cnc-port-weak-stubs`,
       `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and
-      `git diff --check`. The related
+      `git diff --check`. At that point the related
       `Thing::cncPortSetObjectPosition/Orientation` and
-      `Object::cncPortReactToTransformChangeFromThing` bridge helpers remain
-      open in TODO because removing them still crashes the bridge-buffer scene
-      while loading logical bridge map objects.
+      `Object::cncPortReactToTransformChangeFromThing` bridge helpers still
+      crashed the bridge-buffer scene when removed; their later removal is
+      recorded below.
+- [x] Replace the remaining Emscripten-only bridge transform dispatch
+      workaround with the real virtual `Thing`/`Object` transform-reaction
+      path. Deleted `Thing::cncPortSetObjectPosition`,
+      `Thing::cncPortSetObjectOrientation`, and
+      `Object::cncPortReactToTransformChangeFromThing`, then returned
+      `TerrainLogic::Bridge::Bridge` to the original `bridge->setPosition()`
+      and `bridge->setOrientation()` calls so bridge construction reaches
+      `Object::reactToTransformChange` through the normal vtable path. The
+      focused bridge runtime now keeps a retained probe `GameClient`, installs
+      bounded no-op script/audio/drawable global owners, processes only the
+      original destroy-list path where the probe needs teardown, and handles an
+      empty `GameLogic` object lookup vector without requiring a full reset.
+      Verified with `npm --prefix WebAssembly run build:port`,
+      `terrain_bridge_buffer_scene_smoke.mjs` under
+      `CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS=240000` with the real INIZH, MapsZH,
+      Terrain, W3D, and Textures archive set, and
+      `npm --prefix WebAssembly run test:startup-vertical`, including
+      `harness-smoke-ww3d-terrain-bridge-buffer-scene-canvas.png` and the
+      startup vertical screenshots through campaign start.
 - [x] A JS↔engine RPC/command channel stub (`boot`, `log`, `state`,
       `screenshot`).
 - [x] Add a bounded harness `frame` RPC that drives the exported wasm

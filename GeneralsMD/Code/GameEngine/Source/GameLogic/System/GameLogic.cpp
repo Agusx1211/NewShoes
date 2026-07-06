@@ -3999,7 +3999,7 @@ void GameLogic::addObjectToLookupTable( Object *obj )
 //	m_objHash[ obj->getID() ] = obj;
 	ObjectID newID = obj->getID();
 	while( newID >= m_objVector.size() ) // Fail case is hella rare, so faster to double up on size() call
-		m_objVector.resize(m_objVector.size() * 2, NULL);
+		m_objVector.resize(m_objVector.empty() ? OBJ_HASH_SIZE : m_objVector.size() * 2, NULL);
 
 	m_objVector[ newID ] = obj;
 
@@ -4510,6 +4510,18 @@ UnsignedInt GameLogic::getObjectCount( void )
 	}
 	return totalObjects;
 }
+
+#ifdef __EMSCRIPTEN__
+void GameLogic::cncPortProcessDestroyListForProbe( void )
+{
+	processDestroyList();
+}
+
+void GameLogic::cncPortAdvanceFrameForProbe( void )
+{
+	++m_frame;
+}
+#endif
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------

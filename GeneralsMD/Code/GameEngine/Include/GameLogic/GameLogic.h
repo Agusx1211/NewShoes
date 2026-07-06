@@ -225,6 +225,10 @@ public:
 	void timeOutGameStart( void );
 	void initTimeOutValues( void );
 	UnsignedInt getObjectCount( void );
+#ifdef __EMSCRIPTEN__
+	void cncPortProcessDestroyListForProbe( void );
+	void cncPortAdvanceFrameForProbe( void );
+#endif
 
 	Int getRankLevelLimit() const { return m_rankLevelLimit; }
 	void setRankLevelLimit(Int limit) 

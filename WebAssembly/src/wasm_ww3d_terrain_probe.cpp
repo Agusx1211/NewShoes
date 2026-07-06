@@ -16,10 +16,12 @@
 #include "mmsystem.h"
 #include "wwvegas_port.h"
 #include "Common/ArchiveFileSystem.h"
+#include "Common/AudioHandleSpecialValues.h"
 #include "Common/DataChunk.h"
 #include "Common/Errors.h"
 #include "Common/File.h"
 #include "Common/FileSystem.h"
+#include "Common/GameAudio.h"
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
 #include "Common/DrawModule.h"
@@ -46,6 +48,7 @@
 #include "GameLogic/Module/BridgeScaffoldBehavior.h"
 #include "GameLogic/Module/BridgeTowerBehavior.h"
 #include "GameLogic/Module/ImmortalBody.h"
+#include "GameLogic/GhostObject.h"
 #include "GameLogic/PartitionManager.h"
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/PolygonTrigger.h"
@@ -159,6 +162,7 @@ constexpr int kMapCells = 16;
 constexpr int kMapVertices = kMapCells + 1;
 constexpr int kMapPatchCells = 32;
 constexpr int kMapPatchVertices = kMapPatchCells + 1;
+constexpr int kProbeDrawableHashSize = 8192;
 constexpr int kViewportWidth = 800;
 constexpr int kViewportHeight = 600;
 constexpr unsigned int kExpectedFlatTextureSize = kMapCells * 8;
@@ -278,6 +282,17 @@ public:
 class ProbeTerrainLogicGameClient final : public GameClient
 {
 public:
+	void resetProbeState()
+	{
+		m_drawableList = nullptr;
+		m_drawableVector.clear();
+		m_drawableVector.resize(kProbeDrawableHashSize, nullptr);
+		m_nextDrawableID = static_cast<DrawableID>(1);
+		m_frame = 0;
+		m_timeOfDayNotified = false;
+		m_timeOfDay = TIME_OF_DAY_INVALID;
+	}
+
 	void init() override {}
 	void update() override {}
 	void reset() override {}
@@ -306,7 +321,19 @@ public:
 		}
 		return newInstance(Drawable)(thing, statusBits);
 	}
-	void destroyDrawable(Drawable *draw) override { GameClient::destroyDrawable(draw); }
+	void destroyDrawable(Drawable *draw) override
+	{
+		if (draw == nullptr) {
+			return;
+		}
+		draw->removeFromList(&m_drawableList);
+		Object *object = draw->getObject();
+		if (object != nullptr && object->getDrawable() == draw) {
+			object->friend_bindToDrawable(nullptr);
+		}
+		removeDrawableFromLookupTable(draw);
+		draw->deleteInstance();
+	}
 	void setTimeOfDay(TimeOfDay tod) override
 	{
 		m_timeOfDayNotified = true;
@@ -355,6 +382,14 @@ private:
 	bool m_timeOfDayNotified = false;
 	TimeOfDay m_timeOfDay = TIME_OF_DAY_INVALID;
 };
+
+ProbeTerrainLogicGameClient &shared_probe_terrain_logic_game_client()
+{
+	alignas(ProbeTerrainLogicGameClient) static unsigned char storage[sizeof(ProbeTerrainLogicGameClient)];
+	static ProbeTerrainLogicGameClient *game_client =
+		new (storage) ProbeTerrainLogicGameClient();
+	return *game_client;
+}
 
 struct ProbeLogicalTerrainLoadMetrics
 {
@@ -2475,6 +2510,49 @@ private:
 	ScriptEngine *m_scriptEngine = nullptr;
 };
 
+class ProbeNoopScriptEngine final : public ScriptEngine
+{
+public:
+	void init() override {}
+	void reset() override {}
+	void update() override {}
+	void newMap() override {}
+	void notifyOfObjectDestruction(Object *) override {}
+};
+
+class ProbeNoopScriptEngineScope
+{
+public:
+	ProbeNoopScriptEngineScope() :
+		m_oldScriptEngine(TheScriptEngine),
+		m_scriptEngine(sharedScriptEngine())
+	{
+		TheScriptEngine = m_scriptEngine;
+	}
+
+	~ProbeNoopScriptEngineScope()
+	{
+		TheScriptEngine = m_oldScriptEngine;
+	}
+
+	bool installed() const
+	{
+		return m_scriptEngine != nullptr && TheScriptEngine == m_scriptEngine;
+	}
+
+private:
+	static ScriptEngine *sharedScriptEngine()
+	{
+		alignas(ProbeNoopScriptEngine) static unsigned char storage[sizeof(ProbeNoopScriptEngine)];
+		static ScriptEngine *script_engine =
+			new (storage) ProbeNoopScriptEngine();
+		return script_engine;
+	}
+
+	ScriptEngine *m_oldScriptEngine = nullptr;
+	ScriptEngine *m_scriptEngine = nullptr;
+};
+
 class ProbeLogicalTerrainGlobalScope
 {
 public:
@@ -2854,7 +2932,7 @@ public:
 		state.lookupAfterDestroyObject =
 			TheGameLogic->findObjectByID(state.bridgeObjectID) == bridge_object;
 
-		logic.update();
+		logic.cncPortProcessDestroyListForProbe();
 		state.objectCountAfterProcess = logic.getObjectCount();
 		state.lookupAfterProcessNull =
 			TheGameLogic->findObjectByID(state.bridgeObjectID) == nullptr;
@@ -2995,7 +3073,7 @@ public:
 			bridge_object->getDisabledUntil(DISABLED_ANY);
 
 		while (logic.getFrame() < timer.expirationFrame) {
-			logic.update();
+			logic.cncPortAdvanceFrameForProbe();
 		}
 		bridge_object->checkDisabledStatus();
 		timer.frameAfterExpiryCheck = logic.getFrame();
@@ -3431,7 +3509,9 @@ ProbeLogicalTerrainLoadMetrics run_logical_terrain_load_probe(
 	metrics.expectedMaxZ = static_cast<float>(max_height) * MAP_HEIGHT_SCALE;
 
 	MapCache map_cache;
-	ProbeTerrainLogicGameClient game_client;
+	ProbeTerrainLogicGameClient &game_client =
+		shared_probe_terrain_logic_game_client();
+	game_client.resetProbeState();
 	ThingFactory thing_factory;
 	ProbeLogicalScriptEngineScope script_engine_scope;
 	W3DTerrainLogic terrain_logic;
@@ -4962,6 +5042,59 @@ private:
 	CellShroudStatus m_sampleStatus = CELLSHROUD_SHROUDED;
 };
 
+class ProbeNoopAudioManager final : public AudioManager
+{
+public:
+#if defined(_DEBUG) || defined(_INTERNAL)
+	void audioDebugDisplay(DebugDisplayInterface *, void *, FILE * = nullptr) override {}
+#endif
+	void stopAudio(AudioAffect) override {}
+	void pauseAudio(AudioAffect) override {}
+	void resumeAudio(AudioAffect) override {}
+	void pauseAmbient(Bool) override {}
+	AudioHandle addAudioEvent(const AudioEventRTS *) override { return AHSV_NoSound; }
+	void removeAudioEvent(AudioHandle) override {}
+	void killAudioEventImmediately(AudioHandle) override {}
+	void nextMusicTrack() override {}
+	void prevMusicTrack() override {}
+	Bool isMusicPlaying() const override { return FALSE; }
+	Bool hasMusicTrackCompleted(const AsciiString &, Int) const override { return FALSE; }
+	AsciiString getMusicTrackName() const override { return AsciiString::TheEmptyString; }
+	void openDevice() override {}
+	void closeDevice() override {}
+	void *getDevice() override { return nullptr; }
+	void notifyOfAudioCompletion(UnsignedInt, UnsignedInt) override {}
+	UnsignedInt getProviderCount() const override { return 0; }
+	AsciiString getProviderName(UnsignedInt) const override { return AsciiString::TheEmptyString; }
+	UnsignedInt getProviderIndex(AsciiString) const override { return 0; }
+	void selectProvider(UnsignedInt) override {}
+	void unselectProvider() override {}
+	UnsignedInt getSelectedProvider() const override { return 0; }
+	void setSpeakerType(UnsignedInt) override {}
+	UnsignedInt getSpeakerType() override { return 0; }
+	UnsignedInt getNum2DSamples() const override { return 0; }
+	UnsignedInt getNum3DSamples() const override { return 0; }
+	UnsignedInt getNumStreams() const override { return 0; }
+	Bool doesViolateLimit(AudioEventRTS *) const override { return FALSE; }
+	Bool isPlayingLowerPriority(AudioEventRTS *) const override { return FALSE; }
+	Bool isPlayingAlready(AudioEventRTS *) const override { return FALSE; }
+	Bool isObjectPlayingVoice(UnsignedInt) const override { return FALSE; }
+	void adjustVolumeOfPlayingAudio(AsciiString, Real) override {}
+	void removePlayingAudio(AsciiString) override {}
+	void removeAllDisabledAudio() override {}
+	Bool has3DSensitiveStreamsPlaying() const override { return FALSE; }
+	void *getHandleForBink() override { return nullptr; }
+	void releaseHandleForBink() override {}
+	void friend_forcePlayAudioEventRTS(const AudioEventRTS *) override {}
+	void setPreferredProvider(AsciiString) override {}
+	void setPreferredSpeaker(AsciiString) override {}
+	Real getFileLengthMS(AsciiString) const override { return 0.0f; }
+	void closeAnySamplesUsingFile(const void *) override {}
+
+protected:
+	void setDeviceListenerPosition() override {}
+};
+
 class ProbePartitionTerrainLogic final : public TerrainLogic
 {
 public:
@@ -5800,7 +5933,9 @@ ProbeLogicalMapObjectLoadMetrics load_probe_logical_terrain_map_objects(
 
 	ProbeWritableGlobalDataScope global_data_scope;
 	MapCache map_cache;
-	ProbeTerrainLogicGameClient game_client;
+	ProbeTerrainLogicGameClient &game_client =
+		shared_probe_terrain_logic_game_client();
+	game_client.resetProbeState();
 	ThingFactory thing_factory;
 	ProbeLogicalScriptEngineScope script_engine_scope;
 	W3DTerrainLogic terrain_logic;
@@ -10296,19 +10431,31 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	TerrainLogic *old_terrain_logic = TheTerrainLogic;
 	GameLogic *old_game_logic = TheGameLogic;
 	ModuleFactory *old_module_factory = TheModuleFactory;
+	AudioManager *old_audio = TheAudio;
 	PlayerList *old_player_list = ThePlayerList;
 	Radar *old_radar = TheRadar;
+	GhostObjectManager *old_ghost_object_manager = TheGhostObjectManager;
 	PartitionManager *old_partition_manager = ThePartitionManager;
 	FXListStore *old_fx_list_store = TheFXListStore;
 	DamageFXStore *old_damage_fx_store = TheDamageFXStore;
 	ArmorStore *old_armor_store = TheArmorStore;
+	FontLibrary *old_font_library = TheFontLibrary;
+	DisplayStringManager *old_display_string_manager = TheDisplayStringManager;
+	GlobalLanguage *old_global_language = TheGlobalLanguageData;
 	MapCache bridge_draw_map_cache;
-	ProbeTerrainLogicGameClient bridge_draw_game_client;
+	ProbeTerrainLogicGameClient &bridge_draw_game_client =
+		shared_probe_terrain_logic_game_client();
+	bridge_draw_game_client.resetProbeState();
+	ProbeTerrainDrawableFontLibrary bridge_drawable_font_library;
+	ProbeTerrainDrawableDisplayStringManager bridge_drawable_display_string_manager;
+	GlobalLanguage bridge_drawable_global_language;
 	ThingFactory bridge_draw_thing_factory;
 	ProbeBridgeModuleFactory bridge_draw_module_factory;
 	GameLogic bridge_draw_game_logic;
+	ProbeNoopAudioManager bridge_draw_audio;
 	PlayerList bridge_draw_player_list;
 	ProbeShroudCountingRadar bridge_draw_radar;
+	GhostObjectManager bridge_draw_ghost_object_manager;
 	PartitionManager bridge_draw_partition_manager;
 	FXListStore bridge_draw_fx_list_store;
 	DamageFXStore bridge_draw_damage_fx_store;
@@ -10346,6 +10493,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	bool bridge_armor_load_exception = false;
 	bool bridge_generic_bridge_template_load_exception = false;
 	Int bridge_generic_bridge_template_error_code = 0;
+	bool bridge_drawable_globals_installed = false;
 	bool bridge_partition_ready = false;
 	bool bridge_object_script_engine_ready = false;
 	bool bridge_thing_factory_new_object_template_found = false;
@@ -10843,6 +10991,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	}
 
 	if (tree_buffer_installed && mesh_file_exists && tree_texture_file_exists) {
+		probe_bridge_phase_log("tree-buffer-add-tree");
 		tree_data_configured = tree_data != nullptr;
 		tree_location_x = bridge_center_x + 64.0f;
 		tree_location_y = bridge_center_y + 64.0f;
@@ -10851,15 +11000,25 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		Coord3D location;
 		location.set(tree_location_x, tree_location_y, tree_location_z);
 		render_object->addTree(kTreeProbeId, location, 1.0f, 0.0f, 0.0f, tree_data);
+		probe_bridge_phase_log("tree-buffer-add-tree-done");
 		add_tree_invoked = true;
+		probe_bridge_phase_log("tree-buffer-update-tree");
 		update_tree_invoked = render_object->updateTreePosition(kTreeProbeId, location, 0.0f);
+		probe_bridge_phase_log("tree-buffer-update-tree-done");
 	}
 
 	if (bridge_buffer_initialized && TheNameKeyGenerator != nullptr) {
+		probe_bridge_phase_log("object-runtime-setup");
+		TheFontLibrary = &bridge_drawable_font_library;
+		TheDisplayStringManager = &bridge_drawable_display_string_manager;
+		TheGlobalLanguageData = &bridge_drawable_global_language;
+		bridge_drawable_globals_installed = true;
+
 		TheModuleFactory = &bridge_draw_module_factory;
+		TheAudio = &bridge_draw_audio;
 
 		TheGameLogic = &bridge_draw_game_logic;
-		bridge_draw_game_logic.reset();
+		bridge_draw_game_logic.setObjectIDCounter(static_cast<ObjectID>(1));
 		bridge_game_logic_ready = TheGameLogic == &bridge_draw_game_logic;
 
 		ThePlayerList = &bridge_draw_player_list;
@@ -10869,6 +11028,8 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 
 		TheRadar = &bridge_draw_radar;
 		bridge_radar_ready = TheRadar == &bridge_draw_radar;
+
+		TheGhostObjectManager = &bridge_draw_ghost_object_manager;
 
 		ThePartitionManager = &bridge_draw_partition_manager;
 		bridge_draw_partition_manager.init();
@@ -10960,7 +11121,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			bridge_armor_ready &&
 			bridge_generic_bridge_template_loaded &&
 			bridge_partition_ready) {
-		ProbeLogicalScriptEngineScope bridge_object_script_engine_scope;
+		ProbeNoopScriptEngineScope bridge_object_script_engine_scope;
 		bridge_object_script_engine_ready = bridge_object_script_engine_scope.installed();
 		const ThingTemplate *direct_generic_bridge_template = nullptr;
 		if (bridge_object_script_engine_ready) {
@@ -11008,7 +11169,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 				bridge_draw_game_logic.destroyObject(direct_bridge_object);
 				bridge_thing_factory_new_object_destroyed_before_process =
 					direct_bridge_object->isDestroyed();
-				bridge_draw_game_logic.update();
+				bridge_draw_game_logic.cncPortProcessDestroyListForProbe();
 				probe_bridge_phase_log("destroy-temp-object-done");
 				bridge_thing_factory_new_object_count_after_destroy =
 					bridge_draw_game_logic.getObjectCount();
@@ -11119,12 +11280,15 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_logic_pathfinder_map_invoked =
 			bridge_draw_terrain_logic.exerciseFirstBridgePathfinderMapForProbe(
 				bridge_logic_pathfinder_map);
+		probe_bridge_phase_log("bridge-object-lookup");
 		bridge_logic_object_lookup_invoked =
 			bridge_draw_terrain_logic.verifyFirstBridgeObjectLookupForProbe(
 				bridge_logic_object_lookup);
+		probe_bridge_phase_log("bridge-object-lookup-done");
 		BodyDamageType first_body_state = BODY_PRISTINE;
 		Real first_body_health = -1.0f;
 		Real first_body_max_health = -1.0f;
+		probe_bridge_phase_log("bridge-body-state");
 		if (bridge_draw_terrain_logic.firstBridgeBodyDamageStateForProbe(
 				first_body_state,
 				first_body_health,
@@ -11133,7 +11297,9 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			bridge_logic_first_body_health_after_seed = first_body_health;
 			bridge_logic_first_body_max_health_after_seed = first_body_max_health;
 		}
+		probe_bridge_phase_log("bridge-body-state-done");
 		ProbeTerrainLogicForBridgeDraw::BridgeDamageAttemptForProbe damaged_body_attempt;
+		probe_bridge_phase_log("bridge-attempt-damage");
 		if (bridge_draw_terrain_logic.attemptFirstBridgeDamageForProbe(
 				1.0f,
 				damaged_body_attempt)) {
@@ -11153,10 +11319,12 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			bridge_logic_attempt_damage_changed_state =
 				damaged_body_attempt.state != BODY_PRISTINE;
 		}
+		probe_bridge_phase_log("bridge-attempt-damage-done");
 		BridgeInfo damaged_bridge_info;
 		PathfindLayerEnum damaged_bridge_layer = LAYER_GROUND;
 		bool damaged_bridge_broken = false;
 		bool damaged_bridge_repaired = false;
+		probe_bridge_phase_log("bridge-damage-update");
 		if (bridge_draw_terrain_logic.updateFirstBridgeDamageStateForProbe(
 				damaged_bridge_info,
 				damaged_bridge_layer,
@@ -11169,7 +11337,9 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			bridge_logic_broken_after_attempt_update = damaged_bridge_broken;
 			bridge_logic_repaired_after_attempt_update = damaged_bridge_repaired;
 		}
+		probe_bridge_phase_log("bridge-damage-update-done");
 		ProbeTerrainLogicForBridgeDraw::BridgeDamageAttemptForProbe killed_body_attempt;
+		probe_bridge_phase_log("bridge-kill");
 		if (bridge_draw_terrain_logic.killFirstBridgeForProbe(killed_body_attempt)) {
 			bridge_logic_kill_invoked = true;
 			bridge_logic_kill_object_still_present =
@@ -11183,10 +11353,12 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			bridge_logic_body_max_health_after_kill =
 				killed_body_attempt.maxHealth;
 		}
+		probe_bridge_phase_log("bridge-kill-done");
 		BridgeInfo killed_bridge_info;
 		PathfindLayerEnum killed_bridge_layer = LAYER_GROUND;
 		bool killed_bridge_broken = false;
 		bool killed_bridge_repaired = false;
+		probe_bridge_phase_log("bridge-kill-update");
 		if (bridge_draw_terrain_logic.updateFirstBridgeDamageStateForProbe(
 				killed_bridge_info,
 				killed_bridge_layer,
@@ -11199,12 +11371,17 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			bridge_logic_broken_after_kill_update = killed_bridge_broken;
 			bridge_logic_repaired_after_kill_update = killed_bridge_repaired;
 		}
+		probe_bridge_phase_log("bridge-kill-update-done");
 		ProbeTerrainLogicForBridgeDraw::BridgeDamageAttemptForProbe healed_body_attempt;
 		Bool null_source_healing_accepted = FALSE;
 		Bool first_healing_accepted = FALSE;
 		Bool repeat_healing_accepted = FALSE;
 		Bool healing_benefactor_matches_bridge = FALSE;
-		bridge_draw_game_logic.update();
+		probe_bridge_phase_log("bridge-pre-healing-destroy-list");
+		bridge_draw_game_logic.cncPortProcessDestroyListForProbe();
+		probe_bridge_phase_log("bridge-pre-healing-destroy-list-done");
+		bridge_draw_game_logic.cncPortAdvanceFrameForProbe();
+		probe_bridge_phase_log("bridge-sole-healing");
 		if (bridge_draw_terrain_logic.attemptFirstBridgeSoleHealingForProbe(
 				1.0f,
 				5,
@@ -11233,10 +11410,12 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			bridge_logic_body_max_health_after_sole_healing =
 				healed_body_attempt.maxHealth;
 		}
+		probe_bridge_phase_log("bridge-sole-healing-done");
 		BridgeInfo healed_bridge_info;
 		PathfindLayerEnum healed_bridge_layer = LAYER_GROUND;
 		bool healed_bridge_broken = false;
 		bool healed_bridge_repaired = false;
+		probe_bridge_phase_log("bridge-healing-update");
 		if (bridge_draw_terrain_logic.updateFirstBridgeDamageStateForProbe(
 				healed_bridge_info,
 				healed_bridge_layer,
@@ -11249,19 +11428,26 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			bridge_logic_broken_after_sole_healing_update = healed_bridge_broken;
 			bridge_logic_repaired_after_sole_healing_update = healed_bridge_repaired;
 		}
+		probe_bridge_phase_log("bridge-healing-update-done");
+		probe_bridge_phase_log("bridge-disabled-timer");
 		bridge_logic_disabled_timer_invoked =
 			bridge_draw_terrain_logic.exerciseFirstBridgeDisabledTimerForProbe(
 				bridge_draw_game_logic,
 				2,
 				bridge_logic_disabled_timer);
+		probe_bridge_phase_log("bridge-disabled-timer-done");
+		probe_bridge_phase_log("bridge-invulnerable");
 		bridge_logic_invulnerable_state_invoked =
 			bridge_draw_terrain_logic.exerciseFirstBridgeInvulnerableStateForProbe(
 				bridge_logic_invulnerable_state);
+		probe_bridge_phase_log("bridge-invulnerable-done");
+		probe_bridge_phase_log("bridge-manual-geometry");
 		bridge_manual_geometry_after_load =
 			bridge_buffer->firstBridgeManualGeometry(
 				bridge_manual_vertices_after_load,
 				bridge_manual_indices_after_load,
 				bridge_manual_geometry_exception);
+		probe_bridge_phase_log("bridge-manual-geometry-done");
 		probe_bridge_metric_log(
 			"after-load",
 			selected_bridge_original_name,
@@ -11380,10 +11566,12 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			bridge_buffer->lastDrawEnabledBridgeCount();
 	}
 	if (bridge_draw_first_damage_state_after_invulnerable_state_scene == BODY_PRISTINE) {
+		ProbeNoopScriptEngineScope destroy_list_script_engine_scope;
 		bridge_logic_destroy_list_invoked =
+			destroy_list_script_engine_scope.installed() &&
 			bridge_draw_terrain_logic.exerciseFirstBridgeDestroyListForProbe(
-				bridge_draw_game_logic,
-				bridge_logic_destroy_list);
+					bridge_draw_game_logic,
+					bridge_logic_destroy_list);
 	}
 
 	ProbeWorldHeightMapInspector::recordRenderedTileMetrics(map, map_load);
@@ -12588,10 +12776,17 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		wasm_shutdown_ww3d_probe();
 	}
 
+	if (bridge_drawable_globals_installed) {
+		TheGlobalLanguageData = old_global_language;
+		TheDisplayStringManager = old_display_string_manager;
+		TheFontLibrary = old_font_library;
+	}
 	TheArmorStore = old_armor_store;
 	TheDamageFXStore = old_damage_fx_store;
 	TheFXListStore = old_fx_list_store;
+	TheAudio = old_audio;
 	ThePartitionManager = old_partition_manager;
+	TheGhostObjectManager = old_ghost_object_manager;
 	TheRadar = old_radar;
 	ThePlayerList = old_player_list;
 	TheGameLogic = old_game_logic;
