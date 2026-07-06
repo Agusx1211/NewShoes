@@ -101,7 +101,6 @@ const d3d8BoundTextures = new Map();
 // from the previous draw. GL retains state between identical draws.
 let d3d8LastDrawKey = null;
 let d3d8CachedDerived = null; // {renderState, clipPlanes, material, lights, fixedFunctionLights, directionalLights, firstDirectionalLight, vertexLayout, texture0Id, texture1Id, canSampleTexture0, canSampleTexture1, texture0Coordinates, texture1Coordinates, texture0SemanticMode, texture1SemanticMode, appliedTexture0Combiner, appliedStage1Combiner, implicitAlphaCutoutThreshold, appliedPointSprite}
-let d3d8LastTransformUniformStateHash = null;
 let d3d8LastTransformUniformWorld = null;
 let d3d8LastTransformUniformView = null;
 let d3d8LastTransformUniformProjection = null;
@@ -2917,6 +2916,7 @@ function bindD3D8Program(program) {
   gl.useProgram(program);
   d3d8CurrentProgram = program;
   d3d8LastVertexAttribKey = null;
+  resetD3D8TransformUniformCache();
   resetD3D8UniformSubgroupCaches();
 }
 
@@ -7768,22 +7768,19 @@ function d3d8MatrixEquals(left, right) {
   return true;
 }
 
-function d3d8TransformUniformsEqual(stateHash, world, view, projection) {
-  return d3d8LastTransformUniformStateHash === stateHash &&
-    d3d8MatrixEquals(d3d8LastTransformUniformWorld, world) &&
+function d3d8TransformUniformsEqual(world, view, projection) {
+  return d3d8MatrixEquals(d3d8LastTransformUniformWorld, world) &&
     d3d8MatrixEquals(d3d8LastTransformUniformView, view) &&
     d3d8MatrixEquals(d3d8LastTransformUniformProjection, projection);
 }
 
 function resetD3D8TransformUniformCache() {
-  d3d8LastTransformUniformStateHash = null;
   d3d8LastTransformUniformWorld = null;
   d3d8LastTransformUniformView = null;
   d3d8LastTransformUniformProjection = null;
 }
 
-function rememberD3D8TransformUniforms(stateHash, world, view, projection) {
-  d3d8LastTransformUniformStateHash = stateHash;
+function rememberD3D8TransformUniforms(world, view, projection) {
   d3d8LastTransformUniformWorld = new Float32Array(world);
   d3d8LastTransformUniformView = new Float32Array(view);
   d3d8LastTransformUniformProjection = new Float32Array(projection);
@@ -9554,15 +9551,15 @@ function paintD3D8DrawIndexed(payload = {}) {
       // Direct3D stores row-vector matrices row-major; WebGL interprets this
       // memory as column-major, giving the transpose needed for GLSL
       // column-vector multiplication. The broad uniform cache excludes object
-      // transforms, so matrix uploads use the full transform-bearing hash.
-      if (d3d8TransformUniformsEqual(stateHash, world, view, projection)) {
+      // transforms, so matrix uploads are cached by the exact uploaded values.
+      if (d3d8TransformUniformsEqual(world, view, projection)) {
         d3d8PerfStats.drawTransformUniformCacheHits += 1;
       } else {
         d3d8PerfStats.drawTransformUniformCacheMisses += 1;
         gl.uniformMatrix4fv(bridgeProgram.world, false, world);
         gl.uniformMatrix4fv(bridgeProgram.view, false, view);
         gl.uniformMatrix4fv(bridgeProgram.projection, false, projection);
-        rememberD3D8TransformUniforms(stateHash, world, view, projection);
+        rememberD3D8TransformUniforms(world, view, projection);
       }
     } else {
       resetD3D8TransformUniformCache();

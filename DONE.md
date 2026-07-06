@@ -8586,6 +8586,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       1.557 to 0.015 ms/frame. Remaining measured sorted-uniform costs are
       transform uploads 1.371, render-state application 0.551, and material
       uniforms 0.479 ms/frame.
+- [x] Remove unrelated state-hash misses from the sorted world/view/projection
+      uniform cache. The browser D3D8 bridge now keys transform uniforms only
+      by the exact uploaded world/view/projection matrix values and resets the
+      transform cache on shader program changes, preserving program-local WebGL
+      uniform correctness while avoiding reuploads when material, light, or
+      render state changes with the same transforms. Verified with
+      `node --check WebAssembly/harness/bridge.js`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port:release`,
+      `npm --prefix WebAssembly run build:port`, and a Mac M4 Chrome/Metal
+      runtime profile using `realEngineFrameTick`, 10 warmup frames,
+      60 measured frames, batch 10, and `PERF_PROFILE_ENGINE_PROFILE=1`. The
+      run reported an Apple M4 Metal renderer string, 45.66 ms/frame wall,
+      48.22 ms average engine `lastFrameMs`, zero measured readPixels, and a
+      visible shell-map screenshot. Sorted bridge work fell from 5.130 to
+      3.848 ms/frame, sorted uniform setup fell from 2.728 to
+      2.076 ms/frame, and transform uploads fell from 1.371 to
+      0.852 ms/frame; transform cache rates were ~313.5 hits/frame vs
+      ~168.3 misses/frame. Remaining measured sorted-uniform costs are
+      material uniforms 0.513, render-state application 0.282, and
+      texture-layout uniforms 0.015 ms/frame.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`
