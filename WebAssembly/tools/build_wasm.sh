@@ -45,6 +45,11 @@ fi
 
 emcmake cmake "${cmake_args[@]}"
 
+check_cnc_port_artifacts() {
+  test -f "${wasm_dir}/${dist_dir}/cnc-port.js"
+  test -f "${wasm_dir}/${dist_dir}/cnc-port.wasm"
+}
+
 # Hot-path support: when CNC_BUILD_TARGETS is set (space-separated CMake
 # target names), build only those targets instead of the full ~90-executable
 # probe/smoke surface. The real-init boot loop should use this via
@@ -53,15 +58,20 @@ emcmake cmake "${cmake_args[@]}"
 if [[ -n "${CNC_BUILD_TARGETS:-}" ]]; then
   read -r -a build_targets <<<"${CNC_BUILD_TARGETS}"
   target_args=()
+  builds_cnc_port=false
   for t in "${build_targets[@]}"; do
     target_args+=(--target "$t")
+    if [[ "$t" == "cnc-port" ]]; then
+      builds_cnc_port=true
+    fi
   done
   cmake --build "${build_dir}" "${target_args[@]}"
+  if [[ "${builds_cnc_port}" == "true" ]]; then
+    check_cnc_port_artifacts
+  fi
 else
   cmake --build "${build_dir}"
-
-  test -f "${wasm_dir}/${dist_dir}/cnc-port.js"
-  test -f "${wasm_dir}/${dist_dir}/cnc-port.wasm"
+  check_cnc_port_artifacts
 fi
 
 echo "${wasm_dir}/${dist_dir}/cnc-port.js"

@@ -305,6 +305,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `WebAssembly/tools/build_wasm.sh` + `package.json`; Debug build
       (`build/wasm`, -O0) untouched; both verified green. Merge commits
       897c65c / 7ae5d0c.
+- [x] Make targeted `cnc-port` hot-path builds assert their selected dist
+      artifacts exist. `WebAssembly/tools/build_wasm.sh` now uses one
+      `check_cnc_port_artifacts` helper for full builds and
+      `CNC_BUILD_TARGETS=cnc-port` builds, so Debug still verifies
+      `dist/cnc-port.js` / `.wasm` and Release verifies
+      `dist-release/cnc-port.js` / `.wasm`. Removed the stale open TODO that
+      still claimed Debug and Release clobbered the same `dist/` output, and
+      added `/WebAssembly/dist-release/` to `.gitignore` so Release artifacts
+      stay out of commits like Debug artifacts. Verified with `npm --prefix
+      WebAssembly run build:port`, `npm --prefix WebAssembly run
+      build:port:release` plus a Debug artifact mtime/size comparison proving
+      Release left `dist/` untouched, `npm --prefix WebAssembly run
+      build:startup-vertical`, `npm --prefix WebAssembly run
+      verify:cnc-port-real-headers`, `npm --prefix WebAssembly run
+      verify:cnc-port-weak-stubs`, `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs`, and `node
+      WebAssembly/tools/run_startup_vertical_smoke.mjs`. The separate
+      Release/perf deployment/re-measurement TODO remains open.
 ### Libraries (compile as-is where possible)
 - [x] `Compression/EAC` BTree, Huff, and RefPack codecs compile from original
       source and round-trip smoke runs under wasm.

@@ -185,10 +185,6 @@ residue and the next frontier.
       the smoke.mjs cursor-hidden probe assertion once W3DMouse cursor rendering
       (the game's own cursor) is ported — currently hardcoded css="default" to
       avoid a cursorless UI (see e97628f).
-- [ ] Debug and Release builds both link into the same `dist/cnc-port.js` and
-      silently clobber each other — give the Release lane its own dist output
-      (or an explicit copy step) so a `build:port:release` doesn't invalidate
-      the Debug artifacts CI just verified.
 - [ ] Replace the Emscripten-only direct `GameLogic::update()` dispatch
       workaround in `GameEngine::update()` with the real
       `W3DGameLogic`/`SubsystemInterface::UPDATE` wasm vtable ownership fix
