@@ -18,8 +18,10 @@ const realInitMenuClickScreenshot = resolve(screenshotDir, "startup-vertical-rea
 const realInitCampaignStartScreenshot = resolve(screenshotDir, "startup-vertical-real-init-campaign-start.png");
 const realInitPostCampaignScreenshot = resolve(screenshotDir, "startup-vertical-real-init-post-campaign.png");
 const interactScreenshot = resolve(screenshotDir, "interact-milestone.png");
+const attackScreenshot = resolve(screenshotDir, "attack-milestone.png");
 const proveInteract = process.env.STARTUP_VERTICAL_PROVE_INTERACT === "1";
 const proveRadar = process.env.STARTUP_VERTICAL_PROVE_RADAR === "1";
+const proveAttack = process.env.STARTUP_VERTICAL_PROVE_ATTACK === "1";
 const debugStartupVertical = process.env.STARTUP_VERTICAL_DEBUG === "1";
 const realInitOnly = process.env.STARTUP_VERTICAL_REAL_INIT_ONLY === "1";
 const postCampaignFrameCount = Number(process.env.STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES ?? 0);
@@ -2496,6 +2498,7 @@ try {
       reachedControl: false,
       unitPicked: null,
       selectCount: 0,
+      attackOrder: null,
       radarMove: null,
       moveSource: null,
       moveDelta: null,
@@ -2593,7 +2596,9 @@ try {
       );
       return summary;
     }
-    const unit = localUnits[0];
+    const combatNamePattern = /Tank|Paladin|Humvee|Ranger|Missile|Comanche|Crusader|Raptor|Aurora|Tomahawk/i;
+    const unit = localUnits.find((d) => combatNamePattern.test(d.name ?? ""))
+      ?? localUnits[0];
     summary.unitPicked = { id: unit.id, name: unit.name, screenPos: unit.screenPos, worldPos: unit.worldPos };
     console.error("[interact] picked unit:", JSON.stringify(summary.unitPicked));
 
@@ -2649,6 +2654,313 @@ try {
       useAlternateMouse,
       "moveButton", moveClick.name
     );
+    const displayWidth = pcResult?.frame?.clientState?.display?.width
+      ?? pcResult?.frame?.display?.width
+      ?? 800;
+    const displayHeight = pcResult?.frame?.clientState?.display?.height
+      ?? pcResult?.frame?.display?.height
+      ?? 600;
+
+    const worldDistance2d = (a, b) => {
+      if (a == null || b == null) {
+        return null;
+      }
+      const dx = Number(a.x) - Number(b.x);
+      const dy = Number(a.y) - Number(b.y);
+      if (!Number.isFinite(dx) || !Number.isFinite(dy)) {
+        return null;
+      }
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+
+    async function reselectPickedUnit() {
+      const currentDrawables = await page.evaluate(() =>
+        window.CnCPort.rpc("queryDrawables"));
+      const currentUnit = (currentDrawables?.result?.drawables ?? [])
+        .find((candidate) => candidate.id === unit.id);
+      const currentPoint = currentUnit?.onScreen === true && currentUnit.screenPos != null
+        ? {
+            x: Math.round(currentUnit.screenPos.x),
+            y: Math.round(currentUnit.screenPos.y),
+          }
+        : clickPoint;
+      await postRealEngineMouseMessage(page, win32MouseMessages.mouseMove, currentPoint);
+      await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+      await postRealEngineMouseMessage(page, win32MouseMessages.leftButtonDown, currentPoint);
+      await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+      await postRealEngineMouseMessage(page, win32MouseMessages.leftButtonUp, currentPoint);
+      await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+      return page.evaluate(() =>
+        window.CnCPort.rpc("querySelection"));
+    }
+
+    async function proveAttackObjectOrder() {
+      const beforeTargets = await page.evaluate(() =>
+        window.CnCPort.rpc("queryDrawables"));
+      const enemies = beforeTargets?.result?.enemyDrawables ?? [];
+      const targetCombatNamePattern =
+        /GLA|China|America|Tank|Infantry|Soldier|Rebel|RPG|Missile|Quad|Scorpion|Technical|Terror|Worker|Stinger|Tunnel|Barracks|ArmsDealer|Command|Supply|Patriot|Gattling|Dozer|Humvee|Paladin|Comanche|Mig|Raptor|Ranger|Trooper|AngryMob|Hijacker|Jarmen|Dragon|Overlord|Marauder|RocketBuggy|Toxin|Demo/i;
+      const targetSceneryNamePattern =
+        /Fence|Wall|Road|Tree|Shrub|Bush|Rock|Boulder|Barrel|Traffic|Sign|Light|Lamp|Pole|Bridge|Ambient|Prop|Debris|Crate|Cargo|CivilianCar|Car|Truck|Train|Flag/i;
+      const targetAttackRank = (candidate) => {
+        const name = candidate?.name ?? "";
+        if (targetCombatNamePattern.test(name)) {
+          return 0;
+        }
+        if (candidate?.structure === true) {
+          return 1;
+        }
+        if (!targetSceneryNamePattern.test(name)) {
+          return 2;
+        }
+        return 3;
+      };
+      const isUsableAttackTarget = (candidate) =>
+          candidate?.onScreen === true
+            && candidate.hidden === false
+            && candidate.effectivelyDead !== true
+            && candidate.screenPos != null
+            && candidate.worldPos != null
+            && candidate.screenPos.x >= 8
+            && candidate.screenPos.x <= displayWidth - 8
+            && candidate.screenPos.y >= 8
+            && candidate.screenPos.y <= displayHeight - 150
+            && (candidate.body?.ready !== true || candidate.body.health > 0)
+            && targetAttackRank(candidate) < 3;
+      const rankTargets = (candidates) => candidates
+        .sort((a, b) => {
+          const aRank = targetAttackRank(a);
+          const bRank = targetAttackRank(b);
+          if (aRank !== bRank) {
+            return aRank - bRank;
+          }
+          const aStructure = a.structure === true ? 1 : 0;
+          const bStructure = b.structure === true ? 1 : 0;
+          if (aStructure !== bStructure) {
+            return aStructure - bStructure;
+          }
+          return (worldDistance2d(unit.worldPos, a.worldPos) ?? Number.MAX_SAFE_INTEGER)
+            - (worldDistance2d(unit.worldPos, b.worldPos) ?? Number.MAX_SAFE_INTEGER);
+        });
+      const hostileTargets = rankTargets(enemies
+        .filter((candidate) => isUsableAttackTarget(candidate)
+          && candidate.hostileToLocal === true))
+        .slice(0, 16)
+        .map((candidate) => ({ ...candidate, forceAttack: false }));
+      const forceAttackTargets = rankTargets(enemies
+        .filter((candidate) => isUsableAttackTarget(candidate)
+          && candidate.hostileToLocal !== true))
+        .slice(0, 16)
+        .map((candidate) => ({ ...candidate, forceAttack: true }));
+      const usableTargets = hostileTargets.length > 0 ? hostileTargets : forceAttackTargets;
+      console.error(
+        "[interact] attack target candidates:",
+        JSON.stringify(usableTargets.map((candidate) => ({
+          id: candidate.id,
+          name: candidate.name,
+          rank: targetAttackRank(candidate),
+          forceAttack: candidate.forceAttack === true,
+          playerIndex: candidate.playerIndex,
+          relationshipToLocal: candidate.relationshipToLocalName ?? candidate.relationshipToLocal,
+          structure: candidate.structure,
+          screenPos: candidate.screenPos,
+          worldPos: candidate.worldPos,
+          health: candidate.body?.health,
+          maxHealth: candidate.body?.maxHealth,
+        }))));
+      expect(usableTargets.length > 0,
+        "[interact] no visible attack target is available for attack proof",
+        {
+          stats: beforeTargets?.result?.stats,
+          enemyCount: enemies.length,
+          hostileCount: enemies.filter((candidate) =>
+            candidate?.onScreen === true && candidate.hostileToLocal === true).length,
+          fallbackForceAttack: hostileTargets.length === 0,
+          rejectedSceneryCount: enemies.filter((candidate) =>
+            candidate?.onScreen === true && targetAttackRank(candidate) >= 3).length,
+          sampleEnemies: enemies.slice(0, 12),
+        });
+
+      const beforeCommandPath = selBefore?.result?.commandPath ?? {};
+      const beforeAttackCount = beforeCommandPath.dispatchAttackCommandCount ?? 0;
+      const targetIds = new Set(usableTargets.map((candidate) => candidate.id));
+      const attempts = [];
+      let accepted = null;
+      for (const target of usableTargets) {
+        const point = {
+          x: Math.round(target.screenPos.x),
+          y: Math.round(target.screenPos.y),
+        };
+        let forceAttackSelection = null;
+        if (target.forceAttack === true) {
+          await page.keyboard.down("Control");
+          await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+          forceAttackSelection = await page.evaluate(() =>
+            window.CnCPort.rpc("querySelection"));
+          expect(forceAttackSelection?.result?.modes?.forceAttack === true,
+            "[interact] CTRL did not enter force-attack mode before force attack proof",
+            forceAttackSelection?.result?.modes);
+        }
+        await postRealEngineMouseMessage(page, win32MouseMessages.mouseMove, point);
+        await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+        await postRealEngineMouseMessage(page, moveClick.down, point);
+        await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+        await postRealEngineMouseMessage(page, moveClick.up, point);
+        await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+        if (target.forceAttack === true) {
+          await page.keyboard.up("Control");
+          await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+        }
+
+        const afterClickSelection = await page.evaluate(() =>
+          window.CnCPort.rpc("querySelection"));
+        const commandPath = afterClickSelection?.result?.commandPath ?? {};
+        const attempt = {
+          target: {
+            id: target.id,
+            name: target.name,
+            rank: targetAttackRank(target),
+            forceAttack: target.forceAttack === true,
+            relationshipToLocal: target.relationshipToLocalName ?? target.relationshipToLocal,
+            point,
+            structure: target.structure,
+          },
+          forceAttackModeBeforeClick: forceAttackSelection?.result?.modes?.forceAttack,
+          selectCount: afterClickSelection?.result?.selectCount,
+          selectedIds: (afterClickSelection?.result?.selected ?? [])
+            .map((selected) => selected.id),
+          lastClickIssuedType: commandPath.lastClickIssuedType,
+          lastClickDrawId: commandPath.lastClickDrawId,
+          dispatchAttackCommandCount: commandPath.dispatchAttackCommandCount,
+          dispatchLastAttackCommandType: commandPath.dispatchLastAttackCommandType,
+          dispatchLastAttackHadGroup: commandPath.dispatchLastAttackHadGroup,
+          dispatchLastAttackTargetId: commandPath.dispatchLastAttackTargetId,
+        };
+        attempts.push(attempt);
+        console.error("[interact] attack target candidate:", JSON.stringify(attempt));
+        if ((commandPath.dispatchAttackCommandCount ?? 0) > beforeAttackCount
+            && commandPath.dispatchLastAttackHadGroup === 1
+            && targetIds.has(commandPath.dispatchLastAttackTargetId)) {
+          const acceptedTarget = usableTargets.find((candidate) =>
+            candidate.id === commandPath.dispatchLastAttackTargetId) ?? target;
+          accepted = {
+            target: acceptedTarget,
+            clickedPoint: point,
+            forceAttack: target.forceAttack === true,
+            beforeCommandPath,
+            afterCommandPath: commandPath,
+            attempts,
+          };
+          break;
+        }
+
+        const stillSelected = (afterClickSelection?.result?.selected ?? [])
+          .some((selected) => selected.id === unit.id);
+        if (!stillSelected) {
+          await reselectPickedUnit();
+        }
+      }
+
+      if (accepted == null) {
+        throw new Error(
+          `[interact] no visible enemy target produced an attack dispatch; ` +
+          `beforeCommandPath=${JSON.stringify(beforeCommandPath)}; ` +
+          `attempts=${JSON.stringify(attempts)}`
+        );
+      }
+
+      console.error("[interact] accepted attack target:", JSON.stringify({
+        id: accepted.target.id,
+        name: accepted.target.name,
+        forceAttack: accepted.forceAttack === true,
+        clickedPoint: accepted.clickedPoint,
+        afterCommandPath: accepted.afterCommandPath,
+      }));
+      console.error("[interact] stepping 180 frames for attack order to affect object state...");
+      await runRealEngineFrames(page, 180);
+
+      const afterTargets = await page.evaluate(() =>
+        window.CnCPort.rpc("queryDrawables"));
+      const afterUnit = (afterTargets?.result?.drawables ?? [])
+        .find((candidate) => candidate.id === unit.id);
+      const afterTarget = (afterTargets?.result?.enemyDrawables ?? [])
+        .find((candidate) => candidate.id === accepted.target.id);
+      const beforeDistance = worldDistance2d(unit.worldPos, accepted.target.worldPos);
+      const afterDistance = worldDistance2d(afterUnit?.worldPos, afterTarget?.worldPos);
+      const unitDelta = worldDistance2d(unit.worldPos, afterUnit?.worldPos);
+      const beforeHealth = accepted.target.body?.ready === true
+        ? accepted.target.body.health
+        : null;
+      const afterHealth = afterTarget?.body?.ready === true
+        ? afterTarget.body.health
+        : null;
+      const beforeDamageTimestamp = accepted.target.body?.lastDamageTimestamp ?? 0;
+      const afterDamageTimestamp = afterTarget?.body?.lastDamageTimestamp ?? 0;
+      const targetDamaged = (
+        Number.isFinite(beforeHealth)
+          && Number.isFinite(afterHealth)
+          && afterHealth < beforeHealth - 0.1
+      )
+        || afterDamageTimestamp > beforeDamageTimestamp
+        || afterTarget?.effectivelyDead === true;
+      const unitMoved = Number.isFinite(unitDelta) && unitDelta > 1.0;
+      const distanceClosed = Number.isFinite(beforeDistance)
+        && Number.isFinite(afterDistance)
+        && afterDistance < beforeDistance - 1.0;
+      const postState = {
+        unitDelta,
+        beforeDistance,
+        afterDistance,
+        beforeHealth,
+        afterHealth,
+        beforeDamageTimestamp,
+        afterDamageTimestamp,
+        targetStillVisible: afterTarget != null,
+        targetDamaged,
+        unitMoved,
+        distanceClosed,
+      };
+      console.error("[interact] attack post-state:", JSON.stringify(postState));
+      if (!targetDamaged && !unitMoved && !distanceClosed) {
+        throw new Error(
+          `[interact] attack command dispatched but object state did not change; ` +
+          `attack=${JSON.stringify(accepted)}; postState=${JSON.stringify(postState)}`
+        );
+      }
+
+      await mkdir(screenshotDir, { recursive: true });
+      await page.screenshot({ path: attackScreenshot });
+      return {
+        target: {
+          id: accepted.target.id,
+          name: accepted.target.name,
+          playerIndex: accepted.target.playerIndex,
+          structure: accepted.target.structure,
+          forceAttack: accepted.forceAttack === true,
+          screenPos: accepted.target.screenPos,
+          worldPos: accepted.target.worldPos,
+        },
+        clickedPoint: accepted.clickedPoint,
+        beforeCommandPath: accepted.beforeCommandPath,
+        afterCommandPath: accepted.afterCommandPath,
+        attempts: accepted.attempts,
+        postState,
+        screenshotPath: attackScreenshot,
+      };
+    }
+
+    if (proveAttack) {
+      summary.attackOrder = await proveAttackObjectOrder();
+      summary.moveSource = "attackObject";
+      summary.moveDelta = summary.attackOrder.postState?.unitDelta ?? null;
+      summary.screenshotPath = summary.attackOrder.screenshotPath;
+      console.error("[interact] attack proof accepted:", JSON.stringify(summary.attackOrder));
+      if (!proveInteract && !proveRadar) {
+        return summary;
+      }
+      selBefore = await page.evaluate(() =>
+        window.CnCPort.rpc("querySelection"));
+    }
 
     async function proveLeftHudRadarMove() {
       const currentFrame = await runRealEngineFrames(page, 1);
@@ -2786,12 +3098,6 @@ try {
       }
     }
 
-    const displayWidth = pcResult?.frame?.clientState?.display?.width
-      ?? pcResult?.frame?.display?.width
-      ?? 800;
-    const displayHeight = pcResult?.frame?.clientState?.display?.height
-      ?? pcResult?.frame?.display?.height
-      ?? 600;
     const clampPoint = (point) => ({
       x: Math.max(16, Math.min(Math.round(point.x), displayWidth - 16)),
       y: Math.max(16, Math.min(Math.round(point.y), displayHeight - 140)),
@@ -2905,7 +3211,7 @@ try {
     return summary;
   }
 
-  const interactResult = (proveInteract || proveRadar)
+  const interactResult = (proveInteract || proveRadar || proveAttack)
     ? await selectAndMoveUnit(realInitPage)
     : null;
 

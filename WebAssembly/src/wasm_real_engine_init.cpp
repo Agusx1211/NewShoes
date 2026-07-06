@@ -75,6 +75,7 @@
 #include "GameLogic/TerrainLogic.h"
 #include "GameLogic/Weapon.h"
 #include "GameLogic/Object.h"
+#include "GameLogic/Module/BodyModule.h"
 #include "Common/ThingTemplate.h"
 #include "Common/ThingFactory.h"
 #include "GameClient/ParticleSys.h"
@@ -187,6 +188,13 @@ extern "C" Int cnc_port_logic_dispatch_last_move_had_group(void);
 extern "C" Real cnc_port_logic_dispatch_last_move_x(void);
 extern "C" Real cnc_port_logic_dispatch_last_move_y(void);
 extern "C" Real cnc_port_logic_dispatch_last_move_z(void);
+extern "C" Int cnc_port_logic_dispatch_attack_command_count(void);
+extern "C" Int cnc_port_logic_dispatch_last_attack_command_type(void);
+extern "C" Int cnc_port_logic_dispatch_last_attack_had_group(void);
+extern "C" Int cnc_port_logic_dispatch_last_attack_target_id(void);
+extern "C" Real cnc_port_logic_dispatch_last_attack_target_x(void);
+extern "C" Real cnc_port_logic_dispatch_last_attack_target_y(void);
+extern "C" Real cnc_port_logic_dispatch_last_attack_target_z(void);
 extern "C" Int cnc_port_logic_dispatch_build_command_count(void);
 extern "C" Int cnc_port_logic_dispatch_last_build_command_type(void);
 extern "C" Int cnc_port_logic_dispatch_last_build_had_group(void);
@@ -4535,6 +4543,123 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_stop_audio_even
 // When the JSON parses, the WTS breakdown in `stats` distinguishes a null
 // TheTacticalView camera (WTS_INVALID), an off-frustum unit (WTS_OUTSIDE),
 // or a genuinely on-screen unit (WTS_INSIDE).
+static void append_drawable_body_json(std::string &json, Object *obj)
+{
+	json += ",\"body\":{";
+	BodyModuleInterface *body = NULL;
+	try {
+		body = obj != NULL ? obj->getBodyModule() : NULL;
+	} catch (...) {
+		body = NULL;
+	}
+	if (body == NULL) {
+		json += "\"ready\":false,\"health\":null,\"maxHealth\":null,"
+			"\"damageState\":null,\"lastDamageTimestamp\":null}";
+		json += "}";
+		return;
+	}
+
+	Real health = 0.0f;
+	Real max_health = 0.0f;
+	Int damage_state = -1;
+	UnsignedInt last_damage_timestamp = 0;
+	try {
+		health = body->getHealth();
+		max_health = body->getMaxHealth();
+		damage_state = static_cast<Int>(body->getDamageState());
+		last_damage_timestamp = body->getLastDamageTimestamp();
+	} catch (...) {
+		json += "\"ready\":false,\"health\":null,\"maxHealth\":null,"
+			"\"damageState\":null,\"lastDamageTimestamp\":null}";
+		json += "}";
+		return;
+	}
+
+	json += "\"ready\":true";
+	json += ",\"health\":" + std::to_string(health);
+	json += ",\"maxHealth\":" + std::to_string(max_health);
+	json += ",\"damageState\":" + std::to_string(damage_state);
+	json += ",\"lastDamageTimestamp\":" + std::to_string(last_damage_timestamp);
+	json += "}";
+}
+
+static void append_drawable_probe_entry_json(
+	std::string &json,
+	Object *obj,
+	const ThingTemplate *tpl,
+	Player *owner,
+	const Player *local_player,
+	bool is_structure,
+	bool is_hidden,
+	const Coord3D *pos,
+	bool on_screen,
+	const ICoord2D &screen_pos)
+{
+	json += "{";
+
+	long long obj_id = 0;
+	try {
+		obj_id = obj != NULL ? static_cast<long long>(obj->getID()) : -1;
+	} catch (...) {
+		obj_id = -1;
+	}
+	json += "\"id\":" + std::to_string(obj_id);
+	json += ",\"name\":\"" + json_escape(tpl ? tpl->getName().str() : "unknown") + "\"";
+
+	if (owner != NULL) {
+		json += ",\"playerIndex\":" + std::to_string(owner->getPlayerIndex());
+		json += ",\"localOwned\":";
+		json += (owner == local_player) ? "true" : "false";
+	} else {
+		json += ",\"playerIndex\":-1,\"localOwned\":false";
+	}
+
+	Int relationship_to_local = -1;
+	try {
+		if (obj != NULL && local_player != NULL && obj->getTeam() != NULL) {
+			relationship_to_local = static_cast<Int>(local_player->getRelationship(obj->getTeam()));
+		}
+	} catch (...) {
+		relationship_to_local = -1;
+	}
+	json += ",\"relationshipToLocal\":" + std::to_string(relationship_to_local);
+	json += ",\"hostileToLocal\":";
+	json += relationship_to_local == ENEMIES ? "true" : "false";
+	if (relationship_to_local >= ENEMIES && relationship_to_local <= ALLIES) {
+		json += ",\"relationshipToLocalName\":\"";
+		json += TheRelationshipNames[relationship_to_local];
+		json += "\"";
+	} else {
+		json += ",\"relationshipToLocalName\":\"UNKNOWN\"";
+	}
+
+	json += ",\"structure\":";
+	json += is_structure ? "true" : "false";
+	json += ",\"hidden\":";
+	json += is_hidden ? "true" : "false";
+	json += ",\"effectivelyDead\":";
+	try {
+		json += obj != NULL && obj->isEffectivelyDead() ? "true" : "false";
+	} catch (...) {
+		json += "false";
+	}
+
+	if (pos != NULL) {
+		json += ",\"worldPos\":{\"x\":" + std::to_string(pos->x);
+		json += ",\"y\":" + std::to_string(pos->y);
+		json += ",\"z\":" + std::to_string(pos->z) + "}";
+	} else {
+		json += ",\"worldPos\":null";
+	}
+
+	json += ",\"onScreen\":";
+	json += on_screen ? "true" : "false";
+	json += ",\"screenPos\":{\"x\":" + std::to_string(screen_pos.x);
+	json += ",\"y\":" + std::to_string(screen_pos.y) + "}";
+	append_drawable_body_json(json, obj);
+	json += "}";
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 {
 	static std::string json;
@@ -4569,6 +4694,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 	int ownedNull = 0;     // owner == nullptr (unowned / hazard object)
 	int ownedLocal = 0;    // owner == localPlayer
 	int ownedNotLocal = 0; // owner != nullptr && owner != localPlayer
+	int enemyKept = 0;
 	// worldToScreen tri-return breakdowns (View::WorldToScreenReturn enums).
 	int wtsInside = 0;
 	int wtsOutside = 0;
@@ -4579,6 +4705,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 
 	json = "{\"ready\":true,\"started\":true,\"guard\":\"none\",\"localPlayerIndex\":" + std::to_string(localIdx) + ",\"drawables\":[";
 	bool first = true;
+	std::string enemy_json;
+	bool enemy_first = true;
 
 	for (Drawable *d = TheGameClient->firstDrawable(); d; d = d->getNextDrawable()) {
 		totalDrawables++;
@@ -4639,6 +4767,21 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 		} catch (...) {
 			owner = nullptr;
 		}
+
+		bool isStructure = false;
+		try {
+			isStructure = obj->isKindOf(KINDOF_STRUCTURE);
+		} catch (...) {
+			isStructure = false;
+		}
+
+		bool isHidden = false;
+		try {
+			isHidden = d->isDrawableEffectivelyHidden();
+		} catch (...) {
+			isHidden = false;
+		}
+
 		if (owner == nullptr) {
 			ownedNull++;
 		} else if (owner == localPlayer) {
@@ -4646,6 +4789,24 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 		} else {
 			ownedNotLocal++;
 			notOwned++;
+			if (onScreen && !isHidden) {
+				if (!enemy_first) {
+					enemy_json += ",";
+				}
+				enemy_first = false;
+				++enemyKept;
+				append_drawable_probe_entry_json(
+					enemy_json,
+					obj,
+					tpl,
+					owner,
+					localPlayer,
+					isStructure,
+					isHidden,
+					pos,
+					onScreen,
+					screenPos);
+			}
 			continue;
 		}
 		// NOTE: ownedNull units (e.g. terrain blobs, ambient effects) survive
@@ -4661,13 +4822,6 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 			continue;
 		}
 
-		// Filter: hidden
-		bool isHidden = false;
-		try {
-			isHidden = d->isDrawableEffectivelyHidden();
-		} catch (...) {
-			isHidden = false;
-		}
 		if (isHidden) {
 			hidden++;
 			continue;
@@ -4680,55 +4834,22 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 		}
 		first = false;
 
-		json += "{";
-
-		// Guard: getID() can crash if obj vtable is corrupted
-		long long objId = 0;
-		try {
-			objId = static_cast<long long>(obj->getID());
-		} catch (...) {
-			objId = -1;
-		}
-		json += "\"id\":" + std::to_string(objId);
-
-		// Guard: getTemplate() may return NULL; cache the result to avoid double-call
-		json += ",\"name\":\"" + json_escape(tpl ? tpl->getName().str() : "unknown") + "\"";
-
-		// Use the owner computed earlier for filtering
-		if (owner != nullptr) {
-			json += ",\"playerIndex\":" + std::to_string(owner->getPlayerIndex());
-			json += ",\"localOwned\":";
-			json += (owner == localPlayer) ? "true" : "false";
-		} else {
-			json += ",\"playerIndex\":-1,\"localOwned\":false";
-		}
-
-		// Guard: isKindOf() can crash if obj kindOf flags are corrupted
-		bool isStructure = false;
-		try {
-			isStructure = obj->isKindOf(KINDOF_STRUCTURE);
-		} catch (...) {
-			isStructure = false;
-		}
-		json += ",\"structure\":";
-		json += isStructure ? "true" : "false";
-
-		// Use the isHidden computed earlier for filtering
-		json += ",\"hidden\":";
-		json += isHidden ? "true" : "false";
-
-		json += ",\"worldPos\":{\"x\":" + std::to_string(pos->x);
-		json += ",\"y\":" + std::to_string(pos->y);
-		json += ",\"z\":" + std::to_string(pos->z) + "}";
-
-		json += ",\"onScreen\":";
-		json += onScreen ? "true" : "false";
-		json += ",\"screenPos\":{\"x\":" + std::to_string(screenPos.x);
-		json += ",\"y\":" + std::to_string(screenPos.y) + "}";
-
-		json += "}";
+		append_drawable_probe_entry_json(
+			json,
+			obj,
+			tpl,
+			owner,
+			localPlayer,
+			isStructure,
+			isHidden,
+			pos,
+			onScreen,
+			screenPos);
 	}
 
+	json += "]";
+	json += ",\"enemyDrawables\":[";
+	json += enemy_json;
 	json += "]";
 	json += ",\"stats\":{\"total\":" + std::to_string(totalDrawables);
 	json += ",\"noObject\":" + std::to_string(noObject);
@@ -4736,6 +4857,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 	json += ",\"ownedNull\":" + std::to_string(ownedNull);
 	json += ",\"ownedLocal\":" + std::to_string(ownedLocal);
 	json += ",\"ownedNotLocal\":" + std::to_string(ownedNotLocal);
+	json += ",\"enemyKept\":" + std::to_string(enemyKept);
 	json += ",\"offScreen\":" + std::to_string(offScreen);
 	json += ",\"hidden\":" + std::to_string(hidden);
 	json += ",\"kept\":" + std::to_string(kept);
@@ -4843,6 +4965,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 	json += ",\"dispatchLastMoveWorldPos\":{\"x\":" + std::to_string(cnc_port_logic_dispatch_last_move_x());
 	json += ",\"y\":" + std::to_string(cnc_port_logic_dispatch_last_move_y());
 	json += ",\"z\":" + std::to_string(cnc_port_logic_dispatch_last_move_z()) + "}";
+	json += ",\"dispatchAttackCommandCount\":" + std::to_string(cnc_port_logic_dispatch_attack_command_count());
+	json += ",\"dispatchLastAttackCommandType\":" + std::to_string(cnc_port_logic_dispatch_last_attack_command_type());
+	json += ",\"dispatchLastAttackHadGroup\":" + std::to_string(cnc_port_logic_dispatch_last_attack_had_group());
+	json += ",\"dispatchLastAttackTargetId\":" + std::to_string(cnc_port_logic_dispatch_last_attack_target_id());
+	json += ",\"dispatchLastAttackTargetWorldPos\":{\"x\":" + std::to_string(cnc_port_logic_dispatch_last_attack_target_x());
+	json += ",\"y\":" + std::to_string(cnc_port_logic_dispatch_last_attack_target_y());
+	json += ",\"z\":" + std::to_string(cnc_port_logic_dispatch_last_attack_target_z()) + "}";
 	json += ",\"dispatchBuildCommandCount\":" + std::to_string(cnc_port_logic_dispatch_build_command_count());
 	json += ",\"dispatchLastBuildCommandType\":" + std::to_string(cnc_port_logic_dispatch_last_build_command_type());
 	json += ",\"dispatchLastBuildHadGroup\":" + std::to_string(cnc_port_logic_dispatch_last_build_had_group());

@@ -102,6 +102,13 @@ static Int g_wasmLogicDispatchLastMoveHadGroup = -1;
 static Real g_wasmLogicDispatchLastMoveX = 0.0f;
 static Real g_wasmLogicDispatchLastMoveY = 0.0f;
 static Real g_wasmLogicDispatchLastMoveZ = 0.0f;
+static Int g_wasmLogicDispatchAttackCommandCount = 0;
+static Int g_wasmLogicDispatchLastAttackCommandType = -1;
+static Int g_wasmLogicDispatchLastAttackHadGroup = -1;
+static Int g_wasmLogicDispatchLastAttackTargetId = -1;
+static Real g_wasmLogicDispatchLastAttackTargetX = 0.0f;
+static Real g_wasmLogicDispatchLastAttackTargetY = 0.0f;
+static Real g_wasmLogicDispatchLastAttackTargetZ = 0.0f;
 static Int g_wasmLogicDispatchBuildCommandCount = 0;
 static Int g_wasmLogicDispatchLastBuildCommandType = -1;
 static Int g_wasmLogicDispatchLastBuildHadGroup = -1;
@@ -125,6 +132,13 @@ extern "C" Int cnc_port_logic_dispatch_last_move_had_group( void ) { return g_wa
 extern "C" Real cnc_port_logic_dispatch_last_move_x( void ) { return g_wasmLogicDispatchLastMoveX; }
 extern "C" Real cnc_port_logic_dispatch_last_move_y( void ) { return g_wasmLogicDispatchLastMoveY; }
 extern "C" Real cnc_port_logic_dispatch_last_move_z( void ) { return g_wasmLogicDispatchLastMoveZ; }
+extern "C" Int cnc_port_logic_dispatch_attack_command_count( void ) { return g_wasmLogicDispatchAttackCommandCount; }
+extern "C" Int cnc_port_logic_dispatch_last_attack_command_type( void ) { return g_wasmLogicDispatchLastAttackCommandType; }
+extern "C" Int cnc_port_logic_dispatch_last_attack_had_group( void ) { return g_wasmLogicDispatchLastAttackHadGroup; }
+extern "C" Int cnc_port_logic_dispatch_last_attack_target_id( void ) { return g_wasmLogicDispatchLastAttackTargetId; }
+extern "C" Real cnc_port_logic_dispatch_last_attack_target_x( void ) { return g_wasmLogicDispatchLastAttackTargetX; }
+extern "C" Real cnc_port_logic_dispatch_last_attack_target_y( void ) { return g_wasmLogicDispatchLastAttackTargetY; }
+extern "C" Real cnc_port_logic_dispatch_last_attack_target_z( void ) { return g_wasmLogicDispatchLastAttackTargetZ; }
 extern "C" Int cnc_port_logic_dispatch_build_command_count( void ) { return g_wasmLogicDispatchBuildCommandCount; }
 extern "C" Int cnc_port_logic_dispatch_last_build_command_type( void ) { return g_wasmLogicDispatchLastBuildCommandType; }
 extern "C" Int cnc_port_logic_dispatch_last_build_had_group( void ) { return g_wasmLogicDispatchLastBuildHadGroup; }
@@ -145,6 +159,25 @@ static void cnc_port_note_logic_dispatch_move_command(
 	g_wasmLogicDispatchLastMoveX = dest.x;
 	g_wasmLogicDispatchLastMoveY = dest.y;
 	g_wasmLogicDispatchLastMoveZ = dest.z;
+}
+
+static void cnc_port_note_logic_dispatch_attack_command(
+	GameMessage::Type type,
+	AIGroup *currentlySelectedGroup,
+	Object *target)
+{
+	++g_wasmLogicDispatchAttackCommandCount;
+	g_wasmLogicDispatchLastAttackCommandType = static_cast<Int>(type);
+	g_wasmLogicDispatchLastAttackHadGroup = currentlySelectedGroup != NULL ? 1 : 0;
+	g_wasmLogicDispatchLastAttackTargetId = target != NULL ? static_cast<Int>(target->getID()) : -1;
+	if (target != NULL) {
+		const Coord3D *pos = target->getPosition();
+		if (pos != NULL) {
+			g_wasmLogicDispatchLastAttackTargetX = pos->x;
+			g_wasmLogicDispatchLastAttackTargetY = pos->y;
+			g_wasmLogicDispatchLastAttackTargetZ = pos->z;
+		}
+	}
 }
 
 static void cnc_port_note_logic_dispatch_build_command(
@@ -1365,6 +1398,9 @@ void GameLogic::logicMessageDispatcher( GameMessage *msg, void *userData )
 		case GameMessage::MSG_DO_ATTACK_OBJECT:
 		{
 			Object *enemy = TheGameLogic->findObjectByID( msg->getArgument( 0 )->objectID );
+#ifdef __EMSCRIPTEN__
+			cnc_port_note_logic_dispatch_attack_command(msg->getType(), currentlySelectedGroup, enemy);
+#endif
 
 			// Check enemy, as it is possible that he died this frame.
 			if (enemy) 
@@ -1387,6 +1423,9 @@ void GameLogic::logicMessageDispatcher( GameMessage *msg, void *userData )
 		case GameMessage::MSG_DO_FORCE_ATTACK_OBJECT:
 		{
 			Object *enemy = TheGameLogic->findObjectByID( msg->getArgument( 0 )->objectID );
+#ifdef __EMSCRIPTEN__
+			cnc_port_note_logic_dispatch_attack_command(msg->getType(), currentlySelectedGroup, enemy);
+#endif
 
 			// Check enemy, as it is possible that he died this frame.
 			if (enemy) 

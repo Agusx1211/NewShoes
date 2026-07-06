@@ -6575,6 +6575,33 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       STARTUP_VERTICAL_POST_CAMPAIGN_LIGHTWEIGHT=1 node
       WebAssembly/harness/startup_vertical_smoke.mjs`; screenshot:
       `WebAssembly/artifacts/screenshots/interact-milestone.png`.
+- [x] Prove real force-attack object dispatch and damage at MD_USA01 player
+      control.
+      `startup_vertical_smoke.mjs` now supports
+      `STARTUP_VERTICAL_PROVE_ATTACK=1`, reaches original player control,
+      selects a local `AmericaTankPaladin`, exports non-local drawables with
+      body health/damage and original `Player::getRelationship(obj->getTeam())`
+      metadata, and first searches for visible hostile targets. The verified
+      MD_USA01 handoff reported 44 visible non-local drawables but zero visible
+      `ENEMIES`, so the harness held CTRL to enter the original force-attack
+      mode and clicked neutral `GLATrap` id 710 through the same Win32 mouse
+      path. The command path reported `forceAttackModeBeforeClick=true`,
+      `lastClickIssuedType=1060`, `lastClickDrawId=710`,
+      `dispatchAttackCommandCount 0 -> 1`,
+      `dispatchLastAttackCommandType=1060`,
+      `dispatchLastAttackHadGroup=1`, and
+      `dispatchLastAttackTargetId=710`. After 180 real frames the Paladin moved
+      176.78 world units, distance to target closed 320.25 -> 165.26, target
+      health changed 100 -> 40, and `lastDamageTimestamp` advanced to 2664.
+      Verified with `node --check WebAssembly/harness/startup_vertical_smoke.mjs`,
+      `git diff --check`, `npm --prefix WebAssembly run build:port`, and on the
+      Mac M4 real GPU with Chrome/Metal:
+      `STARTUP_VERTICAL_REAL_INIT_ONLY=1 STARTUP_VERTICAL_PROVE_ATTACK=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_COMPACT_CHUNKS=1
+      STARTUP_VERTICAL_POST_CAMPAIGN_LIGHTWEIGHT=1 node
+      WebAssembly/harness/startup_vertical_smoke.mjs`. Renderer was
+      `ANGLE Metal Renderer: Apple M4`; screenshot:
+      `WebAssembly/artifacts/screenshots/attack-milestone.png`.
 
 ---
 
