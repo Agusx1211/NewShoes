@@ -62,6 +62,30 @@ class ScriptActionsInterface;
 class ScriptEngine;
 class WindowLayout;
 
+extern DisconnectMenu *TheDisconnectMenu;
+extern GameState *TheGameState;
+extern NetworkInterface *TheNetwork;
+extern PingerInterface *ThePinger;
+extern RecorderClass *TheRecorder;
+extern GameSpyStagingRoom *TheGameSpyGame;
+extern RankPoints *TheRankPointValues;
+extern ScriptActionsInterface *TheScriptActions;
+extern ScriptEngine *TheScriptEngine;
+extern Bool LANbuttonPushed;
+extern Bool LANSocketErrorDetected;
+extern Int NET_CRC_INTERVAL;
+extern NameKeyType listboxChatWindowID;
+extern GameWindow *listboxChatWindow;
+extern GameWindow *listboxPlayers;
+extern NameKeyType listboxGamesID;
+extern GameWindow *listboxGames;
+extern NameKeyType listboxChatWindowLanGameID;
+extern GameWindow *listboxChatWindowLanGame;
+extern WindowLayout *mapSelectLayout;
+extern NameKeyType listboxChatWindowScoreScreenID;
+extern GameWindow *listboxChatWindowScoreScreen;
+
+#ifndef CNC_PORT_LINKS_REAL_GAMENETWORK_OWNERS
 DisconnectMenu *TheDisconnectMenu __attribute__((weak)) = nullptr;
 GameState *TheGameState __attribute__((weak)) = nullptr;
 NetworkInterface *TheNetwork __attribute__((weak)) = nullptr;
@@ -88,6 +112,7 @@ GameWindow *listboxChatWindowLanGame __attribute__((weak)) = nullptr;
 WindowLayout *mapSelectLayout __attribute__((weak)) = nullptr;
 NameKeyType listboxChatWindowScoreScreenID __attribute__((weak)) = NAMEKEY_INVALID;
 GameWindow *listboxChatWindowScoreScreen __attribute__((weak)) = nullptr;
+#endif
 
 extern "C" {
 void cnc_port_browser_udp_adapter_clear();
@@ -108,6 +133,7 @@ Int cnc_port_browser_udp_adapter_read_count();
 Int cnc_port_browser_udp_adapter_dropped_count();
 }
 
+#ifndef CNC_PORT_LINKS_REAL_GAMENETWORK_OWNERS
 __attribute__((weak)) DisconnectMenu::DisconnectMenu() :
 	m_disconnectManager(nullptr),
 	m_menuState(DISCONNECTMENUSTATETYPE_SCREENOFF)
@@ -307,6 +333,7 @@ __attribute__((weak)) std::string WideCharStringToMultiByte(const WideChar *orig
 	}
 	return out;
 }
+#endif
 
 namespace {
 void set_probe_logic_frame(GameLogic *logic, UnsignedInt frame)

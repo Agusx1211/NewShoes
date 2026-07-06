@@ -8764,6 +8764,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       WebAssembly/harness/smoke.mjs`, `node --check
       WebAssembly/tools/verify_cnc_port_weak_stubs.mjs`, and `git diff
       --check`.
+- [x] Gate the direct GameNetwork probe weak fallback surface out of the real
+      `cnc-port` runtime. `cnc-port` now defines
+      `CNC_PORT_LINKS_REAL_GAMENETWORK_OWNERS`, so
+      `wasm_gamenetwork_probe.cpp` keeps extern declarations for the real
+      GameNetwork/GameClient/Common owners but no longer emits weak storage or
+      fallback bodies for the GameNetwork globals, `DisconnectMenu`,
+      `GameState`, `MapCache`, LAN menu callbacks/preferences, shell helpers,
+      thread string converters, or the debug-only CRC no-op helpers in the real
+      link. The weak-stub verifier now reports all 264 tracked explicit weak
+      declarations gated out, zero compiled weak definitions, zero
+      strong-provider overlaps, and zero no-final-visible helpers. The
+      archive-owned INI compatibility weak shims remain outside this
+      direct-object verifier and are still tracked as the next archive-aware
+      cleanup. Verified with `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly run verify:cnc-port-weak-stubs`, focused
+      `llvm-nm` checks on `wasm_gamenetwork_probe.cpp.o`, `npm --prefix
+      WebAssembly run verify:cnc-port-real-headers`, `npm --prefix WebAssembly
+      run build:startup-vertical`, `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs`, `node
+      WebAssembly/tools/run_startup_vertical_smoke.mjs`, and `git diff
+      --check`.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an
