@@ -8785,6 +8785,31 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       WebAssembly/harness/smoke.mjs`, `node
       WebAssembly/tools/run_startup_vertical_smoke.mjs`, and `git diff
       --check`.
+- [x] Make the weak-stub verifier archive-aware and gate the archive-owned INI
+      compatibility weak fallbacks out of the real `cnc-port` runtime.
+      `WebAssembly/tools/verify_cnc_port_weak_stubs.mjs` now tracks linked
+      archive members as well as direct `CMakeFiles/cnc-port.dir/src/*.o`
+      objects, asserts the tracked archives are current link inputs, and
+      filters `llvm-nm --print-file-name` output to the intended member. The
+      tracked archive members are
+      `libzh_gameengine_real_ini_runtime.a:wasm_real_ini_compat.cpp.o`,
+      `libzh_gameengine_real_ini_runtime.a:wasm_real_ini_probe.cpp.o`, and
+      `libzh_gameclient_utility.a:wasm_ini_mapped_image_compat.cpp.o`.
+      `zh_gameengine_real_ini_runtime` and `zh_gameclient_utility` now define
+      `CNC_PORT_LINKS_REAL_INI_COMPAT_OWNERS`, so those files keep extern
+      declarations but no longer emit weak INI/global fallback bodies when they
+      are linked into `cnc-port`. The weak-stub verifier now reports 285
+      tracked explicit weak declarations, zero compiled weak definitions, 285
+      gated-out declarations, zero active weak boundaries, zero strong-provider
+      overlaps, and zero no-final-visible helpers. Verified with `npm --prefix
+      WebAssembly run build:port`, `npm --prefix WebAssembly run
+      verify:cnc-port-weak-stubs`, focused archive-member `llvm-nm` checks,
+      `npm --prefix WebAssembly run verify:cnc-port-real-headers`, `npm
+      --prefix WebAssembly run build:startup-vertical`, `EXPECT_WASM=1 node
+      WebAssembly/harness/smoke.mjs`, `node
+      WebAssembly/tools/run_startup_vertical_smoke.mjs`, `node --check
+      WebAssembly/tools/verify_cnc_port_weak_stubs.mjs`, and `git diff
+      --check`.
 - [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot. The keyboard frame owner no
       longer constructs a throwaway original `GlobalData` just to warm an

@@ -28,6 +28,18 @@ class ObjectCreationListStore;
 class PartitionManager;
 class TerrainLogic;
 
+extern AudioManager *TheAudio;
+extern ControlBar *TheControlBar;
+extern Display *TheDisplay;
+extern GameClient *TheGameClient;
+extern GameLogic *TheGameLogic;
+extern GameLODManager *TheGameLODManager;
+extern ObjectCreationListStore *TheObjectCreationListStore;
+extern PartitionManager *ThePartitionManager;
+extern TerrainLogic *TheTerrainLogic;
+extern ThingFactory *TheThingFactory;
+
+#ifndef CNC_PORT_LINKS_REAL_INI_COMPAT_OWNERS
 AudioManager *TheAudio __attribute__((weak)) = nullptr;
 ControlBar *TheControlBar __attribute__((weak)) = nullptr;
 Display *TheDisplay __attribute__((weak)) = nullptr;
@@ -38,6 +50,7 @@ ObjectCreationListStore *TheObjectCreationListStore __attribute__((weak)) = null
 PartitionManager *ThePartitionManager __attribute__((weak)) = nullptr;
 TerrainLogic *TheTerrainLogic __attribute__((weak)) = nullptr;
 ThingFactory *TheThingFactory __attribute__((weak)) = nullptr;
+#endif
 
 // The weak throwing INI block parsers and GameLOD helpers that used to live
 // here shadowed the REAL parsers once the full engine linked into cnc-port
@@ -49,6 +62,7 @@ ThingFactory *TheThingFactory __attribute__((weak)) = nullptr;
 // object modules (Object.cpp / CrateCollide.cpp / AutoHealBehavior.cpp).
 // It only fires for Objects in a running match; the real InGameUI is not part
 // of this runtime slice yet.
+#ifndef CNC_PORT_LINKS_REAL_INI_COMPAT_OWNERS
 void __attribute__((weak)) InGameUI::addWorldAnimation(
 	Anim2DTemplate *,
 	const Coord3D *,
@@ -83,6 +97,7 @@ void __attribute__((weak)) ScriptEngine::parseScriptCondition(INI *)
 {
 	throw INI_UNKNOWN_TOKEN;
 }
+#endif
 
 #ifndef WASM_REAL_INI_OBJECT_RUNTIME
 // The real Common/UserPreferences.cpp is linked through
@@ -177,4 +192,3 @@ ThingTemplate *__attribute__((weak)) ThingFactory::findTemplateInternal(
 // OptionPreferences is owned by the real
 // GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/OptionsMenu.cpp linked
 // through zh_gameengine_real_lifecycle_runtime.
-

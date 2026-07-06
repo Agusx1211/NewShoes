@@ -3,6 +3,7 @@
 #include "Common/INI.h"
 #include "GameClient/Image.h"
 
+#ifndef CNC_PORT_LINKS_REAL_INI_COMPAT_OWNERS
 void __attribute__((weak)) INI::parseMappedImage(INI *ini, void *, void *store, const void *)
 {
 	const char *token = ini != nullptr ? ini->getNextToken() : nullptr;
@@ -12,3 +13,4 @@ void __attribute__((weak)) INI::parseMappedImage(INI *ini, void *, void *store, 
 			TheMappedImageCollection->findImageByName(AsciiString(token));
 	}
 }
+#endif

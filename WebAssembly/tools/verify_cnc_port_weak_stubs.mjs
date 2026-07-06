@@ -22,13 +22,28 @@ const DEFAULT_DIST_JS = resolve(wasmRoot, "dist/cnc-port.js");
 const DEFAULT_DIST_WASM = resolve(wasmRoot, "dist/cnc-port.wasm");
 
 const trackedSources = [
-  "WebAssembly/src/wasm_gamenetwork_probe.cpp",
-  "WebAssembly/src/wasm_wndproc_probe.cpp",
-  "WebAssembly/src/wasm_startup_singletons_probe.cpp",
-  "WebAssembly/src/wasm_ww3d_render_probe.cpp",
-  "WebAssembly/src/wasm_ww3d_scene_probe.cpp",
-  "WebAssembly/src/wasm_ww3d_terrain_probe.cpp",
-  "WebAssembly/src/wasm_ww3d_terrain_probe_stubs.cpp",
+  { source: "WebAssembly/src/wasm_gamenetwork_probe.cpp" },
+  { source: "WebAssembly/src/wasm_wndproc_probe.cpp" },
+  { source: "WebAssembly/src/wasm_startup_singletons_probe.cpp" },
+  { source: "WebAssembly/src/wasm_ww3d_render_probe.cpp" },
+  { source: "WebAssembly/src/wasm_ww3d_scene_probe.cpp" },
+  { source: "WebAssembly/src/wasm_ww3d_terrain_probe.cpp" },
+  { source: "WebAssembly/src/wasm_ww3d_terrain_probe_stubs.cpp" },
+  {
+    source: "WebAssembly/src/wasm_real_ini_compat.cpp",
+    archive: "libzh_gameengine_real_ini_runtime.a",
+    member: "wasm_real_ini_compat.cpp.o",
+  },
+  {
+    source: "WebAssembly/src/wasm_real_ini_probe.cpp",
+    archive: "libzh_gameengine_real_ini_runtime.a",
+    member: "wasm_real_ini_probe.cpp.o",
+  },
+  {
+    source: "WebAssembly/src/wasm_ini_mapped_image_compat.cpp",
+    archive: "libzh_gameclient_utility.a",
+    member: "wasm_ini_mapped_image_compat.cpp.o",
+  },
 ];
 
 function usage() {
@@ -112,6 +127,30 @@ function objectPathForSource(buildDir, sourceRel) {
   return resolve(buildDir, "CMakeFiles/cnc-port.dir/src", `${sourceBase}.o`);
 }
 
+function archivePathForTrackedSource(buildDir, entry) {
+  return resolve(buildDir, entry.archive);
+}
+
+function trackedSourceObject(buildDir, entry) {
+  if (entry.archive) {
+    const archivePath = archivePathForTrackedSource(buildDir, entry);
+    return {
+      kind: "archive",
+      path: archivePath,
+      member: entry.member,
+      label: `${relative(repoRoot, archivePath)}:${entry.member}`,
+    };
+  }
+
+  const objectPath = objectPathForSource(buildDir, entry.source);
+  return {
+    kind: "direct",
+    path: objectPath,
+    member: null,
+    label: relative(repoRoot, objectPath),
+  };
+}
+
 function parseLinkInputs(queryOutput, buildDir) {
   const inputs = [];
   let inInputs = false;
@@ -165,6 +204,23 @@ function parseNmDefined(output) {
     }
   }
   return symbols;
+}
+
+function parseNmDefinedForTrackedObject(objectInfo) {
+  if (objectInfo.kind === "direct") {
+    return parseNmDefined(run(
+      "llvm-nm",
+      ["--defined-only", "--no-demangle", "--line-numbers", objectInfo.path],
+      { cwd: repoRoot },
+    ));
+  }
+
+  return parseNmDefined(run(
+    "llvm-nm",
+    ["--defined-only", "--no-demangle", "--line-numbers", "--print-file-name", objectInfo.path],
+    { cwd: repoRoot },
+  )).filter((symbol) => symbol.file === `${objectInfo.path}:${objectInfo.member}` ||
+    symbol.file === `${relative(repoRoot, objectInfo.path)}:${objectInfo.member}`);
 }
 
 function demangle(symbols) {
@@ -306,17 +362,26 @@ function main() {
   const options = parseArgs(process.argv.slice(2));
   requireFile(options.distJs, "Run npm run build:port first.");
   requireFile(options.distWasm, "Run npm run build:port first.");
-  for (const sourceRel of trackedSources) {
-    requireFile(resolve(repoRoot, sourceRel), "Tracked weak-stub source is missing.");
-    requireFile(objectPathForSource(options.buildDir, sourceRel), "Run npm run build:port first.");
+  for (const entry of trackedSources) {
+    requireFile(resolve(repoRoot, entry.source), "Tracked weak-stub source is missing.");
   }
 
   const queryOutput = run("ninja", ["-t", "query", options.distJs], { cwd: options.buildDir });
   const linkInputs = parseLinkInputs(queryOutput, options.buildDir).filter(existsSync);
 
+  const trackedObjects = new Map();
+  for (const entry of trackedSources) {
+    const objectInfo = trackedSourceObject(options.buildDir, entry);
+    requireFile(objectInfo.path, "Run npm run build:port first.");
+    if (entry.archive && !linkInputs.includes(objectInfo.path)) {
+      throw new Error(`${objectInfo.label} is not in the current cnc-port link inputs.`);
+    }
+    trackedObjects.set(entry.source, objectInfo);
+  }
+
   const declarationsBySource = new Map();
   const allDeclarations = [];
-  for (const sourceRel of trackedSources) {
+  for (const { source: sourceRel } of trackedSources) {
     const declarations = parseExplicitWeakDeclarations(sourceRel);
     declarationsBySource.set(sourceRel, declarations);
     allDeclarations.push(...declarations);
@@ -324,14 +389,9 @@ function main() {
 
   const objectWeakSymbols = [];
   const unmatchedWeakSymbols = [];
-  for (const sourceRel of trackedSources) {
-    const objectPath = objectPathForSource(options.buildDir, sourceRel);
-    const nmOutput = run(
-      "llvm-nm",
-      ["--defined-only", "--no-demangle", "--line-numbers", objectPath],
-      { cwd: repoRoot },
-    );
-    const weakSymbols = parseNmDefined(nmOutput).filter((symbol) => isWeakType(symbol.type));
+  for (const { source: sourceRel } of trackedSources) {
+    const objectInfo = trackedObjects.get(sourceRel);
+    const weakSymbols = parseNmDefinedForTrackedObject(objectInfo).filter((symbol) => isWeakType(symbol.type));
     const demangled = demangle(weakSymbols.map((symbol) => symbol.symbol));
     const declarations = declarationsBySource.get(sourceRel) ?? [];
 
@@ -339,7 +399,7 @@ function main() {
       const enriched = {
         ...symbol,
         source: sourceRel,
-        object: relative(repoRoot, objectPath),
+        object: objectInfo.label,
         demangled: demangled.get(symbol.symbol) ?? symbol.symbol,
         sourceLine: sourceLineFromLocation(symbol.location),
         sourceFile: sourceFileFromLocation(symbol.location)
@@ -425,7 +485,7 @@ function main() {
   });
 
   const bySource = {};
-  for (const sourceRel of trackedSources) {
+  for (const { source: sourceRel } of trackedSources) {
     const sourceDefinitions = compiledWeakDefinitions.filter((entry) => entry.source === sourceRel);
     const sourceDeclarations = sourceWeakDeclarations.filter((entry) => entry.source === sourceRel);
     bySource[sourceRel] = {

@@ -59,9 +59,15 @@
 
 class TerrainVisual;
 
+extern MapCache *TheMapCache;
+extern TerrainVisual *TheTerrainVisual;
+extern const StaticNameKey TheKey_InitialCameraPosition;
+
+#ifndef CNC_PORT_LINKS_REAL_INI_COMPAT_OWNERS
 MapCache *TheMapCache __attribute__((weak)) = nullptr;
 TerrainVisual *TheTerrainVisual __attribute__((weak)) = nullptr;
 const StaticNameKey TheKey_InitialCameraPosition __attribute__((weak))("InitialCameraPosition");
+#endif
 
 namespace {
 constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";

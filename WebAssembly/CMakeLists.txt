@@ -3380,6 +3380,7 @@ set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/System/ParticleSys.cpp
 
 target_compile_definitions(zh_gameengine_real_ini_runtime PRIVATE
   ALLOW_DEBUG_UTILS=1
+  CNC_PORT_LINKS_REAL_INI_COMPAT_OWNERS=1
   CNC_PORT_REAL_GAMELOGIC_HEADER=1
   DEBUG_LOGGING=1
   DISABLE_DEBUG_CRASHING=1
@@ -4038,6 +4039,7 @@ target_include_directories(zh_gameclient_utility PUBLIC
 )
 
 target_compile_definitions(zh_gameclient_utility PRIVATE
+  CNC_PORT_LINKS_REAL_INI_COMPAT_OWNERS=1
   CNC_PORT_REAL_GAMELOGIC_HEADER=1
   WASM_USE_ORIGINAL_GLOBALDATA=1
 )
