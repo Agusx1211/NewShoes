@@ -396,6 +396,12 @@ const d3d8PerfStats = {
   drawUniformCacheMisses: 0,
   drawTransformUniformCacheHits: 0,
   drawTransformUniformCacheMisses: 0,
+  drawWorldTransformUniformCacheHits: 0,
+  drawWorldTransformUniformCacheMisses: 0,
+  drawViewTransformUniformCacheHits: 0,
+  drawViewTransformUniformCacheMisses: 0,
+  drawProjectionTransformUniformCacheHits: 0,
+  drawProjectionTransformUniformCacheMisses: 0,
   drawPointSpriteUniformCacheHits: 0,
   drawPointSpriteUniformCacheMisses: 0,
   drawTextureUniformCacheHits: 0,
@@ -531,6 +537,12 @@ function d3d8PerfSummary() {
     drawUniformCacheMisses: d3d8PerfStats.drawUniformCacheMisses,
     drawTransformUniformCacheHits: d3d8PerfStats.drawTransformUniformCacheHits,
     drawTransformUniformCacheMisses: d3d8PerfStats.drawTransformUniformCacheMisses,
+    drawWorldTransformUniformCacheHits: d3d8PerfStats.drawWorldTransformUniformCacheHits,
+    drawWorldTransformUniformCacheMisses: d3d8PerfStats.drawWorldTransformUniformCacheMisses,
+    drawViewTransformUniformCacheHits: d3d8PerfStats.drawViewTransformUniformCacheHits,
+    drawViewTransformUniformCacheMisses: d3d8PerfStats.drawViewTransformUniformCacheMisses,
+    drawProjectionTransformUniformCacheHits: d3d8PerfStats.drawProjectionTransformUniformCacheHits,
+    drawProjectionTransformUniformCacheMisses: d3d8PerfStats.drawProjectionTransformUniformCacheMisses,
     drawPointSpriteUniformCacheHits: d3d8PerfStats.drawPointSpriteUniformCacheHits,
     drawPointSpriteUniformCacheMisses: d3d8PerfStats.drawPointSpriteUniformCacheMisses,
     drawTextureUniformCacheHits: d3d8PerfStats.drawTextureUniformCacheHits,
@@ -7815,21 +7827,21 @@ function d3d8NumericArrayEquals(left, right) {
   return true;
 }
 
-function d3d8TransformUniformsEqual(world, view, projection) {
-  return d3d8MatrixEquals(d3d8LastTransformUniformWorld, world) &&
-    d3d8MatrixEquals(d3d8LastTransformUniformView, view) &&
-    d3d8MatrixEquals(d3d8LastTransformUniformProjection, projection);
-}
-
 function resetD3D8TransformUniformCache() {
   d3d8LastTransformUniformWorld = null;
   d3d8LastTransformUniformView = null;
   d3d8LastTransformUniformProjection = null;
 }
 
-function rememberD3D8TransformUniforms(world, view, projection) {
+function rememberD3D8WorldTransformUniform(world) {
   d3d8LastTransformUniformWorld = new Float32Array(world);
+}
+
+function rememberD3D8ViewTransformUniform(view) {
   d3d8LastTransformUniformView = new Float32Array(view);
+}
+
+function rememberD3D8ProjectionTransformUniform(projection) {
   d3d8LastTransformUniformProjection = new Float32Array(projection);
 }
 
@@ -9627,15 +9639,35 @@ function paintD3D8DrawIndexed(payload = {}) {
       // Direct3D stores row-vector matrices row-major; WebGL interprets this
       // memory as column-major, giving the transpose needed for GLSL
       // column-vector multiplication. The broad uniform cache excludes object
-      // transforms, so matrix uploads are cached by the exact uploaded values.
-      if (d3d8TransformUniformsEqual(world, view, projection)) {
+      // transforms, so each matrix upload is cached by its exact uploaded value.
+      const worldTransformUnchanged = d3d8MatrixEquals(d3d8LastTransformUniformWorld, world);
+      const viewTransformUnchanged = d3d8MatrixEquals(d3d8LastTransformUniformView, view);
+      const projectionTransformUnchanged = d3d8MatrixEquals(d3d8LastTransformUniformProjection, projection);
+      if (worldTransformUnchanged && viewTransformUnchanged && projectionTransformUnchanged) {
         d3d8PerfStats.drawTransformUniformCacheHits += 1;
       } else {
         d3d8PerfStats.drawTransformUniformCacheMisses += 1;
+      }
+      if (worldTransformUnchanged) {
+        d3d8PerfStats.drawWorldTransformUniformCacheHits += 1;
+      } else {
+        d3d8PerfStats.drawWorldTransformUniformCacheMisses += 1;
         gl.uniformMatrix4fv(bridgeProgram.world, false, world);
+        rememberD3D8WorldTransformUniform(world);
+      }
+      if (viewTransformUnchanged) {
+        d3d8PerfStats.drawViewTransformUniformCacheHits += 1;
+      } else {
+        d3d8PerfStats.drawViewTransformUniformCacheMisses += 1;
         gl.uniformMatrix4fv(bridgeProgram.view, false, view);
+        rememberD3D8ViewTransformUniform(view);
+      }
+      if (projectionTransformUnchanged) {
+        d3d8PerfStats.drawProjectionTransformUniformCacheHits += 1;
+      } else {
+        d3d8PerfStats.drawProjectionTransformUniformCacheMisses += 1;
         gl.uniformMatrix4fv(bridgeProgram.projection, false, projection);
-        rememberD3D8TransformUniforms(world, view, projection);
+        rememberD3D8ProjectionTransformUniform(projection);
       }
     } else {
       resetD3D8TransformUniformCache();

@@ -253,6 +253,12 @@ const browserPerfFields = [
   "drawUniformCacheMisses",
   "drawTransformUniformCacheHits",
   "drawTransformUniformCacheMisses",
+  "drawWorldTransformUniformCacheHits",
+  "drawWorldTransformUniformCacheMisses",
+  "drawViewTransformUniformCacheHits",
+  "drawViewTransformUniformCacheMisses",
+  "drawProjectionTransformUniformCacheHits",
+  "drawProjectionTransformUniformCacheMisses",
   "drawPointSpriteUniformCacheHits",
   "drawPointSpriteUniformCacheMisses",
   "drawTextureUniformCacheHits",
@@ -376,6 +382,18 @@ function browserPerfDelta(before, after, framesAdvanced) {
           drawUniformCacheMisses: Number(delta.drawUniformCacheMisses ?? 0) / framesAdvanced,
           drawTransformUniformCacheHits: Number(delta.drawTransformUniformCacheHits ?? 0) / framesAdvanced,
           drawTransformUniformCacheMisses: Number(delta.drawTransformUniformCacheMisses ?? 0) / framesAdvanced,
+          drawWorldTransformUniformCacheHits:
+            Number(delta.drawWorldTransformUniformCacheHits ?? 0) / framesAdvanced,
+          drawWorldTransformUniformCacheMisses:
+            Number(delta.drawWorldTransformUniformCacheMisses ?? 0) / framesAdvanced,
+          drawViewTransformUniformCacheHits:
+            Number(delta.drawViewTransformUniformCacheHits ?? 0) / framesAdvanced,
+          drawViewTransformUniformCacheMisses:
+            Number(delta.drawViewTransformUniformCacheMisses ?? 0) / framesAdvanced,
+          drawProjectionTransformUniformCacheHits:
+            Number(delta.drawProjectionTransformUniformCacheHits ?? 0) / framesAdvanced,
+          drawProjectionTransformUniformCacheMisses:
+            Number(delta.drawProjectionTransformUniformCacheMisses ?? 0) / framesAdvanced,
           drawPointSpriteUniformCacheHits: Number(delta.drawPointSpriteUniformCacheHits ?? 0) / framesAdvanced,
           drawPointSpriteUniformCacheMisses: Number(delta.drawPointSpriteUniformCacheMisses ?? 0) / framesAdvanced,
           drawTextureUniformCacheHits: Number(delta.drawTextureUniformCacheHits ?? 0) / framesAdvanced,

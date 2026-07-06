@@ -116,7 +116,13 @@ residual transform uploads 0.342 ms/frame. A draw-path viewport cache then
 dropped viewport setup to 0.076 ms/frame and sorted bridge work to
 2.255 ms/frame with ~484 viewport-cache hits/frame. Remaining measured sorted
 uniform costs are residual transform uploads 0.553 ms/frame, render-state
-application 0.280 ms/frame, and material uniforms 0.190 ms/frame.
+application 0.280 ms/frame, and material uniforms 0.190 ms/frame. Splitting
+world/view/projection transform uploads then reduced transform uploads to
+0.172 ms/frame and sorted bridge work to 2.065 ms/frame by keeping mostly
+constant view/projection uniforms current across per-object world changes. The
+remaining measured sorted-uniform costs are render-state application
+0.512 ms/frame, residual transform uploads 0.172 ms/frame, and material
+uniforms 0.131 ms/frame.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
@@ -2410,16 +2416,17 @@ and then start with the PROFILE, not with any individual fix.
       changing buffer/shader/draw submission internals that might be dominated
       by asynchronous ANGLE/GPU stalls.
 - [ ] **Optimize remaining sorted browser uniform setup**: after the
-      draw-path viewport cache, Mac Chrome/Metal measures sorted bridge work at
-      2.255 ms/frame across ~64.3 profiled sorted draws/frame. Viewport setup
-      is no longer a primary frontier (`sortedDrawViewportMs` 0.076 ms/frame,
-      with ~484 viewport-cache hits/frame and ~5.5 misses/frame), material
-      uniforms remain low (`sortedDrawRenderMaterialUniformMs`
-      0.190 ms/frame), and texture layout remains drained
-      (`sortedDrawTextureUniformMs` 0.016 ms/frame). The remaining uniform
-      targets are residual transform uploads (`sortedDrawTransformUniformMs`
-      0.553 ms/frame) and render-state application
-      (`sortedDrawApplyRenderStateMs` 0.280 ms/frame). Cache or split only
+      per-matrix transform upload split, Mac Chrome/Metal measures sorted
+      bridge work at 2.065 ms/frame across ~66.4 profiled sorted draws/frame.
+      Transform uploads are no longer a primary frontier
+      (`sortedDrawTransformUniformMs` 0.172 ms/frame): world still changes
+      often (~168.1 misses/frame), while view/projection are mostly stable
+      (~7.7 and ~3.5 misses/frame). Viewport setup remains low
+      (`sortedDrawViewportMs` 0.090 ms/frame), material uniforms remain low
+      (`sortedDrawRenderMaterialUniformMs` 0.131 ms/frame), and texture layout
+      remains drained (`sortedDrawTextureUniformMs` 0.016 ms/frame). The
+      remaining uniform target is render-state application
+      (`sortedDrawApplyRenderStateMs` 0.512 ms/frame). Cache or split only
       these proven repeated work groups, preserving original sorted draw order.
 - [ ] **Batch the 2D GUI/menu draws — the menu is the real shell-map
       bottleneck, not the 3D scene.** Owner-observed: on the shell map the

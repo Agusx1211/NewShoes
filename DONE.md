@@ -8644,6 +8644,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       0.798 to 0.076 ms/frame. Remaining measured sorted-uniform costs are
       residual transform uploads 0.553, render-state application 0.280, and
       material uniforms 0.190 ms/frame.
+- [x] Split sorted transform uniform uploads by world/view/projection matrix.
+      The browser D3D8 bridge now keeps separate exact-value snapshots for the
+      current program's world, view, and projection uniforms, so a per-object
+      world transform change no longer resends unchanged camera/projection
+      matrices. Program switches and transform-disabled draws still reset the
+      transform cache, preserving WebGL uniform locality and the original D3D
+      transform semantics. The runtime frame profile now reports per-matrix
+      transform cache counters. Verified with `node --check
+      WebAssembly/harness/bridge.js`, `node --check
+      WebAssembly/harness/runtime_frame_profile.mjs`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port`, and a Mac M4 Chrome/Metal
+      runtime profile with visible shell-map screenshot. The run reported an
+      Apple M4 Metal renderer string, 41.95 ms/frame wall, 38.45 ms average
+      engine `lastFrameMs`, zero measured readPixels, ~66.4 profiled sorted
+      draws/frame, sorted bridge work at 2.065 ms/frame, sorted uniform setup
+      at 1.035 ms/frame, and `sortedDrawTransformUniformMs` down from 0.553 to
+      0.172 ms/frame. Matrix cache rates were world ~318.0 hits/frame vs
+      ~168.1 misses, view ~478.4 hits vs ~7.7 misses, and projection
+      ~482.6 hits vs ~3.5 misses. Remaining measured sorted-uniform costs are
+      render-state application 0.512, material uniforms 0.131, and
+      texture-layout uniforms 0.016 ms/frame.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`
