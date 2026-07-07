@@ -8,6 +8,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Performance / profiling (2026-07-07 session)
+
+- [x] Add opt-in D3D8 buffer upload producer attribution to the real runtime
+      profile. The wasm D3D8 shim now passes the current engine frame profile
+      marker through buffer updates when
+      `PERF_PROFILE_D3D8_BUFFER_PRODUCERS=1`; `bridge.js` aggregates top
+      producers by upload bytes, dynamic/`NOOVERWRITE`/`DISCARD` mix, and
+      upload timing, and `runtime_frame_profile.mjs` diffs those producers per
+      measured frame. Verified with `node --check
+      WebAssembly/harness/bridge.js`, `node --check
+      WebAssembly/harness/runtime_frame_profile.mjs`, `npm --prefix
+      WebAssembly run build:port`, a local SwiftShader producer profile, and a
+      Mac M4/Metal profile copied to
+      `WebAssembly/artifacts/perf/runtime-frame-profile-buffer-producers-mac.json`.
+      The Mac run reported `ANGLE Metal Renderer: Apple M4`, producer tracking
+      enabled, 137 buffer updates, 326 KB uploaded, 253 KB `NOOVERWRITE`,
+      72.6 KB `DISCARD`, 0.060 ms `bufferSubDataMs`, and a useful top-producer
+      breakdown led by water render, terrain extra-blend, volumetric shadow
+      VB/IB uploads, shoreline, and water-track batch unlock.
+
 ## User-reported play bugs (2026-07-06 session)
 
 - [x] Fix skirmish loading screens never appearing before map load. The browser

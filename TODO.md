@@ -186,9 +186,18 @@ draw-submit cleanup removed duplicate render-state normalization and skips
 diagnostic-rich fill/shade objects on `diag=lite` solid non-flat draws; the
 latest Mac M4 Metal profile measured 37.22 ms/frame wall and reduced scoped
 sorted draw-submit work to 2.70 ms/frame, with render-state apply at
-0.054 ms/frame. The remaining upload frontier is now smaller and should be
-reprofiled by producer before broader JS-side `NOOVERWRITE`, orphaning, or
-checksum changes. The user-reported shadow
+0.054 ms/frame. D3D8 buffer upload producer attribution is now available behind
+`PERF_PROFILE_D3D8_BUFFER_PRODUCERS=1`, and the Mac M4/Metal one-frame sanity
+profile `runtime-frame-profile-buffer-producers-mac.json` measured 137 buffer
+updates, 326 KB uploaded, 253 KB `NOOVERWRITE`, 72.6 KB `DISCARD`, and
+0.060 ms `bufferSubDataMs`; the leading byte producers were
+`W3DWater.render.renderWater.before` (140.5 KB),
+`HeightMap.render.extraBlend.before` (48.1 KB),
+`W3DVolumetricShadow.renderDynamicVolume.vbUnlock.before` (46.6 KB),
+`HeightMap.render.shoreLines.before` (44.8 KB), and
+`W3DVolumetricShadow.renderDynamicVolume.ibUnlock.before` (23.3 KB). The next
+upload byte-reduction pass should start with those producers before broader
+JS-side `NOOVERWRITE`, orphaning, or checksum changes. The user-reported shadow
 flicker/breakage symptom is fixed in the live skirmish path, while broader
 shadow fidelity remains in the queued phased plan.
 
@@ -2563,8 +2572,15 @@ and then start with the PROFILE, not with any individual fix.
       indices; the final Mac M4 Chrome/Metal profile measured 186.6
       updates/frame, 0.91 MB/frame uploaded, 0.38 MB/frame dynamic uploads,
       0.31 MB/frame `NOOVERWRITE` uploads, and 0.088 ms/frame in
-      `bufferSubDataMs`. Reprofile the remaining upload producers before the
-      next byte-range reduction.
+      `bufferSubDataMs`. A same-day producer-attribution pass now labels D3D8
+      buffer uploads from the current engine profile marker. The Mac M4/Metal
+      sanity profile with `PERF_PROFILE_D3D8_BUFFER_PRODUCERS=1` measured the
+      remaining one-frame upload mix at 326 KB/frame, led by water surface
+      vertices (140.5 KB), terrain extra-blend (48.1 KB), volumetric shadow
+      VB/IB uploads (46.6 KB + 23.3 KB), shoreline indices/verts (44.8 KB), and
+      water-track batch unlock (18.2 KB). Next pass: reduce or static-cache
+      those concrete water/terrain/shadow producer byte ranges before touching
+      generic JS-side orphaning or checksum policy.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing

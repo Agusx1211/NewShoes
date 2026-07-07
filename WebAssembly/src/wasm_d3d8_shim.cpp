@@ -18,6 +18,7 @@
 
 #ifdef __EMSCRIPTEN__
 extern "C" void cnc_port_note_engine_profile_marker(const char *name) __attribute__((weak));
+extern "C" const char *cnc_port_current_engine_profile_marker() __attribute__((weak));
 extern "C" int cnc_port_is_sorted_draw_submit_profile_scope() __attribute__((weak));
 static bool wasm_d3d8_sorted_draw_profile_enabled()
 {
@@ -100,11 +101,27 @@ EM_JS(void, wasm_d3d8_browser_buffer_update, (
 	unsigned int byte_offset,
 	unsigned int byte_size,
 	unsigned int usage,
-	unsigned int lock_flags
+	unsigned int lock_flags,
+	unsigned int producer_ptr
 ), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8BufferUpdate : null;
 	if (typeof bridge !== "function" || typeof Module === "undefined" || !Module.HEAPU8) {
 		return;
+	}
+	const producerTracking =
+		typeof globalThis !== "undefined" && globalThis.__cncD3D8BufferProducerTrackingEnabled === true;
+	let producer = "";
+	if (producerTracking && producer_ptr !== 0) {
+		const heap = Module.HEAPU8;
+		let end = producer_ptr >>> 0;
+		const maxEnd = Math.min(heap.length, end + 160);
+		while (end < maxEnd && heap[end] !== 0) {
+			end++;
+		}
+		for (let cursor = producer_ptr >>> 0; cursor < end; cursor++) {
+			const code = heap[cursor];
+			producer += code >= 0x20 && code < 0x7f ? String.fromCharCode(code) : "?";
+		}
 	}
 	bridge({
 		kind: kind >>> 0,
@@ -113,6 +130,7 @@ EM_JS(void, wasm_d3d8_browser_buffer_update, (
 		byteSize: byte_size >>> 0,
 		usage: usage >>> 0,
 		lockFlags: lock_flags >>> 0,
+		producer,
 		bytes: Module.HEAPU8.subarray(data_ptr, data_ptr + byte_size),
 	});
 });
@@ -618,8 +636,8 @@ void wasm_d3d8_browser_clear_target(unsigned int, unsigned int, double, unsigned
 void wasm_d3d8_browser_set_viewport(unsigned int, unsigned int, unsigned int, unsigned int, double, double,
 	unsigned int, unsigned int) {}
 void wasm_d3d8_browser_buffer_create(unsigned int, unsigned int, unsigned int, unsigned int) {}
-void wasm_d3d8_browser_buffer_update(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
-	unsigned int) {}
+void wasm_d3d8_browser_buffer_update(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
+	unsigned int, unsigned int, unsigned int) {}
 void wasm_d3d8_browser_buffer_release(unsigned int, unsigned int) {}
 void wasm_d3d8_browser_texture_create(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int) {}
@@ -1127,6 +1145,11 @@ void browser_buffer_update(UINT kind, UINT buffer_id, const BYTE *data, UINT byt
 	g_state.last_browser_buffer_bytes = byte_size;
 	g_state.last_browser_buffer_usage = usage;
 	g_state.last_browser_buffer_lock_flags = lock_flags;
+#ifdef __EMSCRIPTEN__
+	const char *producer = cnc_port_current_engine_profile_marker ? cnc_port_current_engine_profile_marker() : nullptr;
+#else
+	const char *producer = nullptr;
+#endif
 	wasm_d3d8_browser_buffer_update(
 		kind,
 		buffer_id,
@@ -1134,7 +1157,8 @@ void browser_buffer_update(UINT kind, UINT buffer_id, const BYTE *data, UINT byt
 		byte_offset,
 		byte_size,
 		usage,
-		lock_flags);
+		lock_flags,
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(producer)));
 }
 
 void browser_buffer_release(UINT kind, UINT buffer_id)

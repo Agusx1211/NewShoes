@@ -390,6 +390,7 @@ const d3d8BufferStats = {
   lastUpdate: null,
   lastRelease: null,
 };
+const d3d8BufferProducerStats = new Map();
 let d3d8ViewportState = null;
 let browser_fbo_incomplete_count = 0;
 const d3d8ViewportStats = {
@@ -548,6 +549,104 @@ function roundedPerfMs(value) {
   return Math.round(Number(value ?? 0) * 1000) / 1000;
 }
 
+function bufferProducerLabel(value) {
+  const label = typeof value === "string" ? value.trim() : "";
+  return label.length > 0 ? label.slice(0, 160) : "(unmarked)";
+}
+
+function noteD3D8BufferProducerUpdate({
+  producer,
+  resource,
+  byteLength,
+  updateMs,
+  subDataMs,
+  mirrorMs,
+  mirroredBytes,
+  skippedMirrorBytes,
+  discard,
+  noOverwrite,
+  orphaned,
+  resized,
+}) {
+  if (!d3d8BufferProducerTrackingEnabled || !resource) {
+    return;
+  }
+  const label = bufferProducerLabel(producer);
+  let entry = d3d8BufferProducerStats.get(label);
+  if (!entry) {
+    entry = {
+      producer: label,
+      updates: 0,
+      uploadBytes: 0,
+      vertexUpdates: 0,
+      vertexUploadBytes: 0,
+      indexUpdates: 0,
+      indexUploadBytes: 0,
+      dynamicUpdates: 0,
+      dynamicUploadBytes: 0,
+      discardUpdates: 0,
+      discardUploadBytes: 0,
+      noOverwriteUpdates: 0,
+      noOverwriteUploadBytes: 0,
+      orphanedUpdates: 0,
+      resizedUpdates: 0,
+      updateMs: 0,
+      bufferSubDataMs: 0,
+      mirrorMs: 0,
+      mirrorBytes: 0,
+      mirrorSkippedBytes: 0,
+    };
+    d3d8BufferProducerStats.set(label, entry);
+  }
+  entry.updates += 1;
+  entry.uploadBytes += byteLength;
+  if (resource.kindName === "vertex") {
+    entry.vertexUpdates += 1;
+    entry.vertexUploadBytes += byteLength;
+  } else if (resource.kindName === "index") {
+    entry.indexUpdates += 1;
+    entry.indexUploadBytes += byteLength;
+  }
+  if (resource.dynamic) {
+    entry.dynamicUpdates += 1;
+    entry.dynamicUploadBytes += byteLength;
+  }
+  if (discard) {
+    entry.discardUpdates += 1;
+    entry.discardUploadBytes += byteLength;
+  }
+  if (noOverwrite) {
+    entry.noOverwriteUpdates += 1;
+    entry.noOverwriteUploadBytes += byteLength;
+  }
+  if (orphaned) {
+    entry.orphanedUpdates += 1;
+  }
+  if (resized) {
+    entry.resizedUpdates += 1;
+  }
+  entry.updateMs += updateMs;
+  entry.bufferSubDataMs += subDataMs;
+  entry.mirrorMs += mirrorMs;
+  entry.mirrorBytes += mirroredBytes;
+  entry.mirrorSkippedBytes += skippedMirrorBytes;
+}
+
+function d3d8BufferProducerSummary() {
+  if (!d3d8BufferProducerTrackingEnabled) {
+    return [];
+  }
+  return [...d3d8BufferProducerStats.values()]
+    .sort((a, b) => b.uploadBytes - a.uploadBytes || b.updates - a.updates)
+    .slice(0, 128)
+    .map((entry) => ({
+      ...entry,
+      updateMs: roundedPerfMs(entry.updateMs),
+      bufferSubDataMs: roundedPerfMs(entry.bufferSubDataMs),
+      mirrorMs: roundedPerfMs(entry.mirrorMs),
+    }));
+}
+
 function resetD3D8UniformSubgroupCaches() {
   d3d8LastBaseUniformKey = null;
   d3d8LastMaterialUniformInfo = null;
@@ -693,6 +792,8 @@ function d3d8PerfSummary() {
     bufferMirrorBytes: d3d8PerfStats.bufferMirrorBytes,
     bufferMirrorMs: roundedPerfMs(d3d8PerfStats.bufferMirrorMs),
     bufferMirrorSkippedBytes: d3d8PerfStats.bufferMirrorSkippedBytes,
+    bufferProducerTracking: d3d8BufferProducerTrackingEnabled,
+    bufferProducers: d3d8BufferProducerSummary(),
   };
 }
 
@@ -3389,6 +3490,21 @@ function updateD3D8Buffer(payload = {}) {
   d3d8PerfStats.bufferMirrorBytes += mirroredBytes;
   d3d8PerfStats.bufferMirrorMs += mirrorMs;
   d3d8PerfStats.bufferMirrorSkippedBytes += skippedMirrorBytes;
+  const producer = d3d8BufferProducerTrackingEnabled ? bufferProducerLabel(payload.producer) : "";
+  noteD3D8BufferProducerUpdate({
+    producer,
+    resource,
+    byteLength: bytes.byteLength,
+    updateMs,
+    subDataMs,
+    mirrorMs,
+    mirroredBytes,
+    skippedMirrorBytes,
+    discard,
+    noOverwrite,
+    orphaned,
+    resized,
+  });
   d3d8BufferStats.lastUpdate = {
     id,
     kind: resource.kindName,
@@ -3408,6 +3524,7 @@ function updateD3D8Buffer(payload = {}) {
     bufferSubDataMs: roundedPerfMs(subDataMs),
     updateMs: roundedPerfMs(updateMs),
     uploads: resource.uploads,
+    producer: d3d8BufferProducerTrackingEnabled ? producer : null,
   };
   updateD3D8BufferSummary();
   return 1;
@@ -8918,6 +9035,7 @@ let d3d8DiagLevel = "full";
 let d3d8SceneDrawHistoryLimit = 256;
 let d3d8AdjacentDrawBatchingEnabled = true;
 let d3d8LiteVertexBufferMirrorsEnabled = false;
+let d3d8BufferProducerTrackingEnabled = false;
 let d3d8BoundDrawDiagnosticsSetter = null;
 let d3d8BoundDrawDiagnosticsEnabled = true;
 function setD3D8BoundDrawDiagnostics(enabled) {
@@ -8931,6 +9049,13 @@ function applyD3D8BoundDrawDiagnosticsLevel() {
   // Keep this independent from diag=lite: disabling these CPU-side checksums
   // makes M4/Metal runs stall later in terrain GL work and increases frame time.
   return setD3D8BoundDrawDiagnostics(true);
+}
+function setD3D8BufferProducerTracking(enabled) {
+  d3d8BufferProducerTrackingEnabled = enabled === true || enabled === 1 || enabled === "1";
+  if (typeof globalThis !== "undefined") {
+    globalThis.__cncD3D8BufferProducerTrackingEnabled = d3d8BufferProducerTrackingEnabled;
+  }
+  return d3d8BufferProducerTrackingEnabled;
 }
 try {
   const _params = new URLSearchParams(globalThis.location?.search || "");
@@ -8948,7 +9073,12 @@ try {
   if (_liteVertexMirrors === "1" || _liteVertexMirrors === "true" || _liteVertexMirrors === "on") {
     d3d8LiteVertexBufferMirrorsEnabled = true;
   }
+  const _bufferProducers = _params.get("d3d8BufferProducers");
+  if (_bufferProducers === "1" || _bufferProducers === "true" || _bufferProducers === "on") {
+    d3d8BufferProducerTrackingEnabled = true;
+  }
 } catch (_e) { /* no location (node context) */ }
+setD3D8BufferProducerTracking(d3d8BufferProducerTrackingEnabled);
 if (typeof globalThis !== "undefined") {
   globalThis.__cncSetDiagLevel = (lvl) => {
     if (lvl === "lite" || lvl === "full") {
@@ -8980,6 +9110,8 @@ if (typeof globalThis !== "undefined") {
     return d3d8LiteVertexBufferMirrorsEnabled;
   };
   globalThis.__cncGetD3D8LiteVertexMirrors = () => d3d8LiteVertexBufferMirrorsEnabled;
+  globalThis.__cncSetD3D8BufferProducerTracking = setD3D8BufferProducerTracking;
+  globalThis.__cncGetD3D8BufferProducerTracking = () => d3d8BufferProducerTrackingEnabled;
   globalThis.__cncSetD3D8BoundDrawDiagnostics = setD3D8BoundDrawDiagnostics;
   globalThis.__cncGetD3D8BoundDrawDiagnostics = () => d3d8BoundDrawDiagnosticsEnabled;
   globalThis.__cncFlushD3D8PendingDrawBatch = () => flushD3D8PendingDrawBatch("manual");

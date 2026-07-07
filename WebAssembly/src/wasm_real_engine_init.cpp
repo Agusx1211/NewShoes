@@ -494,6 +494,11 @@ extern "C" void cnc_port_note_engine_profile_marker(const char *name)
 	note_engine_frame_profile_marker(name);
 }
 
+extern "C" const char *cnc_port_current_engine_profile_marker()
+{
+	return g_engine_frame_profile_last_label.empty() ? "" : g_engine_frame_profile_last_label.c_str();
+}
+
 extern "C" int cnc_port_is_engine_frame_profile_enabled()
 {
 	return g_engine_frame_profile_enabled ? 1 : 0;

@@ -459,6 +459,73 @@ const browserPerfFields = [
   "bufferMirrorSkippedBytes",
 ];
 
+const bufferProducerFields = [
+  "updates",
+  "uploadBytes",
+  "vertexUpdates",
+  "vertexUploadBytes",
+  "indexUpdates",
+  "indexUploadBytes",
+  "dynamicUpdates",
+  "dynamicUploadBytes",
+  "discardUpdates",
+  "discardUploadBytes",
+  "noOverwriteUpdates",
+  "noOverwriteUploadBytes",
+  "orphanedUpdates",
+  "resizedUpdates",
+  "updateMs",
+  "bufferSubDataMs",
+  "mirrorMs",
+  "mirrorBytes",
+  "mirrorSkippedBytes",
+];
+
+function bufferProducerMap(perf) {
+  const result = new Map();
+  for (const entry of perf?.bufferProducers ?? []) {
+    if (typeof entry?.producer === "string" && entry.producer.length > 0) {
+      result.set(entry.producer, entry);
+    }
+  }
+  return result;
+}
+
+function bufferProducerDelta(before, after, framesAdvanced) {
+  if (!before?.bufferProducerTracking && !after?.bufferProducerTracking) {
+    return [];
+  }
+  const beforeMap = bufferProducerMap(before);
+  const afterMap = bufferProducerMap(after);
+  const producers = new Set([...beforeMap.keys(), ...afterMap.keys()]);
+  const delta = [];
+  for (const producer of producers) {
+    const beforeEntry = beforeMap.get(producer) ?? {};
+    const afterEntry = afterMap.get(producer) ?? {};
+    const entry = { producer };
+    for (const field of bufferProducerFields) {
+      const beforeValue = Number(beforeEntry[field] ?? 0);
+      const afterValue = Number(afterEntry[field] ?? 0);
+      entry[field] = Number.isFinite(beforeValue) && Number.isFinite(afterValue)
+        ? afterValue - beforeValue
+        : null;
+    }
+    if (framesAdvanced > 0) {
+      entry.perFrame = {};
+      for (const field of bufferProducerFields) {
+        entry.perFrame[field] = Number(entry[field] ?? 0) / framesAdvanced;
+      }
+    }
+    delta.push(entry);
+  }
+  return delta
+    .filter((entry) => Number(entry.uploadBytes ?? 0) > 0 || Number(entry.updates ?? 0) > 0)
+    .sort((a, b) =>
+      Number(b.uploadBytes ?? 0) - Number(a.uploadBytes ?? 0)
+      || Number(b.updates ?? 0) - Number(a.updates ?? 0))
+    .slice(0, 64);
+}
+
 function browserPerfDelta(before, after, framesAdvanced) {
   if (!before || !after) {
     return null;
@@ -483,12 +550,14 @@ function browserPerfDelta(before, after, framesAdvanced) {
     clearBridgeMs +
     Number(delta.textureConvertMs ?? 0) +
     Math.max(0, Number(delta.bufferUpdateMs ?? 0) - Number(delta.bufferSubDataMs ?? 0));
+  const bufferProducers = bufferProducerDelta(before, after, framesAdvanced);
   return {
     before,
     after,
     delta,
     trackedGlCallMs,
     trackedBrowserMs,
+    bufferProducers,
     perFrame: framesAdvanced > 0
       ? {
           draws: Number(delta.draws ?? 0) / framesAdvanced,
@@ -764,8 +833,9 @@ const viewportHeight = parsePositiveInt("PERF_PROFILE_HEIGHT", 720);
 const includeSamples = process.env.PERF_PROFILE_SAMPLES === "1";
 const d3d8AdjacentBatching = process.env.PERF_PROFILE_D3D8_BATCH !== "0";
 const d3d8LiteVertexMirrors = process.env.PERF_PROFILE_D3D8_VERTEX_MIRRORS === "1";
+const d3d8BufferProducers = process.env.PERF_PROFILE_D3D8_BUFFER_PRODUCERS === "1";
 const d3d8BoundDrawDiagnostics = parseOptionalBoolean("PERF_PROFILE_D3D8_BOUND_DIAG");
-const engineFrameProfile = process.env.PERF_PROFILE_ENGINE_PROFILE === "1";
+const engineFrameProfile = process.env.PERF_PROFILE_ENGINE_PROFILE === "1" || d3d8BufferProducers;
 
 const server = await startStaticServer({ root: wasmRoot });
 let browser;
@@ -806,6 +876,8 @@ try {
     window.__cncSetD3D8AdjacentBatching?.(enabled) ?? null, d3d8AdjacentBatching);
   const d3d8LiteVertexMirrorsActive = await page.evaluate((enabled) =>
     window.__cncSetD3D8LiteVertexMirrors?.(enabled) ?? null, d3d8LiteVertexMirrors);
+  const d3d8BufferProducersActive = await page.evaluate((enabled) =>
+    window.__cncSetD3D8BufferProducerTracking?.(enabled) ?? null, d3d8BufferProducers);
   const d3d8BoundDrawDiagnosticsActive = d3d8BoundDrawDiagnostics == null
     ? await page.evaluate(() => window.__cncGetD3D8BoundDrawDiagnostics?.() ?? null)
     : await page.evaluate((enabled) =>
@@ -866,6 +938,7 @@ try {
     distDir,
     d3d8AdjacentBatching: d3d8AdjacentBatchingActive,
     d3d8LiteVertexMirrors: d3d8LiteVertexMirrorsActive,
+    d3d8BufferProducers: d3d8BufferProducersActive,
     d3d8BoundDrawDiagnostics: d3d8BoundDrawDiagnosticsActive,
     engineFrameProfile,
     measuredFrameCommand,
