@@ -78,6 +78,32 @@ EM_JS(void, wasm_d3d8_browser_set_viewport, (
 		targetHeight: target_height >>> 0,
 	});
 });
+EM_JS(void, wasm_d3d8_browser_set_gamma_ramp, (
+	unsigned int flags,
+	const unsigned short *red,
+	const unsigned short *green,
+	const unsigned short *blue
+), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8SetGammaRamp : null;
+	if (typeof bridge !== "function") {
+		return;
+	}
+	const heap = Module.HEAPU16;
+	if (!(heap instanceof Uint16Array) || !red || !green || !blue) {
+		return;
+	}
+	const copyRamp = (ptr) => {
+		const start = ptr >>> 1;
+		const end = start + 256;
+		return Array.from(heap.subarray(start, end), (value) => value >>> 0);
+	};
+	bridge({
+		flags: flags >>> 0,
+		red: copyRamp(red),
+		green: copyRamp(green),
+		blue: copyRamp(blue),
+	});
+});
 EM_JS(void, wasm_d3d8_browser_buffer_create, (
 	unsigned int kind,
 	unsigned int buffer_id,
@@ -718,6 +744,7 @@ void fill_caps(D3DCAPS8 &caps)
 	std::memset(&caps, 0, sizeof(caps));
 	caps.AdapterOrdinal = D3DADAPTER_DEFAULT;
 	caps.DeviceType = D3DDEVTYPE_HAL;
+	caps.Caps2 = D3DCAPS2_FULLSCREENGAMMA;
 	caps.PrimitiveMiscCaps = D3DPMISCCAPS_COLORWRITEENABLE;
 	caps.RasterCaps = D3DPRASTERCAPS_ZBIAS;
 	caps.TextureFilterCaps = D3DPTFILTERCAPS_MINFPOINT | D3DPTFILTERCAPS_MINFLINEAR |
@@ -748,6 +775,16 @@ void fill_caps(D3DCAPS8 &caps)
 	caps.MaxPrimitiveCount = 65535;
 	caps.MaxVertexIndex = 65535;
 	caps.MaxPointSize = 64.0f;
+}
+
+void fill_identity_gamma_ramp(D3DGAMMARAMP &ramp)
+{
+	for (UINT i = 0; i < 256; ++i) {
+		const WORD value = static_cast<WORD>(i * 257U);
+		ramp.red[i] = value;
+		ramp.green[i] = value;
+		ramp.blue[i] = value;
+	}
 }
 
 UINT bytes_per_pixel(D3DFORMAT format)
@@ -2762,8 +2799,29 @@ public:
 	}
 
 	HRESULT GetRasterStatus(void *) override { return D3DERR_NOTAVAILABLE; }
-	void SetGammaRamp(DWORD, const void *) override {}
-	void GetGammaRamp(void *) override {}
+	void SetGammaRamp(DWORD flags, const void *ramp) override
+	{
+		if (ramp == nullptr) {
+			return;
+		}
+		const D3DGAMMARAMP *gamma_ramp = static_cast<const D3DGAMMARAMP *>(ramp);
+		m_gamma_ramp = *gamma_ramp;
+		m_has_gamma_ramp = true;
+		wasm_d3d8_browser_set_gamma_ramp(flags, m_gamma_ramp.red, m_gamma_ramp.green, m_gamma_ramp.blue);
+	}
+
+	void GetGammaRamp(void *ramp) override
+	{
+		if (ramp == nullptr) {
+			return;
+		}
+		D3DGAMMARAMP *gamma_ramp = static_cast<D3DGAMMARAMP *>(ramp);
+		if (m_has_gamma_ramp) {
+			*gamma_ramp = m_gamma_ramp;
+		} else {
+			fill_identity_gamma_ramp(*gamma_ramp);
+		}
+	}
 	HRESULT CreateTexture(UINT width, UINT height, UINT levels, DWORD usage, D3DFORMAT format, D3DPOOL pool,
 		IDirect3DTexture8 **texture) override
 	{
@@ -4292,6 +4350,8 @@ private:
 	UINT m_current_fbo_depth_texture_id = 0; // 0 = default depth buffer
 	IDirect3DVertexBuffer8 *m_stream_source = nullptr;
 	IDirect3DIndexBuffer8 *m_indices = nullptr;
+	D3DGAMMARAMP m_gamma_ramp = {};
+	bool m_has_gamma_ramp = false;
 	UINT m_stream_source_stride = 0;
 	UINT m_indices_base_vertex_index = 0;
 	BrowserD3DVertexBuffer *m_user_pointer_vertex_buffer = nullptr;

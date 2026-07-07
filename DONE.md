@@ -8,6 +8,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Visual fidelity — missing/degraded graphic effects (2026-07-07 session)
+
+- [x] Restore the original WW3D screen gamma path in the browser presentation
+      layer. `W3DDisplay::setGamma()` now keeps the native desktop/windowed
+      safety check for non-Emscripten builds but lets browser canvas output use
+      the game gamma setting. The D3D8 shim advertises
+      `D3DCAPS2_FULLSCREENGAMMA`, stores `SetGammaRamp` state, returns it from
+      `GetGammaRamp`, and forwards the 256-entry ramp to the JS bridge instead
+      of dropping it. The harness bridge now converts the original
+      `DX8Wrapper::Set_Gamma` ramp into an SVG `feComponentTransfer` canvas
+      presentation filter, exposes `state.graphics.d3d8Gamma`, and provides a
+      `setD3D8GammaRamp` RPC for deterministic before/after checks.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `npm --prefix WebAssembly run build:port`, a local Playwright run showing
+      a mid-gray canvas screenshot center change from `srgb(128,128,128)` to
+      `srgb(180,180,180)` for gamma 2.0, Mac Chrome/Metal on Apple M4 showing
+      `[128,128,128,255]` to `[180,180,180,255]`, and
+      `STARTUP_VERTICAL_REAL_INIT_ONLY=1 node
+      WebAssembly/harness/startup_vertical_smoke.mjs` passing with
+      `initReturned=true`, 43 completed startup subsystems, and real menu
+      screenshots.
+
 ## User-reported play bugs (2026-07-07 session)
 
 - [x] Fix skirmish loading-screen map and faction art. Browser skirmish now

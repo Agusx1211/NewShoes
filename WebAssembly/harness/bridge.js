@@ -907,6 +907,23 @@ function d3d8PerfSummary() {
   };
 }
 
+const D3D8_GAMMA_FILTER_ID = "cnc-d3d8-gamma-filter";
+const D3D8_GAMMA_SVG_NS = "http://www.w3.org/2000/svg";
+let d3d8GammaFilterNodes = null;
+
+function defaultD3D8GammaState() {
+  return {
+    source: "d3d8_gamma_ramp_presentation",
+    supported: true,
+    applied: false,
+    flags: 0,
+    cssFilter: "",
+    channels: null,
+    samples: null,
+    request: null,
+  };
+}
+
 const harnessState = {
   booted: false,
   frame: 0,
@@ -963,6 +980,7 @@ const harnessState = {
     lastD3D8UniformKey: null,
     lastD3D8TextureUniformKey: null,
     lastD3D8AppliedRenderState: null,
+    d3d8Gamma: defaultD3D8GammaState(),
   },
   originalEngineLinked: false,
   originalCoreProbe: null,
@@ -1033,6 +1051,195 @@ function warnD3D8Once(key, message, detail = {}) {
   warnings.push(warning);
   harnessState.graphics.d3d8Warnings = warnings;
   console.warn(`[D3D8 bridge] ${message}`, detail);
+}
+
+function roundedD3D8GammaMetric(value) {
+  return Math.round(Number(value) * 1000000) / 1000000;
+}
+
+function clampD3D8RampWord(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(65535, Math.trunc(number)));
+}
+
+function copyD3D8GammaRampChannel(values) {
+  const source = Array.isArray(values) || ArrayBuffer.isView(values) ? values : [];
+  const ramp = new Array(256);
+  for (let i = 0; i < 256; i++) {
+    ramp[i] = clampD3D8RampWord(source[i] ?? 0);
+  }
+  return ramp;
+}
+
+function sampleD3D8GammaRampChannel(ramp) {
+  return [0, 64, 128, 192, 255].map((index) => ramp[index] ?? 0);
+}
+
+function estimateD3D8GammaChannel(ramp) {
+  const first = (ramp[0] ?? 0) / 65535;
+  const mid = (ramp[128] ?? 0) / 65535;
+  const last = (ramp[255] ?? 0) / 65535;
+  const amplitude = last - first;
+  let exponent = 1;
+  if (amplitude > 1 / 65535) {
+    const normalizedMid = Math.max(0.000001, Math.min(0.999999, (mid - first) / amplitude));
+    const inputMid = 128 / 256;
+    exponent = Math.log(normalizedMid) / Math.log(inputMid);
+    if (!Number.isFinite(exponent) || exponent <= 0) {
+      exponent = 1;
+    }
+  }
+  return {
+    offset: roundedD3D8GammaMetric(first),
+    amplitude: roundedD3D8GammaMetric(Math.max(0, amplitude)),
+    exponent: roundedD3D8GammaMetric(exponent),
+    gamma: roundedD3D8GammaMetric(1 / exponent),
+    samples: {
+      first: ramp[0] ?? 0,
+      mid: ramp[128] ?? 0,
+      last: ramp[255] ?? 0,
+    },
+  };
+}
+
+function d3d8GammaChannelIsIdentity(channel) {
+  return Math.abs(channel.offset) <= 0.01
+    && Math.abs(channel.amplitude - 1) <= 0.015
+    && Math.abs(channel.exponent - 1) <= 0.02;
+}
+
+function ensureD3D8GammaFilterNodes() {
+  if (d3d8GammaFilterNodes) {
+    return d3d8GammaFilterNodes;
+  }
+
+  const svg = document.createElementNS(D3D8_GAMMA_SVG_NS, "svg");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.style.position = "absolute";
+  svg.style.width = "0";
+  svg.style.height = "0";
+  svg.style.overflow = "hidden";
+
+  const filter = document.createElementNS(D3D8_GAMMA_SVG_NS, "filter");
+  filter.setAttribute("id", D3D8_GAMMA_FILTER_ID);
+  filter.setAttribute("color-interpolation-filters", "sRGB");
+
+  const transfer = document.createElementNS(D3D8_GAMMA_SVG_NS, "feComponentTransfer");
+  const red = document.createElementNS(D3D8_GAMMA_SVG_NS, "feFuncR");
+  const green = document.createElementNS(D3D8_GAMMA_SVG_NS, "feFuncG");
+  const blue = document.createElementNS(D3D8_GAMMA_SVG_NS, "feFuncB");
+  const alpha = document.createElementNS(D3D8_GAMMA_SVG_NS, "feFuncA");
+  alpha.setAttribute("type", "identity");
+  transfer.append(red, green, blue, alpha);
+  filter.append(transfer);
+  svg.append(filter);
+  (document.body ?? document.documentElement).append(svg);
+
+  d3d8GammaFilterNodes = { svg, filter, red, green, blue };
+  return d3d8GammaFilterNodes;
+}
+
+function formatD3D8GammaFilterNumber(value) {
+  return String(Math.round(Number(value) * 1000000) / 1000000);
+}
+
+function applyD3D8GammaFunction(node, channel) {
+  node.setAttribute("type", "gamma");
+  node.setAttribute("amplitude", formatD3D8GammaFilterNumber(channel.amplitude));
+  node.setAttribute("exponent", formatD3D8GammaFilterNumber(channel.exponent));
+  node.setAttribute("offset", formatD3D8GammaFilterNumber(channel.offset));
+}
+
+function applyD3D8GammaFilter(channels, enabled) {
+  if (!enabled) {
+    canvas.style.filter = "";
+    return "";
+  }
+  const nodes = ensureD3D8GammaFilterNodes();
+  applyD3D8GammaFunction(nodes.red, channels.red);
+  applyD3D8GammaFunction(nodes.green, channels.green);
+  applyD3D8GammaFunction(nodes.blue, channels.blue);
+  const cssFilter = `url(#${D3D8_GAMMA_FILTER_ID})`;
+  canvas.style.filter = cssFilter;
+  return cssFilter;
+}
+
+function setD3D8GammaRamp(payload = {}) {
+  const red = copyD3D8GammaRampChannel(payload.red);
+  const green = copyD3D8GammaRampChannel(payload.green);
+  const blue = copyD3D8GammaRampChannel(payload.blue);
+  const channels = {
+    red: estimateD3D8GammaChannel(red),
+    green: estimateD3D8GammaChannel(green),
+    blue: estimateD3D8GammaChannel(blue),
+  };
+  const applied = !d3d8GammaChannelIsIdentity(channels.red)
+    || !d3d8GammaChannelIsIdentity(channels.green)
+    || !d3d8GammaChannelIsIdentity(channels.blue);
+  const cssFilter = applyD3D8GammaFilter(channels, applied);
+  const summary = {
+    source: "d3d8_gamma_ramp_presentation",
+    supported: true,
+    applied,
+    flags: Number(payload.flags ?? 0) >>> 0,
+    cssFilter,
+    channels,
+    samples: {
+      red: sampleD3D8GammaRampChannel(red),
+      green: sampleD3D8GammaRampChannel(green),
+      blue: sampleD3D8GammaRampChannel(blue),
+    },
+    request: payload.request ?? null,
+  };
+  harnessState.graphics = {
+    ...harnessState.graphics,
+    d3d8Gamma: summary,
+  };
+  return summary;
+}
+
+function buildD3D8GammaRampPayload(payload = {}) {
+  const gamma = clampNumber(payload.gamma, 0.6, 6.0, 1.0);
+  const bright = clampNumber(payload.bright ?? payload.brightness, -0.5, 0.5, 0.0);
+  const contrast = clampNumber(payload.contrast, 0.5, 2.0, 1.0);
+  const ooGamma = 1.0 / gamma;
+  const ramp = [];
+  for (let i = 0; i < 256; i++) {
+    const input = i / 256.0;
+    const output = clamp01(contrast * Math.pow(input, ooGamma) + bright);
+    ramp.push(Math.trunc(output * 65535));
+  }
+  return {
+    flags: Number(payload.flags ?? 0) >>> 0,
+    red: ramp,
+    green: ramp,
+    blue: ramp,
+    request: {
+      gamma: roundedD3D8GammaMetric(gamma),
+      bright: roundedD3D8GammaMetric(bright),
+      contrast: roundedD3D8GammaMetric(contrast),
+    },
+  };
+}
+
+function buildOrUseD3D8GammaRampPayload(payload = {}) {
+  const hasExplicitRamp = Array.isArray(payload.red) || ArrayBuffer.isView(payload.red)
+    || Array.isArray(payload.green) || ArrayBuffer.isView(payload.green)
+    || Array.isArray(payload.blue) || ArrayBuffer.isView(payload.blue);
+  if (hasExplicitRamp) {
+    return {
+      flags: Number(payload.flags ?? 0) >>> 0,
+      red: payload.red,
+      green: payload.green ?? payload.red,
+      blue: payload.blue ?? payload.red,
+      request: payload.request ?? null,
+    };
+  }
+  return buildD3D8GammaRampPayload(payload);
 }
 
 const browserAudioRuntime = {
@@ -11439,6 +11646,7 @@ async function loadWasmModule() {
       printErr: (text) => recordLog("wasm stderr", { text: String(text) }),
       cncPortD3D8Clear: paintD3D8Clear,
       cncPortD3D8SetViewport: setD3D8Viewport,
+      cncPortD3D8SetGammaRamp: setD3D8GammaRamp,
       cncPortD3D8BufferCreate: createD3D8Buffer,
       cncPortD3D8BufferUpdate: updateD3D8Buffer,
       cncPortD3D8BufferRelease: releaseD3D8Buffer,
@@ -11969,6 +12177,7 @@ function d3d8BridgeCallbacks() {
   return {
     cncPortD3D8Clear: paintD3D8Clear,
     cncPortD3D8SetViewport: setD3D8Viewport,
+    cncPortD3D8SetGammaRamp: setD3D8GammaRamp,
     cncPortD3D8BufferCreate: createD3D8Buffer,
     cncPortD3D8BufferUpdate: updateD3D8Buffer,
     cncPortD3D8BufferRelease: releaseD3D8Buffer,
@@ -16464,6 +16673,16 @@ async function rpc(command, payload = {}) {
           ok: true,
           command: "mapCacheProbe",
           probe: JSON.parse(moduleResult.wasmModule.mapCacheProbe()),
+        };
+      }
+    case "setD3D8GammaRamp":
+      {
+        const gamma = setD3D8GammaRamp(buildOrUseD3D8GammaRampPayload(payload));
+        return {
+          ok: gamma.supported === true,
+          command,
+          gamma,
+          state: snapshotState(),
         };
       }
     case "d3d8TextureInventory":

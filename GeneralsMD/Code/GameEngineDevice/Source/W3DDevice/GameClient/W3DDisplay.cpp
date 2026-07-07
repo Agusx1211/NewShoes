@@ -578,8 +578,10 @@ void W3DDisplay::getDisplayModeDescription(Int modeIndex, Int *xres, Int *yres, 
 
 void W3DDisplay::setGamma(Real gamma, Real bright, Real contrast, Bool calibrate)
 {
+#ifndef __EMSCRIPTEN__
 	if (m_windowed)
 		return;	//we don't allow gamma to change in window because it would affect desktop.
+#endif
 
 	DX8Wrapper::Set_Gamma(gamma,bright,contrast,calibrate, false);
 }

@@ -531,16 +531,6 @@ found several effects the original shipped that the port silently drops (shaders
 + gamma are stubbed). Each is an individual item; verify with before/after
 screenshots on the release build.
 
-- [ ] **Screen gamma is ignored (whole-image flatness)** — `IDirect3DDevice8::
-      SetGammaRamp` is a no-op in the shim (`WebAssembly/src/wasm_d3d8_shim.cpp:
-      2736` `SetGammaRamp(...) override {}`). The original drives screen gamma
-      over the whole framebuffer; `m_displayGamma` defaults to 1.0 but the
-      brightness control maps it 0.6→2.0 (`GlobalData.cpp:1241-1249`), so the
-      intended brightness/contrast/punch is dropped and output shows raw
-      uncorrected tone. Likely the single biggest "less vivid" cause (affects
-      every pixel every frame). Fix: apply the requested gamma ramp as a final
-      WebGL present/post pass (or honor `m_displayGamma`). Verify by toggling it
-      on the release build and comparing screenshots.
 - [ ] **Terrain noise/detail shaders are dead (flat ground)** — the shim stubs
       the programmable pipeline (`wasm_d3d8_shim.cpp:3399-3402`:
       `CreatePixelShader → D3DERR_NOTAVAILABLE`, `SetPixelShader/SetVertexShader`
@@ -553,6 +543,13 @@ screenshots on the release build.
       base+noise multi-texture blend as a WebGL2 shader in the bridge (the
       fixed-function fallback drops the noise/lightmap pass). Verify vs original
       terrain screenshots.
+- [ ] **Arbitrary gamma ramps need a true LUT post-process** — the browser now
+      honors the original WW3D `DX8Wrapper::Set_Gamma` curve by estimating
+      gamma/brightness/contrast from the submitted `D3DGAMMARAMP` and applying
+      an SVG presentation filter. If a future original path submits a custom
+      non-gamma 256-entry ramp, replace/augment this with a WebGL post-process
+      LUT that samples the full ramp per channel. Verify with a synthetic
+      non-linear/non-monotonic ramp and browser screenshot pixels.
 - [ ] **Cloud shadows over terrain missing (static map)** — the original blends
       a scrolling `cloudmap.tga` as an extra terrain texture stage
       (`TerrainTex.cpp:909` `CloudMapTerrainTextureClass`), producing moving
