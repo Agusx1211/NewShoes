@@ -476,6 +476,29 @@ symptom is temporal — NOT a single still.
       broken, revert `0de33aa6` + `667cd7ec` (and re-check the earlier per-task
       replay) or fix the per-volume stencil replay so increment/decrement passes
       stay correct. Do not accept "shell-map visible" as the shadow acceptance check.
+- [ ] **iPad/iOS: click-drag selects the canvas instead of dragging in-game** —
+      on iPad Safari/iOS, a touch drag on the game canvas triggers the browser's
+      text/element selection (highlighting the canvas) instead of a clean in-game
+      drag-select/order, which is annoying and steals the gesture. Suppress native
+      selection + callout on the canvas: CSS `user-select:none`,
+      `-webkit-user-select:none`, `-webkit-touch-callout:none`, and
+      `touch-action:none` on the canvas/container in `harness/play.html`, plus
+      `preventDefault()` on `selectstart`/`touchstart` for the canvas so the touch
+      goes to the engine's input path, not the DOM selection. Verify a drag on
+      iPad selects units in-game and no longer highlights the page.
+- [ ] **Add a native-resolution option + fullscreen button (render at tab res)** —
+      today the canvas renders at one fixed default resolution. Add a resolution
+      selector with two entries: (1) the current default, and (2) an
+      auto-generated entry matching the browser tab's actual size — CSS pixels ×
+      `window.devicePixelRatio` — so we can render at the display's native
+      resolution. Switching must resize BOTH the WebGL canvas backing store and
+      tell the engine/D3D8 layer the new backbuffer size (viewport + projection +
+      GUI layout reflow) — not just CSS-scale the existing buffer. Also add a
+      **fullscreen button** using the Fullscreen API (`requestFullscreen()` on the
+      canvas container, handle the resize + exit). Handle tab resize / DPR change
+      so the native-res entry tracks the current window. Verify on desktop and
+      iPad that native-res is sharper and fullscreen fills the screen without
+      distorting aspect.
 - [ ] **Broaden right-click context-target order coverage beyond docking** —
       right-click ground move and GLA worker right-click supply docking now work
       in the browser alternate-mouse path (see DONE). Keep extending the
