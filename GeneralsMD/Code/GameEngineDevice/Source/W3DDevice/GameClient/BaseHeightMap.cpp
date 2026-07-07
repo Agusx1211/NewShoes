@@ -168,6 +168,7 @@ Int BaseHeightMapRenderObjClass::freeMapResources(void)
 	REF_PTR_RELEASE(m_stageTwoTexture);
 	REF_PTR_RELEASE(m_stageThreeTexture);
 	REF_PTR_RELEASE(m_destAlphaTexture);
+	releaseShoreLineBuffers();
 	REF_PTR_RELEASE(m_map);
 
 	return 0;
@@ -278,6 +279,7 @@ BaseHeightMapRenderObjClass::BaseHeightMapRenderObjClass(void)
 	m_numVisibleShoreLineTiles=0;
 	m_shoreLineTilePositionsSize=0;
 	m_currentMinWaterOpacity = -1.0f;
+	m_vertexShoreLine = NULL;
 
 	m_vertexMaterialClass=NULL;
 	m_stageZeroTexture=NULL;
@@ -1513,6 +1515,57 @@ void BaseHeightMapRenderObjClass::setShoreLineDetail(void)
 	updateShorelineTiles(0,0,m_mapDX-1,m_mapDY-1,m_map);
 }
 
+void BaseHeightMapRenderObjClass::releaseShoreLineBuffers(void)
+{
+	REF_PTR_RELEASE(m_vertexShoreLine);
+}
+
+void BaseHeightMapRenderObjClass::buildShoreLineBuffers(void)
+{
+	releaseShoreLineBuffers();
+
+	if (TheGlobalData->m_isWorldBuilder || !m_shoreLineTilePositions || m_numShoreLineTiles <= 0)
+		return;
+
+	const Int vertexCount = m_numShoreLineTiles * 4;
+	if (vertexCount > 0xffff)
+		return;
+
+	m_vertexShoreLine=NEW_REF(DX8VertexBufferClass,(dynamic_fvf_type,(UnsignedShort)vertexCount,DX8VertexBufferClass::USAGE_DEFAULT));
+	if (!m_vertexShoreLine)
+		return;
+
+	DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexShoreLine);
+	VertexFormatXYZNDUV2 *vb=(VertexFormatXYZNDUV2*)lockVtxBuffer.Get_Vertex_Array();
+	if (!vb)
+	{
+		releaseShoreLineBuffers();
+		return;
+	}
+
+	for (Int i=0; i<m_numShoreLineTiles; ++i)
+	{
+		shoreLineTileInfo *shoreInfo=&m_shoreLineTilePositions[i];
+		const Real texCoords[4]={shoreInfo->t0, shoreInfo->t1, shoreInfo->t2, shoreInfo->t3};
+		for (Int vertexIndex=0; vertexIndex<4; ++vertexIndex)
+		{
+			const Int vertOffset=vertexIndex*3;
+			vb->x=shoreInfo->verts[vertOffset];
+			vb->y=shoreInfo->verts[vertOffset+1];
+			vb->z=shoreInfo->verts[vertOffset+2];
+			vb->nx=0;
+			vb->ny=0;
+			vb->nz=0;
+			vb->diffuse=0;
+			vb->u1=texCoords[vertexIndex];
+			vb->v1=0;
+			vb->u2=0;
+			vb->v2=0;
+			vb++;
+		}
+	}
+}
+
 /** This is an extra pre-process of shoreline data to make it more efficient for runtime culling.  It is not
 used by the world builder since it modifies the terrain too frequently.  The function also assumes that updateShoreLineTiles()
 was previously called and inserted the tiles in the correctly sorted order.
@@ -1520,7 +1573,10 @@ WARNING!!! Current version assumes we always sort the entire map!  So don't set 
 void BaseHeightMapRenderObjClass::recordShoreLineSortInfos(void)
 {
 	if (TheGlobalData->m_isWorldBuilder || !m_shoreLineTilePositions || m_numShoreLineTiles == 0 || !m_map)
+	{
+		releaseShoreLineBuffers();
 		return;	//we must be in the builder so don't sort.
+	}
 
 	//Find how many sortinfos we need.
 	Int shoreLineSortInfosSize = m_map->getXExtent()-1;
@@ -1614,6 +1670,8 @@ void BaseHeightMapRenderObjClass::recordShoreLineSortInfos(void)
 			i += sortInfo->numTiles-1;	//skip tiles we just scanned.
 		}
 	}
+
+	buildShoreLineBuffers();
 }
 
 void BaseHeightMapRenderObjClass::updateShorelineTile(Int i, Int j, Int border, WorldHeightMap *pMap)
@@ -1675,6 +1733,7 @@ water.*/
 void BaseHeightMapRenderObjClass::updateShorelineTiles(Int minX, Int minY, Int maxX, Int maxY, WorldHeightMap *pMap)
 {
 	Int border = pMap->getBorderSizeInline();
+	releaseShoreLineBuffers();
 
 	//Clamp region to valid terrain tiles
 	if (minX<0)
@@ -1707,7 +1766,9 @@ void BaseHeightMapRenderObjClass::updateShorelineTiles(Int minX, Int minY, Int m
 	}
 
 	if (TheWaterTransparency->m_transparentWaterDepth == 0 || !TheGlobalData->m_showSoftWaterEdge)
+	{
 		return;
+	}
 
 	//we want to add the tiles in a certain order to make culling faster
 	//by default they are inserted in x-order
@@ -2711,6 +2772,10 @@ void BaseHeightMapRenderObjClass::renderShoreLinesSorted(CameraClass *pCamera)
 	DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_ALPHA);
 	DX8Wrapper::Set_DX8_Texture_Stage_State(0,  D3DTSS_TEXCOORDINDEX, 0);
 
+	if (!m_vertexShoreLine)
+		buildShoreLineBuffers();
+	Bool useStaticShoreLineVB = m_vertexShoreLine != NULL;
+
 	Bool isDone=FALSE;
 	Int lastRenderedTile=0;
 
@@ -2829,113 +2894,145 @@ flushVertexBuffer1:
 		if (batchTileCount == 0)
 			continue;
 
-		vertexCount=batchTileCount*4;
 		indexCount=batchTileCount*6;
-		DynamicVBAccessClass vb_access(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,vertexCount);
-		DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8,indexCount);
 
-		{	//Need to put this in another code block so vb/ib gets automatically locked/unlocked by destructors
-			DynamicVBAccessClass::WriteLockClass lock(&vb_access);
-			VertexFormatXYZNDUV2 *vb= lock.Get_Formatted_Vertex_Array();
-			DynamicIBAccessClass::WriteLockClass lockib(&ib_access);
-			UnsignedShort *ib=lockib.Get_Index_Array();
-			if (!ib || !vb)
-			{	DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_BLUE|D3DCOLORWRITEENABLE_GREEN|D3DCOLORWRITEENABLE_RED);
-				return;
-			}
-
-			try {
-			for (Int tileIndex=0; tileIndex<batchTileCount; tileIndex++)
-			{
-				shoreLineTileInfo *shoreInfo=batchShoreInfo[tileIndex];
-				const Int tileX=batchTileX[tileIndex];
-				const Int tileY=batchTileY[tileIndex];
-				const Int vertexBase=tileIndex*4;
-
-				vb->x = shoreInfo->verts[0];
-				vb->y = shoreInfo->verts[1];
-				vb->z = shoreInfo->verts[2];
-				vb->nx=0;	//filling these to keep AGP write buffer happy.
-				vb->ny=0;
-				vb->nz=0;
-				vb->diffuse=0;
-				vb->u1=shoreInfo->t0;
-				vb->v1=0;
-				vb->u2=0;
-				vb->v2=0;
-				vb++;
-
-				vb->x = shoreInfo->verts[3];
-				vb->y = shoreInfo->verts[4];
-				vb->z = shoreInfo->verts[5];
-				vb->nx=0;	//filling these to keep AGP write buffer happy.
-				vb->ny=0;
-				vb->nz=0;
-				vb->diffuse=0;
-				vb->u1=shoreInfo->t1;
-				vb->v1=0;
-				vb->u2=0;
-				vb->v2=0;
-				vb++;
-
-				vb->x = shoreInfo->verts[6];
-				vb->y = shoreInfo->verts[7];
-				vb->z = shoreInfo->verts[8];
-				vb->nx=0;	//filling these to keep AGP write buffer happy.
-				vb->ny=0;
-				vb->nz=0;
-				vb->diffuse=0;
-				vb->u1=shoreInfo->t2;
-				vb->v1=0;
-				vb->u2=0;
-				vb->v2=0;
-				vb++;
-
-				vb->x = shoreInfo->verts[9];
-				vb->y = shoreInfo->verts[10];
-				vb->z = shoreInfo->verts[11];
-				vb->nx=0;	//filling these to keep AGP write buffer happy.
-				vb->ny=0;
-				vb->nz=0;
-				vb->diffuse=0;
-				vb->u1=shoreInfo->t3;
-				vb->v1=0;
-				vb->u2=0;
-				vb->v2=0;
-				vb++;
-
-				if (m_map->getQuickFlipState(tileX,tileY))
-				{
-					ib[0]=1+vertexBase;
-					ib[1]=3+vertexBase;
-					ib[2]=0+vertexBase;
-					ib[3]=1+vertexBase;
-					ib[4]=2+vertexBase;
-					ib[5]=3+vertexBase;
-				}
-				else
-				{
-					ib[0]=0+vertexBase;
-					ib[1]=2+vertexBase;
-					ib[2]=3+vertexBase;
-					ib[3]=0+vertexBase;
-					ib[4]=1+vertexBase;
-					ib[5]=2+vertexBase;
-				}
-				ib += 6;
-			}
-			IndexBufferExceptionFunc();
-			} catch(...) {
-				IndexBufferExceptionFunc();
-			}
-		}//lock and fill ib/vb
-
-		if (indexCount > 0 && vertexCount > 0)
+		if (useStaticShoreLineVB)
 		{
-			DX8Wrapper::Set_Index_Buffer(ib_access,0);
-			DX8Wrapper::Set_Vertex_Buffer(vb_access);
-			DX8Wrapper::Draw_Triangles(	0,indexCount/3, 0,	vertexCount);	//draw a quad, 2 triangles, 4 verts
-			m_numVisibleShoreLineTiles += batchTileCount;
+			DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8,indexCount);
+			Int minVertexIndex=0xffff;
+			Int maxVertexIndex=0;
+
+			{
+				DynamicIBAccessClass::WriteLockClass lockib(&ib_access);
+				UnsignedShort *ib=lockib.Get_Index_Array();
+				if (!ib)
+				{	DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_BLUE|D3DCOLORWRITEENABLE_GREEN|D3DCOLORWRITEENABLE_RED);
+					return;
+				}
+
+				try {
+				for (Int tileIndex=0; tileIndex<batchTileCount; tileIndex++)
+				{
+					shoreLineTileInfo *shoreInfo=batchShoreInfo[tileIndex];
+					const Int tileX=batchTileX[tileIndex];
+					const Int tileY=batchTileY[tileIndex];
+					const Int shoreTileIndex=shoreInfo-m_shoreLineTilePositions;
+					const Int vertexBase=shoreTileIndex*4;
+
+					if (vertexBase < minVertexIndex)
+						minVertexIndex=vertexBase;
+					if ((vertexBase+4) > maxVertexIndex)
+						maxVertexIndex=vertexBase+4;
+
+					if (m_map->getQuickFlipState(tileX,tileY))
+					{
+						ib[0]=1+vertexBase;
+						ib[1]=3+vertexBase;
+						ib[2]=0+vertexBase;
+						ib[3]=1+vertexBase;
+						ib[4]=2+vertexBase;
+						ib[5]=3+vertexBase;
+					}
+					else
+					{
+						ib[0]=0+vertexBase;
+						ib[1]=2+vertexBase;
+						ib[2]=3+vertexBase;
+						ib[3]=0+vertexBase;
+						ib[4]=1+vertexBase;
+						ib[5]=2+vertexBase;
+					}
+					ib += 6;
+				}
+				IndexBufferExceptionFunc();
+				} catch(...) {
+					IndexBufferExceptionFunc();
+				}
+			}
+
+			vertexCount=maxVertexIndex-minVertexIndex;
+			if (indexCount > 0 && vertexCount > 0)
+			{
+				DX8Wrapper::Set_Index_Buffer(ib_access,0);
+				DX8Wrapper::Set_Vertex_Buffer(m_vertexShoreLine);
+				DX8Wrapper::Draw_Triangles(	0,indexCount/3, minVertexIndex,	vertexCount);	//draw shoreline quads
+				m_numVisibleShoreLineTiles += batchTileCount;
+			}
+		}
+		else
+		{
+			vertexCount=batchTileCount*4;
+			DynamicVBAccessClass vb_access(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,vertexCount);
+			DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8,indexCount);
+
+			{	//Need to put this in another code block so vb/ib gets automatically locked/unlocked by destructors
+				DynamicVBAccessClass::WriteLockClass lock(&vb_access);
+				VertexFormatXYZNDUV2 *vb= lock.Get_Formatted_Vertex_Array();
+				DynamicIBAccessClass::WriteLockClass lockib(&ib_access);
+				UnsignedShort *ib=lockib.Get_Index_Array();
+				if (!ib || !vb)
+				{	DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_BLUE|D3DCOLORWRITEENABLE_GREEN|D3DCOLORWRITEENABLE_RED);
+					return;
+				}
+
+				try {
+				for (Int tileIndex=0; tileIndex<batchTileCount; tileIndex++)
+				{
+					shoreLineTileInfo *shoreInfo=batchShoreInfo[tileIndex];
+					const Int tileX=batchTileX[tileIndex];
+					const Int tileY=batchTileY[tileIndex];
+					const Int vertexBase=tileIndex*4;
+					const Real texCoords[4]={shoreInfo->t0, shoreInfo->t1, shoreInfo->t2, shoreInfo->t3};
+					for (Int vertexIndex=0; vertexIndex<4; ++vertexIndex)
+					{
+						const Int vertOffset=vertexIndex*3;
+						vb->x=shoreInfo->verts[vertOffset];
+						vb->y=shoreInfo->verts[vertOffset+1];
+						vb->z=shoreInfo->verts[vertOffset+2];
+						vb->nx=0;	//filling these to keep AGP write buffer happy.
+						vb->ny=0;
+						vb->nz=0;
+						vb->diffuse=0;
+						vb->u1=texCoords[vertexIndex];
+						vb->v1=0;
+						vb->u2=0;
+						vb->v2=0;
+						vb++;
+					}
+
+					if (m_map->getQuickFlipState(tileX,tileY))
+					{
+						ib[0]=1+vertexBase;
+						ib[1]=3+vertexBase;
+						ib[2]=0+vertexBase;
+						ib[3]=1+vertexBase;
+						ib[4]=2+vertexBase;
+						ib[5]=3+vertexBase;
+					}
+					else
+					{
+						ib[0]=0+vertexBase;
+						ib[1]=2+vertexBase;
+						ib[2]=3+vertexBase;
+						ib[3]=0+vertexBase;
+						ib[4]=1+vertexBase;
+						ib[5]=2+vertexBase;
+					}
+					ib += 6;
+				}
+				IndexBufferExceptionFunc();
+				} catch(...) {
+					IndexBufferExceptionFunc();
+				}
+			}//lock and fill ib/vb
+
+			if (indexCount > 0 && vertexCount > 0)
+			{
+				DX8Wrapper::Set_Index_Buffer(ib_access,0);
+				DX8Wrapper::Set_Vertex_Buffer(vb_access);
+				DX8Wrapper::Draw_Triangles(	0,indexCount/3, 0,	vertexCount);	//draw shoreline quads
+				m_numVisibleShoreLineTiles += batchTileCount;
+			}
 		}
 	}//for all shore tiles
 

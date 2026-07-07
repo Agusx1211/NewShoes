@@ -176,12 +176,16 @@ updates/frame (1.12 MiB), 362.7 `NOOVERWRITE` updates/frame (1.02 MiB), only
 8.7 `DISCARD`/orphan updates/frame, and zero resizes. The measured render
 frontier remains heightmap/terrain/dynamic upload bursts. A C++ water-track
 lock-batching pass cut update calls to 196.2/frame on Mac M4 Metal while
-leaving upload bytes in the same range, so the next pass should reduce real
-dynamic upload byte volume/ranges rather than JS-side `NOOVERWRITE`
-`bufferSubData` call count; raw checksum removal and `DISCARD` orphan toggling
-are also not the next optimizations. The user-reported shadow flicker/breakage
-symptom is fixed in the live skirmish path, while broader shadow fidelity
-remains in the queued phased plan.
+leaving upload bytes in the same range. The sorted shoreline renderer now
+keeps stable shoreline quad vertices in a persistent D3D8 vertex buffer and
+only uploads the visible dynamic index ranges each frame; the latest Mac M4
+Metal profile measured 37.50 ms/frame wall, 9.83 ms average engine frame time,
+186.6 buffer updates/frame, 0.91 MB/frame uploaded, 0.38 MB/frame dynamic
+uploads, and `bufferSubDataMs` 0.088 ms/frame. The remaining upload frontier is
+now smaller and should be reprofiled by producer before broader JS-side
+`NOOVERWRITE`, orphaning, or checksum changes. The user-reported shadow
+flicker/breakage symptom is fixed in the live skirmish path, while broader
+shadow fidelity remains in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
@@ -2548,7 +2552,13 @@ and then start with the PROFILE, not with any individual fix.
       `DISCARD`/orphan updates happen per frame and there are zero resizes, so
       the next pass should reduce/coalesce real dynamic `NOOVERWRITE` upload
       bursts instead of toggling orphan behavior or disabling bound
-      diagnostics.
+      diagnostics. A same-day shoreline static-VB pass moved stable shoreline
+      vertices out of the per-frame dynamic ring and left only visible dynamic
+      indices; the final Mac M4 Chrome/Metal profile measured 186.6
+      updates/frame, 0.91 MB/frame uploaded, 0.38 MB/frame dynamic uploads,
+      0.31 MB/frame `NOOVERWRITE` uploads, and 0.088 ms/frame in
+      `bufferSubDataMs`. Reprofile the remaining upload producers before the
+      next byte-range reduction.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing

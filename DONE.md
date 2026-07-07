@@ -8408,6 +8408,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       updates/frame, 174.1 `NOOVERWRITE` updates/frame, 1.74 MB/frame uploaded,
       and 0.135 ms/frame in `bufferSubDataMs`. The remaining upload frontier is
       reducing real dynamic upload byte volume/ranges, not just call count.
+- [x] Cache sorted shoreline vertices in a persistent D3D8 vertex buffer.
+      `BaseHeightMapRenderObjClass` now rebuilds a static
+      `DX8VertexBufferClass` when shoreline tile data changes, writes the same
+      original four `VertexFormatXYZNDUV2` vertices per shoreline tile, and
+      keeps the old dynamic VB/IB renderer as a fallback for oversized or
+      unavailable buffers. The sorted game renderer now uploads only the
+      visible dynamic index range for each batch and draws against the cached
+      shoreline vertex buffer with the original quick-flip index order, water
+      depth texture coordinates, and destination-alpha render state. Verified
+      with `git diff --check`, `npm --prefix WebAssembly run build:port`, `npm
+      --prefix WebAssembly run build:port:release`, and a final Mac M4
+      Chrome/Metal release runtime profile (`ANGLE Metal Renderer: Apple M4`,
+      `dist-release`, `diag=lite`, 60 measured frames, engine profile enabled)
+      that reached in-game shell-map state at logic frame 72 with a visible
+      screenshot. Against the previous upload-frontier profile, buffer upload
+      traffic dropped from 1.74 MB/frame to 0.91 MB/frame, dynamic uploads from
+      1.21 MB/frame to 0.38 MB/frame, `NOOVERWRITE` uploads from 1.09 MB/frame
+      to 0.31 MB/frame, vertex uploads from 1.58 MB/frame to 0.75 MB/frame,
+      update calls from 196.2/frame to 186.6/frame, and `bufferSubDataMs` from
+      0.113 to 0.088 ms/frame. The run measured 37.50 ms/frame wall and
+      9.83 ms average engine frame time; the remaining upload frontier should
+      be reprofiled by producer before further byte-range work.
 - [x] Split the D3D8 draw-state cache hash from per-object transforms.
       `wasm_d3d8_shim.cpp` now computes both the original full draw hash and a
       derived-state hash that excludes world/view/projection but still covers

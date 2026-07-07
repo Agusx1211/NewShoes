@@ -322,12 +322,15 @@ protected:
 	Int m_numVisibleShoreLineTiles;	///<number of visible tiles.
 	Int m_shoreLineTilePositionsSize;	///<total size of array including unused memory.
 	Real m_currentMinWaterOpacity;		///<current value inside the gradient lookup texture.
+	DX8VertexBufferClass *m_vertexShoreLine;	///<static shoreline vertices rebuilt when shoreline tiles change
 	shoreLineTileSortInfo *m_shoreLineSortInfos;
 	Int m_shoreLineSortInfosSize;
 	Int m_shoreLineSortInfosXMajor;
 	Int m_shoreLineTileSortMaxCoordinate;	///<keep track of coordinate range along axis used for m_shoreLineSortInfos
 	Int m_shoreLineTileSortMinCoordinate;
 	void initDestAlphaLUT(void);	///<initialize water depth LUT stored in m_destAlphaTexture
+	void releaseShoreLineBuffers(void);
+	void buildShoreLineBuffers(void);
 	void renderShoreLines(CameraClass *pCamera);	///<re-render parts of terrain that need custom blending into water edge
 	void renderShoreLinesSorted(CameraClass *pCamera);	///<optimized version for game usage.
 };
