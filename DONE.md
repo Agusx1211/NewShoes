@@ -487,6 +487,31 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       work, reduced total browser D3D8 draws from 339.3 to 272.3/frame, and
       reduced sorted draw-profiled calls from 253.1 to 186.2/frame.
 
+- [x] Batch wasm static volumetric shadow draw replay in world space. The
+      browser-only shadow path now collects visible static shadow volume tasks,
+      transforms their vertices to world space into the enlarged wasm shadow
+      VB/IB ring, rewrites indices relative to the combined batch, submits the
+      whole static batch once for the stencil increment pass, and replays that
+      same batch once for the decrement pass when the dynamic-ring generation
+      is still valid. The original per-task object-space renderer remains the
+      fallback for native builds, missing mesh transforms, oversized static
+      batches, lock failures, and generation-invalidated decrement passes.
+      Verified with `git diff --check`, `npm --prefix WebAssembly run
+      build:port`, `npm --prefix WebAssembly run build:port:release`, and a
+      Mac M4 Chrome/Metal release profile copied to
+      `WebAssembly/artifacts/perf/runtime-frame-profile-static-shadow-world-batch-mac.json`.
+      The Mac harness screenshot
+      `WebAssembly/artifacts/screenshots/runtime-frame-profile-static-shadow-world-batch-mac.png`
+      showed the shell-map/menu rendering normally. Compared with
+      `runtime-frame-profile-dynamic-shadow-world-batch-mac.json`, the Mac
+      release run kept the renderer on `ANGLE Metal Renderer: Apple M4`,
+      reduced `W3DVolumetricShadow.renderMeshVolume.draw.before` from 47.8 to
+      2.0 calls/frame and from 0.444 to 0.035 ms/frame of attributed draw work,
+      reduced total browser D3D8 draws from 272.3 to 227.7/frame, and reduced
+      sorted draw-profiled calls from 186.2 to 143.8/frame. The remaining
+      measured draw-side leaders are sorted renderer submit replay, heightmap
+      tile draws, and projected-shadow mesh flushes.
+
 - [x] Extend D3D8 draw producer attribution to non-sorted draw calls. The
       opt-in producer table now records total `drawProfiledMs`, total
       calls/indices, and separate sorted-call counters for every D3D8 indexed

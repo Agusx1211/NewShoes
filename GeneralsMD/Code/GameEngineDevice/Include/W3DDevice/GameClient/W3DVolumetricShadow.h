@@ -112,8 +112,34 @@ protected:
 		void renderStencilShadows( void );
 		Int renderDynamicShadowTasks(void);
 #ifdef __EMSCRIPTEN__
+		struct StaticShadowWorldBatch
+		{
+			Bool valid;
+			Int vertexStart;
+			Int vertexCount;
+			Int indexStart;
+			Int polyCount;
+			Int taskCount;
+			Int vertexGeneration;
+			Int indexGeneration;
+
+			StaticShadowWorldBatch(void) :
+				valid(FALSE),
+				vertexStart(0),
+				vertexCount(0),
+				indexStart(0),
+				polyCount(0),
+				taskCount(0),
+				vertexGeneration(0),
+				indexGeneration(0)
+			{
+			}
+		};
+
 		const Matrix3D *dynamicShadowTaskMeshTransform(W3DVolumetricShadowRenderTask *task) const;
 		void renderDynamicShadowWorldBatch(Int vertexStart, Int vertexCount, Int indexStart, Int polyCount);
+		Bool buildAndRenderStaticShadowWorldBatch(StaticShadowWorldBatch &batch);
+		void renderStaticShadowWorldBatchDraw(const StaticShadowWorldBatch &batch);
 #endif
 
 		W3DVolumetricShadow *m_shadowList;

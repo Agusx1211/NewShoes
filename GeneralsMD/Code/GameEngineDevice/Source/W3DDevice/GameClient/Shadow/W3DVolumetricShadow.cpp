@@ -149,8 +149,13 @@ int nShadowVertsInBuf=0;	//model vetices in vertex buffer
 int nShadowStartBatchVertex=0;
 int nShadowIndicesInBuf=0;	//model vetices in vertex buffer
 int nShadowStartBatchIndex=0;
+#ifdef __EMSCRIPTEN__
+int SHADOW_VERTEX_SIZE=65535;
+int SHADOW_INDEX_SIZE=65535;
+#else
 int SHADOW_VERTEX_SIZE=4096;
 int SHADOW_INDEX_SIZE=8192;
+#endif
 static int s_dynamicShadowVertexBufferGeneration=0;
 static int s_dynamicShadowIndexBufferGeneration=0;
 
@@ -3695,6 +3700,261 @@ void W3DVolumetricShadowManager::renderDynamicShadowWorldBatch(Int vertexStart, 
 		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderDynamicVolume.draw.after");
 	}
 }
+
+void W3DVolumetricShadowManager::renderStaticShadowWorldBatchDraw(const StaticShadowWorldBatch &batch)
+{
+	LPDIRECT3DDEVICE8 m_pDev = DX8Wrapper::_Get_D3D_Device8();
+
+	if (!batch.valid || !m_pDev || !shadowVertexBufferD3D || !shadowIndexBufferD3D ||
+		batch.vertexCount <= 0 || batch.polyCount <= 0)
+		return;
+
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchReplay.before");
+	m_pDev->SetVertexShader(SHADOW_DYNAMIC_VOLUME_FVF);
+
+	Matrix3D identity(TRUE);
+	Matrix4x4 mWorld(identity);
+	Matrix4x4 transposedWorld = mWorld.Transpose();
+	m_pDev->SetTransform(D3DTS_WORLD,(_D3DMATRIX *)&transposedWorld);
+
+	if (shadowVertexBufferD3D != lastActiveVertexBuffer)
+	{
+		m_pDev->SetStreamSource(0,shadowVertexBufferD3D,sizeof(SHADOW_DYNAMIC_VOLUME_VERTEX));
+		lastActiveVertexBuffer = shadowVertexBufferD3D;
+	}
+	m_pDev->SetIndices(shadowIndexBufferD3D,batch.vertexStart);
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchReplay.after");
+
+	if (DX8Wrapper::_Is_Triangle_Draw_Enabled())
+	{
+		Debug_Statistics::Record_DX8_Polys_And_Vertices(batch.polyCount,batch.vertexCount,ShaderClass::_PresetOpaqueShader);
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.draw.before");
+		const bool profile_submit = CNC_PORT_SHADOW_PROFILE_SUBMIT_ENABLED();
+		CNC_PORT_BEGIN_SHADOW_SUBMIT_PROFILE_SCOPE(profile_submit);
+		m_pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST,0,batch.vertexCount,batch.indexStart,batch.polyCount);
+		CNC_PORT_END_SHADOW_SUBMIT_PROFILE_SCOPE(profile_submit);
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.draw.after");
+	}
+}
+
+Bool W3DVolumetricShadowManager::buildAndRenderStaticShadowWorldBatch(StaticShadowWorldBatch &batch)
+{
+	batch = StaticShadowWorldBatch();
+
+	if (!shadowVertexBufferD3D || !shadowIndexBufferD3D)
+		return FALSE;
+
+	Int totalVertexCount = 0;
+	Int totalIndexCount = 0;
+	Int totalTaskCount = 0;
+
+	for (W3DBufferManager::W3DVertexBuffer *nextVb=TheW3DBufferManager->getNextVertexBuffer(NULL,W3DBufferManager::VBM_FVF_XYZ);
+		nextVb != NULL;
+		nextVb=TheW3DBufferManager->getNextVertexBuffer(nextVb,W3DBufferManager::VBM_FVF_XYZ))
+	{
+		W3DVolumetricShadowRenderTask *nextTask=(W3DVolumetricShadowRenderTask *)nextVb->m_renderTaskList;
+		while (nextTask)
+		{
+			Geometry *geometry = nextTask->m_parentShadow->m_shadowVolume[nextTask->m_lightIndex][nextTask->m_meshIndex];
+			Int numVerts = geometry ? geometry->GetNumActiveVertex() : 0;
+			Int numPolys = geometry ? geometry->GetNumActivePolygon() : 0;
+			Int numIndex = numPolys * 3;
+
+			if (numVerts > 0 && numPolys > 0)
+			{
+				if (!nextTask->m_parentShadow->dynamicShadowMeshTransform(nextTask->m_meshIndex))
+					return FALSE;
+				if (totalVertexCount + numVerts > SHADOW_VERTEX_SIZE ||
+					totalIndexCount + numIndex > SHADOW_INDEX_SIZE)
+				{
+					return FALSE;
+				}
+				totalVertexCount += numVerts;
+				totalIndexCount += numIndex;
+				totalTaskCount++;
+			}
+
+			nextTask=(W3DVolumetricShadowRenderTask *)nextTask->m_nextTask;
+		}
+	}
+
+	if (totalVertexCount <= 0 || totalIndexCount <= 0 || totalTaskCount <= 0)
+		return FALSE;
+
+	const Bool discard = (nShadowVertsInBuf > (SHADOW_VERTEX_SIZE - totalVertexCount)) ||
+		(nShadowIndicesInBuf > (SHADOW_INDEX_SIZE - totalIndexCount));
+	const Int batchVertexStart = discard ? 0 : nShadowVertsInBuf;
+	const Int batchIndexStart = discard ? 0 : nShadowIndicesInBuf;
+	const DWORD lockFlags = discard ? D3DLOCK_DISCARD : D3DLOCK_NOOVERWRITE;
+
+	SHADOW_DYNAMIC_VOLUME_VERTEX *pvVertices = NULL;
+	UnsignedShort *pvIndices = NULL;
+
+	if (discard)
+	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchVbLockDiscard.before");
+	}
+	else
+	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchVbLockNoOverwrite.before");
+	}
+	if (shadowVertexBufferD3D->Lock(batchVertexStart*sizeof(SHADOW_DYNAMIC_VOLUME_VERTEX),
+		totalVertexCount*sizeof(SHADOW_DYNAMIC_VOLUME_VERTEX),(unsigned char **)&pvVertices,lockFlags) != D3D_OK)
+	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchVbLock.failed");
+		return FALSE;
+	}
+	if (discard)
+	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchVbLockDiscard.after");
+	}
+	else
+	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchVbLockNoOverwrite.after");
+	}
+
+	if (discard)
+	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchIbLockDiscard.before");
+	}
+	else
+	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchIbLockNoOverwrite.before");
+	}
+	if (shadowIndexBufferD3D->Lock(batchIndexStart*sizeof(short),
+		totalIndexCount*sizeof(short),(unsigned char **)&pvIndices,lockFlags) != D3D_OK)
+	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchIbLock.failed");
+		shadowVertexBufferD3D->Unlock();
+		return FALSE;
+	}
+	if (discard)
+	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchIbLockDiscard.after");
+	}
+	else
+	{
+		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchIbLockNoOverwrite.after");
+	}
+
+	if (!pvVertices || !pvIndices)
+	{
+		shadowIndexBufferD3D->Unlock();
+		shadowVertexBufferD3D->Unlock();
+		return FALSE;
+	}
+
+	if (discard)
+	{
+		nShadowVertsInBuf = 0;
+		nShadowStartBatchVertex = 0;
+		nShadowIndicesInBuf = 0;
+		nShadowStartBatchIndex = 0;
+		s_dynamicShadowVertexBufferGeneration++;
+		s_dynamicShadowIndexBufferGeneration++;
+	}
+
+	SHADOW_DYNAMIC_VOLUME_VERTEX *vertexCursor = pvVertices;
+	UnsignedShort *indexCursor = pvIndices;
+	Int vertexBaseOffset = 0;
+
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchVertexWrite.before");
+	for (W3DBufferManager::W3DVertexBuffer *nextVb=TheW3DBufferManager->getNextVertexBuffer(NULL,W3DBufferManager::VBM_FVF_XYZ);
+		nextVb != NULL;
+		nextVb=TheW3DBufferManager->getNextVertexBuffer(nextVb,W3DBufferManager::VBM_FVF_XYZ))
+	{
+		W3DVolumetricShadowRenderTask *nextTask=(W3DVolumetricShadowRenderTask *)nextVb->m_renderTaskList;
+		while (nextTask)
+		{
+			Geometry *geometry = nextTask->m_parentShadow->m_shadowVolume[nextTask->m_lightIndex][nextTask->m_meshIndex];
+			Int numVerts = geometry ? geometry->GetNumActiveVertex() : 0;
+			Int numPolys = geometry ? geometry->GetNumActivePolygon() : 0;
+			const Matrix3D *meshXform = nextTask->m_parentShadow->dynamicShadowMeshTransform(nextTask->m_meshIndex);
+
+			if (numVerts > 0 && numPolys > 0 && meshXform)
+			{
+#ifdef SV_DEBUG
+				srand(0x1345465);
+#endif
+				for (Int i=0; i<numVerts; i++)
+				{
+					Vector3 worldVertex;
+					Matrix3D::Transform_Vector(*meshXform,*geometry->GetVertex(i),&worldVertex);
+					vertexCursor->x = worldVertex.X;
+					vertexCursor->y = worldVertex.Y;
+					vertexCursor->z = worldVertex.Z;
+#ifdef SV_DEBUG
+					vertexCursor->diffuse=(rand()%255) | ((rand()%255)<<8) | ((rand()%255)<<16);
+#endif
+					vertexCursor++;
+				}
+			}
+
+			nextTask=(W3DVolumetricShadowRenderTask *)nextTask->m_nextTask;
+		}
+	}
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchVertexWrite.after");
+
+	try {
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchIndexWrite.before");
+	for (W3DBufferManager::W3DVertexBuffer *nextVb=TheW3DBufferManager->getNextVertexBuffer(NULL,W3DBufferManager::VBM_FVF_XYZ);
+		nextVb != NULL;
+		nextVb=TheW3DBufferManager->getNextVertexBuffer(nextVb,W3DBufferManager::VBM_FVF_XYZ))
+	{
+		W3DVolumetricShadowRenderTask *nextTask=(W3DVolumetricShadowRenderTask *)nextVb->m_renderTaskList;
+		while (nextTask)
+		{
+			Geometry *geometry = nextTask->m_parentShadow->m_shadowVolume[nextTask->m_lightIndex][nextTask->m_meshIndex];
+			Int numVerts = geometry ? geometry->GetNumActiveVertex() : 0;
+			Int numPolys = geometry ? geometry->GetNumActivePolygon() : 0;
+
+			if (numVerts > 0 && numPolys > 0)
+			{
+				short indexList[3];
+				for (Int polyIndex = 0; polyIndex < numPolys; polyIndex++)
+				{
+					geometry->GetPolygonIndex(polyIndex,indexList);
+					*indexCursor++ = (UnsignedShort)(indexList[0] + vertexBaseOffset);
+					*indexCursor++ = (UnsignedShort)(indexList[1] + vertexBaseOffset);
+					*indexCursor++ = (UnsignedShort)(indexList[2] + vertexBaseOffset);
+				}
+				vertexBaseOffset += numVerts;
+			}
+
+			nextTask=(W3DVolumetricShadowRenderTask *)nextTask->m_nextTask;
+		}
+	}
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchIndexWrite.after");
+	IndexBufferExceptionFunc();
+	} catch(...) {
+		IndexBufferExceptionFunc();
+	}
+
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchVbUnlock.before");
+	shadowVertexBufferD3D->Unlock();
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchVbUnlock.after");
+
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchIbUnlock.before");
+	shadowIndexBufferD3D->Unlock();
+	CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderMeshVolume.worldBatchIbUnlock.after");
+
+	nShadowVertsInBuf = batchVertexStart + totalVertexCount;
+	nShadowStartBatchVertex = nShadowVertsInBuf;
+	nShadowIndicesInBuf = batchIndexStart + totalIndexCount;
+	nShadowStartBatchIndex = nShadowIndicesInBuf;
+
+	batch.valid = TRUE;
+	batch.vertexStart = batchVertexStart;
+	batch.vertexCount = totalVertexCount;
+	batch.indexStart = batchIndexStart;
+	batch.polyCount = totalIndexCount / 3;
+	batch.taskCount = totalTaskCount;
+	batch.vertexGeneration = s_dynamicShadowVertexBufferGeneration;
+	batch.indexGeneration = s_dynamicShadowIndexBufferGeneration;
+
+	renderStaticShadowWorldBatchDraw(batch);
+	return TRUE;
+}
 #endif
 
 Int W3DVolumetricShadowManager::renderDynamicShadowTasks(void)
@@ -4160,15 +4420,29 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 		//Empty queue of static shadow volumes to render.
 		W3DBufferManager::W3DVertexBuffer *nextVb;
 		W3DVolumetricShadowRenderTask *nextTask;
+#ifdef __EMSCRIPTEN__
+		StaticShadowWorldBatch staticShadowWorldBatch;
+		Bool staticShadowWorldBatched = FALSE;
+#endif
 		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.staticIncrement.before");
-		for (nextVb=TheW3DBufferManager->getNextVertexBuffer(NULL,W3DBufferManager::VBM_FVF_XYZ);nextVb != NULL; nextVb=TheW3DBufferManager->getNextVertexBuffer(nextVb,W3DBufferManager::VBM_FVF_XYZ))
+#ifdef __EMSCRIPTEN__
+		staticShadowWorldBatched = buildAndRenderStaticShadowWorldBatch(staticShadowWorldBatch);
+		if (staticShadowWorldBatched)
 		{
-			nextTask=(W3DVolumetricShadowRenderTask *)nextVb->m_renderTaskList;
-			while (nextTask)
+			numRenderedShadows += staticShadowWorldBatch.taskCount;
+		}
+		else
+#endif
+		{
+			for (nextVb=TheW3DBufferManager->getNextVertexBuffer(NULL,W3DBufferManager::VBM_FVF_XYZ);nextVb != NULL; nextVb=TheW3DBufferManager->getNextVertexBuffer(nextVb,W3DBufferManager::VBM_FVF_XYZ))
 			{
-				nextTask->m_parentShadow->RenderVolume(nextTask->m_meshIndex,nextTask->m_lightIndex);
-				nextTask=(W3DVolumetricShadowRenderTask *)nextTask->m_nextTask;
-				numRenderedShadows++;
+				nextTask=(W3DVolumetricShadowRenderTask *)nextVb->m_renderTaskList;
+				while (nextTask)
+				{
+					nextTask->m_parentShadow->RenderVolume(nextTask->m_meshIndex,nextTask->m_lightIndex);
+					nextTask=(W3DVolumetricShadowRenderTask *)nextTask->m_nextTask;
+					numRenderedShadows++;
+				}
 			}
 		}
 		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.staticIncrement.after");
@@ -4184,13 +4458,27 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 		m_pDev->SetRenderState(D3DRS_CULLMODE,D3DCULL_CCW);
 
 		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.staticDecrement.before");
-		for (nextVb=TheW3DBufferManager->getNextVertexBuffer(NULL,W3DBufferManager::VBM_FVF_XYZ);nextVb != NULL; nextVb=TheW3DBufferManager->getNextVertexBuffer(nextVb,W3DBufferManager::VBM_FVF_XYZ))
+#ifdef __EMSCRIPTEN__
+		if (staticShadowWorldBatched &&
+			staticShadowWorldBatch.vertexGeneration == s_dynamicShadowVertexBufferGeneration &&
+			staticShadowWorldBatch.indexGeneration == s_dynamicShadowIndexBufferGeneration)
 		{
-			nextTask=(W3DVolumetricShadowRenderTask *)nextVb->m_renderTaskList;
-			while (nextTask)
+			renderStaticShadowWorldBatchDraw(staticShadowWorldBatch);
+		}
+		else
+#endif
+		{
+#ifdef __EMSCRIPTEN__
+			m_pDev->SetVertexShader(W3DBufferManager::getDX8Format(W3DBufferManager::VBM_FVF_XYZ));
+#endif
+			for (nextVb=TheW3DBufferManager->getNextVertexBuffer(NULL,W3DBufferManager::VBM_FVF_XYZ);nextVb != NULL; nextVb=TheW3DBufferManager->getNextVertexBuffer(nextVb,W3DBufferManager::VBM_FVF_XYZ))
 			{
-				nextTask->m_parentShadow->RenderVolume(nextTask->m_meshIndex,nextTask->m_lightIndex);
-				nextTask=(W3DVolumetricShadowRenderTask *)nextTask->m_nextTask;
+				nextTask=(W3DVolumetricShadowRenderTask *)nextVb->m_renderTaskList;
+				while (nextTask)
+				{
+					nextTask->m_parentShadow->RenderVolume(nextTask->m_meshIndex,nextTask->m_lightIndex);
+					nextTask=(W3DVolumetricShadowRenderTask *)nextTask->m_nextTask;
+				}
 			}
 		}
 		CNC_PORT_NOTE_VOLUMETRIC_SHADOW_STEP("W3DVolumetricShadow.renderShadows.staticDecrement.after");
