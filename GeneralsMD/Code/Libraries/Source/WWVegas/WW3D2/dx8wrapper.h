@@ -1192,6 +1192,10 @@ WWINLINE void DX8Wrapper::Set_Texture(unsigned stage,TextureBaseClass* texture)
 	if (texture==render_state.Textures[stage]) return;
 	REF_PTR_SET(render_state.Textures[stage],texture);
 	render_state_changed|=(TEXTURE0_CHANGED<<stage);
+	if (stage > 0) {
+		ShaderClass::Invalidate();
+		render_state_changed|=SHADER_CHANGED;
+	}
 }
 
 WWINLINE void DX8Wrapper::Set_Material(const VertexMaterialClass* material)

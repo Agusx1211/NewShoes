@@ -543,16 +543,6 @@ screenshots on the release build.
       base+noise multi-texture blend as a WebGL2 shader in the bridge (the
       fixed-function fallback drops the noise/lightmap pass). Verify vs original
       terrain screenshots.
-- [ ] **Stage-1 textureUnavailable warning on shellmap W3D draws** — a real
-      shellmap boot with full D3D8 diagnostics reports
-      `combiner:1:4:4:textureUnavailable` at draw sequence 470. The neighboring
-      W3D draws have stage 1 color/alpha `D3DTOP_MODULATE` with
-      `D3DTA_TEXTURE`, but `boundTextures` contains only stage 0. This may be
-      stale texture-stage state that should be reset, or a missing stage-1
-      texture bind on an object/road/cloud pass. Capture draw-producer
-      attribution for the warning draw, then either disable the stale stage or
-      bind the intended second texture. Verify by eliminating the warning
-      without changing intended single-texture draws.
 - [ ] **Heat-haze / screen smudges not rendering (flat explosions/fire)** — the
       original distorts the background behind heat particles ("screen smudges
       which are particles that distort the background behind them",

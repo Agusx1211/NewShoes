@@ -11115,6 +11115,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       the `?diag=` / `__cncSetDiagLevel` opt-in machinery and the play-page
       lite perf win are kept. Found by the 2026-07-04 adversarial audit
       (verified live against the build, both modes).
+- [x] **Clear stale shellmap W3D stage-1 texture state.** Real shellmap
+      diagnostics showed `combiner:1:4:4:textureUnavailable` after a
+      two-texture W3D draw left post-detail `MODULATE` active and later mesh
+      categories bound only stage 0. `DX8Wrapper::Set_Texture` now invalidates
+      shader-stage state when secondary texture bindings change, and shader
+      application uses a local post-detail-disabled shader copy whenever stage
+      1 has no bound texture. The bridge draw history also records the existing
+      per-draw producer label for future attribution. Verified with
+      `node --check WebAssembly/harness/bridge.js`, `npm --prefix WebAssembly
+      run build:port`, and a full real shellmap Playwright boot: 16 frames,
+      3306 D3D8 draws, no `d3d8Warnings`, draw 470 stage-1 color/alpha
+      `D3DTOP_DISABLE`, draw 469 still sampling stage 1, and nonblank canvas
+      center pixel `[10,22,30,255]` in
+      `WebAssembly/artifacts/screenshots/shellmap-stage1-texture-warning-after.png`.
 
 ## Cross-cutting: project hygiene
 

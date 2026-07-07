@@ -2291,7 +2291,14 @@ void DX8Wrapper::Apply_Render_State_Changes()
 	if (!render_state_changed) return;
 	if (render_state_changed&SHADER_CHANGED) {
 		SNAPSHOT_SAY(("DX8 - apply shader\n"));
-		render_state.shader.Apply();
+		ShaderClass shader = render_state.shader;
+		if (CurrentCaps->Get_Max_Textures_Per_Pass() > 1 &&
+			 shader.Uses_Post_Detail_Texture() &&
+			 render_state.Textures[1] == NULL) {
+			shader.Set_Post_Detail_Color_Func(ShaderClass::DETAILCOLOR_DISABLE);
+			shader.Set_Post_Detail_Alpha_Func(ShaderClass::DETAILALPHA_DISABLE);
+		}
+		shader.Apply();
 	}
 
 	unsigned mask=TEXTURE0_CHANGED;

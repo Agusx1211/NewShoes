@@ -10052,6 +10052,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   const indexCount = Number(payload.indexCount ?? 0) >>> 0;
   const primitiveType = Number(payload.primitiveType ?? 0) >>> 0;
   const sortedDrawProfiled = payload.sortedDrawSubmitProfile === true;
+  const drawProducer = d3d8DrawProducerTrackingEnabled ? bufferProducerLabel(payload.producer) : null;
   const drawProducerStartedAt = d3d8DrawProducerTrackingEnabled ? perfNow() : 0;
   const sortedDrawStartedAt = sortedDrawProfiled ? perfNow() : 0;
   let sortedDrawPhaseStartedAt = sortedDrawStartedAt;
@@ -11159,6 +11160,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     ok: drawOk,
     source: "browser_d3d8_draw_indexed",
     drawSequence,
+    producer: drawProducer,
     api: harnessState.graphics.api,
     viewport: appliedViewport,
     primitiveType: Number(payload.primitiveType ?? 0),
@@ -11287,6 +11289,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   const drawHistoryEntry = {
       ok: probe.ok,
       drawSequence: probe.drawSequence,
+      producer: probe.producer,
       primitiveType: probe.primitiveType,
       baseVertexIndex: probe.baseVertexIndex,
       minVertexIndex: probe.minVertexIndex,
