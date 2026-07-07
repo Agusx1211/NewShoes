@@ -140,8 +140,11 @@ RoadType::RoadType(void):
 m_roadTexture(NULL),
 m_vertexRoad(NULL),
 m_indexRoad(NULL),
-m_stackingOrder(0),
-m_uniqueID(-1)
+m_numRoadVertices(0),
+m_numRoadIndices(0),
+m_uniqueID(-1),
+m_isAutoLoaded(false),
+m_stackingOrder(0)
 {
 }
 
@@ -1234,7 +1237,7 @@ void W3DRoadBuffer::loadRoadsInVertexAndIndexBuffers()
 	VertexFormatXYZDUV1 *vb;
 	UnsignedShort *ib;
 	// Lock the buffers.
-	if (m_roadTypes[m_curRoadType].getIB() == NULL) {
+	if (m_roadTypes[m_curRoadType].getIB() == NULL || m_roadTypes[m_curRoadType].getVB() == NULL) {
 		this->m_roadTypes[m_curRoadType].setNumVertices(0);
 		this->m_roadTypes[m_curRoadType].setNumIndices(0);
 		return;
@@ -3079,19 +3082,25 @@ W3DRoadBuffer::~W3DRoadBuffer(void)
 /** Constructor.  */
 //=============================================================================
 W3DRoadBuffer::W3DRoadBuffer(void)	:
+	m_roadTypes(NULL),
 	m_roads(NULL),
 	m_numRoads(0),
 	m_initialized(false),
 	m_map(NULL),
+	m_lightsIterator(NULL),
+	m_curUniqueID(0),
+	m_curRoadType(0),
 #ifdef LOAD_TEST_ASSETS
 	m_maxUID(0),
+	m_curOpenRoad(0),
 #endif // LOAD_TEST_ASSETS
-	m_lightsIterator(NULL),
 	m_maxRoadSegments(500),
-	m_maxRoadTypes(8),
 	m_maxRoadVertex(1000),
 	m_maxRoadIndex(2000),
-	m_curRoadType(0)
+	m_maxRoadTypes(8),
+	m_curNumRoadVertices(0),
+	m_curNumRoadIndices(0),
+	m_updateBuffers(false)
 
 {
 	allocateRoadBuffers();
@@ -3404,5 +3413,3 @@ void W3DRoadBuffer::drawRoads(CameraClass * camera, TextureClass *cloudTexture, 
 #endif
 	m_curRoadType = 0;
 }
-
-

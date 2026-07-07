@@ -2737,7 +2737,12 @@ and then start with the PROFILE, not with any individual fix.
       projected-shadow receiver fast path skips clipped dynamic-index
       generation for meshes fully inside the projector cull volume, but the
       repeated Mac M4 profiles stayed within the same wall-time band; byte-tail
-      work remains exact dynamic shadow bytes and water-track batch unlock.
+      work remains exact dynamic shadow bytes and water-track batch unlock. A
+      road-upload A/B showed road bytes are not the next wall-time target:
+      static-road and wider-cull experiments reduced or removed the road upload
+      producer but regressed Mac M4 wall time, so leave the original
+      per-visible-road upload path unless a future trace shows a road-specific
+      stall.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing

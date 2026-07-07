@@ -9375,6 +9375,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `sortedDrawUniformMs` to 0.629 ms/frame, and `sortedDrawFillShadeMs` to
       0.063 ms/frame. The full diagnostics smoke confirms detailed
       `browser_d3d8_draw_indexed` probes still work.
+- [x] Profile and reject non-winning road upload reductions, then harden
+      `W3DRoadBuffer` state. The current Mac M4/Metal producer profile
+      (`runtime-frame-profile-current-producers-mac.json`) measured 9.326
+      ms/frame wall with `HeightMap.render.roads.before` responsible for 756
+      updates / 31.0 MB over 60 frames. Three road-upload reductions were
+      tested and reverted because they reduced upload bytes but regressed wall
+      time: static visible road runs
+      (`runtime-frame-profile-static-roads-mac.json`, 13.037 ms/frame),
+      static per-road-type full draws
+      (`runtime-frame-profile-static-roadtypes-mac.json`, 10.065 ms/frame),
+      and a 32-tile road cull margin
+      (`runtime-frame-profile-road-cull-margin-mac.json`, 10.292 ms/frame).
+      The kept change initializes the previously uninitialized `RoadType` and
+      `W3DRoadBuffer` counters/pointers/update flag and refuses to lock road
+      buffers unless both VB and IB are present. Verified with
+      `git diff --check`, `npm --prefix WebAssembly run build:port`, and
+      `npm --prefix WebAssembly run build:port:release`, and
+      `EXPECT_WASM=1 node harness/smoke.mjs`.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`
