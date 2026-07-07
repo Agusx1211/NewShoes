@@ -344,17 +344,23 @@ and the render-uniform cache now also avoid hot comma-string keys; the final
 Mac M4/Metal profile `runtime-frame-profile-numeric-hotkeys-final-mac.json`
 kept the screenshot correct and measured 3.993 ms/frame of attributed D3D8
 draw bridge work with `sortedDrawPreBatchMs` at 0.161 ms/frame. A follow-up
-PERF pass extended browser derived-object reuse beyond the previous-draw fast path;
+PERF pass extended browser derived-object reuse beyond the previous-draw fast
+path;
 `runtime-frame-profile-derived-lru-release-mac.json` dropped derived-cache
 misses from 122.8 to 62.4/frame and `sortedDrawDerivedMs` from 0.547 to
 0.221 ms/frame, led by `SortingRenderer.pool.draw.submit.before` moving from
-0.426 to 0.091 ms/frame. The next PERF pass should use the producer table to
-reduce world-space submissions or
-residual draw-submit stalls, not material, light, text-geometry, first-vertex
-VAO setup, transform comparison/allocation, draw-time harness bookkeeping,
-draw-cache key string allocation, sampler-key string allocation, or
-adjacent/render-uniform key string allocation, or browser derived-object cache
-misses. Broader shadow fidelity remains in the queued phased plan.
+0.426 to 0.091 ms/frame. Another follow-up replaced per-draw vertex-attrib /
+VAO key strings with primitive-field cache lookup;
+`runtime-frame-profile-vao-key-release-mac.json` reduced
+`sortedDrawVertexAttribMs` from 0.266 to 0.202 ms/frame and
+`sortedDrawGeometryMs` from 0.733 to 0.672 ms/frame. The next PERF pass should
+use the producer table to reduce world-space submissions or residual
+draw-submit stalls. Do not revisit material, light, text-geometry,
+first-vertex VAO setup, transform comparison/allocation, draw-time harness
+bookkeeping, draw-cache key strings, sampler-key strings,
+adjacent/render-uniform key strings, browser derived-object cache misses, or
+vertex-attrib/VAO key strings. Broader shadow fidelity remains in the queued
+phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`

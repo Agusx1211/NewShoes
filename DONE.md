@@ -445,6 +445,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       same noise band, so this closes the derived-object cache miss cleanup but
       leaves the draw-submission/geometry frontier open.
 
+- [x] Remove per-draw vertex-attrib and VAO key string construction from the
+      browser D3D8 bridge. Persistent-buffer draws now compare a reusable
+      primitive-field vertex-attrib signature and look up VAOs through a
+      bounded nested cache keyed by vertex/index buffer ids, preserving the
+      existing VAO lifetime and buffer-invalidation behavior without building a
+      long comma-joined key every draw.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `git diff --check`, a local SwiftShader runtime profile with visible
+      screenshot (`runtime-frame-profile-vao-key-local.json`), and a synced Mac
+      M4/Metal release profile copied to
+      `runtime-frame-profile-vao-key-release-mac.json` /
+      `runtime-frame-profile-vao-key-release-mac.png`. Compared with
+      `runtime-frame-profile-derived-lru-release-mac.json`, the Mac release
+      run kept the renderer on `ANGLE Metal Renderer: Apple M4`, reduced
+      `sortedDrawVertexAttribMs` from 0.266 to 0.202 ms/frame,
+      `sortedDrawGeometryMs` from 0.733 to 0.672 ms/frame, and
+      `sortedDrawProfiledMs` from 2.696 to 2.659 ms/frame. Wall time remained
+      noise-flat, so the broader submission/geometry frontier stays open.
+
 - [x] Extend D3D8 draw producer attribution to non-sorted draw calls. The
       opt-in producer table now records total `drawProfiledMs`, total
       calls/indices, and separate sorted-call counters for every D3D8 indexed
