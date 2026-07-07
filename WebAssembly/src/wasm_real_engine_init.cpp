@@ -77,6 +77,7 @@
 #include "GameLogic/Weapon.h"
 #include "GameLogic/Object.h"
 #include "GameLogic/Module/BodyModule.h"
+#include "wasm_d3d8_shim.h"
 #include "Common/ThingTemplate.h"
 #include "Common/ThingFactory.h"
 #include "GameClient/ParticleSys.h"
@@ -894,6 +895,17 @@ void append_frame_texture_diagnostics(std::string &json)
 		json += "}";
 	}
 	json += "]}";
+}
+
+void append_d3d8_draw_cache_json(std::string &json)
+{
+	const WasmD3D8ShimState *d3d8_state = wasm_d3d8_get_state();
+	json += ",\"d3d8DrawCache\":{";
+	json += "\"derivedStateHits\":" +
+		std::to_string(d3d8_state != NULL ? d3d8_state->draw_derived_state_cache_hits : 0);
+	json += ",\"derivedStateMisses\":" +
+		std::to_string(d3d8_state != NULL ? d3d8_state->draw_derived_state_cache_misses : 0);
+	json += "}";
 }
 
 void append_coord3d_fields(
@@ -4708,6 +4720,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame(int frame
 	append_last_script_step_json(json);
 	append_frame_texture_diagnostics(json);
 	append_engine_frame_profile_json(json);
+	append_d3d8_draw_cache_json(json);
 	json += ",\"quitting\":";
 	json += (TheGameEngine != NULL && TheGameEngine->getQuitting() != FALSE) ? "true" : "false";
 	json += ",\"exceptionCaught\":";
@@ -4748,6 +4761,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_summary(i
 	append_last_script_step_json(json);
 	append_frame_texture_diagnostics(json);
 	append_engine_frame_profile_json(json);
+	append_d3d8_draw_cache_json(json);
 	json += ",\"quitting\":";
 	json += (TheGameEngine != NULL && TheGameEngine->getQuitting() != FALSE) ? "true" : "false";
 	json += ",\"exceptionCaught\":";
@@ -4789,6 +4803,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_tick(int 
 	std::snprintf(elapsed, sizeof(elapsed), ",\"lastFrameMs\":%.1f", g_frame_state.last_frame_ms);
 	json += elapsed;
 	append_engine_frame_profile_json(json);
+	append_d3d8_draw_cache_json(json);
 	json += "}";
 	g_frame_json = json;
 	return g_frame_json.c_str();

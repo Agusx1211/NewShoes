@@ -8265,6 +8265,31 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       sampled runtime profiles, and a visible shell-map terrain/water
       screenshot. The conservative default measured 38.34 ms/frame wall /
       36.92 ms average engine `lastFrameMs`.
+- [x] Cache native D3D8 derived draw-state payload before crossing into JS.
+      `wasm_d3d8_shim.cpp` now keeps the texture-transform/render-state/
+      clip-plane/material/light payload and its derived hash behind a device
+      revision, while still capturing world/view/projection matrices for every
+      draw. D3D setters invalidate that payload only when the value actually
+      changes, so repeated render-state, texture-stage, material, light, clip,
+      and texture-transform setters no longer force an identical payload
+      rebuild. `wasm_real_engine_init.cpp` exports native derived-state
+      hit/miss counters through the real-frame JSON, and
+      `runtime_frame_profile.mjs` preserves those counters in samples plus a
+      measured-pass delta. Verified with `node --check
+      WebAssembly/harness/runtime_frame_profile.mjs`, `npm --prefix
+      WebAssembly run build:port`, `npm --prefix WebAssembly run
+      build:port:release`, a local SwiftShader shell-map profile with a
+      visible screenshot (measured native cache delta: 189.3 hits/frame,
+      47.0 misses/frame), and a same-machine Mac M4 Chrome/Metal A/B against
+      baseline commit `d3290787` (`dist-baseline` vs `dist-release`, 60 warmup
+      + 60 measured `realEngineFrameTick` frames, engine profile enabled).
+      The Mac A/B was neutral/slightly better on total wall time (40.43 ->
+      40.32 ms/frame; engine average 39.03 -> 38.89 ms/frame) and reduced the
+      targeted sampled native bridge bucket:
+      `WasmD3D8.drawBound.capture.before` 0.52 ms -> 0.18 ms on the last
+      profiled frame; `WasmD3D8.browserDrawIndexed.before` stayed effectively
+      flat at 3.16 ms -> 3.18 ms. The remaining frame frontier is still
+      terrain/terrain-track variance rather than this native payload rebuild.
 - [x] Split the D3D8 draw-state cache hash from per-object transforms.
       `wasm_d3d8_shim.cpp` now computes both the original full draw hash and a
       derived-state hash that excludes world/view/projection but still covers

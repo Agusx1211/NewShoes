@@ -2487,7 +2487,16 @@ and then start with the PROFILE, not with any individual fix.
       reduced browser draw-submit cost but added a larger buffer-unlock spike,
       so it was not kept. Next pass should continue with base tile/shoreline
       bursts or a separate padded/static terrain-track batching experiment,
-      not per-frame index uploads.
+      not per-frame index uploads. 2026-07-07 native derived draw-state
+      caching reduced targeted D3D8 bridge buckets in a same-machine Mac M4
+      Chrome/Metal A/B against `d3290787`: `drawBound.capture.before` dropped
+      from 0.52 ms to 0.18 ms on the last profiled frame, while
+      `browserDrawIndexed.before` stayed effectively flat (3.16 ms -> 3.18 ms)
+      and total wall time was neutral/slightly better (40.43 -> 40.32 ms/frame;
+      engine average 39.03 -> 38.89 ms/frame). Treat this as bridge cleanup,
+      not a terrain-frontier fix: the next performance pass should still
+      split/optimize base terrain tile/shoreline bursts or static
+      terrain-track batching.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing

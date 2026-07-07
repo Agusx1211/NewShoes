@@ -2904,6 +2904,12 @@ public:
 		if (matrix == nullptr) {
 			return E_FAIL;
 		}
+		if (is_cached_draw_texture_transform(state)) {
+			const auto found = m_transforms.find(state);
+			if (found == m_transforms.end() || !memory_equal(found->second, *matrix)) {
+				invalidate_draw_derived_payload();
+			}
+		}
 		m_transforms[state] = *matrix;
 		++g_state.set_transform_calls;
 		g_state.last_set_transform_state = state;
@@ -2937,7 +2943,14 @@ public:
 		} else {
 			identity_matrix(current);
 		}
-		m_transforms[state] = multiply_matrix(*matrix, current);
+		const D3DMATRIX multiplied = multiply_matrix(*matrix, current);
+		if (is_cached_draw_texture_transform(state)) {
+			const auto found = m_transforms.find(state);
+			if (found == m_transforms.end() || !memory_equal(found->second, multiplied)) {
+				invalidate_draw_derived_payload();
+			}
+		}
+		m_transforms[state] = multiplied;
 		return S_OK;
 	}
 
@@ -2976,6 +2989,9 @@ public:
 		if (material == nullptr) {
 			return E_FAIL;
 		}
+		if (!memory_equal(m_material, *material)) {
+			invalidate_draw_derived_payload();
+		}
 		m_material = *material;
 		++g_state.set_material_calls;
 		g_state.last_set_material = draw_material_from_d3d(m_material);
@@ -2996,6 +3012,9 @@ public:
 		if (light == nullptr || index >= WASM_D3D8_LIGHT_COUNT) {
 			return E_FAIL;
 		}
+		if (!memory_equal(m_lights[index], *light)) {
+			invalidate_draw_derived_payload();
+		}
 		m_lights[index] = *light;
 		++g_state.set_light_calls;
 		g_state.last_set_light_index = index;
@@ -3007,7 +3026,11 @@ public:
 		if (index >= WASM_D3D8_LIGHT_COUNT) {
 			return E_FAIL;
 		}
-		m_light_enabled[index] = enable ? TRUE : FALSE;
+		const BOOL enabled = enable ? TRUE : FALSE;
+		if (m_light_enabled[index] != enabled) {
+			invalidate_draw_derived_payload();
+		}
+		m_light_enabled[index] = enabled;
 		++g_state.light_enable_calls;
 		g_state.last_light_enable_index = index;
 		g_state.last_light_enable_value = m_light_enabled[index];
@@ -3018,6 +3041,9 @@ public:
 		if (plane == nullptr || index >= WASM_D3D8_CLIP_PLANE_COUNT) {
 			return E_FAIL;
 		}
+		if (std::memcmp(m_clip_planes[index], plane, sizeof(m_clip_planes[index])) != 0) {
+			invalidate_draw_derived_payload();
+		}
 		std::memcpy(m_clip_planes[index], plane, sizeof(m_clip_planes[index]));
 		++g_state.set_clip_plane_calls;
 		g_state.last_set_clip_plane_index = index;
@@ -3026,6 +3052,9 @@ public:
 	}
 	HRESULT SetRenderState(D3DRENDERSTATETYPE state, DWORD value) override
 	{
+		if (render_state_value(state) != value) {
+			invalidate_draw_derived_payload();
+		}
 		m_render_states[state] = value;
 		++g_state.set_render_state_calls;
 		if (state == D3DRS_ZFUNC && value == D3DCMP_EQUAL) {
@@ -3106,6 +3135,9 @@ public:
 	}
 	HRESULT SetTextureStageState(DWORD stage, D3DTEXTURESTAGESTATETYPE state, DWORD value) override
 	{
+		if (texture_stage_state_value(stage, state) != value) {
+			invalidate_draw_derived_payload();
+		}
 		m_texture_stage_states[stage][state] = value;
 		++g_state.set_texture_stage_state_calls;
 		if (state == D3DTSS_TEXCOORDINDEX && value == D3DTSS_TCI_CAMERASPACEPOSITION) {
@@ -3842,133 +3874,18 @@ private:
 		capture_draw_transform(D3DTS_WORLD, DRAW_TRANSFORM_WORLD, g_state.last_draw_world_transform);
 		capture_draw_transform(D3DTS_VIEW, DRAW_TRANSFORM_VIEW, g_state.last_draw_view_transform);
 		capture_draw_transform(D3DTS_PROJECTION, DRAW_TRANSFORM_PROJECTION, g_state.last_draw_projection_transform);
-		capture_draw_texture_transform(D3DTS_TEXTURE0, DRAW_TEXTURE_TRANSFORM_STAGE0,
-			g_state.last_draw_texture0_transform);
-		capture_draw_texture_transform(D3DTS_TEXTURE1, DRAW_TEXTURE_TRANSFORM_STAGE1,
-			g_state.last_draw_texture1_transform);
-		capture_draw_render_state();
-		capture_draw_material();
+		capture_or_apply_draw_derived_payload();
 		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.hash.before");
 
-		// Compute FNV-1a 32-bit hashes over the draw-state fields copied to JS.
-		// The full hash includes all transforms and drives GL state/uniform
-		// correctness; the derived hash excludes per-draw world/view/projection
-		// transforms so the browser bridge can reuse the expensive copied render
-		// state when only object placement changed. Bound texture identity is
-		// intentionally not part of either hash because the D3D8 device tracks
-		// texture binding separately.
-		constexpr UINT FNV1A_OFFSET_BASIS = 0x811c9dc5u;
-		constexpr UINT FNV1A_PRIME = 0x01000193u;
-		union FloatUInt { float f; UINT u; };
-		auto hashf = [](float v) -> UINT { FloatUInt x; x.f = v; return x.u; };
-		auto fnv1a_step = [](UINT h, UINT v) -> UINT { return (h ^ v) * FNV1A_PRIME; };
-		UINT state_hash = FNV1A_OFFSET_BASIS;
-		UINT derived_state_hash = FNV1A_OFFSET_BASIS;
-		auto hash_full_matrix = [&](const D3DMATRIX &m) {
-			for (UINT r = 0; r < 4; ++r)
-				for (UINT c = 0; c < 4; ++c)
-					state_hash = fnv1a_step(state_hash, hashf(m.m[r][c]));
-		};
-		auto hash_shared_uint = [&](UINT value) {
-			state_hash = fnv1a_step(state_hash, value);
-			derived_state_hash = fnv1a_step(derived_state_hash, value);
-		};
-		auto hash_shared_float = [&](float value) {
-			hash_shared_uint(hashf(value));
-		};
-		auto hash_shared_matrix = [&](const D3DMATRIX &m) {
-			for (UINT r = 0; r < 4; ++r)
-				for (UINT c = 0; c < 4; ++c)
-					hash_shared_float(m.m[r][c]);
-		};
-		// Full hash: 5 transform matrices. Derived hash: texture transforms only.
-		hash_full_matrix(g_state.last_draw_world_transform);
-		hash_full_matrix(g_state.last_draw_view_transform);
-		hash_full_matrix(g_state.last_draw_projection_transform);
-		hash_shared_matrix(g_state.last_draw_texture0_transform);
-		hash_shared_matrix(g_state.last_draw_texture1_transform);
-		// render state (DWORD fields + texture stages)
-		const auto &rs = g_state.last_draw_render_state;
-		#define HASH_RS_FIELD(field) hash_shared_uint(static_cast<UINT>(rs.field));
-		HASH_RS_FIELD(cull_mode); HASH_RS_FIELD(z_enable); HASH_RS_FIELD(z_write_enable);
-		HASH_RS_FIELD(z_func); HASH_RS_FIELD(alpha_blend_enable); HASH_RS_FIELD(src_blend);
-		HASH_RS_FIELD(dest_blend); HASH_RS_FIELD(blend_op); HASH_RS_FIELD(alpha_test_enable);
-		HASH_RS_FIELD(alpha_func); HASH_RS_FIELD(alpha_ref); HASH_RS_FIELD(color_write_enable);
-		HASH_RS_FIELD(texture_factor); HASH_RS_FIELD(stencil_enable); HASH_RS_FIELD(stencil_fail);
-		HASH_RS_FIELD(stencil_z_fail); HASH_RS_FIELD(stencil_pass); HASH_RS_FIELD(stencil_func);
-		HASH_RS_FIELD(stencil_ref); HASH_RS_FIELD(stencil_mask); HASH_RS_FIELD(stencil_write_mask);
-		HASH_RS_FIELD(fog_enable); HASH_RS_FIELD(fog_color); HASH_RS_FIELD(fog_start);
-		HASH_RS_FIELD(fog_end); HASH_RS_FIELD(fog_vertex_mode); HASH_RS_FIELD(range_fog_enable);
-		HASH_RS_FIELD(fill_mode); HASH_RS_FIELD(z_bias); HASH_RS_FIELD(shade_mode);
-		HASH_RS_FIELD(lighting); HASH_RS_FIELD(ambient); HASH_RS_FIELD(color_vertex);
-		HASH_RS_FIELD(diffuse_material_source); HASH_RS_FIELD(specular_material_source);
-		HASH_RS_FIELD(ambient_material_source); HASH_RS_FIELD(emissive_material_source);
-		HASH_RS_FIELD(clipping); HASH_RS_FIELD(clip_plane_enable); HASH_RS_FIELD(specular_enable);
-		HASH_RS_FIELD(normalize_normals); HASH_RS_FIELD(local_viewer);
-		HASH_RS_FIELD(point_size); HASH_RS_FIELD(point_size_min); HASH_RS_FIELD(point_size_max);
-		HASH_RS_FIELD(point_sprite_enable); HASH_RS_FIELD(point_scale_enable);
-		HASH_RS_FIELD(point_scale_a); HASH_RS_FIELD(point_scale_b); HASH_RS_FIELD(point_scale_c);
-		#undef HASH_RS_FIELD
-		// texture stage states (8 stages * 29 DWORDs)
-		for (UINT s = 0; s < WASM_D3D8_TEXTURE_STAGE_COUNT; ++s)
-			for (UINT i = 0; i < WASM_D3D8_TEXTURE_STAGE_STATE_SLOTS; ++i)
-				hash_shared_uint(rs.texture_stages[s].values[i]);
-		// clip planes (6 * 4 floats)
-		for (UINT p = 0; p < WASM_D3D8_CLIP_PLANE_COUNT; ++p)
-			for (UINT c = 0; c < 4; ++c)
-				hash_shared_float(g_state.last_draw_clip_planes[p][c]);
-		// material (4 D3DCOLORVALUE + 1 float power)
-		const auto &mat = g_state.last_draw_material;
-		hash_shared_float(mat.diffuse.r);
-		hash_shared_float(mat.diffuse.g);
-		hash_shared_float(mat.diffuse.b);
-		hash_shared_float(mat.diffuse.a);
-		hash_shared_float(mat.ambient.r);
-		hash_shared_float(mat.ambient.g);
-		hash_shared_float(mat.ambient.b);
-		hash_shared_float(mat.ambient.a);
-		hash_shared_float(mat.specular.r);
-		hash_shared_float(mat.specular.g);
-		hash_shared_float(mat.specular.b);
-		hash_shared_float(mat.specular.a);
-		hash_shared_float(mat.emissive.r);
-		hash_shared_float(mat.emissive.g);
-		hash_shared_float(mat.emissive.b);
-		hash_shared_float(mat.emissive.a);
-		hash_shared_float(mat.power);
-		// lights (8 lights, each: type, enabled, then float fields)
-		for (UINT l = 0; l < WASM_D3D8_LIGHT_COUNT; ++l) {
-			const auto &lt = g_state.last_draw_lights[l];
-			hash_shared_uint(lt.type);
-			hash_shared_uint(lt.enabled);
-			hash_shared_float(lt.diffuse.r);
-			hash_shared_float(lt.diffuse.g);
-			hash_shared_float(lt.diffuse.b);
-			hash_shared_float(lt.diffuse.a);
-			hash_shared_float(lt.specular.r);
-			hash_shared_float(lt.specular.g);
-			hash_shared_float(lt.specular.b);
-			hash_shared_float(lt.specular.a);
-			hash_shared_float(lt.ambient.r);
-			hash_shared_float(lt.ambient.g);
-			hash_shared_float(lt.ambient.b);
-			hash_shared_float(lt.ambient.a);
-			hash_shared_float(lt.position.x);
-			hash_shared_float(lt.position.y);
-			hash_shared_float(lt.position.z);
-			hash_shared_float(lt.direction.x);
-			hash_shared_float(lt.direction.y);
-			hash_shared_float(lt.direction.z);
-			hash_shared_float(lt.range);
-			hash_shared_float(lt.falloff);
-			hash_shared_float(lt.attenuation0);
-			hash_shared_float(lt.attenuation1);
-			hash_shared_float(lt.attenuation2);
-			hash_shared_float(lt.theta);
-			hash_shared_float(lt.phi);
-		}
-		// transform mask
-		hash_shared_uint(g_state.last_draw_transform_mask);
+		UINT transform_hash = FNV1A_OFFSET_BASIS;
+		hash_matrix(transform_hash, g_state.last_draw_world_transform);
+		hash_matrix(transform_hash, g_state.last_draw_view_transform);
+		hash_matrix(transform_hash, g_state.last_draw_projection_transform);
+		const UINT derived_state_hash =
+			fnv1a_step(m_cached_draw_derived_payload.payload_hash, g_state.last_draw_transform_mask);
+		const UINT state_hash = fnv1a_step(
+			fnv1a_step(transform_hash, m_cached_draw_derived_payload.payload_hash),
+			g_state.last_draw_transform_mask);
 		g_state.last_draw_state_hash = state_hash;
 		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.hash.after");
 		const WasmD3D8DrawTextureStageState &stage0 =
@@ -4041,6 +3958,191 @@ private:
 		}
 	}
 
+	struct CachedDrawDerivedPayload
+	{
+		bool valid = false;
+		UINT revision = 0;
+		UINT payload_hash = 0;
+		UINT texture_transform_mask = 0;
+		D3DMATRIX texture0_transform = {};
+		D3DMATRIX texture1_transform = {};
+		WasmD3D8DrawRenderState render_state = {};
+		float clip_planes[WASM_D3D8_CLIP_PLANE_COUNT][4] = {};
+		WasmD3D8DrawMaterial material = {};
+		WasmD3D8DrawLight lights[WASM_D3D8_LIGHT_COUNT] = {};
+	};
+
+	static constexpr UINT FNV1A_OFFSET_BASIS = 0x811c9dc5u;
+	static constexpr UINT FNV1A_PRIME = 0x01000193u;
+
+	template <typename T>
+	static bool memory_equal(const T &left, const T &right)
+	{
+		return std::memcmp(&left, &right, sizeof(T)) == 0;
+	}
+
+	static bool is_cached_draw_texture_transform(D3DTRANSFORMSTATETYPE state)
+	{
+		return state == D3DTS_TEXTURE0 || state == D3DTS_TEXTURE1;
+	}
+
+	static UINT hash_float(float value)
+	{
+		union FloatUInt { float f; UINT u; };
+		FloatUInt bits = {};
+		bits.f = value;
+		return bits.u;
+	}
+
+	static UINT fnv1a_step(UINT hash, UINT value)
+	{
+		return (hash ^ value) * FNV1A_PRIME;
+	}
+
+	static void hash_matrix(UINT &hash, const D3DMATRIX &matrix)
+	{
+		for (UINT row = 0; row < 4; ++row) {
+			for (UINT column = 0; column < 4; ++column) {
+				hash = fnv1a_step(hash, hash_float(matrix.m[row][column]));
+			}
+		}
+	}
+
+	static void hash_draw_derived_payload(
+		UINT &hash,
+		const D3DMATRIX &texture0_transform,
+		const D3DMATRIX &texture1_transform,
+		const WasmD3D8DrawRenderState &render_state,
+		const float clip_planes[WASM_D3D8_CLIP_PLANE_COUNT][4],
+		const WasmD3D8DrawMaterial &material,
+		const WasmD3D8DrawLight lights[WASM_D3D8_LIGHT_COUNT])
+	{
+		hash_matrix(hash, texture0_transform);
+		hash_matrix(hash, texture1_transform);
+		#define HASH_RS_FIELD(field) hash = fnv1a_step(hash, static_cast<UINT>(render_state.field));
+		HASH_RS_FIELD(cull_mode); HASH_RS_FIELD(z_enable); HASH_RS_FIELD(z_write_enable);
+		HASH_RS_FIELD(z_func); HASH_RS_FIELD(alpha_blend_enable); HASH_RS_FIELD(src_blend);
+		HASH_RS_FIELD(dest_blend); HASH_RS_FIELD(blend_op); HASH_RS_FIELD(alpha_test_enable);
+		HASH_RS_FIELD(alpha_func); HASH_RS_FIELD(alpha_ref); HASH_RS_FIELD(color_write_enable);
+		HASH_RS_FIELD(texture_factor); HASH_RS_FIELD(stencil_enable); HASH_RS_FIELD(stencil_fail);
+		HASH_RS_FIELD(stencil_z_fail); HASH_RS_FIELD(stencil_pass); HASH_RS_FIELD(stencil_func);
+		HASH_RS_FIELD(stencil_ref); HASH_RS_FIELD(stencil_mask); HASH_RS_FIELD(stencil_write_mask);
+		HASH_RS_FIELD(fog_enable); HASH_RS_FIELD(fog_color); HASH_RS_FIELD(fog_start);
+		HASH_RS_FIELD(fog_end); HASH_RS_FIELD(fog_vertex_mode); HASH_RS_FIELD(range_fog_enable);
+		HASH_RS_FIELD(fill_mode); HASH_RS_FIELD(z_bias); HASH_RS_FIELD(shade_mode);
+		HASH_RS_FIELD(lighting); HASH_RS_FIELD(ambient); HASH_RS_FIELD(color_vertex);
+		HASH_RS_FIELD(diffuse_material_source); HASH_RS_FIELD(specular_material_source);
+		HASH_RS_FIELD(ambient_material_source); HASH_RS_FIELD(emissive_material_source);
+		HASH_RS_FIELD(clipping); HASH_RS_FIELD(clip_plane_enable); HASH_RS_FIELD(specular_enable);
+		HASH_RS_FIELD(normalize_normals); HASH_RS_FIELD(local_viewer);
+		HASH_RS_FIELD(point_size); HASH_RS_FIELD(point_size_min); HASH_RS_FIELD(point_size_max);
+		HASH_RS_FIELD(point_sprite_enable); HASH_RS_FIELD(point_scale_enable);
+		HASH_RS_FIELD(point_scale_a); HASH_RS_FIELD(point_scale_b); HASH_RS_FIELD(point_scale_c);
+		#undef HASH_RS_FIELD
+		for (UINT stage = 0; stage < WASM_D3D8_TEXTURE_STAGE_COUNT; ++stage) {
+			for (UINT slot = 0; slot < WASM_D3D8_TEXTURE_STAGE_STATE_SLOTS; ++slot) {
+				hash = fnv1a_step(hash, static_cast<UINT>(render_state.texture_stages[stage].values[slot]));
+			}
+		}
+		for (UINT plane = 0; plane < WASM_D3D8_CLIP_PLANE_COUNT; ++plane) {
+			for (UINT component = 0; component < 4; ++component) {
+				hash = fnv1a_step(hash, hash_float(clip_planes[plane][component]));
+			}
+		}
+		#define HASH_COLOR(color) \
+			do { \
+				hash = fnv1a_step(hash, hash_float(color.r)); \
+				hash = fnv1a_step(hash, hash_float(color.g)); \
+				hash = fnv1a_step(hash, hash_float(color.b)); \
+				hash = fnv1a_step(hash, hash_float(color.a)); \
+			} while (0)
+		HASH_COLOR(material.diffuse);
+		HASH_COLOR(material.ambient);
+		HASH_COLOR(material.specular);
+		HASH_COLOR(material.emissive);
+		hash = fnv1a_step(hash, hash_float(material.power));
+		for (UINT index = 0; index < WASM_D3D8_LIGHT_COUNT; ++index) {
+			const WasmD3D8DrawLight &light = lights[index];
+			hash = fnv1a_step(hash, static_cast<UINT>(light.type));
+			hash = fnv1a_step(hash, static_cast<UINT>(light.enabled));
+			HASH_COLOR(light.diffuse);
+			HASH_COLOR(light.specular);
+			HASH_COLOR(light.ambient);
+			hash = fnv1a_step(hash, hash_float(light.position.x));
+			hash = fnv1a_step(hash, hash_float(light.position.y));
+			hash = fnv1a_step(hash, hash_float(light.position.z));
+			hash = fnv1a_step(hash, hash_float(light.direction.x));
+			hash = fnv1a_step(hash, hash_float(light.direction.y));
+			hash = fnv1a_step(hash, hash_float(light.direction.z));
+			hash = fnv1a_step(hash, hash_float(light.range));
+			hash = fnv1a_step(hash, hash_float(light.falloff));
+			hash = fnv1a_step(hash, hash_float(light.attenuation0));
+			hash = fnv1a_step(hash, hash_float(light.attenuation1));
+			hash = fnv1a_step(hash, hash_float(light.attenuation2));
+			hash = fnv1a_step(hash, hash_float(light.theta));
+			hash = fnv1a_step(hash, hash_float(light.phi));
+		}
+		#undef HASH_COLOR
+	}
+
+	void invalidate_draw_derived_payload()
+	{
+		++m_draw_derived_payload_revision;
+		if (m_draw_derived_payload_revision == 0) {
+			m_draw_derived_payload_revision = 1;
+			m_cached_draw_derived_payload.valid = false;
+		}
+	}
+
+	void capture_or_apply_draw_derived_payload()
+	{
+		if (m_cached_draw_derived_payload.valid &&
+				m_cached_draw_derived_payload.revision == m_draw_derived_payload_revision) {
+			g_state.last_draw_texture_transform_mask = m_cached_draw_derived_payload.texture_transform_mask;
+			g_state.last_draw_texture0_transform = m_cached_draw_derived_payload.texture0_transform;
+			g_state.last_draw_texture1_transform = m_cached_draw_derived_payload.texture1_transform;
+			g_state.last_draw_render_state = m_cached_draw_derived_payload.render_state;
+			std::memcpy(g_state.last_draw_clip_planes, m_cached_draw_derived_payload.clip_planes,
+				sizeof(g_state.last_draw_clip_planes));
+			g_state.last_draw_material = m_cached_draw_derived_payload.material;
+			std::memcpy(g_state.last_draw_lights, m_cached_draw_derived_payload.lights,
+				sizeof(g_state.last_draw_lights));
+			++g_state.draw_derived_state_cache_hits;
+			return;
+		}
+
+		g_state.last_draw_texture_transform_mask = 0;
+		capture_draw_texture_transform(D3DTS_TEXTURE0, DRAW_TEXTURE_TRANSFORM_STAGE0,
+			g_state.last_draw_texture0_transform);
+		capture_draw_texture_transform(D3DTS_TEXTURE1, DRAW_TEXTURE_TRANSFORM_STAGE1,
+			g_state.last_draw_texture1_transform);
+		capture_draw_render_state();
+		capture_draw_material();
+
+		m_cached_draw_derived_payload.valid = true;
+		m_cached_draw_derived_payload.revision = m_draw_derived_payload_revision;
+		m_cached_draw_derived_payload.texture_transform_mask = g_state.last_draw_texture_transform_mask;
+		m_cached_draw_derived_payload.texture0_transform = g_state.last_draw_texture0_transform;
+		m_cached_draw_derived_payload.texture1_transform = g_state.last_draw_texture1_transform;
+		m_cached_draw_derived_payload.render_state = g_state.last_draw_render_state;
+		std::memcpy(m_cached_draw_derived_payload.clip_planes, g_state.last_draw_clip_planes,
+			sizeof(m_cached_draw_derived_payload.clip_planes));
+		m_cached_draw_derived_payload.material = g_state.last_draw_material;
+		std::memcpy(m_cached_draw_derived_payload.lights, g_state.last_draw_lights,
+			sizeof(m_cached_draw_derived_payload.lights));
+		UINT payload_hash = FNV1A_OFFSET_BASIS;
+		hash_draw_derived_payload(
+			payload_hash,
+			m_cached_draw_derived_payload.texture0_transform,
+			m_cached_draw_derived_payload.texture1_transform,
+			m_cached_draw_derived_payload.render_state,
+			m_cached_draw_derived_payload.clip_planes,
+			m_cached_draw_derived_payload.material,
+			m_cached_draw_derived_payload.lights);
+		m_cached_draw_derived_payload.payload_hash = payload_hash;
+		++g_state.draw_derived_state_cache_misses;
+	}
+
 	HRESULT create_surface(UINT width, UINT height, D3DFORMAT format, DWORD usage, IDirect3DSurface8 **surface)
 	{
 		if (surface == nullptr) {
@@ -4078,6 +4180,8 @@ private:
 	D3DFORMAT m_user_pointer_index_buffer_format = D3DFMT_INDEX16;
 	std::vector<BYTE> m_user_pointer_index_bytes;
 	DWORD m_vertex_shader = 0;
+	UINT m_draw_derived_payload_revision = 1;
+	CachedDrawDerivedPayload m_cached_draw_derived_payload;
 };
 
 class BrowserD3D8 final : public IDirect3D8

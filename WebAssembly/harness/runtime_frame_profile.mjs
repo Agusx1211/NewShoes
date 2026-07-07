@@ -125,12 +125,42 @@ const render2DProfileFields = [
   "maxIndices",
 ];
 
+const d3d8DrawCacheFields = [
+  "derivedStateHits",
+  "derivedStateMisses",
+];
+
 function summarizeProfileGroup(samples, groupName, fields) {
   const summary = {};
   for (const field of fields) {
     summary[field] = stats(samples.map((sample) => Number(sample.profile?.[groupName]?.[field] ?? Number.NaN)));
   }
   return summary;
+}
+
+function summarizeSampleCounterDelta(samples, groupName, fields, framesAdvanced) {
+  if (samples.length < 2) {
+    return null;
+  }
+  const first = samples[0]?.[groupName] ?? null;
+  const last = samples[samples.length - 1]?.[groupName] ?? null;
+  if (!first || !last) {
+    return null;
+  }
+  const countedFrames = Math.max(0, framesAdvanced - Number(samples[0]?.frames ?? 0));
+  const delta = {};
+  const perFrame = {};
+  for (const field of fields) {
+    const beforeValue = Number(first[field] ?? 0);
+    const afterValue = Number(last[field] ?? 0);
+    delta[field] = Number.isFinite(beforeValue) && Number.isFinite(afterValue)
+      ? afterValue - beforeValue
+      : null;
+    perFrame[field] = countedFrames > 0 && delta[field] !== null
+      ? delta[field] / countedFrames
+      : null;
+  }
+  return { first, last, delta, countedFrames, perFrame };
 }
 
 function summarizeProfileCounters(samples) {
@@ -203,6 +233,16 @@ function compactParticles(particles) {
   };
 }
 
+function compactD3D8DrawCache(cache) {
+  if (!cache) {
+    return null;
+  }
+  return {
+    derivedStateHits: Number(cache.derivedStateHits ?? 0),
+    derivedStateMisses: Number(cache.derivedStateMisses ?? 0),
+  };
+}
+
 function compactFrameState(frame) {
   if (!frame) {
     return null;
@@ -217,6 +257,7 @@ function compactFrameState(frame) {
     display: compactDisplay(frame.display),
     view: compactView(frame.view),
     particles: compactParticles(frame.particles),
+    d3d8DrawCache: compactD3D8DrawCache(frame.d3d8DrawCache),
     profile: frame.profile ?? null,
   };
 }
@@ -571,6 +612,7 @@ async function runFramePass(page, frameCount, batchSize, label, command = "realE
       drawableCount: Number(frame.gameplay?.drawableCount ?? Number.NaN),
       renderedObjectCount: Number(frame.gameplay?.renderedObjectCount ?? Number.NaN),
       particleSystemCount: Number(frame.particles?.systemCount ?? Number.NaN),
+      d3d8DrawCache: compactD3D8DrawCache(frame.d3d8DrawCache),
       profile: frame.profile ?? null,
     });
     remaining -= frames;
@@ -598,6 +640,12 @@ async function runFramePass(page, frameCount, batchSize, label, command = "realE
     engineLastFrameMs: stats(samples.map((sample) => sample.engineLastFrameMs)),
     drawCalls,
     drawCallsPerFrame: drawCalls !== null && framesAdvanced > 0 ? drawCalls / framesAdvanced : null,
+    d3d8DrawCache: summarizeSampleCounterDelta(
+      samples,
+      "d3d8DrawCache",
+      d3d8DrawCacheFields,
+      framesAdvanced,
+    ),
     browserPerf: browserPerfDelta(browserPerfBefore, browserPerfAfter, framesAdvanced),
     profileCounters: profile ? summarizeProfileCounters(samples) : null,
     finalState: compactFrameState(finalFrame),
@@ -637,6 +685,7 @@ async function runUntilSettled(page, maxFrames, shellMap) {
       drawableCount: Number(frame.gameplay?.drawableCount ?? Number.NaN),
       renderedObjectCount: Number(frame.gameplay?.renderedObjectCount ?? Number.NaN),
       particleSystemCount: Number(frame.particles?.systemCount ?? Number.NaN),
+      d3d8DrawCache: compactD3D8DrawCache(frame.d3d8DrawCache),
     });
     if (sceneIsSettled(frame, shellMap)) {
       settled = true;
@@ -655,6 +704,12 @@ async function runUntilSettled(page, maxFrames, shellMap) {
     wallMsPerFrame: samples.length > 0 ? totalWallMs / samples.length : null,
     rpcWallMs: stats(samples.map((sample) => sample.wallMs)),
     engineLastFrameMs: stats(samples.map((sample) => sample.engineLastFrameMs)),
+    d3d8DrawCache: summarizeSampleCounterDelta(
+      samples,
+      "d3d8DrawCache",
+      d3d8DrawCacheFields,
+      samples.length,
+    ),
     browserPerf: browserPerfDelta(browserPerfBefore, browserPerfAfter, samples.length),
     finalState: compactFrameState(finalFrame),
     sampleCount: samples.length,

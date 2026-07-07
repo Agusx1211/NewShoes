@@ -207,6 +207,8 @@ struct WasmD3D8ShimState
 	WasmD3D8DrawMaterial last_draw_material;
 	WasmD3D8DrawLight last_draw_lights[WASM_D3D8_LIGHT_COUNT];
 	UINT last_draw_state_hash;
+	UINT draw_derived_state_cache_hits;
+	UINT draw_derived_state_cache_misses;
 	UINT begin_scene_calls;
 	UINT end_scene_calls;
 	UINT clear_calls;
