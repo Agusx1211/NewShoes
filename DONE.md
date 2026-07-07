@@ -41,6 +41,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       On Mac Metal the one-frame producer profile stayed at 137 buffer updates
       while total upload traffic dropped from 326.3 KB to 267.6 KB and
       `W3DWater.render.renderWater.before` dropped from 140.5 KB to 82.0 KB.
+- [x] Trim terrain extra-blend dynamic uploads to the visible third-blend
+      tiles. `HeightMapRenderObjClass::renderExtraBlendTiles()` previously
+      locked the full `DEFAULT_MAX_FRAME_EXTRABLEND_TILES` dynamic VB/IB range
+      before knowing how many extra-blend tiles were visible, so the browser
+      uploaded the unused tail every frame. The renderer now pre-counts the
+      visible extra-blend tiles, locks exactly that vertex/index range, and
+      keeps the original tile order, shader passes, and batch-growth heuristic.
+      Verified with `git diff --check`, `npm --prefix WebAssembly run
+      build:port`, `npm --prefix WebAssembly run build:port:release`, a local
+      producer profile, and a Mac M4/Metal producer profile copied to
+      `WebAssembly/artifacts/perf/runtime-frame-profile-extra-blend-exact-ranges-mac.json`.
+      On Mac Metal total one-frame upload traffic dropped from 267.6 KB to
+      222.3 KB, and `HeightMap.render.extraBlend.before` dropped from 48.1 KB
+      to 2.4 KB while staying at the same two buffer update calls.
 
 ## User-reported play bugs (2026-07-06 session)
 

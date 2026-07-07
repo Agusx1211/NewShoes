@@ -199,11 +199,16 @@ updates, 326 KB uploaded, 253 KB `NOOVERWRITE`, 72.6 KB `DISCARD`, and
 dynamic ranges for flat/trapezoid water now trim unused uploaded vertices and
 indices: `runtime-frame-profile-water-exact-ranges-mac.json` measured 137
 buffer updates, 267.6 KB uploaded, 0.075 ms `bufferSubDataMs`, and
-`W3DWater.render.renderWater.before` down to 82.0 KB. The next upload
-byte-reduction pass should start with the new leading non-water producers
-(`HeightMap.render.extraBlend.before`, volumetric shadow VB/IB unlock, and
-`HeightMap.render.shoreLines.before`) before broader JS-side `NOOVERWRITE`,
-orphaning, or checksum changes. The user-reported shadow
+`W3DWater.render.renderWater.before` down to 82.0 KB. Exact dynamic ranges for
+terrain extra-blend then dropped
+`HeightMap.render.extraBlend.before` from 48.1 KB to 2.4 KB and total measured
+one-frame upload traffic to 222.3 KB in
+`runtime-frame-profile-extra-blend-exact-ranges-mac.json`. The next upload
+byte-reduction pass should start with the remaining leading producers
+(`W3DWater.render.renderWater.before`, volumetric shadow VB/IB unlock,
+`HeightMap.render.shoreLines.before`, and
+`W3DWaterTracks.flush.batchUnlock.before`) before broader JS-side
+`NOOVERWRITE`, orphaning, or checksum changes. The user-reported shadow
 flicker/breakage symptom is fixed in the live skirmish path, while broader
 shadow fidelity remains in the queued phased plan.
 
@@ -2593,8 +2598,15 @@ and then start with the PROFILE, not with any individual fix.
       `runtime-frame-profile-water-exact-ranges-mac.json` dropped total
       measured one-frame upload traffic from 326.3 KB to 267.6 KB and
       `W3DWater.render.renderWater.before` from 140.5 KB to 82.0 KB at the same
-      137 update calls. Next concrete frontier: extra-blend terrain, volumetric
-      shadow VB/IB unlocks, and shoreline ranges.
+      137 update calls. A follow-up exact-range pass fixed
+      `renderExtraBlendTiles()` over-allocation: the helper now pre-counts the
+      visible third-blend tiles and locks only those vertex/index ranges. The
+      Mac M4/Metal sanity profile
+      `runtime-frame-profile-extra-blend-exact-ranges-mac.json` dropped total
+      measured one-frame upload traffic to 222.3 KB and
+      `HeightMap.render.extraBlend.before` from 48.1 KB to 2.4 KB. Next
+      concrete frontier: remaining water surface bytes, volumetric shadow
+      VB/IB unlocks, shoreline index ranges, and water-track batch unlock.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing

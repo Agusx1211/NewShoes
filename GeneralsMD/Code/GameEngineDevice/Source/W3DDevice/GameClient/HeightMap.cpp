@@ -2370,8 +2370,44 @@ void HeightMapRenderObjClass::renderExtraBlendTiles(void)
 	if (maxBlendTiles > 10000)	//we can only fit about 10000 tiles into a single VB.
 		maxBlendTiles = 10000;
 
-	DynamicVBAccessClass vb_access(BUFFER_TYPE_DYNAMIC_DX8,DX8_FVF_XYZNDUV2,maxBlendTiles*4);
-	DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8,maxBlendTiles*6);
+	// Loop over visible terrain and extract all the tiles that need extra blend.
+	Int drawEdgeY=m_map->getDrawOrgY()+m_map->getDrawHeight()-1;
+	Int drawEdgeX=m_map->getDrawOrgX()+m_map->getDrawWidth()-1;
+	if (drawEdgeX > (m_map->getXExtent()-1))
+		drawEdgeX = m_map->getXExtent()-1;
+	if (drawEdgeY > (m_map->getYExtent()-1))
+		drawEdgeY = m_map->getYExtent()-1;
+	Int drawStartX=m_map->getDrawOrgX();
+	Int drawStartY=m_map->getDrawOrgY();
+
+	Int visibleBlendTiles = 0;
+	for (Int j=0; j<m_numExtraBlendTiles; j++)
+	{
+		if (visibleBlendTiles >= maxBlendTiles)
+			break;
+
+		Real U[4],V[4];
+		UnsignedByte alpha[4];
+		Bool flipState,cliffState;
+		Int x = m_extraBlendTilePositions[j] & 0xffff;
+		Int y = m_extraBlendTilePositions[j] >> 16;
+
+		if (x >= drawStartX && x < drawEdgeX &&
+			y >= drawStartY && y < drawEdgeY &&
+			m_map->getExtraAlphaUVData(x,y,U,V,alpha,&flipState, &cliffState))
+		{
+			visibleBlendTiles++;
+		}
+	}
+
+	if (!visibleBlendTiles)
+		return;	//nothing visible to draw
+
+	Int maxVertexCount = visibleBlendTiles*4;
+	Int maxIndexCount = visibleBlendTiles*6;
+
+	DynamicVBAccessClass vb_access(BUFFER_TYPE_DYNAMIC_DX8,DX8_FVF_XYZNDUV2,maxVertexCount);
+	DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8,maxIndexCount);
 	{
 
 		DynamicVBAccessClass::WriteLockClass lock(&vb_access);
@@ -2383,20 +2419,10 @@ void HeightMapRenderObjClass::renderExtraBlendTiles(void)
 
 		const UnsignedByte* data = m_map->getDataPtr();
 
-		//Loop over visible terrain and extract all the tiles that need extra blend
-		Int drawEdgeY=m_map->getDrawOrgY()+m_map->getDrawHeight()-1;
-		Int drawEdgeX=m_map->getDrawOrgX()+m_map->getDrawWidth()-1;
-		if (drawEdgeX > (m_map->getXExtent()-1))
-			drawEdgeX = m_map->getXExtent()-1;
-		if (drawEdgeY > (m_map->getYExtent()-1))
-			drawEdgeY = m_map->getYExtent()-1;
-		Int drawStartX=m_map->getDrawOrgX();
-		Int drawStartY=m_map->getDrawOrgY();
-
 		try {
 		for (Int j=0; j<m_numExtraBlendTiles; j++)
 		{
-			if (vertexCount >= (maxBlendTiles*4))
+			if (vertexCount >= maxVertexCount)
 				break;	//no room in vertex buffer
 
 			Real U[4],V[4];
@@ -2503,7 +2529,7 @@ void HeightMapRenderObjClass::renderExtraBlendTiles(void)
 	if (vertexCount)
 	{
 		//Check if we couldn't fit all blend tiles into vertex buffer so we can enlarge it for next frame.
-		if (vertexCount == (maxBlendTiles*4))
+		if (visibleBlendTiles == maxBlendTiles)
 			maxBlendTiles += 16;	//enlarge by 16 to reduce trashing.
 		
 		ShaderClass::Invalidate();	//invalidate to force shader to reset since we directly changed states
