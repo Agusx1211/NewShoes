@@ -10,6 +10,35 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## User-reported play bugs (2026-07-07 session)
 
+- [x] Fix shadows mostly not rendering in live skirmish. The D3D8 bridge now
+      treats `D3DFVF_XYZRHW` vertices as transformed-and-lit screen-space
+      vertices instead of sending them through the current world/view/projection
+      matrices. This restores the volumetric shadow composite quad submitted by
+      `W3DVolumetricShadowManager::renderStencilShadows()` (`XYZRHW|DIFFUSE`,
+      `D3DBLEND_DESTCOLOR/ZERO`) to the tactical viewport, while normal
+      world-space draws still use the existing matrix path. The bridge draw
+      history now records `pretransformedPosition` so future shadow captures can
+      distinguish TL quads from projected scene geometry, and
+      `skirmish_start_smoke.mjs` can target `dist-release` with
+      `SKIRMISH_START_DIST`.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `node --check WebAssembly/harness/skirmish_start_smoke.mjs`,
+      `git diff --check`, and a Mac M4/Metal release skirmish run:
+      `SKIRMISH_START_DIST=dist-release
+      SKIRMISH_START_MAP='maps\tournament desert\tournament desert.map'
+      SKIRMISH_START_POST_ACTIVE_FRAMES=180
+      SKIRMISH_START_EXPECT_SURVIVE=1
+      SKIRMISH_START_CAPTURE_D3D8_HISTORY=1 ... node
+      harness/skirmish_start_smoke.mjs`. The capture
+      `WebAssembly/artifacts/skirmish/skirmish-shadow-rhw-fixed.json` reached
+      active gameplay, kept stencil available, submitted increment/decrement
+      shadow volumes, and showed both shadow composite quads with
+      `pretransformedPosition=true`, `visible=4`, and screen-space bounds
+      covering the tactical viewport. The screenshot
+      `WebAssembly/artifacts/screenshots/skirmish-shadow-rhw-fixed.png` shows
+      visible structure/unit shadows under the China base after 180 active
+      frames.
+
 - [x] Restore browser right-click ground orders in alternate-mouse mode. Browser
       option defaults now enable the original alternate-mouse command scheme
       when no `UseAlternateMouse` preference exists, and the Emscripten

@@ -4385,11 +4385,27 @@ function d3d8FixedLightUniformKey(lights) {
   return values.join(",");
 }
 
-function d3d8BaseUniformKey(useTransforms, appliedRenderState, clipPlanes, shadeModeDraw) {
+function d3d8ViewportUniformKey(viewport) {
+  const d3d = viewport?.d3d;
+  if (!d3d) {
+    return "0,0,0,0";
+  }
+  return [
+    finiteNumber(d3d.x, 0),
+    finiteNumber(d3d.y, 0),
+    Math.max(1, finiteNumber(d3d.width, 1)),
+    Math.max(1, finiteNumber(d3d.height, 1)),
+  ].join(",");
+}
+
+function d3d8BaseUniformKey(useTransforms, usePretransformedPosition, appliedViewport,
+    appliedRenderState, clipPlanes, shadeModeDraw) {
   const values = [
     useTransforms ? 1 : 0,
+    usePretransformedPosition ? 1 : 0,
+    usePretransformedPosition ? d3d8ViewportUniformKey(appliedViewport) : "",
     appliedRenderState.depth.bias.ndc,
-    appliedRenderState.clipPlanes.mask,
+    usePretransformedPosition ? 0 : appliedRenderState.clipPlanes.mask,
     shadeModeDraw.usesFlatShader ? 1 : 0,
     appliedRenderState.lighting.shaderEnabled ? 1 : 0,
     appliedRenderState.lighting.specular.enabled ? 1 : 0,
@@ -4397,7 +4413,7 @@ function d3d8BaseUniformKey(useTransforms, appliedRenderState, clipPlanes, shade
     appliedRenderState.lighting.localViewer.enabled ? 1 : 0,
     appliedRenderState.materialSources.colorVertex.enabled ? 1 : 0,
   ];
-  if (appliedRenderState.clipPlanes.mask !== 0) {
+  if (!usePretransformedPosition && appliedRenderState.clipPlanes.mask !== 0) {
     for (let planeIndex = 0; planeIndex < D3D8_CLIP_PLANE_COUNT; ++planeIndex) {
       values.push(...(clipPlanes[planeIndex] ?? [0, 0, 0, 0]));
     }
@@ -4954,6 +4970,7 @@ function d3d8LegacyVertexLayoutInfo(vertexStride) {
     stride,
     positionOffset: 0,
     positionComponents: 3,
+    pretransformed: false,
     normalOffset: stride >= D3D8_NORMAL_MIN_STRIDE ? D3D8_NORMAL_OFFSET : null,
     diffuseOffset: stride >= D3D8_DIFFUSE_MIN_STRIDE ? D3D8_DIFFUSE_OFFSET : null,
     specularOffset: null,
@@ -5030,6 +5047,7 @@ function d3d8VertexLayoutInfo(fvf, vertexStride) {
     stride,
     positionOffset: 0,
     positionComponents,
+    pretransformed: (normalizedFvf & D3DFVF_XYZRHW) === D3DFVF_XYZRHW,
     normalOffset: normalOffset !== null && stride >= normalOffset + 3 * 4 ? normalOffset : null,
     diffuseOffset: diffuseOffset !== null && stride >= diffuseOffset + 4 ? diffuseOffset : null,
     specularOffset: specularOffset !== null && stride >= specularOffset + 4 ? specularOffset : null,
@@ -6608,7 +6626,7 @@ function ensureD3D8DrawProgram() {
   }
 
   const vertexShader = compileShader(gl.VERTEX_SHADER, `#version 300 es
-    in vec3 aPosition;
+    in vec4 aPosition;
     in vec3 aNormal;
     in vec4 aDiffuseBgra;
     in vec4 aSpecularBgra;
@@ -6616,6 +6634,8 @@ function ensureD3D8DrawProgram() {
     in vec2 aTexCoord1;
     uniform float uScale;
     uniform bool uUseTransforms;
+    uniform bool uPretransformedPosition;
+    uniform vec4 uD3DViewport;
     uniform mat4 uWorld;
     uniform mat4 uView;
     uniform mat4 uProjection;
@@ -6795,14 +6815,30 @@ function ensureD3D8DrawProgram() {
       }
       return transformed.xy;
     }
+    vec4 d3dPretransformedPositionToClip(vec4 screenPosition) {
+      vec2 viewportOrigin = uD3DViewport.xy;
+      vec2 viewportSize = max(uD3DViewport.zw, vec2(1.0));
+      vec3 ndc = vec3(
+        ((screenPosition.x - viewportOrigin.x) / viewportSize.x) * 2.0 - 1.0,
+        1.0 - ((screenPosition.y - viewportOrigin.y) / viewportSize.y) * 2.0,
+        screenPosition.z * 2.0 - 1.0
+      );
+      float rhw = abs(screenPosition.w) > 0.000001 ? screenPosition.w : 1.0;
+      float clipW = 1.0 / rhw;
+      return vec4(ndc * clipW, clipW);
+    }
     void main() {
-      vec4 worldPosition = vec4(aPosition, 1.0);
+      vec4 worldPosition = vec4(aPosition.xyz, 1.0);
       vec4 viewPosition = worldPosition;
       vec3 worldNormal = aNormal;
       vec3 cameraSpaceNormal = aNormal;
       vec3 viewDirection = vec3(0.0, 0.0, 1.0);
-      if (uUseTransforms) {
-        worldPosition = uWorld * vec4(aPosition, 1.0);
+      if (uPretransformedPosition) {
+        gl_Position = d3dPretransformedPositionToClip(aPosition);
+        vFogDepth = 0.0;
+        vFogRangeDistance = 0.0;
+      } else if (uUseTransforms) {
+        worldPosition = uWorld * vec4(aPosition.xyz, 1.0);
         mat3 worldNormalMatrix = transpose(inverse(mat3(uWorld)));
         worldNormal = worldNormalMatrix * aNormal;
         viewPosition = uView * worldPosition;
@@ -7266,6 +7302,8 @@ function ensureD3D8DrawProgram() {
     texCoord1: gl.getAttribLocation(program, "aTexCoord1"),
     scale: gl.getUniformLocation(program, "uScale"),
     useTransforms: gl.getUniformLocation(program, "uUseTransforms"),
+    pretransformedPosition: gl.getUniformLocation(program, "uPretransformedPosition"),
+    d3dViewport: gl.getUniformLocation(program, "uD3DViewport"),
     world: gl.getUniformLocation(program, "uWorld"),
     view: gl.getUniformLocation(program, "uView"),
     projection: gl.getUniformLocation(program, "uProjection"),
@@ -7548,6 +7586,35 @@ function projectD3D8VertexToNdc(vertexBytes, vertexByteOffset, vertexStride, tra
     glClip[1] / glClip[3],
     glClip[2] / glClip[3],
   ];
+}
+
+function projectD3D8PretransformedVertex(vertexBytes, vertexByteOffset, vertexStride, viewport, vertexIndex) {
+  if (!(vertexBytes instanceof Uint8Array) || vertexStride < 16 || vertexIndex === null) {
+    return null;
+  }
+  const base = vertexByteOffset + vertexIndex * vertexStride;
+  if (base < 0 || base + 16 > vertexBytes.byteLength) {
+    return null;
+  }
+  const d3dViewport = viewport?.d3d ?? {};
+  const viewportX = finiteNumber(d3dViewport.x, 0);
+  const viewportY = finiteNumber(d3dViewport.y, 0);
+  const viewportWidth = Math.max(1, finiteNumber(d3dViewport.width, 1));
+  const viewportHeight = Math.max(1, finiteNumber(d3dViewport.height, 1));
+  const view = new DataView(vertexBytes.buffer, vertexBytes.byteOffset, vertexBytes.byteLength);
+  const x = readD3D8Float32(view, base);
+  const y = readD3D8Float32(view, base + 4);
+  const z = readD3D8Float32(view, base + 8);
+  const rhw = readD3D8Float32(view, base + 12);
+  const clipW = Math.abs(rhw) > 0.000001 ? 1.0 / rhw : 1.0;
+  return {
+    ndc: [
+      ((x - viewportX) / viewportWidth) * 2.0 - 1.0,
+      1.0 - ((y - viewportY) / viewportHeight) * 2.0,
+      z * 2.0 - 1.0,
+    ],
+    clipW,
+  };
 }
 
 function d3d8ProjectedTriangleArea(a, b, c) {
@@ -8296,7 +8363,8 @@ function inspectD3D8DrawVertices(resource, byteOffset, vertexStride, vertexCount
     max: [0, 0, 0, 0],
     average: [0, 0, 0, 0],
   };
-  const projected = transforms ? {
+  const pretransformed = vertexLayout?.pretransformed === true;
+  const projected = (transforms || pretransformed) ? {
     sampleCount: 0,
     visible: 0,
     behindOrInvalidW: 0,
@@ -8322,6 +8390,9 @@ function inspectD3D8DrawVertices(resource, byteOffset, vertexStride, vertexCount
       readD3D8Float32(view, base + 4),
       readD3D8Float32(view, base + 8),
     ];
+    const positionRhw = pretransformed && base + 16 <= bytes.byteLength
+      ? readD3D8Float32(view, base + 12)
+      : null;
     for (let axis = 0; axis < 3; ++axis) {
       bounds.min[axis] = Math.min(bounds.min[axis], position[axis]);
       bounds.max[axis] = Math.max(bounds.max[axis], position[axis]);
@@ -8344,17 +8415,25 @@ function inspectD3D8DrawVertices(resource, byteOffset, vertexStride, vertexCount
     }
 
     if (projected) {
-      const worldPosition = multiplyD3D8ColumnMatrixVector(transforms.world, [...position, 1]);
-      const viewPosition = multiplyD3D8ColumnMatrixVector(transforms.view, worldPosition);
-      const d3dClip = multiplyD3D8ColumnMatrixVector(transforms.projection, viewPosition);
-      const glClip = [d3dClip[0], d3dClip[1], d3dClip[2] * 2.0 - d3dClip[3], d3dClip[3]];
+      let ndcInfo = null;
+      if (pretransformed) {
+        ndcInfo = projectD3D8PretransformedVertex(bytes, byteOffset, vertexStride, viewport, vertexIndex);
+      } else if (transforms) {
+        const worldPosition = multiplyD3D8ColumnMatrixVector(transforms.world, [...position, 1]);
+        const viewPosition = multiplyD3D8ColumnMatrixVector(transforms.view, worldPosition);
+        const d3dClip = multiplyD3D8ColumnMatrixVector(transforms.projection, viewPosition);
+        const glClip = [d3dClip[0], d3dClip[1], d3dClip[2] * 2.0 - d3dClip[3], d3dClip[3]];
+        ndcInfo = Math.abs(glClip[3]) <= 0.000001
+          ? null
+          : { ndc: [glClip[0] / glClip[3], glClip[1] / glClip[3], glClip[2] / glClip[3]], clipW: glClip[3] };
+      }
       projected.sampleCount += 1;
-      projected.clipWMin = Math.min(projected.clipWMin, glClip[3]);
-      projected.clipWMax = Math.max(projected.clipWMax, glClip[3]);
-      if (Math.abs(glClip[3]) <= 0.000001) {
+      if (!ndcInfo) {
         projected.behindOrInvalidW += 1;
       } else {
-        const ndc = [glClip[0] / glClip[3], glClip[1] / glClip[3], glClip[2] / glClip[3]];
+        const { ndc, clipW } = ndcInfo;
+        projected.clipWMin = Math.min(projected.clipWMin, clipW);
+        projected.clipWMax = Math.max(projected.clipWMax, clipW);
         for (let axis = 0; axis < 3; ++axis) {
           projected.ndcMin[axis] = Math.min(projected.ndcMin[axis], ndc[axis]);
           projected.ndcMax[axis] = Math.max(projected.ndcMax[axis], ndc[axis]);
@@ -8390,6 +8469,7 @@ function inspectD3D8DrawVertices(resource, byteOffset, vertexStride, vertexCount
       samples.push({
         index: vertexIndex,
         position,
+        rhw: positionRhw,
         diffuse: rgba,
         texCoords,
       });
@@ -8422,19 +8502,29 @@ function inspectD3D8DrawVertices(resource, byteOffset, vertexStride, vertexCount
 }
 
 function inspectD3D8IndexedTriangles(vertexResource, vertexByteOffset, vertexStride,
-    indexResource, indexByteOffset, indexCount, indexSize, primitiveType, transforms) {
+    indexResource, indexByteOffset, indexCount, indexSize, primitiveType, transforms,
+    vertexLayout = null, viewport = null) {
   const vertexBytes = vertexResource?.bytes;
   const indexBytes = indexResource?.bytes;
   if (!(vertexBytes instanceof Uint8Array) ||
       !(indexBytes instanceof Uint8Array) ||
       vertexStride < 12 ||
-      !transforms ||
+      (!transforms && vertexLayout?.pretransformed !== true) ||
       indexCount < 3 ||
       (indexSize !== 2 && indexSize !== 4)) {
     return null;
   }
 
   const readProjected = (vertexIndex) => {
+    if (vertexLayout?.pretransformed === true) {
+      return projectD3D8PretransformedVertex(
+        vertexBytes,
+        vertexByteOffset,
+        vertexStride,
+        viewport,
+        vertexIndex,
+      )?.ndc ?? null;
+    }
     return projectD3D8VertexToNdc(vertexBytes, vertexByteOffset, vertexStride, transforms, vertexIndex);
   };
   const areaFor = (ia, ib, ic) => {
@@ -9304,8 +9394,9 @@ function configureD3D8VertexAttribPointers({
   texture1Coordinates,
 }) {
   bindD3D8ArrayBuffer(vertexResource.buffer);
+  const positionComponents = vertexLayout?.pretransformed ? 4 : 3;
   gl.enableVertexAttribArray(bridgeProgram.position);
-  gl.vertexAttribPointer(bridgeProgram.position, 3, gl.FLOAT, false, vertexStride, vertexByteOffset);
+  gl.vertexAttribPointer(bridgeProgram.position, positionComponents, gl.FLOAT, false, vertexStride, vertexByteOffset);
   if (bridgeProgram.normal >= 0 && vertexLayout.normalOffset !== null) {
     gl.enableVertexAttribArray(bridgeProgram.normal);
     gl.vertexAttribPointer(bridgeProgram.normal, 3, gl.FLOAT, false,
@@ -9452,7 +9543,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   const texture1Transform = normalizeD3DMatrix(payload.transforms?.texture1);
   const transformMask = Number(payload.transformMask ?? 0) >>> 0;
   const useTransforms = transformMask === 7 && world !== null && view !== null && projection !== null;
-  const usesIdentityClipSpace =
+  const matrixTransformsAreIdentity =
     useTransforms &&
     isIdentityD3DMatrix(world) &&
     isIdentityD3DMatrix(view) &&
@@ -9582,6 +9673,10 @@ function paintD3D8DrawIndexed(payload = {}) {
       implicitAlphaCutoutThreshold,
     };
   }
+  const vertexPretransformed = vertexLayout?.pretransformed === true;
+  const usePositionTransforms = useTransforms && !vertexPretransformed;
+  const includeSceneDrawHistory = usePositionTransforms || vertexPretransformed;
+  const usesIdentityClipSpace = usePositionTransforms && matrixTransformsAreIdentity;
   recordSortedDrawPhase?.("sortedDrawDerivedMs");
   warnD3D8CombinerDiagnostics(renderState, appliedTexture0Combiner, appliedStage1Combiner, drawSequence);
   if (d3d8DiagLevel === "full" && texture0Resource) {
@@ -9678,7 +9773,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       vertexStride,
       vertexCount,
       vertexLayout,
-      useTransforms ? { world, view, projection } : null,
+      usePositionTransforms ? { world, view, projection } : null,
       appliedViewport,
       indexResource,
       indexByteOffset,
@@ -9695,7 +9790,9 @@ function paintD3D8DrawIndexed(payload = {}) {
         indexCount,
         indexSize,
         payload.primitiveType,
-        useTransforms ? { world, view, projection } : null,
+        usePositionTransforms ? { world, view, projection } : null,
+        vertexLayout,
+        appliedViewport,
       );
     }
   }
@@ -9711,7 +9808,9 @@ function paintD3D8DrawIndexed(payload = {}) {
       vertexStride >= 12 && indexCount > 0 && (indexSize === 2 || indexSize === 4)) {
     const bridgeProgram = ensureD3D8DrawProgram();
     bindD3D8Program(bridgeProgram.program);
-    const renderUniformKey = `${derivedStateHash},${primitiveType}`;
+    const renderUniformKey = `${derivedStateHash},${primitiveType},`
+      + `${usePositionTransforms ? 1 : 0},${vertexPretransformed ? 1 : 0},`
+      + `${vertexPretransformed ? d3d8ViewportUniformKey(appliedViewport) : ""}`;
     const textureUniformKey = d3d8TextureLayoutUniformKey({
       renderState,
       canSampleTexture0,
@@ -9761,7 +9860,7 @@ function paintD3D8DrawIndexed(payload = {}) {
           vertexResource,
           vertexByteOffset,
           vertexStride,
-          transforms: useTransforms ? { world, view, projection } : null,
+          transforms: usePositionTransforms ? { world, view, projection } : null,
         },
       );
       shadeModeDraw = createD3D8ShadeModeDrawInfo(
@@ -9779,6 +9878,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     const vertexAttribKey = `${vertexBufferId},${vertexByteOffset},${vertexStride},`
       + `${bridgeProgram.position},${bridgeProgram.normal},${bridgeProgram.diffuse},`
       + `${bridgeProgram.specular},${bridgeProgram.texCoord0},${bridgeProgram.texCoord1},`
+      + `${vertexLayout.positionComponents ?? 3},${vertexLayout.pretransformed ? 1 : 0},`
       + `${vertexLayout.normalOffset ?? -1},${vertexLayout.diffuseOffset ?? -1},`
       + `${vertexLayout.specularOffset ?? -1},`
       + `${canSampleTexture0 ? 1 : 0},${texture0Coordinates.usesVertexTexCoord ? 1 : 0},`
@@ -9910,10 +10010,10 @@ function paintD3D8DrawIndexed(payload = {}) {
       appliedRenderState.clipPlanes = d3d8ClipPlaneInfo(renderState, clipPlanes);
       appliedRenderState.lighting = {
         ...appliedRenderState.lighting,
-        shaderEnabled: appliedRenderState.lighting.enabled && fixedFunctionLights.length > 0,
+        shaderEnabled: !vertexPretransformed && appliedRenderState.lighting.enabled && fixedFunctionLights.length > 0,
         normalTransform: {
-          source: useTransforms ? "inverseTransposeWorld" : "attribute",
-          inverseTransposeWorld: Boolean(useTransforms),
+          source: usePositionTransforms ? "inverseTransposeWorld" : "attribute",
+          inverseTransposeWorld: Boolean(usePositionTransforms),
           normalizeNormals: renderState.normalizeNormals !== 0,
         },
         viewDirection: {
@@ -9936,18 +10036,39 @@ function paintD3D8DrawIndexed(payload = {}) {
         firstDirectionalLight,
       };
       recordRenderUniformDetail?.("sortedDrawRenderBuildMs");
-      const baseUniformKey = d3d8BaseUniformKey(useTransforms, appliedRenderState, clipPlanes, shadeModeDraw);
+      const baseUniformKey = d3d8BaseUniformKey(
+        usePositionTransforms,
+        vertexPretransformed,
+        appliedViewport,
+        appliedRenderState,
+        clipPlanes,
+        shadeModeDraw,
+      );
       if (baseUniformKey === d3d8LastBaseUniformKey) {
         d3d8PerfStats.drawBaseUniformCacheHits += 1;
       } else {
         d3d8PerfStats.drawBaseUniformCacheMisses += 1;
         gl.uniform1f(bridgeProgram.scale, 1.0);
-        gl.uniform1i(bridgeProgram.useTransforms, useTransforms ? 1 : 0);
+        gl.uniform1i(bridgeProgram.useTransforms, usePositionTransforms ? 1 : 0);
+        if (bridgeProgram.pretransformedPosition) {
+          gl.uniform1i(bridgeProgram.pretransformedPosition, vertexPretransformed ? 1 : 0);
+        }
+        if (bridgeProgram.d3dViewport && vertexPretransformed) {
+          const viewport = appliedViewport?.d3d ?? { x: 0, y: 0, width: 1, height: 1 };
+          gl.uniform4f(
+            bridgeProgram.d3dViewport,
+            finiteNumber(viewport.x, 0),
+            finiteNumber(viewport.y, 0),
+            Math.max(1, finiteNumber(viewport.width, 1)),
+            Math.max(1, finiteNumber(viewport.height, 1)),
+          );
+        }
         if (bridgeProgram.depthBias) {
           gl.uniform1f(bridgeProgram.depthBias, appliedRenderState.depth.bias.ndc);
         }
         if (bridgeProgram.clipPlaneMask) {
-          gl.uniform1i(bridgeProgram.clipPlaneMask, appliedRenderState.clipPlanes.mask);
+          gl.uniform1i(bridgeProgram.clipPlaneMask,
+            vertexPretransformed ? 0 : appliedRenderState.clipPlanes.mask);
         }
         if (bridgeProgram.clipPlanes) {
           gl.uniform4fv(bridgeProgram.clipPlanes, flattenD3D8ClipPlanes(clipPlanes));
@@ -10157,7 +10278,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       appliedRenderState = harnessState.graphics.lastD3D8AppliedRenderState;
     }
     recordSortedDrawSubphase?.("sortedDrawRenderUniformMs");
-    if (useTransforms) {
+    if (usePositionTransforms) {
       // Direct3D stores row-vector matrices row-major; WebGL interprets this
       // memory as column-major, giving the transpose needed for GLSL
       // column-vector multiplication. The broad uniform cache excludes object
@@ -10423,7 +10544,8 @@ function paintD3D8DrawIndexed(payload = {}) {
     indexSize,
     usedPersistentBuffers: usePersistentBuffers,
     transformMask,
-    usedTransforms: Boolean(useTransforms),
+    usedTransforms: Boolean(usePositionTransforms),
+    pretransformedPosition: Boolean(vertexPretransformed),
     usedIdentityClipSpace: Boolean(usesIdentityClipSpace),
     renderState,
     clipPlanes,
@@ -10537,6 +10659,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       vertexCount: probe.vertexCount,
       vertexStride: probe.vertexStride,
       vertexShaderFvf: probe.vertexShaderFvf,
+      pretransformedPosition: probe.pretransformedPosition,
       indexBufferId: probe.indexBufferId,
       indexCount: probe.indexCount,
       renderState: {
@@ -10624,7 +10747,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       : []),
     drawHistoryEntry,
   ].slice(-64);
-  const sceneDrawHistory = useTransforms
+  const sceneDrawHistory = includeSceneDrawHistory
     ? [
         ...(Array.isArray(harnessState.graphics.d3d8SceneDrawHistory)
           ? harnessState.graphics.d3d8SceneDrawHistory

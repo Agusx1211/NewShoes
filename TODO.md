@@ -245,9 +245,11 @@ when the projector cull volume fully contains a receiver mesh; Mac M4 repeats
 stayed in the same wall-time band, so the remaining work is still broad draw
 submission and the noisy projected-shadow mesh flush before returning to the
 remaining byte-tail producers (exact dynamic shadow bytes and
-`W3DWaterTracks.flush.batchUnlock.before`). The user-reported shadow
-flicker/breakage symptom is fixed in the live skirmish path, while broader
-shadow fidelity remains in the queued phased plan.
+`W3DWaterTracks.flush.batchUnlock.before`). The user-reported live-skirmish
+shadow absence/flicker symptoms are fixed in the multi-frame Mac release path:
+stencil volume passes and the `XYZRHW` shadow composite are now captured as
+visible active-gameplay draws. Broader shadow fidelity remains in the queued
+phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
@@ -258,7 +260,7 @@ runtime JS/wasm by file metadata and the Mac harness server no-stores live
 harness/runtime assets, so a reload cannot silently keep an older frame-344
 build while preserving browser caching for the 1.3 GB archive payloads.
 
-QUEUED other: shadows phased plan (blob→stencil→shaders; re-scout needed), remaining control-bar player-list/purchase-science behavior after command-button, radar, and Generals Experience open/close proofs, compressed/DXT volume textures.
+QUEUED other: shadows phased plan (blob→stencil→shaders fidelity polish), remaining control-bar player-list/purchase-science behavior after command-button, radar, and Generals Experience open/close proofs, compressed/DXT volume textures.
 
 Dev-box render-verify: symlink worktree `dist/` → main's built `dist/` renders JS-only fixes without the Mac (~4min boot).
 
@@ -307,17 +309,6 @@ Reported by the project owner on the Mac GPU build. Reproduce in the harness and
 verify each fix with a real, **multi-frame** screenshot / state check where the
 symptom is temporal — NOT a single still.
 
-- [ ] **Shadows mostly do not render (REOPEN)** — in real play, unit/structure
-      shadows are absent most of the time (not merely flickering). The DONE.md
-      "Fix live skirmish shadow flicker/breakage" `[x]` (D3D8 stencil ref/mask
-      width fix) is **premature**: it was verified only by a single one-frame
-      screenshot showing the invalid dark blob gone, which cannot verify a
-      temporal flicker/absence bug. Re-scout the full shadow path (volumetric
-      first/second stencil pass, projected-shadow receiver, `m_stencilRef`/mask
-      handling, and whether the WebGL2 default framebuffer actually has the
-      stencil/depth bits the passes assume) and verify over many frames of
-      active gameplay, not one still. Ties into the queued "shadows phased plan
-      (blob→stencil→shaders)".
 - [ ] **Broaden right-click context-target order coverage beyond docking** —
       right-click ground move and GLA worker right-click supply docking now work
       in the browser alternate-mouse path (see DONE). Keep extending the

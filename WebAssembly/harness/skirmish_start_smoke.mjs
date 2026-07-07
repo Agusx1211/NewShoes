@@ -57,10 +57,19 @@ const postActiveFrameChunk = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_CHUNK"
 const expectPostActiveSurvival = process.env.SKIRMISH_START_EXPECT_SURVIVE === "1";
 const requestedSkirmishMap = String(process.env.SKIRMISH_START_MAP ?? "").trim();
 const captureD3D8History = process.env.SKIRMISH_START_CAPTURE_D3D8_HISTORY === "1";
+const distDir = parseDistDir();
 
 function parsePositiveInt(name, fallback) {
   const value = Number.parseInt(process.env[name] ?? "", 10);
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function parseDistDir() {
+  const value = process.env.SKIRMISH_START_DIST ?? "dist";
+  if (!/^dist(?:[-_][A-Za-z0-9_-]+)?$/.test(value)) {
+    throw new Error(`Invalid SKIRMISH_START_DIST: ${value}`);
+  }
+  return value;
 }
 
 function expect(condition, message, payload = null) {
@@ -419,7 +428,9 @@ async function main() {
       }
     });
 
-    await page.goto(new URL("harness/index.html", server.url).href, { waitUntil: "networkidle" });
+    const harnessUrl = new URL("harness/index.html", server.url);
+    harnessUrl.searchParams.set("dist", distDir);
+    await page.goto(harnessUrl.href, { waitUntil: "networkidle" });
     await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
     await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
 
@@ -631,6 +642,7 @@ async function main() {
     const result = {
       ok: true,
       source: "skirmish-start-smoke",
+      distDir,
       archiveCount: mount.archiveSet.archiveCount,
       requestedMap: requestedSkirmishMap || null,
       selectedMap: mapCache?.probe?.skirmishGameInfo?.map
