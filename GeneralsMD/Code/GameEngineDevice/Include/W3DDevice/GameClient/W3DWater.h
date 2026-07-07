@@ -130,6 +130,9 @@ public:
 
 protected:
 	DX8IndexBufferClass			*m_indexBuffer;	///<indices defining quad
+	DX8IndexBufferClass			*m_flatWaterIndexBuffer;	///<cached indices for flat water grids.
+	Int							m_flatWaterIndexUCount;
+	Int							m_flatWaterIndexVCount;
 	SceneClass							*m_parentScene;	///<scene to be reflected
 	ShaderClass m_shaderClass; ///<shader or rendering state for heightmap
 	VertexMaterialClass	  		*m_vertexMaterialClass;	///<vertex lighting material
@@ -241,6 +244,7 @@ protected:
 
 	Setting m_settings[ TIME_OF_DAY_COUNT ];	///< settings for each time of day
 	void drawRiverWater(PolygonTrigger *pTrig);
+	DX8IndexBufferClass *getFlatWaterIndexBuffer(Int uCount, Int vCount);
 	void drawTrapezoidWater(Vector3 points[4]);
 	void loadSetting ( Setting *skySetting, TimeOfDay timeOfDay );	///<init sky/water settings from GDF
 	void renderSky(void);	///<draw the sky layer (clouds, stars, etc.)

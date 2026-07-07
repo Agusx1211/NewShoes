@@ -208,10 +208,13 @@ shadow rendering now replays the first stencil-pass dynamic VB/IB ranges during
 the decrement pass when no dynamic-ring discard has invalidated them; the Mac
 M4/Metal profile `runtime-frame-profile-dynamic-shadow-replay-mac.json`
 measured 79 buffer updates, 186.6 KB uploaded, 0.035 ms `bufferSubDataMs`, and
-volumetric shadow VB/IB uploads down to 29+29 updates / 23.3 KB + 11.7 KB. The
+volumetric shadow VB/IB uploads down to 29+29 updates / 23.3 KB + 11.7 KB.
+Flat-water grid indices now use a cached static DX8 index buffer instead of a
+per-frame dynamic index upload; `runtime-frame-profile-flat-water-static-ib-mac.json`
+measured 78 buffer updates, 170.7 KB uploaded, 0.045 ms `bufferSubDataMs`, and
+`W3DWater.render.renderWater.before` down to one vertex-only 65.1 KB update. The
 next upload byte-reduction pass should start with the remaining leading
-producers (`W3DWater.render.renderWater.before`,
-`HeightMap.render.shoreLines.before`, and
+producers (`HeightMap.render.shoreLines.before` and
 `W3DWaterTracks.flush.batchUnlock.before`) before broader JS-side
 `NOOVERWRITE`, orphaning, or checksum changes. The user-reported shadow
 flicker/breakage symptom is fixed in the live skirmish path, while broader
@@ -2613,9 +2616,13 @@ and then start with the PROFILE, not with any individual fix.
       dynamic shadow replay removed the redundant second-pass shadow geometry
       uploads: `runtime-frame-profile-dynamic-shadow-replay-mac.json` measured
       79 buffer updates, 186.6 KB/frame uploaded, and dynamic shadow VB/IB
-      unlocks down to 29+29 updates / 23.3 KB + 11.7 KB. Next concrete
-      frontier: remaining water surface bytes, shoreline index ranges, and
-      water-track batch unlock.
+      unlocks down to 29+29 updates / 23.3 KB + 11.7 KB. A follow-up cached
+      flat-water index-buffer pass removed the per-frame flat-water dynamic
+      index upload: `runtime-frame-profile-flat-water-static-ib-mac.json`
+      measured 78 buffer updates, 170.7 KB/frame uploaded, and
+      `W3DWater.render.renderWater.before` down to one vertex-only 65.1 KB
+      update. Next concrete frontier: shoreline index ranges and water-track
+      batch unlock.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing

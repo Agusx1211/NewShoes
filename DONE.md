@@ -71,6 +71,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       186.6 KB, buffer updates dropped from 137 to 79, and dynamic shadow
       VB/IB uploads dropped from 58+58 updates / 46.6 KB + 23.3 KB to 29+29
       updates / 23.3 KB + 11.7 KB.
+- [x] Cache flat-water grid indices in a persistent DX8 index buffer. The flat
+      water grid vertices still animate every frame, but the triangle index
+      pattern only depends on the generated `uCount`/`vCount`; `drawTrapezoidWater()`
+      now lazily rebuilds a `DX8IndexBufferClass` only when those dimensions
+      change and binds it with the existing dynamic vertex buffer. Verified
+      with `git diff --check`, `npm --prefix WebAssembly run build:port`, `npm
+      --prefix WebAssembly run build:port:release`, a local producer profile,
+      and a Mac M4/Metal producer profile copied to
+      `WebAssembly/artifacts/perf/runtime-frame-profile-flat-water-static-ib-mac.json`.
+      The Mac harness screenshot
+      `WebAssembly/artifacts/screenshots/runtime-frame-profile-flat-water-static-ib-mac.png`
+      showed the shell-map water rendering normally. On Mac Metal total
+      one-frame upload traffic dropped from 186.6 KB to 170.7 KB, buffer
+      updates dropped from 79 to 78, and `W3DWater.render.renderWater.before`
+      dropped from 81.9 KB across one vertex + one index update to one
+      vertex-only 65.1 KB update.
 
 ## User-reported play bugs (2026-07-06 session)
 

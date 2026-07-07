@@ -344,6 +344,9 @@ WaterRenderObjClass::WaterRenderObjClass(void)
 	m_dx=0;
 	m_dy=0;
 	m_indexBuffer=NULL;
+	m_flatWaterIndexBuffer=NULL;
+	m_flatWaterIndexUCount=0;
+	m_flatWaterIndexVCount=0;
 	m_waterTrackSystem = NULL;
 	m_doWaterGrid = FALSE;
 	m_meshVertexMaterialClass=NULL;
@@ -820,6 +823,9 @@ void WaterRenderObjClass::ReleaseResources(void)
 {
 
 	REF_PTR_RELEASE(m_indexBuffer);
+	REF_PTR_RELEASE(m_flatWaterIndexBuffer);
+	m_flatWaterIndexUCount=0;
+	m_flatWaterIndexVCount=0;
 
 	REF_PTR_RELEASE(m_pReflectionTexture);
 	SAFE_RELEASE(m_vertexBufferD3D);
@@ -3098,6 +3104,55 @@ void WaterRenderObjClass::setupFlatWaterShader(void)
 	}
 }
 
+DX8IndexBufferClass *WaterRenderObjClass::getFlatWaterIndexBuffer(Int uCount, Int vCount)
+{
+	if (m_flatWaterIndexBuffer &&
+		m_flatWaterIndexUCount == uCount &&
+		m_flatWaterIndexVCount == vCount)
+	{
+		return m_flatWaterIndexBuffer;
+	}
+
+	REF_PTR_RELEASE(m_flatWaterIndexBuffer);
+	m_flatWaterIndexUCount=0;
+	m_flatWaterIndexVCount=0;
+
+	const Int rectangleCount=(uCount-1)*(vCount-1);
+	const Int indexCount=rectangleCount*6;
+	if (indexCount <= 0)
+		return NULL;
+
+	m_flatWaterIndexBuffer=NEW_REF(DX8IndexBufferClass,((UnsignedShort)indexCount));
+	if (!m_flatWaterIndexBuffer)
+		return NULL;
+
+	{
+		DX8IndexBufferClass::WriteLockClass lockib(m_flatWaterIndexBuffer);
+		UnsignedShort *curIb = lockib.Get_Index_Array();
+		for (Int j=0; j<vCount-1; j++)
+		{
+			for (Int i=0; i<uCount-1; i++)
+			{
+				//triangle 1
+				curIb[0] = (j)*uCount + i;
+				curIb[1] = (j+1)*uCount + i+1;
+				curIb[2] = (j+1)*uCount + i;
+
+				//triangle 2
+				curIb[3] = (j)*uCount + i;
+				curIb[4] = (j)*uCount + i+1;
+				curIb[5] = (j+1)*uCount + i+1;
+
+				curIb += 6;	//skip the 6 indices we just added.
+			}
+		}
+	}
+
+	m_flatWaterIndexUCount=uCount;
+	m_flatWaterIndexVCount=vCount;
+	return m_flatWaterIndexBuffer;
+}
+
 //-------------------------------------------------------------------------------------------------
 //Draw a 4 sided flat water area.
 //-------------------------------------------------------------------------------------------------
@@ -3129,34 +3184,9 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 
 	Int i, j;
 	const Int vertexCount = uCount * vCount;
-	const Int indexCount = rectangleCount * 6;
-	//allocate 2 triangles per side with 3 indices per triangle
-	DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8,indexCount);
-	{
-		DynamicIBAccessClass::WriteLockClass lockib(&ib_access);
- 		UnsignedShort *curIb = lockib.Get_Index_Array();
-		try {
-		for (j=0; j<vCount-1; j++)
-		{	for (i=0; i<uCount-1; i++)
-			{
-				//triangle 1
-				curIb[0] = (j)*uCount + i;
-				curIb[1] = (j+1)*uCount + i+1;
-				curIb[2] = (j+1)*uCount + i;
-
-				//triangle 2
-				curIb[3] = (j)*uCount + i;
-				curIb[4] = (j)*uCount + i+1;
-				curIb[5] = (j+1)*uCount + i+1;
-
-				curIb += 6;	//skip the 6 indices we just added.
-			}
-		}
-		IndexBufferExceptionFunc();
-		} catch(...) {
-			IndexBufferExceptionFunc();
-		}
-	}
+	DX8IndexBufferClass *flatWaterIndexBuffer=getFlatWaterIndexBuffer(uCount,vCount);
+	if (!flatWaterIndexBuffer)
+		return;
 
 	Real	waterFactor=150;
 	Real shadeR=TheWaterTransparency->m_standingWaterColor.red;
@@ -3332,7 +3362,7 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 	Matrix3D tm(1);
 
 	DX8Wrapper::Set_Transform(D3DTS_WORLD,tm);	//position the water surface
-	DX8Wrapper::Set_Index_Buffer(ib_access,0);
+	DX8Wrapper::Set_Index_Buffer(flatWaterIndexBuffer,0);
 	DX8Wrapper::Set_Vertex_Buffer(vb_access);
 
 	setupFlatWaterShader();// lorenzen sez use the alpha shader
