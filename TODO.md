@@ -543,13 +543,6 @@ screenshots on the release build.
       base+noise multi-texture blend as a WebGL2 shader in the bridge (the
       fixed-function fallback drops the noise/lightmap pass). Verify vs original
       terrain screenshots.
-- [ ] **Arbitrary gamma ramps need a true LUT post-process** — the browser now
-      honors the original WW3D `DX8Wrapper::Set_Gamma` curve by estimating
-      gamma/brightness/contrast from the submitted `D3DGAMMARAMP` and applying
-      an SVG presentation filter. If a future original path submits a custom
-      non-gamma 256-entry ramp, replace/augment this with a WebGL post-process
-      LUT that samples the full ramp per channel. Verify with a synthetic
-      non-linear/non-monotonic ramp and browser screenshot pixels.
 - [ ] **Cloud shadows over terrain missing (static map)** — the original blends
       a scrolling `cloudmap.tga` as an extra terrain texture stage
       (`TerrainTex.cpp:909` `CloudMapTerrainTextureClass`), producing moving

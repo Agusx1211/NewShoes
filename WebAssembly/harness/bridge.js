@@ -1144,25 +1144,31 @@ function ensureD3D8GammaFilterNodes() {
 }
 
 function formatD3D8GammaFilterNumber(value) {
-  return String(Math.round(Number(value) * 1000000) / 1000000);
+  const number = Number(value);
+  return String(Math.round((Number.isFinite(number) ? number : 0) * 1000000) / 1000000);
 }
 
-function applyD3D8GammaFunction(node, channel) {
-  node.setAttribute("type", "gamma");
-  node.setAttribute("amplitude", formatD3D8GammaFilterNumber(channel.amplitude));
-  node.setAttribute("exponent", formatD3D8GammaFilterNumber(channel.exponent));
-  node.setAttribute("offset", formatD3D8GammaFilterNumber(channel.offset));
+function d3d8GammaRampTableValues(ramp) {
+  return ramp.map((value) => formatD3D8GammaFilterNumber((value ?? 0) / 65535)).join(" ");
 }
 
-function applyD3D8GammaFilter(channels, enabled) {
+function applyD3D8GammaTableFunction(node, ramp) {
+  node.setAttribute("type", "table");
+  node.removeAttribute("amplitude");
+  node.removeAttribute("exponent");
+  node.removeAttribute("offset");
+  node.setAttribute("tableValues", d3d8GammaRampTableValues(ramp));
+}
+
+function applyD3D8GammaFilter(ramps, enabled) {
   if (!enabled) {
     canvas.style.filter = "";
     return "";
   }
   const nodes = ensureD3D8GammaFilterNodes();
-  applyD3D8GammaFunction(nodes.red, channels.red);
-  applyD3D8GammaFunction(nodes.green, channels.green);
-  applyD3D8GammaFunction(nodes.blue, channels.blue);
+  applyD3D8GammaTableFunction(nodes.red, ramps.red);
+  applyD3D8GammaTableFunction(nodes.green, ramps.green);
+  applyD3D8GammaTableFunction(nodes.blue, ramps.blue);
   const cssFilter = `url(#${D3D8_GAMMA_FILTER_ID})`;
   canvas.style.filter = cssFilter;
   return cssFilter;
@@ -1180,11 +1186,13 @@ function setD3D8GammaRamp(payload = {}) {
   const applied = !d3d8GammaChannelIsIdentity(channels.red)
     || !d3d8GammaChannelIsIdentity(channels.green)
     || !d3d8GammaChannelIsIdentity(channels.blue);
-  const cssFilter = applyD3D8GammaFilter(channels, applied);
+  const cssFilter = applyD3D8GammaFilter({ red, green, blue }, applied);
   const summary = {
     source: "d3d8_gamma_ramp_presentation",
     supported: true,
     applied,
+    filterMode: applied ? "table" : "identity",
+    lutEntries: 256,
     flags: Number(payload.flags ?? 0) >>> 0,
     cssFilter,
     channels,

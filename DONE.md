@@ -30,6 +30,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `initReturned=true`, 43 completed startup subsystems, and real menu
       screenshots.
 
+- [x] Honor arbitrary 256-entry D3D8 gamma ramps in the browser presentation
+      layer. The bridge now applies each submitted red/green/blue
+      `D3DGAMMARAMP` channel through SVG `feComponentTransfer type="table"`
+      with all 256 entries instead of reducing the ramp to an estimated
+      gamma/brightness/contrast curve. The existing WW3D gamma curve still
+      works, and future non-gamma ramps now retain per-channel LUT shape.
+      Verified with `node --check WebAssembly/harness/bridge.js` and a local
+      Playwright harness screenshot using a synthetic non-gamma ramp (red
+      identity, green inverted, blue threshold): `state.graphics.d3d8Gamma`
+      reported `filterMode="table"` and 256 table entries per channel, and the
+      viewport center changed from `srgb(64,128,192)` to `srgb(63,126,255)`.
+
 ## User-reported play bugs (2026-07-07 session)
 
 - [x] Fix skirmish loading-screen map and faction art. Browser skirmish now
