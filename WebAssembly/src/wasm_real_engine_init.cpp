@@ -39,6 +39,7 @@
 #include "Common/NameKeyGenerator.h"
 #include "Common/Player.h"
 #include "Common/PlayerList.h"
+#include "Common/PlayerTemplate.h"
 #include "Common/Radar.h"
 #include "Common/SubsystemInterface.h"
 #include "Common/GameLOD.h"
@@ -69,6 +70,7 @@
 #include "GameClient/WindowLayout.h"
 #include "GameNetwork/GameInfo.h"
 #include "wasm_browser_mouse.h"
+#include "GameLogic/Module/AIUpdate.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/PartitionManager.h"
 #include "GameLogic/ScriptEngine.h"
@@ -201,6 +203,13 @@ extern "C" Int cnc_port_logic_dispatch_last_attack_target_id(void);
 extern "C" Real cnc_port_logic_dispatch_last_attack_target_x(void);
 extern "C" Real cnc_port_logic_dispatch_last_attack_target_y(void);
 extern "C" Real cnc_port_logic_dispatch_last_attack_target_z(void);
+extern "C" Int cnc_port_logic_dispatch_dock_command_count(void);
+extern "C" Int cnc_port_logic_dispatch_last_dock_command_type(void);
+extern "C" Int cnc_port_logic_dispatch_last_dock_had_group(void);
+extern "C" Int cnc_port_logic_dispatch_last_dock_target_id(void);
+extern "C" Real cnc_port_logic_dispatch_last_dock_target_x(void);
+extern "C" Real cnc_port_logic_dispatch_last_dock_target_y(void);
+extern "C" Real cnc_port_logic_dispatch_last_dock_target_z(void);
 extern "C" Int cnc_port_logic_dispatch_build_command_count(void);
 extern "C" Int cnc_port_logic_dispatch_last_build_command_type(void);
 extern "C" Int cnc_port_logic_dispatch_last_build_had_group(void);
@@ -3479,6 +3488,91 @@ void append_map_metadata_json(std::string &json, const char *field_name, const M
 	json += "}";
 }
 
+const PlayerTemplate *find_player_template_by_name(const char *template_name, Int *out_index)
+{
+	if (out_index != NULL) {
+		*out_index = -1;
+	}
+	if (ThePlayerTemplateStore == NULL || template_name == NULL || template_name[0] == '\0') {
+		return NULL;
+	}
+	AsciiString requested(template_name);
+	const Int template_count = ThePlayerTemplateStore->getPlayerTemplateCount();
+	for (Int i = 0; i < template_count; ++i) {
+		const PlayerTemplate *player_template = ThePlayerTemplateStore->getNthPlayerTemplate(i);
+		if (player_template == NULL) {
+			continue;
+		}
+		if (player_template->getName().compareNoCase(requested.str()) == 0) {
+			if (out_index != NULL) {
+				*out_index = i;
+			}
+			return player_template;
+		}
+	}
+	return NULL;
+}
+
+void append_player_template_json(std::string &json, const char *field_name, Int template_index)
+{
+	json += ",\"";
+	json += field_name != NULL ? field_name : "playerTemplate";
+	json += "\":{";
+	json += "\"index\":" + std::to_string(static_cast<long long>(template_index));
+	const PlayerTemplate *player_template =
+		(ThePlayerTemplateStore != NULL && template_index >= 0)
+			? ThePlayerTemplateStore->getNthPlayerTemplate(template_index)
+			: NULL;
+	json += ",\"present\":";
+	json += player_template != NULL ? "true" : "false";
+	if (player_template != NULL) {
+		json += ",\"name\":\"" + json_escape(player_template->getName().str()) + "\"";
+		json += ",\"side\":\"" + json_escape(player_template->getSide().str()) + "\"";
+		json += ",\"baseSide\":\"" + json_escape(player_template->getBaseSide().str()) + "\"";
+		json += ",\"playable\":";
+		json += player_template->isPlayableSide() ? "true" : "false";
+		json += ",\"startingBuilding\":\"" + json_escape(player_template->getStartingBuilding().str()) + "\"";
+		json += ",\"startingUnits\":[";
+		for (Int i = 0; i < MAX_MP_STARTING_UNITS; ++i) {
+			if (i > 0) {
+				json += ",";
+			}
+			json += "\"" + json_escape(player_template->getStartingUnit(i).str()) + "\"";
+		}
+		json += "]";
+	}
+	json += "}";
+}
+
+void append_game_slot_json(std::string &json, const char *field_name, const GameInfo *game, Int slot_num)
+{
+	json += ",\"";
+	json += field_name != NULL ? field_name : "slot";
+	json += "\":{";
+	json += "\"slot\":" + std::to_string(static_cast<long long>(slot_num));
+	const GameSlot *slot = game != NULL ? game->getConstSlot(slot_num) : NULL;
+	json += ",\"present\":";
+	json += slot != NULL ? "true" : "false";
+	if (slot != NULL) {
+		json += ",\"state\":" + std::to_string(static_cast<long long>(slot->getState()));
+		json += ",\"accepted\":";
+		json += slot->isAccepted() ? "true" : "false";
+		json += ",\"hasMap\":";
+		json += slot->hasMap() ? "true" : "false";
+		json += ",\"human\":";
+		json += slot->isHuman() ? "true" : "false";
+		json += ",\"ai\":";
+		json += slot->isAI() ? "true" : "false";
+		json += ",\"occupied\":";
+		json += slot->isOccupied() ? "true" : "false";
+		json += ",\"color\":" + std::to_string(static_cast<long long>(slot->getColor()));
+		json += ",\"startPos\":" + std::to_string(static_cast<long long>(slot->getStartPos()));
+		json += ",\"teamNumber\":" + std::to_string(static_cast<long long>(slot->getTeamNumber()));
+		append_player_template_json(json, "playerTemplate", slot->getPlayerTemplate());
+	}
+	json += "}";
+}
+
 void append_game_info_json(std::string &json, const char *field_name, const GameInfo *game)
 {
 	json += ",\"";
@@ -3495,13 +3589,18 @@ void append_game_info_json(std::string &json, const char *field_name, const Game
 		json += ",\"gameInProgress\":";
 		json += game->isGameInProgress() ? "true" : "false";
 		json += ",\"gameId\":" + std::to_string(static_cast<long long>(game->getGameID()));
-		json += ",\"localSlot\":" + std::to_string(static_cast<long long>(game->getLocalSlotNum()));
+		const Int local_slot = game->isInGame() ? game->getLocalSlotNum() : -1;
+		json += ",\"localSlot\":" + std::to_string(static_cast<long long>(local_slot));
 		json += ",\"numPlayers\":" + std::to_string(static_cast<long long>(game->getNumPlayers()));
 		json += ",\"mapCRC\":" + std::to_string(static_cast<unsigned long long>(game->getMapCRC()));
 		json += ",\"mapSize\":" + std::to_string(static_cast<unsigned long long>(game->getMapSize()));
 		json += ",\"mapContentsMask\":" + std::to_string(static_cast<long long>(game->getMapContentsMask()));
 		json += ",\"seed\":" + std::to_string(static_cast<long long>(game->getSeed()));
 		append_map_metadata_json(json, "metadata", metadata);
+		append_game_slot_json(json, "slot0", game, 0);
+		if (local_slot >= 0 && local_slot != 0) {
+			append_game_slot_json(json, "localSlotInfo", game, local_slot);
+		}
 	}
 	json += "}";
 }
@@ -3815,6 +3914,8 @@ const char *game_message_type_name(Int message_type)
 			return "MSG_DO_FORCE_ATTACK_OBJECT";
 		case GameMessage::MSG_DO_FORCE_ATTACK_GROUND:
 			return "MSG_DO_FORCE_ATTACK_GROUND";
+		case GameMessage::MSG_DOCK:
+			return "MSG_DOCK";
 		case GameMessage::MSG_DO_MOVETO:
 			return "MSG_DO_MOVETO";
 		case GameMessage::MSG_DO_ATTACKMOVETO:
@@ -5586,6 +5687,29 @@ static void append_drawable_probe_entry_json(
 
 	json += ",\"structure\":";
 	json += is_structure ? "true" : "false";
+	json += ",\"kindOf\":{";
+	json += "\"selectable\":";
+	json += obj != NULL && obj->isKindOf(KINDOF_SELECTABLE) ? "true" : "false";
+	json += ",\"supplySource\":";
+	json += obj != NULL && obj->isKindOf(KINDOF_SUPPLY_SOURCE) ? "true" : "false";
+	json += ",\"alwaysSelectable\":";
+	json += obj != NULL && obj->isKindOf(KINDOF_ALWAYS_SELECTABLE) ? "true" : "false";
+	json += ",\"clickThrough\":";
+	json += obj != NULL && obj->isKindOf(KINDOF_CLICK_THROUGH) ? "true" : "false";
+	json += ",\"dozer\":";
+	json += obj != NULL && obj->isKindOf(KINDOF_DOZER) ? "true" : "false";
+	json += ",\"harvester\":";
+	json += obj != NULL && obj->isKindOf(KINDOF_HARVESTER) ? "true" : "false";
+	json += "}";
+	Int shroud_status = -1;
+	try {
+		shroud_status = obj != NULL && local_player != NULL
+			? static_cast<Int>(obj->getShroudedStatus(local_player->getPlayerIndex()))
+			: -1;
+	} catch (...) {
+		shroud_status = -1;
+	}
+	json += ",\"shroudStatus\":" + std::to_string(shroud_status);
 	json += ",\"hidden\":";
 	json += is_hidden ? "true" : "false";
 	json += ",\"effectivelyDead\":";
@@ -5924,6 +6048,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 	json += ",\"lastClickControllable\":" + std::to_string(cnc_port_command_xlat_last_click_controllable());
 	json += ",\"lastClickUseAlternateMouse\":" + std::to_string(cnc_port_command_xlat_last_click_use_alternate_mouse());
 	json += ",\"lastClickIssuedType\":" + std::to_string(cnc_port_command_xlat_last_click_issued_type());
+	json += ",\"lastClickIssuedTypeName\":\"";
+	json += game_message_type_name(cnc_port_command_xlat_last_click_issued_type());
+	json += "\"";
 	json += ",\"lastClickDrawId\":" + std::to_string(cnc_port_command_xlat_last_click_draw_id());
 	json += ",\"lastClickWorldPos\":{\"x\":" + std::to_string(cnc_port_command_xlat_last_click_x());
 	json += ",\"y\":" + std::to_string(cnc_port_command_xlat_last_click_y());
@@ -5964,6 +6091,16 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 	json += ",\"dispatchLastAttackTargetWorldPos\":{\"x\":" + std::to_string(cnc_port_logic_dispatch_last_attack_target_x());
 	json += ",\"y\":" + std::to_string(cnc_port_logic_dispatch_last_attack_target_y());
 	json += ",\"z\":" + std::to_string(cnc_port_logic_dispatch_last_attack_target_z()) + "}";
+	json += ",\"dispatchDockCommandCount\":" + std::to_string(cnc_port_logic_dispatch_dock_command_count());
+	json += ",\"dispatchLastDockCommandType\":" + std::to_string(cnc_port_logic_dispatch_last_dock_command_type());
+	json += ",\"dispatchLastDockCommandTypeName\":\"";
+	json += game_message_type_name(cnc_port_logic_dispatch_last_dock_command_type());
+	json += "\"";
+	json += ",\"dispatchLastDockHadGroup\":" + std::to_string(cnc_port_logic_dispatch_last_dock_had_group());
+	json += ",\"dispatchLastDockTargetId\":" + std::to_string(cnc_port_logic_dispatch_last_dock_target_id());
+	json += ",\"dispatchLastDockTargetWorldPos\":{\"x\":" + std::to_string(cnc_port_logic_dispatch_last_dock_target_x());
+	json += ",\"y\":" + std::to_string(cnc_port_logic_dispatch_last_dock_target_y());
+	json += ",\"z\":" + std::to_string(cnc_port_logic_dispatch_last_dock_target_z()) + "}";
 	json += ",\"dispatchBuildCommandCount\":" + std::to_string(cnc_port_logic_dispatch_build_command_count());
 	json += ",\"dispatchLastBuildCommandType\":" + std::to_string(cnc_port_logic_dispatch_last_build_command_type());
 	json += ",\"dispatchLastBuildHadGroup\":" + std::to_string(cnc_port_logic_dispatch_last_build_had_group());
@@ -6045,6 +6182,72 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 				json += obj->isLocallyControlled() ? "true" : "false";
 			} catch (...) {
 				json += "false";
+			}
+			json += ",\"ai\":";
+			AIUpdateInterface *ai = NULL;
+			try {
+				ai = obj->getAIUpdateInterface();
+			} catch (...) {
+				ai = NULL;
+			}
+			if (ai != NULL) {
+				json += "{\"ready\":true";
+				json += ",\"stateId\":";
+				try {
+					json += std::to_string(static_cast<Int>(ai->getCurrentStateID()));
+				} catch (...) {
+					json += "-1";
+				}
+				json += ",\"stateName\":\"";
+				try {
+					json += json_escape(ai->getCurrentStateName().str());
+				} catch (...) {
+					json += "";
+				}
+				json += "\"";
+				json += ",\"idle\":";
+				try {
+					json += ai->isIdle() ? "true" : "false";
+				} catch (...) {
+					json += "false";
+				}
+				json += ",\"moving\":";
+				try {
+					json += ai->isMoving() ? "true" : "false";
+				} catch (...) {
+					json += "false";
+				}
+				json += ",\"waitingForPath\":";
+				try {
+					json += ai->isWaitingForPath() ? "true" : "false";
+				} catch (...) {
+					json += "false";
+				}
+				Object *goal = NULL;
+				try {
+					goal = ai->getGoalObject();
+				} catch (...) {
+					goal = NULL;
+				}
+				json += ",\"goalObjectId\":";
+				json += goal != NULL ? std::to_string(static_cast<Int>(goal->getID())) : "-1";
+				json += ",\"goalTemplateName\":";
+				const ThingTemplate *goal_template = NULL;
+				if (goal != NULL) {
+					try {
+						goal_template = goal->getTemplate();
+					} catch (...) {
+						goal_template = NULL;
+					}
+				}
+				if (goal_template != NULL) {
+					json += "\"" + json_escape(goal_template->getName().str()) + "\"";
+				} else {
+					json += "null";
+				}
+				json += "}";
+			} else {
+				json += "{\"ready\":false}";
 			}
 			json += ",\"worldPos\":{\"x\":" + std::to_string(pos->x);
 			json += ",\"y\":" + std::to_string(pos->y);
@@ -6262,6 +6465,76 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_skirmish_ma
 	json += ",\"requested\":\"" + json_escape(requested.str()) + "\"";
 	json += ",\"applied\":\"" + json_escape(it->first.str()) + "\"";
 	append_map_metadata_json(json, "metadata", &it->second);
+	append_game_info_json(json, "skirmishGameInfo", TheSkirmishGameInfo);
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_skirmish_local_template(const char *template_name)
+{
+	static std::string json;
+	const char *raw_template_name = template_name != NULL ? template_name : "";
+	AsciiString requested(raw_template_name);
+
+	json = "{";
+	json += "\"ok\":false";
+	json += ",\"requested\":\"" + json_escape(requested.str()) + "\"";
+
+	if (TheSkirmishGameInfo == NULL) {
+		json += ",\"error\":\"skirmishGameInfoNotReady\"";
+		json += "}";
+		return json.c_str();
+	}
+	if (ThePlayerTemplateStore == NULL) {
+		json += ",\"error\":\"playerTemplateStoreNotReady\"";
+		json += "}";
+		return json.c_str();
+	}
+
+	Int template_index = -1;
+	const PlayerTemplate *player_template = find_player_template_by_name(raw_template_name, &template_index);
+	if (player_template == NULL) {
+		json += ",\"error\":\"templateNotFound\"";
+		json += ",\"availableTemplates\":[";
+		const Int template_count = ThePlayerTemplateStore->getPlayerTemplateCount();
+		const Int emit_count = template_count < 32 ? template_count : 32;
+		for (Int i = 0; i < emit_count; ++i) {
+			if (i > 0) {
+				json += ",";
+			}
+			const PlayerTemplate *candidate = ThePlayerTemplateStore->getNthPlayerTemplate(i);
+			json += candidate != NULL
+				? "\"" + json_escape(candidate->getName().str()) + "\""
+				: "\"\"";
+		}
+		json += "]";
+		json += ",\"availableTemplateCount\":" + std::to_string(static_cast<long long>(template_count));
+		json += "}";
+		return json.c_str();
+	}
+
+	const Int local_slot = TheSkirmishGameInfo->isInGame() ? TheSkirmishGameInfo->getLocalSlotNum() : -1;
+	const Int target_slot = local_slot >= 0 ? local_slot : 0;
+	GameSlot *slot = TheSkirmishGameInfo->getSlot(target_slot);
+	if (slot == NULL) {
+		json += ",\"error\":\"localSlotNotFound\"";
+		json += ",\"localSlot\":" + std::to_string(static_cast<long long>(local_slot));
+		json += ",\"targetSlot\":" + std::to_string(static_cast<long long>(target_slot));
+		json += "}";
+		return json.c_str();
+	}
+
+	slot->setPlayerTemplate(template_index);
+	slot->setAccept();
+
+	json = "{";
+	json += "\"ok\":true";
+	json += ",\"requested\":\"" + json_escape(requested.str()) + "\"";
+	json += ",\"applied\":\"" + json_escape(player_template->getName().str()) + "\"";
+	json += ",\"localSlot\":" + std::to_string(static_cast<long long>(local_slot));
+	json += ",\"targetSlot\":" + std::to_string(static_cast<long long>(target_slot));
+	append_player_template_json(json, "appliedTemplate", template_index);
+	append_game_slot_json(json, "slot", TheSkirmishGameInfo, target_slot);
 	append_game_info_json(json, "skirmishGameInfo", TheSkirmishGameInfo);
 	json += "}";
 	return json.c_str();

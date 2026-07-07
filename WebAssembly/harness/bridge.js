@@ -11070,6 +11070,11 @@ async function loadWasmModule() {
         "string",
         ["string"],
       ),
+      realEngineSetSkirmishLocalTemplate: module.cwrap(
+        "cnc_port_real_engine_set_skirmish_local_template",
+        "string",
+        ["string"],
+      ),
       realEngineFrame: module.cwrap("cnc_port_real_engine_frame", "string", ["number"]),
       realEngineFrameSummary: module.cwrap(
         "cnc_port_real_engine_frame_summary",
@@ -15975,6 +15980,33 @@ async function rpc(command, payload = {}) {
         return {
           ok: Boolean(result?.ok) && !aborted,
           command: "realEngineSetSkirmishMap",
+          aborted,
+          abortMessage,
+          result,
+          state: snapshotState(),
+        };
+      }
+    case "realEngineSetSkirmishLocalTemplate":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineSetSkirmishLocalTemplate");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineSetSkirmishLocalTemplate", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.realEngineSetSkirmishLocalTemplate(
+            String(payload.templateName ?? payload.template ?? ""),
+          ));
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        recordLog("real engine set skirmish local template", { aborted, abortMessage, result });
+        return {
+          ok: Boolean(result?.ok) && !aborted,
+          command: "realEngineSetSkirmishLocalTemplate",
           aborted,
           abortMessage,
           result,

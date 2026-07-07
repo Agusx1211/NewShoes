@@ -318,15 +318,13 @@ symptom is temporal — NOT a single still.
       stencil/depth bits the passes assume) and verify over many frames of
       active gameplay, not one still. Ties into the queued "shadows phased plan
       (blob→stencil→shaders)".
-- [ ] **Prove right-click context-target orders on the map** — right-click
-      ground move now works in the browser alternate-mouse path (see DONE), but
-      target-specific context orders still need harness proof: e.g. a GLA
-      worker right-clicked onto a supply/resource pile should dispatch
-      `MSG_DOCK` and enter the gather/dock AI path; object attack/enter/repair
-      should likewise be verified through the original context-command
-      resolution. Add a real right-click harvest/order proof that reads back
-      command dispatch plus the worker's AI/order state, not just the click
-      event.
+- [ ] **Broaden right-click context-target order coverage beyond docking** —
+      right-click ground move and GLA worker right-click supply docking now work
+      in the browser alternate-mouse path (see DONE). Keep extending the
+      harness through the original context-command resolver for object
+      attack/enter/repair and any other target-specific right-click commands,
+      with dispatch counters plus unit AI/order state checks rather than only
+      raw click-event checks.
 - [ ] **Frame time is unstable (jumps around; no steady 30fps) (REOPEN/perf)** —
       the average is good (~9 ms release shell-map profile) but frame time
       varies wildly in play and never holds a consistent 30fps. Frame-time

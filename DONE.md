@@ -29,6 +29,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       attack-move fallback, and captured
       `WebAssembly/artifacts/screenshots/input-select-e2e.png`.
 
+- [x] Prove browser right-click supply docking through the original context
+      command path. The skirmish input harness now forces a deterministic GLA
+      local template, scouts toward the nearest fogged supply with a normal
+      ground move when Alpine Assault starts with supplies under shroud, waits
+      until the supply is clickable, then right-clicks it with the selected
+      `GLAInfantryWorker`. The wasm query path records dock dispatch counters,
+      target id/world position, selected-unit AI state/goal, drawable kind-of
+      flags, and shroud status. Verified with
+      `npm --prefix WebAssembly run build:port` and
+      `node WebAssembly/harness/input_select_e2e.mjs`: the accepted attempt
+      clicked `SupplyDock#108`, reported `lastClickIssuedTypeName=MSG_DOCK`,
+      `dispatchLastDockHadGroup=1`, `dispatchLastDockTargetId=108`, and the
+      worker entered AI state 14 with `goalObjectId=108`. The same run kept the
+      existing move proof green with `MSG_DO_MOVETO` and an 86.04 world-unit
+      delta, completed construction/unit production/attack-move, and captured
+      `WebAssembly/artifacts/screenshots/input-select-e2e.png`.
+
 ## Performance / profiling (2026-07-07 session)
 
 - [x] Add frame-stability fields to the real runtime profile. The profile

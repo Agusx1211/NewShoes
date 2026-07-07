@@ -37,9 +37,12 @@ const WM_LBUTTONDOWN = 0x0201;
 const WM_LBUTTONUP = 0x0202;
 const WM_RBUTTONDOWN = 0x0204;
 const WM_RBUTTONUP = 0x0205;
+const AI_DOCK = 14;
+const OBJECTSHROUD_FOGGED = 3;
 
 const screenshotPath = resolve(screenshotsRoot, "input-select-e2e.png");
 const outputPath = resolve(wasmRoot, "artifacts/input-select-e2e.json");
+const requestedSkirmishTemplate = String(process.env.E2E_SKIRMISH_TEMPLATE ?? "FactionGLA").trim();
 
 const archiveSpecs = [
   { name: "INIZH.big" },
@@ -245,12 +248,15 @@ function compactDrawable(drawable) {
     relationshipToLocalName: drawable.relationshipToLocalName ?? null,
     hostileToLocal: drawable.hostileToLocal ?? null,
     structure: drawable.structure ?? null,
+    kindOf: drawable.kindOf ?? null,
+    shroudStatus: drawable.shroudStatus ?? null,
     hidden: drawable.hidden ?? null,
     effectivelyDead: drawable.effectivelyDead ?? null,
     onScreen: drawable.onScreen ?? null,
     screenPos: drawable.screenPos ?? null,
     worldPos: drawable.worldPos ?? null,
     body: drawable.body ?? null,
+    ai: drawable.ai ?? null,
   };
 }
 
@@ -323,6 +329,7 @@ function compactMoveCommandPath(selectionResult) {
   return {
     lastClickType: path.lastClickType ?? null,
     lastClickIssuedType: path.lastClickIssuedType ?? null,
+    lastClickIssuedTypeName: path.lastClickIssuedTypeName ?? null,
     lastClickWorldPos: path.lastClickWorldPos ?? null,
     rawRightDownCount: path.rawRightDownCount ?? null,
     rawRightUpCount: path.rawRightUpCount ?? null,
@@ -350,6 +357,7 @@ function compactAttackCommandPath(selectionResult) {
   return {
     lastClickType: path.lastClickType ?? null,
     lastClickIssuedType: path.lastClickIssuedType ?? null,
+    lastClickIssuedTypeName: path.lastClickIssuedTypeName ?? null,
     lastClickDrawId: path.lastClickDrawId ?? null,
     lastClickWorldPos: path.lastClickWorldPos ?? null,
     dispatchAttackCommandCount: path.dispatchAttackCommandCount ?? null,
@@ -358,6 +366,27 @@ function compactAttackCommandPath(selectionResult) {
     dispatchLastAttackHadGroup: path.dispatchLastAttackHadGroup ?? null,
     dispatchLastAttackTargetId: path.dispatchLastAttackTargetId ?? null,
     dispatchLastAttackTargetWorldPos: path.dispatchLastAttackTargetWorldPos ?? null,
+  };
+}
+
+function compactDockCommandPath(selectionResult) {
+  const path = selectionResult?.commandPath ?? {};
+  return {
+    lastClickType: path.lastClickType ?? null,
+    lastClickIssuedType: path.lastClickIssuedType ?? null,
+    lastClickIssuedTypeName: path.lastClickIssuedTypeName ?? null,
+    lastClickDrawId: path.lastClickDrawId ?? null,
+    lastClickWorldPos: path.lastClickWorldPos ?? null,
+    rawRightDownCount: path.rawRightDownCount ?? null,
+    rawRightUpCount: path.rawRightUpCount ?? null,
+    rightClickSeenCount: path.rightClickSeenCount ?? null,
+    rightClickIsClick: path.rightClickIsClick ?? null,
+    dispatchDockCommandCount: path.dispatchDockCommandCount ?? null,
+    dispatchLastDockCommandType: path.dispatchLastDockCommandType ?? null,
+    dispatchLastDockCommandTypeName: path.dispatchLastDockCommandTypeName ?? null,
+    dispatchLastDockHadGroup: path.dispatchLastDockHadGroup ?? null,
+    dispatchLastDockTargetId: path.dispatchLastDockTargetId ?? null,
+    dispatchLastDockTargetWorldPos: path.dispatchLastDockTargetWorldPos ?? null,
   };
 }
 
@@ -383,6 +412,13 @@ function buildAttackDispatchDelta(before, after) {
   return {
     dispatch: (after.dispatchAttackCommandCount ?? 0) -
       (before.dispatchAttackCommandCount ?? 0),
+  };
+}
+
+function buildDockDispatchDelta(before, after) {
+  return {
+    dispatch: (after.dispatchDockCommandCount ?? 0) -
+      (before.dispatchDockCommandCount ?? 0),
   };
 }
 
@@ -458,18 +494,94 @@ function rankAttackTargets(unit, candidates) {
   });
 }
 
-function chooseMovableDrawable(drawables) {
+function chooseMovableDrawable(drawables, requireOnScreen = true) {
   const localUnits = (drawables ?? []).filter((drawable) =>
+    drawable?.localOwned === true &&
+    drawable?.structure === false &&
+    drawable?.hidden === false &&
+    drawable?.worldPos != null &&
+    (!requireOnScreen || (
+      drawable?.onScreen === true &&
+      drawable?.screenPos != null)));
+  const preferred = /Worker|Dozer|Tank|Technical|Humvee|Ranger|Missile|Quad|Scorpion|Marauder|Rebel|Terror|Combat|Bike|Truck/i;
+  return localUnits.find((drawable) => preferred.test(drawable.name ?? "")) ??
+    localUnits[0] ??
+    null;
+}
+
+function isDockCapableHarvesterDrawable(drawable) {
+  const name = drawable?.name ?? "";
+  return /Worker|SupplyTruck|Chinook|Harvester/i.test(name) && !/Dozer/i.test(name);
+}
+
+function chooseDockCapableHarvester(drawables) {
+  const localHarvesters = (drawables ?? []).filter((drawable) =>
     drawable?.localOwned === true &&
     drawable?.structure === false &&
     drawable?.hidden === false &&
     drawable?.onScreen === true &&
     drawable?.screenPos != null &&
-    drawable?.worldPos != null);
-  const preferred = /Worker|Dozer|Tank|Technical|Humvee|Ranger|Missile|Quad|Scorpion|Marauder|Rebel|Terror|Combat|Bike|Truck/i;
-  return localUnits.find((drawable) => preferred.test(drawable.name ?? "")) ??
-    localUnits[0] ??
+    drawable?.worldPos != null &&
+    isDockCapableHarvesterDrawable(drawable));
+  return localHarvesters.find((drawable) => /Worker/i.test(drawable.name ?? "")) ??
+    localHarvesters.find((drawable) => /SupplyTruck|Chinook/i.test(drawable.name ?? "")) ??
+    localHarvesters[0] ??
     null;
+}
+
+function dockTargetRank(candidate) {
+  const name = candidate?.name ?? "";
+  if (/SupplyDock|SupplyPile|SupplyWarehouse|SupplySource/i.test(name)) {
+    return 0;
+  }
+  if (/Supply/i.test(name) && candidate?.localOwned !== true) {
+    return 1;
+  }
+  if (/Supply/i.test(name)) {
+    return 2;
+  }
+  return 3;
+}
+
+function isVisibleDockTarget(candidate) {
+  const shroudStatus = Number(candidate?.shroudStatus);
+  return !Number.isFinite(shroudStatus) || shroudStatus < OBJECTSHROUD_FOGGED;
+}
+
+function dockTargetBaseUsable(candidate) {
+  const health = Number(candidate?.body?.health);
+  const maxHealth = Number(candidate?.body?.maxHealth);
+  return candidate?.id != null &&
+    candidate.hidden === false &&
+    candidate.effectivelyDead !== true &&
+    candidate.worldPos != null &&
+    candidate.body?.ready === true &&
+    Number.isFinite(health) &&
+    Number.isFinite(maxHealth) &&
+    health > 0 &&
+    maxHealth > 0 &&
+    dockTargetRank(candidate) < 3;
+}
+
+function usableDockTarget(candidate) {
+  return dockTargetBaseUsable(candidate) && isVisibleDockTarget(candidate);
+}
+
+function rankDockTargets(worker, candidates) {
+  return [...(candidates ?? [])].sort((a, b) => {
+    const aVisible = a?.onScreen === true ? 0 : 1;
+    const bVisible = b?.onScreen === true ? 0 : 1;
+    if (aVisible !== bVisible) {
+      return aVisible - bVisible;
+    }
+    const aRank = dockTargetRank(a);
+    const bRank = dockTargetRank(b);
+    if (aRank !== bRank) {
+      return aRank - bRank;
+    }
+    return (worldDistance2d(worker.worldPos, a.worldPos) ?? Number.MAX_SAFE_INTEGER) -
+      (worldDistance2d(worker.worldPos, b.worldPos) ?? Number.MAX_SAFE_INTEGER);
+  });
 }
 
 async function waitForCommandButtons(page) {
@@ -502,6 +614,15 @@ async function postShortOrderClick(page, click, point, label, settleFrames = 5) 
   await postMouse(page, click.down, point);
   await postMouse(page, click.up, point);
   return runFrames(page, settleFrames, `${label} click`);
+}
+
+async function postShortSelectClick(page, point, label, settleFrames = 5) {
+  await postMouse(page, WM_MOUSEMOVE, point);
+  await runFrames(page, 1, `${label} move`);
+  await postShortOrderClick(page, {
+    down: WM_LBUTTONDOWN,
+    up: WM_LBUTTONUP,
+  }, point, label, settleFrames);
 }
 
 async function dragSelectBox(page, start, end, label, settleFrames = 5) {
@@ -642,17 +763,53 @@ async function waitForSkirmishMatch(page) {
 
 async function proveMoveOrder(page, activeFrame, results) {
   console.error("[input-select-e2e] === MOVE ORDER ===");
-  const drawablesQuery = await rpc(page, "queryDrawables");
+  let drawablesQuery = await rpc(page, "queryDrawables");
   expect(drawablesQuery?.ok === true,
     "queryDrawables failed before move-order proof",
     drawablesQuery);
-  const drawables = drawablesQuery.result?.drawables ?? [];
-  let unit = chooseMovableDrawable(drawables);
+  let drawables = drawablesQuery.result?.drawables ?? [];
+  let allDrawables = drawablesQuery.result?.allDrawables ?? drawables;
+  let selection = await rpc(page, "querySelection");
+  let selectedIds = new Set((selection?.result?.selected ?? []).map((selected) => selected.id));
+  let selectedMovable = allDrawables.find((drawable) =>
+    selectedIds.has(drawable.id) &&
+    drawable?.localOwned === true &&
+    drawable?.structure === false &&
+    drawable?.worldPos != null);
+  let unit = selectedMovable?.onScreen === true
+    ? selectedMovable
+    : chooseMovableDrawable(drawables);
+  if (unit == null) {
+    const offscreenUnit = selectedMovable ?? chooseMovableDrawable(allDrawables, false);
+    if (offscreenUnit?.worldPos != null) {
+      console.error(`[input-select-e2e] framing off-screen movable unit ` +
+        `${offscreenUnit.name}#${offscreenUnit.id} at ${JSON.stringify(offscreenUnit.worldPos)}`);
+      const lookAt = await rpc(page, "tacticalViewLookAt", { worldPos: offscreenUnit.worldPos });
+      expect(lookAt?.ok === true,
+        "tactical view could not frame off-screen movable unit",
+        { unit: compactDrawable(offscreenUnit), lookAt });
+      await runFrames(page, 10, "move proof camera frame unit");
+      drawablesQuery = await rpc(page, "queryDrawables");
+      expect(drawablesQuery?.ok === true,
+        "queryDrawables failed after framing move-order unit",
+        drawablesQuery);
+      drawables = drawablesQuery.result?.drawables ?? [];
+      allDrawables = drawablesQuery.result?.allDrawables ?? drawables;
+      selectedMovable = allDrawables.find((drawable) =>
+        selectedIds.has(drawable.id) &&
+        drawable?.localOwned === true &&
+        drawable?.structure === false &&
+        drawable?.worldPos != null);
+      unit = selectedMovable?.onScreen === true
+        ? selectedMovable
+        : chooseMovableDrawable(drawables);
+    }
+  }
   expect(unit != null,
     "no on-screen local movable unit was available for move-order proof",
     {
       stats: drawablesQuery.result?.stats,
-      localOwned: drawables
+      localOwned: allDrawables
         .filter((drawable) => drawable?.localOwned === true)
         .map((drawable) => ({
           id: drawable.id,
@@ -668,30 +825,42 @@ async function proveMoveOrder(page, activeFrame, results) {
     x: Math.round(unit.screenPos.x),
     y: Math.round(unit.screenPos.y),
   };
-  console.error(`[input-select-e2e] selecting movable unit ${unit.name}#${unit.id} at ` +
-    `(${selectedPoint.x},${selectedPoint.y})`);
-  await clickSelectPoint(page, selectedPoint, "move proof select unit");
-
-  let selection = await rpc(page, "querySelection");
+  if (!selectedIds.has(unit.id)) {
+    console.error(`[input-select-e2e] selecting movable unit ${unit.name}#${unit.id} at ` +
+      `(${selectedPoint.x},${selectedPoint.y})`);
+    await clickSelectPoint(page, selectedPoint, "move proof select unit");
+    selection = await rpc(page, "querySelection");
+    if (!(selection?.ok === true && Number(selection.result?.selectCount ?? 0) > 0)) {
+      await dragSelectBox(
+        page,
+        { x: selectedPoint.x - 24, y: selectedPoint.y - 24 },
+        { x: selectedPoint.x + 24, y: selectedPoint.y + 24 },
+        "move proof drag-select unit",
+        3);
+      selection = await rpc(page, "querySelection");
+    }
+  } else {
+    console.error(`[input-select-e2e] reusing selected movable unit ${unit.name}#${unit.id}`);
+  }
   expect(selection?.ok === true && Number(selection.result?.selectCount ?? 0) > 0,
     "move-order proof unit click did not select a controllable drawable",
     selection);
   if (!(selection.result?.selected ?? []).some((selected) => selected.id === unit.id)) {
-    const selectedIds = new Set((selection.result?.selected ?? []).map((selected) => selected.id));
-    const selectedMovable = drawables.find((drawable) =>
+    selectedIds = new Set((selection.result?.selected ?? []).map((selected) => selected.id));
+    const newlySelectedMovable = drawables.find((drawable) =>
       selectedIds.has(drawable.id) &&
       drawable?.localOwned === true &&
       drawable?.structure === false &&
       drawable?.worldPos != null);
-    expect(selectedMovable != null,
+    expect(newlySelectedMovable != null,
       "move-order proof selected a different object, but not a movable local unit",
       {
         clickedUnit: unit,
         selection: selection.result,
       });
     console.error(`[input-select-e2e] clicked unit ${unit.id} selected nearby ` +
-      `${selectedMovable.name}#${selectedMovable.id}; tracking selected unit`);
-    unit = selectedMovable;
+      `${newlySelectedMovable.name}#${newlySelectedMovable.id}; tracking selected unit`);
+    unit = newlySelectedMovable;
     selectedPoint = {
       x: Math.round(unit.screenPos.x),
       y: Math.round(unit.screenPos.y),
@@ -814,6 +983,309 @@ async function proveMoveOrder(page, activeFrame, results) {
   results.moveOrderProof.verdict = "MOVE-ORDER-DISPATCHED-AND-UNIT-MOVED";
   console.error(`[input-select-e2e] move proof world delta: ${worldDelta}`);
   return settledSelection?.result ?? afterSelection?.result ?? selection.result;
+}
+
+async function proveDockOrder(page, activeFrame, results) {
+  console.error("[input-select-e2e] === RIGHT-CLICK DOCK ORDER ===");
+  const preflight = await queryDrawablesChecked(page, "dock proof preflight");
+  let visibleDrawables = preflight.result?.drawables ?? [];
+  let allDrawables = preflight.result?.allDrawables ?? visibleDrawables;
+  let worker = chooseDockCapableHarvester(visibleDrawables);
+  expect(worker != null,
+    "no visible local dock-capable harvester was available for right-click dock proof",
+    {
+      stats: preflight.result?.stats ?? null,
+      localUnits: visibleDrawables
+        .filter((drawable) => drawable?.localOwned === true && drawable?.structure === false)
+        .map(compactDrawable),
+    });
+
+  const displayWidth = activeFrame?.frame?.clientState?.display?.width ??
+    activeFrame?.frame?.display?.width ??
+    1280;
+  const displayHeight = activeFrame?.frame?.clientState?.display?.height ??
+    activeFrame?.frame?.display?.height ??
+    720;
+  const selectPoint = {
+    x: Math.round(worker.screenPos.x),
+    y: Math.round(worker.screenPos.y),
+  };
+  let selection = await rpc(page, "querySelection");
+  if (!(selection?.result?.selected ?? []).some((selected) => selected.id === worker.id)) {
+    await postShortSelectClick(page, selectPoint, "dock proof select harvester");
+    selection = await rpc(page, "querySelection");
+  }
+  expect(selection?.ok === true &&
+      (selection.result?.selected ?? []).some((selected) => selected.id === worker.id),
+    "dock proof did not select the intended harvester",
+    {
+      worker: compactDrawable(worker),
+      selection: selection?.result ?? selection,
+    });
+
+  const useAlternateMouse = selection.result?.inputSettings?.useAlternateMouse === true;
+  const dockClick = useAlternateMouse
+      ? { name: "right", down: WM_RBUTTONDOWN, up: WM_RBUTTONUP }
+      : { name: "left", down: WM_LBUTTONDOWN, up: WM_LBUTTONUP };
+  const buildTargetCandidates = (drawables, visibleOnly) => rankDockTargets(
+    worker,
+    (drawables ?? []).filter((candidate) =>
+      candidate.id !== worker.id &&
+      (visibleOnly ? usableDockTarget(candidate) : dockTargetBaseUsable(candidate))))
+    .slice(0, visibleOnly ? 24 : 8);
+  let targetCandidates = buildTargetCandidates(allDrawables, true);
+
+  results.dockOrderProof.selectedUnit = compactDrawable(worker);
+  results.dockOrderProof.initialCandidateTargets = targetCandidates.map((candidate) => ({
+    ...compactDrawable(candidate),
+    rank: dockTargetRank(candidate),
+    distanceFromWorker: worldDistance2d(worker.worldPos, candidate.worldPos),
+  }));
+  results.dockOrderProof.targetStats = preflight.result?.stats ?? null;
+
+  if (targetCandidates.length === 0) {
+    const scoutCandidates = buildTargetCandidates(allDrawables, false);
+    results.dockOrderProof.scoutCandidates = scoutCandidates.map((candidate) => ({
+      ...compactDrawable(candidate),
+      rank: dockTargetRank(candidate),
+      distanceFromWorker: worldDistance2d(worker.worldPos, candidate.worldPos),
+    }));
+    expect(scoutCandidates.length > 0,
+      "no supply/dock target candidate was available for right-click dock proof",
+      {
+        stats: preflight.result?.stats ?? null,
+        supplyLike: allDrawables
+          .filter((drawable) => /Supply/i.test(drawable?.name ?? ""))
+          .slice(0, 24)
+          .map(compactDrawable),
+      });
+
+    for (const scoutCandidate of scoutCandidates) {
+      console.error(`[input-select-e2e] scouting toward fogged dock target ` +
+        `${scoutCandidate.name}#${scoutCandidate.id} at ${JSON.stringify(scoutCandidate.worldPos)}`);
+      const lookAt = await rpc(page, "tacticalViewLookAt", { worldPos: scoutCandidate.worldPos });
+      expect(lookAt?.ok === true,
+        "tactical view could not frame fogged dock target for scouting",
+        { target: compactDrawable(scoutCandidate), lookAt });
+      await runFrames(page, 10, "dock proof scout camera frame");
+
+      const framedQuery = await queryDrawablesChecked(page, "dock proof scout framed scan");
+      allDrawables = framedQuery.result?.allDrawables ?? framedQuery.result?.drawables ?? allDrawables;
+      visibleDrawables = framedQuery.result?.drawables ?? visibleDrawables;
+      const framedTarget = allDrawables.find((drawable) => drawable.id === scoutCandidate.id) ?? scoutCandidate;
+      const scoutPoint = {
+        x: Math.round(framedTarget.screenPos?.x ?? Math.floor(displayWidth * 0.5)),
+        y: Math.round(framedTarget.screenPos?.y ?? Math.floor(displayHeight * 0.45)),
+      };
+      scoutPoint.x = Math.max(16, Math.min(scoutPoint.x, displayWidth - 16));
+      scoutPoint.y = Math.max(16, Math.min(scoutPoint.y, displayHeight - 160));
+
+      console.error(`[input-select-e2e] moving harvester toward ${framedTarget.name}#${framedTarget.id} ` +
+        `at (${scoutPoint.x},${scoutPoint.y}) to clear shroud`);
+      await postMouse(page, WM_MOUSEMOVE, scoutPoint);
+      await runFrames(page, 5, "dock proof scout mouse move");
+      await postShortOrderClick(page, dockClick, scoutPoint, "dock proof scout move");
+
+      const samples = [];
+      let revealedTarget = null;
+      const maxScoutFrames = parsePositiveInt("E2E_DOCK_SCOUT_MAX_FRAMES", 720);
+      const scoutFrameChunk = parsePositiveInt("E2E_DOCK_SCOUT_FRAME_CHUNK", 30);
+      for (let framesAdvanced = 0; framesAdvanced < maxScoutFrames; framesAdvanced += scoutFrameChunk) {
+        await runFrames(page, Math.min(scoutFrameChunk, maxScoutFrames - framesAdvanced),
+          "dock proof scout advance");
+        const revealQuery = await queryDrawablesChecked(page, "dock proof scout reveal scan");
+        const drawablesNow = revealQuery.result?.allDrawables ?? revealQuery.result?.drawables ?? [];
+        const currentTarget = drawablesNow.find((drawable) => drawable.id === scoutCandidate.id) ?? null;
+        const currentWorker = drawablesNow.find((drawable) => drawable.id === worker.id) ?? null;
+        if (currentWorker != null) {
+          worker = currentWorker;
+        }
+        samples.push({
+          framesAdvanced: framesAdvanced + scoutFrameChunk,
+          target: compactDrawable(currentTarget),
+          worker: compactDrawable(currentWorker),
+          distance: worldDistance2d(currentWorker?.worldPos, currentTarget?.worldPos),
+        });
+        if (currentTarget != null && isVisibleDockTarget(currentTarget)) {
+          revealedTarget = currentTarget;
+          allDrawables = drawablesNow;
+          visibleDrawables = revealQuery.result?.drawables ?? visibleDrawables;
+          break;
+        }
+      }
+
+      results.dockOrderProof.scoutAttempts.push({
+        target: compactDrawable(framedTarget),
+        point: scoutPoint,
+        revealed: revealedTarget != null,
+        samples,
+      });
+      if (revealedTarget != null) {
+        console.error(`[input-select-e2e] dock target ${revealedTarget.name}#${revealedTarget.id} ` +
+          `became visible with shroudStatus=${revealedTarget.shroudStatus}`);
+        break;
+      }
+    }
+
+    targetCandidates = buildTargetCandidates(allDrawables, true);
+  }
+
+  selection = await rpc(page, "querySelection");
+  if (!(selection?.result?.selected ?? []).some((selected) => selected.id === worker.id) &&
+      worker.onScreen === true &&
+      worker.screenPos != null) {
+    await postShortSelectClick(page, {
+      x: Math.round(worker.screenPos.x),
+      y: Math.round(worker.screenPos.y),
+    }, "dock proof reselect harvester after scout");
+    selection = await rpc(page, "querySelection");
+  }
+  expect(selection?.ok === true &&
+      (selection.result?.selected ?? []).some((selected) => selected.id === worker.id),
+    "dock proof lost harvester selection before issuing dock command",
+    {
+      worker: compactDrawable(worker),
+      selection: selection?.result ?? selection,
+    });
+
+  const beforeCommandPath = compactDockCommandPath(selection.result);
+  results.dockOrderProof.selectedUnit = compactDrawable(worker);
+  results.dockOrderProof.beforeCommandPath = beforeCommandPath;
+  results.dockOrderProof.candidateTargets = targetCandidates.map((candidate) => ({
+    ...compactDrawable(candidate),
+    rank: dockTargetRank(candidate),
+    distanceFromWorker: worldDistance2d(worker.worldPos, candidate.worldPos),
+  }));
+
+  expect(targetCandidates.length > 0,
+    "no supply/dock target candidate was available for right-click dock proof",
+    {
+      stats: preflight.result?.stats ?? null,
+      supplyLike: allDrawables
+        .filter((drawable) => /Supply/i.test(drawable?.name ?? ""))
+        .slice(0, 24)
+        .map(compactDrawable),
+    });
+
+  let accepted = null;
+  for (const candidate of targetCandidates) {
+    let target = candidate;
+    if (target.onScreen !== true ||
+        target.screenPos == null ||
+        target.screenPos.x < 8 ||
+        target.screenPos.x > displayWidth - 8 ||
+        target.screenPos.y < 8 ||
+        target.screenPos.y > displayHeight - 150) {
+      console.error(`[input-select-e2e] framing dock target ${target.name}#${target.id} at ` +
+        `${JSON.stringify(target.worldPos)}`);
+      const lookAt = await rpc(page, "tacticalViewLookAt", { worldPos: target.worldPos });
+      expect(lookAt?.ok === true,
+        "tactical view could not frame dock target",
+        { target: compactDrawable(target), lookAt });
+      await runFrames(page, 10, "dock proof camera frame target");
+      const framedQuery = await queryDrawablesChecked(page, "dock proof framed target scan");
+      const framedTarget = (framedQuery.result?.allDrawables ?? framedQuery.result?.drawables ?? [])
+        .find((drawable) => drawable.id === candidate.id);
+      if (framedTarget == null) {
+        results.dockOrderProof.attempts.push({
+          target: compactDrawable(candidate),
+          skipped: "TARGET_MISSING_AFTER_CAMERA_FRAME",
+        });
+        continue;
+      }
+      target = framedTarget;
+    }
+
+    const point = {
+      x: Math.round(target.screenPos?.x ?? -1),
+      y: Math.round(target.screenPos?.y ?? -1),
+    };
+    if (!Number.isFinite(point.x) ||
+        !Number.isFinite(point.y) ||
+        point.x < 8 ||
+        point.x > displayWidth - 8 ||
+        point.y < 8 ||
+        point.y > displayHeight - 150) {
+      results.dockOrderProof.attempts.push({
+        target: compactDrawable(target),
+        skipped: "TARGET_NOT_CLICKABLE_ON_SCREEN",
+        point,
+      });
+      continue;
+    }
+
+    console.error(`[input-select-e2e] trying ${dockClick.name}-click dock on ` +
+      `${target.name}#${target.id} at (${point.x},${point.y})`);
+    await postMouse(page, WM_MOUSEMOVE, point);
+    await runFrames(page, 5, "dock proof mouse move");
+    await postShortOrderClick(page, dockClick, point, "dock proof");
+
+    const afterClickSelection = await rpc(page, "querySelection");
+    const afterCommandPath = compactDockCommandPath(afterClickSelection?.result);
+    const delta = buildDockDispatchDelta(beforeCommandPath, afterCommandPath);
+    await runFrames(page, 5, "dock proof AI settle");
+    const settledSelection = await rpc(page, "querySelection");
+    const selectedWorker = (settledSelection?.result?.selected ?? [])
+      .find((selected) => selected.id === worker.id);
+    const ai = selectedWorker?.ai ?? null;
+    const aiDocked =
+      ai?.stateId === AI_DOCK ||
+      /dock/i.test(ai?.stateName ?? "") ||
+      ai?.goalObjectId === target.id;
+    const attempt = {
+      clickButton: dockClick.name,
+      target: {
+        ...compactDrawable(target),
+        point,
+        rank: dockTargetRank(target),
+        distanceFromWorker: worldDistance2d(worker.worldPos, target.worldPos),
+      },
+      selectCount: afterClickSelection?.result?.selectCount ?? null,
+      selectedIds: (afterClickSelection?.result?.selected ?? [])
+        .map((selected) => selected.id),
+      commandPath: afterCommandPath,
+      dispatchDelta: delta,
+      selectedWorker: selectedWorker ?? null,
+      aiDocked,
+    };
+    results.dockOrderProof.attempts.push(attempt);
+    console.error(`[input-select-e2e] dock attempt: ${JSON.stringify(attempt)}`);
+
+    if (delta.dispatch > 0 &&
+        afterCommandPath.lastClickIssuedTypeName === "MSG_DOCK" &&
+        afterCommandPath.dispatchLastDockCommandTypeName === "MSG_DOCK" &&
+        afterCommandPath.dispatchLastDockHadGroup === 1 &&
+        afterCommandPath.dispatchLastDockTargetId === target.id &&
+        aiDocked) {
+      accepted = attempt;
+      break;
+    }
+
+    selection = await rpc(page, "querySelection");
+    if (!(selection?.result?.selected ?? []).some((selected) => selected.id === worker.id)) {
+      const currentDrawables = await queryDrawablesChecked(page, "dock proof reselect scan");
+      const currentWorker = (currentDrawables.result?.allDrawables ?? currentDrawables.result?.drawables ?? [])
+        .find((drawable) => drawable.id === worker.id && drawable.onScreen === true);
+      if (currentWorker?.screenPos != null) {
+        await postShortSelectClick(page, {
+          x: Math.round(currentWorker.screenPos.x),
+          y: Math.round(currentWorker.screenPos.y),
+        }, "dock proof reselect harvester");
+      }
+    }
+  }
+
+  expect(accepted != null,
+    "no supply/dock target produced a real MSG_DOCK dispatch plus dock AI state",
+    results.dockOrderProof.attempts);
+
+  results.dockOrderProof.ok = true;
+  results.dockOrderProof.accepted = accepted;
+  results.dockOrderProof.afterCommandPath = accepted.commandPath;
+  results.dockOrderProof.dispatchDelta = accepted.dispatchDelta;
+  results.dockOrderProof.verdict = "RIGHT-CLICK-DOCK-DISPATCHED-AND-AI-DOCKED";
+  console.error(`[input-select-e2e] dock proof accepted: ${results.dockOrderProof.verdict}`);
+  return (await rpc(page, "querySelection"))?.result ?? selection?.result ?? null;
 }
 
 async function proveStructureCreated(page, buildTemplate, beforeDrawablesQuery, results) {
@@ -1948,6 +2420,26 @@ async function main() {
       attempts: [],
       verdict: null,
     },
+    skirmishSetup: {
+      requestedTemplate: requestedSkirmishTemplate || null,
+      localTemplate: null,
+      activeLocalPlayer: null,
+    },
+    dockOrderProof: {
+      ok: false,
+      selectedUnit: null,
+      beforeCommandPath: null,
+      afterCommandPath: null,
+      dispatchDelta: null,
+      targetStats: null,
+      initialCandidateTargets: [],
+      scoutCandidates: [],
+      scoutAttempts: [],
+      candidateTargets: [],
+      attempts: [],
+      accepted: null,
+      verdict: null,
+    },
     screenshot: null,
     verdict: null,
   };
@@ -2051,6 +2543,18 @@ async function main() {
     expect(skirmishMenu?.parent?.found === true && skirmishMenu?.buttonStart?.clickable === true,
       "skirmish game options menu did not become startable", skirmishMenu);
 
+    if (requestedSkirmishTemplate) {
+      console.error(`[input-select-e2e] setting local skirmish template ${requestedSkirmishTemplate}`);
+      const templateSet = await rpc(page, "realEngineSetSkirmishLocalTemplate", {
+        templateName: requestedSkirmishTemplate,
+      });
+      results.skirmishSetup.localTemplate = templateSet?.result ?? templateSet ?? null;
+      expect(templateSet?.ok === true &&
+          String(templateSet.result?.applied ?? "").toLowerCase() === requestedSkirmishTemplate.toLowerCase(),
+        "requested local skirmish template was not applied", templateSet);
+      await runSummary(page, 1, "skirmish local template apply settle");
+    }
+
     // ── Phase 4: start skirmish match ──
     console.error("[input-select-e2e] starting skirmish match...");
     await clickButton(
@@ -2074,6 +2578,7 @@ async function main() {
       renderedObjectCount: gameplay?.renderedObjectCount,
       localPlayer: gameplay?.localPlayer,
     };
+    results.skirmishSetup.activeLocalPlayer = gameplay?.localPlayer ?? null;
     console.error(`[input-select-e2e] ACTIVE MATCH: gameMode=${gameplay?.gameMode}, inGame=${gameplay?.inGame}, ` +
       `loadingMap=${gameplay?.loadingMap}, inputEnabled=${gameplay?.inputEnabled}, ` +
       `objectCount=${gameplay?.objectCount}, drawableCount=${gameplay?.drawableCount}`);
@@ -2082,6 +2587,15 @@ async function main() {
     expect(gameplay?.loadingMap === false, "still loading map");
     expect(gameplay?.inputEnabled === true, "input not enabled");
     expect(Number(gameplay?.objectCount ?? 0) > 0, "no objects present");
+    if (/GLA/i.test(requestedSkirmishTemplate)) {
+      expect(/GLA/i.test(gameplay?.localPlayer?.side ?? ""),
+        "active match local player did not use the requested GLA template",
+        {
+          requestedTemplate: requestedSkirmishTemplate,
+          setup: results.skirmishSetup.localTemplate,
+          localPlayer: gameplay?.localPlayer,
+        });
+    }
 
     // ── Phase 5: DRAG BOX-SELECT ──
     // The player's base should be near screen center in Alpine Assault.
@@ -2151,11 +2665,15 @@ async function main() {
       }
     }
 
-    // ── Phase 7: MOVE ORDER ──
+    // ── Phase 7: RIGHT-CLICK CONTEXT DOCK ORDER ──
+    const dockSelectionResult = await proveDockOrder(page, active.result, results);
+    currentSelectionResult = dockSelectionResult ?? currentSelectionResult;
+
+    // ── Phase 8: MOVE ORDER ──
     const moveSelectionResult = await proveMoveOrder(page, active.result, results);
     currentSelectionResult = moveSelectionResult;
 
-    // ── Phase 8: COMMAND BAR BUILD/QUEUE BUTTON ──
+    // ── Phase 9: COMMAND BAR BUILD/QUEUE BUTTON ──
     const selectionWorksNow = Number(currentSelectionResult.selectCount ?? 0) > 0;
     if (selectionWorksNow) {
       console.error("[input-select-e2e] === COMMAND BAR BUILD/QUEUE BUTTON ===");
@@ -2273,13 +2791,13 @@ async function main() {
       console.error(`[input-select-e2e] command-bar verdict: ${results.commandBarProof.verdict}`);
     }
 
-    // ── Phase 9: screenshot ──
+    // ── Phase 10: screenshot ──
     console.error("[input-select-e2e] capturing screenshot...");
     await page.locator("#viewport").screenshot({ path: screenshotPath });
     results.screenshot = screenshotPath;
     console.error(`[input-select-e2e] screenshot saved to ${screenshotPath}`);
 
-    // ── Phase 10: verdict ──
+    // ── Phase 11: verdict ──
     const dragWorks = results.dragProof.selectCount > 0;
     const clickWorks = results.clickProof.selectCount > 0;
     const selectionWorks = dragWorks || clickWorks;
@@ -2290,24 +2808,32 @@ async function main() {
     const attackRequired = results.productionProof.unitProduction?.ok === true;
     results.ok = selectionWorks &&
       results.moveOrderProof.ok === true &&
+      results.dockOrderProof.ok === true &&
       (!constructionRequired || results.productionProof.ok === true) &&
       (!unitProductionRequired || results.productionProof.unitProduction?.ok === true) &&
       (!attackRequired || results.attackProof?.ok === true);
 
     if (selectionWorks && results.moveOrderProof.ok &&
+        results.dockOrderProof.ok &&
         results.commandBarProof.ok && results.productionProof.unitProduction?.ok &&
         results.attackProof?.ok) {
-      results.verdict = `SELECT-MOVE-CONSTRUCT-PRODUCE-AND-ATTACK-WORK (${results.attackProof.verdict})`;
+      results.verdict = `SELECT-MOVE-DOCK-CONSTRUCT-PRODUCE-AND-ATTACK-WORK (${results.attackProof.verdict})`;
     } else if (selectionWorks && results.moveOrderProof.ok &&
+        results.dockOrderProof.ok &&
         results.commandBarProof.ok && results.productionProof.unitProduction?.ok) {
-      results.verdict = `SELECT-MOVE-CONSTRUCT-AND-UNIT-PRODUCTION-WORK (${results.commandBarProof.verdict})`;
+      results.verdict = `SELECT-MOVE-DOCK-CONSTRUCT-AND-UNIT-PRODUCTION-WORK (${results.commandBarProof.verdict})`;
     } else if (selectionWorks && results.moveOrderProof.ok &&
+        results.dockOrderProof.ok &&
         results.commandBarProof.ok && results.productionProof.ok) {
-      results.verdict = `SELECT-MOVE-COMMAND-BAR-AND-CONSTRUCTION-WORK (${results.commandBarProof.verdict})`;
+      results.verdict = `SELECT-MOVE-DOCK-COMMAND-BAR-AND-CONSTRUCTION-WORK (${results.commandBarProof.verdict})`;
     } else if (selectionWorks && results.moveOrderProof.ok && results.commandBarProof.ok) {
-      results.verdict = `SELECT-MOVE-AND-COMMAND-BAR-WORK (${results.commandBarProof.verdict})`;
+      results.verdict = results.dockOrderProof.ok
+        ? `SELECT-MOVE-DOCK-AND-COMMAND-BAR-WORK (${results.commandBarProof.verdict})`
+        : "SELECT-MOVE-WORK-DOCK-FAILS";
     } else if (selectionWorks && results.moveOrderProof.ok) {
-      results.verdict = "SELECT-AND-MOVE-WORK-COMMAND-BAR-FAILS";
+      results.verdict = results.dockOrderProof.ok
+        ? "SELECT-MOVE-AND-DOCK-WORK-COMMAND-BAR-FAILS"
+        : "SELECT-AND-MOVE-WORK-DOCK-FAILS";
     } else if (dragWorks) {
       results.verdict = "SELECT-WORKS-MOVE-FAILS";
     } else if (clickWorks) {
@@ -2322,6 +2848,7 @@ async function main() {
     console.error(`[input-select-e2e] Drag proof: selectCount=${results.dragProof.selectCount}, selectedCount=${results.dragProof.selectedCount}`);
     console.error(`[input-select-e2e] Click proof: selectCount=${results.clickProof.selectCount}, selectedCount=${results.clickProof.selectedCount}`);
     console.error(`[input-select-e2e] Move proof: ${JSON.stringify(results.moveOrderProof)}`);
+    console.error(`[input-select-e2e] Dock proof: ${JSON.stringify(results.dockOrderProof)}`);
     console.error(`[input-select-e2e] Command proof: ${JSON.stringify(results.commandBarProof)}`);
     console.error(`[input-select-e2e] Production proof: ${JSON.stringify(results.productionProof)}`);
     console.error(`[input-select-e2e] Attack proof: ${JSON.stringify(results.attackProof)}`);

@@ -109,6 +109,13 @@ static Int g_wasmLogicDispatchLastAttackTargetId = -1;
 static Real g_wasmLogicDispatchLastAttackTargetX = 0.0f;
 static Real g_wasmLogicDispatchLastAttackTargetY = 0.0f;
 static Real g_wasmLogicDispatchLastAttackTargetZ = 0.0f;
+static Int g_wasmLogicDispatchDockCommandCount = 0;
+static Int g_wasmLogicDispatchLastDockCommandType = -1;
+static Int g_wasmLogicDispatchLastDockHadGroup = -1;
+static Int g_wasmLogicDispatchLastDockTargetId = -1;
+static Real g_wasmLogicDispatchLastDockTargetX = 0.0f;
+static Real g_wasmLogicDispatchLastDockTargetY = 0.0f;
+static Real g_wasmLogicDispatchLastDockTargetZ = 0.0f;
 static Int g_wasmLogicDispatchBuildCommandCount = 0;
 static Int g_wasmLogicDispatchLastBuildCommandType = -1;
 static Int g_wasmLogicDispatchLastBuildHadGroup = -1;
@@ -139,6 +146,13 @@ extern "C" Int cnc_port_logic_dispatch_last_attack_target_id( void ) { return g_
 extern "C" Real cnc_port_logic_dispatch_last_attack_target_x( void ) { return g_wasmLogicDispatchLastAttackTargetX; }
 extern "C" Real cnc_port_logic_dispatch_last_attack_target_y( void ) { return g_wasmLogicDispatchLastAttackTargetY; }
 extern "C" Real cnc_port_logic_dispatch_last_attack_target_z( void ) { return g_wasmLogicDispatchLastAttackTargetZ; }
+extern "C" Int cnc_port_logic_dispatch_dock_command_count( void ) { return g_wasmLogicDispatchDockCommandCount; }
+extern "C" Int cnc_port_logic_dispatch_last_dock_command_type( void ) { return g_wasmLogicDispatchLastDockCommandType; }
+extern "C" Int cnc_port_logic_dispatch_last_dock_had_group( void ) { return g_wasmLogicDispatchLastDockHadGroup; }
+extern "C" Int cnc_port_logic_dispatch_last_dock_target_id( void ) { return g_wasmLogicDispatchLastDockTargetId; }
+extern "C" Real cnc_port_logic_dispatch_last_dock_target_x( void ) { return g_wasmLogicDispatchLastDockTargetX; }
+extern "C" Real cnc_port_logic_dispatch_last_dock_target_y( void ) { return g_wasmLogicDispatchLastDockTargetY; }
+extern "C" Real cnc_port_logic_dispatch_last_dock_target_z( void ) { return g_wasmLogicDispatchLastDockTargetZ; }
 extern "C" Int cnc_port_logic_dispatch_build_command_count( void ) { return g_wasmLogicDispatchBuildCommandCount; }
 extern "C" Int cnc_port_logic_dispatch_last_build_command_type( void ) { return g_wasmLogicDispatchLastBuildCommandType; }
 extern "C" Int cnc_port_logic_dispatch_last_build_had_group( void ) { return g_wasmLogicDispatchLastBuildHadGroup; }
@@ -176,6 +190,25 @@ static void cnc_port_note_logic_dispatch_attack_command(
 			g_wasmLogicDispatchLastAttackTargetX = pos->x;
 			g_wasmLogicDispatchLastAttackTargetY = pos->y;
 			g_wasmLogicDispatchLastAttackTargetZ = pos->z;
+		}
+	}
+}
+
+static void cnc_port_note_logic_dispatch_dock_command(
+	GameMessage::Type type,
+	AIGroup *currentlySelectedGroup,
+	Object *target)
+{
+	++g_wasmLogicDispatchDockCommandCount;
+	g_wasmLogicDispatchLastDockCommandType = static_cast<Int>(type);
+	g_wasmLogicDispatchLastDockHadGroup = currentlySelectedGroup != NULL ? 1 : 0;
+	g_wasmLogicDispatchLastDockTargetId = target != NULL ? static_cast<Int>(target->getID()) : -1;
+	if (target != NULL) {
+		const Coord3D *pos = target->getPosition();
+		if (pos != NULL) {
+			g_wasmLogicDispatchLastDockTargetX = pos->x;
+			g_wasmLogicDispatchLastDockTargetY = pos->y;
+			g_wasmLogicDispatchLastDockTargetZ = pos->z;
 		}
 	}
 }
@@ -1300,6 +1333,10 @@ void GameLogic::logicMessageDispatcher( GameMessage *msg, void *userData )
 			// sanity
 			if( dockBuilding == NULL )
 				break;
+
+#ifdef __EMSCRIPTEN__
+			cnc_port_note_logic_dispatch_dock_command(msg->getType(), currentlySelectedGroup, dockBuilding);
+#endif
 
 			// tell the currently selected group to go get repaired
 			if( currentlySelectedGroup )
