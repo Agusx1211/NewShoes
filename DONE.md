@@ -42,6 +42,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       reported `filterMode="table"` and 256 table entries per channel, and the
       viewport center changed from `srgb(64,128,192)` to `srgb(63,126,255)`.
 
+- [x] Prove terrain cloud shadows are not dropped by the browser stage-2 limit.
+      Because the browser D3D8 adapter intentionally exposes no pixel shader
+      support, the original `W3DShaderManager` selects the fixed-function
+      terrain fallback, where the cloud pass is rendered as a generated
+      camera-space stage-0 modulation pass instead of the programmable stage-2
+      path. A real shellmap boot with full D3D8 draw diagnostics showed 3,306
+      browser indexed draws over 16 real frame advances, 429 generated
+      camera-space stage-0 draws, and 208 cloud-modulation draws with
+      `SRCBLEND=D3DBLEND_DESTCOLOR`, `DESTBLEND=D3DBLEND_ZERO`, `D3DTOP_SELECTARG1`,
+      a sampled 64x64 DXT1 texture, and first/last cloud draws spanning
+      sequences 291-3118. The same run had zero active stage-2 draws and no
+      stage-2 texture-stage warnings. This closes the stale TODO that assumed
+      terrain clouds were missing because stage 2 was dropped.
+
 ## User-reported play bugs (2026-07-07 session)
 
 - [x] Fix skirmish loading-screen map and faction art. Browser skirmish now
