@@ -125,6 +125,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       total one-frame upload traffic dropped from 125.4 KB to 107.6 KB while
       buffer updates stayed at 70, and `W3DWater.render.renderWater.before`
       dropped from 65.1 KB to 47.4 KB with draw time still low at 0.085 ms.
+- [x] Batch first-pass dynamic volumetric shadow uploads. The shadow manager
+      now collects the visible dynamic shadow render tasks for the increment
+      stencil pass, uploads their generated geometry in capacity-bounded VB/IB
+      chunks, and draws each task through the existing uploaded-range replay
+      path. The original per-task upload renderer remains the fallback for
+      oversized chunks, failed locks, and later decrement-pass invalidation.
+      Verified with `git diff --check`, `npm --prefix WebAssembly run
+      build:port`, `npm --prefix WebAssembly run build:port:release`, and a
+      Mac M4 Chrome/Metal producer profile copied to
+      `WebAssembly/artifacts/perf/runtime-frame-profile-dynamic-shadow-batch-mac.json`.
+      The Mac harness screenshot
+      `WebAssembly/artifacts/screenshots/runtime-frame-profile-dynamic-shadow-batch-mac.png`
+      showed the shell-map water/shoreline/shadow scene rendering normally. On
+      Mac Metal, total buffer updates dropped from 70 to 14 and
+      `bufferSubDataMs` dropped from 0.025 ms to 0.010 ms; dynamic shadow
+      VB/IB producers moved from 29+29 updates / 23.3 KB + 11.7 KB to 1+1
+      updates with the same exact byte payload.
 
 ## User-reported play bugs (2026-07-06 session)
 

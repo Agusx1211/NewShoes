@@ -90,6 +90,7 @@ protected:
 
 		// to render the stencil buffer polygon to the screen
 		void renderStencilShadows( void );
+		Int renderDynamicShadowTasks(void);
 
 		W3DVolumetricShadow *m_shadowList;
 		W3DVolumetricShadowRenderTask *m_dynamicShadowVolumesToRender;

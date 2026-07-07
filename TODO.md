@@ -220,10 +220,16 @@ shoreline tiles; `runtime-frame-profile-shoreline-static-ib-mac.json` measured
 vertices now use a narrower dynamic `XYZDUV2` buffer because the flat-water
 path uses prelit diffuse and constant normals; `runtime-frame-profile-flat-water-xyzduv2-mac.json`
 measured 70 buffer updates, 107.6 KB uploaded, 0.025 ms `bufferSubDataMs`, and
-`W3DWater.render.renderWater.before` down to 47.4 KB. The next upload
-byte-reduction pass should start with the remaining leading producers (dynamic
-volumetric shadow VB/IB ranges and `W3DWaterTracks.flush.batchUnlock.before`)
-before broader JS-side `NOOVERWRITE`, orphaning, or checksum changes. The user-reported shadow
+`W3DWater.render.renderWater.before` down to 47.4 KB. Dynamic volumetric
+shadow first-pass geometry now batches all visible dynamic shadow volumes into
+one VB upload and one IB upload when they fit the existing dynamic ring;
+`runtime-frame-profile-dynamic-shadow-batch-mac.json` measured 14 buffer
+updates, 107.8 KB uploaded, 0.010 ms `bufferSubDataMs`, and dynamic shadow
+VB/IB producers down to 1+1 updates / 23.3 KB + 11.7 KB. The next upload
+byte-reduction pass should start with the remaining leading byte producers
+(flat-water vertices, exact dynamic shadow bytes, and
+`W3DWaterTracks.flush.batchUnlock.before`) before broader JS-side
+`NOOVERWRITE`, orphaning, or checksum changes. The user-reported shadow
 flicker/breakage symptom is fixed in the live skirmish path, while broader
 shadow fidelity remains in the queued phased plan.
 
@@ -2638,7 +2644,12 @@ and then start with the PROFILE, not with any individual fix.
       `runtime-frame-profile-flat-water-xyzduv2-mac.json` measured 70 buffer
       updates, 107.6 KB/frame uploaded, and
       `W3DWater.render.renderWater.before` down to 47.4 KB. Next concrete
-      frontier: dynamic volumetric shadow VB/IB uploads and water-track batch
+      dynamic-shadow pass coalesced the first-pass dynamic shadow geometry into
+      chunk-level uploads:
+      `runtime-frame-profile-dynamic-shadow-batch-mac.json` measured 14 buffer
+      updates, 107.8 KB/frame uploaded, and dynamic shadow VB/IB producers down
+      to 1+1 updates / 23.3 KB + 11.7 KB. Next concrete byte frontier:
+      flat-water vertices, exact dynamic shadow bytes, and water-track batch
       unlock.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
