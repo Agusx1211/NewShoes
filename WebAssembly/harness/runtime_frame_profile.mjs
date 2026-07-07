@@ -565,6 +565,9 @@ const bufferProducerFields = [
 const drawProducerFields = [
   "calls",
   "indices",
+  "drawProfiledMs",
+  "sortedCalls",
+  "sortedIndices",
   "sortedDrawProfiledMs",
   "sortedDrawPreBatchMs",
   "sortedDrawDerivedMs",

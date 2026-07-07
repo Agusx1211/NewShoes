@@ -652,7 +652,7 @@ function d3d8BufferProducerSummary() {
     }));
 }
 
-function noteD3D8DrawProducerCall(producer, indexCount) {
+function noteD3D8DrawProducerCall(producer, indexCount, sortedProfiled) {
   if (!d3d8DrawProducerTrackingEnabled) {
     return null;
   }
@@ -663,6 +663,9 @@ function noteD3D8DrawProducerCall(producer, indexCount) {
       producer: label,
       calls: 0,
       indices: 0,
+      drawProfiledMs: 0,
+      sortedCalls: 0,
+      sortedIndices: 0,
       sortedDrawProfiledMs: 0,
       sortedDrawPreBatchMs: 0,
       sortedDrawDerivedMs: 0,
@@ -697,6 +700,10 @@ function noteD3D8DrawProducerCall(producer, indexCount) {
   }
   entry.calls += 1;
   entry.indices += Number(indexCount ?? 0) >>> 0;
+  if (sortedProfiled) {
+    entry.sortedCalls += 1;
+    entry.sortedIndices += Number(indexCount ?? 0) >>> 0;
+  }
   return entry;
 }
 
@@ -713,6 +720,7 @@ function d3d8DrawProducerSummary() {
   }
   return [...d3d8DrawProducerStats.values()]
     .sort((a, b) =>
+      b.drawProfiledMs - a.drawProfiledMs ||
       b.sortedDrawProfiledMs - a.sortedDrawProfiledMs ||
       b.calls - a.calls ||
       b.indices - a.indices)
@@ -9610,12 +9618,18 @@ function paintD3D8DrawIndexed(payload = {}) {
   const indexCount = Number(payload.indexCount ?? 0) >>> 0;
   const primitiveType = Number(payload.primitiveType ?? 0) >>> 0;
   const sortedDrawProfiled = payload.sortedDrawSubmitProfile === true;
+  const drawProducerStartedAt = d3d8DrawProducerTrackingEnabled ? perfNow() : 0;
   const sortedDrawStartedAt = sortedDrawProfiled ? perfNow() : 0;
   let sortedDrawPhaseStartedAt = sortedDrawStartedAt;
   let sortedDrawSubphaseStartedAt = sortedDrawStartedAt;
-  const drawProducerEntry = sortedDrawProfiled
-    ? noteD3D8DrawProducerCall(payload.producer, indexCount)
+  const drawProducerEntry = d3d8DrawProducerTrackingEnabled
+    ? noteD3D8DrawProducerCall(payload.producer, indexCount, sortedDrawProfiled)
     : null;
+  const finishDrawProducerProfile = drawProducerEntry
+    ? () => {
+        noteD3D8DrawProducerMs(drawProducerEntry, "drawProfiledMs", perfNow() - drawProducerStartedAt);
+      }
+    : () => {};
   const finishSortedDrawProfile = sortedDrawProfiled
     ? () => {
         const elapsed = perfNow() - sortedDrawStartedAt;
@@ -9676,6 +9690,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   if (tryMergeD3D8PendingDrawBatch(earlyBatchInfo)) {
     recordSortedDrawPhase?.("sortedDrawPreBatchMs");
     finishSortedDrawProfile();
+    finishDrawProducerProfile();
     harnessState.graphics.d3d8DrawIndexedSequence = drawSequence;
     return 1;
   }
@@ -10685,6 +10700,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     // spread-copied draw-history array — keep only the cheap sequence counter.
     recordSortedDrawPhase?.("sortedDrawTailMs");
     finishSortedDrawProfile();
+    finishDrawProducerProfile();
     harnessState.graphics.d3d8DrawIndexedSequence = drawSequence;
     return drawOk ? 1 : 0;
   }
@@ -10937,6 +10953,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   };
   recordSortedDrawPhase?.("sortedDrawTailMs");
   finishSortedDrawProfile();
+  finishDrawProducerProfile();
   return drawOk ? 1 : 0;
 }
 

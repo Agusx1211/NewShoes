@@ -77,6 +77,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Extend D3D8 draw producer attribution to non-sorted draw calls. The
+      opt-in producer table now records total `drawProfiledMs`, total
+      calls/indices, and separate sorted-call counters for every D3D8 indexed
+      draw when `PERF_PROFILE_D3D8_DRAW_PRODUCERS=1`, so non-sorted owners no
+      longer disappear behind slow-frame-only engine markers.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `node --check WebAssembly/harness/runtime_frame_profile.mjs`,
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and a synced Mac
+      M4/Metal release profile copied to
+      `runtime-frame-profile-all-draw-producers-mac.json` /
+      `runtime-frame-profile-all-draw-producers-mac.png`. The profile measured
+      4.062 ms/frame of attributed draw bridge work, with sorted leaders still
+      headed by `SortingRenderer.pool.draw.submit.before` (1.236 ms/frame),
+      `HeightMap.tilePasses.tileDraw.before` (0.629),
+      `W3DVolumetricShadow.renderDynamicVolume.draw.before` (0.634), and
+      `W3DVolumetricShadow.renderMeshVolume.draw.before` (0.466), plus the
+      newly visible non-sorted leader
+      `W3DProjectedShadow.renderShadows.meshFlush.before` (0.385 ms/frame).
+      Smaller non-sorted tails now show shoreline, display-string, roads,
+      extra-blend, water, water-track, and window draw producers.
+
 - [x] Add opt-in sorted D3D8 draw producer attribution to the runtime profile.
       The wasm D3D8 shim now passes the owning engine profile marker captured at
       sorted draw-submit scope entry through the browser draw bridge when
