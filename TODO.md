@@ -384,6 +384,11 @@ reproduce in the harness and verify each fix with a screenshot / state check.
       Narrow the remaining work to SFX + speech routing specifically: sample
       (non-stream) voice allocation, the 2D/3D SFX bus, and the speech/dialog
       mixer path — music streaming is no longer the blocker.
+      2026-07-07: fixed a concrete 2D SFX/voice pool-exhaustion bug in
+      `MilesAudioManager::killLowestPrioritySoundImmediately()` where the 2D
+      fallback released a 2D sound but erased the 3D playing list. Keep this
+      open for natural gameplay SFX/EVA/unit-speech verification and a
+      pool-pressure harness that proves preempted 2D handles are reused.
       Related: [[frontier-2026-07-05-skirmish-sweep]] audio bug.
 - [ ] **Text renders truncated** — some strings show only one letter or a few
       letters instead of the full text. Investigate the text/font glyph

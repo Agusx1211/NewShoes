@@ -10,6 +10,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## User-reported play bugs (2026-07-07 session)
 
+- [x] Fix the Miles 2D SFX/voice pool-preemption list erase. When the 2D sample
+      pool was exhausted, `MilesAudioManager::killLowestPrioritySoundImmediately()`
+      correctly released the selected lower-priority 2D sound but then erased
+      using `m_playing3DSounds`, corrupting or losing the 2D playing-list slot
+      instead of returning that handle to the 2D path. The fallback now erases
+      `m_playingSounds`, while the 3D branch remains on `m_playing3DSounds`.
+      `verify_audio_sample_start_frontier.mjs` now pins both fallback branches
+      so the list targets cannot regress.
+      Verified with `node --check WebAssembly/tools/verify_audio_sample_start_frontier.mjs`,
+      `node WebAssembly/tools/verify_audio_sample_start_frontier.mjs`,
+      `git diff --check`, `npm --prefix WebAssembly run build:port:release`,
+      `EXPECT_WASM=1 node WebAssembly/harness/audio_miles_webaudio_vertical_smoke.mjs`,
+      `EXPECT_WASM=1 node WebAssembly/harness/real_audio_event_smoke.mjs`, and
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`. The real-audio smoke
+      passed on the linked release runtime with real 3D SFX, 2D SFX, speech,
+      Zero Hour music, and base-Generals music all scheduled through Web Audio.
+      The broader natural gameplay SFX/EVA/unit-speech bug remains open in
+      TODO pending multi-event gameplay and pool-pressure verification.
+
 - [x] Fix shadows mostly not rendering in live skirmish. The D3D8 bridge now
       treats `D3DFVF_XYZRHW` vertices as transformed-and-lit screen-space
       vertices instead of sending them through the current world/view/projection

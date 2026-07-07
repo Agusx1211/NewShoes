@@ -61,6 +61,10 @@
 //   Pool selection (MilesAudioManager.cpp):
 //     - getFirst2DSample @ 1216: draws from m_availableSamples pool.
 //     - getFirst3DSample @ 1230: draws from m_available3DSamples pool.
+//     - killLowestPrioritySoundImmediately @ 2051: the 3D fallback erases
+//       from m_playing3DSounds after releasing the selected 3D sound, while
+//       the 2D fallback erases from m_playingSounds after releasing the
+//       selected 2D sound.
 //     - There is NO getFirstStream; the stream path opens the handle directly
 //       via AIL_open_stream inside playAudioEvent (pinned as a positive fact:
 //       getFirstStreamDecl = -1, and streamOpenCall is the AIL_open_stream line
@@ -519,6 +523,59 @@ function main() {
       },
       { key: "m_available3DSamples_erase", re: /m_available3DSamples\s*\.\s*erase\s*\(/ },
     ], errors, facts);
+  }
+  {
+    const defLine = pinDef(
+      miles,
+      "killLowestPrioritySoundImmediatelyDefLine",
+      /Bool\s+MilesAudioManager\s*::\s*killLowestPrioritySoundImmediately\s*\(/,
+      2051,
+      errors,
+      facts,
+    );
+    const range = functionBodyLineRange(miles.lines, defLine);
+    pinOrderedCursor(
+      miles,
+      range ? range.start : -1,
+      range ? range.end : -1,
+      "killLowestPrioritySoundImmediatelyBody",
+      [
+        {
+          key: "positional_branch",
+          re: /\bevent\s*->\s*isPositionalAudio\s*\(\s*\)/,
+        },
+        {
+          key: "m_playing3DSounds_iterate",
+          re: /m_playing3DSounds\s*\.\s*begin\s*\(\s*\)/,
+        },
+        {
+          key: "release_3d_lowest_priority",
+          re: /\breleasePlayingAudio\s*\(\s*playing\s*\)/,
+        },
+        {
+          key: "m_playing3DSounds_erase",
+          re: /m_playing3DSounds\s*\.\s*erase\s*\(\s*it\s*\)/,
+        },
+        {
+          key: "non_positional_branch",
+          re: /^\s*else\s*$/,
+        },
+        {
+          key: "m_playingSounds_iterate",
+          re: /m_playingSounds\s*\.\s*begin\s*\(\s*\)/,
+        },
+        {
+          key: "release_2d_lowest_priority",
+          re: /\breleasePlayingAudio\s*\(\s*playing\s*\)/,
+        },
+        {
+          key: "m_playingSounds_erase",
+          re: /m_playingSounds\s*\.\s*erase\s*\(\s*it\s*\)/,
+        },
+      ],
+      errors,
+      facts,
+    );
   }
   // There is intentionally NO getFirstStream helper. Streams are opened
   // directly via AIL_open_stream inside playAudioEvent. Assert that no
