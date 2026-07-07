@@ -229,13 +229,21 @@ VB/IB producers down to 1+1 updates / 23.3 KB + 11.7 KB. A follow-up upload
 byte-reduction pass moved flat-water's constant tint/alpha out of the
 vertex payload: `runtime-frame-profile-flat-water-xyzuv2-tfactor-mac.json`
 measured 14 buffer updates, 102.1 KB uploaded, 0.010 ms `bufferSubDataMs`, and
-`W3DWater.render.renderWater.before` down to 41.4 KB. The next upload
-byte-reduction pass should start with the remaining leading byte producers
-(exact dynamic shadow bytes and `W3DWaterTracks.flush.batchUnlock.before`)
-before broader JS-side `NOOVERWRITE`, orphaning, checksum changes, or deeper
-flat-water shader/generated-UV work. The user-reported shadow flicker/breakage
-symptom is fixed in the live skirmish path, while broader shadow fidelity
-remains in the queued phased plan.
+`W3DWater.render.renderWater.before` down to 41.4 KB. A current release
+reprofile showed the real wall-time frontier had moved from upload bytes to
+draw submission and shoreline range fragmentation; the sorted shoreline
+renderer now keeps static vertex data but switches fragmented visible batches
+back to the dynamic-index path when they would exceed four static draw ranges.
+`runtime-frame-profile-shoreline-threshold4-final-mac.json` measured 9.05
+ms/frame wall vs 9.41 ms/frame in the same-session baseline, with
+`HeightMap.render.shoreLines.before` down from 1.405 ms to 0.200 ms and draw
+calls down from 403.6/frame to 319.4/frame. The next PERF pass should start
+from the remaining draw-side leaders (`WasmD3D8.browserDrawIndexed.before` and
+`W3DProjectedShadow.renderShadows.meshFlush.before`) before returning to the
+remaining byte-tail producers (exact dynamic shadow bytes and
+`W3DWaterTracks.flush.batchUnlock.before`). The user-reported shadow
+flicker/breakage symptom is fixed in the live skirmish path, while broader
+shadow fidelity remains in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
@@ -2660,7 +2668,17 @@ and then start with the PROFILE, not with any individual fix.
       buffer updates, 102.1 KB/frame uploaded, and
       `W3DWater.render.renderWater.before` down to 41.4 KB. Further flat-water
       byte reductions would need shader/generated-UV work or a custom packed
-      vertex format.
+      vertex format. A current release reprofile then showed shoreline draw
+      fragmentation, not upload time, as the next local wall-time target; the
+      thresholded shoreline visible-index path uses dynamic indices only for
+      batches that would exceed four static draw ranges.
+      `runtime-frame-profile-shoreline-threshold4-final-mac.json` measured
+      9.05 ms/frame wall vs 9.41 ms/frame in the same-session baseline,
+      `HeightMap.render.shoreLines.before` 1.405 ms -> 0.200 ms, and draw
+      calls 403.6/frame -> 319.4/frame. Next concrete PERF frontier:
+      `WasmD3D8.browserDrawIndexed.before` and
+      `W3DProjectedShadow.renderShadows.meshFlush.before`; byte-tail work
+      remains exact dynamic shadow bytes and water-track batch unlock.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing

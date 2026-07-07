@@ -166,6 +166,7 @@ void oversizeTheTerrain(Int amount)
 
 #define DEFAULT_MAX_BATCH_SHORELINE_TILES		512	//maximum number of terrain tiles rendered per call (must fit in one VB)
 #define DEFAULT_MAX_MAP_SHORELINE_TILES		4096	//default size of array allocated to hold all map shoreline tiles.
+#define MAX_STATIC_SHORELINE_DRAW_RANGES		4	//above this, dynamic visible indices are cheaper than many static draws.
 
 #define ADJUST_FROM_INDEX_TO_REAL(k) ((k-m_map->getBorderSizeInline())*MAP_XY_FACTOR)
 inline Int IABS(Int x) {	if (x>=0) return x; return -x;};
@@ -2948,8 +2949,28 @@ flushVertexBuffer1:
 			continue;
 
 		indexCount=batchTileCount*6;
+		Bool useStaticShoreLineIB = useStaticShoreLineVB && m_indexShoreLine;
+		if (useStaticShoreLineIB)
+		{
+			Int previousShoreTileIndex=-2;
+			Int runCount=0;
+			for (Int tileIndex=0; tileIndex<batchTileCount; tileIndex++)
+			{
+				shoreLineTileInfo *shoreInfo=batchShoreInfo[tileIndex];
+				const Int shoreTileIndex=shoreInfo-m_shoreLineTilePositions;
 
-		if (useStaticShoreLineVB && m_indexShoreLine)
+				if (shoreTileIndex != previousShoreTileIndex+1)
+					runCount++;
+				previousShoreTileIndex=shoreTileIndex;
+
+				if (runCount > MAX_STATIC_SHORELINE_DRAW_RANGES)
+					break;
+			}
+
+			useStaticShoreLineIB = runCount <= MAX_STATIC_SHORELINE_DRAW_RANGES;
+		}
+
+		if (useStaticShoreLineIB)
 		{
 			DX8Wrapper::Set_Index_Buffer(m_indexShoreLine,0);
 			DX8Wrapper::Set_Vertex_Buffer(m_vertexShoreLine);

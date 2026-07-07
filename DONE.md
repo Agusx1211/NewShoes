@@ -160,6 +160,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       total one-frame upload traffic dropped from 107.8 KB to 102.1 KB while
       buffer updates stayed at 14, and `W3DWater.render.renderWater.before`
       dropped from 47.4 KB to 41.4 KB.
+- [x] Collapse fragmented sorted shoreline draw ranges when static-index
+      runs get too small. `renderShoreLinesSorted()` still uses the persistent
+      static shoreline vertex/index buffers for contiguous visible tile runs,
+      but now counts visible static index ranges and falls back to the existing
+      dynamic visible-index path when a batch would exceed four static draw
+      ranges. This preserves exact visible-tile culling, the original
+      quick-flip triangle order, and destination-alpha shoreline render state
+      while trading a small dynamic index upload for fewer draw submissions on
+      fragmented views. Verified with `git diff --check`, `npm --prefix
+      WebAssembly run build:port`, `EXPECT_WASM=1 node harness/smoke.mjs`,
+      `npm --prefix WebAssembly run build:port:release`, and a Mac M4
+      Chrome/Metal release profile copied to
+      `WebAssembly/artifacts/perf/runtime-frame-profile-shoreline-threshold4-final-mac.json`.
+      The Mac harness screenshot
+      `WebAssembly/artifacts/screenshots/runtime-frame-profile-shoreline-threshold4-final-mac.png`
+      showed shell-map shoreline/water/menu rendering normally. On Mac Metal,
+      the same-session release baseline measured 9.41 ms/frame wall,
+      403.6 draws/frame, and `HeightMap.render.shoreLines.before` at
+      1.405 ms; the final run measured 9.05 ms/frame wall, 319.4 draws/frame,
+      and shoreline at 0.200 ms. The tradeoff is expected: index upload bytes
+      rose from 77.9 KB/frame to 129.6 KB/frame and `bufferSubDataMs` from
+      0.043 ms/frame to 0.045 ms/frame.
 
 ## User-reported play bugs (2026-07-06 session)
 
