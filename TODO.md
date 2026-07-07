@@ -405,6 +405,61 @@ symptom is temporal — NOT a single still.
       `SpecialPowerModule` firing + recharge. Verify by purchasing then firing a
       power in the harness and reading back the special-power module state.
 
+## Visual fidelity — missing/degraded graphic effects (2026-07-07 Claude audit)
+
+Owner reports the game "used to feel more vivid." Audit of the D3D8→WebGL shim
+found several effects the original shipped that the port silently drops (shaders
++ gamma are stubbed). Each is an individual item; verify with before/after
+screenshots on the release build.
+
+- [ ] **Screen gamma is ignored (whole-image flatness)** — `IDirect3DDevice8::
+      SetGammaRamp` is a no-op in the shim (`WebAssembly/src/wasm_d3d8_shim.cpp:
+      2736` `SetGammaRamp(...) override {}`). The original drives screen gamma
+      over the whole framebuffer; `m_displayGamma` defaults to 1.0 but the
+      brightness control maps it 0.6→2.0 (`GlobalData.cpp:1241-1249`), so the
+      intended brightness/contrast/punch is dropped and output shows raw
+      uncorrected tone. Likely the single biggest "less vivid" cause (affects
+      every pixel every frame). Fix: apply the requested gamma ramp as a final
+      WebGL present/post pass (or honor `m_displayGamma`). Verify by toggling it
+      on the release build and comparing screenshots.
+- [ ] **Terrain noise/detail shaders are dead (flat ground)** — the shim stubs
+      the programmable pipeline (`wasm_d3d8_shim.cpp:3399-3402`:
+      `CreatePixelShader → D3DERR_NOTAVAILABLE`, `SetPixelShader/SetVertexShader`
+      no-ops), so the shipped terrain shaders (`Shaders/terrainnoise*.nvp`,
+      `fterrainnoise*.nvp`, `roadnoise2.nvp`) never run. `HeightMap.cpp:2064-2092`
+      selects `W3DShaderManager::ST_TERRAIN_BASE_NOISE1/2/12` plus a "macro
+      noise/lightmap texture (pass 3)"; with shaders unavailable W3D falls back
+      to plain fixed-function terrain, losing the fine noise + lightmap detail
+      layer that gave the ground texture/depth. Fix: reimplement the terrain
+      base+noise multi-texture blend as a WebGL2 shader in the bridge (the
+      fixed-function fallback drops the noise/lightmap pass). Verify vs original
+      terrain screenshots.
+- [ ] **Cloud shadows over terrain missing (static map)** — the original blends
+      a scrolling `cloudmap.tga` as an extra terrain texture stage
+      (`TerrainTex.cpp:909` `CloudMapTerrainTextureClass`), producing moving
+      cloud shadows across the map. The port likely drops the higher terrain
+      texture stage (evidence of stage-2+ being dropped/limited:
+      `TODO.md` stage-2 water note + prior audit "stage-2+ dropped vs 8-stage
+      caps"). Result: terrain is static/flat with no drifting shadows. Fix:
+      ensure the scrolling cloud-map stage is bound and animated in the terrain
+      draw path. Verify by watching multiple frames for moving cloud shadows.
+- [ ] **Heat-haze / screen smudges not rendering (flat explosions/fire)** — the
+      original distorts the background behind heat particles ("screen smudges
+      which are particles that distort the background behind them",
+      `W3DParticleSys.cpp:381`) — the shimmer around fire, explosions, and jet
+      exhaust. This needs a grab-framebuffer + refraction pass, exactly the kind
+      of render-to-texture the fixed-function WebGL bridge tends to drop
+      (related to the known "invisible explosions" report). Fix: implement the
+      smudge/distortion pass (sample the current color target and offset by the
+      smudge geometry) in the bridge. Verify with an explosion capture.
+- [ ] **Monochrome / motion-blur screen shaders missing (special-FX tints)** —
+      also casualties of the stubbed pixel-shader path: `Shaders/monochrome.nvp`
+      / `invmonochrome.nvp` (screen monochrome/tint used by some special
+      powers/EMP/superweapon flashes) and `MotionBlur.nvv`/`motionblur.nvp`
+      (motion blur). Lower priority than the above but part of the same
+      dead-shader gap. Fix: implement these as WebGL2 post passes when their
+      shader is selected. Verify by triggering the relevant effect.
+
 ## Strategy pivot — real `init()` whole-program link (current focus)
 
 See `AGENTS.md` "How the port advances". Probe/smoke accretion is over; these
