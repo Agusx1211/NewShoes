@@ -2783,7 +2783,7 @@ void WaterRenderObjClass::drawRiverWater(PolygonTrigger *pTrig)
 	m_drawingRiver = true;
 
 	//allocate 2 triangles per side with 3 indices per triangle
-	DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8,(rectangleCount+1)*2*3);
+	DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8,rectangleCount*6);
 	{
 		DynamicIBAccessClass::WriteLockClass lockib(&ib_access);
  		UnsignedShort *curIb = lockib.Get_Index_Array();
@@ -3128,8 +3128,10 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 	vCount++;
 
 	Int i, j;
+	const Int vertexCount = uCount * vCount;
+	const Int indexCount = rectangleCount * 6;
 	//allocate 2 triangles per side with 3 indices per triangle
-	DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8,(rectangleCount+1)*2*3);
+	DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8,indexCount);
 	{
 		DynamicIBAccessClass::WriteLockClass lockib(&ib_access);
  		UnsignedShort *curIb = lockib.Get_Index_Array();
@@ -3206,7 +3208,7 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 	//Keep diffuse from lighting calculations but substitute custom alpha
 	diffuse |= m_settings[m_tod].waterDiffuse & 0xff000000;	//copy alpha/opacity from ini setting
 
-	DynamicVBAccessClass vb_access(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,(rectangleCount+1)*2);
+	DynamicVBAccessClass vb_access(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,vertexCount);
 
 //#define WAVY_WATER
 //#define FEATHER_LAYER_COUNT (3) //LORENZEN
@@ -3367,7 +3369,7 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 //		}
 //#endif // FEATHER_WATER
 //#endif //WAVY_WATER
-		DX8Wrapper::Draw_Triangles(	0,rectangleCount*2, 0,	(rectangleCount+1)*2);//lorenzen thinks this is where to itereate the soft shoreline effect
+		DX8Wrapper::Draw_Triangles(	0,rectangleCount*2, 0,	vertexCount);//lorenzen thinks this is where to itereate the soft shoreline effect
 	}
 
 
@@ -3376,7 +3378,7 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 	if (false) {
 		DX8Wrapper::_Get_D3D_Device8()->SetRenderState(D3DRS_FILLMODE,D3DFILL_WIREFRAME);
 		m_pDev->SetRenderState(D3DRS_ALPHABLENDENABLE , false);
-		DX8Wrapper::Draw_Triangles(	0,rectangleCount*2, 0,	(rectangleCount+1)*2);
+		DX8Wrapper::Draw_Triangles(	0,rectangleCount*2, 0,	vertexCount);
 		m_pDev->SetRenderState(D3DRS_ALPHABLENDENABLE , true);
 		DX8Wrapper::_Get_D3D_Device8()->SetRenderState(D3DRS_FILLMODE,D3DFILL_SOLID);
 	}
@@ -3409,7 +3411,7 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 			//Shroud shader uses z-compare of EQUAL which wouldn't work on water because it doesn't
 			//write to the zbuffer.  Change to LESSEQUAL.
 			DX8Wrapper::_Get_D3D_Device8()->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
-			DX8Wrapper::Draw_Triangles(	0,rectangleCount*2, 0,	(rectangleCount+1)*2);
+			DX8Wrapper::Draw_Triangles(	0,rectangleCount*2, 0,	vertexCount);
 			DX8Wrapper::_Get_D3D_Device8()->SetRenderState(D3DRS_ZFUNC, D3DCMP_EQUAL);
 			W3DShaderManager::resetShader(W3DShaderManager::ST_SHROUD_TEXTURE);
 		}

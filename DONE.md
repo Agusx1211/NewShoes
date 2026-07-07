@@ -27,6 +27,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       72.6 KB `DISCARD`, 0.060 ms `bufferSubDataMs`, and a useful top-producer
       breakdown led by water render, terrain extra-blend, volumetric shadow
       VB/IB uploads, shoreline, and water-track batch unlock.
+- [x] Reduce flat water dynamic upload ranges to the vertices and indices
+      actually emitted. `WaterRenderObjClass::drawTrapezoidWater()` previously
+      allocated and reported `2 * (rectangleCount + 1)` dynamic vertices even
+      though the grid writer only filled `(uCells + 1) * (vCells + 1)`, leaving
+      large unused tails in the browser D3D8 upload. The trapezoid path now
+      requests exact vertex and index counts, and the river helper now requests
+      the exact dynamic index count too. Verified with `git diff --check`,
+      `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly run build:port:release`, a local producer
+      profile, and a Mac M4/Metal producer profile copied to
+      `WebAssembly/artifacts/perf/runtime-frame-profile-water-exact-ranges-mac.json`.
+      On Mac Metal the one-frame producer profile stayed at 137 buffer updates
+      while total upload traffic dropped from 326.3 KB to 267.6 KB and
+      `W3DWater.render.renderWater.before` dropped from 140.5 KB to 82.0 KB.
 
 ## User-reported play bugs (2026-07-06 session)
 

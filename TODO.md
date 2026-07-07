@@ -195,9 +195,15 @@ updates, 326 KB uploaded, 253 KB `NOOVERWRITE`, 72.6 KB `DISCARD`, and
 `HeightMap.render.extraBlend.before` (48.1 KB),
 `W3DVolumetricShadow.renderDynamicVolume.vbUnlock.before` (46.6 KB),
 `HeightMap.render.shoreLines.before` (44.8 KB), and
-`W3DVolumetricShadow.renderDynamicVolume.ibUnlock.before` (23.3 KB). The next
-upload byte-reduction pass should start with those producers before broader
-JS-side `NOOVERWRITE`, orphaning, or checksum changes. The user-reported shadow
+`W3DVolumetricShadow.renderDynamicVolume.ibUnlock.before` (23.3 KB). Exact
+dynamic ranges for flat/trapezoid water now trim unused uploaded vertices and
+indices: `runtime-frame-profile-water-exact-ranges-mac.json` measured 137
+buffer updates, 267.6 KB uploaded, 0.075 ms `bufferSubDataMs`, and
+`W3DWater.render.renderWater.before` down to 82.0 KB. The next upload
+byte-reduction pass should start with the new leading non-water producers
+(`HeightMap.render.extraBlend.before`, volumetric shadow VB/IB unlock, and
+`HeightMap.render.shoreLines.before`) before broader JS-side `NOOVERWRITE`,
+orphaning, or checksum changes. The user-reported shadow
 flicker/breakage symptom is fixed in the live skirmish path, while broader
 shadow fidelity remains in the queued phased plan.
 
@@ -2580,7 +2586,15 @@ and then start with the PROFILE, not with any individual fix.
       VB/IB uploads (46.6 KB + 23.3 KB), shoreline indices/verts (44.8 KB), and
       water-track batch unlock (18.2 KB). Next pass: reduce or static-cache
       those concrete water/terrain/shadow producer byte ranges before touching
-      generic JS-side orphaning or checksum policy.
+      generic JS-side orphaning or checksum policy. A follow-up exact-range
+      pass fixed `drawTrapezoidWater()` over-allocation: the helper now uploads
+      only the `(uCells + 1) * (vCells + 1)` vertices it writes and only the
+      `rectangleCount * 6` indices it fills. The Mac M4/Metal sanity profile
+      `runtime-frame-profile-water-exact-ranges-mac.json` dropped total
+      measured one-frame upload traffic from 326.3 KB to 267.6 KB and
+      `W3DWater.render.renderWater.before` from 140.5 KB to 82.0 KB at the same
+      137 update calls. Next concrete frontier: extra-blend terrain, volumetric
+      shadow VB/IB unlocks, and shoreline ranges.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing
