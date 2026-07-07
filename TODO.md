@@ -317,11 +317,19 @@ draw-hot-path pass removed stale per-draw canvas/perf-summary bookkeeping from
 lite D3D8 draws; `runtime-frame-profile-draw-hotpath-light-sync-mac.json`
 reduced the viewport/bookkeeping bucket from 0.657 to 0.238 ms/frame, but
 overall averages stayed dominated by intermittent display-string/world-uniform,
-draw-call, road, and water driver stalls. The next PERF pass should attack
-those remaining driver stalls or reduce world-space submissions, not material,
-light, text-geometry, first-vertex VAO setup, transform comparison/allocation,
-or draw-time harness bookkeeping. Broader shadow fidelity remains in the queued
-phased plan.
+draw-call, road, and water driver stalls. Opt-in sorted D3D8 draw producer
+attribution now replaces the old internal `WasmD3D8.browserDrawIndexed.before`
+bucket with owning renderer labels:
+`runtime-frame-profile-draw-producers-final-mac.json` measured 3.859 ms/frame
+of sorted draw bridge work on Mac M4/Metal, led by
+`SortingRenderer.pool.draw.submit.before` (1.218 ms/frame, 74.7 calls),
+`W3DVolumetricShadow.renderDynamicVolume.draw.before` (0.989 ms/frame, 64.2
+calls), `W3DVolumetricShadow.renderMeshVolume.draw.before` (0.888 ms/frame,
+47.8 calls), and `HeightMap.tilePasses.tileDraw.before` (0.564 ms/frame, 48
+calls). The next PERF pass should use those producers to reduce world-space
+submissions or residual draw-submit stalls, not material, light, text-geometry,
+first-vertex VAO setup, transform comparison/allocation, or draw-time harness
+bookkeeping. Broader shadow fidelity remains in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`

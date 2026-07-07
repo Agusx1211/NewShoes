@@ -77,6 +77,30 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Add opt-in sorted D3D8 draw producer attribution to the runtime profile.
+      The wasm D3D8 shim now passes the owning engine profile marker captured at
+      sorted draw-submit scope entry through the browser draw bridge when
+      producer tracking is enabled, while internal `WasmD3D8.*`,
+      `DX8Wrapper.*`, and frame markers are filtered out of producer ownership.
+      `bridge.js` aggregates per-producer sorted draw calls, indices, total
+      profiled bridge time, and the existing sorted draw sub-buckets;
+      `runtime_frame_profile.mjs` exposes the delta behind
+      `PERF_PROFILE_D3D8_DRAW_PRODUCERS=1`.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `node --check WebAssembly/harness/runtime_frame_profile.mjs`,
+      `npm --prefix WebAssembly run build:port:release`,
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and a synced Mac
+      M4/Metal release profile copied to
+      `runtime-frame-profile-draw-producers-final-mac.json` /
+      `runtime-frame-profile-draw-producers-final-mac.png`. The profile kept
+      the renderer on `ANGLE Metal Renderer: Apple M4` and measured
+      3.859 ms/frame of sorted draw bridge work, now attributed to
+      `SortingRenderer.pool.draw.submit.before` (1.218 ms/frame),
+      `W3DVolumetricShadow.renderDynamicVolume.draw.before` (0.989),
+      `W3DVolumetricShadow.renderMeshVolume.draw.before` (0.888), and
+      `HeightMap.tilePasses.tileDraw.before` (0.564) instead of the internal
+      `WasmD3D8.browserDrawIndexed.before` marker.
+
 - [x] Remove per-draw harness bookkeeping from the lite D3D8 draw hot path.
       Draw-time canvas sync now skips the no-op pending-batch flush and avoids
       rebuilding `harnessState.graphics` when the canvas size did not change,

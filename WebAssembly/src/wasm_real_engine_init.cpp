@@ -298,6 +298,8 @@ static double g_engine_frame_profile_last_mark_ms = 0.0;
 static int g_engine_frame_profile_transitions = 0;
 static int g_engine_frame_profile_sorted_draw_submit_depth = 0;
 static std::string g_engine_frame_profile_last_label;
+static std::string g_engine_frame_profile_sorted_draw_submit_label;
+static std::string g_engine_frame_profile_last_producer_label;
 static std::vector<EngineFrameProfileBucket> g_engine_frame_profile_buckets;
 static unsigned int g_engine_frame_render2d_calls = 0;
 static unsigned int g_engine_frame_render2d_draws = 0;
@@ -375,6 +377,13 @@ void add_engine_frame_profile_sample(const std::string &label, double elapsed_ms
 	g_engine_frame_profile_buckets.push_back(bucket);
 }
 
+bool is_engine_frame_profile_internal_draw_marker(const std::string &label)
+{
+	return label.rfind("WasmD3D8.", 0) == 0 ||
+		label.rfind("DX8Wrapper.", 0) == 0 ||
+		label.rfind("frame.", 0) == 0;
+}
+
 void reset_engine_frame_profile()
 {
 	if (!g_engine_frame_profile_enabled) {
@@ -385,7 +394,10 @@ void reset_engine_frame_profile()
 	g_engine_frame_profile_started_ms = emscripten_get_now();
 	g_engine_frame_profile_last_mark_ms = g_engine_frame_profile_started_ms;
 	g_engine_frame_profile_transitions = 0;
+	g_engine_frame_profile_sorted_draw_submit_depth = 0;
+	g_engine_frame_profile_sorted_draw_submit_label.clear();
 	g_engine_frame_profile_last_label = "frame.start";
+	g_engine_frame_profile_last_producer_label.clear();
 }
 
 void note_engine_frame_profile_marker(const char *name)
@@ -400,6 +412,9 @@ void note_engine_frame_profile_marker(const char *name)
 			now_ms - g_engine_frame_profile_last_mark_ms);
 	}
 	g_engine_frame_profile_last_label = name != nullptr ? name : "(null)";
+	if (!is_engine_frame_profile_internal_draw_marker(g_engine_frame_profile_last_label)) {
+		g_engine_frame_profile_last_producer_label = g_engine_frame_profile_last_label;
+	}
 	g_engine_frame_profile_last_mark_ms = now_ms;
 	++g_engine_frame_profile_transitions;
 }
@@ -565,6 +580,12 @@ extern "C" void cnc_port_note_render2d_render(
 extern "C" void cnc_port_begin_sorted_draw_submit_profile_scope()
 {
 	if (g_engine_frame_profile_enabled) {
+		if (g_engine_frame_profile_sorted_draw_submit_depth == 0) {
+			g_engine_frame_profile_sorted_draw_submit_label =
+				g_engine_frame_profile_last_producer_label.empty()
+					? g_engine_frame_profile_last_label
+					: g_engine_frame_profile_last_producer_label;
+		}
 		++g_engine_frame_profile_sorted_draw_submit_depth;
 	}
 }
@@ -573,6 +594,9 @@ extern "C" void cnc_port_end_sorted_draw_submit_profile_scope()
 {
 	if (g_engine_frame_profile_sorted_draw_submit_depth > 0) {
 		--g_engine_frame_profile_sorted_draw_submit_depth;
+		if (g_engine_frame_profile_sorted_draw_submit_depth == 0) {
+			g_engine_frame_profile_sorted_draw_submit_label.clear();
+		}
 	}
 }
 
@@ -581,12 +605,21 @@ extern "C" int cnc_port_is_sorted_draw_submit_profile_scope()
 	return g_engine_frame_profile_enabled && g_engine_frame_profile_sorted_draw_submit_depth > 0 ? 1 : 0;
 }
 
+extern "C" const char *cnc_port_current_sorted_draw_submit_profile_marker()
+{
+	return g_engine_frame_profile_sorted_draw_submit_label.empty()
+		? ""
+		: g_engine_frame_profile_sorted_draw_submit_label.c_str();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_frame_profile(int enabled)
 {
 	g_engine_frame_profile_enabled = enabled != 0;
 	if (!g_engine_frame_profile_enabled) {
 		g_engine_frame_profile_buckets.clear();
 		g_engine_frame_profile_last_label.clear();
+		g_engine_frame_profile_sorted_draw_submit_label.clear();
+		g_engine_frame_profile_last_producer_label.clear();
 		g_engine_frame_profile_started_ms = 0.0;
 		g_engine_frame_profile_last_mark_ms = 0.0;
 		g_engine_frame_profile_transitions = 0;

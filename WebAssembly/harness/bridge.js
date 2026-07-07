@@ -391,6 +391,7 @@ const d3d8BufferStats = {
   lastRelease: null,
 };
 const d3d8BufferProducerStats = new Map();
+const d3d8DrawProducerStats = new Map();
 let d3d8ViewportState = null;
 let browser_fbo_incomplete_count = 0;
 const d3d8ViewportStats = {
@@ -651,6 +652,82 @@ function d3d8BufferProducerSummary() {
     }));
 }
 
+function noteD3D8DrawProducerCall(producer, indexCount) {
+  if (!d3d8DrawProducerTrackingEnabled) {
+    return null;
+  }
+  const label = bufferProducerLabel(producer);
+  let entry = d3d8DrawProducerStats.get(label);
+  if (!entry) {
+    entry = {
+      producer: label,
+      calls: 0,
+      indices: 0,
+      sortedDrawProfiledMs: 0,
+      sortedDrawPreBatchMs: 0,
+      sortedDrawDerivedMs: 0,
+      sortedDrawTextureDiagMs: 0,
+      sortedDrawViewportMs: 0,
+      sortedDrawDiagnosticsMs: 0,
+      sortedDrawGeometryMs: 0,
+      sortedDrawProgramMs: 0,
+      sortedDrawFillShadeMs: 0,
+      sortedDrawVertexAttribMs: 0,
+      sortedDrawTextureBindMs: 0,
+      sortedDrawUniformMs: 0,
+      sortedDrawApplyRenderStateMs: 0,
+      sortedDrawRenderBuildMs: 0,
+      sortedDrawRenderBaseUniformMs: 0,
+      sortedDrawRenderMaterialUniformMs: 0,
+      sortedDrawRenderLightUniformMs: 0,
+      sortedDrawRenderStageUniformMs: 0,
+      sortedDrawRenderAlphaFogUniformMs: 0,
+      sortedDrawRenderUniformMs: 0,
+      sortedDrawTransformUniformMs: 0,
+      sortedDrawTransformCompareMs: 0,
+      sortedDrawWorldTransformUniformMs: 0,
+      sortedDrawViewTransformUniformMs: 0,
+      sortedDrawProjectionTransformUniformMs: 0,
+      sortedDrawPointSpriteUniformMs: 0,
+      sortedDrawTextureUniformMs: 0,
+      sortedDrawDrawOrBatchMs: 0,
+      sortedDrawTailMs: 0,
+    };
+    d3d8DrawProducerStats.set(label, entry);
+  }
+  entry.calls += 1;
+  entry.indices += Number(indexCount ?? 0) >>> 0;
+  return entry;
+}
+
+function noteD3D8DrawProducerMs(entry, field, elapsedMs) {
+  if (!entry || typeof field !== "string" || !(field in entry)) {
+    return;
+  }
+  entry[field] += elapsedMs;
+}
+
+function d3d8DrawProducerSummary() {
+  if (!d3d8DrawProducerTrackingEnabled) {
+    return [];
+  }
+  return [...d3d8DrawProducerStats.values()]
+    .sort((a, b) =>
+      b.sortedDrawProfiledMs - a.sortedDrawProfiledMs ||
+      b.calls - a.calls ||
+      b.indices - a.indices)
+    .slice(0, 128)
+    .map((entry) => {
+      const rounded = { ...entry };
+      for (const key of Object.keys(rounded)) {
+        if (key.endsWith("Ms")) {
+          rounded[key] = roundedPerfMs(rounded[key]);
+        }
+      }
+      return rounded;
+    });
+}
+
 function resetD3D8UniformSubgroupCaches() {
   d3d8LastBaseUniformKey = null;
   d3d8LastMaterialUniformInfo = null;
@@ -802,6 +879,8 @@ function d3d8PerfSummary() {
     bufferMirrorSkippedBytes: d3d8PerfStats.bufferMirrorSkippedBytes,
     bufferProducerTracking: d3d8BufferProducerTrackingEnabled,
     bufferProducers: d3d8BufferProducerSummary(),
+    drawProducerTracking: d3d8DrawProducerTrackingEnabled,
+    drawProducers: d3d8DrawProducerSummary(),
   };
 }
 
@@ -9164,6 +9243,7 @@ let d3d8SceneDrawHistoryLimit = 256;
 let d3d8AdjacentDrawBatchingEnabled = true;
 let d3d8LiteVertexBufferMirrorsEnabled = false;
 let d3d8BufferProducerTrackingEnabled = false;
+let d3d8DrawProducerTrackingEnabled = false;
 let d3d8BoundDrawDiagnosticsSetter = null;
 let d3d8BoundDrawDiagnosticsEnabled = true;
 function setD3D8BoundDrawDiagnostics(enabled) {
@@ -9185,6 +9265,13 @@ function setD3D8BufferProducerTracking(enabled) {
   }
   return d3d8BufferProducerTrackingEnabled;
 }
+function setD3D8DrawProducerTracking(enabled) {
+  d3d8DrawProducerTrackingEnabled = enabled === true || enabled === 1 || enabled === "1";
+  if (typeof globalThis !== "undefined") {
+    globalThis.__cncD3D8DrawProducerTrackingEnabled = d3d8DrawProducerTrackingEnabled;
+  }
+  return d3d8DrawProducerTrackingEnabled;
+}
 try {
   const _params = new URLSearchParams(globalThis.location?.search || "");
   const _diag = _params.get("diag");
@@ -9205,8 +9292,13 @@ try {
   if (_bufferProducers === "1" || _bufferProducers === "true" || _bufferProducers === "on") {
     d3d8BufferProducerTrackingEnabled = true;
   }
+  const _drawProducers = _params.get("d3d8DrawProducers");
+  if (_drawProducers === "1" || _drawProducers === "true" || _drawProducers === "on") {
+    d3d8DrawProducerTrackingEnabled = true;
+  }
 } catch (_e) { /* no location (node context) */ }
 setD3D8BufferProducerTracking(d3d8BufferProducerTrackingEnabled);
+setD3D8DrawProducerTracking(d3d8DrawProducerTrackingEnabled);
 if (typeof globalThis !== "undefined") {
   globalThis.__cncSetDiagLevel = (lvl) => {
     if (lvl === "lite" || lvl === "full") {
@@ -9240,6 +9332,8 @@ if (typeof globalThis !== "undefined") {
   globalThis.__cncGetD3D8LiteVertexMirrors = () => d3d8LiteVertexBufferMirrorsEnabled;
   globalThis.__cncSetD3D8BufferProducerTracking = setD3D8BufferProducerTracking;
   globalThis.__cncGetD3D8BufferProducerTracking = () => d3d8BufferProducerTrackingEnabled;
+  globalThis.__cncSetD3D8DrawProducerTracking = setD3D8DrawProducerTracking;
+  globalThis.__cncGetD3D8DrawProducerTracking = () => d3d8DrawProducerTrackingEnabled;
   globalThis.__cncSetD3D8BoundDrawDiagnostics = setD3D8BoundDrawDiagnostics;
   globalThis.__cncGetD3D8BoundDrawDiagnostics = () => d3d8BoundDrawDiagnosticsEnabled;
   globalThis.__cncFlushD3D8PendingDrawBatch = () => flushD3D8PendingDrawBatch("manual");
@@ -9519,10 +9613,22 @@ function paintD3D8DrawIndexed(payload = {}) {
   const sortedDrawStartedAt = sortedDrawProfiled ? perfNow() : 0;
   let sortedDrawPhaseStartedAt = sortedDrawStartedAt;
   let sortedDrawSubphaseStartedAt = sortedDrawStartedAt;
+  const drawProducerEntry = sortedDrawProfiled
+    ? noteD3D8DrawProducerCall(payload.producer, indexCount)
+    : null;
+  const finishSortedDrawProfile = sortedDrawProfiled
+    ? () => {
+        const elapsed = perfNow() - sortedDrawStartedAt;
+        d3d8PerfStats.sortedDrawProfiledMs += elapsed;
+        noteD3D8DrawProducerMs(drawProducerEntry, "sortedDrawProfiledMs", elapsed);
+      }
+    : () => {};
   const recordSortedDrawPhase = sortedDrawProfiled
     ? (field) => {
         const now = perfNow();
-        d3d8PerfStats[field] += now - sortedDrawPhaseStartedAt;
+        const elapsed = now - sortedDrawPhaseStartedAt;
+        d3d8PerfStats[field] += elapsed;
+        noteD3D8DrawProducerMs(drawProducerEntry, field, elapsed);
         sortedDrawPhaseStartedAt = now;
       }
     : null;
@@ -9534,7 +9640,9 @@ function paintD3D8DrawIndexed(payload = {}) {
   const recordSortedDrawSubphase = sortedDrawProfiled
     ? (field) => {
         const now = perfNow();
-        d3d8PerfStats[field] += now - sortedDrawSubphaseStartedAt;
+        const elapsed = now - sortedDrawSubphaseStartedAt;
+        d3d8PerfStats[field] += elapsed;
+        noteD3D8DrawProducerMs(drawProducerEntry, field, elapsed);
         sortedDrawSubphaseStartedAt = now;
       }
     : null;
@@ -9567,9 +9675,8 @@ function paintD3D8DrawIndexed(payload = {}) {
   });
   if (tryMergeD3D8PendingDrawBatch(earlyBatchInfo)) {
     recordSortedDrawPhase?.("sortedDrawPreBatchMs");
-    d3d8PerfStats.sortedDrawProfiledMs += sortedDrawProfiled ? perfNow() - sortedDrawStartedAt : 0;
+    finishSortedDrawProfile();
     harnessState.graphics.d3d8DrawIndexedSequence = drawSequence;
-    harnessState.graphics.d3d8Perf = d3d8PerfSummary();
     return 1;
   }
   flushD3D8PendingDrawBatch("drawBreak");
@@ -10034,13 +10141,17 @@ function paintD3D8DrawIndexed(payload = {}) {
         normalized: true,
       });
       if (sortedDrawProfiled) {
-        d3d8PerfStats.sortedDrawApplyRenderStateMs += perfNow() - applyRenderStateStartedAt;
+        const elapsed = perfNow() - applyRenderStateStartedAt;
+        d3d8PerfStats.sortedDrawApplyRenderStateMs += elapsed;
+        noteD3D8DrawProducerMs(drawProducerEntry, "sortedDrawApplyRenderStateMs", elapsed);
       }
       let renderUniformDetailStartedAt = sortedDrawProfiled ? perfNow() : 0;
       const recordRenderUniformDetail = sortedDrawProfiled
         ? (field) => {
             const now = perfNow();
-            d3d8PerfStats[field] += now - renderUniformDetailStartedAt;
+            const elapsed = now - renderUniformDetailStartedAt;
+            d3d8PerfStats[field] += elapsed;
+            noteD3D8DrawProducerMs(drawProducerEntry, field, elapsed);
             renderUniformDetailStartedAt = now;
           }
         : null;
@@ -10333,7 +10444,9 @@ function paintD3D8DrawIndexed(payload = {}) {
       const recordTransformDetail = sortedDrawProfiled
         ? (field) => {
             const now = perfNow();
-            d3d8PerfStats[field] += now - transformDetailStartedAt;
+            const elapsed = now - transformDetailStartedAt;
+            d3d8PerfStats[field] += elapsed;
+            noteD3D8DrawProducerMs(drawProducerEntry, field, elapsed);
             transformDetailStartedAt = now;
           }
         : null;
@@ -10571,7 +10684,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     // lite: skip the ~40-field probe, per-draw texture sampling, and the
     // spread-copied draw-history array — keep only the cheap sequence counter.
     recordSortedDrawPhase?.("sortedDrawTailMs");
-    d3d8PerfStats.sortedDrawProfiledMs += sortedDrawProfiled ? perfNow() - sortedDrawStartedAt : 0;
+    finishSortedDrawProfile();
     harnessState.graphics.d3d8DrawIndexedSequence = drawSequence;
     return drawOk ? 1 : 0;
   }
@@ -10823,7 +10936,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     d3d8Perf: d3d8PerfSummary(),
   };
   recordSortedDrawPhase?.("sortedDrawTailMs");
-  d3d8PerfStats.sortedDrawProfiledMs += sortedDrawProfiled ? perfNow() - sortedDrawStartedAt : 0;
+  finishSortedDrawProfile();
   return drawOk ? 1 : 0;
 }
 

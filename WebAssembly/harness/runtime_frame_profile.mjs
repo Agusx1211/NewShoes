@@ -562,6 +562,40 @@ const bufferProducerFields = [
   "mirrorSkippedBytes",
 ];
 
+const drawProducerFields = [
+  "calls",
+  "indices",
+  "sortedDrawProfiledMs",
+  "sortedDrawPreBatchMs",
+  "sortedDrawDerivedMs",
+  "sortedDrawTextureDiagMs",
+  "sortedDrawViewportMs",
+  "sortedDrawDiagnosticsMs",
+  "sortedDrawGeometryMs",
+  "sortedDrawProgramMs",
+  "sortedDrawFillShadeMs",
+  "sortedDrawVertexAttribMs",
+  "sortedDrawTextureBindMs",
+  "sortedDrawUniformMs",
+  "sortedDrawApplyRenderStateMs",
+  "sortedDrawRenderBuildMs",
+  "sortedDrawRenderBaseUniformMs",
+  "sortedDrawRenderMaterialUniformMs",
+  "sortedDrawRenderLightUniformMs",
+  "sortedDrawRenderStageUniformMs",
+  "sortedDrawRenderAlphaFogUniformMs",
+  "sortedDrawRenderUniformMs",
+  "sortedDrawTransformUniformMs",
+  "sortedDrawTransformCompareMs",
+  "sortedDrawWorldTransformUniformMs",
+  "sortedDrawViewTransformUniformMs",
+  "sortedDrawProjectionTransformUniformMs",
+  "sortedDrawPointSpriteUniformMs",
+  "sortedDrawTextureUniformMs",
+  "sortedDrawDrawOrBatchMs",
+  "sortedDrawTailMs",
+];
+
 function bufferProducerMap(perf) {
   const result = new Map();
   for (const entry of perf?.bufferProducers ?? []) {
@@ -607,6 +641,51 @@ function bufferProducerDelta(before, after, framesAdvanced) {
     .slice(0, 64);
 }
 
+function drawProducerMap(perf) {
+  const result = new Map();
+  for (const entry of perf?.drawProducers ?? []) {
+    if (typeof entry?.producer === "string" && entry.producer.length > 0) {
+      result.set(entry.producer, entry);
+    }
+  }
+  return result;
+}
+
+function drawProducerDelta(before, after, framesAdvanced) {
+  if (!before?.drawProducerTracking && !after?.drawProducerTracking) {
+    return [];
+  }
+  const beforeMap = drawProducerMap(before);
+  const afterMap = drawProducerMap(after);
+  const producers = new Set([...beforeMap.keys(), ...afterMap.keys()]);
+  const delta = [];
+  for (const producer of producers) {
+    const beforeEntry = beforeMap.get(producer) ?? {};
+    const afterEntry = afterMap.get(producer) ?? {};
+    const entry = { producer };
+    for (const field of drawProducerFields) {
+      const beforeValue = Number(beforeEntry[field] ?? 0);
+      const afterValue = Number(afterEntry[field] ?? 0);
+      entry[field] = Number.isFinite(beforeValue) && Number.isFinite(afterValue)
+        ? afterValue - beforeValue
+        : null;
+    }
+    if (framesAdvanced > 0) {
+      entry.perFrame = {};
+      for (const field of drawProducerFields) {
+        entry.perFrame[field] = Number(entry[field] ?? 0) / framesAdvanced;
+      }
+    }
+    delta.push(entry);
+  }
+  return delta
+    .filter((entry) => Number(entry.calls ?? 0) > 0 || Number(entry.sortedDrawProfiledMs ?? 0) > 0)
+    .sort((a, b) =>
+      Number(b.sortedDrawProfiledMs ?? 0) - Number(a.sortedDrawProfiledMs ?? 0)
+      || Number(b.calls ?? 0) - Number(a.calls ?? 0))
+    .slice(0, 64);
+}
+
 function browserPerfDelta(before, after, framesAdvanced) {
   if (!before || !after) {
     return null;
@@ -632,6 +711,7 @@ function browserPerfDelta(before, after, framesAdvanced) {
     Number(delta.textureConvertMs ?? 0) +
     Math.max(0, Number(delta.bufferUpdateMs ?? 0) - Number(delta.bufferSubDataMs ?? 0));
   const bufferProducers = bufferProducerDelta(before, after, framesAdvanced);
+  const drawProducers = drawProducerDelta(before, after, framesAdvanced);
   return {
     before,
     after,
@@ -639,6 +719,7 @@ function browserPerfDelta(before, after, framesAdvanced) {
     trackedGlCallMs,
     trackedBrowserMs,
     bufferProducers,
+    drawProducers,
     perFrame: framesAdvanced > 0
       ? {
           draws: Number(delta.draws ?? 0) / framesAdvanced,
@@ -932,8 +1013,11 @@ const sampleBrowserPerf = process.env.PERF_PROFILE_SAMPLE_BROWSER === "1";
 const d3d8AdjacentBatching = process.env.PERF_PROFILE_D3D8_BATCH !== "0";
 const d3d8LiteVertexMirrors = process.env.PERF_PROFILE_D3D8_VERTEX_MIRRORS === "1";
 const d3d8BufferProducers = process.env.PERF_PROFILE_D3D8_BUFFER_PRODUCERS === "1";
+const d3d8DrawProducers = process.env.PERF_PROFILE_D3D8_DRAW_PRODUCERS === "1";
 const d3d8BoundDrawDiagnostics = parseOptionalBoolean("PERF_PROFILE_D3D8_BOUND_DIAG");
-const engineFrameProfile = process.env.PERF_PROFILE_ENGINE_PROFILE === "1" || d3d8BufferProducers;
+const engineFrameProfile = process.env.PERF_PROFILE_ENGINE_PROFILE === "1" ||
+  d3d8BufferProducers ||
+  d3d8DrawProducers;
 
 const server = await startStaticServer({ root: wasmRoot });
 let browser;
@@ -976,6 +1060,8 @@ try {
     window.__cncSetD3D8LiteVertexMirrors?.(enabled) ?? null, d3d8LiteVertexMirrors);
   const d3d8BufferProducersActive = await page.evaluate((enabled) =>
     window.__cncSetD3D8BufferProducerTracking?.(enabled) ?? null, d3d8BufferProducers);
+  const d3d8DrawProducersActive = await page.evaluate((enabled) =>
+    window.__cncSetD3D8DrawProducerTracking?.(enabled) ?? null, d3d8DrawProducers);
   const d3d8BoundDrawDiagnosticsActive = d3d8BoundDrawDiagnostics == null
     ? await page.evaluate(() => window.__cncGetD3D8BoundDrawDiagnostics?.() ?? null)
     : await page.evaluate((enabled) =>
@@ -1037,6 +1123,7 @@ try {
     d3d8AdjacentBatching: d3d8AdjacentBatchingActive,
     d3d8LiteVertexMirrors: d3d8LiteVertexMirrorsActive,
     d3d8BufferProducers: d3d8BufferProducersActive,
+    d3d8DrawProducers: d3d8DrawProducersActive,
     d3d8BoundDrawDiagnostics: d3d8BoundDrawDiagnosticsActive,
     engineFrameProfile,
     sampleBrowserPerf,

@@ -19,6 +19,7 @@
 #ifdef __EMSCRIPTEN__
 extern "C" void cnc_port_note_engine_profile_marker(const char *name) __attribute__((weak));
 extern "C" const char *cnc_port_current_engine_profile_marker() __attribute__((weak));
+extern "C" const char *cnc_port_current_sorted_draw_submit_profile_marker() __attribute__((weak));
 extern "C" int cnc_port_is_sorted_draw_submit_profile_scope() __attribute__((weak));
 static bool wasm_d3d8_sorted_draw_profile_enabled()
 {
@@ -383,11 +384,27 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	unsigned int material_ptr,
 	unsigned int state_hash,
 	unsigned int derived_state_hash,
+	unsigned int producer_ptr,
 	int sorted_draw_profile_scope
 ), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8DrawIndexed : null;
 	if (typeof bridge !== "function" || typeof Module === "undefined") {
 		return;
+	}
+	const producerTracking =
+		typeof globalThis !== "undefined" && globalThis.__cncD3D8DrawProducerTrackingEnabled === true;
+	let producer = "";
+	if (producerTracking && producer_ptr !== 0 && Module.HEAPU8) {
+		const heap = Module.HEAPU8;
+		let end = producer_ptr >>> 0;
+		const maxEnd = Math.min(heap.length, end + 160);
+		while (end < maxEnd && heap[end] !== 0) {
+			end++;
+		}
+		for (let cursor = producer_ptr >>> 0; cursor < end; cursor++) {
+			const code = heap[cursor];
+			producer += code >= 0x20 && code < 0x7f ? String.fromCharCode(code) : "?";
+		}
 	}
 	const copyMatrix = (ptr) => {
 		if (!ptr || !Module.HEAPF32) {
@@ -628,6 +645,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 		material: cached_state.material,
 		stateHash: current_state_hash,
 		derivedStateHash: current_derived_state_hash,
+		producer,
 		sortedDrawSubmitProfile: sorted_draw_profile_scope !== 0,
 	});
 	});
@@ -648,7 +666,7 @@ void wasm_d3d8_browser_texture_bind(unsigned int, unsigned int) {}
 void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
-	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, int) {}
+	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, int) {}
 #endif
 
 namespace {
@@ -1407,6 +1425,16 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.browserDrawIndexed.complete");
 		return;
 	}
+#ifdef __EMSCRIPTEN__
+	const char *producer = cnc_port_current_sorted_draw_submit_profile_marker
+		? cnc_port_current_sorted_draw_submit_profile_marker()
+		: nullptr;
+	if ((producer == nullptr || producer[0] == '\0') && cnc_port_current_engine_profile_marker) {
+		producer = cnc_port_current_engine_profile_marker();
+	}
+#else
+	const char *producer = nullptr;
+#endif
 	WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.browserDrawIndexed.before");
 	wasm_d3d8_browser_draw_indexed(
 		static_cast<int>(primitive_type),
@@ -1436,6 +1464,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(material)),
 		state_hash,
 		derived_state_hash,
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(producer)),
 		profile_sorted_draw_submit ? 1 : 0);
 	WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.browserDrawIndexed.after");
 }
