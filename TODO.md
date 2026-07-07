@@ -520,6 +520,37 @@ Reported by the project owner on the Mac GPU build. Reproduce in the harness and
 verify each fix with a real, **multi-frame** screenshot / state check where the
 symptom is temporal — NOT a single still.
 
+- [ ] **Hover/tooltip text renders only the first letter** — hovering the cursor
+      over a building (and other places with hover/tooltip text) shows only ONE
+      character of the string instead of the full text. The string is known/laid
+      out but only the first glyph draws. Trace the tooltip/hover text render path
+      (`GameWindow` tooltip / `DisplayString` / W3D text glyph submission): likely
+      the per-glyph draw loop only submits the first glyph, or the text
+      width/advance/clip rect is computed as ~1 char so the rest is clipped, or
+      the multi-glyph quad batch is dropped at the browser D3D8 layer. Verify a
+      multi-letter tooltip renders fully.
+- [ ] **Decals flip-flop / render at wrong depth (z-order)** — some decals
+      (scorch marks, shadow/terrain decals) intermittently render onto the
+      background / at the wrong depth and flicker between correct and wrong across
+      frames. Looks like depth/z handling for the decal pass is unstable —
+      inconsistent ZWRITE/ZFUNC/depth-bias or draw-order between the decal pass
+      and terrain/world. Trace the projected/terrain decal render order and depth
+      state; compare against the earlier z-order work (`feat/zorder-fix`). Verify
+      over MULTIPLE frames (the flicker is temporal) that decals stay on the
+      ground at correct depth.
+- [ ] **Wrong ground tiles — small squares render the wrong texture** — sometimes
+      individual terrain tiles show clearly wrong content (little squares
+      rendering the wrong thing). SUSPECT: this may be a **stale texture-bind
+      cache** regression — Codex is currently fast-pathing/caching D3D8 texture
+      binds (`Cache D3D8 draw texture binds`, `Fast-path repeated D3D8 sampler
+      hits`, and the in-flight "skip per-apply SetTexture JS hop" work). If a
+      cached bind serves the previous tile's texture ID when the stage should
+      rebind, a tile draws with the wrong texture. Check that the texture-bind /
+      sampler fast-path correctly invalidates when the bound texture or stage
+      changes, and diff behavior with the bind cache disabled. Also consider a
+      terrain tile-texture atlas/UV/index bug independent of the cache. Verify no
+      wrong tiles appear across a panned multi-frame terrain view.
+
 - [ ] **Rally-point line does not render** — when a production building's rally
       point (the "go to here after created" point) is set, the white rally line
       from the building to the rally point does not draw. The rally point itself /
