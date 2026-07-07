@@ -309,6 +309,7 @@ function compactGameplay(gameplay) {
     renderedObjectCount: gameplay.renderedObjectCount,
     localPlayer: gameplay.localPlayer,
     ai: gameplay.ai ?? null,
+    playerDiagnostics: compactPlayerDiagnostics(gameplay.playerDiagnostics),
     inputEnabled: gameplay.inputEnabled,
     fade: gameplay.fade,
     fadeValue: gameplay.fadeValue,
@@ -366,6 +367,111 @@ function compactD3D8DrawCache(cache) {
     derivedStateMisses: Number(cache.derivedStateMisses ?? 0),
     bufferChecksumHits: Number(cache.bufferChecksumHits ?? 0),
     bufferChecksumMisses: Number(cache.bufferChecksumMisses ?? 0),
+  };
+}
+
+function compactPlayerDiagnostics(diagnostics) {
+  if (!diagnostics?.players || !Array.isArray(diagnostics.players)) {
+    return null;
+  }
+  return {
+    playerListReady: diagnostics.playerListReady ?? null,
+    gameLogicReady: diagnostics.gameLogicReady ?? null,
+    playerCount: diagnostics.playerCount ?? diagnostics.players.length,
+    localPlayerIndex: diagnostics.localPlayerIndex ?? null,
+    unownedObjects: diagnostics.unownedObjects ?? null,
+    invalidOwnerObjects: diagnostics.invalidOwnerObjects ?? null,
+    players: diagnostics.players.map((player) => ({
+      index: player.index,
+      local: player.local,
+      name: player.name,
+      side: player.side,
+      baseSide: player.baseSide,
+      playerTypeName: player.playerTypeName,
+      skirmishAI: player.skirmishAI,
+      difficultyName: player.difficultyName,
+      active: player.active,
+      dead: player.dead,
+      playableSide: player.playableSide,
+      money: player.money,
+      relationshipToLocal: player.relationshipToLocal,
+      templateName: player.template?.name ?? null,
+      buildList: player.buildList ?? null,
+      objects: player.objects ? {
+        total: player.objects.total,
+        structures: player.objects.structures,
+        infantry: player.objects.infantry,
+        vehicles: player.objects.vehicles,
+        commandCenters: player.objects.commandCenters,
+        productionObjects: player.objects.productionObjects,
+        dozers: player.objects.dozers,
+        harvesters: player.objects.harvesters,
+        supplySources: player.objects.supplySources,
+      } : null,
+    })),
+  };
+}
+
+function indexedPlayers(diagnostics) {
+  const players = diagnostics?.players;
+  if (!Array.isArray(players)) {
+    return new Map();
+  }
+  return new Map(players.map((player) => [Number(player.index), player]));
+}
+
+function enemyAiPlayers(diagnostics) {
+  const players = diagnostics?.players;
+  if (!Array.isArray(players)) {
+    return [];
+  }
+  return players.filter((player) =>
+    player?.local !== true &&
+    player?.skirmishAI === true &&
+    player?.relationshipToLocal === "enemy");
+}
+
+function summarizeEnemyAiActivity(initialGameplay, finalGameplay, framesAdvanced) {
+  const initialDiagnostics = initialGameplay?.playerDiagnostics;
+  const finalDiagnostics = finalGameplay?.playerDiagnostics;
+  const initialEnemies = enemyAiPlayers(initialDiagnostics);
+  const finalPlayers = indexedPlayers(finalDiagnostics);
+  const enemySummaries = initialEnemies.map((initial) => {
+    const final = finalPlayers.get(Number(initial.index)) ?? null;
+    const initialObjects = Number(initial.objects?.total ?? 0);
+    const finalObjects = Number(final?.objects?.total ?? 0);
+    const initialMoney = Number(initial.money ?? 0);
+    const finalMoney = Number(final?.money ?? initialMoney);
+    return {
+      index: initial.index,
+      side: initial.side,
+      difficultyName: initial.difficultyName,
+      initialMoney,
+      finalMoney: final == null ? null : finalMoney,
+      initialObjects,
+      finalObjects: final == null ? null : finalObjects,
+      objectDelta: final == null ? null : finalObjects - initialObjects,
+      moneyDelta: final == null ? null : finalMoney - initialMoney,
+      initialBuildListEntries: initial.buildList?.entries ?? null,
+      finalBuildListEntries: final?.buildList?.entries ?? null,
+      finalObjectBreakdown: final?.objects ?? null,
+      activeEvidence: final != null && (
+        finalObjects > initialObjects ||
+        finalMoney < initialMoney ||
+        Number(final.objects?.structures ?? 0) > Number(initial.objects?.structures ?? 0) ||
+        Number(final.objects?.infantry ?? 0) > Number(initial.objects?.infantry ?? 0) ||
+        Number(final.objects?.vehicles ?? 0) > Number(initial.objects?.vehicles ?? 0)
+      ),
+    };
+  });
+  return {
+    framesAdvanced,
+    initialFrame: initialGameplay?.logicFrame ?? null,
+    finalFrame: finalGameplay?.logicFrame ?? null,
+    localPlayerIndex: finalDiagnostics?.localPlayerIndex ?? initialDiagnostics?.localPlayerIndex ?? null,
+    enemyAiCount: initialEnemies.length,
+    activityDetected: enemySummaries.some((summary) => summary.activeEvidence),
+    enemySummaries,
   };
 }
 
@@ -441,8 +547,8 @@ async function runUiFrames(page, frames, label) {
   return result;
 }
 
-async function runUiSummary(page, frames, label) {
-  const result = await rpc(page, "realEngineFrameSummary", { frames });
+async function runUiSummary(page, frames, label, payload = {}) {
+  const result = await rpc(page, "realEngineFrameSummary", { frames, ...payload });
   expect(result?.ok === true && result.aborted === false,
     `${label} summary frame failed`, result);
   return result;
@@ -589,23 +695,17 @@ async function clickButton(page, button, hitProbe, label, settleFrames = 120) {
   return { point, target, released, settled };
 }
 
-async function waitForSkirmishMatch(page, maxFrames, chunkSize) {
+async function waitForSkirmishMatch(page, maxFrames, chunkSize, summaryPayload = {}) {
   const samples = [];
   let framesAdvanced = 0;
   while (framesAdvanced < maxFrames) {
     const frames = Math.min(chunkSize, maxFrames - framesAdvanced);
-    const result = await runUiSummary(page, frames, "profile skirmish match wait");
+    const result = await runUiSummary(page, frames, "profile skirmish match wait", summaryPayload);
     framesAdvanced += frames;
     const gameplay = result.frame?.gameplay;
     samples.push({
       framesCompleted: result.frame?.framesCompleted ?? null,
-      gameMode: gameplay?.gameMode ?? null,
-      inGame: gameplay?.inGame ?? null,
-      loadingMap: gameplay?.loadingMap ?? null,
-      objectCount: gameplay?.objectCount ?? null,
-      drawableCount: gameplay?.drawableCount ?? null,
-      renderedObjectCount: gameplay?.renderedObjectCount ?? null,
-      inputEnabled: gameplay?.inputEnabled ?? null,
+      ...compactGameplay(gameplay),
     });
     if (gameplay?.gameMode === GAME_SKIRMISH &&
         gameplay?.inGame === true &&
@@ -681,22 +781,31 @@ async function enterSkirmishScene(page) {
   const active = await waitForSkirmishMatch(
     page,
     parsePositiveInt("PERF_PROFILE_SKIRMISH_MAX_START_FRAMES", 4200),
-    parsePositiveInt("PERF_PROFILE_SKIRMISH_START_CHUNK", 30));
+    parsePositiveInt("PERF_PROFILE_SKIRMISH_START_CHUNK", 30),
+    skirmishPlayerDiagnostics ? { playerDiagnostics: true } : {});
   const postActiveFrames = parsePositiveInt("PERF_PROFILE_SKIRMISH_POST_ACTIVE_FRAMES", 0);
+  let postActive = null;
   if (postActiveFrames > 0) {
-    await runUiSummary(
+    postActive = await runUiSummary(
       page,
       postActiveFrames,
-      "profile skirmish post-active settle");
+      "profile skirmish post-active settle",
+      skirmishPlayerDiagnostics ? { playerDiagnostics: true } : {});
   }
+  const activeGameplay = compactGameplay(active.result?.frame?.gameplay);
+  const postActiveGameplay = compactGameplay(postActive?.frame?.gameplay);
 
   return {
     requestedMap: requestedMap || null,
     skirmishMapSet: skirmishMapSet?.result ?? null,
     activeFramesAdvanced: active.framesAdvanced,
     activeSamples: active.samples.slice(-12),
-    activeGameplay: compactGameplay(active.result?.frame?.gameplay),
+    activeGameplay,
     postActiveFrames,
+    postActiveGameplay,
+    enemyAiActivity: skirmishPlayerDiagnostics && postActiveGameplay != null
+      ? summarizeEnemyAiActivity(activeGameplay, postActiveGameplay, postActiveFrames)
+      : null,
   };
 }
 
@@ -1325,6 +1434,9 @@ const viewportWidth = parsePositiveInt("PERF_PROFILE_WIDTH", 1280);
 const viewportHeight = parsePositiveInt("PERF_PROFILE_HEIGHT", 720);
 const includeSamples = process.env.PERF_PROFILE_SAMPLES === "1";
 const sampleBrowserPerf = process.env.PERF_PROFILE_SAMPLE_BROWSER === "1";
+const skirmishPlayerDiagnosticsSetting = parseOptionalBoolean("PERF_PROFILE_SKIRMISH_PLAYER_DIAGNOSTICS");
+const skirmishPlayerDiagnostics = profileScene === "skirmish" &&
+  (skirmishPlayerDiagnosticsSetting ?? true);
 const d3d8AdjacentBatching = process.env.PERF_PROFILE_D3D8_BATCH !== "0";
 const d3d8LiteVertexMirrors = process.env.PERF_PROFILE_D3D8_VERTEX_MIRRORS === "1";
 const d3d8BufferProducers = process.env.PERF_PROFILE_D3D8_BUFFER_PRODUCERS === "1";
@@ -1452,6 +1564,7 @@ try {
     d3d8BoundDrawDiagnostics: d3d8BoundDrawDiagnosticsActive,
     engineFrameProfile,
     sampleBrowserPerf,
+    skirmishPlayerDiagnostics,
     measuredFrameCommand,
     shellMap,
     skirmishSetup,

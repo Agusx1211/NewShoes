@@ -1407,6 +1407,7 @@ void renderStenciledPlayerColor( UnsignedInt color, UnsignedInt stencilRef, Bool
 #define MAX_VISIBLE_OCCLUDED_PLAYER_OBJECTS	512 //maximum number of occluded objects permitted per player
 void RTS3DScene::flushOccludedObjectsIntoStencil(RenderInfoClass & rinfo)
 {
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.entry");
 	RenderObjClass *robj;
 	Drawable *draw;
 	RenderObjClass *playerObjects[MAX_PLAYER_COUNT][MAX_VISIBLE_OCCLUDED_PLAYER_OBJECTS];
@@ -1435,6 +1436,7 @@ void RTS3DScene::flushOccludedObjectsIntoStencil(RenderInfoClass & rinfo)
 	if (m_numPotentialOccludees && m_numPotentialOccluders)
 	{
 		//bucket sort all possibly occluded objects by player index/color.
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.bucket.before");
 		for (Int i=0; i<m_numPotentialOccludees; i++)
 		{
 			robj=m_potentialOccludees[i];
@@ -1453,7 +1455,9 @@ void RTS3DScene::flushOccludedObjectsIntoStencil(RenderInfoClass & rinfo)
 			*lastPlayerObject[index] = robj;
 			lastPlayerObject[index]++;	//increment to next object
 		}
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.bucket.after");
 
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.occludeeState.before");
 		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILENABLE, TRUE );
 		DX8Wrapper::Set_DX8_Render_State(D3DRS_ZENABLE, TRUE );
 		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILMASK, 0xffffffff);
@@ -1464,6 +1468,7 @@ void RTS3DScene::flushOccludedObjectsIntoStencil(RenderInfoClass & rinfo)
 		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILZFAIL, D3DSTENCILOP_KEEP );
 		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILFAIL,  D3DSTENCILOP_KEEP );
 		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILPASS,  D3DSTENCILOP_REPLACE );
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.occludeeState.after");
 
 		//Find out which player indices are actually used and remap them to
 		//a color index.  Render all objects using the same color index at once.
@@ -1507,7 +1512,9 @@ void RTS3DScene::flushOccludedObjectsIntoStencil(RenderInfoClass & rinfo)
 						DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILFUNC,  D3DCMP_NEVER );	//never allow frame buffer writes.
 						DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILFAIL,  D3DSTENCILOP_REPLACE );	//always replace existing stencil value
 						renderOneObject(rinfo, (*renderList), localPlayerIndex);
+						CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.translucentFlush.before");
 						TheDX8MeshRenderer.Flush();	//render all the submitted meshes using current stencil function
+						CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.translucentFlush.after");
 						SHD_FLUSH;
 						DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILFAIL,  D3DSTENCILOP_KEEP );
 						DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILFUNC,  D3DCMP_ALWAYS );
@@ -1517,7 +1524,9 @@ void RTS3DScene::flushOccludedObjectsIntoStencil(RenderInfoClass & rinfo)
 					renderList++;	//advance to next object
 				}
 
+				CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.occludeeFlush.before");
 				TheDX8MeshRenderer.Flush();	//render all the submitted meshes using current stencil function
+				CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.occludeeFlush.after");
 			}
 		}
 		//Stencil buffer is now filled with color indices of potentially occluded objects.  We now draw
@@ -1530,10 +1539,13 @@ void RTS3DScene::flushOccludedObjectsIntoStencil(RenderInfoClass & rinfo)
 			renderOneObject(rinfo, (*nonOccluderOrOccludeeList), localPlayerIndex);
 			nonOccluderOrOccludeeList++;	//advance to next one
 		}
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.nonOccluderFlush.before");
 		TheDX8MeshRenderer.Flush();	//render all the submitted meshes using current stencil function
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.nonOccluderFlush.after");
 
 		//Stencil buffer is now filled with color indices of potentially occluded objects.  We now draw
 		//occluder objects so they cover up and modify stencil MSB wherever they are in front of other objects.
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.occluderState.before");
 		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILENABLE, TRUE );
 		DX8Wrapper::Set_DX8_Render_State(D3DRS_ZENABLE, TRUE );
 		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILREF, 0xffffffff);
@@ -1543,6 +1555,7 @@ void RTS3DScene::flushOccludedObjectsIntoStencil(RenderInfoClass & rinfo)
 		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILZFAIL, D3DSTENCILOP_KEEP );
 		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILFAIL,  D3DSTENCILOP_KEEP );
 		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILPASS,  D3DSTENCILOP_REPLACE );
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.occluderState.after");
 
 		//Render all potential occluders on top of already rendered potential occludees.
 		RenderObjClass **occluderList=m_potentialOccluders;
@@ -1552,7 +1565,9 @@ void RTS3DScene::flushOccludedObjectsIntoStencil(RenderInfoClass & rinfo)
 			occluderList++;	//advance to next one
 		}
 
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.occluderFlush.before");
 		TheDX8MeshRenderer.Flush();	//render all the submitted meshes using current stencil function
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.occluderFlush.after");
 
 		//We now have a stencil buffer where pixels that are occluded have a bit pattern of 1INDX000.
 		//INDX contains the occluded player's color index.  We walk through all the player colors and
@@ -1562,7 +1577,9 @@ void RTS3DScene::flushOccludedObjectsIntoStencil(RenderInfoClass & rinfo)
 		{
 			Int color=visiblePlayerColors[i];
 			Int stencilRef=(playerIndexToColorIndex(i+1)<<3)|0x80;
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.colorQuad.before");
 			renderStenciledPlayerColor(color,stencilRef);
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.colorQuad.after");
 			usedPlayerColorBits |= stencilRef;	//keep track of all bits used for occlusion/player colors.
 		}
 
@@ -1572,7 +1589,9 @@ void RTS3DScene::flushOccludedObjectsIntoStencil(RenderInfoClass & rinfo)
 			//stencil shadows.  That's probably not enough since it will only allow 7 overlapping shadows.
 			//So we clear the stencil buffer, leaving only the MSB set on any occluded player pixels so that
 			//shadow code knows not to overwrite these pixels.
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.clearColorQuad.before");
 			renderStenciledPlayerColor(0,0, TRUE);
+			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.clearColorQuad.after");
 			TheW3DShadowManager->setStencilShadowMask(0x80808080);	//msb indicates occluded player pixels so ignore it when filling screen with shadow
 		}
 
@@ -1603,13 +1622,16 @@ void RTS3DScene::flushOccludedObjectsIntoStencil(RenderInfoClass & rinfo)
 			renderOneObject(rinfo, (*nonOccluderOrOccludeeList), localPlayerIndex);
 			nonOccluderOrOccludeeList++;	//advance to next one
 		}
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.fallbackFlush.before");
 		TheDX8MeshRenderer.Flush();	//render all the submitted meshes using current stencil function
+		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.fallbackFlush.after");
 	}
 
 	//Reset scene ambient because we sometimes mess around with it to make objects
 	//glow, etc. when processing drawables.  This is a good place to do it because this
 	//function gets called right after we flush regular render objects.
 	DX8Wrapper::Set_DX8_Render_State(D3DRS_AMBIENT,DX8Wrapper::Convert_Color(this->Get_Ambient_Light(),0.0f));
+	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.occludedStencil.complete");
 }
 
 /*Version which does not require stencil buffer*/

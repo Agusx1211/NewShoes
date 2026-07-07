@@ -481,6 +481,19 @@ symptom is temporal — NOT a single still.
       active-base baseline; now that live skirmish AI/pathfinder is enabled,
       the next performance target is a later, populated AI/pathfinding fight
       rather than the first visible 224-object base.
+      2026-07-07: the profiler now records compact player diagnostics around
+      active-skirmish setup/post-active settling, and the Mac M4/Metal
+      `runtime-frame-profile-skirmish-ai-1200-occlusion-split-mac.json`
+      profile measured a real AI-advanced scene: 1200 post-active frames,
+      enemy `activityDetected=true`, enemy objects 3 to 4, enemy money 11400
+      to 9400, final logic frame 1300, 225 objects/drawables, and engine
+      `lastFrameMs` avg 6.26 / p95 6.7 / p99 6.8 / max 8.6 over 60 frames.
+      The first occluded-stencil split showed the old combined marker is not
+      the primary remaining draw leader: occluder flush is ~0.080 ms/frame and
+      occludee flush ~0.048 ms/frame. The next measured late-skirmish draw
+      frontier is heightmap tile draws (~0.578 ms/frame), volumetric dynamic
+      and mesh shadows (~0.187 and ~0.184), window draw callbacks (~0.144),
+      roads (~0.131), and then smaller occlusion phases.
 - [ ] **Skirmish structures render all white (team-color/texture bug)** — the
       enemy base structures show up **all white** (separate from the AI being
       off — two bugs seen together). Likely a house-color/team-color remap not

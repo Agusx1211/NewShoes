@@ -248,6 +248,30 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Profile the first AI-advanced active skirmish scene and split the
+      occluded-stencil flush. `runtime_frame_profile.mjs` now keeps compact
+      player diagnostics in skirmish setup/post-active output by default, while
+      leaving measured frame passes free of `playerDiagnostics`, so performance
+      artifacts state whether they measured a first active base or an
+      AI-advanced scene. `RTS3DScene::flushOccludedObjectsIntoStencil()` now
+      emits phase markers around bucketing, stencil state setup, occludee
+      flushes, delayed non-occluder flushes, occluder flushes, color quads, and
+      fallback flushes, letting D3D8 draw producer attribution break up the old
+      combined `RTS3DScene.flush.occludedStencil.before` bucket.
+      Verified with `node --check WebAssembly/harness/runtime_frame_profile.mjs`,
+      `git diff --check`, `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly run build:port:release`, a local release
+      skirmish diagnostics profile, and Mac M4/Metal release profiles
+      `runtime-frame-profile-skirmish-ai-1200-mac.json` and
+      `runtime-frame-profile-skirmish-ai-1200-occlusion-split-mac.json`.
+      The split Mac profile ran 1200 post-active frames, observed enemy
+      `activityDetected=true` (objects 3 to 4, money 11400 to 9400), and then
+      measured 60 frames at engine `lastFrameMs` avg 6.26 / p95 6.7 / p99 6.8
+      / max 8.6. The former combined occlusion bucket split into occluder
+      flush ~0.080 ms/frame, occludee flush ~0.048, and color quad ~0.014;
+      the next late-skirmish draw leaders are heightmap tile draws, volumetric
+      shadow draws, window draw callbacks, and roads.
+
 - [x] Add active-skirmish profiling to the runtime frame profiler. The profiler
       now accepts `PERF_PROFILE_SCENE=skirmish`, drives the real UI path from
       Main Menu -> Single Player -> Skirmish -> Start with original Win32 mouse
