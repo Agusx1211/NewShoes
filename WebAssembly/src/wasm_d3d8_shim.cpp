@@ -394,7 +394,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			return null;
 		}
 		const offset = ptr >>> 2;
-		return Array.from(Module.HEAPF32.subarray(offset, offset + 16));
+		return new Float32Array(Module.HEAPF32.subarray(offset, offset + 16));
 	};
 	const heapMatrixView = (ptr) => {
 		if (!ptr || !Module.HEAPF32) {

@@ -347,6 +347,17 @@ symptom is temporal — NOT a single still.
       recurring render marker remained `WasmD3D8.browserDrawIndexed.before`.
       Next work is to use those slowest-sample markers to attack the real spike
       causes, not to add more broad averages.
+      2026-07-07: cached D3D8 texture transforms now stay as owned
+      `Float32Array`s in the draw-state LRU instead of owned JS arrays, so the
+      bridge no longer recopies both texture matrices to new typed arrays on
+      every draw. A debug/profile Mac M4/Metal sanity run
+      (`runtime-frame-profile-mac-texture-transform-typed.json`) remained
+      render-correct over 60 frames; the slowest samples were still led by
+      `WasmD3D8.drawBound.capture.before`,
+      `WasmD3D8.browserDrawIndexed.before`, projected-shadow flush,
+      shoreline, and water-track markers. Keep attacking those real spike
+      buckets and the structural command-buffer work; this does not close the
+      stability item.
 - [ ] **Performance still needs love (general)** — beyond stability, the loaded
       (non-shell-map) skirmish frame cost with hundreds of units is the real
       target and is not yet profiled/held to triple-digit fps. Keep pushing the

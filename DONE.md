@@ -48,6 +48,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Remove the per-draw texture-transform recopy in the D3D8 bridge. The
+      native EM_JS draw payload cache still owns copied texture transform
+      matrices for LRU safety, but it now stores those copies as
+      `Float32Array`s instead of JS arrays. `paintD3D8DrawIndexed` can therefore
+      pass cached texture transforms through `normalizeD3DMatrix` without
+      allocating fresh typed arrays for both texture stages on every draw.
+      Verified with `npm --prefix WebAssembly run build:port` and a synced Mac
+      M4/Metal runtime profile
+      (`runtime-frame-profile-mac-texture-transform-typed.json`, `diag=lite`,
+      `realEngineFrameSummary`, 10 warmup + 60 measured frames, engine profile
+      markers enabled). The run reported
+      `ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)` and
+      a visible profile screenshot; because it used the debug/profile path, the
+      measured 94.16 ms/frame wall average is a sanity/bucket run rather than a
+      release FPS baseline. The slowest samples remained dominated by
+      `WasmD3D8.drawBound.capture.before`,
+      `WasmD3D8.browserDrawIndexed.before`, projected-shadow flush, shoreline,
+      and water-track markers.
+
 - [x] Add frame-stability fields to the real runtime profile. The profile
       summary now reports `p99` alongside min/avg/median/p95/max and always
       includes compact `slowestEngineSamples` / `slowestRpcSamples` entries
