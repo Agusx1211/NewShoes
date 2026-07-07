@@ -304,7 +304,15 @@ transform/draw-submit stalls, sorting-reset/terrain shader-reset, shoreline and
 water-track unlocks, projected/volumetric shadow buckets, shroud/window repaint,
 and occasional text draw submission, so the next PERF pass should attack
 transform or residual draw-submit spikes rather than material, light,
-text-geometry, or first-vertex VAO setup. Broader shadow fidelity
+text-geometry, or first-vertex VAO setup. A follow-up transform split now
+exports compare/world/view/projection timing inside `sortedDrawTransformUniformMs`;
+`runtime-frame-profile-transform-split-mac.json` showed matrix comparison is
+only 0.065 ms/frame while world-matrix uniform upload dominates at
+0.805 ms/frame. Reusing persistent transform-cache snapshots removes per-miss
+`Float32Array` allocations, but `runtime-frame-profile-transform-snapshot-mac.json`
+kept world upload in the same band (0.859 ms/frame), so the transform frontier
+is driver-side world `uniformMatrix4fv` frequency/stalls or reducing the number
+of world-space submissions, not JS matrix comparison/allocation. Broader shadow fidelity
 remains in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`

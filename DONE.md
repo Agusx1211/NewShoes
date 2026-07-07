@@ -77,6 +77,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Split transform-uniform profiling and remove per-miss transform snapshot
+      allocations. The browser D3D8 perf summary and `runtime_frame_profile.mjs`
+      now break `sortedDrawTransformUniformMs` into matrix compare, world, view,
+      and projection sub-buckets, including compact slow-frame samples. The
+      transform cache now reuses fixed 16-float snapshots instead of allocating a
+      new `Float32Array` on each world/view/projection miss.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `node --check WebAssembly/harness/runtime_frame_profile.mjs`,
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and Mac M4/Metal
+      release profiles copied to `runtime-frame-profile-transform-split-mac.json`
+      and `runtime-frame-profile-transform-snapshot-mac.json` with screenshots.
+      The split profile measured transform uniform work at 1.086 ms/frame, with
+      compare at 0.065, world upload at 0.805, view at 0.060, and projection at
+      0.053 ms/frame. Snapshot reuse kept the shell-map/menu screenshot correct
+      and removed the JS allocations, but world upload stayed in the same band
+      (0.859 ms/frame), proving the remaining transform frontier is world
+      `uniformMatrix4fv` frequency/driver stalls or reducing world-space draw
+      submissions rather than JS comparison or snapshot allocation.
+
 - [x] Skip unlit fixed-light uniform work in the browser D3D8 bridge. The shader
       only reads fixed-function light arrays through `d3dApplyLighting()`, which
       is gated by `uLightingEnabled`, so unlit/pretransformed draws now count as

@@ -489,6 +489,10 @@ const d3d8PerfStats = {
   sortedDrawRenderAlphaFogUniformMs: 0,
   sortedDrawRenderUniformMs: 0,
   sortedDrawTransformUniformMs: 0,
+  sortedDrawTransformCompareMs: 0,
+  sortedDrawWorldTransformUniformMs: 0,
+  sortedDrawViewTransformUniformMs: 0,
+  sortedDrawProjectionTransformUniformMs: 0,
   sortedDrawPointSpriteUniformMs: 0,
   sortedDrawTextureUniformMs: 0,
   sortedDrawDrawOrBatchMs: 0,
@@ -744,6 +748,10 @@ function d3d8PerfSummary() {
     sortedDrawRenderAlphaFogUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawRenderAlphaFogUniformMs),
     sortedDrawRenderUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawRenderUniformMs),
     sortedDrawTransformUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawTransformUniformMs),
+    sortedDrawTransformCompareMs: roundedPerfMs(d3d8PerfStats.sortedDrawTransformCompareMs),
+    sortedDrawWorldTransformUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawWorldTransformUniformMs),
+    sortedDrawViewTransformUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawViewTransformUniformMs),
+    sortedDrawProjectionTransformUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawProjectionTransformUniformMs),
     sortedDrawPointSpriteUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawPointSpriteUniformMs),
     sortedDrawTextureUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawTextureUniformMs),
     sortedDrawDrawOrBatchMs: roundedPerfMs(d3d8PerfStats.sortedDrawDrawOrBatchMs),
@@ -8210,16 +8218,33 @@ function resetD3D8TransformUniformCache() {
   d3d8LastTransformUniformProjection = null;
 }
 
+function rememberD3D8TransformUniformSnapshot(cached, values) {
+  const snapshot = cached instanceof Float32Array && cached.length === 16
+    ? cached
+    : new Float32Array(16);
+  snapshot.set(values);
+  return snapshot;
+}
+
 function rememberD3D8WorldTransformUniform(world) {
-  d3d8LastTransformUniformWorld = new Float32Array(world);
+  d3d8LastTransformUniformWorld = rememberD3D8TransformUniformSnapshot(
+    d3d8LastTransformUniformWorld,
+    world,
+  );
 }
 
 function rememberD3D8ViewTransformUniform(view) {
-  d3d8LastTransformUniformView = new Float32Array(view);
+  d3d8LastTransformUniformView = rememberD3D8TransformUniformSnapshot(
+    d3d8LastTransformUniformView,
+    view,
+  );
 }
 
 function rememberD3D8ProjectionTransformUniform(projection) {
-  d3d8LastTransformUniformProjection = new Float32Array(projection);
+  d3d8LastTransformUniformProjection = rememberD3D8TransformUniformSnapshot(
+    d3d8LastTransformUniformProjection,
+    projection,
+  );
 }
 
 function d3d8MaterialUniformsEqual(renderState, material) {
@@ -10299,9 +10324,18 @@ function paintD3D8DrawIndexed(payload = {}) {
       // memory as column-major, giving the transpose needed for GLSL
       // column-vector multiplication. The broad uniform cache excludes object
       // transforms, so each matrix upload is cached by its exact uploaded value.
+      let transformDetailStartedAt = sortedDrawProfiled ? perfNow() : 0;
+      const recordTransformDetail = sortedDrawProfiled
+        ? (field) => {
+            const now = perfNow();
+            d3d8PerfStats[field] += now - transformDetailStartedAt;
+            transformDetailStartedAt = now;
+          }
+        : null;
       const worldTransformUnchanged = d3d8MatrixEquals(d3d8LastTransformUniformWorld, world);
       const viewTransformUnchanged = d3d8MatrixEquals(d3d8LastTransformUniformView, view);
       const projectionTransformUnchanged = d3d8MatrixEquals(d3d8LastTransformUniformProjection, projection);
+      recordTransformDetail?.("sortedDrawTransformCompareMs");
       if (worldTransformUnchanged && viewTransformUnchanged && projectionTransformUnchanged) {
         d3d8PerfStats.drawTransformUniformCacheHits += 1;
       } else {
@@ -10314,6 +10348,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         gl.uniformMatrix4fv(bridgeProgram.world, false, world);
         rememberD3D8WorldTransformUniform(world);
       }
+      recordTransformDetail?.("sortedDrawWorldTransformUniformMs");
       if (viewTransformUnchanged) {
         d3d8PerfStats.drawViewTransformUniformCacheHits += 1;
       } else {
@@ -10321,6 +10356,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         gl.uniformMatrix4fv(bridgeProgram.view, false, view);
         rememberD3D8ViewTransformUniform(view);
       }
+      recordTransformDetail?.("sortedDrawViewTransformUniformMs");
       if (projectionTransformUnchanged) {
         d3d8PerfStats.drawProjectionTransformUniformCacheHits += 1;
       } else {
@@ -10328,6 +10364,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         gl.uniformMatrix4fv(bridgeProgram.projection, false, projection);
         rememberD3D8ProjectionTransformUniform(projection);
       }
+      recordTransformDetail?.("sortedDrawProjectionTransformUniformMs");
     }
     // Non-transformed draws leave these uniforms unused but still current.
     // Keep the cache hot for the next transformed world-space draw.
