@@ -10106,7 +10106,10 @@ function paintD3D8DrawIndexed(payload = {}) {
         d3d8LastBaseUniformKey = baseUniformKey;
       }
       recordRenderUniformDetail?.("sortedDrawRenderBaseUniformMs");
-      if (d3d8MaterialUniformsEqual(renderState, material)) {
+      const materialUniformsNeeded = Boolean(appliedRenderState.lighting.shaderEnabled);
+      if (!materialUniformsNeeded) {
+        d3d8PerfStats.drawMaterialUniformCacheHits += 1;
+      } else if (d3d8MaterialUniformsEqual(renderState, material)) {
         d3d8PerfStats.drawMaterialUniformCacheHits += 1;
       } else {
         d3d8PerfStats.drawMaterialUniformCacheMisses += 1;

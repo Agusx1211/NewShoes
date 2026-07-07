@@ -77,6 +77,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Skip unlit D3D8 material uniform uploads. The browser D3D8 bridge now only
+      uploads material/source uniforms when fixed-function shader lighting is
+      active; unlit and pretransformed draws leave the cached material state
+      alone because the active shader path returns vertex color without reading
+      those material uniforms.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and a synced Mac
+      M4/Metal release profile copied to
+      `runtime-frame-profile-material-skip-mac.json` with screenshot
+      `runtime-frame-profile-material-skip-mac.png`. Compared with the
+      same-session draw-submit attribution profile, material-uniform time
+      dropped from 0.096 to 0.013 ms/frame, sorted uniform setup dropped from
+      1.77 to 1.57 ms/frame, and wall / engine averages improved from
+      17.32 / 16.03 to 16.26 / 14.97 ms/frame. Remaining slow samples are still
+      transform-uniform, vertex-attribute/geometry, and draw/batch submission
+      stalls plus shadow/terrain/window-repaint spikes, so the frontier remains
+      draw-side command work rather than material uniforms.
+
 - [x] Cache stable Render2D geometry in wasm after the first unchanged render.
       `Render2DClass` now keeps optional Emscripten-only static DX8 vertex and
       index buffers for unchanged geometry, reusing them on subsequent renders

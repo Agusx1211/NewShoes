@@ -278,11 +278,19 @@ off the dynamic ring after their first render:
 `runtime-frame-profile-render2d-static-cache-mac.json` dropped buffer updates
 from 58.3 to 48.9/frame and `bufferSubDataMs` from 0.731 to
 0.223 ms/frame, with the shell-map/menu screenshot still correct and same-session
-wall/engine averages improving from 20.34/18.86 to 17.20/15.75 ms/frame.
-Remaining spike frames still rotate between `WasmD3D8.browserDrawIndexed.before`,
-projected/volumetric shadow buckets, roads/shoreline, and occasional text draw
-submission, so the next PERF pass should attack draw-side stalls / command
-buffering rather than more text-geometry upload. Broader shadow fidelity
+wall/engine averages improving from 20.34/18.86 to 17.20/15.75 ms/frame. A
+draw-side bridge pass then skips material/source uniform uploads when
+fixed-function shader lighting is disabled; compared with
+`runtime-frame-profile-draw-submit-attribution-mac.json`,
+`runtime-frame-profile-material-skip-mac.json` dropped material uniforms from
+0.096 to 0.013 ms/frame, sorted uniform setup from 1.77 to 1.57 ms/frame, and
+wall/engine averages from 17.32/16.03 to 16.26/14.97 ms/frame, with the
+shell-map/menu screenshot still correct. Remaining spike frames still rotate
+between `WasmD3D8.browserDrawIndexed.before` transform/geometry/draw-submit
+stalls, projected/volumetric shadow buckets, roads/shoreline, shroud/window
+repaint/texture upload, and occasional text draw submission, so the next PERF
+pass should attack transform/draw submission spikes rather than material or
+text-geometry upload. Broader shadow fidelity
 remains in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
