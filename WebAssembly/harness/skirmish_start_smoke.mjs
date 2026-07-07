@@ -118,6 +118,7 @@ function compactGameplay(frame) {
     renderedObjectCount: gameplay?.renderedObjectCount ?? null,
     inputEnabled: gameplay?.inputEnabled ?? null,
     localPlayer: gameplay?.localPlayer ?? null,
+    ai: gameplay?.ai ?? null,
     playerDiagnostics: gameplay?.playerDiagnostics ?? null,
     display,
   };
@@ -736,6 +737,7 @@ function summarizeEnemyAiActivity(activeGameplay, postActive) {
     firstFrame: first?.framesCompleted ?? null,
     lastFrame: last?.framesCompleted ?? null,
     localPlayerIndex: last?.playerDiagnostics?.localPlayerIndex ?? null,
+    ai: last?.ai ?? first?.ai ?? null,
     enemyAiCount: firstEnemies.length,
     enemySummaries,
     activityDetected: enemySummaries.some((summary) => summary.activeEvidence),

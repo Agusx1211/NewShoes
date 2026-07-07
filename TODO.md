@@ -478,37 +478,9 @@ symptom is temporal — NOT a single still.
       skirmish via `PERF_PROFILE_SCENE=skirmish`, and the first Mac M4/Metal
       release profile reached 224 objects/drawables with p95 6.5 ms, p99
       6.8 ms, and max 9.3 ms over 60 measured frames. This is a useful
-      active-base baseline, but not the hundreds-of-units/AI/pathfinding
-      target because the camera only rendered 4 objects and skirmish AI is
-      still compiled out.
-- [ ] **Skirmish AI is entirely disabled by a build flag (ROOT CAUSE FOUND —
-      not player-setup tuning).** In a real skirmish the enemy does nothing (no
-      production/building/attacks); Codex confirmed object count is flat over
-      600 frames. This is NOT a per-player setup bug — the whole AI update is
-      compiled out: under `WASM_REAL_INI_AI_METADATA_ONLY` (defined in the
-      build, `WebAssembly/CMakeLists.txt:3412`), `AI::update()` is a literal
-      `return;` (`GameLogic/AI/AI.cpp:373`) so `ThePlayerList->UPDATE()` — the
-      call that ticks every player's `Player::update()` → `m_ai->update()`
-      brain — never runs, and `m_pathfinder` is `NULL` (`AI.cpp:314`) so no
-      unit can path. The players/AISkirmishPlayers ARE created correctly; the
-      system that ticks them is stubbed. This was a boot-time stub because the
-      AI's hard dependency, the **Pathfinder**, was not ported. 2026-07-07:
-      the separate missing loose script payload bug is fixed: `LooseScripts.big`
-      now mounts `SkirmishScripts.scb`, `MultiplayerScripts.scb`, and
-      `Scripts.ini`, and `SKIRMISH_START_EXPECT_ENEMY_START_ASSETS=1` proves
-      the enemy skirmish player starts alive with owned command center/builder
-      assets and no neutral command centers. This TODO remains open only for
-      the real AI tick/pathfinder/AIData work. Real work
-      (milestone-sized, NOT a tweak — the TODO "AI behavior tuning" note badly
-      undersells it): (1) port/enable the real `Pathfinder`
-      (`m_pathfinder = NEW Pathfinder`) and make it work in wasm — the
-      load-bearing prerequisite; (2) remove the `AI::update()` `return;` stub so
-      `processPathfindQueue()` + `ThePlayerList->UPDATE()` run; (3) parse
-      `AIData.ini` fully (drop `WASM_REAL_INI_AI_METADATA_ONLY`) so the skirmish
-      AI has its real tuning values — `AISkirmishPlayer` reads
-      `TheAI->getAiData()->m_*` (build cadence, resource thresholds,
-      `m_forceSkirmishAI`) for every decision. Verify with enemy
-      `objectCount`/production growth over many frames on the release build.
+      active-base baseline; now that live skirmish AI/pathfinder is enabled,
+      the next performance target is a later, populated AI/pathfinding fight
+      rather than the first visible 224-object base.
 - [ ] **Skirmish structures render all white (team-color/texture bug)** — the
       enemy base structures show up **all white** (separate from the AI being
       off — two bugs seen together). Likely a house-color/team-color remap not
@@ -1234,9 +1206,6 @@ residue and the next frontier.
 - [ ] Link and smoke-test the original audio INI parser routes after the real
       `Common/INI.cpp` reader, audio manager, and full runtime singleton
       surface are available without target-local parser stubs.
-- [ ] Replace the focused AIData runtime's metadata-only AI/pathfinder
-      compatibility path with full original AI/pathfinder ownership once
-      `GameLogic/Pathfinder` can link into runtime startup.
 - [ ] Replace the focused browser INI runtime's weak fail-fast unused INI block
       parser definitions with the real parser destinations as each owning
       singleton comes online; they exist only to keep the focused `Armor`,
@@ -2193,7 +2162,11 @@ residue and the next frontier.
       faction/build cases.
 - [ ] `ScriptEngine` runs map scripts.
 - [ ] Fixed-timestep simulation is **deterministic** (same seed → same result).
-- [ ] AI opponent plays a skirmish.
+- [ ] AI opponent plays a skirmish. The live release skirmish smoke now proves
+      the first enemy AI production/economy step over 1200 post-active frames
+      with full `AI::update()`, `Pathfinder`, and AIData enabled; keep this open
+      for attack waves, base expansion/resource harvesting, faction/difficulty
+      coverage, and full win/lose progression.
 - [ ] Win/lose conditions trigger.
 - [ ] Harness: from the skirmish-start smoke's active match state, issue
       attack orders through the original input/command path and assert object

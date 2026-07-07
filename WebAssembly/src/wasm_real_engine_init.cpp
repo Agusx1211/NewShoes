@@ -72,6 +72,7 @@
 #include "GameClient/WindowLayout.h"
 #include "GameNetwork/GameInfo.h"
 #include "wasm_browser_mouse.h"
+#include "GameLogic/AI.h"
 #include "GameLogic/Module/AIUpdate.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/PartitionManager.h"
@@ -3975,6 +3976,40 @@ void append_player_runtime_diagnostics(std::string &json)
 	json += "]}";
 }
 
+void append_ai_runtime_state(std::string &json)
+{
+	json += ",\"ai\":{";
+	json += "\"ready\":";
+	json += TheAI != NULL ? "true" : "false";
+	if (TheAI != NULL) {
+		const TAiData *ai_data = TheAI->getAiData();
+		int side_info_count = 0;
+		for (const AISideInfo *info = ai_data != NULL ? ai_data->m_sideInfo : NULL;
+				info != NULL;
+				info = info->m_next) {
+			++side_info_count;
+		}
+		int build_list_count = 0;
+		for (const AISideBuildList *build = ai_data != NULL ? ai_data->m_sideBuildLists : NULL;
+				build != NULL;
+				build = build->m_next) {
+			++build_list_count;
+		}
+		json += ",\"pathfinderReady\":";
+		json += TheAI->pathfinder() != NULL ? "true" : "false";
+		json += ",\"aiDataReady\":";
+		json += ai_data != NULL ? "true" : "false";
+		json += ",\"sideInfoCount\":" + std::to_string(side_info_count);
+		json += ",\"buildListCount\":" + std::to_string(build_list_count);
+		json += ",\"forceSkirmishAI\":";
+		json += ai_data != NULL && ai_data->m_forceSkirmishAI ? "true" : "false";
+	} else {
+		json += ",\"pathfinderReady\":false,\"aiDataReady\":false,"
+			"\"sideInfoCount\":0,\"buildListCount\":0,\"forceSkirmishAI\":false";
+	}
+	json += "}";
+}
+
 void append_real_engine_frame_summary_state(std::string &json)
 {
 	json += ",\"inputSettings\":{\"useAlternateMouse\":";
@@ -4039,6 +4074,7 @@ void append_real_engine_frame_summary_state(std::string &json)
 	if (g_player_runtime_diagnostics_enabled) {
 		append_player_runtime_diagnostics(json);
 	}
+	append_ai_runtime_state(json);
 	if (TheInGameUI != NULL) {
 		json += ",\"inGameUIReady\":true";
 		json += ",\"inputEnabled\":";
@@ -4815,6 +4851,8 @@ void append_real_engine_client_state(std::string &json)
 	json += ",\"prepareHideShellCount\":" + std::to_string(cnc_port_logic_dispatch_prepare_hide_shell_count());
 	json += ",\"clearGameDataCount\":" + std::to_string(cnc_port_logic_dispatch_clear_game_data_count());
 	json += "}";
+
+	append_ai_runtime_state(json);
 
 	json += ",\"gameClientReady\":";
 	json += TheGameClient != NULL ? "true" : "false";

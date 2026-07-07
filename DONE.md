@@ -43,8 +43,34 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:skirmish-start-assets`, and direct
       inspection of `artifacts/skirmish/skirmish-start-smoke.json` showing
       `enemyAiCount=1`, `neutralCommandCenters=0`, and `ready=true`. Full AI
-      production/attacks remain open behind the existing
-      `WASM_REAL_INI_AI_METADATA_ONLY`/Pathfinder TODO.
+      production and activity were still blocked at this point, then unblocked
+      by the follow-up real AI/pathfinder entry below.
+
+- [x] Enable the real skirmish AI update/pathfinder path in `cnc-port`.
+      Removed the `WASM_REAL_INI_AI_METADATA_ONLY` compile definition from the
+      linked real INI runtime so original `AI::AI()` constructs `Pathfinder`,
+      `AI::update()` runs `processPathfindQueue()` and `ThePlayerList->UPDATE()`,
+      and full AIData stays available to `AISkirmishPlayer`. Real-engine frame
+      diagnostics now expose `gameplay.ai` with `pathfinderReady`, AIData
+      readiness, side-info count, and side-build-list count, and both the frame
+      profiler and skirmish-start smoke preserve that state in compact output.
+      This closes the old focused AIData metadata-only/pathfinder compatibility
+      TODO for the live runtime; the remaining `AI.cpp` guard branches are only
+      source fallback code with no CMake definition in `cnc-port`.
+      Verified with `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly run build:port:release`, debug
+      `SKIRMISH_START_EXPECT_ENEMY_AI_ACTIVITY=1 SKIRMISH_START_DIST=dist
+      SKIRMISH_START_ENEMY_AI_ACTIVITY_FRAMES=1200 node
+      WebAssembly/harness/skirmish_start_smoke.mjs`, and release
+      `SKIRMISH_START_EXPECT_ENEMY_AI_ACTIVITY=1
+      SKIRMISH_START_DIST=dist-release
+      SKIRMISH_START_ENEMY_AI_ACTIVITY_FRAMES=1200 node
+      WebAssembly/harness/skirmish_start_smoke.mjs`. The release artifact
+      reached frame 1344 on Alpine Assault with `pathfinderReady=true`,
+      `aiDataReady=true`, 12 side infos, 12 side build lists, one enemy
+      skirmish AI, `activityDetected=true`, enemy objects 3 to 5, and enemy
+      money 8700 to 8000. Full attack waves, economy depth, and win/lose
+      progression remain open under M6 AI-opponent work.
 
 - [x] Fix in-game ESC menu buttons doing nothing in live skirmish. The
       browser runtime now keeps original gameplay GUI callback owners resident
