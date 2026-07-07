@@ -4498,6 +4498,50 @@ function d3d8ViewportUniformKey(viewport) {
   ].join(",");
 }
 
+function d3d8CaptureRenderUniformKey(
+    derivedStateHash,
+    primitiveType,
+    usePositionTransforms,
+    vertexPretransformed,
+    appliedViewport) {
+  const d3d = vertexPretransformed ? appliedViewport?.d3d : null;
+  return {
+    derivedStateHash,
+    primitiveType,
+    usePositionTransforms: usePositionTransforms ? 1 : 0,
+    vertexPretransformed: vertexPretransformed ? 1 : 0,
+    viewportX: d3d ? finiteNumber(d3d.x, 0) : 0,
+    viewportY: d3d ? finiteNumber(d3d.y, 0) : 0,
+    viewportWidth: d3d ? Math.max(1, finiteNumber(d3d.width, 1)) : 0,
+    viewportHeight: d3d ? Math.max(1, finiteNumber(d3d.height, 1)) : 0,
+  };
+}
+
+function d3d8RenderUniformKeyMatches(
+    key,
+    derivedStateHash,
+    primitiveType,
+    usePositionTransforms,
+    vertexPretransformed,
+    appliedViewport) {
+  if (!key ||
+      key.derivedStateHash !== derivedStateHash ||
+      key.primitiveType !== primitiveType ||
+      key.usePositionTransforms !== (usePositionTransforms ? 1 : 0) ||
+      key.vertexPretransformed !== (vertexPretransformed ? 1 : 0)) {
+    return false;
+  }
+  const d3d = vertexPretransformed ? appliedViewport?.d3d : null;
+  const viewportX = d3d ? finiteNumber(d3d.x, 0) : 0;
+  const viewportY = d3d ? finiteNumber(d3d.y, 0) : 0;
+  const viewportWidth = d3d ? Math.max(1, finiteNumber(d3d.width, 1)) : 0;
+  const viewportHeight = d3d ? Math.max(1, finiteNumber(d3d.height, 1)) : 0;
+  return key.viewportX === viewportX &&
+    key.viewportY === viewportY &&
+    key.viewportWidth === viewportWidth &&
+    key.viewportHeight === viewportHeight;
+}
+
 function d3d8BaseUniformKey(useTransforms, usePretransformedPosition, appliedViewport,
     appliedRenderState, clipPlanes, shadeModeDraw) {
   const values = [
@@ -9407,21 +9451,17 @@ function d3d8AdjacentDrawBatchInfo({
   if (!Number.isSafeInteger(indexEndByteOffset)) {
     return null;
   }
-  const key = [
-    Number(stateHash) >>> 0,
-    Number(derivedStateHash) >>> 0,
-    Number(primitiveType) >>> 0,
+  return {
+    stateHash: Number(stateHash) >>> 0,
+    derivedStateHash: Number(derivedStateHash) >>> 0,
+    primitiveType: Number(primitiveType) >>> 0,
     vertexBufferId,
     indexBufferId,
     vertexByteOffset,
     vertexStride,
     vertexShaderFvf,
-    indexSize,
     texture0Id,
     texture1Id,
-  ].join(",");
-  return {
-    key,
     glPrimitive: baseGlPrimitive,
     indexType: indexSize === 4 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
     indexSize,
@@ -9431,9 +9471,24 @@ function d3d8AdjacentDrawBatchInfo({
   };
 }
 
+function d3d8AdjacentDrawBatchKeyMatches(left, right) {
+  return Boolean(left && right &&
+    left.stateHash === right.stateHash &&
+    left.derivedStateHash === right.derivedStateHash &&
+    left.primitiveType === right.primitiveType &&
+    left.vertexBufferId === right.vertexBufferId &&
+    left.indexBufferId === right.indexBufferId &&
+    left.vertexByteOffset === right.vertexByteOffset &&
+    left.vertexStride === right.vertexStride &&
+    left.vertexShaderFvf === right.vertexShaderFvf &&
+    left.indexSize === right.indexSize &&
+    left.texture0Id === right.texture0Id &&
+    left.texture1Id === right.texture1Id);
+}
+
 function tryMergeD3D8PendingDrawBatch(batchInfo) {
   const pending = d3d8PendingDrawBatch;
-  if (!pending || !batchInfo || pending.key !== batchInfo.key ||
+  if (!d3d8AdjacentDrawBatchKeyMatches(pending, batchInfo) ||
       pending.nextIndexByteOffset !== batchInfo.indexByteOffset) {
     return false;
   }
@@ -9986,9 +10041,6 @@ function paintD3D8DrawIndexed(payload = {}) {
       vertexStride >= 12 && indexCount > 0 && (indexSize === 2 || indexSize === 4)) {
     const bridgeProgram = ensureD3D8DrawProgram();
     bindD3D8Program(bridgeProgram.program);
-    const renderUniformKey = `${derivedStateHash},${primitiveType},`
-      + `${usePositionTransforms ? 1 : 0},${vertexPretransformed ? 1 : 0},`
-      + `${vertexPretransformed ? d3d8ViewportUniformKey(appliedViewport) : ""}`;
     const textureUniformKey = d3d8TextureLayoutUniformKey({
       renderState,
       canSampleTexture0,
@@ -10002,7 +10054,14 @@ function paintD3D8DrawIndexed(payload = {}) {
       texture1Transform,
     });
     const renderUniformUnchanged =
-      renderUniformKey === harnessState.graphics.lastD3D8UniformKey &&
+      d3d8RenderUniformKeyMatches(
+        harnessState.graphics.lastD3D8UniformKey,
+        derivedStateHash,
+        primitiveType,
+        usePositionTransforms,
+        vertexPretransformed,
+        appliedViewport,
+      ) &&
       harnessState.graphics.lastD3D8AppliedRenderState != null;
     const textureUniformUnchanged =
       textureUniformKey === harnessState.graphics.lastD3D8TextureUniformKey;
@@ -10463,7 +10522,13 @@ function paintD3D8DrawIndexed(payload = {}) {
       }
       recordRenderUniformDetail?.("sortedDrawRenderAlphaFogUniformMs");
       harnessState.graphics.lastD3D8AppliedRenderState = appliedRenderState;
-      harnessState.graphics.lastD3D8UniformKey = renderUniformKey;
+      harnessState.graphics.lastD3D8UniformKey = d3d8CaptureRenderUniformKey(
+        derivedStateHash,
+        primitiveType,
+        usePositionTransforms,
+        vertexPretransformed,
+        appliedViewport,
+      );
     } else {
       appliedRenderState = harnessState.graphics.lastD3D8AppliedRenderState;
     }

@@ -77,6 +77,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Remove more hot draw-path string keys from the browser D3D8 bridge.
+      Adjacent draw-batch candidates now compare numeric state/buffer/texture
+      fields directly instead of building a comma-joined batch key, and the
+      render-uniform cache compares against the previous snapshot without
+      allocating a formatted key on hits. This preserves the existing cache
+      boundaries and draw ordering; it only trims JS allocation in the draw
+      scaffolding.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `git diff --check`, `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`,
+      and a synced Mac M4/Metal release profile copied to
+      `runtime-frame-profile-numeric-hotkeys-final-mac.json` /
+      `runtime-frame-profile-numeric-hotkeys-final-mac.png`. The profile kept
+      the renderer on `ANGLE Metal Renderer: Apple M4`, reported 337.4
+      draws/frame, 3.993 ms/frame of attributed D3D8 draw bridge work,
+      `sortedDrawProfiledMs` 3.049, `sortedDrawPreBatchMs` 0.161, and
+      `sortedDrawDrawOrBatchMs` 0.128. The producer table remains led by
+      `SortingRenderer.pool.draw.submit.before`, heightmap tile draws, and
+      volumetric/projected shadow draws, so this is a narrow stability/GC
+      cleanup rather than a frontier shift.
+
 - [x] Remove per-draw sampler-state string keys from the D3D8 texture path.
       Sampler cache hits now compare the exact numeric WebGL sampler fields
       stored on the texture resource instead of building a colon-joined string

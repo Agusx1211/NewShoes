@@ -339,11 +339,16 @@ kept the screenshot correct and moved attributed draw bridge work from 4.062 to
 hits now use exact numeric field comparison instead of building another string
 key per sampled draw; `runtime-frame-profile-sampler-key-mac.json` moved
 `sortedDrawTextureBindMs` from 0.1515 to 0.1369 ms/frame, and the 120-frame
-repeat moved it from 0.1829 to 0.1470 ms/frame. The next PERF pass should use
-the producer table to reduce world-space submissions or residual draw-submit
-stalls, not material, light, text-geometry, first-vertex VAO setup, transform
-comparison/allocation, draw-time harness bookkeeping, draw-cache key string
-allocation, or sampler-key string allocation. Broader shadow fidelity remains
+repeat moved it from 0.1829 to 0.1470 ms/frame. Adjacent draw-batch candidates
+and the render-uniform cache now also avoid hot comma-string keys; the final
+Mac M4/Metal profile `runtime-frame-profile-numeric-hotkeys-final-mac.json`
+kept the screenshot correct and measured 3.993 ms/frame of attributed D3D8
+draw bridge work with `sortedDrawPreBatchMs` at 0.161 ms/frame. The next PERF
+pass should use the producer table to reduce world-space submissions or
+residual draw-submit stalls, not material, light, text-geometry, first-vertex
+VAO setup, transform comparison/allocation, draw-time harness bookkeeping,
+draw-cache key string allocation, sampler-key string allocation, or
+adjacent/render-uniform key string allocation. Broader shadow fidelity remains
 in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
