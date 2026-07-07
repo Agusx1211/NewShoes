@@ -182,6 +182,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       and shoreline at 0.200 ms. The tradeoff is expected: index upload bytes
       rose from 77.9 KB/frame to 129.6 KB/frame and `bufferSubDataMs` from
       0.043 ms/frame to 0.045 ms/frame.
+- [x] Skip projected-shadow material-pass polygon clipping for fully contained
+      receiver meshes. `MeshClass::Render_Material_Pass()` now checks whether
+      a material-pass cull volume fully contains the mesh object-space bounding
+      box after transforming the projector OBB into mesh-local space. Fully
+      contained meshes take the original full material-pass path using the
+      registered static mesh indices, while partial intersections still use
+      the existing APT generation and dynamic clipped-index upload. Verified
+      with `git diff --check`, `npm --prefix WebAssembly run build:port`,
+      `EXPECT_WASM=1 node harness/smoke.mjs`, `npm --prefix WebAssembly run
+      build:port:release`, and repeated Mac M4 Chrome/Metal release profiles
+      copied to
+      `WebAssembly/artifacts/perf/runtime-frame-profile-cull-contained-mac.json`
+      and
+      `WebAssembly/artifacts/perf/runtime-frame-profile-cull-contained-repeat-mac.json`.
+      The Mac screenshot
+      `WebAssembly/artifacts/screenshots/runtime-frame-profile-cull-contained-mac.png`
+      showed the shell-map water/menu rendering normally. On Mac Metal, the
+      repeat profiles stayed in the same wall-time band as the previous
+      shoreline run (9.06-9.10 ms/frame vs 9.05 ms/frame); the sampled browser
+      draw-submit marker moved from 9.14 ms to about 8.56-8.59 ms, while the
+      projected-shadow mesh-flush marker remained noisy at 1.66-2.05 ms.
 
 ## User-reported play bugs (2026-07-06 session)
 

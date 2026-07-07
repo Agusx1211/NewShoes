@@ -127,6 +127,44 @@ static unsigned MeshDebugIdCount;
 bool MeshClass::Legacy_Meshes_Fogged = true;
 static SimpleDynVecClass<uint32> temp_apt;
 
+static bool Is_AABox_Fully_Inside_OBBox(const AABoxClass &box,const OBBoxClass &obbox)
+{
+	for (int x=-1; x<=1; x+=2) {
+		for (int y=-1; y<=1; y+=2) {
+			for (int z=-1; z<=1; z+=2) {
+				Vector3 corner(
+					box.Center.X + box.Extent.X * x,
+					box.Center.Y + box.Extent.Y * y,
+					box.Center.Z + box.Extent.Z * z);
+				if (CollisionMath::Overlap_Test(obbox,corner) != CollisionMath::INSIDE) {
+					return false;
+				}
+			}
+		}
+	}
+	return true;
+}
+
+static bool Is_Mesh_Fully_Inside_Cull_Volume(MeshModelClass *model,const Matrix3D &modeltm,const OBBoxClass &world_cull_volume)
+{
+	Matrix3D modeltminv;
+	modeltm.Get_Orthogonal_Inverse(modeltminv);
+	OBBoxClass localbox;
+	OBBoxClass::Transform(modeltminv,world_cull_volume,&localbox);
+
+	AABoxClass meshbox;
+	model->Get_Bounding_Box(&meshbox);
+	return Is_AABox_Fully_Inside_OBBox(meshbox,localbox);
+}
+
+static bool Should_Per_Polygon_Cull_Material_Pass(MeshModelClass *model,const Matrix3D &modeltm,MaterialPassClass *pass)
+{
+	OBBoxClass *cull_volume = pass->Get_Cull_Volume();
+	return (	cull_volume != NULL &&
+				MaterialPassClass::Is_Per_Polygon_Culling_Enabled() &&
+				!Is_Mesh_Fully_Inside_Cull_Volume(model,modeltm,*cull_volume));
+}
+
 /*
 ** This #define causes the collision code to always recompute the triangle normals rather
 ** than using the ones in the model. 
@@ -878,7 +916,7 @@ void MeshClass::Render_Material_Pass(MaterialPassClass * pass,IndexBufferClass *
 		//MW: Need uninstall custom materials in case they leave D3D in unknown state
 		pass->UnInstall_Materials();
 
-	} else if ((pass->Get_Cull_Volume() != NULL) && (MaterialPassClass::Is_Per_Polygon_Culling_Enabled())) {
+	} else if (Should_Per_Polygon_Cull_Material_Pass(Model,Transform,pass)) {
 		
 		/*
 		** Generate the APT 
@@ -1597,8 +1635,5 @@ int MeshClass::Get_Draw_Call_Count(void) const
 		return 0;
 	}
 }
-
-
-
 
 

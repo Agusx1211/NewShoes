@@ -239,7 +239,11 @@ ms/frame wall vs 9.41 ms/frame in the same-session baseline, with
 `HeightMap.render.shoreLines.before` down from 1.405 ms to 0.200 ms and draw
 calls down from 403.6/frame to 319.4/frame. The next PERF pass should start
 from the remaining draw-side leaders (`WasmD3D8.browserDrawIndexed.before` and
-`W3DProjectedShadow.renderShadows.meshFlush.before`) before returning to the
+`W3DProjectedShadow.renderShadows.meshFlush.before`). A first scoped
+projected-shadow receiver pass now skips per-polygon material-pass culling
+when the projector cull volume fully contains a receiver mesh; Mac M4 repeats
+stayed in the same wall-time band, so the remaining work is still broad draw
+submission and the noisy projected-shadow mesh flush before returning to the
 remaining byte-tail producers (exact dynamic shadow bytes and
 `W3DWaterTracks.flush.batchUnlock.before`). The user-reported shadow
 flicker/breakage symptom is fixed in the live skirmish path, while broader
@@ -2677,8 +2681,11 @@ and then start with the PROFILE, not with any individual fix.
       `HeightMap.render.shoreLines.before` 1.405 ms -> 0.200 ms, and draw
       calls 403.6/frame -> 319.4/frame. Next concrete PERF frontier:
       `WasmD3D8.browserDrawIndexed.before` and
-      `W3DProjectedShadow.renderShadows.meshFlush.before`; byte-tail work
-      remains exact dynamic shadow bytes and water-track batch unlock.
+      `W3DProjectedShadow.renderShadows.meshFlush.before`. A first
+      projected-shadow receiver fast path skips clipped dynamic-index
+      generation for meshes fully inside the projector cull volume, but the
+      repeated Mac M4 profiles stayed within the same wall-time band; byte-tail
+      work remains exact dynamic shadow bytes and water-track batch unlock.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing
