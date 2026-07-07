@@ -165,8 +165,17 @@ stalls into shoreline/extra-blend/terrain-track buckets. The conservative
 default keeps bound diagnostics enabled; the latest default terrain profile
 measured 38.34 ms/frame wall / 36.92 ms average engine `lastFrameMs`, with
 `captureBound` still ~7.55 ms/frame, `browserDrawIndexed` ~4.78 ms/frame, and
-visible shell-map water/terrain. The measured render frontier remains
-heightmap/terrain, but raw checksum removal is not the next optimization; the
+visible shell-map water/terrain. The runtime profile now also decomposes D3D8
+buffer-upload traffic by buffer kind and lock/update mode. The latest Mac
+Chrome/Metal release profile measured 36.34 ms/frame wall / 24.27 ms average
+engine `lastFrameMs`; tracked browser D3D8 work is 20.53 ms/frame and is
+dominated by buffer uploads (`bufferSubDataMs` 19.83 ms/frame across 386.3
+updates/frame, 1.69 MiB/frame). The upload mix is mostly vertex and dynamic
+ring writes: 289.0 vertex updates/frame (1.54 MiB), 372.3 dynamic
+updates/frame (1.12 MiB), 362.7 `NOOVERWRITE` updates/frame (1.02 MiB), only
+8.7 `DISCARD`/orphan updates/frame, and zero resizes. The measured render
+frontier remains heightmap/terrain/dynamic upload bursts, but raw checksum
+removal and `DISCARD` orphan toggling are not the next optimizations; the
 user-reported shadow flicker/breakage symptom is fixed in the live skirmish
 path, while broader shadow fidelity remains in the queued phased plan.
 
@@ -2525,7 +2534,17 @@ and then start with the PROFILE, not with any individual fix.
       7.69-7.91 ms/frame to 0.66-2.93 ms/frame, and buffer update time from
       ~7.1 ms/frame to 0.52-2.77 ms/frame; total wall time was still noisy
       (41.78-45.31 ms/frame), so continue profiling the next wall-time stall
-      instead of disabling diagnostics wholesale.
+      instead of disabling diagnostics wholesale. 2026-07-07 buffer-upload
+      census: the runtime profile now breaks upload traffic down by
+      vertex/index, dynamic, `DISCARD`, `NOOVERWRITE`, orphan, and resize
+      counters. The current Mac M4 Chrome/Metal shell-map profile measures
+      386.3 updates/frame and 1.69 MiB/frame uploaded, dominated by dynamic
+      vertex-buffer ring writes (289.0 vertex updates/frame, 1.54 MiB/frame;
+      362.7 `NOOVERWRITE` updates/frame, 1.02 MiB/frame). Only 8.7
+      `DISCARD`/orphan updates happen per frame and there are zero resizes, so
+      the next pass should reduce/coalesce real dynamic `NOOVERWRITE` upload
+      bursts instead of toggling orphan behavior or disabling bound
+      diagnostics.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing

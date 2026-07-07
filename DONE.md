@@ -8362,6 +8362,30 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       ms/frame to 0.66-2.93 ms/frame. End-to-end wall time stayed noisy
       (41.78-45.31 ms/frame), so the next frontier is the remaining stall
       outside this checksum bucket rather than disabling diagnostics.
+- [x] Expose D3D8 buffer-upload composition counters in the runtime profile.
+      `bridge.js` now reports buffer uploads split by vertex/index buffer,
+      dynamic usage, `DISCARD`, `NOOVERWRITE`, orphaned updates, and resizes;
+      `runtime_frame_profile.mjs` carries those fields through measured deltas
+      and per-frame summaries. Verified with `node --check
+      WebAssembly/harness/bridge.js`, `node --check
+      WebAssembly/harness/runtime_frame_profile.mjs`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port:release`, and a final Mac M4
+      Chrome/Metal runtime profile (`ANGLE Metal Renderer: Apple M4`,
+      `dist-release`, `diag=lite`, 20 warmup + 30 measured frames, engine
+      profile enabled). The final profile reached the same shell-map gameplay
+      state (`inGame=true`, logic frame 52, 335 objects/drawables, 75 rendered
+      objects, local player America) and measured 36.34 ms/frame wall,
+      24.27 ms average engine `lastFrameMs`, and 20.53 ms/frame tracked browser
+      D3D8 work. Buffer uploads dominate that tracked browser time:
+      `bufferSubDataMs` is 19.83 ms/frame across 386.3 updates/frame and
+      1.69 MiB/frame uploaded, with 289.0 vertex updates/frame (1.54 MiB),
+      97.3 index updates/frame (0.16 MiB), 372.3 dynamic updates/frame
+      (1.12 MiB), 362.7 `NOOVERWRITE` updates/frame (1.02 MiB), only 8.7
+      `DISCARD`/orphan updates/frame, and zero resizes. A WebGL2 source-offset
+      direct-heap upload experiment was measured and reverted after repeats
+      were noisy/neutral-regressive, so the kept change is the counter surface
+      and the next frontier is reducing/coalescing real dynamic
+      `NOOVERWRITE` upload bursts.
 - [x] Split the D3D8 draw-state cache hash from per-object transforms.
       `wasm_d3d8_shim.cpp` now computes both the original full draw hash and a
       derived-state hash that excludes world/view/projection but still covers

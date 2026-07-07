@@ -519,6 +519,18 @@ const d3d8PerfStats = {
   fboIncomplete: 0,
   bufferUpdates: 0,
   bufferUploadBytes: 0,
+  bufferVertexUpdates: 0,
+  bufferVertexUploadBytes: 0,
+  bufferIndexUpdates: 0,
+  bufferIndexUploadBytes: 0,
+  bufferDynamicUpdates: 0,
+  bufferDynamicUploadBytes: 0,
+  bufferDiscardUpdates: 0,
+  bufferDiscardUploadBytes: 0,
+  bufferNoOverwriteUpdates: 0,
+  bufferNoOverwriteUploadBytes: 0,
+  bufferOrphanedUpdates: 0,
+  bufferResizedUpdates: 0,
   bufferUpdateMs: 0,
   bufferSubDataMs: 0,
   bufferMirrorBytes: 0,
@@ -664,6 +676,18 @@ function d3d8PerfSummary() {
     fboIncomplete: d3d8PerfStats.fboIncomplete,
     bufferUpdates: d3d8PerfStats.bufferUpdates,
     bufferUploadBytes: d3d8PerfStats.bufferUploadBytes,
+    bufferVertexUpdates: d3d8PerfStats.bufferVertexUpdates,
+    bufferVertexUploadBytes: d3d8PerfStats.bufferVertexUploadBytes,
+    bufferIndexUpdates: d3d8PerfStats.bufferIndexUpdates,
+    bufferIndexUploadBytes: d3d8PerfStats.bufferIndexUploadBytes,
+    bufferDynamicUpdates: d3d8PerfStats.bufferDynamicUpdates,
+    bufferDynamicUploadBytes: d3d8PerfStats.bufferDynamicUploadBytes,
+    bufferDiscardUpdates: d3d8PerfStats.bufferDiscardUpdates,
+    bufferDiscardUploadBytes: d3d8PerfStats.bufferDiscardUploadBytes,
+    bufferNoOverwriteUpdates: d3d8PerfStats.bufferNoOverwriteUpdates,
+    bufferNoOverwriteUploadBytes: d3d8PerfStats.bufferNoOverwriteUploadBytes,
+    bufferOrphanedUpdates: d3d8PerfStats.bufferOrphanedUpdates,
+    bufferResizedUpdates: d3d8PerfStats.bufferResizedUpdates,
     bufferUpdateMs: roundedPerfMs(d3d8PerfStats.bufferUpdateMs),
     bufferSubDataMs: roundedPerfMs(d3d8PerfStats.bufferSubDataMs),
     bufferMirrorBytes: d3d8PerfStats.bufferMirrorBytes,
@@ -3324,6 +3348,7 @@ function updateD3D8Buffer(payload = {}) {
   gl.bufferSubData(resource.target, byteOffset, bytes);
   const subDataMs = perfNow() - subDataStartedAt;
   const updateMs = perfNow() - updateStartedAt;
+  const noOverwrite = Boolean(lockFlags & D3DLOCK_NOOVERWRITE);
   resource.uploads += 1;
   d3d8BufferStats.updates += 1;
   d3d8BufferStats.uploadBytes += bytes.byteLength;
@@ -3334,6 +3359,31 @@ function updateD3D8Buffer(payload = {}) {
   d3d8BufferStats.mirrorSkippedBytes += skippedMirrorBytes;
   d3d8PerfStats.bufferUpdates += 1;
   d3d8PerfStats.bufferUploadBytes += bytes.byteLength;
+  if (resource.kindName === "vertex") {
+    d3d8PerfStats.bufferVertexUpdates += 1;
+    d3d8PerfStats.bufferVertexUploadBytes += bytes.byteLength;
+  } else if (resource.kindName === "index") {
+    d3d8PerfStats.bufferIndexUpdates += 1;
+    d3d8PerfStats.bufferIndexUploadBytes += bytes.byteLength;
+  }
+  if (resource.dynamic) {
+    d3d8PerfStats.bufferDynamicUpdates += 1;
+    d3d8PerfStats.bufferDynamicUploadBytes += bytes.byteLength;
+  }
+  if (discard) {
+    d3d8PerfStats.bufferDiscardUpdates += 1;
+    d3d8PerfStats.bufferDiscardUploadBytes += bytes.byteLength;
+  }
+  if (noOverwrite) {
+    d3d8PerfStats.bufferNoOverwriteUpdates += 1;
+    d3d8PerfStats.bufferNoOverwriteUploadBytes += bytes.byteLength;
+  }
+  if (orphaned) {
+    d3d8PerfStats.bufferOrphanedUpdates += 1;
+  }
+  if (resized) {
+    d3d8PerfStats.bufferResizedUpdates += 1;
+  }
   d3d8PerfStats.bufferUpdateMs += updateMs;
   d3d8PerfStats.bufferSubDataMs += subDataMs;
   d3d8PerfStats.bufferMirrorBytes += mirroredBytes;
@@ -3348,7 +3398,7 @@ function updateD3D8Buffer(payload = {}) {
     glUsage: resource.glUsageName,
     lockFlags,
     discard: Boolean(lockFlags & D3DLOCK_DISCARD),
-    noOverwrite: Boolean(lockFlags & D3DLOCK_NOOVERWRITE),
+    noOverwrite,
     orphaned,
     resized,
     mirrored: mirroredBytes > 0,
