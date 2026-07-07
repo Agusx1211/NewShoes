@@ -473,7 +473,14 @@ symptom is temporal — NOT a single still.
       target and is not yet profiled/held to triple-digit fps. Keep pushing the
       draw-side frontier (browserDrawIndexed per-draw scaffolding, projected
       shadow flush, shoreline) and land the structural per-frame draw command
-      buffer rather than only per-uniform/per-subsystem caching.
+      buffer rather than only per-uniform/per-subsystem caching. 2026-07-07:
+      `runtime_frame_profile.mjs` can now drive the real UI into an active
+      skirmish via `PERF_PROFILE_SCENE=skirmish`, and the first Mac M4/Metal
+      release profile reached 224 objects/drawables with p95 6.5 ms, p99
+      6.8 ms, and max 9.3 ms over 60 measured frames. This is a useful
+      active-base baseline, but not the hundreds-of-units/AI/pathfinding
+      target because the camera only rendered 4 objects and skirmish AI is
+      still compiled out.
 - [ ] **Skirmish AI is entirely disabled by a build flag (ROOT CAUSE FOUND —
       not player-setup tuning).** In a real skirmish the enemy does nothing (no
       production/building/attacks); Codex confirmed object count is flat over
@@ -2841,7 +2848,17 @@ and then start with the PROFILE, not with any individual fix.
       on the release build, capture the C++ phase breakdown (`TheGameLogic->
       update` vs `TheDisplay->DRAW` vs the W3D render buckets) AND p95/p99 + max
       frame time (not just average), and record the top buckets. Only then pick
-      the next structural target. (by Claude)
+      the next structural target. 2026-07-07: the prerequisite harness path is
+      now in place via `PERF_PROFILE_SCENE=skirmish`; it drives Main Menu ->
+      Single Player -> Skirmish -> Start and then runs the existing runtime
+      profiler in active gameplay. The first Mac M4/Metal release producer run
+      (`runtime-frame-profile-skirmish-mac.json`) measured an initial base
+      scene, not a loaded battle: 224 objects/drawables, 4 rendered objects,
+      164 draws/frame, engine `lastFrameMs` avg 6.10, p95 6.5, p99 6.8, max
+      9.3, with draw producers led by heightmap tile draws and volumetric
+      shadow draws. Keep this TODO open until the harness can create/load a
+      populated mid-battle scene with AI/pathfinding/projectiles/particles.
+      (by Claude)
 - [ ] **WebGL2 instanced rendering for repeated meshes (draw-count collapse on
       loaded scenes).** A real battle draws dozens/hundreds of identical
       unit/structure models, each currently a separate draw. Use

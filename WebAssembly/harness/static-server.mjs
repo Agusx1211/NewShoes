@@ -302,8 +302,20 @@ export async function startStaticServer({
     server,
     root: staticRoot,
     url: `http://127.0.0.1:${address.port}/`,
-    close: () => new Promise((resolveClose, rejectClose) => {
-      server.close((error) => error ? rejectClose(error) : resolveClose());
+    close: ({ forceAfterMs = 1000 } = {}) => new Promise((resolveClose, rejectClose) => {
+      const forceTimer = setTimeout(() => {
+        server.closeAllConnections?.();
+      }, forceAfterMs);
+      forceTimer.unref?.();
+      server.closeIdleConnections?.();
+      server.close((error) => {
+        clearTimeout(forceTimer);
+        if (error) {
+          rejectClose(error);
+          return;
+        }
+        resolveClose();
+      });
     }),
   };
 }

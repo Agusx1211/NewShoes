@@ -222,6 +222,31 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Add active-skirmish profiling to the runtime frame profiler. The profiler
+      now accepts `PERF_PROFILE_SCENE=skirmish`, drives the real UI path from
+      Main Menu -> Single Player -> Skirmish -> Start with original Win32 mouse
+      messages, optionally applies `PERF_PROFILE_SKIRMISH_MAP`, waits for
+      active gameplay with visible rendered objects, then runs the existing
+      p95/p99/slowest-sample/D3D8 producer profile passes against the loaded
+      match. Skirmish profiles write separate default artifacts
+      (`runtime-frame-profile-skirmish*.json/png`) so they do not overwrite the
+      shell-map baseline. The profiler and static harness server also now bound
+      cleanup; on Mac Chrome/Metal `browser.close` can time out after the JSON
+      is already written, and the script now logs that timeout and exits
+      cleanly instead of leaving a remote Node process alive.
+      Verified with `node --check WebAssembly/harness/runtime_frame_profile.mjs`,
+      `node --check WebAssembly/harness/static-server.mjs`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port:release`, a local SwiftShader
+      release cleanup check, and synced Mac M4/Metal release runs. The main
+      60-frame Mac producer profile
+      `WebAssembly/artifacts/perf/runtime-frame-profile-skirmish-mac.json`
+      reported `ANGLE Metal Renderer: Apple M4`, active skirmish gameplay with
+      224 objects/drawables and 4 rendered objects, engine `lastFrameMs` avg
+      6.10 ms / p95 6.5 / p99 6.8 / max 9.3, 164 draws/frame, 1.111 ms/frame
+      attributed sorted draw work, 50 buffer updates/frame, and a visible
+      skirmish screenshot. The one-frame Mac cleanup check confirmed no
+      `runtime_frame_profile` process remained after the bounded shutdown.
+
 - [x] Remove more hot draw-path string keys from the browser D3D8 bridge.
       Adjacent draw-batch candidates now compare numeric state/buffer/texture
       fields directly instead of building a comma-joined batch key, and the

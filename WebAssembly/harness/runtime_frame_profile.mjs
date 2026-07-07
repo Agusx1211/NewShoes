@@ -12,6 +12,11 @@ const archiveRoot = resolve(wasmRoot, "artifacts/real-assets");
 const artifactsRoot = resolve(wasmRoot, "artifacts/perf");
 const screenshotsRoot = resolve(wasmRoot, "artifacts/screenshots");
 
+const GAME_SKIRMISH = 2;
+const WM_MOUSEMOVE = 0x0200;
+const WM_LBUTTONDOWN = 0x0201;
+const WM_LBUTTONUP = 0x0202;
+
 const archiveSpecs = [
   { name: "INIZH.big" },
   { name: "EnglishZH.big" },
@@ -52,6 +57,14 @@ function parseDistDir() {
   return value;
 }
 
+function parseProfileScene() {
+  const value = (process.env.PERF_PROFILE_SCENE ?? "shellmap").trim().toLowerCase();
+  if (value === "shellmap" || value === "skirmish") {
+    return value;
+  }
+  throw new Error(`Invalid PERF_PROFILE_SCENE: ${value}`);
+}
+
 function parseOptionalBoolean(name) {
   const value = process.env[name];
   if (value == null || value === "") {
@@ -64,6 +77,35 @@ function parseOptionalBoolean(name) {
     return false;
   }
   throw new Error(`Invalid ${name}: ${value}`);
+}
+
+async function runWithDeadline(label, timeoutMs, task) {
+  let timeoutId = null;
+  const timeout = new Promise((resolve) => {
+    timeoutId = setTimeout(() => resolve({ timedOut: true }), timeoutMs);
+    timeoutId.unref?.();
+  });
+  const work = Promise.resolve()
+    .then(task)
+    .then(() => ({ timedOut: false }))
+    .catch((error) => ({ timedOut: false, error }));
+  const result = await Promise.race([work, timeout]);
+  if (timeoutId != null) {
+    clearTimeout(timeoutId);
+  }
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.timedOut) {
+    console.error(`[runtime-profile] ${label} timed out after ${timeoutMs}ms`);
+    return false;
+  }
+  return true;
+}
+
+async function flushOutputStreams() {
+  await new Promise((resolve) => process.stdout.write("", resolve));
+  await new Promise((resolve) => process.stderr.write("", resolve));
 }
 
 function expect(condition, message, payload) {
@@ -376,6 +418,58 @@ async function rpc(page, command, payload = {}) {
   return page.evaluate(([name, args]) => window.CnCPort.rpc(name, args), [command, payload]);
 }
 
+function win32PointLParam(point) {
+  return ((point.y & 0xffff) << 16) | (point.x & 0xffff);
+}
+
+async function postMouse(page, message, point) {
+  const result = await rpc(page, "postMessage", {
+    message,
+    lParam: win32PointLParam(point),
+    point,
+  });
+  expect(result?.ok === true, "profile mouse message was not posted", result);
+  return result;
+}
+
+async function runUiFrames(page, frames, label) {
+  const result = await rpc(page, "realEngineFrame", { frames });
+  expect(result?.ok === true && result.aborted === false,
+    `${label} UI frame failed`, result);
+  return result;
+}
+
+async function runUiSummary(page, frames, label) {
+  const result = await rpc(page, "realEngineFrameSummary", { frames });
+  expect(result?.ok === true && result.aborted === false,
+    `${label} summary frame failed`, result);
+  return result;
+}
+
+async function waitForUiCondition(page, label, predicate, maxFrames = 180) {
+  const attempts = [];
+  let last = null;
+  for (let frame = 0; frame < maxFrames; frame += 1) {
+    last = await runUiFrames(page, 1, label);
+    const clientState = last.frame?.clientState ?? {};
+    attempts.push({
+      framesCompleted: last.frame?.framesCompleted ?? null,
+      shell: clientState.shell ?? null,
+      transition: clientState.transition ?? null,
+      gameplay: compactGameplay(last.frame?.gameplay),
+      mainMenu: clientState.mainMenu ?? null,
+      skirmishMenu: clientState.skirmishMenu ?? null,
+    });
+    if (predicate(clientState, last)) {
+      return last;
+    }
+  }
+  expect(false, `${label} did not satisfy condition`, {
+    attempts: attempts.slice(-8),
+    last: attempts[attempts.length - 1] ?? null,
+  });
+}
+
 async function revealShellMenu(page, shellMap) {
   if (!shellMap) {
     return;
@@ -390,6 +484,218 @@ async function revealShellMenu(page, shellMap) {
     expect(frame?.ok === true && frame.aborted === false,
       "runtime frame profile menu reveal frame failed", frame);
   }
+}
+
+function realMenuHitMatches(menu, hitProbeName, buttonFieldName) {
+  const hitWindow = menu?.[hitProbeName]?.window;
+  const button = menu?.[buttonFieldName];
+  return button?.clickable === true && hitWindow?.found === true && hitWindow.id === button.id;
+}
+
+function collectWindowRefs(clientState) {
+  const refs = [];
+  for (const group of [clientState?.mainMenu, clientState?.skirmishMenu]) {
+    for (const value of Object.values(group ?? {})) {
+      if (value?.found === true && Number.isFinite(value.id)) {
+        refs.push(value);
+      }
+      if (value?.window?.found === true && Number.isFinite(value.window.id)) {
+        refs.push(value.window);
+      }
+    }
+  }
+  for (const field of ["focusWindow", "captureWindow", "grabWindow"]) {
+    const ref = clientState?.input?.[field];
+    if (ref?.found === true && Number.isFinite(ref.id)) {
+      refs.push(ref);
+    }
+  }
+  return refs;
+}
+
+function findWindowById(clientState, id) {
+  return collectWindowRefs(clientState).find((ref) => ref.id === id) ?? null;
+}
+
+async function revealMainMenu(page) {
+  const seedPoint = { x: 32, y: 32 };
+  const revealPoint = { x: 96, y: 96 };
+  await postMouse(page, WM_MOUSEMOVE, seedPoint);
+  await waitForUiCondition(
+    page,
+    "profile main-menu seed mouse move",
+    (clientState) => clientState.input?.mouse?.x === seedPoint.x &&
+      clientState.input?.mouse?.y === seedPoint.y,
+    12);
+
+  await postMouse(page, WM_MOUSEMOVE, revealPoint);
+  return waitForUiCondition(
+    page,
+    "profile main-menu reveal",
+    (clientState) => clientState.input?.mouse?.x === revealPoint.x &&
+      clientState.input?.mouse?.y === revealPoint.y &&
+      clientState.transition?.finished === true &&
+      clientState.input?.mouse?.visible === true &&
+      realMenuHitMatches(clientState.mainMenu, "underButtonSinglePlayerCenter", "buttonSinglePlayer"),
+    120);
+}
+
+async function waitForButtonDown(page, target, label, maxFrames = 12) {
+  return waitForUiCondition(
+    page,
+    `${label} down`,
+    (clientState) => {
+      const downTarget = findWindowById(clientState, target.id);
+      return clientState.input?.grabWindow?.id === target.id && downTarget?.selected === true;
+    },
+    maxFrames);
+}
+
+async function waitForButtonReleased(page, target, label, maxFrames = 12) {
+  return waitForUiCondition(
+    page,
+    `${label} release`,
+    (clientState) => {
+      const finalTarget = findWindowById(clientState, target.id);
+      return finalTarget == null || finalTarget.selected === false;
+    },
+    maxFrames);
+}
+
+async function clickButton(page, button, hitProbe, label, settleFrames = 120) {
+  expect(button?.clickable === true, `${label} button is not clickable`, button);
+  const point = hitProbe?.point ?? { x: button.centerX, y: button.centerY };
+  expect(Number.isFinite(point.x) && Number.isFinite(point.y),
+    `${label} click point is invalid`, { button, hitProbe, point });
+  const target = hitProbe?.window?.found === true ? hitProbe.window : button;
+  expect(target?.clickable === true, `${label} target is not clickable`, { button, hitProbe, target });
+
+  await postMouse(page, WM_MOUSEMOVE, point);
+  await postMouse(page, WM_LBUTTONDOWN, point);
+  await waitForButtonDown(page, target, label);
+  await postMouse(page, WM_LBUTTONUP, point);
+  const released = await waitForButtonReleased(page, target, label);
+  if (settleFrames == null) {
+    return { point, target, released, settled: released };
+  }
+  const settled = await waitForUiCondition(
+    page,
+    label,
+    (clientState) => clientState.transition?.ready === true &&
+      clientState.transition?.finished === true,
+    settleFrames);
+  return { point, target, released, settled };
+}
+
+async function waitForSkirmishMatch(page, maxFrames, chunkSize) {
+  const samples = [];
+  let framesAdvanced = 0;
+  while (framesAdvanced < maxFrames) {
+    const frames = Math.min(chunkSize, maxFrames - framesAdvanced);
+    const result = await runUiSummary(page, frames, "profile skirmish match wait");
+    framesAdvanced += frames;
+    const gameplay = result.frame?.gameplay;
+    samples.push({
+      framesCompleted: result.frame?.framesCompleted ?? null,
+      gameMode: gameplay?.gameMode ?? null,
+      inGame: gameplay?.inGame ?? null,
+      loadingMap: gameplay?.loadingMap ?? null,
+      objectCount: gameplay?.objectCount ?? null,
+      drawableCount: gameplay?.drawableCount ?? null,
+      renderedObjectCount: gameplay?.renderedObjectCount ?? null,
+      inputEnabled: gameplay?.inputEnabled ?? null,
+    });
+    if (gameplay?.gameMode === GAME_SKIRMISH &&
+        gameplay?.inGame === true &&
+        gameplay?.loadingMap === false &&
+        gameplay?.inputEnabled === true &&
+        Number(gameplay?.objectCount ?? 0) > 0 &&
+        Number(gameplay?.drawableCount ?? 0) > 0 &&
+        Number(gameplay?.renderedObjectCount ?? 0) > 0) {
+      return { result, framesAdvanced, samples };
+    }
+  }
+  expect(false, "profile skirmish did not reach an active match", {
+    maxFrames,
+    samples: samples.slice(-12),
+  });
+}
+
+async function enterSkirmishScene(page) {
+  let frame = await runUiFrames(page, 5, "profile initial menu frames");
+  if (frame.frame?.clientState?.shell?.topIsMainMenu !== true) {
+    frame = await waitForUiCondition(
+      page,
+      "profile main menu available",
+      (clientState) => clientState.shell?.topIsMainMenu === true &&
+        clientState.shell?.topHidden === false,
+      120);
+  }
+  expect(frame.frame?.clientState?.mainMenu?.buttonSinglePlayer?.found === true,
+    "profile main menu Single Player button geometry is unavailable",
+    frame.frame?.clientState?.mainMenu?.buttonSinglePlayer);
+
+  const revealed = await revealMainMenu(page);
+  const singlePlayerClick = await clickButton(
+    page,
+    revealed.frame.clientState.mainMenu.buttonSinglePlayer,
+    revealed.frame.clientState.mainMenu.underButtonSinglePlayerCenter,
+    "profile single-player");
+  const singlePlayerMenu = singlePlayerClick.settled.frame?.clientState?.mainMenu;
+  expect(singlePlayerMenu?.buttonSkirmish?.clickable === true,
+    "profile single-player menu did not expose ButtonSkirmish", singlePlayerMenu);
+
+  const skirmishClick = await clickButton(
+    page,
+    singlePlayerMenu.buttonSkirmish,
+    null,
+    "profile skirmish");
+  const skirmishMenuReady = skirmishClick.settled.frame?.clientState?.skirmishMenu?.buttonStart?.clickable === true
+    ? skirmishClick.settled
+    : await waitForUiCondition(
+      page,
+      "profile skirmish options menu",
+      (clientState) => clientState.skirmishMenu?.buttonStart?.clickable === true,
+      180);
+  const skirmishMenu = skirmishMenuReady.frame?.clientState?.skirmishMenu;
+  expect(skirmishMenu?.parent?.found === true && skirmishMenu?.buttonStart?.clickable === true,
+    "profile skirmish game options menu did not become startable", skirmishMenu);
+
+  const requestedMap = String(process.env.PERF_PROFILE_SKIRMISH_MAP ?? "").trim();
+  let skirmishMapSet = null;
+  if (requestedMap) {
+    skirmishMapSet = await rpc(page, "realEngineSetSkirmishMap", { map: requestedMap });
+    expect(skirmishMapSet?.ok === true && skirmishMapSet.result?.applied,
+      "profile requested skirmish map was not applied", skirmishMapSet);
+    await runUiSummary(page, 1, "profile skirmish map apply settle");
+  }
+
+  await clickButton(
+    page,
+    skirmishMenu.buttonStart,
+    skirmishMenu.underButtonStartCenter,
+    "profile skirmish start",
+    null);
+  const active = await waitForSkirmishMatch(
+    page,
+    parsePositiveInt("PERF_PROFILE_SKIRMISH_MAX_START_FRAMES", 4200),
+    parsePositiveInt("PERF_PROFILE_SKIRMISH_START_CHUNK", 30));
+  const postActiveFrames = parsePositiveInt("PERF_PROFILE_SKIRMISH_POST_ACTIVE_FRAMES", 0);
+  if (postActiveFrames > 0) {
+    await runUiSummary(
+      page,
+      postActiveFrames,
+      "profile skirmish post-active settle");
+  }
+
+  return {
+    requestedMap: requestedMap || null,
+    skirmishMapSet: skirmishMapSet?.result ?? null,
+    activeFramesAdvanced: active.framesAdvanced,
+    activeSamples: active.samples.slice(-12),
+    activeGameplay: compactGameplay(active.result?.frame?.gameplay),
+    postActiveFrames,
+  };
 }
 
 async function queryRenderer(page) {
@@ -1009,7 +1315,9 @@ const batchSize = parsePositiveInt("PERF_PROFILE_BATCH", 1);
 const diagLevel = process.env.PERF_PROFILE_DIAG ?? "lite";
 const measuredFrameCommand = process.env.PERF_PROFILE_FRAME_COMMAND ?? "realEngineFrameSummary";
 const distDir = parseDistDir();
-const shellMap = process.env.PERF_PROFILE_SHELLMAP !== "0";
+const profileScene = parseProfileScene();
+const shellMap = profileScene === "skirmish" ? true : process.env.PERF_PROFILE_SHELLMAP !== "0";
+const settledSceneUsesShellMap = profileScene === "shellmap" && shellMap;
 const viewportWidth = parsePositiveInt("PERF_PROFILE_WIDTH", 1280);
 const viewportHeight = parsePositiveInt("PERF_PROFILE_HEIGHT", 720);
 const includeSamples = process.env.PERF_PROFILE_SAMPLES === "1";
@@ -1025,6 +1333,8 @@ const engineFrameProfile = process.env.PERF_PROFILE_ENGINE_PROFILE === "1" ||
 
 const server = await startStaticServer({ root: wasmRoot });
 let browser;
+let page;
+let profileCompleted = false;
 
 try {
   const launchOptions = { headless: true };
@@ -1040,7 +1350,7 @@ try {
   await mkdir(artifactsRoot, { recursive: true });
   await mkdir(screenshotsRoot, { recursive: true });
 
-  const page = await browser.newPage({ viewport: { width: viewportWidth, height: viewportHeight } });
+  page = await browser.newPage({ viewport: { width: viewportWidth, height: viewportHeight } });
   page.setDefaultTimeout(300000);
   page.setDefaultNavigationTimeout(300000);
   page.on("pageerror", (error) => {
@@ -1087,10 +1397,15 @@ try {
   const initWallMs = performance.now() - initStartedAt;
   expect(init?.ok === true && init.aborted === false && init.frontier?.initReturned === true,
     "runtime frame profile failed real engine init", init);
-  await revealShellMenu(page, shellMap);
+  let skirmishSetup = null;
+  if (profileScene === "skirmish") {
+    skirmishSetup = await enterSkirmishScene(page);
+  } else {
+    await revealShellMenu(page, shellMap);
+  }
 
   const warmup = await runFramePass(page, warmupFrames, batchSize, "warmup");
-  const settle = sceneIsSettled(warmup.rawFinalFrame, shellMap)
+  const settle = sceneIsSettled(warmup.rawFinalFrame, settledSceneUsesShellMap)
     ? {
         label: "settle",
         requestedFrames: 0,
@@ -1100,7 +1415,7 @@ try {
         wallMsPerFrame: null,
         finalState: compactFrameState(warmup.rawFinalFrame),
       }
-    : await runUntilSettled(page, settleFrames, shellMap);
+    : await runUntilSettled(page, settleFrames, settledSceneUsesShellMap);
   expect(settle.settled === true, "runtime frame profile scene did not settle", settle);
   const measured = await runFramePass(
     page,
@@ -1113,12 +1428,15 @@ try {
   const screenshot = await rpc(page, "screenshot");
   expect(screenshot?.ok === true && screenshotHasVisibleSample(screenshot.screenshot),
     "runtime frame profile screenshot stayed blank", summarizeScreenshot(screenshot));
-  const screenshotPath = resolve(screenshotsRoot, "runtime-frame-profile.png");
+  const screenshotPath = resolve(
+    screenshotsRoot,
+    profileScene === "skirmish" ? "runtime-frame-profile-skirmish.png" : "runtime-frame-profile.png");
   await page.locator("#viewport").screenshot({ path: screenshotPath });
 
   const output = {
     ok: true,
     source: "cnc-port-runtime-frame-profile",
+    profileScene,
     renderer,
     m4Metal: renderer.includes("Apple M4") && renderer.includes("Metal"),
     swiftShader: /SwiftShader/i.test(renderer),
@@ -1133,6 +1451,7 @@ try {
     sampleBrowserPerf,
     measuredFrameCommand,
     shellMap,
+    skirmishSetup,
     viewport: { width: viewportWidth, height: viewportHeight },
     initWallMs,
     archiveCount: archiveSpecs.length,
@@ -1141,12 +1460,38 @@ try {
     measured,
     screenshot: screenshotPath,
   };
-  const outputPath = resolve(artifactsRoot, "runtime-frame-profile.json");
+  const outputPath = resolve(
+    artifactsRoot,
+    process.env.PERF_PROFILE_OUTPUT ??
+      (profileScene === "skirmish"
+        ? "runtime-frame-profile-skirmish.json"
+        : "runtime-frame-profile.json"));
   await writeFile(outputPath, `${JSON.stringify(output, null, 2)}\n`);
   console.log(JSON.stringify({ ...output, outputPath }, null, 2));
+  profileCompleted = true;
 } finally {
-  if (browser) {
-    await browser.close();
+  let cleanupTimedOut = false;
+  if (page) {
+    cleanupTimedOut = !(await runWithDeadline(
+      "page.close",
+      3000,
+      () => page.close({ runBeforeUnload: false }))) || cleanupTimedOut;
   }
-  await server.close();
+  if (browser) {
+    cleanupTimedOut = !(await runWithDeadline(
+      "browser.close",
+      5000,
+      () => browser.close())) || cleanupTimedOut;
+  }
+  cleanupTimedOut = !(await runWithDeadline(
+    "static server close",
+    5000,
+    () => server.close())) || cleanupTimedOut;
+  if (cleanupTimedOut) {
+    if (!profileCompleted) {
+      console.error("[runtime-profile] cleanup timed out before profile completed");
+    }
+    await flushOutputStreams();
+    process.exit(profileCompleted ? (process.exitCode ?? 0) : 1);
+  }
 }
