@@ -25,6 +25,7 @@
 #include <mmsystem.h>
 #include <windows.h>
 
+#include "Common/AsciiString.h"
 #include "Common/GameEngine.h"
 #include "Common/AudioAffect.h"
 #include "Common/AudioEventInfo.h"
@@ -738,6 +739,51 @@ std::string json_escape(const std::string &value)
 		}
 	}
 	return out;
+}
+
+std::string unicode_to_debug_ascii(const UnicodeString &value)
+{
+	AsciiString ascii;
+	ascii.translate(value);
+	return ascii.str() != NULL ? ascii.str() : "";
+}
+
+void append_military_subtitle_json(std::string &json)
+{
+	json += ",\"militarySubtitle\":{";
+	if (TheInGameUI == NULL || !TheInGameUI->debugMilitarySubtitleActive()) {
+		json += "\"active\":false,\"fullLength\":0,\"index\":0,\"finished\":false,"
+			"\"lifetime\":0,\"incrementOnFrame\":0,\"lineCount\":0,"
+			"\"fullText\":\"\",\"lines\":[]}";
+		return;
+	}
+
+	const UnsignedInt full_length = TheInGameUI->debugMilitarySubtitleLength();
+	const UnsignedInt index = TheInGameUI->debugMilitarySubtitleIndex();
+	const UnsignedInt line_count = TheInGameUI->debugMilitarySubtitleCurrentLineCount();
+	json += "\"active\":true";
+	json += ",\"fullLength\":" + std::to_string(full_length);
+	json += ",\"index\":" + std::to_string(index);
+	json += ",\"finished\":";
+	json += index >= full_length ? "true" : "false";
+	json += ",\"lifetime\":" + std::to_string(TheInGameUI->debugMilitarySubtitleLifetime());
+	json += ",\"incrementOnFrame\":" +
+		std::to_string(TheInGameUI->debugMilitarySubtitleIncrementOnFrame());
+	json += ",\"lineCount\":" + std::to_string(line_count);
+	json += ",\"fullText\":\"" +
+		json_escape(unicode_to_debug_ascii(TheInGameUI->debugMilitarySubtitleText())) + "\"";
+	json += ",\"lines\":[";
+	for (UnsignedInt line = 0; line < line_count; ++line) {
+		if (line != 0) {
+			json += ",";
+		}
+		const std::string text =
+			unicode_to_debug_ascii(TheInGameUI->debugMilitarySubtitleLine(static_cast<Int>(line)));
+		json += "{\"index\":" + std::to_string(line);
+		json += ",\"length\":" + std::to_string(text.size());
+		json += ",\"text\":\"" + json_escape(text) + "\"}";
+	}
+	json += "]}";
 }
 
 std::string script_diag_action_name(int action_type);
@@ -3521,6 +3567,7 @@ void append_real_engine_frame_summary_state(std::string &json)
 		json += ",\"inGameUIReady\":false,\"inputEnabled\":null,"
 			"\"selectCount\":0,\"selectedControllable\":null";
 	}
+	append_military_subtitle_json(json);
 	if (TheScriptEngine != NULL) {
 		char fade_value[64];
 		std::snprintf(fade_value, sizeof(fade_value), "%.3f", TheScriptEngine->getFadeValue());
@@ -4264,6 +4311,7 @@ void append_real_engine_client_state(std::string &json)
 			"\"mouseOverDrawableId\":null,\"videoBufferReady\":null,"
 			"\"cameoVideoBufferReady\":null";
 	}
+	append_military_subtitle_json(json);
 
 	json += ",\"controlBarReady\":";
 	json += TheControlBar != NULL ? "true" : "false";

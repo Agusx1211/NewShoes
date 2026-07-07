@@ -4135,6 +4135,57 @@ void InGameUI::removeMilitarySubtitle( void )
 
 }
 
+#if defined(__EMSCRIPTEN__)
+Bool InGameUI::debugMilitarySubtitleActive( void ) const
+{
+	return m_militarySubtitle != NULL;
+}
+
+UnsignedInt InGameUI::debugMilitarySubtitleIndex( void ) const
+{
+	return m_militarySubtitle != NULL ? m_militarySubtitle->index : 0;
+}
+
+UnsignedInt InGameUI::debugMilitarySubtitleLength( void ) const
+{
+	return m_militarySubtitle != NULL ? m_militarySubtitle->subtitle.getLength() : 0;
+}
+
+UnsignedInt InGameUI::debugMilitarySubtitleLifetime( void ) const
+{
+	return m_militarySubtitle != NULL ? m_militarySubtitle->lifetime : 0;
+}
+
+UnsignedInt InGameUI::debugMilitarySubtitleIncrementOnFrame( void ) const
+{
+	return m_militarySubtitle != NULL ? m_militarySubtitle->incrementOnFrame : 0;
+}
+
+UnsignedInt InGameUI::debugMilitarySubtitleCurrentLineCount( void ) const
+{
+	if (m_militarySubtitle == NULL) {
+		return 0;
+	}
+	const UnsignedInt line_count = m_militarySubtitle->currentDisplayString + 1;
+	return line_count <= MAX_SUBTITLE_LINES ? line_count : MAX_SUBTITLE_LINES;
+}
+
+UnicodeString InGameUI::debugMilitarySubtitleText( void ) const
+{
+	return m_militarySubtitle != NULL ? m_militarySubtitle->subtitle : UnicodeString::TheEmptyString;
+}
+
+UnicodeString InGameUI::debugMilitarySubtitleLine( Int line ) const
+{
+	if (m_militarySubtitle == NULL || line < 0 || line >= MAX_SUBTITLE_LINES ||
+			line > (Int)m_militarySubtitle->currentDisplayString ||
+			m_militarySubtitle->displayStrings[line] == NULL) {
+		return UnicodeString::TheEmptyString;
+	}
+	return m_militarySubtitle->displayStrings[line]->getText();
+}
+#endif
+
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 Bool InGameUI::areSelectedObjectsControllable() const
@@ -5708,5 +5759,3 @@ WindowMsgHandledType IdleWorkerSystem( GameWindow *window, UnsignedInt msg,
 	return MSG_HANDLED;
 
 }
-
-

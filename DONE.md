@@ -10,6 +10,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## User-reported play bugs (2026-07-06 session)
 
+- [x] Add real-runtime military subtitle diagnostics for the truncated-text
+      investigation. `InGameUI` now exposes Emscripten-only read accessors for
+      the active military subtitle, and the real engine frame JSON reports
+      `gameplay.militarySubtitle` with active state, full source text, reveal
+      index, lifetime, and currently displayed lines. This let the existing
+      startup vertical harness distinguish true text truncation from the
+      original typewriter reveal. Verified with `npm run build:port`,
+      `STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=60
+      STARTUP_VERTICAL_SCREENSHOT_DIR=artifacts/screenshots/text-subtitle-check-60
+      node harness/startup_vertical_smoke.mjs` showing full text
+      `Somewhere in Southern Kazakhstan\nEn route to Baikonur` at length 53
+      with displayed prefix `Somewhere in Southe` at index 19, and
+      `STARTUP_VERTICAL_POST_CAMPAIGN_FRAMES=300
+      STARTUP_VERTICAL_POST_CAMPAIGN_FRAME_CHUNK=60
+      STARTUP_VERTICAL_SCREENSHOT_DIR=artifacts/screenshots/text-subtitle-check
+      node harness/startup_vertical_smoke.mjs` showing the subtitle inactive by
+      logic frame 300.
 - [x] Mount localized English audio/speech archives in the human and real
       skirmish boot paths. `play.mjs`, startup/skirmish/input/perf/shellmap and
       real FX harness archive specs now include `SpeechEnglishZH.big` and

@@ -583,6 +583,17 @@ public:
 	void unregisterWindowLayout(WindowLayout *layout); // stop updates for this layout
 
   void triggerDoubleClickAttackMoveGuardHint( void );
+
+#if defined(__EMSCRIPTEN__)
+	Bool debugMilitarySubtitleActive( void ) const;
+	UnsignedInt debugMilitarySubtitleIndex( void ) const;
+	UnsignedInt debugMilitarySubtitleLength( void ) const;
+	UnsignedInt debugMilitarySubtitleLifetime( void ) const;
+	UnsignedInt debugMilitarySubtitleIncrementOnFrame( void ) const;
+	UnsignedInt debugMilitarySubtitleCurrentLineCount( void ) const;
+	UnicodeString debugMilitarySubtitleText( void ) const;
+	UnicodeString debugMilitarySubtitleLine( Int line ) const;
+#endif
   
 
 public:
