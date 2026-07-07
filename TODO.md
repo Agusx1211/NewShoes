@@ -364,11 +364,22 @@ ordinary `DX8MeshRenderer.flush.rigid.before` submission during the renderer
 flush: `runtime-frame-profile-projected-meshflush-split-mac.json` measured 48.37
 calls/frame, 13.8K indices/frame, and 0.373 ms/frame there, while delayed
 material-pass / projected receiver clipping markers did not show as hot rows.
-The next PERF pass should first recapture a Mac M4/Metal release frame profile
-after the shadow rollback, then use the producer table to reduce the remaining
-draw-side leaders: likely `SortingRenderer.pool.draw.submit.before`,
+The post-rollback producer recapture is done:
+`runtime-frame-profile-post-shadow-revert-producers-mac.json` measured
+`SortingRenderer.pool.draw.submit.before`, heightmap tile draws, volumetric
+shadow replay, and `DX8MeshRenderer.flush.rigid.before` as the remaining
+leaders. A follow-up browser bridge pass now routes color-write-disabled,
+alpha-discard-free solid triangle draws through a minimal depth/stencil-only
+WebGL program. The Mac M4/Metal profile
+`runtime-frame-profile-depth-stencil-program-mac.json` used that path for
+6,718 draws over 60 frames (~112/frame), kept shell-map rendering correct, and
+moved wall/engine averages from 42.27/12.81 to 42.09/12.55 ms/frame with
+sorted draw-profiled work from 2.640 to 2.584 ms/frame. A real multi-frame
+Tournament Desert skirmish check also kept active-gameplay shadows visible and
+recorded the expected 14 increment + 14 decrement color-masked stencil draws.
+The remaining draw-side leaders are still `SortingRenderer.pool.draw.submit.before`,
 `HeightMap.tilePasses.tileDraw.before`, `DX8MeshRenderer.flush.rigid.before`,
-and any newly visible volumetric-shadow replay cost. Do not revisit material,
+and the structural per-frame draw command buffer. Do not revisit material,
 light, text-geometry, first-vertex VAO setup, transform comparison/allocation,
 draw-time harness bookkeeping, draw-cache key strings, sampler-key strings,
 adjacent/render-uniform key strings, browser derived-object cache misses,

@@ -314,6 +314,32 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Use a minimal WebGL program for D3D8 depth/stencil-only draws. The browser
+      D3D8 bridge now detects persistent-buffer indexed draws where all RGBA
+      color writes are masked off, alpha test and implicit alpha cutout are
+      inactive, the fill mode is solid, and the primitive is triangular. Those
+      draws bind a stripped shader that preserves the same position transforms,
+      depth bias, viewport mapping, and clip-plane discard, but skips fixed
+      function lighting, texture sampling, stage combiners, fog, material, and
+      point-sprite uniforms. Program switches now invalidate per-program uniform
+      caches, and the perf summary records `drawDepthStencilOnlyProgramDraws`.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `git diff --check`, and a focused Playwright `d3d8StencilState` RPC:
+      the stencil write/read probe rendered center `[0,255,0,255]`, corner
+      `[0,0,0,255]`, and reported `drawDepthStencilOnlyProgramDraws=1`.
+      Mac M4/Metal release skirmish verification
+      `WebAssembly/artifacts/skirmish/skirmish-depth-stencil-program.json`
+      reached active Tournament Desert gameplay, kept visible shadows in
+      `WebAssembly/artifacts/screenshots/skirmish-depth-stencil-program.png`,
+      and recorded the accepted per-volume shadow pattern: 14 increment plus
+      14 decrement color-write-disabled stencil draws. The Mac producer profile
+      `WebAssembly/artifacts/perf/runtime-frame-profile-depth-stencil-program-mac.json`
+      used the lightweight path for 6,718 draws over 60 frames (~112/frame),
+      kept the shell-map screenshot correct
+      (`runtime-frame-profile-depth-stencil-program-mac.png`), and moved the
+      post-rollback producer baseline from 42.27/12.81 ms wall/engine average
+      to 42.09/12.55, with sorted draw-profiled work 2.640 -> 2.584 ms/frame.
+
 - [x] Cache draw-time WebGL texture binding/sampler state in the D3D8 bridge.
       `bridge.js` now tracks the actual WebGL active texture unit plus per-unit
       2D/3D bindings, preserves/invalidates that cache around direct texture

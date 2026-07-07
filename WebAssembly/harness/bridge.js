@@ -95,6 +95,7 @@ async function cncPortRuntimeCacheToken(distDir) {
 }
 
 let d3d8DrawProgram = null;
+let d3d8DepthStencilProgram = null;
 const d3d8Buffers = new Map();
 const d3d8Textures = new Map();
 const d3d8BoundTextures = new Map();
@@ -466,6 +467,7 @@ const d3d8PerfStats = {
   drawBatchSavedDrawElements: 0,
   drawBatchMergedIndices: 0,
   drawBatchMaxRunLength: 0,
+  drawDepthStencilOnlyProgramDraws: 0,
   drawDerivedCacheHits: 0,
   drawDerivedCacheMisses: 0,
   drawUniformCacheHits: 0,
@@ -815,6 +817,7 @@ function d3d8PerfSummary() {
     drawBatchSavedDrawElements: d3d8PerfStats.drawBatchSavedDrawElements,
     drawBatchMergedIndices: d3d8PerfStats.drawBatchMergedIndices,
     drawBatchMaxRunLength: d3d8PerfStats.drawBatchMaxRunLength,
+    drawDepthStencilOnlyProgramDraws: d3d8PerfStats.drawDepthStencilOnlyProgramDraws,
     drawDerivedCacheHits: d3d8PerfStats.drawDerivedCacheHits,
     drawDerivedCacheMisses: d3d8PerfStats.drawDerivedCacheMisses,
     drawUniformCacheHits: d3d8PerfStats.drawUniformCacheHits,
@@ -3674,6 +3677,9 @@ function bindD3D8Program(program) {
   d3d8LastDefaultVertexAttribKey = null;
   resetD3D8TransformUniformCache();
   resetD3D8UniformSubgroupCaches();
+  harnessState.graphics.lastD3D8AppliedRenderState = null;
+  harnessState.graphics.lastD3D8UniformKey = null;
+  harnessState.graphics.lastD3D8TextureUniformKey = null;
 }
 
 function d3d8VertexArraySupported() {
@@ -8260,6 +8266,183 @@ function ensureD3D8DrawProgram() {
   return d3d8DrawProgram;
 }
 
+function ensureD3D8DepthStencilProgram() {
+  if (!gl) {
+    return null;
+  }
+  if (d3d8DepthStencilProgram) {
+    return d3d8DepthStencilProgram;
+  }
+
+  const vertexShader = compileShader(gl.VERTEX_SHADER, `#version 300 es
+    in vec4 aPosition;
+    uniform float uScale;
+    uniform bool uUseTransforms;
+    uniform bool uPretransformedPosition;
+    uniform vec4 uD3DViewport;
+    uniform mat4 uWorld;
+    uniform mat4 uView;
+    uniform mat4 uProjection;
+    uniform float uDepthBias;
+    out vec4 vClipPosition;
+    vec4 d3dPretransformedPositionToClip(vec4 screenPosition) {
+      vec2 viewportOrigin = uD3DViewport.xy;
+      vec2 viewportSize = max(uD3DViewport.zw, vec2(1.0));
+      vec3 ndc = vec3(
+        ((screenPosition.x - viewportOrigin.x) / viewportSize.x) * 2.0 - 1.0,
+        1.0 - ((screenPosition.y - viewportOrigin.y) / viewportSize.y) * 2.0,
+        screenPosition.z * 2.0 - 1.0
+      );
+      float rhw = abs(screenPosition.w) > 0.000001 ? screenPosition.w : 1.0;
+      float clipW = 1.0 / rhw;
+      return vec4(ndc * clipW, clipW);
+    }
+    void main() {
+      vec4 worldPosition = vec4(aPosition.xyz, 1.0);
+      if (uPretransformedPosition) {
+        gl_Position = d3dPretransformedPositionToClip(aPosition);
+      } else if (uUseTransforms) {
+        worldPosition = uWorld * vec4(aPosition.xyz, 1.0);
+        vec4 viewPosition = uView * worldPosition;
+        vec4 d3dClip = uProjection * viewPosition;
+        gl_Position = vec4(d3dClip.x, d3dClip.y, d3dClip.z * 2.0 - d3dClip.w, d3dClip.w);
+      } else {
+        gl_Position = vec4(aPosition.x / uScale, aPosition.y / uScale, 0.0, 1.0);
+      }
+      gl_Position.z -= uDepthBias * gl_Position.w;
+      gl_PointSize = 1.0;
+      vClipPosition = worldPosition;
+    }
+  `);
+  const fragmentShader = compileShader(gl.FRAGMENT_SHADER, `#version 300 es
+    precision highp float;
+    in vec4 vClipPosition;
+    uniform int uClipPlaneMask;
+    uniform vec4 uClipPlanes[6];
+    out vec4 fragColor;
+    void main() {
+      for (int index = 0; index < 6; ++index) {
+        if ((uClipPlaneMask & (1 << index)) != 0 && dot(uClipPlanes[index], vClipPosition) < 0.0) {
+          discard;
+        }
+      }
+      fragColor = vec4(1.0);
+    }
+  `);
+  const program = gl.createProgram();
+  gl.attachShader(program, vertexShader);
+  gl.attachShader(program, fragmentShader);
+  gl.linkProgram(program);
+  gl.deleteShader(vertexShader);
+  gl.deleteShader(fragmentShader);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    const info = gl.getProgramInfoLog(program);
+    gl.deleteProgram(program);
+    throw new Error(`D3D8 depth/stencil bridge program link failed: ${info}`);
+  }
+
+  d3d8DepthStencilProgram = {
+    program,
+    position: gl.getAttribLocation(program, "aPosition"),
+    normal: -1,
+    diffuse: -1,
+    specular: -1,
+    texCoord0: -1,
+    texCoord1: -1,
+    scale: gl.getUniformLocation(program, "uScale"),
+    useTransforms: gl.getUniformLocation(program, "uUseTransforms"),
+    pretransformedPosition: gl.getUniformLocation(program, "uPretransformedPosition"),
+    d3dViewport: gl.getUniformLocation(program, "uD3DViewport"),
+    world: gl.getUniformLocation(program, "uWorld"),
+    view: gl.getUniformLocation(program, "uView"),
+    projection: gl.getUniformLocation(program, "uProjection"),
+    depthBias: gl.getUniformLocation(program, "uDepthBias"),
+    texture0CoordinateMode: null,
+    useTexture0Transform: null,
+    texture0Transform: null,
+    texture0TransformComponentCount: null,
+    texture0TransformProjected: null,
+    texture1CoordinateMode: null,
+    useTexture1Transform: null,
+    texture1Transform: null,
+    texture1TransformComponentCount: null,
+    texture1TransformProjected: null,
+    pointSize: null,
+    pointSizeMin: null,
+    pointSizeMax: null,
+    pointScaleEnable: null,
+    pointScaleA: null,
+    pointScaleB: null,
+    pointScaleC: null,
+    pointViewportHeight: null,
+    lightingEnabled: null,
+    specularEnabled: null,
+    normalizeNormals: null,
+    localViewer: null,
+    colorVertexEnabled: null,
+    sceneAmbient: null,
+    materialDiffuse: null,
+    materialAmbient: null,
+    materialSpecular: null,
+    materialEmissive: null,
+    materialPower: null,
+    diffuseMaterialSource: null,
+    specularMaterialSource: null,
+    ambientMaterialSource: null,
+    emissiveMaterialSource: null,
+    fixedLightCount: null,
+    fixedLightType: null,
+    fixedLightDiffuse: null,
+    fixedLightSpecular: null,
+    fixedLightAmbient: null,
+    fixedLightPosition: null,
+    fixedLightDirection: null,
+    fixedLightRangeAttenuation: null,
+    fixedLightSpot: null,
+    useTexture0: null,
+    drawingPoints: null,
+    pointSpriteEnable: null,
+    texture0: null,
+    texture0LodBias: null,
+    texture0Semantic: null,
+    useTexture1: null,
+    texture1: null,
+    texture1LodBias: null,
+    texture1Semantic: null,
+    textureFactor: null,
+    stage0ColorOp: null,
+    stage0ColorArg0: null,
+    stage0ColorArg1: null,
+    stage0ColorArg2: null,
+    stage0AlphaOp: null,
+    stage0AlphaArg0: null,
+    stage0AlphaArg1: null,
+    stage0AlphaArg2: null,
+    stage0ResultArg: null,
+    stage1ColorOp: null,
+    stage1ColorArg0: null,
+    stage1ColorArg1: null,
+    stage1ColorArg2: null,
+    stage1AlphaOp: null,
+    stage1AlphaArg0: null,
+    stage1AlphaArg1: null,
+    stage1AlphaArg2: null,
+    alphaTestEnabled: null,
+    alphaFunc: null,
+    alphaRef: null,
+    implicitAlphaCutoutThreshold: null,
+    fogEnabled: null,
+    fogRangeEnabled: null,
+    fogColor: null,
+    fogStart: null,
+    fogEnd: null,
+    clipPlaneMask: gl.getUniformLocation(program, "uClipPlaneMask"),
+    clipPlanes: gl.getUniformLocation(program, "uClipPlanes[0]"),
+    useFlatShade: null,
+  };
+  return d3d8DepthStencilProgram;
+}
+
 function d3dPrimitiveToGl(primitiveType) {
   if (!gl) {
     return null;
@@ -8407,6 +8590,25 @@ function d3d8PointSpriteUniformsEqual(left, right) {
 function d3dPrimitiveIsTriangle(primitiveType) {
   const type = Number(primitiveType) >>> 0;
   return type === D3DPT_TRIANGLELIST || type === D3DPT_TRIANGLESTRIP || type === D3DPT_TRIANGLEFAN;
+}
+
+function d3d8CanUseDepthStencilOnlyProgram(renderState, primitiveType, implicitAlphaCutoutThreshold) {
+  const colorWrites = Number(renderState?.colorWriteEnable ?? (
+    D3DCOLORWRITEENABLE_RED |
+    D3DCOLORWRITEENABLE_GREEN |
+    D3DCOLORWRITEENABLE_BLUE |
+    D3DCOLORWRITEENABLE_ALPHA
+  )) >>> 0;
+  return (colorWrites & (
+    D3DCOLORWRITEENABLE_RED |
+    D3DCOLORWRITEENABLE_GREEN |
+    D3DCOLORWRITEENABLE_BLUE |
+    D3DCOLORWRITEENABLE_ALPHA
+  )) === 0 &&
+    Number(renderState?.alphaTestEnable ?? 0) === 0 &&
+    implicitAlphaCutoutThreshold < 0 &&
+    Number(renderState?.fillMode ?? D3DFILL_SOLID) === D3DFILL_SOLID &&
+    d3dPrimitiveIsTriangle(primitiveType);
 }
 
 function readD3D8Index(indexBytes, byteOffset, index, indexSize) {
@@ -10780,20 +10982,34 @@ function paintD3D8DrawIndexed(payload = {}) {
   if (gl && d3d8GlPrimitiveSupported(baseGlPrimitive) && usePersistentBuffers &&
       vertexByteSize > 0 && indexByteSize > 0 &&
       vertexStride >= 12 && indexCount > 0 && (indexSize === 2 || indexSize === 4)) {
-    const bridgeProgram = ensureD3D8DrawProgram();
-    bindD3D8Program(bridgeProgram.program);
-    const textureUniformKey = d3d8TextureLayoutUniformKey({
+    const depthStencilOnlyDraw = d3d8CanUseDepthStencilOnlyProgram(
       renderState,
-      canSampleTexture0,
-      canSampleTexture1,
-      texture0Coordinates,
-      texture1Coordinates,
-      texture0SemanticMode,
-      texture1SemanticMode,
+      payload.primitiveType,
       implicitAlphaCutoutThreshold,
-      texture0Transform,
-      texture1Transform,
-    });
+    );
+    const bridgeProgram = depthStencilOnlyDraw
+      ? ensureD3D8DepthStencilProgram()
+      : ensureD3D8DrawProgram();
+    if (depthStencilOnlyDraw) {
+      d3d8PerfStats.drawDepthStencilOnlyProgramDraws += 1;
+    }
+    bindD3D8Program(bridgeProgram.program);
+    const drawCanSampleTexture0 = depthStencilOnlyDraw ? false : canSampleTexture0;
+    const drawCanSampleTexture1 = depthStencilOnlyDraw ? false : canSampleTexture1;
+    const textureUniformKey = depthStencilOnlyDraw
+      ? "depth-stencil-only"
+      : d3d8TextureLayoutUniformKey({
+          renderState,
+          canSampleTexture0,
+          canSampleTexture1,
+          texture0Coordinates,
+          texture1Coordinates,
+          texture0SemanticMode,
+          texture1SemanticMode,
+          implicitAlphaCutoutThreshold,
+          texture0Transform,
+          texture1Transform,
+        });
     const renderUniformUnchanged =
       d3d8RenderUniformKeyMatches(
         harnessState.graphics.lastD3D8UniformKey,
@@ -10859,9 +11075,9 @@ function paintD3D8DrawIndexed(payload = {}) {
       vertexStride,
       bridgeProgram,
       vertexLayout,
-      canSampleTexture0,
+      canSampleTexture0: drawCanSampleTexture0,
       texture0Coordinates,
-      canSampleTexture1,
+      canSampleTexture1: drawCanSampleTexture1,
       texture1Coordinates,
     });
     const canUseVertexArrayCache = Boolean(
@@ -10888,9 +11104,9 @@ function paintD3D8DrawIndexed(payload = {}) {
       applyD3D8DefaultVertexAttribValues(
         bridgeProgram,
         vertexLayout,
-        canSampleTexture0,
+        drawCanSampleTexture0,
         texture0Coordinates,
-        canSampleTexture1,
+        drawCanSampleTexture1,
         texture1Coordinates,
       );
     } else {
@@ -10912,9 +11128,9 @@ function paintD3D8DrawIndexed(payload = {}) {
             vertexByteOffset,
             vertexStride,
             vertexLayout,
-            canSampleTexture0,
+            canSampleTexture0: drawCanSampleTexture0,
             texture0Coordinates,
-            canSampleTexture1,
+            canSampleTexture1: drawCanSampleTexture1,
             texture1Coordinates,
           });
           bindD3D8ElementArrayBufferForVertexArray(indexResource.buffer);
@@ -10926,9 +11142,9 @@ function paintD3D8DrawIndexed(payload = {}) {
             vertexByteOffset,
             vertexStride,
             vertexLayout,
-            canSampleTexture0,
+            canSampleTexture0: drawCanSampleTexture0,
             texture0Coordinates,
-            canSampleTexture1,
+            canSampleTexture1: drawCanSampleTexture1,
             texture1Coordinates,
           });
         }
@@ -10940,9 +11156,9 @@ function paintD3D8DrawIndexed(payload = {}) {
           vertexByteOffset,
           vertexStride,
           vertexLayout,
-          canSampleTexture0,
+          canSampleTexture0: drawCanSampleTexture0,
           texture0Coordinates,
-          canSampleTexture1,
+          canSampleTexture1: drawCanSampleTexture1,
           texture1Coordinates,
         });
       }
@@ -10953,14 +11169,14 @@ function paintD3D8DrawIndexed(payload = {}) {
     recordSortedDrawSubphase?.("sortedDrawVertexAttribMs");
     // Texture handles are not in the state hash, so bind/sampler state is
     // cached against the actual WebGL texture unit state.
-    if (canSampleTexture0) {
+    if (drawCanSampleTexture0) {
       appliedTexture0Sampler = ensureD3D8DrawTexture2D(
         0,
         renderState.textureStages[0],
         texture0Resource,
       );
     }
-    if (canSampleTexture1) {
+    if (drawCanSampleTexture1) {
       appliedTexture1Sampler = ensureD3D8DrawTexture2D(
         1,
         renderState.textureStages[1],
@@ -10997,7 +11213,10 @@ function paintD3D8DrawIndexed(payload = {}) {
       appliedRenderState.clipPlanes = d3d8ClipPlaneInfo(renderState, clipPlanes);
       appliedRenderState.lighting = {
         ...appliedRenderState.lighting,
-        shaderEnabled: !vertexPretransformed && appliedRenderState.lighting.enabled && fixedFunctionLights.length > 0,
+        shaderEnabled: !depthStencilOnlyDraw &&
+          !vertexPretransformed &&
+          appliedRenderState.lighting.enabled &&
+          fixedFunctionLights.length > 0,
         normalTransform: {
           source: usePositionTransforms ? "inverseTransposeWorld" : "attribute",
           inverseTransposeWorld: Boolean(usePositionTransforms),
@@ -11171,8 +11390,10 @@ function paintD3D8DrawIndexed(payload = {}) {
         }
       }
       recordRenderUniformDetail?.("sortedDrawRenderLightUniformMs");
-      const stageUniformKey = d3d8StageUniformKey(renderState);
-      if (stageUniformKey === d3d8LastStageUniformKey) {
+      const stageUniformKey = depthStencilOnlyDraw ? null : d3d8StageUniformKey(renderState);
+      if (depthStencilOnlyDraw) {
+        d3d8PerfStats.drawStageUniformCacheHits += 1;
+      } else if (stageUniformKey === d3d8LastStageUniformKey) {
         d3d8PerfStats.drawStageUniformCacheHits += 1;
       } else {
         d3d8PerfStats.drawStageUniformCacheMisses += 1;
@@ -11236,8 +11457,10 @@ function paintD3D8DrawIndexed(payload = {}) {
         d3d8LastStageUniformKey = stageUniformKey;
       }
       recordRenderUniformDetail?.("sortedDrawRenderStageUniformMs");
-      const alphaFogUniformKey = d3d8AlphaFogUniformKey(renderState, appliedRenderState);
-      if (alphaFogUniformKey === d3d8LastAlphaFogUniformKey) {
+      const alphaFogUniformKey = depthStencilOnlyDraw ? null : d3d8AlphaFogUniformKey(renderState, appliedRenderState);
+      if (depthStencilOnlyDraw) {
+        d3d8PerfStats.drawAlphaFogUniformCacheHits += 1;
+      } else if (alphaFogUniformKey === d3d8LastAlphaFogUniformKey) {
         d3d8PerfStats.drawAlphaFogUniformCacheHits += 1;
       } else {
         d3d8PerfStats.drawAlphaFogUniformCacheMisses += 1;
@@ -11333,7 +11556,9 @@ function paintD3D8DrawIndexed(payload = {}) {
     // Keep the cache hot for the next transformed world-space draw.
     recordSortedDrawSubphase?.("sortedDrawTransformUniformMs");
     harnessState.graphics.lastD3D8StateHash = stateHash;
-    if (d3d8PointSpriteUniformsEqual(d3d8LastPointSpriteUniformInfo, appliedPointSprite)) {
+    if (depthStencilOnlyDraw) {
+      d3d8PerfStats.drawPointSpriteUniformCacheHits += 1;
+    } else if (d3d8PointSpriteUniformsEqual(d3d8LastPointSpriteUniformInfo, appliedPointSprite)) {
       d3d8PerfStats.drawPointSpriteUniformCacheHits += 1;
     } else {
       d3d8PerfStats.drawPointSpriteUniformCacheMisses += 1;
@@ -11373,7 +11598,9 @@ function paintD3D8DrawIndexed(payload = {}) {
     // Texture-layout uniforms change when sampling availability, texture
     // coordinate generation, texture transforms, semantic mode, LOD bias, or
     // implicit alpha cutoff changes. Texture object binding is handled above.
-    if (!textureUniformUnchanged) {
+    if (depthStencilOnlyDraw) {
+      harnessState.graphics.lastD3D8TextureUniformKey = textureUniformKey;
+    } else if (!textureUniformUnchanged) {
       if (bridgeProgram.texture0CoordinateMode) {
         gl.uniform1i(bridgeProgram.texture0CoordinateMode,
           canSampleTexture0 ? texture0Coordinates.mode : D3DTSS_TCI_PASSTHRU);
