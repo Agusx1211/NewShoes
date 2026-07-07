@@ -1254,6 +1254,12 @@ async function postRealEngineMouseMessage(page, message, point) {
   return result;
 }
 
+async function postShortRealEngineClick(page, click, point, settleFrames = 5) {
+  await postRealEngineMouseMessage(page, click.down, point);
+  await postRealEngineMouseMessage(page, click.up, point);
+  return runRealEngineFrames(page, settleFrames);
+}
+
 async function waitForBrowserDirectInputQueue(page, expectedCount, label) {
   const handle = await page.waitForFunction((count) =>
     (window.CnCPort?.state?.browserDirectInput?.queuedKeyCount ?? 0) >= count,
@@ -2963,10 +2969,7 @@ try {
         }
         await postRealEngineMouseMessage(page, win32MouseMessages.mouseMove, point);
         await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
-        await postRealEngineMouseMessage(page, moveClick.down, point);
-        await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
-        await postRealEngineMouseMessage(page, moveClick.up, point);
-        await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+        await postShortRealEngineClick(page, moveClick, point);
         if (target.forceAttack === true) {
           await page.keyboard.up("Control");
           await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
@@ -3177,10 +3180,7 @@ try {
       for (const candidate of radarCandidates) {
         await postRealEngineMouseMessage(page, win32MouseMessages.mouseMove, candidate);
         await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
-        await postRealEngineMouseMessage(page, moveClick.down, candidate);
-        await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
-        await postRealEngineMouseMessage(page, moveClick.up, candidate);
-        await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+        await postShortRealEngineClick(page, moveClick, candidate);
 
         const radarSelection = await page.evaluate(() =>
           window.CnCPort.rpc("querySelection"));
@@ -3400,10 +3400,7 @@ try {
 
         await postRealEngineMouseMessage(page, win32MouseMessages.mouseMove, candidate);
         await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
-        await postRealEngineMouseMessage(page, destinationClick.down, candidate);
-        await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
-        await postRealEngineMouseMessage(page, destinationClick.up, candidate);
-        await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+        await postShortRealEngineClick(page, destinationClick, candidate);
 
         const afterClickSelection = await page.evaluate(() =>
           window.CnCPort.rpc("querySelection"));
@@ -3533,10 +3530,7 @@ try {
     for (const candidate of candidateDestinations) {
       await postRealEngineMouseMessage(page, win32MouseMessages.mouseMove, candidate);
       await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
-      await postRealEngineMouseMessage(page, moveClick.down, candidate);
-      await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
-      await postRealEngineMouseMessage(page, moveClick.up, candidate);
-      await runRealEngineFrames(page, CLICK_FORWARD_FRAMES);
+      await postShortRealEngineClick(page, moveClick, candidate);
       selAfterMoveClick = await page.evaluate(() =>
         window.CnCPort.rpc("querySelection"));
       const commandPath = selAfterMoveClick?.result?.commandPath ?? {};

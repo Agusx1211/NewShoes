@@ -318,15 +318,15 @@ symptom is temporal — NOT a single still.
       stencil/depth bits the passes assume) and verify over many frames of
       active gameplay, not one still. Ties into the queued "shadows phased plan
       (blob→stencil→shaders)".
-- [ ] **Cannot right-click-issue unit orders on the map** — right-clicking a
-      selected unit on a target does not issue the context order (e.g. a GLA
-      worker right-clicked onto a supply/resource pile does not go harvest;
-      right-click move/attack/enter also suspect). Left-click selection works;
-      the right-mouse-button order path is the gap. Trace RMB → `GameClient`
-      mouse handling → context-command resolution (`chooseCommandForTarget` /
-      worker-to-supply, force-move, force-attack) → `GameLogic` order dispatch.
-      Verify by issuing a real right-click harvest order in the harness and
-      reading back the worker's AI/order state (not just a click event).
+- [ ] **Prove right-click context-target orders on the map** — right-click
+      ground move now works in the browser alternate-mouse path (see DONE), but
+      target-specific context orders still need harness proof: e.g. a GLA
+      worker right-clicked onto a supply/resource pile should dispatch
+      `MSG_DOCK` and enter the gather/dock AI path; object attack/enter/repair
+      should likewise be verified through the original context-command
+      resolution. Add a real right-click harvest/order proof that reads back
+      command dispatch plus the worker's AI/order state, not just the click
+      event.
 - [ ] **Frame time is unstable (jumps around; no steady 30fps) (REOPEN/perf)** —
       the average is good (~9 ms release shell-map profile) but frame time
       varies wildly in play and never holds a consistent 30fps. Frame-time

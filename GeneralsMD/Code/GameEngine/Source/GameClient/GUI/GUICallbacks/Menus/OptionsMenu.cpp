@@ -322,8 +322,13 @@ void OptionPreferences::setOnlineIPAddress( UnsignedInt IP )
 Bool OptionPreferences::getAlternateMouseModeEnabled(void)
 {
 	OptionPreferences::const_iterator it = find("UseAlternateMouse");
-	if (it == end())
+	if (it == end()) {
+#ifdef __EMSCRIPTEN__
+		return TRUE;
+#else
 		return TheGlobalData->m_useAlternateMouse;
+#endif
+	}
 
 	if (stricmp(it->second.str(), "yes") == 0) {
 		return TRUE;

@@ -324,6 +324,12 @@ function compactMoveCommandPath(selectionResult) {
     lastClickType: path.lastClickType ?? null,
     lastClickIssuedType: path.lastClickIssuedType ?? null,
     lastClickWorldPos: path.lastClickWorldPos ?? null,
+    rawRightDownCount: path.rawRightDownCount ?? null,
+    rawRightUpCount: path.rawRightUpCount ?? null,
+    rightClickSeenCount: path.rightClickSeenCount ?? null,
+    rightClickIsClick: path.rightClickIsClick ?? null,
+    rightClickDownTime: path.rightClickDownTime ?? null,
+    rightClickUpTime: path.rightClickUpTime ?? null,
     moveIssueCount: path.moveIssueCount ?? null,
     moveAppendCount: path.moveAppendCount ?? null,
     moveLastMsgType: path.moveLastMsgType ?? null,
@@ -490,6 +496,12 @@ async function clickSelectPoint(page, point, label, settleFrames = 5) {
   await runFrames(page, settleFrames, `${label} down`);
   await postMouse(page, WM_LBUTTONUP, point);
   return runFrames(page, settleFrames, `${label} up`);
+}
+
+async function postShortOrderClick(page, click, point, label, settleFrames = 5) {
+  await postMouse(page, click.down, point);
+  await postMouse(page, click.up, point);
+  return runFrames(page, settleFrames, `${label} click`);
 }
 
 async function dragSelectBox(page, start, end, label, settleFrames = 5) {
@@ -729,10 +741,7 @@ async function proveMoveOrder(page, activeFrame, results) {
       `(${destination.x},${destination.y})`);
     await postMouse(page, WM_MOUSEMOVE, destination);
     await runFrames(page, 5, "move-order mouse move");
-    await postMouse(page, moveClick.down, destination);
-    await runFrames(page, 5, "move-order down");
-    await postMouse(page, moveClick.up, destination);
-    await runFrames(page, 5, "move-order up");
+    await postShortOrderClick(page, moveClick, destination, "move-order");
 
     afterSelection = await rpc(page, "querySelection");
     afterCommandPath = compactMoveCommandPath(afterSelection?.result);
@@ -1113,7 +1122,7 @@ async function proveUnitProduction(page, completedStructure, results) {
       proof.created = compactDrawable(newMatches[0]);
       proof.verdict = "UNIT-PRODUCTION-CREATED-OBJECT";
       console.error(`[input-select-e2e] unit production created ${unitTemplate}#${proof.created.id}`);
-      const attackSettleFrames = parsePositiveInt("E2E_UNIT_ATTACK_SETTLE_FRAMES", 120);
+      const attackSettleFrames = parsePositiveInt("E2E_UNIT_ATTACK_SETTLE_FRAMES", 0);
       proof.attackSettleFrames = attackSettleFrames;
       if (attackSettleFrames > 0) {
         await runSummary(page, attackSettleFrames, "unit attack settle wait");
@@ -1661,10 +1670,7 @@ async function proveAttackOrder(page, producedUnit, results) {
           `${target.name}#${target.id} at (${point.x},${point.y})`);
         await postMouse(page, WM_MOUSEMOVE, point);
         await runFrames(page, 5, "attack proof mouse move");
-        await postMouse(page, clickMode.down, point);
-        await runFrames(page, 5, "attack proof down");
-        await postMouse(page, clickMode.up, point);
-        await runFrames(page, 5, "attack proof up");
+        await postShortOrderClick(page, clickMode, point, "attack proof");
       } finally {
         if (controlHeld) {
           await page.keyboard.up("Control");

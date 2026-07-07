@@ -8,6 +8,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## User-reported play bugs (2026-07-07 session)
+
+- [x] Restore browser right-click ground orders in alternate-mouse mode. Browser
+      option defaults now enable the original alternate-mouse command scheme
+      when no `UseAlternateMouse` preference exists, and the Emscripten
+      preference path now reads/writes the real user preferences file instead
+      of hard-disabling preference I/O. The order harness now posts mouse
+      down/up as a single short click before advancing frames, matching the
+      engine's `Mouse::isClick` tolerance instead of simulating a long
+      right-button hold. `querySelection` exposes wasm-only right-click
+      command-path counters so regressions show whether raw RMB and synthesized
+      `MSG_MOUSE_RIGHT_CLICK` reached `CommandXlat`.
+      Verified with `npm --prefix WebAssembly run build:port` and
+      `node WebAssembly/harness/input_select_e2e.mjs`: the skirmish proof
+      selected `GLAInfantryWorker#209`, issued a real right-click map order,
+      recorded `rightClickIsClick=1`, `lastClickIssuedType=1068`
+      (`MSG_DO_MOVETO`), `dispatchLastMoveHadGroup=1`, and moved the unit
+      75.02 world units. The same run completed construction, unit production,
+      attack-move fallback, and captured
+      `WebAssembly/artifacts/screenshots/input-select-e2e.png`.
+
 ## Performance / profiling (2026-07-07 session)
 
 - [x] Add frame-stability fields to the real runtime profile. The profile
@@ -28,6 +49,7 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       rejected before this cleanup because the current shell-map draw stream
       produced zero same-key non-contiguous merges
       (`runtime-frame-profile-multirange-batch-rejected-mac.json`).
+
 - [x] Add opt-in D3D8 buffer upload producer attribution to the real runtime
       profile. The wasm D3D8 shim now passes the current engine frame profile
       marker through buffer updates when

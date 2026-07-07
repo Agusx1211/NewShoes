@@ -52,6 +52,10 @@
 #include "GameClient/ChallengeGenerals.h"
 #include "GameNetwork/GameSpy/PeerDefs.h"
 
+#ifdef __EMSCRIPTEN__
+#include <string>
+#endif
+
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -103,6 +107,19 @@ static AsciiString realAsStr(Real val)
 	return ret;
 }
 
+#ifdef __EMSCRIPTEN__
+static std::string wasmPreferencePath(const AsciiString& filename)
+{
+	std::string path = filename.str();
+	for (char& c : path) {
+		if (c == '\\') {
+			c = '/';
+		}
+	}
+	return path;
+}
+#endif
+
 //-----------------------------------------------------------------------------
 // PUBLIC FUNCTIONS ///////////////////////////////////////////////////////////
 //-----------------------------------------------------------------------------
@@ -123,17 +140,18 @@ UserPreferences::~UserPreferences( void )
 #define LINE_LEN 2048
 Bool UserPreferences::load(AsciiString fname)
 {
-#ifdef __EMSCRIPTEN__
-	m_filename = fname;
-	return false;
-#else
 //	if (strstr(fname.str(), "\\"))
 //		throw INI_INVALID_DATA;	// must be a leaf name
 
 	m_filename = TheGlobalData->getPath_UserData();
 	m_filename.concat(fname);
 
+#ifdef __EMSCRIPTEN__
+	const std::string openFilename = wasmPreferencePath(m_filename);
+	FILE *fp = fopen(openFilename.c_str(), "r");
+#else
 	FILE *fp = fopen(m_filename.str(), "r");
+#endif
 	if (fp)
 	{
 		char buf[LINE_LEN];
@@ -158,18 +176,19 @@ Bool UserPreferences::load(AsciiString fname)
 		return true;
 	}
 	return false;
-#endif
 }
 
 Bool UserPreferences::write( void )
 {
-#ifdef __EMSCRIPTEN__
-	return true;
-#else
 	if (m_filename.isEmpty())
 		return false;
 
+#ifdef __EMSCRIPTEN__
+	const std::string openFilename = wasmPreferencePath(m_filename);
+	FILE *fp = fopen(openFilename.c_str(), "w");
+#else
 	FILE *fp = fopen(m_filename.str(), "w");
+#endif
 	if (fp)
 	{
 		PreferenceMap::const_iterator it = begin();
@@ -182,7 +201,6 @@ Bool UserPreferences::write( void )
 		return true;
 	}
 	return false;
-#endif
 }
 
 Bool UserPreferences::getBool(AsciiString key, Bool defaultValue) const

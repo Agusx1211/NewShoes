@@ -96,6 +96,12 @@ static Int g_wasmCommandLastClickDrawId = -1;
 static Real g_wasmCommandLastClickX = 0.0f;
 static Real g_wasmCommandLastClickY = 0.0f;
 static Real g_wasmCommandLastClickZ = 0.0f;
+static Int g_wasmCommandRawRightDownCount = 0;
+static Int g_wasmCommandRawRightUpCount = 0;
+static Int g_wasmCommandRightClickSeenCount = 0;
+static Int g_wasmCommandRightClickIsClick = -1;
+static Int g_wasmCommandRightClickDownTime = -1;
+static Int g_wasmCommandRightClickUpTime = -1;
 static Int g_wasmCommandMoveIssueCount = 0;
 static Int g_wasmCommandMoveAppendCount = 0;
 static Int g_wasmCommandMoveLastMsgType = -1;
@@ -130,6 +136,24 @@ static void cnc_port_record_command_click(
 	}
 }
 
+static void cnc_port_record_command_raw_right_down(UnsignedInt clickTime)
+{
+	++g_wasmCommandRawRightDownCount;
+	g_wasmCommandRightClickDownTime = static_cast<Int>(clickTime);
+}
+
+static void cnc_port_record_command_raw_right_up(UnsignedInt clickTime)
+{
+	++g_wasmCommandRawRightUpCount;
+	g_wasmCommandRightClickUpTime = static_cast<Int>(clickTime);
+}
+
+static void cnc_port_record_command_right_click_seen(Bool isClick)
+{
+	++g_wasmCommandRightClickSeenCount;
+	g_wasmCommandRightClickIsClick = isClick ? 1 : 0;
+}
+
 static void cnc_port_record_move_issue(
 	GameMessage::Type msgType,
 	CommandTranslator::CommandEvaluateType commandType,
@@ -160,6 +184,12 @@ extern "C" Int cnc_port_command_xlat_last_click_draw_id( void ) { return g_wasmC
 extern "C" Real cnc_port_command_xlat_last_click_x( void ) { return g_wasmCommandLastClickX; }
 extern "C" Real cnc_port_command_xlat_last_click_y( void ) { return g_wasmCommandLastClickY; }
 extern "C" Real cnc_port_command_xlat_last_click_z( void ) { return g_wasmCommandLastClickZ; }
+extern "C" Int cnc_port_command_xlat_raw_right_down_count( void ) { return g_wasmCommandRawRightDownCount; }
+extern "C" Int cnc_port_command_xlat_raw_right_up_count( void ) { return g_wasmCommandRawRightUpCount; }
+extern "C" Int cnc_port_command_xlat_right_click_seen_count( void ) { return g_wasmCommandRightClickSeenCount; }
+extern "C" Int cnc_port_command_xlat_right_click_is_click( void ) { return g_wasmCommandRightClickIsClick; }
+extern "C" Int cnc_port_command_xlat_right_click_down_time( void ) { return g_wasmCommandRightClickDownTime; }
+extern "C" Int cnc_port_command_xlat_right_click_up_time( void ) { return g_wasmCommandRightClickUpTime; }
 extern "C" Int cnc_port_command_xlat_move_issue_count( void ) { return g_wasmCommandMoveIssueCount; }
 extern "C" Int cnc_port_command_xlat_move_append_count( void ) { return g_wasmCommandMoveAppendCount; }
 extern "C" Int cnc_port_command_xlat_move_last_msg_type( void ) { return g_wasmCommandMoveLastMsgType; }
@@ -3724,6 +3754,9 @@ GameMessageDisposition CommandTranslator::translateGameMessage(const GameMessage
 			// 2) Time has exceeded the time which we allow for this to be a click.
 			m_mouseRightDragAnchor = msg->getArgument( 0 )->pixel;
 			m_mouseRightDown = (UnsignedInt) msg->getArgument( 2 )->integer;
+#ifdef __EMSCRIPTEN__
+			cnc_port_record_command_raw_right_down(m_mouseRightDown);
+#endif
 
 			break;
 		}
@@ -3734,6 +3767,9 @@ GameMessageDisposition CommandTranslator::translateGameMessage(const GameMessage
 			// register this event for determining if the click was fast or short enough not to be a drag
 			m_mouseRightDragLift = msg->getArgument( 0 )->pixel;
 			m_mouseRightUp = (UnsignedInt) msg->getArgument( 2 )->integer;
+#ifdef __EMSCRIPTEN__
+			cnc_port_record_command_raw_right_up(m_mouseRightUp);
+#endif
 
 			//Kris: July 7, 2003. Added this code to deselect build placement mode when right clicked. This fixes
 			//a bug where you couldn't cancel the sneak attack mode via right click. This only happened when you
@@ -3770,8 +3806,11 @@ GameMessageDisposition CommandTranslator::translateGameMessage(const GameMessage
 		case GameMessage::MSG_MOUSE_RIGHT_CLICK:
 		{
 			// right click is only actioned here if we're in alternate mouse mode
-			if (TheGlobalData->m_useAlternateMouse 
-				&& TheMouse->isClick(&m_mouseRightDragAnchor, &m_mouseRightDragLift, m_mouseRightDown, m_mouseRightUp))
+			Bool isClick = TheMouse->isClick(&m_mouseRightDragAnchor, &m_mouseRightDragLift, m_mouseRightDown, m_mouseRightUp);
+#ifdef __EMSCRIPTEN__
+			cnc_port_record_command_right_click_seen(isClick);
+#endif
+			if (TheGlobalData->m_useAlternateMouse && isClick)
 			{
 				Bool isPoint = (msg->getArgument(0)->pixelRegion.height() == 0 && msg->getArgument(0)->pixelRegion.width() == 0);
 
