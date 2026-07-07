@@ -248,6 +248,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Cache draw-time WebGL texture binding/sampler state in the D3D8 bridge.
+      `bridge.js` now tracks the actual WebGL active texture unit plus per-unit
+      2D/3D bindings, preserves/invalidates that cache around direct texture
+      upload/release/FBO helper paths, and makes repeated D3D8 draws skip
+      redundant `activeTexture`, `bindTexture(TEXTURE_2D, ...)`, and sampler
+      application when the texture and sampler state are already current.
+      `runtime_frame_profile.mjs` now carries per-frame
+      `drawTextureActiveCache*`, `drawTextureBindCache*`, and
+      `drawTextureSamplerCache*` counters. Verified with local release
+      skirmish profiles and Mac M4/Metal release profile
+      `runtime-frame-profile-texture-sampler-cache-skirmish-ai-1200-mac.json`
+      plus a visible active-skirmish screenshot. The Mac run observed enemy AI
+      activity (objects 3 to 4, money 11500 to 9500), measured engine
+      `lastFrameMs` avg 6.15 / p95 6.6 / p99 6.6 / max 7.6 over 60 frames, and
+      reduced draw-time texture active changes to ~5/frame with zero 2D bind
+      misses and ~138 sampler-cache hits/frame. This was a correctness-preserving
+      draw cleanup, not a major wall-time win: `sortedDrawTextureBindMs` stayed
+      in the same noise band, so the next performance frontier remains terrain
+      tile draw submission, volumetric shadows, UI/roads, and command buffering.
+
 - [x] Profile the first AI-advanced active skirmish scene and split the
       occluded-stencil flush. `runtime_frame_profile.mjs` now keeps compact
       player diagnostics in skirmish setup/post-active output by default, while

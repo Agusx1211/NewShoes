@@ -394,6 +394,9 @@ const d3d8BufferProducerStats = new Map();
 const d3d8DrawProducerStats = new Map();
 let d3d8ViewportState = null;
 let browser_fbo_incomplete_count = 0;
+let d3d8CurrentActiveTextureUnit = null;
+const d3d8CurrentTexture2DBindings = new Map();
+const d3d8CurrentTexture3DBindings = new Map();
 const d3d8ViewportStats = {
   sets: 0,
   applications: 0,
@@ -450,6 +453,12 @@ const d3d8PerfStats = {
   drawPointSpriteUniformCacheMisses: 0,
   drawTextureUniformCacheHits: 0,
   drawTextureUniformCacheMisses: 0,
+  drawTextureActiveCacheHits: 0,
+  drawTextureActiveCacheMisses: 0,
+  drawTextureBindCacheHits: 0,
+  drawTextureBindCacheMisses: 0,
+  drawTextureSamplerCacheHits: 0,
+  drawTextureSamplerCacheMisses: 0,
   drawVertexAttribCacheHits: 0,
   drawVertexAttribCacheMisses: 0,
   drawVertexArrayCacheHits: 0,
@@ -793,6 +802,12 @@ function d3d8PerfSummary() {
     drawPointSpriteUniformCacheMisses: d3d8PerfStats.drawPointSpriteUniformCacheMisses,
     drawTextureUniformCacheHits: d3d8PerfStats.drawTextureUniformCacheHits,
     drawTextureUniformCacheMisses: d3d8PerfStats.drawTextureUniformCacheMisses,
+    drawTextureActiveCacheHits: d3d8PerfStats.drawTextureActiveCacheHits,
+    drawTextureActiveCacheMisses: d3d8PerfStats.drawTextureActiveCacheMisses,
+    drawTextureBindCacheHits: d3d8PerfStats.drawTextureBindCacheHits,
+    drawTextureBindCacheMisses: d3d8PerfStats.drawTextureBindCacheMisses,
+    drawTextureSamplerCacheHits: d3d8PerfStats.drawTextureSamplerCacheHits,
+    drawTextureSamplerCacheMisses: d3d8PerfStats.drawTextureSamplerCacheMisses,
     drawVertexAttribCacheHits: d3d8PerfStats.drawVertexAttribCacheHits,
     drawVertexAttribCacheMisses: d3d8PerfStats.drawVertexAttribCacheMisses,
     drawVertexArrayCacheHits: d3d8PerfStats.drawVertexArrayCacheHits,
@@ -4770,8 +4785,8 @@ function d3d8SamplerStateMatches(resource, {
     key.completeMipChain === (completeMipChain ? 1 : 0);
 }
 
-function applyD3D8TextureSamplerToBoundTexture(stage, textureStage, resource) {
-  if (!gl || !resource?.texture || !textureStage) {
+function d3d8TextureSamplerParams(textureStage, resource) {
+  if (!resource?.texture || !textureStage) {
     return null;
   }
   const completeMipChain = textureHasCompleteMipChain(resource);
@@ -4786,7 +4801,8 @@ function applyD3D8TextureSamplerToBoundTexture(stage, textureStage, resource) {
   const maxLevel = completeMipChain ? Math.max(baseLevel, highestLevel) : 0;
   const lodBiasBits = Number(textureStage.mipMapLodBias ?? 0) >>> 0;
   const lodBias = d3dDwordToFloat(lodBiasBits);
-  if (resource.samplerState && d3d8SamplerStateMatches(resource, {
+  return {
+    completeMipChain,
     min,
     mag,
     wrapS,
@@ -4794,8 +4810,40 @@ function applyD3D8TextureSamplerToBoundTexture(stage, textureStage, resource) {
     baseLevel,
     maxLevel,
     lodBiasBits,
+    lodBias,
+    requestedMaxMipLevel,
+  };
+}
+
+function d3d8TextureSamplerStateCurrent(textureStage, resource, params = null) {
+  const samplerParams = params ?? d3d8TextureSamplerParams(textureStage, resource);
+  return Boolean(
+    resource?.samplerState &&
+    samplerParams &&
+    d3d8SamplerStateMatches(resource, samplerParams));
+}
+
+function applyD3D8TextureSamplerToBoundTexture(stage, textureStage, resource, params = null) {
+  if (!gl || !resource?.texture || !textureStage) {
+    return null;
+  }
+  const samplerParams = params ?? d3d8TextureSamplerParams(textureStage, resource);
+  if (!samplerParams) {
+    return null;
+  }
+  const {
     completeMipChain,
-  })) {
+    min,
+    mag,
+    wrapS,
+    wrapT,
+    baseLevel,
+    maxLevel,
+    lodBiasBits,
+    lodBias,
+    requestedMaxMipLevel,
+  } = samplerParams;
+  if (d3d8TextureSamplerStateCurrent(textureStage, resource, samplerParams)) {
     if (d3d8DiagLevel === "full") {
       d3d8TextureStats.lastSampler = resource.samplerState;
       updateD3D8TextureSummary();
@@ -5520,6 +5568,67 @@ function d3d8TextureSemanticMode(resource) {
   }
 }
 
+function invalidateD3D8GlTextureBindingCache(stage = null) {
+  d3d8CurrentActiveTextureUnit = null;
+  if (stage === null || stage === undefined) {
+    d3d8CurrentTexture2DBindings.clear();
+    d3d8CurrentTexture3DBindings.clear();
+    return;
+  }
+  const unit = Number(stage) >>> 0;
+  d3d8CurrentTexture2DBindings.delete(unit);
+  d3d8CurrentTexture3DBindings.delete(unit);
+}
+
+function setD3D8ActiveTextureUnitCached(stage) {
+  const unit = Number(stage) >>> 0;
+  if (d3d8CurrentActiveTextureUnit === unit) {
+    d3d8PerfStats.drawTextureActiveCacheHits += 1;
+    return;
+  }
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  d3d8CurrentActiveTextureUnit = unit;
+  d3d8PerfStats.drawTextureActiveCacheMisses += 1;
+}
+
+function bindD3D8DrawTexture2D(stage, resource) {
+  if (!gl || !resource?.texture) {
+    return;
+  }
+  const unit = Number(stage) >>> 0;
+  setD3D8ActiveTextureUnitCached(unit);
+  if (d3d8CurrentTexture2DBindings.get(unit) === resource.texture) {
+    d3d8PerfStats.drawTextureBindCacheHits += 1;
+    return;
+  }
+  gl.bindTexture(gl.TEXTURE_2D, resource.texture);
+  d3d8CurrentTexture2DBindings.set(unit, resource.texture);
+  d3d8PerfStats.drawTextureBindCacheMisses += 1;
+}
+
+function ensureD3D8DrawTexture2D(stage, textureStage, resource) {
+  if (!gl || !resource?.texture || !textureStage) {
+    return null;
+  }
+  const unit = Number(stage) >>> 0;
+  const samplerParams = d3d8TextureSamplerParams(textureStage, resource);
+  const textureBound = d3d8CurrentTexture2DBindings.get(unit) === resource.texture;
+  const samplerCurrent = d3d8TextureSamplerStateCurrent(textureStage, resource, samplerParams);
+  if (textureBound && samplerCurrent) {
+    d3d8PerfStats.drawTextureBindCacheHits += 1;
+    d3d8PerfStats.drawTextureSamplerCacheHits += 1;
+    return resource.samplerState;
+  }
+
+  bindD3D8DrawTexture2D(unit, resource);
+  if (samplerCurrent) {
+    d3d8PerfStats.drawTextureSamplerCacheHits += 1;
+    return resource.samplerState;
+  }
+  d3d8PerfStats.drawTextureSamplerCacheMisses += 1;
+  return applyD3D8TextureSamplerToBoundTexture(unit, textureStage, resource, samplerParams);
+}
+
 function withPreservedD3D8TextureBinding(target, callback) {
   if (!gl) {
     return null;
@@ -5534,6 +5643,7 @@ function withPreservedD3D8TextureBinding(target, callback) {
   } finally {
     gl.bindTexture(target, previousTexture);
     gl.activeTexture(previousActiveTexture);
+    invalidateD3D8GlTextureBindingCache();
   }
 }
 
@@ -6457,11 +6567,15 @@ function releaseD3D8Texture(payload = {}) {
       gl.activeTexture(gl.TEXTURE0 + stage);
       gl.bindTexture(target, null);
       gl.activeTexture(previousActiveTexture);
+      d3d8CurrentActiveTextureUnit = null;
+      d3d8CurrentTexture2DBindings.set(stage, null);
+      d3d8CurrentTexture3DBindings.set(stage, null);
       d3d8BoundTextures.delete(stage);
       releasedBindings.push(stage);
     }
   }
   gl.deleteTexture(resource.texture);
+  invalidateD3D8GlTextureBindingCache();
   if (releasedBindings.length > 0) {
     d3d8TextureStats.releaseUnbinds += releasedBindings.length;
     d3d8TextureStats.lastReleaseUnbind = { id, stages: releasedBindings };
@@ -6500,6 +6614,9 @@ function bindD3D8Texture(payload = {}) {
     gl.bindTexture(gl.TEXTURE_2D, null);
     gl.bindTexture(gl.TEXTURE_3D, null);
     gl.activeTexture(previousActiveTexture);
+    d3d8CurrentActiveTextureUnit = null;
+    d3d8CurrentTexture2DBindings.set(stage, null);
+    d3d8CurrentTexture3DBindings.set(stage, null);
     d3d8BoundTextures.delete(stage);
     d3d8TextureStats.unbinds += 1;
     d3d8TextureStats.lastBind = {
@@ -6516,6 +6633,7 @@ function bindD3D8Texture(payload = {}) {
   const resource = d3d8Textures.get(id);
   if (!resource) {
     gl.activeTexture(previousActiveTexture);
+    d3d8CurrentActiveTextureUnit = null;
     d3d8TextureStats.missingBinds += 1;
     d3d8TextureStats.lastMissingBind = {
       stage,
@@ -6530,11 +6648,16 @@ function bindD3D8Texture(payload = {}) {
   if (target === gl.TEXTURE_3D) {
     gl.bindTexture(gl.TEXTURE_2D, null);
     gl.bindTexture(gl.TEXTURE_3D, resource.texture);
+    d3d8CurrentTexture2DBindings.set(stage, null);
+    d3d8CurrentTexture3DBindings.set(stage, resource.texture);
   } else {
     gl.bindTexture(gl.TEXTURE_3D, null);
     gl.bindTexture(gl.TEXTURE_2D, resource.texture);
+    d3d8CurrentTexture3DBindings.set(stage, null);
+    d3d8CurrentTexture2DBindings.set(stage, resource.texture);
   }
   gl.activeTexture(previousActiveTexture);
+  d3d8CurrentActiveTextureUnit = null;
   d3d8BoundTextures.set(stage, id);
   d3d8TextureStats.binds += 1;
   d3d8TextureStats.lastBind = {
@@ -10233,21 +10356,17 @@ function paintD3D8DrawIndexed(payload = {}) {
       d3d8LastVertexAttribKey = vertexAttribKey;
     }
     recordSortedDrawSubphase?.("sortedDrawVertexAttribMs");
-    // Per-draw texture binding: ALWAYS executed (texture handles are NOT in
-    // the state hash — same render state can draw with different textures).
+    // Texture handles are not in the state hash, so bind/sampler state is
+    // cached against the actual WebGL texture unit state.
     if (canSampleTexture0) {
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, texture0Resource.texture);
-      appliedTexture0Sampler = applyD3D8TextureSamplerToBoundTexture(
+      appliedTexture0Sampler = ensureD3D8DrawTexture2D(
         0,
         renderState.textureStages[0],
         texture0Resource,
       );
     }
     if (canSampleTexture1) {
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, texture1Resource.texture);
-      appliedTexture1Sampler = applyD3D8TextureSamplerToBoundTexture(
+      appliedTexture1Sampler = ensureD3D8DrawTexture2D(
         1,
         renderState.textureStages[1],
         texture1Resource,

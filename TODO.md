@@ -494,6 +494,18 @@ symptom is temporal — NOT a single still.
       frontier is heightmap tile draws (~0.578 ms/frame), volumetric dynamic
       and mesh shadows (~0.187 and ~0.184), window draw callbacks (~0.144),
       roads (~0.131), and then smaller occlusion phases.
+      2026-07-07: draw-time WebGL texture unit/2D-binding/sampler caching now
+      skips redundant `activeTexture` / `bindTexture` / sampler application in
+      the D3D8 bridge. The Mac M4/Metal late-skirmish profile
+      `runtime-frame-profile-texture-sampler-cache-skirmish-ai-1200-mac.json`
+      reduced active texture changes to ~5/frame, 2D bind misses to zero, and
+      sampler misses to ~5/frame while preserving a visible active-skirmish
+      screenshot, but `sortedDrawTextureBindMs` stayed noise-flat (~0.080
+      ms/frame vs ~0.073 baseline) and wall time did not materially move.
+      Do not spend another pass on draw-time texture binding unless a trace
+      shows a real stall there; the current frontier remains terrain tile draw
+      submission, volumetric shadows, UI/roads, and the structural draw command
+      buffer.
 - [ ] **Skirmish structures render all white (team-color/texture bug)** — the
       enemy base structures show up **all white** (separate from the AI being
       off — two bugs seen together). Likely a house-color/team-color remap not
