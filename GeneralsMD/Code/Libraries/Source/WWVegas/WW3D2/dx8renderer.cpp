@@ -61,6 +61,22 @@
 #include "stripoptimizer.h"
 #include "meshgeometry.h"
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_profile_marker(const char *name) __attribute__((weak));
+extern "C" int cnc_port_is_engine_frame_profile_enabled() __attribute__((weak));
+#define CNC_PORT_DX8_MESH_PROFILE_ENABLED() \
+	(cnc_port_is_engine_frame_profile_enabled && cnc_port_is_engine_frame_profile_enabled())
+#define CNC_PORT_NOTE_DX8_MESH_PROFILE_STEP(enabled, name) \
+	do { \
+		if ((enabled) && cnc_port_note_engine_profile_marker) { \
+			cnc_port_note_engine_profile_marker(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_DX8_MESH_PROFILE_ENABLED() false
+#define CNC_PORT_NOTE_DX8_MESH_PROFILE_STEP(enabled, name) do { (void)(enabled); } while (0)
+#endif
+
 /*
 ** Global Instance of the DX8MeshRender
 */
@@ -344,14 +360,19 @@ void DX8RigidFVFCategoryContainer::Add_Delayed_Visible_Material_Pass(MaterialPas
 void DX8RigidFVFCategoryContainer::Render_Delayed_Procedural_Material_Passes(void)
 {
 	if (!Any_Delayed_Passes_To_Render()) return;
+	const bool profileDelayedPasses = CNC_PORT_DX8_MESH_PROFILE_ENABLED();
+	CNC_PORT_NOTE_DX8_MESH_PROFILE_STEP(profileDelayedPasses, "DX8MeshRenderer.delayedPasses.container.before");
 	AnyDelayedPassesToRender=false;
 
+	CNC_PORT_NOTE_DX8_MESH_PROFILE_STEP(profileDelayedPasses, "DX8MeshRenderer.delayedPasses.state.before");
 	DX8Wrapper::Set_Vertex_Buffer(vertex_buffer);
 	DX8Wrapper::Set_Index_Buffer(index_buffer,0);
+	CNC_PORT_NOTE_DX8_MESH_PROFILE_STEP(profileDelayedPasses, "DX8MeshRenderer.delayedPasses.state.after");
 
 	SNAPSHOT_SAY(("DX8RigidFVFCategoryContainer::Render_Delayed_Procedural_Material_Passes()\n"));
 
 	// additional passes
+	CNC_PORT_NOTE_DX8_MESH_PROFILE_STEP(profileDelayedPasses, "DX8MeshRenderer.delayedPasses.render.before");
 	MatPassTaskClass * mpr = delayed_matpass_head;
 	while (mpr != NULL) {
 	
@@ -361,8 +382,10 @@ void DX8RigidFVFCategoryContainer::Render_Delayed_Procedural_Material_Passes(voi
 		delete mpr;
 		mpr = next_mpr;
 	}
+	CNC_PORT_NOTE_DX8_MESH_PROFILE_STEP(profileDelayedPasses, "DX8MeshRenderer.delayedPasses.render.after");
 
 	delayed_matpass_head = delayed_matpass_tail = NULL;
+	CNC_PORT_NOTE_DX8_MESH_PROFILE_STEP(profileDelayedPasses, "DX8MeshRenderer.delayedPasses.container.after");
 }
 
 
@@ -2173,6 +2196,7 @@ void DX8MeshRendererClass::Flush(void)
 
 	WWPROFILE("DX8MeshRenderer::Flush");
 	if (!camera) return;
+	const bool profileMeshFlush = CNC_PORT_DX8_MESH_PROFILE_ENABLED();
 	Log_Statistics_String(true);	
 
 	/*
@@ -2184,24 +2208,34 @@ void DX8MeshRendererClass::Flush(void)
 	** bulk of the meshes have already been drawn (there would be extra overhead involved
 	** in solving this for skins)
 	*/
+	CNC_PORT_NOTE_DX8_MESH_PROFILE_STEP(profileMeshFlush, "DX8MeshRenderer.flush.rigid.before");
 	for (i=0;i<texture_category_container_lists_rigid.Count();++i) {
 		Render_FVF_Category_Container_List(*texture_category_container_lists_rigid[i]);
 	}
+	CNC_PORT_NOTE_DX8_MESH_PROFILE_STEP(profileMeshFlush, "DX8MeshRenderer.flush.rigid.after");
 
+	CNC_PORT_NOTE_DX8_MESH_PROFILE_STEP(profileMeshFlush, "DX8MeshRenderer.flush.skin.before");
 	Render_FVF_Category_Container_List(*texture_category_container_list_skin);
+	CNC_PORT_NOTE_DX8_MESH_PROFILE_STEP(profileMeshFlush, "DX8MeshRenderer.flush.skin.after");
 
+	CNC_PORT_NOTE_DX8_MESH_PROFILE_STEP(profileMeshFlush, "DX8MeshRenderer.flush.decals.before");
 	Render_Decal_Meshes();
+	CNC_PORT_NOTE_DX8_MESH_PROFILE_STEP(profileMeshFlush, "DX8MeshRenderer.flush.decals.after");
 
 	/*
 	** Render the translucent procedural material passes that were applied to meshes that
 	** had their base passes disabled. 
 	*/
+	CNC_PORT_NOTE_DX8_MESH_PROFILE_STEP(profileMeshFlush, "DX8MeshRenderer.flush.delayed.before");
 	for (i=0;i<texture_category_container_lists_rigid.Count();++i) {
 		Render_FVF_Category_Container_List_Delayed_Passes(*texture_category_container_lists_rigid[i]);
 	}
+	CNC_PORT_NOTE_DX8_MESH_PROFILE_STEP(profileMeshFlush, "DX8MeshRenderer.flush.delayed.after");
 
+	CNC_PORT_NOTE_DX8_MESH_PROFILE_STEP(profileMeshFlush, "DX8MeshRenderer.flush.clear.before");
 	DX8Wrapper::Set_Vertex_Buffer(NULL);
 	DX8Wrapper::Set_Index_Buffer(NULL,0);
+	CNC_PORT_NOTE_DX8_MESH_PROFILE_STEP(profileMeshFlush, "DX8MeshRenderer.flush.clear.after");
 }
 
 
@@ -2277,5 +2311,4 @@ void DX8MeshRendererClass::Invalidate( bool shutdown)
 
 	texture_category_container_lists_rigid.Delete_All();
 }
-
 

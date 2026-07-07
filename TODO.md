@@ -366,22 +366,27 @@ visible, reduced `W3DVolumetricShadow.renderDynamicVolume.draw.before` from
 browser-only world-batch strategy with an enlarged wasm shadow ring and
 generation-checked decrement replay. The Mac M4/Metal release profile
 `runtime-frame-profile-static-shadow-world-batch-mac.json` kept the renderer on
-`ANGLE Metal Renderer: Apple M4`, kept the shell-map screenshot visible,
-reduced static `W3DVolumetricShadow.renderMeshVolume.draw.before` from 47.8 to
-2.0 calls/frame and from 0.444 to 0.035 ms/frame of attributed draw work,
-reduced total browser D3D8 draws from 272.3 to 227.7/frame, and reduced sorted
-draw-profiled calls from 186.2 to 143.8/frame. The next PERF pass should use
-the producer table to reduce the remaining draw-side leaders:
-`SortingRenderer.pool.draw.submit.before`,
-`HeightMap.tilePasses.tileDraw.before`, and
-`W3DProjectedShadow.renderShadows.meshFlush.before`; sampled C++ buckets also
-still show intermittent shoreline and projected-shadow mesh-flush spikes. Do
-not revisit material, light, text-geometry, first-vertex VAO setup, transform
-comparison/allocation, draw-time harness bookkeeping, draw-cache key strings,
-sampler-key strings, adjacent/render-uniform key strings, browser
-derived-object cache misses, vertex-attrib/VAO key strings, dynamic
-volumetric shadow per-task draw replay, or static volumetric shadow per-task
-draw replay. Broader shadow fidelity remains in the queued phased plan.
+`ANGLE Metal Renderer: Apple M4`, kept the shell-map screenshot visible, reduced
+static `W3DVolumetricShadow.renderMeshVolume.draw.before` from 47.8 to 2.0
+calls/frame and from 0.444 to 0.035 ms/frame of attributed draw work, reduced
+total browser D3D8 draws from 272.3 to 227.7/frame, and reduced sorted
+draw-profiled calls from 186.2 to 143.8/frame. A follow-up mesh-flush split
+showed the old `W3DProjectedShadow.renderShadows.meshFlush.before` producer is
+ordinary `DX8MeshRenderer.flush.rigid.before` submission during the renderer
+flush: `runtime-frame-profile-projected-meshflush-split-mac.json` measured 48.37
+calls/frame, 13.8K indices/frame, and 0.373 ms/frame there, while delayed
+material-pass / projected receiver clipping markers did not show as hot rows.
+The next PERF pass should use the producer table to reduce the remaining
+draw-side leaders: `SortingRenderer.pool.draw.submit.before`,
+`HeightMap.tilePasses.tileDraw.before`, and `DX8MeshRenderer.flush.rigid.before`;
+sampled C++ buckets also still show intermittent shoreline and rigid mesh-flush
+spikes. Do not revisit material, light, text-geometry, first-vertex VAO setup,
+transform comparison/allocation, draw-time harness bookkeeping, draw-cache key
+strings, sampler-key strings, adjacent/render-uniform key strings, browser
+derived-object cache misses, vertex-attrib/VAO key strings, dynamic volumetric
+shadow per-task draw replay, static volumetric shadow per-task draw replay, or
+projected-shadow receiver per-polygon clipping unless a new profile makes it
+hot. Broader shadow fidelity remains in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`

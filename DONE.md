@@ -512,6 +512,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       measured draw-side leaders are sorted renderer submit replay, heightmap
       tile draws, and projected-shadow mesh flushes.
 
+- [x] Split the projected-shadow mesh-flush draw bucket into DX8 mesh-renderer
+      phases. `DX8MeshRendererClass::Flush()` now emits Emscripten-only,
+      frame-profiler-gated markers around rigid, skin, decal, delayed
+      material-pass, and final buffer-clear phases; delayed material-pass
+      containers and `MeshClass::Render_Material_Pass()` skin /
+      per-polygon-cull / full-mesh branches also have gated profile markers.
+      Verified with `git diff --check`, `npm --prefix WebAssembly run
+      build:port`, `npm --prefix WebAssembly run build:port:release`, and a
+      Mac M4 Chrome/Metal release profile copied to
+      `WebAssembly/artifacts/perf/runtime-frame-profile-projected-meshflush-split-mac.json`.
+      The screenshot
+      `WebAssembly/artifacts/screenshots/runtime-frame-profile-projected-meshflush-split-mac.png`
+      showed the shell-map/menu rendering normally. The run kept the renderer
+      on `ANGLE Metal Renderer: Apple M4` and showed the old
+      `W3DProjectedShadow.renderShadows.meshFlush.before` owner is actually
+      ordinary rigid mesh-renderer submission during the flush:
+      `DX8MeshRenderer.flush.rigid.before` measured 48.37 calls/frame,
+      13.8K indices/frame, and 0.373 ms/frame. Delayed material-pass and
+      projected receiver clipping markers did not appear as hot rows, so the
+      next draw pass should target rigid mesh submission rather than
+      projected-shadow receiver clipping.
+
 - [x] Extend D3D8 draw producer attribution to non-sorted draw calls. The
       opt-in producer table now records total `drawProfiledMs`, total
       calls/indices, and separate sorted-call counters for every D3D8 indexed

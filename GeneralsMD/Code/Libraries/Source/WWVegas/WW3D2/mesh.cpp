@@ -122,6 +122,22 @@
 #include <stdio.h>
 #include <wwprofile.h>
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_profile_marker(const char *name) __attribute__((weak));
+extern "C" int cnc_port_is_engine_frame_profile_enabled() __attribute__((weak));
+#define CNC_PORT_MESH_PROFILE_ENABLED() \
+	(cnc_port_is_engine_frame_profile_enabled && cnc_port_is_engine_frame_profile_enabled())
+#define CNC_PORT_NOTE_MESH_PROFILE_STEP(enabled, name) \
+	do { \
+		if ((enabled) && cnc_port_note_engine_profile_marker) { \
+			cnc_port_note_engine_profile_marker(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_MESH_PROFILE_ENABLED() false
+#define CNC_PORT_NOTE_MESH_PROFILE_STEP(enabled, name) do { (void)(enabled); } while (0)
+#endif
+
 static unsigned MeshDebugIdCount;
 
 bool MeshClass::Legacy_Meshes_Fogged = true;
@@ -864,12 +880,14 @@ void MeshClass::Render_Material_Pass(MaterialPassClass * pass,IndexBufferClass *
 	//without having to create a new material pass per object instance. -MW
 	float oldOpacity=-1.0f;
 	Vector3 oldEmissive(-1,-1,-1);
+	const bool profileMaterialPass = CNC_PORT_MESH_PROFILE_ENABLED();
 
 	if (LightEnvironment != NULL) {
 		DX8Wrapper::Set_Light_Environment(LightEnvironment);
 	}
 
 	if (Model->Get_Flag(MeshModelClass::SKIN)) {
+		CNC_PORT_NOTE_MESH_PROFILE_STEP(profileMaterialPass, "Mesh.renderMaterialPass.skin.before");
 
 		/*
 		** In the case of skin meshes, we need to render our polys with the identity transform
@@ -916,10 +934,12 @@ void MeshClass::Render_Material_Pass(MaterialPassClass * pass,IndexBufferClass *
 		//MW: Need uninstall custom materials in case they leave D3D in unknown state
 		pass->UnInstall_Materials();
 
+		CNC_PORT_NOTE_MESH_PROFILE_STEP(profileMaterialPass, "Mesh.renderMaterialPass.skin.after");
 	} else if (Should_Per_Polygon_Cull_Material_Pass(Model,Transform,pass)) {
-		
+		CNC_PORT_NOTE_MESH_PROFILE_STEP(profileMaterialPass, "Mesh.renderMaterialPass.perPolygonCull.before");
+
 		/*
-		** Generate the APT 
+		** Generate the APT
 		*/
 		temp_apt.Delete_All(false);
 			
@@ -999,8 +1019,10 @@ void MeshClass::Render_Material_Pass(MaterialPassClass * pass,IndexBufferClass *
 			//MW: Need uninstall custom materials in case they leave D3D in unknown state
 			pass->UnInstall_Materials();
 		}
-	} else {		
-		
+		CNC_PORT_NOTE_MESH_PROFILE_STEP(profileMaterialPass, "Mesh.renderMaterialPass.perPolygonCull.after");
+	} else {
+		CNC_PORT_NOTE_MESH_PROFILE_STEP(profileMaterialPass, "Mesh.renderMaterialPass.fullMesh.before");
+
 		/*
 		** Normal mesh case, render polys with this mesh's transform
 		*/
@@ -1046,6 +1068,7 @@ void MeshClass::Render_Material_Pass(MaterialPassClass * pass,IndexBufferClass *
 		}
 		//MW: Need uninstall custom materials in case they leave D3D in unknown state
 		pass->UnInstall_Materials();
+		CNC_PORT_NOTE_MESH_PROFILE_STEP(profileMaterialPass, "Mesh.renderMaterialPass.fullMesh.after");
 	}
 }
 
@@ -1635,5 +1658,3 @@ int MeshClass::Get_Draw_Call_Count(void) const
 		return 0;
 	}
 }
-
-
