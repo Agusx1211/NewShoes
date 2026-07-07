@@ -988,41 +988,48 @@ const bufferProducerFields = [
   "mirrorSkippedBytes",
 ];
 
+const drawProducerPhaseSuffixes = [
+  "PreBatch",
+  "Derived",
+  "TextureDiag",
+  "Viewport",
+  "Diagnostics",
+  "Geometry",
+  "Program",
+  "FillShade",
+  "VertexAttrib",
+  "TextureBind",
+  "Uniform",
+  "ApplyRenderState",
+  "RenderBuild",
+  "RenderBaseUniform",
+  "RenderMaterialUniform",
+  "RenderLightUniform",
+  "RenderStageUniform",
+  "RenderAlphaFogUniform",
+  "RenderUniform",
+  "TransformUniform",
+  "TransformCompare",
+  "WorldTransformUniform",
+  "ViewTransformUniform",
+  "ProjectionTransformUniform",
+  "PointSpriteUniform",
+  "TextureUniform",
+  "DrawOrBatch",
+  "Tail",
+];
+const drawProducerGenericPhaseFields = drawProducerPhaseSuffixes.map((suffix) => `draw${suffix}Ms`);
+const drawProducerSortedPhaseFields = drawProducerPhaseSuffixes.map((suffix) => `sortedDraw${suffix}Ms`);
+
 const drawProducerFields = [
   "calls",
   "indices",
   "drawProfiledMs",
+  ...drawProducerGenericPhaseFields,
   "sortedCalls",
   "sortedIndices",
   "sortedDrawProfiledMs",
-  "sortedDrawPreBatchMs",
-  "sortedDrawDerivedMs",
-  "sortedDrawTextureDiagMs",
-  "sortedDrawViewportMs",
-  "sortedDrawDiagnosticsMs",
-  "sortedDrawGeometryMs",
-  "sortedDrawProgramMs",
-  "sortedDrawFillShadeMs",
-  "sortedDrawVertexAttribMs",
-  "sortedDrawTextureBindMs",
-  "sortedDrawUniformMs",
-  "sortedDrawApplyRenderStateMs",
-  "sortedDrawRenderBuildMs",
-  "sortedDrawRenderBaseUniformMs",
-  "sortedDrawRenderMaterialUniformMs",
-  "sortedDrawRenderLightUniformMs",
-  "sortedDrawRenderStageUniformMs",
-  "sortedDrawRenderAlphaFogUniformMs",
-  "sortedDrawRenderUniformMs",
-  "sortedDrawTransformUniformMs",
-  "sortedDrawTransformCompareMs",
-  "sortedDrawWorldTransformUniformMs",
-  "sortedDrawViewTransformUniformMs",
-  "sortedDrawProjectionTransformUniformMs",
-  "sortedDrawPointSpriteUniformMs",
-  "sortedDrawTextureUniformMs",
-  "sortedDrawDrawOrBatchMs",
-  "sortedDrawTailMs",
+  ...drawProducerSortedPhaseFields,
 ];
 
 function bufferProducerMap(perf) {
@@ -1110,7 +1117,8 @@ function drawProducerDelta(before, after, framesAdvanced) {
   return delta
     .filter((entry) => Number(entry.calls ?? 0) > 0 || Number(entry.sortedDrawProfiledMs ?? 0) > 0)
     .sort((a, b) =>
-      Number(b.sortedDrawProfiledMs ?? 0) - Number(a.sortedDrawProfiledMs ?? 0)
+      Number(b.drawProfiledMs ?? 0) - Number(a.drawProfiledMs ?? 0)
+      || Number(b.sortedDrawProfiledMs ?? 0) - Number(a.sortedDrawProfiledMs ?? 0)
       || Number(b.calls ?? 0) - Number(a.calls ?? 0))
     .slice(0, 64);
 }

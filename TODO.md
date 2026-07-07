@@ -377,6 +377,19 @@ moved wall/engine averages from 42.27/12.81 to 42.09/12.55 ms/frame with
 sorted draw-profiled work from 2.640 to 2.584 ms/frame. A real multi-frame
 Tournament Desert skirmish check also kept active-gameplay shadows visible and
 recorded the expected 14 increment + 14 decrement color-masked stencil draws.
+The producer profiler now carries generic per-producer `draw*Ms` phase buckets
+for all indexed draws, not just sorted submits, and sorts producer deltas by
+total `drawProfiledMs`. The Mac M4/Metal profile
+`runtime-frame-profile-producer-phases-final-mac.json` measured
+335.3 D3D8 draws/frame, 249.1 sorted-profiled draws/frame, and 2.914 ms/frame
+of sorted-profiled bridge work; the all-draw producer leaders were
+`SortingRenderer.pool.draw.submit.before` (0.935 ms/frame),
+`HeightMap.tilePasses.tileDraw.before` (0.721),
+`W3DVolumetricShadow.renderDynamicVolume.draw.before` (0.682),
+`DX8MeshRenderer.flush.rigid.before` (0.673, non-sorted), and
+`W3DVolumetricShadow.renderMeshVolume.draw.before` (0.483). The largest phase
+buckets are still spread across geometry setup, render/transform uniforms, and
+terrain texture binding rather than one retired key/string/cache path.
 The remaining draw-side leaders are still `SortingRenderer.pool.draw.submit.before`,
 `HeightMap.tilePasses.tileDraw.before`, `DX8MeshRenderer.flush.rigid.before`,
 and the structural per-frame draw command buffer. Do not revisit material,

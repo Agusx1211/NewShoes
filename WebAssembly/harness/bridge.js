@@ -692,6 +692,51 @@ function d3d8BufferProducerSummary() {
     }));
 }
 
+const d3d8DrawProducerPhaseSuffixes = [
+  "PreBatch",
+  "Derived",
+  "TextureDiag",
+  "Viewport",
+  "Diagnostics",
+  "Geometry",
+  "Program",
+  "FillShade",
+  "VertexAttrib",
+  "TextureBind",
+  "Uniform",
+  "ApplyRenderState",
+  "RenderBuild",
+  "RenderBaseUniform",
+  "RenderMaterialUniform",
+  "RenderLightUniform",
+  "RenderStageUniform",
+  "RenderAlphaFogUniform",
+  "RenderUniform",
+  "TransformUniform",
+  "TransformCompare",
+  "WorldTransformUniform",
+  "ViewTransformUniform",
+  "ProjectionTransformUniform",
+  "PointSpriteUniform",
+  "TextureUniform",
+  "DrawOrBatch",
+  "Tail",
+];
+const d3d8DrawProducerPhaseFields = d3d8DrawProducerPhaseSuffixes.map((suffix) => [
+  `sortedDraw${suffix}Ms`,
+  `draw${suffix}Ms`,
+]);
+const d3d8DrawProducerGenericPhaseFieldBySorted =
+  new Map(d3d8DrawProducerPhaseFields);
+
+function initialD3D8DrawProducerPhaseCounters(fieldIndex) {
+  const counters = {};
+  for (const fields of d3d8DrawProducerPhaseFields) {
+    counters[fields[fieldIndex]] = 0;
+  }
+  return counters;
+}
+
 function noteD3D8DrawProducerCall(producer, indexCount, sortedProfiled) {
   if (!d3d8DrawProducerTrackingEnabled) {
     return null;
@@ -704,37 +749,11 @@ function noteD3D8DrawProducerCall(producer, indexCount, sortedProfiled) {
       calls: 0,
       indices: 0,
       drawProfiledMs: 0,
+      ...initialD3D8DrawProducerPhaseCounters(1),
       sortedCalls: 0,
       sortedIndices: 0,
       sortedDrawProfiledMs: 0,
-      sortedDrawPreBatchMs: 0,
-      sortedDrawDerivedMs: 0,
-      sortedDrawTextureDiagMs: 0,
-      sortedDrawViewportMs: 0,
-      sortedDrawDiagnosticsMs: 0,
-      sortedDrawGeometryMs: 0,
-      sortedDrawProgramMs: 0,
-      sortedDrawFillShadeMs: 0,
-      sortedDrawVertexAttribMs: 0,
-      sortedDrawTextureBindMs: 0,
-      sortedDrawUniformMs: 0,
-      sortedDrawApplyRenderStateMs: 0,
-      sortedDrawRenderBuildMs: 0,
-      sortedDrawRenderBaseUniformMs: 0,
-      sortedDrawRenderMaterialUniformMs: 0,
-      sortedDrawRenderLightUniformMs: 0,
-      sortedDrawRenderStageUniformMs: 0,
-      sortedDrawRenderAlphaFogUniformMs: 0,
-      sortedDrawRenderUniformMs: 0,
-      sortedDrawTransformUniformMs: 0,
-      sortedDrawTransformCompareMs: 0,
-      sortedDrawWorldTransformUniformMs: 0,
-      sortedDrawViewTransformUniformMs: 0,
-      sortedDrawProjectionTransformUniformMs: 0,
-      sortedDrawPointSpriteUniformMs: 0,
-      sortedDrawTextureUniformMs: 0,
-      sortedDrawDrawOrBatchMs: 0,
-      sortedDrawTailMs: 0,
+      ...initialD3D8DrawProducerPhaseCounters(0),
     };
     d3d8DrawProducerStats.set(label, entry);
   }
@@ -752,6 +771,16 @@ function noteD3D8DrawProducerMs(entry, field, elapsedMs) {
     return;
   }
   entry[field] += elapsedMs;
+}
+
+function noteD3D8DrawProducerPhaseMs(entry, sortedField, elapsedMs, sortedProfiled) {
+  const genericField = d3d8DrawProducerGenericPhaseFieldBySorted.get(sortedField);
+  if (genericField) {
+    noteD3D8DrawProducerMs(entry, genericField, elapsedMs);
+  }
+  if (sortedProfiled) {
+    noteD3D8DrawProducerMs(entry, sortedField, elapsedMs);
+  }
 }
 
 function d3d8DrawProducerSummary() {
@@ -10609,12 +10638,14 @@ function paintD3D8DrawIndexed(payload = {}) {
   const sortedDrawProfiled = payload.sortedDrawSubmitProfile === true;
   const drawProducer = d3d8DrawProducerTrackingEnabled ? bufferProducerLabel(payload.producer) : null;
   const drawProducerStartedAt = d3d8DrawProducerTrackingEnabled ? perfNow() : 0;
-  const sortedDrawStartedAt = sortedDrawProfiled ? perfNow() : 0;
-  let sortedDrawPhaseStartedAt = sortedDrawStartedAt;
-  let sortedDrawSubphaseStartedAt = sortedDrawStartedAt;
   const drawProducerEntry = d3d8DrawProducerTrackingEnabled
     ? noteD3D8DrawProducerCall(payload.producer, indexCount, sortedDrawProfiled)
     : null;
+  const drawSubphaseProfiled = sortedDrawProfiled || drawProducerEntry !== null;
+  const sortedDrawStartedAt = sortedDrawProfiled ? perfNow() : 0;
+  const drawPhaseStartedAt = drawSubphaseProfiled ? perfNow() : 0;
+  let drawPhaseStartedAtCurrent = drawPhaseStartedAt;
+  let drawSubphaseStartedAtCurrent = drawPhaseStartedAt;
   const finishDrawProducerProfile = drawProducerEntry
     ? () => {
         noteD3D8DrawProducerMs(drawProducerEntry, "drawProfiledMs", perfNow() - drawProducerStartedAt);
@@ -10627,27 +10658,31 @@ function paintD3D8DrawIndexed(payload = {}) {
         noteD3D8DrawProducerMs(drawProducerEntry, "sortedDrawProfiledMs", elapsed);
       }
     : () => {};
-  const recordSortedDrawPhase = sortedDrawProfiled
+  const recordDrawPhase = drawSubphaseProfiled
     ? (field) => {
         const now = perfNow();
-        const elapsed = now - sortedDrawPhaseStartedAt;
-        d3d8PerfStats[field] += elapsed;
-        noteD3D8DrawProducerMs(drawProducerEntry, field, elapsed);
-        sortedDrawPhaseStartedAt = now;
+        const elapsed = now - drawPhaseStartedAtCurrent;
+        if (sortedDrawProfiled) {
+          d3d8PerfStats[field] += elapsed;
+        }
+        noteD3D8DrawProducerPhaseMs(drawProducerEntry, field, elapsed, sortedDrawProfiled);
+        drawPhaseStartedAtCurrent = now;
       }
     : null;
-  const resetSortedDrawSubphase = sortedDrawProfiled
+  const resetDrawSubphase = drawSubphaseProfiled
     ? () => {
-        sortedDrawSubphaseStartedAt = perfNow();
+        drawSubphaseStartedAtCurrent = perfNow();
       }
     : null;
-  const recordSortedDrawSubphase = sortedDrawProfiled
+  const recordDrawSubphase = drawSubphaseProfiled
     ? (field) => {
         const now = perfNow();
-        const elapsed = now - sortedDrawSubphaseStartedAt;
-        d3d8PerfStats[field] += elapsed;
-        noteD3D8DrawProducerMs(drawProducerEntry, field, elapsed);
-        sortedDrawSubphaseStartedAt = now;
+        const elapsed = now - drawSubphaseStartedAtCurrent;
+        if (sortedDrawProfiled) {
+          d3d8PerfStats[field] += elapsed;
+        }
+        noteD3D8DrawProducerPhaseMs(drawProducerEntry, field, elapsed, sortedDrawProfiled);
+        drawSubphaseStartedAtCurrent = now;
       }
     : null;
   if (sortedDrawProfiled) {
@@ -10678,14 +10713,14 @@ function paintD3D8DrawIndexed(payload = {}) {
     renderState: payload.renderState,
   });
   if (tryMergeD3D8PendingDrawBatch(earlyBatchInfo)) {
-    recordSortedDrawPhase?.("sortedDrawPreBatchMs");
+    recordDrawPhase?.("sortedDrawPreBatchMs");
     finishSortedDrawProfile();
     finishDrawProducerProfile();
     harnessState.graphics.d3d8DrawIndexedSequence = drawSequence;
     return 1;
   }
   flushD3D8PendingDrawBatch("drawBreak");
-  recordSortedDrawPhase?.("sortedDrawPreBatchMs");
+  recordDrawPhase?.("sortedDrawPreBatchMs");
   const world = normalizeD3DMatrix(payload.transforms?.world);
   const view = normalizeD3DMatrix(payload.transforms?.view);
   const projection = normalizeD3DMatrix(payload.transforms?.projection);
@@ -10853,7 +10888,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   const usePositionTransforms = useTransforms && !vertexPretransformed;
   const includeSceneDrawHistory = usePositionTransforms || vertexPretransformed;
   const usesIdentityClipSpace = usePositionTransforms && matrixTransformsAreIdentity;
-  recordSortedDrawPhase?.("sortedDrawDerivedMs");
+  recordDrawPhase?.("sortedDrawDerivedMs");
   warnD3D8CombinerDiagnostics(renderState, appliedTexture0Combiner, appliedStage1Combiner, drawSequence);
   if (d3d8DiagLevel === "full" && texture0Resource) {
     const caps = (harnessState.graphics.uiDrawCaptures ??= { atlas: [], small: [], census: {} });
@@ -10927,7 +10962,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       });
     }
   }
-  recordSortedDrawPhase?.("sortedDrawTextureDiagMs");
+  recordDrawPhase?.("sortedDrawTextureDiagMs");
   let appliedViewport = null;
   let appliedRenderState = null;
   let appliedTexture0Sampler = null;
@@ -10941,7 +10976,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   syncCanvasSize({ restoreViewport: false, refreshState: false, flushPending: false });
   appliedViewport = applyD3D8Viewport("draw");
   appliedPointSprite = d3d8PointSpriteInfo(renderState, payload.primitiveType, appliedViewport);
-  recordSortedDrawPhase?.("sortedDrawViewportMs");
+  recordDrawPhase?.("sortedDrawViewportMs");
   if (collectDrawDiagnostics) {
     vertexDiagnostics = inspectD3D8DrawVertices(
       vertexResource,
@@ -10976,8 +11011,8 @@ function paintD3D8DrawIndexed(payload = {}) {
     ? sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2))
     : null;
   let centerPixel = preDrawCenterPixel;
-  recordSortedDrawPhase?.("sortedDrawDiagnosticsMs");
-  resetSortedDrawSubphase?.();
+  recordDrawPhase?.("sortedDrawDiagnosticsMs");
+  resetDrawSubphase?.();
 
   if (gl && d3d8GlPrimitiveSupported(baseGlPrimitive) && usePersistentBuffers &&
       vertexByteSize > 0 && indexByteSize > 0 &&
@@ -11032,7 +11067,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     } else {
       d3d8PerfStats.drawTextureUniformCacheMisses += 1;
     }
-    recordSortedDrawSubphase?.("sortedDrawProgramMs");
+    recordDrawSubphase?.("sortedDrawProgramMs");
     let fillModeDraw, shadeModeDraw;
     // Per-draw geometry setup: ALWAYS executed (not skippable — geometry changes
     // every draw even when render state is identical).
@@ -11067,7 +11102,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         fillModeDraw,
       );
     }
-    recordSortedDrawSubphase?.("sortedDrawFillShadeMs");
+    recordDrawSubphase?.("sortedDrawFillShadeMs");
     const temporaryIndices = fillModeDraw.lineIndices ?? shadeModeDraw.triangleIndices ?? null;
     const vertexAttribKey = setD3D8ScratchVertexAttribKey({
       vertexBufferId,
@@ -11166,7 +11201,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         d3d8LastVertexAttribKey = cloneD3D8VertexAttribKey(vertexAttribKey);
       }
     }
-    recordSortedDrawSubphase?.("sortedDrawVertexAttribMs");
+    recordDrawSubphase?.("sortedDrawVertexAttribMs");
     // Texture handles are not in the state hash, so bind/sampler state is
     // cached against the actual WebGL texture unit state.
     if (drawCanSampleTexture0) {
@@ -11183,30 +11218,39 @@ function paintD3D8DrawIndexed(payload = {}) {
         texture1Resource,
       );
     }
-    recordSortedDrawSubphase?.("sortedDrawTextureBindMs");
-    recordSortedDrawPhase?.("sortedDrawGeometryMs");
-    resetSortedDrawSubphase?.();
+    recordDrawSubphase?.("sortedDrawTextureBindMs");
+    recordDrawPhase?.("sortedDrawGeometryMs");
+    resetDrawSubphase?.();
     // Apply render/material/light uniforms only when changed. This key excludes
     // world/view/projection and bound texture IDs; those have narrower caches
     // below.
     if (!renderUniformUnchanged) {
-      const applyRenderStateStartedAt = sortedDrawProfiled ? perfNow() : 0;
+      const applyRenderStateStartedAt = drawSubphaseProfiled ? perfNow() : 0;
       appliedRenderState = applyD3D8RenderState(renderState, {
         invertCullWinding: false,
         normalized: true,
       });
-      if (sortedDrawProfiled) {
+      if (drawSubphaseProfiled) {
         const elapsed = perfNow() - applyRenderStateStartedAt;
-        d3d8PerfStats.sortedDrawApplyRenderStateMs += elapsed;
-        noteD3D8DrawProducerMs(drawProducerEntry, "sortedDrawApplyRenderStateMs", elapsed);
+        if (sortedDrawProfiled) {
+          d3d8PerfStats.sortedDrawApplyRenderStateMs += elapsed;
+        }
+        noteD3D8DrawProducerPhaseMs(
+          drawProducerEntry,
+          "sortedDrawApplyRenderStateMs",
+          elapsed,
+          sortedDrawProfiled,
+        );
       }
-      let renderUniformDetailStartedAt = sortedDrawProfiled ? perfNow() : 0;
-      const recordRenderUniformDetail = sortedDrawProfiled
+      let renderUniformDetailStartedAt = drawSubphaseProfiled ? perfNow() : 0;
+      const recordRenderUniformDetail = drawSubphaseProfiled
         ? (field) => {
             const now = perfNow();
             const elapsed = now - renderUniformDetailStartedAt;
-            d3d8PerfStats[field] += elapsed;
-            noteD3D8DrawProducerMs(drawProducerEntry, field, elapsed);
+            if (sortedDrawProfiled) {
+              d3d8PerfStats[field] += elapsed;
+            }
+            noteD3D8DrawProducerPhaseMs(drawProducerEntry, field, elapsed, sortedDrawProfiled);
             renderUniformDetailStartedAt = now;
           }
         : null;
@@ -11502,19 +11546,21 @@ function paintD3D8DrawIndexed(payload = {}) {
     } else {
       appliedRenderState = harnessState.graphics.lastD3D8AppliedRenderState;
     }
-    recordSortedDrawSubphase?.("sortedDrawRenderUniformMs");
+    recordDrawSubphase?.("sortedDrawRenderUniformMs");
     if (usePositionTransforms) {
       // Direct3D stores row-vector matrices row-major; WebGL interprets this
       // memory as column-major, giving the transpose needed for GLSL
       // column-vector multiplication. The broad uniform cache excludes object
       // transforms, so each matrix upload is cached by its exact uploaded value.
-      let transformDetailStartedAt = sortedDrawProfiled ? perfNow() : 0;
-      const recordTransformDetail = sortedDrawProfiled
+      let transformDetailStartedAt = drawSubphaseProfiled ? perfNow() : 0;
+      const recordTransformDetail = drawSubphaseProfiled
         ? (field) => {
             const now = perfNow();
             const elapsed = now - transformDetailStartedAt;
-            d3d8PerfStats[field] += elapsed;
-            noteD3D8DrawProducerMs(drawProducerEntry, field, elapsed);
+            if (sortedDrawProfiled) {
+              d3d8PerfStats[field] += elapsed;
+            }
+            noteD3D8DrawProducerPhaseMs(drawProducerEntry, field, elapsed, sortedDrawProfiled);
             transformDetailStartedAt = now;
           }
         : null;
@@ -11554,7 +11600,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     }
     // Non-transformed draws leave these uniforms unused but still current.
     // Keep the cache hot for the next transformed world-space draw.
-    recordSortedDrawSubphase?.("sortedDrawTransformUniformMs");
+    recordDrawSubphase?.("sortedDrawTransformUniformMs");
     harnessState.graphics.lastD3D8StateHash = stateHash;
     if (depthStencilOnlyDraw) {
       d3d8PerfStats.drawPointSpriteUniformCacheHits += 1;
@@ -11594,7 +11640,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       }
       d3d8LastPointSpriteUniformInfo = { ...appliedPointSprite };
     }
-    recordSortedDrawSubphase?.("sortedDrawPointSpriteUniformMs");
+    recordDrawSubphase?.("sortedDrawPointSpriteUniformMs");
     // Texture-layout uniforms change when sampling availability, texture
     // coordinate generation, texture transforms, semantic mode, LOD bias, or
     // implicit alpha cutoff changes. Texture object binding is handled above.
@@ -11686,8 +11732,8 @@ function paintD3D8DrawIndexed(payload = {}) {
       }
       harnessState.graphics.lastD3D8TextureUniformKey = textureUniformKey;
     }
-    recordSortedDrawSubphase?.("sortedDrawTextureUniformMs");
-    recordSortedDrawPhase?.("sortedDrawUniformMs");
+    recordDrawSubphase?.("sortedDrawTextureUniformMs");
+    recordDrawPhase?.("sortedDrawUniformMs");
     let temporaryIndexBuffer = null;
     let restoreProvokingVertex = false;
     try {
@@ -11745,7 +11791,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         setD3D8FirstVertexConvention(false);
       }
     }
-    recordSortedDrawPhase?.("sortedDrawDrawOrBatchMs");
+    recordDrawPhase?.("sortedDrawDrawOrBatchMs");
     if (d3d8DiagLevel === "full") {
       refreshCanvasState();
       centerPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
@@ -11758,7 +11804,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   if (d3d8DiagLevel !== "full") {
     // lite: skip the ~40-field probe, per-draw texture sampling, and the
     // spread-copied draw-history array — keep only the cheap sequence counter.
-    recordSortedDrawPhase?.("sortedDrawTailMs");
+    recordDrawPhase?.("sortedDrawTailMs");
     finishSortedDrawProfile();
     finishDrawProducerProfile();
     harnessState.graphics.d3d8DrawIndexedSequence = drawSequence;
@@ -12013,7 +12059,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     lastD3D8DrawIndexed: probe,
     d3d8Perf: d3d8PerfSummary(),
   };
-  recordSortedDrawPhase?.("sortedDrawTailMs");
+  recordDrawPhase?.("sortedDrawTailMs");
   finishSortedDrawProfile();
   finishDrawProducerProfile();
   return drawOk ? 1 : 0;

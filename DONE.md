@@ -314,6 +314,33 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Extend D3D8 draw producer phase attribution to all indexed draws. The
+      browser D3D8 producer table now records generic `draw*Ms` phase buckets
+      alongside the existing sorted-only `sortedDraw*Ms` counters, so
+      non-sorted owners such as `DX8MeshRenderer.flush.rigid.before` get the
+      same geometry/uniform/texture-bind split as sorted terrain and shadow
+      submits. `runtime_frame_profile.mjs` carries those generic fields through
+      before/after deltas and sorts producer deltas by total `drawProfiledMs`
+      before falling back to sorted time and call count.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `node --check WebAssembly/harness/runtime_frame_profile.mjs`,
+      `git diff --check`, `npm --prefix WebAssembly run build:port:release`,
+      and a Mac M4 Chrome/Metal release profile copied to
+      `WebAssembly/artifacts/perf/runtime-frame-profile-producer-phases-final-mac.json`.
+      The run kept the renderer on `ANGLE Metal Renderer: Apple M4`, saved a
+      visible shell-map screenshot at
+      `WebAssembly/artifacts/screenshots/runtime-frame-profile-producer-phases-final-mac.png`,
+      measured 48.19 ms/frame wall over 60 profiled frames, 335.3 D3D8
+      draws/frame, 249.1 sorted-profiled draws/frame, and 2.914 ms/frame of
+      sorted-profiled bridge work. The all-draw producer table is now led by
+      `SortingRenderer.pool.draw.submit.before` (0.935 ms/frame total draw
+      profile), `HeightMap.tilePasses.tileDraw.before` (0.721),
+      `W3DVolumetricShadow.renderDynamicVolume.draw.before` (0.682),
+      `DX8MeshRenderer.flush.rigid.before` (0.673, non-sorted), and
+      `W3DVolumetricShadow.renderMeshVolume.draw.before` (0.483), with phase
+      costs split across geometry setup, render/transform uniforms, and terrain
+      texture binding.
+
 - [x] Use a minimal WebGL program for D3D8 depth/stencil-only draws. The browser
       D3D8 bridge now detects persistent-buffer indexed draws where all RGBA
       color writes are masked off, alpha test and implicit alpha cutout are
