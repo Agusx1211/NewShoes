@@ -464,6 +464,29 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `sortedDrawProfiledMs` from 2.696 to 2.659 ms/frame. Wall time remained
       noise-flat, so the broader submission/geometry frontier stays open.
 
+- [x] Batch wasm dynamic volumetric shadow draw replay in world space. The
+      browser-only shadow path now transforms dynamic shadow volume vertices to
+      world space during the existing first-pass batched VB upload, rewrites
+      indices relative to the combined batch, submits the whole batch once for
+      the stencil increment pass, and replays the same batch once for the
+      decrement pass when the dynamic-ring generation is still valid. The
+      original per-task object-space renderer remains the fallback for native
+      builds, missing mesh transforms, oversized batches, lock failures, and
+      generation-invalidated decrement passes.
+      Verified with `npm --prefix WebAssembly run build:port`, `npm --prefix
+      WebAssembly run build:port:release`, and a Mac M4 Chrome/Metal release
+      profile copied to
+      `WebAssembly/artifacts/perf/runtime-frame-profile-dynamic-shadow-world-batch-mac.json`.
+      The Mac harness screenshot
+      `WebAssembly/artifacts/screenshots/runtime-frame-profile-dynamic-shadow-world-batch-mac.png`
+      showed the shell-map/menu rendering normally. Compared with
+      `runtime-frame-profile-vao-key-release-mac.json`, the Mac release run
+      kept the renderer on `ANGLE Metal Renderer: Apple M4`, reduced
+      `W3DVolumetricShadow.renderDynamicVolume.draw.before` from 64.2 to
+      2.0 calls/frame and from 0.594 to 0.039 ms/frame of sorted profiled draw
+      work, reduced total browser D3D8 draws from 339.3 to 272.3/frame, and
+      reduced sorted draw-profiled calls from 253.1 to 186.2/frame.
+
 - [x] Extend D3D8 draw producer attribution to non-sorted draw calls. The
       opt-in producer table now records total `drawProfiledMs`, total
       calls/indices, and separate sorted-call counters for every D3D8 indexed

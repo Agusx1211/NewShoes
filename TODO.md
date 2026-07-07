@@ -353,14 +353,26 @@ misses from 122.8 to 62.4/frame and `sortedDrawDerivedMs` from 0.547 to
 VAO key strings with primitive-field cache lookup;
 `runtime-frame-profile-vao-key-release-mac.json` reduced
 `sortedDrawVertexAttribMs` from 0.266 to 0.202 ms/frame and
-`sortedDrawGeometryMs` from 0.733 to 0.672 ms/frame. The next PERF pass should
-use the producer table to reduce world-space submissions or residual
-draw-submit stalls. Do not revisit material, light, text-geometry,
-first-vertex VAO setup, transform comparison/allocation, draw-time harness
-bookkeeping, draw-cache key strings, sampler-key strings,
-adjacent/render-uniform key strings, browser derived-object cache misses, or
-vertex-attrib/VAO key strings. Broader shadow fidelity remains in the queued
-phased plan.
+`sortedDrawGeometryMs` from 0.733 to 0.672 ms/frame. A wasm-only dynamic
+volumetric shadow world-batch replay now transforms first-pass dynamic shadow
+volume vertices to world space during the existing batched upload, rewrites
+indices relative to the combined batch, and replays the batch once for each
+stencil pass when buffer generations remain valid. The Mac M4/Metal release
+profile `runtime-frame-profile-dynamic-shadow-world-batch-mac.json` kept the
+renderer on `ANGLE Metal Renderer: Apple M4`, kept the shell-map screenshot
+visible, reduced `W3DVolumetricShadow.renderDynamicVolume.draw.before` from
+64.2 to 2.0 calls/frame, and reduced total browser D3D8 draws from 339.3 to
+272.3/frame. The next PERF pass should use the producer table to reduce the
+remaining draw-side leaders: `SortingRenderer.pool.draw.submit.before`,
+`HeightMap.tilePasses.tileDraw.before`,
+`W3DProjectedShadow.renderShadows.meshFlush.before`, and static
+`W3DVolumetricShadow.renderMeshVolume.draw.before` submissions. Do not revisit
+material, light, text-geometry, first-vertex VAO setup, transform
+comparison/allocation, draw-time harness bookkeeping, draw-cache key strings,
+sampler-key strings, adjacent/render-uniform key strings, browser
+derived-object cache misses, vertex-attrib/VAO key strings, or dynamic
+volumetric shadow per-task draw replay. Broader shadow fidelity remains in the
+queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
