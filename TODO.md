@@ -355,6 +355,18 @@ symptom is temporal — NOT a single still.
       draw-side frontier (browserDrawIndexed per-draw scaffolding, projected
       shadow flush, shoreline) and land the structural per-frame draw command
       buffer rather than only per-uniform/per-subsystem caching.
+- [ ] **Intro/menu music never stops during gameplay** — the shell/menu
+      (intro) music keeps playing after a match starts instead of being stopped
+      when the in-game music track takes over, so it plays through gameplay
+      (likely overlapping or replacing the intended in-game music). Trace the
+      music state transition on match start: `GameMusic`/`AudioManager` should
+      stop the shell/menu track when entering `GAME_*` play and start the
+      in-game track. Check that the "stop current music" request actually
+      reaches the Web Audio stream (stream stop/drain policy), and that the
+      shell→game transition fires the stop. Distinct from the "sounds don't
+      play" bug — here a track fails to STOP. Verify by starting a skirmish in
+      the harness and confirming the menu track has stopped (state + audible
+      check) once in-game.
 
 ## Strategy pivot — real `init()` whole-program link (current focus)
 
