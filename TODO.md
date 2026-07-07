@@ -2796,6 +2796,45 @@ and then start with the PROFILE, not with any individual fix.
       help remaining ordered Render2D/text draws after the W3DDisplay GUI batch.
       Verify against shell-map goldens; re-measure
       `sortedDrawUniformMs`/`browserDrawIndexed` + particle-count-vs-FPS. (by Claude)
+- [ ] **Profile a LOADED skirmish (hundreds of units) — the real perf target,
+      never yet measured.** All perf work to date optimizes the ~9 ms shell-map
+      background; the scene that actually matters (an active battle with
+      hundreds of units, AI, pathfinding, projectiles, particles) has never
+      been profiled, so we do not know where its frame time goes — render vs
+      sim (`TheGameLogic->update`) vs AI/pathfind vs partition manager. This is
+      the PREREQUISITE that tells us whether large perf wins remain and where;
+      until it exists, shell-map micro-caching is tuning a scene that is already
+      fast (110 fps). Action: drive the harness to a populated mid-battle state
+      on the release build, capture the C++ phase breakdown (`TheGameLogic->
+      update` vs `TheDisplay->DRAW` vs the W3D render buckets) AND p95/p99 + max
+      frame time (not just average), and record the top buckets. Only then pick
+      the next structural target. (by Claude)
+- [ ] **WebGL2 instanced rendering for repeated meshes (draw-count collapse on
+      loaded scenes).** A real battle draws dozens/hundreds of identical
+      unit/structure models, each currently a separate draw. Use
+      `drawElementsInstanced` (WebGL2 core) to render all instances of one mesh
+      in a single call, feeding per-instance world matrix (+ house-color/team
+      tint) through an instanced vertex-attribute buffer instead of per-draw
+      uniforms. Requires the generated fixed-function shaders to read an
+      instance-matrix attribute rather than a uniform world/view/proj — real
+      shader surgery. Biggest expected win on LOADED skirmish scenes (many
+      repeated models), not the shell map. Composes with the per-frame command
+      buffer above: the buffer collects instances, then issues one instanced
+      draw per mesh. Verify on a loaded battle: draw count + wall time
+      before/after. (Promoted from the buried draw-side future note; by Claude)
+- [ ] **Eliminate per-draw JS allocation churn (GC-pause jitter).** The D3D8
+      draw bridge allocates ~2500 short-lived JS objects/frame — ~5 `Array.from`
+      matrix copies × ~500 draws (the EM_JS draw body in `wasm_d3d8_shim.cpp`
+      copies world/view/proj/tex0/tex1 into fresh JS arrays) plus per-draw state
+      objects. This garbage drives V8 GC pauses — a prime suspect for the "frame
+      time jumps around / no steady 30 fps" jitter (see the frame-stability
+      item). Fix: stop materializing arrays — read matrices as zero-copy
+      `HEAPF32.subarray` views (the buffer path already does this), reuse
+      preallocated scratch typed-arrays across draws, and skip rebuilding state
+      objects on cache hits. Largely subsumed by the per-frame command buffer
+      (one crossing, no per-draw arrays) but worth doing directly if the command
+      buffer slips. Verify with p95/p99 frame time + a DevTools memory timeline
+      showing reduced GC frequency. (by Claude)
 - [ ] **Optimize the real `HeightMap.render.tilePasses` bucket, not terrain
       sidecars**: recent Mac profiles prove base terrain tile passes remain a
       recurring real render bucket (`HeightMap.render.tilePasses.before`
