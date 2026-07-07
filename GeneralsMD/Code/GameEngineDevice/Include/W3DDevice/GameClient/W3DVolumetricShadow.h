@@ -47,6 +47,14 @@ struct W3DVolumetricShadowRenderTask : public W3DBufferManager::W3DRenderTask
 	W3DVolumetricShadow	*m_parentShadow;		///<main casting object to which this volume belongs.
 	UnsignedByte		m_meshIndex;		///<mesh index of volume within parent to render.
 	UnsignedByte		m_lightIndex;		///<light index of volume within parent to render.
+	Bool				m_dynamicBufferRangeValid;
+	Int					m_dynamicVertexStart;
+	Int					m_dynamicVertexCount;
+	Int					m_dynamicIndexStart;
+	Int					m_dynamicIndexCount;
+	Int					m_dynamicPolyCount;
+	Int					m_dynamicVertexGeneration;
+	Int					m_dynamicIndexGeneration;
 };
 
 // ShadowManager -------------------------------------------------------------
@@ -65,7 +73,8 @@ public:
 	void removeAllShadows(void); ///< Remove all shadows.
 	/// queues up a dynamic shadow caster for rendering - only used internally by shadow system.
 	void addDynamicShadowTask(W3DVolumetricShadowRenderTask *task)
-	{	W3DBufferManager::W3DRenderTask *oldTask=m_dynamicShadowVolumesToRender;
+	{	task->m_dynamicBufferRangeValid = FALSE;
+		W3DBufferManager::W3DRenderTask *oldTask=m_dynamicShadowVolumesToRender;
 		m_dynamicShadowVolumesToRender=task;
 		m_dynamicShadowVolumesToRender->m_nextTask=oldTask;
 	}
@@ -128,11 +137,11 @@ class W3DVolumetricShadow	: public Shadow
 		void updateMeshVolume(Int meshIndex, Int lightIndex, const Matrix3D *meshXform, const AABoxClass &meshBox, float floorZ);///<update shadow volume of this mesh.
 
 		// rendering interface
-		void RenderVolume(Int meshIndex, Int lightIndex);	///<renders a specifc volume from the model hierarchy
+		void RenderVolume(Int meshIndex, Int lightIndex, Bool reuseDynamicBuffer = FALSE);	///<renders a specifc volume from the model hierarchy
 		///render single mesh which could belong to a larger hierarchy (optimized for static meshes).
 		void RenderMeshVolume(Int meshIndex, Int lightIndex, const Matrix3D *meshXform);
 		///render single mesh which could belong to a larger hierarchy (optimized for animated meshes).
-		void RenderDynamicMeshVolume(Int meshIndex, Int lightIndex, const Matrix3D *meshXform);
+		void RenderDynamicMeshVolume(Int meshIndex, Int lightIndex, const Matrix3D *meshXform, Bool reuseUploadedRange = FALSE);
 		void RenderMeshVolumeBounds(Int meshIndex, Int lightIndex, const Matrix3D *meshXform);	///<render bounding volume around shadow volume - for debug use.
 
 		void setLightPosHistory(Int lightIndex, Int meshIndex, Vector3 &pos) {m_lightPosHistory[lightIndex][meshIndex]=pos;}	///<updates the last position of light

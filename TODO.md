@@ -203,9 +203,14 @@ buffer updates, 267.6 KB uploaded, 0.075 ms `bufferSubDataMs`, and
 terrain extra-blend then dropped
 `HeightMap.render.extraBlend.before` from 48.1 KB to 2.4 KB and total measured
 one-frame upload traffic to 222.3 KB in
-`runtime-frame-profile-extra-blend-exact-ranges-mac.json`. The next upload
-byte-reduction pass should start with the remaining leading producers
-(`W3DWater.render.renderWater.before`, volumetric shadow VB/IB unlock,
+`runtime-frame-profile-extra-blend-exact-ranges-mac.json`. Dynamic volumetric
+shadow rendering now replays the first stencil-pass dynamic VB/IB ranges during
+the decrement pass when no dynamic-ring discard has invalidated them; the Mac
+M4/Metal profile `runtime-frame-profile-dynamic-shadow-replay-mac.json`
+measured 79 buffer updates, 186.6 KB uploaded, 0.035 ms `bufferSubDataMs`, and
+volumetric shadow VB/IB uploads down to 29+29 updates / 23.3 KB + 11.7 KB. The
+next upload byte-reduction pass should start with the remaining leading
+producers (`W3DWater.render.renderWater.before`,
 `HeightMap.render.shoreLines.before`, and
 `W3DWaterTracks.flush.batchUnlock.before`) before broader JS-side
 `NOOVERWRITE`, orphaning, or checksum changes. The user-reported shadow
@@ -2605,8 +2610,12 @@ and then start with the PROFILE, not with any individual fix.
       `runtime-frame-profile-extra-blend-exact-ranges-mac.json` dropped total
       measured one-frame upload traffic to 222.3 KB and
       `HeightMap.render.extraBlend.before` from 48.1 KB to 2.4 KB. Next
-      concrete frontier: remaining water surface bytes, volumetric shadow
-      VB/IB unlocks, shoreline index ranges, and water-track batch unlock.
+      dynamic shadow replay removed the redundant second-pass shadow geometry
+      uploads: `runtime-frame-profile-dynamic-shadow-replay-mac.json` measured
+      79 buffer updates, 186.6 KB/frame uploaded, and dynamic shadow VB/IB
+      unlocks down to 29+29 updates / 23.3 KB + 11.7 KB. Next concrete
+      frontier: remaining water surface bytes, shoreline index ranges, and
+      water-track batch unlock.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing

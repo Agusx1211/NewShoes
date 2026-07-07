@@ -55,6 +55,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       On Mac Metal total one-frame upload traffic dropped from 267.6 KB to
       222.3 KB, and `HeightMap.render.extraBlend.before` dropped from 48.1 KB
       to 2.4 KB while staying at the same two buffer update calls.
+- [x] Replay dynamic volumetric shadow uploads for the second stencil pass.
+      Dynamic shadow geometry is generated once per frame but rendered twice
+      for stencil increment/decrement; the decrement pass previously re-locked
+      and re-uploaded the same dynamic VB/IB ranges. Each dynamic shadow render
+      task now caches its first-pass ring-buffer vertex/index ranges, guarded by
+      dynamic-buffer discard generations, and the decrement pass reuses those
+      ranges when still valid while falling back to the original upload path if
+      a discard invalidates them. Verified with `git diff --check`, `npm
+      --prefix WebAssembly run build:port`, `npm --prefix WebAssembly run
+      build:port:release`, a local producer profile, and a Mac M4/Metal
+      producer profile copied to
+      `WebAssembly/artifacts/perf/runtime-frame-profile-dynamic-shadow-replay-mac.json`.
+      On Mac Metal total one-frame upload traffic dropped from 222.3 KB to
+      186.6 KB, buffer updates dropped from 137 to 79, and dynamic shadow
+      VB/IB uploads dropped from 58+58 updates / 46.6 KB + 23.3 KB to 29+29
+      updates / 23.3 KB + 11.7 KB.
 
 ## User-reported play bugs (2026-07-06 session)
 
