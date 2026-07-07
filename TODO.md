@@ -451,6 +451,26 @@ Reported by the project owner on the Mac GPU build. Reproduce in the harness and
 verify each fix with a real, **multi-frame** screenshot / state check where the
 symptom is temporal — NOT a single still.
 
+- [ ] **Volumetric shadows broke after the shadow-volume batching commits (REGRESSION)** —
+      project owner reports shadows are now totally broken in live play. Regression
+      window is Codex's volumetric shadow "world-batch replay" work: `0de33aa6`
+      (Batch wasm dynamic shadow volume draws) and `667cd7ec` (Batch wasm static
+      shadow volume draws), on top of the earlier per-task replay/batch changes,
+      all in `GeneralsMD/.../W3DDevice/GameClient/Shadow/W3DVolumetricShadow.cpp`.
+      These pre-transform each volume's first-pass vertices into a shared world
+      buffer, rewrite indices relative to the combined batch, and replay the batch
+      once per stencil pass. **Likely cause:** stencil shadow volumes need
+      per-volume two-pass increment/decrement counting and per-volume state
+      (cull/transform); a merged world-batch replay can lose that per-volume
+      separation and corrupt the stencil result → shadows vanish or render wrong.
+      **Why it was missed:** the only verification Codex recorded (TODO.md
+      ~356-372) was "kept the shell-map screenshot visible" on Mac Metal plus
+      draw-call-count reductions — the shell map is not a live skirmish and a
+      non-black screenshot does NOT validate shadow correctness. ACTION: reproduce
+      in a real **multi-frame skirmish** screenshot with units casting shadows; if
+      broken, revert `0de33aa6` + `667cd7ec` (and re-check the earlier per-task
+      replay) or fix the per-volume stencil replay so increment/decrement passes
+      stay correct. Do not accept "shell-map visible" as the shadow acceptance check.
 - [ ] **Broaden right-click context-target order coverage beyond docking** —
       right-click ground move and GLA worker right-click supply docking now work
       in the browser alternate-mouse path (see DONE). Keep extending the
