@@ -486,6 +486,10 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       2.0 calls/frame and from 0.594 to 0.039 ms/frame of sorted profiled draw
       work, reduced total browser D3D8 draws from 339.3 to 272.3/frame, and
       reduced sorted draw-profiled calls from 253.1 to 186.2/frame.
+      **REVERTED 2026-07-07:** live skirmish later showed the shell-map-only
+      proof was insufficient and this world-batch replay could break visible
+      gameplay shadows. The accepted path restores per-volume `RenderVolume`
+      stencil replay while keeping the earlier dynamic upload batching.
 
 - [x] Batch wasm static volumetric shadow draw replay in world space. The
       browser-only shadow path now collects visible static shadow volume tasks,
@@ -511,6 +515,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       sorted draw-profiled calls from 186.2 to 143.8/frame. The remaining
       measured draw-side leaders are sorted renderer submit replay, heightmap
       tile draws, and projected-shadow mesh flushes.
+      **REVERTED 2026-07-07:** live skirmish later showed the shell-map-only
+      proof was insufficient and this world-batch replay could break visible
+      gameplay shadows. Static shadows are back on per-volume `RenderVolume`
+      increment/decrement replay; future batching work must preserve that
+      stencil behavior and pass a real multi-frame skirmish screenshot/state
+      check.
 
 - [x] Split the projected-shadow mesh-flush draw bucket into DX8 mesh-renderer
       phases. `DX8MeshRendererClass::Flush()` now emits Emscripten-only,
@@ -1078,11 +1088,10 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `Data\Audio\Tracks\USA_11.mp3` through
       `AudioBufferSourceNode -> GainNode -> musicGainNode ->
       AudioDestinationNode` with no stream error.
-- [x] Fix live skirmish shadow flicker/breakage. **[REOPENED 2026-07-07 —
-      PREMATURE: in real play shadows mostly do not render at all; this `[x]`
-      was verified only by a single one-frame screenshot showing the dark blob
-      gone, which cannot verify a temporal flicker/absence bug. See TODO.md
-      "User-reported play bugs (2026-07-07 session)".]** The browser D3D8 bridge
+- [x] Fix live skirmish shadow flicker/breakage. **[REOPENED 2026-07-07,
+      then closed by the follow-up entry below: in real play shadows mostly did
+      not render after the later world-batch replay work, so the original
+      one-frame proof was incomplete.]** The browser D3D8 bridge
       now masks D3D8 stencil reference/read/write masks to the actual WebGL
       stencil-bit width before `gl.stencilFunc`, `gl.stencilMask`, and stencil
       clears. This preserves the original D3D8 masked-test behavior for the
@@ -1104,6 +1113,33 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       205 with active skirmish state, the applied shadow stencil state was
       `ref=128`, `mask=192`, `writeMask=255`, and the screenshot no longer
       showed the large invalid dark shadow blob over the local base.
+- [x] Restore live skirmish shadows after the rejected shadow world-batch
+      replay. The dynamic and static world-space shadow volume batch paths from
+      `0de33aa6` and `667cd7ec` are removed from
+      `W3DVolumetricShadowManager`, returning static and dynamic shadow volumes
+      to the original per-volume `RenderVolume()` stencil increment/decrement
+      replay with CW/CCW cull changes. The earlier dynamic VB/IB upload batching
+      and second-pass buffer reuse remain intact, so the rollback is scoped to
+      the correctness-breaking merged world draw replay.
+      Verified with `git diff --check`, `npm --prefix WebAssembly run
+      build:port`, `npm --prefix WebAssembly run build:port:release`, and a
+      Mac M4/Metal release skirmish run:
+      `SKIRMISH_START_DIST=dist-release
+      SKIRMISH_START_MAP='maps\tournament desert\tournament desert.map'
+      SKIRMISH_START_POST_ACTIVE_FRAMES=180
+      SKIRMISH_START_EXPECT_SURVIVE=1
+      SKIRMISH_START_CAPTURE_D3D8_HISTORY=1 ... node
+      harness/skirmish_start_smoke.mjs`. The renderer probe reported
+      `ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)`.
+      The capture
+      `WebAssembly/artifacts/skirmish/skirmish-shadow-worldbatch-revert.json`
+      reached active Tournament Desert gameplay, advanced 180 post-active
+      frames, and recorded 14 color-write-disabled stencil increment draws
+      (`stencilPass=7`, `cullMode=2`), 14 matching decrement draws
+      (`stencilPass=5`, `cullMode=3`), plus two screen-space composite quads.
+      The screenshot
+      `WebAssembly/artifacts/screenshots/skirmish-shadow-worldbatch-revert.png`
+      shows visible structure and infantry shadows in the live GLA start base.
 - [x] Fix the live skirmish minimap terrain render. The browser D3D8 caps now
       stop advertising `D3DFMT_R8G8B8` as a supported texture format, so
       original `W3DRadar::initializeTextureFormats()` selects `X8R8G8B8`

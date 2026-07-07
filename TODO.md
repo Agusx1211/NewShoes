@@ -353,40 +353,29 @@ misses from 122.8 to 62.4/frame and `sortedDrawDerivedMs` from 0.547 to
 VAO key strings with primitive-field cache lookup;
 `runtime-frame-profile-vao-key-release-mac.json` reduced
 `sortedDrawVertexAttribMs` from 0.266 to 0.202 ms/frame and
-`sortedDrawGeometryMs` from 0.733 to 0.672 ms/frame. A wasm-only dynamic
-volumetric shadow world-batch replay now transforms first-pass dynamic shadow
-volume vertices to world space during the existing batched upload, rewrites
-indices relative to the combined batch, and replays the batch once for each
-stencil pass when buffer generations remain valid. The Mac M4/Metal release
-profile `runtime-frame-profile-dynamic-shadow-world-batch-mac.json` kept the
-renderer on `ANGLE Metal Renderer: Apple M4`, kept the shell-map screenshot
-visible, reduced `W3DVolumetricShadow.renderDynamicVolume.draw.before` from
-64.2 to 2.0 calls/frame, and reduced total browser D3D8 draws from 339.3 to
-272.3/frame. Static volumetric shadow volume replay now uses the same
-browser-only world-batch strategy with an enlarged wasm shadow ring and
-generation-checked decrement replay. The Mac M4/Metal release profile
-`runtime-frame-profile-static-shadow-world-batch-mac.json` kept the renderer on
-`ANGLE Metal Renderer: Apple M4`, kept the shell-map screenshot visible, reduced
-static `W3DVolumetricShadow.renderMeshVolume.draw.before` from 47.8 to 2.0
-calls/frame and from 0.444 to 0.035 ms/frame of attributed draw work, reduced
-total browser D3D8 draws from 272.3 to 227.7/frame, and reduced sorted
-draw-profiled calls from 186.2 to 143.8/frame. A follow-up mesh-flush split
-showed the old `W3DProjectedShadow.renderShadows.meshFlush.before` producer is
+`sortedDrawGeometryMs` from 0.733 to 0.672 ms/frame. The later dynamic/static
+volumetric shadow world-batch replay profiles were invalidated by live-skirmish
+shadow correctness: those commits were shell-map-only verified, broke visible
+gameplay shadows, and have been reverted back to per-volume `RenderVolume`
+stencil replay while preserving the earlier dynamic upload batching. A follow-up
+mesh-flush split, captured before that rollback, showed the old
+`W3DProjectedShadow.renderShadows.meshFlush.before` producer is
 ordinary `DX8MeshRenderer.flush.rigid.before` submission during the renderer
 flush: `runtime-frame-profile-projected-meshflush-split-mac.json` measured 48.37
 calls/frame, 13.8K indices/frame, and 0.373 ms/frame there, while delayed
 material-pass / projected receiver clipping markers did not show as hot rows.
-The next PERF pass should use the producer table to reduce the remaining
-draw-side leaders: `SortingRenderer.pool.draw.submit.before`,
-`HeightMap.tilePasses.tileDraw.before`, and `DX8MeshRenderer.flush.rigid.before`;
-sampled C++ buckets also still show intermittent shoreline and rigid mesh-flush
-spikes. Do not revisit material, light, text-geometry, first-vertex VAO setup,
-transform comparison/allocation, draw-time harness bookkeeping, draw-cache key
-strings, sampler-key strings, adjacent/render-uniform key strings, browser
-derived-object cache misses, vertex-attrib/VAO key strings, dynamic volumetric
-shadow per-task draw replay, static volumetric shadow per-task draw replay, or
+The next PERF pass should first recapture a Mac M4/Metal release frame profile
+after the shadow rollback, then use the producer table to reduce the remaining
+draw-side leaders: likely `SortingRenderer.pool.draw.submit.before`,
+`HeightMap.tilePasses.tileDraw.before`, `DX8MeshRenderer.flush.rigid.before`,
+and any newly visible volumetric-shadow replay cost. Do not revisit material,
+light, text-geometry, first-vertex VAO setup, transform comparison/allocation,
+draw-time harness bookkeeping, draw-cache key strings, sampler-key strings,
+adjacent/render-uniform key strings, browser derived-object cache misses,
+vertex-attrib/VAO key strings, the reverted shadow world-batch replay, or
 projected-shadow receiver per-polygon clipping unless a new profile makes it
-hot. Broader shadow fidelity remains in the queued phased plan.
+hot and the fix passes a real multi-frame skirmish shadow screenshot/state
+check. Broader shadow fidelity remains in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
@@ -456,26 +445,6 @@ Reported by the project owner on the Mac GPU build. Reproduce in the harness and
 verify each fix with a real, **multi-frame** screenshot / state check where the
 symptom is temporal — NOT a single still.
 
-- [ ] **Volumetric shadows broke after the shadow-volume batching commits (REGRESSION)** —
-      project owner reports shadows are now totally broken in live play. Regression
-      window is Codex's volumetric shadow "world-batch replay" work: `0de33aa6`
-      (Batch wasm dynamic shadow volume draws) and `667cd7ec` (Batch wasm static
-      shadow volume draws), on top of the earlier per-task replay/batch changes,
-      all in `GeneralsMD/.../W3DDevice/GameClient/Shadow/W3DVolumetricShadow.cpp`.
-      These pre-transform each volume's first-pass vertices into a shared world
-      buffer, rewrite indices relative to the combined batch, and replay the batch
-      once per stencil pass. **Likely cause:** stencil shadow volumes need
-      per-volume two-pass increment/decrement counting and per-volume state
-      (cull/transform); a merged world-batch replay can lose that per-volume
-      separation and corrupt the stencil result → shadows vanish or render wrong.
-      **Why it was missed:** the only verification Codex recorded (TODO.md
-      ~356-372) was "kept the shell-map screenshot visible" on Mac Metal plus
-      draw-call-count reductions — the shell map is not a live skirmish and a
-      non-black screenshot does NOT validate shadow correctness. ACTION: reproduce
-      in a real **multi-frame skirmish** screenshot with units casting shadows; if
-      broken, revert `0de33aa6` + `667cd7ec` (and re-check the earlier per-task
-      replay) or fix the per-volume stencil replay so increment/decrement passes
-      stay correct. Do not accept "shell-map visible" as the shadow acceptance check.
 - [ ] **iPad/iOS: click-drag selects the canvas instead of dragging in-game** —
       on iPad Safari/iOS, a touch drag on the game canvas triggers the browser's
       text/element selection (highlighting the canvas) instead of a clean in-game

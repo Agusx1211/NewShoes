@@ -55,16 +55,6 @@ struct W3DVolumetricShadowRenderTask : public W3DBufferManager::W3DRenderTask
 	Int					m_dynamicPolyCount;
 	Int					m_dynamicVertexGeneration;
 	Int					m_dynamicIndexGeneration;
-#ifdef __EMSCRIPTEN__
-	Bool				m_dynamicWorldBatchMember;
-	Bool				m_dynamicWorldBatchHead;
-	Int					m_dynamicWorldBatchVertexStart;
-	Int					m_dynamicWorldBatchVertexCount;
-	Int					m_dynamicWorldBatchIndexStart;
-	Int					m_dynamicWorldBatchPolyCount;
-	Int					m_dynamicWorldBatchVertexGeneration;
-	Int					m_dynamicWorldBatchIndexGeneration;
-#endif
 };
 
 // ShadowManager -------------------------------------------------------------
@@ -84,16 +74,6 @@ public:
 	/// queues up a dynamic shadow caster for rendering - only used internally by shadow system.
 	void addDynamicShadowTask(W3DVolumetricShadowRenderTask *task)
 	{	task->m_dynamicBufferRangeValid = FALSE;
-#ifdef __EMSCRIPTEN__
-		task->m_dynamicWorldBatchMember = FALSE;
-		task->m_dynamicWorldBatchHead = FALSE;
-		task->m_dynamicWorldBatchVertexStart = 0;
-		task->m_dynamicWorldBatchVertexCount = 0;
-		task->m_dynamicWorldBatchIndexStart = 0;
-		task->m_dynamicWorldBatchPolyCount = 0;
-		task->m_dynamicWorldBatchVertexGeneration = 0;
-		task->m_dynamicWorldBatchIndexGeneration = 0;
-#endif
 		W3DBufferManager::W3DRenderTask *oldTask=m_dynamicShadowVolumesToRender;
 		m_dynamicShadowVolumesToRender=task;
 		m_dynamicShadowVolumesToRender->m_nextTask=oldTask;
@@ -111,36 +91,6 @@ protected:
 		// to render the stencil buffer polygon to the screen
 		void renderStencilShadows( void );
 		Int renderDynamicShadowTasks(void);
-#ifdef __EMSCRIPTEN__
-		struct StaticShadowWorldBatch
-		{
-			Bool valid;
-			Int vertexStart;
-			Int vertexCount;
-			Int indexStart;
-			Int polyCount;
-			Int taskCount;
-			Int vertexGeneration;
-			Int indexGeneration;
-
-			StaticShadowWorldBatch(void) :
-				valid(FALSE),
-				vertexStart(0),
-				vertexCount(0),
-				indexStart(0),
-				polyCount(0),
-				taskCount(0),
-				vertexGeneration(0),
-				indexGeneration(0)
-			{
-			}
-		};
-
-		const Matrix3D *dynamicShadowTaskMeshTransform(W3DVolumetricShadowRenderTask *task) const;
-		void renderDynamicShadowWorldBatch(Int vertexStart, Int vertexCount, Int indexStart, Int polyCount);
-		Bool buildAndRenderStaticShadowWorldBatch(StaticShadowWorldBatch &batch);
-		void renderStaticShadowWorldBatchDraw(const StaticShadowWorldBatch &batch);
-#endif
 
 		W3DVolumetricShadow *m_shadowList;
 		W3DVolumetricShadowRenderTask *m_dynamicShadowVolumesToRender;
@@ -189,9 +139,6 @@ class W3DVolumetricShadow	: public Shadow
 
 		// rendering interface
 		void RenderVolume(Int meshIndex, Int lightIndex, Bool reuseDynamicBuffer = FALSE);	///<renders a specifc volume from the model hierarchy
-#ifdef __EMSCRIPTEN__
-		const Matrix3D *dynamicShadowMeshTransform(Int meshIndex) const;
-#endif
 		///render single mesh which could belong to a larger hierarchy (optimized for static meshes).
 		void RenderMeshVolume(Int meshIndex, Int lightIndex, const Matrix3D *meshXform);
 		///render single mesh which could belong to a larger hierarchy (optimized for animated meshes).
