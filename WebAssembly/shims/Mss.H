@@ -206,6 +206,26 @@ static inline std::uintptr_t MSSInvalidHandle()
 	return static_cast<std::uintptr_t>(-1);
 }
 
+static inline F32 MSSBrowserNormalizeVolume(F32 volume)
+{
+	if (volume != volume || volume <= 0.0f) {
+		return 0.0f;
+	}
+	if (volume <= 1.0f) {
+		return volume;
+	}
+	if (volume >= 127.0f) {
+		return 1.0f;
+	}
+	return volume / 127.0f;
+}
+
+static inline S32 MSSBrowserVolumeToMilesInteger(F32 volume)
+{
+	const F32 normalized = MSSBrowserNormalizeVolume(volume);
+	return static_cast<S32>(normalized * 127.0f + 0.5f);
+}
+
 struct MSSBrowserSampleState
 {
 	bool allocated = false;
@@ -291,6 +311,7 @@ struct MSSBrowser3DSampleState
 	S32 status = SMP_DONE;
 	S32 user_data[8] = {};
 	S32 volume = 127;
+	F32 volume_float = 1.0f;
 	S32 loop_count = 1;
 	U32 offset = 0;
 	U32 length = 0;
@@ -490,13 +511,14 @@ static inline S32 MSSBrowserNotify3DSampleStart(const MSSBrowser3DSampleState &s
 				handle: $0 >>> 0,
 				dataPtr: $1 >>> 0,
 				volume: $2 | 0,
-				x: Number($3),
-				y: Number($4),
-				z: Number($5),
-				playbackRate: $6 | 0,
-				loopCount: $7 | 0,
-				minDistance: Number($8),
-				maxDistance: Number($9),
+				volumeFloat: Number($3),
+				x: Number($4),
+				y: Number($5),
+				z: Number($6),
+				playbackRate: $7 | 0,
+				loopCount: $8 | 0,
+				minDistance: Number($9),
+				maxDistance: Number($10),
 			}, Module.HEAPU8) ? 1 : 0;
 		} catch (error) {
 			console.error("cncPortMss3DSampleStart failed", error);
@@ -506,6 +528,7 @@ static inline S32 MSSBrowserNotify3DSampleStart(const MSSBrowser3DSampleState &s
 		static_cast<unsigned int>(sample.handle),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(sample.file_data)),
 		sample.volume,
+		static_cast<double>(sample.volume_float),
 		static_cast<double>(sample.position.x),
 		static_cast<double>(sample.position.y),
 		static_cast<double>(sample.position.z),
@@ -597,8 +620,9 @@ static inline S32 MSSBrowserNotifyStreamStart(const MSSBrowserStreamState &strea
 				handle: $0 >>> 0,
 				filename: UTF8ToString($1),
 				volume: $2 | 0,
-				loopCount: $3 | 0,
-				playbackRate: $4 | 0,
+				volumeFloat: Number($3),
+				loopCount: $4 | 0,
+				playbackRate: $5 | 0,
 			} ) ? 1 : 0;
 		} catch (error) {
 			console.error("cncPortMssStreamStart failed", error);
@@ -608,6 +632,7 @@ static inline S32 MSSBrowserNotifyStreamStart(const MSSBrowserStreamState &strea
 		static_cast<unsigned int>(stream.handle),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(stream.filename)),
 		stream.volume,
+		static_cast<double>(stream.volume_float),
 		stream.loop_count,
 		stream.playback_rate);
 #else
@@ -1398,11 +1423,12 @@ static inline void AIL_end_3D_sample(H3DSAMPLE sample)
 		}
 	}
 }
-static inline void AIL_set_3D_sample_volume(H3DSAMPLE sample, S32 volume)
+static inline void AIL_set_3D_sample_volume(H3DSAMPLE sample, F32 volume)
 {
 	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
 	if (state != nullptr) {
-		state->volume = volume;
+		state->volume_float = MSSBrowserNormalizeVolume(volume);
+		state->volume = MSSBrowserVolumeToMilesInteger(volume);
 	}
 }
 static inline S32 AIL_3D_sample_volume(H3DSAMPLE sample)
@@ -1738,6 +1764,7 @@ static inline void AIL_set_stream_volume(HSTREAM stream, S32 volume)
 	MSSBrowserStreamState *state = MSSBrowserFindStream(stream);
 	if (state != nullptr) {
 		state->volume = volume;
+		state->volume_float = MSSBrowserNormalizeVolume(static_cast<F32>(volume));
 	}
 }
 static inline S32 AIL_stream_volume(HSTREAM stream)
@@ -1820,7 +1847,7 @@ static inline void AIL_set_stream_volume_pan(HSTREAM stream, F32 volume, F32 pan
 {
 	MSSBrowserStreamState *state = MSSBrowserFindStream(stream);
 	if (state != nullptr) {
-		state->volume_float = volume;
+		state->volume_float = MSSBrowserNormalizeVolume(volume);
 		state->pan_float = pan;
 	}
 }

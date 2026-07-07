@@ -2177,7 +2177,7 @@ function cncPortMss3DSampleStart(payload, heapu8) {
     const z = Number(payload.z ?? 0);
     panner.setPosition(x, y, z);
 
-    const volume = clamp01(Number((payload.volume ?? 127) / 127));
+    const volume = clamp01(Number(payload.volumeFloat ?? ((payload.volume ?? 127) / 127)));
     gain.gain.value = volume;
 
     source.buffer = createWebAudioBufferFromDecoded(context, {
@@ -2368,7 +2368,7 @@ async function _startMssStreamAsync(payload) {
   }
 
   const handle = Number(payload?.handle ?? 0);
-  const volume = clamp01(Number((payload.volume ?? 127) / 127));
+  const volume = clamp01(Number(payload.volumeFloat ?? ((payload.volume ?? 127) / 127)));
   const loopCount = Number(payload.loopCount ?? 1);
 
   // Register pending start for stop-before-start race guard.

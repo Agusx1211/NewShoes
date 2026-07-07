@@ -31,6 +31,7 @@
 #include "Common/AudioEventInfo.h"
 #include "Common/AudioEventRTS.h"
 #include "Common/AudioHandleSpecialValues.h"
+#include "Common/AudioSettings.h"
 #include "Common/FunctionLexicon.h"
 #include "Common/GameAudio.h"
 #include "Common/GameMemory.h"
@@ -5580,6 +5581,36 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_play_audio_even
 	json += ",\"audioType\":\"" + json_escape(audio_type_name(info->m_soundType)) + "\"";
 	json += ",\"soundTypeBits\":" + std::to_string(static_cast<unsigned long long>(info->m_type));
 	json += ",\"controlBits\":" + std::to_string(static_cast<unsigned long long>(info->m_control));
+	json += ",\"eventVolume\":" + std::to_string(event.getVolume());
+	json += ",\"eventInfoVolume\":" + std::to_string(info->m_volume);
+	json += ",\"eventInfoVolumeShift\":" + std::to_string(info->m_volumeShift);
+	json += ",\"audioMixer\":{";
+	json += "\"music\":" + std::to_string(TheAudio->getVolume(AudioAffect_Music));
+	json += ",\"sound\":" + std::to_string(TheAudio->getVolume(AudioAffect_Sound));
+	json += ",\"sound3D\":" + std::to_string(TheAudio->getVolume(AudioAffect_Sound3D));
+	json += ",\"speech\":" + std::to_string(TheAudio->getVolume(AudioAffect_Speech));
+	json += ",\"musicOn\":";
+	json += TheAudio->isOn(AudioAffect_Music) ? "true" : "false";
+	json += ",\"soundOn\":";
+	json += TheAudio->isOn(AudioAffect_Sound) ? "true" : "false";
+	json += ",\"sound3DOn\":";
+	json += TheAudio->isOn(AudioAffect_Sound3D) ? "true" : "false";
+	json += ",\"speechOn\":";
+	json += TheAudio->isOn(AudioAffect_Speech) ? "true" : "false";
+	json += "}";
+	const AudioSettings *audio_settings = TheAudio->getAudioSettings();
+	if (audio_settings != NULL) {
+		json += ",\"audioSettings\":{";
+		json += "\"defaultSound\":" + std::to_string(audio_settings->m_defaultSoundVolume);
+		json += ",\"defaultSound3D\":" + std::to_string(audio_settings->m_default3DSoundVolume);
+		json += ",\"defaultSpeech\":" + std::to_string(audio_settings->m_defaultSpeechVolume);
+		json += ",\"defaultMusic\":" + std::to_string(audio_settings->m_defaultMusicVolume);
+		json += ",\"preferredSound\":" + std::to_string(audio_settings->m_preferredSoundVolume);
+		json += ",\"preferredSound3D\":" + std::to_string(audio_settings->m_preferred3DSoundVolume);
+		json += ",\"preferredSpeech\":" + std::to_string(audio_settings->m_preferredSpeechVolume);
+		json += ",\"preferredMusic\":" + std::to_string(audio_settings->m_preferredMusicVolume);
+		json += "}";
+	}
 	json += ",\"positional\":";
 	json += event.isPositionalAudio() ? "true" : "false";
 	json += ",\"filename\":\"" + json_escape(filename.str()) + "\"";

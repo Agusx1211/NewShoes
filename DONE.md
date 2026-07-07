@@ -10,6 +10,30 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## User-reported play bugs (2026-07-07 session)
 
+- [x] Fix silent direct real-engine Web Audio events caused by MSS volume ABI
+      truncation. The browser MSS 3D sample shim now accepts normalized `F32`
+      volumes from the original `MilesAudioManager` path, preserves the legacy
+      0..127 integer readback, and sends `volumeFloat` through the 3D sample
+      and stream start bridges. The Web Audio bridge now prefers that normalized
+      value, so real engine-driven 3D SFX, 2D SFX, speech, and music schedule
+      with audible gain instead of decoded-but-silent sources. The real-audio
+      smoke now asserts `> 0` volume on all direct-event sample/stream paths and
+      can explicitly target `dist-release` with `REAL_AUDIO_DIST_DIR`.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `node --check WebAssembly/harness/real_audio_event_smoke.mjs`,
+      `node WebAssembly/tools/verify_audio_sample_start_frontier.mjs`,
+      `node WebAssembly/tools/verify_mss_3d_sample_lifecycle_contract.mjs`,
+      `node WebAssembly/tools/verify_mss_stream_lifecycle_contract.mjs`,
+      `node WebAssembly/tools/verify_audio_3d_position_frontier.mjs`,
+      `node WebAssembly/tools/verify_audio_music_manager_frontier.mjs`,
+      `node WebAssembly/tools/verify_miles_audio_volume_frontier.mjs`,
+      `node WebAssembly/tools/verify_audio_3d_zoom_volume_frontier.mjs`,
+      `npm --prefix WebAssembly run build:port`,
+      `EXPECT_WASM=1 node WebAssembly/harness/real_audio_event_smoke.mjs`,
+      `npm --prefix WebAssembly run build:port:release`, and
+      `EXPECT_WASM=1 REAL_AUDIO_DIST_DIR=dist-release node
+      WebAssembly/harness/real_audio_event_smoke.mjs`.
+
 - [x] Fix the Miles 2D SFX/voice pool-preemption list erase. When the 2D sample
       pool was exhausted, `MilesAudioManager::killLowestPrioritySoundImmediately()`
       correctly released the selected lower-priority 2D sound but then erased

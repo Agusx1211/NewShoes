@@ -389,6 +389,11 @@ reproduce in the harness and verify each fix with a screenshot / state check.
       fallback released a 2D sound but erased the 3D playing list. Keep this
       open for natural gameplay SFX/EVA/unit-speech verification and a
       pool-pressure harness that proves preempted 2D handles are reused.
+      2026-07-07: fixed the direct-event MSS volume ABI path where normalized
+      3D sample volumes were truncated to integer zero before Web Audio; the
+      direct real-audio gate now proves audible 3D SFX, 2D SFX, speech, and
+      music in debug and release. Keep this open for naturally triggered
+      skirmish/EVA/unit audio and sustained completion-drain verification.
       Related: [[frontier-2026-07-05-skirmish-sweep]] audio bug.
 - [ ] **Text renders truncated** — some strings show only one letter or a few
       letters instead of the full text. Investigate the text/font glyph

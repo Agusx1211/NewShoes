@@ -5,8 +5,8 @@
 // source files only, with no browser, build, dist, or asset artifacts.
 //
 // Verified facts:
-//   1. WebAssembly/shims/Mss.H declares the stateful stream handle storage and
-//      AIL stream lifecycle surface.
+//   1. WebAssembly/shims/Mss.H declares the stateful stream handle storage,
+//      normalized browser volume payload, and AIL stream lifecycle surface.
 //   2. WebAssembly/src/wasm_mss_stream_lifecycle_probe.cpp exposes
 //      cnc_port_probe_mss_stream_lifecycle, calls representative stream APIs
 //      in source order, and emits the expected not-yet-playback JSON contract.
@@ -67,30 +67,31 @@ function main() {
   const bridge = readSourceLines(SOURCES.bridge);
 
   const mssSurface = [
-    { name: "MSSBrowserStreamState", line: 215, regex: /\bstruct\s+MSSBrowserStreamState\b/ },
-    { name: "MSSBrowserFindStream", line: 357, regex: /\bMSSBrowserStreamState\s*\*\s*MSSBrowserFindStream\s*\(/ },
-    { name: "MSSBrowserAllocateStream", line: 372, regex: /\bMSSBrowserStreamState\s*\*\s*MSSBrowserAllocateStream\s*\(/ },
-    { name: "AIL_open_stream", line: 1040, regex: /\bHSTREAM\s+AIL_open_stream\s*\(/ },
-    { name: "AIL_open_stream_by_sample", line: 1056, regex: /\bHSTREAM\s+AIL_open_stream_by_sample\s*\(/ },
-    { name: "AIL_start_stream", line: 1069, regex: /\bvoid\s+AIL_start_stream\s*\(/ },
-    { name: "AIL_pause_stream", line: 1079, regex: /\bvoid\s+AIL_pause_stream\s*\(/ },
-    { name: "AIL_close_stream", line: 1095, regex: /\bvoid\s+AIL_close_stream\s*\(/ },
-    { name: "AIL_stream_status", line: 1105, regex: /\bS32\s+AIL_stream_status\s*\(/ },
-    { name: "AIL_set_stream_pan", line: 1110, regex: /\bvoid\s+AIL_set_stream_pan\s*\(/ },
-    { name: "AIL_stream_pan", line: 1117, regex: /\bS32\s+AIL_stream_pan\s*\(/ },
-    { name: "AIL_set_stream_volume", line: 1122, regex: /\bvoid\s+AIL_set_stream_volume\s*\(/ },
-    { name: "AIL_stream_volume", line: 1129, regex: /\bS32\s+AIL_stream_volume\s*\(/ },
-    { name: "AIL_set_stream_loop_block", line: 1134, regex: /\bvoid\s+AIL_set_stream_loop_block\s*\(/ },
-    { name: "AIL_set_stream_loop_count", line: 1142, regex: /\bvoid\s+AIL_set_stream_loop_count\s*\(/ },
-    { name: "AIL_stream_loop_count", line: 1149, regex: /\bS32\s+AIL_stream_loop_count\s*\(/ },
-    { name: "AIL_set_stream_ms_position", line: 1154, regex: /\bvoid\s+AIL_set_stream_ms_position\s*\(\s*HSTREAM[^,]*,\s*S32\s+position/ },
-    { name: "AIL_stream_ms_position[S32 overload]", line: 1161, regex: /\bvoid\s+AIL_stream_ms_position\s*\(\s*HSTREAM[^,]*,\s*S32\s*\*\s*len/ },
-    { name: "AIL_stream_ms_position[long overload]", line: 1171, regex: /\bvoid\s+AIL_stream_ms_position\s*\(\s*HSTREAM[^,]*,\s*long\s*\*\s*len/ },
-    { name: "AIL_stream_playback_rate", line: 1183, regex: /\bS32\s+AIL_stream_playback_rate\s*\(/ },
-    { name: "AIL_set_stream_playback_rate", line: 1188, regex: /\bvoid\s+AIL_set_stream_playback_rate\s*\(/ },
-    { name: "AIL_stream_volume_pan", line: 1195, regex: /\bvoid\s+AIL_stream_volume_pan\s*\(/ },
-    { name: "AIL_set_stream_volume_pan", line: 1205, regex: /\bvoid\s+AIL_set_stream_volume_pan\s*\(/ },
-    { name: "AIL_register_stream_callback", line: 1213, regex: /\bAIL_stream_callback\s+AIL_register_stream_callback\s*\(/ },
+    { name: "MSSBrowserStreamState", line: 258, regex: /\bstruct\s+MSSBrowserStreamState\b/ },
+    { name: "MSSBrowserNotifyStreamStart", line: 610, regex: /\bS32\s+MSSBrowserNotifyStreamStart\s*\(/ },
+    { name: "MSSBrowserFindStream", line: 680, regex: /\bMSSBrowserStreamState\s*\*\s*MSSBrowserFindStream\s*\(/ },
+    { name: "MSSBrowserAllocateStream", line: 695, regex: /\bMSSBrowserStreamState\s*\*\s*MSSBrowserAllocateStream\s*\(/ },
+    { name: "AIL_open_stream", line: 1678, regex: /\bHSTREAM\s+AIL_open_stream\s*\(/ },
+    { name: "AIL_open_stream_by_sample", line: 1694, regex: /\bHSTREAM\s+AIL_open_stream_by_sample\s*\(/ },
+    { name: "AIL_start_stream", line: 1707, regex: /\bvoid\s+AIL_start_stream\s*\(/ },
+    { name: "AIL_pause_stream", line: 1718, regex: /\bvoid\s+AIL_pause_stream\s*\(/ },
+    { name: "AIL_close_stream", line: 1734, regex: /\bvoid\s+AIL_close_stream\s*\(/ },
+    { name: "AIL_stream_status", line: 1745, regex: /\bS32\s+AIL_stream_status\s*\(/ },
+    { name: "AIL_set_stream_pan", line: 1750, regex: /\bvoid\s+AIL_set_stream_pan\s*\(/ },
+    { name: "AIL_stream_pan", line: 1757, regex: /\bS32\s+AIL_stream_pan\s*\(/ },
+    { name: "AIL_set_stream_volume", line: 1762, regex: /\bvoid\s+AIL_set_stream_volume\s*\(/ },
+    { name: "AIL_stream_volume", line: 1770, regex: /\bS32\s+AIL_stream_volume\s*\(/ },
+    { name: "AIL_set_stream_loop_block", line: 1775, regex: /\bvoid\s+AIL_set_stream_loop_block\s*\(/ },
+    { name: "AIL_set_stream_loop_count", line: 1783, regex: /\bvoid\s+AIL_set_stream_loop_count\s*\(/ },
+    { name: "AIL_stream_loop_count", line: 1790, regex: /\bS32\s+AIL_stream_loop_count\s*\(/ },
+    { name: "AIL_set_stream_ms_position", line: 1795, regex: /\bvoid\s+AIL_set_stream_ms_position\s*\(\s*HSTREAM[^,]*,\s*S32\s+position/ },
+    { name: "AIL_stream_ms_position[S32 overload]", line: 1802, regex: /\bvoid\s+AIL_stream_ms_position\s*\(\s*HSTREAM[^,]*,\s*S32\s*\*\s*len/ },
+    { name: "AIL_stream_ms_position[long overload]", line: 1812, regex: /\bvoid\s+AIL_stream_ms_position\s*\(\s*HSTREAM[^,]*,\s*long\s*\*\s*len/ },
+    { name: "AIL_stream_playback_rate", line: 1824, regex: /\bS32\s+AIL_stream_playback_rate\s*\(/ },
+    { name: "AIL_set_stream_playback_rate", line: 1829, regex: /\bvoid\s+AIL_set_stream_playback_rate\s*\(/ },
+    { name: "AIL_stream_volume_pan", line: 1836, regex: /\bvoid\s+AIL_stream_volume_pan\s*\(/ },
+    { name: "AIL_set_stream_volume_pan", line: 1846, regex: /\bvoid\s+AIL_set_stream_volume_pan\s*\(/ },
+    { name: "AIL_register_stream_callback", line: 1854, regex: /\bAIL_stream_callback\s+AIL_register_stream_callback\s*\(/ },
   ];
 
   const mssFacts = {};
@@ -104,6 +105,72 @@ function main() {
     );
   }
   facts.mssShimStreamSurface = mssFacts;
+  const streamNotifyStart = mssFacts.MSSBrowserNotifyStreamStart.line;
+  const streamSetVolume = mssFacts.AIL_set_stream_volume.line;
+  const streamSetVolumePan = mssFacts.AIL_set_stream_volume_pan.line;
+  const streamRegisterCallback = mssFacts.AIL_register_stream_callback.line;
+  const streamVolumeFloatPayloadLine = lineNumber(
+    mss.lines,
+    (line, index) =>
+      index + 1 > streamNotifyStart
+      && index + 1 < mssFacts.MSSBrowserFindStream.line
+      && /volumeFloat:\s*Number\(\$3\)/.test(line),
+  );
+  const streamVolumeFloatArgumentLine = lineNumber(
+    mss.lines,
+    (line, index) =>
+      index + 1 > streamNotifyStart
+      && index + 1 < mssFacts.MSSBrowserFindStream.line
+      && /static_cast<double>\(stream\.volume_float\)/.test(line),
+  );
+  const integerSetterMirrorLine = lineNumber(
+    mss.lines,
+    (line, index) =>
+      index + 1 > streamSetVolume
+      && index + 1 < mssFacts.AIL_stream_volume.line
+      && /state->volume_float\s*=\s*MSSBrowserNormalizeVolume\(static_cast<F32>\(volume\)\)/.test(line),
+  );
+  const volumePanSetterNormalizedLine = lineNumber(
+    mss.lines,
+    (line, index) =>
+      index + 1 > streamSetVolumePan
+      && index + 1 < streamRegisterCallback
+      && /state->volume_float\s*=\s*MSSBrowserNormalizeVolume\(volume\)/.test(line),
+  );
+  facts.mssShimStreamVolumeFloat = {
+    notifyPayload: {
+      expectedLine: 623,
+      line: streamVolumeFloatPayloadLine,
+      present: streamVolumeFloatPayloadLine !== -1,
+    },
+    notifyArgument: {
+      expectedLine: 635,
+      line: streamVolumeFloatArgumentLine,
+      present: streamVolumeFloatArgumentLine !== -1,
+    },
+    integerSetterMirror: {
+      expectedLine: 1767,
+      line: integerSetterMirrorLine,
+      present: integerSetterMirrorLine !== -1,
+    },
+    volumePanSetterNormalized: {
+      expectedLine: 1850,
+      line: volumePanSetterNormalizedLine,
+      present: volumePanSetterNormalizedLine !== -1,
+    },
+  };
+  if (streamVolumeFloatPayloadLine !== 623) {
+    errors.push(`Mss.H stream start volumeFloat payload expected at line 623 but found at ${streamVolumeFloatPayloadLine}`);
+  }
+  if (streamVolumeFloatArgumentLine !== 635) {
+    errors.push(`Mss.H stream start volumeFloat argument expected at line 635 but found at ${streamVolumeFloatArgumentLine}`);
+  }
+  if (integerSetterMirrorLine !== 1767) {
+    errors.push(`Mss.H AIL_set_stream_volume volume_float mirror expected at line 1767 but found at ${integerSetterMirrorLine}`);
+  }
+  if (volumePanSetterNormalizedLine !== 1850) {
+    errors.push(`Mss.H AIL_set_stream_volume_pan normalized volume_float expected at line 1850 but found at ${volumePanSetterNormalizedLine}`);
+  }
 
   const probeEntryLine = findLine(
     probe.lines,
@@ -192,14 +259,14 @@ function main() {
     source: requirePinnedLine(
       errors,
       cmake.lines,
-      3693,
+      4896,
       /src\/wasm_mss_stream_lifecycle_probe\.cpp/,
       "CMake stream lifecycle probe source",
     ),
     export: requirePinnedLine(
       errors,
       cmake.lines,
-      3818,
+      5121,
       /_cnc_port_probe_mss_stream_lifecycle/,
       "CMake stream lifecycle probe export",
     ),
@@ -209,14 +276,14 @@ function main() {
     cwrap: requirePinnedLine(
       errors,
       bridge.lines,
-      5734,
+      11561,
       /probeMssStreamLifecycle:\s*module\.cwrap\("cnc_port_probe_mss_stream_lifecycle",\s*"string",\s*\[\]\)/,
       "bridge stream lifecycle cwrap",
     ),
     rpc: requirePinnedLine(
       errors,
       bridge.lines,
-      15594,
+      27032,
       /case "mssStreamLifecycleProbe":/,
       "bridge mssStreamLifecycleProbe RPC",
     ),

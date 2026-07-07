@@ -66,13 +66,15 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_mss_3d_sample_lifecycle()
 	AIL_set_3D_position(sample, 100.0f, 200.0f, 300.0f);
 	AIL_set_3D_velocity_vector(sample, 4.0f, 5.0f, 6.0f);
 	AIL_set_3D_sample_volume(sample, 66);
+	const S32 legacy_volume = AIL_3D_sample_volume(sample);
+	AIL_set_3D_sample_volume(sample, 0.42f);
 	AIL_set_3D_sample_loop_count(sample, 3);
 	AIL_set_3D_sample_offset(sample, 17);
 	AIL_set_3D_sample_playback_rate(sample, 22050);
 	AIL_set_3D_sample_occlusion(sample, 0.25f);
 	AIL_set_3D_sample_effects_level(sample, 0.5f);
 
-	const S32 volume = AIL_3D_sample_volume(sample);
+	const S32 normalized_volume = AIL_3D_sample_volume(sample);
 	const S32 loop_count = AIL_3D_sample_loop_count(sample);
 	const U32 offset = AIL_3D_sample_offset(sample);
 	const U32 length = AIL_3D_sample_length(sample);
@@ -106,6 +108,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_mss_3d_sample_lifecycle()
 		sample_before_release->velocity.z == 6.0f &&
 		sample_before_release->min_distance == 12.0f &&
 		sample_before_release->max_distance == 345.0f &&
+		sample_before_release->volume == normalized_volume &&
+		sample_before_release->volume_float > 0.419f &&
+		sample_before_release->volume_float < 0.421f &&
 		sample_before_release->occlusion > 0.249f &&
 		sample_before_release->occlusion < 0.251f &&
 		sample_before_release->effects_level > 0.499f &&
@@ -146,7 +151,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_mss_3d_sample_lifecycle()
 		user_data_3 == 99 &&
 		set_file_result == 1 &&
 		previous_callback == nullptr &&
-		volume == 66 &&
+		legacy_volume == 66 &&
+		normalized_volume == 53 &&
 		loop_count == 3 &&
 		offset == 17 &&
 		length == 0 &&
@@ -183,6 +189,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_mss_3d_sample_lifecycle()
 		"\"AIL_set_3D_sample_distances\":{\"min\":%.3f,\"max\":%.3f},"
 		"\"AIL_set_3D_position\":{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f},"
 		"\"AIL_set_3D_sample_volume\":%d,"
+		"\"AIL_set_3D_sample_volume_float\":%.3f,"
 		"\"AIL_set_3D_sample_loop_count\":%d,"
 		"\"AIL_set_3D_sample_offset\":%u,"
 		"\"AIL_set_3D_sample_playback_rate\":%d,"
@@ -216,7 +223,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_mss_3d_sample_lifecycle()
 		sample_before_release != nullptr ? static_cast<double>(sample_before_release->position.x) : 0.0,
 		sample_before_release != nullptr ? static_cast<double>(sample_before_release->position.y) : 0.0,
 		sample_before_release != nullptr ? static_cast<double>(sample_before_release->position.z) : 0.0,
-		volume,
+		legacy_volume,
+		sample_before_release != nullptr ? static_cast<double>(sample_before_release->volume_float) : 0.0,
 		loop_count,
 		offset,
 		playback_rate,

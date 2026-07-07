@@ -387,60 +387,81 @@ function main() {
   // FACT 5 - Mss.H stateful 3D surface.
   // ========================================================================
   const mssSurface = [
+    { name: "MSSBrowserNormalizeVolume", line: 209 },
+    { name: "MSSBrowserVolumeToMilesInteger", line: 223 },
     // Provider: enumerate/open/close/speaker.
-    { name: "AIL_enumerate_3D_providers", line: 998 },
-    { name: "AIL_open_3D_provider", line: 1019 },
-    { name: "AIL_close_3D_provider", line: 1027 },
-    { name: "AIL_set_3D_speaker_type", line: 1033 },
+    { name: "AIL_enumerate_3D_providers", line: 1616 },
+    { name: "AIL_open_3D_provider", line: 1637 },
+    { name: "AIL_close_3D_provider", line: 1645 },
+    { name: "AIL_set_3D_speaker_type", line: 1651 },
     // Listener: open (and alias) / close.
-    { name: "AIL_3D_open_listener", line: 975 },
-    { name: "AIL_open_3D_listener", line: 989 },
-    { name: "AIL_close_3D_listener", line: 990 },
+    { name: "AIL_3D_open_listener", line: 1593 },
+    { name: "AIL_open_3D_listener", line: 1607 },
+    { name: "AIL_close_3D_listener", line: 1608 },
     // 3D sample allocate/release/file/user-data/callback/distances/position/
     // orientation/velocity/volume/loop/offset/rate/occlusion/effects/
     // start/stop/resume/end/status.
-    { name: "AIL_allocate_3D_sample_handle", line: 731 },
-    { name: "AIL_release_3D_sample_handle", line: 745 },
-    { name: "AIL_set_3D_sample_file", line: 755 },
-    { name: "AIL_set_3D_object_user_data", line: 855 },
-    { name: "AIL_3D_object_user_data", line: 870 },
-    { name: "AIL_set_3D_user_data", line: 882 },
-    { name: "AIL_3D_user_data", line: 886 },
-    { name: "AIL_register_3D_EOS_callback", line: 963 },
-    { name: "AIL_set_3D_sample_distances", line: 948 },
-    { name: "AIL_set_3D_position", line: 909 },
-    { name: "AIL_set_3D_orientation", line: 921 },
-    { name: "AIL_set_3D_velocity_vector", line: 936 },
-    { name: "AIL_set_3D_sample_volume", line: 809 },
-    { name: "AIL_3D_sample_volume", line: 816 },
-    { name: "AIL_set_3D_sample_loop_count", line: 821 },
-    { name: "AIL_3D_sample_loop_count", line: 828 },
-    { name: "AIL_set_3D_sample_offset", line: 833 },
-    { name: "AIL_3D_sample_offset", line: 840 },
-    { name: "AIL_3D_sample_length", line: 845 },
-    { name: "AIL_set_3D_sample_playback_rate", line: 895 },
-    { name: "AIL_3D_sample_playback_rate", line: 890 },
-    { name: "AIL_set_3D_sample_occlusion", line: 902 },
-    { name: "AIL_set_3D_sample_effects_level", line: 956 },
-    { name: "AIL_start_3D_sample", line: 770 },
-    { name: "AIL_stop_3D_sample", line: 781 },
-    { name: "AIL_resume_3D_sample", line: 789 },
-    { name: "AIL_end_3D_sample", line: 798 },
-    { name: "AIL_3D_sample_status", line: 850 },
+    { name: "AIL_allocate_3D_sample_handle", line: 1344 },
+    { name: "AIL_release_3D_sample_handle", line: 1358 },
+    { name: "AIL_set_3D_sample_file", line: 1369 },
+    { name: "AIL_set_3D_object_user_data", line: 1473 },
+    { name: "AIL_3D_object_user_data", line: 1488 },
+    { name: "AIL_set_3D_user_data", line: 1500 },
+    { name: "AIL_3D_user_data", line: 1504 },
+    { name: "AIL_register_3D_EOS_callback", line: 1581 },
+    { name: "AIL_set_3D_sample_distances", line: 1566 },
+    { name: "AIL_set_3D_position", line: 1527 },
+    { name: "AIL_set_3D_orientation", line: 1539 },
+    { name: "AIL_set_3D_velocity_vector", line: 1554 },
+    { name: "AIL_set_3D_sample_volume", line: 1426 },
+    { name: "AIL_3D_sample_volume", line: 1434 },
+    { name: "AIL_set_3D_sample_loop_count", line: 1439 },
+    { name: "AIL_3D_sample_loop_count", line: 1446 },
+    { name: "AIL_set_3D_sample_offset", line: 1451 },
+    { name: "AIL_3D_sample_offset", line: 1458 },
+    { name: "AIL_3D_sample_length", line: 1463 },
+    { name: "AIL_set_3D_sample_playback_rate", line: 1513 },
+    { name: "AIL_3D_sample_playback_rate", line: 1508 },
+    { name: "AIL_set_3D_sample_occlusion", line: 1520 },
+    { name: "AIL_set_3D_sample_effects_level", line: 1574 },
+    { name: "AIL_start_3D_sample", line: 1384 },
+    { name: "AIL_stop_3D_sample", line: 1396 },
+    { name: "AIL_resume_3D_sample", line: 1405 },
+    { name: "AIL_end_3D_sample", line: 1414 },
+    { name: "AIL_3D_sample_status", line: 1468 },
     // Stateful storage structs and find/allocate helpers.
-    { name: "MSSBrowser3DVector", line: 242 },
-    { name: "MSSBrowser3DSampleState", line: 249 },
-    { name: "MSSBrowser3DListenerState", line: 277 },
-    { name: "MSSBrowserFind3DSample", line: 394 },
-    { name: "MSSBrowserAllocate3DSample", line: 409 },
-    { name: "MSSBrowserFind3DListener", line: 427 },
-    { name: "MSSBrowserAllocate3DListener", line: 442 },
+    { name: "MSSBrowser3DVector", line: 288 },
+    { name: "MSSBrowser3DSampleState", line: 295 },
+    { name: "MSSBrowser3DListenerState", line: 328 },
+    { name: "MSSBrowserFind3DSample", line: 717 },
+    { name: "MSSBrowserAllocate3DSample", line: 732 },
+    { name: "MSSBrowserFind3DListener", line: 750 },
+    { name: "MSSBrowserAllocate3DListener", line: 765 },
   ];
   const mssFacts = {};
   for (const { name, line } of mssSurface) {
     mssFacts[name] = pinMssLine(errors, mss.lines, name, line);
   }
   facts.mssShim3DSurface = mssFacts;
+  {
+    const volumeFloatLine = lineNumber(
+      mss.lines,
+      (line, index) =>
+        index + 1 > mssFacts.MSSBrowser3DSampleState.line
+        && index + 1 < mssFacts.MSSBrowser3DListenerState.line
+        && /\bF32\s+volume_float\s*=\s*1\.0f\s*;/.test(line),
+    );
+    facts.mssShim3DVolumeFloat = {
+      expectedLine: 314,
+      line: volumeFloatLine,
+      present: volumeFloatLine !== -1,
+    };
+    if (volumeFloatLine !== 314) {
+      errors.push(
+        `Mss.H MSSBrowser3DSampleState volume_float expected at line 314 but found at ${volumeFloatLine}`,
+      );
+    }
+  }
 
   // ========================================================================
   // FACT 6 - runtime probe entry, representative calls, and JSON contract.
@@ -509,28 +530,65 @@ function main() {
   }
   facts.probeRepresentativeCalls = probeCallFacts;
   facts.probeRepresentativeCallOrderEndsWith = previousName;
+  facts.probe3DVolumeFloat = {
+    legacyIntegerCall: requirePinnedLine(
+      errors,
+      probe.lines,
+      68,
+      /AIL_set_3D_sample_volume\s*\(\s*sample\s*,\s*66\s*\)/,
+      "probe legacy integer 3D sample volume call",
+    ),
+    normalizedFloatCall: requirePinnedLine(
+      errors,
+      probe.lines,
+      70,
+      /AIL_set_3D_sample_volume\s*\(\s*sample\s*,\s*0\.42f\s*\)/,
+      "probe normalized float 3D sample volume call",
+    ),
+    normalizedIntegerCheck: requirePinnedLine(
+      errors,
+      probe.lines,
+      155,
+      /normalized_volume\s*==\s*53/,
+      "probe normalized 3D sample volume integer readback",
+    ),
+    floatStateCheck: requirePinnedLine(
+      errors,
+      probe.lines,
+      112,
+      /sample_before_release->volume_float\s*>\s*0\.419f/,
+      "probe normalized 3D sample volume float state lower bound",
+    ),
+  };
 
   facts.probeJsonStrings = {
     sample3DLifecycleReady: requirePinnedLine(
       errors,
       probe.lines,
-      172,
+      178,
       /sample3DLifecycleReady/,
       "probe sample3DLifecycleReady JSON",
     ),
     playbackReadyFalse: requirePinnedLine(
       errors,
       probe.lines,
-      173,
+      179,
       /playbackReady.*false/,
       "probe playbackReady false JSON",
     ),
     nextRequired: requirePinnedLine(
       errors,
       probe.lines,
-      174,
+      180,
       /nextRequired.*webAudioPlaybackBackend/,
       "probe nextRequired JSON",
+    ),
+    volumeFloat: requirePinnedLine(
+      errors,
+      probe.lines,
+      192,
+      /AIL_set_3D_sample_volume_float/,
+      "probe normalized 3D sample volume JSON",
     ),
   };
 
@@ -541,14 +599,14 @@ function main() {
     source: requirePinnedLine(
       errors,
       cmake.lines,
-      3694,
+      4897,
       /src\/wasm_mss_3d_sample_lifecycle_probe\.cpp/,
       "CMake 3D sample lifecycle probe source",
     ),
     export: requirePinnedLine(
       errors,
       cmake.lines,
-      3818,
+      5121,
       /_cnc_port_probe_mss_3d_sample_lifecycle/,
       "CMake 3D sample lifecycle probe export",
     ),
@@ -558,14 +616,14 @@ function main() {
     cwrap: requirePinnedLine(
       errors,
       bridge.lines,
-      5757,
+      11562,
       /probeMss3DSampleLifecycle:\s*module\.cwrap\("cnc_port_probe_mss_3d_sample_lifecycle",\s*"string",\s*\[\]\)/,
       "bridge 3D sample lifecycle cwrap",
     ),
     rpc: requirePinnedLine(
       errors,
       bridge.lines,
-      15634,
+      27116,
       /case "mss3DSampleLifecycleProbe":/,
       "bridge mss3DSampleLifecycleProbe RPC",
     ),

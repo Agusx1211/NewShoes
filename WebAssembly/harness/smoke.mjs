@@ -930,6 +930,7 @@ function assertMss3DSampleLifecycleProbe(probe, label) {
       || Math.abs((probe.calls?.AIL_set_3D_position?.y ?? 0) - 200) > 0.001
       || Math.abs((probe.calls?.AIL_set_3D_position?.z ?? 0) - 300) > 0.001
       || probe.calls?.AIL_set_3D_sample_volume !== 66
+      || Math.abs((probe.calls?.AIL_set_3D_sample_volume_float ?? 0) - 0.42) > 0.001
       || probe.calls?.AIL_set_3D_sample_loop_count !== 3
       || probe.calls?.AIL_set_3D_sample_offset !== 17
       || probe.calls?.AIL_set_3D_sample_playback_rate !== 22050

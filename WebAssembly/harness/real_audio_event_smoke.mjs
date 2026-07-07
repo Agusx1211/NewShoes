@@ -55,6 +55,19 @@ function buildArchives(baseUrl) {
   });
 }
 
+function validCncPortDistDir(value) {
+  return typeof value === "string" && /^dist(?:[-_][A-Za-z0-9_-]+)?$/.test(value);
+}
+
+function smokePagePath() {
+  const distDir = process.env.REAL_AUDIO_DIST_DIR;
+  if (distDir == null || distDir === "") {
+    return "harness/index.html";
+  }
+  expect(validCncPortDistDir(distDir), "invalid REAL_AUDIO_DIST_DIR", { distDir });
+  return `harness/index.html?dist=${encodeURIComponent(distDir)}`;
+}
+
 async function rpc(page, command, payload = {}) {
   return page.evaluate(([name, args]) => window.CnCPort.rpc(name, args), [command, payload]);
 }
@@ -87,6 +100,11 @@ function assertDecodedSample(runtime, eventName, expectedNode) {
     `${eventName} did not schedule a decoded Web Audio buffer on ${expectedNode}`, last);
 }
 
+function assertAudibleVolume(value, eventName, payload) {
+  expect(Number.isFinite(value) && value > 0,
+    `${eventName} scheduled decoded audio with a silent or invalid volume`, payload);
+}
+
 async function streamRuntime(page) {
   const runtime = await rpc(page, "browserAudioRuntime");
   return runtime.state?.browserMssStreamPlaybackRuntime ?? null;
@@ -97,11 +115,13 @@ async function sampleRuntime(page, key) {
   return runtime.state?.[key] ?? null;
 }
 
-async function waitForDecodedSample(page, key, expectedNode, before, timeoutMs = 10000) {
+async function waitForDecodedSample(page, key, expectedNode, before, timeoutMs = 15000, context = {}) {
   const start = Date.now();
   const beforeStarted = before?.started ?? 0;
+  let lastRuntime = null;
   while (Date.now() - start < timeoutMs) {
     const runtime = await sampleRuntime(page, key);
+    lastRuntime = runtime;
     const last = runtime?.lastEvent;
     if ((runtime?.started ?? 0) > beforeStarted
         && last?.payload?.container === "RIFF/WAVE"
@@ -116,7 +136,11 @@ async function waitForDecodedSample(page, key, expectedNode, before, timeoutMs =
     await rpc(page, "realEngineFrameSummary", { frames: 1 });
     await page.waitForTimeout(25);
   }
-  throw new Error(`${key} did not decode and start within ${timeoutMs}ms`);
+  throw new Error(`${key} did not decode and start within ${timeoutMs}ms: ${JSON.stringify({
+    beforeStarted,
+    context,
+    runtime: lastRuntime,
+  })}`);
 }
 
 async function waitForDecodedStream(page, filename, before, label = "stream", timeoutMs = 15000) {
@@ -191,7 +215,8 @@ async function playAndMaybeStopMusicEvent(
       && musicStream.lastEvent.nodeGraph.includes("musicGainNode")
       && musicStream.activeSources > (musicBefore?.activeSources ?? 0)
       && musicStream.musicSourceActive === true
-      && Number.isFinite(musicStream.lastEvent?.volume),
+      && Number.isFinite(musicStream.lastEvent?.volume)
+      && musicStream.lastEvent.volume > 0,
     `${eventName} did not schedule through the browser MSS stream backend`, musicStream);
 
   let stoppedMusicStream = null;
@@ -236,7 +261,8 @@ async function playAndStopSpeechEvent(page, eventName, expectedFilename, expecte
       && Array.isArray(speechStream.lastEvent?.nodeGraph)
       && speechStream.lastEvent.nodeGraph.includes("speechGainNode")
       && speechStream.activeSources > (speechBefore?.activeSources ?? 0)
-      && Number.isFinite(speechStream.lastEvent?.volume),
+      && Number.isFinite(speechStream.lastEvent?.volume)
+      && speechStream.lastEvent.volume > 0,
     `${eventName} did not schedule through the browser MSS speech stream backend`, speechStream);
 
   const speechStop = await rpc(page, "realEngineStopAudioEvent", {
@@ -265,7 +291,7 @@ try {
   page.setDefaultTimeout(240000);
   page.setDefaultNavigationTimeout(240000);
 
-  await page.goto(new URL("harness/index.html", server.url).href, { waitUntil: "networkidle" });
+  await page.goto(new URL(smokePagePath(), server.url).href, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
   await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
 
@@ -313,11 +339,18 @@ try {
     "browserMss3DSamplePlaybackRuntime",
     "sound3DGainNode",
     worldSoundBefore,
+    15000,
+    { event: worldSound.result },
   );
   assertDecodedSample(
     worldSoundRuntime,
     "ArtilleryBarrageIncomingWhistle",
     "sound3DGainNode",
+  );
+  assertAudibleVolume(
+    worldSoundRuntime.lastEvent?.sample3D?.volume,
+    "ArtilleryBarrageIncomingWhistle",
+    { event: worldSound.result, playback: worldSoundRuntime.lastEvent },
   );
 
   const uiSoundBefore = await sampleRuntime(page, "browserMssSamplePlaybackRuntime");
@@ -336,11 +369,18 @@ try {
     "browserMssSamplePlaybackRuntime",
     "soundGainNode",
     uiSoundBefore,
+    15000,
+    { event: uiSound.result },
   );
   assertDecodedSample(
     uiSoundRuntime,
     "CIAAgentVoiceAttack",
     "soundGainNode",
+  );
+  assertAudibleVolume(
+    uiSoundRuntime.lastEvent?.sample?.volume,
+    "CIAAgentVoiceAttack",
+    { event: uiSound.result, playback: uiSoundRuntime.lastEvent },
   );
 
   const speech = await playAndStopSpeechEvent(
@@ -373,6 +413,7 @@ try {
       handle: worldSound.result.handle,
       nodeGraph: worldSoundRuntime.lastEvent.nodeGraph,
       frames: worldSoundRuntime.lastEvent.payload.frames,
+      volume: worldSoundRuntime.lastEvent.sample3D.volume,
     },
     uiSound: {
       event: uiSound.result.requested,
@@ -380,6 +421,7 @@ try {
       handle: uiSound.result.handle,
       nodeGraph: uiSoundRuntime.lastEvent.nodeGraph,
       frames: uiSoundRuntime.lastEvent.payload.frames,
+      volume: uiSoundRuntime.lastEvent.sample.volume,
     },
     speech: {
       event: speech.speech.result.requested,
@@ -390,6 +432,7 @@ try {
       decodedBy: speech.speechStream.lastEvent.payload.decodedBy,
       decodedFrames: speech.speechStream.lastEvent.payload.decodedFrames,
       durationSeconds: speech.speechStream.lastEvent.durationSeconds,
+      volume: speech.speechStream.lastEvent.volume,
       nodeGraph: speech.speechStream.lastEvent.nodeGraph,
       stopped: speech.stoppedSpeechStream?.stopped ?? null,
       activeSourcesAfterStop: speech.stoppedSpeechStream?.activeSources ?? null,
@@ -402,6 +445,7 @@ try {
       decodedBy: zhMusic.musicStream.lastEvent.payload.decodedBy,
       decodedFrames: zhMusic.musicStream.lastEvent.payload.decodedFrames,
       durationSeconds: zhMusic.musicStream.lastEvent.durationSeconds,
+      volume: zhMusic.musicStream.lastEvent.volume,
       nodeGraph: zhMusic.musicStream.lastEvent.nodeGraph,
       stopped: zhMusic.stoppedMusicStream?.stopped ?? null,
       activeSourcesAfterStop: zhMusic.stoppedMusicStream?.activeSources ?? null,
@@ -414,6 +458,7 @@ try {
       decodedBy: baseMusic.musicStream.lastEvent.payload.decodedBy,
       decodedFrames: baseMusic.musicStream.lastEvent.payload.decodedFrames,
       durationSeconds: baseMusic.musicStream.lastEvent.durationSeconds,
+      volume: baseMusic.musicStream.lastEvent.volume,
       nodeGraph: baseMusic.musicStream.lastEvent.nodeGraph,
       stopped: baseMusic.stoppedMusicStream?.stopped ?? null,
       activeSourcesAfterStop: baseMusic.stoppedMusicStream?.activeSources ?? null,
