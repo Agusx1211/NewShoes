@@ -2496,7 +2496,14 @@ and then start with the PROFILE, not with any individual fix.
       engine average 39.03 -> 38.89 ms/frame). Treat this as bridge cleanup,
       not a terrain-frontier fix: the next performance pass should still
       split/optimize base terrain tile/shoreline bursts or static
-      terrain-track batching.
+      terrain-track batching. A follow-up partial-lock pass for terrain-track
+      vertices now locks only the packed visible prefix instead of the whole
+      dynamic track pool; Mac M4 Chrome/Metal profiles reduced buffer
+      upload traffic from 2.29 MB/frame to ~1.81 MB/frame and tracked browser
+      D3D8 work from 13.82 ms/frame to 8.64 ms/frame in the final run, with
+      wall time 40.32 -> 39.41 ms/frame. The next pass should reprofile the
+      remaining terrain tile/shoreline buckets before attempting broader
+      draw-command buffering.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing

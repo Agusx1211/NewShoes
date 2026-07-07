@@ -877,15 +877,33 @@ Try improving the fit to vertical surfaces like cliffs.
 	diffuseLight = REAL_TO_INT(shadeB) | (REAL_TO_INT(shadeG) << 8) | (REAL_TO_INT(shadeR) << 16);
 	Real numFadedEdges=m_maxTankTrackEdges-m_maxTankTrackOpaqueEdges;
 
-	//check if there is anything to draw and fill vertex buffer
+	// Check if there is anything to draw. The browser D3D8 shim uploads the
+	// locked range on unlock, so lock only the packed visible vertices instead
+	// of the whole terrain-track pool.
 	if (m_edgesToFlush >= 2)
 	{
+		CNC_PORT_NOTE_TERRAIN_TRACK_PROFILE_STEP(profileTerrainTracks, "W3DTerrainTracks.flush.count.before");
+		mod=m_usedModules;
+		while( mod )
+		{
+			if (mod->m_activeEdgeCount >= 2 && mod->Is_Really_Visible())
+			{
+				totalVertexCount += mod->m_activeEdgeCount*2;
+			}
+			mod = mod->m_nextSystem;
+		}
+		CNC_PORT_NOTE_TERRAIN_TRACK_PROFILE_STEP(profileTerrainTracks, "W3DTerrainTracks.flush.count.after");
+	}
+
+	// Fill the visible prefix of the vertex buffer.
+	if (totalVertexCount >= 4)
+	{
 		CNC_PORT_NOTE_TERRAIN_TRACK_PROFILE_STEP(profileTerrainTracks, "W3DTerrainTracks.flush.lock.before");
-		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexBuffer);
+		DX8VertexBufferClass::AppendLockClass lockVtxBuffer(m_vertexBuffer,0,totalVertexCount);
 		CNC_PORT_NOTE_TERRAIN_TRACK_PROFILE_STEP(profileTerrainTracks, "W3DTerrainTracks.flush.lock.after");
 		CNC_PORT_NOTE_TERRAIN_TRACK_PROFILE_STEP(profileTerrainTracks, "W3DTerrainTracks.flush.write.before");
 		VertexFormatXYZDUV1 *verts = (VertexFormatXYZDUV1*)lockVtxBuffer.Get_Vertex_Array();
-		trackStartIndex=0;
+		Int writtenVertexCount=0;
 
 		mod=m_usedModules;
 		//Fill our vertex buffer with all the tracks
@@ -939,10 +957,13 @@ Try improving the fit to vertical surfaces like cliffs.
 					verts->diffuse=diffuseLight | ( REAL_TO_INT(distanceFade*255.0f) <<24);
 					verts++;
 				}//for
-				totalVertexCount += mod->m_activeEdgeCount*2;
+				writtenVertexCount += mod->m_activeEdgeCount*2;
 			}// mod has edges to render
 			mod = mod->m_nextSystem;
 		}	//while (mod)
+		const bool vertexCountMatches = writtenVertexCount == totalVertexCount;
+		DEBUG_ASSERTCRASH(vertexCountMatches, ("Terrain track visible vertex pre-count mismatch."));
+		(void)vertexCountMatches;
 		CNC_PORT_NOTE_TERRAIN_TRACK_PROFILE_STEP(profileTerrainTracks, "W3DTerrainTracks.flush.write.after");
 		CNC_PORT_NOTE_TERRAIN_TRACK_PROFILE_STEP(profileTerrainTracks, "W3DTerrainTracks.flush.unlock.before");
 	}//edges to flush

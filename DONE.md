@@ -8290,6 +8290,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       profiled frame; `WasmD3D8.browserDrawIndexed.before` stayed effectively
       flat at 3.16 ms -> 3.18 ms. The remaining frame frontier is still
       terrain/terrain-track variance rather than this native payload rebuild.
+- [x] Reduce terrain-track dynamic vertex-buffer uploads to the visible prefix.
+      `TerrainTracksRenderObjClassSystem::flush()` now pre-counts active,
+      really-visible track edges and uses `DX8VertexBufferClass::AppendLockClass`
+      to lock only the packed visible vertex prefix. The draw loop still emits
+      the same per-track static-index draws and preserves the original linked
+      list order, but the browser D3D8 shim no longer uploads the unused tail
+      of the preallocated terrain-track pool on unlock. Verified with
+      `git diff --check`, `npm --prefix WebAssembly run build:port`, `npm
+      --prefix WebAssembly run build:port:release`, a local SwiftShader
+      runtime profile with a visible screenshot, and Mac M4 Chrome/Metal
+      release profiles (`realEngineFrameTick`, 60 warmup + 60 measured frames,
+      engine profile enabled). Against the previous `e068f65a` profile, buffer
+      updates stayed constant at 381.8/frame, but the final run reduced upload
+      traffic from 2.29 MB/frame to 1.81 MB/frame, tracked browser D3D8 work
+      from 13.82 ms/frame to 8.64 ms/frame, and wall time from 40.32 ms/frame
+      to 39.41 ms/frame. The visible screenshot remained intact.
 - [x] Split the D3D8 draw-state cache hash from per-object transforms.
       `wasm_d3d8_shim.cpp` now computes both the original full draw hash and a
       derived-state hash that excludes world/view/projection but still covers
