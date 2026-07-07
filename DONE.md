@@ -463,6 +463,33 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       reducing dirty texture/filter application frequency in `TextureClass::Apply()`
       / `TextureFilterClass::Apply()`.
 
+- [x] Defer browser-side D3D8 texture binds to draw time in lite diagnostics.
+      A temporary SetTexture subphase profile showed the texture-apply spike was
+      dominated by the JS bind notification path:
+      `WasmD3D8.SetTexture.browserBind.before` measured 6.31 ms across 150
+      binds in the sampled Mac M4/Metal shell-map frame. `bindD3D8Texture()`
+      now records D3D8 bound texture state and bind stats without immediately
+      issuing WebGL `activeTexture` / `bindTexture` calls; the real draw path
+      continues to bind textures through `ensureD3D8DrawTexture2D()` with its
+      existing GL-state cache. The WebGL texture-unit limit is cached with the
+      GL binding cache, and per-bind `harnessState.graphics.d3d8Textures`
+      summary refreshes are kept for `diag=full` probes while skipped in
+      `diag=lite` runtime profiles.
+      Verified with `npm --prefix WebAssembly run build:port:release`,
+      `node --check WebAssembly/harness/bridge.js`, Mac Chrome/Metal release
+      profile
+      `WebAssembly/artifacts/perf/runtime-frame-profile-deferred-texture-bind-final-mac.json`,
+      and visible shell-map screenshot
+      `WebAssembly/artifacts/screenshots/runtime-frame-profile-deferred-texture-bind-final-mac.png`.
+      The final clean profile moved `DX8Wrapper.Apply.texture.before` from
+      5.055 ms across 127 applies in
+      `runtime-frame-profile-texture-label-lite-mac.json` to 0.13 ms across 127
+      applies; a temporary deep split also showed the direct bind bucket moved
+      from 6.31 ms / max 0.44 to 0.09 ms / max 0.005. Focused Mac `diag=full`
+      RPC checks for `d3d8TexturedQuad` and `d3d8TwoTextureQuad` preserved the
+      red `[255,0,0,255]` and blue `[0,0,255,255]` center pixels, exact
+      `boundTextures`, bind deltas, and release cleanup.
+
 - [x] Cache draw-time WebGL texture binding/sampler state in the D3D8 bridge.
       `bridge.js` now tracks the actual WebGL active texture unit plus per-unit
       2D/3D bindings, preserves/invalidates that cache around direct texture

@@ -433,10 +433,12 @@ while preserving first-seen labels and missing-texture details. The follow-up
 split profile `runtime-frame-profile-texture-label-lite-mac.json` kept the
 shell-map screenshot correct and moved that slowest texture-apply sample from
 5.90 to 5.32 ms (max 0.085 -> 0.055) with p99 engine frame time 24.3 -> 22.7
-inside the instrumented profile. The remaining texture-apply frontier is still
-the actual dirty texture/filter application frequency in `TextureClass::Apply()`
-and `TextureFilterClass::Apply()`, not another browser sampler-cache pass.
-The remaining draw-side leaders are still `SortingRenderer.pool.draw.submit.before`,
+inside the instrumented profile. The follow-up JS texture-bind cleanup moved the
+final clean Mac profile `DX8Wrapper.Apply.texture.before` bucket to 0.13 ms
+across 127 texture applies by making D3D8 `SetTexture` notifications update
+browser D3D state instead of immediately rebinding WebGL textures in `diag=lite`.
+Do not re-open texture apply unless a new profile shows it regressed.
+The remaining draw-side leaders are `WasmD3D8.browserDrawIndexed.before`,
 `HeightMap.tilePasses.tileDraw.before`, `DX8MeshRenderer.flush.rigid.before`,
 volumetric shadow draws, and the structural per-frame draw command buffer. Do
 not revisit material, light, text-geometry, first-vertex VAO setup, transform

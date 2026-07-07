@@ -427,6 +427,7 @@ const d3d8DrawProducerStats = new Map();
 let d3d8ViewportState = null;
 let browser_fbo_incomplete_count = 0;
 let d3d8CurrentActiveTextureUnit = null;
+let d3d8MaxCombinedTextureImageUnits = null;
 const d3d8CurrentTexture2DBindings = new Map();
 const d3d8CurrentTexture3DBindings = new Map();
 const d3d8ViewportStats = {
@@ -6312,6 +6313,7 @@ function d3d8TextureSemanticMode(resource) {
 function invalidateD3D8GlTextureBindingCache(stage = null) {
   d3d8CurrentActiveTextureUnit = null;
   if (stage === null || stage === undefined) {
+    d3d8MaxCombinedTextureImageUnits = null;
     d3d8CurrentTexture2DBindings.clear();
     d3d8CurrentTexture3DBindings.clear();
     return;
@@ -6505,6 +6507,12 @@ function updateD3D8TextureSummary() {
     },
     d3d8Perf: d3d8PerfSummary(),
   };
+}
+
+function updateD3D8TextureBindSummary() {
+  if (d3d8DiagLevel === "full") {
+    updateD3D8TextureSummary();
+  }
 }
 
 function createD3D8Texture(payload = {}) {
@@ -7349,7 +7357,8 @@ function bindD3D8Texture(payload = {}) {
   flushD3D8PendingDrawBatch("textureBind");
   const stage = Number(payload.stage ?? 0) >>> 0;
   const id = Number(payload.id ?? 0) >>> 0;
-  const maxTextureUnits = gl.getParameter(gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS);
+  const maxTextureUnits = d3d8MaxCombinedTextureImageUnits ??
+    (d3d8MaxCombinedTextureImageUnits = gl.getParameter(gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS));
   if (stage >= maxTextureUnits) {
     d3d8TextureStats.missingBinds += 1;
     d3d8TextureStats.lastMissingBind = {
@@ -7358,19 +7367,11 @@ function bindD3D8Texture(payload = {}) {
       reason: "stage exceeds WebGL texture units",
       maxTextureUnits,
     };
-    updateD3D8TextureSummary();
+    updateD3D8TextureBindSummary();
     return 0;
   }
 
-  const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
-  gl.activeTexture(gl.TEXTURE0 + stage);
   if (id === 0) {
-    gl.bindTexture(gl.TEXTURE_2D, null);
-    gl.bindTexture(gl.TEXTURE_3D, null);
-    gl.activeTexture(previousActiveTexture);
-    d3d8CurrentActiveTextureUnit = null;
-    d3d8CurrentTexture2DBindings.set(stage, null);
-    d3d8CurrentTexture3DBindings.set(stage, null);
     d3d8BoundTextures.delete(stage);
     d3d8TextureStats.unbinds += 1;
     d3d8TextureStats.lastBind = {
@@ -7380,38 +7381,22 @@ function bindD3D8Texture(payload = {}) {
       nullBind: true,
       boundTexture: null,
     };
-    updateD3D8TextureSummary();
+    updateD3D8TextureBindSummary();
     return 1;
   }
 
   const resource = d3d8Textures.get(id);
   if (!resource) {
-    gl.activeTexture(previousActiveTexture);
-    d3d8CurrentActiveTextureUnit = null;
     d3d8TextureStats.missingBinds += 1;
     d3d8TextureStats.lastMissingBind = {
       stage,
       id,
       reason: "texture id is not live",
     };
-    updateD3D8TextureSummary();
+    updateD3D8TextureBindSummary();
     return 0;
   }
 
-  const target = resource.target ?? gl.TEXTURE_2D;
-  if (target === gl.TEXTURE_3D) {
-    gl.bindTexture(gl.TEXTURE_2D, null);
-    gl.bindTexture(gl.TEXTURE_3D, resource.texture);
-    d3d8CurrentTexture2DBindings.set(stage, null);
-    d3d8CurrentTexture3DBindings.set(stage, resource.texture);
-  } else {
-    gl.bindTexture(gl.TEXTURE_3D, null);
-    gl.bindTexture(gl.TEXTURE_2D, resource.texture);
-    d3d8CurrentTexture3DBindings.set(stage, null);
-    d3d8CurrentTexture2DBindings.set(stage, resource.texture);
-  }
-  gl.activeTexture(previousActiveTexture);
-  d3d8CurrentActiveTextureUnit = null;
   d3d8BoundTextures.set(stage, id);
   d3d8TextureStats.binds += 1;
   d3d8TextureStats.lastBind = {
@@ -7427,7 +7412,7 @@ function bindD3D8Texture(payload = {}) {
     type: resource.type || "2d",
     uploads: resource.uploads,
   };
-  updateD3D8TextureSummary();
+  updateD3D8TextureBindSummary();
   return 1;
 }
 
