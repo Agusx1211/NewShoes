@@ -376,6 +376,43 @@ symptom is temporal — NOT a single still.
       play" bug — here a track fails to STOP. Verify by starting a skirmish in
       the harness and confirming the menu track has stopped (state + audible
       check) once in-game.
+- [ ] **Skirmish enemy AI never activates (and enemy base is white)** — in a
+      real skirmish the enemy base exists but shows **no activity at all** (no
+      unit production, no building, no attacks) and its structures render
+      **all white**. Two likely-separate faults observed together: (a) the AI
+      player is not taking any actions — check that the skirmish AI player is
+      created with a real `AIPlayer`/skirmish personality and that its
+      per-frame `AIPlayer::update`/build-plan/script path actually runs (not a
+      stub), and that difficulty/side setup wired it; (b) the "all white"
+      structures are a texture/team-color render bug (house-color remap or
+      missing texture bind) — related to the known white-units render issue.
+      Verify AI with state (enemy `objectCount`/production over many frames) and
+      white-base with a screenshot on the release build.
+- [ ] **Skirmish loading screen missing its art** — the multiplayer/skirmish
+      load screen shows no map preview image, no general/side portrait, etc.
+      (blank/placeholder instead of the real load-screen art). Trace the
+      loadscreen image path: mapped-image / `MappedImageCollection` lookups for
+      the map preview + faction art, and whether those textures are loaded and
+      bound when the load screen draws. Distinct from the existing
+      "loading-screen progress is static" item (that one is about progress
+      animation; this is about the load screen's images not rendering).
+- [ ] **In-game ESC menu buttons do nothing** — during skirmish, pressing ESC
+      opens the in-game (pause/options/quit) menu, but **none of its buttons
+      respond** to clicks. The window opens and draws, so this is the in-game
+      menu's control input/callback wiring, not the open path. Trace the pause
+      menu window's button `GameWindow` callbacks / command dispatch during
+      active gameplay (input may be routed to the game instead of the modal
+      menu, or the button callbacks are unbound). Verify by clicking
+      Resume/Quit in the harness and confirming the corresponding action fires.
+- [ ] **Purchased special powers can't be activated** — generals' special
+      abilities/powers can be *purchased* (science/rank spend works) but
+      clicking the ability button to *use* it does nothing: no targeting
+      cursor, no activation, no effect. This is the special-power **activation/
+      targeting** path, distinct from purchase (see the purchasable-science
+      dispatch item above). Trace the command-button → `SpecialPower` activation
+      (`MSG_DO_SPECIAL_POWER` / target-select mode) → `GameLogic`
+      `SpecialPowerModule` firing + recharge. Verify by purchasing then firing a
+      power in the harness and reading back the special-power module state.
 
 ## Strategy pivot — real `init()` whole-program link (current focus)
 
