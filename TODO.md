@@ -181,9 +181,14 @@ keeps stable shoreline quad vertices in a persistent D3D8 vertex buffer and
 only uploads the visible dynamic index ranges each frame; the latest Mac M4
 Metal profile measured 37.50 ms/frame wall, 9.83 ms average engine frame time,
 186.6 buffer updates/frame, 0.91 MB/frame uploaded, 0.38 MB/frame dynamic
-uploads, and `bufferSubDataMs` 0.088 ms/frame. The remaining upload frontier is
-now smaller and should be reprofiled by producer before broader JS-side
-`NOOVERWRITE`, orphaning, or checksum changes. The user-reported shadow
+uploads, and `bufferSubDataMs` 0.088 ms/frame. A follow-up browser D3D8
+draw-submit cleanup removed duplicate render-state normalization and skips
+diagnostic-rich fill/shade objects on `diag=lite` solid non-flat draws; the
+latest Mac M4 Metal profile measured 37.22 ms/frame wall and reduced scoped
+sorted draw-submit work to 2.70 ms/frame, with render-state apply at
+0.054 ms/frame. The remaining upload frontier is now smaller and should be
+reprofiled by producer before broader JS-side `NOOVERWRITE`, orphaning, or
+checksum changes. The user-reported shadow
 flicker/breakage symptom is fixed in the live skirmish path, while broader
 shadow fidelity remains in the queued phased plan.
 

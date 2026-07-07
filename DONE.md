@@ -9137,6 +9137,29 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `W3DProjectedShadow.renderShadows.meshFlush.before` at 1.26 ms, and the
       recurring perf frontier moved back to heightmap/terrain rendering. This
       pass did not claim to fix the separate user-reported shadow flicker bug.
+- [x] Trim browser D3D8 draw-submit work after the shoreline static-VB pass.
+      The shoreline split showed the remaining hot cost had moved back into
+      generic `paintD3D8DrawIndexed` submission, so the temporary shoreline
+      markers were not kept. In `diag=lite`, the browser bridge now uses a
+      minimal solid/non-flat draw descriptor instead of constructing the full
+      fill-mode and shade-mode probe objects that are only consumed by full
+      diagnostics. The draw path also passes already-normalized render state to
+      `applyD3D8RenderState`, removing a duplicate normalization pass while
+      keeping the full diagnostic probe path intact. Verified with
+      `node --check WebAssembly/harness/bridge.js`,
+      `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly run build:port:release`,
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and a synced Mac M4
+      Chrome/Metal release runtime profile. The Mac run reported
+      `ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)`,
+      60 measured frames, 37.22 ms/frame wall, 9.57 ms average engine
+      `lastFrameMs`, and a visible shell-map screenshot at
+      `WebAssembly/artifacts/screenshots/runtime-frame-profile-draw-submit-lite-fast-mac.png`.
+      Scoped sorted draw-submit work fell to 2.703 ms/frame, with
+      `sortedDrawApplyRenderStateMs` down to 0.054 ms/frame,
+      `sortedDrawUniformMs` to 0.629 ms/frame, and `sortedDrawFillShadeMs` to
+      0.063 ms/frame. The full diagnostics smoke confirms detailed
+      `browser_d3d8_draw_indexed` probes still work.
 - [x] Harden the human play harness against stale frame-344 builds. The Mac
       repro path did not reproduce the old shell-map abort on current bits:
       `harness/play.html?autostart=1&dist=dist-release&shellmap=1&diag=lite`

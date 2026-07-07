@@ -7819,6 +7819,35 @@ function createD3D8ShadeModeDrawInfo(
   return info;
 }
 
+function createD3D8LiteSolidDrawInfo(renderState, primitiveType, indexByteOffset, indexCount) {
+  const fillMode = Number(renderState.fillMode ?? D3DFILL_SOLID) >>> 0;
+  const shadeMode = Number(renderState.shadeMode ?? D3DSHADE_GOURAUD) >>> 0;
+  if (fillMode !== D3DFILL_SOLID || shadeMode === D3DSHADE_FLAT) {
+    return null;
+  }
+  const glPrimitive = d3dPrimitiveToGl(primitiveType);
+  const supported = d3d8GlPrimitiveSupported(glPrimitive);
+  return {
+    fillModeDraw: {
+      glPrimitive,
+      drawIndexCount: indexCount,
+      drawIndexByteOffset: indexByteOffset,
+      temporaryIndexBuffer: false,
+      supported,
+      fallbackReason: supported ? null : "unsupportedPrimitive",
+    },
+    shadeModeDraw: {
+      usesFlatShader: false,
+      usesFirstVertexConvention: false,
+      glPrimitive,
+      drawIndexCount: indexCount,
+      drawIndexByteOffset: indexByteOffset,
+      supported,
+      fallbackReason: supported ? null : "unsupportedPrimitive",
+    },
+  };
+}
+
 function d3d8FillModeProbeInfo(fillModeDraw) {
   if (!fillModeDraw) {
     return null;
@@ -8704,7 +8733,9 @@ function d3d8EffectiveStencilValue(value) {
 }
 
 function applyD3D8RenderState(renderState, options = {}) {
-  const state = normalizeD3D8RenderState(renderState);
+  const state = options.normalized === true
+    ? renderState
+    : normalizeD3D8RenderState(renderState);
   const cullEnabled = state.cullMode === D3DCULL_CW || state.cullMode === D3DCULL_CCW;
   const cullFace = options.invertCullWinding
     ? (state.cullMode === D3DCULL_CW ? gl.FRONT : gl.BACK)
@@ -9580,29 +9611,37 @@ function paintD3D8DrawIndexed(payload = {}) {
     let fillModeDraw, shadeModeDraw;
     // Per-draw geometry setup: ALWAYS executed (not skippable — geometry changes
     // every draw even when render state is identical).
-    fillModeDraw = createD3D8FillModeDrawInfo(
-      renderState,
-      payload.primitiveType,
-      indexResource,
-      indexByteOffset,
-      indexCount,
-      indexSize,
-      {
-        vertexResource,
-        vertexByteOffset,
-        vertexStride,
-        transforms: useTransforms ? { world, view, projection } : null,
-      },
-    );
-    shadeModeDraw = createD3D8ShadeModeDrawInfo(
-      renderState,
-      payload.primitiveType,
-      indexResource,
-      indexByteOffset,
-      indexCount,
-      indexSize,
-      fillModeDraw,
-    );
+    const liteSolidDrawInfo = d3d8DiagLevel !== "full"
+      ? createD3D8LiteSolidDrawInfo(renderState, payload.primitiveType, indexByteOffset, indexCount)
+      : null;
+    if (liteSolidDrawInfo) {
+      fillModeDraw = liteSolidDrawInfo.fillModeDraw;
+      shadeModeDraw = liteSolidDrawInfo.shadeModeDraw;
+    } else {
+      fillModeDraw = createD3D8FillModeDrawInfo(
+        renderState,
+        payload.primitiveType,
+        indexResource,
+        indexByteOffset,
+        indexCount,
+        indexSize,
+        {
+          vertexResource,
+          vertexByteOffset,
+          vertexStride,
+          transforms: useTransforms ? { world, view, projection } : null,
+        },
+      );
+      shadeModeDraw = createD3D8ShadeModeDrawInfo(
+        renderState,
+        payload.primitiveType,
+        indexResource,
+        indexByteOffset,
+        indexCount,
+        indexSize,
+        fillModeDraw,
+      );
+    }
     recordSortedDrawSubphase?.("sortedDrawFillShadeMs");
     const temporaryIndices = fillModeDraw.lineIndices ?? shadeModeDraw.triangleIndices ?? null;
     const vertexAttribKey = `${vertexBufferId},${vertexByteOffset},${vertexStride},`
@@ -9723,6 +9762,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       const applyRenderStateStartedAt = sortedDrawProfiled ? perfNow() : 0;
       appliedRenderState = applyD3D8RenderState(renderState, {
         invertCullWinding: false,
+        normalized: true,
       });
       if (sortedDrawProfiled) {
         d3d8PerfStats.sortedDrawApplyRenderStateMs += perfNow() - applyRenderStateStartedAt;
@@ -10172,8 +10212,10 @@ function paintD3D8DrawIndexed(payload = {}) {
       } else {
         bindD3D8ElementArrayBuffer(indexResource.buffer);
       }
-      appliedFillMode = d3d8FillModeProbeInfo(fillModeDraw);
-      appliedShadeMode = d3d8ShadeModeProbeInfo(shadeModeDraw);
+      if (d3d8DiagLevel === "full") {
+        appliedFillMode = d3d8FillModeProbeInfo(fillModeDraw);
+        appliedShadeMode = d3d8ShadeModeProbeInfo(shadeModeDraw);
+      }
       if (fillModeDraw.supported && shadeModeDraw.supported) {
         const canQueueAdjacentBatch = Boolean(
           earlyBatchInfo &&
