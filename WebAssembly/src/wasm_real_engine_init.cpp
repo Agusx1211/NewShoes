@@ -4907,6 +4907,37 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_spawn_laser(
 	return json.c_str();
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_tactical_view_look_at(
+	float x,
+	float y,
+	float z)
+{
+	static std::string json;
+	json = "{\"ok\":false,\"source\":\"tactical-view-look-at\"";
+	if (TheTacticalView == NULL) {
+		json += ",\"guard\":\"TheTacticalView\"}";
+		return json.c_str();
+	}
+	Coord3D pos = { x, y, z };
+	if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z)) {
+		json += ",\"guard\":\"invalidPosition\"}";
+		return json.c_str();
+	}
+
+	Coord3D before = { 0.0f, 0.0f, 0.0f };
+	TheTacticalView->getPosition(&before);
+	TheTacticalView->lookAt(&pos);
+	Coord3D after = { 0.0f, 0.0f, 0.0f };
+	TheTacticalView->getPosition(&after);
+
+	json = "{\"ok\":true,\"source\":\"tactical-view-look-at\"";
+	append_coord3d_fields(json, "requested", pos);
+	append_coord3d_fields(json, "before", before);
+	append_coord3d_fields(json, "after", after);
+	json += "}";
+	return json.c_str();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_do_fx(
 	const char *fx_name,
 	float x,
@@ -5540,6 +5571,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 	bool first = true;
 	std::string enemy_json;
 	bool enemy_first = true;
+	std::string all_json;
+	bool all_first = true;
+	int allKept = 0;
 
 	for (Drawable *d = TheGameClient->firstDrawable(); d; d = d->getNextDrawable()) {
 		totalDrawables++;
@@ -5615,6 +5649,23 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 			isHidden = false;
 		}
 
+		if (!all_first) {
+			all_json += ",";
+		}
+		all_first = false;
+		++allKept;
+		append_drawable_probe_entry_json(
+			all_json,
+			obj,
+			tpl,
+			owner,
+			localPlayer,
+			isStructure,
+			isHidden,
+			pos,
+			onScreen,
+			screenPos);
+
 		if (owner == nullptr) {
 			ownedNull++;
 		} else if (owner == localPlayer) {
@@ -5684,8 +5735,12 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 	json += ",\"enemyDrawables\":[";
 	json += enemy_json;
 	json += "]";
+	json += ",\"allDrawables\":[";
+	json += all_json;
+	json += "]";
 	json += ",\"stats\":{\"total\":" + std::to_string(totalDrawables);
 	json += ",\"noObject\":" + std::to_string(noObject);
+	json += ",\"allKept\":" + std::to_string(allKept);
 	json += ",\"notOwned\":" + std::to_string(notOwned);
 	json += ",\"ownedNull\":" + std::to_string(ownedNull);
 	json += ",\"ownedLocal\":" + std::to_string(ownedLocal);

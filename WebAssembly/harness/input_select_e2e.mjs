@@ -14,7 +14,9 @@
  *      MSG_DOZER_CONSTRUCT, then wait for completion.
  *   4. Select the completed producer, click a real unit-build command, and
  *      assert MSG_QUEUE_UNIT_CREATE plus a newly-created local unit drawable.
- *   5. Capture screenshot to artifacts/screenshots/input-select-e2e.png.
+ *   5. Select the produced unit, issue a real attack order, and assert the
+ *      dispatch plus resulting object/unit state change.
+ *   6. Capture screenshot to artifacts/screenshots/input-select-e2e.png.
  *
  * On errno=17/EEXIST wait 30s and retry up to 3x.
  */
@@ -239,8 +241,12 @@ function compactDrawable(drawable) {
     name: drawable.name ?? null,
     playerIndex: drawable.playerIndex ?? null,
     localOwned: drawable.localOwned ?? null,
+    relationshipToLocal: drawable.relationshipToLocal ?? null,
+    relationshipToLocalName: drawable.relationshipToLocalName ?? null,
+    hostileToLocal: drawable.hostileToLocal ?? null,
     structure: drawable.structure ?? null,
     hidden: drawable.hidden ?? null,
+    effectivelyDead: drawable.effectivelyDead ?? null,
     onScreen: drawable.onScreen ?? null,
     screenPos: drawable.screenPos ?? null,
     worldPos: drawable.worldPos ?? null,
@@ -333,6 +339,22 @@ function compactMoveCommandPath(selectionResult) {
   };
 }
 
+function compactAttackCommandPath(selectionResult) {
+  const path = selectionResult?.commandPath ?? {};
+  return {
+    lastClickType: path.lastClickType ?? null,
+    lastClickIssuedType: path.lastClickIssuedType ?? null,
+    lastClickDrawId: path.lastClickDrawId ?? null,
+    lastClickWorldPos: path.lastClickWorldPos ?? null,
+    dispatchAttackCommandCount: path.dispatchAttackCommandCount ?? null,
+    dispatchLastAttackCommandType: path.dispatchLastAttackCommandType ?? null,
+    dispatchLastAttackCommandTypeName: path.dispatchLastAttackCommandTypeName ?? null,
+    dispatchLastAttackHadGroup: path.dispatchLastAttackHadGroup ?? null,
+    dispatchLastAttackTargetId: path.dispatchLastAttackTargetId ?? null,
+    dispatchLastAttackTargetWorldPos: path.dispatchLastAttackTargetWorldPos ?? null,
+  };
+}
+
 function buildDispatchDelta(before, after) {
   return {
     build: (after.dispatchBuildCommandCount ?? 0) - (before.dispatchBuildCommandCount ?? 0),
@@ -351,6 +373,13 @@ function buildMoveDispatchDelta(before, after) {
   };
 }
 
+function buildAttackDispatchDelta(before, after) {
+  return {
+    dispatch: (after.dispatchAttackCommandCount ?? 0) -
+      (before.dispatchAttackCommandCount ?? 0),
+  };
+}
+
 function worldDistance2d(a, b) {
   if (a == null || b == null) {
     return null;
@@ -361,6 +390,66 @@ function worldDistance2d(a, b) {
     return null;
   }
   return Math.sqrt(dx * dx + dy * dy);
+}
+
+function attackTargetRank(candidate) {
+  const name = candidate?.name ?? "";
+  const nonCombatPattern =
+    /Train|SupplyDock|SupplyPile|Ambient|Amb_|Fence|Wall|Road|Tree|Shrub|Bush|Rock|Boulder|Barrel|Traffic|Sign|Light|Lamp|Pole|Bridge|Prop|Debris|Crate|Cargo|CivilianCar|Car|Truck|Flag/i;
+  const combatPattern =
+    /GLA|China|America|Tank|Infantry|Soldier|Rebel|RPG|Missile|Quad|Scorpion|Technical|Terror|Worker|Stinger|Tunnel|Barracks|ArmsDealer|Command|Supply|Patriot|Gattling|Dozer|Humvee|Paladin|Comanche|Mig|Raptor|Ranger|Trooper|AngryMob|Hijacker|Jarmen|Dragon|Overlord|Marauder|RocketBuggy|Toxin|Demo/i;
+  if (nonCombatPattern.test(name)) {
+    return 3;
+  }
+  if (combatPattern.test(name)) {
+    return 0;
+  }
+  if (candidate?.structure === true) {
+    return 1;
+  }
+  return 2;
+}
+
+function usableAttackCandidate(candidate) {
+  const health = Number(candidate?.body?.health);
+  const maxHealth = Number(candidate?.body?.maxHealth);
+  return candidate?.localOwned !== true &&
+    candidate.hidden === false &&
+    candidate.effectivelyDead !== true &&
+    candidate.worldPos != null &&
+    candidate.body?.ready === true &&
+    Number.isFinite(health) &&
+    Number.isFinite(maxHealth) &&
+    health > 0 &&
+    maxHealth > 0 &&
+    attackTargetRank(candidate) < 3;
+}
+
+function usableAttackTarget(candidate, displayWidth, displayHeight) {
+  return usableAttackCandidate(candidate) &&
+    candidate?.onScreen === true &&
+    candidate.screenPos != null &&
+    candidate.screenPos.x >= 8 &&
+    candidate.screenPos.x <= displayWidth - 8 &&
+    candidate.screenPos.y >= 8 &&
+    candidate.screenPos.y <= displayHeight - 150;
+}
+
+function rankAttackTargets(unit, candidates) {
+  return [...(candidates ?? [])].sort((a, b) => {
+    const aRank = attackTargetRank(a);
+    const bRank = attackTargetRank(b);
+    if (aRank !== bRank) {
+      return aRank - bRank;
+    }
+    const aStructure = a.structure === true ? 1 : 0;
+    const bStructure = b.structure === true ? 1 : 0;
+    if (aStructure !== bStructure) {
+      return aStructure - bStructure;
+    }
+    return (worldDistance2d(unit.worldPos, a.worldPos) ?? Number.MAX_SAFE_INTEGER) -
+      (worldDistance2d(unit.worldPos, b.worldPos) ?? Number.MAX_SAFE_INTEGER);
+  });
 }
 
 function chooseMovableDrawable(drawables) {
@@ -400,6 +489,22 @@ async function clickSelectPoint(page, point, label, settleFrames = 5) {
   await postMouse(page, WM_LBUTTONDOWN, point);
   await runFrames(page, settleFrames, `${label} down`);
   await postMouse(page, WM_LBUTTONUP, point);
+  return runFrames(page, settleFrames, `${label} up`);
+}
+
+async function dragSelectBox(page, start, end, label, settleFrames = 5) {
+  await postMouse(page, WM_MOUSEMOVE, start);
+  await runFrames(page, settleFrames, `${label} move start`);
+  await postMouse(page, WM_LBUTTONDOWN, start);
+  await runFrames(page, settleFrames, `${label} down`);
+  await postMouse(page, WM_MOUSEMOVE, {
+    x: Math.round((start.x + end.x) / 2),
+    y: Math.round((start.y + end.y) / 2),
+  });
+  await runFrames(page, settleFrames, `${label} drag`);
+  await postMouse(page, WM_MOUSEMOVE, end);
+  await runFrames(page, settleFrames, `${label} move end`);
+  await postMouse(page, WM_LBUTTONUP, end);
   return runFrames(page, settleFrames, `${label} up`);
 }
 
@@ -1008,6 +1113,20 @@ async function proveUnitProduction(page, completedStructure, results) {
       proof.created = compactDrawable(newMatches[0]);
       proof.verdict = "UNIT-PRODUCTION-CREATED-OBJECT";
       console.error(`[input-select-e2e] unit production created ${unitTemplate}#${proof.created.id}`);
+      const attackSettleFrames = parsePositiveInt("E2E_UNIT_ATTACK_SETTLE_FRAMES", 120);
+      proof.attackSettleFrames = attackSettleFrames;
+      if (attackSettleFrames > 0) {
+        await runSummary(page, attackSettleFrames, "unit attack settle wait");
+        const settledQuery = await queryDrawablesChecked(page, "unit attack settle");
+        const settledUnit = (settledQuery.result?.allDrawables ??
+            settledQuery.result?.drawables ??
+            [])
+          .find((drawable) => drawable.id === proof.created.id);
+        proof.settledCreated = compactDrawable(settledUnit) ?? proof.created;
+      } else {
+        proof.settledCreated = proof.created;
+      }
+      await proveAttackOrder(page, proof.settledCreated, results);
       return proof;
     }
 
@@ -1028,6 +1147,702 @@ async function proveUnitProduction(page, completedStructure, results) {
         samples: proof.samples.slice(-12),
       },
     });
+}
+
+async function selectProducedUnitForAttack(page, unit, displayWidth, displayHeight) {
+  const clampPoint = (point) => ({
+    x: Math.max(8, Math.min(Math.round(point.x), displayWidth - 8)),
+    y: Math.max(8, Math.min(Math.round(point.y), displayHeight - 150)),
+  });
+  const base = unit.screenPos;
+  const clickOffsets = [
+    { x: 0, y: 0 },
+    { x: 0, y: -18 },
+    { x: 14, y: -10 },
+    { x: -14, y: -10 },
+    { x: 18, y: 8 },
+    { x: -18, y: 8 },
+    { x: 0, y: 18 },
+    { x: 0, y: 34 },
+    { x: 18, y: 34 },
+    { x: -18, y: 34 },
+    { x: 0, y: 50 },
+    { x: 24, y: 48 },
+    { x: -24, y: 48 },
+  ];
+  const attempts = [];
+
+  for (const offset of clickOffsets) {
+    const point = clampPoint({ x: base.x + offset.x, y: base.y + offset.y });
+    console.error(`[input-select-e2e] trying attack-unit click select at ` +
+      `(${point.x},${point.y}) for ${unit.name}#${unit.id}`);
+    await clickSelectPoint(page, point, "attack proof select produced unit", 5);
+    const selection = await rpc(page, "querySelection");
+    const selectedIds = (selection?.result?.selected ?? []).map((selected) => selected.id);
+    const attempt = {
+      type: "click",
+      point,
+      ok: selectedIds.includes(unit.id),
+      selectCount: selection?.result?.selectCount ?? null,
+      selectedIds,
+    };
+    attempts.push(attempt);
+    if (attempt.ok) {
+      return { selection, attempts };
+    }
+  }
+
+  for (const radius of [18, 28, 42, 56]) {
+    const start = clampPoint({ x: base.x - radius, y: base.y - radius });
+    const end = clampPoint({ x: base.x + radius, y: base.y + radius });
+    console.error(`[input-select-e2e] trying attack-unit drag select ` +
+      `(${start.x},${start.y}) -> (${end.x},${end.y}) for ${unit.name}#${unit.id}`);
+    await dragSelectBox(page, start, end, "attack proof drag produced unit", 3);
+    const selection = await rpc(page, "querySelection");
+    const selectedIds = (selection?.result?.selected ?? []).map((selected) => selected.id);
+    const attempt = {
+      type: "drag",
+      start,
+      end,
+      ok: selectedIds.includes(unit.id),
+      selectCount: selection?.result?.selectCount ?? null,
+      selectedIds,
+    };
+    attempts.push(attempt);
+    if (attempt.ok) {
+      return { selection, attempts };
+    }
+  }
+
+  const asymmetricBoxes = [
+    { start: { x: base.x + 2, y: base.y + 2 }, end: { x: base.x + 48, y: base.y + 48 } },
+    { start: { x: base.x - 10, y: base.y + 8 }, end: { x: base.x + 34, y: base.y + 54 } },
+    { start: { x: base.x + 8, y: base.y - 6 }, end: { x: base.x + 56, y: base.y + 34 } },
+    { start: { x: base.x - 44, y: base.y + 2 }, end: { x: base.x - 2, y: base.y + 48 } },
+  ];
+  for (const box of asymmetricBoxes) {
+    const start = clampPoint(box.start);
+    const end = clampPoint(box.end);
+    console.error(`[input-select-e2e] trying attack-unit offset drag select ` +
+      `(${start.x},${start.y}) -> (${end.x},${end.y}) for ${unit.name}#${unit.id}`);
+    await dragSelectBox(page, start, end, "attack proof offset drag produced unit", 3);
+    const selection = await rpc(page, "querySelection");
+    const selectedIds = (selection?.result?.selected ?? []).map((selected) => selected.id);
+    const attempt = {
+      type: "offset-drag",
+      start,
+      end,
+      ok: selectedIds.includes(unit.id),
+      selectCount: selection?.result?.selectCount ?? null,
+      selectedIds,
+    };
+    attempts.push(attempt);
+    if (attempt.ok) {
+      return { selection, attempts };
+    }
+  }
+
+  return { selection: null, attempts };
+}
+
+async function proveAttackMoveOrder(page, unit, selectedResult, displayWidth, displayHeight, proof) {
+  console.error(`[input-select-e2e] proving attack-move with ${unit.name}#${unit.id}`);
+  const commandReady = await waitForCommandButtons(page);
+  const entries = commandButtonEntries(commandReady.frame?.clientState?.controlBarWindows);
+  const attackMoveCommand = entries.find(({ button }) =>
+    button.command?.typeName === "GUI_COMMAND_ATTACK_MOVE");
+  proof.attackMove = {
+    ok: false,
+    skippedObjectAttackReason: proof.objectAttackSkippedReason ?? null,
+    visibleCommandCount: entries.length,
+    visibleCommands: entries.map(({ slot, button }) => ({
+      slot,
+      id: button.id,
+      centerX: button.centerX,
+      centerY: button.centerY,
+      clickable: button.clickable,
+      hidden: button.hidden,
+      enabled: button.enabled,
+      command: button.command,
+    })),
+    chosen: attackMoveCommand == null ? null : {
+      slot: attackMoveCommand.slot,
+      id: attackMoveCommand.button.id,
+      centerX: attackMoveCommand.button.centerX,
+      centerY: attackMoveCommand.button.centerY,
+      command: attackMoveCommand.button.command,
+    },
+    beforeCommandPath: compactMoveCommandPath(selectedResult),
+    armedCommandPath: null,
+    attempts: [],
+    accepted: null,
+    beforeWorldPos: unit.worldPos,
+    afterWorldPos: null,
+    worldDelta: null,
+    verdict: null,
+  };
+  expect(attackMoveCommand != null,
+    "selected produced unit did not expose an attack-move command",
+    proof.attackMove.visibleCommands);
+
+  await clickButton(page, attackMoveCommand.button, null,
+    `attack-move ${attackMoveCommand.slot} ${attackMoveCommand.button.command?.name ?? "command"}`,
+    null);
+  await runFrames(page, 5, "attack-move command settle");
+
+  let armedSelection = await rpc(page, "querySelection");
+  if (armedSelection?.result?.modes?.attackMoveTo !== true &&
+      armedSelection?.result?.guiCommand?.typeName !== "GUI_COMMAND_ATTACK_MOVE") {
+    await runFrames(page, 5, "attack-move command arm retry");
+    armedSelection = await rpc(page, "querySelection");
+  }
+  expect(armedSelection?.result?.modes?.attackMoveTo === true ||
+      armedSelection?.result?.guiCommand?.typeName === "GUI_COMMAND_ATTACK_MOVE",
+    "attack-move command button did not arm attack-move mode",
+    {
+      chosen: proof.attackMove.chosen,
+      selection: armedSelection?.result,
+    });
+  proof.attackMove.armedCommandPath = compactMoveCommandPath(armedSelection.result);
+
+  const clampPoint = (point) => ({
+    x: Math.max(16, Math.min(Math.round(point.x), displayWidth - 16)),
+    y: Math.max(16, Math.min(Math.round(point.y), displayHeight - 150)),
+  });
+  const destinations = [
+    clampPoint({ x: unit.screenPos.x + 220, y: unit.screenPos.y }),
+    clampPoint({ x: unit.screenPos.x + 200, y: unit.screenPos.y + 90 }),
+    clampPoint({ x: unit.screenPos.x - 220, y: unit.screenPos.y }),
+    clampPoint({ x: unit.screenPos.x - 200, y: unit.screenPos.y + 90 }),
+    clampPoint({ x: Math.floor(displayWidth * 0.5), y: Math.floor(displayHeight * 0.45) }),
+    clampPoint({ x: displayWidth - 96, y: Math.floor(displayHeight * 0.45) }),
+    clampPoint({ x: 96, y: Math.floor(displayHeight * 0.45) }),
+  ].filter((point, index, points) =>
+    points.findIndex((candidate) => candidate.x === point.x && candidate.y === point.y) === index);
+
+  const beforePath = proof.attackMove.armedCommandPath;
+  let accepted = null;
+  for (const destination of destinations) {
+    console.error(`[input-select-e2e] trying attack-move destination ` +
+      `(${destination.x},${destination.y})`);
+    await postMouse(page, WM_MOUSEMOVE, destination);
+    await runFrames(page, 5, "attack-move mouse move");
+    await postMouse(page, WM_LBUTTONDOWN, destination);
+    await runFrames(page, 5, "attack-move down");
+    await postMouse(page, WM_LBUTTONUP, destination);
+    await runFrames(page, 5, "attack-move up");
+
+    const afterSelection = await rpc(page, "querySelection");
+    const afterPath = compactMoveCommandPath(afterSelection?.result);
+    const delta = buildMoveDispatchDelta(beforePath, afterPath);
+    const attempt = {
+      destination,
+      commandPath: afterPath,
+      delta,
+      selectCount: afterSelection?.result?.selectCount ?? null,
+      selectedIds: (afterSelection?.result?.selected ?? [])
+        .map((selected) => selected.id),
+    };
+    proof.attackMove.attempts.push(attempt);
+    console.error(`[input-select-e2e] attack-move attempt: ${JSON.stringify(attempt)}`);
+    if (delta.dispatch > 0) {
+      expect(afterPath.dispatchLastMoveCommandTypeName === "MSG_DO_ATTACKMOVETO",
+        "attack-move destination dispatched the wrong command type",
+        attempt);
+      expect(afterPath.dispatchLastMoveHadGroup === 1,
+        "attack-move dispatch did not include a selected group",
+        attempt);
+      accepted = {
+        destination,
+        afterCommandPath: afterPath,
+        dispatchDelta: delta,
+      };
+      break;
+    }
+  }
+
+  expect(accepted != null,
+    "no attack-move destination produced MSG_DO_ATTACKMOVETO",
+    proof.attackMove.attempts);
+
+  await runFrames(page, 120, "attack-move post-dispatch");
+  const stateQuery = await queryDrawablesChecked(page, "attack-move post state");
+  const stateDrawables = stateQuery.result?.allDrawables ?? stateQuery.result?.drawables ?? [];
+  const afterUnit = stateDrawables.find((candidate) => candidate.id === unit.id);
+  const worldDelta = worldDistance2d(unit.worldPos, afterUnit?.worldPos);
+  expect(Number.isFinite(worldDelta) && worldDelta > 1.0,
+    "attack-move dispatch did not move the produced unit",
+    {
+      unit,
+      afterUnit: compactDrawable(afterUnit),
+      worldDelta,
+      accepted,
+    });
+
+  proof.attackMove.ok = true;
+  proof.attackMove.accepted = accepted;
+  proof.attackMove.afterWorldPos = afterUnit?.worldPos ?? null;
+  proof.attackMove.worldDelta = worldDelta;
+  proof.attackMove.verdict = "ATTACK-MOVE-DISPATCHED-AND-UNIT-MOVED";
+  proof.ok = true;
+  proof.postState = {
+    attackMove: true,
+    unitMoved: true,
+    worldDelta,
+    beforeWorldPos: unit.worldPos,
+    afterWorldPos: afterUnit?.worldPos ?? null,
+  };
+  proof.verdict = proof.attackMove.verdict;
+  console.error(`[input-select-e2e] attack-move proof accepted: ` +
+    `${proof.attackMove.verdict}, worldDelta=${worldDelta}`);
+  return proof.attackMove;
+}
+
+async function proveAttackOrder(page, producedUnit, results) {
+  console.error(`[input-select-e2e] === ATTACK ORDER ===`);
+  expect(producedUnit?.id != null,
+    "attack proof did not receive a produced unit object",
+    producedUnit);
+
+  const preflightFrame = await runFrames(page, 1, "attack proof preflight");
+  const displayWidth = preflightFrame?.frame?.clientState?.display?.width ??
+    preflightFrame?.frame?.display?.width ??
+    1280;
+  const displayHeight = preflightFrame?.frame?.clientState?.display?.height ??
+    preflightFrame?.frame?.display?.height ??
+    720;
+  const beforeTargets = await queryDrawablesChecked(page, "attack proof target scan");
+  const drawables = beforeTargets.result?.drawables ?? [];
+  const enemies = beforeTargets.result?.enemyDrawables ?? [];
+  const unit = drawables.find((drawable) => drawable.id === producedUnit.id);
+  expect(unit != null,
+    "produced unit was not visible for attack-order proof",
+    {
+      producedUnit,
+      stats: beforeTargets.result?.stats ?? null,
+      localUnits: drawables
+        .filter((drawable) => drawable?.localOwned === true && drawable?.structure === false)
+        .map(compactDrawable),
+    });
+
+  const selectPoint = {
+    x: Math.round(unit.screenPos.x),
+    y: Math.round(unit.screenPos.y),
+  };
+  console.error(`[input-select-e2e] selecting produced attack unit ${unit.name}#${unit.id} at ` +
+    `(${selectPoint.x},${selectPoint.y})`);
+
+  const selectedForAttack = await selectProducedUnitForAttack(
+    page,
+    unit,
+    displayWidth,
+    displayHeight);
+  const selection = selectedForAttack.selection;
+  expect(selection?.ok === true,
+    "attack proof querySelection failed after selecting produced unit",
+    {
+      unit,
+      attempts: selectedForAttack.attempts,
+      selection,
+    });
+  expect((selection.result?.selected ?? []).some((selected) => selected.id === unit.id),
+    "attack proof click did not select the produced unit",
+    {
+      unit,
+      attempts: selectedForAttack.attempts,
+      selection: selection.result,
+    });
+
+  const beforeCommandPath = compactAttackCommandPath(selection.result);
+  const useAlternateMouse = selection.result?.inputSettings?.useAlternateMouse === true;
+  const primaryClick = useAlternateMouse
+    ? { name: "right", down: WM_RBUTTONDOWN, up: WM_RBUTTONUP }
+    : { name: "left", down: WM_LBUTTONDOWN, up: WM_LBUTTONUP };
+  const secondaryClick = useAlternateMouse
+    ? { name: "left", down: WM_LBUTTONDOWN, up: WM_LBUTTONUP }
+    : { name: "right", down: WM_RBUTTONDOWN, up: WM_RBUTTONUP };
+  const clickModes = [primaryClick, secondaryClick];
+
+  const buildTargetLists = (query) => {
+    const source = query.result?.allDrawables ?? query.result?.enemyDrawables ?? [];
+    const hostileVisible = rankAttackTargets(
+      unit,
+      source.filter((candidate) =>
+        usableAttackTarget(candidate, displayWidth, displayHeight) &&
+        candidate.hostileToLocal === true))
+      .slice(0, 16)
+      .map((candidate) => ({ ...candidate, forceAttack: false }));
+    const forceVisible = rankAttackTargets(
+      unit,
+      source.filter((candidate) =>
+        usableAttackTarget(candidate, displayWidth, displayHeight) &&
+        candidate.hostileToLocal !== true))
+      .slice(0, 16)
+      .map((candidate) => ({ ...candidate, forceAttack: true }));
+    const hostileAny = rankAttackTargets(
+      unit,
+      source.filter((candidate) =>
+        usableAttackCandidate(candidate) &&
+        candidate.hostileToLocal === true))
+      .slice(0, 24)
+      .map((candidate) => ({ ...candidate, forceAttack: false }));
+    const forceAny = rankAttackTargets(
+      unit,
+      source.filter((candidate) =>
+        usableAttackCandidate(candidate) &&
+        candidate.hostileToLocal !== true))
+      .slice(0, 24)
+      .map((candidate) => ({ ...candidate, forceAttack: true }));
+    return {
+      source,
+      visible: hostileVisible.length > 0 ? hostileVisible : forceVisible,
+      offscreen: hostileAny.length > 0 ? hostileAny : forceAny,
+      hostileVisible,
+      forceVisible,
+      hostileAny,
+      forceAny,
+    };
+  };
+
+  let targetQuery = beforeTargets;
+  let targetLists = buildTargetLists(targetQuery);
+  let usableTargets = targetLists.visible;
+
+  const proof = {
+    ok: false,
+    selectedUnit: compactDrawable(unit),
+    display: { width: displayWidth, height: displayHeight },
+    selectAttempts: selectedForAttack.attempts,
+    beforeCommandPath,
+    targetStats: beforeTargets.result?.stats ?? null,
+    sourceTargetCount: targetLists.source.length,
+    visibleTargetCount: targetLists.visible.length,
+    offscreenTargetCount: targetLists.offscreen.length,
+    candidateTargets: usableTargets.map((candidate) => ({
+      ...compactDrawable(candidate),
+      forceAttack: candidate.forceAttack === true,
+      rank: attackTargetRank(candidate),
+      distanceFromUnit: worldDistance2d(unit.worldPos, candidate.worldPos),
+    })),
+    offscreenCandidateTargets: targetLists.offscreen.map((candidate) => ({
+      ...compactDrawable(candidate),
+      forceAttack: candidate.forceAttack === true,
+      rank: attackTargetRank(candidate),
+      distanceFromUnit: worldDistance2d(unit.worldPos, candidate.worldPos),
+    })),
+    objectAttackSkippedReason: null,
+    attackMove: null,
+    cameraLookAtAttempts: [],
+    reselectAttempts: [],
+    attempts: [],
+    accepted: null,
+    maxFrames: null,
+    frameChunk: null,
+    samples: [],
+    postState: null,
+    verdict: null,
+  };
+  results.attackProof = proof;
+
+  if (targetLists.hostileAny.length === 0) {
+    proof.objectAttackSkippedReason = "NO_HOSTILE_TARGETS_IN_LIVE_SKIRMISH";
+    console.error("[input-select-e2e] no hostile live skirmish targets found; " +
+      "proving produced-unit attack-move instead");
+    await proveAttackMoveOrder(page, unit, selection.result, displayWidth, displayHeight, proof);
+    return proof;
+  }
+
+  if (usableTargets.length === 0 && targetLists.offscreen.length > 0) {
+    for (const candidate of targetLists.offscreen.slice(0, 8)) {
+      console.error(`[input-select-e2e] framing off-screen attack target ` +
+        `${candidate.name}#${candidate.id} at ${JSON.stringify(candidate.worldPos)}`);
+      const lookAt = await rpc(page, "tacticalViewLookAt", { worldPos: candidate.worldPos });
+      expect(lookAt?.ok === true,
+        "tactical view could not frame off-screen attack target",
+        { candidate: compactDrawable(candidate), lookAt });
+      await runFrames(page, 10, "attack proof camera frame target");
+      const framedQuery = await queryDrawablesChecked(page, "attack proof framed target scan");
+      const framedLists = buildTargetLists(framedQuery);
+      const matchingVisible = framedLists.visible.find((target) => target.id === candidate.id);
+      const nextTargets = matchingVisible != null
+        ? [
+            matchingVisible,
+            ...framedLists.visible.filter((target) => target.id !== matchingVisible.id),
+          ]
+        : framedLists.visible;
+      const attempt = {
+        requested: {
+          ...compactDrawable(candidate),
+          forceAttack: candidate.forceAttack === true,
+          rank: attackTargetRank(candidate),
+        },
+        lookAt: lookAt.result ?? null,
+        visibleTargetCount: nextTargets.length,
+        matchedRequested: matchingVisible != null,
+        framedStats: framedQuery.result?.stats ?? null,
+        visibleTargets: nextTargets.slice(0, 8).map((target) => ({
+          ...compactDrawable(target),
+          forceAttack: target.forceAttack === true,
+          rank: attackTargetRank(target),
+          distanceFromUnit: worldDistance2d(unit.worldPos, target.worldPos),
+        })),
+      };
+      proof.cameraLookAtAttempts.push(attempt);
+      if (nextTargets.length > 0) {
+        targetQuery = framedQuery;
+        targetLists = framedLists;
+        usableTargets = nextTargets;
+        proof.targetStats = framedQuery.result?.stats ?? proof.targetStats;
+        proof.visibleTargetCount = usableTargets.length;
+        proof.candidateTargets = usableTargets.map((target) => ({
+          ...compactDrawable(target),
+          forceAttack: target.forceAttack === true,
+          rank: attackTargetRank(target),
+          distanceFromUnit: worldDistance2d(unit.worldPos, target.worldPos),
+        }));
+        break;
+      }
+    }
+  }
+
+  const targetIds = new Set(usableTargets.map((candidate) => candidate.id));
+
+  console.error(`[input-select-e2e] attack target candidates: ` +
+    `${JSON.stringify(proof.candidateTargets.map((candidate) => ({
+      id: candidate.id,
+      name: candidate.name,
+      forceAttack: candidate.forceAttack,
+      hostileToLocal: candidate.hostileToLocal,
+      relationshipToLocalName: candidate.relationshipToLocalName,
+      structure: candidate.structure,
+      screenPos: candidate.screenPos,
+      health: candidate.body?.health,
+      maxHealth: candidate.body?.maxHealth,
+      distanceFromUnit: candidate.distanceFromUnit,
+    })))}`);
+
+  expect(usableTargets.length > 0,
+    "no visible attack target is available for attack-order proof",
+    {
+      stats: targetQuery.result?.stats ?? null,
+      sourceTargetCount: targetLists.source.length,
+      enemyCount: enemies.length,
+      hostileCount: targetLists.source.filter((candidate) =>
+        candidate?.onScreen === true && candidate.hostileToLocal === true).length,
+      fallbackForceAttack: targetLists.hostileVisible.length === 0,
+      offscreenCandidateCount: targetLists.offscreen.length,
+      rejectedSceneryCount: targetLists.source.filter((candidate) =>
+        candidate?.onScreen === true && attackTargetRank(candidate) >= 3).length,
+      sampleTargets: targetLists.source.slice(0, 12).map(compactDrawable),
+      cameraLookAtAttempts: proof.cameraLookAtAttempts,
+    });
+
+  let accepted = null;
+  for (const clickMode of clickModes) {
+    for (const target of usableTargets) {
+      const point = {
+        x: Math.round(target.screenPos.x),
+        y: Math.round(target.screenPos.y),
+      };
+      let forceAttackSelection = null;
+      let controlHeld = false;
+      try {
+        if (target.forceAttack === true) {
+          await page.keyboard.down("Control");
+          controlHeld = true;
+          await runFrames(page, 5, "attack proof ctrl down");
+          forceAttackSelection = await rpc(page, "querySelection");
+          expect(forceAttackSelection?.result?.modes?.forceAttack === true,
+            "CTRL did not enter force-attack mode before attack proof",
+            forceAttackSelection?.result?.modes);
+        }
+
+        console.error(`[input-select-e2e] trying ${clickMode.name}-click attack on ` +
+          `${target.name}#${target.id} at (${point.x},${point.y})`);
+        await postMouse(page, WM_MOUSEMOVE, point);
+        await runFrames(page, 5, "attack proof mouse move");
+        await postMouse(page, clickMode.down, point);
+        await runFrames(page, 5, "attack proof down");
+        await postMouse(page, clickMode.up, point);
+        await runFrames(page, 5, "attack proof up");
+      } finally {
+        if (controlHeld) {
+          await page.keyboard.up("Control");
+          await runFrames(page, 5, "attack proof ctrl up");
+        }
+      }
+
+      const afterClickSelection = await rpc(page, "querySelection");
+      const afterCommandPath = compactAttackCommandPath(afterClickSelection?.result);
+      const delta = buildAttackDispatchDelta(beforeCommandPath, afterCommandPath);
+      const attempt = {
+        clickButton: clickMode.name,
+        target: {
+          ...compactDrawable(target),
+          forceAttack: target.forceAttack === true,
+          point,
+          rank: attackTargetRank(target),
+        },
+        forceAttackModeBeforeClick: forceAttackSelection?.result?.modes?.forceAttack ?? null,
+        selectCount: afterClickSelection?.result?.selectCount ?? null,
+        selectedIds: (afterClickSelection?.result?.selected ?? [])
+          .map((selected) => selected.id),
+        commandPath: afterCommandPath,
+        dispatchDelta: delta,
+      };
+      proof.attempts.push(attempt);
+      console.error(`[input-select-e2e] attack attempt: ${JSON.stringify(attempt)}`);
+
+      const attackTypeName = afterCommandPath.dispatchLastAttackCommandTypeName;
+      if (delta.dispatch > 0 &&
+          afterCommandPath.dispatchLastAttackHadGroup === 1 &&
+          targetIds.has(afterCommandPath.dispatchLastAttackTargetId) &&
+          (attackTypeName === "MSG_DO_ATTACK_OBJECT" ||
+            attackTypeName === "MSG_DO_FORCE_ATTACK_OBJECT")) {
+        const acceptedTarget = usableTargets.find((candidate) =>
+          candidate.id === afterCommandPath.dispatchLastAttackTargetId) ?? target;
+        accepted = {
+          clickButton: clickMode.name,
+          clickedPoint: point,
+          target: acceptedTarget,
+          forceAttack: target.forceAttack === true,
+          beforeCommandPath,
+          afterCommandPath,
+          dispatchDelta: delta,
+        };
+        break;
+      }
+
+      const stillSelected = (afterClickSelection?.result?.selected ?? [])
+        .some((selected) => selected.id === unit.id);
+      if (!stillSelected) {
+        const reselected = await selectProducedUnitForAttack(
+          page,
+          unit,
+          displayWidth,
+          displayHeight);
+        proof.reselectAttempts.push(reselected.attempts);
+        expect((reselected.selection?.result?.selected ?? [])
+          .some((selected) => selected.id === unit.id),
+          "attack proof could not reselect produced unit after a failed target attempt",
+          {
+            unit,
+            attempts: reselected.attempts,
+            selection: reselected.selection?.result ?? null,
+          });
+      }
+    }
+    if (accepted != null) {
+      break;
+    }
+  }
+
+  expect(accepted != null,
+    "no visible target produced a real attack dispatch",
+    proof.attempts);
+
+  proof.accepted = {
+    ...accepted,
+    target: {
+      ...compactDrawable(accepted.target),
+      forceAttack: accepted.forceAttack === true,
+      rank: attackTargetRank(accepted.target),
+    },
+  };
+  console.error(`[input-select-e2e] accepted attack target: ${JSON.stringify(proof.accepted)}`);
+
+  const maxFrames = parsePositiveInt("E2E_ATTACK_EFFECT_MAX_FRAMES", 1800);
+  const frameChunk = parsePositiveInt("E2E_ATTACK_EFFECT_FRAME_CHUNK", 60);
+  proof.maxFrames = maxFrames;
+  proof.frameChunk = frameChunk;
+
+  const beforeHealth = accepted.target.body?.ready === true
+    ? Number(accepted.target.body.health)
+    : null;
+  const beforeDamageTimestamp = Number(accepted.target.body?.lastDamageTimestamp ?? 0);
+  const beforeDistance = worldDistance2d(unit.worldPos, accepted.target.worldPos);
+  let framesAdvanced = 0;
+  let firstStateChange = null;
+  let firstDamage = null;
+
+  while (framesAdvanced <= maxFrames) {
+    const stateQuery = await queryDrawablesChecked(page, "attack proof state");
+    const stateDrawables = stateQuery.result?.allDrawables ?? stateQuery.result?.drawables ?? [];
+    const afterUnit = stateDrawables
+      .find((candidate) => candidate.id === unit.id);
+    const afterTarget = stateDrawables
+      .find((candidate) => candidate.id === accepted.target.id);
+    const afterHealth = afterTarget?.body?.ready === true
+      ? Number(afterTarget.body.health)
+      : null;
+    const afterDamageTimestamp = Number(afterTarget?.body?.lastDamageTimestamp ?? 0);
+    const unitDelta = worldDistance2d(unit.worldPos, afterUnit?.worldPos);
+    const afterDistance = worldDistance2d(afterUnit?.worldPos, afterTarget?.worldPos);
+    const targetDamaged = (
+      Number.isFinite(beforeHealth) &&
+      Number.isFinite(afterHealth) &&
+      afterHealth < beforeHealth - 0.1
+    ) ||
+      (Number.isFinite(beforeDamageTimestamp) &&
+        afterDamageTimestamp > beforeDamageTimestamp) ||
+      afterTarget?.effectivelyDead === true;
+    const unitMoved = Number.isFinite(unitDelta) && unitDelta > 1.0;
+    const distanceClosed = Number.isFinite(beforeDistance) &&
+      Number.isFinite(afterDistance) &&
+      afterDistance < beforeDistance - 1.0;
+    const sample = {
+      framesAdvanced,
+      stats: stateQuery.result?.stats ?? null,
+      targetStillVisible: afterTarget != null,
+      beforeHealth,
+      afterHealth: Number.isFinite(afterHealth) ? afterHealth : null,
+      beforeDamageTimestamp,
+      afterDamageTimestamp,
+      beforeDistance,
+      afterDistance: Number.isFinite(afterDistance) ? afterDistance : null,
+      unitDelta: Number.isFinite(unitDelta) ? unitDelta : null,
+      targetDamaged,
+      unitMoved,
+      distanceClosed,
+      target: compactDrawable(afterTarget),
+      unit: compactDrawable(afterUnit),
+    };
+    proof.samples.push(sample);
+    console.error(`[input-select-e2e] attack sample ${framesAdvanced}/${maxFrames}: ` +
+      `targetDamaged=${sample.targetDamaged}, unitMoved=${sample.unitMoved}, ` +
+      `distanceClosed=${sample.distanceClosed}, health=${sample.beforeHealth}->${sample.afterHealth}`);
+
+    if (targetDamaged && firstDamage == null) {
+      firstDamage = sample;
+      break;
+    }
+    if (firstStateChange == null && (unitMoved || distanceClosed)) {
+      firstStateChange = sample;
+    }
+
+    if (framesAdvanced >= maxFrames) {
+      break;
+    }
+    const frames = Math.min(frameChunk, maxFrames - framesAdvanced);
+    await runSummary(page, frames, "attack proof effect wait");
+    framesAdvanced += frames;
+  }
+
+  const postState = firstDamage ?? firstStateChange;
+  expect(postState != null,
+    "attack command dispatched but object state did not change",
+    {
+      accepted: proof.accepted,
+      samples: proof.samples.slice(-12),
+    });
+
+  proof.ok = true;
+  proof.postState = postState;
+  proof.verdict = firstDamage != null
+    ? "ATTACK-DISPATCHED-AND-TARGET-DAMAGED"
+    : "ATTACK-DISPATCHED-AND-OBJECT-STATE-CHANGED";
+  console.error(`[input-select-e2e] attack proof accepted: ${proof.verdict}`);
+  return proof;
 }
 
 /**
@@ -1090,6 +1905,27 @@ async function main() {
       progress: null,
       completion: null,
       unitProduction: null,
+      verdict: null,
+    },
+    attackProof: {
+      ok: false,
+      selectedUnit: null,
+      display: null,
+      selectAttempts: [],
+      beforeCommandPath: null,
+      targetStats: null,
+      candidateTargets: [],
+      offscreenCandidateTargets: [],
+      objectAttackSkippedReason: null,
+      attackMove: null,
+      cameraLookAtAttempts: [],
+      reselectAttempts: [],
+      attempts: [],
+      accepted: null,
+      maxFrames: null,
+      frameChunk: null,
+      samples: [],
+      postState: null,
       verdict: null,
     },
     moveOrderProof: {
@@ -1445,12 +2281,18 @@ async function main() {
       results.commandBarProof.verdict === "COMMAND-BAR-BUILD-DISPATCHED" &&
       results.productionProof.buildTemplate != null;
     const unitProductionRequired = results.productionProof.unitProduction?.chosen != null;
+    const attackRequired = results.productionProof.unitProduction?.ok === true;
     results.ok = selectionWorks &&
       results.moveOrderProof.ok === true &&
       (!constructionRequired || results.productionProof.ok === true) &&
-      (!unitProductionRequired || results.productionProof.unitProduction?.ok === true);
+      (!unitProductionRequired || results.productionProof.unitProduction?.ok === true) &&
+      (!attackRequired || results.attackProof?.ok === true);
 
     if (selectionWorks && results.moveOrderProof.ok &&
+        results.commandBarProof.ok && results.productionProof.unitProduction?.ok &&
+        results.attackProof?.ok) {
+      results.verdict = `SELECT-MOVE-CONSTRUCT-PRODUCE-AND-ATTACK-WORK (${results.attackProof.verdict})`;
+    } else if (selectionWorks && results.moveOrderProof.ok &&
         results.commandBarProof.ok && results.productionProof.unitProduction?.ok) {
       results.verdict = `SELECT-MOVE-CONSTRUCT-AND-UNIT-PRODUCTION-WORK (${results.commandBarProof.verdict})`;
     } else if (selectionWorks && results.moveOrderProof.ok &&
@@ -1476,6 +2318,7 @@ async function main() {
     console.error(`[input-select-e2e] Move proof: ${JSON.stringify(results.moveOrderProof)}`);
     console.error(`[input-select-e2e] Command proof: ${JSON.stringify(results.commandBarProof)}`);
     console.error(`[input-select-e2e] Production proof: ${JSON.stringify(results.productionProof)}`);
+    console.error(`[input-select-e2e] Attack proof: ${JSON.stringify(results.attackProof)}`);
     console.error(`[input-select-e2e] Screenshot: ${results.screenshot}`);
     console.error(`[input-select-e2e] VERDICT: ${results.verdict}`);
 

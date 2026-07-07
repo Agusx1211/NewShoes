@@ -3591,6 +3591,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `Command_ConstructGLAInfantryRebel`, observed `dispatchQueueUnitCreateCount`
       advance by 1, and created local `GLAInfantryRebel#225` after 300 unit
       production frames.
+- [x] Prove a produced live skirmish unit can receive a real attack-move order
+      through the original command bar and input path. `input_select_e2e.mjs`
+      now waits for the produced unit to settle, selects that exact drawable,
+      scans all live drawables for hostile object-attack candidates, and, when
+      the default live skirmish has no hostile live targets, clicks the unit's
+      real `GUI_COMMAND_ATTACK_MOVE` button and requires
+      `MSG_DO_ATTACKMOVETO` plus a measured unit world-position delta. The
+      harness also exposes `allDrawables` and a tactical-view `lookAt` RPC for
+      future object-attack framing diagnostics. Verified with local Chromium:
+      `E2E_BROWSER_EXECUTABLE=/home/agusx1211/.cache/ms-playwright/chromium-1228/chrome-linux/chrome E2E_BROWSER_ARGS='--headless=new' node harness/input_select_e2e.mjs`.
+      The run selected `Slth_GLAInfantryRebel#225`, found no hostile live
+      skirmish targets, clicked `Command_AttackMove`, observed
+      `dispatchLastMoveCommandTypeName=MSG_DO_ATTACKMOVETO`, and measured the
+      produced unit moving from `(1200.830,285.852,18.75)` to
+      `(1209.616,280.886,18.75)` for
+      `SELECT-MOVE-CONSTRUCT-PRODUCE-AND-ATTACK-WORK
+      (ATTACK-MOVE-DISPATCHED-AND-UNIT-MOVED)`.
 - [x] Close the Fable command-bar in-flight follow-up. The Emscripten-only
       `FunctionLexicon::loadRuntimeTableForPort` now owns only the merged
       tables installed through that API, frees the previous injected table on

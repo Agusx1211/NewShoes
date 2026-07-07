@@ -10872,6 +10872,11 @@ async function loadWasmModule() {
         "string",
         ["string", "number", "number", "number", "number", "number", "number", "number"],
       ),
+      tacticalViewLookAt: module.cwrap(
+        "cnc_port_tactical_view_look_at",
+        "string",
+        ["number", "number", "number"],
+      ),
       realEngineDetonateWeapon: module.cwrap(
         "cnc_port_real_engine_detonate_weapon",
         "string",
@@ -16130,6 +16135,34 @@ async function rpc(command, payload = {}) {
         return {
           ok: Boolean(result?.ready) && !aborted,
           command: "queryDrawables",
+          aborted,
+          abortMessage,
+          result,
+          state: snapshotState(),
+        };
+      }
+    case "tacticalViewLookAt":
+      {
+        const moduleResult = await getWasmModuleForArchives("tacticalViewLookAt");
+        if (moduleResult.error) {
+          return { ok: false, command: "tacticalViewLookAt", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.tacticalViewLookAt(
+            Number(payload.x ?? payload.worldPos?.x ?? 0),
+            Number(payload.y ?? payload.worldPos?.y ?? 0),
+            Number(payload.z ?? payload.worldPos?.z ?? 0),
+          ));
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        return {
+          ok: Boolean(result?.ok) && !aborted,
+          command: "tacticalViewLookAt",
           aborted,
           abortMessage,
           result,

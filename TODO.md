@@ -1831,9 +1831,15 @@ residue and the next frontier.
 - [ ] Win/lose conditions trigger.
 - [ ] Harness: from the skirmish-start smoke's active match state, issue
       attack orders through the original input/command path and assert object
-      state changes. The live skirmish e2e now covers map-ground movement:
-      `AmericaVehicleDozer` selection -> `MSG_DO_MOVETO` dispatch -> measured
-      world-position delta after frame stepping.
+      state changes. The live skirmish e2e now covers map-ground movement
+      (`AmericaVehicleDozer` selection -> `MSG_DO_MOVETO` dispatch -> measured
+      world-position delta) and, after real barracks unit production, proves
+      produced-infantry attack-move through the original control-bar/input path
+      (`GUI_COMMAND_ATTACK_MOVE` -> `MSG_DO_ATTACKMOVETO` -> measured unit
+      world-position delta). Keep this open for real hostile object attack and
+      target damage; the current default live skirmish scan finds no hostile
+      live targets, and neutral force-attack candidates have not produced an
+      object attack dispatch.
 - [ ] Replay/recorder (`Recorder.cpp`) records and plays back deterministically.
 
 ---
