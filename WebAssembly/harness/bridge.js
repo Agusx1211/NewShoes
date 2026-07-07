@@ -99,10 +99,15 @@ const d3d8Buffers = new Map();
 const d3d8Textures = new Map();
 const d3d8BoundTextures = new Map();
 // Draw-cache: skips normalize* JS object rebuilds and the point-sprite +
-// texture-availability uniform blocks when the draw-state key is unchanged
-// from the previous draw. GL retains state between identical draws.
+// texture-availability uniform blocks for repeated draw-state keys. The
+// previous draw stays as the fast path; the bounded table catches non-adjacent
+// repeats inside sorted draw runs.
 let d3d8LastDrawKey = null;
 let d3d8CachedDerived = null; // {renderState, clipPlanes, material, lights, fixedFunctionLights, directionalLights, firstDirectionalLight, vertexLayout, texture0Id, texture1Id, canSampleTexture0, canSampleTexture1, texture0Coordinates, texture1Coordinates, texture0SemanticMode, texture1SemanticMode, appliedTexture0Combiner, appliedStage1Combiner, implicitAlphaCutoutThreshold, appliedPointSprite}
+const D3D8_DERIVED_DRAW_CACHE_LIMIT = 128;
+const d3d8DerivedDrawCache = new Map();
+let d3d8DerivedDrawCacheEntries = 0;
+let d3d8DerivedDrawCacheClock = 0;
 let d3d8LastTransformUniformWorld = null;
 let d3d8LastTransformUniformView = null;
 let d3d8LastTransformUniformProjection = null;
@@ -1024,6 +1029,7 @@ function invalidateD3D8DrawStateCache() {
   harnessState.graphics.lastD3D8AppliedRenderState = null;
   d3d8LastDrawKey = null;
   d3d8CachedDerived = null;
+  clearD3D8DerivedDrawCache();
   resetD3D8TransformUniformCache();
   d3d8LastPointSpriteUniformInfo = null;
   d3d8LastVertexAttribKey = null;
@@ -1031,6 +1037,131 @@ function invalidateD3D8DrawStateCache() {
   invalidateD3D8AppliedViewportCache();
   invalidateD3D8RenderGlStateCache();
   resetD3D8UniformSubgroupCaches();
+}
+
+function clearD3D8DerivedDrawCache() {
+  d3d8DerivedDrawCache.clear();
+  d3d8DerivedDrawCacheEntries = 0;
+  d3d8DerivedDrawCacheClock = 0;
+}
+
+function d3d8DerivedDrawCacheEntryMatches(
+  entry,
+  derivedStateHash,
+  texture0Id,
+  texture1Id,
+  vertexShaderFvf,
+  vertexStride,
+  primitiveType,
+) {
+  return entry.derivedStateHash === derivedStateHash &&
+    entry.texture0Id === texture0Id &&
+    entry.texture1Id === texture1Id &&
+    entry.vertexShaderFvf === vertexShaderFvf &&
+    entry.vertexStride === vertexStride &&
+    entry.primitiveType === primitiveType;
+}
+
+function findD3D8DerivedDrawCacheEntry(
+  derivedStateHash,
+  texture0Id,
+  texture1Id,
+  vertexShaderFvf,
+  vertexStride,
+  primitiveType,
+) {
+  const bucket = d3d8DerivedDrawCache.get(derivedStateHash);
+  if (!bucket) {
+    return null;
+  }
+  for (const entry of bucket) {
+    if (d3d8DerivedDrawCacheEntryMatches(
+      entry,
+      derivedStateHash,
+      texture0Id,
+      texture1Id,
+      vertexShaderFvf,
+      vertexStride,
+      primitiveType,
+    )) {
+      entry.usedAt = ++d3d8DerivedDrawCacheClock;
+      return entry;
+    }
+  }
+  return null;
+}
+
+function evictOldestD3D8DerivedDrawCacheEntry() {
+  let oldestHash = null;
+  let oldestBucket = null;
+  let oldestIndex = -1;
+  let oldestUsedAt = Infinity;
+  for (const [hash, bucket] of d3d8DerivedDrawCache) {
+    for (let index = 0; index < bucket.length; index += 1) {
+      const usedAt = bucket[index].usedAt;
+      if (usedAt < oldestUsedAt) {
+        oldestHash = hash;
+        oldestBucket = bucket;
+        oldestIndex = index;
+        oldestUsedAt = usedAt;
+      }
+    }
+  }
+  if (oldestBucket === null || oldestIndex < 0) {
+    return;
+  }
+  oldestBucket.splice(oldestIndex, 1);
+  d3d8DerivedDrawCacheEntries -= 1;
+  if (oldestBucket.length === 0) {
+    d3d8DerivedDrawCache.delete(oldestHash);
+  }
+}
+
+function rememberD3D8DerivedDrawCacheEntry(
+  derivedStateHash,
+  texture0Id,
+  texture1Id,
+  vertexShaderFvf,
+  vertexStride,
+  primitiveType,
+  derived,
+) {
+  let bucket = d3d8DerivedDrawCache.get(derivedStateHash);
+  if (!bucket) {
+    bucket = [];
+    d3d8DerivedDrawCache.set(derivedStateHash, bucket);
+  }
+  for (const entry of bucket) {
+    if (d3d8DerivedDrawCacheEntryMatches(
+      entry,
+      derivedStateHash,
+      texture0Id,
+      texture1Id,
+      vertexShaderFvf,
+      vertexStride,
+      primitiveType,
+    )) {
+      entry.derived = derived;
+      entry.usedAt = ++d3d8DerivedDrawCacheClock;
+      return entry;
+    }
+  }
+  const entry = {
+    derivedStateHash,
+    texture0Id,
+    texture1Id,
+    vertexShaderFvf,
+    vertexStride,
+    primitiveType,
+    derived,
+    usedAt: ++d3d8DerivedDrawCacheClock,
+  };
+  bucket.push(entry);
+  d3d8DerivedDrawCacheEntries += 1;
+  while (d3d8DerivedDrawCacheEntries > D3D8_DERIVED_DRAW_CACHE_LIMIT) {
+    evictOldestD3D8DerivedDrawCacheEntry();
+  }
+  return entry;
 }
 
 const d3d8WarnedOnce = new Set();
@@ -6791,6 +6922,7 @@ function releaseD3D8Texture(payload = {}) {
   }
   gl.deleteTexture(resource.texture);
   invalidateD3D8GlTextureBindingCache();
+  invalidateD3D8DrawStateCache();
   if (releasedBindings.length > 0) {
     d3d8TextureStats.releaseUnbinds += releasedBindings.length;
     d3d8TextureStats.lastReleaseUnbind = { id, stages: releasedBindings };
@@ -10151,7 +10283,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   // all render/material/light state used by the derived JS objects below.
   const drawCacheTexture0Id = Number(d3d8BoundTextures.get(0) ?? 0) >>> 0;
   const drawCacheTexture1Id = Number(d3d8BoundTextures.get(1) ?? 0) >>> 0;
-  const drawCacheHit = d3d8CachedDerived !== null &&
+  let drawCacheHit = d3d8CachedDerived !== null &&
     d3d8LastDrawKey !== null &&
     d3d8LastDrawKey.derivedStateHash === derivedStateHash &&
     d3d8LastDrawKey.texture0Id === drawCacheTexture0Id &&
@@ -10159,6 +10291,21 @@ function paintD3D8DrawIndexed(payload = {}) {
     d3d8LastDrawKey.vertexShaderFvf === vertexShaderFvf &&
     d3d8LastDrawKey.vertexStride === vertexStride &&
     d3d8LastDrawKey.primitiveType === primitiveType;
+  if (!drawCacheHit) {
+    const cachedEntry = findD3D8DerivedDrawCacheEntry(
+      derivedStateHash,
+      drawCacheTexture0Id,
+      drawCacheTexture1Id,
+      vertexShaderFvf,
+      vertexStride,
+      primitiveType,
+    );
+    if (cachedEntry !== null) {
+      d3d8LastDrawKey = cachedEntry;
+      d3d8CachedDerived = cachedEntry.derived;
+      drawCacheHit = true;
+    }
+  }
   if (drawCacheHit) {
     d3d8PerfStats.drawDerivedCacheHits += 1;
   } else {
@@ -10257,14 +10404,6 @@ function paintD3D8DrawIndexed(payload = {}) {
       texture1Resource,
     );
     // Update draw-cache for next draw
-    d3d8LastDrawKey = {
-      derivedStateHash,
-      texture0Id,
-      texture1Id,
-      vertexShaderFvf,
-      vertexStride,
-      primitiveType,
-    };
     d3d8CachedDerived = {
       renderState, clipPlanes, material, lights,
       fixedFunctionLights, directionalLights, firstDirectionalLight,
@@ -10277,6 +10416,15 @@ function paintD3D8DrawIndexed(payload = {}) {
       appliedTexture0Combiner, appliedStage1Combiner,
       implicitAlphaCutoutThreshold,
     };
+    d3d8LastDrawKey = rememberD3D8DerivedDrawCacheEntry(
+      derivedStateHash,
+      texture0Id,
+      texture1Id,
+      vertexShaderFvf,
+      vertexStride,
+      primitiveType,
+      d3d8CachedDerived,
+    );
   }
   const vertexPretransformed = vertexLayout?.pretransformed === true;
   const usePositionTransforms = useTransforms && !vertexPretransformed;

@@ -423,6 +423,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       but was wall-time noisy, so this records a narrow JS hot-path cleanup
       rather than a frontier shift.
 
+- [x] Reuse browser D3D8 derived draw-state objects across non-adjacent draws.
+      `bridge.js` now keeps the existing previous-draw fast path and adds a
+      bounded primitive-key cache for repeated derived draw keys within sorted
+      draw runs, avoiding repeated render/material/light/texture-coordinate
+      object rebuilds when the same state recurs after intervening draws.
+      Texture create/update/release paths clear the cache conservatively so
+      texture readiness cannot go stale.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `git diff --check`, a local SwiftShader runtime profile with visible
+      screenshot (`runtime-frame-profile.json` /
+      `runtime-frame-profile.png`), and a synced Mac M4/Metal release profile
+      copied to `runtime-frame-profile-derived-lru-release-mac.json` /
+      `runtime-frame-profile-derived-lru-release-mac.png`. Compared with
+      `runtime-frame-profile-numeric-hotkeys-final-mac.json`, the Mac release
+      run kept the renderer on `ANGLE Metal Renderer: Apple M4`, kept the
+      screenshot visible, moved derived-cache hits/misses from 214.6/122.8 to
+      274.0/62.4 per frame, reduced `sortedDrawDerivedMs` from 0.547 to
+      0.221 ms/frame, and reduced `SortingRenderer.pool.draw.submit.before`
+      derived time from 0.426 to 0.091 ms/frame. Total wall time stayed in the
+      same noise band, so this closes the derived-object cache miss cleanup but
+      leaves the draw-submission/geometry frontier open.
+
 - [x] Extend D3D8 draw producer attribution to non-sorted draw calls. The
       opt-in producer table now records total `drawProfiledMs`, total
       calls/indices, and separate sorted-call counters for every D3D8 indexed
