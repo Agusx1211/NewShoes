@@ -77,6 +77,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Remove per-draw string construction from the D3D8 derived draw-cache key.
+      `paintD3D8DrawIndexed` now compares the six draw-cache fields
+      (`derivedStateHash`, bound texture ids, FVF, stride, primitive type)
+      directly and only stores a small key object on cache misses, preserving
+      the existing derived-state cache behavior without building a concatenated
+      string on every draw.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and synced Mac
+      M4/Metal release profiles copied to
+      `runtime-frame-profile-draw-cache-key-mac.json` /
+      `runtime-frame-profile-draw-cache-key-mac.png` and
+      `runtime-frame-profile-draw-cache-key-repeat-mac.json` /
+      `runtime-frame-profile-draw-cache-key-repeat-mac.png`. The 60-frame
+      producer run kept the renderer on `ANGLE Metal Renderer: Apple M4` and
+      moved attributed draw bridge work from 4.062 to 4.024 ms/frame, with
+      `SortingRenderer.pool.draw.submit.before` `sortedDrawDerivedMs` moving
+      from 0.421 to 0.408 ms/frame. The 120-frame repeat stayed visually valid
+      but was wall-time noisy, so this records a narrow JS hot-path cleanup
+      rather than a frontier shift.
+
 - [x] Extend D3D8 draw producer attribution to non-sorted draw calls. The
       opt-in producer table now records total `drawProfiledMs`, total
       calls/indices, and separate sorted-call counters for every D3D8 indexed

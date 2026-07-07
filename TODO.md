@@ -330,10 +330,17 @@ calls), `W3DVolumetricShadow.renderMeshVolume.draw.before` (0.466 ms/frame,
 `W3DProjectedShadow.renderShadows.meshFlush.before` (0.385 ms/frame, 48.4
 calls). Smaller non-sorted tails now visible in the same profile include
 shoreline, display-string, roads, extra-blend, water, water-track, and window
-draws. The next PERF pass should use those producers to reduce world-space
-submissions or residual draw-submit stalls, not material, light, text-geometry,
-first-vertex VAO setup, transform comparison/allocation, or draw-time harness
-bookkeeping. Broader shadow fidelity remains in the queued phased plan.
+draws. The D3D8 bridge now compares the derived draw-cache key as numeric
+fields instead of allocating a concatenated key string every draw; the first
+Mac M4/Metal producer run `runtime-frame-profile-draw-cache-key-mac.json`
+kept the screenshot correct and moved attributed draw bridge work from 4.062 to
+4.024 ms/frame, with `SortingRenderer.pool.draw.submit.before`
+`sortedDrawDerivedMs` moving from 0.421 to 0.408 ms/frame. The next PERF pass
+should use the producer table to reduce world-space submissions or residual
+draw-submit stalls, not material, light, text-geometry, first-vertex VAO setup,
+transform comparison/allocation, draw-time harness bookkeeping, or draw-cache
+key string allocation. Broader shadow fidelity remains in the queued phased
+plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`

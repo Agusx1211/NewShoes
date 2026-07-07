@@ -9708,19 +9708,22 @@ function paintD3D8DrawIndexed(payload = {}) {
     isIdentityD3DMatrix(world) &&
     isIdentityD3DMatrix(view) &&
     isIdentityD3DMatrix(projection);
-  // --- Draw-cache: compute key and gate normalize* + derived-object rebuilds ---
+  // --- Draw-cache: compare key fields and gate normalize* + derived-object rebuilds ---
   // Key = (derivedStateHash, tex0Id, tex1Id, fvf, stride, primitiveType).
   // primitiveType is added because it affects point-sprite semantics and is NOT
   // covered by the native state hash. The derived hash excludes per-draw
   // world/view/projection transforms but still includes texture transforms and
   // all render/material/light state used by the derived JS objects below.
-  const drawCacheKey = `${derivedStateHash},`
-    + `${Number(d3d8BoundTextures.get(0) ?? 0) >>> 0},`
-    + `${Number(d3d8BoundTextures.get(1) ?? 0) >>> 0},`
-    + `${vertexShaderFvf},`
-    + `${vertexStride},`
-    + `${primitiveType}`;
-  const drawCacheHit = drawCacheKey === d3d8LastDrawKey && d3d8CachedDerived !== null;
+  const drawCacheTexture0Id = Number(d3d8BoundTextures.get(0) ?? 0) >>> 0;
+  const drawCacheTexture1Id = Number(d3d8BoundTextures.get(1) ?? 0) >>> 0;
+  const drawCacheHit = d3d8CachedDerived !== null &&
+    d3d8LastDrawKey !== null &&
+    d3d8LastDrawKey.derivedStateHash === derivedStateHash &&
+    d3d8LastDrawKey.texture0Id === drawCacheTexture0Id &&
+    d3d8LastDrawKey.texture1Id === drawCacheTexture1Id &&
+    d3d8LastDrawKey.vertexShaderFvf === vertexShaderFvf &&
+    d3d8LastDrawKey.vertexStride === vertexStride &&
+    d3d8LastDrawKey.primitiveType === primitiveType;
   if (drawCacheHit) {
     d3d8PerfStats.drawDerivedCacheHits += 1;
   } else {
@@ -9776,12 +9779,12 @@ function paintD3D8DrawIndexed(payload = {}) {
     directionalLights = d3d8DirectionalLights(lights);
     firstDirectionalLight = directionalLights[0] ?? null;
     vertexLayout = d3d8VertexLayoutInfo(vertexShaderFvf, vertexStride);
-    texture0Id = Number(d3d8BoundTextures.get(0) ?? 0) >>> 0;
+    texture0Id = drawCacheTexture0Id;
     texture0Resource = texture0Id !== 0 ? d3d8Textures.get(texture0Id) : null;
     texture0Ready = Boolean(
       (texture0Resource?.target ?? gl?.TEXTURE_2D) === gl?.TEXTURE_2D &&
       texture0Resource?.initializedLevels?.has("0"));
-    texture1Id = Number(d3d8BoundTextures.get(1) ?? 0) >>> 0;
+    texture1Id = drawCacheTexture1Id;
     texture1Resource = texture1Id !== 0 ? d3d8Textures.get(texture1Id) : null;
     texture1Ready = Boolean(
       (texture1Resource?.target ?? gl?.TEXTURE_2D) === gl?.TEXTURE_2D &&
@@ -9819,7 +9822,14 @@ function paintD3D8DrawIndexed(payload = {}) {
       texture1Resource,
     );
     // Update draw-cache for next draw
-    d3d8LastDrawKey = drawCacheKey;
+    d3d8LastDrawKey = {
+      derivedStateHash,
+      texture0Id,
+      texture1Id,
+      vertexShaderFvf,
+      vertexStride,
+      primitiveType,
+    };
     d3d8CachedDerived = {
       renderState, clipPlanes, material, lights,
       fixedFunctionLights, directionalLights, firstDirectionalLight,
