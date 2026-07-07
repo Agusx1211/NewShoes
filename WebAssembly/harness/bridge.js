@@ -11517,6 +11517,11 @@ async function loadWasmModule() {
         null,
         ["number"],
       ),
+      realEngineSetPlayerDiagnostics: module.cwrap(
+        "cnc_port_real_engine_set_player_diagnostics",
+        null,
+        ["number"],
+      ),
       realEngineDoFX: module.cwrap(
         "cnc_port_real_engine_do_fx",
         "string",
@@ -16480,6 +16485,7 @@ async function rpc(command, payload = {}) {
         let abortMessage = null;
         let abortStack = null;
         moduleResult.wasmModule.realEngineSetFrameProfile?.(payload.profile === true ? 1 : 0);
+        moduleResult.wasmModule.realEngineSetPlayerDiagnostics?.(payload.playerDiagnostics === true ? 1 : 0);
         try {
           frame = JSON.parse(moduleResult.wasmModule.realEngineFrame(Number(payload.frames ?? 1)));
           // The engine renders at its own resolution (TheDisplay, e.g.
@@ -16545,6 +16551,7 @@ async function rpc(command, payload = {}) {
         let abortStack = null;
         let __rawSummary = null;
         moduleResult.wasmModule.realEngineSetFrameProfile?.(payload.profile === true ? 1 : 0);
+        moduleResult.wasmModule.realEngineSetPlayerDiagnostics?.(payload.playerDiagnostics === true ? 1 : 0);
         try {
           __rawSummary = moduleResult.wasmModule.realEngineFrameSummary(Number(payload.frames ?? 1));
           frame = JSON.parse(__rawSummary);

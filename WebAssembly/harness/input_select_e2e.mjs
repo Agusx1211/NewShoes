@@ -61,6 +61,7 @@ const archiveSpecs = [
   { name: "AudioEnglishZH.big" },
   { name: "ShadersZH.big" },
   { name: "ZZBase_INI.big", sourceName: "INI.big" },
+  { name: "LooseScripts.big" },
   { name: "ZZBase_English.big", sourceName: "English.big" },
   { name: "ZZBase_Window.big", sourceName: "Window.big" },
   { name: "ZZBase_Terrain.big", sourceName: "Terrain.big" },

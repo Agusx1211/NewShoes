@@ -485,7 +485,13 @@ symptom is temporal — NOT a single still.
       brain — never runs, and `m_pathfinder` is `NULL` (`AI.cpp:314`) so no
       unit can path. The players/AISkirmishPlayers ARE created correctly; the
       system that ticks them is stubbed. This was a boot-time stub because the
-      AI's hard dependency, the **Pathfinder**, was not ported. Real work
+      AI's hard dependency, the **Pathfinder**, was not ported. 2026-07-07:
+      the separate missing loose script payload bug is fixed: `LooseScripts.big`
+      now mounts `SkirmishScripts.scb`, `MultiplayerScripts.scb`, and
+      `Scripts.ini`, and `SKIRMISH_START_EXPECT_ENEMY_START_ASSETS=1` proves
+      the enemy skirmish player starts alive with owned command center/builder
+      assets and no neutral command centers. This TODO remains open only for
+      the real AI tick/pathfinder/AIData work. Real work
       (milestone-sized, NOT a tweak — the TODO "AI behavior tuning" note badly
       undersells it): (1) port/enable the real `Pathfinder`
       (`m_pathfinder = NEW Pathfinder`) and make it work in wasm — the
@@ -500,7 +506,10 @@ symptom is temporal — NOT a single still.
       enemy base structures show up **all white** (separate from the AI being
       off — two bugs seen together). Likely a house-color/team-color remap not
       applied or a missing texture bind for those objects — related to the known
-      white-units render issue. Verify with a screenshot on the release build.
+      white-units render issue. 2026-07-07: the initial enemy-base ownership
+      path now assigns the base to the enemy skirmish player instead of neutral;
+      keep this open only for any remaining visual all-white render bug.
+      Verify with a screenshot on the release build.
 - [ ] **Skirmish loading screen missing its art** — the multiplayer/skirmish
       load screen shows no map preview image, no general/side portrait, etc.
       (blank/placeholder instead of the real load-screen art). Trace the

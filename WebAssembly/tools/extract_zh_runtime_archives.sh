@@ -50,6 +50,12 @@ loose_video_payloads=(
   VS_small.bik
 )
 
+loose_script_payloads=(
+  SkirmishScripts.scb
+  MultiplayerScripts.scb
+  Scripts.ini
+)
+
 base_data_archives=(
   INI.big
   Terrain.big
@@ -325,11 +331,14 @@ ensure_iso "${disc2_image}" "${disc2_iso}"
 7z e -y "-o${out_dir}" "${disc2_iso}" Language.cab Gensec.big >/dev/null
 7z e -y "-o${out_dir}" "${data_cab}" "${data_archives[@]}" >/dev/null
 7z e -y "-o${out_dir}" "${data_cab}" "${loose_video_payloads[@]}" >/dev/null
+7z e -y "-o${out_dir}" "${data_cab}" "${loose_script_payloads[@]}" >/dev/null
+node "${script_dir}/build_loose_scripts_big.mjs" "${out_dir}" "${out_dir}/LooseScripts.big" >/dev/null
 7z e -y "-o${out_dir}" "${language_cab}" "${language_archives[@]}" >/dev/null
 
 for archive in "${data_archives[@]}" "${language_archives[@]}" "${top_level_archives[@]}"; do
   require_big "${out_dir}/${archive}"
 done
+require_big "${out_dir}/LooseScripts.big"
 
 for video in "${loose_video_payloads[@]}"; do
   require_bink "${out_dir}/${video}"
@@ -341,5 +350,7 @@ printf '%s\n' \
   "${data_archives[@]}" \
   "${language_archives[@]}" \
   "${top_level_archives[@]}" \
+  LooseScripts.big \
   "${loose_video_payloads[@]}" \
+  "${loose_script_payloads[@]}" \
   "${extracted_optional_archives[@]}" | sort -u

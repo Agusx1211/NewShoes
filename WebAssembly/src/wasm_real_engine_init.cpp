@@ -294,6 +294,7 @@ struct EngineFrameProfileBucket {
 };
 
 static bool g_engine_frame_profile_enabled = false;
+static bool g_player_runtime_diagnostics_enabled = false;
 static double g_engine_frame_profile_started_ms = 0.0;
 static double g_engine_frame_profile_last_mark_ms = 0.0;
 static int g_engine_frame_profile_transitions = 0;
@@ -627,6 +628,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_frame_profile(int 
 		g_engine_frame_profile_sorted_draw_submit_depth = 0;
 		reset_engine_frame_render2d_profile();
 	}
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_player_diagnostics(int enabled)
+{
+	g_player_runtime_diagnostics_enabled = enabled != 0;
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_last_update_target()
@@ -3631,12 +3637,326 @@ void append_game_info_json(std::string &json, const char *field_name, const Game
 		json += ",\"mapContentsMask\":" + std::to_string(static_cast<long long>(game->getMapContentsMask()));
 		json += ",\"seed\":" + std::to_string(static_cast<long long>(game->getSeed()));
 		append_map_metadata_json(json, "metadata", metadata);
+		json += ",\"slots\":[";
+		bool first_slot = true;
+		for (Int slot_num = 0; slot_num < MAX_SLOTS; ++slot_num) {
+			const GameSlot *slot = game->getConstSlot(slot_num);
+			if (slot == NULL || !slot->isOccupied()) {
+				continue;
+			}
+			if (!first_slot) {
+				json += ",";
+			}
+			first_slot = false;
+			json += "{";
+			json += "\"slot\":" + std::to_string(static_cast<long long>(slot_num));
+			json += ",\"state\":" + std::to_string(static_cast<long long>(slot->getState()));
+			json += ",\"accepted\":";
+			json += slot->isAccepted() ? "true" : "false";
+			json += ",\"human\":";
+			json += slot->isHuman() ? "true" : "false";
+			json += ",\"ai\":";
+			json += slot->isAI() ? "true" : "false";
+			json += ",\"color\":" + std::to_string(static_cast<long long>(slot->getColor()));
+			json += ",\"startPos\":" + std::to_string(static_cast<long long>(slot->getStartPos()));
+			json += ",\"teamNumber\":" + std::to_string(static_cast<long long>(slot->getTeamNumber()));
+			append_player_template_json(json, "playerTemplate", slot->getPlayerTemplate());
+			json += "}";
+		}
+		json += "]";
 		append_game_slot_json(json, "slot0", game, 0);
 		if (local_slot >= 0 && local_slot != 0) {
 			append_game_slot_json(json, "localSlotInfo", game, local_slot);
 		}
 	}
 	json += "}";
+}
+
+const char *player_type_name(PlayerType type)
+{
+	switch (type) {
+	case PLAYER_HUMAN:
+		return "human";
+	case PLAYER_COMPUTER:
+		return "computer";
+	default:
+		return "unknown";
+	}
+}
+
+const char *difficulty_name(GameDifficulty difficulty)
+{
+	switch (difficulty) {
+	case DIFFICULTY_EASY:
+		return "easy";
+	case DIFFICULTY_NORMAL:
+		return "normal";
+	case DIFFICULTY_HARD:
+		return "hard";
+	default:
+		return "unknown";
+	}
+}
+
+const char *relationship_name(Relationship relationship)
+{
+	switch (relationship) {
+	case ENEMIES:
+		return "enemy";
+	case NEUTRAL:
+		return "neutral";
+	case ALLIES:
+		return "ally";
+	default:
+		return "unknown";
+	}
+}
+
+struct PlayerObjectDiagnostics
+{
+	PlayerObjectDiagnostics()
+		: objects(0),
+			structures(0),
+			infantry(0),
+			vehicles(0),
+			commandCenters(0),
+			productionObjects(0),
+			dozers(0),
+			harvesters(0),
+			supplySources(0),
+			sampleCount(0)
+	{
+	}
+
+	Int objects;
+	Int structures;
+	Int infantry;
+	Int vehicles;
+	Int commandCenters;
+	Int productionObjects;
+	Int dozers;
+	Int harvesters;
+	Int supplySources;
+	Int sampleCount;
+	std::string samples;
+};
+
+void append_player_object_sample(
+	PlayerObjectDiagnostics &diagnostics,
+	Object *obj,
+	const ThingTemplate *thing_template)
+{
+	if (diagnostics.sampleCount >= 8 || obj == NULL) {
+		return;
+	}
+	if (!diagnostics.samples.empty()) {
+		diagnostics.samples += ",";
+	}
+	diagnostics.samples += "{";
+	diagnostics.samples += "\"id\":" + std::to_string(static_cast<long long>(obj->getID()));
+	diagnostics.samples += ",\"template\":\"";
+	diagnostics.samples += json_escape(
+		thing_template != NULL && thing_template->getName().str() != NULL
+			? thing_template->getName().str()
+			: "");
+	diagnostics.samples += "\"";
+	const Coord3D *position = obj->getPosition();
+	if (position != NULL &&
+			std::isfinite(position->x) &&
+			std::isfinite(position->y) &&
+			std::isfinite(position->z)) {
+		append_coord3d_fields(diagnostics.samples, "position", *position);
+	} else {
+		diagnostics.samples += ",\"position\":null";
+	}
+	diagnostics.samples += "}";
+	++diagnostics.sampleCount;
+}
+
+void append_player_runtime_diagnostics(std::string &json)
+{
+	json += ",\"playerDiagnostics\":{";
+	json += "\"playerListReady\":";
+	json += ThePlayerList != NULL ? "true" : "false";
+	json += ",\"gameLogicReady\":";
+	json += TheGameLogic != NULL ? "true" : "false";
+	if (ThePlayerList == NULL) {
+		json += ",\"playerCount\":0,\"localPlayerIndex\":null,"
+			"\"unownedObjects\":0,\"invalidOwnerObjects\":0,\"players\":[]}";
+		return;
+	}
+
+	PlayerObjectDiagnostics object_diagnostics[MAX_PLAYER_COUNT];
+	Int unowned_objects = 0;
+	Int invalid_owner_objects = 0;
+	if (TheGameLogic != NULL) {
+		for (Object *obj = TheGameLogic->getFirstObject();
+				obj != NULL;
+				obj = obj->getNextObject()) {
+			Player *owner = NULL;
+			try {
+				owner = obj->getControllingPlayer();
+			} catch (...) {
+				owner = NULL;
+			}
+			if (owner == NULL) {
+				++unowned_objects;
+				continue;
+			}
+			const Int owner_index = owner->getPlayerIndex();
+			if (owner_index < 0 || owner_index >= MAX_PLAYER_COUNT) {
+				++invalid_owner_objects;
+				continue;
+			}
+
+			PlayerObjectDiagnostics &diagnostics = object_diagnostics[owner_index];
+			++diagnostics.objects;
+			const ThingTemplate *thing_template = NULL;
+			try {
+				thing_template = obj->getTemplate();
+			} catch (...) {
+				thing_template = NULL;
+			}
+			if (obj->isKindOf(KINDOF_STRUCTURE)) {
+				++diagnostics.structures;
+			}
+			if (obj->isKindOf(KINDOF_INFANTRY)) {
+				++diagnostics.infantry;
+			}
+			if (obj->isKindOf(KINDOF_VEHICLE)) {
+				++diagnostics.vehicles;
+			}
+			if (obj->isKindOf(KINDOF_COMMANDCENTER)) {
+				++diagnostics.commandCenters;
+			}
+			if (obj->getProductionUpdateInterface() != NULL) {
+				++diagnostics.productionObjects;
+			}
+			if (thing_template != NULL && thing_template->isKindOf(KINDOF_DOZER)) {
+				++diagnostics.dozers;
+			}
+			if (thing_template != NULL && thing_template->isKindOf(KINDOF_HARVESTER)) {
+				++diagnostics.harvesters;
+			}
+			if (thing_template != NULL && thing_template->isKindOf(KINDOF_SUPPLY_SOURCE)) {
+				++diagnostics.supplySources;
+			}
+			append_player_object_sample(diagnostics, obj, thing_template);
+		}
+	}
+
+	Player *local_player = ThePlayerList->getLocalPlayer();
+	json += ",\"playerCount\":" + std::to_string(ThePlayerList->getPlayerCount());
+	json += ",\"localPlayerIndex\":";
+	json += local_player != NULL
+		? std::to_string(static_cast<long long>(local_player->getPlayerIndex()))
+		: "null";
+	json += ",\"unownedObjects\":" + std::to_string(unowned_objects);
+	json += ",\"invalidOwnerObjects\":" + std::to_string(invalid_owner_objects);
+	json += ",\"players\":[";
+	bool first_player = true;
+	for (Int i = 0; i < ThePlayerList->getPlayerCount(); ++i) {
+		Player *player = ThePlayerList->getNthPlayer(i);
+		if (player == NULL) {
+			continue;
+		}
+		if (!first_player) {
+			json += ",";
+		}
+		first_player = false;
+
+		const PlayerObjectDiagnostics &diagnostics =
+			object_diagnostics[player->getPlayerIndex() >= 0 &&
+					player->getPlayerIndex() < MAX_PLAYER_COUNT
+				? player->getPlayerIndex()
+				: 0];
+		const PlayerTemplate *player_template = player->getPlayerTemplate();
+		const PlayerType player_type = player->getPlayerType();
+		const GameDifficulty difficulty = player->getPlayerDifficulty();
+		Int build_list_entries = 0;
+		Int initially_built_entries = 0;
+		for (BuildListInfo *info = player->getBuildList();
+				info != NULL;
+				info = info->getNext()) {
+			++build_list_entries;
+			if (info->isInitiallyBuilt()) {
+				++initially_built_entries;
+			}
+		}
+
+		json += "{";
+		json += "\"index\":" + std::to_string(player->getPlayerIndex());
+		json += ",\"local\":";
+		json += player == local_player ? "true" : "false";
+		json += ",\"name\":\"";
+		json += json_escape(TheNameKeyGenerator != NULL
+			? TheNameKeyGenerator->keyToName(player->getPlayerNameKey()).str()
+			: "");
+		json += "\"";
+		json += ",\"displayName\":\"" + json_escape(unicode_to_debug_ascii(player->getPlayerDisplayName())) + "\"";
+		json += ",\"side\":\"" + json_escape(player->getSide().str()) + "\"";
+		json += ",\"baseSide\":\"" + json_escape(player->getBaseSide().str()) + "\"";
+		json += ",\"playerType\":" + std::to_string(static_cast<Int>(player_type));
+		json += ",\"playerTypeName\":\"" + std::string(player_type_name(player_type)) + "\"";
+		json += ",\"skirmishAI\":";
+		json += player->isSkirmishAIPlayer() ? "true" : "false";
+		json += ",\"difficulty\":" + std::to_string(static_cast<Int>(difficulty));
+		json += ",\"difficultyName\":\"" + std::string(difficulty_name(difficulty)) + "\"";
+		json += ",\"active\":";
+		json += player->isPlayerActive() ? "true" : "false";
+		json += ",\"dead\":";
+		json += player->isPlayerDead() ? "true" : "false";
+		json += ",\"playableSide\":";
+		json += player->isPlayableSide() ? "true" : "false";
+		json += ",\"canBuildBase\":";
+		json += player->getCanBuildBase() ? "true" : "false";
+		json += ",\"canBuildUnits\":";
+		json += player->getCanBuildUnits() ? "true" : "false";
+		json += ",\"hasAnyObjects\":";
+		json += player->hasAnyObjects() ? "true" : "false";
+		json += ",\"hasAnyUnits\":";
+		json += player->hasAnyUnits() ? "true" : "false";
+		json += ",\"hasAnyBuildFacility\":";
+		json += player->hasAnyBuildFacility() ? "true" : "false";
+		json += ",\"money\":" + std::to_string(static_cast<long long>(player->getMoney()->countMoney()));
+		json += ",\"color\":" +
+			std::to_string(static_cast<unsigned long long>(static_cast<UnsignedInt>(player->getPlayerColor())));
+		json += ",\"nightColor\":" +
+			std::to_string(static_cast<unsigned long long>(static_cast<UnsignedInt>(player->getPlayerNightColor())));
+		json += ",\"relationshipToLocal\":";
+		if (local_player != NULL && local_player->getDefaultTeam() != NULL) {
+			json += "\"" + std::string(relationship_name(player->getRelationship(local_player->getDefaultTeam()))) + "\"";
+		} else {
+			json += "null";
+		}
+		json += ",\"template\":{";
+		json += "\"present\":";
+		json += player_template != NULL ? "true" : "false";
+		if (player_template != NULL) {
+			json += ",\"name\":\"" + json_escape(player_template->getName().str()) + "\"";
+			json += ",\"side\":\"" + json_escape(player_template->getSide().str()) + "\"";
+			json += ",\"baseSide\":\"" + json_escape(player_template->getBaseSide().str()) + "\"";
+			json += ",\"startingBuilding\":\"" + json_escape(player_template->getStartingBuilding().str()) + "\"";
+		}
+		json += "}";
+		json += ",\"buildList\":{\"entries\":" + std::to_string(build_list_entries);
+		json += ",\"initiallyBuilt\":" + std::to_string(initially_built_entries) + "}";
+		json += ",\"objects\":{";
+		json += "\"total\":" + std::to_string(diagnostics.objects);
+		json += ",\"structures\":" + std::to_string(diagnostics.structures);
+		json += ",\"infantry\":" + std::to_string(diagnostics.infantry);
+		json += ",\"vehicles\":" + std::to_string(diagnostics.vehicles);
+		json += ",\"commandCenters\":" + std::to_string(diagnostics.commandCenters);
+		json += ",\"productionObjects\":" + std::to_string(diagnostics.productionObjects);
+		json += ",\"dozers\":" + std::to_string(diagnostics.dozers);
+		json += ",\"harvesters\":" + std::to_string(diagnostics.harvesters);
+		json += ",\"supplySources\":" + std::to_string(diagnostics.supplySources);
+		json += ",\"samples\":[";
+		json += diagnostics.samples;
+		json += "]}";
+		json += "}";
+	}
+	json += "]}";
 }
 
 void append_real_engine_frame_summary_state(std::string &json)
@@ -3700,6 +4020,9 @@ void append_real_engine_frame_summary_state(std::string &json)
 		json += ",\"active\":null,\"side\":\"\"";
 	}
 	json += "}";
+	if (g_player_runtime_diagnostics_enabled) {
+		append_player_runtime_diagnostics(json);
+	}
 	if (TheInGameUI != NULL) {
 		json += ",\"inGameUIReady\":true";
 		json += ",\"inputEnabled\":";
@@ -4432,6 +4755,9 @@ void append_real_engine_client_state(std::string &json)
 	} else {
 		json += ",\"playerCount\":0,\"localPlayer\":{\"ready\":false,"
 			"\"index\":null,\"active\":null,\"side\":\"\"}";
+	}
+	if (g_player_runtime_diagnostics_enabled) {
+		append_player_runtime_diagnostics(json);
 	}
 
 	json += ",\"inGameUIReady\":";

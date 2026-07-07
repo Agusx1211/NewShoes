@@ -74,6 +74,7 @@
     "test:weapon-impact-fx": "npm run build:port && node harness/weapon_impact_fx_smoke.mjs",
     "test:real-audio-event": "npm run build:port && node harness/real_audio_event_smoke.mjs",
     "test:skirmish-start": "npm run build:port && node harness/skirmish_start_smoke.mjs",
+    "test:skirmish-start-assets": "npm run build:port && SKIRMISH_START_EXPECT_ENEMY_START_ASSETS=1 node harness/skirmish_start_smoke.mjs",
     "test:skirmish-music-transition": "npm run build:port && SKIRMISH_START_EXPECT_MUSIC_STOP=1 node harness/skirmish_start_smoke.mjs",
     "test:skirmish-esc-menu": "npm run build:port && SKIRMISH_START_EXPECT_ESC_MENU_RESUME=1 node harness/skirmish_start_smoke.mjs",
     "profile:runtime-frames": "npm run build:port && node harness/runtime_frame_profile.mjs",

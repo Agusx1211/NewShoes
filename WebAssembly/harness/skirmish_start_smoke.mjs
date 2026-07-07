@@ -32,6 +32,7 @@ const archiveSpecs = [
   { name: "AudioEnglishZH.big" },
   { name: "ShadersZH.big" },
   { name: "ZZBase_INI.big", sourceName: "INI.big" },
+  { name: "LooseScripts.big" },
   { name: "ZZBase_English.big", sourceName: "English.big" },
   { name: "ZZBase_Window.big", sourceName: "Window.big" },
   { name: "ZZBase_Terrain.big", sourceName: "Terrain.big" },
@@ -52,11 +53,18 @@ const outputPath = resolve(
     resolve(artifactsRoot, "skirmish-start-smoke.json"));
 const maxStartFrames = parsePositiveInt("SKIRMISH_START_MAX_FRAMES", 4200);
 const frameChunk = parsePositiveInt("SKIRMISH_START_FRAME_CHUNK", 30);
-const postActiveFrames = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_FRAMES", 0);
-const postActiveFrameChunk = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_CHUNK", frameChunk);
 const expectPostActiveSurvival = process.env.SKIRMISH_START_EXPECT_SURVIVE === "1";
 const expectMenuMusicStop = process.env.SKIRMISH_START_EXPECT_MUSIC_STOP === "1";
 const expectEscMenuResume = process.env.SKIRMISH_START_EXPECT_ESC_MENU_RESUME === "1";
+const expectEnemyStartAssets = process.env.SKIRMISH_START_EXPECT_ENEMY_START_ASSETS === "1";
+const expectEnemyAiActivity = process.env.SKIRMISH_START_EXPECT_ENEMY_AI_ACTIVITY === "1";
+const collectPlayerDiagnostics = expectEnemyStartAssets || expectEnemyAiActivity;
+const requestedPostActiveFrames = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_FRAMES", 0);
+const enemyAiActivityFrames = parsePositiveInt("SKIRMISH_START_ENEMY_AI_ACTIVITY_FRAMES", 1200);
+const postActiveFrames = expectEnemyAiActivity
+  ? Math.max(requestedPostActiveFrames, enemyAiActivityFrames)
+  : requestedPostActiveFrames;
+const postActiveFrameChunk = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_CHUNK", frameChunk);
 const musicStopMaxFrames = parsePositiveInt("SKIRMISH_START_MUSIC_STOP_MAX_FRAMES", 360);
 const requestedSkirmishMap = String(process.env.SKIRMISH_START_MAP ?? "").trim();
 const captureD3D8History = process.env.SKIRMISH_START_CAPTURE_D3D8_HISTORY === "1";
@@ -109,6 +117,7 @@ function compactGameplay(frame) {
     renderedObjectCount: gameplay?.renderedObjectCount ?? null,
     inputEnabled: gameplay?.inputEnabled ?? null,
     localPlayer: gameplay?.localPlayer ?? null,
+    playerDiagnostics: gameplay?.playerDiagnostics ?? null,
     display,
   };
 }
@@ -339,11 +348,15 @@ function assertFrameResult(result, label) {
 }
 
 async function runFrames(page, frames, label = "real engine") {
-  return assertFrameResult(await rpc(page, "realEngineFrame", { frames }), label);
+  return assertFrameResult(
+    await rpc(page, "realEngineFrame", { frames, playerDiagnostics: collectPlayerDiagnostics }),
+    label);
 }
 
 async function runSummary(page, frames, label = "real engine summary") {
-  return assertFrameResult(await rpc(page, "realEngineFrameSummary", { frames }), label);
+  return assertFrameResult(
+    await rpc(page, "realEngineFrameSummary", { frames, playerDiagnostics: collectPlayerDiagnostics }),
+    label);
 }
 
 async function postMouse(page, message, point) {
@@ -616,6 +629,118 @@ async function runPostActiveFrames(page, totalFrames, chunkSize) {
   return { result: last, framesAdvanced, samples };
 }
 
+function indexedPlayers(diagnostics) {
+  const players = diagnostics?.players;
+  if (!Array.isArray(players)) return new Map();
+  return new Map(players.map((player) => [Number(player.index), player]));
+}
+
+function enemyAiPlayers(diagnostics) {
+  const players = diagnostics?.players;
+  if (!Array.isArray(players)) return [];
+  return players.filter((player) =>
+    player?.local !== true &&
+    player?.skirmishAI === true &&
+    player?.relationshipToLocal === "enemy");
+}
+
+function summarizeEnemyStartAssets(gameplay) {
+  const diagnostics = gameplay?.playerDiagnostics;
+  const players = Array.isArray(diagnostics?.players) ? diagnostics.players : [];
+  const enemies = enemyAiPlayers(diagnostics);
+  const neutralCommandCenters = players
+    .filter((player) => player?.relationshipToLocal === "neutral")
+    .reduce((count, player) => count + Number(player?.objects?.commandCenters ?? 0), 0);
+  const enemySummaries = enemies.map((enemy) => {
+    const objects = enemy.objects ?? {};
+    const buildList = enemy.buildList ?? {};
+    const hasStartAssets = enemy.active === true &&
+      enemy.dead !== true &&
+      Number(objects.commandCenters ?? 0) > 0 &&
+      Number(objects.dozers ?? 0) > 0 &&
+      Number(objects.productionObjects ?? 0) > 0 &&
+      Number(buildList.entries ?? 0) > 0;
+    return {
+      index: enemy.index,
+      name: enemy.name,
+      side: enemy.side,
+      difficultyName: enemy.difficultyName,
+      active: enemy.active,
+      dead: enemy.dead,
+      money: enemy.money,
+      objects,
+      buildList,
+      hasStartAssets,
+    };
+  });
+  return {
+    frame: gameplay?.framesCompleted ?? null,
+    localPlayerIndex: diagnostics?.localPlayerIndex ?? null,
+    enemyAiCount: enemies.length,
+    neutralCommandCenters,
+    enemySummaries,
+    ready: enemies.length > 0 &&
+      neutralCommandCenters === 0 &&
+      enemySummaries.every((summary) => summary.hasStartAssets),
+  };
+}
+
+function summarizeEnemyAiActivity(activeGameplay, postActive) {
+  const samples = [
+    activeGameplay,
+    ...(postActive?.samples ?? []),
+    postActive?.finalGameplay,
+  ].filter((sample) => sample?.playerDiagnostics?.players);
+  const first = samples[0] ?? null;
+  const last = samples[samples.length - 1] ?? null;
+  const firstEnemies = enemyAiPlayers(first?.playerDiagnostics);
+  const lastPlayers = indexedPlayers(last?.playerDiagnostics);
+  const enemySummaries = firstEnemies.map((initial) => {
+    const final = lastPlayers.get(Number(initial.index)) ?? null;
+    const initialObjects = Number(initial.objects?.total ?? 0);
+    const finalObjects = Number(final?.objects?.total ?? 0);
+    const initialMoney = Number(initial.money ?? 0);
+    const finalMoney = Number(final?.money ?? initialMoney);
+    return {
+      index: initial.index,
+      name: initial.name,
+      side: initial.side,
+      difficultyName: initial.difficultyName,
+      initial: {
+        active: initial.active,
+        money: initialMoney,
+        objects: initial.objects ?? null,
+        buildList: initial.buildList ?? null,
+      },
+      final: final == null ? null : {
+        active: final.active,
+        money: finalMoney,
+        objects: final.objects ?? null,
+        buildList: final.buildList ?? null,
+      },
+      objectDelta: finalObjects - initialObjects,
+      moneyDelta: finalMoney - initialMoney,
+      activeEvidence: final != null && (
+        finalObjects > initialObjects ||
+        finalMoney < initialMoney ||
+        Number(final.objects?.structures ?? 0) > Number(initial.objects?.structures ?? 0) ||
+        Number(final.objects?.infantry ?? 0) > Number(initial.objects?.infantry ?? 0) ||
+        Number(final.objects?.vehicles ?? 0) > Number(initial.objects?.vehicles ?? 0)
+      ),
+    };
+  });
+  return {
+    framesAdvanced: postActive?.framesAdvanced ?? 0,
+    sampleCount: samples.length,
+    firstFrame: first?.framesCompleted ?? null,
+    lastFrame: last?.framesCompleted ?? null,
+    localPlayerIndex: last?.playerDiagnostics?.localPlayerIndex ?? null,
+    enemyAiCount: firstEnemies.length,
+    enemySummaries,
+    activityDetected: enemySummaries.some((summary) => summary.activeEvidence),
+  };
+}
+
 async function main() {
   await mkdir(dirname(screenshotPath), { recursive: true });
   await mkdir(dirname(outputPath), { recursive: true });
@@ -790,6 +915,8 @@ async function main() {
       throw error;
     }
     let postActive = null;
+    let enemyStartAssets = null;
+    let enemyAiActivity = null;
     let musicTransition = null;
     if (expectMenuMusicStop) {
       console.error("[skirmish-start] wait for pre-skirmish music handles to close");
@@ -832,6 +959,18 @@ async function main() {
             samples: postActive.samples.slice(-12),
           });
       }
+    }
+    if (expectEnemyStartAssets) {
+      enemyStartAssets = summarizeEnemyStartAssets(compactGameplay(active.result.frame));
+      expect(enemyStartAssets.ready === true,
+        "enemy skirmish AI did not receive starting assets", enemyStartAssets);
+    }
+    if (expectEnemyAiActivity) {
+      enemyAiActivity = summarizeEnemyAiActivity(compactGameplay(active.result.frame), postActive);
+      expect(enemyAiActivity.enemyAiCount > 0,
+        "skirmish did not expose an enemy skirmish AI player", enemyAiActivity);
+      expect(enemyAiActivity.activityDetected === true,
+        "enemy skirmish AI did not produce activity during post-active frames", enemyAiActivity);
     }
     let escMenuResume = null;
     if (expectEscMenuResume) {
@@ -946,6 +1085,8 @@ async function main() {
         shroudDiagnostics: postActiveShroudDiagnostics,
         samples: postActive.samples,
       },
+      enemyStartAssets,
+      enemyAiActivity,
       escMenuResume,
       renderProbe,
       // ADD-ONLY HUD diagnostics: full control-bar / shell / startNewGame state

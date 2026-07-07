@@ -10,6 +10,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## User-reported play bugs (2026-07-07 session)
 
+- [x] Fix skirmish enemy starting assets being assigned to neutral when loose
+      script payloads were absent from the browser archive set. Runtime archive
+      extraction now pulls `SkirmishScripts.scb`, `MultiplayerScripts.scb`, and
+      `Scripts.ini` from `Data1.cab`, packs them into `LooseScripts.big` under
+      the original `Data\Scripts\...` paths, and mounts that archive in the
+      playable/startup/skirmish/profile harnesses. Opt-in real-engine frame
+      diagnostics now expose slot/player/object ownership state, and
+      `skirmish_start_smoke.mjs` has an opt-in
+      `SKIRMISH_START_EXPECT_ENEMY_START_ASSETS=1` gate, exposed as
+      `npm run test:skirmish-start-assets`, that requires an enemy skirmish AI
+      player to be alive, own a command center and builder, have a skirmish
+      build list, and leave zero command centers on neutral players.
+      Verified with `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly run test:skirmish-start-assets`, and direct
+      inspection of `artifacts/skirmish/skirmish-start-smoke.json` showing
+      `enemyAiCount=1`, `neutralCommandCenters=0`, and `ready=true`. Full AI
+      production/attacks remain open behind the existing
+      `WASM_REAL_INI_AI_METADATA_ONLY`/Pathfinder TODO.
+
 - [x] Fix in-game ESC menu buttons doing nothing in live skirmish. The
       browser runtime now keeps original gameplay GUI callback owners resident
       after engine lifecycle table reloads, including `QuitMenuSystem`, so the
