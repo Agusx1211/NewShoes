@@ -33,8 +33,14 @@
       }
       #progress { max-width: 42rem; color: #9fb6c9; }
       #warning { max-width: 42rem; color: #b08a4f; font-size: 13px; }
-      /* Without this, mobile browsers consume touches for scroll/zoom and the
-         canvas never sees pointer events. */
+      /* Without this, mobile browsers consume touches for scroll/zoom or
+         native selection/callout before the canvas input path can claim them. */
+      .shell,
+      #viewport {
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+      }
       #viewport { touch-action: none; }
       #buildAge.fresh { color: #7ee787; }
       #consoleToggle {

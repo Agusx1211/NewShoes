@@ -58,6 +58,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## User-reported play bugs (2026-07-07 session)
 
+- [x] Add the browser-side guard that stops iPad/iOS touch-drags on the
+      playable canvas from becoming native page selection/callout.
+      `harness/play.html` now disables user selection, WebKit user selection,
+      WebKit touch callout, and touch browser gestures on the game shell/canvas;
+      `bridge.js` cancels canvas `selectstart`, `dragstart`, `touchstart`, and
+      `touchmove` defaults while leaving the existing pointer-event bridge as
+      the engine input path. Verified with
+      `node --check WebAssembly/harness/bridge.js`, `node --check
+      WebAssembly/harness/play.mjs`, `git diff --check`, and a touch-enabled
+      Playwright load of `harness/play.html?dist=dist-release`: computed
+      canvas style reported `touchAction="none"` / `userSelect="none"`, all
+      four cancelable native selection/touch events returned
+      `defaultPrevented=true`, the check saved
+      `artifacts/screenshots/ipad-canvas-gesture-guards.png`, and an
+      overlay-hidden touchscreen tap still claimed/released browser pointer
+      capture with `lastError=null`. A physical iPad Safari gameplay
+      confirmation remains tracked in `TODO.md`.
+
 - [x] Fix skirmish loading-screen map and faction art. Browser skirmish now
       prepares random side/color/start-position data before the first deferred
       `startNewGame()` load-screen construction, so the real

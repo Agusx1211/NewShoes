@@ -445,16 +445,12 @@ Reported by the project owner on the Mac GPU build. Reproduce in the harness and
 verify each fix with a real, **multi-frame** screenshot / state check where the
 symptom is temporal — NOT a single still.
 
-- [ ] **iPad/iOS: click-drag selects the canvas instead of dragging in-game** —
-      on iPad Safari/iOS, a touch drag on the game canvas triggers the browser's
-      text/element selection (highlighting the canvas) instead of a clean in-game
-      drag-select/order, which is annoying and steals the gesture. Suppress native
-      selection + callout on the canvas: CSS `user-select:none`,
-      `-webkit-user-select:none`, `-webkit-touch-callout:none`, and
-      `touch-action:none` on the canvas/container in `harness/play.html`, plus
-      `preventDefault()` on `selectstart`/`touchstart` for the canvas so the touch
-      goes to the engine's input path, not the DOM selection. Verify a drag on
-      iPad selects units in-game and no longer highlights the page.
+- [ ] **Physical iPad Safari canvas-drag confirmation** — after the browser-side
+      canvas selection/callout suppression, run the real playable page on an
+      iPad in Safari and confirm an in-game touch drag no longer highlights the
+      page/canvas and still reaches the expected drag-select/order path. The
+      touch-enabled Chromium harness guard/pointer checks are done; this is the
+      remaining real-device WebKit confirmation.
 - [ ] **Add a native-resolution option + fullscreen button (render at tab res)** —
       today the canvas renders at one fixed default resolution. Add a resolution
       selector with two entries: (1) the current default, and (2) an

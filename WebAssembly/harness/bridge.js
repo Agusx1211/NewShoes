@@ -28047,6 +28047,22 @@ canvas.addEventListener("compositionend", async (event) => {
 
   await postBrowserTextToWasm(text);
 });
+
+function suppressCanvasNativeSelection(event) {
+  event.preventDefault();
+}
+
+function suppressCanvasNativeTouchDefault(event) {
+  if (event.cancelable) {
+    event.preventDefault();
+  }
+}
+
+canvas.addEventListener("selectstart", suppressCanvasNativeSelection);
+canvas.addEventListener("dragstart", suppressCanvasNativeSelection);
+canvas.addEventListener("touchstart", suppressCanvasNativeTouchDefault, { passive: false });
+canvas.addEventListener("touchmove", suppressCanvasNativeTouchDefault, { passive: false });
+
 window.addEventListener("pointerdown", () => {
   void resumeBrowserAudioRuntime("window.pointerdown");
 }, { capture: true });
