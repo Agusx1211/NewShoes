@@ -10105,8 +10105,8 @@ function paintD3D8DrawIndexed(payload = {}) {
         d3d8LastBaseUniformKey = baseUniformKey;
       }
       recordRenderUniformDetail?.("sortedDrawRenderBaseUniformMs");
-      const materialUniformsNeeded = Boolean(appliedRenderState.lighting.shaderEnabled);
-      if (!materialUniformsNeeded) {
+      const lightingUniformsNeeded = Boolean(appliedRenderState.lighting.shaderEnabled);
+      if (!lightingUniformsNeeded) {
         d3d8PerfStats.drawMaterialUniformCacheHits += 1;
       } else if (d3d8MaterialUniformsEqual(renderState, material)) {
         d3d8PerfStats.drawMaterialUniformCacheHits += 1;
@@ -10145,46 +10145,50 @@ function paintD3D8DrawIndexed(payload = {}) {
         rememberD3D8MaterialUniforms(renderState, material);
       }
       recordRenderUniformDetail?.("sortedDrawRenderMaterialUniformMs");
-      const fixedLightUniformKey = d3d8FixedLightUniformKey(fixedFunctionLights);
-      if (fixedLightUniformKey === d3d8LastFixedLightUniformKey) {
+      if (!lightingUniformsNeeded) {
         d3d8PerfStats.drawFixedLightUniformCacheHits += 1;
       } else {
-        d3d8PerfStats.drawFixedLightUniformCacheMisses += 1;
-        if (bridgeProgram.fixedLightCount) {
-          gl.uniform1i(bridgeProgram.fixedLightCount, fixedFunctionLights.length);
+        const fixedLightUniformKey = d3d8FixedLightUniformKey(fixedFunctionLights);
+        if (fixedLightUniformKey === d3d8LastFixedLightUniformKey) {
+          d3d8PerfStats.drawFixedLightUniformCacheHits += 1;
+        } else {
+          d3d8PerfStats.drawFixedLightUniformCacheMisses += 1;
+          if (bridgeProgram.fixedLightCount) {
+            gl.uniform1i(bridgeProgram.fixedLightCount, fixedFunctionLights.length);
+          }
+          if (bridgeProgram.fixedLightType) {
+            gl.uniform1iv(bridgeProgram.fixedLightType, flattenD3D8LightType(fixedFunctionLights));
+          }
+          if (bridgeProgram.fixedLightDiffuse) {
+            gl.uniform4fv(bridgeProgram.fixedLightDiffuse,
+              flattenD3D8LightColor(fixedFunctionLights, "diffuse", D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
+          }
+          if (bridgeProgram.fixedLightSpecular) {
+            gl.uniform4fv(bridgeProgram.fixedLightSpecular,
+              flattenD3D8LightColor(fixedFunctionLights, "specular", D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
+          }
+          if (bridgeProgram.fixedLightAmbient) {
+            gl.uniform4fv(bridgeProgram.fixedLightAmbient,
+              flattenD3D8LightColor(fixedFunctionLights, "ambient", D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
+          }
+          if (bridgeProgram.fixedLightPosition) {
+            gl.uniform3fv(bridgeProgram.fixedLightPosition,
+              flattenD3D8LightVector(fixedFunctionLights, "position", [0, 0, 0],
+                D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
+          }
+          if (bridgeProgram.fixedLightDirection) {
+            gl.uniform3fv(bridgeProgram.fixedLightDirection,
+              flattenD3D8LightDirection(fixedFunctionLights, D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
+          }
+          if (bridgeProgram.fixedLightRangeAttenuation) {
+            gl.uniform4fv(bridgeProgram.fixedLightRangeAttenuation,
+              flattenD3D8LightRangeAttenuation(fixedFunctionLights));
+          }
+          if (bridgeProgram.fixedLightSpot) {
+            gl.uniform3fv(bridgeProgram.fixedLightSpot, flattenD3D8LightSpot(fixedFunctionLights));
+          }
+          d3d8LastFixedLightUniformKey = fixedLightUniformKey;
         }
-        if (bridgeProgram.fixedLightType) {
-          gl.uniform1iv(bridgeProgram.fixedLightType, flattenD3D8LightType(fixedFunctionLights));
-        }
-        if (bridgeProgram.fixedLightDiffuse) {
-          gl.uniform4fv(bridgeProgram.fixedLightDiffuse,
-            flattenD3D8LightColor(fixedFunctionLights, "diffuse", D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
-        }
-        if (bridgeProgram.fixedLightSpecular) {
-          gl.uniform4fv(bridgeProgram.fixedLightSpecular,
-            flattenD3D8LightColor(fixedFunctionLights, "specular", D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
-        }
-        if (bridgeProgram.fixedLightAmbient) {
-          gl.uniform4fv(bridgeProgram.fixedLightAmbient,
-            flattenD3D8LightColor(fixedFunctionLights, "ambient", D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
-        }
-        if (bridgeProgram.fixedLightPosition) {
-          gl.uniform3fv(bridgeProgram.fixedLightPosition,
-            flattenD3D8LightVector(fixedFunctionLights, "position", [0, 0, 0],
-              D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
-        }
-        if (bridgeProgram.fixedLightDirection) {
-          gl.uniform3fv(bridgeProgram.fixedLightDirection,
-            flattenD3D8LightDirection(fixedFunctionLights, D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
-        }
-        if (bridgeProgram.fixedLightRangeAttenuation) {
-          gl.uniform4fv(bridgeProgram.fixedLightRangeAttenuation,
-            flattenD3D8LightRangeAttenuation(fixedFunctionLights));
-        }
-        if (bridgeProgram.fixedLightSpot) {
-          gl.uniform3fv(bridgeProgram.fixedLightSpot, flattenD3D8LightSpot(fixedFunctionLights));
-        }
-        d3d8LastFixedLightUniformKey = fixedLightUniformKey;
       }
       recordRenderUniformDetail?.("sortedDrawRenderLightUniformMs");
       const stageUniformKey = d3d8StageUniformKey(renderState);

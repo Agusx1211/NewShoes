@@ -77,6 +77,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Skip unlit fixed-light uniform work in the browser D3D8 bridge. The shader
+      only reads fixed-function light arrays through `d3dApplyLighting()`, which
+      is gated by `uLightingEnabled`, so unlit/pretransformed draws now count as
+      fixed-light uniform cache hits without building fixed-light keys or
+      uploading the unused arrays. The previously uploaded light uniforms remain
+      cached for the next lit draw.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and two synced Mac
+      M4/Metal release profiles copied to
+      `runtime-frame-profile-lighting-skip-mac.json` /
+      `runtime-frame-profile-lighting-skip-repeat-mac.json` with screenshots.
+      Compared with the same-session first-vertex VAO baseline, fixed-light
+      misses dropped from 15.8 to 2.0/frame; fixed-light uniform time measured
+      0.020 ms/frame on the first run and 0.150 ms/frame on the repeat vs
+      0.163 ms/frame baseline. Wall/engine averages were noise-bound
+      (15.22 / 13.93 and 16.36 / 15.05 vs 14.67 / 13.34 baseline), so the
+      remaining frontier stays transform/draw-submit stalls and shell-map
+      terrain/shadow/text spikes rather than fixed-light uploads.
+
 - [x] Reuse cached VAOs for first-vertex flat-shaded D3D8 draws. Mac
       Chrome/Metal exposes `WEBGL_provoking_vertex`, and the provoking-vertex
       mode is not VAO attribute-pointer state, so first-vertex flat-shaded draws

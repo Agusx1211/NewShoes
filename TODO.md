@@ -292,12 +292,19 @@ cache instead of rebuilding vertex-attribute pointers every draw:
 misses from 117.6 to 8.3/frame, raised VAO hits from 104.7 to 213.8/frame,
 dropped sorted geometry setup from 1.53 to 0.67 ms/frame, and improved
 wall/engine averages from 16.26/14.97 to 14.67/13.34 ms/frame. Remaining spike
+frames then showed a fixed-light uniform spike on draws where shader lighting
+is disabled; the bridge now skips that unused key/upload path alongside the
+existing unlit material skip. Two Mac M4/Metal repeats kept the shell-map/menu
+screenshot correct and reduced fixed-light uniform misses from 15.8 to
+2.0/frame, but wall time stayed noise-bound (15.22/13.93 and 16.36/15.05
+wall/engine averages vs the 14.67/13.34 VAO baseline), so this retires the
+fixed-light upload waste without changing the primary frontier. Remaining spike
 frames still rotate between `WasmD3D8.browserDrawIndexed.before`
 transform/draw-submit stalls, sorting-reset/terrain shader-reset, shoreline and
 water-track unlocks, projected/volumetric shadow buckets, shroud/window repaint,
 and occasional text draw submission, so the next PERF pass should attack
-transform or residual draw-submit spikes rather than material, text-geometry, or
-first-vertex VAO setup. Broader shadow fidelity
+transform or residual draw-submit spikes rather than material, light,
+text-geometry, or first-vertex VAO setup. Broader shadow fidelity
 remains in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
