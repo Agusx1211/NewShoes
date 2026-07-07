@@ -276,6 +276,12 @@ reproduce in the harness and verify each fix with a screenshot / state check.
       Start-button path now resumes Web Audio, creates default mixer buses, and
       verified natural main-menu music streams; keep open for natural skirmish
       SFX/ambient/unit-sound verification and any remaining drop policy bugs.
+      2026-07-07 (owner): music playback is noticeably better (more tracks
+      play), but **sound effects and speech/dialog (EVA announcements, unit
+      responses/acknowledgements) still do not play most of the time**.
+      Narrow the remaining work to SFX + speech routing specifically: sample
+      (non-stream) voice allocation, the 2D/3D SFX bus, and the speech/dialog
+      mixer path — music streaming is no longer the blocker.
       Related: [[frontier-2026-07-05-skirmish-sweep]] audio bug.
 - [ ] **Text renders truncated** — some strings show only one letter or a few
       letters instead of the full text. Investigate the text/font glyph
@@ -295,6 +301,52 @@ reproduce in the harness and verify each fix with a screenshot / state check.
       degraded. Pin down which effect systems (particle/lightning/FX) are
       under-rendering. (Ambiguous "lightning" vs "lighting" — confirm which on
       repro.)
+## User-reported play bugs (2026-07-07 session)
+
+Reported by the project owner on the Mac GPU build. Reproduce in the harness and
+verify each fix with a real, **multi-frame** screenshot / state check where the
+symptom is temporal — NOT a single still.
+
+- [ ] **Shadows mostly do not render (REOPEN)** — in real play, unit/structure
+      shadows are absent most of the time (not merely flickering). The DONE.md
+      "Fix live skirmish shadow flicker/breakage" `[x]` (D3D8 stencil ref/mask
+      width fix) is **premature**: it was verified only by a single one-frame
+      screenshot showing the invalid dark blob gone, which cannot verify a
+      temporal flicker/absence bug. Re-scout the full shadow path (volumetric
+      first/second stencil pass, projected-shadow receiver, `m_stencilRef`/mask
+      handling, and whether the WebGL2 default framebuffer actually has the
+      stencil/depth bits the passes assume) and verify over many frames of
+      active gameplay, not one still. Ties into the queued "shadows phased plan
+      (blob→stencil→shaders)".
+- [ ] **Cannot right-click-issue unit orders on the map** — right-clicking a
+      selected unit on a target does not issue the context order (e.g. a GLA
+      worker right-clicked onto a supply/resource pile does not go harvest;
+      right-click move/attack/enter also suspect). Left-click selection works;
+      the right-mouse-button order path is the gap. Trace RMB → `GameClient`
+      mouse handling → context-command resolution (`chooseCommandForTarget` /
+      worker-to-supply, force-move, force-attack) → `GameLogic` order dispatch.
+      Verify by issuing a real right-click harvest order in the harness and
+      reading back the worker's AI/order state (not just a click event).
+- [ ] **Frame time is unstable (jumps around; no steady 30fps) (REOPEN/perf)** —
+      the average is good (~9 ms release shell-map profile) but frame time
+      varies wildly in play and never holds a consistent 30fps. Frame-time
+      STABILITY is currently untracked: every perf item optimizes *average*
+      ms/frame or a named bucket, and TODO/DONE already record optimizations
+      that *added* upload/unlock spikes. Add a stability workstream: report
+      p95/p99 and max frame time (not just avg/median), identify the spike
+      frames, and attack the likely causes — (1) GC pauses from ~2500
+      `Array.from` matrix allocations/frame in the D3D8 draw bridge (the
+      per-frame command-buffer TODO addresses both average and jitter), (2)
+      uneven per-frame work (buffer uploads / shadow-volume regen /
+      water-shoreline rebuild firing on some frames only), (3) unpaced rAF logic
+      stepping (fixed-timestep pacing). Optimize for consistency, not the mean.
+- [ ] **Performance still needs love (general)** — beyond stability, the loaded
+      (non-shell-map) skirmish frame cost with hundreds of units is the real
+      target and is not yet profiled/held to triple-digit fps. Keep pushing the
+      draw-side frontier (browserDrawIndexed per-draw scaffolding, projected
+      shadow flush, shoreline) and land the structural per-frame draw command
+      buffer rather than only per-uniform/per-subsystem caching.
+
 ## Strategy pivot — real `init()` whole-program link (current focus)
 
 See `AGENTS.md` "How the port advances". Probe/smoke accretion is over; these

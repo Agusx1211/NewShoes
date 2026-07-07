@@ -271,8 +271,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `Data\Audio\Tracks\USA_11.mp3` through
       `AudioBufferSourceNode -> GainNode -> musicGainNode ->
       AudioDestinationNode` with no stream error.
-- [x] Fix live skirmish shadow flicker/breakage. The browser D3D8 bridge now
-      masks D3D8 stencil reference/read/write masks to the actual WebGL
+- [x] Fix live skirmish shadow flicker/breakage. **[REOPENED 2026-07-07 —
+      PREMATURE: in real play shadows mostly do not render at all; this `[x]`
+      was verified only by a single one-frame screenshot showing the dark blob
+      gone, which cannot verify a temporal flicker/absence bug. See TODO.md
+      "User-reported play bugs (2026-07-07 session)".]** The browser D3D8 bridge
+      now masks D3D8 stencil reference/read/write masks to the actual WebGL
       stencil-bit width before `gl.stencilFunc`, `gl.stencilMask`, and stencil
       clears. This preserves the original D3D8 masked-test behavior for the
       gameplay shadow pass that submits `0x80808080` with mask `0xC0`; WebGL
