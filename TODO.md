@@ -285,12 +285,19 @@ fixed-function shader lighting is disabled; compared with
 `runtime-frame-profile-material-skip-mac.json` dropped material uniforms from
 0.096 to 0.013 ms/frame, sorted uniform setup from 1.77 to 1.57 ms/frame, and
 wall/engine averages from 17.32/16.03 to 16.26/14.97 ms/frame, with the
-shell-map/menu screenshot still correct. Remaining spike frames still rotate
-between `WasmD3D8.browserDrawIndexed.before` transform/geometry/draw-submit
-stalls, projected/volumetric shadow buckets, roads/shoreline, shroud/window
-repaint/texture upload, and occasional text draw submission, so the next PERF
-pass should attack transform/draw submission spikes rather than material or
-text-geometry upload. Broader shadow fidelity
+shell-map/menu screenshot still correct. The draw bridge now also lets
+`WEBGL_provoking_vertex` first-vertex flat-shaded draws use the persistent VAO
+cache instead of rebuilding vertex-attribute pointers every draw:
+`runtime-frame-profile-firstvertex-vao-mac.json` reduced vertex-attribute
+misses from 117.6 to 8.3/frame, raised VAO hits from 104.7 to 213.8/frame,
+dropped sorted geometry setup from 1.53 to 0.67 ms/frame, and improved
+wall/engine averages from 16.26/14.97 to 14.67/13.34 ms/frame. Remaining spike
+frames still rotate between `WasmD3D8.browserDrawIndexed.before`
+transform/draw-submit stalls, sorting-reset/terrain shader-reset, shoreline and
+water-track unlocks, projected/volumetric shadow buckets, shroud/window repaint,
+and occasional text draw submission, so the next PERF pass should attack
+transform or residual draw-submit spikes rather than material, text-geometry, or
+first-vertex VAO setup. Broader shadow fidelity
 remains in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`

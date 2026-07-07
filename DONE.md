@@ -77,6 +77,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Reuse cached VAOs for first-vertex flat-shaded D3D8 draws. Mac
+      Chrome/Metal exposes `WEBGL_provoking_vertex`, and the provoking-vertex
+      mode is not VAO attribute-pointer state, so first-vertex flat-shaded draws
+      no longer bypass the persistent VAO cache when they use the original index
+      buffer. Temporary-index draws remain on the uncached path.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and a synced Mac
+      M4/Metal release profile copied to
+      `runtime-frame-profile-firstvertex-vao-mac.json` with screenshot
+      `runtime-frame-profile-firstvertex-vao-mac.png`. Compared with the
+      same-session material-skip baseline, vertex-attribute cache misses dropped
+      from 117.6 to 8.3/frame, VAO cache hits rose from 104.7 to 213.8/frame,
+      sorted geometry setup dropped from 1.53 to 0.67 ms/frame, sorted bridge
+      work dropped from 4.68 to 3.46 ms/frame, and wall / engine averages
+      improved from 16.26 / 14.97 to 14.67 / 13.34 ms/frame. Remaining slow
+      samples are now led by transform/draw-submit stalls plus sorting reset,
+      terrain shoreline/shader-reset, water-track unlock, projected shadow, and
+      text/window repaint spikes.
+
 - [x] Skip unlit D3D8 material uniform uploads. The browser D3D8 bridge now only
       uploads material/source uniforms when fixed-function shader lighting is
       active; unlit and pretransformed draws leave the cached material state

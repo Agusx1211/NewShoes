@@ -9895,8 +9895,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       + `${texture1Coordinates.offset ?? -1}`;
     const canUseVertexArrayCache = Boolean(
       d3d8VertexArraySupported() &&
-      temporaryIndices == null &&
-      shadeModeDraw.usesFirstVertexConvention !== true,
+      temporaryIndices == null,
     );
     const vertexArrayKey = canUseVertexArrayCache ? `${vertexAttribKey},${indexBufferId}` : null;
     const cachedVertexArray = vertexArrayKey !== null ? d3d8VertexArrayCache.get(vertexArrayKey) : null;
