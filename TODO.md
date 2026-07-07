@@ -174,10 +174,14 @@ updates/frame, 1.69 MiB/frame). The upload mix is mostly vertex and dynamic
 ring writes: 289.0 vertex updates/frame (1.54 MiB), 372.3 dynamic
 updates/frame (1.12 MiB), 362.7 `NOOVERWRITE` updates/frame (1.02 MiB), only
 8.7 `DISCARD`/orphan updates/frame, and zero resizes. The measured render
-frontier remains heightmap/terrain/dynamic upload bursts, but raw checksum
-removal and `DISCARD` orphan toggling are not the next optimizations; the
-user-reported shadow flicker/breakage symptom is fixed in the live skirmish
-path, while broader shadow fidelity remains in the queued phased plan.
+frontier remains heightmap/terrain/dynamic upload bursts. A C++ water-track
+lock-batching pass cut update calls to 196.2/frame on Mac M4 Metal while
+leaving upload bytes in the same range, so the next pass should reduce real
+dynamic upload byte volume/ranges rather than JS-side `NOOVERWRITE`
+`bufferSubData` call count; raw checksum removal and `DISCARD` orphan toggling
+are also not the next optimizations. The user-reported shadow flicker/breakage
+symptom is fixed in the live skirmish path, while broader shadow fidelity
+remains in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`

@@ -29,6 +29,7 @@
 #define __W3DWaterTracks_H_
 
 enum waveType : Int;	//forward reference
+struct VertexFormatXYZDUV1;
 
 /// Custom render object that draws animated tracks/waves on the water.
 /**
@@ -55,6 +56,8 @@ public:
 	Int render(DX8VertexBufferClass	*vertexBuffer, Int batchStart);	///<append this object's vertices to the shared render batch
 
 protected:
+	Int writeVertices(VertexFormatXYZDUV1 *vb);	///<write this object's current vertices into an already-locked batch
+
 	TextureClass *m_stageZeroTexture;	///<primary texture
 	SphereClass	m_boundingSphere;		///<bounding sphere of WaterTracks
 	AABoxClass	m_boundingBox;			///<bounding box of WaterTracks

@@ -8386,6 +8386,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       were noisy/neutral-regressive, so the kept change is the counter surface
       and the next frontier is reducing/coalescing real dynamic
       `NOOVERWRITE` upload bursts.
+- [x] Batch water-track dynamic vertex-buffer locks by same-texture run.
+      `WaterTracksObj::render()` now factors the original wave-position,
+      underwater-height, alpha, UV, and vertex write math into
+      `writeVertices()`, while `WaterTracksRenderSystem::flush()` locks the
+      shared dynamic vertex buffer once per same-texture/capacity chunk, writes
+      each track's original four vertices into the locked range, unlocks, and
+      draws that chunk before any later `DISCARD`. This preserves the existing
+      texture grouping, vertex order, index buffer layout, and the original
+      999-page rollover behavior while reducing per-object
+      `NOOVERWRITE` lock/unlock/upload bursts. A JS-side deferred
+      `NOOVERWRITE` coalescing experiment was measured and rejected: it halved
+      WebGL `bufferSubData` calls but regressed ANGLE/Metal upload time, so the
+      kept fix is source-level batching at the producer. Verified with
+      `git diff --check`, `npm --prefix WebAssembly run build:port`, `npm
+      --prefix WebAssembly run build:port:release`, and a Mac M4 Chrome/Metal
+      release runtime profile (`ANGLE Metal Renderer: Apple M4`,
+      `dist-release`, `diag=lite`, 60 measured frames) that reached in-game
+      shell-map state with a screenshot and measured 35.58 ms/frame wall,
+      196.2 buffer updates/frame, 99.4 vertex updates/frame, 184.0 dynamic
+      updates/frame, 174.1 `NOOVERWRITE` updates/frame, 1.74 MB/frame uploaded,
+      and 0.135 ms/frame in `bufferSubDataMs`. The remaining upload frontier is
+      reducing real dynamic upload byte volume/ranges, not just call count.
 - [x] Split the D3D8 draw-state cache hash from per-object transforms.
       `wasm_d3d8_shim.cpp` now computes both the original full draw hash and a
       derived-state hash that excludes world/view/projection but still covers

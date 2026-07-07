@@ -324,12 +324,6 @@ Int WaterTracksObj::render(DX8VertexBufferClass	*vertexBuffer, Int batchStart)
 {
 	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.entry");
 	VertexFormatXYZDUV1 *vb;
-	Vector2	waveTailOrigin,waveFrontOrigin;
-	Real	ooWaveDirLen=1.0f/m_waveDir.Length();	//one over length
-	Real	waterHeight;
-	Real	waveAlpha;
-	Real	widthFrac;
-	Real	heightFrac;
 
 	if (batchStart < (WATER_VB_PAGES*WATER_STRIP_X*WATER_STRIP_Y-m_x*m_y))
 	{	//we have room in current VB, append new verts
@@ -352,6 +346,25 @@ Int WaterTracksObj::render(DX8VertexBufferClass	*vertexBuffer, Int batchStart)
 		CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.lockDiscard.after");
 		batchStart=0;	//reset start of page to first vertex
 	}
+
+	const Int vertsWritten = writeVertices(vb);
+
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.unlock.before");
+	vertexBuffer->Get_DX8_Vertex_Buffer()->Unlock();
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.unlock.after");
+
+	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.complete");
+	return batchStart+vertsWritten;	//return new offset into unused area of vertex buffer
+}
+
+Int WaterTracksObj::writeVertices(VertexFormatXYZDUV1 *vb)
+{
+	Vector2	waveTailOrigin,waveFrontOrigin;
+	Real	ooWaveDirLen=1.0f/m_waveDir.Length();	//one over length
+	Real	waterHeight;
+	Real	waveAlpha;
+	Real	widthFrac;
+	Real	heightFrac;
 
 	//Adjust wave position in a non-linear way so that it slows down as it hits the target.  Using 1/4 sine wave
 	//seems to work okay since it maxes out at 1.0 at our final position.
@@ -510,12 +523,7 @@ Int WaterTracksObj::render(DX8VertexBufferClass	*vertexBuffer, Int batchStart)
 	vb++;
 	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.vertexWrite.after");
 
-	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.unlock.before");
-	vertexBuffer->Get_DX8_Vertex_Buffer()->Unlock();
-	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.unlock.after");
-
-	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.obj.complete");
-	return batchStart+m_x*m_y;	//return new offset into unused area of vertex buffer
+	return m_x*m_y;
 }
 
 static void DrawWaterTrackBatch(DX8IndexBufferClass *indexBuffer, Int batchDrawStart, Int batchTrackCount, Int trianglesPerTrack, Int verticesPerTrack)
@@ -991,9 +999,8 @@ Try improving the fit to vertical surfaces like cliffs.
 
 	const Int verticesPerTrack = m_stripSizeX * m_stripSizeY;
 	const Int trianglesPerTrack = (m_stripSizeX - 1) * (m_stripSizeY - 1) * 2;
-	const Int maxBatchStart = WATER_VB_PAGES * verticesPerTrack - verticesPerTrack;
-	Int batchDrawStart = 0;
-	Int batchTrackCount = 0;
+	const Int vertexCapacity = WATER_VB_PAGES * verticesPerTrack;
+	const Int maxBatchStart = vertexCapacity - verticesPerTrack;
 	TextureClass *lastTexture = NULL;
 	Bool hasTexture = FALSE;
 
@@ -1004,9 +1011,6 @@ Try improving the fit to vertical surfaces like cliffs.
 	{
 		if (!hasTexture || lastTexture != mod->m_stageZeroTexture)
 		{
-			DrawWaterTrackBatch(m_indexBuffer,batchDrawStart,batchTrackCount,trianglesPerTrack,verticesPerTrack);
-			batchTrackCount = 0;
-
 			CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.texture.before");
 			DX8Wrapper::Set_Texture(0,mod->m_stageZeroTexture);
 			CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.texture.after");
@@ -1014,28 +1018,75 @@ Try improving the fit to vertical surfaces like cliffs.
 			hasTexture = TRUE;
 		}
 
-		if (m_batchStart >= maxBatchStart && batchTrackCount > 0)
+		TextureClass *batchTexture = mod->m_stageZeroTexture;
+		while (mod && mod->m_stageZeroTexture == batchTexture)
 		{
-			DrawWaterTrackBatch(m_indexBuffer,batchDrawStart,batchTrackCount,trianglesPerTrack,verticesPerTrack);
-			batchTrackCount = 0;
-		}
+			const Bool discard = m_batchStart >= maxBatchStart;
+			const Int writeStart = discard ? 0 : m_batchStart;
+			const Int trackCapacity = discard ? (maxBatchStart / verticesPerTrack) : ((maxBatchStart - m_batchStart) / verticesPerTrack);
+			Int batchTrackCount = 0;
+			WaterTracksObj *scan = mod;
 
-		const Int writeStart = (m_batchStart < maxBatchStart) ? m_batchStart : 0;
-		Int vertsRendered=mod->render(m_vertexBuffer,m_batchStart);
-
-		if (vertsRendered != m_batchStart)
-		{
-			if (batchTrackCount == 0)
+			while (scan && scan->m_stageZeroTexture == batchTexture && batchTrackCount < trackCapacity)
 			{
-				batchDrawStart = writeStart;
+				++batchTrackCount;
+				scan = scan->m_nextSystem;
 			}
-			++batchTrackCount;
-			m_batchStart = vertsRendered;	//advance past vertices already in buffer
-		}
 
-		mod = mod->m_nextSystem;
+			if (batchTrackCount <= 0)
+			{
+				m_batchStart = maxBatchStart;
+				continue;
+			}
+
+			VertexFormatXYZDUV1 *vb;
+			const Int stride = m_vertexBuffer->FVF_Info().Get_FVF_Size();
+			const Int lockOffset = writeStart * stride;
+			const Int lockSize = batchTrackCount * verticesPerTrack * stride;
+			const DWORD lockFlags = discard ? D3DLOCK_DISCARD : D3DLOCK_NOOVERWRITE;
+
+			if (discard)
+			{
+				CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.batchLockDiscard.before");
+			}
+			else
+			{
+				CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.batchLockNoOverwrite.before");
+			}
+
+			if(m_vertexBuffer->Get_DX8_Vertex_Buffer()->Lock(lockOffset,lockSize,(unsigned char**)&vb,lockFlags) != D3D_OK)
+			{
+				CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.batchLock.failed");
+				mod = scan;
+				continue;
+			}
+
+			if (discard)
+			{
+				CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.batchLockDiscard.after");
+			}
+			else
+			{
+				CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.batchLockNoOverwrite.after");
+			}
+
+			Int tracksWritten = 0;
+			VertexFormatXYZDUV1 *writeCursor = vb;
+			while (tracksWritten < batchTrackCount && mod)
+			{
+				writeCursor += mod->writeVertices(writeCursor);
+				mod = mod->m_nextSystem;
+				++tracksWritten;
+			}
+
+			CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.batchUnlock.before");
+			m_vertexBuffer->Get_DX8_Vertex_Buffer()->Unlock();
+			CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.batchUnlock.after");
+
+			DrawWaterTrackBatch(m_indexBuffer,writeStart,tracksWritten,trianglesPerTrack,verticesPerTrack);
+			m_batchStart = writeStart + tracksWritten * verticesPerTrack;	//advance past vertices already in buffer
+		}
 	}	//while (mod)
-	DrawWaterTrackBatch(m_indexBuffer,batchDrawStart,batchTrackCount,trianglesPerTrack,verticesPerTrack);
 	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.drawLoop.after");
 
 	CNC_PORT_NOTE_WATER_TRACK_STEP("W3DWaterTracks.flush.cleanup.before");
