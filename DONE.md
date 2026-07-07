@@ -393,6 +393,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       frame retained 40 color-write-disabled stencil volume draws plus 2
       pretransformed blended stencil composite draws.
 
+- [x] Cache normalized D3D8 viewport data on the browser draw path. The bridge
+      now reuses the normalized viewport object while explicit D3D8 viewport
+      state and drawing-buffer dimensions are unchanged, invalidates that cache
+      on viewport sets and canvas resizes, and compares the applied WebGL
+      viewport/scissor/depth-range key as numeric fields instead of allocating a
+      comma-string key on every indexed draw. Full viewport diagnostics still
+      read back GL viewport, scissor, and depth range in `diag=full`; the cache
+      only trims the hot `diag=lite` draw path. Verified with
+      `node --check WebAssembly/harness/bridge.js`, `git diff --check`, and a
+      focused Mac M4/Metal `d3d8Viewport` RPC that kept the original
+      sub-rectangle viewport at 32,48 320x180, render target 800x600, browser
+      GL box 51,446 512x216, and depth range `[0.25, 0.75]` exact. Mac
+      Chrome/Metal release profiles
+      `WebAssembly/artifacts/perf/runtime-frame-profile-viewport-cache-mac.json`
+      and `runtime-frame-profile-viewport-cache-repeat-mac.json` kept the
+      shell-map screenshot correct
+      (`runtime-frame-profile-viewport-cache-mac.png`) and moved
+      `sortedDrawViewportMs` from the preceding 0.271 ms/frame profile to
+      0.235 and 0.244 ms/frame; wall time stayed noise-bound at
+      48.08/48.51 ms/frame.
+
 - [x] Cache draw-time WebGL texture binding/sampler state in the D3D8 bridge.
       `bridge.js` now tracks the actual WebGL active texture unit plus per-unit
       2D/3D bindings, preserves/invalidates that cache around direct texture

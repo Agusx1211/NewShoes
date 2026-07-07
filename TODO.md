@@ -401,6 +401,15 @@ shell-map screenshot correct. A real skirmish
 artifact `skirmish-depth-fast-derived.json` reached active gameplay with
 visible shadows and recorded 40 color-write-disabled stencil volume draws plus
 2 pretransformed blended stencil composite draws in the captured frame.
+A follow-up viewport hot-path pass now reuses the normalized D3D8 viewport
+object between explicit viewport sets / canvas resizes and compares the
+applied WebGL viewport key as numeric fields instead of building a comma-string
+key every draw. Mac M4/Metal release repeats
+`runtime-frame-profile-viewport-cache-mac.json` and
+`runtime-frame-profile-viewport-cache-repeat-mac.json` kept the shell-map
+screenshot correct and moved `sortedDrawViewportMs` from 0.271 ms/frame to
+0.235 and 0.244 ms/frame. A focused Mac `d3d8Viewport` RPC also kept the
+sub-rect viewport, scissor box, and `[0.25, 0.75]` depth range exact.
 The remaining draw-side leaders are still `SortingRenderer.pool.draw.submit.before`,
 `HeightMap.tilePasses.tileDraw.before`, `DX8MeshRenderer.flush.rigid.before`,
 volumetric shadow draws, and the structural per-frame draw command buffer. Do
@@ -410,8 +419,9 @@ sampler-key strings, adjacent/render-uniform key strings, browser derived-object
 cache misses, vertex-attrib/VAO key strings, the reverted shadow world-batch
 replay, projected-shadow receiver per-polygon clipping, or depth/stencil-only
 texture-probe setup unless a new profile makes it hot and the fix passes a real
-multi-frame skirmish shadow screenshot/state check. Broader shadow fidelity
-remains in the queued phased plan.
+multi-frame skirmish shadow screenshot/state check. Do not revisit viewport
+normalization/key construction unless a new profile shows it regressed. Broader
+shadow fidelity remains in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`

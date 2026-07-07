@@ -160,6 +160,8 @@ let d3d8TemporaryIndexBuffer = null;
 let d3d8TemporaryIndexBufferBytes = 0;
 let d3d8CurrentDepthMask = true;
 let d3d8LastAppliedViewportKey = null;
+let d3d8CachedViewportInput = null;
+let d3d8CachedNormalizedViewport = null;
 let d3d8CurrentRenderGlState = null;
 
 function setD3D8DepthMask(enabled) {
@@ -814,24 +816,43 @@ function resetD3D8UniformSubgroupCaches() {
   d3d8LastAlphaFogUniformKey = null;
 }
 
-function d3d8ViewportCacheKey(viewport) {
-  if (!viewport?.gl || !viewport?.drawingBuffer) {
-    return null;
-  }
-  return [
-    viewport.gl.x,
-    viewport.gl.y,
-    viewport.gl.width,
-    viewport.gl.height,
-    viewport.gl.minZ,
-    viewport.gl.maxZ,
-    viewport.drawingBuffer.width,
-    viewport.drawingBuffer.height,
-  ].join(",");
-}
-
 function invalidateD3D8AppliedViewportCache() {
   d3d8LastAppliedViewportKey = null;
+}
+
+function invalidateD3D8NormalizedViewportCache() {
+  d3d8CachedViewportInput = null;
+  d3d8CachedNormalizedViewport = null;
+}
+
+function d3d8ViewportAppliedKeyMatches(left, right) {
+  return Boolean(
+    left && right &&
+    left.x === right.x &&
+    left.y === right.y &&
+    left.width === right.width &&
+    left.height === right.height &&
+    left.minZ === right.minZ &&
+    left.maxZ === right.maxZ &&
+    left.drawingBufferWidth === right.drawingBufferWidth &&
+    left.drawingBufferHeight === right.drawingBufferHeight
+  );
+}
+
+function d3d8ViewportInputMatches(input, payload, bufferWidth, bufferHeight) {
+  return Boolean(
+    input &&
+    input.x === payload.x &&
+    input.y === payload.y &&
+    input.width === payload.width &&
+    input.height === payload.height &&
+    input.minZ === payload.minZ &&
+    input.maxZ === payload.maxZ &&
+    input.targetWidth === payload.targetWidth &&
+    input.targetHeight === payload.targetHeight &&
+    input.bufferWidth === bufferWidth &&
+    input.bufferHeight === bufferHeight
+  );
 }
 
 function d3d8PerfSummary() {
@@ -3424,6 +3445,9 @@ function syncCanvasSize(options = {}) {
     canvas.height = displaySize.height;
     resized = true;
   }
+  if (resized) {
+    invalidateD3D8NormalizedViewportCache();
+  }
   if (gl && restoreViewport) {
     restoreFullCanvasViewport();
   } else if (resized) {
@@ -3460,20 +3484,7 @@ function restoreFullCanvasViewport() {
   invalidateD3D8AppliedViewportCache();
 }
 
-function defaultD3D8Viewport() {
-  const drawingBuffer = currentDrawingBufferSize();
-  return {
-    x: 0,
-    y: 0,
-    width: drawingBuffer.width,
-    height: drawingBuffer.height,
-    minZ: 0,
-    maxZ: 1,
-  };
-}
-
-function normalizeD3D8Viewport(payload = {}) {
-  const drawingBuffer = currentDrawingBufferSize();
+function normalizeD3D8Viewport(payload = {}, drawingBuffer = currentDrawingBufferSize()) {
   const bufferWidth = Math.max(0, drawingBuffer.width);
   const bufferHeight = Math.max(0, drawingBuffer.height);
   const requested = {
@@ -3509,10 +3520,21 @@ function normalizeD3D8Viewport(payload = {}) {
     minZ,
     maxZ,
   };
+  const appliedKey = {
+    x: glViewport.x,
+    y: glViewport.y,
+    width: glViewport.width,
+    height: glViewport.height,
+    minZ: glViewport.minZ,
+    maxZ: glViewport.maxZ,
+    drawingBufferWidth: bufferWidth,
+    drawingBufferHeight: bufferHeight,
+  };
   return {
     requested,
     d3d,
     gl: glViewport,
+    appliedKey,
     renderTarget: {
       width: targetWidth,
       height: targetHeight,
@@ -3527,6 +3549,48 @@ function normalizeD3D8Viewport(payload = {}) {
       requested.minZ !== minZ ||
       requested.maxZ !== maxZ,
   };
+}
+
+function currentD3D8ViewportPayload(drawingBuffer = currentDrawingBufferSize()) {
+  if (d3d8ViewportState) {
+    return d3d8ViewportState;
+  }
+  return {
+    x: 0,
+    y: 0,
+    width: drawingBuffer.width,
+    height: drawingBuffer.height,
+    minZ: 0,
+    maxZ: 1,
+    targetWidth: drawingBuffer.width,
+    targetHeight: drawingBuffer.height,
+  };
+}
+
+function cachedD3D8NormalizedViewport() {
+  const drawingBuffer = currentDrawingBufferSize();
+  const bufferWidth = Math.max(0, drawingBuffer.width);
+  const bufferHeight = Math.max(0, drawingBuffer.height);
+  const payload = currentD3D8ViewportPayload({ width: bufferWidth, height: bufferHeight });
+  if (d3d8CachedNormalizedViewport &&
+      d3d8ViewportInputMatches(d3d8CachedViewportInput, payload, bufferWidth, bufferHeight)) {
+    return d3d8CachedNormalizedViewport;
+  }
+  const viewport = normalizeD3D8Viewport(payload, { width: bufferWidth, height: bufferHeight });
+  d3d8CachedViewportInput = {
+    x: payload.x,
+    y: payload.y,
+    width: payload.width,
+    height: payload.height,
+    minZ: payload.minZ,
+    maxZ: payload.maxZ,
+    targetWidth: payload.targetWidth,
+    targetHeight: payload.targetHeight,
+    bufferWidth,
+    bufferHeight,
+  };
+  d3d8CachedNormalizedViewport = viewport;
+  return viewport;
 }
 
 function viewportArraysEqual(left, right, tolerance = 0) {
@@ -3551,9 +3615,9 @@ function expectedD3D8ViewportGlBox(d3dViewport = {}, renderTarget = {}, drawingB
 }
 
 function applyD3D8Viewport(reason = "draw") {
-  const viewport = normalizeD3D8Viewport(d3d8ViewportState ?? defaultD3D8Viewport());
+  const viewport = cachedD3D8NormalizedViewport();
   d3d8ViewportStats.applications += 1;
-  const viewportKey = d3d8ViewportCacheKey(viewport);
+  const viewportKey = viewport.appliedKey;
   if (!gl) {
     const probe = {
       ok: false,
@@ -3576,7 +3640,7 @@ function applyD3D8Viewport(reason = "draw") {
     return probe;
   }
 
-  const cacheHit = viewportKey !== null && viewportKey === d3d8LastAppliedViewportKey;
+  const cacheHit = d3d8ViewportAppliedKeyMatches(d3d8LastAppliedViewportKey, viewportKey);
   if (cacheHit) {
     d3d8PerfStats.drawViewportCacheHits += 1;
   } else {
@@ -3638,6 +3702,7 @@ function applyD3D8Viewport(reason = "draw") {
 function setD3D8Viewport(payload = {}) {
   d3d8ViewportStats.sets += 1;
   invalidateD3D8DrawStateCache();
+  invalidateD3D8NormalizedViewportCache();
   d3d8ViewportState = {
     x: Number(payload.x ?? 0) >>> 0,
     y: Number(payload.y ?? 0) >>> 0,
