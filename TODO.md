@@ -390,16 +390,28 @@ of sorted-profiled bridge work; the all-draw producer leaders were
 `W3DVolumetricShadow.renderMeshVolume.draw.before` (0.483). The largest phase
 buckets are still spread across geometry setup, render/transform uniforms, and
 terrain texture binding rather than one retired key/string/cache path.
+A follow-up depth/stencil-only fast-derived pass avoids texture, combiner,
+light, and implicit-alpha-cutout probes when render-state facts alone prove
+the minimal depth/stencil program is valid. The Mac M4/Metal profile
+`runtime-frame-profile-depth-fast-derived-mac.json` showed the fast path
+covering all current depth/stencil-only program draws
+(`drawDepthStencilOnlyProgramDraws` and
+`drawDepthStencilOnlyFastDerivedDraws` were both 111.97/frame) and kept the
+shell-map screenshot correct. A real skirmish
+artifact `skirmish-depth-fast-derived.json` reached active gameplay with
+visible shadows and recorded 40 color-write-disabled stencil volume draws plus
+2 pretransformed blended stencil composite draws in the captured frame.
 The remaining draw-side leaders are still `SortingRenderer.pool.draw.submit.before`,
 `HeightMap.tilePasses.tileDraw.before`, `DX8MeshRenderer.flush.rigid.before`,
-and the structural per-frame draw command buffer. Do not revisit material,
-light, text-geometry, first-vertex VAO setup, transform comparison/allocation,
-draw-time harness bookkeeping, draw-cache key strings, sampler-key strings,
-adjacent/render-uniform key strings, browser derived-object cache misses,
-vertex-attrib/VAO key strings, the reverted shadow world-batch replay, or
-projected-shadow receiver per-polygon clipping unless a new profile makes it
-hot and the fix passes a real multi-frame skirmish shadow screenshot/state
-check. Broader shadow fidelity remains in the queued phased plan.
+volumetric shadow draws, and the structural per-frame draw command buffer. Do
+not revisit material, light, text-geometry, first-vertex VAO setup, transform
+comparison/allocation, draw-time harness bookkeeping, draw-cache key strings,
+sampler-key strings, adjacent/render-uniform key strings, browser derived-object
+cache misses, vertex-attrib/VAO key strings, the reverted shadow world-batch
+replay, projected-shadow receiver per-polygon clipping, or depth/stencil-only
+texture-probe setup unless a new profile makes it hot and the fix passes a real
+multi-frame skirmish shadow screenshot/state check. Broader shadow fidelity
+remains in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`

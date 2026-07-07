@@ -367,6 +367,32 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       post-rollback producer baseline from 42.27/12.81 ms wall/engine average
       to 42.09/12.55, with sorted draw-profiled work 2.640 -> 2.584 ms/frame.
 
+- [x] Skip texture/combiner derived setup for eligible depth/stencil-only
+      draws. The D3D8 bridge now first checks the normalized render state for
+      color-write-disabled solid triangle draws where alpha testing is off and
+      implicit alpha cutout cannot apply because blending is enabled or depth
+      writes/testing are disabled. In `diag=lite`, those draws still use the
+      minimal depth/stencil program but no longer probe bound texture resources,
+      texture-coordinate layouts, stage combiners, semantic modes, or fixed
+      lights before deciding the alpha-cutout threshold. The derived-state cache
+      records this fast path, diagnostic mode changes invalidate the cache, and
+      the perf summary now reports `drawDepthStencilOnlyFastDerivedDraws`.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `node --check WebAssembly/harness/runtime_frame_profile.mjs`, and
+      `git diff --check`. The Mac M4/Metal profile
+      `WebAssembly/artifacts/perf/runtime-frame-profile-depth-fast-derived-mac.json`
+      kept the shell-map screenshot correct
+      (`runtime-frame-profile-depth-fast-derived-mac.png`) and measured the fast
+      path on all current depth/stencil-only program draws: both
+      `drawDepthStencilOnlyProgramDraws` and
+      `drawDepthStencilOnlyFastDerivedDraws` were 111.97/frame. The skirmish artifact
+      `WebAssembly/artifacts/skirmish/skirmish-depth-fast-derived.json` reached
+      active Alpine Assault gameplay at frame 144 with 224 objects, 224
+      drawables, 4 rendered objects, visible non-black pixel variance, and
+      visible shadows in `skirmish-depth-fast-derived.png`; its captured D3D8
+      frame retained 40 color-write-disabled stencil volume draws plus 2
+      pretransformed blended stencil composite draws.
+
 - [x] Cache draw-time WebGL texture binding/sampler state in the D3D8 bridge.
       `bridge.js` now tracks the actual WebGL active texture unit plus per-unit
       2D/3D bindings, preserves/invalidates that cache around direct texture

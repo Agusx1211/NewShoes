@@ -206,6 +206,7 @@ function compactBrowserPerfSample(browserPerf) {
     draws: perFrame.draws,
     drawMs: perFrame.drawMs,
     drawDepthStencilOnlyProgramDraws: perFrame.drawDepthStencilOnlyProgramDraws,
+    drawDepthStencilOnlyFastDerivedDraws: perFrame.drawDepthStencilOnlyFastDerivedDraws,
     sortedDrawProfiledMs: perFrame.sortedDrawProfiledMs,
     sortedDrawUniformMs: perFrame.sortedDrawUniformMs,
     sortedDrawRenderUniformMs: perFrame.sortedDrawRenderUniformMs,
@@ -850,6 +851,7 @@ const browserPerfFields = [
   "drawBatchMergedIndices",
   "drawBatchMaxRunLength",
   "drawDepthStencilOnlyProgramDraws",
+  "drawDepthStencilOnlyFastDerivedDraws",
   "drawDerivedCacheHits",
   "drawDerivedCacheMisses",
   "drawUniformCacheHits",
@@ -1168,6 +1170,8 @@ function browserPerfDelta(before, after, framesAdvanced) {
           drawBatchMergedIndices: Number(delta.drawBatchMergedIndices ?? 0) / framesAdvanced,
           drawDepthStencilOnlyProgramDraws:
             Number(delta.drawDepthStencilOnlyProgramDraws ?? 0) / framesAdvanced,
+          drawDepthStencilOnlyFastDerivedDraws:
+            Number(delta.drawDepthStencilOnlyFastDerivedDraws ?? 0) / framesAdvanced,
           drawDerivedCacheHits: Number(delta.drawDerivedCacheHits ?? 0) / framesAdvanced,
           drawDerivedCacheMisses: Number(delta.drawDerivedCacheMisses ?? 0) / framesAdvanced,
           drawUniformCacheHits: Number(delta.drawUniformCacheHits ?? 0) / framesAdvanced,

@@ -468,6 +468,7 @@ const d3d8PerfStats = {
   drawBatchMergedIndices: 0,
   drawBatchMaxRunLength: 0,
   drawDepthStencilOnlyProgramDraws: 0,
+  drawDepthStencilOnlyFastDerivedDraws: 0,
   drawDerivedCacheHits: 0,
   drawDerivedCacheMisses: 0,
   drawUniformCacheHits: 0,
@@ -847,6 +848,7 @@ function d3d8PerfSummary() {
     drawBatchMergedIndices: d3d8PerfStats.drawBatchMergedIndices,
     drawBatchMaxRunLength: d3d8PerfStats.drawBatchMaxRunLength,
     drawDepthStencilOnlyProgramDraws: d3d8PerfStats.drawDepthStencilOnlyProgramDraws,
+    drawDepthStencilOnlyFastDerivedDraws: d3d8PerfStats.drawDepthStencilOnlyFastDerivedDraws,
     drawDerivedCacheHits: d3d8PerfStats.drawDerivedCacheHits,
     drawDerivedCacheMisses: d3d8PerfStats.drawDerivedCacheMisses,
     drawUniformCacheHits: d3d8PerfStats.drawUniformCacheHits,
@@ -5921,6 +5923,29 @@ function textureStageCoordinateInfo(textureStage, stage, vertexStride, vertexLay
   };
 }
 
+function disabledTextureStageCoordinateInfo(stage) {
+  const transformInfo = d3dTextureTransformFlagsInfo(D3DTTFF_DISABLE);
+  return {
+    stage,
+    texCoordIndex: stage,
+    mode: D3DTSS_TCI_PASSTHRU,
+    modeName: d3dTextureCoordinateModeName(D3DTSS_TCI_PASSTHRU),
+    coordSet: stage,
+    layoutSource: "depth-stencil-only",
+    offset: null,
+    components: 0,
+    generated: false,
+    usesVertexTexCoord: false,
+    textureTransformFlags: D3DTTFF_DISABLE,
+    textureTransformModeName: transformInfo.modeName,
+    textureTransformComponentCount: transformInfo.componentCount,
+    textureTransformProjected: transformInfo.projected,
+    transformSupported: true,
+    transformApplied: false,
+    supported: false,
+  };
+}
+
 function textureStageCombinerInfo(textureStage, stage, canSampleTexture) {
   if (!textureStage) {
     return null;
@@ -8621,7 +8646,7 @@ function d3dPrimitiveIsTriangle(primitiveType) {
   return type === D3DPT_TRIANGLELIST || type === D3DPT_TRIANGLESTRIP || type === D3DPT_TRIANGLEFAN;
 }
 
-function d3d8CanUseDepthStencilOnlyProgram(renderState, primitiveType, implicitAlphaCutoutThreshold) {
+function d3d8CanUseDepthStencilOnlyProgramBase(renderState, primitiveType) {
   const colorWrites = Number(renderState?.colorWriteEnable ?? (
     D3DCOLORWRITEENABLE_RED |
     D3DCOLORWRITEENABLE_GREEN |
@@ -8635,9 +8660,27 @@ function d3d8CanUseDepthStencilOnlyProgram(renderState, primitiveType, implicitA
     D3DCOLORWRITEENABLE_ALPHA
   )) === 0 &&
     Number(renderState?.alphaTestEnable ?? 0) === 0 &&
-    implicitAlphaCutoutThreshold < 0 &&
     Number(renderState?.fillMode ?? D3DFILL_SOLID) === D3DFILL_SOLID &&
     d3dPrimitiveIsTriangle(primitiveType);
+}
+
+function d3d8ImplicitAlphaCutoutCannotApply(renderState) {
+  return Boolean(
+    renderState &&
+    (renderState.alphaBlendEnable !== 0 ||
+      renderState.zEnable === D3DZB_FALSE ||
+      renderState.zWriteEnable === 0)
+  );
+}
+
+function d3d8CanUseDepthStencilOnlyProgramWithoutTextureProbe(renderState, primitiveType) {
+  return d3d8CanUseDepthStencilOnlyProgramBase(renderState, primitiveType) &&
+    d3d8ImplicitAlphaCutoutCannotApply(renderState);
+}
+
+function d3d8CanUseDepthStencilOnlyProgram(renderState, primitiveType, implicitAlphaCutoutThreshold) {
+  return d3d8CanUseDepthStencilOnlyProgramBase(renderState, primitiveType) &&
+    implicitAlphaCutoutThreshold < 0;
 }
 
 function readD3D8Index(indexBytes, byteOffset, index, indexSize) {
@@ -10308,6 +10351,9 @@ if (typeof globalThis !== "undefined") {
   globalThis.__cncSetDiagLevel = (lvl) => {
     if (lvl === "lite" || lvl === "full") {
       flushD3D8PendingDrawBatch("setDiagLevel");
+      if (d3d8DiagLevel !== lvl) {
+        invalidateD3D8DrawStateCache();
+      }
       d3d8DiagLevel = lvl;
       applyD3D8BoundDrawDiagnosticsLevel();
     }
@@ -10781,6 +10827,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   let texture0SemanticMode, texture1SemanticMode;
   let appliedTexture0Combiner, appliedStage1Combiner;
   let implicitAlphaCutoutThreshold;
+  let depthStencilOnlyFastDerived = false;
 
   if (drawCacheHit) {
     // Reuse cached derived objects — GL retains state between identical draws,
@@ -10810,57 +10857,81 @@ function paintD3D8DrawIndexed(payload = {}) {
     appliedTexture0Combiner = c.appliedTexture0Combiner;
     appliedStage1Combiner = c.appliedStage1Combiner;
     implicitAlphaCutoutThreshold = c.implicitAlphaCutoutThreshold;
+    depthStencilOnlyFastDerived = c.depthStencilOnlyFastDerived === true;
   } else {
     renderState = normalizeD3D8RenderState(payload.renderState);
     clipPlanes = normalizeD3D8ClipPlanes(payload.clipPlanes);
     material = normalizeD3D8Material(payload.material);
-    lights = normalizeD3D8Lights(payload.lights);
-    fixedFunctionLights = d3d8FixedFunctionLights(lights);
-    directionalLights = d3d8DirectionalLights(lights);
-    firstDirectionalLight = directionalLights[0] ?? null;
     vertexLayout = d3d8VertexLayoutInfo(vertexShaderFvf, vertexStride);
     texture0Id = drawCacheTexture0Id;
-    texture0Resource = texture0Id !== 0 ? d3d8Textures.get(texture0Id) : null;
-    texture0Ready = Boolean(
-      (texture0Resource?.target ?? gl?.TEXTURE_2D) === gl?.TEXTURE_2D &&
-      texture0Resource?.initializedLevels?.has("0"));
     texture1Id = drawCacheTexture1Id;
-    texture1Resource = texture1Id !== 0 ? d3d8Textures.get(texture1Id) : null;
-    texture1Ready = Boolean(
-      (texture1Resource?.target ?? gl?.TEXTURE_2D) === gl?.TEXTURE_2D &&
-      texture1Resource?.initializedLevels?.has("0"));
-    texture0Coordinates = textureStageCoordinateInfo(
-      renderState.textureStages[0],
-      0,
-      vertexStride,
-      vertexLayout,
-      texture0Transform,
-    );
-    texture1Coordinates = textureStageCoordinateInfo(
-      renderState.textureStages[1],
-      1,
-      vertexStride,
-      vertexLayout,
-      texture1Transform,
-    );
-    drawUsesPointSpriteCoordinates =
-      (Number(payload.primitiveType ?? 0) >>> 0) === D3DPT_POINTLIST &&
-      Number(renderState.pointSpriteEnable ?? 0) !== 0;
-    canSampleTexture0 = Boolean(
-      texture0Ready && (texture0Coordinates.supported || drawUsesPointSpriteCoordinates));
-    canSampleTexture1 = Boolean(
-      texture1Ready && (texture1Coordinates.supported || drawUsesPointSpriteCoordinates));
-    texture0SemanticMode = canSampleTexture0 ? d3d8TextureSemanticMode(texture0Resource) : 0;
-    texture1SemanticMode = canSampleTexture1 ? d3d8TextureSemanticMode(texture1Resource) : 0;
-    appliedTexture0Combiner = textureStageCombinerInfo(renderState.textureStages[0], 0, canSampleTexture0);
-    appliedStage1Combiner = textureStageCombinerInfo(renderState.textureStages[1], 1, canSampleTexture1);
-    implicitAlphaCutoutThreshold = d3d8ImplicitAlphaCutoutThreshold(
-      renderState,
-      canSampleTexture0,
-      texture0Resource,
-      canSampleTexture1,
-      texture1Resource,
-    );
+    depthStencilOnlyFastDerived = d3d8DiagLevel !== "full" &&
+      d3d8CanUseDepthStencilOnlyProgramWithoutTextureProbe(renderState, primitiveType);
+    if (depthStencilOnlyFastDerived) {
+      lights = [];
+      fixedFunctionLights = [];
+      directionalLights = [];
+      firstDirectionalLight = null;
+      texture0Resource = null;
+      texture0Ready = false;
+      texture1Resource = null;
+      texture1Ready = false;
+      texture0Coordinates = disabledTextureStageCoordinateInfo(0);
+      texture1Coordinates = disabledTextureStageCoordinateInfo(1);
+      drawUsesPointSpriteCoordinates = false;
+      canSampleTexture0 = false;
+      canSampleTexture1 = false;
+      texture0SemanticMode = 0;
+      texture1SemanticMode = 0;
+      appliedTexture0Combiner = null;
+      appliedStage1Combiner = null;
+      implicitAlphaCutoutThreshold = -1;
+    } else {
+      lights = normalizeD3D8Lights(payload.lights);
+      fixedFunctionLights = d3d8FixedFunctionLights(lights);
+      directionalLights = d3d8DirectionalLights(lights);
+      firstDirectionalLight = directionalLights[0] ?? null;
+      texture0Resource = texture0Id !== 0 ? d3d8Textures.get(texture0Id) : null;
+      texture0Ready = Boolean(
+        (texture0Resource?.target ?? gl?.TEXTURE_2D) === gl?.TEXTURE_2D &&
+        texture0Resource?.initializedLevels?.has("0"));
+      texture1Resource = texture1Id !== 0 ? d3d8Textures.get(texture1Id) : null;
+      texture1Ready = Boolean(
+        (texture1Resource?.target ?? gl?.TEXTURE_2D) === gl?.TEXTURE_2D &&
+        texture1Resource?.initializedLevels?.has("0"));
+      texture0Coordinates = textureStageCoordinateInfo(
+        renderState.textureStages[0],
+        0,
+        vertexStride,
+        vertexLayout,
+        texture0Transform,
+      );
+      texture1Coordinates = textureStageCoordinateInfo(
+        renderState.textureStages[1],
+        1,
+        vertexStride,
+        vertexLayout,
+        texture1Transform,
+      );
+      drawUsesPointSpriteCoordinates =
+        (Number(payload.primitiveType ?? 0) >>> 0) === D3DPT_POINTLIST &&
+        Number(renderState.pointSpriteEnable ?? 0) !== 0;
+      canSampleTexture0 = Boolean(
+        texture0Ready && (texture0Coordinates.supported || drawUsesPointSpriteCoordinates));
+      canSampleTexture1 = Boolean(
+        texture1Ready && (texture1Coordinates.supported || drawUsesPointSpriteCoordinates));
+      texture0SemanticMode = canSampleTexture0 ? d3d8TextureSemanticMode(texture0Resource) : 0;
+      texture1SemanticMode = canSampleTexture1 ? d3d8TextureSemanticMode(texture1Resource) : 0;
+      appliedTexture0Combiner = textureStageCombinerInfo(renderState.textureStages[0], 0, canSampleTexture0);
+      appliedStage1Combiner = textureStageCombinerInfo(renderState.textureStages[1], 1, canSampleTexture1);
+      implicitAlphaCutoutThreshold = d3d8ImplicitAlphaCutoutThreshold(
+        renderState,
+        canSampleTexture0,
+        texture0Resource,
+        canSampleTexture1,
+        texture1Resource,
+      );
+    }
     // Update draw-cache for next draw
     d3d8CachedDerived = {
       renderState, clipPlanes, material, lights,
@@ -10873,6 +10944,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       texture0SemanticMode, texture1SemanticMode,
       appliedTexture0Combiner, appliedStage1Combiner,
       implicitAlphaCutoutThreshold,
+      depthStencilOnlyFastDerived,
     };
     d3d8LastDrawKey = rememberD3D8DerivedDrawCacheEntry(
       derivedStateHash,
@@ -10883,6 +10955,9 @@ function paintD3D8DrawIndexed(payload = {}) {
       primitiveType,
       d3d8CachedDerived,
     );
+  }
+  if (depthStencilOnlyFastDerived) {
+    d3d8PerfStats.drawDepthStencilOnlyFastDerivedDraws += 1;
   }
   const vertexPretransformed = vertexLayout?.pretransformed === true;
   const usePositionTransforms = useTransforms && !vertexPretransformed;
