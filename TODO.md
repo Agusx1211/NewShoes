@@ -2503,7 +2503,16 @@ and then start with the PROFILE, not with any individual fix.
       D3D8 work from 13.82 ms/frame to 8.64 ms/frame in the final run, with
       wall time 40.32 -> 39.41 ms/frame. The next pass should reprofile the
       remaining terrain tile/shoreline buckets before attempting broader
-      draw-command buffering.
+      draw-command buffering. A same-day exact shoreline batch pass made the
+      sorted shoreline renderer lock/upload only the visible tiles collected
+      for each batch and fixed its zero-count / end-of-array sort guards. The
+      direct Mac M4 Chrome/Metal no-sample profile reduced buffer upload
+      traffic from 1.814 MB/frame to 1.771 MB/frame, buffer update time from
+      8.27 to 7.15 ms/frame, and tracked browser D3D8 work from 8.64 to
+      7.91 ms/frame; sampled profiles also reduced `browserDrawIndexed.before`
+      from 7.21 to 5.15/5.82 ms/frame. Total wall time is still noisy/neutral,
+      so keep this item open and continue from current profiles rather than
+      claiming the whole heightmap frontier is drained.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing

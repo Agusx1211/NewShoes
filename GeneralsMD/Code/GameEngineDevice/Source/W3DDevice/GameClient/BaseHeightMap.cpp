@@ -1519,7 +1519,7 @@ was previously called and inserted the tiles in the correctly sorted order.
 WARNING!!! Current version assumes we always sort the entire map!  So don't set parameters to partial updates! */
 void BaseHeightMapRenderObjClass::recordShoreLineSortInfos(void)
 {
-	if (TheGlobalData->m_isWorldBuilder || !m_shoreLineTilePositions || !m_map)
+	if (TheGlobalData->m_isWorldBuilder || !m_shoreLineTilePositions || m_numShoreLineTiles == 0 || !m_map)
 		return;	//we must be in the builder so don't sort.
 
 	//Find how many sortinfos we need.
@@ -1566,7 +1566,7 @@ void BaseHeightMapRenderObjClass::recordShoreLineSortInfos(void)
 			Int minY,maxY;
 			minY=maxY=m_shoreLineTilePositions[i].m_xy >> 16;
 
-			while ((m_shoreLineTilePositions[j].m_xy & 0xffff) == x && j < m_numShoreLineTiles)
+			while (j < m_numShoreLineTiles && (m_shoreLineTilePositions[j].m_xy & 0xffff) == x)
 			{	//keep track of highest y coordinate.
 				Int y = m_shoreLineTilePositions[j].m_xy >> 16;
 				if (y > maxY)
@@ -1599,7 +1599,7 @@ void BaseHeightMapRenderObjClass::recordShoreLineSortInfos(void)
 			Int minX,maxX;
 			minX=maxX=m_shoreLineTilePositions[i].m_xy & 0xffff;
 
-			while ((m_shoreLineTilePositions[j].m_xy >> 16) == y && j < m_numShoreLineTiles)
+			while (j < m_numShoreLineTiles && (m_shoreLineTilePositions[j].m_xy >> 16) == y)
 			{	//keep track of highest x coordinate.
 				Int x = m_shoreLineTilePositions[j].m_xy & 0xffff;
 				if (x > maxX)
@@ -2716,8 +2716,123 @@ void BaseHeightMapRenderObjClass::renderShoreLinesSorted(CameraClass *pCamera)
 
 	while (!isDone)
 	{
-		DynamicVBAccessClass vb_access(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,DEFAULT_MAX_BATCH_SHORELINE_TILES*4);
-		DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8,DEFAULT_MAX_BATCH_SHORELINE_TILES*6);
+		shoreLineTileInfo *batchShoreInfo[DEFAULT_MAX_BATCH_SHORELINE_TILES];
+		Int batchTileX[DEFAULT_MAX_BATCH_SHORELINE_TILES];
+		Int batchTileY[DEFAULT_MAX_BATCH_SHORELINE_TILES];
+		Int batchTileCount=0;
+
+		if (m_shoreLineSortInfosXMajor)	//map is wider than taller.
+		{
+			Int x=drawStartX;
+			for (x=drawStartX; x<drawEdgeX; x++)
+			{	//figure out how many tiles are available in this column
+				shoreLineTileSortInfo *sortInfo=&m_shoreLineSortInfos[x];
+
+				if (!sortInfo->numTiles)
+					continue;	//no tiles in this column.
+
+				//Clamp visible area to actual tiles in this column
+				Int startY=drawStartY;
+				if (sortInfo->minTileCoordinate > startY)
+					startY = sortInfo->minTileCoordinate;
+				Int edgeY=drawEdgeY;
+				if ((sortInfo->maxTileCoordinate+1) < edgeY)
+					edgeY = sortInfo->maxTileCoordinate+1;
+
+				if ((edgeY-startY) <= 0)
+					continue;	//no tiles visible in this column.
+
+				//Pointer to first tile in this column
+				shoreLineTileInfo *shoreInfo=m_shoreLineTilePositions+sortInfo->tileStartIndex+lastRenderedTile;
+				//Loop over tiles in this column and render visible ones
+				for (Int k=lastRenderedTile; k<sortInfo->numTiles; k++)
+				{
+					Int tileY = shoreInfo->m_xy >> 16;
+					if (tileY < startY)
+					{	shoreInfo++;	//advance to next tile.
+						continue;	//this tile is not visible
+					}
+
+					if (tileY >= edgeY)
+						break;	//since tiles are x-sorted, there will not be any visible ones after this one.
+
+					batchShoreInfo[batchTileCount]=shoreInfo;
+					batchTileX[batchTileCount]=x;
+					batchTileY[batchTileCount]=tileY;
+					batchTileCount++;
+					shoreInfo++;	//advance to next tile.
+
+					if (batchTileCount >= DEFAULT_MAX_BATCH_SHORELINE_TILES)
+					{	lastRenderedTile=k+1;
+						goto flushVertexBuffer0;
+					}
+				}//looping over tiles in column
+				lastRenderedTile=0;
+			}//looping over all visible columns.
+flushVertexBuffer0:
+			drawStartX = x;	//record how far we've moved so far
+			isDone = x >= drawEdgeX;
+		}
+		else
+		{
+			Int y=drawStartY;
+			for (y=drawStartY; y<drawEdgeY; y++)
+			{	//figure out how many tiles are available in this row
+				shoreLineTileSortInfo *sortInfo=&m_shoreLineSortInfos[y];
+
+				if (!sortInfo->numTiles)
+					continue;	//no tiles in this row.
+
+				//Clamp visible area to actual tiles in this row
+				Int startX=drawStartX;
+				if (sortInfo->minTileCoordinate > startX)
+					startX = sortInfo->minTileCoordinate;
+				Int edgeX=drawEdgeX;
+				if ((sortInfo->maxTileCoordinate+1) < edgeX)
+					edgeX = sortInfo->maxTileCoordinate+1;
+
+				if ((edgeX-startX) <= 0)
+					continue;	//no tiles visible in this row.
+
+				//Pointer to first tile in this row
+				shoreLineTileInfo *shoreInfo=m_shoreLineTilePositions+sortInfo->tileStartIndex+lastRenderedTile;
+				//Loop over tiles in this row and render visible ones
+				for (Int k=lastRenderedTile; k<sortInfo->numTiles; k++)
+				{
+					Int tileX = shoreInfo->m_xy & 0xffff;
+					if (tileX < startX)
+					{	shoreInfo++;	//advance to next tile.
+						continue;	//this tile is not visible
+					}
+
+					if (tileX >= edgeX)
+						break;	//since tiles are x-sorted, there will not be any visible ones after this one.
+
+					batchShoreInfo[batchTileCount]=shoreInfo;
+					batchTileX[batchTileCount]=tileX;
+					batchTileY[batchTileCount]=y;
+					batchTileCount++;
+					shoreInfo++;	//advance to next tile.
+
+					if (batchTileCount >= DEFAULT_MAX_BATCH_SHORELINE_TILES)
+					{	lastRenderedTile=k+1;
+						goto flushVertexBuffer1;
+					}
+				}//looping over tiles in row
+				lastRenderedTile=0;
+			}//looping over all visible rows.
+flushVertexBuffer1:
+			drawStartY = y;	//record how far we've moved so far
+			isDone = y >= drawEdgeY;
+		}
+
+		if (batchTileCount == 0)
+			continue;
+
+		vertexCount=batchTileCount*4;
+		indexCount=batchTileCount*6;
+		DynamicVBAccessClass vb_access(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,vertexCount);
+		DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8,indexCount);
 
 		{	//Need to put this in another code block so vb/ib gets automatically locked/unlocked by destructors
 			DynamicVBAccessClass::WriteLockClass lock(&vb_access);
@@ -2730,250 +2845,86 @@ void BaseHeightMapRenderObjClass::renderShoreLinesSorted(CameraClass *pCamera)
 			}
 
 			try {
-			Int x=drawStartX;
-			Int y=drawStartY;
-			//Loop over visible terrain and extract all the tiles that need shoreline blend
-			if (m_shoreLineSortInfosXMajor)	//map is wider than taller.
-			{	
-				for (x=drawStartX; x<drawEdgeX; x++)
-				{	//figure out how many tiles are available in this column
-					shoreLineTileSortInfo *sortInfo=&m_shoreLineSortInfos[x];
-
-					if (!sortInfo->numTiles)
-						continue;	//no tiles in this column.
-
-					//Clamp visible area to actual tiles in this column
-					Int startY=drawStartY;
-					if (sortInfo->minTileCoordinate > startY)
-						startY = sortInfo->minTileCoordinate;
-					Int edgeY=drawEdgeY;
-					if ((sortInfo->maxTileCoordinate+1) < edgeY)
-						edgeY = sortInfo->maxTileCoordinate+1;
-
-					if ((edgeY-startY) <= 0)
-						continue;	//no tiles visible in this column.
-
-					//Pointer to first tile in this column
-					shoreLineTileInfo *shoreInfo=m_shoreLineTilePositions+sortInfo->tileStartIndex+lastRenderedTile;
-					//Loop over tiles in this column and render visible ones
-					for (Int k=lastRenderedTile; k<sortInfo->numTiles; k++)
-					{
-						Int tileY = shoreInfo->m_xy >> 16;
-						if (tileY < startY)
-						{	shoreInfo++;	//advance to next tile.
-							continue;	//this tile is not visible
-						}
-
-						if (tileY >= edgeY)
-							break;	//since tiles are x-sorted, there will not be any visible ones after this one.
-
-						if (vertexCount >= (DEFAULT_MAX_BATCH_SHORELINE_TILES*4))
-						{	lastRenderedTile=k;
-							goto flushVertexBuffer0;
-						}
-
-						vb->x = shoreInfo->verts[0];
-						vb->y = shoreInfo->verts[1];
-						vb->z = shoreInfo->verts[2];
-						vb->nx=0;	//filling these to keep AGP write buffer happy.
-						vb->ny=0;
-						vb->nz=0;
-						vb->diffuse=0;
-						vb->u1=shoreInfo->t0;
-						vb->v1=0;
-						vb->u2=0;
-						vb->v2=0;
-						vb++;
-
-						vb->x = shoreInfo->verts[3];
-						vb->y = shoreInfo->verts[4];
-						vb->z = shoreInfo->verts[5];
-						vb->nx=0;	//filling these to keep AGP write buffer happy.
-						vb->ny=0;
-						vb->nz=0;
-						vb->diffuse=0;
-						vb->u1=shoreInfo->t1;
-						vb->v1=0;
-						vb->u2=0;
-						vb->v2=0;
-						vb++;
-
-						vb->x = shoreInfo->verts[6];
-						vb->y = shoreInfo->verts[7];
-						vb->z = shoreInfo->verts[8];
-						vb->nx=0;	//filling these to keep AGP write buffer happy.
-						vb->ny=0;
-						vb->nz=0;
-						vb->diffuse=0;
-						vb->u1=shoreInfo->t2;
-						vb->v1=0;
-						vb->u2=0;
-						vb->v2=0;
-						vb++;
-
-						vb->x = shoreInfo->verts[9];
-						vb->y = shoreInfo->verts[10];
-						vb->z = shoreInfo->verts[11];
-						vb->nx=0;	//filling these to keep AGP write buffer happy.
-						vb->ny=0;
-						vb->nz=0;
-						vb->diffuse=0;
-						vb->u1=shoreInfo->t3;
-						vb->v1=0;
-						vb->u2=0;
-						vb->v2=0;
-						vb++;
-					
-						if (m_map->getQuickFlipState(x,tileY))
-						{
-							ib[0]=1+vertexCount;
-							ib[1]=3+vertexCount;
-							ib[2]=0+vertexCount;
-							ib[3]=1+vertexCount;
-							ib[4]=2+vertexCount;
-							ib[5]=3+vertexCount;
-						}
-						else
-						{
-							ib[0]=0+vertexCount;
-							ib[1]=2+vertexCount;
-							ib[2]=3+vertexCount;
-							ib[3]=0+vertexCount;
-							ib[4]=1+vertexCount;
-							ib[5]=2+vertexCount;
-						}
-						ib += 6;
-						vertexCount +=4;
-						indexCount +=6;
-						shoreInfo++;	//advance to next tile.
-					}//looping over tiles in column
-					lastRenderedTile=0;
-				}//looping over all visible columns.
-flushVertexBuffer0:
-				drawStartX = x;	//record how far we've moved so far
-				isDone = x >= drawEdgeX;
-			}
-			else
+			for (Int tileIndex=0; tileIndex<batchTileCount; tileIndex++)
 			{
-				for (y=drawStartY; y<drawEdgeY; y++)
-				{	//figure out how many tiles are available in this row
-					shoreLineTileSortInfo *sortInfo=&m_shoreLineSortInfos[y];
+				shoreLineTileInfo *shoreInfo=batchShoreInfo[tileIndex];
+				const Int tileX=batchTileX[tileIndex];
+				const Int tileY=batchTileY[tileIndex];
+				const Int vertexBase=tileIndex*4;
 
-					if (!sortInfo->numTiles)
-						continue;	//no tiles in this row.
+				vb->x = shoreInfo->verts[0];
+				vb->y = shoreInfo->verts[1];
+				vb->z = shoreInfo->verts[2];
+				vb->nx=0;	//filling these to keep AGP write buffer happy.
+				vb->ny=0;
+				vb->nz=0;
+				vb->diffuse=0;
+				vb->u1=shoreInfo->t0;
+				vb->v1=0;
+				vb->u2=0;
+				vb->v2=0;
+				vb++;
 
-					//Clamp visible area to actual tiles in this row
-					Int startX=drawStartX;
-					if (sortInfo->minTileCoordinate > startX)
-						startX = sortInfo->minTileCoordinate;
-					Int edgeX=drawEdgeX;
-					if ((sortInfo->maxTileCoordinate+1) < edgeX)
-						edgeX = sortInfo->maxTileCoordinate+1;
+				vb->x = shoreInfo->verts[3];
+				vb->y = shoreInfo->verts[4];
+				vb->z = shoreInfo->verts[5];
+				vb->nx=0;	//filling these to keep AGP write buffer happy.
+				vb->ny=0;
+				vb->nz=0;
+				vb->diffuse=0;
+				vb->u1=shoreInfo->t1;
+				vb->v1=0;
+				vb->u2=0;
+				vb->v2=0;
+				vb++;
 
-					if ((edgeX-startX) <= 0)
-						continue;	//no tiles visible in this row.
+				vb->x = shoreInfo->verts[6];
+				vb->y = shoreInfo->verts[7];
+				vb->z = shoreInfo->verts[8];
+				vb->nx=0;	//filling these to keep AGP write buffer happy.
+				vb->ny=0;
+				vb->nz=0;
+				vb->diffuse=0;
+				vb->u1=shoreInfo->t2;
+				vb->v1=0;
+				vb->u2=0;
+				vb->v2=0;
+				vb++;
 
-					//Pointer to first tile in this row
-					shoreLineTileInfo *shoreInfo=m_shoreLineTilePositions+sortInfo->tileStartIndex+lastRenderedTile;
-					//Loop over tiles in this row and render visible ones
-					for (Int k=lastRenderedTile; k<sortInfo->numTiles; k++)
-					{
-						Int tileX = shoreInfo->m_xy & 0xffff;
-						if (tileX < startX)
-						{	shoreInfo++;	//advance to next tile.
-							continue;	//this tile is not visible
-						}
+				vb->x = shoreInfo->verts[9];
+				vb->y = shoreInfo->verts[10];
+				vb->z = shoreInfo->verts[11];
+				vb->nx=0;	//filling these to keep AGP write buffer happy.
+				vb->ny=0;
+				vb->nz=0;
+				vb->diffuse=0;
+				vb->u1=shoreInfo->t3;
+				vb->v1=0;
+				vb->u2=0;
+				vb->v2=0;
+				vb++;
 
-						if (tileX >= edgeX)
-							break;	//since tiles are x-sorted, there will not be any visible ones after this one.
-
-						if (vertexCount >= (DEFAULT_MAX_BATCH_SHORELINE_TILES*4))
-						{	lastRenderedTile=k;
-							goto flushVertexBuffer1;
-						}
-
-						vb->x = shoreInfo->verts[0];
-						vb->y = shoreInfo->verts[1];
-						vb->z = shoreInfo->verts[2];
-						vb->nx=0;	//filling these to keep AGP write buffer happy.
-						vb->ny=0;
-						vb->nz=0;
-						vb->diffuse=0;
-						vb->u1=shoreInfo->t0;
-						vb->v1=0;
-						vb->u2=0;
-						vb->v2=0;
-						vb++;
-
-						vb->x = shoreInfo->verts[3];
-						vb->y = shoreInfo->verts[4];
-						vb->z = shoreInfo->verts[5];
-						vb->nx=0;	//filling these to keep AGP write buffer happy.
-						vb->ny=0;
-						vb->nz=0;
-						vb->diffuse=0;
-						vb->u1=shoreInfo->t1;
-						vb->v1=0;
-						vb->u2=0;
-						vb->v2=0;
-						vb++;
-
-						vb->x = shoreInfo->verts[6];
-						vb->y = shoreInfo->verts[7];
-						vb->z = shoreInfo->verts[8];
-						vb->nx=0;	//filling these to keep AGP write buffer happy.
-						vb->ny=0;
-						vb->nz=0;
-						vb->diffuse=0;
-						vb->u1=shoreInfo->t2;
-						vb->v1=0;
-						vb->u2=0;
-						vb->v2=0;
-						vb++;
-
-						vb->x = shoreInfo->verts[9];
-						vb->y = shoreInfo->verts[10];
-						vb->z = shoreInfo->verts[11];
-						vb->nx=0;	//filling these to keep AGP write buffer happy.
-						vb->ny=0;
-						vb->nz=0;
-						vb->diffuse=0;
-						vb->u1=shoreInfo->t3;
-						vb->v1=0;
-						vb->u2=0;
-						vb->v2=0;
-						vb++;
-					
-						if (m_map->getQuickFlipState(tileX,y))
-						{
-							ib[0]=1+vertexCount;
-							ib[1]=3+vertexCount;
-							ib[2]=0+vertexCount;
-							ib[3]=1+vertexCount;
-							ib[4]=2+vertexCount;
-							ib[5]=3+vertexCount;
-						}
-						else
-						{
-							ib[0]=0+vertexCount;
-							ib[1]=2+vertexCount;
-							ib[2]=3+vertexCount;
-							ib[3]=0+vertexCount;
-							ib[4]=1+vertexCount;
-							ib[5]=2+vertexCount;
-						}
-						ib += 6;
-						vertexCount +=4;
-						indexCount +=6;
-						shoreInfo++;	//advance to next tile.
-					}//looping over tiles in row
-					lastRenderedTile=0;
-				}//looping over all visible rows.
-flushVertexBuffer1:
-				drawStartY = y;	//record how far we've moved so far
-				isDone = y >= drawEdgeY;
-				IndexBufferExceptionFunc();
+				if (m_map->getQuickFlipState(tileX,tileY))
+				{
+					ib[0]=1+vertexBase;
+					ib[1]=3+vertexBase;
+					ib[2]=0+vertexBase;
+					ib[3]=1+vertexBase;
+					ib[4]=2+vertexBase;
+					ib[5]=3+vertexBase;
+				}
+				else
+				{
+					ib[0]=0+vertexBase;
+					ib[1]=2+vertexBase;
+					ib[2]=3+vertexBase;
+					ib[3]=0+vertexBase;
+					ib[4]=1+vertexBase;
+					ib[5]=2+vertexBase;
+				}
+				ib += 6;
 			}
+			IndexBufferExceptionFunc();
 			} catch(...) {
 				IndexBufferExceptionFunc();
 			}
@@ -2984,11 +2935,8 @@ flushVertexBuffer1:
 			DX8Wrapper::Set_Index_Buffer(ib_access,0);
 			DX8Wrapper::Set_Vertex_Buffer(vb_access);
 			DX8Wrapper::Draw_Triangles(	0,indexCount/3, 0,	vertexCount);	//draw a quad, 2 triangles, 4 verts
-			m_numVisibleShoreLineTiles += indexCount/6;
+			m_numVisibleShoreLineTiles += batchTileCount;
 		}
-
-		vertexCount=0;
-		indexCount=0;
 	}//for all shore tiles
 
 	//Disable writes to destination alpha

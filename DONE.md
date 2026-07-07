@@ -8306,6 +8306,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       traffic from 2.29 MB/frame to 1.81 MB/frame, tracked browser D3D8 work
       from 13.82 ms/frame to 8.64 ms/frame, and wall time from 40.32 ms/frame
       to 39.41 ms/frame. The visible screenshot remained intact.
+- [x] Tighten sorted shoreline batching to exact visible dynamic-buffer ranges.
+      `BaseHeightMapRenderObjClass::recordShoreLineSortInfos()` now returns
+      before indexing the first shoreline tile when the count is zero and
+      checks `j < m_numShoreLineTiles` before reading the next tile while
+      building x/y-major sort runs. `renderShoreLinesSorted()` now first
+      collects the next visible sorted shoreline batch, then locks dynamic
+      vertex/index buffers sized to that exact batch instead of the fixed
+      512-tile maximum. The emitted tile order, quick-flip indices, material,
+      texture, and destination-alpha render state are preserved. Verified with
+      `git diff --check`, `npm --prefix WebAssembly run build:port`, `npm
+      --prefix WebAssembly run build:port:release`, a local SwiftShader
+      runtime profile with a visible screenshot, and Mac M4 Chrome/Metal
+      release profiles (`realEngineFrameTick`, 60 warmup + 60 measured frames,
+      engine profile enabled). Against the previous no-sample terrain-track
+      baseline, buffer upload traffic dropped from 1.814 MB/frame to
+      1.771 MB/frame, buffer update time from 8.27 to 7.15 ms/frame, and
+      tracked browser D3D8 work from 8.64 to 7.91 ms/frame; sampled runs also
+      reduced `WasmD3D8.browserDrawIndexed.before` from 7.21 ms/frame to
+      5.15/5.82 ms/frame. Wall time remained noisy rather than conclusively
+      improved, so the broader heightmap performance item remains open.
 - [x] Split the D3D8 draw-state cache hash from per-object transforms.
       `wasm_d3d8_shim.cpp` now computes both the original full draw hash and a
       derived-state hash that excludes world/view/projection but still covers
