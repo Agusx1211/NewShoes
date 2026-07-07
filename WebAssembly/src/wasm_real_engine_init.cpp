@@ -4573,6 +4573,15 @@ void append_real_engine_client_state(std::string &json)
 	append_window_under_probe_center(json, "underButtonStartCenter", "SkirmishGameOptionsMenu.wnd:ButtonStart");
 	json += "}";
 
+	json += ",\"loadScreen\":{\"queried\":true,\"multiplayer\":{\"queried\":true";
+	append_window_probe(json, "mapPreview", "MultiplayerLoadScreen.wnd:WinMapPreview");
+	append_window_probe(json, "localGeneralPortrait", "MultiplayerLoadScreen.wnd:LocalGeneralPortrait");
+	append_window_probe(json, "localGeneralName", "MultiplayerLoadScreen.wnd:LocalGeneralName");
+	append_window_probe(json, "progressLocal", "MultiplayerLoadScreen.wnd:ProgressLoad0");
+	append_window_probe(json, "playerNameLocal", "MultiplayerLoadScreen.wnd:StaticTextPlayer0");
+	append_window_probe(json, "playerSideLocal", "MultiplayerLoadScreen.wnd:StaticTextSide0");
+	json += "}}";
+
 	json += ",\"controlBarWindows\":{\"queried\":true";
 	append_window_probe(json, "parent", "ControlBar.wnd:ControlBarParent");
 	append_window_probe(json, "leftHud", "ControlBar.wnd:LeftHUD");

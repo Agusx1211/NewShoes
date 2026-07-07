@@ -1257,6 +1257,28 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 					CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.firstCall.loadScreen.after");
 
 				}
+#ifdef __EMSCRIPTEN__
+				else if( m_gameMode == GAME_SKIRMISH && TheSkirmishGameInfo )
+				{
+					if(m_background)
+					{
+						m_background->destroyWindows();
+						m_background->deleteInstance();
+						m_background = NULL;
+					}
+					CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.firstCall.loadScreen.before");
+					m_loadScreen = getLoadScreen( loadingSaveGame );
+					if(m_loadScreen)
+					{
+						TheGameInfo = TheSkirmishGameInfo;
+						TheMouse->setVisibility(FALSE);
+						TheWritableGlobalData->m_loadScreenRender = TRUE;	///< mark it so only a few select things are rendered during load
+						m_loadScreen->init(TheSkirmishGameInfo);
+						updateLoadProgress(LOAD_PROGRESS_START);
+					}
+					CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.firstCall.loadScreen.after");
+				}
+#endif
 
 				m_startNewGame = TRUE;
 				CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.firstCall.defer");

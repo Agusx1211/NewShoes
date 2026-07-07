@@ -10,6 +10,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## User-reported play bugs (2026-07-06 session)
 
+- [x] Fix skirmish loading screens never appearing before map load. The browser
+      skirmish first-call `startNewGame` defer now creates the real
+      `MultiPlayerLoadScreen`, binds `TheSkirmishGameInfo`, hides the mouse,
+      draws `LOAD_PROGRESS_START`, and returns at the frame boundary before the
+      synchronous map load runs. The real-engine client-state JSON now probes
+      the key `MultiplayerLoadScreen.wnd` windows, and the skirmish harness
+      captures a loading-screen screenshot plus canvas pixel variance before
+      waiting for the active match. Verified with `node --check
+      WebAssembly/harness/skirmish_start_smoke.mjs`, `npm --prefix
+      WebAssembly run build:port`, `node
+      WebAssembly/harness/skirmish_start_smoke.mjs`, and `npm --prefix
+      WebAssembly run build:port:release`; the harness captured
+      `WebAssembly/artifacts/screenshots/skirmish-start-loading-screen.png`
+      with `loadingMap=true`, visible `MultiplayerLoadScreen.wnd` controls,
+      and 12/12 visible non-black sample points before the match loaded.
 - [x] Add real-runtime military subtitle diagnostics for the truncated-text
       investigation. `InGameUI` now exposes Emscripten-only read accessors for
       the active military subtitle, and the real engine frame JSON reports

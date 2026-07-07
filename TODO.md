@@ -228,10 +228,11 @@ reproduce in the harness and verify each fix with a screenshot / state check.
       truncation: the runtime now exports `gameplay.militarySubtitle` with the
       full source string, current index, and displayed lines. Keep this open
       for a non-typewriter repro.
-- [ ] **Loading screens never show** — starting a skirmish or loading the game
-      freezes the display, then eventually loads, but the loading screen is
-      never drawn. The load path blocks the render/present loop; the loading
-      screen UI/progress must pump frames while loading.
+- [ ] **Loading-screen progress is static during map load** — the real
+      multiplayer load screen now presents before the skirmish map load starts,
+      but the synchronous map load still blocks intermediate browser frame
+      turns. Split or yield the long load path if live progress animation is
+      required during the load itself.
 - [ ] **Lightning/lighting effects flat** — special/lightning effects look
       flat vs the original; the game's richer effect set is missing or
       degraded. Pin down which effect systems (particle/lightning/FX) are

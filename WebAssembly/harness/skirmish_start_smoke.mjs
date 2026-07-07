@@ -44,6 +44,9 @@ const archiveSpecs = [
 const screenshotPath = resolve(
   process.env.SKIRMISH_START_SCREENSHOT ??
     resolve(screenshotsRoot, "skirmish-start-smoke.png"));
+const loadingScreenshotPath = resolve(
+  process.env.SKIRMISH_START_LOADING_SCREENSHOT ??
+    resolve(screenshotsRoot, "skirmish-start-loading-screen.png"));
 const outputPath = resolve(
   process.env.SKIRMISH_START_OUTPUT ??
     resolve(artifactsRoot, "skirmish-start-smoke.json"));
@@ -493,12 +496,31 @@ async function main() {
     }
 
     console.error("[skirmish-start] click start");
-    await clickButton(
+    const skirmishStartClick = await clickButton(
       page,
       skirmishMenu.buttonStart,
       skirmishMenu.underButtonStartCenter,
       "skirmish start",
       null);
+    const loadingGameplay = compactGameplay(skirmishStartClick.settled.frame);
+    const loadingWindows =
+      skirmishStartClick.settled.frame?.clientState?.loadScreen?.multiplayer ?? null;
+    expect(loadingGameplay.gameMode === GAME_SKIRMISH &&
+        loadingGameplay.loadingMap === true &&
+        loadingWindows?.mapPreview?.found === true &&
+        loadingWindows?.progressLocal?.found === true,
+      "skirmish start did not present the multiplayer loading screen before loading the map", {
+        loadingGameplay,
+        loadingWindows,
+        lastGameLogicStep: skirmishStartClick.settled.lastGameLogicStep,
+      });
+    await page.locator("#viewport").screenshot({ path: loadingScreenshotPath });
+    const loadingRenderProbe = await sampleViewportGrid(page);
+    expect(loadingRenderProbe.ok === true &&
+        loadingRenderProbe.visibleSampleCount > 0 &&
+        loadingRenderProbe.uniqueColorCount > 1,
+      "skirmish loading screen canvas did not expose visible non-black pixel variance",
+      loadingRenderProbe);
 
     console.error("[skirmish-start] wait for active match");
     let active;
@@ -616,6 +638,12 @@ async function main() {
         ?? mapCache?.probe?.firstOfficialMultiplayerMap
         ?? null,
       skirmishMapSet: skirmishMapSet?.result ?? null,
+      loadingScreen: {
+        gameplay: loadingGameplay,
+        windows: loadingWindows,
+        renderProbe: loadingRenderProbe,
+        screenshot: loadingScreenshotPath,
+      },
       firstOfficialMultiplayerMetadata: mapCache?.probe?.firstOfficialMultiplayerMetadata ?? null,
       officialMultiplayerCount: mapCache?.probe?.officialMultiplayerCount ?? null,
       officialMultiplayerMaps: mapCache?.probe?.officialMultiplayerMaps ?? [],
