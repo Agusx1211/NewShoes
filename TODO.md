@@ -422,6 +422,20 @@ and `DX8MeshRenderer.flush.rigid.before` 0.0225 -> 0.0166 ms/frame). Focused
 Mac `d3d8TexturedQuad` / `d3d8TwoTextureQuad` RPCs preserved the exact sampler
 states and expected red / blue center pixels. This is a narrow JS draw-scaffold
 cleanup, not a frontier shift.
+The `DX8Wrapper::Apply_Render_State_Changes()` draw-submit profile now splits
+shader, texture, material, light, transform, and VB/IB apply phases. The first
+Mac M4/Metal split (`runtime-frame-profile-dx8-apply-split-mac.json`) showed
+the slow-frame apply spike is texture apply, not identity bookkeeping:
+`DX8Wrapper.Apply.texture.before` was 5.90 ms across 136 texture applies in the
+slowest sampled frame. The texture-label diagnostics hook now avoids rebuilding
+name/path `std::string`s for repeated non-missing texture IDs in the same frame
+while preserving first-seen labels and missing-texture details. The follow-up
+split profile `runtime-frame-profile-texture-label-lite-mac.json` kept the
+shell-map screenshot correct and moved that slowest texture-apply sample from
+5.90 to 5.32 ms (max 0.085 -> 0.055) with p99 engine frame time 24.3 -> 22.7
+inside the instrumented profile. The remaining texture-apply frontier is still
+the actual dirty texture/filter application frequency in `TextureClass::Apply()`
+and `TextureFilterClass::Apply()`, not another browser sampler-cache pass.
 The remaining draw-side leaders are still `SortingRenderer.pool.draw.submit.before`,
 `HeightMap.tilePasses.tileDraw.before`, `DX8MeshRenderer.flush.rigid.before`,
 volumetric shadow draws, and the structural per-frame draw command buffer. Do

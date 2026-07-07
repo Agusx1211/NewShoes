@@ -2095,7 +2095,7 @@ void DX8Wrapper::Draw(
 #endif
 	CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Draw.entry");
 	CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Draw.apply.before");
-	Apply_Render_State_Changes();
+	Apply_Render_State_Changes(profile_sorted_draw_submit);
 	CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Draw.apply.after");
 
 	// Debug feature to disable triangle drawing...
@@ -2284,12 +2284,13 @@ void DX8Wrapper::Draw_Strip(
 //
 // ----------------------------------------------------------------------------
 
-void DX8Wrapper::Apply_Render_State_Changes()
+void DX8Wrapper::Apply_Render_State_Changes(bool profile_sorted_draw_submit)
 {
 	SNAPSHOT_SAY(("DX8Wrapper::Apply_Render_State_Changes()\n"));
 	
 	if (!render_state_changed) return;
 	if (render_state_changed&SHADER_CHANGED) {
+		CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Apply.shader.before");
 		SNAPSHOT_SAY(("DX8 - apply shader\n"));
 		ShaderClass shader = render_state.shader;
 		if (CurrentCaps->Get_Max_Textures_Per_Pass() > 1 &&
@@ -2299,6 +2300,7 @@ void DX8Wrapper::Apply_Render_State_Changes()
 			shader.Set_Post_Detail_Alpha_Func(ShaderClass::DETAILALPHA_DISABLE);
 		}
 		shader.Apply();
+		CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Apply.shader.after");
 	}
 
 	unsigned mask=TEXTURE0_CHANGED;
@@ -2306,6 +2308,7 @@ void DX8Wrapper::Apply_Render_State_Changes()
 	{
 		if (render_state_changed&mask) 
 		{
+			CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Apply.texture.before");
 			SNAPSHOT_SAY(("DX8 - apply texture %d (%s)\n",i,render_state.Textures[i] ? render_state.Textures[i]->Get_Full_Path() : "NULL"));
 
 			if (render_state.Textures[i]) 
@@ -2316,11 +2319,13 @@ void DX8Wrapper::Apply_Render_State_Changes()
 			{
 				TextureBaseClass::Apply_Null(i);
 			}
+			CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Apply.texture.after");
 		}
 	}
 
 	if (render_state_changed&MATERIAL_CHANGED) 
 	{
+		CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Apply.material.before");
 		SNAPSHOT_SAY(("DX8 - apply material\n"));
 		VertexMaterialClass* material=const_cast<VertexMaterialClass*>(render_state.material);
 		if (material) 
@@ -2328,10 +2333,12 @@ void DX8Wrapper::Apply_Render_State_Changes()
 			material->Apply();
 		}
 		else VertexMaterialClass::Apply_Null();
+		CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Apply.material.after");
 	}
 
 	if (render_state_changed&LIGHTS_CHANGED)
 	{
+		CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Apply.lights.before");
 		unsigned mask=LIGHT0_CHANGED;
 		for (unsigned index=0;index<4;++index,mask<<=1) {
 			if (render_state_changed&mask) {
@@ -2362,17 +2369,23 @@ void DX8Wrapper::Apply_Render_State_Changes()
 				}
 			}
 		}
+		CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Apply.lights.after");
 	}
 
 	if (render_state_changed&WORLD_CHANGED) {
+		CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Apply.world.before");
 		SNAPSHOT_SAY(("DX8 - apply world matrix\n"));
 		_Set_DX8_Transform(D3DTS_WORLD,render_state.world);
+		CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Apply.world.after");
 	}
 	if (render_state_changed&VIEW_CHANGED) {
+		CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Apply.view.before");
 		SNAPSHOT_SAY(("DX8 - apply view matrix\n"));
 		_Set_DX8_Transform(D3DTS_VIEW,render_state.view);
+		CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Apply.view.after");
 	}
 	if (render_state_changed&VERTEX_BUFFER_CHANGED) {
+		CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Apply.vertexBuffer.before");
 		SNAPSHOT_SAY(("DX8 - apply vb change\n"));
 		for (int i=0;i<MAX_VERTEX_STREAMS;++i) {
 			if (render_state.vertex_buffers[i]) {
@@ -2403,8 +2416,10 @@ void DX8Wrapper::Apply_Render_State_Changes()
 				DX8_RECORD_VERTEX_BUFFER_CHANGE();
 			}
 		}
+		CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Apply.vertexBuffer.after");
 	}
 	if (render_state_changed&INDEX_BUFFER_CHANGED) {
+		CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Apply.indexBuffer.before");
 		SNAPSHOT_SAY(("DX8 - apply ib change\n"));
 		if (render_state.index_buffer) {
 			switch (render_state.index_buffer_type) {//->Type()) {
@@ -2428,6 +2443,7 @@ void DX8Wrapper::Apply_Render_State_Changes()
 				0));
 			DX8_RECORD_INDEX_BUFFER_CHANGE();
 		}
+		CNC_PORT_NOTE_DX8_SORTED_DRAW_STEP(profile_sorted_draw_submit,"DX8Wrapper.Apply.indexBuffer.after");
 	}
 
 	render_state_changed&=((unsigned)WORLD_IDENTITY|(unsigned)VIEW_IDENTITY);

@@ -438,6 +438,31 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `SortingRenderer.pool.draw.submit.before` 0.0364 -> 0.0290, and
       `DX8MeshRenderer.flush.rigid.before` 0.0225 -> 0.0166 ms/frame.
 
+- [x] Split DX8 draw-submit apply phases and trim repeated texture-label
+      allocations. `DX8Wrapper::Draw()` now passes its existing sorted
+      draw-submit profile flag into `DX8Wrapper::Apply_Render_State_Changes()`,
+      whose shader, texture, material, light, world/view transform, vertex
+      buffer, and index buffer apply blocks now emit profile-only markers. Other
+      callers keep the default non-profile path. The first Mac M4/Metal split
+      profile showed the old `DX8Wrapper.Draw.apply.before` spike was dominated
+      by texture application: `DX8Wrapper.Apply.texture.before` measured
+      5.90 ms across 136 texture applies in the slowest sampled shell-map frame.
+      `cnc_port_note_texture_apply()` now avoids constructing and copying
+      name/path `std::string`s for repeated non-missing texture IDs within the
+      same frame, while preserving first-seen texture labels, per-frame apply
+      counts, and missing-texture diagnostics.
+      Verified with `npm --prefix WebAssembly run build:port:release`, Mac
+      Chrome/Metal release profiles
+      `WebAssembly/artifacts/perf/runtime-frame-profile-dx8-apply-split-mac.json`
+      and `runtime-frame-profile-texture-label-lite-mac.json`, and a visible
+      shell-map screenshot
+      `WebAssembly/artifacts/screenshots/runtime-frame-profile-texture-label-lite-mac.png`.
+      In the instrumented profile, the slowest-frame texture-apply bucket moved
+      from 5.90 ms / max 0.085 to 5.32 ms / max 0.055, and engine p99 moved from
+      24.3 to 22.7 ms. The split also identifies the next C++ draw-side target:
+      reducing dirty texture/filter application frequency in `TextureClass::Apply()`
+      / `TextureFilterClass::Apply()`.
+
 - [x] Cache draw-time WebGL texture binding/sampler state in the D3D8 bridge.
       `bridge.js` now tracks the actual WebGL active texture unit plus per-unit
       2D/3D bindings, preserves/invalidates that cache around direct texture

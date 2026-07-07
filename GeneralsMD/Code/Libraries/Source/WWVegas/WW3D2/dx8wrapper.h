@@ -341,7 +341,7 @@ public:
 	static void Set_Light(unsigned index,const D3DLIGHT8* light);
 	static void Set_Light(unsigned index,const LightClass &light);
 
-	static void Apply_Render_State_Changes();	// Apply deferred render state changes (will be called automatically by Draw...)
+	static void Apply_Render_State_Changes(bool profile_sorted_draw_submit = false);	// Apply deferred render state changes (will be called automatically by Draw...)
 
 	static void Draw_Triangles(
 		unsigned buffer_type,

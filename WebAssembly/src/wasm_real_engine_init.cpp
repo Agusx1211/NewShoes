@@ -714,15 +714,13 @@ extern "C" void cnc_port_note_texture_apply(
 	int missing)
 {
 	++g_frame_texture_apply_count;
+	const char *texture_name_c = name != nullptr ? name : "";
+	const char *texture_path_c = full_path != nullptr ? full_path : "";
 	if (texture_id != 0) {
-		const std::string texture_name = name != nullptr ? name : "";
-		const std::string texture_path = full_path != nullptr ? full_path : "";
 		bool updated = false;
 		for (FrameTextureLabel &label : g_frame_texture_labels) {
 			if (label.texture_id == texture_id) {
 				label.stage = stage;
-				label.name = texture_name;
-				label.path = texture_path;
 				label.missing = missing != 0;
 				updated = true;
 				break;
@@ -732,8 +730,8 @@ extern "C" void cnc_port_note_texture_apply(
 			FrameTextureLabel label;
 			label.texture_id = texture_id;
 			label.stage = stage;
-			label.name = texture_name;
-			label.path = texture_path;
+			label.name = texture_name_c;
+			label.path = texture_path_c;
 			label.missing = missing != 0;
 			g_frame_texture_labels.push_back(label);
 		}
@@ -743,8 +741,8 @@ extern "C" void cnc_port_note_texture_apply(
 	}
 
 	++g_frame_missing_texture_apply_count;
-	const std::string texture_name = name != nullptr ? name : "";
-	const std::string texture_path = full_path != nullptr ? full_path : "";
+	const std::string texture_name = texture_name_c;
+	const std::string texture_path = texture_path_c;
 	if (g_frame_first_missing_texture_name.empty() &&
 		g_frame_first_missing_texture_path.empty()) {
 		g_frame_first_missing_texture_name = texture_name;
