@@ -55,6 +55,8 @@ const frameChunk = parsePositiveInt("SKIRMISH_START_FRAME_CHUNK", 30);
 const postActiveFrames = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_FRAMES", 0);
 const postActiveFrameChunk = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_CHUNK", frameChunk);
 const expectPostActiveSurvival = process.env.SKIRMISH_START_EXPECT_SURVIVE === "1";
+const expectMenuMusicStop = process.env.SKIRMISH_START_EXPECT_MUSIC_STOP === "1";
+const musicStopMaxFrames = parsePositiveInt("SKIRMISH_START_MUSIC_STOP_MAX_FRAMES", 360);
 const requestedSkirmishMap = String(process.env.SKIRMISH_START_MAP ?? "").trim();
 const captureD3D8History = process.env.SKIRMISH_START_CAPTURE_D3D8_HISTORY === "1";
 const distDir = parseDistDir();
@@ -204,6 +206,108 @@ function compactClickFrame(frameResult) {
 
 async function rpc(page, command, payload = {}) {
   return page.evaluate(([name, data]) => window.CnCPort.rpc(name, data), [command, payload]);
+}
+
+async function resumeAudio(page) {
+  const point = await page.evaluate(() => {
+    const target = document.querySelector("#viewport");
+    const rect = target.getBoundingClientRect();
+    return {
+      x: rect.left + Math.max(1, Math.min(rect.width - 1, rect.width / 2)),
+      y: rect.top + Math.max(1, Math.min(rect.height - 1, rect.height / 2)),
+    };
+  });
+  await page.mouse.click(point.x, point.y);
+  await page.waitForFunction(async () => {
+    const result = await window.CnCPort.rpc("browserAudioRuntime");
+    return result.browserAudioRuntime?.contextState === "running"
+      && result.browserAudioRuntime?.resumeSuccesses >= 1;
+  }, null, { timeout: 5000 });
+  return rpc(page, "browserAudioRuntime");
+}
+
+async function streamRuntime(page) {
+  const runtime = await rpc(page, "browserAudioRuntime");
+  return runtime.state?.browserMssStreamPlaybackRuntime ?? null;
+}
+
+function activeStreamHandles(runtime) {
+  return (runtime?.activeStreamHandles ?? [])
+    .map((handle) => Number(handle))
+    .filter((handle) => Number.isFinite(handle));
+}
+
+function handleClosed(runtime, handle) {
+  return (runtime?.eventLog ?? []).some((event) =>
+    event.phase === "AIL_close_stream" && Number(event.handle) === Number(handle));
+}
+
+async function waitForActiveMusic(page, label, maxFrames = 240) {
+  const samples = [];
+  let framesAdvanced = 0;
+  while (framesAdvanced < maxFrames) {
+    const runtime = await streamRuntime(page);
+    const handles = activeStreamHandles(runtime);
+    samples.push({
+      framesAdvanced,
+      activeSources: runtime?.activeSources ?? null,
+      activeStreamHandles: handles,
+      lastEvent: runtime?.lastEvent ?? null,
+      lastError: runtime?.lastError ?? null,
+    });
+    if (runtime?.lastError) {
+      throw new Error(`${label} Web Audio stream runtime reported an error: ${runtime.lastError}`);
+    }
+    if (handles.length > 0 && runtime?.lastEvent?.nodeGraph?.includes("musicGainNode")) {
+      return { runtime, handles, framesAdvanced, samples };
+    }
+    await runSummary(page, 4, label);
+    framesAdvanced += 4;
+  }
+  expect(false, `${label} did not start an active music stream`, {
+    maxFrames,
+    samples: samples.slice(-16),
+  });
+}
+
+async function waitForHandlesClosed(page, handles, label, maxFrames) {
+  const targets = handles.map((handle) => Number(handle));
+  const samples = [];
+  let framesAdvanced = 0;
+  while (framesAdvanced <= maxFrames) {
+    const runtime = await streamRuntime(page);
+    const active = activeStreamHandles(runtime);
+    const remainingActive = targets.filter((handle) => active.includes(handle));
+    const missingCloseEvents = targets.filter((handle) => !handleClosed(runtime, handle));
+    samples.push({
+      framesAdvanced,
+      activeStreamHandles: active,
+      remainingActive,
+      missingCloseEvents,
+      stopped: runtime?.stopped ?? null,
+      volumeUpdates: runtime?.volumeUpdates ?? null,
+      lastVolumeUpdate: runtime?.lastVolumeUpdate ?? null,
+      lastEvent: runtime?.lastEvent ?? null,
+      lastError: runtime?.lastError ?? null,
+    });
+    if (runtime?.lastError) {
+      throw new Error(`${label} Web Audio stream runtime reported an error: ${runtime.lastError}`);
+    }
+    if (remainingActive.length === 0 && missingCloseEvents.length === 0) {
+      return { runtime, framesAdvanced, samples };
+    }
+    if (framesAdvanced >= maxFrames) {
+      break;
+    }
+    const frames = Math.min(frameChunk, maxFrames - framesAdvanced);
+    await runSummary(page, frames, label);
+    framesAdvanced += frames;
+  }
+  expect(false, `${label} did not close the pre-skirmish music handles`, {
+    handles: targets,
+    maxFrames,
+    samples: samples.slice(-16),
+  });
 }
 
 function assertFrameResult(result, label) {
@@ -434,6 +538,26 @@ async function main() {
     await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
     await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
 
+    let audioSetup = null;
+    if (expectMenuMusicStop) {
+      console.error("[skirmish-start] enable Web Audio for music transition check");
+      const audioRuntime = await resumeAudio(page);
+      const mixer = await rpc(page, "setBrowserAudioMixerVolumes", {
+        trigger: "skirmish_start_smoke.mjs music transition",
+      });
+      expect(audioRuntime?.browserAudioRuntime?.contextState === "running"
+          && mixer?.browserAudioMixerRuntime?.created === true
+          && mixer?.browserAudioMixerRuntime?.contextState === "running",
+        "Web Audio was not ready for skirmish music transition check", {
+          audioRuntime,
+          mixer,
+        });
+      audioSetup = {
+        runtime: audioRuntime.browserAudioRuntime,
+        mixer: mixer.browserAudioMixerRuntime,
+      };
+    }
+
     console.error("[skirmish-start] mounting archives");
     const mount = await rpc(page, "mountArchives", {
       path: "/assets/skirmish-start",
@@ -466,6 +590,9 @@ async function main() {
 
     console.error("[skirmish-start] reveal main menu");
     const revealed = await revealMainMenu(page);
+    const menuMusic = expectMenuMusicStop
+      ? await waitForActiveMusic(page, "main menu music")
+      : null;
 
     console.error("[skirmish-start] click single player");
     const singlePlayerClick = await clickButton(
@@ -507,6 +634,13 @@ async function main() {
     }
 
     console.error("[skirmish-start] click start");
+    const musicBeforeStart = expectMenuMusicStop ? await streamRuntime(page) : null;
+    const preSkirmishMusicHandles = expectMenuMusicStop
+      ? Array.from(new Set([
+          ...menuMusic.handles,
+          ...activeStreamHandles(musicBeforeStart),
+        ])).sort((left, right) => left - right)
+      : [];
     const skirmishStartClick = await clickButton(
       page,
       skirmishMenu.buttonStart,
@@ -543,6 +677,31 @@ async function main() {
       throw error;
     }
     let postActive = null;
+    let musicTransition = null;
+    if (expectMenuMusicStop) {
+      console.error("[skirmish-start] wait for pre-skirmish music handles to close");
+      const stopped = await waitForHandlesClosed(
+        page,
+        preSkirmishMusicHandles,
+        "skirmish music transition",
+        musicStopMaxFrames);
+      musicTransition = {
+        audioSetup,
+        menuMusic: {
+          handles: menuMusic.handles,
+          runtime: menuMusic.runtime,
+          framesAdvanced: menuMusic.framesAdvanced,
+          samples: menuMusic.samples.slice(-16),
+        },
+        preSkirmishHandles: preSkirmishMusicHandles,
+        beforeStart: musicBeforeStart,
+        afterActive: {
+          framesAdvanced: stopped.framesAdvanced,
+          runtime: stopped.runtime,
+          samples: stopped.samples.slice(-16),
+        },
+      };
+    }
     if (postActiveFrames > 0) {
       console.error(`[skirmish-start] run ${postActiveFrames} post-active frames`);
       postActive = await runPostActiveFrames(page, postActiveFrames, postActiveFrameChunk);
@@ -661,6 +820,7 @@ async function main() {
       officialMultiplayerMaps: mapCache?.probe?.officialMultiplayerMaps ?? [],
       framesAdvancedAfterStart: active.framesAdvanced,
       finalGameplay: compactGameplay(active.result.frame),
+      musicTransition,
       shroudDiagnostics,
       postActive: postActive == null ? null : {
         framesAdvanced: postActive.framesAdvanced,

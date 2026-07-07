@@ -338,14 +338,14 @@ function main() {
     cwrap: requirePinnedLine(
       errors,
       bridge.lines,
-      11586,
+      11595,
       /probeMssStreamLifecycle:\s*module\.cwrap\("cnc_port_probe_mss_stream_lifecycle",\s*"string",\s*\[\]\)/,
       "bridge stream lifecycle cwrap",
     ),
     rpc: requirePinnedLine(
       errors,
       bridge.lines,
-      27057,
+      27066,
       /case "mssStreamLifecycleProbe":/,
       "bridge mssStreamLifecycleProbe RPC",
     ),
@@ -366,11 +366,120 @@ function main() {
     streamVolumePanModuleCallback: requirePinnedLine(
       errors,
       bridge.lines,
-      11336,
+      11345,
       /^\s+cncPortMssStreamVolumePan,\s*$/,
       "bridge stream volume/pan module callback",
     ),
   };
+
+  const stopFunctionLine = findLine(bridge.lines, /\bfunction\s+cncPortMssStreamStop\s*\(/);
+  const stopActiveLookupLine = lineNumber(
+    bridge.lines,
+    (line, index) =>
+      index + 1 > stopFunctionLine
+      && /activeSources\.get\(handle\)/.test(line),
+  );
+  const pendingAfterDecodeCancelDeleteLine = lineNumber(
+    bridge.lines,
+    (line, index) =>
+      index + 1 > 2473
+      && index + 1 < 2521
+      && /pendingStarts\.delete\(handle\)/.test(line),
+  );
+  const pendingAfterDecodeCleanupLine = lineNumber(
+    bridge.lines,
+    (line, index) =>
+      index + 1 > pendingAfterDecodeCancelDeleteLine
+      && index + 1 < 2521
+      && /pendingStarts\.delete\(handle\)/.test(line),
+  );
+  const stopPrematureDeleteLine = lineNumber(
+    bridge.lines,
+    (line, index) =>
+      index + 1 > stopFunctionLine
+      && index + 1 < stopActiveLookupLine
+      && /pendingStarts(?:\?\.)?delete\s*\(\s*handle\s*\)/.test(line),
+  );
+  facts.bridgePendingStreamRaceGuard = {
+    streamStartFunction: requirePinnedLine(
+      errors,
+      bridge.lines,
+      2375,
+      /\basync\s+function\s+_startMssStreamAsync\s*\(/,
+      "bridge async stream start function",
+    ),
+    pendingStartSet: requirePinnedLine(
+      errors,
+      bridge.lines,
+      2399,
+      /pendingStarts\.set\(handle,\s*\{\s*cancelled:\s*false\s*\}\)/,
+      "bridge pending stream start registration",
+    ),
+    pendingAfterDecodeCheck: requirePinnedLine(
+      errors,
+      bridge.lines,
+      2472,
+      /pendingAfterDecode\s*=\s*browserMssStreamPlaybackRuntime\.pendingStarts\.get\(handle\)/,
+      "bridge pending stream post-decode lookup",
+    ),
+    pendingAfterDecodeCancel: requirePinnedLine(
+      errors,
+      bridge.lines,
+      2473,
+      /pendingAfterDecode\?\.cancelled/,
+      "bridge pending stream post-decode cancel guard",
+    ),
+    pendingAfterDecodeCancelDelete: {
+      expectedLine: 2474,
+      line: pendingAfterDecodeCancelDeleteLine,
+      present: pendingAfterDecodeCancelDeleteLine !== -1,
+    },
+    pendingCleanupBeforeSchedule: {
+      expectedLine: 2477,
+      line: pendingAfterDecodeCleanupLine,
+      present: pendingAfterDecodeCleanupLine !== -1,
+    },
+    activeSourceSchedule: requirePinnedLine(
+      errors,
+      bridge.lines,
+      2521,
+      /activeSources\.set\(handle,\s*\{\s*source,\s*gain,\s*volume\s*\}\)/,
+      "bridge stream active source schedule",
+    ),
+    stopFunction: requirePinnedLine(
+      errors,
+      bridge.lines,
+      2552,
+      /\bfunction\s+cncPortMssStreamStop\s*\(/,
+      "bridge stream stop callback",
+    ),
+    stopMarksPendingCancelled: requirePinnedLine(
+      errors,
+      bridge.lines,
+      2559,
+      /entry\.cancelled\s*=\s*true/,
+      "bridge stream stop marks pending start cancelled",
+    ),
+    stopPrematurePendingDelete: {
+      line: stopPrematureDeleteLine,
+      present: stopPrematureDeleteLine !== -1,
+    },
+  };
+  if (stopPrematureDeleteLine !== -1) {
+    errors.push(
+      `bridge stream stop must not delete pendingStarts before async decode observes cancellation (line ${stopPrematureDeleteLine})`,
+    );
+  }
+  if (pendingAfterDecodeCancelDeleteLine !== 2474) {
+    errors.push(
+      `bridge pending stream cancelled cleanup expected at line 2474 but found at ${pendingAfterDecodeCancelDeleteLine}`,
+    );
+  }
+  if (pendingAfterDecodeCleanupLine !== 2477) {
+    errors.push(
+      `bridge pending stream cleanup before schedule expected at line 2477 but found at ${pendingAfterDecodeCleanupLine}`,
+    );
+  }
 
   const report = {
     ok: errors.length === 0,

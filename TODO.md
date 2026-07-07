@@ -474,28 +474,6 @@ symptom is temporal — NOT a single still.
       draw-side frontier (browserDrawIndexed per-draw scaffolding, projected
       shadow flush, shoreline) and land the structural per-frame draw command
       buffer rather than only per-uniform/per-subsystem caching.
-- [ ] **Intro/menu music never stops during gameplay** — the shell/menu
-      (intro) music keeps playing after a match starts instead of being stopped
-      when the in-game music track takes over, so it plays through gameplay
-      (likely overlapping or replacing the intended in-game music). Trace the
-      music state transition on match start: `GameMusic`/`AudioManager` should
-      stop the shell/menu track when entering `GAME_*` play and start the
-      in-game track. Check that the "stop current music" request actually
-      reaches the Web Audio stream (stream stop/drain policy), and that the
-      shell→game transition fires the stop. Distinct from the "sounds don't
-      play" bug — here a track fails to STOP. Verify by starting a skirmish in
-      the harness and confirming the menu track has stopped (state + audible
-      check) once in-game.
-      2026-07-07: fixed the direct engine-driven music stream overlap path:
-      `MilesAudioManager::playStream()` now retires older `AT_Music` streams
-      when a new music stream starts, fading them when the original request
-      asks for fade, and the browser MSS stream bridge applies live
-      `AIL_set_stream_volume_pan()` updates to active Web Audio gain nodes.
-      `test:real-audio-event` now proves the old ZH music stream receives
-      fade-volume updates and closes before the base music stream starts in
-      debug and release. Keep this open for the natural start-skirmish gate,
-      which still needs to confirm the menu track stopped once active gameplay
-      begins.
 - [ ] **Skirmish enemy AI never activates (and enemy base is white)** — in a
       real skirmish the enemy base exists but shows **no activity at all** (no
       unit production, no building, no attacks) and its structures render
@@ -2336,8 +2314,10 @@ residue and the next frontier.
       stops through the original remove-audio-event path; live stream
       volume/pan updates now drive active Web Audio gain, and starting a new
       `AT_Music` stream retires older music streams with fade coverage in
-      `test:real-audio-event`. Broader next/previous, completion, and natural
-      gameplay-triggered transitions remain open.
+      `test:real-audio-event`. The real menu-to-skirmish path now also gates
+      that pre-skirmish menu music handles close before gameplay music remains
+      active (`test:skirmish-music-transition`). Broader next/previous and
+      completion transitions remain open.
 - [ ] EVA voice / unit voices.
 - [ ] Volume/mixer controls wired to options UI; `verify:audio-options-volume-frontier`
       now pins the original Zero Hour OptionsMenu slider-to-`TheAudio->setVolume`

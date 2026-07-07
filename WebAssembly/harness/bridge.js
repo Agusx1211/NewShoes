@@ -2414,17 +2414,17 @@ async function _startMssStreamAsync(payload) {
   // Load stream bytes from mounted BIG archives.
   const wasmModule = await wasmModulePromise;
   if (!wasmModule) {
+    browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
     browserMssStreamPlaybackRuntime.lastError = "WASM module not available";
     return;
   }
 
-  // Race guard: stop was called before async load completed.
+  // Race guard: stop was called before async archive access started.
   const pending = browserMssStreamPlaybackRuntime.pendingStarts.get(handle);
   if (pending?.cancelled) {
     browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
     return;
   }
-  browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
 
   // Search mounted audio archives for the stream file.
   const normalizedFilename = normalizeBrowserAudioLookupPath(filename);
@@ -2450,6 +2450,7 @@ async function _startMssStreamAsync(payload) {
   }
 
   if (!entry || !archiveBytes) {
+    browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
     browserMssStreamPlaybackRuntime.lastError =
       `Stream file not found in any mounted archive: ${filename}`;
     return;
@@ -2461,10 +2462,19 @@ async function _startMssStreamAsync(payload) {
   try {
     decoded = await decodeMssStreamPayload(context, payloadBytes, entry);
   } catch (err) {
+    browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
     browserMssStreamPlaybackRuntime.lastError =
       `Failed to decode stream payload: ${err?.message ?? String(err)}`;
     return;
   }
+
+  // Race guard: stop was called while archive lookup / MP3 decode was in flight.
+  const pendingAfterDecode = browserMssStreamPlaybackRuntime.pendingStarts.get(handle);
+  if (pendingAfterDecode?.cancelled) {
+    browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
+    return;
+  }
+  browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
 
   browserMssStreamPlaybackRuntime.decoded += 1;
   browserMssStreamPlaybackRuntime.eventLog.push({
@@ -2547,7 +2557,6 @@ function cncPortMssStreamStop(payload) {
   const entry = browserMssStreamPlaybackRuntime.pendingStarts?.get(handle);
   if (entry) {
     entry.cancelled = true;
-    browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
   }
   try {
     const active = browserMssStreamPlaybackRuntime.activeSources.get(handle);

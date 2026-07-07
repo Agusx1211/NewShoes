@@ -10,6 +10,35 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## User-reported play bugs (2026-07-07 session)
 
+- [x] Fix intro/menu music continuing into active skirmish gameplay. The
+      skirmish-start harness can now enable Web Audio before real init, capture
+      natural main-menu music stream handles, drive Main Menu -> Single Player
+      -> Skirmish -> Start through original mouse messages, and assert those
+      exact pre-skirmish handles have both `AIL_close_stream` events and no
+      active Web Audio source once the real match is active. This exposed a
+      browser MSS stream race where `cncPortMssStreamStop()` removed the
+      pending-start record before async archive lookup / MP3 decode could see
+      the cancellation; a stop during decode recorded close but still scheduled
+      the source afterward. The bridge now keeps pending stream starts
+      cancellable until after decode, checks cancellation again before
+      scheduling the `AudioBufferSourceNode`, and only deletes the pending
+      record at cancel/failure/schedule completion. Added
+      `npm run test:skirmish-music-transition`.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `node --check WebAssembly/harness/skirmish_start_smoke.mjs`,
+      `node --check WebAssembly/tools/verify_mss_stream_lifecycle_contract.mjs`,
+      `node WebAssembly/tools/verify_mss_stream_lifecycle_contract.mjs`,
+      `node WebAssembly/tools/verify_audio_music_manager_frontier.mjs`,
+      `git diff --check`, and
+      `npm --prefix WebAssembly run test:skirmish-music-transition`, plus the
+      same gate on `dist-release` with
+      `SKIRMISH_START_EXPECT_MUSIC_STOP=1 SKIRMISH_START_DIST=dist-release
+      node WebAssembly/harness/skirmish_start_smoke.mjs`. The passing release
+      skirmish artifact selected Alpine Assault, reached active `GAME_SKIRMISH`
+      with 223 objects/drawables, closed pre-skirmish music handles
+      `20481`/`20482`/`20483`, left `pendingStarts=0`, and kept only the new
+      gameplay/base music handle active.
+
 - [x] Stop stacked engine-owned music streams in the direct Web Audio path.
       `MilesAudioManager::playStream()` now retires older playing `AT_Music`
       streams whenever a new music stream starts, using the original fade
