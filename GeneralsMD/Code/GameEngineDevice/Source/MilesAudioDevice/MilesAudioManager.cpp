@@ -2790,7 +2790,35 @@ void MilesAudioManager::playStream( AudioEventRTS *event, HSTREAM stream )
 	AIL_register_stream_callback(stream, setStreamCompleted);
 	AIL_start_stream(stream);
 	if (event->getAudioEventInfo()->m_soundType == AT_Music) {
-		// Need to stop/fade out the old music here.
+		const Bool fadeOldMusic = event->getShouldFade() && getAudioSettings()->m_fadeAudioFrames > 0;
+		for (std::list<PlayingAudio *>::iterator it = m_playingStreams.begin(); it != m_playingStreams.end(); ) {
+			PlayingAudio *playing = *it;
+			if (playing == NULL || playing->m_audioEventRTS == NULL ||
+					playing->m_audioEventRTS->getAudioEventInfo() == NULL ||
+					playing->m_audioEventRTS->getAudioEventInfo()->m_soundType != AT_Music) {
+				++it;
+				continue;
+			}
+			if (fadeOldMusic) {
+				m_fadingAudio.push_back(playing);
+			} else {
+				releasePlayingAudio(playing);
+			}
+			it = m_playingStreams.erase(it);
+		}
+		if (!fadeOldMusic) {
+			for (std::list<PlayingAudio *>::iterator it = m_fadingAudio.begin(); it != m_fadingAudio.end(); ) {
+				PlayingAudio *playing = *it;
+				if (playing != NULL && playing->m_audioEventRTS != NULL &&
+						playing->m_audioEventRTS->getAudioEventInfo() != NULL &&
+						playing->m_audioEventRTS->getAudioEventInfo()->m_soundType == AT_Music) {
+					releasePlayingAudio(playing);
+					it = m_fadingAudio.erase(it);
+				} else {
+					++it;
+				}
+			}
+		}
 	}
 }
 

@@ -10,6 +10,29 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## User-reported play bugs (2026-07-07 session)
 
+- [x] Stop stacked engine-owned music streams in the direct Web Audio path.
+      `MilesAudioManager::playStream()` now retires older playing `AT_Music`
+      streams whenever a new music stream starts, using the original fade
+      request when available and immediate release otherwise. The browser MSS
+      shim now emits stream volume/pan notifications from
+      `AIL_set_stream_volume_pan()`, and the bridge applies those updates to
+      active stream `GainNode`s, so original fade frames affect audible Web
+      Audio output before stop. `real_audio_event_smoke.mjs` now checks active
+      stream handles, waits for handle-specific fade/close, and drives the
+      stop-music-fade path before starting base music.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `node --check WebAssembly/harness/real_audio_event_smoke.mjs`,
+      `node WebAssembly/tools/verify_mss_stream_lifecycle_contract.mjs`,
+      `node WebAssembly/tools/verify_audio_music_manager_frontier.mjs`,
+      `node WebAssembly/tools/verify_audio_sample_start_frontier.mjs`,
+      `npm --prefix WebAssembly run build:port`,
+      `EXPECT_WASM=1 node WebAssembly/harness/real_audio_event_smoke.mjs`,
+      `npm --prefix WebAssembly run build:port:release`, and
+      `EXPECT_WASM=1 REAL_AUDIO_DIST_DIR=dist-release node
+      WebAssembly/harness/real_audio_event_smoke.mjs`. The broader natural
+      start-skirmish menu-music transition remains open in TODO pending a
+      full gameplay transition gate.
+
 - [x] Fix silent direct real-engine Web Audio events caused by MSS volume ABI
       truncation. The browser MSS 3D sample shim now accepts normalized `F32`
       volumes from the original `MilesAudioManager` path, preserves the legacy

@@ -33,6 +33,7 @@ const archiveSpecs = [
   { name: "Gensec.big" },
 ];
 const AHSV_STOP_THE_MUSIC = 4;
+const AHSV_STOP_THE_MUSIC_FADE = 5;
 
 function expect(condition, message, payload) {
   if (!condition) {
@@ -167,18 +168,75 @@ async function waitForDecodedStream(page, filename, before, label = "stream", ti
   throw new Error(`${label} ${filename} stream did not decode and schedule within ${timeoutMs}ms`);
 }
 
-async function waitForStreamStop(page, before, label = "stream", timeoutMs = 5000) {
+function countStreamCloseEvents(runtime, handle) {
+  return (runtime?.eventLog ?? []).filter((event) =>
+    event.phase === "AIL_close_stream"
+      && (handle == null || Number(event.handle) === Number(handle))).length;
+}
+
+async function waitForStreamStop(page, before, label = "stream", timeoutMs = 5000, handle = null) {
   const start = Date.now();
   const beforeStopped = before?.stopped ?? 0;
+  const beforeHandleClosed = countStreamCloseEvents(before, handle);
+  let lastRuntime = null;
   while (Date.now() - start < timeoutMs) {
     const runtime = await streamRuntime(page);
-    if ((runtime?.stopped ?? 0) > beforeStopped) {
+    lastRuntime = runtime;
+    const stopped = handle == null
+      ? (runtime?.stopped ?? 0) > beforeStopped
+      : countStreamCloseEvents(runtime, handle) > beforeHandleClosed;
+    if (stopped) {
       return runtime;
     }
-    await rpc(page, "realEngineFrameSummary", { frames: 1 });
-    await page.waitForTimeout(50);
+    await rpc(page, "realEngineFrameSummary", { frames: 4 });
+    await page.waitForTimeout(25);
   }
-  throw new Error(`${label} did not stop within ${timeoutMs}ms`);
+  throw new Error(`${label} did not stop within ${timeoutMs}ms: ${JSON.stringify({
+    handle,
+    beforeStopped,
+    beforeHandleClosed,
+    runtime: lastRuntime,
+  })}`);
+}
+
+async function waitForStreamVolumeDrop(page, handle, before, startVolume, label = "stream", timeoutMs = 15000) {
+  const start = Date.now();
+  const beforeUpdates = before?.volumeUpdates ?? 0;
+  const streamHandle = Number(handle);
+  let lastRuntime = null;
+  while (Date.now() - start < timeoutMs) {
+    const runtime = await streamRuntime(page);
+    lastRuntime = runtime;
+    const update = runtime?.lastVolumeUpdate;
+    if ((runtime?.volumeUpdates ?? 0) > beforeUpdates
+        && Number(update?.handle) === streamHandle
+        && Number.isFinite(update?.volume)
+        && update.volume >= 0
+        && update.volume < startVolume) {
+      return runtime;
+    }
+    const targetClosed = runtime?.eventLog?.some((event) =>
+      event.phase === "AIL_close_stream" && Number(event.handle) === streamHandle);
+    if (targetClosed) {
+      throw new Error(`${label} stream stopped before any fade volume update: ${JSON.stringify({
+        handle: streamHandle,
+        beforeUpdates,
+        startVolume,
+        runtime,
+      })}`);
+    }
+    if (runtime?.lastError) {
+      throw new Error(`${label} stream volume fade failed: ${runtime.lastError}`);
+    }
+    await rpc(page, "realEngineFrameSummary", { frames: 4 });
+    await page.waitForTimeout(25);
+  }
+  throw new Error(`${label} stream volume did not fade within ${timeoutMs}ms: ${JSON.stringify({
+    handle: streamHandle,
+    beforeUpdates,
+    startVolume,
+    runtime: lastRuntime,
+  })}`);
 }
 
 async function playAndMaybeStopMusicEvent(
@@ -213,25 +271,46 @@ async function playAndMaybeStopMusicEvent(
       && (musicStream.lastEvent?.payload?.decodedFrames ?? 0) > 0
       && Array.isArray(musicStream.lastEvent?.nodeGraph)
       && musicStream.lastEvent.nodeGraph.includes("musicGainNode")
-      && musicStream.activeSources > (musicBefore?.activeSources ?? 0)
+      && musicStream.activeStreamHandles?.includes(musicStream.lastEvent.handle)
       && musicStream.musicSourceActive === true
       && Number.isFinite(musicStream.lastEvent?.volume)
       && musicStream.lastEvent.volume > 0,
     `${eventName} did not schedule through the browser MSS stream backend`, musicStream);
 
   let stoppedMusicStream = null;
+  let fadedMusicStream = null;
   if (stop) {
-    const stopHandle = stop === "music" ? AHSV_STOP_THE_MUSIC : music.result.handle;
+    const stopHandle = stop === "music"
+      ? AHSV_STOP_THE_MUSIC
+      : stop === "musicFade"
+        ? AHSV_STOP_THE_MUSIC_FADE
+        : music.result.handle;
+    const stopBefore = await streamRuntime(page);
     const musicStop = await rpc(page, "realEngineStopAudioEvent", {
       handle: stopHandle,
       pumpFrames: 2,
     });
     expect(musicStop?.ok === true && musicStop.result?.handle === stopHandle,
       `${eventName} stop did not reach the original audio manager`, musicStop);
-    stoppedMusicStream = await waitForStreamStop(page, musicStream, eventName);
+    if (stop === "musicFade") {
+      fadedMusicStream = await waitForStreamVolumeDrop(
+        page,
+        musicStream.lastEvent.handle,
+        stopBefore,
+        musicStream.lastEvent.volume,
+        eventName,
+      );
+    }
+    stoppedMusicStream = await waitForStreamStop(
+      page,
+      stopBefore,
+      eventName,
+      30000,
+      musicStream.lastEvent.handle,
+    );
   }
 
-  return { music, musicStream, stoppedMusicStream };
+  return { music, musicStream, fadedMusicStream, stoppedMusicStream };
 }
 
 async function playAndStopSpeechEvent(page, eventName, expectedFilename, expectedArchive) {
@@ -271,7 +350,13 @@ async function playAndStopSpeechEvent(page, eventName, expectedFilename, expecte
   });
   expect(speechStop?.ok === true && speechStop.result?.handle === speech.result.handle,
     `${eventName} stop did not reach the original audio manager`, speechStop);
-  const stoppedSpeechStream = await waitForStreamStop(page, speechStream, eventName);
+  const stoppedSpeechStream = await waitForStreamStop(
+    page,
+    speechStream,
+    eventName,
+    5000,
+    speechStream.lastEvent.handle,
+  );
   return { speech, speechStream, stoppedSpeechStream };
 }
 
@@ -395,7 +480,7 @@ try {
     "Game_USA_10",
     "Data\\Audio\\Tracks\\USA_10.mp3",
     "MusicZH.big",
-    { stop: "music" },
+    { stop: "musicFade" },
   );
   const baseMusic = await playAndMaybeStopMusicEvent(
     page,
@@ -446,6 +531,8 @@ try {
       decodedFrames: zhMusic.musicStream.lastEvent.payload.decodedFrames,
       durationSeconds: zhMusic.musicStream.lastEvent.durationSeconds,
       volume: zhMusic.musicStream.lastEvent.volume,
+      fadedVolume: zhMusic.fadedMusicStream?.lastVolumeUpdate?.volume ?? null,
+      volumeUpdates: zhMusic.fadedMusicStream?.volumeUpdates ?? null,
       nodeGraph: zhMusic.musicStream.lastEvent.nodeGraph,
       stopped: zhMusic.stoppedMusicStream?.stopped ?? null,
       activeSourcesAfterStop: zhMusic.stoppedMusicStream?.activeSources ?? null,

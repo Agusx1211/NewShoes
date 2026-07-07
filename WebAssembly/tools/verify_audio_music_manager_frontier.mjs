@@ -692,6 +692,70 @@ function main() {
     );
   }
 
+  const playStreamDefLine = findMemberDef(
+    milesCpp.lines,
+    /void\s+MilesAudioManager\s*::\s*playStream\s*\(/,
+  );
+  facts.milesPlayStreamDefLine = playStreamDefLine;
+  if (playStreamDefLine !== 2783) {
+    errors.push(
+      `MilesAudioManager::playStream expected at line 2783 but found at ${playStreamDefLine}`,
+    );
+  }
+  if (playStreamDefLine > 0) {
+    const range = functionBodyLineRange(milesCpp.lines, playStreamDefLine);
+    if (!range) {
+      errors.push("MilesAudioManager::playStream: function body not found");
+    } else {
+      checkOrderedAnchors(
+        milesCpp.lines,
+        range,
+        [
+          {
+            key: "AIL_set_stream_loop_count",
+            re: /AIL_set_stream_loop_count\s*\(\s*stream\s*,\s*INFINITE_LOOP_COUNT\s*\)/,
+          },
+          {
+            key: "AIL_register_stream_callback",
+            re: /AIL_register_stream_callback\s*\(\s*stream\s*,\s*setStreamCompleted\s*\)/,
+          },
+          { key: "AIL_start_stream", re: /AIL_start_stream\s*\(\s*stream\s*\)/ },
+          {
+            key: "fadeOldMusic",
+            re: /fadeOldMusic\s*=\s*event->getShouldFade\(\)\s*&&\s*getAudioSettings\(\)->m_fadeAudioFrames\s*>\s*0/,
+          },
+          {
+            key: "playingStreamsLoop",
+            re: /m_playingStreams\s*\.\s*begin\s*\(\s*\)/,
+          },
+          {
+            key: "oldMusicGuard",
+            re: /m_soundType\s*!=\s*AT_Music/,
+          },
+          {
+            key: "fadeOldPlayingMusic",
+            re: /m_fadingAudio\s*\.\s*push_back\s*\(\s*playing\s*\)/,
+          },
+          {
+            key: "releaseOldPlayingMusic",
+            re: /releasePlayingAudio\s*\(\s*playing\s*\)/,
+          },
+          {
+            key: "eraseOldPlayingMusic",
+            re: /m_playingStreams\s*\.\s*erase\s*\(\s*it\s*\)/,
+          },
+          {
+            key: "releaseOldFadingMusic",
+            re: /m_fadingAudio\s*\.\s*erase\s*\(\s*it\s*\)/,
+          },
+        ],
+        errors,
+        facts,
+        "MilesAudioManager::playStream",
+      );
+    }
+  }
+
   // =====================================================================
   // MilesAudioManager.cpp: next/prev/state music implementations
   // =====================================================================

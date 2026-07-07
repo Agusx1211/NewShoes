@@ -486,6 +486,16 @@ symptom is temporal — NOT a single still.
       play" bug — here a track fails to STOP. Verify by starting a skirmish in
       the harness and confirming the menu track has stopped (state + audible
       check) once in-game.
+      2026-07-07: fixed the direct engine-driven music stream overlap path:
+      `MilesAudioManager::playStream()` now retires older `AT_Music` streams
+      when a new music stream starts, fading them when the original request
+      asks for fade, and the browser MSS stream bridge applies live
+      `AIL_set_stream_volume_pan()` updates to active Web Audio gain nodes.
+      `test:real-audio-event` now proves the old ZH music stream receives
+      fade-volume updates and closes before the base music stream starts in
+      debug and release. Keep this open for the natural start-skirmish gate,
+      which still needs to confirm the menu track stopped once active gameplay
+      begins.
 - [ ] **Skirmish enemy AI never activates (and enemy base is white)** — in a
       real skirmish the enemy base exists but shows **no activity at all** (no
       unit production, no building, no attacks) and its structures render
@@ -2323,8 +2333,11 @@ residue and the next frontier.
       volume bus, Music.ini parse path, and next/previous/completion state
       contracts that the Web Audio stream backend must satisfy. Engine-driven
       playback for `Game_USA_10` now reaches the browser MSS stream backend and
-      stops through the original remove-audio-event path; next/previous,
-      fading, completion, and gameplay-triggered transitions remain open.
+      stops through the original remove-audio-event path; live stream
+      volume/pan updates now drive active Web Audio gain, and starting a new
+      `AT_Music` stream retires older music streams with fade coverage in
+      `test:real-audio-event`. Broader next/previous, completion, and natural
+      gameplay-triggered transitions remain open.
 - [ ] EVA voice / unit voices.
 - [ ] Volume/mixer controls wired to options UI; `verify:audio-options-volume-frontier`
       now pins the original Zero Hour OptionsMenu slider-to-`TheAudio->setVolume`

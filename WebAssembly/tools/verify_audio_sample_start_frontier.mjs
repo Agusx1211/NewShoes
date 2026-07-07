@@ -70,13 +70,13 @@
 //       getFirstStreamDecl = -1, and streamOpenCall is the AIL_open_stream line
 //       inside playAudioEvent).
 //
-//   playSample (MilesAudioManager.cpp @ 2798) — 2D sample start body order:
+//   playSample (MilesAudioManager.cpp @ 2826) — 2D sample start body order:
 //     - AIL_init_sample, AIL_register_EOS_callback (completion callback
 //       registration -> setSampleCompleted), initFilters, loadFileForRead
 //       (file loading), AIL_set_sample_file (payload handoff),
 //       AIL_start_sample.
 //
-//   playSample3D (MilesAudioManager.cpp @ 2820) — 3D sample start body order:
+//   playSample3D (MilesAudioManager.cpp @ 2848) — 3D sample start body order:
 //     - getCurrentPositionFromEvent (3D position source), loadFileForRead
 //       (file loading), AIL_set_3D_sample_file (payload handoff),
 //       AIL_register_3D_EOS_callback (completion callback registration ->
@@ -93,8 +93,8 @@
 //   File loading (MilesAudioManager.cpp / AudioFileCache):
 //     - loadFileForRead @ 1054 forwards to m_audioCache->openFile(event).
 //     - closeFile @ 1060 forwards to m_audioCache->closeFile(fileRead).
-//     - AudioFileCache::openFile (MilesAudioManager.cpp @ 3126) and
-//       AudioFileCache::closeFile (@ 3217) own the real file-buffer lifecycle
+//     - AudioFileCache::openFile (MilesAudioManager.cpp @ 3154) and
+//       AudioFileCache::closeFile (@ 3245) own the real file-buffer lifecycle
 //       (pinned as definition anchors only; their bodies are out of scope).
 //
 //   Header anchors (MilesAudioManager.h): playAudioEvent @ 256,
@@ -627,7 +627,7 @@ function main() {
       miles,
       "playSampleDefLine",
       /void\s*\*\s*MilesAudioManager\s*::\s*playSample\s*\(/,
-      2798,
+      2826,
       errors,
       facts,
     );
@@ -655,7 +655,7 @@ function main() {
       miles,
       "playSample3DDefLine",
       /void\s*\*\s*MilesAudioManager\s*::\s*playSample3D\s*\(/,
-      2820,
+      2848,
       errors,
       facts,
     );
@@ -758,7 +758,7 @@ function main() {
     miles,
     "audioFileCacheOpenFileDefLine",
     /void\s*\*\s*AudioFileCache\s*::\s*openFile\s*\(/,
-    3126,
+    3154,
     errors,
     facts,
   );
@@ -766,7 +766,7 @@ function main() {
     miles,
     "audioFileCacheCloseFileDefLine",
     /void\s+AudioFileCache\s*::\s*closeFile\s*\(/,
-    3217,
+    3245,
     errors,
     facts,
   );

@@ -1946,10 +1946,13 @@ function summarizeBrowserMssStreamPlaybackRuntime() {
     scheduled: browserMssStreamPlaybackRuntime.scheduled,
     stopped: browserMssStreamPlaybackRuntime.stopped,
     ended: browserMssStreamPlaybackRuntime.ended,
+    volumeUpdates: browserMssStreamPlaybackRuntime.volumeUpdates,
     activeSources: browserMssStreamPlaybackRuntime.activeSources.size,
+    activeStreamHandles: [...browserMssStreamPlaybackRuntime.activeSources.keys()],
     pendingStarts: browserMssStreamPlaybackRuntime.pendingStarts?.size ?? 0,
     musicSourceActive: browserMssStreamPlaybackRuntime.musicSourceActive ?? false,
     lastEvent: browserMssStreamPlaybackRuntime.lastEvent,
+    lastVolumeUpdate: browserMssStreamPlaybackRuntime.lastVolumeUpdate,
     eventLog: [...browserMssStreamPlaybackRuntime.eventLog],
     lastError: browserMssStreamPlaybackRuntime.lastError,
   };
@@ -2300,8 +2303,10 @@ const browserMssStreamPlaybackRuntime = {
   scheduled: 0,
   stopped: 0,
   ended: 0,
+  volumeUpdates: 0,
   eventLog: [],
   lastEvent: null,
+  lastVolumeUpdate: null,
   lastError: null,
 };
 
@@ -2322,9 +2327,11 @@ function resetBrowserMssStreamPlaybackRuntime() {
   browserMssStreamPlaybackRuntime.scheduled = 0;
   browserMssStreamPlaybackRuntime.stopped = 0;
   browserMssStreamPlaybackRuntime.ended = 0;
+  browserMssStreamPlaybackRuntime.volumeUpdates = 0;
   browserMssStreamPlaybackRuntime.musicSourceActive = false;
   browserMssStreamPlaybackRuntime.eventLog = [];
   browserMssStreamPlaybackRuntime.lastEvent = null;
+  browserMssStreamPlaybackRuntime.lastVolumeUpdate = null;
   browserMssStreamPlaybackRuntime.lastError = null;
 }
 
@@ -2333,6 +2340,23 @@ function cncPortMssStreamStart(payload) {
   _startMssStreamAsync(payload).catch((err) => {
     browserMssStreamPlaybackRuntime.lastError = err?.message ?? String(err);
   });
+  return true;
+}
+
+function cncPortMssStreamVolumePan(payload) {
+  const handle = Number(payload?.handle ?? 0);
+  const volume = clamp01(Number(payload.volumeFloat ?? ((payload.volume ?? 127) / 127)));
+  const pan = clamp01(Number(payload.panFloat ?? 0.5));
+  const update = { handle, phase: "AIL_set_stream_volume_pan", volume, pan };
+  browserMssStreamPlaybackRuntime.volumeUpdates += 1;
+  browserMssStreamPlaybackRuntime.lastVolumeUpdate = update;
+  browserMssStreamPlaybackRuntime.eventLog.push(update);
+  const active = browserMssStreamPlaybackRuntime.activeSources.get(handle);
+  if (active?.gain) {
+    active.gain.gain.value = volume;
+    active.volume = volume;
+    active.pan = pan;
+  }
   return true;
 }
 
@@ -2484,7 +2508,7 @@ async function _startMssStreamAsync(payload) {
     browserMssStreamPlaybackRuntime.lastError = null;
   };
 
-  browserMssStreamPlaybackRuntime.activeSources.set(handle, { source, gain });
+  browserMssStreamPlaybackRuntime.activeSources.set(handle, { source, gain, volume });
   browserMssStreamPlaybackRuntime.musicSourceActive = true;
   browserMssStreamPlaybackRuntime.scheduled += 1;
   browserMssStreamPlaybackRuntime.lastEvent = {
@@ -11309,6 +11333,7 @@ async function loadWasmModule() {
       cncPortMss3DSampleRelease,
       cncPortMssStreamStart,
       cncPortMssStreamStop,
+      cncPortMssStreamVolumePan,
       cncPortBrowserUdpSend,
       cncPortBrowserUdpRecv,
       cncGdiMeasure,

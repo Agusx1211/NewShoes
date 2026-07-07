@@ -662,6 +662,36 @@ static inline S32 MSSBrowserNotifyStreamStop(HSTREAM stream)
 #endif
 }
 
+static inline S32 MSSBrowserNotifyStreamVolumePan(const MSSBrowserStreamState &stream)
+{
+#ifdef __EMSCRIPTEN__
+	return EM_ASM_INT({
+		const bridge = typeof Module !== "undefined" ? Module.cncPortMssStreamVolumePan : null;
+		if (typeof bridge !== "function") {
+			return 0;
+		}
+		try {
+			return bridge({
+				handle: $0 >>> 0,
+				volume: $1 | 0,
+				volumeFloat: Number($2),
+				panFloat: Number($3),
+			}) ? 1 : 0;
+		} catch (error) {
+			console.error("cncPortMssStreamVolumePan failed", error);
+			return 0;
+		}
+	},
+		static_cast<unsigned int>(stream.handle),
+		stream.volume,
+		static_cast<double>(stream.volume_float),
+		static_cast<double>(stream.pan_float));
+#else
+	(void)stream;
+	return 0;
+#endif
+}
+
 static inline MSSBrowserSampleState *MSSBrowserFindSample(HSAMPLE handle)
 {
 	if (!MSSBrowserHandleValid(handle)) {
@@ -1848,7 +1878,9 @@ static inline void AIL_set_stream_volume_pan(HSTREAM stream, F32 volume, F32 pan
 	MSSBrowserStreamState *state = MSSBrowserFindStream(stream);
 	if (state != nullptr) {
 		state->volume_float = MSSBrowserNormalizeVolume(volume);
+		state->volume = MSSBrowserVolumeToMilesInteger(volume);
 		state->pan_float = pan;
+		MSSBrowserNotifyStreamVolumePan(*state);
 	}
 }
 static inline AIL_stream_callback AIL_register_stream_callback(HSTREAM stream, AIL_stream_callback callback)
