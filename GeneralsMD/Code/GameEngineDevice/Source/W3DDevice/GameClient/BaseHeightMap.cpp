@@ -119,6 +119,28 @@ extern HeightMapRenderObjClass *TheHeightMap;
 
 static ShaderClass detailOpaqueShader(SC_DETAIL_BLEND);
 
+static void fillShoreLineIndices(UnsignedShort *ib, Int vertexBase, Bool quickFlip)
+{
+	if (quickFlip)
+	{
+		ib[0]=1+vertexBase;
+		ib[1]=3+vertexBase;
+		ib[2]=0+vertexBase;
+		ib[3]=1+vertexBase;
+		ib[4]=2+vertexBase;
+		ib[5]=3+vertexBase;
+	}
+	else
+	{
+		ib[0]=0+vertexBase;
+		ib[1]=2+vertexBase;
+		ib[2]=3+vertexBase;
+		ib[3]=0+vertexBase;
+		ib[4]=1+vertexBase;
+		ib[5]=2+vertexBase;
+	}
+}
+
 //-----------------------------------------------------------------------------
 //         Global Functions & Data                                              
 //-----------------------------------------------------------------------------
@@ -280,6 +302,7 @@ BaseHeightMapRenderObjClass::BaseHeightMapRenderObjClass(void)
 	m_shoreLineTilePositionsSize=0;
 	m_currentMinWaterOpacity = -1.0f;
 	m_vertexShoreLine = NULL;
+	m_indexShoreLine = NULL;
 
 	m_vertexMaterialClass=NULL;
 	m_stageZeroTexture=NULL;
@@ -1518,6 +1541,7 @@ void BaseHeightMapRenderObjClass::setShoreLineDetail(void)
 void BaseHeightMapRenderObjClass::releaseShoreLineBuffers(void)
 {
 	REF_PTR_RELEASE(m_vertexShoreLine);
+	REF_PTR_RELEASE(m_indexShoreLine);
 }
 
 void BaseHeightMapRenderObjClass::buildShoreLineBuffers(void)
@@ -1535,34 +1559,63 @@ void BaseHeightMapRenderObjClass::buildShoreLineBuffers(void)
 	if (!m_vertexShoreLine)
 		return;
 
-	DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexShoreLine);
-	VertexFormatXYZNDUV2 *vb=(VertexFormatXYZNDUV2*)lockVtxBuffer.Get_Vertex_Array();
-	if (!vb)
 	{
-		releaseShoreLineBuffers();
+		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexShoreLine);
+		VertexFormatXYZNDUV2 *vb=(VertexFormatXYZNDUV2*)lockVtxBuffer.Get_Vertex_Array();
+		if (!vb)
+		{
+			releaseShoreLineBuffers();
+			return;
+		}
+
+		for (Int i=0; i<m_numShoreLineTiles; ++i)
+		{
+			shoreLineTileInfo *shoreInfo=&m_shoreLineTilePositions[i];
+			const Real texCoords[4]={shoreInfo->t0, shoreInfo->t1, shoreInfo->t2, shoreInfo->t3};
+			for (Int vertexIndex=0; vertexIndex<4; ++vertexIndex)
+			{
+				const Int vertOffset=vertexIndex*3;
+				vb->x=shoreInfo->verts[vertOffset];
+				vb->y=shoreInfo->verts[vertOffset+1];
+				vb->z=shoreInfo->verts[vertOffset+2];
+				vb->nx=0;
+				vb->ny=0;
+				vb->nz=0;
+				vb->diffuse=0;
+				vb->u1=texCoords[vertexIndex];
+				vb->v1=0;
+				vb->u2=0;
+				vb->v2=0;
+				vb++;
+			}
+		}
+	}
+
+	const Int indexCount = m_numShoreLineTiles * 6;
+	if (indexCount > 0xffff)
+		return;
+
+	m_indexShoreLine=NEW_REF(DX8IndexBufferClass,((UnsignedShort)indexCount));
+	if (!m_indexShoreLine)
+		return;
+
+	DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexShoreLine);
+	UnsignedShort *ib=lockIdxBuffer.Get_Index_Array();
+	if (!ib)
+	{
+		REF_PTR_RELEASE(m_indexShoreLine);
 		return;
 	}
 
 	for (Int i=0; i<m_numShoreLineTiles; ++i)
 	{
 		shoreLineTileInfo *shoreInfo=&m_shoreLineTilePositions[i];
-		const Real texCoords[4]={shoreInfo->t0, shoreInfo->t1, shoreInfo->t2, shoreInfo->t3};
-		for (Int vertexIndex=0; vertexIndex<4; ++vertexIndex)
-		{
-			const Int vertOffset=vertexIndex*3;
-			vb->x=shoreInfo->verts[vertOffset];
-			vb->y=shoreInfo->verts[vertOffset+1];
-			vb->z=shoreInfo->verts[vertOffset+2];
-			vb->nx=0;
-			vb->ny=0;
-			vb->nz=0;
-			vb->diffuse=0;
-			vb->u1=texCoords[vertexIndex];
-			vb->v1=0;
-			vb->u2=0;
-			vb->v2=0;
-			vb++;
-		}
+		const Int tileX=shoreInfo->m_xy & 0xffff;
+		const Int tileY=(shoreInfo->m_xy >> 16) & 0xffff;
+		const Int vertexBase=i*4;
+
+		fillShoreLineIndices(ib,vertexBase,m_map && m_map->getQuickFlipState(tileX,tileY));
+		ib += 6;
 	}
 }
 
@@ -2896,7 +2949,40 @@ flushVertexBuffer1:
 
 		indexCount=batchTileCount*6;
 
-		if (useStaticShoreLineVB)
+		if (useStaticShoreLineVB && m_indexShoreLine)
+		{
+			DX8Wrapper::Set_Index_Buffer(m_indexShoreLine,0);
+			DX8Wrapper::Set_Vertex_Buffer(m_vertexShoreLine);
+
+			Int runStartTile=-1;
+			Int runTileCount=0;
+			for (Int tileIndex=0; tileIndex<batchTileCount; tileIndex++)
+			{
+				shoreLineTileInfo *shoreInfo=batchShoreInfo[tileIndex];
+				const Int shoreTileIndex=shoreInfo-m_shoreLineTilePositions;
+
+				if (runTileCount > 0 && shoreTileIndex == (runStartTile+runTileCount))
+				{
+					runTileCount++;
+					continue;
+				}
+
+				if (runTileCount > 0)
+				{
+					DX8Wrapper::Draw_Triangles(runStartTile*6,runTileCount*2,runStartTile*4,runTileCount*4);
+				}
+
+				runStartTile=shoreTileIndex;
+				runTileCount=1;
+			}
+
+			if (runTileCount > 0)
+			{
+				DX8Wrapper::Draw_Triangles(runStartTile*6,runTileCount*2,runStartTile*4,runTileCount*4);
+				m_numVisibleShoreLineTiles += batchTileCount;
+			}
+		}
+		else if (useStaticShoreLineVB)
 		{
 			DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8,indexCount);
 			Int minVertexIndex=0xffff;
@@ -2924,24 +3010,7 @@ flushVertexBuffer1:
 					if ((vertexBase+4) > maxVertexIndex)
 						maxVertexIndex=vertexBase+4;
 
-					if (m_map->getQuickFlipState(tileX,tileY))
-					{
-						ib[0]=1+vertexBase;
-						ib[1]=3+vertexBase;
-						ib[2]=0+vertexBase;
-						ib[3]=1+vertexBase;
-						ib[4]=2+vertexBase;
-						ib[5]=3+vertexBase;
-					}
-					else
-					{
-						ib[0]=0+vertexBase;
-						ib[1]=2+vertexBase;
-						ib[2]=3+vertexBase;
-						ib[3]=0+vertexBase;
-						ib[4]=1+vertexBase;
-						ib[5]=2+vertexBase;
-					}
+					fillShoreLineIndices(ib,vertexBase,m_map->getQuickFlipState(tileX,tileY));
 					ib += 6;
 				}
 				IndexBufferExceptionFunc();
@@ -3000,24 +3069,7 @@ flushVertexBuffer1:
 						vb++;
 					}
 
-					if (m_map->getQuickFlipState(tileX,tileY))
-					{
-						ib[0]=1+vertexBase;
-						ib[1]=3+vertexBase;
-						ib[2]=0+vertexBase;
-						ib[3]=1+vertexBase;
-						ib[4]=2+vertexBase;
-						ib[5]=3+vertexBase;
-					}
-					else
-					{
-						ib[0]=0+vertexBase;
-						ib[1]=2+vertexBase;
-						ib[2]=3+vertexBase;
-						ib[3]=0+vertexBase;
-						ib[4]=1+vertexBase;
-						ib[5]=2+vertexBase;
-					}
+					fillShoreLineIndices(ib,vertexBase,m_map->getQuickFlipState(tileX,tileY));
 					ib += 6;
 				}
 				IndexBufferExceptionFunc();

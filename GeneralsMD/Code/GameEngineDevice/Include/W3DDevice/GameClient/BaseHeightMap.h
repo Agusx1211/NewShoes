@@ -323,6 +323,7 @@ protected:
 	Int m_shoreLineTilePositionsSize;	///<total size of array including unused memory.
 	Real m_currentMinWaterOpacity;		///<current value inside the gradient lookup texture.
 	DX8VertexBufferClass *m_vertexShoreLine;	///<static shoreline vertices rebuilt when shoreline tiles change
+	DX8IndexBufferClass *m_indexShoreLine;	///<static shoreline indices rebuilt when shoreline tiles change
 	shoreLineTileSortInfo *m_shoreLineSortInfos;
 	Int m_shoreLineSortInfosSize;
 	Int m_shoreLineSortInfosXMajor;

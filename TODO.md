@@ -212,10 +212,14 @@ volumetric shadow VB/IB uploads down to 29+29 updates / 23.3 KB + 11.7 KB.
 Flat-water grid indices now use a cached static DX8 index buffer instead of a
 per-frame dynamic index upload; `runtime-frame-profile-flat-water-static-ib-mac.json`
 measured 78 buffer updates, 170.7 KB uploaded, 0.045 ms `bufferSubDataMs`, and
-`W3DWater.render.renderWater.before` down to one vertex-only 65.1 KB update. The
-next upload byte-reduction pass should start with the remaining leading
-producers (`HeightMap.render.shoreLines.before` and
-`W3DWaterTracks.flush.batchUnlock.before`) before broader JS-side
+`W3DWater.render.renderWater.before` down to one vertex-only 65.1 KB update.
+Shoreline indices now use a cached static DX8 index buffer rebuilt with the
+shoreline tiles; `runtime-frame-profile-shoreline-static-ib-mac.json` measured
+70 buffer updates, 125.4 KB uploaded, 0.020 ms `bufferSubDataMs`, and no
+`HeightMap.render.shoreLines.before` dynamic upload producer. The next upload
+byte-reduction pass should start with the remaining leading producers
+(`W3DWater.render.renderWater.before`, dynamic volumetric shadow VB/IB ranges,
+and `W3DWaterTracks.flush.batchUnlock.before`) before broader JS-side
 `NOOVERWRITE`, orphaning, or checksum changes. The user-reported shadow
 flicker/breakage symptom is fixed in the live skirmish path, while broader
 shadow fidelity remains in the queued phased plan.
@@ -2621,8 +2625,11 @@ and then start with the PROFILE, not with any individual fix.
       index upload: `runtime-frame-profile-flat-water-static-ib-mac.json`
       measured 78 buffer updates, 170.7 KB/frame uploaded, and
       `W3DWater.render.renderWater.before` down to one vertex-only 65.1 KB
-      update. Next concrete frontier: shoreline index ranges and water-track
-      batch unlock.
+      update. Shoreline index ranges are now static-cached too:
+      `runtime-frame-profile-shoreline-static-ib-mac.json` measured 70 buffer
+      updates, 125.4 KB/frame uploaded, and no shoreline dynamic upload
+      producer. Next concrete frontier: animated water surface vertices,
+      dynamic volumetric shadow VB/IB uploads, and water-track batch unlock.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing

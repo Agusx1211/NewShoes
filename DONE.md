@@ -87,6 +87,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       updates dropped from 79 to 78, and `W3DWater.render.renderWater.before`
       dropped from 81.9 KB across one vertex + one index update to one
       vertex-only 65.1 KB update.
+- [x] Cache sorted shoreline indices in a persistent DX8 index buffer.
+      `BaseHeightMapRenderObjClass` now rebuilds a static
+      `DX8IndexBufferClass` with the shoreline tile buffers, using the same
+      original quick-flip triangle order as the dynamic fallback. The sorted
+      shoreline renderer binds the cached vertex/index buffers and draws only
+      contiguous visible tile runs, so the existing culling remains exact; if
+      the index buffer is unavailable or oversized, the previous dynamic-index
+      path remains the fallback. Verified with `git diff --check`, `npm
+      --prefix WebAssembly run build:port`, `npm --prefix WebAssembly run
+      build:port:release`, a local SwiftShader producer profile, and a Mac M4
+      Chrome/Metal producer profile copied to
+      `WebAssembly/artifacts/perf/runtime-frame-profile-shoreline-static-ib-mac.json`.
+      The Mac harness screenshot
+      `WebAssembly/artifacts/screenshots/runtime-frame-profile-shoreline-static-ib-mac.png`
+      showed the shell-map shoreline/water rendering normally. On Mac Metal,
+      total one-frame upload traffic dropped from 170.7 KB to 125.4 KB, buffer
+      updates dropped from 78 to 70, and the prior
+      `HeightMap.render.shoreLines.before` producer (8 dynamic index updates /
+      44.8 KB) disappeared. The tradeoff is more static shoreline draw ranges
+      in this sampled view (318 draws / 225 batch flushes vs 234 / 141 in the
+      previous profile), with measured draw time still low at 0.095 ms.
 
 ## User-reported play bugs (2026-07-06 session)
 
