@@ -145,9 +145,42 @@ function slowestSamples(samples, valueField, limit = 8) {
       renderedObjectCount: sample.renderedObjectCount,
       particleSystemCount: sample.particleSystemCount,
       drawSequence: sample.drawSequence,
+      browserPerf: compactBrowserPerfSample(sample.browserPerf),
       profileElapsedMs: sample.profile?.elapsedMs ?? null,
       profileTop: compactProfileTop(sample.profile),
     }));
+}
+
+function compactBrowserPerfSample(browserPerf) {
+  const perFrame = browserPerf?.perFrame;
+  if (!perFrame) {
+    return null;
+  }
+  return {
+    trackedBrowserMs: perFrame.trackedBrowserMs,
+    trackedGlCallMs: perFrame.trackedGlCallMs,
+    draws: perFrame.draws,
+    drawMs: perFrame.drawMs,
+    sortedDrawProfiledMs: perFrame.sortedDrawProfiledMs,
+    sortedDrawUniformMs: perFrame.sortedDrawUniformMs,
+    sortedDrawRenderUniformMs: perFrame.sortedDrawRenderUniformMs,
+    sortedDrawRenderBaseUniformMs: perFrame.sortedDrawRenderBaseUniformMs,
+    sortedDrawRenderMaterialUniformMs: perFrame.sortedDrawRenderMaterialUniformMs,
+    sortedDrawRenderLightUniformMs: perFrame.sortedDrawRenderLightUniformMs,
+    sortedDrawRenderStageUniformMs: perFrame.sortedDrawRenderStageUniformMs,
+    sortedDrawRenderAlphaFogUniformMs: perFrame.sortedDrawRenderAlphaFogUniformMs,
+    sortedDrawTransformUniformMs: perFrame.sortedDrawTransformUniformMs,
+    sortedDrawPointSpriteUniformMs: perFrame.sortedDrawPointSpriteUniformMs,
+    sortedDrawTextureUniformMs: perFrame.sortedDrawTextureUniformMs,
+    sortedDrawGeometryMs: perFrame.sortedDrawGeometryMs,
+    sortedDrawVertexAttribMs: perFrame.sortedDrawVertexAttribMs,
+    sortedDrawDrawOrBatchMs: perFrame.sortedDrawDrawOrBatchMs,
+    bufferUpdates: perFrame.bufferUpdates,
+    bufferUploadBytes: perFrame.bufferUploadBytes,
+    bufferSubDataMs: perFrame.bufferSubDataMs,
+    textureUploadMs: perFrame.textureUploadMs,
+    readPixelsMs: perFrame.readPixelsMs,
+  };
 }
 
 const render2DProfileFields = [
@@ -721,6 +754,7 @@ async function runFramePass(page, frameCount, batchSize, label, command = "realE
   let drawSequenceAfter = null;
   let finalFrame = null;
   const browserPerfBefore = await queryBrowserPerf(page);
+  let sampleBrowserPerfBefore = sampleBrowserPerf ? browserPerfBefore : null;
 
   for (let remaining = frameCount; remaining > 0;) {
     const frames = Math.min(batchSize, remaining);
@@ -738,6 +772,12 @@ async function runFramePass(page, frameCount, batchSize, label, command = "realE
     completedAfter = Number(frame.framesCompleted ?? 0);
     drawSequenceAfter = drawSequence;
     finalFrame = frame;
+    let browserPerf = null;
+    if (sampleBrowserPerf) {
+      const sampleBrowserPerfAfter = await queryBrowserPerf(page);
+      browserPerf = browserPerfDelta(sampleBrowserPerfBefore, sampleBrowserPerfAfter, frames);
+      sampleBrowserPerfBefore = sampleBrowserPerfAfter;
+    }
     samples.push({
       frames,
       wallMs,
@@ -750,6 +790,7 @@ async function runFramePass(page, frameCount, batchSize, label, command = "realE
       renderedObjectCount: Number(frame.gameplay?.renderedObjectCount ?? Number.NaN),
       particleSystemCount: Number(frame.particles?.systemCount ?? Number.NaN),
       d3d8DrawCache: compactD3D8DrawCache(frame.d3d8DrawCache),
+      browserPerf,
       profile: frame.profile ?? null,
     });
     remaining -= frames;
@@ -875,6 +916,7 @@ const shellMap = process.env.PERF_PROFILE_SHELLMAP !== "0";
 const viewportWidth = parsePositiveInt("PERF_PROFILE_WIDTH", 1280);
 const viewportHeight = parsePositiveInt("PERF_PROFILE_HEIGHT", 720);
 const includeSamples = process.env.PERF_PROFILE_SAMPLES === "1";
+const sampleBrowserPerf = process.env.PERF_PROFILE_SAMPLE_BROWSER === "1";
 const d3d8AdjacentBatching = process.env.PERF_PROFILE_D3D8_BATCH !== "0";
 const d3d8LiteVertexMirrors = process.env.PERF_PROFILE_D3D8_VERTEX_MIRRORS === "1";
 const d3d8BufferProducers = process.env.PERF_PROFILE_D3D8_BUFFER_PRODUCERS === "1";
@@ -985,6 +1027,7 @@ try {
     d3d8BufferProducers: d3d8BufferProducersActive,
     d3d8BoundDrawDiagnostics: d3d8BoundDrawDiagnosticsActive,
     engineFrameProfile,
+    sampleBrowserPerf,
     measuredFrameCommand,
     shellMap,
     viewport: { width: viewportWidth, height: viewportHeight },

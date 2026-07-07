@@ -77,6 +77,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Add per-slowest-frame browser D3D8 attribution and skip unused clip-plane
+      uniform uploads. `runtime_frame_profile.mjs` now has opt-in
+      `PERF_PROFILE_SAMPLE_BROWSER=1`, which records per-sample browser D3D8
+      deltas and attaches a compact breakdown to `slowestEngineSamples` /
+      `slowestRpcSamples`; default profiles remain unchanged. The diagnostic
+      `runtime-frame-profile-sample-browser-detail-mac.json` showed slow frames
+      split between uniform stalls, draw-call stalls, buffer-upload bursts, and
+      VAO/vertex-attribute stalls instead of one generic
+      `browserDrawIndexed` bucket. The bridge now skips uploading the
+      `uClipPlanes[0]` array when the effective clip-plane mask is zero,
+      preserving `uClipPlaneMask` updates and keeping nonzero clip-plane draws
+      on the original path. Verified with `node --check
+      WebAssembly/harness/bridge.js`, `node --check
+      WebAssembly/harness/runtime_frame_profile.mjs`, `git diff --check`,
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs` (logged to
+      `artifacts/perf/smoke-clipplane-skip.stdout.log`, including the D3D8
+      clip-plane probe), and a Mac M4/Metal release profile copied to
+      `runtime-frame-profile-clipplane-skip-mac.json`. The Mac profile kept the
+      shell-map/menu screenshot intact and reduced sorted uniform setup from
+      4.96 to 3.34 ms/frame, with base-uniform setup down from 1.09 to
+      0.41 ms/frame; wall time was noise-flat in that run.
+
 - [x] Keep D3D8 transform uniforms cached across non-transformed draws. The
       browser D3D8 bridge no longer resets the world/view/projection uniform
       cache when a draw uses screen-space or otherwise non-transformed

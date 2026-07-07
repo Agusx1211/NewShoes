@@ -254,8 +254,15 @@ instead of forcing the next world-space draw to re-upload them; the Mac M4/Metal
 release profile `runtime-frame-profile-transform-cache-mac.json` reduced sorted
 draw profiled bridge work from 11.45 to 8.79 ms/frame and transform-uniform
 subtime from 2.70 to 1.80 ms/frame while preserving shell-map and active
-skirmish screenshots. Broader shadow fidelity remains in the queued phased
-plan.
+skirmish screenshots. The runtime profile can now optionally attach compact
+per-sample browser D3D8 deltas (`PERF_PROFILE_SAMPLE_BROWSER=1`) to the slowest
+frame summaries, which split current slow frames into uniform, draw-call,
+buffer-upload, and vertex-attribute stall patterns. Using that diagnostic, the
+bridge now skips the unused `uClipPlanes` array upload when the effective clip
+mask is zero; `runtime-frame-profile-clipplane-skip-mac.json` reduced sorted
+uniform setup from 4.96 to 3.34 ms/frame and base-uniform setup from 1.09 to
+0.41 ms/frame in the Mac M4/Metal release profile, with wall time noise-flat.
+Broader shadow fidelity remains in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`

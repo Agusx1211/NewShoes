@@ -10066,11 +10066,11 @@ function paintD3D8DrawIndexed(payload = {}) {
         if (bridgeProgram.depthBias) {
           gl.uniform1f(bridgeProgram.depthBias, appliedRenderState.depth.bias.ndc);
         }
+        const effectiveClipPlaneMask = vertexPretransformed ? 0 : appliedRenderState.clipPlanes.mask;
         if (bridgeProgram.clipPlaneMask) {
-          gl.uniform1i(bridgeProgram.clipPlaneMask,
-            vertexPretransformed ? 0 : appliedRenderState.clipPlanes.mask);
+          gl.uniform1i(bridgeProgram.clipPlaneMask, effectiveClipPlaneMask);
         }
-        if (bridgeProgram.clipPlanes) {
+        if (bridgeProgram.clipPlanes && effectiveClipPlaneMask !== 0) {
           gl.uniform4fv(bridgeProgram.clipPlanes, flattenD3D8ClipPlanes(clipPlanes));
         }
         if (bridgeProgram.useFlatShade) {
