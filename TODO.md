@@ -518,6 +518,34 @@ Reported by the project owner on the Mac GPU build. Reproduce in the harness and
 verify each fix with a real, **multi-frame** screenshot / state check where the
 symptom is temporal — NOT a single still.
 
+- [ ] **Rally-point line does not render** — when a production building's rally
+      point (the "go to here after created" point) is set, the white rally line
+      from the building to the rally point does not draw. The rally point itself /
+      unit routing may work, but the visual line is missing. Trace the rally-line
+      draw path (W3D in-world line/decal rendering for `RallyPoint` / the
+      drawable's rally feedback) and confirm it submits through the browser D3D8
+      layer; likely an unrendered line-primitive / XYZRHW or in-world line draw,
+      similar in kind to other missing overlay primitives. Verify with a
+      multi-frame screenshot showing the line after setting a rally point.
+- [ ] **Ground toxin/radiation fields do not render** — toxins on the ground
+      (anthrax, radiation, and similar persistent ground effects) are not drawn.
+      The field is likely still active in simulation (damage over area) but the
+      ground decal/overlay is invisible. Trace the toxin/radiation ground-effect
+      render path (terrain decal / scorch-style projected overlay or particle
+      ground splat) and confirm its draw reaches the browser D3D8 layer; check
+      whether it depends on a projected-decal / blend / texture path that is
+      currently stubbed or mis-blended. Verify with a screenshot of an active
+      anthrax/radiation field on the ground.
+- [ ] **Post-match stats/score screen is broken and cannot be closed** — after a
+      match ends, the end-of-game stats/score screen renders broken (garbled /
+      wrong layout) and has no working way to dismiss it (buttons don't respond /
+      no close), trapping the player. Reproduce by finishing a skirmish match.
+      Investigate both (a) the score-screen window/layout rendering (the
+      `ScoreScreen` / end-game window GUI draw + its data population) and (b) its
+      button callbacks / input wiring (same class of dead-button issue seen with
+      the Esc menu and skirmish quit menu — check the window's callbacks are
+      registered and reachable through the browser input path). Verify the screen
+      renders correctly AND a close/continue button returns to the menu.
 - [ ] **Physical iPad Safari canvas-drag confirmation** — after the browser-side
       canvas selection/callout suppression, run the real playable page on an
       iPad in Safari and confirm an in-game touch drag no longer highlights the
