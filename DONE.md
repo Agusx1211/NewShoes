@@ -77,6 +77,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Remove per-draw sampler-state string keys from the D3D8 texture path.
+      Sampler cache hits now compare the exact numeric WebGL sampler fields
+      stored on the texture resource instead of building a colon-joined string
+      for every sampled draw. Misses still update the same sampler state and
+      diagnostics, preserving the existing `texParameteri` skip behavior.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and synced Mac
+      M4/Metal release profiles copied to
+      `runtime-frame-profile-sampler-key-mac.json` /
+      `runtime-frame-profile-sampler-key-mac.png` and
+      `runtime-frame-profile-sampler-key-repeat-mac.json` /
+      `runtime-frame-profile-sampler-key-repeat-mac.png`. Compared with the
+      same build before this cleanup, the 60-frame profile moved
+      `sortedDrawTextureBindMs` from 0.1515 to 0.1369 ms/frame, and the
+      120-frame repeat moved it from 0.1829 to 0.1470 ms/frame. Total wall time
+      remained noisy, so the remaining frontier is still reducing producer draw
+      submissions and geometry setup rather than sampler-key allocation.
+
 - [x] Remove per-draw string construction from the D3D8 derived draw-cache key.
       `paintD3D8DrawIndexed` now compares the six draw-cache fields
       (`derivedStateHash`, bound texture ids, FVF, stride, primitive type)

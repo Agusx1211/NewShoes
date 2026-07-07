@@ -4671,7 +4671,7 @@ function textureHasCompleteMipChain(resource) {
   return true;
 }
 
-function d3d8SamplerStateKey({
+function d3d8SamplerStateMatches(resource, {
   min,
   mag,
   wrapS,
@@ -4681,16 +4681,16 @@ function d3d8SamplerStateKey({
   lodBiasBits,
   completeMipChain,
 }) {
-  return [
-    min.value,
-    mag.value,
-    wrapS.value,
-    wrapT.value,
-    baseLevel,
-    maxLevel,
-    lodBiasBits,
-    completeMipChain ? 1 : 0,
-  ].join(":");
+  const key = resource?.samplerStateKey;
+  return Boolean(key) &&
+    key.min === min.value &&
+    key.mag === mag.value &&
+    key.wrapS === wrapS.value &&
+    key.wrapT === wrapT.value &&
+    key.baseLevel === baseLevel &&
+    key.maxLevel === maxLevel &&
+    key.lodBiasBits === lodBiasBits &&
+    key.completeMipChain === (completeMipChain ? 1 : 0);
 }
 
 function applyD3D8TextureSamplerToBoundTexture(stage, textureStage, resource) {
@@ -4709,7 +4709,7 @@ function applyD3D8TextureSamplerToBoundTexture(stage, textureStage, resource) {
   const maxLevel = completeMipChain ? Math.max(baseLevel, highestLevel) : 0;
   const lodBiasBits = Number(textureStage.mipMapLodBias ?? 0) >>> 0;
   const lodBias = d3dDwordToFloat(lodBiasBits);
-  const samplerStateKey = d3d8SamplerStateKey({
+  if (resource.samplerState && d3d8SamplerStateMatches(resource, {
     min,
     mag,
     wrapS,
@@ -4718,8 +4718,7 @@ function applyD3D8TextureSamplerToBoundTexture(stage, textureStage, resource) {
     maxLevel,
     lodBiasBits,
     completeMipChain,
-  });
-  if (resource.samplerStateKey === samplerStateKey && resource.samplerState) {
+  })) {
     if (d3d8DiagLevel === "full") {
       d3d8TextureStats.lastSampler = resource.samplerState;
       updateD3D8TextureSummary();
@@ -4770,7 +4769,16 @@ function applyD3D8TextureSamplerToBoundTexture(stage, textureStage, resource) {
     supported: min.supported && mag.supported && wrapS.supported && wrapT.supported,
   };
   resource.samplerState = applied;
-  resource.samplerStateKey = samplerStateKey;
+  resource.samplerStateKey = {
+    min: min.value,
+    mag: mag.value,
+    wrapS: wrapS.value,
+    wrapT: wrapT.value,
+    baseLevel,
+    maxLevel,
+    lodBiasBits,
+    completeMipChain: completeMipChain ? 1 : 0,
+  };
   d3d8TextureStats.samplerApplications += 1;
   d3d8TextureStats.lastSampler = applied;
   updateD3D8TextureSummary();

@@ -335,12 +335,16 @@ fields instead of allocating a concatenated key string every draw; the first
 Mac M4/Metal producer run `runtime-frame-profile-draw-cache-key-mac.json`
 kept the screenshot correct and moved attributed draw bridge work from 4.062 to
 4.024 ms/frame, with `SortingRenderer.pool.draw.submit.before`
-`sortedDrawDerivedMs` moving from 0.421 to 0.408 ms/frame. The next PERF pass
-should use the producer table to reduce world-space submissions or residual
-draw-submit stalls, not material, light, text-geometry, first-vertex VAO setup,
-transform comparison/allocation, draw-time harness bookkeeping, or draw-cache
-key string allocation. Broader shadow fidelity remains in the queued phased
-plan.
+`sortedDrawDerivedMs` moving from 0.421 to 0.408 ms/frame. Sampler-state cache
+hits now use exact numeric field comparison instead of building another string
+key per sampled draw; `runtime-frame-profile-sampler-key-mac.json` moved
+`sortedDrawTextureBindMs` from 0.1515 to 0.1369 ms/frame, and the 120-frame
+repeat moved it from 0.1829 to 0.1470 ms/frame. The next PERF pass should use
+the producer table to reduce world-space submissions or residual draw-submit
+stalls, not material, light, text-geometry, first-vertex VAO setup, transform
+comparison/allocation, draw-time harness bookkeeping, draw-cache key string
+allocation, or sampler-key string allocation. Broader shadow fidelity remains
+in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
