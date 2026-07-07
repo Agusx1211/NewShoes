@@ -96,7 +96,7 @@ function summarizeScreenshot(screenshot) {
 function stats(values) {
   const finite = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
   if (finite.length === 0) {
-    return { count: 0, min: null, avg: null, median: null, p95: null, max: null };
+    return { count: 0, min: null, avg: null, median: null, p95: null, p99: null, max: null };
   }
   const sum = finite.reduce((total, value) => total + value, 0);
   const percentile = (p) => finite[Math.min(finite.length - 1, Math.floor((finite.length - 1) * p))];
@@ -106,8 +106,48 @@ function stats(values) {
     avg: sum / finite.length,
     median: percentile(0.5),
     p95: percentile(0.95),
+    p99: percentile(0.99),
     max: finite[finite.length - 1],
   };
+}
+
+function compactProfileTop(profile, limit = 8) {
+  return Array.isArray(profile?.top)
+    ? profile.top.slice(0, limit).map((entry) => ({
+        name: entry.name,
+        totalMs: entry.totalMs,
+        maxMs: entry.maxMs,
+        samples: entry.samples,
+      }))
+    : [];
+}
+
+function slowestSamples(samples, valueField, limit = 8) {
+  return samples
+    .map((sample, sampleIndex) => ({
+      sampleIndex,
+      value: Number(sample[valueField] ?? Number.NaN),
+      sample,
+    }))
+    .filter((entry) => Number.isFinite(entry.value))
+    .sort((left, right) => right.value - left.value)
+    .slice(0, limit)
+    .map(({ sampleIndex, value, sample }) => ({
+      sampleIndex,
+      value,
+      frames: sample.frames,
+      wallMs: sample.wallMs,
+      wallMsPerFrame: sample.wallMsPerFrame,
+      engineLastFrameMs: sample.engineLastFrameMs,
+      logicFrame: sample.logicFrame,
+      objectCount: sample.objectCount,
+      drawableCount: sample.drawableCount,
+      renderedObjectCount: sample.renderedObjectCount,
+      particleSystemCount: sample.particleSystemCount,
+      drawSequence: sample.drawSequence,
+      profileElapsedMs: sample.profile?.elapsedMs ?? null,
+      profileTop: compactProfileTop(sample.profile),
+    }));
 }
 
 const render2DProfileFields = [
@@ -747,6 +787,8 @@ async function runFramePass(page, frameCount, batchSize, label, command = "realE
     profileCounters: profile ? summarizeProfileCounters(samples) : null,
     finalState: compactFrameState(finalFrame),
     sampleCount: samples.length,
+    slowestEngineSamples: slowestSamples(samples, "engineLastFrameMs"),
+    slowestRpcSamples: slowestSamples(samples, "wallMsPerFrame"),
     firstSample: samples[0] ?? null,
     lastSample: samples[samples.length - 1] ?? null,
   };
@@ -810,6 +852,8 @@ async function runUntilSettled(page, maxFrames, shellMap) {
     browserPerf: browserPerfDelta(browserPerfBefore, browserPerfAfter, samples.length),
     finalState: compactFrameState(finalFrame),
     sampleCount: samples.length,
+    slowestEngineSamples: slowestSamples(samples, "engineLastFrameMs"),
+    slowestRpcSamples: slowestSamples(samples, "wallMs"),
     firstSample: samples[0] ?? null,
     lastSample: samples[samples.length - 1] ?? null,
   };

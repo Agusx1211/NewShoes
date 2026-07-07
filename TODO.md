@@ -340,6 +340,15 @@ symptom is temporal — NOT a single still.
       uneven per-frame work (buffer uploads / shadow-volume regen /
       water-shoreline rebuild firing on some frames only), (3) unpaced rAF logic
       stepping (fixed-timestep pacing). Optimize for consistency, not the mean.
+      2026-07-07: `runtime_frame_profile.mjs` now reports p99 and compact
+      `slowestEngineSamples` / `slowestRpcSamples` with top engine markers, so
+      spike frames are visible without full sample dumps. The first M4/Metal
+      sampled profile (`runtime-frame-profile-stability-fields-mac.json`) had
+      engine `lastFrameMs` avg 7.78, p95 9.6, p99 9.9, max 11.2 over 30
+      single-frame samples; the worst frame was game-logic heavy, while the
+      recurring render marker remained `WasmD3D8.browserDrawIndexed.before`.
+      Next work is to use those slowest-sample markers to attack the real spike
+      causes, not to add more broad averages.
 - [ ] **Performance still needs love (general)** — beyond stability, the loaded
       (non-shell-map) skirmish frame cost with hundreds of units is the real
       target and is not yet profiled/held to triple-digit fps. Keep pushing the

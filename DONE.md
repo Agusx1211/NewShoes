@@ -10,6 +10,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Add frame-stability fields to the real runtime profile. The profile
+      summary now reports `p99` alongside min/avg/median/p95/max and always
+      includes compact `slowestEngineSamples` / `slowestRpcSamples` entries
+      with logic frame, object/drawable/rendered counts, particle count, draw
+      sequence, profile elapsed time, and the top engine markers for each slow
+      sample. This lets future performance passes identify spike frames without
+      enabling full sample dumps by default. Verified with `node --check
+      WebAssembly/harness/runtime_frame_profile.mjs` and a Mac M4/Metal
+      release profile copied to
+      `WebAssembly/artifacts/perf/runtime-frame-profile-stability-fields-mac.json`.
+      That 30-frame single-frame-batch run reported engine `lastFrameMs` avg
+      7.78, p95 9.6, p99 9.9, max 11.2, and its slowest compact sample was
+      led by `TheGameLogic` 4.07 ms followed by
+      `WasmD3D8.browserDrawIndexed.before` 2.445 ms. A same-state
+      non-contiguous `WEBGL_multi_draw` batching candidate was profiled and
+      rejected before this cleanup because the current shell-map draw stream
+      produced zero same-key non-contiguous merges
+      (`runtime-frame-profile-multirange-batch-rejected-mac.json`).
 - [x] Add opt-in D3D8 buffer upload producer attribution to the real runtime
       profile. The wasm D3D8 shim now passes the current engine frame profile
       marker through buffer updates when
