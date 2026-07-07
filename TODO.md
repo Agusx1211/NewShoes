@@ -216,11 +216,14 @@ measured 78 buffer updates, 170.7 KB uploaded, 0.045 ms `bufferSubDataMs`, and
 Shoreline indices now use a cached static DX8 index buffer rebuilt with the
 shoreline tiles; `runtime-frame-profile-shoreline-static-ib-mac.json` measured
 70 buffer updates, 125.4 KB uploaded, 0.020 ms `bufferSubDataMs`, and no
-`HeightMap.render.shoreLines.before` dynamic upload producer. The next upload
-byte-reduction pass should start with the remaining leading producers
-(`W3DWater.render.renderWater.before`, dynamic volumetric shadow VB/IB ranges,
-and `W3DWaterTracks.flush.batchUnlock.before`) before broader JS-side
-`NOOVERWRITE`, orphaning, or checksum changes. The user-reported shadow
+`HeightMap.render.shoreLines.before` dynamic upload producer. Flat-water
+vertices now use a narrower dynamic `XYZDUV2` buffer because the flat-water
+path uses prelit diffuse and constant normals; `runtime-frame-profile-flat-water-xyzduv2-mac.json`
+measured 70 buffer updates, 107.6 KB uploaded, 0.025 ms `bufferSubDataMs`, and
+`W3DWater.render.renderWater.before` down to 47.4 KB. The next upload
+byte-reduction pass should start with the remaining leading producers (dynamic
+volumetric shadow VB/IB ranges and `W3DWaterTracks.flush.batchUnlock.before`)
+before broader JS-side `NOOVERWRITE`, orphaning, or checksum changes. The user-reported shadow
 flicker/breakage symptom is fixed in the live skirmish path, while broader
 shadow fidelity remains in the queued phased plan.
 
@@ -2629,7 +2632,14 @@ and then start with the PROFILE, not with any individual fix.
       `runtime-frame-profile-shoreline-static-ib-mac.json` measured 70 buffer
       updates, 125.4 KB/frame uploaded, and no shoreline dynamic upload
       producer. Next concrete frontier: animated water surface vertices,
-      dynamic volumetric shadow VB/IB uploads, and water-track batch unlock.
+      dynamic volumetric shadow VB/IB uploads, and water-track batch unlock. A
+      follow-up flat-water vertex-format pass moved the animated water surface
+      to a narrower dynamic `XYZDUV2` buffer:
+      `runtime-frame-profile-flat-water-xyzduv2-mac.json` measured 70 buffer
+      updates, 107.6 KB/frame uploaded, and
+      `W3DWater.render.renderWater.before` down to 47.4 KB. Next concrete
+      frontier: dynamic volumetric shadow VB/IB uploads and water-track batch
+      unlock.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing

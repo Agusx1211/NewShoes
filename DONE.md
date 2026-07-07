@@ -108,6 +108,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       44.8 KB) disappeared. The tradeoff is more static shoreline draw ranges
       in this sampled view (318 draws / 225 batch flushes vs 234 / 141 in the
       previous profile), with measured draw time still low at 0.095 ms.
+- [x] Use the narrower `XYZDUV2` vertex format for animated flat-water
+      uploads. `drawTrapezoidWater()` still rewrites animated flat-water
+      positions, diffuse, and both UV sets every frame, but now uses a
+      persistent dynamic `DX8VertexBufferClass` with `DX8_FVF_XYZDUV2` instead
+      of the global `XYZNDUV2` dynamic ring because the flat-water path uses
+      prelit diffuse and constant normals. The original river, sky, shoreline,
+      and mesh-water vertex formats are unchanged. Verified with
+      `git diff --check`, `npm --prefix WebAssembly run build:port`, `npm
+      --prefix WebAssembly run build:port:release`, and a Mac M4 Chrome/Metal
+      producer profile copied to
+      `WebAssembly/artifacts/perf/runtime-frame-profile-flat-water-xyzduv2-mac.json`.
+      The Mac harness screenshot
+      `WebAssembly/artifacts/screenshots/runtime-frame-profile-flat-water-xyzduv2-mac.png`
+      showed the shell-map water/shoreline rendering normally. On Mac Metal,
+      total one-frame upload traffic dropped from 125.4 KB to 107.6 KB while
+      buffer updates stayed at 70, and `W3DWater.render.renderWater.before`
+      dropped from 65.1 KB to 47.4 KB with draw time still low at 0.085 ms.
 
 ## User-reported play bugs (2026-07-06 session)
 

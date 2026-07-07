@@ -345,8 +345,10 @@ WaterRenderObjClass::WaterRenderObjClass(void)
 	m_dy=0;
 	m_indexBuffer=NULL;
 	m_flatWaterIndexBuffer=NULL;
+	m_flatWaterVertexBuffer=NULL;
 	m_flatWaterIndexUCount=0;
 	m_flatWaterIndexVCount=0;
+	m_flatWaterVertexCount=0;
 	m_waterTrackSystem = NULL;
 	m_doWaterGrid = FALSE;
 	m_meshVertexMaterialClass=NULL;
@@ -824,8 +826,10 @@ void WaterRenderObjClass::ReleaseResources(void)
 
 	REF_PTR_RELEASE(m_indexBuffer);
 	REF_PTR_RELEASE(m_flatWaterIndexBuffer);
+	REF_PTR_RELEASE(m_flatWaterVertexBuffer);
 	m_flatWaterIndexUCount=0;
 	m_flatWaterIndexVCount=0;
+	m_flatWaterVertexCount=0;
 
 	REF_PTR_RELEASE(m_pReflectionTexture);
 	SAFE_RELEASE(m_vertexBufferD3D);
@@ -3153,6 +3157,25 @@ DX8IndexBufferClass *WaterRenderObjClass::getFlatWaterIndexBuffer(Int uCount, In
 	return m_flatWaterIndexBuffer;
 }
 
+DX8VertexBufferClass *WaterRenderObjClass::getFlatWaterVertexBuffer(Int vertexCount)
+{
+	if (m_flatWaterVertexBuffer && m_flatWaterVertexCount == vertexCount)
+		return m_flatWaterVertexBuffer;
+
+	REF_PTR_RELEASE(m_flatWaterVertexBuffer);
+	m_flatWaterVertexCount=0;
+
+	if (vertexCount <= 0 || vertexCount > 0xffff)
+		return NULL;
+
+	m_flatWaterVertexBuffer=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZDUV2,(UnsignedShort)vertexCount,DX8VertexBufferClass::USAGE_DYNAMIC));
+	if (!m_flatWaterVertexBuffer)
+		return NULL;
+
+	m_flatWaterVertexCount=vertexCount;
+	return m_flatWaterVertexBuffer;
+}
+
 //-------------------------------------------------------------------------------------------------
 //Draw a 4 sided flat water area.
 //-------------------------------------------------------------------------------------------------
@@ -3238,7 +3261,18 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 	//Keep diffuse from lighting calculations but substitute custom alpha
 	diffuse |= m_settings[m_tod].waterDiffuse & 0xff000000;	//copy alpha/opacity from ini setting
 
-	DynamicVBAccessClass vb_access(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,vertexCount);
+	DX8VertexBufferClass *flatWaterVertexBuffer=getFlatWaterVertexBuffer(vertexCount);
+	if (!flatWaterVertexBuffer)
+		return;
+
+	VertexFormatXYZDUV2 *vb=NULL;
+	if (flatWaterVertexBuffer->Get_DX8_Vertex_Buffer()->Lock(0,vertexCount*sizeof(VertexFormatXYZDUV2),(unsigned char**)&vb,D3DLOCK_DISCARD) != D3D_OK)
+		return;
+	if (!vb)
+	{
+		flatWaterVertexBuffer->Get_DX8_Vertex_Buffer()->Unlock();
+		return;
+	}
 
 //#define WAVY_WATER
 //#define FEATHER_LAYER_COUNT (3) //LORENZEN
@@ -3248,10 +3282,6 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 //#ifdef WAVY_WATER // the NEW WATER a'la LORENZEN
 	if ( TheGlobalData->m_featherWater )
 	{
-
-		DynamicVBAccessClass::WriteLockClass lock(&vb_access);
-		VertexFormatXYZNDUV2* vb=lock.Get_Formatted_Vertex_Array();
-
 		Real phase = 0;
 		Real mapCoeff = PI/(4*MAP_XY_FACTOR);
 		Real wave = 0;
@@ -3298,9 +3328,6 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 				vb->v1 = (vertex.Y/waterFactor) + 0.02*cos(5*m_riverVOrigin)*wave;
 				vb->u2 = vertex.X/BUMP_SIZE;
 				vb->v2 = vertex.Y/BUMP_SIZE + 0.3f*vertex.X/BUMP_SIZE;
-				vb->nx = 0;
-				vb->ny = 0;
-				vb->nz = 1.0f;
 				vb++;
 			}
 		}
@@ -3309,9 +3336,6 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 	else
 
 	{
-		DynamicVBAccessClass::WriteLockClass lock(&vb_access);
-		VertexFormatXYZNDUV2* vb=lock.Get_Formatted_Vertex_Array();
-
 		//Pulling some constants out of the inner loops to improve performance -MW
 		Real constA=0.02*cos(11*m_riverVOrigin);
 		Real constB=0.02*cos(5*m_riverVOrigin);
@@ -3347,13 +3371,12 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 				//Old slower version
  				//vb->v2 = vertex.Y/BUMP_SIZE + 0.3f*vertex.X/BUMP_SIZE;
 				vb->v2 = (vertex.Y+0.3f*vertex.X)/BUMP_SIZE;
-				vb->nx = 0;
-				vb->ny = 0;
-				vb->nz = 1.0f;
 				vb++;
 			}
 		}
 	}
+
+	flatWaterVertexBuffer->Get_DX8_Vertex_Buffer()->Unlock();
 
 //#endif // OLD VS NEW WATER
 
@@ -3363,7 +3386,7 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 
 	DX8Wrapper::Set_Transform(D3DTS_WORLD,tm);	//position the water surface
 	DX8Wrapper::Set_Index_Buffer(flatWaterIndexBuffer,0);
-	DX8Wrapper::Set_Vertex_Buffer(vb_access);
+	DX8Wrapper::Set_Vertex_Buffer(flatWaterVertexBuffer);
 
 	setupFlatWaterShader();// lorenzen sez use the alpha shader
 
