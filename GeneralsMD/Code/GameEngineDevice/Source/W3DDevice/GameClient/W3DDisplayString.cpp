@@ -70,6 +70,21 @@
 
 // PRIVATE PROTOTYPES /////////////////////////////////////////////////////////
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_profile_marker(const char *name) __attribute__((weak));
+extern "C" int cnc_port_is_engine_frame_profile_enabled() __attribute__((weak));
+#define CNC_PORT_NOTE_W3D_DISPLAY_STRING_PROFILE_STEP(name) \
+	do { \
+		if (cnc_port_is_engine_frame_profile_enabled && \
+				cnc_port_is_engine_frame_profile_enabled() && \
+				cnc_port_note_engine_profile_marker) { \
+			cnc_port_note_engine_profile_marker(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_W3D_DISPLAY_STRING_PROFILE_STEP(name) do { } while (0)
+#endif
+
 // PRIVATE FUNCTIONS //////////////////////////////////////////////////////////
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -172,6 +187,7 @@ void W3DDisplayString::draw( Int x, Int y, Color color, Color dropColor, Int xDr
 	// if our font or text has changed we need to build a new sentence
 	if( m_fontChanged || m_textChanged )
 	{
+		CNC_PORT_NOTE_W3D_DISPLAY_STRING_PROFILE_STEP("W3DDisplayString.draw.buildSentence.before");
 		if(m_useHotKey)
 		{
 			m_textRenderer.Set_Hot_Key_Parse(TRUE);
@@ -190,6 +206,7 @@ void W3DDisplayString::draw( Int x, Int y, Color color, Color dropColor, Int xDr
 		m_fontChanged = FALSE;
 		m_textChanged = FALSE;
 		needNewPolys = TRUE;
+		CNC_PORT_NOTE_W3D_DISPLAY_STRING_PROFILE_STEP("W3DDisplayString.draw.buildSentence.after");
 
 	}  // end if
 
@@ -203,6 +220,8 @@ void W3DDisplayString::draw( Int x, Int y, Color color, Color dropColor, Int xDr
 			color != m_currTextColor || 
 			dropColor != m_currDropColor )
 	{
+
+		CNC_PORT_NOTE_W3D_DISPLAY_STRING_PROFILE_STEP("W3DDisplayString.draw.buildPolys.before");
 
 		// save the new attributes of the text position and color
 		m_textPos.x = x;
@@ -229,10 +248,14 @@ void W3DDisplayString::draw( Int x, Int y, Color color, Color dropColor, Int xDr
 			m_textRendererHotKey.Render();
 		}
 	
+		CNC_PORT_NOTE_W3D_DISPLAY_STRING_PROFILE_STEP("W3DDisplayString.draw.buildPolys.after");
+
 	}  // end if
 
 	// render the text
+	CNC_PORT_NOTE_W3D_DISPLAY_STRING_PROFILE_STEP("W3DDisplayString.draw.render.before");
 	m_textRenderer.Render();
+	CNC_PORT_NOTE_W3D_DISPLAY_STRING_PROFILE_STEP("W3DDisplayString.draw.render.after");
 
 	// we are for sure using display resources now
 	if( TheGameClient )

@@ -77,6 +77,42 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Cache stable Render2D geometry in wasm after the first unchanged render.
+      `Render2DClass` now keeps optional Emscripten-only static DX8 vertex and
+      index buffers for unchanged geometry, reusing them on subsequent renders
+      instead of rebuilding dynamic VB/IB contents every frame. The cache
+      invalidates on reset, z changes, moves, forced color/alpha changes, and
+      all public geometry-add / text-append paths; state, texture,
+      alpha/additive/grayscale, and the original draw order still flow through
+      the normal render path.
+      Verified with `git diff --check`,
+      `npm --prefix WebAssembly run build:port:release`,
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and a synced Mac
+      M4/Metal release profile copied to
+      `runtime-frame-profile-render2d-static-cache-mac.json` with screenshot
+      `runtime-frame-profile-render2d-static-cache-mac.png`. Compared with the
+      same-session window-repaint split profile, buffer updates dropped from
+      58.25 to 48.92/frame and `bufferSubDataMs` dropped from 0.731 to
+      0.223 ms/frame; wall / engine averages improved from 20.34 / 18.86 to
+      17.20 / 15.75 ms/frame. The screenshot kept the visible shell-map/menu
+      text intact. Remaining slowest samples still include draw-side stalls in
+      `WasmD3D8.browserDrawIndexed.before`, projected/volumetric shadows,
+      roads/shoreline, and occasional text draw submission, so the stability
+      frontier stays open.
+
+- [x] Split the W3D window repaint and display-string profile buckets. The
+      browser runtime now emits profile-gated markers inside
+      `GameWindowManager::winRepaint()` for below/middle/above/transition
+      passes and draw callback / border work, plus markers around
+      `GameWindowGlobal` primitive wrappers, `W3DGameWinDefaultDraw`,
+      `W3DGameWindow::drawText`, and `W3DDisplayString::draw`. Verified with
+      `git diff --check`, `npm --prefix WebAssembly run build:port:release`,
+      and a Mac M4/Metal release profile copied to
+      `runtime-frame-profile-window-repaint-split-mac.json` with a visible
+      shell-map/menu screenshot. The split showed the visible main-menu repaint
+      spikes are six `W3DDisplayString.draw.render.before` calls rather than
+      window traversal, draw callbacks, borders, or primitive wrapper work.
+
 - [x] Split W3D in-game UI draw profiling down to the window repaint phase.
       `W3DInGameUI::draw()` now emits profile markers around preDraw, selection
       region, view hints, postDraw, and `TheWindowManager->winRepaint()`,

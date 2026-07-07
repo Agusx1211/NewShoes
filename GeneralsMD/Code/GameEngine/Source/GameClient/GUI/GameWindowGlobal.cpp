@@ -66,6 +66,21 @@
 
 // PRIVATE FUNCTIONS //////////////////////////////////////////////////////////
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_profile_marker(const char *name) __attribute__((weak));
+extern "C" int cnc_port_is_engine_frame_profile_enabled() __attribute__((weak));
+#define CNC_PORT_NOTE_GAME_WINDOW_PRIMITIVE_STEP(name) \
+	do { \
+		if (cnc_port_is_engine_frame_profile_enabled && \
+				cnc_port_is_engine_frame_profile_enabled() && \
+				cnc_port_note_engine_profile_marker) { \
+			cnc_port_note_engine_profile_marker(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_GAME_WINDOW_PRIMITIVE_STEP(name) do { } while (0)
+#endif
+
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC FUNCTIONS ///////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -78,7 +93,9 @@ void GameWindowManager::winDrawImage( const Image *image, Int startX, Int startY
 																			Int endX, Int endY, Color color )
 {
 
+	CNC_PORT_NOTE_GAME_WINDOW_PRIMITIVE_STEP("GameWindowManager.winDrawImage.before");
 	TheDisplay->drawImage( image, startX, startY, endX, endY, color );
+	CNC_PORT_NOTE_GAME_WINDOW_PRIMITIVE_STEP("GameWindowManager.winDrawImage.after");
 
 }  // end WinDrawImage
 
@@ -90,9 +107,11 @@ void GameWindowManager::winFillRect( Color color, Real width,
 																		 Int endX, Int endY )
 {
 
+	CNC_PORT_NOTE_GAME_WINDOW_PRIMITIVE_STEP("GameWindowManager.winFillRect.before");
 	TheDisplay->drawFillRect( startX, startY, 
 														endX - startX, endY - startY, 
 														color );
+	CNC_PORT_NOTE_GAME_WINDOW_PRIMITIVE_STEP("GameWindowManager.winFillRect.after");
 
 }  // end WinFillRect
 
@@ -104,9 +123,11 @@ void GameWindowManager::winOpenRect( Color color, Real width,
 																		 Int endX, Int endY )
 {
 
+	CNC_PORT_NOTE_GAME_WINDOW_PRIMITIVE_STEP("GameWindowManager.winOpenRect.before");
 	TheDisplay->drawOpenRect( startX, startY,
 														endX - startX, endY - startY,
 														width, color );
+	CNC_PORT_NOTE_GAME_WINDOW_PRIMITIVE_STEP("GameWindowManager.winOpenRect.after");
 
 }  // end WinOpenRect
 
@@ -118,7 +139,9 @@ void GameWindowManager::winDrawLine( Color color, Real width,
 																		 Int endX, Int endY )
 {
 
+	CNC_PORT_NOTE_GAME_WINDOW_PRIMITIVE_STEP("GameWindowManager.winDrawLine.before");
 	TheDisplay->drawLine( startX, startY, endX, endY, width, color );
+	CNC_PORT_NOTE_GAME_WINDOW_PRIMITIVE_STEP("GameWindowManager.winDrawLine.after");
 
 }  // end WinDrawLine
 
@@ -235,4 +258,3 @@ GameFont *GameWindowManager::winFindFont( AsciiString fontName,
 	return NULL;
 
 }  // end WinFindFont
-

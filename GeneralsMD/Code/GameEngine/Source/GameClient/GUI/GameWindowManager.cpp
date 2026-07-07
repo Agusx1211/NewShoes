@@ -77,6 +77,21 @@ UnsignedInt WindowLayoutCurrentVersion = 2;
 //
 static Bool sendMousePosMessages = TRUE;
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_profile_marker(const char *name) __attribute__((weak));
+extern "C" int cnc_port_is_engine_frame_profile_enabled() __attribute__((weak));
+#define CNC_PORT_NOTE_GAME_WINDOW_PROFILE_STEP(name) \
+	do { \
+		if (cnc_port_is_engine_frame_profile_enabled && \
+				cnc_port_is_engine_frame_profile_enabled() && \
+				cnc_port_note_engine_profile_marker) { \
+			cnc_port_note_engine_profile_marker(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_GAME_WINDOW_PROFILE_STEP(name) do { } while (0)
+#endif
+
 //-------------------------------------------------------------------------------------------------
 /** Process windows waiting to be destroyed */
 //-------------------------------------------------------------------------------------------------
@@ -1295,14 +1310,22 @@ Int GameWindowManager::drawWindow( GameWindow *window )
 	{
 
 		if( !BitTest( window->m_status, WIN_STATUS_SEE_THRU ) && window->m_draw )
+		{
+			CNC_PORT_NOTE_GAME_WINDOW_PROFILE_STEP("GameWindowManager.drawWindow.drawCallback.before");
 			window->m_draw( window, &window->m_instData );
+			CNC_PORT_NOTE_GAME_WINDOW_PROFILE_STEP("GameWindowManager.drawWindow.drawCallback.after");
+		}
 
 		/// @todo visit list boxes and borders, this is stupid!
 		// for list boxes only draw the borders BEFORE the children
 		if( BitTest( window->winGetStyle(), GWS_SCROLL_LISTBOX ) )
 			if( BitTest( window->m_status, WIN_STATUS_BORDER ) == TRUE &&
 					!BitTest( window->m_status, WIN_STATUS_SEE_THRU ) )
+			{
+				CNC_PORT_NOTE_GAME_WINDOW_PROFILE_STEP("GameWindowManager.drawWindow.border.before");
 				window->winDrawBorder();
+				CNC_PORT_NOTE_GAME_WINDOW_PROFILE_STEP("GameWindowManager.drawWindow.border.after");
+			}
 
 		// draw children in reverse order just like the window list
 		child = window->m_child;
@@ -1319,7 +1342,11 @@ Int GameWindowManager::drawWindow( GameWindow *window )
 		if( !BitTest( window->winGetStyle(), GWS_SCROLL_LISTBOX ) )
 			if( BitTest( window->m_status, WIN_STATUS_BORDER ) == TRUE &&
 					!BitTest( window->m_status, WIN_STATUS_SEE_THRU ) )
+			{
+				CNC_PORT_NOTE_GAME_WINDOW_PROFILE_STEP("GameWindowManager.drawWindow.border.before");
 				window->winDrawBorder();
+				CNC_PORT_NOTE_GAME_WINDOW_PROFILE_STEP("GameWindowManager.drawWindow.border.after");
+			}
 
 	}  // end if
 
@@ -1335,6 +1362,7 @@ void GameWindowManager::winRepaint( void )
 	GameWindow *window, *next;
 
 	// draw below windows
+	CNC_PORT_NOTE_GAME_WINDOW_PROFILE_STEP("GameWindowManager.winRepaint.below.before");
 	for( window = m_windowTail; window; window = next )
 	{
 		next = window->m_prev;
@@ -1342,8 +1370,10 @@ void GameWindowManager::winRepaint( void )
 		if( BitTest( window->m_status, WIN_STATUS_BELOW ) )
 			drawWindow( window );
 	}
+	CNC_PORT_NOTE_GAME_WINDOW_PROFILE_STEP("GameWindowManager.winRepaint.below.after");
 
 	// draw non-above and non-below windows
+	CNC_PORT_NOTE_GAME_WINDOW_PROFILE_STEP("GameWindowManager.winRepaint.middle.before");
 	for( window = m_windowTail; window; window = next )
 	{
 		next = window->m_prev;
@@ -1352,8 +1382,10 @@ void GameWindowManager::winRepaint( void )
 																	 WIN_STATUS_BELOW ) == FALSE)
 			drawWindow( window );
 	}
+	CNC_PORT_NOTE_GAME_WINDOW_PROFILE_STEP("GameWindowManager.winRepaint.middle.after");
 
 	// draw above windows
+	CNC_PORT_NOTE_GAME_WINDOW_PROFILE_STEP("GameWindowManager.winRepaint.above.before");
 	for( window = m_windowTail; window; window = next )
 	{
 		next = window->m_prev;
@@ -1361,9 +1393,14 @@ void GameWindowManager::winRepaint( void )
 		if( BitTest( window->m_status, WIN_STATUS_ABOVE ) )
 			drawWindow( window );
 	}
+	CNC_PORT_NOTE_GAME_WINDOW_PROFILE_STEP("GameWindowManager.winRepaint.above.after");
 
 	if(TheTransitionHandler)
+	{
+		CNC_PORT_NOTE_GAME_WINDOW_PROFILE_STEP("GameWindowManager.winRepaint.transitions.before");
 		TheTransitionHandler->draw();
+		CNC_PORT_NOTE_GAME_WINDOW_PROFILE_STEP("GameWindowManager.winRepaint.transitions.after");
+	}
 }  // end WinRepaint
 
 //-------------------------------------------------------------------------------------------------

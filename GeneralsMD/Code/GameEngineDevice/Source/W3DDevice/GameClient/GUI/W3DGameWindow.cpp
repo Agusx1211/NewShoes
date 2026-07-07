@@ -72,6 +72,21 @@ static const Image *borderPieces[NUM_BORDER_PIECES] = { 0 };
 
 // PRIVATE PROTOTYPES /////////////////////////////////////////////////////////
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_profile_marker(const char *name) __attribute__((weak));
+extern "C" int cnc_port_is_engine_frame_profile_enabled() __attribute__((weak));
+#define CNC_PORT_NOTE_W3D_GAME_WINDOW_PROFILE_STEP(name) \
+	do { \
+		if (cnc_port_is_engine_frame_profile_enabled && \
+				cnc_port_is_engine_frame_profile_enabled() && \
+				cnc_port_note_engine_profile_marker) { \
+			cnc_port_note_engine_profile_marker(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_W3D_GAME_WINDOW_PROFILE_STEP(name) do { } while (0)
+#endif
+
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE FUNCTIONS //////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -312,6 +327,8 @@ void W3DGameWinDefaultDraw( GameWindow *window, WinInstanceData *instData )
 	{
 		const Image *image;
 
+		CNC_PORT_NOTE_W3D_GAME_WINDOW_PROFILE_STEP("W3DGameWinDefaultDraw.image.before");
+
 		// get image
 		if( BitTest( window->winGetStatus(), WIN_STATUS_ENABLED ) == FALSE )
 			image = window->winGetDisabledImage( 0 );
@@ -331,11 +348,14 @@ void W3DGameWinDefaultDraw( GameWindow *window, WinInstanceData *instData )
 			TheWindowManager->winDrawImage( image, start.x, start.y, end.x, end.y );
 
 		}  // end if
+		CNC_PORT_NOTE_W3D_GAME_WINDOW_PROFILE_STEP("W3DGameWinDefaultDraw.image.after");
 
 	}  // end if
 	else
 	{
 		Color color, borderColor;
+
+		CNC_PORT_NOTE_W3D_GAME_WINDOW_PROFILE_STEP("W3DGameWinDefaultDraw.color.before");
 
 		// get colors
 		if( BitTest( window->winGetStatus(), WIN_STATUS_ENABLED ) == FALSE )
@@ -375,17 +395,20 @@ void W3DGameWinDefaultDraw( GameWindow *window, WinInstanceData *instData )
 																		 origin.y + borderWidth,
 																		 origin.x + size.x - borderWidth,
 																		 origin.y + size.y - borderWidth );
+		CNC_PORT_NOTE_W3D_GAME_WINDOW_PROFILE_STEP("W3DGameWinDefaultDraw.color.after");
 
 	}  // end else
 
 	// if we have a video buffer, draw the video buffer
 	if ( instData->m_videoBuffer )
 	{
+		CNC_PORT_NOTE_W3D_GAME_WINDOW_PROFILE_STEP("W3DGameWinDefaultDraw.video.before");
 		ICoord2D pos, size;
 		window->winGetScreenPosition( &pos.x, &pos.y );
 		window->winGetSize( &size.x, &size.y );
 
 		TheDisplay->drawVideoBuffer( instData->m_videoBuffer, pos.x, pos.y, pos.x + size.x, pos.y + size.y );
+		CNC_PORT_NOTE_W3D_GAME_WINDOW_PROFILE_STEP("W3DGameWinDefaultDraw.video.after");
 	}
 
 }  // end W3DGameWinDefaultDraw
@@ -643,6 +666,7 @@ void W3DGameWindow::drawText( Color color )
 	// draw the quads if needed
 	if( needDraw || m_needPolyDraw )
 	{
+		CNC_PORT_NOTE_W3D_GAME_WINDOW_PROFILE_STEP("W3DGameWindow.drawText.buildPolys.before");
 		UnsignedInt outline = TheWindowManager->winMakeColor( 0, 0, 0, 255 );
 	
 		m_textRenderer.Reset_Polys();
@@ -653,11 +677,13 @@ void W3DGameWindow::drawText( Color color )
 		m_textRenderer.Draw_Sentence( m_currTextColor );
 
 		m_needPolyDraw = FALSE;
+		CNC_PORT_NOTE_W3D_GAME_WINDOW_PROFILE_STEP("W3DGameWindow.drawText.buildPolys.after");
 
 	}  // end if
 
 	// do the render
+	CNC_PORT_NOTE_W3D_GAME_WINDOW_PROFILE_STEP("W3DGameWindow.drawText.render.before");
 	m_textRenderer.Render();
+	CNC_PORT_NOTE_W3D_GAME_WINDOW_PROFILE_STEP("W3DGameWindow.drawText.render.after");
 
 }  // end drawText
-

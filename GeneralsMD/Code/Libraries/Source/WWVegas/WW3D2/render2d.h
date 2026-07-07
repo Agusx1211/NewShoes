@@ -56,6 +56,9 @@ class	Font3DInstanceClass;
 class TextureClass;
 class	Vector3;
 class	Vector4;
+class DX8IndexBufferClass;
+class DX8VertexBufferClass;
+class Matrix4x4;
 
 /*
 ** Macros
@@ -147,7 +150,13 @@ public:
 	void Set_Hidden( bool hide )			{ IsHidden = hide; }
 
 	// Z-value support (this is usefull for playing tricks with the z-buffer)
-	void	Set_Z_Value (float z_value)	{ ZValue = z_value; }
+	void	Set_Z_Value (float z_value)
+	{
+		ZValue = z_value;
+#ifdef __EMSCRIPTEN__
+		Invalidate_Static_Render_Cache();
+#endif
+	}
 
 	// Move all verts 
 	void	Move( const Vector2 & a );
@@ -195,6 +204,17 @@ protected:
 	void	Internal_Add_Quad_VColors( unsigned long color1, unsigned long color2 );
 	void	Internal_Add_Quad_HColors( unsigned long color1, unsigned long color2 );
 	void	Internal_Add_Quad_Indicies( int start_vert_index, bool backfaced = false );
+	void	Render_Current_Buffers(const Matrix4x4 &view, const Matrix4x4 &proj);
+#ifdef __EMSCRIPTEN__
+	void	Invalidate_Static_Render_Cache(void);
+	bool	Prepare_Static_Render_Cache(void);
+	DX8VertexBufferClass *StaticVertexBuffer;
+	DX8IndexBufferClass *StaticIndexBuffer;
+	int StaticVertexCount;
+	int StaticIndexCount;
+	bool StaticRenderCacheWarm;
+	bool StaticRenderCacheDirty;
+#endif
 };
 
 

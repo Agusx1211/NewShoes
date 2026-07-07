@@ -103,14 +103,23 @@ RectClass							Render2DClass::ScreenResolution( 0,0,0,0 );
 Render2DClass::Render2DClass( TextureClass* tex ) :
 	CoordinateScale( 1, 1 ),
 	CoordinateOffset( 0, 0 ),
+	BiasedCoordinateOffset( 0, 0 ),
 	Texture(0),
-	ZValue(0),
-	IsHidden( false ),
-	IsGrayScale (false),
 	Indices(sizeof(PreAllocatedIndices)/sizeof(unsigned short),PreAllocatedIndices),
 	Vertices(sizeof(PreAllocatedVertices)/sizeof(Vector2),PreAllocatedVertices),
 	UVCoordinates(sizeof(PreAllocatedUVCoordinates)/sizeof(Vector2),PreAllocatedUVCoordinates),
-	Colors(sizeof(PreAllocatedColors)/sizeof(unsigned long),PreAllocatedColors)
+	Colors(sizeof(PreAllocatedColors)/sizeof(unsigned long),PreAllocatedColors),
+	IsHidden( false ),
+	IsGrayScale (false),
+	ZValue(0)
+#ifdef __EMSCRIPTEN__
+	, StaticVertexBuffer(NULL),
+	StaticIndexBuffer(NULL),
+	StaticVertexCount(0),
+	StaticIndexCount(0),
+	StaticRenderCacheWarm(false),
+	StaticRenderCacheDirty(true)
+#endif
 {
 	Set_Texture( tex );	
    Shader = Get_Default_Shader();
@@ -119,6 +128,10 @@ Render2DClass::Render2DClass( TextureClass* tex ) :
 
 Render2DClass::~Render2DClass()
 {
+#ifdef __EMSCRIPTEN__
+	REF_PTR_RELEASE(StaticVertexBuffer);
+	REF_PTR_RELEASE(StaticIndexBuffer);
+#endif
 	REF_PTR_RELEASE(Texture);	
 }
 
@@ -152,6 +165,9 @@ Render2DClass::Get_Default_Shader( void )
 
 void	Render2DClass::Reset(void)
 {
+#ifdef __EMSCRIPTEN__
+	Invalidate_Static_Render_Cache();
+#endif
 	Vertices.Reset_Active();
 	UVCoordinates.Reset_Active();
 	Colors.Reset_Active();
@@ -159,6 +175,66 @@ void	Render2DClass::Reset(void)
 
 	Update_Bias(); // Keep the bias updated
 }
+
+#ifdef __EMSCRIPTEN__
+void Render2DClass::Invalidate_Static_Render_Cache(void)
+{
+	StaticRenderCacheWarm = false;
+	StaticRenderCacheDirty = true;
+}
+
+bool Render2DClass::Prepare_Static_Render_Cache(void)
+{
+	const int vertex_count = Vertices.Count();
+	const int index_count = Indices.Count();
+	if (vertex_count <= 0 || index_count <= 0 ||
+		 vertex_count > 0xffff || index_count > 0xffff) {
+		return false;
+	}
+
+	if (StaticVertexBuffer == NULL || StaticVertexCount != vertex_count) {
+		REF_PTR_RELEASE(StaticVertexBuffer);
+		StaticVertexBuffer = NEW_REF(DX8VertexBufferClass, (dynamic_fvf_type, static_cast<unsigned short>(vertex_count)));
+		StaticVertexCount = vertex_count;
+		StaticRenderCacheDirty = true;
+	}
+	if (StaticIndexBuffer == NULL || StaticIndexCount != index_count) {
+		REF_PTR_RELEASE(StaticIndexBuffer);
+		StaticIndexBuffer = NEW_REF(DX8IndexBufferClass, (static_cast<unsigned short>(index_count)));
+		StaticIndexCount = index_count;
+		StaticRenderCacheDirty = true;
+	}
+	if (StaticVertexBuffer == NULL || StaticIndexBuffer == NULL) {
+		return false;
+	}
+	if (!StaticRenderCacheDirty) {
+		return true;
+	}
+
+	{
+		VertexBufferClass::WriteLockClass Lock(StaticVertexBuffer);
+		const FVFInfoClass &fi = StaticVertexBuffer->FVF_Info();
+		unsigned char *va = reinterpret_cast<unsigned char *>(Lock.Get_Vertex_Array());
+		for (int i = 0; i < vertex_count; ++i) {
+			Vector3 temp(Vertices[i].X, Vertices[i].Y, ZValue);
+			*reinterpret_cast<Vector3 *>(va + fi.Get_Location_Offset()) = temp;
+			*reinterpret_cast<unsigned int *>(va + fi.Get_Diffuse_Offset()) = Colors[i];
+			*reinterpret_cast<Vector2 *>(va + fi.Get_Tex_Offset(0)) = UVCoordinates[i];
+			va += fi.Get_FVF_Size();
+		}
+	}
+	{
+		IndexBufferClass::WriteLockClass Lock(StaticIndexBuffer);
+		unsigned short *mem = Lock.Get_Index_Array();
+		for (int i = 0; i < index_count; ++i) {
+			mem[i] = Indices[i];
+		}
+	}
+
+	StaticRenderCacheDirty = false;
+	return true;
+}
+#endif
 
 void Render2DClass::Set_Texture(TextureClass* tex)
 {
@@ -300,6 +376,9 @@ void Render2DClass::Convert_Vert( Vector2 & vert_out, float x_in, float y_in )
 
 void	Render2DClass::Move( const Vector2 & move )	// Move all verts 
 {
+#ifdef __EMSCRIPTEN__
+	Invalidate_Static_Render_Cache();
+#endif
 	Vector2 scaled_move;
 	scaled_move.X = move.X * CoordinateScale.X;
 	scaled_move.Y = move.Y * CoordinateScale.Y;
@@ -310,6 +389,9 @@ void	Render2DClass::Move( const Vector2 & move )	// Move all verts
 
 void	Render2DClass::Force_Alpha( float alpha )		// Force all alphas 
 {
+#ifdef __EMSCRIPTEN__
+	Invalidate_Static_Render_Cache();
+#endif
 	unsigned long a = (unsigned)(WWMath::Clamp( alpha, 0, 1 ) * 255.0f);
 	a <<= 24;
 	for ( int i = 0; i < Colors.Count(); i++ ) {
@@ -320,6 +402,9 @@ void	Render2DClass::Force_Alpha( float alpha )		// Force all alphas
 
 void	Render2DClass::Force_Color( int color )		// Force all alphas 
 {
+#ifdef __EMSCRIPTEN__
+	Invalidate_Static_Render_Cache();
+#endif
 	for ( int i = 0; i < Colors.Count(); i++ ) {
 		Colors[i] = color;
 	}
@@ -445,6 +530,9 @@ void	Render2DClass::Internal_Add_Quad_Indicies( int start_vert_index, bool backf
 
 void	Render2DClass::Add_Quad( const Vector2 & v0, const Vector2 & v1, const Vector2 & v2, const Vector2 & v3, const RectClass & uv, unsigned long color )
 {
+#ifdef __EMSCRIPTEN__
+	Invalidate_Static_Render_Cache();
+#endif
 	Internal_Add_Quad_Indicies( Vertices.Count() );
 	Internal_Add_Quad_Vertices( v0, v1, v2, v3 );
 	Internal_Add_Quad_UVs( uv );
@@ -453,6 +541,9 @@ void	Render2DClass::Add_Quad( const Vector2 & v0, const Vector2 & v1, const Vect
 
 void	Render2DClass::Add_Quad_Backfaced( const Vector2 & v0, const Vector2 & v1, const Vector2 & v2, const Vector2 & v3, const RectClass & uv, unsigned long color )
 {
+#ifdef __EMSCRIPTEN__
+	Invalidate_Static_Render_Cache();
+#endif
 	Internal_Add_Quad_Indicies( Vertices.Count(), true );
 	Internal_Add_Quad_Vertices( v0, v1, v2, v3 );
 	Internal_Add_Quad_UVs( uv );
@@ -461,6 +552,9 @@ void	Render2DClass::Add_Quad_Backfaced( const Vector2 & v0, const Vector2 & v1, 
 
 void	Render2DClass::Add_Quad_VGradient( const Vector2 & v0, const Vector2 & v1, const Vector2 & v2, const Vector2 & v3, const RectClass & uv, unsigned long top_color, unsigned long bottom_color )
 {
+#ifdef __EMSCRIPTEN__
+	Invalidate_Static_Render_Cache();
+#endif
 	Internal_Add_Quad_Indicies( Vertices.Count() );
 	Internal_Add_Quad_Vertices( v0, v1, v2, v3 );
 	Internal_Add_Quad_UVs( uv );
@@ -469,6 +563,9 @@ void	Render2DClass::Add_Quad_VGradient( const Vector2 & v0, const Vector2 & v1, 
 
 void	Render2DClass::Add_Quad_HGradient( const Vector2 & v0, const Vector2 & v1, const Vector2 & v2, const Vector2 & v3, const RectClass & uv, unsigned long left_color, unsigned long right_color )
 {
+#ifdef __EMSCRIPTEN__
+	Invalidate_Static_Render_Cache();
+#endif
 	Internal_Add_Quad_Indicies( Vertices.Count() );
 	Internal_Add_Quad_Vertices( v0, v1, v2, v3 );
 	Internal_Add_Quad_UVs( uv );
@@ -478,6 +575,9 @@ void	Render2DClass::Add_Quad_HGradient( const Vector2 & v0, const Vector2 & v1, 
 
 void	Render2DClass::Add_Quad_VGradient( const RectClass & screen, unsigned long top_color, unsigned long bottom_color )
 {
+#ifdef __EMSCRIPTEN__
+	Invalidate_Static_Render_Cache();
+#endif
 	Internal_Add_Quad_Indicies( Vertices.Count() );
 	Internal_Add_Quad_Vertices( screen );
 	Internal_Add_Quad_UVs( RectClass( 0,0,1,1 ) );
@@ -486,6 +586,9 @@ void	Render2DClass::Add_Quad_VGradient( const RectClass & screen, unsigned long 
 
 void	Render2DClass::Add_Quad_HGradient( const RectClass & screen, unsigned long left_color, unsigned long right_color )
 {
+#ifdef __EMSCRIPTEN__
+	Invalidate_Static_Render_Cache();
+#endif
 	Internal_Add_Quad_Indicies( Vertices.Count() );
 	Internal_Add_Quad_Vertices( screen );
 	Internal_Add_Quad_UVs( RectClass( 0,0,1,1 ) );
@@ -495,6 +598,9 @@ void	Render2DClass::Add_Quad_HGradient( const RectClass & screen, unsigned long 
 
 void	Render2DClass::Add_Quad( const RectClass & screen, const RectClass & uv, unsigned long color )
 {
+#ifdef __EMSCRIPTEN__
+	Invalidate_Static_Render_Cache();
+#endif
 	Internal_Add_Quad_Indicies( Vertices.Count() );
 	Internal_Add_Quad_Vertices( screen );
 	Internal_Add_Quad_UVs( uv );
@@ -503,6 +609,9 @@ void	Render2DClass::Add_Quad( const RectClass & screen, const RectClass & uv, un
 
 void	Render2DClass::Add_Quad( const Vector2 & v0, const Vector2 & v1, const Vector2 & v2, const Vector2 & v3, unsigned long color )
 {
+#ifdef __EMSCRIPTEN__
+	Invalidate_Static_Render_Cache();
+#endif
 	Internal_Add_Quad_Indicies( Vertices.Count() );
 	Internal_Add_Quad_Vertices( v0, v1, v2, v3 );
 	Internal_Add_Quad_UVs( RectClass( 0,0,1,1 ) );
@@ -511,6 +620,9 @@ void	Render2DClass::Add_Quad( const Vector2 & v0, const Vector2 & v1, const Vect
 
 void	Render2DClass::Add_Quad( const RectClass & screen, unsigned long color )
 {
+#ifdef __EMSCRIPTEN__
+	Invalidate_Static_Render_Cache();
+#endif
 	Internal_Add_Quad_Indicies( Vertices.Count() );
 	Internal_Add_Quad_Vertices( screen );
 	Internal_Add_Quad_UVs( RectClass( 0,0,1,1 ) );
@@ -522,6 +634,9 @@ void	Render2DClass::Add_Quad( const RectClass & screen, unsigned long color )
 */
 void	Render2DClass::Add_Tri( const Vector2 & v0, const Vector2 & v1, const Vector2 & v2, const Vector2 & uv0, const Vector2 & uv1, const Vector2 & uv2, unsigned long color )
 {
+#ifdef __EMSCRIPTEN__
+	Invalidate_Static_Render_Cache();
+#endif
 	int old_vert_count = Vertices.Count();
 
 	// Add the verticies (translated to new coordinates)
@@ -634,6 +749,42 @@ void	Render2DClass::Add_Outline( const RectClass & rect, float width, const Rect
 	Add_Line (Vector2 (rect.Right, rect.Bottom),	Vector2 (rect.Left + 1, rect.Bottom),	width, color);	
 }
 
+void Render2DClass::Render_Current_Buffers(const Matrix4x4 &view, const Matrix4x4 &proj)
+{
+	if (IsGrayScale)
+	{	//special case added to draw grayscale non-alpha blended images.
+		DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueShader);
+		DX8Wrapper::Apply_Render_State_Changes();	//force update of all regular W3D states.
+		if (DX8Wrapper::Get_Current_Caps()->Support_Dot3())
+		{	//Override W3D states with customizations for grayscale
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_TEXTUREFACTOR, 0x80A5CA8E);
+			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLORARG0, D3DTA_TFACTOR | D3DTA_ALPHAREPLICATE);
+			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
+			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLORARG2, D3DTA_TFACTOR | D3DTA_ALPHAREPLICATE);
+			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLOROP, D3DTOP_MULTIPLYADD);
+
+			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_COLORARG1, D3DTA_CURRENT);
+			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_COLORARG2, D3DTA_TFACTOR);
+			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_COLOROP, D3DTOP_DOTPRODUCT3);
+		}
+		else
+		{	//doesn't have DOT3 blend mode so fake it another way.
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_TEXTUREFACTOR, 0x60606060);
+			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
+			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLORARG2, D3DTA_TFACTOR);
+			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLOROP, D3DTOP_MODULATE);
+		}
+	}
+	else
+		DX8Wrapper::Set_Shader(Shader);
+	DX8Wrapper::Draw_Triangles(0,Indices.Count()/3,0,Vertices.Count());
+
+	DX8Wrapper::Set_Transform(D3DTS_VIEW,view);
+	DX8Wrapper::Set_Transform(D3DTS_PROJECTION,proj);
+	if (IsGrayScale)
+		ShaderClass::Invalidate();	//force both stages to be reset.
+}
+
 void Render2DClass::Render(void)
 {
 	CNC_PORT_FLUSH_W3D_DISPLAY_2D_BATCH(this);
@@ -678,6 +829,15 @@ void Render2DClass::Render(void)
 	DX8Wrapper::Set_View_Identity();
 	DX8Wrapper::Set_Transform(D3DTS_PROJECTION,identity);
 
+#ifdef __EMSCRIPTEN__
+	if (StaticRenderCacheWarm && Prepare_Static_Render_Cache()) {
+		DX8Wrapper::Set_Vertex_Buffer(StaticVertexBuffer);
+		DX8Wrapper::Set_Index_Buffer(StaticIndexBuffer,0);
+		Render_Current_Buffers(view,proj);
+		return;
+	}
+#endif
+
 	DynamicVBAccessClass vb(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,Vertices.Count());
 	{
 		DynamicVBAccessClass::WriteLockClass Lock(&vb);
@@ -710,38 +870,10 @@ void Render2DClass::Render(void)
 	DX8Wrapper::Set_Vertex_Buffer(vb);
 	DX8Wrapper::Set_Index_Buffer(ib,0);
 
-	if (IsGrayScale)
-	{	//special case added to draw grayscale non-alpha blended images.
-		DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueShader);
-		DX8Wrapper::Apply_Render_State_Changes();	//force update of all regular W3D states.
-		if (DX8Wrapper::Get_Current_Caps()->Support_Dot3())
-		{	//Override W3D states with customizations for grayscale
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_TEXTUREFACTOR, 0x80A5CA8E);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLORARG0, D3DTA_TFACTOR | D3DTA_ALPHAREPLICATE);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLORARG2, D3DTA_TFACTOR | D3DTA_ALPHAREPLICATE);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLOROP, D3DTOP_MULTIPLYADD);
-
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_COLORARG1, D3DTA_CURRENT);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_COLORARG2, D3DTA_TFACTOR);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_COLOROP, D3DTOP_DOTPRODUCT3);
-		}
-		else
-		{	//doesn't have DOT3 blend mode so fake it another way.
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_TEXTUREFACTOR, 0x60606060);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLORARG2, D3DTA_TFACTOR);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLOROP, D3DTOP_MODULATE);
-		}
-	}
-	else
-		DX8Wrapper::Set_Shader(Shader);
-	DX8Wrapper::Draw_Triangles(0,Indices.Count()/3,0,Vertices.Count());	
-
-	DX8Wrapper::Set_Transform(D3DTS_VIEW,view);
-	DX8Wrapper::Set_Transform(D3DTS_PROJECTION,proj);
-	if (IsGrayScale)
-		ShaderClass::Invalidate();	//force both stages to be reset.
+#ifdef __EMSCRIPTEN__
+	StaticRenderCacheWarm = true;
+#endif
+	Render_Current_Buffers(view,proj);
 
 }
 
@@ -750,9 +882,9 @@ void Render2DClass::Render(void)
 ** Render2DTextClass
 */
 Render2DTextClass::Render2DTextClass(Font3DInstanceClass *font) :
+	Font(NULL),
 	Location(0.0f,0.0f),
 	Cursor(0.0f,0.0f),
-	Font(NULL),
 	WrapWidth(0),
 	ClipRect(0, 0, 0, 0),
 	IsClippedEnabled(false)
@@ -839,6 +971,9 @@ void	Render2DTextClass::Draw_Text( const char * text, unsigned long color )
 
 void	Render2DTextClass::Draw_Text( const WCHAR * text, unsigned long color )
 {
+#ifdef __EMSCRIPTEN__
+	Invalidate_Static_Render_Cache();
+#endif
 	WWMEMLOG(MEM_GEOMETRY);
 
 	// Reset the Extents
@@ -876,6 +1011,9 @@ void	Render2DTextClass::Draw_Text( const WCHAR * text, unsigned long color )
 
 void	Render2DTextClass::Draw_Block( const RectClass & screen, unsigned long color )
 {
+#ifdef __EMSCRIPTEN__
+	Invalidate_Static_Render_Cache();
+#endif
 	Internal_Add_Quad_Indicies( Vertices.Count() );
 	Internal_Add_Quad_Vertices( screen );
 	Internal_Add_Quad_UVs( BlockUV );

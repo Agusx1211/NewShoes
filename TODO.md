@@ -269,9 +269,21 @@ again to 2.76 ms/frame and material uniforms from 0.65 to 0.22 ms/frame, with
 wall time still noise-flat. `runtime-frame-profile-ui-split-mac.json` then
 split `W3DInGameUI::draw()` and showed the visible main-menu UI spikes are
 inside `TheWindowManager->winRepaint()`, not preDraw, hints, or postDraw; the
-next UI perf pass should split/reduce the window-manager repaint path while the
-other recurring spike remains projected-shadow mesh flush. Broader shadow
-fidelity remains in the queued phased plan.
+follow-up `runtime-frame-profile-window-repaint-split-mac.json` split the
+window repaint path and showed the recurring UI spike is six
+`W3DDisplayString.draw.render.before` calls, not window traversal, draw
+callbacks, borders, or primitive wrappers. A wasm-only warmed `Render2DClass`
+static VB/IB cache for unchanged geometry then moved stable text/window quads
+off the dynamic ring after their first render:
+`runtime-frame-profile-render2d-static-cache-mac.json` dropped buffer updates
+from 58.3 to 48.9/frame and `bufferSubDataMs` from 0.731 to
+0.223 ms/frame, with the shell-map/menu screenshot still correct and same-session
+wall/engine averages improving from 20.34/18.86 to 17.20/15.75 ms/frame.
+Remaining spike frames still rotate between `WasmD3D8.browserDrawIndexed.before`,
+projected/volumetric shadow buckets, roads/shoreline, and occasional text draw
+submission, so the next PERF pass should attack draw-side stalls / command
+buffering rather than more text-geometry upload. Broader shadow fidelity
+remains in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
@@ -371,6 +383,15 @@ symptom is temporal — NOT a single still.
       shoreline, and water-track markers. Keep attacking those real spike
       buckets and the structural command-buffer work; this does not close the
       stability item.
+      2026-07-07: window repaint profiling isolated the visible menu UI spike
+      to six `W3DDisplayString.draw.render.before` calls. A wasm-only warmed
+      `Render2DClass` static VB/IB cache removed the stable text/window
+      geometry from the dynamic upload path after first render and reduced
+      `bufferSubDataMs` from 0.731 to 0.223 ms/frame in same-session Mac
+      profiles, but slowest samples still rotate through
+      `WasmD3D8.browserDrawIndexed.before`, projected/volumetric shadows,
+      roads/shoreline, and occasional text draw-submit stalls. Keep this item
+      open for command-buffer/draw-side stability work.
 - [ ] **Performance still needs love (general)** — beyond stability, the loaded
       (non-shell-map) skirmish frame cost with hundreds of units is the real
       target and is not yet profiled/held to triple-digit fps. Keep pushing the
