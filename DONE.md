@@ -10,6 +10,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## User-reported play bugs (2026-07-07 session)
 
+- [x] Fix in-game ESC menu buttons doing nothing in live skirmish. The
+      browser runtime now keeps original gameplay GUI callback owners resident
+      after engine lifecycle table reloads, including `QuitMenuSystem`, so the
+      lazily-created `QuitMenu.wnd:QuitMenuParent` binds the original
+      `QuitMenu.cpp` system callback instead of `GameWinDefaultSystem`.
+      `skirmish_start_smoke.mjs` gained an opt-in ESC-menu gate and
+      `npm run test:skirmish-esc-menu`; the gate presses Escape through browser
+      keyboard input, verifies the original quit menu opens paused, clicks the
+      real Return button, and requires the menu to close with gameplay
+      unpaused. Verified with `npm --prefix WebAssembly run build:port`,
+      `SKIRMISH_START_EXPECT_ESC_MENU_RESUME=1 node
+      WebAssembly/harness/skirmish_start_smoke.mjs`, and
+      `node WebAssembly/harness/startup_vertical_smoke.mjs`.
+
 - [x] Fix intro/menu music continuing into active skirmish gameplay. The
       skirmish-start harness can now enable Web Audio before real init, capture
       natural main-menu music stream handles, drive Main Menu -> Single Player
@@ -4271,6 +4285,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `node WebAssembly/harness/startup_vertical_smoke.mjs` confirming the
       FunctionLexicon frontier now has 11 missing groups; screenshot
       `WebAssembly/artifacts/screenshots/input-select-e2e.png`.
+- [x] Promote original `QuitMenuSystem` into the linked `cnc-port`
+      FunctionLexicon ownership surface and prove the live ESC-menu Return
+      path in skirmish. The runtime callback repair now preserves the gameplay
+      GUI callback slice through real-frame execution after lifecycle reloads,
+      and the client-state probe exposes `quitMenuSystemLookup` plus the live
+      quit-menu parent callback. `skirmish_start_smoke.mjs` now opens the
+      in-game quit menu with Escape, clicks the original Return button, and
+      requires `TheInGameUI->isQuitMenuVisible()` and `GameLogic` pause state
+      to clear. Startup vertical verifies `quitMenuSystem` lookup and reports
+      10 remaining missing callback groups.
 - [x] Prove live skirmish map-ground movement dispatch and state change through
       the existing e2e harness. `input_select_e2e.mjs` now queries on-screen
       local non-structure drawables after the real Skirmish Start path reaches

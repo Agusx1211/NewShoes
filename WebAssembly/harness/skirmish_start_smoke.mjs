@@ -56,6 +56,7 @@ const postActiveFrames = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_FRAMES", 0
 const postActiveFrameChunk = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_CHUNK", frameChunk);
 const expectPostActiveSurvival = process.env.SKIRMISH_START_EXPECT_SURVIVE === "1";
 const expectMenuMusicStop = process.env.SKIRMISH_START_EXPECT_MUSIC_STOP === "1";
+const expectEscMenuResume = process.env.SKIRMISH_START_EXPECT_ESC_MENU_RESUME === "1";
 const musicStopMaxFrames = parsePositiveInt("SKIRMISH_START_MUSIC_STOP_MAX_FRAMES", 360);
 const requestedSkirmishMap = String(process.env.SKIRMISH_START_MAP ?? "").trim();
 const captureD3D8History = process.env.SKIRMISH_START_CAPTURE_D3D8_HISTORY === "1";
@@ -200,6 +201,16 @@ function compactClickFrame(frameResult) {
     skirmishMenu: {
       parent: clientState.skirmishMenu?.parent ?? null,
       buttonStart: clientState.skirmishMenu?.buttonStart ?? null,
+    },
+    quitMenu: {
+      visible: clientState.quitMenu?.visible ?? null,
+      quitMenuSystemLookup: clientState.quitMenu?.quitMenuSystemLookup ?? null,
+      fullParent: clientState.quitMenu?.fullParent ?? null,
+      noSaveParent: clientState.quitMenu?.noSaveParent ?? null,
+      buttonReturnFull: clientState.quitMenu?.buttonReturnFull ?? null,
+      buttonReturnNoSave: clientState.quitMenu?.buttonReturnNoSave ?? null,
+      underButtonReturnFullCenter: clientState.quitMenu?.underButtonReturnFullCenter ?? null,
+      underButtonReturnNoSaveCenter: clientState.quitMenu?.underButtonReturnNoSaveCenter ?? null,
     },
   };
 }
@@ -353,7 +364,7 @@ function realMenuHitMatches(menu, hitProbeName, buttonFieldName) {
 
 function collectWindowRefs(clientState) {
   const refs = [];
-  for (const group of [clientState?.mainMenu, clientState?.skirmishMenu]) {
+  for (const group of [clientState?.mainMenu, clientState?.skirmishMenu, clientState?.quitMenu]) {
     for (const value of Object.values(group ?? {})) {
       if (value?.found === true && Number.isFinite(value.id)) {
         refs.push(value);
@@ -390,6 +401,24 @@ async function waitForCondition(page, label, predicate, maxFrames = 180) {
     attempts: attempts.slice(-12),
     last: compactClickFrame(last),
   });
+}
+
+async function waitForBrowserInput(page, predicate, label) {
+  const deadline = Date.now() + 5000;
+  let result = await rpc(page, "state");
+
+  while (true) {
+    if (predicate(result.state?.browserInput)) {
+      return result.state.browserInput;
+    }
+    if (Date.now() >= deadline) {
+      break;
+    }
+    await page.waitForTimeout(20);
+    result = await rpc(page, "state");
+  }
+
+  expect(false, `${label} browser input state not observed`, result.state?.browserInput ?? null);
 }
 
 async function waitForTransitionIdle(page, label, maxFrames = 120) {
@@ -462,6 +491,90 @@ async function clickButton(page, button, hitProbe, label, settleFrames = 120) {
   const released = await waitForButtonReleased(page, target, label);
   const settled = settleFrames == null ? released : await waitForTransitionIdle(page, label, settleFrames);
   return { point, target, released, settled };
+}
+
+function visibleQuitMenuReturnButton(quitMenu) {
+  if (!quitMenu?.visible) {
+    return null;
+  }
+  for (const button of [quitMenu.buttonReturnNoSave, quitMenu.buttonReturnFull]) {
+    if (button?.clickable === true && button.hidden === false && button.managerHidden === false) {
+      return button;
+    }
+  }
+  return null;
+}
+
+function visibleQuitMenuReturnHitProbe(quitMenu, button) {
+  const candidates = [
+    quitMenu?.underButtonReturnNoSaveCenter,
+    quitMenu?.underButtonReturnFullCenter,
+  ];
+  return candidates.find((probe) => probe?.window?.found === true &&
+    probe.window.id === button?.id) ?? null;
+}
+
+async function driveEscMenuResume(page) {
+  const before = await runFrames(page, 1, "esc menu precheck");
+  expect(before.frame?.clientState?.gameplay?.inGame === true &&
+      before.frame.clientState.gameplay.gameMode === GAME_SKIRMISH &&
+      before.frame.clientState.gameplay.loadingMap === false,
+    "ESC menu check requires an active skirmish", before.frame?.clientState?.gameplay);
+
+  await page.keyboard.down("Escape");
+  await waitForBrowserInput(
+    page,
+    (input) => input?.messageQueue?.count >= 1 &&
+      input?.keyboardMessageQueue?.count >= 1,
+    "Escape keydown");
+  const opened = await waitForCondition(
+    page,
+    "quit menu open",
+    (clientState) => clientState.quitMenu?.visible === true &&
+      clientState.gameplay?.gamePaused === true &&
+      visibleQuitMenuReturnButton(clientState.quitMenu)?.clickable === true,
+    120);
+  await page.keyboard.up("Escape");
+  await waitForBrowserInput(
+    page,
+    (input) => input?.messageQueue?.count >= 1 &&
+      input?.keyboardMessageQueue?.count >= 1,
+    "Escape keyup");
+  await runFrames(page, 1, "quit menu escape release");
+
+  const returnButton = visibleQuitMenuReturnButton(opened.frame?.clientState?.quitMenu);
+  const returnHit = visibleQuitMenuReturnHitProbe(opened.frame?.clientState?.quitMenu, returnButton);
+  expect(returnButton?.clickable === true, "quit menu Return button was not clickable",
+    opened.frame?.clientState?.quitMenu);
+
+  const resumeClick = await clickButton(
+    page,
+    returnButton,
+    returnHit,
+    "quit-menu return",
+    null);
+  const closed = await waitForCondition(
+    page,
+    "quit menu close",
+    (clientState) => clientState.quitMenu?.visible === false &&
+      clientState.gameplay?.gamePaused === false,
+    120);
+
+  return {
+    opened: {
+      gameplay: opened.frame?.clientState?.gameplay ?? null,
+      quitMenu: opened.frame?.clientState?.quitMenu ?? null,
+    },
+    returnClick: {
+      point: resumeClick.point,
+      target: resumeClick.target,
+      releasedGameplay: resumeClick.released.frame?.clientState?.gameplay ?? null,
+    },
+    closed: {
+      gameplay: closed.frame?.clientState?.gameplay ?? null,
+      quitMenu: closed.frame?.clientState?.quitMenu ?? null,
+    },
+  };
 }
 
 async function waitForSkirmishMatch(page) {
@@ -720,6 +833,11 @@ async function main() {
           });
       }
     }
+    let escMenuResume = null;
+    if (expectEscMenuResume) {
+      console.error("[skirmish-start] verify ESC quit menu Resume button");
+      escMenuResume = await driveEscMenuResume(page);
+    }
     await page.locator("#viewport").screenshot({ path: screenshotPath });
     const renderProbe = await sampleViewportGrid(page);
     expect(renderProbe.ok === true,
@@ -828,6 +946,7 @@ async function main() {
         shroudDiagnostics: postActiveShroudDiagnostics,
         samples: postActive.samples,
       },
+      escMenuResume,
       renderProbe,
       // ADD-ONLY HUD diagnostics: full control-bar / shell / startNewGame state
       // from the final active-match frame (read-only; does not gate anything).

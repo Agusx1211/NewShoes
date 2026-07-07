@@ -36,6 +36,10 @@
 #include "GameClient/GUICallbacks.h"
 #include "GameClient/Gadget.h"
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_function_lexicon_after_reset( void ) __attribute__((weak));
+#endif
+
 // Popup Ladder Select --------------------------------------------------------------------------
 extern void PopupLadderSelectInit( WindowLayout *layout, void *userData );
 extern WindowMsgHandledType PopupLadderSelectSystem( GameWindow *window, UnsignedInt msg, WindowMsgData mData1, WindowMsgData mData2 );
@@ -582,6 +586,11 @@ void FunctionLexicon::reset( void )
 
 	// nothing dynamically loaded, just reinit the tables
 	init();
+
+#ifdef __EMSCRIPTEN__
+	if( cnc_port_function_lexicon_after_reset != NULL )
+		cnc_port_function_lexicon_after_reset();
+#endif
 
 }  // end reset
 

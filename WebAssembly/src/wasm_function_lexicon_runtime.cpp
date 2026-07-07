@@ -37,8 +37,12 @@ extern WindowMsgHandledType ControlBarInput(GameWindow *window, UnsignedInt msg,
 	WindowMsgData mData1, WindowMsgData mData2);
 extern WindowMsgHandledType ExtendedMessageBoxSystem(GameWindow *window,
 	UnsignedInt msg, WindowMsgData mData1, WindowMsgData mData2);
+extern WindowMsgHandledType QuitMenuSystem(GameWindow *window, UnsignedInt msg,
+	WindowMsgData mData1, WindowMsgData mData2);
 
 #ifdef __EMSCRIPTEN__
+__attribute__((used)) static GameWinSystemFunc g_keep_quit_menu_system =
+	QuitMenuSystem;
 __attribute__((used)) static GameWinSystemFunc g_keep_control_bar_system =
 	ControlBarSystem;
 __attribute__((used)) static GameWinInputFunc g_keep_left_hud_input =
@@ -54,7 +58,6 @@ namespace {
 FunctionLexiconRuntimeProbeResult g_function_lexicon_state;
 W3DFunctionLexicon *g_function_lexicon = nullptr;
 bool g_function_lexicon_init_ran = false;
-FunctionLexicon *g_command_bar_callbacks_registered_for = nullptr;
 
 struct RuntimeLexiconEntry
 {
@@ -113,17 +116,29 @@ void load_runtime_table_with_entries(FunctionLexicon::TableIndex index,
 	TheFunctionLexicon->loadRuntimeTableForPort(new_table, index);
 }
 
-void register_command_bar_callback_owners()
+void repair_gameplay_callback_owners()
 {
 	if (TheFunctionLexicon == nullptr ||
 		TheNameKeyGenerator == nullptr) {
 		return;
 	}
-	if (g_command_bar_callbacks_registered_for == TheFunctionLexicon) {
+	if (TheFunctionLexicon->gameWinSystemFunc(
+			TheNameKeyGenerator->nameToKey("QuitMenuSystem")) == QuitMenuSystem &&
+		TheFunctionLexicon->gameWinSystemFunc(
+			TheNameKeyGenerator->nameToKey("ControlBarSystem")) == ControlBarSystem &&
+		TheFunctionLexicon->gameWinSystemFunc(
+			TheNameKeyGenerator->nameToKey("GeneralsExpPointsSystem")) ==
+			GeneralsExpPointsSystem &&
+		TheFunctionLexicon->gameWinInputFunc(
+			TheNameKeyGenerator->nameToKey("LeftHUDInput")) == LeftHUDInput &&
+		TheFunctionLexicon->gameWinInputFunc(
+			TheNameKeyGenerator->nameToKey("GeneralsExpPointsInput")) ==
+			GeneralsExpPointsInput) {
 		return;
 	}
 
 	const RuntimeLexiconEntry system_entries[] = {
+		{ "QuitMenuSystem", FunctionLexicon::TableFunction(QuitMenuSystem) },
 		{ "ControlBarSystem", FunctionLexicon::TableFunction(ControlBarSystem) },
 		{ "GeneralsExpPointsSystem",
 			FunctionLexicon::TableFunction(GeneralsExpPointsSystem) },
@@ -138,7 +153,6 @@ void register_command_bar_callback_owners()
 		system_entries, sizeof(system_entries) / sizeof(system_entries[0]));
 	load_runtime_table_with_entries(FunctionLexicon::TABLE_GAME_WIN_INPUT,
 		input_entries, sizeof(input_entries) / sizeof(input_entries[0]));
-	g_command_bar_callbacks_registered_for = TheFunctionLexicon;
 }
 
 const char *json_bool(bool value)
@@ -357,6 +371,9 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 	result.single_player_menu_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("SinglePlayerMenuSystem")) == SinglePlayerMenuSystem;
+	result.quit_menu_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("QuitMenuSystem")) == QuitMenuSystem;
 	result.challenge_menu_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("ChallengeMenuSystem")) == ChallengeMenuSystem;
@@ -1091,8 +1108,8 @@ bool idle_worker_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &res
 bool base_layout_callback_graph_ready(const FunctionLexiconRuntimeProbeResult &result)
 {
 	// The linked runtime currently proves a shell-menu subset plus the
-	// game-window block input, MOTD, options-menu, skirmish-map-select, challenge-menu,
-	// popup-communicator, in-game popup-message, idle-worker, control-bar
+	// game-window block input, MOTD, options-menu, skirmish-map-select, quit-menu,
+	// challenge-menu, popup-communicator, in-game popup-message, idle-worker, control-bar
 	// input/command/HUD, generals-experience points, beacon-window,
 	// replay-control, control-bar observer, map-select, replay-menu,
 	// popup-replay modal callbacks, and game-info-window callback owners.
@@ -1365,7 +1382,7 @@ const FunctionLexiconRuntimeProbeResult &wasm_function_lexicon_runtime_install(
 			result.constructed = true;
 			result.the_function_lexicon_owned = true;
 		}
-		register_command_bar_callback_owners();
+		repair_gameplay_callback_owners();
 		result.init_ran = g_function_lexicon_init_ran;
 		capture_table_state(result);
 		capture_lookup_state(result);
@@ -1414,9 +1431,14 @@ const FunctionLexiconRuntimeProbeResult &wasm_function_lexicon_runtime_state()
 	return g_function_lexicon_state;
 }
 
-void wasm_function_lexicon_register_command_bar_callback_owners()
+void wasm_function_lexicon_repair_gameplay_callback_owners()
 {
-	register_command_bar_callback_owners();
+	repair_gameplay_callback_owners();
+}
+
+extern "C" void cnc_port_function_lexicon_after_reset()
+{
+	repair_gameplay_callback_owners();
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_function_lexicon_runtime()
@@ -1479,6 +1501,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"skirmishGameOptionsMenuSystem\":%s,"
 		"\"skirmishMapSelectMenuSystem\":%s,"
 		"\"singlePlayerMenuSystem\":%s,"
+		"\"quitMenuSystem\":%s,"
 		"\"challengeMenuSystem\":%s,"
 		"\"popupCommunicatorSystem\":%s,"
 		"\"mapSelectMenuSystem\":%s,"
@@ -1621,6 +1644,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.skirmish_game_options_menu_system_lookup),
 		json_bool(state.skirmish_map_select_menu_system_lookup),
 		json_bool(state.single_player_menu_system_lookup),
+		json_bool(state.quit_menu_system_lookup),
 		json_bool(state.challenge_menu_system_lookup),
 		json_bool(state.popup_communicator_system_lookup),
 		json_bool(state.map_select_menu_system_lookup),

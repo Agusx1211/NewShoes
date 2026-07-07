@@ -914,7 +914,7 @@ extern "C" void cnc_port_note_subsystem_init(const char *name, int phase)
 		g_state.in_flight.clear();
 		g_state.completed.push_back(safe_name);
 		if (std::strcmp(safe_name, "TheFunctionLexicon") == 0) {
-			wasm_function_lexicon_register_command_bar_callback_owners();
+			wasm_function_lexicon_repair_gameplay_callback_owners();
 		}
 		std::printf("cnc-port: real-init subsystem-done %s\n", safe_name);
 	} else if (phase == 2) {
@@ -3866,6 +3866,9 @@ const char *system_func_name(GameWinSystemFunc system)
 	if (system == GeneralsExpPointsSystem) {
 		return "GeneralsExpPointsSystem";
 	}
+	if (system == QuitMenuSystem) {
+		return "QuitMenuSystem";
+	}
 	return "unknown";
 }
 
@@ -4728,6 +4731,30 @@ void append_real_engine_client_state(std::string &json)
 	append_window_probe(json, "playerSideLocal", "MultiplayerLoadScreen.wnd:StaticTextSide0");
 	json += "}}";
 
+	json += ",\"quitMenu\":{\"queried\":true";
+	json += ",\"visible\":";
+	json += (TheInGameUI != NULL && TheInGameUI->isQuitMenuVisible()) ? "true" : "false";
+	json += ",\"quitMenuSystemLookup\":";
+	json += (TheFunctionLexicon != NULL && TheNameKeyGenerator != NULL &&
+		TheFunctionLexicon->gameWinSystemFunc(
+			TheNameKeyGenerator->nameToKey("QuitMenuSystem")) == QuitMenuSystem) ?
+		"true" : "false";
+	append_window_probe(json, "fullParent", "QuitMenu.wnd:QuitMenuParent");
+	append_window_probe(json, "noSaveParent", "QuitNoSave.wnd:QuitMenuParent");
+	append_window_probe(json, "buttonReturnFull", "QuitMenu.wnd:ButtonReturn");
+	append_window_probe(json, "buttonReturnNoSave", "QuitNoSave.wnd:ButtonReturn");
+	append_window_probe(json, "buttonExitFull", "QuitMenu.wnd:ButtonExit");
+	append_window_probe(json, "buttonExitNoSave", "QuitNoSave.wnd:ButtonExit");
+	append_window_probe(json, "buttonOptionsFull", "QuitMenu.wnd:ButtonOptions");
+	append_window_probe(json, "buttonOptionsNoSave", "QuitNoSave.wnd:ButtonOptions");
+	append_window_probe(json, "buttonRestartFull", "QuitMenu.wnd:ButtonRestart");
+	append_window_probe(json, "buttonRestartNoSave", "QuitNoSave.wnd:ButtonRestart");
+	append_window_under_probe_center(
+		json, "underButtonReturnFullCenter", "QuitMenu.wnd:ButtonReturn");
+	append_window_under_probe_center(
+		json, "underButtonReturnNoSaveCenter", "QuitNoSave.wnd:ButtonReturn");
+	json += "}";
+
 	json += ",\"controlBarWindows\":{\"queried\":true";
 	append_window_probe(json, "parent", "ControlBar.wnd:ControlBarParent");
 	append_window_probe(json, "leftHud", "ControlBar.wnd:LeftHUD");
@@ -4837,6 +4864,7 @@ void run_real_engine_frames(int frame_count)
 			const double frame_started_at = emscripten_get_now();
 			reset_engine_frame_profile();
 			try {
+				wasm_function_lexicon_repair_gameplay_callback_owners();
 				clear_stale_movie_break_for_visible_main_menu();
 				TheGameEngine->update();
 				clear_stale_movie_break_for_visible_main_menu();
@@ -6649,7 +6677,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_init(const char
 		// browser tab has focus; WinMain mirrors focus state into the engine.
 		TheGameEngine->setIsActive(TRUE);
 		TheGameEngine->init(argc, argv);
-		wasm_function_lexicon_register_command_bar_callback_owners();
+		wasm_function_lexicon_repair_gameplay_callback_owners();
 		g_state.init_returned = true;
 		g_state.quitting_after_init = TheGameEngine->getQuitting() != FALSE;
 	} catch (const char *message) {

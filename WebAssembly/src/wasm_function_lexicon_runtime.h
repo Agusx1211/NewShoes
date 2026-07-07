@@ -74,6 +74,7 @@ struct FunctionLexiconRuntimeProbeResult
 	bool skirmish_game_options_menu_system_lookup = false;
 	bool skirmish_map_select_menu_system_lookup = false;
 	bool single_player_menu_system_lookup = false;
+	bool quit_menu_system_lookup = false;
 	bool challenge_menu_system_lookup = false;
 	bool popup_communicator_system_lookup = false;
 	bool map_select_menu_system_lookup = false;
@@ -173,7 +174,7 @@ struct FunctionLexiconRuntimeProbeResult
 const FunctionLexiconRuntimeProbeResult &wasm_function_lexicon_runtime_install(
 	bool runtime_archive_registered,
 	bool audio_manager_ready);
-void wasm_function_lexicon_register_command_bar_callback_owners();
+void wasm_function_lexicon_repair_gameplay_callback_owners();
 const FunctionLexiconRuntimeProbeResult &wasm_function_lexicon_runtime_state();
 const char *wasm_function_lexicon_runtime_state_json();
 

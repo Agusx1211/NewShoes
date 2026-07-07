@@ -494,14 +494,6 @@ symptom is temporal — NOT a single still.
       bound when the load screen draws. Distinct from the existing
       "loading-screen progress is static" item (that one is about progress
       animation; this is about the load screen's images not rendering).
-- [ ] **In-game ESC menu buttons do nothing** — during skirmish, pressing ESC
-      opens the in-game (pause/options/quit) menu, but **none of its buttons
-      respond** to clicks. The window opens and draws, so this is the in-game
-      menu's control input/callback wiring, not the open path. Trace the pause
-      menu window's button `GameWindow` callbacks / command dispatch during
-      active gameplay (input may be routed to the game instead of the modal
-      menu, or the button callbacks are unbound). Verify by clicking
-      Resume/Quit in the harness and confirming the corresponding action fires.
 - [ ] **Purchased special powers can't be activated** — generals' special
       abilities/powers can be *purchased* (science/rank spend works) but
       clicking the ability button to *use* it does nothing: no targeting
@@ -949,7 +941,7 @@ residue and the next frontier.
       dispatch; the remaining
       `FunctionLexicon` boundary is now
       reported by startup JSON as explicit missing callback owner groups:
-      save/load, quit menu, score-screen/replay-save, LAN/game-network menus,
+      save/load, score-screen/replay-save, LAN/game-network menus,
       WOL/GameSpy overlays,
       direct-connect/download menus, and in-game network menus). The same archive-backed
       boot now constructs original `W3DModuleFactory`, runs
@@ -989,7 +981,7 @@ residue and the next frontier.
       original `IdleWorkerSystem`, `BeaconWindowInput`, `ControlBarInput`,
       `ControlBarSystem`, `LeftHUDInput`,
       `GeneralsExpPointsSystem`, `GeneralsExpPointsInput`, and
-      `ReplayControl` system/input lookups, and
+      `ReplayControl` system/input lookups, original `QuitMenuSystem`, and
       original `MainMenu`/`CreditsMenu`/
       `SkirmishGameOptionsMenu`/`SinglePlayerMenu`
       system/input/init/update/shutdown lookups plus original `ChallengeMenu`
@@ -1025,12 +1017,6 @@ residue and the next frontier.
       LAN/WOL/GameSpy into `cnc-port`. Directly registering those callbacks
       retains `LastReplayFileName` and `ScoreScreenEnableControls()` from
       original `ScoreScreen.cpp`; do not replace that with fake weak stubs.
-- [ ] Promote `QuitMenuSystem` only after the original `GameLogic`,
-      `MessageStream`, `GameState`, `Recorder`, `InGameUI`, `Shell`,
-      `ControlBar`, victory-condition, and `ScriptEngine` ownership surface is
-      ready in the linked runtime. The callback name is non-online, but the
-      original `QuitMenu.cpp` owner immediately reaches broad gameplay and UI
-      state; do not register it through weak stand-ins.
 - [ ] Promote the `ScoreScreen*` FunctionLexicon callbacks only after the
       original score-screen owner can run with real `GameState`, `InGameUI`,
       campaign/LOD, video/audio, `SkirmishBattleHonors`, and message-resource
