@@ -124,6 +124,7 @@ static Int g_wasmStartNewGameCount = 0;
 static Int g_wasmStartNewGameLastEntryMode = -1;
 static Int g_wasmStartNewGameLastAfterDefaultsMode = -1;
 static Int g_wasmStartNewGameLastBeforeShellBranchMode = -1;
+static Bool g_wasmStartNewGameSkirmishLoadScreenPrepared = FALSE;
 static AsciiString g_wasmStartNewGameShellLastAction;
 
 extern "C" Int cnc_port_start_new_game_shell_branch_count( void ) { return g_wasmStartNewGameShellBranchCount; }
@@ -1168,6 +1169,26 @@ static void populateRandomStartPosition( GameInfo *game )
 	}
 }
 
+#ifdef __EMSCRIPTEN__
+static void prepareSkirmishGameInfoForEarlyLoadScreen( GameInfo *game, Bool loadingSaveGame )
+{
+	if( !game )
+		return;
+
+	TheGameInfo = game;
+	checkForDuplicateColors( game );
+	for( Int i = 0; i < MAX_SLOTS; ++i )
+	{
+		GameSlot *slot = game->getSlot( i );
+		if( slot && !loadingSaveGame )
+			slot->saveOffOriginalInfo();
+	}
+	populateRandomSideAndColor( game );
+	populateRandomStartPosition( game );
+	g_wasmStartNewGameSkirmishLoadScreenPrepared = TRUE;
+}
+#endif
+
 // ------------------------------------------------------------------------------------------------
 /** Update the load screen progress */
 // ------------------------------------------------------------------------------------------------
@@ -1205,6 +1226,8 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 #ifdef __EMSCRIPTEN__
 	++g_wasmStartNewGameCount;
 	g_wasmStartNewGameLastEntryMode = m_gameMode;
+	if( m_startNewGame == FALSE )
+		g_wasmStartNewGameSkirmishLoadScreenPrepared = FALSE;
 #endif
 
 	#ifdef DUMP_PERF_STATS
@@ -1267,10 +1290,10 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 						m_background = NULL;
 					}
 					CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.firstCall.loadScreen.before");
+					prepareSkirmishGameInfoForEarlyLoadScreen( TheSkirmishGameInfo, loadingSaveGame );
 					m_loadScreen = getLoadScreen( loadingSaveGame );
 					if(m_loadScreen)
 					{
-						TheGameInfo = TheSkirmishGameInfo;
 						TheMouse->setVisibility(FALSE);
 						TheWritableGlobalData->m_loadScreenRender = TRUE;	///< mark it so only a few select things are rendered during load
 						m_loadScreen->init(TheSkirmishGameInfo);
@@ -1353,7 +1376,16 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
     }
   }
 
-	checkForDuplicateColors( game );
+	Bool skirmishLoadScreenAlreadyPrepared = FALSE;
+#ifdef __EMSCRIPTEN__
+	skirmishLoadScreenAlreadyPrepared =
+		g_wasmStartNewGameSkirmishLoadScreenPrepared &&
+		m_gameMode == GAME_SKIRMISH &&
+		game == TheSkirmishGameInfo;
+#endif
+
+	if( !skirmishLoadScreenAlreadyPrepared )
+		checkForDuplicateColors( game );
 
 	Bool isSkirmishOrSkirmishReplay = FALSE;
 	if (game)
@@ -1361,7 +1393,7 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 		for (Int i=0; i<MAX_SLOTS; ++i)
 		{
 			GameSlot *slot = game->getSlot(i);
-			if (!loadingSaveGame) {
+			if (!skirmishLoadScreenAlreadyPrepared && !loadingSaveGame) {
 				slot->saveOffOriginalInfo();
 			}
 			if (slot->isAI())
@@ -1379,8 +1411,14 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 		}
 	}
 
-	populateRandomSideAndColor( game );
-	populateRandomStartPosition( game );
+	if( !skirmishLoadScreenAlreadyPrepared )
+	{
+		populateRandomSideAndColor( game );
+		populateRandomStartPosition( game );
+	}
+#ifdef __EMSCRIPTEN__
+	g_wasmStartNewGameSkirmishLoadScreenPrepared = FALSE;
+#endif
 
 	//****************************//
 	// Start the LoadScreen Now!	//

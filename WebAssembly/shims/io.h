@@ -5,7 +5,37 @@
 #include <unistd.h>
 
 #ifdef __cplusplus
+#include <string>
 #define WASM_POSIX_SCOPE ::
+
+static inline std::string WasmIoNormalizePath(const char *path)
+{
+	std::string normalized = path != nullptr ? path : "";
+	for (char &ch : normalized) {
+		if (ch == '\\') {
+			ch = '/';
+		}
+	}
+	return normalized;
+}
+
+static inline int WasmIoOpen(const char *path, int flags, int mode = 0666)
+{
+	const std::string normalized = WasmIoNormalizePath(path);
+	return ::open(normalized.c_str(), flags, mode);
+}
+
+static inline int WasmIoAccess(const char *path, int mode)
+{
+	const std::string normalized = WasmIoNormalizePath(path);
+	return ::access(normalized.c_str(), mode);
+}
+
+static inline int WasmIoChmod(const char *path, mode_t mode)
+{
+	const std::string normalized = WasmIoNormalizePath(path);
+	return ::chmod(normalized.c_str(), mode);
+}
 #else
 #define WASM_POSIX_SCOPE
 #endif
@@ -51,7 +81,11 @@
 #endif
 
 #ifndef _open
+#ifdef __cplusplus
+#define _open WasmIoOpen
+#else
 #define _open WASM_POSIX_SCOPE open
+#endif
 #endif
 
 #ifndef _close
@@ -71,9 +105,17 @@
 #endif
 
 #ifndef _access
+#ifdef __cplusplus
+#define _access WasmIoAccess
+#else
 #define _access WASM_POSIX_SCOPE access
+#endif
 #endif
 
 #ifndef _chmod
+#ifdef __cplusplus
+#define _chmod WasmIoChmod
+#else
 #define _chmod WASM_POSIX_SCOPE chmod
+#endif
 #endif

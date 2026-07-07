@@ -86,6 +86,87 @@ static Coord3DList	m_techPositions;
 static Int m_mapDX = 0;
 static Int m_mapDY = 0;
 
+#ifdef __EMSCRIPTEN__
+static AsciiString g_cncPortLastMapPreviewMapName;
+static AsciiString g_cncPortLastMapPreviewTgaName;
+static AsciiString g_cncPortLastMapPreviewPortableName;
+static AsciiString g_cncPortLastMapPreviewImageName;
+static AsciiString g_cncPortLastMapPreviewDir;
+static AsciiString g_cncPortLastMapPreviewOutputPath;
+static Int g_cncPortLastMapPreviewFileSize = -1;
+static Bool g_cncPortLastMapPreviewFoundExisting = FALSE;
+static Bool g_cncPortLastMapPreviewSourceOpenOk = FALSE;
+static Bool g_cncPortLastMapPreviewCreateDirOk = FALSE;
+static Bool g_cncPortLastMapPreviewCopyOk = FALSE;
+static Bool g_cncPortLastMapPreviewImageCreated = FALSE;
+static Bool g_cncPortLastMapPreviewReturnedImage = FALSE;
+
+extern "C" const char *cnc_port_last_map_preview_map_name(void)
+{
+	return g_cncPortLastMapPreviewMapName.str();
+}
+
+extern "C" const char *cnc_port_last_map_preview_tga_name(void)
+{
+	return g_cncPortLastMapPreviewTgaName.str();
+}
+
+extern "C" const char *cnc_port_last_map_preview_portable_name(void)
+{
+	return g_cncPortLastMapPreviewPortableName.str();
+}
+
+extern "C" const char *cnc_port_last_map_preview_image_name(void)
+{
+	return g_cncPortLastMapPreviewImageName.str();
+}
+
+extern "C" const char *cnc_port_last_map_preview_dir(void)
+{
+	return g_cncPortLastMapPreviewDir.str();
+}
+
+extern "C" const char *cnc_port_last_map_preview_output_path(void)
+{
+	return g_cncPortLastMapPreviewOutputPath.str();
+}
+
+extern "C" Int cnc_port_last_map_preview_file_size(void)
+{
+	return g_cncPortLastMapPreviewFileSize;
+}
+
+extern "C" Int cnc_port_last_map_preview_found_existing(void)
+{
+	return g_cncPortLastMapPreviewFoundExisting;
+}
+
+extern "C" Int cnc_port_last_map_preview_source_open_ok(void)
+{
+	return g_cncPortLastMapPreviewSourceOpenOk;
+}
+
+extern "C" Int cnc_port_last_map_preview_create_dir_ok(void)
+{
+	return g_cncPortLastMapPreviewCreateDirOk;
+}
+
+extern "C" Int cnc_port_last_map_preview_copy_ok(void)
+{
+	return g_cncPortLastMapPreviewCopyOk;
+}
+
+extern "C" Int cnc_port_last_map_preview_image_created(void)
+{
+	return g_cncPortLastMapPreviewImageCreated;
+}
+
+extern "C" Int cnc_port_last_map_preview_returned_image(void)
+{
+	return g_cncPortLastMapPreviewReturnedImage;
+}
+#endif
+
 static UnsignedInt calcCRC( AsciiString dirName, AsciiString fname )
 {
 	CRC theCRC;
@@ -1144,6 +1225,21 @@ static void copyFromBigToDir( const AsciiString& infile, const AsciiString& outf
 
 Image *getMapPreviewImage( AsciiString mapName )
 {
+#ifdef __EMSCRIPTEN__
+	g_cncPortLastMapPreviewMapName = mapName;
+	g_cncPortLastMapPreviewTgaName.clear();
+	g_cncPortLastMapPreviewPortableName.clear();
+	g_cncPortLastMapPreviewImageName.clear();
+	g_cncPortLastMapPreviewDir.clear();
+	g_cncPortLastMapPreviewOutputPath.clear();
+	g_cncPortLastMapPreviewFileSize = -1;
+	g_cncPortLastMapPreviewFoundExisting = FALSE;
+	g_cncPortLastMapPreviewSourceOpenOk = FALSE;
+	g_cncPortLastMapPreviewCreateDirOk = FALSE;
+	g_cncPortLastMapPreviewCopyOk = FALSE;
+	g_cncPortLastMapPreviewImageCreated = FALSE;
+	g_cncPortLastMapPreviewReturnedImage = FALSE;
+#endif
 	if(!TheGlobalData)
 		return NULL;
 	DEBUG_LOG(("%s Map Name \n", mapName.str()));
@@ -1162,6 +1258,10 @@ Image *getMapPreviewImage( AsciiString mapName )
 	tgaName.concat(".tga");
 
 	AsciiString portableName = TheGameState->realMapPathToPortableMapPath(name);
+#ifdef __EMSCRIPTEN__
+	g_cncPortLastMapPreviewTgaName = tgaName;
+	g_cncPortLastMapPreviewPortableName = portableName;
+#endif
 	tempName.set(AsciiString::TheEmptyString);
 	for(Int i = 0; i < portableName.getLength(); ++i)
 	{
@@ -1174,6 +1274,9 @@ Image *getMapPreviewImage( AsciiString mapName )
 	
 	name = tempName;
 	name.concat(".tga");
+#ifdef __EMSCRIPTEN__
+	g_cncPortLastMapPreviewImageName = tempName;
+#endif
 
 	
 	// copy file over	
@@ -1182,14 +1285,30 @@ Image *getMapPreviewImage( AsciiString mapName )
 	Image *image = (Image *)TheMappedImageCollection->findImageByName(tempName);
 	if(!image)
 	{
+		File *previewFile = TheFileSystem->openFile(tgaName.str(), File::READ | File::BINARY);
+		if(!previewFile)
+			return NULL;
+#ifdef __EMSCRIPTEN__
+		g_cncPortLastMapPreviewSourceOpenOk = TRUE;
+		g_cncPortLastMapPreviewFileSize = previewFile->seek(0, File::END);
+		previewFile->seek(0, File::START);
+#endif
+		previewFile->close();
 
-		if(!TheFileSystem->doesFileExist(tgaName.str()))
-			return NULL;	
 		AsciiString mapPreviewDir;
 		mapPreviewDir.format(MAP_PREVIEW_DIR_PATH, TheGlobalData->getPath_UserData().str());
-		TheFileSystem->createDirectory(mapPreviewDir);
+#ifdef __EMSCRIPTEN__
+		g_cncPortLastMapPreviewDir = mapPreviewDir;
+#endif
+		Bool createDirOk = TheFileSystem->createDirectory(mapPreviewDir);
+#ifdef __EMSCRIPTEN__
+		g_cncPortLastMapPreviewCreateDirOk = createDirOk;
+#endif
 
 		mapPreviewDir.concat(name);
+#ifdef __EMSCRIPTEN__
+		g_cncPortLastMapPreviewOutputPath = mapPreviewDir;
+#endif
 
 		Bool success = false;
 		try
@@ -1204,6 +1323,9 @@ Image *getMapPreviewImage( AsciiString mapName )
 		
 		if (success)
 		{
+#ifdef __EMSCRIPTEN__
+			g_cncPortLastMapPreviewCopyOk = TRUE;
+#endif
     	image = newInstance(Image);
 			image->setName(tempName);
 			//image->setFullPath("mission.tga");
@@ -1218,12 +1340,22 @@ Image *getMapPreviewImage( AsciiString mapName )
 			image->setTextureHeight(128);
 			image->setTextureWidth(128);
 			TheMappedImageCollection->addImage(image);
+#ifdef __EMSCRIPTEN__
+			g_cncPortLastMapPreviewImageCreated = TRUE;
+#endif
 		}
 		else
 		{
 			image = NULL;
 		}
 	}
+#ifdef __EMSCRIPTEN__
+	else
+	{
+		g_cncPortLastMapPreviewFoundExisting = TRUE;
+	}
+	g_cncPortLastMapPreviewReturnedImage = image != NULL;
+#endif
 
 	return image;
 
@@ -1355,4 +1487,3 @@ void findDrawPositions( Int startX, Int startY, Int width, Int height, Region3D 
 	lr->y += startY;
 
 }  // end findDrawPositions
-

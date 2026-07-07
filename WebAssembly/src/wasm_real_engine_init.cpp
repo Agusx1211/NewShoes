@@ -59,6 +59,7 @@
 #include "GameClient/GameClient.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
+#include "GameClient/Image.h"
 #include "W3DDevice/GameClient/W3DGUICallbacks.h"
 #include "W3DDevice/GameClient/W3DGameWindow.h"
 #include "GameClient/GameWindowTransitions.h"
@@ -252,6 +253,19 @@ extern "C" Int cnc_port_command_xlat_move_last_team_exists(void);
 extern "C" Real cnc_port_command_xlat_move_last_x(void);
 extern "C" Real cnc_port_command_xlat_move_last_y(void);
 extern "C" Real cnc_port_command_xlat_move_last_z(void);
+extern "C" const char *cnc_port_last_map_preview_map_name(void);
+extern "C" const char *cnc_port_last_map_preview_tga_name(void);
+extern "C" const char *cnc_port_last_map_preview_portable_name(void);
+extern "C" const char *cnc_port_last_map_preview_image_name(void);
+extern "C" const char *cnc_port_last_map_preview_dir(void);
+extern "C" const char *cnc_port_last_map_preview_output_path(void);
+extern "C" Int cnc_port_last_map_preview_file_size(void);
+extern "C" Int cnc_port_last_map_preview_found_existing(void);
+extern "C" Int cnc_port_last_map_preview_source_open_ok(void);
+extern "C" Int cnc_port_last_map_preview_create_dir_ok(void);
+extern "C" Int cnc_port_last_map_preview_copy_ok(void);
+extern "C" Int cnc_port_last_map_preview_image_created(void);
+extern "C" Int cnc_port_last_map_preview_returned_image(void);
 extern void W3DMainMenuInit(WindowLayout *layout, void *userData);
 
 static std::string g_last_engine_update_target;
@@ -3609,6 +3623,7 @@ void append_game_slot_json(std::string &json, const char *field_name, const Game
 		json += ",\"startPos\":" + std::to_string(static_cast<long long>(slot->getStartPos()));
 		json += ",\"teamNumber\":" + std::to_string(static_cast<long long>(slot->getTeamNumber()));
 		append_player_template_json(json, "playerTemplate", slot->getPlayerTemplate());
+		append_player_template_json(json, "originalPlayerTemplate", slot->getOriginalPlayerTemplate());
 	}
 	json += "}";
 }
@@ -3661,6 +3676,7 @@ void append_game_info_json(std::string &json, const char *field_name, const Game
 			json += ",\"startPos\":" + std::to_string(static_cast<long long>(slot->getStartPos()));
 			json += ",\"teamNumber\":" + std::to_string(static_cast<long long>(slot->getTeamNumber()));
 			append_player_template_json(json, "playerTemplate", slot->getPlayerTemplate());
+			append_player_template_json(json, "originalPlayerTemplate", slot->getOriginalPlayerTemplate());
 			json += "}";
 		}
 		json += "]";
@@ -4393,6 +4409,74 @@ void append_command_button_json(std::string &json, const CommandButton *command)
 	json += "}";
 }
 
+void append_image_ref_json(std::string &json, const char *field_name, const Image *image)
+{
+	json += ",\"";
+	json += field_name != NULL ? field_name : "image";
+	json += "\":{";
+	json += "\"present\":";
+	json += image != NULL ? "true" : "false";
+	if (image != NULL) {
+		json += ",\"name\":\"" + json_escape(image->getName().str()) + "\"";
+		json += ",\"filename\":\"" + json_escape(image->getFilename().str()) + "\"";
+		json += ",\"width\":" + std::to_string(static_cast<long long>(image->getImageWidth()));
+		json += ",\"height\":" + std::to_string(static_cast<long long>(image->getImageHeight()));
+		const ICoord2D *texture_size = image->getTextureSize();
+		json += ",\"textureWidth\":";
+		json += texture_size != NULL ? std::to_string(static_cast<long long>(texture_size->x)) : "null";
+		json += ",\"textureHeight\":";
+		json += texture_size != NULL ? std::to_string(static_cast<long long>(texture_size->y)) : "null";
+		json += ",\"status\":" + std::to_string(static_cast<unsigned long long>(image->getStatus()));
+	}
+	json += "}";
+}
+
+void append_map_preview_diagnostic_json(std::string &json, const char *field_name)
+{
+	json += ",\"";
+	json += field_name != NULL ? field_name : "mapPreviewDiagnostic";
+	json += "\":{";
+	json += "\"mapName\":\"";
+	json += json_escape(cnc_port_last_map_preview_map_name() != NULL
+		? cnc_port_last_map_preview_map_name() : "");
+	json += "\"";
+	json += ",\"tgaName\":\"";
+	json += json_escape(cnc_port_last_map_preview_tga_name() != NULL
+		? cnc_port_last_map_preview_tga_name() : "");
+	json += "\"";
+	json += ",\"portableName\":\"";
+	json += json_escape(cnc_port_last_map_preview_portable_name() != NULL
+		? cnc_port_last_map_preview_portable_name() : "");
+	json += "\"";
+	json += ",\"imageName\":\"";
+	json += json_escape(cnc_port_last_map_preview_image_name() != NULL
+		? cnc_port_last_map_preview_image_name() : "");
+	json += "\"";
+	json += ",\"directory\":\"";
+	json += json_escape(cnc_port_last_map_preview_dir() != NULL
+		? cnc_port_last_map_preview_dir() : "");
+	json += "\"";
+	json += ",\"outputPath\":\"";
+	json += json_escape(cnc_port_last_map_preview_output_path() != NULL
+		? cnc_port_last_map_preview_output_path() : "");
+	json += "\"";
+	json += ",\"fileSize\":";
+	json += std::to_string(static_cast<long long>(cnc_port_last_map_preview_file_size()));
+	json += ",\"foundExisting\":";
+	json += cnc_port_last_map_preview_found_existing() ? "true" : "false";
+	json += ",\"sourceOpenOk\":";
+	json += cnc_port_last_map_preview_source_open_ok() ? "true" : "false";
+	json += ",\"createDirOk\":";
+	json += cnc_port_last_map_preview_create_dir_ok() ? "true" : "false";
+	json += ",\"copyOk\":";
+	json += cnc_port_last_map_preview_copy_ok() ? "true" : "false";
+	json += ",\"imageCreated\":";
+	json += cnc_port_last_map_preview_image_created() ? "true" : "false";
+	json += ",\"returnedImage\":";
+	json += cnc_port_last_map_preview_returned_image() ? "true" : "false";
+	json += "}";
+}
+
 void append_window_json(std::string &json, GameWindow *window, const char *requested_name)
 {
 	json += "{\"name\":\"";
@@ -4453,6 +4537,13 @@ void append_window_json(std::string &json, GameWindow *window, const char *reque
 	json += enabled ? "true" : "false";
 	json += ",\"clickable\":";
 	json += (!manager_hidden && enabled && (status & WIN_STATUS_NO_INPUT) == 0) ? "true" : "false";
+	if (inst_data != NULL) {
+		UnicodeString text = inst_data->getText();
+		json += ",\"text\":\"" + json_escape(unicode_to_debug_ascii(text)) + "\"";
+		json += ",\"textLength\":" + std::to_string(static_cast<long long>(text.getLength()));
+		json += ",\"textLabel\":\"" + json_escape(inst_data->m_textLabelString.str()) + "\"";
+		append_image_ref_json(json, "enabledImage0", window->winGetEnabledImage(0));
+	}
 	json += ",\"owner\":";
 	append_window_identity_json(json, inst_data != NULL ? inst_data->getOwner() : NULL);
 	const char *command_button_prefix = "ControlBar.wnd:ButtonCommand";
@@ -6794,6 +6885,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_map_cache_probe()
 		json += "]";
 		append_game_info_json(json, "skirmishGameInfo", TheSkirmishGameInfo);
 		append_game_info_json(json, "gameInfo", TheGameInfo);
+		append_map_preview_diagnostic_json(json, "mapPreviewDiagnostic");
 		json += ",\"cpuDetectSpeedMHz\":" + std::to_string(static_cast<long long>(CPUDetectClass::Get_Processor_Speed()));
 		json += ",\"cpuDetectRamBytes\":"
 			+ std::to_string(static_cast<unsigned long long>(CPUDetectClass::Get_Total_Physical_Memory()));

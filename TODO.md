@@ -510,14 +510,6 @@ symptom is temporal — NOT a single still.
       path now assigns the base to the enemy skirmish player instead of neutral;
       keep this open only for any remaining visual all-white render bug.
       Verify with a screenshot on the release build.
-- [ ] **Skirmish loading screen missing its art** — the multiplayer/skirmish
-      load screen shows no map preview image, no general/side portrait, etc.
-      (blank/placeholder instead of the real load-screen art). Trace the
-      loadscreen image path: mapped-image / `MappedImageCollection` lookups for
-      the map preview + faction art, and whether those textures are loaded and
-      bound when the load screen draws. Distinct from the existing
-      "loading-screen progress is static" item (that one is about progress
-      animation; this is about the load screen's images not rendering).
 - [ ] **Purchased special powers can't be activated** — generals' special
       abilities/powers can be *purchased* (science/rank spend works) but
       clicking the ability button to *use* it does nothing: no targeting

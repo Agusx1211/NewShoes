@@ -11,6 +11,7 @@ const screenshotsRoot = resolve(wasmRoot, "artifacts/screenshots");
 const artifactsRoot = resolve(wasmRoot, "artifacts/skirmish");
 
 const GAME_SKIRMISH = 2;
+const WIN_STATUS_IMAGE = 0x80;
 const WM_MOUSEMOVE = 0x0200;
 const WM_LBUTTONDOWN = 0x0201;
 const WM_LBUTTONUP = 0x0202;
@@ -897,6 +898,18 @@ async function main() {
         loadingWindows,
         lastGameLogicStep: skirmishStartClick.settled.lastGameLogicStep,
       });
+    expect((loadingWindows.mapPreview.status & WIN_STATUS_IMAGE) !== 0 &&
+        loadingWindows.mapPreview.enabledImage0?.present === true &&
+        loadingWindows.mapPreview.enabledImage0?.name !== "UnknownMap" &&
+        Boolean(loadingWindows.mapPreview.enabledImage0?.filename),
+      "skirmish loading screen did not bind the selected map preview image",
+      loadingWindows.mapPreview);
+    expect((loadingWindows.localGeneralPortrait?.status & WIN_STATUS_IMAGE) !== 0 &&
+        loadingWindows.localGeneralPortrait?.enabledImage0?.present === true &&
+        Boolean(loadingWindows.localGeneralPortrait?.enabledImage0?.name) &&
+        Boolean(loadingWindows.localGeneralPortrait?.enabledImage0?.filename),
+      "skirmish loading screen did not bind the local player faction portrait",
+      loadingWindows.localGeneralPortrait);
     await page.locator("#viewport").screenshot({ path: loadingScreenshotPath });
     const loadingRenderProbe = await sampleViewportGrid(page);
     expect(loadingRenderProbe.ok === true &&
@@ -1075,6 +1088,7 @@ async function main() {
       firstOfficialMultiplayerMetadata: mapCache?.probe?.firstOfficialMultiplayerMetadata ?? null,
       officialMultiplayerCount: mapCache?.probe?.officialMultiplayerCount ?? null,
       officialMultiplayerMaps: mapCache?.probe?.officialMultiplayerMaps ?? [],
+      mapPreviewDiagnostic: mapCache?.probe?.mapPreviewDiagnostic ?? null,
       framesAdvancedAfterStart: active.framesAdvanced,
       finalGameplay: compactGameplay(active.result.frame),
       musicTransition,

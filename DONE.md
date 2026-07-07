@@ -10,6 +10,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## User-reported play bugs (2026-07-07 session)
 
+- [x] Fix skirmish loading-screen map and faction art. Browser skirmish now
+      prepares random side/color/start-position data before the first deferred
+      `startNewGame()` load-screen construction, so the real
+      `MultiPlayerLoadScreen` binds the local player's resolved template
+      portrait/name instead of Observer/Random placeholders. Runtime map
+      preview TGA extraction now uses a real source-file open check and the
+      Emscripten `io.h` local-file shims normalize Windows path separators
+      before POSIX `_open`/`_access`/`_chmod`, matching the existing
+      `CreateDirectory` normalization and letting generated preview TGAs land
+      in the browser user-data tree. The skirmish harness now asserts both
+      `WinMapPreview` and `LocalGeneralPortrait` have `WIN_STATUS_IMAGE` and
+      non-placeholder mapped images. Verified with `npm --prefix WebAssembly
+      run build:port` and `node WebAssembly/harness/skirmish_start_smoke.mjs`;
+      `artifacts/screenshots/skirmish-start-loading-screen.png` shows the
+      selected Alpine Assault map preview plus General Tao/China Nuke General
+      art/text on the real multiplayer loading screen.
+
 - [x] Fix skirmish enemy starting assets being assigned to neutral when loose
       script payloads were absent from the browser archive set. Runtime archive
       extraction now pulls `SkirmishScripts.scb`, `MultiplayerScripts.scb`, and
