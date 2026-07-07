@@ -128,6 +128,8 @@ const render2DProfileFields = [
 const d3d8DrawCacheFields = [
   "derivedStateHits",
   "derivedStateMisses",
+  "bufferChecksumHits",
+  "bufferChecksumMisses",
 ];
 
 function summarizeProfileGroup(samples, groupName, fields) {
@@ -240,6 +242,8 @@ function compactD3D8DrawCache(cache) {
   return {
     derivedStateHits: Number(cache.derivedStateHits ?? 0),
     derivedStateMisses: Number(cache.derivedStateMisses ?? 0),
+    bufferChecksumHits: Number(cache.bufferChecksumHits ?? 0),
+    bufferChecksumMisses: Number(cache.bufferChecksumMisses ?? 0),
   };
 }
 

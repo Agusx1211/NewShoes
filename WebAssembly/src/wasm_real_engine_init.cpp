@@ -905,6 +905,10 @@ void append_d3d8_draw_cache_json(std::string &json)
 		std::to_string(d3d8_state != NULL ? d3d8_state->draw_derived_state_cache_hits : 0);
 	json += ",\"derivedStateMisses\":" +
 		std::to_string(d3d8_state != NULL ? d3d8_state->draw_derived_state_cache_misses : 0);
+	json += ",\"bufferChecksumHits\":" +
+		std::to_string(d3d8_state != NULL ? d3d8_state->draw_buffer_checksum_cache_hits : 0);
+	json += ",\"bufferChecksumMisses\":" +
+		std::to_string(d3d8_state != NULL ? d3d8_state->draw_buffer_checksum_cache_misses : 0);
 	json += "}";
 }
 

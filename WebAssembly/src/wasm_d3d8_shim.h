@@ -209,6 +209,8 @@ struct WasmD3D8ShimState
 	UINT last_draw_state_hash;
 	UINT draw_derived_state_cache_hits;
 	UINT draw_derived_state_cache_misses;
+	UINT draw_buffer_checksum_cache_hits;
+	UINT draw_buffer_checksum_cache_misses;
 	UINT begin_scene_calls;
 	UINT end_scene_calls;
 	UINT clear_calls;

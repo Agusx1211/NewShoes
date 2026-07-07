@@ -1003,6 +1003,74 @@ UINT checked_range_size(UINT length, UINT offset, UINT requested_size)
 	return requested_size <= available ? requested_size : available;
 }
 
+class BufferChecksumCache
+{
+public:
+	void invalidate()
+	{
+		++m_revision;
+		if (m_revision == 0) {
+			m_revision = 1;
+			for (ChecksumCacheEntry &entry : m_entries) {
+				entry.valid = false;
+			}
+		}
+	}
+
+	DWORD checksum(const BYTE *data, UINT length, UINT offset, UINT size) const
+	{
+		const UINT checked_size = checked_range_size(length, offset, size);
+		if (data == nullptr || checked_size == 0) {
+			return 0;
+		}
+		++m_clock;
+		for (ChecksumCacheEntry &entry : m_entries) {
+			if (entry.valid && entry.revision == m_revision && entry.offset == offset &&
+					entry.size == checked_size) {
+				entry.last_used = m_clock;
+				++g_state.draw_buffer_checksum_cache_hits;
+				return entry.value;
+			}
+		}
+
+		DWORD value = checksum_bytes(data + offset, checked_size);
+		ChecksumCacheEntry *victim = &m_entries[0];
+		for (ChecksumCacheEntry &entry : m_entries) {
+			if (!entry.valid) {
+				victim = &entry;
+				break;
+			}
+			if (entry.last_used < victim->last_used) {
+				victim = &entry;
+			}
+		}
+		victim->valid = true;
+		victim->revision = m_revision;
+		victim->offset = offset;
+		victim->size = checked_size;
+		victim->value = value;
+		victim->last_used = m_clock;
+		++g_state.draw_buffer_checksum_cache_misses;
+		return value;
+	}
+
+private:
+	struct ChecksumCacheEntry
+	{
+		bool valid = false;
+		std::uint64_t revision = 0;
+		UINT offset = 0;
+		UINT size = 0;
+		DWORD value = 0;
+		std::uint64_t last_used = 0;
+	};
+
+	static constexpr UINT CACHE_ENTRY_COUNT = 32;
+	mutable ChecksumCacheEntry m_entries[CACHE_ENTRY_COUNT] = {};
+	std::uint64_t m_revision = 1;
+	mutable std::uint64_t m_clock = 0;
+};
+
 UINT primitive_vertex_count(D3DPRIMITIVETYPE primitive_type, UINT primitive_count)
 {
 	switch (primitive_type) {
@@ -2333,6 +2401,9 @@ public:
 			return E_FAIL;
 		}
 		++g_state.buffer_unlock_calls;
+		if (m_dirty_size != 0) {
+			m_checksum_cache.invalidate();
+		}
 		browser_buffer_update(BROWSER_BUFFER_VERTEX, m_browser_buffer_id,
 			m_bytes.data() + m_dirty_offset, m_dirty_offset, m_dirty_size, m_usage, m_lock_flags);
 		m_locked = false;
@@ -2356,11 +2427,7 @@ public:
 
 	DWORD checksum(UINT offset, UINT size) const
 	{
-		const UINT checked_size = checked_range_size(length(), offset, size);
-		if (checked_size == 0) {
-			return 0;
-		}
-		return checksum_bytes(m_bytes.data() + offset, checked_size);
+		return m_checksum_cache.checksum(m_bytes.data(), length(), offset, size);
 	}
 
 	ULONG AddRef() override { return ++m_ref_count; }
@@ -2387,6 +2454,7 @@ private:
 	UINT m_dirty_offset = 0;
 	UINT m_dirty_size = 0;
 	DWORD m_lock_flags = 0;
+	BufferChecksumCache m_checksum_cache;
 };
 
 class BrowserD3DIndexBuffer final : public IDirect3DIndexBuffer8, private BrowserD3DResource
@@ -2444,6 +2512,9 @@ public:
 			return E_FAIL;
 		}
 		++g_state.buffer_unlock_calls;
+		if (m_dirty_size != 0) {
+			m_checksum_cache.invalidate();
+		}
 		browser_buffer_update(BROWSER_BUFFER_INDEX, m_browser_buffer_id,
 			m_bytes.data() + m_dirty_offset, m_dirty_offset, m_dirty_size, m_usage, m_lock_flags);
 		m_locked = false;
@@ -2469,11 +2540,7 @@ public:
 
 	DWORD checksum(UINT offset, UINT size) const
 	{
-		const UINT checked_size = checked_range_size(length(), offset, size);
-		if (checked_size == 0) {
-			return 0;
-		}
-		return checksum_bytes(m_bytes.data() + offset, checked_size);
+		return m_checksum_cache.checksum(m_bytes.data(), length(), offset, size);
 	}
 
 	ULONG AddRef() override { return ++m_ref_count; }
@@ -2501,6 +2568,7 @@ private:
 	UINT m_dirty_offset = 0;
 	UINT m_dirty_size = 0;
 	DWORD m_lock_flags = 0;
+	BufferChecksumCache m_checksum_cache;
 };
 
 class BrowserD3DDevice final : public IDirect3DDevice8

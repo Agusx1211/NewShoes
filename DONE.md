@@ -8326,6 +8326,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       reduced `WasmD3D8.browserDrawIndexed.before` from 7.21 ms/frame to
       5.15/5.82 ms/frame. Wall time remained noisy rather than conclusively
       improved, so the broader heightmap performance item remains open.
+- [x] Cache native D3D8 bound-draw buffer checksums by buffer revision/range.
+      `wasm_d3d8_shim.cpp` now keeps a small per-buffer LRU for diagnostic
+      vertex/index checksums and invalidates it on non-empty buffer unlocks, so
+      `capture_bound_draw()` still publishes the same `last_draw_*_checksum`
+      values without re-hashing unchanged static ranges every draw. The real
+      frame JSON and `runtime_frame_profile.mjs` now report checksum-cache
+      hit/miss deltas beside the existing derived-state cache counters. Verified
+      with `git diff --check`, `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly run build:port:release`, a local SwiftShader
+      runtime profile with a visible shell-map screenshot, and Mac M4
+      Chrome/Metal release profiles (`dist-release`, 60 warmup + 60 measured
+      frames, engine profile enabled). The local run measured about 292
+      checksum hits/frame and 179 misses/frame. On M4, repeats measured about
+      391-395 checksum hits/frame, reduced
+      `WasmD3D8.DrawIndexedPrimitive.captureBound.before` from ~9.6 ms/frame to
+      0.27 ms/frame, and reduced tracked browser D3D8 work from 7.69-7.91
+      ms/frame to 0.66-2.93 ms/frame. End-to-end wall time stayed noisy
+      (41.78-45.31 ms/frame), so the next frontier is the remaining stall
+      outside this checksum bucket rather than disabling diagnostics.
 - [x] Split the D3D8 draw-state cache hash from per-object transforms.
       `wasm_d3d8_shim.cpp` now computes both the original full draw hash and a
       derived-state hash that excludes world/view/projection but still covers

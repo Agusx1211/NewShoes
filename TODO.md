@@ -2512,7 +2512,15 @@ and then start with the PROFILE, not with any individual fix.
       7.91 ms/frame; sampled profiles also reduced `browserDrawIndexed.before`
       from 7.21 to 5.15/5.82 ms/frame. Total wall time is still noisy/neutral,
       so keep this item open and continue from current profiles rather than
-      claiming the whole heightmap frontier is drained.
+      claiming the whole heightmap frontier is drained. A follow-up native
+      bound-draw checksum cache preserved diagnostics while making repeated
+      static buffer ranges revision-keyed cache hits. Mac M4 Chrome/Metal
+      release repeats reduced `WasmD3D8.DrawIndexedPrimitive.captureBound.before`
+      from ~9.6 ms/frame to 0.27 ms/frame, tracked browser D3D8 work from
+      7.69-7.91 ms/frame to 0.66-2.93 ms/frame, and buffer update time from
+      ~7.1 ms/frame to 0.52-2.77 ms/frame; total wall time was still noisy
+      (41.78-45.31 ms/frame), so continue profiling the next wall-time stall
+      instead of disabling diagnostics wholesale.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing
