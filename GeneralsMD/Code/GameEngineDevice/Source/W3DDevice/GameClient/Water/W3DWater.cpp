@@ -3013,7 +3013,7 @@ void WaterRenderObjClass::drawRiverWater(PolygonTrigger *pTrig)
 
 }
 
-void WaterRenderObjClass::setupFlatWaterShader(void) 
+void WaterRenderObjClass::setupFlatWaterShader(UnsignedInt textureFactor, Bool useTextureFactor)
 {
 
 	DX8Wrapper::Set_Texture(0,m_riverTexture);
@@ -3030,6 +3030,13 @@ void WaterRenderObjClass::setupFlatWaterShader(void)
 	m_riverTexture->Get_Filter().Set_Mip_Mapping(TextureFilterClass::FILTER_TYPE_BEST);
 
 	DX8Wrapper::Apply_Render_State_Changes();	//force update of view and projection matrices
+	if (useTextureFactor)
+	{
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_TEXTUREFACTOR, textureFactor);
+	}
+	UnsignedInt colorArg2 = useTextureFactor ? D3DTA_TFACTOR : D3DTA_DIFFUSE;
+	DX8Wrapper::Set_DX8_Texture_Stage_State(0, D3DTSS_COLORARG2, colorArg2);
+	DX8Wrapper::Set_DX8_Texture_Stage_State(0, D3DTSS_ALPHAARG2, colorArg2);
 
 	//Setup shroud to render in same pass as water
 	if (m_trapezoidWaterPixelShader)
@@ -3168,7 +3175,7 @@ DX8VertexBufferClass *WaterRenderObjClass::getFlatWaterVertexBuffer(Int vertexCo
 	if (vertexCount <= 0 || vertexCount > 0xffff)
 		return NULL;
 
-	m_flatWaterVertexBuffer=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZDUV2,(UnsignedShort)vertexCount,DX8VertexBufferClass::USAGE_DYNAMIC));
+	m_flatWaterVertexBuffer=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZUV2,(UnsignedShort)vertexCount,DX8VertexBufferClass::USAGE_DYNAMIC));
 	if (!m_flatWaterVertexBuffer)
 		return NULL;
 
@@ -3265,8 +3272,8 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 	if (!flatWaterVertexBuffer)
 		return;
 
-	VertexFormatXYZDUV2 *vb=NULL;
-	if (flatWaterVertexBuffer->Get_DX8_Vertex_Buffer()->Lock(0,vertexCount*sizeof(VertexFormatXYZDUV2),(unsigned char**)&vb,D3DLOCK_DISCARD) != D3D_OK)
+	VertexFormatXYZUV2 *vb=NULL;
+	if (flatWaterVertexBuffer->Get_DX8_Vertex_Buffer()->Lock(0,vertexCount*sizeof(VertexFormatXYZUV2),(unsigned char**)&vb,D3DLOCK_DISCARD) != D3D_OK)
 		return;
 	if (!vb)
 	{
@@ -3278,6 +3285,8 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 //#define FEATHER_LAYER_COUNT (3) //LORENZEN
 //#define FEATHER_LAYER_THICKNESS (2.5f)
 //#define FEATHER_WATER
+
+	UnsignedInt flatWaterDiffuse = (UnsignedInt)diffuse;
 
 //#ifdef WAVY_WATER // the NEW WATER a'la LORENZEN
 	if ( TheGlobalData->m_featherWater )
@@ -3300,7 +3309,7 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 		if ( TheGlobalData->m_featherWater == 1) Alpha = 255;
 
 		//Keep diffuse from lighting calculations but substitute custom alpha
-		Int customDiffuse = (diffuse & 0x00ffffff) | (Alpha<< 24);//(0x80 << 16)|(0x90 << 8)|0xa0;
+		flatWaterDiffuse = (diffuse & 0x00ffffff) | ((UnsignedInt)Alpha << 24);//(0x80 << 16)|(0x90 << 8)|0xa0;
 
 		for (j=0; j<vCount; j++)
 		{
@@ -3323,7 +3332,6 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 				wave = (sin(phase) - 1.0f) * amplitude;
 
 				vb->z = (vertex.Z + wave);
-				vb->diffuse = customDiffuse;
 				vb->u1 = (vertex.X/waterFactor) + 0.02*cos(11*m_riverVOrigin)*wave;
 				vb->v1 = (vertex.Y/waterFactor) + 0.02*cos(5*m_riverVOrigin)*wave;
 				vb->u2 = vertex.X/BUMP_SIZE;
@@ -3361,7 +3369,6 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 				vb->y=vertex.Y;
 				vb->z=vertex.Z;
 
-				vb->diffuse= diffuse;
 				//Old slower version
  				//vb->u1=(vertex.X/waterFactor) + 0.02*cos(11*m_riverVOrigin)*sin(25*m_riverVOrigin+vertex.X*PI/(4*MAP_XY_FACTOR));
  				//vb->v1=(vertex.Y/waterFactor) + 0.02*cos(5*m_riverVOrigin)*sin(25*m_riverVOrigin+vertex.Y*PI/(4*MAP_XY_FACTOR));
@@ -3388,7 +3395,7 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 	DX8Wrapper::Set_Index_Buffer(flatWaterIndexBuffer,0);
 	DX8Wrapper::Set_Vertex_Buffer(flatWaterVertexBuffer);
 
-	setupFlatWaterShader();// lorenzen sez use the alpha shader
+	setupFlatWaterShader(flatWaterDiffuse, TRUE);// lorenzen sez use the alpha shader
 
 	//If video card supports it and it's enabled, feather the water edge using destination alpha
 	if (DX8Wrapper::getBackBufferFormat() == WW3D_FORMAT_A8R8G8B8 && TheGlobalData->m_showSoftWaterEdge && TheWaterTransparency->m_transparentWaterDepth !=0)
@@ -3470,6 +3477,8 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4])
 		}
 	}
 	DX8Wrapper::_Get_D3D_Device8()->SetRenderState(D3DRS_CULLMODE, cull);
+	DX8Wrapper::Set_DX8_Texture_Stage_State(0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+	DX8Wrapper::Set_DX8_Texture_Stage_State(0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
 }
 
 

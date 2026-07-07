@@ -249,6 +249,7 @@ protected:
 	DX8IndexBufferClass *getFlatWaterIndexBuffer(Int uCount, Int vCount);
 	DX8VertexBufferClass *getFlatWaterVertexBuffer(Int vertexCount);
 	void drawTrapezoidWater(Vector3 points[4]);
+	void setupFlatWaterShader(UnsignedInt textureFactor=0xffffffff, Bool useTextureFactor=FALSE);
 	void loadSetting ( Setting *skySetting, TimeOfDay timeOfDay );	///<init sky/water settings from GDF
 	void renderSky(void);	///<draw the sky layer (clouds, stars, etc.)
 	void testCurvedWater(void);	///<draw the sky layer (clouds, stars, etc.)
@@ -260,7 +261,6 @@ protected:
 	///bounding box of frustum clipped polygon plane
 	Bool getClippedWaterPlane(CameraClass *cam, AABoxClass *box);
 
-	void setupFlatWaterShader(void);
 	void setupJbaWaterShader(void);
 	void cleanupJbaWaterShader(void);
 

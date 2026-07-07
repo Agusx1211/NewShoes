@@ -142,6 +142,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `bufferSubDataMs` dropped from 0.025 ms to 0.010 ms; dynamic shadow
       VB/IB producers moved from 29+29 updates / 23.3 KB + 11.7 KB to 1+1
       updates with the same exact byte payload.
+- [x] Move flat-water tint/alpha out of the dynamic vertex payload. The
+      flat-water branch in `drawTrapezoidWater()` now uploads no-diffuse
+      `DX8_FVF_XYZUV2` vertices and passes its constant per-draw diffuse/alpha
+      through `D3DRS_TEXTUREFACTOR` / `D3DTA_TFACTOR`. Mesh water, the
+      no-argument shader path, river, sky, shoreline, and water-track vertex
+      formats remain unchanged, and the flat-water draw restores stage-0
+      color/alpha args to `D3DTA_DIFFUSE` after its direct D3D8 cull restore.
+      Verified with `git diff --check`, `npm --prefix WebAssembly run
+      build:port`, `EXPECT_WASM=1 node harness/smoke.mjs`, `npm --prefix
+      WebAssembly run build:port:release`, and a Mac M4 Chrome/Metal producer
+      profile copied to
+      `WebAssembly/artifacts/perf/runtime-frame-profile-flat-water-xyzuv2-tfactor-mac.json`.
+      The Mac harness screenshot
+      `WebAssembly/artifacts/screenshots/runtime-frame-profile-flat-water-xyzuv2-tfactor-mac.png`
+      showed the shell-map water/shoreline/UI rendering normally. On Mac Metal,
+      total one-frame upload traffic dropped from 107.8 KB to 102.1 KB while
+      buffer updates stayed at 14, and `W3DWater.render.renderWater.before`
+      dropped from 47.4 KB to 41.4 KB.
 
 ## User-reported play bugs (2026-07-06 session)
 

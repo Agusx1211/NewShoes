@@ -225,13 +225,17 @@ shadow first-pass geometry now batches all visible dynamic shadow volumes into
 one VB upload and one IB upload when they fit the existing dynamic ring;
 `runtime-frame-profile-dynamic-shadow-batch-mac.json` measured 14 buffer
 updates, 107.8 KB uploaded, 0.010 ms `bufferSubDataMs`, and dynamic shadow
-VB/IB producers down to 1+1 updates / 23.3 KB + 11.7 KB. The next upload
+VB/IB producers down to 1+1 updates / 23.3 KB + 11.7 KB. A follow-up upload
+byte-reduction pass moved flat-water's constant tint/alpha out of the
+vertex payload: `runtime-frame-profile-flat-water-xyzuv2-tfactor-mac.json`
+measured 14 buffer updates, 102.1 KB uploaded, 0.010 ms `bufferSubDataMs`, and
+`W3DWater.render.renderWater.before` down to 41.4 KB. The next upload
 byte-reduction pass should start with the remaining leading byte producers
-(flat-water vertices, exact dynamic shadow bytes, and
-`W3DWaterTracks.flush.batchUnlock.before`) before broader JS-side
-`NOOVERWRITE`, orphaning, or checksum changes. The user-reported shadow
-flicker/breakage symptom is fixed in the live skirmish path, while broader
-shadow fidelity remains in the queued phased plan.
+(exact dynamic shadow bytes and `W3DWaterTracks.flush.batchUnlock.before`)
+before broader JS-side `NOOVERWRITE`, orphaning, checksum changes, or deeper
+flat-water shader/generated-UV work. The user-reported shadow flicker/breakage
+symptom is fixed in the live skirmish path, while broader shadow fidelity
+remains in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
@@ -2649,8 +2653,14 @@ and then start with the PROFILE, not with any individual fix.
       `runtime-frame-profile-dynamic-shadow-batch-mac.json` measured 14 buffer
       updates, 107.8 KB/frame uploaded, and dynamic shadow VB/IB producers down
       to 1+1 updates / 23.3 KB + 11.7 KB. Next concrete byte frontier:
-      flat-water vertices, exact dynamic shadow bytes, and water-track batch
-      unlock.
+      exact dynamic shadow bytes and water-track batch unlock. A follow-up
+      flat-water texture-factor pass moved constant flat-water tint/alpha out
+      of the vertex payload and narrowed the dynamic surface to `XYZUV2`:
+      `runtime-frame-profile-flat-water-xyzuv2-tfactor-mac.json` measured 14
+      buffer updates, 102.1 KB/frame uploaded, and
+      `W3DWater.render.renderWater.before` down to 41.4 KB. Further flat-water
+      byte reductions would need shader/generated-UV work or a custom packed
+      vertex format.
 - [ ] **Audit raw Direct3D stream/index binds before adding DX8Wrapper buffer
       identity caches**: water, snow, and shadow code call
       `SetStreamSource`/`SetIndices` directly on the D3D8 device, bypassing
