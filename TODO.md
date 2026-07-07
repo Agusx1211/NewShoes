@@ -266,8 +266,12 @@ use `uniform3f`/`uniform4f` instead of allocating temporary typed arrays for
 material, texture-factor, and fog color uploads; the follow-up
 `runtime-frame-profile-scalar-uniforms-mac.json` reduced sorted uniform setup
 again to 2.76 ms/frame and material uniforms from 0.65 to 0.22 ms/frame, with
-wall time still noise-flat. Broader shadow fidelity remains in the queued
-phased plan.
+wall time still noise-flat. `runtime-frame-profile-ui-split-mac.json` then
+split `W3DInGameUI::draw()` and showed the visible main-menu UI spikes are
+inside `TheWindowManager->winRepaint()`, not preDraw, hints, or postDraw; the
+next UI perf pass should split/reduce the window-manager repaint path while the
+other recurring spike remains projected-shadow mesh flush. Broader shadow
+fidelity remains in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`

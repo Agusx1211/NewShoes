@@ -52,6 +52,18 @@
 
 #include "Common/UnitTimings.h" //Contains the DO_UNIT_TIMINGS define jba.		 
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_note_engine_update_target(const char *name) __attribute__((weak));
+#define CNC_PORT_NOTE_W3D_INGAME_UI_STEP(name) \
+	do { \
+		if (cnc_port_note_engine_update_target) { \
+			cnc_port_note_engine_update_target(name); \
+		} \
+	} while (0)
+#else
+#define CNC_PORT_NOTE_W3D_INGAME_UI_STEP(name) do { } while (0)
+#endif
+
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -392,11 +404,17 @@ void W3DInGameUI::reset( void )
 //-------------------------------------------------------------------------------------------------
 void W3DInGameUI::draw( void )
 {
+	CNC_PORT_NOTE_W3D_INGAME_UI_STEP("W3DInGameUI.draw.preDraw.before");
 	preDraw();
+	CNC_PORT_NOTE_W3D_INGAME_UI_STEP("W3DInGameUI.draw.preDraw.after");
 
 	// draw selection region if drag selecting
 	if( m_isDragSelecting )
+	{
+		CNC_PORT_NOTE_W3D_INGAME_UI_STEP("W3DInGameUI.draw.selectionRegion.before");
 		drawSelectionRegion();
+		CNC_PORT_NOTE_W3D_INGAME_UI_STEP("W3DInGameUI.draw.selectionRegion.after");
+	}
 
 	// for each view draw hints
 	/// @todo should the UI be iterating through views like this?
@@ -404,6 +422,7 @@ void W3DInGameUI::draw( void )
 	{
 		View *view;
 
+		CNC_PORT_NOTE_W3D_INGAME_UI_STEP("W3DInGameUI.draw.viewHints.before");
 		for( view = TheDisplay->getFirstView();
 				 view;
 				 view = TheDisplay->getNextView( view ) )
@@ -419,6 +438,7 @@ void W3DInGameUI::draw( void )
 			drawPlaceAngle( view );
 
 		}  // end for view
+		CNC_PORT_NOTE_W3D_INGAME_UI_STEP("W3DInGameUI.draw.viewHints.after");
 
 	}  // end if
 
@@ -434,9 +454,13 @@ void W3DInGameUI::draw( void )
 	if (!g_UT_startTiming)
 #endif
 
+	CNC_PORT_NOTE_W3D_INGAME_UI_STEP("W3DInGameUI.draw.postDraw.before");
 	postDraw();
+	CNC_PORT_NOTE_W3D_INGAME_UI_STEP("W3DInGameUI.draw.postDraw.after");
 
+	CNC_PORT_NOTE_W3D_INGAME_UI_STEP("W3DInGameUI.draw.windowRepaint.before");
 	TheWindowManager->winRepaint();
+	CNC_PORT_NOTE_W3D_INGAME_UI_STEP("W3DInGameUI.draw.windowRepaint.after");
 	
 #ifdef EXTENDED_STATS
 	}

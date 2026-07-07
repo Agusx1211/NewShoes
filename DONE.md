@@ -77,6 +77,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Split W3D in-game UI draw profiling down to the window repaint phase.
+      `W3DInGameUI::draw()` now emits profile markers around preDraw, selection
+      region, view hints, postDraw, and `TheWindowManager->winRepaint()`,
+      without changing UI behavior. Verified with `git diff --check`,
+      `npm --prefix WebAssembly run build:port:release`, syncing the rebuilt
+      `dist-release` bundle to the Mac, and a Mac M4/Metal profile copied to
+      `runtime-frame-profile-ui-split-mac.json` with a visible shell-map/menu
+      screenshot. The split showed the current visible main-menu UI spikes are
+      in `W3DInGameUI.draw.windowRepaint.before` (the repaint call), while
+      preDraw, view hints, and postDraw are not the hot path. The same profile
+      still shows projected-shadow mesh flush as the other recurring spike.
+
 - [x] Avoid transient typed arrays for scalar D3D8 color uniforms. Material
       colors, scene ambient, texture factor, and fog color now use direct
       `uniform4f` / `uniform3f` uploads instead of allocating a new
