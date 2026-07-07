@@ -77,6 +77,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Keep D3D8 transform uniforms cached across non-transformed draws. The
+      browser D3D8 bridge no longer resets the world/view/projection uniform
+      cache when a draw uses screen-space or otherwise non-transformed
+      positions. Those uniforms are unused for `XYZRHW`/UI draws but remain
+      current in WebGL, so the next world-space draw can reuse the last uploaded
+      matrices unless a program change or explicit D3D8 state invalidation
+      resets the cache. Verified with `node --check WebAssembly/harness/bridge.js`,
+      `git diff --check`, `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`,
+      and synced Mac M4/Metal release harness runs. The before/after profiles
+      `runtime-frame-profile-rhw-shadow-fixed-mac.json` and
+      `runtime-frame-profile-transform-cache-mac.json` reported Apple M4 Metal
+      and reduced sorted draw profiled bridge work from 11.45 to 8.79 ms/frame,
+      with transform-uniform subtime down from 2.70 to 1.80 ms/frame and
+      wall time from 24.80 to 24.13 ms/frame over 60 measured
+      `realEngineFrameTick` frames. The screenshot
+      `runtime-frame-profile-transform-cache-mac.png` shows the shell map/menu
+      intact, and `skirmish-shadow-transform-cache.json` /
+      `skirmish-shadow-transform-cache.png` reached active Tournament Desert
+      gameplay with the expected pretransformed stencil mask/composite draws
+      and visible structure/unit shadows.
+
 - [x] Remove the per-draw texture-transform recopy in the D3D8 bridge. The
       native EM_JS draw payload cache still owns copied texture transform
       matrices for LRU safety, but it now stores those copies as

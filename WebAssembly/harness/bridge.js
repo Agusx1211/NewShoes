@@ -10312,9 +10312,9 @@ function paintD3D8DrawIndexed(payload = {}) {
         gl.uniformMatrix4fv(bridgeProgram.projection, false, projection);
         rememberD3D8ProjectionTransformUniform(projection);
       }
-    } else {
-      resetD3D8TransformUniformCache();
     }
+    // Non-transformed draws leave these uniforms unused but still current.
+    // Keep the cache hot for the next transformed world-space draw.
     recordSortedDrawSubphase?.("sortedDrawTransformUniformMs");
     harnessState.graphics.lastD3D8StateHash = stateHash;
     if (d3d8PointSpriteUniformsEqual(d3d8LastPointSpriteUniformInfo, appliedPointSprite)) {

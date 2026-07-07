@@ -248,8 +248,14 @@ remaining byte-tail producers (exact dynamic shadow bytes and
 `W3DWaterTracks.flush.batchUnlock.before`). The user-reported live-skirmish
 shadow absence/flicker symptoms are fixed in the multi-frame Mac release path:
 stencil volume passes and the `XYZRHW` shadow composite are now captured as
-visible active-gameplay draws. Broader shadow fidelity remains in the queued
-phased plan.
+visible active-gameplay draws. A follow-up bridge cache pass now keeps
+world/view/projection uniforms hot across non-transformed `XYZRHW` draws
+instead of forcing the next world-space draw to re-upload them; the Mac M4/Metal
+release profile `runtime-frame-profile-transform-cache-mac.json` reduced sorted
+draw profiled bridge work from 11.45 to 8.79 ms/frame and transform-uniform
+subtime from 2.70 to 1.80 ms/frame while preserving shell-map and active
+skirmish screenshots. Broader shadow fidelity remains in the queued phased
+plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
