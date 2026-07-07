@@ -474,18 +474,33 @@ symptom is temporal — NOT a single still.
       draw-side frontier (browserDrawIndexed per-draw scaffolding, projected
       shadow flush, shoreline) and land the structural per-frame draw command
       buffer rather than only per-uniform/per-subsystem caching.
-- [ ] **Skirmish enemy AI never activates (and enemy base is white)** — in a
-      real skirmish the enemy base exists but shows **no activity at all** (no
-      unit production, no building, no attacks) and its structures render
-      **all white**. Two likely-separate faults observed together: (a) the AI
-      player is not taking any actions — check that the skirmish AI player is
-      created with a real `AIPlayer`/skirmish personality and that its
-      per-frame `AIPlayer::update`/build-plan/script path actually runs (not a
-      stub), and that difficulty/side setup wired it; (b) the "all white"
-      structures are a texture/team-color render bug (house-color remap or
-      missing texture bind) — related to the known white-units render issue.
-      Verify AI with state (enemy `objectCount`/production over many frames) and
-      white-base with a screenshot on the release build.
+- [ ] **Skirmish AI is entirely disabled by a build flag (ROOT CAUSE FOUND —
+      not player-setup tuning).** In a real skirmish the enemy does nothing (no
+      production/building/attacks); Codex confirmed object count is flat over
+      600 frames. This is NOT a per-player setup bug — the whole AI update is
+      compiled out: under `WASM_REAL_INI_AI_METADATA_ONLY` (defined in the
+      build, `WebAssembly/CMakeLists.txt:3412`), `AI::update()` is a literal
+      `return;` (`GameLogic/AI/AI.cpp:373`) so `ThePlayerList->UPDATE()` — the
+      call that ticks every player's `Player::update()` → `m_ai->update()`
+      brain — never runs, and `m_pathfinder` is `NULL` (`AI.cpp:314`) so no
+      unit can path. The players/AISkirmishPlayers ARE created correctly; the
+      system that ticks them is stubbed. This was a boot-time stub because the
+      AI's hard dependency, the **Pathfinder**, was not ported. Real work
+      (milestone-sized, NOT a tweak — the TODO "AI behavior tuning" note badly
+      undersells it): (1) port/enable the real `Pathfinder`
+      (`m_pathfinder = NEW Pathfinder`) and make it work in wasm — the
+      load-bearing prerequisite; (2) remove the `AI::update()` `return;` stub so
+      `processPathfindQueue()` + `ThePlayerList->UPDATE()` run; (3) parse
+      `AIData.ini` fully (drop `WASM_REAL_INI_AI_METADATA_ONLY`) so the skirmish
+      AI has its real tuning values — `AISkirmishPlayer` reads
+      `TheAI->getAiData()->m_*` (build cadence, resource thresholds,
+      `m_forceSkirmishAI`) for every decision. Verify with enemy
+      `objectCount`/production growth over many frames on the release build.
+- [ ] **Skirmish structures render all white (team-color/texture bug)** — the
+      enemy base structures show up **all white** (separate from the AI being
+      off — two bugs seen together). Likely a house-color/team-color remap not
+      applied or a missing texture bind for those objects — related to the known
+      white-units render issue. Verify with a screenshot on the release build.
 - [ ] **Skirmish loading screen missing its art** — the multiplayer/skirmish
       load screen shows no map preview image, no general/side portrait, etc.
       (blank/placeholder instead of the real load-screen art). Trace the
