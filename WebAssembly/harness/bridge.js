@@ -5414,12 +5414,33 @@ function textureHasCompleteMipChain(resource) {
   if (!resource || resource.levels <= 1) {
     return false;
   }
+  if (typeof resource.completeMipChain === "boolean") {
+    return resource.completeMipChain;
+  }
   for (let level = 0; level < resource.levels; ++level) {
     if (!resource.initializedLevels.has(String(level))) {
       return false;
     }
   }
   return true;
+}
+
+function updateD3D8TextureMipCompleteness(resource) {
+  if (!resource) {
+    return false;
+  }
+  let complete = false;
+  if (resource.levels > 1 && resource.initializedLevels?.size >= resource.levels) {
+    complete = true;
+    for (let level = 0; level < resource.levels; ++level) {
+      if (!resource.initializedLevels.has(String(level))) {
+        complete = false;
+        break;
+      }
+    }
+  }
+  resource.completeMipChain = complete;
+  return complete;
 }
 
 function d3d8SamplerStateMatches(resource, {
@@ -5442,6 +5463,43 @@ function d3d8SamplerStateMatches(resource, {
     key.maxLevel === maxLevel &&
     key.lodBiasBits === lodBiasBits &&
     key.completeMipChain === (completeMipChain ? 1 : 0);
+}
+
+function captureD3D8TextureSamplerRawKey(textureStage, resource, samplerParams = null) {
+  if (!resource?.texture || !textureStage) {
+    return null;
+  }
+  return {
+    minFilter: Number(textureStage.minFilter ?? 0) >>> 0,
+    magFilter: Number(textureStage.magFilter ?? 0) >>> 0,
+    mipFilter: Number(textureStage.mipFilter ?? 0) >>> 0,
+    addressU: Number(textureStage.addressU ?? 0) >>> 0,
+    addressV: Number(textureStage.addressV ?? 0) >>> 0,
+    maxMipLevel: Number(textureStage.maxMipLevel ?? 0) >>> 0,
+    mipMapLodBias: Number(textureStage.mipMapLodBias ?? 0) >>> 0,
+    levelCount: Math.max(1, Number(resource.levels ?? 1) >>> 0),
+    completeMipChain: (samplerParams?.completeMipChain ?? textureHasCompleteMipChain(resource)) ? 1 : 0,
+  };
+}
+
+function d3d8TextureSamplerRawStateCurrent(textureStage, resource) {
+  const key = resource?.samplerD3DStateKey;
+  if (!resource?.samplerState || !resource?.texture || !textureStage || !key) {
+    return false;
+  }
+  const levelCount = Math.max(1, Number(resource.levels ?? 1) >>> 0);
+  const completeMipChain = textureHasCompleteMipChain(resource) ? 1 : 0;
+  return Boolean(
+    key.minFilter === (Number(textureStage.minFilter ?? 0) >>> 0) &&
+    key.magFilter === (Number(textureStage.magFilter ?? 0) >>> 0) &&
+    key.mipFilter === (Number(textureStage.mipFilter ?? 0) >>> 0) &&
+    key.addressU === (Number(textureStage.addressU ?? 0) >>> 0) &&
+    key.addressV === (Number(textureStage.addressV ?? 0) >>> 0) &&
+    key.maxMipLevel === (Number(textureStage.maxMipLevel ?? 0) >>> 0) &&
+    key.mipMapLodBias === (Number(textureStage.mipMapLodBias ?? 0) >>> 0) &&
+    key.levelCount === levelCount &&
+    key.completeMipChain === completeMipChain
+  );
 }
 
 function d3d8TextureSamplerParams(textureStage, resource) {
@@ -5563,6 +5621,7 @@ function applyD3D8TextureSamplerToBoundTexture(stage, textureStage, resource, pa
     lodBiasBits,
     completeMipChain: completeMipChain ? 1 : 0,
   };
+  resource.samplerD3DStateKey = captureD3D8TextureSamplerRawKey(textureStage, resource, samplerParams);
   d3d8TextureStats.samplerApplications += 1;
   d3d8TextureStats.lastSampler = applied;
   updateD3D8TextureSummary();
@@ -6293,16 +6352,21 @@ function ensureD3D8DrawTexture2D(stage, textureStage, resource) {
     return null;
   }
   const unit = Number(stage) >>> 0;
-  const samplerParams = d3d8TextureSamplerParams(textureStage, resource);
   const textureBound = d3d8CurrentTexture2DBindings.get(unit) === resource.texture;
-  const samplerCurrent = d3d8TextureSamplerStateCurrent(textureStage, resource, samplerParams);
-  if (textureBound && samplerCurrent) {
+  const rawSamplerCurrent = d3d8TextureSamplerRawStateCurrent(textureStage, resource);
+  if (textureBound && rawSamplerCurrent) {
     d3d8PerfStats.drawTextureBindCacheHits += 1;
     d3d8PerfStats.drawTextureSamplerCacheHits += 1;
     return resource.samplerState;
   }
 
   bindD3D8DrawTexture2D(unit, resource);
+  if (rawSamplerCurrent) {
+    d3d8PerfStats.drawTextureSamplerCacheHits += 1;
+    return resource.samplerState;
+  }
+  const samplerParams = d3d8TextureSamplerParams(textureStage, resource);
+  const samplerCurrent = d3d8TextureSamplerStateCurrent(textureStage, resource, samplerParams);
   if (samplerCurrent) {
     d3d8PerfStats.drawTextureSamplerCacheHits += 1;
     return resource.samplerState;
@@ -6484,9 +6548,11 @@ function createD3D8Texture(payload = {}) {
     depth: 1,
     initializedLevels: new Set(),
     levelFormats: new Map(),
+    completeMipChain: false,
     uploads: 0,
     samplerState: null,
     samplerStateKey: null,
+    samplerD3DStateKey: null,
   };
   d3d8Textures.set(id, resource);
   d3d8TextureStats.creates += 1;
@@ -6572,6 +6638,7 @@ function ensureD3D8DepthTextureStorage(resource) {
       resource.rtAllocated = true;
       resource.initializedLevels.add("0");
       resource.levelFormats.set("0", info.storage);
+      updateD3D8TextureMipCompleteness(resource);
       resource.storage = info.storage;
     }
   });
@@ -6840,9 +6907,11 @@ function createD3D8VolumeTexture(payload = {}) {
     type: "volume",
     initializedLevels: new Set(),
     levelFormats: new Map(),
+    completeMipChain: false,
     uploads: 0,
     samplerState: null,
     samplerStateKey: null,
+    samplerD3DStateKey: null,
   };
   d3d8Textures.set(id, resource);
   d3d8TextureStats.creates += 1;
@@ -6999,6 +7068,7 @@ function updateD3D8Texture(payload = {}) {
       }
       resource.initializedLevels.add(levelKey);
       resource.levelFormats.set(levelKey, info.storage);
+      updateD3D8TextureMipCompleteness(resource);
     } else {
       if (info.compressed && !info.dxtDecode) {
         gl.compressedTexImage2D(gl.TEXTURE_2D, level, info.internalFormat, width, height, 0, uploadBytes);
@@ -7180,6 +7250,7 @@ function updateD3D8VolumeTexture(payload = {}) {
       }
       resource.initializedLevels.add(levelKey);
       resource.levelFormats.set(levelKey, info.storage);
+      updateD3D8TextureMipCompleteness(resource);
     } else {
       gl.texSubImage3D(gl.TEXTURE_3D, level, x, y, z, width, height, depth,
         info.format, info.type, uploadBytes);

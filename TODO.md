@@ -410,6 +410,18 @@ key every draw. Mac M4/Metal release repeats
 screenshot correct and moved `sortedDrawViewportMs` from 0.271 ms/frame to
 0.235 and 0.244 ms/frame. A focused Mac `d3d8Viewport` RPC also kept the
 sub-rect viewport, scissor box, and `[0.25, 0.75]` depth range exact.
+A follow-up sampler raw-hit pass keeps a raw D3D sampler-state key plus cached
+mip-chain completeness on texture resources, so repeated sampled draws that
+already have the right texture bound skip GL sampler-parameter resolution before
+confirming the sampler cache hit. The Mac M4/Metal release profile
+`runtime-frame-profile-sampler-raw-final-mac.json` kept the shell-map screenshot
+correct and moved `sortedDrawTextureBindMs` from 0.1874 to 0.1682 ms/frame;
+the top texture-bind rows also moved down (`HeightMap.tilePasses.tileDraw.before`
+0.1087 -> 0.0990, `SortingRenderer.pool.draw.submit.before` 0.0364 -> 0.0290,
+and `DX8MeshRenderer.flush.rigid.before` 0.0225 -> 0.0166 ms/frame). Focused
+Mac `d3d8TexturedQuad` / `d3d8TwoTextureQuad` RPCs preserved the exact sampler
+states and expected red / blue center pixels. This is a narrow JS draw-scaffold
+cleanup, not a frontier shift.
 The remaining draw-side leaders are still `SortingRenderer.pool.draw.submit.before`,
 `HeightMap.tilePasses.tileDraw.before`, `DX8MeshRenderer.flush.rigid.before`,
 volumetric shadow draws, and the structural per-frame draw command buffer. Do
@@ -420,8 +432,9 @@ cache misses, vertex-attrib/VAO key strings, the reverted shadow world-batch
 replay, projected-shadow receiver per-polygon clipping, or depth/stencil-only
 texture-probe setup unless a new profile makes it hot and the fix passes a real
 multi-frame skirmish shadow screenshot/state check. Do not revisit viewport
-normalization/key construction unless a new profile shows it regressed. Broader
-shadow fidelity remains in the queued phased plan.
+normalization/key construction or raw sampler-state/mip-completeness checks
+unless a new profile shows them regressed. Broader shadow fidelity remains in
+the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`

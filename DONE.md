@@ -414,6 +414,30 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       0.235 and 0.244 ms/frame; wall time stayed noise-bound at
       48.08/48.51 ms/frame.
 
+- [x] Fast-path repeated D3D8 sampler hits before resolving GL sampler
+      parameters. Texture resources now cache raw D3D sampler-state fields plus
+      mip-chain completeness, and mip completeness is updated when texture levels
+      are allocated/uploaded. `ensureD3D8DrawTexture2D()` checks that raw key on
+      sampled draw cache hits, so draws with the same D3D stage state and the
+      same bound texture skip rebuilding the resolved GL sampler params before
+      counting the sampler cache hit. Misses still use the existing
+      `d3d8TextureSamplerParams()` and `texParameteri` application path.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `git diff --check`, and focused Mac M4/Metal `d3d8TexturedQuad` /
+      `d3d8TwoTextureQuad` RPCs. The focused probe kept the renderer on
+      `ANGLE Metal Renderer: Apple M4`, preserved stage-0 linear/nearest sampler
+      state with a red center pixel `[255,0,0,255]`, and preserved two-stage
+      nearest sampler state with a blue center pixel `[0,0,255,255]`. The Mac
+      Chrome/Metal release profile
+      `WebAssembly/artifacts/perf/runtime-frame-profile-sampler-raw-final-mac.json`
+      kept the shell-map screenshot correct
+      (`runtime-frame-profile-sampler-raw-final-mac.png`) and moved
+      `sortedDrawTextureBindMs` from 0.1874 to 0.1682 ms/frame; the leading
+      texture-bind rows also moved down:
+      `HeightMap.tilePasses.tileDraw.before` 0.1087 -> 0.0990,
+      `SortingRenderer.pool.draw.submit.before` 0.0364 -> 0.0290, and
+      `DX8MeshRenderer.flush.rigid.before` 0.0225 -> 0.0166 ms/frame.
+
 - [x] Cache draw-time WebGL texture binding/sampler state in the D3D8 bridge.
       `bridge.js` now tracks the actual WebGL active texture unit plus per-unit
       2D/3D bindings, preserves/invalidates that cache around direct texture
