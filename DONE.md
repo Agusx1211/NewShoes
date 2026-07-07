@@ -77,6 +77,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Remove per-draw harness bookkeeping from the lite D3D8 draw hot path.
+      Draw-time canvas sync now skips the no-op pending-batch flush and avoids
+      rebuilding `harnessState.graphics` when the canvas size did not change,
+      while snapshots and perf RPCs still publish fresh D3D8 summaries on
+      demand. Lite draws also stop rebuilding the full `d3d8PerfSummary()`
+      object after every draw.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`, and synced Mac
+      M4/Metal release profiles copied to
+      `runtime-frame-profile-draw-hotpath-light-sync-mac.json` /
+      `runtime-frame-profile-draw-hotpath-light-sync-mac.png`. Compared with
+      the same-session producer-attributed baseline
+      `runtime-frame-profile-buffer-producers-current-mac.json`, the
+      draw-time viewport/bookkeeping bucket dropped from 0.657 to
+      0.238 ms/frame. Overall frame averages remained dominated by intermittent
+      display-string/world-uniform, draw-call, road, and water driver stalls, so
+      this retires stale JS bookkeeping rather than changing the primary
+      frontier.
+
 - [x] Split transform-uniform profiling and remove per-miss transform snapshot
       allocations. The browser D3D8 perf summary and `runtime_frame_profile.mjs`
       now break `sortedDrawTransformUniformMs` into matrix compare, world, view,

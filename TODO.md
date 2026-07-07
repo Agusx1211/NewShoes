@@ -312,8 +312,16 @@ only 0.065 ms/frame while world-matrix uniform upload dominates at
 `Float32Array` allocations, but `runtime-frame-profile-transform-snapshot-mac.json`
 kept world upload in the same band (0.859 ms/frame), so the transform frontier
 is driver-side world `uniformMatrix4fv` frequency/stalls or reducing the number
-of world-space submissions, not JS matrix comparison/allocation. Broader shadow fidelity
-remains in the queued phased plan.
+of world-space submissions, not JS matrix comparison/allocation. A follow-up
+draw-hot-path pass removed stale per-draw canvas/perf-summary bookkeeping from
+lite D3D8 draws; `runtime-frame-profile-draw-hotpath-light-sync-mac.json`
+reduced the viewport/bookkeeping bucket from 0.657 to 0.238 ms/frame, but
+overall averages stayed dominated by intermittent display-string/world-uniform,
+draw-call, road, and water driver stalls. The next PERF pass should attack
+those remaining driver stalls or reduce world-space submissions, not material,
+light, text-geometry, first-vertex VAO setup, transform comparison/allocation,
+or draw-time harness bookkeeping. Broader shadow fidelity remains in the queued
+phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`

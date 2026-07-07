@@ -2873,9 +2873,12 @@ function refreshCanvasState(displaySize = getCanvasDisplaySize()) {
 }
 
 function syncCanvasSize(options = {}) {
-  flushD3D8PendingDrawBatch("syncCanvasSize");
+  if (options.flushPending !== false) {
+    flushD3D8PendingDrawBatch("syncCanvasSize");
+  }
   const displaySize = getCanvasDisplaySize();
   const restoreViewport = options.restoreViewport !== false;
+  const refreshState = options.refreshState !== false;
   let resized = false;
   if (canvas.width !== displaySize.width || canvas.height !== displaySize.height) {
     canvas.width = displaySize.width;
@@ -2887,7 +2890,9 @@ function syncCanvasSize(options = {}) {
   } else if (resized) {
     invalidateD3D8AppliedViewportCache();
   }
-  refreshCanvasState(displaySize);
+  if (refreshState || resized) {
+    refreshCanvasState(displaySize);
+  }
 }
 
 function finiteNumber(value, fallback) {
@@ -9795,7 +9800,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   let vertexDiagnostics = null;
   let drawOk = false;
   const collectDrawDiagnostics = d3d8DiagLevel === "full";
-  syncCanvasSize({ restoreViewport: false });
+  syncCanvasSize({ restoreViewport: false, refreshState: false, flushPending: false });
   appliedViewport = applyD3D8Viewport("draw");
   appliedPointSprite = d3d8PointSpriteInfo(renderState, payload.primitiveType, appliedViewport);
   recordSortedDrawPhase?.("sortedDrawViewportMs");
@@ -10568,7 +10573,6 @@ function paintD3D8DrawIndexed(payload = {}) {
     recordSortedDrawPhase?.("sortedDrawTailMs");
     d3d8PerfStats.sortedDrawProfiledMs += sortedDrawProfiled ? perfNow() - sortedDrawStartedAt : 0;
     harnessState.graphics.d3d8DrawIndexedSequence = drawSequence;
-    harnessState.graphics.d3d8Perf = d3d8PerfSummary();
     return drawOk ? 1 : 0;
   }
 
@@ -10820,7 +10824,6 @@ function paintD3D8DrawIndexed(payload = {}) {
   };
   recordSortedDrawPhase?.("sortedDrawTailMs");
   d3d8PerfStats.sortedDrawProfiledMs += sortedDrawProfiled ? perfNow() - sortedDrawStartedAt : 0;
-  harnessState.graphics.d3d8Perf = d3d8PerfSummary();
   return drawOk ? 1 : 0;
 }
 
