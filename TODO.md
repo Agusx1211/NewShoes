@@ -261,8 +261,13 @@ buffer-upload, and vertex-attribute stall patterns. Using that diagnostic, the
 bridge now skips the unused `uClipPlanes` array upload when the effective clip
 mask is zero; `runtime-frame-profile-clipplane-skip-mac.json` reduced sorted
 uniform setup from 4.96 to 3.34 ms/frame and base-uniform setup from 1.09 to
-0.41 ms/frame in the Mac M4/Metal release profile, with wall time noise-flat.
-Broader shadow fidelity remains in the queued phased plan.
+0.41 ms/frame in the Mac M4/Metal release profile. Scalar color uniforms now
+use `uniform3f`/`uniform4f` instead of allocating temporary typed arrays for
+material, texture-factor, and fog color uploads; the follow-up
+`runtime-frame-profile-scalar-uniforms-mac.json` reduced sorted uniform setup
+again to 2.76 ms/frame and material uniforms from 0.65 to 0.22 ms/frame, with
+wall time still noise-flat. Broader shadow fidelity remains in the queued
+phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`

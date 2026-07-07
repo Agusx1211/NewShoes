@@ -8196,6 +8196,14 @@ function d3d8NumericArrayEquals(left, right) {
   return true;
 }
 
+function setD3D8Uniform3FromArray(location, values) {
+  gl.uniform3f(location, values[0], values[1], values[2]);
+}
+
+function setD3D8Uniform4FromArray(location, values) {
+  gl.uniform4f(location, values[0], values[1], values[2], values[3]);
+}
+
 function resetD3D8TransformUniformCache() {
   d3d8LastTransformUniformWorld = null;
   d3d8LastTransformUniformView = null;
@@ -10103,19 +10111,19 @@ function paintD3D8DrawIndexed(payload = {}) {
       } else {
         d3d8PerfStats.drawMaterialUniformCacheMisses += 1;
         if (bridgeProgram.sceneAmbient) {
-          gl.uniform4fv(bridgeProgram.sceneAmbient, new Float32Array(appliedRenderState.ambient.rgba));
+          setD3D8Uniform4FromArray(bridgeProgram.sceneAmbient, appliedRenderState.ambient.rgba);
         }
         if (bridgeProgram.materialDiffuse) {
-          gl.uniform4fv(bridgeProgram.materialDiffuse, new Float32Array(material.diffuse));
+          setD3D8Uniform4FromArray(bridgeProgram.materialDiffuse, material.diffuse);
         }
         if (bridgeProgram.materialAmbient) {
-          gl.uniform4fv(bridgeProgram.materialAmbient, new Float32Array(material.ambient));
+          setD3D8Uniform4FromArray(bridgeProgram.materialAmbient, material.ambient);
         }
         if (bridgeProgram.materialSpecular) {
-          gl.uniform4fv(bridgeProgram.materialSpecular, new Float32Array(material.specular));
+          setD3D8Uniform4FromArray(bridgeProgram.materialSpecular, material.specular);
         }
         if (bridgeProgram.materialEmissive) {
-          gl.uniform4fv(bridgeProgram.materialEmissive, new Float32Array(material.emissive));
+          setD3D8Uniform4FromArray(bridgeProgram.materialEmissive, material.emissive);
         }
         if (bridgeProgram.materialPower) {
           gl.uniform1f(bridgeProgram.materialPower, material.power);
@@ -10183,8 +10191,10 @@ function paintD3D8DrawIndexed(payload = {}) {
       } else {
         d3d8PerfStats.drawStageUniformCacheMisses += 1;
         if (bridgeProgram.textureFactor) {
-          gl.uniform4fv(bridgeProgram.textureFactor,
-            new Float32Array(d3dColorToNormalizedRgba(renderState.textureFactor)));
+          setD3D8Uniform4FromArray(
+            bridgeProgram.textureFactor,
+            d3dColorToNormalizedRgba(renderState.textureFactor),
+          );
         }
         if (bridgeProgram.stage0ColorOp) {
           gl.uniform1i(bridgeProgram.stage0ColorOp, renderState.textureStages[0].colorOp);
@@ -10261,7 +10271,7 @@ function paintD3D8DrawIndexed(payload = {}) {
           gl.uniform1i(bridgeProgram.fogRangeEnabled, appliedRenderState.fog.rangeEnabled ? 1 : 0);
         }
         if (bridgeProgram.fogColor) {
-          gl.uniform3fv(bridgeProgram.fogColor, new Float32Array(appliedRenderState.fog.color));
+          setD3D8Uniform3FromArray(bridgeProgram.fogColor, appliedRenderState.fog.color);
         }
         if (bridgeProgram.fogStart) {
           gl.uniform1f(bridgeProgram.fogStart, appliedRenderState.fog.start);

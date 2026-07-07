@@ -77,6 +77,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Performance / profiling (2026-07-07 session)
 
+- [x] Avoid transient typed arrays for scalar D3D8 color uniforms. Material
+      colors, scene ambient, texture factor, and fog color now use direct
+      `uniform4f` / `uniform3f` uploads instead of allocating a new
+      `Float32Array` for each scalar color uniform miss. Array uniforms for
+      fixed-function lights and clip planes remain on the typed-array path.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `git diff --check`, `EXPECT_WASM=1 node WebAssembly/harness/smoke.mjs`
+      (logged to `artifacts/perf/smoke-scalar-uniforms.stdout.log`, covering
+      material/source/fog/texture-factor probes), and a synced Mac M4/Metal
+      release profile copied to `runtime-frame-profile-scalar-uniforms-mac.json`.
+      The Mac screenshot kept the shell map/menu intact; sorted uniform setup
+      fell from 3.34 to 2.76 ms/frame vs the prior clip-plane-skip run, with
+      material uniform setup down from 0.65 to 0.22 ms/frame and wall time
+      still noise-flat.
+
 - [x] Add per-slowest-frame browser D3D8 attribution and skip unused clip-plane
       uniform uploads. `runtime_frame_profile.mjs` now has opt-in
       `PERF_PROFILE_SAMPLE_BROWSER=1`, which records per-sample browser D3D8
