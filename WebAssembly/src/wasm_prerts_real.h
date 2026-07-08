@@ -70,6 +70,41 @@ inline int iswascii(wint_t c)
 	return c >= 0 && c <= 0x7f;
 }
 
+// ---------------------------------------------------------------------------
+// Normalizing fopen for the real-engine TUs.
+//
+// The save-game path (GameState::getSaveDirectory / XferSave / XferLoad) builds
+// paths with Win32 backslash separators, e.g.
+//   "/home/web_user\\Command and Conquer Generals Zero Hour Data\\Save\\00000000.sav"
+// and passes them straight to fopen(). A real Win32 CRT tolerates '\\'; the
+// Emscripten/POSIX libc treats '\\' as an ordinary filename character, so the
+// open fails and the whole save/load path breaks. The engine's other file
+// primitives already normalize backslashes at the platform seam (see
+// shims/io.h WasmIoOpen/WasmIoAccess); this mirrors that for the C stdio
+// fopen used by the Xfer disk layer. Path characters other than '\\' are
+// untouched, so forward-slash paths are a no-op. This is a platform re-target,
+// not a change to any save logic or file format.
+#ifdef __cplusplus
+#include <cstdio>
+static inline std::FILE *WasmRealFopenNormalized(const char *path, const char *mode)
+{
+	if (path == nullptr) {
+		return std::fopen(path, mode);
+	}
+	std::string normalized(path);
+	for (char &ch : normalized) {
+		if (ch == '\\') {
+			ch = '/';
+		}
+	}
+	return std::fopen(normalized.c_str(), mode);
+}
+
+#ifndef fopen
+#define fopen(path, mode) WasmRealFopenNormalized((path), (mode))
+#endif
+#endif
+
 #include "Lib/BaseType.h"
 #include "Common/GameType.h"
 #include "Common/STLTypedefs.h"

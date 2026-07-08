@@ -473,6 +473,45 @@ QUEUED other: shadows phased plan (blob→stencil→shaders fidelity polish), re
 
 Dev-box render-verify: symlink worktree `dist/` → main's built `dist/` renders JS-only fixes without the Mac (~4min boot).
 
+## Save / Load (in-game save games)
+
+The real engine's save/load system is reused as-is: `GameState::saveGame` /
+`loadGame` (`Common/System/SaveGame/GameState.cpp`) drive the Xfer/Snapshot
+serialization (`XferSave`/`XferLoad`) over the original `.sav` block format;
+the UI is the real `PopupSaveLoad.cpp` reached from in-game ESC/Options →
+`QuitMenu` → `ButtonSaveLoad`. Two browser-port gaps were fixed:
+
+- [x] **Persist save games across page reload (IDBFS).** The engine wrote
+      `.sav` files to volatile MEMFS, so they vanished on reload. Now `-lidbfs.js`
+      is linked into `cnc-port` and `bridge.js` mounts IDBFS on the user-data
+      directory (`/home/web_user/Command and Conquer Generals Zero Hour Data`) in
+      `preRun`, `syncfs(true)` before boot, and auto-`syncfs(false)` on
+      visibilitychange/pagehide/beforeunload + a 5s interval. HOME is pinned so
+      `getPath_UserData()` is deterministic JS-side. Added `persistSaves` /
+      `listSaves` RPCs (and `window.CnCPort.persistSaves/listSaves`). No change to
+      the Xfer logic or the `.sav` format.
+- [x] **Fix backslash save paths reaching `fopen`.** `XferSave`/`XferLoad`
+      `open()` call `fopen()` directly with Win32 backslash paths
+      (`.../Save\00000000.sav`); Emscripten libc treats `\` as a literal filename
+      char, so every save/load `fopen` failed. `_open`/`_access` already normalize
+      backslashes (`shims/io.h`); added the same normalization for the C stdio
+      `fopen` used by the Xfer disk layer via a wrapper in `src/wasm_prerts_real.h`
+      (real-engine force-include). Platform re-target only; no save-logic change.
+- [ ] **VERIFY the save round-trip on the real GPU / harness** (I could not drive
+      the browser). Boot a skirmish (e.g. via `play.html` or `skirmish_start_smoke`),
+      ESC → Options → Save/Load → New Save; confirm `listSaves` shows the `.sav`
+      and `saveFsPersisted` logs; reload the page; ESC → Options → Save/Load →
+      select the save → Load; confirm the match state restores. Then confirm the
+      save survives a full page reload (IndexedDB). See DONE.md for the exact
+      recipe. If `Module.IDBFS` is unavailable at runtime, the bridge logs
+      `saveFsMountError` and falls back to session-only MEMFS saves.
+- [ ] **Confirm the in-game boot actually reaches the QuitMenu Save/Load path.**
+      The save UI (`PopupSaveLoad`/`QuitMenu`) is real engine code linked into
+      `cnc-port`; verify `TheShell->getSaveLoadMenuLayout()` and the `QuitMenu.wnd`
+      `ButtonSaveLoad` open the popup in a live skirmish (single-player only —
+      skirmish/MP use `QuitNoSave.wnd`, no save button; the round-trip test may
+      need a single-player mission or a temporary save trigger).
+
 ## User-reported play bugs (2026-07-06 session)
 
 Observed by the project owner playing real skirmish + intro on the Mac GPU

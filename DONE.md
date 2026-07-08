@@ -8,6 +8,73 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Save / Load — browser persistence + path fix (2026-07-08)
+
+- [x] **In-game save games persist across page reload, reusing the real
+      GameState/Xfer serialization unchanged.** The engine's save/load system was
+      already complete and browser-buildable (`GameState::saveGame`/`loadGame`
+      driving `XferSave`/`XferLoad` over the original `.sav` block format, UI via
+      the real `PopupSaveLoad.cpp` from in-game ESC/Options → `QuitMenu` →
+      `ButtonSaveLoad`). Two platform-boundary gaps were closed; NO save logic or
+      `.sav` format was reimplemented.
+
+      **Gap 1 — no persistence.** `XferSave`/`XferLoad` write with raw
+      `fopen`/`fwrite` into `getPath_UserData()` + `"Save/"`, which in the browser
+      resolves under `$HOME` (`SHGetSpecialFolderPath` shim → `$HOME`,
+      `shims/windows.h:1767`). That is MEMFS — wiped on reload. The port linked no
+      IDBFS (emscripten 3.1.6 drops it unless `-lidbfs.js` is passed) and never
+      called `syncfs`. Fix:
+      - `WebAssembly/CMakeLists.txt` `cnc-port` link opts: add `-lidbfs.js`
+        (verified in the built `dist/cnc-port.js`: `FS.filesystems.IDBFS` is now
+        populated; the "IDBFS is no longer included" placeholder is gone).
+      - `WebAssembly/harness/bridge.js`: in the module `preRun` pin
+        `ENV.HOME = /home/web_user` (so `getPath_UserData()` is deterministic),
+        `FS.mount(FS.filesystems.IDBFS, {}, "/home/web_user/Command and Conquer
+        Generals Zero Hour Data")`, and `FS.syncfs(true)` (with a run-dependency so
+        boot waits for the load). Auto-flush `FS.syncfs(false)` on
+        visibilitychange(hidden)/pagehide/beforeunload plus a 5s interval. Added
+        RPCs `persistSaves` / `listSaves` and `window.CnCPort.persistSaves` /
+        `listSaves`. Falls back to session-only MEMFS (logs `saveFsMountError`) if
+        IDBFS is ever absent.
+
+      **Gap 2 — backslash paths broke every save `fopen`.** `GameState` builds
+      paths with Win32 backslashes (`.../Save\00000000.sav`) and `XferSave`/
+      `XferLoad::open` pass them straight to C `fopen`. The port's `_open`/`_access`
+      already normalize `\`→`/` (`shims/io.h`), but `fopen` did not, so every
+      save/load open failed. Fix: a normalizing `fopen` wrapper
+      (`WasmRealFopenNormalized`) in `WebAssembly/src/wasm_prerts_real.h` — the
+      force-include for the real-engine `zh_gameengine_real_lifecycle_runtime`
+      target — mirroring the existing io.h normalization. Function-like macro; only
+      affects plain `fopen(...)` calls (all engine usages are plain calls; no
+      `std::fopen`/`&fopen` in the tree). Non-backslash paths are a no-op.
+
+      Build: `cd WebAssembly && npm run build:port` links clean (exit 0, 168
+      pre-existing warnings, `dist/cnc-port.{js,wasm}` produced).
+
+      **Not yet browser-verified (agent cannot drive the browser).** To verify the
+      round-trip:
+      1. Boot a **single-player** context that has the Save button (skirmish/MP
+         use `QuitNoSave.wnd` with no Save button — save/load is single-player
+         only). Options: a campaign mission, or drive `TheGameState->saveGame` via
+         a harness hook. `harness/skirmish_start_smoke.mjs` reaches live gameplay.
+      2. In-game: ESC / MSG_META_OPTIONS → `QuitMenu` → `ButtonSaveLoad` opens
+         `PopupSaveLoad`; pick "New Save", confirm → `GameState::saveGame` writes
+         `00000000.sav`. The harness can drive this faithfully with the existing
+         `clickWindowByName` RPC on `QuitMenu.wnd:ButtonSaveLoad`,
+         `PopupSaveLoad.wnd:ListboxGames` (row 0 = New Save), and
+         `PopupSaveLoad.wnd:ButtonSave` — no new export needed.
+      3. `window.CnCPort.rpc("listSaves")` should list the `.sav`; the log should
+         show `saveFsPersisted`.
+      4. **Reload the page.** `preRun` `syncfs(true)` repopulates the save dir from
+         IndexedDB; `listSaves` should still show the `.sav`.
+      5. In-game: ESC → Save/Load → select the save → Load → `GameState::loadGame`
+         (`TheGameEngine->reset()` + `xferSaveData(XFER_LOAD)` +
+         `gameStatePostProcessLoad`); confirm the match state restores.
+      Risks to watch: (a) whether real `init()`/`execute()` reaches live in-game
+      state with the save UI wired in the current boot; (b) IndexedDB availability
+      in the harness's browser context; (c) `syncfs` timing on very rapid
+      reload (the 5s interval + event flushes mitigate). See TODO "Save / Load".
+
 ## Browser display / harness UX (2026-07-08)
 
 - [x] **Ground/building projected decals render partially (half-clipped along

@@ -13553,6 +13553,168 @@ function cncGdiRasterizeGlyph(
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// Persistent save games (IDBFS)
+//
+// The real engine writes save games with the original GameState / XferSave
+// code path: raw fopen/fwrite against a path built from
+//   getPath_UserData()  ==  "$HOME/<UserDataLeafName>/"
+// and getSaveDirectory() appends "Save/". In the browser build:
+//   - HOME is pinned to CNC_PORT_USER_DATA_HOME (see preRun) so the path is
+//     deterministic and stable across reloads.
+//   - <UserDataLeafName> defaults to "Command and Conquer Generals Zero Hour
+//     Data" (GlobalData.cpp, the registry lookup fails in the shim).
+// We mount IDBFS on the whole user-data directory so the engine's own
+// CreateDirectory("Save/") + fopen(".sav") calls land in IndexedDB-backed
+// storage and survive a page reload. Nothing about the save FORMAT or the
+// Xfer/Snapshot serialization changes — this only re-targets where the bytes
+// physically live.
+// ---------------------------------------------------------------------------
+const CNC_PORT_USER_DATA_HOME = "/home/web_user";
+const CNC_PORT_USER_DATA_LEAF = "Command and Conquer Generals Zero Hour Data";
+const CNC_PORT_USER_DATA_DIR = `${CNC_PORT_USER_DATA_HOME}/${CNC_PORT_USER_DATA_LEAF}`;
+const CNC_PORT_SAVE_DIR = `${CNC_PORT_USER_DATA_DIR}/Save`;
+
+// Set once mountSaveFilesystem succeeds; guards persist/read calls.
+let cncPortSaveFsMounted = false;
+
+function cncPortMkdirTree(FS, dir) {
+  const parts = String(dir).split("/").filter((p) => p.length > 0);
+  let current = "";
+  for (const part of parts) {
+    current += `/${part}`;
+    try {
+      FS.mkdir(current);
+    } catch (e) {
+      // EEXIST is fine; anything else is a real error.
+      if (!e || e.errno === undefined) {
+        // Some Emscripten builds throw plain errors; ignore if it now exists.
+      }
+    }
+  }
+}
+
+// Mount IDBFS at the user-data directory during preRun and pull any previously
+// persisted saves into MEMFS before the engine boots. Uses run dependencies so
+// the async syncfs completes before main() runs.
+function mountSaveFilesystem(m) {
+  try {
+    const FS = m.FS;
+    if (!FS) {
+      recordLog("saveFsMountError", { error: "Module.FS unavailable" });
+      return;
+    }
+    // Emscripten registers IDBFS under FS.filesystems.IDBFS (populated by
+    // FS.staticInit during preRun); it is not exposed as Module.IDBFS. Fall
+    // back to Module.IDBFS in case a future build exports it directly.
+    const IDBFS = (FS.filesystems && FS.filesystems.IDBFS) || m.IDBFS;
+    if (!IDBFS) {
+      // Built without -lidbfs.js: saves still work for the session but do not
+      // persist. Fall back to a plain MEMFS directory so nothing crashes.
+      cncPortMkdirTree(FS, CNC_PORT_SAVE_DIR);
+      recordLog("saveFsMountError", {
+        error: "Module.IDBFS unavailable (build without -lidbfs.js); saves are session-only",
+      });
+      return;
+    }
+
+    // Ensure the mount point exists, then mount IDBFS on it.
+    cncPortMkdirTree(FS, CNC_PORT_USER_DATA_DIR);
+    try {
+      FS.mount(IDBFS, {}, CNC_PORT_USER_DATA_DIR);
+    } catch (mountError) {
+      // Already mounted (e.g. re-entrant module create) is acceptable.
+      recordLog("saveFsMountRetry", { error: String(mountError) });
+    }
+
+    // Pull persisted data from IndexedDB into MEMFS before boot.
+    if (typeof m.addRunDependency === "function") {
+      m.addRunDependency("cnc-port-idbfs");
+    }
+    FS.syncfs(true, (err) => {
+      try {
+        // Make sure the Save/ leaf exists after the sync (first run has none).
+        cncPortMkdirTree(FS, CNC_PORT_SAVE_DIR);
+      } catch (mkdirError) {
+        recordLog("saveFsMkdirError", { error: String(mkdirError) });
+      }
+      cncPortSaveFsMounted = !err;
+      if (err) {
+        recordLog("saveFsSyncInError", { error: String(err) });
+      } else {
+        recordLog("saveFsMounted", { path: CNC_PORT_SAVE_DIR });
+      }
+      if (typeof m.removeRunDependency === "function") {
+        m.removeRunDependency("cnc-port-idbfs");
+      }
+    });
+  } catch (error) {
+    recordLog("saveFsMountError", { error: String(error) });
+    if (typeof m.removeRunDependency === "function") {
+      try {
+        m.removeRunDependency("cnc-port-idbfs");
+      } catch (removeError) {
+        void removeError;
+      }
+    }
+  }
+}
+
+// Flush MEMFS -> IndexedDB so newly written ".sav" files persist. Safe to call
+// repeatedly; returns a promise that resolves once the flush completes.
+function persistSaveFilesystem(reason = "manual") {
+  return new Promise((resolve) => {
+    const module = cncPortEmscriptenModule;
+    if (!module || !module.FS || !cncPortSaveFsMounted) {
+      resolve({ ok: false, reason, error: "save filesystem not mounted" });
+      return;
+    }
+    try {
+      module.FS.syncfs(false, (err) => {
+        if (err) {
+          recordLog("saveFsSyncOutError", { reason, error: String(err) });
+          resolve({ ok: false, reason, error: String(err) });
+        } else {
+          recordLog("saveFsPersisted", { reason });
+          resolve({ ok: true, reason });
+        }
+      });
+    } catch (error) {
+      recordLog("saveFsSyncOutError", { reason, error: String(error) });
+      resolve({ ok: false, reason, error: String(error) });
+    }
+  });
+}
+
+// List persisted ".sav" files in the mounted save directory (harness/debug).
+function listSaveFiles() {
+  const module = cncPortEmscriptenModule;
+  if (!module || !module.FS) {
+    return { ok: false, error: "module/FS unavailable", files: [] };
+  }
+  const FS = module.FS;
+  let entries = [];
+  try {
+    entries = FS.readdir(CNC_PORT_SAVE_DIR);
+  } catch (error) {
+    return { ok: false, error: String(error), files: [], dir: CNC_PORT_SAVE_DIR };
+  }
+  const files = [];
+  for (const name of entries) {
+    if (name === "." || name === "..") continue;
+    if (!/\.sav$/i.test(name)) continue;
+    const full = `${CNC_PORT_SAVE_DIR}/${name}`;
+    let size = -1;
+    try {
+      size = FS.stat(full).size;
+    } catch (statError) {
+      void statError;
+    }
+    files.push({ name, size });
+  }
+  return { ok: true, files, dir: CNC_PORT_SAVE_DIR, mounted: cncPortSaveFsMounted };
+}
+
 async function loadWasmModule() {
   try {
     const distDir = selectedCncPortDistDir();
@@ -13597,6 +13759,21 @@ async function loadWasmModule() {
       cncPortBrowserUdpRecv,
       cncGdiMeasure,
       cncGdiRasterizeGlyph,
+      // Persist the in-game save directory to IndexedDB via IDBFS so ".sav"
+      // files written by the real GameState / XferSave path survive a reload.
+      // HOME is pinned so getPath_UserData() ("$HOME/<leaf>/") is deterministic
+      // JS-side; the real engine still creates the leaf/Save dirs itself.
+      preRun: [
+        (m) => {
+          try {
+            m.ENV = m.ENV || {};
+            m.ENV.HOME = CNC_PORT_USER_DATA_HOME;
+          } catch (envError) {
+            recordLog("saveFsEnvError", { error: String(envError) });
+          }
+          mountSaveFilesystem(m);
+        },
+      ],
     });
     cncPortEmscriptenModule = module;
     harnessState.moduleDistDir = distDir;
@@ -18748,6 +18925,19 @@ async function rpc(command, payload = {}) {
       return mountArchives(payload);
     case "realEngineInit":
       return realEngineInit(payload);
+    case "persistSaves":
+      // Flush MEMFS -> IndexedDB so newly written ".sav" files survive a reload.
+      // Call this after the in-game Save dialog reports success.
+      {
+        const result = await persistSaveFilesystem(String(payload.reason ?? "rpc"));
+        return { ok: Boolean(result.ok), command, result };
+      }
+    case "listSaves":
+      // Enumerate persisted save files in the mounted save directory.
+      {
+        const result = listSaveFiles();
+        return { ok: Boolean(result.ok), command, ...result };
+      }
     case "mapCacheProbe":
       {
         const moduleResult = await getWasmModuleForArchives("mapCacheProbe");
@@ -30055,8 +30245,39 @@ window.addEventListener("blur", () => {
   }
 });
 
+// Auto-persist save games to IndexedDB. The engine writes ".sav" files with
+// its own GameState / XferSave path into the IDBFS-mounted save directory; we
+// flush MEMFS -> IndexedDB on the events that precede losing the page so a
+// reload can read them back. A slow periodic flush is the reliable guarantee
+// (beforeunload cannot await the async syncfs), and it only touches disk when
+// the save filesystem is actually mounted.
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      void persistSaveFilesystem("visibilitychange");
+    }
+  });
+}
+window.addEventListener("pagehide", () => {
+  void persistSaveFilesystem("pagehide");
+});
+window.addEventListener("beforeunload", () => {
+  // Best-effort: fires the async syncfs; IndexedDB writes are queued even if
+  // the callback never runs before navigation completes.
+  void persistSaveFilesystem("beforeunload");
+});
+// Periodic safety flush (every 5s) so an in-game save persists even if the tab
+// is closed without a clean unload event. No-op until the FS is mounted.
+setInterval(() => {
+  if (cncPortSaveFsMounted) {
+    void persistSaveFilesystem("interval");
+  }
+}, 5000);
+
 window.CnCPort = {
   rpc,
   state: harnessState,
   d3d8BridgeCallbacks,
+  persistSaves: persistSaveFilesystem,
+  listSaves: listSaveFiles,
 };
