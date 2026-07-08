@@ -612,10 +612,10 @@ symptom is temporal — NOT a single still.
       ms/frame or a named bucket, and TODO/DONE already record optimizations
       that *added* upload/unlock spikes. Add a stability workstream: report
       p95/p99 and max frame time (not just avg/median), identify the spike
-      frames, and attack the likely causes — (1) GC pauses from ~2500
-      `Array.from` matrix allocations/frame in the D3D8 draw bridge (the
-      per-frame command-buffer TODO addresses both average and jitter), (2)
-      uneven per-frame work (buffer uploads / shadow-volume regen /
+      frames, and attack the likely causes — (1) GC pauses from per-draw D3D8
+      bridge payload/state object churn (the old matrix-copy slice is retired,
+      but the per-frame command-buffer TODO still addresses both average and
+      jitter), (2) uneven per-frame work (buffer uploads / shadow-volume regen /
       water-shoreline rebuild firing on some frames only), (3) unpaced rAF logic
       stepping (fixed-timestep pacing). Optimize for consistency, not the mean.
       2026-07-07: `runtime_frame_profile.mjs` now reports p99 and compact
@@ -647,6 +647,17 @@ symptom is temporal — NOT a single still.
       `WasmD3D8.browserDrawIndexed.before`, projected/volumetric shadows,
       roads/shoreline, and occasional text draw-submit stalls. Keep this item
       open for command-buffer/draw-side stability work.
+      2026-07-08: draw-payload world/view/projection matrices now stay as wasm
+      pointers through EM_JS and are copied directly from the wasm heap into
+      three reusable scratch `Float32Array(16)` buffers in the JS draw bridge;
+      cached texture transform `Float32Array`s keep their previous no-copy
+      path. Mac M4/Metal release profile
+      `runtime-frame-profile-matrix-scratch-mac.json` reported 1651.8 matrix
+      normalizations/frame, 991.1 heap-to-scratch copies/frame, zero allocated
+      matrix copies, and engine `lastFrameMs` avg 4.72 / p95 6.9 / p99 7.2 /
+      max 7.3 ms over 60 measured shell-map/menu frames. Keep this item open:
+      per-draw state-object churn, uneven producer work, and the structural
+      command-buffer path remain.
 - [ ] **Performance still needs love (general)** — beyond stability, the loaded
       (non-shell-map) skirmish frame cost with hundreds of units is the real
       target and is not yet profiled/held to triple-digit fps. Keep pushing the
@@ -3031,18 +3042,27 @@ and then start with the PROFILE, not with any individual fix.
       draw per mesh. Verify on a loaded battle: draw count + wall time
       before/after. (Promoted from the buried draw-side future note; by Claude)
 - [ ] **Eliminate per-draw JS allocation churn (GC-pause jitter).** The D3D8
-      draw bridge allocates ~2500 short-lived JS objects/frame — ~5 `Array.from`
-      matrix copies × ~500 draws (the EM_JS draw body in `wasm_d3d8_shim.cpp`
-      copies world/view/proj/tex0/tex1 into fresh JS arrays) plus per-draw state
-      objects. This garbage drives V8 GC pauses — a prime suspect for the "frame
-      time jumps around / no steady 30 fps" jitter (see the frame-stability
-      item). Fix: stop materializing arrays — read matrices as zero-copy
-      `HEAPF32.subarray` views (the buffer path already does this), reuse
-      preallocated scratch typed-arrays across draws, and skip rebuilding state
-      objects on cache hits. Largely subsumed by the per-frame command buffer
-      (one crossing, no per-draw arrays) but worth doing directly if the command
-      buffer slips. Verify with p95/p99 frame time + a DevTools memory timeline
-      showing reduced GC frequency. (by Claude)
+      draw bridge still creates short-lived JS payload/state objects per draw.
+      The old matrix-copy path has been reduced in slices (cached texture
+      transforms, then raw world/view/projection pointers), but per-draw
+      payload objects, derived state objects on cache misses, material/light/
+      clip arrays, and bridge scaffolding can still drive V8 GC pauses — a
+      prime suspect for the "frame time jumps around / no steady 30 fps" jitter
+      (see the frame-stability item). Fix: keep chipping away at materialized
+      arrays/objects on the hot path, reuse scratch storage where values must
+      cross into JS, and skip rebuilding state objects on cache hits. Largely
+      subsumed by the per-frame command buffer (one crossing, no per-draw
+      payload object) but worth doing directly if the command buffer slips.
+      2026-07-08: world/view/projection now pass as raw wasm
+      pointers instead of new `HEAPF32.subarray()` view objects and are copied
+      into reusable draw-scratch matrices; cached texture transform
+      `Float32Array`s retain their no-copy path. The profile counters show zero
+      allocated matrix copies on local SwiftShader and Mac M4/Metal real-GPU
+      runs. This removes the per-draw matrix-view/allocation slice, but the TODO
+      stays open for remaining per-draw state objects, broader zero-copy /
+      command buffering, and DevTools memory proof of reduced GC frequency.
+      Verify future work with p95/p99 frame time + a DevTools memory timeline.
+      (by Claude)
 - [ ] **Optimize the real `HeightMap.render.tilePasses` bucket, not terrain
       sidecars**: recent Mac profiles prove base terrain tile passes remain a
       recurring real render bucket (`HeightMap.render.tilePasses.before`

@@ -96,6 +96,7 @@ async function cncPortRuntimeCacheToken(distDir) {
 
 let d3d8DrawProgram = null;
 let d3d8DepthStencilProgram = null;
+let cncPortEmscriptenModule = null;
 const d3d8Buffers = new Map();
 const d3d8Textures = new Map();
 const d3d8BoundTextures = new Map();
@@ -140,6 +141,11 @@ const d3d8ScratchVertexAttribKey = {
   canSampleTexture1: 0,
   texture1UsesVertexTexCoord: 0,
   texture1Offset: -1,
+};
+const d3d8DrawMatrixScratch = {
+  world: new Float32Array(16),
+  view: new Float32Array(16),
+  projection: new Float32Array(16),
 };
 let d3d8CurrentVertexArray = null;
 let d3d8CurrentVertexArrayKey = null;
@@ -472,6 +478,9 @@ const d3d8PerfStats = {
   drawBatchMaxRunLength: 0,
   drawDepthStencilOnlyProgramDraws: 0,
   drawDepthStencilOnlyFastDerivedDraws: 0,
+  drawMatrixNormalizations: 0,
+  drawMatrixScratchCopies: 0,
+  drawMatrixAllocatedCopies: 0,
   drawDerivedCacheHits: 0,
   drawDerivedCacheMisses: 0,
   drawUniformCacheHits: 0,
@@ -871,6 +880,9 @@ function d3d8PerfSummary() {
     drawBatchMaxRunLength: d3d8PerfStats.drawBatchMaxRunLength,
     drawDepthStencilOnlyProgramDraws: d3d8PerfStats.drawDepthStencilOnlyProgramDraws,
     drawDepthStencilOnlyFastDerivedDraws: d3d8PerfStats.drawDepthStencilOnlyFastDerivedDraws,
+    drawMatrixNormalizations: d3d8PerfStats.drawMatrixNormalizations,
+    drawMatrixScratchCopies: d3d8PerfStats.drawMatrixScratchCopies,
+    drawMatrixAllocatedCopies: d3d8PerfStats.drawMatrixAllocatedCopies,
     drawDerivedCacheHits: d3d8PerfStats.drawDerivedCacheHits,
     drawDerivedCacheMisses: d3d8PerfStats.drawDerivedCacheMisses,
     drawUniformCacheHits: d3d8PerfStats.drawUniformCacheHits,
@@ -9417,7 +9429,35 @@ function pixelLooksMessageBoxBlueTint(pixel) {
       && pixel[3] >= 200);
 }
 
-function normalizeD3DMatrix(matrix) {
+function copyD3DMatrixFromHeap(ptr, scratch) {
+  const address = Number(ptr ?? 0) >>> 0;
+  const heap = cncPortEmscriptenModule?.HEAPF32;
+  if (address === 0 ||
+      !(heap instanceof Float32Array) ||
+      !(scratch instanceof Float32Array) ||
+      scratch.length !== 16) {
+    return null;
+  }
+  const offset = address >>> 2;
+  if (offset + 16 > heap.length) {
+    return null;
+  }
+  for (let index = 0; index < 16; ++index) {
+    const value = heap[offset + index];
+    if (!Number.isFinite(value)) {
+      return null;
+    }
+    scratch[index] = value;
+  }
+  d3d8PerfStats.drawMatrixNormalizations += 1;
+  d3d8PerfStats.drawMatrixScratchCopies += 1;
+  return scratch;
+}
+
+function normalizeD3DMatrix(matrix, scratch = null) {
+  if (typeof matrix === "number") {
+    return copyD3DMatrixFromHeap(matrix, scratch);
+  }
   const isSequence = Array.isArray(matrix) || ArrayBuffer.isView(matrix);
   if (!isSequence || matrix.length !== 16) {
     return null;
@@ -9427,7 +9467,17 @@ function normalizeD3DMatrix(matrix) {
       return null;
     }
   }
-  return matrix instanceof Float32Array ? matrix : new Float32Array(matrix);
+  d3d8PerfStats.drawMatrixNormalizations += 1;
+  if (scratch instanceof Float32Array && scratch.length === 16) {
+    scratch.set(matrix);
+    d3d8PerfStats.drawMatrixScratchCopies += 1;
+    return scratch;
+  }
+  if (matrix instanceof Float32Array) {
+    return matrix;
+  }
+  d3d8PerfStats.drawMatrixAllocatedCopies += 1;
+  return new Float32Array(matrix);
 }
 
 function d3d8MatrixEquals(left, right) {
@@ -10888,9 +10938,9 @@ function paintD3D8DrawIndexed(payload = {}) {
   }
   flushD3D8PendingDrawBatch("drawBreak");
   recordDrawPhase?.("sortedDrawPreBatchMs");
-  const world = normalizeD3DMatrix(payload.transforms?.world);
-  const view = normalizeD3DMatrix(payload.transforms?.view);
-  const projection = normalizeD3DMatrix(payload.transforms?.projection);
+  const world = normalizeD3DMatrix(payload.transforms?.world, d3d8DrawMatrixScratch.world);
+  const view = normalizeD3DMatrix(payload.transforms?.view, d3d8DrawMatrixScratch.view);
+  const projection = normalizeD3DMatrix(payload.transforms?.projection, d3d8DrawMatrixScratch.projection);
   const texture0Transform = normalizeD3DMatrix(payload.transforms?.texture0);
   const texture1Transform = normalizeD3DMatrix(payload.transforms?.texture1);
   const transformMask = Number(payload.transformMask ?? 0) >>> 0;
@@ -12545,6 +12595,7 @@ async function loadWasmModule() {
       cncGdiMeasure,
       cncGdiRasterizeGlyph,
     });
+    cncPortEmscriptenModule = module;
     harnessState.moduleDistDir = distDir;
     d3d8BoundDrawDiagnosticsSetter = module.cwrap(
       "cnc_port_d3d8_set_bound_draw_diagnostics",

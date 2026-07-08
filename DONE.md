@@ -8,6 +8,33 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Performance — browser D3D8 draw bridge (2026-07-08 session)
+
+- [x] Reuse scratch matrices for D3D8 draw-payload world/view/projection
+      normalization. The native EM_JS draw payload now passes raw wasm pointers
+      for the three per-draw world/view/projection matrices instead of creating
+      `HEAPF32.subarray()` view objects, and the hot `paintD3D8DrawIndexed()`
+      path copies those matrices directly from the current wasm heap into three
+      reusable `Float32Array(16)` scratch buffers. Cached texture transform
+      `Float32Array`s keep the previous no-copy fast path, and long-lived
+      transform-uniform caches still keep their own snapshots, so mutable
+      scratch arrays do not escape the draw call. The runtime profile now
+      reports `drawMatrixNormalizations`, `drawMatrixScratchCopies`, and
+      `drawMatrixAllocatedCopies`.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `node --check WebAssembly/harness/runtime_frame_profile.mjs`,
+      `git diff --check`, `npm --prefix WebAssembly run build:port:release`,
+      a local SwiftShader profile
+      `WebAssembly/artifacts/perf/runtime-frame-profile-matrix-scratch-local.json`,
+      and a Mac M4 Chrome/Metal release profile
+      `WebAssembly/artifacts/perf/runtime-frame-profile-matrix-scratch-mac.json`
+      with visible screenshot
+      `WebAssembly/artifacts/screenshots/runtime-frame-profile-matrix-scratch-mac.png`.
+      The Mac profile reported `ANGLE Metal Renderer: Apple M4`, 60 measured
+      shell-map/menu frames, engine `lastFrameMs` avg 4.72 / p95 6.9 / p99 7.2
+      / max 7.3 ms, and 1651.8 matrix normalizations/frame with 991.1
+      heap-to-scratch copies/frame and zero allocated matrix copies.
+
 ## Visual fidelity — missing/degraded graphic effects (2026-07-07 session)
 
 - [x] Restore the original WW3D screen gamma path in the browser presentation
