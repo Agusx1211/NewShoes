@@ -781,22 +781,43 @@ screenshots on the release build.
       the PS tier — e.g. GeForce3+/`terrainShader8Stage` single-pass) from the
       shim so `getChipset()` picks the programmable paths; (2) implement
       `CreatePixelShader`/`CreateVertexShader` + `SetPixelShader`/`SetVertexShader`
-      in the D3D8→WebGL2 layer by translating the shipped shaders to GLSL. The game
-      ships a FIXED, known set (`Shaders/*.nvp` pixel, `*.nvv` vertex — e.g.
-      `monochrome.nvp`/`invmonochrome.nvp`, `MotionBlur.nvv`/`motionblur.nvp`, the
-      heat-haze/smudge shader, terrain PS variants), so a **targeted hand-port**
-      (GLSL equivalents mapped by shader name/hash) is feasible without a full
-      generic DX8-shader-assembly compiler — do that before attempting a general
-      `nvparse`/bytecode→GLSL translator. Payoff: single-pass pixel-shader terrain
-      (clouds+noise+lightmap folded, fewer draws) AND it is the prerequisite that
-      unlocks the two dead-shader entries below (heat-haze/smudge, monochrome/
-      motion-blur) — cross-reference them. RISKS/verify: feeding a PS-capable
-      chipset must NOT regress the fixed-function paths that currently work
-      (gate carefully or make each shader type independently selectable); confirm
-      terrain still renders correctly after the tier switch; watch per-draw/perf.
-      Big lift — land it incrementally (one shader at a time, screenshot each) and
-      do NOT invent shading; port the real shader math. Adapter/caps identity lives
-      in `wasm_d3d8_shim.cpp`; shader create/set entry points there + `bridge.js`.
+      in the D3D8→WebGL2 layer. **APPROACH DECIDED (owner, 2026-07-08): build a
+      GENERIC on-the-fly bytecode→GLSL translator (the WineD3D/DXVK model), NOT a
+      per-shader hand-port.** The shaders are confirmed portable **DX8 asm** —
+      `terrain.nvp` opens `ps.1.1` (`tex t0; tex t1; lrp r0,v0.a,t1,t0; mul r0,r0,
+      v0`) and `.nvv` are `vs.1.1` — assembled to a D3D8 token stream and handed to
+      `CreatePixelShader`/`CreateVertexShader` (`W3DShaderManager.cpp:3040/3044`),
+      NOT NVIDIA register combiners. SM1.x is tiny and control-flow-free, so a
+      generic translator is bounded and is faithful-by-construction (covers every
+      shader + mods, no hand-GLSL drift). Design (mirror WineD3D `glsl_shader.c`,
+      which is in `assets/docs/` `dlls/wined3d` — the closest existing D3D→GLSL
+      analogue; DXVK targets SPIR-V so WineD3D is the better reference):
+      (1) intercept `CreatePixelShader`/`CreateVertexShader` in the shim, parse the
+      DX8 token stream to a small IR, emit GLSL (one expr per instruction; register
+      file → locals/uniforms/varyings); (2) compile+cache the GLSL ONCE per shader
+      at create time (warm at load, not lazily mid-frame — WebGL compile hitches);
+      (3) **program cache keyed on the (vertex-shader, pixel-shader) PAIR** — D3D8
+      has separate vs/ps objects, WebGL2 needs one linked program, so link lazily
+      per pair and glue vs outputs (`oT0..oT7`,`oD0/oD1`) → ps inputs
+      (`t0..t3`,`v0/v1`) as matching varyings; (4) `Set*ShaderConstant` (`cN`) →
+      uniform float4 array; (5) report a PS-capable adapter identity + caps
+      (`PixelShaderVersion`/`VertexShaderVersion`, a `DC_*` chipset selecting the PS
+      tier) from `wasm_d3d8_shim.cpp` so `getChipset()` picks the programmable
+      paths. HARD BITS (bounded, Wine handles all): ps.1.x arg modifiers
+      (`_bx2/_x2/_sat`) + register clamp to [-1,1] + **coissue** (paired RGB/alpha
+      op); ps.1.4 phases/`texld` differ from 1.1 (sweep all `Shaders/*.nvp` to see
+      which versions the corpus uses — motion-blur/heat-haze may need 1.4); must
+      COEXIST with the existing fixed-function GLSL emulation in `bridge.js` (some
+      draws stay fixed-function). Payoff: single-pass pixel-shader terrain
+      (clouds+noise+lightmap folded, fewer draws) AND it unlocks the two
+      dead-shader entries below (heat-haze/smudge, monochrome/motion-blur) —
+      cross-reference. VERIFY/RISKS: enabling the PS chipset must NOT regress the
+      fixed-function paths that currently render correctly (gate per shader-type /
+      keep independently selectable); confirm terrain still correct after the tier
+      switch; watch per-draw/perf. Land incrementally — get ONE shader (terrain)
+      pixel-perfect end-to-end via the generic path first, then widen; do NOT
+      invent shading, translate the real bytecode. Entry points: shader create/set
+      + adapter caps in `wasm_d3d8_shim.cpp`; GLSL emit/program cache in `bridge.js`.
 - [ ] **Heat-haze / screen smudges not rendering (flat explosions/fire)** — the
       original distorts the background behind heat particles ("screen smudges
       which are particles that distort the background behind them",
