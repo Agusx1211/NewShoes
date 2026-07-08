@@ -404,6 +404,8 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	unsigned int projection_ptr,
 	unsigned int texture0_transform_ptr,
 	unsigned int texture1_transform_ptr,
+	unsigned int texture2_transform_ptr,
+	unsigned int texture3_transform_ptr,
 	unsigned int render_state_ptr,
 	unsigned int clip_planes_ptr,
 	unsigned int lights_ptr,
@@ -620,6 +622,8 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 		cached_state = {
 			texture0Transform: copyMatrix(texture0_transform_ptr),
 			texture1Transform: copyMatrix(texture1_transform_ptr),
+			texture2Transform: copyMatrix(texture2_transform_ptr),
+			texture3Transform: copyMatrix(texture3_transform_ptr),
 			renderState: copyRenderState(render_state_ptr),
 			clipPlanes: copyClipPlanes(clip_planes_ptr),
 			lights: copyLights(lights_ptr),
@@ -640,12 +644,16 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			projection: 0,
 			texture0: null,
 			texture1: null,
+			texture2: null,
+			texture3: null,
 		});
 	transforms.world = world_ptr >>> 0;
 	transforms.view = view_ptr >>> 0;
 	transforms.projection = projection_ptr >>> 0;
 	transforms.texture0 = cached_state.texture0Transform;
 	transforms.texture1 = cached_state.texture1Transform;
+	transforms.texture2 = cached_state.texture2Transform;
+	transforms.texture3 = cached_state.texture3Transform;
 	const payload = Module.__cncPortD3D8DrawIndexedPayload ||
 		(Module.__cncPortD3D8DrawIndexedPayload = {
 			transforms,
@@ -695,7 +703,8 @@ void wasm_d3d8_browser_texture_bind(unsigned int, unsigned int) {}
 void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
-	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, int) {}
+	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
+	unsigned int, int) {}
 #endif
 
 namespace {
@@ -1221,6 +1230,8 @@ constexpr UINT DRAW_TRANSFORM_VIEW = 1u << 1;
 constexpr UINT DRAW_TRANSFORM_PROJECTION = 1u << 2;
 constexpr UINT DRAW_TEXTURE_TRANSFORM_STAGE0 = 1u << 0;
 constexpr UINT DRAW_TEXTURE_TRANSFORM_STAGE1 = 1u << 1;
+constexpr UINT DRAW_TEXTURE_TRANSFORM_STAGE2 = 1u << 2;
+constexpr UINT DRAW_TEXTURE_TRANSFORM_STAGE3 = 1u << 3;
 constexpr UINT BROWSER_BUFFER_VERTEX = 1u;
 constexpr UINT BROWSER_BUFFER_INDEX = 2u;
 
@@ -1636,6 +1647,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 	UINT index_byte_size, UINT index_count, UINT index_size, UINT transform_mask, const D3DMATRIX *world_transform,
 	const D3DMATRIX *view_transform, const D3DMATRIX *projection_transform,
 	const D3DMATRIX *texture0_transform, const D3DMATRIX *texture1_transform,
+	const D3DMATRIX *texture2_transform, const D3DMATRIX *texture3_transform,
 	const WasmD3D8DrawRenderState *render_state, const float *clip_planes,
 	const WasmD3D8DrawLight *lights, const WasmD3D8DrawMaterial *material, UINT state_hash,
 	UINT derived_state_hash)
@@ -1679,6 +1691,8 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(projection_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(texture0_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(texture1_transform)),
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(texture2_transform)),
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(texture3_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(render_state)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(clip_planes)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(lights)),
@@ -4010,6 +4024,8 @@ private:
 			identity_matrix(g_state.last_draw_projection_transform);
 			identity_matrix(g_state.last_draw_texture0_transform);
 			identity_matrix(g_state.last_draw_texture1_transform);
+			identity_matrix(g_state.last_draw_texture2_transform);
+			identity_matrix(g_state.last_draw_texture3_transform);
 			g_state.last_draw_render_state = {};
 			g_state.last_draw_material = draw_material_from_d3d(m_material);
 		}
@@ -4371,6 +4387,8 @@ private:
 			&g_state.last_draw_projection_transform,
 			&g_state.last_draw_texture0_transform,
 			&g_state.last_draw_texture1_transform,
+			&g_state.last_draw_texture2_transform,
+			&g_state.last_draw_texture3_transform,
 			&g_state.last_draw_render_state,
 			&g_state.last_draw_clip_planes[0][0],
 			g_state.last_draw_lights,
@@ -4411,6 +4429,8 @@ private:
 		UINT texture_transform_mask = 0;
 		D3DMATRIX texture0_transform = {};
 		D3DMATRIX texture1_transform = {};
+		D3DMATRIX texture2_transform = {};
+		D3DMATRIX texture3_transform = {};
 		WasmD3D8DrawRenderState render_state = {};
 		float clip_planes[WASM_D3D8_CLIP_PLANE_COUNT][4] = {};
 		WasmD3D8DrawMaterial material = {};
@@ -4428,7 +4448,8 @@ private:
 
 	static bool is_cached_draw_texture_transform(D3DTRANSFORMSTATETYPE state)
 	{
-		return state == D3DTS_TEXTURE0 || state == D3DTS_TEXTURE1;
+		return state == D3DTS_TEXTURE0 || state == D3DTS_TEXTURE1 ||
+			state == D3DTS_TEXTURE2 || state == D3DTS_TEXTURE3;
 	}
 
 	static UINT hash_float(float value)
@@ -4457,6 +4478,8 @@ private:
 		UINT &hash,
 		const D3DMATRIX &texture0_transform,
 		const D3DMATRIX &texture1_transform,
+		const D3DMATRIX &texture2_transform,
+		const D3DMATRIX &texture3_transform,
 		const WasmD3D8DrawRenderState &render_state,
 		const float clip_planes[WASM_D3D8_CLIP_PLANE_COUNT][4],
 		const WasmD3D8DrawMaterial &material,
@@ -4464,6 +4487,8 @@ private:
 	{
 		hash_matrix(hash, texture0_transform);
 		hash_matrix(hash, texture1_transform);
+		hash_matrix(hash, texture2_transform);
+		hash_matrix(hash, texture3_transform);
 		#define HASH_RS_FIELD(field) hash = fnv1a_step(hash, static_cast<UINT>(render_state.field));
 		HASH_RS_FIELD(cull_mode); HASH_RS_FIELD(z_enable); HASH_RS_FIELD(z_write_enable);
 		HASH_RS_FIELD(z_func); HASH_RS_FIELD(alpha_blend_enable); HASH_RS_FIELD(src_blend);
@@ -4546,6 +4571,8 @@ private:
 			g_state.last_draw_texture_transform_mask = m_cached_draw_derived_payload.texture_transform_mask;
 			g_state.last_draw_texture0_transform = m_cached_draw_derived_payload.texture0_transform;
 			g_state.last_draw_texture1_transform = m_cached_draw_derived_payload.texture1_transform;
+			g_state.last_draw_texture2_transform = m_cached_draw_derived_payload.texture2_transform;
+			g_state.last_draw_texture3_transform = m_cached_draw_derived_payload.texture3_transform;
 			g_state.last_draw_render_state = m_cached_draw_derived_payload.render_state;
 			std::memcpy(g_state.last_draw_clip_planes, m_cached_draw_derived_payload.clip_planes,
 				sizeof(g_state.last_draw_clip_planes));
@@ -4561,6 +4588,10 @@ private:
 			g_state.last_draw_texture0_transform);
 		capture_draw_texture_transform(D3DTS_TEXTURE1, DRAW_TEXTURE_TRANSFORM_STAGE1,
 			g_state.last_draw_texture1_transform);
+		capture_draw_texture_transform(D3DTS_TEXTURE2, DRAW_TEXTURE_TRANSFORM_STAGE2,
+			g_state.last_draw_texture2_transform);
+		capture_draw_texture_transform(D3DTS_TEXTURE3, DRAW_TEXTURE_TRANSFORM_STAGE3,
+			g_state.last_draw_texture3_transform);
 		capture_draw_render_state();
 		capture_draw_material();
 
@@ -4569,6 +4600,8 @@ private:
 		m_cached_draw_derived_payload.texture_transform_mask = g_state.last_draw_texture_transform_mask;
 		m_cached_draw_derived_payload.texture0_transform = g_state.last_draw_texture0_transform;
 		m_cached_draw_derived_payload.texture1_transform = g_state.last_draw_texture1_transform;
+		m_cached_draw_derived_payload.texture2_transform = g_state.last_draw_texture2_transform;
+		m_cached_draw_derived_payload.texture3_transform = g_state.last_draw_texture3_transform;
 		m_cached_draw_derived_payload.render_state = g_state.last_draw_render_state;
 		std::memcpy(m_cached_draw_derived_payload.clip_planes, g_state.last_draw_clip_planes,
 			sizeof(m_cached_draw_derived_payload.clip_planes));
@@ -4580,6 +4613,8 @@ private:
 			payload_hash,
 			m_cached_draw_derived_payload.texture0_transform,
 			m_cached_draw_derived_payload.texture1_transform,
+			m_cached_draw_derived_payload.texture2_transform,
+			m_cached_draw_derived_payload.texture3_transform,
 			m_cached_draw_derived_payload.render_state,
 			m_cached_draw_derived_payload.clip_planes,
 			m_cached_draw_derived_payload.material,
