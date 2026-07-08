@@ -104,6 +104,31 @@ EM_JS(void, wasm_d3d8_browser_set_gamma_ramp, (
 		blue: copyRamp(blue),
 	});
 });
+// Capture the fog-of-war shroud UV offset (c32) / scale (c33) constants that
+// W3DTreeBuffer::drawTrees uploads.  In the browser port there is no bound
+// vertex shader, so these register writes would otherwise be lost; we stash the
+// four floats each so the draw payload can hand them to the WebGL2 bridge, which
+// regenerates the stage-1 shroud UVs per-vertex (Trees.nvv: oT1 = (v0+c32)*c33).
+EM_JS(void, wasm_d3d8_browser_tree_shroud_constant, (
+	unsigned int reg,
+	const float *data
+), {
+	const heap = Module.HEAPF32;
+	if (!(heap instanceof Float32Array) || !data) {
+		return;
+	}
+	const base = data >>> 2;
+	const v = [heap[base], heap[base + 1], heap[base + 2], heap[base + 3]];
+	let slot = Module.__cncPortD3D8TreeShroud;
+	if (!slot || typeof slot !== "object") {
+		slot = Module.__cncPortD3D8TreeShroud = { c32: [0, 0, 0, 0], c33: [0, 0, 0, 0] };
+	}
+	if (reg === 32) {
+		slot.c32 = v;
+	} else if (reg === 33) {
+		slot.c33 = v;
+	}
+});
 EM_JS(void, wasm_d3d8_browser_buffer_create, (
 	unsigned int kind,
 	unsigned int buffer_id,
@@ -684,6 +709,10 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	payload.derivedStateHash = current_derived_state_hash;
 	payload.producer = producer;
 	payload.sortedDrawSubmitProfile = sorted_draw_profile_scope !== 0;
+	// Fog-of-war shroud UV offset/scale for the tree draw (c32/c33 from
+	// W3DTreeBuffer::drawTrees).  Null unless a tree draw uploaded them; the
+	// bridge only consumes it when it identifies the tree draw.
+	payload.treeShroud = Module.__cncPortD3D8TreeShroud || null;
 	bridge(payload);
 	});
 #else
@@ -700,6 +729,7 @@ void wasm_d3d8_browser_texture_update(unsigned int, unsigned int, unsigned int, 
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int) {}
 void wasm_d3d8_browser_texture_release(unsigned int) {}
 void wasm_d3d8_browser_texture_bind(unsigned int, unsigned int) {}
+void wasm_d3d8_browser_tree_shroud_constant(unsigned int, const float *) {}
 void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
@@ -3762,7 +3792,16 @@ public:
 		return S_OK;
 	}
 	HRESULT DeleteVertexShader(DWORD) override { return S_OK; }
-	HRESULT SetVertexShaderConstant(DWORD, const void *, DWORD) override { return S_OK; }
+	HRESULT SetVertexShaderConstant(DWORD reg, const void *data, DWORD count) override
+	{
+		// Trees.nvv shroud UV constants: c32 = offset, c33 = scale.  Capture them
+		// so the tree draw payload can hand them to the WebGL2 bridge (there is no
+		// bound vertex shader in the browser, so these would otherwise be lost).
+		if (data && count >= 1 && (reg == 32 || reg == 33)) {
+			wasm_d3d8_browser_tree_shroud_constant(reg, static_cast<const float *>(data));
+		}
+		return S_OK;
+	}
 	HRESULT CreatePixelShader(const DWORD *, DWORD *) override { return D3DERR_NOTAVAILABLE; }
 	HRESULT SetPixelShader(DWORD) override { return S_OK; }
 	HRESULT DeletePixelShader(DWORD) override { return S_OK; }

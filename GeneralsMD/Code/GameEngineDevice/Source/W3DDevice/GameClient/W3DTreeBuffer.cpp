@@ -1736,28 +1736,16 @@ void W3DTreeBuffer::drawTrees(CameraClass * camera, RefRenderObjListIterator *pD
 	DX8Wrapper::Apply_Render_State_Changes();
 	W3DShaderManager::setShroudTex(1);
 	DX8Wrapper::Apply_Render_State_Changes();
- 
-	if (m_dwTreeVertexShader) {
-		D3DXMATRIX matProj, matView, matWorld;
-		DX8Wrapper::_Get_DX8_Transform(D3DTS_WORLD, *(Matrix4x4*)&matWorld);
-		DX8Wrapper::_Get_DX8_Transform(D3DTS_VIEW, *(Matrix4x4*)&matView);
-		DX8Wrapper::_Get_DX8_Transform(D3DTS_PROJECTION, *(Matrix4x4*)&matProj);
-		D3DXMATRIX mat;
-		D3DXMatrixMultiply( &mat, &matView, &matProj );
-		D3DXMatrixMultiply( &mat, &matWorld, &mat );
-		D3DXMatrixTranspose( &mat, &mat );
 
-		// c4  - Composite World-View-Projection Matrix
-		DX8Wrapper::_Get_D3D_Device8()->SetVertexShaderConstant(  4, &mat,  4 );
-		Vector4 noSway(0,0,0,0);
-		DX8Wrapper::_Get_D3D_Device8()->SetVertexShaderConstant(  8, &noSway,  1 );
-
-		// c8 - c8+MAX_SWAY_TYPES - the sway amount.
-		for	(i=0; i<MAX_SWAY_TYPES; i++) {
-			Vector4 sway4(swayFactor[i].X, swayFactor[i].Y, swayFactor[i].Z, 0);
-			DX8Wrapper::_Get_D3D_Device8()->SetVertexShaderConstant(  9+i, &sway4,  1 );
-		}
-
+	// Upload the shroud (fog-of-war) UV offset/scale into c32/c33 unconditionally.
+	// The original engine did this only when the tree vertex shader was bound
+	// (below), but in the wasm/browser port CreateVertexShader is unavailable so
+	// m_dwTreeVertexShader stays 0 and we take the fixed-function fallback.  The
+	// D3D8->WebGL2 bridge reads these constants to generate the stage-1 shroud
+	// UVs per-vertex (matching Trees.nvv: oT1 = (v0 + c32) * c33), so trees are
+	// darkened by fog-of-war like the terrain.  Uploading VS constants with no VS
+	// bound is harmless on real hardware.
+	{
 		W3DShroud *shroud;
 		if ((shroud=TheTerrainRenderObject->getShroud()) != 0) {
 			// Setup shroud texture info [6/6/2003]
@@ -1779,6 +1767,28 @@ void W3DTreeBuffer::drawTrees(CameraClass * camera, RefRenderObjListIterator *pD
 			Vector4 offset(0,0,0,0);
 			DX8Wrapper::_Get_D3D_Device8()->SetVertexShaderConstant(  32, &offset,  1 );
 			DX8Wrapper::_Get_D3D_Device8()->SetVertexShaderConstant(  33, &offset,  1 );
+		}
+	}
+
+	if (m_dwTreeVertexShader) {
+		D3DXMATRIX matProj, matView, matWorld;
+		DX8Wrapper::_Get_DX8_Transform(D3DTS_WORLD, *(Matrix4x4*)&matWorld);
+		DX8Wrapper::_Get_DX8_Transform(D3DTS_VIEW, *(Matrix4x4*)&matView);
+		DX8Wrapper::_Get_DX8_Transform(D3DTS_PROJECTION, *(Matrix4x4*)&matProj);
+		D3DXMATRIX mat;
+		D3DXMatrixMultiply( &mat, &matView, &matProj );
+		D3DXMatrixMultiply( &mat, &matWorld, &mat );
+		D3DXMatrixTranspose( &mat, &mat );
+
+		// c4  - Composite World-View-Projection Matrix
+		DX8Wrapper::_Get_D3D_Device8()->SetVertexShaderConstant(  4, &mat,  4 );
+		Vector4 noSway(0,0,0,0);
+		DX8Wrapper::_Get_D3D_Device8()->SetVertexShaderConstant(  8, &noSway,  1 );
+
+		// c8 - c8+MAX_SWAY_TYPES - the sway amount.
+		for	(i=0; i<MAX_SWAY_TYPES; i++) {
+			Vector4 sway4(swayFactor[i].X, swayFactor[i].Y, swayFactor[i].Z, 0);
+			DX8Wrapper::_Get_D3D_Device8()->SetVertexShaderConstant(  9+i, &sway4,  1 );
 		}
 
 		DX8Wrapper::Set_Vertex_Shader(m_dwTreeVertexShader);

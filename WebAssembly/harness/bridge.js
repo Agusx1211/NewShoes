@@ -8154,6 +8154,12 @@ function ensureD3D8DrawProgram() {
     uniform vec3 uFixedLightDirection[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
     uniform vec4 uFixedLightRangeAttenuation[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
     uniform vec3 uFixedLightSpot[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
+    // Fog-of-war shroud UV generation for the tree draw (Trees.nvv fallback).
+    // The tree FVF (XYZNDUV1) has no stage-1 UVs, so when uTreeShroudGen is set
+    // the stage-1 texcoord is generated from world position: (worldXY + off)*scl.
+    uniform bool uTreeShroudGen;
+    uniform vec2 uTreeShroudOffset;
+    uniform vec2 uTreeShroudScale;
     out vec4 vColor;
     out vec4 vSpecularColor;
     flat out vec4 vFlatColor;
@@ -8374,7 +8380,10 @@ function ensureD3D8DrawProgram() {
         uTexture1CoordinateMode,
         viewPosition.xyz,
         cameraSpaceNormal);
-      if (uUseTexture1Transform) {
+      if (uTreeShroudGen) {
+        // Trees.nvv: oT1 = (v0 + c32) * c33, per-vertex from world position.
+        vTexCoord1 = (worldPosition.xy + uTreeShroudOffset) * uTreeShroudScale;
+      } else if (uUseTexture1Transform) {
         vTexCoord1 = d3dApplyTextureTransform(
           texture1Coordinate,
           uTexture1Transform,
@@ -8947,6 +8956,9 @@ function ensureD3D8DrawProgram() {
     texture1Transform: gl.getUniformLocation(program, "uTexture1Transform"),
     texture1TransformComponentCount: gl.getUniformLocation(program, "uTexture1TransformComponentCount"),
     texture1TransformProjected: gl.getUniformLocation(program, "uTexture1TransformProjected"),
+    treeShroudGen: gl.getUniformLocation(program, "uTreeShroudGen"),
+    treeShroudOffset: gl.getUniformLocation(program, "uTreeShroudOffset"),
+    treeShroudScale: gl.getUniformLocation(program, "uTreeShroudScale"),
     texture2CoordinateMode: gl.getUniformLocation(program, "uTexture2CoordinateMode"),
     texture2CoordSet: gl.getUniformLocation(program, "uTexture2CoordSet"),
     useTexture2Transform: gl.getUniformLocation(program, "uUseTexture2Transform"),
@@ -12915,6 +12927,33 @@ function paintD3D8DrawIndexed(payload = {}) {
         }
       }
       harnessState.graphics.lastD3D8TextureUniformKey = textureUniformKey;
+    }
+    // Fog-of-war shroud UV generation for trees.  The tree FVF (XYZNDUV1) has
+    // only one UV set, so stage 1 (the shroud) has no per-vertex UVs and would
+    // otherwise sample a single corner texel (always bright) -> trees never
+    // darken in fog.  W3DTreeBuffer's Trees.nvv path generates the shroud UV
+    // per-vertex from world position; reproduce it here (oT1 = (worldXY + c32) *
+    // c33) using the c32/c33 constants captured from SetVertexShaderConstant.
+    // This runs every draw (outside the texture-uniform cache) so uTreeShroudGen
+    // is reliably reset to 0 for every non-tree draw and nothing else changes.
+    if (bridgeProgram.treeShroudGen) {
+      const treeShroud = payload.treeShroud;
+      const isTreeShroudDraw =
+        vertexShaderFvf === (D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_TEX1) &&
+        vertexStride === 36 &&
+        canSampleTexture1 &&
+        treeShroud &&
+        Array.isArray(treeShroud.c33) &&
+        treeShroud.c33[0] !== 0;
+      gl.uniform1i(bridgeProgram.treeShroudGen, isTreeShroudDraw ? 1 : 0);
+      if (isTreeShroudDraw) {
+        if (bridgeProgram.treeShroudOffset) {
+          gl.uniform2f(bridgeProgram.treeShroudOffset, treeShroud.c32[0], treeShroud.c32[1]);
+        }
+        if (bridgeProgram.treeShroudScale) {
+          gl.uniform2f(bridgeProgram.treeShroudScale, treeShroud.c33[0], treeShroud.c33[1]);
+        }
+      }
     }
     recordDrawSubphase?.("sortedDrawTextureUniformMs");
     recordDrawPhase?.("sortedDrawUniformMs");
