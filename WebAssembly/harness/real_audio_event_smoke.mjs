@@ -144,6 +144,61 @@ async function waitForDecodedSample(page, key, expectedNode, before, timeoutMs =
   })}`);
 }
 
+function assertFinitePosition(position, label, payload) {
+  expect(Number.isFinite(position?.x)
+      && Number.isFinite(position?.y)
+      && Number.isFinite(position?.z),
+    `${label} did not report a finite 3D position`, payload);
+}
+
+async function waitFor3DSpatialUpdates(page, handle, before, timeoutMs = 15000) {
+  const start = Date.now();
+  const beforeListener = before?.listenerAppliedUpdates ?? 0;
+  const beforeSample = before?.samplePositionAppliedUpdates ?? 0;
+  const sampleHandle = Number(handle);
+  let lastRuntime = null;
+  while (Date.now() - start < timeoutMs) {
+    await rpc(page, "realEngineFrameSummary", { frames: 1 });
+    const runtime = await sampleRuntime(page, "browserMss3DSamplePlaybackRuntime");
+    lastRuntime = runtime;
+    const listenerAdvanced = (runtime?.listenerAppliedUpdates ?? 0) > beforeListener;
+    const targetSampleUpdate = (runtime?.recentSamplePositions ?? []).find((update) =>
+      Number(update?.handle) === sampleHandle &&
+        Number(update?.sequence ?? 0) > beforeSample);
+    if (listenerAdvanced && targetSampleUpdate != null) {
+      assertFinitePosition(runtime.lastListener?.position, "Miles listener update", runtime);
+      assertFinitePosition(targetSampleUpdate.position, "Miles 3D sample update", runtime);
+      return { ...runtime, targetSampleUpdate };
+    }
+    if (runtime?.lastError) {
+      throw new Error(`3D spatial update failed: ${runtime.lastError}`);
+    }
+    await page.waitForTimeout(25);
+  }
+  throw new Error(`3D spatial listener/sample updates did not arrive: ${JSON.stringify({
+    handle: sampleHandle,
+    beforeListener,
+    beforeSample,
+    runtime: lastRuntime,
+  })}`);
+}
+
+async function waitFor3DListener(page, timeoutMs = 10000) {
+  const start = Date.now();
+  let lastRuntime = null;
+  while (Date.now() - start < timeoutMs) {
+    const runtime = await sampleRuntime(page, "browserMss3DSamplePlaybackRuntime");
+    lastRuntime = runtime;
+    if ((runtime?.listenerAppliedUpdates ?? 0) > 0) {
+      assertFinitePosition(runtime.lastListener?.position, "Miles listener", runtime);
+      return runtime;
+    }
+    await rpc(page, "realEngineFrameSummary", { frames: 1 });
+    await page.waitForTimeout(25);
+  }
+  throw new Error(`3D listener did not update: ${JSON.stringify(lastRuntime)}`);
+}
+
 async function waitForDecodedStream(page, filename, before, label = "stream", timeoutMs = 15000) {
   const start = Date.now();
   const beforeScheduled = before?.scheduled ?? 0;
@@ -408,11 +463,16 @@ try {
 
   await rpc(page, "realEngineFrameSummary", { frames: 2 });
 
-  const worldSoundBefore = await sampleRuntime(page, "browserMss3DSamplePlaybackRuntime");
+  await rpc(page, "realEngineFrameSummary", { frames: 60 });
+  const worldSoundBefore = await waitFor3DListener(page);
+  const worldSoundPosition = worldSoundBefore.lastListener.position;
   const worldSound = await rpc(page, "realEnginePlayAudioEvent", {
     name: "ArtilleryBarrageIncomingWhistle",
     positional: true,
-    useViewPosition: true,
+    useViewPosition: false,
+    x: worldSoundPosition.x,
+    y: worldSoundPosition.y,
+    z: worldSoundPosition.z,
     pumpFrames: 2,
   });
   expect(worldSound?.ok === true
@@ -436,6 +496,11 @@ try {
     worldSoundRuntime.lastEvent?.sample3D?.volume,
     "ArtilleryBarrageIncomingWhistle",
     { event: worldSound.result, playback: worldSoundRuntime.lastEvent },
+  );
+  const worldSoundSpatial = await waitFor3DSpatialUpdates(
+    page,
+    worldSoundRuntime.lastEvent?.handle,
+    worldSoundBefore,
   );
 
   const uiSoundBefore = await sampleRuntime(page, "browserMssSamplePlaybackRuntime");
@@ -499,6 +564,10 @@ try {
       nodeGraph: worldSoundRuntime.lastEvent.nodeGraph,
       frames: worldSoundRuntime.lastEvent.payload.frames,
       volume: worldSoundRuntime.lastEvent.sample3D.volume,
+      listenerAppliedUpdates: worldSoundSpatial.listenerAppliedUpdates,
+      samplePositionAppliedUpdates: worldSoundSpatial.samplePositionAppliedUpdates,
+      listenerPosition: worldSoundSpatial.lastListener?.position ?? null,
+      samplePosition: worldSoundSpatial.targetSampleUpdate?.position ?? null,
     },
     uiSound: {
       event: uiSound.result.requested,

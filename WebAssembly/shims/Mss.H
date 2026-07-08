@@ -605,6 +605,84 @@ static inline S32 MSSBrowserNotify3DSampleRelease(H3DSAMPLE sample)
 #endif
 }
 
+static inline S32 MSSBrowserNotify3DSamplePosition(const MSSBrowser3DSampleState &sample)
+{
+#ifdef __EMSCRIPTEN__
+	return EM_ASM_INT({
+		const bridge = typeof Module !== "undefined" ? Module.cncPortMss3DSamplePositionUpdate : null;
+		if (typeof bridge !== "function") {
+			return 0;
+		}
+		try {
+			return bridge({
+				handle: $0 >>> 0,
+				x: Number($1),
+				y: Number($2),
+				z: Number($3),
+			}) ? 1 : 0;
+		} catch (error) {
+			console.error("cncPortMss3DSamplePositionUpdate failed", error);
+			return 0;
+		}
+	},
+		static_cast<unsigned int>(sample.handle),
+		static_cast<double>(sample.position.x),
+		static_cast<double>(sample.position.y),
+		static_cast<double>(sample.position.z));
+#else
+	(void)sample;
+	return 0;
+#endif
+}
+
+static inline S32 MSSBrowserNotify3DListenerUpdate(const MSSBrowser3DListenerState &listener)
+{
+#ifdef __EMSCRIPTEN__
+	return EM_ASM_INT({
+		const bridge = typeof Module !== "undefined" ? Module.cncPortMss3DListenerUpdate : null;
+		if (typeof bridge !== "function") {
+			return 0;
+		}
+		try {
+			return bridge({
+				handle: $0 >>> 0,
+				x: Number($1),
+				y: Number($2),
+				z: Number($3),
+				frontX: Number($4),
+				frontY: Number($5),
+				frontZ: Number($6),
+				upX: Number($7),
+				upY: Number($8),
+				upZ: Number($9),
+				velocityX: Number($10),
+				velocityY: Number($11),
+				velocityZ: Number($12),
+			}) ? 1 : 0;
+		} catch (error) {
+			console.error("cncPortMss3DListenerUpdate failed", error);
+			return 0;
+		}
+	},
+		static_cast<unsigned int>(listener.handle),
+		static_cast<double>(listener.position.x),
+		static_cast<double>(listener.position.y),
+		static_cast<double>(listener.position.z),
+		static_cast<double>(listener.front.x),
+		static_cast<double>(listener.front.y),
+		static_cast<double>(listener.front.z),
+		static_cast<double>(listener.up.x),
+		static_cast<double>(listener.up.y),
+		static_cast<double>(listener.up.z),
+		static_cast<double>(listener.velocity.x),
+		static_cast<double>(listener.velocity.y),
+		static_cast<double>(listener.velocity.z));
+#else
+	(void)listener;
+	return 0;
+#endif
+}
+
 // ---- Stream browser notifications ----
 
 static inline S32 MSSBrowserNotifyStreamStart(const MSSBrowserStreamState &stream)
@@ -1559,11 +1637,15 @@ static inline void AIL_set_3D_position(H3DPOBJECT object, F32 x, F32 y, F32 z)
 	MSSBrowser3DSampleState *sample = MSSBrowserFind3DSample(object);
 	if (sample != nullptr) {
 		sample->position = { x, y, z };
+		if (sample->browser_playback_requested && !sample->released) {
+			MSSBrowserNotify3DSamplePosition(*sample);
+		}
 		return;
 	}
 	MSSBrowser3DListenerState *listener = MSSBrowserFind3DListener(object);
 	if (listener != nullptr) {
 		listener->position = { x, y, z };
+		MSSBrowserNotify3DListenerUpdate(*listener);
 	}
 }
 static inline void AIL_set_3D_orientation(
@@ -1579,6 +1661,7 @@ static inline void AIL_set_3D_orientation(
 	if (listener != nullptr) {
 		listener->front = { frontX, frontY, frontZ };
 		listener->up = { upX, upY, upZ };
+		MSSBrowserNotify3DListenerUpdate(*listener);
 	}
 }
 static inline void AIL_set_3D_velocity_vector(H3DPOBJECT object, F32 x, F32 y, F32 z)
@@ -1591,6 +1674,7 @@ static inline void AIL_set_3D_velocity_vector(H3DPOBJECT object, F32 x, F32 y, F
 	MSSBrowser3DListenerState *listener = MSSBrowserFind3DListener(object);
 	if (listener != nullptr) {
 		listener->velocity = { x, y, z };
+		MSSBrowserNotify3DListenerUpdate(*listener);
 	}
 }
 static inline void AIL_set_3D_sample_distances(H3DSAMPLE sample, F32 minDistance, F32 maxDistance)

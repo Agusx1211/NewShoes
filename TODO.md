@@ -2473,9 +2473,11 @@ residue and the next frontier.
       engine-driven Web Audio scheduling/lifecycle coverage.
 - [ ] Complete dynamic 3D audio behavior after the engine-driven positional
       sample start path. `test:real-audio-event` proves one real world SFX
-      reaches `PannerNode -> sound3DGainNode`; remaining work is listener
-      updates, attenuation/zoom-volume recompute for already-playing samples,
-      and camera/world movement validation during gameplay.
+      reaches `PannerNode -> sound3DGainNode`, and the browser MSS bridge now
+      applies real Miles listener position/orientation updates plus active
+      sample `AIL_set_3D_position` updates to Web Audio; remaining work is
+      attenuation/zoom-volume recompute for already-playing samples and
+      camera/world movement validation during active gameplay.
 - [ ] Music playback + transitions; `verify:audio-music-manager-frontier` now
       pins the source-only `MusicTrack` / `MusicManager` / Miles stream route,
       volume bus, Music.ini parse path, and next/previous/completion state
@@ -3289,10 +3291,15 @@ and then start with the PROFILE, not with any individual fix.
       SwiftShader screenshot goldens with a tolerance diff. First golden to
       add: a z-bias scene (bridges/overlays) so the 33641ab draw-order fix
       can't silently regress.
-- [ ] Wire `setListenerPosition`/listener orientation updates from the real
-      camera into the browser MSS 3D path during gameplay — 3D panners
-      exist but the listener never moves, so positional audio won't track
-      the camera (Fable audit; M7 follow-up).
+- [ ] Verify sustained gameplay 3D audio camera/source movement in active
+      skirmish. The browser MSS bridge now applies real Miles listener
+      position/orientation updates to `AudioContext.listener` and active sample
+      `AIL_set_3D_position` updates to live `PannerNode`s, and
+      `real_audio_event_smoke.mjs` proves an engine-driven 3D event receives
+      listener + sample spatial updates on debug/release builds. Remaining:
+      drive active skirmish camera movement with naturally triggered or
+      long-lived positional sounds and assert panner/listener updates over
+      gameplay frames.
 - [ ] Deterministic-replay regression (record once, assert identical playback).
 - [ ] Promote issue-dump replay from browser input/frame reproduction to an
       original-engine checkpoint once `Recorder.cpp`/save-load ownership is

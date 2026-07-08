@@ -2371,7 +2371,15 @@ function summarizeBrowserMss3DSamplePlaybackRuntime() {
     stopped: browserMss3DSamplePlaybackRuntime.stopped,
     ended: browserMss3DSamplePlaybackRuntime.ended,
     released: browserMss3DSamplePlaybackRuntime.released,
+    listenerUpdates: browserMss3DSamplePlaybackRuntime.listenerUpdates,
+    listenerAppliedUpdates: browserMss3DSamplePlaybackRuntime.listenerAppliedUpdates,
+    samplePositionUpdates: browserMss3DSamplePlaybackRuntime.samplePositionUpdates,
+    samplePositionAppliedUpdates: browserMss3DSamplePlaybackRuntime.samplePositionAppliedUpdates,
     activeSources: browserMss3DSamplePlaybackRuntime.activeSources.size,
+    lastListener: browserMss3DSamplePlaybackRuntime.lastListener,
+    lastSamplePosition: browserMss3DSamplePlaybackRuntime.lastSamplePosition,
+    lastIgnoredUpdate: browserMss3DSamplePlaybackRuntime.lastIgnoredUpdate,
+    recentSamplePositions: [...browserMss3DSamplePlaybackRuntime.recentSamplePositions],
     lastEvent: browserMss3DSamplePlaybackRuntime.lastEvent,
     eventLog: [...browserMss3DSamplePlaybackRuntime.eventLog],
     lastError: browserMss3DSamplePlaybackRuntime.lastError,
@@ -2584,6 +2592,62 @@ function cncPortMssSampleRelease(payload) {
 
 // ---- 3D sample Web Audio handlers (positioned unit sounds) ----
 
+function finiteAudioCoordinate(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function audioContextTime(context) {
+  const value = Number(context?.currentTime ?? 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function setWebAudioPosition(target, position, time = 0) {
+  const next = {
+    x: finiteAudioCoordinate(position?.x),
+    y: finiteAudioCoordinate(position?.y),
+    z: finiteAudioCoordinate(position?.z),
+  };
+  if (target?.positionX && target?.positionY && target?.positionZ) {
+    setAudioParamValue(target, "positionX", next.x, time);
+    setAudioParamValue(target, "positionY", next.y, time);
+    setAudioParamValue(target, "positionZ", next.z, time);
+  } else if (target && typeof target.setPosition === "function") {
+    target.setPosition(next.x, next.y, next.z);
+  }
+  return next;
+}
+
+function setWebAudioListenerOrientation(listener, orientation, time = 0) {
+  const next = {
+    frontX: finiteAudioCoordinate(orientation?.frontX),
+    frontY: finiteAudioCoordinate(orientation?.frontY, 1),
+    frontZ: finiteAudioCoordinate(orientation?.frontZ),
+    upX: finiteAudioCoordinate(orientation?.upX),
+    upY: finiteAudioCoordinate(orientation?.upY),
+    upZ: finiteAudioCoordinate(orientation?.upZ, -1),
+  };
+  if (listener?.forwardX && listener?.forwardY && listener?.forwardZ &&
+      listener?.upX && listener?.upY && listener?.upZ) {
+    setAudioParamValue(listener, "forwardX", next.frontX, time);
+    setAudioParamValue(listener, "forwardY", next.frontY, time);
+    setAudioParamValue(listener, "forwardZ", next.frontZ, time);
+    setAudioParamValue(listener, "upX", next.upX, time);
+    setAudioParamValue(listener, "upY", next.upY, time);
+    setAudioParamValue(listener, "upZ", next.upZ, time);
+  } else if (listener && typeof listener.setOrientation === "function") {
+    listener.setOrientation(
+      next.frontX,
+      next.frontY,
+      next.frontZ,
+      next.upX,
+      next.upY,
+      next.upZ,
+    );
+  }
+  return next;
+}
+
 const browserMss3DSamplePlaybackRuntime = {
   activeSources: new Map(), // handle -> { source, gain, panner }
   pendingCompletions: new Map(), // handle -> Promise
@@ -2592,6 +2656,14 @@ const browserMss3DSamplePlaybackRuntime = {
   stopped: 0,
   ended: 0,
   released: 0,
+  listenerUpdates: 0,
+  listenerAppliedUpdates: 0,
+  samplePositionUpdates: 0,
+  samplePositionAppliedUpdates: 0,
+  lastListener: null,
+  lastSamplePosition: null,
+  lastIgnoredUpdate: null,
+  recentSamplePositions: [],
   eventLog: [],
   lastEvent: null,
   lastError: null,
@@ -2628,10 +2700,11 @@ function cncPortMss3DSampleStart(payload, heapu8) {
     panner.maxDistance = Math.max(payload.maxDistance ?? 10.0, 1.0);
     panner.rolloffFactor = 1.0;
     // Set 3D position from Miles coordinates
-    const x = Number(payload.x ?? 0);
-    const y = Number(payload.y ?? 0);
-    const z = Number(payload.z ?? 0);
-    panner.setPosition(x, y, z);
+    const position = setWebAudioPosition(panner, {
+      x: payload.x,
+      y: payload.y,
+      z: payload.z,
+    }, audioContextTime(context));
 
     const volume = clamp01(Number(payload.volumeFloat ?? ((payload.volume ?? 127) / 127)));
     gain.gain.value = volume;
@@ -2661,7 +2734,7 @@ function cncPortMss3DSampleStart(payload, heapu8) {
       },
       sample3D: {
         volume,
-        position: { x, y, z },
+        position,
         playbackRate: Number(payload.playbackRate ?? decoded.info.samplesPerSec),
         loopCount: Number(payload.loopCount ?? 1),
         minDistance: Number(payload.minDistance ?? 0),
@@ -2704,7 +2777,7 @@ function cncPortMss3DSampleStart(payload, heapu8) {
     browserMss3DSamplePlaybackRuntime.started += 1;
     browserMss3DSamplePlaybackRuntime.eventLog.push(
       { handle, phase: "AIL_start_3D_sample", node: "AudioBufferSourceNode" },
-      { handle, phase: "webAudioStart3D", volume, position: { x, y, z } },
+      { handle, phase: "webAudioStart3D", volume, position },
     );
     browserMss3DSamplePlaybackRuntime.lastEvent = event;
     browserMss3DSamplePlaybackRuntime.activeSources.set(handle, { source, gain, panner });
@@ -2715,6 +2788,84 @@ function cncPortMss3DSampleStart(payload, heapu8) {
     browserMss3DSamplePlaybackRuntime.lastError = error?.message ?? String(error);
     return false;
   }
+}
+
+function cncPortMss3DSamplePositionUpdate(payload) {
+  const handle = Number(payload?.handle ?? 0);
+  const position = {
+    x: payload?.x,
+    y: payload?.y,
+    z: payload?.z,
+  };
+  browserMss3DSamplePlaybackRuntime.samplePositionUpdates += 1;
+  const entry = browserMss3DSamplePlaybackRuntime.activeSources.get(handle);
+  if (!entry?.panner) {
+    browserMss3DSamplePlaybackRuntime.lastIgnoredUpdate = {
+      phase: "AIL_set_3D_position",
+      handle,
+      reason: "inactive-sample",
+    };
+    return false;
+  }
+  const context = browserAudioRuntime.context;
+  const appliedPosition = setWebAudioPosition(
+    entry.panner,
+    position,
+    audioContextTime(context),
+  );
+  browserMss3DSamplePlaybackRuntime.samplePositionAppliedUpdates += 1;
+  const update = {
+    sequence: browserMss3DSamplePlaybackRuntime.samplePositionAppliedUpdates,
+    handle,
+    position: appliedPosition,
+  };
+  browserMss3DSamplePlaybackRuntime.lastSamplePosition = update;
+  browserMss3DSamplePlaybackRuntime.recentSamplePositions.push(update);
+  if (browserMss3DSamplePlaybackRuntime.recentSamplePositions.length > 128) {
+    browserMss3DSamplePlaybackRuntime.recentSamplePositions.shift();
+  }
+  return true;
+}
+
+function cncPortMss3DListenerUpdate(payload) {
+  browserMss3DSamplePlaybackRuntime.listenerUpdates += 1;
+  const context = browserAudioRuntime.context;
+  if (!context?.listener) {
+    browserMss3DSamplePlaybackRuntime.lastIgnoredUpdate = {
+      phase: "AIL_set_3D_listener",
+      handle: Number(payload?.handle ?? 0),
+      reason: "audio-listener-unavailable",
+    };
+    return false;
+  }
+  const time = audioContextTime(context);
+  const position = setWebAudioPosition(context.listener, {
+    x: payload?.x,
+    y: payload?.y,
+    z: payload?.z,
+  }, time);
+  const orientation = setWebAudioListenerOrientation(context.listener, {
+    frontX: payload?.frontX,
+    frontY: payload?.frontY,
+    frontZ: payload?.frontZ,
+    upX: payload?.upX,
+    upY: payload?.upY,
+    upZ: payload?.upZ,
+  }, time);
+  const velocity = {
+    x: finiteAudioCoordinate(payload?.velocityX),
+    y: finiteAudioCoordinate(payload?.velocityY),
+    z: finiteAudioCoordinate(payload?.velocityZ),
+  };
+  browserMss3DSamplePlaybackRuntime.listenerAppliedUpdates += 1;
+  browserMss3DSamplePlaybackRuntime.lastListener = {
+    handle: Number(payload?.handle ?? 0),
+    position,
+    orientation,
+    velocity,
+  };
+  browserMss3DSamplePlaybackRuntime.lastError = null;
+  return true;
 }
 
 function cncPortMss3DSampleStop(payload) {
@@ -12584,6 +12735,8 @@ async function loadWasmModule() {
       cncPortMssSampleEnd,
       cncPortMssSampleRelease,
       cncPortMss3DSampleStart,
+      cncPortMss3DSamplePositionUpdate,
+      cncPortMss3DListenerUpdate,
       cncPortMss3DSampleStop,
       cncPortMss3DSampleEnd,
       cncPortMss3DSampleRelease,
@@ -14062,10 +14215,10 @@ function summarizeRenderedAudioWindow(channelData, startFrame, endFrame) {
   };
 }
 
-function setAudioParamValue(target, key, value) {
+function setAudioParamValue(target, key, value, time = 0) {
   const param = target?.[key];
   if (param && typeof param.setValueAtTime === "function") {
-    param.setValueAtTime(value, 0);
+    param.setValueAtTime(value, time);
   } else if (target) {
     target[key] = value;
   }

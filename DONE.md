@@ -8691,6 +8691,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       manager. Verified locally with
       `npm --prefix WebAssembly run test:real-audio-event` and on the Mac M4
       Metal-backed Chrome with `REAL_AUDIO_BROWSER_EXECUTABLE="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" REAL_AUDIO_BROWSER_ARGS="--enable-gpu --use-angle=metal" /opt/homebrew/bin/node harness/real_audio_event_smoke.mjs`.
+- [x] Apply live Miles 3D listener and sample-position updates to Web Audio.
+      The browser MSS shim now forwards real `AIL_set_3D_orientation`,
+      listener `AIL_set_3D_position`, and listener velocity calls to
+      `cncPortMss3DListenerUpdate`, which updates `AudioContext.listener`
+      position/orientation with the current Miles state. Active 3D sample
+      `AIL_set_3D_position` calls now notify
+      `cncPortMss3DSamplePositionUpdate`, which applies the updated coordinates
+      to the existing `PannerNode` instead of only using the start-time
+      position. `real_audio_event_smoke.mjs` now waits for a settled real
+      listener, plays `ArtilleryBarrageIncomingWhistle` through the original
+      engine event path, and asserts finite listener and target sample spatial
+      updates from the live bridge. Verified with
+      `node --check WebAssembly/harness/bridge.js`,
+      `node --check WebAssembly/harness/real_audio_event_smoke.mjs`,
+      `git diff --check`, `npm --prefix WebAssembly run build:port`,
+      `REAL_AUDIO_DIST_DIR=dist node WebAssembly/harness/real_audio_event_smoke.mjs`,
+      `npm --prefix WebAssembly run build:port:release`, and
+      `REAL_AUDIO_DIST_DIR=dist-release node WebAssembly/harness/real_audio_event_smoke.mjs`.
 - [x] Drive a real engine-owned music stream through the browser MSS Web Audio
       backend in `cnc-port`. `real_audio_event_smoke.mjs` now plays the shipped
       ZH `MusicTrack` `Game_USA_10` through the original
