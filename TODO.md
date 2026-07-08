@@ -736,18 +736,39 @@ found several effects the original shipped that the port silently drops (shaders
 + gamma are stubbed). Each is an individual item; verify with before/after
 screenshots on the release build.
 
-- [ ] **Terrain noise/detail shaders are dead (flat ground)** — the shim stubs
-      the programmable pipeline (`wasm_d3d8_shim.cpp:3399-3402`:
-      `CreatePixelShader → D3DERR_NOTAVAILABLE`, `SetPixelShader/SetVertexShader`
-      no-ops), so the shipped terrain shaders (`Shaders/terrainnoise*.nvp`,
-      `fterrainnoise*.nvp`, `roadnoise2.nvp`) never run. `HeightMap.cpp:2064-2092`
-      selects `W3DShaderManager::ST_TERRAIN_BASE_NOISE1/2/12` plus a "macro
-      noise/lightmap texture (pass 3)"; with shaders unavailable W3D falls back
-      to plain fixed-function terrain, losing the fine noise + lightmap detail
-      layer that gave the ground texture/depth. Fix: reimplement the terrain
-      base+noise multi-texture blend as a WebGL2 shader in the bridge (the
-      fixed-function fallback drops the noise/lightmap pass). Verify vs original
-      terrain screenshots.
+- [ ] **Terrain noise/detail shaders — verify the detail layer is enabled at
+      runtime (premise re-diagnosed).** Original investigation assumed the
+      pixel-shader stub (`wasm_d3d8_shim.cpp`: `CreatePixelShader →
+      D3DERR_NOTAVAILABLE`) killed the terrain detail. That is *not* the cause.
+      The port intentionally reports a fixed-function Voodoo5-class adapter
+      (`VendorId=0x121a`, `DeviceId=0x0009` → `DC_VOODOO5=4`), so
+      `W3DShaderManager` selects the fixed-function `TerrainShader2Stage` path —
+      which is the *correct* original path for that device class, not a
+      degraded fallback. That path (and the single-pass `ST_TERRAIN_BASE_NOISE12`
+      variant) is fully and correctly implemented end-to-end: the C++ shim
+      captures the `D3DTS_TEXTURE0/1` noise/cloud transforms and the multi-pass
+      draws; `bridge.js` has camera-space (`D3DTSS_TCI_CAMERASPACEPOSITION`)
+      texgen, per-stage texture-transform matrices, WRAP addressing, and the
+      multiplicative `SRCBLEND=DESTCOLOR / DESTBLEND=ZERO` blend. Verified the
+      noise pass gets a *distinct* derivedStateHash (native hash includes texture
+      transforms + all texture-stage states incl. TEXCOORDINDEX/TEXTURETRANSFORM
+      + blend states) so it is never batch-merged or draw-cache-deduped with the
+      base pass. DONE.md ("terrain cloud shadows are not dropped") already proved
+      the cloud-modulation pass runs (~208 cloud draws) in a real shellmap boot.
+      Real remaining cause of "flat ground" is upstream **engine LOD / Options
+      gating**: `ST_TERRAIN_BASE_NOISE*` is only selected when
+      `TheGlobalData->m_useLightMap` (fine `TSNoiseUrb.tga` macro/lightmap grain,
+      stage 3) and/or `m_useCloudMap` (cloud shadow) are TRUE, set from the
+      GameLOD preset / player Options (`GameLOD.cpp:354-355,577-578`) — both
+      default FALSE and the dynamic-benchmark fallback lands on
+      `STATIC_GAME_LOD_LOW`. **Next:** on the Mac GPU, read the new
+      `terrainNoiseMultiplyDraws` / `...TransformedDraws` /
+      `...IdentityTransformDraws` counters in `d3d8PerfSummary()` (bridge.js) to
+      confirm whether the noise/lightmap pass is actually emitted. If the counter
+      is 0, the fix is to enable `m_useLightMap`/`m_useCloudMap` via the real
+      Options/LOD path (engine/INI, not the bridge) — do NOT force flags or
+      invent shading. If the counter is nonzero but terrain still looks flat,
+      compare the noise texture sampling/UV scale against original screenshots.
 - [ ] **Heat-haze / screen smudges not rendering (flat explosions/fire)** — the
       original distorts the background behind heat particles ("screen smudges
       which are particles that distort the background behind them",
