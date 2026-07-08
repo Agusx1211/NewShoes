@@ -551,15 +551,6 @@ symptom is temporal — NOT a single still.
       terrain tile-texture atlas/UV/index bug independent of the cache. Verify no
       wrong tiles appear across a panned multi-frame terrain view.
 
-- [ ] **Rally-point line does not render** — when a production building's rally
-      point (the "go to here after created" point) is set, the white rally line
-      from the building to the rally point does not draw. The rally point itself /
-      unit routing may work, but the visual line is missing. Trace the rally-line
-      draw path (W3D in-world line/decal rendering for `RallyPoint` / the
-      drawable's rally feedback) and confirm it submits through the browser D3D8
-      layer; likely an unrendered line-primitive / XYZRHW or in-world line draw,
-      similar in kind to other missing overlay primitives. Verify with a
-      multi-frame screenshot showing the line after setting a rally point.
 - [ ] **Ground toxin/radiation fields do not render** — toxins on the ground
       (anthrax, radiation, and similar persistent ground effects) are not drawn.
       The field is likely still active in simulation (damage over area) but the
@@ -2071,7 +2062,20 @@ residue and the next frontier.
       `CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS` guard and
       `wasm_ww3d_terrain_probe_stubs.cpp` weak adjacent-system symbols with
       the real tree, prop, bib, bridge, waypoint, shroud, water, and road
-      runtime systems as those subsystems become browser-ready. The original
+      runtime systems as those subsystems become browser-ready.
+      2026-07-08: the **tree, prop, bib, bridge, and waypoint** buffers are now
+      instantiated unconditionally in `BaseHeightMapRenderObjClass` ctor
+      (source, not macro — sidesteps the two-TU ODR ambiguity where the
+      macro-guarded probe TU wins the link and left them NULL). Live skirmish
+      boot (China/GLA/USA random maps) renders real trees, building bibs, and
+      the rally/waypoint feedback lines with no crash — verified via
+      `skirmish_start_smoke.mjs` (`SKIRMISH_START_RALLY_PROBE=1` drives select
+      building + right-click rally + screenshot). This was the root cause of the
+      "rally-point line does not render" bug (drawWaypoints never ran because
+      `m_waypointBuffer==NULL`). Remaining: the shroud enable-gate, the road
+      `DO_ROADS` path, water, and the weak `wasm_ww3d_terrain_probe_stubs.cpp`
+      symbols still use the probe guard; a full macro/stub removal previously
+      timed out + crashed Chromium, so retire them per-subsystem. The original
       `W3DBibBuffer` constructor/add/remove/clear/free lifecycle is now
       browser-harness verified through browser-backed D3D8 buffers/textures,
       and the original `W3DPropBuffer` add/update/doFullUpdate/cull/remove/clear

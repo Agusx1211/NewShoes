@@ -318,32 +318,34 @@ BaseHeightMapRenderObjClass::BaseHeightMapRenderObjClass(void)
 	m_useDepthFade = false;
 	m_disableTextures = false;
 	TheTerrainRenderObject = this;
-	m_treeBuffer = NULL; 
-
-#ifndef CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS
+	// Terrain adjacent systems re-enabled for the port build. The
+	// minimal-heightmap probe guard previously left these buffers NULL, so the
+	// real trees, props, building bibs, bridges (and rally/waypoint lines below)
+	// silently never rendered even though their draw call sites run guarded by
+	// NULL checks. Each buffer's original browser draw path is source-backed and
+	// harness-verified; instantiate them unconditionally so the linked BaseHeightMap
+	// translation unit that wins ODR always owns the real systems.
+	m_treeBuffer = NULL;
 	m_treeBuffer = NEW W3DTreeBuffer;
-#endif
 
-	m_propBuffer = NULL; 
-
-#ifndef CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS
+	m_propBuffer = NULL;
 	m_propBuffer = NEW W3DPropBuffer;
-#endif
-
 
 	m_bibBuffer = NULL;
-#ifndef CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS
 	m_bibBuffer = NEW W3DBibBuffer;
-#endif
+
 	m_curImpassableSlope = 45.0f;	// default to 45 degrees.
 	m_bridgeBuffer = NULL;
-#ifndef CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS
 	m_bridgeBuffer = NEW W3DBridgeBuffer;
-#endif
 	m_waypointBuffer = NULL;
-#ifndef CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS
+	// Rally-point and unit-waypoint feedback lines. Re-enabled for the port
+	// build even under the minimal-heightmap probe guard: leaving this NULL made
+	// BaseHeightMapRenderObjClass::Render skip drawWaypoints() entirely, so the
+	// white rally line (production structure -> rally point) and the unit
+	// waypoint-plot lines never rendered. The waypoint buffer is lightweight (a
+	// SegmentedLineClass plus an SCMNode marker render object) and its
+	// destroy/free paths are already NULL-guarded.
 	m_waypointBuffer = NEW W3DWaypointBuffer;
-#endif
 #ifdef DO_ROADS
 	m_roadBuffer = NULL;
 	m_roadBuffer = NEW W3DRoadBuffer;
