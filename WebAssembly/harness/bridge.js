@@ -1160,6 +1160,8 @@ function d3d8DerivedDrawCacheEntryMatches(
   derivedStateHash,
   texture0Id,
   texture1Id,
+  texture2Id,
+  texture3Id,
   vertexShaderFvf,
   vertexStride,
   primitiveType,
@@ -1167,6 +1169,8 @@ function d3d8DerivedDrawCacheEntryMatches(
   return entry.derivedStateHash === derivedStateHash &&
     entry.texture0Id === texture0Id &&
     entry.texture1Id === texture1Id &&
+    entry.texture2Id === texture2Id &&
+    entry.texture3Id === texture3Id &&
     entry.vertexShaderFvf === vertexShaderFvf &&
     entry.vertexStride === vertexStride &&
     entry.primitiveType === primitiveType;
@@ -1176,6 +1180,8 @@ function findD3D8DerivedDrawCacheEntry(
   derivedStateHash,
   texture0Id,
   texture1Id,
+  texture2Id,
+  texture3Id,
   vertexShaderFvf,
   vertexStride,
   primitiveType,
@@ -1190,6 +1196,8 @@ function findD3D8DerivedDrawCacheEntry(
       derivedStateHash,
       texture0Id,
       texture1Id,
+      texture2Id,
+      texture3Id,
       vertexShaderFvf,
       vertexStride,
       primitiveType,
@@ -1231,6 +1239,8 @@ function rememberD3D8DerivedDrawCacheEntry(
   derivedStateHash,
   texture0Id,
   texture1Id,
+  texture2Id,
+  texture3Id,
   vertexShaderFvf,
   vertexStride,
   primitiveType,
@@ -1247,6 +1257,8 @@ function rememberD3D8DerivedDrawCacheEntry(
       derivedStateHash,
       texture0Id,
       texture1Id,
+      texture2Id,
+      texture3Id,
       vertexShaderFvf,
       vertexStride,
       primitiveType,
@@ -1260,6 +1272,8 @@ function rememberD3D8DerivedDrawCacheEntry(
     derivedStateHash,
     texture0Id,
     texture1Id,
+    texture2Id,
+    texture3Id,
     vertexShaderFvf,
     vertexStride,
     primitiveType,
@@ -5537,6 +5551,8 @@ function d3d8BaseUniformKey(useTransforms, usePretransformedPosition, appliedVie
 function d3d8StageUniformKey(renderState) {
   const stage0 = renderState.textureStages[0];
   const stage1 = renderState.textureStages[1];
+  const stage2 = renderState.textureStages[2];
+  const stage3 = renderState.textureStages[3];
   return [
     renderState.textureFactor,
     stage0.colorOp,
@@ -5556,6 +5572,25 @@ function d3d8StageUniformKey(renderState) {
     stage1.alphaArg0,
     stage1.alphaArg1,
     stage1.alphaArg2,
+    stage1.resultArg,
+    stage2.colorOp,
+    stage2.colorArg0,
+    stage2.colorArg1,
+    stage2.colorArg2,
+    stage2.alphaOp,
+    stage2.alphaArg0,
+    stage2.alphaArg1,
+    stage2.alphaArg2,
+    stage2.resultArg,
+    stage3.colorOp,
+    stage3.colorArg0,
+    stage3.colorArg1,
+    stage3.colorArg2,
+    stage3.alphaOp,
+    stage3.alphaArg0,
+    stage3.alphaArg1,
+    stage3.alphaArg2,
+    stage3.resultArg,
   ].join(",");
 }
 
@@ -5576,16 +5611,24 @@ function d3d8TextureLayoutUniformKey({
   renderState,
   canSampleTexture0,
   canSampleTexture1,
+  canSampleTexture2,
+  canSampleTexture3,
   texture0Coordinates,
   texture1Coordinates,
+  texture2Coordinates,
+  texture3Coordinates,
   texture0SemanticMode,
   texture1SemanticMode,
+  texture2SemanticMode,
+  texture3SemanticMode,
   implicitAlphaCutoutThreshold,
   texture0Transform,
   texture1Transform,
+  texture2Transform,
+  texture3Transform,
 }) {
   const values = [implicitAlphaCutoutThreshold];
-  const pushStage = (stage, canSampleTexture, coordinates, semanticMode, textureTransform) => {
+  const pushStage = (stage, canSampleTexture, coordinates, semanticMode, textureTransform, includeCoordSet = false) => {
     const transformApplied = Boolean(canSampleTexture && coordinates.transformApplied);
     values.push(
       canSampleTexture ? 1 : 0,
@@ -5596,6 +5639,12 @@ function d3d8TextureLayoutUniformKey({
       canSampleTexture ? Number(stage.mipMapLodBias ?? 0) >>> 0 : 0,
       canSampleTexture ? semanticMode : 0,
     );
+    // Stages 2/3 select which vertex UV set feeds the shader, so the coordinate
+    // index participates in the layout key. Stages 0/1 always map coordSet->attr
+    // 1:1 in the vertex fetch, so their key is left unchanged.
+    if (includeCoordSet) {
+      values.push(canSampleTexture ? (coordinates.coordSet >>> 0) : 0);
+    }
     if (transformApplied) {
       values.push(...textureTransform);
     }
@@ -5613,6 +5662,22 @@ function d3d8TextureLayoutUniformKey({
     texture1Coordinates,
     texture1SemanticMode,
     texture1Transform,
+  );
+  pushStage(
+    renderState.textureStages[2],
+    canSampleTexture2,
+    texture2Coordinates,
+    texture2SemanticMode,
+    texture2Transform,
+    true,
+  );
+  pushStage(
+    renderState.textureStages[3],
+    canSampleTexture3,
+    texture3Coordinates,
+    texture3SemanticMode,
+    texture3Transform,
+    true,
   );
   return values.join(",");
 }
@@ -6366,7 +6431,7 @@ function textureStageCombinerInfo(textureStage, stage, canSampleTexture) {
   const alphaNeedsArg0 = d3dTextureCombinerOpUsesArg0(alphaOp);
   const alphaNeedsArg1 = d3dTextureCombinerOpUsesArg1(alphaOp);
   const alphaNeedsArg2 = d3dTextureCombinerOpUsesArg2(alphaOp);
-  const supportedAlphaOp = stage <= 1
+  const supportedAlphaOp = stage <= 3
     ? d3dTextureCombinerOpSupported(alphaOp, "alpha")
     : alphaOp === D3DTOP_DISABLE || stageAlphaPassesCurrent;
   const supportedAlphaArg0 = !alphaNeedsArg0 || d3dTextureCombinerArgSupported(alphaArg0);
@@ -6410,8 +6475,9 @@ function textureStageCombinerInfo(textureStage, stage, canSampleTexture) {
   };
 }
 
-function warnD3D8CombinerDiagnostics(renderState, stage0Combiner, stage1Combiner, drawSequence) {
-  for (const combiner of [stage0Combiner, stage1Combiner]) {
+function warnD3D8CombinerDiagnostics(renderState, stage0Combiner, stage1Combiner,
+    stage2Combiner, stage3Combiner, drawSequence) {
+  for (const combiner of [stage0Combiner, stage1Combiner, stage2Combiner, stage3Combiner]) {
     if (!combiner || combiner.supported) {
       continue;
     }
@@ -6451,7 +6517,11 @@ function warnD3D8CombinerDiagnostics(renderState, stage0Combiner, stage1Combiner
     );
   }
 
-  for (let stage = 2; stage < D3D8_TEXTURE_STAGE_COUNT; ++stage) {
+  // Stages 0-3 are now rendered by the fixed-function combiner cascade. Stages
+  // 4-7 are still not sampled by the browser shader, so keep warning if the
+  // engine ever activates one (the shipped fixed-function paths top out at 4
+  // simultaneous stages, so this should stay silent).
+  for (let stage = 4; stage < D3D8_TEXTURE_STAGE_COUNT; ++stage) {
     const textureStage = renderState?.textureStages?.[stage];
     if (!textureStage) {
       continue;
@@ -6463,7 +6533,7 @@ function warnD3D8CombinerDiagnostics(renderState, stage0Combiner, stage1Combiner
     }
     warnD3D8Once(
       `stage:${stage}:${colorOp}:${alphaOp}`,
-      `texture stage ${stage} is active but the browser shader currently renders only stages 0 and 1`,
+      `texture stage ${stage} is active but the browser shader currently renders only stages 0-3`,
       {
         drawSequence,
         stage,
@@ -7958,6 +8028,18 @@ function ensureD3D8DrawProgram() {
     uniform mat4 uTexture1Transform;
     uniform int uTexture1TransformComponentCount;
     uniform bool uTexture1TransformProjected;
+    uniform int uTexture2CoordinateMode;
+    uniform int uTexture2CoordSet;
+    uniform bool uUseTexture2Transform;
+    uniform mat4 uTexture2Transform;
+    uniform int uTexture2TransformComponentCount;
+    uniform bool uTexture2TransformProjected;
+    uniform int uTexture3CoordinateMode;
+    uniform int uTexture3CoordSet;
+    uniform bool uUseTexture3Transform;
+    uniform mat4 uTexture3Transform;
+    uniform int uTexture3TransformComponentCount;
+    uniform bool uTexture3TransformProjected;
     uniform float uPointSize;
     uniform float uPointSizeMin;
     uniform float uPointSizeMax;
@@ -7995,6 +8077,8 @@ function ensureD3D8DrawProgram() {
     flat out vec4 vFlatColor;
     out vec2 vTexCoord0;
     out vec2 vTexCoord1;
+    out vec2 vTexCoord2;
+    out vec2 vTexCoord3;
     out vec4 vClipPosition;
     out float vFogDepth;
     out float vFogRangeDistance;
@@ -8217,6 +8301,41 @@ function ensureD3D8DrawProgram() {
       } else {
         vTexCoord1 = texture1Coordinate.xy;
       }
+      // Stages 2/3 either read a generated camera-space coord (the terrain/water
+      // noise + lightmap layers use D3DTSS_TCI_CAMERASPACEPOSITION) or reuse an
+      // existing vertex UV set selected by D3DTSS_TEXCOORDINDEX (coordSet 0/1,
+      // the only sets the XYZNDUV FVF exposes). uTextureNCoordSet picks the base
+      // UV; the transform (STRETCH_FACTOR noise projection etc.) is then applied.
+      vec2 texCoord2Base = uTexture2CoordSet == 1 ? aTexCoord1 : aTexCoord0;
+      vec4 texture2Coordinate = d3dTextureCoordinateSource(
+        texCoord2Base,
+        uTexture2CoordinateMode,
+        viewPosition.xyz,
+        cameraSpaceNormal);
+      if (uUseTexture2Transform) {
+        vTexCoord2 = d3dApplyTextureTransform(
+          texture2Coordinate,
+          uTexture2Transform,
+          uTexture2TransformComponentCount,
+          uTexture2TransformProjected);
+      } else {
+        vTexCoord2 = texture2Coordinate.xy;
+      }
+      vec2 texCoord3Base = uTexture3CoordSet == 1 ? aTexCoord1 : aTexCoord0;
+      vec4 texture3Coordinate = d3dTextureCoordinateSource(
+        texCoord3Base,
+        uTexture3CoordinateMode,
+        viewPosition.xyz,
+        cameraSpaceNormal);
+      if (uUseTexture3Transform) {
+        vTexCoord3 = d3dApplyTextureTransform(
+          texture3Coordinate,
+          uTexture3Transform,
+          uTexture3TransformComponentCount,
+          uTexture3TransformProjected);
+      } else {
+        vTexCoord3 = texture3Coordinate.xy;
+      }
     }
   `);
   const fragmentShader = compileShader(gl.FRAGMENT_SHADER, `#version 300 es
@@ -8226,6 +8345,8 @@ function ensureD3D8DrawProgram() {
     flat in vec4 vFlatColor;
     in vec2 vTexCoord0;
     in vec2 vTexCoord1;
+    in vec2 vTexCoord2;
+    in vec2 vTexCoord3;
     in vec4 vClipPosition;
     in float vFogDepth;
     in float vFogRangeDistance;
@@ -8242,6 +8363,14 @@ function ensureD3D8DrawProgram() {
     uniform sampler2D uTexture1;
     uniform float uTexture1LodBias;
     uniform int uTexture1Semantic;
+    uniform bool uUseTexture2;
+    uniform sampler2D uTexture2;
+    uniform float uTexture2LodBias;
+    uniform int uTexture2Semantic;
+    uniform bool uUseTexture3;
+    uniform sampler2D uTexture3;
+    uniform float uTexture3LodBias;
+    uniform int uTexture3Semantic;
     uniform vec4 uTextureFactor;
     uniform int uStage0ColorOp;
     uniform int uStage0ColorArg0;
@@ -8260,6 +8389,25 @@ function ensureD3D8DrawProgram() {
     uniform int uStage1AlphaArg0;
     uniform int uStage1AlphaArg1;
     uniform int uStage1AlphaArg2;
+    uniform int uStage1ResultArg;
+    uniform int uStage2ColorOp;
+    uniform int uStage2ColorArg0;
+    uniform int uStage2ColorArg1;
+    uniform int uStage2ColorArg2;
+    uniform int uStage2AlphaOp;
+    uniform int uStage2AlphaArg0;
+    uniform int uStage2AlphaArg1;
+    uniform int uStage2AlphaArg2;
+    uniform int uStage2ResultArg;
+    uniform int uStage3ColorOp;
+    uniform int uStage3ColorArg0;
+    uniform int uStage3ColorArg1;
+    uniform int uStage3ColorArg2;
+    uniform int uStage3AlphaOp;
+    uniform int uStage3AlphaArg0;
+    uniform int uStage3AlphaArg1;
+    uniform int uStage3AlphaArg2;
+    uniform int uStage3ResultArg;
     uniform bool uAlphaTestEnabled;
     uniform int uAlphaFunc;
     uniform float uAlphaRef;
@@ -8547,6 +8695,46 @@ function ensureD3D8DrawProgram() {
       }
       return d3dApplyAlphaOp(uStage1AlphaOp, arg0, arg1, arg2, textureColor, currentColor, diffuseColor);
     }
+    // Generic cascade stage used for texture stages 2 and 3. D3D8 stages 2..7
+    // feed the previous stage's result in as CURRENT, exactly like stage 1, so a
+    // single parameterised combiner reproduces every additional stage. The op/arg
+    // selectors arrive as uniforms rather than hard-coded per-stage names.
+    vec3 d3dStageColor(int colorOp, int colorArg0, int colorArg1, int colorArg2,
+        vec4 diffuseColor, vec4 textureColor, vec4 currentColor, vec4 tempColor) {
+      if (colorOp == 1) {
+        return currentColor.rgb;
+      }
+      vec3 arg0 = d3dCombinerColorArg(
+        colorArg0, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
+      vec3 arg1 = d3dCombinerColorArg(
+        colorArg1, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
+      float arg1Alpha = d3dCombinerAlphaArg(
+        colorArg1, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
+      vec3 arg2 = d3dCombinerColorArg(
+        colorArg2, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
+      return d3dApplyColorOp(
+        colorOp, arg0, arg1, arg1Alpha, arg2, textureColor, currentColor, diffuseColor);
+    }
+    float d3dStageAlpha(int alphaOp, int alphaArg0, int alphaArg1, int alphaArg2,
+        vec4 diffuseColor, vec4 textureColor, vec4 currentColor, vec4 tempColor) {
+      if (alphaOp == 1) {
+        return currentColor.a;
+      }
+      float arg0 = d3dCombinerAlphaArg(
+        alphaArg0, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
+      float arg1 = d3dCombinerAlphaArg(
+        alphaArg1, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
+      float arg2 = d3dCombinerAlphaArg(
+        alphaArg2, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
+      if (alphaOp == 24) {
+        vec3 colorArg1 = d3dCombinerColorArg(
+          alphaArg1, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
+        vec3 colorArg2 = d3dCombinerColorArg(
+          alphaArg2, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
+        return d3dDotProduct3(colorArg1, colorArg2).r;
+      }
+      return d3dApplyAlphaOp(alphaOp, arg0, arg1, arg2, textureColor, currentColor, diffuseColor);
+    }
     void main() {
       for (int index = 0; index < 6; ++index) {
         if ((uClipPlaneMask & (1 << index)) != 0 && dot(uClipPlanes[index], vClipPosition) < 0.0) {
@@ -8562,17 +8750,65 @@ function ensureD3D8DrawProgram() {
       vec4 texture1Color = uUseTexture1
         ? d3dTextureSample(texture(uTexture1, texture1Coord, uTexture1LodBias), uTexture1Semantic)
         : vec4(1.0);
+      vec4 texture2Color = uUseTexture2
+        ? d3dTextureSample(texture(uTexture2, vTexCoord2, uTexture2LodBias), uTexture2Semantic)
+        : vec4(1.0);
+      vec4 texture3Color = uUseTexture3
+        ? d3dTextureSample(texture(uTexture3, vTexCoord3, uTexture3LodBias), uTexture3Semantic)
+        : vec4(1.0);
       vec4 diffuseColor = uUseFlatShade ? vFlatColor : vColor;
+      // Stage 0. CURRENT starts as DIFFUSE; TEMP starts cleared. Each stage's
+      // D3DTSS_RESULTARG picks whether its computed value lands in CURRENT
+      // (D3DTA_CURRENT) or TEMP (D3DTA_TEMP == 5), leaving the other register
+      // untouched so it survives into later stages.
       vec4 stage0ComputedColor = vec4(
         d3dStage0Color(diffuseColor, texture0Color, vec4(0.0)),
         d3dStage0Alpha(diffuseColor, texture0Color, vec4(0.0))
       );
-      vec4 stage0CurrentColor = uStage0ResultArg == 5 ? diffuseColor : stage0ComputedColor;
-      vec4 stage0TempColor = uStage0ResultArg == 5 ? stage0ComputedColor : vec4(0.0);
-      vec4 color = vec4(
-        d3dStage1Color(diffuseColor, texture1Color, stage0CurrentColor, stage0TempColor),
-        d3dStage1Alpha(diffuseColor, texture1Color, stage0CurrentColor, stage0TempColor)
+      vec4 currentColor = uStage0ResultArg == 5 ? diffuseColor : stage0ComputedColor;
+      vec4 tempColor = uStage0ResultArg == 5 ? stage0ComputedColor : vec4(0.0);
+      // Stage 1 (unchanged combiner functions; result now routed through
+      // D3DTSS_RESULTARG so it can feed stage 2 as CURRENT or TEMP).
+      vec4 stage1ComputedColor = vec4(
+        d3dStage1Color(diffuseColor, texture1Color, currentColor, tempColor),
+        d3dStage1Alpha(diffuseColor, texture1Color, currentColor, tempColor)
       );
+      if (uStage1ResultArg == 5) {
+        tempColor = stage1ComputedColor;
+      } else {
+        currentColor = stage1ComputedColor;
+      }
+      // Stage 2 — D3D8 cascade: previous stage's result arrives as CURRENT. A
+      // disabled colorOp (D3DTOP_DISABLE == 1) passes CURRENT through unchanged,
+      // so 0/1-stage draws are byte-for-byte identical to before this stage.
+      if (uStage2ColorOp != 1) {
+        vec4 stage2ComputedColor = vec4(
+          d3dStageColor(uStage2ColorOp, uStage2ColorArg0, uStage2ColorArg1, uStage2ColorArg2,
+            diffuseColor, texture2Color, currentColor, tempColor),
+          d3dStageAlpha(uStage2AlphaOp, uStage2AlphaArg0, uStage2AlphaArg1, uStage2AlphaArg2,
+            diffuseColor, texture2Color, currentColor, tempColor)
+        );
+        if (uStage2ResultArg == 5) {
+          tempColor = stage2ComputedColor;
+        } else {
+          currentColor = stage2ComputedColor;
+        }
+      }
+      // Stage 3.
+      if (uStage3ColorOp != 1) {
+        vec4 stage3ComputedColor = vec4(
+          d3dStageColor(uStage3ColorOp, uStage3ColorArg0, uStage3ColorArg1, uStage3ColorArg2,
+            diffuseColor, texture3Color, currentColor, tempColor),
+          d3dStageAlpha(uStage3AlphaOp, uStage3AlphaArg0, uStage3AlphaArg1, uStage3AlphaArg2,
+            diffuseColor, texture3Color, currentColor, tempColor)
+        );
+        if (uStage3ResultArg == 5) {
+          tempColor = stage3ComputedColor;
+        } else {
+          currentColor = stage3ComputedColor;
+        }
+      }
+      vec4 color = currentColor;
       if (!uAlphaTestEnabled && uImplicitAlphaCutoutThreshold >= 0.0 &&
           color.a <= uImplicitAlphaCutoutThreshold) {
         discard;
@@ -8629,6 +8865,18 @@ function ensureD3D8DrawProgram() {
     texture1Transform: gl.getUniformLocation(program, "uTexture1Transform"),
     texture1TransformComponentCount: gl.getUniformLocation(program, "uTexture1TransformComponentCount"),
     texture1TransformProjected: gl.getUniformLocation(program, "uTexture1TransformProjected"),
+    texture2CoordinateMode: gl.getUniformLocation(program, "uTexture2CoordinateMode"),
+    texture2CoordSet: gl.getUniformLocation(program, "uTexture2CoordSet"),
+    useTexture2Transform: gl.getUniformLocation(program, "uUseTexture2Transform"),
+    texture2Transform: gl.getUniformLocation(program, "uTexture2Transform"),
+    texture2TransformComponentCount: gl.getUniformLocation(program, "uTexture2TransformComponentCount"),
+    texture2TransformProjected: gl.getUniformLocation(program, "uTexture2TransformProjected"),
+    texture3CoordinateMode: gl.getUniformLocation(program, "uTexture3CoordinateMode"),
+    texture3CoordSet: gl.getUniformLocation(program, "uTexture3CoordSet"),
+    useTexture3Transform: gl.getUniformLocation(program, "uUseTexture3Transform"),
+    texture3Transform: gl.getUniformLocation(program, "uTexture3Transform"),
+    texture3TransformComponentCount: gl.getUniformLocation(program, "uTexture3TransformComponentCount"),
+    texture3TransformProjected: gl.getUniformLocation(program, "uTexture3TransformProjected"),
     pointSize: gl.getUniformLocation(program, "uPointSize"),
     pointSizeMin: gl.getUniformLocation(program, "uPointSizeMin"),
     pointSizeMax: gl.getUniformLocation(program, "uPointSizeMax"),
@@ -8671,6 +8919,14 @@ function ensureD3D8DrawProgram() {
     texture1: gl.getUniformLocation(program, "uTexture1"),
     texture1LodBias: gl.getUniformLocation(program, "uTexture1LodBias"),
     texture1Semantic: gl.getUniformLocation(program, "uTexture1Semantic"),
+    useTexture2: gl.getUniformLocation(program, "uUseTexture2"),
+    texture2: gl.getUniformLocation(program, "uTexture2"),
+    texture2LodBias: gl.getUniformLocation(program, "uTexture2LodBias"),
+    texture2Semantic: gl.getUniformLocation(program, "uTexture2Semantic"),
+    useTexture3: gl.getUniformLocation(program, "uUseTexture3"),
+    texture3: gl.getUniformLocation(program, "uTexture3"),
+    texture3LodBias: gl.getUniformLocation(program, "uTexture3LodBias"),
+    texture3Semantic: gl.getUniformLocation(program, "uTexture3Semantic"),
     textureFactor: gl.getUniformLocation(program, "uTextureFactor"),
     stage0ColorOp: gl.getUniformLocation(program, "uStage0ColorOp"),
     stage0ColorArg0: gl.getUniformLocation(program, "uStage0ColorArg0"),
@@ -8689,6 +8945,25 @@ function ensureD3D8DrawProgram() {
     stage1AlphaArg0: gl.getUniformLocation(program, "uStage1AlphaArg0"),
     stage1AlphaArg1: gl.getUniformLocation(program, "uStage1AlphaArg1"),
     stage1AlphaArg2: gl.getUniformLocation(program, "uStage1AlphaArg2"),
+    stage1ResultArg: gl.getUniformLocation(program, "uStage1ResultArg"),
+    stage2ColorOp: gl.getUniformLocation(program, "uStage2ColorOp"),
+    stage2ColorArg0: gl.getUniformLocation(program, "uStage2ColorArg0"),
+    stage2ColorArg1: gl.getUniformLocation(program, "uStage2ColorArg1"),
+    stage2ColorArg2: gl.getUniformLocation(program, "uStage2ColorArg2"),
+    stage2AlphaOp: gl.getUniformLocation(program, "uStage2AlphaOp"),
+    stage2AlphaArg0: gl.getUniformLocation(program, "uStage2AlphaArg0"),
+    stage2AlphaArg1: gl.getUniformLocation(program, "uStage2AlphaArg1"),
+    stage2AlphaArg2: gl.getUniformLocation(program, "uStage2AlphaArg2"),
+    stage2ResultArg: gl.getUniformLocation(program, "uStage2ResultArg"),
+    stage3ColorOp: gl.getUniformLocation(program, "uStage3ColorOp"),
+    stage3ColorArg0: gl.getUniformLocation(program, "uStage3ColorArg0"),
+    stage3ColorArg1: gl.getUniformLocation(program, "uStage3ColorArg1"),
+    stage3ColorArg2: gl.getUniformLocation(program, "uStage3ColorArg2"),
+    stage3AlphaOp: gl.getUniformLocation(program, "uStage3AlphaOp"),
+    stage3AlphaArg0: gl.getUniformLocation(program, "uStage3AlphaArg0"),
+    stage3AlphaArg1: gl.getUniformLocation(program, "uStage3AlphaArg1"),
+    stage3AlphaArg2: gl.getUniformLocation(program, "uStage3AlphaArg2"),
+    stage3ResultArg: gl.getUniformLocation(program, "uStage3ResultArg"),
     alphaTestEnabled: gl.getUniformLocation(program, "uAlphaTestEnabled"),
     alphaFunc: gl.getUniformLocation(program, "uAlphaFunc"),
     alphaRef: gl.getUniformLocation(program, "uAlphaRef"),
@@ -8803,6 +9078,18 @@ function ensureD3D8DepthStencilProgram() {
     texture1Transform: null,
     texture1TransformComponentCount: null,
     texture1TransformProjected: null,
+    texture2CoordinateMode: null,
+    texture2CoordSet: null,
+    useTexture2Transform: null,
+    texture2Transform: null,
+    texture2TransformComponentCount: null,
+    texture2TransformProjected: null,
+    texture3CoordinateMode: null,
+    texture3CoordSet: null,
+    useTexture3Transform: null,
+    texture3Transform: null,
+    texture3TransformComponentCount: null,
+    texture3TransformProjected: null,
     pointSize: null,
     pointSizeMin: null,
     pointSizeMax: null,
@@ -8845,6 +9132,14 @@ function ensureD3D8DepthStencilProgram() {
     texture1: null,
     texture1LodBias: null,
     texture1Semantic: null,
+    useTexture2: null,
+    texture2: null,
+    texture2LodBias: null,
+    texture2Semantic: null,
+    useTexture3: null,
+    texture3: null,
+    texture3LodBias: null,
+    texture3Semantic: null,
     textureFactor: null,
     stage0ColorOp: null,
     stage0ColorArg0: null,
@@ -8863,6 +9158,25 @@ function ensureD3D8DepthStencilProgram() {
     stage1AlphaArg0: null,
     stage1AlphaArg1: null,
     stage1AlphaArg2: null,
+    stage1ResultArg: null,
+    stage2ColorOp: null,
+    stage2ColorArg0: null,
+    stage2ColorArg1: null,
+    stage2ColorArg2: null,
+    stage2AlphaOp: null,
+    stage2AlphaArg0: null,
+    stage2AlphaArg1: null,
+    stage2AlphaArg2: null,
+    stage2ResultArg: null,
+    stage3ColorOp: null,
+    stage3ColorArg0: null,
+    stage3ColorArg1: null,
+    stage3ColorArg2: null,
+    stage3AlphaOp: null,
+    stage3AlphaArg0: null,
+    stage3AlphaArg1: null,
+    stage3AlphaArg2: null,
+    stage3ResultArg: null,
     alphaTestEnabled: null,
     alphaFunc: null,
     alphaRef: null,
@@ -11265,6 +11579,8 @@ function paintD3D8DrawIndexed(payload = {}) {
   const projection = normalizeD3DMatrix(payload.transforms?.projection, d3d8DrawMatrixScratch.projection);
   const texture0Transform = normalizeD3DMatrix(payload.transforms?.texture0);
   const texture1Transform = normalizeD3DMatrix(payload.transforms?.texture1);
+  const texture2Transform = normalizeD3DMatrix(payload.transforms?.texture2);
+  const texture3Transform = normalizeD3DMatrix(payload.transforms?.texture3);
   const transformMask = Number(payload.transformMask ?? 0) >>> 0;
   const useTransforms = transformMask === 7 && world !== null && view !== null && projection !== null;
   const matrixTransformsAreIdentity =
@@ -11280,11 +11596,15 @@ function paintD3D8DrawIndexed(payload = {}) {
   // all render/material/light state used by the derived JS objects below.
   const drawCacheTexture0Id = Number(d3d8BoundTextures.get(0) ?? 0) >>> 0;
   const drawCacheTexture1Id = Number(d3d8BoundTextures.get(1) ?? 0) >>> 0;
+  const drawCacheTexture2Id = Number(d3d8BoundTextures.get(2) ?? 0) >>> 0;
+  const drawCacheTexture3Id = Number(d3d8BoundTextures.get(3) ?? 0) >>> 0;
   let drawCacheHit = d3d8CachedDerived !== null &&
     d3d8LastDrawKey !== null &&
     d3d8LastDrawKey.derivedStateHash === derivedStateHash &&
     d3d8LastDrawKey.texture0Id === drawCacheTexture0Id &&
     d3d8LastDrawKey.texture1Id === drawCacheTexture1Id &&
+    d3d8LastDrawKey.texture2Id === drawCacheTexture2Id &&
+    d3d8LastDrawKey.texture3Id === drawCacheTexture3Id &&
     d3d8LastDrawKey.vertexShaderFvf === vertexShaderFvf &&
     d3d8LastDrawKey.vertexStride === vertexStride &&
     d3d8LastDrawKey.primitiveType === primitiveType;
@@ -11293,6 +11613,8 @@ function paintD3D8DrawIndexed(payload = {}) {
       derivedStateHash,
       drawCacheTexture0Id,
       drawCacheTexture1Id,
+      drawCacheTexture2Id,
+      drawCacheTexture3Id,
       vertexShaderFvf,
       vertexStride,
       primitiveType,
@@ -11314,11 +11636,17 @@ function paintD3D8DrawIndexed(payload = {}) {
   let vertexLayout;
   let texture0Id, texture0Resource, texture0Ready;
   let texture1Id, texture1Resource, texture1Ready;
+  let texture2Id, texture2Resource, texture2Ready;
+  let texture3Id, texture3Resource, texture3Ready;
   let texture0Coordinates, texture1Coordinates;
+  let texture2Coordinates, texture3Coordinates;
   let drawUsesPointSpriteCoordinates;
   let canSampleTexture0, canSampleTexture1;
+  let canSampleTexture2, canSampleTexture3;
   let texture0SemanticMode, texture1SemanticMode;
+  let texture2SemanticMode, texture3SemanticMode;
   let appliedTexture0Combiner, appliedStage1Combiner;
+  let appliedStage2Combiner, appliedStage3Combiner;
   let implicitAlphaCutoutThreshold;
   let depthStencilOnlyFastDerived = false;
 
@@ -11340,15 +11668,29 @@ function paintD3D8DrawIndexed(payload = {}) {
     texture1Id = c.texture1Id;
     texture1Resource = texture1Id !== 0 ? d3d8Textures.get(texture1Id) : null;
     texture1Ready = c.texture1Ready;
+    texture2Id = c.texture2Id;
+    texture2Resource = texture2Id !== 0 ? d3d8Textures.get(texture2Id) : null;
+    texture2Ready = c.texture2Ready;
+    texture3Id = c.texture3Id;
+    texture3Resource = texture3Id !== 0 ? d3d8Textures.get(texture3Id) : null;
+    texture3Ready = c.texture3Ready;
     texture0Coordinates = c.texture0Coordinates;
     texture1Coordinates = c.texture1Coordinates;
+    texture2Coordinates = c.texture2Coordinates;
+    texture3Coordinates = c.texture3Coordinates;
     drawUsesPointSpriteCoordinates = c.drawUsesPointSpriteCoordinates;
     canSampleTexture0 = c.canSampleTexture0;
     canSampleTexture1 = c.canSampleTexture1;
+    canSampleTexture2 = c.canSampleTexture2;
+    canSampleTexture3 = c.canSampleTexture3;
     texture0SemanticMode = c.texture0SemanticMode;
     texture1SemanticMode = c.texture1SemanticMode;
+    texture2SemanticMode = c.texture2SemanticMode;
+    texture3SemanticMode = c.texture3SemanticMode;
     appliedTexture0Combiner = c.appliedTexture0Combiner;
     appliedStage1Combiner = c.appliedStage1Combiner;
+    appliedStage2Combiner = c.appliedStage2Combiner;
+    appliedStage3Combiner = c.appliedStage3Combiner;
     implicitAlphaCutoutThreshold = c.implicitAlphaCutoutThreshold;
     depthStencilOnlyFastDerived = c.depthStencilOnlyFastDerived === true;
   } else {
@@ -11358,6 +11700,8 @@ function paintD3D8DrawIndexed(payload = {}) {
     vertexLayout = d3d8VertexLayoutInfo(vertexShaderFvf, vertexStride);
     texture0Id = drawCacheTexture0Id;
     texture1Id = drawCacheTexture1Id;
+    texture2Id = drawCacheTexture2Id;
+    texture3Id = drawCacheTexture3Id;
     depthStencilOnlyFastDerived = d3d8DiagLevel !== "full" &&
       d3d8CanUseDepthStencilOnlyProgramWithoutTextureProbe(renderState, primitiveType);
     if (depthStencilOnlyFastDerived) {
@@ -11369,15 +11713,27 @@ function paintD3D8DrawIndexed(payload = {}) {
       texture0Ready = false;
       texture1Resource = null;
       texture1Ready = false;
+      texture2Resource = null;
+      texture2Ready = false;
+      texture3Resource = null;
+      texture3Ready = false;
       texture0Coordinates = disabledTextureStageCoordinateInfo(0);
       texture1Coordinates = disabledTextureStageCoordinateInfo(1);
+      texture2Coordinates = disabledTextureStageCoordinateInfo(2);
+      texture3Coordinates = disabledTextureStageCoordinateInfo(3);
       drawUsesPointSpriteCoordinates = false;
       canSampleTexture0 = false;
       canSampleTexture1 = false;
+      canSampleTexture2 = false;
+      canSampleTexture3 = false;
       texture0SemanticMode = 0;
       texture1SemanticMode = 0;
+      texture2SemanticMode = 0;
+      texture3SemanticMode = 0;
       appliedTexture0Combiner = null;
       appliedStage1Combiner = null;
+      appliedStage2Combiner = null;
+      appliedStage3Combiner = null;
       implicitAlphaCutoutThreshold = -1;
     } else {
       lights = normalizeD3D8Lights(payload.lights);
@@ -11392,6 +11748,14 @@ function paintD3D8DrawIndexed(payload = {}) {
       texture1Ready = Boolean(
         (texture1Resource?.target ?? gl?.TEXTURE_2D) === gl?.TEXTURE_2D &&
         texture1Resource?.initializedLevels?.has("0"));
+      texture2Resource = texture2Id !== 0 ? d3d8Textures.get(texture2Id) : null;
+      texture2Ready = Boolean(
+        (texture2Resource?.target ?? gl?.TEXTURE_2D) === gl?.TEXTURE_2D &&
+        texture2Resource?.initializedLevels?.has("0"));
+      texture3Resource = texture3Id !== 0 ? d3d8Textures.get(texture3Id) : null;
+      texture3Ready = Boolean(
+        (texture3Resource?.target ?? gl?.TEXTURE_2D) === gl?.TEXTURE_2D &&
+        texture3Resource?.initializedLevels?.has("0"));
       texture0Coordinates = textureStageCoordinateInfo(
         renderState.textureStages[0],
         0,
@@ -11406,6 +11770,20 @@ function paintD3D8DrawIndexed(payload = {}) {
         vertexLayout,
         texture1Transform,
       );
+      texture2Coordinates = textureStageCoordinateInfo(
+        renderState.textureStages[2],
+        2,
+        vertexStride,
+        vertexLayout,
+        texture2Transform,
+      );
+      texture3Coordinates = textureStageCoordinateInfo(
+        renderState.textureStages[3],
+        3,
+        vertexStride,
+        vertexLayout,
+        texture3Transform,
+      );
       drawUsesPointSpriteCoordinates =
         (Number(payload.primitiveType ?? 0) >>> 0) === D3DPT_POINTLIST &&
         Number(renderState.pointSpriteEnable ?? 0) !== 0;
@@ -11413,10 +11791,19 @@ function paintD3D8DrawIndexed(payload = {}) {
         texture0Ready && (texture0Coordinates.supported || drawUsesPointSpriteCoordinates));
       canSampleTexture1 = Boolean(
         texture1Ready && (texture1Coordinates.supported || drawUsesPointSpriteCoordinates));
+      // Stages 2/3 do not participate in point-sprite gl_PointCoord substitution;
+      // they read either a vertex UV set (coordSet 0/1) or a generated
+      // camera-space coordinate.
+      canSampleTexture2 = Boolean(texture2Ready && texture2Coordinates.supported);
+      canSampleTexture3 = Boolean(texture3Ready && texture3Coordinates.supported);
       texture0SemanticMode = canSampleTexture0 ? d3d8TextureSemanticMode(texture0Resource) : 0;
       texture1SemanticMode = canSampleTexture1 ? d3d8TextureSemanticMode(texture1Resource) : 0;
+      texture2SemanticMode = canSampleTexture2 ? d3d8TextureSemanticMode(texture2Resource) : 0;
+      texture3SemanticMode = canSampleTexture3 ? d3d8TextureSemanticMode(texture3Resource) : 0;
       appliedTexture0Combiner = textureStageCombinerInfo(renderState.textureStages[0], 0, canSampleTexture0);
       appliedStage1Combiner = textureStageCombinerInfo(renderState.textureStages[1], 1, canSampleTexture1);
+      appliedStage2Combiner = textureStageCombinerInfo(renderState.textureStages[2], 2, canSampleTexture2);
+      appliedStage3Combiner = textureStageCombinerInfo(renderState.textureStages[3], 3, canSampleTexture3);
       implicitAlphaCutoutThreshold = d3d8ImplicitAlphaCutoutThreshold(
         renderState,
         canSampleTexture0,
@@ -11431,11 +11818,16 @@ function paintD3D8DrawIndexed(payload = {}) {
       fixedFunctionLights, directionalLights, firstDirectionalLight,
       vertexLayout,
       texture0Id, texture0Ready, texture1Id, texture1Ready,
+      texture2Id, texture2Ready, texture3Id, texture3Ready,
       texture0Coordinates, texture1Coordinates,
+      texture2Coordinates, texture3Coordinates,
       drawUsesPointSpriteCoordinates,
       canSampleTexture0, canSampleTexture1,
+      canSampleTexture2, canSampleTexture3,
       texture0SemanticMode, texture1SemanticMode,
+      texture2SemanticMode, texture3SemanticMode,
       appliedTexture0Combiner, appliedStage1Combiner,
+      appliedStage2Combiner, appliedStage3Combiner,
       implicitAlphaCutoutThreshold,
       depthStencilOnlyFastDerived,
     };
@@ -11443,6 +11835,8 @@ function paintD3D8DrawIndexed(payload = {}) {
       derivedStateHash,
       texture0Id,
       texture1Id,
+      texture2Id,
+      texture3Id,
       vertexShaderFvf,
       vertexStride,
       primitiveType,
@@ -11479,7 +11873,8 @@ function paintD3D8DrawIndexed(payload = {}) {
   const includeSceneDrawHistory = usePositionTransforms || vertexPretransformed;
   const usesIdentityClipSpace = usePositionTransforms && matrixTransformsAreIdentity;
   recordDrawPhase?.("sortedDrawDerivedMs");
-  warnD3D8CombinerDiagnostics(renderState, appliedTexture0Combiner, appliedStage1Combiner, drawSequence);
+  warnD3D8CombinerDiagnostics(renderState, appliedTexture0Combiner, appliedStage1Combiner,
+    appliedStage2Combiner, appliedStage3Combiner, drawSequence);
   if (d3d8DiagLevel === "full" && texture0Resource) {
     const caps = (harnessState.graphics.uiDrawCaptures ??= { atlas: [], small: [], census: {} });
     const dimKey = `${texture0Resource.width}x${texture0Resource.height}`;
@@ -11557,6 +11952,8 @@ function paintD3D8DrawIndexed(payload = {}) {
   let appliedRenderState = null;
   let appliedTexture0Sampler = null;
   let appliedTexture1Sampler = null;
+  let appliedTexture2Sampler = null;
+  let appliedTexture3Sampler = null;
   let appliedFillMode = null;
   let appliedShadeMode = null;
   let appliedPointSprite = null;
@@ -11621,19 +12018,29 @@ function paintD3D8DrawIndexed(payload = {}) {
     bindD3D8Program(bridgeProgram.program);
     const drawCanSampleTexture0 = depthStencilOnlyDraw ? false : canSampleTexture0;
     const drawCanSampleTexture1 = depthStencilOnlyDraw ? false : canSampleTexture1;
+    const drawCanSampleTexture2 = depthStencilOnlyDraw ? false : canSampleTexture2;
+    const drawCanSampleTexture3 = depthStencilOnlyDraw ? false : canSampleTexture3;
     const textureUniformKey = depthStencilOnlyDraw
       ? "depth-stencil-only"
       : d3d8TextureLayoutUniformKey({
           renderState,
           canSampleTexture0,
           canSampleTexture1,
+          canSampleTexture2,
+          canSampleTexture3,
           texture0Coordinates,
           texture1Coordinates,
+          texture2Coordinates,
+          texture3Coordinates,
           texture0SemanticMode,
           texture1SemanticMode,
+          texture2SemanticMode,
+          texture3SemanticMode,
           implicitAlphaCutoutThreshold,
           texture0Transform,
           texture1Transform,
+          texture2Transform,
+          texture3Transform,
         });
     const renderUniformUnchanged =
       d3d8RenderUniformKeyMatches(
@@ -11814,6 +12221,20 @@ function paintD3D8DrawIndexed(payload = {}) {
         1,
         renderState.textureStages[1],
         texture1Resource,
+      );
+    }
+    if (drawCanSampleTexture2) {
+      appliedTexture2Sampler = ensureD3D8DrawTexture2D(
+        2,
+        renderState.textureStages[2],
+        texture2Resource,
+      );
+    }
+    if (drawCanSampleTexture3) {
+      appliedTexture3Sampler = ensureD3D8DrawTexture2D(
+        3,
+        renderState.textureStages[3],
+        texture3Resource,
       );
     }
     recordDrawSubphase?.("sortedDrawTextureBindMs");
@@ -12096,6 +12517,29 @@ function paintD3D8DrawIndexed(payload = {}) {
         if (bridgeProgram.stage1AlphaArg2) {
           gl.uniform1i(bridgeProgram.stage1AlphaArg2, renderState.textureStages[1].alphaArg2);
         }
+        if (bridgeProgram.stage1ResultArg) {
+          gl.uniform1i(bridgeProgram.stage1ResultArg, renderState.textureStages[1].resultArg);
+        }
+        // Stages 2 and 3 use the same combiner uniforms as 0/1, chained through
+        // CURRENT/TEMP by D3DTSS_RESULTARG. A disabled stage (colorOp==DISABLE)
+        // passes CURRENT through in the shader, so uploading these is harmless
+        // for 0/1-only draws.
+        for (const stageIndex of [2, 3]) {
+          const stage = renderState.textureStages[stageIndex];
+          const p = bridgeProgram;
+          const colorOp = p[`stage${stageIndex}ColorOp`];
+          if (colorOp) {
+            gl.uniform1i(colorOp, stage.colorOp);
+            gl.uniform1i(p[`stage${stageIndex}ColorArg0`], stage.colorArg0);
+            gl.uniform1i(p[`stage${stageIndex}ColorArg1`], stage.colorArg1);
+            gl.uniform1i(p[`stage${stageIndex}ColorArg2`], stage.colorArg2);
+            gl.uniform1i(p[`stage${stageIndex}AlphaOp`], stage.alphaOp);
+            gl.uniform1i(p[`stage${stageIndex}AlphaArg0`], stage.alphaArg0);
+            gl.uniform1i(p[`stage${stageIndex}AlphaArg1`], stage.alphaArg1);
+            gl.uniform1i(p[`stage${stageIndex}AlphaArg2`], stage.alphaArg2);
+            gl.uniform1i(p[`stage${stageIndex}ResultArg`], stage.resultArg);
+          }
+        }
         d3d8LastStageUniformKey = stageUniformKey;
       }
       recordRenderUniformDetail?.("sortedDrawRenderStageUniformMs");
@@ -12327,6 +12771,66 @@ function paintD3D8DrawIndexed(payload = {}) {
       }
       if (bridgeProgram.texture1Semantic) {
         gl.uniform1i(bridgeProgram.texture1Semantic, texture1SemanticMode);
+      }
+      // Stages 2 and 3: coordinate mode, coordSet selection, texture transform,
+      // sampler unit, LOD bias, semantic mode. The bridge samples texture unit
+      // == stage index (uTexture2->unit 2, uTexture3->unit 3).
+      const p = bridgeProgram;
+      const stage23 = [
+        {
+          index: 2,
+          canSample: canSampleTexture2,
+          coords: texture2Coordinates,
+          transform: texture2Transform,
+          semantic: texture2SemanticMode,
+        },
+        {
+          index: 3,
+          canSample: canSampleTexture3,
+          coords: texture3Coordinates,
+          transform: texture3Transform,
+          semantic: texture3SemanticMode,
+        },
+      ];
+      for (const s of stage23) {
+        const coordModeLoc = p[`texture${s.index}CoordinateMode`];
+        if (!coordModeLoc && !p[`useTexture${s.index}`]) {
+          continue;
+        }
+        const transformApplied = Boolean(s.canSample && s.coords.transformApplied);
+        if (coordModeLoc) {
+          gl.uniform1i(coordModeLoc, s.canSample ? s.coords.mode : D3DTSS_TCI_PASSTHRU);
+        }
+        if (p[`texture${s.index}CoordSet`]) {
+          gl.uniform1i(p[`texture${s.index}CoordSet`], s.canSample ? (s.coords.coordSet >>> 0) : 0);
+        }
+        if (p[`useTexture${s.index}Transform`]) {
+          gl.uniform1i(p[`useTexture${s.index}Transform`], transformApplied ? 1 : 0);
+        }
+        if (p[`texture${s.index}TransformComponentCount`]) {
+          gl.uniform1i(p[`texture${s.index}TransformComponentCount`],
+            transformApplied ? s.coords.textureTransformComponentCount : 0);
+        }
+        if (p[`texture${s.index}TransformProjected`]) {
+          gl.uniform1i(p[`texture${s.index}TransformProjected`],
+            transformApplied && s.coords.textureTransformProjected ? 1 : 0);
+        }
+        if (p[`texture${s.index}Transform`] && transformApplied) {
+          gl.uniformMatrix4fv(p[`texture${s.index}Transform`], false, s.transform);
+        }
+        if (p[`useTexture${s.index}`]) {
+          gl.uniform1i(p[`useTexture${s.index}`], s.canSample ? 1 : 0);
+        }
+        if (p[`texture${s.index}`]) {
+          gl.uniform1i(p[`texture${s.index}`], s.index);
+        }
+        if (p[`texture${s.index}LodBias`]) {
+          gl.uniform1f(p[`texture${s.index}LodBias`],
+            s.canSample ? d3dDwordToFloat(renderState.textureStages[s.index].mipMapLodBias) : 0.0);
+        }
+        if (p[`texture${s.index}Semantic`]) {
+          gl.uniform1i(p[`texture${s.index}Semantic`], s.semantic);
+        }
       }
       harnessState.graphics.lastD3D8TextureUniformKey = textureUniformKey;
     }

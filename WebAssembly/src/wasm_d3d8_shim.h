@@ -202,6 +202,8 @@ struct WasmD3D8ShimState
 	D3DMATRIX last_draw_projection_transform;
 	D3DMATRIX last_draw_texture0_transform;
 	D3DMATRIX last_draw_texture1_transform;
+	D3DMATRIX last_draw_texture2_transform;
+	D3DMATRIX last_draw_texture3_transform;
 	WasmD3D8DrawRenderState last_draw_render_state;
 	float last_draw_clip_planes[WASM_D3D8_CLIP_PLANE_COUNT][4];
 	WasmD3D8DrawMaterial last_draw_material;
