@@ -286,6 +286,28 @@ void GameLODManager::init(void)
 
 	m_idealDetailLevel=(StaticGameLODLevel)optionPref.getIdealStaticGameDetail();
 
+#ifdef __EMSCRIPTEN__
+	//Browser/WebGL2 port: the D3D8->WebGL2 device advertises a placeholder
+	//fixed-function adapter (see wasm_d3d8_shim.cpp GetAdapterIdentifier), so
+	//getChipset() reports a low-tier card and the hardware-driven detail
+	//selection (findStaticLODLevel / the CPU benchmark fallback) always lands on
+	//STATIC_GAME_LOD_LOW.  Low disables UseLightMap/UseCloudMap in GameLOD.ini,
+	//which turns off the terrain noise/lightmap/cloud multiplicative pass
+	//(ST_TERRAIN_BASE_NOISE*) and leaves terrain visibly flat even on very
+	//capable hardware.  The browser runtime cannot be probed for a real GPU tier
+	//through the D3D8 identity path, so - exactly like the desktop game persisting
+	//a detected/chosen level into Options.ini - seed the highest detail level
+	//when the player has not chosen one.  This drives the real Options/LOD path
+	//(setStaticLODLevel below applies the High preset) rather than forcing the
+	//flags or inventing shading in the bridge; an explicit user choice in Options
+	//still wins because it leaves userSetDetail non-UNKNOWN.
+	if (userSetDetail == STATIC_GAME_LOD_UNKNOWN && m_idealDetailLevel == STATIC_GAME_LOD_UNKNOWN)
+	{
+		m_idealDetailLevel = STATIC_GAME_LOD_HIGH;
+		userSetDetail = STATIC_GAME_LOD_HIGH;
+	}
+#endif
+
 	//always get this data in case we need it later.
 	testMinimumRequirements(NULL,&m_cpuType,&m_cpuFreq,&m_numRAM,NULL,NULL,NULL);
 
