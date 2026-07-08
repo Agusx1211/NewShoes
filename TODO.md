@@ -558,6 +558,21 @@ symptom is temporal — NOT a single still.
       draws wrong or not at all. Check that counter when this bug (and the
       toxin/radiation-field bug above) reproduces — a nonzero count points at a
       missing format path rather than the bind cache.
+      2026-07-08 (format-coverage RULED OUT): audited every runtime
+      texture-creation path vs bridge coverage. All live terrain/decal/UI formats
+      are already covered — terrain ground tiles are **A1R5G5B5**
+      (`TerrainTex.cpp:72/84`), shroud A4R4G4B4/R5G6B5, decals/placeholder
+      A8R8G8B8, fonts A4R4G4B4. Every rejected bridge format (P8, V8U8, L6V5U5,
+      G16R16, …) is unreachable at runtime: `Get_Valid_Texture_Format`
+      (`ww3dformat.cpp:311`) downgrades unsupported → A8R8G8B8/A4R4G4B4/…, the
+      shim advertises only bridge-covered formats, V8U8 bump path is `#if 0`
+      dead in ZH (`W3DWater.cpp:1070-1101`), and P8 is asserted out + always
+      converted to A8R8G8B8 on load. So `unsupportedUpdates` cannot be bumped by
+      a live tile — this is NOT the cause. Next suspects: (a) the D3D8
+      texture-bind/sampler fast-path cache serving a stale tile texture, (b) the
+      A1R5G5B5 terrain atlas cell offset / UV-index / 16-bit mip packing in
+      `TerrainTextureClass::update()` (`TerrainTex.cpp:96`). Verify: on the Mac,
+      `unsupportedUpdates` should already read 0 during normal terrain render.
 - [ ] **Trees render too bright — tree lighting is wrong** — 2026-07-08: after the
       terrain-adjacent buffers were re-enabled (commit `2df600c5`) and the correct
       `dist-release` build reached the Mac, `W3DTreeBuffer` trees now draw, but on
