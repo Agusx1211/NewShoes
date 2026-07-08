@@ -58,6 +58,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## User-reported play bugs (2026-07-07 session)
 
+- [x] Fix hover/tooltip text rendering only the first letter. The live
+      skirmish harness reproduced the symptom over a real GLA command center:
+      `mouseOverDrawableId=1075` resolved to `GLACommandCenter` with translated
+      display name `Command Center`, but the tooltip display string contained
+      only `C\n`. The root cause was the wasm `_vsnwprintf` compatibility shim
+      using POSIX wide-format semantics for MSVC-format strings: original wide
+      formats use bare `%s` for wide strings and `%hs` / `%S` for narrow
+      strings, while POSIX `vswprintf` treats bare `%s` as multibyte. The shim
+      now maps bare `%s` to `%ls`, keeps `%hs` narrow, and maps MSVC wide `%S`
+      to POSIX narrow `%s`. The harness state and screenshot prove the fixed
+      tooltip now contains `Command Center\n` with length 15 and width 87 over
+      the same real drawable. Verified with `npm run build:port:release` and
+      the real headless skirmish hover proof saved as
+      `WebAssembly/artifacts/tooltip-hover-format-fix.json` plus
+      `WebAssembly/artifacts/screenshots/tooltip-hover-format-fix.png`.
+
 - [x] Add the browser-side guard that stops iPad/iOS touch-drags on the
       playable canvas from becoming native page selection/callout.
       `harness/play.html` now disables user selection, WebKit user selection,

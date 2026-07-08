@@ -906,6 +906,60 @@ void Mouse::setCursorTooltip( UnicodeString tooltip, Int delay, const RGBColor *
 }  // end setCursorTooltip
 
 // ------------------------------------------------------------------------------------------------
+UnicodeString Mouse::getCursorTooltipTextForDebug( void ) const
+{
+	if( m_tooltipDisplayString == NULL )
+		return UnicodeString::TheEmptyString;
+
+	return m_tooltipDisplayString->getText();
+}
+
+// ------------------------------------------------------------------------------------------------
+Int Mouse::getCursorTooltipTextLengthForDebug( void ) const
+{
+	return m_tooltipDisplayString != NULL ? m_tooltipDisplayString->getTextLength() : 0;
+}
+
+// ------------------------------------------------------------------------------------------------
+void Mouse::getCursorTooltipSizeForDebug( Int *width, Int *height ) const
+{
+	if( width )
+		*width = 0;
+	if( height )
+		*height = 0;
+
+	if( m_tooltipDisplayString != NULL )
+		m_tooltipDisplayString->getSize( width, height );
+}
+
+// ------------------------------------------------------------------------------------------------
+UnicodeString Mouse::getCursorTextForDebug( void ) const
+{
+	if( m_cursorTextDisplayString == NULL )
+		return UnicodeString::TheEmptyString;
+
+	return m_cursorTextDisplayString->getText();
+}
+
+// ------------------------------------------------------------------------------------------------
+Int Mouse::getCursorTextLengthForDebug( void ) const
+{
+	return m_cursorTextDisplayString != NULL ? m_cursorTextDisplayString->getTextLength() : 0;
+}
+
+// ------------------------------------------------------------------------------------------------
+void Mouse::getCursorTextSizeForDebug( Int *width, Int *height ) const
+{
+	if( width )
+		*width = 0;
+	if( height )
+		*height = 0;
+
+	if( m_cursorTextDisplayString != NULL )
+		m_cursorTextDisplayString->getSize( width, height );
+}
+
+// ------------------------------------------------------------------------------------------------
 /** Set the text for the mouse cursor ... note that this is *NOT* the tooltip text we
 	* can set to be at the mouse position */
 // ------------------------------------------------------------------------------------------------
@@ -1225,5 +1279,4 @@ void INI::parseMouseDefinition( INI* ini )
 		ini->initFromINI( TheMouse, TheMouseFieldParseTable );
 	}
 }
-
 

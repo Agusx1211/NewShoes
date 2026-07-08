@@ -266,6 +266,19 @@ public:
 
 	void setCursorTooltip( UnicodeString tooltip, Int tooltipDelay = -1, const RGBColor *color = NULL, Real width = 1.0f );		///< set tooltip string at cursor
 	void setMouseText( UnicodeString text, const RGBAColorInt *color, const RGBAColorInt *dropColor );					///< set the cursor text, *NOT* the tooltip text
+	Bool isCursorTooltipDisplayedForDebug( void ) const { return m_displayTooltip; }
+	Bool isCursorTooltipEmptyForDebug( void ) const { return m_isTooltipEmpty; }
+	Int getCursorTooltipHighlightPosForDebug( void ) const { return m_highlightPos; }
+	Int getCursorTooltipFillTimeForDebug( void ) const { return m_tooltipFillTime; }
+	Int getCursorTooltipDelayTimeForDebug( void ) const { return m_tooltipDelayTime; }
+	Int getCursorTooltipDelayOverrideForDebug( void ) const { return m_tooltipDelay; }
+	UnsignedInt getCursorTooltipStillTimeForDebug( void ) const { return m_stillTime; }
+	UnicodeString getCursorTooltipTextForDebug( void ) const;
+	Int getCursorTooltipTextLengthForDebug( void ) const;
+	void getCursorTooltipSizeForDebug( Int *width, Int *height ) const;
+	UnicodeString getCursorTextForDebug( void ) const;
+	Int getCursorTextLengthForDebug( void ) const;
+	void getCursorTextSizeForDebug( Int *width, Int *height ) const;
 	virtual void setMouseLimits( void );					///< update the limit extents the mouse can move in
 	MouseCursor getMouseCursor(void) { return m_currentCursor; }	///< get the current mouse cursor image type
 	virtual void setRedrawMode(RedrawMode mode)	{m_currentRedrawMode=mode;} ///<set cursor drawing method.

@@ -101,6 +101,17 @@ static inline int wwlib_vsnwprintf(wchar_t *buffer, size_t count, const wchar_t 
 			converted.push_back(L's');
 			++index;
 			needs_conversion = true;
+		} else if (format[index] == L's') {
+			// MSVC wide printf treats bare %s as a wide string. POSIX
+			// vswprintf treats it as multibyte, so spell the intent out.
+			converted.push_back(L'l');
+			converted.push_back(L's');
+			needs_conversion = true;
+		} else if (format[index] == L'S') {
+			// MSVC wide printf uses %S for narrow strings; POSIX uses %S as
+			// a wide-string alias. Convert it to POSIX's narrow %s.
+			converted.push_back(L's');
+			needs_conversion = true;
 		} else {
 			converted.push_back(format[index]);
 		}

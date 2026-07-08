@@ -4690,11 +4690,50 @@ void append_input_window_state(std::string &json)
 			json += ",\"rightState\":" + std::to_string(static_cast<int>(mouse->rightState));
 			json += ",\"rightEvent\":" + std::to_string(mouse->rightEvent);
 		}
+		Int tooltip_width = 0;
+		Int tooltip_height = 0;
+		TheMouse->getCursorTooltipSizeForDebug(&tooltip_width, &tooltip_height);
+		const UnicodeString tooltip_text = TheMouse->getCursorTooltipTextForDebug();
+		json += ",\"tooltip\":{";
+		json += "\"displayed\":";
+		json += TheMouse->isCursorTooltipDisplayedForDebug() ? "true" : "false";
+		json += ",\"empty\":";
+		json += TheMouse->isCursorTooltipEmptyForDebug() ? "true" : "false";
+		json += ",\"text\":\"" + json_escape(unicode_to_debug_ascii(tooltip_text)) + "\"";
+		json += ",\"textLength\":" + std::to_string(static_cast<long long>(tooltip_text.getLength()));
+		json += ",\"displayStringLength\":"
+			+ std::to_string(TheMouse->getCursorTooltipTextLengthForDebug());
+		json += ",\"width\":" + std::to_string(tooltip_width);
+		json += ",\"height\":" + std::to_string(tooltip_height);
+		json += ",\"highlightPos\":"
+			+ std::to_string(TheMouse->getCursorTooltipHighlightPosForDebug());
+		json += ",\"fillTime\":"
+			+ std::to_string(TheMouse->getCursorTooltipFillTimeForDebug());
+		json += ",\"delayTime\":"
+			+ std::to_string(TheMouse->getCursorTooltipDelayTimeForDebug());
+		json += ",\"delayOverride\":"
+			+ std::to_string(TheMouse->getCursorTooltipDelayOverrideForDebug());
+		json += ",\"stillTime\":"
+			+ std::to_string(TheMouse->getCursorTooltipStillTimeForDebug());
+		json += "}";
+		Int cursor_text_width = 0;
+		Int cursor_text_height = 0;
+		TheMouse->getCursorTextSizeForDebug(&cursor_text_width, &cursor_text_height);
+		const UnicodeString cursor_text = TheMouse->getCursorTextForDebug();
+		json += ",\"cursorText\":{";
+		json += "\"text\":\"" + json_escape(unicode_to_debug_ascii(cursor_text)) + "\"";
+		json += ",\"textLength\":" + std::to_string(static_cast<long long>(cursor_text.getLength()));
+		json += ",\"displayStringLength\":"
+			+ std::to_string(TheMouse->getCursorTextLengthForDebug());
+		json += ",\"width\":" + std::to_string(cursor_text_width);
+		json += ",\"height\":" + std::to_string(cursor_text_height);
+		json += "}";
 	} else {
 		json += ",\"visible\":null,\"cursor\":null,\"x\":null,\"y\":null,"
 			"\"leftState\":null,\"leftEvent\":null,\"leftFrame\":null,"
 			"\"middleState\":null,\"middleEvent\":null,"
-			"\"rightState\":null,\"rightEvent\":null";
+			"\"rightState\":null,\"rightEvent\":null,"
+			"\"tooltip\":null,\"cursorText\":null";
 	}
 	json += "}";
 	json += ",\"keyboard\":{";
@@ -6182,6 +6221,7 @@ static void append_drawable_body_json(std::string &json, Object *obj)
 
 static void append_drawable_probe_entry_json(
 	std::string &json,
+	const Drawable *drawable,
 	Object *obj,
 	const ThingTemplate *tpl,
 	Player *owner,
@@ -6194,14 +6234,29 @@ static void append_drawable_probe_entry_json(
 {
 	json += "{";
 
+	long long drawable_id = 0;
+	try {
+		drawable_id = drawable != NULL ? static_cast<long long>(drawable->getID()) : -1;
+	} catch (...) {
+		drawable_id = -1;
+	}
+	json += "\"drawableId\":" + std::to_string(drawable_id);
+
 	long long obj_id = 0;
 	try {
 		obj_id = obj != NULL ? static_cast<long long>(obj->getID()) : -1;
 	} catch (...) {
 		obj_id = -1;
 	}
-	json += "\"id\":" + std::to_string(obj_id);
+	json += ",\"id\":" + std::to_string(obj_id);
+	json += ",\"objectId\":" + std::to_string(obj_id);
 	json += ",\"name\":\"" + json_escape(tpl ? tpl->getName().str() : "unknown") + "\"";
+	const UnicodeString display_name = tpl != NULL
+		? tpl->getDisplayName()
+		: UnicodeString::TheEmptyString;
+	json += ",\"displayName\":\"" + json_escape(unicode_to_debug_ascii(display_name)) + "\"";
+	json += ",\"displayNameLength\":" +
+		std::to_string(static_cast<long long>(display_name.getLength()));
 
 	if (owner != NULL) {
 		json += ",\"playerIndex\":" + std::to_string(owner->getPlayerIndex());
@@ -6412,6 +6467,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 		++allKept;
 		append_drawable_probe_entry_json(
 			all_json,
+			d,
 			obj,
 			tpl,
 			owner,
@@ -6437,6 +6493,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 				++enemyKept;
 				append_drawable_probe_entry_json(
 					enemy_json,
+					d,
 					obj,
 					tpl,
 					owner,
@@ -6476,6 +6533,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_drawables()
 
 		append_drawable_probe_entry_json(
 			json,
+			d,
 			obj,
 			tpl,
 			owner,

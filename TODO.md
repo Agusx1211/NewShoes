@@ -510,8 +510,9 @@ reproduce in the harness and verify each fix with a screenshot / state check.
       the visible campaign-intro `Somewhere in South...` case is confirmed to
       be the original military subtitle typewriter reveal, not a stuck render
       truncation: the runtime now exports `gameplay.militarySubtitle` with the
-      full source string, current index, and displayed lines. Keep this open
-      for a non-typewriter repro.
+      full source string, current index, and displayed lines. 2026-07-08: the
+      hover-tooltip first-letter case was fixed in the MSVC wide-format shim;
+      keep this open for any unrelated non-tooltip repro.
 - [ ] **Loading-screen progress is static during map load** — the real
       multiplayer load screen now presents before the skirmish map load starts,
       but the synchronous map load still blocks intermediate browser frame
@@ -528,15 +529,6 @@ Reported by the project owner on the Mac GPU build. Reproduce in the harness and
 verify each fix with a real, **multi-frame** screenshot / state check where the
 symptom is temporal — NOT a single still.
 
-- [ ] **Hover/tooltip text renders only the first letter** — hovering the cursor
-      over a building (and other places with hover/tooltip text) shows only ONE
-      character of the string instead of the full text. The string is known/laid
-      out but only the first glyph draws. Trace the tooltip/hover text render path
-      (`GameWindow` tooltip / `DisplayString` / W3D text glyph submission): likely
-      the per-glyph draw loop only submits the first glyph, or the text
-      width/advance/clip rect is computed as ~1 char so the rest is clipped, or
-      the multi-glyph quad batch is dropped at the browser D3D8 layer. Verify a
-      multi-letter tooltip renders fully.
 - [ ] **Decals flip-flop / render at wrong depth (z-order)** — some decals
       (scorch marks, shadow/terrain decals) intermittently render onto the
       background / at the wrong depth and flicker between correct and wrong across
