@@ -2517,6 +2517,15 @@ void BaseHeightMapRenderObjClass::staticLightingChanged( void )
 	m_roadBuffer->updateLighting();
 #endif
 
+	// Cause the trees to re-bake their per-vertex lighting.  The tree buffer bakes
+	// scene lighting into the vertex diffuse once and caches it; without this it
+	// keeps whatever lighting it was first baked with and never darkens when the
+	// map's dark time-of-day object lighting is applied (unlike the terrain, which
+	// re-bakes via m_needFullUpdate, and props, which relight every frame).
+	if (m_treeBuffer) {
+		m_treeBuffer->updateLighting();
+	}
+
 }
 
 //=============================================================================

@@ -849,16 +849,38 @@ async function driveTreeDiffuseProbe(page) {
       colorOp0: d.renderState?.textureStage0?.colorOp ?? d.renderState?.colorOp ?? null,
       diffuse: d.vertexSummary?.diffuse ?? d.vertexSummary ?? null,
     }));
-    // Fallback: if the strict tree filter found nothing, dump all distinct
-    // (stride, fvf) pairs so we can adjust the filter.
-    if (treeDraws.length === 0) {
-      const seen = new Map();
+    // Always aggregate diffuse min/max/avg per (stride, fvf) group so the tree
+    // draws can be compared against the TERRAIN draws (the in-frame dark
+    // reference) on the same map -- this makes the tree-lighting verification
+    // map-agnostic: on a dark map the terrain diffuse is dark, and after the
+    // re-bake fix the tree diffuse should land in the same dark range instead of
+    // staying bright.
+    {
+      const groups = new Map();
       for (const d of hist) {
         const key = `${d.vertexStride}/${d.vertexShaderFvf}`;
-        if (!seen.has(key)) seen.set(key, { stride: d.vertexStride, fvf: d.vertexShaderFvf, count: 0, sampleDiffuse: d.vertexSummary?.diffuse ?? null });
-        seen.get(key).count += 1;
+        const diff = d.vertexSummary?.diffuse ?? null;
+        let g = groups.get(key);
+        if (!g) {
+          g = { stride: d.vertexStride, fvf: d.vertexShaderFvf, drawCount: 0,
+                min: [255, 255, 255, 255], max: [0, 0, 0, 0], avgSum: [0, 0, 0, 0], avgN: 0 };
+          groups.set(key, g);
+        }
+        g.drawCount += 1;
+        if (diff && diff.min && diff.max && diff.average) {
+          for (let c = 0; c < 4; c++) {
+            g.min[c] = Math.min(g.min[c], diff.min[c]);
+            g.max[c] = Math.max(g.max[c], diff.max[c]);
+            g.avgSum[c] += diff.average[c];
+          }
+          g.avgN += 1;
+        }
       }
-      info.fvfStridePairs = [...seen.values()].slice(0, 30);
+      info.diffuseByGroup = [...groups.values()].map((g) => ({
+        stride: g.stride, fvf: g.fvf, drawCount: g.drawCount,
+        diffuseMin: g.avgN ? g.min : null, diffuseMax: g.avgN ? g.max : null,
+        diffuseAvg: g.avgN ? g.avgSum.map((s) => Number((s / g.avgN).toFixed(1))) : null,
+      })).sort((a, b) => b.drawCount - a.drawCount).slice(0, 30);
     }
     info.ok = true;
   } catch (error) {
@@ -893,7 +915,9 @@ async function main() {
     });
     page.on("console", (msg) => {
       const text = msg.text();
-      if (msg.type() === "error") {
+      // Forward engine diagnostic prints (TREEBAKE / staticLightingChanged) on
+      // whatever console channel emscripten routes stdout/stderr to, plus errors.
+      if (msg.type() === "error" || /cnc-port:|TREEBAKE|staticLightingChanged/.test(text)) {
         console.error(`[skirmish-start page] ${text}`);
       }
     });

@@ -202,6 +202,15 @@ public:
 	/// Called when the view changes, and sort key needs to be recalculated.
 	/// Normally sortKey gets calculated when a tree becomes visible.
 	void doFullUpdate(void) {m_updateAllKeys = true;};
+	/// Called when the static lighting / time-of-day changes.  The tree buffer
+	/// bakes scene lighting into each vertex's diffuse color once (in
+	/// loadTreesInVertexAndIndexBuffers) and caches it; without re-flagging here
+	/// the trees keep whatever lighting they were first baked with and never
+	/// darken when the map's time-of-day lighting is applied.  Setting
+	/// m_anythingChanged forces the next drawTrees to re-bake with the current
+	/// TerrainObjectsLighting -- the same re-light the terrain (m_needFullUpdate)
+	/// and roads (W3DRoadBuffer::updateLighting) already do.
+	void updateLighting(void) {m_anythingChanged = true;};
 	void setIsTerrain(void) {m_isTerrainPass = true;}; ///< Terrain calls this to tell trees to draw.
 	Bool needToDraw(void) {return m_isTerrainPass;};
 
