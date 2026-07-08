@@ -69,8 +69,16 @@ try {
   }
   const s2d = last?.browserMssSamplePlaybackRuntime ?? {};
   const s3d = last?.browserMss3DSamplePlaybackRuntime ?? {};
+  const dev = last?.audioDeviceState?.result ?? last?.audioDeviceState ?? null;
+  let deviceState = null;
+  try { deviceState = JSON.parse((await rpc(page, "audioDeviceState"))?.result ?? "null") ?? dev; } catch (_e) { deviceState = dev; }
   const out = {
     event: EVENT, plays: PLAYS,
+    deviceState: deviceState ? {
+      poolsAllocated: deviceState.poolsAllocated, num2DSamples: deviceState.num2DSamples, num3DSamples: deviceState.num3DSamples,
+      providerOpen: deviceState.providerOpen, selectedProviderName: deviceState.selectedProviderName,
+      playPath: deviceState.playPath ?? null,
+    } : "unavailable",
     sample2D: { started: s2d.started, completed: s2d.completed, ended: s2d.ended, stopped: s2d.stopped, released: s2d.released, active: s2d.activeSources ?? s2d.active },
     sample3D: { started: s3d.started, completed: s3d.completed, ended: s3d.ended, active: s3d.activeSources ?? s3d.active },
     progression: samples,
