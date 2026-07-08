@@ -1600,6 +1600,18 @@ void TerrainShader2Stage::reset(void)
 
 	DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
 	DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_TEXCOORDINDEX, D3DTSS_TCI_PASSTHRU|1);
+
+	// Restore the framebuffer alpha-blend to the DX8 default (blending OFF).
+	// set() pass 1 turns alpha blending ON (SRCALPHA/INVSRCALPHA for the smooth
+	// texture-transition blend) and the noise/cloud pass (pass 2) installs a
+	// *multiplicative* blend (ALPHABLENDENABLE=TRUE, SRCBLEND=DESTCOLOR,
+	// DESTBLEND=ZERO).  Neither is cleared here, so any later draw that relies on
+	// the default (blending disabled) inherits the stale terrain blend and can
+	// render a wrong / hard-edged transition.  Reset it, exactly as we already
+	// reset the texture-stage state this shader touched.
+	DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHABLENDENABLE, FALSE);
+	DX8Wrapper::Set_DX8_Render_State(D3DRS_SRCBLEND, D3DBLEND_ONE);
+	DX8Wrapper::Set_DX8_Render_State(D3DRS_DESTBLEND, D3DBLEND_ZERO);
 }
 
 void TerrainShader2Stage::updateNoise1(D3DXMATRIX *destMatrix,D3DXMATRIX *curViewInverse, Bool doUpdate)
