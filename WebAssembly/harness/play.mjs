@@ -33,6 +33,7 @@ const archiveSpecs = [
   { name: "ZZBase_AudioEnglish.big", sourceName: "base-generals/AudioEnglish.big" },
   { name: "ZZBase_Speech.big", sourceName: "base-generals/Speech.big" },
   { name: "ZZBase_SpeechEnglish.big", sourceName: "base-generals/SpeechEnglish.big" },
+  { name: "ZZBase_Maps.big", sourceName: "base-generals/Maps.big" },
   { name: "Gensec.big" },
 ];
 
