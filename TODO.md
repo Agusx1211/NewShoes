@@ -563,15 +563,62 @@ symptom is temporal — NOT a single still.
       `dist-release` build reached the Mac, `W3DTreeBuffer` trees now draw, but on
       the real GPU they are **constantly too bright / full-bright** and don't
       respond to scene lighting (no shading, no day/night / terrain static light).
-      Likely the tree billboard/mesh draw isn't receiving diffuse sun + ambient +
-      the dynamic-lights iterator, or is drawn with an emissive/unlit shader or a
-      vertex material with lighting effectively disabled. Trace
-      `BaseHeightMapRenderObjClass::renderTrees` (BaseHeightMap.cpp:3125) ->
-      `W3DTreeBuffer::drawTrees(camera, &pDynamicLightsIterator)`: check the
-      shader / vertex-material lighting flags, whether static terrain lighting +
-      sun color + ambient are applied to the tree verts, and how the dynamic
-      lights iterator is used. Compare against original tree shading. Verify with a
-      screenshot showing shaded (not full-bright) trees.
+      **AUDIT 2026-07-08 (branch `fix/trees-too-bright`): the C++ tree-lighting path
+      and the D3D8->bridge fixed-function path are BOTH faithful — no unlit/emissive
+      material, no missing light env, no "lighting-off drops the color" bug. Every
+      prior hypothesis was checked and is FALSE. Do not re-audit the same links.**
+      - Trees are lit **on the CPU**: `W3DTreeBuffer::doLighting` (W3DTreeBuffer.cpp:640)
+        computes `ambient + N·L·diffuse` from `TheGlobalData->m_terrainObjectsLighting[m_timeOfDay]`
+        and bakes it into the per-vertex `diffuse` (line 962). This function is
+        **byte-identical** to the working community reference
+        (`assets/docs/community-cnc/GeneralsGameCode/.../W3DTreeBuffer.cpp`; diff = whitespace only).
+      - `renderTrees` (BaseHeightMap.cpp:3125) sets `Set_Material(m_vertexMaterialClass)`
+        = `PRELIT_DIFFUSE` (BaseHeightMap.cpp:2004) → `Set_Lighting(false)` +
+        diffuse-from-COLOR1 (vertmaterial.cpp:1023-1024) → **D3DRS_LIGHTING=FALSE,
+        color = baked vertex diffuse**. This is the SAME material/mechanism the terrain
+        uses (terrain renders fine — see [[black-terrain-diagnosis]]).
+      - The port always takes the **FVF fixed-function fallback** (`Set_Vertex_Shader(DX8_FVF_XYZNDUV1)`,
+        W3DTreeBuffer.cpp:1795/1817) because the shim's `CreateVertexShader` returns
+        `D3DERR_NOTAVAILABLE` (`wasm_d3d8_shim.cpp:3476`) so `Trees.vso` never loads
+        (`m_dwTreeVertexShader==0`). That is the correct faithful path (lighting off, so
+        the repurposed sway "normal" channel nx/ny/nz is harmlessly ignored).
+      - Bridge binds the tree diffuse at the right offset (FVF XYZ|NORMAL|DIFFUSE|TEX1,
+        stride 36, diffuse @24; `d3d8VertexLayoutInfo` bridge.js:6150-6188). With lighting
+        effectively off (`shaderEnabled` needs `fixedFunctionLights.length>0`; trees set
+        none — bridge.js:11778) the VS passes `vColor = color1` = baked diffuse
+        (bridge.js:8107-8110). `detailAlphaShader` GRADIENT_MODULATE → stage-0
+        `MODULATE(TEXTURE, DIFFUSE)` (shader.cpp:580-587); bridge resolves stage-0
+        `D3DTA_CURRENT`→diffuse (bridge.js:8397-8404). Final = `texture × bakedLighting`.
+      - Tree normals are the artist-authored W3D normals (not recomputed:
+        `OPTIMIZE_VNORM_RAM=0`, DIRTY_VNORMALS only on non-uniform scale —
+        meshgeometry.cpp:1447,2025).
+      - **SwiftShader renders the tree smoke WITH visible per-vertex shading**
+        (`WebAssembly/artifacts/screenshots/harness-smoke-ww3d-terrain-tree-buffer-scene-canvas.png`),
+        so the bug is **real-Metal-GPU-specific**, not in the CPU bake or JS logic.
+      **NEXT (needs the Mac GPU — dev-box SwiftShader can't repro; no new instrumentation
+      needed, the data is already captured):** on the Mac run, pull `d3d8DrawHistory`
+      (`window.CnCPort`), filter the tree pass (`vertexShaderFvf === (D3DFVF_XYZ|
+      D3DFVF_NORMAL|D3DFVF_DIFFUSE|D3DFVF_TEX1)`, `vertexStride === 36`), and read
+      (a) `vertexSummary` diffuse min/max/avg and (b) `renderState.textureStage0`
+      colorOp/args. This decides between:
+      - **(A) diffuse is ~white in the VB** → the map's `TerrainObjectsLighting`
+        clamps `ambient + N·L·diffuse` to 1.0 for up-facing leaf normals. Most likely
+        the object-light **sun direction** is the straight-down `initLightValues (0,0,-1)`
+        default instead of the map's angled sun → every up-facing leaf hits N·L=1 →
+        uniform full-bright (exactly this symptom). Verify
+        `WorldHeightMap::ParseLightingDataChunk` (WorldHeightMap.cpp:782) reads the
+        object-light `lightPos` for the current time-of-day; and that the map's
+        GlobalLighting chunk (K_LIGHTING_VERSION) is actually parsed at map load. This
+        is a **data/lighting-load** fix, not a render fix. NOTE: terrain hides the same
+        clamping because ground normals are ~uniform, so "terrain looks fine" does NOT
+        prove object-lighting is loaded — check the values directly.
+      - **(B) diffuse is shaded in the VB but the on-GPU result is white** → a
+        Metal-specific bridge stage-combine bug for the tree draw's exact state.
+      Fix per whichever the capture shows; **do NOT change the faithful C++ bake.**
+      (Benign aside for later: shim default `D3DTSS_COLORARG2`/`D3DTSS_ALPHAARG2` is
+      `D3DTA_CURRENT`; true DX8 default is `D3DTA_DIFFUSE` — harmless at stage 0 since
+      the bridge resolves stage-0 CURRENT→diffuse, but worth aligning at
+      `wasm_d3d8_shim.cpp:3901,3907`.)
 - [ ] **Terrain edge-blend / feathered texture transitions not rendering — hard
       straight borders (roads + terrain texture edges)** — 2026-07-08 (owner): the
       alpha-blended terrain edge transitions that feather one terrain texture into
