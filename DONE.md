@@ -36,6 +36,34 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `dist/cnc-port.wasm`); JS `node --check` clean. Branch
       `feat/resolution-fullscreen`. Still to verify on desktop Mac GPU + iPad
       Safari (sharpness, fill, UI layout, click accuracy).
+- [x] **Fullscreen rework: clean fill, no gray bar.** Owner reported a gray bar
+      at the bottom in fullscreen (the `.status` toolbar row + gray `.shell`
+      chrome showing below the canvas). Added a `:fullscreen` /
+      `:-webkit-full-screen` / `.is-fullscreen` CSS state (`harness.css`) that
+      drops the toolbar/borders/padding, makes the `.shell` full-viewport BLACK,
+      and fills the screen with the canvas (`object-fit: contain` -> letterbox on
+      black, never gray). Windowed layout unchanged. On entering fullscreen the
+      page auto-applies a Native resolution matched to the real fullscreen display
+      (`fullscreenPixelSize` = fullscreen element client box or `screen.*` x DPR),
+      and restores the previously-selected resolution on exit
+      (`onFullscreenChange` in `play.mjs`). Esc exits (standard API); a
+      hover-near-top `#fullscreenExit` affordance gives a visible exit without a
+      permanent bar.
+- [x] **Non-destructive in-game resolution change.** The stock OptionsMenu path
+      recreates `TheShell` + re-pushes `MainMenu.wnd`, which would dump a live
+      match to the menu. `cnc_port_real_engine_set_resolution` now branches on
+      game state (`TheGameLogic->isInGame() && !isInShellGame() && !isLoadingMap()`):
+      in a live match it does a LIGHT in-place reflow --
+      `TheDisplay->setDisplayMode` + `m_x/yResolution` + header/mouse notifies +
+      `TheInGameUI->recreateControlBar()` + resize `TheTacticalView`
+      (`setWidth(getWidth())`, `setHeight(getHeight()*0.77f)`, mirroring
+      `InGameUI::init`) -- WITHOUT touching `TheShell` or game state, so the match
+      keeps running, units stay selected, camera stays put. In the shell/menus it
+      keeps the full recreate. The auto-native-on-fullscreen uses the same RPC so
+      going fullscreen mid-match is non-destructive. Result JSON now carries a
+      `reflow` field (`"in-place"` / `"shell"`) for harness verification.
+      build:port green; JS `node --check` clean. NOTE: the command bar is rebuilt
+      (brief repopulate) on the in-place path; selection/camera/units persist.
 
 ## Probe-stub / ODR-shadow burndown (2026-07-08 orchestrated session)
 
