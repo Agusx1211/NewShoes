@@ -505,9 +505,6 @@ window.addEventListener("keydown", (event) => {
 let activeRpc = null;
 let displayControlsReady = false;
 let applyingResolution = false;
-// Selection to restore when leaving fullscreen (fullscreen auto-applies a
-// screen-matched native resolution, so we remember what the player had picked).
-let preFullscreenSelectValue = null;
 
 // The in-game (live) select is the canonical resolution control the existing
 // apply path reads. The launcher select is a pre-game mirror that seeds this
@@ -542,45 +539,6 @@ function nativePixelSize() {
     width: Math.max(640, Math.round(cssWidth * dpr)),
     height: Math.max(480, Math.round(cssHeight * dpr)),
   };
-}
-
-function fullscreenPixelSize() {
-  // The real fullscreen display resolution. Prefer the fullscreen element's own
-  // client box (matches what the canvas actually occupies once CSS applies);
-  // fall back to screen.* which is reliable the instant fullscreenchange fires,
-  // before layout settles. Both x devicePixelRatio for the true pixel grid.
-  const dpr = window.devicePixelRatio || 1;
-  const el = fullscreenElement() || fullscreenTarget;
-  const cssWidth = (el && el.clientWidth) || window.screen?.width || window.innerWidth || 800;
-  const cssHeight = (el && el.clientHeight) || window.screen?.height || window.innerHeight || 600;
-  return {
-    width: Math.max(640, Math.round(cssWidth * dpr)),
-    height: Math.max(480, Math.round(cssHeight * dpr)),
-  };
-}
-
-// Apply a specific pixel size directly (used by the fullscreen auto-native path,
-// which must not depend on the hidden selector's current value).
-async function applyResolutionSize(width, height) {
-  if (!activeRpc || applyingResolution) {
-    return;
-  }
-  const w = Math.max(1, Math.round(Number(width) || 0));
-  const h = Math.max(1, Math.round(Number(height) || 0));
-  if (w < 1 || h < 1) {
-    return;
-  }
-  applyingResolution = true;
-  try {
-    const result = await activeRpc("setEngineResolution", { width: w, height: h });
-    if (result?.ok !== true) {
-      console.warn("[play] setEngineResolution (fullscreen) failed", result?.error ?? result);
-    }
-  } catch (error) {
-    console.warn("[play] setEngineResolution (fullscreen) threw", error);
-  } finally {
-    applyingResolution = false;
-  }
 }
 
 // Every resolution <select> on the page (the in-game live one + the launcher
@@ -749,87 +707,19 @@ function onFullscreenChange() {
     fullscreenButton.classList.toggle("active", active);
     fullscreenButton.textContent = active ? "exit full" : "fullscreen";
   }
-  // Toggle an explicit class alongside the :fullscreen selector so the chrome
-  // (toolbar / borders) is dropped and the canvas fills the screen on black.
-  // Belt-and-suspenders for browsers that scope :fullscreen to the element only.
+  // Fullscreen is PURELY a CSS scale-to-fill: toggle the class (alongside the
+  // :fullscreen selector) so the chrome is hidden and the existing canvas is
+  // scaled up to fill the screen (object-fit: contain on black -> aspect
+  // preserved, letterboxed on black). We deliberately do NOT change the engine
+  // resolution on enter/leave: no setEngineResolution, no shell/HUD reflow, no
+  // backbuffer resize. The game keeps rendering at its current resolution and
+  // the UI stays exactly as it was -- only the on-screen scale changes. The
+  // resolution selector remains the one explicit path that changes the engine
+  // resolution. Input still lands correctly because canvasInputPointFromEvent
+  // maps from the live canvas client rect (which becomes the fullscreen rect)
+  // to the unchanged engine display size.
   fullscreenTarget.classList.toggle("is-fullscreen", active);
   refreshNativeOption();
-
-  if (active) {
-    // Entering fullscreen: remember the player's selection, then auto-apply a
-    // native resolution matched to the real fullscreen display size so the
-    // engine renders at full-screen resolution and the game fills the display
-    // at correct aspect (no upscale blur, no letterbox-in-gray). Defer one frame
-    // so the fullscreen CSS (canvas -> 100vw/100vh) has laid out before we read
-    // the size, otherwise a mid-transition read can be degenerate/stale.
-    if (preFullscreenSelectValue === null && resolutionSelect) {
-      // Store the native option by its stable prefix, not its live "native:WxH"
-      // value (that string changes as the size updates).
-      preFullscreenSelectValue = selectedResolution()?.isNative
-        ? "native"
-        : resolutionSelect.value;
-    }
-    applyFullscreenResolutionDeferred();
-  } else {
-    // Exiting fullscreen: restore the previously-selected resolution so the
-    // windowed layout returns to exactly what the player had. The CSS is still
-    // transitioning back to the windowed layout when fullscreenchange fires
-    // (canvas rect / screen.* momentarily degenerate), and re-sizing the
-    // render target to a bad size there is what left a BLACK screen after ESC.
-    // So restore the selection now but DEFER the actual resize to the next
-    // animation frame, guard against a zero/degenerate size, and nudge a repaint.
-    const restore = preFullscreenSelectValue;
-    preFullscreenSelectValue = null;
-    refreshNativeOption();
-    if (restore !== null && resolutionSelect) {
-      if (restore === "native") {
-        const nativeOption = resolutionSelect.querySelector('option[data-native="1"]');
-        if (nativeOption) {
-          resolutionSelect.value = nativeOption.value;
-        }
-      } else {
-        resolutionSelect.value = restore;
-      }
-    }
-    applyWindowedResolutionDeferred();
-  }
-}
-
-// Apply the fullscreen (screen-matched) resolution after layout settles, so the
-// size read reflects the real fullscreen viewport rather than a mid-transition
-// value. Retries once if the size still looks degenerate.
-function applyFullscreenResolutionDeferred(attempt = 0) {
-  requestAnimationFrame(() => {
-    if (!fullscreenElement()) {
-      return; // exited before we got a chance; the exit path takes over.
-    }
-    const size = fullscreenPixelSize();
-    if ((size.width < 2 || size.height < 2) && attempt < 5) {
-      applyFullscreenResolutionDeferred(attempt + 1);
-      return;
-    }
-    void applyResolutionSize(size.width, size.height);
-  });
-}
-
-// Re-apply the windowed resolution after fullscreen exit, once the windowed
-// layout has settled. Guards against a degenerate size and forces a repaint so
-// the game does not stay black after ESC.
-function applyWindowedResolutionDeferred(attempt = 0) {
-  requestAnimationFrame(() => {
-    if (fullscreenElement()) {
-      return; // re-entered fullscreen; not our job anymore.
-    }
-    refreshNativeOption();
-    const target = selectedResolution();
-    // If the selected size is degenerate right now (layout not settled), retry a
-    // few frames before giving up rather than resizing to a broken target.
-    if (target && (target.width < 2 || target.height < 2) && attempt < 5) {
-      applyWindowedResolutionDeferred(attempt + 1);
-      return;
-    }
-    void applySelectedResolution();
-  });
 }
 
 // --- live tracking of tab size / DPR ----------------------------------------
@@ -843,7 +733,13 @@ function onViewportGeometryChange() {
   // window drag does not spam display-mode changes (each recreates the shell).
   resizeSettleTimer = setTimeout(() => {
     resizeSettleTimer = null;
-    if (selectedResolution()?.isNative) {
+    // Fullscreen is a pure CSS scale and fires resize events too; never re-apply
+    // the engine resolution while fullscreen so entering/leaving it does not
+    // trigger a shell/HUD reflow. Only track Native for the windowed selector.
+    const inFullscreen = Boolean(
+      document.fullscreenElement || document.webkitFullscreenElement,
+    );
+    if (!inFullscreen && selectedResolution()?.isNative) {
       void applySelectedResolution();
     }
   }, 350);
