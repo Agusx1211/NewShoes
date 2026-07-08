@@ -816,6 +816,50 @@ async function driveRallyPointProbe(page) {
   return info;
 }
 
+// Tree-lighting discriminator: read the baked per-vertex diffuse of the tree
+// draw pass (FVF XYZ|NORMAL|DIFFUSE|TEX1 = 0x152, stride 36) from the draw
+// history. If diffuse is ~white the CPU bake is wrong (sun-direction/light data
+// → hypothesis A); if it is shaded/dark but trees still look wrong on GPU the
+// Metal combiner drops it (hypothesis B).
+async function driveTreeDiffuseProbe(page) {
+  const info = { steps: [] };
+  try {
+    await page.evaluate(() => { window.__cncSetDiagLevel?.("full"); window.__cncSetD3D8SceneDrawHistoryLimit?.(8192); });
+    await rpc(page, "revealLocalMap", { permanent: true });
+    await runFrames(page, 4, "tree probe reveal settle");
+    const frame = await runFrames(page, 1, "tree probe frame");
+    const hist = frame?.result?.state?.graphics?.d3d8SceneDrawHistory
+      ?? frame?.result?.state?.graphics?.d3d8DrawHistory ?? [];
+    info.totalDraws = hist.length;
+    const treeDraws = hist.filter((d) => Number(d.vertexStride) === 36 &&
+      (Number(d.vertexShaderFvf) === 0x152 || Number(d.vertexShaderFvf) === 338));
+    info.treeDrawCount = treeDraws.length;
+    info.treeDraws = treeDraws.slice(0, 6).map((d) => ({
+      seq: d.drawSequence, fvf: d.vertexShaderFvf, stride: d.vertexStride,
+      verts: d.vertexCount, tex0: d.texture0?.id ?? null,
+      lighting: d.renderState?.lighting ?? null,
+      colorOp0: d.renderState?.textureStage0?.colorOp ?? d.renderState?.colorOp ?? null,
+      diffuse: d.vertexSummary?.diffuse ?? d.vertexSummary ?? null,
+    }));
+    // Fallback: if the strict tree filter found nothing, dump all distinct
+    // (stride, fvf) pairs so we can adjust the filter.
+    if (treeDraws.length === 0) {
+      const seen = new Map();
+      for (const d of hist) {
+        const key = `${d.vertexStride}/${d.vertexShaderFvf}`;
+        if (!seen.has(key)) seen.set(key, { stride: d.vertexStride, fvf: d.vertexShaderFvf, count: 0, sampleDiffuse: d.vertexSummary?.diffuse ?? null });
+        seen.get(key).count += 1;
+      }
+      info.fvfStridePairs = [...seen.values()].slice(0, 30);
+    }
+    info.ok = true;
+  } catch (error) {
+    info.ok = false;
+    info.error = error?.message ?? String(error);
+  }
+  return info;
+}
+
 async function main() {
   await mkdir(dirname(screenshotPath), { recursive: true });
   await mkdir(dirname(outputPath), { recursive: true });
@@ -1069,6 +1113,11 @@ async function main() {
     if (process.env.SKIRMISH_START_RALLY_PROBE === "1") {
       rallyProbe = await driveRallyPointProbe(page);
       console.error("[skirmish-start] rallyProbe:", JSON.stringify(rallyProbe));
+    }
+    let treeProbe = null;
+    if (process.env.SKIRMISH_START_TREE_PROBE === "1") {
+      treeProbe = await driveTreeDiffuseProbe(page);
+      console.error("[skirmish-start] treeProbe:", JSON.stringify(treeProbe));
     }
     await page.locator("#viewport").screenshot({ path: screenshotPath });
     const renderProbe = await sampleViewportGrid(page);
