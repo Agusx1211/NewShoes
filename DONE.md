@@ -91,6 +91,29 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `requestAnimationFrame`, guards degenerate sizes with retries, and re-applies
       the windowed resolution after layout settles so the game stays live/visible;
       the continuous frame loop repaints. build:port green; JS `node --check` clean.
+- [x] **Fullscreen reworked to pure CSS scale-to-fill (no engine resize).**
+      The auto engine-resolution change on fullscreen enter/exit
+      (`setEngineResolution` -> shell/command-bar reflow) was fragile and broke
+      the HUD on the enter/leave cycle (owner-reported). Superseded: fullscreen is
+      now PURELY a CSS scale. `onFullscreenChange` only toggles `.is-fullscreen`;
+      the `:fullscreen` CSS scales the canvas to the screen with
+      `object-fit: contain` on black (aspect preserved, letterboxed). No
+      `setEngineResolution`, no shell/HUD reflow, no backbuffer resize on
+      enter/leave -- the game keeps rendering at its current resolution and the UI
+      is exactly as before; ESC exits cleanly (buffer reverts, frame loop
+      repaints, no black). Removed the fragile helpers (`fullscreenPixelSize`,
+      `applyResolutionSize`, deferred enter/exit resize, `preFullscreenSelectValue`).
+      To keep rendering + input correct under the CSS scale: `getCanvasDisplaySize`
+      pins the backing store to the engine render resolution while fullscreen (so
+      the buffer aspect matches the engine and object-fit letterboxes cleanly
+      instead of growing to the screen and re-stretching), and
+      `canvasInputPointFromEvent` maps the pointer through the letterboxed content
+      box in fullscreen so clicks/placement still land right (windowed path
+      unchanged). `onViewportGeometryChange` never re-applies the engine
+      resolution while fullscreen. The resolution selector remains the ONE explicit
+      engine-resize path, decoupled from fullscreen. This trades fullscreen
+      native-res sharpness for reliability, per owner. JS/CSS only; node --check
+      clean.
 
 ## Probe-stub / ODR-shadow burndown (2026-07-08 orchestrated session)
 
