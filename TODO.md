@@ -767,6 +767,36 @@ screenshots on the release build.
       Options/LOD path (engine/INI, not the bridge) — do NOT force flags or
       invent shading. If the counter is nonzero but terrain still looks flat,
       compare the noise texture sampling/UV scale against original screenshots.
+- [ ] **Path B: implement the D3D8 pixel/vertex-shader tier in the WebGL2 bridge
+      (unlock the "good" shader paths).** OWNER-REQUESTED (2026-07-08). Today the
+      shim reports a fixed-function Voodoo5-class adapter (`wasm_d3d8_shim.cpp`
+      `VendorId=0x121a`, `DeviceId=0x0009` → `DC_VOODOO5`) and
+      `CreatePixelShader`/`CreateVertexShader` return `D3DERR_NOTAVAILABLE`, so
+      `W3DShaderManager` selects the fixed-function terrain path and every
+      programmable-shader effect is dead. NOTE: the fixed-function terrain
+      clouds+noise path is ALREADY correct end-to-end (see entry above) — Path B
+      is NOT needed to fix terrain, it is the higher-fidelity/richer-effects
+      option. Scope: (1) report a pixel-shader-capable adapter identity + caps
+      (`PixelShaderVersion`/`VertexShaderVersion`, a `DC_*` chipset that selects
+      the PS tier — e.g. GeForce3+/`terrainShader8Stage` single-pass) from the
+      shim so `getChipset()` picks the programmable paths; (2) implement
+      `CreatePixelShader`/`CreateVertexShader` + `SetPixelShader`/`SetVertexShader`
+      in the D3D8→WebGL2 layer by translating the shipped shaders to GLSL. The game
+      ships a FIXED, known set (`Shaders/*.nvp` pixel, `*.nvv` vertex — e.g.
+      `monochrome.nvp`/`invmonochrome.nvp`, `MotionBlur.nvv`/`motionblur.nvp`, the
+      heat-haze/smudge shader, terrain PS variants), so a **targeted hand-port**
+      (GLSL equivalents mapped by shader name/hash) is feasible without a full
+      generic DX8-shader-assembly compiler — do that before attempting a general
+      `nvparse`/bytecode→GLSL translator. Payoff: single-pass pixel-shader terrain
+      (clouds+noise+lightmap folded, fewer draws) AND it is the prerequisite that
+      unlocks the two dead-shader entries below (heat-haze/smudge, monochrome/
+      motion-blur) — cross-reference them. RISKS/verify: feeding a PS-capable
+      chipset must NOT regress the fixed-function paths that currently work
+      (gate carefully or make each shader type independently selectable); confirm
+      terrain still renders correctly after the tier switch; watch per-draw/perf.
+      Big lift — land it incrementally (one shader at a time, screenshot each) and
+      do NOT invent shading; port the real shader math. Adapter/caps identity lives
+      in `wasm_d3d8_shim.cpp`; shader create/set entry points there + `bridge.js`.
 - [ ] **Heat-haze / screen smudges not rendering (flat explosions/fire)** — the
       original distorts the background behind heat particles ("screen smudges
       which are particles that distort the background behind them",
