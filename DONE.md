@@ -39,6 +39,33 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       stillFullscreen:true, pageErrors:[]`. No engine/menu logic changed (reuses
       the original in-game-menu path); JS-only, so no wasm rebuild required.
 
+- [x] **General's Challenge freezes on "Play Game" — fixed a NULL video-stream
+      deref in `ChallengeLoadScreen::init`.** User report: "Challenges don't load —
+      I can select the challenge but when I click Play Game it freezes." Clicking a
+      general then "Play Game" in `ChallengeMenu` (`GUICallbacks/Menus/ChallengeMenu.cpp`
+      line 686) posts `MSG_NEW_GAME`/`GAME_SINGLE_PLAYER`; `GameLogic::startNewGame`
+      picks `ChallengeLoadScreen` for the challenge campaign (`GameLogic.cpp:731-733`).
+      `ChallengeLoadScreen::init` (`GameClient/GUI/LoadScreen.cpp`) opens the mission's
+      `IntroMovie` — for every challenge mission that is `GeneralsChallengeBackground`
+      → Bink `GC_Background.bik` (Campaign.ini / Video.ini). In the browser the Bink
+      file isn't reachable through the raw-`fopen` bink shim (videos live inside the
+      mounted `.big` archives, not the emscripten FS), so `TheVideoPlayer->open()`
+      returns NULL. Unlike `SinglePlayerLoadScreen::init` (which null-checks its
+      stream and returns), `ChallengeLoadScreen::init` dereferenced the NULL stream
+      immediately — `m_videoBuffer->allocate(m_videoStream->width(), m_videoStream->height())`
+      → NULL vtable call → wasm trap the moment "Play Game" is clicked (reads as a
+      freeze). **Fix:** add the same `if (m_videoStream == NULL) return;` guard that
+      `SinglePlayerLoadScreen::init` already has, right after the `open()` call
+      (`LoadScreen.cpp` ~line 1263). The load screen just skips its intro movie and
+      the map loads normally. **Repro/verify:** new `harness/challenge_start_smoke.mjs`
+      drives Main Menu → Single Player → Challenge → Easy → select general 0 → Play
+      Game and steps the engine watching `lastGameLogicStep`; a `challengeMenu` window
+      probe block was added to `wasm_real_engine_init.cpp` state JSON so the harness
+      can locate `ButtonPlay`/`GeneralPosition*`. Post-fix the challenge menu reveals,
+      general selection works, and Play Game advances into `startNewGame` / map load
+      (`SidesInfo.init.complete`, no exception) instead of trapping. Built with
+      `npm run build:port`.
+
 - [x] **Trees rendered over-bright / fully illuminated — fixed by re-baking tree
       lighting on lighting/time-of-day change** (commit 844629f5, user-confirmed on
       real Metal GPU). `W3DTreeBuffer` bakes scene lighting into each tree vertex's

@@ -5215,6 +5215,23 @@ void append_real_engine_client_state(std::string &json)
 	append_window_under_probe_center(json, "underButtonStartCenter", "SkirmishGameOptionsMenu.wnd:ButtonStart");
 	json += "}";
 
+	// General's Challenge menu (Zero Hour): lets the harness drive the challenge
+	// start path (select a general position, then click "Play Game").
+	json += ",\"challengeMenu\":{\"queried\":true";
+	append_window_probe(json, "parent", "ChallengeMenu.wnd:ParentChallengeMenu");
+	append_window_probe(json, "buttonPlay", "ChallengeMenu.wnd:ButtonPlay");
+	append_window_probe(json, "buttonBack", "ChallengeMenu.wnd:ButtonBack");
+	append_window_probe(json, "generalPosition0", "ChallengeMenu.wnd:GeneralPosition0");
+	append_window_probe(json, "generalPosition1", "ChallengeMenu.wnd:GeneralPosition1");
+	append_window_probe(json, "generalPosition2", "ChallengeMenu.wnd:GeneralPosition2");
+	append_window_probe(json, "generalPosition3", "ChallengeMenu.wnd:GeneralPosition3");
+	append_window_under_probe_center(json, "underButtonPlayCenter", "ChallengeMenu.wnd:ButtonPlay");
+	append_window_under_probe_center(json, "underGeneralPosition0Center", "ChallengeMenu.wnd:GeneralPosition0");
+	append_window_under_probe_center(json, "underGeneralPosition1Center", "ChallengeMenu.wnd:GeneralPosition1");
+	append_window_under_probe_center(json, "underGeneralPosition2Center", "ChallengeMenu.wnd:GeneralPosition2");
+	append_window_under_probe_center(json, "underGeneralPosition3Center", "ChallengeMenu.wnd:GeneralPosition3");
+	json += "}";
+
 	json += ",\"loadScreen\":{\"queried\":true,\"multiplayer\":{\"queried\":true";
 	append_window_probe(json, "mapPreview", "MultiplayerLoadScreen.wnd:WinMapPreview");
 	append_window_probe(json, "localGeneralPortrait", "MultiplayerLoadScreen.wnd:LocalGeneralPortrait");

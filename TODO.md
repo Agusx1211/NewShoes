@@ -3624,7 +3624,17 @@ and then start with the PROFILE, not with any individual fix.
       `renderedObjectCount > 0`, visible non-black canvas variance, and no
       traps. Remaining: AI behavior tuning and map-specific script fixes.
 - [ ] Single-player campaign(s) playable (scripts, objectives, cinematics).
-- [ ] Challenge mode (Zero Hour generals challenge).
+- [ ] Challenge mode (Zero Hour generals challenge). The start freeze is FIXED
+      (NULL video-stream deref in `ChallengeLoadScreen::init`; see DONE.md
+      2026-07-08) — Main Menu -> Single Player -> Challenge -> difficulty ->
+      select a general -> Play Game now loads the challenge map and simulates
+      (harness `challenge_start_smoke.mjs` reaches inGame, loadingMap=false,
+      471 objects on GC_ChemGeneral). Remaining for a full pass: verify input
+      re-enables after the challenge map's intro script (observed
+      `inputEnabled=false` while the intro runs — confirm it clears and the
+      player gains control), the AI opponent general behaves, and the
+      challenge win/loss -> ScoreScreen -> next-general flow works end to end.
+      Also verify on the real Metal GPU (dev-box run was SwiftShader).
 - [ ] Save / load a game (serialization round-trips correctly).
 - [ ] Options persist (graphics, audio, controls) via IDBFS.
 

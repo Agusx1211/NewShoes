@@ -1260,6 +1260,17 @@ void ChallengeLoadScreen::init( GameInfo *game )
 	m_videoStream = TheVideoPlayer->open( TheCampaignManager->getCurrentMission()->m_movieLabel );
 #endif
 
+	// If the movie can't be opened (e.g. the Bink file isn't present in the
+	// mounted archives, as happens in the browser port), bail out gracefully
+	// instead of dereferencing a NULL stream below. SinglePlayerLoadScreen::init()
+	// guards its stream the same way; without this guard the challenge load
+	// screen hard-crashes (NULL deref on m_videoStream->width()) the instant the
+	// player clicks "Play Game", which reads as a freeze.
+	if ( m_videoStream == NULL )
+	{
+		return;
+	}
+
 	// Create the new buffer
 	m_videoBuffer = TheDisplay->createVideoBuffer();
 	if (m_videoBuffer == NULL || !m_videoBuffer->allocate(	m_videoStream->width(), m_videoStream->height() ))
