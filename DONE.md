@@ -10,6 +10,35 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Browser display / harness UX (2026-07-08)
 
+- [x] **In-game ESC key dead in a fullscreen skirmish (Esc menu never opens) —
+      fixed with the Keyboard Lock API** (`WebAssembly/harness/play.mjs`,
+      `WebAssembly/harness/play.html`). The engine path was already correct and
+      already regression-tested: DOM `Escape` → DIK `0x01` → `KEY_ESC`
+      (`KeyDefs.h:126`) → the real `MetaEventTranslator` (attached in
+      `GameClient::init`, `GameClient.cpp:310`) looks up `TheMetaMap` (loaded from
+      `Data\English\CommandMap.ini` which binds `KEY_ESC`→`OPTIONS`) → emits
+      `GameMessage::MSG_META_OPTIONS` → `CommandXlat.cpp:3237` calls
+      `ToggleQuitMenu()` (`QuitMenu.cpp:284`, opens `QuitNoSave.wnd` for skirmish
+      and pauses). `npm run test:skirmish-esc-menu` passes today: an injected DOM
+      Escape opens the paused quit menu. The real-play bug was that the player
+      runs the game **in fullscreen**, and the browser consumes the Esc keydown to
+      exit fullscreen *before* any JS `keydown` listener fires — a security
+      behaviour `preventDefault()` cannot override — so the engine never saw Esc.
+      Fix: acquire `navigator.keyboard.lock(["Escape"])` when entering fullscreen
+      and release it on exit (wired in `onFullscreenChange`, covering the
+      fullscreen button, boot-time "start in fullscreen", and any programmatic
+      request). While locked, a single Esc is delivered to the page (bridge.js →
+      engine → Esc menu); the user holds Esc (Chromium's native "hold Esc to exit"
+      prompt) or clicks the exit affordance to leave fullscreen. Feature-detected:
+      Safari/Firefox lack the API and keep native Esc-exit. Verified on the dev
+      box (SwiftShader, no GPU needed): (1) isolated mechanism test — lock
+      acquired in fullscreen, Esc keydown delivered to the page, fullscreen NOT
+      exited; (2) real-code end-to-end — booted the actual `play.html` to the main
+      menu, entered fullscreen (real `play.mjs` `onFullscreenChange` acquired the
+      lock), pressed Esc → `escKeydowns:1, escWhileFullscreen:true,
+      stillFullscreen:true, pageErrors:[]`. No engine/menu logic changed (reuses
+      the original in-game-menu path); JS-only, so no wasm rebuild required.
+
 - [x] **Trees rendered over-bright / fully illuminated — fixed by re-baking tree
       lighting on lighting/time-of-day change** (commit 844629f5, user-confirmed on
       real Metal GPU). `W3DTreeBuffer` bakes scene lighting into each tree vertex's

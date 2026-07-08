@@ -678,6 +678,49 @@ function fullscreenSupported() {
   );
 }
 
+// Keyboard Lock keeps Esc reaching the game while fullscreen. Without it the
+// browser eats the Esc keydown to exit fullscreen (a security behaviour that
+// preventDefault() cannot override), so the in-game Esc menu (KEY_ESC ->
+// MetaEventTranslator -> MSG_META_OPTIONS -> ToggleQuitMenu) never fires and Esc
+// is dead in-game. navigator.keyboard.lock(['Escape']) only takes effect while
+// fullscreen: Esc keydowns are delivered to the page (bridge.js forwards them to
+// the engine); the user holds Esc to exit fullscreen instead. Chromium/Edge
+// support this; Safari/Firefox lack it and fall back to native Esc-exits.
+let keyboardEscLocked = false;
+
+async function lockEscapeKey() {
+  if (keyboardEscLocked) {
+    return;
+  }
+  const keyboard = navigator.keyboard;
+  if (!keyboard || typeof keyboard.lock !== "function") {
+    return; // Unsupported (Safari/Firefox): native Esc still exits fullscreen.
+  }
+  try {
+    await keyboard.lock(["Escape"]);
+    keyboardEscLocked = true;
+  } catch (error) {
+    // lock() rejects when not in fullscreen or when the API is disallowed; the
+    // game just keeps the native Esc-exit behaviour in that case.
+    console.warn("[play] keyboard.lock(Escape) failed", error);
+  }
+}
+
+function unlockEscapeKey() {
+  if (!keyboardEscLocked) {
+    return;
+  }
+  keyboardEscLocked = false;
+  const keyboard = navigator.keyboard;
+  if (keyboard && typeof keyboard.unlock === "function") {
+    try {
+      keyboard.unlock();
+    } catch (error) {
+      console.warn("[play] keyboard.unlock failed", error);
+    }
+  }
+}
+
 async function enterFullscreen() {
   // Prefer the standard API; fall back to the webkit-prefixed path for older
   // Safari. iPad Safari only exposes element.webkitRequestFullscreen on <video>
@@ -711,6 +754,15 @@ async function exitFullscreen() {
 
 function onFullscreenChange() {
   const active = Boolean(fullscreenElement());
+  // Grab/release the Esc keyboard lock alongside the fullscreen state so Esc
+  // opens the in-game menu instead of exiting fullscreen. This covers every
+  // entry path (the fullscreen button, boot-time "start in fullscreen", and any
+  // programmatic request) since they all funnel through this change handler.
+  if (active) {
+    void lockEscapeKey();
+  } else {
+    unlockEscapeKey();
+  }
   if (fullscreenButton) {
     fullscreenButton.classList.toggle("active", active);
     fullscreenButton.textContent = active ? "exit full" : "fullscreen";
@@ -785,7 +837,9 @@ function initDisplayControls() {
   }
 
   // In-fullscreen exit affordance (no permanent bar): the button is revealed by
-  // CSS on hover near the top; clicking it exits. Esc still exits too.
+  // CSS on hover near the top; clicking it exits. With the Esc keyboard lock a
+  // single Esc opens the in-game menu, so the exit affordances are this button
+  // and holding Esc (the browser surfaces "hold Esc to exit" automatically).
   const fullscreenExit = document.querySelector("#fullscreenExit");
   if (fullscreenExit) {
     fullscreenExit.addEventListener("click", () => {
