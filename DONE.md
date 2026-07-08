@@ -8,6 +8,48 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Probe-stub / ODR-shadow burndown (2026-07-08 orchestrated session)
+
+- [x] **ObjectCreationLists actually execute now** (biggest gameplay fix). In
+      `cnc-port` the ONLY linked `ObjectCreationList.o` was the probe/no-op copy:
+      `WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY` reduced every OCL
+      `create()` to `return NULL`, and the full-body TU
+      (`zh_gameengine_real_compile_frontier`) is a compile-only canary that is
+      **never linked into cnc-port** (not even an ODR race — the no-op ran
+      unconditionally). So death debris/wreckage, OCL-fired sub-weapons
+      (cluster/MOAB/SCUD), and persistent toxin/radiation/anthrax FIELD objects
+      (each spawned by an OCL then given `RadiusDecalUpdate`) all silently did
+      nothing — which is also why the RadiusDecal un-gate alone showed no toxin
+      field (the field object never spawned). Fix: un-gated the real `create()`
+      bodies source-level (ODR-proof) in `ObjectCreationList.cpp`/`.h` +
+      `DeliverPayloadAIUpdate.cpp` and removed the CMake macro. build:port green;
+      **verified combat-regression-safe on real Apple M4 Metal** — skirmish
+      survives AI activity (`activityDetected=true`) with OCLs firing, no crash
+      (`ocl-combat-regression.png`). Specific-effect close-ups (visible wreckage /
+      toxin puddle) still to be captured, but the no-op is definitively gone.
+- [x] **Wrong ground tiles fixed.** The port's `D3DXFilterTexture` shim built the
+      terrain-atlas mip chain with point-sampling (`copy_scaled_rect_from`),
+      whereas `D3DX_FILTER_BOX` averages each 2x2 block. Near the packed A1R5G5B5
+      tile borders (4px), point-sampling dragged a neighbouring tile's colour into
+      the mips, so distant tiles showed the wrong content. Added format-aware
+      box-filter mip generation (`wasm_d3d8_shim.cpp`). Texture-format coverage and
+      the D3D8 bind/sampler cache were both audited and cleared as the cause.
+      build:port green; distant terrain renders clean on Mac Metal.
+- [x] **Decal/scorch z-order flicker fixed.** `flushDecals` set `D3DRS_ZBIAS=1`
+      directly on the device (bypassing DX8Wrapper's cache) and never restored it;
+      the cache thought ZBIAS was 0 so the engine's reset short-circuited, leaking
+      bias into the next frame's terrain/scorch draws (flicker gated on whether
+      decals flushed the prior frame). Fixed: restore `D3DRS_ZBIAS=0` after the
+      decal batch.
+- [x] **~120 broken GUI screens recovered.** The probe `FunctionLexicon::init()`
+      (`wasm_ww3d_render_probe.cpp`) loaded a reduced callback table that omitted
+      ~120 real GUI system/input/layout callbacks, so many `.wnd` screens loaded
+      unpopulated with dead buttons. `repair_gameplay_callback_owners()` now
+      re-registers all whose real owners are linked (LAN/WOL/online menus,
+      Save/Load, replay popup, in-game chat/diplomacy/disconnect, host/join
+      popups). build:port green, regression-clean on Metal; per-screen visual
+      confirmation pending.
+
 ## Terrain adjacent systems re-enabled (2026-07-08 session)
 
 - [x] **Rally-point line does not render** — FIXED. Root cause: the probe-era
