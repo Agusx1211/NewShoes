@@ -478,6 +478,17 @@ const d3d8PerfStats = {
   drawBatchMaxRunLength: 0,
   drawDepthStencilOnlyProgramDraws: 0,
   drawDepthStencilOnlyFastDerivedDraws: 0,
+  // Terrain noise/cloud/lightmap detail-pass diagnostics. The original
+  // TerrainShader2Stage noise/cloud pass (W3DShaderManager.cpp
+  // TerrainShader2Stage::set pass 2) binds a noise/cloud texture with
+  // D3DTSS_TCI_CAMERASPACEPOSITION generated coords + a D3DTS_TEXTURE0/1
+  // texture transform and blends multiplicatively (SRCBLEND=DESTCOLOR,
+  // DESTBLEND=ZERO). These counters let the real-GPU harness confirm the
+  // detail layer is actually emitted (vs. the LOD/Options gate leaving
+  // m_useLightMap/m_useCloudMap off, which yields flat terrain).
+  terrainNoiseMultiplyDraws: 0,
+  terrainNoiseMultiplyTransformedDraws: 0,
+  terrainNoiseMultiplyIdentityTransformDraws: 0,
   drawMatrixNormalizations: 0,
   drawMatrixScratchCopies: 0,
   drawMatrixAllocatedCopies: 0,
@@ -882,6 +893,9 @@ function d3d8PerfSummary() {
     drawBatchMaxRunLength: d3d8PerfStats.drawBatchMaxRunLength,
     drawDepthStencilOnlyProgramDraws: d3d8PerfStats.drawDepthStencilOnlyProgramDraws,
     drawDepthStencilOnlyFastDerivedDraws: d3d8PerfStats.drawDepthStencilOnlyFastDerivedDraws,
+    terrainNoiseMultiplyDraws: d3d8PerfStats.terrainNoiseMultiplyDraws,
+    terrainNoiseMultiplyTransformedDraws: d3d8PerfStats.terrainNoiseMultiplyTransformedDraws,
+    terrainNoiseMultiplyIdentityTransformDraws: d3d8PerfStats.terrainNoiseMultiplyIdentityTransformDraws,
     drawMatrixNormalizations: d3d8PerfStats.drawMatrixNormalizations,
     drawMatrixScratchCopies: d3d8PerfStats.drawMatrixScratchCopies,
     drawMatrixAllocatedCopies: d3d8PerfStats.drawMatrixAllocatedCopies,
@@ -10263,6 +10277,75 @@ function d3d8ClipPlaneInfo(renderState, clipPlanes) {
   };
 }
 
+// Detect and count terrain noise/cloud/lightmap "detail" multiply passes.
+//
+// The original engine renders the fine terrain noise + lightmap detail through
+// the fixed-function TerrainShader2Stage noise/cloud pass (the browser D3D8
+// adapter deliberately reports a fixed-function Voodoo5-class device, so
+// W3DShaderManager selects this fallback rather than the ps.1.1
+// terrainnoise*.pso path). That pass — and the single-pass
+// ST_TERRAIN_BASE_NOISE12 variant — is identified by:
+//   * a texture sampled with D3DTSS_TCI_CAMERASPACEPOSITION generated coords
+//     plus a D3DTS_TEXTURE0/1 texture transform (the STRETCH_FACTOR + sliding
+//     offset projection from updateNoise1/updateNoise2), and
+//   * a multiplicative framebuffer blend: SRCBLEND=DESTCOLOR, DESTBLEND=ZERO.
+// See GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/
+// W3DShaderManager.cpp (TerrainShader2Stage::set, pass 2).
+//
+// This diagnostic is pure instrumentation (no rendering change): it lets the
+// real-GPU harness confirm the detail layer is actually being emitted. A flat
+// terrain almost always means the engine LOD / Options gate left
+// m_useLightMap / m_useCloudMap off, so ST_TERRAIN_BASE_NOISE* is never
+// selected and these draws never occur (counter stays 0) — not a lost pass in
+// the D3D8 -> WebGL2 bridge, which faithfully replays each pass.
+function d3d8NoteTerrainNoiseMultiplyDraw(
+  renderState,
+  canSampleTexture0,
+  texture0Coordinates,
+  texture0Transform,
+  canSampleTexture1,
+  texture1Coordinates,
+  texture1Transform,
+) {
+  if (!renderState || Number(renderState.alphaBlendEnable ?? 0) === 0) {
+    return;
+  }
+  const srcBlend = Number(renderState.srcBlend ?? D3DBLEND_ONE) >>> 0;
+  const destBlend = Number(renderState.destBlend ?? D3DBLEND_ZERO) >>> 0;
+  // The multiplicative "modulate onto framebuffer" blend that the noise/cloud
+  // pass uses. This is what darkens/tints the terrain by the noise pattern.
+  if (srcBlend !== D3DBLEND_DESTCOLOR || destBlend !== D3DBLEND_ZERO) {
+    return;
+  }
+  const stage0IsProjectedNoise = Boolean(
+    canSampleTexture0 &&
+    texture0Coordinates &&
+    texture0Coordinates.mode === D3DTSS_TCI_CAMERASPACEPOSITION);
+  const stage1IsProjectedNoise = Boolean(
+    canSampleTexture1 &&
+    texture1Coordinates &&
+    texture1Coordinates.mode === D3DTSS_TCI_CAMERASPACEPOSITION);
+  if (!stage0IsProjectedNoise && !stage1IsProjectedNoise) {
+    return;
+  }
+  d3d8PerfStats.terrainNoiseMultiplyDraws += 1;
+  // Whether the projection matrix is non-identity. An identity transform on a
+  // camera-space-position noise pass would collapse the noise UVs and flatten
+  // the detail, so the harness can use this to distinguish "detail present"
+  // from "detail collapsed".
+  const stage0Transformed = stage0IsProjectedNoise &&
+    texture0Coordinates.transformApplied &&
+    !isIdentityD3DMatrix(texture0Transform);
+  const stage1Transformed = stage1IsProjectedNoise &&
+    texture1Coordinates.transformApplied &&
+    !isIdentityD3DMatrix(texture1Transform);
+  if (stage0Transformed || stage1Transformed) {
+    d3d8PerfStats.terrainNoiseMultiplyTransformedDraws += 1;
+  } else {
+    d3d8PerfStats.terrainNoiseMultiplyIdentityTransformDraws += 1;
+  }
+}
+
 function normalizeD3D8RenderState(renderState = {}) {
   return {
     cullMode: Number(renderState.cullMode ?? D3DCULL_CW) >>> 0,
@@ -11289,6 +11372,28 @@ function paintD3D8DrawIndexed(payload = {}) {
   if (depthStencilOnlyFastDerived) {
     d3d8PerfStats.drawDepthStencilOnlyFastDerivedDraws += 1;
   }
+  // Terrain noise/cloud/lightmap detail-pass diagnostic. The original
+  // TerrainShader2Stage::set(pass==2) noise/cloud pass (and the single-pass
+  // ST_TERRAIN_BASE_NOISE12 variant) projects a noise/cloud texture onto the
+  // terrain via D3DTSS_TCI_CAMERASPACEPOSITION generated coordinates plus a
+  // D3DTS_TEXTURE0/1 texture transform, then blends multiplicatively with
+  // SRCBLEND=DESTCOLOR / DESTBLEND=ZERO (see
+  // GeneralsMD/.../W3DDevice/GameClient/W3DShaderManager.cpp). Counting these
+  // draws (and whether their texture transform is non-identity) lets the
+  // real-GPU harness confirm the fine noise + lightmap detail layer is
+  // actually being emitted. If terrain looks flat, the usual cause is the
+  // engine LOD / Options gate leaving m_useLightMap / m_useCloudMap off so the
+  // ST_TERRAIN_BASE_NOISE* technique is never selected upstream (in which case
+  // this counter stays 0), not a lost pass in the D3D8->WebGL2 bridge.
+  d3d8NoteTerrainNoiseMultiplyDraw(
+    renderState,
+    canSampleTexture0,
+    texture0Coordinates,
+    texture0Transform,
+    canSampleTexture1,
+    texture1Coordinates,
+    texture1Transform,
+  );
   const vertexPretransformed = vertexLayout?.pretransformed === true;
   const usePositionTransforms = useTransforms && !vertexPretransformed;
   const includeSceneDrawHistory = usePositionTransforms || vertexPretransformed;
