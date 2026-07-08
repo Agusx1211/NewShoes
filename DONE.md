@@ -32,6 +32,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       render crash (`renderedObjectCount>0`, harness assertions green).
       Screenshots `WebAssembly/artifacts/screenshots/rally-fixed.png` (GLA rally
       line) and `full-reenable.png` (China bibs + trees + rally line).
+      2026-07-08 real-GPU verification: an interim "still dark on the Mac GPU"
+      report was a **stale `dist-release`** — `harness/play.html` serves the
+      `dist-release` build by default (`defaultCncPortDistDir()` returns
+      `dist-release` only for play.html) while `build:port` only updates `dist`.
+      Rebuilt BOTH `dist` (build:port) and `dist-release` (build:port:release)
+      with the fix, deployed both to cnc-gpu, and confirmed on real
+      `ANGLE Metal Renderer: Apple M4` (renderer string checked) that the blue
+      rally line renders from the building to the rally flag — in the `dist`
+      build (`rally-mac.png`) AND the user-facing `dist-release` build
+      (`rally-mac-release.png`), both also showing trees + bib foundations. Merged
+      to `main` (no stranded branch).
 
 ---
 
