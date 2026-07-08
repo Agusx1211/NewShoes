@@ -63,6 +63,16 @@ body {
   align-self: center;
   background: #000;
   display: block;
+  /* Letterbox (aspect-preserve) the engine's chosen-resolution backing store
+     into this 16:9 display box, exactly like fullscreen. Without this a
+     non-16:9 render (e.g. 4:3 800x600 / 1024x768) is horizontally STRETCHED to
+     fill the box, so the chosen resolution is not visually respected in
+     windowed mode. `contain` centers the render on black instead (pillarbox on
+     the sides / letterbox on top). The dynamic "Native" option sizes its buffer
+     to the box aspect, so `contain` fills it edge-to-edge (no bars) -- one rule
+     handles both cases. canvasInputPointFromEvent maps clicks through the same
+     contained content box so they still land on the right engine point. */
+  object-fit: contain;
 }
 
 /* --- In-game gear button (single unobtrusive control) ---------------------- */

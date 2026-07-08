@@ -16951,25 +16951,22 @@ function canvasInputPointFromEvent(event) {
   const targetWidth = harnessState.engineDisplaySize?.width ?? canvas.width;
   const targetHeight = harnessState.engineDisplaySize?.height ?? canvas.height;
 
-  // Default (windowed): the canvas has no object-fit, so its bitmap is stretched
-  // to fill the whole element box -> the content box IS the element rect.
   let contentLeft = rect.left;
   let contentTop = rect.top;
   let contentWidth = rect.width;
   let contentHeight = rect.height;
 
-  // Fullscreen: the canvas is displayed with `object-fit: contain`, so when the
-  // drawing-buffer aspect does not match the screen aspect (e.g. a 4:3 render on
-  // a 16:9 display) the rendered content is CENTERED and LETTERBOXED inside the
-  // element rect -- the game only occupies a sub-rectangle. Compute that content
-  // box from the buffer aspect so clicks / building placement land on the right
-  // engine point instead of being offset by the black letterbox bars.
-  const inFullscreen = Boolean(
-    document.fullscreenElement || document.webkitFullscreenElement,
-  );
+  // The canvas is displayed with `object-fit: contain` in BOTH windowed and
+  // fullscreen (see harness.css #viewport), so when the drawing-buffer aspect
+  // does not match the element-box aspect (e.g. a 4:3 render in a 16:9 box) the
+  // rendered content is CENTERED and LETTERBOXED inside the element rect -- the
+  // game only occupies a sub-rectangle. Compute that content box from the buffer
+  // aspect so clicks / building placement land on the right engine point instead
+  // of being offset by the black letterbox bars. When the buffer aspect matches
+  // the box (e.g. the dynamic "Native" option) this degenerates to the full rect.
   const bufferWidth = canvas.width;
   const bufferHeight = canvas.height;
-  if (inFullscreen && rect.width > 0 && rect.height > 0
+  if (rect.width > 0 && rect.height > 0
       && bufferWidth > 0 && bufferHeight > 0) {
     const scale = Math.min(rect.width / bufferWidth, rect.height / bufferHeight);
     contentWidth = bufferWidth * scale;
