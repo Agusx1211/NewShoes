@@ -3416,3 +3416,44 @@ void MilesAudioManager::dumpAllAssetsUsed()
 	logfile = NULL;
 }
 #endif
+
+//-------------------------------------------------------------------------------------------------
+// Browser (Web Audio) end-of-playback bridge.
+//
+// The real MilesAudioManager never polls sample/stream status. It relies on the
+// Miles Sound System firing the end-of-sample / end-of-stream callback it
+// registered (setSampleCompleted / set3DSampleCompleted / setStreamCompleted)
+// from the driver's mixer thread when a voice finishes. That callback drives
+// MilesAudioManager::notifyOfAudioCompletion(), which is what actually returns
+// the 2D/3D sample handle to the free pool, clears the disallow-speech latch,
+// and advances/loops the event.
+//
+// In the browser there is no Miles mixer thread; the equivalent "this voice
+// finished" signal is the Web Audio AudioBufferSourceNode "ended" event fired
+// on the JS side. Without routing that event back into the engine, every
+// non-looping 2D/3D sample leaks its channel after playing once (the pools
+// exhaust and SFX / unit voices stop mixing) and every uninterruptable speech
+// stream leaves getDisallowSpeech() stuck TRUE (all further speech dropped).
+// Music survives only because it loops with INFINITE_LOOP_COUNT and never ends.
+//
+// These exports let the JS bridge deliver the "ended" signal for the finished
+// handle. They fire the exact same EOS callback path Miles would have, so the
+// original engine completion logic runs unchanged.
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+
+extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_mss_complete_sample(unsigned int handle)
+{
+	AIL_end_sample(static_cast<HSAMPLE>(handle));
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_mss_complete_3d_sample(unsigned int handle)
+{
+	AIL_end_3D_sample(static_cast<H3DSAMPLE>(handle));
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_mss_complete_stream(unsigned int handle)
+{
+	AIL_end_stream(static_cast<HSTREAM>(handle));
+}
+#endif
