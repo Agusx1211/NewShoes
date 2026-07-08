@@ -788,6 +788,21 @@ void W3DProjectedShadowManager::flushDecals(W3DShadowTexture *texture, ShadowTyp
 		m_pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST,0,nShadowDecalVertsInBatch,nShadowDecalStartBatchIndex,nShadowDecalPolysInBatch);
 		CNC_PORT_NOTE_PROJECTED_SHADOW_STEP("W3DProjectedShadow.flushDecals.draw.after");
 	}
+	// Restore the depth bias to 0 on the device.  The ZBIAS=1 above is set
+	// directly on the D3D device (bypassing DX8Wrapper's render-state shadow
+	// cache), so DX8Wrapper still believes ZBIAS==0.  If we leave the device
+	// biased, the bias leaks past this decal batch: the mesh renderer's later
+	// DX8Wrapper::Set_DX8_Render_State(D3DRS_ZBIAS,0) short-circuits on the
+	// unchanged cached value and never re-sends 0 to the device, so the stale
+	// device bias survives into the NEXT frame and gets applied to that frame's
+	// terrain and scorch marks (drawScorches() sets no ZBIAS of its own).
+	// Whether the leak is present depends on whether any decals flushed the
+	// prior frame, which flip-flops per frame and produces the temporal
+	// decal/scorch z-order flicker.  Reset it here directly on the device so the
+	// device value matches DX8Wrapper's shadow cache (0), matching the
+	// set/reset-to-0 bracketing every other ZBIAS user in the engine uses
+	// (see RTS3DScene::Flush in W3DScene.cpp).
+	m_pDev->SetRenderState(D3DRS_ZBIAS,0);
 
 //	m_pDev->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);	//should reject background pixels
 //	m_pDev->SetRenderState( D3DRS_STENCILENABLE, FALSE );
