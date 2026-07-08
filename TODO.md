@@ -550,6 +550,33 @@ symptom is temporal — NOT a single still.
       changes, and diff behavior with the bind cache disabled. Also consider a
       terrain tile-texture atlas/UV/index bug independent of the cache. Verify no
       wrong tiles appear across a panned multi-frame terrain view.
+- [ ] **Trees render too bright — tree lighting is wrong** — 2026-07-08: after the
+      terrain-adjacent buffers were re-enabled (commit `2df600c5`) and the correct
+      `dist-release` build reached the Mac, `W3DTreeBuffer` trees now draw, but on
+      the real GPU they are **constantly too bright / full-bright** and don't
+      respond to scene lighting (no shading, no day/night / terrain static light).
+      Likely the tree billboard/mesh draw isn't receiving diffuse sun + ambient +
+      the dynamic-lights iterator, or is drawn with an emissive/unlit shader or a
+      vertex material with lighting effectively disabled. Trace
+      `BaseHeightMapRenderObjClass::renderTrees` (BaseHeightMap.cpp:3125) ->
+      `W3DTreeBuffer::drawTrees(camera, &pDynamicLightsIterator)`: check the
+      shader / vertex-material lighting flags, whether static terrain lighting +
+      sun color + ambient are applied to the tree verts, and how the dynamic
+      lights iterator is used. Compare against original tree shading. Verify with a
+      screenshot showing shaded (not full-bright) trees.
+- [ ] **Terrain edge-blend / feathered texture transitions not rendering — hard
+      straight borders (roads + terrain texture edges)** — 2026-07-08 (owner): the
+      alpha-blended terrain edge transitions that feather one terrain texture into
+      the next are not drawn, and most visibly the **road edges are hard straight
+      cuts** instead of the soft blended border. This is the terrain blend / detail
+      alpha-edge pass (multi-texture terrain blend from the per-cell blend/alpha
+      data, the detail-blend shader `SC_DETAIL_BLEND` in BaseHeightMap.cpp, the
+      dest-alpha path `m_destAlphaTexture`, and the road edge alpha in
+      `W3DRoadBuffer::drawRoads`). Investigate whether the blend / dest-alpha /
+      detail second-pass is missing, stubbed, or mis-blended in the browser D3D8
+      layer (blend state, DESTALPHA support, or a skipped pass). Verify with a
+      screenshot of a road / terrain-texture boundary showing feathered blended
+      edges, not straight cuts.
 - [ ] **Ground toxin/radiation fields do not render** — toxins on the ground
       (anthrax, radiation, and similar persistent ground effects) are not drawn.
       The field is likely still active in simulation (damage over area) but the
