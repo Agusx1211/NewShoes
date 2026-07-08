@@ -3674,10 +3674,32 @@ function getCanvasDisplaySize() {
   const cssWidth = rect.width || canvas.width;
   const cssHeight = rect.height || canvas.height;
 
-  // If an explicit engine resolution is pinned, the backing store follows it
-  // (so buffer == engine render target, 1:1, no stretch, correct unproject).
-  // cssWidth/cssHeight still report the real CSS box so pointer->engine mapping
-  // and refreshCanvasState stay accurate.
+  // Fullscreen (pure CSS scale-to-fill): the CSS box becomes the whole screen,
+  // but we do NOT want the backing store to grow to the screen size -- that
+  // would change the drawing-buffer aspect to the screen aspect and re-stretch
+  // the engine render. Instead keep the backing store at the engine's CURRENT
+  // render resolution so the buffer aspect matches the engine, and let
+  // `object-fit: contain` scale that buffer up and letterbox it on black. The
+  // engine resolution is unchanged by fullscreen.
+  const engineDisplay = harnessState.engineDisplaySize;
+  const inFullscreen = Boolean(
+    document.fullscreenElement || document.webkitFullscreenElement,
+  );
+  if (inFullscreen && engineDisplay
+      && engineDisplay.width > 0 && engineDisplay.height > 0) {
+    return {
+      width: engineDisplay.width,
+      height: engineDisplay.height,
+      cssWidth,
+      cssHeight,
+      devicePixelRatio,
+    };
+  }
+
+  // If an explicit engine resolution is pinned (resolution selector), the
+  // backing store follows it (so buffer == engine render target, 1:1, no
+  // stretch, correct unproject). cssWidth/cssHeight still report the real CSS
+  // box so pointer->engine mapping and refreshCanvasState stay accurate.
   if (explicitEngineBackingStore
       && explicitEngineBackingStore.width > 0
       && explicitEngineBackingStore.height > 0) {
@@ -16345,10 +16367,38 @@ function canvasInputPointFromEvent(event) {
   // pre-real-init probe pages.
   const targetWidth = harnessState.engineDisplaySize?.width ?? canvas.width;
   const targetHeight = harnessState.engineDisplaySize?.height ?? canvas.height;
-  const scaleX = rect.width > 0 ? targetWidth / rect.width : 1;
-  const scaleY = rect.height > 0 ? targetHeight / rect.height : 1;
-  const x = Math.max(0, Math.min(targetWidth - 1, Math.round((event.clientX - rect.left) * scaleX)));
-  const y = Math.max(0, Math.min(targetHeight - 1, Math.round((event.clientY - rect.top) * scaleY)));
+
+  // Default (windowed): the canvas has no object-fit, so its bitmap is stretched
+  // to fill the whole element box -> the content box IS the element rect.
+  let contentLeft = rect.left;
+  let contentTop = rect.top;
+  let contentWidth = rect.width;
+  let contentHeight = rect.height;
+
+  // Fullscreen: the canvas is displayed with `object-fit: contain`, so when the
+  // drawing-buffer aspect does not match the screen aspect (e.g. a 4:3 render on
+  // a 16:9 display) the rendered content is CENTERED and LETTERBOXED inside the
+  // element rect -- the game only occupies a sub-rectangle. Compute that content
+  // box from the buffer aspect so clicks / building placement land on the right
+  // engine point instead of being offset by the black letterbox bars.
+  const inFullscreen = Boolean(
+    document.fullscreenElement || document.webkitFullscreenElement,
+  );
+  const bufferWidth = canvas.width;
+  const bufferHeight = canvas.height;
+  if (inFullscreen && rect.width > 0 && rect.height > 0
+      && bufferWidth > 0 && bufferHeight > 0) {
+    const scale = Math.min(rect.width / bufferWidth, rect.height / bufferHeight);
+    contentWidth = bufferWidth * scale;
+    contentHeight = bufferHeight * scale;
+    contentLeft = rect.left + (rect.width - contentWidth) / 2;
+    contentTop = rect.top + (rect.height - contentHeight) / 2;
+  }
+
+  const scaleX = contentWidth > 0 ? targetWidth / contentWidth : 1;
+  const scaleY = contentHeight > 0 ? targetHeight / contentHeight : 1;
+  const x = Math.max(0, Math.min(targetWidth - 1, Math.round((event.clientX - contentLeft) * scaleX)));
+  const y = Math.max(0, Math.min(targetHeight - 1, Math.round((event.clientY - contentTop) * scaleY)));
   return { x, y };
 }
 
