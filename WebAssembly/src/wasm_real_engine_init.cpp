@@ -5680,6 +5680,34 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_tactical_view_look_at(
 	return json.c_str();
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_reveal_local_map(int permanent)
+{
+	static std::string json;
+	json = "{\"ok\":false,\"source\":\"reveal-local-map\"";
+	if (ThePartitionManager == NULL) {
+		json += ",\"guard\":\"ThePartitionManager\"}";
+		return json.c_str();
+	}
+	if (ThePlayerList == NULL || ThePlayerList->getLocalPlayer() == NULL) {
+		json += ",\"guard\":\"ThePlayerList.localPlayer\"}";
+		return json.c_str();
+	}
+
+	const Int player_index = ThePlayerList->getLocalPlayer()->getPlayerIndex();
+	if (permanent != 0) {
+		ThePartitionManager->revealMapForPlayerPermanently(player_index);
+	} else {
+		ThePartitionManager->revealMapForPlayer(player_index);
+	}
+
+	json = "{\"ok\":true,\"source\":\"reveal-local-map\"";
+	json += ",\"playerIndex\":" + std::to_string(player_index);
+	json += ",\"permanent\":";
+	json += permanent != 0 ? "true" : "false";
+	json += "}";
+	return json.c_str();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_do_fx(
 	const char *fx_name,
 	float x,

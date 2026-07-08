@@ -12785,6 +12785,11 @@ async function loadWasmModule() {
         "string",
         ["number", "number", "number"],
       ),
+      revealLocalMap: module.cwrap(
+        "cnc_port_reveal_local_map",
+        "string",
+        ["number"],
+      ),
       realEngineDetonateWeapon: module.cwrap(
         "cnc_port_real_engine_detonate_weapon",
         "string",
@@ -18111,6 +18116,32 @@ async function rpc(command, payload = {}) {
         return {
           ok: Boolean(result?.ok) && !aborted,
           command: "tacticalViewLookAt",
+          aborted,
+          abortMessage,
+          result,
+          state: snapshotState(),
+        };
+      }
+    case "revealLocalMap":
+      {
+        const moduleResult = await getWasmModuleForArchives("revealLocalMap");
+        if (moduleResult.error) {
+          return { ok: false, command: "revealLocalMap", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.revealLocalMap(
+            payload.permanent === false || payload.permanent === 0 || payload.permanent === "0" ? 0 : 1,
+          ));
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        return {
+          ok: Boolean(result?.ok) && !aborted,
+          command: "revealLocalMap",
           aborted,
           abortMessage,
           result,

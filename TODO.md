@@ -696,14 +696,6 @@ symptom is temporal — NOT a single still.
       shows a real stall there; the current frontier remains terrain tile draw
       submission, volumetric shadows, UI/roads, and the structural draw command
       buffer.
-- [ ] **Skirmish structures render all white (team-color/texture bug)** — the
-      enemy base structures show up **all white** (separate from the AI being
-      off — two bugs seen together). Likely a house-color/team-color remap not
-      applied or a missing texture bind for those objects — related to the known
-      white-units render issue. 2026-07-07: the initial enemy-base ownership
-      path now assigns the base to the enemy skirmish player instead of neutral;
-      keep this open only for any remaining visual all-white render bug.
-      Verify with a screenshot on the release build.
 - [ ] **Purchased special powers can't be activated** — generals' special
       abilities/powers can be *purchased* (science/rank spend works) but
       clicking the ability button to *use* it does nothing: no targeting

@@ -181,6 +181,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       money 8700 to 8000. Full attack waves, economy depth, and win/lose
       progression remain open under M6 AI-opponent work.
 
+- [x] Verify skirmish structures are not rendering all white in the real
+      release runtime. Added a `revealLocalMap` harness/debug RPC that calls the
+      original partition-manager reveal path for local-player inspection, plus
+      `skirmish_structure_texture_capture.mjs` to drive Main Menu -> Single
+      Player -> Skirmish -> Start, frame a hostile visible structure, capture a
+      full D3D8 diagnostic frame, join original texture labels to browser
+      texture metadata, and assert the target patch is visible/non-white.
+      Verified with `node --check
+      WebAssembly/harness/skirmish_structure_texture_capture.mjs`,
+      `node --check WebAssembly/harness/bridge.js`, `git diff --check`,
+      `npm --prefix WebAssembly run build:port:release`, a local SwiftShader
+      release capture, and a Mac M4/Metal release capture. The Mac run reported
+      `ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)`,
+      target `Lazr_AmericaCommandCenter#212`, target patch 12/12 visible
+      samples non-white with 0 white samples, and generated house-color texture
+      `#-13445146#zhca_atlaser.tga` ready/sampled/uploaded with `whiteOnly=0`.
+      Evidence is saved at
+      `WebAssembly/artifacts/skirmish-structure/enemy-structure.png` and
+      `WebAssembly/artifacts/skirmish-structure/enemy-structure-textures.json`.
+
 - [x] Fix in-game ESC menu buttons doing nothing in live skirmish. The
       browser runtime now keeps original gameplay GUI callback owners resident
       after engine lifecycle table reloads, including `QuitMenuSystem`, so the
