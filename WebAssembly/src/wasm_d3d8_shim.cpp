@@ -824,6 +824,187 @@ bool is_block_compressed_format(D3DFORMAT format)
 	}
 }
 
+// Expanded ARGB8 representation of a single texel, used for box-filter mip
+// generation. Kept format-agnostic so the averaging loop can accumulate in
+// full 8-bit-per-channel precision before re-encoding.
+struct BoxFilterTexel
+{
+	unsigned int a;
+	unsigned int r;
+	unsigned int g;
+	unsigned int b;
+};
+
+inline unsigned int expand_5_to_8(unsigned int v)
+{
+	return (v << 3) | (v >> 2);
+}
+
+inline unsigned int expand_6_to_8(unsigned int v)
+{
+	return (v << 2) | (v >> 4);
+}
+
+inline unsigned int expand_4_to_8(unsigned int v)
+{
+	return (v << 4) | v;
+}
+
+inline unsigned int expand_1_to_8(unsigned int v)
+{
+	return v ? 0xFFu : 0u;
+}
+
+// Decodes one texel of the given uncompressed format into ARGB8. Returns false
+// for formats whose bit layout is not modelled here, so callers can fall back
+// to point sampling rather than corrupt the data.
+inline bool box_filter_decode_texel(D3DFORMAT format, const BYTE *texel, BoxFilterTexel &out)
+{
+	switch (format) {
+		case D3DFMT_A8R8G8B8:
+		case D3DFMT_X8R8G8B8: {
+			out.b = texel[0];
+			out.g = texel[1];
+			out.r = texel[2];
+			out.a = (format == D3DFMT_A8R8G8B8) ? texel[3] : 0xFFu;
+			return true;
+		}
+		case D3DFMT_R8G8B8: {
+			out.b = texel[0];
+			out.g = texel[1];
+			out.r = texel[2];
+			out.a = 0xFFu;
+			return true;
+		}
+		case D3DFMT_A1R5G5B5:
+		case D3DFMT_X1R5G5B5: {
+			const unsigned int v = static_cast<unsigned int>(texel[0]) |
+				(static_cast<unsigned int>(texel[1]) << 8);
+			out.b = expand_5_to_8(v & 0x1Fu);
+			out.g = expand_5_to_8((v >> 5) & 0x1Fu);
+			out.r = expand_5_to_8((v >> 10) & 0x1Fu);
+			out.a = (format == D3DFMT_A1R5G5B5) ? expand_1_to_8((v >> 15) & 0x1u) : 0xFFu;
+			return true;
+		}
+		case D3DFMT_R5G6B5: {
+			const unsigned int v = static_cast<unsigned int>(texel[0]) |
+				(static_cast<unsigned int>(texel[1]) << 8);
+			out.b = expand_5_to_8(v & 0x1Fu);
+			out.g = expand_6_to_8((v >> 5) & 0x3Fu);
+			out.r = expand_5_to_8((v >> 11) & 0x1Fu);
+			out.a = 0xFFu;
+			return true;
+		}
+		case D3DFMT_A4R4G4B4:
+		case D3DFMT_X4R4G4B4: {
+			const unsigned int v = static_cast<unsigned int>(texel[0]) |
+				(static_cast<unsigned int>(texel[1]) << 8);
+			out.b = expand_4_to_8(v & 0xFu);
+			out.g = expand_4_to_8((v >> 4) & 0xFu);
+			out.r = expand_4_to_8((v >> 8) & 0xFu);
+			out.a = (format == D3DFMT_A4R4G4B4) ? expand_4_to_8((v >> 12) & 0xFu) : 0xFFu;
+			return true;
+		}
+		case D3DFMT_A8L8: {
+			const unsigned int l = texel[0];
+			out.r = out.g = out.b = l;
+			out.a = texel[1];
+			return true;
+		}
+		case D3DFMT_L8: {
+			const unsigned int l = texel[0];
+			out.r = out.g = out.b = l;
+			out.a = 0xFFu;
+			return true;
+		}
+		case D3DFMT_A8: {
+			out.r = out.g = out.b = 0u;
+			out.a = texel[0];
+			return true;
+		}
+		default:
+			return false;
+	}
+}
+
+// Re-encodes an averaged ARGB8 texel back into the given format. Must mirror
+// box_filter_decode_texel; returns false for unmodelled formats.
+inline bool box_filter_encode_texel(D3DFORMAT format, const BoxFilterTexel &in, BYTE *texel)
+{
+	switch (format) {
+		case D3DFMT_A8R8G8B8:
+		case D3DFMT_X8R8G8B8: {
+			texel[0] = static_cast<BYTE>(in.b);
+			texel[1] = static_cast<BYTE>(in.g);
+			texel[2] = static_cast<BYTE>(in.r);
+			texel[3] = (format == D3DFMT_A8R8G8B8) ? static_cast<BYTE>(in.a) : 0xFF;
+			return true;
+		}
+		case D3DFMT_R8G8B8: {
+			texel[0] = static_cast<BYTE>(in.b);
+			texel[1] = static_cast<BYTE>(in.g);
+			texel[2] = static_cast<BYTE>(in.r);
+			return true;
+		}
+		case D3DFMT_A1R5G5B5:
+		case D3DFMT_X1R5G5B5: {
+			const unsigned int a = (format == D3DFMT_A1R5G5B5) ? ((in.a >= 128u) ? 1u : 0u) : 1u;
+			const unsigned int v = (a << 15) |
+				(((in.r >> 3) & 0x1Fu) << 10) |
+				(((in.g >> 3) & 0x1Fu) << 5) |
+				((in.b >> 3) & 0x1Fu);
+			texel[0] = static_cast<BYTE>(v & 0xFFu);
+			texel[1] = static_cast<BYTE>((v >> 8) & 0xFFu);
+			return true;
+		}
+		case D3DFMT_R5G6B5: {
+			const unsigned int v = (((in.r >> 3) & 0x1Fu) << 11) |
+				(((in.g >> 2) & 0x3Fu) << 5) |
+				((in.b >> 3) & 0x1Fu);
+			texel[0] = static_cast<BYTE>(v & 0xFFu);
+			texel[1] = static_cast<BYTE>((v >> 8) & 0xFFu);
+			return true;
+		}
+		case D3DFMT_A4R4G4B4:
+		case D3DFMT_X4R4G4B4: {
+			const unsigned int a = (format == D3DFMT_A4R4G4B4) ? ((in.a >> 4) & 0xFu) : 0xFu;
+			const unsigned int v = (a << 12) |
+				(((in.r >> 4) & 0xFu) << 8) |
+				(((in.g >> 4) & 0xFu) << 4) |
+				((in.b >> 4) & 0xFu);
+			texel[0] = static_cast<BYTE>(v & 0xFFu);
+			texel[1] = static_cast<BYTE>((v >> 8) & 0xFFu);
+			return true;
+		}
+		case D3DFMT_A8L8: {
+			texel[0] = static_cast<BYTE>(in.r);
+			texel[1] = static_cast<BYTE>(in.a);
+			return true;
+		}
+		case D3DFMT_L8: {
+			texel[0] = static_cast<BYTE>(in.r);
+			return true;
+		}
+		case D3DFMT_A8: {
+			texel[0] = static_cast<BYTE>(in.a);
+			return true;
+		}
+		default:
+			return false;
+	}
+}
+
+// True when the box-filter decode/encode path models this format, so mip
+// generation can average neighbours (matching D3DXFilterTexture's
+// D3DX_FILTER_BOX) instead of point sampling.
+inline bool box_filter_supports_format(D3DFORMAT format)
+{
+	BoxFilterTexel probe = {};
+	BYTE scratch[4] = {};
+	return box_filter_decode_texel(format, scratch, probe) &&
+		box_filter_encode_texel(format, probe, scratch);
+}
+
 bool is_browser_texture_format_supported(D3DFORMAT format)
 {
 	switch (format) {
@@ -1786,6 +1967,83 @@ public:
 		return true;
 	}
 
+	// Box-filter downsample matching D3DXFilterTexture(D3DX_FILTER_BOX): each
+	// destination texel is the average of the block of source texels it covers.
+	// This is what the terrain-tile A1R5G5B5 atlas (and every other mipped
+	// texture) relies on; point sampling the mip chain pulls in a single texel
+	// per destination and, near packed atlas cell borders, drags a neighbouring
+	// tile's colour into the mip -> individual terrain tiles render the wrong
+	// content at distance. Returns false (caller falls back to point sampling)
+	// for compressed formats or bit layouts not modelled by the box helpers.
+	bool box_filter_from(const BrowserD3DSurface &source)
+	{
+		if (m_locked || source.is_locked() ||
+			m_desc.Format != source.desc().Format ||
+			is_block_compressed_format(m_desc.Format) ||
+			!box_filter_supports_format(m_desc.Format)) {
+			return false;
+		}
+		const UINT source_width = source.desc().Width;
+		const UINT source_height = source.desc().Height;
+		const UINT destination_width = m_desc.Width;
+		const UINT destination_height = m_desc.Height;
+		const UINT texel_size = bytes_per_pixel(m_desc.Format);
+		if (source_width == 0 || source_height == 0 ||
+			destination_width == 0 || destination_height == 0 || texel_size == 0) {
+			return false;
+		}
+
+		const D3DFORMAT format = m_desc.Format;
+		for (UINT y = 0; y < destination_height; ++y) {
+			const UINT source_y0 = static_cast<UINT>(
+				(static_cast<std::uint64_t>(y) * source_height) / destination_height);
+			UINT source_y1 = static_cast<UINT>(
+				(static_cast<std::uint64_t>(y + 1) * source_height) / destination_height);
+			if (source_y1 <= source_y0) {
+				source_y1 = source_y0 + 1;
+			}
+			BYTE *destination_row = m_pixels.data() + texture_offset(0, y);
+			for (UINT x = 0; x < destination_width; ++x) {
+				const UINT source_x0 = static_cast<UINT>(
+					(static_cast<std::uint64_t>(x) * source_width) / destination_width);
+				UINT source_x1 = static_cast<UINT>(
+					(static_cast<std::uint64_t>(x + 1) * source_width) / destination_width);
+				if (source_x1 <= source_x0) {
+					source_x1 = source_x0 + 1;
+				}
+				unsigned int sum_a = 0, sum_r = 0, sum_g = 0, sum_b = 0, count = 0;
+				for (UINT sy = source_y0; sy < source_y1 && sy < source_height; ++sy) {
+					for (UINT sx = source_x0; sx < source_x1 && sx < source_width; ++sx) {
+						const BYTE *source_texel = source.m_pixels.data() +
+							source.texture_offset(sx, sy);
+						BoxFilterTexel decoded = {};
+						if (!box_filter_decode_texel(format, source_texel, decoded)) {
+							return false;
+						}
+						sum_a += decoded.a;
+						sum_r += decoded.r;
+						sum_g += decoded.g;
+						sum_b += decoded.b;
+						++count;
+					}
+				}
+				if (count == 0) {
+					count = 1;
+				}
+				BoxFilterTexel averaged = {};
+				averaged.a = (sum_a + count / 2) / count;
+				averaged.r = (sum_r + count / 2) / count;
+				averaged.g = (sum_g + count / 2) / count;
+				averaged.b = (sum_b + count / 2) / count;
+				BYTE *destination_texel = destination_row + x * texel_size;
+				if (!box_filter_encode_texel(format, averaged, destination_texel)) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
 	void set_texture_owner(UINT texture_id, UINT level, D3DFORMAT format, DWORD usage)
 	{
 		m_owner_texture_id = texture_id;
@@ -2190,15 +2448,20 @@ public:
 				FAILED(m_levels[level]->GetDesc(&destination_desc))) {
 				return E_FAIL;
 			}
-			RECT source_rect = {};
-			source_rect.right = static_cast<LONG>(source_desc.Width);
-			source_rect.bottom = static_cast<LONG>(source_desc.Height);
-			RECT destination_rect = {};
-			destination_rect.right = static_cast<LONG>(destination_desc.Width);
-			destination_rect.bottom = static_cast<LONG>(destination_desc.Height);
-			if (!m_levels[level]->copy_scaled_rect_from(*m_levels[level - 1],
-				source_rect, destination_rect)) {
-				return E_FAIL;
+			// Match D3DXFilterTexture(D3DX_FILTER_BOX): average the covered
+			// source block. Only fall back to a point-sampled stretch for
+			// formats the box filter does not model (e.g. compressed).
+			if (!m_levels[level]->box_filter_from(*m_levels[level - 1])) {
+				RECT source_rect = {};
+				source_rect.right = static_cast<LONG>(source_desc.Width);
+				source_rect.bottom = static_cast<LONG>(source_desc.Height);
+				RECT destination_rect = {};
+				destination_rect.right = static_cast<LONG>(destination_desc.Width);
+				destination_rect.bottom = static_cast<LONG>(destination_desc.Height);
+				if (!m_levels[level]->copy_scaled_rect_from(*m_levels[level - 1],
+					source_rect, destination_rect)) {
+					return E_FAIL;
+				}
 			}
 			m_levels[level]->upload_owned_texture();
 		}
