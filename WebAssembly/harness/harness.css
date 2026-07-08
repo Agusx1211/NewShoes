@@ -1,8 +1,17 @@
 :root {
   color-scheme: dark;
-  font-family: Arial, Helvetica, sans-serif;
-  background: #111;
-  color: #f4f4f4;
+  --sys-font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --accent: #e0a83a;
+  --accent-2: #c8801e;
+  --panel: #12161c;
+  --panel-2: #1a2029;
+  --line: #2b333d;
+  --line-2: #394452;
+  --text: #eef2f6;
+  --text-dim: #9aa7b4;
+  font-family: var(--sys-font);
+  background: #0a0c0f;
+  color: var(--text);
 }
 
 * {
@@ -19,67 +28,610 @@ body {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  background: #161616;
+  background: #08090b;
 }
 
+/* Prevent mobile browsers from stealing touches for scroll/zoom/callout before
+   the canvas input path can claim them. */
+.shell,
+#viewport {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+#viewport { touch-action: none; }
+
+/* ---------------------------------------------------------------------------
+   Playing shell. The canvas fills its area with NO gray toolbar row: the shell
+   is a single centered canvas on black. The old .status bar is gone; live
+   status is a subtle floating HUD chip and settings live behind the gear.
+   --------------------------------------------------------------------------- */
 .shell {
   width: min(100vw, 1280px);
   min-height: 100vh;
+  position: relative;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  place-items: center;
+  background: #000;
 }
 
 #viewport {
   width: 100%;
-  max-height: calc(100vh - 64px);
+  max-width: 100%;
+  max-height: 100vh;
   aspect-ratio: 16 / 9;
   align-self: center;
   background: #000;
   display: block;
 }
 
-.status {
-  min-height: 64px;
+/* --- In-game gear button (single unobtrusive control) ---------------------- */
+#gearButton {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  z-index: 40;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+  color: #e7eef5;
+  background: rgba(18, 22, 28, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  opacity: 0.55;
+  transition: opacity 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+#gearButton:hover,
+#gearButton:focus-visible {
+  opacity: 1;
+  background: rgba(24, 30, 38, 0.9);
+  outline: none;
+}
+#gearButton:active { transform: scale(0.94); }
+#gearButton.hidden { display: none; }
+
+/* --- Subtle in-game HUD chip (replaces the gray status bar) ----------------- */
+.hud {
+  position: fixed;
+  left: 50%;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 35;
   display: flex;
   align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(12, 15, 19, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-dim);
+  font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+.hud:hover { opacity: 1; }
+.hud.hidden { display: none; }
+.hud .hudItem span { color: var(--text); }
+.hud .hudDot { color: rgba(255, 255, 255, 0.25); }
+
+/* ===========================================================================
+   LAUNCHER SCREEN
+   =========================================================================== */
+#overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: clamp(12px, 4vw, 40px);
+  overflow: auto;
+}
+#overlay.hidden { display: none; }
+
+.launcherBg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(1200px 700px at 50% -10%, rgba(224, 168, 58, 0.10), transparent 60%),
+    radial-gradient(900px 600px at 15% 110%, rgba(40, 90, 140, 0.14), transparent 55%),
+    linear-gradient(160deg, #0c0f14 0%, #070809 60%, #0a0c10 100%);
+}
+.launcherBg::after {
+  /* Faint diagonal texture so the black isn't dead-flat. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.012) 0px,
+    rgba(255, 255, 255, 0.012) 1px,
+    transparent 1px,
+    transparent 7px
+  );
+  opacity: 0.7;
+}
+
+.launcherPanel {
+  position: relative;
+  z-index: 1;
+  width: min(680px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(18px, 3vw, 28px);
+  padding: clamp(22px, 4vw, 40px);
+  background: linear-gradient(180deg, rgba(26, 32, 41, 0.92), rgba(16, 20, 26, 0.94));
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 30px 80px rgba(0, 0, 0, 0.6),
+    0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.launcherHead { text-align: center; }
+.launcherKicker {
+  margin: 0 0 2px;
+  font-size: clamp(11px, 1.6vw, 13px);
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.launcherTitle {
+  margin: 0;
+  font-size: clamp(34px, 8vw, 58px);
+  line-height: 0.98;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: #fff;
+  text-shadow: 0 2px 24px rgba(224, 168, 58, 0.25);
+}
+.launcherTitle .titleZh {
+  display: block;
+  margin-top: 6px;
+  font-size: clamp(15px, 3vw, 22px);
+  font-weight: 700;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--accent);
+  text-shadow: none;
+}
+.launcherSub {
+  margin: 12px auto 0;
+  max-width: 42ch;
+  font-size: clamp(13px, 2vw, 15px);
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.launcherBody {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(18px, 3vw, 28px);
+  align-items: start;
+}
+@media (max-width: 620px) {
+  .launcherBody { grid-template-columns: 1fr; }
+}
+
+.launcherPrimary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.playButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
   justify-content: center;
-  gap: 32px;
-  border-top: 1px solid #333;
-  background: #202020;
+  padding: 18px 28px;
+  font: 700 clamp(17px, 2.4vw, 20px)/1 var(--sys-font);
+  letter-spacing: 0.04em;
+  color: #1a1206;
+  cursor: pointer;
+  background: linear-gradient(180deg, #f2c04d, var(--accent-2));
+  border: 1px solid #f6cf6a;
+  border-radius: 12px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.45) inset,
+    0 10px 26px rgba(200, 128, 30, 0.35);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
 }
-
-.status div {
-  min-width: 88px;
+.playButton:hover { filter: brightness(1.05); transform: translateY(-1px); }
+.playButton:active { transform: translateY(1px); box-shadow: 0 4px 12px rgba(200, 128, 30, 0.3); }
+.playButton:disabled {
+  cursor: default;
+  filter: grayscale(0.5) brightness(0.7);
+  transform: none;
+  box-shadow: none;
 }
+.playButton .playGlyph { font-size: 0.85em; transform: translateY(1px); }
 
-.label {
-  display: block;
-  color: #b8b8b8;
+.launcherProgress {
+  margin: 0;
+  min-height: 1.2em;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #8fbfe0;
+  text-align: center;
+  word-break: break-word;
+}
+.launcherProgress.error { color: #ef8f7f; }
+.launcherWarning {
+  margin: 0;
   font-size: 12px;
-  line-height: 1.2;
+  line-height: 1.5;
+  color: #b79458;
+  text-align: center;
 }
 
-.status strong {
+/* --- Pre-game settings block ------------------------------------------------ */
+.launcherSettings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(10, 13, 17, 0.55);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.settingsHeading {
+  margin: 0 0 2px;
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.settingRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+}
+.settingRowToggle { cursor: pointer; }
+.settingLabel {
+  font-size: 14px;
+  color: var(--text);
+}
+.settingHint {
+  margin: 2px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.settingHint .inlineGear { color: var(--accent); }
+
+/* Shared select styling (launcher + settings overlay). */
+select#resolutionSelect,
+select#resolutionSelectLive {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  font: 14px/1.2 var(--sys-font);
+  padding: 9px 10px;
+  color: var(--text);
+  background: #0c1016;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  cursor: pointer;
+}
+select#resolutionSelect:focus-visible,
+select#resolutionSelectLive:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Fullscreen checkbox — larger touch target. */
+#fullscreenToggle {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.launcherFoot {
+  display: flex;
+  justify-content: center;
+  padding-top: 4px;
+}
+.buildAge {
+  font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+}
+.buildAge.fresh { color: #7ee787; }
+
+/* ===========================================================================
+   SETTINGS OVERLAY (in-game, opened by the gear)
+   =========================================================================== */
+#settingsOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: flex-end;
+}
+#settingsOverlay.hidden { display: none; }
+.settingsBackdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+}
+.settingsSheet {
+  position: relative;
+  width: min(380px, 92vw);
+  max-height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px 18px calc(24px + env(safe-area-inset-bottom));
+  padding-top: calc(18px + env(safe-area-inset-top));
+  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  border-left: 1px solid var(--line);
+  box-shadow: -20px 0 60px rgba(0, 0, 0, 0.5);
+}
+.settingsSheetHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.settingsSheetHead h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+.iconClose {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  cursor: pointer;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+}
+.iconClose:hover { color: var(--text); border-color: var(--line); }
+
+.settingsSection {
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.settingsSection:first-of-type { border-top: none; }
+.settingsSection h3 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.settingRowActions { justify-content: space-between; }
+
+.pillButton {
+  font: 13px/1 var(--sys-font);
+  padding: 9px 16px;
+  cursor: pointer;
+  color: var(--text);
+  background: #20262e;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  transition: background 0.12s ease, border-color 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.pillButton:hover { background: #29313b; border-color: var(--line); }
+.pillButton.active {
+  background: linear-gradient(180deg, #2a4f74, #1c3d5c);
+  border-color: #4d90c4;
+  color: #fff;
+}
+
+/* --- Collapsible debug / issue-recorder tools ------------------------------ */
+.debugSection > summary {
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  list-style: none;
+  padding: 4px 0;
+  user-select: none;
+}
+.debugSection > summary::-webkit-details-marker { display: none; }
+.debugSection > summary::before {
+  content: "▸ ";
+  color: var(--line-2);
+}
+.debugSection[open] > summary::before { content: "▾ "; }
+
+.debugControls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.debugControls button {
+  font: 12px/1.2 var(--sys-font);
+  padding: 9px 8px;
+  cursor: pointer;
+  background: #20262c;
+  color: #d6e2ea;
+  border: 1px solid #43515e;
+  border-radius: 8px;
+}
+.debugControls button:hover { background: #262e36; }
+.debugControls button.active {
+  background: #633322;
+  border-color: #b66a4a;
+}
+.debugOptions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  color: var(--text-dim);
+  font: 12px/1.35 ui-monospace, monospace;
+}
+.debugOptions input { vertical-align: middle; }
+#dumpStatus {
+  grid-column: 1 / -1;
+  min-height: 1rem;
+  color: #9fb6c9;
+  font-size: 11px;
+}
+
+/* ===========================================================================
+   ENGINE LOG CONSOLE PANEL
+   =========================================================================== */
+#consolePanel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 40vh;
+  background: rgba(10, 12, 14, 0.96);
+  color: #9fd49f;
+  font: 11px/1.45 ui-monospace, monospace;
+  overflow-y: auto;
+  padding: 0.5rem 0.75rem 0.75rem;
+  border-top: 1px solid #333;
+  white-space: pre-wrap;
+  word-break: break-all;
+  z-index: 70;
+}
+#consolePanel.hidden { display: none; }
+
+/* ===========================================================================
+   ISSUE-REPORT MODAL
+   =========================================================================== */
+#issueModal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.72);
+  padding: 1rem;
+}
+#issueModal.hidden { display: none; }
+#issueDialog {
+  width: min(96vw, 980px);
+  max-height: 94vh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0.6rem;
+  background: #111820;
+  color: #dbe7ef;
+  border: 1px solid #40515f;
+  border-radius: 10px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+  padding: 0.8rem;
+}
+.issueTop {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.6rem;
+  align-items: center;
+}
+.issueTop input[type="text"] {
+  min-width: 0;
+  background: #0c1117;
+  border: 1px solid #3c4a55;
+  color: #eef6fb;
+  border-radius: 6px;
+  padding: 0.45rem 0.55rem;
+  font: 13px/1.4 var(--sys-font);
+}
+.issuePaint {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #b9c7d1;
+  font: 12px/1.3 var(--sys-font);
+}
+.issueCanvasWrap {
+  position: relative;
+  min-height: 0;
+  overflow: auto;
+  background: #05070a;
+  border: 1px solid #2a343d;
+}
+#issueScreenshotCanvas,
+#issueAnnotationCanvas {
   display: block;
-  margin-top: 4px;
-  font-size: 16px;
-  line-height: 1.2;
-  letter-spacing: 0;
+  width: 100%;
+  height: auto;
+}
+#issueAnnotationCanvas {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+}
+.issueBottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.6rem;
+  align-items: end;
+}
+#issueComment {
+  min-height: 5rem;
+  resize: vertical;
+  background: #0c1117;
+  color: #eef6fb;
+  border: 1px solid #3c4a55;
+  border-radius: 6px;
+  padding: 0.55rem;
+  font: 13px/1.45 var(--sys-font);
+}
+.issueActions {
+  display: flex;
+  gap: 0.45rem;
+}
+.issueActions button,
+.issueTop button {
+  font: 12px/1.3 var(--sys-font);
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  background: #20262c;
+  color: #e7f1f7;
+  border: 1px solid #4a5864;
+  border-radius: 8px;
+}
+@media (max-width: 760px) {
+  .issueTop,
+  .issueBottom {
+    grid-template-columns: 1fr;
+  }
+  .issueActions {
+    justify-content: end;
+  }
 }
 
-/* ---------------------------------------------------------------------------
-   Fullscreen state. When the .shell is the fullscreen element the normal grid
-   still reserves the .status toolbar row (min-height 64px, #202020) which shows
-   as an ugly gray bar below the game. In fullscreen we drop all page chrome and
-   let the game canvas fill the screen on black, letterboxing on black if the
-   render aspect does not match the display. Windowed layout is untouched.
+/* ===========================================================================
+   FULLSCREEN STATE
+   When the .shell is the fullscreen element, drop all page chrome and let the
+   game canvas fill the screen on black, letterboxing on black if the render
+   aspect does not match. Windowed layout is untouched.
 
-   Both the standard :fullscreen and -webkit-full-screen selectors are covered,
-   plus a .is-fullscreen class the page toggles as a belt-and-suspenders path
-   for engines/browsers that scope :fullscreen oddly. Selectors are kept in
-   separate rules because one unknown selector invalidates a whole grouped
-   selector list in CSS.
-   --------------------------------------------------------------------------- */
+   Both :fullscreen and -webkit-full-screen are covered, plus an .is-fullscreen
+   class the page toggles as a belt-and-suspenders path for engines/browsers
+   that scope :fullscreen oddly. Selectors are kept in separate rules because
+   one unknown selector invalidates a whole grouped selector list in CSS.
+   =========================================================================== */
 .shell:fullscreen,
 .shell.is-fullscreen {
   width: 100vw;
@@ -93,7 +645,6 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  grid-template-rows: none;
 }
 .shell:-webkit-full-screen {
   width: 100vw;
@@ -109,20 +660,18 @@ body {
   justify-content: center;
 }
 
-/* Hide the toolbar (resolution selector + fullscreen button live here) and any
-   header/footer chrome while fullscreen so nothing shows below the canvas. */
-.shell:fullscreen .status,
-.shell.is-fullscreen .status {
+/* Hide the in-game HUD chip while fullscreen so nothing shows over the game. */
+.shell:fullscreen .hud,
+.shell.is-fullscreen .hud {
   display: none;
 }
-.shell:-webkit-full-screen .status {
+.shell:-webkit-full-screen .hud {
   display: none;
 }
 
 /* Canvas fills the fullscreen viewport, centered, letterboxed on BLACK. Drop
-   the windowed 16:9 aspect lock and the (100vh - 64px) toolbar allowance; the
-   page auto-applies a native resolution matched to the screen so the drawing
-   buffer aspect matches and the canvas fills the display. */
+   the windowed 16:9 aspect lock; the page auto-applies a native resolution
+   matched to the screen so the buffer aspect matches and the canvas fills. */
 .shell:fullscreen #viewport,
 .shell.is-fullscreen #viewport {
   width: 100vw;
@@ -152,14 +701,14 @@ body {
   position: fixed;
   top: 12px;
   right: 12px;
-  z-index: 40;
-  font: 12px/1.2 ui-monospace, monospace;
-  padding: 0.35rem 0.7rem;
+  z-index: 45;
+  font: 12px/1.2 var(--sys-font);
+  padding: 0.45rem 0.8rem;
   cursor: pointer;
   color: #fff;
   background: rgba(28, 61, 92, 0.85);
   border: 1px solid #4d90c4;
-  border-radius: 4px;
+  border-radius: 8px;
   opacity: 0;
   transition: opacity 0.15s ease;
   pointer-events: none;

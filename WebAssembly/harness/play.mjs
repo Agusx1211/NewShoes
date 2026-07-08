@@ -41,9 +41,38 @@ const overlay = document.querySelector("#overlay");
 const startButton = document.querySelector("#start");
 const progressNode = document.querySelector("#progress");
 const fpsNode = document.querySelector("#fps");
+const hudNode = document.querySelector("#hud");
+const gearButton = document.querySelector("#gearButton");
 const queryParams = new URLSearchParams(window.location.search);
 const viewportCanvas = document.querySelector("#viewport");
 const selectedDistDir = selectedCncPortDistDir();
+
+// Persisted launcher settings (chosen before the game boots and re-applied on
+// every load). localStorage may be unavailable (privacy mode) so all access is
+// guarded and silently degrades to in-memory defaults.
+const LAUNCHER_SETTINGS_KEY = "cncPortLauncherSettings.v1";
+
+function loadLauncherSettings() {
+  try {
+    const raw = window.localStorage?.getItem(LAUNCHER_SETTINGS_KEY);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveLauncherSettings(patch) {
+  try {
+    const next = { ...loadLauncherSettings(), ...patch };
+    window.localStorage?.setItem(LAUNCHER_SETTINGS_KEY, JSON.stringify(next));
+  } catch {
+    // Persistence unavailable; keep going with in-memory selection only.
+  }
+}
 
 const DEFAULT_LOGIC_FPS = 30;
 const DEFAULT_CATCHUP_FRAMES = 2;
@@ -106,12 +135,14 @@ window.CnCIssueRecorder = issueRecorder;
 
 function report(message) {
   progressNode.textContent = message;
+  progressNode.classList.remove("error");
 }
 
 function fail(message, detail) {
   console.error("[play]", message, detail ?? "");
   issueRecorder.noteFailure(message, detail);
-  report(`FAILED: ${message}`);
+  progressNode.textContent = `FAILED: ${message}`;
+  progressNode.classList.add("error");
   startButton.disabled = false;
 }
 
@@ -303,9 +334,16 @@ async function start() {
 
     report("");
     overlay.classList.add("hidden");
+    hudNode?.classList.remove("hidden");
+    gearButton?.classList.remove("hidden");
     issueRecorder.setSessionContext({ phase: "running" });
     viewportCanvas.focus();
     initDisplayControls();
+    // Apply the resolution / fullscreen the player chose on the launcher before
+    // booting. The live in-game select already carries the persisted value
+    // (initDisplayControls seeds it), so drive the EXISTING apply path; do not
+    // reimplement the resize logic here.
+    await applyLauncherIntentOnBoot();
     if (new URLSearchParams(window.location.search).get("replay") === "1") {
       issueRecorder.setSessionContext({ phase: "replay-ready" });
       return;
@@ -471,7 +509,13 @@ let applyingResolution = false;
 // screen-matched native resolution, so we remember what the player had picked).
 let preFullscreenSelectValue = null;
 
-const resolutionSelect = document.querySelector("#resolutionSelect");
+// The in-game (live) select is the canonical resolution control the existing
+// apply path reads. The launcher select is a pre-game mirror that seeds this
+// one before boot; both are populated with the same option ladder and kept in
+// sync so a change in one reflects in the other.
+const resolutionSelect = document.querySelector("#resolutionSelectLive");
+const launcherResolutionSelect = document.querySelector("#resolutionSelect");
+const fullscreenToggle = document.querySelector("#fullscreenToggle");
 const fullscreenButton = document.querySelector("#fullscreenButton");
 const fullscreenTarget = document.querySelector(".shell") || document.body;
 
@@ -539,38 +583,83 @@ async function applyResolutionSize(width, height) {
   }
 }
 
-function refreshNativeOption() {
-  if (!resolutionSelect) {
+// Every resolution <select> on the page (the in-game live one + the launcher
+// mirror) shares the same option ladder and a live-updating Native entry.
+function resolutionSelects() {
+  return [resolutionSelect, launcherResolutionSelect].filter(Boolean);
+}
+
+function refreshNativeOptionFor(select) {
+  if (!select) {
     return;
   }
   const native = nativePixelSize();
-  const option = resolutionSelect.querySelector('option[data-native="1"]');
+  const option = select.querySelector('option[data-native="1"]');
   if (option) {
     option.value = `native:${native.width}x${native.height}`;
     option.textContent = `Native (${native.width} x ${native.height})`;
   }
 }
 
-function populateResolutionOptions() {
-  if (!resolutionSelect) {
+function refreshNativeOption() {
+  for (const select of resolutionSelects()) {
+    refreshNativeOptionFor(select);
+  }
+}
+
+function populateResolutionOptionsInto(select, preferredValue) {
+  if (!select) {
     return;
   }
-  resolutionSelect.textContent = "";
+  select.textContent = "";
   const native = nativePixelSize();
   const nativeOption = document.createElement("option");
   nativeOption.dataset.native = "1";
   nativeOption.value = `native:${native.width}x${native.height}`;
   nativeOption.textContent = `Native (${native.width} x ${native.height})`;
-  resolutionSelect.appendChild(nativeOption);
+  select.appendChild(nativeOption);
   for (const preset of PRESET_RESOLUTIONS) {
     const option = document.createElement("option");
     option.value = `${preset.width}x${preset.height}`;
     option.textContent = preset.label;
-    resolutionSelect.appendChild(option);
+    select.appendChild(option);
   }
-  // Default the selection to the stock engine resolution so nothing changes
-  // until the player picks something; "Native" is opt-in.
-  resolutionSelect.value = "800x600";
+  applySelectValue(select, preferredValue ?? "800x600");
+}
+
+// Set a select's value tolerating the live "native:WxH" string (whose numeric
+// suffix changes with the tab size): a stored "native" intent maps onto the
+// current Native option regardless of its live value.
+function applySelectValue(select, value) {
+  if (!select) {
+    return;
+  }
+  if (value === "native") {
+    const nativeOption = select.querySelector('option[data-native="1"]');
+    if (nativeOption) {
+      select.value = nativeOption.value;
+      return;
+    }
+  }
+  const hasOption = Array.from(select.options).some((option) => option.value === value);
+  select.value = hasOption ? value : "800x600";
+}
+
+// Canonical, storage-safe representation of a select's current choice: "native"
+// for the live-sizing native option, else the plain "WxH" preset string.
+function selectStorageValue(select) {
+  if (!select) {
+    return "800x600";
+  }
+  const value = select.value || "";
+  return value.startsWith("native:") ? "native" : value;
+}
+
+function populateResolutionOptions() {
+  const stored = loadLauncherSettings();
+  const preferred = typeof stored.resolution === "string" ? stored.resolution : "800x600";
+  populateResolutionOptionsInto(resolutionSelect, preferred);
+  populateResolutionOptionsInto(launcherResolutionSelect, preferred);
 }
 
 function selectedResolution() {
@@ -726,6 +815,10 @@ function initDisplayControls() {
   populateResolutionOptions();
 
   resolutionSelect.addEventListener("change", () => {
+    // Mirror the choice onto the launcher select + persist, then drive the
+    // existing live-apply path.
+    applySelectValue(launcherResolutionSelect, selectStorageValue(resolutionSelect));
+    saveLauncherSettings({ resolution: selectStorageValue(resolutionSelect) });
     void applySelectedResolution();
   });
 
@@ -799,3 +892,112 @@ function initDisplayControls() {
   };
   watchDprChange();
 }
+
+// --- launcher (pre-game) settings + in-game settings overlay ----------------
+// The launcher exposes the same display controls BEFORE the game boots. It
+// stores the player's intent (resolution + start-in-fullscreen) in localStorage
+// and, on boot, seeds the live select and drives the EXISTING apply path so the
+// game starts at the chosen resolution (and enters fullscreen if requested).
+let launcherControlsReady = false;
+
+function initLauncherControls() {
+  if (launcherControlsReady) {
+    return;
+  }
+  launcherControlsReady = true;
+
+  const stored = loadLauncherSettings();
+  // Seed the launcher select ladder + Native entry so it is usable pre-boot.
+  populateResolutionOptionsInto(
+    launcherResolutionSelect,
+    typeof stored.resolution === "string" ? stored.resolution : "800x600",
+  );
+  if (fullscreenToggle) {
+    fullscreenToggle.checked = Boolean(stored.startFullscreen);
+    // iPad Safari can't fullscreen arbitrary elements; hide the toggle where
+    // fullscreen isn't available so it never sets an intent that can't apply.
+    if (!fullscreenSupported()) {
+      const row = fullscreenToggle.closest(".settingRow");
+      (row ?? fullscreenToggle).classList.add("hidden");
+    }
+  }
+
+  launcherResolutionSelect?.addEventListener("change", () => {
+    const value = selectStorageValue(launcherResolutionSelect);
+    saveLauncherSettings({ resolution: value });
+    // Keep the live in-game select in step (it may already exist / be seeded).
+    applySelectValue(resolutionSelect, value);
+  });
+
+  fullscreenToggle?.addEventListener("change", () => {
+    saveLauncherSettings({ startFullscreen: fullscreenToggle.checked });
+  });
+
+  // Refresh the launcher Native option to the current tab size while it's shown
+  // so its label reflects the real pixel grid before the player starts.
+  refreshNativeOptionFor(launcherResolutionSelect);
+  window.addEventListener("resize", () => {
+    if (!launcherControlsReady) {
+      return;
+    }
+    refreshNativeOptionFor(launcherResolutionSelect);
+  });
+}
+
+async function applyLauncherIntentOnBoot() {
+  const stored = loadLauncherSettings();
+  // Seed the live select from the persisted choice, then drive the existing
+  // apply path (unless it's the stock default, which needs no display change).
+  if (typeof stored.resolution === "string" && resolutionSelect) {
+    applySelectValue(resolutionSelect, stored.resolution);
+    applySelectValue(launcherResolutionSelect, stored.resolution);
+  }
+  if (selectStorageValue(resolutionSelect) !== "800x600") {
+    await applySelectedResolution();
+  }
+  // Enter fullscreen if the player asked for it. onFullscreenChange (owned by
+  // the resize logic) then auto-applies the screen-matched native resolution.
+  if (stored.startFullscreen && fullscreenSupported() && !fullscreenElement()) {
+    await enterFullscreen();
+  }
+}
+
+// --- in-game settings overlay (opened by the gear) --------------------------
+const settingsOverlay = document.querySelector("#settingsOverlay");
+const settingsClose = document.querySelector("#settingsClose");
+
+function openSettings() {
+  if (!settingsOverlay) {
+    return;
+  }
+  refreshNativeOption();
+  settingsOverlay.classList.remove("hidden");
+  settingsOverlay.setAttribute("aria-hidden", "false");
+}
+
+function closeSettings() {
+  if (!settingsOverlay) {
+    return;
+  }
+  settingsOverlay.classList.add("hidden");
+  settingsOverlay.setAttribute("aria-hidden", "true");
+}
+
+gearButton?.addEventListener("click", openSettings);
+settingsClose?.addEventListener("click", closeSettings);
+settingsOverlay?.addEventListener("click", (event) => {
+  if (event.target instanceof Element && event.target.closest("[data-close-settings]")) {
+    closeSettings();
+  }
+});
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && settingsOverlay && !settingsOverlay.classList.contains("hidden")) {
+    // Only when the overlay is the topmost thing; the issue modal manages its
+    // own Escape, and fullscreen Esc is handled by the browser.
+    if (!fullscreenElement()) {
+      closeSettings();
+    }
+  }
+});
+
+initLauncherControls();
