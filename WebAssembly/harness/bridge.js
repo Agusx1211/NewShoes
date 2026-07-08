@@ -8869,10 +8869,22 @@ function ensureD3D8DrawProgram() {
       } else {
         currentColor = stage1ComputedColor;
       }
-      // Stage 2 — D3D8 cascade: previous stage's result arrives as CURRENT. A
-      // disabled colorOp (D3DTOP_DISABLE == 1) passes CURRENT through unchanged,
-      // so 0/1-stage draws are byte-for-byte identical to before this stage.
-      if (uStage2ColorOp != 1) {
+      // Stage 2/3 — D3D8 texture-stage CASCADE TERMINATION. Per the D3D8 SDK
+      // (Textures/Blending/TextureBlendingOperations): "You can disable a
+      // texture stage AND ANY SUBSEQUENT texture blending stages in the cascade
+      // by setting the color operation for that stage to D3DTOP_DISABLE." So the
+      // FIRST stage whose colorOp is DISABLE ends the cascade — every higher
+      // stage is ignored regardless of its own (possibly STALE) state. The
+      // engine only resets the stages a given shader uses (terrain is 2-stage,
+      // stops at stage 1), leaving stage 2/3 combiner state from an earlier
+      // 4-stage draw (e.g. river/trapezoid water) resident. Gating stages 2/3
+      // only on their own colorOp let that stale stage-3 combiner (a MODULATE by
+      // a bound water/noise texture) leak onto the next terrain draw and multiply
+      // it toward black — the faceted black holes. Track a cascade-active flag
+      // that goes false at the first DISABLE stage and require it for 2 and 3,
+      // matching hardware and keeping 0/1-only draws byte-for-byte identical.
+      bool cascadeActive = uStage1ColorOp != 1;
+      if (cascadeActive && uStage2ColorOp != 1) {
         vec4 stage2ComputedColor = vec4(
           d3dStageColor(uStage2ColorOp, uStage2ColorArg0, uStage2ColorArg1, uStage2ColorArg2,
             diffuseColor, texture2Color, currentColor, tempColor),
@@ -8884,9 +8896,11 @@ function ensureD3D8DrawProgram() {
         } else {
           currentColor = stage2ComputedColor;
         }
+      } else {
+        cascadeActive = false;
       }
-      // Stage 3.
-      if (uStage3ColorOp != 1) {
+      // Stage 3 runs only if stages 1 AND 2 both stayed enabled (cascade intact).
+      if (cascadeActive && uStage3ColorOp != 1) {
         vec4 stage3ComputedColor = vec4(
           d3dStageColor(uStage3ColorOp, uStage3ColorArg0, uStage3ColorArg1, uStage3ColorArg2,
             diffuseColor, texture3Color, currentColor, tempColor),

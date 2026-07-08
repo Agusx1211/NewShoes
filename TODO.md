@@ -511,6 +511,38 @@ the UI is the real `PopupSaveLoad.cpp` reached from in-game ESC/Options →
       `ButtonSaveLoad` open the popup in a live skirmish (single-player only —
       skirmish/MP use `QuitNoSave.wnd`, no save button; the round-trip test may
       need a single-player mission or a temporary save trigger).
+## User-reported play bugs (2026-07-09 session)
+
+- [ ] **China CAMPAIGN terrain has large faceted BLACK HOLES** — on a China
+      campaign mission (e.g. `MD_CHI01`) big sharp-edged black polygons are
+      punched through the terrain amid normally-rendered terrain, units and
+      buildings (objects on the black terrain render fine; the black is
+      terrain-only). Diagnosis (2026-07-09): the black is terrain that got
+      multiplied toward 0, not clear-color. Prime suspect is the newly-enabled
+      D3D8 texture-stage 2/3 combiner cascade (commit `20adccf6`, GPU-unverified):
+      the port evaluated stages 2 and 3 gated only on their **own** colorOp, so a
+      STALE stage-3 combiner (a MODULATE by a bound non-white texture left by an
+      earlier 4-stage draw) leaked onto later 2-stage terrain draws. D3D8's rule
+      (DX8 SDK Textures/Blending/TextureBlendingOperations) is that the FIRST
+      stage with `D3DTOP_DISABLE` terminates the cascade — every higher stage is
+      ignored regardless of its stale state; terrain is a 2-stage shader so its
+      cascade must stop at stage 1/2. Landed a cascade-termination fix in
+      `harness/bridge.js` (track a `cascadeActive` flag; require it for stages 2
+      and 3). No-regression VERIFIED on real Mac Metal GPU on a scene that
+      actively binds stage 3 (Winding River river-water, 6 stage-3 draws):
+      patched vs unpatched are byte-equivalent (mean abs diff 1.42, 0% near-black
+      both). **STILL OPEN / NOT PROVEN:** the exact campaign black holes could NOT
+      be reproduced in the harness — fresh skirmish starts on Alpine Assault,
+      Golden Oasis, Tournament Desert and Winding River (incl. a 2500-frame combat
+      run) all render CLEAN on Metal (no black holes; correct soft fog edges), and
+      campaign maps (`MD_CHI0x`) are single-player so `realEngineSetSkirmishMap`
+      rejects them (`mapIsNotMultiplayer`) — there is no campaign-gameplay RPC to
+      drive the real mission. NEXT: wire a way to boot the real China campaign
+      mission in the harness (or force-load a single-player map into an active
+      match), reproduce the black holes on Metal, and confirm the cascade fix
+      removes them (before/after). If it does not, re-open the diagnosis (candidate
+      alternates: shroud terrain multiply on genuinely-unexplored cells;
+      per-patch depth/z-bias; a campaign-specific blend/water draw).
 
 ## User-reported play bugs (2026-07-06 session)
 
