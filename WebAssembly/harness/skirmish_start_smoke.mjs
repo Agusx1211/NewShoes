@@ -827,8 +827,11 @@ async function driveTreeDiffuseProbe(page) {
     await page.evaluate(() => { window.__cncSetDiagLevel?.("full"); window.__cncSetD3D8SceneDrawHistoryLimit?.(8192); });
     await rpc(page, "revealLocalMap", { permanent: true });
     await runFrames(page, 4, "tree probe reveal settle");
-    const frame = await runFrames(page, 1, "tree probe frame");
+    // realEngineFrameSummary populates the scene draw history (realEngineFrame does not).
+    const frame = await runSummary(page, 1, "tree probe frame");
     const hist = frame?.result?.state?.graphics?.d3d8SceneDrawHistory
+      ?? frame?.frame?.graphics?.d3d8SceneDrawHistory
+      ?? frame?.result?.frame?.graphics?.d3d8SceneDrawHistory
       ?? frame?.result?.state?.graphics?.d3d8DrawHistory ?? [];
     info.totalDraws = hist.length;
     const treeDraws = hist.filter((d) => Number(d.vertexStride) === 36 &&
