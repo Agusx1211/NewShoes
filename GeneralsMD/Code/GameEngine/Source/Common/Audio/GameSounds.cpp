@@ -138,8 +138,22 @@ Real SoundManager::getCameraAudibleDistance( void )
 //-------------------------------------------------------------------------------------------------
 void SoundManager::addAudioEvent(AudioEventRTS *eventToAdd)
 {
-	if (m_num2DSamples == 0 && m_num3DSamples == 0) {
+	// The device sample pools (getNum2D/3DSamples) are filled by
+	// MilesAudioManager::initSamplePools(), which the browser port may complete
+	// slightly after the very first audio events are already flowing through the
+	// SoundManager. The original one-shot cache (only refreshed while both counts
+	// were still 0) latched 0/0 forever if it happened to run before the pools
+	// were populated. With m_num2DSamples == 0, canPlayNow()'s
+	// "m_numPlaying2DSamples < m_num2DSamples" channel check is 0 < 0 == false,
+	// so every 2D/3D sample (unit voices, weapon/impact SFX) is dropped before it
+	// is ever appended to the request list -- the sample never reaches
+	// playSample()/AIL_start_sample() and never mixes, while streams (music) keep
+	// working because they do not go through this pool accounting. Re-read the
+	// counts until they are non-zero so the cache heals once the pools are ready.
+	if (m_num2DSamples == 0) {
 		m_num2DSamples = TheAudio->getNum2DSamples();
+	}
+	if (m_num3DSamples == 0) {
 		m_num3DSamples = TheAudio->getNum3DSamples();
 	}
 
