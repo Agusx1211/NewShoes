@@ -57,14 +57,17 @@ RadiusDecalTemplate::RadiusDecalTemplate() :
 // ------------------------------------------------------------------------------------------------
 void RadiusDecalTemplate::createRadiusDecal(const Coord3D& pos, Real radius, const Player* owningPlayer, RadiusDecal& result) const
 {
-#ifdef WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY
-	(void)pos;
-	(void)radius;
-	(void)owningPlayer;
+	// NOTE (wasm port): This must always run the real path. RadiusDecal decals are
+	// a runtime, client-side visual (ground toxin/radiation/anthrax fields, radius
+	// cursors, delivery/targeting reticles) that register with
+	// TheProjectedShadowManager and render via its projected-shadow decal list.
+	// The WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY guard that formerly
+	// no-op'd this body belonged to an isolated INI-metadata probe; in the real
+	// cnc-port runtime it wrongly suppressed decal creation, so these fields were
+	// never added to m_decalList and never drew. The object-creation-list metadata
+	// mode (which that macro is for) is unrelated to this client visual.
 	result.clear();
-#else
-	result.clear();
-	
+
 	if (owningPlayer == NULL)
 	{
 		DEBUG_CRASH(("You MUST specify a non-NULL owningPlayer to createRadiusDecal. (srj)\n"));
@@ -101,7 +104,6 @@ void RadiusDecalTemplate::createRadiusDecal(const Coord3D& pos, Real radius, con
 			DEBUG_CRASH(("Unable to add decal %s\n",decalInfo.m_ShadowName));
 		}
 	}
-#endif
 }
 
 // ------------------------------------------------------------------------------------------------
