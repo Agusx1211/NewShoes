@@ -613,6 +613,24 @@ symptom is temporal — NOT a single still.
       rest of the scene uses. Do NOT touch the (faithful) emissive/`doLighting` bake, and
       do NOT give trees the cloud/lightmap (the original doesn't). Verify: trees darken
       with the fog/shroud like buildings and no longer pop full-bright.
+      **RELATED LATENT FRAGILITY (explains the OPPOSITE "too dark" symptom, not the
+      current "too bright" one — record & fix if it resurfaces):** the HIGH-LOD terrain
+      cloud/noise pass `TerrainShader2Stage::set` case 2 sets a MULTIPLICATIVE framebuffer
+      blend (`D3DRS_ALPHABLENDENABLE=TRUE, SRCBLEND=DESTCOLOR, DESTBLEND=ZERO`,
+      W3DShaderManager.cpp:1726-1728) and `TerrainShader2Stage::reset` (W3DShaderManager.cpp:1590)
+      does NOT restore the blend — it relies on the next `ShaderClass::Apply` (forced via
+      `ShaderClass::Invalidate()`→`ShaderDirty`, shader.cpp:415-431) to re-send the alpha
+      blend. In the original this holds (roads/bibs/trees all `Set_Shader(detailAlphaShader)`
+      with ShaderDirty true after reset). If any port path lets `detailAlphaShader` stay the
+      current shader with `ShaderDirty==false` before the tree draw, `DX8Wrapper::Set_Shader`
+      early-returns (dx8wrapper.h) and the leftover multiply blend leaks into trees → trees
+      DARKEN (multiplied by the framebuffer). NOTE the port emulates a Voodoo5 adapter
+      (`wasm_d3d8_shim.cpp` GetAdapterIdentifier VendorId 0x121a/DeviceId 0x0009 →
+      getChipset()==DC_VOODOO5), so terrain uses `TerrainShader2Stage`, NOT 8Stage; the
+      8Stage reset (W3DShaderManager.cpp:1934) additionally never restores stage 0/1
+      TEXTURETRANSFORMFLAGS/TEXCOORDINDEX — a latent bug only if the chipset is ever
+      DC_TNT..DC_GEFORCE2. Bridge samples a NULL/unbound texture as WHITE (bridge.js:8559-8564),
+      so a leftover-enabled stage never blackens — confirming the bridge is faithful here.
   (superseded historical note — was mis-scoped as a lighting-data/emissive bug:)
 - [ ] **(historical) Trees render too bright — tree lighting is wrong** — 2026-07-08: after the
       terrain-adjacent buffers were re-enabled (commit `2df600c5`) and the correct
