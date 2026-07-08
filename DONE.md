@@ -273,6 +273,33 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       WebAssembly/harness/skirmish_start_smoke.mjs`, and
       `node WebAssembly/harness/startup_vertical_smoke.mjs`.
 
+- [x] Fix the post-match stats/score screen rendering broken and being
+      impossible to close (traps the player after a skirmish ends). Same root
+      cause class as the ESC/quit-menu dead buttons: the reduced runtime
+      `FunctionLexicon` table in `WebAssembly/src/wasm_ww3d_render_probe.cpp`
+      (its ODR-override `FunctionLexicon::init()` at ~line 289, table
+      `runtimeBaseSystemTable` etc.) omits the `ScoreScreen*` callback owners,
+      so when `ScoreScreen.wnd` loads, its `ScoreScreenInit`/`Update`/`Shutdown`
+      layout callbacks and `ScoreScreenSystem`/`ScoreScreenInput` window
+      callbacks never resolve — the layout never populates its data or sets its
+      `ScoreScreenShow` transition group (broken/garbled render) and the OK /
+      Continue button plus the ESC key never dispatch (dead close). The real
+      owners in `GeneralsMD/.../GUICallbacks/Menus/ScoreScreen.cpp` are already
+      compiled/linked into `cnc-port` via `zh_gameengine_real_lifecycle_runtime`.
+      `repair_gameplay_callback_owners()` in
+      `WebAssembly/src/wasm_function_lexicon_runtime.cpp` (which already runs
+      after `TheFunctionLexicon` init, after lexicon reset, and per-frame) now
+      also re-registers the five real `ScoreScreen*` functions into
+      `TABLE_GAME_WIN_SYSTEM`, `TABLE_GAME_WIN_INPUT`, `TABLE_WIN_LAYOUT_INIT`,
+      `TABLE_WIN_LAYOUT_UPDATE`, and `TABLE_WIN_LAYOUT_SHUTDOWN`, using the same
+      `loadRuntimeTableForPort` merge path as the quit-menu repair. No engine
+      logic changed and `ScoreScreen::PlayMovieAndBlock` is untouched (the
+      skirmish path never reaches it). Verified with
+      `npm --prefix WebAssembly run build:port` (cold worktree build,
+      1308/1308 linked clean). Orchestrator to confirm on the real Metal GPU by
+      finishing a skirmish: score screen renders the correct layout + data and
+      the OK/Continue button (or ESC) returns to the menu.
+
 - [x] Fix intro/menu music continuing into active skirmish gameplay. The
       skirmish-start harness can now enable Web Audio before real init, capture
       natural main-menu music stream handles, drive Main Menu -> Single Player
