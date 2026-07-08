@@ -550,6 +550,32 @@ symptom is temporal — NOT a single still.
       changes, and diff behavior with the bind cache disabled. Also consider a
       terrain tile-texture atlas/UV/index bug independent of the cache. Verify no
       wrong tiles appear across a panned multi-frame terrain view.
+- [ ] **All terrain-adjacent systems render nothing (trees, props, bibs,
+      bridges, rally/waypoint line)** — 2026-07-08: commit `2df600c5`
+      "Re-enable terrain adjacent systems" made the `BaseHeightMapRenderObjClass`
+      constructor `NEW` the sub-buffers (`m_treeBuffer`, `m_propBuffer`,
+      `m_bibBuffer`, `m_bridgeBuffer`, `m_waypointBuffer`) even under the
+      `CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS` build define, but on the
+      real Mac GPU build **none of these draw** — no trees/props/bibs/bridges and
+      no white rally/waypoint line. (Deploy verified byte-identical on the Mac, so
+      this is a real defect, not a stale build.) The macro is referenced ONLY in
+      `BaseHeightMap.cpp` (constructor) + defined at `WebAssembly/CMakeLists.txt`.
+      The draw calls themselves are NOT gated — `HeightMap.cpp::Render()` guards
+      each only by `if (m_xxxBuffer)` (props ~2211, bridges ~2234/2265, waypoints
+      ~2272, bibs ~2278; trees via `DoTrees`->`renderTrees` BaseHeightMap.cpp:152/
+      3125), each wrapped in `CNC_PORT_NOTE_TERRAIN_STEP(...)` markers usable as a
+      runtime trace. Two suspects to discriminate WITH the trace (rally line
+      failing too — and it is selection-driven, not map-load-populated — is the
+      clue): (a) the real `HeightMapRenderObjClass::Render()` is not the terrain
+      object actually running (a `Probe*` object from
+      `WebAssembly/src/wasm_ww3d_terrain_probe.cpp` may shadow it, or FlatHeightMap
+      is active) so the whole block never runs → markers absent; (b) the draws run
+      but buffers are never POPULATED (tree/prop/bib add-path at map-load still
+      stubbed) → markers present but zero geometry. `W3dWaypointBuffer.cpp` already
+      has `cnc-port: WP`/`cnc-port: RALLY` printfs. Fix must PORT the missing path,
+      not stub; prove with a before/after screenshot showing recovered geometry.
+      NOTE: an in-progress Claude session on `main` was also chasing this — check
+      for its follow-up commits before duplicating.
 
 - [ ] **Ground toxin/radiation fields do not render** — toxins on the ground
       (anthrax, radiation, and similar persistent ground effects) are not drawn.
