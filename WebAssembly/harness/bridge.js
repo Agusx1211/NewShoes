@@ -432,6 +432,15 @@ const d3d8BufferProducerStats = new Map();
 const d3d8DrawProducerStats = new Map();
 let d3d8ViewportState = null;
 let browser_fbo_incomplete_count = 0;
+// When the player picks an explicit engine render resolution (resolution
+// selector / fullscreen auto-native), the WebGL2 backing store must stay at THAT
+// size so it matches the engine render target 1:1. Otherwise syncCanvasSize()
+// (run every draw) would reset canvas.width/height back to CSS-box x DPR, which
+// generally differs in size AND aspect from the engine resolution -> the D3D8
+// viewport scale becomes non-uniform (stretched geometry) and screen<->world
+// unproject (pick ray / building-placement hover) lands on the wrong point.
+// null = follow CSS x DPR (original behavior); {width,height} = pin the store.
+let explicitEngineBackingStore = null;
 let d3d8CurrentActiveTextureUnit = null;
 let d3d8MaxCombinedTextureImageUnits = null;
 const d3d8CurrentTexture2DBindings = new Map();
@@ -3664,6 +3673,22 @@ function getCanvasDisplaySize() {
   const devicePixelRatio = window.devicePixelRatio || 1;
   const cssWidth = rect.width || canvas.width;
   const cssHeight = rect.height || canvas.height;
+
+  // If an explicit engine resolution is pinned, the backing store follows it
+  // (so buffer == engine render target, 1:1, no stretch, correct unproject).
+  // cssWidth/cssHeight still report the real CSS box so pointer->engine mapping
+  // and refreshCanvasState stay accurate.
+  if (explicitEngineBackingStore
+      && explicitEngineBackingStore.width > 0
+      && explicitEngineBackingStore.height > 0) {
+    return {
+      width: explicitEngineBackingStore.width,
+      height: explicitEngineBackingStore.height,
+      cssWidth,
+      cssHeight,
+      devicePixelRatio,
+    };
+  }
 
   return {
     width: Math.max(1, Math.round(cssWidth * devicePixelRatio)),
@@ -18191,11 +18216,12 @@ async function rpc(command, payload = {}) {
         const appliedWidth = Number.isFinite(result?.width) && result.width > 0 ? result.width : width;
         const appliedHeight = Number.isFinite(result?.height) && result.height > 0 ? result.height : height;
         if (result?.ok === true) {
-          // Size the WebGL2 canvas backing store to the applied engine
-          // resolution so the drawing buffer matches the render target 1:1.
-          // (syncCanvasSize normally tracks CSS x DPR every draw; setting the
-          // backing store explicitly here makes the selected resolution the
-          // authoritative render size until the next CSS/DPR-driven sync.)
+          // Pin the WebGL2 backing store to the applied engine resolution so the
+          // drawing buffer matches the render target 1:1 (no stretch, correct
+          // unproject/pick-ray). Without this pin, syncCanvasSize() (run every
+          // draw) would reset canvas.width/height back to CSS-box x DPR, whose
+          // size AND aspect generally differ from the engine resolution.
+          explicitEngineBackingStore = { width: appliedWidth, height: appliedHeight };
           if (canvas.width !== appliedWidth || canvas.height !== appliedHeight) {
             canvas.width = appliedWidth;
             canvas.height = appliedHeight;

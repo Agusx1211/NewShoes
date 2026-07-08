@@ -1852,8 +1852,24 @@ void W3DView::scrollBy( Coord2D *delta )
 		start.X = getWidth();
 		start.Y = getHeight();
 		Real aspect = getWidth()/getHeight();
-		end.X = start.X + delta->x * SCROLL_RESOLUTION;
-		end.Y = start.Y + delta->y * SCROLL_RESOLUTION*aspect;
+		// The pixel scroll offset below is fed to Device_To_World_Space, which
+		// divides by the CURRENT render-target resolution (Device_To_View_Space).
+		// With a fixed pixel SCROLL_RESOLUTION the resulting world distance is
+		// therefore inversely proportional to the resolution -- so keyboard/edge
+		// scrolling gets slower as the resolution grows. To keep the scroll a
+		// constant WORLD distance per step at any resolution (matching the stock
+		// 800x600 feel), scale the pixel offset by the render target's size
+		// relative to the 800x600 baseline so the /res divide cancels out.
+		int rtWidth = 800, rtHeight = 600, rtBits = 0; bool rtWindowed = false;
+		WW3D::Get_Render_Target_Resolution(rtWidth, rtHeight, rtBits, rtWindowed);
+		if (rtWidth <= 0) rtWidth = 800;
+		if (rtHeight <= 0) rtHeight = 600;
+		const Real SCROLL_REF_WIDTH  = 800.0f;
+		const Real SCROLL_REF_HEIGHT = 600.0f;
+		const Real scrollScaleX = (Real)rtWidth  / SCROLL_REF_WIDTH;
+		const Real scrollScaleY = (Real)rtHeight / SCROLL_REF_HEIGHT;
+		end.X = start.X + delta->x * SCROLL_RESOLUTION * scrollScaleX;
+		end.Y = start.Y + delta->y * SCROLL_RESOLUTION * aspect * scrollScaleY;
 
 		m_3DCamera->Device_To_World_Space( start, &worldStart );
 		m_3DCamera->Device_To_World_Space( end, &worldEnd );

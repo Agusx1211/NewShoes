@@ -665,7 +665,9 @@ function onFullscreenChange() {
     // Entering fullscreen: remember the player's selection, then auto-apply a
     // native resolution matched to the real fullscreen display size so the
     // engine renders at full-screen resolution and the game fills the display
-    // at correct aspect (no upscale blur, no letterbox-in-gray).
+    // at correct aspect (no upscale blur, no letterbox-in-gray). Defer one frame
+    // so the fullscreen CSS (canvas -> 100vw/100vh) has laid out before we read
+    // the size, otherwise a mid-transition read can be degenerate/stale.
     if (preFullscreenSelectValue === null && resolutionSelect) {
       // Store the native option by its stable prefix, not its live "native:WxH"
       // value (that string changes as the size updates).
@@ -673,14 +675,17 @@ function onFullscreenChange() {
         ? "native"
         : resolutionSelect.value;
     }
-    const size = fullscreenPixelSize();
-    void applyResolutionSize(size.width, size.height);
+    applyFullscreenResolutionDeferred();
   } else {
     // Exiting fullscreen: restore the previously-selected resolution so the
-    // windowed layout returns to exactly what the player had.
+    // windowed layout returns to exactly what the player had. The CSS is still
+    // transitioning back to the windowed layout when fullscreenchange fires
+    // (canvas rect / screen.* momentarily degenerate), and re-sizing the
+    // render target to a bad size there is what left a BLACK screen after ESC.
+    // So restore the selection now but DEFER the actual resize to the next
+    // animation frame, guard against a zero/degenerate size, and nudge a repaint.
     const restore = preFullscreenSelectValue;
     preFullscreenSelectValue = null;
-    // Refresh Native to the windowed size first so its value is current.
     refreshNativeOption();
     if (restore !== null && resolutionSelect) {
       if (restore === "native") {
@@ -692,8 +697,45 @@ function onFullscreenChange() {
         resolutionSelect.value = restore;
       }
     }
-    void applySelectedResolution();
+    applyWindowedResolutionDeferred();
   }
+}
+
+// Apply the fullscreen (screen-matched) resolution after layout settles, so the
+// size read reflects the real fullscreen viewport rather than a mid-transition
+// value. Retries once if the size still looks degenerate.
+function applyFullscreenResolutionDeferred(attempt = 0) {
+  requestAnimationFrame(() => {
+    if (!fullscreenElement()) {
+      return; // exited before we got a chance; the exit path takes over.
+    }
+    const size = fullscreenPixelSize();
+    if ((size.width < 2 || size.height < 2) && attempt < 5) {
+      applyFullscreenResolutionDeferred(attempt + 1);
+      return;
+    }
+    void applyResolutionSize(size.width, size.height);
+  });
+}
+
+// Re-apply the windowed resolution after fullscreen exit, once the windowed
+// layout has settled. Guards against a degenerate size and forces a repaint so
+// the game does not stay black after ESC.
+function applyWindowedResolutionDeferred(attempt = 0) {
+  requestAnimationFrame(() => {
+    if (fullscreenElement()) {
+      return; // re-entered fullscreen; not our job anymore.
+    }
+    refreshNativeOption();
+    const target = selectedResolution();
+    // If the selected size is degenerate right now (layout not settled), retry a
+    // few frames before giving up rather than resizing to a broken target.
+    if (target && (target.width < 2 || target.height < 2) && attempt < 5) {
+      applyWindowedResolutionDeferred(attempt + 1);
+      return;
+    }
+    void applySelectedResolution();
+  });
 }
 
 // --- live tracking of tab size / DPR ----------------------------------------
