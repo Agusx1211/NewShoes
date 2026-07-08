@@ -1504,8 +1504,21 @@ Shadow* W3DProjectedShadowManager::addDecal(Shadow::ShadowTypeInfo *shadowInfo)
 	st=m_W3DShadowTextureManager->getTexture(texture_name);
 	if (st == NULL)
 	{
-		//Adding a new decal texture
-		TextureClass *w3dTexture=WW3DAssetManager::Get_Instance()->Get_Texture(texture_name);
+		//Adding a new decal texture.
+		// NOTE (wasm port): request MIP_LEVELS_1 (not the Get_Texture default
+		// MIP_LEVELS_ALL). Projected decals never use mip-maps (see the
+		// Set_Mip_Mapping(FILTER_TYPE_NONE) call below), and MIP_LEVELS_ALL routes
+		// the texture through WW3D's thumbnail / delayed-background-load path
+		// (see WW3D2/texture.cpp TextureClass::Init). Under that path a decal's
+		// full level-0 surface can be missing the first time flushDecals draws it,
+		// so the D3D8->WebGL2 bridge sees the bound texture as "not ready"
+		// (initializedLevels lacks level 0) and substitutes opaque white for the
+		// sample. The decal's terrain-conforming quad then renders as a flat,
+		// texture-alpha-less pale square (a cluster of cell-sized squares over the
+		// terrain grid) instead of its round alpha shape. MIP_LEVELS_1 forces the
+		// full surface to initialize immediately, so the alpha shape is present
+		// on the very first decal draw.
+		TextureClass *w3dTexture=WW3DAssetManager::Get_Instance()->Get_Texture(texture_name, MIP_LEVELS_1);
 		w3dTexture->Get_Filter().Set_U_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 		w3dTexture->Get_Filter().Set_V_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 		w3dTexture->Get_Filter().Set_Mip_Mapping(TextureFilterClass::FILTER_TYPE_NONE);
@@ -1622,8 +1635,13 @@ Shadow* W3DProjectedShadowManager::addDecal(RenderObjClass *robj, Shadow::Shadow
 	st=m_W3DShadowTextureManager->getTexture(texture_name);
 	if (st == NULL)
 	{
-		//Adding a new decal texture
-		TextureClass *w3dTexture=WW3DAssetManager::Get_Instance()->Get_Texture(texture_name);
+		//Adding a new decal texture.
+		// NOTE (wasm port): load with MIP_LEVELS_1 so the full level-0 surface
+		// initializes immediately instead of via WW3D's thumbnail/delayed load
+		// (MIP_LEVELS_ALL). See the matching note in the other addDecal overload:
+		// a not-yet-ready decal texture makes the D3D8->WebGL2 bridge substitute
+		// opaque white and render the decal's terrain quad as a pale square.
+		TextureClass *w3dTexture=WW3DAssetManager::Get_Instance()->Get_Texture(texture_name, MIP_LEVELS_1);
 		w3dTexture->Get_Filter().Set_U_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 		w3dTexture->Get_Filter().Set_V_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 		w3dTexture->Get_Filter().Set_Mip_Mapping(TextureFilterClass::FILTER_TYPE_NONE);
@@ -1768,7 +1786,10 @@ W3DProjectedShadow* W3DProjectedShadowManager::addShadow(RenderObjClass *robj, S
 				if (st == NULL)
 				{
 					//need to add this texture without creating it from a real renderobject
-					TextureClass *w3dTexture=WW3DAssetManager::Get_Instance()->Get_Texture(texture_name);
+					// NOTE (wasm port): MIP_LEVELS_1 forces immediate full init (no
+					// thumbnail/delayed load), so the bridge never renders the decal
+					// as an opaque-white pale square before its texture is ready.
+					TextureClass *w3dTexture=WW3DAssetManager::Get_Instance()->Get_Texture(texture_name, MIP_LEVELS_1);
 					w3dTexture->Get_Filter().Set_U_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 					w3dTexture->Get_Filter().Set_V_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 					w3dTexture->Get_Filter().Set_Mip_Mapping(TextureFilterClass::FILTER_TYPE_NONE);
@@ -1955,7 +1976,10 @@ W3DProjectedShadow* W3DProjectedShadowManager::createDecalShadow(Shadow::ShadowT
 	if (st == NULL)
 	{
 		//need to add this texture without creating it from a real renderobject
-		TextureClass *w3dTexture=WW3DAssetManager::Get_Instance()->Get_Texture(texture_name);
+		// NOTE (wasm port): MIP_LEVELS_1 forces immediate full init (no
+		// thumbnail/delayed load), so the bridge never renders the decal as an
+		// opaque-white pale square before its texture is ready.
+		TextureClass *w3dTexture=WW3DAssetManager::Get_Instance()->Get_Texture(texture_name, MIP_LEVELS_1);
 		w3dTexture->Get_Filter().Set_U_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 		w3dTexture->Get_Filter().Set_V_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 		w3dTexture->Get_Filter().Set_Mip_Mapping(TextureFilterClass::FILTER_TYPE_NONE);
