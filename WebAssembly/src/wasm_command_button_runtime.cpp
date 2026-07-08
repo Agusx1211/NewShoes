@@ -14,13 +14,39 @@
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/WeaponSet.h"
 
-ControlBar *TheControlBar = nullptr;
+// NOTE (special-power activation fix): This file was the pre-real-ControlBar
+// INI-runtime slice.  It provided a *minimal* ControlBar/CommandButton/
+// CommandSet so the object/command INI could parse before the full GUI control
+// bar was ported.  The real GeneralsMD ControlBar.cpp is now compiled into the
+// cnc-port runtime (via zh_gameclient_utility), and it owns the complete
+// implementations that drive the special-power shortcut palette, the per-frame
+// command-availability refresh, and button wiring.
+//
+// Both translation units define the same ControlBar/CommandButton/CommandSet
+// symbols.  With two *strong* definitions the linker picks whichever archive
+// resolves the reference first, and when this stub archive won it silently
+// shadowed the real ControlBar::update()/init()/reset() (empty stubs below) —
+// so the special-power shortcut buttons were never populated or refreshed and
+// clicking a purchased power did nothing.
+//
+// Fix: mark every definition here that the real ControlBar.cpp also provides as
+// weak, so the real strong implementation always wins wherever ControlBar.cpp
+// is linked (cnc-port), while the INI-runtime-only targets that do NOT link
+// ControlBar.cpp still get these weak fallbacks.  See TODO.md
+// "Purchased special powers can't be activated".
+#if defined(__GNUC__) || defined(__clang__)
+#define CNC_PORT_CB_WEAK __attribute__((weak))
+#else
+#define CNC_PORT_CB_WEAK
+#endif
 
-const Image *ControlBar::m_rankVeteranIcon = nullptr;
-const Image *ControlBar::m_rankEliteIcon = nullptr;
-const Image *ControlBar::m_rankHeroicIcon = nullptr;
+ControlBar *TheControlBar CNC_PORT_CB_WEAK = nullptr;
 
-const FieldParse CommandButton::s_commandButtonFieldParseTable[] =
+const Image *ControlBar::m_rankVeteranIcon CNC_PORT_CB_WEAK = nullptr;
+const Image *ControlBar::m_rankEliteIcon CNC_PORT_CB_WEAK = nullptr;
+const Image *ControlBar::m_rankHeroicIcon CNC_PORT_CB_WEAK = nullptr;
+
+CNC_PORT_CB_WEAK const FieldParse CommandButton::s_commandButtonFieldParseTable[] =
 {
 	{ "Command", CommandButton::parseCommand, nullptr, offsetof(CommandButton, m_command) },
 	{ "Options", INI::parseBitString32, TheCommandOptionNames, offsetof(CommandButton, m_options) },
@@ -43,7 +69,7 @@ const FieldParse CommandButton::s_commandButtonFieldParseTable[] =
 	{ nullptr, nullptr, nullptr, 0 }
 };
 
-const FieldParse CommandSet::m_commandSetFieldParseTable[] =
+CNC_PORT_CB_WEAK const FieldParse CommandSet::m_commandSetFieldParseTable[] =
 {
 	{ "1", CommandSet::parseCommandButton, (void *)0, offsetof(CommandSet, m_command) },
 	{ "2", CommandSet::parseCommandButton, (void *)1, offsetof(CommandSet, m_command) },
@@ -66,7 +92,7 @@ const FieldParse CommandSet::m_commandSetFieldParseTable[] =
 	{ nullptr, nullptr, nullptr, 0 }
 };
 
-void CommandButton::parseCommand(INI *ini, void *, void *store, const void *)
+CNC_PORT_CB_WEAK void CommandButton::parseCommand(INI *ini, void *, void *store, const void *)
 {
 	const char *token = ini->getNextToken();
 
@@ -80,7 +106,7 @@ void CommandButton::parseCommand(INI *ini, void *, void *store, const void *)
 	throw INI_INVALID_DATA;
 }
 
-CommandButton::CommandButton()
+CNC_PORT_CB_WEAK CommandButton::CommandButton()
 {
 	m_command = GUI_COMMAND_NONE;
 	m_thingTemplate = nullptr;
@@ -105,14 +131,14 @@ CommandButton::CommandButton()
 	m_radiusCursor = RADIUSCURSOR_NONE;
 }
 
-CommandButton::~CommandButton() = default;
+CNC_PORT_CB_WEAK CommandButton::~CommandButton() = default;
 
-void CommandButton::cacheButtonImage()
+CNC_PORT_CB_WEAK void CommandButton::cacheButtonImage()
 {
 	m_buttonImageName.clear();
 }
 
-void CommandSet::parseCommandButton(INI *ini, void *, void *store, const void *user_data)
+CNC_PORT_CB_WEAK void CommandSet::parseCommandButton(INI *ini, void *, void *store, const void *user_data)
 {
 	const char *token = ini->getNextToken();
 	const CommandButton *command_button =
@@ -130,7 +156,7 @@ void CommandSet::parseCommandButton(INI *ini, void *, void *store, const void *u
 	button_array[button_index] = command_button;
 }
 
-CommandSet::CommandSet(const AsciiString &name) :
+CNC_PORT_CB_WEAK CommandSet::CommandSet(const AsciiString &name) :
 	m_name(name),
 	m_next(nullptr)
 {
@@ -139,7 +165,7 @@ CommandSet::CommandSet(const AsciiString &name) :
 	}
 }
 
-const CommandButton *CommandSet::getCommandButton(Int index) const
+CNC_PORT_CB_WEAK const CommandButton *CommandSet::getCommandButton(Int index) const
 {
 	if (index < 0 || index >= MAX_COMMANDS_PER_SET) {
 		return nullptr;
@@ -206,15 +232,15 @@ Bool __attribute__((weak)) CommandButton::isValidObjectTarget(const Object *, co
 	return FALSE;
 }
 
-void CommandSet::friend_addToList(CommandSet **list_head)
+CNC_PORT_CB_WEAK void CommandSet::friend_addToList(CommandSet **list_head)
 {
 	m_next = *list_head;
 	*list_head = this;
 }
 
-CommandSet::~CommandSet() = default;
+CNC_PORT_CB_WEAK CommandSet::~CommandSet() = default;
 
-ControlBar::ControlBar()
+CNC_PORT_CB_WEAK ControlBar::ControlBar()
 {
 	m_UIDirty = false;
 	m_commandButtons = nullptr;
@@ -225,7 +251,7 @@ ControlBar::ControlBar()
 	m_rallyPointDrawableID = INVALID_DRAWABLE_ID;
 }
 
-ControlBar::~ControlBar()
+CNC_PORT_CB_WEAK ControlBar::~ControlBar()
 {
 	while (m_commandButtons != nullptr) {
 		CommandButton *button = m_commandButtons->friend_getNext();
@@ -243,24 +269,24 @@ ControlBar::~ControlBar()
 	}
 }
 
-void ControlBar::init()
+CNC_PORT_CB_WEAK void ControlBar::init()
 {
 }
 
-void ControlBar::reset()
+CNC_PORT_CB_WEAK void ControlBar::reset()
 {
 }
 
-void ControlBar::update()
+CNC_PORT_CB_WEAK void ControlBar::update()
 {
 }
 
-void ControlBar::markUIDirty()
+CNC_PORT_CB_WEAK void ControlBar::markUIDirty()
 {
 	m_UIDirty = true;
 }
 
-CommandButton *ControlBar::findNonConstCommandButton(const AsciiString &name)
+CNC_PORT_CB_WEAK CommandButton *ControlBar::findNonConstCommandButton(const AsciiString &name)
 {
 	for (const CommandButton *command = m_commandButtons; command != nullptr; command = command->getNext()) {
 		if (command->getName() == name) {
@@ -271,7 +297,7 @@ CommandButton *ControlBar::findNonConstCommandButton(const AsciiString &name)
 	return nullptr;
 }
 
-const CommandButton *ControlBar::findCommandButton(const AsciiString &name)
+CNC_PORT_CB_WEAK const CommandButton *ControlBar::findCommandButton(const AsciiString &name)
 {
 	CommandButton *button = findNonConstCommandButton(name);
 	if (button != nullptr) {
@@ -280,7 +306,7 @@ const CommandButton *ControlBar::findCommandButton(const AsciiString &name)
 	return button;
 }
 
-CommandSet *ControlBar::findNonConstCommandSet(const AsciiString &name)
+CNC_PORT_CB_WEAK CommandSet *ControlBar::findNonConstCommandSet(const AsciiString &name)
 {
 	for (CommandSet *set = m_commandSets; set != nullptr; set = set->friend_getNext()) {
 		if (set->getName() == name) {
@@ -291,7 +317,7 @@ CommandSet *ControlBar::findNonConstCommandSet(const AsciiString &name)
 	return nullptr;
 }
 
-const CommandSet *ControlBar::findCommandSet(const AsciiString &name)
+CNC_PORT_CB_WEAK const CommandSet *ControlBar::findCommandSet(const AsciiString &name)
 {
 	CommandSet *set = findNonConstCommandSet(name);
 	if (set != nullptr) {
@@ -300,7 +326,7 @@ const CommandSet *ControlBar::findCommandSet(const AsciiString &name)
 	return set;
 }
 
-CommandButton *ControlBar::newCommandButton(const AsciiString &name)
+CNC_PORT_CB_WEAK CommandButton *ControlBar::newCommandButton(const AsciiString &name)
 {
 	CommandButton *button = newInstance(CommandButton);
 	button->setName(name);
@@ -308,7 +334,7 @@ CommandButton *ControlBar::newCommandButton(const AsciiString &name)
 	return button;
 }
 
-CommandButton *ControlBar::newCommandButtonOverride(CommandButton *button_to_override)
+CNC_PORT_CB_WEAK CommandButton *ControlBar::newCommandButtonOverride(CommandButton *button_to_override)
 {
 	if (button_to_override == nullptr) {
 		return nullptr;
@@ -321,14 +347,14 @@ CommandButton *ControlBar::newCommandButtonOverride(CommandButton *button_to_ove
 	return override_button;
 }
 
-CommandSet *ControlBar::newCommandSet(const AsciiString &name)
+CNC_PORT_CB_WEAK CommandSet *ControlBar::newCommandSet(const AsciiString &name)
 {
 	CommandSet *set = newInstance(CommandSet)(name);
 	set->friend_addToList(&m_commandSets);
 	return set;
 }
 
-CommandSet *ControlBar::newCommandSetOverride(CommandSet *set_to_override)
+CNC_PORT_CB_WEAK CommandSet *ControlBar::newCommandSetOverride(CommandSet *set_to_override)
 {
 	if (set_to_override == nullptr) {
 		return nullptr;
@@ -341,7 +367,7 @@ CommandSet *ControlBar::newCommandSetOverride(CommandSet *set_to_override)
 	return override_set;
 }
 
-void ControlBar::parseCommandSetDefinition(INI *ini)
+CNC_PORT_CB_WEAK void ControlBar::parseCommandSetDefinition(INI *ini)
 {
 	const char *token = ini->getNextToken();
 	AsciiString name(token);
