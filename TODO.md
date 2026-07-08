@@ -558,7 +558,63 @@ symptom is temporal — NOT a single still.
       draws wrong or not at all. Check that counter when this bug (and the
       toxin/radiation-field bug above) reproduces — a nonzero count points at a
       missing format path rather than the bind cache.
-- [ ] **Trees render too bright — tree lighting is wrong** — 2026-07-08: after the
+- [ ] **Trees not darkened by shroud/fog of war (pop full-bright) — tree stage-1
+      shroud MODULATE is a no-op on the real GPU** — 2026-07-08 (branch
+      `fix/trees-shroud`): owner Mac screenshots confirm the whole scene is
+      shroud/fog-darkened (terrain + roads + BUILDINGS all correctly darkened) but
+      TREES stay full-bright/saturated. So the scene/shroud darkening reaches
+      buildings but NOT trees. **Round-3 audit findings:**
+      - **Emissive is NOT the bug.** The tree material emissive is loaded faithfully
+        from the W3D file (`VertexMaterialClass::Parse_W3dVertexMaterialStruct`
+        vertmaterial.cpp; `Init_From_Material3` / `Load_W3D`), and `doLighting`'s
+        emissive read (W3DTreeBuffer.cpp:783-790) is byte-identical to the community
+        reference. If a tree has emissive, both original and port add it the same way.
+      - **Root cause = the shroud.** Buildings/props darken via a SEPARATE
+        `_PresetMultiplicativeSpriteShader` shroud pass with the shroud on texture
+        **stage 0** (`W3DShroudMaterialPassClass::Install_Materials` W3DShroud.cpp:788
+        → `ShroudTextureShader::set` W3DShaderManager.cpp:1211). Trees darken via the
+        shroud on texture **stage 1** MODULATE inside the single tree draw
+        (`W3DShaderManager::setShroudTex(1)` W3DShaderManager.cpp:3185, called from
+        `W3DTreeBuffer::drawTrees` W3DTreeBuffer.cpp:1737). The shroud transform math
+        in `setShroudTex` is IDENTICAL to `ShroudTextureShader::set` (camera-space
+        texgen `D3DTSS_TCI_CAMERASPACEPOSITION` + `D3DTTFF_COUNT2` + `D3DTS_TEXTURE1`).
+      - In the port `m_dwTreeVertexShader==0` (CreateVertexShader returns
+        `D3DERR_NOTAVAILABLE`), so `Trees.vso` never loads and the tree shroud runs the
+        **FVF fixed-function stage-1 texgen fallback** — a path the shipping game never
+        exercised (it always had `Trees.vso`, which did the shroud in the vertex/pixel
+        shader and DISABLED the stage-1 fixed-function texgen, W3DTreeBuffer.cpp:1808-1813).
+      - Bridge audit (mine + a glm-5.2 subagent): the fragment shader gates stage 1 on
+        `uUseTexture1 = canSampleTexture1` (bridge.js:12317); if false, `texture1Color =
+        vec4(1.0)` white (bridge.js:8562-8564) → `MODULATE(white, current) = current` →
+        NO darkening (exactly the symptom). `canSampleTexture1 = texture1Ready &&
+        (texture1Coordinates.supported || pointSprite)` (bridge.js:11414). Both audits
+        found the stage-1 shroud path architecturally correct (texgen, `D3DTS_TEXTURE1`
+        transform captured as a Float32Array so `transformApplied` should be true, combiner
+        MODULATE/SELECTARG2 supported, shroud texture marked ready via CopyRects
+        `upload_owned_texture`→`updateD3D8Texture` initializedLevels), i.e. NO definitive
+        static code break — so the failure is a real-GPU/runtime value we must capture.
+      **THE ONE MAC-GPU CHECK (decides the fix; no new instrumentation — draw history
+      already captures it):** on the real GPU, pull `d3d8DrawHistory`, find the tree pass
+      (`vertexShaderFvf === (D3DFVF_XYZ|D3DFVF_NORMAL|D3DFVF_DIFFUSE|D3DFVF_TEX1)`,
+      `vertexStride === 36`), and read `texture1.sampled` + `renderState.textureStage1`
+      (colorOp, texCoordIndex, textureTransformFlags) and `texture1.id`/`ready`:
+      - If `texture1.sampled === false` → `canSampleTexture1` is false. Check which factor:
+        `texture1Ready` (shroud texture id not resolved/initialized on the tree draw) vs
+        `texture1Coordinates.supported` (camera-space texgen + COUNT2 transform not
+        applied). Fix that specific gate in the bridge so the tree draw samples the shroud
+        on stage 1, matching the (working) building stage-0 shroud.
+      - If `texture1.sampled === true` but the shroud texel is white → the camera-space
+        texgen/`D3DTS_TEXTURE1` transform maps tree verts to a revealed/border shroud cell;
+        compare the tree draw's captured `D3DTS_TEXTURE1` matrix to the building shroud
+        pass's `D3DTS_TEXTURE0` matrix (they should be equal per the identical C++).
+      **Faithful fix direction (once the capture pinpoints it):** make the port's FVF
+      tree shroud reliably sample+MODULATE the shroud on stage 1 (bridge fix), OR route
+      the tree shroud through the same proven `_PresetMultiplicativeShader` mechanism the
+      rest of the scene uses. Do NOT touch the (faithful) emissive/`doLighting` bake, and
+      do NOT give trees the cloud/lightmap (the original doesn't). Verify: trees darken
+      with the fog/shroud like buildings and no longer pop full-bright.
+  (superseded historical note — was mis-scoped as a lighting-data/emissive bug:)
+- [ ] **(historical) Trees render too bright — tree lighting is wrong** — 2026-07-08: after the
       terrain-adjacent buffers were re-enabled (commit `2df600c5`) and the correct
       `dist-release` build reached the Mac, `W3DTreeBuffer` trees now draw, but on
       the real GPU they are **constantly too bright / full-bright** and don't
