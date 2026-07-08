@@ -10,6 +10,31 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Browser display / harness UX (2026-07-08)
 
+- [x] **Ground/building projected decals render partially (half-clipped along
+      terrain-cell diagonals) and flicker — fixed via slope-scaled polygon offset
+      for D3D8 ZBIAS** (verified on real Apple M4 Metal GPU as the Superweapon
+      General: the `SupW_AmericaCommandCenter` plaza insignia decal renders whole
+      and is byte-stable across frames). The faction/general insignia decal is
+      drawn by `W3DProjectedShadowManager::flushDecals`
+      (`GeneralsMD/.../Shadow/W3DProjectedShadow.cpp:788`) as a
+      terrain-heightfield-tessellated grid mesh (many cells, wide depth range)
+      sitting `0.01*MAP_XY_FACTOR` (0.1 world unit) above the plaza with
+      `D3DRS_ZBIAS=1` (`:783,1131`). The D3D8->WebGL2 layer emulated ZBIAS purely
+      as a constant clip-space depth shift in the vertex shader
+      (`gl_Position.z -= uDepthBias*w`, bridge.js ~8346/9117); a uniform NDC shift
+      does not scale with each triangle's window-space depth slope, and after the
+      correct 24-bit denominator `((1<<20)-1)` (commit 4734789) `ZBIAS=1` biased
+      only ~1e-6 NDC — below the depth-buffer quantisation at gameplay camera
+      range — so half the decal triangles lost the z-fight and the decal clipped
+      along the terrain cell diagonals and flickered. Fix (bridge.js, JS-only, no
+      wasm rebuild): also emulate `D3DRS_ZBIAS` with `gl.polygonOffset`
+      (`factor=-clamped, units=-2*clamped`, what D3D8 ZBIAS mapped to on real HW),
+      enabled/reset via the tracked-state helpers so it never leaks across draws
+      (`z_bias` is in the shim render-state hash, so decal vs terrain draws never
+      share the cached offset). The constant NDC shift stays for backward
+      compatibility with the depth-bias probes. Blast radius = every ZBIAS user:
+      projected insignia/shadow decals, scorch marks, wireframe/overlay passes.
+
 - [x] **In-game ESC key dead in a fullscreen skirmish (Esc menu never opens) —
       fixed with the Keyboard Lock API** (`WebAssembly/harness/play.mjs`,
       `WebAssembly/harness/play.html`). The engine path was already correct and

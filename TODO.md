@@ -611,15 +611,6 @@ Reported by the project owner on the Mac GPU build. Reproduce in the harness and
 verify each fix with a real, **multi-frame** screenshot / state check where the
 symptom is temporal — NOT a single still.
 
-- [ ] **Decals flip-flop / render at wrong depth (z-order)** — some decals
-      (scorch marks, shadow/terrain decals) intermittently render onto the
-      background / at the wrong depth and flicker between correct and wrong across
-      frames. Looks like depth/z handling for the decal pass is unstable —
-      inconsistent ZWRITE/ZFUNC/depth-bias or draw-order between the decal pass
-      and terrain/world. Trace the projected/terrain decal render order and depth
-      state; compare against the earlier z-order work (`feat/zorder-fix`). Verify
-      over MULTIPLE frames (the flicker is temporal) that decals stay on the
-      ground at correct depth.
 - [ ] **Wrong ground tiles — small squares render the wrong texture** — sometimes
       individual terrain tiles show clearly wrong content (little squares
       rendering the wrong thing). SUSPECT: this may be a **stale texture-bind
