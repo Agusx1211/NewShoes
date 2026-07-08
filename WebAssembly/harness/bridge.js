@@ -11315,56 +11315,77 @@ function paintD3D8DrawIndexed(payload = {}) {
       d3d8VertexArraySupported() &&
       temporaryIndices == null,
     );
-    const cachedVertexArray = canUseVertexArrayCache
-      ? findD3D8VertexArrayCacheEntry(vertexAttribKey, indexBufferId)
-      : null;
     const currentVertexArrayMatches =
-      d3d8CurrentVertexArray === null ||
+      d3d8CurrentVertexArray !== null &&
       d3d8VertexArrayKeyMatches(d3d8CurrentVertexArrayKey, vertexAttribKey, indexBufferId);
-    if (d3d8VertexAttribKeyMatches(d3d8LastVertexAttribKey, vertexAttribKey) && currentVertexArrayMatches) {
+    const vertexAttribAlreadyBound = currentVertexArrayMatches ||
+      (d3d8CurrentVertexArray === null &&
+        d3d8VertexAttribKeyMatches(d3d8LastVertexAttribKey, vertexAttribKey));
+    if (vertexAttribAlreadyBound) {
       d3d8PerfStats.drawVertexAttribCacheHits += 1;
-    } else if (cachedVertexArray?.vertexArray) {
-      d3d8PerfStats.drawVertexAttribCacheHits += 1;
-      d3d8PerfStats.drawVertexArrayCacheHits += 1;
-      bindD3D8VertexArray(
-        cachedVertexArray.vertexArray,
-        cachedVertexArray,
-        cachedVertexArray.elementArrayBuffer,
-        cachedVertexArray,
-      );
-      applyD3D8DefaultVertexAttribValues(
-        bridgeProgram,
-        vertexLayout,
-        drawCanSampleTexture0,
-        texture0Coordinates,
-        drawCanSampleTexture1,
-        texture1Coordinates,
-      );
+      if (currentVertexArrayMatches && canUseVertexArrayCache && d3d8CurrentVertexArrayKey) {
+        d3d8CurrentVertexArrayKey.usedAt = ++d3d8VertexArrayCacheClock;
+      }
     } else {
-      d3d8PerfStats.drawVertexAttribCacheMisses += 1;
-      if (canUseVertexArrayCache) {
-        d3d8PerfStats.drawVertexArrayCacheMisses += 1;
-        const vertexArray = gl.createVertexArray();
-        if (vertexArray) {
-          const cachedEntry = rememberD3D8VertexArray(
-            vertexAttribKey,
-            indexBufferId,
-            vertexArray,
-            indexResource.buffer,
-          );
-          bindD3D8VertexArray(vertexArray, cachedEntry, null, cachedEntry);
-          configureD3D8VertexAttribPointers({
-            bridgeProgram,
-            vertexResource,
-            vertexByteOffset,
-            vertexStride,
-            vertexLayout,
-            canSampleTexture0: drawCanSampleTexture0,
-            texture0Coordinates,
-            canSampleTexture1: drawCanSampleTexture1,
-            texture1Coordinates,
-          });
-          bindD3D8ElementArrayBufferForVertexArray(indexResource.buffer);
+      const cachedVertexArray = canUseVertexArrayCache
+        ? findD3D8VertexArrayCacheEntry(vertexAttribKey, indexBufferId)
+        : null;
+      if (cachedVertexArray?.vertexArray) {
+        d3d8PerfStats.drawVertexAttribCacheHits += 1;
+        d3d8PerfStats.drawVertexArrayCacheHits += 1;
+        bindD3D8VertexArray(
+          cachedVertexArray.vertexArray,
+          cachedVertexArray,
+          cachedVertexArray.elementArrayBuffer,
+          cachedVertexArray,
+        );
+        applyD3D8DefaultVertexAttribValues(
+          bridgeProgram,
+          vertexLayout,
+          drawCanSampleTexture0,
+          texture0Coordinates,
+          drawCanSampleTexture1,
+          texture1Coordinates,
+        );
+      } else {
+        d3d8PerfStats.drawVertexAttribCacheMisses += 1;
+        if (canUseVertexArrayCache) {
+          d3d8PerfStats.drawVertexArrayCacheMisses += 1;
+          const vertexArray = gl.createVertexArray();
+          if (vertexArray) {
+            const cachedEntry = rememberD3D8VertexArray(
+              vertexAttribKey,
+              indexBufferId,
+              vertexArray,
+              indexResource.buffer,
+            );
+            bindD3D8VertexArray(vertexArray, cachedEntry, null, cachedEntry);
+            configureD3D8VertexAttribPointers({
+              bridgeProgram,
+              vertexResource,
+              vertexByteOffset,
+              vertexStride,
+              vertexLayout,
+              canSampleTexture0: drawCanSampleTexture0,
+              texture0Coordinates,
+              canSampleTexture1: drawCanSampleTexture1,
+              texture1Coordinates,
+            });
+            bindD3D8ElementArrayBufferForVertexArray(indexResource.buffer);
+          } else {
+            bindD3D8DefaultVertexArray();
+            configureD3D8VertexAttribPointers({
+              bridgeProgram,
+              vertexResource,
+              vertexByteOffset,
+              vertexStride,
+              vertexLayout,
+              canSampleTexture0: drawCanSampleTexture0,
+              texture0Coordinates,
+              canSampleTexture1: drawCanSampleTexture1,
+              texture1Coordinates,
+            });
+          }
         } else {
           bindD3D8DefaultVertexArray();
           configureD3D8VertexAttribPointers({
@@ -11379,22 +11400,9 @@ function paintD3D8DrawIndexed(payload = {}) {
             texture1Coordinates,
           });
         }
-      } else {
-        bindD3D8DefaultVertexArray();
-        configureD3D8VertexAttribPointers({
-          bridgeProgram,
-          vertexResource,
-          vertexByteOffset,
-          vertexStride,
-          vertexLayout,
-          canSampleTexture0: drawCanSampleTexture0,
-          texture0Coordinates,
-          canSampleTexture1: drawCanSampleTexture1,
-          texture1Coordinates,
-        });
-      }
-      if (!d3d8VertexAttribKeyMatches(d3d8LastVertexAttribKey, vertexAttribKey)) {
-        d3d8LastVertexAttribKey = cloneD3D8VertexAttribKey(vertexAttribKey);
+        if (!d3d8VertexAttribKeyMatches(d3d8LastVertexAttribKey, vertexAttribKey)) {
+          d3d8LastVertexAttribKey = cloneD3D8VertexAttribKey(vertexAttribKey);
+        }
       }
     }
     recordDrawSubphase?.("sortedDrawVertexAttribMs");

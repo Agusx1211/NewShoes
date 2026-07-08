@@ -490,6 +490,30 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       red `[255,0,0,255]` and blue `[0,0,255,255]` center pixels, exact
       `boundTextures`, bind deltas, and release cleanup.
 
+- [x] Fast-path current VAO hits in the browser D3D8 draw bridge. The hot
+      `paintD3D8DrawIndexed` vertex-attribute block now checks the currently
+      bound VAO before searching the per-buffer VAO cache bucket, so the common
+      already-bound case skips the Map/bucket lookup entirely. When the current
+      VAO key matches, that match also serves as the vertex-attribute hit test
+      because `bindD3D8VertexArray()` keeps the current VAO key and
+      `d3d8LastVertexAttribKey` synchronized; default-VAO draws keep the exact
+      old field comparison path. Current VAO hits still refresh the cached
+      entry's LRU clock so eviction behavior remains conservative.
+      Verified with `node --check WebAssembly/harness/bridge.js`,
+      `git diff --check`, and four Mac M4 Chrome/Metal release runtime
+      profiles with visible shell-map screenshots
+      (`runtime-frame-profile-vao-current-hit-mac.json`,
+      `runtime-frame-profile-vao-current-hit-repeat-mac.json`,
+      `runtime-frame-profile-vao-current-key-fastpath-mac.json`, and
+      `runtime-frame-profile-vao-current-key-fastpath-repeat-mac.json`).
+      The final two-run average kept the renderer on `ANGLE Metal Renderer:
+      Apple M4` and moved `sortedDrawVertexAttribMs` from 0.2173 to
+      0.2008 ms/frame, `sortedDrawGeometryMs` from 0.7643 to
+      0.7479 ms/frame, and `sortedDrawProfiledMs` from 2.9185 to
+      2.8993 ms/frame. This was a small draw-scaffold cleanup; the remaining
+      performance frontier is still the draw-command buffer / terrain,
+      mesh-renderer, and volumetric-shadow producers.
+
 - [x] Cache draw-time WebGL texture binding/sampler state in the D3D8 bridge.
       `bridge.js` now tracks the actual WebGL active texture unit plus per-unit
       2D/3D bindings, preserves/invalidates that cache around direct texture

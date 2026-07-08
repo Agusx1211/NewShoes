@@ -438,19 +438,27 @@ final clean Mac profile `DX8Wrapper.Apply.texture.before` bucket to 0.13 ms
 across 127 texture applies by making D3D8 `SetTexture` notifications update
 browser D3D state instead of immediately rebinding WebGL textures in `diag=lite`.
 Do not re-open texture apply unless a new profile shows it regressed.
+A follow-up current-VAO fast path in the JS draw bridge now tests the already
+bound VAO before searching the VAO cache bucket and avoids a duplicate
+vertex-attribute field compare when the current VAO key matches. Mac M4/Metal
+release repeats kept shell-map screenshots correct; the final two-run average
+moved `sortedDrawVertexAttribMs` from 0.2173 to 0.2008 ms/frame,
+`sortedDrawGeometryMs` from 0.7643 to 0.7479 ms/frame, and
+`sortedDrawProfiledMs` from 2.9185 to 2.8993 ms/frame. This is a narrow
+draw-scaffold cleanup, not a frontier shift.
 The remaining draw-side leaders are `WasmD3D8.browserDrawIndexed.before`,
 `HeightMap.tilePasses.tileDraw.before`, `DX8MeshRenderer.flush.rigid.before`,
 volumetric shadow draws, and the structural per-frame draw command buffer. Do
 not revisit material, light, text-geometry, first-vertex VAO setup, transform
 comparison/allocation, draw-time harness bookkeeping, draw-cache key strings,
 sampler-key strings, adjacent/render-uniform key strings, browser derived-object
-cache misses, vertex-attrib/VAO key strings, the reverted shadow world-batch
-replay, projected-shadow receiver per-polygon clipping, or depth/stencil-only
-texture-probe setup unless a new profile makes it hot and the fix passes a real
-multi-frame skirmish shadow screenshot/state check. Do not revisit viewport
-normalization/key construction or raw sampler-state/mip-completeness checks
-unless a new profile shows them regressed. Broader shadow fidelity remains in
-the queued phased plan.
+cache misses, vertex-attrib/VAO key strings, current-VAO lookup/comparison, the
+reverted shadow world-batch replay, projected-shadow receiver per-polygon
+clipping, or depth/stencil-only texture-probe setup unless a new profile makes
+it hot and the fix passes a real multi-frame skirmish shadow screenshot/state
+check. Do not revisit viewport normalization/key construction or raw
+sampler-state/mip-completeness checks unless a new profile shows them
+regressed. Broader shadow fidelity remains in the queued phased plan.
 
 PLAY latest: `harness/play.html` now targets the optimized `dist-release`
 runtime by default and boots the real ShellMapMD path unless `?shellmap=0`
