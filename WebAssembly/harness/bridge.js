@@ -18215,13 +18215,20 @@ async function rpc(command, payload = {}) {
           // next frame refreshes it from clientState.display.
           harnessState.engineDisplaySize = { width: appliedWidth, height: appliedHeight };
           refreshCanvasState();
-          recordLog("set engine resolution", { requested: { width, height }, applied: { width: appliedWidth, height: appliedHeight } });
+          recordLog("set engine resolution", {
+            requested: { width, height },
+            applied: { width: appliedWidth, height: appliedHeight },
+            reflow: result?.reflow ?? null,
+          });
         }
         return {
           ok: result?.ok === true,
           command: "setEngineResolution",
           requested: { width, height },
           applied: { width: appliedWidth, height: appliedHeight },
+          // "shell" = full menu recreate; "in-place" = non-destructive mid-match
+          // resize (game kept running). Lets the harness verify the branch taken.
+          reflow: result?.reflow ?? null,
           error: result?.error ?? null,
           state: snapshotState(),
         };

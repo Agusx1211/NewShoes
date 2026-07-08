@@ -5519,12 +5519,20 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_summary(i
 //   TheWritableGlobalData->m_x/yResolution = new size
 //   TheHeaderTemplateManager->headerNotifyResolutionChange()  (font/header reflow)
 //   TheMouse->mouseNotifyResolutionChange()                   (cursor scaling)
-//   recreate TheShell + TheInGameUI->recreateControlBar()     (GUI window reflow at new res)
-// so the HUD / command bar / menus reposition for the new resolution instead of
-// being CSS-stretched. Returns a small JSON blob describing the applied size.
+// The GUI reflow then branches on game state so the resize is non-destructive
+// mid-match:
+//   * SHELL / menus (no live match): full OptionsMenu.cpp path -- recreate
+//     TheShell + TheInGameUI->recreateControlBar() + re-push MainMenu.wnd so
+//     every menu WND re-lays-out at the new size (harmless from the menus).
+//   * LIVE MATCH (isInGame && !isInShellGame): light in-place reflow --
+//     recreateControlBar() + resize TheTacticalView, WITHOUT tearing down
+//     TheShell or the running game, so the match keeps running (units stay
+//     selected, camera stays put) and only the render target + HUD change.
+// Returns a small JSON blob describing the applied size and which reflow ran.
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_resolution(int xres, int yres)
 {
 	static std::string result_json;
+	const char *reflow_mode = "none";
 	auto emit = [&](bool ok, int applied_x, int applied_y, const char *error) {
 		std::string json = "{";
 		json += "\"ok\":";
@@ -5533,6 +5541,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_resolution(
 		json += ",\"requestedHeight\":" + std::to_string(yres);
 		json += ",\"width\":" + std::to_string(applied_x);
 		json += ",\"height\":" + std::to_string(applied_y);
+		json += ",\"reflow\":\"" + std::string(reflow_mode) + "\"";
 		json += ",\"error\":";
 		if (error != NULL) {
 			json += "\"" + json_escape(error) + "\"";
@@ -5541,8 +5550,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_resolution(
 		}
 		json += "}";
 		result_json = json;
-		std::printf("cnc-port: set-resolution requested=%dx%d applied=%dx%d ok=%d%s%s\n",
-			xres, yres, applied_x, applied_y, ok ? 1 : 0,
+		std::printf("cnc-port: set-resolution requested=%dx%d applied=%dx%d reflow=%s ok=%d%s%s\n",
+			xres, yres, applied_x, applied_y, reflow_mode, ok ? 1 : 0,
 			error != NULL ? " error=" : "", error != NULL ? error : "");
 		std::fflush(stdout);
 		return result_json.c_str();
@@ -5571,12 +5580,17 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_resolution(
 	const Int bit_depth = TheDisplay->getBitDepth();
 	const Bool windowed = TheDisplay->getWindowed();
 
-	// Never re-create the shell / control bar while a movie is playing or a map
-	// is mid-load: the same guard the options screen relies on implicitly by
-	// only being reachable from a stable menu state.
-	const Bool safe_for_gui_reflow =
-		!TheDisplay->isMoviePlaying() &&
-		(TheGameLogic == NULL || !TheGameLogic->isLoadingMap());
+	// A real match is running (not the shell/menu background and not mid-load):
+	// the resize must be NON-DESTRUCTIVE. The stock OptionsMenu resolution path
+	// (which we replay in the shell branch) recreates TheShell and re-pushes the
+	// main menu -- that is only safe/harmless from the menus, where the options
+	// screen is reachable. During a live game it would tear the match down and
+	// dump the player to the menu, so we take a light in-place reflow instead.
+	const Bool in_live_match =
+		TheGameLogic != NULL &&
+		TheGameLogic->isInGame() &&
+		!TheGameLogic->isInShellGame() &&
+		!TheGameLogic->isLoadingMap();
 
 	Bool changed = FALSE;
 	try {
@@ -5585,6 +5599,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_resolution(
 			TheWritableGlobalData->m_xResolution = xres;
 			TheWritableGlobalData->m_yResolution = yres;
 
+			// Common to both paths: fonts/headers and cursor scale track the new
+			// resolution (same notifies the options screen fires).
 			if (TheHeaderTemplateManager != NULL) {
 				TheHeaderTemplateManager->headerNotifyResolutionChange();
 			}
@@ -5592,11 +5608,31 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_resolution(
 				TheMouse->mouseNotifyResolutionChange();
 			}
 
-			if (safe_for_gui_reflow) {
-				// Re-lay-out all shell menus at the new resolution by recreating
-				// the shell, exactly like OptionsMenu.cpp does after a resolution
-				// change: destroy + re-init TheShell (so every WND re-lays-out at
-				// the new screen size) and re-push the main menu.
+			if (in_live_match) {
+				// LIGHT in-place resize: keep the running game, units, and camera.
+				// Only the render target + HUD layout change.
+				reflow_mode = "in-place";
+				// Rebuild the command bar / control bar at the new resolution
+				// (deletes + recreates the ControlBar.wnd and TheControlBar in
+				// place; does NOT touch TheShell or the game state).
+				if (TheInGameUI != NULL) {
+					TheInGameUI->recreateControlBar();
+				}
+				// Re-size the tactical view to the new screen, mirroring how
+				// InGameUI::init() sizes it (full width, 0.77 height so the 3D
+				// view does not draw under the command bar). This is the
+				// tactical-view / viewport recompute so the world view and
+				// screen<->world mapping match the new resolution.
+				if (TheTacticalView != NULL) {
+					TheTacticalView->setWidth(TheDisplay->getWidth());
+					TheTacticalView->setHeight((Int)(TheDisplay->getHeight() * 0.77f));
+				}
+			} else {
+				// SHELL / menus: full reflow exactly like OptionsMenu.cpp --
+				// destroy + re-init TheShell (so every menu WND re-lays-out at
+				// the new screen size), recreate the control bar, and re-push the
+				// main menu. Harmless here because we are not in a live match.
+				reflow_mode = "shell";
 				if (TheShell != NULL) {
 					delete TheShell;
 					TheShell = NULL;
@@ -5611,11 +5647,6 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_resolution(
 				if (TheShell != NULL) {
 					TheShell->push(AsciiString("Menus/MainMenu.wnd"));
 				}
-			} else if (TheInGameUI != NULL) {
-				// In-game / mid-movie: at minimum re-lay-out the command bar so
-				// the HUD tracks the new resolution without tearing down the
-				// active game's shell.
-				TheInGameUI->recreateControlBar();
 			}
 		}
 	} catch (...) {

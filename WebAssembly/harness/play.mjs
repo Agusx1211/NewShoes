@@ -462,6 +462,9 @@ window.addEventListener("keydown", (event) => {
 let activeRpc = null;
 let displayControlsReady = false;
 let applyingResolution = false;
+// Selection to restore when leaving fullscreen (fullscreen auto-applies a
+// screen-matched native resolution, so we remember what the player had picked).
+let preFullscreenSelectValue = null;
 
 const resolutionSelect = document.querySelector("#resolutionSelect");
 const fullscreenButton = document.querySelector("#fullscreenButton");
@@ -490,6 +493,45 @@ function nativePixelSize() {
     width: Math.max(640, Math.round(cssWidth * dpr)),
     height: Math.max(480, Math.round(cssHeight * dpr)),
   };
+}
+
+function fullscreenPixelSize() {
+  // The real fullscreen display resolution. Prefer the fullscreen element's own
+  // client box (matches what the canvas actually occupies once CSS applies);
+  // fall back to screen.* which is reliable the instant fullscreenchange fires,
+  // before layout settles. Both x devicePixelRatio for the true pixel grid.
+  const dpr = window.devicePixelRatio || 1;
+  const el = fullscreenElement() || fullscreenTarget;
+  const cssWidth = (el && el.clientWidth) || window.screen?.width || window.innerWidth || 800;
+  const cssHeight = (el && el.clientHeight) || window.screen?.height || window.innerHeight || 600;
+  return {
+    width: Math.max(640, Math.round(cssWidth * dpr)),
+    height: Math.max(480, Math.round(cssHeight * dpr)),
+  };
+}
+
+// Apply a specific pixel size directly (used by the fullscreen auto-native path,
+// which must not depend on the hidden selector's current value).
+async function applyResolutionSize(width, height) {
+  if (!activeRpc || applyingResolution) {
+    return;
+  }
+  const w = Math.max(1, Math.round(Number(width) || 0));
+  const h = Math.max(1, Math.round(Number(height) || 0));
+  if (w < 1 || h < 1) {
+    return;
+  }
+  applyingResolution = true;
+  try {
+    const result = await activeRpc("setEngineResolution", { width: w, height: h });
+    if (result?.ok !== true) {
+      console.warn("[play] setEngineResolution (fullscreen) failed", result?.error ?? result);
+    }
+  } catch (error) {
+    console.warn("[play] setEngineResolution (fullscreen) threw", error);
+  } finally {
+    applyingResolution = false;
+  }
 }
 
 function refreshNativeOption() {
@@ -613,10 +655,43 @@ function onFullscreenChange() {
     fullscreenButton.classList.toggle("active", active);
     fullscreenButton.textContent = active ? "exit full" : "fullscreen";
   }
-  // Fullscreen changes the tab's real pixel size; refresh the Native entry and,
-  // if Native is selected, re-apply so the render resolution fills the screen.
+  // Toggle an explicit class alongside the :fullscreen selector so the chrome
+  // (toolbar / borders) is dropped and the canvas fills the screen on black.
+  // Belt-and-suspenders for browsers that scope :fullscreen to the element only.
+  fullscreenTarget.classList.toggle("is-fullscreen", active);
   refreshNativeOption();
-  if (selectedResolution()?.isNative) {
+
+  if (active) {
+    // Entering fullscreen: remember the player's selection, then auto-apply a
+    // native resolution matched to the real fullscreen display size so the
+    // engine renders at full-screen resolution and the game fills the display
+    // at correct aspect (no upscale blur, no letterbox-in-gray).
+    if (preFullscreenSelectValue === null && resolutionSelect) {
+      // Store the native option by its stable prefix, not its live "native:WxH"
+      // value (that string changes as the size updates).
+      preFullscreenSelectValue = selectedResolution()?.isNative
+        ? "native"
+        : resolutionSelect.value;
+    }
+    const size = fullscreenPixelSize();
+    void applyResolutionSize(size.width, size.height);
+  } else {
+    // Exiting fullscreen: restore the previously-selected resolution so the
+    // windowed layout returns to exactly what the player had.
+    const restore = preFullscreenSelectValue;
+    preFullscreenSelectValue = null;
+    // Refresh Native to the windowed size first so its value is current.
+    refreshNativeOption();
+    if (restore !== null && resolutionSelect) {
+      if (restore === "native") {
+        const nativeOption = resolutionSelect.querySelector('option[data-native="1"]');
+        if (nativeOption) {
+          resolutionSelect.value = nativeOption.value;
+        }
+      } else {
+        resolutionSelect.value = restore;
+      }
+    }
     void applySelectedResolution();
   }
 }
@@ -663,6 +738,33 @@ function initDisplayControls() {
         }
       });
     }
+  }
+
+  // In-fullscreen exit affordance (no permanent bar): the button is revealed by
+  // CSS on hover near the top; clicking it exits. Esc still exits too.
+  const fullscreenExit = document.querySelector("#fullscreenExit");
+  if (fullscreenExit) {
+    fullscreenExit.addEventListener("click", () => {
+      void exitFullscreen();
+    });
+    // Reveal the exit control when the pointer nears the top edge while
+    // fullscreen, then auto-hide shortly after, so it is discoverable without
+    // sitting on screen permanently.
+    let revealTimer = null;
+    window.addEventListener("pointermove", (event) => {
+      if (!fullscreenElement()) {
+        return;
+      }
+      if (event.clientY <= 64) {
+        fullscreenTarget.classList.add("reveal-exit");
+        if (revealTimer) {
+          clearTimeout(revealTimer);
+        }
+        revealTimer = setTimeout(() => {
+          fullscreenTarget.classList.remove("reveal-exit");
+        }, 2000);
+      }
+    });
   }
 
   document.addEventListener("fullscreenchange", onFullscreenChange);

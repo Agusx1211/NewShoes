@@ -66,3 +66,114 @@ body {
   line-height: 1.2;
   letter-spacing: 0;
 }
+
+/* ---------------------------------------------------------------------------
+   Fullscreen state. When the .shell is the fullscreen element the normal grid
+   still reserves the .status toolbar row (min-height 64px, #202020) which shows
+   as an ugly gray bar below the game. In fullscreen we drop all page chrome and
+   let the game canvas fill the screen on black, letterboxing on black if the
+   render aspect does not match the display. Windowed layout is untouched.
+
+   Both the standard :fullscreen and -webkit-full-screen selectors are covered,
+   plus a .is-fullscreen class the page toggles as a belt-and-suspenders path
+   for engines/browsers that scope :fullscreen oddly. Selectors are kept in
+   separate rules because one unknown selector invalidates a whole grouped
+   selector list in CSS.
+   --------------------------------------------------------------------------- */
+.shell:fullscreen,
+.shell.is-fullscreen {
+  width: 100vw;
+  height: 100vh;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  grid-template-rows: none;
+}
+.shell:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Hide the toolbar (resolution selector + fullscreen button live here) and any
+   header/footer chrome while fullscreen so nothing shows below the canvas. */
+.shell:fullscreen .status,
+.shell.is-fullscreen .status {
+  display: none;
+}
+.shell:-webkit-full-screen .status {
+  display: none;
+}
+
+/* Canvas fills the fullscreen viewport, centered, letterboxed on BLACK. Drop
+   the windowed 16:9 aspect lock and the (100vh - 64px) toolbar allowance; the
+   page auto-applies a native resolution matched to the screen so the drawing
+   buffer aspect matches and the canvas fills the display. */
+.shell:fullscreen #viewport,
+.shell.is-fullscreen #viewport {
+  width: 100vw;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  aspect-ratio: auto;
+  object-fit: contain;
+  background: #000;
+  align-self: center;
+}
+.shell:-webkit-full-screen #viewport {
+  width: 100vw;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  aspect-ratio: auto;
+  object-fit: contain;
+  background: #000;
+  align-self: center;
+}
+
+/* Fullscreen exit affordance: not a permanent bar. Hidden by default; shown
+   only in fullscreen, and even then it fades in on hover near the top edge so
+   it does not clutter the game. Esc also exits (standard Fullscreen API). */
+#fullscreenExit {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 40;
+  font: 12px/1.2 ui-monospace, monospace;
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+  color: #fff;
+  background: rgba(28, 61, 92, 0.85);
+  border: 1px solid #4d90c4;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+.shell:fullscreen #fullscreenExit,
+.shell.is-fullscreen #fullscreenExit,
+.shell:-webkit-full-screen #fullscreenExit {
+  pointer-events: auto;
+}
+/* Reveal on hover over the top strip of the screen (and while hovering the
+   button itself) so there is always a visible exit without a static bar. */
+.shell:fullscreen:hover #fullscreenExit,
+.shell.is-fullscreen.reveal-exit #fullscreenExit,
+.shell:-webkit-full-screen:hover #fullscreenExit,
+#fullscreenExit:hover {
+  opacity: 1;
+}
