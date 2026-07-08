@@ -19,9 +19,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       tree buffer, so the port's boot ordering left trees baked with the still-bright
       default lighting, never re-lit → fully illuminated regardless of map TOD. Fix:
       add `W3DTreeBuffer::updateLighting()` (`{m_anythingChanged=true;}`) and call it
-      from `staticLightingChanged()`, mirroring the terrain/road re-light. (The
-      SEPARATE extra fog-of-war shroud darkening for trees is deferred — a distinct
-      shim texture-lifecycle issue, not the user's reported bug; see TODO.md.)
+      from `staticLightingChanged()`, mirroring the terrain/road re-light.
+
+- [x] **Trees now darken in the fog-of-war** (commit 90ebb407, user-confirmed on
+      real Metal GPU). The browser port has no vertex shader, so drawTrees uses the
+      fixed-function fallback; Draw_Triangles internally re-applies the
+      single-texture tree shader and disables stage 1, dropping the shroud that
+      setShroudTex bound. Fix: in the fallback, draw with a DETAILCOLOR_SCALE
+      post-detail shader so the shader itself sets stage 1 = MODULATE(shroud,current)
+      (survives the redraw, like terrain), and bind the shroud DST texture as
+      Textures[1]; the D3D8->WebGL2 bridge supplies the stage-1 shroud UV from the
+      c32/c33 constants (c6f5ea56). NOTE: the bridge `canSampleTex1/tex1id` diag for
+      this draw reads false/0 but is MISLEADING — the fix works; don't strip it.
 
 - [x] **Native-resolution option + fullscreen button (render at tab res).** Added
       a resolution selector and a Fullscreen button to the playable page

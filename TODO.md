@@ -573,26 +573,19 @@ symptom is temporal — NOT a single still.
       A1R5G5B5 terrain atlas cell offset / UV-index / 16-bit mip packing in
       `TerrainTextureClass::update()` (`TerrainTex.cpp:96`). Verify: on the Mac,
       `unsupportedUpdates` should already read 0 during normal terrain render.
-- [ ] **(DEFERRED, low priority — NOT the user's reported bug) Trees don't get the
-      EXTRA fog-of-war shroud darkening — tree stage-1 shroud MODULATE is a no-op**
-      — NOTE 2026-07-08: the user's actual "trees too bright / fully illuminated"
-      complaint was FIXED by the scene-lighting re-bake (commit 844629f5:
-      `W3DTreeBuffer::updateLighting()` from `staticLightingChanged()`); trees now
-      darken with the map lighting. This remaining item is only the ADDITIONAL
-      per-shroud darkening in fog and is not worth chasing unless the user asks.
-      **NEW ROOT CAUSE (2026-07-08, ~20 verify cycles):** it is a SHIM
-      texture-lifecycle bug, not engine state. Real-GPU bridge instrumentation:
-      in-game tree draw has `canSampleTex1=false, tex1id=0, stage1colorOp=DISABLE`
-      even though c6f5ea56's c33 UV constants arrive. The shroud DST texture
-      (`m_pDstTexture`, 64x64 A4R4G4B4 POOL_DEFAULT) that trees BIND resolves to
-      shim texture id 0, while `W3DShroud::render`→`CopyRects` uploads the fog data
-      to a DIFFERENT/ephemeral WebGL texture (dstOwnerId 92,93,94... incrementing
-      per frame). Fix must reconnect them in `wasm_d3d8_shim.cpp` (texture vs
-      surface owner-id disconnect / per-frame re-creation of the shroud DST
-      texture). ALL 4 engine stage-binding attempts fail with tex1id=0 (setShroudTex
-      re-assert, direct dev->SetTexture, DETAILCOLOR_SCALE post-detail shader,
-      +ShaderClass::Invalidate) — don't retry engine-side. See memory
-      [[trees-bright-fog-shroud-root-cause]].
+- [x] **Trees don't darken in fog-of-war — FIXED 2026-07-08 (commit 90ebb407),
+      user-confirmed on real Metal GPU.** The user's "trees too bright / fully
+      illuminated" bug had TWO parts, both now fixed: (1) scene lighting — trees
+      baked once with stale bright lighting; fixed by `W3DTreeBuffer::updateLighting()`
+      from `staticLightingChanged()` (844629f5). (2) fog-of-war shroud darkening —
+      in the browser fixed-function fallback (no vertex shader), Draw_Triangles
+      re-applies the single-texture tree shader and disables stage 1, dropping the
+      shroud; fixed by drawing with a DETAILCOLOR_SCALE post-detail shader so the
+      SHADER sets stage 1 = MODULATE(shroud, current) (survives the redraw) +
+      binding the shroud as Textures[1] (90ebb407). CAUTION for future work: the
+      `canSampleTex1=false / tex1id=0` bridge diagnostic for this draw is MISLEADING
+      — the fix works despite it; do not treat that flag as proof the shroud isn't
+      applied, and do not strip the DETAILCOLOR branch (it re-breaks the trees).
       --- older notes (superseded, kept for history) ---
       owner Mac screenshots confirm the whole scene is
       shroud/fog-darkened (terrain + roads + BUILDINGS all correctly darkened) but
