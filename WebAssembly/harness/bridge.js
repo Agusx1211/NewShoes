@@ -13106,6 +13106,11 @@ async function loadWasmModule() {
         "string",
         ["number"],
       ),
+      realEngineSetResolution: module.cwrap(
+        "cnc_port_real_engine_set_resolution",
+        "string",
+        ["number", "number"],
+      ),
       realEngineSetFrameProfile: module.cwrap(
         "cnc_port_real_engine_set_frame_profile",
         null,
@@ -18146,6 +18151,73 @@ async function rpc(command, payload = {}) {
           lastUpdateTarget,
           lastGameLogicStep,
           frame,
+          state: snapshotState(),
+        };
+      }
+    case "setEngineResolution":
+      {
+        // Drive the SAME real display-resize path the in-game options screen
+        // uses: cnc_port_real_engine_set_resolution ->
+        //   TheDisplay->setDisplayMode -> WW3D::Set_Device_Resolution (backbuffer)
+        //   + Render2DClass::Set_Screen_Resolution (2D projection)
+        //   + Display::setDisplayMode (client width/height globals)
+        //   + Header/Mouse resolution-change notifies + shell/control-bar reflow.
+        // The engine renders at this logical resolution; the WebGL2 drawing
+        // buffer is sized here so the two match 1:1 (native = sharp, no stretch).
+        const moduleResult = await getWasmModuleForArchives("setEngineResolution");
+        if (moduleResult.error) {
+          return { ok: false, command: "setEngineResolution", error: moduleResult.error };
+        }
+        const setResolution = moduleResult.wasmModule.realEngineSetResolution;
+        if (typeof setResolution !== "function") {
+          return { ok: false, command: "setEngineResolution", error: "resolution hook not exported by this build" };
+        }
+        const width = Math.max(1, Math.round(Number(payload.width ?? 0)));
+        const height = Math.max(1, Math.round(Number(payload.height ?? 0)));
+        if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) {
+          return { ok: false, command: "setEngineResolution", error: "invalid width/height" };
+        }
+        flushD3D8PendingDrawBatch("setEngineResolution");
+        let result = null;
+        try {
+          result = JSON.parse(setResolution(width, height));
+        } catch (error) {
+          return {
+            ok: false,
+            command: "setEngineResolution",
+            error: error?.message ?? String(error),
+          };
+        }
+        const appliedWidth = Number.isFinite(result?.width) && result.width > 0 ? result.width : width;
+        const appliedHeight = Number.isFinite(result?.height) && result.height > 0 ? result.height : height;
+        if (result?.ok === true) {
+          // Size the WebGL2 canvas backing store to the applied engine
+          // resolution so the drawing buffer matches the render target 1:1.
+          // (syncCanvasSize normally tracks CSS x DPR every draw; setting the
+          // backing store explicitly here makes the selected resolution the
+          // authoritative render size until the next CSS/DPR-driven sync.)
+          if (canvas.width !== appliedWidth || canvas.height !== appliedHeight) {
+            canvas.width = appliedWidth;
+            canvas.height = appliedHeight;
+          }
+          invalidateD3D8NormalizedViewportCache();
+          invalidateD3D8AppliedViewportCache();
+          if (gl) {
+            restoreFullCanvasViewport();
+          }
+          // Update the cached engine display size immediately so pointer->engine
+          // coordinate mapping (canvasInputPointFromEvent) is correct before the
+          // next frame refreshes it from clientState.display.
+          harnessState.engineDisplaySize = { width: appliedWidth, height: appliedHeight };
+          refreshCanvasState();
+          recordLog("set engine resolution", { requested: { width, height }, applied: { width: appliedWidth, height: appliedHeight } });
+        }
+        return {
+          ok: result?.ok === true,
+          command: "setEngineResolution",
+          requested: { width, height },
+          applied: { width: appliedWidth, height: appliedHeight },
+          error: result?.error ?? null,
           state: snapshotState(),
         };
       }
