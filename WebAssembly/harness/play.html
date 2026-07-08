@@ -2,282 +2,138 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>C&C Zero Hour — play (wasm)</title>
     <link rel="stylesheet" href="./harness.css">
-    <style>
-      #overlay {
-        position: fixed;
-        inset: 0;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 1rem;
-        background: rgba(0, 0, 0, 0.88);
-        color: #ddd;
-        font: 15px/1.5 ui-monospace, monospace;
-        text-align: center;
-        padding: 1rem;
-        z-index: 10;
-      }
-      #overlay.hidden { display: none; }
-      #start {
-        font: inherit;
-        padding: 0.8rem 2.2rem;
-        cursor: pointer;
-        background: #1c3d5c;
-        color: #fff;
-        border: 1px solid #4d90c4;
-        border-radius: 4px;
-      }
-      #progress { max-width: 42rem; color: #9fb6c9; }
-      #warning { max-width: 42rem; color: #b08a4f; font-size: 13px; }
-      /* Without this, mobile browsers consume touches for scroll/zoom or
-         native selection/callout before the canvas input path can claim them. */
-      .shell,
-      #viewport {
-        -webkit-user-select: none;
-        user-select: none;
-        -webkit-touch-callout: none;
-      }
-      #viewport { touch-action: none; }
-      #buildAge.fresh { color: #7ee787; }
-      .displayControls {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.3rem;
-      }
-      .displayControls select,
-      #fullscreenButton {
-        font: inherit;
-        font-size: 12px;
-        padding: 0.15rem 0.5rem;
-        cursor: pointer;
-        background: #222;
-        color: #bbb;
-        border: 1px solid #444;
-        border-radius: 3px;
-        max-width: 12rem;
-      }
-      #fullscreenButton.active {
-        background: #1c3d5c;
-        border-color: #4d90c4;
-        color: #fff;
-      }
-      #fullscreenButton.hidden { display: none; }
-      #consoleToggle {
-        font: inherit;
-        font-size: 12px;
-        padding: 0.15rem 0.6rem;
-        cursor: pointer;
-        background: #222;
-        color: #bbb;
-        border: 1px solid #444;
-        border-radius: 3px;
-      }
-      #consolePanel {
-        position: fixed;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        height: 40vh;
-        background: rgba(10, 12, 14, 0.95);
-        color: #9fd49f;
-        font: 11px/1.45 ui-monospace, monospace;
-        overflow-y: auto;
-        padding: 0.5rem 0.75rem 0.75rem;
-        border-top: 1px solid #333;
-        white-space: pre-wrap;
-        word-break: break-all;
-        z-index: 20;
-      }
-      #consolePanel.hidden { display: none; }
-      .debugControls {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 0.35rem;
-        min-width: 10rem;
-      }
-      .debugControls button {
-        font: inherit;
-        font-size: 12px;
-        padding: 0.25rem 0.45rem;
-        cursor: pointer;
-        background: #20262c;
-        color: #d6e2ea;
-        border: 1px solid #43515e;
-        border-radius: 3px;
-      }
-      .debugControls button.active {
-        background: #633322;
-        border-color: #b66a4a;
-      }
-      .debugOptions {
-        grid-column: 1 / -1;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.45rem 0.75rem;
-        color: #aebdcc;
-        font: 11px/1.35 ui-monospace, monospace;
-      }
-      .debugOptions input {
-        vertical-align: middle;
-      }
-      #dumpStatus {
-        grid-column: 1 / -1;
-        min-height: 1rem;
-        color: #9fb6c9;
-        font-size: 11px;
-      }
-      #issueModal {
-        position: fixed;
-        inset: 0;
-        z-index: 30;
-        display: grid;
-        place-items: center;
-        background: rgba(0, 0, 0, 0.72);
-        padding: 1rem;
-      }
-      #issueModal.hidden { display: none; }
-      #issueDialog {
-        width: min(96vw, 980px);
-        max-height: 94vh;
-        display: grid;
-        grid-template-rows: auto minmax(0, 1fr) auto;
-        gap: 0.6rem;
-        background: #111820;
-        color: #dbe7ef;
-        border: 1px solid #40515f;
-        border-radius: 6px;
-        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
-        padding: 0.8rem;
-      }
-      .issueTop {
-        display: grid;
-        grid-template-columns: 1fr auto auto;
-        gap: 0.6rem;
-        align-items: center;
-      }
-      .issueTop input[type="text"] {
-        min-width: 0;
-        background: #0c1117;
-        border: 1px solid #3c4a55;
-        color: #eef6fb;
-        border-radius: 3px;
-        padding: 0.45rem 0.55rem;
-        font: 13px/1.4 ui-monospace, monospace;
-      }
-      .issuePaint {
-        display: flex;
-        align-items: center;
-        gap: 0.45rem;
-        color: #b9c7d1;
-        font: 12px/1.3 ui-monospace, monospace;
-      }
-      .issueCanvasWrap {
-        position: relative;
-        min-height: 0;
-        overflow: auto;
-        background: #05070a;
-        border: 1px solid #2a343d;
-      }
-      #issueScreenshotCanvas,
-      #issueAnnotationCanvas {
-        display: block;
-        width: 100%;
-        height: auto;
-      }
-      #issueAnnotationCanvas {
-        position: absolute;
-        inset: 0;
-        cursor: crosshair;
-      }
-      .issueBottom {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 0.6rem;
-        align-items: end;
-      }
-      #issueComment {
-        min-height: 5rem;
-        resize: vertical;
-        background: #0c1117;
-        color: #eef6fb;
-        border: 1px solid #3c4a55;
-        border-radius: 3px;
-        padding: 0.55rem;
-        font: 13px/1.45 ui-monospace, monospace;
-      }
-      .issueActions {
-        display: flex;
-        gap: 0.45rem;
-      }
-      .issueActions button,
-      .issueTop button {
-        font: 12px/1.3 ui-monospace, monospace;
-        padding: 0.45rem 0.65rem;
-        cursor: pointer;
-        background: #20262c;
-        color: #e7f1f7;
-        border: 1px solid #4a5864;
-        border-radius: 3px;
-      }
-      @media (max-width: 760px) {
-        .issueTop,
-        .issueBottom {
-          grid-template-columns: 1fr;
-        }
-        .issueActions {
-          justify-content: end;
-        }
-      }
-    </style>
   </head>
   <body>
     <main class="shell">
-      <button id="fullscreenExit" type="button" title="Exit fullscreen (Esc)">exit fullscreen</button>
+      <button id="fullscreenExit" type="button" title="Exit fullscreen (Esc)">Exit fullscreen</button>
       <canvas id="viewport" width="1280" height="720" aria-label="Game viewport" tabindex="0"></canvas>
-      <aside class="status" aria-live="polite">
-        <div>
-          <span class="label">State</span>
-          <strong id="state">idle</strong>
-        </div>
-        <div>
-          <span class="label">Frames</span>
-          <strong id="frames">0</strong>
-        </div>
-        <div>
-          <span class="label">FPS</span>
-          <strong id="fps">-</strong>
-        </div>
-        <div>
-          <span class="label">Build</span>
-          <strong id="buildAge" title="">-</strong>
-        </div>
-        <div>
-          <button id="consoleToggle" type="button" title="Engine/harness log (also: ` key)">console</button>
-        </div>
-        <div class="displayControls">
-          <span class="label">Display</span>
-          <select id="resolutionSelect" title="Engine render resolution (drives the real display-mode change)"></select>
-          <button id="fullscreenButton" type="button" title="Toggle fullscreen">fullscreen</button>
-        </div>
-        <div class="debugControls" aria-label="Issue dump controls">
-          <button id="recordToggle" type="button" title="Record a rolling debug dump">record</button>
-          <button id="issueButton" type="button" title="Capture screenshot, annotation, comment, and deep state">report issue</button>
-          <button id="saveDump" type="button" title="Download the current .cncdump.json">save dump</button>
-          <button id="uploadDump" type="button" title="Upload to the local harness server when available">upload</button>
-          <div class="debugOptions">
-            <label><input id="deepCapture" type="checkbox" checked> deep</label>
-            <label><input id="videoCapture" type="checkbox" checked> video</label>
-          </div>
-          <strong id="dumpStatus">idle</strong>
-        </div>
+
+      <!-- In-game chrome: a single unobtrusive gear that opens the settings
+           overlay. No permanent gray bar. Hidden until the game is running. -->
+      <button id="gearButton" type="button" class="hidden" title="Settings, display &amp; tools" aria-label="Settings">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3.2"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+
+      <!-- Live status nodes bridge.js writes into. Kept present (bridge.js sets
+           their textContent directly, unguarded) but folded into a subtle,
+           unobtrusive in-game HUD chip instead of a gray toolbar. -->
+      <aside id="hud" class="hud hidden" aria-live="polite">
+        <span class="hudItem"><span id="state">idle</span></span>
+        <span class="hudDot" aria-hidden="true">·</span>
+        <span class="hudItem"><span id="fps">-</span> fps</span>
+        <span class="hudDot" aria-hidden="true">·</span>
+        <span class="hudItem"><span id="frames">0</span> frames</span>
       </aside>
     </main>
+
+    <!-- ===================================================================
+         LAUNCHER: shown before the game boots. A centered panel over a dark
+         background with the title, a prominent PLAY button, and pre-game
+         settings (resolution + fullscreen) that persist and apply on boot.
+         =================================================================== -->
+    <div id="overlay">
+      <div class="launcherBg" aria-hidden="true"></div>
+      <div class="launcherPanel" role="dialog" aria-label="Launch Command &amp; Conquer Generals Zero Hour">
+        <header class="launcherHead">
+          <p class="launcherKicker">Command &amp; Conquer</p>
+          <h1 class="launcherTitle">Generals<span class="titleZh">Zero Hour</span></h1>
+          <p class="launcherSub">The real engine, compiled to WebAssembly, running in your browser.</p>
+        </header>
+
+        <div class="launcherBody">
+          <div class="launcherPrimary">
+            <button id="start" type="button" class="playButton">
+              <span class="playGlyph" aria-hidden="true">▶</span>
+              <span class="playLabel">Play</span>
+            </button>
+            <p id="progress" class="launcherProgress" aria-live="polite"></p>
+            <p id="warning" class="launcherWarning">
+              Starting downloads ~1.3&nbsp;GB of game archives into browser memory.
+              A desktop browser is recommended; most phones will run out of memory.
+            </p>
+          </div>
+
+          <section class="launcherSettings" aria-label="Display settings">
+            <h2 class="settingsHeading">Display</h2>
+            <label class="settingRow" for="resolutionSelect">
+              <span class="settingLabel">Resolution</span>
+              <select id="resolutionSelect" title="Engine render resolution (applied when the game boots)"></select>
+            </label>
+            <label class="settingRow settingRowToggle" for="fullscreenToggle">
+              <span class="settingLabel">Start in fullscreen</span>
+              <input id="fullscreenToggle" type="checkbox">
+            </label>
+            <p class="settingHint">
+              Settings are saved and applied when you press Play. You can change
+              them again in-game from the <span class="inlineGear" aria-hidden="true">⚙</span> gear.
+            </p>
+          </section>
+        </div>
+
+        <footer class="launcherFoot">
+          <span id="buildAge" class="buildAge" title="">build —</span>
+        </footer>
+      </div>
+    </div>
+
+    <!-- ===================================================================
+         SETTINGS OVERLAY: opened by the in-game gear. Holds the live display
+         controls (resolution + fullscreen), the console toggle, and the
+         collapsible debug / issue-recorder tools.
+         =================================================================== -->
+    <div id="settingsOverlay" class="hidden" aria-hidden="true">
+      <div class="settingsBackdrop" data-close-settings></div>
+      <div class="settingsSheet" role="dialog" aria-modal="true" aria-label="Settings">
+        <header class="settingsSheetHead">
+          <h2>Settings</h2>
+          <button id="settingsClose" type="button" class="iconClose" title="Close (Esc)" aria-label="Close">✕</button>
+        </header>
+
+        <section class="settingsSection">
+          <h3>Display</h3>
+          <label class="settingRow" for="resolutionSelectLive">
+            <span class="settingLabel">Resolution</span>
+            <select id="resolutionSelectLive" title="Engine render resolution (drives the real display-mode change)"></select>
+          </label>
+          <div class="settingRow settingRowActions">
+            <span class="settingLabel">Fullscreen</span>
+            <button id="fullscreenButton" type="button" class="pillButton" title="Toggle fullscreen">Fullscreen</button>
+          </div>
+        </section>
+
+        <section class="settingsSection">
+          <h3>Diagnostics</h3>
+          <div class="settingRow settingRowActions">
+            <span class="settingLabel">Engine log</span>
+            <button id="consoleToggle" type="button" class="pillButton" title="Engine/harness log (also: ` key)">Console</button>
+          </div>
+        </section>
+
+        <details class="settingsSection debugSection">
+          <summary>Debug &amp; issue tools</summary>
+          <div class="debugControls" aria-label="Issue dump controls">
+            <button id="recordToggle" type="button" title="Record a rolling debug dump">Record</button>
+            <button id="issueButton" type="button" title="Capture screenshot, annotation, comment, and deep state">Report issue</button>
+            <button id="saveDump" type="button" title="Download the current .cncdump.json">Save dump</button>
+            <button id="uploadDump" type="button" title="Upload to the local harness server when available">Upload</button>
+            <div class="debugOptions">
+              <label><input id="deepCapture" type="checkbox" checked> deep</label>
+              <label><input id="videoCapture" type="checkbox" checked> video</label>
+            </div>
+            <strong id="dumpStatus">idle</strong>
+          </div>
+        </details>
+      </div>
+    </div>
+
     <div id="consolePanel" class="hidden" aria-label="Engine log"></div>
+
     <div id="issueModal" class="hidden" aria-label="Report issue dialog">
       <div id="issueDialog" role="dialog" aria-modal="true">
         <div class="issueTop">
@@ -299,15 +155,7 @@
         </div>
       </div>
     </div>
-    <div id="overlay">
-      <h1>C&amp;C Generals: Zero Hour — real engine, in your browser</h1>
-      <div id="warning">
-        Starting downloads ~1.3 GB of game archives into browser memory.
-        A desktop browser is recommended; most phones will run out of memory.
-      </div>
-      <button id="start">Start game</button>
-      <div id="progress"></div>
-    </div>
+
     <script type="module" src="./bridge.js"></script>
     <script type="module" src="./play.mjs"></script>
   </body>
