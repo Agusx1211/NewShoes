@@ -550,16 +550,33 @@ symptom is temporal — NOT a single still.
       changes, and diff behavior with the bind cache disabled. Also consider a
       terrain tile-texture atlas/UV/index bug independent of the cache. Verify no
       wrong tiles appear across a panned multi-frame terrain view.
+- [ ] **All terrain-adjacent systems render nothing (trees, props, bibs,
+      bridges, rally/waypoint line)** — 2026-07-08: commit `2df600c5`
+      "Re-enable terrain adjacent systems" made the `BaseHeightMapRenderObjClass`
+      constructor `NEW` the sub-buffers (`m_treeBuffer`, `m_propBuffer`,
+      `m_bibBuffer`, `m_bridgeBuffer`, `m_waypointBuffer`) even under the
+      `CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS` build define, but on the
+      real Mac GPU build **none of these draw** — no trees/props/bibs/bridges and
+      no white rally/waypoint line. (Deploy verified byte-identical on the Mac, so
+      this is a real defect, not a stale build.) The macro is referenced ONLY in
+      `BaseHeightMap.cpp` (constructor) + defined at `WebAssembly/CMakeLists.txt`.
+      The draw calls themselves are NOT gated — `HeightMap.cpp::Render()` guards
+      each only by `if (m_xxxBuffer)` (props ~2211, bridges ~2234/2265, waypoints
+      ~2272, bibs ~2278; trees via `DoTrees`->`renderTrees` BaseHeightMap.cpp:152/
+      3125), each wrapped in `CNC_PORT_NOTE_TERRAIN_STEP(...)` markers usable as a
+      runtime trace. Two suspects to discriminate WITH the trace (rally line
+      failing too — and it is selection-driven, not map-load-populated — is the
+      clue): (a) the real `HeightMapRenderObjClass::Render()` is not the terrain
+      object actually running (a `Probe*` object from
+      `WebAssembly/src/wasm_ww3d_terrain_probe.cpp` may shadow it, or FlatHeightMap
+      is active) so the whole block never runs → markers absent; (b) the draws run
+      but buffers are never POPULATED (tree/prop/bib add-path at map-load still
+      stubbed) → markers present but zero geometry. `W3dWaypointBuffer.cpp` already
+      has `cnc-port: WP`/`cnc-port: RALLY` printfs. Fix must PORT the missing path,
+      not stub; prove with a before/after screenshot showing recovered geometry.
+      NOTE: an in-progress Claude session on `main` was also chasing this — check
+      for its follow-up commits before duplicating.
 
-- [ ] **Rally-point line does not render** — when a production building's rally
-      point (the "go to here after created" point) is set, the white rally line
-      from the building to the rally point does not draw. The rally point itself /
-      unit routing may work, but the visual line is missing. Trace the rally-line
-      draw path (W3D in-world line/decal rendering for `RallyPoint` / the
-      drawable's rally feedback) and confirm it submits through the browser D3D8
-      layer; likely an unrendered line-primitive / XYZRHW or in-world line draw,
-      similar in kind to other missing overlay primitives. Verify with a
-      multi-frame screenshot showing the line after setting a rally point.
 - [ ] **Ground toxin/radiation fields do not render** — toxins on the ground
       (anthrax, radiation, and similar persistent ground effects) are not drawn.
       The field is likely still active in simulation (damage over area) but the
@@ -2071,7 +2088,20 @@ residue and the next frontier.
       `CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS` guard and
       `wasm_ww3d_terrain_probe_stubs.cpp` weak adjacent-system symbols with
       the real tree, prop, bib, bridge, waypoint, shroud, water, and road
-      runtime systems as those subsystems become browser-ready. The original
+      runtime systems as those subsystems become browser-ready.
+      2026-07-08: the **tree, prop, bib, bridge, and waypoint** buffers are now
+      instantiated unconditionally in `BaseHeightMapRenderObjClass` ctor
+      (source, not macro — sidesteps the two-TU ODR ambiguity where the
+      macro-guarded probe TU wins the link and left them NULL). Live skirmish
+      boot (China/GLA/USA random maps) renders real trees, building bibs, and
+      the rally/waypoint feedback lines with no crash — verified via
+      `skirmish_start_smoke.mjs` (`SKIRMISH_START_RALLY_PROBE=1` drives select
+      building + right-click rally + screenshot). This was the root cause of the
+      "rally-point line does not render" bug (drawWaypoints never ran because
+      `m_waypointBuffer==NULL`). Remaining: the shroud enable-gate, the road
+      `DO_ROADS` path, water, and the weak `wasm_ww3d_terrain_probe_stubs.cpp`
+      symbols still use the probe guard; a full macro/stub removal previously
+      timed out + crashed Chromium, so retire them per-subsystem. The original
       `W3DBibBuffer` constructor/add/remove/clear/free lifecycle is now
       browser-harness verified through browser-backed D3D8 buffers/textures,
       and the original `W3DPropBuffer` add/update/doFullUpdate/cull/remove/clear

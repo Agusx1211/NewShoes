@@ -8,6 +8,33 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Terrain adjacent systems re-enabled (2026-07-08 session)
+
+- [x] **Rally-point line does not render** — FIXED. Root cause: the probe-era
+      `CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS` guard left
+      `m_waypointBuffer == NULL` in `BaseHeightMapRenderObjClass` ctor, so
+      `HeightMapRenderObjClass::Render`'s `if(m_waypointBuffer)` skipped
+      `W3DWaypointBuffer::drawWaypoints()` entirely — the rally line (production
+      structure -> rally point) and unit waypoint-plot lines never drew. Two TUs
+      compile `BaseHeightMap.cpp` (real `zh_gameengine_real_compile_frontier`
+      without the macro, probe `zh_w3d_terrain_probe_runtime` with it) and the
+      probe TU wins the ODR link, so the buffer was NULL despite the real TU
+      instantiating it. Diagnosed with a call-site printf (`m_waypointBuffer=0`)
+      captured via bridge.js `Module.print`, driven by the new
+      `skirmish_start_smoke.mjs` `SKIRMISH_START_RALLY_PROBE=1` path (select
+      building -> right-click rally -> before/after screenshots). Fix: the tree,
+      prop, bib, bridge, and waypoint buffers are now instantiated
+      unconditionally in the ctor (source, not macro), so whichever TU wins ODR
+      owns the real systems. Verified on live skirmish (random China/GLA/USA
+      maps): the blue rally line runs from the building exit to the rally flag
+      with node markers, and — as bonus wins from the same change — building
+      **bibs** (concrete foundations) and **trees** now render, with no boot/
+      render crash (`renderedObjectCount>0`, harness assertions green).
+      Screenshots `WebAssembly/artifacts/screenshots/rally-fixed.png` (GLA rally
+      line) and `full-reenable.png` (China bibs + trees + rally line).
+
+---
+
 ## Performance — browser D3D8 draw bridge (2026-07-08 session)
 
 - [x] Reuse scratch matrices for D3D8 draw-payload world/view/projection

@@ -744,6 +744,78 @@ function summarizeEnemyAiActivity(activeGameplay, postActive) {
   };
 }
 
+// Rally-point render probe. Selects a local production structure, issues a
+// right-click on the ground to set its rally point, and reports (a) whether the
+// engine issued MSG_SET_RALLY_POINT (logic-level, render-independent) and (b)
+// before/after screenshots so the blue rally line can be visually confirmed.
+async function driveRallyPointProbe(page) {
+  const WM_RBUTTONDOWN = 0x0204;
+  const WM_RBUTTONUP = 0x0205;
+  const info = { steps: [] };
+  const rallyBeforePath = resolve(screenshotsRoot, "rally-before.png");
+  const rallyAfterPath = resolve(screenshotsRoot, "rally-after.png");
+  try {
+    await rpc(page, "revealLocalMap", { permanent: true });
+    await runFrames(page, 6, "rally reveal settle");
+
+    const drawablesResult = await rpc(page, "queryDrawables");
+    const drawables = drawablesResult?.result?.drawables ?? [];
+    info.localDrawableCount = drawables.length;
+    const candidates0 = drawables.filter((d) =>
+      d?.structure === true && d?.localOwned === true && d?.hidden !== true &&
+      d?.screenPos != null && d?.worldPos != null);
+    info.candidateCount = candidates0.length;
+    const building = candidates0[0] ?? null;
+    if (!building) {
+      info.ok = false;
+      info.reason = "no local structure found for rally probe";
+      return info;
+    }
+    info.building = { name: building.name, screenPos: building.screenPos, worldPos: building.worldPos };
+    // postMouse and queryDrawables screenPos share the engine display space
+    // (800x600), so clicking the building's screenPos selects it directly.
+    const origin = { x: Math.round(building.screenPos.x), y: Math.round(building.screenPos.y) };
+    const bp = { x: origin.x, y: origin.y };
+    info.selectClick = bp;
+
+    // Select the building.
+    await postMouse(page, WM_MOUSEMOVE, bp);
+    await postMouse(page, WM_LBUTTONDOWN, bp);
+    await postMouse(page, WM_LBUTTONUP, bp);
+    await runFrames(page, 4, "rally select settle");
+    await page.locator("#viewport").screenshot({ path: rallyBeforePath });
+
+    // Right-click a ground point lower-left of the building to set the rally
+    // point. A correct rally line would run diagonally down-left — clearly
+    // distinct from the suspected horizontal render artifact above the dome.
+    const rp = {
+      x: Math.max(20, origin.x - 100),
+      y: Math.min(420, origin.y + 150),
+    };
+    info.rallyTarget = rp;
+    await postMouse(page, WM_MOUSEMOVE, rp);
+    await postMouse(page, WM_RBUTTONDOWN, rp);
+    await postMouse(page, WM_RBUTTONUP, rp);
+    await runFrames(page, 8, "rally set settle");
+
+    // Re-select and hold selection so drawWaypoints() renders the rally line
+    // (the line only draws while the production structure is selected). The
+    // before/after screenshots capture the blue rally line running from the
+    // building exit to the rally flag (visual verification).
+    await postMouse(page, WM_MOUSEMOVE, bp);
+    await postMouse(page, WM_LBUTTONDOWN, bp);
+    await postMouse(page, WM_LBUTTONUP, bp);
+    await runFrames(page, 6, "rally reselect settle");
+    await page.locator("#viewport").screenshot({ path: rallyAfterPath });
+    info.ok = true;
+    info.screenshots = { before: rallyBeforePath, after: rallyAfterPath };
+  } catch (error) {
+    info.ok = false;
+    info.error = error?.message ?? String(error);
+  }
+  return info;
+}
+
 async function main() {
   await mkdir(dirname(screenshotPath), { recursive: true });
   await mkdir(dirname(outputPath), { recursive: true });
@@ -768,8 +840,9 @@ async function main() {
       console.error(`[skirmish-start] pageerror ${error.stack ?? error.message}`);
     });
     page.on("console", (msg) => {
+      const text = msg.text();
       if (msg.type() === "error") {
-        console.error(`[skirmish-start page] ${msg.text()}`);
+        console.error(`[skirmish-start page] ${text}`);
       }
     });
 
@@ -992,6 +1065,11 @@ async function main() {
       console.error("[skirmish-start] verify ESC quit menu Resume button");
       escMenuResume = await driveEscMenuResume(page);
     }
+    let rallyProbe = null;
+    if (process.env.SKIRMISH_START_RALLY_PROBE === "1") {
+      rallyProbe = await driveRallyPointProbe(page);
+      console.error("[skirmish-start] rallyProbe:", JSON.stringify(rallyProbe));
+    }
     await page.locator("#viewport").screenshot({ path: screenshotPath });
     const renderProbe = await sampleViewportGrid(page);
     expect(renderProbe.ok === true,
@@ -1104,6 +1182,7 @@ async function main() {
       enemyStartAssets,
       enemyAiActivity,
       escMenuResume,
+      rallyProbe,
       renderProbe,
       // ADD-ONLY HUD diagnostics: full control-bar / shell / startNewGame state
       // from the final active-match frame (read-only; does not gate anything).
