@@ -573,63 +573,94 @@ symptom is temporal — NOT a single still.
       A1R5G5B5 terrain atlas cell offset / UV-index / 16-bit mip packing in
       `TerrainTextureClass::update()` (`TerrainTex.cpp:96`). Verify: on the Mac,
       `unsupportedUpdates` should already read 0 during normal terrain render.
-- [ ] **Trees lighting wrong at HIGH LOD — too dark (was too bright at LOW LOD)** —
-      2026-07-08 UPDATE (branch `fix/trees-lighting-v2`): owner now reports trees look
-      **TOO DARK** on the Mac, and the symptom FLIPPED (was too-bright) right after the
-      GameLOD fix (`47ab0cde`) seeded `STATIC_GAME_LOD_HIGH`, turning on
-      `m_useLightMap`/`m_useCloudMap` (terrain cloud/lightmap/noise MULTIPLY pass now
-      emits). **Round-2 audit (all confirmed faithful, do not re-audit):**
-      - The tree CPU bake (`W3DTreeBuffer::doLighting`, W3DTreeBuffer.cpp:640) reads
-        `m_terrainObjectsLighting[timeOfDay]` and is **LOD-independent** — no lightmap/
-        cloud/LOD global scales, dims, or re-bakes it (checked GlobalData, GameLOD
-        `applyStaticLODLevel` GameLOD.cpp:542-624, HeightMap/BaseHeightMap, TerrainTex
-        LightMapTerrainTextureClass). Same tree diffuse bytes at LOW and HIGH LOD.
-      - **Trees are NOT cloud/lightmap-modulated in the original** — confirmed against
-        the community reference (`assets/docs/.../GeneralsGameCode/.../W3DTreeBuffer.cpp`):
-        `drawTrees` binds ONLY the tree atlas (stage 0) + shroud (stage 1, via
-        `setShroudTex`), never `m_stageTwoTexture`(cloud)/`m_stageThreeTexture`(lightmap).
-        The sibling `W3DPropBuffer::drawProps` (W3DPropBuffer.cpp:327) also does NOT get
-        cloud/lightmap — it builds a `LightEnvironmentClass` from the same
-        `m_terrainObjectsLighting`. So "give trees the cloud pass" would be INVENTING
-        behavior — do not.
-      - **No render-state leak** from the HIGH-LOD terrain shader into the tree draw:
-        the D3D8 shim's `SetRenderState`/`SetTextureStageState` (wasm_d3d8_shim.cpp:3498,
-        3581) record every value unconditionally (no dedup drop), and DX8Wrapper
-        `Invalidate_Cached_Render_States` (dx8wrapper.cpp) poison-invalidates so the
-        tree's `Set_Material(PRELIT_DIFFUSE)` + `Set_Shader(detailAlphaShader)` re-send
-        blend, stage0 `TEXTURETRANSFORMFLAGS=DISABLE` (vertmaterial.cpp:964-970), and
-        stage ops. Tree-shadow decals (HIGH-LOD only, `_PresetMultiplicativeShader`,
-        W3DProjectedShadow.cpp:697) darken the GROUND decals, not the tree billboards,
-        and the tree mesh `Set_Shader` resets their multiply blend.
-      - Bridge: a NULL/disabled texture stage samples `vec4(1.0)` white (bridge.js:8561,
-        8564), so a leftover-enabled stage with no texture does NOT blacken trees; and a
-        revealed shroud texel is white (W3DShroud.cpp:321-323, level=255) so the shroud
-        MODULATE is a no-op in revealed areas.
-      **RECONCILIATION:** the tree draw is faithful and LOD-independent, so the two
-      remaining real causes are: **(A)** the tree bake is genuinely near-white for
-      up-facing leaf normals (map object-light sun ~straight-down or ambient+diffuse≥1),
-      which read as "too bright" at LOW LOD; at HIGH LOD the terrain lightmap correctly
-      DARKENS the ground, so the (unchanged, bright) trees now sit against dark terrain
-      and the *relative* mismatch reads as wrong — the fix is the tree bake INPUT
-      (verify the map's `TerrainObjectsLighting` sun `lightPos`/values via
-      `WorldHeightMap::ParseLightingDataChunk`, WorldHeightMap.cpp:782), NOT the draw;
-      OR **(B)** a Metal-combiner-specific darkening of the tree's stage-1 shroud
-      MODULATE (camera-space texgen + `D3DTS_TEXTURE1` transform) that only misbehaves on
-      the real driver.
-      **THE ONE MAC-GPU CHECK (no new instrumentation; data already captured):** pull
-      `d3d8DrawHistory`, filter the tree pass (`vertexShaderFvf === (D3DFVF_XYZ|
-      D3DFVF_NORMAL|D3DFVF_DIFFUSE|D3DFVF_TEX1)`, `vertexStride === 36`) and read
-      (1) `vertexSummary` diffuse min/max/avg — if avg is near 255 the bake is white →
-      cause (A), chase the map sun/`m_terrainObjectsLighting` values; (2) `texture1`
-      (`sampled`, `semantic`, `combiner`) and `renderState.textureStage1.colorOp` — if
-      stage 1 is MODULATE and sampling a non-white shroud/wrong texel, that is the
-      darkening → cause (B), fix the bridge shroud stage-1 texgen/transform. Compare the
-      SAME capture at LOW vs HIGH LOD: if the tree pass's diffuse + stage state are
-      IDENTICAL across LOD (as the code says they must be), the darkening is purely the
-      scene-relative lightmap effect (A), not a tree bug.
-
-  ORIGINAL 2026-07-08 note (kept for context — too-bright at LOW LOD):
-- [ ] **(historical) Trees render too bright at LOW LOD** — after the
+- [ ] **Trees not darkened by shroud/fog of war (pop full-bright) — tree stage-1
+      shroud MODULATE is a no-op on the real GPU** — 2026-07-08 (branch
+      `fix/trees-shroud`): owner Mac screenshots confirm the whole scene is
+      shroud/fog-darkened (terrain + roads + BUILDINGS all correctly darkened) but
+      TREES stay full-bright/saturated. So the scene/shroud darkening reaches
+      buildings but NOT trees.
+      **FIX APPLIED (pending Mac verification), bridge.js `createD3D8Texture`:**
+      make a POOL_DEFAULT non-RT texture sampleable immediately on creation
+      (allocate defined level-0 storage + mark `initializedLevels`), so a
+      CopyRects/UpdateSurface-filled dynamic texture (the W3DShroud `m_pDstTexture`,
+      created empty via `TextureClass(..., MIP_LEVELS_1, POOL_DEFAULT)`, usage=0)
+      is NOT treated as un-sampleable → the fragment shader no longer substitutes
+      opaque WHITE for it → the tree stage-1 shroud MODULATE actually darkens.
+      This is the general form of the just-proven decal-texture readiness fix
+      (`Get_Texture` MIP_LEVELS_ALL → not-ready → white), matching D3D8 semantics
+      (a bound texture always samples defined storage). Verify on the Mac that
+      trees darken with the fog/shroud like buildings and no longer glow. If they
+      still glow, capture the tree pass `texture1.sampled`/`textureStage1` (below).
+      **Round-3 audit findings:**
+      - **Emissive is NOT the bug.** The tree material emissive is loaded faithfully
+        from the W3D file (`VertexMaterialClass::Parse_W3dVertexMaterialStruct`
+        vertmaterial.cpp; `Init_From_Material3` / `Load_W3D`), and `doLighting`'s
+        emissive read (W3DTreeBuffer.cpp:783-790) is byte-identical to the community
+        reference. If a tree has emissive, both original and port add it the same way.
+      - **Root cause = the shroud.** Buildings/props darken via a SEPARATE
+        `_PresetMultiplicativeSpriteShader` shroud pass with the shroud on texture
+        **stage 0** (`W3DShroudMaterialPassClass::Install_Materials` W3DShroud.cpp:788
+        → `ShroudTextureShader::set` W3DShaderManager.cpp:1211). Trees darken via the
+        shroud on texture **stage 1** MODULATE inside the single tree draw
+        (`W3DShaderManager::setShroudTex(1)` W3DShaderManager.cpp:3185, called from
+        `W3DTreeBuffer::drawTrees` W3DTreeBuffer.cpp:1737). The shroud transform math
+        in `setShroudTex` is IDENTICAL to `ShroudTextureShader::set` (camera-space
+        texgen `D3DTSS_TCI_CAMERASPACEPOSITION` + `D3DTTFF_COUNT2` + `D3DTS_TEXTURE1`).
+      - In the port `m_dwTreeVertexShader==0` (CreateVertexShader returns
+        `D3DERR_NOTAVAILABLE`), so `Trees.vso` never loads and the tree shroud runs the
+        **FVF fixed-function stage-1 texgen fallback** — a path the shipping game never
+        exercised (it always had `Trees.vso`, which did the shroud in the vertex/pixel
+        shader and DISABLED the stage-1 fixed-function texgen, W3DTreeBuffer.cpp:1808-1813).
+      - Bridge audit (mine + a glm-5.2 subagent): the fragment shader gates stage 1 on
+        `uUseTexture1 = canSampleTexture1` (bridge.js:12317); if false, `texture1Color =
+        vec4(1.0)` white (bridge.js:8562-8564) → `MODULATE(white, current) = current` →
+        NO darkening (exactly the symptom). `canSampleTexture1 = texture1Ready &&
+        (texture1Coordinates.supported || pointSprite)` (bridge.js:11414). Both audits
+        found the stage-1 shroud path architecturally correct (texgen, `D3DTS_TEXTURE1`
+        transform captured as a Float32Array so `transformApplied` should be true, combiner
+        MODULATE/SELECTARG2 supported, shroud texture marked ready via CopyRects
+        `upload_owned_texture`→`updateD3D8Texture` initializedLevels), i.e. NO definitive
+        static code break — so the failure is a real-GPU/runtime value we must capture.
+      **THE ONE MAC-GPU CHECK (decides the fix; no new instrumentation — draw history
+      already captures it):** on the real GPU, pull `d3d8DrawHistory`, find the tree pass
+      (`vertexShaderFvf === (D3DFVF_XYZ|D3DFVF_NORMAL|D3DFVF_DIFFUSE|D3DFVF_TEX1)`,
+      `vertexStride === 36`), and read `texture1.sampled` + `renderState.textureStage1`
+      (colorOp, texCoordIndex, textureTransformFlags) and `texture1.id`/`ready`:
+      - If `texture1.sampled === false` → `canSampleTexture1` is false. Check which factor:
+        `texture1Ready` (shroud texture id not resolved/initialized on the tree draw) vs
+        `texture1Coordinates.supported` (camera-space texgen + COUNT2 transform not
+        applied). Fix that specific gate in the bridge so the tree draw samples the shroud
+        on stage 1, matching the (working) building stage-0 shroud.
+      - If `texture1.sampled === true` but the shroud texel is white → the camera-space
+        texgen/`D3DTS_TEXTURE1` transform maps tree verts to a revealed/border shroud cell;
+        compare the tree draw's captured `D3DTS_TEXTURE1` matrix to the building shroud
+        pass's `D3DTS_TEXTURE0` matrix (they should be equal per the identical C++).
+      **Faithful fix direction (once the capture pinpoints it):** make the port's FVF
+      tree shroud reliably sample+MODULATE the shroud on stage 1 (bridge fix), OR route
+      the tree shroud through the same proven `_PresetMultiplicativeShader` mechanism the
+      rest of the scene uses. Do NOT touch the (faithful) emissive/`doLighting` bake, and
+      do NOT give trees the cloud/lightmap (the original doesn't). Verify: trees darken
+      with the fog/shroud like buildings and no longer pop full-bright.
+      **RELATED LATENT FRAGILITY (explains the OPPOSITE "too dark" symptom, not the
+      current "too bright" one — record & fix if it resurfaces):** the HIGH-LOD terrain
+      cloud/noise pass `TerrainShader2Stage::set` case 2 sets a MULTIPLICATIVE framebuffer
+      blend (`D3DRS_ALPHABLENDENABLE=TRUE, SRCBLEND=DESTCOLOR, DESTBLEND=ZERO`,
+      W3DShaderManager.cpp:1726-1728) and `TerrainShader2Stage::reset` (W3DShaderManager.cpp:1590)
+      does NOT restore the blend — it relies on the next `ShaderClass::Apply` (forced via
+      `ShaderClass::Invalidate()`→`ShaderDirty`, shader.cpp:415-431) to re-send the alpha
+      blend. In the original this holds (roads/bibs/trees all `Set_Shader(detailAlphaShader)`
+      with ShaderDirty true after reset). If any port path lets `detailAlphaShader` stay the
+      current shader with `ShaderDirty==false` before the tree draw, `DX8Wrapper::Set_Shader`
+      early-returns (dx8wrapper.h) and the leftover multiply blend leaks into trees → trees
+      DARKEN (multiplied by the framebuffer). NOTE the port emulates a Voodoo5 adapter
+      (`wasm_d3d8_shim.cpp` GetAdapterIdentifier VendorId 0x121a/DeviceId 0x0009 →
+      getChipset()==DC_VOODOO5), so terrain uses `TerrainShader2Stage`, NOT 8Stage; the
+      8Stage reset (W3DShaderManager.cpp:1934) additionally never restores stage 0/1
+      TEXTURETRANSFORMFLAGS/TEXCOORDINDEX — a latent bug only if the chipset is ever
+      DC_TNT..DC_GEFORCE2. Bridge samples a NULL/unbound texture as WHITE (bridge.js:8559-8564),
+      so a leftover-enabled stage never blackens — confirming the bridge is faithful here.
+  (superseded historical note — was mis-scoped as a lighting-data/emissive bug:)
+- [ ] **(historical) Trees render too bright — tree lighting is wrong** — 2026-07-08: after the
       terrain-adjacent buffers were re-enabled (commit `2df600c5`) and the correct
       `dist-release` build reached the Mac, `W3DTreeBuffer` trees now draw, but on
       the real GPU they were **too bright / full-bright** and didn't
