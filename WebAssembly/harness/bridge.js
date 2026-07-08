@@ -16598,20 +16598,140 @@ function archivePathFromPayload(payload, baseDirectory = "/assets") {
   return { url, name, memfsPath };
 }
 
+// ---------------------------------------------------------------------------
+// IO worker client (first slice of "move IO to its own thread").
+//
+// A dedicated module Web Worker (harness/io_worker.mjs) does the archive
+// `fetch()` + `arrayBuffer()` off the main thread and transfers the finished
+// bytes back (zero-copy). The main thread only performs the single
+// `FS.writeFile` memcpy into the wasm heap. This keeps the ~1.6 GB archive
+// download and its decode from contending with the WebGL/engine main thread.
+//
+// It is opt-outable: set `window.__cncIoWorker = false` (or `?ioworker=0` via
+// the page, handled by the caller) to force the legacy inline fetch. Any worker
+// failure transparently falls back to the inline path, so this never blocks a
+// mount that would otherwise succeed.
+let ioWorkerInstance = null;
+let ioWorkerNextId = 1;
+let ioWorkerDisabled = false;
+const ioWorkerPending = new Map();
+
+function ioWorkerEnabled() {
+  if (ioWorkerDisabled) {
+    return false;
+  }
+  if (typeof Worker !== "function") {
+    return false;
+  }
+  // Explicit opt-out escape hatch for debugging / regressions.
+  try {
+    if (globalThis.__cncIoWorker === false) {
+      return false;
+    }
+  } catch (_error) {
+    // No globalThis override in some contexts; default to enabled.
+  }
+  return true;
+}
+
+function ensureIoWorker() {
+  if (ioWorkerInstance || !ioWorkerEnabled()) {
+    return ioWorkerInstance;
+  }
+  try {
+    const workerUrl = browserAssetUrl("./io_worker.mjs");
+    const worker = new Worker(workerUrl, { type: "module" });
+    worker.onmessage = (event) => {
+      const message = event.data ?? {};
+      const pending = ioWorkerPending.get(message.id);
+      if (!pending) {
+        return; // e.g. the initial { id: 0, kind: "ready" } announcement.
+      }
+      ioWorkerPending.delete(message.id);
+      if (message.ok) {
+        pending.resolve(message);
+      } else {
+        pending.reject(new Error(message.error ?? "IO worker error"));
+      }
+    };
+    worker.onerror = (event) => {
+      // A hard worker failure disables the worker path for the rest of the
+      // session and rejects every in-flight request so callers fall back.
+      ioWorkerDisabled = true;
+      const error = new Error(event?.message ?? "IO worker crashed");
+      for (const [, pending] of ioWorkerPending) {
+        pending.reject(error);
+      }
+      ioWorkerPending.clear();
+      try {
+        worker.terminate();
+      } catch (_terminateError) {
+        // ignore
+      }
+      ioWorkerInstance = null;
+    };
+    ioWorkerInstance = worker;
+  } catch (_error) {
+    ioWorkerDisabled = true;
+    ioWorkerInstance = null;
+  }
+  return ioWorkerInstance;
+}
+
+function ioWorkerRequest(request, transfer = []) {
+  const worker = ensureIoWorker();
+  if (!worker) {
+    return Promise.reject(new Error("IO worker unavailable"));
+  }
+  const id = ioWorkerNextId++;
+  return new Promise((resolve, reject) => {
+    ioWorkerPending.set(id, { resolve, reject });
+    try {
+      worker.postMessage({ ...request, id }, transfer);
+    } catch (error) {
+      ioWorkerPending.delete(id);
+      reject(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+}
+
+// Fetch a whole archive off the main thread; resolves to a Uint8Array view of
+// the transferred ArrayBuffer. Rejects (so the caller falls back inline) if the
+// worker is unavailable or the fetch fails.
+async function fetchArchiveBytesOffThread(url) {
+  const response = await ioWorkerRequest({ kind: "fetchArchive", url });
+  return new Uint8Array(response.bytes);
+}
+
 async function writeArchiveToMemfs(wasmModule, payload, baseDirectory = "/assets") {
   const archive = archivePathFromPayload(payload, baseDirectory);
   if (archive.error) {
     return archive;
   }
 
-  const response = await fetch(archive.url);
-  if (!response.ok) {
-    return {
-      error: `${archive.name} fetch failed: ${response.status} ${response.statusText}`,
-    };
+  let bytes = null;
+  let reader = "main-thread fetch";
+
+  if (ioWorkerEnabled()) {
+    try {
+      bytes = await fetchArchiveBytesOffThread(archive.url);
+      reader = "io-worker fetch";
+    } catch (_workerError) {
+      // Fall back to the inline main-thread fetch below.
+      bytes = null;
+    }
   }
 
-  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes === null) {
+    const response = await fetch(archive.url);
+    if (!response.ok) {
+      return {
+        error: `${archive.name} fetch failed: ${response.status} ${response.statusText}`,
+      };
+    }
+    bytes = new Uint8Array(await response.arrayBuffer());
+  }
+
   ensureMemfsDirectory(wasmModule.fs, parentDirectory(archive.memfsPath));
   wasmModule.fs.writeFile(archive.memfsPath, bytes);
 
@@ -16620,6 +16740,7 @@ async function writeArchiveToMemfs(wasmModule, payload, baseDirectory = "/assets
     sourceName: String(payload.sourceName ?? archive.name),
     path: archive.memfsPath,
     bytes: bytes.byteLength,
+    reader,
   };
 }
 

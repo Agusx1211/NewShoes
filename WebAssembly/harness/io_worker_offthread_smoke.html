@@ -1,0 +1,97 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>IO worker off-thread smoke</title>
+  </head>
+  <body>
+    <p>IO worker off-thread smoke harness.</p>
+    <script type="module">
+      // Drive harness/io_worker.mjs directly to prove it fetches off the main
+      // thread while a main-thread rAF heartbeat keeps ticking.
+      window.__runIoWorkerSmoke = (payloadUrl) => {
+        return new Promise((resolve, reject) => {
+          let ready = false;
+          let heartbeatTicks = 0;
+          let heartbeatRunning = false;
+
+          const worker = new Worker(new URL("./io_worker.mjs", import.meta.url), {
+            type: "module",
+          });
+
+          const tick = () => {
+            if (!heartbeatRunning) {
+              return;
+            }
+            heartbeatTicks += 1;
+            requestAnimationFrame(tick);
+          };
+
+          const startedAt = performance.now();
+
+          worker.onmessage = (event) => {
+            const message = event.data ?? {};
+            if (message.kind === "ready") {
+              ready = true;
+              // Start the main-thread heartbeat, then issue the off-thread fetch.
+              heartbeatRunning = true;
+              requestAnimationFrame(tick);
+              const heartbeatBaseline = heartbeatTicks;
+              const fetchStartedAt = performance.now();
+              worker.postMessage({ id: 1, kind: "fetchArchive", url: payloadUrl });
+              worker.__fetchStartedAt = fetchStartedAt;
+              worker.__heartbeatBaseline = heartbeatBaseline;
+              return;
+            }
+            if (message.id === 1) {
+              if (!message.ok) {
+                heartbeatRunning = false;
+                reject(new Error(message.error ?? "worker fetch failed"));
+                worker.terminate();
+                return;
+              }
+              const buffer = message.bytes;
+              const byteLength = buffer.byteLength;
+              // A transferred ArrayBuffer is detached on the worker side; on the
+              // main side it is a fresh, non-zero buffer. We prove transfer by
+              // confirming we received a real ArrayBuffer with the expected size.
+              const transferred = buffer instanceof ArrayBuffer && byteLength > 0;
+              const heartbeatTicksDuringFetch =
+                heartbeatTicks - (worker.__heartbeatBaseline ?? 0);
+              const fetchMs = performance.now() - (worker.__fetchStartedAt ?? startedAt);
+              worker.__fetchResult = {
+                ready,
+                byteLength,
+                transferred,
+                heartbeatTicksDuringFetch,
+                fetchMs,
+              };
+              // Now run a deliberate 300ms CPU-busy task ON THE WORKER and count
+              // main-thread heartbeat ticks during it: the unambiguous proof
+              // that heavy off-thread work does not freeze the main thread.
+              worker.__busyBaseline = heartbeatTicks;
+              worker.postMessage({ id: 2, kind: "busy", ms: 300 });
+              return;
+            }
+
+            if (message.id === 2) {
+              heartbeatRunning = false;
+              const heartbeatTicksDuringBusy =
+                heartbeatTicks - (worker.__busyBaseline ?? 0);
+              const result = worker.__fetchResult ?? {};
+              worker.terminate();
+              resolve({ ...result, heartbeatTicksDuringBusy });
+            }
+          };
+
+          worker.onerror = (event) => {
+            reject(new Error(event?.message ?? "worker crashed"));
+          };
+
+          // Safety timeout.
+          setTimeout(() => reject(new Error("io worker smoke timed out")), 15000);
+        });
+      };
+    </script>
+  </body>
+</html>

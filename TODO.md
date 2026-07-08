@@ -518,6 +518,88 @@ reproduce in the harness and verify each fix with a screenshot / state check.
       but the synchronous map load still blocks intermediate browser frame
       turns. Split or yield the long load path if live progress animation is
       required during the load itself.
+      2026-07-08 (IO-off-thread investigation): ROOT CAUSE decomposed. The
+      per-screen freeze is NOT network I/O — by the time the engine runs, ALL
+      archive bytes are already fully materialized in MEMFS (mount does
+      `fetch -> arrayBuffer -> FS.writeFile` up front; range-backed mount
+      synthesizes a whole BIG in MEMFS). `Win32BIGFile::openFile`
+      (GeneralsMD/.../Win32Device/Common/Win32BIGFile.cpp:63) hands out a
+      `RAMFile` whose `openFromArchive`/`read` are pure in-memory memcpy
+      (GeneralsMD/.../Common/System/RAMFile.cpp:210,263). The freeze is
+      SINGLE-THREADED CPU work — refpack decompress + W3D/texture/INI parse —
+      run synchronously inside ONE `cnc_port_real_engine_frame` cwrap call
+      (src/wasm_real_engine_init.cpp:5435) from the rAF `step`, during
+      `GameLogic::startNewGame -> loadMapINI / TheTerrainLogic->loadMap /
+      newMap`. So "move IO to its own thread" for the SCREEN-LOAD freeze
+      ultimately needs the engine load work off the render thread (pthreads),
+      not just the fetch.
+### Move I/O off the main thread (owner ask: "stop blocking the main thread on screen load")
+
+Architecture finding (2026-07-08): COOP/COEP are ALREADY set in the harness
+(`harness/static-server.mjs:31-37` -> `same-origin` / `require-corp`), so
+`SharedArrayBuffer` + real threads are unlocked. But `cnc-port` links with NO
+pthreads and NO ASYNCIFY (`WebAssembly/CMakeLists.txt` cnc-port
+`target_link_options` ~5104; `-sENVIRONMENT=web,worker`,
+`-sALLOW_MEMORY_GROWTH=1`, emsdk 3.1.6). Two distinct blocking costs exist and
+need different fixes:
+  1. **Boot archive download+decode (~1.6 GB)** — was on the main thread
+     (`writeArchiveToMemfs`: `fetch -> arrayBuffer` then `FS.writeFile`).
+  2. **Per-screen/map load freeze** — single-threaded engine CPU
+     (refpack decompress + W3D/texture/INI parse) inside one synchronous
+     `cnc_port_real_engine_frame` call. This is the owner's real complaint and
+     is NOT solved by moving the fetch; it needs the engine load work off the
+     render thread (pthreads) OR incremental yielding.
+
+Recommendation for this codebase: do NOT start with ASYNCIFY (whole-program
+unwind cost + code-size, risky against the shim/ODR surface) and do NOT rush
+pthreads (thread-safety audit of the whole single-threaded engine + the
+`ALLOW_MEMORY_GROWTH` vs growable-SAB constraint on emsdk 3.1.6). Start with a
+dedicated **IO Web Worker** (least invasive, no engine/build-flag risk), then
+escalate to pthreads ONLY for the map-load compute if the fetch offload is not
+enough.
+
+- [x] **First slice — IO fetch/decode Web Worker (DONE).** `harness/io_worker.mjs`
+      (module Worker) does the archive `fetch()` + `arrayBuffer()` off the main
+      thread and transfers the bytes back zero-copy; `writeArchiveToMemfs`
+      (`harness/bridge.js`) uses it by default and falls back to the inline
+      main-thread fetch on any worker failure. Opt out with
+      `window.__cncIoWorker=false` or `?ioworker=0` (wired in `play.mjs`). Only
+      the single `FS.writeFile` memcpy stays on the main thread (wasm heap is
+      main-thread-owned). Verified by `npm run test:io-worker-offthread`
+      (`harness/io_worker_offthread_smoke.mjs` + `.html`): worker returns the
+      exact served bytes, and a 300 ms worker-CPU task leaves the main-thread
+      rAF heartbeat ticking ~18x (i.e. off-thread work does not freeze the main
+      thread). `npm run build:port` still green.
+- [ ] **Route range-backed mount through the IO worker too.** The
+      range-backed path (`extractBigEntriesFromUrl` + `buildBigArchive` +
+      `fetchByteRange`, `harness/bridge.js`) still does its byte-range fetches
+      and BIG synthesis on the main thread. Move that CPU-heavy synthesis into
+      `io_worker.mjs` (it already has a `fetchRange` command) and transfer the
+      synthesized BIG back, leaving only `FS.writeFile` on the main thread.
+- [ ] **Verify the first slice on the real Mac GPU build.** Confirm on
+      `cnc-gpu` that the ~1.6 GB `play.html` mount no longer stalls the page
+      (canvas/UI stays responsive during download) with the IO worker on, and
+      that `?ioworker=0` reproduces the old inline behavior. Screenshot/state
+      check per "don't work blind".
+- [ ] **Escalate to pthreads for the MAP-LOAD compute freeze (the owner's real
+      bug).** This is the hard part. Options, in order of increasing risk:
+      (a) yield the load path incrementally (drive `loadMapINI`/`loadMap`/`newMap`
+      as a coroutine that returns to the browser between chunks so the loading
+      screen animates) — no threads, but requires restructuring the engine load
+      into steppable stages; OR (b) run the map-load compute on an emscripten
+      pthread (real Web Worker) while the main thread keeps rendering the load
+      screen — needs `-sUSE_PTHREADS=1 -sPROXY_TO_PTHREAD` consideration, a
+      thread-safety audit (GL MUST stay main-thread; the load worker may only
+      touch CPU-side sim/asset state until handed back), and resolving
+      `ALLOW_MEMORY_GROWTH` vs growable-`SharedArrayBuffer` on emsdk 3.1.6
+      (may need a fixed `MAXIMUM_MEMORY` or an emsdk bump). Gate behind a build
+      flag; keep the non-threaded build as the default until proven.
+- [ ] **Decide/measure: is the boot `FS.writeFile` memcpy (1.6 GB into the
+      wasm heap on the main thread) worth eliminating?** With pthreads +
+      SharedArrayBuffer the archive bytes could live in shared memory the
+      worker fills directly, removing the final main-thread copy. Only pursue
+      if profiling shows that copy is a material boot stall vs the download.
+
 - [ ] **Lightning/lighting effects flat** — special/lightning effects look
       flat vs the original; the game's richer effect set is missing or
       degraded. Pin down which effect systems (particle/lightning/FX) are

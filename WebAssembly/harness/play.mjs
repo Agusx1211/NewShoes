@@ -272,6 +272,14 @@ async function start() {
     } else {
       setConfiguredDiagLevel("full");
     }
+    // The archive download + decode runs on a dedicated IO Web Worker by
+    // default (bridge.js), so it does not contend with the WebGL/engine main
+    // thread. Add ?ioworker=0 to force the legacy inline main-thread fetch for
+    // debugging or regression comparison.
+    if (queryParams.get("ioworker") === "0") {
+      window.__cncIoWorker = false;
+    }
+
     issueRecorder.setSessionContext({
       phase: "starting",
       diagLevel: configuredDiagLevel,
