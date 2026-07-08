@@ -215,6 +215,7 @@ function applyD3D8TrackedGlState(key, value, apply) {
   }
 }
 
+const D3DUSAGE_RENDERTARGET = 0x00000001;
 const D3DUSAGE_WRITEONLY = 0x00000008;
 const D3DUSAGE_DEPTHSTENCIL = 0x00000002;
 const D3DUSAGE_DYNAMIC = 0x00000200;
@@ -6744,6 +6745,40 @@ function createD3D8Texture(payload = {}) {
     samplerD3DStateKey: null,
   };
   d3d8Textures.set(id, resource);
+  // D3D8 semantics: a created texture bound to a stage is ALWAYS sampleable — it
+  // samples whatever storage is in place even before the app writes content. The
+  // bridge otherwise treats a texture whose level 0 has not been uploaded as
+  // un-sampleable (canSampleTexture*), and the fragment shader substitutes opaque
+  // WHITE for it (`vec4(1.0)`), turning any MODULATE-by-that-texture into a no-op.
+  // A POOL_DEFAULT texture created with no content and filled later via
+  // CopyRects/UpdateSurface — e.g. the W3DShroud fog-of-war texture that the tree
+  // draw MODULATEs at STAGE 1 — is exactly this case: on any frame the engine
+  // binds it before/without a captured level-0 upload, the shroud reads white and
+  // the trees never darken in fog (while buildings, shrouded via a separate
+  // already-updated pass, do). Allocate defined level-0 storage now and mark it
+  // initialized so the texture samples defined (zeroed) storage the moment it is
+  // bound, matching D3D8. Scoped to plain 2D textures in the DEFAULT pool that are
+  // NOT render targets / depth-stencils (those keep their own rtAllocated path),
+  // and harmless for textures that later receive real content (their update
+  // re-uploads over level 0 via texSubImage2D).
+  const poolDefaultBlittable =
+    (resource.pool >>> 0) === 0 /* D3DPOOL_DEFAULT */ &&
+    (resource.usage & (D3DUSAGE_RENDERTARGET | D3DUSAGE_DEPTHSTENCIL)) === 0 &&
+    !resource.initializedLevels.has("0");
+  if (poolDefaultBlittable) {
+    const createInfo = d3d8TextureFormatInfo(format);
+    if (createInfo.supported && !createInfo.compressed) {
+      withPreservedD3D8TextureUnit(() => {
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, createInfo.internalFormat,
+          width, height, 0, createInfo.format, createInfo.type, null);
+      });
+      resource.initializedLevels.add("0");
+      resource.levelFormats.set("0", createInfo.storage);
+      resource.storage = createInfo.storage;
+      updateD3D8TextureMipCompleteness(resource);
+    }
+  }
   d3d8TextureStats.creates += 1;
   d3d8TextureStats.lastCreate = {
     id,

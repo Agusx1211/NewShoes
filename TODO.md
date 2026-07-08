@@ -563,7 +563,20 @@ symptom is temporal — NOT a single still.
       `fix/trees-shroud`): owner Mac screenshots confirm the whole scene is
       shroud/fog-darkened (terrain + roads + BUILDINGS all correctly darkened) but
       TREES stay full-bright/saturated. So the scene/shroud darkening reaches
-      buildings but NOT trees. **Round-3 audit findings:**
+      buildings but NOT trees.
+      **FIX APPLIED (pending Mac verification), bridge.js `createD3D8Texture`:**
+      make a POOL_DEFAULT non-RT texture sampleable immediately on creation
+      (allocate defined level-0 storage + mark `initializedLevels`), so a
+      CopyRects/UpdateSurface-filled dynamic texture (the W3DShroud `m_pDstTexture`,
+      created empty via `TextureClass(..., MIP_LEVELS_1, POOL_DEFAULT)`, usage=0)
+      is NOT treated as un-sampleable → the fragment shader no longer substitutes
+      opaque WHITE for it → the tree stage-1 shroud MODULATE actually darkens.
+      This is the general form of the just-proven decal-texture readiness fix
+      (`Get_Texture` MIP_LEVELS_ALL → not-ready → white), matching D3D8 semantics
+      (a bound texture always samples defined storage). Verify on the Mac that
+      trees darken with the fog/shroud like buildings and no longer glow. If they
+      still glow, capture the tree pass `texture1.sampled`/`textureStage1` (below).
+      **Round-3 audit findings:**
       - **Emissive is NOT the bug.** The tree material emissive is loaded faithfully
         from the W3D file (`VertexMaterialClass::Parse_W3dVertexMaterialStruct`
         vertmaterial.cpp; `Init_From_Material3` / `Load_W3D`), and `doLighting`'s
