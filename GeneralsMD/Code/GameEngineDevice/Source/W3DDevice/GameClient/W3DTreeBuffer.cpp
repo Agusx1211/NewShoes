@@ -1820,6 +1820,25 @@ void W3DTreeBuffer::drawTrees(CameraClass * camera, RefRenderObjListIterator *pD
 			DX8Wrapper::_Get_D3D_Device8()->SetTextureStageState(0,  D3DTSS_TEXCOORDINDEX, 0);
 			DX8Wrapper::_Get_D3D_Device8()->SetTextureStageState(1,  D3DTSS_TEXCOORDINDEX, 1);
 			DX8Wrapper::_Get_D3D_Device8()->SetTextureStageState(1,  D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
+		} else {
+			// Fixed-function fallback (the browser/wasm port has no vertex shader, so
+			// CreateVertexShader fails and m_dwTreeVertexShader stays 0).  Draw_Triangles
+			// internally re-applies the single-texture tree shader, which disables
+			// stage 1 and drops the fog-of-war shroud that setShroudTex bound -- so
+			// trees stay bright in fog.  Use a shader whose *post-detail* stage
+			// MODULATEs a second texture (the shroud) at stage 1: because the SHADER
+			// configures the stage on apply, it survives the redraw (this is how
+			// terrain samples its shroud).  Bind the shroud as Textures[1]; the
+			// D3D8->WebGL2 bridge generates the stage-1 shroud UV from the c32/c33
+			// constants uploaded above (Trees.nvv: oT1 = (worldXY + c32) * c33).
+			W3DShroud *treeShroud = TheTerrainRenderObject ? TheTerrainRenderObject->getShroud() : NULL;
+			if (treeShroud && treeShroud->getShroudTexture()) {
+				ShaderClass shroudShader = detailAlphaShader;
+				shroudShader.Set_Post_Detail_Color_Func(ShaderClass::DETAILCOLOR_SCALE);
+				ShaderClass::Invalidate();	// force a full shader re-apply so the post-detail stage-1 states are actually set
+				DX8Wrapper::Set_Shader(shroudShader);
+				DX8Wrapper::Set_Texture(1, treeShroud->getShroudTexture());
+			}
 		}
 		DX8Wrapper::Draw_Triangles(	0, m_curNumTreeIndices[bNdx]/3, 0,	m_curNumTreeVertices[bNdx]);
 	}
