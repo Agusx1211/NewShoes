@@ -108,14 +108,7 @@ static void adjustVector(Coord3D *vec, const Matrix3D* mtx)
 //-------------------------------------------------------------------------------------------------
 Object* ObjectCreationNugget::create( const Object* primary, const Object* secondary, UnsignedInt lifetimeFrames ) const
 {
-#ifdef WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY
-	(void)primary;
-	(void)secondary;
-	(void)lifetimeFrames;
-	return NULL;
-#else
 	return create( primary, primary ? primary->getPosition() : NULL, secondary ? secondary->getPosition() : NULL, INVALID_ANGLE, lifetimeFrames );
-#endif
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -128,16 +121,7 @@ Object* ObjectCreationNugget::create( const Object* primary, const Object* secon
 //This one is called only when we have a nugget that doesn't care about createOwner.
 Object* ObjectCreationNugget::create( const Object *primaryObj, const Coord3D *primary, const Coord3D *secondary, Bool createOwner, UnsignedInt lifetimeFrames ) const
 {
-#ifdef WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY
-	(void)primaryObj;
-	(void)primary;
-	(void)secondary;
-	(void)createOwner;
-	(void)lifetimeFrames;
-	return NULL;
-#else
 	return create( primaryObj, primary, secondary, INVALID_ANGLE, lifetimeFrames );
-#endif
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -155,14 +139,6 @@ public:
 
 	virtual Object* create( const Object* primaryObj, const Coord3D *primary, const Coord3D* secondary, Real angle, UnsignedInt lifetimeFrames = 0 ) const
 	{
-#ifdef WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY
-		(void)primaryObj;
-		(void)primary;
-		(void)secondary;
-		(void)angle;
-		(void)lifetimeFrames;
-		return NULL;
-#else
 		if (!primaryObj || !primary || !secondary)
 		{ 
 			DEBUG_CRASH(("You must have a primary and secondary source for this effect"));
@@ -174,7 +150,6 @@ public:
 		  TheWeaponStore->createAndFireTempWeapon( m_weapon, primaryObj, secondary );
 	  }
 		return NULL;
-#endif
   }
 
 	static void parse(INI *ini, void *instance, void* /*store*/, const void* /*userData*/)
@@ -211,14 +186,6 @@ public:
 
 	virtual Object* create( const Object* primaryObj, const Coord3D *primary, const Coord3D* secondary, Real angle, UnsignedInt lifetimeFrames = 0 ) const
 	{
-#ifdef WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY
-		(void)primaryObj;
-		(void)primary;
-		(void)secondary;
-		(void)angle;
-		(void)lifetimeFrames;
-		return NULL;
-#else
 		if (!primaryObj || !primary || !secondary)
 		{ 
 			DEBUG_CRASH(("You must have a primary and secondary source for this effect"));
@@ -251,7 +218,6 @@ public:
 			rd->killWhenNoLongerAttacking(true);
 		}
 		return NULL;
-#endif
   }
 
 	static void parse(INI *ini, void *instance, void* /*store*/, const void* /*userData*/)
@@ -308,28 +274,11 @@ public:
 
 	virtual Object* create(const Object *primaryObj, const Coord3D *primary, const Coord3D *secondary, Real angle, UnsignedInt lifetimeFrames = 0 ) const
 	{
-#ifdef WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY
-		(void)primaryObj;
-		(void)primary;
-		(void)secondary;
-		(void)angle;
-		(void)lifetimeFrames;
-		return NULL;
-#else
 		return create( primaryObj, primary, secondary, true, lifetimeFrames );
-#endif
 	}
 
 	virtual Object* create(const Object* primaryObj, const Coord3D *primary, const Coord3D* secondary, Bool createOwner, UnsignedInt lifetimeFrames = 0 ) const
 	{
-#ifdef WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY
-		(void)primaryObj;
-		(void)primary;
-		(void)secondary;
-		(void)createOwner;
-		(void)lifetimeFrames;
-		return NULL;
-#else
 		if (!primaryObj || !primary || !secondary)
 		{
 			DEBUG_CRASH(("You must have a primary and secondary source for this effect"));
@@ -567,7 +516,6 @@ public:
 			}
 		}
 		return firstTransport;
-#endif
 	}
 
 	static void parsePayload( INI* ini, void *instance, void *store, const void* /*userData*/ )
@@ -684,12 +632,6 @@ public:
 
 	virtual Object* create( const Object* primary, const Object* secondary, UnsignedInt lifetimeFrames = 0 ) const
 	{
-#ifdef WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY
-		(void)primary;
-		(void)secondary;
-		(void)lifetimeFrames;
-		return NULL;
-#else
 		if (primary)
 		{
 			/// @todo srj -- ack. const_cast is evil.
@@ -717,22 +659,12 @@ public:
 			DEBUG_CRASH(("You must have a primary source for this effect"));
 		}
 		return NULL;
-#endif
 	}
 
 	virtual Object* create(const Object* primaryObj, const Coord3D *primary, const Coord3D* secondary, Real angle, UnsignedInt lifetimeFrames = 0 ) const
 	{
-#ifdef WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY
-		(void)primaryObj;
-		(void)primary;
-		(void)secondary;
-		(void)angle;
-		(void)lifetimeFrames;
-		return NULL;
-#else
 		DEBUG_CRASH(("You must call this effect with an object, not a location"));
 		return NULL;
-#endif
 	}
 
 	static void parse(INI *ini, void *instance, void* /*store*/, const void* /*userData*/)
@@ -857,12 +789,6 @@ public:
 
 	virtual Object* create(const Object* primary, const Object* secondary, UnsignedInt lifetimeFrames = 0 ) const
 	{
-#ifdef WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY
-		(void)primary;
-		(void)secondary;
-		(void)lifetimeFrames;
-		return NULL;
-#else
 		if (primary)
 		{
 			if (m_skipIfSignificantlyAirborne && primary->isSignificantlyAboveTerrain())
@@ -875,19 +801,10 @@ public:
 			DEBUG_CRASH(("You must have a primary source for this effect"));
 		}
 		return NULL;
-#endif
 	}
 
 	virtual Object* create(const Object* primaryObj, const Coord3D *primary, const Coord3D* secondary, Real angle, UnsignedInt lifetimeFrames = 0 ) const
 	{
-#ifdef WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY
-		(void)primaryObj;
-		(void)primary;
-		(void)secondary;
-		(void)angle;
-		(void)lifetimeFrames;
-		return NULL;
-#else
 		if (primary)
 		{
 			const Matrix3D *xfrm = NULL;
@@ -903,7 +820,6 @@ public:
 			DEBUG_CRASH(("You must have a primary source for this effect"));
 		}
 		return NULL;
-#endif
 	}
 
 	static const FieldParse* getCommonFieldParse()

@@ -101,7 +101,6 @@ const FieldParse* DeliverPayloadData::getFieldParse()
 	return dataFieldParse;
 }
 
-#ifndef WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY
 
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
@@ -1245,4 +1244,3 @@ StateReturnType CleanUpState::onEnter() // Delete my successful butt
 	return STATE_CONTINUE;
 }
 
-#endif // WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY
