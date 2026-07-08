@@ -2457,6 +2457,37 @@ function clamp01(value) {
   return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
 }
 
+// Route a Web Audio "playback finished" signal back into the C++ engine so the
+// Miles end-of-sample / end-of-stream callback fires. The real MilesAudioManager
+// relies on that callback to return the 2D/3D voice handle to the free pool,
+// clear the disallow-speech latch, and advance/loop the event. Without this the
+// sample pools exhaust after one use (SFX/unit voices stop mixing) and speech is
+// permanently blocked. `fnName` is the exported completion entry point.
+//
+// Only `cwrap` (not `ccall`) is on the exported runtime methods list, so the
+// wrappers are built via cwrap and cached per function name.
+const cncPortAudioCompletionWrappers = new Map(); // fnName -> cwrapped fn
+function notifyEngineAudioCompleted(fnName, handle) {
+  const module = cncPortEmscriptenModule;
+  if (!module || typeof module.cwrap !== "function") {
+    return;
+  }
+  const numericHandle = Number(handle) >>> 0;
+  if (!numericHandle) {
+    return;
+  }
+  try {
+    let wrapper = cncPortAudioCompletionWrappers.get(fnName);
+    if (!wrapper) {
+      wrapper = module.cwrap(fnName, null, ["number"]);
+      cncPortAudioCompletionWrappers.set(fnName, wrapper);
+    }
+    wrapper(numericHandle);
+  } catch (error) {
+    console.error(`${fnName} failed`, error);
+  }
+}
+
 function cncPortMssSampleStart(payload, heapu8) {
   const context = browserAudioRuntime.context;
   if (!context || context.state !== "running") {
@@ -2535,6 +2566,7 @@ function cncPortMssSampleStart(payload, heapu8) {
         : ["AudioBufferSourceNode", "GainNode", "soundGainNode", "AudioDestinationNode"],
     };
 
+    const activeEntry = { source, gain, panner, stoppedByEngine: false };
     const completion = new Promise((resolve) => {
       source.onended = () => {
         try {
@@ -2546,7 +2578,15 @@ function cncPortMssSampleStart(payload, heapu8) {
           resolve({ handle, phase: "completed", ignoredAfterReset: true });
           return;
         }
-        browserMssSamplePlaybackRuntime.activeSources.delete(handle);
+        const engineStopped = activeEntry.stoppedByEngine;
+        // Clean up this source's bookkeeping BEFORE notifying the engine. The
+        // engine's completion path may synchronously re-play the same handle
+        // (attack->sound->decay portions, looping sounds) which reinstalls a
+        // fresh activeSources entry for this handle; deleting only when the
+        // stored entry is still ours avoids clobbering that new playback.
+        if (browserMssSamplePlaybackRuntime.activeSources.get(handle) === activeEntry) {
+          browserMssSamplePlaybackRuntime.activeSources.delete(handle);
+        }
         browserMssSamplePlaybackRuntime.pendingCompletions.delete(handle);
         browserMssSamplePlaybackRuntime.completed += 1;
         const ended = {
@@ -2558,6 +2598,12 @@ function cncPortMssSampleStart(payload, heapu8) {
         browserMssSamplePlaybackRuntime.eventLog.push(ended);
         browserMssSamplePlaybackRuntime.lastEvent = { ...event, completion: ended };
         browserMssSamplePlaybackRuntime.lastError = null;
+        // Natural end-of-buffer (not an engine-initiated stop/release): fire the
+        // Miles EOS callback so the engine frees this 2D voice handle. Done last
+        // so any re-play it triggers installs cleanly over the cleared entry.
+        if (!engineStopped) {
+          notifyEngineAudioCompleted("cnc_port_mss_complete_sample", handle);
+        }
         resolve(ended);
       };
     });
@@ -2568,7 +2614,7 @@ function cncPortMssSampleStart(payload, heapu8) {
       { handle, phase: "webAudioStart", volume, stereoPan: pan },
     );
     browserMssSamplePlaybackRuntime.lastEvent = event;
-    browserMssSamplePlaybackRuntime.activeSources.set(handle, { source, gain, panner });
+    browserMssSamplePlaybackRuntime.activeSources.set(handle, activeEntry);
     browserMssSamplePlaybackRuntime.pendingCompletions.set(handle, completion);
     source.start(context.currentTime);
     return true;
@@ -2586,6 +2632,9 @@ function cncPortMssSampleStop(payload) {
   }
   browserMssSamplePlaybackRuntime.stopped += 1;
   browserMssSamplePlaybackRuntime.eventLog.push({ handle, phase: "AIL_stop_sample" });
+  // Engine-initiated stop: the engine already owns the completion of this voice,
+  // so suppress the natural-end completion callback in onended.
+  entry.stoppedByEngine = true;
   try {
     entry.source.stop();
   } catch {
@@ -2769,6 +2818,7 @@ function cncPortMss3DSampleStart(payload, heapu8) {
       ],
     };
 
+    const activeEntry = { source, gain, panner, stoppedByEngine: false };
     const completion = new Promise((resolve) => {
       source.onended = () => {
         try {
@@ -2778,7 +2828,12 @@ function cncPortMss3DSampleStart(payload, heapu8) {
           resolve({ handle, phase: "completed", ignoredAfterReset: true });
           return;
         }
-        browserMss3DSamplePlaybackRuntime.activeSources.delete(handle);
+        const engineStopped = activeEntry.stoppedByEngine;
+        // Clean up before notifying so a synchronous engine re-play of this
+        // handle (multi-portion / looping sounds) is not clobbered.
+        if (browserMss3DSamplePlaybackRuntime.activeSources.get(handle) === activeEntry) {
+          browserMss3DSamplePlaybackRuntime.activeSources.delete(handle);
+        }
         browserMss3DSamplePlaybackRuntime.pendingCompletions.delete(handle);
         browserMss3DSamplePlaybackRuntime.ended += 1;
         browserMss3DSamplePlaybackRuntime.eventLog.push({
@@ -2788,6 +2843,11 @@ function cncPortMss3DSampleStart(payload, heapu8) {
         });
         browserMss3DSamplePlaybackRuntime.lastEvent = { ...event, completion: { handle, phase: "completed" } };
         browserMss3DSamplePlaybackRuntime.lastError = null;
+        // Natural end-of-buffer: fire the Miles 3D EOS callback so the engine
+        // frees this positional voice handle (done last, after cleanup).
+        if (!engineStopped) {
+          notifyEngineAudioCompleted("cnc_port_mss_complete_3d_sample", handle);
+        }
         resolve({ handle, phase: "completed" });
       };
     });
@@ -2798,7 +2858,7 @@ function cncPortMss3DSampleStart(payload, heapu8) {
       { handle, phase: "webAudioStart3D", volume, position },
     );
     browserMss3DSamplePlaybackRuntime.lastEvent = event;
-    browserMss3DSamplePlaybackRuntime.activeSources.set(handle, { source, gain, panner });
+    browserMss3DSamplePlaybackRuntime.activeSources.set(handle, activeEntry);
     browserMss3DSamplePlaybackRuntime.pendingCompletions.set(handle, completion);
     source.start(context.currentTime);
     return true;
@@ -2894,6 +2954,8 @@ function cncPortMss3DSampleStop(payload) {
   }
   browserMss3DSamplePlaybackRuntime.stopped += 1;
   browserMss3DSamplePlaybackRuntime.eventLog.push({ handle, phase: "AIL_stop_3D_sample" });
+  // Engine-initiated stop: suppress the natural-end completion callback.
+  entry.stoppedByEngine = true;
   try {
     entry.source.stop();
   } catch { /* already ended */ }
@@ -3121,13 +3183,19 @@ async function _startMssStreamAsync(payload) {
   gain.connect(busNode);
   source.start(context.currentTime);
 
+  const streamEntry = { source, gain, volume, stoppedByEngine: false };
   // Mirror the sample path's onended cleanup so non-looping streams
   // are removed from activeSources and musicSourceActive is updated.
   source.onended = () => {
     try {
       source.disconnect();
     } catch { /* already disconnected */ }
-    browserMssStreamPlaybackRuntime.activeSources.delete(handle);
+    const engineStopped = streamEntry.stoppedByEngine;
+    // Clean up before notifying so a synchronous engine re-play of this handle
+    // does not get clobbered.
+    if (browserMssStreamPlaybackRuntime.activeSources.get(handle) === streamEntry) {
+      browserMssStreamPlaybackRuntime.activeSources.delete(handle);
+    }
     browserMssStreamPlaybackRuntime.ended += 1;
     browserMssStreamPlaybackRuntime.musicSourceActive =
       browserMssStreamPlaybackRuntime.activeSources.size > 0;
@@ -3138,9 +3206,17 @@ async function _startMssStreamAsync(payload) {
       order: browserMssStreamPlaybackRuntime.ended,
     });
     browserMssStreamPlaybackRuntime.lastError = null;
+    // Natural end of a non-looping stream (speech / EVA / dialog). Fire the
+    // Miles end-of-stream callback so the engine runs setStreamCompleted() ->
+    // notifyOfAudioCompletion(): this clears the disallow-speech latch (so the
+    // next speech line is not dropped) and releases the stream channel. Music
+    // loops forever and never reaches this path.
+    if (!engineStopped) {
+      notifyEngineAudioCompleted("cnc_port_mss_complete_stream", handle);
+    }
   };
 
-  browserMssStreamPlaybackRuntime.activeSources.set(handle, { source, gain, volume });
+  browserMssStreamPlaybackRuntime.activeSources.set(handle, streamEntry);
   browserMssStreamPlaybackRuntime.musicSourceActive = true;
   browserMssStreamPlaybackRuntime.scheduled += 1;
   browserMssStreamPlaybackRuntime.lastEvent = {
@@ -3183,6 +3259,10 @@ function cncPortMssStreamStop(payload) {
   try {
     const active = browserMssStreamPlaybackRuntime.activeSources.get(handle);
     if (active) {
+      // Engine-initiated close: suppress the natural-end completion callback so
+      // we don't re-enter the engine's completion path for a stream it is
+      // already tearing down.
+      active.stoppedByEngine = true;
       active.source.stop();
       browserMssStreamPlaybackRuntime.activeSources.delete(handle);
     }

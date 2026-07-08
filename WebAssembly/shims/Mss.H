@@ -1977,6 +1977,22 @@ static inline AIL_stream_callback AIL_register_stream_callback(HSTREAM stream, A
 	state->eos_callback = callback;
 	return previous;
 }
+// Fire the registered end-of-stream callback for a stream that has finished
+// playing in the browser. Real Miles drives this from its own mixer thread
+// when a (non-looping) stream reaches its end; in the browser the Web Audio
+// "ended" event is the equivalent trigger and must be routed back here so the
+// engine's setStreamCompleted() -> notifyOfAudioCompletion() path runs (clears
+// disallow-speech, advances/loops, releases the stream channel).
+static inline void AIL_end_stream(HSTREAM stream)
+{
+	MSSBrowserStreamState *state = MSSBrowserFindStream(stream);
+	if (state != nullptr) {
+		state->status = SMP_DONE;
+		if (state->eos_callback != nullptr) {
+			state->eos_callback(stream);
+		}
+	}
+}
 static inline void AIL_set_file_callbacks(
 	AIL_file_open_callback open,
 	AIL_file_close_callback close,
