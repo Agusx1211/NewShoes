@@ -549,7 +549,15 @@ symptom is temporal — NOT a single still.
       sampler fast-path correctly invalidates when the bound texture or stage
       changes, and diff behavior with the bind cache disabled. Also consider a
       terrain tile-texture atlas/UV/index bug independent of the cache. Verify no
-      wrong tiles appear across a panned multi-frame terrain view.
+      wrong tiles appear across a panned multi-frame terrain view. 2026-07-08
+      (scout lead): also rule out a D3D8→WebGL2 **format-coverage gap** — the
+      bridge logs "format is not implemented by the initial uncompressed texture
+      bridge" (`harness/bridge.js:4733`) and a depth/stencil equivalent (`:4779`)
+      and bumps an `unsupportedUpdates` / `lastUnsupported` counter. If a specific
+      terrain/decal texture format isn't implemented, that tile/overlay silently
+      draws wrong or not at all. Check that counter when this bug (and the
+      toxin/radiation-field bug above) reproduces — a nonzero count points at a
+      missing format path rather than the bind cache.
 - [ ] **Trees render too bright — tree lighting is wrong** — 2026-07-08: after the
       terrain-adjacent buffers were re-enabled (commit `2df600c5`) and the correct
       `dist-release` build reached the Mac, `W3DTreeBuffer` trees now draw, but on
