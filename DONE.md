@@ -64,6 +64,33 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `reflow` field (`"in-place"` / `"shell"`) for harness verification.
       build:port green; JS `node --check` clean. NOTE: the command bar is rebuilt
       (brief repopulate) on the in-place path; selection/camera/units persist.
+- [x] **Resolution/fullscreen behavior fixes (4 Mac-tested bugs).**
+      (1) **Aspect stretch + (4) broken building-placement hover at non-default /
+      fullscreen res** shared one root cause: bridge.js `syncCanvasSize()` runs
+      every draw and reset `canvas.width/height` back to CSS-box x DPR, so the
+      WebGL backing store no longer matched the engine render target (different
+      size AND aspect) -> non-uniform D3D8 viewport scale (stretched geometry) and
+      a broken screen<->world unproject (`getPickRay`/`screenToTerrain` ->
+      `PixelScreenToW3DLogicalScreen` + `Device_To_View_Space`, which divides by
+      `Get_Render_Target_Resolution`), so the placement ghost tracked the wrong
+      terrain point. Fix: pin the backing store to the applied engine resolution
+      (`explicitEngineBackingStore` in `bridge.js`; `getCanvasDisplaySize` honors
+      it) so buffer == render target 1:1 -> no stretch, correct pick-ray. The
+      in-place reflow already resizes `TheTacticalView` (aspect via
+      `W3DView::setWidth/setHeight` -> `Set_Aspect_Ratio(width/height)`), and
+      `harnessState.engineDisplaySize` keeps pointer->engine mapping right.
+      (2) **Arrow/edge scroll too slow at high res**: `W3DView::scrollBy`
+      (`W3DView.cpp`) fed a fixed pixel `SCROLL_RESOLUTION` through
+      `Device_To_World_Space`, which divides by the render resolution -> world
+      scroll distance inversely proportional to res. Scaled the pixel offset by
+      render size vs the 800x600 baseline so scroll is res-independent (identical
+      to stock at 800x600).
+      (3) **ESC-exit fullscreen -> black screen**: the `fullscreenchange` resize
+      ran mid-transition (canvas rect / `screen.*` degenerate) and broke the
+      render target. `play.mjs` now defers the enter/exit resize to
+      `requestAnimationFrame`, guards degenerate sizes with retries, and re-applies
+      the windowed resolution after layout settles so the game stays live/visible;
+      the continuous frame loop repaints. build:port green; JS `node --check` clean.
 
 ## Probe-stub / ODR-shadow burndown (2026-07-08 orchestrated session)
 
