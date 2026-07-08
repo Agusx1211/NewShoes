@@ -6315,6 +6315,112 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_stop_audio_even
 	return json.c_str();
 }
 
+// ---------------------------------------------------------------------------
+// Audio-device state diagnostic.
+//
+// Reports the real MilesAudioManager device state so the harness can confirm,
+// in a live skirmish, whether the sample pools were actually allocated and a
+// provider is open.  If the pools are 0/0 (provider never selected ->
+// initSamplePools() never ran) every 2D/3D SFX and unit voice is silently
+// dropped in SoundManager::canPlayNow() before it can reach AIL_start_sample(),
+// which is exactly the "music plays but SFX/voices don't" symptom.
+//
+// The per-outcome counters come from g_milesAudioDeviceDiagnostics, which is
+// defined in MilesAudioManager.cpp and instruments the real play path.  We
+// mirror its layout here and pull it through the accessor declared alongside it.
+struct MilesAudioDeviceDiagnostics
+{
+	unsigned long long addAudioEventRequested;
+	unsigned long long playSampleRequested;
+	unsigned long long playSampleStarted;
+	unsigned long long playSampleDroppedFileNotFound;
+	unsigned long long playSample3DRequested;
+	unsigned long long playSample3DStarted;
+	unsigned long long playSample3DDroppedFileNotFound;
+	unsigned long long playSample3DDroppedNoPosition;
+};
+const MilesAudioDeviceDiagnostics *MilesAudioManagerPeekDeviceDiagnostics( void );
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_audio_device_state( void )
+{
+	static std::string json;
+	json = "{\"ok\":false,\"source\":\"audio-device-state\"";
+	if (TheAudio == NULL) {
+		json += ",\"guard\":\"TheAudio\"}";
+		return json.c_str();
+	}
+
+	const UnsignedInt selectedProvider = TheAudio->getSelectedProvider();
+	const UnsignedInt providerCount = TheAudio->getProviderCount();
+	// PROVIDER_ERROR is 0xFFFFFFFF; a selection >= providerCount means no
+	// provider is bound and initSamplePools() has not run.
+	const bool providerOpen = (selectedProvider < providerCount);
+
+	json = "{\"ok\":true,\"source\":\"audio-device-state\"";
+	json += ",\"selectedProvider\":" + std::to_string(static_cast<unsigned long long>(selectedProvider));
+	json += ",\"providerOpen\":";
+	json += providerOpen ? "true" : "false";
+	json += ",\"providerCount\":" + std::to_string(static_cast<unsigned long long>(providerCount));
+	json += ",\"selectedProviderName\":\"";
+	if (providerOpen) {
+		json += json_escape(TheAudio->getProviderName(selectedProvider).str());
+	}
+	json += "\"";
+
+	// Enumerate the provider list so we can see whether the fast-2D failsafe
+	// name the port relies on is actually present.
+	json += ",\"providers\":[";
+	for (UnsignedInt i = 0; i < providerCount; ++i) {
+		if (i != 0) {
+			json += ",";
+		}
+		json += "\"" + json_escape(TheAudio->getProviderName(i).str()) + "\"";
+	}
+	json += "]";
+
+	// Pool sizes: these are 0/0 until initSamplePools() runs.  A non-zero
+	// num2D/num3D is the load-bearing "pools were allocated" signal.
+	const UnsignedInt num2D = TheAudio->getNum2DSamples();
+	const UnsignedInt num3D = TheAudio->getNum3DSamples();
+	json += ",\"num2DSamples\":" + std::to_string(static_cast<unsigned long long>(num2D));
+	json += ",\"num3DSamples\":" + std::to_string(static_cast<unsigned long long>(num3D));
+	json += ",\"poolsAllocated\":";
+	json += (num2D > 0 || num3D > 0) ? "true" : "false";
+
+	// Preferred/failsafe provider name resolution: this is what selectProvider()
+	// tried to open, and why the pools may not have been allocated.
+	const AudioSettings *settings = TheAudio->getAudioSettings();
+	if (settings != NULL) {
+		const AsciiString fast2D("Miles Fast 2D Positional Audio");
+		json += ",\"fast2DProviderIndex\":" +
+			std::to_string(static_cast<unsigned long long>(TheAudio->getProviderIndex(fast2D)));
+	}
+
+	// Per-outcome play-path counters from the real MilesAudioManager.
+	const MilesAudioDeviceDiagnostics *diag = MilesAudioManagerPeekDeviceDiagnostics();
+	if (diag != NULL) {
+		json += ",\"playPath\":{";
+		json += "\"addAudioEventRequested\":" + std::to_string(diag->addAudioEventRequested);
+		json += ",\"playSampleRequested\":" + std::to_string(diag->playSampleRequested);
+		json += ",\"playSampleStarted\":" + std::to_string(diag->playSampleStarted);
+		json += ",\"playSampleDroppedFileNotFound\":" + std::to_string(diag->playSampleDroppedFileNotFound);
+		json += ",\"playSample3DRequested\":" + std::to_string(diag->playSample3DRequested);
+		json += ",\"playSample3DStarted\":" + std::to_string(diag->playSample3DStarted);
+		json += ",\"playSample3DDroppedFileNotFound\":" + std::to_string(diag->playSample3DDroppedFileNotFound);
+		json += ",\"playSample3DDroppedNoPosition\":" + std::to_string(diag->playSample3DDroppedNoPosition);
+		json += "}";
+	}
+
+	json += ",\"soundOn\":";
+	json += TheAudio->isOn(AudioAffect_Sound) ? "true" : "false";
+	json += ",\"sound3DOn\":";
+	json += TheAudio->isOn(AudioAffect_Sound3D) ? "true" : "false";
+	json += ",\"speechOn\":";
+	json += TheAudio->isOn(AudioAffect_Speech) ? "true" : "false";
+	json += "}";
+	return json.c_str();
+}
+
 // Query all drawables in the game client, returning position, ownership, and
 // screen-space info. Safe to call before init — returns {"ready":false}.
 //

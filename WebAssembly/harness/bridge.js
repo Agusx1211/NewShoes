@@ -13151,6 +13151,11 @@ async function loadWasmModule() {
         "string",
         ["string", "number", "number", "number", "number", "number", "number", "number"],
       ),
+      audioDeviceState: module.cwrap(
+        "cnc_port_audio_device_state",
+        "string",
+        [],
+      ),
       realEngineStopAudioEvent: module.cwrap(
         "cnc_port_real_engine_stop_audio_event",
         "string",
@@ -18420,6 +18425,40 @@ async function rpc(command, payload = {}) {
           state: snapshotState(),
         };
       }
+    case "audioDeviceState":
+      {
+        // Queryable snapshot of the real MilesAudioManager device state so the
+        // harness can confirm, in a live skirmish, whether the Miles sample
+        // pools were actually allocated (num2D/num3DSamples > 0) and a provider
+        // is open.  If the pools are 0/0, SoundManager::canPlayNow() drops every
+        // 2D/3D SFX/voice before AIL_start_sample(), which is the "music plays
+        // but SFX/voices don't" symptom.  Paired with browserMssSamplePlayback-
+        // Runtime.started climbing off 0 once the pools exist.
+        const moduleResult = await getWasmModuleForArchives("audioDeviceState");
+        if (moduleResult.error) {
+          return { ok: false, command: "audioDeviceState", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.audioDeviceState());
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        recordLog("audio device state", { aborted, abortMessage, result });
+        return {
+          ok: Boolean(result?.ok) && !aborted,
+          command: "audioDeviceState",
+          aborted,
+          abortMessage,
+          result,
+          browserMssSamplePlaybackRuntime: summarizeBrowserMssSamplePlaybackRuntime(),
+          browserMss3DSamplePlaybackRuntime: summarizeBrowserMss3DSamplePlaybackRuntime(),
+          browserMssStreamPlaybackRuntime: summarizeBrowserMssStreamPlaybackRuntime(),
+        };
+      }
     case "realEnginePlayAudioEvent":
       {
         const moduleResult = await getWasmModuleForArchives("realEnginePlayAudioEvent");
@@ -18444,6 +18483,15 @@ async function rpc(command, payload = {}) {
           aborted = true;
           abortMessage = error?.message ?? String(error);
         }
+        // Fold in the real audio-device state so a single play call surfaces
+        // whether the sample pools exist and a provider is open -- the signal
+        // that tells us why "started" is or isn't climbing.
+        let audioDeviceState = null;
+        try {
+          audioDeviceState = JSON.parse(moduleResult.wasmModule.audioDeviceState());
+        } catch (error) {
+          audioDeviceState = { ok: false, error: error?.message ?? String(error) };
+        }
         recordLog("real engine play audio event", { aborted, abortMessage, result });
         return {
           ok: Boolean(result?.ok) && !aborted,
@@ -18451,6 +18499,7 @@ async function rpc(command, payload = {}) {
           aborted,
           abortMessage,
           result,
+          audioDeviceState,
           browserMssSamplePlaybackRuntime: summarizeBrowserMssSamplePlaybackRuntime(),
           browserMss3DSamplePlaybackRuntime: summarizeBrowserMss3DSamplePlaybackRuntime(),
           browserMssStreamPlaybackRuntime: summarizeBrowserMssStreamPlaybackRuntime(),

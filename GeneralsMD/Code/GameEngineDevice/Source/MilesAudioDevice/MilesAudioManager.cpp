@@ -73,6 +73,38 @@
 
 enum { INFINITE_LOOP_COUNT = 1000000 };
 
+// ---------------------------------------------------------------------------
+// Browser audio-device diagnostics.
+//
+// The WebAssembly port drops in-game SFX/voices silently when the Miles sample
+// pools are never allocated (provider not selected -> initSamplePools() never
+// runs -> getNum2D/3DSamples()==0 -> SoundManager::canPlayNow()'s
+// "playing < poolSize" channel check is 0 < 0 == false, so every 2D/3D event is
+// released before it ever reaches playSample()/AIL_start_sample()).  These
+// counters give the harness an objective, queryable view of the real play path
+// so we can see whether pools exist and where events are being dropped.  This is
+// pure instrumentation of the real subsystem; it does not change gameplay.
+struct MilesAudioDeviceDiagnostics
+{
+	unsigned long long addAudioEventRequested;      // MilesAudioManager::addAudioEvent entries
+	unsigned long long playSampleRequested;         // playSample() entries (past canPlayNow)
+	unsigned long long playSampleStarted;           // playSample() reached AIL_start_sample()
+	unsigned long long playSampleDroppedFileNotFound; // loadFileForRead() returned NULL
+	unsigned long long playSample3DRequested;       // playSample3D() entries
+	unsigned long long playSample3DStarted;         // playSample3D() reached AIL_start_3D_sample()
+	unsigned long long playSample3DDroppedFileNotFound;
+	unsigned long long playSample3DDroppedNoPosition;
+};
+
+static MilesAudioDeviceDiagnostics g_milesAudioDeviceDiagnostics = {0,0,0,0,0,0,0,0};
+
+// Exposed via WebAssembly/src for the harness device-state RPC.  Declared here
+// (not in the header) so it is available to whatever TU builds the C export.
+const MilesAudioDeviceDiagnostics *MilesAudioManagerPeekDeviceDiagnostics( void )
+{
+	return &g_milesAudioDeviceDiagnostics;
+}
+
 // Callback functions useful for Miles ////////////////////////////////////////////////////////////
 static void AILCALLBACK setSampleCompleted( HSAMPLE sampleCompleted );
 static void AILCALLBACK set3DSampleCompleted( H3DSAMPLE sample3DCompleted );
@@ -117,6 +149,7 @@ MilesAudioManager::~MilesAudioManager()
 #if defined(_DEBUG) || defined(_INTERNAL)
 AudioHandle MilesAudioManager::addAudioEvent( const AudioEventRTS *eventToAdd )
 {
+	++g_milesAudioDeviceDiagnostics.addAudioEventRequested;
 	if (TheGlobalData->m_preloadReport) {
 		if (!eventToAdd->getEventName().isEmpty()) {
 			m_allEventsLoaded.insert(eventToAdd->getEventName());
@@ -1660,17 +1693,29 @@ UnsignedInt MilesAudioManager::getProviderIndex( AsciiString providerName ) cons
 //-------------------------------------------------------------------------------------------------
 void MilesAudioManager::selectProvider( UnsignedInt providerNdx )
 {
-	if (!isOn(AudioAffect_Sound3D)) 
+	if (!isOn(AudioAffect_Sound3D))
 	{
 		return;
 	}
 
-	if (providerNdx == m_selectedProvider) 
+	// Original early-out: bail if the caller asked for the provider we already
+	// have selected.  BUT at init both the incoming index and m_selectedProvider
+	// are PROVIDER_ERROR (0xFFFFFFFF) whenever getProviderIndex(m_pref3DProvider)
+	// fails to resolve the preferred 3D-provider name (e.g. no user prefs file in
+	// the browser, or the enumerated provider list uses a different name than the
+	// INI default).  In that case PROVIDER_ERROR == PROVIDER_ERROR made this
+	// return BEFORE ever opening a provider or calling initSamplePools(), so the
+	// sample pools stayed at 0/0 and SoundManager::canPlayNow() dropped every
+	// 2D/3D SFX and unit voice (streams/music were unaffected).  Only take the
+	// early-out when we are genuinely already on a valid, selected provider; if
+	// nothing is selected yet, fall through and open the failsafe provider so the
+	// pools get allocated.  Behavior is unchanged once a real provider is bound.
+	if (providerNdx == m_selectedProvider && isValidProvider())
 	{
 		return;
 	}
 
-	if (isValidProvider()) 
+	if (isValidProvider())
 	{
 		freeAllMilesHandles();
 		unselectProvider();
@@ -1726,22 +1771,31 @@ void MilesAudioManager::selectProvider( UnsignedInt providerNdx )
 	{
 		providerNdx = getProviderIndex( "Miles Fast 2D Positional Audio" );
 	}
-	success = AIL_open_3D_provider( m_provider3D[providerNdx].id ) == 0;
+	// Guard the m_provider3D[] index: getProviderIndex returns PROVIDER_ERROR
+	// (0xFFFFFFFF) when the name is not enumerated, which would index the array
+	// out of bounds.  Only attempt to open a resolved provider.
+	if( providerNdx < m_providerCount )
+	{
+		success = AIL_open_3D_provider( m_provider3D[providerNdx].id ) == 0;
+	}
 
-	//if (providerNdx < m_providerCount) 
+	//if (providerNdx < m_providerCount)
 	//{
 	//	failed = AIL_open_3D_provider(m_provider3D[providerNdx].id);
 	//}
 
 
 
-	if( !success ) 
+	if( !success )
 	{
 		m_selectedProvider = PROVIDER_ERROR;
 		// try to select a failsafe
 		providerNdx = getProviderIndex( "Miles Fast 2D Positional Audio" );
-		success = AIL_open_3D_provider( m_provider3D[providerNdx].id ) == 0;
-	} 
+		if( providerNdx < m_providerCount )
+		{
+			success = AIL_open_3D_provider( m_provider3D[providerNdx].id ) == 0;
+		}
+	}
 
 	if ( success )
 	{
@@ -2825,6 +2879,7 @@ void MilesAudioManager::playStream( AudioEventRTS *event, HSTREAM stream )
 //-------------------------------------------------------------------------------------------------
 void *MilesAudioManager::playSample( AudioEventRTS *event, HSAMPLE sample )
 {
+	++g_milesAudioDeviceDiagnostics.playSampleRequested;
 	AIL_init_sample(sample);
 
 	// Prep any sort of filtering, etc, here
@@ -2839,6 +2894,9 @@ void *MilesAudioManager::playSample( AudioEventRTS *event, HSAMPLE sample )
 
 		// Start playback
 		AIL_start_sample(sample);
+		++g_milesAudioDeviceDiagnostics.playSampleStarted;
+	} else {
+		++g_milesAudioDeviceDiagnostics.playSampleDroppedFileNotFound;
 	}
 
 	return fileBuffer;
@@ -2847,6 +2905,7 @@ void *MilesAudioManager::playSample( AudioEventRTS *event, HSAMPLE sample )
 //-------------------------------------------------------------------------------------------------
 void *MilesAudioManager::playSample3D( AudioEventRTS *event, H3DSAMPLE sample3D )
 {
+	++g_milesAudioDeviceDiagnostics.playSample3DRequested;
 	const Coord3D *pos = getCurrentPositionFromEvent(event);
 	if (pos) {
 		// Load the file in
@@ -2873,10 +2932,14 @@ void *MilesAudioManager::playSample3D( AudioEventRTS *event, H3DSAMPLE sample3D 
 			
 			// Start playback
 			AIL_start_3D_sample(sample3D);
+			++g_milesAudioDeviceDiagnostics.playSample3DStarted;
+		} else {
+			++g_milesAudioDeviceDiagnostics.playSample3DDroppedFileNotFound;
 		}
 		return fileBuffer;
 	}
 
+	++g_milesAudioDeviceDiagnostics.playSample3DDroppedNoPosition;
 	return NULL;
 }
 
