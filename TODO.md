@@ -586,16 +586,6 @@ symptom is temporal — NOT a single still.
       whether it depends on a projected-decal / blend / texture path that is
       currently stubbed or mis-blended. Verify with a screenshot of an active
       anthrax/radiation field on the ground.
-- [ ] **Post-match stats/score screen is broken and cannot be closed** — after a
-      match ends, the end-of-game stats/score screen renders broken (garbled /
-      wrong layout) and has no working way to dismiss it (buttons don't respond /
-      no close), trapping the player. Reproduce by finishing a skirmish match.
-      Investigate both (a) the score-screen window/layout rendering (the
-      `ScoreScreen` / end-game window GUI draw + its data population) and (b) its
-      button callbacks / input wiring (same class of dead-button issue seen with
-      the Esc menu and skirmish quit menu — check the window's callbacks are
-      registered and reachable through the browser input path). Verify the screen
-      renders correctly AND a close/continue button returns to the menu.
 - [ ] **Physical iPad Safari canvas-drag confirmation** — after the browser-side
       canvas selection/callout suppression, run the real playable page on an
       iPad in Safari and confirm an in-game touch drag no longer highlights the

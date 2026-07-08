@@ -40,9 +40,34 @@ extern WindowMsgHandledType ExtendedMessageBoxSystem(GameWindow *window,
 extern WindowMsgHandledType QuitMenuSystem(GameWindow *window, UnsignedInt msg,
 	WindowMsgData mData1, WindowMsgData mData2);
 
+// Score screen (end-of-match stats) callbacks -- the real owners live in
+// GameClient/GUI/GUICallbacks/Menus/ScoreScreen.cpp and are linked into
+// cnc-port, but the reduced runtime FunctionLexicon table
+// (wasm_ww3d_render_probe.cpp) omits them, so the ScoreScreen.wnd layout can
+// neither run its init/update/shutdown (broken layout + no data) nor dispatch
+// its system/input callbacks (dead OK/continue button and dead ESC).  Repair
+// the tables at runtime the same way the quit-menu owners are repaired.
+extern WindowMsgHandledType ScoreScreenSystem(GameWindow *window, UnsignedInt msg,
+	WindowMsgData mData1, WindowMsgData mData2);
+extern WindowMsgHandledType ScoreScreenInput(GameWindow *window, UnsignedInt msg,
+	WindowMsgData mData1, WindowMsgData mData2);
+extern void ScoreScreenInit(WindowLayout *layout, void *userData);
+extern void ScoreScreenUpdate(WindowLayout *layout, void *userData);
+extern void ScoreScreenShutdown(WindowLayout *layout, void *userData);
+
 #ifdef __EMSCRIPTEN__
 __attribute__((used)) static GameWinSystemFunc g_keep_quit_menu_system =
 	QuitMenuSystem;
+__attribute__((used)) static GameWinSystemFunc g_keep_score_screen_system =
+	ScoreScreenSystem;
+__attribute__((used)) static GameWinInputFunc g_keep_score_screen_input =
+	ScoreScreenInput;
+__attribute__((used)) static WindowLayoutInitFunc g_keep_score_screen_init =
+	ScoreScreenInit;
+__attribute__((used)) static WindowLayoutUpdateFunc g_keep_score_screen_update =
+	ScoreScreenUpdate;
+__attribute__((used)) static WindowLayoutShutdownFunc g_keep_score_screen_shutdown =
+	ScoreScreenShutdown;
 __attribute__((used)) static GameWinSystemFunc g_keep_control_bar_system =
 	ControlBarSystem;
 __attribute__((used)) static GameWinInputFunc g_keep_left_hud_input =
@@ -129,6 +154,18 @@ void repair_gameplay_callback_owners()
 		TheFunctionLexicon->gameWinSystemFunc(
 			TheNameKeyGenerator->nameToKey("GeneralsExpPointsSystem")) ==
 			GeneralsExpPointsSystem &&
+		TheFunctionLexicon->gameWinSystemFunc(
+			TheNameKeyGenerator->nameToKey("ScoreScreenSystem")) == ScoreScreenSystem &&
+		TheFunctionLexicon->gameWinInputFunc(
+			TheNameKeyGenerator->nameToKey("ScoreScreenInput")) == ScoreScreenInput &&
+		TheFunctionLexicon->winLayoutInitFunc(
+			TheNameKeyGenerator->nameToKey("ScoreScreenInit"),
+			FunctionLexicon::TABLE_WIN_LAYOUT_INIT) == ScoreScreenInit &&
+		TheFunctionLexicon->winLayoutUpdateFunc(
+			TheNameKeyGenerator->nameToKey("ScoreScreenUpdate")) == ScoreScreenUpdate &&
+		TheFunctionLexicon->winLayoutShutdownFunc(
+			TheNameKeyGenerator->nameToKey("ScoreScreenShutdown")) ==
+			ScoreScreenShutdown &&
 		TheFunctionLexicon->gameWinInputFunc(
 			TheNameKeyGenerator->nameToKey("LeftHUDInput")) == LeftHUDInput &&
 		TheFunctionLexicon->gameWinInputFunc(
@@ -142,17 +179,41 @@ void repair_gameplay_callback_owners()
 		{ "ControlBarSystem", FunctionLexicon::TableFunction(ControlBarSystem) },
 		{ "GeneralsExpPointsSystem",
 			FunctionLexicon::TableFunction(GeneralsExpPointsSystem) },
+		{ "ScoreScreenSystem", FunctionLexicon::TableFunction(ScoreScreenSystem) },
 	};
 	const RuntimeLexiconEntry input_entries[] = {
 		{ "LeftHUDInput", FunctionLexicon::TableFunction(LeftHUDInput) },
 		{ "GeneralsExpPointsInput",
 			FunctionLexicon::TableFunction(GeneralsExpPointsInput) },
+		{ "ScoreScreenInput", FunctionLexicon::TableFunction(ScoreScreenInput) },
+	};
+	// ScoreScreen's window-layout callbacks (init/update/shutdown) are looked up
+	// by the ScoreScreen.wnd load path; without them the layout never populates
+	// its stats/data and never sets up its transition group -> broken render.
+	const RuntimeLexiconEntry layout_init_entries[] = {
+		{ "ScoreScreenInit", FunctionLexicon::TableFunction(ScoreScreenInit) },
+	};
+	const RuntimeLexiconEntry layout_update_entries[] = {
+		{ "ScoreScreenUpdate", FunctionLexicon::TableFunction(ScoreScreenUpdate) },
+	};
+	const RuntimeLexiconEntry layout_shutdown_entries[] = {
+		{ "ScoreScreenShutdown",
+			FunctionLexicon::TableFunction(ScoreScreenShutdown) },
 	};
 
 	load_runtime_table_with_entries(FunctionLexicon::TABLE_GAME_WIN_SYSTEM,
 		system_entries, sizeof(system_entries) / sizeof(system_entries[0]));
 	load_runtime_table_with_entries(FunctionLexicon::TABLE_GAME_WIN_INPUT,
 		input_entries, sizeof(input_entries) / sizeof(input_entries[0]));
+	load_runtime_table_with_entries(FunctionLexicon::TABLE_WIN_LAYOUT_INIT,
+		layout_init_entries,
+		sizeof(layout_init_entries) / sizeof(layout_init_entries[0]));
+	load_runtime_table_with_entries(FunctionLexicon::TABLE_WIN_LAYOUT_UPDATE,
+		layout_update_entries,
+		sizeof(layout_update_entries) / sizeof(layout_update_entries[0]));
+	load_runtime_table_with_entries(FunctionLexicon::TABLE_WIN_LAYOUT_SHUTDOWN,
+		layout_shutdown_entries,
+		sizeof(layout_shutdown_entries) / sizeof(layout_shutdown_entries[0]));
 }
 
 const char *json_bool(bool value)
