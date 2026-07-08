@@ -10,6 +10,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Browser display / harness UX (2026-07-08)
 
+- [x] **Trees rendered over-bright / fully illuminated — fixed by re-baking tree
+      lighting on lighting/time-of-day change** (commit 844629f5, user-confirmed on
+      real Metal GPU). `W3DTreeBuffer` bakes scene lighting into each tree vertex's
+      diffuse ONCE and caches it (gated by `m_anythingChanged`);
+      `BaseHeightMapRenderObjClass::staticLightingChanged()` re-baked terrain
+      (`m_needFullUpdate`) and roads (`m_roadBuffer->updateLighting`) but never the
+      tree buffer, so the port's boot ordering left trees baked with the still-bright
+      default lighting, never re-lit → fully illuminated regardless of map TOD. Fix:
+      add `W3DTreeBuffer::updateLighting()` (`{m_anythingChanged=true;}`) and call it
+      from `staticLightingChanged()`, mirroring the terrain/road re-light. (The
+      SEPARATE extra fog-of-war shroud darkening for trees is deferred — a distinct
+      shim texture-lifecycle issue, not the user's reported bug; see TODO.md.)
+
 - [x] **Native-resolution option + fullscreen button (render at tab res).** Added
       a resolution selector and a Fullscreen button to the playable page
       (`WebAssembly/harness/play.html` + `play.mjs`). The selector offers the
