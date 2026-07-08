@@ -767,6 +767,25 @@ screenshots on the release build.
       Options/LOD path (engine/INI, not the bridge) — do NOT force flags or
       invent shading. If the counter is nonzero but terrain still looks flat,
       compare the noise texture sampling/UV scale against original screenshots.
+      **FIX APPLIED (2026-07-08, `fix/terrain-lod-lightmap`):** confirmed root
+      cause via the real path — with no persisted `StaticGameLOD`/`IdealStaticGameLOD`
+      preference, `GameLODManager::init()` leaves both UNKNOWN, so `setStaticLODLevel`
+      never applies a preset in `init()` and the W3DDisplay boot
+      (`W3DDisplay.cpp:783-784`) falls back to `findStaticLODLevel()`, which is
+      gated by `m_videoChipType >= preset->m_videoType` and lands on
+      `STATIC_GAME_LOD_LOW` because the shim advertises `DC_VOODOO5` (below the
+      Medium/High presets' required video tiers). Low → `UseLightMap=No`/
+      `UseCloudMap=No` in GameLOD.ini → noise/lightmap/cloud pass never emitted.
+      Fix (Options/LOD lane only, `GameLOD.cpp` `init()`, `__EMSCRIPTEN__`-guarded):
+      when neither preference is set, seed the ideal + user detail to
+      `STATIC_GAME_LOD_HIGH` so the real `setStaticLODLevel(HIGH)` applies the High
+      preset (lightmap+cloud ON) — mirrors the desktop game persisting a
+      detected/chosen level into Options.ini; an explicit user choice still wins.
+      Did NOT touch `getChipset()`, the shim adapter identity/caps, or the terrain
+      shader-technique selection (reserved for the pixel-shader / Path B effort).
+      `build:port` green. **Still needs Mac-GPU verification:** boot, confirm
+      `terrainNoiseMultiplyTransformedDraws > 0` in `d3d8PerfSummary()` and a
+      before/after terrain screenshot (fine noise grain + soft lightmap/cloud).
 - [ ] **Path B: implement the D3D8 pixel/vertex-shader tier in the WebGL2 bridge
       (unlock the "good" shader paths).** OWNER-REQUESTED (2026-07-08). Today the
       shim reports a fixed-function Voodoo5-class adapter (`wasm_d3d8_shim.cpp`
