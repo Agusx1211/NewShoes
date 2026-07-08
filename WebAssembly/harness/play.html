@@ -43,6 +43,30 @@
       }
       #viewport { touch-action: none; }
       #buildAge.fresh { color: #7ee787; }
+      .displayControls {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.3rem;
+      }
+      .displayControls select,
+      #fullscreenButton {
+        font: inherit;
+        font-size: 12px;
+        padding: 0.15rem 0.5rem;
+        cursor: pointer;
+        background: #222;
+        color: #bbb;
+        border: 1px solid #444;
+        border-radius: 3px;
+        max-width: 12rem;
+      }
+      #fullscreenButton.active {
+        background: #1c3d5c;
+        border-color: #4d90c4;
+        color: #fff;
+      }
+      #fullscreenButton.hidden { display: none; }
       #consoleToggle {
         font: inherit;
         font-size: 12px;
@@ -233,6 +257,11 @@
         </div>
         <div>
           <button id="consoleToggle" type="button" title="Engine/harness log (also: ` key)">console</button>
+        </div>
+        <div class="displayControls">
+          <span class="label">Display</span>
+          <select id="resolutionSelect" title="Engine render resolution (drives the real display-mode change)"></select>
+          <button id="fullscreenButton" type="button" title="Toggle fullscreen">fullscreen</button>
         </div>
         <div class="debugControls" aria-label="Issue dump controls">
           <button id="recordToggle" type="button" title="Record a rolling debug dump">record</button>

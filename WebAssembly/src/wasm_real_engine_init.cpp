@@ -67,6 +67,7 @@
 #include "GameClient/Keyboard.h"
 #include "GameClient/Mouse.h"
 #include "GameClient/Shell.h"
+#include "GameClient/HeaderTemplate.h"
 #include "GameClient/View.h"
 #include "GameClient/WinInstanceData.h"
 #include "GameClient/WindowLayout.h"
@@ -5506,6 +5507,125 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_summary(i
 		g_frame_state.exception_caught ? g_frame_state.exception_text.c_str() : "(none)");
 	std::fflush(stdout);
 	return g_frame_json.c_str();
+}
+
+// Runtime display-resolution change driven from the browser page (resolution
+// selector / fullscreen). This replays the SAME real path the in-game options
+// screen uses when the user picks a new resolution
+// (GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/OptionsMenu.cpp:1080-1123):
+//   TheDisplay->setDisplayMode()   -> W3DDisplay::setDisplayMode -> WW3D::Set_Device_Resolution
+//                                     (backbuffer/present size) + Render2DClass::Set_Screen_Resolution
+//                                     (2D projection) + Display::setDisplayMode (client width/height globals)
+//   TheWritableGlobalData->m_x/yResolution = new size
+//   TheHeaderTemplateManager->headerNotifyResolutionChange()  (font/header reflow)
+//   TheMouse->mouseNotifyResolutionChange()                   (cursor scaling)
+//   recreate TheShell + TheInGameUI->recreateControlBar()     (GUI window reflow at new res)
+// so the HUD / command bar / menus reposition for the new resolution instead of
+// being CSS-stretched. Returns a small JSON blob describing the applied size.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_resolution(int xres, int yres)
+{
+	static std::string result_json;
+	auto emit = [&](bool ok, int applied_x, int applied_y, const char *error) {
+		std::string json = "{";
+		json += "\"ok\":";
+		json += ok ? "true" : "false";
+		json += ",\"requestedWidth\":" + std::to_string(xres);
+		json += ",\"requestedHeight\":" + std::to_string(yres);
+		json += ",\"width\":" + std::to_string(applied_x);
+		json += ",\"height\":" + std::to_string(applied_y);
+		json += ",\"error\":";
+		if (error != NULL) {
+			json += "\"" + json_escape(error) + "\"";
+		} else {
+			json += "null";
+		}
+		json += "}";
+		result_json = json;
+		std::printf("cnc-port: set-resolution requested=%dx%d applied=%dx%d ok=%d%s%s\n",
+			xres, yres, applied_x, applied_y, ok ? 1 : 0,
+			error != NULL ? " error=" : "", error != NULL ? error : "");
+		std::fflush(stdout);
+		return result_json.c_str();
+	};
+
+	if (!g_state.attempted || !g_state.init_returned) {
+		return emit(false, 0, 0, "engine not initialized");
+	}
+	if (TheDisplay == NULL || TheWritableGlobalData == NULL) {
+		return emit(false, 0, 0, "display/global data not ready");
+	}
+	// Clamp to the engine's supported minimum (menus are authored for >=800x600;
+	// smaller than 640x480 breaks the shell layout math). Upper bound guards
+	// against a runaway drawing-buffer allocation from a bad DPR/size report.
+	if (xres < 640) xres = 640;
+	if (yres < 480) yres = 480;
+	if (xres > 7680) xres = 7680;
+	if (yres > 4320) yres = 4320;
+
+	const UnsignedInt current_x = TheDisplay->getWidth();
+	const UnsignedInt current_y = TheDisplay->getHeight();
+	if ((UnsignedInt)xres == current_x && (UnsignedInt)yres == current_y) {
+		return emit(true, (int)current_x, (int)current_y, NULL);
+	}
+
+	const Int bit_depth = TheDisplay->getBitDepth();
+	const Bool windowed = TheDisplay->getWindowed();
+
+	// Never re-create the shell / control bar while a movie is playing or a map
+	// is mid-load: the same guard the options screen relies on implicitly by
+	// only being reachable from a stable menu state.
+	const Bool safe_for_gui_reflow =
+		!TheDisplay->isMoviePlaying() &&
+		(TheGameLogic == NULL || !TheGameLogic->isLoadingMap());
+
+	Bool changed = FALSE;
+	try {
+		if (TheDisplay->setDisplayMode((UnsignedInt)xres, (UnsignedInt)yres, (UnsignedInt)bit_depth, windowed)) {
+			changed = TRUE;
+			TheWritableGlobalData->m_xResolution = xres;
+			TheWritableGlobalData->m_yResolution = yres;
+
+			if (TheHeaderTemplateManager != NULL) {
+				TheHeaderTemplateManager->headerNotifyResolutionChange();
+			}
+			if (TheMouse != NULL) {
+				TheMouse->mouseNotifyResolutionChange();
+			}
+
+			if (safe_for_gui_reflow) {
+				// Re-lay-out all shell menus at the new resolution by recreating
+				// the shell, exactly like OptionsMenu.cpp does after a resolution
+				// change: destroy + re-init TheShell (so every WND re-lays-out at
+				// the new screen size) and re-push the main menu.
+				if (TheShell != NULL) {
+					delete TheShell;
+					TheShell = NULL;
+				}
+				TheShell = MSGNEW("GameClientSubsystem") Shell;
+				if (TheShell != NULL) {
+					TheShell->init();
+				}
+				if (TheInGameUI != NULL) {
+					TheInGameUI->recreateControlBar();
+				}
+				if (TheShell != NULL) {
+					TheShell->push(AsciiString("Menus/MainMenu.wnd"));
+				}
+			} else if (TheInGameUI != NULL) {
+				// In-game / mid-movie: at minimum re-lay-out the command bar so
+				// the HUD tracks the new resolution without tearing down the
+				// active game's shell.
+				TheInGameUI->recreateControlBar();
+			}
+		}
+	} catch (...) {
+		return emit(false, (int)TheDisplay->getWidth(), (int)TheDisplay->getHeight(), "exception during resolution change");
+	}
+
+	if (!changed) {
+		return emit(false, (int)TheDisplay->getWidth(), (int)TheDisplay->getHeight(), "device rejected resolution");
+	}
+	return emit(true, (int)TheDisplay->getWidth(), (int)TheDisplay->getHeight(), NULL);
 }
 
 // Minimal frame stepping for the human/play loop. The richer frame endpoints

@@ -8,6 +8,35 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Browser display / harness UX (2026-07-08)
+
+- [x] **Native-resolution option + fullscreen button (render at tab res).** Added
+      a resolution selector and a Fullscreen button to the playable page
+      (`WebAssembly/harness/play.html` + `play.mjs`). The selector offers the
+      stock 800x600 default, a small preset ladder, and an auto-generated
+      **Native** entry = CSS px x `window.devicePixelRatio` that live-updates on
+      `resize` / `visualViewport` / DPR (`matchMedia`) changes and re-applies when
+      selected. Switching drives the SAME real display-mode-change path the
+      in-game options screen uses, via a new
+      `cnc_port_real_engine_set_resolution` C++ hook
+      (`WebAssembly/src/wasm_real_engine_init.cpp`) that replays
+      `OptionsMenu.cpp`: `TheDisplay->setDisplayMode()`
+      (W3DDisplay -> `WW3D::Set_Device_Resolution` backbuffer + present size,
+      `Render2DClass::Set_Screen_Resolution` 2D projection, `Display::setDisplayMode`
+      client width/height globals) + `TheWritableGlobalData->m_x/yResolution` +
+      `headerNotifyResolutionChange` + `mouseNotifyResolutionChange` + shell
+      recreate / `TheInGameUI->recreateControlBar()` GUI reflow. bridge.js's new
+      `setEngineResolution` RPC then resizes the WebGL2 backing store
+      (`canvas.width/height`) to match, invalidates the D3D8 viewport caches, and
+      updates `harnessState.engineDisplaySize` so pointer->engine coordinate
+      mapping (`canvasInputPointFromEvent`) stays correct. Fullscreen uses the
+      Fullscreen API on the shell container with a webkit fallback, hides itself
+      where unsupported (iPad Safari non-video elements), and re-applies Native on
+      `fullscreenchange`. build:port green (function exported into
+      `dist/cnc-port.wasm`); JS `node --check` clean. Branch
+      `feat/resolution-fullscreen`. Still to verify on desktop Mac GPU + iPad
+      Safari (sharpness, fill, UI layout, click accuracy).
+
 ## Probe-stub / ODR-shadow burndown (2026-07-08 orchestrated session)
 
 - [x] **ObjectCreationLists actually execute now** (biggest gameplay fix). In

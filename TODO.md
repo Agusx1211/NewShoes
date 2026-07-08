@@ -718,19 +718,7 @@ symptom is temporal — NOT a single still.
       page/canvas and still reaches the expected drag-select/order path. The
       touch-enabled Chromium harness guard/pointer checks are done; this is the
       remaining real-device WebKit confirmation.
-- [ ] **Add a native-resolution option + fullscreen button (render at tab res)** —
-      today the canvas renders at one fixed default resolution. Add a resolution
-      selector with two entries: (1) the current default, and (2) an
-      auto-generated entry matching the browser tab's actual size — CSS pixels ×
-      `window.devicePixelRatio` — so we can render at the display's native
-      resolution. Switching must resize BOTH the WebGL canvas backing store and
-      tell the engine/D3D8 layer the new backbuffer size (viewport + projection +
-      GUI layout reflow) — not just CSS-scale the existing buffer. Also add a
-      **fullscreen button** using the Fullscreen API (`requestFullscreen()` on the
-      canvas container, handle the resize + exit). Handle tab resize / DPR change
-      so the native-res entry tracks the current window. Verify on desktop and
-      iPad that native-res is sharper and fullscreen fills the screen without
-      distorting aspect.
+
 - [ ] **Broaden right-click context-target order coverage beyond docking** —
       right-click ground move and GLA worker right-click supply docking now work
       in the browser alternate-mouse path (see DONE). Keep extending the

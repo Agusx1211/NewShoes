@@ -218,6 +218,7 @@ async function start() {
     report("waiting for wasm bridge...");
     const rawRpc = await waitForRpc();
     const rpc = issueRecorder.setRpc(rawRpc);
+    activeRpc = rpc;
     const startAudioRuntime = await rpc("resumeBrowserAudioRuntime", {
       trigger: "play.start",
     }).catch((error) => ({ ok: false, error: error?.message ?? String(error) }));
@@ -299,6 +300,7 @@ async function start() {
     overlay.classList.add("hidden");
     issueRecorder.setSessionContext({ phase: "running" });
     viewportCanvas.focus();
+    initDisplayControls();
     if (new URLSearchParams(window.location.search).get("replay") === "1") {
       issueRecorder.setSessionContext({ phase: "replay-ready" });
       return;
@@ -448,3 +450,245 @@ window.addEventListener("keydown", (event) => {
     toggleConsole();
   }
 });
+
+// --- resolution selector + fullscreen ---------------------------------------
+// The engine renders at a logical resolution (TheDisplay, default 800x600);
+// bridge.js's "setEngineResolution" RPC drives the real display-mode-change
+// path (W3DDisplay::setDisplayMode -> WW3D::Set_Device_Resolution + 2D
+// projection + GUI reflow) and resizes the WebGL2 backing store to match. This
+// selector exposes the stock 800x600 plus a live-updating "Native" entry that
+// tracks the tab's real pixel size (CSS px x devicePixelRatio) so the game can
+// render at the display's native resolution instead of one fixed default.
+let activeRpc = null;
+let displayControlsReady = false;
+let applyingResolution = false;
+
+const resolutionSelect = document.querySelector("#resolutionSelect");
+const fullscreenButton = document.querySelector("#fullscreenButton");
+const fullscreenTarget = document.querySelector(".shell") || document.body;
+
+// Stock preset resolutions the original game ships (Display.cpp populates the
+// same 4:3/widescreen ladder). Kept modest so the default entry is the real
+// engine default. "Native" is generated separately and always first-class.
+const PRESET_RESOLUTIONS = [
+  { width: 800, height: 600, label: "800 x 600 (default)" },
+  { width: 1024, height: 768, label: "1024 x 768" },
+  { width: 1280, height: 720, label: "1280 x 720" },
+  { width: 1280, height: 1024, label: "1280 x 1024" },
+  { width: 1600, height: 900, label: "1600 x 900" },
+  { width: 1920, height: 1080, label: "1920 x 1080" },
+];
+
+function nativePixelSize() {
+  // CSS pixels the canvas actually occupies x devicePixelRatio => the display's
+  // real pixel grid, so rendering at this size is 1:1 sharp (no upscale blur).
+  const rect = viewportCanvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const cssWidth = rect.width || window.innerWidth || 800;
+  const cssHeight = rect.height || window.innerHeight || 600;
+  return {
+    width: Math.max(640, Math.round(cssWidth * dpr)),
+    height: Math.max(480, Math.round(cssHeight * dpr)),
+  };
+}
+
+function refreshNativeOption() {
+  if (!resolutionSelect) {
+    return;
+  }
+  const native = nativePixelSize();
+  const option = resolutionSelect.querySelector('option[data-native="1"]');
+  if (option) {
+    option.value = `native:${native.width}x${native.height}`;
+    option.textContent = `Native (${native.width} x ${native.height})`;
+  }
+}
+
+function populateResolutionOptions() {
+  if (!resolutionSelect) {
+    return;
+  }
+  resolutionSelect.textContent = "";
+  const native = nativePixelSize();
+  const nativeOption = document.createElement("option");
+  nativeOption.dataset.native = "1";
+  nativeOption.value = `native:${native.width}x${native.height}`;
+  nativeOption.textContent = `Native (${native.width} x ${native.height})`;
+  resolutionSelect.appendChild(nativeOption);
+  for (const preset of PRESET_RESOLUTIONS) {
+    const option = document.createElement("option");
+    option.value = `${preset.width}x${preset.height}`;
+    option.textContent = preset.label;
+    resolutionSelect.appendChild(option);
+  }
+  // Default the selection to the stock engine resolution so nothing changes
+  // until the player picks something; "Native" is opt-in.
+  resolutionSelect.value = "800x600";
+}
+
+function selectedResolution() {
+  const value = resolutionSelect ? resolutionSelect.value : "";
+  if (typeof value !== "string") {
+    return null;
+  }
+  const raw = value.startsWith("native:") ? value.slice("native:".length) : value;
+  const match = /^(\d+)x(\d+)$/.exec(raw);
+  if (!match) {
+    return null;
+  }
+  return { width: Number(match[1]), height: Number(match[2]), isNative: value.startsWith("native:") };
+}
+
+async function applySelectedResolution() {
+  if (!activeRpc || applyingResolution) {
+    return;
+  }
+  const target = selectedResolution();
+  if (!target) {
+    return;
+  }
+  applyingResolution = true;
+  try {
+    const result = await activeRpc("setEngineResolution", {
+      width: target.width,
+      height: target.height,
+    });
+    if (result?.ok !== true) {
+      console.warn("[play] setEngineResolution failed", result?.error ?? result);
+    }
+  } catch (error) {
+    console.warn("[play] setEngineResolution threw", error);
+  } finally {
+    applyingResolution = false;
+  }
+}
+
+// --- fullscreen -------------------------------------------------------------
+function fullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+
+function fullscreenSupported() {
+  return Boolean(
+    fullscreenTarget.requestFullscreen ||
+    fullscreenTarget.webkitRequestFullscreen ||
+    viewportCanvas.webkitRequestFullscreen,
+  );
+}
+
+async function enterFullscreen() {
+  // Prefer the standard API; fall back to the webkit-prefixed path for older
+  // Safari. iPad Safari only exposes element.webkitRequestFullscreen on <video>
+  // (not arbitrary elements), so this may reject there -> handled by hiding the
+  // button when unsupported.
+  const el = fullscreenTarget;
+  try {
+    if (el.requestFullscreen) {
+      await el.requestFullscreen();
+    } else if (el.webkitRequestFullscreen) {
+      el.webkitRequestFullscreen();
+    } else if (viewportCanvas.webkitRequestFullscreen) {
+      viewportCanvas.webkitRequestFullscreen();
+    }
+  } catch (error) {
+    console.warn("[play] requestFullscreen failed", error);
+  }
+}
+
+async function exitFullscreen() {
+  try {
+    if (document.exitFullscreen) {
+      await document.exitFullscreen();
+    } else if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+    }
+  } catch (error) {
+    console.warn("[play] exitFullscreen failed", error);
+  }
+}
+
+function onFullscreenChange() {
+  const active = Boolean(fullscreenElement());
+  if (fullscreenButton) {
+    fullscreenButton.classList.toggle("active", active);
+    fullscreenButton.textContent = active ? "exit full" : "fullscreen";
+  }
+  // Fullscreen changes the tab's real pixel size; refresh the Native entry and,
+  // if Native is selected, re-apply so the render resolution fills the screen.
+  refreshNativeOption();
+  if (selectedResolution()?.isNative) {
+    void applySelectedResolution();
+  }
+}
+
+// --- live tracking of tab size / DPR ----------------------------------------
+let resizeSettleTimer = null;
+function onViewportGeometryChange() {
+  refreshNativeOption();
+  if (resizeSettleTimer) {
+    clearTimeout(resizeSettleTimer);
+  }
+  // Debounce: only push a new engine resolution once the resize settles, so a
+  // window drag does not spam display-mode changes (each recreates the shell).
+  resizeSettleTimer = setTimeout(() => {
+    resizeSettleTimer = null;
+    if (selectedResolution()?.isNative) {
+      void applySelectedResolution();
+    }
+  }, 350);
+}
+
+function initDisplayControls() {
+  if (displayControlsReady || !resolutionSelect) {
+    return;
+  }
+  displayControlsReady = true;
+  populateResolutionOptions();
+
+  resolutionSelect.addEventListener("change", () => {
+    void applySelectedResolution();
+  });
+
+  if (fullscreenButton) {
+    if (!fullscreenSupported()) {
+      // Degrade gracefully: hide the button where fullscreen is unavailable
+      // (e.g. iPad Safari for non-video elements) so desktop keeps it.
+      fullscreenButton.classList.add("hidden");
+    } else {
+      fullscreenButton.addEventListener("click", () => {
+        if (fullscreenElement()) {
+          void exitFullscreen();
+        } else {
+          void enterFullscreen();
+        }
+      });
+    }
+  }
+
+  document.addEventListener("fullscreenchange", onFullscreenChange);
+  document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+  window.addEventListener("resize", onViewportGeometryChange);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", onViewportGeometryChange);
+  }
+  // devicePixelRatio can change without a resize event (e.g. moving the window
+  // to a display with a different DPR, or browser zoom). Re-arm a matchMedia
+  // resolution query against the current DPR each time it fires so subsequent
+  // DPR changes are still caught.
+  const watchDprChange = () => {
+    try {
+      const dpr = window.devicePixelRatio || 1;
+      const dprQuery = window.matchMedia(`(resolution: ${dpr}dppx)`);
+      if (dprQuery && typeof dprQuery.addEventListener === "function") {
+        dprQuery.addEventListener("change", () => {
+          onViewportGeometryChange();
+          watchDprChange();
+        }, { once: true });
+      }
+    } catch {
+      // matchMedia resolution queries unsupported; the resize / visualViewport
+      // listeners still cover the common cases.
+    }
+  };
+  watchDprChange();
+}
