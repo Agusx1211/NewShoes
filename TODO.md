@@ -655,9 +655,15 @@ symptom is temporal — NOT a single still.
       `runtime-frame-profile-matrix-scratch-mac.json` reported 1651.8 matrix
       normalizations/frame, 991.1 heap-to-scratch copies/frame, zero allocated
       matrix copies, and engine `lastFrameMs` avg 4.72 / p95 6.9 / p99 7.2 /
-      max 7.3 ms over 60 measured shell-map/menu frames. Keep this item open:
-      per-draw state-object churn, uneven producer work, and the structural
-      command-buffer path remain.
+      max 7.3 ms over 60 measured shell-map/menu frames.
+      2026-07-08: the native EM_JS indexed-draw bridge now reuses one outer
+      draw payload object plus one nested transform shell for synchronous
+      `cncPortD3D8DrawIndexed` calls. A local SwiftShader shell-map profile
+      (`runtime-frame-profile-reused-payload-local.json`) rendered the real
+      shell map and reported `drawPayloadCalls` and `drawPayloadReused` both at
+      236.375/frame with zero allocated matrix copies. Keep this item open:
+      derived-state misses, material/light/clip arrays, uneven producer work,
+      and the structural command-buffer path remain.
 - [ ] **Performance still needs love (general)** — beyond stability, the loaded
       (non-shell-map) skirmish frame cost with hundreds of units is the real
       target and is not yet profiled/held to triple-digit fps. Keep pushing the
@@ -3052,9 +3058,14 @@ and then start with the PROFILE, not with any individual fix.
       into reusable draw-scratch matrices; cached texture transform
       `Float32Array`s retain their no-copy path. The profile counters show zero
       allocated matrix copies on local SwiftShader and Mac M4/Metal real-GPU
-      runs. This removes the per-draw matrix-view/allocation slice, but the TODO
-      stays open for remaining per-draw state objects, broader zero-copy /
-      command buffering, and DevTools memory proof of reduced GC frequency.
+      runs. 2026-07-08: wasm-driven indexed draws now also reuse the outer
+      EM_JS payload object and its nested transform shell; the local
+      `runtime-frame-profile-reused-payload-local.json` shell-map profile
+      reports 236.375 payload calls/frame and 236.375 reused payloads/frame.
+      This removes the per-draw matrix-view/allocation slice and the outer
+      payload object allocation, but the TODO stays open for remaining derived
+      state objects, material/light/clip arrays, broader zero-copy / command
+      buffering, and DevTools memory proof of reduced GC frequency.
       Verify future work with p95/p99 frame time + a DevTools memory timeline.
       (by Claude)
 - [ ] **Optimize the real `HeightMap.render.tilePasses` bucket, not terrain

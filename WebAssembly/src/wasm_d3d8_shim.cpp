@@ -633,40 +633,50 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 		Module.__cncPortD3D8LastDrawDerivedStateHash = current_derived_state_hash;
 		Module.__cncPortD3D8LastDrawStatePayload = cached_state;
 	}
-	const transforms = {
-		world: world_ptr >>> 0,
-		view: view_ptr >>> 0,
-		projection: projection_ptr >>> 0,
-		texture0: cached_state.texture0Transform,
-		texture1: cached_state.texture1Transform,
-	};
-	bridge({
-		primitiveType: primitive_type,
-		baseVertexIndex: base_vertex_index >>> 0,
-		minVertexIndex: min_vertex_index >>> 0,
-		firstIndex: first_index >>> 0,
-		vertexBufferId: vertex_buffer_id >>> 0,
-		vertexByteOffset: vertex_byte_offset >>> 0,
-		vertexBytes: vertex_byte_size >>> 0,
-		vertexCount: vertex_count >>> 0,
-		vertexStride: vertex_stride >>> 0,
-		vertexShaderFvf: vertex_shader_fvf >>> 0,
-		indexBufferId: index_buffer_id >>> 0,
-		indexByteOffset: index_byte_offset >>> 0,
-		indexBytes: index_byte_size >>> 0,
-		indexCount: index_count >>> 0,
-		indexSize: index_size >>> 0,
-		transformMask: transform_mask >>> 0,
-		transforms,
-		renderState: cached_state.renderState,
-		clipPlanes: cached_state.clipPlanes,
-		lights: cached_state.lights,
-		material: cached_state.material,
-		stateHash: current_state_hash,
-		derivedStateHash: current_derived_state_hash,
-		producer,
-		sortedDrawSubmitProfile: sorted_draw_profile_scope !== 0,
-	});
+	const transforms = Module.__cncPortD3D8DrawIndexedTransforms ||
+		(Module.__cncPortD3D8DrawIndexedTransforms = {
+			world: 0,
+			view: 0,
+			projection: 0,
+			texture0: null,
+			texture1: null,
+		});
+	transforms.world = world_ptr >>> 0;
+	transforms.view = view_ptr >>> 0;
+	transforms.projection = projection_ptr >>> 0;
+	transforms.texture0 = cached_state.texture0Transform;
+	transforms.texture1 = cached_state.texture1Transform;
+	const payload = Module.__cncPortD3D8DrawIndexedPayload ||
+		(Module.__cncPortD3D8DrawIndexedPayload = {
+			transforms,
+			__reusedD3D8DrawPayload: true,
+		});
+	payload.primitiveType = primitive_type;
+	payload.baseVertexIndex = base_vertex_index >>> 0;
+	payload.minVertexIndex = min_vertex_index >>> 0;
+	payload.firstIndex = first_index >>> 0;
+	payload.vertexBufferId = vertex_buffer_id >>> 0;
+	payload.vertexByteOffset = vertex_byte_offset >>> 0;
+	payload.vertexBytes = vertex_byte_size >>> 0;
+	payload.vertexCount = vertex_count >>> 0;
+	payload.vertexStride = vertex_stride >>> 0;
+	payload.vertexShaderFvf = vertex_shader_fvf >>> 0;
+	payload.indexBufferId = index_buffer_id >>> 0;
+	payload.indexByteOffset = index_byte_offset >>> 0;
+	payload.indexBytes = index_byte_size >>> 0;
+	payload.indexCount = index_count >>> 0;
+	payload.indexSize = index_size >>> 0;
+	payload.transformMask = transform_mask >>> 0;
+	payload.transforms = transforms;
+	payload.renderState = cached_state.renderState;
+	payload.clipPlanes = cached_state.clipPlanes;
+	payload.lights = cached_state.lights;
+	payload.material = cached_state.material;
+	payload.stateHash = current_state_hash;
+	payload.derivedStateHash = current_derived_state_hash;
+	payload.producer = producer;
+	payload.sortedDrawSubmitProfile = sorted_draw_profile_scope !== 0;
+	bridge(payload);
 	});
 #else
 void wasm_d3d8_browser_clear_target(unsigned int, unsigned int, double, unsigned int) {}

@@ -34,6 +34,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       shell-map/menu frames, engine `lastFrameMs` avg 4.72 / p95 6.9 / p99 7.2
       / max 7.3 ms, and 1651.8 matrix normalizations/frame with 991.1
       heap-to-scratch copies/frame and zero allocated matrix copies.
+- [x] Reuse the outer EM_JS D3D8 indexed-draw payload shell. The native
+      `wasm_d3d8_browser_draw_indexed` glue now keeps one module-local payload
+      object and one nested transform object for synchronous
+      `cncPortD3D8DrawIndexed` calls, mutating their scalar fields before each
+      bridge call instead of allocating a fresh outer draw payload and
+      `transforms` object for every indexed draw. Derived state payloads remain
+      cached by derived-state hash, and the direct JS/RPC-style draw tests still
+      accept ordinary object payloads. `bridge.js` and
+      `runtime_frame_profile.mjs` now expose `drawPayloadCalls` and
+      `drawPayloadReused` counters so profiles can prove the wasm path is using
+      the reusable shell. Verified with
+      `node --check WebAssembly/harness/bridge.js`,
+      `node --check WebAssembly/harness/runtime_frame_profile.mjs`,
+      `git diff --check`, `npm --prefix WebAssembly run build:port`,
+      `npm --prefix WebAssembly run build:port:release`, and a local
+      SwiftShader shell-map profile
+      `PERF_PROFILE_DIST=dist PERF_PROFILE_FRAMES=8 PERF_PROFILE_WARMUP_FRAMES=3 PERF_PROFILE_SETTLE_FRAMES=3 PERF_PROFILE_OUTPUT=runtime-frame-profile-reused-payload-local.json node harness/runtime_frame_profile.mjs`.
+      The profile rendered the real shell map with `renderedObjectCount=40` and
+      reported 236.375 `drawPayloadCalls`/frame, 236.375
+      `drawPayloadReused`/frame, and zero allocated matrix copies.
 
 ## Visual fidelity — missing/degraded graphic effects (2026-07-07 session)
 

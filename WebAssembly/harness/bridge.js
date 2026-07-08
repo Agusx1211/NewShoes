@@ -481,6 +481,8 @@ const d3d8PerfStats = {
   drawMatrixNormalizations: 0,
   drawMatrixScratchCopies: 0,
   drawMatrixAllocatedCopies: 0,
+  drawPayloadCalls: 0,
+  drawPayloadReused: 0,
   drawDerivedCacheHits: 0,
   drawDerivedCacheMisses: 0,
   drawUniformCacheHits: 0,
@@ -883,6 +885,8 @@ function d3d8PerfSummary() {
     drawMatrixNormalizations: d3d8PerfStats.drawMatrixNormalizations,
     drawMatrixScratchCopies: d3d8PerfStats.drawMatrixScratchCopies,
     drawMatrixAllocatedCopies: d3d8PerfStats.drawMatrixAllocatedCopies,
+    drawPayloadCalls: d3d8PerfStats.drawPayloadCalls,
+    drawPayloadReused: d3d8PerfStats.drawPayloadReused,
     drawDerivedCacheHits: d3d8PerfStats.drawDerivedCacheHits,
     drawDerivedCacheMisses: d3d8PerfStats.drawDerivedCacheMisses,
     drawUniformCacheHits: d3d8PerfStats.drawUniformCacheHits,
@@ -11003,6 +11007,10 @@ function paintD3D8DrawIndexed(payload = {}) {
   const indexSize = Number(payload.indexSize ?? 0) >>> 0;
   const indexCount = Number(payload.indexCount ?? 0) >>> 0;
   const primitiveType = Number(payload.primitiveType ?? 0) >>> 0;
+  d3d8PerfStats.drawPayloadCalls += 1;
+  if (payload.__reusedD3D8DrawPayload === true) {
+    d3d8PerfStats.drawPayloadReused += 1;
+  }
   const sortedDrawProfiled = payload.sortedDrawSubmitProfile === true;
   const drawProducer = d3d8DrawProducerTrackingEnabled ? bufferProducerLabel(payload.producer) : null;
   const drawProducerStartedAt = d3d8DrawProducerTrackingEnabled ? perfNow() : 0;
