@@ -1082,6 +1082,19 @@ async function main() {
       await runSummary(page, 1, "skirmish map apply settle");
     }
 
+    // Optional: force the local player's faction/general (e.g.
+    // FactionAmericaSuperWeaponGeneral) so a specific insignia decal is placed.
+    let localTemplateSet = null;
+    const requestedLocalTemplate = String(process.env.SKIRMISH_START_LOCAL_TEMPLATE ?? "").trim();
+    if (requestedLocalTemplate) {
+      console.error(`[skirmish-start] set local template ${requestedLocalTemplate}`);
+      localTemplateSet = await rpc(page, "realEngineSetSkirmishLocalTemplate", {
+        template: requestedLocalTemplate,
+      });
+      console.error("[skirmish-start] localTemplateSet:", JSON.stringify(localTemplateSet));
+      await runSummary(page, 1, "skirmish local template apply settle");
+    }
+
     console.error("[skirmish-start] click start");
     const musicBeforeStart = expectMenuMusicStop ? await streamRuntime(page) : null;
     const preSkirmishMusicHandles = expectMenuMusicStop
