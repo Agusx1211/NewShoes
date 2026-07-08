@@ -55,6 +55,29 @@ extern void ScoreScreenInit(WindowLayout *layout, void *userData);
 extern void ScoreScreenUpdate(WindowLayout *layout, void *userData);
 extern void ScoreScreenShutdown(WindowLayout *layout, void *userData);
 
+// Shell / online / in-game GUI callbacks the reduced runtime FunctionLexicon
+// table (wasm_ww3d_render_probe.cpp) omits.  Their real owners
+// (GameClient/GUI/GUICallbacks/{Menus,...}/*.cpp) all link into cnc-port, so
+// every .wnd screen that references them by name (LAN, WOL/online, save/load,
+// download, in-game chat/diplomacy/disconnect, host/join popups, ...) can be
+// repaired the same way the quit-menu/ScoreScreen owners were.  Most of these
+// symbols are declared in GameClient/GUICallbacks.h (already included above);
+// the handful below are declared locally by the real FunctionLexicon.cpp too,
+// so mirror those extern declarations exactly.
+extern void PopupReplayUpdate(WindowLayout *layout, void *userData);
+extern WindowMsgHandledType PopupReplaySystem(GameWindow *window, UnsignedInt msg,
+	WindowMsgData mData1, WindowMsgData mData2);
+extern void PopupLadderSelectInit(WindowLayout *layout, void *userData);
+extern WindowMsgHandledType PopupLadderSelectSystem(GameWindow *window,
+	UnsignedInt msg, WindowMsgData mData1, WindowMsgData mData2);
+extern WindowMsgHandledType PopupLadderSelectInput(GameWindow *window,
+	UnsignedInt msg, WindowMsgData mData1, WindowMsgData mData2);
+extern WindowMsgHandledType PopupBuddyNotificationSystem(GameWindow *window,
+	UnsignedInt msg, WindowMsgData mData1, WindowMsgData mData2);
+extern void RCGameDetailsMenuInit(WindowLayout *layout, void *userData);
+extern WindowMsgHandledType RCGameDetailsMenuSystem(GameWindow *window,
+	UnsignedInt msg, WindowMsgData mData1, WindowMsgData mData2);
+
 #ifdef __EMSCRIPTEN__
 __attribute__((used)) static GameWinSystemFunc g_keep_quit_menu_system =
 	QuitMenuSystem;
@@ -147,6 +170,14 @@ void repair_gameplay_callback_owners()
 		TheNameKeyGenerator == nullptr) {
 		return;
 	}
+	// Idempotency guard.  Once every table has been merged with the real owners
+	// below, all these lookups resolve and we can skip the (allocating) merge.
+	// The sentinels cover one entry from each affected table, including the
+	// broad shell/online/in-game groups newly repaired here (LanLobbyMenu* for
+	// the LAN menus, WOLLoginMenu* for the online shell, SaveLoadMenu* for
+	// save/load, DownloadMenu* for the download screen, DiplomacySystem /
+	// InGameChatSystem for the in-game network windows, PopupHostGame* for the
+	// host popups) so a partial merge cannot short-circuit.
 	if (TheFunctionLexicon->gameWinSystemFunc(
 			TheNameKeyGenerator->nameToKey("QuitMenuSystem")) == QuitMenuSystem &&
 		TheFunctionLexicon->gameWinSystemFunc(
@@ -156,16 +187,42 @@ void repair_gameplay_callback_owners()
 			GeneralsExpPointsSystem &&
 		TheFunctionLexicon->gameWinSystemFunc(
 			TheNameKeyGenerator->nameToKey("ScoreScreenSystem")) == ScoreScreenSystem &&
+		TheFunctionLexicon->gameWinSystemFunc(
+			TheNameKeyGenerator->nameToKey("LanLobbyMenuSystem")) ==
+			LanLobbyMenuSystem &&
+		TheFunctionLexicon->gameWinSystemFunc(
+			TheNameKeyGenerator->nameToKey("WOLLoginMenuSystem")) ==
+			WOLLoginMenuSystem &&
+		TheFunctionLexicon->gameWinSystemFunc(
+			TheNameKeyGenerator->nameToKey("SaveLoadMenuSystem")) ==
+			SaveLoadMenuSystem &&
+		TheFunctionLexicon->gameWinSystemFunc(
+			TheNameKeyGenerator->nameToKey("DownloadMenuSystem")) ==
+			DownloadMenuSystem &&
+		TheFunctionLexicon->gameWinSystemFunc(
+			TheNameKeyGenerator->nameToKey("DiplomacySystem")) == DiplomacySystem &&
+		TheFunctionLexicon->gameWinSystemFunc(
+			TheNameKeyGenerator->nameToKey("PopupHostGameSystem")) ==
+			PopupHostGameSystem &&
 		TheFunctionLexicon->gameWinInputFunc(
 			TheNameKeyGenerator->nameToKey("ScoreScreenInput")) == ScoreScreenInput &&
 		TheFunctionLexicon->winLayoutInitFunc(
 			TheNameKeyGenerator->nameToKey("ScoreScreenInit"),
 			FunctionLexicon::TABLE_WIN_LAYOUT_INIT) == ScoreScreenInit &&
+		TheFunctionLexicon->winLayoutInitFunc(
+			TheNameKeyGenerator->nameToKey("SaveLoadMenuInit"),
+			FunctionLexicon::TABLE_WIN_LAYOUT_INIT) == SaveLoadMenuInit &&
 		TheFunctionLexicon->winLayoutUpdateFunc(
 			TheNameKeyGenerator->nameToKey("ScoreScreenUpdate")) == ScoreScreenUpdate &&
+		TheFunctionLexicon->winLayoutUpdateFunc(
+			TheNameKeyGenerator->nameToKey("WOLLoginMenuUpdate")) ==
+			WOLLoginMenuUpdate &&
 		TheFunctionLexicon->winLayoutShutdownFunc(
 			TheNameKeyGenerator->nameToKey("ScoreScreenShutdown")) ==
 			ScoreScreenShutdown &&
+		TheFunctionLexicon->winLayoutShutdownFunc(
+			TheNameKeyGenerator->nameToKey("SaveLoadMenuShutdown")) ==
+			SaveLoadMenuShutdown &&
 		TheFunctionLexicon->gameWinInputFunc(
 			TheNameKeyGenerator->nameToKey("LeftHUDInput")) == LeftHUDInput &&
 		TheFunctionLexicon->gameWinInputFunc(
@@ -174,31 +231,305 @@ void repair_gameplay_callback_owners()
 		return;
 	}
 
+	// Every owner referenced below is compiled into cnc-port (verified against
+	// the zh_gameengine_real_lifecycle_runtime / zh_window_layout_script_runtime
+	// / zh_gameclient_utility source lists), so re-registering them by name is a
+	// link-safe repair of the reduced runtime FunctionLexicon table.  Grouped by
+	// user-visible screen for readability.
 	const RuntimeLexiconEntry system_entries[] = {
+		// gameplay HUD / end-of-match (already handled group)
 		{ "QuitMenuSystem", FunctionLexicon::TableFunction(QuitMenuSystem) },
 		{ "ControlBarSystem", FunctionLexicon::TableFunction(ControlBarSystem) },
 		{ "GeneralsExpPointsSystem",
 			FunctionLexicon::TableFunction(GeneralsExpPointsSystem) },
 		{ "ScoreScreenSystem", FunctionLexicon::TableFunction(ScoreScreenSystem) },
+		// LAN shell menus
+		{ "LanLobbyMenuSystem", FunctionLexicon::TableFunction(LanLobbyMenuSystem) },
+		{ "LanGameOptionsMenuSystem",
+			FunctionLexicon::TableFunction(LanGameOptionsMenuSystem) },
+		{ "LanMapSelectMenuSystem",
+			FunctionLexicon::TableFunction(LanMapSelectMenuSystem) },
+		// save / load
+		{ "SaveLoadMenuSystem",
+			FunctionLexicon::TableFunction(SaveLoadMenuSystem) },
+		// download screen
+		{ "DownloadMenuSystem",
+			FunctionLexicon::TableFunction(DownloadMenuSystem) },
+		// popup replay save (score-state popup)
+		{ "PopupReplaySystem", FunctionLexicon::TableFunction(PopupReplaySystem) },
+		// in-game network windows
+		{ "InGameChatSystem", FunctionLexicon::TableFunction(InGameChatSystem) },
+		{ "DisconnectControlSystem",
+			FunctionLexicon::TableFunction(DisconnectControlSystem) },
+		{ "DiplomacySystem", FunctionLexicon::TableFunction(DiplomacySystem) },
+		{ "EstablishConnectionsControlSystem",
+			FunctionLexicon::TableFunction(EstablishConnectionsControlSystem) },
+		// host / join / ladder popups
+		{ "PopupHostGameSystem",
+			FunctionLexicon::TableFunction(PopupHostGameSystem) },
+		{ "PopupJoinGameSystem",
+			FunctionLexicon::TableFunction(PopupJoinGameSystem) },
+		{ "PopupLadderSelectSystem",
+			FunctionLexicon::TableFunction(PopupLadderSelectSystem) },
+		{ "NetworkDirectConnectSystem",
+			FunctionLexicon::TableFunction(NetworkDirectConnectSystem) },
+		// WOL / online shell + overlays
+		{ "PopupBuddyNotificationSystem",
+			FunctionLexicon::TableFunction(PopupBuddyNotificationSystem) },
+		{ "WOLLadderScreenSystem",
+			FunctionLexicon::TableFunction(WOLLadderScreenSystem) },
+		{ "WOLLoginMenuSystem",
+			FunctionLexicon::TableFunction(WOLLoginMenuSystem) },
+		{ "WOLLocaleSelectSystem",
+			FunctionLexicon::TableFunction(WOLLocaleSelectSystem) },
+		{ "WOLLobbyMenuSystem",
+			FunctionLexicon::TableFunction(WOLLobbyMenuSystem) },
+		{ "WOLGameSetupMenuSystem",
+			FunctionLexicon::TableFunction(WOLGameSetupMenuSystem) },
+		{ "WOLMapSelectMenuSystem",
+			FunctionLexicon::TableFunction(WOLMapSelectMenuSystem) },
+		{ "WOLBuddyOverlaySystem",
+			FunctionLexicon::TableFunction(WOLBuddyOverlaySystem) },
+		{ "WOLBuddyOverlayRCMenuSystem",
+			FunctionLexicon::TableFunction(WOLBuddyOverlayRCMenuSystem) },
+		{ "RCGameDetailsMenuSystem",
+			FunctionLexicon::TableFunction(RCGameDetailsMenuSystem) },
+		{ "GameSpyPlayerInfoOverlaySystem",
+			FunctionLexicon::TableFunction(GameSpyPlayerInfoOverlaySystem) },
+		{ "WOLMessageWindowSystem",
+			FunctionLexicon::TableFunction(WOLMessageWindowSystem) },
+		{ "WOLQuickMatchMenuSystem",
+			FunctionLexicon::TableFunction(WOLQuickMatchMenuSystem) },
+		{ "WOLWelcomeMenuSystem",
+			FunctionLexicon::TableFunction(WOLWelcomeMenuSystem) },
+		{ "WOLStatusMenuSystem",
+			FunctionLexicon::TableFunction(WOLStatusMenuSystem) },
+		{ "WOLQMScoreScreenSystem",
+			FunctionLexicon::TableFunction(WOLQMScoreScreenSystem) },
+		{ "WOLCustomScoreScreenSystem",
+			FunctionLexicon::TableFunction(WOLCustomScoreScreenSystem) },
 	};
 	const RuntimeLexiconEntry input_entries[] = {
 		{ "LeftHUDInput", FunctionLexicon::TableFunction(LeftHUDInput) },
 		{ "GeneralsExpPointsInput",
 			FunctionLexicon::TableFunction(GeneralsExpPointsInput) },
 		{ "ScoreScreenInput", FunctionLexicon::TableFunction(ScoreScreenInput) },
+		// LAN shell menus
+		{ "LanLobbyMenuInput", FunctionLexicon::TableFunction(LanLobbyMenuInput) },
+		{ "LanGameOptionsMenuInput",
+			FunctionLexicon::TableFunction(LanGameOptionsMenuInput) },
+		{ "LanMapSelectMenuInput",
+			FunctionLexicon::TableFunction(LanMapSelectMenuInput) },
+		// save / load + download
+		{ "SaveLoadMenuInput",
+			FunctionLexicon::TableFunction(SaveLoadMenuInput) },
+		{ "DownloadMenuInput",
+			FunctionLexicon::TableFunction(DownloadMenuInput) },
+		// in-game network windows
+		{ "InGameChatInput", FunctionLexicon::TableFunction(InGameChatInput) },
+		{ "DisconnectControlInput",
+			FunctionLexicon::TableFunction(DisconnectControlInput) },
+		{ "DiplomacyInput", FunctionLexicon::TableFunction(DiplomacyInput) },
+		{ "EstablishConnectionsControlInput",
+			FunctionLexicon::TableFunction(EstablishConnectionsControlInput) },
+		// host / join / ladder popups
+		{ "PopupHostGameInput",
+			FunctionLexicon::TableFunction(PopupHostGameInput) },
+		{ "PopupJoinGameInput",
+			FunctionLexicon::TableFunction(PopupJoinGameInput) },
+		{ "PopupLadderSelectInput",
+			FunctionLexicon::TableFunction(PopupLadderSelectInput) },
+		{ "NetworkDirectConnectInput",
+			FunctionLexicon::TableFunction(NetworkDirectConnectInput) },
+		// WOL / online shell + overlays
+		{ "WOLLadderScreenInput",
+			FunctionLexicon::TableFunction(WOLLadderScreenInput) },
+		{ "WOLLoginMenuInput",
+			FunctionLexicon::TableFunction(WOLLoginMenuInput) },
+		{ "WOLLocaleSelectInput",
+			FunctionLexicon::TableFunction(WOLLocaleSelectInput) },
+		{ "WOLLobbyMenuInput",
+			FunctionLexicon::TableFunction(WOLLobbyMenuInput) },
+		{ "WOLGameSetupMenuInput",
+			FunctionLexicon::TableFunction(WOLGameSetupMenuInput) },
+		{ "WOLMapSelectMenuInput",
+			FunctionLexicon::TableFunction(WOLMapSelectMenuInput) },
+		{ "WOLBuddyOverlayInput",
+			FunctionLexicon::TableFunction(WOLBuddyOverlayInput) },
+		{ "GameSpyPlayerInfoOverlayInput",
+			FunctionLexicon::TableFunction(GameSpyPlayerInfoOverlayInput) },
+		{ "WOLMessageWindowInput",
+			FunctionLexicon::TableFunction(WOLMessageWindowInput) },
+		{ "WOLQuickMatchMenuInput",
+			FunctionLexicon::TableFunction(WOLQuickMatchMenuInput) },
+		{ "WOLWelcomeMenuInput",
+			FunctionLexicon::TableFunction(WOLWelcomeMenuInput) },
+		{ "WOLStatusMenuInput",
+			FunctionLexicon::TableFunction(WOLStatusMenuInput) },
+		{ "WOLQMScoreScreenInput",
+			FunctionLexicon::TableFunction(WOLQMScoreScreenInput) },
+		{ "WOLCustomScoreScreenInput",
+			FunctionLexicon::TableFunction(WOLCustomScoreScreenInput) },
 	};
 	// ScoreScreen's window-layout callbacks (init/update/shutdown) are looked up
 	// by the ScoreScreen.wnd load path; without them the layout never populates
 	// its stats/data and never sets up its transition group -> broken render.
+	// The same is true for every screen below.
 	const RuntimeLexiconEntry layout_init_entries[] = {
 		{ "ScoreScreenInit", FunctionLexicon::TableFunction(ScoreScreenInit) },
+		// save / load (two entry points)
+		{ "SaveLoadMenuInit", FunctionLexicon::TableFunction(SaveLoadMenuInit) },
+		{ "SaveLoadMenuFullScreenInit",
+			FunctionLexicon::TableFunction(SaveLoadMenuFullScreenInit) },
+		// download
+		{ "DownloadMenuInit", FunctionLexicon::TableFunction(DownloadMenuInit) },
+		// LAN shell menus
+		{ "LanLobbyMenuInit", FunctionLexicon::TableFunction(LanLobbyMenuInit) },
+		{ "LanGameOptionsMenuInit",
+			FunctionLexicon::TableFunction(LanGameOptionsMenuInit) },
+		{ "LanMapSelectMenuInit",
+			FunctionLexicon::TableFunction(LanMapSelectMenuInit) },
+		// host / join / ladder popups
+		{ "PopupHostGameInit",
+			FunctionLexicon::TableFunction(PopupHostGameInit) },
+		{ "PopupJoinGameInit",
+			FunctionLexicon::TableFunction(PopupJoinGameInit) },
+		{ "PopupLadderSelectInit",
+			FunctionLexicon::TableFunction(PopupLadderSelectInit) },
+		{ "NetworkDirectConnectInit",
+			FunctionLexicon::TableFunction(NetworkDirectConnectInit) },
+		// WOL / online shell + overlays
+		{ "WOLLadderScreenInit",
+			FunctionLexicon::TableFunction(WOLLadderScreenInit) },
+		{ "WOLLoginMenuInit",
+			FunctionLexicon::TableFunction(WOLLoginMenuInit) },
+		{ "WOLLocaleSelectInit",
+			FunctionLexicon::TableFunction(WOLLocaleSelectInit) },
+		{ "WOLLobbyMenuInit",
+			FunctionLexicon::TableFunction(WOLLobbyMenuInit) },
+		{ "WOLGameSetupMenuInit",
+			FunctionLexicon::TableFunction(WOLGameSetupMenuInit) },
+		{ "WOLMapSelectMenuInit",
+			FunctionLexicon::TableFunction(WOLMapSelectMenuInit) },
+		{ "WOLBuddyOverlayInit",
+			FunctionLexicon::TableFunction(WOLBuddyOverlayInit) },
+		{ "WOLBuddyOverlayRCMenuInit",
+			FunctionLexicon::TableFunction(WOLBuddyOverlayRCMenuInit) },
+		{ "RCGameDetailsMenuInit",
+			FunctionLexicon::TableFunction(RCGameDetailsMenuInit) },
+		{ "GameSpyPlayerInfoOverlayInit",
+			FunctionLexicon::TableFunction(GameSpyPlayerInfoOverlayInit) },
+		{ "WOLMessageWindowInit",
+			FunctionLexicon::TableFunction(WOLMessageWindowInit) },
+		{ "WOLQuickMatchMenuInit",
+			FunctionLexicon::TableFunction(WOLQuickMatchMenuInit) },
+		{ "WOLWelcomeMenuInit",
+			FunctionLexicon::TableFunction(WOLWelcomeMenuInit) },
+		{ "WOLStatusMenuInit",
+			FunctionLexicon::TableFunction(WOLStatusMenuInit) },
+		{ "WOLQMScoreScreenInit",
+			FunctionLexicon::TableFunction(WOLQMScoreScreenInit) },
+		{ "WOLCustomScoreScreenInit",
+			FunctionLexicon::TableFunction(WOLCustomScoreScreenInit) },
 	};
 	const RuntimeLexiconEntry layout_update_entries[] = {
 		{ "ScoreScreenUpdate", FunctionLexicon::TableFunction(ScoreScreenUpdate) },
+		// save / load + download + popup replay
+		{ "SaveLoadMenuUpdate",
+			FunctionLexicon::TableFunction(SaveLoadMenuUpdate) },
+		{ "DownloadMenuUpdate",
+			FunctionLexicon::TableFunction(DownloadMenuUpdate) },
+		{ "PopupReplayUpdate",
+			FunctionLexicon::TableFunction(PopupReplayUpdate) },
+		// LAN shell menus
+		{ "LanLobbyMenuUpdate",
+			FunctionLexicon::TableFunction(LanLobbyMenuUpdate) },
+		{ "LanGameOptionsMenuUpdate",
+			FunctionLexicon::TableFunction(LanGameOptionsMenuUpdate) },
+		{ "LanMapSelectMenuUpdate",
+			FunctionLexicon::TableFunction(LanMapSelectMenuUpdate) },
+		// host popup + direct connect
+		{ "PopupHostGameUpdate",
+			FunctionLexicon::TableFunction(PopupHostGameUpdate) },
+		{ "NetworkDirectConnectUpdate",
+			FunctionLexicon::TableFunction(NetworkDirectConnectUpdate) },
+		// WOL / online shell + overlays
+		{ "WOLLadderScreenUpdate",
+			FunctionLexicon::TableFunction(WOLLadderScreenUpdate) },
+		{ "WOLLoginMenuUpdate",
+			FunctionLexicon::TableFunction(WOLLoginMenuUpdate) },
+		{ "WOLLocaleSelectUpdate",
+			FunctionLexicon::TableFunction(WOLLocaleSelectUpdate) },
+		{ "WOLLobbyMenuUpdate",
+			FunctionLexicon::TableFunction(WOLLobbyMenuUpdate) },
+		{ "WOLGameSetupMenuUpdate",
+			FunctionLexicon::TableFunction(WOLGameSetupMenuUpdate) },
+		{ "WOLMapSelectMenuUpdate",
+			FunctionLexicon::TableFunction(WOLMapSelectMenuUpdate) },
+		{ "WOLBuddyOverlayUpdate",
+			FunctionLexicon::TableFunction(WOLBuddyOverlayUpdate) },
+		{ "GameSpyPlayerInfoOverlayUpdate",
+			FunctionLexicon::TableFunction(GameSpyPlayerInfoOverlayUpdate) },
+		{ "WOLMessageWindowUpdate",
+			FunctionLexicon::TableFunction(WOLMessageWindowUpdate) },
+		{ "WOLQuickMatchMenuUpdate",
+			FunctionLexicon::TableFunction(WOLQuickMatchMenuUpdate) },
+		{ "WOLWelcomeMenuUpdate",
+			FunctionLexicon::TableFunction(WOLWelcomeMenuUpdate) },
+		{ "WOLStatusMenuUpdate",
+			FunctionLexicon::TableFunction(WOLStatusMenuUpdate) },
+		{ "WOLQMScoreScreenUpdate",
+			FunctionLexicon::TableFunction(WOLQMScoreScreenUpdate) },
+		{ "WOLCustomScoreScreenUpdate",
+			FunctionLexicon::TableFunction(WOLCustomScoreScreenUpdate) },
 	};
 	const RuntimeLexiconEntry layout_shutdown_entries[] = {
 		{ "ScoreScreenShutdown",
 			FunctionLexicon::TableFunction(ScoreScreenShutdown) },
+		// save / load + download
+		{ "SaveLoadMenuShutdown",
+			FunctionLexicon::TableFunction(SaveLoadMenuShutdown) },
+		{ "DownloadMenuShutdown",
+			FunctionLexicon::TableFunction(DownloadMenuShutdown) },
+		// LAN shell menus
+		{ "LanLobbyMenuShutdown",
+			FunctionLexicon::TableFunction(LanLobbyMenuShutdown) },
+		{ "LanGameOptionsMenuShutdown",
+			FunctionLexicon::TableFunction(LanGameOptionsMenuShutdown) },
+		{ "LanMapSelectMenuShutdown",
+			FunctionLexicon::TableFunction(LanMapSelectMenuShutdown) },
+		// direct connect
+		{ "NetworkDirectConnectShutdown",
+			FunctionLexicon::TableFunction(NetworkDirectConnectShutdown) },
+		// WOL / online shell + overlays
+		{ "WOLLadderScreenShutdown",
+			FunctionLexicon::TableFunction(WOLLadderScreenShutdown) },
+		{ "WOLLoginMenuShutdown",
+			FunctionLexicon::TableFunction(WOLLoginMenuShutdown) },
+		{ "WOLLocaleSelectShutdown",
+			FunctionLexicon::TableFunction(WOLLocaleSelectShutdown) },
+		{ "WOLLobbyMenuShutdown",
+			FunctionLexicon::TableFunction(WOLLobbyMenuShutdown) },
+		{ "WOLGameSetupMenuShutdown",
+			FunctionLexicon::TableFunction(WOLGameSetupMenuShutdown) },
+		{ "WOLMapSelectMenuShutdown",
+			FunctionLexicon::TableFunction(WOLMapSelectMenuShutdown) },
+		{ "WOLBuddyOverlayShutdown",
+			FunctionLexicon::TableFunction(WOLBuddyOverlayShutdown) },
+		{ "GameSpyPlayerInfoOverlayShutdown",
+			FunctionLexicon::TableFunction(GameSpyPlayerInfoOverlayShutdown) },
+		{ "WOLMessageWindowShutdown",
+			FunctionLexicon::TableFunction(WOLMessageWindowShutdown) },
+		{ "WOLQuickMatchMenuShutdown",
+			FunctionLexicon::TableFunction(WOLQuickMatchMenuShutdown) },
+		{ "WOLWelcomeMenuShutdown",
+			FunctionLexicon::TableFunction(WOLWelcomeMenuShutdown) },
+		{ "WOLStatusMenuShutdown",
+			FunctionLexicon::TableFunction(WOLStatusMenuShutdown) },
+		{ "WOLQMScoreScreenShutdown",
+			FunctionLexicon::TableFunction(WOLQMScoreScreenShutdown) },
+		{ "WOLCustomScoreScreenShutdown",
+			FunctionLexicon::TableFunction(WOLCustomScoreScreenShutdown) },
 	};
 
 	load_runtime_table_with_entries(FunctionLexicon::TABLE_GAME_WIN_SYSTEM,
