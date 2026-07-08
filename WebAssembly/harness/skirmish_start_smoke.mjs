@@ -821,6 +821,65 @@ async function driveRallyPointProbe(page) {
   return info;
 }
 
+// Decal probe: reveal the map, find the local player's Command Center (which
+// carries the faction/general house-color insignia decal on its concrete
+// plaza), point the tactical camera at it, and screenshot twice (two frames
+// apart) so a flickering/z-fighting insignia decal is visible as a difference
+// between frames. Used to verify the D3D8 ZBIAS polygon-offset fix renders the
+// whole insignia decal stably.
+async function driveDecalProbe(page) {
+  const info = { steps: [] };
+  const decalAPath = resolve(screenshotsRoot, "decal-cc-a.png");
+  const decalBPath = resolve(screenshotsRoot, "decal-cc-b.png");
+  try {
+    await rpc(page, "revealLocalMap", { permanent: true });
+    await runFrames(page, 6, "decal reveal settle");
+
+    const drawablesResult = await rpc(page, "queryDrawables");
+    const drawables = drawablesResult?.result?.drawables ?? [];
+    info.localDrawableCount = drawables.length;
+    // Prefer the local player's command center; fall back to any command
+    // center, then any local structure.
+    const isCommandCenter = (d) =>
+      typeof d?.name === "string" && /commandcenter|command_center/i.test(d.name);
+    const localStructures = drawables.filter((d) =>
+      d?.structure === true && d?.localOwned === true && d?.hidden !== true &&
+      d?.worldPos != null);
+    const target =
+      localStructures.find(isCommandCenter) ??
+      drawables.filter((d) => isCommandCenter(d) && d?.worldPos != null)[0] ??
+      localStructures[0] ??
+      null;
+    if (!target) {
+      info.ok = false;
+      info.reason = "no command center / local structure found for decal probe";
+      info.sampleNames = drawables.slice(0, 40).map((d) => d?.name).filter(Boolean);
+      return info;
+    }
+    info.target = { name: target.name, worldPos: target.worldPos, localOwned: target.localOwned };
+
+    // Center the tactical camera on the building so its plaza insignia decal
+    // fills the frame.
+    const look = await rpc(page, "tacticalViewLookAt", {
+      x: Number(target.worldPos.x ?? 0),
+      y: Number(target.worldPos.y ?? 0),
+      z: Number(target.worldPos.z ?? 0),
+    });
+    info.lookAt = { ok: look?.ok === true, result: look?.result ?? null };
+    await runFrames(page, 8, "decal lookat settle");
+
+    await page.locator("#viewport").screenshot({ path: decalAPath });
+    await runFrames(page, 3, "decal inter-frame settle");
+    await page.locator("#viewport").screenshot({ path: decalBPath });
+    info.ok = true;
+    info.screenshots = { a: decalAPath, b: decalBPath };
+  } catch (error) {
+    info.ok = false;
+    info.error = error?.message ?? String(error);
+  }
+  return info;
+}
+
 // Tree-lighting discriminator: read the baked per-vertex diffuse of the tree
 // draw pass (FVF XYZ|NORMAL|DIFFUSE|TEX1 = 0x152, stride 36) from the draw
 // history. If diffuse is ~white the CPU bake is wrong (sun-direction/light data
@@ -1150,6 +1209,11 @@ async function main() {
     if (process.env.SKIRMISH_START_TREE_PROBE === "1") {
       treeProbe = await driveTreeDiffuseProbe(page);
       console.error("[skirmish-start] treeProbe:", JSON.stringify(treeProbe));
+    }
+    let decalProbe = null;
+    if (process.env.SKIRMISH_START_DECAL_PROBE === "1") {
+      decalProbe = await driveDecalProbe(page);
+      console.error("[skirmish-start] decalProbe:", JSON.stringify(decalProbe));
     }
     await page.locator("#viewport").screenshot({ path: screenshotPath });
     const renderProbe = await sampleViewportGrid(page);

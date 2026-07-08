@@ -9387,7 +9387,24 @@ function d3d8DepthBiasInfo(zBias) {
   // Shader applies gl_Position.z -= ndc * w (constant NDC bias of -ndc) => [0,1] depth bias = -ndc/2.
   // D3D8 24/32-bit target uses -ZBias/((1<<20)-1) (d3d8to9 CalcDepthBias). So ndc = 2*clamped/((1<<20)-1).
   const D3D8_DEPTH_BIAS_DENOM = (1 << 20) - 1;
-  return { raw, clamped, ndc: (2.0 * clamped) / D3D8_DEPTH_BIAS_DENOM };
+  // The constant-NDC shift above is uniform across a primitive and does NOT scale
+  // with the polygon's window-space depth slope, so it cannot reliably win the
+  // depth test for large coplanar meshes (e.g. the terrain-tessellated projected
+  // insignia/shadow decals, which span many terrain cells over a big depth range).
+  // On such meshes ZBIAS=1 only shifted depth ~1e-6, well below the depth-buffer
+  // quantisation at gameplay camera distances, so half the decal triangles lost
+  // the z-fight against the plaza and the decal rendered clipped along the terrain
+  // cell diagonals and flickered. D3D8's D3DRS_ZBIAS was, on real hardware, a
+  // polygon-offset-style bias; emulate that here with gl.polygonOffset (slope
+  // scaled) which robustly biases coplanar geometry toward the camera regardless
+  // of depth encoding. Negative factor/units pull the primitive nearer (smaller
+  // depth), matching a positive D3D8 ZBIAS. Factor gives the slope-scaled term
+  // that defeats z-fighting across the whole mesh; units adds a small constant
+  // floor so flat, camera-facing decals still bias.
+  const polygonOffset = clamped > 0
+    ? { enabled: true, factor: -clamped, units: -2 * clamped }
+    : { enabled: false, factor: 0, units: 0 };
+  return { raw, clamped, ndc: (2.0 * clamped) / D3D8_DEPTH_BIAS_DENOM, polygonOffset };
 }
 
 function d3d8PointSpriteInfo(renderState, primitiveType, viewport) {
@@ -11049,6 +11066,21 @@ function applyD3D8RenderState(renderState, options = {}) {
   setD3D8TrackedCapability(gl.DEPTH_TEST, "depthEnabled", depthEnabled);
   setD3D8DepthMask(state.zWriteEnable !== 0);
   applyD3D8TrackedGlState("depthFunc", depthFunc, () => gl.depthFunc(depthFunc));
+
+  // Emulate D3D8 D3DRS_ZBIAS with a slope-scaled polygon offset (see
+  // d3d8DepthBiasInfo). This is what pulls the terrain-tessellated projected
+  // insignia/shadow/scorch decals cleanly in front of the plaza they sit on so
+  // the whole decal wins the depth test instead of z-fighting/half-clipping.
+  // Tracked so the offset is fully reset (disabled + 0,0) on the very next draw
+  // that carries ZBIAS==0, mirroring the engine's set/reset-to-0 bracketing and
+  // preventing any cross-draw bias leak.
+  const polygonOffset = depthBias.polygonOffset;
+  setD3D8TrackedCapability(gl.POLYGON_OFFSET_FILL, "polygonOffsetEnabled", polygonOffset.enabled);
+  applyD3D8TrackedGlState(
+    "polygonOffset",
+    `${polygonOffset.factor},${polygonOffset.units}`,
+    () => gl.polygonOffset(polygonOffset.factor, polygonOffset.units),
+  );
 
   setD3D8TrackedCapability(gl.BLEND, "blendEnabled", blendEnabled);
   applyD3D8TrackedGlState("blendFunc", `${srcBlend},${destBlend}`,
