@@ -8,6 +8,55 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Stepped loading — no more main-thread freezes on boot/map load (2026-07-09)
+
+- [x] **Loading-screen progress is static during map load / per-screen freeze
+      (owner ask: "stop blocking the main thread on screen load").** Root cause
+      (2026-07-08 investigation): the whole `GameLogic::startNewGame` body ran
+      inside ONE `GameEngine::update` call — 10-21s of single-threaded CPU
+      (refpack + W3D/texture/INI parse) in one browser task, so the real
+      LoadScreen frames drawn by `updateLoadProgress` never presented (the
+      browser only composites when the main thread returns to the event loop).
+      FIX (commit ba3ce7b9, per the new AGENTS.md policy allowing surgical
+      original-engine changes): `startNewGame`'s body became an ordered
+      19-step session (`GameLogic::StartNewGameSession` + `runNextLoadStep()`,
+      GameLogic.cpp) split at the existing `updateLoadProgress` milestones —
+      verbatim chunks, original order; cross-step locals moved into the
+      session; the map-object loop is re-entrant/sliced; the peer-wait and
+      FadeWholeScreen `Sleep` loops became repeat-steps (the end-of-load fade
+      is now actually visible for the first time). Native builds drain all
+      steps back-to-back inside `startNewGame` — behavior identical. In the
+      browser (`cnc_port_load_stepping_active` weak hook, default ON,
+      `?loadstep=0` opt-out, `?loadBudgetMs=N` budget, default 50ms/slice)
+      `GameEngine::update` advances one budgeted slice per frame and returns,
+      skipping the client block while a session is active (preserves the
+      original invariant that GameClient never touches a half-loaded world);
+      save-game loads stay synchronous (their GameStateMap caller continues
+      into the snapshot xfer immediately). Frame JSONs expose
+      `loadSessionActive`/`loadProgress`.
+- [x] **GameEngine::init() blocked the main thread for the whole boot
+      (10-30s single task; iPad-watchdog bait at every boot).** Same
+      treatment: `GameEngine::InitSession` + `runNextInitStep()` (17 steps,
+      GameEngine.cpp) with the function-scope `INI`/`XferCRC` in the session
+      and per-step try/catch preserving the original ErrorCode/INIException
+      semantics. `cnc_port_real_engine_init_begin/_step` drive it from the
+      page; `realEngineInit {stepped:true}` in bridge.js loops budgeted slices
+      with `setTimeout(0)` yields and broadcasts per-slice
+      `cncport:initprogress` CustomEvents; play.mjs shows "step N/17 + live
+      subsystem count" (`?initstep=0` restores monolithic). The monolithic
+      RPC still drains the same steps in one call for all existing callers.
+- [x] **Verified** (dev-box SwiftShader + Mac Metal): shellmap gate green with
+      the exact 43-subsystem order + menu screenshot (gate now ticks until the
+      load session drains, logging live progress); skirmish smoke green (118
+      rendered objects); stepped-init probe 43/43 subsystems across 5 slices;
+      Mac Metal loadscreen probe: campaign load ran as **45 slices totalling
+      3.9s with max 239ms per slice** (was one 10-20s frozen task), real
+      SinglePlayerLoadScreen screenshots at progress 2/21/100 showing the
+      moving progress bar, mission then loads into its intro cinematic
+      correctly. Longest remaining single steps (terrain loadMap ~239ms on
+      Metal) far under the 1s responsiveness target; sub-splitting follow-ups
+      tracked in TODO "Stepped-load follow-ups".
+
 ## Browser boot — real loading experience on play.html (2026-07-09)
 
 - [x] Streamed archive download progress. `harness/io_worker.mjs` now fetches

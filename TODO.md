@@ -646,26 +646,6 @@ reproduce in the harness and verify each fix with a screenshot / state check.
       full source string, current index, and displayed lines. 2026-07-08: the
       hover-tooltip first-letter case was fixed in the MSVC wide-format shim;
       keep this open for any unrelated non-tooltip repro.
-- [ ] **Loading-screen progress is static during map load** — the real
-      multiplayer load screen now presents before the skirmish map load starts,
-      but the synchronous map load still blocks intermediate browser frame
-      turns. Split or yield the long load path if live progress animation is
-      required during the load itself.
-      2026-07-08 (IO-off-thread investigation): ROOT CAUSE decomposed. The
-      per-screen freeze is NOT network I/O — by the time the engine runs, ALL
-      archive bytes are already fully materialized in MEMFS (mount does
-      `fetch -> arrayBuffer -> FS.writeFile` up front; range-backed mount
-      synthesizes a whole BIG in MEMFS). `Win32BIGFile::openFile`
-      (GeneralsMD/.../Win32Device/Common/Win32BIGFile.cpp:63) hands out a
-      `RAMFile` whose `openFromArchive`/`read` are pure in-memory memcpy
-      (GeneralsMD/.../Common/System/RAMFile.cpp:210,263). The freeze is
-      SINGLE-THREADED CPU work — refpack decompress + W3D/texture/INI parse —
-      run synchronously inside ONE `cnc_port_real_engine_frame` cwrap call
-      (src/wasm_real_engine_init.cpp:5435) from the rAF `step`, during
-      `GameLogic::startNewGame -> loadMapINI / TheTerrainLogic->loadMap /
-      newMap`. So "move IO to its own thread" for the SCREEN-LOAD freeze
-      ultimately needs the engine load work off the render thread (pthreads),
-      not just the fetch.
 ### Move I/O off the main thread (owner ask: "stop blocking the main thread on screen load")
 
 Architecture finding (2026-07-08): COOP/COEP are ALREADY set in the harness
@@ -709,24 +689,29 @@ enough.
       and BIG synthesis on the main thread. Move that CPU-heavy synthesis into
       `io_worker.mjs` (it already has a `fetchRange` command) and transfer the
       synthesized BIG back, leaving only `FS.writeFile` on the main thread.
-- [ ] **Verify the first slice on the real Mac GPU build.** Confirm on
-      `cnc-gpu` that the ~1.6 GB `play.html` mount no longer stalls the page
-      (canvas/UI stays responsive during download) with the IO worker on, and
-      that `?ioworker=0` reproduces the old inline behavior. Screenshot/state
-      check per "don't work blind".
-- [ ] **Escalate to pthreads for the MAP-LOAD compute freeze (the owner's real
-      bug).** This is the hard part. Options, in order of increasing risk:
-      (a) yield the load path incrementally (drive `loadMapINI`/`loadMap`/`newMap`
-      as a coroutine that returns to the browser between chunks so the loading
-      screen animates) — no threads, but requires restructuring the engine load
-      into steppable stages; OR (b) run the map-load compute on an emscripten
-      pthread (real Web Worker) while the main thread keeps rendering the load
-      screen — needs `-sUSE_PTHREADS=1 -sPROXY_TO_PTHREAD` consideration, a
-      thread-safety audit (GL MUST stay main-thread; the load worker may only
-      touch CPU-side sim/asset state until handed back), and resolving
-      `ALLOW_MEMORY_GROWTH` vs growable-`SharedArrayBuffer` on emsdk 3.1.6
-      (may need a fixed `MAXIMUM_MEMORY` or an emsdk bump). Gate behind a build
-      flag; keep the non-threaded build as the default until proven.
+- [ ] **Verify the streamed/parallel mount + stepped init/load on the real Mac
+      GPU play page as the OWNER sees it.** The loadscreen/stepped-init probes
+      cover the RPC path; confirm the human `play.html` boot shows the
+      Install_Final splash + live progress bar and that the tab stays
+      responsive through mount + init + shellmap load (screenshot/state per
+      "don't work blind"), and that `?ioworker=0`, `?fetchpar=0`,
+      `?initstep=0`, `?loadstep=0` opt-outs still reproduce legacy behavior.
+- [ ] **Stepped-load follow-ups (2026-07-09, after the map-load/init stepping
+      landed — see DONE "Stepped loading").** The owner's map-load freeze is
+      fixed by stepping (no pthreads needed); remaining refinements:
+      (a) sub-split the remaining >budget single steps if they matter in play:
+      `TheTerrainLogic->loadMap`, `preloadAssets` (chunkable per-asset loop),
+      `ThePartitionManager->init`, and init's THING_FACTORY /
+      UPGRADE_CLIENT / FINGERPRINT_MAPCACHE steps — measure per-step ms first
+      (the CNC_PORT_NOTE step markers + slice RPC timings already expose
+      them); (b) stepped save-game loads (`startNewGame(TRUE)` stays
+      synchronous because GameStateMap's caller continues into the snapshot
+      xfer immediately — needs a completion-callback refactor of
+      `GameStateMap.cpp:448`); (c) MP loads: PROGRESS_WAIT now repeats at
+      client rate instead of Sleep(100) polling — re-check testTimeOut
+      pacing when real network play lands; (d) pthreads remain the fallback
+      only if a single unsplittable step proves too heavy (thread-safety
+      audit + ALLOW_MEMORY_GROWTH vs growable-SAB on emsdk 3.1.6).
 - [ ] **Decide/measure: is the boot `FS.writeFile` memcpy (1.6 GB into the
       wasm heap on the main thread) worth eliminating?** With pthreads +
       SharedArrayBuffer the archive bytes could live in shared memory the
