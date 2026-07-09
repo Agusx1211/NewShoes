@@ -998,7 +998,14 @@ symptom is temporal — NOT a single still.
       Metal skirmish); per-location uniform value cache + lazy
       provoking-vertex (2f9b10a0) eliminates ~90% of uniform GL calls (Metal
       skirmish: ~3391 would-be uniform calls/frame → 328 issued / 3063
-      skipped). Remaining levers, largest first: (a) drawElements count
+      skipped); **the single-digit-FPS crush itself was NOT command volume**
+      — it was per-append ANGLE Metal render-pass breaks from NOOVERWRITE
+      bufferSubData into GPU-in-flight dynamic ring buffers, fixed by
+      dynamic-buffer append redirection (a8c0c3ff: crush 3.9 → 59.6fps
+      median on the campaign intro; see DONE 2026-07-09). Command volume
+      still matters for headroom (GPU process runs 50-99% busy at 60fps in
+      heavy scenes and dipped to ~43fps at ~2,200 draws/frame). Remaining
+      levers, largest first: (a) drawElements count
       itself — adjacent-draw batching still merges ~0 because it requires
       contiguous index ranges;
       design a sound `WEBGL_multi_draw` batch (key must include transform

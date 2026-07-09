@@ -89,6 +89,40 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       (p90 117ms) because drawElements count itself still saturates the GPU
       process. Verified: pixel smokes green (SwiftShader), Metal skirmish
       profile screenshot pixel-correct, campaign-intro Metal screenshot.
+- [x] **Diagnose the real crush cap: fps ∝ 1/bufferSubData count, not draw
+      count (third trace + counter time series).** A third user trace (new
+      build confirmed in-profile) still crushed at 3.7fps with the GPU
+      process 99-100% busy and renderer main 81% idle. A 2s-resolution
+      counter series over the campaign intro was decisive: 1,541 draws/frame
+      ran at 3.4fps with ~950 dynamic-buffer updates/frame, while 2,016
+      draws/frame ran at 60fps with ~109 — and 512 draws/frame with 338
+      updates ran at 17fps. The engine streams skinned infantry/particles/UI
+      through shared D3DUSAGE_DYNAMIC ring buffers (~950 NOOVERWRITE appends
+      per crush frame); each bufferSubData into the GPU-in-flight shared
+      buffer makes ANGLE Metal end the render encoder (staging blit /
+      whole-buffer copy, per BufferMtl::setSubDataImpl) = a full tile
+      load/store per append. A forced-orphan experiment (fresh storage per
+      append) took the crush from 3.9 to 59.8fps median, confirming the
+      mechanism. Also ruled out: stencil-shadow fill (a no-discard
+      depth/stencil program variant — committed as 74a6d0f9, structurally
+      correct since discard defeats early stencil rejection — changed
+      nothing measurable).
+- [x] **Fix (commit a8c0c3ff): dynamic-buffer append redirection.** Dynamic
+      updates stay in the CPU mirror as append ranges; the first draw whose
+      exact D3D8 vertex window (minVertexIndex / uploaded vertex count) or
+      index range sits inside a range uploads it once to a dedicated pool
+      buffer (bufferData full-replace = fresh ANGLE storage, no in-flight
+      sync) and binds it with rebased offsets. Ranges are immutable until
+      DISCARD recycles their slots (multi-pass safe); pools are per-GL-target
+      (WebGL buffers are permanently typed by first bind — a shared pool
+      corrupted terrain in an intermediate iteration, caught by the skirmish
+      screenshot); window-spanning draws (terrain chunks) fall back to a
+      cached whole-mirror refresh of the shared buffer. Temp element-array
+      uploads switched to bufferData full-replace. Measured on Metal
+      (campaign intro, 150s series): crush window 3.9 → **59.6fps median**
+      (min 43.5), sub-30fps windows 28/73 → 1/74, with the same ~935
+      updates/frame flowing. Verified: skirmish/shell/mapped-image pixel
+      smokes green, Metal end-of-intro screenshot pixel-correct.
 
 ## Performance — input-event state-JSON churn + SFX decode churn (2026-07-09)
 
