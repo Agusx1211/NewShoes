@@ -982,6 +982,31 @@ symptom is temporal — NOT a single still.
       stability profiling MUST inject synthetic 60Hz pointermove + live
       combat audio during measured passes or it will keep missing
       input/audio-correlated GC dips.
+- [ ] **GPU-process command volume is THE frame-rate cap (2026-07-09 play-trace
+      finding)** — a 286s Chrome trace of real play on the Mac (Metal) showed
+      the Chrome GPU process 90-98% busy for the entire match (~22ms
+      GPU-process CPU per displayed frame: GLES command decode + ANGLE→Metal
+      translation) while the renderer main thread sat at ~20%; rAF throttled
+      to ~42Hz with p90 gap 38ms / p95 65ms. Reducing GL calls per frame pays
+      twice (renderer + GPU process). 2026-07-09 progress: narrowed
+      SetViewport/Clear draw-state invalidation (444 → 95 render-state GL
+      calls/frame, view+proj uploads 54 → 10 on Metal skirmish). Remaining
+      levers, largest first: (a) drawElements count itself — adjacent-draw
+      batching still merges ~0 because it requires contiguous index ranges;
+      design a sound `WEBGL_multi_draw` batch (key must include transform
+      equality since transforms are uniforms, not state) for same-state runs;
+      (b) texture-bind churn (drawTextureBindCacheMisses ~54% of draws);
+      (c) per-draw wasm↔JS marshaling glue (copyColor/copyVector/read ≈3.2s
+      of the 286s trace) — flatten the draw payload into one typed-array view;
+      (d) world-matrix uniform uploads (~50% of draws, real per-object
+      changes — needs UBO or transform palette to improve).
+- [ ] **Load/transition wall-time waits still block the main thread** — the
+      remaining big hitches are by-design blocking loops in the original code
+      (LoadScreen voice-length wait, GameClient 4s end wait, Bink
+      frame-ready polls) which spin inside one browser task. Sleep() is now a
+      no-op (2026-07-09) so they no longer burn usleep spin, but the waits
+      still freeze the tab for their wall duration. Fixing properly means
+      pumping them through the port's frame loop (invasive; design first).
 - [ ] **Performance still needs love (general)** — beyond stability, the loaded
       (non-shell-map) skirmish frame cost with hundreds of units is the real
       target and is not yet profiled/held to triple-digit fps. Keep pushing the

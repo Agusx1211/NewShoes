@@ -8,6 +8,61 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Performance — play-trace deep dive: busy-spins, per-draw overhead, GPU-process cap (2026-07-09)
+
+- [x] **Analyze the user's 286s Chrome play trace (Mac Metal, real match) and
+      find the remaining lag structure.** 2.79M trace events + 2.2M CPU
+      profiler samples (128µs sampling). Findings: (1) the Chrome **GPU
+      process ran 90-98% busy for the whole match** (~22ms GPU-process CPU
+      per displayed frame decoding GLES commands + ANGLE→Metal translation)
+      while the renderer main thread sat ~20% — the true frame-rate cap; rAF
+      throttled to ~42Hz avg, gap p90 38ms / p95 65ms / p99 81ms ≈ the felt
+      jitter; (2) jank spikes were draw-flood frames where per-GL-op
+      instrumentation (perfNow pairs, d3d8PerfSummary rebuilds, recordLog,
+      per-draw getBoundingClientRect forced layout after per-tick #frames
+      textContent invalidations) was up to ~50% of the frame; (3) in-wasm
+      `emscripten_get_now` busy-spins concentrated at menu/load/quit
+      transitions (3.2s during menu, 0.7s in the map-load hitch, 0.75s at
+      quit) — the engine FPS-limiter `while (m_useFpsLimit && …) Sleep(0)`
+      poll loop plus emscripten `usleep` busy-waiting inside `Sleep(ms)`
+      wait loops; (4) GC now minor after the input/audio churn fixes
+      (MinorGC 1.5s/286s). Profiler-methodology trap recorded: the
+      `runtime_frame_profile` `wallMsPerFrame` (~33ms vs engineLastFrameMs
+      ~4.7ms) is CDP `page.evaluate` round-trip overhead, NOT engine cost —
+      compare in-page measurements instead.
+- [x] **Phase 1 fixes (commit 5e4c4645).** GameEngine.cpp skips the
+      `m_useFpsLimit` timeGetTime spin under `__EMSCRIPTEN__` (the page's rAF
+      accumulator paces frames); shim `Sleep()` is a no-op (usleep busy-waits
+      without ASYNCIFY — wall-time loop exits unchanged, condition loops
+      finish sooner); bridge.js: `preserveDrawingBuffer:false` on play.html —
+      Metal shellmap awaited tick p50 **23.9ms → 9.3ms**, rAF p99 50→34ms —
+      with the screenshot RPC re-rendering in-task so captures stay valid
+      (harness pages keep preserve:true); cached `getCanvasDisplaySize`
+      (ResizeObserver/fullscreen/dpr invalidation; no per-draw
+      getBoundingClientRect); `perfNow()` returns 0 in lite diag
+      (`__cncSetD3D8PerfTiming` / `?perfTiming=` override; profiler harness
+      re-enables explicitly); texture/buffer/FBO perf-summary rebuilds gated
+      to full diag with forced refresh in `snapshotState()` and probe
+      readers; `#frames` DOM write throttled to 250ms. Verified: phase1
+      probe (lite + preserve=0, SwiftShader debug dist) — boot, ticks,
+      non-blank screenshot RPC, fresh state summaries, timing gates;
+      `input_select_e2e` matches pre-change state (attackProof red +
+      commandBar flake are the documented pre-existing reds; move/dock/
+      production green).
+- [x] **Phase 2 fix (commit 3d08a3ce): narrow SetViewport/Clear draw-state
+      invalidation.** Both nuked the entire draw-state cache (tracked GL
+      state values, transform/base/stage/alpha-fog uniform caches,
+      vertex-attrib keys) on every call; neither touches tracked GL state.
+      Now they only flush the pending draw batch; Clear syncs the tracked
+      stencilMask cache in place; bindD3D8Framebuffer keeps the full
+      invalidate (rare, touches gl.viewport directly). Metal skirmish
+      per-frame: renderStateGlCacheMisses **444 → 95**, view+proj matrix
+      uploads 54 → 10, base/alphaFog/pointSprite/material uniform misses
+      124 → 34, viewport applies 27 → 4, engineLastFrameMs 3.66 → 2.70.
+      Verified: display_shell_composite + display_mapped_image pixel smokes,
+      skirmish_start_smoke (123 rendered objects, 12/12 visible samples,
+      stencil shadows), Metal skirmish screenshot pixel-correct.
+
 ## Performance — input-event state-JSON churn + SFX decode churn (2026-07-09)
 
 - [x] **Kill the per-input-event ~170KB state JSON round trip (the "feels
