@@ -877,19 +877,17 @@ symptom is temporal — NOT a single still.
       `D3DTA_CURRENT`; true DX8 default is `D3DTA_DIFFUSE` — harmless at stage 0 since
       the bridge resolves stage-0 CURRENT→diffuse, but worth aligning at
       `wasm_d3d8_shim.cpp:3901,3907`.)
-- [ ] **Terrain edge-blend / feathered texture transitions not rendering — hard
-      straight borders (roads + terrain texture edges)** — 2026-07-08 (owner): the
-      alpha-blended terrain edge transitions that feather one terrain texture into
-      the next are not drawn, and most visibly the **road edges are hard straight
-      cuts** instead of the soft blended border. This is the terrain blend / detail
-      alpha-edge pass (multi-texture terrain blend from the per-cell blend/alpha
-      data, the detail-blend shader `SC_DETAIL_BLEND` in BaseHeightMap.cpp, the
-      dest-alpha path `m_destAlphaTexture`, and the road edge alpha in
-      `W3DRoadBuffer::drawRoads`). Investigate whether the blend / dest-alpha /
-      detail second-pass is missing, stubbed, or mis-blended in the browser D3D8
-      layer (blend state, DESTALPHA support, or a skipped pass). Verify with a
-      screenshot of a road / terrain-texture boundary showing feathered blended
-      edges, not straight cuts.
+- [ ] **Shoreline/water dest-alpha pre-pass writes are dropped (backbuffer has
+      no alpha channel)** — found 2026-07-09 while fixing the road/terrain
+      edge-blend regression: the shoreline dest-alpha pre-pass
+      (BaseHeightMap.cpp `m_destAlphaTexture`, `D3DCOLORWRITEENABLE_ALPHA`)
+      writes to a backbuffer created with `alpha:false` (bridge.js
+      getContext), so those writes are dropped and later
+      DESTALPHA/INVDESTALPHA blends read alpha=1.0. Flipping `alpha:true`
+      naively would composite the canvas with the page background; the real
+      fix needs an offscreen RGBA FBO for the scene + opaque present blit.
+      Affects shoreline/water edge feathering only (roads/terrain edges were
+      fixed by dc33545d). Verify with a shoreline screenshot on a water map.
 - [ ] **Ground toxin/radiation fields do not render** — toxins on the ground
       (anthrax, radiation, and similar persistent ground effects) are not drawn.
       The field is likely still active in simulation (damage over area) but the

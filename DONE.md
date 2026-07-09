@@ -8,6 +8,39 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Rendering — hard/unfeathered terrain + road edges (port regression, 2026-07-09)
+
+- [x] **Fix hard sawtooth road edges, road-crossing notches, and unfeathered
+      terrain blend patches (commit dc33545d).** User screenshots on Metal
+      showed all three; live `d3d8SceneDrawHistory` capture on the shellmap
+      showed every road-family draw (terrain blend cells + road passes,
+      stride-24 XYZDUV1) reaching the bridge with `ALPHABLENDENABLE=0` while
+      its SRCALPHA/INVSRCALPHA factors were correct. Root cause: port commit
+      5002650a made `DX8Wrapper::Set_Texture` raise SHADER_CHANGED on every
+      secondary-stage binding change; the W3DShaderManager fixed-function
+      shaders apply pending ShaderClass state FIRST, then set manual render
+      states, then bind their stage-1 cloud/noise texture — the re-marked
+      dirty bit made Apply_Render_State_Changes re-apply the last OPAQUE
+      ShaderClass preset at the draw, disabling the blend (the road-edge TODO
+      was filed the day after that commit landed; the earlier stage-0 WRAP
+      fix 82386110 treated a symptom). Fix: gate the refresh on
+      `render_state.shader.Uses_Post_Detail_Texture()` — the stale stage-1
+      combiner case 5002650a fixed still triggers it, opaque presets no
+      longer stomp manual fixed-function state. Verified: draw capture flips
+      road-family blend 0/69 → 69/69 enabled; skirmish smoke green with
+      visibly feathered dirt/asphalt edges (SwiftShader); Metal skirmish
+      screenshot shows feathered edges + correctly blended cloud shading;
+      engine frame time unchanged. Diagnosis byproducts: road textures are
+      DXT5 with real feather alpha; roads draw zwrite-off SRCALPHA (no
+      dest-alpha); the separate shoreline dest-alpha gap is filed in TODO.
+- [x] **Restrict dynamic-buffer append redirection to ring-pattern buffers
+      (commit e7707856).** Plain-locked dynamic buffers (roads and other
+      build-once geometry) may draw with conservative vertex windows that
+      exceed the locked range — harmless against a full-size buffer, but
+      out-of-bounds against an exact-size pool slot (WebGL drops/zeroes the
+      draw). Only buffers observed streaming via DISCARD/NOOVERWRITE locks
+      redirect; plain-locked ones keep the authoritative shared GL buffer.
+
 ## Performance — play-trace deep dive: busy-spins, per-draw overhead, GPU-process cap (2026-07-09)
 
 - [x] **Analyze the user's 286s Chrome play trace (Mac Metal, real match) and
