@@ -4177,7 +4177,14 @@ function applyD3D8Viewport(reason = "draw") {
 
 function setD3D8Viewport(payload = {}) {
   d3d8ViewportStats.sets += 1;
-  invalidateD3D8DrawStateCache();
+  // A D3D SetViewport only affects viewport/scissor/depthRange — none of the
+  // tracked blend/cull/stencil GL state, uniforms, or vertex attribs. The
+  // renderUniform key stores viewport values and is compared against the
+  // freshly applied viewport per draw, so invalidating only the viewport
+  // caches keeps every other cache warm. (This used to nuke the entire draw
+  // state cache, forcing a full GL-state + uniform re-upload on the first
+  // draw after every SetViewport — dozens of times per frame.)
+  flushD3D8PendingDrawBatch("setViewport");
   invalidateD3D8NormalizedViewportCache();
   d3d8ViewportState = {
     x: Number(payload.x ?? 0) >>> 0,
@@ -8134,9 +8141,15 @@ function clearCanvas(payload = {}) {
 
 function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
   const clearTotalStartedAt = perfNow();
-  // Reset state hash: clear changes GL state outside the draw path.
+  // Clear only touches clearColor/clearDepth/clearStencil (untracked), the
+  // depth mask (via the tracked setD3D8DepthMask, restored below), the
+  // stencil mask (tracked cache synced below), and — through syncCanvasSize's
+  // restoreFullCanvasViewport — viewport/scissor, whose applied-viewport cache
+  // that helper invalidates itself. The blend/cull/uniform/vertex-attrib
+  // caches all stay valid, so only the pending batch needs flushing here
+  // (it must draw under the pre-clear state).
   const invalidateStartedAt = perfNow();
-  invalidateD3D8DrawStateCache();
+  flushD3D8PendingDrawBatch("clear");
   d3d8PerfStats.clearInvalidateMs += perfNow() - invalidateStartedAt;
   const clearFlags = flags >>> 0;
   const rgba = [
@@ -8166,7 +8179,13 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
       d3d8PerfStats.clearContextAttrMs += perfNow() - contextAttrStartedAt;
     }
     if ((clearFlags & 0x4) !== 0 && hasStencilBuffer) {
-      gl.stencilMask(d3d8EffectiveStencilValue(0xffffffff));
+      const clearStencilMask = d3d8EffectiveStencilValue(0xffffffff);
+      gl.stencilMask(clearStencilMask);
+      // stencilMask is a tracked render-state key; keep the cache in sync so
+      // the next draw's tracked apply doesn't skip a needed gl.stencilMask.
+      if (d3d8CurrentRenderGlState) {
+        d3d8CurrentRenderGlState.stencilMask = clearStencilMask;
+      }
       gl.clearStencil(d3d8EffectiveStencilValue(stencil));
       clearBits |= gl.STENCIL_BUFFER_BIT;
     }
