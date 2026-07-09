@@ -516,10 +516,19 @@ Bool IS_FOUR_BY_THREE_ASPECT( Real x, Real y )
 {
   if ( y == 0 )
     return FALSE;
-  
-  Real aspectRatio = fabs( x / y ); 
+
+  Real aspectRatio = fabs( x / y );
+#ifdef __EMSCRIPTEN__
+  // Browser port: the canvas can be any aspect (widescreen displays, dynamic
+  // canvas-fit sizes), and the options-menu resolution combo filters modes
+  // through this predicate. Restricting the list to 4:3 made the CURRENT
+  // resolution unlistable, so the combo preselected 800x600 and accepting the
+  // options screen reverted the display to it. Accept any sane landscape
+  // aspect so the live mode is always listed and preselected.
+  return (( aspectRatio >= 1.0f) && ( aspectRatio < 3.6f));
+#else
   return (( aspectRatio > 1.332f) && ( aspectRatio < 1.334f));
-  
+#endif
 }
 
 

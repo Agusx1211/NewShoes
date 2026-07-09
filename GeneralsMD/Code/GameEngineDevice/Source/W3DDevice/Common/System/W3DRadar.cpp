@@ -309,8 +309,18 @@ void W3DRadar::drawHeroIcon( Int pixelX, Int pixelY, Int width, Int height, cons
 		// shift from an upper left to a center focus for the icon
 		int iconWidth = image->getImageWidth();
 		int iconHeight = image->getImageHeight();
+#ifdef __EMSCRIPTEN__
+		// Browser port: the reticle is authored in 800x600-era pixels; scale
+		// with the render height so it stays legible at high resolutions.
+		if (TheDisplay != NULL && TheDisplay->getHeight() > 0)
+		{
+			Real radarIconScale = (Real)TheDisplay->getHeight() / 600.0f;
+			iconWidth = REAL_TO_INT(iconWidth * radarIconScale);
+			iconHeight = REAL_TO_INT(iconHeight * radarIconScale);
+		}
+#endif
 		offsetScreen.x -= (iconWidth / 2) - 1;
-		offsetScreen.y -= iconHeight / 2; 
+		offsetScreen.y -= iconHeight / 2;
 
 		// draw the icon
 		TheDisplay->drawImage( image, offsetScreen.x , offsetScreen.y, offsetScreen.x + iconWidth, offsetScreen.y + iconHeight );

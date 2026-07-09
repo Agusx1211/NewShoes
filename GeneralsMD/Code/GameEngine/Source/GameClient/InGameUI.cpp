@@ -5693,6 +5693,30 @@ void InGameUI::recreateControlBar( void )
 	GameWindow *win = TheWindowManager->winGetWindowFromId(NULL, TheNameKeyGenerator->nameToKey(AsciiString("ControlBar.wnd")));
 	if(win)
 		win->deleteInstance();
+
+#ifdef __EMSCRIPTEN__
+	// The control bar's parent window is actually named
+	// "ControlBar.wnd:ControlBarParent" (see Show/HideControlBar), so the
+	// "ControlBar.wnd" lookup above never matches and every recreate LEAKED
+	// the previous bar. Natively that stayed invisible (the bar is hidden in
+	// the menus, the only place the stock game recreates it); the browser
+	// port recreates in-game on resolution changes, where the stale bar kept
+	// rendering as a ghost at its old size. Hide + winDestroy (the manager's
+	// deferred-destruction path, which also clears focus/capture/mouseover
+	// references) instead of a raw deleteInstance — tearing the live window
+	// down instantly mid-frame threw from inside the window teardown. Bounded
+	// sweep: destruction is deferred, so re-looking-up the same id would spin.
+	for (Int staleBarSweep = 0; staleBarSweep < 8; ++staleBarSweep)
+	{
+		GameWindow *staleBar = TheWindowManager->winGetWindowFromId(NULL,
+			TheNameKeyGenerator->nameToKey(AsciiString("ControlBar.wnd:ControlBarParent")));
+		if (staleBar == NULL)
+			break;
+		staleBar->winHide(TRUE);
+		TheWindowManager->winDestroy(staleBar);
+		break;
+	}
+#endif
 	
 	m_idleWorkerWin = NULL;	
 	

@@ -210,6 +210,26 @@ W3DView::~W3DView()
 
 }  // end ~W3DView
 
+#ifdef __EMSCRIPTEN__
+// Widescreen field-of-view correction: the stock camera keeps a fixed 50-deg
+// HORIZONTAL fov and derives the vertical fov from the view aspect, so any
+// display wider than the original 4:3 SHRINKS the vertical world view — wide
+// canvases felt "zoomed in" and LOST screen real estate. Widen the horizontal
+// fov by the display's aspect excess over 4:3 (tan-domain, so the vertical
+// world extent exactly matches a 4:3 display with the same layout): a wider
+// canvas shows the SAME world vertically and MORE world horizontally.
+static Real cnc_port_aspect_corrected_hfov(Real hfov)
+{
+	const Real baseAspect = 4.0f / 3.0f;
+	if (hfov <= 0.0f || TheDisplay == NULL || TheDisplay->getHeight() == 0)
+		return hfov;
+	Real displayAspect = (Real)TheDisplay->getWidth() / (Real)TheDisplay->getHeight();
+	if (displayAspect <= baseAspect)
+		return hfov;
+	return 2.0f * atan(tan(hfov * 0.5f) * (displayAspect / baseAspect));
+}
+#endif
+
 //-------------------------------------------------------------------------------------------------
 /** Sets the height of the viewport, while maintaining original camera perspective. */
 //-------------------------------------------------------------------------------------------------
@@ -241,7 +261,12 @@ void W3DView::setWidth(Int width)
 
 	//we want to maintain the same scale, so we'll need to adjust the fov.
 	//default W3D fov for full-screen is 50 degrees.
+#ifdef __EMSCRIPTEN__
+	m_3DCamera->Set_View_Plane(
+		cnc_port_aspect_corrected_hfov((Real)width/(Real)TheDisplay->getWidth()*DEG_TO_RADF(50.0f)), -1);
+#else
 	m_3DCamera->Set_View_Plane((Real)width/(Real)TheDisplay->getWidth()*DEG_TO_RADF(50.0f),-1);
+#endif
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -621,7 +646,11 @@ void W3DView::setCameraTransform( void )
 	}
 
 #if defined(_DEBUG) || defined(_INTERNAL)
+#ifdef __EMSCRIPTEN__
+	m_3DCamera->Set_View_Plane( cnc_port_aspect_corrected_hfov( m_FOV ), -1 );
+#else
 	m_3DCamera->Set_View_Plane( m_FOV, -1 );
+#endif
 #endif
 
 	// rebuild it (even if we just did it due to camera constraints)

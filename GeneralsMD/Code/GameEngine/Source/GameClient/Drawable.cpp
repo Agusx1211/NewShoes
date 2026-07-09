@@ -342,6 +342,22 @@ void Drawable::saturateRGB(RGBColor& color, Real factor)
 //#define CLAMP_ICON_ZOOM_FACTOR(n) (MAX(0.80f, MIN(1.00f, n)))
 #define CLAMP_ICON_ZOOM_FACTOR(n) (n)//nothing
 
+#ifdef __EMSCRIPTEN__
+// Browser port: world-overlay icons (veterancy stars, heal/emoticon/bomb
+// icons, ammo/container pips) are authored in 800x600-era pixels and drawn at
+// raw image size, so at high render resolutions they shrink toward
+// illegibility. Scale them with the render height (1.0 at the original 600
+// lines) — the same factor the .wnd loader applies to the 2D GUI.
+static Real cncPortIconResolutionScale( void )
+{
+	return (TheDisplay != NULL && TheDisplay->getHeight() > 0)
+		? ((Real)TheDisplay->getHeight() / 600.0f) : 1.0f;
+}
+#define CNC_PORT_ICON_SCALE cncPortIconResolutionScale()
+#else
+#define CNC_PORT_ICON_SCALE (1.0f)
+#endif
+
 
 //-------------------------------------------------------------------------------------------------
 /** Drawables are lightweight, graphical entities which live on the GameClient,
@@ -2873,8 +2889,8 @@ void Drawable::drawEmoticon( const IRegion2D *healthBarRegion )
 			//Draw the emoticon.
 			Int barWidth = healthBarRegion->hi.x - healthBarRegion->lo.x;
 			//Int barHeight = healthBarRegion.hi.y - healthBarRegion.lo.y;
-			Int frameWidth = getIconInfo()->m_icon[ ICON_EMOTICON ]->getCurrentFrameWidth();
-			Int frameHeight = getIconInfo()->m_icon[ ICON_EMOTICON ]->getCurrentFrameHeight();
+			Int frameWidth = REAL_TO_INT( getIconInfo()->m_icon[ ICON_EMOTICON ]->getCurrentFrameWidth() * CNC_PORT_ICON_SCALE );
+			Int frameHeight = REAL_TO_INT( getIconInfo()->m_icon[ ICON_EMOTICON ]->getCurrentFrameHeight() * CNC_PORT_ICON_SCALE );
 
 #ifdef SCALE_ICONS_WITH_ZOOM_ML
 			// adjust the width to be a % of the health bar region size
@@ -2924,6 +2940,7 @@ void Drawable::drawAmmo( const IRegion2D *healthBarRegion )
 #else
 	Real scale = 1.0f;
 #endif
+	scale *= CNC_PORT_ICON_SCALE;
 
 	Int boxWidth  = REAL_TO_INT(s_emptyAmmo->getImageWidth() * scale);
 	Int boxHeight = REAL_TO_INT(s_emptyAmmo->getImageHeight() * scale);
@@ -2992,6 +3009,7 @@ void Drawable::drawContained( const IRegion2D *healthBarRegion )
 #else
 	Real scale = 1.0f;
 #endif
+	scale *= CNC_PORT_ICON_SCALE;
 	Int boxWidth  = REAL_TO_INT(s_emptyContainer->getImageWidth() * scale);
 	Int boxHeight = REAL_TO_INT(s_emptyContainer->getImageHeight() * scale);
 	const Int SPACING = 1;
@@ -3045,8 +3063,8 @@ void Drawable::drawBattlePlans( const IRegion2D *healthBarRegion )
 				getIconInfo()->m_icon[ ICON_BATTLEPLAN_BOMBARD ] = newInstance(Anim2D)( s_animationTemplates[ ICON_BATTLEPLAN_BOMBARD ], TheAnim2DCollection );
 			}
 			//Int barHeight = healthBarRegion.hi.y - healthBarRegion.lo.y;
-			Int frameWidth = getIconInfo()->m_icon[ ICON_BATTLEPLAN_BOMBARD ]->getCurrentFrameWidth();
-			Int frameHeight = getIconInfo()->m_icon[ ICON_BATTLEPLAN_BOMBARD ]->getCurrentFrameHeight();
+			Int frameWidth = getIconInfo()->m_icon[ ICON_BATTLEPLAN_BOMBARD ]->getCurrentFrameWidth() * CNC_PORT_ICON_SCALE;
+			Int frameHeight = getIconInfo()->m_icon[ ICON_BATTLEPLAN_BOMBARD ]->getCurrentFrameHeight() * CNC_PORT_ICON_SCALE;
 			
 #ifdef SCALE_ICONS_WITH_ZOOM_ML
 			// adjust the width to be a % of the health bar region size
@@ -3073,8 +3091,8 @@ void Drawable::drawBattlePlans( const IRegion2D *healthBarRegion )
 				getIconInfo()->m_icon[ ICON_BATTLEPLAN_HOLDTHELINE ] = newInstance(Anim2D)( s_animationTemplates[ ICON_BATTLEPLAN_HOLDTHELINE ], TheAnim2DCollection );
 			}
 			// draw the icon
-			Int frameWidth = getIconInfo()->m_icon[ ICON_BATTLEPLAN_HOLDTHELINE ]->getCurrentFrameWidth();
-			Int frameHeight = getIconInfo()->m_icon[ ICON_BATTLEPLAN_HOLDTHELINE ]->getCurrentFrameHeight();
+			Int frameWidth = getIconInfo()->m_icon[ ICON_BATTLEPLAN_HOLDTHELINE ]->getCurrentFrameWidth() * CNC_PORT_ICON_SCALE;
+			Int frameHeight = getIconInfo()->m_icon[ ICON_BATTLEPLAN_HOLDTHELINE ]->getCurrentFrameHeight() * CNC_PORT_ICON_SCALE;
 			
 #ifdef SCALE_ICONS_WITH_ZOOM_ML
 			// adjust the width to be a % of the health bar region size
@@ -3101,8 +3119,8 @@ void Drawable::drawBattlePlans( const IRegion2D *healthBarRegion )
 				getIconInfo()->m_icon[ ICON_BATTLEPLAN_SEARCHANDDESTROY ] = newInstance(Anim2D)( s_animationTemplates[ ICON_BATTLEPLAN_SEARCHANDDESTROY ], TheAnim2DCollection );
 			}
 			// draw the icon
-			Int frameWidth = getIconInfo()->m_icon[ ICON_BATTLEPLAN_SEARCHANDDESTROY ]->getCurrentFrameWidth();
-			Int frameHeight = getIconInfo()->m_icon[ ICON_BATTLEPLAN_SEARCHANDDESTROY ]->getCurrentFrameHeight();
+			Int frameWidth = getIconInfo()->m_icon[ ICON_BATTLEPLAN_SEARCHANDDESTROY ]->getCurrentFrameWidth() * CNC_PORT_ICON_SCALE;
+			Int frameHeight = getIconInfo()->m_icon[ ICON_BATTLEPLAN_SEARCHANDDESTROY ]->getCurrentFrameHeight() * CNC_PORT_ICON_SCALE;
 
 #ifdef SCALE_ICONS_WITH_ZOOM_ML
 			// adjust the width to be a % of the health bar region size
@@ -3315,8 +3333,8 @@ void Drawable::drawHealing(const IRegion2D* healthBarRegion)
 				//
 				Int barWidth = healthBarRegion->hi.x - healthBarRegion->lo.x;
 
-				Int frameWidth = getIconInfo()->m_icon[ typeIndex ]->getCurrentFrameWidth();
-				Int frameHeight = getIconInfo()->m_icon[ typeIndex ]->getCurrentFrameHeight();
+				Int frameWidth = getIconInfo()->m_icon[ typeIndex ]->getCurrentFrameWidth() * CNC_PORT_ICON_SCALE;
+				Int frameHeight = getIconInfo()->m_icon[ typeIndex ]->getCurrentFrameHeight() * CNC_PORT_ICON_SCALE;
 
 #ifdef SCALE_ICONS_WITH_ZOOM_ML
 				// adjust the width to be a % of the health bar region size
@@ -3387,8 +3405,8 @@ void Drawable::drawEnthusiastic(const IRegion2D* healthBarRegion)
 			else
 				scale = 0.5f;
  
-			Int frameWidth = getIconInfo()->m_icon[ iconIndex ]->getCurrentFrameWidth() * scale;
-			Int frameHeight = getIconInfo()->m_icon[ iconIndex ]->getCurrentFrameHeight() * scale;
+			Int frameWidth = getIconInfo()->m_icon[ iconIndex ]->getCurrentFrameWidth() * scale * CNC_PORT_ICON_SCALE;
+			Int frameHeight = getIconInfo()->m_icon[ iconIndex ]->getCurrentFrameHeight() * scale * CNC_PORT_ICON_SCALE;
 
 #ifdef SCALE_ICONS_WITH_ZOOM_ML
 			// adjust the width to be a % of the health bar region size
@@ -3440,8 +3458,8 @@ void Drawable::drawDemoralized(const IRegion2D* healthBarRegion)
 			if (getIconInfo()->m_icon[ ICON_DEMORALIZED ])
 			{
 
-				Int frameWidth = getIconInfo()->m_icon[ ICON_DEMORALIZED ]->getCurrentFrameWidth();
-				Int frameHeight = getIconInfo()->m_icon[ ICON_DEMORALIZED ]->getCurrentFrameHeight();
+				Int frameWidth = getIconInfo()->m_icon[ ICON_DEMORALIZED ]->getCurrentFrameWidth() * CNC_PORT_ICON_SCALE;
+				Int frameHeight = getIconInfo()->m_icon[ ICON_DEMORALIZED ]->getCurrentFrameHeight() * CNC_PORT_ICON_SCALE;
 
 #ifdef SCALE_ICONS_WITH_ZOOM_ML
 				// adjust the width to be a % of the health bar region size
@@ -3497,8 +3515,8 @@ void Drawable::drawBombed(const IRegion2D* healthBarRegion)
 				Int barWidth = healthBarRegion->hi.x - healthBarRegion->lo.x;
 				Int barHeight = healthBarRegion->hi.y - healthBarRegion->lo.y;
 
-				Int frameWidth = getIconInfo()->m_icon[ ICON_CARBOMB ]->getCurrentFrameWidth();
-				Int frameHeight = getIconInfo()->m_icon[ ICON_CARBOMB ]->getCurrentFrameHeight();
+				Int frameWidth = getIconInfo()->m_icon[ ICON_CARBOMB ]->getCurrentFrameWidth() * CNC_PORT_ICON_SCALE;
+				Int frameHeight = getIconInfo()->m_icon[ ICON_CARBOMB ]->getCurrentFrameHeight() * CNC_PORT_ICON_SCALE;
 
 				// adjust the width to be a % of the health bar region size
 				Int size = REAL_TO_INT( barWidth * 0.5f );
@@ -3574,8 +3592,8 @@ void Drawable::drawBombed(const IRegion2D* healthBarRegion)
 						Int barWidth = healthBarRegion->hi.x - healthBarRegion->lo.x;
 						Int barHeight = healthBarRegion->hi.y - healthBarRegion->lo.y;
 
-						Int frameWidth = getIconInfo()->m_icon[ ICON_BOMB_TIMED ]->getCurrentFrameWidth();
-						Int frameHeight = getIconInfo()->m_icon[ ICON_BOMB_TIMED ]->getCurrentFrameHeight();
+						Int frameWidth = getIconInfo()->m_icon[ ICON_BOMB_TIMED ]->getCurrentFrameWidth() * CNC_PORT_ICON_SCALE;
+						Int frameHeight = getIconInfo()->m_icon[ ICON_BOMB_TIMED ]->getCurrentFrameHeight() * CNC_PORT_ICON_SCALE;
 
 						// adjust the width to be a % of the health bar region size
 						Int size = REAL_TO_INT( barWidth * 0.65f );
@@ -3613,8 +3631,8 @@ void Drawable::drawBombed(const IRegion2D* healthBarRegion)
 						Int barWidth = healthBarRegion->hi.x - healthBarRegion->lo.x;
 						Int barHeight = healthBarRegion->hi.y - healthBarRegion->lo.y;
 
-						Int frameWidth = getIconInfo()->m_icon[ ICON_BOMB_REMOTE ]->getCurrentFrameWidth();
-						Int frameHeight = getIconInfo()->m_icon[ ICON_BOMB_REMOTE ]->getCurrentFrameHeight();
+						Int frameWidth = getIconInfo()->m_icon[ ICON_BOMB_REMOTE ]->getCurrentFrameWidth() * CNC_PORT_ICON_SCALE;
+						Int frameHeight = getIconInfo()->m_icon[ ICON_BOMB_REMOTE ]->getCurrentFrameHeight() * CNC_PORT_ICON_SCALE;
 
 
 						// adjust the width to be a % of the health bar region size
@@ -3679,8 +3697,8 @@ void Drawable::drawDisabled(const IRegion2D* healthBarRegion)
 		{
 			Int barHeight = healthBarRegion->hi.y - healthBarRegion->lo.y;
 
-			Int frameWidth = getIconInfo()->m_icon[ ICON_DISABLED ]->getCurrentFrameWidth();
-			Int frameHeight = getIconInfo()->m_icon[ ICON_DISABLED ]->getCurrentFrameHeight();
+			Int frameWidth = getIconInfo()->m_icon[ ICON_DISABLED ]->getCurrentFrameWidth() * CNC_PORT_ICON_SCALE;
+			Int frameHeight = getIconInfo()->m_icon[ ICON_DISABLED ]->getCurrentFrameHeight() * CNC_PORT_ICON_SCALE;
 
 #ifdef SCALE_ICONS_WITH_ZOOM_ML
 			// adjust the width to be a % of the health bar region size
@@ -3832,6 +3850,7 @@ void Drawable::drawVeterancy( const IRegion2D *healthBarRegion )
 #else
 	Real objScale = 1.0f;
 #endif
+	objScale *= CNC_PORT_ICON_SCALE;
 
 
 	Real vetBoxWidth  = image->getImageWidth()*objScale;

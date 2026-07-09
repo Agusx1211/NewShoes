@@ -92,7 +92,11 @@ static NameKeyType    comboBoxAntiAliasingID   = NAMEKEY_INVALID;
 static GameWindow *   comboBoxAntiAliasing     = NULL;
 
 static NameKeyType    comboBoxResolutionID      = NAMEKEY_INVALID;
-static GameWindow *   comboBoxResolution       = NULL; 
+static GameWindow *   comboBoxResolution       = NULL;
+// Combo position highlighted when the options screen was populated; the
+// browser port only applies a resolution change when the user moved it (see
+// the accept path). Harmless native (unused there).
+static Int            s_initialResolutionComboIndex = -1;
 
 static NameKeyType    comboBoxDetailID      = NAMEKEY_INVALID;
 static GameWindow *   comboBoxDetail        = NULL; 
@@ -1076,13 +1080,23 @@ static void saveOptions( void )
 	// Resolution
 	GadgetComboBoxGetSelectedPos( comboBoxResolution, &index );
 	Int xres, yres, bitDepth;
-	
+
 	oldDispSettings.xRes = TheDisplay->getWidth();
 	oldDispSettings.yRes = TheDisplay->getHeight();
 	oldDispSettings.bitDepth = TheDisplay->getBitDepth();
 	oldDispSettings.windowed = TheDisplay->getWindowed();
-	
-	if (index < TheDisplay->getDisplayModeCount() && index >= 0)
+
+#ifdef __EMSCRIPTEN__
+	// Browser port: only apply a resolution the user actually PICKED. The
+	// combo can only highlight modes enumerated at boot; a dynamic canvas-fit
+	// size applied later is not in that list, so the untouched combo falls
+	// back to the default entry and accepting the options screen used to
+	// revert the display to it.
+	Bool resolutionComboChanged = (index != s_initialResolutionComboIndex);
+#else
+	Bool resolutionComboChanged = TRUE;
+#endif
+	if (resolutionComboChanged && index < TheDisplay->getDisplayModeCount() && index >= 0)
 	{
 		TheDisplay->getDisplayModeDescription(index,&xres,&yres,&bitDepth);
 		if (TheGlobalData->m_xResolution != xres || TheGlobalData->m_yResolution != yres)
@@ -1091,6 +1105,7 @@ static void saveOptions( void )
 			if (TheDisplay->setDisplayMode(xres,yres,bitDepth,TheDisplay->getWindowed()))
 			{
 				dispChanged = TRUE;
+				s_initialResolutionComboIndex = index;
 				TheWritableGlobalData->m_xResolution = xres;
 				TheWritableGlobalData->m_yResolution = yres;
 
@@ -1614,6 +1629,16 @@ void OptionsMenuInit( WindowLayout *layout, void *userData )
 		{	selectedXRes=800; selectedYRes=600;
 		}
 	}
+#ifdef __EMSCRIPTEN__
+	// Browser port: the LIVE display resolution is the source of truth — the
+	// page may have applied a dynamic (canvas-fit) size that options.ini never
+	// saw. Seeding from prefs (or the 800x600 fallback below, which also
+	// typo'd selectedXRes=600 in the stock code) would write stale values into
+	// TheWritableGlobalData->m_x/yResolution, desyncing the engine's
+	// resolution globals from the real display just by OPENING this screen.
+	selectedXRes = TheDisplay->getWidth();
+	selectedYRes = TheDisplay->getHeight();
+#endif
 
 	// populate resolution modes
 	GadgetComboBoxReset(comboBoxResolution);
@@ -1632,15 +1657,23 @@ void OptionsMenuInit( WindowLayout *layout, void *userData )
 
 	if (selectedResIndex == -1)	//check if saved mode no longer available
 	{	//pick default resolution
+#ifdef __EMSCRIPTEN__
+		// Keep the true current size in the globals; only the combo highlight
+		// falls back to the default entry (a dynamic canvas-fit resolution is
+		// generally not in the 4:3 mode list).
+		selectedResIndex = defaultResIndex;
+#else
 		selectedXRes = 800;
 		selectedXRes = 600;
 		selectedResIndex = defaultResIndex;
+#endif
 	}
 
 	TheWritableGlobalData->m_xResolution = selectedXRes;
 	TheWritableGlobalData->m_yResolution = selectedYRes;
 
 	GadgetComboBoxSetSelectedPos( comboBoxResolution, selectedResIndex );
+	s_initialResolutionComboIndex = selectedResIndex;
 
 	// set the display detail
 	GadgetComboBoxReset(comboBoxDetail);
