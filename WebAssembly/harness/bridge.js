@@ -4878,11 +4878,23 @@ function updateD3D8Buffer(payload = {}) {
     return 0;
   }
 
-  // Dynamic buffers are redirected: appends stay in the CPU mirror and reach
-  // the GPU as per-range pool buffers at draw time (see the block above), so
-  // the shared GL buffer is neither bound nor written here.
-  const dynamicRedirect = resource.dynamic === true;
+  // Dynamic buffers that follow the streaming ring pattern (DISCARD at wrap,
+  // NOOVERWRITE appends between — the per-mesh lock/draw stream that caused
+  // the per-append ANGLE Metal pass breaks) are redirected: appends stay in
+  // the CPU mirror and reach the GPU as per-range pool buffers at draw time.
+  // Dynamic buffers filled with PLAIN locks (roads, other build-once
+  // geometry) are NOT redirected: their draws may use conservative
+  // minVertexIndex/vertexCount windows that exceed the locked range, which is
+  // harmless against a full-size buffer but out-of-bounds against an
+  // exact-size pool slot (WebGL then drops or zeroes the draw). Those buffers
+  // take the cached whole-mirror refresh path instead (one fresh-storage
+  // bufferData per actual change — still no per-draw in-flight sync).
   const discard = Boolean(resource.dynamic && (lockFlags & D3DLOCK_DISCARD));
+  if (resource.dynamic === true &&
+      (lockFlags & (D3DLOCK_DISCARD | D3DLOCK_NOOVERWRITE)) !== 0) {
+    resource.dynRingPattern = true;
+  }
+  const dynamicRedirect = resource.dynamic === true && resource.dynRingPattern === true;
   let resized = false;
   let orphaned = false;
   if (dynamicRedirect) {
@@ -12881,7 +12893,11 @@ function paintD3D8DrawIndexed(payload = {}) {
         effectiveVertexBufferId = slot.id;
         effectiveVertexByteOffset = vertexByteOffset - range.start;
         d3d8PerfStats.drawDynamicVertexRedirects += 1;
-      } else {
+      } else if (vertexResource.dynRanges?.length > 0) {
+        // Ring-pattern buffer but this draw's window is not covered by one
+        // range — serve it from the refreshed shared buffer. Plain-locked
+        // dynamic buffers (no ranges) never enter here: their shared buffer
+        // is already authoritative.
         ensureD3D8DynamicSharedBufferCurrent(vertexResource);
       }
     }
@@ -12897,7 +12913,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         effectiveIndexBufferId = slot.id;
         shadeModeDraw.drawIndexByteOffset -= range.start;
         d3d8PerfStats.drawDynamicIndexRedirects += 1;
-      } else {
+      } else if (indexResource.dynRanges?.length > 0) {
         ensureD3D8DynamicSharedBufferCurrent(indexResource);
       }
     } else if (indexResource.dynamic === true) {
