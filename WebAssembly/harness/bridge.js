@@ -112,6 +112,7 @@ async function cncPortRuntimeCacheToken(distDir) {
 
 let d3d8DrawProgram = null;
 let d3d8DepthStencilProgram = null;
+let d3d8DepthStencilNoClipProgram = null;
 let cncPortEmscriptenModule = null;
 const d3d8Buffers = new Map();
 const d3d8Textures = new Map();
@@ -503,6 +504,7 @@ const d3d8PerfStats = {
   drawBatchMergedIndices: 0,
   drawBatchMaxRunLength: 0,
   drawDepthStencilOnlyProgramDraws: 0,
+  drawDepthStencilNoDiscardDraws: 0,
   drawDepthStencilOnlyFastDerivedDraws: 0,
   // Terrain noise/cloud/lightmap detail-pass diagnostics. The original
   // TerrainShader2Stage noise/cloud pass (W3DShaderManager.cpp
@@ -928,6 +930,7 @@ function d3d8PerfSummary() {
     drawBatchMergedIndices: d3d8PerfStats.drawBatchMergedIndices,
     drawBatchMaxRunLength: d3d8PerfStats.drawBatchMaxRunLength,
     drawDepthStencilOnlyProgramDraws: d3d8PerfStats.drawDepthStencilOnlyProgramDraws,
+    drawDepthStencilNoDiscardDraws: d3d8PerfStats.drawDepthStencilNoDiscardDraws,
     drawDepthStencilOnlyFastDerivedDraws: d3d8PerfStats.drawDepthStencilOnlyFastDerivedDraws,
     terrainNoiseMultiplyDraws: d3d8PerfStats.terrainNoiseMultiplyDraws,
     terrainNoiseMultiplyTransformedDraws: d3d8PerfStats.terrainNoiseMultiplyTransformedDraws,
@@ -9488,6 +9491,99 @@ function ensureD3D8DepthStencilProgram() {
   return d3d8DepthStencilProgram;
 }
 
+// No-discard depth/stencil variant for draws with no active clip planes —
+// which is every stencil-shadow-volume draw in practice. `discard` in a
+// fragment shader (even behind a uniform branch that never takes it) disables
+// early depth/stencil rejection, so the clip-plane FS above forces the GPU to
+// run a fragment program for every fragment of every shadow volume. Volume
+// fill covers the screen many times over in unit-heavy scenes, which is what
+// crushed the campaign-intro frame rate on Apple GPUs. With no discard (and
+// color writes already masked off) the hardware performs the whole stencil
+// update with early fragment tests and no fragment shader work.
+function ensureD3D8DepthStencilNoClipProgram() {
+  if (!gl) {
+    return null;
+  }
+  if (d3d8DepthStencilNoClipProgram) {
+    return d3d8DepthStencilNoClipProgram;
+  }
+  const template = ensureD3D8DepthStencilProgram();
+  if (!template) {
+    return null;
+  }
+  const vertexShader = compileShader(gl.VERTEX_SHADER, `#version 300 es
+    in vec4 aPosition;
+    uniform float uScale;
+    uniform bool uUseTransforms;
+    uniform bool uPretransformedPosition;
+    uniform vec4 uD3DViewport;
+    uniform mat4 uWorld;
+    uniform mat4 uView;
+    uniform mat4 uProjection;
+    uniform float uDepthBias;
+    vec4 d3dPretransformedPositionToClip(vec4 screenPosition) {
+      vec2 viewportOrigin = uD3DViewport.xy;
+      vec2 viewportSize = max(uD3DViewport.zw, vec2(1.0));
+      vec3 ndc = vec3(
+        ((screenPosition.x - viewportOrigin.x) / viewportSize.x) * 2.0 - 1.0,
+        1.0 - ((screenPosition.y - viewportOrigin.y) / viewportSize.y) * 2.0,
+        screenPosition.z * 2.0 - 1.0
+      );
+      float rhw = abs(screenPosition.w) > 0.000001 ? screenPosition.w : 1.0;
+      float clipW = 1.0 / rhw;
+      return vec4(ndc * clipW, clipW);
+    }
+    void main() {
+      if (uPretransformedPosition) {
+        gl_Position = d3dPretransformedPositionToClip(aPosition);
+      } else if (uUseTransforms) {
+        vec4 worldPosition = uWorld * vec4(aPosition.xyz, 1.0);
+        vec4 viewPosition = uView * worldPosition;
+        vec4 d3dClip = uProjection * viewPosition;
+        gl_Position = vec4(d3dClip.x, d3dClip.y, d3dClip.z * 2.0 - d3dClip.w, d3dClip.w);
+      } else {
+        gl_Position = vec4(aPosition.x / uScale, aPosition.y / uScale, 0.0, 1.0);
+      }
+      gl_Position.z -= uDepthBias * gl_Position.w;
+      gl_PointSize = 1.0;
+    }
+  `);
+  const fragmentShader = compileShader(gl.FRAGMENT_SHADER, `#version 300 es
+    precision highp float;
+    out vec4 fragColor;
+    void main() {
+      fragColor = vec4(1.0);
+    }
+  `);
+  const program = gl.createProgram();
+  gl.attachShader(program, vertexShader);
+  gl.attachShader(program, fragmentShader);
+  gl.linkProgram(program);
+  gl.deleteShader(vertexShader);
+  gl.deleteShader(fragmentShader);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    const info = gl.getProgramInfoLog(program);
+    gl.deleteProgram(program);
+    throw new Error(`D3D8 depth/stencil no-clip bridge program link failed: ${info}`);
+  }
+  d3d8DepthStencilNoClipProgram = {
+    ...template,
+    program,
+    position: gl.getAttribLocation(program, "aPosition"),
+    scale: gl.getUniformLocation(program, "uScale"),
+    useTransforms: gl.getUniformLocation(program, "uUseTransforms"),
+    pretransformedPosition: gl.getUniformLocation(program, "uPretransformedPosition"),
+    d3dViewport: gl.getUniformLocation(program, "uD3DViewport"),
+    world: gl.getUniformLocation(program, "uWorld"),
+    view: gl.getUniformLocation(program, "uView"),
+    projection: gl.getUniformLocation(program, "uProjection"),
+    depthBias: gl.getUniformLocation(program, "uDepthBias"),
+    clipPlaneMask: null,
+    clipPlanes: null,
+  };
+  return d3d8DepthStencilNoClipProgram;
+}
+
 function d3dPrimitiveToGl(primitiveType) {
   if (!gl) {
     return null;
@@ -12455,11 +12551,22 @@ function paintD3D8DrawIndexed(payload = {}) {
       payload.primitiveType,
       implicitAlphaCutoutThreshold,
     );
+    // Shadow-volume (and other color-masked) draws with no active clip
+    // planes take the discard-free program so the GPU keeps early
+    // depth/stencil rejection — see ensureD3D8DepthStencilNoClipProgram.
+    const depthStencilNeedsClipPlanes = depthStencilOnlyDraw &&
+      !vertexPretransformed &&
+      d3d8ClipPlaneMask(renderState) !== 0;
     const bridgeProgram = depthStencilOnlyDraw
-      ? ensureD3D8DepthStencilProgram()
+      ? (depthStencilNeedsClipPlanes
+        ? ensureD3D8DepthStencilProgram()
+        : ensureD3D8DepthStencilNoClipProgram())
       : ensureD3D8DrawProgram();
     if (depthStencilOnlyDraw) {
       d3d8PerfStats.drawDepthStencilOnlyProgramDraws += 1;
+      if (!depthStencilNeedsClipPlanes) {
+        d3d8PerfStats.drawDepthStencilNoDiscardDraws += 1;
+      }
     }
     bindD3D8Program(bridgeProgram.program);
     const drawCanSampleTexture0 = depthStencilOnlyDraw ? false : canSampleTexture0;

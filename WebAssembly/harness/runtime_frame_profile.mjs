@@ -856,6 +856,7 @@ const browserPerfFields = [
   "drawBatchMergedIndices",
   "drawBatchMaxRunLength",
   "drawDepthStencilOnlyProgramDraws",
+  "drawDepthStencilNoDiscardDraws",
   "drawDepthStencilOnlyFastDerivedDraws",
   "drawMatrixNormalizations",
   "drawMatrixScratchCopies",
