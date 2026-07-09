@@ -634,8 +634,35 @@ async function start() {
     const shellMap = queryParams.get("shellmap") !== "0";
     issueRecorder.setSessionContext({ shellMap });
     bootProgressEnginePhase();
-    report(`running real GameEngine::init() (~10-30s, shell map ${shellMap ? "on" : "off"})...`);
-    const init = await rpc("realEngineInit", { runDirectory: "/assets/real-init", shellMap });
+    report(`running real GameEngine::init() (shell map ${shellMap ? "on" : "off"})...`);
+    // Stepped init: GameEngine::init runs as budgeted slices that return to
+    // the event loop between steps, so the overlay can paint real progress
+    // (per-slice cncport:initprogress events from bridge.js) and the main
+    // thread never blocks for the whole init. ?initstep=0 restores the
+    // monolithic call.
+    const steppedInit = queryParams.get("initstep") !== "0";
+    const onInitProgress = (event) => {
+      const step = event.detail ?? {};
+      if (typeof step.stepIndex === "number" && typeof step.stepCount === "number") {
+        const subsystems = typeof step.subsystemsCompleted === "number"
+          ? `, ${step.subsystemsCompleted} subsystems`
+          : "";
+        report(`running real GameEngine::init() (step ${Math.min(step.stepIndex + 1, step.stepCount)}/${step.stepCount}${subsystems}, shell map ${shellMap ? "on" : "off"})...`);
+      }
+    };
+    if (steppedInit) {
+      window.addEventListener("cncport:initprogress", onInitProgress);
+    }
+    let init;
+    try {
+      init = await rpc("realEngineInit", {
+        runDirectory: "/assets/real-init",
+        shellMap,
+        stepped: steppedInit,
+      });
+    } finally {
+      window.removeEventListener("cncport:initprogress", onInitProgress);
+    }
     if (init?.ok !== true || init?.frontier?.initReturned !== true) {
       fail("real engine init failed", init);
       return;
