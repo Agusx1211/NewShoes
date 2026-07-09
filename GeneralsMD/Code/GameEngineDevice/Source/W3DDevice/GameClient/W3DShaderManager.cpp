@@ -2313,6 +2313,15 @@ Int RoadShaderPixelShader::set(Int pass)
 	//tell pixel shader which UV set to use for each stage
 	DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_TEXCOORDINDEX, 0 );
 
+	// Road base texture is a REPEAT/WRAP atlas with transparent (alpha=0)
+	// sub-rect borders that feather the road edges. The road texture filter is
+	// REPEAT, but its stage-0 WRAP is only (re)applied when the bound texture
+	// changes; a preceding terrain-blend pass sets stage-0 CLAMP directly, and
+	// re-binding the same road texture leaves that stale CLAMP -> hard edges.
+	// Set stage-0 WRAP explicitly, as stages 1/2 already do below.
+	DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_ADDRESSU, D3DTADDRESS_WRAP );
+	DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_ADDRESSV, D3DTADDRESS_WRAP );
+
 	DX8Wrapper::Set_DX8_Render_State(D3DRS_ZFUNC,D3DCMP_LESSEQUAL);
 	DX8Wrapper::Set_DX8_Render_State(D3DRS_ZWRITEENABLE,FALSE);
 	DX8Wrapper::Set_DX8_Render_State(D3DRS_LIGHTING, FALSE);
@@ -2427,6 +2436,16 @@ Int RoadShader2Stage::set(Int pass)
 	DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_ALPHAOP,   D3DTOP_MODULATE );
 
 	DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_TEXCOORDINDEX, 0 );
+	// The road texture is a REPEAT/WRAP atlas whose sub-rects have a transparent
+	// (alpha=0) border that feathers the road edges into terrain. The road
+	// TextureFilterClass is REPEAT (W3DRoadBuffer.cpp), but its Filter.Apply
+	// (which would set stage-0 WRAP) only runs when the bound texture *changes*
+	// (DX8Wrapper::Set_Texture / Apply_Render_State_Changes skip it otherwise).
+	// A preceding terrain-blend pass sets stage-0 to CLAMP directly, so when the
+	// same road texture is re-bound the stale CLAMP persists -> hard road edges.
+	// Set stage-0 WRAP explicitly here, exactly as stage 1 already does below.
+	DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_ADDRESSU, D3DTADDRESS_WRAP );
+	DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_ADDRESSV, D3DTADDRESS_WRAP );
 	DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHABLENDENABLE,true);	//blend roads into terrain
 
 	if (pass == 0)
