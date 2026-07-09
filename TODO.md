@@ -513,6 +513,30 @@ the UI is the real `PopupSaveLoad.cpp` reached from in-game ESC/Options →
       need a single-player mission or a temporary save trigger).
 ## User-reported play bugs (2026-07-09 session)
 
+- [ ] **"Random" skirmish enemy reportedly mirrors the player's faction — STILL
+      OPEN, needs a live repro.** Branch `fix/skirmish-random-faction` (commits
+      `af2225bc`/`eb7de370`, worktree `.claude/worktrees/skirmish-random-faction`)
+      claimed to fix this by resetting the default AI slot to
+      `PLAYERTEMPLATE_RANDOM`/color `-1` in `SkirmishGameOptionsMenuInit`
+      (`GeneralsMD/.../Menus/SkirmishGameOptionsMenu.cpp` before `setSlot(1,...)`),
+      but review (2026-07-09) found the change is a **functional no-op** and the
+      diagnosis wrong: `GameSlot::setState()`
+      (`GeneralsMD/Code/GameEngine/Source/GameNetwork/GameInfo.cpp:200`) already
+      resets `m_playerTemplate = -1` and `m_color = -1` on any non-AI→AI
+      transition, so `gSlot.setState(SLOT_*_AI)` from `SLOT_PLAYER` state clears
+      the host's faction/color one line above the inserted code. The branch's
+      smoke "verification" (enemy resolved to a non-host faction) passes with or
+      without the change (~11/12 of random rolls are off-faction), and its
+      DONE.md entry claiming the fix is incorrect — do NOT merge that branch.
+      NEXT: reproduce for real — boot the play-page/harness skirmish flow, dump
+      `TheSkirmishGameInfo` slot templates via RPC right before `startPressed()`
+      and after `populateRandomSideAndColor`
+      (`GeneralsMD/.../GameLogic/System/GameLogic.cpp:816`), across several
+      seeds, including with a persisted browser `Skirmish.ini`
+      (`SkirmishPreferences`, SlotList serializes AI color/template —
+      `GameInfo.cpp:963`). Candidate real causes: a persisted SlotList carrying a
+      concrete slot-1 faction; the play-page start path; or the report being
+      about displayed vs resolved faction.
 - [ ] **China CAMPAIGN terrain has large faceted BLACK HOLES** — on a China
       campaign mission (e.g. `MD_CHI01`) big sharp-edged black polygons are
       punched through the terrain amid normally-rendered terrain, units and
