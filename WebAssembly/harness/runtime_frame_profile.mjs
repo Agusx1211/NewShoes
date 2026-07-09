@@ -902,6 +902,8 @@ const browserPerfFields = [
   "drawStageUniformCacheMisses",
   "drawAlphaFogUniformCacheHits",
   "drawAlphaFogUniformCacheMisses",
+  "uniformGlCalls",
+  "uniformGlSkipped",
   "sortedDrawProfiledCalls",
   "sortedDrawProfiledMs",
   "sortedDrawPreBatchMs",
