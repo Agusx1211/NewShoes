@@ -62,6 +62,33 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       Verified: display_shell_composite + display_mapped_image pixel smokes,
       skirmish_start_smoke (123 rendered objects, 12/12 visible samples,
       stencil shadows), Metal skirmish screenshot pixel-correct.
+- [x] **Phase 3 fix (commit 2f9b10a0): per-location uniform value cache +
+      lazy provoking-vertex.** Driven by a second user trace (USA campaign
+      intro, single-digit FPS with many units): GPU process 97-99% busy in
+      the crush window while renderer main sat 65% idle; renderer busy time
+      was per-draw uniform dispatch (uniformMatrix4fv 3.6s / uniform1i 1.5s /
+      provokingVertexWEBGL 0.5s over 40s). The draw path's single-entry group
+      keys (base/material/stage/texture/alpha-fog) thrash when unit-heavy
+      scenes alternate states draw-to-draw, and each miss re-uploaded the
+      whole 20-40-uniform block (constant sampler indices and the unused
+      stage-2/3 block included); flat-shaded draws toggled
+      provokingVertexWEBGL twice each. Now every scalar/vec/matrix uniform in
+      the draw path goes through cached setters storing the last value on the
+      WebGLUniformLocation (fetched once per program; GL uniform state is
+      per-program so the cache survives program switches — world/view/proj no
+      longer re-upload on stencil-shadow program flips), and the provoking
+      convention is tracked lazily (runs of same-mode draws cost zero
+      extension calls). New `uniformGlCalls`/`uniformGlSkipped` counters:
+      `skipped` counts exactly what the old code would have issued. Measured
+      on Metal: skirmish 3391 would-be uniform calls/frame → 328 issued
+      (90.3% eliminated); campaign intro (805 draws/frame) 2914 → 834 issued
+      (71%), of which 641 are per-object world matrices — the irreducible
+      remainder pending multi-draw/instancing. Campaign-intro play-style
+      pacing on Metal: rAF gap p50 16.7ms / ~13.7 engine ticks/s sustained
+      (trace baseline crush window: p50 175ms ≈ 5.7fps), tail still heavy
+      (p90 117ms) because drawElements count itself still saturates the GPU
+      process. Verified: pixel smokes green (SwiftShader), Metal skirmish
+      profile screenshot pixel-correct, campaign-intro Metal screenshot.
 
 ## Performance — input-event state-JSON churn + SFX decode churn (2026-07-09)
 

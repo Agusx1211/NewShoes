@@ -987,12 +987,20 @@ symptom is temporal — NOT a single still.
       the Chrome GPU process 90-98% busy for the entire match (~22ms
       GPU-process CPU per displayed frame: GLES command decode + ANGLE→Metal
       translation) while the renderer main thread sat at ~20%; rAF throttled
-      to ~42Hz with p90 gap 38ms / p95 65ms. Reducing GL calls per frame pays
-      twice (renderer + GPU process). 2026-07-09 progress: narrowed
-      SetViewport/Clear draw-state invalidation (444 → 95 render-state GL
-      calls/frame, view+proj uploads 54 → 10 on Metal skirmish). Remaining
-      levers, largest first: (a) drawElements count itself — adjacent-draw
-      batching still merges ~0 because it requires contiguous index ranges;
+      to ~42Hz with p90 gap 38ms / p95 65ms. A second trace (USA campaign
+      intro, single-digit FPS with many units on screen) showed the GPU
+      process 97-99% busy in the crush window while renderer main sat 65%
+      idle; renderer busy time was per-draw uniform dispatch (uniformMatrix4fv
+      3.6s, uniform1i 1.5s, provokingVertexWEBGL 0.5s over a 40s window).
+      Reducing GL calls per frame pays twice (renderer + GPU process).
+      2026-07-09 progress: narrowed SetViewport/Clear draw-state invalidation
+      (444 → 95 render-state GL calls/frame, view+proj uploads 54 → 10 on
+      Metal skirmish); per-location uniform value cache + lazy
+      provoking-vertex (2f9b10a0) eliminates ~90% of uniform GL calls (Metal
+      skirmish: ~3391 would-be uniform calls/frame → 328 issued / 3063
+      skipped). Remaining levers, largest first: (a) drawElements count
+      itself — adjacent-draw batching still merges ~0 because it requires
+      contiguous index ranges;
       design a sound `WEBGL_multi_draw` batch (key must include transform
       equality since transforms are uniforms, not state) for same-state runs;
       (b) texture-bind churn (drawTextureBindCacheMisses ~54% of draws);
