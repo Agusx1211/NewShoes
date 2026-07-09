@@ -5588,6 +5588,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_resolution(
 	if (TheDisplay == NULL || TheWritableGlobalData == NULL) {
 		return emit(false, 0, 0, "display/global data not ready");
 	}
+	// A resolution change mid-load would resize the device under a half-built
+	// world (shell recreate while layouts stream in, tactical view resize while
+	// the map builds). Refuse with a distinguishable error; the page retries
+	// once the load session drains.
+	if (TheGameLogic != NULL
+			&& (TheGameLogic->isLoadingMap() || TheGameLogic->isLoadSessionActive())) {
+		return emit(false, (int)TheDisplay->getWidth(), (int)TheDisplay->getHeight(), "busy-loading");
+	}
 	// Clamp to the engine's supported minimum (menus are authored for >=800x600;
 	// smaller than 640x480 breaks the shell layout math). Upper bound guards
 	// against a runaway drawing-buffer allocation from a bad DPR/size report.
@@ -5642,6 +5650,18 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_resolution(
 				// place; does NOT touch TheShell or the game state).
 				if (TheInGameUI != NULL) {
 					TheInGameUI->recreateControlBar();
+					// recreateControlBar() leaves a FRESH TheControlBar with no
+					// match state: no faction scheme (the bar background art +
+					// per-resolution layout) and no shortcut bar, so the HUD
+					// renders as loose pieces at stale coordinates. Replay the
+					// same post-load setup GameLogic::startNewGame runs after
+					// the bar exists (setControlBarSchemeByPlayer +
+					// initSpecialPowershortcutBar for the local player).
+					if (TheControlBar != NULL && ThePlayerList != NULL
+							&& ThePlayerList->getLocalPlayer() != NULL) {
+						TheControlBar->setControlBarSchemeByPlayer(ThePlayerList->getLocalPlayer());
+						TheControlBar->initSpecialPowershortcutBar(ThePlayerList->getLocalPlayer());
+					}
 				}
 				// Re-size the tactical view to the new screen, mirroring how
 				// InGameUI::init() sizes it (full width, 0.77 height so the 3D
@@ -5655,10 +5675,21 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_resolution(
 			} else {
 				// SHELL / menus: full reflow exactly like OptionsMenu.cpp --
 				// destroy + re-init TheShell (so every menu WND re-lays-out at
-				// the new screen size), recreate the control bar, and re-push the
-				// main menu. Harmless here because we are not in a live match.
+				// the new screen size) and recreate the control bar. Unlike the
+				// stock options screen (which always dumps to the main menu),
+				// re-push the SAME screen stack that was up, bottom to top, so a
+				// dynamic resize (window drag / fullscreen) does not throw the
+				// player out of the menu they were in. shutdownImmediate makes
+				// each interim push complete synchronously.
 				reflow_mode = "shell";
+				std::vector<AsciiString> shellStack;
 				if (TheShell != NULL) {
+					for (Int i = 0; i < TheShell->getScreenCount(); ++i) {
+						WindowLayout *screen = TheShell->getScreenAt(i);
+						if (screen != NULL && screen->getFilename().isNotEmpty()) {
+							shellStack.push_back(screen->getFilename());
+						}
+					}
 					delete TheShell;
 					TheShell = NULL;
 				}
@@ -5670,7 +5701,12 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_resolution(
 					TheInGameUI->recreateControlBar();
 				}
 				if (TheShell != NULL) {
-					TheShell->push(AsciiString("Menus/MainMenu.wnd"));
+					if (shellStack.empty()) {
+						shellStack.push_back(AsciiString("Menus/MainMenu.wnd"));
+					}
+					for (size_t i = 0; i < shellStack.size(); ++i) {
+						TheShell->push(shellStack[i], TRUE);
+					}
 				}
 			}
 		}
@@ -5682,6 +5718,44 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_resolution(
 		return emit(false, (int)TheDisplay->getWidth(), (int)TheDisplay->getHeight(), "device rejected resolution");
 	}
 	return emit(true, (int)TheDisplay->getWidth(), (int)TheDisplay->getHeight(), NULL);
+}
+
+// Diagnostic: dump every top-level GameWindow (name, rect, hidden) so the
+// harness can attribute stray on-screen UI to its owning window — e.g. the
+// ghost-control-bar hunt after in-place resolution reflows.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_dump_windows(void)
+{
+	static std::string json;
+	json = "{\"ok\":";
+	if (TheWindowManager == NULL) {
+		json += "false,\"error\":\"window manager not ready\"}";
+		return json.c_str();
+	}
+	json += "true,\"windows\":[";
+	bool first = true;
+	for (GameWindow *window = TheWindowManager->winGetWindowList();
+			window != NULL; window = window->winGetNext()) {
+		Int x = 0, y = 0, width = 0, height = 0;
+		window->winGetPosition(&x, &y);
+		window->winGetSize(&width, &height);
+		const WinInstanceData *instance = window->winGetInstanceData();
+		const char *name = (instance != NULL && instance->m_decoratedNameString.isNotEmpty())
+			? instance->m_decoratedNameString.str() : "";
+		if (!first) {
+			json += ",";
+		}
+		first = false;
+		json += "{\"name\":\"" + json_escape(name) + "\"";
+		json += ",\"x\":" + std::to_string((long long)x);
+		json += ",\"y\":" + std::to_string((long long)y);
+		json += ",\"w\":" + std::to_string((long long)width);
+		json += ",\"h\":" + std::to_string((long long)height);
+		json += ",\"hidden\":";
+		json += window->winIsHidden() ? "true" : "false";
+		json += "}";
+	}
+	json += "]}";
+	return json.c_str();
 }
 
 // Minimal frame stepping for the human/play loop. The richer frame endpoints
@@ -5813,6 +5887,41 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_load_steppi
 	json += budget;
 	json += "}";
 	return json.c_str();
+}
+
+// ---------------------------------------------------------------------------
+// Boot render resolution.
+//
+// The page calls cnc_port_real_engine_set_boot_resolution BEFORE realEngineInit
+// (dynamic mode: canvas CSS box x devicePixelRatio; fixed mode: the persisted
+// user setting). GameEngine's INIT_STEP_GLOBAL_DATA consumes it through the
+// weak hook below — after GameData.ini / options.ini / command-line parsing,
+// before W3DDisplay creates the device from m_x/yResolution — so the engine
+// boots directly at the target size instead of 800x600-then-resize.
+// ---------------------------------------------------------------------------
+static int g_boot_resolution_width = 0;
+static int g_boot_resolution_height = 0;
+
+extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_boot_resolution(int width, int height)
+{
+	g_boot_resolution_width = width;
+	g_boot_resolution_height = height;
+	std::printf("cnc-port: boot-resolution requested=%dx%d\n", width, height);
+	std::fflush(stdout);
+}
+
+extern "C" int cnc_port_boot_display_resolution(int *xres, int *yres)
+{
+	int width = g_boot_resolution_width;
+	int height = g_boot_resolution_height;
+	if (width < 640 || height < 480) {
+		return 0;
+	}
+	if (width > 7680) width = 7680;
+	if (height > 4320) height = 4320;
+	if (xres != NULL) *xres = width;
+	if (yres != NULL) *yres = height;
+	return 1;
 }
 
 extern "C" float cnc_port_client_frame_time_scale(void)

@@ -3898,33 +3898,15 @@ function getCanvasDisplaySize() {
   const cssWidth = rect.width || canvas.width;
   const cssHeight = rect.height || canvas.height;
 
-  // Fullscreen (pure CSS scale-to-fill): the CSS box becomes the whole screen,
-  // but we do NOT want the backing store to grow to the screen size -- that
-  // would change the drawing-buffer aspect to the screen aspect and re-stretch
-  // the engine render. Instead keep the backing store at the engine's CURRENT
-  // render resolution so the buffer aspect matches the engine, and let
-  // `object-fit: contain` scale that buffer up and letterbox it on black. The
-  // engine resolution is unchanged by fullscreen.
-  const engineDisplay = harnessState.engineDisplaySize;
-  const inFullscreen = Boolean(
-    document.fullscreenElement || document.webkitFullscreenElement,
-  );
-  if (inFullscreen && engineDisplay
-      && engineDisplay.width > 0 && engineDisplay.height > 0) {
-    cachedCanvasDisplaySize = {
-      width: engineDisplay.width,
-      height: engineDisplay.height,
-      cssWidth,
-      cssHeight,
-      devicePixelRatio,
-    };
-    return cachedCanvasDisplaySize;
-  }
-
-  // If an explicit engine resolution is pinned (resolution selector), the
-  // backing store follows it (so buffer == engine render target, 1:1, no
-  // stretch, correct unproject). cssWidth/cssHeight still report the real CSS
-  // box so pointer->engine mapping and refreshCanvasState stay accurate.
+  // Single sizing rule: once the engine device exists, the backing store is
+  // PINNED to the engine render resolution (the D3D8 shim reports it via
+  // onD3D8BackbufferResize on device create and every Reset), so the drawing
+  // buffer always matches the render target 1:1 — no stretch, correct
+  // unproject/pick-ray, identical in windowed and fullscreen (the CSS
+  // `object-fit: contain` letterboxes it into whatever box the page gives
+  // the canvas). cssWidth/cssHeight still report the real CSS box so
+  // pointer->engine mapping and refreshCanvasState stay accurate. Pre-engine
+  // pages (probes without the real device) fall through to CSS x DPR.
   if (explicitEngineBackingStore
       && explicitEngineBackingStore.width > 0
       && explicitEngineBackingStore.height > 0) {
@@ -3996,6 +3978,58 @@ function syncCanvasSize(options = {}) {
   if (refreshState || resized) {
     refreshCanvasState(displaySize);
   }
+}
+
+// The engine owns the render resolution. The D3D8 shim calls this on device
+// create and on every device Reset (any TheDisplay->setDisplayMode — whether
+// the page's setEngineResolution RPC or the in-game options screen drove it),
+// making the engine backbuffer the single source of truth for the WebGL2
+// backing store. Pin the store to it, resize the canvas, refresh the caches,
+// and broadcast so the page UI can mirror engine-initiated changes.
+function onD3D8BackbufferResize(width, height, source = "engine") {
+  const bufferWidth = Math.round(Number(width) || 0);
+  const bufferHeight = Math.round(Number(height) || 0);
+  if (bufferWidth < 2 || bufferHeight < 2) {
+    return;
+  }
+  // Flush draws batched against the OLD buffer before the size changes.
+  flushD3D8PendingDrawBatch("backbufferResize");
+  explicitEngineBackingStore = { width: bufferWidth, height: bufferHeight };
+  harnessState.engineDisplaySize = { width: bufferWidth, height: bufferHeight };
+  invalidateCanvasDisplaySizeCache();
+  if (canvas.width !== bufferWidth || canvas.height !== bufferHeight) {
+    canvas.width = bufferWidth;
+    canvas.height = bufferHeight;
+  }
+  invalidateD3D8NormalizedViewportCache();
+  invalidateD3D8AppliedViewportCache();
+  if (gl) {
+    restoreFullCanvasViewport();
+  }
+  refreshCanvasState();
+  recordLog("d3d8 backbuffer resize", { width: bufferWidth, height: bufferHeight, source });
+  if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+    try {
+      window.dispatchEvent(new CustomEvent("cncport:resolutionchange", {
+        detail: { width: bufferWidth, height: bufferHeight, source },
+      }));
+    } catch {
+      // worker context without CustomEvent — state RPC still reflects the size
+    }
+  }
+}
+
+// Browser-native pixel size for the shim's adapter mode table (the size the
+// canvas CSS box occupies x devicePixelRatio — rendering at it is 1:1 sharp).
+function d3d8NativeModeQuery() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
+  const cssWidth = rect.width || canvas.width || 0;
+  const cssHeight = rect.height || canvas.height || 0;
+  return {
+    width: Math.round(cssWidth * dpr),
+    height: Math.round(cssHeight * dpr),
+  };
 }
 
 function finiteNumber(value, fallback) {
@@ -14492,6 +14526,8 @@ async function loadWasmModule() {
       cncPortD3D8Clear: paintD3D8Clear,
       cncPortD3D8SetViewport: setD3D8Viewport,
       cncPortD3D8SetGammaRamp: setD3D8GammaRamp,
+      cncPortD3D8BackbufferResize: onD3D8BackbufferResize,
+      cncPortD3D8NativeMode: d3d8NativeModeQuery,
       cncPortD3D8BufferCreate: createD3D8Buffer,
       cncPortD3D8BufferUpdate: updateD3D8Buffer,
       cncPortD3D8BufferRelease: releaseD3D8Buffer,
@@ -14737,6 +14773,16 @@ async function loadWasmModule() {
         "cnc_port_real_engine_set_resolution",
         "string",
         ["number", "number"],
+      ),
+      realEngineSetBootResolution: module.cwrap(
+        "cnc_port_real_engine_set_boot_resolution",
+        null,
+        ["number", "number"],
+      ),
+      realEngineDumpWindows: module.cwrap(
+        "cnc_port_real_engine_dump_windows",
+        "string",
+        [],
       ),
       realEngineSetFrameProfile: module.cwrap(
         "cnc_port_real_engine_set_frame_profile",
@@ -15087,6 +15133,8 @@ function d3d8BridgeCallbacks() {
     cncPortD3D8Clear: paintD3D8Clear,
     cncPortD3D8SetViewport: setD3D8Viewport,
     cncPortD3D8SetGammaRamp: setD3D8GammaRamp,
+    cncPortD3D8BackbufferResize: onD3D8BackbufferResize,
+    cncPortD3D8NativeMode: d3d8NativeModeQuery,
     cncPortD3D8BufferCreate: createD3D8Buffer,
     cncPortD3D8BufferUpdate: updateD3D8Buffer,
     cncPortD3D8BufferRelease: releaseD3D8Buffer,
@@ -19122,6 +19170,16 @@ async function realEngineInit(payload = {}) {
   let frontier = null;
   let aborted = false;
   let abortMessage = null;
+  // Boot render resolution: hand the page's target (dynamic canvas-fit or the
+  // persisted fixed setting) to the engine BEFORE init so GameEngine's
+  // INIT_STEP_GLOBAL_DATA applies it and the device is created directly at the
+  // target size (no 800x600-then-resize flash). Absent/invalid => stock boot.
+  const bootWidth = Math.round(Number(payload.bootWidth ?? 0));
+  const bootHeight = Math.round(Number(payload.bootHeight ?? 0));
+  if (bootWidth >= 640 && bootHeight >= 480
+      && typeof wasmModule.realEngineSetBootResolution === "function") {
+    wasmModule.realEngineSetBootResolution(bootWidth, bootHeight);
+  }
   const useStepped = payload.stepped === true
     && typeof wasmModule.realEngineInitBegin === "function"
     && typeof wasmModule.realEngineInitStep === "function";
@@ -20255,28 +20313,11 @@ async function rpc(command, payload = {}) {
         const appliedWidth = Number.isFinite(result?.width) && result.width > 0 ? result.width : width;
         const appliedHeight = Number.isFinite(result?.height) && result.height > 0 ? result.height : height;
         if (result?.ok === true) {
-          // Pin the WebGL2 backing store to the applied engine resolution so the
-          // drawing buffer matches the render target 1:1 (no stretch, correct
-          // unproject/pick-ray). Without this pin, syncCanvasSize() (run every
-          // draw) would reset canvas.width/height back to CSS-box x DPR, whose
-          // size AND aspect generally differ from the engine resolution.
-          explicitEngineBackingStore = { width: appliedWidth, height: appliedHeight };
-          invalidateCanvasDisplaySizeCache();
-          if (canvas.width !== appliedWidth || canvas.height !== appliedHeight) {
-            canvas.width = appliedWidth;
-            canvas.height = appliedHeight;
-          }
-          invalidateD3D8NormalizedViewportCache();
-          invalidateD3D8AppliedViewportCache();
-          if (gl) {
-            restoreFullCanvasViewport();
-          }
-          // Update the cached engine display size immediately so pointer->engine
-          // coordinate mapping (canvasInputPointFromEvent) is correct before the
-          // next frame refreshes it from clientState.display.
-          harnessState.engineDisplaySize = { width: appliedWidth, height: appliedHeight };
-          invalidateCanvasDisplaySizeCache();
-          refreshCanvasState();
+          // The engine's device Reset already drove onD3D8BackbufferResize
+          // (canvas pin + cache invalidation + resolutionchange event). Run it
+          // again defensively — it is idempotent — to cover a stale wasm build
+          // without the shim notify and the size-unchanged early-out path.
+          onD3D8BackbufferResize(appliedWidth, appliedHeight, "rpc");
           recordLog("set engine resolution", {
             requested: { width, height },
             applied: { width: appliedWidth, height: appliedHeight },
@@ -20408,6 +20449,22 @@ async function rpc(command, payload = {}) {
         ));
         recordLog("client pacing", pacing);
         return { ok: Boolean(pacing?.ok), command: "realEngineSetClientPacing", pacing };
+      }
+    case "realEngineDumpWindows":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineDumpWindows");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineDumpWindows", error: moduleResult.error };
+        }
+        if (typeof moduleResult.wasmModule.realEngineDumpWindows !== "function") {
+          return { ok: false, command: "realEngineDumpWindows", error: "window dump not exported by this build" };
+        }
+        try {
+          const dump = JSON.parse(moduleResult.wasmModule.realEngineDumpWindows());
+          return { ok: dump?.ok === true, command: "realEngineDumpWindows", ...dump };
+        } catch (error) {
+          return { ok: false, command: "realEngineDumpWindows", error: error?.message ?? String(error) };
+        }
       }
     case "realEngineSetLoadStepping":
       {

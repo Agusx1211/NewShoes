@@ -110,6 +110,11 @@
 
 #ifdef __EMSCRIPTEN__
 extern "C" void cnc_port_note_game_logic_step(const char *name) __attribute__((weak));
+// Browser port boot resolution: the page picks the render resolution (dynamic
+// canvas-fit or a fixed user setting) before init; returns nonzero when an
+// override is present. Applied after GameData/user-pref/command-line parsing,
+// before TheDisplay reads m_x/yResolution to create the device.
+extern "C" int cnc_port_boot_display_resolution(int *xres, int *yres) __attribute__((weak));
 #define CNC_PORT_NOTE_ENGINE_INIT_STEP(name) \
 	do { \
 		if (cnc_port_note_game_logic_step) { \
@@ -524,6 +529,20 @@ Bool GameEngine::runNextInitStep( void )
 		
 		// special-case: parse command-line parameters after loading global data
 		parseCommandLine(s->argc, s->argv);
+
+#ifdef __EMSCRIPTEN__
+		// Apply the page-chosen boot resolution last so it wins over the INI
+		// default and options.ini, the same way an explicit -xres/-yres would.
+		if (cnc_port_boot_display_resolution && TheWritableGlobalData != NULL) {
+			int bootXRes = 0;
+			int bootYRes = 0;
+			if (cnc_port_boot_display_resolution(&bootXRes, &bootYRes)
+					&& bootXRes >= 640 && bootYRes >= 480) {
+				TheWritableGlobalData->m_xResolution = bootXRes;
+				TheWritableGlobalData->m_yResolution = bootYRes;
+			}
+		}
+#endif
 
 		s->step = InitSession::INIT_STEP_LOD_WATER;
 		return TRUE;

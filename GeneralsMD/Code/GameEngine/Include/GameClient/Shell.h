@@ -143,6 +143,7 @@ public:
 	inline Bool isShellActive( void ) { return m_isShellActive; }  ///<	Returns true if the shell is active
 	
 	inline Int getScreenCount(void) { return m_screenCount; }			///< Return the current number of screens
+	inline WindowLayout *getScreenAt( Int index ) { return (index >= 0 && index < m_screenCount) ? m_screenStack[ index ] : NULL; }	///< Return screen by stack position (0 = bottom)
 
 	void registerWithAnimateManager( GameWindow *win, AnimTypes animType, Bool needsToFinish, UnsignedInt delayMS = 0);
 	Bool isAnimFinished( void );

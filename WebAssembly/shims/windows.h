@@ -960,10 +960,10 @@ static inline int MessageBox(void *window, const char *text, const char *caption
 	return MessageBoxA(window, text, caption, flags);
 }
 
-static inline BOOL SetWindowPos(HWND, HWND, int, int, int, int, UINT)
-{
-	return TRUE;
-}
+// Real implementation below (after WasmWin32Input) — the window record's rect
+// must track resize calls or GetClientRect goes stale and the engine WndProc
+// silently drops WM_MOUSEMOVE outside the old client area.
+static inline BOOL SetWindowPos(HWND window, HWND insert_after, int x, int y, int width, int height, UINT flags);
 
 static inline BOOL ClipCursor(const RECT *)
 {
@@ -1283,6 +1283,20 @@ static inline WindowRecord *FindWindow(HWND window)
 	return nullptr;
 }
 
+// Resize every window record to the given client size (origin preserved).
+// The port has exactly one application window; the D3D8 shim calls this on
+// device create/Reset so GetClientRect always matches the render resolution
+// (the engine WndProc drops WM_MOUSEMOVE outside the client rect — a stale
+// 800x600 rect silently killed hover on larger canvases).
+static inline void ResizeAllWindows(int width, int height)
+{
+	for (unsigned int index = 0; index < window_count; ++index) {
+		WindowRecord &record = windows[index];
+		record.rect.right = record.rect.left + width;
+		record.rect.bottom = record.rect.top + height;
+	}
+}
+
 static inline HWND CreateWindowRecord(LPCSTR class_name, int x = 0, int y = 0, int width = 0, int height = 0)
 {
 	if (window_count >= WindowCapacity()) {
@@ -1367,6 +1381,32 @@ static inline void Reset()
 		key_pressed_since_last_query[index] = false;
 	}
 }
+}
+
+static inline BOOL SetWindowPos(HWND window, HWND, int x, int y, int width, int height, UINT flags)
+{
+	// Track position/size on the window record so GetWindowRect/GetClientRect
+	// stay truthful. DX8Wrapper::Set_Device_Resolution resizes the application
+	// window through here on every display-mode change; with the old no-op the
+	// client rect stayed at creation size and the engine WndProc dropped
+	// WM_MOUSEMOVE beyond it (hover dead outside the original 800x600).
+	WasmWin32Input::WindowRecord *record = WasmWin32Input::FindWindow(window);
+	if (record == nullptr) {
+		return TRUE;
+	}
+	if ((flags & SWP_NOMOVE) == 0) {
+		const int old_width = record->rect.right - record->rect.left;
+		const int old_height = record->rect.bottom - record->rect.top;
+		record->rect.left = x;
+		record->rect.top = y;
+		record->rect.right = x + old_width;
+		record->rect.bottom = y + old_height;
+	}
+	if ((flags & SWP_NOSIZE) == 0) {
+		record->rect.right = record->rect.left + width;
+		record->rect.bottom = record->rect.top + height;
+	}
+	return TRUE;
 }
 
 static inline HCURSOR LoadCursor(HINSTANCE, LPCSTR cursor_name)

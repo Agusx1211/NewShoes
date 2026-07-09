@@ -4536,6 +4536,17 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_reset_browser_input()
 	return write_state_json();
 }
 
+// Strong def of the weak hook the D3D8 shim calls on device create/Reset:
+// keep the Win32-shim window rects in step with the render resolution so
+// GetClientRect is truthful (the engine WndProc drops WM_MOUSEMOVE outside
+// the client rect — a stale rect silently kills hover beyond it).
+extern "C" void cnc_port_win32_resize_application_window(int width, int height)
+{
+	if (width > 0 && height > 0) {
+		WasmWin32Input::ResizeAllWindows(width, height);
+	}
+}
+
 static void queue_browser_message(
 	int message,
 	int w_param,

@@ -78,6 +78,33 @@ EM_JS(void, wasm_d3d8_browser_set_viewport, (
 		targetHeight: target_height >>> 0,
 	});
 });
+// The engine owns the render resolution: any backbuffer size change (device
+// create or Reset from TheDisplay->setDisplayMode, whether driven by the page
+// or by the in-game options screen) is pushed to the bridge so the WebGL2
+// canvas backing store always matches the engine render target 1:1.
+EM_JS(void, wasm_d3d8_browser_backbuffer_resize, (unsigned int width, unsigned int height), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8BackbufferResize : null;
+	if (typeof bridge !== "function") {
+		return;
+	}
+	bridge(width >>> 0, height >>> 0);
+});
+// Browser-native display pixel size (canvas CSS box x devicePixelRatio),
+// packed (width << 16) | height so the adapter mode table can expose it as a
+// real display mode. Returns 0 when the bridge is absent (probe pages).
+EM_JS(unsigned int, wasm_d3d8_browser_native_mode, (), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8NativeMode : null;
+	if (typeof bridge !== "function") {
+		return 0;
+	}
+	const mode = bridge();
+	const width = Math.min(8191, Math.max(0, Math.round(Number(mode && mode.width) || 0)));
+	const height = Math.min(8191, Math.max(0, Math.round(Number(mode && mode.height) || 0)));
+	if (width < 640 || height < 480) {
+		return 0;
+	}
+	return ((width << 16) | height) >>> 0;
+});
 EM_JS(void, wasm_d3d8_browser_set_gamma_ramp, (
 	unsigned int flags,
 	const unsigned short *red,
@@ -716,6 +743,8 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	bridge(payload);
 	});
 #else
+void wasm_d3d8_browser_backbuffer_resize(unsigned int, unsigned int) {}
+unsigned int wasm_d3d8_browser_native_mode() { return 0; }
 void wasm_d3d8_browser_clear_target(unsigned int, unsigned int, double, unsigned int) {}
 void wasm_d3d8_browser_set_viewport(unsigned int, unsigned int, unsigned int, unsigned int, double, double,
 	unsigned int, unsigned int) {}
@@ -736,6 +765,11 @@ void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned in
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, int) {}
 #endif
+
+// Defined by the port runtime (wasm_port_entry.cpp): resizes the Win32-shim
+// window records so GetClientRect tracks the render resolution. Weak so probe
+// targets that link this shim without the runtime still build.
+extern "C" void cnc_port_win32_resize_application_window(int width, int height) __attribute__((weak));
 
 namespace {
 
@@ -773,12 +807,117 @@ bool ascii_iequals(const char *left, const char *right)
 	return *left == '\0' && *right == '\0';
 }
 
-void fill_display_mode(D3DDISPLAYMODE &mode)
+// Adapter display-mode ladder. The engine's own display-mode enumeration
+// (DX8Wrapper -> W3DDisplay::getDisplayModeCount -> the in-game options
+// resolution combo box) reads this list, so it carries genuine choices instead
+// of the old single hardcoded 800x600 entry. The stock combo filters to 4:3
+// modes >= 800 wide at >= 24bpp; the wide entries are harmless there and
+// available to other Enumerate_Resolutions consumers. The browser's real
+// native pixel size (from the bridge) is appended as a first-class mode.
+const struct { UINT width; UINT height; } k_adapter_modes[] = {
+	{800, 600}, {1024, 768}, {1152, 864}, {1280, 720}, {1280, 800},
+	{1280, 960}, {1280, 1024}, {1366, 768}, {1400, 1050}, {1440, 900},
+	{1600, 900}, {1600, 1200}, {1680, 1050}, {1920, 1080}, {1920, 1200},
+	{2048, 1536}, {2560, 1440}, {2560, 1600}, {3840, 2160},
+};
+const UINT k_adapter_mode_base_count = sizeof(k_adapter_modes) / sizeof(k_adapter_modes[0]);
+
+bool browser_native_display_size(UINT &width, UINT &height)
 {
-	mode.Width = 800;
-	mode.Height = 600;
+	const unsigned int packed = wasm_d3d8_browser_native_mode();
+	if (packed == 0) {
+		return false;
+	}
+	width = (packed >> 16) & 0xffff;
+	height = packed & 0xffff;
+	return width >= 640 && height >= 480;
+}
+
+// Dynamic tail of the adapter mode list: the browser-native pixel size plus
+// the CURRENT backbuffer size (so whatever resolution the engine is running —
+// including custom/dynamic sizes — is always listable and therefore
+// preselectable by the in-game options combo). Deduplicated against the
+// static ladder and each other.
+UINT adapter_extra_modes(UINT extra_widths[2], UINT extra_heights[2])
+{
+	UINT count = 0;
+	UINT candidate_widths[2];
+	UINT candidate_heights[2];
+	UINT candidates = 0;
+	UINT native_width = 0;
+	UINT native_height = 0;
+	if (browser_native_display_size(native_width, native_height)) {
+		candidate_widths[candidates] = native_width;
+		candidate_heights[candidates] = native_height;
+		++candidates;
+	}
+	if (g_state.back_buffer_width >= 640 && g_state.back_buffer_height >= 480) {
+		candidate_widths[candidates] = (UINT)g_state.back_buffer_width;
+		candidate_heights[candidates] = (UINT)g_state.back_buffer_height;
+		++candidates;
+	}
+	for (UINT c = 0; c < candidates; ++c) {
+		bool duplicate = false;
+		for (UINT i = 0; i < k_adapter_mode_base_count && !duplicate; ++i) {
+			duplicate = k_adapter_modes[i].width == candidate_widths[c]
+				&& k_adapter_modes[i].height == candidate_heights[c];
+		}
+		for (UINT e = 0; e < count && !duplicate; ++e) {
+			duplicate = extra_widths[e] == candidate_widths[c]
+				&& extra_heights[e] == candidate_heights[c];
+		}
+		if (!duplicate) {
+			extra_widths[count] = candidate_widths[c];
+			extra_heights[count] = candidate_heights[c];
+			++count;
+		}
+	}
+	return count;
+}
+
+UINT adapter_mode_count()
+{
+	UINT extra_widths[2];
+	UINT extra_heights[2];
+	return k_adapter_mode_base_count + adapter_extra_modes(extra_widths, extra_heights);
+}
+
+bool adapter_mode_at(UINT index, D3DDISPLAYMODE &mode)
+{
 	mode.RefreshRate = 60;
 	mode.Format = D3DFMT_A8R8G8B8;
+	if (index < k_adapter_mode_base_count) {
+		mode.Width = k_adapter_modes[index].width;
+		mode.Height = k_adapter_modes[index].height;
+		return true;
+	}
+	UINT extra_widths[2];
+	UINT extra_heights[2];
+	const UINT extra_count = adapter_extra_modes(extra_widths, extra_heights);
+	const UINT extra_index = index - k_adapter_mode_base_count;
+	if (extra_index < extra_count) {
+		mode.Width = extra_widths[extra_index];
+		mode.Height = extra_heights[extra_index];
+		return true;
+	}
+	return false;
+}
+
+// The adapter's "current desktop mode": the browser-native pixel size when
+// the bridge reports one, else the classic 800x600 default.
+void fill_display_mode(D3DDISPLAYMODE &mode)
+{
+	mode.RefreshRate = 60;
+	mode.Format = D3DFMT_A8R8G8B8;
+	UINT native_width = 0;
+	UINT native_height = 0;
+	if (browser_native_display_size(native_width, native_height)) {
+		mode.Width = native_width;
+		mode.Height = native_height;
+		return;
+	}
+	mode.Width = 800;
+	mode.Height = 600;
 }
 
 void fill_caps(D3DCAPS8 &caps)
@@ -3007,6 +3146,11 @@ public:
 		g_state.back_buffer_format = m_parameters.BackBufferFormat;
 		g_state.depth_stencil_format = m_parameters.AutoDepthStencilFormat;
 		g_state.viewport = m_viewport;
+		if (cnc_port_win32_resize_application_window != nullptr) {
+			cnc_port_win32_resize_application_window(
+				(int)m_parameters.BackBufferWidth, (int)m_parameters.BackBufferHeight);
+		}
+		wasm_d3d8_browser_backbuffer_resize(m_parameters.BackBufferWidth, m_parameters.BackBufferHeight);
 		wasm_d3d8_browser_set_viewport(
 			m_viewport.X,
 			m_viewport.Y,
@@ -3072,7 +3216,12 @@ public:
 		if (mode == nullptr) {
 			return E_FAIL;
 		}
-		fill_display_mode(*mode);
+		// The device's mode is the live backbuffer size (the engine render
+		// resolution), not the adapter's native/desktop mode.
+		mode->Width = m_parameters.BackBufferWidth;
+		mode->Height = m_parameters.BackBufferHeight;
+		mode->RefreshRate = 60;
+		mode->Format = m_parameters.BackBufferFormat;
 		return S_OK;
 	}
 
@@ -3086,9 +3235,66 @@ public:
 
 	HRESULT Reset(D3DPRESENT_PARAMETERS *parameters) override
 	{
+		// Real device reset: the engine drives this through
+		// DX8Wrapper::Reset_Device when TheDisplay->setDisplayMode changes the
+		// render resolution. Honor the new backbuffer size: recreate the
+		// backbuffer/depth surfaces at it, reset the viewport to cover it, and
+		// notify the bridge so the canvas backing store follows the engine.
 		if (parameters != nullptr) {
 			m_parameters = *parameters;
 		}
+		if (m_parameters.BackBufferWidth == 0) {
+			m_parameters.BackBufferWidth = 800;
+		}
+		if (m_parameters.BackBufferHeight == 0) {
+			m_parameters.BackBufferHeight = 600;
+		}
+		if (m_parameters.BackBufferFormat == D3DFMT_UNKNOWN) {
+			m_parameters.BackBufferFormat = D3DFMT_A8R8G8B8;
+		}
+		if (m_parameters.AutoDepthStencilFormat == D3DFMT_UNKNOWN) {
+			m_parameters.AutoDepthStencilFormat = D3DFMT_D24S8;
+		}
+
+		if (m_back_buffer != nullptr) {
+			m_back_buffer->Release();
+			m_back_buffer = nullptr;
+		}
+		if (m_depth_stencil != nullptr) {
+			m_depth_stencil->Release();
+			m_depth_stencil = nullptr;
+		}
+		m_back_buffer = new (std::nothrow) BrowserD3DSurface(this, m_parameters.BackBufferWidth,
+			m_parameters.BackBufferHeight, m_parameters.BackBufferFormat, D3DUSAGE_RENDERTARGET);
+		m_depth_stencil = new (std::nothrow) BrowserD3DSurface(this, m_parameters.BackBufferWidth,
+			m_parameters.BackBufferHeight, m_parameters.AutoDepthStencilFormat, D3DUSAGE_DEPTHSTENCIL);
+
+		m_viewport.X = 0;
+		m_viewport.Y = 0;
+		m_viewport.Width = m_parameters.BackBufferWidth;
+		m_viewport.Height = m_parameters.BackBufferHeight;
+		m_viewport.MinZ = 0.0f;
+		m_viewport.MaxZ = 1.0f;
+
+		g_state.back_buffer_width = m_parameters.BackBufferWidth;
+		g_state.back_buffer_height = m_parameters.BackBufferHeight;
+		g_state.back_buffer_format = m_parameters.BackBufferFormat;
+		g_state.depth_stencil_format = m_parameters.AutoDepthStencilFormat;
+		g_state.viewport = m_viewport;
+		if (cnc_port_win32_resize_application_window != nullptr) {
+			cnc_port_win32_resize_application_window(
+				(int)m_parameters.BackBufferWidth, (int)m_parameters.BackBufferHeight);
+		}
+		wasm_d3d8_browser_backbuffer_resize(m_parameters.BackBufferWidth, m_parameters.BackBufferHeight);
+		wasm_d3d8_browser_set_viewport(
+			m_viewport.X,
+			m_viewport.Y,
+			m_viewport.Width,
+			m_viewport.Height,
+			m_viewport.MinZ,
+			m_viewport.MaxZ,
+			m_parameters.BackBufferWidth,
+			m_parameters.BackBufferHeight);
 		return S_OK;
 	}
 
@@ -4728,15 +4934,17 @@ public:
 		return S_OK;
 	}
 
-	UINT GetAdapterModeCount(UINT adapter) override { return adapter == D3DADAPTER_DEFAULT ? 1 : 0; }
+	UINT GetAdapterModeCount(UINT adapter) override
+	{
+		return adapter == D3DADAPTER_DEFAULT ? adapter_mode_count() : 0;
+	}
 
 	HRESULT EnumAdapterModes(UINT adapter, UINT mode, D3DDISPLAYMODE *display_mode) override
 	{
-		if (adapter != D3DADAPTER_DEFAULT || mode != 0 || display_mode == nullptr) {
+		if (adapter != D3DADAPTER_DEFAULT || display_mode == nullptr) {
 			return E_FAIL;
 		}
-		fill_display_mode(*display_mode);
-		return S_OK;
+		return adapter_mode_at(mode, *display_mode) ? S_OK : E_FAIL;
 	}
 
 	HRESULT GetAdapterDisplayMode(UINT adapter, D3DDISPLAYMODE *display_mode) override
