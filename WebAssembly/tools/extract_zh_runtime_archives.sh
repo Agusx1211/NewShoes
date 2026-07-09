@@ -346,6 +346,14 @@ done
 
 extract_optional_base_startup_archives
 
+# Boot splash for harness/play.html: the original WinMain.cpp load-screen
+# bitmap (Data\English\Install_Final.bmp inside EnglishZH.big) converted to
+# PNG next to the archives. Best-effort: the play page falls back to its plain
+# gradient background when the PNG is missing (404).
+node "${script_dir}/extract_splash_art.mjs" \
+  "${out_dir}/EnglishZH.big" "${out_dir}/Install_Final.png" >/dev/null \
+  || echo "warning: splash art extraction failed (play page keeps plain background)" >&2
+
 printf '%s\n' \
   "${data_archives[@]}" \
   "${language_archives[@]}" \

@@ -17,7 +17,10 @@
 //
 // Protocol (main thread -> worker):
 //   { id, kind: "fetchArchive", url }
-//       -> fetch whole archive, transfer bytes back.
+//       -> fetch whole archive (streamed), transfer bytes back. While the body
+//          streams, interim { id, ok: true, kind: "progress", url, received,
+//          total } messages are posted (throttled to ~4/sec; total is the
+//          Content-Length, 0 when the server did not send one).
 //   { id, kind: "fetchRange", url, start, end }
 //       -> HTTP Range request, transfer the range bytes back.
 //   { id, kind: "ping" }
@@ -25,14 +28,70 @@
 //
 // Response (worker -> main thread):
 //   { id, ok: true, kind, bytes: ArrayBuffer, byteLength, status }   // transferred
+//   { id, ok: true, kind: "progress", url, received, total }         // interim
 //   { id, ok: false, kind, error }
 
-async function fetchWholeArchive(url) {
+const PROGRESS_POST_INTERVAL_MS = 250; // ~4 progress posts per second per archive
+
+// Streamed whole-archive fetch: reads the response body chunk by chunk so the
+// caller can observe real download progress, then hands back ONE contiguous
+// ArrayBuffer (still transferred zero-copy to the main thread). When the
+// Content-Length is known the bytes land directly in a single preallocated
+// buffer; otherwise chunks accumulate and are joined once at the end.
+async function fetchWholeArchive(url, reportProgress) {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`fetch failed: ${response.status} ${response.statusText}`);
   }
-  const buffer = await response.arrayBuffer();
+
+  const contentLength = Number(response.headers.get("content-length"));
+  const total = Number.isSafeInteger(contentLength) && contentLength > 0 ? contentLength : 0;
+
+  if (typeof response.body?.getReader !== "function") {
+    // No streaming support in this context: fall back to the single-shot read
+    // and report completion only.
+    const buffer = await response.arrayBuffer();
+    reportProgress?.(buffer.byteLength, total || buffer.byteLength, true);
+    return { buffer, status: response.status };
+  }
+
+  const reader = response.body.getReader();
+  let flat = total > 0 ? new Uint8Array(total) : null;
+  let chunks = null; // fallback accumulator (unknown or wrong Content-Length)
+  let received = 0;
+  reportProgress?.(0, total, true);
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    if (flat && received + value.byteLength <= flat.byteLength) {
+      flat.set(value, received);
+    } else {
+      if (!chunks) {
+        // Content-Length was missing or too small; switch to chunk mode.
+        chunks = flat ? [flat.subarray(0, received)] : [];
+        flat = null;
+      }
+      chunks.push(value);
+    }
+    received += value.byteLength;
+    reportProgress?.(received, total, false);
+  }
+  reportProgress?.(received, total || received, true);
+
+  let buffer;
+  if (flat) {
+    buffer = received === flat.byteLength ? flat.buffer : flat.buffer.slice(0, received);
+  } else {
+    const merged = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks ?? []) {
+      merged.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    buffer = merged.buffer;
+  }
   return { buffer, status: response.status };
 }
 
@@ -75,7 +134,17 @@ self.onmessage = async (event) => {
     }
 
     if (kind === "fetchArchive") {
-      const { buffer, status } = await fetchWholeArchive(String(message.url ?? ""));
+      const url = String(message.url ?? "");
+      let lastProgressAt = -Infinity;
+      const reportProgress = (received, total, force) => {
+        const now = performance.now();
+        if (!force && now - lastProgressAt < PROGRESS_POST_INTERVAL_MS) {
+          return;
+        }
+        lastProgressAt = now;
+        self.postMessage({ id, ok: true, kind: "progress", url, received, total });
+      };
+      const { buffer, status } = await fetchWholeArchive(url, reportProgress);
       self.postMessage(
         { id, ok: true, kind, bytes: buffer, byteLength: buffer.byteLength, status },
         [buffer],

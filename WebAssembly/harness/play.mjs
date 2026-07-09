@@ -142,11 +142,160 @@ function report(message) {
   progressNode.classList.remove("error");
 }
 
+// --- boot progress UI (archive download/mount bar + engine-init pulse) ------
+// bridge.js's mountArchives path emits "cnc-archive-progress" CustomEvents:
+// { phase: "fetch"|"write"|"done", name, url, received, total, index, count }.
+// Archive sizes are only known as each Content-Length arrives, so the overall
+// total is shown as an estimate ("~") until every size is known. If the events
+// never arrive (older bridge, worker failure) the bar simply stays empty and
+// the existing #progress status text still tells the story.
+const bootProgressNode = document.querySelector("#bootProgress");
+const bootBarFillNode = document.querySelector("#bootBarFill");
+const bootBytesNode = document.querySelector("#bootBytes");
+const bootRateNode = document.querySelector("#bootRate");
+const bootDetailNode = document.querySelector("#bootDetail");
+
+const bootProgressState = {
+  active: false,
+  archiveCount: archiveSpecs.length,
+  perArchive: new Map(), // name -> { received, total }
+  rateSamples: [], // { t, bytes } sliding window for the MB/s readout
+};
+
+function beginBootProgress(archiveCount) {
+  bootProgressState.active = true;
+  bootProgressState.archiveCount = archiveCount;
+  bootProgressState.perArchive.clear();
+  bootProgressState.rateSamples.length = 0;
+  if (bootBarFillNode) {
+    bootBarFillNode.style.width = "0%";
+  }
+  if (bootBytesNode) {
+    bootBytesNode.textContent = "";
+  }
+  if (bootRateNode) {
+    bootRateNode.textContent = "";
+  }
+  if (bootDetailNode) {
+    bootDetailNode.textContent = "";
+  }
+  bootProgressNode?.classList.remove("indeterminate", "hidden");
+}
+
+function bootProgressEnginePhase() {
+  // Archives are all in MEMFS; GameEngine::init() has no byte counter, so
+  // pulse the full bar instead of pretending a percentage.
+  if (bootBarFillNode) {
+    bootBarFillNode.style.width = "100%";
+  }
+  if (bootRateNode) {
+    bootRateNode.textContent = "";
+  }
+  if (bootDetailNode) {
+    bootDetailNode.textContent = "";
+  }
+  bootProgressNode?.classList.add("indeterminate");
+}
+
+function endBootProgress() {
+  bootProgressState.active = false;
+  bootProgressNode?.classList.add("hidden");
+  bootProgressNode?.classList.remove("indeterminate");
+}
+
+function formatGb(bytes) {
+  return (bytes / (1024 ** 3)).toFixed(2);
+}
+
+function bootRateBytesPerSec(receivedNow) {
+  const now = performance.now();
+  const samples = bootProgressState.rateSamples;
+  samples.push({ t: now, bytes: receivedNow });
+  while (samples.length > 2 && now - samples[0].t > 3000) {
+    samples.shift();
+  }
+  const first = samples[0];
+  const seconds = (now - first.t) / 1000;
+  if (seconds < 0.3 || receivedNow < first.bytes) {
+    return null;
+  }
+  return (receivedNow - first.bytes) / seconds;
+}
+
+function renderBootProgress(detail) {
+  const name = String(detail.name ?? detail.url ?? "archive");
+  const phase = String(detail.phase ?? "fetch");
+  const count = Number(detail.count ?? bootProgressState.archiveCount) || bootProgressState.archiveCount;
+  const ordinal = Number.isInteger(detail.index) ? `${detail.index + 1}/${count}` : "";
+  const entry = bootProgressState.perArchive.get(name) ?? { received: 0, total: 0 };
+  entry.received = Math.max(entry.received, Number(detail.received ?? 0) || 0);
+  entry.total = Math.max(entry.total, Number(detail.total ?? 0) || 0);
+  bootProgressState.perArchive.set(name, entry);
+
+  // Overall byte totals. Archives whose Content-Length has not arrived yet
+  // (or was missing) are estimated at the average known archive size, so the
+  // denominator is honest-but-approximate until all sizes are in.
+  let received = 0;
+  let knownTotal = 0;
+  let knownCount = 0;
+  let unknownReceived = 0;
+  let unknownCount = 0;
+  for (const archive of bootProgressState.perArchive.values()) {
+    received += archive.received;
+    if (archive.total > 0) {
+      knownTotal += archive.total;
+      knownCount += 1;
+    } else {
+      unknownReceived += archive.received;
+      unknownCount += 1;
+    }
+  }
+  const unseenCount = Math.max(0, count - bootProgressState.perArchive.size);
+  const averageKnown = knownCount > 0 ? knownTotal / knownCount : 0;
+  const estimatedTotal = knownTotal
+    + Math.max(unknownReceived, unknownCount * averageKnown)
+    + unseenCount * averageKnown;
+  const allTotalsKnown = unseenCount === 0 && unknownCount === 0;
+
+  if (bootBarFillNode && estimatedTotal > 0) {
+    const fraction = Math.max(0, Math.min(1, received / estimatedTotal));
+    bootBarFillNode.style.width = `${(fraction * 100).toFixed(1)}%`;
+  }
+  if (bootBytesNode) {
+    bootBytesNode.textContent = estimatedTotal > 0
+      ? `${formatGb(received)} / ${allTotalsKnown ? "" : "~"}${formatGb(estimatedTotal)} GB`
+      : "";
+  }
+  if (bootRateNode) {
+    const rate = bootRateBytesPerSec(received);
+    if (rate !== null) {
+      bootRateNode.textContent = `${(rate / (1024 ** 2)).toFixed(1)} MB/s`;
+    }
+  }
+  if (bootDetailNode) {
+    if (phase === "write") {
+      bootDetailNode.textContent = `mounting ${name}...`;
+    } else if (phase === "done") {
+      bootDetailNode.textContent = ordinal ? `mounted ${name} (${ordinal})` : `mounted ${name}`;
+    } else {
+      bootDetailNode.textContent = ordinal ? `downloading ${name} (${ordinal})` : `downloading ${name}`;
+    }
+  }
+}
+
+window.addEventListener("cnc-archive-progress", (event) => {
+  if (!bootProgressState.active) {
+    return;
+  }
+  renderBootProgress(event.detail ?? {});
+});
+
 function fail(message, detail) {
   console.error("[play]", message, detail ?? "");
   issueRecorder.noteFailure(message, detail);
   progressNode.textContent = `FAILED: ${message}`;
   progressNode.classList.add("error");
+  bootProgressNode?.classList.remove("indeterminate");
   startButton.disabled = false;
 }
 
@@ -424,6 +573,12 @@ async function start() {
     if (queryParams.get("ioworker") === "0") {
       window.__cncIoWorker = false;
     }
+    // Archive downloads overlap (bounded fetch-ahead on the IO worker) while
+    // the MEMFS writes stay sequential. Add ?fetchpar=0 to force strictly
+    // sequential downloads for debugging or regression comparison.
+    if (queryParams.get("fetchpar") === "0") {
+      window.__cncFetchParallel = false;
+    }
 
     issueRecorder.setSessionContext({
       phase: "starting",
@@ -436,7 +591,8 @@ async function start() {
       },
     });
 
-    report(`downloading + mounting ${archiveSpecs.length} archives (~1.6 GB, be patient)...`);
+    report(`downloading + mounting ${archiveSpecs.length} archives...`);
+    beginBootProgress(archiveSpecs.length);
     const mount = await rpc("mountArchives", {
       path: "/assets/real-init",
       verifyEach: false,
@@ -458,6 +614,7 @@ async function start() {
 
     const shellMap = queryParams.get("shellmap") !== "0";
     issueRecorder.setSessionContext({ shellMap });
+    bootProgressEnginePhase();
     report(`running real GameEngine::init() (~10-30s, shell map ${shellMap ? "on" : "off"})...`);
     const init = await rpc("realEngineInit", { runDirectory: "/assets/real-init", shellMap });
     if (init?.ok !== true || init?.frontier?.initReturned !== true) {
@@ -486,6 +643,7 @@ async function start() {
     }
 
     report("");
+    endBootProgress();
     overlay.classList.add("hidden");
     hudNode?.classList.remove("hidden");
     gearButton?.classList.remove("hidden");

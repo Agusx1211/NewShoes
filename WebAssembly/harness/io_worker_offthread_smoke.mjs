@@ -68,6 +68,22 @@ async function main() {
       "main-thread heartbeat kept ticking during 300ms worker-CPU task",
       Number(result.heartbeatTicksDuringBusy) >= 5,
     ]);
+    // Streamed-fetch progress: the worker must post interim
+    // { kind: "progress", received, total } messages so the play page can
+    // render a real download bar. Total comes from Content-Length and the
+    // final (forced) progress post must cover the whole payload.
+    checks.push([
+      "worker posted streamed progress events",
+      Number(result.progressEventCount) >= 1,
+    ]);
+    checks.push([
+      "progress total matches Content-Length",
+      Number(result.progressTotal) === fileStat.size,
+    ]);
+    checks.push([
+      "final progress covered the full payload",
+      Number(result.progressMaxReceived) === fileStat.size,
+    ]);
 
     const failed = checks.filter(([, ok]) => !ok);
     for (const [name, ok] of checks) {
@@ -77,6 +93,7 @@ async function main() {
       `info  byteLength=${result.byteLength} expected=${fileStat.size} ` +
         `heartbeatTicksDuringFetch=${result.heartbeatTicksDuringFetch} ` +
         `heartbeatTicksDuringBusy=${result.heartbeatTicksDuringBusy} ` +
+        `progressEvents=${result.progressEventCount} ` +
         `fetchMs=${result.fetchMs?.toFixed?.(1) ?? result.fetchMs}\n`,
     );
     if (failed.length > 0) {
