@@ -2105,12 +2105,23 @@ AGAIN:
 			}
 		}
 					
-		if (TheScriptEngine->isTimeFrozenDebug() || TheScriptEngine->isTimeFrozenScript() || TheGameLogic->isGamePaused())	
+		if (TheScriptEngine->isTimeFrozenDebug() || TheScriptEngine->isTimeFrozenScript() || TheGameLogic->isGamePaused())
 		{
 			freezeTime = false; // We're frozen for debug or for pause, and need to continue out of the loop.
 		}
 
-		} while (freezeTime && !TheTacticalView->isCameraMovementFinished());
+		} while (
+#ifdef __EMSCRIPTEN__
+			// Paced browser mode: freezeTime is also true on every client-only
+			// frame (client frame counter didn't advance), so looping here would
+			// render entire scripted camera movements inside ONE update call — a
+			// multi-second tab freeze after which the camera appears to teleport
+			// (the shellmap's menu pans hit this). Render one frame per update
+			// instead; time-frozen moves hold TheGameLogic via the port's
+			// cnc_port_allow_logic_frame gate, preserving the freeze semantics.
+			!(cnc_port_client_paced_mode && cnc_port_client_paced_mode() != 0) &&
+#endif
+			freezeTime && !TheTacticalView->isCameraMovementFinished());
 	CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.complete");
 
 #ifdef EXTENDED_STATS

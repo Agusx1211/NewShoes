@@ -54,6 +54,29 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       consumed per client frame (now 60Hz), so click→UI-response is ~1 client
       frame (16.7ms) + present instead of up to 33ms + present. The cursor
       itself was already the zero-latency native CSS cursor.
+- [x] **Fix paced-mode regression: multi-second freezes + "camera doesn't
+      move" on the main menu.** User report after the decoupling landed. Root
+      cause: `W3DDisplay::draw`'s do/while re-renders inside ONE update call
+      while `freezeTime && !isCameraMovementFinished()` — the engine's
+      time-frozen-cinematic mechanism (logic can't advance because update()
+      never returns). Paced mode made `freezeTime` true on every client-only
+      frame (the `lastFrame == TheGameClient->getFrame()` term), so ANY
+      scripted camera movement (the shellmap's menu pans) rendered its entire
+      duration synchronously in one RAF task: ~21s tab freeze, after which
+      the camera had "teleported" — the user never saw it pan. (The pacing
+      probe's "loadStalls" at logic frame ~250 every boot were this, not map
+      reloads.) Fix: in paced mode the loop is single-pass
+      (`cnc_port_client_paced_mode` check in the while condition) so moves
+      render across successive 60Hz client frames, and the port's
+      `cnc_port_allow_logic_frame` gate additionally holds `TheGameLogic`
+      while `TheTacticalView->isTimeFrozen() && !isCameraMovementFinished()`
+      — preserving the original time-freeze semantics for campaign cinematics
+      WITHOUT blocking the tab (fixes one class of the "wall-time waits"
+      TODO; frozen pans now render smoothly instead of freezing the browser).
+      Metal-verified: shellmap pans play smoothly (pacing probe shows
+      continuous 33ms logic cadence through the window where the ~21s stall
+      used to appear, zero load stalls), title + skirmish screenshots
+      pixel-correct.
 
 ## Rendering — hard/unfeathered terrain + road edges (port regression, 2026-07-09)
 

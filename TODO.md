@@ -513,7 +513,24 @@ the UI is the real `PopupSaveLoad.cpp` reached from in-game ESC/Options →
       need a single-player mission or a temporary save trigger).
 ## User-reported play bugs (2026-07-09 session)
 
-- [ ] **"Feels emulated" follow-ups after the 60Hz-client / 30Hz-logic
+- [ ] **iPad Safari sometimes renders an all-black canvas** — appeared
+      alongside the paced-mode camera-pan freezes (20s+ blocked main-thread
+      tasks), which iPadOS Safari punishes by killing the WebGL context (every
+      subsequent GL call no-ops → permanently black canvas; Mac Chrome
+      tolerated the same freeze). The freeze root cause is fixed (see DONE:
+      paced-mode do/while regression), which likely removes the trigger.
+      Detection landed in bridge.js (`webglcontextlost` handler: red reload
+      banner + console + `webglContextLost`/`webglContextLossAt` in the state
+      RPC/dumps) so any recurrence is visible instead of a silent black
+      screen. If it still recurs on iPad after the fixed build (Safari also
+      kills contexts on MEMORY pressure — this tab holds the 1.3GB archives +
+      wasm heap + GL resources, near iPad Safari's per-tab limit):
+      (a) capture a dump/state showing `webglContextLost:true` to confirm the
+      mechanism; (b) consider real context-restore (re-create GL resources
+      from CPU mirrors + DDS sources — big lift, buffers have mirrors but
+      textures/shaders/VAOs need a registry); (c) reduce peak memory on
+      mobile (range-backed archive reads instead of full in-memory mount is
+      the big one).
       decoupling** — the paced mode (client at display rate, TheGameLogic held
       at the authentic 30Hz via the `cnc_port_allow_logic_frame` gate EA left
       as a @todo above `GameEngine::update`) is live and Metal-verified

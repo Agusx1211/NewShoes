@@ -5729,7 +5729,23 @@ extern Int TheW3DFrameLengthInMsec;
 
 extern "C" int cnc_port_allow_logic_frame(void)
 {
-	return g_paced_allow_logic_frame;
+	if (!g_paced_allow_logic_frame) {
+		return 0;
+	}
+	// "Freeze time during camera movement" cinematics: the original engine
+	// implements them by spinning W3DDisplay::draw's do/while for the whole
+	// move inside ONE GameEngine::update call (logic can't advance because
+	// update() never returns). Paced mode exits that loop after one render
+	// (see W3DDisplay.cpp) so the move plays across successive 60Hz client
+	// frames; the time-freeze semantic is preserved here instead by holding
+	// TheGameLogic while the frozen move is active.
+	if (g_paced_mode_active
+		&& TheTacticalView != NULL
+		&& TheTacticalView->isTimeFrozen()
+		&& !TheTacticalView->isCameraMovementFinished()) {
+		return 0;
+	}
+	return 1;
 }
 
 extern "C" int cnc_port_client_paced_mode(void)
