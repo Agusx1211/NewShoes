@@ -115,6 +115,21 @@ existing smokes stay only as regression tests.
 - When something doesn't compile to wasm, the fix is to **port/shim its
   dependency**, not to stub out or fake the feature.
 - Map missing platform APIs to browser equivalents; preserve original logic.
+- **Modifying original engine code is allowed when the browser requires it**
+  (policy updated 2026-07 — the port is mature enough that "never touch engine
+  source" is retired). When a genuine browser constraint — the single-threaded
+  event loop (nothing paints until control returns), async-only I/O, memory
+  limits — cannot be met at the platform seam alone, change the original C++:
+  add yield points, restructure a blocking loop, split a monolithic load
+  function. Constraints on such changes:
+  - Change **how** the code runs (scheduling, I/O, pumping), never **what**
+    the game does — same data, same simulation outcomes, same UI flow.
+  - Keep edits minimal and reviewable; prefer `#ifdef __EMSCRIPTEN__` gating
+    or the established weak-hook pattern (`cnc_port_*` weak decls in engine
+    files, strong defs in `wasm_real_engine_init.cpp`) so native builds keep
+    the original behavior byte-for-byte.
+  - A rewrite of a subsystem is still forbidden; surgical restructuring of a
+    function the browser physically cannot run as-is is fine.
 
 ## Don't work blind: keep a driveable harness
 
