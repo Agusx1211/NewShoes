@@ -8,6 +8,61 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Performance — input-event state-JSON churn + SFX decode churn (2026-07-09)
+
+- [x] **Kill the per-input-event ~170KB state JSON round trip (the "feels
+      laggy while playing" lever).** Deep review + Mac M4/Metal measurement
+      found every pointermove/keydown/wheel event paid TWO full
+      `write_state_json()` builds (measured 170,638 bytes; 256KB static buffer
+      in `wasm_port_entry.cpp`) + `UTF8ToString` + `JSON.parse` +
+      `snapshotState()` — ~0.35ms and ~1MB of JS garbage per mouse move at
+      pointer rate, and up to 4 builds per keypress (keydown+char, then keyup
+      ×2). At 60–120 events/s that is 50–100MB/s of main-thread garbage during
+      active play → periodic major-GC pauses, i.e. exactly the reported
+      "random hard dips + laggy feel." Every existing profiler pass missed it
+      because `runtime_frame_profile.mjs` never moves the mouse. Fix:
+      `cnc_port_set_browser_input_lite` / `cnc_port_post_browser_message_lite`
+      (same input application + WM_MOUSEMOVE coalescing/overflow eviction via
+      shared helpers, int return, no state blob) in `wasm_port_entry.cpp`,
+      exported in `CMakeLists.txt`, plus `pushBrowserInputToWasmLite` in
+      `bridge.js` wired into the hot canvas/window listeners (pointermove/
+      down/up, wheel, keydown/char/keyup; falls back to the full path on older
+      wasm builds). Harness RPCs (`postMessage`, `input`) keep the full-state
+      path and `rpc("state")` still rebuilds fresh wasm state on demand, so
+      state-polling smokes stay valid. Verified: dispatched-PointerEvent
+      probes on dist + dist-release + Mac Metal show cursor/queue state
+      landing through the lite path with correct coalescing; Metal heap churn
+      per pointermove dropped ~1MB → **0.9KB**; `input_select_e2e` reaches
+      the same pre-existing red attack-proof step with a byte-identical
+      failure (select/drag-select/move/dock/build/produce all green).
+- [x] **Cache decoded SFX AudioBuffers (the "dips during battles" lever).**
+      Every `AIL_start_sample`/`AIL_start_3D_sample` re-ran the JS WAV decode
+      (IMA-ADPCM per-sample JS array pushes), a full-pass
+      `summarizeDecodedSamples` diagnostic, and the int16→float conversion —
+      ~700KB of garbage per SFX start (measured on M4/Metal). Fix:
+      `getOrDecodeMssSampleBuffer` in `bridge.js` — LRU cache (96MB decoded
+      cap) shared by the 2D and 3D sample-start paths; AudioBuffers are
+      immutable and safely shared across `AudioBufferSourceNode`s; stats are
+      computed once at decode. The C++ Miles shim mallocs a fresh PCM payload
+      per start (its ADPCM→PCM expansion), so the key is riffSize + a strided
+      64-window FNV content fingerprint (head/tail-only hashing fails: WAVs
+      start/end in silence). `decodedCache` counters are exposed in the MSS
+      sample runtime summary. Verified: `real_audio_event_smoke` green twice
+      with the cache; deterministic miss→hit proof via
+      `mssSamplePlaybackProbe` ×2 on Metal and SwiftShader (hits:1+ misses:1,
+      no errors; the probe rpc's standalone `ok:false` reproduces identically
+      on the pre-change bridge — pre-existing). Follow-ups filed in TODO.md
+      (stream-path cache for repeated EVA/speech; engine-side payload reuse).
+- [x] **Fix debug-dist total load failure (pre-existing since d1e69c2d).**
+      The IDBFS save mount probes `Module.addRunDependency` in preRun; with
+      `ASSERTIONS=1` (Debug dist) unexported runtime methods are
+      abort-on-access stubs, so EVERY debug-dist module load aborted ("Wasm
+      module unavailable" — mountArchives could not run at all). Added
+      `addRunDependency`/`removeRunDependency` to `EXPORTED_RUNTIME_METHODS`
+      for cnc-port. Release (`ASSERTIONS=0`) was unaffected (method simply
+      undefined → guard skipped), which is why the play page kept working
+      while the whole debug-dist harness surface was silently broken.
+
 ## Save / Load — browser persistence + path fix (2026-07-08)
 
 - [x] **In-game save games persist across page reload, reusing the real

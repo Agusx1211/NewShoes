@@ -2366,6 +2366,7 @@ function resetBrowserMssSamplePlaybackRuntime() {
 function summarizeBrowserMssSamplePlaybackRuntime() {
   return {
     source: browserMssSamplePlaybackRuntime.source,
+    decodedCache: summarizeDecodedSampleCache(),
     ready:
       browserAudioRuntime.context?.state === "running" &&
       browserAudioMixerRuntime.created === true,
@@ -2461,7 +2462,7 @@ function summarizeBrowserMssStreamPlaybackRuntime() {
   };
 }
 
-function readMssSampleWaveBytes(payload, heapu8) {
+function mssSampleWaveRange(payload, heapu8) {
   const dataPtr = Number(payload?.dataPtr ?? 0) >>> 0;
   if (!dataPtr || !(heapu8 instanceof Uint8Array)) {
     throw new Error("MSS sample payload pointer is unavailable");
@@ -2474,7 +2475,100 @@ function readMssSampleWaveBytes(payload, heapu8) {
   if (riffSize < 44 || riffSize > 64 * 1024 * 1024 || dataPtr + riffSize > heapu8.byteLength) {
     throw new Error(`MSS sample RIFF size is invalid: ${riffSize}`);
   }
+  return { dataPtr, riffSize };
+}
+
+function readMssSampleWaveBytes(payload, heapu8) {
+  const { dataPtr, riffSize } = mssSampleWaveRange(payload, heapu8);
   return heapu8.slice(dataPtr, dataPtr + riffSize);
+}
+
+// Decoded-sample cache: gameplay replays the same SFX payloads constantly
+// (gunfire, unit voices, UI clicks). Re-running the JS WAV decode and
+// int16->float conversion on every AIL_start_sample burned ~0.7MB of garbage
+// plus main-thread CPU per start (measured on M4/Metal); AudioBuffers are
+// immutable and safely shared across AudioBufferSourceNodes, so decode each
+// payload once and reuse the buffer. The C++ Miles shim mallocs a FRESH
+// PCM payload buffer per start (its ADPCM->PCM expansion), so the heap
+// pointer cannot be part of the key; key on size + a strided content
+// fingerprint instead. Head/tail-only hashing is not enough either — WAV
+// payloads routinely start and end in silence (all zero bytes) — so sample
+// 64 evenly spaced 4-byte windows across the whole payload.
+const cncPortDecodedSampleCache = new Map();
+let cncPortDecodedSampleCacheBytes = 0;
+const CNC_PORT_DECODED_SAMPLE_CACHE_MAX_BYTES = 96 * 1024 * 1024;
+const cncPortDecodedSampleCacheStats = { hits: 0, misses: 0, evictions: 0 };
+
+function summarizeDecodedSampleCache() {
+  return {
+    entries: cncPortDecodedSampleCache.size,
+    decodedFloatBytes: cncPortDecodedSampleCacheBytes,
+    hits: cncPortDecodedSampleCacheStats.hits,
+    misses: cncPortDecodedSampleCacheStats.misses,
+    evictions: cncPortDecodedSampleCacheStats.evictions,
+  };
+}
+
+function mssSampleCacheKey(heapu8, dataPtr, riffSize) {
+  let hash = 0x811c9dc5;
+  const headEnd = dataPtr + Math.min(64, riffSize);
+  for (let i = dataPtr; i < headEnd; i += 1) {
+    hash = Math.imul(hash ^ heapu8[i], 0x01000193);
+  }
+  const windows = 64;
+  const stride = Math.max(4, Math.floor(riffSize / windows));
+  for (let offset = 64; offset + 4 <= riffSize; offset += stride) {
+    const base = dataPtr + offset;
+    hash = Math.imul(hash ^ heapu8[base], 0x01000193);
+    hash = Math.imul(hash ^ heapu8[base + 1], 0x01000193);
+    hash = Math.imul(hash ^ heapu8[base + 2], 0x01000193);
+    hash = Math.imul(hash ^ heapu8[base + 3], 0x01000193);
+  }
+  return `${riffSize}:${hash >>> 0}`;
+}
+
+function getOrDecodeMssSampleBuffer(context, payload, heapu8) {
+  const { dataPtr, riffSize } = mssSampleWaveRange(payload, heapu8);
+  const key = mssSampleCacheKey(heapu8, dataPtr, riffSize);
+  let entry = cncPortDecodedSampleCache.get(key);
+  if (entry) {
+    // Map preserves insertion order; re-insert to keep LRU eviction honest.
+    cncPortDecodedSampleCache.delete(key);
+    cncPortDecodedSampleCache.set(key, entry);
+    entry.plays += 1;
+    cncPortDecodedSampleCacheStats.hits += 1;
+    return entry;
+  }
+  cncPortDecodedSampleCacheStats.misses += 1;
+  const bytes = heapu8.slice(dataPtr, dataPtr + riffSize);
+  const decoded = decodeAudioWavPayload(bytes);
+  const decodedFrames = Math.floor(decoded.samples.length / decoded.info.channels);
+  const audioBuffer = createWebAudioBufferFromDecoded(context, {
+    info: decoded.info,
+    samples: decoded.samples,
+    decodedFrames,
+  });
+  entry = {
+    audioBuffer,
+    info: decoded.info,
+    decodedFrames,
+    payloadBytes: riffSize,
+    decodedFloatBytes: audioBufferDecodedFloatBytes(audioBuffer),
+    // The full-pass sample stats are diagnostics; computing them once at
+    // decode time keeps repeated plays from paying the extra pass.
+    stats: summarizeDecodedSamples(decoded.samples),
+    plays: 1,
+  };
+  cncPortDecodedSampleCache.set(key, entry);
+  cncPortDecodedSampleCacheBytes += entry.decodedFloatBytes;
+  while (cncPortDecodedSampleCacheBytes > CNC_PORT_DECODED_SAMPLE_CACHE_MAX_BYTES
+      && cncPortDecodedSampleCache.size > 1) {
+    const oldest = cncPortDecodedSampleCache.entries().next().value;
+    cncPortDecodedSampleCache.delete(oldest[0]);
+    cncPortDecodedSampleCacheBytes -= oldest[1].decodedFloatBytes;
+    cncPortDecodedSampleCacheStats.evictions += 1;
+  }
+  return entry;
 }
 
 function clamp01(value) {
@@ -2530,9 +2624,7 @@ function cncPortMssSampleStart(payload, heapu8) {
   }
 
   try {
-    const bytes = readMssSampleWaveBytes(payload, heapu8);
-    const decoded = decodeAudioWavPayload(bytes);
-    const decodedFrames = Math.floor(decoded.samples.length / decoded.info.channels);
+    const sample = getOrDecodeMssSampleBuffer(context, payload, heapu8);
     const source = context.createBufferSource();
     const gain = context.createGain();
     const panner = typeof context.createStereoPanner === "function"
@@ -2545,11 +2637,7 @@ function cncPortMssSampleStart(payload, heapu8) {
     if (panner) {
       panner.pan.value = pan;
     }
-    source.buffer = createWebAudioBufferFromDecoded(context, {
-      info: decoded.info,
-      samples: decoded.samples,
-      decodedFrames,
-    });
+    source.buffer = sample.audioBuffer;
     source.connect(gain);
     if (panner) {
       gain.connect(panner);
@@ -2566,20 +2654,20 @@ function cncPortMssSampleStart(payload, heapu8) {
       webAudioNode: "AudioBufferSourceNode",
       payload: {
         container: "RIFF/WAVE",
-        codec: decoded.info.codec,
-        bytes: bytes.byteLength,
-        dataBytes: decoded.info.dataBytes,
-        frames: decodedFrames,
-        sampleRate: decoded.info.samplesPerSec,
-        channels: decoded.info.channels,
-        bitsPerSample: decoded.info.bitsPerSample,
-        stats: summarizeDecodedSamples(decoded.samples),
+        codec: sample.info.codec,
+        bytes: sample.payloadBytes,
+        dataBytes: sample.info.dataBytes,
+        frames: sample.decodedFrames,
+        sampleRate: sample.info.samplesPerSec,
+        channels: sample.info.channels,
+        bitsPerSample: sample.info.bitsPerSample,
+        stats: sample.stats,
       },
       sample: {
         volume,
         panFloat,
         stereoPan: pan,
-        playbackRate: Number(payload.playbackRate ?? decoded.info.samplesPerSec),
+        playbackRate: Number(payload.playbackRate ?? sample.info.samplesPerSec),
         loopCount: Number(payload.loopCount ?? 1),
         msPosition: Number(payload.msPosition ?? 0),
       },
@@ -2778,9 +2866,7 @@ function cncPortMss3DSampleStart(payload, heapu8) {
   }
 
   try {
-    const bytes = readMssSampleWaveBytes(payload, heapu8);
-    const decoded = decodeAudioWavPayload(bytes);
-    const decodedFrames = Math.floor(decoded.samples.length / decoded.info.channels);
+    const sample = getOrDecodeMssSampleBuffer(context, payload, heapu8);
     const source = context.createBufferSource();
     const gain = context.createGain();
     // Use PannerNode for true 3D positioning
@@ -2800,11 +2886,7 @@ function cncPortMss3DSampleStart(payload, heapu8) {
     const volume = clamp01(Number(payload.volumeFloat ?? ((payload.volume ?? 127) / 127)));
     gain.gain.value = volume;
 
-    source.buffer = createWebAudioBufferFromDecoded(context, {
-      info: decoded.info,
-      samples: decoded.samples,
-      decodedFrames,
-    });
+    source.buffer = sample.audioBuffer;
     source.connect(gain);
     gain.connect(panner);
     panner.connect(busNode);
@@ -2817,16 +2899,16 @@ function cncPortMss3DSampleStart(payload, heapu8) {
       webAudioNode: "AudioBufferSourceNode",
       payload: {
         container: "RIFF/WAVE",
-        codec: decoded.info.codec,
-        bytes: bytes.byteLength,
-        frames: decodedFrames,
-        sampleRate: decoded.info.samplesPerSec,
-        channels: decoded.info.channels,
+        codec: sample.info.codec,
+        bytes: sample.payloadBytes,
+        frames: sample.decodedFrames,
+        sampleRate: sample.info.samplesPerSec,
+        channels: sample.info.channels,
       },
       sample3D: {
         volume,
         position,
-        playbackRate: Number(payload.playbackRate ?? decoded.info.samplesPerSec),
+        playbackRate: Number(payload.playbackRate ?? sample.info.samplesPerSec),
         loopCount: Number(payload.loopCount ?? 1),
         minDistance: Number(payload.minDistance ?? 0),
         maxDistance: Number(payload.maxDistance ?? 10),
@@ -13820,12 +13902,26 @@ async function loadWasmModule() {
         "string",
         ["number", "number", "number", "number", "number"],
       ),
+      setBrowserInputLite: typeof module._cnc_port_set_browser_input_lite === "function"
+        ? module.cwrap(
+          "cnc_port_set_browser_input_lite",
+          "number",
+          ["number", "number", "number", "number", "number"],
+        )
+        : null,
       resetBrowserInput: module.cwrap("cnc_port_reset_browser_input", "string", []),
       postBrowserMessage: module.cwrap(
         "cnc_port_post_browser_message",
         "string",
         ["number", "number", "number", "number", "number"],
       ),
+      postBrowserMessageLite: typeof module._cnc_port_post_browser_message_lite === "function"
+        ? module.cwrap(
+          "cnc_port_post_browser_message_lite",
+          "number",
+          ["number", "number", "number", "number", "number"],
+        )
+        : null,
       dinputQueueKey: module.cwrap(
         "cnc_port_dinput_queue_key",
         "number",
@@ -17567,6 +17663,58 @@ async function pushBrowserInputToWasm({
   refreshBrowserDirectInputQueue(wasmModule);
   harnessState.wasm = "loaded";
   return snapshotState();
+}
+
+// Hot input path for live DOM events (pointermove/keydown/wheel fire at
+// device rate during play). Uses the "_lite" wasm entry points that apply
+// the exact same input/queue semantics but skip the ~170KB full-state JSON
+// build + JSON.parse + snapshotState that the probe-oriented path above pays
+// per call — that per-event churn was measured as the main GC/jank driver.
+// Harness RPCs keep the full-state path so state assertions stay possible;
+// rpc("state") rebuilds fresh state on demand for anything that polls it.
+async function pushBrowserInputToWasmLite({
+  cursor = null,
+  virtualKey = -1,
+  keyDown = false,
+  directInputCode = -1,
+  timestamp = 0,
+  win32Message = null,
+} = {}) {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+  if (!wasmModule.setBrowserInputLite || !wasmModule.postBrowserMessageLite) {
+    // Older wasm build without the lite exports: fall back to the full path.
+    return pushBrowserInputToWasm({
+      cursor, virtualKey, keyDown, directInputCode, timestamp, win32Message,
+    });
+  }
+
+  wasmModule.setBrowserInputLite(
+    cursor?.x ?? 0,
+    cursor?.y ?? 0,
+    cursor ? 1 : 0,
+    virtualKey,
+    keyDown ? 1 : 0,
+  );
+  if (directInputCode >= 0) {
+    wasmModule.dinputQueueKey(
+      directInputCode,
+      keyDown ? 1 : 0,
+      Math.max(0, Math.floor(timestamp || performance.now())),
+    );
+  }
+  if (win32Message) {
+    wasmModule.postBrowserMessageLite(
+      win32Message.message,
+      win32Message.wParam ?? 0,
+      win32Message.lParam ?? 0,
+      win32Message.point?.x ?? cursor?.x ?? 0,
+      win32Message.point?.y ?? cursor?.y ?? 0,
+    );
+  }
+  return null;
 }
 
 async function postBrowserMessageToWasm({
@@ -30110,7 +30258,7 @@ window.addEventListener("pointerdown", () => {
 
 canvas.addEventListener("pointermove", (event) => {
   const point = canvasInputPointFromEvent(event);
-  void pushBrowserInputToWasm({
+  void pushBrowserInputToWasmLite({
     cursor: point,
     win32Message: {
       message: win32Messages.mouseMove,
@@ -30125,7 +30273,7 @@ canvas.addEventListener("pointerdown", (event) => {
   const message = mouseButtonMessage(event, true, point);
   claimBrowserPointerCapture(event);
   event.preventDefault();
-  void pushBrowserInputToWasm({
+  void pushBrowserInputToWasmLite({
     cursor: point,
     win32Message: message >= 0 ? {
       message,
@@ -30140,7 +30288,7 @@ canvas.addEventListener("pointerup", (event) => {
   rememberPointerUpForDoubleClick(event, point);
   releaseBrowserPointerCapture(event);
   event.preventDefault();
-  void pushBrowserInputToWasm({
+  void pushBrowserInputToWasmLite({
     cursor: point,
     win32Message: message >= 0 ? {
       message,
@@ -30152,7 +30300,7 @@ canvas.addEventListener("pointerup", (event) => {
 canvas.addEventListener("wheel", (event) => {
   const point = canvasInputPointFromEvent(event);
   event.preventDefault();
-  void pushBrowserInputToWasm({
+  void pushBrowserInputToWasmLite({
     cursor: point,
     win32Message: {
       message: win32Messages.mouseWheel,
@@ -30211,7 +30359,7 @@ window.addEventListener("keydown", (event) => {
   event.preventDefault();
   const charCode = win32CharCodeFromEvent(event);
   void (async () => {
-    await pushBrowserInputToWasm({
+    await pushBrowserInputToWasmLite({
       virtualKey,
       keyDown: true,
       directInputCode: directInputScanCodeFromEvent(event),
@@ -30222,7 +30370,7 @@ window.addEventListener("keydown", (event) => {
       },
     });
     if (charCode >= 0) {
-      await pushBrowserInputToWasm({
+      await pushBrowserInputToWasmLite({
         win32Message: {
           message: win32Messages.char,
           wParam: charCode,
@@ -30240,7 +30388,7 @@ window.addEventListener("keyup", (event) => {
     return;
   }
   event.preventDefault();
-  void pushBrowserInputToWasm({
+  void pushBrowserInputToWasmLite({
     virtualKey,
     keyDown: false,
     directInputCode: directInputScanCodeFromEvent(event),

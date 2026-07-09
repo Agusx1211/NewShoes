@@ -4489,7 +4489,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_register_archive_set(
 	return write_state_json();
 }
 
-EMSCRIPTEN_KEEPALIVE const char *cnc_port_set_browser_input(
+static void apply_browser_input(
 	int cursor_x,
 	int cursor_y,
 	int cursor_available,
@@ -4502,7 +4502,32 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_set_browser_input(
 	if (virtual_key >= 0) {
 		WasmWin32Input::SetKeyState(virtual_key, key_down != 0);
 	}
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_set_browser_input(
+	int cursor_x,
+	int cursor_y,
+	int cursor_available,
+	int virtual_key,
+	int key_down)
+{
+	apply_browser_input(cursor_x, cursor_y, cursor_available, virtual_key, key_down);
 	return write_state_json();
+}
+
+// Hot input path: identical input application without the full-state JSON
+// round trip. Real gameplay input fires at pointer/keyboard event rate, and
+// rebuilding + JSON.parse-ing the ~170KB state blob per event is pure
+// overhead there; harness probes keep using the full-state variant above.
+EMSCRIPTEN_KEEPALIVE int cnc_port_set_browser_input_lite(
+	int cursor_x,
+	int cursor_y,
+	int cursor_available,
+	int virtual_key,
+	int key_down)
+{
+	apply_browser_input(cursor_x, cursor_y, cursor_available, virtual_key, key_down);
+	return 1;
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_reset_browser_input()
@@ -4511,7 +4536,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_reset_browser_input()
 	return write_state_json();
 }
 
-EMSCRIPTEN_KEEPALIVE const char *cnc_port_post_browser_message(
+static void queue_browser_message(
 	int message,
 	int w_param,
 	int l_param,
@@ -4537,7 +4562,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_post_browser_message(
 		pending.lParam = lparam;
 		pending.time = static_cast<DWORD>(Win32PortNowMilliseconds());
 		pending.pt = point;
-		return write_state_json();
+		return;
 	}
 
 	// Never let a full queue eat a button/wheel/key message: evict the
@@ -4562,7 +4587,31 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_post_browser_message(
 		lparam,
 		0,
 		&point);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_post_browser_message(
+	int message,
+	int w_param,
+	int l_param,
+	int point_x,
+	int point_y)
+{
+	queue_browser_message(message, w_param, l_param, point_x, point_y);
 	return write_state_json();
+}
+
+// Hot input path counterpart of cnc_port_post_browser_message: same queue
+// semantics (WM_MOUSEMOVE coalescing, overflow eviction), no full-state JSON.
+// Returns the pending queue depth so the JS side can expose it cheaply.
+EMSCRIPTEN_KEEPALIVE int cnc_port_post_browser_message_lite(
+	int message,
+	int w_param,
+	int l_param,
+	int point_x,
+	int point_y)
+{
+	queue_browser_message(message, w_param, l_param, point_x, point_y);
+	return static_cast<int>(WasmWin32Input::message_queue_count);
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_browser_message_queue()

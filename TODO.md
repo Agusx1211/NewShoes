@@ -972,6 +972,16 @@ symptom is temporal — NOT a single still.
       236.375/frame with zero allocated matrix copies. Keep this item open:
       derived-state misses, material/light/clip arrays, uneven producer work,
       and the structural command-buffer path remain.
+      2026-07-09: the biggest play-only jank sources were OUTSIDE the frame
+      loop and invisible to every profile run (profiles never move the mouse
+      or fight): per-input-event ~170KB state-JSON builds ×2 (+parse +
+      snapshot; ~1MB garbage per mouse move) and per-SFX-start JS WAV
+      re-decode (~700KB garbage per gunshot). Both fixed and Metal-verified
+      (see DONE 2026-07-09: lite input entry points; decoded-AudioBuffer
+      cache). Pointermove heap churn measured 1MB → 0.9KB per event. Future
+      stability profiling MUST inject synthetic 60Hz pointermove + live
+      combat audio during measured passes or it will keep missing
+      input/audio-correlated GC dips.
 - [ ] **Performance still needs love (general)** — beyond stability, the loaded
       (non-shell-map) skirmish frame cost with hundreds of units is the real
       target and is not yet profiled/held to triple-digit fps. Keep pushing the
@@ -1010,6 +1020,32 @@ symptom is temporal — NOT a single still.
       shows a real stall there; the current frontier remains terrain tile draw
       submission, volumetric shadows, UI/roads, and the structural draw command
       buffer.
+- [ ] **IDBFS 5s interval sync re-copies the growing LastReplay.rep all match**
+      — the engine's original RecorderClass writes `Replays/LastReplay.rep`
+      incrementally every logic frame, and the whole user-data dir is the
+      IDBFS mount, so the periodic `FS.syncfs` safety flush in `bridge.js`
+      re-stores the entire replay file (mtime changed) into IndexedDB every
+      5 seconds — a slowly growing periodic main-thread copy. Options: mount
+      IDBFS on `Save/` only (replays become session-only), skip the interval
+      flush unless a `.sav` mtime changed, or debounce to save events. Cost
+      today is small (~ms) but grows with match length.
+- [ ] **Repeated speech/EVA stream starts re-decode via the stream path** —
+      the 2D/3D MSS *sample* paths now reuse decoded AudioBuffers via
+      `getOrDecodeMssSampleBuffer` (see DONE), but `AIL_start_stream` WAV/MP3
+      payloads (`decodeMssStreamPayload`) still decode per start. EVA/speech
+      lines repeat often; give streams the same decoded-buffer cache (music
+      tracks are large — cap or exclude multi-minute tracks).
+- [ ] **`harnessState.logs` is unbounded** — every engine stdout line becomes
+      a retained log entry + `console.info` (`recordLog` in `bridge.js`), and
+      `rpc("state")` copies the whole array. Long sessions with chatty
+      warnings grow memory and jank. Ring-buffer it (keep last ~2000).
+- [ ] **First-sight asset-load hitches: consider original `-preload` path** —
+      retail defaults `m_preloadAssets=FALSE` (loads models/textures on first
+      sight; masked by OS disk cache natively, a visible hitch risk in wasm).
+      The original `parsePreload` command-line path (`CommandLine.cpp:635`)
+      already exists; if Metal traces show first-spawn hitches, enable the
+      original preload flag for browser boots instead of inventing a new
+      preloader. Verify load-time cost on the Mac before enabling by default.
 - [ ] **Purchased special powers can't be activated** — generals' special
       abilities/powers can be *purchased* (science/rank spend works) but
       clicking the ability button to *use* it does nothing: no targeting

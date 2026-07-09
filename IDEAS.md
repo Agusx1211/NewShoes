@@ -57,3 +57,27 @@ Tasks to promote when M6+ makes this actionable:
 - Establish an evaluation baseline: can an LLM beat the built-in skirmish AI on
   easy?
 - Decide per-frame vs per-decision cadence and batch orders to bound call rate.
+
+## Deferred: audio decode on a Web Worker ("audio on its own thread")
+
+Context (2026-07-09 perf review): Web Audio *playback* already runs on the
+browser's dedicated real-time audio thread — nothing to move there. What sat
+on the main thread was the per-play JS work in `bridge.js`: WAV/IMA-ADPCM
+decode, int16→float conversion, and diagnostics. The decoded-AudioBuffer
+cache (see DONE 2026-07-09) removed the *repeated* cost; what remains on the
+main thread is the one-time first-play decode per unique sample (~1-3ms for
+typical SFX, more for long speech).
+
+If first-play decode still shows up in Metal traces:
+- Move `decodeAudioWavPayload` to a plain module Worker (same pattern as the
+  existing IO worker, `harness/io_worker.mjs` — no pthreads/SAB needed).
+  Post the WAV bytes (transferable), decode + convert to `Float32Array`
+  channel buffers off-thread, transfer them back, then `AudioBuffer` +
+  `copyToChannel` on main (fast memcpy).
+- The tradeoff: sample start becomes async (first play of a sample lands a
+  frame or two late). Miles semantics tolerate this — the shim already
+  routes completion callbacks asynchronously.
+- Do NOT move the engine's MilesAudioManager itself onto a pthread: its
+  per-frame work is tiny, and the pthreads + ALLOW_MEMORY_GROWTH constraint
+  on emsdk 3.1.6 (see the IO-worker analysis in TODO.md) makes that
+  high-risk for no measured win.
