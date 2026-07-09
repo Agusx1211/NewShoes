@@ -1879,10 +1879,13 @@ static inline BOOL RemoveFontResource(LPCSTR)
 
 static inline void Sleep(DWORD milliseconds)
 {
-	if (milliseconds == 0) {
-		return;
-	}
-	usleep(static_cast<useconds_t>(milliseconds) * 1000U);
+	// Single-threaded wasm without ASYNCIFY: usleep() cannot yield to the
+	// browser event loop — it busy-spins on emscripten_get_now() for the whole
+	// duration, so a Sleep inside a wait loop burns main-thread CPU without
+	// letting anything else run. Any loop condition that can progress at all
+	// progresses via same-task work in the loop body, so returning immediately
+	// preserves every exit condition and just stops the spin.
+	(void)milliseconds;
 }
 
 static inline BOOL PeekMessage(MSG *message, HWND window, UINT filter_min, UINT filter_max, UINT remove_msg)

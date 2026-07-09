@@ -1,10 +1,26 @@
 const canvas = document.querySelector("#viewport");
+// preserveDrawingBuffer forces the compositor to COPY the drawing buffer every
+// frame instead of swapping it (an extra full-framebuffer blit per frame on
+// tile-based GPUs like Apple Silicon). Harness pages need it so screenshots /
+// pixel probes can read the canvas from any task; the play page renders every
+// frame anyway, so captures re-render synchronously instead (snapshotCanvas).
+const contextPreserveDrawingBuffer = (() => {
+  try {
+    const params = new URLSearchParams(globalThis.location?.search || "");
+    const explicit = params.get("preserveBuffer");
+    if (explicit === "0" || explicit === "false" || explicit === "off") return false;
+    if (explicit === "1" || explicit === "true" || explicit === "on") return true;
+    return !(globalThis.location?.pathname || "").endsWith("/play.html");
+  } catch (_error) {
+    return true;
+  }
+})();
 const gl = canvas.getContext("webgl2", {
   alpha: false,
   antialias: false,
   depth: true,
   stencil: true,
-  preserveDrawingBuffer: true,
+  preserveDrawingBuffer: contextPreserveDrawingBuffer,
 });
 const s3tc = gl ? gl.getExtension("WEBGL_compressed_texture_s3tc") : null;
 const provokingVertex = gl ? gl.getExtension("WEBGL_provoking_vertex") : null;
@@ -620,7 +636,15 @@ const d3d8PerfStats = {
   bufferMirrorSkippedBytes: 0,
 };
 
+// Per-GL-op timing instrumentation. performance.now() twice around every GL
+// call is measurable overhead in draw-flood frames, so lite diag disables the
+// clock reads (counters keep counting; *Ms stats read 0). Full diag or
+// __cncSetD3D8PerfTiming(true) re-enables real timing.
+let d3d8PerfTimingEnabled = true;
 function perfNow() {
+  if (!d3d8PerfTimingEnabled) {
+    return 0;
+  }
   return typeof performance !== "undefined" && typeof performance.now === "function"
     ? performance.now()
     : Date.now();
@@ -1676,6 +1700,13 @@ const browserMssSamplePlaybackRuntime = {
 };
 
 const wasmModulePromise = loadWasmModule();
+// Synchronous handle for code that must act inside the current task (e.g.
+// snapshotCanvas re-rendering before toDataURL when preserveDrawingBuffer is
+// off — the drawing buffer is only valid until the task yields to compositing).
+let resolvedWasmModule = null;
+wasmModulePromise.then((wasmModule) => {
+  resolvedWasmModule = wasmModule;
+}).catch(() => {});
 
 function browserAudioContextCtor() {
   return globalThis.AudioContext || globalThis.webkitAudioContext || null;
@@ -3765,7 +3796,39 @@ async function playBrowserAudioRequestPathLiveEvent(payload = {}) {
   return summarizeBrowserAudioRequestPathRuntime();
 }
 
+// getBoundingClientRect() forces style/layout and is on the per-draw path via
+// syncCanvasSize(), so the display size is cached and only recomputed when a
+// size-affecting event fires (resize, fullscreen, dpr change, engine-display /
+// backing-store updates below).
+let cachedCanvasDisplaySize = null;
+function invalidateCanvasDisplaySizeCache() {
+  cachedCanvasDisplaySize = null;
+}
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("resize", invalidateCanvasDisplaySizeCache);
+  document.addEventListener("fullscreenchange", invalidateCanvasDisplaySizeCache);
+  document.addEventListener("webkitfullscreenchange", invalidateCanvasDisplaySizeCache);
+  if (typeof ResizeObserver === "function" && canvas) {
+    new ResizeObserver(invalidateCanvasDisplaySizeCache).observe(canvas);
+  }
+  const watchDevicePixelRatio = () => {
+    try {
+      const mql = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      mql.addEventListener("change", () => {
+        invalidateCanvasDisplaySizeCache();
+        watchDevicePixelRatio();
+      }, { once: true });
+    } catch (_error) {
+      // matchMedia unavailable; resize events still invalidate.
+    }
+  };
+  watchDevicePixelRatio();
+}
+
 function getCanvasDisplaySize() {
+  if (cachedCanvasDisplaySize) {
+    return cachedCanvasDisplaySize;
+  }
   const rect = canvas.getBoundingClientRect();
   const devicePixelRatio = window.devicePixelRatio || 1;
   const cssWidth = rect.width || canvas.width;
@@ -3784,13 +3847,14 @@ function getCanvasDisplaySize() {
   );
   if (inFullscreen && engineDisplay
       && engineDisplay.width > 0 && engineDisplay.height > 0) {
-    return {
+    cachedCanvasDisplaySize = {
       width: engineDisplay.width,
       height: engineDisplay.height,
       cssWidth,
       cssHeight,
       devicePixelRatio,
     };
+    return cachedCanvasDisplaySize;
   }
 
   // If an explicit engine resolution is pinned (resolution selector), the
@@ -3800,22 +3864,24 @@ function getCanvasDisplaySize() {
   if (explicitEngineBackingStore
       && explicitEngineBackingStore.width > 0
       && explicitEngineBackingStore.height > 0) {
-    return {
+    cachedCanvasDisplaySize = {
       width: explicitEngineBackingStore.width,
       height: explicitEngineBackingStore.height,
       cssWidth,
       cssHeight,
       devicePixelRatio,
     };
+    return cachedCanvasDisplaySize;
   }
 
-  return {
+  cachedCanvasDisplaySize = {
     width: Math.max(1, Math.round(cssWidth * devicePixelRatio)),
     height: Math.max(1, Math.round(cssHeight * devicePixelRatio)),
     cssWidth,
     cssHeight,
     devicePixelRatio,
   };
+  return cachedCanvasDisplaySize;
 }
 
 function refreshCanvasState(displaySize = getCanvasDisplaySize()) {
@@ -3834,7 +3900,11 @@ function refreshCanvasState(displaySize = getCanvasDisplaySize()) {
     contextLost: gl ? gl.isContextLost() : false,
     drawingBufferWidth: gl ? gl.drawingBufferWidth : canvas.width,
     drawingBufferHeight: gl ? gl.drawingBufferHeight : canvas.height,
-    d3d8Perf: d3d8PerfSummary(),
+    // The ~150-field perf summary is too expensive to rebuild on the clear/draw
+    // path in lite mode; snapshotState() force-refreshes it for RPC consumers.
+    d3d8Perf: d3d8DiagLevel === "full"
+      ? d3d8PerfSummary()
+      : (previousGraphics.d3d8Perf ?? null),
   };
 }
 
@@ -4484,7 +4554,12 @@ function d3d8BufferUsageInfo(usage) {
   };
 }
 
-function updateD3D8BufferSummary() {
+function updateD3D8BufferSummary(force = false) {
+  if (!force && d3d8DiagLevel !== "full") {
+    // Runs per buffer create/update/release; deferred in lite mode the same
+    // way as updateD3D8TextureSummary (snapshotState() force-refreshes).
+    return;
+  }
   let liveVertex = 0;
   let liveIndex = 0;
   for (const resource of d3d8Buffers.values()) {
@@ -6930,7 +7005,7 @@ function sampleD3D8TextureCenter(textureId) {
   );
 }
 
-function updateD3D8TextureSummary() {
+function updateD3D8TextureSummary(force = false) {
   d3d8TextureStats.live = d3d8Textures.size;
   const boundTextures = {};
   for (const [stage, textureId] of d3d8BoundTextures.entries()) {
@@ -6966,7 +7041,12 @@ function updateD3D8TextureSummary() {
       lastSampler: d3d8TextureStats.lastSampler,
       lastTextureDepthFboBind: d3d8TextureStats.lastTextureDepthFboBind,
     },
-    d3d8Perf: d3d8PerfSummary(),
+    // Rebuilding the ~150-field perf summary on every texture op is the
+    // expensive part of this publish; lite mode keeps the previous value
+    // (snapshotState() and forced callers refresh it per query instead).
+    d3d8Perf: force || d3d8DiagLevel === "full"
+      ? d3d8PerfSummary()
+      : (harnessState.graphics?.d3d8Perf ?? null),
   };
 }
 
@@ -7159,7 +7239,9 @@ function bindD3D8Framebuffer(payload = {}) {
     d3d8PerfStats.fboBinds += 1;
     d3d8PerfStats.fboBindMs += perfNow() - bindStartedAt;
     d3d8PerfStats.fboIncomplete = browser_fbo_incomplete_count;
-    harnessState.graphics.d3d8Perf = d3d8PerfSummary();
+    if (d3d8DiagLevel === "full") {
+      harnessState.graphics.d3d8Perf = d3d8PerfSummary();
+    }
     return result;
   };
   const colorTextureId = Number(payload.colorTextureId ?? 0) >>> 0;
@@ -11312,6 +11394,11 @@ function applyD3D8RenderState(renderState, options = {}) {
 // while still doing the real draw — for the human-playable page. Never change
 // the default: existing gates depend on "full".
 let d3d8DiagLevel = "full";
+// null = follow diag level (full => timed, lite => untimed); boolean = forced.
+let d3d8PerfTimingOverride = null;
+function syncD3D8PerfTimingEnabled() {
+  d3d8PerfTimingEnabled = d3d8PerfTimingOverride ?? (d3d8DiagLevel === "full");
+}
 let d3d8SceneDrawHistoryLimit = 256;
 let d3d8AdjacentDrawBatchingEnabled = true;
 let d3d8LiteVertexBufferMirrorsEnabled = false;
@@ -11349,6 +11436,10 @@ try {
   const _params = new URLSearchParams(globalThis.location?.search || "");
   const _diag = _params.get("diag");
   if (_diag === "lite" || _diag === "full") d3d8DiagLevel = _diag;
+  const _perfTiming = _params.get("perfTiming");
+  if (_perfTiming === "1" || _perfTiming === "true") d3d8PerfTimingOverride = true;
+  else if (_perfTiming === "0" || _perfTiming === "false") d3d8PerfTimingOverride = false;
+  syncD3D8PerfTimingEnabled();
   const _historyLimit = Number(_params.get("drawHistoryLimit"));
   if (Number.isFinite(_historyLimit) && _historyLimit > 0) {
     d3d8SceneDrawHistoryLimit = Math.min(8192, Math.max(1, Math.trunc(_historyLimit)));
@@ -11380,9 +11471,15 @@ if (typeof globalThis !== "undefined") {
         invalidateD3D8DrawStateCache();
       }
       d3d8DiagLevel = lvl;
+      syncD3D8PerfTimingEnabled();
       applyD3D8BoundDrawDiagnosticsLevel();
     }
     return d3d8DiagLevel;
+  };
+  globalThis.__cncSetD3D8PerfTiming = (enabled) => {
+    d3d8PerfTimingOverride = enabled == null ? null : Boolean(enabled);
+    syncD3D8PerfTimingEnabled();
+    return d3d8PerfTimingEnabled;
   };
   globalThis.__cncSetD3D8SceneDrawHistoryLimit = (limit) => {
     const numericLimit = Number(limit);
@@ -13425,6 +13522,20 @@ function syncStatus(label = harnessState.booted ? "booted" : "idle") {
   framesNode.textContent = String(harnessState.frame);
 }
 
+// The engine ticks 30x/s during play; writing #frames every tick invalidates
+// layout, which the render path then repays as forced synchronous layouts.
+// Nothing machine-reads #frames (harness asserts on rpc state), so a 250ms
+// cadence is purely cosmetic.
+let framesNodeThrottleLastUpdateMs = 0;
+function setFramesNodeThrottled(framesCompleted) {
+  const now = Date.now();
+  if (now - framesNodeThrottleLastUpdateMs < 250) {
+    return;
+  }
+  framesNodeThrottleLastUpdateMs = now;
+  framesNode.textContent = String(framesCompleted);
+}
+
 function syncBrowserCursor(input = harnessState.browserInput) {
   if (!input) {
     const css = canvas.style.cursor || "auto";
@@ -14439,6 +14550,19 @@ function refreshBrowserDirectInputQueue(wasmModule) {
 
 function snapshotCanvas() {
   syncCanvasSize();
+  if (!contextPreserveDrawingBuffer
+      && typeof resolvedWasmModule?.realEngineFrameTick === "function"
+      && harnessState.frame > 0) {
+    // Without preserveDrawingBuffer the buffer is undefined once the task that
+    // drew it yields to the compositor; render a fresh frame in THIS task so
+    // toDataURL/readPixels below observe real content.
+    try {
+      resolvedWasmModule.realEngineFrameTick(1);
+      flushD3D8PendingDrawBatch("snapshotCanvas");
+    } catch (_error) {
+      // Fall through: capture whatever is in the buffer.
+    }
+  }
   return {
     width: canvas.width,
     height: canvas.height,
@@ -14450,6 +14574,16 @@ function snapshotCanvas() {
 
 function snapshotState() {
   syncCanvasSize();
+  // Lite mode defers the per-op graphics summaries; RPC consumers still expect
+  // point-in-time data, so rebuild them here where the cost is per-query.
+  if (d3d8DiagLevel !== "full") {
+    updateD3D8TextureSummary(true);
+    updateD3D8BufferSummary(true);
+    harnessState.graphics = {
+      ...harnessState.graphics,
+      d3d8Perf: d3d8PerfSummary(),
+    };
+  }
   return {
     booted: harnessState.booted,
     frame: harnessState.frame,
@@ -19271,6 +19405,11 @@ async function rpc(command, payload = {}) {
           const engineDisplay = frame?.clientState?.display;
           if (Number.isFinite(engineDisplay?.width) && engineDisplay.width > 0
               && Number.isFinite(engineDisplay?.height) && engineDisplay.height > 0) {
+            const previousEngineDisplay = harnessState.engineDisplaySize;
+            if (previousEngineDisplay?.width !== engineDisplay.width
+                || previousEngineDisplay?.height !== engineDisplay.height) {
+              invalidateCanvasDisplaySizeCache();
+            }
             harnessState.engineDisplaySize = {
               width: engineDisplay.width,
               height: engineDisplay.height,
@@ -19357,6 +19496,7 @@ async function rpc(command, payload = {}) {
           // draw) would reset canvas.width/height back to CSS-box x DPR, whose
           // size AND aspect generally differ from the engine resolution.
           explicitEngineBackingStore = { width: appliedWidth, height: appliedHeight };
+          invalidateCanvasDisplaySizeCache();
           if (canvas.width !== appliedWidth || canvas.height !== appliedHeight) {
             canvas.width = appliedWidth;
             canvas.height = appliedHeight;
@@ -19370,6 +19510,7 @@ async function rpc(command, payload = {}) {
           // coordinate mapping (canvasInputPointFromEvent) is correct before the
           // next frame refreshes it from clientState.display.
           harnessState.engineDisplaySize = { width: appliedWidth, height: appliedHeight };
+          invalidateCanvasDisplaySizeCache();
           refreshCanvasState();
           recordLog("set engine resolution", {
             requested: { width, height },
@@ -19467,7 +19608,7 @@ async function rpc(command, payload = {}) {
           const framesCompleted = Number(frame?.framesCompleted);
           if (Number.isFinite(framesCompleted)) {
             harnessState.frame = framesCompleted;
-            framesNode.textContent = String(framesCompleted);
+            setFramesNodeThrottled(framesCompleted);
           }
         } catch (error) {
           aborted = true;
@@ -20224,6 +20365,7 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: "Wasm module unavailable; D3D8 buffer dirty probe cannot run" };
         }
         const probe = parseModuleState(wasmModule.probeD3D8BufferDirty());
+        updateD3D8BufferSummary(true);
         const browserProbe = harnessState.graphics.d3d8Buffers ?? null;
         const ok = Boolean(probe.ok)
           && browserProbe?.lastUpdate?.byteOffset === probe.indexUpdate?.offset
@@ -20246,6 +20388,7 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: "Wasm module unavailable; D3D8 buffer hint probe cannot run" };
         }
         const probe = parseModuleState(wasmModule.probeD3D8BufferHints());
+        updateD3D8BufferSummary(true);
         const browserProbe = harnessState.graphics.d3d8Buffers ?? null;
         const ok = Boolean(probe.ok)
           && browserProbe?.lastCreate?.dynamic === true
@@ -26759,8 +26902,10 @@ async function rpc(command, payload = {}) {
           ...harnessState.graphics,
           lastD3D8DrawIndexed: null,
         };
+        updateD3D8BufferSummary(true);
         const bufferBefore = harnessState.graphics.d3d8Buffers ?? {};
         const probe = parseModuleState(wasmModule.probeWW3DEmissiveColor2MaterialSource());
+        updateD3D8BufferSummary(true);
         const bufferAfter = harnessState.graphics.d3d8Buffers ?? null;
         const screenshot = snapshotCanvas();
         const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;

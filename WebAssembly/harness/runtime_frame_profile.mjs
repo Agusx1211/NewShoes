@@ -1526,6 +1526,9 @@ try {
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
   const renderer = await queryRenderer(page);
   await page.evaluate((level) => window.__cncSetDiagLevel?.(level), diagLevel);
+  // Lite diag now disables per-GL-op perfNow() timing (play-page overhead fix);
+  // the profiler needs the *_Ms stats, so force timing back on for this run.
+  await page.evaluate(() => window.__cncSetD3D8PerfTiming?.(true));
   const d3d8AdjacentBatchingActive = await page.evaluate((enabled) =>
     window.__cncSetD3D8AdjacentBatching?.(enabled) ?? null, d3d8AdjacentBatching);
   const d3d8LiteVertexMirrorsActive = await page.evaluate((enabled) =>

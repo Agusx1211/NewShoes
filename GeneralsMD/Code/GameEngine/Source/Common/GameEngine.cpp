@@ -939,18 +939,23 @@ void GameEngine::execute( void )
           {
             // limit the framerate
 					  DWORD now = timeGetTime();
+#ifndef __EMSCRIPTEN__
+					  // Browser build: the page's requestAnimationFrame accumulator paces
+					  // engine frames; timeGetTime() polling here would busy-spin the
+					  // shared browser main thread for the remainder of every frame.
 					  DWORD limit = (1000.0f/m_maxFPS)-1;
-					  while (TheGlobalData->m_useFpsLimit && (now - prevTime) < limit) 
+					  while (TheGlobalData->m_useFpsLimit && (now - prevTime) < limit)
 					  {
 						  ::Sleep(0);
 						  now = timeGetTime();
 					  }
 					  //Int slept = now - prevTime;
 					  //DEBUG_LOG(("delayed %d\n",slept));
+#endif
 
 					  prevTime = now;
 
-          }        
+          }
         
         }
 			}
