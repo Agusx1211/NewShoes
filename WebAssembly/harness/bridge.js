@@ -14047,6 +14047,8 @@ function syncBrowserCursor(input = harnessState.browserInput) {
   };
 }
 
+const HARNESS_LOG_LIMIT = 512;
+
 function recordLog(message, data = null) {
   const entry = {
     frame: harnessState.frame,
@@ -14055,7 +14057,16 @@ function recordLog(message, data = null) {
     time: new Date().toISOString(),
   };
   harnessState.logs.push(entry);
-  console.info("[wasm-harness]", entry.message, entry.data ?? "");
+  if (harnessState.logs.length > HARNESS_LOG_LIMIT) {
+    harnessState.logs.splice(0, harnessState.logs.length - HARNESS_LOG_LIMIT);
+  }
+  // console.info is expensive when DevTools is open (the exact scenario in
+  // which the user records traces): a burst of engine stdout during texture
+  // loads showed up as ~160ms of recordLog inside one hitch. Keep the console
+  // mirror for full diag only; the entries above stay queryable either way.
+  if (d3d8DiagLevel === "full") {
+    console.info("[wasm-harness]", entry.message, entry.data ?? "");
+  }
   return entry;
 }
 
