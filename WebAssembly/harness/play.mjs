@@ -172,6 +172,25 @@ function buildArchives() {
 }
 
 async function runFrameLoop(rpc) {
+  // Stepped map loads are on by default in the wasm (startNewGame spreads its
+  // steps across frames so the real load screen presents and the tab never
+  // blocks). ?loadstep=0 restores the legacy synchronous load for A/B;
+  // ?loadBudgetMs=N tunes the per-frame load slice budget (default 50ms).
+  const params = new URLSearchParams(window.location.search);
+  const loadStepParam = params.get("loadstep");
+  const loadBudgetMs = Number(params.get("loadBudgetMs") ?? 0);
+  if (loadStepParam === "0" || loadBudgetMs > 0) {
+    try {
+      const stepping = await rpc("realEngineSetLoadStepping", {
+        enabled: loadStepParam !== "0",
+        budgetMs: loadBudgetMs,
+      });
+      console.log("[play] load stepping", stepping?.stepping ?? stepping);
+    } catch (error) {
+      console.warn("[play] load stepping setup threw (stale build?)", error);
+    }
+  }
+
   const logicFps = Math.min(240, positiveNumberParam("logicFps", DEFAULT_LOGIC_FPS));
   const clientFps = Math.min(240, positiveNumberParam("clientFps", DEFAULT_CLIENT_FPS));
   if (clientFps > logicFps) {

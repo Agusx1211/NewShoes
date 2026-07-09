@@ -161,6 +161,18 @@ public:
 	void startNewGame( Bool loadSaveGame );
 	void loadMapINI( AsciiString mapName );
 
+	// Stepped map load: startNewGame's body runs as an ordered sequence of
+	// steps sharing one session (see GameLogic.cpp runNextLoadStep). Native
+	// builds drive every step back-to-back inside startNewGame — identical
+	// order and behavior. Browser builds spread the steps across
+	// GameEngine::update calls so the load screen can present between slices
+	// (the browser only composites when the main thread returns to the event
+	// loop, so a monolithic load renders nothing and freezes the tab).
+	struct StartNewGameSession;
+	Bool isLoadSessionActive( void ) const { return m_loadSession != NULL; }
+	Int getLoadSessionProgress( void ) const;				///< last load-screen percent, -1 when no session
+	void advanceLoadSession( void );								///< run one budgeted slice of load steps
+
 	void updateLoadProgress( Int progress );
 	void deleteLoadScreen( void );
 	
@@ -359,6 +371,12 @@ private:
 
 	LoadScreen *getLoadScreen( Bool loadSaveGame );
 	LoadScreen *m_loadScreen;
+
+	// stepped startNewGame session (see comment on isLoadSessionActive)
+	StartNewGameSession *m_loadSession;
+	void beginLoadSession( Bool loadSaveGame );							///< allocate the session (startNewGame body state)
+	Bool runNextLoadStep( void );														///< run one step; FALSE when the load finished/aborted
+	void endLoadSession( void );														///< free the session
 	Bool m_gamePaused;
 	Bool m_inputEnabledMemory;// Latches used to remember what to restore to after we unpause
 	Bool m_mouseVisibleMemory;

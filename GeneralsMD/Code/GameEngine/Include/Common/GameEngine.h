@@ -83,7 +83,24 @@ public:
 	virtual Bool isActive(void) {return m_isActive;}	///< returns whether app has OS focus.
 	virtual void setIsActive(Bool isActive) { m_isActive = isActive; };
 
+	// Stepped engine init: init(argc, argv)'s body runs as an ordered step
+	// sequence sharing one session (see GameEngine.cpp runNextInitStep).
+	// Native init drives every step back-to-back — identical order and
+	// behavior. Browser builds call runNextInitStep across event-loop turns so
+	// the page can paint boot progress and the main thread never blocks for
+	// the whole init.
+	struct InitSession;
+	Bool isInitSessionActive( void ) const { return m_initSession != NULL; }
+	void beginInitSession( int argc, char *argv[] );	///< allocate the session
+	Bool runNextInitStep( void );											///< run one step; FALSE when init finished
+	Int getInitStepIndex( void ) const;								///< current step index (0-based), -1 when no session
+	Int getInitStepCount( void ) const;								///< total step count
+
 protected:
+
+	// stepped init session (see comment on isInitSessionActive)
+	InitSession *m_initSession;
+	void endInitSession( void );
 
 	virtual FileSystem *createFileSystem( void );								///< Factory for FileSystem classes
 	virtual LocalFileSystem *createLocalFileSystem( void ) = 0;	///< Factory for LocalFileSystem classes

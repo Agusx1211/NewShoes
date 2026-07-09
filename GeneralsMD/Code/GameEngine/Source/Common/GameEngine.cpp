@@ -202,6 +202,7 @@ GameEngine::GameEngine( void )
 	m_maxFPS = 0;
 	m_quitting = FALSE;
 	m_isActive = FALSE;
+	m_initSession = NULL;
 
 	_Module.Init(NULL, ApplicationHInstance);
 }
@@ -211,6 +212,8 @@ GameEngine::~GameEngine()
 {
 	//extern std::vector<std::string>	preloadTextureNamesGlobalHack;
 	//preloadTextureNamesGlobalHack.clear();
+
+	endInitSession();
 
 	delete TheMapCache;
 	TheMapCache = NULL;
@@ -261,11 +264,130 @@ void GameEngine::setFramesPerSecondLimit( Int fps )
  * Initialize the game engine by initializing the GameLogic and GameClient.
  */
 void GameEngine::init( void ) {} /// @todo: I changed this to take argc & argv so we can parse those after the GDF is loaded.  We need to rethink this immediately as it is a nasty hack
+
+// ------------------------------------------------------------------------------------------------
+/** State carried across the steps of the (formerly monolithic) init(argc, argv)
+	* body. Each step in runNextInitStep is a chunk of the original function in
+	* its original order; the function-scope locals (the INI loader and the
+	* "lightCRC" XferCRC) live here instead of on the stack. Native builds run
+	* every step back-to-back inside init — identical order and behavior.
+	* Browser builds run the steps across event-loop turns so the page can paint
+	* boot progress and the main thread never blocks for the whole init. */
+// ------------------------------------------------------------------------------------------------
+struct GameEngine::InitSession
+{
+	enum Step
+	{
+		INIT_STEP_CORE = 0,					///< subsystem list, random, file system, name keys, command list
+		INIT_STEP_FILESYS,					///< TheLocalFileSystem + TheArchiveFileSystem
+		INIT_STEP_GLOBAL_DATA,			///< TheWritableGlobalData + command line
+		INIT_STEP_LOD_WATER,				///< GameLODManager + water/weather INIs
+		INIT_STEP_GAMETEXT,					///< TheGameText
+		INIT_STEP_STORES_A,					///< science/multiplayer/terrain/language/CD
+		INIT_STEP_AUDIO,						///< TheAudio
+		INIT_STEP_STORES_B,					///< lexicon/modules/messages/sides/ranks/particles/weapons/...
+		INIT_STEP_THING_FACTORY,		///< TheThingFactory (Object.ini)
+		INIT_STEP_UPGRADE_CLIENT,		///< UpgradeCenter + TheGameClient (W3D/device init)
+		INIT_STEP_AI_LOGIC,					///< AI/logic/teams/crates/players/recorder/radar/victory
+		INIT_STEP_METAMAP_STATE,		///< MetaMap + action manager + game state
+		INIT_STEP_CRC_POSTPROCESS,	///< xferCRC close + postProcessLoadAll
+		INIT_STEP_SETTINGS,					///< fps limit + audio on/off flags
+		INIT_STEP_FINGERPRINT_MAPCACHE,	///< sec-file fingerprint + MapCache updateCache
+		INIT_STEP_INITIALFILE_SHELL,	///< -file/-replay handling + shellmap check
+		INIT_STEP_TAIL,							///< post-try tail: masks, resetAll, HideControlBar
+		INIT_STEP_COUNT
+	};
+
+	Int step;
+	int argc;
+	char **argv;
+	INI ini;								///< the original function-scope INI loader
+	XferCRC xferCRC;				///< the original "lightCRC" xfer (opened in CORE, closed later)
+
+#ifdef DUMP_PERF_STATS
+	__int64 startTime64;
+	__int64 endTime64, freq64;
+	char Buf[256];
+#endif
+
+	InitSession( int argcIn, char *argvIn[] )
+	{
+		step = INIT_STEP_CORE;
+		argc = argcIn;
+		argv = argvIn;
+	}
+};
+
+// ------------------------------------------------------------------------------------------------
+void GameEngine::beginInitSession( int argc, char *argv[] )
+{
+	DEBUG_ASSERTCRASH( m_initSession == NULL, ("beginInitSession: an init session is already active") );
+	endInitSession();
+	m_initSession = NEW InitSession( argc, argv );
+}
+
+// ------------------------------------------------------------------------------------------------
+void GameEngine::endInitSession( void )
+{
+	if( m_initSession )
+	{
+		delete m_initSession;
+		m_initSession = NULL;
+	}
+}
+
+// ------------------------------------------------------------------------------------------------
+Int GameEngine::getInitStepIndex( void ) const
+{
+	return m_initSession != NULL ? m_initSession->step : -1;
+}
+
+// ------------------------------------------------------------------------------------------------
+Int GameEngine::getInitStepCount( void ) const
+{
+	return InitSession::INIT_STEP_COUNT;
+}
+
+/** -----------------------------------------------------------------------------------------------
+ * Initialize the game engine by initializing the GameLogic and GameClient.
+ * The original monolithic body now lives in runNextInitStep as an ordered step
+ * sequence sharing m_initSession (same chunks, same order); this drains it in
+ * one call. Browser builds instead drive runNextInitStep across event-loop
+ * turns (see WebAssembly/src/wasm_real_engine_init.cpp).
+ */
 void GameEngine::init( int argc, char *argv[] )
 {
+	beginInitSession( argc, argv );
+	while( runNextInitStep() )
+	{
+	}
+}
+
+// ------------------------------------------------------------------------------------------------
+/** One step of the original init body (see InitSession). Returns TRUE while
+	* more steps remain, FALSE when init finished. The original try/catch
+	* wrapped the whole body; wrapping each step is behaviorally identical
+	* because the handlers either crash or fall through to the post-try tail. */
+// ------------------------------------------------------------------------------------------------
+Bool GameEngine::runNextInitStep( void )
+{
+	InitSession *s = m_initSession;
+	if( s == NULL )
+		return FALSE;
+
+	if( s->step < InitSession::INIT_STEP_TAIL )
+	{
 	try {
-		//create an INI object to use for loading stuff
-		INI ini;
+		//the original function-scope INI object / lightCRC xfer, now session-held
+		INI &ini = s->ini;
+		XferCRC &xferCRC = s->xferCRC;
+
+		switch( s->step )
+		{
+
+		//-------------------------------------------------------------------------------------------
+		case InitSession::INIT_STEP_CORE:
+		{
 
 #ifdef DEBUG_LOGGING
 		if (TheVersion)
@@ -298,13 +420,10 @@ void GameEngine::init( int argc, char *argv[] )
 
 
 	#ifdef DUMP_PERF_STATS////////////////////////////////////////////////////////////
-	__int64 startTime64;//////////////////////////////////////////////////////////////
-	__int64 endTime64,freq64;///////////////////////////////////////////////////////////
-	GetPrecisionTimerTicksPerSec(&freq64);///////////////////////////////////////////////
-	GetPrecisionTimer(&startTime64);////////////////////////////////////////////////////
-  char Buf[256];//////////////////////////////////////////////////////////////////////
+	GetPrecisionTimerTicksPerSec(&s->freq64);////////////////////////////////////////////
+	GetPrecisionTimer(&s->startTime64);//////////////////////////////////////////////////
 	#endif//////////////////////////////////////////////////////////////////////////////
-		
+
 		m_maxFPS = DEFAULT_MAX_FPS;
 
 		TheSubsystemList = MSGNEW("GameEngineSubsystem") SubsystemInterfaceList;
@@ -329,10 +448,10 @@ void GameEngine::init( int argc, char *argv[] )
 
 
     	#ifdef DUMP_PERF_STATS///////////////////////////////////////////////////////////////////////////
-	GetPrecisionTimer(&endTime64);//////////////////////////////////////////////////////////////////
-	sprintf(Buf,"----------------------------------------------------------------------------After TheNameKeyGenerator  = %f seconds \n",((double)(endTime64-startTime64)/(double)(freq64)));
-  startTime64 = endTime64;//Reset the clock ////////////////////////////////////////////////////////
-	DEBUG_LOG(("%s", Buf));////////////////////////////////////////////////////////////////////////////
+	GetPrecisionTimer(&s->endTime64);//////////////////////////////////////////////////////////////////
+	sprintf(s->Buf,"----------------------------------------------------------------------------After TheNameKeyGenerator  = %f seconds \n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)));
+  s->startTime64 = s->endTime64;//Reset the clock ////////////////////////////////////////////////////
+	DEBUG_LOG(("%s", s->Buf));/////////////////////////////////////////////////////////////////////////
 	#endif/////////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -341,46 +460,59 @@ void GameEngine::init( int argc, char *argv[] )
 		TheCommandList->init();
 
     	#ifdef DUMP_PERF_STATS///////////////////////////////////////////////////////////////////////////
-	GetPrecisionTimer(&endTime64);//////////////////////////////////////////////////////////////////
-	sprintf(Buf,"----------------------------------------------------------------------------After TheCommandList  = %f seconds \n",((double)(endTime64-startTime64)/(double)(freq64)));
-  startTime64 = endTime64;//Reset the clock ////////////////////////////////////////////////////////
-	DEBUG_LOG(("%s", Buf));////////////////////////////////////////////////////////////////////////////
+	GetPrecisionTimer(&s->endTime64);//////////////////////////////////////////////////////////////////
+	sprintf(s->Buf,"----------------------------------------------------------------------------After TheCommandList  = %f seconds \n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)));
+  s->startTime64 = s->endTime64;//Reset the clock ////////////////////////////////////////////////////////
+	DEBUG_LOG(("%s", s->Buf));////////////////////////////////////////////////////////////////////////////
 	#endif/////////////////////////////////////////////////////////////////////////////////////////////
 
 
-		XferCRC xferCRC;
 		xferCRC.open("lightCRC");
 
+		s->step = InitSession::INIT_STEP_FILESYS;
+		return TRUE;
+		}
+
+		//-------------------------------------------------------------------------------------------
+		case InitSession::INIT_STEP_FILESYS:
+		{
 
 		initSubsystem(TheLocalFileSystem, "TheLocalFileSystem", createLocalFileSystem(), NULL);
 
 
     	#ifdef DUMP_PERF_STATS///////////////////////////////////////////////////////////////////////////
-	GetPrecisionTimer(&endTime64);//////////////////////////////////////////////////////////////////
-	sprintf(Buf,"----------------------------------------------------------------------------After TheLocalFileSystem  = %f seconds \n",((double)(endTime64-startTime64)/(double)(freq64)));
-  startTime64 = endTime64;//Reset the clock ////////////////////////////////////////////////////////
-	DEBUG_LOG(("%s", Buf));////////////////////////////////////////////////////////////////////////////
+	GetPrecisionTimer(&s->endTime64);//////////////////////////////////////////////////////////////////
+	sprintf(s->Buf,"----------------------------------------------------------------------------After TheLocalFileSystem  = %f seconds \n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)));
+  s->startTime64 = s->endTime64;//Reset the clock ////////////////////////////////////////////////////////
+	DEBUG_LOG(("%s", s->Buf));////////////////////////////////////////////////////////////////////////////
 	#endif/////////////////////////////////////////////////////////////////////////////////////////////
 
 
 		initSubsystem(TheArchiveFileSystem, "TheArchiveFileSystem", createArchiveFileSystem(), NULL); // this MUST come after TheLocalFileSystem creation
 
     	#ifdef DUMP_PERF_STATS///////////////////////////////////////////////////////////////////////////
-	GetPrecisionTimer(&endTime64);//////////////////////////////////////////////////////////////////
-	sprintf(Buf,"----------------------------------------------------------------------------After TheArchiveFileSystem  = %f seconds \n",((double)(endTime64-startTime64)/(double)(freq64)));
-  startTime64 = endTime64;//Reset the clock ////////////////////////////////////////////////////////
-	DEBUG_LOG(("%s", Buf));////////////////////////////////////////////////////////////////////////////
+	GetPrecisionTimer(&s->endTime64);//////////////////////////////////////////////////////////////////
+	sprintf(s->Buf,"----------------------------------------------------------------------------After TheArchiveFileSystem  = %f seconds \n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)));
+  s->startTime64 = s->endTime64;//Reset the clock ////////////////////////////////////////////////////////
+	DEBUG_LOG(("%s", s->Buf));////////////////////////////////////////////////////////////////////////////
 	#endif/////////////////////////////////////////////////////////////////////////////////////////////
 
+		s->step = InitSession::INIT_STEP_GLOBAL_DATA;
+		return TRUE;
+		}
+
+		//-------------------------------------------------------------------------------------------
+		case InitSession::INIT_STEP_GLOBAL_DATA:
+		{
 
 		initSubsystem(TheWritableGlobalData, "TheWritableGlobalData", MSGNEW("GameEngineSubsystem") GlobalData(), &xferCRC, "Data\\INI\\Default\\GameData.ini", "Data\\INI\\GameData.ini");
 
 
 	#ifdef DUMP_PERF_STATS///////////////////////////////////////////////////////////////////////////
-	GetPrecisionTimer(&endTime64);//////////////////////////////////////////////////////////////////
-	sprintf(Buf,"----------------------------------------------------------------------------After  TheWritableGlobalData = %f seconds \n",((double)(endTime64-startTime64)/(double)(freq64)));
-  startTime64 = endTime64;//Reset the clock ////////////////////////////////////////////////////////
-	DEBUG_LOG(("%s", Buf));////////////////////////////////////////////////////////////////////////////
+	GetPrecisionTimer(&s->endTime64);//////////////////////////////////////////////////////////////////
+	sprintf(s->Buf,"----------------------------------------------------------------------------After  TheWritableGlobalData = %f seconds \n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)));
+  s->startTime64 = s->endTime64;//Reset the clock ////////////////////////////////////////////////////////
+	DEBUG_LOG(("%s", s->Buf));////////////////////////////////////////////////////////////////////////////
 	#endif/////////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -391,7 +523,15 @@ void GameEngine::init( int argc, char *argv[] )
 	#endif
 		
 		// special-case: parse command-line parameters after loading global data
-		parseCommandLine(argc, argv);
+		parseCommandLine(s->argc, s->argv);
+
+		s->step = InitSession::INIT_STEP_LOD_WATER;
+		return TRUE;
+		}
+
+		//-------------------------------------------------------------------------------------------
+		case InitSession::INIT_STEP_LOD_WATER:
+		{
 
 		// doesn't require resets so just create a single instance here.
 		TheGameLODManager = MSGNEW("GameEngineSubsystem") GameLODManager;
@@ -412,12 +552,19 @@ void GameEngine::init( int argc, char *argv[] )
 
 
 	#ifdef DUMP_PERF_STATS///////////////////////////////////////////////////////////////////////////
-	GetPrecisionTimer(&endTime64);//////////////////////////////////////////////////////////////////
-	sprintf(Buf,"----------------------------------------------------------------------------After water INI's = %f seconds \n",((double)(endTime64-startTime64)/(double)(freq64)));
-  startTime64 = endTime64;//Reset the clock ////////////////////////////////////////////////////////
-	DEBUG_LOG(("%s", Buf));////////////////////////////////////////////////////////////////////////////
+	GetPrecisionTimer(&s->endTime64);//////////////////////////////////////////////////////////////////
+	sprintf(s->Buf,"----------------------------------------------------------------------------After water INI's = %f seconds \n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)));
+  s->startTime64 = s->endTime64;//Reset the clock ////////////////////////////////////////////////////////
+	DEBUG_LOG(("%s", s->Buf));////////////////////////////////////////////////////////////////////////////
 	#endif/////////////////////////////////////////////////////////////////////////////////////////////
 
+		s->step = InitSession::INIT_STEP_GAMETEXT;
+		return TRUE;
+		}
+
+		//-------------------------------------------------------------------------------------------
+		case InitSession::INIT_STEP_GAMETEXT:
+		{
 
 #ifdef DEBUG_CRC
 		initSubsystem(TheDeepCRCSanityCheck, "TheDeepCRCSanityCheck", MSGNEW("GameEngineSubystem") DeepCRCSanityCheck, NULL, NULL, NULL, NULL);
@@ -425,12 +572,19 @@ void GameEngine::init( int argc, char *argv[] )
 		initSubsystem(TheGameText, "TheGameText", CreateGameTextInterface(), NULL);
 
 	#ifdef DUMP_PERF_STATS///////////////////////////////////////////////////////////////////////////
-	GetPrecisionTimer(&endTime64);//////////////////////////////////////////////////////////////////
-	sprintf(Buf,"----------------------------------------------------------------------------After TheGameText = %f seconds \n",((double)(endTime64-startTime64)/(double)(freq64)));
-  startTime64 = endTime64;//Reset the clock ////////////////////////////////////////////////////////
-	DEBUG_LOG(("%s", Buf));////////////////////////////////////////////////////////////////////////////
+	GetPrecisionTimer(&s->endTime64);//////////////////////////////////////////////////////////////////
+	sprintf(s->Buf,"----------------------------------------------------------------------------After TheGameText = %f seconds \n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)));
+  s->startTime64 = s->endTime64;//Reset the clock ////////////////////////////////////////////////////////
+	DEBUG_LOG(("%s", s->Buf));////////////////////////////////////////////////////////////////////////////
 	#endif/////////////////////////////////////////////////////////////////////////////////////////////
 
+		s->step = InitSession::INIT_STEP_STORES_A;
+		return TRUE;
+		}
+
+		//-------------------------------------------------------------------------------------------
+		case InitSession::INIT_STEP_STORES_A:
+		{
 
 		initSubsystem(TheScienceStore,"TheScienceStore", MSGNEW("GameEngineSubsystem") ScienceStore(), &xferCRC, "Data\\INI\\Default\\Science.ini", "Data\\INI\\Science.ini");
 		initSubsystem(TheMultiplayerSettings,"TheMultiplayerSettings", MSGNEW("GameEngineSubsystem") MultiplayerSettings(), &xferCRC, "Data\\INI\\Default\\Multiplayer.ini", "Data\\INI\\Multiplayer.ini");
@@ -439,22 +593,37 @@ void GameEngine::init( int argc, char *argv[] )
 		initSubsystem(TheGlobalLanguageData,"TheGlobalLanguageData",MSGNEW("GameEngineSubsystem") GlobalLanguage, NULL); // must be before the game text
 		initSubsystem(TheCDManager,"TheCDManager", CreateCDManager(), NULL);
 	#ifdef DUMP_PERF_STATS///////////////////////////////////////////////////////////////////////////
-	GetPrecisionTimer(&endTime64);//////////////////////////////////////////////////////////////////
-	sprintf(Buf,"----------------------------------------------------------------------------After TheCDManager = %f seconds \n",((double)(endTime64-startTime64)/(double)(freq64)));
-  startTime64 = endTime64;//Reset the clock ////////////////////////////////////////////////////////
-	DEBUG_LOG(("%s", Buf));////////////////////////////////////////////////////////////////////////////
+	GetPrecisionTimer(&s->endTime64);//////////////////////////////////////////////////////////////////
+	sprintf(s->Buf,"----------------------------------------------------------------------------After TheCDManager = %f seconds \n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)));
+  s->startTime64 = s->endTime64;//Reset the clock ////////////////////////////////////////////////////////
+	DEBUG_LOG(("%s", s->Buf));////////////////////////////////////////////////////////////////////////////
 	#endif/////////////////////////////////////////////////////////////////////////////////////////////
+
+		s->step = InitSession::INIT_STEP_AUDIO;
+		return TRUE;
+		}
+
+		//-------------------------------------------------------------------------------------------
+		case InitSession::INIT_STEP_AUDIO:
+		{
 		initSubsystem(TheAudio,"TheAudio", createAudioManager(), NULL);
 		if (!TheAudio->isMusicAlreadyLoaded())
 			setQuitting(TRUE);
 
 	#ifdef DUMP_PERF_STATS///////////////////////////////////////////////////////////////////////////
-	GetPrecisionTimer(&endTime64);//////////////////////////////////////////////////////////////////
-	sprintf(Buf,"----------------------------------------------------------------------------After TheAudio = %f seconds \n",((double)(endTime64-startTime64)/(double)(freq64)));
-  startTime64 = endTime64;//Reset the clock ////////////////////////////////////////////////////////
-	DEBUG_LOG(("%s", Buf));////////////////////////////////////////////////////////////////////////////
+	GetPrecisionTimer(&s->endTime64);//////////////////////////////////////////////////////////////////
+	sprintf(s->Buf,"----------------------------------------------------------------------------After TheAudio = %f seconds \n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)));
+  s->startTime64 = s->endTime64;//Reset the clock ////////////////////////////////////////////////////////
+	DEBUG_LOG(("%s", s->Buf));////////////////////////////////////////////////////////////////////////////
 	#endif/////////////////////////////////////////////////////////////////////////////////////////////
 
+		s->step = InitSession::INIT_STEP_STORES_B;
+		return TRUE;
+		}
+
+		//-------------------------------------------------------------------------------------------
+		case InitSession::INIT_STEP_STORES_B:
+		{
 
 		initSubsystem(TheFunctionLexicon,"TheFunctionLexicon", createFunctionLexicon(), NULL);
 		initSubsystem(TheModuleFactory,"TheModuleFactory", createModuleFactory(), NULL);
@@ -466,10 +635,10 @@ void GameEngine::init( int argc, char *argv[] )
 		initSubsystem(TheParticleSystemManager,"TheParticleSystemManager", createParticleSystemManager(), NULL);
 
 	#ifdef DUMP_PERF_STATS///////////////////////////////////////////////////////////////////////////
-	GetPrecisionTimer(&endTime64);//////////////////////////////////////////////////////////////////
-	sprintf(Buf,"----------------------------------------------------------------------------After TheParticleSystemManager = %f seconds \n",((double)(endTime64-startTime64)/(double)(freq64)));
-  startTime64 = endTime64;//Reset the clock ////////////////////////////////////////////////////////
-	DEBUG_LOG(("%s", Buf));////////////////////////////////////////////////////////////////////////////
+	GetPrecisionTimer(&s->endTime64);//////////////////////////////////////////////////////////////////
+	sprintf(s->Buf,"----------------------------------------------------------------------------After TheParticleSystemManager = %f seconds \n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)));
+  s->startTime64 = s->endTime64;//Reset the clock ////////////////////////////////////////////////////////
+	DEBUG_LOG(("%s", s->Buf));////////////////////////////////////////////////////////////////////////////
 	#endif/////////////////////////////////////////////////////////////////////////////////////////////
     
     
@@ -484,36 +653,56 @@ void GameEngine::init( int argc, char *argv[] )
 
 
 	#ifdef DUMP_PERF_STATS///////////////////////////////////////////////////////////////////////////
-	GetPrecisionTimer(&endTime64);//////////////////////////////////////////////////////////////////
-	sprintf(Buf,"----------------------------------------------------------------------------After TheBuildAssistant = %f seconds \n",((double)(endTime64-startTime64)/(double)(freq64)));
-  startTime64 = endTime64;//Reset the clock ////////////////////////////////////////////////////////
-	DEBUG_LOG(("%s", Buf));////////////////////////////////////////////////////////////////////////////
+	GetPrecisionTimer(&s->endTime64);//////////////////////////////////////////////////////////////////
+	sprintf(s->Buf,"----------------------------------------------------------------------------After TheBuildAssistant = %f seconds \n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)));
+  s->startTime64 = s->endTime64;//Reset the clock ////////////////////////////////////////////////////////
+	DEBUG_LOG(("%s", s->Buf));////////////////////////////////////////////////////////////////////////////
 	#endif/////////////////////////////////////////////////////////////////////////////////////////////
 
+		s->step = InitSession::INIT_STEP_THING_FACTORY;
+		return TRUE;
+		}
 
+		//-------------------------------------------------------------------------------------------
+		case InitSession::INIT_STEP_THING_FACTORY:
+		{
 
 		initSubsystem(TheThingFactory,"TheThingFactory", createThingFactory(), &xferCRC, "Data\\INI\\Default\\Object.ini", NULL, "Data\\INI\\Object");
 
 	#ifdef DUMP_PERF_STATS///////////////////////////////////////////////////////////////////////////
-	GetPrecisionTimer(&endTime64);//////////////////////////////////////////////////////////////////
-	sprintf(Buf,"----------------------------------------------------------------------------After TheThingFactory = %f seconds \n",((double)(endTime64-startTime64)/(double)(freq64)));
-  startTime64 = endTime64;//Reset the clock ////////////////////////////////////////////////////////
-	DEBUG_LOG(("%s", Buf));////////////////////////////////////////////////////////////////////////////
+	GetPrecisionTimer(&s->endTime64);//////////////////////////////////////////////////////////////////
+	sprintf(s->Buf,"----------------------------------------------------------------------------After TheThingFactory = %f seconds \n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)));
+  s->startTime64 = s->endTime64;//Reset the clock ////////////////////////////////////////////////////////
+	DEBUG_LOG(("%s", s->Buf));////////////////////////////////////////////////////////////////////////////
 	#endif/////////////////////////////////////////////////////////////////////////////////////////////
-    
-    
+
+		s->step = InitSession::INIT_STEP_UPGRADE_CLIENT;
+		return TRUE;
+		}
+
+		//-------------------------------------------------------------------------------------------
+		case InitSession::INIT_STEP_UPGRADE_CLIENT:
+		{
+
 		initSubsystem(TheUpgradeCenter,"TheUpgradeCenter", MSGNEW("GameEngineSubsystem") UpgradeCenter, &xferCRC, "Data\\INI\\Default\\Upgrade.ini", "Data\\INI\\Upgrade.ini");
 		initSubsystem(TheGameClient,"TheGameClient", createGameClient(), NULL);
 
 
 	#ifdef DUMP_PERF_STATS///////////////////////////////////////////////////////////////////////////
-	GetPrecisionTimer(&endTime64);//////////////////////////////////////////////////////////////////
-	sprintf(Buf,"----------------------------------------------------------------------------After TheGameClient = %f seconds \n",((double)(endTime64-startTime64)/(double)(freq64)));
-  startTime64 = endTime64;//Reset the clock ////////////////////////////////////////////////////////
-	DEBUG_LOG(("%s", Buf));////////////////////////////////////////////////////////////////////////////
+	GetPrecisionTimer(&s->endTime64);//////////////////////////////////////////////////////////////////
+	sprintf(s->Buf,"----------------------------------------------------------------------------After TheGameClient = %f seconds \n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)));
+  s->startTime64 = s->endTime64;//Reset the clock ////////////////////////////////////////////////////////
+	DEBUG_LOG(("%s", s->Buf));////////////////////////////////////////////////////////////////////////////
 	#endif/////////////////////////////////////////////////////////////////////////////////////////////
 
-	
+		s->step = InitSession::INIT_STEP_AI_LOGIC;
+		return TRUE;
+		}
+
+		//-------------------------------------------------------------------------------------------
+		case InitSession::INIT_STEP_AI_LOGIC:
+		{
+
 		initSubsystem(TheAI,"TheAI", MSGNEW("GameEngineSubsystem") AI(), &xferCRC,  "Data\\INI\\Default\\AIData.ini", "Data\\INI\\AIData.ini");
 		initSubsystem(TheGameLogic,"TheGameLogic", createGameLogic(), NULL);
 		initSubsystem(TheTeamFactory,"TheTeamFactory", MSGNEW("GameEngineSubsystem") TeamFactory(), NULL);
@@ -528,12 +717,19 @@ void GameEngine::init( int argc, char *argv[] )
 
 
 	#ifdef DUMP_PERF_STATS///////////////////////////////////////////////////////////////////////////
-	GetPrecisionTimer(&endTime64);//////////////////////////////////////////////////////////////////
-	sprintf(Buf,"----------------------------------------------------------------------------After TheVictoryConditions = %f seconds \n",((double)(endTime64-startTime64)/(double)(freq64)));
-  startTime64 = endTime64;//Reset the clock ////////////////////////////////////////////////////////
-	DEBUG_LOG(("%s", Buf));////////////////////////////////////////////////////////////////////////////
+	GetPrecisionTimer(&s->endTime64);//////////////////////////////////////////////////////////////////
+	sprintf(s->Buf,"----------------------------------------------------------------------------After TheVictoryConditions = %f seconds \n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)));
+  s->startTime64 = s->endTime64;//Reset the clock ////////////////////////////////////////////////////////
+	DEBUG_LOG(("%s", s->Buf));////////////////////////////////////////////////////////////////////////////
 	#endif/////////////////////////////////////////////////////////////////////////////////////////////
 
+		s->step = InitSession::INIT_STEP_METAMAP_STATE;
+		return TRUE;
+		}
+
+		//-------------------------------------------------------------------------------------------
+		case InitSession::INIT_STEP_METAMAP_STATE:
+		{
 
 		AsciiString fname;
 		fname.format("Data\\%s\\CommandMap.ini", GetRegistryLanguage().str());
@@ -558,12 +754,19 @@ void GameEngine::init( int argc, char *argv[] )
 
 
 	#ifdef DUMP_PERF_STATS///////////////////////////////////////////////////////////////////////////
-	GetPrecisionTimer(&endTime64);//////////////////////////////////////////////////////////////////
-	sprintf(Buf,"----------------------------------------------------------------------------After TheGameResultsQueue = %f seconds \n",((double)(endTime64-startTime64)/(double)(freq64)));
-  startTime64 = endTime64;//Reset the clock ////////////////////////////////////////////////////////
-	DEBUG_LOG(("%s", Buf));////////////////////////////////////////////////////////////////////////////
+	GetPrecisionTimer(&s->endTime64);//////////////////////////////////////////////////////////////////
+	sprintf(s->Buf,"----------------------------------------------------------------------------After TheGameResultsQueue = %f seconds \n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)));
+  s->startTime64 = s->endTime64;//Reset the clock ////////////////////////////////////////////////////////
+	DEBUG_LOG(("%s", s->Buf));////////////////////////////////////////////////////////////////////////////
 	#endif/////////////////////////////////////////////////////////////////////////////////////////////
 
+		s->step = InitSession::INIT_STEP_CRC_POSTPROCESS;
+		return TRUE;
+		}
+
+		//-------------------------------------------------------------------------------------------
+		case InitSession::INIT_STEP_CRC_POSTPROCESS:
+		{
 
 		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.xferCRC.close.before");
 		xferCRC.close();
@@ -574,6 +777,14 @@ void GameEngine::init( int argc, char *argv[] )
 		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.postProcessLoadAll.before");
 		TheSubsystemList->postProcessLoadAll();
 		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.postProcessLoadAll.after");
+
+		s->step = InitSession::INIT_STEP_SETTINGS;
+		return TRUE;
+		}
+
+		//-------------------------------------------------------------------------------------------
+		case InitSession::INIT_STEP_SETTINGS:
+		{
 
 		CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.fps.before");
 		setFramesPerSecondLimit(TheGlobalData->m_framesPerSecondLimit);
@@ -594,9 +805,17 @@ void GameEngine::init( int argc, char *argv[] )
 
 		// If we turn m_quitting to FALSE here, then we throw away any requests to quit that
 		// took place during loading. :-\ - jkmcd
-		// If this really needs to take place, please make sure that pressing cancel on the audio 
+		// If this really needs to take place, please make sure that pressing cancel on the audio
 		// load music dialog will still cause the game to quit.
 		// m_quitting = FALSE;
+
+		s->step = InitSession::INIT_STEP_FINGERPRINT_MAPCACHE;
+		return TRUE;
+		}
+
+		//-------------------------------------------------------------------------------------------
+		case InitSession::INIT_STEP_FINGERPRINT_MAPCACHE:
+		{
 
 		// for fingerprinting, we need to ensure the presence of these files
 
@@ -637,10 +856,10 @@ void GameEngine::init( int argc, char *argv[] )
 
 
 	#ifdef DUMP_PERF_STATS///////////////////////////////////////////////////////////////////////////
-	GetPrecisionTimer(&endTime64);//////////////////////////////////////////////////////////////////
-	sprintf(Buf,"----------------------------------------------------------------------------After TheMapCache->updateCache = %f seconds \n",((double)(endTime64-startTime64)/(double)(freq64)));
-  startTime64 = endTime64;//Reset the clock ////////////////////////////////////////////////////////
-	DEBUG_LOG(("%s", Buf));////////////////////////////////////////////////////////////////////////////
+	GetPrecisionTimer(&s->endTime64);//////////////////////////////////////////////////////////////////
+	sprintf(s->Buf,"----------------------------------------------------------------------------After TheMapCache->updateCache = %f seconds \n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)));
+  s->startTime64 = s->endTime64;//Reset the clock ////////////////////////////////////////////////////////
+	DEBUG_LOG(("%s", s->Buf));////////////////////////////////////////////////////////////////////////////
 	#endif/////////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -650,10 +869,18 @@ void GameEngine::init( int argc, char *argv[] )
 			//populateMapListbox(NULL, true, true);
 			m_quitting = TRUE;
 		}
-		
+
+		s->step = InitSession::INIT_STEP_INITIALFILE_SHELL;
+		return TRUE;
+		}
+
+		//-------------------------------------------------------------------------------------------
+		case InitSession::INIT_STEP_INITIALFILE_SHELL:
+		{
+
 		// load the initial shell screen
 		//TheShell->push( AsciiString("Menus/MainMenu.wnd") );
-		
+
 		// This allows us to run a map/reply from the command line
 		if (TheGlobalData->m_initialFile.isEmpty() == FALSE)
 		{
@@ -701,7 +928,20 @@ void GameEngine::init( int argc, char *argv[] )
 			TheWritableGlobalData->m_afterIntro = TRUE;
 
 		//initDisabledMasks();
-		
+
+		s->step = InitSession::INIT_STEP_TAIL;
+		return TRUE;
+		}
+
+		//-------------------------------------------------------------------------------------------
+		default:
+		{
+			DEBUG_CRASH(("runNextInitStep: unknown init step %d", s->step));
+			s->step = InitSession::INIT_STEP_TAIL;
+			return TRUE;
+		}
+
+		}  // end switch
 	}
 	catch (ErrorCode ec)
 	{
@@ -709,6 +949,10 @@ void GameEngine::init( int argc, char *argv[] )
 		{
 			RELEASE_CRASHLOCALIZED("ERROR:D3DFailurePrompt", "ERROR:D3DFailureMessage");
 		}
+		// original behavior: a non-D3D ErrorCode fell out of the try block and
+		// continued at the post-try tail below
+		s->step = InitSession::INIT_STEP_TAIL;
+		return TRUE;
 	}
 	catch (INIException e)
 	{
@@ -722,7 +966,9 @@ void GameEngine::init( int argc, char *argv[] )
 	{
 		RELEASE_CRASH(("Uncaught Exception during initialization."));
 	}
+	}  // end if step < INIT_STEP_TAIL
 
+	// INIT_STEP_TAIL — the original post-try tail
 	if(!TheGlobalData->m_playIntro)
 		TheWritableGlobalData->m_afterIntro = TRUE;
 
@@ -742,7 +988,10 @@ void GameEngine::init( int argc, char *argv[] )
 	CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.hideControlBar.before");
 	HideControlBar();
 	CNC_PORT_NOTE_ENGINE_INIT_STEP("GameEngine.init.hideControlBar.after");
-}  // end init
+
+	endInitSession();
+	return FALSE;
+}  // end runNextInitStep (formerly the body of init)
 
 /** -----------------------------------------------------------------------------------------------
 	* Reset all necessary parts of the game engine to be ready to accept new game data 
@@ -804,12 +1053,29 @@ extern "C" int cnc_port_allow_logic_frame(void) __attribute__((weak));
  * of TheNetwork and TheGameLogic to a fixed framerate.
  */
 void GameEngine::update( void )
-{ 
+{
 	USE_PERF_TIMER(GameEngine_update)
 	{
 
+#ifdef __EMSCRIPTEN__
+		//
+		// Stepped map load in progress: the original code ran the whole load
+		// inside one update call, so the client never touched the half-loaded
+		// world. Keep that invariant per slice: advance the load and return.
+		// The load screen draws via LoadScreen::update (WindowManager + Display)
+		// and presents when this call returns to the browser event loop.
+		//
+		if( TheGameLogic != NULL && TheGameLogic->isLoadSessionActive() )
 		{
-			
+			CNC_PORT_NOTE_ENGINE_UPDATE_TARGET("TheGameLogic.loadSession");
+			TheGameLogic->advanceLoadSession();
+			CNC_PORT_NOTE_ENGINE_UPDATE_TARGET("idle");
+			return;
+		}
+#endif
+
+		{
+
 			// VERIFY CRC needs to be in this code block.  Please to not pull TheGameLogic->update() inside this block.
 			VERIFY_CRC
 

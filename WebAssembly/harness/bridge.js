@@ -14693,6 +14693,8 @@ async function loadWasmModule() {
       ),
       probeWin32GameEngine: module.cwrap("cnc_port_probe_win32_gameengine", "string", []),
       realEngineInit: module.cwrap("cnc_port_real_engine_init", "string", ["string", "number"]),
+      realEngineInitBegin: module.cwrap("cnc_port_real_engine_init_begin", "string", ["string", "number"]),
+      realEngineInitStep: module.cwrap("cnc_port_real_engine_init_step", "string", ["number"]),
       realEngineFrontier: module.cwrap("cnc_port_real_engine_frontier", "string", []),
       mapCacheProbe: module.cwrap("cnc_port_map_cache_probe", "string", []),
       realEngineSetSkirmishMap: module.cwrap(
@@ -14723,6 +14725,11 @@ async function loadWasmModule() {
       ),
       realEngineSetClientPacing: module.cwrap(
         "cnc_port_real_engine_set_client_pacing",
+        "string",
+        ["number", "number"],
+      ),
+      realEngineSetLoadStepping: module.cwrap(
+        "cnc_port_real_engine_set_load_stepping",
         "string",
         ["number", "number"],
       ),
@@ -19013,15 +19020,60 @@ async function realEngineInit(payload = {}) {
   let frontier = null;
   let aborted = false;
   let abortMessage = null;
-  try {
-    frontier = JSON.parse(wasmModule.realEngineInit(runDirectory, useShellMap));
-  } catch (error) {
-    aborted = true;
-    abortMessage = error?.message ?? String(error);
+  const useStepped = payload.stepped === true
+    && typeof wasmModule.realEngineInitBegin === "function"
+    && typeof wasmModule.realEngineInitStep === "function";
+  if (useStepped) {
+    // Stepped init: GameEngine::init's body runs as an ordered step sequence
+    // (see GameEngine.cpp runNextInitStep); each slice returns to the event
+    // loop so the page can paint boot progress and the main thread never
+    // blocks for the whole init. Progress is broadcast per slice as a
+    // "cncport:initprogress" CustomEvent for the boot overlay.
+    const stepBudgetMs = Number(payload.stepBudgetMs ?? 200);
+    try {
+      const begin = JSON.parse(wasmModule.realEngineInitBegin(runDirectory, useShellMap));
+      if (begin?.ok !== true && begin?.initReturned !== true) {
+        aborted = true;
+        abortMessage = `init_begin failed: ${begin?.exception ?? "unknown"}`;
+      }
+      while (!aborted) {
+        const step = JSON.parse(wasmModule.realEngineInitStep(stepBudgetMs));
+        harnessState.realEngineInitProgress = step;
+        try {
+          window.dispatchEvent(new CustomEvent("cncport:initprogress", { detail: step }));
+        } catch {
+          // no DOM (worker context) — progress still visible via state RPC
+        }
+        if (step?.ok !== true) {
+          aborted = true;
+          abortMessage = `init_step failed: ${step?.exception ?? "unknown"}`;
+          break;
+        }
+        if (step?.done === true) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    } catch (error) {
+      aborted = true;
+      abortMessage = error?.message ?? String(error);
+    }
     try {
       frontier = JSON.parse(wasmModule.realEngineFrontier());
     } catch {
       frontier = null; // runtime tore down before the frontier could be read
+    }
+  } else {
+    try {
+      frontier = JSON.parse(wasmModule.realEngineInit(runDirectory, useShellMap));
+    } catch (error) {
+      aborted = true;
+      abortMessage = error?.message ?? String(error);
+      try {
+        frontier = JSON.parse(wasmModule.realEngineFrontier());
+      } catch {
+        frontier = null; // runtime tore down before the frontier could be read
+      }
     }
   }
   const traceLines = harnessState.logs
@@ -20215,6 +20267,22 @@ async function rpc(command, payload = {}) {
         ));
         recordLog("client pacing", pacing);
         return { ok: Boolean(pacing?.ok), command: "realEngineSetClientPacing", pacing };
+      }
+    case "realEngineSetLoadStepping":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineSetLoadStepping");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineSetLoadStepping", error: moduleResult.error };
+        }
+        if (typeof moduleResult.wasmModule.realEngineSetLoadStepping !== "function") {
+          return { ok: false, command: "realEngineSetLoadStepping", error: "export missing (stale wasm build)" };
+        }
+        const stepping = JSON.parse(moduleResult.wasmModule.realEngineSetLoadStepping(
+          payload.enabled === false ? 0 : 1,
+          Number(payload.budgetMs ?? 0),
+        ));
+        recordLog("load stepping", stepping);
+        return { ok: Boolean(stepping?.ok), command: "realEngineSetLoadStepping", stepping };
       }
     case "realEngineFramePaced":
       {

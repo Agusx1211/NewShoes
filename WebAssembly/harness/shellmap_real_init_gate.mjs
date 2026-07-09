@@ -222,6 +222,32 @@ try {
     frame = await page.evaluate((frameCount) =>
       window.CnCPort.rpc("realEngineFrame", { frames: frameCount }), frames);
   }
+  // The shell-map load is now stepped (startNewGame spreads its steps across
+  // GameEngine::update calls so the real load screen presents between slices).
+  // Keep ticking until the load session drains instead of assuming the whole
+  // load completed inside one update call.
+  {
+    const deadline = Date.now() + 8 * 60 * 1000; // SwiftShader shell load is slow
+    let lastProgressLog = 0;
+    while (frame?.frame?.loadSessionActive === true) {
+      if (Date.now() > deadline) {
+        throw new Error(`shell-map load session did not finish before deadline: ${JSON.stringify({
+          loadProgress: frame?.frame?.loadProgress,
+          lastGameLogicStep: frame?.frame?.lastGameLogicStep,
+        })}`);
+      }
+      const progress = frame?.frame?.loadProgress ?? -1;
+      if (progress !== lastProgressLog) {
+        console.error(`[shellmap] load session progress=${progress}`);
+        lastProgressLog = progress;
+      }
+      frame = await page.evaluate(() =>
+        window.CnCPort.rpc("realEngineFrame", { frames: 10 }));
+    }
+    // a few settle frames so the shell pushes MainMenu and renders it
+    frame = await page.evaluate(() =>
+      window.CnCPort.rpc("realEngineFrame", { frames: 5 }));
+  }
   assertShellMapFrame(frame);
 
   const screenshot = await page.evaluate(() => window.CnCPort.rpc("screenshot"));

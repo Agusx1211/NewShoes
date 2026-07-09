@@ -114,6 +114,13 @@
 
 #ifdef __EMSCRIPTEN__
 extern "C" void cnc_port_note_game_logic_step(const char *name) __attribute__((weak));
+// Stepped-load hooks (strong defs in WebAssembly/src/wasm_real_engine_init.cpp):
+// stepping_active gates spreading startNewGame's steps across engine updates;
+// slice_begin marks the start of a budgeted slice; should_yield reports the
+// slice budget is spent. All weak — absent means original synchronous load.
+extern "C" int cnc_port_load_stepping_active(void) __attribute__((weak));
+extern "C" void cnc_port_load_step_slice_begin(void) __attribute__((weak));
+extern "C" int cnc_port_load_step_should_yield(void) __attribute__((weak));
 static Int g_wasmStartNewGameShellBranchCount = 0;
 static Int g_wasmStartNewGameShellPushAttemptCount = 0;
 static Int g_wasmStartNewGameShellRevealExistingCount = 0;
@@ -307,6 +314,7 @@ GameLogic::GameLogic( void )
 	m_inputEnabledMemory = TRUE;
 	m_mouseVisibleMemory = TRUE;
 	m_loadScreen = NULL;
+	m_loadSession = NULL;
 	m_forceGameStartByTimeOut = FALSE;
 #ifdef DUMP_PERF_STATS
 	m_overallFailedPathfinds = 0;
@@ -381,6 +389,8 @@ void GameLogic::destroyAllObjectsImmediate()
 // ------------------------------------------------------------------------------------------------
 GameLogic::~GameLogic()
 {
+
+	endLoadSession();
 
 	// clear any object TOC we might have
 	m_objectTOC.clear();
@@ -508,6 +518,11 @@ void GameLogic::init( void )
 void GameLogic::reset( void )
 {
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.entry");
+
+	// a reset mid-load abandons the stepped load session (safety net; the
+	// stepped driver blocks normal update work while a session is active)
+	endLoadSession();
+
 	m_thingTemplateBuildableOverrides.clear();
 	m_controlBarOverrides.clear();
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.reset.overridesClear.after");
@@ -1190,13 +1205,88 @@ static void prepareSkirmishGameInfoForEarlyLoadScreen( GameInfo *game, Bool load
 #endif
 
 // ------------------------------------------------------------------------------------------------
+/** State carried across the steps of the (formerly monolithic) startNewGame body.
+	* Each step in runNextLoadStep is a verbatim chunk of the original function; the
+	* locals that crossed the chunk boundaries live here instead of on the stack.
+	* Native builds run all steps back-to-back inside startNewGame (same order,
+	* same behavior); browser builds run budgeted slices per GameEngine::update so
+	* the load screen can present between slices. The full definition must precede
+	* updateLoadProgress below, which records lastProgress into the session. */
+// ------------------------------------------------------------------------------------------------
+struct GameLogic::StartNewGameSession
+{
+	enum Step
+	{
+		LOAD_STEP_SETUP = 0,						///< defaults, game info, load screen creation
+		LOAD_STEP_MAP_INI,							///< loadMapINI
+		LOAD_STEP_TERRAIN_LOAD,					///< TheTerrainLogic->loadMap
+		LOAD_STEP_SIDES,								///< side/team population + validateSides
+		LOAD_STEP_PLAYERS,							///< ThePlayerList->newGame
+		LOAD_STEP_SCRIPTS,							///< script engine newMap + MP victory scripts
+		LOAD_STEP_RADAR_VICTORY_PARTITION,	///< radar/victory/extents/partition/ghost
+		LOAD_STEP_TERRAIN_NEW_MAP,			///< TheTerrainLogic->newMap
+		LOAD_STEP_BRIDGES,							///< bridge-like map objects
+		LOAD_STEP_PATHFIND,							///< pathfinder newMap
+		LOAD_STEP_REVEAL,								///< observer/slot shroud reveals
+		LOAD_STEP_MAP_OBJECTS,					///< all map objects (re-entrant, sliced)
+		LOAD_STEP_NETWORK_BUILDINGS,		///< initial per-player buildings/units
+		LOAD_STEP_PRELOAD_ASSETS,				///< TheGameClient->preloadAssets
+		LOAD_STEP_CAMERA_FINALIZE,			///< camera, partition update, challenge/rank
+		LOAD_STEP_PROGRESS_END,					///< LOAD_PROGRESS_END + network complete
+		LOAD_STEP_PROGRESS_WAIT,				///< wait for peers (repeats)
+		LOAD_STEP_FADE,									///< FadeWholeScreen transition (repeats)
+		LOAD_STEP_FINISH								///< load screen teardown + shell/control bar
+	};
+
+	Int step;
+	Bool loadingSaveGame;
+	GameInfo *game;
+	Int localSlot;
+	Bool isChallengeCampaign;
+	Bool isSkirmishOrSkirmishReplay;
+	Int progressCount;							///< LOAD_STEP_MAP_OBJECTS progress ramp (spans slices)
+	Int progressTimer;							///< LOAD_STEP_MAP_OBJECTS 500ms progress throttle
+	MapObject *pMapObj;							///< LOAD_STEP_MAP_OBJECTS resume cursor
+	Bool mapObjectsStarted;
+	Bool fadeStarted;
+	Int lastProgress;								///< last percent given to updateLoadProgress
+
+#ifdef DUMP_PERF_STATS
+	__int64 startTime64;
+	__int64 endTime64, freq64;
+	char Buf[256];
+#endif
+
+	StartNewGameSession( Bool loadingSave )
+	{
+		step = LOAD_STEP_SETUP;
+		loadingSaveGame = loadingSave;
+		game = NULL;
+		localSlot = 0;
+		isChallengeCampaign = FALSE;
+		isSkirmishOrSkirmishReplay = FALSE;
+		progressCount = 0;
+		progressTimer = 0;
+		pMapObj = NULL;
+		mapObjectsStarted = FALSE;
+		fadeStarted = FALSE;
+		lastProgress = 0;
+	}
+};
+
+// ------------------------------------------------------------------------------------------------
 /** Update the load screen progress */
 // ------------------------------------------------------------------------------------------------
 void GameLogic::updateLoadProgress( Int progress )
 {
-	
+
 	if( m_loadScreen )
 		m_loadScreen->update( progress );
+
+	// remember the percent so a stepped load can re-present the screen between
+	// milestones (see advanceLoadSession)
+	if( m_loadSession )
+		m_loadSession->lastProgress = progress;
 
 }  // end updateLoadProgress
 
@@ -1215,6 +1305,69 @@ void GameLogic::deleteLoadScreen( void )
 	}  // end if
 
 }  // end deleteLoadScreen
+
+// ------------------------------------------------------------------------------------------------
+void GameLogic::beginLoadSession( Bool loadSaveGame )
+{
+	DEBUG_ASSERTCRASH( m_loadSession == NULL, ("beginLoadSession: a load session is already active") );
+	endLoadSession();
+	m_loadSession = NEW StartNewGameSession( loadSaveGame );
+#ifdef DUMP_PERF_STATS
+	GetPrecisionTimerTicksPerSec(&m_loadSession->freq64);
+	GetPrecisionTimer(&m_loadSession->startTime64);
+#endif
+}
+
+// ------------------------------------------------------------------------------------------------
+void GameLogic::endLoadSession( void )
+{
+	if( m_loadSession )
+	{
+		delete m_loadSession;
+		m_loadSession = NULL;
+	}
+}
+
+// ------------------------------------------------------------------------------------------------
+Int GameLogic::getLoadSessionProgress( void ) const
+{
+	return m_loadSession != NULL ? m_loadSession->lastProgress : -1;
+}
+
+// ------------------------------------------------------------------------------------------------
+/** Run one budgeted slice of load steps. Only called when a session is active:
+	* natively that never happens (startNewGame drains the session in one call);
+	* in the browser GameEngine::update calls this once per frame until done. */
+// ------------------------------------------------------------------------------------------------
+void GameLogic::advanceLoadSession( void )
+{
+	if( m_loadSession == NULL )
+		return;
+
+#ifdef __EMSCRIPTEN__
+	if( cnc_port_load_step_slice_begin )
+		cnc_port_load_step_slice_begin();
+#endif
+
+	while( m_loadSession != NULL )
+	{
+		if( !runNextLoadStep() )
+			break;
+#ifdef __EMSCRIPTEN__
+		if( cnc_port_load_step_should_yield && cnc_port_load_step_should_yield() )
+			break;
+#endif
+	}
+
+	//
+	// present a fresh load-screen frame for this slice even when no step in the
+	// slice reached an updateLoadProgress milestone, so the screen keeps
+	// animating (native called update only at milestones because the whole load
+	// ran inside one blocking call anyway)
+	//
+	if( m_loadSession != NULL && m_loadScreen != NULL )
+		updateLoadProgress( m_loadSession->lastProgress );
+}
 
 // ------------------------------------------------------------------------------------------------
 /** Entry point for starting a new game, the engine is already in clean state at this
@@ -1307,10 +1460,57 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 				CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.firstCall.defer");
 				return;
 
-		}  
+		}
 
 	}  // end if
 
+	//
+	// the original monolithic load body now lives in runNextLoadStep as an
+	// ordered step sequence sharing m_loadSession (verbatim chunks, same order)
+	//
+	beginLoadSession( loadingSaveGame );
+
+#ifdef __EMSCRIPTEN__
+	if( loadingSaveGame == FALSE && cnc_port_load_stepping_active && cnc_port_load_stepping_active() )
+	{
+		//
+		// browser: run the first budgeted slice now and return; the session
+		// continues from GameEngine::update so every slice returns to the
+		// browser event loop and the load screen actually presents. Save-game
+		// loads stay synchronous because their caller (GameStateMap) keeps
+		// working with the loaded world as soon as we return.
+		//
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.steppedSession.begin");
+		advanceLoadSession();
+		return;
+	}
+#endif
+
+	// original synchronous behavior: drain every step back-to-back in this call
+	while( runNextLoadStep() )
+	{
+	}
+}  // end startNewGame
+
+// ------------------------------------------------------------------------------------------------
+/** One step of the original startNewGame body (see StartNewGameSession). Every
+	* case below is a chunk of the original monolithic function in its original
+	* order; locals that cross step boundaries live in the session. Returns TRUE
+	* while more steps remain, FALSE when the load completed or aborted. */
+// ------------------------------------------------------------------------------------------------
+Bool GameLogic::runNextLoadStep( void )
+{
+	StartNewGameSession *s = m_loadSession;
+	if( s == NULL )
+		return FALSE;
+	const Bool loadingSaveGame = s->loadingSaveGame;
+
+	switch( s->step )
+	{
+
+	//-----------------------------------------------------------------------------------------------
+	case StartNewGameSession::LOAD_STEP_SETUP:
+	{
 	m_rankLevelLimit = 1000;	// this is reset every game.
 	setDefaults( loadingSaveGame );
 #ifdef __EMSCRIPTEN__
@@ -1330,7 +1530,8 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	// Fill in the game color and Factions before we do the Load Screen
 	GameInfo *game = NULL;
 	TheGameInfo = NULL;
-	Int localSlot = 0;
+	// localSlot lives in the session: it is computed in LOAD_STEP_SIDES and
+	// read again in LOAD_STEP_CAMERA_FINALIZE
 	if (TheNetwork)
 	{
 		if (TheLAN)
@@ -1450,18 +1651,35 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 		TheCampaignManager->SetVictorious(FALSE);
 	m_startNewGame = FALSE;
 
-	// update the loadscreen 
+	// update the loadscreen
 	if(m_loadScreen)
 		updateLoadProgress(LOAD_PROGRESS_POST_PARTICLE_INI_LOAD);
 
 	// reset the frame counter
 	m_frame = 0;
 
+	s->game = game;
+	s->isChallengeCampaign = isChallengeCampaign;
+	s->isSkirmishOrSkirmishReplay = isSkirmishOrSkirmishReplay;
+	s->step = StartNewGameSession::LOAD_STEP_MAP_INI;
+	return TRUE;
+	}
+
+	//-----------------------------------------------------------------------------------------------
+	case StartNewGameSession::LOAD_STEP_MAP_INI:
+	{
 	// before loading the map, load the map.ini file in the same directory.
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.loadMapINI.before");
 	loadMapINI( TheGlobalData->m_mapName );
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.loadMapINI.after");
 
+	s->step = StartNewGameSession::LOAD_STEP_TERRAIN_LOAD;
+	return TRUE;
+	}
+
+	//-----------------------------------------------------------------------------------------------
+	case StartNewGameSession::LOAD_STEP_TERRAIN_LOAD:
+	{
 	// load a map
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.terrainLoad.before");
 	TheTerrainLogic->loadMap( TheGlobalData->m_mapName, false );
@@ -1469,16 +1687,26 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	// anytime the world's size changes, must reset the partition mgr
 	//ThePartitionManager->init();
 
-	// update the loadscreen 
+	// update the loadscreen
 	updateLoadProgress(LOAD_PROGRESS_POST_LOAD_MAP);
 
 	#ifdef DUMP_PERF_STATS
-	GetPrecisionTimer(&endTime64);
-	char Buf[256];
-	sprintf(Buf,"After terrainlogic->loadmap=%f\n",((double)(endTime64-startTime64)/(double)(freq64)*1000.0));
+	GetPrecisionTimer(&s->endTime64);
+	sprintf(s->Buf,"After terrainlogic->loadmap=%f\n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)*1000.0));
 		//DEBUG_LOG(("Placed a starting building for %s at waypoint %s\n", playerName.str(), waypointName.str()));
-	DEBUG_LOG(("%s", Buf));
+	DEBUG_LOG(("%s", s->Buf));
 	#endif
+
+	s->step = StartNewGameSession::LOAD_STEP_SIDES;
+	return TRUE;
+	}
+
+	//-----------------------------------------------------------------------------------------------
+	case StartNewGameSession::LOAD_STEP_SIDES:
+	{
+	GameInfo *game = s->game;
+	Bool isSkirmishOrSkirmishReplay = s->isSkirmishOrSkirmishReplay;
+	Int localSlot = s->localSlot;
 
 	Int progressCount = LOAD_PROGRESS_SIDE_POPULATION;
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.sidePopulation.before");
@@ -1661,17 +1889,35 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	TheSidesList->validateSides();
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.validateSides.after");
 
-	// update the loadscreen 
+	// update the loadscreen
 	updateLoadProgress(LOAD_PROGRESS_POST_SIDE_LIST_INIT);
 
+	s->localSlot = localSlot;
+	s->step = StartNewGameSession::LOAD_STEP_PLAYERS;
+	return TRUE;
+	}
+
+	//-----------------------------------------------------------------------------------------------
+	case StartNewGameSession::LOAD_STEP_PLAYERS:
+	{
 	// update the player list to match the new map.
 	TheTeamFactory->reset();
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.playerListNewGame.before");
 	ThePlayerList->newGame();
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.playerListNewGame.after");
-	
-	// update the loadscreen 
+
+	// update the loadscreen
 	updateLoadProgress(LOAD_PROGRESS_POST_PLAYER_LIST_RESET);
+
+	s->step = StartNewGameSession::LOAD_STEP_SCRIPTS;
+	return TRUE;
+	}
+
+	//-----------------------------------------------------------------------------------------------
+	case StartNewGameSession::LOAD_STEP_SCRIPTS:
+	{
+	GameInfo *game = s->game;
+	Bool isSkirmishOrSkirmishReplay = s->isSkirmishOrSkirmishReplay;
 
 	// Tell the script engine that a newe set of scripts is loaded.
 		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.scriptEngineNewMap.before");
@@ -1714,7 +1960,9 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 				file.registerParser( AsciiString("PlayerScriptsList"), AsciiString::TheEmptyString, ScriptList::ParseScriptsDataChunk );
 				if (!file.parse(NULL)) {
 					DEBUG_LOG(("ERROR - Unable to read in multiplayer scripts.\n"));
-					return;
+					// original code returned out of startNewGame here; abort the session
+					endLoadSession();
+					return FALSE;
 				}
 				ScriptList *scripts[MAX_PLAYER_COUNT];
 				Int count = ScriptList::getReadScripts(scripts);
@@ -1799,9 +2047,16 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 		*/
 	}
 
-	// update the loadscreen 
+	// update the loadscreen
 	updateLoadProgress(LOAD_PROGRESS_POST_VICTORY_CONDITION_SETUP);
 
+	s->step = StartNewGameSession::LOAD_STEP_RADAR_VICTORY_PARTITION;
+	return TRUE;
+	}
+
+	//-----------------------------------------------------------------------------------------------
+	case StartNewGameSession::LOAD_STEP_RADAR_VICTORY_PARTITION:
+	{
 	// set the radar as on a new map
 		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.radarNewMap.before");
 		TheRadar->newMap( TheTerrainLogic );
@@ -1833,23 +2088,37 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	TheGhostObjectManager->reset();
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.ghostReset.after");
 	
-	// update the loadscreen 
+	// update the loadscreen
 	updateLoadProgress(LOAD_PROGRESS_POST_GHOST_OBJECT_MANAGER_RESET);
 
+	s->step = StartNewGameSession::LOAD_STEP_TERRAIN_NEW_MAP;
+	return TRUE;
+	}
+
+	//-----------------------------------------------------------------------------------------------
+	case StartNewGameSession::LOAD_STEP_TERRAIN_NEW_MAP:
+	{
 	// update the terrain logic now that all is loaded
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.terrainNewMap.before");
 	TheTerrainLogic->newMap( loadingSaveGame );
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.terrainNewMap.after");
 
-	// update the loadscreen 
+	// update the loadscreen
 	updateLoadProgress(LOAD_PROGRESS_POST_TERRAIN_LOGIC_NEW_MAP);
 
 	#ifdef DUMP_PERF_STATS
-	GetPrecisionTimer(&endTime64);
-	sprintf(Buf,"After terrainlogic->newmap=%f\n",((double)(endTime64-startTime64)/(double)(freq64)*1000.0));
-	DEBUG_LOG(("%s", Buf));
+	GetPrecisionTimer(&s->endTime64);
+	sprintf(s->Buf,"After terrainlogic->newmap=%f\n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)*1000.0));
+	DEBUG_LOG(("%s", s->Buf));
 	#endif
 
+	s->step = StartNewGameSession::LOAD_STEP_BRIDGES;
+	return TRUE;
+	}
+
+	//-----------------------------------------------------------------------------------------------
+	case StartNewGameSession::LOAD_STEP_BRIDGES:
+	{
 		// Special case, load any bridge map objects.
  	const ThingTemplate *thingTemplate;
 	MapObject *pMapObj;
@@ -1902,21 +2171,37 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	}	// for, loading bridge map objects
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.bridgeLikeScan.after");
 
-	// update the loadscreen 
+	// update the loadscreen
 	updateLoadProgress(LOAD_PROGRESS_POST_BRIDGE_LOAD);
 
 	// refresh the radar to reflect loaded bridges
 	TheRadar->refreshTerrain( TheTerrainLogic );
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.radarRefresh.after");
 
+	s->step = StartNewGameSession::LOAD_STEP_PATHFIND;
+	return TRUE;
+	}
+
+	//-----------------------------------------------------------------------------------------------
+	case StartNewGameSession::LOAD_STEP_PATHFIND:
+	{
 	// tell the AI about it
 	// Note that it is important that the pathfinder be called before the map objects are loaded.
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.pathfinderNewMap.before");
 	TheAI->pathfinder()->newMap( );
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.pathfinderNewMap.after");
 
-	// update the loadscreen 
+	// update the loadscreen
 	updateLoadProgress(LOAD_PROGRESS_POST_PATHFINDER_NEW_MAP);
+
+	s->step = StartNewGameSession::LOAD_STEP_REVEAL;
+	return TRUE;
+	}
+
+	//-----------------------------------------------------------------------------------------------
+	case StartNewGameSession::LOAD_STEP_REVEAL:
+	{
+	GameInfo *game = s->game;
 
 	// reveal the map for the permanent observer
 	ThePartitionManager->revealMapForPlayerPermanently( ThePlayerList->findPlayerWithNameKey(TheNameKeyGenerator->nameToKey("ReplayObserver"))->getPlayerIndex() );
@@ -1951,11 +2236,19 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	}
 
 	#ifdef DUMP_PERF_STATS
-	GetPrecisionTimer(&endTime64);
-	sprintf(Buf,"Before loading objects=%f\n",((double)(endTime64-startTime64)/(double)(freq64)*1000.0));
-	DEBUG_LOG(("%s", Buf));
+	GetPrecisionTimer(&s->endTime64);
+	sprintf(s->Buf,"Before loading objects=%f\n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)*1000.0));
+	DEBUG_LOG(("%s", s->Buf));
 	#endif
 
+	s->step = StartNewGameSession::LOAD_STEP_MAP_OBJECTS;
+	return TRUE;
+	}
+
+	//-----------------------------------------------------------------------------------------------
+	case StartNewGameSession::LOAD_STEP_MAP_OBJECTS:
+	{
+	// deterministic per-slice recompute; the loop below re-enters here when sliced
 	Bool useTrees = TheGlobalData->m_useTrees;
 
 	// If forceFluffToProp == true, removable objects get created on client only. [7/14/2003]
@@ -1972,13 +2265,20 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 		forceFluffToProp = TRUE; // Always do client side fluff - faster, and syncs properly. jba.
 	}
 
-	progressCount = LOAD_PROGRESS_LOOP_ALL_THE_FREAKN_OBJECTS;
-	Int timer = timeGetTime();
-	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.mapObjects.before");
+	if( !s->mapObjectsStarted )
+	{
+		s->progressCount = LOAD_PROGRESS_LOOP_ALL_THE_FREAKN_OBJECTS;
+		s->progressTimer = timeGetTime();
+		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.mapObjects.before");
+		s->pMapObj = MapObject::getFirstMapObject();
+		s->mapObjectsStarted = TRUE;
+	}
+	const ThingTemplate *thingTemplate;
 	if( loadingSaveGame ) {
 		// Loading a loadingSaveGame, need to add the trees to the client. jba. [8/11/2003]
-		for (pMapObj = MapObject::getFirstMapObject(); pMapObj; pMapObj = pMapObj->getNext()) 
+		for (; s->pMapObj; s->pMapObj = s->pMapObj->getNext())
 		{
+			MapObject *pMapObj = s->pMapObj;
 			// get thing template based from map object name
 			thingTemplate = pMapObj->getThingTemplate();
 			if( thingTemplate == NULL )
@@ -2002,12 +2302,13 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 			}
 		}
 	} 
-	else 
+	else
 	{
 
-		for (pMapObj = MapObject::getFirstMapObject(); pMapObj; pMapObj = pMapObj->getNext()) 
+		for (; s->pMapObj; s->pMapObj = s->pMapObj->getNext())
 		{
-		
+			MapObject *pMapObj = s->pMapObj;
+
 			if (pMapObj->getFlag(FLAG_BRIDGE_FLAGS) || pMapObj->getFlag(FLAG_ROAD_FLAGS)) {
 				continue;	// roads & bridges are special cased in the terrain side.
 			}
@@ -2110,13 +2411,22 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 
 			}  // end if
 		
-			if(timeGetTime() > timer + 500)
+			if(timeGetTime() > s->progressTimer + 500)
 			{
-				if(progressCount < LOAD_PROGRESS_MAX_ALL_THE_FREAKN_OBJECTS)
-					progressCount ++;
-				updateLoadProgress(progressCount);
-				timer = timeGetTime();
+				if(s->progressCount < LOAD_PROGRESS_MAX_ALL_THE_FREAKN_OBJECTS)
+					s->progressCount ++;
+				updateLoadProgress(s->progressCount);
+				s->progressTimer = timeGetTime();
 			}
+
+#ifdef __EMSCRIPTEN__
+			// stepped load: slice budget spent — resume from the next object
+			if( cnc_port_load_step_should_yield && cnc_port_load_step_should_yield() )
+			{
+				s->pMapObj = s->pMapObj->getNext();
+				return TRUE;
+			}
+#endif
 
 		}	// for, loading map objects
 
@@ -2124,12 +2434,21 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.mapObjects.after");
 
 	#ifdef DUMP_PERF_STATS
-	GetPrecisionTimer(&endTime64);
-	sprintf(Buf,"After loading objects=%f\n",((double)(endTime64-startTime64)/(double)(freq64)*1000.0));
-	DEBUG_LOG(("%s", Buf));
+	GetPrecisionTimer(&s->endTime64);
+	sprintf(s->Buf,"After loading objects=%f\n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)*1000.0));
+	DEBUG_LOG(("%s", s->Buf));
 	#endif
 
-	progressCount = LOAD_PROGRESS_LOOP_INITIAL_NETWORK_BUILDINGS;
+	s->step = StartNewGameSession::LOAD_STEP_NETWORK_BUILDINGS;
+	return TRUE;
+	}
+
+	//-----------------------------------------------------------------------------------------------
+	case StartNewGameSession::LOAD_STEP_NETWORK_BUILDINGS:
+	{
+	GameInfo *game = s->game;
+
+	Int progressCount = LOAD_PROGRESS_LOOP_INITIAL_NETWORK_BUILDINGS;
 	// place initial network buildings/units
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.initialNetworkObjects.before");
 	if (game && !loadingSaveGame)
@@ -2202,6 +2521,13 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	// update the loadscreen
 	updateLoadProgress(LOAD_PROGRESS_POST_INITIAL_NETWORK_BUILDINGS);
 
+	s->step = StartNewGameSession::LOAD_STEP_PRELOAD_ASSETS;
+	return TRUE;
+	}
+
+	//-----------------------------------------------------------------------------------------------
+	case StartNewGameSession::LOAD_STEP_PRELOAD_ASSETS:
+	{
 	//
 	// tell the client to pre-load some assets that we will use such as faction things we
 	// will build and various damage states for all the structures on the map so that we
@@ -2225,8 +2551,19 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	//put this here somewhat randomly.
 	TheControlBar->hideCommunicator( FALSE );
 
-	// update the loadscreen 
+	// update the loadscreen
 	updateLoadProgress(LOAD_PROGRESS_POST_PRELOAD_ASSETS);
+
+	s->step = StartNewGameSession::LOAD_STEP_CAMERA_FINALIZE;
+	return TRUE;
+	}
+
+	//-----------------------------------------------------------------------------------------------
+	case StartNewGameSession::LOAD_STEP_CAMERA_FINALIZE:
+	{
+	GameInfo *game = s->game;
+	Int localSlot = s->localSlot;
+	Bool isChallengeCampaign = s->isChallengeCampaign;
 
 	TheTacticalView->setAngleAndPitchToDefault();
 	TheTacticalView->setZoomToDefault();
@@ -2287,9 +2624,9 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.partitionUpdate.after");
 
 	#ifdef DUMP_PERF_STATS
-	GetPrecisionTimer(&endTime64);
-	sprintf(Buf,"After partition manager update=%f\n",((double)(endTime64-startTime64)/(double)(freq64)*1000.0));
-	DEBUG_LOG(("%s", Buf));
+	GetPrecisionTimer(&s->endTime64);
+	sprintf(s->Buf,"After partition manager update=%f\n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)*1000.0));
+	DEBUG_LOG(("%s", s->Buf));
 	#endif
 
 
@@ -2366,6 +2703,13 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 		}
 	}
 
+	s->step = StartNewGameSession::LOAD_STEP_PROGRESS_END;
+	return TRUE;
+	}
+
+	//-----------------------------------------------------------------------------------------------
+	case StartNewGameSession::LOAD_STEP_PROGRESS_END:
+	{
 	updateLoadProgress(LOAD_PROGRESS_END);
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.loadProgressEnd.after");
 
@@ -2376,20 +2720,43 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	}
 
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.progressWait.before");
-	while(!isProgressComplete())
+	s->step = StartNewGameSession::LOAD_STEP_PROGRESS_WAIT;
+	return TRUE;
+	}
+
+	//-----------------------------------------------------------------------------------------------
+	case StartNewGameSession::LOAD_STEP_PROGRESS_WAIT:
+	{
+	// originally: while(!isProgressComplete()) { ... Sleep(100); } — the step
+	// repeats (returns without advancing) until every peer reports complete
+	if(!isProgressComplete())
 	{
 		updateLoadProgress(101); // keep greater then 100
 		testTimeOut();
 		Sleep(100);
+		return TRUE;
 	}
 
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.progressWait.after");
+	s->step = StartNewGameSession::LOAD_STEP_FADE;
+	return TRUE;
+	}
+
+	//-----------------------------------------------------------------------------------------------
+	case StartNewGameSession::LOAD_STEP_FADE:
+	{
 	// if we're in a load game, don't fade yet
 	if( loadingSaveGame == FALSE )
 	{
-		TheTransitionHandler->setGroup("FadeWholeScreen");
-		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.fadeWait.before");
-		while(!TheTransitionHandler->isFinished())
+		if( !s->fadeStarted )
+		{
+			TheTransitionHandler->setGroup("FadeWholeScreen");
+			CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.fadeWait.before");
+			s->fadeStarted = TRUE;
+		}
+		// originally: while(!TheTransitionHandler->isFinished()) { ... Sleep(33); }
+		// — the step repeats until the fade transition finishes
+		if(!TheTransitionHandler->isFinished())
 		{
 			TheWindowManager->update();
 			if(!TheTransitionHandler->isFinished())
@@ -2398,11 +2765,18 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 				setFPMode();
 				Sleep(33);
 			}
-
+			return TRUE;
 		}
 		CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.fadeWait.after");
 	}
 
+	s->step = StartNewGameSession::LOAD_STEP_FINISH;
+	return TRUE;
+	}
+
+	//-----------------------------------------------------------------------------------------------
+	case StartNewGameSession::LOAD_STEP_FINISH:
+	{
 	if(m_loadScreen)
 	{
 		TheMouse->setVisibility(TRUE);
@@ -2421,9 +2795,9 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	}
 	
 	#ifdef DUMP_PERF_STATS
-	GetPrecisionTimer(&endTime64);
-	sprintf(Buf,"After delete load screen=%f\n",((double)(endTime64-startTime64)/(double)(freq64)*1000.0));
-	DEBUG_LOG(("%s", Buf));
+	GetPrecisionTimer(&s->endTime64);
+	sprintf(s->Buf,"After delete load screen=%f\n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)*1000.0));
+	DEBUG_LOG(("%s", s->Buf));
 	#endif
 
 #ifdef __EMSCRIPTEN__
@@ -2582,9 +2956,9 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.complete");
 
 #ifdef DUMP_PERF_STATS
-	GetPrecisionTimer(&endTime64);
-	sprintf(Buf,"Total startnewgame=%f\n",((double)(endTime64-startTime64)/(double)(freq64)*1000.0));
-	DEBUG_LOG(("%s", Buf));
+	GetPrecisionTimer(&s->endTime64);
+	sprintf(s->Buf,"Total startnewgame=%f\n",((double)(s->endTime64-s->startTime64)/(double)(s->freq64)*1000.0));
+	DEBUG_LOG(("%s", s->Buf));
 #endif
 
 	//Assume that getting this far means we've successfully entered an online game.
@@ -2592,14 +2966,27 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	if (TheGameSpyInfo)
 		TheGameSpyInfo->updateAdditionalGameSpyDisconnections(1);
 
-  
+
   if ( isInReplayGame() && TheInGameUI && TheGameText )
   {
 		TheInGameUI->message( TheGameText->fetch( "GUI:FastForwardInstructions" ) );
   }
 
+	endLoadSession();
+	return FALSE;
+	}
 
-}  // end startNewGame
+	//-----------------------------------------------------------------------------------------------
+	default:
+	{
+		DEBUG_CRASH(("runNextLoadStep: unknown load step %d", s->step));
+		endLoadSession();
+		return FALSE;
+	}
+
+	}  // end switch
+
+}  // end runNextLoadStep (formerly the body of startNewGame)
 
 //-----------------------------------------------------------------------------------------
 static void findAndSelectCommandCenter(Object *obj, void* alreadyFound)
@@ -3836,6 +4223,16 @@ void GameLogic::update( void )
     Profile::StopRange("map_load");
 #endif
 		m_startNewGame = FALSE;
+
+#ifdef __EMSCRIPTEN__
+		if( isLoadSessionActive() )
+		{
+			// browser stepped load: the session continues from GameEngine::update
+			// slices; don't run a logic frame against the half-loaded world
+			CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.update.deferredStartNewGame.stepping");
+			return;
+		}
+#endif
 
 	#ifdef DUMP_PERF_STATS
 		char Buf[1024];

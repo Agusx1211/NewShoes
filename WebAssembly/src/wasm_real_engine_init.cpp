@@ -5462,6 +5462,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame(int frame
 	json += ",\"staleMovieBreakClears\":" + std::to_string(g_frame_state.stale_movie_break_clears);
 	json += ",\"lastUpdateTarget\":\"" + json_escape(g_last_engine_update_target) + "\"";
 	json += ",\"lastGameLogicStep\":\"" + json_escape(g_last_game_logic_step) + "\"";
+	json += ",\"loadSessionActive\":";
+	json += (TheGameLogic != NULL && TheGameLogic->isLoadSessionActive()) ? "true" : "false";
+	json += ",\"loadProgress\":" + std::to_string(
+		TheGameLogic != NULL ? (long long)TheGameLogic->getLoadSessionProgress() : -1);
 	append_last_script_step_json(json);
 	append_frame_texture_diagnostics(json);
 	append_engine_frame_profile_json(json);
@@ -5503,6 +5507,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_summary(i
 	json += ",\"staleMovieBreakClears\":" + std::to_string(g_frame_state.stale_movie_break_clears);
 	json += ",\"lastUpdateTarget\":\"" + json_escape(g_last_engine_update_target) + "\"";
 	json += ",\"lastGameLogicStep\":\"" + json_escape(g_last_game_logic_step) + "\"";
+	json += ",\"loadSessionActive\":";
+	json += (TheGameLogic != NULL && TheGameLogic->isLoadSessionActive()) ? "true" : "false";
+	json += ",\"loadProgress\":" + std::to_string(
+		TheGameLogic != NULL ? (long long)TheGameLogic->getLoadSessionProgress() : -1);
 	append_last_script_step_json(json);
 	append_frame_texture_diagnostics(json);
 	append_engine_frame_profile_json(json);
@@ -5753,6 +5761,60 @@ extern "C" int cnc_port_client_paced_mode(void)
 	return g_paced_mode_active;
 }
 
+// ---------------------------------------------------------------------------
+// Stepped map load ("async loading").
+//
+// GameLogic::startNewGame's body runs as an ordered step sequence (see
+// GameLogic.cpp runNextLoadStep). In the browser the steps are spread across
+// GameEngine::update calls so every slice returns to the event loop: the real
+// LoadScreen presents (progress moves, typewriter/video animate), the tab
+// never blocks for the whole load, and iPad Safari's blocked-main-thread
+// watchdog has nothing to kill. Weak-hook consumers in engine code:
+//   - GameLogic::startNewGame       -> cnc_port_load_stepping_active (enable)
+//   - GameLogic::advanceLoadSession -> cnc_port_load_step_slice_begin +
+//     cnc_port_load_step_should_yield (per-slice time budget)
+//   - map-object loop               -> cnc_port_load_step_should_yield
+// ---------------------------------------------------------------------------
+static int g_load_stepping_enabled = 1;
+static double g_load_step_budget_ms = 50.0;
+static double g_load_step_slice_started_at = 0.0;
+
+extern "C" int cnc_port_load_stepping_active(void)
+{
+	return g_load_stepping_enabled;
+}
+
+extern "C" void cnc_port_load_step_slice_begin(void)
+{
+	g_load_step_slice_started_at = emscripten_get_now();
+}
+
+extern "C" int cnc_port_load_step_should_yield(void)
+{
+	if (!g_load_stepping_enabled) {
+		return 0;
+	}
+	return (emscripten_get_now() - g_load_step_slice_started_at) >= g_load_step_budget_ms ? 1 : 0;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_load_stepping(
+	int enabled,
+	double budget_ms)
+{
+	static std::string json;
+	g_load_stepping_enabled = enabled != 0 ? 1 : 0;
+	if (budget_ms > 0.0) {
+		g_load_step_budget_ms = budget_ms;
+	}
+	json = "{\"ok\":true";
+	json += ",\"loadStepping\":" + std::to_string(g_load_stepping_enabled);
+	char budget[48];
+	std::snprintf(budget, sizeof(budget), ",\"budgetMs\":%.1f", g_load_step_budget_ms);
+	json += budget;
+	json += "}";
+	return json.c_str();
+}
+
 extern "C" float cnc_port_client_frame_time_scale(void)
 {
 	return g_paced_frame_time_scale;
@@ -5806,6 +5868,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_paced(int
 		TheGameLogic != NULL ? (long long)TheGameLogic->getFrame() : -1);
 	json += ",\"clientFrame\":" + std::to_string(
 		TheGameClient != NULL ? (long long)TheGameClient->getFrame() : -1);
+	json += ",\"loadSessionActive\":";
+	json += (TheGameLogic != NULL && TheGameLogic->isLoadSessionActive()) ? "true" : "false";
+	json += ",\"loadProgress\":" + std::to_string(
+		TheGameLogic != NULL ? (long long)TheGameLogic->getLoadSessionProgress() : -1);
 	json += ",\"quitting\":";
 	json += (TheGameEngine != NULL && TheGameEngine->getQuitting() != FALSE) ? "true" : "false";
 	json += ",\"exceptionCaught\":";
@@ -7626,4 +7692,129 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_init(const char
 	std::fflush(stdout);
 
 	return build_state_json();
+}
+
+// ---------------------------------------------------------------------------
+// Stepped GameEngine::init: the same preamble as cnc_port_real_engine_init,
+// but the init body (now an ordered step sequence inside the engine — see
+// GameEngine.cpp runNextInitStep) is driven by cnc_port_real_engine_init_step
+// calls from the page. Each step call returns to the browser event loop so
+// boot progress can paint and the main thread never blocks for the whole
+// 10-30s init. The monolithic cnc_port_real_engine_init stays for existing
+// harness callers (GameEngine::init drains the same steps in one call).
+// ---------------------------------------------------------------------------
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_init_begin(const char *run_directory, int use_shell_map)
+{
+	if (g_state.attempted) {
+		return build_state_json();
+	}
+	g_state.attempted = true;
+	g_use_shell_map = use_shell_map != 0;
+	reset_script_diag_trace();
+
+	if (run_directory != nullptr && run_directory[0] != '\0') {
+		if (chdir(run_directory) == 0) {
+			g_state.run_directory = run_directory;
+		} else {
+			g_state.run_directory = std::string("chdir-failed:") + run_directory;
+		}
+	}
+
+	// WinMain.cpp order: memory manager first, then GameMain -> CreateGameEngine.
+	if (TheMemoryPoolFactory == NULL) {
+		initMemoryManager();
+	}
+	ensure_real_engine_input_window();
+	cnc_port_terrain_probe_set_shroud_enabled(true);
+
+	static const char *argv_storage[] = {"CnCGeneralsZH", "-noshellmap", "-win"};
+	static const char *argv_shellmap_storage[] = {"CnCGeneralsZH", "-win"};
+	const int argc = g_use_shell_map ? 2 : 3;
+	char **argv = const_cast<char **>(g_use_shell_map ? argv_shellmap_storage : argv_storage);
+
+	std::printf("cnc-port: real-init-begin (stepped) dir=%s argv=%s\n",
+		g_state.run_directory.c_str(),
+		g_use_shell_map ? "-win" : "-noshellmap -win");
+	std::fflush(stdout);
+
+	static std::string json;
+	try {
+		TheGameEngine = CreateGameEngine();
+		// browser tab has focus; WinMain mirrors focus state into the engine.
+		TheGameEngine->setIsActive(TRUE);
+		TheGameEngine->beginInitSession(argc, argv);
+	} catch (const char *message) {
+		g_state.exception_caught = true;
+		g_state.exception_text = message != nullptr ? message : "(const char* exception)";
+	} catch (...) {
+		g_state.exception_caught = true;
+		g_state.exception_text = "unhandled C++ exception escaping beginInitSession";
+	}
+
+	json = "{\"ok\":";
+	json += (!g_state.exception_caught && TheGameEngine != NULL) ? "true" : "false";
+	json += ",\"stepped\":true";
+	json += ",\"stepCount\":" + std::to_string(
+		TheGameEngine != NULL ? (long long)TheGameEngine->getInitStepCount() : -1);
+	json += ",\"exception\":\"" + json_escape(g_state.exception_text) + "\"";
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_init_step(double budget_ms)
+{
+	static std::string json;
+	if (TheGameEngine == NULL || !g_state.attempted) {
+		json = "{\"ok\":false,\"error\":\"init_begin has not run\"}";
+		return json.c_str();
+	}
+
+	bool more = TheGameEngine->isInitSessionActive();
+	const double started_at = emscripten_get_now();
+	try {
+		while (more) {
+			more = TheGameEngine->runNextInitStep() != FALSE;
+			if (more && budget_ms > 0.0
+				&& (emscripten_get_now() - started_at) >= budget_ms) {
+				break;
+			}
+		}
+	} catch (const char *message) {
+		g_state.exception_caught = true;
+		g_state.exception_text = message != nullptr ? message : "(const char* exception)";
+		more = false;
+	} catch (...) {
+		g_state.exception_caught = true;
+		g_state.exception_text = "unhandled C++ exception escaping runNextInitStep";
+		more = false;
+	}
+	g_state.elapsed_ms += emscripten_get_now() - started_at;
+
+	if (!more && !g_state.init_returned && !g_state.exception_caught) {
+		// same completion bookkeeping as the monolithic cnc_port_real_engine_init
+		wasm_function_lexicon_repair_gameplay_callback_owners();
+		g_state.init_returned = true;
+		g_state.quitting_after_init = TheGameEngine->getQuitting() != FALSE;
+		std::printf("cnc-port: real-init end (stepped) quitting=%d completed=%zu\n",
+			g_state.quitting_after_init ? 1 : 0,
+			g_state.completed.size());
+		std::fflush(stdout);
+	}
+
+	json = "{\"ok\":";
+	json += g_state.exception_caught ? "false" : "true";
+	json += ",\"done\":";
+	json += more ? "false" : "true";
+	json += ",\"stepIndex\":" + std::to_string((long long)TheGameEngine->getInitStepIndex());
+	json += ",\"stepCount\":" + std::to_string((long long)TheGameEngine->getInitStepCount());
+	json += ",\"subsystemsCompleted\":" + std::to_string((long long)g_state.completed.size());
+	json += ",\"inFlight\":\"" + json_escape(g_state.in_flight) + "\"";
+	json += ",\"quitting\":";
+	json += (TheGameEngine->getQuitting() != FALSE) ? "true" : "false";
+	json += ",\"exception\":\"" + json_escape(g_state.exception_text) + "\"";
+	char elapsed[64];
+	std::snprintf(elapsed, sizeof(elapsed), ",\"elapsedMs\":%.1f", g_state.elapsed_ms);
+	json += elapsed;
+	json += "}";
+	return json.c_str();
 }
