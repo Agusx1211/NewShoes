@@ -1192,7 +1192,15 @@ WWINLINE void DX8Wrapper::Set_Texture(unsigned stage,TextureBaseClass* texture)
 	if (texture==render_state.Textures[stage]) return;
 	REF_PTR_SET(render_state.Textures[stage],texture);
 	render_state_changed|=(TEXTURE0_CHANGED<<stage);
-	if (stage > 0) {
+	// Refresh the shader on secondary-stage binding changes ONLY when the
+	// current ShaderClass actually drives the post-detail stage (the stale
+	// stage-1 MODULATE-combiner case this refresh exists for). Re-applying
+	// unconditionally stomps W3DShaderManager's raw fixed-function states:
+	// the terrain blend-cell / road passes set ALPHABLENDENABLE manually and
+	// THEN bind their stage-1 cloud/noise texture, so an opaque preset
+	// re-applied at the draw disabled their blend and produced hard,
+	// unfeathered terrain and road edges.
+	if (stage > 0 && render_state.shader.Uses_Post_Detail_Texture()) {
 		ShaderClass::Invalidate();
 		render_state_changed|=SHADER_CHANGED;
 	}
