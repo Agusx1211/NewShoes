@@ -14671,6 +14671,16 @@ async function loadWasmModule() {
         "string",
         ["number"],
       ),
+      realEngineFramePaced: module.cwrap(
+        "cnc_port_real_engine_frame_paced",
+        "string",
+        ["number"],
+      ),
+      realEngineSetClientPacing: module.cwrap(
+        "cnc_port_real_engine_set_client_pacing",
+        "string",
+        ["number", "number"],
+      ),
       realEngineSetResolution: module.cwrap(
         "cnc_port_real_engine_set_resolution",
         "string",
@@ -15065,9 +15075,14 @@ function snapshotCanvas() {
       && harnessState.frame > 0) {
     // Without preserveDrawingBuffer the buffer is undefined once the task that
     // drew it yields to the compositor; render a fresh frame in THIS task so
-    // toDataURL/readPixels below observe real content.
+    // toDataURL/readPixels below observe real content. Prefer a client-only
+    // paced frame (runLogic=0) so taking a screenshot does not advance the sim.
     try {
-      resolvedWasmModule.realEngineFrameTick(1);
+      if (typeof resolvedWasmModule.realEngineFramePaced === "function") {
+        resolvedWasmModule.realEngineFramePaced(0);
+      } else {
+        resolvedWasmModule.realEngineFrameTick(1);
+      }
       flushD3D8PendingDrawBatch("snapshotCanvas");
     } catch (_error) {
       // Fall through: capture whatever is in the buffer.
@@ -20132,6 +20147,62 @@ async function rpc(command, payload = {}) {
             && frame?.quitting !== true
             && frame?.exceptionCaught !== true) && !aborted,
           command: "realEngineFrameTick",
+          aborted,
+          abortMessage,
+          abortStack,
+          frame,
+        };
+      }
+    case "realEngineSetClientPacing":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineSetClientPacing");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineSetClientPacing", error: moduleResult.error };
+        }
+        if (typeof moduleResult.wasmModule.realEngineSetClientPacing !== "function") {
+          return { ok: false, command: "realEngineSetClientPacing", error: "export missing (stale wasm build)" };
+        }
+        const pacing = JSON.parse(moduleResult.wasmModule.realEngineSetClientPacing(
+          Number(payload.clientFps ?? 0),
+          Number(payload.logicFps ?? 0),
+        ));
+        recordLog("client pacing", pacing);
+        return { ok: Boolean(pacing?.ok), command: "realEngineSetClientPacing", pacing };
+      }
+    case "realEngineFramePaced":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineFramePaced");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineFramePaced", error: moduleResult.error };
+        }
+        if (typeof moduleResult.wasmModule.realEngineFramePaced !== "function") {
+          return { ok: false, command: "realEngineFramePaced", error: "export missing (stale wasm build)" };
+        }
+        let frame = null;
+        let aborted = false;
+        let abortMessage = null;
+        let abortStack = null;
+        try {
+          frame = JSON.parse(moduleResult.wasmModule.realEngineFramePaced(
+            payload.runLogic === false ? 0 : 1,
+          ));
+          const framesCompleted = Number(frame?.framesCompleted);
+          if (Number.isFinite(framesCompleted)) {
+            harnessState.frame = framesCompleted;
+            setFramesNodeThrottled(framesCompleted);
+          }
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+          abortStack = error?.stack ?? null;
+        }
+        flushD3D8PendingDrawBatch("realEngineFramePaced");
+        return {
+          ok: Boolean(frame?.initReturned === true
+            && frame?.framesCompleted > 0
+            && frame?.quitting !== true
+            && frame?.exceptionCaught !== true) && !aborted,
+          command: "realEngineFramePaced",
           aborted,
           abortMessage,
           abortStack,

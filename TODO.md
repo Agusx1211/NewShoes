@@ -513,6 +513,27 @@ the UI is the real `PopupSaveLoad.cpp` reached from in-game ESC/Options →
       need a single-player mission or a temporary save trigger).
 ## User-reported play bugs (2026-07-09 session)
 
+- [ ] **"Feels emulated" follow-ups after the 60Hz-client / 30Hz-logic
+      decoupling** — the paced mode (client at display rate, TheGameLogic held
+      at the authentic 30Hz via the `cnc_port_allow_logic_frame` gate EA left
+      as a @todo above `GameEngine::update`) is live and Metal-verified
+      (client 59.96/s, logic 29.68/s, logic-gap p50 33.33ms). Known cosmetic
+      deltas at 60Hz client to watch for in play and fix if noticed:
+      (a) camera shake decays 2× faster and alternates at client rate
+      (`W3DView.cpp` `m_shakeIntensity *= 0.75` per client frame — EA's own
+      "@todo Make this framerate-independent"); (b) `m_scrollAmountCutoff`
+      compares the now-halved per-tick scroll offset, so the "scrolling fast"
+      camera-height behavior triggers at slightly different speeds;
+      (c) client-frame-counted UI cosmetics (window transition animations,
+      floating-text fade, radar refresh) run 2× rate — snappier, arguably
+      nicer, but not stock; (d) replay fast-forward (`isTimeFast`) is bounded
+      by page pacing — raise `logicFps` URL param for FF experiments;
+      (e) MP later: the logic gate only touches the `TheNetwork == NULL`
+      branch, but the W3DDisplay syncTime paced-mode advance must be
+      re-checked when real network client-spins arrive. Unit motion itself is
+      still 30Hz steps (original behavior) — smooth 60Hz unit motion would
+      need drawable position interpolation between logic frames (big design;
+      IDEAS-level).
 - [ ] **"Random" skirmish enemy reportedly mirrors the player's faction — STILL
       OPEN, needs a live repro.** Branch `fix/skirmish-random-faction` (commits
       `af2225bc`/`eb7de370`, worktree `.claude/worktrees/skirmish-random-faction`)

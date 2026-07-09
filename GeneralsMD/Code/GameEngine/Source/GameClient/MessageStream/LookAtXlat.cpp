@@ -54,6 +54,15 @@
 
 LookAtTranslator *TheLookAtTranslator = NULL;
 
+#ifdef __EMSCRIPTEN__
+// Browser pacing hook: MSG_FRAME_TICK scroll offsets are per-CLIENT-frame
+// velocities tuned for the stock 30Hz client. When the page runs the client
+// at display rate (e.g. 60Hz) this returns logicFps/clientFps (e.g. 0.5) so
+// the camera covers the same world distance per wall-clock second. Absent
+// (weak) or 1.0 means original behavior.
+extern "C" float cnc_port_client_frame_time_scale(void) __attribute__((weak));
+#endif
+
 static enum
 {
 	DIR_UP = 0,
@@ -472,6 +481,13 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 					break;
 				}
 
+#ifdef __EMSCRIPTEN__
+				if (cnc_port_client_frame_time_scale) {
+					const Real portFrameScale = cnc_port_client_frame_time_scale();
+					offset.x *= portFrameScale;
+					offset.y *= portFrameScale;
+				}
+#endif
 				TheInGameUI->setScrollAmount(offset);
 				TheTacticalView->scrollBy( &offset );
 			}

@@ -117,6 +117,10 @@ static void drawFramerateBar(void);
 
 #ifdef __EMSCRIPTEN__
 extern "C" void cnc_port_note_engine_update_target(const char *name) __attribute__((weak));
+// Browser pacing hook: nonzero when the page runs the client at display rate
+// with TheGameLogic gated to 30Hz (see GameEngine::update). Controls whether
+// W3D animation time advances per client frame instead of per logic frame.
+extern "C" int cnc_port_client_paced_mode(void) __attribute__((weak));
 #define CNC_PORT_NOTE_W3D_DISPLAY_STEP(name) \
 	do { \
 		if (cnc_port_note_engine_update_target) { \
@@ -1798,6 +1802,13 @@ AGAIN:
 	freezeTime = freezeTime || TheGameLogic->isGamePaused();
 	CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.freezeState.after");
 
+#ifdef __EMSCRIPTEN__
+	// True freezes only (pause/scripted/debug) — before the "client frame did
+	// not advance" term below. Paced browser mode uses this so W3D animation
+	// time keeps advancing on client-only frames (logic gated to 30Hz).
+	const Bool freezeTimeBase = freezeTime;
+#endif
+
 	// hack to let client spin fast in network games but still do effects at the same pace. -MDC
 	static UnsignedInt lastFrame = ~0;
 	freezeTime = freezeTime || (lastFrame == TheGameClient->getFrame());
@@ -1845,7 +1856,26 @@ AGAIN:
 			}
 		}
 
-	if (!freezeTime) 
+#ifdef __EMSCRIPTEN__
+	// Paced browser mode (client at display rate, logic at 30Hz): advance W3D
+	// animation time on every non-frozen client frame. TheW3DFrameLengthInMsec
+	// is set to the real client frame length by the pacing RPC, so wall-clock
+	// animation speed is unchanged but animations render at display rate. The
+	// stock condition (else branch) only advances on logic frames, which would
+	// halve animation speed at a 60Hz client.
+	if (cnc_port_client_paced_mode && cnc_port_client_paced_mode() != 0)
+	{
+		if (!freezeTimeBase)
+		{
+			syncTime += TheW3DFrameLengthInMsec;
+		}
+	}
+	else if (!freezeTime)
+	{
+		syncTime += TheW3DFrameLengthInMsec;
+	}
+#else
+	if (!freezeTime)
 	{
 		/// @todo Decouple framerate from timestep
 		// for now, use constant time steps to avoid animations running independent of framerate
@@ -1853,6 +1883,7 @@ AGAIN:
 		// allow W3D to update its internals
 		//	WW3D::Sync( GetTickCount() );
 	}
+#endif
 		CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.ww3dSync.before");
 		WW3D::Sync( syncTime );
 		CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.ww3dSync.after");

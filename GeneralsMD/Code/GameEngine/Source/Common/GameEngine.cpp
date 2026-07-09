@@ -781,6 +781,13 @@ DECLARE_PERF_TIMER(GameEngine_update)
 
 #ifdef __EMSCRIPTEN__
 extern "C" void cnc_port_note_engine_update_target(const char *name) __attribute__((weak));
+// Browser pacing hook: the page runs GameEngine::update at display rate (e.g.
+// 60Hz) for a smooth client, and uses this gate to keep TheGameLogic at the
+// original LOGICFRAMES_PER_SECOND (30Hz) so sim speed is unchanged. This is
+// the decoupling EA left as a @todo above GameEngine::update. Only consulted
+// for the TheNetwork == NULL branch; absent (weak) or returning nonzero means
+// original 1:1 behavior.
+extern "C" int cnc_port_allow_logic_frame(void) __attribute__((weak));
 #define CNC_PORT_NOTE_ENGINE_UPDATE_TARGET(name) \
 	do { \
 		if (cnc_port_note_engine_update_target) { \
@@ -829,7 +836,13 @@ void GameEngine::update( void )
 		}
 
 
-		if ((TheNetwork == NULL && !TheGameLogic->isGamePaused()) || (TheNetwork && TheNetwork->isFrameDataReady()))
+		Bool portAllowLogic = TRUE;
+#ifdef __EMSCRIPTEN__
+		if (TheNetwork == NULL && cnc_port_allow_logic_frame) {
+			portAllowLogic = cnc_port_allow_logic_frame() != 0;
+		}
+#endif
+		if ((TheNetwork == NULL && portAllowLogic && !TheGameLogic->isGamePaused()) || (TheNetwork && TheNetwork->isFrameDataReady()))
 		{
 			CNC_PORT_NOTE_ENGINE_UPDATE_TARGET("TheGameLogic");
 			TheGameLogic->UPDATE();

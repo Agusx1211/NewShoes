@@ -75,6 +75,10 @@ function saveLauncherSettings(patch) {
 }
 
 const DEFAULT_LOGIC_FPS = 30;
+// Display-rate client over the authentic 30Hz sim (GameEngine::update paced
+// mode). ?clientFps=30 (or any value <= logicFps) falls back to the legacy
+// coupled loop.
+const DEFAULT_CLIENT_FPS = 60;
 const DEFAULT_CATCHUP_FRAMES = 2;
 
 function positiveNumberParam(name, fallback) {
@@ -169,6 +173,147 @@ function buildArchives() {
 
 async function runFrameLoop(rpc) {
   const logicFps = Math.min(240, positiveNumberParam("logicFps", DEFAULT_LOGIC_FPS));
+  const clientFps = Math.min(240, positiveNumberParam("clientFps", DEFAULT_CLIENT_FPS));
+  if (clientFps > logicFps) {
+    try {
+      const pacing = await rpc("realEngineSetClientPacing", { clientFps, logicFps });
+      if (pacing?.ok === true) {
+        return runPacedFrameLoop(rpc, clientFps, logicFps);
+      }
+      console.warn("[play] paced mode unavailable, using coupled loop", pacing);
+    } catch (error) {
+      console.warn("[play] paced mode setup threw, using coupled loop", error);
+    }
+  }
+  return runCoupledFrameLoop(rpc, logicFps);
+}
+
+// Paced loop: one GameEngine::update per display frame (smooth client —
+// camera, input, UI, W3D animation), with TheGameLogic gated to an absolute
+// drift-free logicFps schedule so sim speed is exactly the original 30Hz.
+// Frames are scheduled to the nearest display tick (half-refresh hysteresis)
+// so a 60Hz display gets a perfectly even run-run pattern instead of the
+// accumulator's occasional 50ms/17ms judder pairs.
+async function runPacedFrameLoop(rpc, clientFps, logicFps) {
+  const clientPeriod = 1000 / clientFps;
+  const logicPeriod = 1000 / logicFps;
+  const rafDeltas = [];
+  let refreshMs = 1000 / 60;
+  let lastStamp = null;
+  let nextClientDue = null;
+  let nextLogicDue = null;
+  let running = true;
+  let windowStart = null;
+  let windowClient = 0;
+  let windowLogic = 0;
+  // Diagnostics: last ~15s of {t: RAF stamp, logic: logic frames run} so a
+  // probe can verify pacing evenness (window.__cncPacingSamples).
+  const pacingSamples = [];
+  window.__cncPacingSamples = pacingSamples;
+
+  const step = async (animationStamp) => {
+    if (!running) {
+      return;
+    }
+    const stamp = Number.isFinite(animationStamp) ? animationStamp : performance.now();
+    if (lastStamp !== null) {
+      const delta = stamp - lastStamp;
+      if (delta > 1 && delta < 100) {
+        rafDeltas.push(delta);
+        if (rafDeltas.length > 20) {
+          rafDeltas.shift();
+        }
+        const sorted = [...rafDeltas].sort((a, b) => a - b);
+        refreshMs = sorted[Math.floor(sorted.length / 2)];
+      }
+    }
+    lastStamp = stamp;
+    const halfTick = refreshMs / 2;
+    if (nextClientDue === null) {
+      nextClientDue = stamp;
+      nextLogicDue = stamp;
+    }
+
+    // Client frame due? Only skips ticks when the display refresh outruns
+    // clientFps (e.g. 120Hz display with clientFps=60).
+    if (stamp < nextClientDue - halfTick) {
+      requestAnimationFrame(step);
+      return;
+    }
+    nextClientDue += clientPeriod;
+    if (stamp - nextClientDue > 4 * clientPeriod) {
+      nextClientDue = stamp + clientPeriod;
+    }
+
+    // Logic frames due at this client tick (normally 0 or 1; brief stalls
+    // catch up by at most DEFAULT_CATCHUP_FRAMES, long stalls resync and the
+    // game simply slows, matching the original engine under load).
+    let logicToRun = 0;
+    while (stamp >= nextLogicDue - halfTick && logicToRun < DEFAULT_CATCHUP_FRAMES) {
+      logicToRun += 1;
+      nextLogicDue += logicPeriod;
+    }
+    if (stamp - nextLogicDue > 4 * logicPeriod) {
+      nextLogicDue = stamp + logicPeriod;
+    }
+
+    try {
+      let result = null;
+      if (logicToRun === 0) {
+        const startedAt = performance.now();
+        result = await rpc("realEngineFramePaced", { runLogic: false });
+        issueRecorder.noteFrame(
+          "realEngineFramePaced", { runLogic: false }, result, performance.now() - startedAt);
+      } else {
+        for (let i = 0; i < logicToRun; i += 1) {
+          // The recorder occasionally swaps in the rich summary frame for
+          // issue evidence; it runs logic unconditionally, so only allow it
+          // on scheduled logic ticks to keep sim pacing exact.
+          const command = issueRecorder.frameCommand();
+          const startedAt = performance.now();
+          if (command === "realEngineFrameTick") {
+            result = await rpc("realEngineFramePaced", { runLogic: true });
+            issueRecorder.noteFrame(
+              "realEngineFramePaced", { runLogic: true }, result, performance.now() - startedAt);
+          } else {
+            result = await rpc(command, { frames: 1 });
+            issueRecorder.noteFrame(command, { frames: 1 }, result, performance.now() - startedAt);
+          }
+          windowLogic += 1;
+        }
+      }
+      if (result?.ok !== true) {
+        running = false;
+        fail("engine frame failed", result);
+        return;
+      }
+    } catch (error) {
+      running = false;
+      fail("engine frame threw", error);
+      return;
+    }
+    windowClient += 1;
+    pacingSamples.push({ t: stamp, logic: logicToRun });
+    if (pacingSamples.length > 900) {
+      pacingSamples.splice(0, pacingSamples.length - 900);
+    }
+
+    if (windowStart === null) {
+      windowStart = stamp;
+    } else if (stamp - windowStart >= 1000) {
+      const seconds = (stamp - windowStart) / 1000;
+      fpsNode.textContent =
+        `${(windowClient / seconds).toFixed(0)}/${(windowLogic / seconds).toFixed(0)}`;
+      windowStart = stamp;
+      windowClient = 0;
+      windowLogic = 0;
+    }
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+async function runCoupledFrameLoop(rpc, logicFps) {
   const logicFrameMs = 1000 / logicFps;
   const maxCatchupFrames = Math.max(
     1,

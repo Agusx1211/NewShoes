@@ -8,6 +8,53 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Game feel — 60Hz client over the authentic 30Hz sim (2026-07-09)
+
+- [x] **Decouple GameClient (render/input/camera/UI) from GameLogic frame rate
+      — the "feels emulated at 60fps" fix.** User report: fps counter fine but
+      the game feels laggy/"emulated". Root cause: the whole engine (camera
+      scroll, input consumption, UI feedback, W3D animation time) ran at the
+      page loop's 30Hz logic pacing — the original 1:1 client:logic coupling
+      EA themselves marked "@todo Allow the client to run as fast as possible,
+      but limit ... TheGameLogic to a fixed framerate" above
+      `GameEngine::update`. Implemented exactly that decoupling with three
+      weak hooks consumed by the port runtime
+      (`wasm_real_engine_init.cpp`): `cnc_port_allow_logic_frame` gates
+      `TheGameLogic->UPDATE()` (SP branch only) so the page can run
+      `GameEngine::update` at display rate while logic holds 30Hz;
+      `cnc_port_client_frame_time_scale` (logicFps/clientFps = 0.5) scales the
+      per-FRAME_TICK scroll offsets in `LookAtXlat.cpp` so camera scroll
+      covers the same world distance per second; `cnc_port_client_paced_mode`
+      switches `W3DDisplay::draw` to advance W3D animation `syncTime` on
+      every non-frozen client frame (with `TheW3DFrameLengthInMsec` set to
+      the real client frame length via the pacing RPC) so model animations
+      render at 60Hz at correct wall-clock speed. The engine was already
+      built for this: drawable client effects freeze on client-only frames
+      via the `m_frame`-advance hack ("hack to let client spin fast in
+      network games"), and `ParticleSystemManager::update` self-gates on
+      `TheGameLogic->getFrame()`. New exports
+      `cnc_port_real_engine_set_client_pacing(clientFps, logicFps)` +
+      `cnc_port_real_engine_frame_paced(runLogic)`; play.mjs got a drift-free
+      nearest-vsync scheduler (absolute logic schedule with half-refresh
+      hysteresis — kills the old accumulator's 50ms/17ms judder pairs; ring
+      buffer `window.__cncPacingSamples` for probes), default
+      clientFps=60/logicFps=30 with `?clientFps=30` legacy fallback (also
+      auto-falls-back if the wasm export is missing). `snapshotCanvas` now
+      renders its refresh frame with `runLogic=0` so screenshots no longer
+      advance the sim. Metal-verified via pacing probe on the play page
+      (autostart, dist-release): client 59.96/s, logic 29.68/s, logic-gap
+      p05/p50/p95 = 32.4/33.33/34.2ms (49 of 51 gaps in the 33ms bucket),
+      title+shellmap pixel-correct; under heavy load (late shellmap battle,
+      headless compositing) the client degrades to ~42fps while logic holds
+      30.0/s exactly — the game no longer slows down when rendering is
+      heavy. Skirmish smoke green (unpaced RPC path unchanged; weak hooks
+      default to original behavior). Cosmetic deltas + MP notes tracked in
+      TODO ("Feels emulated follow-ups").
+- [x] **Input latency halved as a side effect** — mouse/keyboard queues are
+      consumed per client frame (now 60Hz), so click→UI-response is ~1 client
+      frame (16.7ms) + present instead of up to 33ms + present. The cursor
+      itself was already the zero-latency native CSS cursor.
+
 ## Rendering — hard/unfeathered terrain + road edges (port regression, 2026-07-09)
 
 - [x] **Fix hard sawtooth road edges, road-crossing notches, and unfeathered

@@ -5704,6 +5704,105 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_tick(int 
 	return g_frame_json.c_str();
 }
 
+// ---------------------------------------------------------------------------
+// Client/logic frame-rate decoupling ("paced mode").
+//
+// The original GameEngine::update() couples TheGameClient (render/input/UI)
+// and TheGameLogic (sim) 1:1 at LOGICFRAMES_PER_SECOND (30Hz). EA left the
+// decoupling as a @todo above GameEngine::update. The page enables it with
+// cnc_port_real_engine_set_client_pacing(clientFps, logicFps) and then drives
+// cnc_port_real_engine_frame_paced(runLogic) once per display frame: every
+// call runs the full client (smooth camera/input/UI/W3D animation), while
+// TheGameLogic only advances when runLogic != 0 — keeping the sim at its
+// authentic 30Hz. Three weak hooks in engine code consume this state:
+//   - GameEngine::update    -> cnc_port_allow_logic_frame (skip logic frame)
+//   - LookAtXlat FRAME_TICK -> cnc_port_client_frame_time_scale (scroll speed)
+//   - W3DDisplay::draw      -> cnc_port_client_paced_mode (anim time advance)
+// ---------------------------------------------------------------------------
+static int g_paced_allow_logic_frame = 1;
+static int g_paced_mode_active = 0;
+static float g_paced_frame_time_scale = 1.0f;
+
+// W3D client frame length global (W3DView.cpp); W3DGameClient::setFrameRate
+// is private on the GameClient base, and this is all it assigns.
+extern Int TheW3DFrameLengthInMsec;
+
+extern "C" int cnc_port_allow_logic_frame(void)
+{
+	return g_paced_allow_logic_frame;
+}
+
+extern "C" int cnc_port_client_paced_mode(void)
+{
+	return g_paced_mode_active;
+}
+
+extern "C" float cnc_port_client_frame_time_scale(void)
+{
+	return g_paced_frame_time_scale;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_client_pacing(
+	int client_fps,
+	int logic_fps)
+{
+	static std::string json;
+	if (client_fps > 0 && logic_fps > 0 && client_fps >= logic_fps) {
+		g_paced_mode_active = client_fps != logic_fps ? 1 : 0;
+		g_paced_frame_time_scale = (float)logic_fps / (float)client_fps;
+		TheW3DFrameLengthInMsec = (Int)(1000.0f / (float)client_fps);
+	} else {
+		g_paced_mode_active = 0;
+		g_paced_frame_time_scale = 1.0f;
+		TheW3DFrameLengthInMsec = (Int)MSEC_PER_LOGICFRAME_REAL;
+	}
+	json = "{\"ok\":true";
+	json += ",\"pacedMode\":" + std::to_string(g_paced_mode_active);
+	json += ",\"clientFps\":" + std::to_string(client_fps);
+	json += ",\"logicFps\":" + std::to_string(logic_fps);
+	char scale[48];
+	std::snprintf(scale, sizeof(scale), ",\"frameTimeScale\":%.4f", g_paced_frame_time_scale);
+	json += scale;
+	json += ",\"gameClientLive\":";
+	json += TheGameClient != NULL ? "true" : "false";
+	json += "}";
+	return json.c_str();
+}
+
+// One client frame at display rate; TheGameLogic only advances when
+// run_logic != 0 (see cnc_port_allow_logic_frame gate in GameEngine::update).
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_paced(int run_logic)
+{
+	g_paced_allow_logic_frame = run_logic != 0 ? 1 : 0;
+	run_real_engine_frames(1);
+	g_paced_allow_logic_frame = 1;
+
+	std::string json = "{";
+	json += "\"tick\":true";
+	json += ",\"paced\":true";
+	json += ",\"ranLogicRequested\":";
+	json += run_logic != 0 ? "true" : "false";
+	json += ",\"initReturned\":";
+	json += (g_state.attempted && g_state.init_returned) ? "true" : "false";
+	json += ",\"framesAttempted\":" + std::to_string(g_frame_state.frames_attempted);
+	json += ",\"framesCompleted\":" + std::to_string(g_frame_state.frames_completed);
+	json += ",\"logicFrame\":" + std::to_string(
+		TheGameLogic != NULL ? (long long)TheGameLogic->getFrame() : -1);
+	json += ",\"clientFrame\":" + std::to_string(
+		TheGameClient != NULL ? (long long)TheGameClient->getFrame() : -1);
+	json += ",\"quitting\":";
+	json += (TheGameEngine != NULL && TheGameEngine->getQuitting() != FALSE) ? "true" : "false";
+	json += ",\"exceptionCaught\":";
+	json += g_frame_state.exception_caught ? "true" : "false";
+	json += ",\"exception\":\"" + json_escape(g_frame_state.exception_text) + "\"";
+	char elapsed[64];
+	std::snprintf(elapsed, sizeof(elapsed), ",\"lastFrameMs\":%.1f", g_frame_state.last_frame_ms);
+	json += elapsed;
+	json += "}";
+	g_frame_json = json;
+	return g_frame_json.c_str();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_spawn_laser(
 	const char *template_name,
 	float x,
