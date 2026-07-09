@@ -3850,6 +3850,16 @@ and then start with the PROFILE, not with any individual fix.
 
 ## Cross-cutting: harness & verification (ongoing, never "done")
 
+- [ ] `play.mjs` `?autostart=1` can hang forever at
+      `rpc("resumeBrowserAudioRuntime")`: without a user gesture Chrome's
+      autoplay policy leaves `AudioContext.resume()` PENDING (never settles),
+      so the `.catch` never fires and `start()` never reaches the archive
+      mount. Real users click Play (a gesture) so the play page is fine; the
+      harness/autostart path should race the resume RPC against a short
+      timeout (or launch probes with
+      `--autoplay-policy=no-user-gesture-required`, as mount/overlay probes
+      now do). Observed twice on 2026-07-09 while verifying the loading
+      overlay.
 - [ ] Keep the RPC command surface growing with each subsystem (boot, menu nav,
       unit select/move/order, match start/step, state + log readback).
 - [ ] Screenshot-diff regression suite for menus and in-game scenes.

@@ -38,7 +38,15 @@
          settings (resolution + fullscreen) that persist and apply on boot.
          =================================================================== -->
     <div id="overlay">
-      <div class="launcherBg" aria-hidden="true"></div>
+      <div class="launcherBg" aria-hidden="true">
+        <!-- Real game splash: the original WinMain.cpp load-screen bitmap
+             (Data\English\Install_Final.bmp from EnglishZH.big), extracted to
+             PNG by tools/extract_splash_art.mjs into the gitignored
+             artifacts/real-assets/ dir the harness server already serves. On
+             404 the img removes itself and the plain gradient stays. -->
+        <img class="splashArt" src="../artifacts/real-assets/Install_Final.png"
+             alt="" decoding="async" onerror="this.remove()">
+      </div>
       <div class="launcherPanel" role="dialog" aria-label="Launch Command &amp; Conquer Generals Zero Hour">
         <header class="launcherHead">
           <p class="launcherKicker">Command &amp; Conquer</p>
@@ -53,8 +61,21 @@
               <span class="playLabel">Play</span>
             </button>
             <p id="progress" class="launcherProgress" aria-live="polite"></p>
+            <!-- Boot progress: archive download/mount bar fed by the
+                 cnc-archive-progress events bridge.js emits, then an
+                 indeterminate pulse while GameEngine::init() runs. -->
+            <div id="bootProgress" class="bootProgress hidden">
+              <div class="bootBarTrack" role="progressbar" aria-label="Download progress">
+                <div id="bootBarFill" class="bootBarFill"></div>
+              </div>
+              <div class="bootStats">
+                <span id="bootBytes"></span>
+                <span id="bootRate"></span>
+              </div>
+              <p id="bootDetail" class="bootDetail"></p>
+            </div>
             <p id="warning" class="launcherWarning">
-              Starting downloads ~1.3&nbsp;GB of game archives into browser memory.
+              Starting downloads ~2&nbsp;GB of game archives into browser memory.
               A desktop browser is recommended; most phones will run out of memory.
             </p>
           </div>

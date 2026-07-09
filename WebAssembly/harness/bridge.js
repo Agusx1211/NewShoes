@@ -17679,6 +17679,15 @@ function ensureIoWorker() {
       if (!pending) {
         return; // e.g. the initial { id: 0, kind: "ready" } announcement.
       }
+      if (message.ok && message.kind === "progress") {
+        // Interim streamed-fetch progress: notify without settling the request.
+        try {
+          pending.onProgress?.(message);
+        } catch (_progressError) {
+          // Progress observers are UI-only; they must never break the fetch.
+        }
+        return;
+      }
       ioWorkerPending.delete(message.id);
       if (message.ok) {
         pending.resolve(message);
@@ -17710,14 +17719,14 @@ function ensureIoWorker() {
   return ioWorkerInstance;
 }
 
-function ioWorkerRequest(request, transfer = []) {
+function ioWorkerRequest(request, transfer = [], onProgress = null) {
   const worker = ensureIoWorker();
   if (!worker) {
     return Promise.reject(new Error("IO worker unavailable"));
   }
   const id = ioWorkerNextId++;
   return new Promise((resolve, reject) => {
-    ioWorkerPending.set(id, { resolve, reject });
+    ioWorkerPending.set(id, { resolve, reject, onProgress });
     try {
       worker.postMessage({ ...request, id }, transfer);
     } catch (error) {
@@ -17729,43 +17738,136 @@ function ioWorkerRequest(request, transfer = []) {
 
 // Fetch a whole archive off the main thread; resolves to a Uint8Array view of
 // the transferred ArrayBuffer. Rejects (so the caller falls back inline) if the
-// worker is unavailable or the fetch fails.
-async function fetchArchiveBytesOffThread(url) {
-  const response = await ioWorkerRequest({ kind: "fetchArchive", url });
+// worker is unavailable or the fetch fails. `onProgress` (optional) receives
+// the worker's streamed { url, received, total } download progress messages.
+async function fetchArchiveBytesOffThread(url, onProgress = null) {
+  const response = await ioWorkerRequest({ kind: "fetchArchive", url }, [], onProgress);
   return new Uint8Array(response.bytes);
 }
 
-async function writeArchiveToMemfs(wasmModule, payload, baseDirectory = "/assets") {
+// Archive mount progress -> page UI. The mount path publishes coarse
+// per-archive progress (streamed fetch bytes, the blocking memfs write, and
+// completion) as a DOM CustomEvent so play.html can render a real loading bar
+// without touching the RPC surface. Dispatch is best-effort only: a missing
+// DOM or a throwing listener must never affect the mount itself.
+function emitArchiveProgress(detail) {
+  try {
+    globalThis.dispatchEvent?.(new CustomEvent("cnc-archive-progress", { detail }));
+  } catch (_error) {
+    // Progress UI is optional; ignore.
+  }
+}
+
+function archiveFetchProgressReporter(archive, context = null) {
+  return (progress) => {
+    emitArchiveProgress({
+      phase: "fetch",
+      name: archive.name,
+      url: archive.url,
+      received: Number(progress?.received ?? 0),
+      total: Number(progress?.total ?? 0),
+      ...(context ?? {}),
+    });
+  };
+}
+
+// How many archives to download concurrently while mounting a set. The bytes
+// still hit MEMFS strictly sequentially in registration order; this only lets
+// the next fetches overlap the current write. `window.__cncFetchParallel =
+// false` (page: ?fetchpar=0) opts out; the worker-less fallback stays fully
+// sequential so the legacy inline path is unchanged.
+const ARCHIVE_FETCH_PARALLELISM = 3;
+
+function archiveFetchParallelism() {
+  try {
+    if (globalThis.__cncFetchParallel === false) {
+      return 1;
+    }
+  } catch (_error) {
+    // No override available; use the default below.
+  }
+  return ioWorkerEnabled() ? ARCHIVE_FETCH_PARALLELISM : 1;
+}
+
+// Download one archive's bytes, preferring the IO worker (streamed, off the
+// main thread) and falling back to the inline main-thread fetch. Returns
+// { bytes, reader } or { error } for an HTTP failure (network errors throw,
+// matching the legacy inline path).
+async function fetchArchiveBytesWithFallback(archive, onProgress = null) {
+  if (ioWorkerEnabled()) {
+    try {
+      const bytes = await fetchArchiveBytesOffThread(archive.url, onProgress);
+      return { bytes, reader: "io-worker fetch" };
+    } catch (_workerError) {
+      // Fall back to the inline main-thread fetch below.
+    }
+  }
+
+  const response = await fetch(archive.url);
+  if (!response.ok) {
+    return {
+      error: `${archive.name} fetch failed: ${response.status} ${response.statusText}`,
+    };
+  }
+  const contentLength = Number(response.headers.get("content-length"));
+  const total = Number.isSafeInteger(contentLength) && contentLength > 0 ? contentLength : 0;
+  onProgress?.({ url: archive.url, received: 0, total });
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  onProgress?.({ url: archive.url, received: bytes.byteLength, total: total || bytes.byteLength });
+  return { bytes, reader: "main-thread fetch" };
+}
+
+async function writeArchiveToMemfs(wasmModule, payload, baseDirectory = "/assets", options = {}) {
   const archive = archivePathFromPayload(payload, baseDirectory);
   if (archive.error) {
     return archive;
   }
+  const emitProgress = options.emitProgress !== false;
+  const progressContext = options.progressContext ?? null;
+  const reportPhase = (phase, byteLength) => {
+    if (!emitProgress) {
+      return;
+    }
+    emitArchiveProgress({
+      phase,
+      name: archive.name,
+      url: archive.url,
+      received: byteLength,
+      total: byteLength,
+      ...(progressContext ?? {}),
+    });
+  };
 
   let bytes = null;
   let reader = "main-thread fetch";
 
-  if (ioWorkerEnabled()) {
-    try {
-      bytes = await fetchArchiveBytesOffThread(archive.url);
-      reader = "io-worker fetch";
-    } catch (_workerError) {
-      // Fall back to the inline main-thread fetch below.
-      bytes = null;
+  if (options.prefetched) {
+    // mountArchives' bounded fetch-ahead pipeline already downloaded this one.
+    if (options.prefetched.error) {
+      return { error: options.prefetched.error };
     }
+    bytes = options.prefetched.bytes;
+    reader = options.prefetched.reader;
+  } else {
+    const fetched = await fetchArchiveBytesWithFallback(
+      archive,
+      emitProgress ? archiveFetchProgressReporter(archive, progressContext) : null,
+    );
+    if (fetched.error) {
+      return { error: fetched.error };
+    }
+    bytes = fetched.bytes;
+    reader = fetched.reader;
   }
 
-  if (bytes === null) {
-    const response = await fetch(archive.url);
-    if (!response.ok) {
-      return {
-        error: `${archive.name} fetch failed: ${response.status} ${response.statusText}`,
-      };
-    }
-    bytes = new Uint8Array(await response.arrayBuffer());
-  }
+  reportPhase("write", bytes.byteLength);
+  // Give the page a task boundary to paint the "mounting <name>" state before
+  // the multi-hundred-MB synchronous FS.writeFile memcpy blocks the thread.
+  await new Promise((resolveYield) => setTimeout(resolveYield, 0));
 
   ensureMemfsDirectory(wasmModule.fs, parentDirectory(archive.memfsPath));
   wasmModule.fs.writeFile(archive.memfsPath, bytes);
+  reportPhase("done", bytes.byteLength);
 
   return {
     name: archive.name,
@@ -19173,10 +19275,49 @@ async function mountArchives(payload = {}) {
     return { ok: false, command: "mountArchives", error: `Archive directory must stay under /assets/: ${payload.path}` };
   }
 
+  // Bounded fetch-ahead pipeline: while archive N writes into MEMFS, archives
+  // N+1..N+2 already download (on the IO worker), so the network never idles
+  // behind the sequential main-thread memcpys. Registration order and the
+  // sequential writes are preserved exactly; only the fetches overlap. At most
+  // archiveFetchParallelism() (=3) archive buffers are alive at once: the one
+  // being written plus up to two in flight.
+  const prefetchWindow = archiveFetchParallelism();
+  const emitProgressEvents = payload.progressEvents !== false;
+  const parsedArchives = archiveInputs.map((input) => archivePathFromPayload(input, baseDirectory));
+  const prefetches = new Array(archiveInputs.length).fill(null);
+  const startPrefetch = (index) => {
+    if (index >= archiveInputs.length || prefetches[index] || parsedArchives[index].error) {
+      return;
+    }
+    const onProgress = emitProgressEvents
+      ? archiveFetchProgressReporter(parsedArchives[index], {
+        index,
+        count: archiveInputs.length,
+      })
+      : null;
+    // Capture rejections as values so an unawaited lookahead fetch can never
+    // become an unhandled rejection; the throw is replayed on await below.
+    prefetches[index] = fetchArchiveBytesWithFallback(parsedArchives[index], onProgress)
+      .catch((error) => ({ thrown: error }));
+  };
+
   const archives = [];
   const archiveProbes = [];
-  for (const input of archiveInputs) {
-    const archive = await writeArchiveToMemfs(moduleResult.wasmModule, input, baseDirectory);
+  for (let index = 0; index < archiveInputs.length; index += 1) {
+    for (let ahead = index; ahead < Math.min(index + prefetchWindow, archiveInputs.length); ahead += 1) {
+      startPrefetch(ahead);
+    }
+    const input = archiveInputs[index];
+    const prefetched = prefetches[index] ? await prefetches[index] : null;
+    prefetches[index] = null; // release the buffer reference promptly
+    if (prefetched?.thrown) {
+      throw prefetched.thrown;
+    }
+    const archive = await writeArchiveToMemfs(moduleResult.wasmModule, input, baseDirectory, {
+      prefetched,
+      emitProgress: emitProgressEvents,
+      progressContext: { index, count: archiveInputs.length },
+    });
     if (archive.error) {
       return { ok: false, command: "mountArchives", error: archive.error, archives };
     }

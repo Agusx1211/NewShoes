@@ -8,6 +8,42 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Browser boot — real loading experience on play.html (2026-07-09)
+
+- [x] Streamed archive download progress. `harness/io_worker.mjs` now fetches
+      archives with a ReadableStream reader loop (preallocated buffer when
+      Content-Length is known, chunk-merge fallback otherwise) and posts
+      throttled `{kind:"progress", url, received, total}` messages (~4/sec per
+      archive) while keeping the zero-copy `ArrayBuffer` transfer.
+      `test:io-worker-offthread` extended to assert progress events arrive with
+      the right Content-Length total and full payload coverage (green).
+- [x] Real progress UI on the play launcher. bridge.js's mount path emits
+      `cnc-archive-progress` DOM CustomEvents (fetch/write/done phases with
+      index/count); play.html/play.mjs render a progress bar, accumulated
+      "X.XX / ~Y.YY GB" byte counter (the "~" drops once every Content-Length
+      is known), a MB/s readout, and a per-archive "downloading/mounting
+      <name> (k/n)" detail line, then an indeterminate pulse during
+      `GameEngine::init()`. Fully fallback-safe: if events never arrive the
+      old `#progress` status text still tells the story, and a `?ioworker=0`
+      main-thread run still reports per-archive completion (verified).
+- [x] Real splash art behind the launcher: the ORIGINAL WinMain.cpp
+      load-screen bitmap (`Data\English\Install_Final.bmp` from EnglishZH.big)
+      extracted + converted BMP->PNG by the new dependency-free
+      `tools/extract_splash_art.mjs` (wired into
+      `tools/extract_zh_runtime_archives.sh`) into gitignored
+      `artifacts/real-assets/Install_Final.png`, served by the existing static
+      server; the `<img>` removes itself on 404 so the plain gradient remains
+      (verified both ways with screenshots). No proprietary asset committed.
+- [x] Bounded parallel archive fetch: mountArchives now runs a fetch-ahead
+      pipeline (up to 3 concurrent downloads on the IO worker) while MEMFS
+      writes stay strictly sequential in registration order; at most 2 buffers
+      in flight beyond the one being written (~650MB worst-case transient).
+      `?fetchpar=0` / `window.__cncFetchParallel=false` opts out; worker-less
+      fallback stays fully sequential. Verified end-to-end on the dev box:
+      full play.html?autostart=1 boot mounted 2.08GB (1.41GB downloaded within
+      the first 10s) and reached overlay-hidden/running state (t≈491s on a
+      heavily loaded box; SwiftShader init dominates).
+
 ## Game feel — 60Hz client over the authentic 30Hz sim (2026-07-09)
 
 - [x] **Decouple GameClient (render/input/camera/UI) from GameLogic frame rate

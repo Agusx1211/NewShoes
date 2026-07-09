@@ -28,9 +28,18 @@
           };
 
           const startedAt = performance.now();
+          const progressEvents = [];
 
           worker.onmessage = (event) => {
             const message = event.data ?? {};
+            if (message.kind === "progress") {
+              // Interim streamed-fetch progress (same id as the request).
+              progressEvents.push({
+                received: Number(message.received),
+                total: Number(message.total),
+              });
+              return;
+            }
             if (message.kind === "ready") {
               ready = true;
               // Start the main-thread heartbeat, then issue the off-thread fetch.
@@ -65,6 +74,11 @@
                 transferred,
                 heartbeatTicksDuringFetch,
                 fetchMs,
+                progressEventCount: progressEvents.length,
+                progressMaxReceived: progressEvents.reduce(
+                  (max, progress) => Math.max(max, progress.received), 0),
+                progressTotal: progressEvents.reduce(
+                  (max, progress) => Math.max(max, progress.total), 0),
               };
               // Now run a deliberate 300ms CPU-busy task ON THE WORKER and count
               // main-thread heartbeat ticks during it: the unambiguous proof

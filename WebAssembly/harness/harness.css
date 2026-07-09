@@ -170,6 +170,30 @@ body {
   opacity: 0.7;
 }
 
+/* Real game splash art (Install_Final.bmp -> PNG) behind the launcher panel.
+   Dimmed + vignetted so the panel/progress stay readable; when the asset is
+   missing the img removes itself and the gradient above shows unchanged. */
+.launcherBg .splashArt {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 25%;
+  opacity: 0.5;
+}
+.launcherBg::before {
+  /* Scrim above the splash art (paint order: gradient bg < img < ::after
+     texture < this z-indexed ::before scrim). */
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    radial-gradient(120% 90% at 50% 45%, rgba(5, 6, 8, 0.25) 30%, rgba(5, 6, 8, 0.78) 100%),
+    linear-gradient(180deg, rgba(5, 6, 8, 0.45), rgba(5, 6, 8, 0.62));
+}
+
 .launcherPanel {
   position: relative;
   z-index: 1;
@@ -284,6 +308,57 @@ body {
   line-height: 1.5;
   color: #b79458;
   text-align: center;
+}
+
+/* --- Boot progress (archive download/mount bar + engine-init pulse) --------- */
+.bootProgress {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.bootProgress.hidden { display: none; }
+.bootBarTrack {
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  background: rgba(8, 10, 13, 0.9);
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+}
+.bootBarFill {
+  width: 0%;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-2), #f2c04d);
+  box-shadow: 0 0 12px rgba(224, 168, 58, 0.45);
+  transition: width 0.25s ease;
+}
+/* Engine-init phase: archives are in, no byte counter to show — pulse the
+   full bar instead of pretending a percentage. */
+.bootProgress.indeterminate .bootBarFill {
+  width: 100% !important;
+  animation: bootBarPulse 1.6s ease-in-out infinite;
+}
+@keyframes bootBarPulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+.bootStats {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text);
+}
+.bootStats #bootRate { color: var(--text-dim); }
+.bootDetail {
+  margin: 0;
+  min-height: 1.2em;
+  font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-dim);
+  text-align: center;
+  word-break: break-word;
 }
 
 /* --- Pre-game settings block ------------------------------------------------ */
