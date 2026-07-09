@@ -718,6 +718,44 @@ enough.
       worker fills directly, removing the final main-thread copy. Only pursue
       if profiling shows that copy is a material boot stall vs the download.
 
+- [ ] **Resolution follow-ups (2026-07-09, after the engine-owned resolution
+      rework — see DONE "Resolution polish").** (a) The in-game options
+      screen's resolution combo lists only 4:3 modes (stock
+      `IS_FOUR_BY_THREE_ASPECT` filter in `W3DDisplay::getDisplayModeCount`)
+      — decide whether to relax it for widescreen entries under
+      `__EMSCRIPTEN__` (pure UI-affordance change; the engine renders any
+      aspect fine). (b) The shell-stack re-push in
+      `cnc_port_real_engine_set_resolution` relies on each menu's Shutdown()
+      honoring `shutdownImmediate`; deep stacks beyond
+      MainMenu→SP/Skirmish menus (esp. future MP/GameSpy screens) are
+      unverified — if a screen ignores immediate-shutdown the pending push
+      chain can drop entries (degrades to landing on a shallower menu, not a
+      crash). (c) A resolution change requested DURING a load session is
+      refused engine-side (`busy-loading`) and retried by the page every 1s
+      for up to 90s — if map loads ever exceed that, make the retry
+      open-ended or event-driven off `loadSessionActive`. (d) iPad Safari:
+      no Fullscreen API for canvas elements (button hides); dynamic mode
+      covers rotation/viewport changes — verify on the actual iPad,
+      including the DPR (3x) buffer sizes vs its memory limits (a 2732x2048
+      render target may be too heavy; consider a DPR cap setting).
+      (e) `?autostart=1` probes: the boot-time resolution is computed from
+      the canvas box at Play-click time; a probe that resizes the window
+      between page load and boot completion relies on the post-boot
+      `applyDisplaySettings("boot")` catch-up — keep that call.
+      (f) High-res UI long tail beyond the CNC_PORT_ICON_SCALE'd world icons:
+      floating world text (money "+$" pickups, veterancy numbers), tooltip
+      and HUD FONT sizes still render at authored point sizes — audit
+      `TheHeaderTemplateManager` scaling vs raw `TheFontLibrary` uses at
+      2560x1600 and scale the stragglers. (g) After an in-game resolution
+      change the control-bar money display shows the "$$$" placeholder until
+      the amount next changes (static `lastMoney` in InGameUI survives the
+      recreate) — self-heals with any income tick; reset it on
+      recreateControlBar if it annoys. (h) The engine writes options.ini
+      "Resolution" when the user applies a resolution in the in-game options
+      screen; the page's persisted settings override it next boot by design
+      (the cncport:resolutionchange mirror keeps them in sync) — revisit if
+      users report surprises.
+
 - [ ] **Lightning/lighting effects flat** — special/lightning effects look
       flat vs the original; the game's richer effect set is missing or
       degraded. Pin down which effect systems (particle/lightning/FX) are

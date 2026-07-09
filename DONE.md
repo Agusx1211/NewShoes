@@ -8,6 +8,149 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Resolution polish — the engine owns the render resolution (2026-07-09)
+
+- [x] **Resolution was "all over the place" (owner ask): windowed vs
+      fullscreen disagreed, the engine was blind to the canvas size, high-DPI
+      artifacts, duplicated launcher/settings controls.** Rebuilt around ONE
+      invariant: **TheDisplay's resolution is the single source of truth and
+      the WebGL2 backing store always equals it.** The chain, engine-outward:
+      (a) the D3D8 shim advertises a real adapter mode ladder (classic 4:3 set
+      + wide + the live browser-native size via `cncPortD3D8NativeMode`)
+      instead of one hardcoded 800x600 entry, so the engine's own
+      display-mode enumeration (and the stock in-game options combo) sees
+      genuine choices; the device's `GetDisplayMode` reports the live
+      backbuffer; (b) `BrowserD3DDevice::Reset` now actually honors the new
+      backbuffer size (recreates backbuffer/depth surfaces, resets the
+      viewport) and — like device create — notifies the bridge
+      (`wasm_d3d8_browser_backbuffer_resize` → `onD3D8BackbufferResize`),
+      which pins the canvas backing store to the engine resolution,
+      invalidates the viewport caches, and broadcasts a
+      `cncport:resolutionchange` CustomEvent. ANY engine-side resolution
+      change (page RPC or the in-game options screen) now resizes the canvas
+      correctly; the old CSSxDPR-vs-engine mismatch (default-boot stretch,
+      broken pick-ray) is structurally gone. (c) Boot resolution: the page
+      passes its intent into `realEngineInit` (`bootWidth/bootHeight` →
+      `cnc_port_real_engine_set_boot_resolution`), consumed by a weak hook at
+      the end of GameEngine's INIT_STEP_GLOBAL_DATA (after GameData.ini /
+      options.ini / command line, before W3DDisplay creates the device), so
+      the engine boots directly at the target size — no 800x600-then-resize.
+      (d) `cnc_port_real_engine_set_resolution` hardening: refuses changes
+      while a load session is active (`busy-loading`, page retries 1s up to
+      90s); the shell branch now captures the shell screen stack
+      (`Shell::getScreenAt` accessor added) and re-pushes it bottom→top with
+      `shutdownImmediate` instead of dumping to MainMenu (dynamic resizes no
+      longer throw the player out of the menu they were in); the live-match
+      branch keeps the non-destructive in-place reflow AND — the historical
+      "HUD breaks into pieces" root cause, reproduced deterministically on
+      Metal — now replays the post-load control-bar setup startNewGame runs
+      (`setControlBarSchemeByPlayer` + `initSpecialPowershortcutBar` for the
+      local player) after `recreateControlBar()`, because the recreate leaves
+      a fresh `TheControlBar` with no faction scheme (no bar background art,
+      loose radar/buttons at stale coordinates). (e) Fixed a stock
+      engine bug the port now hits: OptionsMenu's populate path overwrote
+      `m_x/yResolution` from stale options.ini prefs (with EA's
+      `selectedXRes = 600` typo in the fallback) just by OPENING the options
+      screen — under `__EMSCRIPTEN__` the live display size seeds the combo
+      and the globals stay truthful. Files:
+      `WebAssembly/src/wasm_d3d8_shim.cpp`,
+      `WebAssembly/src/wasm_real_engine_init.cpp`,
+      `GeneralsMD/.../Common/GameEngine.cpp` (weak hook),
+      `GeneralsMD/.../GameClient/Shell.h` (accessor),
+      `GeneralsMD/.../Menus/OptionsMenu.cpp` (gated fix).
+- [x] **Page UI: Dynamic / preset / custom resolution in ONE place (the
+      in-game gear), launcher controls removed (owner ask).** `play.html`'s
+      launcher Display section (resolution select + "start in fullscreen")
+      deleted — they duplicated the source of truth and start-in-fullscreen
+      couldn't work reliably (browsers require a user gesture). The settings
+      overlay select now offers **Dynamic — fits window (live WxH label)**
+      (default), a preset ladder, and **Custom…** WxH inputs; persisted as
+      `cncPortDisplaySettings.v2` ({mode:"dynamic"} | {mode:"fixed",w,h});
+      v1 launcher settings migrate (explicit non-default sizes → fixed).
+      Dynamic mode tracks resize/visualViewport/DPR-change/fullscreen-change
+      (debounced 350ms + rAF-deferred + degenerate-box-guarded) and drives
+      `setEngineResolution`; fullscreen in dynamic = native-res sharp,
+      fullscreen at fixed res = CSS letterbox scale. Engine-initiated changes
+      (in-game options) mirror back into the select + persisted intent via
+      the `cncport:resolutionchange` event. CSS: play page's shell is now the
+      full viewport (`.shell.playShell`, canvas absolutely positioned —
+      **a plain `height:100%` grid item was circular in the implicit track
+      and silently fell back to the canvas buffer's intrinsic aspect**, which
+      made Dynamic chase its own tail; the legacy `.shell` box is preserved
+      for index.html smoke pages); `object-fit: contain` letterboxes fixed
+      resolutions identically windowed and fullscreen.
+      `bridge.js`: single sizing rule in `getCanvasDisplaySize` (engine pin →
+      CSSxDPR fallback pre-engine only), fullscreen special-case removed,
+      `setEngineResolution` RPC delegates the canvas work to
+      `onD3D8BackbufferResize`.
+- [x] **Owner-feedback round (same day, live play reports).**
+      (1) *"Opening the options menu reverts to the default low resolution"*:
+      two stock behaviors compounded — the combo lists only 4:3 modes
+      (`IS_FOUR_BY_THREE_ASPECT`) so a dynamic/wide resolution is never
+      listable, and the untouched combo falls back to the 800x600 entry which
+      Accept then applies. Fixes: the aspect filter accepts any landscape
+      aspect under `__EMSCRIPTEN__`; the shim's adapter list now also contains
+      the CURRENT backbuffer size; and the options screen only applies a
+      resolution when the user actually MOVED the combo
+      (`s_initialResolutionComboIndex` guard, native behavior unchanged).
+      (2) *Ghost HUD pieces after in-game resolution changes*: root-caused
+      via a new `realEngineDumpWindows` RPC (`cnc_port_real_engine_dump_windows`)
+      — stock `recreateControlBar()` looks up `"ControlBar.wnd"` but the
+      parent window is named `"ControlBar.wnd:ControlBarParent"`
+      (Show/HideControlBar use the real name), so every recreate LEAKED the
+      old bar; invisible natively (bar hidden in menus), a visible stale-size
+      ghost in-game. Gated fix hides + `winDestroy`s the stale parent on
+      recreate — NOT a raw `deleteInstance`, which tears the live window down
+      mid-frame and THREW from inside the teardown (first fix attempt emptied
+      the shell stack: "exception during resolution change" caught after
+      `delete TheShell`, before the re-push — winDestroy is the manager's
+      deferred path that also clears focus/capture/mouseover references).
+      (3) *Widescreen "too zoomed in, losing real estate"*: stock keeps a
+      fixed 50-deg HORIZONTAL fov and derives vertical from the view aspect,
+      so wider-than-4:3 displays SHRINK the vertical world view. Gated
+      `cnc_port_aspect_corrected_hfov` in `W3DView` widens hfov by the
+      display-aspect excess over 4:3 in tan-domain — vertical world extent
+      now matches 4:3 exactly, wider canvas = strictly MORE world.
+      (4) *iPad "graphics context was lost"*: dynamic mode at devicePixelRatio
+      2-3 allocated ~16MP render targets; `MAX_DYNAMIC_PIXELS` budget in
+      play.mjs (2.4MP on iOS-like devices, 4K-equivalent on desktop) scales
+      the automatic size down aspect-preserving; explicit fixed/custom picks
+      are not capped. (5) *World-overlay icons tiny at high res* (veterancy
+      star, heal/emoticon/bomb icons, ammo/container pips, radar hero
+      reticle): authored in 800x600-era pixels and drawn at raw image size —
+      now scaled by `CNC_PORT_ICON_SCALE` (render height / 600) in
+      `Drawable.cpp` (20 sites) and `W3DRadar::drawHeroIcon`. (6) *"Hover
+      broke — can't hover menu buttons or buildings"*: REPRODUCED and
+      root-caused with a real-pointer probe + DOM/queue instrumentation
+      (moves at x<=800 worked, beyond died; clicks always worked). The stock
+      WinMain.cpp WndProc DROPS `WM_MOUSEMOVE` outside `GetClientRect`
+      (buttons pass unfiltered) — and the Win32 shim's `SetWindowPos` was a
+      no-op, so the input window's record stayed at its creation 800x600
+      while the render resolution grew: hover was silently dead outside the
+      original 800x600 at ANY larger resolution (pre-existing bug, exposed
+      the moment the engine really ran at bigger sizes). Fix at the platform
+      seam: `shims/windows.h` `SetWindowPos` now really moves/sizes the
+      window record (honoring SWP_NOMOVE/NOSIZE — DX8Wrapper's
+      Set_Device_Resolution resize path), plus a belt-and-braces
+      `WasmWin32Input::ResizeAllWindows` driven from the D3D8 device
+      create/Reset via the weak `cnc_port_win32_resize_application_window`
+      hook (covers boot, where no SetWindowPos runs). Verified with
+      `hover_probe.mjs` (Playwright mouse -> letterbox content-box mapping ->
+      engine cursor + hit-test) at dynamic and letterboxed fixed resolutions
+      on Metal.
+- [x] **Verified** (SwiftShader `harness/resolution_probe.mjs` + same probe
+      on Mac Metal dist-release, all 8 checks PASS on both): dynamic boot at
+      canvas size (1280x800, buffer==engine==box), engine follows a window
+      resize to exactly 1000x700, fixed 1024x768 lands exactly (letterboxed),
+      return to dynamic, shell alive with MainMenu after every reflow.
+      Screenshots eyeballed on Metal (menu at 1280x800 and 1024x768 laid out
+      correctly, shellmap alive). In-game (real USA campaign mission via
+      `~/cnc-verify/ingame_resolution_probe.mjs` on the Mac):
+      1280x800→1600x1000→1280x800 mid-match, both `reflow:"in-place"`,
+      playerControl preserved, scene coherent in screenshots. Shellmap gate
+      green on the new build; both dists rebuilt + rsynced to cnc-gpu with
+      md5 parity.
+
 ## Stepped loading — no more main-thread freezes on boot/map load (2026-07-09)
 
 - [x] **Loading-screen progress is static during map load / per-screen freeze

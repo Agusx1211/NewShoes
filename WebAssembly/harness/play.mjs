@@ -47,31 +47,54 @@ const queryParams = new URLSearchParams(window.location.search);
 const viewportCanvas = document.querySelector("#viewport");
 const selectedDistDir = selectedCncPortDistDir();
 
-// Persisted launcher settings (chosen before the game boots and re-applied on
-// every load). localStorage may be unavailable (privacy mode) so all access is
-// guarded and silently degrades to in-memory defaults.
-const LAUNCHER_SETTINGS_KEY = "cncPortLauncherSettings.v1";
+// Persisted display settings (v2) — the ONE source of resolution intent:
+//   { mode: "dynamic" }                     follow the window (default)
+//   { mode: "fixed", width: W, height: H }  explicit resolution
+// localStorage may be unavailable (privacy mode) so all access is guarded and
+// silently degrades to in-memory defaults. Legacy v1 launcher settings (the
+// removed launcher resolution select) migrate: an explicit non-default "WxH"
+// becomes fixed; "native"/default/absent becomes dynamic.
+const DISPLAY_SETTINGS_KEY = "cncPortDisplaySettings.v2";
+const LEGACY_LAUNCHER_SETTINGS_KEY = "cncPortLauncherSettings.v1";
 
-function loadLauncherSettings() {
+function saveDisplaySettings(settings) {
   try {
-    const raw = window.localStorage?.getItem(LAUNCHER_SETTINGS_KEY);
-    if (!raw) {
-      return {};
-    }
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
+    window.localStorage?.setItem(DISPLAY_SETTINGS_KEY, JSON.stringify(settings));
   } catch {
-    return {};
+    // Persistence unavailable; keep going with the in-memory selection only.
   }
 }
 
-function saveLauncherSettings(patch) {
+function loadDisplaySettings() {
   try {
-    const next = { ...loadLauncherSettings(), ...patch };
-    window.localStorage?.setItem(LAUNCHER_SETTINGS_KEY, JSON.stringify(next));
+    const raw = window.localStorage?.getItem(DISPLAY_SETTINGS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.mode === "fixed"
+          && Number.isFinite(Number(parsed.width)) && Number.isFinite(Number(parsed.height))
+          && Number(parsed.width) >= 2 && Number(parsed.height) >= 2) {
+        return { mode: "fixed", width: Math.round(Number(parsed.width)), height: Math.round(Number(parsed.height)) };
+      }
+      if (parsed?.mode === "dynamic") {
+        return { mode: "dynamic" };
+      }
+    }
+    const legacyRaw = window.localStorage?.getItem(LEGACY_LAUNCHER_SETTINGS_KEY);
+    if (legacyRaw) {
+      const legacy = JSON.parse(legacyRaw);
+      const match = /^(\d+)x(\d+)$/.exec(typeof legacy?.resolution === "string" ? legacy.resolution : "");
+      // The v1 default was "800x600" for everyone who never touched the
+      // selector; only a non-default explicit size migrates as fixed intent.
+      if (match && `${match[1]}x${match[2]}` !== "800x600") {
+        const migrated = { mode: "fixed", width: Number(match[1]), height: Number(match[2]) };
+        saveDisplaySettings(migrated);
+        return migrated;
+      }
+    }
   } catch {
-    // Persistence unavailable; keep going with in-memory selection only.
+    // Corrupt/unavailable storage: fall through to the default.
   }
+  return { mode: "dynamic" };
 }
 
 const DEFAULT_LOGIC_FPS = 30;
@@ -653,12 +676,19 @@ async function start() {
     if (steppedInit) {
       window.addEventListener("cncport:initprogress", onInitProgress);
     }
+    // Boot render resolution: the engine boots directly at the page's intent
+    // (dynamic canvas-fit or the persisted fixed size) instead of 800x600 —
+    // no post-boot resize, sharp from the first frame. Computed here (not at
+    // page load) so a window resize during the archive download still counts.
+    const bootResolution = targetResolutionForSettings();
     let init;
     try {
       init = await rpc("realEngineInit", {
         runDirectory: "/assets/real-init",
         shellMap,
         stepped: steppedInit,
+        bootWidth: bootResolution?.width,
+        bootHeight: bootResolution?.height,
       });
     } finally {
       window.removeEventListener("cncport:initprogress", onInitProgress);
@@ -696,11 +726,11 @@ async function start() {
     issueRecorder.setSessionContext({ phase: "running" });
     viewportCanvas.focus();
     initDisplayControls();
-    // Apply the resolution / fullscreen the player chose on the launcher before
-    // booting. The live in-game select already carries the persisted value
-    // (initDisplayControls seeds it), so drive the EXISTING apply path; do not
-    // reimplement the resize logic here.
-    await applyLauncherIntentOnBoot();
+    // The engine booted at the requested resolution (the boot resolutionchange
+    // event recorded it); this apply is a no-op then, and covers the fallbacks:
+    // a stale wasm without the boot export, or the window changing size during
+    // the archive download.
+    await applyDisplaySettings("boot");
     if (new URLSearchParams(window.location.search).get("replay") === "1") {
       issueRecorder.setSessionContext({ phase: "replay-ready" });
       return;
@@ -851,151 +881,131 @@ window.addEventListener("keydown", (event) => {
   }
 });
 
-// --- resolution selector + fullscreen ---------------------------------------
-// The engine renders at a logical resolution (TheDisplay, default 800x600);
-// bridge.js's "setEngineResolution" RPC drives the real display-mode-change
-// path (W3DDisplay::setDisplayMode -> WW3D::Set_Device_Resolution + 2D
-// projection + GUI reflow) and resizes the WebGL2 backing store to match. This
-// selector exposes the stock 800x600 plus a live-updating "Native" entry that
-// tracks the tab's real pixel size (CSS px x devicePixelRatio) so the game can
-// render at the display's native resolution instead of one fixed default.
+// --- resolution + fullscreen (engine-owned, page-driven) ---------------------
+// The ENGINE owns the render resolution (TheDisplay). The page expresses
+// intent through the setEngineResolution RPC (the real display-mode-change
+// path: W3DDisplay::setDisplayMode -> WW3D::Set_Device_Resolution + 2D
+// projection + GUI reflow); the D3D8 shim reports every applied backbuffer
+// size back to the page (bridge "cncport:resolutionchange" events) and
+// bridge.js pins the WebGL2 backing store to it, so buffer == render target
+// 1:1 in every mode. This block implements:
+//   * Dynamic (default): the engine resolution follows the canvas CSS box x
+//     devicePixelRatio — window resizes, DPR changes and fullscreen re-apply
+//     it (debounced, degenerate-size-guarded, rAF-deferred) so the render is
+//     always 1:1 sharp with no letterbox.
+//   * Fixed: preset ladder or custom W x H; CSS letterboxes (object-fit:
+//     contain) so aspect is always preserved, windowed and fullscreen alike.
+//   * Engine-initiated changes (the in-game options screen) are mirrored back
+//     into the select and the persisted intent — one source of truth.
 let activeRpc = null;
 let displayControlsReady = false;
-let applyingResolution = false;
 
-// The in-game (live) select is the canonical resolution control the existing
-// apply path reads. The launcher select is a pre-game mirror that seeds this
-// one before boot; both are populated with the same option ladder and kept in
-// sync so a change in one reflects in the other.
 const resolutionSelect = document.querySelector("#resolutionSelectLive");
-const launcherResolutionSelect = document.querySelector("#resolutionSelect");
-const fullscreenToggle = document.querySelector("#fullscreenToggle");
+const customResolutionRow = document.querySelector("#customResolutionRow");
+const customResolutionWidth = document.querySelector("#customResolutionWidth");
+const customResolutionHeight = document.querySelector("#customResolutionHeight");
+const customResolutionApply = document.querySelector("#customResolutionApply");
 const fullscreenButton = document.querySelector("#fullscreenButton");
 const fullscreenTarget = document.querySelector(".shell") || document.body;
 
-// Stock preset resolutions the original game ships (Display.cpp populates the
-// same 4:3/widescreen ladder). Kept modest so the default entry is the real
-// engine default. "Native" is generated separately and always first-class.
 const PRESET_RESOLUTIONS = [
-  { width: 800, height: 600, label: "800 x 600 (default)" },
+  { width: 800, height: 600, label: "800 x 600 (original)" },
   { width: 1024, height: 768, label: "1024 x 768" },
   { width: 1280, height: 720, label: "1280 x 720" },
   { width: 1280, height: 1024, label: "1280 x 1024" },
   { width: 1600, height: 900, label: "1600 x 900" },
+  { width: 1600, height: 1200, label: "1600 x 1200" },
   { width: 1920, height: 1080, label: "1920 x 1080" },
+  { width: 2560, height: 1440, label: "2560 x 1440" },
 ];
 
-function nativePixelSize() {
-  // CSS pixels the canvas actually occupies x devicePixelRatio => the display's
-  // real pixel grid, so rendering at this size is 1:1 sharp (no upscale blur).
-  const rect = viewportCanvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  const cssWidth = rect.width || window.innerWidth || 800;
-  const cssHeight = rect.height || window.innerHeight || 600;
+// The menus are authored for >= 800x600; the engine-side hook additionally
+// clamps at 640x480..7680x4320. Dynamic sizing clamps to the authored minimum
+// so tiny windows scale the render down via CSS instead of breaking layouts.
+const ENGINE_MIN = { width: 800, height: 600 };
+const ENGINE_MAX = { width: 7680, height: 4320 };
+
+// Total-pixel budget for DYNAMIC sizing. iPads report devicePixelRatio 2-3;
+// a full-DPR canvas there means a ~16MP render target and WebGL context loss
+// ("browser reclaimed the GPU"), so mobile Safari gets a tighter budget (the
+// render is CSS-upscaled from a still-sharp ~2.4MP). Desktop allows up to 4K.
+// Explicit fixed/custom selections are NOT capped — only the automatic mode.
+const IS_IOS_LIKE = /iP(ad|hone|od)/.test(navigator.userAgent)
+  || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const MAX_DYNAMIC_PIXELS = IS_IOS_LIKE ? 2_400_000 : 8_500_000;
+
+let displaySettings = loadDisplaySettings();
+let lastAppliedResolution = null; // {width,height} last reported by the engine
+
+function clampResolution(width, height) {
   return {
-    width: Math.max(640, Math.round(cssWidth * dpr)),
-    height: Math.max(480, Math.round(cssHeight * dpr)),
+    width: Math.min(ENGINE_MAX.width, Math.max(ENGINE_MIN.width, Math.round(width))),
+    height: Math.min(ENGINE_MAX.height, Math.max(ENGINE_MIN.height, Math.round(height))),
   };
 }
 
-// Every resolution <select> on the page (the in-game live one + the launcher
-// mirror) shares the same option ladder and a live-updating Native entry.
-function resolutionSelects() {
-  return [resolutionSelect, launcherResolutionSelect].filter(Boolean);
-}
-
-function refreshNativeOptionFor(select) {
-  if (!select) {
-    return;
-  }
-  const native = nativePixelSize();
-  const option = select.querySelector('option[data-native="1"]');
-  if (option) {
-    option.value = `native:${native.width}x${native.height}`;
-    option.textContent = `Native (${native.width} x ${native.height})`;
-  }
-}
-
-function refreshNativeOption() {
-  for (const select of resolutionSelects()) {
-    refreshNativeOptionFor(select);
-  }
-}
-
-function populateResolutionOptionsInto(select, preferredValue) {
-  if (!select) {
-    return;
-  }
-  select.textContent = "";
-  const native = nativePixelSize();
-  const nativeOption = document.createElement("option");
-  nativeOption.dataset.native = "1";
-  nativeOption.value = `native:${native.width}x${native.height}`;
-  nativeOption.textContent = `Native (${native.width} x ${native.height})`;
-  select.appendChild(nativeOption);
-  for (const preset of PRESET_RESOLUTIONS) {
-    const option = document.createElement("option");
-    option.value = `${preset.width}x${preset.height}`;
-    option.textContent = preset.label;
-    select.appendChild(option);
-  }
-  applySelectValue(select, preferredValue ?? "800x600");
-}
-
-// Set a select's value tolerating the live "native:WxH" string (whose numeric
-// suffix changes with the tab size): a stored "native" intent maps onto the
-// current Native option regardless of its live value.
-function applySelectValue(select, value) {
-  if (!select) {
-    return;
-  }
-  if (value === "native") {
-    const nativeOption = select.querySelector('option[data-native="1"]');
-    if (nativeOption) {
-      select.value = nativeOption.value;
-      return;
-    }
-  }
-  const hasOption = Array.from(select.options).some((option) => option.value === value);
-  select.value = hasOption ? value : "800x600";
-}
-
-// Canonical, storage-safe representation of a select's current choice: "native"
-// for the live-sizing native option, else the plain "WxH" preset string.
-function selectStorageValue(select) {
-  if (!select) {
-    return "800x600";
-  }
-  const value = select.value || "";
-  return value.startsWith("native:") ? "native" : value;
-}
-
-function populateResolutionOptions() {
-  const stored = loadLauncherSettings();
-  const preferred = typeof stored.resolution === "string" ? stored.resolution : "800x600";
-  populateResolutionOptionsInto(resolutionSelect, preferred);
-  populateResolutionOptionsInto(launcherResolutionSelect, preferred);
-}
-
-function selectedResolution() {
-  const value = resolutionSelect ? resolutionSelect.value : "";
-  if (typeof value !== "string") {
+// The canvas CSS box x devicePixelRatio: the display's real pixel grid, so
+// rendering at this size is 1:1 sharp (no upscale blur). Returns null during
+// degenerate layouts (mid-fullscreen-transition, hidden canvas) so callers
+// skip instead of pushing a broken size into the engine.
+function dynamicTargetResolution() {
+  const rect = viewportCanvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const cssWidth = rect.width || window.innerWidth || 0;
+  const cssHeight = rect.height || window.innerHeight || 0;
+  if (cssWidth < 64 || cssHeight < 64) {
     return null;
   }
-  const raw = value.startsWith("native:") ? value.slice("native:".length) : value;
-  const match = /^(\d+)x(\d+)$/.exec(raw);
-  if (!match) {
-    return null;
+  let width = cssWidth * dpr;
+  let height = cssHeight * dpr;
+  const pixels = width * height;
+  if (pixels > MAX_DYNAMIC_PIXELS) {
+    const scale = Math.sqrt(MAX_DYNAMIC_PIXELS / pixels);
+    width *= scale;
+    height *= scale;
   }
-  return { width: Number(match[1]), height: Number(match[2]), isNative: value.startsWith("native:") };
+  return clampResolution(width, height);
 }
 
-async function applySelectedResolution() {
-  if (!activeRpc || applyingResolution) {
+function targetResolutionForSettings() {
+  if (displaySettings.mode === "fixed") {
+    return clampResolution(displaySettings.width, displaySettings.height);
+  }
+  return dynamicTargetResolution();
+}
+
+// --- applying ---------------------------------------------------------------
+let applyingResolution = false;
+let applyQueued = false;
+let busyRetryTimer = null;
+let busyRetryCount = 0;
+
+function scheduleBusyRetry(reason) {
+  if (busyRetryTimer || busyRetryCount >= 90) {
     return;
   }
-  const target = selectedResolution();
+  busyRetryTimer = setTimeout(() => {
+    busyRetryTimer = null;
+    busyRetryCount += 1;
+    void applyDisplaySettings(`${reason}:retry`);
+  }, 1000);
+}
+
+async function applyDisplaySettings(reason = "settings") {
+  if (!activeRpc) {
+    return;
+  }
+  const target = targetResolutionForSettings();
   if (!target) {
+    return;
+  }
+  if (lastAppliedResolution
+      && lastAppliedResolution.width === target.width
+      && lastAppliedResolution.height === target.height) {
+    return;
+  }
+  if (applyingResolution) {
+    applyQueued = true;
     return;
   }
   applyingResolution = true;
@@ -1004,15 +1014,124 @@ async function applySelectedResolution() {
       width: target.width,
       height: target.height,
     });
-    if (result?.ok !== true) {
+    if (result?.ok === true) {
+      busyRetryCount = 0;
+      lastAppliedResolution = {
+        width: result.applied?.width ?? target.width,
+        height: result.applied?.height ?? target.height,
+      };
+    } else if (result?.error === "busy-loading") {
+      // A map/save load is in flight; the engine refuses resolution changes
+      // until it drains. Retry on a timer instead of dropping the intent.
+      scheduleBusyRetry(reason);
+    } else {
       console.warn("[play] setEngineResolution failed", result?.error ?? result);
     }
   } catch (error) {
     console.warn("[play] setEngineResolution threw", error);
   } finally {
     applyingResolution = false;
+    if (applyQueued) {
+      applyQueued = false;
+      void applyDisplaySettings(reason);
+    }
   }
 }
+
+// --- select UI ----------------------------------------------------------------
+function presetValue(width, height) {
+  return `${width}x${height}`;
+}
+
+function dynamicOptionLabel() {
+  const size = dynamicTargetResolution();
+  return size
+    ? `Dynamic — fits window (${size.width} x ${size.height})`
+    : "Dynamic — fits window";
+}
+
+function populateResolutionSelect() {
+  if (!resolutionSelect) {
+    return;
+  }
+  resolutionSelect.textContent = "";
+  const dynamicOption = document.createElement("option");
+  dynamicOption.value = "dynamic";
+  dynamicOption.textContent = dynamicOptionLabel();
+  resolutionSelect.appendChild(dynamicOption);
+  for (const preset of PRESET_RESOLUTIONS) {
+    const option = document.createElement("option");
+    option.value = presetValue(preset.width, preset.height);
+    option.textContent = preset.label;
+    resolutionSelect.appendChild(option);
+  }
+  const customOption = document.createElement("option");
+  customOption.value = "custom";
+  customOption.textContent = "Custom…";
+  resolutionSelect.appendChild(customOption);
+}
+
+function refreshDynamicOptionLabel() {
+  const option = resolutionSelect?.querySelector('option[value="dynamic"]');
+  if (option) {
+    option.textContent = dynamicOptionLabel();
+  }
+}
+
+function syncSelectToSettings() {
+  if (!resolutionSelect) {
+    return;
+  }
+  refreshDynamicOptionLabel();
+  let showCustom = false;
+  if (displaySettings.mode === "dynamic") {
+    resolutionSelect.value = "dynamic";
+  } else {
+    const value = presetValue(displaySettings.width, displaySettings.height);
+    const isPreset = PRESET_RESOLUTIONS.some(
+      (preset) => presetValue(preset.width, preset.height) === value);
+    resolutionSelect.value = isPreset ? value : "custom";
+    showCustom = !isPreset;
+    if (customResolutionWidth && customResolutionHeight) {
+      customResolutionWidth.value = String(displaySettings.width);
+      customResolutionHeight.value = String(displaySettings.height);
+    }
+  }
+  customResolutionRow?.classList.toggle("hidden", !showCustom && resolutionSelect.value !== "custom");
+}
+
+function setDisplaySettings(next, reason) {
+  displaySettings = next;
+  saveDisplaySettings(displaySettings);
+  syncSelectToSettings();
+  void applyDisplaySettings(reason);
+}
+
+// Engine-side resolution reports: device create at boot, every RPC apply, and
+// engine-initiated changes (the in-game options screen). The engine is the
+// source of truth — an unexpected size becomes the new persisted fixed intent.
+window.addEventListener("cncport:resolutionchange", (event) => {
+  const width = Math.round(Number(event.detail?.width ?? 0));
+  const height = Math.round(Number(event.detail?.height ?? 0));
+  const source = String(event.detail?.source ?? "engine");
+  if (width < 2 || height < 2) {
+    return;
+  }
+  lastAppliedResolution = { width, height };
+  refreshDynamicOptionLabel();
+  if (source !== "engine" || !displayControlsReady) {
+    return;
+  }
+  const expected = targetResolutionForSettings();
+  if (expected
+      && Math.abs(expected.width - width) <= 2
+      && Math.abs(expected.height - height) <= 2) {
+    return; // our own change (or boot) landing — intent already matches
+  }
+  displaySettings = { mode: "fixed", width, height };
+  saveDisplaySettings(displaySettings);
+  syncSelectToSettings();
+});
 
 // --- fullscreen -------------------------------------------------------------
 function fullscreenElement() {
@@ -1116,41 +1235,38 @@ function onFullscreenChange() {
     fullscreenButton.classList.toggle("active", active);
     fullscreenButton.textContent = active ? "exit full" : "fullscreen";
   }
-  // Fullscreen is PURELY a CSS scale-to-fill: toggle the class (alongside the
-  // :fullscreen selector) so the chrome is hidden and the existing canvas is
-  // scaled up to fill the screen (object-fit: contain on black -> aspect
-  // preserved, letterboxed on black). We deliberately do NOT change the engine
-  // resolution on enter/leave: no setEngineResolution, no shell/HUD reflow, no
-  // backbuffer resize. The game keeps rendering at its current resolution and
-  // the UI stays exactly as it was -- only the on-screen scale changes. The
-  // resolution selector remains the one explicit path that changes the engine
-  // resolution. Input still lands correctly because canvasInputPointFromEvent
-  // maps from the live canvas client rect (which becomes the fullscreen rect)
-  // to the unchanged engine display size.
+  // Toggle the CSS fullscreen state (chrome hidden, canvas scaled to the
+  // screen, letterboxed on black via object-fit: contain), then treat the
+  // enter/exit as a viewport geometry change: in Dynamic mode the engine
+  // resolution follows the new canvas box (debounced + rAF-deferred +
+  // degenerate-size-guarded in the geometry handler, so the mid-transition
+  // rects that used to break the render target are skipped) — fullscreen is
+  // 1:1 sharp. In fixed mode the engine keeps its resolution and only the CSS
+  // scale changes. Input stays correct either way: canvasInputPointFromEvent
+  // maps through the letterboxed content box to the engine display size.
   fullscreenTarget.classList.toggle("is-fullscreen", active);
-  refreshNativeOption();
+  onViewportGeometryChange();
 }
 
-// --- live tracking of tab size / DPR ----------------------------------------
+// --- live tracking of tab size / DPR / fullscreen -----------------------------
 let resizeSettleTimer = null;
 function onViewportGeometryChange() {
-  refreshNativeOption();
+  refreshDynamicOptionLabel();
+  if (displaySettings.mode !== "dynamic") {
+    return;
+  }
   if (resizeSettleTimer) {
     clearTimeout(resizeSettleTimer);
   }
   // Debounce: only push a new engine resolution once the resize settles, so a
-  // window drag does not spam display-mode changes (each recreates the shell).
+  // window drag does not spam display-mode changes (each reflows the GUI), and
+  // defer to rAF so fullscreen enter/exit applies after layout stabilizes.
   resizeSettleTimer = setTimeout(() => {
     resizeSettleTimer = null;
-    // Fullscreen is a pure CSS scale and fires resize events too; never re-apply
-    // the engine resolution while fullscreen so entering/leaving it does not
-    // trigger a shell/HUD reflow. Only track Native for the windowed selector.
-    const inFullscreen = Boolean(
-      document.fullscreenElement || document.webkitFullscreenElement,
-    );
-    if (!inFullscreen && selectedResolution()?.isNative) {
-      void applySelectedResolution();
-    }
+    requestAnimationFrame(() => {
+      refreshDynamicOptionLabel();
+      void applyDisplaySettings("geometry");
+    });
   }, 350);
 }
 
@@ -1159,14 +1275,46 @@ function initDisplayControls() {
     return;
   }
   displayControlsReady = true;
-  populateResolutionOptions();
+  populateResolutionSelect();
+  syncSelectToSettings();
 
   resolutionSelect.addEventListener("change", () => {
-    // Mirror the choice onto the launcher select + persist, then drive the
-    // existing live-apply path.
-    applySelectValue(launcherResolutionSelect, selectStorageValue(resolutionSelect));
-    saveLauncherSettings({ resolution: selectStorageValue(resolutionSelect) });
-    void applySelectedResolution();
+    const value = resolutionSelect.value;
+    if (value === "dynamic") {
+      setDisplaySettings({ mode: "dynamic" }, "select");
+      return;
+    }
+    if (value === "custom") {
+      // Show the inputs seeded with the current size; nothing applies until
+      // the player hits Apply.
+      customResolutionRow?.classList.remove("hidden");
+      const seed = lastAppliedResolution ?? targetResolutionForSettings();
+      if (seed && customResolutionWidth && customResolutionHeight) {
+        customResolutionWidth.value = String(seed.width);
+        customResolutionHeight.value = String(seed.height);
+      }
+      return;
+    }
+    const match = /^(\d+)x(\d+)$/.exec(value);
+    if (match) {
+      setDisplaySettings(
+        { mode: "fixed", width: Number(match[1]), height: Number(match[2]) },
+        "select");
+    }
+  });
+
+  customResolutionApply?.addEventListener("click", () => {
+    const width = Math.round(Number(customResolutionWidth?.value ?? 0));
+    const height = Math.round(Number(customResolutionHeight?.value ?? 0));
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width < 2 || height < 2) {
+      return;
+    }
+    const clamped = clampResolution(width, height);
+    if (customResolutionWidth && customResolutionHeight) {
+      customResolutionWidth.value = String(clamped.width);
+      customResolutionHeight.value = String(clamped.height);
+    }
+    setDisplaySettings({ mode: "fixed", width: clamped.width, height: clamped.height }, "custom");
   });
 
   if (fullscreenButton) {
@@ -1242,75 +1390,6 @@ function initDisplayControls() {
   watchDprChange();
 }
 
-// --- launcher (pre-game) settings + in-game settings overlay ----------------
-// The launcher exposes the same display controls BEFORE the game boots. It
-// stores the player's intent (resolution + start-in-fullscreen) in localStorage
-// and, on boot, seeds the live select and drives the EXISTING apply path so the
-// game starts at the chosen resolution (and enters fullscreen if requested).
-let launcherControlsReady = false;
-
-function initLauncherControls() {
-  if (launcherControlsReady) {
-    return;
-  }
-  launcherControlsReady = true;
-
-  const stored = loadLauncherSettings();
-  // Seed the launcher select ladder + Native entry so it is usable pre-boot.
-  populateResolutionOptionsInto(
-    launcherResolutionSelect,
-    typeof stored.resolution === "string" ? stored.resolution : "800x600",
-  );
-  if (fullscreenToggle) {
-    fullscreenToggle.checked = Boolean(stored.startFullscreen);
-    // iPad Safari can't fullscreen arbitrary elements; hide the toggle where
-    // fullscreen isn't available so it never sets an intent that can't apply.
-    if (!fullscreenSupported()) {
-      const row = fullscreenToggle.closest(".settingRow");
-      (row ?? fullscreenToggle).classList.add("hidden");
-    }
-  }
-
-  launcherResolutionSelect?.addEventListener("change", () => {
-    const value = selectStorageValue(launcherResolutionSelect);
-    saveLauncherSettings({ resolution: value });
-    // Keep the live in-game select in step (it may already exist / be seeded).
-    applySelectValue(resolutionSelect, value);
-  });
-
-  fullscreenToggle?.addEventListener("change", () => {
-    saveLauncherSettings({ startFullscreen: fullscreenToggle.checked });
-  });
-
-  // Refresh the launcher Native option to the current tab size while it's shown
-  // so its label reflects the real pixel grid before the player starts.
-  refreshNativeOptionFor(launcherResolutionSelect);
-  window.addEventListener("resize", () => {
-    if (!launcherControlsReady) {
-      return;
-    }
-    refreshNativeOptionFor(launcherResolutionSelect);
-  });
-}
-
-async function applyLauncherIntentOnBoot() {
-  const stored = loadLauncherSettings();
-  // Seed the live select from the persisted choice, then drive the existing
-  // apply path (unless it's the stock default, which needs no display change).
-  if (typeof stored.resolution === "string" && resolutionSelect) {
-    applySelectValue(resolutionSelect, stored.resolution);
-    applySelectValue(launcherResolutionSelect, stored.resolution);
-  }
-  if (selectStorageValue(resolutionSelect) !== "800x600") {
-    await applySelectedResolution();
-  }
-  // Enter fullscreen if the player asked for it. onFullscreenChange (owned by
-  // the resize logic) then auto-applies the screen-matched native resolution.
-  if (stored.startFullscreen && fullscreenSupported() && !fullscreenElement()) {
-    await enterFullscreen();
-  }
-}
-
 // --- in-game settings overlay (opened by the gear) --------------------------
 const settingsOverlay = document.querySelector("#settingsOverlay");
 const settingsClose = document.querySelector("#settingsClose");
@@ -1319,7 +1398,9 @@ function openSettings() {
   if (!settingsOverlay) {
     return;
   }
-  refreshNativeOption();
+  if (displayControlsReady) {
+    syncSelectToSettings();
+  }
   settingsOverlay.classList.remove("hidden");
   settingsOverlay.setAttribute("aria-hidden", "false");
 }
@@ -1349,4 +1430,3 @@ window.addEventListener("keydown", (event) => {
   }
 });
 
-initLauncherControls();

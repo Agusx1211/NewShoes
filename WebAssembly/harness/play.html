@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="./harness.css">
   </head>
   <body>
-    <main class="shell">
+    <main class="shell playShell">
       <button id="fullscreenExit" type="button" title="Exit fullscreen (hold Esc)">Exit fullscreen</button>
       <canvas id="viewport" width="1280" height="720" aria-label="Game viewport" tabindex="0"></canvas>
 
@@ -82,17 +82,10 @@
 
           <section class="launcherSettings" aria-label="Display settings">
             <h2 class="settingsHeading">Display</h2>
-            <label class="settingRow" for="resolutionSelect">
-              <span class="settingLabel">Resolution</span>
-              <select id="resolutionSelect" title="Engine render resolution (applied when the game boots)"></select>
-            </label>
-            <label class="settingRow settingRowToggle" for="fullscreenToggle">
-              <span class="settingLabel">Start in fullscreen</span>
-              <input id="fullscreenToggle" type="checkbox">
-            </label>
             <p class="settingHint">
-              Settings are saved and applied when you press Play. You can change
-              them again in-game from the <span class="inlineGear" aria-hidden="true">⚙</span> gear.
+              The game renders at your window size and follows it live.
+              Resolution and fullscreen live in-game behind the
+              <span class="inlineGear" aria-hidden="true">⚙</span> gear.
             </p>
           </section>
         </div>
@@ -122,6 +115,15 @@
             <span class="settingLabel">Resolution</span>
             <select id="resolutionSelectLive" title="Engine render resolution (drives the real display-mode change)"></select>
           </label>
+          <div id="customResolutionRow" class="settingRow settingRowActions hidden">
+            <span class="settingLabel">Custom size</span>
+            <span class="customResolutionInputs">
+              <input id="customResolutionWidth" type="number" inputmode="numeric" min="640" max="7680" step="1" placeholder="width">
+              <span aria-hidden="true">x</span>
+              <input id="customResolutionHeight" type="number" inputmode="numeric" min="480" max="4320" step="1" placeholder="height">
+              <button id="customResolutionApply" type="button" class="pillButton" title="Apply custom resolution">Apply</button>
+            </span>
+          </div>
           <div class="settingRow settingRowActions">
             <span class="settingLabel">Fullscreen</span>
             <button id="fullscreenButton" type="button" class="pillButton" title="Toggle fullscreen">Fullscreen</button>

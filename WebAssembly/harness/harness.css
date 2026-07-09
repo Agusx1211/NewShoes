@@ -42,9 +42,8 @@ body {
 #viewport { touch-action: none; }
 
 /* ---------------------------------------------------------------------------
-   Playing shell. The canvas fills its area with NO gray toolbar row: the shell
-   is a single centered canvas on black. The old .status bar is gone; live
-   status is a subtle floating HUD chip and settings live behind the gear.
+   Legacy harness shell (index.html and the smoke pages): the historical
+   capped-width 16:9 canvas box. The playable page uses .shell.playShell below.
    --------------------------------------------------------------------------- */
 .shell {
   width: min(100vw, 1280px);
@@ -63,15 +62,42 @@ body {
   align-self: center;
   background: #000;
   display: block;
-  /* Letterbox (aspect-preserve) the engine's chosen-resolution backing store
-     into this 16:9 display box, exactly like fullscreen. Without this a
-     non-16:9 render (e.g. 4:3 800x600 / 1024x768) is horizontally STRETCHED to
-     fill the box, so the chosen resolution is not visually respected in
-     windowed mode. `contain` centers the render on black instead (pillarbox on
-     the sides / letterbox on top). The dynamic "Native" option sizes its buffer
-     to the box aspect, so `contain` fills it edge-to-edge (no bars) -- one rule
-     handles both cases. canvasInputPointFromEvent maps clicks through the same
-     contained content box so they still land on the right engine point. */
+  object-fit: contain;
+}
+
+/* ---------------------------------------------------------------------------
+   Playing shell (play.html). The canvas IS the window: the shell fills the
+   whole viewport (no width cap, no forced aspect box) so windowed and
+   fullscreen share one geometry model. Live status is a subtle floating HUD
+   chip and settings live behind the gear.
+   --------------------------------------------------------------------------- */
+.shell.playShell {
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+.shell.playShell #viewport {
+  /* Absolutely positioned so the percentages resolve against the shell box
+     (the window) instead of the grid's implicit auto tracks — a plain
+     height:100% grid item is circular there and silently falls back to the
+     canvas buffer's intrinsic aspect (the box then tracks the render buffer,
+     not the window, and Dynamic mode chases its own tail). */
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  aspect-ratio: auto;
+  /* The backing store is pinned to the ENGINE render resolution (bridge.js).
+     In Dynamic mode that resolution follows this box x devicePixelRatio, so
+     `contain` fills the window edge-to-edge with a 1:1-sharp render. At a
+     fixed resolution the aspect generally differs from the window, and
+     `contain` centers the render letterboxed on black instead of stretching
+     it — the chosen resolution is visually respected. Windowed and fullscreen
+     behave identically. canvasInputPointFromEvent maps clicks through the same
+     contained content box so they land on the right engine point. */
   object-fit: contain;
 }
 
@@ -398,8 +424,7 @@ body {
 }
 .settingHint .inlineGear { color: var(--accent); }
 
-/* Shared select styling (launcher + settings overlay). */
-select#resolutionSelect,
+/* Resolution select (settings overlay). */
 select#resolutionSelectLive {
   flex: 1 1 auto;
   min-width: 0;
@@ -412,18 +437,30 @@ select#resolutionSelectLive {
   border-radius: 8px;
   cursor: pointer;
 }
-select#resolutionSelect:focus-visible,
 select#resolutionSelectLive:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
-/* Fullscreen checkbox — larger touch target. */
-#fullscreenToggle {
-  width: 20px;
-  height: 20px;
-  accent-color: var(--accent);
-  cursor: pointer;
+/* Custom W x H entry (shown when the resolution select is on "Custom…"). */
+.customResolutionInputs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+}
+.customResolutionInputs input[type="number"] {
+  width: 72px;
+  font: 14px/1.2 var(--sys-font);
+  padding: 8px 8px;
+  color: var(--text);
+  background: #0c1016;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+}
+.customResolutionInputs input[type="number"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .launcherFoot {
