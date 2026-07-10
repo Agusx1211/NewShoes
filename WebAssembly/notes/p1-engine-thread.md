@@ -937,6 +937,15 @@ ceiling — legacy peaks 58.8/s where threaded holds ~43/s; both are far above
 the 30/s logic gate and the felt-60Hz bar is a display-rate concern only at
 peaks, not the crush the blocker described.
 
+**HEADFUL spot-check (the owner-realistic config: real window, GPU
+compositing ON, no --disable-gpu-compositing), threaded-release, 90s:**
+client **52.6-60/s** through the escalated shellmap (55.2/s at 1514
+draws/frame; 83k draws/s peak), logic 30.0 exact in every settled bucket,
+maxGap 19-33ms (single 2.2s gap = a shellmap load slice). Headless numbers
+above are the CONSERVATIVE bound — headless BeginFrame throttling caps the
+client ~44/s; headful hits the actual 60Hz bar. The GATE D-era headful
+question is closed: no Chrome flags are needed.
+
 **Flip decision: UNBLOCKED** — the prepared flip diff from
 `threaded-default-flip` (f002675d) is cherry-picked on this lane's branch
 with the dist default resolved to dist-threaded-release on the play page.
