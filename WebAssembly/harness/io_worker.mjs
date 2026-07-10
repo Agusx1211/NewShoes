@@ -23,6 +23,14 @@
 //          Content-Length, 0 when the server did not send one).
 //   { id, kind: "fetchRange", url, start, end }
 //       -> HTTP Range request, transfer the range bytes back.
+//   { id, kind: "fetchToOpfs", url, opfsPath }
+//       -> stream fetch straight into an OPFS file (P2 "OPFS as the disk",
+//          IDEAS.md "the browser as a 2003 PC"): each chunk is written through
+//          a FileSystemSyncAccessHandle as it arrives, so the whole file is
+//          NEVER resident in worker memory (peak = one fetch chunk). Interim
+//          progress messages identical to fetchArchive. Responds
+//          { id, ok: true, kind, bytesWritten, opfsPath, status }.
+//          opfsPath may contain '/' separators; directories are created.
 //   { id, kind: "ping" }
 //       -> liveness check.
 //
@@ -95,6 +103,87 @@ async function fetchWholeArchive(url, reportProgress) {
   return { buffer, status: response.status };
 }
 
+// Walk an OPFS path like "cnc-assets/INIZH.big", creating intermediate
+// directories, and return the FileSystemFileHandle for the final component.
+async function resolveOpfsFileHandle(opfsPath, { create }) {
+  if (!navigator.storage || typeof navigator.storage.getDirectory !== "function") {
+    throw new Error("OPFS (navigator.storage.getDirectory) is unavailable in this worker");
+  }
+  const parts = String(opfsPath ?? "")
+    .split("/")
+    .filter((part) => part.length > 0 && part !== ".");
+  if (parts.length === 0 || parts.includes("..")) {
+    throw new Error(`invalid OPFS path: ${opfsPath}`);
+  }
+  let directory = await navigator.storage.getDirectory();
+  for (const part of parts.slice(0, -1)) {
+    directory = await directory.getDirectoryHandle(part, { create });
+  }
+  return directory.getFileHandle(parts[parts.length - 1], { create });
+}
+
+// Streamed fetch -> OPFS: the P0-proven pattern from opfs_sync_read_worker.mjs
+// promoted into the shipping IO worker. Bytes go chunk-by-chunk from the fetch
+// body reader into FileSystemSyncAccessHandle.write(chunk, { at }) — the whole
+// file is never held in memory. createSyncAccessHandle is dedicated-worker-only,
+// which this worker is.
+async function fetchToOpfs(url, opfsPath, reportProgress) {
+  const fileHandle = await resolveOpfsFileHandle(opfsPath, { create: true });
+  if (typeof fileHandle.createSyncAccessHandle !== "function") {
+    throw new Error("FileSystemFileHandle.createSyncAccessHandle is unavailable in this worker");
+  }
+  const handle = await fileHandle.createSyncAccessHandle();
+  try {
+    handle.truncate(0);
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`fetch failed: ${response.status} ${response.statusText}`);
+    }
+    const contentLength = Number(response.headers.get("content-length"));
+    const total = Number.isSafeInteger(contentLength) && contentLength > 0 ? contentLength : 0;
+
+    let offset = 0;
+    if (typeof response.body?.getReader !== "function") {
+      // No streaming support in this context: single-shot fallback (still one
+      // buffer, immediately written out and released).
+      const buffer = new Uint8Array(await response.arrayBuffer());
+      const written = handle.write(buffer, { at: 0 });
+      if (written !== buffer.byteLength) {
+        throw new Error(`short OPFS write: ${written} of ${buffer.byteLength} at 0`);
+      }
+      offset = written;
+      reportProgress?.(offset, total || offset, true);
+    } else {
+      const reader = response.body.getReader();
+      reportProgress?.(0, total, true);
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        const written = handle.write(value, { at: offset });
+        if (written !== value.byteLength) {
+          throw new Error(`short OPFS write: ${written} of ${value.byteLength} at ${offset}`);
+        }
+        offset += written;
+        reportProgress?.(offset, total, false);
+      }
+      reportProgress?.(offset, total || offset, true);
+    }
+    handle.flush();
+    if (handle.getSize() !== offset) {
+      throw new Error(`OPFS size mismatch after write: ${handle.getSize()} != ${offset}`);
+    }
+    return { bytesWritten: offset, status: response.status };
+  } finally {
+    try {
+      handle.close();
+    } catch {
+      // already closed
+    }
+  }
+}
+
 async function fetchRange(url, start, end) {
   const response = await fetch(url, {
     headers: { Range: `bytes=${start}-${end}` },
@@ -149,6 +238,23 @@ self.onmessage = async (event) => {
         { id, ok: true, kind, bytes: buffer, byteLength: buffer.byteLength, status },
         [buffer],
       );
+      return;
+    }
+
+    if (kind === "fetchToOpfs") {
+      const url = String(message.url ?? "");
+      const opfsPath = String(message.opfsPath ?? "");
+      let lastProgressAt = -Infinity;
+      const reportProgress = (received, total, force) => {
+        const now = performance.now();
+        if (!force && now - lastProgressAt < PROGRESS_POST_INTERVAL_MS) {
+          return;
+        }
+        lastProgressAt = now;
+        self.postMessage({ id, ok: true, kind: "progress", url, received, total });
+      };
+      const { bytesWritten, status } = await fetchToOpfs(url, opfsPath, reportProgress);
+      self.postMessage({ id, ok: true, kind, bytesWritten, opfsPath, status });
       return;
     }
 

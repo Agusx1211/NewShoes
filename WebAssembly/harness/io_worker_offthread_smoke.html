@@ -106,6 +106,74 @@
           setTimeout(() => reject(new Error("io worker smoke timed out")), 15000);
         });
       };
+
+      // fetchToOpfs smoke (P2 "OPFS as the disk"): drive the worker's
+      // streamed fetch->OPFS command, then read the OPFS file back on the
+      // main thread (async File API) and byte-compare against a direct fetch
+      // of the same served payload. Cleans up the OPFS entry afterwards.
+      window.__runFetchToOpfsSmoke = async (payloadUrl) => {
+        const opfsPath = "cnc-io-smoke/fetch-to-opfs.bin";
+        const worker = new Worker(new URL("./io_worker.mjs", import.meta.url), {
+          type: "module",
+        });
+        const progressEvents = [];
+        try {
+          const response = await new Promise((resolve, reject) => {
+            worker.onmessage = (event) => {
+              const message = event.data ?? {};
+              if (message.kind === "ready") {
+                worker.postMessage({ id: 7, kind: "fetchToOpfs", url: payloadUrl, opfsPath });
+                return;
+              }
+              if (message.kind === "progress") {
+                progressEvents.push({
+                  received: Number(message.received),
+                  total: Number(message.total),
+                });
+                return;
+              }
+              if (message.id === 7) {
+                if (message.ok) {
+                  resolve(message);
+                } else {
+                  reject(new Error(message.error ?? "fetchToOpfs failed"));
+                }
+              }
+            };
+            worker.onerror = (event) => reject(new Error(event?.message ?? "worker crashed"));
+            setTimeout(() => reject(new Error("fetchToOpfs smoke timed out")), 15000);
+          });
+
+          // Read the bytes back from OPFS on the main thread (async API) and
+          // compare against a direct fetch of the served payload.
+          const root = await navigator.storage.getDirectory();
+          const dir = await root.getDirectoryHandle("cnc-io-smoke");
+          const fileHandle = await dir.getFileHandle("fetch-to-opfs.bin");
+          const opfsBytes = new Uint8Array(await (await fileHandle.getFile()).arrayBuffer());
+          const servedBytes = new Uint8Array(await (await fetch(payloadUrl)).arrayBuffer());
+          let bytesMatch = opfsBytes.byteLength === servedBytes.byteLength;
+          if (bytesMatch) {
+            for (let i = 0; i < opfsBytes.byteLength; i += 1) {
+              if (opfsBytes[i] !== servedBytes[i]) {
+                bytesMatch = false;
+                break;
+              }
+            }
+          }
+          await root.removeEntry("cnc-io-smoke", { recursive: true });
+          return {
+            bytesWritten: Number(response.bytesWritten),
+            opfsByteLength: opfsBytes.byteLength,
+            servedByteLength: servedBytes.byteLength,
+            bytesMatch,
+            progressEventCount: progressEvents.length,
+            progressTotal: progressEvents.reduce((max, p) => Math.max(max, p.total), 0),
+            progressMaxReceived: progressEvents.reduce((max, p) => Math.max(max, p.received), 0),
+          };
+        } finally {
+          worker.terminate();
+        }
+      };
     </script>
   </body>
 </html>

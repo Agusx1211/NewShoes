@@ -42,6 +42,12 @@ async function main() {
       return window.__runIoWorkerSmoke(payloadUrl);
     }, new URL(targetPath, server.url).href);
 
+    // fetchToOpfs (P2 "OPFS as the disk"): stream the same served payload into
+    // OPFS through the worker and byte-compare the OPFS contents.
+    const opfsResult = await page.evaluate(async (payloadUrl) => {
+      return window.__runFetchToOpfsSmoke(payloadUrl);
+    }, new URL(targetPath, server.url).href);
+
     // Assertions.
     const checks = [];
     checks.push(["worker reported ready", result.ready === true]);
@@ -84,6 +90,32 @@ async function main() {
       "final progress covered the full payload",
       Number(result.progressMaxReceived) === fileStat.size,
     ]);
+    // fetchToOpfs checks: bytes streamed into OPFS must match the served file
+    // exactly, with the same progress-message contract as fetchArchive.
+    checks.push([
+      "fetchToOpfs wrote the full payload to OPFS",
+      Number(opfsResult.bytesWritten) === fileStat.size,
+    ]);
+    checks.push([
+      "OPFS file byte-length matches served file",
+      Number(opfsResult.opfsByteLength) === fileStat.size,
+    ]);
+    checks.push([
+      "OPFS bytes match served bytes exactly",
+      opfsResult.bytesMatch === true,
+    ]);
+    checks.push([
+      "fetchToOpfs posted streamed progress events",
+      Number(opfsResult.progressEventCount) >= 1,
+    ]);
+    checks.push([
+      "fetchToOpfs progress total matches Content-Length",
+      Number(opfsResult.progressTotal) === fileStat.size,
+    ]);
+    checks.push([
+      "fetchToOpfs final progress covered the full payload",
+      Number(opfsResult.progressMaxReceived) === fileStat.size,
+    ]);
 
     const failed = checks.filter(([, ok]) => !ok);
     for (const [name, ok] of checks) {
@@ -95,6 +127,11 @@ async function main() {
         `heartbeatTicksDuringBusy=${result.heartbeatTicksDuringBusy} ` +
         `progressEvents=${result.progressEventCount} ` +
         `fetchMs=${result.fetchMs?.toFixed?.(1) ?? result.fetchMs}\n`,
+    );
+    process.stdout.write(
+      `info  fetchToOpfs bytesWritten=${opfsResult.bytesWritten} ` +
+        `opfsBytes=${opfsResult.opfsByteLength} match=${opfsResult.bytesMatch} ` +
+        `progressEvents=${opfsResult.progressEventCount}\n`,
     );
     if (failed.length > 0) {
       failure = `IO worker off-thread smoke failed: ${failed.map(([n]) => n).join(", ")}`;
