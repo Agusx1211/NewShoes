@@ -49,10 +49,12 @@
 #include <emscripten.h>
 
 #include <cerrno>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <pthread.h>
+#include <unistd.h>
 
 // ---------------------------------------------------------------------------
 // Realm-local JS bindings (installed by harness/opfs_realm_files.mjs).
@@ -260,7 +262,43 @@ int cnc_port_opfs_intercept_open(const char *path, int flags)
 	}
 
 	pthread_mutex_lock(&g_lock);
-	const bool matches = g_prefix_count > 0 && pathMatchesRegisteredPrefix(path);
+	const bool anyPrefix = g_prefix_count > 0;
+	pthread_mutex_unlock(&g_lock);
+	if (!anyPrefix) {
+		return -1;
+	}
+
+	// The engine chdir()s into its run directory and opens archives with
+	// RELATIVE paths (Win32BIGFileSystem::init -> loadBigFilesFromDirectory
+	// ("", "*.big") -> "INIZH.big"), while registered prefixes and staged
+	// realm keys are absolute. Absolutize against the CWD for MATCHING only;
+	// a miss still falls through to POSIX with the caller's original path
+	// (POSIX resolves the CWD itself).
+	char absolute[1024];
+	if (path[0] != '/') {
+		const char *relative = path;
+		while (relative[0] == '.' && relative[1] == '/') {
+			relative += 2;
+		}
+		char cwd[768];
+		if (getcwd(cwd, sizeof(cwd)) == nullptr) {
+			return -1;
+		}
+		const int written = std::snprintf(
+			absolute,
+			sizeof(absolute),
+			"%s%s%s",
+			cwd,
+			cwd[0] != '\0' && cwd[std::strlen(cwd) - 1] == '/' ? "" : "/",
+			relative);
+		if (written <= 0 || written >= static_cast<int>(sizeof(absolute))) {
+			return -1;
+		}
+		path = absolute;
+	}
+
+	pthread_mutex_lock(&g_lock);
+	const bool matches = pathMatchesRegisteredPrefix(path);
 	pthread_mutex_unlock(&g_lock);
 	if (!matches) {
 		return -1;
