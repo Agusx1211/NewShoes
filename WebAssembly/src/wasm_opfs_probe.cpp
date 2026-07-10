@@ -50,6 +50,11 @@
 
 #include <atomic>
 
+// OPFS-boundary diagnostics from wasm_opfs_files.cpp (always linked into
+// cnc-port): actual OPFS calls per phase prove the readahead coalescing.
+extern "C" double cnc_port_opfs_js_read_calls(void);
+extern "C" double cnc_port_opfs_js_read_bytes(void);
+
 namespace
 {
 
@@ -96,6 +101,8 @@ struct PhaseResult
 	double tocMs;               // full TOC walk (byte-wise names)
 	long long tocReads;         // number of _read calls during the walk
 	long long tocBytes;
+	long long tocOpfsCalls;     // OPFS calls the walk actually issued (readahead)
+	long long phaseOpfsCalls;   // OPFS calls across the whole phase
 	double randomMs;
 	long long randomBytes;
 	double sequentialMs;
@@ -177,6 +184,7 @@ bool runPhase(const char *path, PhaseResult &result)
 	// --- 2. Full TOC walk, byte-wise names (the engine's boot pattern) ---
 	char nameBuffer[512];
 	long long biggestSize = -1;
+	const long long phaseOpfsCallsStart = static_cast<long long>(cnc_port_opfs_js_read_calls());
 	{
 		const double start = emscripten_get_now();
 		_lseek(result.fd, 0x10, SEEK_SET);
@@ -215,6 +223,8 @@ bool runPhase(const char *path, PhaseResult &result)
 			}
 		}
 		result.tocMs = emscripten_get_now() - start;
+		result.tocOpfsCalls =
+			static_cast<long long>(cnc_port_opfs_js_read_calls()) - phaseOpfsCallsStart;
 	}
 
 	unsigned char *chunk = static_cast<unsigned char *>(std::malloc(kSequentialChunkSize));
@@ -348,6 +358,8 @@ bool runPhase(const char *path, PhaseResult &result)
 	}
 
 	std::free(chunk);
+	result.phaseOpfsCalls =
+		static_cast<long long>(cnc_port_opfs_js_read_calls()) - phaseOpfsCallsStart;
 	if (_close(result.fd) != 0) {
 		return phaseFail(result, "close failed");
 	}
@@ -362,6 +374,7 @@ int appendPhaseJson(char *out, int capacity, const char *label, const PhaseResul
 		"\"%s\":{\"attempted\":%s,\"ok\":%s,\"error\":\"%s\",\"interceptActive\":%d,"
 		"\"fileSize\":%lld,\"magic\":\"%s\",\"archiveSizeField\":%lld,"
 		"\"tocEntries\":%lld,\"tocMs\":%.2f,\"tocReads\":%lld,\"tocBytes\":%lld,"
+		"\"tocOpfsCalls\":%lld,\"phaseOpfsCalls\":%lld,"
 		"\"randomMs\":%.2f,\"randomBytes\":%lld,"
 		"\"sequentialMs\":%.2f,\"sequentialBytes\":%lld,\"fullFileFnv\":%u,"
 		"\"biggestName\":\"%s\",\"biggestOffset\":%lld,\"biggestSize\":%lld,"
@@ -378,6 +391,8 @@ int appendPhaseJson(char *out, int capacity, const char *label, const PhaseResul
 		result.tocMs,
 		result.tocReads,
 		result.tocBytes,
+		result.tocOpfsCalls,
+		result.phaseOpfsCalls,
 		result.randomMs,
 		result.randomBytes,
 		result.sequentialMs,

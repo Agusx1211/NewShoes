@@ -31,11 +31,25 @@
 // Positions/sizes cross the EM_JS boundary as doubles (emsdk 3.1.6 has no
 // BigInt interop); doubles are exact for any file < 2^53 bytes.
 
+// Small-read coalescing (P2 integration follow-up (a) in TODO.md): the
+// engine's BIG TOC walk issues ~60k byte-wise reads across the archive set
+// at boot; at Chromium's ~0.6ms synchronous storage-IPC floor per OPFS read
+// that would cost ~35s. Each virtual fd therefore keeps a 64KB READAHEAD
+// WINDOW: reads smaller than the window are served from it, and a miss
+// fills the window with ONE OPFS call at the miss offset. Sequential small
+// reads collapse to 1 OPFS call per 64KB (measured: the 3462-read TOC walk
+// of INIZH.big drops from ~2.1s to window-fill cost, see the lane notes).
+// Reads >= the window size bypass it (they are already one OPFS call; no
+// extra memcpy). The window is allocated lazily on the first small read and
+// freed on close; files are immutable while staged, so the window never
+// goes stale.
+
 #ifdef __EMSCRIPTEN__
 
 #include <emscripten.h>
 
 #include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <pthread.h>
@@ -105,6 +119,7 @@ constexpr int kOpfsFdBase = 0x0fd00000;
 constexpr int kOpfsMaxOpen = 64;
 constexpr int kOpfsMaxPrefixes = 8;
 constexpr int kOpfsMaxPrefixLength = 255;
+constexpr long long kOpfsReadaheadSize = 64 * 1024;
 
 struct OpfsVirtualFile
 {
@@ -112,12 +127,24 @@ struct OpfsVirtualFile
 	int jsId;
 	long long size;
 	long long position;
+	// Readahead window (see file header): covers
+	// [readaheadStart, readaheadStart + readaheadLength) of the file.
+	unsigned char *readahead;
+	long long readaheadStart;
+	long long readaheadLength;
 };
 
 OpfsVirtualFile g_files[kOpfsMaxOpen];
 char g_prefixes[kOpfsMaxPrefixes][kOpfsMaxPrefixLength + 1];
 int g_prefix_count = 0;
 pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
+
+// Diagnostics (reported by probe:p2-opfs to prove the coalescing): how many
+// OPFS calls / bytes the JS boundary actually saw vs how many read()
+// requests the engine issued.
+long long g_js_read_calls = 0;
+long long g_js_read_bytes = 0;
+long long g_intercept_read_calls = 0;
 
 bool pathMatchesRegisteredPrefix(const char *path)
 {
@@ -189,6 +216,33 @@ EMSCRIPTEN_KEEPALIVE int cnc_port_opfs_open_count(void)
 	return count;
 }
 
+// Diagnostics: OPFS calls actually issued at the JS boundary vs read()
+// requests served by the intercept — the readahead coalescing ratio.
+// Doubles (exact < 2^53) because emsdk 3.1.6 has no BigInt interop.
+EMSCRIPTEN_KEEPALIVE double cnc_port_opfs_js_read_calls(void)
+{
+	pthread_mutex_lock(&g_lock);
+	const long long value = g_js_read_calls;
+	pthread_mutex_unlock(&g_lock);
+	return static_cast<double>(value);
+}
+
+EMSCRIPTEN_KEEPALIVE double cnc_port_opfs_js_read_bytes(void)
+{
+	pthread_mutex_lock(&g_lock);
+	const long long value = g_js_read_bytes;
+	pthread_mutex_unlock(&g_lock);
+	return static_cast<double>(value);
+}
+
+EMSCRIPTEN_KEEPALIVE double cnc_port_opfs_intercept_read_calls(void)
+{
+	pthread_mutex_lock(&g_lock);
+	const long long value = g_intercept_read_calls;
+	pthread_mutex_unlock(&g_lock);
+	return static_cast<double>(value);
+}
+
 // ---------------------------------------------------------------------------
 // fd-intercept hooks (weak decls in shims/io.h; strong defs here).
 // ---------------------------------------------------------------------------
@@ -231,6 +285,9 @@ int cnc_port_opfs_intercept_open(const char *path, int flags)
 			g_files[index].jsId = jsId;
 			g_files[index].size = static_cast<long long>(size);
 			g_files[index].position = 0;
+			g_files[index].readahead = nullptr;
+			g_files[index].readaheadStart = 0;
+			g_files[index].readaheadLength = 0;
 			fd = kOpfsFdBase + index;
 			break;
 		}
@@ -265,16 +322,18 @@ int cnc_port_opfs_intercept_read(int fd, void *buffer, unsigned int length)
 		errno = EBADF;
 		return -1;
 	}
+	g_intercept_read_calls += 1;
 	const int jsId = file->jsId;
 	const long long position = file->position;
 	const long long size = file->size;
-	pthread_mutex_unlock(&g_lock);
 
 	if (buffer == nullptr) {
+		pthread_mutex_unlock(&g_lock);
 		errno = EFAULT;
 		return -1;
 	}
 	if (position >= size || length == 0) {
+		pthread_mutex_unlock(&g_lock);
 		return 0; // at/behind EOF, or nothing requested.
 	}
 	long long want = static_cast<long long>(length);
@@ -282,23 +341,103 @@ int cnc_port_opfs_intercept_read(int fd, void *buffer, unsigned int length)
 		want = size - position;
 	}
 
-	const int read = cnc_port_opfs_js_read(
-		jsId,
-		static_cast<unsigned char *>(buffer),
-		static_cast<int>(want),
-		static_cast<double>(position));
-	if (read < 0) {
+	// Large reads: one OPFS call straight into the caller's buffer (the
+	// readahead window would only add a memcpy). Lock dropped around the JS
+	// call, matching the pre-readahead behavior.
+	if (want >= kOpfsReadaheadSize) {
+		pthread_mutex_unlock(&g_lock);
+		const int read = cnc_port_opfs_js_read(
+			jsId,
+			static_cast<unsigned char *>(buffer),
+			static_cast<int>(want),
+			static_cast<double>(position));
+		if (read < 0) {
+			errno = EIO;
+			return -1;
+		}
+		pthread_mutex_lock(&g_lock);
+		g_js_read_calls += 1;
+		g_js_read_bytes += read;
+		file = slotForFd(fd);
+		if (file != nullptr) {
+			file->position = position + read;
+		}
+		pthread_mutex_unlock(&g_lock);
+		return read;
+	}
+
+	// Small read: serve from the per-fd readahead window, filling it (one
+	// OPFS call per fill) on a miss. Lock held throughout — the window and
+	// position must stay consistent, the JS read cannot re-enter this layer,
+	// and small fills are the fast path this exists for.
+	unsigned char *dest = static_cast<unsigned char *>(buffer);
+	long long copied = 0;
+	bool ioError = false;
+	while (copied < want) {
+		const long long at = position + copied;
+		if (file->readahead != nullptr && at >= file->readaheadStart
+			&& at < file->readaheadStart + file->readaheadLength) {
+			long long available = file->readaheadStart + file->readaheadLength - at;
+			if (available > want - copied) {
+				available = want - copied;
+			}
+			std::memcpy(
+				dest + copied,
+				file->readahead + (at - file->readaheadStart),
+				static_cast<size_t>(available));
+			copied += available;
+			continue;
+		}
+		if (file->readahead == nullptr) {
+			file->readahead =
+				static_cast<unsigned char *>(std::malloc(static_cast<size_t>(kOpfsReadaheadSize)));
+		}
+		if (file->readahead == nullptr) {
+			// Allocation failed: degrade to a direct OPFS read of the rest.
+			const int read = cnc_port_opfs_js_read(
+				file->jsId,
+				dest + copied,
+				static_cast<int>(want - copied),
+				static_cast<double>(at));
+			g_js_read_calls += 1;
+			if (read < 0) {
+				ioError = copied == 0;
+				break;
+			}
+			g_js_read_bytes += read;
+			copied += read;
+			if (read == 0) {
+				break;
+			}
+			continue;
+		}
+		long long fill = size - at;
+		if (fill > kOpfsReadaheadSize) {
+			fill = kOpfsReadaheadSize;
+		}
+		const int read = cnc_port_opfs_js_read(
+			file->jsId,
+			file->readahead,
+			static_cast<int>(fill),
+			static_cast<double>(at));
+		g_js_read_calls += 1;
+		if (read <= 0) {
+			ioError = read < 0 && copied == 0;
+			file->readaheadLength = 0;
+			break;
+		}
+		g_js_read_bytes += read;
+		file->readaheadStart = at;
+		file->readaheadLength = read;
+	}
+	if (ioError) {
+		pthread_mutex_unlock(&g_lock);
 		errno = EIO;
 		return -1;
 	}
-
-	pthread_mutex_lock(&g_lock);
-	file = slotForFd(fd);
-	if (file != nullptr) {
-		file->position = position + read;
-	}
+	file->position = position + copied;
 	pthread_mutex_unlock(&g_lock);
-	return read;
+	return static_cast<int>(copied);
 }
 
 long long cnc_port_opfs_intercept_lseek(int fd, long long offset, int whence)
@@ -347,9 +486,14 @@ int cnc_port_opfs_intercept_close(int fd)
 		return -1;
 	}
 	const int jsId = file->jsId;
+	unsigned char *readahead = file->readahead;
+	file->readahead = nullptr;
+	file->readaheadStart = 0;
+	file->readaheadLength = 0;
 	file->used = false;
 	pthread_mutex_unlock(&g_lock);
 
+	std::free(readahead);
 	cnc_port_opfs_js_close(jsId);
 	return 0;
 }

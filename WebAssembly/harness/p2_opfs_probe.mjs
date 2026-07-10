@@ -239,6 +239,8 @@ async function main() {
       opfs: opfs && {
         tocMs: opfs.tocMs,
         tocReads: opfs.tocReads,
+        tocOpfsCalls: opfs.tocOpfsCalls,
+        phaseOpfsCalls: opfs.phaseOpfsCalls,
         randomMBps: mbps(opfs.randomBytes, opfs.randomMs),
         sequentialMBps: mbps(opfs.sequentialBytes, opfs.sequentialMs),
         biggestEntryMs: opfs.biggestMs,
