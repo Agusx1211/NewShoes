@@ -198,8 +198,13 @@ for P1c:
       round-trip, no worker GL context loss. SwiftShader rates: client
       ~1.1/s, logic ~2.2/s (catchup bound; sim slows gracefully under
       software-raster overload — exact 60/30 is a Mac Metal measurement).
-- [ ] GATE D Mac Metal + owner (deploy dist-threaded + this branch's harness
-      to cnc-gpu, verify 60/30 pacing + owner playtest behind ?threads=1)
+- [~] GATE D Mac Metal — RUN 2026-07-10 (final-migration lane): renderer /
+      boot / init / audio / skirmish / screenshots ALL GREEN on real Metal,
+      but the 60/30 pacing bar FAILS with a measured threaded-only GL
+      throughput regression (details in "GATE D" section below). THE FLIP IS
+      BLOCKED on that regression; the flip diff is prepared on branch
+      `threaded-default-flip` (bridge.js/play.mjs/issue-recorder.mjs) and all
+      behavior-neutral probe pins (`threads=0`) are already landed.
 - [x] Default-readiness gap closure — GREEN 2026-07-10 (gap-closure lane):
       threaded state/issue-dump/mount-guard/shader-tier RPC routing, OPFS
       stream reads (music/speech restored under OPFS mounts), MSS byte-copy
@@ -790,3 +795,95 @@ machinery together with the legacy smoke surface"). The P2-obsoleted
 mount-freeze mitigations named by IDEAS P3 (chunked MEMFS writes) also
 stay: the non-threaded DEFAULT path still mounts via MEMFS until threaded
 becomes the default.
+
+## GATE D results (2026-07-10, final-migration lane, Mac M4 Metal)
+
+Build af478736 (dev-box dists rsync'd + md5-verified on cnc-gpu; a stale
+`dist/cnc-port.wasm` with identical size+mtime was caught ONLY by
+`rsync --checksum` — always checksum-verify dist syncs). All probes:
+headless Chrome 150, `--enable-gpu --use-angle=metal`, playwright-core from
+`~/cnc-verify` on the Mac (`gate_d_boot_probe.mjs`, `gate_d_ab_pacing_probe.mjs`,
+`gate_d_perf_compare.mjs`, `gate_d_threaded_diag.mjs`,
+`gate_d_skirmish_probe.mjs` live there, uncommitted like the other Mac
+instruments). Screenshots + boot summary copied to
+`WebAssembly/artifacts/screenshots/gate-d-*.png` / `gate-d-boot-summary.json`.
+
+**GREEN on real Metal (`?threads=1`):**
+
+- Renderer: `ANGLE (Apple, ANGLE Metal Renderer: Apple M4, ...)` in the main
+  realm, in a probe worker, AND in the ENGINE worker's own executor context
+  (now provable: the worker status feed posts
+  `threadedEngine.graphics.renderer` + live `d3d8Perf` counters — added this
+  lane, engine_realm_boot.mjs).
+- Boot: overlay hidden 19.2s, title (shellmap load drained) 25.2s
+  (other runs 21-40s; 2.2GB OPFS mount from-empty each time). Real init
+  43/43 subsystems ON the engine pthread. Fixed 2GiB heap instantiates fine;
+  main-thread JS heap ~33MB.
+- Title screenshot: fully rendered shellmap battle behind the menu
+  (gate-d-title-threaded-metal.png, 2.4MB, mean lum 223).
+- Audio (headless counters): music/speech streams decoded+scheduled from
+  OPFS (2), samples 9 2D + 445 3D started, 2D completions drained 9/9 with
+  zero completion-failure logs, dedupe engaged (332 key-only skips, 0
+  misses), AudioContext running, `wasmStateSource: engine-thread`.
+- Skirmish through the engine's own click path (SinglePlayer -> Skirmish ->
+  Start): reaches PLAYER CONTROL in a real match (command center + dozer,
+  control bar, $10000 — gate-d-skirmish-ingame-metal.png), match load ~5s,
+  **in-match logic 29.98/s EXACT, client 43.9/s** over 30s, no loop error,
+  no context loss.
+
+**RED — the flip bar (client ~60 / logic ~30 at the shellmap) FAILS:**
+
+| leg (same box, flags, scene) | logic /s (120s window) | client /s |
+|---|---|---|
+| legacy `play.html?autostart=1`  | **30.0 exact all buckets** | 34-58 |
+| threaded `?threads=1`          | 26 -> 14 (2x client, catchup-pinned) | 17-28 -> **7** |
+
+Mechanism (measured, not guessed):
+
+- The shellmap battle escalates: 496 draws/frame early -> 1245-1645
+  draws/frame late (engine frame profile via
+  `realEngineFrameSummary {profile:true}`, threaded-routed).
+- Per-draw executor behavior is IDENTICAL in both realms: 0.77 uniform GL
+  calls/draw, ~730 indices/draw, same cache hit ratios (perf-compare of the
+  new worker `d3d8Perf` status vs legacy `state.graphics.d3d8Perf`).
+- But sustained GL throughput differs ~2.5x: legacy pushes 1,223,321
+  draws/30s (~40.8k draws/s at 52fps) vs threaded 493,479/30s
+  (~16.4k draws/s). Same ANGLE Metal device, same code — the deficit is
+  specific to the OffscreenCanvas-in-worker context.
+- Eliminated: worker rAF throttling (synthetic worker rAF + GL clears hold
+  60.0fps for 45s in every flag combo), SwiftShader fallback in the engine
+  worker (renderer string above), `--disable-gpu-compositing` (A/B'd:
+  same collapse with GPU compositing on), uniform/VAO/state cache
+  regressions (ratios identical), profile-marker overhead (collapse
+  reproduces with profiling off), audio forwarding volume (starts ~22/s;
+  completions drain; dedupe active).
+- Consistent with the dev-box SwiftShader gate always running at the
+  catchup bound: the threaded tick is intrinsically more expensive per GL
+  call; SwiftShader's raster cost masked it, Metal exposes it.
+
+Open lead for the fix lane: worker-context GL command submission behavior
+(flush cadence for OffscreenCanvas commits, SAB-view upload paths in the
+bindings, command-buffer scheduling for dedicated workers). Also re-check
+headful Chrome (probes were headless; do not assume it differs without
+measuring — the owner plays headful).
+
+**Flip decision: NOT flipped** (mission bar not met). The full flip diff
+(bridge.js play-page default + play.mjs + issue-recorder dist-metadata
+mirror) is committed on branch `threaded-default-flip`; behavior-neutral
+prep (probe `threads=0` pins, replay-by-dump-origin threads pin, worker
+renderer/d3d8Perf status) is on the main line. Local
+`verify:threaded-play` (30/30) is green with those pins, and
+`issue_recorder_ui_smoke`'s timeout is pre-existing (fails identically on
+pristine main).
+
+**Mac hygiene this lane:** the data volume hit 100% full twice — (1)
+Chrome `code_sign_clone` leak (51GB logical / ~1.4GB physical across 38
+orphaned clones from past probe Chromes) cleaned; (2) probe Chrome
+profiles with 2.3GB OPFS each — every OPFS-mount probe MUST
+`rmSync(profile)` in its finally (a leaked profile starved the next run's
+OPFS writes into silent mount stalls: FileSystemSyncAccessHandle.write
+returns 2^32-8 and boot hangs at the overlay). `~/.Trash` was emptied
+(1.8GB). Free space steady-state is only ~3.2GiB — one OPFS probe profile
+at a time. Playwright `browser.close()` reproducibly wedges after these
+runs (Chrome already gone) — kill the node by PID afterwards and never
+rely on post-close code (write summaries BEFORE close).

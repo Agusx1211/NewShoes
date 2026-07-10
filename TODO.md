@@ -689,11 +689,28 @@ DONE.md with reasons.
 - [ ] **Engine-thread architecture: remaining open items (P0-P3 themselves
       are DONE — see DONE.md "Engine-thread architecture P0-P3" and
       notes/p1-engine-thread.md).**
-      (GATE D) Mac Metal verification + owner playtest behind `?threads=1`:
-      deploy dist-threaded + harness to cnc-gpu, verify 60/30 pacing on the
-      real GPU, re-measure the P3 growth-off A/B at 60fps client (SwiftShader
-      showed no delta; the JS share is proportionally larger on Metal), and
-      only then discuss threaded-by-default. Safari/iPad support unassessed.
+      (GATE D — RUN 2026-07-10, final-migration lane; full numbers in
+      notes/p1-engine-thread.md "GATE D results"): renderer(Metal in the
+      engine worker's own context)/boot(25s)/init 43/43/audio/skirmish-to-
+      player-control/screenshots ALL GREEN on cnc-gpu, but **60/30 pacing
+      FAILS: threaded-only GL-throughput regression** — same executor, same
+      per-draw GL mix (0.77 uniform calls/draw both legs), worker context
+      sustains ~16.4k draws/s vs main-thread ~40.8k draws/s on the same
+      ANGLE Metal device; as the shellmap battle escalates (496 -> 1645
+      draws/frame) threaded collapses to client ~7/s logic ~14/s while
+      legacy holds client 34-58/s logic 30.0/s over the same 120s window.
+      Not scheduling (synthetic worker rAF+GL clears hold 60fps), not
+      SwiftShader fallback (worker renderer string proven Metal via the new
+      status feed), not --disable-gpu-compositing (A/B'd), not the uniform/
+      VAO caches (hit ratios identical). THE DEFAULT FLIP IS BLOCKED on
+      this: chase the worker-context command-buffer/flush behavior (e.g.
+      ANGLE Metal flush cadence for OffscreenCanvas-in-worker, SAB-view
+      upload paths), then re-run harness/gate_d probes (in ~/cnc-verify on
+      the Mac) + owner playtest. The prepared flip diff sits on branch
+      `threaded-default-flip`. Also still open: re-measure the P3 growth-off
+      A/B at 60fps client; Safari/iPad support unassessed; headful-Chrome
+      confirmation of the regression (probes were headless; do NOT assume
+      headful differs without measuring).
       (b) OPFS stat/access coverage: 0-byte MEMFS markers expose size 0 /
       mtime 0 to Win32LocalFileSystem::getFileInfo (archive timestamp in
       Win32BIGFile::getFileInfo) — intercept stat paths or write real sizes

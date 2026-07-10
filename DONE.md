@@ -8,7 +8,34 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
-## Threaded default-readiness gap closure — landed (2026-07-10)
+## GATE D Mac Metal verification of the threaded path — run (2026-07-10)
+
+Final-migration lane. Full numbers + mechanism in
+`WebAssembly/notes/p1-engine-thread.md` "GATE D results".
+
+- [x] Deploy HEAD (af478736) to cnc-gpu: repo rsync + all three dists
+      md5-verified (`rsync --checksum` caught a stale `dist/cnc-port.wasm`
+      with identical size+mtime — quick-check alone is not deploy proof);
+      `__cnc_build_info` reports HEAD.
+- [x] Metal-verify `?threads=1` on the real M4 GPU: renderer `ANGLE Metal
+      Renderer: Apple M4` in the ENGINE worker's own context (new
+      `threadedEngine.graphics.renderer`/`d3d8Perf` status feed), boot to
+      title 25.2s (OPFS from-empty), init 43/43 on the pthread, shellmap
+      title screenshot, audio decode/schedule/completion/dedupe counters all
+      advancing, real skirmish via the engine's own click path to PLAYER
+      CONTROL (in-match logic 29.98/s exact, client 43.9/s) — artifacts in
+      `WebAssembly/artifacts/screenshots/gate-d-*`.
+- [x] Measure the 60/30 flip bar at the shellmap vs the legacy path (A/B,
+      same box/flags/scene): legacy logic 30.0/s exact + client 34-58/s for
+      120s; threaded collapses to client ~7/s / logic ~14/s as the shellmap
+      battle grows to ~1645 draws/frame. Root mechanism measured: identical
+      per-draw GL mix but ~2.5x lower sustained GL throughput from the
+      worker context (~16.4k vs ~40.8k draws/s). Eliminated: rAF throttling,
+      SwiftShader fallback, --disable-gpu-compositing, cache regressions.
+      **Default flip therefore NOT landed** — prepared on branch
+      `threaded-default-flip`; behavior-neutral prep (probe `threads=0`
+      pins, replay threads-by-dump-origin, worker graphics status) landed on
+      the main line with `verify:threaded-play` 30/30 green.
 
 Gap-closure lane for the owner directive "fully migrate to the engine-thread
 path": every functional gap named for making `?threads=1` the play.html
