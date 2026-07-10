@@ -1185,13 +1185,15 @@ async function threadedRpc(command, payload = {}) {
     case "threadedStatus": {
       await threadedEngine.ensureReady();
       if (threadedEngine.engineThreadStarted) {
-        const reply = await threadedEngine.sendCommand({ cmd: "status" }, { timeoutMs: 30000 });
+        // Long engine frames (shellmap load slices under SwiftShader) delay
+        // port replies by tens of seconds — give the round trip real room.
+        const reply = await threadedEngine.sendCommand({ cmd: "status" }, { timeoutMs: 120000 });
         return { ok: true, command, status: reply, threaded: true };
       }
       return { ok: true, command, status: threadedEngine.lastStatus, threaded: true };
     }
     case "threadedPacingSamples": {
-      const reply = await threadedEngine.sendCommand({ cmd: "pacingSamples" }, { timeoutMs: 30000 });
+      const reply = await threadedEngine.sendCommand({ cmd: "pacingSamples" }, { timeoutMs: 120000 });
       return { ok: true, command, samples: reply.samples ?? [], threaded: true };
     }
     case "threadedStartLoop": {

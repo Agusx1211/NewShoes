@@ -32,6 +32,10 @@ const wasmRoot = resolve(harnessRoot, "..");
 const shotDir = resolve(wasmRoot, "artifacts/screenshots");
 const skipReference = process.env.SKIP_REFERENCE === "1";
 const BOOT_TIMEOUT_MS = Number(process.env.BOOT_TIMEOUT_MS ?? 15 * 60 * 1000);
+// Post-boot settle before the title capture: the main-menu fade-in advances
+// per RENDERED frame, so slow SwiftShader runs need tens of seconds before
+// the menu is fully lit.
+const SETTLE_MS = Number(process.env.SETTLE_MS ?? 30000);
 
 function log(line) {
   process.stdout.write(`[threaded-play-gate] ${line}\n`);
@@ -128,7 +132,7 @@ async function main() {
         consoleLines,
       );
       // Let the shellmap actually render a few frames before capturing.
-      await referencePage.waitForTimeout(8000);
+      await referencePage.waitForTimeout(SETTLE_MS);
       referenceShot = join(shotDir, "p1c-title-nonthreaded.png");
       await captureViewport(referencePage, referenceShot);
       summary.referenceShot = referenceShot;
@@ -166,8 +170,22 @@ async function main() {
       initState.init?.frontier?.initReturned === true,
     ]);
 
-    // Let the shellmap render, then capture the GATE B screenshot.
-    await page.waitForTimeout(8000);
+    // The shellmap LOAD runs inside the engine-thread loop's first frames
+    // (threaded mode skips the boot-time reveal pumps), so wait for the load
+    // session to drain and real frames to accumulate before judging pixels.
+    // Read the push-fed status snapshot (state.threadedEngine) — no port
+    // round-trip, so long load frames cannot starve this wait.
+    log("waiting for the engine-thread loop to drain the shellmap load...");
+    await page.waitForFunction(() => {
+      const engine = window.CnCPort?.state?.threadedEngine;
+      return engine?.loop?.active === true
+        && engine?.frame != null
+        && engine.frame.loadSessionActive === false
+        && (engine.loop.clientFrames ?? 0) > 30;
+    }, null, { timeout: 12 * 60 * 1000, polling: 2000 });
+    log("shellmap load drained; settling before capture...");
+    // Let the menu fade-in (per rendered frame) complete, then capture GATE B.
+    await page.waitForTimeout(SETTLE_MS);
     const threadedShot = join(shotDir, "p1c-title-threaded.png");
     const shotBuffer = await captureViewport(page, threadedShot);
     summary.threadedShot = threadedShot;
@@ -195,9 +213,11 @@ async function main() {
     checks.push(["screenshot captured (>10KB PNG)", shotBuffer.length > 10 * 1024]);
 
     // ---------- GATE C: paced loop measurement ----------
-    const statusA = await page.evaluate(() => window.CnCPort.rpc("threadedStatus"));
+    // Sample the unsolicited 500ms status feed twice (push-fed snapshots —
+    // immune to long frames starving a port round-trip).
+    const statusA = { status: await page.evaluate(() => window.CnCPort.state.threadedEngine) };
     await page.waitForTimeout(5000);
-    const statusB = await page.evaluate(() => window.CnCPort.rpc("threadedStatus"));
+    const statusB = { status: await page.evaluate(() => window.CnCPort.state.threadedEngine) };
     const loopA = statusA?.status?.loop;
     const loopB = statusB?.status?.loop;
     const seconds = (statusB?.status?.now - statusA?.status?.now) / 1000;
@@ -283,7 +303,7 @@ async function main() {
     summary.windowsDump = { ok: windowsDump?.ok === true, windowCount };
     checks.push(["state RPC round-trips (realEngineDumpWindows)", windowsDump?.ok === true && windowCount > 0]);
 
-    const finalStatus = await page.evaluate(() => window.CnCPort.rpc("threadedStatus"));
+    const finalStatus = { status: await page.evaluate(() => window.CnCPort.state.threadedEngine) };
     summary.finalStatus = {
       initState: finalStatus?.status?.initState,
       loop: finalStatus?.status?.loop,
