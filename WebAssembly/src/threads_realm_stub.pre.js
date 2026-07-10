@@ -39,12 +39,20 @@
 //       → adopt port for all further commands/replies; reply {cmd:"connected"}.
 //   {cmd:"ping"}
 //       → {cmd:"pong", isPthread:true}
-//   {cmd:"setup", moduleUrl, canvas}   (canvas = transferred OffscreenCanvas)
+//   {cmd:"setup", moduleUrl, canvas, options?}   (canvas = transferred
+//         OffscreenCanvas; options = plain data passed through verbatim)
 //       → dynamic import(moduleUrl), await its default({canvas, Module,
-//         realm:"engine"}); reply {cmd:"setupDone", ok, error?,
+//         realm:"engine", options}); reply {cmd:"setupDone", ok, error?,
 //         hooksInstalled?}. The stub stays generic: ALL executor logic lives
 //         in the imported module (P1b's realm-agnostic GL executor; the P1a
-//         probe uses harness/engine_realm_test_executor.mjs).
+//         probe uses harness/engine_realm_test_executor.mjs, P1c's real boot
+//         module is harness/engine_realm_boot.mjs).
+//         P1c extension: when the imported module's default() resolves to an
+//         object with a `handleCommand(msg, respond)` function, every command
+//         this stub does NOT recognize is forwarded to it (respond posts
+//         {__cncRealm: payload} on the connected port). That keeps the baked
+//         -in stub tiny and generic while the (rebuildable-without-relink)
+//         boot module owns the whole P1c protocol.
 //   {cmd:"callExport", name, args:[...numbers], id}
 //       → Module["_"+name](...args); reply {cmd:"callExportResult", id,
 //         value} (numeric returns only for now). This is the RPC-forwarding
@@ -66,6 +74,7 @@
 
   var realmModule = Module;
   var connectedPort = null;
+  var moduleCommandHandler = null; // installed by the setup module (P1c)
 
   function respond(viaPort, payload) {
     var envelope = { __cncRealm: payload };
@@ -104,6 +113,7 @@
             canvas: msg.canvas,
             Module: realmModule,
             realm: "engine",
+            options: msg.options != null ? msg.options : null,
           });
         })
         .then(
@@ -111,6 +121,10 @@
             var reply = { cmd: "setupDone", ok: true };
             if (result && result.hooksInstalled) {
               reply.hooksInstalled = result.hooksInstalled;
+            }
+            if (result && typeof result.handleCommand === "function") {
+              moduleCommandHandler = result.handleCommand;
+              reply.moduleCommandHandler = true;
             }
             respond(replyPort, reply);
           },
@@ -138,8 +152,26 @@
       respond(replyPort, reply);
       return;
     }
-    // Unknown or reply-shaped cmd (pong/setupDone/... possibly echoed back
-    // by the main thread's setimmediate branch): ignore silently.
+    // P1c: unrecognized commands go to the boot module's handler when one is
+    // installed. NOTE: default-channel echoes (the main thread's
+    // 'setimmediate' branch bounces our replies back) land here too, so the
+    // module handler MUST silently ignore cmds outside its own protocol
+    // (engine_realm_boot.mjs does).
+    if (moduleCommandHandler !== null) {
+      try {
+        moduleCommandHandler(msg, function (payload) {
+          respond(replyPort, payload);
+        });
+      } catch (error) {
+        respond(replyPort, {
+          cmd: "moduleCommandError",
+          sourceCmd: cmd,
+          error: String((error && error.stack) || error),
+        });
+      }
+      return;
+    }
+    // Unknown cmd with no module handler: ignore silently.
   }
 
   self.addEventListener("message", function (event) {

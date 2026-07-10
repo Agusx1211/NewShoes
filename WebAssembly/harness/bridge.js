@@ -1,4 +1,19 @@
 import { createD3D8Executor } from "./d3d8_executor.mjs";
+import { createGdiHooks } from "./gdi_executor.mjs";
+
+// Engine-thread mode (?threads=1, plumbed like ?dist=): the REAL engine runs
+// on a pthread in the single pool worker of the dist-threaded build, and the
+// GL executor runs in THAT worker realm against an OffscreenCanvas transferred
+// from #viewport. The DEFAULT (no param) path must stay behavior-identical —
+// every threaded divergence in this file branches on this flag.
+// Design + P1a/P1b mechanics: WebAssembly/notes/p1-engine-thread.md.
+const cncPortThreadedMode = (() => {
+  try {
+    return new URLSearchParams(globalThis.location?.search || "").get("threads") === "1";
+  } catch (_error) {
+    return false;
+  }
+})();
 
 const canvas = document.querySelector("#viewport");
 // preserveDrawingBuffer forces the compositor to COPY the drawing buffer every
@@ -17,7 +32,14 @@ const contextPreserveDrawingBuffer = (() => {
     return true;
   }
 })();
-const gl = canvas.getContext("webgl2", {
+// Threaded mode: #viewport must stay CONTEXT-FREE so transferControlToOffscreen
+// can hand it to the engine worker realm (a canvas with any context cannot be
+// transferred). The main-realm executor below is constructed against an
+// invisible scratch canvas instead, so the whole main-side diagnostics surface
+// keeps existing — it just never receives real engine draws (those happen in
+// the worker realm's executor).
+const executorCanvas = cncPortThreadedMode ? document.createElement("canvas") : canvas;
+const gl = cncPortThreadedMode ? null : canvas.getContext("webgl2", {
   alpha: false,
   antialias: false,
   depth: true,
@@ -26,7 +48,7 @@ const gl = canvas.getContext("webgl2", {
 });
 const s3tc = gl ? gl.getExtension("WEBGL_compressed_texture_s3tc") : null;
 
-const fallbackContext = gl ? null : canvas.getContext("2d", { alpha: false });
+const fallbackContext = gl ? null : executorCanvas.getContext("2d", { alpha: false });
 const stateNode = document.querySelector("#state");
 const framesNode = document.querySelector("#frames");
 
@@ -36,6 +58,11 @@ function validCncPortDistDir(value) {
 
 function defaultCncPortDistDir() {
   try {
+    if (cncPortThreadedMode) {
+      // ?threads=1 needs the pthread-enabled runtime (PTHREAD_POOL_SIZE=1 +
+      // realm stub). An explicit ?dist= still wins in selectedCncPortDistDir.
+      return "dist-threaded";
+    }
     if (validCncPortDistDir(globalThis.__cncDefaultDistDir)) {
       return globalThis.__cncDefaultDistDir;
     }
@@ -227,8 +254,11 @@ const harnessState = {
 // this page's canvas/GL context, harness log + state sinks and fresh-view
 // wasm heap accessors. hooks = the 20 Module.cncPortD3D8* functions; diag =
 // the executor-internal surface the harness RPC/diagnostics still read.
+// Threaded mode: executorCanvas is an invisible scratch canvas (the REAL
+// executor lives in the engine worker realm, harness/engine_realm_boot.mjs);
+// this main-realm instance only keeps the diag surface alive.
 const { hooks: d3d8Hooks, diag: d3d8Diag } = createD3D8Executor({
-  canvas,
+  canvas: executorCanvas,
   gl,
   s3tc,
   fallbackContext,
@@ -538,6 +568,786 @@ let resolvedWasmModule = null;
 wasmModulePromise.then((wasmModule) => {
   resolvedWasmModule = wasmModule;
 }).catch(() => {});
+
+// ============================================================================
+// P1c: threaded engine controller (?threads=1)
+//
+// Owns the main-realm side of the engine-thread architecture
+// (notes/p1-engine-thread.md): prepares the single pool worker's realm BEFORE
+// the engine pthread is spawned (connect a dedicated MessagePort, transfer the
+// #viewport OffscreenCanvas, import harness/engine_realm_boot.mjs), then
+// drives boot/go, forwards input/RPC over the port, and executes the MSS
+// audio bodies main-side when the engine realm posts them over.
+// ============================================================================
+
+// Fresh main-realm heap view: with pthreads+ALLOW_MEMORY_GROWTH the ENGINE
+// thread grows the shared memory and only ITS realm's Module.HEAP* views are
+// refreshed synchronously; the main realm's cached view goes stale (it still
+// aliases the same SharedArrayBuffer but misses the newly grown tail). The
+// emscripten factory exposes Module.wasmMemory in every realm, so rebuild a
+// view whenever the buffer identity changed (memory.grow returns a NEW SAB
+// object).
+let cncPortFreshHeapCache = null;
+function freshMainHeapU8() {
+  const module = cncPortEmscriptenModule;
+  if (!module) {
+    return null;
+  }
+  const memoryBuffer = module.wasmMemory?.buffer;
+  if (memoryBuffer) {
+    if (!cncPortFreshHeapCache || cncPortFreshHeapCache.buffer !== memoryBuffer) {
+      cncPortFreshHeapCache = new Uint8Array(memoryBuffer);
+    }
+    return cncPortFreshHeapCache;
+  }
+  return module.HEAPU8 ?? null;
+}
+
+function threadedWorkerDiagLevel() {
+  // The worker realm's URL carries no page params, so decide here with the
+  // same defaults the pages use: explicit ?diag= wins; play.html defaults to
+  // "lite"; harness/probe pages default to "full".
+  try {
+    const params = new URLSearchParams(globalThis.location?.search || "");
+    const diag = params.get("diag");
+    if (diag === "lite" || diag === "full") {
+      return diag;
+    }
+    return (globalThis.location?.pathname || "").endsWith("/play.html") ? "lite" : "full";
+  } catch (_error) {
+    return "full";
+  }
+}
+
+function createThreadedEngineController() {
+  const pending = new Map(); // id -> { resolve, reject, timer, resetTimer }
+  let commandId = 0;
+  let realmPort = null;
+  let engineWorker = null;
+  let prepPromise = null;
+  let engineThreadStarted = false;
+  let lastStatus = null;
+  let lastLoopError = null;
+  let mssHandlers = null;
+
+  function threadedLog(message, data) {
+    recordLog(`threaded ${message}`, data);
+  }
+
+  function mssHandlerMap() {
+    if (!mssHandlers) {
+      mssHandlers = {
+        cncPortMssSampleStart,
+        cncPortMssSampleStop,
+        cncPortMssSampleEnd,
+        cncPortMssSampleRelease,
+        cncPortMss3DSampleStart,
+        cncPortMss3DSamplePositionUpdate,
+        cncPortMss3DListenerUpdate,
+        cncPortMss3DSampleStop,
+        cncPortMss3DSampleEnd,
+        cncPortMss3DSampleRelease,
+        cncPortMssStreamStart,
+        cncPortMssStreamStop,
+        cncPortMssStreamVolumePan,
+      };
+    }
+    return mssHandlers;
+  }
+
+  function handleMssMessage(msg) {
+    const handler = mssHandlerMap()[msg.hook];
+    if (typeof handler !== "function") {
+      threadedLog("mss hook unknown", { hook: msg.hook });
+      return;
+    }
+    // Sample-start payloads arrive with a worker-side COPY of the RIFF bytes
+    // (padded, dataPtr rewritten to 4 — see engine_realm_boot.mjs); everything
+    // else reads nothing or reads the SHARED heap through a fresh view.
+    const heap = msg.bytes instanceof Uint8Array ? msg.bytes : freshMainHeapU8();
+    try {
+      handler(msg.payload ?? {}, heap);
+    } catch (error) {
+      threadedLog("mss hook failed", { hook: msg.hook, error: error?.message ?? String(error) });
+    }
+  }
+
+  function applyThreadedStatus(status) {
+    lastStatus = status;
+    harnessState.threadedEngine = status;
+    const size = status.engineDisplaySize;
+    if (size && Number.isFinite(size.width) && size.width > 1
+        && Number.isFinite(size.height) && size.height > 1) {
+      const previous = harnessState.engineDisplaySize;
+      if (!previous || previous.width !== size.width || previous.height !== size.height) {
+        harnessState.engineDisplaySize = { width: size.width, height: size.height };
+        try {
+          window.dispatchEvent(new CustomEvent("cncport:resolutionchange", {
+            detail: { width: size.width, height: size.height, source: "engine" },
+          }));
+        } catch (_error) {
+          // no DOM event support — state still updated
+        }
+      }
+    }
+    try {
+      window.dispatchEvent(new CustomEvent("cncport:threadedstatus", { detail: status }));
+    } catch (_error) {
+      // no DOM event support
+    }
+  }
+
+  function settlePending(id, settle) {
+    const entry = pending.get(id);
+    if (!entry) {
+      return null;
+    }
+    pending.delete(id);
+    if (entry.timer) {
+      clearTimeout(entry.timer);
+    }
+    return settle(entry);
+  }
+
+  function dispatchRealmMessage(msg) {
+    if (!msg || typeof msg !== "object") {
+      return;
+    }
+    switch (msg.cmd) {
+      case "mss":
+        handleMssMessage(msg);
+        return;
+      case "status":
+        applyThreadedStatus(msg);
+        return;
+      case "live":
+        threadedLog("engine thread live");
+        return;
+      case "engineInitProgress": {
+        const entry = pending.get(msg.id);
+        if (entry?.onProgress) {
+          entry.onProgress(msg.step);
+        }
+        return;
+      }
+      case "loopError":
+        lastLoopError = msg.error ?? "unknown";
+        threadedLog("frame loop error", { error: msg.error, result: msg.result ?? null });
+        try {
+          window.dispatchEvent(new CustomEvent("cncport:threadedlooperror", { detail: msg }));
+        } catch (_error) { /* no DOM event support */ }
+        return;
+      case "tickError":
+        threadedLog("engine tick error", { error: msg.error });
+        return;
+      case "moduleCommandError":
+        threadedLog("realm command error", { sourceCmd: msg.sourceCmd, error: msg.error });
+        return;
+      default: {
+        // id-carrying replies (engineCallResult / engineInitDone /
+        // startLoopResult / statusResult / ...) settle their pending entry.
+        if (msg.id !== undefined && pending.has(msg.id)) {
+          settlePending(msg.id, (entry) => entry.resolve(msg));
+          return;
+        }
+        // pong / connected / setupDone during prep are awaited by matcher
+        // callbacks registered in prepWaiters below.
+        for (const waiter of prepWaiters) {
+          if (!waiter.done && waiter.match(msg)) {
+            waiter.done = true;
+            waiter.resolve(msg);
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  const prepWaiters = [];
+  function waitForRealmMessage(match, timeoutMs, label) {
+    return new Promise((resolve, reject) => {
+      const waiter = { match, resolve, done: false };
+      prepWaiters.push(waiter);
+      setTimeout(() => {
+        if (!waiter.done) {
+          waiter.done = true;
+          reject(new Error(`threaded realm prep timed out waiting for ${label}`));
+        }
+      }, timeoutMs);
+    });
+  }
+
+  async function prepare() {
+    await wasmModulePromise;
+    const module = cncPortEmscriptenModule;
+    if (!module) {
+      throw new Error("threaded mode: wasm module unavailable");
+    }
+    if (!(module.HEAP8?.buffer instanceof SharedArrayBuffer)) {
+      throw new Error("threaded mode requires the pthread build (dist-threaded) + crossOriginIsolated");
+    }
+    const pt = module.PThread;
+    engineWorker = (pt?.unusedWorkers && pt.unusedWorkers[0])
+      || (pt?.runningWorkers && pt.runningWorkers[0]) || null;
+    if (!engineWorker) {
+      throw new Error("threaded mode: no pthread pool worker found");
+    }
+    // Coexists with PThread's worker.onmessage (property assignment).
+    engineWorker.addEventListener("message", (event) => {
+      const data = event?.data;
+      if (data && typeof data === "object" && data.__cncRealm) {
+        dispatchRealmMessage(data.__cncRealm);
+      }
+    });
+
+    const pong = waitForRealmMessage((m) => m.cmd === "pong", 10000, "pong");
+    engineWorker.postMessage({ target: "setimmediate", __cncRealm: { cmd: "ping" } });
+    await pong;
+
+    const channel = new MessageChannel();
+    realmPort = channel.port1;
+    realmPort.onmessage = (event) => {
+      const data = event?.data;
+      if (data && typeof data === "object" && data.__cncRealm) {
+        dispatchRealmMessage(data.__cncRealm);
+      }
+    };
+    const connected = waitForRealmMessage((m) => m.cmd === "connected", 10000, "connected");
+    engineWorker.postMessage(
+      { target: "setimmediate", __cncRealm: { cmd: "connect" } },
+      [channel.port2],
+    );
+    await connected;
+
+    const offscreen = canvas.transferControlToOffscreen();
+    const moduleUrl = new URL("./engine_realm_boot.mjs", import.meta.url).href;
+    const setupDone = waitForRealmMessage((m) => m.cmd === "setupDone", 30000, "setupDone");
+    realmPort.postMessage({
+      __cncRealm: {
+        cmd: "setup",
+        moduleUrl,
+        canvas: offscreen,
+        options: {
+          diagLevel: threadedWorkerDiagLevel(),
+          preserveDrawingBuffer: contextPreserveDrawingBuffer,
+        },
+      },
+    }, [offscreen]);
+    const setup = await setupDone;
+    if (setup.ok !== true) {
+      throw new Error(`threaded realm setup failed: ${setup.error ?? "unknown"}`);
+    }
+    threadedLog("realm setup complete", {
+      hooksInstalled: setup.hooksInstalled?.length ?? 0,
+      moduleCommandHandler: setup.moduleCommandHandler === true,
+    });
+    // Pin the standing worker->main channel inside the boot module (its
+    // unsolicited posts — status/mss/loopError — ride this respond closure).
+    sendPortCommand({ cmd: "attachMainPort" });
+    harnessState.threadedMode = true;
+  }
+
+  function ensureReady() {
+    if (!prepPromise) {
+      prepPromise = prepare();
+    }
+    return prepPromise;
+  }
+
+  function sendPortCommand(payload, transfer) {
+    if (!realmPort) {
+      throw new Error("threaded realm port not connected");
+    }
+    realmPort.postMessage({ __cncRealm: payload }, transfer ?? []);
+  }
+
+  function sendCommand(payload, { timeoutMs = 300000, onProgress = null } = {}) {
+    const id = ++commandId;
+    return new Promise((resolve, reject) => {
+      const entry = { resolve, reject, onProgress: null, timer: null };
+      const armTimer = () => {
+        if (entry.timer) {
+          clearTimeout(entry.timer);
+        }
+        entry.timer = setTimeout(() => {
+          pending.delete(id);
+          reject(new Error(`threaded command ${payload.cmd} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      };
+      // Progress messages prove the engine thread is alive — re-arm the
+      // deadline instead of giving a long op a fixed budget.
+      entry.onProgress = (step) => {
+        armTimer();
+        if (onProgress) {
+          onProgress(step);
+        }
+      };
+      pending.set(id, entry);
+      armTimer();
+      try {
+        sendPortCommand({ ...payload, id });
+      } catch (error) {
+        pending.delete(id);
+        clearTimeout(entry.timer);
+        reject(error);
+      }
+    });
+  }
+
+  async function engineCall(name, returnType, argTypes, args, options = {}) {
+    await ensureReady();
+    const reply = await sendCommand({
+      cmd: "engineCall",
+      name,
+      returnType,
+      argTypes,
+      args,
+      parseJson: options.parseJson !== false,
+    }, { timeoutMs: options.timeoutMs ?? 300000 });
+    if (reply.ok !== true) {
+      throw new Error(reply.error ?? `threaded engine call ${name} failed`);
+    }
+    return reply.value;
+  }
+
+  // ---- ordered input forwarding with pointermove coalescing ------------------
+  // Entries flush once per task (microtask boundary); consecutive
+  // pointermove-only entries collapse to the latest one, mirroring how the
+  // Win32 message queue naturally coalesces WM_MOUSEMOVE.
+  const inputOutbox = [];
+  let inputFlushScheduled = false;
+  const WM_MOUSEMOVE = 0x0200;
+
+  function flushInputOutbox() {
+    inputFlushScheduled = false;
+    if (inputOutbox.length === 0 || !realmPort) {
+      inputOutbox.length = 0;
+      return;
+    }
+    const batch = inputOutbox.splice(0);
+    try {
+      sendPortCommand({ cmd: "input", batch });
+    } catch (_error) {
+      // Port gone (realm setup failed) — input is droppable.
+    }
+  }
+
+  function forwardInput(entry) {
+    const isMove = entry.win32?.message === WM_MOUSEMOVE
+      && entry.virtualKey === undefined
+      && (entry.directInputCode ?? -1) < 0
+      && entry.reset !== true;
+    const last = inputOutbox[inputOutbox.length - 1];
+    if (isMove && last && last.__move === true) {
+      inputOutbox[inputOutbox.length - 1] = { ...entry, __move: true };
+    } else {
+      inputOutbox.push(isMove ? { ...entry, __move: true } : entry);
+    }
+    if (!inputFlushScheduled) {
+      inputFlushScheduled = true;
+      queueMicrotask(flushInputOutbox);
+    }
+  }
+
+  // ---- boot/go + real init orchestration -------------------------------------
+  async function startEngineThread() {
+    await ensureReady();
+    if (engineThreadStarted) {
+      return;
+    }
+    const module = cncPortEmscriptenModule;
+    const rc = module._cnc_port_engine_thread_boot();
+    if (rc !== 0) {
+      throw new Error(`cnc_port_engine_thread_boot failed rc=${rc}`);
+    }
+    const deadline = performance.now() + 15000;
+    while (module._cnc_port_engine_thread_boot_state() < 1) {
+      if (performance.now() > deadline) {
+        throw new Error("engine pthread did not reach its go-flag poll within 15s");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    module._cnc_port_engine_thread_go();
+    engineThreadStarted = true;
+    threadedLog("engine pthread started (boot+go)");
+  }
+
+  async function engineInit(payload = {}) {
+    await startEngineThread();
+    const traceStart = harnessState.logs.length;
+    const onProgress = (step) => {
+      harnessState.realEngineInitProgress = step;
+      try {
+        window.dispatchEvent(new CustomEvent("cncport:initprogress", { detail: step }));
+      } catch (_error) { /* no DOM */ }
+    };
+    let reply = null;
+    let aborted = false;
+    let abortMessage = null;
+    try {
+      reply = await sendCommand({
+        cmd: "engineInit",
+        runDirectory: String(payload.runDirectory ?? "/assets/runtime"),
+        shellMap: payload.shellMap === true,
+        stepped: payload.stepped !== false,
+        bootWidth: payload.bootWidth,
+        bootHeight: payload.bootHeight,
+        stepBudgetMs: payload.stepBudgetMs,
+      }, {
+        // SwiftShader full boots take minutes; each init slice posts progress
+        // which re-arms this deadline, so a genuine hang is what times out.
+        timeoutMs: 600000,
+        onProgress,
+      });
+    } catch (error) {
+      aborted = true;
+      abortMessage = error?.message ?? String(error);
+    }
+    const result = reply?.result ?? null;
+    if (result?.aborted) {
+      aborted = true;
+      abortMessage = result.abortMessage ?? abortMessage ?? "unknown";
+    }
+    const frontier = result?.frontier ?? null;
+    // Same stdout-trace digest the non-threaded path builds: pthread printf is
+    // proxied to the main runtime's print handlers, so the subsystem trace
+    // still lands in harnessState.logs.
+    const traceLines = harnessState.logs
+      .slice(traceStart)
+      .map((entry) => entry?.data?.text)
+      .filter((text) => typeof text === "string"
+        && (text.startsWith("cnc-port: real-init") || text.startsWith("cnc-port: RELEASE_CRASH")));
+    const releaseCrash = traceLines.find((text) => text.startsWith("cnc-port: RELEASE_CRASH")) ?? null;
+    const completed = traceLines
+      .filter((text) => text.startsWith("cnc-port: real-init subsystem-done "))
+      .map((text) => text.slice("cnc-port: real-init subsystem-done ".length));
+    recordLog("real engine init (threaded)", {
+      aborted,
+      abortMessage,
+      releaseCrash,
+      subsystemsCompleted: completed.length,
+      initReturned: Boolean(frontier?.initReturned),
+    });
+    harnessState.realEngineInit = {
+      attempted: true,
+      threaded: true,
+      runDirectory: String(payload.runDirectory ?? "/assets/runtime"),
+      aborted,
+      abortMessage,
+      releaseCrash,
+      trace: traceLines,
+      subsystemsCompleted: completed,
+      frontier,
+    };
+    return {
+      ok: Boolean(frontier?.initReturned) && !aborted,
+      command: "realEngineInit",
+      threaded: true,
+      runDirectory: String(payload.runDirectory ?? "/assets/runtime"),
+      aborted,
+      abortMessage,
+      releaseCrash,
+      trace: traceLines,
+      subsystemsCompleted: completed,
+      inFlightSubsystem: null,
+      frontier,
+      state: snapshotState(),
+    };
+  }
+
+  async function startLoop(payload = {}) {
+    await startEngineThread();
+    const reply = await sendCommand({
+      cmd: "startLoop",
+      clientFps: payload.clientFps,
+      logicFps: payload.logicFps,
+      catchup: payload.catchup,
+    }, { timeoutMs: 60000 });
+    return reply;
+  }
+
+  return {
+    ensureReady,
+    startEngineThread,
+    engineCall,
+    engineInit,
+    startLoop,
+    forwardInput,
+    sendCommand,
+    get lastStatus() { return lastStatus; },
+    get lastLoopError() { return lastLoopError; },
+    get engineThreadStarted() { return engineThreadStarted; },
+  };
+}
+
+const threadedEngine = cncPortThreadedMode ? createThreadedEngineController() : null;
+if (threadedEngine) {
+  // Prepare the worker realm as soon as the runtime is up — BEFORE any engine
+  // start (P1a handshake rule: all realm prep must complete before boot/go
+  // blocks the worker's event loop).
+  threadedEngine.ensureReady().catch((error) => {
+    recordLog("threaded realm prep failed", { error: error?.message ?? String(error) });
+  });
+}
+
+// Redirect Web Audio completion callbacks into the engine realm in threaded
+// mode (they call cnc_port_mss_complete_* which touches engine state and must
+// run on the engine thread).
+function notifyEngineAudioCompletedThreaded(fnName, handle) {
+  const numericHandle = Number(handle) >>> 0;
+  if (!numericHandle) {
+    return true;
+  }
+  if (!threadedEngine) {
+    return false;
+  }
+  threadedEngine.engineCall(fnName, null, ["number"], [numericHandle], { timeoutMs: 60000 })
+    .catch((error) => {
+      recordLog("threaded audio completion failed", {
+        fnName,
+        error: error?.message ?? String(error),
+      });
+    });
+  return true;
+}
+
+// Threaded capture of the #viewport placeholder canvas: the transferred
+// canvas commits frames from the worker; drawImage on the placeholder is the
+// spec-supported way to read them back on main.
+function snapshotThreadedViewport() {
+  const scratch = document.createElement("canvas");
+  const width = harnessState.engineDisplaySize?.width ?? canvas.width;
+  const height = harnessState.engineDisplaySize?.height ?? canvas.height;
+  scratch.width = Math.max(1, width);
+  scratch.height = Math.max(1, height);
+  const context = scratch.getContext("2d");
+  try {
+    context.drawImage(canvas, 0, 0, scratch.width, scratch.height);
+    return scratch.toDataURL("image/png");
+  } catch (error) {
+    recordLog("threaded snapshot failed", { error: error?.message ?? String(error) });
+    return null;
+  }
+}
+
+// RPC routing gate for threaded mode. Returns undefined to fall through to
+// the regular (main-side JS only) handler; anything else is the final RPC
+// result. Commands that would call wasm exports from the MAIN thread while
+// the engine runs on the pthread are either routed over the realm port or
+// answered with an explicit unsupported error — never allowed through and
+// never hung.
+const THREADED_MAIN_SIDE_COMMANDS = new Set([
+  "mountArchive",
+  "mountArchives",
+  "resumeBrowserAudioRuntime",
+  "setBrowserAudioMixerVolumes",
+  "setD3D8GammaRamp",
+  "persistSaves",
+  "listSaves",
+]);
+
+async function threadedRpc(command, payload = {}) {
+  if (!threadedEngine) {
+    return undefined;
+  }
+  if (THREADED_MAIN_SIDE_COMMANDS.has(command)) {
+    return undefined; // pure main-side JS/FS/WebAudio — unchanged behavior
+  }
+  switch (command) {
+    case "state":
+      // Main-side snapshot without the wasm state() call (that export must
+      // not run on the main thread while the engine thread owns the wasm).
+      return {
+        ok: true,
+        command,
+        state: snapshotState(),
+        logs: [...harnessState.logs],
+        threaded: true,
+        threadedEngine: threadedEngine.lastStatus,
+      };
+    case "screenshot":
+      return { ok: true, command, screenshot: snapshotThreadedViewport(), threaded: true };
+    case "threadedStatus": {
+      await threadedEngine.ensureReady();
+      if (threadedEngine.engineThreadStarted) {
+        const reply = await threadedEngine.sendCommand({ cmd: "status" }, { timeoutMs: 30000 });
+        return { ok: true, command, status: reply, threaded: true };
+      }
+      return { ok: true, command, status: threadedEngine.lastStatus, threaded: true };
+    }
+    case "threadedPacingSamples": {
+      const reply = await threadedEngine.sendCommand({ cmd: "pacingSamples" }, { timeoutMs: 30000 });
+      return { ok: true, command, samples: reply.samples ?? [], threaded: true };
+    }
+    case "threadedStartLoop": {
+      try {
+        const reply = await threadedEngine.startLoop(payload);
+        return {
+          ok: reply.ok === true,
+          command,
+          pacing: reply.pacing ?? null,
+          clientFps: reply.clientFps,
+          logicFps: reply.logicFps,
+          error: reply.ok === true ? undefined : (reply.error ?? "startLoop failed"),
+          threaded: true,
+        };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineInit":
+      try {
+        return await threadedEngine.engineInit(payload);
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    case "realEngineFrame": {
+      try {
+        const frames = Math.max(1, Math.min(600, Math.trunc(Number(payload.frames ?? 1))));
+        const frame = await threadedEngine.engineCall(
+          "cnc_port_real_engine_frame", "string", ["number"], [frames]);
+        return {
+          ok: Boolean(frame?.framesCompleted > 0),
+          command,
+          aborted: false,
+          frame,
+          threaded: true,
+          state: snapshotState(),
+        };
+      } catch (error) {
+        return {
+          ok: false, command, aborted: true,
+          abortMessage: error?.message ?? String(error), threaded: true,
+        };
+      }
+    }
+    case "realEngineFramePaced": {
+      try {
+        const frame = await threadedEngine.engineCall(
+          "cnc_port_real_engine_frame_paced", "string", ["number"],
+          [payload.runLogic === false ? 0 : 1]);
+        return { ok: frame?.tick === true, command, frame, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineSetClientPacing": {
+      try {
+        const pacing = await threadedEngine.engineCall(
+          "cnc_port_real_engine_set_client_pacing", "string", ["number", "number"],
+          [Number(payload.clientFps ?? 60), Number(payload.logicFps ?? 30)]);
+        return { ok: pacing?.ok === true, command, ...pacing, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineSetLoadStepping": {
+      try {
+        const stepping = await threadedEngine.engineCall(
+          "cnc_port_real_engine_set_load_stepping", "string", ["number", "number"],
+          [payload.enabled === false ? 0 : 1, Number(payload.budgetMs ?? 0)]);
+        return { ok: true, command, stepping, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineFrontier": {
+      try {
+        const frontier = await threadedEngine.engineCall(
+          "cnc_port_real_engine_frontier", "string", [], []);
+        return { ok: true, command, frontier, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "setEngineResolution": {
+      const width = Math.max(1, Math.round(Number(payload.width ?? 0)));
+      const height = Math.max(1, Math.round(Number(payload.height ?? 0)));
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width < 2 || height < 2) {
+        return { ok: false, command, error: "invalid width/height", threaded: true };
+      }
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_real_engine_set_resolution", "string", ["number", "number"],
+          [width, height]);
+        return {
+          ok: result?.ok === true,
+          command,
+          requested: { width, height },
+          applied: {
+            width: Number.isFinite(result?.width) && result.width > 0 ? result.width : width,
+            height: Number.isFinite(result?.height) && result.height > 0 ? result.height : height,
+          },
+          reflow: result?.reflow ?? null,
+          error: result?.ok === true ? undefined : (result?.error ?? "resolution change refused"),
+          threaded: true,
+        };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "postMessage": {
+      // Synthetic win32 message from the harness/pages: ride the ordered
+      // input-forwarding path (applied on the engine thread between frames).
+      await threadedEngine.ensureReady();
+      threadedEngine.forwardInput({
+        cursor: payload.point ?? null,
+        win32: {
+          message: Number(payload.message ?? 0),
+          wParam: Number(payload.wParam ?? 0),
+          lParam: Number(payload.lParam ?? 0),
+          px: payload.point?.x ?? 0,
+          py: payload.point?.y ?? 0,
+        },
+      });
+      return { ok: true, command, forwarded: true, threaded: true, state: snapshotState() };
+    }
+    case "realEngineDumpWindows": {
+      try {
+        const windows = await threadedEngine.engineCall(
+          "cnc_port_real_engine_dump_windows", "string", [], []);
+        return { ok: true, command, windows, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "probeBrowserInput": {
+      try {
+        const probe = await threadedEngine.engineCall(
+          "cnc_port_probe_browser_input", "string", [], []);
+        return { ok: true, command, probe, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "queryDrawables": {
+      try {
+        const drawables = await threadedEngine.engineCall(
+          "cnc_port_query_drawables", "string", [], []);
+        return { ok: true, command, drawables, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "clickWindowByName": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_click_window_by_name", "string", ["string"],
+          [String(payload.window ?? payload.windowName ?? "")]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    default:
+      return {
+        ok: false,
+        command,
+        error: "not yet supported in threaded mode",
+        threaded: true,
+      };
+  }
+}
 
 function browserAudioContextCtor() {
   return globalThis.AudioContext || globalThis.webkitAudioContext || null;
@@ -1448,6 +2258,12 @@ function clamp01(value) {
 // wrappers are built via cwrap and cached per function name.
 const cncPortAudioCompletionWrappers = new Map(); // fnName -> cwrapped fn
 function notifyEngineAudioCompleted(fnName, handle) {
+  if (cncPortThreadedMode) {
+    // The completion export touches engine state — it must run on the engine
+    // thread. Fire-and-forget through the realm-port engine-call primitive.
+    notifyEngineAudioCompletedThreaded(fnName, handle);
+    return;
+  }
   const module = cncPortEmscriptenModule;
   if (!module || typeof module.cwrap !== "function") {
     return;
@@ -2872,107 +3688,10 @@ function applyModuleState(moduleState) {
 // Backs the original WW3D FontCharsClass / Render2DSentenceClass text path.
 // The C++ side (wasm_win32_gdi_browser.cpp) calls these synchronous hooks via
 // EM_ASM; they rasterize glyphs through a Canvas 2D context and write BGR
-// pixels back into the wasm DIB-section buffer.
-let gdiCanvas = null;
-let gdiCtx = null;
-
-function gdiEnsureContext() {
-  if (gdiCtx) {
-    return gdiCtx;
-  }
-  gdiCanvas = document.createElement("canvas");
-  gdiCtx = gdiCanvas.getContext("2d", { willReadFrequently: true });
-  return gdiCtx;
-}
-
-function gdiFontCss(face, logicalHeight, weight, italic) {
-  const px = Math.max(1, Math.abs((logicalHeight | 0) || 16));
-  const wght = weight || 400;
-  const ital = italic ? "italic " : "";
-  const family = face && face.length ? JSON.stringify(String(face)) : "Arial";
-  return `${ital}${wght} ${px}px ${family}`;
-}
-
-function gdiCssColor(rgb) {
-  const v = rgb >>> 0;
-  const r = v & 0xff;
-  const g = (v >> 8) & 0xff;
-  const b = (v >> 16) & 0xff;
-  return `rgb(${r},${g},${b})`;
-}
-
-// Measure: synchronous canvas.measureText + fontBoundingBox metrics.  Returns
-// {width,height,ascent,overhang} in device pixels.  overhang is left at 0
-// because canvas TextMetrics exposes no direct equivalent; the original
-// FontCharsClass zeroes overhang for the Generals/Arial path regardless.
-function cncGdiMeasure(face, logicalHeight, weight, italic, str) {
-  const ctx = gdiEnsureContext();
-  if (!ctx || typeof str !== "string" || str.length === 0) {
-    return null;
-  }
-  ctx.font = gdiFontCss(face, logicalHeight, weight, italic);
-  const m = ctx.measureText(str);
-  const px = Math.max(1, Math.abs((logicalHeight | 0) || 16));
-  const ascent = Math.ceil(m.fontBoundingBoxAscent || (px * 0.8));
-  const descent = Math.ceil(m.fontBoundingBoxDescent || (px * 0.2));
-  const width = Math.ceil(m.width);
-  return { width, height: ascent + descent, ascent, overhang: 0 };
-}
-
-// Rasterize one UTF-16 code unit at (x,y) honoring ETO_OPAQUE.  Writes 24bpp
-// BGR, DWORD-padded stride, top-down into the wasm heap at bitsPtr.
-function cncGdiRasterizeGlyph(
-  face,
-  logicalHeight,
-  weight,
-  italic,
-  code,
-  x,
-  y,
-  bitsPtr,
-  bmpW,
-  bmpH,
-  stride,
-  textColorRgb,
-  bkColorRgb,
-  opaque,
-  heapu8,
-) {
-  const ctx = gdiEnsureContext();
-  if (!ctx || bmpW <= 0 || bmpH <= 0 || stride < bmpW * 3) {
-    return false;
-  }
-  if (!(heapu8 instanceof Uint8Array)) {
-    return false;
-  }
-  if (gdiCanvas.width !== bmpW) {
-    gdiCanvas.width = bmpW;
-  }
-  if (gdiCanvas.height !== bmpH) {
-    gdiCanvas.height = bmpH;
-  }
-  ctx.font = gdiFontCss(face, logicalHeight, weight, italic);
-  ctx.textBaseline = "top";
-  ctx.textAlign = "left";
-  if (opaque) {
-    ctx.fillStyle = gdiCssColor(bkColorRgb);
-    ctx.fillRect(0, 0, bmpW, bmpH);
-  }
-  ctx.fillStyle = gdiCssColor(textColorRgb);
-  ctx.fillText(String.fromCharCode(code), x, y);
-  const img = ctx.getImageData(0, 0, bmpW, bmpH).data;
-  for (let row = 0; row < bmpH; row++) {
-    let dst = (bitsPtr | 0) + row * stride;
-    const srcRow = row * bmpW * 4;
-    for (let col = 0; col < bmpW; col++) {
-      const s = srcRow + col * 4;
-      heapu8[dst++] = img[s + 2]; // B
-      heapu8[dst++] = img[s + 1]; // G
-      heapu8[dst++] = img[s + 0]; // R
-    }
-  }
-  return true;
-}
+// pixels back into the wasm DIB-section buffer. Extracted VERBATIM to
+// harness/gdi_executor.mjs (P1c) so the engine worker realm can install the
+// same rasterizer against an OffscreenCanvas in threaded mode.
+const { cncGdiMeasure, cncGdiRasterizeGlyph } = createGdiHooks();
 
 // ---------------------------------------------------------------------------
 // Persistent save games (IDBFS)
@@ -7012,8 +7731,11 @@ function canvasInputPointFromEvent(event) {
   // aspect so clicks / building placement land on the right engine point instead
   // of being offset by the black letterbox bars. When the buffer aspect matches
   // the box (e.g. the dynamic "Native" option) this degenerates to the full rect.
-  const bufferWidth = canvas.width;
-  const bufferHeight = canvas.height;
+  // Threaded mode: the placeholder's width/height attributes freeze at their
+  // transfer-time values (the worker owns the real backing size), so use the
+  // engine display size relayed through the worker status messages instead.
+  const bufferWidth = cncPortThreadedMode ? targetWidth : canvas.width;
+  const bufferHeight = cncPortThreadedMode ? targetHeight : canvas.height;
   if (rect.width > 0 && rect.height > 0
       && bufferWidth > 0 && bufferHeight > 0) {
     const scale = Math.min(rect.width / bufferWidth, rect.height / bufferHeight);
@@ -7231,6 +7953,14 @@ async function pushBrowserInputToWasm({
   timestamp = 0,
   win32Message = null,
 } = {}) {
+  if (cncPortThreadedMode) {
+    // Same forwarding as the lite path (the full-state JSON round trip is a
+    // main-thread wasm call and cannot run while the engine thread owns wasm).
+    await pushBrowserInputToWasmLite({
+      cursor, virtualKey, keyDown, directInputCode, timestamp, win32Message,
+    });
+    return snapshotState();
+  }
   const wasmModule = await wasmModulePromise;
   if (!wasmModule) {
     return null;
@@ -7288,6 +8018,37 @@ async function pushBrowserInputToWasmLite({
   timestamp = 0,
   win32Message = null,
 } = {}) {
+  if (cncPortThreadedMode) {
+    // Forward the SAME lite numeric calls over the realm port; the engine
+    // realm applies them in order between frames (engine_realm_boot.mjs).
+    // Pure pointermoves omit the key fields so the outbox can coalesce them.
+    try {
+      await threadedEngine.ensureReady();
+      const entry = {
+        cursor,
+        win32: win32Message ? {
+          message: win32Message.message,
+          wParam: win32Message.wParam ?? 0,
+          lParam: win32Message.lParam ?? 0,
+          px: win32Message.point?.x ?? cursor?.x ?? 0,
+          py: win32Message.point?.y ?? cursor?.y ?? 0,
+        } : null,
+      };
+      if (virtualKey >= 0 || keyDown) {
+        entry.virtualKey = virtualKey;
+        entry.keyDown = keyDown;
+      }
+      if (directInputCode >= 0) {
+        entry.directInputCode = directInputCode;
+        entry.timestamp = timestamp || performance.now();
+        entry.keyDown = keyDown;
+      }
+      threadedEngine.forwardInput(entry);
+    } catch (_error) {
+      // Realm not ready yet (archive download phase) — input is droppable.
+    }
+    return null;
+  }
   const wasmModule = await wasmModulePromise;
   if (!wasmModule) {
     return null;
@@ -7331,6 +8092,24 @@ async function postBrowserMessageToWasm({
   lParam = 0,
   point = null,
 } = {}) {
+  if (cncPortThreadedMode) {
+    try {
+      await threadedEngine.ensureReady();
+      threadedEngine.forwardInput({
+        cursor: point,
+        win32: {
+          message: Number(message),
+          wParam: Number(wParam),
+          lParam: Number(lParam),
+          px: point?.x ?? 0,
+          py: point?.y ?? 0,
+        },
+      });
+    } catch (_error) {
+      // Realm not ready yet — droppable.
+    }
+    return snapshotState();
+  }
   const wasmModule = await wasmModulePromise;
   if (!wasmModule) {
     return null;
@@ -7366,6 +8145,17 @@ async function postBrowserTextToWasm(text) {
 }
 
 async function resetBrowserInput() {
+  if (cncPortThreadedMode) {
+    resetDoubleClickState();
+    resetBrowserPointerCaptureState();
+    try {
+      await threadedEngine.ensureReady();
+      threadedEngine.forwardInput({ reset: true });
+    } catch (_error) {
+      // Realm not ready yet — droppable.
+    }
+    return snapshotState();
+  }
   const wasmModule = await wasmModulePromise;
   if (!wasmModule) {
     return null;
@@ -7869,6 +8659,18 @@ async function resetOriginalKeyboardInput() {
 }
 
 async function queueOriginalKeyboardFocusLost() {
+  if (cncPortThreadedMode) {
+    // Focus-lost queueing touches the engine's keyboard state — run it on the
+    // engine thread; the probe JSON return is not needed for the focus path.
+    try {
+      await threadedEngine.engineCall(
+        "cnc_port_queue_original_keyboard_focus_lost", "string", [], [],
+        { timeoutMs: 30000, parseJson: true });
+    } catch (error) {
+      recordLog("threaded focus-lost queue failed", { error: error?.message ?? String(error) });
+    }
+    return snapshotState();
+  }
   const wasmModule = await wasmModulePromise;
   if (!wasmModule) {
     return null;
@@ -8741,6 +9543,16 @@ async function mountShippedMeshAsset(payload = {}) {
 }
 
 async function rpc(command, payload = {}) {
+  if (cncPortThreadedMode) {
+    // Threaded routing choke point: engine-touching commands execute ON the
+    // engine thread via the realm port; pure-JS commands fall through; the
+    // rest answer with an explicit unsupported error (never a main-thread
+    // wasm call, never a hang). See threadedRpc above.
+    const routed = await threadedRpc(command, payload);
+    if (routed !== undefined) {
+      return routed;
+    }
+  }
   switch (command) {
     case "boot":
       return { ok: true, command, state: await boot(payload) };
