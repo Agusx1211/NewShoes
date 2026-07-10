@@ -112,6 +112,21 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
   for (const [name, hook] of Object.entries(d3d8Hooks)) {
     Module[name] = hook;
   }
+  // Record the worker context's real renderer string once (GATE D evidence:
+  // this is the context the engine actually draws with — Metal vs SwiftShader
+  // must be provable from the status feed, not inferred from a separate
+  // probe context).
+  try {
+    const glCtx = typeof d3d8Diag.gl === "function" ? d3d8Diag.gl() : null;
+    if (glCtx) {
+      const ext = glCtx.getExtension("WEBGL_debug_renderer_info");
+      realmState.graphics.webglRenderer = ext
+        ? glCtx.getParameter(ext.UNMASKED_RENDERER_WEBGL)
+        : glCtx.getParameter(glCtx.RENDERER);
+    }
+  } catch (error) {
+    recordLog("worker renderer query failed", { error: String(error) });
+  }
   // Graphics diagnostics level: the worker realm's URL has no ?diag= param,
   // so apply the page's choice (play.html runs "lite") explicitly. The
   // executor installed __cncSetDiagLevel on THIS realm's globalThis.
@@ -602,6 +617,16 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         ? d3d8Diag.webglContextLost() === true
         : false,
       shaderTier: realmState.graphics?.d3d8ShaderTier ?? null,
+      // GATE D perf evidence: the worker executor's renderer string and live
+      // draw/cache counters (same summary the legacy path serves from
+      // snapshotState) — without these, threaded GL perf is unobservable
+      // from the main realm.
+      graphics: {
+        renderer: realmState.graphics?.webglRenderer ?? null,
+        d3d8Perf: typeof d3d8Diag?.d3d8PerfSummary === "function"
+          ? d3d8Diag.d3d8PerfSummary()
+          : null,
+      },
       mssForward: { ...mssForwardStats },
       recentLogs: logs.slice(-5),
     };

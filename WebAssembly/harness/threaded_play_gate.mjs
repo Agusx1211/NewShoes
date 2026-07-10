@@ -2,7 +2,9 @@
 // (WebAssembly/notes/p1-engine-thread.md).
 //
 // Drives the REAL play page in headless Chromium twice:
-//   1. reference: play.html?autostart=1&dist=dist          (default main-thread path)
+//   1. reference: play.html?autostart=1&threads=0&dist=dist (legacy main-thread
+//      path; threads=0 is explicit so this leg stays legacy when the prepared
+//      threaded-by-default flip lands on the play page)
 //   2. threaded:  play.html?autostart=1&threads=1          (engine on the pthread)
 // and asserts:
 //   GATE B — the threaded boot reaches the title screen (real init 43/43 on
@@ -167,7 +169,7 @@ async function main() {
       log("booting NON-threaded reference (dist)...");
       const referencePage = await bootPlayPage(
         browser,
-        new URL("harness/play.html?autostart=1&dist=dist", server.url).href,
+        new URL("harness/play.html?autostart=1&threads=0&dist=dist", server.url).href,
         "ref",
         consoleLines,
       );

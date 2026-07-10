@@ -36,7 +36,10 @@ const SAMPLE_INTERVAL_MS = 1000;
 
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  const url = new URL("harness/play.html?autostart=1&diag=lite&dist=dist", server.url);
+  // threads=0: this check exercises the LEGACY stepped-load path on the play
+  // page explicitly (stays correct when the prepared threaded-by-default flip
+  // lands on the play page).
+  const url = new URL("harness/play.html?autostart=1&diag=lite&threads=0&dist=dist", server.url);
   await page.goto(url.href, { waitUntil: "domcontentloaded", timeout: 60_000 });
   console.log("navigated; waiting for stepped-load boot (SwiftShader, up to 10 min)");
   await page.waitForSelector("#overlay.hidden", { state: "attached", timeout: 600_000 });

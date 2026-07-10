@@ -112,6 +112,12 @@ function replayUrl(serverUrl, dump) {
   } else {
     params.set("diag", "lite");
   }
+  // Replay on the path the dump was RECORDED on: dumps from the threaded
+  // play page carry build.distDir === "dist-threaded"; everything else was
+  // recorded on the legacy main-thread path, so pin threads=0 there. Pinning
+  // explicitly keeps replays faithful when the prepared threaded-by-default
+  // play-page flip lands.
+  params.set("threads", dump.build?.distDir === "dist-threaded" ? "1" : "0");
   return new URL(`harness/play.html?${params}`, serverUrl).href;
 }
 
