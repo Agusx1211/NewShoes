@@ -37,13 +37,47 @@ function log(line) {
   process.stdout.write(`[threaded-play-gate] ${line}\n`);
 }
 
+const verbose = process.env.VERBOSE === "1";
+
 async function bootPlayPage(browser, url, label, consoleLines) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  page.on("console", (msg) => consoleLines.push(`${label} ${msg.type()}: ${msg.text()}`));
-  page.on("pageerror", (err) => consoleLines.push(`${label} pageerror: ${err.message}`));
+  page.on("console", (msg) => {
+    consoleLines.push(`${label} ${msg.type()}: ${msg.text()}`);
+    if (verbose) {
+      process.stderr.write(`[console:${label}] ${msg.type()}: ${msg.text()}\n`);
+    }
+  });
+  page.on("pageerror", (err) => {
+    consoleLines.push(`${label} pageerror: ${err.message}`);
+    if (verbose) {
+      process.stderr.write(`[pageerror:${label}] ${err.message}\n`);
+    }
+  });
   await page.goto(url, { waitUntil: "load" });
-  // Boot is done when play.mjs hides the overlay (init returned + HUD shown).
-  await page.waitForSelector("#overlay.hidden", { timeout: BOOT_TIMEOUT_MS });
+  // Boot progress heartbeat: the mount/init phases only touch the DOM, so in
+  // verbose mode poll the overlay status line for the log.
+  const progressTimer = verbose ? setInterval(() => {
+    page.evaluate(() => ({
+      progress: document.querySelector("#progress")?.textContent ?? "",
+      threaded: window.CnCPort?.state?.threadedEngine
+        ? {
+          init: window.CnCPort.state.threadedEngine.initState,
+          loop: window.CnCPort.state.threadedEngine.loop?.active,
+          clientFrames: window.CnCPort.state.threadedEngine.loop?.clientFrames,
+        }
+        : null,
+    })).then((info) => {
+      process.stderr.write(`[boot:${label}] ${JSON.stringify(info)}\n`);
+    }).catch(() => {});
+  }, 20000) : null;
+  try {
+    // Boot is done when play.mjs hides the overlay (init returned + HUD shown).
+    await page.waitForSelector("#overlay.hidden", { timeout: BOOT_TIMEOUT_MS });
+  } finally {
+    if (progressTimer) {
+      clearInterval(progressTimer);
+    }
+  }
   return page;
 }
 

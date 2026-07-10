@@ -45,6 +45,12 @@ const fpsNode = document.querySelector("#fps");
 const hudNode = document.querySelector("#hud");
 const gearButton = document.querySelector("#gearButton");
 const queryParams = new URLSearchParams(window.location.search);
+// Engine-thread mode (?threads=1): the engine runs on a pthread in the
+// dist-threaded build and bridge.js moves the frame loop into the worker
+// realm; this page only observes (status events drive the HUD). Must match
+// bridge.js's cncPortThreadedMode / defaultCncPortDistDir logic. Declared
+// before the selectedCncPortDistDir() call below (TDZ).
+const threadedMode = queryParams.get("threads") === "1";
 const viewportCanvas = document.querySelector("#viewport");
 const selectedDistDir = selectedCncPortDistDir();
 
@@ -113,12 +119,6 @@ function positiveNumberParam(name, fallback) {
 function validCncPortDistDir(value) {
   return typeof value === "string" && /^dist(?:[-_][A-Za-z0-9_-]+)?$/.test(value);
 }
-
-// Engine-thread mode (?threads=1): the engine runs on a pthread in the
-// dist-threaded build and bridge.js moves the frame loop into the worker
-// realm; this page only observes (status events drive the HUD). Must match
-// bridge.js's cncPortThreadedMode / defaultCncPortDistDir logic.
-const threadedMode = queryParams.get("threads") === "1";
 
 function selectedCncPortDistDir() {
   const fallback = threadedMode ? "dist-threaded" : "dist-release";

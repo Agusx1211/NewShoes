@@ -1410,7 +1410,15 @@ async function resumeBrowserAudioRuntime(trigger = "rpc.resumeBrowserAudioRuntim
 
   try {
     if (typeof context.resume === "function" && context.state !== "running") {
-      await context.resume();
+      // Under the autoplay policy context.resume() stays PENDING (not
+      // rejected) until a user gesture — a gesture-less boot (headless
+      // ?autostart=1 probes) would hang forever on this await. Give it a
+      // short window and move on; the window pointerdown/keydown listeners
+      // re-resume on the first real gesture.
+      await Promise.race([
+        context.resume(),
+        new Promise((resolve) => setTimeout(resolve, 3000)),
+      ]);
     }
     if (context.state === "running") {
       browserAudioRuntime.resumeSuccesses += 1;
@@ -3862,7 +3870,11 @@ async function loadWasmModule() {
     const moduleExports = await import(browserAssetUrl(`../${distDir}/cnc-port.js`, runtimeCacheToken));
     const createModule = moduleExports.default ?? moduleExports.createCncPortModule;
     const module = await createModule({
-      locateFile: (path) => path.endsWith(".wasm")
+      // .wasm AND the pthread pool worker script (threaded build) live in the
+      // dist directory; returning a bare relative path from locateFile makes
+      // the browser resolve it against the DOCUMENT (harness/) and 404 — the
+      // module factory then waits on its worker-pool run dependency forever.
+      locateFile: (path) => (path.endsWith(".wasm") || path.endsWith(".js"))
         ? browserAssetUrl(`../${distDir}/${path}`, runtimeCacheToken)
         : path,
       print: (text) => recordLog("wasm stdout", { text: String(text) }),
