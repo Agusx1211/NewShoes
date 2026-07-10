@@ -47,8 +47,23 @@ static const Int g_lanHostNameLength = 1;
 static const Int g_lanGameNameLength = 16; // reduced length because of game option length
 static const Int g_lanGameNameReservedLength = 16; // save N wchars for ID info
 static const Int g_lanMaxChatLength = 100;
+#ifdef __EMSCRIPTEN__
+// WideChar is 4 bytes in Wasm rather than the 2-byte Win32 wchar_t assumed by
+// the original wire budget. Keep the largest fixed LAN announcement exactly
+// within Transport's original MAX_PACKET_SIZE cap.
+static const Int m_lanMaxOptionsLength = MAX_PACKET_SIZE
+	- (sizeof(Int)
+		+ (g_lanPlayerNameLength + 1) * sizeof(WideChar)
+		+ (g_lanLoginNameLength + 1)
+		+ (g_lanHostNameLength + 1)
+		+ (g_lanGameNameLength + 1) * sizeof(WideChar)
+		+ sizeof(Bool)
+		+ 1
+		+ sizeof(Bool));
+#else
 static const Int m_lanMaxOptionsLength = MAX_PACKET_SIZE - ( 8 + (g_lanGameNameLength+1)*2 + 4 + (g_lanPlayerNameLength+1)*2
-																														+ (g_lanLoginNameLength+1) + (g_lanHostNameLength+1) );
+																												+ (g_lanLoginNameLength+1) + (g_lanHostNameLength+1) );
+#endif
 static const Int g_maxSerialLength = 23; // including the trailing '\0'
 
 struct LANMessage;

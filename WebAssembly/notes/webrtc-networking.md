@@ -50,3 +50,20 @@ only for the current page session and are not written to local storage.
 The bundled signaling server is intentionally minimal. Before exposing it as
 a public service, add deployment-level authentication, TLS, rate limiting, and
 room-code abuse protection.
+
+## Verified match path
+
+`npm run test:browser-lan-webrtc-playable-match` boots two complete game
+instances with the shipped archives, enters the original Multiplayer → LAN
+screens, and drives the original `LANAPI` host/discovery/join/options/ready/
+game-start flow. It then loads the same real map in both clients and advances
+the original `Network::update` lockstep simulation while asserting distinct
+local player IDs, two human armies, synchronized logic frames, and no CRC
+mismatch. The harness captures each player's canvas under
+`artifacts/networking/` and asserts that the signaling server carried zero
+game-payload bytes.
+
+Wasm uses four-byte `WideChar`, unlike Win32's two-byte `wchar_t`. The browser
+LAN wire budget therefore reduces the game-options field and sends only the
+active portion of variable LAN messages so every original encrypted datagram
+stays within `MAX_PACKET_SIZE`. Native packet layout is unchanged.

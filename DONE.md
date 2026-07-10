@@ -10911,6 +10911,21 @@ mitigation track. Items resolved or retired by the pivot:
       with zero game payload bytes on the signaling server. Verified with
       `npm --prefix WebAssembly run build:port`, `node WebAssembly/harness/network_webrtc_live_transport_smoke.mjs`,
       and the existing `network_websocket_live_transport_smoke.mjs` regression.
+- [x] Drive a complete two-client original LAN match over WebRTC. The new
+      `lan_webrtc_playable_match_smoke.mjs` boots two full `cnc-port` runtimes
+      with the shipped archives, enters the original Multiplayer → LAN menus,
+      and drives original `LANAPI` host announcement, discovery, join/options,
+      ready, and game-start callbacks through the direct DataChannel endpoint.
+      The Wasm LAN wire budget now accounts for four-byte `WideChar` and sends
+      active message lengths so announcements remain under the original
+      476-byte transport cap; browser ready broadcasts also apply their local
+      state through original `LANAPI::OnAccept`. Both clients load Alpine
+      Assault, create distinct local armies and faction HUDs, advance the
+      original lockstep simulation from logic frame 13 to 23 in sync with two
+      players and no CRC mismatch, and capture separate host/guest canvases.
+      The signaling server reports zero game payload bytes. Verified with
+      `npm --prefix WebAssembly run build:port` and
+      `node WebAssembly/harness/lan_webrtc_playable_match_smoke.mjs`.
 - [x] Carry the LANAPI discovery/join/game-start flow through browser
       WebSocket binary frames. `lanapi_websocket_flow_smoke.mjs` boots two
       isolated Playwright contexts, builds the existing original LAN announce,

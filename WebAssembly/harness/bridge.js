@@ -1561,6 +1561,25 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
+    case "realEngineLanState": {
+      try {
+        const state = await threadedEngine.engineCall(
+          "cnc_port_real_engine_lan_state", "string", [], []);
+        return { ok: true, command, lan: state, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineLanCommand": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_real_engine_lan_command", "string", ["string", "string"],
+          [String(payload.action ?? payload.command ?? ""), String(payload.value ?? "")]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     default:
       return {
         ok: false,
@@ -4558,6 +4577,12 @@ async function loadWasmModule() {
         "cnc_port_real_engine_set_skirmish_local_template",
         "string",
         ["string"],
+      ),
+      realEngineLanState: module.cwrap("cnc_port_real_engine_lan_state", "string", []),
+      realEngineLanCommand: module.cwrap(
+        "cnc_port_real_engine_lan_command",
+        "string",
+        ["string", "string"],
       ),
       realEngineFrame: module.cwrap("cnc_port_real_engine_frame", "string", ["number"]),
       realEngineFrameSummary: module.cwrap(
@@ -10465,6 +10490,44 @@ async function rpc(command, payload = {}) {
           result,
           state: snapshotState(),
         };
+      }
+    case "realEngineLanState":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineLanState");
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        try {
+          return {
+            ok: true,
+            command,
+            lan: JSON.parse(moduleResult.wasmModule.realEngineLanState()),
+            state: snapshotState(),
+          };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "realEngineLanCommand":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineLanCommand");
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        try {
+          const result = JSON.parse(moduleResult.wasmModule.realEngineLanCommand(
+            String(payload.action ?? payload.command ?? ""),
+            String(payload.value ?? ""),
+          ));
+          return {
+            ok: result?.ok === true,
+            command,
+            result,
+            state: snapshotState(),
+          };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
       }
     case "realEngineUpdateBreakpoint":
       {
