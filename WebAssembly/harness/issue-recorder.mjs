@@ -482,11 +482,13 @@ function validCncPortDistDir(value) {
 function selectedCncPortDistDir() {
   try {
     const params = new URLSearchParams(window.location.search);
-    // Mirror bridge.js defaultCncPortDistDir: threaded mode loads the
-    // RELEASE threaded build on the play page (dist-threaded elsewhere) —
-    // the dump metadata must record the dist the page ACTUALLY loaded.
+    // Mirror bridge.js: threaded is the play-page default (?threads=0 is
+    // the legacy escape hatch), and threaded mode loads the RELEASE
+    // threaded build on the play page (dist-threaded elsewhere) — the dump
+    // metadata must record the dist the page ACTUALLY loaded.
+    const threads = params.get("threads");
     const onPlayPage = window.location.pathname.endsWith("/play.html");
-    const threadedMode = params.get("threads") === "1";
+    const threadedMode = threads === "1" || (threads !== "0" && onPlayPage);
     const fallback = threadedMode
       ? (onPlayPage ? "dist-threaded-release" : "dist-threaded")
       : (onPlayPage ? "dist-release" : "dist");

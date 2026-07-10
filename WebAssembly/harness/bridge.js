@@ -1,15 +1,21 @@
 import { createD3D8Executor } from "./d3d8_executor.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
 
-// Engine-thread mode (?threads=1, plumbed like ?dist=): the REAL engine runs
-// on a pthread in the single pool worker of the dist-threaded build, and the
-// GL executor runs in THAT worker realm against an OffscreenCanvas transferred
-// from #viewport. The DEFAULT (no param) path must stay behavior-identical —
-// every threaded divergence in this file branches on this flag.
-// Design + P1a/P1b mechanics: WebAssembly/notes/p1-engine-thread.md.
+// Engine-thread mode (plumbed like ?dist=): the REAL engine runs on a
+// pthread in the single pool worker of the dist-threaded build, and the GL
+// executor runs in THAT worker realm against an OffscreenCanvas transferred
+// from #viewport. Every threaded divergence in this file branches on this
+// flag. THREADED IS THE DEFAULT ON THE PLAY PAGE (owner directive
+// 2026-07-10, Metal-verified — notes/p1-engine-thread.md GATE D);
+// ?threads=0 keeps the legacy single-threaded path as a transition escape
+// hatch. Harness/smoke pages keep the legacy default and opt in via
+// ?threads=1. Design + P1a/P1b mechanics: WebAssembly/notes/p1-engine-thread.md.
 const cncPortThreadedMode = (() => {
   try {
-    return new URLSearchParams(globalThis.location?.search || "").get("threads") === "1";
+    const threads = new URLSearchParams(globalThis.location?.search || "").get("threads");
+    if (threads === "1") return true;
+    if (threads === "0") return false;
+    return (globalThis.location?.pathname || "").endsWith("/play.html");
   } catch (_error) {
     return false;
   }

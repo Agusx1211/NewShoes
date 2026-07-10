@@ -45,12 +45,15 @@ const fpsNode = document.querySelector("#fps");
 const hudNode = document.querySelector("#hud");
 const gearButton = document.querySelector("#gearButton");
 const queryParams = new URLSearchParams(window.location.search);
-// Engine-thread mode (?threads=1): the engine runs on a pthread in the
-// dist-threaded build and bridge.js moves the frame loop into the worker
-// realm; this page only observes (status events drive the HUD). Must match
-// bridge.js's cncPortThreadedMode / defaultCncPortDistDir logic. Declared
-// before the selectedCncPortDistDir() call below (TDZ).
-const threadedMode = queryParams.get("threads") === "1";
+// Engine-thread mode: the engine runs on a pthread in the dist-threaded
+// build and bridge.js moves the frame loop into the worker realm; this page
+// only observes (status events drive the HUD). THREADED IS THE PLAY-PAGE
+// DEFAULT (owner directive 2026-07-10, Metal-verified — see
+// notes/p1-engine-thread.md GATE D); ?threads=0 keeps the legacy
+// single-threaded path as a transition escape hatch. Must match bridge.js's
+// cncPortThreadedMode / defaultCncPortDistDir logic. Declared before the
+// selectedCncPortDistDir() call below (TDZ).
+const threadedMode = queryParams.get("threads") !== "0";
 const viewportCanvas = document.querySelector("#viewport");
 const selectedDistDir = selectedCncPortDistDir();
 
