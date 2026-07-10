@@ -744,15 +744,17 @@ enough.
       NOTE (owner): do NOT add HTTP-cache/persistence layers for re-download
       avoidance yet — OPFS enters in P2 as the read-backing disk, not as a
       cache.
-- [ ] **Audio payload inventory duplicates whole archives on the main thread
-      (2026-07-10 audit).** `buildAudioPayloadInventoryFromMountedArchives`
-      (`harness/bridge.js:18670`) does `FS.readFile` (= full copy) of every
-      audio-relevant archive right after mount — SpeechEnglishZH.big alone is
-      254MB, ~400MB transient total — then parses BIG TOCs and samples entry
-      headers, all on the main thread. Reuse the already-downloaded bytes from
-      the mount pipeline (before they're released) or move the scan into
-      `io_worker.mjs`; at minimum drop the whole-file copies (read only TOC +
-      sampled headers via streamed reads).
+- [ ] **Remaining whole-archive `FS.readFile` copies outside the inventory
+      path (2026-07-10, follow-up to the inventory partial-read fix).**
+      (a) `startBrowserMssStreamPlayback` (`harness/bridge.js` ~3345) copies
+      each audio-relevant archive out of MEMFS (SpeechEnglishZH.big = 254MB)
+      per `AIL_start_stream` while hunting for the stream file — a runtime
+      hot path on every music/speech stream start. (b) The
+      `mssAdpcmSamplePlaybackProbe` RPC (~32390) does the same for one
+      archive. Both should reuse the `openMountedArchiveReader` +
+      `readBigDirectoryFromReader` partial-read helpers the inventory now
+      uses (and (a) should cache the parsed directory instead of re-parsing
+      per stream start).
 - [ ] **Measure the mount-phase repeated TOC parsing (2026-07-10 audit).**
       Each mounted archive's TOC is parsed by its per-archive `probeArchive`,
       then ALL TOCs again by the aggregate `/assets/.../*.big` probe, again by
@@ -1888,6 +1890,17 @@ residue and the next frontier.
       serialize npm scripts that share `WebAssembly/build/wasm`. Concurrent
       `build:wasm` runs can race during CMake/Ninja regeneration and fail with
       `ninja: error: failed recompaction` before the harness code runs.
+- [ ] **`runtime_archives_smoke.mjs` is red on a stale ControlBarScheme
+      assertion (2026-07-10).** Against the current `dist/cnc-port.wasm`, the
+      wasm-side `controlBarScheme` asset probe reports `attempted:false` with
+      `source:"superseded by cnc_port_real_engine_init (original
+      GameClient::init -> ControlBar::init)"`, but
+      `assertControlBarSchemeProbe` (smoke line ~688) still expects the old
+      parsed-metadata shape, so the smoke dies at line ~4125 before reaching
+      the audio/data assertions. Reproduced identically on unmodified main
+      (bridge.js untouched) on 2026-07-10. Update the assertion to accept the
+      superseded-probe shape (or assert the real-engine ControlBar path
+      instead).
 - [ ] Investigate the browser-stage hang in `test:runtime-archives-browser`.
       On 2026-07-02, `timeout --kill-after=15s 300s npm --prefix WebAssembly
       run test:runtime-archives-browser` reached

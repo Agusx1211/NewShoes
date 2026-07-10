@@ -8,6 +8,35 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Audio payload inventory: partial reads instead of whole-archive copies (2026-07-10)
+
+- [x] **Audio payload inventory duplicates whole archives on the main thread
+      (2026-07-10 audit) — fixed via FS-stream partial reads.**
+      `buildAudioPayloadInventoryFromMountedArchives` (bridge.js) used to
+      `FS.readFile` every audio-relevant archive after each `mountArchives`
+      (SpeechEnglishZH.big alone 254MB; ~386MB duplicated for the standard
+      audio set) and hold all copies in `archiveBytesByName` across the scan.
+      Now it opens each archive once via the Emscripten FS stream API
+      (`openMountedArchiveReader`: FS.stat/open/read/close) and reads only:
+      the BIGF header + directory in 64KB chunks
+      (`readBigDirectoryFromReader`, mirroring `extractBigEntryFromUrl`'s
+      range strategy with `readBigDirectoryFromBytes`'s exact semantics +
+      error messages), 64-byte payload headers for
+      `classifyAudioPayloadFormat`, the small audio INI text ranges, and the
+      few full decode/cache-proof payloads on demand through a
+      `readEntryBytes(archiveName, entry)` accessor now threaded into
+      `buildAudioDecodeAndBufferProofs` / `buildRequestedAudioDecodeCacheProof`
+      (replacing the `archiveBytesByName` Map). Inventory output proven
+      byte-identical pre/post (A/B JSON diff over a real 8-archive mount incl.
+      base INI.big, deterministic across runs); JS-heap last-sample dropped
+      818MB→432MB (= the 386MB duplicate set) with mount time unchanged;
+      node equivalence test covered 8 malformed-BIGF error paths with
+      identical messages plus a >64KB-directory archive and a chunked mock-FS
+      read loop. `test:io-worker-offthread` green. Note:
+      `runtime_archives_smoke.mjs` could not gate this — it is red on a
+      pre-existing stale ControlBarScheme assertion before the audio
+      assertions run (reproduced on unmodified main; tracked in TODO.md).
+
 ## Stepped-load validation regression — frozen turrets / stuck muzzle flashes (2026-07-10)
 
 - [x] **Menu-shell "battleship guns never rotate" + "muzzle flash constantly

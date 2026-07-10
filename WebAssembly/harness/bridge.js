@@ -16773,9 +16773,117 @@ function readBigDirectoryFromBytes(bytes, archiveName) {
   return entries;
 }
 
-function readMountedBigText(archiveBytes, entry) {
-  const bytes = archiveBytes.subarray(entry.offset, entry.offset + entry.size);
-  return new TextDecoder("windows-1252").decode(bytes);
+// Opens a mounted MEMFS file for bounded partial reads via the Emscripten FS
+// stream API so callers never have to copy a whole archive out of MEMFS
+// (FS.readFile) just to sample a few byte ranges from it.
+function openMountedArchiveReader(fs, path) {
+  const size = fs.stat(path).size;
+  const stream = fs.open(path, "r");
+  return {
+    size,
+    readAt(position, length) {
+      const start = Math.max(0, Math.min(position, size));
+      const wanted = Math.max(0, Math.min(length, size - start));
+      const buffer = new Uint8Array(wanted);
+      let total = 0;
+      while (total < wanted) {
+        const read = fs.read(stream, buffer, total, wanted - total, start + total);
+        if (read <= 0) {
+          break;
+        }
+        total += read;
+      }
+      return total === wanted ? buffer : buffer.subarray(0, total);
+    },
+    close() {
+      try {
+        fs.close(stream);
+      } catch {
+        // Stream already closed; nothing left to release.
+      }
+    },
+  };
+}
+
+// Partial-read variant of readBigDirectoryFromBytes: parses the BIGF header +
+// directory through bounded chunked reads (same strategy as
+// extractBigEntryFromUrl's range fetches) instead of requiring the whole
+// archive in memory. Semantics and error messages mirror
+// readBigDirectoryFromBytes.
+function readBigDirectoryFromReader(reader, archiveName) {
+  if (reader.size < 16) {
+    throw new Error(`${archiveName} is too small to be a BIGF archive`);
+  }
+  const header = reader.readAt(0, 16);
+  const magic = String.fromCharCode(...header.subarray(0, 4));
+  if (magic !== "BIGF") {
+    throw new Error(`${archiveName} is not a BIGF archive`);
+  }
+
+  const entryCount = readBigUInt32BE(header, 8);
+  if (entryCount > 1000000) {
+    throw new Error(`${archiveName} has an invalid BIGF entry count: ${entryCount}`);
+  }
+
+  const decoder = new TextDecoder("ascii");
+  const entries = [];
+  const directoryStart = 0x10;
+  const chunkSize = 64 * 1024;
+  const directoryCapacity = reader.size - directoryStart;
+  let directoryBytes = new Uint8Array(0);
+
+  const ensureDirectoryBytes = (requiredLength, failureMessage) => {
+    while (directoryBytes.byteLength < requiredLength) {
+      if (directoryBytes.byteLength >= directoryCapacity) {
+        throw new Error(failureMessage);
+      }
+      const start = directoryStart + directoryBytes.byteLength;
+      const next = reader.readAt(start, Math.min(chunkSize, reader.size - start));
+      if (next.byteLength === 0) {
+        throw new Error(failureMessage);
+      }
+      directoryBytes = appendBytes(directoryBytes, next);
+    }
+  };
+
+  let cursor = 0;
+  for (let index = 0; index < entryCount; ++index) {
+    ensureDirectoryBytes(cursor + 9, `${archiveName} BIGF directory ended before entry ${index}`);
+    const offset = readBigUInt32BE(directoryBytes, cursor);
+    const size = readBigUInt32BE(directoryBytes, cursor + 4);
+    const pathStart = cursor + 8;
+    let pathEnd = pathStart;
+    for (;;) {
+      while (pathEnd < directoryBytes.byteLength && directoryBytes[pathEnd] !== 0) {
+        pathEnd += 1;
+      }
+      if (pathEnd < directoryBytes.byteLength) {
+        break;
+      }
+      ensureDirectoryBytes(
+        directoryBytes.byteLength + 1,
+        `${archiveName} BIGF entry ${index} has no terminator`,
+      );
+    }
+    if (offset + size > reader.size) {
+      throw new Error(`${archiveName} BIGF entry extends past archive end`);
+    }
+
+    const path = decoder.decode(directoryBytes.subarray(pathStart, pathEnd));
+    entries.push({
+      archive: archiveName,
+      path,
+      normalizedPath: normalizeBigPath(path),
+      offset,
+      size,
+    });
+    cursor = pathEnd + 1;
+  }
+  return entries;
+}
+
+function decodeMountedBigTextBytes(payloadBytes) {
+  return new TextDecoder("windows-1252").decode(payloadBytes);
 }
 
 function stripIniComment(line) {
@@ -16953,8 +17061,11 @@ function parseAudioWavFmt(header) {
   return null;
 }
 
-function classifyAudioPayloadFormat(archiveBytes, entry) {
-  const header = archiveBytes.subarray(entry.offset, Math.min(entry.offset + 64, archiveBytes.byteLength));
+// Callers pass the payload's first audioPayloadHeaderSampleBytes bytes
+// (clamped to the archive end), not the whole archive.
+const audioPayloadHeaderSampleBytes = 64;
+
+function classifyAudioPayloadFormat(header, entry) {
   const extension = audioPayloadExtension(entry.path);
   const magic = audioPayloadMagic(header);
   const wavFmt = magic === "riff-wave" ? parseAudioWavFmt(header) : null;
@@ -18121,7 +18232,7 @@ async function buildBrowserAudio3DPositioningProof(decodedPayloads) {
   }
 }
 
-function buildAudioDecodeAndBufferProofs(entryIndex, archiveBytesByName) {
+function buildAudioDecodeAndBufferProofs(entryIndex, readEntryBytes) {
   const errors = [];
   const proofs = [];
   const decodedPayloads = [];
@@ -18131,13 +18242,18 @@ function buildAudioDecodeAndBufferProofs(entryIndex, archiveBytesByName) {
       errors.push(`decode proof payload not found: ${target.path}`);
       continue;
     }
-    const archiveBytes = archiveBytesByName.get(entry.archive);
-    if (!archiveBytes) {
+    let payloadBytes;
+    try {
+      payloadBytes = readEntryBytes(entry.archive, entry);
+    } catch (error) {
+      errors.push(`${target.path}: ${error?.message ?? String(error)}`);
+      continue;
+    }
+    if (!payloadBytes) {
       errors.push(`decode proof archive bytes not found: ${entry.archive}`);
       continue;
     }
     try {
-      const payloadBytes = archiveBytes.subarray(entry.offset, entry.offset + entry.size);
       const decoded = decodeAudioWavPayload(payloadBytes);
       const decodedFrames = decoded.samples.length / decoded.info.channels;
       decodedPayloads.push({
@@ -18209,7 +18325,7 @@ function selectRequestedDecodeCacheTargets(requestedPayloadCachePlan) {
   ];
 }
 
-async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, entryIndex, archiveBytesByName) {
+async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, entryIndex, readEntryBytes) {
   const errors = [];
   const entries = [];
   const decodedCache = new Map();
@@ -18230,14 +18346,19 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
       );
       continue;
     }
-    const archiveBytes = archiveBytesByName.get(target.archive);
-    if (!archiveBytes) {
+    let payloadBytes;
+    try {
+      payloadBytes = readEntryBytes(target.archive, entry);
+    } catch (error) {
+      errors.push(`${target.cacheKey}: ${error?.message ?? String(error)}`);
+      continue;
+    }
+    if (!payloadBytes) {
       errors.push(`requested decode-cache archive bytes not found: ${target.archive}`);
       continue;
     }
 
     try {
-      const payloadBytes = archiveBytes.subarray(entry.offset, entry.offset + entry.size);
       if (target.extension === "mp3") {
         const decoded = await decodeWebAudioPayload(payloadBytes);
         const cacheEntry = {
@@ -18668,18 +18789,32 @@ function buildAudioRequestedPayloadCachePlan(refsBySection) {
 }
 
 async function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
+  // Readers stay open across the scan (directory, entry-header sampling, INI
+  // text, decode/cache proofs) and always close on the way out, including the
+  // early ok:false returns.
+  const openArchiveReaders = [];
+  try {
+    return await buildAudioPayloadInventoryWithReaders(wasmModule, archives, openArchiveReaders);
+  } finally {
+    for (const reader of openArchiveReaders) {
+      reader.close();
+    }
+  }
+}
+
+async function buildAudioPayloadInventoryWithReaders(wasmModule, archives, openArchiveReaders) {
   const mountedArchives = [];
   const entryIndex = new Map();
   const iniFiles = {};
   const iniTexts = {};
   const payloadFormats = newAudioFormatSummary("mounted BIG Data\\Audio entry headers");
   payloadFormats.archives = {};
-  const archiveBytesByName = new Map();
+  const archiveReadersByName = new Map();
 
   for (const archive of archives.filter(isAudioPayloadRelevantArchive)) {
-    let archiveBytes;
+    let reader;
     try {
-      archiveBytes = wasmModule.fs.readFile(archive.path);
+      reader = openMountedArchiveReader(wasmModule.fs, archive.path);
     } catch (error) {
       return {
         ok: false,
@@ -18687,14 +18822,15 @@ async function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archive
         error: error?.message ?? String(error),
       };
     }
-    archiveBytesByName.set(archive.name, archiveBytes);
+    openArchiveReaders.push(reader);
+    archiveReadersByName.set(archive.name, reader);
     if (archive.sourceName) {
-      archiveBytesByName.set(archive.sourceName, archiveBytes);
+      archiveReadersByName.set(archive.sourceName, reader);
     }
 
     let entries;
     try {
-      entries = readBigDirectoryFromBytes(archiveBytes, archive.name);
+      entries = readBigDirectoryFromReader(reader, archive.name);
     } catch (error) {
       return {
         ok: false,
@@ -18706,7 +18842,10 @@ async function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archive
     const archiveFormats = newAudioFormatSummary(`${archive.name} Data\\Audio entry headers`);
     for (const entry of entries) {
       if (entry.normalizedPath.startsWith("data\\audio\\")) {
-        entry.format = classifyAudioPayloadFormat(archiveBytes, entry);
+        entry.format = classifyAudioPayloadFormat(
+          reader.readAt(entry.offset, audioPayloadHeaderSampleBytes),
+          entry,
+        );
         addAudioFormatSummaryEntry(archiveFormats, entry);
         addAudioFormatSummaryEntry(payloadFormats, entry);
       }
@@ -18733,7 +18872,7 @@ async function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archive
       const entry = entries.find((candidate) =>
         candidate.normalizedPath === normalizeBigPath(iniPath));
       if (entry) {
-        iniTexts[iniPath] = readMountedBigText(archiveBytes, entry);
+        iniTexts[iniPath] = decodeMountedBigTextBytes(reader.readAt(entry.offset, entry.size));
         iniFiles[iniPath] = {
           present: true,
           archive: archive.name,
@@ -18843,14 +18982,23 @@ async function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archive
     : payloadFormats.requiresTranscode > 0
       ? "imaAdpcmDecoder"
       : "decodeAudioDataHarness";
-  const audioProofs = buildAudioDecodeAndBufferProofs(entryIndex, archiveBytesByName);
+  // On-demand partial reads for the handful of proof payloads; returns null
+  // when the archive is not part of the scanned reader set.
+  const readEntryBytes = (archiveName, entry) => {
+    const reader = archiveReadersByName.get(archiveName);
+    if (!reader) {
+      return null;
+    }
+    return reader.readAt(entry.offset, entry.size);
+  };
+  const audioProofs = buildAudioDecodeAndBufferProofs(entryIndex, readEntryBytes);
   const decodeProofs = audioProofs.decodeProofs;
   const webAudioBufferProofs = audioProofs.webAudioBufferProofs;
   const requestedPayloadCachePlan = buildAudioRequestedPayloadCachePlan(refsBySection);
   const requestedPayloadDecodeCacheProof = await buildRequestedAudioDecodeCacheProof(
     requestedPayloadCachePlan,
     entryIndex,
-    archiveBytesByName,
+    readEntryBytes,
   );
   if (decodeProofs.ready && webAudioBufferProofs.ready && payloadFormats.nextRequired === "imaAdpcmDecoder") {
     payloadFormats.nextRequired = "requestedPayloadDecodeCache";
