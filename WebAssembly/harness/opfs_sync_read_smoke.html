@@ -1,0 +1,98 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>OPFS sync read smoke</title>
+  </head>
+  <body>
+    <p>OPFS streamed-download + sync-read smoke harness.</p>
+    <script type="module">
+      // Drives harness/opfs_sync_read_worker.mjs: the worker streams the
+      // archive into OPFS and measures sync reads; this page then verifies
+      // sampled OPFS byte ranges against HTTP Range requests for the same
+      // ranges (the static server supports Range).
+      window.__runOpfsSmoke = (url) => {
+        return new Promise((resolveSmoke, reject) => {
+          const worker = new Worker(new URL("./opfs_sync_read_worker.mjs", import.meta.url), {
+            type: "module",
+          });
+          const progress = { events: 0, maxReceived: 0 };
+
+          worker.onmessage = async (event) => {
+            const message = event.data ?? {};
+            if (message.kind === "boot") {
+              worker.postMessage({ kind: "run", url });
+              return;
+            }
+            if (message.kind === "progress") {
+              progress.events += 1;
+              progress.maxReceived = Math.max(progress.maxReceived, Number(message.received));
+              return;
+            }
+            if (message.kind !== "result") {
+              return;
+            }
+
+            const result = message.result ?? {};
+            // Byte-exact verification: compare each OPFS-read sample against a
+            // main-thread Range fetch of the same byte range.
+            const rangeChecks = [];
+            let rangeVerifyOk = (result.verifySamples ?? []).length === 5;
+            try {
+              for (const sample of result.verifySamples ?? []) {
+                const opfsBytes = new Uint8Array(sample.buffer);
+                const response = await fetch(url, {
+                  headers: { Range: `bytes=${sample.at}-${sample.at + sample.length - 1}` },
+                });
+                const check = {
+                  at: sample.at,
+                  length: sample.length,
+                  status: response.status,
+                  match: false,
+                };
+                if (response.status === 206) {
+                  const httpBytes = new Uint8Array(await response.arrayBuffer());
+                  check.httpLength = httpBytes.byteLength;
+                  if (httpBytes.byteLength === opfsBytes.byteLength) {
+                    let mismatchAt = -1;
+                    for (let i = 0; i < httpBytes.byteLength; i += 1) {
+                      if (httpBytes[i] !== opfsBytes[i]) {
+                        mismatchAt = i;
+                        break;
+                      }
+                    }
+                    check.match = mismatchAt === -1;
+                    if (mismatchAt !== -1) check.mismatchAt = mismatchAt;
+                  }
+                }
+                if (!check.match) rangeVerifyOk = false;
+                rangeChecks.push(check);
+              }
+            } catch (error) {
+              rangeVerifyOk = false;
+              rangeChecks.push({ error: String(error) });
+            }
+
+            // Drop the transferred buffers from the serialized result.
+            const { verifySamples, ...rest } = result;
+            worker.terminate();
+            resolveSmoke({
+              ...rest,
+              ok: message.ok === true,
+              progressEvents: progress.events,
+              progressMaxReceived: progress.maxReceived,
+              rangeVerifyOk,
+              rangeChecks,
+            });
+          };
+
+          worker.onerror = (event) => {
+            reject(new Error(event?.message ?? "OPFS worker crashed"));
+          };
+
+          setTimeout(() => reject(new Error("OPFS smoke timed out")), 120000);
+        });
+      };
+    </script>
+  </body>
+</html>

@@ -44,6 +44,40 @@ mitigation track. Items resolved or retired by the pivot:
       measurement work is retired with it. Revisit only on pre-P2 boot pain
       (cheap partial: `verifyEach:false` on the play path).
 
+## Engine-thread architecture P0 spike — browser-primitive feasibility smokes (2026-07-10)
+
+- [x] **OffscreenCanvas WebGL2-in-worker proven on the CI baseline
+      (headless SwiftShader Chromium 149).** JS-only smoke
+      `npm run test:offscreen-worker-gl`
+      (harness/offscreen_worker_gl_smoke.{mjs,html} +
+      offscreen_worker_gl_worker.mjs): transferControlToOffscreen → module
+      worker → getContext("webgl2") succeeds (renderer "ANGLE … SwiftShader
+      driver"); requestAnimationFrame IS available in dedicated workers and
+      drove the loop (setTimeout fallback exists but was not needed); frames
+      drawn in the worker present on the page's placeholder canvas
+      (Playwright element screenshots non-black, differ across ~10 frames —
+      verified by pixel decode, not just exit code). Blocked-worker behavior
+      (the load-screen question): during a 2s synchronous worker busy-loop
+      the MAIN thread kept ticking (120 rAF ticks), zero frames drew or
+      presented during the block (screenshots identical), the canvas kept
+      showing the last presented frame (frozen, not broken/black), and
+      animation resumed after the block. Matches the IDEAS.md design
+      assumption exactly: a hard-blocked engine thread = frozen load screen,
+      never a locked tab.
+- [x] **OPFS streamed-download + synchronous reads proven on the CI
+      baseline.** JS-only smoke `npm run test:opfs-sync-read`
+      (harness/opfs_sync_read_smoke.{mjs,html} + opfs_sync_read_worker.mjs):
+      navigator.storage.getDirectory + createSyncAccessHandle both available
+      in a dedicated worker; the real 18MB INIZH.big streamed
+      fetch→OPFS chunk-by-chunk (peak JS-held buffer = one 2MB fetch chunk,
+      never resident) at ~52-85 MB/s; fresh sync handle then read it back
+      genuinely synchronously — 16B header ("BIGF"), 256KB TOC read
+      ~83 MB/s, 200 random 64KB reads ~96 MB/s, 16 sequential 1MB reads
+      ~565 MB/s; 5 sampled OPFS ranges byte-matched main-thread HTTP Range
+      fetches exactly; file removed after. Quota reported 4-5GB for the
+      default (non-persistent) Playwright profile — enough for the full
+      ~2GB archive set, but worth re-checking on real user profiles/Safari.
+
 ## Stepped-load validation regression — frozen turrets / stuck muzzle flashes (2026-07-10)
 
 - [x] **Menu-shell "battleship guns never rotate" + "muzzle flash constantly
