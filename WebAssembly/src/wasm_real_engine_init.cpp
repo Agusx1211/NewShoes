@@ -50,10 +50,13 @@
 #include "GameClient/GadgetPushButton.h"
 #include "WW3D2/assetmgr.h"
 #include "WW3D2/texture.h"
+#include "WW3D2/ww3d.h"
 #include "GameClient/MapUtil.h"
 #include "cpudetect.h"
 #include "GameClient/Display.h"
 #include "GameClient/Drawable.h"
+#include "Common/DrawModule.h"
+#include "W3DDevice/GameClient/Module/W3DModelDraw.h"
 #include "GameClient/FXList.h"
 #include "GameClient/GUICallbacks.h"
 #include "GameClient/GameClient.h"
@@ -5875,6 +5878,22 @@ extern "C" int cnc_port_client_frame_elapsed_ms(void)
 	return g_paced_elapsed_whole_ms;
 }
 
+// W3DDisplay::draw exit-branch counters (strong defs in W3DDisplay.cpp,
+// __EMSCRIPTEN__ block). Reported in cnc_port_real_engine_frame_paced JSON.
+extern "C" int cnc_port_w3d_draw_entries;
+extern "C" int cnc_port_w3d_draw_exit_iconic;
+extern "C" int cnc_port_w3d_draw_exit_timefast;
+extern "C" int cnc_port_w3d_draw_exit_multiplier;
+extern "C" int cnc_port_w3d_draw_scene_renders;
+extern "C" int cnc_port_w3d_draw_view_draws;
+// Per-drawable client draw pass (strong defs in W3DModelDraw.cpp) and
+// animation stepping (strong defs in animobj.cpp).
+extern "C" int cnc_port_w3d_model_draw_calls;
+extern "C" int cnc_port_w3d_recoil_calls;
+extern "C" int cnc_port_w3d_recoil_barrel_updates;
+extern "C" int cnc_port_w3d_anim_progress_calls;
+extern "C" int cnc_port_w3d_anim_frame_advances;
+
 // ---------------------------------------------------------------------------
 // Stepped map load ("async loading").
 //
@@ -5969,6 +5988,69 @@ extern "C" float cnc_port_client_frame_time_scale(void)
 	return g_paced_frame_time_scale;
 }
 
+// Frozen-animation debugging: per-drawable HAnim + muzzle-flash/recoil truth.
+// Pass 0 reports drawables with barrel/flash data (the muzzle-flash suspects),
+// pass 1 fills remaining slots with other animated models. flashHidden is the
+// muzzle-flash subobject's ACTUAL Is_Hidden flag, so a dump distinguishes
+// "hide never called" from "hide called but not taking effect in rendering".
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_anim_report(int max_entries)
+{
+	static std::string json;
+	json = "{\"ok\":true";
+	json += ",\"logicFrame\":" + std::to_string(
+		TheGameLogic != NULL ? (long long)TheGameLogic->getFrame() : -1);
+	json += ",\"drawables\":[";
+	int emitted = 0;
+	if (max_entries <= 0) {
+		max_entries = 48;
+	}
+	if (TheGameClient != NULL) {
+		// Pass 0: on-screen (vis=1) drawables with anims or barrels — these are
+		// the pixels the player is looking at and must never be crowded out of
+		// the cap by offscreen entries. Pass 1: offscreen barrel carriers.
+		// Pass 2: other offscreen animated drawables.
+		for (int pass = 0; pass < 3 && emitted < max_entries; ++pass) {
+			for (Drawable *d = TheGameClient->firstDrawable();
+					d != NULL && emitted < max_entries;
+					d = d->getNextDrawable()) {
+				const W3DModelDraw *w3d = NULL;
+				for (DrawModule **dm = d->getDrawModules(); *dm; ++dm) {
+					const ObjectDrawInterface *di = (*dm)->getObjectDrawInterface();
+					if (di != NULL) {
+						w3d = (const W3DModelDraw *)di;
+						break;
+					}
+				}
+				if (w3d == NULL) {
+					continue;
+				}
+				std::string frag;
+				w3d->cncPortAppendAnimReport(frag);
+				const bool has_barrels = frag.find("\"barrels\"") != std::string::npos;
+				const bool has_anim = frag.find("\"anim\"") != std::string::npos;
+				const bool on_screen = frag.find("\"vis\":1") != std::string::npos;
+				bool take = false;
+				if (pass == 0) {
+					take = on_screen && (has_anim || has_barrels);
+				} else if (pass == 1) {
+					take = !on_screen && has_barrels;
+				} else {
+					take = !on_screen && !has_barrels && has_anim;
+				}
+				if (take) {
+					if (emitted) {
+						json += ",";
+					}
+					json += frag;
+					++emitted;
+				}
+			}
+		}
+	}
+	json += "],\"count\":" + std::to_string(emitted) + "}";
+	return json.c_str();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_client_pacing(
 	int client_fps,
 	int logic_fps)
@@ -6026,6 +6108,29 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_paced(int
 	json += (TheGameLogic != NULL && TheGameLogic->isLoadSessionActive()) ? "true" : "false";
 	json += ",\"loadProgress\":" + std::to_string(
 		TheGameLogic != NULL ? (long long)TheGameLogic->getLoadSessionProgress() : -1);
+	// W3D animation clock (drives every HAnim/particle/muzzle-flash timeline).
+	// If w3dSyncTimeMs stops advancing while clientFrame does, animations are
+	// frozen — the exact owner-reported symptom class (units move, nothing
+	// animates) — and w3dFrameTimeMs shows the per-frame increment applied.
+	json += ",\"w3dSyncTimeMs\":" + std::to_string((unsigned long long)WW3D::Get_Sync_Time());
+	json += ",\"w3dFrameTimeMs\":" + std::to_string((unsigned long long)WW3D::Get_Frame_Time());
+	json += ",\"timeMultiplier\":" + std::to_string(
+		TheTacticalView != NULL ? (long long)TheTacticalView->getTimeMultiplier() : 1);
+	// W3DDisplay::draw exit-branch counters (defined in W3DDisplay.cpp): with
+	// 60 entries/s, whichever exit accounts for the missing scene renders
+	// names the frame-eating branch. viewDraws is the actual drawViews()+
+	// present; sceneRenders is updateViews() (pre-render world update).
+	json += ",\"w3dDrawEntries\":" + std::to_string(cnc_port_w3d_draw_entries);
+	json += ",\"w3dDrawExitIconic\":" + std::to_string(cnc_port_w3d_draw_exit_iconic);
+	json += ",\"w3dDrawExitTimeFast\":" + std::to_string(cnc_port_w3d_draw_exit_timefast);
+	json += ",\"w3dDrawExitMultiplier\":" + std::to_string(cnc_port_w3d_draw_exit_multiplier);
+	json += ",\"w3dDrawSceneRenders\":" + std::to_string(cnc_port_w3d_draw_scene_renders);
+	json += ",\"w3dDrawViewDraws\":" + std::to_string(cnc_port_w3d_draw_view_draws);
+	json += ",\"w3dModelDrawCalls\":" + std::to_string(cnc_port_w3d_model_draw_calls);
+	json += ",\"w3dRecoilCalls\":" + std::to_string(cnc_port_w3d_recoil_calls);
+	json += ",\"w3dRecoilBarrelUpdates\":" + std::to_string(cnc_port_w3d_recoil_barrel_updates);
+	json += ",\"w3dAnimProgressCalls\":" + std::to_string(cnc_port_w3d_anim_progress_calls);
+	json += ",\"w3dAnimFrameAdvances\":" + std::to_string(cnc_port_w3d_anim_frame_advances);
 	json += ",\"quitting\":";
 	json += (TheGameEngine != NULL && TheGameEngine->getQuitting() != FALSE) ? "true" : "false";
 	json += ",\"exceptionCaught\":";

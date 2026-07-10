@@ -144,6 +144,27 @@ function compactFrame(frame) {
     quitting: frame.quitting,
     lastUpdateTarget: frame.lastUpdateTarget,
     lastGameLogicStep: frame.lastGameLogicStep,
+    // W3D animation clock + frame counters (frozen-animation debugging: if
+    // w3dSyncTimeMs stops advancing while clientFrame moves, every HAnim/
+    // particle/muzzle-flash timeline is frozen — owner-reported symptom).
+    logicFrame: frame.logicFrame,
+    clientFrame: frame.clientFrame,
+    w3dSyncTimeMs: frame.w3dSyncTimeMs,
+    w3dFrameTimeMs: frame.w3dFrameTimeMs,
+    timeMultiplier: frame.timeMultiplier,
+    // W3DDisplay::draw exit-branch counters: name the branch that skips the
+    // scene render when visible canvas updates lag the 60Hz engine tick.
+    w3dDrawEntries: frame.w3dDrawEntries,
+    w3dDrawExitIconic: frame.w3dDrawExitIconic,
+    w3dDrawExitTimeFast: frame.w3dDrawExitTimeFast,
+    w3dDrawExitMultiplier: frame.w3dDrawExitMultiplier,
+    w3dDrawSceneRenders: frame.w3dDrawSceneRenders,
+    w3dDrawViewDraws: frame.w3dDrawViewDraws,
+    w3dModelDrawCalls: frame.w3dModelDrawCalls,
+    w3dRecoilCalls: frame.w3dRecoilCalls,
+    w3dRecoilBarrelUpdates: frame.w3dRecoilBarrelUpdates,
+    w3dAnimProgressCalls: frame.w3dAnimProgressCalls,
+    w3dAnimFrameAdvances: frame.w3dAnimFrameAdvances,
     textureDiagnostics: frame.textureDiagnostics,
     missingApplies: frame.missingApplies,
     missingBailouts: frame.missingBailouts,
@@ -168,6 +189,9 @@ function compactState(state) {
     canvas: state.canvas,
     graphics: {
       api: state.graphics?.api,
+      // Active D3D8 shader tier ("ps11"/"ff") — sampled once per session in
+      // bridge.js; dumps must carry it so tier-attribution is never guessed.
+      d3d8ShaderTier: state.graphics?.d3d8ShaderTier,
       d3d8DrawIndexedSequence: state.graphics?.d3d8DrawIndexedSequence,
       d3d8Perf: state.graphics?.d3d8Perf,
       lastD3D8DrawIndexed: state.graphics?.lastD3D8DrawIndexed
@@ -621,6 +645,8 @@ class IssueRecorder {
     this.activeStroke = null;
     this.bound = false;
     this.wrappedRpc = null;
+    this.animReportTimer = null;
+    this.animReportSamples = [];
     this.setStatus("idle");
   }
 
@@ -946,6 +972,35 @@ class IssueRecorder {
     if (this.includeVideo) {
       await this.startVideo();
     }
+    // Sample the anim/ghost report once per second while recording so the
+    // bundle carries per-unit state for the exact moments the video shows a
+    // problem (the 3 dump-time reports only cover the instant of the dump,
+    // when the camera has usually moved off the broken units).
+    if (this.rpc && !this.animReportTimer) {
+      this.animReportTimer = setInterval(() => {
+        if (!this.recording || !this.rpc) {
+          return;
+        }
+        void this.rpc("realEngineAnimReport", { maxEntries: 40 })
+          .then((result) => {
+            const report = result?.report ?? result ?? null;
+            // Full-fidelity copy for the bundle: the timeline event path
+            // depth-redacts nested objects (turrets/barrels/anim would be
+            // stripped) and caps arrays at 24 entries.
+            if (report) {
+              pushBounded(this.animReportSamples, {
+                t: stableNowMs(),
+                frame: this.lastFrameMarker,
+                report,
+              }, 240);
+            }
+            this.record("animReport.sample", {
+              entries: report?.drawables?.length ?? 0,
+            });
+          })
+          .catch(() => {});
+      }, 1000);
+    }
     this.setStatus("recording");
     await this.persistDraft("recording-start");
   }
@@ -953,6 +1008,10 @@ class IssueRecorder {
   async stopRecording(reason = "manual") {
     this.record("recording.stop", { reason }, { force: true });
     this.recording = false;
+    if (this.animReportTimer) {
+      clearInterval(this.animReportTimer);
+      this.animReportTimer = null;
+    }
     this.controls.recordToggle?.classList.remove("active");
     if (this.controls.recordToggle) {
       this.controls.recordToggle.textContent = "record";
@@ -1280,6 +1339,28 @@ class IssueRecorder {
     const logs = this.collectLogsTail();
     const videoDataUrl = await this.videoDataUrl();
     const build = this.build ?? await collectBuildAssets();
+    // Frozen-animation debugging: capture per-drawable HAnim + muzzle-flash
+    // truth (recoil state + the flash subobject's actual Is_Hidden flag)
+    // three times ~400ms apart, so a dump shows whether flashes TOGGLE.
+    let animReports = null;
+    try {
+      const rpc = window.CnCPort?.rpc;
+      if (typeof rpc === "function") {
+        animReports = [];
+        for (let i = 0; i < 3; i += 1) {
+          const res = await Promise.race([
+            rpc("realEngineAnimReport", { maxEntries: 40 }),
+            new Promise((resolve) => setTimeout(() => resolve(null), 3_000)),
+          ]);
+          animReports.push({ t: Date.now(), report: res?.report ?? res ?? null });
+          if (i < 2) {
+            await new Promise((resolve) => setTimeout(resolve, 400));
+          }
+        }
+      }
+    } catch (error) {
+      animReports = { error: error instanceof Error ? error.message : String(error) };
+    }
     const bundle = {
       schema: "cnc.issue-dump.v1",
       id: this.id,
@@ -1330,6 +1411,8 @@ class IssueRecorder {
       },
       timeline: this.events,
       frameSamples: this.frameSamples,
+      animReports,
+      animReportSamples: this.animReportSamples,
       issues: this.issues,
       logs,
       media: {

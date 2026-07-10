@@ -422,9 +422,18 @@ public:
 	virtual ObjectDrawInterface* getObjectDrawInterface() { return this; }
 	virtual const ObjectDrawInterface* getObjectDrawInterface() const { return this; }
 
-	///@todo: I had to make this public because W3DDevice needs access for casting shadows -MW 
+	///@todo: I had to make this public because W3DDevice needs access for casting shadows -MW
 	inline RenderObjClass *getRenderObject() { return m_renderObject; }
 	virtual Bool updateBonesForClientParticleSystems( void );///< this will reposition particle systems on the fly ML
+
+#ifdef __EMSCRIPTEN__
+	// Diagnostic (frozen-animation debugging): append a JSON object with the
+	// current HAnim state (mode/frame/rate multiplier) and, per barrel with a
+	// muzzle-flash bone, the recoil state plus the flash subobject's actual
+	// Is_Hidden flag. Read by cnc_port_real_engine_anim_report; lets a user
+	// dump prove whether muzzle-flash hide CALLS take EFFECT. No side effects.
+	void cncPortAppendAnimReport(std::string &out) const;
+#endif
 
 	virtual void onDrawableBoundToObject();
 	virtual void setTerrainDecalSize(Real x, Real y);

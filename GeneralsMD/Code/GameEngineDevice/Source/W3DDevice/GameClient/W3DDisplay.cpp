@@ -127,6 +127,19 @@ extern "C" int cnc_port_client_paced_mode(void) __attribute__((weak));
 // step at a 30fps-effective client runs every animation at half speed while
 // logic keeps moving units at full speed — owner-reported symptom class).
 extern "C" int cnc_port_client_frame_elapsed_ms(void) __attribute__((weak));
+// Frozen-animation debugging (owner-reported ~5Hz visible updates while the
+// engine ticks 60Hz): count every W3DDisplay::draw entry and each way a call
+// can skip the actual scene render, so telemetry names the frame-eating
+// branch instead of it being inferred. Read by wasm_real_engine_init's paced
+// frame JSON.
+extern "C" {
+int cnc_port_w3d_draw_entries = 0;
+int cnc_port_w3d_draw_exit_iconic = 0;
+int cnc_port_w3d_draw_exit_timefast = 0;
+int cnc_port_w3d_draw_exit_multiplier = 0;
+int cnc_port_w3d_draw_scene_renders = 0;
+int cnc_port_w3d_draw_view_draws = 0;
+}
 #define CNC_PORT_NOTE_W3D_DISPLAY_STEP(name) \
 	do { \
 		if (cnc_port_note_engine_update_target) { \
@@ -1723,9 +1736,15 @@ void W3DDisplay::draw( void )
 	CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.entry");
 	//USE_PERF_TIMER(W3DDisplay_draw)
 	static UnsignedInt syncTime = 0;
+#ifdef __EMSCRIPTEN__
+	++cnc_port_w3d_draw_entries;
+#endif
 
 	extern HWND ApplicationHWnd;
 	if (ApplicationHWnd && ::IsIconic(ApplicationHWnd)) {
+#ifdef __EMSCRIPTEN__
+		++cnc_port_w3d_draw_exit_iconic;
+#endif
 		return;
 	}
 
@@ -1836,6 +1855,9 @@ AGAIN:
 	{
 		primaryW3DView->updateCameraMovements();  // Update camera motion effects.
 		syncTime += TheW3DFrameLengthInMsec;
+#ifdef __EMSCRIPTEN__
+		++cnc_port_w3d_draw_exit_timefast;
+#endif
 		return;
 	}
 
@@ -1913,12 +1935,17 @@ AGAIN:
 	static Int prevTime = timeGetTime(), now;	
 
 	now=timeGetTime();
-	if (TheTacticalView->getTimeMultiplier()>1) 
+	if (TheTacticalView->getTimeMultiplier()>1)
 	{
 		static Int timeMultiplierCounter = 1;
 		timeMultiplierCounter--;
-		if (timeMultiplierCounter>1) 
+		if (timeMultiplierCounter>1)
+		{
+#ifdef __EMSCRIPTEN__
+			++cnc_port_w3d_draw_exit_multiplier;
+#endif
 			return;
+		}
 		timeMultiplierCounter = TheTacticalView->getTimeMultiplier();
 		// limit the framerate, because while fast time is on, the game logic is running as fast as it can.
 	}	
@@ -1950,6 +1977,9 @@ AGAIN:
 				//trying to refresh the visible terrain geometry.
 	//			if(TheGlobalData->m_loadScreenRender != TRUE)
 					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.updateViews.before");
+#ifdef __EMSCRIPTEN__
+					++cnc_port_w3d_draw_scene_renders;
+#endif
 					updateViews();
 					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.updateViews.after");
 					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.particles.before");
@@ -2019,6 +2049,9 @@ AGAIN:
 
 					// draw all views of the world
 					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.drawViews.before");
+#ifdef __EMSCRIPTEN__
+					++cnc_port_w3d_draw_view_draws;
+#endif
 					drawViews();
 					CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.drawViews.after");
 

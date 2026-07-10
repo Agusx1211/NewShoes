@@ -67,6 +67,17 @@
 #include "wwmemlog.h"
 #include "animatedsoundmgr.h"
 
+#ifdef __EMSCRIPTEN__
+// Frozen-animation debugging: count animation stepping at its source. If
+// progress calls run but frame advances stay ~0 while WW3D sync time moves,
+// every skeletal animation is frozen despite a live render loop. Read by
+// wasm_real_engine_init's paced frame JSON.
+extern "C" {
+int cnc_port_w3d_anim_progress_calls = 0;
+int cnc_port_w3d_anim_frame_advances = 0;
+}
+#endif
+
 
 /***********************************************************************************************
  * Animatable3DObjClass::Animatable3DObjClass -- constructor                                   *
@@ -1051,15 +1062,21 @@ void Animatable3DObjClass::Single_Anim_Progress (void)
 	//	Update the current frame (only works in "SINGLE_ANIM" mode!)
 	//
 	if (CurMotionMode == SINGLE_ANIM) {
-		
-		// 
+
+		//
 		// Update the frame number and sync time
 		//
 		float oldprev = ModeAnim.PrevFrame;
 		ModeAnim.PrevFrame		= ModeAnim.Frame;
 		ModeAnim.Frame				= Compute_Current_Frame(&ModeAnim.animDirection);
 		ModeAnim.LastSyncTime	= WW3D::Get_Sync_Time();
-	
+#ifdef __EMSCRIPTEN__
+		++cnc_port_w3d_anim_progress_calls;
+		if (ModeAnim.Frame != ModeAnim.PrevFrame) {
+			++cnc_port_w3d_anim_frame_advances;
+		}
+#endif
+
 		if (ModeAnim.Frame == ModeAnim.PrevFrame) {
 			// This function was somehow called twice per frame.
 			// Since ModeAnim.Frame hasn't changed, reset the ModeAnim.PrevFrame.

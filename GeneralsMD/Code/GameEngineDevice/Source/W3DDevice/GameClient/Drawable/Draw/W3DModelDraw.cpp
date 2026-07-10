@@ -54,6 +54,9 @@
 #include "GameLogic/FPUControl.h"
 #include "GameLogic/Module/AIUpdate.h"
 #include "GameLogic/Module/PhysicsUpdate.h"
+#ifdef __EMSCRIPTEN__
+#include <cmath>
+#endif
 #include "W3DDevice/GameClient/Module/W3DModelDraw.h"
 #include "W3DDevice/GameClient/W3DAssetManager.h"
 #include "W3DDevice/GameClient/W3DDisplay.h"
@@ -72,6 +75,22 @@
 // for occasional debugging...
 //#pragma optimize("", off)
 //#pragma MESSAGE("************************************** WARNING, optimization disabled for debugging purposes")
+#endif
+
+#ifdef __EMSCRIPTEN__
+// Frozen-animation debugging (owner-reported: units move but skeletal anims,
+// turret bones and muzzle-flash hide all freeze): count the per-drawable
+// client draw pass so telemetry shows whether it runs at all, and whether
+// handleClientRecoil reaches its barrel processing (a m_curState without
+// BARRELS_VALID early-returns and leaves a shown muzzle flash on forever).
+// Read by wasm_real_engine_init's paced frame JSON.
+#include <cstdio>
+#include <string>
+extern "C" {
+int cnc_port_w3d_model_draw_calls = 0;
+int cnc_port_w3d_recoil_calls = 0;
+int cnc_port_w3d_recoil_barrel_updates = 0;
+}
 #endif
 
 //-------------------------------------------------------------------------------------------------
@@ -2039,6 +2058,9 @@ void W3DModelDraw::adjustTransformMtx(Matrix3D& mtx) const
 //-------------------------------------------------------------------------------------------------
 void W3DModelDraw::doDrawModule(const Matrix3D* transformMtx)
 {
+#ifdef __EMSCRIPTEN__
+	++cnc_port_w3d_model_draw_calls;
+#endif
 	// update whether or not we should be animating.
 	setPauseAnimation( !getDrawable()->getShouldAnimate(getW3DModelDrawModuleData()->m_animationsRequirePower) );
 
@@ -2480,6 +2502,170 @@ void W3DModelDraw::handleClientTurretPositioning()
 //	}
 //}
 
+#ifdef __EMSCRIPTEN__
+static void cncPortJsonEscapeInto(std::string &out, const char *s)
+{
+	for (; s && *s; ++s)
+	{
+		char c = *s;
+		if (c == '"' || c == '\\') { out += '\\'; out += c; }
+		else if ((unsigned char)c >= 0x20) out += c;
+	}
+}
+
+void W3DModelDraw::cncPortAppendAnimReport(std::string &out) const
+{
+	out += "{\"tmpl\":\"";
+	const Drawable *d = getDrawable();
+	cncPortJsonEscapeInto(out, (d && d->getTemplate()) ? d->getTemplate()->getName().str() : "?");
+	out += "\"";
+	if (d)
+	{
+		// Classify why a stale muzzle flash might persist: dead corpse models
+		// and hidden/offscreen drawables never run the client draw pass that
+		// would hide the flash subobject. vis = W3D render-graph visibility
+		// from the last render traversal: a stuck flash with vis=1 is a real
+		// on-screen artifact; with vis=0 it is a stale flag on an offscreen
+		// model (benign — updateViews client-draws a drawable before drawViews
+		// renders it again).
+		const Object *obj = d->getObject();
+		char meta[200];
+		std::snprintf(meta, sizeof(meta), ",\"did\":%d,\"oid\":%d,\"hidden\":%d,\"dead\":%d,\"vis\":%d,\"x\":%.0f,\"y\":%.0f",
+			(int)d->getID(),
+			obj != NULL ? (int)obj->getID() : 0,
+			const_cast<Drawable *>(d)->isDrawableEffectivelyHidden() ? 1 : 0,
+			(obj != NULL && obj->isEffectivelyDead()) ? 1 : 0,
+			(m_renderObject != NULL && m_renderObject->Is_Really_Visible()) ? 1 : 0,
+			d->getPosition()->x, d->getPosition()->y);
+		out += meta;
+	}
+	if (m_renderObject && m_renderObject->Class_ID() == RenderObjClass::CLASSID_HLOD)
+	{
+		HLodClass *hlod = (HLodClass *)m_renderObject;
+		float frame = 0.0f, mult = 0.0f;
+		int numFrames = 0, mode = 0;
+		HAnimClass *anim = hlod->Peek_Animation_And_Info(frame, numFrames, mode, mult);
+		if (anim)
+		{
+			char buf[128];
+			std::snprintf(buf, sizeof(buf),
+				",\"anim\":{\"mode\":%d,\"frame\":%.2f,\"numFrames\":%d,\"mult\":%.3f}",
+				mode, frame, numFrames, mult);
+			out += buf;
+		}
+	}
+	if (m_curState != NULL && (m_curState->m_validStuff & ModelConditionInfo::BARRELS_VALID))
+	{
+		out += ",\"barrels\":[";
+		Bool first = TRUE;
+		for (Int wslot = 0; wslot < WEAPONSLOT_COUNT; ++wslot)
+		{
+			if (!m_curState->m_hasRecoilBonesOrMuzzleFlashes[wslot])
+				continue;
+			const ModelConditionInfo::WeaponBarrelInfoVec &barrels = m_curState->m_weaponBarrelInfoVec[wslot];
+			const WeaponRecoilInfoVec &recoils = m_weaponRecoilInfoVec[wslot];
+			size_t count = barrels.size() < recoils.size() ? barrels.size() : recoils.size();
+			for (size_t i = 0; i < count; ++i)
+			{
+				Int flashHidden = -1; // -1 = no flash bone or subobject lookup failed
+				if (barrels[i].m_muzzleFlashBone != 0 && m_renderObject)
+				{
+					RenderObjClass *child = m_renderObject->Get_Sub_Object_On_Bone(0, barrels[i].m_muzzleFlashBone);
+					if (child)
+					{
+						flashHidden = child->Is_Hidden() ? 1 : 0;
+						child->Release_Ref();
+					}
+				}
+				char buf[96];
+				std::snprintf(buf, sizeof(buf), "%s{\"slot\":%d,\"state\":%d,\"flashHidden\":%d}",
+					first ? "" : ",", (int)wslot, (int)recoils[i].m_state, (int)flashHidden);
+				out += buf;
+				first = FALSE;
+				// Every subobject on the muzzle bone with all three hidden
+				// flags: a flash that stays lit on screen while flashHidden=1
+				// above means the pixels come from a different subobject on
+				// the same bone (or a stale submission).
+				if (barrels[i].m_muzzleFlashBone != 0 && m_renderObject)
+				{
+					const int nOnBone = m_renderObject->Get_Num_Sub_Objects_On_Bone(barrels[i].m_muzzleFlashBone);
+					for (int s = 0; s < nOnBone && s < 4; ++s)
+					{
+						RenderObjClass *child = m_renderObject->Get_Sub_Object_On_Bone(s, barrels[i].m_muzzleFlashBone);
+						if (!child)
+							continue;
+						out += ",{\"sub\":\"";
+						cncPortJsonEscapeInto(out, child->Get_Name());
+						char sbuf[96];
+						std::snprintf(sbuf, sizeof(sbuf), "\",\"h\":%d,\"ah\":%d,\"nha\":%d}",
+							child->Is_Hidden() ? 1 : 0,
+							child->Is_Animation_Hidden() ? 1 : 0,
+							child->Is_Not_Hidden_At_All() ? 1 : 0);
+						out += sbuf;
+						child->Release_Ref();
+					}
+				}
+			}
+		}
+		out += "]";
+	}
+	// Turret tracer (Codex seam): logical turret angle from the AI, the HTree
+	// bone's world matrix, and the rigid child mesh's world matrix. Comparing
+	// which of the three stops changing across reports names the broken stage:
+	// rot changing + hYaw frozen = Control_Bone/hierarchy re-eval broken;
+	// hYaw changing + cYaw frozen = Update_Sub_Object_Transforms broken;
+	// all changing while pixels are frozen = stale draw submission.
+	if (m_curState != NULL && (m_curState->m_validStuff & ModelConditionInfo::TURRETS_VALID)
+			&& m_renderObject != NULL && m_renderObject->Class_ID() == RenderObjClass::CLASSID_HLOD)
+	{
+		out += ",\"turrets\":[";
+		Bool firstTur = TRUE;
+		const HTreeClass *tree = ((HLodClass *)m_renderObject)->Get_HTree();
+		for (int tslot = 0; tslot < MAX_TURRETS; ++tslot)
+		{
+			const ModelConditionInfo::TurretInfo &tur = m_curState->m_turrets[tslot];
+			if (tur.m_turretAngleBone == 0 && tur.m_turretPitchBone == 0)
+				continue;
+			Real rot = 0, pitch = 0;
+			const Object *obj = getDrawable() ? getDrawable()->getObject() : NULL;
+			if (obj)
+			{
+				const AIUpdateInterface *ai = obj->getAIUpdateInterface();
+				if (ai)
+					ai->getTurretRotAndPitch((WhichTurretType)tslot, &rot, &pitch);
+			}
+			double hYaw = -99.0, cYaw = -99.0, hSig = 0.0, cSig = 0.0;
+			const int bone = tur.m_turretAngleBone != 0 ? tur.m_turretAngleBone : tur.m_turretPitchBone;
+			if (tree != NULL && bone > 0 && bone < const_cast<HTreeClass *>(tree)->Num_Pivots())
+			{
+				const Matrix3D &m = tree->Get_Transform(bone);
+				hYaw = atan2((double)m[1][0], (double)m[0][0]);
+				hSig = m[0][0] + m[1][0] * 3.0 + m[2][1] * 7.0 + m[0][3] + m[1][3];
+			}
+			if (m_renderObject && bone > 0)
+			{
+				RenderObjClass *child = m_renderObject->Get_Sub_Object_On_Bone(0, bone);
+				if (child)
+				{
+					const Matrix3D &cm = child->Get_Transform();
+					cYaw = atan2((double)cm[1][0], (double)cm[0][0]);
+					cSig = cm[0][0] + cm[1][0] * 3.0 + cm[2][1] * 7.0 + cm[0][3] + cm[1][3];
+					child->Release_Ref();
+				}
+			}
+			char tbuf[224];
+			std::snprintf(tbuf, sizeof(tbuf),
+				"%s{\"slot\":%d,\"bone\":%d,\"rot\":%.4f,\"pitch\":%.4f,\"hYaw\":%.4f,\"cYaw\":%.4f,\"hSig\":%.4f,\"cSig\":%.4f}",
+				firstTur ? "" : ",", tslot, bone, (double)rot, (double)pitch, hYaw, cYaw, hSig, cSig);
+			out += tbuf;
+			firstTur = FALSE;
+		}
+		out += "]";
+	}
+	out += "}";
+}
+#endif
+
 //-------------------------------------------------------------------------------------------------
 /*
 	Note that, strictly speaking this code is WRONG, since it assumes it will get called every frame,
@@ -2490,6 +2676,9 @@ void W3DModelDraw::handleClientTurretPositioning()
 */
 void W3DModelDraw::handleClientRecoil()
 {
+#ifdef __EMSCRIPTEN__
+	++cnc_port_w3d_recoil_calls;
+#endif
 	const W3DModelDrawModuleData* d = getW3DModelDrawModuleData();
 	if (!(m_curState->m_validStuff & ModelConditionInfo::BARRELS_VALID))
 	{
@@ -2510,6 +2699,9 @@ void W3DModelDraw::handleClientRecoil()
 		count = (count>recoilCount)?recoilCount:count;
 		for (Int i = 0; i < count; ++i)
 		{
+#ifdef __EMSCRIPTEN__
+			++cnc_port_w3d_recoil_barrel_updates;
+#endif
 			if (barrels[i].m_muzzleFlashBone != 0)
 			{
 				Bool hidden = recoils[i].m_state != WeaponRecoilInfo::RECOIL_START;
