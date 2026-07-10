@@ -25,7 +25,7 @@ import { chromium } from "playwright";
 import { startStaticServer } from "./static-server.mjs";
 import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
@@ -39,8 +39,33 @@ function log(line) {
 
 const verbose = process.env.VERBOSE === "1";
 
+// Capture the game canvas through the bridge's own screenshot RPC instead of
+// Playwright element screenshots: on the NON-threaded page the free-running
+// engine loop saturates the main thread and Playwright's action pipeline
+// times out waiting for element stability (the exact symptom the engine
+// thread removes). The RPC path re-renders synchronously when needed
+// (snapshotCanvas) and reads the transferred placeholder via drawImage in
+// threaded mode (snapshotThreadedViewport).
+async function captureViewport(page, path) {
+  const shot = await page.evaluate(() => window.CnCPort.rpc("screenshot"));
+  const dataUrl = typeof shot?.screenshot === "string"
+    ? shot.screenshot
+    : shot?.screenshot?.dataUrl;
+  if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/png;base64,")) {
+    throw new Error(`screenshot rpc returned no dataUrl (${JSON.stringify(shot)?.slice(0, 200)})`);
+  }
+  const buffer = Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64");
+  if (path) {
+    await writeFile(path, buffer);
+  }
+  return buffer;
+}
+
 async function bootPlayPage(browser, url, label, consoleLines) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  // The non-threaded page saturates its main thread once the engine loop
+  // runs; give Playwright actions a generous budget.
+  page.setDefaultTimeout(120000);
   page.on("console", (msg) => {
     consoleLines.push(`${label} ${msg.type()}: ${msg.text()}`);
     if (verbose) {
@@ -105,7 +130,7 @@ async function main() {
       // Let the shellmap actually render a few frames before capturing.
       await referencePage.waitForTimeout(8000);
       referenceShot = join(shotDir, "p1c-title-nonthreaded.png");
-      await referencePage.locator("#viewport").screenshot({ path: referenceShot });
+      await captureViewport(referencePage, referenceShot);
       summary.referenceShot = referenceShot;
       log(`reference title screenshot: ${referenceShot}`);
       await referencePage.close();
@@ -144,7 +169,7 @@ async function main() {
     // Let the shellmap render, then capture the GATE B screenshot.
     await page.waitForTimeout(8000);
     const threadedShot = join(shotDir, "p1c-title-threaded.png");
-    const shotBuffer = await page.locator("#viewport").screenshot({ path: threadedShot });
+    const shotBuffer = await captureViewport(page, threadedShot);
     summary.threadedShot = threadedShot;
     log(`threaded title screenshot: ${threadedShot}`);
     // Non-black check via an in-page sample of the placeholder canvas.
@@ -241,12 +266,10 @@ async function main() {
     // capture before/after shots; a hilite change is expected but only
     // recorded (menu layout varies with resolution), the click state check
     // below is the hard gate.
-    const beforeHover = await page.locator("#viewport").screenshot();
+    const beforeHover = await captureViewport(page, null);
     await page.mouse.move(canvasBox.x + canvasBox.width * 0.5, canvasBox.y + canvasBox.height * 0.35, { steps: 8 });
     await page.waitForTimeout(1200);
-    const afterHover = await page.locator("#viewport").screenshot({
-      path: join(shotDir, "p1c-menu-hover-threaded.png"),
-    });
+    const afterHover = await captureViewport(page, join(shotDir, "p1c-menu-hover-threaded.png"));
     summary.hoverScreenshotDiffers = !beforeHover.equals(afterHover);
     checks.push([
       "canvas still animating around input (screenshots differ)",
