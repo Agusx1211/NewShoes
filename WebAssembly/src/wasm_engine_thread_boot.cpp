@@ -44,6 +44,27 @@
 extern "C" void wasm_d3d8_browser_clear_target(
 	unsigned int flags, unsigned int color, double z, unsigned int stencil);
 
+// P1c: dispatch one main-loop tick to the engine-realm controller
+// (harness/engine_realm_boot.mjs installs Module.cncPortEngineThreadTick on
+// the WORKER-realm Module during the realm-setup handshake). The controller
+// owns the whole frame policy — stepped real init, the paced client/logic
+// frame loop, input/RPC draining — all executed on this pthread's wasm stack.
+// Returns 1 when a controller handled the tick, 0 when none is installed
+// (then the C side falls back to the P1a color-cycling clear so
+// harness/p1_scaffold_probe.mjs keeps proving the raw scaffold).
+EM_JS(int, cnc_port_engine_thread_tick_js, (int heartbeat), {
+	const hook = typeof Module !== "undefined" ? Module.cncPortEngineThreadTick : null;
+	if (typeof hook !== "function") {
+		return 0;
+	}
+	try {
+		hook(heartbeat);
+	} catch (error) {
+		console.error("cnc-port: engine-thread tick hook failed", error);
+	}
+	return 1;
+});
+
 namespace
 {
 
@@ -58,6 +79,13 @@ std::atomic<int> g_tick_heartbeat{0};
 void engine_thread_tick()
 {
 	const int heartbeat = g_tick_heartbeat.fetch_add(1) + 1;
+	// P1c controller first: when the engine-realm boot module installed
+	// Module.cncPortEngineThreadTick, that JS drives the REAL engine (stepped
+	// init, paced frames). Only when no controller exists (the P1a scaffold
+	// probe) fall back to the animated proof clear below.
+	if (cnc_port_engine_thread_tick_js(heartbeat) != 0) {
+		return;
+	}
 	// Color-cycling clear derived from the heartbeat: at worker-rAF rates the
 	// canvas visibly animates, so two probe screenshots ~500ms apart must be
 	// non-black AND differ if (and only if) the engine-thread loop is really

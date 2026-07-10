@@ -783,6 +783,38 @@ DONE.md with reasons.
       mounts + mount pipeline (the P2 payoff: ~2GB residency gone).
       (e) measure the same probe on the Mac M4 (real SSD) — dev-box numbers
       are the conservative bound.
+      PROGRESS (2026-07-10, lane P1c): threaded play path LANDED and GREEN —
+      `play.html?threads=1` boots the REAL engine on the pthread
+      (harness/engine_realm_boot.mjs in the worker realm + bridge threaded
+      controller/routing; details + root-cause finds in
+      notes/p1-engine-thread.md "P1c implementation"). GATES B+C green via
+      `npm run verify:threaded-play` (13/13, SwiftShader): real init 43/43 on
+      the engine thread, threaded boot to title 133s (vs ~13 min wall
+      non-threaded on the same box), shellmap load drained by the
+      engine-thread paced loop, forwarded input verified via engine state,
+      title screenshot renders the full shellmap. Root-cause fix along the
+      way: shims/windows.h InitializeCriticalSection now placement-news the
+      recursive_mutex (was uninitialized garbage -> engine thread parked
+      forever in W3DMouse::draw on the pthread build). STILL OPEN: GATE D
+      (Mac Metal 60/30 measurement + owner playtest behind ?threads=1),
+      Safari/iPad.
+- [ ] **Threaded-mode (P1c) follow-ups, in threaded mode only** (2026-07-10):
+      (a) canvas pixel/graphics diagnostics RPCs read the MAIN scratch
+      executor (blank) — route worker-side equivalents (executor lives in the
+      engine realm) when a probe needs them; (b) `mountArchive(s)` calls
+      `registerArchiveSet`/`probeArchive` wasm exports from the MAIN thread —
+      safe only BEFORE the engine pthread starts (play boots mount-first);
+      guard or route post-boot mounts; (c) Bink hooks are not installed in
+      the engine realm — videos no-op under ?threads=1; (d) shader tier
+      (Enhanced ps11 opt-in) can't read localStorage from the worker realm —
+      plumb through the setup options; (e) issue-recorder deep frame
+      summaries and canvas video capture are untested against the
+      transferred-placeholder canvas; (f) threaded `state` RPC returns the
+      main-side snapshot without the wasm `cnc_port_state` fields (route via
+      engineCall if a consumer needs them); (g) MSS sample-start payloads are
+      copied worker-side per start (correctness: Miles shim frees the PCM
+      buffer engine-side) — dedupe with a content-key handshake if the copies
+      ever show in profiles.
 - [ ] **Remaining whole-archive `FS.readFile` copies outside the inventory
       path (2026-07-10, follow-up to the inventory partial-read fix).**
       (a) `startBrowserMssStreamPlayback` (`harness/bridge.js` ~3345) copies

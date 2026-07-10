@@ -45,6 +45,12 @@ const fpsNode = document.querySelector("#fps");
 const hudNode = document.querySelector("#hud");
 const gearButton = document.querySelector("#gearButton");
 const queryParams = new URLSearchParams(window.location.search);
+// Engine-thread mode (?threads=1): the engine runs on a pthread in the
+// dist-threaded build and bridge.js moves the frame loop into the worker
+// realm; this page only observes (status events drive the HUD). Must match
+// bridge.js's cncPortThreadedMode / defaultCncPortDistDir logic. Declared
+// before the selectedCncPortDistDir() call below (TDZ).
+const threadedMode = queryParams.get("threads") === "1";
 const viewportCanvas = document.querySelector("#viewport");
 const selectedDistDir = selectedCncPortDistDir();
 
@@ -115,8 +121,9 @@ function validCncPortDistDir(value) {
 }
 
 function selectedCncPortDistDir() {
-  const value = queryParams.get("dist") || "dist-release";
-  return validCncPortDistDir(value) ? value : "dist-release";
+  const fallback = threadedMode ? "dist-threaded" : "dist-release";
+  const value = queryParams.get("dist") || fallback;
+  return validCncPortDistDir(value) ? value : fallback;
 }
 
 let configuredDiagLevel = "full";
@@ -366,6 +373,12 @@ async function runFrameLoop(rpc) {
 
   const logicFps = Math.min(240, positiveNumberParam("logicFps", DEFAULT_LOGIC_FPS));
   const clientFps = Math.min(240, positiveNumberParam("clientFps", DEFAULT_CLIENT_FPS));
+  if (threadedMode) {
+    // The paced loop runs IN the engine worker realm (engine_realm_boot.mjs,
+    // driven by the pthread's rAF main loop); this page only starts it and
+    // renders the status feed into the HUD.
+    return runThreadedFrameLoop(rpc, clientFps, logicFps);
+  }
   if (clientFps > logicFps) {
     try {
       const pacing = await rpc("realEngineSetClientPacing", { clientFps, logicFps });
@@ -378,6 +391,37 @@ async function runFrameLoop(rpc) {
     }
   }
   return runCoupledFrameLoop(rpc, logicFps);
+}
+
+// Threaded mode: the engine thread owns the frame loop; observe its 500ms
+// status posts for the client/logic HUD counter and surface loop errors.
+async function runThreadedFrameLoop(rpc, clientFps, logicFps) {
+  const start = await rpc("threadedStartLoop", { clientFps, logicFps });
+  if (start?.ok !== true) {
+    fail("threaded frame loop failed to start", start);
+    return;
+  }
+  console.log("[play] threaded frame loop started", start.pacing ?? start);
+  let previous = null;
+  window.addEventListener("cncport:threadedstatus", (event) => {
+    const status = event.detail;
+    const loop = status?.loop;
+    if (!loop) {
+      return;
+    }
+    if (previous && loop.clientFrames >= previous.clientFrames && status.now > previous.now) {
+      const seconds = (status.now - previous.now) / 1000;
+      if (seconds > 0.2) {
+        const client = (loop.clientFrames - previous.clientFrames) / seconds;
+        const logic = (loop.logicFrames - previous.logicFrames) / seconds;
+        fpsNode.textContent = `${client.toFixed(0)}/${logic.toFixed(0)}`;
+      }
+    }
+    previous = { now: status.now, clientFrames: loop.clientFrames, logicFrames: loop.logicFrames };
+  });
+  window.addEventListener("cncport:threadedlooperror", (event) => {
+    fail("engine thread frame loop failed", event.detail?.error ?? event.detail);
+  });
 }
 
 // Paced loop: one GameEngine::update per display frame (smooth client —
@@ -694,6 +738,8 @@ async function start() {
     } finally {
       window.removeEventListener("cncport:initprogress", onInitProgress);
     }
+    console.log("[play] boot: realEngineInit resolved",
+      { ok: init?.ok, initReturned: init?.frontier?.initReturned });
     if (init?.ok !== true || init?.frontier?.initReturned !== true) {
       fail("real engine init failed", init);
       return;
@@ -716,8 +762,15 @@ async function start() {
         lParam: ((point.y & 0xffff) << 16) | (point.x & 0xffff),
         point,
       });
-      await rpc("realEngineFrame", { frames: 2 });
+      if (!threadedMode) {
+        // Threaded mode: the engine-thread paced loop starts right below and
+        // supplies frames continuously, so these reveal-pump frames are
+        // redundant — and each one is a long-blocking engine call while the
+        // shellmap load session is draining.
+        await rpc("realEngineFrame", { frames: 2 });
+      }
     }
+    console.log("[play] boot: menu reveal moves posted");
 
     report("");
     endBootProgress();

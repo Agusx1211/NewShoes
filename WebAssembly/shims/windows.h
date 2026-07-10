@@ -12,6 +12,7 @@
 #include <dirent.h>
 #include <fnmatch.h>
 #include <mutex>
+#include <new>
 #include <string>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -1748,12 +1749,29 @@ static inline void DebugBreak()
 	__builtin_trap();
 }
 
-static inline void InitializeCriticalSection(CRITICAL_SECTION *)
+static inline void InitializeCriticalSection(CRITICAL_SECTION *section)
 {
+	// Win32 initializes a critical section over ARBITRARY memory — WWLib's
+	// CriticalSectionClass (mutex.cpp) allocates a raw `new char[sizeof(
+	// CRITICAL_SECTION)]` buffer and relies on this call to make it usable.
+	// The shim's recursive_mutex must therefore be constructed IN PLACE here:
+	// with the old no-op, the mutex field was uninitialized heap garbage. The
+	// single-threaded build never noticed (musl's no-thread pthread stubs
+	// accept anything), but the pthread build parks the ENGINE THREAD forever
+	// on the first lock of that garbage (first casualty: W3DMouse::draw ->
+	// CriticalSectionClass::Lock inside W3DDisplay::draw, engine-thread boot).
+	if (section != nullptr) {
+		new (&section->mutex) std::recursive_mutex();
+	}
 }
 
 static inline void DeleteCriticalSection(CRITICAL_SECTION *)
 {
+	// Intentionally no destructor call: callers mix raw-buffer sections
+	// (WWLib mutex.cpp) with by-value struct members (WWLib critsection.cpp,
+	// whose member destructs again with the object). musl's recursive_mutex
+	// holds no resources, so skipping destroy is safe and avoids the double
+	// destruction.
 }
 
 static inline void EnterCriticalSection(CRITICAL_SECTION *section)

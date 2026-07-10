@@ -1,0 +1,701 @@
+// engine_realm_boot.mjs — P1c engine-realm boot module (design:
+// WebAssembly/notes/p1-engine-thread.md, lane P1c).
+//
+// Imported dynamically INTO THE PTHREAD WORKER REALM by the realm stub
+// (src/threads_realm_stub.pre.js `setup` command) BEFORE the engine pthread
+// is spawned. It owns everything that must live in the engine realm:
+//
+//   - the realm-agnostic D3D8->WebGL2 executor (harness/d3d8_executor.mjs)
+//     constructed against the transferred OffscreenCanvas; its 20
+//     Module.cncPortD3D8* hooks are spread onto the WORKER-realm Module
+//     (EM_JS bodies resolve Module in the calling thread's realm),
+//   - the GDI text rasterizer hooks (harness/gdi_executor.mjs, OffscreenCanvas
+//     2D in this realm — the engine consumes their return values
+//     synchronously so they cannot be forwarded),
+//   - engine-realm AUDIO FORWARDERS for the 13 Module.cncPortMss* hooks:
+//     payloads post to the main realm where the existing Web Audio bodies in
+//     bridge.js execute them; sample-start payloads carry a worker-side COPY
+//     of the RIFF bytes (the C++ Miles shim mallocs a fresh PCM buffer per
+//     start and may free it before main handles the async message, so the
+//     shared-heap pointer cannot be read main-side later),
+//   - UDP hook stubs matching bridge.js's disabled-endpoint behavior
+//     (send -> 0, recv -> null),
+//   - the ENGINE-THREAD TICK CONTROLLER (Module.cncPortEngineThreadTick,
+//     called by src/wasm_engine_thread_boot.cpp's rAF main loop ON the
+//     pthread): stepped real GameEngine::init, then the paced client/logic
+//     frame loop ported from play.mjs runPacedFrameLoop (client ~display
+//     rate, logic gated to an absolute drift-free 30Hz schedule, catchup<=2),
+//   - the async engine-call primitive ({cmd:"engineCall", name, returnType,
+//     argTypes, args} -> Module.cwrap(...)(...) executed in this realm on the
+//     engine thread) that bridge.js's threaded RPC routing builds on, and the
+//     ordered input-forwarding sink (lite input exports applied between
+//     frames).
+//
+// HARD RULE (see notes/p1-engine-thread.md): NO wasm export may be called in
+// this realm before the engine pthread runs on this worker (an idle pool
+// worker has wasm instantiated but no thread stack/TLS established — calls
+// would scribble over the main thread's stack). Everything wasm-touching is
+// queued until the first main-loop tick arrives ("live").
+
+import { createD3D8Executor } from "./d3d8_executor.mjs";
+import { createGdiHooks } from "./gdi_executor.mjs";
+
+const DEFAULT_CATCHUP_FRAMES = 2;
+const STATUS_INTERVAL_MS = 500;
+const LOG_LIMIT = 400;
+const PREBOOT_QUEUE_LIMIT = 4096;
+
+export default async function setupEngineRealm({ canvas, Module, realm, options }) {
+  if (!canvas || typeof canvas.getContext !== "function") {
+    throw new Error("engine_realm_boot: no OffscreenCanvas transferred");
+  }
+  if (!Module || typeof Module !== "object" || typeof Module.cwrap !== "function") {
+    throw new Error("engine_realm_boot: worker-realm Module (with cwrap) required");
+  }
+  const opts = options && typeof options === "object" ? options : {};
+
+  // ---- realm-local log ring (drained into status posts) --------------------
+  const logs = [];
+  function recordLog(message, data) {
+    logs.push({ time: new Date().toISOString(), message, data: data ?? null });
+    if (logs.length > LOG_LIMIT) {
+      logs.splice(0, logs.length - LOG_LIMIT);
+    }
+  }
+
+  // ---- unsolicited worker->main channel -------------------------------------
+  // The stub hands us a respond() per command; the first command from main
+  // ("attachMainPort", sent right after setupDone) pins it as the standing
+  // post channel. Until then fall back to the default worker channel tagged
+  // for emscripten's silent 'setimmediate' branch.
+  let postToMain = (payload) => {
+    try {
+      self.postMessage({ target: "setimmediate", __cncRealm: payload });
+    } catch (_error) {
+      // Nothing useful to do from the worker realm.
+    }
+  };
+
+  // ---- D3D8 executor in this realm ------------------------------------------
+  const realmState = {
+    canvas: { width: canvas.width, height: canvas.height },
+    graphics: {},
+    logs,
+  };
+  const { hooks: d3d8Hooks, diag: d3d8Diag } = createD3D8Executor({
+    canvas,
+    // env.gl omitted -> executor creates the WebGL2 context on the
+    // OffscreenCanvas itself (worker path).
+    log: recordLog,
+    state: realmState,
+    getModule: () => Module,
+    // Fresh-view accessors: Module.HEAP* are reassigned by
+    // updateGlobalBufferAndViews IN THIS REALM whenever this thread grows the
+    // memory (the engine thread is the only wasm-running thread), so reading
+    // them per call is growth-safe here.
+    getHeapU8: () => Module.HEAPU8 ?? null,
+    getHeapU16: () => Module.HEAPU16 ?? null,
+    getHeapU32: () => Module.HEAPU32 ?? null,
+    getHeapF32: () => Module.HEAPF32 ?? null,
+    getHeapF64: () => Module.HEAPF64 ?? null,
+    preserveDrawingBuffer: opts.preserveDrawingBuffer === true,
+  });
+  for (const [name, hook] of Object.entries(d3d8Hooks)) {
+    Module[name] = hook;
+  }
+  // Graphics diagnostics level: the worker realm's URL has no ?diag= param,
+  // so apply the page's choice (play.html runs "lite") explicitly. The
+  // executor installed __cncSetDiagLevel on THIS realm's globalThis.
+  if ((opts.diagLevel === "lite" || opts.diagLevel === "full")
+      && typeof globalThis.__cncSetDiagLevel === "function") {
+    globalThis.__cncSetDiagLevel(opts.diagLevel);
+  }
+
+  // ---- GDI text hooks (synchronous returns -> must live in this realm) ------
+  const gdiHooks = createGdiHooks();
+  Module.cncGdiMeasure = gdiHooks.cncGdiMeasure;
+  Module.cncGdiRasterizeGlyph = gdiHooks.cncGdiRasterizeGlyph;
+
+  // ---- MSS audio forwarders --------------------------------------------------
+  // bridge.js executes the real Web Audio bodies main-side; completion
+  // callbacks come back through the engineCall primitive
+  // (cnc_port_mss_complete_*). Forwarders return 1 ("playback requested") —
+  // the C++ side records it as browser_playback_requested, and failures are
+  // still surfaced main-side through the audio runtime state.
+  const MSS_HOOKS = [
+    "cncPortMssSampleStart",
+    "cncPortMssSampleStop",
+    "cncPortMssSampleEnd",
+    "cncPortMssSampleRelease",
+    "cncPortMss3DSampleStart",
+    "cncPortMss3DSamplePositionUpdate",
+    "cncPortMss3DListenerUpdate",
+    "cncPortMss3DSampleStop",
+    "cncPortMss3DSampleEnd",
+    "cncPortMss3DSampleRelease",
+    "cncPortMssStreamStart",
+    "cncPortMssStreamStop",
+    "cncPortMssStreamVolumePan",
+  ];
+  const MSS_SAMPLE_DATA_HOOKS = new Set(["cncPortMssSampleStart", "cncPortMss3DSampleStart"]);
+
+  function copySampleWaveBytes(payload) {
+    // Mirror bridge.js mssSampleWaveRange validation, then copy the RIFF out
+    // of the (fresh, this realm grows its own views) wasm heap. The copy is
+    // PADDED with 4 lead bytes and dataPtr rewritten to 4 so the main-side
+    // body's `!dataPtr` pointer-validity guard and all dataPtr-relative reads
+    // keep working unchanged against the small transferred buffer.
+    const heapu8 = Module.HEAPU8;
+    const dataPtr = Number(payload?.dataPtr ?? 0) >>> 0;
+    if (!dataPtr || !(heapu8 instanceof Uint8Array) || dataPtr + 12 > heapu8.byteLength) {
+      return null;
+    }
+    const riffSize = (heapu8[dataPtr + 4]
+      | (heapu8[dataPtr + 5] << 8)
+      | (heapu8[dataPtr + 6] << 16)
+      | (heapu8[dataPtr + 7] << 24)) + 8;
+    if (riffSize < 44 || riffSize > 64 * 1024 * 1024 || dataPtr + riffSize > heapu8.byteLength) {
+      return null;
+    }
+    const copy = new Uint8Array(4 + riffSize);
+    copy.set(heapu8.subarray(dataPtr, dataPtr + riffSize), 4);
+    return copy;
+  }
+
+  for (const hook of MSS_HOOKS) {
+    Module[hook] = (payload /* , heapu8 */) => {
+      const message = { cmd: "mss", hook, payload: payload ?? null };
+      let transfer;
+      if (MSS_SAMPLE_DATA_HOOKS.has(hook)) {
+        const copy = copySampleWaveBytes(payload);
+        if (copy) {
+          message.payload = { ...payload, dataPtr: 4 };
+          message.bytes = copy;
+          transfer = [copy.buffer];
+        }
+        // On copy failure keep the original pointer: main will attempt the
+        // shared-heap read and surface the same validation error the
+        // non-threaded path would.
+      }
+      try {
+        postToMain(message, transfer);
+      } catch (_error) {
+        return 0;
+      }
+      return 1;
+    };
+  }
+
+  // ---- UDP hooks: disabled-endpoint behavior (bridge parity) ----------------
+  let udpStubLogged = false;
+  Module.cncPortBrowserUdpSend = () => {
+    if (!udpStubLogged) {
+      udpStubLogged = true;
+      recordLog("threaded UDP hooks are engine-realm stubs (endpoint disabled)");
+    }
+    return 0;
+  };
+  Module.cncPortBrowserUdpRecv = () => null;
+
+  // ---- wasm call plumbing (all deferred until the pthread ticks) -------------
+  let live = false; // first tick seen -> wasm calls are safe in this realm
+  const prebootQueue = []; // functions to run on first tick, in arrival order
+  const cwrapCache = new Map();
+  function cwrapFor(name, returnType, argTypes) {
+    const key = `${name} ${returnType} ${(argTypes ?? []).join(",")}`;
+    let fn = cwrapCache.get(key);
+    if (!fn) {
+      fn = Module.cwrap(name, returnType === "void" || returnType === null ? null : returnType, argTypes ?? []);
+      cwrapCache.set(key, fn);
+    }
+    return fn;
+  }
+
+  function runOrQueue(task) {
+    if (live) {
+      task();
+      return;
+    }
+    if (prebootQueue.length < PREBOOT_QUEUE_LIMIT) {
+      prebootQueue.push(task);
+    }
+  }
+
+  function parseMaybeJson(value) {
+    if (typeof value !== "string") {
+      return value;
+    }
+    try {
+      return JSON.parse(value);
+    } catch (_error) {
+      return value;
+    }
+  }
+
+  function execEngineCall(msg, respond) {
+    const reply = { cmd: "engineCallResult", id: msg.id };
+    try {
+      const fn = cwrapFor(String(msg.name), msg.returnType ?? null, msg.argTypes ?? []);
+      const value = fn(...(Array.isArray(msg.args) ? msg.args : []));
+      reply.ok = true;
+      reply.value = msg.parseJson === false ? value : parseMaybeJson(value);
+    } catch (error) {
+      reply.ok = false;
+      reply.error = String((error && error.stack) || error);
+    }
+    respond(reply);
+  }
+
+  // ---- input forwarding sink --------------------------------------------------
+  // Entries mirror bridge.js pushBrowserInputToWasmLite exactly; applied in
+  // arrival order on this thread (between frames: port messages and rAF ticks
+  // interleave on the worker event loop, never mid-frame).
+  function applyInputEntry(entry) {
+    if (!entry || typeof entry !== "object") {
+      return;
+    }
+    if (entry.reset === true) {
+      Module._cnc_port_reset_browser_input();
+      return;
+    }
+    const cursor = entry.cursor ?? null;
+    Module._cnc_port_set_browser_input_lite(
+      cursor?.x ?? 0,
+      cursor?.y ?? 0,
+      cursor ? 1 : 0,
+      entry.virtualKey ?? -1,
+      entry.keyDown ? 1 : 0,
+    );
+    if ((entry.directInputCode ?? -1) >= 0) {
+      Module._cnc_port_dinput_queue_key(
+        entry.directInputCode,
+        entry.keyDown ? 1 : 0,
+        Math.max(0, Math.floor(entry.timestamp || 0)),
+      );
+    }
+    const win32 = entry.win32 ?? null;
+    if (win32) {
+      Module._cnc_port_post_browser_message_lite(
+        win32.message ?? 0,
+        win32.wParam ?? 0,
+        win32.lParam ?? 0,
+        win32.px ?? cursor?.x ?? 0,
+        win32.py ?? cursor?.y ?? 0,
+      );
+    }
+  }
+
+  // ---- stepped real init state machine ---------------------------------------
+  // States: idle -> pending -> stepping -> done/error. Driven one slice per
+  // main-loop tick so the worker yields between slices (the real LoadScreen
+  // presents at task boundaries — the design's whole point).
+  const init = {
+    state: "idle",
+    request: null,
+    respond: null,
+    aborted: false,
+    abortMessage: null,
+    lastStep: null,
+  };
+
+  function finishInit() {
+    let frontier = null;
+    try {
+      frontier = parseMaybeJson(cwrapFor("cnc_port_real_engine_frontier", "string", [])());
+    } catch (error) {
+      frontier = null;
+      if (!init.aborted) {
+        init.aborted = true;
+        init.abortMessage = `frontier read failed: ${error}`;
+      }
+    }
+    init.state = init.aborted ? "error" : "done";
+    const respond = init.respond;
+    init.respond = null;
+    if (respond) {
+      respond({
+        cmd: "engineInitDone",
+        id: init.request?.id,
+        result: {
+          aborted: init.aborted,
+          abortMessage: init.abortMessage,
+          frontier,
+          stepped: init.request?.stepped !== false,
+          lastStep: init.lastStep,
+        },
+      });
+    }
+  }
+
+  function pumpInit() {
+    if (init.state === "pending") {
+      const request = init.request;
+      try {
+        const bootWidth = Math.round(Number(request.bootWidth ?? 0));
+        const bootHeight = Math.round(Number(request.bootHeight ?? 0));
+        if (bootWidth >= 640 && bootHeight >= 480
+            && typeof Module._cnc_port_real_engine_set_boot_resolution === "function") {
+          Module._cnc_port_real_engine_set_boot_resolution(bootWidth, bootHeight);
+        }
+        if (request.stepped === false) {
+          // ?initstep=0 fallback: the monolithic init call — blocks this
+          // worker (not the page) for the whole init.
+          const monolithic = parseMaybeJson(cwrapFor(
+            "cnc_port_real_engine_init", "string", ["string", "number"],
+          )(request.runDirectory, request.shellMap ? 1 : 0));
+          if (monolithic?.initReturned !== true) {
+            init.aborted = true;
+            init.abortMessage = `init failed: ${monolithic?.exception ?? "unknown"}`;
+          }
+          finishInit();
+          return;
+        }
+        const begin = parseMaybeJson(cwrapFor(
+          "cnc_port_real_engine_init_begin", "string", ["string", "number"],
+        )(request.runDirectory, request.shellMap ? 1 : 0));
+        if (begin?.ok !== true && begin?.initReturned !== true) {
+          init.aborted = true;
+          init.abortMessage = `init_begin failed: ${begin?.exception ?? "unknown"}`;
+          finishInit();
+          return;
+        }
+        init.state = "stepping";
+      } catch (error) {
+        init.aborted = true;
+        init.abortMessage = String((error && error.stack) || error);
+        finishInit();
+      }
+      return;
+    }
+    if (init.state === "stepping") {
+      try {
+        const step = parseMaybeJson(cwrapFor(
+          "cnc_port_real_engine_init_step", "string", ["number"],
+        )(Number(init.request?.stepBudgetMs ?? 200)));
+        init.lastStep = step;
+        postToMain({ cmd: "engineInitProgress", id: init.request?.id, step });
+        if (step?.ok !== true) {
+          init.aborted = true;
+          init.abortMessage = `init_step failed: ${step?.exception ?? "unknown"}`;
+          finishInit();
+          return;
+        }
+        if (step?.done === true) {
+          finishInit();
+        }
+      } catch (error) {
+        init.aborted = true;
+        init.abortMessage = String((error && error.stack) || error);
+        finishInit();
+      }
+    }
+  }
+
+  // ---- paced frame loop (ported from play.mjs runPacedFrameLoop) --------------
+  const loop = {
+    active: false,
+    error: null,
+    clientFps: 60,
+    logicFps: 30,
+    catchup: DEFAULT_CATCHUP_FRAMES,
+    clientPeriod: 1000 / 60,
+    logicPeriod: 1000 / 30,
+    rafDeltas: [],
+    refreshMs: 1000 / 60,
+    lastStamp: null,
+    nextClientDue: null,
+    nextLogicDue: null,
+    clientFrames: 0, // cumulative paced client frames run
+    logicFrames: 0, // cumulative logic frames run
+    startedAt: null,
+    lastResult: null,
+    pacingSamples: [], // last ~900 {t, logic} for pacing-evenness probes
+  };
+  let framePacedFn = null;
+
+  function startLoop(msg, respond) {
+    const clientFps = Math.max(1, Math.min(240, Number(msg.clientFps ?? 60)));
+    const logicFps = Math.max(1, Math.min(240, Number(msg.logicFps ?? 30)));
+    let pacing = null;
+    try {
+      pacing = parseMaybeJson(cwrapFor(
+        "cnc_port_real_engine_set_client_pacing", "string", ["number", "number"],
+      )(clientFps, logicFps));
+    } catch (error) {
+      respond({ cmd: "startLoopResult", id: msg.id, ok: false, error: String(error) });
+      return;
+    }
+    framePacedFn = cwrapFor("cnc_port_real_engine_frame_paced", "string", ["number"]);
+    loop.active = true;
+    loop.error = null;
+    loop.clientFps = clientFps;
+    loop.logicFps = logicFps;
+    loop.catchup = Math.max(1, Math.min(8, Number(msg.catchup ?? DEFAULT_CATCHUP_FRAMES)));
+    loop.clientPeriod = 1000 / clientFps;
+    loop.logicPeriod = 1000 / logicFps;
+    loop.rafDeltas.length = 0;
+    loop.lastStamp = null;
+    loop.nextClientDue = null;
+    loop.nextLogicDue = null;
+    loop.clientFrames = 0;
+    loop.logicFrames = 0;
+    loop.startedAt = performance.now();
+    loop.pacingSamples.length = 0;
+    respond({ cmd: "startLoopResult", id: msg.id, ok: true, pacing, clientFps, logicFps });
+  }
+
+  function pumpLoop(stamp) {
+    if (!loop.active) {
+      return;
+    }
+    if (loop.lastStamp !== null) {
+      const delta = stamp - loop.lastStamp;
+      if (delta > 1 && delta < 100) {
+        loop.rafDeltas.push(delta);
+        if (loop.rafDeltas.length > 20) {
+          loop.rafDeltas.shift();
+        }
+        const sorted = [...loop.rafDeltas].sort((a, b) => a - b);
+        loop.refreshMs = sorted[Math.floor(sorted.length / 2)];
+      }
+    }
+    loop.lastStamp = stamp;
+    const halfTick = loop.refreshMs / 2;
+    if (loop.nextClientDue === null) {
+      loop.nextClientDue = stamp;
+      loop.nextLogicDue = stamp;
+    }
+    if (stamp < loop.nextClientDue - halfTick) {
+      return; // display refresh outruns clientFps: skip this tick
+    }
+    loop.nextClientDue += loop.clientPeriod;
+    if (stamp - loop.nextClientDue > 4 * loop.clientPeriod) {
+      loop.nextClientDue = stamp + loop.clientPeriod;
+    }
+    let logicToRun = 0;
+    while (stamp >= loop.nextLogicDue - halfTick && logicToRun < loop.catchup) {
+      logicToRun += 1;
+      loop.nextLogicDue += loop.logicPeriod;
+    }
+    if (stamp - loop.nextLogicDue > 4 * loop.logicPeriod) {
+      loop.nextLogicDue = stamp + loop.logicPeriod;
+    }
+
+    let result = null;
+    try {
+      if (logicToRun === 0) {
+        result = parseMaybeJson(framePacedFn(0));
+      } else {
+        for (let i = 0; i < logicToRun; i += 1) {
+          result = parseMaybeJson(framePacedFn(1));
+          loop.logicFrames += 1;
+        }
+      }
+    } catch (error) {
+      loop.active = false;
+      loop.error = String((error && error.stack) || error);
+      recordLog("threaded frame loop threw", { error: loop.error });
+      postToMain({ cmd: "loopError", error: loop.error });
+      return;
+    }
+    if (result?.tick !== true || result?.exceptionCaught === true) {
+      loop.active = false;
+      loop.error = result?.exception || "engine frame failed";
+      recordLog("threaded frame loop failed", { result });
+      postToMain({ cmd: "loopError", error: loop.error, result });
+      return;
+    }
+    loop.clientFrames += 1;
+    loop.lastResult = result;
+    loop.pacingSamples.push({ t: stamp, logic: logicToRun });
+    if (loop.pacingSamples.length > 900) {
+      loop.pacingSamples.splice(0, loop.pacingSamples.length - 900);
+    }
+  }
+
+  // ---- periodic status --------------------------------------------------------
+  let lastStatusAt = 0;
+  let statusSeq = 0;
+  function buildStatus() {
+    const result = loop.lastResult;
+    return {
+      cmd: "status",
+      seq: ++statusSeq,
+      now: performance.now(),
+      live,
+      initState: init.state,
+      loop: {
+        active: loop.active,
+        error: loop.error,
+        clientFps: loop.clientFps,
+        logicFps: loop.logicFps,
+        startedAt: loop.startedAt,
+        clientFrames: loop.clientFrames,
+        logicFrames: loop.logicFrames,
+      },
+      frame: result ? {
+        logicFrame: result.logicFrame,
+        clientFrame: result.clientFrame,
+        framesCompleted: result.framesCompleted,
+        loadSessionActive: result.loadSessionActive,
+        loadProgress: result.loadProgress,
+        lastFrameMs: result.lastFrameMs,
+        quitting: result.quitting,
+      } : null,
+      engineDisplaySize: realmState.engineDisplaySize ?? null,
+      canvas: { width: canvas.width, height: canvas.height },
+      contextLost: typeof d3d8Diag?.webglContextLost === "function"
+        ? d3d8Diag.webglContextLost() === true
+        : false,
+      recentLogs: logs.slice(-5),
+    };
+  }
+
+  function maybePostStatus(stamp) {
+    if (stamp - lastStatusAt < STATUS_INTERVAL_MS) {
+      return;
+    }
+    lastStatusAt = stamp;
+    postToMain(buildStatus());
+  }
+
+  // ---- the engine-thread tick (called by wasm_engine_thread_boot.cpp) --------
+  let tickErrorLogged = false;
+  Module.cncPortEngineThreadTick = () => {
+    try {
+      const stamp = performance.now();
+      if (!live) {
+        live = true;
+        recordLog("engine thread live (first main-loop tick)");
+        // Bound-draw diagnostics cwrap is a wasm call — wire it only now.
+        try {
+          if (typeof d3d8Diag.setBoundDrawDiagnosticsSetter === "function"
+              && typeof Module._cnc_port_d3d8_set_bound_draw_diagnostics === "function") {
+            d3d8Diag.setBoundDrawDiagnosticsSetter(
+              Module.cwrap("cnc_port_d3d8_set_bound_draw_diagnostics", null, ["number"]));
+            if (typeof d3d8Diag.applyD3D8BoundDrawDiagnosticsLevel === "function") {
+              d3d8Diag.applyD3D8BoundDrawDiagnosticsLevel();
+            }
+          }
+        } catch (error) {
+          recordLog("bound-draw diagnostics wiring failed", { error: String(error) });
+        }
+        while (prebootQueue.length > 0) {
+          prebootQueue.shift()();
+        }
+        postToMain({ cmd: "live" });
+      }
+      pumpInit();
+      pumpLoop(stamp);
+      maybePostStatus(stamp);
+    } catch (error) {
+      if (!tickErrorLogged) {
+        tickErrorLogged = true;
+        recordLog("engine thread tick failed", { error: String((error && error.stack) || error) });
+        postToMain({ cmd: "tickError", error: String((error && error.stack) || error) });
+      }
+    }
+  };
+
+  // ---- command handler (stub forwards unknown cmds here) ----------------------
+  // NOTE: default-channel echoes (emscripten's 'setimmediate' bounce) also land
+  // here — silently ignore anything outside the known command set.
+  function handleCommand(msg, respond) {
+    const cmd = msg?.cmd;
+    switch (cmd) {
+      case "attachMainPort":
+        postToMain = (payload, transfer) => {
+          try {
+            respond(payload, transfer);
+          } catch (_error) {
+            // channel gone
+          }
+        };
+        respond({ cmd: "mainPortAttached" });
+        return;
+      case "engineInit": {
+        if (init.state !== "idle") {
+          respond({
+            cmd: "engineInitDone",
+            id: msg.id,
+            result: { aborted: true, abortMessage: `init already ${init.state}`, frontier: null },
+          });
+          return;
+        }
+        init.state = "pending";
+        init.request = {
+          id: msg.id,
+          runDirectory: String(msg.runDirectory ?? "/assets/runtime"),
+          shellMap: msg.shellMap === true,
+          stepped: msg.stepped !== false,
+          bootWidth: msg.bootWidth,
+          bootHeight: msg.bootHeight,
+          stepBudgetMs: msg.stepBudgetMs,
+        };
+        init.respond = respond;
+        return;
+      }
+      case "engineCall":
+        runOrQueue(() => execEngineCall(msg, respond));
+        return;
+      case "input": {
+        const batch = Array.isArray(msg.batch) ? msg.batch : [];
+        runOrQueue(() => {
+          for (const entry of batch) {
+            try {
+              applyInputEntry(entry);
+            } catch (error) {
+              recordLog("threaded input apply failed", { error: String(error) });
+            }
+          }
+        });
+        return;
+      }
+      case "startLoop":
+        runOrQueue(() => startLoop(msg, respond));
+        return;
+      case "stopLoop":
+        loop.active = false;
+        respond({ cmd: "stopLoopResult", id: msg.id, ok: true });
+        return;
+      case "setDiagLevel":
+        if (typeof globalThis.__cncSetDiagLevel === "function") {
+          respond({
+            cmd: "setDiagLevelResult",
+            id: msg.id,
+            level: globalThis.__cncSetDiagLevel(msg.level),
+          });
+        } else {
+          respond({ cmd: "setDiagLevelResult", id: msg.id, level: null });
+        }
+        return;
+      case "status":
+        respond({ ...buildStatus(), id: msg.id, cmd: "statusResult" });
+        return;
+      case "pacingSamples":
+        respond({ cmd: "pacingSamplesResult", id: msg.id, samples: loop.pacingSamples.slice() });
+        return;
+      default:
+        // Not ours (or a bounced reply) — ignore silently.
+    }
+  }
+
+  recordLog("engine realm boot module installed", {
+    realm,
+    diagLevel: opts.diagLevel ?? null,
+    preserveDrawingBuffer: opts.preserveDrawingBuffer === true,
+  });
+
+  return {
+    hooksInstalled: [
+      ...Object.keys(d3d8Hooks),
+      "cncGdiMeasure",
+      "cncGdiRasterizeGlyph",
+      ...MSS_HOOKS,
+      "cncPortBrowserUdpSend",
+      "cncPortBrowserUdpRecv",
+      "cncPortEngineThreadTick",
+    ],
+    handleCommand,
+  };
+}
