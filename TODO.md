@@ -538,8 +538,9 @@ the UI is the real `PopupSaveLoad.cpp` reached from in-game ESC/Options →
       mechanism; (b) consider real context-restore (re-create GL resources
       from CPU mirrors + DDS sources — big lift, buffers have mirrors but
       textures/shaders/VAOs need a registry); (c) reduce peak memory on
-      mobile (range-backed archive reads instead of full in-memory mount is
-      the big one).
+      mobile — the adopted engine-thread + OPFS-disk plan (IDEAS.md, P2)
+      removes the ~2GB resident archive copy entirely and is the real fix;
+      range-backed subset mounts are no longer the plan.
       decoupling** — the paced mode (client at display rate, TheGameLogic held
       at the authentic 30Hz via the `cnc_port_allow_logic_frame` gate EA left
       as a @todo above `GameEngine::update`) is live and Metal-verified
@@ -657,47 +658,16 @@ reproduce in the harness and verify each fix with a screenshot / state check.
       keep this open for any unrelated non-tooltip repro.
 ### Move I/O off the main thread (owner ask: "stop blocking the main thread on screen load")
 
-Architecture finding (2026-07-08): COOP/COEP are ALREADY set in the harness
-(`harness/static-server.mjs:31-37` -> `same-origin` / `require-corp`), so
-`SharedArrayBuffer` + real threads are unlocked. But `cnc-port` links with NO
-pthreads and NO ASYNCIFY (`WebAssembly/CMakeLists.txt` cnc-port
-`target_link_options` ~5104; `-sENVIRONMENT=web,worker`,
-`-sALLOW_MEMORY_GROWTH=1`, emsdk 3.1.6). Two distinct blocking costs exist and
-need different fixes:
-  1. **Boot archive download+decode (~1.6 GB)** — was on the main thread
-     (`writeArchiveToMemfs`: `fetch -> arrayBuffer` then `FS.writeFile`).
-  2. **Per-screen/map load freeze** — single-threaded engine CPU
-     (refpack decompress + W3D/texture/INI parse) inside one synchronous
-     `cnc_port_real_engine_frame` call. This is the owner's real complaint and
-     is NOT solved by moving the fetch; it needs the engine load work off the
-     render thread (pthreads) OR incremental yielding.
+DIRECTION CHANGE (owner, 2026-07-10): the 2026-07-08 "IO worker first, pthreads
+only as fallback" recommendation is SUPERSEDED. The owner wants the game's own
+loading screens, a never-blocked main thread, and zero archive memory
+duplication, and allows engine changes — the adopted plan is the engine-thread
++ OPFS-disk + OffscreenCanvas architecture (full design + P0-P3 phasing in
+IDEAS.md "the browser as a 2003 PC"; concrete next action is the P0 spike item
+below). The existing IO-worker fetch pipeline and stepped loading remain the
+shipping behavior until P1/P2 land; superseded follow-on items were moved to
+DONE.md with reasons.
 
-Recommendation for this codebase: do NOT start with ASYNCIFY (whole-program
-unwind cost + code-size, risky against the shim/ODR surface) and do NOT rush
-pthreads (thread-safety audit of the whole single-threaded engine + the
-`ALLOW_MEMORY_GROWTH` vs growable-SAB constraint on emsdk 3.1.6). Start with a
-dedicated **IO Web Worker** (least invasive, no engine/build-flag risk), then
-escalate to pthreads ONLY for the map-load compute if the fetch offload is not
-enough.
-
-- [x] **First slice — IO fetch/decode Web Worker (DONE).** `harness/io_worker.mjs`
-      (module Worker) does the archive `fetch()` + `arrayBuffer()` off the main
-      thread and transfers the bytes back zero-copy; `writeArchiveToMemfs`
-      (`harness/bridge.js`) uses it by default and falls back to the inline
-      main-thread fetch on any worker failure. Opt out with
-      `window.__cncIoWorker=false` or `?ioworker=0` (wired in `play.mjs`). Only
-      the single `FS.writeFile` memcpy stays on the main thread (wasm heap is
-      main-thread-owned). Verified by `npm run test:io-worker-offthread`
-      (`harness/io_worker_offthread_smoke.mjs` + `.html`): worker returns the
-      exact served bytes, and a 300 ms worker-CPU task leaves the main-thread
-      rAF heartbeat ticking ~18x (i.e. off-thread work does not freeze the main
-      thread). `npm run build:port` still green.
-- [ ] **Route range-backed mount through the IO worker too.** The
-      range-backed path (`extractBigEntriesFromUrl` + `buildBigArchive` +
-      `fetchByteRange`, `harness/bridge.js`) still does its byte-range fetches
-      and BIG synthesis on the main thread. Move that CPU-heavy synthesis into
-      `io_worker.mjs` (it already has a `fetchRange` command) and transfer the
-      synthesized BIG back, leaving only `FS.writeFile` on the main thread.
 - [ ] **Verify the streamed/parallel mount + stepped init/load on the real Mac
       GPU play page as the OWNER sees it.** The loadscreen/stepped-init probes
       cover the RPC path; confirm the human `play.html` boot shows the
@@ -705,30 +675,17 @@ enough.
       responsive through mount + init + shellmap load (screenshot/state per
       "don't work blind"), and that `?ioworker=0`, `?fetchpar=0`,
       `?initstep=0`, `?loadstep=0` opt-outs still reproduce legacy behavior.
-- [ ] **Stepped-load follow-ups (2026-07-09, after the map-load/init stepping
-      landed — see DONE "Stepped loading").** The owner's map-load freeze is
-      fixed by stepping (no pthreads needed); remaining refinements:
-      (a) sub-split the remaining >budget single steps if they matter in play:
-      `TheTerrainLogic->loadMap`, `preloadAssets` (chunkable per-asset loop),
-      `ThePartitionManager->init`, and init's THING_FACTORY /
-      UPGRADE_CLIENT / FINGERPRINT_MAPCACHE steps — measure per-step ms first
-      (the CNC_PORT_NOTE step markers + slice RPC timings already expose
-      them); (b) stepped save-game loads (`startNewGame(TRUE)` stays
-      synchronous because GameStateMap's caller continues into the snapshot
-      xfer immediately — needs a completion-callback refactor of
-      `GameStateMap.cpp:448`); (c) MP loads: PROGRESS_WAIT now repeats at
-      client rate instead of Sleep(100) polling — re-check testTimeOut
-      pacing when real network play lands; (d) pthreads remain the fallback
-      only if a single unsplittable step proves too heavy (thread-safety
-      audit + ALLOW_MEMORY_GROWTH vs growable-SAB on emsdk 3.1.6).
-- [ ] **Decide/measure: is the boot `FS.writeFile` memcpy (~2 GB total on the
-      main thread) worth eliminating?** Note (2026-07-10 audit): MEMFS file
-      contents are JS-side `Uint8Array`s, NOT wasm linear memory — the copy
-      cost is real but it does not consume the 2GB `MAXIMUM_MEMORY` heap.
-      Cheapest fix if it profiles as a stall: chunk each write into ~32-64MB
-      slices with a yield between slices (no pthreads/SAB needed, bounds each
-      block to ~tens of ms). The pthreads+SAB shared-memory fill is the heavy
-      alternative; only pursue if chunking is insufficient.
+- [ ] **Stepped-load follow-ups (2026-07-09; DEMOTED 2026-07-10 by the
+      engine-thread plan).** Under the adopted architecture the step yields
+      become presentation-only (an over-budget step = load-bar stutter on the
+      engine thread, not a frozen tab), so sub-splitting `loadMap` /
+      `preloadAssets` / `ThePartitionManager->init` etc. is only worth doing
+      if a specific stutter is owner-visible in play before P1 lands. Still
+      genuinely open regardless of architecture: (a) stepped save-game loads
+      (`startNewGame(TRUE)` synchronous; needs a completion-callback refactor
+      of `GameStateMap.cpp:448`); (b) MP loads: PROGRESS_WAIT repeats at
+      client rate instead of Sleep(100) polling — re-check testTimeOut pacing
+      when real network play lands.
 - [ ] **P0 spike: engine on its own thread (owner-directed 2026-07-10).**
       Owner wants: game's own load screens, main thread never locked, zero
       archive memory duplication — and explicitly allows engine changes. The
@@ -753,14 +710,6 @@ enough.
       the mount pipeline (before they're released) or move the scan into
       `io_worker.mjs`; at minimum drop the whole-file copies (read only TOC +
       sampled headers via streamed reads).
-- [ ] **Measure the mount-phase repeated TOC parsing (2026-07-10 audit).**
-      Each mounted archive's TOC is parsed by its per-archive `probeArchive`,
-      then ALL TOCs again by the aggregate `/assets/.../*.big` probe, again by
-      `registerArchiveSet` → `loadBigFilesFromDirectory`, and again by the
-      real engine init's own archive scan — ~4 synchronous main-thread passes
-      over ~60k entries with per-entry small reads + AsciiString allocs.
-      Measure per-pass ms; if material, skip per-archive probes on the play
-      path (`verifyEach:false`) and/or cache the parsed index across passes.
 
 - [ ] **Resolution follow-ups (2026-07-09, after the engine-owned resolution
       rework — see DONE "Resolution polish").** (a) The in-game options

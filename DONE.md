@@ -8,6 +8,42 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## I/O strategy pivot — engine-thread + OPFS-disk direction adopted (2026-07-10)
+
+Owner-directed pivot after the 2026-07-10 I/O audit: the game must use its own
+loading screens, never lock the main thread, and not duplicate archive memory;
+engine changes are allowed. The adopted architecture (engine on a pthread +
+OPFS sync-access-handle reads + OffscreenCanvas; design + P0-P3 phasing in
+IDEAS.md "the browser as a 2003 PC") supersedes the incremental main-thread
+mitigation track. Items resolved or retired by the pivot:
+
+- [x] **First slice — IO fetch/decode Web Worker.** `harness/io_worker.mjs`
+      (module Worker) does the archive `fetch()` + `arrayBuffer()` off the
+      main thread and transfers the bytes back zero-copy; `writeArchiveToMemfs`
+      (`harness/bridge.js`) uses it by default with inline main-thread
+      fallback; opt out `?ioworker=0`. Verified by
+      `npm run test:io-worker-offthread` (worker returns exact served bytes;
+      a 300ms worker-CPU task leaves the main-thread rAF heartbeat ticking).
+      Remains the shipping download path until P2 (where it streams into OPFS
+      instead of transferring whole buffers).
+- [x] **(superseded — not doing) Route range-backed mount through the IO
+      worker.** Range-backed subset mounts (`extractBigEntriesFromUrl` +
+      `buildBigArchive`) stay probe-only tooling; under the adopted plan OPFS
+      serves on-demand reads at P2 and subset-BIG synthesis has no future.
+      Retire the range path entirely when P2 lands.
+- [x] **(superseded — not doing) Eliminate/chunk the boot `FS.writeFile`
+      memcpy.** Audit correction recorded: MEMFS contents are JS-side
+      `Uint8Array`s, not wasm heap, so the copy never touched the 2GB
+      `MAXIMUM_MEMORY`. P2 deletes MEMFS archive mounting wholesale; chunking
+      or pthread+SAB fills of a to-be-deleted path are wasted work. Revisit
+      only if a mount-phase freeze becomes owner-visible before P2.
+- [x] **(superseded — not doing) Measure the mount-phase repeated TOC
+      parsing.** The audit found ~4 synchronous TOC passes (per-archive
+      probes, aggregate probe, `registerArchiveSet`, engine init's own scan)
+      over ~60k entries; P2 removes the probe/register mount pipeline, so the
+      measurement work is retired with it. Revisit only on pre-P2 boot pain
+      (cheap partial: `verifyEach:false` on the play path).
+
 ## Stepped-load validation regression — frozen turrets / stuck muzzle flashes (2026-07-10)
 
 - [x] **Menu-shell "battleship guns never rotate" + "muzzle flash constantly
