@@ -245,3 +245,107 @@ da47ce04, 2026-07-10):
   0), `startup_vertical_smoke.mjs` (`assertFunctionLexiconRuntimeFrontier`),
   `issue_recorder_ui_smoke.mjs` (record-button click timeout). These smokes
   normally run after `npm run build:port`; re-check after a fresh build.
+
+## P2-prep results (lane P2-prep, 2026-07-10): OPFS-as-disk read layer proven
+
+The isolated OPFS read layer (P2 core) is built and green end to end on the
+threaded build: `npm run probe:p2-opfs` (harness/p2_opfs_probe.{html,mjs},
+disposable) passes 24/24 on dev-box headless Chromium. What exists now:
+
+- **io_worker `fetchToOpfs`** ({kind:"fetchToOpfs", url, opfsPath}): streamed
+  fetch -> FileSystemSyncAccessHandle.write chunk-by-chunk (never whole-file
+  resident), fetchArchive-shaped progress messages, responds {bytesWritten}.
+  Byte-exactness covered by `test:io-worker-offthread` (extended, 15/15).
+- **C-level fd intercept at the shims/io.h seam**: weak
+  `cnc_port_opfs_intercept_{open,is_fd,read,lseek,close,size}` decls in io.h,
+  consulted by new `WasmIo{Open,Read,Write,Lseek,Close}` wrappers BEFORE
+  POSIX; strong defs in src/wasm_opfs_files.cpp (cnc-port only, both builds).
+  Virtual read-only fds (base 0x0fd00000) for paths under prefixes registered
+  via `cnc_port_opfs_register_prefix`; reads go through EM_JS to REALM-LOCAL
+  `globalThis.__cncOpfs{Open,Size,Read,Close}` — i.e. the engine pthread's
+  worker realm, bypassing the pthread->main FS proxy entirely. Inert-by-
+  default proof: targets that don't link wasm_opfs_files.cpp resolve the weak
+  decls to null (the ~90 legacy smokes); cnc-port with no registration always
+  falls through to POSIX. Default `build:port` green, d3d8-shim-smoke PASS.
+- **Realm staging module** harness/opfs_realm_files.mjs: imported into the
+  pool-worker realm via the P1a stub's `setup` command; pre-opens sync access
+  handles for a {enginePath -> opfsPath} map (carried in the module URL's
+  `?map=` query — setup only forwards canvas/Module/realm), installs the
+  __cncOpfs* functions + a diag responder on the same __cncRealm envelope
+  (the stub ignores unknown cmds silently).
+- **Probe**: own pthread entry (src/wasm_opfs_probe.cpp, does NOT touch
+  wasm_engine_thread_boot.cpp) opens /assets/INIZH.big through the io.h seam
+  and mirrors the engine's real patterns — BIG "BIGF" magic + header, full
+  TOC walk with BYTE-WISE name reads (Win32BIGFileSystem::openArchiveFile's
+  exact loop), 512 random 64KB lseek+reads, sequential full read, largest-
+  entry (RAMFile-style) read — then repeats everything on a MEMFS copy via
+  plain POSIX (= the pthread->main FS proxy). 5 sampled ranges + the largest
+  entry FNV-verified against HTTP Range fetches: byte-exact.
+
+**The throughput number (dev box, headless Chromium, shared/busy box; same-day
+baselines):**
+
+| pattern                    | OPFS via seam | FS proxy (MEMFS) | raw JS OPFS (P0 smoke) |
+|---------------------------|---------------|------------------|------------------------|
+| TOC walk (3462 tiny reads)| 1.9-2.0s      | 0.37-0.39s       | —                      |
+| per-call overhead          | ~0.58ms       | ~0.11ms          | ~0.87ms (64KB random)  |
+| random 64KB preads         | 96-105 MB/s   | 285-325 MB/s     | 72 MB/s                |
+| sequential 1MB reads       | 160-217 MB/s  | 338-339 MB/s     | 402 MB/s               |
+| 1.6MB whole-entry read     | 4.9-7.7ms     | 1.1ms            | —                      |
+
+Reading of the numbers (decides P2 shape, honestly):
+
+- The seam adds ~nothing: OPFS-through-C matches raw JS-worker OPFS on the
+  same box/day. The ~0.6ms/call floor is Chromium's synchronous storage-IPC
+  per `read()`, size-independent; streaming lands 160-400 MB/s.
+- The FS proxy is FASTER per call — but that comparison is RAM vs disk: the
+  MEMFS copy is resident in the wasm heap, which is exactly the ~2GB
+  residency P2 exists to eliminate. OPFS trades ~0.5ms/call + disk streaming
+  for near-zero memory. P2 viability is therefore about the BOOT PATTERN,
+  not raw speed:
+  - RAMFile whole-inner-file reads: fine as-is (1 call per file).
+  - Byte-wise TOC walks are the hazard: ~60k tiny reads across the ~30
+    archives would cost ~35s at 0.58ms/call (vs ~6s proxied). P2 integration
+    MUST add small-read coalescing — either a C-side readahead buffer in the
+    intercept layer (serve sequential small reads from a 64KB buffer = 1 OPFS
+    call per 64KB, TOC cost collapses to proxy-level) or batch the TOC read
+    at the engine seam. The readahead-in-intercept variant needs no engine
+    edits.
+- Expect materially better per-call numbers on the Mac M4 (real SSD, idle);
+  dev-box numbers are the conservative bound.
+
+**Contracts + gotchas for P2 integration (verified, not speculation):**
+
+- The BIG open path is `_open` in shims/io.h — confirmed: Win32BIGFileSystem
+  ::openArchiveFile -> TheLocalFileSystem->openFile -> LocalFile::open ->
+  `_open` (LocalFile.cpp:270), reads/seeks/closes via `_read/_lseek/_close`,
+  size via File::size() = lseek(END). USE_BUFFERED_IO (the fopen branch in
+  LocalFile.cpp) is NOT defined in the wasm build. CreateFile/fopen in
+  shims/windows.h are NOT on the BIG path — no windows.h changes needed.
+- **Directory-enumeration contract**: Win32BIGFileSystem lists `*.big` via
+  FindFirstFile -> shims/windows.h readdir+stat on MEMFS. OPFS-backed
+  archives therefore need 0-byte MEMFS MARKER files at the engine paths;
+  open() then intercepts to OPFS (probe proves marker stat size 0 + virtual
+  fd size = real 18.7MB coexist). CAVEAT: anything reading sizes/mtimes from
+  stat/FindFirstFile data (Win32LocalFileSystem::getFileInfo — used e.g. for
+  the archive timestamp in Win32BIGFile::getFileInfo) sees the marker's
+  zeros, not real values. Cover stat/access in the intercept (or write real
+  sizes into markers) when something is proven to care.
+- Registration is process-global shared state (wasm globals): register the
+  prefix once from any realm; but `__cncOpfs*` staging is REALM-LOCAL. An
+  open on a registered path in a realm WITHOUT staged handles falls through
+  to POSIX (main-realm MEMFS mounts under the same prefix keep working).
+- Chromium ACCEPTS SharedArrayBuffer-backed views in
+  FileSystemSyncAccessHandle.read() (readMode "shared-view" in the probe
+  diag; the WebIDL AllowSharedBufferSource widening is live). The
+  scratch+copy fallback exists in opfs_realm_files.mjs but was not needed.
+- createSyncAccessHandle holds an EXCLUSIVE lock per OPFS file: one handle
+  per file, shared by all virtual opens (reads are stateless {at}); a page
+  cannot removeEntry while the worker holds the handle
+  (NoModificationAllowedError) — release handles or recycle the worker
+  before deleting archives. Handle opening is async: stage BEFORE spawning
+  the engine/probe pthread (same ordering rule as the P1a handshake).
+- The probe spawns its pthread from the main realm with no go-flag dance:
+  prep-then-spawn is sufficient because the thread's EM_JS calls are
+  synchronous against already-staged realm state; the blocked worker event
+  loop only matters for ASYNC realm work (P1a note still applies there).

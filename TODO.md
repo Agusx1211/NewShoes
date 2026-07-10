@@ -744,6 +744,45 @@ DONE.md with reasons.
       `WebAssembly/notes/p1-engine-thread.md`. SwiftShader
       OffscreenCanvas-in-worker is thereby covered; still open: P1b executor
       extraction, P1c integration (gates B/C), Safari/iPad, Mac Metal.
+      PROGRESS (2026-07-10, lane P2-prep): OPFS-as-disk READ LAYER proven in
+      isolation (P2 core) — io_worker `fetchToOpfs` (streamed fetch→OPFS,
+      never whole-file resident; `test:io-worker-offthread` extended 15/15),
+      weak fd-intercept seam in `shims/io.h` + `src/wasm_opfs_files.cpp`
+      (virtual read-only fds under registered prefixes; reads via realm-local
+      `__cncOpfs*` FileSystemSyncAccessHandle wrappers, bypassing the
+      pthread→main FS proxy; inert by default, default build + d3d8 smoke
+      green), realm staging module `harness/opfs_realm_files.mjs`, and
+      `npm run probe:p2-opfs` 24/24 (own probe pthread does C-level
+      _open/_read/_lseek/_close of INIZH.big through the seam: BIG magic,
+      engine-pattern byte-wise TOC walk, random/sequential reads, all
+      FNV-verified vs HTTP Range). Throughput (dev box): ~0.58ms/call OPFS
+      sync-IPC floor, 96-105 MB/s random 64KB, 160-217 MB/s sequential —
+      vs FS proxy 0.11ms/call (but that path needs the archive RESIDENT in
+      the heap). Full numbers + enumeration contract + gotchas in
+      notes/p1-engine-thread.md "P2-prep results".
+- [ ] **P2 integration follow-ups (2026-07-10, from the P2-prep probe —
+      prerequisites for wiring OPFS reads under the real engine boot):**
+      (a) SMALL-READ COALESCING in the intercept layer: the engine's
+      byte-wise TOC walk costs ~0.58ms per OPFS read call (Chromium sync
+      storage IPC) → ~35s projected across the ~30-archive boot vs ~6s
+      proxied; add a C-side readahead buffer (e.g. 64KB) in
+      wasm_opfs_files.cpp so sequential small reads collapse to 1 OPFS call
+      per buffer fill (no engine edits needed). (b) stat/access coverage:
+      0-byte MEMFS markers satisfy *.big enumeration (FindFirstFile →
+      readdir+stat) but expose size 0 / mtime 0 to
+      Win32LocalFileSystem::getFileInfo (archive timestamp in
+      Win32BIGFile::getFileInfo) — intercept stat paths or write real sizes
+      into markers when something is proven to care. (c) sync-handle
+      lifecycle: createSyncAccessHandle holds an exclusive per-file lock —
+      OPFS deletes/updates (re-download, cache invalidation) require
+      releasing the realm's handles first (NoModificationAllowedError
+      otherwise). (d) real boot wiring: build the {enginePath→opfsPath} map
+      from the manifest, stage handles in the engine-thread realm BEFORE the
+      engine pthread spawns (P1a ordering rule), register "/assets/" (or the
+      real mount prefix), create markers, and delete the MEMFS archive
+      mounts + mount pipeline (the P2 payoff: ~2GB residency gone).
+      (e) measure the same probe on the Mac M4 (real SSD) — dev-box numbers
+      are the conservative bound.
 - [ ] **Remaining whole-archive `FS.readFile` copies outside the inventory
       path (2026-07-10, follow-up to the inventory partial-read fix).**
       (a) `startBrowserMssStreamPlayback` (`harness/bridge.js` ~3345) copies
