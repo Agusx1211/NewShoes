@@ -185,11 +185,61 @@ for P1c:
 - [ ] P1b extraction + non-threaded parity proof
 
 - [x] Recon map of bridge.js delivered.
-- [ ] P1a GATE A
+- [x] P1a GATE A (subsumed: the real D3D8 device creates in the engine realm
+      during the threaded boot; cleared/rendered frames present from the
+      worker — proven by the GATE B run below)
 - [x] P1b extraction + non-threaded parity proof (see below)
-- [ ] P1c GATE B (title), GATE C (shellmap+input+RPC) — implementation landed
-      (see "P1c implementation" below); gates in verification
-- [ ] GATE D Mac Metal + owner
+- [x] P1c GATE B (title) + GATE C (shellmap+input+RPC) — GREEN 2026-07-10,
+      `node harness/threaded_play_gate.mjs` 13/13 on headless SwiftShader
+      (gate-run-9): threaded boot to title in 133s (vs ~13 min wall for the
+      non-threaded reference leg on the same box), real init 43/43 ON the
+      engine pthread, shellmap load drained by the engine-thread paced loop,
+      title screenshot = fully rendered shellmap
+      (artifacts/screenshots/p1c-title-threaded.png vs
+      p1c-title-nonthreaded.png), forwarded pointermove verified in
+      cnc_port_probe_browser_input cursor state, realEngineDumpWindows
+      round-trip, no worker GL context loss. SwiftShader rates: client
+      ~1.1/s, logic ~2.2/s (catchup bound; sim slows gracefully under
+      software-raster overload — exact 60/30 is a Mac Metal measurement).
+- [ ] GATE D Mac Metal + owner (deploy dist-threaded + this branch's harness
+      to cnc-gpu, verify 60/30 pacing + owner playtest behind ?threads=1)
+
+## P1c root-cause find: Win32 CRITICAL_SECTION shim vs pthreads (2026-07-10)
+
+The first threaded boot froze the ENGINE THREAD forever inside
+`W3DMouse::draw` (marker `W3DDisplay.draw.mouse.before`; heartbeat frozen —
+diagnosed with the new main-thread stall introspection
+`CnCPort.engineModule()` + `cnc_port_real_engine_last_update_target`).
+Root cause: WWLib's `CriticalSectionClass` (mutex.cpp) allocates a raw
+`new char[sizeof(CRITICAL_SECTION)]` and calls `InitializeCriticalSection` —
+the shim no-opped it, leaving the shim struct's `std::recursive_mutex`
+UNCONSTRUCTED. Single-threaded builds never noticed (musl's no-thread pthread
+stubs accept garbage); the pthread build parks the thread on the first lock.
+Fixed in shims/windows.h: placement-new the recursive_mutex in
+`InitializeCriticalSection` (DeleteCriticalSection stays inert — mixed
+raw-buffer/by-value callers, musl mutex holds no resources).
+Related trap for future shim work: shims/mutex.h and WWLib/mutex.h share the
+`MUTEX_H` include guard — WWVegas headers (wwstring.h et al) pull WWLib's
+version first from their own directory, so most TUs get WWLib's class + the
+Win32 shims, NOT shims/mutex.h's spinlock classes.
+
+## P1c gotchas (probe/page level, all fixed in this branch)
+
+- bridge `locateFile` must map `.js` too: the pthread pool worker script
+  (`cnc-port.worker.js`) otherwise resolves against harness/ and 404s — the
+  module factory then waits on its worker-pool run dependency FOREVER.
+- Gesture-less boots (headless `?autostart=1`): `AudioContext.resume()` stays
+  PENDING (not rejected) without a user gesture — never `await` it unraced
+  (bridge now races a 3s timeout; the first pointerdown/keydown re-resumes).
+- Playwright element screenshots starve on the busy NON-threaded page (action
+  pipeline can't get stability callbacks) — capture through the bridge's own
+  `screenshot` RPC instead. Same for `waitForSelector("#overlay.hidden")`:
+  needs `state:"attached"` (hidden = display:none never becomes "visible").
+- In threaded mode the shellmap load runs inside the engine-loop's first
+  frames (play.mjs skips the boot reveal-pump frames) — probes must wait for
+  `state.threadedEngine.frame.loadSessionActive === false` (push-fed status,
+  no port round trip) before judging pixels; port round-trips can lag tens of
+  seconds behind long load frames.
 
 ## P1c implementation (2026-07-10, lane P1c)
 

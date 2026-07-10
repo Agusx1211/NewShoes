@@ -744,11 +744,21 @@ DONE.md with reasons.
       `WebAssembly/notes/p1-engine-thread.md`. SwiftShader
       OffscreenCanvas-in-worker is thereby covered; still open: P1b executor
       extraction, P1c integration (gates B/C), Safari/iPad, Mac Metal.
-      PROGRESS (2026-07-10, lane P1c): threaded play path IMPLEMENTED —
-      `play.html?threads=1` boots the real engine on the pthread
+      PROGRESS (2026-07-10, lane P1c): threaded play path LANDED and GREEN —
+      `play.html?threads=1` boots the REAL engine on the pthread
       (harness/engine_realm_boot.mjs in the worker realm + bridge threaded
-      controller/routing; details in notes/p1-engine-thread.md "P1c
-      implementation"; verification via `npm run verify:threaded-play`).
+      controller/routing; details + root-cause finds in
+      notes/p1-engine-thread.md "P1c implementation"). GATES B+C green via
+      `npm run verify:threaded-play` (13/13, SwiftShader): real init 43/43 on
+      the engine thread, threaded boot to title 133s (vs ~13 min wall
+      non-threaded on the same box), shellmap load drained by the
+      engine-thread paced loop, forwarded input verified via engine state,
+      title screenshot renders the full shellmap. Root-cause fix along the
+      way: shims/windows.h InitializeCriticalSection now placement-news the
+      recursive_mutex (was uninitialized garbage -> engine thread parked
+      forever in W3DMouse::draw on the pthread build). STILL OPEN: GATE D
+      (Mac Metal 60/30 measurement + owner playtest behind ?threads=1),
+      Safari/iPad.
 - [ ] **Threaded-mode (P1c) follow-ups, in threaded mode only** (2026-07-10):
       (a) canvas pixel/graphics diagnostics RPCs read the MAIN scratch
       executor (blank) — route worker-side equivalents (executor lives in the
