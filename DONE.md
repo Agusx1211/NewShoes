@@ -8,6 +8,39 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## GATE D blocker root-caused + flip unblocked (2026-07-10, blocker-fix lane)
+
+Full numbers in `WebAssembly/notes/p1-engine-thread.md` "GATE D root cause +
+fix". Branch: worktree blocker-fix lane (root-cause commit + flip
+cherry-pick); NOT merged to main by the lane itself.
+
+- [x] Root-cause the GATE D "worker GL throughput regression": it was
+      **Debug-vs-Release wasm**, not the worker. `build:port:threaded` builds
+      Debug (-O0, ASSERTIONS=1, JS-EH, 99.7MB wasm); GATE D compared it
+      against dist-release (-O2, wasm-EH, 7.7MB). Proven on Mac Metal by
+      (a) a synthetic worker-vs-main GL benchmark at the executor's measured
+      call mix — 70.0k draws/s in BOTH realms (worker parity to 0.1%; CPU
+      loop parity 730 Mops/s both; SAB/attrs/captureStream variants all
+      cleared), and (b) `?dist=dist` on the LEGACY main-thread path
+      reproducing the exact collapse (client 3.8-13/s, 14.5-19.8k draws/s —
+      GATE D's "threaded" numbers, no worker involved).
+- [x] Fix: `npm run build:port:threaded:release` -> dist-threaded-release
+      (first Release+pthread+wasm-EH build; links/runs fine on emsdk 3.1.6);
+      play.html threaded mode defaults to it (harness pages keep Debug
+      dist-threaded); issue-recorder metadata + replay pins follow;
+      `verify:threaded-play` builds both threaded dists; gate gained
+      THREADED_PLAY_DIST.
+- [x] Re-run the lane-D pacing A/B on Mac Metal (same methodology, 120s):
+      threaded-release logic 30.0 exact all settled buckets, client mean
+      39.1/s vs legacy 48.3/s headless (~19%, within the ~20% bar; ~8% at
+      the matched ~1600-draws/frame bucket); HEADFUL (owner-realistic)
+      client 52.6-60/s with logic 30.0 exact — the 60/30 bar met without
+      any Chrome flags. Title screenshot
+      `WebAssembly/artifacts/screenshots/threaded-release-title-metal.png`.
+- [x] Cherry-pick the prepared flip (f002675d): play.html defaults to the
+      engine-thread path (?threads=0 = legacy escape hatch), resolved to
+      serve dist-threaded-release on the play page.
+
 ## GATE D Mac Metal verification of the threaded path — run (2026-07-10)
 
 Final-migration lane. Full numbers + mechanism in
