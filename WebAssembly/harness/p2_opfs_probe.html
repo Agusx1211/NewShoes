@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<!--
+  p2_opfs_probe.html — DISPOSABLE P2-prep proof probe (lane P2-prep; design:
+  IDEAS.md "the browser as a 2003 PC", notes/p1-engine-thread.md). Loads the
+  THREADED build (dist-threaded, `npm run build:port:threaded`) and proves the
+  OPFS-as-disk READ layer end to end:
+
+    1. io_worker fetchToOpfs streams the served INIZH.big into OPFS (never
+       whole-file resident),
+    2. the same bytes are staged in MEMFS (/proxy-assets/) for the
+       pthread->main FS-proxy comparison phase,
+    3. the pool worker realm is prepped through the P1a realm stub:
+       harness/opfs_realm_files.mjs pre-opens sync access handles and
+       installs globalThis.__cncOpfs*,
+    4. the intercept prefix "/assets/" is registered and a 0-byte MEMFS
+       marker is created at /assets/INIZH.big (the directory-enumeration
+       contract),
+    5. cnc_port_opfs_probe_start spawns the probe pthread which does C-level
+       _open/_read/_lseek/_close of /assets/INIZH.big THROUGH the shims/io.h
+       seam (BIG magic, full TOC walk, random preads, sequential read,
+       largest-entry read, checksummed samples), then repeats the patterns
+       against the MEMFS copy,
+    6. the page verifies the recorded sample checksums against HTTP Range
+       fetches of the served file.
+
+  Driven by harness/p2_opfs_probe.mjs. NOT part of test:all.
+-->
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>cnc-port P2 OPFS-as-disk probe</title>
+</head>
+<body>
+<h3>cnc-port P2 OPFS-as-disk probe</h3>
+<pre id="out"></pre>
+<script type="module">
+  const consoleLog = [];
+  window.__consoleLog = consoleLog;
+  function log(kind, text) {
+    consoleLog.push(`${kind}: ${text}`);
+    console.log(`[probe:${kind}] ${text}`);
+  }
+
+  let Module = null;
+  let engineWorker = null;
+  let realmPort = null;
+  const portWaiters = [];
+
+  function waitForRealmMessage(match, timeoutMs, label) {
+    return new Promise((resolve, reject) => {
+      const waiter = { match, resolve, done: false };
+      portWaiters.push(waiter);
+      setTimeout(() => {
+        if (!waiter.done) {
+          waiter.done = true;
+          reject(new Error(`timeout waiting for ${label}`));
+        }
+      }, timeoutMs);
+    });
+  }
+
+  function dispatchRealmMessage(msg) {
+    for (const waiter of portWaiters) {
+      if (!waiter.done && waiter.match(msg)) {
+        waiter.done = true;
+        waiter.resolve(msg);
+        return;
+      }
+    }
+    log("realm", `unmatched realm message: ${JSON.stringify(msg)}`);
+  }
+
+  // FNV-1a 32-bit, matching src/wasm_opfs_probe.cpp exactly.
+  function fnv1a(bytes) {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < bytes.length; i += 1) {
+      hash ^= bytes[i];
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return hash >>> 0;
+  }
+
+  // Step 0: instantiate the threaded runtime, locate the pool worker.
+  window.__init = async () => {
+    const out = {
+      instantiated: false,
+      crossOriginIsolated: !!globalThis.crossOriginIsolated,
+      heapIsShared: null,
+      workerFound: false,
+      error: null,
+    };
+    try {
+      const mod = await import("../dist-threaded/cnc-port.js");
+      Module = await mod.default({
+        print: (text) => log("out", text),
+        printErr: (text) => log("err", text),
+      });
+      window.__cncModule = Module;
+      out.instantiated = true;
+      out.heapIsShared =
+        typeof SharedArrayBuffer !== "undefined" &&
+        Module.HEAP8.buffer instanceof SharedArrayBuffer;
+      const pt = Module.PThread;
+      engineWorker = (pt.unusedWorkers && pt.unusedWorkers[0]) ||
+        (pt.runningWorkers && pt.runningWorkers[0]) || null;
+      out.workerFound = !!engineWorker;
+      if (engineWorker) {
+        engineWorker.addEventListener("message", (event) => {
+          const data = event && event.data;
+          if (data && typeof data === "object" && data.__cncRealm) {
+            dispatchRealmMessage(data.__cncRealm);
+          }
+        });
+      }
+    } catch (e) {
+      out.error = String((e && e.stack) || e);
+    }
+    return out;
+  };
+
+  // Step 1: stream the served archive into OPFS through the IO worker.
+  window.__fetchToOpfs = (url, opfsPath) => {
+    return new Promise((resolve, reject) => {
+      const worker = new Worker(new URL("./io_worker.mjs", import.meta.url), {
+        type: "module",
+      });
+      let progressCount = 0;
+      let maxReceived = 0;
+      worker.onmessage = (event) => {
+        const message = event.data ?? {};
+        if (message.kind === "ready") {
+          worker.postMessage({ id: 11, kind: "fetchToOpfs", url, opfsPath });
+          return;
+        }
+        if (message.kind === "progress") {
+          progressCount += 1;
+          maxReceived = Math.max(maxReceived, Number(message.received));
+          return;
+        }
+        if (message.id === 11) {
+          worker.terminate();
+          if (message.ok) {
+            resolve({
+              bytesWritten: Number(message.bytesWritten),
+              progressCount,
+              maxReceived,
+            });
+          } else {
+            reject(new Error(message.error ?? "fetchToOpfs failed"));
+          }
+        }
+      };
+      worker.onerror = (event) => reject(new Error(event?.message ?? "io worker crashed"));
+      setTimeout(() => reject(new Error("fetchToOpfs timed out")), 120000);
+    });
+  };
+
+  // Step 2: stage the same bytes in MEMFS for the FS-proxy comparison phase.
+  window.__seedMemfs = async (url, memfsPath) => {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`memfs seed fetch failed: ${response.status}`);
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const dir = memfsPath.slice(0, memfsPath.lastIndexOf("/"));
+    try {
+      Module.FS.mkdir(dir);
+    } catch (e) {
+      // already exists
+    }
+    Module.FS.writeFile(memfsPath, bytes);
+    return { byteLength: bytes.byteLength };
+  };
+
+  // Step 3: prep the pool worker realm through the P1a realm stub — connect
+  // the MessagePort, then import opfs_realm_files.mjs with the path map in
+  // the module URL query (the stub's setup forwards only canvas/Module/realm).
+  window.__connectAndStage = async (pathMap) => {
+    const out = { connected: false, setupOk: false, error: null };
+    try {
+      const pong = waitForRealmMessage((m) => m.cmd === "pong", 5000, "pong");
+      engineWorker.postMessage({ target: "setimmediate", __cncRealm: { cmd: "ping" } });
+      await pong;
+      out.pong = true;
+
+      const channel = new MessageChannel();
+      realmPort = channel.port1;
+      realmPort.onmessage = (event) => {
+        const data = event && event.data;
+        if (data && typeof data === "object" && data.__cncRealm) {
+          dispatchRealmMessage(data.__cncRealm);
+        }
+      };
+      const connected = waitForRealmMessage((m) => m.cmd === "connected", 5000, "connected");
+      engineWorker.postMessage(
+        { target: "setimmediate", __cncRealm: { cmd: "connect" } },
+        [channel.port2],
+      );
+      await connected;
+      out.connected = true;
+
+      const moduleUrl = new URL("./opfs_realm_files.mjs", location.href);
+      moduleUrl.searchParams.set("map", JSON.stringify(pathMap));
+      const setupDone = waitForRealmMessage((m) => m.cmd === "setupDone", 20000, "setupDone");
+      realmPort.postMessage({ __cncRealm: { cmd: "setup", moduleUrl: moduleUrl.href } });
+      const msg = await setupDone;
+      out.setupOk = msg.ok === true;
+      out.setupError = msg.error ?? null;
+      out.hooksInstalled = msg.hooksInstalled ?? null;
+    } catch (e) {
+      out.error = String((e && e.stack) || e);
+    }
+    return out;
+  };
+
+  // Step 4: register the intercept prefix + create the 0-byte MEMFS marker
+  // (the directory-enumeration contract: FindFirstFile in shims/windows.h
+  // walks MEMFS via readdir/stat, so a marker must exist for *.big listing;
+  // open() is then intercepted to OPFS).
+  window.__registerAndMark = (prefix, markerPath) => {
+    const out = {};
+    const register = Module.cwrap("cnc_port_opfs_register_prefix", "number", ["string"]);
+    out.registerRc = register(prefix);
+    const dir = markerPath.slice(0, markerPath.lastIndexOf("/"));
+    try {
+      Module.FS.mkdir(dir);
+    } catch (e) {
+      // already exists
+    }
+    Module.FS.writeFile(markerPath, new Uint8Array(0));
+    out.markerSize = Module.FS.stat(markerPath).size;
+    return out;
+  };
+
+  // Step 5: spawn the probe pthread and poll to completion.
+  window.__startProbe = (opfsPath, proxyPath) => {
+    const start = Module.cwrap("cnc_port_opfs_probe_start", "number", ["string", "string"]);
+    return { rc: start(opfsPath, proxyPath) };
+  };
+
+  window.__probeState = () => Module._cnc_port_opfs_probe_state();
+
+  window.__probeSummary = () => {
+    const summary = Module.cwrap("cnc_port_opfs_probe_summary", "string", [])();
+    try {
+      return JSON.parse(summary);
+    } catch (e) {
+      return { parseError: String(e), raw: summary };
+    }
+  };
+
+  // Step 6: verify a sample checksum against an HTTP Range fetch.
+  window.__verifyRange = async (url, offset, length) => {
+    const response = await fetch(url, {
+      headers: { Range: `bytes=${offset}-${offset + length - 1}` },
+    });
+    if (response.status !== 206) {
+      throw new Error(`range fetch failed: HTTP ${response.status}`);
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength !== length) {
+      throw new Error(`range length mismatch: ${bytes.byteLength} != ${length}`);
+    }
+    return { fnv: fnv1a(bytes) };
+  };
+
+  // Realm diagnostics after the run (readMode, reads, errors): served by the
+  // opfsDiagRequest responder opfs_realm_files.mjs installs in the worker
+  // realm (rides the same __cncRealm envelope; the stub ignores unknown cmds).
+  window.__realmDiag = async () => {
+    const id = 991;
+    const result = waitForRealmMessage(
+      (m) => m.cmd === "opfsDiag" && m.id === id,
+      5000,
+      "opfsDiag",
+    );
+    engineWorker.postMessage({
+      target: "setimmediate",
+      __cncRealm: { cmd: "opfsDiagRequest", id },
+    });
+    const msg = await result;
+    return msg.diag ?? null;
+  };
+
+  // OPFS cleanup so back-to-back runs start fresh.
+  window.__cleanupOpfs = async (rootDirName) => {
+    try {
+      const root = await navigator.storage.getDirectory();
+      await root.removeEntry(rootDirName, { recursive: true });
+      return { removed: true };
+    } catch (e) {
+      return { removed: false, error: String(e) };
+    }
+  };
+</script>
+</body>
+</html>

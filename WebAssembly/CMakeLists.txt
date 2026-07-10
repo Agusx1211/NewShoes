@@ -9106,3 +9106,24 @@ add_custom_target(zh_startup_vertical_hotpath
     w3d-window-layout-script-smoke
     gamelogic-new-game-dispatch-smoke
 )
+
+# ---------------------------------------------------------------------------
+# P2-prep (lane P2-prep, appended): OPFS-as-disk read layer.
+#
+#   - src/wasm_opfs_files.cpp: strong defs for the weak fd-intercept hooks
+#     declared in shims/io.h (virtual fds backed by realm-local
+#     FileSystemSyncAccessHandle reads via globalThis.__cncOpfs*). Compiled
+#     into cnc-port in BOTH builds; inert unless JS registers a prefix
+#     (cnc_port_opfs_register_prefix) AND stages handles
+#     (harness/opfs_realm_files.mjs). Every other target that includes
+#     shims/io.h does not link this file, so the weak hooks resolve to null
+#     and behavior is byte-identical.
+#   - src/wasm_opfs_probe.cpp: disposable P2-prep proof probe
+#     (harness/p2_opfs_probe.{html,mjs}); pthread body only compiles under
+#     __EMSCRIPTEN_PTHREADS__ (the CNC_PORT_THREADS build), the default build
+#     gets inert stub exports.
+# ---------------------------------------------------------------------------
+target_sources(cnc-port PRIVATE
+  src/wasm_opfs_files.cpp
+  src/wasm_opfs_probe.cpp
+)
