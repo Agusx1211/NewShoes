@@ -744,6 +744,27 @@ enough.
       NOTE (owner): do NOT add HTTP-cache/persistence layers for re-download
       avoidance yet — OPFS enters in P2 as the read-backing disk, not as a
       cache.
+      PROGRESS (2026-07-10, lane A spike): dual-mode build LANDED and GREEN.
+      `CNC_PORT_THREADS` CMake option + `npm run build:port:threaded`
+      (build/wasm-threaded → dist-threaded); full 1309-TU pthread build links
+      clean on emsdk 3.1.6 — no ODR/shim breakage, only the known
+      pthreads+ALLOW_MEMORY_GROWTH perf warning. Findings from
+      `harness/threaded_boot_probe.mjs` (disposable spike tooling, headless
+      Chromium): (a) `-sPROXY_TO_PTHREAD` is a hard emcc error with our
+      `--no-entry` runtime ("proxies main() for you, but no main exists") —
+      the engine thread must be explicitly spawned; spike proves a spawned
+      pthread runs concurrently with main-thread JS (heartbeat + rAF both
+      advance). (b) EXPORT_ES6+MODULARIZE+pthreads WORKS at runtime on 3.1.6
+      Chromium (classic worker + dynamic import) — no output-format
+      downgrade. (c) Realm split confirmed: pthread realm has its own Module
+      without the bridge hooks and no document (P1 scope). (d) Real
+      `cnc_port_real_engine_init` ON a pthread runs through
+      TheLocalFileSystem + TheArchiveFileSystem (FS syscall proxying to main
+      works) and dies at TheWritableGlobalData only because the probe mounts
+      no assets — no thread-specific crash before that. emsdk 3.1.6 verdict:
+      viable for P0/P1; no upgrade-first requirement flushed yet. STILL OPEN
+      for this item: boot to title (assets + bridge realm split = P1),
+      SwiftShader OffscreenCanvas-in-worker, Safari/iPad, Mac Metal.
 - [ ] **Audio payload inventory duplicates whole archives on the main thread
       (2026-07-10 audit).** `buildAudioPayloadInventoryFromMountedArchives`
       (`harness/bridge.js:18670`) does `FS.readFile` (= full copy) of every
