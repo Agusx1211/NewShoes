@@ -5168,10 +5168,29 @@ if(CNC_PORT_THREADS)
   # 3.1.6 ("may run non-wasm code slowly", the JS-side heap-view refresh
   # caveat); it is kept for spike parity with the default build. P3 of the
   # design intends a fixed-size heap anyway.
-  target_sources(cnc-port PRIVATE src/wasm_engine_thread_spike.cpp)
+  #
+  # P1a scaffold (WebAssembly/notes/p1-engine-thread.md):
+  #   - PTHREAD_POOL_SIZE=1 (down from the P0 spike's 4): the single pool
+  #     worker is deterministic, so the main realm can prepare THAT worker's
+  #     realm (executor import, OffscreenCanvas transfer, Module.cncPortD3D8*
+  #     hooks) before the engine pthread is spawned onto it.
+  #   - threads_realm_stub.pre.js: --pre-js realm stub baked into cnc-port.js;
+  #     no-op on the main realm, installs the {__cncRealm:...} message
+  #     protocol when Module["ENVIRONMENT_IS_PTHREAD"] (see file header).
+  #   - wasm_engine_thread_boot.cpp: boot/go/heartbeat exports; proves
+  #     emscripten_set_main_loop ON the pthread (rAF-driven ticks in the
+  #     worker realm) presenting through the D3D8 shim's EM_JS clear path.
+  target_sources(cnc-port PRIVATE
+    src/wasm_engine_thread_spike.cpp
+    src/wasm_engine_thread_boot.cpp
+  )
   target_link_options(cnc-port PRIVATE
     "SHELL:-sOFFSCREENCANVAS_SUPPORT=1"
-    "SHELL:-sPTHREAD_POOL_SIZE=4"
+    "SHELL:-sPTHREAD_POOL_SIZE=1"
+    "SHELL:--pre-js ${CMAKE_CURRENT_SOURCE_DIR}/src/threads_realm_stub.pre.js"
+  )
+  set_property(TARGET cnc-port APPEND PROPERTY LINK_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/threads_realm_stub.pre.js"
   )
 endif()
 
