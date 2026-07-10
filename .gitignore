@@ -7,6 +7,8 @@
 /WebAssembly/dist-threaded/
 /WebAssembly/dist-threaded-release/
 /WebAssembly/err.txt
+# Per-box persistent self-signed HTTPS cert (generated once by harness/static-server.mjs)
+/WebAssembly/harness/.certs/
 /node_modules/
 /WebAssembly/node_modules
 /WebAssembly/node_modules/
