@@ -76,11 +76,11 @@
   var connectedPort = null;
   var moduleCommandHandler = null; // installed by the setup module (P1c)
 
-  function respond(viaPort, payload) {
+  function respond(viaPort, payload, transfer) {
     var envelope = { __cncRealm: payload };
     try {
       if (viaPort) {
-        viaPort.postMessage(envelope);
+        viaPort.postMessage(envelope, transfer || []);
       } else {
         // Default-channel reply: tag with target:'setimmediate' so the main
         // thread's PThread worker.onmessage takes its silent branch instead
@@ -88,7 +88,7 @@
         // messages back to this worker; the dispatcher below ignores
         // reply-shaped cmds, so the bounce terminates silently.
         envelope.target = "setimmediate";
-        self.postMessage(envelope);
+        self.postMessage(envelope, transfer || []);
       }
     } catch (e) {
       // Reply channel gone — nothing useful to do from a worker realm.
@@ -159,8 +159,10 @@
     // (engine_realm_boot.mjs does).
     if (moduleCommandHandler !== null) {
       try {
-        moduleCommandHandler(msg, function (payload) {
-          respond(replyPort, payload);
+        // Second respond arg = optional transfer list (e.g. the boot module's
+        // MSS sample-byte copies and opfsReadRange payloads move, not clone).
+        moduleCommandHandler(msg, function (payload, transfer) {
+          respond(replyPort, payload, transfer);
         });
       } catch (error) {
         respond(replyPort, {

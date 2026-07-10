@@ -619,6 +619,29 @@ function threadedWorkerDiagLevel() {
   }
 }
 
+function threadedWorkerShaderTier() {
+  // The executor samples the shader tier once at device create via
+  // d3d8ShaderTierQuery (URL ?shaderTier= param, then localStorage
+  // "cncPortShaderTier", default ff). The WORKER realm has neither the page
+  // URL nor localStorage, so resolve the tier here with the same precedence
+  // and hand it through the setup options (engine_realm_boot forces it via
+  // globalThis.__cncD3D8ShaderTier before constructing the executor).
+  try {
+    const params = new URLSearchParams(globalThis.location?.search || "");
+    const fromUrl = params.get("shaderTier");
+    if (fromUrl === "ps11" || fromUrl === "ff") {
+      return fromUrl;
+    }
+    const stored = globalThis.localStorage?.getItem("cncPortShaderTier");
+    if (stored === "ps11" || stored === "ff") {
+      return stored;
+    }
+  } catch (_error) {
+    // Fall through to the executor default (ff).
+  }
+  return null;
+}
+
 function createThreadedEngineController() {
   const pending = new Map(); // id -> { resolve, reject, timer, resetTimer }
   let commandId = 0;
@@ -662,13 +685,22 @@ function createThreadedEngineController() {
       return;
     }
     // Sample-start payloads arrive with a worker-side COPY of the RIFF bytes
-    // (padded, dataPtr rewritten to 4 — see engine_realm_boot.mjs); everything
-    // else reads nothing or reads the SHARED heap through a fresh view.
+    // (padded, dataPtr rewritten to 4 — see engine_realm_boot.mjs) on their
+    // FIRST send per content key, then key-only (dedupe); everything else
+    // reads nothing or reads the SHARED heap through a fresh view.
     const heap = msg.bytes instanceof Uint8Array ? msg.bytes : freshMainHeapU8();
     try {
       handler(msg.payload ?? {}, heap);
     } catch (error) {
       threadedLog("mss hook failed", { hook: msg.hook, error: error?.message ?? String(error) });
+    }
+    // Dedupe-correctness backstop: the worker marked this key "sent" when the
+    // bytes shipped, but the start may have bailed before caching (suspended
+    // AudioContext, missing mixer, decode failure). If the decoded cache does
+    // not hold the key now, tell the worker to re-send bytes next start.
+    const sentKey = typeof msg.payload?.cacheKey === "string" ? msg.payload.cacheKey : null;
+    if (sentKey && msg.bytes instanceof Uint8Array && !cncPortDecodedSampleCache.has(sentKey)) {
+      notifyMssCacheDrop([sentKey]);
     }
   }
 
@@ -824,6 +856,9 @@ function createThreadedEngineController() {
       [channel.port2],
     );
     await connected;
+    // MSS dedupe handshake (see cncPortDecodedSampleCache): dropped decode
+    // cache keys must reach the worker so it re-sends sample bytes.
+    cncPortMssCacheDropNotifier = (keys) => sendPortCommand({ cmd: "mssCacheDrop", keys });
 
     const offscreen = canvas.transferControlToOffscreen();
     const moduleUrl = new URL("./engine_realm_boot.mjs", import.meta.url).href;
@@ -836,6 +871,7 @@ function createThreadedEngineController() {
         options: {
           diagLevel: threadedWorkerDiagLevel(),
           preserveDrawingBuffer: contextPreserveDrawingBuffer,
+          shaderTier: threadedWorkerShaderTier(),
         },
       },
     }, [offscreen]);
@@ -1152,11 +1188,16 @@ function snapshotThreadedViewport() {
 // answered with an explicit unsupported error — never allowed through and
 // never hung.
 const THREADED_MAIN_SIDE_COMMANDS = new Set([
-  "mountArchive",
-  "mountArchives",
+  // mountArchive/mountArchives are handled in the switch below: pre-boot they
+  // fall through to the main-side pipeline (main still owns the wasm), post
+  // boot they are refused (registerArchiveSet/probeArchive are main-thread
+  // wasm calls).
   "resumeBrowserAudioRuntime",
   "setBrowserAudioMixerVolumes",
   "setD3D8GammaRamp",
+  // Saves: IDBFS is mounted on the MAIN runtime (preRun) and the engine
+  // thread's FS writes proxy to main, so persist (FS.syncfs) and the listing
+  // are pure main-side JS in threaded mode too.
   "persistSaves",
   "listSaves",
 ]);
@@ -1169,17 +1210,138 @@ async function threadedRpc(command, payload = {}) {
     return undefined; // pure main-side JS/FS/WebAudio — unchanged behavior
   }
   switch (command) {
-    case "state":
-      // Main-side snapshot without the wasm state() call (that export must
-      // not run on the main thread while the engine thread owns the wasm).
+    case "state": {
+      // Parity with the non-threaded handler: fetch the wasm cnc_port_state
+      // JSON ON the engine thread and merge it into harnessState via
+      // applyModuleState, then return the main-side snapshot. Before the
+      // engine pthread starts (or if the round trip fails) fall back to the
+      // main-only snapshot — never a main-thread wasm call, never a hang.
+      let wasmStateSource = "unavailable (engine thread not started)";
+      if (threadedEngine.engineThreadStarted) {
+        try {
+          const moduleState = await threadedEngine.engineCall(
+            "cnc_port_state", "string", [], [], { timeoutMs: 120000 });
+          if (moduleState && typeof moduleState === "object") {
+            applyModuleState(moduleState);
+            harnessState.wasm = "loaded";
+            wasmStateSource = "engine-thread";
+          } else {
+            wasmStateSource = "cnc_port_state returned a non-object payload";
+          }
+        } catch (error) {
+          wasmStateSource = `cnc_port_state failed: ${error?.message ?? String(error)}`;
+        }
+      }
       return {
         ok: true,
         command,
         state: snapshotState(),
         logs: [...harnessState.logs],
         threaded: true,
+        wasmStateSource,
         threadedEngine: threadedEngine.lastStatus,
       };
+    }
+    case "mountArchive":
+    case "mountArchives": {
+      if (threadedEngine.engineThreadStarted) {
+        // The mount pipelines call registerArchiveSet/probeArchive wasm
+        // exports on the MAIN thread — safe only before the engine pthread
+        // runs (play boots mount-first). Refuse loudly instead of racing the
+        // engine thread on the shared wasm.
+        return {
+          ok: false,
+          command,
+          threaded: true,
+          error: "post-boot mounts are unsupported in threaded mode: the mount "
+            + "pipeline calls registerArchiveSet/probeArchive wasm exports on the "
+            + "main thread, which is only safe before the engine pthread starts. "
+            + "Mount all archives before realEngineInit.",
+        };
+      }
+      return undefined; // pre-boot: main still owns the wasm — unchanged pipeline
+    }
+    case "realEngineAnimReport": {
+      try {
+        const report = await threadedEngine.engineCall(
+          "cnc_port_real_engine_anim_report", "string", ["number"],
+          [Number(payload.maxEntries ?? 0)]);
+        return { ok: report?.ok === true, command, report, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "querySelection": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_query_selection", "string", [], []);
+        return {
+          ok: Boolean(result?.ready),
+          command,
+          result,
+          threaded: true,
+          state: snapshotState(),
+        };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineFrameSummary": {
+      // Issue-recorder deep snapshots use this; the frames interleave with
+      // the engine-thread paced loop exactly like they interleave with the
+      // page-driven loop in non-threaded mode.
+      try {
+        const frames = Math.max(1, Math.min(600, Math.trunc(Number(payload.frames ?? 1))));
+        if (payload.profile !== undefined) {
+          await threadedEngine.engineCall(
+            "cnc_port_real_engine_set_frame_profile", null, ["number"],
+            [payload.profile === true ? 1 : 0]);
+        }
+        if (payload.playerDiagnostics !== undefined) {
+          await threadedEngine.engineCall(
+            "cnc_port_real_engine_set_player_diagnostics", null, ["number"],
+            [payload.playerDiagnostics === true ? 1 : 0]);
+        }
+        const frame = await threadedEngine.engineCall(
+          "cnc_port_real_engine_frame_summary", "string", ["number"], [frames]);
+        return {
+          ok: Boolean(frame?.framesCompleted > 0),
+          command,
+          aborted: false,
+          frame,
+          threaded: true,
+          state: snapshotState(),
+        };
+      } catch (error) {
+        return {
+          ok: false, command, aborted: true,
+          abortMessage: error?.message ?? String(error), threaded: true,
+        };
+      }
+    }
+    case "d3d8TextureInventory": {
+      // The D3D8 executor (and its live-texture map) runs in the ENGINE realm
+      // in threaded mode — the main-side executor is a blank scratch canvas.
+      // Route the inventory to the worker realm (pure JS + GL reads there).
+      try {
+        await threadedEngine.ensureReady();
+        const reply = await threadedEngine.sendCommand({
+          cmd: "textureInventory",
+          sizes: Array.isArray(payload.sizes) ? payload.sizes : undefined,
+          sampleLimit: payload.sampleLimit,
+        }, { timeoutMs: 120000 });
+        return {
+          ok: reply?.ok === true,
+          command,
+          inventory: reply?.inventory ?? {},
+          liveCount: reply?.liveCount ?? 0,
+          threaded: true,
+          error: reply?.ok === true ? undefined : (reply?.error ?? "worker inventory failed"),
+        };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "screenshot":
       return { ok: true, command, screenshot: snapshotThreadedViewport(), threaded: true };
     case "threadedStatus": {
@@ -2181,6 +2343,7 @@ function summarizeBrowserMssStreamPlaybackRuntime() {
     lastVolumeUpdate: browserMssStreamPlaybackRuntime.lastVolumeUpdate,
     eventLog: [...browserMssStreamPlaybackRuntime.eventLog],
     lastError: browserMssStreamPlaybackRuntime.lastError,
+    lastArchiveError: browserMssStreamPlaybackRuntime.lastArchiveError,
   };
 }
 
@@ -2219,7 +2382,24 @@ function readMssSampleWaveBytes(payload, heapu8) {
 const cncPortDecodedSampleCache = new Map();
 let cncPortDecodedSampleCacheBytes = 0;
 const CNC_PORT_DECODED_SAMPLE_CACHE_MAX_BYTES = 96 * 1024 * 1024;
-const cncPortDecodedSampleCacheStats = { hits: 0, misses: 0, evictions: 0 };
+const cncPortDecodedSampleCacheStats = { hits: 0, misses: 0, evictions: 0, dedupeMisses: 0 };
+
+// Threaded-mode dedupe handshake: the ENGINE realm forwards sample-start
+// payloads with a content cacheKey and skips the byte copy once main has the
+// decoded entry. When main drops a key (LRU eviction, or a start that failed
+// before caching), it must tell the worker so the next start re-sends bytes.
+// Installed by the threaded controller; null (no-op) in non-threaded mode.
+let cncPortMssCacheDropNotifier = null;
+function notifyMssCacheDrop(keys) {
+  if (cncPortMssCacheDropNotifier && keys.length > 0) {
+    try {
+      cncPortMssCacheDropNotifier(keys);
+    } catch (_error) {
+      // Port gone — the worker will simply keep sending key-only starts,
+      // each of which re-notifies here.
+    }
+  }
+}
 
 function summarizeDecodedSampleCache() {
   return {
@@ -2228,6 +2408,7 @@ function summarizeDecodedSampleCache() {
     hits: cncPortDecodedSampleCacheStats.hits,
     misses: cncPortDecodedSampleCacheStats.misses,
     evictions: cncPortDecodedSampleCacheStats.evictions,
+    dedupeMisses: cncPortDecodedSampleCacheStats.dedupeMisses,
   };
 }
 
@@ -2250,8 +2431,31 @@ function mssSampleCacheKey(heapu8, dataPtr, riffSize) {
 }
 
 function getOrDecodeMssSampleBuffer(context, payload, heapu8) {
+  // Threaded transport key: the engine realm computed the SAME content key
+  // over the same bytes (engine_realm_boot.mjs) — trust it both for lookup
+  // and as the insert key so the two sides can never diverge.
+  const transportKey = typeof payload?.cacheKey === "string" ? payload.cacheKey : null;
+  if (transportKey) {
+    const cached = cncPortDecodedSampleCache.get(transportKey);
+    if (cached) {
+      cncPortDecodedSampleCache.delete(transportKey);
+      cncPortDecodedSampleCache.set(transportKey, cached);
+      cached.plays += 1;
+      cncPortDecodedSampleCacheStats.hits += 1;
+      return cached;
+    }
+    if (!Number(payload?.dataPtr ?? 0)) {
+      // Key-only start (worker skipped the byte copy) after this side evicted
+      // the entry: notify the drop so the next start re-sends bytes. This one
+      // play is skipped — evictions target least-recently-used entries, so a
+      // just-replayed sample is essentially never the victim.
+      cncPortDecodedSampleCacheStats.dedupeMisses += 1;
+      notifyMssCacheDrop([transportKey]);
+      throw new Error(`MSS dedupe miss: decoded cache no longer holds ${transportKey}`);
+    }
+  }
   const { dataPtr, riffSize } = mssSampleWaveRange(payload, heapu8);
-  const key = mssSampleCacheKey(heapu8, dataPtr, riffSize);
+  const key = transportKey ?? mssSampleCacheKey(heapu8, dataPtr, riffSize);
   let entry = cncPortDecodedSampleCache.get(key);
   if (entry) {
     // Map preserves insertion order; re-insert to keep LRU eviction honest.
@@ -2283,12 +2487,17 @@ function getOrDecodeMssSampleBuffer(context, payload, heapu8) {
   };
   cncPortDecodedSampleCache.set(key, entry);
   cncPortDecodedSampleCacheBytes += entry.decodedFloatBytes;
+  const evictedKeys = [];
   while (cncPortDecodedSampleCacheBytes > CNC_PORT_DECODED_SAMPLE_CACHE_MAX_BYTES
       && cncPortDecodedSampleCache.size > 1) {
     const oldest = cncPortDecodedSampleCache.entries().next().value;
     cncPortDecodedSampleCache.delete(oldest[0]);
     cncPortDecodedSampleCacheBytes -= oldest[1].decodedFloatBytes;
     cncPortDecodedSampleCacheStats.evictions += 1;
+    evictedKeys.push(oldest[0]);
+  }
+  if (evictedKeys.length > 0) {
+    notifyMssCacheDrop(evictedKeys);
   }
   return entry;
 }
@@ -2826,6 +3035,7 @@ const browserMssStreamPlaybackRuntime = {
   lastEvent: null,
   lastVolumeUpdate: null,
   lastError: null,
+  lastArchiveError: null,
 };
 
 function resetBrowserMssStreamPlaybackRuntime() {
@@ -2876,6 +3086,41 @@ function cncPortMssStreamVolumePan(payload) {
     active.pan = pan;
   }
   return true;
+}
+
+// ---- threaded OPFS archive reads for the MSS stream path -------------------
+// In threaded mode the archive bytes live on OPFS (0-byte MEMFS markers only),
+// so the stream-file hunt below cannot fs.readFile them. The staged
+// FileSystemSyncAccessHandle objects live in the ENGINE realm; the
+// "opfsReadRange" realm command (engine_realm_boot.mjs) reads ranges there
+// and transfers the bytes back. The parsed BIG directory is cached per
+// archive so each stream start costs exactly one range read for the payload.
+const mssStreamArchiveDirectoryCache = new Map(); // archive memfs path -> entries[]
+
+async function opfsRealmReadRange(path, offset, length) {
+  if (!threadedEngine) {
+    throw new Error("opfsReadRange requires threaded mode");
+  }
+  const reply = await threadedEngine.sendCommand(
+    { cmd: "opfsReadRange", path, offset, length },
+    { timeoutMs: 120000 },
+  );
+  if (reply?.ok !== true) {
+    throw new Error(reply?.error ?? `opfsReadRange failed for ${path}`);
+  }
+  return reply; // { size, bytes }
+}
+
+async function openOpfsArchiveReader(path) {
+  const stat = await opfsRealmReadRange(path, 0, 0);
+  return {
+    size: Number(stat.size ?? 0),
+    async readAt(position, length) {
+      const reply = await opfsRealmReadRange(path, position, length);
+      return reply.bytes instanceof Uint8Array ? reply.bytes : new Uint8Array(0);
+    },
+    close() {},
+  };
 }
 
 function normalizeBrowserAudioLookupPath(path) {
@@ -2946,7 +3191,15 @@ async function _startMssStreamAsync(payload) {
 
   // Search mounted audio archives for the stream file.
   const normalizedFilename = normalizeBrowserAudioLookupPath(filename);
+  const entryMatchesFilename = (candidate) => {
+    const c = normalizeBrowserAudioLookupPath(candidate.normalizedPath);
+    return (
+      c === normalizedFilename ||
+      c.endsWith("\\" + normalizedFilename)
+    );
+  };
   let archiveBytes = null;
+  let opfsPayloadBytes = null;
   let entry = null;
 
   for (const mounted of harnessState.mountedArchives) {
@@ -2954,27 +3207,50 @@ async function _startMssStreamAsync(payload) {
       continue;
     }
     try {
-      archiveBytes = wasmModule.fs.readFile(mounted.path);
-      const entries = readBigDirectoryFromBytes(archiveBytes, mounted.name);
-      entry = entries.find((candidate) => {
-        const c = normalizeBrowserAudioLookupPath(candidate.normalizedPath);
-        return (
-          c === normalizedFilename ||
-          c.endsWith("\\" + normalizedFilename)
-        );
-      });
-      if (entry) break;
-    } catch { /* skip unreadable archive */ }
+      if (mounted.opfsPath) {
+        // Threaded OPFS mount: the bytes never entered MEMFS. Parse (and
+        // cache) the BIG directory through realm-port range reads against the
+        // staged sync-access handles, then read just the entry payload.
+        let entries = mssStreamArchiveDirectoryCache.get(mounted.path);
+        if (!entries) {
+          const reader = await openOpfsArchiveReader(mounted.path);
+          entries = await readBigDirectoryFromReader(reader, mounted.name);
+          mssStreamArchiveDirectoryCache.set(mounted.path, entries);
+        }
+        entry = entries.find(entryMatchesFilename) ?? null;
+        if (entry) {
+          const range = await opfsRealmReadRange(mounted.path, entry.offset, entry.size);
+          opfsPayloadBytes = range.bytes instanceof Uint8Array ? range.bytes : null;
+          if (!opfsPayloadBytes || opfsPayloadBytes.byteLength !== entry.size) {
+            throw new Error(`OPFS stream payload short read for ${entry.path}`);
+          }
+          break;
+        }
+      } else {
+        archiveBytes = wasmModule.fs.readFile(mounted.path);
+        const entries = readBigDirectoryFromBytes(archiveBytes, mounted.name);
+        entry = entries.find(entryMatchesFilename) ?? null;
+        if (entry) break;
+      }
+    } catch (archiveError) {
+      // Skip unreadable archive, but keep the reason visible for diagnostics.
+      browserMssStreamPlaybackRuntime.lastArchiveError = {
+        archive: mounted.name,
+        error: archiveError?.message ?? String(archiveError),
+      };
+      entry = null;
+    }
   }
 
-  if (!entry || !archiveBytes) {
+  if (!entry || (!archiveBytes && !opfsPayloadBytes)) {
     browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
     browserMssStreamPlaybackRuntime.lastError =
       `Stream file not found in any mounted archive: ${filename}`;
     return;
   }
 
-  const payloadBytes = archiveBytes.subarray(entry.offset, entry.offset + entry.size);
+  const payloadBytes = opfsPayloadBytes
+    ?? archiveBytes.subarray(entry.offset, entry.offset + entry.size);
 
   let decoded;
   try {
@@ -4910,12 +5186,14 @@ function openMountedArchiveReader(fs, path) {
 // directory through bounded chunked reads (same strategy as
 // extractBigEntryFromUrl's range fetches) instead of requiring the whole
 // archive in memory. Semantics and error messages mirror
-// readBigDirectoryFromBytes.
-function readBigDirectoryFromReader(reader, archiveName) {
+// readBigDirectoryFromBytes. Async so readers may be remote (the threaded
+// OPFS realm reader awaits port round trips); MEMFS readers return plain
+// values and are unaffected by the awaits.
+async function readBigDirectoryFromReader(reader, archiveName) {
   if (reader.size < 16) {
     throw new Error(`${archiveName} is too small to be a BIGF archive`);
   }
-  const header = reader.readAt(0, 16);
+  const header = await reader.readAt(0, 16);
   const magic = String.fromCharCode(...header.subarray(0, 4));
   if (magic !== "BIGF") {
     throw new Error(`${archiveName} is not a BIGF archive`);
@@ -4933,13 +5211,13 @@ function readBigDirectoryFromReader(reader, archiveName) {
   const directoryCapacity = reader.size - directoryStart;
   let directoryBytes = new Uint8Array(0);
 
-  const ensureDirectoryBytes = (requiredLength, failureMessage) => {
+  const ensureDirectoryBytes = async (requiredLength, failureMessage) => {
     while (directoryBytes.byteLength < requiredLength) {
       if (directoryBytes.byteLength >= directoryCapacity) {
         throw new Error(failureMessage);
       }
       const start = directoryStart + directoryBytes.byteLength;
-      const next = reader.readAt(start, Math.min(chunkSize, reader.size - start));
+      const next = await reader.readAt(start, Math.min(chunkSize, reader.size - start));
       if (next.byteLength === 0) {
         throw new Error(failureMessage);
       }
@@ -4949,7 +5227,7 @@ function readBigDirectoryFromReader(reader, archiveName) {
 
   let cursor = 0;
   for (let index = 0; index < entryCount; ++index) {
-    ensureDirectoryBytes(cursor + 9, `${archiveName} BIGF directory ended before entry ${index}`);
+    await ensureDirectoryBytes(cursor + 9, `${archiveName} BIGF directory ended before entry ${index}`);
     const offset = readBigUInt32BE(directoryBytes, cursor);
     const size = readBigUInt32BE(directoryBytes, cursor + 4);
     const pathStart = cursor + 8;
@@ -4961,7 +5239,7 @@ function readBigDirectoryFromReader(reader, archiveName) {
       if (pathEnd < directoryBytes.byteLength) {
         break;
       }
-      ensureDirectoryBytes(
+      await ensureDirectoryBytes(
         directoryBytes.byteLength + 1,
         `${archiveName} BIGF entry ${index} has no terminator`,
       );
@@ -6931,7 +7209,7 @@ async function buildAudioPayloadInventoryWithReaders(wasmModule, archives, openA
 
     let entries;
     try {
-      entries = readBigDirectoryFromReader(reader, archive.name);
+      entries = await readBigDirectoryFromReader(reader, archive.name);
     } catch (error) {
       return {
         ok: false,

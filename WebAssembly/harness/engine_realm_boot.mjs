@@ -68,15 +68,24 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
   // ("attachMainPort", sent right after setupDone) pins it as the standing
   // post channel. Until then fall back to the default worker channel tagged
   // for emscripten's silent 'setimmediate' branch.
-  let postToMain = (payload) => {
+  let postToMain = (payload, transfer) => {
     try {
-      self.postMessage({ target: "setimmediate", __cncRealm: payload });
+      self.postMessage({ target: "setimmediate", __cncRealm: payload }, transfer ?? []);
     } catch (_error) {
       // Nothing useful to do from the worker realm.
     }
   };
 
   // ---- D3D8 executor in this realm ------------------------------------------
+  // Shader tier: the executor's d3d8ShaderTierQuery reads the page URL and
+  // localStorage — neither exists in this realm — so bridge.js resolves the
+  // tier main-side (threadedWorkerShaderTier) and passes it through the setup
+  // options; the forced global wins over the query's URL/localStorage checks.
+  // Must be set BEFORE the executor is constructed (the tier is sampled once
+  // at D3D8 device create).
+  if (opts.shaderTier === "ps11" || opts.shaderTier === "ff") {
+    globalThis.__cncD3D8ShaderTier = opts.shaderTier;
+  }
   const realmState = {
     canvas: { width: canvas.width, height: canvas.height },
     graphics: {},
@@ -139,12 +148,9 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
   ];
   const MSS_SAMPLE_DATA_HOOKS = new Set(["cncPortMssSampleStart", "cncPortMss3DSampleStart"]);
 
-  function copySampleWaveBytes(payload) {
-    // Mirror bridge.js mssSampleWaveRange validation, then copy the RIFF out
-    // of the (fresh, this realm grows its own views) wasm heap. The copy is
-    // PADDED with 4 lead bytes and dataPtr rewritten to 4 so the main-side
-    // body's `!dataPtr` pointer-validity guard and all dataPtr-relative reads
-    // keep working unchanged against the small transferred buffer.
+  function sampleWaveRange(payload) {
+    // Mirror bridge.js mssSampleWaveRange validation against the (fresh, this
+    // realm grows its own views) wasm heap.
     const heapu8 = Module.HEAPU8;
     const dataPtr = Number(payload?.dataPtr ?? 0) >>> 0;
     if (!dataPtr || !(heapu8 instanceof Uint8Array) || dataPtr + 12 > heapu8.byteLength) {
@@ -157,9 +163,36 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     if (riffSize < 44 || riffSize > 64 * 1024 * 1024 || dataPtr + riffSize > heapu8.byteLength) {
       return null;
     }
-    const copy = new Uint8Array(4 + riffSize);
-    copy.set(heapu8.subarray(dataPtr, dataPtr + riffSize), 4);
-    return copy;
+    return { heapu8, dataPtr, riffSize };
+  }
+
+  // Content-key dedupe for the per-start RIFF copies (P1c follow-up (g)):
+  // gameplay replays the same payloads constantly and main-side keeps a
+  // content-keyed decoded AudioBuffer cache (bridge.js
+  // cncPortDecodedSampleCache), so after the first send the key alone is
+  // enough. SAME algorithm as bridge.js mssSampleCacheKey so both sides
+  // derive identical keys from identical bytes. Main notifies decode-cache
+  // evictions (and failed caches) back via {cmd:"mssCacheDrop", keys}; a
+  // dropped key re-sends bytes on its next start.
+  const mssSentKeys = new Set();
+  const mssForwardStats = { starts: 0, copies: 0, bytesCopied: 0, dedupeSkips: 0 };
+
+  function mssSampleCacheKey(heapu8, dataPtr, riffSize) {
+    let hash = 0x811c9dc5;
+    const headEnd = dataPtr + Math.min(64, riffSize);
+    for (let i = dataPtr; i < headEnd; i += 1) {
+      hash = Math.imul(hash ^ heapu8[i], 0x01000193);
+    }
+    const windows = 64;
+    const stride = Math.max(4, Math.floor(riffSize / windows));
+    for (let offset = 64; offset + 4 <= riffSize; offset += stride) {
+      const base = dataPtr + offset;
+      hash = Math.imul(hash ^ heapu8[base], 0x01000193);
+      hash = Math.imul(hash ^ heapu8[base + 1], 0x01000193);
+      hash = Math.imul(hash ^ heapu8[base + 2], 0x01000193);
+      hash = Math.imul(hash ^ heapu8[base + 3], 0x01000193);
+    }
+    return `${riffSize}:${hash >>> 0}`;
   }
 
   for (const hook of MSS_HOOKS) {
@@ -167,15 +200,36 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
       const message = { cmd: "mss", hook, payload: payload ?? null };
       let transfer;
       if (MSS_SAMPLE_DATA_HOOKS.has(hook)) {
-        const copy = copySampleWaveBytes(payload);
-        if (copy) {
-          message.payload = { ...payload, dataPtr: 4 };
-          message.bytes = copy;
-          transfer = [copy.buffer];
+        mssForwardStats.starts += 1;
+        const range = sampleWaveRange(payload);
+        if (range) {
+          const key = mssSampleCacheKey(range.heapu8, range.dataPtr, range.riffSize);
+          if (mssSentKeys.has(key)) {
+            // Key-only start: main's decoded cache already holds this
+            // payload. dataPtr 0 marks "no bytes on purpose" (main falls back
+            // to a drop-notify + one skipped play if it evicted the entry).
+            message.payload = { ...payload, dataPtr: 0, cacheKey: key };
+            mssForwardStats.dedupeSkips += 1;
+          } else {
+            // First send: copy the RIFF out of the heap (the C++ Miles shim
+            // mallocs a fresh PCM buffer per start and may free it before
+            // main handles the async message). The copy is PADDED with 4
+            // lead bytes and dataPtr rewritten to 4 so the main-side body's
+            // `!dataPtr` guard and dataPtr-relative reads keep working
+            // unchanged against the small transferred buffer.
+            const copy = new Uint8Array(4 + range.riffSize);
+            copy.set(range.heapu8.subarray(range.dataPtr, range.dataPtr + range.riffSize), 4);
+            message.payload = { ...payload, dataPtr: 4, cacheKey: key };
+            message.bytes = copy;
+            transfer = [copy.buffer];
+            mssSentKeys.add(key);
+            mssForwardStats.copies += 1;
+            mssForwardStats.bytesCopied += copy.byteLength;
+          }
         }
-        // On copy failure keep the original pointer: main will attempt the
-        // shared-heap read and surface the same validation error the
-        // non-threaded path would.
+        // On range-validation failure keep the original pointer: main will
+        // attempt the shared-heap read and surface the same validation error
+        // the non-threaded path would.
       }
       try {
         postToMain(message, transfer);
@@ -547,6 +601,8 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
       contextLost: typeof d3d8Diag?.webglContextLost === "function"
         ? d3d8Diag.webglContextLost() === true
         : false,
+      shaderTier: realmState.graphics?.d3d8ShaderTier ?? null,
+      mssForward: { ...mssForwardStats },
       recentLogs: logs.slice(-5),
     };
   }
@@ -686,6 +742,115 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
               error: String((error && error.stack) || error),
             });
           });
+        return;
+      }
+      case "mssCacheDrop": {
+        // Main-side decoded-sample cache dropped these keys (LRU eviction or
+        // a start that failed to cache) — re-send bytes on their next start.
+        for (const key of Array.isArray(msg.keys) ? msg.keys : []) {
+          mssSentKeys.delete(key);
+        }
+        return; // fire-and-forget (no id)
+      }
+      case "textureInventory": {
+        // Mirror of bridge.js's non-threaded d3d8TextureInventory handler —
+        // the executor's live-texture map exists only in THIS realm in
+        // threaded mode. Read-only JS + GL sampling; no wasm calls, so it is
+        // safe whether or not the pthread is live yet.
+        try {
+          const requestedSizes = Array.isArray(msg.sizes)
+            ? new Set(msg.sizes.map((size) => String(size)))
+            : new Set(["1024x256"]);
+          const sampleLimit = Math.max(0, Math.min(256, Number(msg.sampleLimit ?? 4) >>> 0));
+          const inventory = {};
+          for (const [texId, res] of d3d8Diag.d3d8Textures.entries()) {
+            const key = `${res.width}x${res.height}`;
+            if (!inventory[key]) {
+              inventory[key] = { count: 0, samples: [] };
+            }
+            inventory[key].count += 1;
+            if (requestedSizes.has(key) && inventory[key].samples.length < sampleLimit) {
+              const ready = Boolean(res.initializedLevels?.has("0"));
+              const centerX = Math.max(0, Math.min(res.width - 1, Math.floor(res.width / 2)));
+              const centerY = Math.max(0, Math.min(res.height - 1, Math.floor(res.height / 2)));
+              const cornerX = Math.max(0, Math.min(res.width - 1, 4));
+              const cornerY = Math.max(0, Math.min(res.height - 1, 4));
+              const lowerX = Math.max(0, Math.min(res.width - 1, Math.floor(res.width * 0.78)));
+              const lowerY = Math.max(0, Math.min(res.height - 1, Math.floor(res.height * 0.62)));
+              inventory[key].samples.push({
+                id: texId,
+                uploads: res.uploads ?? 0,
+                ready,
+                format: res.format,
+                pool: res.pool,
+                usage: res.usage,
+                centerPixel: ready
+                  ? d3d8Diag.sampleD3D8TexturePixel(res, centerX, centerY)
+                  : null,
+                cornerPixels: ready
+                  ? [
+                    d3d8Diag.sampleD3D8TexturePixel(res, cornerX, cornerY),
+                    d3d8Diag.sampleD3D8TexturePixel(res, lowerX, lowerY),
+                  ]
+                  : null,
+              });
+            }
+          }
+          respond({
+            cmd: "textureInventoryResult",
+            id: msg.id,
+            ok: true,
+            inventory,
+            liveCount: d3d8Diag.d3d8Textures.size,
+          });
+        } catch (error) {
+          respond({
+            cmd: "textureInventoryResult",
+            id: msg.id,
+            ok: false,
+            error: String((error && error.stack) || error),
+          });
+        }
+        return;
+      }
+      case "opfsReadRange": {
+        // Read [offset, offset+length) of a staged OPFS archive in THIS realm
+        // — the sync access handles live here and reads are stateless {at}.
+        // Serves bridge.js's MSS stream path (music/speech): in threaded mode
+        // the archive bytes are on OPFS, not MEMFS. length 0 = stat (size
+        // only). Pure JS + OPFS, safe before the pthread is live.
+        try {
+          const registry = globalThis.__cncOpfsRegistry;
+          const entry = registry?.files?.get(String(msg.path ?? ""));
+          if (!entry) {
+            respond({
+              cmd: "opfsReadRangeResult",
+              id: msg.id,
+              ok: false,
+              error: `no staged OPFS handle for ${msg.path}`,
+            });
+            return;
+          }
+          const offset = Math.max(0, Math.floor(Number(msg.offset ?? 0)));
+          const length = Math.max(0, Math.floor(Number(msg.length ?? 0)));
+          const wanted = Math.max(0, Math.min(length, entry.size - offset));
+          const bytes = new Uint8Array(wanted);
+          const read = wanted > 0 ? entry.handle.read(bytes, { at: offset }) : 0;
+          respond({
+            cmd: "opfsReadRangeResult",
+            id: msg.id,
+            ok: true,
+            size: entry.size,
+            bytes: read === wanted ? bytes : bytes.subarray(0, read),
+          }, [bytes.buffer]);
+        } catch (error) {
+          respond({
+            cmd: "opfsReadRangeResult",
+            id: msg.id,
+            ok: false,
+            error: String((error && error.stack) || error),
+          });
+        }
         return;
       }
       case "startLoop":
