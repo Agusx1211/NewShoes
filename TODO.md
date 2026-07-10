@@ -4027,3 +4027,14 @@ and then start with the PROFILE, not with any individual fix.
 - [ ] Track which original files are compiled, shimmed, or re-targeted (avoid
       accidental rewrites of platform-independent logic — see the hard rules).
 - [ ] Record every browser-API bridge so the original-vs-port boundary stays clear.
+
+### OWNER DIRECTIVE (2026-07-10): fully migrate to the engine-thread path
+Threaded becomes the DEFAULT in play.html ("we want the feeling and
+efficiency"); `?threads=0` stays only as a transition escape hatch, then the
+legacy machinery is deleted. Order: (1) close threaded gaps — Bink video
+hooks in the engine realm, audio parity verified, full RPC routing (state
+fields, resolution change, save/load IDBFS, issue dumps, shader tier);
+(2) Metal-verify boot+skirmish+pacing (60/30) on cnc-gpu via harness;
+(3) flip default + deploy; (4) owner confirms; (5) delete MEMFS mount
+pipeline, io-worker full transfers, range-backed path (with legacy-smoke
+burn-down), stepped-load-as-correctness. See notes/p1-engine-thread.md.
