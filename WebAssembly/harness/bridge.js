@@ -7286,6 +7286,16 @@ async function fetchArchiveBytesOffThread(url, onProgress = null) {
   return new Uint8Array(response.bytes);
 }
 
+// P2 "OPFS as the disk" (threaded mode): stream one archive straight into an
+// OPFS file on the IO worker. The bytes are NEVER RAM-resident anywhere —
+// each fetch chunk is written through a FileSystemSyncAccessHandle as it
+// arrives — and the worker's streamed progress messages keep feeding the
+// play UI exactly like fetchArchive. Resolves { bytesWritten, status }.
+async function fetchArchiveToOpfsOffThread(url, opfsPath, onProgress = null) {
+  const response = await ioWorkerRequest({ kind: "fetchToOpfs", url, opfsPath }, [], onProgress);
+  return { bytesWritten: Number(response.bytesWritten), status: response.status };
+}
+
 // Archive mount progress -> page UI. The mount path publishes coarse
 // per-archive progress (streamed fetch bytes, the blocking memfs write, and
 // completion) as a DOM CustomEvent so play.html can render a real loading bar
@@ -8893,6 +8903,235 @@ async function mountArchive(payload = {}) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// P2 threaded mount path: archives live on OPFS, not MEMFS (design:
+// notes/p1-engine-thread.md "P2-prep results"; IDEAS.md "the browser as a
+// 2003 PC"). In threaded mode every archive is streamed fetch->OPFS on the
+// IO worker (never RAM-resident), a 0-byte MEMFS MARKER file is created at
+// the engine path (FindFirstFile's *.big enumeration walks MEMFS via
+// readdir+stat; open() is then intercepted to OPFS by the shims/io.h seam in
+// src/wasm_opfs_files.cpp), and the {enginePath -> opfsPath} map is staged
+// in the ENGINE pthread's realm (opfs_realm_files.mjs pre-opens the sync
+// access handles) BEFORE the engine pthread spawns — the async handle opens
+// need the pool worker's free event loop (P1a ordering rule), which awaiting
+// the staging round trip here guarantees: play.html only calls
+// realEngineInit (boot+go) after the mount resolves.
+//
+// No cache/skip layer (owner rule): OPFS is the read disk, every boot
+// re-streams the archive set (fetchToOpfs truncates + rewrites in place, so
+// disk usage stays bounded at one archive set).
+//
+// The non-threaded path is untouched: opfsArchiveMountEnabled() is false
+// outside ?threads=1, and ?opfsmount=0 (window.__cncOpfsMount = false)
+// forces the MEMFS mount even in threaded mode (A/B memory comparison).
+const OPFS_ARCHIVE_ROOT = "cnc-archives";
+const opfsRegisteredPrefixes = new Set();
+
+function opfsArchiveMountEnabled() {
+  if (!cncPortThreadedMode || !threadedEngine) {
+    return false;
+  }
+  try {
+    if (globalThis.__cncOpfsMount === false) {
+      return false; // page opt-out: keep the MEMFS threaded mount
+    }
+  } catch (_error) {
+    // no override available
+  }
+  // fetchToOpfs needs the IO worker (sync access handles are worker-only);
+  // without it the MEMFS mount path below still works in threaded mode.
+  return ioWorkerEnabled();
+}
+
+function opfsPathForArchive(memfsPath) {
+  return `${OPFS_ARCHIVE_ROOT}${memfsPath}`;
+}
+
+// Register the fd-intercept prefix (process-global wasm state). Pre-boot the
+// main thread still owns the wasm (exactly like the MEMFS mount's FS
+// writes); once the engine thread runs, the call routes through the engine
+// realm instead — main never calls wasm exports in threaded mode after boot.
+async function registerOpfsInterceptPrefix(prefix) {
+  if (opfsRegisteredPrefixes.has(prefix)) {
+    return { ok: true };
+  }
+  let rc;
+  if (threadedEngine.engineThreadStarted) {
+    rc = await threadedEngine.engineCall(
+      "cnc_port_opfs_register_prefix", "number", ["string"], [prefix], { parseJson: false });
+  } else {
+    rc = cncPortEmscriptenModule.cwrap(
+      "cnc_port_opfs_register_prefix", "number", ["string"])(prefix);
+  }
+  if (!(Number(rc) >= 1)) {
+    return { ok: false, error: `cnc_port_opfs_register_prefix(${prefix}) rc=${rc}` };
+  }
+  opfsRegisteredPrefixes.add(prefix);
+  return { ok: true };
+}
+
+async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirectory) {
+  const emitProgressEvents = payload.progressEvents !== false;
+  const parsedArchives = archiveInputs.map((input) => archivePathFromPayload(input, baseDirectory));
+  const parseError = parsedArchives.find((archive) => archive.error);
+  if (parseError) {
+    return { ok: false, command: "mountArchives", error: parseError.error };
+  }
+
+  // The staging command rides the realm port — realm prep must be complete.
+  await threadedEngine.ensureReady();
+
+  // Bounded-parallel streamed downloads (same fetch parallelism as the MEMFS
+  // pipeline); there is no sequential write phase, so archives complete in
+  // whatever order the network delivers while `results` keeps input order.
+  const parallelism = Math.max(1, Math.min(archiveFetchParallelism(), parsedArchives.length));
+  const results = new Array(parsedArchives.length).fill(null);
+  let nextDownloadIndex = 0;
+  const downloadWorker = async () => {
+    for (;;) {
+      const index = nextDownloadIndex++;
+      if (index >= parsedArchives.length) {
+        return;
+      }
+      const archive = parsedArchives[index];
+      const progressContext = { index, count: parsedArchives.length };
+      const onProgress = emitProgressEvents
+        ? archiveFetchProgressReporter(archive, progressContext)
+        : null;
+      const opfsPath = opfsPathForArchive(archive.memfsPath);
+      try {
+        const { bytesWritten } = await fetchArchiveToOpfsOffThread(archive.url, opfsPath, onProgress);
+        results[index] = { bytesWritten, opfsPath };
+        if (emitProgressEvents) {
+          emitArchiveProgress({
+            phase: "done",
+            name: archive.name,
+            url: archive.url,
+            received: bytesWritten,
+            total: bytesWritten,
+            ...progressContext,
+          });
+        }
+      } catch (error) {
+        results[index] = {
+          error: `${archive.name} fetchToOpfs failed: ${error?.message ?? String(error)}`,
+        };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: parallelism }, downloadWorker));
+
+  const archives = [];
+  const stageMap = {};
+  for (let index = 0; index < parsedArchives.length; index += 1) {
+    const parsed = parsedArchives[index];
+    const result = results[index];
+    if (!result || result.error) {
+      return {
+        ok: false,
+        command: "mountArchives",
+        error: result?.error ?? `${parsed.name} download did not complete`,
+        archives,
+      };
+    }
+    // 0-byte MEMFS marker at the engine path (directory-enumeration
+    // contract, proven by probe:p2-opfs). Known caveat: stat/getFileInfo see
+    // size 0 / mtime 0 — cover the stat path in the intercept if something
+    // is proven to care.
+    ensureMemfsDirectory(wasmModule.fs, parentDirectory(parsed.memfsPath));
+    wasmModule.fs.writeFile(parsed.memfsPath, new Uint8Array(0));
+    stageMap[parsed.memfsPath] = result.opfsPath;
+    const input = archiveInputs[index];
+    const expectedBytes = Number(input.expectedBytes ?? input.bytes ?? result.bytesWritten);
+    archives.push({
+      name: parsed.name,
+      sourceName: String(input.sourceName ?? parsed.name),
+      path: parsed.memfsPath,
+      bytes: result.bytesWritten,
+      reader: "io-worker fetchToOpfs",
+      opfsPath: result.opfsPath,
+      expectedBytes,
+      bytesMatch: result.bytesWritten === expectedBytes,
+    });
+  }
+
+  const prefix = baseDirectory.endsWith("/") ? baseDirectory : `${baseDirectory}/`;
+  const registered = await registerOpfsInterceptPrefix(prefix);
+  if (!registered.ok) {
+    return { ok: false, command: "mountArchives", error: registered.error, archives };
+  }
+
+  let staging = null;
+  try {
+    staging = await threadedEngine.sendCommand(
+      { cmd: "stageOpfsFiles", map: stageMap },
+      { timeoutMs: 120000 },
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      command: "mountArchives",
+      error: `OPFS realm staging failed: ${error?.message ?? String(error)}`,
+      archives,
+    };
+  }
+  if (staging?.ok !== true) {
+    return {
+      ok: false,
+      command: "mountArchives",
+      error: `OPFS realm staging failed: ${staging?.error ?? "unknown"}`,
+      archives,
+    };
+  }
+
+  rememberMountedArchives(archives);
+  // The archive bytes never enter MEMFS, so the main-side audio payload
+  // inventory scan (diagnostics consumed by state snapshots and the
+  // non-threaded runtime-archives smoke) cannot read them here; mark it
+  // skipped explicitly instead of failing it with a confusing read error.
+  harnessState.audioPayloadInventory = {
+    ok: false,
+    skipped: true,
+    source: "threaded OPFS mounts",
+    error: "archive bytes live on OPFS in threaded mode; main-side inventory scan skipped",
+  };
+
+  // No probeArchive verification: the probe opens archives through the
+  // engine's C++ path on the MAIN thread, whose realm has no staged OPFS
+  // handles (it would read the 0-byte markers). Byte counts from the
+  // streamed writes + the engine's own init (which opens every archive on
+  // the engine thread) are the verification on this path.
+  const ok = archives.every((archive) => archive.bytesMatch);
+  const totalBytes = archives.reduce((sum, archive) => sum + archive.bytes, 0);
+  const archiveSet = {
+    path: baseDirectory,
+    probePath: `${baseDirectory}/*.big`,
+    archiveCount: archives.length,
+    totalBytes,
+    backing: "opfs",
+    stagedPaths: staging.stagedPaths ?? [],
+    archives,
+    probes: [],
+  };
+  if (ok) {
+    registerArchiveSet(wasmModule, archiveSet);
+  }
+
+  recordLog("archive set mounted (opfs)", {
+    path: baseDirectory,
+    archiveCount: archives.length,
+    totalBytes,
+    ok,
+  });
+
+  return {
+    ok,
+    command: "mountArchives",
+    state: snapshotState(),
+    archiveSet,
+  };
+}
+
 async function mountArchives(payload = {}) {
   const moduleResult = await getWasmModuleForArchives("mountArchives");
   if (moduleResult.error) {
@@ -8907,6 +9146,10 @@ async function mountArchives(payload = {}) {
   const baseDirectory = normalizeAssetDirectory(String(payload.path ?? "/assets/runtime"));
   if (!baseDirectory) {
     return { ok: false, command: "mountArchives", error: `Archive directory must stay under /assets/: ${payload.path}` };
+  }
+
+  if (opfsArchiveMountEnabled()) {
+    return mountArchivesToOpfs(moduleResult.wasmModule, payload, archiveInputs, baseDirectory);
   }
 
   // Bounded fetch-ahead pipeline: while archive N writes into MEMFS, archives

@@ -16,21 +16,29 @@
 //     cursor matches via state RPC; menu click -> screenshot delta); state
 //     RPCs round-trip.
 //
+// P2 addition: the threaded boot mounts archives onto OPFS by default (no
+// MEMFS residency); the gate asserts the OPFS-backed mount actually ran and
+// records main-thread memory (performance.memory + wasm memory size) in the
+// summary for the OPFS-vs-MEMFS comparison.
+//
 // Build first: npm run build:port:threaded  (and a dist/ build for the
 // reference run: npm run build:port). Run: node harness/threaded_play_gate.mjs
 //   SKIP_REFERENCE=1  skips the non-threaded reference boot (faster iteration)
+//   OPFS_MOUNT=0      boots the threaded page with ?opfsmount=0 (MEMFS mounts;
+//                     memory A/B comparison run — OPFS assertions skipped)
 // Screenshots: artifacts/screenshots/p1c-*.png
 
 import { chromium } from "playwright";
 import { startStaticServer } from "./static-server.mjs";
 import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
 const shotDir = resolve(wasmRoot, "artifacts/screenshots");
 const skipReference = process.env.SKIP_REFERENCE === "1";
+const memfsMounts = process.env.OPFS_MOUNT === "0";
 const BOOT_TIMEOUT_MS = Number(process.env.BOOT_TIMEOUT_MS ?? 15 * 60 * 1000);
 // Post-boot settle before the title capture: the main-menu fade-in advances
 // per RENDERED frame, so slow SwiftShader runs need tens of seconds before
@@ -66,7 +74,7 @@ async function captureViewport(page, path) {
 }
 
 async function bootPlayPage(browser, url, label, consoleLines) {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  const page = await browser.newPage();
   // The non-threaded page saturates its main thread once the engine loop
   // runs; give Playwright actions a generous budget.
   page.setDefaultTimeout(120000);
@@ -115,7 +123,19 @@ async function bootPlayPage(browser, url, label, consoleLines) {
 async function main() {
   await mkdir(shotDir, { recursive: true });
   const server = await startStaticServer({ root: wasmRoot, port: 0, host: "127.0.0.1" });
-  const browser = await chromium.launch();
+  // PERSISTENT context (fresh profile per run), not chromium.launch():
+  // launch() contexts are incognito-like and their OPFS is backed by an
+  // in-memory filesystem that fails writes with base::File NO_SPACE (write()
+  // returns 2^32-8) at ~1.25GiB on this box — smaller than the archive set.
+  // A persistent profile gets the real disk-backed quota, matching how the
+  // owner's Chrome runs the page. The profile is deleted first so every run
+  // still starts with an empty OPFS (no cache layers).
+  const profileDir = resolve(wasmRoot, "artifacts/pw-profiles/threaded-play-gate");
+  await rm(profileDir, { recursive: true, force: true });
+  await mkdir(profileDir, { recursive: true });
+  const browser = await chromium.launchPersistentContext(profileDir, {
+    viewport: { width: 1280, height: 800 },
+  });
   const consoleLines = [];
   const summary = {};
   const checks = [];
@@ -141,16 +161,60 @@ async function main() {
     }
 
     // ---------- threaded boot (GATE B) ----------
-    log("booting THREADED (dist-threaded, engine on pthread)...");
+    const threadedQuery = memfsMounts
+      ? "harness/play.html?autostart=1&threads=1&opfsmount=0"
+      : "harness/play.html?autostart=1&threads=1";
+    log(`booting THREADED (dist-threaded, engine on pthread, ${memfsMounts ? "MEMFS" : "OPFS"} mounts)...`);
     const bootStartedAt = Date.now();
     const page = await bootPlayPage(
       browser,
-      new URL("harness/play.html?autostart=1&threads=1", server.url).href,
+      new URL(threadedQuery, server.url).href,
       "thr",
       consoleLines,
     );
     summary.threadedBootMs = Date.now() - bootStartedAt;
+    summary.archiveBacking = memfsMounts ? "memfs" : "opfs";
     log(`threaded boot reached title in ${(summary.threadedBootMs / 1000).toFixed(1)}s`);
+
+    // Archive backing + main-thread memory (the P2 payoff measurement):
+    // MEMFS mounts keep every archive byte resident in the wasm heap (the
+    // SharedArrayBuffer grows to hold them); OPFS mounts leave them on disk.
+    const mountInfo = await page.evaluate(() => {
+      const mounted = window.CnCPort?.state?.mountedArchives ?? [];
+      const module = window.CnCPort?.engineModule?.();
+      const perfMemory = performance.memory
+        ? {
+          usedJSHeapSize: performance.memory.usedJSHeapSize,
+          totalJSHeapSize: performance.memory.totalJSHeapSize,
+        }
+        : null;
+      return {
+        archives: mounted.map((archive) => ({
+          name: archive.name,
+          reader: archive.reader,
+          bytes: archive.bytes,
+          opfsPath: archive.opfsPath ?? null,
+        })),
+        wasmMemoryBytes: module?.wasmMemory?.buffer?.byteLength ?? null,
+        perfMemory,
+      };
+    });
+    summary.mountedArchives = mountInfo.archives.length;
+    summary.memory = {
+      wasmMemoryBytes: mountInfo.wasmMemoryBytes,
+      wasmMemoryGiB: mountInfo.wasmMemoryBytes != null
+        ? Number((mountInfo.wasmMemoryBytes / 1024 ** 3).toFixed(2)) : null,
+      perfMemory: mountInfo.perfMemory,
+    };
+    log(`post-boot memory: wasm ${summary.memory.wasmMemoryGiB ?? "?"} GiB, `
+      + `js used ${mountInfo.perfMemory ? (mountInfo.perfMemory.usedJSHeapSize / 1024 ** 2).toFixed(0) : "?"} MiB`);
+    if (!memfsMounts) {
+      const opfsBacked = mountInfo.archives.length > 0
+        && mountInfo.archives.every((archive) =>
+          archive.reader === "io-worker fetchToOpfs" && archive.opfsPath);
+      summary.opfsBackedMount = opfsBacked;
+      checks.push(["threaded mount is OPFS-backed (no MEMFS archive bytes)", opfsBacked]);
+    }
 
     const initState = await page.evaluate(() => ({
       threadedMode: window.CnCPort?.state?.threadedMode === true,

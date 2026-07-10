@@ -1,7 +1,9 @@
 // opfs_realm_files.mjs — realm-side OPFS file registry (P2 "OPFS as the
-// disk"; lane P2-prep). Imported INTO A WORKER REALM (the engine pthread's
-// realm) via the threads_realm_stub `setup` command; its default export
-// matches the stub's executor contract: default({ canvas, Module, realm }).
+// disk"). Imported INTO A WORKER REALM (the engine pthread's realm) either
+// directly via the threads_realm_stub `setup` command (the p2_opfs_probe
+// path; its default export matches the stub's executor contract:
+// default({ canvas, Module, realm })) or by engine_realm_boot.mjs's
+// "stageOpfsFiles" command (the play.html threaded mount path).
 //
 // It pre-opens FileSystemSyncAccessHandle objects (async — must happen while
 // the worker's event loop is free, i.e. BEFORE the engine/probe pthread is
@@ -10,18 +12,24 @@
 // src/wasm_opfs_files.cpp calls:
 //
 //   globalThis.__cncOpfsOpen(path)                 -> id (>=0) or -1
-//   globalThis.__cncOpfsSize(id)                   -> byte size
+//   globalThis.__cncOpfsSize(id)                   -> byte size (double)
 //   globalThis.__cncOpfsRead(id, destPtr, len, at) -> bytesRead
 //   globalThis.__cncOpfsClose(id)                  -> 0
 //
-// The path map rides the import URL's ?map= query (JSON), because the realm
-// stub's setup command forwards only { canvas, Module, realm } — and a
-// query-suffixed URL yields a fresh module instance per distinct map.
+// The path map rides the import URL's ?map= query (JSON): the realm stub's
+// setup command forwards only { canvas, Module, realm }, and a
+// query-suffixed URL yields a fresh module instance per distinct map. All
+// instances share ONE realm-global registry (globalThis.__cncOpfsRegistry),
+// so staging is cumulative: engine_realm_boot's setup import and any number
+// of later stageOpfsFiles imports merge into the same open-file table and
+// the hooks/diag/message-listener are installed exactly once.
 //
 // createSyncAccessHandle takes an EXCLUSIVE lock per OPFS file, so exactly
 // one handle is opened per opfsPath and all virtual opens of that path share
 // it — safe because every read is stateless (`read(view, { at })`), the C
-// side owns the per-fd position.
+// side owns the per-fd position. Closed virtual-open ids are recycled
+// through a free-list (the engine re-opens the archive for every inner-file
+// read, so the id table must not grow with session length).
 //
 // Heap views: a FRESH Uint8Array is built per read from the CURRENT wasm
 // memory buffer (growth of a shared memory mints a new SAB object; stale
@@ -56,29 +64,17 @@ async function resolveOpfsFileHandle(opfsPath) {
   return directory.getFileHandle(parts[parts.length - 1], { create: false });
 }
 
-export default async function setupOpfsRealmFiles({ Module }) {
-  if (!navigator.storage || typeof navigator.storage.getDirectory !== "function") {
-    throw new Error("OPFS unavailable in this realm (navigator.storage.getDirectory missing)");
-  }
-
-  const url = new URL(import.meta.url);
-  const map = JSON.parse(url.searchParams.get("map") || "{}");
-
-  // enginePath -> { handle, size }; pre-open every sync access handle now,
-  // while this worker's event loop is still free.
-  const files = new Map();
-  for (const [enginePath, opfsPath] of Object.entries(map)) {
-    const fileHandle = await resolveOpfsFileHandle(opfsPath);
-    if (typeof fileHandle.createSyncAccessHandle !== "function") {
-      throw new Error("createSyncAccessHandle unavailable in this realm (not a dedicated worker?)");
+function ensureRegistry(Module) {
+  let registry = globalThis.__cncOpfsRegistry;
+  if (registry) {
+    if (Module) {
+      registry.Module = Module;
     }
-    const handle = await fileHandle.createSyncAccessHandle();
-    files.set(enginePath, { handle, size: handle.getSize(), opfsPath });
+    return registry;
   }
 
-  const openIds = []; // id -> { handle, size } | null
   const diag = {
-    stagedPaths: [...files.keys()],
+    stagedPaths: [],
     opens: 0,
     openMisses: 0,
     reads: 0,
@@ -87,32 +83,45 @@ export default async function setupOpfsRealmFiles({ Module }) {
     readMode: null, // "shared-view" | "copy"
     errors: [],
   };
+  registry = {
+    Module,
+    files: new Map(), // enginePath -> { handle, size, opfsPath }
+    openIds: [], // id -> { handle, size } | null
+    freeIds: [], // recycled id slots
+    diag,
+  };
+  globalThis.__cncOpfsRegistry = registry;
 
   globalThis.__cncOpfsOpen = (path) => {
-    const entry = files.get(path);
+    const entry = registry.files.get(path);
     if (!entry) {
       diag.openMisses += 1;
       return -1;
     }
     diag.opens += 1;
-    openIds.push(entry);
-    return openIds.length - 1;
+    const recycled = registry.freeIds.pop();
+    if (recycled !== undefined) {
+      registry.openIds[recycled] = entry;
+      return recycled;
+    }
+    registry.openIds.push(entry);
+    return registry.openIds.length - 1;
   };
 
   globalThis.__cncOpfsSize = (id) => {
-    const entry = openIds[id];
+    const entry = registry.openIds[id];
     return entry ? entry.size : -1;
   };
 
   globalThis.__cncOpfsRead = (id, destPtr, len, at) => {
-    const entry = openIds[id];
+    const entry = registry.openIds[id];
     if (!entry || len < 0) {
       return -1;
     }
     if (len === 0) {
       return 0;
     }
-    const heap = currentHeapU8(Module);
+    const heap = currentHeapU8(registry.Module);
     if (!heap) {
       diag.errors.push("no heap view available");
       return -1;
@@ -150,8 +159,9 @@ export default async function setupOpfsRealmFiles({ Module }) {
   };
 
   globalThis.__cncOpfsClose = (id) => {
-    if (openIds[id]) {
-      openIds[id] = null;
+    if (registry.openIds[id]) {
+      registry.openIds[id] = null;
+      registry.freeIds.push(id);
       diag.closes += 1;
       return 0;
     }
@@ -178,7 +188,51 @@ export default async function setupOpfsRealmFiles({ Module }) {
     });
   });
 
+  return registry;
+}
+
+export default async function setupOpfsRealmFiles({ Module }) {
+  if (!navigator.storage || typeof navigator.storage.getDirectory !== "function") {
+    throw new Error("OPFS unavailable in this realm (navigator.storage.getDirectory missing)");
+  }
+
+  const registry = ensureRegistry(Module);
+
+  const url = new URL(import.meta.url);
+  const map = JSON.parse(url.searchParams.get("map") || "{}");
+
+  // Pre-open every sync access handle now, while this worker's event loop is
+  // still free. Cumulative: already-staged enginePaths with the same
+  // opfsPath are kept (their handle stays valid); a re-stage to a DIFFERENT
+  // opfsPath replaces the entry (old handle closed first — createSyncAccess-
+  // Handle would otherwise throw on the exclusive lock).
+  const stagedPaths = [];
+  for (const [enginePath, opfsPath] of Object.entries(map)) {
+    const existing = registry.files.get(enginePath);
+    if (existing) {
+      if (existing.opfsPath === opfsPath) {
+        stagedPaths.push(enginePath);
+        continue;
+      }
+      try {
+        existing.handle.close();
+      } catch {
+        // already closed
+      }
+      registry.files.delete(enginePath);
+    }
+    const fileHandle = await resolveOpfsFileHandle(opfsPath);
+    if (typeof fileHandle.createSyncAccessHandle !== "function") {
+      throw new Error("createSyncAccessHandle unavailable in this realm (not a dedicated worker?)");
+    }
+    const handle = await fileHandle.createSyncAccessHandle();
+    registry.files.set(enginePath, { handle, size: handle.getSize(), opfsPath });
+    stagedPaths.push(enginePath);
+  }
+  registry.diag.stagedPaths = [...registry.files.keys()];
+
   return {
     hooksInstalled: ["__cncOpfsOpen", "__cncOpfsSize", "__cncOpfsRead", "__cncOpfsClose"],
+    stagedPaths,
   };
 }

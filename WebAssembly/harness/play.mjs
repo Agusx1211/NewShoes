@@ -666,6 +666,12 @@ async function start() {
     if (queryParams.get("fetchpar") === "0") {
       window.__cncFetchParallel = false;
     }
+    // Threaded mode mounts archives onto OPFS (streamed fetch->disk, no
+    // MEMFS residency). Add ?opfsmount=0 to force the MEMFS mount even in
+    // threaded mode (memory A/B comparison / debugging).
+    if (queryParams.get("opfsmount") === "0") {
+      window.__cncOpfsMount = false;
+    }
 
     issueRecorder.setSessionContext({
       phase: "starting",

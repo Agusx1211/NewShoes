@@ -651,6 +651,43 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         });
         return;
       }
+      case "stageOpfsFiles": {
+        // P2 OPFS-as-disk staging: pre-open FileSystemSyncAccessHandle
+        // objects in THIS realm for an {enginePath -> opfsPath} map so the
+        // fd intercept in src/wasm_opfs_files.cpp can serve engine reads
+        // from OPFS. Pure JS + OPFS (no wasm calls), so it is safe before
+        // the engine pthread runs — and it MUST complete before boot/go
+        // (async handle opens need this worker's free event loop; see
+        // notes/p1-engine-thread.md "P2-prep results"). The path map rides
+        // the module URL query because opfs_realm_files.mjs derives its map
+        // from import.meta.url; instances merge into one realm registry.
+        const map = msg.map && typeof msg.map === "object" ? msg.map : {};
+        const moduleUrl = new URL("./opfs_realm_files.mjs", import.meta.url);
+        moduleUrl.searchParams.set("map", JSON.stringify(map));
+        import(moduleUrl.href)
+          .then((opfsModule) => opfsModule.default({ Module }))
+          .then((result) => {
+            recordLog("opfs archive handles staged", {
+              staged: result?.stagedPaths?.length ?? 0,
+            });
+            respond({
+              cmd: "stageOpfsFilesResult",
+              id: msg.id,
+              ok: true,
+              stagedPaths: result?.stagedPaths ?? [],
+            });
+          })
+          .catch((error) => {
+            recordLog("opfs staging failed", { error: String(error) });
+            respond({
+              cmd: "stageOpfsFilesResult",
+              id: msg.id,
+              ok: false,
+              error: String((error && error.stack) || error),
+            });
+          });
+        return;
+      }
       case "startLoop":
         runOrQueue(() => startLoop(msg, respond));
         return;
