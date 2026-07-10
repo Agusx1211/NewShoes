@@ -1263,6 +1263,22 @@ found several effects the original shipped that the port silently drops (shaders
 + gamma are stubbed). Each is an individual item; verify with before/after
 screenshots on the release build.
 
+- [ ] **Explosion/muzzle-flash `LightPulse` terrain illumination — prove the
+      original dynamic-light path end to end.** Source/link inspection confirms
+      that real `FXList` playback, `W3DDisplay::createLightPulse`,
+      `RTS3DScene` dynamic-light updates, `HeightMapRenderObjClass` terrain
+      vertex relighting, D3D8 vertex-buffer uploads, and WebGL diffuse-color
+      consumption are all present in `cnc-port`. The existing
+      `real_fx_render_smoke.mjs` and `weapon_impact_fx_smoke.mjs` gates only
+      assert particle work and effect-texture draws, so they can stay green if
+      the vanilla radial ground-light pulse is absent. Extend the existing real
+      weapon-impact harness path to trigger a shipped FX with a known
+      `LightPulse` over clearly visible ground; capture deterministic
+      before/peak/after frames from the same camera; assert the dynamic-light
+      lifecycle and affected terrain vertex-buffer diffuse changes; and require
+      a localized canvas luminance/color change that decays back to baseline.
+      Verify on both SwiftShader and Mac Chrome/Metal, and fix any discrepancy
+      before moving this item to `DONE.md`.
 - [ ] **Terrain noise/detail shaders — verify the detail layer is enabled at
       runtime (premise re-diagnosed).** Original investigation assumed the
       pixel-shader stub (`wasm_d3d8_shim.cpp`: `CreatePixelShader →
