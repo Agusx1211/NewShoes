@@ -533,7 +533,12 @@ reads payloads on the engine thread). `registerArchiveSet` itself still runs
 (the engine needs the run-directory install).
 
 **3. Gate result (dev box, SwiftShader, 2026-07-10):**
-`node harness/threaded_play_gate.mjs` (SKIP_REFERENCE) 14/14 PASS with
+Full `npm run verify:threaded-play` (reference non-threaded leg + threaded
+OPFS leg) GREEN 14/14, exit 0. Flake note: a first full run failed ONLY
+"client frames advancing" at 0.9/s vs the >1 threshold — at SwiftShader's
+~1 rendered frame/s a 5s sample window counts ~5 frames, so ±1 frame of
+shared-box noise is ±20%; consider a longer sampling window if it recurs.
+The SKIP_REFERENCE run was also 14/14 PASS with
 OPFS-backed mounts — includes the new hard check "threaded mount is
 OPFS-backed (no MEMFS archive bytes)". Threaded boot to TITLE in **17.4s**
 (vs 133s for the MEMFS-threaded P1c gate-run-9 on the same box: the 2.2GB
