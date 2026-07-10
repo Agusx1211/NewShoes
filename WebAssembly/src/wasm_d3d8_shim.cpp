@@ -1597,6 +1597,7 @@ UINT bytes_per_pixel(D3DFORMAT format)
 		case D3DFMT_A1R5G5B5:
 		case D3DFMT_A4R4G4B4:
 		case D3DFMT_A8L8:
+		case D3DFMT_V8U8:
 			return 2;
 		case D3DFMT_A8:
 		case D3DFMT_P8:
@@ -1819,6 +1820,7 @@ bool is_browser_texture_format_supported(D3DFORMAT format)
 		case D3DFMT_A8:
 		case D3DFMT_L8:
 		case D3DFMT_A8L8:
+		case D3DFMT_V8U8:
 		case D3DFMT_DXT1:
 		case D3DFMT_DXT2:
 		case D3DFMT_DXT3:

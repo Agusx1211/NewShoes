@@ -8,6 +8,44 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Visual-effects fidelity audit (2026-07-10)
+
+- [x] **Restore `WATER_TYPE_2_PVSHADER` end to end.** The original 32-frame
+      caustic source animation is loaded without DXT compression, foreground
+      initialized, decoded from the A4R4G4B4 fallback chosen by browser caps,
+      and converted without the original edge out-of-bounds reads. The D3D8
+      shim and WebGL2 bridge now carry `D3DFMT_V8U8` as biased RG8 and recover
+      signed du/dv for SM1 sampling. The original reflected-scene target and
+      wave.vso/wave.pso draw pass the terrain smoke with translated VS/PS draws,
+      zero link failures, and zero fixed-function fallbacks. A forced Type 2 on
+      a non-programmable adapter safely uses regular water instead of touching
+      absent shader/reflection resources.
+- [x] **Exercise every shipped screen-filter variant.** Fixed the diagnostic
+      RPC's missing crossfade fade parameters, then captured black/white,
+      red/white, green/white, circle crossfade, framebuffer-alpha-mask
+      crossfade, six alpha/saturate motion-blur variants, and pan/end-pan.
+      Every mode advances FBO/draw counters and retains varied tactical pixels;
+      the complete programmable run has zero SM1 fallback/link failures and the
+      Classic fixed-function control remains healthy.
+- [x] **Prove real snow/weather rendering.** A Bitter Winter skirmish consumes
+      the map.ini `SnowEnabled` override and renders the shipped
+      `exsnowflake1.tga` DXT5 texture. Its full frame contains eight point-list
+      draws of roughly 550-650 flakes, and the screenshot visibly shows falling
+      snow over the active base.
+- [x] **Resolve the ambiguous lightning/lighting report.** Shipped gameplay has
+      no separate weather-lightning renderer; FX lists use `LightPulse` dynamic
+      point lights. A real match triggered `FX_DamageTankStruck` beside a local
+      drawable and captured 136 scene draws carrying the pulse's warm diffuse
+      color, position, fading range, and original attenuation coefficients.
+- [x] **Re-audit the remaining named effect paths.** Persistent
+      anthrax/radiation fields already run through restored OCL creation and
+      RadiusDecal rendering. Heat distortion has the existing live
+      `MicrowaveEmitter` scene-feedback proof. Tracer and rope draw modules use
+      the supported `Line3DClass` path; projectile streams use the same
+      `SegmentedLineClass` route proven by the real laser smoke; debris uses the
+      linked real W3D model/shadow path and restored OCL creation. No additional
+      browser render-state or missing-body defect was found in those paths.
+
 ## I/O strategy pivot — engine-thread + OPFS-disk direction adopted (2026-07-10)
 
 Owner-directed pivot after the 2026-07-10 I/O audit: the game must use its own

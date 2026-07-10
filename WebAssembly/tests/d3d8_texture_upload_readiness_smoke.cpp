@@ -153,6 +153,9 @@ const TextureFormatMapping *lookup_mapping(DWORD d3d_format)
 		{ D3DFMT_A8L8, 2, GL_RG8, GL_RG, GL_UNSIGNED_BYTE,
 			false, 0, false, false, false, false,
 			"L,A byte pair; map to GL_RG8 (r=L,g=A), shader swizzle rgb=r,a=g" },
+		{ D3DFMT_V8U8, 2, GL_RG8, GL_RG, GL_UNSIGNED_BYTE,
+			false, 0, false, false, false, false,
+			"little-endian signed U,V byte pair; bias two's-complement bytes by 128 into GL_RG8, then reconstruct signed normalized rg in the shader" },
 		{ D3DFMT_P8, 1, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE,
 			false, 0, false, true, false, true,
 			"8-bit palette index; no GL equivalent, decode through engine 256-entry ARGB palette before upload" },
@@ -263,6 +266,7 @@ int main()
 		{ D3DFMT_A8, 4, 4 },
 		{ D3DFMT_L8, 4, 4 },
 		{ D3DFMT_A8L8, 4, 4 },
+		{ D3DFMT_V8U8, 4, 4 },
 	};
 
 	UINT uncompressed_format_count = 0;
@@ -493,7 +497,7 @@ int main()
 	bool first_format = true;
 	const DWORD all_formats[] = {
 		D3DFMT_A8R8G8B8, D3DFMT_X8R8G8B8, D3DFMT_R5G6B5, D3DFMT_A1R5G5B5,
-		D3DFMT_A4R4G4B4, D3DFMT_A8, D3DFMT_L8, D3DFMT_A8L8, D3DFMT_P8,
+		D3DFMT_A4R4G4B4, D3DFMT_A8, D3DFMT_L8, D3DFMT_A8L8, D3DFMT_V8U8, D3DFMT_P8,
 		D3DFMT_DXT1, D3DFMT_DXT2, D3DFMT_DXT3, D3DFMT_DXT4, D3DFMT_DXT5,
 	};
 	for (DWORD fmt : all_formats) {

@@ -2,8 +2,12 @@
 import { access, mkdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright";
 import { startStaticServer } from "./static-server.mjs";
+
+const executablePath = process.env.CNC_CHROMIUM
+  ?? process.env.CNC_TERRAIN_BROWSER_EXECUTABLE
+  ?? process.env.CHROME_PATH;
+const { chromium } = await import(executablePath ? "playwright-core" : "playwright");
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
@@ -13,6 +17,7 @@ const defaultTerrainArchivePath = resolve(wasmRoot, "artifacts/real-assets/Terra
 const defaultBaseTerrainArchivePath = resolve(wasmRoot, "artifacts/real-assets/Terrain.big");
 const defaultTextureArchivePath = resolve(wasmRoot, "artifacts/real-assets/TexturesZH.big");
 const defaultBaseTextureArchivePath = resolve(wasmRoot, "artifacts/real-assets/Textures.big");
+const defaultBaseShaderArchivePath = resolve(wasmRoot, "artifacts/real-assets/Shaders.big");
 const iniArchivePath = resolve(wasmRoot, process.argv[2] ?? defaultIniArchivePath);
 const mapsArchivePath = resolve(wasmRoot, process.argv[3] ?? defaultMapsArchivePath);
 const terrainArchivePath = resolve(wasmRoot, process.argv[4] ?? defaultTerrainArchivePath);
@@ -25,6 +30,10 @@ const textureArchivePath = resolve(
 const baseTextureArchivePath = resolve(
   wasmRoot,
   process.env.CNC_PORT_BASE_TERRAIN_TEXTURE_ARCHIVE ?? defaultBaseTextureArchivePath,
+);
+const baseShaderArchivePath = resolve(
+  wasmRoot,
+  process.env.CNC_PORT_BASE_SHADER_ARCHIVE ?? defaultBaseShaderArchivePath,
 );
 const screenshotDir = resolve(wasmRoot, "artifacts/screenshots");
 const terrainScreenshot = resolve(
@@ -42,6 +51,10 @@ const terrainVisualShroudUpdateScreenshot = resolve(
 const terrainFullSceneScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-terrain-full-scene-canvas.png",
+);
+const terrainWaterType2SceneScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-terrain-water-type2-scene-canvas.png",
 );
 const terrainFullSceneShroudUpdateScreenshot = resolve(
   screenshotDir,
@@ -168,7 +181,7 @@ function isWaterTextureArchiveEntry(entryName) {
     return false;
   }
   const leafName = entryName.split("\\").pop().toLowerCase();
-  return waterTextureCandidateNames.has(leafName);
+  return waterTextureCandidateNames.has(leafName) || /^caust\d{2}\.tga$/.test(leafName);
 }
 
 function isInside(parent, child) {
@@ -314,6 +327,20 @@ if (baseTextureArchiveStat !== null && baseTextureArchivePath !== textureArchive
     });
   }
 }
+const baseShaderArchiveStat = await optionalArchive(baseShaderArchivePath, "Base shader archive", true);
+const baseShaderArchiveEntries = (await listBigArchiveEntries(baseShaderArchivePath))
+  .filter((entry) => /^Shaders\\wave\.(?:pso|vso)$/i.test(entry.name))
+  .map((entry) => entry.name);
+if (baseShaderArchiveEntries.length !== 2) {
+  throw new Error(`Base shader archive does not contain wave.pso and wave.vso: ${baseShaderArchivePath}`);
+}
+textureArchives.push({
+  sourcePath: baseShaderArchivePath,
+  memfsName: basename(baseShaderArchivePath),
+  stat: baseShaderArchiveStat,
+  entries: baseShaderArchiveEntries,
+  optionalBase: false,
+});
 
 await mkdir(screenshotDir, { recursive: true });
 
@@ -334,10 +361,13 @@ let browser;
 const browserEvents = [];
 
 try {
-  browser = await chromium.launch();
+  browser = await chromium.launch({ executablePath });
   const page = await browser.newPage();
   page.on("console", (message) => {
     browserEvents.push({ type: "console", level: message.type(), text: message.text() });
+    if (process.env.CNC_PORT_LOG_BROWSER_CONSOLE === "1") {
+      process.stderr.write(`[browser:${message.type()}] ${message.text()}\n`);
+    }
   });
   page.on("pageerror", (error) => {
     browserEvents.push({ type: "pageerror", message: error?.message ?? String(error) });
@@ -346,13 +376,14 @@ try {
     browserEvents.push({ type: "crash" });
   });
 
-  const harnessUrl = new URL("harness/index.html", server.url).href;
+  const harnessUrl = new URL("harness/index.html", server.url);
+  harnessUrl.searchParams.set("shaderTier", "ps11");
   const iniArchiveUrl = new URL(iniArchiveRelativePath, server.url).href;
   const mapsArchiveUrl = new URL(mapsArchiveRelativePath, server.url).href;
 
   await withTimeout(
     "terrain visual harness page load",
-    page.goto(harnessUrl, { waitUntil: "networkidle" }),
+    page.goto(harnessUrl.href, { waitUntil: "networkidle" }),
     30000,
   );
   await withTimeout(
@@ -888,6 +919,54 @@ try {
     event.type === "pageerror" || event.type === "crash");
   if (fullSceneBrowserFailures.length > 0) {
     throw new Error(`browser failures during W3D terrain full scene: ${JSON.stringify(fullSceneBrowserFailures)}`);
+  }
+
+  const waterType2Result = await withTimeout(
+    "terrain type-2 water scene render RPC",
+    page.evaluate((payload) =>
+      window.CnCPort.rpc("ww3dTerrainWaterType2Scene", payload), {
+        iniArchivePath: iniArchiveMemfsPath,
+        mapsArchivePath: mapsArchiveMemfsPath,
+        terrainArchivePath: fullSceneArchiveMemfsMaskPath,
+      }),
+    240000,
+  );
+  await page.locator("#viewport").screenshot({ path: terrainWaterType2SceneScreenshot });
+  const waterType2DrawHistory = Array.isArray(waterType2Result.drawHistory)
+    ? waterType2Result.drawHistory
+    : [];
+  const waveDraw = waterType2DrawHistory.find((draw) =>
+    draw?.texture0?.format === 60
+      && draw?.texture0?.storage === "rg8-v8u8"
+      && draw?.texture0?.semantic === "signedBump"
+      && draw?.texture0?.semanticMode === 4
+      && draw?.texture0?.sampled === true
+      && draw?.texture1?.sampled === true);
+  const waterType2Perf = waterType2Result.state?.graphics?.d3d8Perf ?? {};
+  if (!waterType2Result.ok
+      || waterType2Result.command !== "ww3dTerrainWaterType2Scene"
+      || waterType2Result.probe?.source !== "ww3d_terrain_full_scene_probe"
+      || waterType2Result.probe?.renderMode !== "full-init-source-patch"
+      || waterType2Result.probe?.visual?.waterRenderObjectNull !== false
+      || waterType2Result.probe?.water?.renderObjectCreated !== true
+      || waterType2Result.probe?.water?.globalPointerMatches !== true
+      || waterType2Result.probe?.water?.sceneObjectAdded !== true
+      || !waveDraw
+      || (waterType2Result.textureProbe?.unsupportedUpdates ?? 0) !== 0
+      || (waterType2Perf.sm1ShaderDraws ?? 0) < 1
+      || (waterType2Perf.sm1TranslatedVsDraws ?? 0) < 1
+      || (waterType2Perf.sm1FallbackDraws ?? 0) !== 0
+      || (waterType2Perf.sm1PairProgramFailures ?? 0) !== 0
+      || waterType2Result.screenshot?.coverage?.coloredPixelCount <= 0) {
+    throw new Error(`W3D type-2 water render failed: ${JSON.stringify({
+      ok: waterType2Result.ok,
+      probe: waterType2Result.probe,
+      waveDraw,
+      drawHistory: summarizeDrawHistory(waterType2DrawHistory),
+      textureProbe: waterType2Result.textureProbe,
+      perf: waterType2Perf,
+      screenshot: waterType2Result.screenshot,
+    })}`);
   }
 
   let fullSceneShroudUpdateResult;

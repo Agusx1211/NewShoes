@@ -749,11 +749,12 @@ DONE.md with reasons.
       (the cncport:resolutionchange mirror keeps them in sync) — revisit if
       users report surprises.
 
-- [ ] **Lightning/lighting effects flat** — special/lightning effects look
-      flat vs the original; the game's richer effect set is missing or
-      degraded. Pin down which effect systems (particle/lightning/FX) are
-      under-rendering. (Ambiguous "lightning" vs "lighting" — confirm which on
-      repro.)
+- [x] **Lightning/lighting effects audited as gameplay `LightPulse`.** There is
+      no separate weather-lightning renderer in the shipped game code. A real
+      Bitter Winter match triggered `FX_DamageTankStruck`; 136 model draws
+      received its animated warm point light with the original position,
+      shrinking range, and attenuation coefficients through `W3DDynamicLight`
+      and `RTS3DScene`.
 ## User-reported play bugs (2026-07-07 session)
 
 Reported by the project owner on the Mac GPU build. Reproduce in the harness and
@@ -955,15 +956,11 @@ symptom is temporal — NOT a single still.
       `D3DTA_CURRENT`; true DX8 default is `D3DTA_DIFFUSE` — harmless at stage 0 since
       the bridge resolves stage-0 CURRENT→diffuse, but worth aligning at
       `wasm_d3d8_shim.cpp:3901,3907`.)
-- [ ] **Ground toxin/radiation fields do not render** — toxins on the ground
-      (anthrax, radiation, and similar persistent ground effects) are not drawn.
-      The field is likely still active in simulation (damage over area) but the
-      ground decal/overlay is invisible. Trace the toxin/radiation ground-effect
-      render path (terrain decal / scorch-style projected overlay or particle
-      ground splat) and confirm its draw reaches the browser D3D8 layer; check
-      whether it depends on a projected-decal / blend / texture path that is
-      currently stubbed or mis-blended. Verify with a screenshot of an active
-      anthrax/radiation field on the ground.
+- [x] **Ground toxin/radiation fields render** — toxins on the ground
+      (anthrax, radiation, and similar persistent ground effects) were fixed by
+      the real OCL-create and RadiusDecal un-gates (`cfd3caa0` / `c5218520`);
+      field objects and their projected decal renderer are no longer compiled
+      to no-ops.
 - [ ] **Physical iPad Safari canvas-drag confirmation** — after the browser-side
       canvas selection/callout suppression, run the real playable page on an
       iPad in Safari and confirm an in-game touch drag no longer highlights the
@@ -1255,20 +1252,23 @@ screenshots on the release build.
             Trees.vso, links all pairs, 0 failures/fallbacks; ff baseline
             unchanged. (Default flip DONE then REVERTED same day per the
             regressions above.)
-      - [ ] **WATER_TYPE_2_PVSHADER wave water needs D3DFMT_V8U8** — the wave
-            path (wave.vso/wave.pso + texbem) creates a signed du/dv bump
-            texture the shim's texture layer doesn't support yet. Upload V8U8
-            as RG8 + decode `*2-1` in the texbem emission (flag on the texture
-            resource), and support `Create_Render_Target` reflection texture
-            interplay. Only maps that set water type 2 use it.
-      - [x] **BW/monochrome + motion-blur filters: visual trigger proof.** The
-            real view-filter RPC follows the original ScriptActions ordering;
-            the shader-tier harness forces and captures both filters on local
-            SwiftShader and Mac M4 Metal. Monochrome produces translated
-            full-screen shader draws; motion blur produces additional FBO
-            passes. Motion blur (`ScreenMotionBlurFilter`) is fixed-function
-            (shipped `motionblur.pso`/`MotionBlur.vso` are dead assets — nothing
-            loads them).
+      - [x] **WATER_TYPE_2_PVSHADER wave water supports D3DFMT_V8U8.** The old
+            GeForce3 path now loads and converts all 32 caustic frames (including
+            the browser cap's A4R4G4B4 source fallback), uploads signed V8U8 as
+            biased RG8, reconstructs signed du/dv for SM1 `texbem`, and renders
+            against the original reflected-scene target. The end-to-end terrain
+            smoke records translated wave.vso/wave.pso draws with zero shader
+            fallback/link failures. Forced Type 2 safely falls back to regular
+            water when programmable resources are unavailable.
+      - [x] **All shipped view-filter modes have visual trigger proof.** The
+            real view-filter RPC follows the original fade ordering for BW and
+            crossfade. The shader-tier harness captures monochrome, red/white,
+            green/white, circle crossfade, framebuffer-alpha-mask crossfade,
+            all six alpha/saturate motion modes, and the pan/end-pan pair. Every
+            mode produces render-target/draw progress and preserves a varied
+            tactical scene. Motion blur remains the original fixed-function
+            `ScreenMotionBlurFilter` (the shipped motion shader files are dead
+            assets).
       - [ ] **ps.1.4 is intentionally unsupported** (phases/`texld`); the
             entire shipped corpus is ps.1.1. If a mod ships 1.4 bytecode the
             create fails cleanly and the engine falls back to fixed function —
@@ -2422,15 +2422,10 @@ residue and the next frontier.
 - [ ] Matrix/transform stack and viewport/camera setup.
 
 ### Increasing fidelity (each step verified by screenshot)
-- [ ] **Texture stages 2+ are silently dropped by the browser D3D8 bridge**
-      (Fable graphics audit 2026-07-05): the uber-shader implements only
-      `uStage0*`/`uStage1*` (bridge.js:5939-5955) while the shim caps claim
-      `MaxTextureBlendStages=8` (`wasm_d3d8_shim.cpp:655`). `W3DWater.cpp`
-      sets stage-2 state unconditionally (lines 277-278, 1885-1886) — water
-      renders with a missing layer by construction. Either implement stages
-      2-3 in the shader or report honest 2-stage caps and verify W3D's
-      multi-pass fallback. Current coverage: active stages 2-7 now emit a
-      one-time `d3d8Warnings`/console diagnostic so this class is visible.
+- [x] **Texture stages 2 and 3 are implemented by the browser D3D8 bridge**
+      with texture binding, coordinate/transform state, samplers, and
+      combiners. Stages 4-7 remain honestly diagnosed if exercised by
+      future/mod content.
 - [ ] **Remaining unsupported combiner ops must not silently degrade**:
       the browser bridge now implements and screenshot-smoke-proves
       `BLENDTEXTUREALPHAPM` plus the four `MODULATE*_ADD*` color ops from the
@@ -2772,11 +2767,14 @@ residue and the next frontier.
       `ParticleSystemManager` runtime once object, drawable, game-client, and
       renderer ownership are linked; verify weapon projectile-exhaust particles
       through harness screenshots/state.
-- [ ] Snow/weather rendering through original `SnowManager` / W3D weather
+- [x] Snow/weather rendering through original `SnowManager` / W3D weather
       paths, including map weather overrides, verified by harness screenshots.
       The generic D3D8 bridge support for bound-buffer `DrawPrimitive` and
-      fixed-function point sprites is now proven; the remaining work is a real
-      SnowManager/weather scene driven through original W3D ownership.
+      fixed-function point sprites is proven through real W3D ownership. A real
+      Bitter Winter skirmish applies its map.ini weather override and visibly
+      renders falling snow; the captured frame contains eight point-list
+      batches of roughly 550-650 flakes using shipped `exsnowflake1.tga` DXT5
+      data.
 - [ ] Reach the **main menu rendering** end-to-end; screenshot it.
 
 ---

@@ -6318,8 +6318,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_view_filter
 	const FilterModes mode = static_cast<FilterModes>(mode_value);
 	Bool filter_ok = FALSE;
 	Bool mode_ok = FALSE;
-	if (filter == FT_VIEW_BW_FILTER) {
-		// Preserve ScriptActions::doBlackWhiteMode ordering.
+	if (filter == FT_VIEW_BW_FILTER || filter == FT_VIEW_CROSSFADE) {
+		// Preserve ScriptActions::doBlackWhiteMode and CommandXlat's crossfade
+		// ordering: select the mode, install the filter, then arm its fade.
 		mode_ok = TheTacticalView->setViewFilterMode(mode);
 		filter_ok = TheTacticalView->setViewFilter(filter);
 		TheTacticalView->setFadeParameters(fade_frames, fade_direction);

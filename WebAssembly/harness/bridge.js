@@ -311,6 +311,7 @@ const D3DFMT_X4R4G4B4 = 30;
 const D3DFMT_P8 = 41;
 const D3DFMT_L8 = 50;
 const D3DFMT_A8L8 = 51;
+const D3DFMT_V8U8 = 60;
 const D3DFMT_D16_LOCKABLE = 70;
 const D3DFMT_D32 = 71;
 const D3DFMT_D15S1 = 73;
@@ -5257,6 +5258,21 @@ function d3d8TextureFormatInfo(format) {
         swizzle: { r: gl.RED, g: gl.RED, b: gl.RED, a: GL_GREEN },
         semantic: "luminanceAlpha",
       };
+    case D3DFMT_V8U8:
+      // D3D8 V8U8 is laid out as little-endian U,V signed two's-complement
+      // bytes. WebGL2's ordinary RG8 sampling is unsigned, so bias each byte
+      // into monotonic UNORM storage before upload and reconstruct the signed
+      // vector in d3dTextureSample(). Keeping the bias in the texture preserves
+      // bilinear filtering across the signed zero crossing.
+      return {
+        d3dFormat,
+        supported: true,
+        internalFormat: gl.RG8,
+        format: gl.RG,
+        type: gl.UNSIGNED_BYTE,
+        storage: "rg8-v8u8",
+        semantic: "signedBump",
+      };
     case D3DFMT_DXT1:
       return s3tc ? {
         d3dFormat,
@@ -5483,6 +5499,15 @@ function convertD3D8TextureBytes(format, bytes, width, height, depth = 1) {
       output[target + 1] = scale4((value >> 4) & 0x0f);
       output[target + 2] = scale4(value & 0x0f);
       output[target + 3] = d3dFormat === D3DFMT_X4R4G4B4 ? 255 : scale4((value >> 12) & 0x0f);
+    }
+    return output;
+  }
+  if (d3dFormat === D3DFMT_V8U8) {
+    const output = new Uint8Array(pixelCount * 2);
+    for (let channel = 0; channel < output.length; ++channel) {
+      // Reinterpret the source byte as int8, then bias [-128, 127] to
+      // [0, 255]. The fragment shader performs the inverse normalization.
+      output[channel] = (bytes[channel] + 128) & 0xff;
     }
     return output;
   }
@@ -7186,6 +7211,8 @@ function d3d8TextureSemanticMode(resource) {
       return 2;
     case "luminanceAlpha":
       return 3;
+    case "signedBump":
+      return 4;
     default:
       return 0;
   }
@@ -9201,6 +9228,10 @@ function ensureD3D8DrawProgram() {
       if (semantic == 3) {
         return vec4(rawSample.r, rawSample.r, rawSample.r, rawSample.g);
       }
+      if (semantic == 4) {
+        vec2 signedBump = clamp((rawSample.rg * 255.0 - 128.0) / 127.0, -1.0, 1.0);
+        return vec4(signedBump, 0.0, 1.0);
+      }
       return rawSample;
     }
     vec2 d3dTextureCoordinate(vec2 coordinate, bool flipY) {
@@ -10253,6 +10284,10 @@ function d3d8SM1BuildFragmentSource(psShader, options) {
   lines.push("  if (semantic == 1) { return vec4(0.0, 0.0, 0.0, rawSample.r); }");
   lines.push("  if (semantic == 2) { return vec4(rawSample.r, rawSample.r, rawSample.r, 1.0); }");
   lines.push("  if (semantic == 3) { return vec4(rawSample.r, rawSample.r, rawSample.r, rawSample.g); }");
+  lines.push("  if (semantic == 4) {");
+  lines.push("    vec2 signedBump = clamp((rawSample.rg * 255.0 - 128.0) / 127.0, -1.0, 1.0);");
+  lines.push("    return vec4(signedBump, 0.0, 1.0);");
+  lines.push("  }");
   lines.push("  return rawSample;");
   lines.push("}");
   lines.push("vec2 d3dTextureCoordinate(vec2 coordinate, bool flipY) {");
@@ -15500,6 +15535,16 @@ function paintD3D8DrawIndexed(payload = {}) {
         implicitAlphaCutout: probe.implicitAlphaCutout,
         colorWrite: appliedRenderState?.colorWrite ?? null,
       },
+      activeLights: d3d8DiagLevel === "full" ? fixedFunctionLights.map((light) => ({
+        index: light.index,
+        type: light.type,
+        diffuse: light.diffuse,
+        position: light.position,
+        range: light.range,
+        attenuation0: light.attenuation0,
+        attenuation1: light.attenuation1,
+        attenuation2: light.attenuation2,
+      })) : [],
       boundTextures: probe.boundTextures,
       texture0: {
         id: probe.texture0.id,
@@ -16525,6 +16570,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_terrain_visual_shroud_update_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainFullScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_full_scene", "string", ["string", "string", "string"]),
+      probeWW3DTerrainWaterType2Scene: module.cwrap(
+        "cnc_port_probe_ww3d_terrain_water_type2_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainFullSceneShroudUpdate: module.cwrap(
         "cnc_port_probe_ww3d_terrain_full_scene_shroud_update", "string", ["string", "string", "string"]),
       probeWW3DTerrainVisualLoadWindowScene: module.cwrap(
@@ -20983,7 +21030,14 @@ async function fetchByteRange(url, start, end) {
   }
 
   const bytes = new Uint8Array(await response.arrayBuffer());
-  const expectedLength = end - start + 1;
+  const contentRange = response.headers.get("Content-Range");
+  const rangeMatch = contentRange?.match(/^bytes\s+(\d+)-(\d+)\/(\d+|\*)$/i);
+  const responseStart = rangeMatch ? Number(rangeMatch[1]) : start;
+  const responseEnd = rangeMatch ? Number(rangeMatch[2]) : end;
+  if (responseStart !== start || responseEnd > end) {
+    throw new Error(`Unexpected Content-Range for ${url} ${start}-${end}: ${contentRange}`);
+  }
+  const expectedLength = responseEnd - responseStart + 1;
   if (bytes.byteLength !== expectedLength) {
     throw new Error(`Range fetch length mismatch for ${url} ${start}-${end}: ${bytes.byteLength} != ${expectedLength}`);
   }
@@ -29826,6 +29880,7 @@ async function rpc(command, payload = {}) {
     case "ww3dTerrainVisualShroudScene":
     case "ww3dTerrainVisualShroudUpdateScene":
     case "ww3dTerrainFullScene":
+    case "ww3dTerrainWaterType2Scene":
     case "ww3dTerrainFullSceneShroudUpdate":
     case "ww3dTerrainVisualLoadWindowScene":
     case "ww3dTerrainVisualCameraPanScene":
@@ -29835,7 +29890,8 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: "Wasm module unavailable; visual-owned WW3D terrain scene cannot render" };
         }
         const fullInitShroudUpdateMode = command === "ww3dTerrainFullSceneShroudUpdate";
-        const fullInitMode = command === "ww3dTerrainFullScene" || fullInitShroudUpdateMode;
+        const waterType2Mode = command === "ww3dTerrainWaterType2Scene";
+        const fullInitMode = command === "ww3dTerrainFullScene" || waterType2Mode || fullInitShroudUpdateMode;
         const visualShroudUpdateMode = command === "ww3dTerrainVisualShroudUpdateScene";
         const visualShroudMode = command === "ww3dTerrainVisualShroudScene" || visualShroudUpdateMode;
         const loadWindowMode = command === "ww3dTerrainVisualLoadWindowScene";
@@ -29883,6 +29939,8 @@ async function rpc(command, payload = {}) {
         const probe = parseModuleState(
           (fullInitShroudUpdateMode
             ? wasmModule.probeWW3DTerrainFullSceneShroudUpdate
+            : (waterType2Mode
+            ? wasmModule.probeWW3DTerrainWaterType2Scene
             : (fullInitMode
             ? wasmModule.probeWW3DTerrainFullScene
             : (loadWindowMode
@@ -29893,7 +29951,7 @@ async function rpc(command, payload = {}) {
                   ? (visualShroudUpdateMode
                     ? wasmModule.probeWW3DTerrainVisualShroudUpdateScene
                     : wasmModule.probeWW3DTerrainVisualShroudScene)
-                  : wasmModule.probeWW3DTerrainVisualScene)))))(
+                  : wasmModule.probeWW3DTerrainVisualScene))))))(
             iniArchivePath,
             mapsArchivePath,
             terrainArchivePath,

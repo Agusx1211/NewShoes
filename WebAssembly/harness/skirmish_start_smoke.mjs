@@ -75,6 +75,7 @@ const postActiveFrameChunk = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_CHUNK"
 const musicStopMaxFrames = parsePositiveInt("SKIRMISH_START_MUSIC_STOP_MAX_FRAMES", 360);
 const requestedSkirmishMap = String(process.env.SKIRMISH_START_MAP ?? "").trim();
 const captureD3D8History = process.env.SKIRMISH_START_CAPTURE_D3D8_HISTORY === "1";
+const expectLightPulseProbe = process.env.SKIRMISH_START_LIGHT_PULSE_PROBE === "1";
 const distDir = parseDistDir();
 
 function parsePositiveInt(name, fallback) {
@@ -1238,6 +1239,31 @@ async function main() {
     expect(visibleSamples.length > 0 && renderProbe.uniqueColorCount > 1,
       "active skirmish canvas did not expose visible non-black pixel variance", renderProbe);
 
+    let lightPulseProbe = null;
+    if (expectLightPulseProbe) {
+      const drawables = await rpc(page, "queryDrawables");
+      const target = drawables?.result?.drawables?.find((drawable) =>
+        drawable.localOwned && drawable.onScreen && drawable.worldPos);
+      expect(Boolean(target), "light-pulse probe could not find a local on-screen drawable",
+        drawables?.result ?? drawables);
+      const trigger = await rpc(page, "realEngineDoFX", {
+        name: "FX_DamageTankStruck",
+        useViewPosition: false,
+        clampToTerrain: true,
+        x: target.worldPos.x,
+        y: target.worldPos.y,
+        z: target.worldPos.z,
+      });
+      expect(trigger?.ok === true, "light-pulse probe could not trigger original FX",
+        trigger?.result ?? trigger);
+      lightPulseProbe = {
+        target: { id: target.id, template: target.template, worldPos: target.worldPos },
+        trigger: trigger.result,
+        pointLightDrawCount: 0,
+        pointLightSamples: [],
+      };
+    }
+
     // ADD-ONLY HUD geometry probe: one full realEngineFrame to capture the
     // per-window control-bar geometry (drawFunc/systemFunc/x/y/w/h/hidden) so
     // the bottom-strip pixels can be mapped to specific HUD windows. Read-only.
@@ -1253,7 +1279,7 @@ async function main() {
     let lastD3D8Clear = null;
     let badJsonContext = null;
     try {
-      if (captureD3D8History) {
+      if (captureD3D8History || expectLightPulseProbe) {
         await page.evaluate(() => window.__cncSetD3D8SceneDrawHistoryLimit?.(8192));
         await page.evaluate(() => window.__cncSetDiagLevel?.("full"));
       }
@@ -1269,15 +1295,28 @@ async function main() {
       // atlas (1024x256) background draws vs small UI icon draws, collected by
       // bridge.js during the frame.
       uiDrawCaptures = full.state?.graphics?.uiDrawCaptures ?? null;
-      d3d8SceneDrawHistory = captureD3D8History
+      d3d8SceneDrawHistory = (captureD3D8History || expectLightPulseProbe)
         ? (full.state?.graphics?.d3d8SceneDrawHistory ?? null)
         : null;
-      lastD3D8Clear = captureD3D8History
+      lastD3D8Clear = (captureD3D8History || expectLightPulseProbe)
         ? (full.state?.graphics?.lastD3D8Clear ?? null)
         : null;
+      if (lightPulseProbe) {
+        const pointLightDraws = (d3d8SceneDrawHistory ?? []).filter((draw) =>
+          (draw?.activeLights ?? []).some((light) => light?.type === 1));
+        lightPulseProbe.pointLightDrawCount = pointLightDraws.length;
+        lightPulseProbe.pointLightSamples = pointLightDraws.slice(0, 3).map((draw) => ({
+          drawSequence: draw.drawSequence,
+          lights: draw.activeLights.filter((light) => light.type === 1),
+        }));
+      }
       badJsonContext = await page.evaluate(() => window.__lastBadJsonContext ?? null).catch(() => null);
     } catch (error) {
       controlBarWindows = { error: error?.message ?? String(error) };
+    }
+    if (lightPulseProbe) {
+      expect(lightPulseProbe.pointLightDrawCount > 0,
+        "original FX LightPulse did not reach a real scene draw", lightPulseProbe);
     }
 
     const mapCache = await rpc(page, "mapCacheProbe");
@@ -1342,6 +1381,7 @@ async function main() {
       enemyAiActivity,
       escMenuResume,
       rallyProbe,
+      lightPulseProbe,
       renderProbe,
       // ADD-ONLY HUD diagnostics: full control-bar / shell / startNewGame state
       // from the final active-match frame (read-only; does not gate anything).

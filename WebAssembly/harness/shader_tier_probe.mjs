@@ -38,7 +38,18 @@ setTimeout(() => {
 const failures = [];
 const viewFilter = {
   monochrome: { filter: 1, mode: 1 },
+  redWhite: { filter: 1, mode: 2 },
+  greenWhite: { filter: 1, mode: 3 },
+  crossfadeCircle: { filter: 3, mode: 4 },
+  crossfadeFramebufferMask: { filter: 3, mode: 5 },
+  motionBlurInOutAlpha: { filter: 2, mode: 6 },
+  motionBlurInOutSaturate: { filter: 2, mode: 7 },
   motionBlurInAlpha: { filter: 2, mode: 8 },
+  motionBlurOutAlpha: { filter: 2, mode: 9 },
+  motionBlurInSaturate: { filter: 2, mode: 10 },
+  motionBlurOutSaturate: { filter: 2, mode: 11 },
+  motionBlurEndPanAlpha: { filter: 2, mode: 12 },
+  motionBlurPanAlpha: { filter: 2, mode: 14 },
   default: { filter: 4, mode: 13 },
 };
 function check(name, ok, detail) {
@@ -46,6 +57,20 @@ function check(name, ok, detail) {
   if (!ok) {
     failures.push({ name, detail });
   }
+}
+
+function effectSummary(variant) {
+  return {
+    command: variant?.command?.result,
+    before: variant?.before,
+    after: variant?.after,
+    screenshot: variant?.screenshot,
+    pixels: variant?.pixels ? {
+      ok: variant.pixels.ok,
+      uniqueColorCount: variant.pixels.uniqueColorCount,
+      luminanceRange: variant.pixels.luminanceRange,
+    } : null,
+  };
 }
 
 const extraArgs = (process.env.CNC_CHROMIUM_ARGS ?? "")
@@ -175,16 +200,127 @@ async function bootAndInspect(tier) {
       debugLog: globalThis.__cncSM1DebugLog ?? {},
     }));
 
-    effects.motionBlurCommand = await page.evaluate((payload) => window.CnCPort.rpc(
+    effects.bwVariants = {};
+    for (const [name, filter] of Object.entries({
+      redWhite: viewFilter.redWhite,
+      greenWhite: viewFilter.greenWhite,
+    })) {
+      const command = await page.evaluate((payload) => window.CnCPort.rpc(
+        "realEngineSetViewFilter", payload,
+      ), { ...filter, fadeFrames: 1, fadeDirection: 1 });
+      await page.evaluate(() => window.CnCPort.rpc("realEngineFrame", { frames: 2 }));
+      effects.bwVariants[name] = {
+        command,
+        pixels: await sampleTacticalView(page),
+        screenshot: await capture(`shellmap-ps11-${name}.png`),
+      };
+    }
+
+    effects.crossfades = {};
+    for (const [name, filter] of Object.entries({
+      circle: viewFilter.crossfadeCircle,
+      framebufferMask: viewFilter.crossfadeFramebufferMask,
+    })) {
+      await page.evaluate((payload) => window.CnCPort.rpc(
+        "realEngineSetViewFilter", payload,
+      ), viewFilter.default);
+      const before = await page.evaluate(() => ({
+        fboBinds: globalThis.__cncD3D8PerfSummary?.().fboBinds ?? 0,
+        draws: globalThis.__cncD3D8PerfSummary?.().draws ?? 0,
+      }));
+      const command = await page.evaluate((payload) => window.CnCPort.rpc(
+        "realEngineSetViewFilter", payload,
+      ), { ...filter, fadeFrames: 6, fadeDirection: -1 });
+      await page.evaluate(() => window.CnCPort.rpc("realEngineFrame", { frames: 2 }));
+      const after = await page.evaluate(() => ({
+        fboBinds: globalThis.__cncD3D8PerfSummary?.().fboBinds ?? 0,
+        draws: globalThis.__cncD3D8PerfSummary?.().draws ?? 0,
+      }));
+      effects.crossfades[name] = {
+        command,
+        before,
+        after,
+        pixels: await sampleTacticalView(page),
+        screenshot: await capture(`shellmap-ps11-crossfade-${name}.png`),
+      };
+    }
+
+    effects.motionBlurVariants = {};
+    for (const [name, filter] of Object.entries({
+      inOutAlpha: viewFilter.motionBlurInOutAlpha,
+      inOutSaturate: viewFilter.motionBlurInOutSaturate,
+      inAlpha: viewFilter.motionBlurInAlpha,
+      outAlpha: viewFilter.motionBlurOutAlpha,
+      inSaturate: viewFilter.motionBlurInSaturate,
+      outSaturate: viewFilter.motionBlurOutSaturate,
+    })) {
+      await page.evaluate((payload) => window.CnCPort.rpc(
+        "realEngineSetViewFilter", payload,
+      ), viewFilter.default);
+      const before = await page.evaluate(() => ({
+        fboBinds: globalThis.__cncD3D8PerfSummary?.().fboBinds ?? 0,
+        draws: globalThis.__cncD3D8PerfSummary?.().draws ?? 0,
+      }));
+      const command = await page.evaluate((payload) => window.CnCPort.rpc(
+        "realEngineSetViewFilter", payload,
+      ), filter);
+      await page.evaluate(() => window.CnCPort.rpc("realEngineFrame", { frames: 2 }));
+      const after = await page.evaluate(() => ({
+        fboBinds: globalThis.__cncD3D8PerfSummary?.().fboBinds ?? 0,
+        draws: globalThis.__cncD3D8PerfSummary?.().draws ?? 0,
+      }));
+      effects.motionBlurVariants[name] = {
+        command,
+        before,
+        after,
+        pixels: await sampleTacticalView(page),
+        screenshot: await capture(`shellmap-ps11-motion-${name}.png`),
+      };
+    }
+
+    await page.evaluate((payload) => window.CnCPort.rpc(
       "realEngineSetViewFilter", payload,
-    ), viewFilter.motionBlurInAlpha);
-    await page.evaluate(() => window.CnCPort.rpc("realEngineFrame", { frames: 2 }));
-    effects.motionBlurPixels = await sampleTacticalView(page);
-    effects.motionBlurScreenshot = await capture("shellmap-ps11-motion-blur.png");
-    effects.afterMotionBlur = await page.evaluate(() => ({
+    ), viewFilter.default);
+    const panBefore = await page.evaluate(() => ({
       fboBinds: globalThis.__cncD3D8PerfSummary?.().fboBinds ?? 0,
       draws: globalThis.__cncD3D8PerfSummary?.().draws ?? 0,
     }));
+    const panCommand = await page.evaluate((payload) => window.CnCPort.rpc(
+      "realEngineSetViewFilter", payload,
+    ), viewFilter.motionBlurPanAlpha);
+    const panLookAt = await page.evaluate(() => window.CnCPort.rpc(
+      "tacticalViewLookAt", { x: 300, y: 300, z: 0 },
+    ));
+    await page.evaluate(() => window.CnCPort.rpc("realEngineFrame", { frames: 2 }));
+    const panAfter = await page.evaluate(() => ({
+      fboBinds: globalThis.__cncD3D8PerfSummary?.().fboBinds ?? 0,
+      draws: globalThis.__cncD3D8PerfSummary?.().draws ?? 0,
+    }));
+    effects.motionBlurVariants.panAlpha = {
+      command: panCommand,
+      lookAt: panLookAt,
+      before: panBefore,
+      after: panAfter,
+      pixels: await sampleTacticalView(page),
+      screenshot: await capture("shellmap-ps11-motion-panAlpha.png"),
+    };
+
+    const endPanCommand = await page.evaluate((payload) => window.CnCPort.rpc(
+      "realEngineSetViewFilter", payload,
+    ), viewFilter.motionBlurEndPanAlpha);
+    const endPanBefore = panAfter;
+    await page.evaluate(() => window.CnCPort.rpc("realEngineFrame", { frames: 2 }));
+    const endPanAfter = await page.evaluate(() => ({
+      fboBinds: globalThis.__cncD3D8PerfSummary?.().fboBinds ?? 0,
+      draws: globalThis.__cncD3D8PerfSummary?.().draws ?? 0,
+    }));
+    effects.motionBlurVariants.endPanAlpha = {
+      command: endPanCommand,
+      before: endPanBefore,
+      after: endPanAfter,
+      pixels: await sampleTacticalView(page),
+      screenshot: await capture("shellmap-ps11-motion-endPanAlpha.png"),
+    };
 
     await page.evaluate((payload) => window.CnCPort.rpc(
       "realEngineSetViewFilter", payload,
@@ -241,19 +377,46 @@ try {
       ps11.effects.monochromePixels.uniqueColorCount >= 24 &&
       ps11.effects.monochromePixels.luminanceRange >= 24,
     ps11.effects.monochromePixels);
-  check("ps11: motion-blur filter triggered", ps11.effects.motionBlurCommand?.ok === true &&
-    ps11.effects.motionBlurScreenshot === true &&
-    ps11.effects.afterMotionBlur?.fboBinds > ps11.effects.afterMonochrome?.perf?.fboBinds &&
-    ps11.effects.afterMotionBlur?.draws > ps11.effects.afterMonochrome?.perf?.draws, {
-    command: ps11.effects.motionBlurCommand?.result,
-    before: ps11.effects.afterMonochrome?.perf,
-    after: ps11.effects.afterMotionBlur,
-  });
-  check("ps11: motion blur preserves the tactical scene",
-    ps11.effects.motionBlurPixels?.ok === true &&
-      ps11.effects.motionBlurPixels.uniqueColorCount >= 24 &&
-      ps11.effects.motionBlurPixels.luminanceRange >= 24,
-    ps11.effects.motionBlurPixels);
+  check("ps11: all BW color variants captured",
+    Object.keys(ps11.effects.bwVariants ?? {}).length === 2,
+    Object.keys(ps11.effects.bwVariants ?? {}));
+  for (const [name, variant] of Object.entries(ps11.effects.bwVariants ?? {})) {
+    check(`ps11: ${name} filter triggered`, variant.command?.ok === true &&
+      variant.screenshot === true &&
+      variant.pixels?.ok === true &&
+      variant.pixels.uniqueColorCount >= 24 &&
+      variant.pixels.luminanceRange >= 24, effectSummary(variant));
+  }
+  check("ps11: both crossfade modes captured",
+    Object.keys(ps11.effects.crossfades ?? {}).length === 2,
+    Object.keys(ps11.effects.crossfades ?? {}));
+  for (const [name, variant] of Object.entries(ps11.effects.crossfades ?? {})) {
+    check(`ps11: ${name} crossfade triggered`, variant.command?.ok === true &&
+      variant.command?.result?.filter === viewFilter.crossfadeCircle.filter &&
+      variant.screenshot === true &&
+      variant.after?.fboBinds > variant.before?.fboBinds &&
+      variant.after?.draws > variant.before?.draws &&
+      variant.pixels?.ok === true &&
+      variant.pixels.uniqueColorCount >= 24 &&
+      variant.pixels.luminanceRange >= 24, effectSummary(variant));
+  }
+  check("ps11: all motion-blur modes captured",
+    Object.keys(ps11.effects.motionBlurVariants ?? {}).length === 8,
+    Object.keys(ps11.effects.motionBlurVariants ?? {}));
+  for (const [name, variant] of Object.entries(ps11.effects.motionBlurVariants ?? {})) {
+    check(`ps11: ${name} motion blur triggered`, variant.command?.ok === true &&
+      variant.command?.result?.filter === viewFilter.motionBlurInAlpha.filter &&
+      variant.screenshot === true &&
+      variant.after?.fboBinds > variant.before?.fboBinds &&
+      variant.after?.draws > variant.before?.draws &&
+      variant.pixels?.ok === true &&
+      variant.pixels.uniqueColorCount >= 24 &&
+      variant.pixels.luminanceRange >= 24 &&
+      (name !== "panAlpha" || variant.lookAt?.ok === true), {
+      ...effectSummary(variant),
+      lookAt: variant.lookAt?.result,
+    });
+  }
 
   const ff = await bootAndInspect("ff");
   check("ff: no SM1 shaders registered", ff.summary.sm1PixelShadersRegistered === 0 &&

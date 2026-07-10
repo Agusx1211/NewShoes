@@ -381,7 +381,10 @@ WaterRenderObjClass::WaterRenderObjClass(void)
 	
 	Int i=NUM_BUMP_FRAMES;
 	while (i--)
+	{
 		m_pBumpTexture[i]=NULL;
+		m_pBumpTexture2[i]=NULL;
+	}
 
 	m_riverVOrigin=0;
 	m_riverTexture=NULL;
@@ -447,6 +450,18 @@ RenderObjClass *	 WaterRenderObjClass::Clone(void) const
 //-------------------------------------------------------------------------------------------------
 HRESULT WaterRenderObjClass::initBumpMap(LPDIRECT3DTEXTURE8 *pTex, TextureClass *pBumpSource)
 {
+	if (pTex == NULL || pBumpSource == NULL) {
+		return E_INVALIDARG;
+	}
+
+	// These frames may already be cached as thumbnail-backed TextureClass
+	// objects. Disabling thumbnails affects new objects only, so explicitly
+	// promote the source before inspecting its D3D surface.
+	pBumpSource->Init();
+	if (pBumpSource->Peek_D3D_Texture() == NULL) {
+		return E_FAIL;
+	}
+
     SurfaceClass::SurfaceDescription    d3dsd;
 	SurfaceClass * surf;
     D3DLOCKED_RECT     d3dlr;
@@ -458,27 +473,37 @@ HRESULT WaterRenderObjClass::initBumpMap(LPDIRECT3DTEXTURE8 *pTex, TextureClass 
 
 	pBumpSource->Get_Level_Description(d3dsd);
 
-	if (Get_Bytes_Per_Pixel(d3dsd.Format) != 4)
+	if (Get_Bytes_Per_Pixel(d3dsd.Format) != 4 && d3dsd.Format != WW3D_FORMAT_A4R4G4B4)
 	{
 		// LORENZEN WAS BUGGED BY THIS, 
 		//		DEBUG_CRASH(("WaterRenderObjClass::Invalid BumpMap format - Was it compressed?") );
-		return S_OK;
+		return E_FAIL;
 	}
 	
-	if (pBumpSource->Peek_D3D_Texture())
-	{
-		numLevels=pBumpSource->Peek_D3D_Texture()->GetLevelCount();
-	}
-	else
-		return S_OK;
+	numLevels=pBumpSource->Peek_D3D_Texture()->GetLevelCount();
 
 	pTex[0]=DX8Wrapper::_Create_DX8_Texture(d3dsd.Width,d3dsd.Height,WW3D_FORMAT_U8V8,MIP_LEVELS_ALL,D3DPOOL_MANAGED,false);
+	if (pTex[0] == NULL) {
+		return E_FAIL;
+	}
 
 	for (Int level=0; level < numLevels; level++)
 	{
 		surf=pBumpSource->Get_Surface_Level(level);
+		if (surf == NULL) {
+			SAFE_RELEASE(pTex[0]);
+			return E_FAIL;
+		}
 		surf->Get_Description(d3dsd);
 		pSrc=(unsigned char *)surf->Lock((int *)&dwSrcPitch);
+		const unsigned int mipSourceBytesPerPixel = Get_Bytes_Per_Pixel(d3dsd.Format);
+		const WW3DFormat mipSourceFormat = d3dsd.Format;
+		auto sampleHeight = [mipSourceFormat](const BYTE *pixel) -> LONG {
+			if (mipSourceFormat == WW3D_FORMAT_A4R4G4B4) {
+				return static_cast<LONG>((pixel[0] & 0x0f) * 17);
+			}
+			return static_cast<LONG>(pixel[0]);
+		};
 
 		pTex[0]->LockRect( level, &d3dlr, 0, 0 );
 		DWORD dwDstPitch = (DWORD)d3dlr.Pitch;
@@ -498,11 +523,13 @@ HRESULT WaterRenderObjClass::initBumpMap(LPDIRECT3DTEXTURE8 *pTex, TextureClass 
 
 			for( DWORD x=0; x<d3dsd.Width; x++ )
 			{
-				LONG v00 = 256-*(pSrcB0+0); // Get the current pixel
-				LONG v01 = 256-*(pSrcB0+4); // and the pixel to the right
-				LONG vM1 = 256-*(pSrcB0-4); // and the pixel to the left
-				LONG v10 = 256-*(pSrcB1+0); // and the pixel one line below.
-				LONG v1M = 256-*(pSrcB2+0); // and the pixel one line above.
+				BYTE* pSrcLeft = x == 0 ? pSrcB0 : pSrcB0 - mipSourceBytesPerPixel;
+				BYTE* pSrcRight = x + 1 == d3dsd.Width ? pSrcB0 : pSrcB0 + mipSourceBytesPerPixel;
+				LONG v00 = 256-sampleHeight(pSrcB0); // Get the current pixel
+				LONG v01 = 256-sampleHeight(pSrcRight); // and the pixel to the right
+				LONG vM1 = 256-sampleHeight(pSrcLeft); // and the pixel to the left
+				LONG v10 = 256-sampleHeight(pSrcB1); // and the pixel one line below.
+				LONG v1M = 256-sampleHeight(pSrcB2); // and the pixel one line above.
 
 				LONG iDu = (vM1-v01); // The delta-u bump value
 				LONG iDv = (v1M-v10); // The delta-v bump value
@@ -539,8 +566,10 @@ HRESULT WaterRenderObjClass::initBumpMap(LPDIRECT3DTEXTURE8 *pTex, TextureClass 
 						break;
 				}
 
-				// Move one pixel to the left (src is 32-bpp)
-				pSrcB0+=4;   pSrcB1+=4;   pSrcB2+=4;
+				// Move one pixel to the right in the source mip.
+				pSrcB0+=mipSourceBytesPerPixel;
+				pSrcB1+=mipSourceBytesPerPixel;
+				pSrcB2+=mipSourceBytesPerPixel;
 			}
 
 			// Move to the next line
@@ -1067,8 +1096,11 @@ Int WaterRenderObjClass::init(Real waterLevel, Real dx, Real dy, SceneClass *par
 	Set_Force_Visible(TRUE);	//water is always visible since it's a composite object made of multiple planes all over the map.
 
 	ReAcquireResources();
-#if 0	//MD does not support the old bump-mapped water at all so no point loading textures. -MW 8-11-03
-	if (type == WATER_TYPE_2_PVSHADER || (W3DShaderManager::getChipset() >= DC_GENERIC_PIXEL_SHADER_1_1))
+	// Zero Hour stopped selecting the old GeForce3 path, but browser builds can
+	// explicitly request WaterType 2 and the shipped base-game archives still
+	// contain every caustXX frame. Restore only that explicit path; do not make
+	// all ps.1.1 hardware pay for 32 animated bump maps.
+	if (type == WATER_TYPE_2_PVSHADER)
 	{	//geforce3 specific water requires some extra D3D assets
 		m_pDev=DX8Wrapper::_Get_D3D_Device8();
 		//save previous thumbnail mode
@@ -1077,7 +1109,6 @@ Int WaterRenderObjClass::init(Real waterLevel, Real dx, Real dy, SceneClass *par
 
 		//load bump map textures off disk
 		TextureClass *pBumpSource;	//temporary textures in a format W3D understands
-		TextureClass *pBumpSource2;	//temporary textures in a format W3D understands
 		Int i;
 		i=NUM_BUMP_FRAMES;
 		while (i--)
@@ -1085,20 +1116,20 @@ Int WaterRenderObjClass::init(Real waterLevel, Real dx, Real dy, SceneClass *par
 			char bump_name[128];
 
 			sprintf(bump_name,"caust%.2d.tga",i);
-			pBumpSource=WW3DAssetManager::Get_Instance()->Get_Texture(bump_name);
-			sprintf(bump_name,"caustS%.2d.tga",i);
-			pBumpSource2=WW3DAssetManager::Get_Instance()->Get_Texture(bump_name);
+			pBumpSource=WW3DAssetManager::Get_Instance()->Get_Texture(
+				bump_name,
+				MIP_LEVELS_ALL,
+				WW3D_FORMAT_A8R8G8B8,
+				false,
+				TextureBaseClass::TEX_REGULAR,
+				false);
 			initBumpMap(m_pBumpTexture+i, pBumpSource);
-			initBumpMap(m_pBumpTexture2+i, pBumpSource2);
 			WW3DAssetManager::Get_Instance()->Release_Texture(pBumpSource);
-			WW3DAssetManager::Get_Instance()->Release_Texture(pBumpSource2);
 			REF_PTR_RELEASE(pBumpSource);
-			REF_PTR_RELEASE(pBumpSource2);
 		}
 		//restore previous thumpnail mode
 		WW3D::Set_Thumbnail_Enabled(thumbnails_enabled);
 	}
-#endif
 
 	//Setup material for regular water
 	m_vertexMaterialClass=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
@@ -1447,7 +1478,8 @@ void WaterRenderObjClass::loadSetting( Setting *setting, TimeOfDay timeOfDay )
 //-------------------------------------------------------------------------------------------------
 void WaterRenderObjClass::updateRenderTargetTextures(CameraClass *cam)
 {
-	if (m_waterType == WATER_TYPE_2_PVSHADER && getClippedWaterPlane(cam, NULL) &&
+	if (m_waterType == WATER_TYPE_2_PVSHADER && m_pReflectionTexture != NULL &&
+		getClippedWaterPlane(cam, NULL) &&
 		TheTerrainRenderObject && TheTerrainRenderObject->getMap())
 		renderMirror(cam);	//generate texture containing reflected scene
 }
@@ -1607,7 +1639,15 @@ void WaterRenderObjClass::Render(RenderInfoClass & rinfo)
 		case WATER_TYPE_2_PVSHADER:
 			//Pixel/Vertex Shader based water which uses an off-screen rendered reflection texture
 			CNC_PORT_NOTE_WATER_STEP("W3DWater.render.type2.before");
-			drawSea(rinfo);	//draw water surface
+			if (m_pReflectionTexture != NULL && m_dwWavePixelShader != 0 &&
+					m_dwWaveVertexShader != 0 && m_vertexBufferD3D != NULL &&
+					m_indexBufferD3D != NULL && m_pBumpTexture[m_iBumpFrame] != NULL) {
+					drawSea(rinfo);	//draw water surface
+			} else {
+				// A forced WaterType 2 on a fixed-function adapter must not dereference
+				// resources that ReAcquireResources could not create.
+				renderWater();
+			}
 			CNC_PORT_NOTE_WATER_STEP("W3DWater.render.type2.after");
 			break;
 
