@@ -200,6 +200,14 @@ for P1c:
       software-raster overload — exact 60/30 is a Mac Metal measurement).
 - [ ] GATE D Mac Metal + owner (deploy dist-threaded + this branch's harness
       to cnc-gpu, verify 60/30 pacing + owner playtest behind ?threads=1)
+- [x] Default-readiness gap closure — GREEN 2026-07-10 (gap-closure lane):
+      threaded state/issue-dump/mount-guard/shader-tier RPC routing, OPFS
+      stream reads (music/speech restored under OPFS mounts), MSS byte-copy
+      dedupe (316 starts -> 33 copies in the gate run), audible-path +
+      completion-drain + save-round-trip + resolution-flow checks in
+      verify:threaded-play (14 -> 30 checks, all green on dev-box
+      SwiftShader; boot to title 28.8s). Default dist byte-identical
+      (md5-proven). See "Default-readiness gap closure" below.
 - [x] P2 OPFS-as-disk mounts in threaded mode — GREEN 2026-07-10 (lane
       P2-integration): 64KB readahead in the fd intercept (TOC walk 2137ms
       -> 1.56ms), `?threads=1` mounts stream fetch->OPFS + stage handles
