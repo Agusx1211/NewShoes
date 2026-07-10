@@ -238,8 +238,12 @@ async function main() {
     checks.push(["client frames advancing", clientRate > 1]);
     checks.push(["logic frames advancing", logicRate > 0.5]);
     checks.push([
-      "logic gated below client rate (paced mode semantics)",
-      logicRate <= clientRate * 1.05 + 1,
+      // Paced-mode invariant: logic never exceeds catchup (2) logic frames
+      // per client frame. Under SwiftShader overload the loop legitimately
+      // runs AT the catchup bound (sim slows gracefully, original engine
+      // behavior); exact 60/30 is a real-GPU (Mac Metal) measurement.
+      "logic within paced catchup bound (<= 2x client rate)",
+      logicRate <= clientRate * 2.1 + 1,
     ]);
     // Exact 60/30 only holds on a real GPU; record it when SwiftShader keeps up.
     summary.pacing.hitsTargetRates = clientRate >= 55 && clientRate <= 65
