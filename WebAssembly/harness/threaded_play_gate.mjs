@@ -71,8 +71,10 @@ async function bootPlayPage(browser, url, label, consoleLines) {
     }).catch(() => {});
   }, 20000) : null;
   try {
-    // Boot is done when play.mjs hides the overlay (init returned + HUD shown).
-    await page.waitForSelector("#overlay.hidden", { timeout: BOOT_TIMEOUT_MS });
+    // Boot is done when play.mjs hides the overlay (init returned + HUD
+    // shown). state:"attached" — the .hidden overlay is display:none, so the
+    // default visible-state wait would never fire.
+    await page.waitForSelector("#overlay.hidden", { state: "attached", timeout: BOOT_TIMEOUT_MS });
   } finally {
     if (progressTimer) {
       clearInterval(progressTimer);
