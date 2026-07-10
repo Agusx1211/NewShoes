@@ -762,27 +762,46 @@ DONE.md with reasons.
       notes/p1-engine-thread.md "P2-prep results".
 - [ ] **P2 integration follow-ups (2026-07-10, from the P2-prep probe —
       prerequisites for wiring OPFS reads under the real engine boot):**
-      (a) SMALL-READ COALESCING in the intercept layer: the engine's
-      byte-wise TOC walk costs ~0.58ms per OPFS read call (Chromium sync
-      storage IPC) → ~35s projected across the ~30-archive boot vs ~6s
-      proxied; add a C-side readahead buffer (e.g. 64KB) in
-      wasm_opfs_files.cpp so sequential small reads collapse to 1 OPFS call
-      per buffer fill (no engine edits needed). (b) stat/access coverage:
-      0-byte MEMFS markers satisfy *.big enumeration (FindFirstFile →
-      readdir+stat) but expose size 0 / mtime 0 to
-      Win32LocalFileSystem::getFileInfo (archive timestamp in
-      Win32BIGFile::getFileInfo) — intercept stat paths or write real sizes
-      into markers when something is proven to care. (c) sync-handle
-      lifecycle: createSyncAccessHandle holds an exclusive per-file lock —
-      OPFS deletes/updates (re-download, cache invalidation) require
-      releasing the realm's handles first (NoModificationAllowedError
-      otherwise). (d) real boot wiring: build the {enginePath→opfsPath} map
-      from the manifest, stage handles in the engine-thread realm BEFORE the
-      engine pthread spawns (P1a ordering rule), register "/assets/" (or the
-      real mount prefix), create markers, and delete the MEMFS archive
-      mounts + mount pipeline (the P2 payoff: ~2GB residency gone).
-      (e) measure the same probe on the Mac M4 (real SSD) — dev-box numbers
-      are the conservative bound.
+      DONE (2026-07-10, lane P2-integration; details in
+      notes/p1-engine-thread.md "P2 integration results"):
+      (a) small-read coalescing — 64KB per-fd readahead in
+      wasm_opfs_files.cpp; probe:p2-opfs TOC walk 2137ms → 1.56ms (now
+      faster than the FS proxy's 319ms), byte-exactness re-proven, the ~35s
+      boot hazard is gone. (d) real boot wiring — threaded `?threads=1`
+      mounts now stream fetch→OPFS on the IO worker (never RAM-resident,
+      play-UI progress preserved), write 0-byte MEMFS markers, register the
+      intercept prefix, and stage sync handles in the engine realm via the
+      new `stageOpfsFiles` command BEFORE the engine pthread spawns (the
+      awaited mount round trip is the ordering guarantee); `?opfsmount=0`
+      keeps the MEMFS threaded mount for A/B runs; the non-threaded default
+      path is untouched (MEMFS pipeline still owns it — sync access handles
+      are worker-only, so retiring MEMFS mounts wholesale waits for
+      threaded-by-default).
+      STILL OPEN: (b) stat/access coverage: 0-byte MEMFS markers expose
+      size 0 / mtime 0 to Win32LocalFileSystem::getFileInfo (archive
+      timestamp in Win32BIGFile::getFileInfo) — intercept stat paths or
+      write real sizes into markers when something is proven to care.
+      (c) sync-handle lifecycle: staged handles hold exclusive per-file
+      locks for the page lifetime — a second tab (or same-session re-mount
+      of the same paths) collides (NoModificationAllowedError on
+      fetchToOpfs truncate); needs per-session namespacing + orphan cleanup
+      or a release-handles protocol before multi-tab play.
+      (e) measure the readahead probe + OPFS-threaded boot on the Mac M4
+      (real SSD) — dev-box numbers are the conservative bound.
+      (f) OPFS-backed (or engine-realm) audio payload inventory if that
+      diagnostics surface is wanted in threaded mode — the OPFS mount path
+      marks it `{ok:false, skipped:true}`.
+      (g) headless-harness note: ephemeral Playwright contexts cap OPFS at
+      ~1.25GiB (in-memory backend, write() returns 2^32-8 =
+      FILE_ERROR_NO_SPACE); any OPFS-mount harness run must use
+      launchPersistentContext (threaded_play_gate.mjs does).
+      (h) threaded crash surfacing: a RELEASE_CRASH inside an engine-thread
+      init step tears down the worker's emscripten main loop (ExitStatus)
+      before engine_realm_boot's pumpInit catch can post the abort — the
+      page only learns via the 600s engineInit timeout. Catch/report the
+      exit at the tick boundary (or hook the crash path to post a realm
+      message) so threaded init crashes fail fast like non-threaded ones
+      (found while diagnosing the P2 relative-path miss, 2026-07-10).
       PROGRESS (2026-07-10, lane P1c): threaded play path LANDED and GREEN —
       `play.html?threads=1` boots the REAL engine on the pthread
       (harness/engine_realm_boot.mjs in the worker realm + bridge threaded

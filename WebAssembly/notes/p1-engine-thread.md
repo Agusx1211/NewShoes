@@ -203,6 +203,11 @@ for P1c:
       software-raster overload — exact 60/30 is a Mac Metal measurement).
 - [ ] GATE D Mac Metal + owner (deploy dist-threaded + this branch's harness
       to cnc-gpu, verify 60/30 pacing + owner playtest behind ?threads=1)
+- [x] P2 OPFS-as-disk mounts in threaded mode — GREEN 2026-07-10 (lane
+      P2-integration): 64KB readahead in the fd intercept (TOC walk 2137ms
+      -> 1.56ms), `?threads=1` mounts stream fetch->OPFS + stage handles
+      pre-spawn, gate 14/14 with title in 17.4s and main-thread JS heap
+      12MiB (2.2GB archive set on disk). See "P2 integration results".
 
 ## P1c root-cause find: Win32 CRITICAL_SECTION shim vs pthreads (2026-07-10)
 
@@ -461,3 +466,131 @@ Reading of the numbers (decides P2 shape, honestly):
   prep-then-spawn is sufficient because the thread's EM_JS calls are
   synchronous against already-staged realm state; the blocked worker event
   loop only matters for ASYNC realm work (P1a note still applies there).
+
+## P2 integration results (lane P2-integration, 2026-07-10)
+
+Threaded mode (`?threads=1`) now mounts archives ON OPFS, not MEMFS: the
+bytes stream fetch->disk on the IO worker and the engine reads them through
+the fd-intercept seam on the engine thread. The default (non-threaded) path
+is byte-identical (`opfsArchiveMountEnabled()` is false without ?threads=1);
+`?opfsmount=0` forces the MEMFS mount even in threaded mode (A/B runs).
+
+**1. 64KB C-side readahead in src/wasm_opfs_files.cpp** (the small-read
+coalescing P2-prep demanded): each virtual fd keeps a per-fd 64KB window;
+reads < 64KB serve from it (one OPFS call per window fill), reads >= 64KB
+bypass it unchanged. Lock held across the buffered path (single-reader
+reality: only the engine thread reads); window freed on close; files are
+immutable while staged so the window never goes stale. Diag exports
+`cnc_port_opfs_js_read_calls/_bytes` + `_intercept_read_calls`; the probe
+reports per-phase `tocOpfsCalls`/`phaseOpfsCalls`.
+
+probe:p2-opfs before/after (same box, same day, INIZH.big, 3462-read TOC,
+24/24 PASS both runs — byte-exactness re-proven by the FNV Range checks):
+
+| pattern                | before      | after                             |
+|------------------------|-------------|-----------------------------------|
+| TOC walk (3462 reads)  | 2137ms      | **1.56ms** (tocOpfsCalls = 0 — the header read's window fill already covers the 44KB TOC region); beats the FS proxy's 319ms |
+| random 64KB preads     | 128 MB/s    | 131 MB/s (bypass, unchanged)      |
+| sequential 1MB reads   | 232 MB/s    | 219 MB/s (bypass, noise)          |
+| largest-entry read     | 3.79ms      | 2.87ms                            |
+
+The projected ~35s TOC hazard across the ~30-archive boot is gone: TOC cost
+is now ~1 OPFS call per 64KB of directory (phaseOpfsCalls 537 for the whole
+probe phase = 512 random reads + ~19 sequential 1MB + fills).
+
+**2. Threaded mount path** (bridge.js `mountArchivesToOpfs`, branch at the
+top of `mountArchives`): per archive, io_worker `fetchToOpfs` streams the
+bytes to `cnc-archives<memfsPath>` (bounded parallelism =
+archiveFetchParallelism(), progress events preserved for the play UI: fetch
+phase from the worker's streamed progress + a final done event); a 0-byte
+MEMFS marker is written at the engine path (enumeration contract); the
+intercept prefix `<baseDirectory>/` is registered (pre-boot: main-side cwrap
+call — main still owns the wasm exactly like the MEMFS mount's FS writes;
+post-boot it would route through engineCall); then a `stageOpfsFiles` realm
+command (new in engine_realm_boot.mjs handleCommand) imports
+opfs_realm_files.mjs with the {enginePath->opfsPath} map and pre-opens the
+sync access handles IN the engine pthread's realm. Awaiting that round trip
+inside mountArchives IS the stage-before-spawn ordering guarantee: play.mjs
+only calls realEngineInit (boot+go) after the mount resolves.
+opfs_realm_files.mjs now keeps a realm-global registry
+(globalThis.__cncOpfsRegistry): multiple imports (distinct ?map= URLs) merge
+cumulatively, hooks/diag/listener install once, and closed virtual-open ids
+recycle through a free-list (the engine re-opens the archive per inner-file
+read — the id table must not grow with session length). No re-download
+skipping (owner rule: no cache layers): every boot truncates + rewrites the
+same OPFS paths, so disk usage stays bounded at one archive set.
+
+**What is intentionally skipped on the OPFS mount path** (documented in the
+code): per-archive/aggregate `probeArchive` and `registerArchiveSet`'s probe
+gating — the probes open archives through the engine's C++ path on the MAIN
+thread, whose realm has no staged handles (they would read the 0-byte
+markers). Verification = streamed byte counts vs manifest + the engine's own
+init opening every archive on the engine thread. The main-side audio payload
+INVENTORY scan is skipped with an explicit
+`{ok:false, skipped:true, source:"threaded OPFS mounts"}` marker (it reads
+archive bytes from MEMFS; it is a diagnostics surface — the real audio path
+reads payloads on the engine thread). `registerArchiveSet` itself still runs
+(the engine needs the run-directory install).
+
+**3. Gate result (dev box, SwiftShader, 2026-07-10):**
+`node harness/threaded_play_gate.mjs` (SKIP_REFERENCE) 14/14 PASS with
+OPFS-backed mounts — includes the new hard check "threaded mount is
+OPFS-backed (no MEMFS archive bytes)". Threaded boot to TITLE in **17.4s**
+(vs 133s for the MEMFS-threaded P1c gate-run-9 on the same box: the 2.2GB
+of JS-side MEMFS writes into a pthread+growable heap are gone), shellmap
+fully rendered (artifacts/screenshots/p1c-title-threaded.png), input +
+windows-dump RPC round-trip, no context loss. Post-boot memory: **wasm
+0.16 GiB, main-thread JS heap 12 MiB** with the 2,229,636,268-byte
+(30-archive) set on OPFS. NOTE: MEMFS archive bytes live in the PAGE JS
+heap (MEMFS stores Uint8Arrays outside wasm memory), so the OPFS-vs-MEMFS
+delta shows in `performance.memory.usedJSHeapSize`, not wasmMemoryBytes —
+the gate records both in its summary.
+
+**Real-boot fix required along the way (found by the gate, not the probe):**
+the engine chdir()s into the run directory and opens archives with RELATIVE
+paths (`loadBigFilesFromDirectory("", "*.big")` -> `"INIZH.big"`), so the
+absolute registered prefix never matched: every archive open fell through
+to the 0-byte marker, no archives indexed, and TheWritableGlobalData
+aborted with the P0 "no assets" signature. `cnc_port_opfs_intercept_open`
+now absolutizes non-absolute paths against getcwd() for matching (misses
+still fall through to POSIX with the original path). Related finding: a
+RELEASE_CRASH inside an engine-thread init step tears down the worker main
+loop (ExitStatus) before the init pump's catch can report it — the page
+only learns via the 600s engineInit timeout (TODO (h): surface engine-
+thread crashes fast).
+
+**Gotchas found (real, reproduced):**
+
+- **Ephemeral Playwright contexts cap OPFS at ~1.25GiB** on the dev box:
+  `chromium.launch()` contexts are incognito-like; their OPFS backend is
+  in-memory and `FileSystemSyncAccessHandle.write()` fails at ~1.34GB
+  cumulative with return value 2^32-8 (base::File FILE_ERROR_NO_SPACE
+  leaking as unsigned — this old Chromium does not throw QuotaExceededError
+  on that path). The 18.7MB probe payload never hit it; the ~1.5GB play
+  archive set does. threaded_play_gate.mjs therefore uses
+  `launchPersistentContext` (disk-backed quota, fresh profile deleted per
+  run = still a from-empty OPFS). Real Chrome on a normal profile (the
+  owner's Mac) is disk-backed and unaffected. io_worker's short-write check
+  turns this into a loud mount error, never silent corruption.
+- The pthread 'unwind' completion surfaces as a benign `ExitStatus`
+  pageerror in Playwright on the threaded boot; it was always logged as a
+  console error ("completed its main entry point with an `unwind`") — not
+  new, just now visible in pageerror monitors too.
+
+**Remaining for retiring MEMFS mounts once threaded becomes default:**
+
+- stat/getFileInfo coverage: markers expose size 0 / mtime 0 (unchanged
+  P2-prep caveat; nothing has been proven to care through a full boot).
+- Handle lifecycle: staged sync-access handles hold exclusive locks for the
+  page lifetime — a SECOND tab (or a re-mount of the same paths in one
+  session) collides: tab 2's fetchToOpfs cannot truncate what tab 1 has
+  staged (NoModificationAllowedError). Needs per-session namespacing +
+  orphan cleanup, or a release-handles protocol, before multi-tab play.
+- Non-threaded mode still needs MEMFS (sync access handles are worker-only;
+  the main-thread engine cannot read OPFS synchronously) — the MEMFS mount
+  pipeline stays until threaded is the default, then it can shrink to the
+  ?opfsmount=0 escape hatch and eventually delete.
+- OPFS-backed audio payload inventory (or engine-realm scan) if that
+  diagnostics surface is wanted in threaded mode.
+- Mac M4 measurement of the readahead probe + OPFS-threaded boot (dev-box
+  numbers are the conservative bound).
