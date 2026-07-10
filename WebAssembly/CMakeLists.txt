@@ -11,6 +11,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CNC_DIST_DIR "dist" CACHE STRING "dist dir for wasm artifacts")
 option(CNC_WASM_NATIVE_EXCEPTIONS "Use native WebAssembly exception handling instead of Emscripten JS exception catching" OFF)
+# P0 engine-thread spike (owner-directed 2026-07-10; IDEAS.md "the browser as
+# a 2003 PC"): build cnc-port with pthreads so the engine can run on its own
+# thread. OFF by default — the default single-threaded build must stay
+# byte-identical. Always use a separate build dir for the threaded variant
+# (tools/build_wasm.sh with CNC_PORT_THREADS=1 does this): -pthread is applied
+# globally because every static lib cnc-port links must be compiled with
+# atomics+bulk-memory or wasm-ld refuses to link --shared-memory objects.
+option(CNC_PORT_THREADS "Build cnc-port with pthreads (engine-on-its-own-thread P0 spike)" OFF)
+if(CNC_PORT_THREADS)
+  add_compile_options(-pthread)
+  add_link_options(-pthread)
+endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/${CNC_DIST_DIR}")
 
 set(CNC_EXCEPTION_COMPILE_OPTION "-fexceptions")
@@ -5132,6 +5144,36 @@ target_link_options(cnc-port PRIVATE
   # the moment the preRun hook even probes for the function.
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['cwrap','FS','addRunDependency','removeRunDependency']"
 )
+
+if(CNC_PORT_THREADS)
+  # Engine-thread P0 spike link surface (IDEAS.md "the browser as a 2003 PC").
+  # -pthread itself comes from the global add_compile_options/add_link_options
+  # at the top of this file.
+  #
+  # NOTE: -sPROXY_TO_PTHREAD is intentionally ABSENT. cnc-port links with
+  # --no-entry and is driven by exported functions from the JS bridge; emsdk
+  # 3.1.6 hard-errors on that combination:
+  #   "emcc: error: PROXY_TO_PTHREAD proxies main() for you, but no main exists"
+  # The threaded architecture instead spawns its own engine pthread — see
+  # src/wasm_engine_thread_spike.cpp (cnc_port_spawn_engine_thread /
+  # cnc_port_spawn_engine_init_thread).
+  #
+  # NOTE: -sEXPORT_ES6=1 + -sMODULARIZE=1 + pthreads verified WORKING at
+  # runtime on emsdk 3.1.6 + headless Chromium (the pthread worker is a
+  # classic worker that dynamic-import()s the ES module; Chromium allows
+  # dynamic import in classic dedicated workers). No output-format downgrade
+  # was needed.
+  #
+  # NOTE: -sALLOW_MEMORY_GROWTH=1 + pthreads links with only a warning on
+  # 3.1.6 ("may run non-wasm code slowly", the JS-side heap-view refresh
+  # caveat); it is kept for spike parity with the default build. P3 of the
+  # design intends a fixed-size heap anyway.
+  target_sources(cnc-port PRIVATE src/wasm_engine_thread_spike.cpp)
+  target_link_options(cnc-port PRIVATE
+    "SHELL:-sOFFSCREENCANVAS_SUPPORT=1"
+    "SHELL:-sPTHREAD_POOL_SIZE=4"
+  )
+endif()
 
 add_executable(compression-eac-smoke
   tests/compression_eac_smoke.cpp
