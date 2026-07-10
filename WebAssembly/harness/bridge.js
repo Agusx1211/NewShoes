@@ -550,6 +550,7 @@ const d3d8TextureStats = {
   lastMissingBind: null,
   lastUnsupported: null,
   lastSampler: null,
+  lastOffscreenFboBind: null,
   lastTextureDepthFboBind: null,
 };
 const d3d8PerfStats = {
@@ -7451,6 +7452,7 @@ function updateD3D8TextureSummary(force = false) {
       lastMissingBind: d3d8TextureStats.lastMissingBind,
       lastUnsupported: d3d8TextureStats.lastUnsupported,
       lastSampler: d3d8TextureStats.lastSampler,
+      lastOffscreenFboBind: d3d8TextureStats.lastOffscreenFboBind,
       lastTextureDepthFboBind: d3d8TextureStats.lastTextureDepthFboBind,
     },
     // Rebuilding the ~150-field perf summary on every texture op is the
@@ -7756,7 +7758,7 @@ function bindD3D8Framebuffer(payload = {}) {
     );
 
     let depthRenderbuffer = null;
-    let depthAttachment = "renderbuffer";
+    let depthAttachment = "depth-renderbuffer";
     let depthStorage = "depth16";
     if (depthTextureId !== 0 && depthTexture && depthInfo) {
       gl.framebufferTexture2D(
@@ -7771,18 +7773,38 @@ function bindD3D8Framebuffer(payload = {}) {
     } else {
       depthRenderbuffer = gl.createRenderbuffer();
       gl.bindRenderbuffer(gl.RENDERBUFFER, depthRenderbuffer);
-      gl.renderbufferStorage(
-        gl.RENDERBUFFER,
-        gl.DEPTH_COMPONENT16,
-        width,
-        height
-      );
-      gl.framebufferRenderbuffer(
-        gl.FRAMEBUFFER,
-        gl.DEPTH_ATTACHMENT,
-        gl.RENDERBUFFER,
-        depthRenderbuffer
-      );
+      if (d3d8HasStencilBuffer) {
+        // The native D3D8 device exposes a D24S8 auto depth/stencil surface.
+        // RTT callers that omit an explicit depth texture still expect the
+        // matching implicit surface, including stencil for projected shadows.
+        gl.renderbufferStorage(
+          gl.RENDERBUFFER,
+          gl.DEPTH24_STENCIL8,
+          width,
+          height
+        );
+        gl.framebufferRenderbuffer(
+          gl.FRAMEBUFFER,
+          gl.DEPTH_STENCIL_ATTACHMENT,
+          gl.RENDERBUFFER,
+          depthRenderbuffer
+        );
+        depthAttachment = "depth-stencil-renderbuffer";
+        depthStorage = "depth24-stencil8";
+      } else {
+        gl.renderbufferStorage(
+          gl.RENDERBUFFER,
+          gl.DEPTH_COMPONENT16,
+          width,
+          height
+        );
+        gl.framebufferRenderbuffer(
+          gl.FRAMEBUFFER,
+          gl.DEPTH_ATTACHMENT,
+          gl.RENDERBUFFER,
+          depthRenderbuffer
+        );
+      }
     }
 
     const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
@@ -7865,15 +7887,28 @@ function bindD3D8Framebuffer(payload = {}) {
 
   d3d8CurrentFramebuffer = fboEntry.fbo;
   d3d8CurrentFramebufferColorTextureId = colorTextureId;
+  const offscreenFboBind = {
+    colorTextureId,
+    depthTextureId,
+    width,
+    height,
+    attachment: fboEntry.depthAttachment,
+    storage: fboEntry.depthStorage,
+  };
+  const previousOffscreenFboBind = d3d8TextureStats.lastOffscreenFboBind;
+  const offscreenFboChanged = previousOffscreenFboBind?.colorTextureId !== colorTextureId ||
+    previousOffscreenFboBind?.depthTextureId !== depthTextureId ||
+    previousOffscreenFboBind?.width !== width ||
+    previousOffscreenFboBind?.height !== height ||
+    previousOffscreenFboBind?.attachment !== fboEntry.depthAttachment ||
+    previousOffscreenFboBind?.storage !== fboEntry.depthStorage;
+  d3d8TextureStats.lastOffscreenFboBind = offscreenFboBind;
   if (depthTextureId !== 0) {
     d3d8TextureStats.lastTextureDepthFboBind = {
-      colorTextureId,
-      depthTextureId,
-      width,
-      height,
-      attachment: fboEntry.depthAttachment,
-      storage: fboEntry.depthStorage,
+      ...offscreenFboBind,
     };
+  }
+  if (offscreenFboChanged || depthTextureId !== 0) {
     updateD3D8TextureSummary();
   }
   return finishFboBind(1);
@@ -8907,9 +8942,14 @@ function ensureD3D8DrawProgram() {
     vec4 d3dPretransformedPositionToClip(vec4 screenPosition) {
       vec2 viewportOrigin = uD3DViewport.xy;
       vec2 viewportSize = max(uD3DViewport.zw, vec2(1.0));
+      // D3D8 rasterizes XYZRHW coordinates at integer pixel centers. WebGL
+      // uses half-integer centers, so translate by half a pixel while mapping
+      // to clip space. This makes the engine's -0.5 fullscreen quads land on
+      // exact texel centers instead of bilinearly blurring the scene copy.
+      vec2 webGlPosition = screenPosition.xy + vec2(0.5);
       vec3 ndc = vec3(
-        ((screenPosition.x - viewportOrigin.x) / viewportSize.x) * 2.0 - 1.0,
-        1.0 - ((screenPosition.y - viewportOrigin.y) / viewportSize.y) * 2.0,
+        ((webGlPosition.x - viewportOrigin.x) / viewportSize.x) * 2.0 - 1.0,
+        1.0 - ((webGlPosition.y - viewportOrigin.y) / viewportSize.y) * 2.0,
         screenPosition.z * 2.0 - 1.0
       );
       float rhw = abs(screenPosition.w) > 0.000001 ? screenPosition.w : 1.0;
@@ -10722,9 +10762,10 @@ function ensureD3D8DepthStencilProgram() {
     vec4 d3dPretransformedPositionToClip(vec4 screenPosition) {
       vec2 viewportOrigin = uD3DViewport.xy;
       vec2 viewportSize = max(uD3DViewport.zw, vec2(1.0));
+      vec2 webGlPosition = screenPosition.xy + vec2(0.5);
       vec3 ndc = vec3(
-        ((screenPosition.x - viewportOrigin.x) / viewportSize.x) * 2.0 - 1.0,
-        1.0 - ((screenPosition.y - viewportOrigin.y) / viewportSize.y) * 2.0,
+        ((webGlPosition.x - viewportOrigin.x) / viewportSize.x) * 2.0 - 1.0,
+        1.0 - ((webGlPosition.y - viewportOrigin.y) / viewportSize.y) * 2.0,
         screenPosition.z * 2.0 - 1.0
       );
       float rhw = abs(screenPosition.w) > 0.000001 ? screenPosition.w : 1.0;
@@ -10953,9 +10994,10 @@ function ensureD3D8DepthStencilNoClipProgram() {
     vec4 d3dPretransformedPositionToClip(vec4 screenPosition) {
       vec2 viewportOrigin = uD3DViewport.xy;
       vec2 viewportSize = max(uD3DViewport.zw, vec2(1.0));
+      vec2 webGlPosition = screenPosition.xy + vec2(0.5);
       vec3 ndc = vec3(
-        ((screenPosition.x - viewportOrigin.x) / viewportSize.x) * 2.0 - 1.0,
-        1.0 - ((screenPosition.y - viewportOrigin.y) / viewportSize.y) * 2.0,
+        ((webGlPosition.x - viewportOrigin.x) / viewportSize.x) * 2.0 - 1.0,
+        1.0 - ((webGlPosition.y - viewportOrigin.y) / viewportSize.y) * 2.0,
         screenPosition.z * 2.0 - 1.0
       );
       float rhw = abs(screenPosition.w) > 0.000001 ? screenPosition.w : 1.0;
@@ -22669,6 +22711,7 @@ async function rpc(command, payload = {}) {
         const screenshot = snapshotCanvas();
         const expectedTextureCenter = probe?.expectedTextureCenter ?? [34, 85, 170, 255];
         const expectedBackbufferCenter = probe?.expectedBackbufferCenter ?? [16, 32, 48, 255];
+        const lastOffscreenFboBind = textureProbe?.lastOffscreenFboBind ?? null;
         const textureDelta = {
           creates: (textureProbe?.creates ?? 0) - (beforeTextures.creates ?? 0),
           releases: (textureProbe?.releases ?? 0) - (beforeTextures.releases ?? 0),
@@ -22686,6 +22729,10 @@ async function rpc(command, payload = {}) {
           && probe?.lastBrowserFbo?.depthTextureId === 0
           && pixelsApproximatelyEqual(probe?.textureSample, expectedTextureCenter, 1)
           && pixelsApproximatelyEqual(screenshot.centerPixel, expectedBackbufferCenter, 1)
+          && lastOffscreenFboBind?.colorTextureId === probe?.textureId
+          && lastOffscreenFboBind?.depthTextureId === 0
+          && lastOffscreenFboBind?.attachment === "depth-stencil-renderbuffer"
+          && lastOffscreenFboBind?.storage === "depth24-stencil8"
           && textureDelta.creates === 1
           && textureDelta.releases === 1
           && textureDelta.live === 0
