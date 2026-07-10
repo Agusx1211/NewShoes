@@ -21089,4 +21089,9 @@ window.CnCPort = {
   d3d8BridgeCallbacks,
   persistSaves: persistSaveFilesystem,
   listSaves: listSaveFiles,
+  // Raw emscripten Module accessor for harness diagnostics (threaded mode:
+  // lets a probe read atomic counters / last-step markers FROM THE MAIN
+  // THREAD while the engine thread is busy inside a long wasm call and the
+  // realm port cannot answer).
+  engineModule: () => cncPortEmscriptenModule,
 };

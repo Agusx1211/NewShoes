@@ -40,6 +40,22 @@ while (Date.now() - startedAt < seconds * 1000) {
       cncPortType: typeof window.CnCPort,
       logCount: logs.length,
       pendingThreadedCommands: window.CnCPort?.state?.threadedPendingCommands ?? null,
+      // Main-thread reads of shared-memory atomics/markers: work even while
+      // the engine thread is stuck inside one long wasm call.
+      engineThread: (() => {
+        try {
+          const m = window.CnCPort?.engineModule?.();
+          if (!m) return null;
+          return {
+            heartbeat: m._cnc_port_engine_thread_boot_heartbeat?.(),
+            state: m._cnc_port_engine_thread_boot_state?.(),
+            lastUpdateTarget: m.cwrap?.("cnc_port_real_engine_last_update_target", "string", [])?.(),
+            lastGameLogicStep: m.cwrap?.("cnc_port_real_engine_last_game_logic_step", "string", [])?.(),
+          };
+        } catch (error) {
+          return { error: String(error).slice(0, 120) };
+        }
+      })(),
       progress: document.querySelector("#progress")?.textContent ?? "",
       overlayHidden: document.querySelector("#overlay")?.classList?.contains("hidden") ?? null,
       threadedMode: window.CnCPort?.state?.threadedMode ?? null,
@@ -48,18 +64,16 @@ while (Date.now() - startedAt < seconds * 1000) {
         now: Math.round(window.CnCPort.state.threadedEngine.now ?? -1),
         init: window.CnCPort.state.threadedEngine.initState,
         live: window.CnCPort.state.threadedEngine.live,
-        loopActive: window.CnCPort.state.threadedEngine.loop?.active,
-        clientFrames: window.CnCPort.state.threadedEngine.loop?.clientFrames,
+        loop: window.CnCPort.state.threadedEngine.loop,
         frame: window.CnCPort.state.threadedEngine.frame,
+        engineDisplaySize: window.CnCPort.state.threadedEngine.engineDisplaySize,
+        recentLogs: (window.CnCPort.state.threadedEngine.recentLogs ?? [])
+          .map((entry) => `${entry.message} ${JSON.stringify(entry.data ?? "").slice(0, 120)}`),
       } : null,
       logTail: logs.slice(-6).map((entry) => `${entry.message} ${JSON.stringify(entry.data ?? "").slice(0, 160)}`),
     };
   }).catch((error) => ({ evalError: error?.message }));
   console.log(`[diag +${Math.round((Date.now() - startedAt) / 1000)}s] ${JSON.stringify(info, null, 1)}`);
-  if (info.overlayHidden === true) {
-    console.log("[diag] overlay hidden — boot completed");
-    break;
-  }
 }
 await browser.close();
 await server.close();
