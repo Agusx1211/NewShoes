@@ -187,8 +187,70 @@ for P1c:
 - [x] Recon map of bridge.js delivered.
 - [ ] P1a GATE A
 - [x] P1b extraction + non-threaded parity proof (see below)
-- [ ] P1c GATE B (title), GATE C (shellmap+input+RPC)
+- [ ] P1c GATE B (title), GATE C (shellmap+input+RPC) — implementation landed
+      (see "P1c implementation" below); gates in verification
 - [ ] GATE D Mac Metal + owner
+
+## P1c implementation (2026-07-10, lane P1c)
+
+`play.html?threads=1` boots the REAL engine on the pthread. All threaded
+logic branches on the flag; the default path is untouched JS-wise except the
+GDI-hook extraction (verbatim move to gdi_executor.mjs).
+
+Pieces (all under WebAssembly/):
+
+- `src/wasm_engine_thread_boot.cpp`: the pthread main-loop tick now calls
+  `Module.cncPortEngineThreadTick` (EM_JS, worker-realm Module) when
+  installed; falls back to the P1a color clear (p1_scaffold_probe unchanged).
+- `src/threads_realm_stub.pre.js`: `setup` passes `options` through to the
+  module; a module-returned `handleCommand(msg, respond)` receives every
+  unknown command (the whole P1c protocol lives in the re-loadable boot
+  module, NOT the baked-in stub). NOTE: default-channel echoes also reach
+  that handler — it must ignore unknown cmds (engine_realm_boot does).
+- `harness/engine_realm_boot.mjs` (imported into the worker realm via setup):
+  constructs the P1b d3d8 executor against the transferred OffscreenCanvas
+  (executor creates its own GL context; diag level via setup options since
+  the worker URL has no page params), installs GDI hooks (OffscreenCanvas 2D
+  measureText/fillText works in workers), MSS forwarders (13 hooks; sample
+  starts COPY the RIFF bytes worker-side — the Miles shim mallocs fresh PCM
+  per start so the pointer must not be read async main-side; the copy is
+  4-byte padded + dataPtr=4 so bridge's `!dataPtr` guard and dataPtr-relative
+  reads work against the small buffer), UDP stubs (send->0/recv->null =
+  bridge's disabled-endpoint behavior), the stepped-init pump (one init_step
+  per tick), the paced loop (port of play.mjs runPacedFrameLoop: absolute
+  logic schedule, catchup<=2, half-tick hysteresis) and the engineCall/input
+  sinks. HARD RULE baked in: no wasm call in the worker realm before the
+  first tick (an idle pool worker has wasm instantiated but no thread
+  stack/TLS — everything queues until "live").
+- `harness/bridge.js`: `cncPortThreadedMode` (?threads=1) — dist default
+  dist-threaded; #viewport stays context-free (transferControlToOffscreen
+  requires it) and the MAIN executor gets an invisible scratch canvas so the
+  whole diag surface stays alive; threaded controller (prep: ping →
+  MessagePort connect → canvas transfer → setup → attachMainPort; boot/go
+  only inside realEngineInit); `threadedRpc` gate at the top of `rpc()`
+  (routed commands run on the engine thread via engineCall; main-side-safe
+  commands fall through; everything else returns an explicit "not yet
+  supported in threaded mode" error — never a main-thread wasm call, never a
+  hang); input forwarding (lite entries over the port, trailing-pointermove
+  coalescing per microtask flush); audio completions redirected through
+  engineCall; MSS bodies executed main-side with a fresh-view heap accessor
+  (Module.wasmMemory buffer identity — main's cached HEAPU8 goes stale when
+  the engine thread grows memory); worker status posts (500ms) drive
+  harnessState.engineDisplaySize + `cncport:resolutionchange` /
+  `cncport:threadedstatus` events; canvasInputPointFromEvent uses
+  engineDisplaySize for the buffer aspect (the placeholder's width/height
+  attributes freeze at transfer time).
+- `harness/play.mjs`: threads=1 → dist-threaded default;
+  runThreadedFrameLoop = rpc("threadedStartLoop") + status-event HUD (the
+  page never drives frames in threaded mode). TDZ gotcha: the threadedMode
+  const must be declared before the selectedCncPortDistDir() call near the
+  top of the file.
+- `harness/threaded_play_gate.mjs` (npm run verify:threaded-play): boots the
+  real play page non-threaded (reference, ?dist=dist) and threaded, asserts
+  GATE B (title, init on engine thread, non-black canvas screenshot) and
+  GATE C (paced loop counters, forwarded pointermove visible in
+  cnc_port_probe_browser_input cursor state, windows-dump state RPC).
+  VERBOSE=1 streams page console; SKIP_REFERENCE=1 skips the reference boot.
 
 ## P1b result: executor extracted to harness/d3d8_executor.mjs
 

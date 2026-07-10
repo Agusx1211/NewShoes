@@ -39,10 +39,13 @@ while (Date.now() - startedAt < seconds * 1000) {
     return {
       cncPortType: typeof window.CnCPort,
       logCount: logs.length,
+      pendingThreadedCommands: window.CnCPort?.state?.threadedPendingCommands ?? null,
       progress: document.querySelector("#progress")?.textContent ?? "",
       overlayHidden: document.querySelector("#overlay")?.classList?.contains("hidden") ?? null,
       threadedMode: window.CnCPort?.state?.threadedMode ?? null,
       threadedStatus: window.CnCPort?.state?.threadedEngine ? {
+        seq: window.CnCPort.state.threadedEngine.seq,
+        now: Math.round(window.CnCPort.state.threadedEngine.now ?? -1),
         init: window.CnCPort.state.threadedEngine.initState,
         live: window.CnCPort.state.threadedEngine.live,
         loopActive: window.CnCPort.state.threadedEngine.loop?.active,

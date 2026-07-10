@@ -697,12 +697,18 @@ function createThreadedEngineController() {
     }
   }
 
+  function publishPending() {
+    harnessState.threadedPendingCommands = Array.from(pending.values())
+      .map((entry) => entry.cmdName ?? "?");
+  }
+
   function settlePending(id, settle) {
     const entry = pending.get(id);
     if (!entry) {
       return null;
     }
     pending.delete(id);
+    publishPending();
     if (entry.timer) {
       clearTimeout(entry.timer);
     }
@@ -864,14 +870,21 @@ function createThreadedEngineController() {
   function sendCommand(payload, { timeoutMs = 300000, onProgress = null } = {}) {
     const id = ++commandId;
     return new Promise((resolve, reject) => {
-      const entry = { resolve, reject, onProgress: null, timer: null };
+      const entry = {
+        resolve,
+        reject,
+        onProgress: null,
+        timer: null,
+        cmdName: payload.cmd === "engineCall" ? `engineCall:${payload.name}` : payload.cmd,
+      };
       const armTimer = () => {
         if (entry.timer) {
           clearTimeout(entry.timer);
         }
         entry.timer = setTimeout(() => {
           pending.delete(id);
-          reject(new Error(`threaded command ${payload.cmd} timed out after ${timeoutMs}ms`));
+          publishPending();
+          reject(new Error(`threaded command ${entry.cmdName} timed out after ${timeoutMs}ms`));
         }, timeoutMs);
       };
       // Progress messages prove the engine thread is alive — re-arm the
@@ -883,11 +896,13 @@ function createThreadedEngineController() {
         }
       };
       pending.set(id, entry);
+      publishPending();
       armTimer();
       try {
         sendPortCommand({ ...payload, id });
       } catch (error) {
         pending.delete(id);
+        publishPending();
         clearTimeout(entry.timer);
         reject(error);
       }

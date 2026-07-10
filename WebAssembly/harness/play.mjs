@@ -738,6 +738,8 @@ async function start() {
     } finally {
       window.removeEventListener("cncport:initprogress", onInitProgress);
     }
+    console.log("[play] boot: realEngineInit resolved",
+      { ok: init?.ok, initReturned: init?.frontier?.initReturned });
     if (init?.ok !== true || init?.frontier?.initReturned !== true) {
       fail("real engine init failed", init);
       return;
@@ -760,8 +762,15 @@ async function start() {
         lParam: ((point.y & 0xffff) << 16) | (point.x & 0xffff),
         point,
       });
-      await rpc("realEngineFrame", { frames: 2 });
+      if (!threadedMode) {
+        // Threaded mode: the engine-thread paced loop starts right below and
+        // supplies frames continuously, so these reveal-pump frames are
+        // redundant — and each one is a long-blocking engine call while the
+        // shellmap load session is draining.
+        await rpc("realEngineFrame", { frames: 2 });
+      }
     }
+    console.log("[play] boot: menu reveal moves posted");
 
     report("");
     endBootProgress();
