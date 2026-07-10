@@ -546,6 +546,13 @@ heap (MEMFS stores Uint8Arrays outside wasm memory), so the OPFS-vs-MEMFS
 delta shows in `performance.memory.usedJSHeapSize`, not wasmMemoryBytes —
 the gate records both in its summary.
 
+A/B comparison run (`OPFS_MOUNT=0 SKIP_REFERENCE=1`, same box, back to
+back): MEMFS-threaded boots to title in 115.9s with **JS heap 2222 MiB**;
+OPFS-threaded 17.4s with 12 MiB. That is the P2 payoff measured: −2.21 GiB
+main-thread residency and a 6.7x faster boot (the MEMFS leg's extra wall
+time is the 2.2GB of JS-side FS.writeFile copies against a
+pthread+growable heap).
+
 **Real-boot fix required along the way (found by the gate, not the probe):**
 the engine chdir()s into the run directory and opens archives with RELATIVE
 paths (`loadBigFilesFromDirectory("", "*.big")` -> `"INIZH.big"`), so the
