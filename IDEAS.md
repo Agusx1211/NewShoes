@@ -81,3 +81,87 @@ If first-play decode still shows up in Metal traces:
   per-frame work is tiny, and the pthreads + ALLOW_MEMORY_GROWTH constraint
   on emsdk 3.1.6 (see the IO-worker analysis in TODO.md) makes that
   high-risk for no measured win.
+
+## Design: "the browser as a 2003 PC" — engine thread + OPFS disk (owner-directed, 2026-07-10)
+
+Owner goals: the game uses its OWN loading screens, the main thread is never
+locked, and archive memory is not duplicated at all. Owner explicitly allows
+touching the engine (AGENTS.md 2026-07 policy already permits scheduling/I-O
+restructuring). Conclusion of the 2026-07-10 I/O audit: the architecture that
+meets all three goals touches the engine LESS than today's strategy — the
+stepped-load surgery exists only because the engine currently shares the
+browser's main thread. Give the engine its own thread and its original
+blocking model becomes correct again.
+
+Target shape — map the browser onto what the engine was written for:
+
+- **Engine thread = the game process.** `-pthread` + `-sPROXY_TO_PTHREAD`:
+  `main()` and the whole engine run on a pthread (a dedicated worker).
+  Blocking reads, `Sleep()`, monolithic loads are all fine there — they block
+  the game, never the tab. COOP/COEP already served by the harness; SAB works.
+- **OPFS = the disk.** Stream downloads chunk-by-chunk in the IO worker
+  straight into OPFS (whole archive is never resident). Engine reads go
+  through the existing `shims/io.h` seam: fd's under `/assets/` map to OPFS
+  `createSyncAccessHandle` handles (async to open — pre-open all ~30 at boot —
+  then genuinely synchronous `read(buf, {at})`, worker-thread-only, which the
+  engine thread is). `Win32BIGFile`/`RAMFile` then work UNMODIFIED: RAMFile's
+  whole-inner-file copy becomes the only RAM copy, freed on close. MEMFS
+  mounts, `FS.writeFile` memcpys, and the 2GB residency all disappear.
+- **OffscreenCanvas = the swapchain.** `-sOFFSCREENCANVAS_SUPPORT`: the
+  WebGL2 context is created on the engine thread from the transferred canvas.
+  The D3D8 shim's EM_JS bodies already execute in the calling thread's realm,
+  so the GL half of bridge.js moves realms, not structure.
+- **Main thread = the OS.** DOM input (emscripten proxies events to pthreads
+  natively), Web Audio output (NOT available in workers — Miles shim calls
+  become a command proxy engine→main; the shim already routes completions
+  asynchronously), RPC frontend (`CnCPort.rpc` becomes async postMessage —
+  harness callers already await), screenshots (the placeholder canvas still
+  displays the OffscreenCanvas output; Playwright captures it as today).
+
+Presentation nuance (load screens): OffscreenCanvas frames present only when
+the worker task yields to its event loop — a hard-blocked engine thread shows
+a frozen (not broken) load screen. So the stepped-init/load sessions are NOT
+deleted: they stay as yield points so the real LoadScreen animates, but they
+stop being correctness-critical. An over-budget step becomes a cosmetic load
+bar stutter instead of a frozen tab; the 50ms-budget sub-splitting burden
+(loadMap, preloadAssets, PartitionManager) evaporates.
+
+Memory outcome: OPFS holds ~2GB on disk; wasm heap holds only the engine
+working set (original-game scale, likely well under 1GB) and can go back to a
+FIXED size with `ALLOW_MEMORY_GROWTH=0` — which also removes the known
+pthreads+growth JS-side heap-view perf caveat. Tab RAM drops from ~4GB to
+~1.5GB; iPad Safari becomes plausible.
+
+The real bill (port layer, not engine):
+1. bridge.js realm split: GL/heap-facing code loads in the pthread worker;
+   DOM/audio/RPC/dump code stays on the page; a message channel between.
+   Biggest single item (~33k-line file, entangled globals).
+2. Audio command proxy main←engine (bounded; latency tolerated by Miles
+   semantics, but verify EVA/UI click latency on real GPU).
+3. Harness: every probe that assumes sync RPC-on-main gets async plumbing.
+4. emsdk 3.1.6 is Feb-2022-old for pthread+OffscreenCanvas; an emsdk upgrade
+   (separate, prerequisite-ish project — shims/ODR surface, wasm-EH release,
+   STLport hashes) de-risks this a lot and unlocks WASMFS-OPFS/JSPI options.
+5. Unknowns to spike FIRST: headless SwiftShader + OffscreenCanvas-in-worker
+   (CI baseline must survive), Safari/iPad OffscreenCanvas WebGL2, pthread
+   build vs the shim/ODR surface.
+
+Phasing (each lands in the real cnc-port runtime, no probe accretion):
+- P0 spike: CMake option builds cnc-port with pthread+PROXY_TO_PTHREAD+
+  OffscreenCanvas; boot to title on SwiftShader + Metal. Flushes build/ODR/
+  driver risk for ~zero design commitment. Keep the main-thread build green
+  in parallel (dual-mode) until parity.
+- P1: bridge realm split + input/audio/RPC proxies; still MEMFS-mounted.
+- P2: OPFS read layer behind shims/io.h; downloads stream to OPFS; delete
+  MEMFS archive mounts + mount pipeline + audio-inventory re-reads.
+- P3: fixed-size heap (growth off); relax step budgets to presentation-only;
+  retire the mount-freeze mitigations (chunked writes etc.) that P2 obsoleted.
+
+Cheaper partial alternative if the thread migration is deferred: keep the
+main-thread engine but store each archive ONCE in the wasm heap (raise
+MAXIMUM_MEMORY toward 4GB) and serve `ArchiveFile` opens as zero-copy views
+into the blob (borrowing RAMFile variant that skips the delete[]). Kills
+duplication and MEMFS double-copies without threads — but residency stays
+~2GB, load freezes remain bounded only by stepping, and it needs the 4GB
+wasm32 pointer regime; it is subsumed by P2 later. Only worth it if P0/P1
+stall.

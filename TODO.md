@@ -721,11 +721,46 @@ enough.
       pacing when real network play lands; (d) pthreads remain the fallback
       only if a single unsplittable step proves too heavy (thread-safety
       audit + ALLOW_MEMORY_GROWTH vs growable-SAB on emsdk 3.1.6).
-- [ ] **Decide/measure: is the boot `FS.writeFile` memcpy (1.6 GB into the
-      wasm heap on the main thread) worth eliminating?** With pthreads +
-      SharedArrayBuffer the archive bytes could live in shared memory the
-      worker fills directly, removing the final main-thread copy. Only pursue
-      if profiling shows that copy is a material boot stall vs the download.
+- [ ] **Decide/measure: is the boot `FS.writeFile` memcpy (~2 GB total on the
+      main thread) worth eliminating?** Note (2026-07-10 audit): MEMFS file
+      contents are JS-side `Uint8Array`s, NOT wasm linear memory — the copy
+      cost is real but it does not consume the 2GB `MAXIMUM_MEMORY` heap.
+      Cheapest fix if it profiles as a stall: chunk each write into ~32-64MB
+      slices with a yield between slices (no pthreads/SAB needed, bounds each
+      block to ~tens of ms). The pthreads+SAB shared-memory fill is the heavy
+      alternative; only pursue if chunking is insufficient.
+- [ ] **P0 spike: engine on its own thread (owner-directed 2026-07-10).**
+      Owner wants: game's own load screens, main thread never locked, zero
+      archive memory duplication — and explicitly allows engine changes. The
+      design that meets all three is engine-on-a-pthread + OPFS-as-disk +
+      OffscreenCanvas ("the browser as a 2003 PC") — full write-up in
+      IDEAS.md. First concrete action: a CMake option that builds `cnc-port`
+      with `-pthread` + `-sPROXY_TO_PTHREAD` + `-sOFFSCREENCANVAS_SUPPORT`
+      and boots to title on SwiftShader + Mac Metal, dual-mode alongside the
+      green main-thread build. The spike exists to flush the real risks:
+      pthread build vs the shim/ODR surface, headless SwiftShader with
+      OffscreenCanvas-in-worker (CI baseline), Safari/iPad support, and
+      whether emsdk 3.1.6 is too old (an emsdk upgrade may be the true P0).
+      NOTE (owner): do NOT add HTTP-cache/persistence layers for re-download
+      avoidance yet — OPFS enters in P2 as the read-backing disk, not as a
+      cache.
+- [ ] **Audio payload inventory duplicates whole archives on the main thread
+      (2026-07-10 audit).** `buildAudioPayloadInventoryFromMountedArchives`
+      (`harness/bridge.js:18670`) does `FS.readFile` (= full copy) of every
+      audio-relevant archive right after mount — SpeechEnglishZH.big alone is
+      254MB, ~400MB transient total — then parses BIG TOCs and samples entry
+      headers, all on the main thread. Reuse the already-downloaded bytes from
+      the mount pipeline (before they're released) or move the scan into
+      `io_worker.mjs`; at minimum drop the whole-file copies (read only TOC +
+      sampled headers via streamed reads).
+- [ ] **Measure the mount-phase repeated TOC parsing (2026-07-10 audit).**
+      Each mounted archive's TOC is parsed by its per-archive `probeArchive`,
+      then ALL TOCs again by the aggregate `/assets/.../*.big` probe, again by
+      `registerArchiveSet` → `loadBigFilesFromDirectory`, and again by the
+      real engine init's own archive scan — ~4 synchronous main-thread passes
+      over ~60k entries with per-entry small reads + AsciiString allocs.
+      Measure per-pass ms; if material, skip per-archive probes on the play
+      path (`verifyEach:false`) and/or cache the parsed index across passes.
 
 - [ ] **Resolution follow-ups (2026-07-09, after the engine-owned resolution
       rework — see DONE "Resolution polish").** (a) The in-game options
