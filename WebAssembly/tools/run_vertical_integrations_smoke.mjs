@@ -528,6 +528,31 @@ const steps = [
     },
   },
   {
+    name: "browser-network-webrtc-live-transport",
+    file: "harness/network_webrtc_live_transport_smoke.mjs",
+    validate(payload) {
+      expect(payload.ok === true, "browser live WebRTC transport smoke did not report ok", payload);
+      expect(payload.path === "browser-network-webrtc-live-transport"
+          && payload.browserContexts === 2
+          && payload.p2p === true
+          && payload.reliable === true
+          && payload.ordered === true
+          && payload.gameBytesRelayedByServer === 0
+          && payload.source?.browserTransport === "WebRTC RTCDataChannel peer mesh"
+          && payload.source?.relayTransport === false
+          && payload.source?.openPeers === 1
+          && payload.destination?.openPeers === 1
+          && payload.packet?.commandType === "NETCOMMANDTYPE_FRAMEINFO+NETCOMMANDTYPE_RUNAHEAD"
+          && payload.receive?.ready === true
+          && payload.receive?.managerReady === true
+          && payload.receive?.storedCommandType === "NETCOMMANDTYPE_RUNAHEAD"
+          && payload.signaling?.relayedSignals > 0
+          && payload.signaling?.binaryFramesRejected === 0
+          && payload.signaling?.gamePayloadBytes === 0,
+        "browser live WebRTC transport smoke did not carry original Transport bytes directly between peers", payload);
+    },
+  },
+  {
     name: "browser-lanapi-announce-two-contexts",
     file: "harness/lanapi_announce_two_contexts_smoke.mjs",
     validate(payload) {
@@ -2075,6 +2100,7 @@ console.log(JSON.stringify({
     "two isolated Playwright browser contexts carrying original GameNetwork transport bytes from one wasm instance into another",
     "two isolated Playwright browser contexts carrying encrypted original Transport::queueSend/doSend wire bytes through a browser WebSocket binary relay into Transport::doRecv, ConnectionManager::doRelay, and frame-data readiness",
     "two isolated Playwright browser contexts using Module.cncPortBrowserUdpSend/Recv as a live WebSocket endpoint for original Transport::doSend/doRecv datagrams",
+    "two isolated Playwright browser contexts routing encrypted original Transport datagrams over a direct reliable ordered WebRTC DataChannel mesh while WebSocket carries signaling only",
     "two isolated Playwright browser contexts carrying a LANMessage MSG_GAME_ANNOUNCE into original LANAPI::update, handleGameAnnounce, ParseGameOptionsString, and OnGameList",
     "two isolated Playwright browser contexts carrying original LANAPI RequestGameJoin, handleRequestJoin, handleJoinAccept, and handleGameOptions through queued Transport bytes",
     "two isolated Playwright browser contexts carrying original LANAPI RequestGameStart and handleGameStart into OnGameStart, Network::init/initTransport/parseUserList, and MSG_NEW_GAME setup",
@@ -2107,7 +2133,7 @@ console.log(JSON.stringify({
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
-    "deferred networking-last item: extend the live WebSocket UDP endpoint from LANAPI game-start into Network::update two-client match-sync coverage",
+    "extend the live WebRTC P2P endpoint through LANAPI game-start and Network::update two-client match-sync coverage after repairing the current-head LANAPI send-probe hang",
   ],
   steps: results.map((result) => result.name),
 }));

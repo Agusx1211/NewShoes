@@ -163,7 +163,9 @@ EM_JS(Int, browser_udp_adapter_send_js, (
 	const UnsignedByte *msg,
 	Int length,
 	UnsignedInt ip,
-	UnsignedShort port), {
+	UnsignedShort port,
+	UnsignedInt source_ip,
+	UnsignedShort source_port), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortBrowserUdpSend : null;
 	if (typeof bridge !== "function" || !msg || length <= 0) {
 		return 0;
@@ -174,6 +176,8 @@ EM_JS(Int, browser_udp_adapter_send_js, (
 			bytes,
 			ip: ip >>> 0,
 			port: port & 0xffff,
+			sourceIp: source_ip >>> 0,
+			sourcePort: source_port & 0xffff,
 		});
 		return written | 0;
 	} catch (error) {
@@ -410,7 +414,9 @@ Int UDP::Write(const unsigned char *msg, UnsignedInt len, UnsignedInt IP, Unsign
 		reinterpret_cast<const UnsignedByte *>(msg),
 		static_cast<Int>(len),
 		IP,
-		port);
+		port,
+		myIP,
+		myPort);
 	if (browser_written > 0) {
 		++g_browser_udp_adapter.writes;
 		m_lastError = OK;

@@ -95,6 +95,8 @@ DisconnectMenu::~DisconnectMenu() {
 
 void DisconnectMenu::init() {
 	m_disconnectManager = NULL;
+	// The browser HideDisconnectWindow path keeps first-time layout creation
+	// lazy; native builds retain the original eager hide/load behavior.
 	HideDisconnectWindow();
 	m_menuState = DISCONNECTMENUSTATETYPE_SCREENOFF;
 }

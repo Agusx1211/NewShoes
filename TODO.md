@@ -3546,7 +3546,17 @@ residue and the next frontier.
       `Network::initTransport` / `parseUserList` state. The remaining
       production step is to extend this live endpoint into the
       `Network::update` frame-sync loop and validate a two-client match-sync
-      harness.
+      harness. A production WebRTC follow-on now replaces the relay-shaped
+      byte path with a reliable ordered `RTCDataChannel` peer mesh, routes
+      unicast by signaling-assigned virtual IPv4 address, fans LAN broadcasts
+      out to every peer, and preserves source IP/port metadata through the
+      original wasm UDP seam. WebSocket is signaling-only (room membership,
+      SDP, ICE) and rejects binary game payloads. The two-context harness
+      proves original encrypted `Transport::doSend/doRecv`, CRC validation,
+      `ConnectionManager::doRelay`, and `FrameDataManager` readiness across a
+      direct DataChannel with zero game bytes relayed by the server. Remaining:
+      carry the live P2P endpoint through the full LAN lobby/game-start and
+      running two-client `Network::update` match loop.
 - [ ] Lockstep frame sync (`FrameData`/`FrameDataManager`/`ConnectionManager`)
       works across browser clients. The LAN game-start vertical now reaches
       original `NetworkInterface::createNetwork`, `Network::init`,
@@ -3590,8 +3600,26 @@ residue and the next frontier.
       through `Transport::update` and `LANAPI::update`; LANAPI still needs that
       live endpoint carried forward into the running `Network::update`
       frame-sync loop.
+- [ ] Repair the current-head `browser-lanapi-live-game-start` harness hang
+      before using it as the WebRTC LAN lobby/game-start gate. On commit
+      `266d602f`, this reproduces in both the untouched main checkout and the
+      isolated WebRTC worktree, while the lower-level live Transport path is
+      green. The first diagnostic found and fixed an eager invisible
+      `DisconnectScreen.wnd` load during `Network::init`; the focused probe now
+      reaches `initTransport` and `parseUserList` but still lacks the populated
+      real `MapCache` needed by `LANAPI::OnGameStart`. Restore this gate with
+      mounted real map-cache ownership, not another probe-local fake.
 - [ ] GameSpy matchmaking/chat (`GameSpy*`) → modern relay or stub gracefully.
 - [ ] NAT/firewall helpers replaced by WebRTC ICE.
+- [ ] Harden a public signaling deployment with TLS termination,
+      authentication/room authorization, rate limits, and abuse controls. The
+      bundled signaling service is sufficient for trusted LAN/testing and
+      carries no game bytes, but is intentionally not an unauthenticated public
+      matchmaking service.
+- [ ] Proxy the WebRTC UDP hooks across the engine-realm message channel when
+      `?threads=1`. The verified baseline runs wasm and RTCDataChannel ownership
+      in the main browser realm; the pthread build must forward send/receive and
+      virtual-IP queries rather than constructing WebRTC objects in the worker.
 - [ ] Cross-client **determinism** validated (no desync) over many frames.
       The current multi-frame update/desync smoke is still single-context: it
       proves original `Network::update` progression, first-frame readiness,

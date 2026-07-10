@@ -148,6 +148,13 @@ void ShowDisconnectWindow( void )
 //------------------------------------------------------
 void HideDisconnectWindow( void )
 {
+	// Creating an invisible layout performs a synchronous WND load during
+	// browser network startup. If the disconnect UI has never been shown there
+	// is nothing to hide; ShowDisconnectWindow() remains its lazy owner.
+#ifdef __EMSCRIPTEN__
+	if (disconnectMenuLayout == NULL)
+		return;
+#endif
 
 	// load the quit menu from the layout file if needed
 	if( disconnectMenuLayout == NULL )
@@ -268,4 +275,3 @@ WindowMsgHandledType DisconnectControlSystem( GameWindow *window, UnsignedInt ms
 	return MSG_HANDLED;
 
 }  // end ControlBarSystem
-

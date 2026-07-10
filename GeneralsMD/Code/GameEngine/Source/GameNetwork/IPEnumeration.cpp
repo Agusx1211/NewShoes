@@ -27,6 +27,15 @@
 #include "winsock2.h"
 #include "GameNetwork/IPEnumeration.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+
+EM_JS(UnsignedInt, browser_network_virtual_ip, (), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortBrowserNetworkVirtualIp : null;
+	return typeof bridge === "function" ? (bridge() >>> 0) : 0;
+});
+#endif
+
 IPEnumeration::IPEnumeration( void )
 {
 	m_IPlist = NULL;
@@ -53,6 +62,24 @@ IPEnumeration::~IPEnumeration( void )
 EnumeratedIP * IPEnumeration::getAddresses( void )
 {
 #ifdef __EMSCRIPTEN__
+	if (m_IPlist)
+		return m_IPlist;
+
+	const UnsignedInt ip = browser_network_virtual_ip();
+	if (ip == 0)
+		return NULL;
+
+	EnumeratedIP *newIP = newInstance(EnumeratedIP);
+	AsciiString str;
+	str.format("%d.%d.%d.%d",
+		(ip >> 24) & 0xff,
+		(ip >> 16) & 0xff,
+		(ip >> 8) & 0xff,
+		ip & 0xff);
+	newIP->setIPstring(str);
+	newIP->setIP(ip);
+	newIP->setNext(NULL);
+	m_IPlist = newIP;
 	return m_IPlist;
 #else
 	if (m_IPlist)

@@ -10890,6 +10890,27 @@ mitigation track. Items resolved or retired by the pivot:
       `Network::update` frame-sync loop across two live-endpoint browser
       clients. Verified with
       `npm --prefix WebAssembly run test:browser-lanapi-live-game-start`.
+- [x] Add a production WebRTC P2P transport under the original wasm UDP seam.
+      `webrtc-udp-endpoint.mjs` builds a reliable ordered RTCDataChannel mesh,
+      preserves binary datagram boundaries and source IP/port metadata, routes
+      unicast to signaling-assigned virtual IPv4 peers, and expands legacy
+      `INADDR_BROADCAST` sends across all open channels. `udp.cpp` now passes
+      its bound source address to the browser transport, while wasm
+      `IPEnumeration` exposes the active peer's virtual address to the original
+      LAN menus. Browser network init also stops synchronously creating the
+      invisible disconnect WND: `HideDisconnectWindow` now defers first layout
+      ownership until `ShowDisconnectWindow`, while native behavior is
+      unchanged. The signaling server is limited to eight peers per room,
+      carries only membership/SDP/ICE JSON, and rejects binary game frames.
+      The human play launcher can join a room before real engine init and
+      accepts configurable STUN/TURN credentials for LAN or internet ICE.
+      `network_webrtc_live_transport_smoke.mjs` boots two isolated browser
+      contexts and proves one original encrypted Transport datagram crosses a
+      direct DataChannel into `Transport::doRecv`, CRC validation,
+      `ConnectionManager::doRelay`, and `FrameDataManager::allCommandsReady`,
+      with zero game payload bytes on the signaling server. Verified with
+      `npm --prefix WebAssembly run build:port`, `node WebAssembly/harness/network_webrtc_live_transport_smoke.mjs`,
+      and the existing `network_websocket_live_transport_smoke.mjs` regression.
 - [x] Carry the LANAPI discovery/join/game-start flow through browser
       WebSocket binary frames. `lanapi_websocket_flow_smoke.mjs` boots two
       isolated Playwright contexts, builds the existing original LAN announce,
