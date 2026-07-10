@@ -1,16 +1,13 @@
 // threaded_play_gate.mjs — P1c gates B/C for the engine-thread architecture
 // (WebAssembly/notes/p1-engine-thread.md).
 //
-// Drives the REAL play page in headless Chromium twice:
-//   1. reference: play.html?autostart=1&threads=0&dist=dist (legacy main-thread
-//      path; threads=0 is explicit so this leg stays legacy when the prepared
-//      threaded-by-default flip lands on the play page)
-//   2. threaded:  play.html?autostart=1&threads=1          (engine on the pthread)
-// and asserts:
+// Drives the REAL play page (threaded/OPFS-only since 2026-07-10 — the
+// ?threads=0 legacy leg was deleted with the play-page legacy path; the
+// non-threaded real-init reference lives in shellmap_real_init_gate.mjs on
+// harness/index.html) in headless Chromium and asserts:
 //   GATE B — the threaded boot reaches the title screen (real init 43/43 on
-//     the engine thread; overlay hidden; #viewport screenshot non-black and
-//     visually comparable to the non-threaded reference — both PNGs are saved
-//     for eyeball comparison, shellmap animation differences expected).
+//     the engine thread; overlay hidden; #viewport screenshot non-black —
+//     the PNG is saved for eyeball comparison).
 //   GATE C — the engine-realm paced loop runs (client/logic counters advance
 //     at a sane ratio; exact 60/30 only holds on a real GPU — SwiftShader
 //     rates are recorded, not asserted); synthetic DOM input forwarded over
@@ -39,11 +36,8 @@
 //   - saves: a .sav written into the IDBFS-mounted user-data dir survives
 //     persistSaves + a fresh page load (listSaves round trip).
 //
-// Build first: npm run build:port:threaded  (and a dist/ build for the
-// reference run: npm run build:port). Run: node harness/threaded_play_gate.mjs
-//   SKIP_REFERENCE=1  skips the non-threaded reference boot (faster iteration)
-//   OPFS_MOUNT=0      boots the threaded page with ?opfsmount=0 (MEMFS mounts;
-//                     memory A/B comparison run — OPFS assertions skipped)
+// Build first: npm run build:port:threaded (and build:port:threaded:release
+// for the play-page default dist). Run: node harness/threaded_play_gate.mjs
 //   THREADED_PLAY_DIST=dist-threaded-release
 //                     gates the RELEASE threaded build (the play-page default
 //                     dist) instead of the Debug dist-threaded
@@ -58,8 +52,6 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
 const shotDir = resolve(wasmRoot, "artifacts/screenshots");
-const skipReference = process.env.SKIP_REFERENCE === "1";
-const memfsMounts = process.env.OPFS_MOUNT === "0";
 // Optional dist override for the threaded leg (e.g. dist-threaded-release,
 // the play-page default build). Empty = the page default (dist-threaded).
 const threadedPlayDist = /^dist(?:[-_][A-Za-z0-9_-]+)?$/.test(process.env.THREADED_PLAY_DIST ?? "")
@@ -171,31 +163,10 @@ async function main() {
   const checks = [];
   let failure = null;
   try {
-    // ---------- reference (non-threaded) boot ----------
-    let referenceShot = null;
-    if (!skipReference) {
-      log("booting NON-threaded reference (dist)...");
-      const referencePage = await bootPlayPage(
-        browser,
-        new URL("harness/play.html?autostart=1&threads=0&dist=dist", server.url).href,
-        "ref",
-        consoleLines,
-      );
-      // Let the shellmap actually render a few frames before capturing.
-      await referencePage.waitForTimeout(SETTLE_MS);
-      referenceShot = join(shotDir, "p1c-title-nonthreaded.png");
-      await captureViewport(referencePage, referenceShot);
-      summary.referenceShot = referenceShot;
-      log(`reference title screenshot: ${referenceShot}`);
-      await referencePage.close();
-    }
-
     // ---------- threaded boot (GATE B) ----------
-    const threadedQuery = (memfsMounts
-      ? "harness/play.html?autostart=1&threads=1&opfsmount=0"
-      : "harness/play.html?autostart=1&threads=1")
+    const threadedQuery = "harness/play.html?autostart=1"
       + (threadedPlayDist ? `&dist=${threadedPlayDist}` : "");
-    log(`booting THREADED (${threadedPlayDist || "dist-threaded"}, engine on pthread, ${memfsMounts ? "MEMFS" : "OPFS"} mounts)...`);
+    log(`booting THREADED (${threadedPlayDist || "dist-threaded-release"}, engine on pthread, OPFS mounts)...`);
     const bootStartedAt = Date.now();
     const page = await bootPlayPage(
       browser,
@@ -204,7 +175,7 @@ async function main() {
       consoleLines,
     );
     summary.threadedBootMs = Date.now() - bootStartedAt;
-    summary.archiveBacking = memfsMounts ? "memfs" : "opfs";
+    summary.archiveBacking = "opfs";
     log(`threaded boot reached title in ${(summary.threadedBootMs / 1000).toFixed(1)}s`);
 
     // Archive backing + main-thread memory (the P2 payoff measurement):
@@ -239,13 +210,11 @@ async function main() {
     };
     log(`post-boot memory: wasm ${summary.memory.wasmMemoryGiB ?? "?"} GiB, `
       + `js used ${mountInfo.perfMemory ? (mountInfo.perfMemory.usedJSHeapSize / 1024 ** 2).toFixed(0) : "?"} MiB`);
-    if (!memfsMounts) {
-      const opfsBacked = mountInfo.archives.length > 0
-        && mountInfo.archives.every((archive) =>
-          archive.reader === "io-worker fetchToOpfs" && archive.opfsPath);
-      summary.opfsBackedMount = opfsBacked;
-      checks.push(["threaded mount is OPFS-backed (no MEMFS archive bytes)", opfsBacked]);
-    }
+    const opfsBacked = mountInfo.archives.length > 0
+      && mountInfo.archives.every((archive) =>
+        archive.reader === "io-worker fetchToOpfs" && archive.opfsPath);
+    summary.opfsBackedMount = opfsBacked;
+    checks.push(["threaded mount is OPFS-backed (no MEMFS archive bytes)", opfsBacked]);
 
     const initState = await page.evaluate(() => ({
       threadedMode: window.CnCPort?.state?.threadedMode === true,
@@ -631,7 +600,7 @@ async function main() {
     await page.close();
 
     const savePage = await browser.newPage();
-    await savePage.goto(new URL("harness/play.html?threads=1", server.url).href, { waitUntil: "load" });
+    await savePage.goto(new URL("harness/play.html", server.url).href, { waitUntil: "load" });
     let savedAcrossReload = false;
     let saveList = null;
     const saveDeadline = Date.now() + 120000;

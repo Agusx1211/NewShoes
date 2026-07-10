@@ -126,9 +126,13 @@ async function cncPortResolveSecureOriginAction(unsupported) {
 
 const cncPortThreadedMode = (() => {
   try {
+    // The play page is THREADED-ONLY (owner directive 2026-07-10; the
+    // ?threads=0 legacy escape hatch was deleted after the owner confirmed
+    // the HTTPS threaded experience). Harness/index.html probe surfaces stay
+    // non-threaded by default and opt in with ?threads=1.
     const threads = new URLSearchParams(globalThis.location?.search || "").get("threads");
     const requested = threads === "1"
-      || (threads !== "0" && (globalThis.location?.pathname || "").endsWith("/play.html"));
+      || (globalThis.location?.pathname || "").endsWith("/play.html");
     if (!requested) return false;
     const support = cncPortThreadedRuntimeSupport();
     if (!support.supported) {
@@ -9407,9 +9411,10 @@ async function mountArchive(payload = {}) {
 // garbage-collects namespaces whose owner page is gone (Web Lock released),
 // so disk usage stays bounded at one archive set per LIVE tab.
 //
-// The non-threaded path is untouched: opfsArchiveMountEnabled() is false
-// outside ?threads=1, and ?opfsmount=0 (window.__cncOpfsMount = false)
-// forces the MEMFS mount even in threaded mode (A/B memory comparison).
+// The non-threaded MEMFS mount path below survives ONLY as the
+// harness/index.html legacy-boot surface (the non-threaded probe/gate pages
+// and A/B-debug boots of the non-threaded dist); the play page can no longer
+// reach it (threaded/OPFS-only since 2026-07-10).
 const OPFS_ARCHIVE_ROOT = "cnc-archives";
 // Per-boot OPFS namespace (owner regression 2026-07-10 hardening): staged
 // FileSystemSyncAccessHandles hold EXCLUSIVE per-file locks for the page
@@ -9457,19 +9462,12 @@ function acquireOpfsNamespaceLock() {
 const opfsRegisteredPrefixes = new Set();
 
 function opfsArchiveMountEnabled() {
-  if (!cncPortThreadedMode || !threadedEngine) {
-    return false;
-  }
-  try {
-    if (globalThis.__cncOpfsMount === false) {
-      return false; // page opt-out: keep the MEMFS threaded mount
-    }
-  } catch (_error) {
-    // no override available
-  }
-  // fetchToOpfs needs the IO worker (sync access handles are worker-only);
-  // without it the MEMFS mount path below still works in threaded mode.
-  return ioWorkerEnabled();
+  // Threaded mode mounts on OPFS, period (the ?opfsmount=0 MEMFS escape
+  // hatch was deleted with the play-page legacy path, 2026-07-10). fetchToOpfs
+  // needs the IO worker (sync access handles are worker-only); if the worker
+  // cannot start, mountArchivesToOpfs fails LOUDLY instead of silently
+  // degrading to a MEMFS mount the engine thread could not read.
+  return cncPortThreadedMode && Boolean(threadedEngine);
 }
 
 function opfsPathForArchive(namespace, memfsPath) {

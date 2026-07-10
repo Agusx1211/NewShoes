@@ -482,20 +482,20 @@ function validCncPortDistDir(value) {
 function selectedCncPortDistDir() {
   try {
     const params = new URLSearchParams(window.location.search);
-    // Mirror bridge.js: threaded is the play-page default (?threads=0 is
-    // the legacy escape hatch), and threaded mode loads the RELEASE
-    // threaded build on the play page (dist-threaded elsewhere) — the dump
-    // metadata must record the dist the page ACTUALLY loaded.
+    // Mirror bridge.js: the play page is threaded-only (RELEASE threaded
+    // build); harness/index.html surfaces are non-threaded by default and
+    // opt in with ?threads=1 (Debug dist-threaded) — the dump metadata must
+    // record the dist the page ACTUALLY loaded.
     const threads = params.get("threads");
     const onPlayPage = window.location.pathname.endsWith("/play.html");
-    const threadedMode = threads === "1" || (threads !== "0" && onPlayPage);
+    const threadedMode = threads === "1" || onPlayPage;
     const fallback = threadedMode
       ? (onPlayPage ? "dist-threaded-release" : "dist-threaded")
-      : (onPlayPage ? "dist-release" : "dist");
+      : "dist";
     const value = params.get("dist") || fallback;
     return validCncPortDistDir(value) ? value : fallback;
   } catch {
-    return "dist-release";
+    return "dist-threaded-release";
   }
 }
 
