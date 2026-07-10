@@ -6,6 +6,11 @@
   </head>
   <body>
     <p>OPFS streamed-download + sync-read smoke harness.</p>
+    <p>
+      <button id="selfrun-btn">Run self-test</button>
+      <span>(streams the real 18MB INIZH.big into OPFS, then measures synchronous reads; or open with <code>?autorun=1</code>)</span>
+    </p>
+    <pre id="selfrun-out"></pre>
     <script type="module">
       // Drives harness/opfs_sync_read_worker.mjs: the worker streams the
       // archive into OPFS and measures sync reads; this page then verifies
@@ -93,6 +98,35 @@
           setTimeout(() => reject(new Error("OPFS smoke timed out")), 120000);
         });
       };
+
+      // Human self-run mode (Mac Chrome / iPad Safari), additive only; the
+      // Node driver calls window.__runOpfsSmoke directly and ignores this UI.
+      const selfRunButton = document.getElementById("selfrun-btn");
+      const selfRunOut = document.getElementById("selfrun-out");
+      const say = (text) => { selfRunOut.textContent += `${text}\n`; };
+      async function selfRun() {
+        selfRunButton.disabled = true;
+        try {
+          say(`userAgent: ${navigator.userAgent}`);
+          const url = new URL("../artifacts/real-assets/INIZH.big", location.href).href;
+          say(`streaming ${url} into OPFS + measuring sync reads (may take ~10-30s)…`);
+          const result = await window.__runOpfsSmoke(url);
+          say(JSON.stringify(result, null, 1));
+          const pass = result.ok === true
+            && result.syncAccessHandleAvailable === true
+            && result.rangeVerifyOk === true;
+          say(pass
+            ? "PASS — OPFS streamed write + synchronous byte-exact reads work in this browser."
+            : "CHECK — see fields above (opfsAvailable / syncAccessHandleAvailable / rangeVerifyOk / error).");
+        } catch (error) {
+          say(`ERROR: ${error?.message ?? error}`);
+          say("If this is iPad Safari, an OPFS/createSyncAccessHandle failure here is exactly the finding we need — please report it.");
+        }
+      }
+      selfRunButton.addEventListener("click", selfRun);
+      if (new URLSearchParams(location.search).get("autorun") === "1") {
+        selfRun();
+      }
     </script>
   </body>
 </html>

@@ -11,6 +11,11 @@
   <body>
     <p>OffscreenCanvas worker WebGL2 smoke harness.</p>
     <canvas id="glcanvas" width="320" height="240"></canvas>
+    <p>
+      <button id="selfrun-btn">Run self-test</button>
+      <span>(or open with <code>?autorun=1</code>; the Node driver ignores this UI)</span>
+    </p>
+    <pre id="selfrun-out"></pre>
     <script type="module">
       // The node driver calls these window.__* functions in sequence and takes
       // Playwright element screenshots of #glcanvas between them. All state
@@ -160,6 +165,49 @@
           setTimeout(() => reject(new Error("busyEnded timed out")), 15000);
         });
       };
+
+      // Human self-run mode: the same sequence the Node driver executes, with
+      // results rendered on the page so a person (Mac Chrome, iPad Safari) can
+      // run this without Playwright. Purely additive; the driver never uses it.
+      const selfRunButton = document.getElementById("selfrun-btn");
+      const selfRunOut = document.getElementById("selfrun-out");
+      const say = (text) => { selfRunOut.textContent += `${text}\n`; };
+      async function selfRun() {
+        selfRunButton.disabled = true;
+        try {
+          say(`userAgent: ${navigator.userAgent}`);
+          say("starting worker + transferControlToOffscreen…");
+          const info = await window.__startOffscreenGl();
+          say(`webgl2InWorker=${info.webgl2InWorker} rafInWorker=${info.rafInWorker} loopMode=${info.loopMode}`);
+          say(`renderer: ${info.rendererString ?? "n/a"}`);
+          if (!info.webgl2InWorker) {
+            say("FAIL — no WebGL2 context in the worker on this browser.");
+            return;
+          }
+          await window.__waitForFrames(15);
+          const frameA = window.__frameCount();
+          await window.__waitForFrames(frameA + 10);
+          say(`animating: ${window.__frameCount()} frames presented (triangle above should be moving)`);
+          say("blocking the worker for 2000ms — the canvas should FREEZE while this page stays responsive…");
+          await window.__beginBusyBlock(2000);
+          const block = await window.__awaitBusyEnd();
+          say(`block done: mainThreadTicksDuringBlock=${block.mainThreadTicksDuringBlock} ` +
+            `framesDrawnDuringBlock=${block.framesDrawnDuringBlock} ` +
+            `blockObservedMs=${Math.round(block.blockObservedMs)}`);
+          await window.__waitForFrames(window.__frameCount() + 10);
+          say(`resumed: ${window.__frameCount()} frames presented`);
+          const pass = block.framesDrawnDuringBlock === 0 && block.mainThreadTicksDuringBlock > 30;
+          say(pass
+            ? "PASS — worker owns GL, and a hard-blocked worker never froze this page."
+            : "CHECK — unexpected block behavior; see numbers above.");
+        } catch (error) {
+          say(`ERROR: ${error?.message ?? error}`);
+        }
+      }
+      selfRunButton.addEventListener("click", selfRun);
+      if (new URLSearchParams(location.search).get("autorun") === "1") {
+        selfRun();
+      }
     </script>
   </body>
 </html>

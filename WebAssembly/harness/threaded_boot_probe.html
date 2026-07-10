@@ -19,7 +19,21 @@
   <title>cnc-port threaded boot probe (P0 spike)</title>
 </head>
 <body>
-<canvas id="probe-canvas" width="800" height="600"></canvas>
+<canvas id="probe-canvas" width="800" height="600" style="display:none"></canvas>
+<h3>cnc-port threaded boot probe (P0 spike)</h3>
+<p>
+  Loads the THREADED engine build (dist-threaded), spawns a real pthread, and
+  runs the real engine init ON that pthread. Expected ending today: the
+  engine's own "Technical Difficulties" abort at TheWritableGlobalData —
+  because this probe mounts no assets. That abort happens on the ENGINE
+  thread; the live counter below proves this page never freezes.
+</p>
+<p>
+  <button id="selfrun-btn">Run probe</button>
+  <span>main-thread rAF ticks: <b id="raf-live">0</b></span>
+  <span>(or open with <code>?autorun=1</code>)</span>
+</p>
+<pre id="selfrun-out"></pre>
 <script type="module">
   const consoleLog = [];
   window.__consoleLog = consoleLog;
@@ -144,6 +158,59 @@
     }
     return out;
   };
+
+  // Human self-run mode (Mac Chrome; iPad will likely fail earlier — that is
+  // itself a finding). Runs the same sequence the Node driver executes and
+  // renders each result on the page. Additive only; the driver ignores it.
+  const selfRunButton = document.getElementById("selfrun-btn");
+  const selfRunOut = document.getElementById("selfrun-out");
+  const rafLive = document.getElementById("raf-live");
+  let rafLiveTicks = 0;
+  const rafLiveTick = () => {
+    rafLiveTicks += 1;
+    rafLive.textContent = String(rafLiveTicks);
+    requestAnimationFrame(rafLiveTick);
+  };
+  requestAnimationFrame(rafLiveTick);
+  const say = (text) => { selfRunOut.textContent += `${text}\n`; };
+  async function selfRun() {
+    selfRunButton.disabled = true;
+    try {
+      say(`userAgent: ${navigator.userAgent}`);
+      say(`crossOriginIsolated=${!!globalThis.crossOriginIsolated} (must be true for pthreads)`);
+      say("1/3 instantiating threaded wasm runtime (99MB debug build — give it a moment)…");
+      const init = await window.__initThreadedModule();
+      say(JSON.stringify(init, null, 1));
+      if (!init.instantiated) {
+        say("FAIL — threaded runtime did not instantiate on this browser.");
+        return;
+      }
+      say("2/3 spawning a real engine pthread; sampling its heartbeat vs this page's rAF for 1.5s…");
+      const prove = await window.__spawnAndProve();
+      say(JSON.stringify(prove, null, 1));
+      say("3/3 running REAL cnc_port_real_engine_init ON the pthread (expect the engine's own " +
+        "'Technical Difficulties' abort at TheWritableGlobalData — no assets mounted; " +
+        "watch the rAF counter stay alive)…");
+      const initOnThread = await window.__attemptInitOnThread(30000);
+      say(JSON.stringify(initOnThread, null, 1));
+      say("console tail:");
+      for (const line of (window.__consoleLog ?? []).slice(-12)) {
+        say(`  ${line}`);
+      }
+      const pass = init.heapIsShared === true
+        && Number(prove.heartbeatDelta) > 0
+        && Number(prove.rafTicksDuringSample) > 0;
+      say(pass
+        ? "PASS — engine code runs on a real pthread concurrently with a live page."
+        : "CHECK — see fields above.");
+    } catch (error) {
+      say(`ERROR: ${error?.message ?? error}`);
+    }
+  }
+  selfRunButton.addEventListener("click", selfRun);
+  if (new URLSearchParams(location.search).get("autorun") === "1") {
+    selfRun();
+  }
 </script>
 </body>
 </html>
