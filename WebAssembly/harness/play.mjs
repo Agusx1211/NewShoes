@@ -57,13 +57,16 @@ const threadedRequested = queryParams.get("threads") !== "0";
 // The pthread build needs SharedArrayBuffer, which only exists on
 // cross-origin-isolated pages — and COOP/COEP are IGNORED on untrustworthy
 // origins (plain http:// over a LAN IP; only https:// and localhost count).
-// Without this check the threaded default died on the owner's LAN URL with a
-// raw "FAILED: archive mount failed" (SharedArrayBuffer is not defined).
+// Owner directive 2026-07-10: NO legacy single-thread fallback. When the
+// threaded default cannot run here, bridge.js redirects the page to the
+// harness HTTPS listener (a trustworthy origin); when a redirect cannot fix
+// it, the boot is blocked with the reason (see threadedUnavailable below).
 // Must match bridge.js's cncPortThreadedRuntimeSupport()/cncPortThreadedMode:
 // both realms decide from the same synchronous globals, so they always agree.
 const threadedSupported = typeof SharedArrayBuffer === "function"
   && window.crossOriginIsolated === true;
 const threadedMode = threadedRequested && threadedSupported;
+const threadedUnavailable = threadedRequested && !threadedSupported;
 const viewportCanvas = document.querySelector("#viewport");
 const selectedDistDir = selectedCncPortDistDir();
 
@@ -339,24 +342,66 @@ window.addEventListener("cnc-archive-progress", (event) => {
   renderBootProgress(event.detail ?? {});
 });
 
-// Owner-visible note when the threaded default fell back to the legacy
-// single-threaded path (untrustworthy origin: no SAB / not COI). The game
-// still boots; the reason must be visible on the page, not only in the
-// console — a silent mode change is how phantom perf reports start.
-if (threadedRequested && !threadedSupported) {
-  console.warn("[play] engine-thread mode unavailable (needs SharedArrayBuffer + crossOriginIsolated;"
-    + " COOP/COEP are ignored on plain http:// LAN origins — use https:// or http://localhost)."
-    + " Falling back to the legacy single-threaded build.");
+// Owner directive 2026-07-10: the play page NEVER falls back to the legacy
+// single-threaded build. When the threaded default cannot run on this origin
+// (no SAB / not COI), bridge.js — which evaluates first — resolves the fix:
+// redirect to the harness HTTPS listener (insecure LAN origin) or block the
+// boot with instructions (https with a rejected cert / localhost without
+// COOP/COEP). This block renders that state on the page and keeps start()
+// from ever booting; a silent mode change is how phantom perf reports start.
+function threadedBlockedMessage(detail) {
+  if (window.location.protocol === "https:") {
+    return "engine-thread mode is unavailable on this HTTPS origin: SharedArrayBuffer is still"
+      + " missing, which usually means the harness's self-signed certificate was rejected."
+      + " Click through the browser warning (Advanced → Proceed) or trust the certificate"
+      + " (WebAssembly/harness/.certs/cert.pem on the server), then reload."
+      + " There is no single-thread fallback.";
+  }
+  return `${detail?.reason ?? "engine-thread mode unavailable on this origin"}`
+    + " — boot blocked; there is no single-thread fallback.";
+}
+
+// Path-aware boot banner (owner-flagged 2026-07-10): play.html's default
+// copy describes the threaded/OPFS mount — archives stream to disk, memory
+// stays flat. Only the explicit legacy escape hatch (?threads=0) still
+// mounts ~2 GB into browser memory (MEMFS), so only that path keeps the
+// memory/phone warning.
+if (!threadedMode && !threadedUnavailable) {
+  const warningNode = document.querySelector("#warning");
+  if (warningNode) {
+    warningNode.textContent = "Legacy single-thread mode (?threads=0): starting downloads"
+      + " ~2 GB of game archives into browser memory. A desktop browser is"
+      + " recommended; most phones will run out of memory.";
+  }
+}
+
+if (threadedUnavailable) {
+  startButton.disabled = true;
   try {
     const note = document.createElement("p");
-    note.id = "threadedFallbackNote";
+    note.id = "threadedRedirectNote";
     note.className = "launcherProgress";
     note.style.color = "#e0b050";
-    note.textContent = "engine-thread mode unavailable on this origin"
-      + " (needs https:// or http://localhost) — running the legacy single-thread build";
+    note.textContent = "engine-thread mode unavailable on this origin —"
+      + " resolving the HTTPS redirect...";
     progressNode?.parentElement?.insertBefore(note, progressNode);
+    const renderUnsupported = (detail) => {
+      if (detail?.action === "redirect") {
+        note.textContent = `redirecting to ${detail.target}`
+          + " (the engine thread needs a secure origin for SharedArrayBuffer)..."
+          + " Accept the self-signed certificate once if the browser warns.";
+      } else if (detail?.action === "blocked") {
+        note.style.color = "#e05050";
+        note.textContent = threadedBlockedMessage(detail);
+      }
+    };
+    window.addEventListener("cnc-threaded-unsupported", (event) => renderUnsupported(event.detail));
+    const current = window.CnCPort?.state?.threadedUnsupported;
+    if (current && current.action !== "pending") {
+      renderUnsupported(current);
+    }
   } catch {
-    // Best-effort; the console warning above still tells the story.
+    // Best-effort; bridge.js's console error/redirect still tells the story.
   }
 }
 
@@ -679,6 +724,18 @@ async function runCoupledFrameLoop(rpc, logicFps) {
 }
 
 async function start() {
+  // Owner directive 2026-07-10: no legacy single-thread fallback — when the
+  // threaded default cannot run on this origin the page redirects/blocks
+  // (see the threadedUnavailable block above); it must never boot legacy.
+  if (threadedUnavailable) {
+    const detail = window.CnCPort?.state?.threadedUnsupported;
+    fail("engine-thread mode unavailable on this origin",
+      detail?.action === "redirect"
+        ? `redirecting to ${detail.target}`
+        : threadedBlockedMessage(detail));
+    startButton.disabled = true;
+    return;
+  }
   startButton.disabled = true;
   try {
     await recorderReady;

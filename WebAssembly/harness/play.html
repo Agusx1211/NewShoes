@@ -74,9 +74,14 @@
               </div>
               <p id="bootDetail" class="bootDetail"></p>
             </div>
+            <!-- Path-aware boot banner: this default copy describes the
+                 threaded/OPFS mount (the play-page default), where archives
+                 stream to browser disk storage and memory stays flat.
+                 play.mjs swaps in the MEMFS memory warning only for the
+                 explicit legacy escape hatch (?threads=0). -->
             <p id="warning" class="launcherWarning">
-              Starting downloads ~2&nbsp;GB of game archives into browser memory.
-              A desktop browser is recommended; most phones will run out of memory.
+              Starting downloads ~2&nbsp;GB of game archives to this browser&rsquo;s
+              disk storage (OPFS); memory use stays flat while they stream.
             </p>
           </div>
 

@@ -16,10 +16,14 @@ import { createGdiHooks } from "./gdi_executor.mjs";
 // localhost qualify). Owner-facing regression 2026-07-10: the play page at
 // http://192.168.x.x:8123 died with "FAILED: archive mount failed" because
 // the threaded default tried to instantiate the pthread wasm without SAB
-// ("ReferenceError: SharedArrayBuffer is not defined"). When the environment
-// cannot run threaded mode, fall back to the legacy single-threaded path
-// (which the same origin ran for months) and surface WHY instead of a raw
-// mount failure. play.mjs mirrors this check for its dist-dir default.
+// ("ReferenceError: SharedArrayBuffer is not defined"). Owner directive
+// 2026-07-10: NO legacy single-thread fallback. When threaded mode is
+// requested but this origin cannot run it, the page REDIRECTS to the
+// harness's HTTPS listener (a trustworthy origin where COOP/COEP are
+// honored); when a redirect cannot fix it (already https with a rejected
+// cert, or a localhost server not sending COOP/COEP) the boot is BLOCKED
+// with the reason — never a silent degrade to the legacy build.
+// play.mjs mirrors this check and renders the redirect/block state.
 function cncPortThreadedRuntimeSupport() {
   const missing = [];
   if (typeof SharedArrayBuffer !== "function") {
@@ -49,7 +53,77 @@ function cncPortThreadedRuntimeSupport() {
   };
 }
 
-let cncPortThreadedFallbackReason = null;
+// Must match harness/static-server.mjs DEFAULT_HTTPS_PORT — the baked
+// fallback when the /__cnc_https_info announcement is unavailable (older
+// server without the endpoint).
+const CNC_PORT_DEFAULT_HTTPS_PORT = 8443;
+
+function cncPortIsLocalhostName(hostnameValue) {
+  const name = String(hostnameValue || "").toLowerCase();
+  return name === "localhost" || name === "127.0.0.1" || name === "[::1]" || name === "::1"
+    || name.endsWith(".localhost");
+}
+
+// Non-null when threaded mode was requested (or defaulted) but this origin
+// cannot run it: { reason, action: "pending"|"redirect"|"blocked", target }.
+// Mutated in place so harnessState always shows the resolved action.
+let cncPortThreadedUnsupported = null;
+
+async function cncPortResolveSecureOriginAction(unsupported) {
+  const location = globalThis.location;
+  if (!location || location.protocol !== "http:" || cncPortIsLocalhostName(location.hostname)) {
+    // Already https (self-signed cert rejected / COI policy) or a localhost
+    // origin whose server is not sending COOP/COEP: a redirect cannot fix
+    // either — block with the reason. localhost origins are trustworthy, so
+    // gates/probes on http://localhost never reach this path with a
+    // COOP/COEP-sending harness server.
+    unsupported.action = "blocked";
+  } else {
+    // Insecure non-localhost origin: redirect to the harness HTTPS listener.
+    // Ask the current (http) origin where it lives; fall back to the baked
+    // default port when the endpoint is missing (older server).
+    let httpsEnabled = true;
+    let httpsPort = CNC_PORT_DEFAULT_HTTPS_PORT;
+    try {
+      const response = await fetch("/__cnc_https_info", { cache: "no-store" });
+      if (response.ok) {
+        const info = await response.json();
+        httpsEnabled = info?.httpsEnabled !== false;
+        const announced = Number(info?.httpsPort);
+        if (Number.isFinite(announced) && announced > 0) {
+          httpsPort = announced;
+        }
+      }
+    } catch (_error) {
+      // No announcement — try the default port anyway.
+    }
+    if (!httpsEnabled) {
+      unsupported.action = "blocked";
+      unsupported.reason += " — and this server has no HTTPS listener"
+        + " (restart harness/serve.mjs with HTTPS_PORT=8443, or open via http://localhost)";
+    } else {
+      unsupported.action = "redirect";
+      unsupported.target = `https://${location.hostname}:${httpsPort}`
+        + `${location.pathname}${location.search}${location.hash}`;
+    }
+  }
+  try {
+    globalThis.dispatchEvent(new CustomEvent("cnc-threaded-unsupported", {
+      detail: { ...unsupported },
+    }));
+  } catch (_error) {
+    // Non-DOM realm; state.threadedUnsupported still carries the result.
+  }
+  if (unsupported.action === "redirect") {
+    console.warn(`[wasm-harness] ${unsupported.reason}; redirecting to the HTTPS origin `
+      + `${unsupported.target} (owner directive: no single-thread fallback)`);
+    globalThis.location.replace(unsupported.target);
+  } else {
+    console.error(`[wasm-harness] ${unsupported.reason}; boot BLOCKED `
+      + "(owner directive: no single-thread fallback)");
+  }
+}
+
 const cncPortThreadedMode = (() => {
   try {
     const threads = new URLSearchParams(globalThis.location?.search || "").get("threads");
@@ -58,8 +132,8 @@ const cncPortThreadedMode = (() => {
     if (!requested) return false;
     const support = cncPortThreadedRuntimeSupport();
     if (!support.supported) {
-      cncPortThreadedFallbackReason = support.reason;
-      console.warn(`[wasm-harness] ${support.reason}; falling back to the legacy single-threaded path`);
+      cncPortThreadedUnsupported = { reason: support.reason, action: "pending", target: null };
+      void cncPortResolveSecureOriginAction(cncPortThreadedUnsupported);
       return false;
     }
     return true;
@@ -222,10 +296,11 @@ const harnessState = {
   booted: false,
   frame: 0,
   runtime: "js-stub",
-  // Non-null when threaded mode was requested (or defaulted) but the
-  // environment cannot run it (no SAB / not crossOriginIsolated) and the
-  // bridge fell back to the legacy single-threaded path.
-  threadedFallbackReason: cncPortThreadedFallbackReason,
+  // Non-null when threaded mode was requested (or defaulted) but this origin
+  // cannot run it (no SAB / not crossOriginIsolated). There is NO legacy
+  // fallback (owner directive 2026-07-10): the action is "redirect" (to the
+  // harness HTTPS listener) or "blocked" (boot refused with the reason).
+  threadedUnsupported: cncPortThreadedUnsupported,
   wasm: null,
   mainLoop: {
     running: false,
@@ -10299,6 +10374,24 @@ async function mountShippedMeshAsset(payload = {}) {
 }
 
 async function rpc(command, payload = {}) {
+  // Owner directive 2026-07-10: never silently boot the legacy single-thread
+  // path when threaded mode was requested but this origin cannot run it.
+  // Refuse the boot-critical commands loudly (the page is redirecting to the
+  // HTTPS origin, or blocked with instructions).
+  if (cncPortThreadedUnsupported
+      && (command === "boot" || command === "mountArchive"
+        || command === "mountArchives" || command === "realEngineInit")) {
+    return {
+      ok: false,
+      command,
+      error: `${cncPortThreadedUnsupported.reason} — boot refused `
+        + "(owner directive: no single-thread fallback; "
+        + (cncPortThreadedUnsupported.action === "redirect"
+          ? `redirecting to ${cncPortThreadedUnsupported.target})`
+          : "serve over https:// or open via http://localhost)"),
+      threadedUnsupported: { ...cncPortThreadedUnsupported },
+    };
+  }
   if (cncPortThreadedMode) {
     // Threaded routing choke point: engine-touching commands execute ON the
     // engine thread via the realm port; pure-JS commands fall through; the
