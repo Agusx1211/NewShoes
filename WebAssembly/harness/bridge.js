@@ -59,8 +59,15 @@ function validCncPortDistDir(value) {
 function defaultCncPortDistDir() {
   try {
     if (cncPortThreadedMode) {
-      // ?threads=1 needs the pthread-enabled runtime (PTHREAD_POOL_SIZE=1 +
-      // realm stub). An explicit ?dist= still wins in selectedCncPortDistDir.
+      // Threaded mode needs the pthread-enabled runtime (PTHREAD_POOL_SIZE=1
+      // + realm stub). The play page serves the RELEASE threaded build
+      // (dist-threaded is Debug: -O0/ASSERTIONS/JS-EH, several times slower
+      // engine — the GATE D "worker GL deficit" was this build-flavor gap);
+      // harness/smoke pages keep the Debug dist-threaded for gate parity
+      // with dist. An explicit ?dist= still wins in selectedCncPortDistDir.
+      if ((globalThis.location?.pathname || "").endsWith("/play.html")) {
+        return "dist-threaded-release";
+      }
       return "dist-threaded";
     }
     if (validCncPortDistDir(globalThis.__cncDefaultDistDir)) {

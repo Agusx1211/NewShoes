@@ -44,6 +44,9 @@
 //   SKIP_REFERENCE=1  skips the non-threaded reference boot (faster iteration)
 //   OPFS_MOUNT=0      boots the threaded page with ?opfsmount=0 (MEMFS mounts;
 //                     memory A/B comparison run — OPFS assertions skipped)
+//   THREADED_PLAY_DIST=dist-threaded-release
+//                     gates the RELEASE threaded build (the play-page default
+//                     dist) instead of the Debug dist-threaded
 // Screenshots: artifacts/screenshots/p1c-*.png
 
 import { chromium } from "playwright";
@@ -57,6 +60,11 @@ const wasmRoot = resolve(harnessRoot, "..");
 const shotDir = resolve(wasmRoot, "artifacts/screenshots");
 const skipReference = process.env.SKIP_REFERENCE === "1";
 const memfsMounts = process.env.OPFS_MOUNT === "0";
+// Optional dist override for the threaded leg (e.g. dist-threaded-release,
+// the play-page default build). Empty = the page default (dist-threaded).
+const threadedPlayDist = /^dist(?:[-_][A-Za-z0-9_-]+)?$/.test(process.env.THREADED_PLAY_DIST ?? "")
+  ? process.env.THREADED_PLAY_DIST
+  : "";
 const BOOT_TIMEOUT_MS = Number(process.env.BOOT_TIMEOUT_MS ?? 15 * 60 * 1000);
 // Post-boot settle before the title capture: the main-menu fade-in advances
 // per RENDERED frame, so slow SwiftShader runs need tens of seconds before
@@ -183,10 +191,11 @@ async function main() {
     }
 
     // ---------- threaded boot (GATE B) ----------
-    const threadedQuery = memfsMounts
+    const threadedQuery = (memfsMounts
       ? "harness/play.html?autostart=1&threads=1&opfsmount=0"
-      : "harness/play.html?autostart=1&threads=1";
-    log(`booting THREADED (dist-threaded, engine on pthread, ${memfsMounts ? "MEMFS" : "OPFS"} mounts)...`);
+      : "harness/play.html?autostart=1&threads=1")
+      + (threadedPlayDist ? `&dist=${threadedPlayDist}` : "");
+    log(`booting THREADED (${threadedPlayDist || "dist-threaded"}, engine on pthread, ${memfsMounts ? "MEMFS" : "OPFS"} mounts)...`);
     const bootStartedAt = Date.now();
     const page = await bootPlayPage(
       browser,

@@ -121,7 +121,12 @@ function validCncPortDistDir(value) {
 }
 
 function selectedCncPortDistDir() {
-  const fallback = threadedMode ? "dist-threaded" : "dist-release";
+  // The play page serves RELEASE builds (legacy: dist-release). The threaded
+  // default is dist-threaded-release for the same reason: dist-threaded is a
+  // Debug build (-O0, ASSERTIONS=1, JS-EH) that runs the engine several times
+  // slower — comparing it against dist-release is what produced the phantom
+  // "worker GL throughput regression" in notes/p1-engine-thread.md GATE D.
+  const fallback = threadedMode ? "dist-threaded-release" : "dist-release";
   const value = queryParams.get("dist") || fallback;
   return validCncPortDistDir(value) ? value : fallback;
 }

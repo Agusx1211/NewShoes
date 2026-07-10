@@ -5,6 +5,7 @@
 /WebAssembly/dist-release/
 /WebAssembly/dist-release-*/
 /WebAssembly/dist-threaded/
+/WebAssembly/dist-threaded-release/
 /WebAssembly/err.txt
 /node_modules/
 /WebAssembly/node_modules

@@ -482,7 +482,14 @@ function validCncPortDistDir(value) {
 function selectedCncPortDistDir() {
   try {
     const params = new URLSearchParams(window.location.search);
-    const fallback = window.location.pathname.endsWith("/play.html") ? "dist-release" : "dist";
+    // Mirror bridge.js defaultCncPortDistDir: threaded mode loads the
+    // RELEASE threaded build on the play page (dist-threaded elsewhere) —
+    // the dump metadata must record the dist the page ACTUALLY loaded.
+    const onPlayPage = window.location.pathname.endsWith("/play.html");
+    const threadedMode = params.get("threads") === "1";
+    const fallback = threadedMode
+      ? (onPlayPage ? "dist-threaded-release" : "dist-threaded")
+      : (onPlayPage ? "dist-release" : "dist");
     const value = params.get("dist") || fallback;
     return validCncPortDistDir(value) ? value : fallback;
   } catch {

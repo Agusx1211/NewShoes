@@ -689,28 +689,27 @@ DONE.md with reasons.
 - [ ] **Engine-thread architecture: remaining open items (P0-P3 themselves
       are DONE — see DONE.md "Engine-thread architecture P0-P3" and
       notes/p1-engine-thread.md).**
-      (GATE D — RUN 2026-07-10, final-migration lane; full numbers in
-      notes/p1-engine-thread.md "GATE D results"): renderer(Metal in the
-      engine worker's own context)/boot(25s)/init 43/43/audio/skirmish-to-
-      player-control/screenshots ALL GREEN on cnc-gpu, but **60/30 pacing
-      FAILS: threaded-only GL-throughput regression** — same executor, same
-      per-draw GL mix (0.77 uniform calls/draw both legs), worker context
-      sustains ~16.4k draws/s vs main-thread ~40.8k draws/s on the same
-      ANGLE Metal device; as the shellmap battle escalates (496 -> 1645
-      draws/frame) threaded collapses to client ~7/s logic ~14/s while
-      legacy holds client 34-58/s logic 30.0/s over the same 120s window.
-      Not scheduling (synthetic worker rAF+GL clears hold 60fps), not
-      SwiftShader fallback (worker renderer string proven Metal via the new
-      status feed), not --disable-gpu-compositing (A/B'd), not the uniform/
-      VAO caches (hit ratios identical). THE DEFAULT FLIP IS BLOCKED on
-      this: chase the worker-context command-buffer/flush behavior (e.g.
-      ANGLE Metal flush cadence for OffscreenCanvas-in-worker, SAB-view
-      upload paths), then re-run harness/gate_d probes (in ~/cnc-verify on
-      the Mac) + owner playtest. The prepared flip diff sits on branch
-      `threaded-default-flip`. Also still open: re-measure the P3 growth-off
-      A/B at 60fps client; Safari/iPad support unassessed; headful-Chrome
-      confirmation of the regression (probes were headless; do NOT assume
-      headful differs without measuring).
+      (GATE D — RUN 2026-07-10; RESOLVED same day by the blocker-fix lane;
+      full numbers in notes/p1-engine-thread.md "GATE D root cause + fix"):
+      renderer/boot/init/audio/skirmish/screenshots ALL GREEN on cnc-gpu.
+      The initially-reported "threaded-only GL-throughput regression"
+      (~16.4k vs ~40.8k draws/s, shellmap client collapse to ~7/s) was a
+      BUILD-FLAVOR artifact, not the worker: dist-threaded is a Debug build
+      (-O0/ASSERTIONS/JS-EH, 99.7MB wasm) and GATE D compared it against
+      dist-release (-O2/wasm-EH, 7.7MB). Proven by (a) a synthetic
+      worker-vs-main GL benchmark on Metal (70.0k draws/s BOTH realms —
+      worker GL parity) and (b) `?dist=dist` on the LEGACY main-thread path
+      reproducing the exact collapse (client 3.8-13/s, 14.5-19.8k draws/s,
+      no worker involved). FIX: `npm run build:port:threaded:release` ->
+      dist-threaded-release, now the play-page threaded default (harness
+      pages keep Debug dist-threaded). Re-run pacing A/B on Metal: threaded
+      logic 30.0 exact, client mean 39.1/s vs legacy 48.3/s (~19%, within
+      the ~20% bar; ~8% at the matched 1600-draws/frame bucket) — flip
+      UNBLOCKED and cherry-picked from `threaded-default-flip`. Still open:
+      owner playtest + deploy of dist-threaded-release alongside
+      dist-release (deploy recipe gains a third dist); re-measure the P3
+      growth-off A/B at 60fps client; Safari/iPad support unassessed;
+      headful-Chrome pacing spot-check (probes were headless).
       (b) OPFS stat/access coverage: 0-byte MEMFS markers expose size 0 /
       mtime 0 to Win32LocalFileSystem::getFileInfo (archive timestamp in
       Win32BIGFile::getFileInfo) — intercept stat paths or write real sizes

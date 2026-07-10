@@ -198,13 +198,15 @@ for P1c:
       round-trip, no worker GL context loss. SwiftShader rates: client
       ~1.1/s, logic ~2.2/s (catchup bound; sim slows gracefully under
       software-raster overload — exact 60/30 is a Mac Metal measurement).
-- [~] GATE D Mac Metal — RUN 2026-07-10 (final-migration lane): renderer /
-      boot / init / audio / skirmish / screenshots ALL GREEN on real Metal,
-      but the 60/30 pacing bar FAILS with a measured threaded-only GL
-      throughput regression (details in "GATE D" section below). THE FLIP IS
-      BLOCKED on that regression; the flip diff is prepared on branch
-      `threaded-default-flip` (bridge.js/play.mjs/issue-recorder.mjs) and all
-      behavior-neutral probe pins (`threads=0`) are already landed.
+- [x] GATE D Mac Metal — RUN 2026-07-10 (final-migration lane): renderer /
+      boot / init / audio / skirmish / screenshots ALL GREEN on real Metal;
+      the 60/30 pacing bar initially FAILED with what looked like a
+      threaded-only GL throughput regression. RESOLVED same day (blocker-fix
+      lane): the regression was **Debug-vs-Release wasm** — dist-threaded is
+      a Debug build and the A/B compared it against dist-release. With the
+      new dist-threaded-release build the pacing bar is MET on Metal
+      (logic 30.0 exact, client within ~19% of legacy at the shellmap; full
+      numbers in "GATE D root cause + fix" below) and the flip is unblocked.
 - [x] Default-readiness gap closure — GREEN 2026-07-10 (gap-closure lane):
       threaded state/issue-dump/mount-guard/shader-tier RPC routing, OPFS
       stream reads (music/speech restored under OPFS mounts), MSS byte-copy
@@ -867,14 +869,70 @@ bindings, command-buffer scheduling for dedicated workers). Also re-check
 headful Chrome (probes were headless; do not assume it differs without
 measuring — the owner plays headful).
 
-**Flip decision: NOT flipped** (mission bar not met). The full flip diff
-(bridge.js play-page default + play.mjs + issue-recorder dist-metadata
-mirror) is committed on branch `threaded-default-flip`; behavior-neutral
-prep (probe `threads=0` pins, replay-by-dump-origin threads pin, worker
-renderer/d3d8Perf status) is on the main line. Local
-`verify:threaded-play` (30/30) is green with those pins, and
-`issue_recorder_ui_smoke`'s timeout is pre-existing (fails identically on
-pristine main).
+## GATE D root cause + fix (2026-07-10, blocker-fix lane): it was Debug-vs-Release wasm, not the worker
+
+**The "worker GL throughput regression" above was a build-flavor artifact.**
+The GATE D A/B compared `play.html?autostart=1` (= **dist-release**: Release,
+-O2, ASSERTIONS=0, native wasm-EH, 7.7MB wasm) against `?threads=1`
+(= **dist-threaded**: `build:port:threaded` has no BUILD_TYPE, and
+tools/build_wasm.sh defaults to **Debug** — -O0, ASSERTIONS=1, WWDEBUG,
+DEBUG_LOGGING, emscripten JS-EH, 99.7MB wasm). The engine simply produced
+draws ~2.5x slower; the GL side consumed them identically in both realms.
+That is why the per-draw GL call mix and cache ratios were identical while
+"throughput" differed — draws/s was measuring the WASM ENGINE, not the GL
+context.
+
+Isolation evidence (Mac M4, Chrome 150 headless, ANGLE Metal, same day/box):
+
+1. **Synthetic worker-vs-main GL benchmark** (no wasm; executor-shaped mix:
+   ~0.77 uniform calls/draw, 732 indices/draw, VAO/texture churn, fence
+   completion tracking): main-1600 **69,952 draws/s @ 43.7fps** vs
+   worker-transferred-1600 **70,002 draws/s @ 43.8fps** vs worker-own
+   69,951 draws/s — worker GL parity to 0.1%, at 4x the real engine's draw
+   rate. Pure-CPU JS in worker == main (730 Mops/s both; no E-core/QoS
+   penalty). Files: cnc-verify glbench/ on the Mac (gl_bench_core.mjs,
+   run_gl_bench.mjs; not committed — synthetic scaffolding).
+2. **debug-legacy reproduction** (`?dist=dist` on the LEGACY main-thread
+   path, no worker anywhere): client 3.8-13.4/s, logic 7.6-25.3/s,
+   **14.5-19.8k draws/s** — the GATE D "threaded" collapse numbers, on the
+   main thread. (flavor_ab_probe.mjs, same 120s/10s-bucket methodology.)
+3. Eliminated by 1+2 in one stroke: worker rAF, OffscreenCanvas
+   transfer/commit path, context-attribute diffs, SAB-view upload paths
+   (debug-legacy has a non-shared heap and still collapses), captureStream,
+   Chrome flags (none used beyond the standard probe set).
+
+**Fix: `npm run build:port:threaded:release`** -> dist-threaded-release
+(Release, -O2, wasm-EH, CNC_PORT_THREADS=1, fixed 2GiB heap,
+PTHREAD_POOL_SIZE=1 — first Release+pthread+wasm-EH build; links and runs
+fine on emsdk 3.1.6). play.html in threaded mode now defaults to
+dist-threaded-release (bridge.js defaultCncPortDistDir + play.mjs, mirroring
+the legacy dist/dist-release convention); harness pages keep the Debug
+dist-threaded; issue-recorder dump metadata + replay_issue_dump threads/dist
+pins follow; threaded_play_gate gained THREADED_PLAY_DIST and
+verify:threaded-play now builds both threaded dists.
+
+**Re-run of the lane-D pacing A/B (same methodology/box/day, 120s window,
+10s buckets, Mac Metal headless):**
+
+| leg | logic /s | client /s | draws/s |
+|---|---|---|---|
+| release-legacy (`?autostart=1`) | 30.0 exact all settled buckets | 35.4-58.8 (mean 48.3) | 40-58k |
+| debug-legacy (`?dist=dist`) | 7.6-25.3 | 3.8-13.4 | 14.5-19.8k |
+| **threaded-release** (`?threads=1&dist=dist-threaded-release`) | **30.0 exact all settled buckets** | **32.7-43.4 (mean 39.1)** | up to 51.5k |
+
+Threaded client is within ~19% of legacy on the window mean and within ~8%
+at the matched escalated bucket (~1600 draws/frame: 32.7/s vs 35.4/s), with
+logic 30.0 exact throughout — **the flip bar (shellmap client within ~20% of
+legacy, 60/30 pacing intact) is MET**. Boot to title 26s (OPFS mounts
+from-empty). The residual ~20% in light buckets is the pthread build's
+remaining costs (atomics/locked malloc + worker-realm forwarding), not a GL
+ceiling — legacy peaks 58.8/s where threaded holds ~43/s; both are far above
+the 30/s logic gate and the felt-60Hz bar is a display-rate concern only at
+peaks, not the crush the blocker described.
+
+**Flip decision: UNBLOCKED** — the prepared flip diff from
+`threaded-default-flip` (f002675d) is cherry-picked on this lane's branch
+with the dist default resolved to dist-threaded-release on the play page.
 
 **Mac hygiene this lane:** the data volume hit 100% full twice — (1)
 Chrome `code_sign_clone` leak (51GB logical / ~1.4GB physical across 38
