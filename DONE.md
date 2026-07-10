@@ -8,6 +8,72 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Engine-thread architecture P0-P3 — landed (2026-07-10)
+
+The engine-on-a-pthread + OPFS-as-disk + OffscreenCanvas architecture
+(IDEAS.md "the browser as a 2003 PC") is live behind `play.html?threads=1`
+on the dist-threaded build. Durable design/mechanism/measurement record:
+`WebAssembly/notes/p1-engine-thread.md`. Still open in TODO: GATE D (Mac
+Metal 60/30 + owner playtest), Safari/iPad, threaded-mode follow-ups, and
+the OPFS operational items (stat coverage, handle lifecycle, crash
+surfacing).
+
+- [x] **P0 spike: engine on its own thread.** Dual-mode `CNC_PORT_THREADS`
+      CMake option + `npm run build:port:threaded` (build/wasm-threaded →
+      dist-threaded); full 1309-TU pthread build links clean on emsdk 3.1.6
+      (no ODR/shim breakage). PROXY_TO_PTHREAD is a hard error with
+      --no-entry → engine pthread spawned explicitly. EXPORT_ES6+MODULARIZE+
+      pthreads works at runtime; realm split confirmed; real init on a
+      pthread runs to TheWritableGlobalData with no assets (no
+      thread-specific crash). Browser primitives proven by JS smokes:
+      test:offscreen-worker-gl, test:opfs-sync-read.
+- [x] **P1a runtime scaffold.** PTHREAD_POOL_SIZE=1 + threads_realm_stub
+      pre-js (ping/setup/callExport realm protocol) +
+      src/wasm_engine_thread_boot.cpp (boot/go/heartbeat;
+      emscripten_set_main_loop ON the pthread — rAF ticks in the worker
+      realm, 'unwind' keep-alive). p1_scaffold_probe 18/18.
+- [x] **P1b executor extraction.** The full D3D8→WebGL2 executor (~12.3k
+      lines, 20 hooks) moved to realm-agnostic harness/d3d8_executor.mjs
+      consumed by both realms; non-threaded parity proven pixel-identical
+      (shellmap gate screenshot diff bbox None).
+- [x] **P1c integration (GATES B+C).** play.html?threads=1 boots the REAL
+      engine on the pthread: engine_realm_boot.mjs (executor+GDI+MSS
+      forwarders+UDP stubs+stepped-init pump+paced loop), bridge threaded
+      controller/routing/input forwarding, threaded_play_gate green.
+      Root-cause find: shims/windows.h InitializeCriticalSection left the
+      shim recursive_mutex unconstructed — placement-new fix (engine thread
+      parked forever in W3DMouse::draw before it).
+- [x] **P2 OPFS-as-disk mounts.** fetchToOpfs streamed mounts + fd-intercept
+      seam (shims/io.h + src/wasm_opfs_files.cpp, 64KB per-fd readahead:
+      TOC walk 2137ms → 1.56ms) + engine-realm staged sync handles.
+      Threaded boot to title 17.4s vs 115.9s MEMFS-threaded; main-thread JS
+      heap 2222 MiB → 12 MiB (2.2GB archive set on disk, wasm 0.16GiB).
+      Relative-path absolutization fix in the intercept (engine chdir +
+      relative opens).
+- [x] **P3 fixed-size heap on the threaded build (2026-07-10, lane P3).**
+      Threaded build links ALLOW_MEMORY_GROWTH=0 + INITIAL_MEMORY=2GiB (==
+      the growth build's MAXIMUM → identical OOM ceiling, no new abort
+      threshold; Chromium commits the shared memory lazily — renderer RSS
+      ~0.9GiB peak through boot+skirmish, never 2GiB). Removes the
+      pthreads+growth JS heap-access tax at the source: 239 GROWABLE_HEAP_*
+      wrappers → 0 in dist-threaded/cnc-port.js, em++ -Wpthreads-mem-growth
+      warning gone. Measured A/B (2 runs each, back-to-back): NO end-to-end
+      delta above SwiftShader box noise (title 19.0/17.6s ON vs 17.3/22.3s
+      OFF; p2-opfs within noise) — the hot JS paths already used fresh-view
+      accessors/realm-local views; the win is the deleted stale-view bug
+      class + free wrapper removal; Mac Metal re-measure rides GATE D.
+      Sizing measured via the new harness/threaded_skirmish_memory_probe.mjs
+      (threaded RPC routing added for realEngineSetSkirmishMap/
+      SetSkirmishLocalTemplate; clickWindowByName threaded route fixed to
+      honor payload.name + derive ok from clicked): growth-ON wasm 229MiB at
+      title, 275.4MiB peak in a live screenshot-verified skirmish; growth-OFF
+      match runs OOM-free to 486 logic frames. Full verify:threaded-play
+      14/14 on the final flags; default build proven BYTE-IDENTICAL (md5) and
+      ninja-flag-identical. Range-backed mount machinery audited for the
+      scheduled P2-landing retirement: NOT deleted — load-bearing for ~18
+      wired legacy smokes; retirement rescheduled with the legacy-smoke
+      burn-down (see TODO). Details: notes/p1-engine-thread.md "P3 results".
+
 ## I/O strategy pivot — engine-thread + OPFS-disk direction adopted (2026-07-10)
 
 Owner-directed pivot after the 2026-07-10 I/O audit: the game must use its own

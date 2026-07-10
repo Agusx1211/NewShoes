@@ -171,7 +171,6 @@ for P1c:
 ## Running state (update me)
 
 - [x] P0 spike merged (build green, pthread runs real init, FS proxy works).
-- [ ] Recon map of bridge.js delivered (agent, in flight).
 - [x] P1a runtime scaffold (GATE A prerequisite) — 2026-07-10:
       PTHREAD_POOL_SIZE=1 + `--pre-js` realm stub
       (src/threads_realm_stub.pre.js) + boot/go/heartbeat scaffold
@@ -182,8 +181,6 @@ for P1c:
       pool / pre-js flags in build/wasm/build.ninja). Mechanism decision
       above. GATE A itself (real D3D8 device creation in the engine realm)
       is P1b/P1c work on this scaffold.
-- [ ] P1b extraction + non-threaded parity proof
-
 - [x] Recon map of bridge.js delivered.
 - [x] P1a GATE A (subsumed: the real D3D8 device creates in the engine realm
       during the threaded boot; cleared/rendered frames present from the
@@ -208,6 +205,14 @@ for P1c:
       -> 1.56ms), `?threads=1` mounts stream fetch->OPFS + stage handles
       pre-spawn, gate 14/14 with title in 17.4s and main-thread JS heap
       12MiB (2.2GB archive set on disk). See "P2 integration results".
+- [x] P3 fixed-size heap on the threaded build — GREEN 2026-07-10 (lane P3):
+      ALLOW_MEMORY_GROWTH=0 + INITIAL_MEMORY=2GiB (== the growth build's
+      MAXIMUM, so the OOM ceiling is unchanged); 239 GROWABLE_HEAP wrappers
+      -> 0; full verify:threaded-play 14/14 on the final flags; real
+      skirmish match runs OOM-free on the fixed heap (screenshot-proven via
+      the new threaded_skirmish_memory_probe); default build byte-identical.
+      Measured A/B: no perf delta above SwiftShader box noise — see
+      "P3 results".
 
 ## P1c root-cause find: Win32 CRITICAL_SECTION shim vs pthreads (2026-07-10)
 
@@ -606,3 +611,99 @@ thread crashes fast).
   diagnostics surface is wanted in threaded mode.
 - Mac M4 measurement of the readahead probe + OPFS-threaded boot (dev-box
   numbers are the conservative bound).
+
+## P3 results (lane P3, 2026-07-10): fixed-size heap on the threaded build
+
+The threaded build now links with a FIXED heap: `-sALLOW_MEMORY_GROWTH=0`
+`-sINITIAL_MEMORY=2147483648` (CNC_PORT_MEMORY_LINK_OPTIONS in
+CMakeLists.txt; threaded branch only). The default build keeps
+growth-on/64MiB-initial/2GiB-max and is BYTE-IDENTICAL after the change
+(md5 of dist/cnc-port.{js,wasm} unchanged across a rebuild; default
+build/wasm/build.ninja flag census identical — no -pthread / pool / pre-js /
+GROWTH=0 anywhere).
+
+**Why INITIAL == the old MAXIMUM (2GiB), not measured-usage + margin:** the
+OOM ceiling is then IDENTICAL to the growth build — no workload that
+survives growth-on can newly abort under the fixed heap, so the fixed heap
+introduces zero new OOM risk on big maps. The measured footprints (below)
+are LOWER BOUNDS from a short match on the default 2-player map, not a
+big-map 8-player peak; sizing to measurement+margin would have created a
+new, un-provable abort threshold. Address space is the only up-front cost:
+Chromium commits shared wasm memory lazily — renderer RSS peaked at
+~880MiB through boot+title (gate run) and ~978MiB through a full
+boot+menus+skirmish-match run, never ~2GiB+ (dev-box Chromium; Mac Chrome
+re-check belongs to GATE D).
+
+**Sizing measurements** (growth-ON threaded build, OPFS mounts, dev box —
+`harness/threaded_skirmish_memory_probe.mjs`, new in P3): wasm memory
+229MiB at title (after shellmap drain + menu navigation; the gate logs
+0.16GiB right at title), **275.4MiB peak in a live skirmish match**
+(default map, 400 logic frames sampled over 120s, screenshot-verified
+match: p3-skirmish-threaded-ingame/final.png), main-thread JS heap ~15MiB.
+Headroom vs the 2GiB ceiling: ~7.4x at the in-match lower bound.
+
+**The tax removal, verified:** dist-threaded/cnc-port.js drops from 239
+`GROWABLE_HEAP_*` call sites to **0**; the em++ `-Wpthreads-mem-growth`
+("may run non-wasm code slowly") warning is gone from the link.
+
+**Perf A/B** (2 runs each, back-to-back, same box, headless SwiftShader;
+shared box — noise is real, growth-ON random-read run 2 caught a load
+spike):
+
+| metric                        | growth ON     | growth OFF (fixed) |
+|-------------------------------|---------------|--------------------|
+| gate boot->title              | 19.0s / 17.6s | 17.3s / 22.3s      |
+| paced client rate (5s window) | 1.5 / 1.6 /s  | 1.3 / 1.2 /s       |
+| paced logic rate              | 2.9 / 3.1 /s  | 2.7 / 2.4 /s       |
+| p2-opfs TOC walk              | 1.53 / 1.65ms | 1.69 / 1.56ms      |
+| p2-opfs random 64KB           | 150 / 50 MB/s | 139 / 127 MB/s     |
+| p2-opfs sequential 1MB        | 247 / 163 MB/s| 229 / 287 MB/s     |
+
+**Honest verdict: no measurable end-to-end delta above dev-box noise under
+SwiftShader.** Expected in hindsight: the architecture's hot JS heap paths
+already dodge the wrappers — the D3D8 executor reads through per-call
+fresh-view accessors (P1b env contract), OPFS reads write through
+realm-local views (P2), and EM_JS bodies use Module.HEAPxx directly. The
+239 wrappers sat in emscripten library JS (FS/syscalls/etc.) that the OPFS
+fd-intercept largely bypasses at runtime. The fixed heap is still the right
+call: it deletes the stale-view BUG CLASS (bridge.js's fresh-view
+workarounds for main-side MSS reads and `Module.wasmMemory` buffer-identity
+checks are no longer load-bearing — the buffer can never be replaced), the
+wrapper removal is free, and SwiftShader frame costs dwarf any JS-side
+delta on this box — a Mac Metal re-measure at 60fps client rides GATE D.
+
+**Fixed-heap risk check (the mission's "engine OOM aborts on big maps"
+concern):** the growth-OFF build boots (2GiB shared memory instantiates
+fine on 3.1.6 + headless Chromium), full `verify:threaded-play` is green,
+and the skirmish probe runs a real match to 486 logic frames with no OOM
+abort. Emscripten 3.1.6 accepts INITIAL=2GiB with growth off (MAXIMUM
+defaults to INITIAL for the shared memory).
+
+**New instrument + threaded RPC surface (P3):**
+`harness/threaded_skirmish_memory_probe.mjs` boots `?threads=1`, drives
+MainMenu -> Single Player -> Skirmish -> Start through `clickWindowByName`
+(the engine's own winSendInputMsg path) and samples memory in-match.
+Gotchas it hit (now baked into the probe): menu TRANSITIONS animate per
+CLIENT frame (~1.3/s under SwiftShader), so one-shot clicks get swallowed —
+click in rounds and poll an engine-state readiness signal between rounds
+(TheSkirmishGameInfo via realEngineSetSkirmishMap's error field for the
+skirmish menu; frame.loadSessionActive===true for Start). Routing added to
+bridge threadedRpc: `realEngineSetSkirmishMap`,
+`realEngineSetSkirmishLocalTemplate`; `clickWindowByName` threaded route
+now honors `payload.name` (the non-threaded contract — it previously read
+only window/windowName) and derives ok from the export's `clicked` flag
+(its JSON has no `ok` field, so the route previously always returned
+ok:false).
+
+**Range-backed mount retirement (P3 audit):** NOT deleted. The shipping
+paths never touch it, but `mountRangeBackedArchiveSet` /
+`extractBigEntriesFromUrl` / `buildBigArchive` are load-bearing for ~18
+package.json-wired legacy smokes (incl. startup_vertical_smoke's phase-2
+audio boot) whose subset-BIG mounts exist precisely to keep those suites
+fast. Mass-converting them to full-archive mounts would multiply suite
+runtime for zero coverage gain. Retirement is therefore scheduled WITH the
+legacy-smoke burn-down (TODO entry "Retire the range-backed subset-mount
+machinery together with the legacy smoke surface"). The P2-obsoleted
+mount-freeze mitigations named by IDEAS P3 (chunked MEMFS writes) also
+stay: the non-threaded DEFAULT path still mounts via MEMFS until threaded
+becomes the default.

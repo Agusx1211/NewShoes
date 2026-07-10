@@ -686,106 +686,23 @@ DONE.md with reasons.
       of `GameStateMap.cpp:448`); (b) MP loads: PROGRESS_WAIT repeats at
       client rate instead of Sleep(100) polling — re-check testTimeOut pacing
       when real network play lands.
-- [ ] **P0 spike: engine on its own thread (owner-directed 2026-07-10).**
-      Owner wants: game's own load screens, main thread never locked, zero
-      archive memory duplication — and explicitly allows engine changes. The
-      design that meets all three is engine-on-a-pthread + OPFS-as-disk +
-      OffscreenCanvas ("the browser as a 2003 PC") — full write-up in
-      IDEAS.md. First concrete action: a CMake option that builds `cnc-port`
-      with `-pthread` + `-sPROXY_TO_PTHREAD` + `-sOFFSCREENCANVAS_SUPPORT`
-      and boots to title on SwiftShader + Mac Metal, dual-mode alongside the
-      green main-thread build. The spike exists to flush the real risks:
-      pthread build vs the shim/ODR surface, headless SwiftShader with
-      OffscreenCanvas-in-worker (CI baseline), Safari/iPad support, and
-      whether emsdk 3.1.6 is too old (an emsdk upgrade may be the true P0).
-      DONE (2026-07-10): the two browser primitives are proven on the dev
-      box's headless SwiftShader Chromium by JS-only smokes —
-      `npm run test:offscreen-worker-gl` (OffscreenCanvas WebGL2 in a worker,
-      rAF-in-worker, blocked-worker = frozen-not-broken presentation) and
-      `npm run test:opfs-sync-read` (streamed fetch→OPFS, sync-handle reads
-      at 95-565 MB/s, byte-exact vs HTTP Range); see DONE.md. Remaining spike
-      risk is the pthread/OffscreenCanvas BUILD (emsdk 3.1.6, shim/ODR) and
-      Safari/iPad — not the browser side on the CI baseline.
-      NOTE (owner): do NOT add HTTP-cache/persistence layers for re-download
-      avoidance yet — OPFS enters in P2 as the read-backing disk, not as a
-      cache.
-      PROGRESS (2026-07-10, lane A spike): dual-mode build LANDED and GREEN.
-      `CNC_PORT_THREADS` CMake option + `npm run build:port:threaded`
-      (build/wasm-threaded → dist-threaded); full 1309-TU pthread build links
-      clean on emsdk 3.1.6 — no ODR/shim breakage, only the known
-      pthreads+ALLOW_MEMORY_GROWTH perf warning. Findings from
-      `harness/threaded_boot_probe.mjs` (disposable spike tooling, headless
-      Chromium): (a) `-sPROXY_TO_PTHREAD` is a hard emcc error with our
-      `--no-entry` runtime ("proxies main() for you, but no main exists") —
-      the engine thread must be explicitly spawned; spike proves a spawned
-      pthread runs concurrently with main-thread JS (heartbeat + rAF both
-      advance). (b) EXPORT_ES6+MODULARIZE+pthreads WORKS at runtime on 3.1.6
-      Chromium (classic worker + dynamic import) — no output-format
-      downgrade. (c) Realm split confirmed: pthread realm has its own Module
-      without the bridge hooks and no document (P1 scope). (d) Real
-      `cnc_port_real_engine_init` ON a pthread runs through
-      TheLocalFileSystem + TheArchiveFileSystem (FS syscall proxying to main
-      works) and dies at TheWritableGlobalData only because the probe mounts
-      no assets — no thread-specific crash before that. emsdk 3.1.6 verdict:
-      viable for P0/P1; no upgrade-first requirement flushed yet. STILL OPEN
-      for this item: boot to title (assets + bridge realm split = P1),
-      SwiftShader OffscreenCanvas-in-worker, Safari/iPad, Mac Metal.
-      PROGRESS (2026-07-10, lane P1a): runtime scaffold LANDED and GREEN —
-      PTHREAD_POOL_SIZE=1 + `--pre-js` realm stub
-      (`src/threads_realm_stub.pre.js`: ping/setup/callExport protocol in
-      the pthread realm) + boot/go/heartbeat scaffold
-      (`src/wasm_engine_thread_boot.cpp`). Proven by
-      `node harness/p1_scaffold_probe.mjs` (18/18): `emscripten_set_main_loop`
-      ON the pthread works on 3.1.6 (rAF ticks in the worker realm; 'unwind'
-      kept alive by worker.js — no JS-driven-tick fallback needed), and a
-      transferred OffscreenCanvas animates a color-cycling clear presented
-      from the engine thread through the D3D8 shim's EM_JS path. Mechanism
-      decision + 3.1.6 gotchas for P1c in
-      `WebAssembly/notes/p1-engine-thread.md`. SwiftShader
-      OffscreenCanvas-in-worker is thereby covered; still open: P1b executor
-      extraction, P1c integration (gates B/C), Safari/iPad, Mac Metal.
-      PROGRESS (2026-07-10, lane P2-prep): OPFS-as-disk READ LAYER proven in
-      isolation (P2 core) — io_worker `fetchToOpfs` (streamed fetch→OPFS,
-      never whole-file resident; `test:io-worker-offthread` extended 15/15),
-      weak fd-intercept seam in `shims/io.h` + `src/wasm_opfs_files.cpp`
-      (virtual read-only fds under registered prefixes; reads via realm-local
-      `__cncOpfs*` FileSystemSyncAccessHandle wrappers, bypassing the
-      pthread→main FS proxy; inert by default, default build + d3d8 smoke
-      green), realm staging module `harness/opfs_realm_files.mjs`, and
-      `npm run probe:p2-opfs` 24/24 (own probe pthread does C-level
-      _open/_read/_lseek/_close of INIZH.big through the seam: BIG magic,
-      engine-pattern byte-wise TOC walk, random/sequential reads, all
-      FNV-verified vs HTTP Range). Throughput (dev box): ~0.58ms/call OPFS
-      sync-IPC floor, 96-105 MB/s random 64KB, 160-217 MB/s sequential —
-      vs FS proxy 0.11ms/call (but that path needs the archive RESIDENT in
-      the heap). Full numbers + enumeration contract + gotchas in
-      notes/p1-engine-thread.md "P2-prep results".
-- [ ] **P2 integration follow-ups (2026-07-10, from the P2-prep probe —
-      prerequisites for wiring OPFS reads under the real engine boot):**
-      DONE (2026-07-10, lane P2-integration; details in
-      notes/p1-engine-thread.md "P2 integration results"):
-      (a) small-read coalescing — 64KB per-fd readahead in
-      wasm_opfs_files.cpp; probe:p2-opfs TOC walk 2137ms → 1.56ms (now
-      faster than the FS proxy's 319ms), byte-exactness re-proven, the ~35s
-      boot hazard is gone. (d) real boot wiring — threaded `?threads=1`
-      mounts now stream fetch→OPFS on the IO worker (never RAM-resident,
-      play-UI progress preserved), write 0-byte MEMFS markers, register the
-      intercept prefix, and stage sync handles in the engine realm via the
-      new `stageOpfsFiles` command BEFORE the engine pthread spawns (the
-      awaited mount round trip is the ordering guarantee); `?opfsmount=0`
-      keeps the MEMFS threaded mount for A/B runs; the non-threaded default
-      path is untouched (MEMFS pipeline still owns it — sync access handles
-      are worker-only, so retiring MEMFS mounts wholesale waits for
-      threaded-by-default).
-      STILL OPEN: (b) stat/access coverage: 0-byte MEMFS markers expose
-      size 0 / mtime 0 to Win32LocalFileSystem::getFileInfo (archive
-      timestamp in Win32BIGFile::getFileInfo) — intercept stat paths or
-      write real sizes into markers when something is proven to care.
-      (c) sync-handle lifecycle: staged handles hold exclusive per-file
+- [ ] **Engine-thread architecture: remaining open items (P0-P3 themselves
+      are DONE — see DONE.md "Engine-thread architecture P0-P3" and
+      notes/p1-engine-thread.md).**
+      (GATE D) Mac Metal verification + owner playtest behind `?threads=1`:
+      deploy dist-threaded + harness to cnc-gpu, verify 60/30 pacing on the
+      real GPU, re-measure the P3 growth-off A/B at 60fps client (SwiftShader
+      showed no delta; the JS share is proportionally larger on Metal), and
+      only then discuss threaded-by-default. Safari/iPad support unassessed.
+      (b) OPFS stat/access coverage: 0-byte MEMFS markers expose size 0 /
+      mtime 0 to Win32LocalFileSystem::getFileInfo (archive timestamp in
+      Win32BIGFile::getFileInfo) — intercept stat paths or write real sizes
+      into markers when something is proven to care.
+      (c) OPFS sync-handle lifecycle: staged handles hold exclusive per-file
       locks for the page lifetime — a second tab (or same-session re-mount
-      of the same paths) collides (NoModificationAllowedError on
-      fetchToOpfs truncate); needs per-session namespacing + orphan cleanup
-      or a release-handles protocol before multi-tab play.
+      of the same paths) collides (NoModificationAllowedError on fetchToOpfs
+      truncate); needs per-session namespacing + orphan cleanup or a
+      release-handles protocol before multi-tab play.
       (e) measure the readahead probe + OPFS-threaded boot on the Mac M4
       (real SSD) — dev-box numbers are the conservative bound.
       (f) OPFS-backed (or engine-realm) audio payload inventory if that
@@ -800,23 +717,29 @@ DONE.md with reasons.
       before engine_realm_boot's pumpInit catch can post the abort — the
       page only learns via the 600s engineInit timeout. Catch/report the
       exit at the tick boundary (or hook the crash path to post a realm
-      message) so threaded init crashes fail fast like non-threaded ones
-      (found while diagnosing the P2 relative-path miss, 2026-07-10).
-      PROGRESS (2026-07-10, lane P1c): threaded play path LANDED and GREEN —
-      `play.html?threads=1` boots the REAL engine on the pthread
-      (harness/engine_realm_boot.mjs in the worker realm + bridge threaded
-      controller/routing; details + root-cause finds in
-      notes/p1-engine-thread.md "P1c implementation"). GATES B+C green via
-      `npm run verify:threaded-play` (13/13, SwiftShader): real init 43/43 on
-      the engine thread, threaded boot to title 133s (vs ~13 min wall
-      non-threaded on the same box), shellmap load drained by the
-      engine-thread paced loop, forwarded input verified via engine state,
-      title screenshot renders the full shellmap. Root-cause fix along the
-      way: shims/windows.h InitializeCriticalSection now placement-news the
-      recursive_mutex (was uninitialized garbage -> engine thread parked
-      forever in W3DMouse::draw on the pthread build). STILL OPEN: GATE D
-      (Mac Metal 60/30 measurement + owner playtest behind ?threads=1),
-      Safari/iPad.
+      message) so threaded init crashes fail fast like non-threaded ones.
+      (i) MEMFS mount retirement: the non-threaded default still needs MEMFS
+      (sync access handles are worker-only); when threaded becomes the
+      default, shrink the MEMFS mount pipeline to the ?opfsmount=0 escape
+      hatch, then delete.
+- [ ] **Retire the range-backed subset-mount machinery together with the
+      legacy smoke surface** (P3 audit, 2026-07-10). No shipping path uses it
+      (play mounts full archives; threaded mounts stream to OPFS), but
+      `mountRangeBackedArchiveSet` / `extractBigEntriesFromUrl` /
+      `buildBigArchive` (harness/bridge.js ~9445-9716) are load-bearing for
+      ~18 package.json-wired legacy smokes (startup_vertical_smoke's phase-2
+      audio-ownership boot, the terrain_*_scene/buffer smokes, the display_*
+      smokes, object_ini_smoke, shipped_mesh_render_smoke,
+      main_menu_layout_image_repaint_smoke, plus
+      range_backed/startup_range_backed smokes that test the machinery
+      itself) and 2 unwired debug scripts (plumbing_check.mjs,
+      input_fix_verification.mjs). Converting those smokes to full-archive
+      mounts would multiply suite runtime/memory (subset BIGs exist precisely
+      to avoid multi-hundred-MB mounts per smoke), so the honest retirement
+      schedule is: delete the machinery WHEN its caller smokes are retired by
+      real-path coverage (the AGENTS.md probe burn-down), not via a mass
+      conversion. Until then the range path is legacy-smoke-only tooling —
+      do not add new callers.
 - [ ] **Threaded-mode (P1c) follow-ups, in threaded mode only** (2026-07-10):
       (a) canvas pixel/graphics diagnostics RPCs read the MAIN scratch
       executor (blank) — route worker-side equivalents (executor lives in the
