@@ -128,6 +128,13 @@
             <span class="settingLabel">Fullscreen</span>
             <button id="fullscreenButton" type="button" class="pillButton" title="Toggle fullscreen">Fullscreen</button>
           </div>
+          <label class="settingRow" for="shaderTierSelect">
+            <span class="settingLabel">Shaders</span>
+            <select id="shaderTierSelect" title="Graphics shader tier (applies after reload — the engine samples GPU capabilities once at boot)">
+              <option value="ff">Classic (fixed function)</option>
+              <option value="ps11">Enhanced (pixel shaders)</option>
+            </select>
+          </label>
         </section>
 
         <section class="settingsSection">

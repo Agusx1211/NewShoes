@@ -6,6 +6,10 @@ constexpr UINT WASM_D3D8_TEXTURE_STAGE_COUNT = 8;
 constexpr UINT WASM_D3D8_TEXTURE_STAGE_STATE_SLOTS = static_cast<UINT>(D3DTSS_RESULTARG) + 1;
 constexpr UINT WASM_D3D8_CLIP_PLANE_COUNT = 6;
 constexpr UINT WASM_D3D8_LIGHT_COUNT = 8;
+// D3D8 SM1 shader constant files (vec4 registers): vs.1.1 exposes c0-c95,
+// ps.1.x exposes c0-c7.
+constexpr UINT WASM_D3D8_VS_CONSTANT_COUNT = 96;
+constexpr UINT WASM_D3D8_PS_CONSTANT_COUNT = 8;
 
 struct WasmD3D8DrawTextureStageState
 {

@@ -58,6 +58,7 @@ loose_script_payloads=(
 
 base_data_archives=(
   INI.big
+  Shaders.big
   Terrain.big
   Textures.big
   W3D.big
@@ -74,6 +75,14 @@ base_disc1_data_archives=(
 # The ZH Data1.cab contains a 786KB stub Music.big with only generalsa.sec.
 # The real base-Generals Music.big (~158MB) contains Data\Audio\Tracks\*.mp3.
 base_music_big="Music.big"
+
+# Shaders.big (base-Generals D3D8 Shaders\*.pso/*.vso binaries, absent from the
+# ZH Data1.cab) is stored in the base Data1.cab under a lowercase entry name
+# ("shaders.big"), and 7z name matching is case-sensitive, so it cannot ride in
+# base_disc1_data_archives; it is extracted explicitly and renamed to the
+# canonical Shaders.big artifact name.
+base_shaders_big_cab_entry="shaders.big"
+base_shaders_big="Shaders.big"
 
 base_disc2_data_archives=(
   Terrain.big
@@ -320,6 +329,19 @@ extract_optional_base_startup_archives() {
   # The real base-Generals Music.big (~158MB) contains Data\Audio\Tracks\*.mp3.
   if [[ -n "${base_data1_source}" && -f "${base_data1_source}" ]]; then
     7z e -y "-o${base_work_dir}" "${base_data1_source}" "${base_music_big}" >/dev/null
+  fi
+
+  # Extract Shaders.big from base Generals Data1.cab. The cab entry is
+  # lowercase ("shaders.big") and 7z name matching is case-sensitive, so
+  # extract it explicitly and rename to the canonical Shaders.big.
+  if [[ -n "${base_data1_source}" && -f "${base_data1_source}" ]]; then
+    7z e -y "-o${out_dir}" "${base_data1_source}" "${base_shaders_big_cab_entry}" >/dev/null
+    if [[ -f "${out_dir}/${base_shaders_big_cab_entry}" ]]; then
+      mv -f "${out_dir}/${base_shaders_big_cab_entry}" "${out_dir}/${base_shaders_big}"
+    fi
+  fi
+  if ! record_optional_archive_if_present "${base_shaders_big}"; then
+    echo "Optional base Generals Data1.cab source not found; ${base_shaders_big} was not extracted." >&2
   fi
 }
 

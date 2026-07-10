@@ -3,10 +3,14 @@
 #include "D3dx8core.h"
 
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <map>
 #include <new>
+#include <set>
+#include <string>
 #include <vector>
 
 #ifdef __EMSCRIPTEN__
@@ -155,6 +159,63 @@ EM_JS(void, wasm_d3d8_browser_tree_shroud_constant, (
 	} else if (reg === 33) {
 		slot.c33 = v;
 	}
+});
+// Shader tier switch.  0 = fixed-function-only adapter (Voodoo5-class identity,
+// no shader caps — the historical browser default), 1 = ps.1.1/vs.1.1-capable
+// adapter (generic vendor so W3DShaderManager::getChipset() lands on
+// DC_GENERIC_PIXEL_SHADER_1_1 and selects the programmable shader paths).
+// Sampled once per session (device create) so caps/identity stay consistent.
+EM_JS(int, wasm_d3d8_browser_shader_tier, (), {
+	if (typeof Module === "undefined") {
+		return 0;
+	}
+	const tier = typeof Module.cncPortD3D8ShaderTier === "function"
+		? Module.cncPortD3D8ShaderTier()
+		: Module.cncPortD3D8ShaderTier;
+	if (tier === 1 || tier === "ps11" || tier === true) {
+		return 1;
+	}
+	return 0;
+});
+// Register a translated D3D8 SM1 shader with the WebGL2 bridge.  The bridge
+// parses the token stream, emits GLSL, and compiles it immediately (create-time
+// warm-up — no mid-frame compile hitches).  Returns 1 on success, 0 on failure
+// so the caller can fail CreatePixelShader/CreateVertexShader and let the
+// engine take its original fixed-function fallback.
+// For vertex shaders decl_ptr/decl_count describe the parsed D3DVSD input
+// layout as packed triples (register, d3dvsdt_type, byte_offset).
+EM_JS(int, wasm_d3d8_browser_shader_create, (
+	int is_pixel,
+	unsigned int handle,
+	const unsigned int *tokens,
+	unsigned int token_count,
+	const unsigned int *decl,
+	unsigned int decl_count
+), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8ShaderCreate : null;
+	if (typeof bridge !== "function" || !Module.HEAPU32 || !tokens || token_count === 0) {
+		return 0;
+	}
+	const tokenBase = tokens >>> 2;
+	const tokenWords = new Uint32Array(Module.HEAPU32.subarray(tokenBase, tokenBase + token_count));
+	let declTriples = null;
+	if (decl && decl_count > 0) {
+		const declBase = decl >>> 2;
+		declTriples = new Uint32Array(Module.HEAPU32.subarray(declBase, declBase + decl_count * 3));
+	}
+	return bridge({
+		isPixel: is_pixel !== 0,
+		handle: handle >>> 0,
+		tokens: tokenWords,
+		declTriples,
+	}) ? 1 : 0;
+});
+EM_JS(void, wasm_d3d8_browser_shader_delete, (int is_pixel, unsigned int handle), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8ShaderDelete : null;
+	if (typeof bridge !== "function") {
+		return;
+	}
+	bridge(is_pixel !== 0, handle >>> 0);
 });
 EM_JS(void, wasm_d3d8_browser_buffer_create, (
 	unsigned int kind,
@@ -465,7 +526,10 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	unsigned int state_hash,
 	unsigned int derived_state_hash,
 	unsigned int producer_ptr,
-	int sorted_draw_profile_scope
+	int sorted_draw_profile_scope,
+	unsigned int pixel_shader,
+	unsigned int ps_consts_ptr,
+	unsigned int vs_consts_ptr
 ), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8DrawIndexed : null;
 	if (typeof bridge !== "function" || typeof Module === "undefined") {
@@ -671,6 +735,18 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 		Module.__cncPortD3D8LastDrawDerivedStateHash = current_derived_state_hash;
 		Module.__cncPortD3D8LastDrawStatePayload = cached_state;
 	} else {
+		// Shader constants ride in the derived-state cache entry: the native
+		// derived hash folds in the pixel-shader handle, the programmable
+		// vertex-shader handle, and value-hashes of both constant files, so a
+		// cache entry can never be reused across different shader state.
+		const programmableVs = (vertex_shader_fvf & 0x80000000) !== 0;
+		const copyConsts = (ptr, floatCount) => {
+			if (!ptr || !Module.HEAPF32) {
+				return null;
+			}
+			const base = ptr >>> 2;
+			return new Float32Array(Module.HEAPF32.subarray(base, base + floatCount));
+		};
 		cached_state = {
 			texture0Transform: copyMatrix(texture0_transform_ptr),
 			texture1Transform: copyMatrix(texture1_transform_ptr),
@@ -680,6 +756,8 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			clipPlanes: copyClipPlanes(clip_planes_ptr),
 			lights: copyLights(lights_ptr),
 			material: copyMaterial(material_ptr),
+			psConstants: pixel_shader !== 0 ? copyConsts(ps_consts_ptr, 8 * 4) : null,
+			vsConstants: programmableVs ? copyConsts(vs_consts_ptr, 96 * 4) : null,
 		};
 		derived_state_cache.set(current_derived_state_hash, cached_state);
 		if (derived_state_cache.size > derived_state_cache_limit) {
@@ -734,6 +812,9 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	payload.material = cached_state.material;
 	payload.stateHash = current_state_hash;
 	payload.derivedStateHash = current_derived_state_hash;
+	payload.pixelShaderHandle = pixel_shader >>> 0;
+	payload.psConstants = cached_state.psConstants || null;
+	payload.vsConstants = cached_state.vsConstants || null;
 	payload.producer = producer;
 	payload.sortedDrawSubmitProfile = sorted_draw_profile_scope !== 0;
 	// Fog-of-war shroud UV offset/scale for the tree draw (c32/c33 from
@@ -759,11 +840,15 @@ void wasm_d3d8_browser_texture_update(unsigned int, unsigned int, unsigned int, 
 void wasm_d3d8_browser_texture_release(unsigned int) {}
 void wasm_d3d8_browser_texture_bind(unsigned int, unsigned int) {}
 void wasm_d3d8_browser_tree_shroud_constant(unsigned int, const float *) {}
+int wasm_d3d8_browser_shader_tier() { return 0; }
+int wasm_d3d8_browser_shader_create(int, unsigned int, const unsigned int *, unsigned int,
+	const unsigned int *, unsigned int) { return 0; }
+void wasm_d3d8_browser_shader_delete(int, unsigned int) {}
 void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
-	unsigned int, int) {}
+	unsigned int, int, unsigned int, unsigned int, unsigned int) {}
 #endif
 
 // Defined by the port runtime (wasm_port_entry.cpp): resizes the Win32-shim
@@ -806,6 +891,530 @@ bool ascii_iequals(const char *left, const char *right)
 	}
 	return *left == '\0' && *right == '\0';
 }
+
+// Shader tier for this session: 0 = fixed-function-only adapter (historical
+// browser default), 1 = ps.1.1/vs.1.1-capable adapter. Sampled once from the
+// bridge so adapter identity, caps, and shader-create behavior stay coherent
+// for the whole device lifetime.
+int wasm_d3d8_shader_tier()
+{
+	static int cached_tier = -1;
+	if (cached_tier < 0) {
+		cached_tier = wasm_d3d8_browser_shader_tier() != 0 ? 1 : 0;
+	}
+	return cached_tier;
+}
+
+// --- D3D8 SM1 (vs.1.1 / ps.1.x) assembly-text -> token-stream assembler -----
+// The engine hands most shaders to CreatePixelShader/CreateVertexShader as
+// already-assembled .pso/.vso token streams, but W3DWater (and the wwshade
+// library) assemble inline asm text at runtime through D3DXAssembleShader.
+// This is a small, faithful assembler for the SM1 subset those sources use;
+// output is a genuine D3D8 token stream, identical in format to the shipped
+// .pso files, so a single downstream translator handles both.
+namespace wasm_sm1 {
+
+struct OpcodeInfo {
+	const char *name;
+	DWORD opcode;
+	int dst_count;   // 0 or 1
+	int src_count;   // source parameter count
+	int extra_floats; // literal float parameters (def)
+};
+
+const OpcodeInfo k_opcodes[] = {
+	{"nop", 0, 0, 0, 0},
+	{"mov", 1, 1, 1, 0},
+	{"add", 2, 1, 2, 0},
+	{"sub", 3, 1, 2, 0},
+	{"mad", 4, 1, 3, 0},
+	{"mul", 5, 1, 2, 0},
+	{"rcp", 6, 1, 1, 0},
+	{"rsq", 7, 1, 1, 0},
+	{"dp3", 8, 1, 2, 0},
+	{"dp4", 9, 1, 2, 0},
+	{"min", 10, 1, 2, 0},
+	{"max", 11, 1, 2, 0},
+	{"slt", 12, 1, 2, 0},
+	{"sge", 13, 1, 2, 0},
+	{"exp", 14, 1, 1, 0},
+	{"log", 15, 1, 1, 0},
+	{"lit", 16, 1, 1, 0},
+	{"dst", 17, 1, 2, 0},
+	{"lrp", 18, 1, 3, 0},
+	{"frc", 19, 1, 1, 0},
+	{"m4x4", 20, 1, 2, 0},
+	{"m4x3", 21, 1, 2, 0},
+	{"m3x4", 22, 1, 2, 0},
+	{"m3x3", 23, 1, 2, 0},
+	{"m3x2", 24, 1, 2, 0},
+	{"texcoord", 64, 1, 0, 0},
+	{"texkill", 65, 1, 0, 0},
+	{"tex", 66, 1, 0, 0},
+	{"texbem", 67, 1, 1, 0},
+	{"texbeml", 68, 1, 1, 0},
+	{"texreg2ar", 69, 1, 1, 0},
+	{"texreg2gb", 70, 1, 1, 0},
+	{"texm3x2pad", 71, 1, 1, 0},
+	{"texm3x2tex", 72, 1, 1, 0},
+	{"texm3x3pad", 73, 1, 1, 0},
+	{"texm3x3tex", 74, 1, 1, 0},
+	{"texm3x3spec", 76, 1, 2, 0},
+	{"texm3x3vspec", 77, 1, 1, 0},
+	{"expp", 78, 1, 1, 0},
+	{"logp", 79, 1, 1, 0},
+	{"cnd", 80, 1, 3, 0},
+	{"def", 81, 1, 0, 4},
+	{"texreg2rgb", 82, 1, 1, 0},
+	{"cmp", 88, 1, 3, 0},
+};
+
+struct Cursor {
+	const char *text;
+	size_t length;
+	size_t pos = 0;
+};
+
+void skip_spaces(Cursor &cursor)
+{
+	while (cursor.pos < cursor.length) {
+		const char value = cursor.text[cursor.pos];
+		if (value == ' ' || value == '\t' || value == '\r') {
+			++cursor.pos;
+			continue;
+		}
+		// Comments run to end of line.
+		if (value == ';' || (value == '/' && cursor.pos + 1 < cursor.length && cursor.text[cursor.pos + 1] == '/')) {
+			while (cursor.pos < cursor.length && cursor.text[cursor.pos] != '\n') {
+				++cursor.pos;
+			}
+			continue;
+		}
+		break;
+	}
+}
+
+bool at_line_end(const Cursor &cursor)
+{
+	return cursor.pos >= cursor.length || cursor.text[cursor.pos] == '\n';
+}
+
+bool read_token(Cursor &cursor, std::string &out)
+{
+	skip_spaces(cursor);
+	out.clear();
+	while (cursor.pos < cursor.length) {
+		const char value = cursor.text[cursor.pos];
+		const bool token_char = (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') ||
+			(value >= '0' && value <= '9') || value == '_' || value == '.' || value == '-' || value == '+';
+		if (!token_char) {
+			break;
+		}
+		out.push_back(ascii_lower(value));
+		++cursor.pos;
+	}
+	return !out.empty();
+}
+
+bool expect_char(Cursor &cursor, char expected)
+{
+	skip_spaces(cursor);
+	if (cursor.pos < cursor.length && cursor.text[cursor.pos] == expected) {
+		++cursor.pos;
+		return true;
+	}
+	return false;
+}
+
+int component_index(char value)
+{
+	switch (value) {
+	case 'x': case 'r': return 0;
+	case 'y': case 'g': return 1;
+	case 'z': case 'b': return 2;
+	case 'w': case 'a': return 3;
+	default: return -1;
+	}
+}
+
+// Parses a bare register name (no modifiers/swizzle) into type + number.
+// is_pixel selects the ps meaning of t registers (TEXTURE) vs vs (ADDR is a0).
+bool parse_register_name(const std::string &name, bool is_pixel, DWORD &type, DWORD &number)
+{
+	if (name.empty()) {
+		return false;
+	}
+	if (name == "a0") {
+		type = 3; // D3DSPR_ADDR
+		number = 0;
+		return !is_pixel;
+	}
+	if (name == "opos") {
+		type = 4; // D3DSPR_RASTOUT
+		number = 0;
+		return !is_pixel;
+	}
+	if (name == "ofog") {
+		type = 4;
+		number = 1;
+		return !is_pixel;
+	}
+	if (name == "opts") {
+		type = 4;
+		number = 2;
+		return !is_pixel;
+	}
+	if (name.size() >= 3 && name[0] == 'o' && name[1] == 'd') {
+		type = 5; // D3DSPR_ATTROUT
+		number = static_cast<DWORD>(std::strtoul(name.c_str() + 2, nullptr, 10));
+		return !is_pixel;
+	}
+	if (name.size() >= 3 && name[0] == 'o' && name[1] == 't') {
+		type = 6; // D3DSPR_TEXCRDOUT
+		number = static_cast<DWORD>(std::strtoul(name.c_str() + 2, nullptr, 10));
+		return !is_pixel;
+	}
+	const char lead = name[0];
+	if (name.size() < 2 || name[1] < '0' || name[1] > '9') {
+		return false;
+	}
+	number = static_cast<DWORD>(std::strtoul(name.c_str() + 1, nullptr, 10));
+	switch (lead) {
+	case 'r': type = 0; return true; // D3DSPR_TEMP
+	case 'v': type = 1; return true; // D3DSPR_INPUT
+	case 'c': type = 2; return true; // D3DSPR_CONST
+	case 't': type = 3; return is_pixel; // D3DSPR_TEXTURE
+	default: return false;
+	}
+}
+
+DWORD make_register_token(DWORD type, DWORD number)
+{
+	return 0x80000000u | ((type << 28) & 0x70000000u) | (number & 0x7ffu);
+}
+
+// dst: name[.writemask] with optional instruction modifiers already consumed.
+bool parse_destination(Cursor &cursor, bool is_pixel, DWORD shift, bool saturate, DWORD &token)
+{
+	std::string name;
+	if (!read_token(cursor, name)) {
+		return false;
+	}
+	std::string mask_text;
+	const size_t dot = name.find('.');
+	if (dot != std::string::npos) {
+		mask_text = name.substr(dot + 1);
+		name = name.substr(0, dot);
+	}
+	DWORD type = 0;
+	DWORD number = 0;
+	if (!parse_register_name(name, is_pixel, type, number)) {
+		return false;
+	}
+	DWORD mask = 0;
+	if (mask_text.empty()) {
+		mask = 0xf;
+	} else {
+		for (const char value : mask_text) {
+			const int component = component_index(value);
+			if (component < 0) {
+				return false;
+			}
+			mask |= 1u << component;
+		}
+	}
+	token = make_register_token(type, number) | (mask << 16) | ((shift & 0xf) << 24) |
+		(saturate ? (1u << 20) : 0u);
+	return true;
+}
+
+// src: [1-|-]name[_bias|_bx2|_x2][.swizzle]
+bool parse_source(Cursor &cursor, bool is_pixel, DWORD &token)
+{
+	skip_spaces(cursor);
+	bool negate = false;
+	bool complement = false;
+	if (cursor.pos + 1 < cursor.length && cursor.text[cursor.pos] == '1' &&
+			cursor.text[cursor.pos + 1] == '-') {
+		complement = true;
+		cursor.pos += 2;
+	} else if (cursor.pos < cursor.length && cursor.text[cursor.pos] == '-') {
+		negate = true;
+		++cursor.pos;
+	}
+	std::string name;
+	if (!read_token(cursor, name)) {
+		return false;
+	}
+	std::string swizzle_text;
+	const size_t dot = name.find('.');
+	if (dot != std::string::npos) {
+		swizzle_text = name.substr(dot + 1);
+		name = name.substr(0, dot);
+	}
+	DWORD modifier = 0; // D3DSPSM_NONE
+	auto strip_suffix = [&name](const char *suffix) {
+		const size_t suffix_length = std::strlen(suffix);
+		if (name.size() > suffix_length &&
+				name.compare(name.size() - suffix_length, suffix_length, suffix) == 0) {
+			name.resize(name.size() - suffix_length);
+			return true;
+		}
+		return false;
+	};
+	if (strip_suffix("_bx2")) {
+		if (complement) {
+			return false; // "1-x_bx2" has no single-modifier encoding
+		}
+		modifier = negate ? 5u : 4u; // SIGNNEG : SIGN
+	} else if (strip_suffix("_bias")) {
+		if (complement) {
+			return false;
+		}
+		modifier = negate ? 3u : 2u; // BIASNEG : BIAS
+	} else if (strip_suffix("_x2")) {
+		if (complement) {
+			return false;
+		}
+		modifier = negate ? 8u : 7u; // X2NEG : X2
+	} else if (complement) {
+		modifier = 6u; // COMP (1-x)
+	} else if (negate) {
+		modifier = 1u; // NEG
+	}
+	DWORD type = 0;
+	DWORD number = 0;
+	if (!parse_register_name(name, is_pixel, type, number)) {
+		return false;
+	}
+	DWORD swizzle = 0xe4; // identity: x y z w
+	if (!swizzle_text.empty()) {
+		int components[4] = {0, 0, 0, 0};
+		size_t count = swizzle_text.size() > 4 ? 4 : swizzle_text.size();
+		for (size_t index = 0; index < count; ++index) {
+			const int component = component_index(swizzle_text[index]);
+			if (component < 0) {
+				return false;
+			}
+			components[index] = component;
+		}
+		for (size_t index = count; index < 4; ++index) {
+			components[index] = components[count - 1];
+		}
+		swizzle = static_cast<DWORD>(components[0] | (components[1] << 2) |
+			(components[2] << 4) | (components[3] << 6));
+	}
+	token = make_register_token(type, number) | (swizzle << 16) | (modifier << 24);
+	return true;
+}
+
+bool parse_float_token(Cursor &cursor, float &value)
+{
+	skip_spaces(cursor);
+	const char *start = cursor.text + cursor.pos;
+	char *end = nullptr;
+	value = std::strtof(start, &end);
+	if (end == start) {
+		return false;
+	}
+	cursor.pos += static_cast<size_t>(end - start);
+	return true;
+}
+
+// Assembles SM1 source text into a D3D8 token stream. Returns false with a
+// diagnostic when the source uses something outside the supported subset.
+bool assemble(const char *source, size_t source_length, std::vector<DWORD> &out, std::string &error)
+{
+	out.clear();
+	if (source == nullptr || source_length == 0) {
+		error = "empty shader source";
+		return false;
+	}
+	Cursor cursor = {source, source_length, 0};
+	bool is_pixel = false;
+	bool version_seen = false;
+	std::string token;
+	while (cursor.pos < cursor.length) {
+		skip_spaces(cursor);
+		if (cursor.pos < cursor.length && cursor.text[cursor.pos] == '\n') {
+			++cursor.pos;
+			continue;
+		}
+		bool coissue = false;
+		skip_spaces(cursor);
+		if (cursor.pos < cursor.length && cursor.text[cursor.pos] == '+') {
+			coissue = true;
+			++cursor.pos;
+		}
+		if (!read_token(cursor, token)) {
+			break;
+		}
+		if (!version_seen) {
+			// Accept ps.1.1 / vs.1.1 / ps_1_1 style version markers.
+			std::string normalized = token;
+			for (char &value : normalized) {
+				if (value == '_') {
+					value = '.';
+				}
+			}
+			unsigned int major = 0;
+			unsigned int minor = 0;
+			if (std::sscanf(normalized.c_str(), "ps.%u.%u", &major, &minor) == 2) {
+				is_pixel = true;
+			} else if (std::sscanf(normalized.c_str(), "vs.%u.%u", &major, &minor) == 2) {
+				is_pixel = false;
+			} else {
+				error = "missing shader version marker: " + token;
+				return false;
+			}
+			out.push_back((is_pixel ? 0xffff0000u : 0xfffe0000u) | ((major & 0xff) << 8) | (minor & 0xff));
+			version_seen = true;
+			continue;
+		}
+		const OpcodeInfo *info = nullptr;
+		DWORD shift = 0;
+		bool saturate = false;
+		std::string mnemonic = token;
+		// Instruction modifiers are suffixes on the mnemonic: _x2 _x4 _d2 _sat.
+		auto strip_mnemonic_suffix = [&mnemonic](const char *suffix) {
+			const size_t suffix_length = std::strlen(suffix);
+			if (mnemonic.size() > suffix_length &&
+					mnemonic.compare(mnemonic.size() - suffix_length, suffix_length, suffix) == 0) {
+				mnemonic.resize(mnemonic.size() - suffix_length);
+				return true;
+			}
+			return false;
+		};
+		if (strip_mnemonic_suffix("_sat")) {
+			saturate = true;
+		}
+		if (strip_mnemonic_suffix("_x2")) {
+			shift = 1;
+		} else if (strip_mnemonic_suffix("_x4")) {
+			shift = 2;
+		} else if (strip_mnemonic_suffix("_d2")) {
+			shift = 0xf;
+		}
+		for (const OpcodeInfo &candidate : k_opcodes) {
+			if (mnemonic == candidate.name) {
+				info = &candidate;
+				break;
+			}
+		}
+		if (info == nullptr) {
+			error = "unsupported SM1 instruction: " + token;
+			return false;
+		}
+		out.push_back(info->opcode | (coissue ? 0x40000000u : 0u));
+		if (info->dst_count > 0) {
+			DWORD dst_token = 0;
+			if (!parse_destination(cursor, is_pixel, shift, saturate, dst_token)) {
+				error = "bad destination for " + token;
+				return false;
+			}
+			out.push_back(dst_token);
+		}
+		for (int source_index = 0; source_index < info->src_count; ++source_index) {
+			if (!expect_char(cursor, ',')) {
+				error = "missing operand for " + token;
+				return false;
+			}
+			DWORD src_token = 0;
+			if (!parse_source(cursor, is_pixel, src_token)) {
+				error = "bad source operand for " + token;
+				return false;
+			}
+			out.push_back(src_token);
+		}
+		for (int float_index = 0; float_index < info->extra_floats; ++float_index) {
+			if (!expect_char(cursor, ',')) {
+				error = "missing literal for " + token;
+				return false;
+			}
+			float value = 0.0f;
+			if (!parse_float_token(cursor, value)) {
+				error = "bad literal for " + token;
+				return false;
+			}
+			DWORD bits = 0;
+			std::memcpy(&bits, &value, sizeof(bits));
+			out.push_back(bits);
+		}
+		skip_spaces(cursor);
+		if (!at_line_end(cursor)) {
+			error = "trailing characters after " + token;
+			return false;
+		}
+	}
+	if (!version_seen) {
+		error = "no shader version marker";
+		return false;
+	}
+	out.push_back(0x0000ffffu); // END token
+	return true;
+}
+
+// Parses a D3D8 vertex-shader declaration (D3DVSD_* token stream) into packed
+// (register, d3dvsdt_type, byte_offset) triples for stream 0. The engine's
+// shaders only source stream 0; anything else is rejected so the caller can
+// fall back to fixed function.
+bool parse_vertex_declaration(const DWORD *declaration, std::vector<DWORD> &triples, std::string &error)
+{
+	triples.clear();
+	if (declaration == nullptr) {
+		error = "null declaration";
+		return false;
+	}
+	DWORD offset = 0;
+	int current_stream = -1;
+	for (size_t index = 0; index < 64; ++index) {
+		const DWORD token = declaration[index];
+		if (token == 0xffffffffu) { // D3DVSD_END
+			return !triples.empty();
+		}
+		const DWORD token_type = (token >> 29) & 0x7;
+		if (token == 0) { // D3DVSD_NOP
+			continue;
+		}
+		if (token_type == 1) { // D3DVSD_TOKEN_STREAM
+			if ((token & 0x10000000u) != 0) { // D3DVSD_STREAM_TESS
+				error = "tessellator streams not supported";
+				return false;
+			}
+			current_stream = static_cast<int>(token & 0xf);
+			offset = 0;
+			continue;
+		}
+		if (token_type == 2) { // D3DVSD_TOKEN_STREAMDATA (REG or SKIP)
+			if ((token & 0x10000000u) != 0) { // D3DVSD_SKIP
+				offset += ((token >> 16) & 0xf) * 4;
+				continue;
+			}
+			const DWORD data_type = (token >> 16) & 0xf;
+			const DWORD reg = token & 0x1f;
+			static const DWORD type_sizes[] = {4, 8, 12, 16, 4, 4, 4, 8};
+			if (data_type >= sizeof(type_sizes) / sizeof(type_sizes[0])) {
+				error = "unsupported D3DVSDT type";
+				return false;
+			}
+			if (current_stream != 0) {
+				error = "vertex declaration uses a stream other than 0";
+				return false;
+			}
+			triples.push_back(reg);
+			triples.push_back(data_type);
+			triples.push_back(offset);
+			offset += type_sizes[data_type];
+			continue;
+		}
+		error = "unsupported vertex declaration token";
+		return false;
+	}
+	error = "unterminated vertex declaration";
+	return false;
+}
+
+} // namespace wasm_sm1
 
 // Adapter display-mode ladder. The engine's own display-mode enumeration
 // (DX8Wrapper -> W3DDisplay::getDisplayModeCount -> the in-game options
@@ -956,6 +1565,16 @@ void fill_caps(D3DCAPS8 &caps)
 	caps.MaxPrimitiveCount = 65535;
 	caps.MaxVertexIndex = 65535;
 	caps.MaxPointSize = 64.0f;
+	if (wasm_d3d8_shader_tier() >= 1) {
+		// ps.1.1 / vs.1.1 tier: W3DShaderManager::getChipset() reads these
+		// through DX8Caps and (with a non-3dfx/NVIDIA/ATI adapter identity)
+		// classifies the device as DC_GENERIC_PIXEL_SHADER_1_1, unlocking the
+		// original programmable-shader effect paths.
+		caps.VertexShaderVersion = 0xfffe0000u | (1u << 8) | 1u; // D3DVS_VERSION(1, 1)
+		caps.MaxVertexShaderConst = WASM_D3D8_VS_CONSTANT_COUNT;
+		caps.PixelShaderVersion = 0xffff0000u | (1u << 8) | 1u; // D3DPS_VERSION(1, 1)
+		caps.MaxPixelShaderValue = 1.0f;
+	}
 }
 
 void fill_identity_gamma_ramp(D3DGAMMARAMP &ramp)
@@ -1819,7 +2438,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 	const D3DMATRIX *texture2_transform, const D3DMATRIX *texture3_transform,
 	const WasmD3D8DrawRenderState *render_state, const float *clip_planes,
 	const WasmD3D8DrawLight *lights, const WasmD3D8DrawMaterial *material, UINT state_hash,
-	UINT derived_state_hash)
+	UINT derived_state_hash, DWORD pixel_shader, const float *ps_constants, const float *vs_constants)
 {
 	const bool profile_sorted_draw_submit = wasm_d3d8_sorted_draw_profile_enabled();
 	if (vertex_buffer_id == 0 || vertex_byte_size == 0 || index_buffer_id == 0 || index_byte_size == 0 ||
@@ -1869,7 +2488,10 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 		state_hash,
 		derived_state_hash,
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(producer)),
-		profile_sorted_draw_submit ? 1 : 0);
+		profile_sorted_draw_submit ? 1 : 0,
+		pixel_shader,
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(ps_constants)),
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(vs_constants)));
 	WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.browserDrawIndexed.after");
 }
 
@@ -3986,32 +4608,152 @@ public:
 	{
 		return D3DERR_NOTAVAILABLE;
 	}
-	HRESULT CreateVertexShader(const DWORD *, const DWORD *, DWORD *, DWORD) override
+	// Programmable D3D8 SM1 shaders. Only advertised (and reachable — the
+	// engine gates every shader load on W3DShaderManager::getChipset()) when
+	// the ps11 shader tier is active; the historical fixed-function tier keeps
+	// the original D3DERR_NOTAVAILABLE behavior byte-for-byte.
+	HRESULT CreateVertexShader(const DWORD *declaration, const DWORD *function, DWORD *handle, DWORD) override
 	{
-		return D3DERR_NOTAVAILABLE;
+		if (handle == nullptr) {
+			return E_FAIL;
+		}
+		*handle = 0;
+		if (wasm_d3d8_shader_tier() == 0 || function == nullptr) {
+			return D3DERR_NOTAVAILABLE;
+		}
+		if ((function[0] & 0xffff0000u) != 0xfffe0000u) {
+			return D3DERR_INVALIDCALL;
+		}
+		std::vector<DWORD> triples;
+		std::string decl_error;
+		if (!wasm_sm1::parse_vertex_declaration(declaration, triples, decl_error)) {
+			std::printf("WasmD3D8: CreateVertexShader declaration rejected: %s\n", decl_error.c_str());
+			return D3DERR_INVALIDCALL;
+		}
+		const UINT token_count = shader_token_count(function);
+		if (token_count == 0) {
+			return D3DERR_INVALIDCALL;
+		}
+		const DWORD new_handle = m_next_vertex_shader_handle;
+		if (!wasm_d3d8_browser_shader_create(0, new_handle,
+				reinterpret_cast<const unsigned int *>(function), token_count,
+				reinterpret_cast<const unsigned int *>(triples.data()),
+				static_cast<unsigned int>(triples.size() / 3))) {
+			std::printf("WasmD3D8: CreateVertexShader translation failed (handle %u)\n", new_handle);
+			return D3DERR_INVALIDCALL;
+		}
+		m_next_vertex_shader_handle += 2;
+		m_vertex_shader_handles.insert(new_handle);
+		*handle = new_handle;
+		return S_OK;
 	}
 	HRESULT SetVertexShader(DWORD handle) override
 	{
 		++g_state.set_vertex_shader_calls;
 		g_state.last_set_vertex_shader = handle;
+		if (handle != m_vertex_shader &&
+				((handle & 0x80000000u) != 0 || (m_vertex_shader & 0x80000000u) != 0)) {
+			// Programmable-vs identity feeds the derived payload hash; FVF-only
+			// switches stay out of it (the bridge keys FVF separately).
+			invalidate_draw_derived_payload();
+		}
 		m_vertex_shader = handle;
 		return S_OK;
 	}
-	HRESULT DeleteVertexShader(DWORD) override { return S_OK; }
-	HRESULT SetVertexShaderConstant(DWORD reg, const void *data, DWORD count) override
+	HRESULT DeleteVertexShader(DWORD handle) override
 	{
-		// Trees.nvv shroud UV constants: c32 = offset, c33 = scale.  Capture them
-		// so the tree draw payload can hand them to the WebGL2 bridge (there is no
-		// bound vertex shader in the browser, so these would otherwise be lost).
-		if (data && count >= 1 && (reg == 32 || reg == 33)) {
-			wasm_d3d8_browser_tree_shroud_constant(reg, static_cast<const float *>(data));
+		if ((handle & 0x80000000u) != 0 && m_vertex_shader_handles.erase(handle) > 0) {
+			wasm_d3d8_browser_shader_delete(0, handle);
+			if (m_vertex_shader == handle) {
+				m_vertex_shader = 0;
+				invalidate_draw_derived_payload();
+			}
 		}
 		return S_OK;
 	}
-	HRESULT CreatePixelShader(const DWORD *, DWORD *) override { return D3DERR_NOTAVAILABLE; }
-	HRESULT SetPixelShader(DWORD) override { return S_OK; }
-	HRESULT DeletePixelShader(DWORD) override { return S_OK; }
-	HRESULT SetPixelShaderConstant(DWORD, const void *, DWORD) override { return S_OK; }
+	HRESULT SetVertexShaderConstant(DWORD reg, const void *data, DWORD count) override
+	{
+		// Trees.nvv shroud UV constants: c32 = offset, c33 = scale.  Capture them
+		// so the tree draw payload can hand them to the WebGL2 bridge (the
+		// fixed-function tier has no bound vertex shader, so these register
+		// writes would otherwise be lost).
+		if (data && count >= 1 && (reg == 32 || reg == 33)) {
+			wasm_d3d8_browser_tree_shroud_constant(reg, static_cast<const float *>(data));
+		}
+		if (data != nullptr && count > 0 && reg < WASM_D3D8_VS_CONSTANT_COUNT) {
+			const DWORD writable = count <= WASM_D3D8_VS_CONSTANT_COUNT - reg
+				? count : WASM_D3D8_VS_CONSTANT_COUNT - reg;
+			float *destination = &m_vs_constants[reg * 4];
+			const size_t bytes = static_cast<size_t>(writable) * 4 * sizeof(float);
+			if (std::memcmp(destination, data, bytes) != 0) {
+				std::memcpy(destination, data, bytes);
+				m_vs_consts_dirty = true;
+				invalidate_draw_derived_payload();
+			}
+		}
+		return S_OK;
+	}
+	HRESULT CreatePixelShader(const DWORD *function, DWORD *handle) override
+	{
+		if (handle == nullptr) {
+			return E_FAIL;
+		}
+		*handle = 0;
+		if (wasm_d3d8_shader_tier() == 0 || function == nullptr) {
+			return D3DERR_NOTAVAILABLE;
+		}
+		if ((function[0] & 0xffff0000u) != 0xffff0000u) {
+			return D3DERR_INVALIDCALL;
+		}
+		const UINT token_count = shader_token_count(function);
+		if (token_count == 0) {
+			return D3DERR_INVALIDCALL;
+		}
+		const DWORD new_handle = m_next_pixel_shader_handle;
+		if (!wasm_d3d8_browser_shader_create(1, new_handle,
+				reinterpret_cast<const unsigned int *>(function), token_count, nullptr, 0)) {
+			std::printf("WasmD3D8: CreatePixelShader translation failed (handle %u)\n", new_handle);
+			return D3DERR_INVALIDCALL;
+		}
+		++m_next_pixel_shader_handle;
+		m_pixel_shader_handles.insert(new_handle);
+		*handle = new_handle;
+		return S_OK;
+	}
+	HRESULT SetPixelShader(DWORD handle) override
+	{
+		if (handle != m_pixel_shader) {
+			m_pixel_shader = handle;
+			invalidate_draw_derived_payload();
+		}
+		return S_OK;
+	}
+	HRESULT DeletePixelShader(DWORD handle) override
+	{
+		if (m_pixel_shader_handles.erase(handle) > 0) {
+			wasm_d3d8_browser_shader_delete(1, handle);
+			if (m_pixel_shader == handle) {
+				m_pixel_shader = 0;
+				invalidate_draw_derived_payload();
+			}
+		}
+		return S_OK;
+	}
+	HRESULT SetPixelShaderConstant(DWORD reg, const void *data, DWORD count) override
+	{
+		if (data != nullptr && count > 0 && reg < WASM_D3D8_PS_CONSTANT_COUNT) {
+			const DWORD writable = count <= WASM_D3D8_PS_CONSTANT_COUNT - reg
+				? count : WASM_D3D8_PS_CONSTANT_COUNT - reg;
+			float *destination = &m_ps_constants[reg * 4];
+			const size_t bytes = static_cast<size_t>(writable) * 4 * sizeof(float);
+			if (std::memcmp(destination, data, bytes) != 0) {
+				std::memcpy(destination, data, bytes);
+				m_ps_consts_dirty = true;
+				invalidate_draw_derived_payload();
+			}
+		}
+		return S_OK;
+	}
 	HRESULT SetStreamSource(UINT stream_number, IDirect3DVertexBuffer8 *stream_data, UINT stride) override
 	{
 		++g_state.set_stream_source_calls;
@@ -4639,7 +5381,10 @@ private:
 			g_state.last_draw_lights,
 			&g_state.last_draw_material,
 			g_state.last_draw_state_hash,
-			derived_state_hash);
+			derived_state_hash,
+			m_pixel_shader,
+			m_pixel_shader != 0 ? m_ps_constants : nullptr,
+			(m_vertex_shader & 0x80000000u) != 0 ? m_vs_constants : nullptr);
 		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.bridge.after");
 		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.complete");
 	}
@@ -4864,6 +5609,19 @@ private:
 			m_cached_draw_derived_payload.clip_planes,
 			m_cached_draw_derived_payload.material,
 			m_cached_draw_derived_payload.lights);
+		// Programmable-shader identity + constant values feed the derived hash
+		// so no batching/merge/dedup layer (native or bridge) can ever mix
+		// draws across different shader state. The setters invalidate this
+		// payload whenever any of these contributions change.
+		payload_hash = fnv1a_step(payload_hash, m_pixel_shader);
+		payload_hash = fnv1a_step(payload_hash,
+			(m_vertex_shader & 0x80000000u) != 0 ? m_vertex_shader : 0u);
+		if (m_pixel_shader != 0) {
+			payload_hash = fnv1a_step(payload_hash, current_ps_const_hash());
+		}
+		if ((m_vertex_shader & 0x80000000u) != 0) {
+			payload_hash = fnv1a_step(payload_hash, current_vs_const_hash());
+		}
 		m_cached_draw_derived_payload.payload_hash = payload_hash;
 		++g_state.draw_derived_state_cache_misses;
 	}
@@ -4907,8 +5665,85 @@ private:
 	D3DFORMAT m_user_pointer_index_buffer_format = D3DFMT_INDEX16;
 	std::vector<BYTE> m_user_pointer_index_bytes;
 	DWORD m_vertex_shader = 0;
+	// Programmable SM1 shader state. Vertex-shader handles carry bit 31 so
+	// they can never collide with D3DFVF codes travelling the same
+	// SetVertexShader path; pixel-shader handles are a plain counter.
+	DWORD m_pixel_shader = 0;
+	DWORD m_next_vertex_shader_handle = 0x80000001u;
+	DWORD m_next_pixel_shader_handle = 1;
+	std::set<DWORD> m_vertex_shader_handles;
+	std::set<DWORD> m_pixel_shader_handles;
+	float m_vs_constants[WASM_D3D8_VS_CONSTANT_COUNT * 4] = {};
+	float m_ps_constants[WASM_D3D8_PS_CONSTANT_COUNT * 4] = {};
+	bool m_vs_consts_dirty = true;
+	bool m_ps_consts_dirty = true;
+	UINT m_vs_const_hash = 0;
+	UINT m_ps_const_hash = 0;
 	UINT m_draw_derived_payload_revision = 1;
 	CachedDrawDerivedPayload m_cached_draw_derived_payload;
+
+	static UINT shader_token_count(const DWORD *function)
+	{
+		// Structural walk of the D3D8 SM1 token stream (version token, then per
+		// instruction its dst/src/float parameter tokens, comment blocks, END),
+		// mirroring the bridge-side parser — a flat scan could misread a def
+		// float literal whose bits happen to look like a comment/END token.
+		// Returns the count INCLUDING the END token, 0 if malformed/unknown.
+		const UINT max_tokens = 4096;
+		if (function == nullptr) {
+			return 0;
+		}
+		UINT index = 1; // callers validate the version token before this walk
+		while (index < max_tokens) {
+			const DWORD token = function[index];
+			if (token == 0x0000ffffu) {
+				return index + 1;
+			}
+			if ((token & 0xffffu) == 0xfffeu) { // comment block
+				index += 1 + ((token >> 16) & 0x7fffu);
+				continue;
+			}
+			const DWORD opcode = token & 0xffffu;
+			const wasm_sm1::OpcodeInfo *info = nullptr;
+			for (const wasm_sm1::OpcodeInfo &candidate : wasm_sm1::k_opcodes) {
+				if (candidate.opcode == opcode) {
+					info = &candidate;
+					break;
+				}
+			}
+			if (info == nullptr) {
+				return 0;
+			}
+			index += 1 + static_cast<UINT>(info->dst_count + info->src_count + info->extra_floats);
+		}
+		return 0;
+	}
+
+	UINT current_vs_const_hash()
+	{
+		if (m_vs_consts_dirty) {
+			UINT hash = FNV1A_OFFSET_BASIS;
+			for (UINT index = 0; index < WASM_D3D8_VS_CONSTANT_COUNT * 4; ++index) {
+				hash = fnv1a_step(hash, hash_float(m_vs_constants[index]));
+			}
+			m_vs_const_hash = hash;
+			m_vs_consts_dirty = false;
+		}
+		return m_vs_const_hash;
+	}
+
+	UINT current_ps_const_hash()
+	{
+		if (m_ps_consts_dirty) {
+			UINT hash = FNV1A_OFFSET_BASIS;
+			for (UINT index = 0; index < WASM_D3D8_PS_CONSTANT_COUNT * 4; ++index) {
+				hash = fnv1a_step(hash, hash_float(m_ps_constants[index]));
+			}
+			m_ps_const_hash = hash;
+			m_ps_consts_dirty = false;
+		}
+		return m_ps_const_hash;
+	}
 };
 
 class BrowserD3D8 final : public IDirect3D8
@@ -4925,6 +5760,19 @@ public:
 			return E_FAIL;
 		}
 		std::memset(identifier, 0, sizeof(*identifier));
+		if (wasm_d3d8_shader_tier() >= 1) {
+			// ps.1.1/vs.1.1 tier: an unknown vendor id keeps
+			// W3DShaderManager::getChipset() out of the NVIDIA/3dfx/ATI
+			// device tables so it classifies by caps and lands on
+			// DC_GENERIC_PIXEL_SHADER_1_1 (the generic programmable path).
+			std::strncpy(identifier->Driver, "webgl2vgl", sizeof(identifier->Driver) - 1);
+			std::strncpy(identifier->Description, "Browser Direct3D8 shader shim",
+				sizeof(identifier->Description) - 1);
+			std::strncpy(identifier->DeviceName, "webgl2", sizeof(identifier->DeviceName) - 1);
+			identifier->VendorId = 0x0000;
+			identifier->DeviceId = 0x0000;
+			return S_OK;
+		}
 		std::strncpy(identifier->Driver, "3dfxvgl", sizeof(identifier->Driver) - 1);
 		std::strncpy(identifier->Description, "Browser Direct3D8 fixed-function shim",
 			sizeof(identifier->Description) - 1);
@@ -5245,19 +6093,66 @@ HRESULT D3DXAssembleShaderFromFile(
 	return D3DERR_NOTAVAILABLE;
 }
 
+namespace {
+
+// Concrete ID3DXBuffer for assembled shader token streams.
+class WasmD3DXBuffer final : public ID3DXBuffer
+{
+public:
+	explicit WasmD3DXBuffer(std::vector<DWORD> &&data) : m_data(std::move(data)) {}
+
+	LPVOID GetBufferPointer() override { return m_data.data(); }
+	DWORD GetBufferSize() override
+	{
+		return static_cast<DWORD>(m_data.size() * sizeof(DWORD));
+	}
+	ULONG AddRef() override { return ++m_ref_count; }
+	ULONG Release() override
+	{
+		const ULONG remaining = --m_ref_count;
+		if (remaining == 0) {
+			delete this;
+		}
+		return remaining;
+	}
+
+private:
+	std::vector<DWORD> m_data;
+	ULONG m_ref_count = 1;
+};
+
+} // namespace
+
 HRESULT D3DXAssembleShader(
-	const void *,
-	UINT,
+	const void *source,
+	UINT source_length,
 	DWORD,
 	LPD3DXBUFFER *,
 	LPD3DXBUFFER *shader_code,
 	LPD3DXBUFFER *errors)
 {
-	if (shader_code != nullptr) {
-		*shader_code = nullptr;
-	}
 	if (errors != nullptr) {
 		*errors = nullptr;
 	}
-	return D3DERR_NOTAVAILABLE;
+	if (shader_code == nullptr) {
+		return E_FAIL;
+	}
+	*shader_code = nullptr;
+	// W3DWater (and wwshade) assemble ps.1.1/vs.1.1 asm text at runtime; the
+	// result is a genuine D3D8 token stream fed straight to
+	// CreatePixelShader/CreateVertexShader. Assembly always works — whether
+	// the produced stream is usable is decided by the shader tier at create
+	// time, mirroring native D3DX (which assembles independently of caps).
+	std::vector<DWORD> tokens;
+	std::string error;
+	if (!wasm_sm1::assemble(static_cast<const char *>(source), source_length, tokens, error)) {
+		std::printf("WasmD3D8: D3DXAssembleShader failed: %s\n", error.c_str());
+		return D3DERR_INVALIDCALL;
+	}
+	WasmD3DXBuffer *buffer = new (std::nothrow) WasmD3DXBuffer(std::move(tokens));
+	if (buffer == nullptr) {
+		return E_OUTOFMEMORY;
+	}
+	*shader_code = buffer;
+	return S_OK;
 }

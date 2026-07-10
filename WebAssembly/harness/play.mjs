@@ -28,6 +28,7 @@ const archiveSpecs = [
   { name: "ZZBase_Terrain.big", sourceName: "Terrain.big" },
   { name: "ZZBase_Textures.big", sourceName: "Textures.big" },
   { name: "ZZBase_W3D.big", sourceName: "W3D.big" },
+  { name: "ZZBase_Shaders.big", sourceName: "Shaders.big" },
   { name: "ZZBase_Music.big", sourceName: "base-generals/Music.big" },
   { name: "ZZBase_Audio.big", sourceName: "base-generals/Audio.big" },
   { name: "ZZBase_AudioEnglish.big", sourceName: "base-generals/AudioEnglish.big" },
@@ -1331,6 +1332,35 @@ function initDisplayControls() {
         }
       });
     }
+  }
+
+  // Shader tier (Classic fixed-function vs Enhanced ps.1.1). The engine
+  // samples GPU capabilities once at device create, so a change applies on the
+  // next boot: persist the choice and reload. A URL ?shaderTier= param wins
+  // over the stored choice (bridge.js d3d8ShaderTierQuery order), keeping
+  // probes deterministic.
+  const shaderTierSelect = document.querySelector("#shaderTierSelect");
+  if (shaderTierSelect) {
+    let storedTier = null;
+    try {
+      storedTier = window.localStorage?.getItem("cncPortShaderTier");
+    } catch { /* storage unavailable */ }
+    const urlTier = new URLSearchParams(window.location.search).get("shaderTier");
+    // Mirror bridge.js d3d8ShaderTierQuery: url > stored > default ff.
+    const effectiveTier = urlTier === "ps11" || urlTier === "ff"
+      ? urlTier
+      : (storedTier === "ps11" || storedTier === "ff" ? storedTier : "ff");
+    shaderTierSelect.value = effectiveTier;
+    shaderTierSelect.addEventListener("change", () => {
+      try {
+        window.localStorage?.setItem("cncPortShaderTier", shaderTierSelect.value);
+      } catch { /* storage unavailable */ }
+      if (window.confirm("Shader tier applies on the next boot. Reload now?")) {
+        const reloadUrl = new URL(window.location.href);
+        reloadUrl.searchParams.delete("shaderTier");
+        window.location.href = reloadUrl.href;
+      }
+    });
   }
 
   // In-fullscreen exit affordance (no permanent bar): the button is revealed by

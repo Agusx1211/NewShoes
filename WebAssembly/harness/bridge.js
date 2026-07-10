@@ -156,6 +156,20 @@ async function cncPortRuntimeCacheToken(distDir) {
 }
 
 let d3d8DrawProgram = null;
+// Fixed-function vertex/fragment GLSL sources, stashed when the FF draw
+// program is built; translated SM1 shaders link against them for mixed pairs
+// (FF vertex + translated pixel, translated vertex + FF pixel cascade — the
+// latter is how the shipped game drives trees: Trees.vso with the tree pixel
+// shader #if 0'd out in W3DTreeBuffer::drawTrees).
+let d3d8FFVertexSourceCache = null;
+let d3d8FFFragmentSourceCache = null;
+// Registered SM1 shader objects (from CreatePixelShader/CreateVertexShader in
+// the wasm shim) and the linked (vertexShader, pixelShader) pair programs.
+const d3d8SM1PixelShaders = new Map();
+const d3d8SM1VertexShaders = new Map();
+const d3d8SM1PairPrograms = new Map();
+let d3d8SM1MostRecentVertexHandle = 0;
+let d3d8SM1MostRecentPixelHandle = 0;
 let d3d8DepthStencilProgram = null;
 let d3d8DepthStencilNoClipProgram = null;
 let cncPortEmscriptenModule = null;
@@ -562,6 +576,14 @@ const d3d8PerfStats = {
   terrainNoiseMultiplyDraws: 0,
   terrainNoiseMultiplyTransformedDraws: 0,
   terrainNoiseMultiplyIdentityTransformDraws: 0,
+  // Translated D3D8 SM1 (ps.1.1/vs.1.1) programmable shader path.
+  sm1PixelShadersRegistered: 0,
+  sm1VertexShadersRegistered: 0,
+  sm1PairProgramsLinked: 0,
+  sm1PairProgramFailures: 0,
+  sm1ShaderDraws: 0,
+  sm1TranslatedVsDraws: 0,
+  sm1FallbackDraws: 0,
   drawMatrixNormalizations: 0,
   drawMatrixScratchCopies: 0,
   drawMatrixAllocatedCopies: 0,
@@ -986,6 +1008,13 @@ function d3d8PerfSummary() {
     terrainNoiseMultiplyDraws: d3d8PerfStats.terrainNoiseMultiplyDraws,
     terrainNoiseMultiplyTransformedDraws: d3d8PerfStats.terrainNoiseMultiplyTransformedDraws,
     terrainNoiseMultiplyIdentityTransformDraws: d3d8PerfStats.terrainNoiseMultiplyIdentityTransformDraws,
+    sm1PixelShadersRegistered: d3d8PerfStats.sm1PixelShadersRegistered,
+    sm1VertexShadersRegistered: d3d8PerfStats.sm1VertexShadersRegistered,
+    sm1PairProgramsLinked: d3d8PerfStats.sm1PairProgramsLinked,
+    sm1PairProgramFailures: d3d8PerfStats.sm1PairProgramFailures,
+    sm1ShaderDraws: d3d8PerfStats.sm1ShaderDraws,
+    sm1TranslatedVsDraws: d3d8PerfStats.sm1TranslatedVsDraws,
+    sm1FallbackDraws: d3d8PerfStats.sm1FallbackDraws,
     drawMatrixNormalizations: d3d8PerfStats.drawMatrixNormalizations,
     drawMatrixScratchCopies: d3d8PerfStats.drawMatrixScratchCopies,
     drawMatrixAllocatedCopies: d3d8PerfStats.drawMatrixAllocatedCopies,
@@ -8555,7 +8584,7 @@ function ensureD3D8DrawProgram() {
     return d3d8DrawProgram;
   }
 
-  const vertexShader = compileShader(gl.VERTEX_SHADER, `#version 300 es
+  const vertexSource = `#version 300 es
     in vec4 aPosition;
     in vec3 aNormal;
     in vec4 aDiffuseBgra;
@@ -8898,8 +8927,13 @@ function ensureD3D8DrawProgram() {
         vTexCoord3 = texture3Coordinate.xy;
       }
     }
-  `);
-  const fragmentShader = compileShader(gl.FRAGMENT_SHADER, `#version 300 es
+  `;
+  // Stashed so translated-shader pair programs (see
+  // ensureD3D8ShaderPairProgram) can link the exact same fixed-function
+  // vertex stage against a translated SM1 fragment stage.
+  d3d8FFVertexSourceCache = vertexSource;
+  const vertexShader = compileShader(gl.VERTEX_SHADER, vertexSource);
+  const fragmentSource = `#version 300 es
     precision highp float;
     in vec4 vColor;
     in vec4 vSpecularColor;
@@ -9398,7 +9432,9 @@ function ensureD3D8DrawProgram() {
       }
       fragColor = color;
     }
-  `);
+  `;
+  d3d8FFFragmentSourceCache = fragmentSource;
+  const fragmentShader = compileShader(gl.FRAGMENT_SHADER, fragmentSource);
   const program = gl.createProgram();
   gl.attachShader(program, vertexShader);
   gl.attachShader(program, fragmentShader);
@@ -9411,7 +9447,15 @@ function ensureD3D8DrawProgram() {
     throw new Error(`D3D8 bridge program link failed: ${info}`);
   }
 
-  d3d8DrawProgram = {
+  d3d8DrawProgram = buildD3D8DrawProgramLocations(program);
+  return d3d8DrawProgram;
+}
+
+// Location table shared by the fixed-function draw program and the translated
+// SM1 shader-pair programs (absent uniforms resolve to null; every cached
+// uniform setter tolerates that).
+function buildD3D8DrawProgramLocations(program) {
+  return {
     program,
     position: gl.getAttribLocation(program, "aPosition"),
     normal: gl.getAttribLocation(program, "aNormal"),
@@ -9552,7 +9596,978 @@ function ensureD3D8DrawProgram() {
     fogStart: gl.getUniformLocation(program, "uFogStart"),
     fogEnd: gl.getUniformLocation(program, "uFogEnd"),
   };
-  return d3d8DrawProgram;
+}
+
+// --- D3D8 SM1 (vs.1.1 / ps.1.x) token stream -> GLSL ES 3.00 translation ---
+// The wasm shim registers each CreatePixelShader/CreateVertexShader token
+// stream here (cncPortD3D8ShaderCreate). Streams are parsed to a small IR at
+// registration; GLSL is emitted per linked (vertexShader, pixelShader) pair so
+// the varying interface can adapt (fixed-function vertex stage feeding a
+// translated fragment stage vs a fully translated pair). Semantics follow the
+// DirectX 8.1 SDK shader reference (assets/docs/graphics/dx8-sdk-docs);
+// bytecode layout cross-checked against WineD3D's SM1 frontend.
+
+const D3D8_SM1_OPCODES = new Map([
+  [0, { name: "nop", dst: 0, srcs: 0 }],
+  [1, { name: "mov", dst: 1, srcs: 1 }],
+  [2, { name: "add", dst: 1, srcs: 2 }],
+  [3, { name: "sub", dst: 1, srcs: 2 }],
+  [4, { name: "mad", dst: 1, srcs: 3 }],
+  [5, { name: "mul", dst: 1, srcs: 2 }],
+  [6, { name: "rcp", dst: 1, srcs: 1 }],
+  [7, { name: "rsq", dst: 1, srcs: 1 }],
+  [8, { name: "dp3", dst: 1, srcs: 2 }],
+  [9, { name: "dp4", dst: 1, srcs: 2 }],
+  [10, { name: "min", dst: 1, srcs: 2 }],
+  [11, { name: "max", dst: 1, srcs: 2 }],
+  [12, { name: "slt", dst: 1, srcs: 2 }],
+  [13, { name: "sge", dst: 1, srcs: 2 }],
+  [14, { name: "exp", dst: 1, srcs: 1 }],
+  [15, { name: "log", dst: 1, srcs: 1 }],
+  [16, { name: "lit", dst: 1, srcs: 1 }],
+  [17, { name: "dst", dst: 1, srcs: 2 }],
+  [18, { name: "lrp", dst: 1, srcs: 3 }],
+  [19, { name: "frc", dst: 1, srcs: 1 }],
+  [20, { name: "m4x4", dst: 1, srcs: 2 }],
+  [21, { name: "m4x3", dst: 1, srcs: 2 }],
+  [22, { name: "m3x4", dst: 1, srcs: 2 }],
+  [23, { name: "m3x3", dst: 1, srcs: 2 }],
+  [24, { name: "m3x2", dst: 1, srcs: 2 }],
+  [64, { name: "texcoord", dst: 1, srcs: 0 }],
+  [65, { name: "texkill", dst: 1, srcs: 0 }],
+  [66, { name: "tex", dst: 1, srcs: 0 }],
+  [67, { name: "texbem", dst: 1, srcs: 1 }],
+  [68, { name: "texbeml", dst: 1, srcs: 1 }],
+  [78, { name: "expp", dst: 1, srcs: 1 }],
+  [79, { name: "logp", dst: 1, srcs: 1 }],
+  [80, { name: "cnd", dst: 1, srcs: 3 }],
+  [81, { name: "def", dst: 1, srcs: 0, floats: 4 }],
+  [88, { name: "cmp", dst: 1, srcs: 3 }],
+]);
+
+function d3d8SM1DecodeParam(token) {
+  return {
+    regType: (token >>> 28) & 0x7,
+    regNum: token & 0x7ff,
+    // Destination fields
+    writeMask: (token >>> 16) & 0xf,
+    shift: (token >>> 24) & 0xf,
+    saturate: (token & 0x00100000) !== 0,
+    // Source fields
+    swizzle: (token >>> 16) & 0xff,
+    modifier: (token >>> 24) & 0xf,
+    relative: (token & 0x2000) !== 0,
+  };
+}
+
+// Parses a D3D8 SM1 token stream to IR. Returns null (with a console warning)
+// for anything outside the supported subset so the shim can report failure
+// and the engine can take its original fixed-function fallback.
+function parseD3D8SM1Tokens(tokens) {
+  if (!tokens || tokens.length < 2) {
+    return null;
+  }
+  const version = tokens[0] >>> 0;
+  const versionKind = (version & 0xffff0000) >>> 0;
+  const isPixel = versionKind === 0xffff0000;
+  const isVertex = versionKind === 0xfffe0000;
+  if (!isPixel && !isVertex) {
+    return null;
+  }
+  const major = (version >>> 8) & 0xff;
+  const minor = version & 0xff;
+  if (major !== 1) {
+    console.warn(`D3D8 SM1: unsupported shader model ${major}.${minor}`);
+    return null;
+  }
+  if (isPixel && minor >= 4) {
+    // ps.1.4 has phase/texld semantics this translator does not model; the
+    // shipped Generals/Zero Hour corpus is entirely ps.1.1.
+    console.warn("D3D8 SM1: ps.1.4 shaders are not supported");
+    return null;
+  }
+  const instructions = [];
+  let index = 1;
+  while (index < tokens.length) {
+    const token = tokens[index] >>> 0;
+    if (token === 0x0000ffff) {
+      return { isPixel, major, minor, instructions };
+    }
+    if ((token & 0xffff) === 0xfffe) { // comment block
+      index += 1 + ((token >>> 16) & 0x7fff);
+      continue;
+    }
+    const opcode = token & 0xffff;
+    const info = D3D8_SM1_OPCODES.get(opcode);
+    if (!info) {
+      console.warn(`D3D8 SM1: unsupported opcode ${opcode}`);
+      return null;
+    }
+    const instruction = {
+      opcode,
+      name: info.name,
+      coissue: (token & 0x40000000) !== 0,
+      dst: null,
+      srcs: [],
+      floats: null,
+    };
+    index += 1;
+    if (info.dst) {
+      instruction.dst = d3d8SM1DecodeParam(tokens[index] >>> 0);
+      index += 1;
+    }
+    for (let s = 0; s < info.srcs; s += 1) {
+      instruction.srcs.push(d3d8SM1DecodeParam(tokens[index] >>> 0));
+      index += 1;
+    }
+    if (info.floats) {
+      const floatView = new Float32Array(tokens.buffer, tokens.byteOffset + index * 4, info.floats);
+      instruction.floats = Array.from(floatView);
+      index += info.floats;
+    }
+    instructions.push(instruction);
+  }
+  console.warn("D3D8 SM1: token stream missing END token");
+  return null;
+}
+
+const D3D8_SM1_COMPONENTS = ["x", "y", "z", "w"];
+
+function d3d8SM1SwizzleSuffix(swizzle) {
+  if (swizzle === 0xe4) {
+    return "";
+  }
+  let suffix = ".";
+  for (let c = 0; c < 4; c += 1) {
+    suffix += D3D8_SM1_COMPONENTS[(swizzle >>> (c * 2)) & 0x3];
+  }
+  return suffix;
+}
+
+function d3d8SM1WriteMaskSuffix(mask) {
+  let suffix = "";
+  for (let c = 0; c < 4; c += 1) {
+    if (mask & (1 << c)) {
+      suffix += D3D8_SM1_COMPONENTS[c];
+    }
+  }
+  return suffix;
+}
+
+// Source register value expression (before swizzle/modifier), per shader kind.
+function d3d8SM1RegisterExpr(param, ctx) {
+  const n = param.regNum;
+  if (ctx.isPixel) {
+    switch (param.regType) {
+      case 0: return `psR${n}`;
+      case 1: return `psV${n}`;
+      case 2:
+        ctx.usedConstants.add(n);
+        return ctx.defConstants.has(n) ? `psC${n}` : `uPsConst[${n}]`;
+      case 3:
+        ctx.usedTexRegisters.add(n);
+        return `psT${n}`;
+      default:
+        throw new Error(`ps: unsupported source register type ${param.regType}`);
+    }
+  }
+  switch (param.regType) {
+    case 0: ctx.usedTemps.add(n); return `vsR${n}`;
+    case 1: ctx.usedInputs.add(n); return `vsV${n}`;
+    case 2:
+      if (param.relative) {
+        ctx.usesAddress = true;
+        return `uVsConst[vsA0 + ${n}]`;
+      }
+      return `uVsConst[${n}]`;
+    case 3: ctx.usesAddress = true; return "vec4(float(vsA0))";
+    default:
+      throw new Error(`vs: unsupported source register type ${param.regType}`);
+  }
+}
+
+// vs matrix macros need the constant register file with an offset applied.
+function d3d8SM1OffsetConstExpr(param, offset) {
+  if (param.regType !== 2) {
+    throw new Error("SM1 matrix op source must be a constant register");
+  }
+  if (param.relative) {
+    return `uVsConst[vsA0 + ${param.regNum + offset}]`;
+  }
+  return `uVsConst[${param.regNum + offset}]`;
+}
+
+function d3d8SM1SourceExpr(param, ctx) {
+  let expr = d3d8SM1RegisterExpr(param, ctx) + d3d8SM1SwizzleSuffix(param.swizzle);
+  switch (param.modifier) {
+    case 0: break;
+    case 1: expr = `(-(${expr}))`; break;                        // negate
+    case 2: expr = `((${expr}) - 0.5)`; break;                   // bias
+    case 3: expr = `(-((${expr}) - 0.5))`; break;                // bias + negate
+    case 4: expr = `(((${expr}) - 0.5) * 2.0)`; break;           // _bx2 (signed scale)
+    case 5: expr = `(-(((${expr}) - 0.5) * 2.0))`; break;        // _bx2 + negate
+    case 6: expr = `(1.0 - (${expr}))`; break;                   // complement
+    case 7: expr = `((${expr}) * 2.0)`; break;                   // _x2 (ps.1.4)
+    case 8: expr = `(-((${expr}) * 2.0))`; break;                // _x2 + negate
+    default:
+      throw new Error(`SM1: unsupported source modifier ${param.modifier}`);
+  }
+  return expr;
+}
+
+function d3d8SM1ArithmeticExpr(instruction, ctx) {
+  const s = instruction.srcs.map((src) => d3d8SM1SourceExpr(src, ctx));
+  switch (instruction.name) {
+    case "mov": return s[0];
+    case "add": return `(${s[0]} + ${s[1]})`;
+    case "sub": return `(${s[0]} - ${s[1]})`;
+    case "mul": return `(${s[0]} * ${s[1]})`;
+    case "mad": return `(${s[0]} * ${s[1]} + ${s[2]})`;
+    case "dp3": return `vec4(dot((${s[0]}).xyz, (${s[1]}).xyz))`;
+    case "dp4": return `vec4(dot(${s[0]}, ${s[1]}))`;
+    case "min": return `min(${s[0]}, ${s[1]})`;
+    case "max": return `max(${s[0]}, ${s[1]})`;
+    case "slt": return `vec4(lessThan(${s[0]}, ${s[1]}))`;
+    case "sge": return `vec4(greaterThanEqual(${s[0]}, ${s[1]}))`;
+    case "frc": return `fract(${s[0]})`;
+    case "rcp": return `vec4(1.0 / (${s[0]}).x)`;
+    case "rsq": return `vec4(inversesqrt(max(abs((${s[0]}).x), 1.0e-12)))`;
+    case "exp": case "expp": return `vec4(exp2((${s[0]}).x))`;
+    case "log": case "logp": return `vec4(log2(max(abs((${s[0]}).x), 1.0e-12)))`;
+    case "dst": return `vec4(1.0, (${s[0]}).y * (${s[1]}).y, (${s[0]}).z, (${s[1]}).w)`;
+    case "lit": return `d3dSM1Lit(${s[0]})`;
+    // lrp d, s0, s1, s2 = s0*s1 + (1-s0)*s2
+    case "lrp": return `mix(${s[2]}, ${s[1]}, ${s[0]})`;
+    // cnd d, s0, s1, s2 = s0 > 0.5 ? s1 : s2 (per component)
+    case "cnd": return `mix(${s[2]}, ${s[1]}, vec4(greaterThan(${s[0]}, vec4(0.5))))`;
+    // cmp d, s0, s1, s2 = s0 >= 0 ? s1 : s2 (per component)
+    case "cmp": return `mix(${s[2]}, ${s[1]}, vec4(greaterThanEqual(${s[0]}, vec4(0.0))))`;
+    case "m4x4": {
+      const v = s[0];
+      const c = instruction.srcs[1];
+      return `vec4(dot(${v}, ${d3d8SM1OffsetConstExpr(c, 0)}), dot(${v}, ${d3d8SM1OffsetConstExpr(c, 1)}), ` +
+        `dot(${v}, ${d3d8SM1OffsetConstExpr(c, 2)}), dot(${v}, ${d3d8SM1OffsetConstExpr(c, 3)}))`;
+    }
+    case "m4x3": {
+      const v = s[0];
+      const c = instruction.srcs[1];
+      return `vec4(dot(${v}, ${d3d8SM1OffsetConstExpr(c, 0)}), dot(${v}, ${d3d8SM1OffsetConstExpr(c, 1)}), ` +
+        `dot(${v}, ${d3d8SM1OffsetConstExpr(c, 2)}), 0.0)`;
+    }
+    case "m3x4": {
+      const v = `(${s[0]}).xyz`;
+      const c = instruction.srcs[1];
+      return `vec4(dot(${v}, ${d3d8SM1OffsetConstExpr(c, 0)}.xyz), dot(${v}, ${d3d8SM1OffsetConstExpr(c, 1)}.xyz), ` +
+        `dot(${v}, ${d3d8SM1OffsetConstExpr(c, 2)}.xyz), dot(${v}, ${d3d8SM1OffsetConstExpr(c, 3)}.xyz))`;
+    }
+    case "m3x3": {
+      const v = `(${s[0]}).xyz`;
+      const c = instruction.srcs[1];
+      return `vec4(dot(${v}, ${d3d8SM1OffsetConstExpr(c, 0)}.xyz), dot(${v}, ${d3d8SM1OffsetConstExpr(c, 1)}.xyz), ` +
+        `dot(${v}, ${d3d8SM1OffsetConstExpr(c, 2)}.xyz), 0.0)`;
+    }
+    case "m3x2": {
+      const v = `(${s[0]}).xyz`;
+      const c = instruction.srcs[1];
+      return `vec4(dot(${v}, ${d3d8SM1OffsetConstExpr(c, 0)}.xyz), dot(${v}, ${d3d8SM1OffsetConstExpr(c, 1)}.xyz), 0.0, 0.0)`;
+    }
+    default:
+      throw new Error(`SM1: no expression for ${instruction.name}`);
+  }
+}
+
+function d3d8SM1ApplyDestModifiers(expr, dst) {
+  let out = expr;
+  switch (dst.shift) {
+    case 0: break;
+    case 1: out = `((${out}) * 2.0)`; break;
+    case 2: out = `((${out}) * 4.0)`; break;
+    case 3: out = `((${out}) * 8.0)`; break;
+    case 0xf: out = `((${out}) * 0.5)`; break;
+    case 0xe: out = `((${out}) * 0.25)`; break;
+    case 0xd: out = `((${out}) * 0.125)`; break;
+    default:
+      throw new Error(`SM1: unsupported destination shift ${dst.shift}`);
+  }
+  if (dst.saturate) {
+    out = `clamp(${out}, 0.0, 1.0)`;
+  }
+  return out;
+}
+
+function d3d8SM1DestName(dst, ctx) {
+  if (ctx.isPixel) {
+    switch (dst.regType) {
+      case 0: return `psR${dst.regNum}`;
+      case 3: ctx.usedTexRegisters.add(dst.regNum); return `psT${dst.regNum}`;
+      default:
+        throw new Error(`ps: unsupported destination register type ${dst.regType}`);
+    }
+  }
+  switch (dst.regType) {
+    case 0: ctx.usedTemps.add(dst.regNum); return `vsR${dst.regNum}`;
+    case 3: ctx.usesAddress = true; return "vsA0"; // handled specially by mov
+    case 4:
+      if (dst.regNum === 0) { ctx.writesPosition = true; return "vsOPos"; }
+      if (dst.regNum === 1) { ctx.writesFog = true; return "vsOFog"; }
+      return "vsOPts";
+    case 5: ctx.usedColorOutputs.add(dst.regNum); return `vsOD${dst.regNum}`;
+    case 6: ctx.usedTexOutputs.add(dst.regNum); return `vsOT${dst.regNum}`;
+    default:
+      throw new Error(`vs: unsupported destination register type ${dst.regType}`);
+  }
+}
+
+function d3d8SM1WriteStatement(dst, valueExpr, ctx) {
+  const destName = d3d8SM1DestName(dst, ctx);
+  if (!ctx.isPixel && dst.regType === 3) {
+    // mov a0.x — D3D8 vs.1.1 address loads use floor semantics.
+    return `vsA0 = int(floor((${valueExpr}).x));`;
+  }
+  let finalExpr = d3d8SM1ApplyDestModifiers(valueExpr, dst);
+  if (ctx.isPixel && !dst.saturate) {
+    // ps.1.x register saturation: every arithmetic result is clamped to
+    // [-MaxPixelShaderValue, +MaxPixelShaderValue] (= [-1, 1] per the caps we
+    // report) BEFORE it can be read back. Skipping this lets intermediates
+    // overshoot 1.0 and re-enter later instructions (e.g. the water shaders'
+    // sparkle mad feeding a shroud mul), rendering brighter than hardware.
+    finalExpr = `clamp(${finalExpr}, -1.0, 1.0)`;
+  }
+  if (dst.writeMask === 0xf) {
+    return `${destName} = ${finalExpr};`;
+  }
+  const mask = d3d8SM1WriteMaskSuffix(dst.writeMask);
+  return `${destName}.${mask} = (${finalExpr}).${mask};`;
+}
+
+// Stage texture sample honoring the same semantic/LOD-bias plumbing as the
+// fixed-function fragment stage. Unbound stages sample opaque black (D3D8).
+function d3d8SM1SampleExpr(stage, coordExpr) {
+  return `(uUseTexture${stage} ? d3dTextureSample(texture(uTexture${stage}, ${coordExpr}, ` +
+    `uTexture${stage}LodBias), uTexture${stage}Semantic) : vec4(0.0, 0.0, 0.0, 1.0))`;
+}
+
+// Emits the pixel-shader instruction body (statement list) for a parsed IR.
+function d3d8SM1EmitPixelBody(ir, ctx) {
+  const lines = [];
+  const instructions = ir.instructions;
+  for (let i = 0; i < instructions.length; i += 1) {
+    const instruction = instructions[i];
+    const stage = instruction.dst ? instruction.dst.regNum : 0;
+    switch (instruction.name) {
+      case "nop":
+        continue;
+      case "def": {
+        ctx.defConstants.set(instruction.dst.regNum, instruction.floats);
+        continue;
+      }
+      case "tex":
+        ctx.usedTexRegisters.add(stage);
+        ctx.sampledStages.add(stage);
+        lines.push(`psT${stage} = ${d3d8SM1SampleExpr(stage, `vTexCoord${stage}`)};`);
+        continue;
+      case "texcoord":
+        ctx.usedTexRegisters.add(stage);
+        lines.push(`psT${stage} = vec4(clamp(vTexCoord${stage}, 0.0, 1.0), 0.0, 1.0);`);
+        continue;
+      case "texkill":
+        lines.push(`if (any(lessThan(vTexCoord${stage}, vec2(0.0)))) { discard; }`);
+        continue;
+      case "texbem":
+      case "texbeml": {
+        ctx.usedTexRegisters.add(stage);
+        ctx.sampledStages.add(stage);
+        ctx.usesBumpEnv = true;
+        const src = d3d8SM1SourceExpr(instruction.srcs[0], ctx);
+        // D3D8 texbem: u' = u + du*M00 + dv*M10, v' = v + du*M01 + dv*M11
+        // with (du, dv) = source.rg and M packed as uBumpEnv[stage] =
+        // (m00, m01, m10, m11).
+        const coord = `(vTexCoord${stage} + vec2(` +
+          `dot(vec2(uBumpEnv[${stage}].x, uBumpEnv[${stage}].z), (${src}).xy), ` +
+          `dot(vec2(uBumpEnv[${stage}].y, uBumpEnv[${stage}].w), (${src}).xy)))`;
+        let sample = d3d8SM1SampleExpr(stage, coord);
+        if (instruction.name === "texbeml") {
+          ctx.usesBumpEnvL = true;
+          sample = `((${sample}) * ((${src}).z * uBumpEnvL[${stage}].x + uBumpEnvL[${stage}].y))`;
+        }
+        lines.push(`psT${stage} = ${sample};`);
+        continue;
+      }
+      default:
+        break;
+    }
+    // Arithmetic. Co-issued pairs (rgb op + alpha op) read their sources
+    // before either result lands, so compute both into temporaries first.
+    const next = instructions[i + 1];
+    if (next && next.coissue && instruction.dst && next.dst) {
+      const exprA = d3d8SM1ArithmeticExpr(instruction, ctx);
+      const exprB = d3d8SM1ArithmeticExpr(next, ctx);
+      lines.push(`vec4 psCo${i}A = ${exprA};`);
+      lines.push(`vec4 psCo${i}B = ${exprB};`);
+      lines.push(d3d8SM1WriteStatement(instruction.dst, `psCo${i}A`, ctx));
+      lines.push(d3d8SM1WriteStatement(next.dst, `psCo${i}B`, ctx));
+      i += 1;
+      continue;
+    }
+    lines.push(d3d8SM1WriteStatement(instruction.dst, d3d8SM1ArithmeticExpr(instruction, ctx), ctx));
+  }
+  return lines;
+}
+
+// Builds the complete fragment shader source for a translated pixel shader.
+// options.translatedVs selects the varying interface: fixed-function vertex
+// pairs get the FF varyings (clip planes, depth fog); translated-vs pairs get
+// the SM1 vertex outputs (oFog-driven fog, no user clip planes).
+function d3d8SM1BuildFragmentSource(psShader, options) {
+  const ctx = {
+    isPixel: true,
+    usedConstants: new Set(),
+    usedTexRegisters: new Set(),
+    sampledStages: new Set(),
+    defConstants: new Map(),
+    usesBumpEnv: false,
+    usesBumpEnvL: false,
+  };
+  const body = d3d8SM1EmitPixelBody(psShader.ir, ctx);
+  const lines = [];
+  lines.push("#version 300 es");
+  lines.push("precision highp float;");
+  lines.push("in vec4 vColor;");
+  lines.push("in vec4 vSpecularColor;");
+  lines.push("flat in vec4 vFlatColor;");
+  for (let stage = 0; stage < 4; stage += 1) {
+    lines.push(`in vec2 vTexCoord${stage};`);
+  }
+  if (options.translatedVs) {
+    if (options.vsWritesFog) {
+      lines.push("in float vVsFog;");
+    }
+  } else {
+    lines.push("in vec4 vClipPosition;");
+    lines.push("in float vFogDepth;");
+    lines.push("in float vFogRangeDistance;");
+    lines.push("uniform int uClipPlaneMask;");
+    lines.push("uniform vec4 uClipPlanes[6];");
+  }
+  lines.push("uniform bool uUseFlatShade;");
+  for (let stage = 0; stage < 4; stage += 1) {
+    lines.push(`uniform bool uUseTexture${stage};`);
+    lines.push(`uniform sampler2D uTexture${stage};`);
+    lines.push(`uniform float uTexture${stage}LodBias;`);
+    lines.push(`uniform int uTexture${stage}Semantic;`);
+  }
+  lines.push("uniform vec4 uPsConst[8];");
+  if (ctx.usesBumpEnv) {
+    lines.push("uniform vec4 uBumpEnv[4];");
+  }
+  if (ctx.usesBumpEnvL) {
+    lines.push("uniform vec2 uBumpEnvL[4];");
+  }
+  lines.push("uniform bool uAlphaTestEnabled;");
+  lines.push("uniform int uAlphaFunc;");
+  lines.push("uniform float uAlphaRef;");
+  lines.push("uniform bool uFogEnabled;");
+  lines.push("uniform bool uFogRangeEnabled;");
+  lines.push("uniform vec3 uFogColor;");
+  lines.push("uniform float uFogStart;");
+  lines.push("uniform float uFogEnd;");
+  lines.push("out vec4 fragColor;");
+  lines.push("bool d3dAlphaCompare(float value, float reference) {");
+  lines.push("  if (uAlphaFunc == 1) { return false; }");
+  lines.push("  if (uAlphaFunc == 2) { return value < reference; }");
+  lines.push("  if (uAlphaFunc == 3) { return value == reference; }");
+  lines.push("  if (uAlphaFunc == 4) { return value <= reference; }");
+  lines.push("  if (uAlphaFunc == 5) { return value > reference; }");
+  lines.push("  if (uAlphaFunc == 6) { return value != reference; }");
+  lines.push("  if (uAlphaFunc == 7) { return value >= reference; }");
+  lines.push("  return true;");
+  lines.push("}");
+  lines.push("vec4 d3dTextureSample(vec4 rawSample, int semantic) {");
+  lines.push("  if (semantic == 1) { return vec4(0.0, 0.0, 0.0, rawSample.r); }");
+  lines.push("  if (semantic == 2) { return vec4(rawSample.r, rawSample.r, rawSample.r, 1.0); }");
+  lines.push("  if (semantic == 3) { return vec4(rawSample.r, rawSample.r, rawSample.r, rawSample.g); }");
+  lines.push("  return rawSample;");
+  lines.push("}");
+  lines.push("void main() {");
+  if (!options.translatedVs) {
+    lines.push("  for (int index = 0; index < 6; ++index) {");
+    lines.push("    if ((uClipPlaneMask & (1 << index)) != 0 && dot(uClipPlanes[index], vClipPosition) < 0.0) {");
+    lines.push("      discard;");
+    lines.push("    }");
+    lines.push("  }");
+  }
+  // ps.1.x color inputs are clamped to [0, 1] on read.
+  lines.push("  vec4 psV0 = clamp(uUseFlatShade ? vFlatColor : vColor, 0.0, 1.0);");
+  lines.push("  vec4 psV1 = clamp(vSpecularColor, 0.0, 1.0);");
+  lines.push("  vec4 psR0 = vec4(0.0);");
+  lines.push("  vec4 psR1 = vec4(0.0);");
+  for (const reg of Array.from(ctx.usedTexRegisters).sort()) {
+    lines.push(`  vec4 psT${reg} = vec4(0.0);`);
+  }
+  for (const [reg, values] of ctx.defConstants) {
+    lines.push(`  vec4 psC${reg} = vec4(${values.map((v) => Number(v).toFixed(6)).join(", ")});`);
+  }
+  for (const line of body) {
+    lines.push(`  ${line}`);
+  }
+  lines.push("  vec4 psOut = psR0;");
+  // Fidelity debugging: set globalThis.__cncSM1VisualizeStage = N BEFORE the
+  // shaders are created (page init script) to render fract(vTexCoordN) instead
+  // of the shader result — a direct view of the interpolated texgen coords.
+  const visualizeStage = Number(globalThis.__cncSM1VisualizeStage);
+  if (Number.isInteger(visualizeStage) && visualizeStage >= 0 && visualizeStage <= 3) {
+    lines.push(`  psOut = vec4(fract(vTexCoord${visualizeStage}), 0.0, 1.0);`);
+  }
+  lines.push("  if (uAlphaTestEnabled && !d3dAlphaCompare(psOut.a, uAlphaRef)) {");
+  lines.push("    discard;");
+  lines.push("  }");
+  if (options.translatedVs) {
+    if (options.vsWritesFog) {
+      // With a programmable vertex shader D3D8 fog blends by the oFog factor
+      // directly (1 = unfogged).
+      lines.push("  if (uFogEnabled) {");
+      lines.push("    psOut.rgb = mix(uFogColor, psOut.rgb, clamp(vVsFog, 0.0, 1.0));");
+      lines.push("  }");
+    }
+  } else {
+    lines.push("  if (uFogEnabled) {");
+    lines.push("    float fogDistance = uFogRangeEnabled ? vFogRangeDistance : vFogDepth;");
+    lines.push("    float fogAmount = clamp((fogDistance - uFogStart) / max(uFogEnd - uFogStart, 0.000001), 0.0, 1.0);");
+    lines.push("    psOut.rgb = mix(psOut.rgb, uFogColor, fogAmount);");
+    lines.push("  }");
+  }
+  lines.push("  fragColor = psOut;");
+  lines.push("}");
+  return { source: lines.join("\n"), sampledStages: ctx.sampledStages, usesBumpEnv: ctx.usesBumpEnv };
+}
+
+// D3DVSDT vertex declaration type -> GL attribute pointer description.
+const D3D8_SM1_DECL_TYPES = [
+  { size: 1, glType: "FLOAT", normalized: false, bgra: false },   // FLOAT1
+  { size: 2, glType: "FLOAT", normalized: false, bgra: false },   // FLOAT2
+  { size: 3, glType: "FLOAT", normalized: false, bgra: false },   // FLOAT3
+  { size: 4, glType: "FLOAT", normalized: false, bgra: false },   // FLOAT4
+  { size: 4, glType: "UNSIGNED_BYTE", normalized: true, bgra: true },  // D3DCOLOR
+  { size: 4, glType: "UNSIGNED_BYTE", normalized: false, bgra: false }, // UBYTE4
+  { size: 2, glType: "SHORT", normalized: false, bgra: false },   // SHORT2
+  { size: 4, glType: "SHORT", normalized: false, bgra: false },   // SHORT4
+];
+
+// Builds the complete vertex shader source for a translated SM1 vertex shader.
+function d3d8SM1BuildVertexSource(vsShader) {
+  const ctx = {
+    isPixel: false,
+    usedTemps: new Set(),
+    usedInputs: new Set(),
+    usedColorOutputs: new Set(),
+    usedTexOutputs: new Set(),
+    usesAddress: false,
+    writesPosition: false,
+    writesFog: false,
+  };
+  const body = [];
+  const instructions = vsShader.ir.instructions;
+  for (const instruction of instructions) {
+    if (instruction.name === "nop") {
+      continue;
+    }
+    if (instruction.name === "def") {
+      throw new Error("vs def constants not supported");
+    }
+    body.push(d3d8SM1WriteStatement(instruction.dst, d3d8SM1ArithmeticExpr(instruction, ctx), ctx));
+  }
+  const declByRegister = new Map();
+  for (const entry of vsShader.decl) {
+    declByRegister.set(entry.register, entry);
+  }
+  const lines = [];
+  lines.push("#version 300 es");
+  for (const entry of vsShader.decl) {
+    lines.push(`in vec4 aVs${entry.register};`);
+  }
+  lines.push("uniform vec4 uVsConst[96];");
+  lines.push("uniform float uDepthBias;");
+  // Full fixed-function varying interface: a translated vertex shader must
+  // link against BOTH translated fragments and the FF fragment cascade (the
+  // shipped tree path is Trees.vso + FF pixel stages), and the FF fragment
+  // statically reads vClipPosition/vFogDepth/vFogRangeDistance.
+  lines.push("out vec4 vColor;");
+  lines.push("out vec4 vSpecularColor;");
+  lines.push("flat out vec4 vFlatColor;");
+  for (let stage = 0; stage < 4; stage += 1) {
+    lines.push(`out vec2 vTexCoord${stage};`);
+  }
+  lines.push("out vec4 vClipPosition;");
+  lines.push("out float vFogDepth;");
+  lines.push("out float vFogRangeDistance;");
+  if (ctx.writesFog) {
+    lines.push("out float vVsFog;");
+  }
+  lines.push("vec4 d3dSM1Lit(vec4 src) {");
+  lines.push("  float power = clamp(src.w, -127.9961, 127.9961);");
+  lines.push("  float specular = src.x > 0.0 ? pow(max(src.y, 0.0), power) : 0.0;");
+  lines.push("  return vec4(1.0, max(src.x, 0.0), specular, 1.0);");
+  lines.push("}");
+  lines.push("void main() {");
+  for (const entry of vsShader.decl) {
+    const type = D3D8_SM1_DECL_TYPES[entry.type];
+    lines.push(`  vec4 vsV${entry.register} = aVs${entry.register}${type && type.bgra ? ".bgra" : ""};`);
+  }
+  for (const reg of Array.from(ctx.usedInputs).sort()) {
+    if (!declByRegister.has(reg)) {
+      lines.push(`  vec4 vsV${reg} = vec4(0.0, 0.0, 0.0, 1.0);`);
+    }
+  }
+  for (const reg of Array.from(ctx.usedTemps).sort()) {
+    lines.push(`  vec4 vsR${reg} = vec4(0.0);`);
+  }
+  if (ctx.usesAddress) {
+    lines.push("  int vsA0 = 0;");
+  }
+  lines.push("  vec4 vsOPos = vec4(0.0);");
+  lines.push("  vec4 vsOPts = vec4(0.0);");
+  lines.push("  vec4 vsOFog = vec4(1.0);");
+  lines.push("  vec4 vsOD0 = vec4(1.0);");
+  lines.push("  vec4 vsOD1 = vec4(0.0);");
+  for (const reg of Array.from(ctx.usedTexOutputs).sort()) {
+    lines.push(`  vec4 vsOT${reg} = vec4(0.0);`);
+  }
+  for (const line of body) {
+    lines.push(`  ${line}`);
+  }
+  // D3D clip space -> GL clip space (z in [0,w] -> [-w,w]), matching the
+  // fixed-function vertex stage, including the shim depth-bias convention.
+  lines.push("  gl_Position = vec4(vsOPos.x, vsOPos.y, vsOPos.z * 2.0 - vsOPos.w, vsOPos.w);");
+  lines.push("  gl_Position.z -= uDepthBias * gl_Position.w;");
+  lines.push("  vColor = clamp(vsOD0, 0.0, 1.0);");
+  lines.push("  vFlatColor = vColor;");
+  lines.push("  vSpecularColor = clamp(vsOD1, 0.0, 1.0);");
+  for (let stage = 0; stage < 4; stage += 1) {
+    lines.push(ctx.usedTexOutputs.has(stage)
+      ? `  vTexCoord${stage} = vsOT${stage}.xy;`
+      : `  vTexCoord${stage} = vec2(0.0);`);
+  }
+  // Zeroed FF-interface varyings: user clip planes evaluate to dot(plane, 0)
+  // == 0 (no discard) and linear fog to amount 0 (matching D3D8, where a
+  // vertex shader that does not write oFog produces unfogged output).
+  lines.push("  vClipPosition = vec4(0.0);");
+  lines.push("  vFogDepth = 0.0;");
+  lines.push("  vFogRangeDistance = 0.0;");
+  if (ctx.writesFog) {
+    lines.push("  vVsFog = vsOFog.x;");
+  }
+  lines.push("}");
+  return { source: lines.join("\n"), writesFog: ctx.writesFog };
+}
+
+// Registration entry point for the wasm shim (Module.cncPortD3D8ShaderCreate).
+function registerD3D8SM1Shader(spec) {
+  try {
+    const ir = parseD3D8SM1Tokens(spec.tokens);
+    if (!ir || ir.isPixel !== Boolean(spec.isPixel)) {
+      return false;
+    }
+    if (ir.isPixel) {
+      const shader = { handle: spec.handle, ir };
+      // Validate translation eagerly: build (and discard) the FF-vertex-pair
+      // fragment source so unsupported constructs fail at create time.
+      d3d8SM1BuildFragmentSource(shader, { translatedVs: false, vsWritesFog: false });
+      d3d8SM1PixelShaders.set(spec.handle, shader);
+      d3d8SM1MostRecentPixelHandle = spec.handle;
+      d3d8PerfStats.sm1PixelShadersRegistered += 1;
+      // Warm the likely pairings so first use never compiles mid-frame: the
+      // FF-vertex pair (terrain/roads/water/BW filter) and, when a vertex
+      // shader was just created (Trees.vso -> Trees.pso), the translated-vs
+      // pair. The reverse order (wave.pso -> wave.vso) is warmed at vertex
+      // registration below.
+      if (gl) {
+        ensureD3D8ShaderPairProgram(0, spec.handle);
+        if (d3d8SM1MostRecentVertexHandle !== 0) {
+          ensureD3D8ShaderPairProgram(d3d8SM1MostRecentVertexHandle, spec.handle);
+        }
+      }
+      return true;
+    }
+    const decl = [];
+    if (spec.declTriples) {
+      for (let index = 0; index + 2 < spec.declTriples.length; index += 3) {
+        decl.push({
+          register: spec.declTriples[index] >>> 0,
+          type: spec.declTriples[index + 1] >>> 0,
+          offset: spec.declTriples[index + 2] >>> 0,
+        });
+      }
+    }
+    if (decl.length === 0) {
+      return false;
+    }
+    for (const entry of decl) {
+      if (!D3D8_SM1_DECL_TYPES[entry.type]) {
+        console.warn(`D3D8 SM1: unsupported vertex declaration type ${entry.type}`);
+        return false;
+      }
+    }
+    const shader = { handle: spec.handle, ir, decl };
+    d3d8SM1BuildVertexSource(shader); // eager validation
+    d3d8SM1VertexShaders.set(spec.handle, shader);
+    d3d8SM1MostRecentVertexHandle = spec.handle;
+    d3d8PerfStats.sm1VertexShadersRegistered += 1;
+    // Warm the translated-vs + FF-pixel pair (the shipped tree path draws
+    // with the vertex shader alone — its SetPixelShader call is #if 0'd out)
+    // and the just-created-pixel pair (W3DWater creates wave.pso BEFORE
+    // wave.vso, so the ps-side warm-up above can't see this vs yet).
+    if (gl) {
+      ensureD3D8ShaderPairProgram(spec.handle, 0);
+      if (d3d8SM1MostRecentPixelHandle !== 0) {
+        ensureD3D8ShaderPairProgram(spec.handle, d3d8SM1MostRecentPixelHandle);
+      }
+    }
+    return true;
+  } catch (error) {
+    console.warn(`D3D8 SM1: shader registration failed: ${error?.message ?? error}`);
+    return false;
+  }
+}
+
+function deleteD3D8SM1Shader(isPixel, handle) {
+  if (isPixel) {
+    d3d8SM1PixelShaders.delete(handle);
+    if (d3d8SM1MostRecentPixelHandle === handle) {
+      d3d8SM1MostRecentPixelHandle = 0;
+    }
+  } else {
+    d3d8SM1VertexShaders.delete(handle);
+    if (d3d8SM1MostRecentVertexHandle === handle) {
+      d3d8SM1MostRecentVertexHandle = 0;
+    }
+  }
+  for (const [key, entry] of Array.from(d3d8SM1PairPrograms)) {
+    if ((isPixel && entry.psHandle === handle) || (!isPixel && entry.vsHandle === handle)) {
+      if (entry.program && gl) {
+        gl.deleteProgram(entry.program.program);
+      }
+      d3d8SM1PairPrograms.delete(key);
+    }
+  }
+}
+
+// Linked program for a (vertexShader, pixelShader) pair. Handle 0 on either
+// side selects the corresponding fixed-function stage: FF vertex + translated
+// pixel (terrain/roads/water/BW filter) or translated vertex + FF pixel
+// cascade (the shipped tree path — Trees.vso with the tree pixel shader
+// #if 0'd out). Returns null when the pair cannot be built (the caller falls
+// back to the fixed-function program and counts it).
+function ensureD3D8ShaderPairProgram(vsHandle, psHandle) {
+  if (!gl || (psHandle === 0 && vsHandle === 0)) {
+    return null;
+  }
+  const key = `${vsHandle}|${psHandle}`;
+  const cached = d3d8SM1PairPrograms.get(key);
+  if (cached !== undefined) {
+    return cached.program;
+  }
+  let entry = { vsHandle, psHandle, program: null };
+  d3d8SM1PairPrograms.set(key, entry);
+  const psShader = psHandle !== 0 ? d3d8SM1PixelShaders.get(psHandle) : null;
+  if (psHandle !== 0 && !psShader) {
+    return null;
+  }
+  let vsSource = null;
+  let vsShader = null;
+  if (vsHandle === 0) {
+    ensureD3D8DrawProgram();
+    vsSource = d3d8FFVertexSourceCache;
+  } else {
+    vsShader = d3d8SM1VertexShaders.get(vsHandle);
+    if (!vsShader) {
+      return null;
+    }
+  }
+  try {
+    let vsBuild = null;
+    if (vsShader) {
+      vsBuild = d3d8SM1BuildVertexSource(vsShader);
+      vsSource = vsBuild.source;
+    }
+    let fsBuild;
+    if (psShader) {
+      fsBuild = d3d8SM1BuildFragmentSource(psShader, {
+        translatedVs: Boolean(vsShader),
+        vsWritesFog: Boolean(vsBuild?.writesFog),
+      });
+    } else {
+      // Translated vertex + fixed-function pixel cascade: reuse the FF
+      // fragment verbatim (uniform-driven texture stages, alpha test, fog).
+      ensureD3D8DrawProgram();
+      fsBuild = { source: d3d8FFFragmentSourceCache, sampledStages: null, usesBumpEnv: false };
+    }
+    const vertexShader = compileShader(gl.VERTEX_SHADER, vsSource);
+    const fragmentShader = compileShader(gl.FRAGMENT_SHADER, fsBuild.source);
+    const program = gl.createProgram();
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+    gl.deleteShader(vertexShader);
+    gl.deleteShader(fragmentShader);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      const info = gl.getProgramInfoLog(program);
+      gl.deleteProgram(program);
+      throw new Error(`link failed: ${info}`);
+    }
+    const bridgeProgram = buildD3D8DrawProgramLocations(program);
+    bridgeProgram.psConst = gl.getUniformLocation(program, "uPsConst[0]");
+    bridgeProgram.bumpEnv = gl.getUniformLocation(program, "uBumpEnv[0]");
+    bridgeProgram.bumpEnvL = gl.getUniformLocation(program, "uBumpEnvL[0]");
+    bridgeProgram.vsConst = gl.getUniformLocation(program, "uVsConst[0]");
+    bridgeProgram.sm1Pair = true;
+    bridgeProgram.sm1PsHandle = psHandle;
+    bridgeProgram.sm1VsHandle = vsHandle;
+    bridgeProgram.sm1SampledStages = fsBuild.sampledStages;
+    if (vsShader) {
+      bridgeProgram.declLayout = vsShader.decl.map((declEntry) => ({
+        ...declEntry,
+        location: gl.getAttribLocation(program, `aVs${declEntry.register}`),
+      }));
+    }
+    entry.program = bridgeProgram;
+    d3d8PerfStats.sm1PairProgramsLinked += 1;
+    return bridgeProgram;
+  } catch (error) {
+    console.warn(`D3D8 SM1: pair program (vs=${vsHandle}, ps=${psHandle}) failed: ${error?.message ?? error}`);
+    d3d8PerfStats.sm1PairProgramFailures += 1;
+    return null;
+  }
+}
+
+// Vertex attribute setup for translated-vs draws: bind by the shader's
+// D3DVSD declaration instead of the FVF layout. Bypasses the FVF VAO cache
+// (these draws are few per frame); resets the FF attrib caches so the next
+// fixed-function draw rebinds cleanly.
+function configureD3D8SM1DeclAttributes(bridgeProgram, vertexResource, vertexByteOffset, vertexStride) {
+  bindD3D8DefaultVertexArray();
+  bindD3D8ArrayBuffer(vertexResource.buffer);
+  for (const entry of bridgeProgram.declLayout) {
+    if (entry.location < 0) {
+      continue;
+    }
+    const type = D3D8_SM1_DECL_TYPES[entry.type];
+    gl.enableVertexAttribArray(entry.location);
+    gl.vertexAttribPointer(
+      entry.location,
+      type.size,
+      gl[type.glType],
+      type.normalized,
+      vertexStride,
+      vertexByteOffset + entry.offset,
+    );
+  }
+  d3d8LastVertexAttribKey = null;
+  d3d8LastDefaultVertexAttribKey = null;
+}
+
+// Skips a constant-file upload when the program already holds these values.
+function d3d8SM1ConstantsChanged(location, values) {
+  const last = location.__cncSM1Last;
+  if (last && last.length === values.length) {
+    let index = 0;
+    for (; index < values.length; index += 1) {
+      if (last[index] !== values[index]) {
+        break;
+      }
+    }
+    if (index === values.length) {
+      d3d8PerfStats.uniformGlSkipped += 1;
+      return false;
+    }
+    last.set(values);
+    return true;
+  }
+  location.__cncSM1Last = new Float32Array(values);
+  return true;
+}
+
+// Uploads SM1 constant files + bump-env matrices for a shader-pair draw.
+function uploadD3D8SM1DrawUniforms(bridgeProgram, payload, renderState) {
+  if (bridgeProgram.psConst && payload.psConstants &&
+      d3d8SM1ConstantsChanged(bridgeProgram.psConst, payload.psConstants)) {
+    gl.uniform4fv(bridgeProgram.psConst, payload.psConstants);
+    d3d8PerfStats.uniformGlCalls += 1;
+  }
+  if (bridgeProgram.vsConst && payload.vsConstants &&
+      d3d8SM1ConstantsChanged(bridgeProgram.vsConst, payload.vsConstants)) {
+    gl.uniform4fv(bridgeProgram.vsConst, payload.vsConstants);
+    d3d8PerfStats.uniformGlCalls += 1;
+  }
+  if (bridgeProgram.bumpEnv) {
+    const bump = d3d8SM1BumpEnvScratch;
+    for (let stage = 0; stage < 4; stage += 1) {
+      const stageState = renderState.textureStages[stage];
+      bump[stage * 4] = d3dDwordToFloat(stageState.bumpEnvMat00);
+      bump[stage * 4 + 1] = d3dDwordToFloat(stageState.bumpEnvMat01);
+      bump[stage * 4 + 2] = d3dDwordToFloat(stageState.bumpEnvMat10);
+      bump[stage * 4 + 3] = d3dDwordToFloat(stageState.bumpEnvMat11);
+    }
+    gl.uniform4fv(bridgeProgram.bumpEnv, bump);
+    d3d8PerfStats.uniformGlCalls += 1;
+  }
+  if (bridgeProgram.bumpEnvL) {
+    const bumpL = d3d8SM1BumpEnvLScratch;
+    for (let stage = 0; stage < 4; stage += 1) {
+      const stageState = renderState.textureStages[stage];
+      bumpL[stage * 2] = d3dDwordToFloat(stageState.bumpEnvLScale);
+      bumpL[stage * 2 + 1] = d3dDwordToFloat(stageState.bumpEnvLOffset);
+    }
+    gl.uniform2fv(bridgeProgram.bumpEnvL, bumpL);
+    d3d8PerfStats.uniformGlCalls += 1;
+  }
+}
+
+const d3d8SM1BumpEnvScratch = new Float32Array(16);
+const d3d8SM1BumpEnvLScratch = new Float32Array(8);
+
+// Shader tier the wasm shim samples once at device create
+// (Module.cncPortD3D8ShaderTier): 1 = advertise ps.1.1/vs.1.1 (programmable
+// paths), 0 = historical fixed-function-only adapter.
+function d3d8ShaderTierQuery() {
+  const record = (tier, source) => {
+    globalThis.__cncD3D8ShaderTierLast = { tier, source };
+    harnessState.graphics.d3d8ShaderTier = tier === 1 ? "ps11" : "ff";
+    return tier;
+  };
+  try {
+    const forced = globalThis.__cncD3D8ShaderTier;
+    if (forced === "ps11" || forced === 1 || forced === true) {
+      return record(1, "forced");
+    }
+    if (forced === "ff" || forced === 0 || forced === false) {
+      return record(0, "forced");
+    }
+    if (typeof location !== "undefined") {
+      const param = new URLSearchParams(location.search).get("shaderTier");
+      if (param === "ps11") {
+        return record(1, "url");
+      }
+      if (param === "ff") {
+        return record(0, "url");
+      }
+    }
+    if (typeof localStorage !== "undefined") {
+      const stored = localStorage.getItem("cncPortShaderTier");
+      if (stored === "ps11") {
+        return record(1, "localStorage");
+      }
+      if (stored === "ff") {
+        return record(0, "localStorage");
+      }
+    }
+  } catch {
+    // Fall through to the default tier.
+  }
+  // Default: fixed function. The ps11 tier renders but has open visual
+  // regressions from owner playtesting (over-bright water, stuck muzzle
+  // flash, flat lighting — see TODO "Shader-tier (Path B) follow-ups");
+  // it stays opt-in (Settings → Shaders → Enhanced) until those are fixed.
+  return record(0, "default");
 }
 
 function ensureD3D8DepthStencilProgram() {
@@ -11995,6 +13010,93 @@ if (typeof globalThis !== "undefined") {
     flushD3D8PendingDrawBatch("perfSummary");
     return d3d8PerfSummary();
   };
+  // Recent harness log entries (incl. wasm stdout/stderr) for probes chasing
+  // shim-side messages like SM1 shader create/assemble failures.
+  globalThis.__cncHarnessLogTail = (count = 100) =>
+    harnessState.logs.slice(-Math.max(1, Math.min(500, Number(count) || 100)));
+  // Pixel-sample a live texture's center texel (fidelity debugging: "is the
+  // cloud texture the shader binds actually a cloud, or a white fallback?").
+  globalThis.__cncSampleTextureCenter = (textureId) => sampleD3D8TextureCenter(textureId);
+  // Blit a live texture (incl. compressed formats FBO-attach can't read) into
+  // an RGBA scratch target and return an NxN grid + channel stats.
+  globalThis.__cncBlitTexture = (textureId, grid = 8) => {
+    const resource = d3d8Textures.get(Number(textureId) >>> 0);
+    if (!gl || !resource?.texture) {
+      return null;
+    }
+    flushD3D8PendingDrawBatch("blitTexture");
+    const size = 64;
+    const vs = "#version 300 es\nvoid main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0-1.0,0,1);}";
+    const fs = "#version 300 es\nprecision highp float;uniform sampler2D uT;out vec4 o;" +
+      "void main(){o=textureLod(uT, gl_FragCoord.xy/64.0, 0.0);}";
+    const compileBlit = (type, source) => {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      return shader;
+    };
+    const program = gl.createProgram();
+    gl.attachShader(program, compileBlit(gl.VERTEX_SHADER, vs));
+    gl.attachShader(program, compileBlit(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      const info = gl.getProgramInfoLog(program);
+      gl.deleteProgram(program);
+      return { error: info };
+    }
+    const previousProgram = gl.getParameter(gl.CURRENT_PROGRAM);
+    const previousFramebuffer = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+    const previousActive = gl.getParameter(gl.ACTIVE_TEXTURE);
+    const previousViewport = gl.getParameter(gl.VIEWPORT);
+    const target = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE15);
+    gl.bindTexture(gl.TEXTURE_2D, target);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    const framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, target, 0);
+    gl.useProgram(program);
+    gl.activeTexture(gl.TEXTURE0 + 14);
+    gl.bindTexture(gl.TEXTURE_2D, resource.texture);
+    gl.uniform1i(gl.getUniformLocation(program, "uT"), 14);
+    gl.viewport(0, 0, size, size);
+    gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.BLEND);
+    gl.disable(gl.SCISSOR_TEST);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    const pixels = new Uint8Array(size * size * 4);
+    gl.readPixels(0, 0, size, size, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    // restore
+    gl.bindFramebuffer(gl.FRAMEBUFFER, previousFramebuffer);
+    gl.useProgram(previousProgram);
+    gl.activeTexture(gl.TEXTURE0 + 14);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.activeTexture(previousActive);
+    gl.viewport(previousViewport[0], previousViewport[1], previousViewport[2], previousViewport[3]);
+    gl.deleteFramebuffer(framebuffer);
+    gl.deleteTexture(target);
+    gl.deleteProgram(program);
+    // The draw-state caches now disagree with real GL state; force reapply.
+    harnessState.graphics.lastD3D8AppliedRenderState = null;
+    let min = 255; let max = 0; let sum = 0;
+    const gridValues = [];
+    const step = Math.max(1, Math.floor(size / grid));
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        const v = pixels[(y * size + x) * 4];
+        min = Math.min(min, v); max = Math.max(max, v); sum += v;
+      }
+    }
+    for (let gy = 0; gy < grid; gy += 1) {
+      const row = [];
+      for (let gx = 0; gx < grid; gx += 1) {
+        row.push(pixels[((gy * step) * size + gx * step) * 4]);
+      }
+      gridValues.push(row);
+    }
+    return { min, max, mean: Math.round(sum / (size * size)), grid: gridValues,
+      width: resource.width, height: resource.height };
+  };
   globalThis.__cncSetD3D8AdjacentBatching = (enabled) => {
     flushD3D8PendingDrawBatch("setAdjacentBatching");
     d3d8AdjacentDrawBatchingEnabled = !(enabled === false || enabled === 0 || enabled === "0");
@@ -12302,6 +13404,13 @@ function paintD3D8DrawIndexed(payload = {}) {
   const indexByteOffset = Number(payload.indexByteOffset ?? 0) >>> 0;
   const vertexStride = Number(payload.vertexStride ?? 0) >>> 0;
   const vertexShaderFvf = Number(payload.vertexShaderFvf ?? 0) >>> 0;
+  // Programmable SM1 shader state: pixel-shader handle rides its own payload
+  // field; a vertex-shader handle travels the vertexShaderFvf field with bit
+  // 31 set (never valid in an FVF code). Both are folded into the native
+  // derivedStateHash, so every downstream cache/batch key already separates
+  // shader draws from fixed-function draws.
+  const pixelShaderHandle = Number(payload.pixelShaderHandle ?? 0) >>> 0;
+  const sm1VertexDraw = (vertexShaderFvf & 0x80000000) !== 0;
   const vertexCount = Number(payload.vertexCount ?? 0) >>> 0;
   const indexSize = Number(payload.indexSize ?? 0) >>> 0;
   const indexCount = Number(payload.indexCount ?? 0) >>> 0;
@@ -12524,12 +13633,26 @@ function paintD3D8DrawIndexed(payload = {}) {
     renderState = normalizeD3D8RenderState(payload.renderState);
     clipPlanes = normalizeD3D8ClipPlanes(payload.clipPlanes);
     material = normalizeD3D8Material(payload.material);
-    vertexLayout = d3d8VertexLayoutInfo(vertexShaderFvf, vertexStride);
+    // Translated-vs draws carry a shader handle, not an FVF: attributes come
+    // from the shader's D3DVSD declaration (bound in
+    // configureD3D8SM1DeclAttributes), so substitute a minimal layout for the
+    // FVF-driven consumers (fill/shade fallbacks, pretransform checks).
+    vertexLayout = sm1VertexDraw
+      ? {
+          positionComponents: 3,
+          pretransformed: false,
+          normalOffset: null,
+          diffuseOffset: null,
+          specularOffset: null,
+          texCoords: [],
+        }
+      : d3d8VertexLayoutInfo(vertexShaderFvf, vertexStride);
     texture0Id = drawCacheTexture0Id;
     texture1Id = drawCacheTexture1Id;
     texture2Id = drawCacheTexture2Id;
     texture3Id = drawCacheTexture3Id;
-    depthStencilOnlyFastDerived = d3d8DiagLevel !== "full" &&
+    depthStencilOnlyFastDerived = pixelShaderHandle === 0 && !sm1VertexDraw &&
+      d3d8DiagLevel !== "full" &&
       d3d8CanUseDepthStencilOnlyProgramWithoutTextureProbe(renderState, primitiveType);
     if (depthStencilOnlyFastDerived) {
       lights = [];
@@ -12623,6 +13746,15 @@ function paintD3D8DrawIndexed(payload = {}) {
       // camera-space coordinate.
       canSampleTexture2 = Boolean(texture2Ready && texture2Coordinates.supported);
       canSampleTexture3 = Boolean(texture3Ready && texture3Coordinates.supported);
+      if (sm1VertexDraw) {
+        // Translated-vs draws source texture coordinates from the vertex
+        // shader's oT outputs, not the FVF/texgen pipeline — sampling only
+        // requires the texture itself to be ready.
+        canSampleTexture0 = texture0Ready;
+        canSampleTexture1 = texture1Ready;
+        canSampleTexture2 = texture2Ready;
+        canSampleTexture3 = texture3Ready;
+      }
       texture0SemanticMode = canSampleTexture0 ? d3d8TextureSemanticMode(texture0Resource) : 0;
       texture1SemanticMode = canSampleTexture1 ? d3d8TextureSemanticMode(texture1Resource) : 0;
       texture2SemanticMode = canSampleTexture2 ? d3d8TextureSemanticMode(texture2Resource) : 0;
@@ -12831,22 +13963,81 @@ function paintD3D8DrawIndexed(payload = {}) {
   if (gl && d3d8GlPrimitiveSupported(baseGlPrimitive) && usePersistentBuffers &&
       vertexByteSize > 0 && indexByteSize > 0 &&
       vertexStride >= 12 && indexCount > 0 && (indexSize === 2 || indexSize === 4)) {
-    const depthStencilOnlyDraw = d3d8CanUseDepthStencilOnlyProgram(
-      renderState,
-      payload.primitiveType,
-      implicitAlphaCutoutThreshold,
-    );
+    const depthStencilOnlyDraw = pixelShaderHandle === 0 && !sm1VertexDraw &&
+      d3d8CanUseDepthStencilOnlyProgram(
+        renderState,
+        payload.primitiveType,
+        implicitAlphaCutoutThreshold,
+      );
     // Shadow-volume (and other color-masked) draws with no active clip
     // planes take the discard-free program so the GPU keeps early
     // depth/stencil rejection — see ensureD3D8DepthStencilNoClipProgram.
     const depthStencilNeedsClipPlanes = depthStencilOnlyDraw &&
       !vertexPretransformed &&
       d3d8ClipPlaneMask(renderState) !== 0;
-    const bridgeProgram = depthStencilOnlyDraw
+    let bridgeProgram = depthStencilOnlyDraw
       ? (depthStencilNeedsClipPlanes
         ? ensureD3D8DepthStencilProgram()
         : ensureD3D8DepthStencilNoClipProgram())
       : ensureD3D8DrawProgram();
+    if (pixelShaderHandle !== 0 || sm1VertexDraw) {
+      // Programmable SM1 draw: use the translated (vertexShader, pixelShader)
+      // pair program. A missing pair (translation failed, vs-only draw)
+      // falls back to the fixed-function program so the draw stays visible
+      // and the failure is countable.
+      // Debug bisection: globalThis.__cncSM1ForceFallback (a Set of ps
+      // handles, or true for all) forces specific shaders back to the FF
+      // program mid-session so an artifact can be pinned to one shader.
+      const sm1ForceFallback = globalThis.__cncSM1ForceFallback === true ||
+        (globalThis.__cncSM1ForceFallback instanceof Set &&
+          globalThis.__cncSM1ForceFallback.has(pixelShaderHandle));
+      const sm1Program = sm1ForceFallback ? null : ensureD3D8ShaderPairProgram(
+        sm1VertexDraw ? vertexShaderFvf : 0,
+        pixelShaderHandle,
+      );
+      if (sm1Program) {
+        bridgeProgram = sm1Program;
+        d3d8PerfStats.sm1ShaderDraws += 1;
+        if (sm1VertexDraw) {
+          d3d8PerfStats.sm1TranslatedVsDraws += 1;
+        }
+      } else {
+        d3d8PerfStats.sm1FallbackDraws += 1;
+      }
+      // Fidelity debugging: capture one representative draw state per pixel
+      // shader when globalThis.__cncSM1DebugCapture is set (read the map from
+      // globalThis.__cncSM1DebugLog). Records the per-stage inputs a
+      // translated shader actually saw so wrong-texgen/wrong-texture bugs
+      // can be pinned without guessing.
+      if (globalThis.__cncSM1DebugCapture) {
+        const log = globalThis.__cncSM1DebugLog ?? (globalThis.__cncSM1DebugLog = {});
+        const key = `ps${pixelShaderHandle}|vs${sm1VertexDraw ? vertexShaderFvf >>> 0 : 0}`;
+        if (!log[key] || (log[key].count ?? 0) < 8) {
+          const entry = log[key] ?? (log[key] = { count: 0, samples: [] });
+          entry.count += 1;
+          entry.samples.push({
+            usedPairProgram: Boolean(sm1Program),
+            canSample: [canSampleTexture0, canSampleTexture1, canSampleTexture2, canSampleTexture3],
+            textureIds: [texture0Id, texture1Id, texture2Id, texture3Id],
+            stages: [0, 1, 2, 3].map((stage) => {
+              const info = [texture0Coordinates, texture1Coordinates,
+                texture2Coordinates, texture3Coordinates][stage];
+              return {
+                mode: info?.modeName,
+                generated: info?.generated,
+                transformApplied: info?.transformApplied,
+                supported: info?.supported,
+              };
+            }),
+            texture2Transform: payload.transforms?.texture2 ? Array.from(payload.transforms.texture2) : null,
+            texture3Transform: payload.transforms?.texture3 ? Array.from(payload.transforms.texture3) : null,
+            psConstants: payload.psConstants ? Array.from(payload.psConstants.slice(0, 8)) : null,
+          });
+        } else {
+          log[key].count += 1;
+        }
+      }
+    }
     if (depthStencilOnlyDraw) {
       d3d8PerfStats.drawDepthStencilOnlyProgramDraws += 1;
       if (!depthStencilNeedsClipPlanes) {
@@ -12998,7 +14189,18 @@ function paintD3D8DrawIndexed(payload = {}) {
     } else if (indexResource.dynamic === true) {
       // Temp-index fallback paths read the mirror, not the GL buffer.
     }
-    const vertexAttribKey = setD3D8ScratchVertexAttribKey({
+    let vertexAttribKey = null;
+    if (bridgeProgram.declLayout) {
+      // Translated-vs draw: attributes bind by the shader's D3DVSD
+      // declaration, bypassing the FVF attribute/VAO caches.
+      configureD3D8SM1DeclAttributes(
+        bridgeProgram,
+        effectiveVertexResource,
+        effectiveVertexByteOffset,
+        vertexStride,
+      );
+    } else {
+    vertexAttribKey = setD3D8ScratchVertexAttribKey({
       vertexBufferId: effectiveVertexBufferId,
       vertexByteOffset: effectiveVertexByteOffset,
       vertexStride,
@@ -13103,6 +14305,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         }
       }
     }
+    }
     recordDrawSubphase?.("sortedDrawVertexAttribMs");
     // Texture handles are not in the state hash, so bind/sampler state is
     // cached against the actual WebGL texture unit state.
@@ -13133,6 +14336,9 @@ function paintD3D8DrawIndexed(payload = {}) {
         renderState.textureStages[3],
         texture3Resource,
       );
+    }
+    if (bridgeProgram.sm1Pair) {
+      uploadD3D8SM1DrawUniforms(bridgeProgram, payload, renderState);
     }
     recordDrawSubphase?.("sortedDrawTextureBindMs");
     recordDrawPhase?.("sortedDrawGeometryMs");
@@ -13791,6 +14997,58 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (d3d8DiagLevel === "full") {
       appliedFillMode = d3d8FillModeProbeInfo(fillModeDraw);
       appliedShadeMode = d3d8ShadeModeProbeInfo(shadeModeDraw);
+    }
+    // Fidelity debugging: read back the ACTUAL GL uniform values + texture
+    // bindings for the next draw using pixel shader
+    // globalThis.__cncSM1UniformDumpPs (ground truth for "was the upload
+    // right"; result in globalThis.__cncSM1UniformDump).
+    if (globalThis.__cncSM1UniformDumpPs &&
+        pixelShaderHandle === globalThis.__cncSM1UniformDumpPs &&
+        bridgeProgram.sm1Pair) {
+      globalThis.__cncSM1UniformDumpCount = (globalThis.__cncSM1UniformDumpCount ?? 0) + 1;
+      if (globalThis.__cncSM1UniformDumpCount >= 8) {
+        globalThis.__cncSM1UniformDumpPs = 0;
+      }
+      const readUniform = (loc) => {
+        try {
+          const value = loc ? gl.getUniform(bridgeProgram.program, loc) : null;
+          return value?.length ? Array.from(value) : value;
+        } catch (error) {
+          return `err:${error?.message}`;
+        }
+      };
+      const previousActive = gl.getParameter(gl.ACTIVE_TEXTURE);
+      const boundAt = [];
+      for (let unit = 0; unit < 4; unit += 1) {
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        boundAt.push(gl.getParameter(gl.TEXTURE_BINDING_2D) ? 1 : 0);
+      }
+      gl.activeTexture(previousActive);
+      const dumpEntry = {
+        psHandle: pixelShaderHandle,
+        useTexture: [bridgeProgram.useTexture0, bridgeProgram.useTexture1,
+          bridgeProgram.useTexture2, bridgeProgram.useTexture3].map(readUniform),
+        samplerUnits: [bridgeProgram.texture0, bridgeProgram.texture1,
+          bridgeProgram.texture2, bridgeProgram.texture3].map(readUniform),
+        coordModes: [bridgeProgram.texture0CoordinateMode, bridgeProgram.texture1CoordinateMode,
+          bridgeProgram.texture2CoordinateMode, bridgeProgram.texture3CoordinateMode].map(readUniform),
+        useTransforms: [bridgeProgram.useTexture0Transform, bridgeProgram.useTexture1Transform,
+          bridgeProgram.useTexture2Transform, bridgeProgram.useTexture3Transform].map(readUniform),
+        semantics: [bridgeProgram.texture0Semantic, bridgeProgram.texture1Semantic,
+          bridgeProgram.texture2Semantic, bridgeProgram.texture3Semantic].map(readUniform),
+        lodBias: [bridgeProgram.texture0LodBias, bridgeProgram.texture1LodBias,
+          bridgeProgram.texture2LodBias, bridgeProgram.texture3LodBias].map(readUniform),
+        tex2Transform: readUniform(bridgeProgram.texture2Transform),
+        tex3Transform: readUniform(bridgeProgram.texture3Transform),
+        coordSets: [null, null, bridgeProgram.texture2CoordSet, bridgeProgram.texture3CoordSet].map(readUniform),
+        unitHasTexture: boundAt,
+        useTransformsFlag: readUniform(bridgeProgram.useTransforms),
+        lightingEnabled: readUniform(bridgeProgram.lightingEnabled),
+        textureIds: [texture0Id, texture1Id, texture2Id, texture3Id],
+        indexCount,
+      };
+      (globalThis.__cncSM1UniformDumps ?? (globalThis.__cncSM1UniformDumps = [])).push(dumpEntry);
+      globalThis.__cncSM1UniformDump = dumpEntry;
     }
     if (fillModeDraw.supported && shadeModeDraw.supported) {
       const canQueueAdjacentBatch = Boolean(
@@ -14540,6 +15798,9 @@ async function loadWasmModule() {
       cncPortD3D8TextureSampleCenter: sampleD3D8TextureCenter,
 		cncPortD3D8BindFramebuffer: bindD3D8Framebuffer,
       cncPortD3D8DrawIndexed: paintD3D8DrawIndexed,
+      cncPortD3D8ShaderTier: d3d8ShaderTierQuery,
+      cncPortD3D8ShaderCreate: registerD3D8SM1Shader,
+      cncPortD3D8ShaderDelete: deleteD3D8SM1Shader,
       cncPortMssSampleStart,
       cncPortMssSampleStop,
       cncPortMssSampleEnd,
@@ -14763,6 +16024,11 @@ async function loadWasmModule() {
         "cnc_port_real_engine_set_client_pacing",
         "string",
         ["number", "number"],
+      ),
+      realEngineAnimReport: module.cwrap(
+        "cnc_port_real_engine_anim_report",
+        "string",
+        ["number"],
       ),
       realEngineSetLoadStepping: module.cwrap(
         "cnc_port_real_engine_set_load_stepping",
@@ -15147,6 +16413,9 @@ function d3d8BridgeCallbacks() {
     cncPortD3D8TextureSampleCenter: sampleD3D8TextureCenter,
     cncPortD3D8DrawIndexed: paintD3D8DrawIndexed,
 		cncPortD3D8BindFramebuffer: bindD3D8Framebuffer,
+    cncPortD3D8ShaderTier: d3d8ShaderTierQuery,
+    cncPortD3D8ShaderCreate: registerD3D8SM1Shader,
+    cncPortD3D8ShaderDelete: deleteD3D8SM1Shader,
   };
 }
 
@@ -20481,6 +21750,28 @@ async function rpc(command, payload = {}) {
         ));
         recordLog("load stepping", stepping);
         return { ok: Boolean(stepping?.ok), command: "realEngineSetLoadStepping", stepping };
+      }
+    case "realEngineAnimReport":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineAnimReport");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineAnimReport", error: moduleResult.error };
+        }
+        if (typeof moduleResult.wasmModule.realEngineAnimReport !== "function") {
+          return { ok: false, command: "realEngineAnimReport", error: "export missing (stale wasm build)" };
+        }
+        try {
+          const report = JSON.parse(moduleResult.wasmModule.realEngineAnimReport(
+            Number(payload.maxEntries ?? 0),
+          ));
+          return { ok: report?.ok === true, command: "realEngineAnimReport", report };
+        } catch (error) {
+          return {
+            ok: false,
+            command: "realEngineAnimReport",
+            error: error?.message ?? String(error),
+          };
+        }
       }
     case "realEngineFramePaced":
       {

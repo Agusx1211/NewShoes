@@ -34,6 +34,7 @@ const archiveSpecs = [
   { name: "ZZBase_Terrain.big", sourceName: "Terrain.big" },
   { name: "ZZBase_Textures.big", sourceName: "Textures.big" },
   { name: "ZZBase_W3D.big", sourceName: "W3D.big" },
+  { name: "ZZBase_Shaders.big", sourceName: "Shaders.big" },
   { name: "ZZBase_Music.big", sourceName: "base-generals/Music.big" },
   { name: "Gensec.big" },
 ];
