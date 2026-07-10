@@ -730,6 +730,20 @@ DONE.md with reasons.
       viable for P0/P1; no upgrade-first requirement flushed yet. STILL OPEN
       for this item: boot to title (assets + bridge realm split = P1),
       SwiftShader OffscreenCanvas-in-worker, Safari/iPad, Mac Metal.
+      PROGRESS (2026-07-10, lane P1a): runtime scaffold LANDED and GREEN —
+      PTHREAD_POOL_SIZE=1 + `--pre-js` realm stub
+      (`src/threads_realm_stub.pre.js`: ping/setup/callExport protocol in
+      the pthread realm) + boot/go/heartbeat scaffold
+      (`src/wasm_engine_thread_boot.cpp`). Proven by
+      `node harness/p1_scaffold_probe.mjs` (18/18): `emscripten_set_main_loop`
+      ON the pthread works on 3.1.6 (rAF ticks in the worker realm; 'unwind'
+      kept alive by worker.js — no JS-driven-tick fallback needed), and a
+      transferred OffscreenCanvas animates a color-cycling clear presented
+      from the engine thread through the D3D8 shim's EM_JS path. Mechanism
+      decision + 3.1.6 gotchas for P1c in
+      `WebAssembly/notes/p1-engine-thread.md`. SwiftShader
+      OffscreenCanvas-in-worker is thereby covered; still open: P1b executor
+      extraction, P1c integration (gates B/C), Safari/iPad, Mac Metal.
 - [ ] **Remaining whole-archive `FS.readFile` copies outside the inventory
       path (2026-07-10, follow-up to the inventory partial-read fix).**
       (a) `startBrowserMssStreamPlayback` (`harness/bridge.js` ~3345) copies

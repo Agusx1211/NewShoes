@@ -111,11 +111,77 @@ crash-free and obvious-TODO), MP, save/load verification on the threaded path.
   engine runs — harness diagnostics that read them become engine-realm
   queries (degrade gracefully in threaded mode for P1).
 
+## P1a mechanism decision (2026-07-10, settled by probe evidence)
+
+**Shipped: `emscripten_set_main_loop` ON the pthread** (design decision #1 as
+written), NOT the JS-driven-ticks fallback. Verified end to end on emsdk
+3.1.6 + headless Chromium by `harness/p1_scaffold_probe.mjs` (18/18 checks:
+heartbeat advances, main rAF alive, transferred OffscreenCanvas animates a
+color-cycling clear presented from the engine thread). Mechanics on 3.1.6,
+for P1c:
+
+- No special flags or thread attributes needed. The pthread entry calls
+  `emscripten_set_main_loop(tick, /*fps=*/0, /*simulate_infinite_loop=*/1)`;
+  fps=0 installs an rAF scheduler (`Browser.mainLoop` is realm-local JS and
+  Chromium dedicated workers have `requestAnimationFrame`);
+  simulate_infinite_loop throws the JS string `'unwind'`, which
+  `cnc-port.worker.js` catches and keeps the worker alive ("completed its
+  main entry point with an `unwind`"). The C stack frame of the entry is
+  intentionally leaked (documented emscripten behavior). No
+  `emscripten_exit_with_live_runtime` needed.
+- `emscripten_set_main_loop` is NOT proxied ("Runs natively in pthread" in
+  library_browser.js) — ticks run in the worker realm on the pthread's wasm
+  stack, so EM_JS bodies called from a tick (e.g. the D3D8 shim's
+  `wasm_d3d8_browser_clear_target`) resolve `Module` to the WORKER-realm
+  Module: exactly the realm where the executor installs `cncPortD3D8*`.
+- **Handshake ordering is load-bearing**: between
+  `_cnc_port_engine_thread_boot()` and `_cnc_port_engine_thread_go()` the
+  pthread blocks its worker's event loop in an `emscripten_thread_sleep`
+  poll, so postMessages to that worker queue un-handled. ALL realm prep
+  (connect/setup/canvas transfer) must complete BEFORE boot; after go the
+  entry unwinds and the worker's event loop (rAF ticks + realm-stub port
+  messages) runs normally. `go` itself is a shared-memory atomic, no message.
+- Realm stub message routing (src/threads_realm_stub.pre.js): main→worker
+  bootstrap messages ride `{target:'setimmediate', __cncRealm:{...}}` on the
+  default channel — 3.1.6's worker.js has a silent no-op branch for
+  `target:'setimmediate'` and err()-spams for any other unknown shape; the
+  main-side PThread handler echoes such messages back (harmless, stub
+  ignores reply-shaped cmds). Real command traffic (setup/callExport) moves
+  to a dedicated MessageChannel port transferred with `{cmd:'connect'}`, so
+  it never touches emscripten's channels. NOTE for any emsdk upgrade: the
+  'setimmediate' silencer is a 3.1.6 internal; re-check both handlers.
+- Finding the worker from the main realm (3.1.6 `Module.PThread`):
+  `PThread.unusedWorkers` (pool workers not yet running a pthread),
+  `PThread.runningWorkers`, `PThread.pthreads` (pthread_t → info). With
+  `PTHREAD_POOL_SIZE=1` and PTHREAD_POOL_DELAY_LOAD unset, startup holds a
+  run dependency until the pool worker has loaded cnc-port.js — so once the
+  factory promise resolves, `PThread.unusedWorkers[0]` is the (stub-armed)
+  engine worker. The pre-js guard for "am I the pthread realm" is
+  `Module["ENVIRONMENT_IS_PTHREAD"]` (set by worker.js on the Module object
+  BEFORE the factory runs; the `var ENVIRONMENT_IS_PTHREAD` declaration
+  comes after the pre-js insertion point).
+- `pthread_create` beyond the pool (observed re-running the P0 probe on the
+  POOL_SIZE=1 build): warns "thread pool is exhausted", allocates + loads a
+  new worker on demand, rc still 0, thread starts asynchronously. The engine
+  itself creates no threads, so P1 stays within the single deterministic
+  pool worker; the P0 probe's second (init) thread simply lands on an
+  on-demand worker and its no-assets init finding is now recorded as
+  still-running-at-30s instead of the abort (not asserted either way).
+
 ## Running state (update me)
 
 - [x] P0 spike merged (build green, pthread runs real init, FS proxy works).
 - [ ] Recon map of bridge.js delivered (agent, in flight).
-- [ ] P1a GATE A
+- [x] P1a runtime scaffold (GATE A prerequisite) — 2026-07-10:
+      PTHREAD_POOL_SIZE=1 + `--pre-js` realm stub
+      (src/threads_realm_stub.pre.js) + boot/go/heartbeat scaffold
+      (src/wasm_engine_thread_boot.cpp);
+      `node harness/p1_scaffold_probe.mjs` green 18/18 (animated engine-
+      thread clear on a transferred OffscreenCanvas, callExport round trip);
+      P0 probe still green; default build verified untouched (no -pthread /
+      pool / pre-js flags in build/wasm/build.ninja). Mechanism decision
+      above. GATE A itself (real D3D8 device creation in the engine realm)
+      is P1b/P1c work on this scaffold.
 - [ ] P1b extraction + non-threaded parity proof
 - [ ] P1c GATE B (title), GATE C (shellmap+input+RPC)
 - [ ] GATE D Mac Metal + owner
