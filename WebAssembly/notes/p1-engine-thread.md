@@ -80,6 +80,37 @@ crash-free and obvious-TODO), MP, save/load verification on the threaded path.
 - P1c integration (task #7): play.mjs `?threads=1` path, RPC/input
   forwarding, paced loop on engine thread, gates B/C, Mac deploy (GATE D).
 
+## Recon facts for P1c (from the 2026-07-10 bridge map; line numbers pre-P1b)
+
+- Module config choke point: bridge.js ~15778-15836 — ALL hooks (19+1 d3d8,
+  13 MSS audio, 2 UDP net, GDI text) are installed via the single object
+  passed to createCncPortModule. Dist selection ~82-108 (`?dist=`,
+  play.html → dist-release default).
+- Frame loop lives in play.mjs: runPacedFrameLoop ~389 (rAF → RPC
+  `realEngineFramePaced({runLogic})` per display frame, catchup≤2),
+  runCoupledFrameLoop ~512 fallback. In threaded mode this loop must move
+  INTO the engine realm (worker rAF calling the export directly); play.mjs
+  should only observe.
+- Input: DOM listeners bridge.js ~32677-32904 → lite exports
+  `setBrowserInputLite` / `postBrowserMessageLite` (numeric args — fits the
+  P1a callExport primitive). Full-path `postBrowserMessage` returns JSON.
+- Audio: 13 Module.cncPortMss* hooks, bodies ~2733-3480; they read sample
+  bytes via heap views and complete back into the engine via cwrap'd
+  `cnc_port_mss_complete_*` exports (notifyEngineAudioCompleted ~2712-2731).
+  Threaded plan: EM_JS runs engine-realm → forward payload+ptr/size to main
+  (main realm's HEAPU8 is a view over the SAME SharedArrayBuffer — zero-copy
+  reads); completions route back via the callExport message primitive.
+- RPC: single async `rpc(command,payload)` dispatcher ~21415+, ~95% of
+  commands call wasm exports (many via cwrap/string returns). Threaded
+  routing: an async engine-call facade (`ccall`-shaped message to the engine
+  realm: name, returnType, argTypes, args) with per-command opt-in; commands
+  not yet routed return an explicit "unsupported in threaded mode" error.
+- Mounts/screenshots/dumps are main-side JS and stay unchanged (canvas
+  placeholder still screenshots normally when control is transferred).
+- EM_JS `Module.__cncPort*` mutable caches live in whichever realm the
+  engine runs — harness diagnostics that read them become engine-realm
+  queries (degrade gracefully in threaded mode for P1).
+
 ## Running state (update me)
 
 - [x] P0 spike merged (build green, pthread runs real init, FS proxy works).
