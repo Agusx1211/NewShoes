@@ -8,6 +8,152 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Stepped-load validation regression — frozen turrets / stuck muzzle flashes (2026-07-10)
+
+- [x] **Menu-shell "battleship guns never rotate" + "muzzle flash constantly
+      on" (map-placed vehicles): root-caused and fixed, owner-confirmed.**
+      Root cause (found by Codex, confirmed by dev-box A/B): stepped map
+      loading (ba3ce7b9) advances later load slices from GameEngine::update()
+      via GameLogic::advanceLoadSession(), OUTSIDE GameLogic::update(), so
+      isInGameLogicUpdate() was FALSE during them. The W3DModelDraw /
+      ModelConditionInfo validators (validateTurretInfo,
+      validateWeaponBarrelInfo, validateStuffForTimeAndWeather — all guarded
+      by isValidTimeToCalcLogicStuff) intentionally refuse to run in that
+      context, so every map-placed object created in a later slice
+      permanently lacked TURRETS_VALID/BARRELS_VALID:
+      handleClientTurretPositioning and handleClientRecoil early-return
+      forever — turrets never rotate, and the models' default-visible
+      MUZZLEFX meshes are never hidden. Scope matched exactly: menu shell
+      (all objects are map-placed at load) broken; normal gameplay clean
+      (units built during GameLogic::update validate fine); infantry healthy
+      (plain HAnim unaffected); pacing- and tier-independent. FIX:
+      `LatchRestore<Bool> inUpdateLatch(m_isInUpdate, TRUE)` inside
+      `advanceLoadSession()` — every load slice now runs in the exact context
+      the original monolithic startNewGame() had (native untouched;
+      m_loadSession only exists in the port's stepped loading). VERIFIED:
+      dev-box A/B on the shellmap intro — before: AmericaVehicleBattleShip
+      reported NO turret/barrel metadata in any sample; after: both turret
+      slots + six barrels in every sample, guns tracking targets (rot/HTree
+      bone/child mesh in lockstep), recoil states cycling, flashes hidden
+      except genuine RECOIL_START frames. Owner confirmed visually.
+      Permanent regression coverage: `npm run verify:stepped-load-validation`
+      (harness/stepped_load_turret_validation_check.mjs — boots the default
+      stepped load and asserts the battleship finishes load with
+      turret/barrel metadata resolved). Investigation eliminations that keep
+      their lessons: time multiplier (=1 throughout), fog/ghost snapshots
+      (shroud CLEAR everywhere, zero active snapshots), turret seam stages
+      1-4 healthy where validated, adjacent-draw batch merging (stateHash
+      FNV-folds world/view/projection — cannot merge differing transforms),
+      SwiftShader probe cadence (66ms elapsed clamp makes anims slow by
+      construction — state reports valid, screenshots not). Diagnostics
+      retained: per-drawable anim report RPC (template/ids/vis + HAnim
+      mode/frame/mult + per-barrel recoil/flashHidden + muzzle-bone
+      subobject hidden flags + turret seam rot/hYaw/cYaw, on-screen entries
+      first), draw/anim counters in the paced JSON, and 1×/s in-recording
+      report samples embedded unredacted in issue dumps
+      (bundle.animReportSamples).
+
+- [x] **Paced-mode animation clock: advance by measured client-frame time
+      (independent performance fix found during the same investigation —
+      real, verified, but NOT the cause of the bug above).** The paced 60Hz
+      client advanced W3D syncTime a fixed TheW3DFrameLengthInMsec (16ms) per
+      client frame, so below-60fps clients ran every animation/muzzle
+      duration/camera pan at fractional wall speed (measured 0.47× at
+      2940×1524, ~29 ticks/s) while 30Hz logic moved units at full speed.
+      Fix: the paced RPC measures real inter-tick duration (clamped 4..66ms,
+      fractional remainder carried); W3DDisplay::draw's paced branch and
+      W3DView's scripted-waypoint camera stepping consume it via weak hook
+      `cnc_port_client_frame_elapsed_ms` (native + coupled loop untouched).
+      Verified on cnc-gpu Metal: 0.47× → ~1.0× at the same conditions; 60Hz
+      baseline unregressed. Known cosmetic residual: rotate/pitch/zoom camera
+      moves are frame-count based and still slow slightly under fps dips —
+      convert to elapsed-time if noticed.
+
+## D3D8 SM1 shader tier — the original pixel/vertex shaders run (2026-07-09)
+
+- [x] **Path B (OWNER-REQUESTED): generic D3D8 SM1 (vs.1.1/ps.1.1)
+      bytecode→GLSL translation so the original programmable-shader effects
+      run in the browser.** Opt-in via `?shaderTier=ps11`, play-page
+      Settings → Shaders → Enhanced, or localStorage `cncPortShaderTier`
+      (default is Classic/ff: the tier is mechanically verified on Metal but
+      owner playtesting found visual fidelity regressions — see TODO
+      "Shader-tier (Path B) follow-ups" — so the default flip was reverted
+      pending fixes). What landed:
+      - **Assets**: base-Generals `Shaders.big` was never extracted — recovered
+        from the Generals CD1 installer cab (lowercase `shaders.big` entry, so
+        the generic extract loop missed it; `extract_zh_runtime_archives.sh`
+        now extracts+renames it) and mounted as `ZZBase_Shaders.big` across
+        play.mjs + 13 other harness archive lists. It carries `terrain.pso`,
+        `terrainnoise*.pso`, `roadnoise2.pso`, `monochrome.pso`,
+        `invmonochrome.pso`, `wave.pso/.vso`; `ShadersZH.big` (already
+        mounted) carries `fterrain*.pso`, `Trees.pso/.vso`.
+      - **Shim (`wasm_d3d8_shim.cpp`)**: tier switch sampled once per session
+        (`Module.cncPortD3D8ShaderTier`); under ps11 `GetDeviceCaps` reports
+        `PixelShaderVersion`/`VertexShaderVersion` 1.1 + 96 vs constants and
+        `GetAdapterIdentifier` reports a neutral vendor so
+        `W3DShaderManager::getChipset()` falls through the NVIDIA/3dfx/ATI
+        tables to the caps-driven `DC_GENERIC_PIXEL_SHADER_1_1` branch (the
+        original generic-hardware path — no GPU impersonation). Implemented
+        `CreatePixelShader`/`CreateVertexShader` (D3D8 token streams; vs
+        handles carry bit 31 so they can't collide with FVF codes on the
+        shared `SetVertexShader` path), `Set/DeletePixel/VertexShader`,
+        `Set*ShaderConstant` (c0-c7 ps / c0-c95 vs files with value-hashes),
+        a D3DVSD vertex-declaration parser, and a faithful **SM1 asm-text
+        assembler** behind `D3DXAssembleShader` (W3DWater assembles its
+        river/main/trapezoid ps.1.1 water shaders from inline asm at map
+        load — all three assemble + create). Shader identity + constant
+        value-hashes fold into the derived draw-state hash so no batching/
+        merge/dedup layer (native or bridge) can mix shader state.
+      - **Bridge (`bridge.js`)**: SM1 token parser → GLSL ES 3.00 emitters
+        (full modifier set `_bx2/_bias/_x2/1-x`/negate, replicate swizzles,
+        write masks, dest shift/saturate, **coissue pairs** evaluated
+        source-snapshot-first, `def` constants, `texbem`/`texbeml` with the
+        per-stage bump-env matrices, vs.1.1 `a0.x` relative constant
+        addressing for the tree-sway table, `m4x4`/`dp4`/`rcp`/... macro
+        ops). Programs are linked per **(vertexShader, pixelShader) pair**
+        with either side falling back to the stashed fixed-function stage
+        source: FF-vertex + translated-pixel (terrain/roads/water/BW — the
+        FF texgen/texture-transform varyings feed t0-t3 exactly like D3D8's
+        FF-coordinates-with-PS mode) and translated-vertex + FF-pixel-cascade
+        (**the shipped tree path: EA `#if 0`'d the tree pixel shader, so
+        retail ran `Trees.vso` + fixed-function stages**). Pairs are warmed
+        at create time (no mid-frame compile hitches), constants upload via
+        value-compare, decl-driven attribute binding bypasses the FVF/VAO
+        caches for translated-vs draws.
+      - **Trees confirmation**: `Trees.vso` decodes to exactly the engine's
+        sway (per-tree `c[a0.x+8]` lookup) + WVP `m4x4` c4-c7 + shroud
+        `oT1 = (v0 + c32) * c33` — i.e. the port's existing `uTreeShroudGen`
+        c32/c33 hack was a faithful reimplementation of the real shader; it
+        remains for tier ff only.
+      - **Verified (SwiftShader)**: offline unit test translates all 18
+        shipped `.pso/.vso` token streams; `harness/shader_tier_probe.mjs`
+        boots the play page both tiers on one build — ps11: 13 pixel shaders
+        + Trees.vso registered, 18 pair programs linked, 0 translation/link
+        failures, 575 shader draws (incl. 25 translated-vs tree draws), 0
+        fixed-function fallbacks; ff: byte-identical baseline (0 SM1
+        activity, shellmap renders). Screenshot compare shows the shellmap
+        ocean regain its original bright sparkle-highlighted water (the
+        trapezoid water ps.1.1 shader) vs the flat dark FF fallback — the
+        owner's "used to feel more vivid" gap.
+      - **Verified (Metal, cnc-gpu)**: same probe on Chrome + Metal against
+        dist-release (md5 parity with the dev box) — ps11 shellmap renders
+        the sparkle water + full menu on the real GPU, explicit ff baseline
+        unchanged → default flipped to ps11. A review subagent audited the
+        full diff (bit layouts, assembler round-trip on the real W3DWater
+        inline asm, GLSL semantics vs the D3D8 SDK, cache coherence): zero
+        blockers; its minor findings (structural token walk, wave.pso→wave.vso
+        warm-up ordering, assembler fail-loudly for `1-x_bx2`/STREAM_TESS,
+        `mov a0.x` floor semantics) were applied; the theoretical ones
+        (V8U8 for wave water, oFog + FF-fragment fog, ps.1.4) live in TODO
+        "Shader-tier (Path B) follow-ups".
+      - **Fixed along the way**: `D3DERR_INVALIDCALL` was missing from the
+        shim d3d8.h (2156); JS signed-bitwise pitfall in the version-token
+        check (`(v & 0xffff0000) >>> 0`); the FF-path `vertexAttribKey` had
+        to hoist above the new decl-attribute branch (black-screen
+        regression caught by the probe's ff baseline run).
+
+---
+
 ## Resolution polish — the engine owns the render resolution (2026-07-09)
 
 - [x] **Resolution was "all over the place" (owner ask): windowed vs

@@ -18,6 +18,7 @@
     "transcode:bink-video": "npm run extract:runtime-archives && node tools/transcode_bink_video_payloads.mjs artifacts/real-assets artifacts/browser-video/bink --expect-current-zh",
     "verify:assets": "node tools/verify_real_assets.mjs",
     "verify:gameengine-startup-order": "node tools/verify_gameengine_startup_order.mjs",
+    "verify:stepped-load-validation": "node harness/stepped_load_turret_validation_check.mjs",
     "verify:gamelogic-new-game-dispatch-frontier": "node tools/verify_gamelogic_new_game_dispatch_frontier.mjs",
     "verify:w3d-module-factory-frontier": "node tools/verify_w3d_module_factory_frontier.mjs",
     "verify:miles-audio-device-frontier": "node tools/verify_miles_audio_device_frontier.mjs",

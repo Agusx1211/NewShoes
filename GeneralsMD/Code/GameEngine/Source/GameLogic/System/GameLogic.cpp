@@ -1344,6 +1344,18 @@ void GameLogic::advanceLoadSession( void )
 	if( m_loadSession == NULL )
 		return;
 
+	// The original monolithic startNewGame() ran entirely inside
+	// GameLogic::update(), i.e. with m_isInUpdate latched TRUE. Stepped load
+	// slices are driven from GameEngine::update() instead, so without this
+	// latch isInGameLogicUpdate() is FALSE during them and
+	// W3DModelDraw/ModelConditionInfo validation (validateTurretInfo,
+	// validateWeaponBarrelInfo, validateStuffForTimeAndWeather) refuses to
+	// run for map-placed objects created in later slices: their states
+	// permanently lack TURRETS_VALID/BARRELS_VALID, so turrets never rotate
+	// and default-visible muzzle-flash meshes are never hidden (owner's
+	// shellmap battleship / stuck-flash bugs). Restore the original context.
+	LatchRestore<Bool> inUpdateLatch(m_isInUpdate, TRUE);
+
 #ifdef __EMSCRIPTEN__
 	if( cnc_port_load_step_slice_begin )
 		cnc_port_load_step_slice_begin();

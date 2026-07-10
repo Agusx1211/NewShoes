@@ -511,6 +511,15 @@ the UI is the real `PopupSaveLoad.cpp` reached from in-game ESC/Options →
       `ButtonSaveLoad` open the popup in a live skirmish (single-player only —
       skirmish/MP use `QuitNoSave.wnd`, no save button; the round-trip test may
       need a single-player mission or a temporary save trigger).
+- [ ] **Pre-existing red: `verify:gameengine-startup-order` fails on committed
+      HEAD** (verified 2026-07-10 by stashing all local changes — exit 1 both
+      ways, so unrelated to the shader-tier/instrumentation work). The
+      source-marker audit reports missing init markers in `GameEngine.cpp`
+      (`createGameLogic`, `createRadar`, `createWebBrowser`) — likely stale
+      expectations after the stepped-init restructuring moved init calls into
+      the step-session table. Update the checker's marker patterns (or the
+      engine comments it greps for) and re-green `test:startup-vertical`.
+
 ## User-reported play bugs (2026-07-09 session)
 
 - [ ] **iPad Safari sometimes renders an all-black canvas** — appeared
@@ -1238,57 +1247,60 @@ screenshots on the release build.
       `build:port` green. **Still needs Mac-GPU verification:** boot, confirm
       `terrainNoiseMultiplyTransformedDraws > 0` in `d3d8PerfSummary()` and a
       before/after terrain screenshot (fine noise grain + soft lightmap/cloud).
-- [ ] **Path B: implement the D3D8 pixel/vertex-shader tier in the WebGL2 bridge
-      (unlock the "good" shader paths).** OWNER-REQUESTED (2026-07-08). Today the
-      shim reports a fixed-function Voodoo5-class adapter (`wasm_d3d8_shim.cpp`
-      `VendorId=0x121a`, `DeviceId=0x0009` → `DC_VOODOO5`) and
-      `CreatePixelShader`/`CreateVertexShader` return `D3DERR_NOTAVAILABLE`, so
-      `W3DShaderManager` selects the fixed-function terrain path and every
-      programmable-shader effect is dead. NOTE: the fixed-function terrain
-      clouds+noise path is ALREADY correct end-to-end (see entry above) — Path B
-      is NOT needed to fix terrain, it is the higher-fidelity/richer-effects
-      option. Scope: (1) report a pixel-shader-capable adapter identity + caps
-      (`PixelShaderVersion`/`VertexShaderVersion`, a `DC_*` chipset that selects
-      the PS tier — e.g. GeForce3+/`terrainShader8Stage` single-pass) from the
-      shim so `getChipset()` picks the programmable paths; (2) implement
-      `CreatePixelShader`/`CreateVertexShader` + `SetPixelShader`/`SetVertexShader`
-      in the D3D8→WebGL2 layer. **APPROACH DECIDED (owner, 2026-07-08): build a
-      GENERIC on-the-fly bytecode→GLSL translator (the WineD3D/DXVK model), NOT a
-      per-shader hand-port.** The shaders are confirmed portable **DX8 asm** —
-      `terrain.nvp` opens `ps.1.1` (`tex t0; tex t1; lrp r0,v0.a,t1,t0; mul r0,r0,
-      v0`) and `.nvv` are `vs.1.1` — assembled to a D3D8 token stream and handed to
-      `CreatePixelShader`/`CreateVertexShader` (`W3DShaderManager.cpp:3040/3044`),
-      NOT NVIDIA register combiners. SM1.x is tiny and control-flow-free, so a
-      generic translator is bounded and is faithful-by-construction (covers every
-      shader + mods, no hand-GLSL drift). Design (mirror WineD3D `glsl_shader.c`,
-      which is in `assets/docs/` `dlls/wined3d` — the closest existing D3D→GLSL
-      analogue; DXVK targets SPIR-V so WineD3D is the better reference):
-      (1) intercept `CreatePixelShader`/`CreateVertexShader` in the shim, parse the
-      DX8 token stream to a small IR, emit GLSL (one expr per instruction; register
-      file → locals/uniforms/varyings); (2) compile+cache the GLSL ONCE per shader
-      at create time (warm at load, not lazily mid-frame — WebGL compile hitches);
-      (3) **program cache keyed on the (vertex-shader, pixel-shader) PAIR** — D3D8
-      has separate vs/ps objects, WebGL2 needs one linked program, so link lazily
-      per pair and glue vs outputs (`oT0..oT7`,`oD0/oD1`) → ps inputs
-      (`t0..t3`,`v0/v1`) as matching varyings; (4) `Set*ShaderConstant` (`cN`) →
-      uniform float4 array; (5) report a PS-capable adapter identity + caps
-      (`PixelShaderVersion`/`VertexShaderVersion`, a `DC_*` chipset selecting the PS
-      tier) from `wasm_d3d8_shim.cpp` so `getChipset()` picks the programmable
-      paths. HARD BITS (bounded, Wine handles all): ps.1.x arg modifiers
-      (`_bx2/_x2/_sat`) + register clamp to [-1,1] + **coissue** (paired RGB/alpha
-      op); ps.1.4 phases/`texld` differ from 1.1 (sweep all `Shaders/*.nvp` to see
-      which versions the corpus uses — motion-blur/heat-haze may need 1.4); must
-      COEXIST with the existing fixed-function GLSL emulation in `bridge.js` (some
-      draws stay fixed-function). Payoff: single-pass pixel-shader terrain
-      (clouds+noise+lightmap folded, fewer draws) AND it unlocks the two
-      dead-shader entries below (heat-haze/smudge, monochrome/motion-blur) —
-      cross-reference. VERIFY/RISKS: enabling the PS chipset must NOT regress the
-      fixed-function paths that currently render correctly (gate per shader-type /
-      keep independently selectable); confirm terrain still correct after the tier
-      switch; watch per-draw/perf. Land incrementally — get ONE shader (terrain)
-      pixel-perfect end-to-end via the generic path first, then widen; do NOT
-      invent shading, translate the real bytecode. Entry points: shader create/set
-      + adapter caps in `wasm_d3d8_shim.cpp`; GLSL emit/program cache in `bridge.js`.
+- [ ] **Shader-tier (Path B) follow-ups** — the D3D8 SM1 (vs.1.1/ps.1.1)
+      programmable tier LANDED 2026-07-09 (see DONE.md "D3D8 SM1 shader tier"):
+      generic bytecode→GLSL translator in `bridge.js`, SM1 text assembler +
+      shader objects/constants in `wasm_d3d8_shim.cpp`, selectable via
+      `?shaderTier=ps11` / play-page Settings→Shaders (default still `ff`).
+      Remaining:
+      - [ ] **ps11 visual regressions from owner playtest (2026-07-09) — fix
+            before re-flipping the default.** The tier is mechanically green
+            (probes, Metal) but the owner reports vs the FF look: water
+            "radioactive/bright AF" at game start; motion blur "a bit off";
+            overall lighting flatter. (The muzzle-flash-always-on and
+            battleship-guns-not-animating reports from the same playtest
+            turned out to be tier-INDEPENDENT — they were the stepped-load
+            validation regression, root-caused and fixed 2026-07-10; see
+            DONE.md. Only genuinely shader-tier visual issues remain here.)
+            Default was REVERTED to ff the same day (`d3d8ShaderTierQuery`
+            default 0); Enhanced stays opt-in in Settings→Shaders. First fix
+            applied: ps.1.x REGISTER SATURATION (every arithmetic result
+            clamps to [-1,1] before reuse — the water sparkle `mad` overshoot
+            feeding later muls was rendering brighter than hardware). Tools
+            built for the rest: `harness/shader_ab_probe.mjs`
+            (same-logic-frame ff vs ps11 screenshot pairs + pixel-diff stats
+            over the shellmap timeline) and `globalThis.__cncSM1ForceFallback`
+            (Set of ps handles — force individual shaders back to FF
+            mid-session to bisect an artifact to one shader). Verify each
+            report against the A/B pairs before chasing.
+      - [x] **Metal verification of the tier pipeline.** shader-tier probe on
+            cnc-gpu (Chrome + Metal, dist-release): ps11 registers 13 ps +
+            Trees.vso, links all pairs, 0 failures/fallbacks; ff baseline
+            unchanged. (Default flip DONE then REVERTED same day per the
+            regressions above.)
+      - [ ] **WATER_TYPE_2_PVSHADER wave water needs D3DFMT_V8U8** — the wave
+            path (wave.vso/wave.pso + texbem) creates a signed du/dv bump
+            texture the shim's texture layer doesn't support yet. Upload V8U8
+            as RG8 + decode `*2-1` in the texbem emission (flag on the texture
+            resource), and support `Create_Render_Target` reflection texture
+            interplay. Only maps that set water type 2 use it.
+      - [ ] **BW/monochrome + motion-blur filters: visual trigger proof** —
+            `monochrome.pso`/`invmonochrome.pso` register + link under ps11
+            (ScreenBWFilter now takes the PS path instead of DOT3), but the
+            effect only shows when a special power/EMP triggers it — capture
+            one on Metal. Motion blur (`ScreenMotionBlurFilter`) is
+            fixed-function (shipped `motionblur.pso`/`MotionBlur.vso` are dead
+            assets — nothing loads them).
+      - [ ] **ps.1.4 is intentionally unsupported** (phases/`texld`); the
+            entire shipped corpus is ps.1.1. If a mod ships 1.4 bytecode the
+            create fails cleanly and the engine falls back to fixed function —
+            revisit only if real content needs it.
+      - [ ] **Retire the c32/c33 tree-shroud FF hack once ps11 is the
+            default** (`uTreeShroudGen` in bridge.js + the unconditional
+            constant upload in `W3DTreeBuffer::drawTrees`) — under ps11 the
+            real `Trees.vso` computes those UVs (`oT1 = (v0 + c32) * c33`);
+            the hack only serves tier ff. Re-verify trees on the user's build
+            before touching it (user-firm rule).
 - [ ] **Heat-haze / screen smudges not rendering (flat explosions/fire)** — the
       original distorts the background behind heat particles ("screen smudges
       which are particles that distort the background behind them",
@@ -1298,13 +1310,14 @@ screenshots on the release build.
       (related to the known "invisible explosions" report). Fix: implement the
       smudge/distortion pass (sample the current color target and offset by the
       smudge geometry) in the bridge. Verify with an explosion capture.
-- [ ] **Monochrome / motion-blur screen shaders missing (special-FX tints)** —
-      also casualties of the stubbed pixel-shader path: `Shaders/monochrome.nvp`
-      / `invmonochrome.nvp` (screen monochrome/tint used by some special
-      powers/EMP/superweapon flashes) and `MotionBlur.nvv`/`motionblur.nvp`
-      (motion blur). Lower priority than the above but part of the same
-      dead-shader gap. Fix: implement these as WebGL2 post passes when their
-      shader is selected. Verify by triggering the relevant effect.
+- [x] **Monochrome / motion-blur screen shaders missing (special-FX tints)** —
+      RESOLVED by the SM1 shader tier (2026-07-09): under `?shaderTier=ps11`
+      `monochrome.pso`/`invmonochrome.pso` register + link and ScreenBWFilter
+      takes its original pixel-shader path (c0 luminance weights, c1 tint, c2
+      fade). Motion blur turned out to be fixed-function in the shipped game
+      (`ScreenMotionBlurFilter` never loads the dead `motionblur.pso` asset).
+      Visual trigger proof on Metal tracked under "Shader-tier (Path B)
+      follow-ups" above.
 
 ## Strategy pivot — real `init()` whole-program link (current focus)
 
