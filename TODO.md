@@ -4024,6 +4024,24 @@ and then start with the PROFILE, not with any individual fix.
       so agents can reproduce late-game reports even after long nondeterministic
       play sessions.
 - [ ] Net-sync regression (two clients, assert no desync).
+- [ ] cnc-gpu disk pressure + probe-profile hygiene (found 2026-07-10, GATE D
+      lane): the Mac's data volume sits at ~3.2GiB free steady-state, so ONE
+      leaked 2.3GB OPFS probe profile silently starves the next run's OPFS
+      writes (FileSystemSyncAccessHandle.write returns 2^32-8, boot hangs at
+      the overlay). Every Mac probe must rmSync its persistent profile in
+      finally AND write its summary BEFORE browser.close() (playwright close
+      reproducibly wedges after these runs — kill the node by PID). Chrome
+      `code_sign_clone` orphans (one per probe launch,
+      /private/var/folders/.../X/com.google.Chrome.code_sign_clone) re-
+      accumulate — sweep them in the post-session pkill ritual. Longer term:
+      free real space on the volume (owner call: ~/llama-moe-cache 41G,
+      CnCWork sparse-image compaction, in-image .claude worktrees 25G +
+      WebAssembly/artifacts 8.5G).
+- [ ] Verify threaded issue-dump replay end to end: replay_issue_dump now
+      pins ?threads= by the dump's recorded distDir, but a dist-threaded
+      dump replay (input forwarding + realEngineFrameTick stepping on the
+      engine thread) has never been exercised — record a dump on
+      ?threads=1, replay it, confirm frame-stepped reproduction works.
 - [ ] Add per-step and page-RPC timeouts to long browser integration smokes.
       A 2026-07-02 `test:vertical-integrations` run reached
       `browser-lanapi-game-start-two-contexts` after the startup/archive/audio
