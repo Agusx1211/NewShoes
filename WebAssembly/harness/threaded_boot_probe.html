@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<!--
+  threaded_boot_probe.html — DISPOSABLE P0 spike probe (engine-on-its-own-thread,
+  IDEAS.md "the browser as a 2003 PC"). Loads dist-threaded/cnc-port.js (built by
+  `npm run build:port:threaded`) and proves:
+    1. the pthread-enabled wasm runtime instantiates on the main thread,
+    2. a real pthread (spawned by cnc_port_spawn_engine_thread) runs
+       concurrently with main-thread JS,
+    3. the pthread worker realm does NOT see the bridge hooks the D3D8 shim
+       EM_JS bodies look up on Module (the realm split the P1 bridge work must
+       close),
+    4. what happens when the REAL cnc_port_real_engine_init runs on a pthread
+       with no bridge/assets mounted (recorded as a finding, not asserted).
+  Driven by harness/threaded_boot_probe.mjs. NOT part of test:all.
+-->
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>cnc-port threaded boot probe (P0 spike)</title>
+</head>
+<body>
+<canvas id="probe-canvas" width="800" height="600"></canvas>
+<script type="module">
+  const consoleLog = [];
+  window.__consoleLog = consoleLog;
+  function log(kind, text) {
+    consoleLog.push(`${kind}: ${text}`);
+    // Also mirror into the browser console so the Playwright driver sees it.
+    console.log(`[probe:${kind}] ${text}`);
+  }
+
+  let Module = null;
+
+  window.__initThreadedModule = async () => {
+    const out = {
+      imported: false,
+      instantiated: false,
+      crossOriginIsolated: !!globalThis.crossOriginIsolated,
+      sharedArrayBufferAvailable: typeof SharedArrayBuffer !== "undefined",
+      heapIsShared: null,
+      pthreadPoolWorkers: null,
+      error: null,
+    };
+    try {
+      const mod = await import("../dist-threaded/cnc-port.js");
+      out.imported = true;
+      Module = await mod.default({
+        canvas: document.getElementById("probe-canvas"),
+        print: (text) => log("out", text),
+        printErr: (text) => log("err", text),
+        // Stand-in for a real bridge.js hook that the D3D8 shim EM_JS bodies
+        // look up (Module.cncPortD3D8Clear). Installing it on the main-realm
+        // Module makes the realm split directly observable: the main realm
+        // reports it present, the pthread worker realm must report it absent.
+        cncPortD3D8Clear: () => {},
+      });
+      window.__cncModule = Module;
+      out.instantiated = true;
+      out.heapIsShared =
+        typeof SharedArrayBuffer !== "undefined" &&
+        Module.HEAP8.buffer instanceof SharedArrayBuffer;
+      try {
+        const pt = Module.PThread;
+        out.pthreadPoolWorkers = pt
+          ? (pt.unusedWorkers ? pt.unusedWorkers.length : 0) +
+            (pt.runningWorkers ? pt.runningWorkers.length : 0)
+          : null;
+      } catch (e) {
+        out.pthreadPoolWorkers = `unavailable: ${e}`;
+      }
+    } catch (e) {
+      out.error = String((e && e.stack) || e);
+    }
+    return out;
+  };
+
+  window.__spawnAndProve = async () => {
+    const out = { error: null };
+    try {
+      out.mainRealmBits = Module._cnc_port_probe_realm_bits();
+      out.spawnRc = Module._cnc_port_spawn_engine_thread();
+
+      // Sample the engine-thread heartbeat while counting main-thread rAF
+      // ticks: both advancing over the same window proves real concurrency.
+      let rafTicks = 0;
+      let rafAlive = true;
+      const rafTick = () => {
+        rafTicks += 1;
+        if (rafAlive) requestAnimationFrame(rafTick);
+      };
+      requestAnimationFrame(rafTick);
+
+      const beats = [];
+      for (let i = 0; i < 15; i += 1) {
+        await new Promise((r) => setTimeout(r, 100));
+        beats.push(Module._cnc_port_engine_thread_heartbeat());
+      }
+      rafAlive = false;
+
+      out.heartbeats = beats;
+      out.heartbeatDelta = beats[beats.length - 1] - beats[0];
+      out.rafTicksDuringSample = rafTicks;
+      out.engineRealmBits = Module._cnc_port_engine_thread_realm_bits();
+      out.engineThreadIsMainRuntime = Module._cnc_port_engine_thread_is_main_runtime();
+      out.engineThreadIsMainBrowser = Module._cnc_port_engine_thread_is_main_browser();
+    } catch (e) {
+      out.error = String((e && e.stack) || e);
+    }
+    return out;
+  };
+
+  window.__attemptInitOnThread = async (deadlineMs) => {
+    const out = { error: null, state: null, resultPrefix: null, elapsedMs: null };
+    try {
+      const spawnInit = Module.cwrap(
+        "cnc_port_spawn_engine_init_thread",
+        "number",
+        ["string", "number"],
+      );
+      const getResult = Module.cwrap("cnc_port_engine_init_thread_result", "string", []);
+      const started = performance.now();
+      out.spawnRc = spawnInit("/", 0);
+      for (;;) {
+        const state = Module._cnc_port_engine_init_thread_state();
+        if (state === 2 || state === 3) {
+          out.state = state;
+          break;
+        }
+        if (performance.now() - started > deadlineMs) {
+          out.state = state; // still running at deadline
+          out.timedOut = true;
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      out.elapsedMs = performance.now() - started;
+      if (out.state === 2) {
+        const result = getResult();
+        out.resultLength = result.length;
+        out.resultPrefix = result.slice(0, 4000);
+      }
+    } catch (e) {
+      out.error = String((e && e.stack) || e);
+    }
+    return out;
+  };
+</script>
+</body>
+</html>
