@@ -7880,28 +7880,10 @@ function bindD3D8Framebuffer(payload = {}) {
     d3d8Framebuffers.set(framebufferKey, fboEntry);
     d3d8PerfStats.fboCreates += 1;
   } else {
-    // Reuse existing FBO - verify it's still complete (texture format may have
-    // changed since creation, e.g. a lazy upload replaced our RGBA
-    // pre-allocation with a compressed format that is not color-renderable in
-    // WebGL2).
+    // FBO completeness is validated at creation. Texture release/recreation and
+    // level-0 storage changes evict their cached attachments, so a cache hit can
+    // bind directly without a synchronous GPU completeness query.
     gl.bindFramebuffer(gl.FRAMEBUFFER, fboEntry.fbo);
-    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-    if (status !== gl.FRAMEBUFFER_COMPLETE) {
-      browser_fbo_incomplete_count += 1;
-      console.warn(
-        `FBO for texture ${colorTextureId} became incomplete after creation (status 0x${status.toString(16)}); recreating`
-      );
-      // Recreate: free the stale FBO and retry from scratch.
-      gl.deleteFramebuffer(fboEntry.fbo);
-      if (fboEntry.depthRenderbuffer) {
-        gl.deleteRenderbuffer(fboEntry.depthRenderbuffer);
-      }
-      d3d8Framebuffers.delete(framebufferKey);
-      // Restore the previous framebuffer before retrying.
-      gl.bindFramebuffer(gl.FRAMEBUFFER, d3d8CurrentFramebuffer);
-      finishFboBind(0);
-      return bindD3D8Framebuffer(payload);
-    }
   }
 
   // Set viewport to match RT size
@@ -8127,6 +8109,13 @@ function updateD3D8Texture(payload = {}) {
   const levelKey = String(level);
   const levelInitialized = resource.initializedLevels.has(levelKey);
   const levelFormat = resource.levelFormats.get(levelKey);
+  // An FBO stays complete across ordinary texSubImage2D writes. If an upload
+  // actually changes level-0 storage, discard any cached attachment now so the
+  // next SetRenderTarget recreates and validates it once. This makes a
+  // synchronous checkFramebufferStatus on every render-target bind unnecessary.
+  if (level === 0 && (!levelInitialized || levelFormat !== info.storage)) {
+    releaseD3D8FramebufferEntriesForTexture(id);
+  }
   let swizzleApplied = resource.swizzleApplied || null;
   const uploadStartedAt = perfNow();
   withPreservedD3D8TextureUnit(() => {
@@ -13134,7 +13123,7 @@ let d3d8LiteVertexBufferMirrorsEnabled = false;
 let d3d8BufferProducerTrackingEnabled = false;
 let d3d8DrawProducerTrackingEnabled = false;
 let d3d8BoundDrawDiagnosticsSetter = null;
-let d3d8BoundDrawDiagnosticsEnabled = true;
+let d3d8BoundDrawDiagnosticsEnabled = d3d8DiagLevel === "full";
 function setD3D8BoundDrawDiagnostics(enabled) {
   d3d8BoundDrawDiagnosticsEnabled = !(enabled === false || enabled === 0 || enabled === "0");
   if (typeof d3d8BoundDrawDiagnosticsSetter === "function") {
@@ -13143,9 +13132,9 @@ function setD3D8BoundDrawDiagnostics(enabled) {
   return d3d8BoundDrawDiagnosticsEnabled;
 }
 function applyD3D8BoundDrawDiagnosticsLevel() {
-  // Keep this independent from diag=lite: disabling these CPU-side checksums
-  // makes M4/Metal runs stall later in terrain GL work and increases frame time.
-  return setD3D8BoundDrawDiagnostics(true);
+  // Buffer checksums and byte-range capture are regression evidence, not draw
+  // inputs. Keep them in full diagnostics and off the human play hot path.
+  return setD3D8BoundDrawDiagnostics(d3d8DiagLevel === "full");
 }
 function setD3D8BufferProducerTracking(enabled) {
   d3d8BufferProducerTrackingEnabled = enabled === true || enabled === 1 || enabled === "1";
@@ -15523,6 +15512,8 @@ function paintD3D8DrawIndexed(payload = {}) {
         zBias: renderState.zBias,
         shadeMode: renderState.shadeMode,
         lighting: renderState.lighting,
+        clipping: renderState.clipping,
+        clipPlaneEnable: renderState.clipPlaneEnable,
         textureStage0: d3d8TextureStageDrawSummary(renderState.textureStages[0]),
         textureStage1: d3d8TextureStageDrawSummary(renderState.textureStages[1]),
       },
@@ -15534,6 +15525,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         alphaTest: appliedRenderState?.alphaTest ?? null,
         implicitAlphaCutout: probe.implicitAlphaCutout,
         colorWrite: appliedRenderState?.colorWrite ?? null,
+        clipPlanes: appliedRenderState?.clipPlanes ?? null,
       },
       activeLights: d3d8DiagLevel === "full" ? fixedFunctionLights.map((light) => ({
         index: light.index,

@@ -1474,6 +1474,9 @@ const batchSize = parsePositiveInt("PERF_PROFILE_BATCH", 1);
 const diagLevel = process.env.PERF_PROFILE_DIAG ?? "lite";
 const measuredFrameCommand = process.env.PERF_PROFILE_FRAME_COMMAND ?? "realEngineFrameSummary";
 const distDir = parseDistDir();
+const requestedShaderTier = String(process.env.PERF_PROFILE_SHADER_TIER ?? "").trim();
+const shaderTier = requestedShaderTier === "ps11" || requestedShaderTier === "ff"
+  ? requestedShaderTier : null;
 const profileScene = parseProfileScene();
 const shellMap = profileScene === "skirmish" ? true : process.env.PERF_PROFILE_SHELLMAP !== "0";
 const settledSceneUsesShellMap = profileScene === "shellmap" && shellMap;
@@ -1526,6 +1529,9 @@ try {
 
   const harnessUrl = new URL("harness/index.html", server.url);
   harnessUrl.searchParams.set("dist", distDir);
+  if (shaderTier) {
+    harnessUrl.searchParams.set("shaderTier", shaderTier);
+  }
   await page.goto(harnessUrl.href, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
   const renderer = await queryRenderer(page);
@@ -1607,6 +1613,7 @@ try {
     swiftShader: /SwiftShader/i.test(renderer),
     diagLevel,
     distDir,
+    shaderTier,
     d3d8AdjacentBatching: d3d8AdjacentBatchingActive,
     d3d8LiteVertexMirrors: d3d8LiteVertexMirrorsActive,
     d3d8BufferProducers: d3d8BufferProducersActive,

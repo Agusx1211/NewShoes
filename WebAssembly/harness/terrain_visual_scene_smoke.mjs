@@ -942,6 +942,10 @@ try {
       && draw?.texture0?.semanticMode === 4
       && draw?.texture0?.sampled === true
       && draw?.texture1?.sampled === true);
+  const reflectionClipDraw = waterType2DrawHistory.find((draw) =>
+    (draw?.appliedRenderState?.clipPlanes?.mask & 1) !== 0
+      && Array.isArray(draw?.appliedRenderState?.clipPlanes?.planes?.[0]));
+  const reflectionClipPlane = reflectionClipDraw?.appliedRenderState?.clipPlanes?.planes?.[0];
   const waterType2Perf = waterType2Result.state?.graphics?.d3d8Perf ?? {};
   if (!waterType2Result.ok
       || waterType2Result.command !== "ww3dTerrainWaterType2Scene"
@@ -952,6 +956,12 @@ try {
       || waterType2Result.probe?.water?.globalPointerMatches !== true
       || waterType2Result.probe?.water?.sceneObjectAdded !== true
       || !waveDraw
+      || !reflectionClipDraw
+      || !Array.isArray(reflectionClipPlane)
+      || Math.abs((reflectionClipPlane[0] ?? 1)) >= 0.0001
+      || Math.abs((reflectionClipPlane[1] ?? 1)) >= 0.0001
+      || Math.abs((reflectionClipPlane[2] ?? 0) - 1) >= 0.0001
+      || waveDraw?.appliedRenderState?.clipPlanes?.mask !== 0
       || (waterType2Result.textureProbe?.unsupportedUpdates ?? 0) !== 0
       || (waterType2Perf.sm1ShaderDraws ?? 0) < 1
       || (waterType2Perf.sm1TranslatedVsDraws ?? 0) < 1
@@ -961,6 +971,7 @@ try {
     throw new Error(`W3D type-2 water render failed: ${JSON.stringify({
       ok: waterType2Result.ok,
       probe: waterType2Result.probe,
+      reflectionClipDraw,
       waveDraw,
       drawHistory: summarizeDrawHistory(waterType2DrawHistory),
       textureProbe: waterType2Result.textureProbe,

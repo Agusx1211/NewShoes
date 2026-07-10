@@ -2024,6 +2024,7 @@ constexpr UINT DRAW_TEXTURE_TRANSFORM_STAGE2 = 1u << 2;
 constexpr UINT DRAW_TEXTURE_TRANSFORM_STAGE3 = 1u << 3;
 constexpr UINT BROWSER_BUFFER_VERTEX = 1u;
 constexpr UINT BROWSER_BUFFER_INDEX = 2u;
+constexpr UINT BROWSER_RENDER_STATE_SLOTS = 256u;
 
 struct BrowserD3DTextureDirtyRegion
 {
@@ -4374,7 +4375,7 @@ public:
 		if (render_state_value(state) != value) {
 			invalidate_draw_derived_payload();
 		}
-		m_render_states[state] = value;
+		store_render_state_value(state, value);
 		++g_state.set_render_state_calls;
 		if (state == D3DRS_ZFUNC && value == D3DCMP_EQUAL) {
 			++g_state.set_render_state_zfunc_equal_calls;
@@ -4457,7 +4458,7 @@ public:
 		if (texture_stage_state_value(stage, state) != value) {
 			invalidate_draw_derived_payload();
 		}
-		m_texture_stage_states[stage][state] = value;
+		store_texture_stage_state_value(stage, state, value);
 		++g_state.set_texture_stage_state_calls;
 		if (state == D3DTSS_TEXCOORDINDEX && value == D3DTSS_TCI_CAMERASPACEPOSITION) {
 			++g_state.set_texture_stage_state_camera_space_texcoord_calls;
@@ -5152,10 +5153,27 @@ private:
 		}
 	}
 
+	void store_render_state_value(D3DRENDERSTATETYPE state, DWORD value)
+	{
+		const UINT index = static_cast<UINT>(state);
+		if (index < BROWSER_RENDER_STATE_SLOTS) {
+			m_render_state_values[index] = value;
+			m_render_state_is_set[index] = true;
+			return;
+		}
+		m_render_state_overflow[state] = value;
+	}
+
 	DWORD render_state_value(D3DRENDERSTATETYPE state) const
 	{
-		const auto found = m_render_states.find(state);
-		return found != m_render_states.end() ? found->second : default_render_state_value(state);
+		const UINT index = static_cast<UINT>(state);
+		if (index < BROWSER_RENDER_STATE_SLOTS) {
+			return m_render_state_is_set[index]
+				? m_render_state_values[index] : default_render_state_value(state);
+		}
+		const auto found = m_render_state_overflow.find(state);
+		return found != m_render_state_overflow.end()
+			? found->second : default_render_state_value(state);
 	}
 
 	DWORD default_texture_stage_state_value(DWORD stage, UINT state) const
@@ -5197,10 +5215,31 @@ private:
 		}
 	}
 
+	void store_texture_stage_state_value(
+		DWORD stage,
+		D3DTEXTURESTAGESTATETYPE state,
+		DWORD value)
+	{
+		const UINT state_index = static_cast<UINT>(state);
+		if (stage < WASM_D3D8_TEXTURE_STAGE_COUNT &&
+				state_index < WASM_D3D8_TEXTURE_STAGE_STATE_SLOTS) {
+			m_texture_stage_state_values[stage][state_index] = value;
+			m_texture_stage_state_is_set[stage][state_index] = true;
+			return;
+		}
+		m_texture_stage_state_overflow[stage][state] = value;
+	}
+
 	DWORD texture_stage_state_value(DWORD stage, UINT state) const
 	{
-		const auto stage_found = m_texture_stage_states.find(stage);
-		if (stage_found != m_texture_stage_states.end()) {
+		if (stage < WASM_D3D8_TEXTURE_STAGE_COUNT &&
+				state < WASM_D3D8_TEXTURE_STAGE_STATE_SLOTS) {
+			return m_texture_stage_state_is_set[stage][state]
+				? m_texture_stage_state_values[stage][state]
+				: default_texture_stage_state_value(stage, state);
+		}
+		const auto stage_found = m_texture_stage_state_overflow.find(stage);
+		if (stage_found != m_texture_stage_state_overflow.end()) {
 			const auto state_found =
 				stage_found->second.find(static_cast<D3DTEXTURESTAGESTATETYPE>(state));
 			if (state_found != stage_found->second.end()) {
@@ -5641,8 +5680,17 @@ private:
 	D3DPRESENT_PARAMETERS m_parameters = {};
 	D3DVIEWPORT8 m_viewport = {};
 	std::map<D3DTRANSFORMSTATETYPE, D3DMATRIX> m_transforms;
-	std::map<D3DRENDERSTATETYPE, DWORD> m_render_states;
-	std::map<DWORD, std::map<D3DTEXTURESTAGESTATETYPE, DWORD>> m_texture_stage_states;
+	DWORD m_render_state_values[BROWSER_RENDER_STATE_SLOTS] = {};
+	bool m_render_state_is_set[BROWSER_RENDER_STATE_SLOTS] = {};
+	DWORD m_texture_stage_state_values
+		[WASM_D3D8_TEXTURE_STAGE_COUNT][WASM_D3D8_TEXTURE_STAGE_STATE_SLOTS] = {};
+	bool m_texture_stage_state_is_set
+		[WASM_D3D8_TEXTURE_STAGE_COUNT][WASM_D3D8_TEXTURE_STAGE_STATE_SLOTS] = {};
+	// Preserve the shim's permissive behavior for invalid/mod-defined enum
+	// values without charging every ordinary state read for a tree lookup.
+	std::map<D3DRENDERSTATETYPE, DWORD> m_render_state_overflow;
+	std::map<DWORD, std::map<D3DTEXTURESTAGESTATETYPE, DWORD>>
+		m_texture_stage_state_overflow;
 	std::map<DWORD, UINT> m_bound_texture_ids;
 	std::map<DWORD, IDirect3DBaseTexture8 *> m_bound_textures;
 	float m_clip_planes[WASM_D3D8_CLIP_PLANE_COUNT][4] = {};

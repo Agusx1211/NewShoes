@@ -1547,7 +1547,23 @@ void WaterRenderObjClass::renderMirror(CameraClass *cam)
 	if (m_tod == TIME_OF_DAY_NIGHT)
 		renderSkyBody(&reflectedTransform);
 
+	// The reflected camera still sees geometry below the water plane.  Without
+	// clipping, submerged terrain is mirrored back onto the surface and looks
+	// like large pieces of ground were drawn over the water (especially in
+	// md_USA01).  Keep only the half-space above the mirror plane while drawing
+	// the reflected scene.  SetClipPlane uses world-space plane coefficients;
+	// z - m_level >= 0 is the side that may appear in the reflection.
+	DWORD oldClipPlaneEnable = 0;
+	m_pDev->GetRenderState(D3DRS_CLIPPLANEENABLE, &oldClipPlaneEnable);
+	const float reflectionClipPlane[4] = { 0.0f, 0.0f, 1.0f, -m_level };
+	DX8Wrapper::Set_DX8_Clip_Plane(0, reflectionClipPlane);
+	DX8Wrapper::Set_DX8_Render_State(
+		D3DRS_CLIPPLANEENABLE,
+		oldClipPlaneEnable | (1UL << 0));
+
 	WW3D::Render(m_parentScene,cam);
+
+	DX8Wrapper::Set_DX8_Render_State(D3DRS_CLIPPLANEENABLE, oldClipPlaneEnable);
 
 	cam->Set_Transform(OldCameraMatrix);	//restore original non-reflected matrix
  	cam->Set_Viewport(vOldMin,vOldMax);
