@@ -1480,6 +1480,15 @@ residue and the next frontier.
       merge routine now that the aggregate lane is green again (2026-07-05).
       If it fails, fix or quarantine the specific probe immediately instead of
       letting the suite become "known red" again.
+- [ ] Re-check three smokes observed red on main against the then-current
+      dist during the P1b executor-extraction parity runs (2026-07-10; each
+      failed IDENTICALLY before/after the extraction, so not caused by it):
+      `harness/smoke.mjs` D3D8 buffer hint probe (wasm-side hint counters all
+      0 at smoke.mjs:3440), `startup_vertical_smoke.mjs`
+      `assertFunctionLexiconRuntimeFrontier`, and
+      `issue_recorder_ui_smoke.mjs` (record-button click timeout). Likely a
+      stale-dist mismatch (these normally run after `npm run build:port`) —
+      rerun after a fresh build and fix or file specifics if still red.
 - [ ] Restore the real cursor-hide behavior in bridge.js syncBrowserCursor and
       the smoke.mjs cursor-hidden probe assertion once W3DMouse cursor rendering
       (the game's own cursor) is ported — currently hardcoded css="default" to

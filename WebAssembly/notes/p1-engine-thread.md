@@ -183,5 +183,65 @@ for P1c:
       above. GATE A itself (real D3D8 device creation in the engine realm)
       is P1b/P1c work on this scaffold.
 - [ ] P1b extraction + non-threaded parity proof
+
+- [x] Recon map of bridge.js delivered.
+- [ ] P1a GATE A
+- [x] P1b extraction + non-threaded parity proof (see below)
 - [ ] P1c GATE B (title), GATE C (shellmap+input+RPC)
 - [ ] GATE D Mac Metal + owner
+
+## P1b result: executor extracted to harness/d3d8_executor.mjs
+
+The full D3D8->WebGL2 executor (605 top-level decls, ~12.3k lines: the 20
+`cncPortD3D8*` hooks, all GL state/caches, SM1 shader tier, DXT decode,
+canvas sizing/context-loss handling, the `globalThis.__cnc*` debug helpers,
+and the canvas paint/sample utilities) now lives in
+`harness/d3d8_executor.mjs` as `createD3D8Executor(env) -> { hooks, diag }`.
+bridge.js constructs it exactly once right after `harnessState` and spreads
+`hooks` into the Module config (`loadWasmModule`) and
+`window.CnCPort.d3d8BridgeCallbacks()`.
+
+env contract (what P1c must provide in the worker realm — full docs at the
+top of d3d8_executor.mjs):
+
+- `canvas` (required; OffscreenCanvas in the worker) — `gl`/`s3tc`/
+  `fallbackContext` optional: main passes its page-lifetime objects for exact
+  identity; when `gl` is omitted the executor creates the WebGL2 context
+  itself (worker path; `preserveDrawingBuffer` overridable via env).
+- `log` (bridge `recordLog` on main; realm-local sink in the worker),
+  `state` (bridge `harnessState`; the executor writes `.canvas`, `.graphics`,
+  `.engineDisplaySize` into it).
+- `getHeapU8/U16/U32/F32/F64` fresh-view accessors + `getModule`. Heap-read
+  audit result: `copyD3DMatrixFromHeap` via `getHeapF32()` is the ONLY direct
+  heap read in the executor (per-call fresh, SAB/growth safe); every other
+  payload is a JS object built per-call by the EM_JS side
+  (wasm_d3d8_shim.cpp), which also owns the `Module.__cncPortD3D8*` payload
+  caches — those live on the ENGINE realm's Module and never cross into
+  bridge.js.
+- DOM access inside the executor is `typeof window/document`-guarded
+  (banner, resize/fullscreen/dpr listeners, getBoundingClientRect fallback),
+  so the module is loadable in a worker realm as-is; `env.dom` is reserved.
+
+diag is the only bridge->executor surface: the ~26 functions +
+`d3d8Textures` + ~57 D3D constants bridge still references (destructured
+once, stable bindings), plus getters for mutable state
+(`d3d8DiagLevelValue`, `webglContextLost/At`, `gl`, `s3tc`) and
+`setBoundDrawDiagnosticsSetter(fn)`, which `loadWasmModule` wires to the
+`cnc_port_d3d8_set_bound_draw_diagnostics` cwrap.
+
+Non-threaded parity proof (dev box, SwiftShader, dist built from main
+da47ce04, 2026-07-10):
+
+- `shellmap_real_init_gate.mjs` (real init -> shellmap render + canvas
+  screenshot): PASS before and after; the two 1280x720 canvas PNGs are
+  PIXEL-IDENTICAL (PIL diff bbox None).
+- `test:io-worker-offthread`: PASS before/after.
+- d3d8 node smokes against the existing dist (d3d8-shim,
+  render-state-mapping, texture-upload-readiness, texture-stage-state-
+  mapping, texture-lifetime): all PASS.
+- Pre-existing reds on the CURRENT stale dist (fail identically on pristine
+  main and on the extraction; normalized logs diff to zero hunks):
+  `harness/smoke.mjs` (D3D8 buffer hint probe: wasm-side hint counters all
+  0), `startup_vertical_smoke.mjs` (`assertFunctionLexiconRuntimeFrontier`),
+  `issue_recorder_ui_smoke.mjs` (record-button click timeout). These smokes
+  normally run after `npm run build:port`; re-check after a fresh build.
