@@ -974,6 +974,18 @@ const browserPerfFields = [
   "bufferNoOverwriteUpdates",
   "bufferNoOverwriteUploadBytes",
   "bufferOrphanedUpdates",
+  "bufferDynamicRedirectedUpdates",
+  "bufferDynamicRangeUploads",
+  "bufferDynamicRangeUploadBytes",
+  "bufferDynamicSnapshotUploads",
+  "bufferDynamicSnapshotUploadBytes",
+  "bufferDynamicRedirectFallbacks",
+  "drawDynamicVertexRedirects",
+  "drawDynamicVertexSnapshotRedirects",
+  "drawDynamicVertexSharedFallbacks",
+  "drawDynamicIndexRedirects",
+  "drawDynamicIndexSnapshotRedirects",
+  "drawDynamicIndexSharedFallbacks",
   "bufferResizedUpdates",
   "bufferUpdateMs",
   "bufferSubDataMs",
@@ -1294,6 +1306,25 @@ function browserPerfDelta(before, after, framesAdvanced) {
           bufferNoOverwriteUpdates: Number(delta.bufferNoOverwriteUpdates ?? 0) / framesAdvanced,
           bufferNoOverwriteUploadBytes: Number(delta.bufferNoOverwriteUploadBytes ?? 0) / framesAdvanced,
           bufferOrphanedUpdates: Number(delta.bufferOrphanedUpdates ?? 0) / framesAdvanced,
+          bufferDynamicRedirectedUpdates:
+            Number(delta.bufferDynamicRedirectedUpdates ?? 0) / framesAdvanced,
+          bufferDynamicRangeUploads: Number(delta.bufferDynamicRangeUploads ?? 0) / framesAdvanced,
+          bufferDynamicRangeUploadBytes: Number(delta.bufferDynamicRangeUploadBytes ?? 0) / framesAdvanced,
+          bufferDynamicSnapshotUploads: Number(delta.bufferDynamicSnapshotUploads ?? 0) / framesAdvanced,
+          bufferDynamicSnapshotUploadBytes:
+            Number(delta.bufferDynamicSnapshotUploadBytes ?? 0) / framesAdvanced,
+          bufferDynamicRedirectFallbacks:
+            Number(delta.bufferDynamicRedirectFallbacks ?? 0) / framesAdvanced,
+          drawDynamicVertexRedirects: Number(delta.drawDynamicVertexRedirects ?? 0) / framesAdvanced,
+          drawDynamicVertexSnapshotRedirects:
+            Number(delta.drawDynamicVertexSnapshotRedirects ?? 0) / framesAdvanced,
+          drawDynamicVertexSharedFallbacks:
+            Number(delta.drawDynamicVertexSharedFallbacks ?? 0) / framesAdvanced,
+          drawDynamicIndexRedirects: Number(delta.drawDynamicIndexRedirects ?? 0) / framesAdvanced,
+          drawDynamicIndexSnapshotRedirects:
+            Number(delta.drawDynamicIndexSnapshotRedirects ?? 0) / framesAdvanced,
+          drawDynamicIndexSharedFallbacks:
+            Number(delta.drawDynamicIndexSharedFallbacks ?? 0) / framesAdvanced,
           bufferResizedUpdates: Number(delta.bufferResizedUpdates ?? 0) / framesAdvanced,
           bufferUpdateMs: Number(delta.bufferUpdateMs ?? 0) / framesAdvanced,
           bufferSubDataMs: Number(delta.bufferSubDataMs ?? 0) / framesAdvanced,

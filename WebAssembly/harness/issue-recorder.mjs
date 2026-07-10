@@ -647,6 +647,7 @@ class IssueRecorder {
     this.wrappedRpc = null;
     this.animReportTimer = null;
     this.animReportSamples = [];
+    this.lastStatusRefreshMs = Number.NEGATIVE_INFINITY;
     this.setStatus("idle");
   }
 
@@ -1505,12 +1506,18 @@ class IssueRecorder {
     if (!this.statusNode) {
       return;
     }
+    const now = stableNowMs();
+    if (now - this.lastStatusRefreshMs < 250) {
+      return;
+    }
+    this.lastStatusRefreshMs = now;
     const label = this.recording ? "rec" : "idle";
     this.statusNode.textContent = `${label} ${this.events.length}e ${this.issues.length}i`;
   }
 
   setStatus(text) {
     if (this.statusNode) {
+      this.lastStatusRefreshMs = stableNowMs();
       this.statusNode.textContent = text;
     }
   }

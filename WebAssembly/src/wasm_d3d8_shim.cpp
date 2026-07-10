@@ -688,7 +688,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			lights.push({
 				index,
 				type: Module.HEAPU32[baseU32] >>> 0,
-				enabled: Module.HEAPU32[baseU32 + 1] >>> 0,
+				enabled: (Module.HEAPU32[baseU32 + 1] >>> 0) !== 0,
 				diffuse: copyColor(baseF32 + 2),
 				specular: copyColor(baseF32 + 6),
 				ambient: copyColor(baseF32 + 10),
@@ -727,7 +727,11 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	// draw-state cache so a 32-bit FNV collision cannot alias render state.
 	const current_derived_state_key = current_derived_state_hash +
 		((current_derived_state_hash_secondary & 0x1fffff) * 0x100000000);
-	const derived_state_cache_limit = 64;
+	// Match the bridge's derived-state working set. Sorted scene draws routinely
+	// revisit more than 64 states, and rebuilding the complete render-state,
+	// material, clip-plane, and eight-light payload is much more expensive than
+	// retaining these small immutable objects.
+	const derived_state_cache_limit = 128;
 	const derived_state_cache = Module.__cncPortD3D8DerivedStatePayloadCache instanceof Map
 		? Module.__cncPortD3D8DerivedStatePayloadCache
 		: (Module.__cncPortD3D8DerivedStatePayloadCache = new Map());
@@ -831,6 +835,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	payload.clipPlanes = cached_state.clipPlanes;
 	payload.lights = cached_state.lights;
 	payload.material = cached_state.material;
+	payload.statePayloadCanonical = true;
 	payload.stateHash = current_state_hash;
 	payload.derivedStateHash = current_derived_state_key;
 	payload.pixelShaderHandle = pixel_shader >>> 0;
