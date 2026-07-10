@@ -104,6 +104,11 @@
 
 #ifdef __EMSCRIPTEN__
 extern "C" void cnc_port_note_engine_update_target(const char *name) __attribute__((weak));
+// Paced-mode hooks (see W3DDisplay.cpp / wasm_real_engine_init.cpp): scripted
+// camera moves step by the measured client-frame duration so pans keep 1.0
+// wall speed when the client cannot sustain the target display rate.
+extern "C" int cnc_port_client_paced_mode(void) __attribute__((weak));
+extern "C" int cnc_port_client_frame_elapsed_ms(void) __attribute__((weak));
 #define CNC_PORT_NOTE_W3D_VIEW_STEP(name) \
 	do { \
 		if (cnc_port_note_engine_update_target) { \
@@ -1097,7 +1102,17 @@ Bool W3DView::updateCameraMovements()
 		didUpdate = true;
 	} else if (m_doingMoveCameraOnWaypointPath) {
 		m_previousLookAtPosition = *getPosition();
-		moveAlongWaypointPath(TheW3DFrameLengthInMsec);
+		Int cameraStepMsec = TheW3DFrameLengthInMsec;
+#ifdef __EMSCRIPTEN__
+		if (cnc_port_client_paced_mode && cnc_port_client_paced_mode() != 0
+				&& cnc_port_client_frame_elapsed_ms) {
+			Int elapsed = cnc_port_client_frame_elapsed_ms();
+			if (elapsed > 0) {
+				cameraStepMsec = elapsed;
+			}
+		}
+#endif
+		moveAlongWaypointPath(cameraStepMsec);
 		didUpdate = true;
 	}
 	if (m_doingScriptedCameraLock)

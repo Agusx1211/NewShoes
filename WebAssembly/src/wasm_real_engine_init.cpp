@@ -5835,6 +5835,46 @@ extern "C" int cnc_port_client_paced_mode(void)
 	return g_paced_mode_active;
 }
 
+// Measured client-frame duration for the paced W3D animation-clock advance.
+// A fixed 16ms step assumes the client sustains the full display rate; when a
+// frame takes longer (retina canvas, heavy battles) animation time falls
+// behind wall time — at 30fps everything animates at HALF speed while logic
+// keeps moving units at full speed ("units move but don't animate", muzzle
+// flashes linger, camera pans crawl). Advancing by the measured duration
+// keeps animation wall-speed at 1.0 exactly like the original 30fps cap did
+// natively (33ms steps ≈ wall time at the design rate). Clamped so pauses,
+// tab switches and load-session slices can't inject animation jumps; the
+// fractional remainder carries so long-run speed is exact.
+static double g_paced_prev_tick_at_ms = 0.0;
+static double g_paced_elapsed_carry_ms = 0.0;
+static int g_paced_elapsed_whole_ms = 0;
+
+static void cnc_port_note_paced_tick_time(void)
+{
+	const double now_ms = emscripten_get_now();
+	if (g_paced_prev_tick_at_ms > 0.0) {
+		double elapsed = now_ms - g_paced_prev_tick_at_ms;
+		if (elapsed < 4.0) {
+			elapsed = 4.0;
+		}
+		if (elapsed > 66.0) {
+			elapsed = 66.0; // two logic frames — same cap as stock catch-up feel
+		}
+		elapsed += g_paced_elapsed_carry_ms;
+		g_paced_elapsed_whole_ms = (int)elapsed;
+		g_paced_elapsed_carry_ms = elapsed - (double)g_paced_elapsed_whole_ms;
+	}
+	g_paced_prev_tick_at_ms = now_ms;
+}
+
+extern "C" int cnc_port_client_frame_elapsed_ms(void)
+{
+	if (!g_paced_mode_active) {
+		return 0; // consumer falls back to TheW3DFrameLengthInMsec
+	}
+	return g_paced_elapsed_whole_ms;
+}
+
 // ---------------------------------------------------------------------------
 // Stepped map load ("async loading").
 //
@@ -5960,6 +6000,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_client_paci
 // run_logic != 0 (see cnc_port_allow_logic_frame gate in GameEngine::update).
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_paced(int run_logic)
 {
+	// Measure the real inter-tick duration first: W3DDisplay::draw advances
+	// the W3D animation clock by this amount (see
+	// cnc_port_client_frame_elapsed_ms) so animation wall-speed stays 1.0
+	// even when the client cannot sustain the target display rate.
+	cnc_port_note_paced_tick_time();
 	g_paced_allow_logic_frame = run_logic != 0 ? 1 : 0;
 	run_real_engine_frames(1);
 	g_paced_allow_logic_frame = 1;

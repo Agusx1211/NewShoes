@@ -121,6 +121,12 @@ extern "C" void cnc_port_note_engine_update_target(const char *name) __attribute
 // with TheGameLogic gated to 30Hz (see GameEngine::update). Controls whether
 // W3D animation time advances per client frame instead of per logic frame.
 extern "C" int cnc_port_client_paced_mode(void) __attribute__((weak));
+// Measured client-frame duration (ms) for the paced animation-clock advance;
+// 0/absent means "use TheW3DFrameLengthInMsec". Keeps animation wall-speed at
+// 1.0 when the client cannot sustain the target display rate (a fixed 16ms
+// step at a 30fps-effective client runs every animation at half speed while
+// logic keeps moving units at full speed — owner-reported symptom class).
+extern "C" int cnc_port_client_frame_elapsed_ms(void) __attribute__((weak));
 #define CNC_PORT_NOTE_W3D_DISPLAY_STEP(name) \
 	do { \
 		if (cnc_port_note_engine_update_target) { \
@@ -1876,7 +1882,12 @@ AGAIN:
 	{
 		if (!freezeTimeBase)
 		{
-			syncTime += TheW3DFrameLengthInMsec;
+			Int pacedElapsed = 0;
+			if (cnc_port_client_frame_elapsed_ms)
+			{
+				pacedElapsed = cnc_port_client_frame_elapsed_ms();
+			}
+			syncTime += pacedElapsed > 0 ? (UnsignedInt)pacedElapsed : (UnsignedInt)TheW3DFrameLengthInMsec;
 		}
 	}
 	else if (!freezeTime)
