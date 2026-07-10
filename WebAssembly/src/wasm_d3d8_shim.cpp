@@ -525,6 +525,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	unsigned int material_ptr,
 	unsigned int state_hash,
 	unsigned int derived_state_hash,
+	unsigned int derived_state_hash_secondary,
 	unsigned int producer_ptr,
 	int sorted_draw_profile_scope,
 	unsigned int pixel_shader,
@@ -720,25 +721,37 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	};
 	const current_state_hash = state_hash >>> 0;
 	const current_derived_state_hash = derived_state_hash >>> 0;
+	const current_derived_state_hash_secondary = derived_state_hash_secondary >>> 0;
+	// JS numbers preserve 53 integer bits exactly.  Keep the full dual-hash pair
+	// for this payload cache and expose 53 bits of that pair to every downstream
+	// draw-state cache so a 32-bit FNV collision cannot alias render state.
+	const current_derived_state_key = current_derived_state_hash +
+		((current_derived_state_hash_secondary & 0x1fffff) * 0x100000000);
 	const derived_state_cache_limit = 64;
 	const derived_state_cache = Module.__cncPortD3D8DerivedStatePayloadCache instanceof Map
 		? Module.__cncPortD3D8DerivedStatePayloadCache
 		: (Module.__cncPortD3D8DerivedStatePayloadCache = new Map());
+	const derived_cache_bucket = derived_state_cache.get(current_derived_state_hash);
 	let cached_state = null;
 	if (Module.__cncPortD3D8LastDrawDerivedStateHash === current_derived_state_hash &&
+			Module.__cncPortD3D8LastDrawDerivedStateHashSecondary ===
+				current_derived_state_hash_secondary &&
 			Module.__cncPortD3D8LastDrawStatePayload) {
 		cached_state = Module.__cncPortD3D8LastDrawStatePayload;
-	} else if (derived_state_cache.has(current_derived_state_hash)) {
-		cached_state = derived_state_cache.get(current_derived_state_hash);
+	} else if (derived_cache_bucket instanceof Map &&
+			derived_cache_bucket.has(current_derived_state_hash_secondary)) {
+		cached_state = derived_cache_bucket.get(current_derived_state_hash_secondary);
 		derived_state_cache.delete(current_derived_state_hash);
-		derived_state_cache.set(current_derived_state_hash, cached_state);
+		derived_state_cache.set(current_derived_state_hash, derived_cache_bucket);
 		Module.__cncPortD3D8LastDrawDerivedStateHash = current_derived_state_hash;
+		Module.__cncPortD3D8LastDrawDerivedStateHashSecondary =
+			current_derived_state_hash_secondary;
 		Module.__cncPortD3D8LastDrawStatePayload = cached_state;
 	} else {
 		// Shader constants ride in the derived-state cache entry: the native
-		// derived hash folds in the pixel-shader handle, the programmable
+		// derived hash pair folds in the pixel-shader handle, the programmable
 		// vertex-shader handle, and value-hashes of both constant files, so a
-		// cache entry can never be reused across different shader state.
+		// cache key cannot reuse an entry across different shader state.
 		const programmableVs = (vertex_shader_fvf & 0x80000000) !== 0;
 		const copyConsts = (ptr, floatCount) => {
 			if (!ptr || !Module.HEAPF32) {
@@ -759,12 +772,20 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			psConstants: pixel_shader !== 0 ? copyConsts(ps_consts_ptr, 8 * 4) : null,
 			vsConstants: programmableVs ? copyConsts(vs_consts_ptr, 96 * 4) : null,
 		};
-		derived_state_cache.set(current_derived_state_hash, cached_state);
+		let cache_bucket = derived_state_cache.get(current_derived_state_hash);
+		if (!(cache_bucket instanceof Map)) {
+			cache_bucket = new Map();
+		}
+		cache_bucket.set(current_derived_state_hash_secondary, cached_state);
+		derived_state_cache.delete(current_derived_state_hash);
+		derived_state_cache.set(current_derived_state_hash, cache_bucket);
 		if (derived_state_cache.size > derived_state_cache_limit) {
 			const oldest_key = derived_state_cache.keys().next().value;
 			derived_state_cache.delete(oldest_key);
 		}
 		Module.__cncPortD3D8LastDrawDerivedStateHash = current_derived_state_hash;
+		Module.__cncPortD3D8LastDrawDerivedStateHashSecondary =
+			current_derived_state_hash_secondary;
 		Module.__cncPortD3D8LastDrawStatePayload = cached_state;
 	}
 	const transforms = Module.__cncPortD3D8DrawIndexedTransforms ||
@@ -811,7 +832,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	payload.lights = cached_state.lights;
 	payload.material = cached_state.material;
 	payload.stateHash = current_state_hash;
-	payload.derivedStateHash = current_derived_state_hash;
+	payload.derivedStateHash = current_derived_state_key;
 	payload.pixelShaderHandle = pixel_shader >>> 0;
 	payload.psConstants = cached_state.psConstants || null;
 	payload.vsConstants = cached_state.vsConstants || null;
@@ -2441,7 +2462,8 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 	const D3DMATRIX *texture2_transform, const D3DMATRIX *texture3_transform,
 	const WasmD3D8DrawRenderState *render_state, const float *clip_planes,
 	const WasmD3D8DrawLight *lights, const WasmD3D8DrawMaterial *material, UINT state_hash,
-	UINT derived_state_hash, DWORD pixel_shader, const float *ps_constants, const float *vs_constants)
+	UINT derived_state_hash, UINT derived_state_hash_secondary, DWORD pixel_shader,
+	const float *ps_constants, const float *vs_constants)
 {
 	const bool profile_sorted_draw_submit = wasm_d3d8_sorted_draw_profile_enabled();
 	if (vertex_buffer_id == 0 || vertex_byte_size == 0 || index_buffer_id == 0 || index_byte_size == 0 ||
@@ -2490,6 +2512,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(material)),
 		state_hash,
 		derived_state_hash,
+		derived_state_hash_secondary,
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(producer)),
 		profile_sorted_draw_submit ? 1 : 0,
 		pixel_shader,
@@ -5372,6 +5395,9 @@ private:
 		hash_matrix(transform_hash, g_state.last_draw_projection_transform);
 		const UINT derived_state_hash =
 			fnv1a_step(m_cached_draw_derived_payload.payload_hash, g_state.last_draw_transform_mask);
+		const UINT derived_state_hash_secondary = fnv1a_step(
+			m_cached_draw_derived_payload.payload_hash_secondary,
+			g_state.last_draw_transform_mask);
 		const UINT state_hash = fnv1a_step(
 			fnv1a_step(transform_hash, m_cached_draw_derived_payload.payload_hash),
 			g_state.last_draw_transform_mask);
@@ -5423,6 +5449,7 @@ private:
 			&g_state.last_draw_material,
 			g_state.last_draw_state_hash,
 			derived_state_hash,
+			derived_state_hash_secondary,
 			m_pixel_shader,
 			m_pixel_shader != 0 ? m_ps_constants : nullptr,
 			(m_vertex_shader & 0x80000000u) != 0 ? m_vs_constants : nullptr);
@@ -5457,6 +5484,7 @@ private:
 		bool valid = false;
 		UINT revision = 0;
 		UINT payload_hash = 0;
+		UINT payload_hash_secondary = 0;
 		UINT texture_transform_mask = 0;
 		D3DMATRIX texture0_transform = {};
 		D3DMATRIX texture1_transform = {};
@@ -5469,6 +5497,7 @@ private:
 	};
 
 	static constexpr UINT FNV1A_OFFSET_BASIS = 0x811c9dc5u;
+	static constexpr UINT FNV1A_SECONDARY_OFFSET_BASIS = 0x9e3779b9u;
 	static constexpr UINT FNV1A_PRIME = 0x01000193u;
 
 	template <typename T>
@@ -5640,8 +5669,19 @@ private:
 		std::memcpy(m_cached_draw_derived_payload.lights, g_state.last_draw_lights,
 			sizeof(m_cached_draw_derived_payload.lights));
 		UINT payload_hash = FNV1A_OFFSET_BASIS;
+		UINT payload_hash_secondary = FNV1A_SECONDARY_OFFSET_BASIS;
 		hash_draw_derived_payload(
 			payload_hash,
+			m_cached_draw_derived_payload.texture0_transform,
+			m_cached_draw_derived_payload.texture1_transform,
+			m_cached_draw_derived_payload.texture2_transform,
+			m_cached_draw_derived_payload.texture3_transform,
+			m_cached_draw_derived_payload.render_state,
+			m_cached_draw_derived_payload.clip_planes,
+			m_cached_draw_derived_payload.material,
+			m_cached_draw_derived_payload.lights);
+		hash_draw_derived_payload(
+			payload_hash_secondary,
 			m_cached_draw_derived_payload.texture0_transform,
 			m_cached_draw_derived_payload.texture1_transform,
 			m_cached_draw_derived_payload.texture2_transform,
@@ -5655,15 +5695,23 @@ private:
 		// draws across different shader state. The setters invalidate this
 		// payload whenever any of these contributions change.
 		payload_hash = fnv1a_step(payload_hash, m_pixel_shader);
+		payload_hash_secondary = fnv1a_step(payload_hash_secondary, m_pixel_shader);
 		payload_hash = fnv1a_step(payload_hash,
+			(m_vertex_shader & 0x80000000u) != 0 ? m_vertex_shader : 0u);
+		payload_hash_secondary = fnv1a_step(payload_hash_secondary,
 			(m_vertex_shader & 0x80000000u) != 0 ? m_vertex_shader : 0u);
 		if (m_pixel_shader != 0) {
 			payload_hash = fnv1a_step(payload_hash, current_ps_const_hash());
+			payload_hash_secondary = fnv1a_step(
+				payload_hash_secondary, current_ps_const_hash_secondary());
 		}
 		if ((m_vertex_shader & 0x80000000u) != 0) {
 			payload_hash = fnv1a_step(payload_hash, current_vs_const_hash());
+			payload_hash_secondary = fnv1a_step(
+				payload_hash_secondary, current_vs_const_hash_secondary());
 		}
 		m_cached_draw_derived_payload.payload_hash = payload_hash;
+		m_cached_draw_derived_payload.payload_hash_secondary = payload_hash_secondary;
 		++g_state.draw_derived_state_cache_misses;
 	}
 
@@ -5729,6 +5777,8 @@ private:
 	bool m_ps_consts_dirty = true;
 	UINT m_vs_const_hash = 0;
 	UINT m_ps_const_hash = 0;
+	UINT m_vs_const_hash_secondary = 0;
+	UINT m_ps_const_hash_secondary = 0;
 	UINT m_draw_derived_payload_revision = 1;
 	CachedDrawDerivedPayload m_cached_draw_derived_payload;
 
@@ -5769,30 +5819,60 @@ private:
 		return 0;
 	}
 
-	UINT current_vs_const_hash()
+	void refresh_vs_const_hashes()
 	{
 		if (m_vs_consts_dirty) {
 			UINT hash = FNV1A_OFFSET_BASIS;
+			UINT hash_secondary = FNV1A_SECONDARY_OFFSET_BASIS;
 			for (UINT index = 0; index < WASM_D3D8_VS_CONSTANT_COUNT * 4; ++index) {
-				hash = fnv1a_step(hash, hash_float(m_vs_constants[index]));
+				const UINT value = hash_float(m_vs_constants[index]);
+				hash = fnv1a_step(hash, value);
+				hash_secondary = fnv1a_step(hash_secondary, value);
 			}
 			m_vs_const_hash = hash;
+			m_vs_const_hash_secondary = hash_secondary;
 			m_vs_consts_dirty = false;
 		}
+	}
+
+	UINT current_vs_const_hash()
+	{
+		refresh_vs_const_hashes();
 		return m_vs_const_hash;
+	}
+
+	UINT current_vs_const_hash_secondary()
+	{
+		refresh_vs_const_hashes();
+		return m_vs_const_hash_secondary;
+	}
+
+	void refresh_ps_const_hashes()
+	{
+		if (m_ps_consts_dirty) {
+			UINT hash = FNV1A_OFFSET_BASIS;
+			UINT hash_secondary = FNV1A_SECONDARY_OFFSET_BASIS;
+			for (UINT index = 0; index < WASM_D3D8_PS_CONSTANT_COUNT * 4; ++index) {
+				const UINT value = hash_float(m_ps_constants[index]);
+				hash = fnv1a_step(hash, value);
+				hash_secondary = fnv1a_step(hash_secondary, value);
+			}
+			m_ps_const_hash = hash;
+			m_ps_const_hash_secondary = hash_secondary;
+			m_ps_consts_dirty = false;
+		}
 	}
 
 	UINT current_ps_const_hash()
 	{
-		if (m_ps_consts_dirty) {
-			UINT hash = FNV1A_OFFSET_BASIS;
-			for (UINT index = 0; index < WASM_D3D8_PS_CONSTANT_COUNT * 4; ++index) {
-				hash = fnv1a_step(hash, hash_float(m_ps_constants[index]));
-			}
-			m_ps_const_hash = hash;
-			m_ps_consts_dirty = false;
-		}
+		refresh_ps_const_hashes();
 		return m_ps_const_hash;
+	}
+
+	UINT current_ps_const_hash_secondary()
+	{
+		refresh_ps_const_hashes();
+		return m_ps_const_hash_secondary;
 	}
 };
 

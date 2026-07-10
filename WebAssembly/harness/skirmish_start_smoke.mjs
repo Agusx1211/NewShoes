@@ -203,6 +203,152 @@ async function sampleViewportGrid(page) {
   });
 }
 
+async function sampleViewportAnnulus(page, screenPos, innerRadius = 14, outerRadius = 42) {
+  return page.evaluate(([position, inner, outer]) => {
+    const canvas = document.querySelector("#viewport");
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      return { ok: false, error: "viewport canvas is missing" };
+    }
+    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+    if (gl == null) {
+      return { ok: false, error: "viewport WebGL context is missing" };
+    }
+    const centerX = Math.round(Number(position?.x));
+    const centerY = Math.round(Number(position?.y));
+    if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) {
+      return { ok: false, error: "screen position is invalid", position };
+    }
+    const x0 = Math.max(0, centerX - outer);
+    const y0 = Math.max(0, centerY - outer);
+    const x1 = Math.min(canvas.width - 1, centerX + outer);
+    const y1 = Math.min(canvas.height - 1, centerY + outer);
+    const width = x1 - x0 + 1;
+    const height = y1 - y0 + 1;
+    const pixels = new Uint8Array(width * height * 4);
+    gl.readPixels(x0, canvas.height - y1 - 1, width, height,
+      gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    const sum = [0, 0, 0];
+    let count = 0;
+    let minLuminance = Number.POSITIVE_INFINITY;
+    let maxLuminance = Number.NEGATIVE_INFINITY;
+    for (let y = y0; y <= y1; ++y) {
+      for (let x = x0; x <= x1; ++x) {
+        const distance = Math.hypot(x - centerX, y - centerY);
+        if (distance < inner || distance > outer) continue;
+        // readPixels is bottom-up relative to screen coordinates.
+        const row = y1 - y;
+        const offset = (row * width + (x - x0)) * 4;
+        const red = pixels[offset];
+        const green = pixels[offset + 1];
+        const blue = pixels[offset + 2];
+        sum[0] += red;
+        sum[1] += green;
+        sum[2] += blue;
+        const luminance = red * 0.2126 + green * 0.7152 + blue * 0.0722;
+        minLuminance = Math.min(minLuminance, luminance);
+        maxLuminance = Math.max(maxLuminance, luminance);
+        count += 1;
+      }
+    }
+    const mean = sum.map((component) => Number((component / Math.max(1, count)).toFixed(3)));
+    return {
+      ok: count > 0,
+      center: { x: centerX, y: centerY },
+      innerRadius: inner,
+      outerRadius: outer,
+      sampleCount: count,
+      mean,
+      meanLuminance: Number((mean[0] * 0.2126 + mean[1] * 0.7152 + mean[2] * 0.0722).toFixed(3)),
+      minLuminance: Number(minLuminance.toFixed(3)),
+      maxLuminance: Number(maxLuminance.toFixed(3)),
+    };
+  }, [screenPos, innerRadius, outerRadius]);
+}
+
+function lightProbeDrawHistory(frameResult) {
+  return frameResult?.state?.graphics?.d3d8SceneDrawHistory
+    ?? frameResult?.frame?.graphics?.d3d8SceneDrawHistory
+    ?? frameResult?.result?.state?.graphics?.d3d8SceneDrawHistory
+    ?? frameResult?.result?.frame?.graphics?.d3d8SceneDrawHistory
+    ?? [];
+}
+
+function summarizeLightProbeTerrain(drawHistory) {
+  const byVertexBuffer = new Map();
+  for (const draw of drawHistory) {
+    if (!(Number(draw?.vertexStride) === 32
+      && Number(draw?.vertexShaderFvf) === 578
+      && draw?.vertexSummary?.diffuse?.checksum != null)) continue;
+    if (byVertexBuffer.has(Number(draw.vertexBufferId))) continue;
+    byVertexBuffer.set(Number(draw.vertexBufferId), {
+      vertexBufferId: Number(draw.vertexBufferId),
+      checksum: Number(draw.vertexSummary.diffuse.checksum) >>> 0,
+      average: draw.vertexSummary.diffuse.average,
+      positionBounds: draw.vertexSummary.positionBounds,
+    });
+  }
+  return Array.from(byVertexBuffer.values());
+}
+
+async function captureLightPulseFrame(page, label, screenPos, screenshot) {
+  await page.evaluate(() => {
+    window.__cncSetDiagLevel?.("full");
+    window.__cncSetD3D8SceneDrawHistoryLimit?.(8192);
+    window.__cncClearD3D8SceneDrawHistory?.();
+  });
+  const frame = await runFrames(page, 1, label);
+  const drawHistory = lightProbeDrawHistory(frame);
+  await page.locator("#viewport").screenshot({ path: screenshot });
+  return {
+    frame: frame.frame?.framesCompleted ?? null,
+    screenshot,
+    canvas: await sampleViewportAnnulus(page, screenPos),
+    pointLights: drawHistory.flatMap((draw) => draw?.activeLights ?? [])
+      .filter((light) => Number(light?.type) === 1)
+      .map((light) => ({
+        diffuse: light.diffuse,
+        position: light.position,
+        range: light.range,
+      }))
+      .slice(0, 8),
+    pointLightDrawCount: drawHistory.filter((draw) =>
+      (draw?.activeLights ?? []).some((light) => Number(light?.type) === 1)).length,
+    terrain: summarizeLightProbeTerrain(drawHistory),
+  };
+}
+
+function compareLightProbeTerrain(baseline, sample, worldPos) {
+  const baselineById = new Map(baseline.terrain.map((terrain) =>
+    [terrain.vertexBufferId, terrain]));
+  const containsTarget = (terrain) => {
+    const bounds = terrain.positionBounds;
+    return bounds != null
+      && Number(worldPos.x) >= Number(bounds.min?.[0])
+      && Number(worldPos.x) <= Number(bounds.max?.[0])
+      && Number(worldPos.y) >= Number(bounds.min?.[1])
+      && Number(worldPos.y) <= Number(bounds.max?.[1]);
+  };
+  const comparisons = sample.terrain
+    .filter((terrain) => baselineById.has(terrain.vertexBufferId))
+    .map((terrain) => {
+      const before = baselineById.get(terrain.vertexBufferId);
+      return {
+        vertexBufferId: terrain.vertexBufferId,
+        containsTarget: containsTarget(terrain),
+        changed: terrain.checksum !== before.checksum,
+        beforeChecksum: before.checksum,
+        checksum: terrain.checksum,
+        averageDelta: terrain.average.map((value, index) =>
+          Number((value - before.average[index]).toFixed(3))),
+      };
+    });
+  return {
+    compared: comparisons.length,
+    changed: comparisons.filter((comparison) => comparison.changed),
+    targetBuffers: comparisons.filter((comparison) => comparison.containsTarget),
+  };
+}
+
 function compactClickFrame(frameResult) {
   const clientState = frameResult?.frame?.clientState ?? {};
   return {
@@ -985,6 +1131,12 @@ async function main() {
 
     const harnessUrl = new URL("harness/index.html", server.url);
     harnessUrl.searchParams.set("dist", distDir);
+    if (expectLightPulseProbe) {
+      // Terrain buffers are created while diagnostics are in lite mode. Keep
+      // their CPU mirrors from creation so the probe can compare the original
+      // per-vertex diffuse values before, during, and after the light pulse.
+      harnessUrl.searchParams.set("d3d8LiteVertexMirrors", "1");
+    }
     await page.goto(harnessUrl.href, { waitUntil: "networkidle" });
     await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
     await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
@@ -1243,11 +1395,25 @@ async function main() {
     if (expectLightPulseProbe) {
       const drawables = await rpc(page, "queryDrawables");
       const target = drawables?.result?.drawables?.find((drawable) =>
-        drawable.localOwned && drawable.onScreen && drawable.worldPos);
+        drawable.localOwned && drawable.onScreen && drawable.worldPos && drawable.screenPos);
       expect(Boolean(target), "light-pulse probe could not find a local on-screen drawable",
         drawables?.result ?? drawables);
+      const baseline = await captureLightPulseFrame(
+        page,
+        "light-pulse baseline",
+        target.screenPos,
+        resolve(screenshotsRoot, "light-pulse-before.png"));
+      const targetInfo = {
+        id: target.id,
+        template: target.template,
+        worldPos: target.worldPos,
+        screenPos: target.screenPos,
+      };
       const trigger = await rpc(page, "realEngineDoFX", {
-        name: "FX_DamageTankStruck",
+        // This shipped muzzle FX is intentionally almost light-only: unlike
+        // an explosion it leaves no scorch and has no persistent particles,
+        // so the final canvas can return to the same baseline.
+        name: "WeaponFX_RangerAdvancedCombatRifleFire",
         useViewPosition: false,
         clampToTerrain: true,
         x: target.worldPos.x,
@@ -1256,12 +1422,66 @@ async function main() {
       });
       expect(trigger?.ok === true, "light-pulse probe could not trigger original FX",
         trigger?.result ?? trigger);
+      const peak = await captureLightPulseFrame(
+        page,
+        "light-pulse peak",
+        target.screenPos,
+        resolve(screenshotsRoot, "light-pulse-peak.png"));
+      await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
+      await runFrames(page, 4, "light-pulse decay to midpoint");
+      const midpoint = await captureLightPulseFrame(
+        page,
+        "light-pulse midpoint",
+        target.screenPos,
+        resolve(screenshotsRoot, "light-pulse-midpoint.png"));
+      await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
+      await runFrames(page, 12, "light-pulse decay to baseline");
+      const after = await captureLightPulseFrame(
+        page,
+        "light-pulse after decay",
+        target.screenPos,
+        resolve(screenshotsRoot, "light-pulse-after.png"));
+      const peakTerrain = compareLightProbeTerrain(baseline, peak, target.worldPos);
+      const midpointTerrain = compareLightProbeTerrain(baseline, midpoint, target.worldPos);
+      const afterTerrain = compareLightProbeTerrain(baseline, after, target.worldPos);
+      const canvasDelta = (sample) => ({
+        rgb: sample.canvas.mean.map((value, index) =>
+          Number((value - baseline.canvas.mean[index]).toFixed(3))),
+        luminance: Number((sample.canvas.meanLuminance - baseline.canvas.meanLuminance).toFixed(3)),
+      });
       lightPulseProbe = {
-        target: { id: target.id, template: target.template, worldPos: target.worldPos },
+        target: targetInfo,
         trigger: trigger.result,
-        pointLightDrawCount: 0,
-        pointLightSamples: [],
+        baseline,
+        peak,
+        midpoint,
+        after,
+        comparisons: {
+          peakTerrain,
+          midpointTerrain,
+          afterTerrain,
+          peakCanvas: canvasDelta(peak),
+          midpointCanvas: canvasDelta(midpoint),
+          afterCanvas: canvasDelta(after),
+        },
       };
+      await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
+      expect(peak.pointLightDrawCount > 0,
+        "original FX LightPulse did not reach a real scene draw", lightPulseProbe);
+      expect(peakTerrain.targetBuffers.some((buffer) => buffer.changed),
+        "original FX LightPulse did not change terrain diffuse vertices at its position",
+        lightPulseProbe);
+      expect(afterTerrain.targetBuffers.length > 0
+          && afterTerrain.targetBuffers.every((buffer) => !buffer.changed),
+        "terrain diffuse vertices did not return to baseline after LightPulse decay",
+        lightPulseProbe);
+      expect(lightPulseProbe.comparisons.peakCanvas.luminance > 1
+          && lightPulseProbe.comparisons.peakCanvas.rgb.some((component) => component > 1),
+        "LightPulse did not produce a localized canvas luminance/color change",
+        lightPulseProbe);
+      expect(Math.abs(lightPulseProbe.comparisons.afterCanvas.luminance) <= 1,
+        "localized canvas luminance did not return to baseline after LightPulse decay",
+        lightPulseProbe);
     }
 
     // ADD-ONLY HUD geometry probe: one full realEngineFrame to capture the
@@ -1279,7 +1499,7 @@ async function main() {
     let lastD3D8Clear = null;
     let badJsonContext = null;
     try {
-      if (captureD3D8History || expectLightPulseProbe) {
+      if (captureD3D8History) {
         await page.evaluate(() => window.__cncSetD3D8SceneDrawHistoryLimit?.(8192));
         await page.evaluate(() => window.__cncSetDiagLevel?.("full"));
       }
@@ -1295,30 +1515,16 @@ async function main() {
       // atlas (1024x256) background draws vs small UI icon draws, collected by
       // bridge.js during the frame.
       uiDrawCaptures = full.state?.graphics?.uiDrawCaptures ?? null;
-      d3d8SceneDrawHistory = (captureD3D8History || expectLightPulseProbe)
+      d3d8SceneDrawHistory = captureD3D8History
         ? (full.state?.graphics?.d3d8SceneDrawHistory ?? null)
         : null;
-      lastD3D8Clear = (captureD3D8History || expectLightPulseProbe)
+      lastD3D8Clear = captureD3D8History
         ? (full.state?.graphics?.lastD3D8Clear ?? null)
         : null;
-      if (lightPulseProbe) {
-        const pointLightDraws = (d3d8SceneDrawHistory ?? []).filter((draw) =>
-          (draw?.activeLights ?? []).some((light) => light?.type === 1));
-        lightPulseProbe.pointLightDrawCount = pointLightDraws.length;
-        lightPulseProbe.pointLightSamples = pointLightDraws.slice(0, 3).map((draw) => ({
-          drawSequence: draw.drawSequence,
-          lights: draw.activeLights.filter((light) => light.type === 1),
-        }));
-      }
       badJsonContext = await page.evaluate(() => window.__lastBadJsonContext ?? null).catch(() => null);
     } catch (error) {
       controlBarWindows = { error: error?.message ?? String(error) };
     }
-    if (lightPulseProbe) {
-      expect(lightPulseProbe.pointLightDrawCount > 0,
-        "original FX LightPulse did not reach a real scene draw", lightPulseProbe);
-    }
-
     const mapCache = await rpc(page, "mapCacheProbe");
     // ADD-ONLY Stage-1: full live D3D8 texture inventory, to determine whether
     // the command-bar atlas (1024x256 SN/SA/SUCommandBar.tga) was ever uploaded.

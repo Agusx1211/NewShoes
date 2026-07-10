@@ -12265,6 +12265,7 @@ function inspectD3D8DrawVertices(resource, byteOffset, vertexStride, vertexCount
     available: vertexLayout?.diffuseOffset !== null,
     sampleCount: 0,
     nonBlackRgb: 0,
+    checksum: 2166136261,
     min: [255, 255, 255, 255],
     max: [0, 0, 0, 0],
     average: [0, 0, 0, 0],
@@ -12317,6 +12318,7 @@ function inspectD3D8DrawVertices(resource, byteOffset, vertexStride, vertexCount
         diffuse.min[component] = Math.min(diffuse.min[component], rgba[component]);
         diffuse.max[component] = Math.max(diffuse.max[component], rgba[component]);
         diffuse.average[component] += rgba[component];
+        diffuse.checksum = Math.imul(diffuse.checksum ^ rgba[component], 16777619) >>> 0;
       }
     }
 
@@ -12387,6 +12389,7 @@ function inspectD3D8DrawVertices(resource, byteOffset, vertexStride, vertexCount
       diffuse.average[component] = Number((diffuse.average[component] / diffuse.sampleCount).toFixed(3));
     }
   } else {
+    diffuse.checksum = null;
     diffuse.min = null;
     diffuse.max = null;
     diffuse.average = null;
@@ -13206,6 +13209,15 @@ if (typeof globalThis !== "undefined") {
     }
     return d3d8SceneDrawHistoryLimit;
   };
+  globalThis.__cncClearD3D8SceneDrawHistory = () => {
+    flushD3D8PendingDrawBatch("clearSceneDrawHistory");
+    harnessState.graphics = {
+      ...harnessState.graphics,
+      d3d8DrawHistory: [],
+      d3d8SceneDrawHistory: [],
+    };
+    return true;
+  };
   globalThis.__cncD3D8PerfSummary = () => {
     flushD3D8PendingDrawBatch("perfSummary");
     return d3d8PerfSummary();
@@ -13353,7 +13365,9 @@ function d3d8AdjacentDrawBatchInfo({
   if ((Number(primitiveType ?? 0) >>> 0) !== D3DPT_TRIANGLELIST || baseGlPrimitive !== gl.TRIANGLES) {
     return null;
   }
-  if ((Number(stateHash ?? 0) >>> 0) === 0 || (Number(derivedStateHash ?? 0) >>> 0) === 0) {
+  const safeDerivedStateHash = Number(derivedStateHash ?? 0);
+  if ((Number(stateHash ?? 0) >>> 0) === 0 ||
+      !Number.isSafeInteger(safeDerivedStateHash) || safeDerivedStateHash === 0) {
     return null;
   }
   if (!usePersistentBuffers ||
@@ -13371,7 +13385,7 @@ function d3d8AdjacentDrawBatchInfo({
   }
   return {
     stateHash: Number(stateHash) >>> 0,
-    derivedStateHash: Number(derivedStateHash) >>> 0,
+    derivedStateHash: safeDerivedStateHash,
     primitiveType: Number(primitiveType) >>> 0,
     vertexBufferId,
     indexBufferId,
@@ -13677,7 +13691,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   const indexResource = d3d8Buffers.get(d3d8BufferKey(2, indexBufferId));
   const usePersistentBuffers = Boolean(vertexResource && indexResource);
   const stateHash = Number(payload.stateHash ?? 0) >>> 0;
-  const derivedStateHash = Number(payload.derivedStateHash ?? payload.stateHash ?? 0) >>> 0;
+  const derivedStateHash = Number(payload.derivedStateHash ?? payload.stateHash ?? 0);
   const earlyBatchInfo = d3d8AdjacentDrawBatchInfo({
     stateHash,
     derivedStateHash,
