@@ -985,13 +985,13 @@ localhost; the owner was the first threaded LAN-IP client.
 
 - bridge.js `cncPortThreadedRuntimeSupport()` + play.mjs mirror: threaded
   mode engages only when `SharedArrayBuffer` + `crossOriginIsolated` are
-  present. Otherwise both fall back to the legacy single-threaded
-  path/dist-release with a visible on-page note ("engine-thread mode
-  unavailable on this origin (needs https:// or http://localhost) — running
-  the legacy single-thread build"), console warning, and
-  `state.threadedFallbackReason`. The owner plays again immediately; the
-  durable trustworthy-origin decision (serve.mjs HTTPS / Chrome policy /
-  localhost) is a TODO for the orchestrator+owner.
+  present. Otherwise both originally fell back to the legacy single-threaded
+  path/dist-release with a visible on-page note and
+  `state.threadedFallbackReason`. **SUPERSEDED same day by owner directive
+  ("no legacy path or fallback — just add HTTPS to the server"): the
+  fallback is replaced by an HTTPS redirect / hard block — see the "HTTPS
+  listener" section below.** The OPFS namespacing/lock hardening and
+  error-detail surfacing from this lane remain in force.
 - Error surfacing: loadWasmModule failures are captured
   (`cncPortModuleLoadError`) and folded into mount errors; play.mjs `fail()`
   now renders the failure detail on the page; io_worker errors keep the
@@ -1051,3 +1051,81 @@ OPFS-heavy persistent-context runs still wedges (write summaries BEFORE
 close, exit hard, then clean Chrome by PID + `rm -rf` the probe profile —
 one leaked 2.9GB profile was cleaned this lane); a stray playwright-flagged
 Chrome (start 00:47) not owned by this lane was left untouched.
+
+## HTTPS listener + no-fallback redirect (2026-07-10, https lane)
+
+OWNER DIRECTIVE (firm): "no legacy path or fallback — just add HTTPS to the
+server." This replaces the untrusted-origin threaded→legacy auto-fallback
+from the mount-failure lane above (the OPFS namespacing/lock hardening and
+error surfacing from that lane stay).
+
+**Server (harness/static-server.mjs + serve.mjs):**
+
+- `startStaticServer` gained opt-in `httpsPort`/`certDir` options: the SAME
+  request handler (COOP/COEP and all endpoints included) is also served via
+  `node:https`. Opt-in means every gate's self-spawned ephemeral localhost
+  server is byte-for-byte unaffected. The HTTPS listener starts BEFORE the
+  HTTP one so `/__cnc_https_info` (announces `{httpsEnabled, httpsPort}`)
+  can never race a request.
+- serve.mjs: `HTTPS_PORT=<port>` forces, `HTTPS_PORT=0` disables, unset
+  defaults to 8443 when HOST is non-localhost OR a cert already exists.
+- Cert: generated ONCE by `ensureSelfSignedCert` into gitignored
+  `WebAssembly/harness/.certs/` (cert.pem/key.pem/san.cnf) and REUSED on
+  every later start — the browser trust decision is per-cert, so
+  regeneration would re-prompt the owner. openssl via a `-config` file
+  (portable across dev-box OpenSSL 3.x and Mac LibreSSL 3.3, which disagree
+  on `-addext`). rsa:2048/sha256, 10 years, CN=cnc-harness, SANs: localhost,
+  hostname (+short, +.local), 127.0.0.1, ::1, every non-internal interface
+  address, and the owner IP 192.168.106.45 baked. **Deploy rsyncs must
+  exclude `WebAssembly/harness/.certs/`** — each box keeps its own cert or
+  the owner's trust decision breaks.
+
+**Page (bridge.js + play.mjs):** when threaded is requested (play default)
+but SAB/COI are missing, there is NO legacy boot:
+
+- insecure non-localhost origin → bridge fetches `/__cnc_https_info` (baked
+  default 8443 if the endpoint is missing) and `location.replace`s to
+  `https://<same-host>:<port><same path+query+hash>`;
+- already-https-but-no-SAB (cert rejected) or localhost-without-COOP/COEP →
+  BLOCKED: on-page instructions (trust/proceed the cert, or restart serve
+  with HTTPS_PORT for the no-listener case), console.error;
+- `state.threadedUnsupported = { reason, action: "redirect"|"blocked",
+  target }` replaces `threadedFallbackReason`; a `cnc-threaded-unsupported`
+  window event fires when the action resolves; bridge `rpc()` refuses
+  boot/mountArchive(s)/realEngineInit while unsupported so nothing can
+  silently degrade;
+- localhost origins never redirect (trustworthy; all gates keep working);
+  explicit `?threads=0` remains the only — deliberate — legacy entry.
+- Path-aware boot banner (owner-flagged): play.html's default copy now
+  describes the OPFS mount (archives → browser disk, memory flat); the
+  MEMFS "~2 GB into browser memory / phones" warning renders only on the
+  explicit `?threads=0` path (play.mjs swaps it in).
+
+**Dev-box verification:** 14/14 redirect-probe checks (LAN http → redirect
+in 633ms, COI+SAB true after; localhost untouched; HTTPS_PORT=0 server →
+blocked note + mountArchives boot-refusal + loud Start failure; banner per
+path), io-worker-offthread 15/15, shellmap_real_init_gate + full
+threaded_play_gate green, four cnc-port builds no-op incremental. Dev-box
+probe quirk: the sandbox `HTTPS_PROXY` env MITMs Chromium's NON-localhost
+https and rejects the self-signed upstream (alert 42 → ERR_EMPTY_RESPONSE)
+— strip proxy env vars from the Chromium launch env for LAN-https probes;
+curl needs `--noproxy '*'`.
+
+**Mac verification (2026-07-10, real Metal GPU):** deployed (fresh no-op
+builds, md5-verified dists + harness overlay), :8123 server restarted as
+`HOST=0.0.0.0 PORT=8123 HTTPS_PORT=8443 node harness/serve.mjs` (single pid
+serves both listeners; :8124 untouched); the interim `~/cnc-tls` stopgap
+TLS proxy another lane had put on :8443 ("TEMPORARY ... until serve.mjs
+ships HTTPS") was retired. Cert generated on the Mac with SANs
+localhost/m4/m4.local/127.0.0.1/::1/192.168.106.45. Headless-Chrome probe
+10/10: LAN http play URL redirects to https :8443 (query preserved),
+COI+SAB true, ANGLE Metal (Apple M4), THREADED wasm instantiates (heap is a
+SharedArrayBuffer), 30/30 archives OPFS-mounted, real init → engine loop →
+shellmap title screenshot. Probe Chrome cleaned by PID, profile removed.
+
+**Owner flow:** open http://192.168.106.45:8123/harness/play.html → auto
+redirect to https://192.168.106.45:8443/harness/play.html → one-time
+"Advanced → Proceed" on the cert interstitial (or trust
+`WebAssembly/harness/.certs/cert.pem` in Keychain) → threaded engine, COI
+true. The :8123 server on the Mac must be started with `HTTPS_PORT=8443`
+(or just HOST=0.0.0.0, which now defaults it).

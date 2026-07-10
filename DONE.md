@@ -8,6 +8,59 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Trustworthy origin: HTTPS listener + no-fallback redirect (2026-07-10, https lane)
+
+OWNER DIRECTIVE: "no legacy path or fallback — just add HTTPS to the server."
+Supersedes the untrusted-origin threaded→legacy auto-fallback shipped in
+8b1cd316 (the OPFS namespacing/lock-hardening and error-detail surfacing from
+that merge stay). Details in `WebAssembly/notes/p1-engine-thread.md`
+"HTTPS listener".
+
+- [x] HTTPS listener in `harness/static-server.mjs` (same handler + COOP/COEP
+      headers over TLS) + `serve.mjs`: `HTTPS_PORT=<port>` forces,
+      `HTTPS_PORT=0` disables, unset defaults to 8443 when HOST is
+      non-localhost or a cert exists. Opt-in only — gates' self-spawned
+      ephemeral localhost servers unaffected.
+- [x] Self-signed cert generated ONCE via openssl (`-config` file, portable
+      across OpenSSL 3.x / the Mac's LibreSSL) into gitignored
+      `WebAssembly/harness/.certs/`, reused on every start so the browser
+      trust decision sticks. 10-year, CN=cnc-harness, SANs: localhost,
+      hostname(+.local), 127.0.0.1/::1, every non-internal interface IP, and
+      192.168.106.45 baked. NEVER rsync one box's `.certs` over another's.
+- [x] Replaced the legacy fallback with redirect/block (bridge.js/play.mjs):
+      insecure non-localhost origin → fetch `/__cnc_https_info` (announces
+      the HTTPS port; baked default 8443) → `location.replace` to
+      `https://<host>:<port><path+query>`; already-https-but-no-SAB (cert
+      rejected) or localhost-without-COOP/COEP → BLOCKED with instructions on
+      the page; bridge `rpc()` refuses boot/mount/realEngineInit while
+      unsupported (`state.threadedUnsupported` = {reason, action, target}).
+      localhost origins never redirect (gates unaffected); explicit
+      `?threads=0` keeps working as the only — deliberate — legacy entry.
+- [x] Path-aware boot banner (owner-flagged): play.html default copy now says
+      archives stream to disk (OPFS, memory stays flat); the MEMFS
+      "~2 GB into browser memory / phones will run out" warning only renders
+      on the explicit `?threads=0` legacy path.
+- [x] Dev-box verification: 14/14 redirect-probe checks (LAN http → https
+      redirect 633ms + COI/SAB true; localhost no-redirect; no-HTTPS server
+      blocks loudly, mountArchives refused, Start fails loudly; banner
+      per-path), `test:io-worker-offthread` 15/15, `shellmap_real_init_gate`
+      + `threaded_play_gate` green, all four cnc-port builds no-op
+      incremental. (Dev-box quirk: strip proxy env for Chromium probes — the
+      sandbox MITM rejects the self-signed upstream on non-localhost https.)
+- [x] Mac deploy + verification (real Metal GPU): fresh builds md5-verified
+      on both boxes, :8123 server restarted with HTTPS_PORT=8443 (single pid
+      serves both listeners; :8124 untouched), the interim `~/cnc-tls`
+      stopgap TLS proxy on :8443 retired. Headless-Chrome probe 10/10:
+      http://192.168.106.45:8123/harness/play.html?autostart=1 redirects to
+      https://192.168.106.45:8443/... (query preserved), COI+SAB true, ANGLE
+      Metal (Apple M4), THREADED wasm instantiates (heap is a
+      SharedArrayBuffer), 30/30 archives OPFS-mounted, real init → engine
+      loop → shellmap title screenshot (non-black, logo + animated scene).
+      Owner one-time step: on first load Chrome shows the self-signed-cert
+      interstitial for https://192.168.106.45:8443 — Advanced → Proceed (or
+      trust `WebAssembly/harness/.certs/cert.pem` in Keychain), once per
+      device.
+
 ## Owner play-page mount-failure regression (2026-07-10, mount-failure lane)
 
 The owner's real headful Chrome at http://192.168.106.45:8123/harness/play.html
