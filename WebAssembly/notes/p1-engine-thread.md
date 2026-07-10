@@ -900,6 +900,13 @@ Isolation evidence (Mac M4, Chrome 150 headless, ANGLE Metal, same day/box):
    transfer/commit path, context-attribute diffs, SAB-view upload paths
    (debug-legacy has a non-shared heap and still collapses), captureStream,
    Chrome flags (none used beyond the standard probe set).
+4. Synthetic attribute/capture sweeps (same benchmark, worker-transferred,
+   1600 draws/frame): preserveDrawingBuffer true/false = no delta (70.0k
+   draws/s both); captureStream(5) on the placeholder costs ~9% in the
+   worker leg only (70.0k -> 64.1k draws/s; nothing on main) — real but far
+   too small to matter; **`desynchronized: true` on a transferred
+   OffscreenCanvas context kills the page in Chrome 150** (target closed —
+   never ship that attribute on the threaded path).
 
 **Fix: `npm run build:port:threaded:release`** -> dist-threaded-release
 (Release, -O2, wasm-EH, CNC_PORT_THREADS=1, fixed 2GiB heap,
