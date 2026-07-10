@@ -714,11 +714,13 @@ DONE.md with reasons.
       mtime 0 to Win32LocalFileSystem::getFileInfo (archive timestamp in
       Win32BIGFile::getFileInfo) — intercept stat paths or write real sizes
       into markers when something is proven to care.
-      (c) OPFS sync-handle lifecycle: staged handles hold exclusive per-file
-      locks for the page lifetime — a second tab (or same-session re-mount
-      of the same paths) collides (NoModificationAllowedError on fetchToOpfs
-      truncate); needs per-session namespacing + orphan cleanup or a
-      release-handles protocol before multi-tab play.
+      (c) DONE 2026-07-10 (mount-failure lane; see DONE "Owner play-page
+      mount-failure regression"): per-boot OPFS namespaces + Web-Lock-owned
+      GC + pagehide/worker release protocol + createSyncAccessHandle
+      retry/delete-and-recreate landed; second tab now boots its own
+      namespace (Mac-verified). Residual: nothing known — if a NEW lock
+      collision shape appears, the io_worker error now names the file and
+      exception.
       (e) measure the readahead probe + OPFS-threaded boot on the Mac M4
       (real SSD) — dev-box numbers are the conservative bound.
       (f) OPFS-backed (or engine-realm) audio payload inventory if that
@@ -4068,6 +4070,23 @@ and then start with the PROFILE, not with any individual fix.
 - [ ] Track which original files are compiled, shimmed, or re-targeted (avoid
       accidental rewrites of platform-independent logic — see the hard rules).
 - [ ] Record every browser-API bridge so the original-vs-port boundary stays clear.
+
+- [ ] **Serve the play page from a trustworthy origin so the THREADED default
+      works at the owner's LAN URL** (mount-failure lane, 2026-07-10). Root
+      cause of the owner's "FAILED: archive mount failed": Chrome ignores
+      COOP/COEP on plain `http://192.168.x.x` (untrustworthy origin) →
+      `crossOriginIsolated` false → no SharedArrayBuffer → the pthread build
+      cannot instantiate. The page now detects this and FALLS BACK to the
+      legacy single-threaded path with a visible note (the owner can play
+      again), but the engine-thread architecture only engages on
+      https:// or localhost. Options for the durable fix, owner/orchestrator
+      decision: (a) HTTPS listener on serve.mjs with a long-lived self-signed
+      cert (one-time browser trust prompt per device), (b) Chrome
+      `--unsafely-treat-insecure-origin-as-secure=http://192.168.106.45:8123`
+      / enterprise policy on the owner's machines, (c) owner opens
+      http://localhost:8123 when playing ON the Mac itself (already works).
+      Also consider a threaded_play_gate leg that boots via a LAN-IP-style
+      untrusted origin and asserts the fallback note + legacy boot.
 
 ### OWNER DIRECTIVE (2026-07-10): fully migrate to the engine-thread path
 Threaded becomes the DEFAULT in play.html ("we want the feeling and

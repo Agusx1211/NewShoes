@@ -961,3 +961,93 @@ returns 2^32-8 and boot hangs at the overlay). `~/.Trash` was emptied
 at a time. Playwright `browser.close()` reproducibly wedges after these
 runs (Chrome already gone) — kill the node by PID afterwards and never
 rely on post-close code (write summaries BEFORE close).
+
+## Owner mount-failure regression (2026-07-10, mount-failure lane)
+
+Symptom: owner's real headful Chrome at
+http://192.168.106.45:8123/harness/play.html (threaded now the play default)
+shows "FAILED: archive mount failed"; every headless gate green on the same
+build.
+
+**Root cause (reproduced on cnc-gpu with plain Chrome + fresh profile): the
+LAN-IP origin is untrustworthy.** Chrome ignores COOP/COEP on plain
+`http://192.168.x.x` ("The Cross-Origin-Opener-Policy header has been
+ignored, because the URL's origin was untrustworthy... use https or
+localhost"), so `crossOriginIsolated` is false, `SharedArrayBuffer` does not
+exist, and OPFS/Web Locks are absent too. The pthread build then dies at
+module scope (`ReferenceError: SharedArrayBuffer is not defined`),
+loadWasmModule returns null, and play.mjs surfaced the generic mount failure.
+localhost IS a trustworthy origin — which is why the gates (all localhost)
+never saw it. The GATE D probes and the headful spot-check also ran
+localhost; the owner was the first threaded LAN-IP client.
+
+**Fix (JS-only, no wasm rebuild):**
+
+- bridge.js `cncPortThreadedRuntimeSupport()` + play.mjs mirror: threaded
+  mode engages only when `SharedArrayBuffer` + `crossOriginIsolated` are
+  present. Otherwise both fall back to the legacy single-threaded
+  path/dist-release with a visible on-page note ("engine-thread mode
+  unavailable on this origin (needs https:// or http://localhost) — running
+  the legacy single-thread build"), console warning, and
+  `state.threadedFallbackReason`. The owner plays again immediately; the
+  durable trustworthy-origin decision (serve.mjs HTTPS / Chrome policy /
+  localhost) is a TODO for the orchestrator+owner.
+- Error surfacing: loadWasmModule failures are captured
+  (`cncPortModuleLoadError`) and folded into mount errors; play.mjs `fail()`
+  now renders the failure detail on the page; io_worker errors keep the
+  DOMException name.
+
+**Second real bug fixed in the same lane — the deferred TODO (c) OPFS
+sync-handle collision, reproduced on a SECURE origin** (localhost, reused
+persistent profile): a second tab's mount failed with
+NoModificationAllowedError ("Access Handles cannot be created if there is
+another open Access Handle or Writable stream associated with the same
+file") because the engine realm's staged handles hold exclusive per-file
+locks for the page lifetime and the mount rewrote fixed OPFS paths.
+Single-tab reload and reload-mid-mount did NOT collide on this box (Chrome
+reaped the old worker fast enough), but that timing is not guaranteed.
+
+Hardening shipped (bridge.js mountArchivesToOpfs, io_worker.mjs,
+opfs_realm_files.mjs, engine_realm_boot.mjs):
+
+- **Per-mount namespaces**: archives stream to
+  `cnc-archives/ns-<bootId>-<seq>/<memfsPath>`; fresh names can never be
+  lock-held, so a wedged stale holder can NEVER block a new boot. The page
+  holds a `cnc-port-opfs-ns:<bootId>` Web Lock (auto-released on page death
+  — unlike OPFS handles) acquired BEFORE GC so a concurrent tab's GC never
+  deletes files a mid-boot tab is writing.
+- **Namespace GC** (io_worker `opfsCollectNamespaces`): before downloading,
+  remove every child of `cnc-archives` except the current namespace and
+  namespaces whose owner lock is still held (`navigator.locks.query()` in
+  the worker). Lock-held removeEntry failures are per-entry and non-fatal.
+  Legacy fixed-layout dirs (`cnc-archives/assets/...`) collect on the first
+  post-fix boot. Two live tabs each keep their namespace: disk = one archive
+  set per LIVE tab (second-tab support costs ~2.2GB while both live).
+- **Release protocol**: pagehide fires `releaseOpfsHandles` into the engine
+  realm (opfs_realm_files.mjs `registry.closeAll()`) and `releaseHandles`
+  to the IO worker (tracked open-handle set) — locks drop early in the
+  common case; the namespace scheme is the hard guarantee when teardown
+  delivery loses the race.
+- **createSyncAccessHandleRobust** (io_worker): on
+  NoModificationAllowedError/InvalidStateError retry ~1.5s, then
+  delete-and-recreate the file, then throw an error naming the opfsPath and
+  the underlying exception ("another tab or a not-yet-reaped worker likely
+  holds this file's exclusive OPFS lock").
+
+**Mac verification matrix** (fixed harness served standalone on :8151 with
+symlinks to the deployed md5-verified dists; reused persistent profile;
+headless Chrome 150 + ANGLE Metal): LAN-IP origin → legacy fallback boots to
+title with the visible note; localhost threaded → title on a namespaced OPFS
+mount; SECOND TAB same profile → boots (was: raw mount failure);
+reload-after-boot / reload-mid-mount / third sequential reload → all boot;
+OPFS root holds only the live namespaces afterwards. Dev-box: full
+`verify:threaded-play` (reference + threaded) and `shellmap_real_init_gate`
+green on the fixed harness. The probe instruments live in `~/cnc-verify/`
+on the Mac (secctx_probe / owner_flow_probe / lock_collision_probe /
+fix_matrix_probe, uncommitted like the other Mac instruments).
+
+Mac-session hygiene notes for future lanes: `context.close()` after
+OPFS-heavy persistent-context runs still wedges (write summaries BEFORE
+close, exit hard, then clean Chrome by PID + `rm -rf` the probe profile —
+one leaked 2.9GB profile was cleaned this lane); a stray playwright-flagged
+Chrome (start 00:47) not owned by this lane was left untouched.

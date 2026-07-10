@@ -8,6 +8,55 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Owner play-page mount-failure regression (2026-07-10, mount-failure lane)
+
+The owner's real headful Chrome at http://192.168.106.45:8123/harness/play.html
+(threaded default) died with "FAILED: archive mount failed"; headless gates
+were green on the same build. Reproduced + root-caused on the Mac, fixed
+JS-only (no wasm rebuild), Mac-verified. Details in
+`WebAssembly/notes/p1-engine-thread.md` "Owner mount-failure regression".
+
+- [x] Reproduce the owner's exact failure on cnc-gpu (plain Chrome, fresh
+      profile, owner URL): `FAILED: archive mount failed` ← "Wasm module
+      unavailable" ← `ReferenceError: SharedArrayBuffer is not defined` —
+      Chrome IGNORES COOP/COEP on the untrustworthy plain-http LAN origin
+      (`isSecureContext:false`, `crossOriginIsolated:false`, OPFS + Web Locks
+      also absent). localhost:8123 on the same box has everything — that is
+      why every headless gate stayed green. NOT the OPFS-lock theory.
+- [x] Fix (bridge.js + play.mjs): threaded mode now requires
+      `SharedArrayBuffer` + `crossOriginIsolated` (cncPortThreadedRuntimeSupport);
+      when the environment can't run it, BOTH files fall back to the legacy
+      single-threaded path/dist with a visible on-page note + console warning
+      + `state.threadedFallbackReason`; loadWasmModule failures are captured
+      and folded into mount errors (no more bare "Wasm module unavailable").
+- [x] ALSO fixed the real (deferred) OPFS sync-handle collision, reproduced
+      on a secure origin: second tab in the same profile failed its mount
+      with NoModificationAllowedError ("Access Handles cannot be created if
+      there is another open Access Handle...") because staged handles hold
+      exclusive locks for the page lifetime. Hardening: (a) every mount
+      writes to a fresh `cnc-archives/ns-<bootId>-<seq>/` namespace (fresh
+      names can never be lock-held) while holding a
+      `cnc-port-opfs-ns:<bootId>` Web Lock; (b) the IO worker GCs namespaces
+      whose owner lock is gone (live tabs keep theirs — two tabs now BOTH
+      run); (c) createSyncAccessHandle retries ~1.5s then
+      delete-and-recreates, and its final error names the file + exception;
+      (d) pagehide posts releaseOpfsHandles to the engine realm
+      (opfs_realm_files closeAll) and releaseHandles to the IO worker so a
+      dying page drops its locks early; (e) play.mjs fail() renders the
+      failure DETAIL on the page (archive + exception), not just in console.
+- [x] Mac verification matrix (fixed harness on :8151 against the deployed
+      md5-verified dists, reused persistent profile, ANGLE Metal):
+      LAN-IP origin → legacy fallback BOOTS to title with the visible note;
+      localhost threaded boot → title (namespaced OPFS mount); second tab
+      same profile → BOOTS (was: raw mount failure); reload-after-boot,
+      reload-mid-mount, 3rd sequential reload → all boot; namespace GC keeps
+      the OPFS root at the live namespaces only.
+- [x] Dev-box gates on the fixed harness: full `verify:threaded-play`
+      (reference + threaded legs) exit 0, "threaded play gate: OK" with all
+      checks PASS incl. the OPFS-backed-mount, save-round-trip and audio
+      checks; `test:io-worker-offthread` 15/15; `shellmap_real_init_gate`
+      green (legacy path = what the LAN fallback serves).
+
 ## GATE D blocker root-caused + flip unblocked (2026-07-10, blocker-fix lane)
 
 Full numbers in `WebAssembly/notes/p1-engine-thread.md` "GATE D root cause +
