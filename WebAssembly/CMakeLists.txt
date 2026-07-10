@@ -5113,6 +5113,38 @@ target_link_libraries(cnc-port PRIVATE
   zh_compression_eac
 )
 
+# cnc-port heap shape (P3, notes/p1-engine-thread.md "P3 results"):
+#
+# - Default (non-threaded) build: unchanged — small INITIAL_MEMORY with
+#   ALLOW_MEMORY_GROWTH up to the 2GiB MAXIMUM. Growth is cheap on a
+#   single-threaded build (views are refreshed at the JS/wasm boundary).
+# - Threaded (CNC_PORT_THREADS) build: FIXED-SIZE heap. pthreads +
+#   ALLOW_MEMORY_GROWTH forces every JS-side HEAP view access through
+#   growth-check wrappers (the em++ -Wpthreads-mem-growth warning: "may run
+#   non-wasm code slowly") because a growable SharedArrayBuffer is replaced
+#   under running JS on every grow. With growth OFF the SAB never moves and
+#   plain typed-array views stay valid for the page lifetime.
+#   INITIAL_MEMORY is set EQUAL to the default build's MAXIMUM_MEMORY (2GiB):
+#   the OOM ceiling is identical to the growth build, so no workload that
+#   survives growth-on can newly abort under the fixed heap. Browsers commit
+#   shared wasm memory pages lazily (verified on dev-box Chromium: renderer
+#   RSS tracks touched pages, not the 2GiB reservation), so the up-front cost
+#   is address space, not resident memory. Measured usage (2026-07-10,
+#   growth-on threaded build, OPFS mounts): 0.16GiB at title; see
+#   notes/p1-engine-thread.md "P3 results" for the in-match sizing runs.
+if(CNC_PORT_THREADS)
+  set(CNC_PORT_MEMORY_LINK_OPTIONS
+    "SHELL:-sALLOW_MEMORY_GROWTH=0"
+    "SHELL:-sINITIAL_MEMORY=2147483648"
+  )
+else()
+  set(CNC_PORT_MEMORY_LINK_OPTIONS
+    "SHELL:-sALLOW_MEMORY_GROWTH=1"
+    "SHELL:-sINITIAL_MEMORY=67108864"
+    "SHELL:-sMAXIMUM_MEMORY=2147483648"
+  )
+endif()
+
 target_link_options(cnc-port PRIVATE
   "SHELL:-Wl,--gc-sections"
   "SHELL:-sERROR_ON_UNDEFINED_SYMBOLS=1"
@@ -5122,9 +5154,7 @@ target_link_options(cnc-port PRIVATE
   "SHELL:-sEXPORT_ES6=1"
   "SHELL:-sEXPORT_NAME=createCncPortModule"
   "SHELL:-sENVIRONMENT=web,worker"
-  "SHELL:-sALLOW_MEMORY_GROWTH=1"
-  "SHELL:-sINITIAL_MEMORY=67108864"
-  "SHELL:-sMAXIMUM_MEMORY=2147483648"
+  ${CNC_PORT_MEMORY_LINK_OPTIONS}
   "SHELL:-sTOTAL_STACK=1048576"
   # IDBFS backs the in-game save directory with IndexedDB so the ".sav" files
   # written by the real GameState / XferSave path survive a page reload. Without
@@ -5164,10 +5194,11 @@ if(CNC_PORT_THREADS)
   # dynamic import in classic dedicated workers). No output-format downgrade
   # was needed.
   #
-  # NOTE: -sALLOW_MEMORY_GROWTH=1 + pthreads links with only a warning on
-  # 3.1.6 ("may run non-wasm code slowly", the JS-side heap-view refresh
-  # caveat); it is kept for spike parity with the default build. P3 of the
-  # design intends a fixed-size heap anyway.
+  # NOTE: memory shape — the threaded build links with a FIXED-SIZE heap
+  # (ALLOW_MEMORY_GROWTH=0, INITIAL_MEMORY=2GiB == the default build's
+  # MAXIMUM). See CNC_PORT_MEMORY_LINK_OPTIONS above for the full rationale
+  # and the P3 measurements (this removes the 3.1.6 -Wpthreads-mem-growth
+  # "may run non-wasm code slowly" JS heap-access tax).
   #
   # P1a scaffold (WebAssembly/notes/p1-engine-thread.md):
   #   - PTHREAD_POOL_SIZE=1 (down from the P0 spike's 4): the single pool

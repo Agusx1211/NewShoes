@@ -1350,7 +1350,32 @@ async function threadedRpc(command, payload = {}) {
       try {
         const result = await threadedEngine.engineCall(
           "cnc_port_click_window_by_name", "string", ["string"],
-          [String(payload.window ?? payload.windowName ?? "")]);
+          // payload.name matches the non-threaded handler's contract.
+          [String(payload.name ?? payload.window ?? payload.windowName ?? "")]);
+        // The export's JSON has no "ok" field — clicked is the success signal.
+        return { ok: result?.clicked === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineSetSkirmishMap": {
+      // Same export the non-threaded handler cwraps; executed on the engine
+      // thread. Enables in-game (skirmish) drives/measurements in threaded
+      // mode (P3 fixed-heap sizing used this first).
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_real_engine_set_skirmish_map", "string", ["string"],
+          [String(payload.map ?? payload.mapName ?? "")]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineSetSkirmishLocalTemplate": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_real_engine_set_skirmish_local_template", "string", ["string"],
+          [String(payload.templateName ?? payload.template ?? "")]);
         return { ok: result?.ok === true, command, result, threaded: true };
       } catch (error) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
