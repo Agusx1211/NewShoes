@@ -4269,6 +4269,7 @@ function applyD3D8Viewport(reason = "draw") {
     return {
       ok: true,
       source: "browser_d3d8_viewport",
+      d3d: viewport.d3d,
       gl: viewport.gl,
       lite: true,
       cacheHit,
@@ -6159,6 +6160,10 @@ function d3d8TextureLayoutUniformKey({
   texture1SemanticMode,
   texture2SemanticMode,
   texture3SemanticMode,
+  texture0FlipY,
+  texture1FlipY,
+  texture2FlipY,
+  texture3FlipY,
   implicitAlphaCutoutThreshold,
   texture0Transform,
   texture1Transform,
@@ -6166,7 +6171,8 @@ function d3d8TextureLayoutUniformKey({
   texture3Transform,
 }) {
   const values = [implicitAlphaCutoutThreshold];
-  const pushStage = (stage, canSampleTexture, coordinates, semanticMode, textureTransform, includeCoordSet = false) => {
+  const pushStage = (stage, canSampleTexture, coordinates, semanticMode, flipY,
+      textureTransform, includeCoordSet = false) => {
     const transformApplied = Boolean(canSampleTexture && coordinates.transformApplied);
     values.push(
       canSampleTexture ? 1 : 0,
@@ -6176,6 +6182,7 @@ function d3d8TextureLayoutUniformKey({
       transformApplied && coordinates.textureTransformProjected ? 1 : 0,
       canSampleTexture ? Number(stage.mipMapLodBias ?? 0) >>> 0 : 0,
       canSampleTexture ? semanticMode : 0,
+      canSampleTexture && flipY ? 1 : 0,
     );
     // Stages 2/3 select which vertex UV set feeds the shader, so the coordinate
     // index participates in the layout key. Stages 0/1 always map coordSet->attr
@@ -6192,6 +6199,7 @@ function d3d8TextureLayoutUniformKey({
     canSampleTexture0,
     texture0Coordinates,
     texture0SemanticMode,
+    texture0FlipY,
     texture0Transform,
   );
   pushStage(
@@ -6199,6 +6207,7 @@ function d3d8TextureLayoutUniformKey({
     canSampleTexture1,
     texture1Coordinates,
     texture1SemanticMode,
+    texture1FlipY,
     texture1Transform,
   );
   pushStage(
@@ -6206,6 +6215,7 @@ function d3d8TextureLayoutUniformKey({
     canSampleTexture2,
     texture2Coordinates,
     texture2SemanticMode,
+    texture2FlipY,
     texture2Transform,
     true,
   );
@@ -6214,6 +6224,7 @@ function d3d8TextureLayoutUniformKey({
     canSampleTexture3,
     texture3Coordinates,
     texture3SemanticMode,
+    texture3FlipY,
     texture3Transform,
     true,
   );
@@ -7225,6 +7236,7 @@ function d3d8FeedbackSafeTextureResource(resource) {
       samplerStateKey: null,
       samplerD3DStateKey: null,
       resolvedBindSerial: -1,
+      renderTargetYFlipped: true,
     };
     withPreservedD3D8TextureUnit(() => {
       gl.bindTexture(gl.TEXTURE_2D, snapshot.texture);
@@ -7505,6 +7517,8 @@ function createD3D8Texture(payload = {}) {
     samplerState: null,
     samplerStateKey: null,
     samplerD3DStateKey: null,
+    renderTargetYFlipped:
+      ((Number(payload.usage ?? 0) >>> 0) & D3DUSAGE_RENDERTARGET) !== 0,
   };
   d3d8Textures.set(id, resource);
   // D3D8 semantics: a created texture bound to a stage is ALWAYS sampleable — it
@@ -9050,18 +9064,22 @@ function ensureD3D8DrawProgram() {
     uniform sampler2D uTexture0;
     uniform float uTexture0LodBias;
     uniform int uTexture0Semantic;
+    uniform bool uTexture0FlipY;
     uniform bool uUseTexture1;
     uniform sampler2D uTexture1;
     uniform float uTexture1LodBias;
     uniform int uTexture1Semantic;
+    uniform bool uTexture1FlipY;
     uniform bool uUseTexture2;
     uniform sampler2D uTexture2;
     uniform float uTexture2LodBias;
     uniform int uTexture2Semantic;
+    uniform bool uTexture2FlipY;
     uniform bool uUseTexture3;
     uniform sampler2D uTexture3;
     uniform float uTexture3LodBias;
     uniform int uTexture3Semantic;
+    uniform bool uTexture3FlipY;
     uniform vec4 uTextureFactor;
     uniform int uStage0ColorOp;
     uniform int uStage0ColorArg0;
@@ -9144,6 +9162,9 @@ function ensureD3D8DrawProgram() {
         return vec4(rawSample.r, rawSample.r, rawSample.r, rawSample.g);
       }
       return rawSample;
+    }
+    vec2 d3dTextureCoordinate(vec2 coordinate, bool flipY) {
+      return flipY ? vec2(coordinate.x, 1.0 - coordinate.y) : coordinate;
     }
     // D3DTA_DIFFUSE == 0, D3DTA_CURRENT == 1, D3DTA_TEXTURE == 2,
     // D3DTA_TFACTOR == 3, D3DTA_SPECULAR == 4, D3DTA_TEMP == 5.
@@ -9436,16 +9457,20 @@ function ensureD3D8DrawProgram() {
       vec2 texture0Coord = (uDrawingPoints && uPointSpriteEnable) ? pointTexCoord : vTexCoord0;
       vec2 texture1Coord = (uDrawingPoints && uPointSpriteEnable) ? pointTexCoord : vTexCoord1;
       vec4 texture0Color = uUseTexture0
-        ? d3dTextureSample(texture(uTexture0, texture0Coord, uTexture0LodBias), uTexture0Semantic)
+        ? d3dTextureSample(texture(uTexture0,
+            d3dTextureCoordinate(texture0Coord, uTexture0FlipY), uTexture0LodBias), uTexture0Semantic)
         : vec4(1.0);
       vec4 texture1Color = uUseTexture1
-        ? d3dTextureSample(texture(uTexture1, texture1Coord, uTexture1LodBias), uTexture1Semantic)
+        ? d3dTextureSample(texture(uTexture1,
+            d3dTextureCoordinate(texture1Coord, uTexture1FlipY), uTexture1LodBias), uTexture1Semantic)
         : vec4(1.0);
       vec4 texture2Color = uUseTexture2
-        ? d3dTextureSample(texture(uTexture2, vTexCoord2, uTexture2LodBias), uTexture2Semantic)
+        ? d3dTextureSample(texture(uTexture2,
+            d3dTextureCoordinate(vTexCoord2, uTexture2FlipY), uTexture2LodBias), uTexture2Semantic)
         : vec4(1.0);
       vec4 texture3Color = uUseTexture3
-        ? d3dTextureSample(texture(uTexture3, vTexCoord3, uTexture3LodBias), uTexture3Semantic)
+        ? d3dTextureSample(texture(uTexture3,
+            d3dTextureCoordinate(vTexCoord3, uTexture3FlipY), uTexture3LodBias), uTexture3Semantic)
         : vec4(1.0);
       vec4 diffuseColor = uUseFlatShade ? vFlatColor : vColor;
       // Stage 0. CURRENT starts as DIFFUSE; TEMP starts cleared. Each stage's
@@ -9633,18 +9658,22 @@ function buildD3D8DrawProgramLocations(program) {
     texture0: gl.getUniformLocation(program, "uTexture0"),
     texture0LodBias: gl.getUniformLocation(program, "uTexture0LodBias"),
     texture0Semantic: gl.getUniformLocation(program, "uTexture0Semantic"),
+    texture0FlipY: gl.getUniformLocation(program, "uTexture0FlipY"),
     useTexture1: gl.getUniformLocation(program, "uUseTexture1"),
     texture1: gl.getUniformLocation(program, "uTexture1"),
     texture1LodBias: gl.getUniformLocation(program, "uTexture1LodBias"),
     texture1Semantic: gl.getUniformLocation(program, "uTexture1Semantic"),
+    texture1FlipY: gl.getUniformLocation(program, "uTexture1FlipY"),
     useTexture2: gl.getUniformLocation(program, "uUseTexture2"),
     texture2: gl.getUniformLocation(program, "uTexture2"),
     texture2LodBias: gl.getUniformLocation(program, "uTexture2LodBias"),
     texture2Semantic: gl.getUniformLocation(program, "uTexture2Semantic"),
+    texture2FlipY: gl.getUniformLocation(program, "uTexture2FlipY"),
     useTexture3: gl.getUniformLocation(program, "uUseTexture3"),
     texture3: gl.getUniformLocation(program, "uTexture3"),
     texture3LodBias: gl.getUniformLocation(program, "uTexture3LodBias"),
     texture3Semantic: gl.getUniformLocation(program, "uTexture3Semantic"),
+    texture3FlipY: gl.getUniformLocation(program, "uTexture3FlipY"),
     textureFactor: gl.getUniformLocation(program, "uTextureFactor"),
     stage0ColorOp: gl.getUniformLocation(program, "uStage0ColorOp"),
     stage0ColorArg0: gl.getUniformLocation(program, "uStage0ColorArg0"),
@@ -10039,7 +10068,8 @@ function d3d8SM1WriteStatement(dst, valueExpr, ctx) {
 // Stage texture sample honoring the same semantic/LOD-bias plumbing as the
 // fixed-function fragment stage. Unbound stages sample opaque black (D3D8).
 function d3d8SM1SampleExpr(stage, coordExpr) {
-  return `(uUseTexture${stage} ? d3dTextureSample(texture(uTexture${stage}, ${coordExpr}, ` +
+  return `(uUseTexture${stage} ? d3dTextureSample(texture(uTexture${stage}, ` +
+    `d3dTextureCoordinate(${coordExpr}, uTexture${stage}FlipY), ` +
     `uTexture${stage}LodBias), uTexture${stage}Semantic) : vec4(0.0, 0.0, 0.0, 1.0))`;
 }
 
@@ -10151,6 +10181,7 @@ function d3d8SM1BuildFragmentSource(psShader, options) {
     lines.push(`uniform sampler2D uTexture${stage};`);
     lines.push(`uniform float uTexture${stage}LodBias;`);
     lines.push(`uniform int uTexture${stage}Semantic;`);
+    lines.push(`uniform bool uTexture${stage}FlipY;`);
   }
   lines.push("uniform vec4 uPsConst[8];");
   if (ctx.usesBumpEnv) {
@@ -10183,6 +10214,9 @@ function d3d8SM1BuildFragmentSource(psShader, options) {
   lines.push("  if (semantic == 2) { return vec4(rawSample.r, rawSample.r, rawSample.r, 1.0); }");
   lines.push("  if (semantic == 3) { return vec4(rawSample.r, rawSample.r, rawSample.r, rawSample.g); }");
   lines.push("  return rawSample;");
+  lines.push("}");
+  lines.push("vec2 d3dTextureCoordinate(vec2 coordinate, bool flipY) {");
+  lines.push("  return flipY ? vec2(coordinate.x, 1.0 - coordinate.y) : coordinate;");
   lines.push("}");
   lines.push("void main() {");
   if (!options.translatedVs) {
@@ -10817,18 +10851,22 @@ function ensureD3D8DepthStencilProgram() {
     texture0: null,
     texture0LodBias: null,
     texture0Semantic: null,
+    texture0FlipY: null,
     useTexture1: null,
     texture1: null,
     texture1LodBias: null,
     texture1Semantic: null,
+    texture1FlipY: null,
     useTexture2: null,
     texture2: null,
     texture2LodBias: null,
     texture2Semantic: null,
+    texture2FlipY: null,
     useTexture3: null,
     texture3: null,
     texture3LodBias: null,
     texture3Semantic: null,
+    texture3FlipY: null,
     textureFactor: null,
     stage0ColorOp: null,
     stage0ColorArg0: null,
@@ -14174,6 +14212,10 @@ function paintD3D8DrawIndexed(payload = {}) {
     const drawCanSampleTexture1 = depthStencilOnlyDraw ? false : canSampleTexture1;
     const drawCanSampleTexture2 = depthStencilOnlyDraw ? false : canSampleTexture2;
     const drawCanSampleTexture3 = depthStencilOnlyDraw ? false : canSampleTexture3;
+    const texture0FlipY = Boolean(canSampleTexture0 && texture0Resource?.renderTargetYFlipped);
+    const texture1FlipY = Boolean(canSampleTexture1 && texture1Resource?.renderTargetYFlipped);
+    const texture2FlipY = Boolean(canSampleTexture2 && texture2Resource?.renderTargetYFlipped);
+    const texture3FlipY = Boolean(canSampleTexture3 && texture3Resource?.renderTargetYFlipped);
     const textureUniformKey = depthStencilOnlyDraw
       ? "depth-stencil-only"
       : d3d8TextureLayoutUniformKey({
@@ -14190,6 +14232,10 @@ function paintD3D8DrawIndexed(payload = {}) {
           texture1SemanticMode,
           texture2SemanticMode,
           texture3SemanticMode,
+          texture0FlipY,
+          texture1FlipY,
+          texture2FlipY,
+          texture3FlipY,
           implicitAlphaCutoutThreshold,
           texture0Transform,
           texture1Transform,
@@ -14985,6 +15031,9 @@ function paintD3D8DrawIndexed(payload = {}) {
       if (bridgeProgram.texture0Semantic) {
         d3d8CachedUniform1i(bridgeProgram.texture0Semantic, texture0SemanticMode);
       }
+      if (bridgeProgram.texture0FlipY) {
+        d3d8CachedUniform1i(bridgeProgram.texture0FlipY, texture0FlipY ? 1 : 0);
+      }
       if (bridgeProgram.useTexture1) {
         d3d8CachedUniform1i(bridgeProgram.useTexture1, canSampleTexture1 ? 1 : 0);
       }
@@ -15000,6 +15049,9 @@ function paintD3D8DrawIndexed(payload = {}) {
       if (bridgeProgram.texture1Semantic) {
         d3d8CachedUniform1i(bridgeProgram.texture1Semantic, texture1SemanticMode);
       }
+      if (bridgeProgram.texture1FlipY) {
+        d3d8CachedUniform1i(bridgeProgram.texture1FlipY, texture1FlipY ? 1 : 0);
+      }
       // Stages 2 and 3: coordinate mode, coordSet selection, texture transform,
       // sampler unit, LOD bias, semantic mode. The bridge samples texture unit
       // == stage index (uTexture2->unit 2, uTexture3->unit 3).
@@ -15011,6 +15063,7 @@ function paintD3D8DrawIndexed(payload = {}) {
           coords: texture2Coordinates,
           transform: texture2Transform,
           semantic: texture2SemanticMode,
+          flipY: texture2FlipY,
         },
         {
           index: 3,
@@ -15018,6 +15071,7 @@ function paintD3D8DrawIndexed(payload = {}) {
           coords: texture3Coordinates,
           transform: texture3Transform,
           semantic: texture3SemanticMode,
+          flipY: texture3FlipY,
         },
       ];
       for (const s of stage23) {
@@ -15058,6 +15112,9 @@ function paintD3D8DrawIndexed(payload = {}) {
         }
         if (p[`texture${s.index}Semantic`]) {
           d3d8CachedUniform1i(p[`texture${s.index}Semantic`], s.semantic);
+        }
+        if (p[`texture${s.index}FlipY`]) {
+          d3d8CachedUniform1i(p[`texture${s.index}FlipY`], s.flipY ? 1 : 0);
         }
       }
       harnessState.graphics.lastD3D8TextureUniformKey = textureUniformKey;

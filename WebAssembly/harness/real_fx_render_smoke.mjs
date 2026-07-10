@@ -90,6 +90,45 @@ function effectDraws(result) {
     .filter((draw) => /^(ex|fx)|expl|blast|shock|smoke|fire/i.test(draw.texture));
 }
 
+async function sampleTacticalView(page) {
+  return page.evaluate(() => {
+    const canvas = document.querySelector("#viewport");
+    const context = canvas?.getContext("webgl2") ?? canvas?.getContext("webgl");
+    if (!(canvas instanceof HTMLCanvasElement) || !context) {
+      return { ok: false, error: "viewport WebGL context unavailable" };
+    }
+    const xs = [0.18, 0.30, 0.42, 0.54, 0.66, 0.78];
+    const ys = [0.14, 0.28, 0.42, 0.56, 0.70, 0.84];
+    const pixel = new Uint8Array(4);
+    const samples = [];
+    for (const xRatio of xs) {
+      for (const yRatio of ys) {
+        context.readPixels(
+          Math.min(canvas.width - 1, Math.floor(canvas.width * xRatio)),
+          Math.min(canvas.height - 1, Math.floor(canvas.height * yRatio)),
+          1,
+          1,
+          context.RGBA,
+          context.UNSIGNED_BYTE,
+          pixel,
+        );
+        samples.push(Array.from(pixel));
+      }
+    }
+    const luminances = samples.map((rgba) =>
+      (rgba[0] * 0.2126) + (rgba[1] * 0.7152) + (rgba[2] * 0.0722));
+    return {
+      ok: true,
+      sampleCount: samples.length,
+      uniqueColorCount: new Set(samples.map((rgba) => rgba.join(","))).size,
+      minimumLuminance: Math.min(...luminances),
+      maximumLuminance: Math.max(...luminances),
+      meanLuminance: luminances.reduce((total, value) => total + value, 0) / luminances.length,
+      luminanceRange: Math.max(...luminances) - Math.min(...luminances),
+    };
+  });
+}
+
 async function triggerOriginalFX(page, name) {
   if (expectHeatDistortion) {
     return rpc(page, "realEngineSpawnParticleSystem", {
@@ -142,6 +181,9 @@ try {
 
   const harnessUrl = new URL("harness/index.html", server.url);
   harnessUrl.searchParams.set("shaderTier", shaderTier);
+  if (expectHeatDistortion) {
+    harnessUrl.searchParams.set("preserveBuffer", "1");
+  }
   await page.goto(harnessUrl.href, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
   await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
@@ -162,11 +204,12 @@ try {
   expect(init?.ok === true && init?.frontier?.initReturned === true,
     "real FX smoke failed real engine init", init?.frontier ?? init);
 
-  await rpc(page, "realEngineFrameSummary", { frames: 4 });
+  await rpc(page, "realEngineFrameSummary", { frames: expectHeatDistortion ? 30 : 4 });
   const before = await rpc(page, "realEngineFrameSummary", { frames: 1 });
   const beforePerf = await page.evaluate(() => globalThis.__cncD3D8PerfSummary?.() ?? {});
   expect(before?.frame?.particles?.managerReady === true,
     "particle manager was not ready before FX trigger", before?.frame?.particles);
+  const beforePixels = expectHeatDistortion ? await sampleTacticalView(page) : null;
 
   const trigger = await triggerOriginalFX(page, fxName);
   expect(trigger?.ok === true, "real FX trigger did not run", trigger?.result ?? trigger);
@@ -191,8 +234,9 @@ try {
     let result = liteResult;
     const particles = liteResult?.frame?.particles ?? {};
     let draws = [];
-    if (Number(particles.particleCount ?? 0) > Number(before.frame.particles.particleCount ?? 0) ||
-        Number(particles.onScreenParticleCount ?? 0) > 0) {
+    if (!expectHeatDistortion &&
+        (Number(particles.particleCount ?? 0) > Number(before.frame.particles.particleCount ?? 0) ||
+          Number(particles.onScreenParticleCount ?? 0) > 0)) {
       await page.evaluate(() => window.__cncSetDiagLevel?.("full"));
       result = await rpc(page, "realEngineFrameSummary", { frames: 1 });
       draws = effectDraws(result);
@@ -224,6 +268,7 @@ try {
   }
 
   const afterPerf = await page.evaluate(() => globalThis.__cncD3D8PerfSummary?.() ?? {});
+  const afterPixels = expectHeatDistortion ? await sampleTacticalView(page) : null;
 
   await page.locator("#viewport").screenshot({ path: screenshotPath });
 
@@ -251,6 +296,12 @@ try {
       });
     expect((afterPerf.fboIncomplete ?? 0) === 0,
       "heat-smudge FX produced an incomplete framebuffer", afterPerf);
+    expect(afterPixels?.ok === true &&
+        afterPixels.uniqueColorCount >= 8 &&
+        afterPixels.luminanceRange >= 24 &&
+        afterPixels.maximumLuminance >= 40 &&
+        afterPixels.meanLuminance >= Math.max(4, beforePixels.meanLuminance * 0.35),
+      "heat-smudge FX left a black or flat tactical view", { beforePixels, afterPixels });
   }
 
   console.log(JSON.stringify({
@@ -262,6 +313,7 @@ try {
       before: beforePerf.framebufferFeedbackResolves ?? 0,
       after: afterPerf.framebufferFeedbackResolves ?? 0,
     },
+    tacticalPixels: expectHeatDistortion ? { before: beforePixels, after: afterPixels } : undefined,
     best: {
       frame: best.frame,
       particleCount: best.particleCount,

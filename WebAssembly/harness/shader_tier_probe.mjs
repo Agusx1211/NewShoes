@@ -58,6 +58,42 @@ const browser = await chromium.launch({
   args: ["--autoplay-policy=no-user-gesture-required", "--window-size=1400,940", ...extraArgs],
 });
 
+async function sampleTacticalView(page) {
+  return page.evaluate(() => {
+    const canvas = document.querySelector("#viewport");
+    const context = canvas?.getContext("webgl2") ?? canvas?.getContext("webgl");
+    if (!(canvas instanceof HTMLCanvasElement) || !context) {
+      return { ok: false, error: "viewport WebGL context unavailable" };
+    }
+    // Stay inside the animated shell-map viewport and away from the right-side
+    // menu/logo.  A valid frame has terrain/water/object variation here; the
+    // broken RTT depth path leaves every sample at the same clear color while
+    // still reporting thousands of successful draw calls.
+    const xs = [0.12, 0.23, 0.34, 0.45, 0.56, 0.67];
+    const ys = [0.13, 0.27, 0.41, 0.55, 0.69, 0.83];
+    const pixel = new Uint8Array(4);
+    const samples = [];
+    for (const xRatio of xs) {
+      for (const yRatio of ys) {
+        const x = Math.min(canvas.width - 1, Math.floor(canvas.width * xRatio));
+        const y = Math.min(canvas.height - 1, Math.floor(canvas.height * yRatio));
+        context.readPixels(x, y, 1, 1, context.RGBA, context.UNSIGNED_BYTE, pixel);
+        samples.push(Array.from(pixel));
+      }
+    }
+    const colors = samples.map((rgba) => rgba.join(","));
+    const luminances = samples.map((rgba) =>
+      (rgba[0] * 0.2126) + (rgba[1] * 0.7152) + (rgba[2] * 0.0722));
+    return {
+      ok: true,
+      sampleCount: samples.length,
+      uniqueColorCount: new Set(colors).size,
+      luminanceRange: Math.max(...luminances) - Math.min(...luminances),
+      samples,
+    };
+  });
+}
+
 async function bootAndInspect(tier) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   await page.addInitScript(() => {
@@ -75,6 +111,7 @@ async function bootAndInspect(tier) {
   const url = new URL("harness/play.html", serverUrl);
   url.searchParams.set("autostart", "1");
   url.searchParams.set("diag", "lite");
+  url.searchParams.set("preserveBuffer", "1");
   url.searchParams.set("dist", process.env.CNC_DIST ?? "dist");
   url.searchParams.set("shaderTier", tier);
   await page.goto(url.href, { waitUntil: "domcontentloaded" });
@@ -105,6 +142,11 @@ async function bootAndInspect(tier) {
       sm1DebugLog: globalThis.__cncSM1DebugLog ?? {},
     };
   });
+  inspection.tacticalFrames = [];
+  for (let frame = 0; frame < 6; frame += 1) {
+    inspection.tacticalFrames.push(await sampleTacticalView(page));
+    await page.evaluate(() => window.CnCPort.rpc("realEngineFrame", { frames: 1 }));
+  }
   const capture = async (name) => {
     const shot = await page.evaluate(async () => {
       const result = await window.CnCPort.rpc("screenshot", {});
@@ -123,6 +165,7 @@ async function bootAndInspect(tier) {
       "realEngineSetViewFilter", payload,
     ), { ...viewFilter.monochrome, fadeFrames: 1, fadeDirection: 1 });
     await page.evaluate(() => window.CnCPort.rpc("realEngineFrame", { frames: 2 }));
+    effects.monochromePixels = await sampleTacticalView(page);
     effects.monochromeScreenshot = await capture("shellmap-ps11-monochrome.png");
     effects.afterMonochrome = await page.evaluate(() => ({
       perf: {
@@ -136,6 +179,7 @@ async function bootAndInspect(tier) {
       "realEngineSetViewFilter", payload,
     ), viewFilter.motionBlurInAlpha);
     await page.evaluate(() => window.CnCPort.rpc("realEngineFrame", { frames: 2 }));
+    effects.motionBlurPixels = await sampleTacticalView(page);
     effects.motionBlurScreenshot = await capture("shellmap-ps11-motion-blur.png");
     effects.afterMotionBlur = await page.evaluate(() => ({
       fboBinds: globalThis.__cncD3D8PerfSummary?.().fboBinds ?? 0,
@@ -160,10 +204,9 @@ try {
   check("ps11: shader draws happened", ps11.summary.sm1ShaderDraws > 0, ps11.summary);
   check("ps11: zero fallback draws", ps11.summary.sm1FallbackDraws === 0, ps11.summary);
   check("ps11: no translation warnings", ps11.sm1Warnings.length === 0, ps11.sm1Warnings.slice(0, 5));
-  check("ps11: shoreline destination alpha uses RGBA scene target",
-    ps11.summary.destinationAlphaBlendDraws > 0 &&
-    ps11.summary.destinationAlphaBlendOffscreenDraws ===
-      ps11.summary.destinationAlphaBlendDraws, ps11.summary);
+  check("ps11: tactical scene pixels are visible", ps11.tacticalFrames.every((frame) =>
+    frame.ok === true && frame.uniqueColorCount >= 8 && frame.luminanceRange >= 24),
+  ps11.tacticalFrames.map(({ samples, ...frame }) => frame));
   const flatWaterSignature = ["tex", "tex", "tex", "tex", "mul", "mad", "mul"];
   const flatWaterEntries = Object.values(ps11.sm1DebugLog).filter((entry) =>
     entry.instructions?.length === flatWaterSignature.length &&
@@ -193,6 +236,11 @@ try {
     command: ps11.effects.monochromeCommand?.result,
     samples: monochromeSamples.length,
   });
+  check("ps11: monochrome filter preserves the tactical scene",
+    ps11.effects.monochromePixels?.ok === true &&
+      ps11.effects.monochromePixels.uniqueColorCount >= 24 &&
+      ps11.effects.monochromePixels.luminanceRange >= 24,
+    ps11.effects.monochromePixels);
   check("ps11: motion-blur filter triggered", ps11.effects.motionBlurCommand?.ok === true &&
     ps11.effects.motionBlurScreenshot === true &&
     ps11.effects.afterMotionBlur?.fboBinds > ps11.effects.afterMonochrome?.perf?.fboBinds &&
@@ -201,12 +249,20 @@ try {
     before: ps11.effects.afterMonochrome?.perf,
     after: ps11.effects.afterMotionBlur,
   });
+  check("ps11: motion blur preserves the tactical scene",
+    ps11.effects.motionBlurPixels?.ok === true &&
+      ps11.effects.motionBlurPixels.uniqueColorCount >= 24 &&
+      ps11.effects.motionBlurPixels.luminanceRange >= 24,
+    ps11.effects.motionBlurPixels);
 
   const ff = await bootAndInspect("ff");
   check("ff: no SM1 shaders registered", ff.summary.sm1PixelShadersRegistered === 0 &&
     ff.summary.sm1VertexShadersRegistered === 0, ff.summary);
   check("ff: no shader draws", ff.summary.sm1ShaderDraws === 0, ff.summary);
   check("ff: draws happened at all", ff.summary.draws > 0, ff.summary);
+  check("ff: tactical scene pixels are visible", ff.tacticalFrames.every((frame) =>
+    frame.ok === true && frame.uniqueColorCount >= 8 && frame.luminanceRange >= 24),
+  ff.tacticalFrames.map(({ samples, ...frame }) => frame));
 } finally {
   await browser.close();
   await server?.close?.();

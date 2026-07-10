@@ -2882,6 +2882,16 @@ void W3DShaderManager::startRenderToTexture(void)
 	if (hr != S_OK)
 		return;
 	m_renderingToTexture = true;
+#ifdef __EMSCRIPTEN__
+	// D3D8 can attach the same depth surface to the back buffer and this render
+	// target, so the frame's earlier depth clear is visible here.  WebGL's
+	// default framebuffer depth storage cannot be attached to an FBO; the bridge
+	// represents the D3D surface with a separate depth texture instead.  Clear
+	// that texture before the full-scene filter pass or its zero-initialized
+	// depth rejects the terrain and almost every object, leaving a blank,
+	// intermittently flickering tactical view behind the UI.
+	DX8Wrapper::Clear(false, true, Vector3(0.0f, 0.0f, 0.0f), 1.0f);
+#endif
 	if (TheGlobalData->m_showSoftWaterEdge)
 	{	//Soft water edges use frame buffer destination alpha so we must clear it to a known value.
 		if (m_currentFilter == FT_VIEW_MOTION_BLUR_FILTER || m_currentFilter == FT_VIEW_CROSSFADE)
@@ -3757,4 +3767,3 @@ void FlatTerrainShaderPixelShader::reset(void)
 
 	DX8Wrapper::Invalidate_Cached_Render_States();
 }
-
