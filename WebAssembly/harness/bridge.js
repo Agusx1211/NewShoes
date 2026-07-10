@@ -10,12 +10,59 @@ import { createGdiHooks } from "./gdi_executor.mjs";
 // ?threads=0 keeps the legacy single-threaded path as a transition escape
 // hatch. Harness/smoke pages keep the legacy default and opt in via
 // ?threads=1. Design + P1a/P1b mechanics: WebAssembly/notes/p1-engine-thread.md.
+// The pthread build hard-requires SharedArrayBuffer, which Chrome only
+// exposes to cross-origin-isolated pages — and COOP/COEP headers are IGNORED
+// on untrustworthy origins (plain http:// over a LAN IP; only https:// and
+// localhost qualify). Owner-facing regression 2026-07-10: the play page at
+// http://192.168.x.x:8123 died with "FAILED: archive mount failed" because
+// the threaded default tried to instantiate the pthread wasm without SAB
+// ("ReferenceError: SharedArrayBuffer is not defined"). When the environment
+// cannot run threaded mode, fall back to the legacy single-threaded path
+// (which the same origin ran for months) and surface WHY instead of a raw
+// mount failure. play.mjs mirrors this check for its dist-dir default.
+function cncPortThreadedRuntimeSupport() {
+  const missing = [];
+  if (typeof SharedArrayBuffer !== "function") {
+    missing.push("SharedArrayBuffer");
+  }
+  if (globalThis.crossOriginIsolated !== true) {
+    missing.push("crossOriginIsolated");
+  }
+  if (missing.length === 0) {
+    return { supported: true, reason: null };
+  }
+  const origin = (() => {
+    try {
+      return globalThis.location?.origin ?? "";
+    } catch (_error) {
+      return "";
+    }
+  })();
+  const insecure = globalThis.isSecureContext !== true;
+  return {
+    supported: false,
+    reason: `engine-thread mode unavailable: missing ${missing.join(" + ")}`
+      + (insecure
+        ? ` — ${origin || "this origin"} is not a secure context (browsers ignore COOP/COEP on`
+          + " plain http:// LAN addresses; use https:// or http://localhost)"
+        : ""),
+  };
+}
+
+let cncPortThreadedFallbackReason = null;
 const cncPortThreadedMode = (() => {
   try {
     const threads = new URLSearchParams(globalThis.location?.search || "").get("threads");
-    if (threads === "1") return true;
-    if (threads === "0") return false;
-    return (globalThis.location?.pathname || "").endsWith("/play.html");
+    const requested = threads === "1"
+      || (threads !== "0" && (globalThis.location?.pathname || "").endsWith("/play.html"));
+    if (!requested) return false;
+    const support = cncPortThreadedRuntimeSupport();
+    if (!support.supported) {
+      cncPortThreadedFallbackReason = support.reason;
+      console.warn(`[wasm-harness] ${support.reason}; falling back to the legacy single-threaded path`);
+      return false;
+    }
+    return true;
   } catch (_error) {
     return false;
   }
@@ -151,6 +198,8 @@ async function cncPortRuntimeCacheToken(distDir) {
 }
 
 let cncPortEmscriptenModule = null;
+// Why loadWasmModule returned null (surfaced in mount errors).
+let cncPortModuleLoadError = null;
 
 const D3DCLEAR_TARGET = 0x00000001;
 
@@ -173,6 +222,10 @@ const harnessState = {
   booted: false,
   frame: 0,
   runtime: "js-stub",
+  // Non-null when threaded mode was requested (or defaulted) but the
+  // environment cannot run it (no SAB / not crossOriginIsolated) and the
+  // bridge fell back to the legacy single-threaded path.
+  threadedFallbackReason: cncPortThreadedFallbackReason,
   wasm: null,
   mainLoop: {
     running: false,
@@ -1130,6 +1183,17 @@ function createThreadedEngineController() {
     return reply;
   }
 
+  // Fire-and-forget realm command (no id, no reply, no timeout entry) —
+  // pagehide teardown must not allocate pending state on a dying page.
+  function postCommand(payload) {
+    try {
+      sendPortCommand(payload);
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  }
+
   return {
     ensureReady,
     startEngineThread,
@@ -1138,6 +1202,7 @@ function createThreadedEngineController() {
     startLoop,
     forwardInput,
     sendCommand,
+    postCommand,
     get lastStatus() { return lastStatus; },
     get lastLoopError() { return lastLoopError; },
     get engineThreadStarted() { return engineThreadStarted; },
@@ -4800,6 +4865,11 @@ async function loadWasmModule() {
       heapU8: () => module.HEAPU8,
     };
   } catch (error) {
+    // Keep the underlying reason: getWasmModuleForArchives folds it into the
+    // mount error so a failed page shows the ROOT CAUSE (e.g. "SharedArray-
+    // Buffer is not defined" on an untrustworthy origin), not a bare
+    // "Wasm module unavailable".
+    cncPortModuleLoadError = String(error?.message ?? error);
     console.info("[wasm-harness] wasm module unavailable; using JS boot stub", error);
     return null;
   }
@@ -7612,6 +7682,29 @@ async function fetchArchiveToOpfsOffThread(url, opfsPath, onProgress = null) {
   return { bytesWritten: Number(response.bytesWritten), status: response.status };
 }
 
+// Release the OPFS exclusive locks (engine realm's staged handles + any
+// in-flight IO-worker handles) as soon as the page starts going away —
+// browsers reap a dead page's workers asynchronously, and until then those
+// locks would collide with the NEXT boot's mount. Best-effort: delivery
+// during teardown is not guaranteed (the per-boot namespace + GC in
+// mountArchivesToOpfs is the hard guarantee; this just releases early in the
+// common case).
+if (cncPortThreadedMode && typeof window !== "undefined") {
+  const releaseOpfsLocksOnPageHide = () => {
+    try {
+      threadedEngine?.postCommand({ cmd: "releaseOpfsHandles" });
+    } catch (_error) {
+      // realm port not connected yet
+    }
+    try {
+      ioWorkerInstance?.postMessage({ kind: "releaseHandles" });
+    } catch (_error) {
+      // worker gone
+    }
+  };
+  window.addEventListener("pagehide", releaseOpfsLocksOnPageHide);
+}
+
 // Archive mount progress -> page UI. The mount path publishes coarse
 // per-archive progress (streamed fetch bytes, the blocking memfs write, and
 // completion) as a DOM CustomEvent so play.html can render a real loading bar
@@ -9049,7 +9142,8 @@ function rememberMountedArchives(archives) {
 async function getWasmModuleForArchives(command) {
   const wasmModule = await wasmModulePromise;
   if (!wasmModule) {
-    return { error: "Wasm module unavailable; archive cannot be mounted", command };
+    const cause = cncPortModuleLoadError ? ` (${cncPortModuleLoadError})` : "";
+    return { error: `Wasm module unavailable; archive cannot be mounted${cause}`, command };
   }
   return { wasmModule };
 }
@@ -9234,13 +9328,57 @@ async function mountArchive(payload = {}) {
 // realEngineInit (boot+go) after the mount resolves.
 //
 // No cache/skip layer (owner rule): OPFS is the read disk, every boot
-// re-streams the archive set (fetchToOpfs truncates + rewrites in place, so
-// disk usage stays bounded at one archive set).
+// re-streams the archive set into a fresh per-boot namespace directory and
+// garbage-collects namespaces whose owner page is gone (Web Lock released),
+// so disk usage stays bounded at one archive set per LIVE tab.
 //
 // The non-threaded path is untouched: opfsArchiveMountEnabled() is false
 // outside ?threads=1, and ?opfsmount=0 (window.__cncOpfsMount = false)
 // forces the MEMFS mount even in threaded mode (A/B memory comparison).
 const OPFS_ARCHIVE_ROOT = "cnc-archives";
+// Per-boot OPFS namespace (owner regression 2026-07-10 hardening): staged
+// FileSystemSyncAccessHandles hold EXCLUSIVE per-file locks for the page
+// lifetime, and a reloaded page's old engine worker is not reaped
+// synchronously — so rewriting fixed paths every boot could collide with a
+// stale holder (NoModificationAllowedError) and kill the whole mount. Every
+// mount therefore writes into a fresh <root>/ns-<bootId>-<seq>/ directory
+// (fresh names can never be lock-held), the page marks its namespaces as
+// LIVE by holding a Web Lock named `${OPFS_NAMESPACE_LOCK_PREFIX}<bootId>`
+// (auto-released on page death, unlike OPFS handles), and every mount first
+// asks the IO worker to garbage-collect namespaces whose owner lock is gone.
+// A second live tab keeps its lock -> its namespace survives -> both tabs
+// work independently instead of one failing with a raw mount error.
+const OPFS_NAMESPACE_LOCK_PREFIX = "cnc-port-opfs-ns:";
+const opfsBootId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+let opfsMountSequence = 0;
+let opfsNamespaceLockPromise = null;
+
+function acquireOpfsNamespaceLock() {
+  if (opfsNamespaceLockPromise) {
+    return opfsNamespaceLockPromise;
+  }
+  opfsNamespaceLockPromise = new Promise((resolve) => {
+    try {
+      if (!navigator.locks || typeof navigator.locks.request !== "function") {
+        resolve(false);
+        return;
+      }
+      navigator.locks.request(
+        `${OPFS_NAMESPACE_LOCK_PREFIX}${opfsBootId}`,
+        { mode: "exclusive", ifAvailable: true },
+        (lock) => {
+          resolve(lock !== null);
+          // Hold the lock until the page dies (bootId is per-page random, so
+          // nobody else ever waits on it).
+          return lock === null ? null : new Promise(() => {});
+        },
+      ).catch(() => resolve(false));
+    } catch (_error) {
+      resolve(false);
+    }
+  });
+  return opfsNamespaceLockPromise;
+}
 const opfsRegisteredPrefixes = new Set();
 
 function opfsArchiveMountEnabled() {
@@ -9259,8 +9397,8 @@ function opfsArchiveMountEnabled() {
   return ioWorkerEnabled();
 }
 
-function opfsPathForArchive(memfsPath) {
-  return `${OPFS_ARCHIVE_ROOT}${memfsPath}`;
+function opfsPathForArchive(namespace, memfsPath) {
+  return `${OPFS_ARCHIVE_ROOT}/${namespace}${memfsPath}`;
 }
 
 // Register the fd-intercept prefix (process-global wasm state). Pre-boot the
@@ -9297,6 +9435,32 @@ async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirec
   // The staging command rides the realm port — realm prep must be complete.
   await threadedEngine.ensureReady();
 
+  // Fresh per-mount namespace under the archive root; mark it live (Web
+  // Lock) BEFORE collecting garbage so a concurrent tab's GC never deletes
+  // files we are about to write, then reclaim dead namespaces (previous
+  // boots) best-effort. GC failures are non-fatal by design: the fresh
+  // namespace never collides with a stale lock holder.
+  const namespace = `ns-${opfsBootId}-${++opfsMountSequence}`;
+  const namespaceLockHeld = await acquireOpfsNamespaceLock();
+  let namespaceGc = null;
+  try {
+    namespaceGc = await ioWorkerRequest({
+      kind: "opfsCollectNamespaces",
+      root: OPFS_ARCHIVE_ROOT,
+      keep: [namespace],
+      lockPrefix: OPFS_NAMESPACE_LOCK_PREFIX,
+    });
+    recordLog("opfs namespace gc", {
+      namespace,
+      lockHeld: namespaceLockHeld,
+      removed: namespaceGc.removed,
+      kept: namespaceGc.kept,
+      failed: namespaceGc.failed,
+    });
+  } catch (error) {
+    recordLog("opfs namespace gc failed", { namespace, error: error?.message ?? String(error) });
+  }
+
   // Bounded-parallel streamed downloads (same fetch parallelism as the MEMFS
   // pipeline); there is no sequential write phase, so archives complete in
   // whatever order the network delivers while `results` keeps input order.
@@ -9314,7 +9478,7 @@ async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirec
       const onProgress = emitProgressEvents
         ? archiveFetchProgressReporter(archive, progressContext)
         : null;
-      const opfsPath = opfsPathForArchive(archive.memfsPath);
+      const opfsPath = opfsPathForArchive(namespace, archive.memfsPath);
       try {
         const { bytesWritten } = await fetchArchiveToOpfsOffThread(archive.url, opfsPath, onProgress);
         results[index] = { bytesWritten, opfsPath };
@@ -9348,6 +9512,8 @@ async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirec
         command: "mountArchives",
         error: result?.error ?? `${parsed.name} download did not complete`,
         archives,
+        opfsNamespace: namespace,
+        opfsNamespaceGc: namespaceGc,
       };
     }
     // 0-byte MEMFS marker at the engine path (directory-enumeration
@@ -9425,6 +9591,8 @@ async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirec
     archiveCount: archives.length,
     totalBytes,
     backing: "opfs",
+    opfsNamespace: namespace,
+    opfsNamespaceGc: namespaceGc,
     stagedPaths: staging.stagedPaths ?? [],
     archives,
     probes: [],

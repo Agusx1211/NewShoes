@@ -769,6 +769,24 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
           });
         return;
       }
+      case "releaseOpfsHandles": {
+        // Pagehide teardown: drop the exclusive OPFS locks NOW instead of
+        // when the browser reaps this worker. Engine reads after this fail
+        // (-1 from the fd intercept) — acceptable, the page is going away.
+        let closed = 0;
+        try {
+          const registry = globalThis.__cncOpfsRegistry;
+          if (registry && typeof registry.closeAll === "function") {
+            closed = registry.closeAll();
+          }
+        } catch (error) {
+          recordLog("releaseOpfsHandles failed", { error: String(error) });
+        }
+        if (msg.id !== undefined) {
+          respond({ cmd: "releaseOpfsHandlesResult", id: msg.id, ok: true, closed });
+        }
+        return;
+      }
       case "mssCacheDrop": {
         // Main-side decoded-sample cache dropped these keys (LRU eviction or
         // a start that failed to cache) — re-send bytes on their next start.

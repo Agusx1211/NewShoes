@@ -53,7 +53,17 @@ const queryParams = new URLSearchParams(window.location.search);
 // single-threaded path as a transition escape hatch. Must match bridge.js's
 // cncPortThreadedMode / defaultCncPortDistDir logic. Declared before the
 // selectedCncPortDistDir() call below (TDZ).
-const threadedMode = queryParams.get("threads") !== "0";
+const threadedRequested = queryParams.get("threads") !== "0";
+// The pthread build needs SharedArrayBuffer, which only exists on
+// cross-origin-isolated pages — and COOP/COEP are IGNORED on untrustworthy
+// origins (plain http:// over a LAN IP; only https:// and localhost count).
+// Without this check the threaded default died on the owner's LAN URL with a
+// raw "FAILED: archive mount failed" (SharedArrayBuffer is not defined).
+// Must match bridge.js's cncPortThreadedRuntimeSupport()/cncPortThreadedMode:
+// both realms decide from the same synchronous globals, so they always agree.
+const threadedSupported = typeof SharedArrayBuffer === "function"
+  && window.crossOriginIsolated === true;
+const threadedMode = threadedRequested && threadedSupported;
 const viewportCanvas = document.querySelector("#viewport");
 const selectedDistDir = selectedCncPortDistDir();
 
@@ -329,10 +339,42 @@ window.addEventListener("cnc-archive-progress", (event) => {
   renderBootProgress(event.detail ?? {});
 });
 
+// Owner-visible note when the threaded default fell back to the legacy
+// single-threaded path (untrustworthy origin: no SAB / not COI). The game
+// still boots; the reason must be visible on the page, not only in the
+// console — a silent mode change is how phantom perf reports start.
+if (threadedRequested && !threadedSupported) {
+  console.warn("[play] engine-thread mode unavailable (needs SharedArrayBuffer + crossOriginIsolated;"
+    + " COOP/COEP are ignored on plain http:// LAN origins — use https:// or http://localhost)."
+    + " Falling back to the legacy single-threaded build.");
+  try {
+    const note = document.createElement("p");
+    note.id = "threadedFallbackNote";
+    note.className = "launcherProgress";
+    note.style.color = "#e0b050";
+    note.textContent = "engine-thread mode unavailable on this origin"
+      + " (needs https:// or http://localhost) — running the legacy single-thread build";
+    progressNode?.parentElement?.insertBefore(note, progressNode);
+  } catch {
+    // Best-effort; the console warning above still tells the story.
+  }
+}
+
 function fail(message, detail) {
   console.error("[play]", message, detail ?? "");
   issueRecorder.noteFailure(message, detail);
-  progressNode.textContent = `FAILED: ${message}`;
+  let detailText = "";
+  try {
+    detailText = typeof detail === "string" ? detail
+      : detail?.error ? String(detail.error)
+        : detail !== undefined && detail !== null ? JSON.stringify(detail) : "";
+  } catch {
+    detailText = String(detail);
+  }
+  if (detailText.length > 600) {
+    detailText = `${detailText.slice(0, 600)}…`;
+  }
+  progressNode.textContent = `FAILED: ${message}${detailText ? ` — ${detailText}` : ""}`;
   progressNode.classList.add("error");
   bootProgressNode?.classList.remove("indeterminate");
   startButton.disabled = false;
@@ -685,6 +727,11 @@ async function start() {
       phase: "starting",
       diagLevel: configuredDiagLevel,
       distDir: selectedDistDir,
+      threaded: {
+        requested: threadedRequested,
+        supported: threadedSupported,
+        mode: threadedMode,
+      },
       pageParams: Object.fromEntries(queryParams),
       audio: {
         runtime: startAudioRuntime?.browserAudioRuntime ?? startAudioRuntime,
