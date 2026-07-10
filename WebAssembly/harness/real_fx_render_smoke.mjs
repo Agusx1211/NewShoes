@@ -2,15 +2,23 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright";
 import { startStaticServer } from "./static-server.mjs";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
 const screenshotDir = resolve(wasmRoot, "artifacts/screenshots");
-const screenshotPath = resolve(screenshotDir, "real-fx-render-smoke.png");
+const executablePath = process.env.CNC_CHROMIUM ??
+  process.env.REAL_FX_BROWSER_EXECUTABLE ?? process.env.CHROME_PATH;
+const { chromium } = await import(executablePath ? "playwright-core" : "playwright");
 const fxName = process.env.REAL_FX_NAME ?? "WeaponFX_MOAB_Blast";
 const maxFrames = Number(process.env.REAL_FX_FRAMES ?? 45);
+const expectHeatDistortion = process.env.REAL_FX_EXPECT_HEAT === "1";
+const heatParticleSystemName = process.env.REAL_HEAT_PARTICLE_SYSTEM ?? "MicrowaveEmitter";
+const shaderTier = process.env.REAL_FX_SHADER_TIER ?? (expectHeatDistortion ? "ps11" : "ff");
+const screenshotPath = resolve(
+  screenshotDir,
+  expectHeatDistortion ? "real-heat-distortion-smoke.png" : "real-fx-render-smoke.png",
+);
 
 const archiveSpecs = [
   { name: "INIZH.big" },
@@ -83,6 +91,13 @@ function effectDraws(result) {
 }
 
 async function triggerOriginalFX(page, name) {
+  if (expectHeatDistortion) {
+    return rpc(page, "realEngineSpawnParticleSystem", {
+      name: heatParticleSystemName,
+      useViewPosition: true,
+      clampToTerrain: true,
+    });
+  }
   const first = await rpc(page, "realEngineDoFX", {
     name,
     useViewPosition: true,
@@ -113,20 +128,21 @@ const server = await startStaticServer({ root: wasmRoot });
 let browser;
 try {
   await mkdir(screenshotDir, { recursive: true });
-  const launchOptions = { headless: true };
-  const executablePath = process.env.REAL_FX_BROWSER_EXECUTABLE ?? process.env.CHROME_PATH;
-  if (executablePath) {
-    launchOptions.executablePath = executablePath;
-  }
-  if (process.env.REAL_FX_BROWSER_ARGS) {
-    launchOptions.args = process.env.REAL_FX_BROWSER_ARGS.split(/\s+/).filter(Boolean);
+  const launchOptions = { headless: true, executablePath };
+  const browserArgs = process.env.CNC_CHROMIUM_ARGS
+    ? process.env.CNC_CHROMIUM_ARGS.split(",").map((arg) => arg.trim()).filter(Boolean)
+    : process.env.REAL_FX_BROWSER_ARGS?.split(/\s+/).filter(Boolean);
+  if (browserArgs?.length) {
+    launchOptions.args = browserArgs;
   }
   browser = await chromium.launch(launchOptions);
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   page.setDefaultTimeout(240000);
   page.setDefaultNavigationTimeout(240000);
 
-  await page.goto(new URL("harness/index.html", server.url).href, { waitUntil: "networkidle" });
+  const harnessUrl = new URL("harness/index.html", server.url);
+  harnessUrl.searchParams.set("shaderTier", shaderTier);
+  await page.goto(harnessUrl.href, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
   await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
   await page.evaluate(() => window.__cncSetD3D8SceneDrawHistoryLimit?.(4096));
@@ -148,11 +164,12 @@ try {
 
   await rpc(page, "realEngineFrameSummary", { frames: 4 });
   const before = await rpc(page, "realEngineFrameSummary", { frames: 1 });
+  const beforePerf = await page.evaluate(() => globalThis.__cncD3D8PerfSummary?.() ?? {});
   expect(before?.frame?.particles?.managerReady === true,
     "particle manager was not ready before FX trigger", before?.frame?.particles);
 
   const trigger = await triggerOriginalFX(page, fxName);
-  expect(trigger?.ok === true, "real FX trigger did not run", trigger);
+  expect(trigger?.ok === true, "real FX trigger did not run", trigger?.result ?? trigger);
   expect(trigger.result?.systemsAfter > trigger.result?.systemsBefore ||
       trigger.result?.particlesAfter > trigger.result?.particlesBefore,
     "real FX trigger did not create particle work", trigger.result);
@@ -161,10 +178,13 @@ try {
     frame: 0,
     particleCount: 0,
     onScreenParticleCount: 0,
+    heatEffectsEnabled: null,
+    smudgeManagerReady: null,
+    smudgeCountLastFrame: 0,
     effectDrawCount: 0,
     effectTextures: [],
-    result: null,
   };
+  const beforeParticleCount = Number(before.frame.particles.particleCount ?? 0);
   await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
   for (let frame = 1; frame <= maxFrames; ++frame) {
     const liteResult = await rpc(page, "realEngineFrameSummary", { frames: 1 });
@@ -178,22 +198,32 @@ try {
       draws = effectDraws(result);
       await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
     }
-    const score = Number(particles.onScreenParticleCount ?? 0) + draws.length;
-    const bestScore = best.onScreenParticleCount + best.effectDrawCount;
+    const particleCount = Number(result?.frame?.particles?.particleCount ?? particles.particleCount ?? 0);
+    const score = Math.max(0, particleCount - beforeParticleCount) +
+      Number(particles.onScreenParticleCount ?? 0) + draws.length;
+    const bestScore = Math.max(0, best.particleCount - beforeParticleCount) +
+      best.onScreenParticleCount + best.effectDrawCount;
     if (score > bestScore) {
       best = {
         frame,
-        particleCount: Number(result?.frame?.particles?.particleCount ?? particles.particleCount ?? 0),
+        particleCount,
         onScreenParticleCount: Number(result?.frame?.particles?.onScreenParticleCount ?? particles.onScreenParticleCount ?? 0),
+        heatEffectsEnabled: result?.frame?.particles?.heatEffectsEnabled ?? null,
+        smudgeManagerReady: result?.frame?.particles?.smudgeManagerReady ?? null,
+        smudgeCountLastFrame: Number(result?.frame?.particles?.smudgeCountLastFrame ?? 0),
         effectDrawCount: draws.length,
         effectTextures: Array.from(new Set(draws.map((draw) => draw.texture).filter(Boolean))).slice(0, 12),
-        result,
       };
     }
-    if (best.effectDrawCount > 0) {
+    const feedbackResolves = await page.evaluate(() =>
+      globalThis.__cncD3D8PerfSummary?.().framebufferFeedbackResolves ?? 0);
+    if (best.effectDrawCount > 0 ||
+        (expectHeatDistortion && feedbackResolves > (beforePerf.framebufferFeedbackResolves ?? 0))) {
       break;
     }
   }
+
+  const afterPerf = await page.evaluate(() => globalThis.__cncD3D8PerfSummary?.() ?? {});
 
   await page.locator("#viewport").screenshot({ path: screenshotPath });
 
@@ -204,17 +234,34 @@ try {
       best,
       trigger: trigger.result,
     });
-  expect(best.effectDrawCount > 0,
+  expect(expectHeatDistortion || best.effectDrawCount > 0,
     "real FX trigger did not produce visible effect texture draws", {
       best,
       trigger: trigger.result,
     });
+  if (expectHeatDistortion) {
+    expect(afterPerf.framebufferFeedbackResolves >
+        (beforePerf.framebufferFeedbackResolves ?? 0),
+      "heat-smudge FX did not resolve and sample the active scene target", {
+        before: beforePerf.framebufferFeedbackResolves ?? 0,
+        after: afterPerf.framebufferFeedbackResolves ?? 0,
+        fboBinds: afterPerf.fboBinds ?? null,
+        fboIncomplete: afterPerf.fboIncomplete ?? null,
+        best,
+      });
+    expect((afterPerf.fboIncomplete ?? 0) === 0,
+      "heat-smudge FX produced an incomplete framebuffer", afterPerf);
+  }
 
   console.log(JSON.stringify({
     ok: true,
-    fxName,
+    fxName: expectHeatDistortion ? heatParticleSystemName : fxName,
     trigger: trigger.result,
     beforeParticles: before.frame.particles,
+    framebufferFeedbackResolves: {
+      before: beforePerf.framebufferFeedbackResolves ?? 0,
+      after: afterPerf.framebufferFeedbackResolves ?? 0,
+    },
     best: {
       frame: best.frame,
       particleCount: best.particleCount,

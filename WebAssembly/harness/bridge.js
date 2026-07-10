@@ -235,6 +235,8 @@ const d3d8Framebuffers = new Map();
 let d3d8CurrentFramebuffer = null;
 let d3d8CurrentFramebufferWidth = 0;
 let d3d8CurrentFramebufferHeight = 0;
+let d3d8CurrentFramebufferColorTextureId = 0;
+let d3d8FramebufferBindSerial = 0;
 let d3d8CurrentProgram = null;
 let d3d8CurrentArrayBuffer = null;
 let d3d8CurrentElementArrayBuffer = null;
@@ -565,6 +567,8 @@ const d3d8PerfStats = {
   drawDepthStencilOnlyProgramDraws: 0,
   drawDepthStencilNoDiscardDraws: 0,
   drawDepthStencilOnlyFastDerivedDraws: 0,
+  destinationAlphaBlendDraws: 0,
+  destinationAlphaBlendOffscreenDraws: 0,
   // Terrain noise/cloud/lightmap detail-pass diagnostics. The original
   // TerrainShader2Stage noise/cloud pass (W3DShaderManager.cpp
   // TerrainShader2Stage::set pass 2) binds a noise/cloud texture with
@@ -686,6 +690,8 @@ const d3d8PerfStats = {
   fboBindMs: 0,
   fboCreates: 0,
   fboIncomplete: 0,
+  framebufferFeedbackResolves: 0,
+  framebufferFeedbackResolveMs: 0,
   bufferUpdates: 0,
   bufferUploadBytes: 0,
   bufferVertexUpdates: 0,
@@ -1005,6 +1011,8 @@ function d3d8PerfSummary() {
     drawDepthStencilOnlyProgramDraws: d3d8PerfStats.drawDepthStencilOnlyProgramDraws,
     drawDepthStencilNoDiscardDraws: d3d8PerfStats.drawDepthStencilNoDiscardDraws,
     drawDepthStencilOnlyFastDerivedDraws: d3d8PerfStats.drawDepthStencilOnlyFastDerivedDraws,
+    destinationAlphaBlendDraws: d3d8PerfStats.destinationAlphaBlendDraws,
+    destinationAlphaBlendOffscreenDraws: d3d8PerfStats.destinationAlphaBlendOffscreenDraws,
     terrainNoiseMultiplyDraws: d3d8PerfStats.terrainNoiseMultiplyDraws,
     terrainNoiseMultiplyTransformedDraws: d3d8PerfStats.terrainNoiseMultiplyTransformedDraws,
     terrainNoiseMultiplyIdentityTransformDraws: d3d8PerfStats.terrainNoiseMultiplyIdentityTransformDraws,
@@ -1117,6 +1125,8 @@ function d3d8PerfSummary() {
     fboBindMs: roundedPerfMs(d3d8PerfStats.fboBindMs),
     fboCreates: d3d8PerfStats.fboCreates,
     fboIncomplete: d3d8PerfStats.fboIncomplete,
+    framebufferFeedbackResolves: d3d8PerfStats.framebufferFeedbackResolves,
+    framebufferFeedbackResolveMs: roundedPerfMs(d3d8PerfStats.framebufferFeedbackResolveMs),
     bufferUpdates: d3d8PerfStats.bufferUpdates,
     bufferUploadBytes: d3d8PerfStats.bufferUploadBytes,
     bufferVertexUpdates: d3d8PerfStats.bufferVertexUpdates,
@@ -7193,6 +7203,72 @@ function setD3D8ActiveTextureUnitCached(stage) {
   d3d8PerfStats.drawTextureActiveCacheMisses += 1;
 }
 
+function d3d8FeedbackSafeTextureResource(resource) {
+  if (!gl || !resource?.texture || d3d8CurrentFramebuffer === null ||
+      resource.id !== d3d8CurrentFramebufferColorTextureId) {
+    return resource;
+  }
+
+  let snapshot = resource.feedbackSnapshot;
+  if (!snapshot) {
+    snapshot = {
+      id: resource.id,
+      width: resource.width,
+      height: resource.height,
+      levels: 1,
+      format: resource.format,
+      texture: gl.createTexture(),
+      target: gl.TEXTURE_2D,
+      type: "feedback-snapshot",
+      completeMipChain: true,
+      samplerState: null,
+      samplerStateKey: null,
+      samplerD3DStateKey: null,
+      resolvedBindSerial: -1,
+    };
+    withPreservedD3D8TextureUnit(() => {
+      gl.bindTexture(gl.TEXTURE_2D, snapshot.texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA8,
+        snapshot.width,
+        snapshot.height,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        null,
+      );
+    });
+    resource.feedbackSnapshot = snapshot;
+  }
+
+  if (snapshot.resolvedBindSerial !== d3d8FramebufferBindSerial) {
+    const startedAt = perfNow();
+    withPreservedD3D8TextureUnit(() => {
+      gl.bindTexture(gl.TEXTURE_2D, snapshot.texture);
+      gl.copyTexSubImage2D(
+        gl.TEXTURE_2D,
+        0,
+        0,
+        0,
+        0,
+        0,
+        snapshot.width,
+        snapshot.height,
+      );
+    });
+    snapshot.resolvedBindSerial = d3d8FramebufferBindSerial;
+    d3d8PerfStats.framebufferFeedbackResolves += 1;
+    d3d8PerfStats.framebufferFeedbackResolveMs += perfNow() - startedAt;
+  }
+  return snapshot;
+}
+
 function bindD3D8DrawTexture2D(stage, resource) {
   if (!gl || !resource?.texture) {
     return;
@@ -7212,28 +7288,29 @@ function ensureD3D8DrawTexture2D(stage, textureStage, resource) {
   if (!gl || !resource?.texture || !textureStage) {
     return null;
   }
+  const sampleResource = d3d8FeedbackSafeTextureResource(resource);
   const unit = Number(stage) >>> 0;
-  const textureBound = d3d8CurrentTexture2DBindings.get(unit) === resource.texture;
-  const rawSamplerCurrent = d3d8TextureSamplerRawStateCurrent(textureStage, resource);
+  const textureBound = d3d8CurrentTexture2DBindings.get(unit) === sampleResource.texture;
+  const rawSamplerCurrent = d3d8TextureSamplerRawStateCurrent(textureStage, sampleResource);
   if (textureBound && rawSamplerCurrent) {
     d3d8PerfStats.drawTextureBindCacheHits += 1;
     d3d8PerfStats.drawTextureSamplerCacheHits += 1;
-    return resource.samplerState;
+    return sampleResource.samplerState;
   }
 
-  bindD3D8DrawTexture2D(unit, resource);
+  bindD3D8DrawTexture2D(unit, sampleResource);
   if (rawSamplerCurrent) {
     d3d8PerfStats.drawTextureSamplerCacheHits += 1;
-    return resource.samplerState;
+    return sampleResource.samplerState;
   }
-  const samplerParams = d3d8TextureSamplerParams(textureStage, resource);
-  const samplerCurrent = d3d8TextureSamplerStateCurrent(textureStage, resource, samplerParams);
+  const samplerParams = d3d8TextureSamplerParams(textureStage, sampleResource);
+  const samplerCurrent = d3d8TextureSamplerStateCurrent(textureStage, sampleResource, samplerParams);
   if (samplerCurrent) {
     d3d8PerfStats.drawTextureSamplerCacheHits += 1;
-    return resource.samplerState;
+    return sampleResource.samplerState;
   }
   d3d8PerfStats.drawTextureSamplerCacheMisses += 1;
-  return applyD3D8TextureSamplerToBoundTexture(unit, textureStage, resource, samplerParams);
+  return applyD3D8TextureSamplerToBoundTexture(unit, textureStage, sampleResource, samplerParams);
 }
 
 function withPreservedD3D8TextureBinding(target, callback) {
@@ -7395,6 +7472,9 @@ function createD3D8Texture(payload = {}) {
   const existing = d3d8Textures.get(id);
   if (existing) {
     releaseD3D8FramebufferEntriesForTexture(id);
+    if (existing.feedbackSnapshot?.texture) {
+      gl.deleteTexture(existing.feedbackSnapshot.texture);
+    }
     gl.deleteTexture(existing.texture);
   }
 
@@ -7490,6 +7570,7 @@ function deleteD3D8FramebufferEntry(key, entry) {
     d3d8CurrentFramebuffer = null;
     d3d8CurrentFramebufferWidth = 0;
     d3d8CurrentFramebufferHeight = 0;
+    d3d8CurrentFramebufferColorTextureId = 0;
   }
   if (entry.fbo) {
     gl.deleteFramebuffer(entry.fbo);
@@ -7571,6 +7652,7 @@ function bindD3D8Framebuffer(payload = {}) {
   const depthTextureId = Number(payload.depthTextureId ?? 0) >>> 0;
   const width = Number(payload.width ?? 0) >>> 0;
   const height = Number(payload.height ?? 0) >>> 0;
+  d3d8FramebufferBindSerial += 1;
 
   if (colorTextureId === 0) {
     // Bind backbuffer (default framebuffer)
@@ -7579,6 +7661,7 @@ function bindD3D8Framebuffer(payload = {}) {
     d3d8CurrentFramebuffer = null;
     d3d8CurrentFramebufferWidth = 0;
     d3d8CurrentFramebufferHeight = 0;
+    d3d8CurrentFramebufferColorTextureId = 0;
     return finishFboBind(1);
   }
 
@@ -7712,6 +7795,15 @@ function bindD3D8Framebuffer(payload = {}) {
       return finishFboBind(0);
     }
 
+    // A render-target allocation is valid level-0 texture storage, and every
+    // successful scene pass writes it before the engine samples it. Keep the
+    // normal texture-readiness bookkeeping in sync so post-processing and
+    // heat-smudge draws do not substitute the fixed-function white fallback.
+    colorTexture.initializedLevels.add("0");
+    colorTexture.levelFormats.set("0", "rgba8");
+    colorTexture.storage = "rgba8";
+    updateD3D8TextureMipCompleteness(colorTexture);
+
     fboEntry = {
       fbo,
       colorTextureId,
@@ -7758,6 +7850,7 @@ function bindD3D8Framebuffer(payload = {}) {
   }
 
   d3d8CurrentFramebuffer = fboEntry.fbo;
+  d3d8CurrentFramebufferColorTextureId = colorTextureId;
   if (depthTextureId !== 0) {
     d3d8TextureStats.lastTextureDepthFboBind = {
       colorTextureId,
@@ -8234,6 +8327,9 @@ function releaseD3D8Texture(payload = {}) {
       d3d8BoundTextures.delete(stage);
       releasedBindings.push(stage);
     }
+  }
+  if (resource.feedbackSnapshot?.texture) {
+    gl.deleteTexture(resource.feedbackSnapshot.texture);
   }
   gl.deleteTexture(resource.texture);
   invalidateD3D8GlTextureBindingCache();
@@ -13805,6 +13901,17 @@ function paintD3D8DrawIndexed(payload = {}) {
   if (depthStencilOnlyFastDerived) {
     d3d8PerfStats.drawDepthStencilOnlyFastDerivedDraws += 1;
   }
+  const usesDestinationAlpha = renderState.alphaBlendEnable !== 0 &&
+    (renderState.srcBlend === D3DBLEND_DESTALPHA ||
+      renderState.srcBlend === D3DBLEND_INVDESTALPHA ||
+      renderState.destBlend === D3DBLEND_DESTALPHA ||
+      renderState.destBlend === D3DBLEND_INVDESTALPHA);
+  if (usesDestinationAlpha) {
+    d3d8PerfStats.destinationAlphaBlendDraws += 1;
+    if (d3d8CurrentFramebuffer !== null) {
+      d3d8PerfStats.destinationAlphaBlendOffscreenDraws += 1;
+    }
+  }
   // Terrain noise/cloud/lightmap detail-pass diagnostic. The original
   // TerrainShader2Stage::set(pass==2) noise/cloud pass (and the single-pass
   // ST_TERRAIN_BASE_NOISE12 variant) projects a noise/cloud texture onto the
@@ -14013,10 +14120,28 @@ function paintD3D8DrawIndexed(payload = {}) {
         const log = globalThis.__cncSM1DebugLog ?? (globalThis.__cncSM1DebugLog = {});
         const key = `ps${pixelShaderHandle}|vs${sm1VertexDraw ? vertexShaderFvf >>> 0 : 0}`;
         if (!log[key] || (log[key].count ?? 0) < 8) {
-          const entry = log[key] ?? (log[key] = { count: 0, samples: [] });
+          const pixelShader = d3d8SM1PixelShaders.get(pixelShaderHandle);
+          const entry = log[key] ?? (log[key] = {
+            count: 0,
+            instructions: pixelShader?.ir?.instructions?.map((instruction) => instruction.name) ?? [],
+            samples: [],
+          });
+          const diffuseOffset = vertexLayout?.diffuseOffset ?? null;
+          const diffuseByteOffset = diffuseOffset === null
+            ? -1
+            : vertexByteOffset + diffuseOffset;
+          const firstVertexDiffuse = diffuseByteOffset >= 0 &&
+              vertexResource?.bytes instanceof Uint8Array &&
+              diffuseByteOffset + 4 <= vertexResource.bytes.byteLength
+            ? d3d8DiffuseRgbaFromBytes(vertexResource.bytes, diffuseByteOffset)
+            : null;
           entry.count += 1;
           entry.samples.push({
             usedPairProgram: Boolean(sm1Program),
+            vertexShaderFvf,
+            vertexStride,
+            diffuseOffset,
+            firstVertexDiffuse,
             canSample: [canSampleTexture0, canSampleTexture1, canSampleTexture2, canSampleTexture3],
             textureIds: [texture0Id, texture1Id, texture2Id, texture3Id],
             stages: [0, 1, 2, 3].map((stage) => {
@@ -16065,6 +16190,11 @@ async function loadWasmModule() {
         "string",
         ["string", "number", "number", "number", "number", "number"],
       ),
+      realEngineSpawnParticleSystem: module.cwrap(
+        "cnc_port_real_engine_spawn_particle_system",
+        "string",
+        ["string", "number", "number", "number", "number", "number"],
+      ),
       realEngineSpawnLaser: module.cwrap(
         "cnc_port_real_engine_spawn_laser",
         "string",
@@ -16074,6 +16204,11 @@ async function loadWasmModule() {
         "cnc_port_tactical_view_look_at",
         "string",
         ["number", "number", "number"],
+      ),
+      realEngineSetViewFilter: module.cwrap(
+        "cnc_port_real_engine_set_view_filter",
+        "string",
+        ["number", "number", "number", "number"],
       ),
       revealLocalMap: module.cwrap(
         "cnc_port_reveal_local_map",
@@ -21845,6 +21980,38 @@ async function rpc(command, payload = {}) {
           state: snapshotState(),
         };
       }
+    case "realEngineSpawnParticleSystem":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineSpawnParticleSystem");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineSpawnParticleSystem", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.realEngineSpawnParticleSystem(
+            String(payload.name ?? "MicrowaveEmitter"),
+            Number(payload.x ?? 0),
+            Number(payload.y ?? 0),
+            Number(payload.z ?? 0),
+            payload.useViewPosition === false ? 0 : 1,
+            payload.clampToTerrain === false ? 0 : 1,
+          ));
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        recordLog("real engine spawn particle system", { aborted, abortMessage, result });
+        return {
+          ok: Boolean(result?.ok) && !aborted,
+          command: "realEngineSpawnParticleSystem",
+          aborted,
+          abortMessage,
+          result,
+          state: snapshotState(),
+        };
+      }
     case "realEngineSpawnLaser":
       {
         const moduleResult = await getWasmModuleForArchives("realEngineSpawnLaser");
@@ -22072,6 +22239,35 @@ async function rpc(command, payload = {}) {
         return {
           ok: Boolean(result?.ok) && !aborted,
           command: "tacticalViewLookAt",
+          aborted,
+          abortMessage,
+          result,
+          state: snapshotState(),
+        };
+      }
+    case "realEngineSetViewFilter":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineSetViewFilter");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineSetViewFilter", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.realEngineSetViewFilter(
+            Number(payload.filter ?? 0),
+            Number(payload.mode ?? 0),
+            Number(payload.fadeFrames ?? 1),
+            Number(payload.fadeDirection ?? 1),
+          ));
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        return {
+          ok: Boolean(result?.ok) && !aborted,
+          command: "realEngineSetViewFilter",
           aborted,
           abortMessage,
           result,

@@ -180,11 +180,15 @@ Int ScreenDefaultFilter::init(void)
 
 Bool ScreenDefaultFilter::preRender(Bool &skipRender, CustomScenePassModes &scenePassMode)
 {
-	//Right now this filter is only used for smudges, so don't bother if none are present.
-	if (TheSmudgeManager)
-	{	if (((W3DSmudgeManager *)TheSmudgeManager)->getSmudgeCountLastFrame() == 0)
-			return FALSE;
-	}
+	//Smudges need the scene as a texture. Soft water edges need an alpha-bearing
+	//scene target because the browser's final canvas framebuffer is opaque.
+	const Bool needsSoftWaterAlpha = TheGlobalData && TheWaterTransparency &&
+		TheGlobalData->m_showSoftWaterEdge &&
+		TheWaterTransparency->m_transparentWaterDepth != 0;
+	const Bool needsSmudgeTexture = TheSmudgeManager &&
+		TheSmudgeManager->getSmudgeCountLastFrame() != 0;
+	if (!needsSoftWaterAlpha && !needsSmudgeTexture)
+		return FALSE;
 	W3DShaderManager::startRenderToTexture();
 	return true;
 }
@@ -3753,6 +3757,4 @@ void FlatTerrainShaderPixelShader::reset(void)
 
 	DX8Wrapper::Invalidate_Cached_Render_States();
 }
-
-
 

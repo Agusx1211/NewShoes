@@ -955,17 +955,6 @@ symptom is temporal — NOT a single still.
       `D3DTA_CURRENT`; true DX8 default is `D3DTA_DIFFUSE` — harmless at stage 0 since
       the bridge resolves stage-0 CURRENT→diffuse, but worth aligning at
       `wasm_d3d8_shim.cpp:3901,3907`.)
-- [ ] **Shoreline/water dest-alpha pre-pass writes are dropped (backbuffer has
-      no alpha channel)** — found 2026-07-09 while fixing the road/terrain
-      edge-blend regression: the shoreline dest-alpha pre-pass
-      (BaseHeightMap.cpp `m_destAlphaTexture`, `D3DCOLORWRITEENABLE_ALPHA`)
-      writes to a backbuffer created with `alpha:false` (bridge.js
-      getContext), so those writes are dropped and later
-      DESTALPHA/INVDESTALPHA blends read alpha=1.0. Flipping `alpha:true`
-      naively would composite the canvas with the page background; the real
-      fix needs an offscreen RGBA FBO for the scene + opaque present blit.
-      Affects shoreline/water edge feathering only (roads/terrain edges were
-      fixed by dc33545d). Verify with a shoreline screenshot on a water map.
 - [ ] **Ground toxin/radiation fields do not render** — toxins on the ground
       (anthrax, radiation, and similar persistent ground effects) are not drawn.
       The field is likely still active in simulation (damage over area) but the
@@ -1237,11 +1226,15 @@ screenshots on the release build.
       shader objects/constants in `wasm_d3d8_shim.cpp`, selectable via
       `?shaderTier=ps11` / play-page Settings→Shaders (default still `ff`).
       Remaining:
-      - [ ] **ps11 visual regressions from owner playtest (2026-07-09) — fix
-            before re-flipping the default.** The tier is mechanically green
-            (probes, Metal) but the owner reports vs the FF look: water
-            "radioactive/bright AF" at game start; motion blur "a bit off";
-            overall lighting flatter. (The muzzle-flash-always-on and
+      - [ ] **Remaining ps11 visual regressions from owner playtest
+            (2026-07-09) — fix before re-flipping the default.** The tier is
+            mechanically green (probes, Metal), but the owner still needs to
+            review motion blur (reported "a bit off") and the overall flatter
+            lighting. **The radioactive/over-bright flat water is resolved
+            (2026-07-10):** the upload optimization had removed vertex diffuse
+            even though the shipped water shader consumes `v0`; `XYZDUV2` and
+            the original tint/alpha are restored, with runtime regression and
+            Mac Metal proof recorded in DONE.md. (The muzzle-flash-always-on and
             battleship-guns-not-animating reports from the same playtest
             turned out to be tier-INDEPENDENT — they were the stepped-load
             validation regression, root-caused and fixed 2026-07-10; see
@@ -1268,13 +1261,14 @@ screenshots on the release build.
             as RG8 + decode `*2-1` in the texbem emission (flag on the texture
             resource), and support `Create_Render_Target` reflection texture
             interplay. Only maps that set water type 2 use it.
-      - [ ] **BW/monochrome + motion-blur filters: visual trigger proof** —
-            `monochrome.pso`/`invmonochrome.pso` register + link under ps11
-            (ScreenBWFilter now takes the PS path instead of DOT3), but the
-            effect only shows when a special power/EMP triggers it — capture
-            one on Metal. Motion blur (`ScreenMotionBlurFilter`) is
-            fixed-function (shipped `motionblur.pso`/`MotionBlur.vso` are dead
-            assets — nothing loads them).
+      - [x] **BW/monochrome + motion-blur filters: visual trigger proof.** The
+            real view-filter RPC follows the original ScriptActions ordering;
+            the shader-tier harness forces and captures both filters on local
+            SwiftShader and Mac M4 Metal. Monochrome produces translated
+            full-screen shader draws; motion blur produces additional FBO
+            passes. Motion blur (`ScreenMotionBlurFilter`) is fixed-function
+            (shipped `motionblur.pso`/`MotionBlur.vso` are dead assets — nothing
+            loads them).
       - [ ] **ps.1.4 is intentionally unsupported** (phases/`texld`); the
             entire shipped corpus is ps.1.1. If a mod ships 1.4 bytecode the
             create fails cleanly and the engine falls back to fixed function —
@@ -1285,23 +1279,14 @@ screenshots on the release build.
             real `Trees.vso` computes those UVs (`oT1 = (v0 + c32) * c33`);
             the hack only serves tier ff. Re-verify trees on the user's build
             before touching it (user-firm rule).
-- [ ] **Heat-haze / screen smudges not rendering (flat explosions/fire)** — the
-      original distorts the background behind heat particles ("screen smudges
-      which are particles that distort the background behind them",
-      `W3DParticleSys.cpp:381`) — the shimmer around fire, explosions, and jet
-      exhaust. This needs a grab-framebuffer + refraction pass, exactly the kind
-      of render-to-texture the fixed-function WebGL bridge tends to drop
-      (related to the known "invisible explosions" report). Fix: implement the
-      smudge/distortion pass (sample the current color target and offset by the
-      smudge geometry) in the bridge. Verify with an explosion capture.
-- [x] **Monochrome / motion-blur screen shaders missing (special-FX tints)** —
-      RESOLVED by the SM1 shader tier (2026-07-09): under `?shaderTier=ps11`
-      `monochrome.pso`/`invmonochrome.pso` register + link and ScreenBWFilter
-      takes its original pixel-shader path (c0 luminance weights, c1 tint, c2
-      fade). Motion blur turned out to be fixed-function in the shipped game
-      (`ScreenMotionBlurFilter` never loads the dead `motionblur.pso` asset).
-      Visual trigger proof on Metal tracked under "Shader-tier (Path B)
-      follow-ups" above.
+- [ ] **Make the generic real-FX render smoke choose a valid original gameplay
+      context.** Its default `WeaponFX_MOAB_Blast` trigger currently samples the
+      shell-map camera position outside the playable partition, gets the
+      original `shrouded` guard, and has no local-owned on-screen drawable for
+      its fallback. Keep the production guard intact; make the harness reach a
+      clear real object/position through existing engine state or drive an
+      active match before triggering. The dedicated `MicrowaveEmitter` heat-
+      smudge fixture is independent and green.
 
 ## Strategy pivot — real `init()` whole-program link (current focus)
 
