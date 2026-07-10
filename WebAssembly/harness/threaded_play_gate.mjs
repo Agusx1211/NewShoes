@@ -21,6 +21,22 @@
 // records main-thread memory (performance.memory + wasm memory size) in the
 // summary for the OPFS-vs-MEMFS comparison.
 //
+// Gap-closure additions (2026-07-10, owner directive "fully migrate to the
+// engine-thread path"): the browser launches with autoplay allowed (mimics
+// the owner's Play-click gesture) and the gate additionally asserts:
+//   - threaded `state` RPC carries the wasm cnc_port_state fields;
+//   - issue-dump RPC routes (realEngineAnimReport / querySelection /
+//     realEngineFrameSummary / d3d8TextureInventory) round-trip;
+//   - placeholder-canvas captureStream stays live (issue-recorder video);
+//   - AUDIBLE PATH: menu-music stream decodes+schedules from the OPFS-backed
+//     archives, samples start (decode+buffer+source.start), completions
+//     drain back into the engine (2D completed counter + no completion-
+//     failure logs), and the worker-side byte-copy dedupe engages;
+//   - resolution-change flow: setEngineResolution round-trips on the engine
+//     thread and the placeholder/status sizes follow;
+//   - saves: a .sav written into the IDBFS-mounted user-data dir survives
+//     persistSaves + a fresh page load (listSaves round trip).
+//
 // Build first: npm run build:port:threaded  (and a dist/ build for the
 // reference run: npm run build:port). Run: node harness/threaded_play_gate.mjs
 //   SKIP_REFERENCE=1  skips the non-threaded reference boot (faster iteration)
@@ -135,6 +151,10 @@ async function main() {
   await mkdir(profileDir, { recursive: true });
   const browser = await chromium.launchPersistentContext(profileDir, {
     viewport: { width: 1280, height: 800 },
+    // Autoplay allowed = the AudioContext runs from boot, matching the real
+    // play flow where the owner's Play click is the resuming gesture before
+    // any engine audio starts. Required for the audible-path checks.
+    args: ["--autoplay-policy=no-user-gesture-required"],
   });
   const consoleLines = [];
   const summary = {};
@@ -370,6 +390,192 @@ async function main() {
       ? windowsDump.windows.windows.length : 0;
     summary.windowsDump = { ok: windowsDump?.ok === true, windowCount };
     checks.push(["state RPC round-trips (realEngineDumpWindows)", windowsDump?.ok === true && windowCount > 0]);
+    // Boot intro/logo movie path completed (Bink provider cleanly skipped the
+    // missing .bik files — parity with the non-threaded page, which installs
+    // no Bink hooks either): the main-menu shell is up.
+    const menuWindowPresent = JSON.stringify(windowsDump?.windows ?? {}).includes("MainMenu.wnd");
+    summary.menuWindowPresent = menuWindowPresent;
+    checks.push(["main-menu shell reached (intro movie path completed, no hang)", menuWindowPresent]);
+
+    // ---------- threaded `state` carries the wasm cnc_port_state fields ----------
+    const stateRpc = await page.evaluate(() => window.CnCPort.rpc("state"));
+    summary.threadedStateRpc = {
+      wasmStateSource: stateRpc?.wasmStateSource ?? null,
+      originalEngineLinked: stateRpc?.state?.originalEngineLinked === true,
+      hasGlobalDataProbe: stateRpc?.state?.globalDataProbe != null,
+    };
+    checks.push([
+      "threaded state RPC merges cnc_port_state (engine-thread source + wasm fields)",
+      stateRpc?.wasmStateSource === "engine-thread"
+        && stateRpc?.state?.originalEngineLinked === true,
+    ]);
+
+    // ---------- issue-dump RPC routes ----------
+    const dumpRoutes = await page.evaluate(async () => {
+      const animReport = await window.CnCPort.rpc("realEngineAnimReport", { maxEntries: 8 });
+      const selection = await window.CnCPort.rpc("querySelection", {});
+      const frameSummary = await window.CnCPort.rpc("realEngineFrameSummary", { frames: 1 });
+      const textures = await window.CnCPort.rpc("d3d8TextureInventory", { sizes: [], sampleLimit: 0 });
+      return {
+        animReport: { ok: animReport?.ok === true, entries: animReport?.report?.drawables?.length ?? null },
+        selection: { ok: selection?.ok === true, error: selection?.error ?? null, ready: selection?.result?.ready ?? null },
+        frameSummary: { ok: frameSummary?.ok === true, frames: frameSummary?.frame?.framesCompleted ?? null },
+        textures: { ok: textures?.ok === true, liveCount: textures?.liveCount ?? null },
+      };
+    });
+    summary.issueDumpRoutes = dumpRoutes;
+    checks.push(["realEngineAnimReport routed (issue dumps)", dumpRoutes.animReport.ok === true]);
+    checks.push([
+      "querySelection routed (no threaded-unsupported error)",
+      dumpRoutes.selection.error !== "not yet supported in threaded mode"
+        && dumpRoutes.selection.ready !== null,
+    ]);
+    checks.push(["realEngineFrameSummary routed (deep snapshots)", dumpRoutes.frameSummary.ok === true]);
+    checks.push([
+      "d3d8TextureInventory routed to the engine realm",
+      dumpRoutes.textures.ok === true && (dumpRoutes.textures.liveCount ?? 0) > 0,
+    ]);
+
+    // ---------- issue-recorder video: placeholder canvas captureStream ----------
+    const captureProbe = await page.evaluate(() => {
+      const viewport = document.querySelector("#viewport");
+      if (typeof viewport?.captureStream !== "function") {
+        return { ok: false, reason: "captureStream unavailable" };
+      }
+      try {
+        const stream = viewport.captureStream(2);
+        const track = stream.getVideoTracks()[0] ?? null;
+        const ok = track != null && track.readyState === "live";
+        track?.stop();
+        return { ok };
+      } catch (error) {
+        return { ok: false, reason: String(error) };
+      }
+    });
+    summary.captureStream = captureProbe;
+    checks.push([
+      "placeholder canvas captureStream live (issue-recorder video)",
+      captureProbe.ok === true,
+    ]);
+
+    // ---------- audible path: streams decode, samples start, completions drain ----------
+    const audioResume = await page.evaluate(() =>
+      window.CnCPort.rpc("resumeBrowserAudioRuntime", { trigger: "threaded-gate" }));
+    summary.audioContextState = audioResume?.browserAudioRuntime?.contextState
+      ?? audioResume?.contextState ?? null;
+    const audioContextRunning = await page.evaluate(async () => {
+      const result = await window.CnCPort.rpc("resumeBrowserAudioRuntime", { trigger: "threaded-gate-2" });
+      return result?.browserAudioRuntime?.contextState ?? result?.contextState ?? null;
+    });
+    checks.push([
+      "AudioContext running (autoplay-authorized boot)",
+      summary.audioContextState === "running" || audioContextRunning === "running",
+    ]);
+    // Trigger a deterministic 2D GUI-click sample through the engine's own
+    // input path, then wait for the shellmap/menu audio evidence to
+    // accumulate: music stream scheduled, samples started, completions back.
+    await page.evaluate(() =>
+      window.CnCPort.rpc("clickWindowByName", { name: "MainMenu.wnd:ButtonSinglePlayer" }));
+    log("waiting for audible-path evidence (stream + samples + completions)...");
+    const audioStartedAt = Date.now();
+    const audioDeadline = audioStartedAt + 180000;
+    let audio = null;
+    let secondClickIssued = false;
+    for (;;) {
+      const state = await page.evaluate(() => window.CnCPort.rpc("state"));
+      const stream = state?.state?.browserMssStreamPlaybackRuntime ?? {};
+      const s2d = state?.state?.browserMssSamplePlaybackRuntime ?? {};
+      const s3d = state?.state?.browserMss3DSamplePlaybackRuntime ?? {};
+      const worker = await page.evaluate(() => window.CnCPort.state.threadedEngine?.mssForward ?? null);
+      audio = {
+        streamStarted: stream.started ?? 0,
+        streamDecoded: stream.decoded ?? 0,
+        streamScheduled: stream.scheduled ?? 0,
+        streamLastError: stream.lastError ?? null,
+        sample2dStarted: s2d.started ?? 0,
+        sample2dCompleted: s2d.completed ?? 0,
+        sample2dLastError: s2d.lastError ?? null,
+        sample3dStarted: s3d.started ?? 0,
+        decodedCache: s2d.decodedCache ?? null,
+        mssForward: worker,
+        completionFailureLogged: (state?.logs ?? []).some((entry) =>
+          entry?.message === "threaded audio completion failed"),
+      };
+      const startedTotal = audio.sample2dStarted + audio.sample3dStarted;
+      const dedupeEngaged = (audio.mssForward?.dedupeSkips ?? 0) > 0;
+      if (audio.streamScheduled > 0 && startedTotal > 0 && audio.sample2dCompleted > 0 && dedupeEngaged) {
+        break;
+      }
+      if (Date.now() > audioDeadline) {
+        break;
+      }
+      if (!secondClickIssued && !dedupeEngaged && Date.now() - audioStartedAt > 30000) {
+        // Deterministic dedupe trigger: a second button click replays the
+        // same GUI-click sample, which must ride the key-only path.
+        secondClickIssued = true;
+        await page.evaluate(() =>
+          window.CnCPort.rpc("clickWindowByName", { name: "MainMenu.wnd:ButtonSkirmish" }));
+      }
+      await page.waitForTimeout(5000);
+    }
+    summary.audio = audio;
+    log(`audio evidence: ${JSON.stringify(audio)}`);
+    checks.push([
+      "music/speech stream decoded + scheduled from OPFS-backed archives",
+      audio.streamScheduled > 0 && audio.streamDecoded > 0,
+    ]);
+    checks.push([
+      "MSS samples started (decode+buffer+start proof)",
+      audio.sample2dStarted + audio.sample3dStarted > 0,
+    ]);
+    checks.push([
+      "sample completions drain back into the engine (onended -> engineCall)",
+      audio.sample2dCompleted > 0 && audio.completionFailureLogged === false,
+    ]);
+    checks.push([
+      "worker byte-copy dedupe engaged (repeat starts key-only, no lost plays)",
+      (audio.mssForward?.dedupeSkips ?? 0) > 0
+        && (audio.decodedCache?.dedupeMisses ?? 0) === 0,
+    ]);
+
+    // ---------- shader tier plumbed into the worker realm ----------
+    const shaderTier = await page.evaluate(() => window.CnCPort.state.threadedEngine?.shaderTier ?? null);
+    summary.shaderTier = shaderTier;
+    checks.push([
+      "worker executor resolved a shader tier (setup-options plumbing)",
+      shaderTier === "ff" || shaderTier === "ps11",
+    ]);
+
+    // ---------- resolution-change flow on the engine thread ----------
+    const resolutionTarget = { width: 1024, height: 768 };
+    const resolutionResult = await page.evaluate((target) =>
+      window.CnCPort.rpc("setEngineResolution", target), resolutionTarget);
+    summary.resolutionChange = {
+      ok: resolutionResult?.ok === true,
+      applied: resolutionResult?.applied ?? null,
+      reflow: resolutionResult?.reflow ?? null,
+      error: resolutionResult?.error ?? null,
+    };
+    let resolutionFollowed = false;
+    if (resolutionResult?.ok === true) {
+      try {
+        await page.waitForFunction((target) => {
+          const size = window.CnCPort?.state?.engineDisplaySize;
+          return size?.width === target.width && size?.height === target.height;
+        }, resolutionTarget, { timeout: 180000, polling: 1000 });
+        resolutionFollowed = true;
+      } catch {
+        resolutionFollowed = false;
+      }
+    }
+    summary.resolutionChange.followed = resolutionFollowed;
+    checks.push([
+      "setEngineResolution round-trips on the engine thread and sizes follow",
+      resolutionResult?.ok === true
+        && resolutionResult?.applied?.width === resolutionTarget.width
+        && resolutionResult?.applied?.height === resolutionTarget.height
+        && resolutionFollowed,
+    ]);
 
     const finalStatus = { status: await page.evaluate(() => window.CnCPort.state.threadedEngine) };
     summary.finalStatus = {
@@ -381,7 +587,69 @@ async function main() {
     };
     checks.push(["no WebGL context loss in the worker", finalStatus?.status?.contextLost !== true]);
 
+    // ---------- saves: IDBFS persist + fresh-page listSaves round trip ----------
+    // The engine writes saves through the pthread->main FS proxy into the
+    // main runtime's MEMFS, where IDBFS is mounted (bridge preRun). Write a
+    // marker .sav into the real save dir, persist, then verify a FRESH page
+    // (same profile => same IndexedDB) lists it after its boot-time syncfs.
+    const saveMarker = "__threaded_gate_roundtrip.sav";
+    const saveWrite = await page.evaluate(async (markerName) => {
+      const module = window.CnCPort.engineModule();
+      const dir = "/home/web_user/Command and Conquer Generals Zero Hour Data/Save";
+      let current = "";
+      for (const part of dir.split("/").filter(Boolean)) {
+        current += `/${part}`;
+        try {
+          module.FS.mkdir(current);
+        } catch { /* exists */ }
+      }
+      module.FS.writeFile(`${dir}/${markerName}`, new Uint8Array([0x53, 0x41, 0x56, 0x45, 0x21]));
+      const persisted = await window.CnCPort.rpc("persistSaves", { reason: "threaded-gate" });
+      const listed = await window.CnCPort.rpc("listSaves");
+      return { persisted, listed };
+    }, saveMarker);
+    summary.saveWrite = {
+      persistedOk: saveWrite?.persisted?.ok === true,
+      listedHere: (saveWrite?.listed?.files ?? []).some((file) => file.name === saveMarker),
+    };
+    checks.push([
+      "persistSaves + listSaves work on the threaded page",
+      summary.saveWrite.persistedOk && summary.saveWrite.listedHere,
+    ]);
+
     await page.close();
+
+    const savePage = await browser.newPage();
+    await savePage.goto(new URL("harness/play.html?threads=1", server.url).href, { waitUntil: "load" });
+    let savedAcrossReload = false;
+    let saveList = null;
+    const saveDeadline = Date.now() + 120000;
+    while (Date.now() < saveDeadline) {
+      saveList = await savePage.evaluate(() => window.CnCPort?.rpc
+        ? window.CnCPort.rpc("listSaves")
+        : null);
+      if (saveList?.ok === true
+          && (saveList.files ?? []).some((file) => file.name === saveMarker && file.size === 5)) {
+        savedAcrossReload = true;
+        break;
+      }
+      await savePage.waitForTimeout(2000);
+    }
+    summary.saveRoundTrip = { savedAcrossReload, files: saveList?.files ?? null };
+    checks.push([
+      "save file survives a fresh page load (IDBFS round trip, threaded)",
+      savedAcrossReload,
+    ]);
+    // Clean up the marker so repeated runs (and the owner's profile pattern)
+    // never accumulate gate artifacts.
+    await savePage.evaluate(async (markerName) => {
+      try {
+        const module = window.CnCPort.engineModule();
+        module.FS.unlink(`/home/web_user/Command and Conquer Generals Zero Hour Data/Save/${markerName}`);
+        await window.CnCPort.rpc("persistSaves", { reason: "threaded-gate-cleanup" });
+      } catch { /* best effort */ }
+    }, saveMarker);
+    await savePage.close();
   } catch (error) {
     failure = error instanceof Error ? error.stack ?? error.message : String(error);
   } finally {

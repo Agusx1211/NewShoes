@@ -8,6 +8,62 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Threaded default-readiness gap closure — landed (2026-07-10)
+
+Gap-closure lane for the owner directive "fully migrate to the engine-thread
+path": every functional gap named for making `?threads=1` the play.html
+default, minus the default flip itself (orchestrator step after Metal
+verification). All verified by the extended `npm run verify:threaded-play`
+gate; default (non-threaded) build byte-identical (md5-proven). Details in
+notes/p1-engine-thread.md "Default-readiness gap closure".
+
+- [x] **Bink/movies in the engine realm**: verified clean-skip parity — the
+      play path installs Bink hooks in NEITHER realm (bridge.js never did);
+      the provider's absent-hook path no-ops every movie and the gate's new
+      "main-menu shell reached" check proves the boot intro/logo path
+      completes without hanging under ?threads=1.
+- [x] **Threaded `state` RPC carries the wasm `cnc_port_state` fields**:
+      routed via engineCall on the engine thread + applyModuleState main-side
+      (falls back to the main-only snapshot pre-boot / on failure;
+      `wasmStateSource` reports which). Gate-checked.
+- [x] **Issue-dump capture RPCs routed**: realEngineAnimReport,
+      querySelection, realEngineFrameSummary (deep snapshots) via engineCall;
+      d3d8TextureInventory via a new worker-realm `textureInventory` command
+      (the executor's texture map lives in the engine realm). Placeholder
+      canvas captureStream verified live for the video capture path.
+- [x] **Post-boot `mountArchive(s)` guarded**: refused with an explicit error
+      once the engine pthread runs (registerArchiveSet/probeArchive are
+      main-thread wasm calls); pre-boot mounts fall through unchanged.
+- [x] **Shader tier plumbed to the worker realm**: resolved main-side (page
+      URL ?shaderTier= → localStorage cncPortShaderTier) and passed through
+      setup options; engine_realm_boot forces globalThis.__cncD3D8ShaderTier
+      before executor construction; worker status posts report the tier.
+- [x] **Threaded OPFS music/speech streams**: MSS stream starts could not
+      read archive bytes (MEMFS holds 0-byte markers) → new `opfsReadRange`
+      realm command reads the staged sync-access handles in the engine realm;
+      the stream path parses + caches BIG directories via ranged reads and
+      fetches exactly the entry payload per start. Gate-checked (music
+      decoded + scheduled from OPFS-backed archives).
+- [x] **MSS byte-copy dedupe**: content-key handshake — the worker computes
+      the same key as bridge's decoded-sample cache, ships bytes once per
+      key, key-only after; main notifies evictions/failed caches back
+      (mssCacheDrop) so bytes re-send. Realm stub respond() gained a
+      transfer-list arg (first-send copies + opfsReadRange payloads move,
+      not clone). Gate-checked (dedupeSkips > 0, dedupeMisses == 0).
+- [x] **Audio completion-drain + audible-path verification**: gate boots with
+      autoplay authorized (models the owner's Play-click gesture), asserts
+      AudioContext running, stream decode+schedule, sample decode+buffer+
+      start, 2D completions draining back through engineCall
+      (cnc_port_mss_complete_sample) with zero "threaded audio completion
+      failed" logs.
+- [x] **Save/load round trip threaded**: persistSaves/listSaves stay
+      main-side (IDBFS mounts on the MAIN runtime; engine-thread FS writes
+      proxy to main); gate writes a marker .sav into the real save dir,
+      persists, and a FRESH page load lists it back (then cleans up).
+- [x] **Resolution-change flow threaded**: setEngineResolution (already
+      routed) now gate-verified end to end — engine-thread reflow +
+      engineDisplaySize follow-up via worker status posts.
+
 ## Engine-thread architecture P0-P3 — landed (2026-07-10)
 
 The engine-on-a-pthread + OPFS-as-disk + OffscreenCanvas architecture

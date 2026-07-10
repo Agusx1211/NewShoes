@@ -740,34 +740,41 @@ DONE.md with reasons.
       real-path coverage (the AGENTS.md probe burn-down), not via a mass
       conversion. Until then the range path is legacy-smoke-only tooling —
       do not add new callers.
-- [ ] **Threaded-mode (P1c) follow-ups, in threaded mode only** (2026-07-10):
-      (a) canvas pixel/graphics diagnostics RPCs read the MAIN scratch
-      executor (blank) — route worker-side equivalents (executor lives in the
-      engine realm) when a probe needs them; (b) `mountArchive(s)` calls
-      `registerArchiveSet`/`probeArchive` wasm exports from the MAIN thread —
-      safe only BEFORE the engine pthread starts (play boots mount-first);
-      guard or route post-boot mounts; (c) Bink hooks are not installed in
-      the engine realm — videos no-op under ?threads=1; (d) shader tier
-      (Enhanced ps11 opt-in) can't read localStorage from the worker realm —
-      plumb through the setup options; (e) issue-recorder deep frame
-      summaries and canvas video capture are untested against the
-      transferred-placeholder canvas; (f) threaded `state` RPC returns the
-      main-side snapshot without the wasm `cnc_port_state` fields (route via
-      engineCall if a consumer needs them); (g) MSS sample-start payloads are
-      copied worker-side per start (correctness: Miles shim frees the PCM
-      buffer engine-side) — dedupe with a content-key handshake if the copies
-      ever show in profiles.
+- [ ] **Threaded-mode (P1c) follow-ups, in threaded mode only** — REMAINDER
+      after the 2026-07-10 gap-closure lane (see DONE "Threaded default-
+      readiness gap closure"; items b/d/f/g plus the state/issue-dump/save/
+      resolution/audio verification landed there):
+      (a-remainder) canvas pixel/graphics diagnostics RPCs beyond
+      `d3d8TextureInventory` (canvas pixel samples, gamma, per-op graphics
+      summaries) still read the MAIN scratch executor or answer
+      explicit-unsupported — route worker-side equivalents through the
+      `textureInventory`-style realm commands when a probe needs them;
+      (c-remainder) Bink hooks are installed in NEITHER realm on the play
+      path (movies cleanly skip via the provider's absent-hook path — parity
+      proven by the gate's menu-reached check); when a real movie-playback
+      consumer lands main-side (browser-video manifest + WebCodecs sidecar),
+      install matching forwarders in engine_realm_boot.mjs;
+      (e-remainder) issue-recorder deep capture's direct `window.__cnc*`
+      globals (`__cncSetDiagLevel`, `__cncD3D8PerfSummary`,
+      `__cncSetD3D8SceneDrawHistoryLimit`) touch the main scratch executor in
+      threaded mode — degrade gracefully today; wire them to the realm
+      "setDiagLevel"/new diag commands for full-fidelity threaded dumps.
 - [ ] **Remaining whole-archive `FS.readFile` copies outside the inventory
       path (2026-07-10, follow-up to the inventory partial-read fix).**
-      (a) `startBrowserMssStreamPlayback` (`harness/bridge.js` ~3345) copies
-      each audio-relevant archive out of MEMFS (SpeechEnglishZH.big = 254MB)
-      per `AIL_start_stream` while hunting for the stream file — a runtime
-      hot path on every music/speech stream start. (b) The
-      `mssAdpcmSamplePlaybackProbe` RPC (~32390) does the same for one
-      archive. Both should reuse the `openMountedArchiveReader` +
+      NON-THREADED (MEMFS-mount) path only since the threaded gap-closure
+      lane: threaded OPFS mounts now hunt stream files through cached BIG
+      directories + `opfsReadRange` realm reads (one ranged read per start).
+      (a) `_startMssStreamAsync`'s MEMFS branch (`harness/bridge.js`) still
+      copies each audio-relevant archive out of MEMFS (SpeechEnglishZH.big =
+      254MB) per `AIL_start_stream` while hunting for the stream file — a
+      runtime hot path on every music/speech stream start. (b) The
+      `mssAdpcmSamplePlaybackProbe` RPC does the same for one archive. Both
+      should reuse the `openMountedArchiveReader` +
       `readBigDirectoryFromReader` partial-read helpers the inventory now
       uses (and (a) should cache the parsed directory instead of re-parsing
-      per stream start).
+      per stream start — the threaded branch's
+      `mssStreamArchiveDirectoryCache` is the pattern). Low priority if the
+      MEMFS mount pipeline is deleted once threaded becomes the default.
 
 - [ ] **Resolution follow-ups (2026-07-09, after the engine-owned resolution
       rework — see DONE "Resolution polish").** (a) The in-game options

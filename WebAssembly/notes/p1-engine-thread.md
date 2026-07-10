@@ -214,6 +214,81 @@ for P1c:
       Measured A/B: no perf delta above SwiftShader box noise — see
       "P3 results".
 
+## Default-readiness gap closure (2026-07-10, gap-closure lane)
+
+Owner directive step (1): close the functional gaps that block making
+`?threads=1` the play.html default. Everything below is JS/harness-only
+except the realm stub (threaded-build pre-js relink); the DEFAULT build is
+untouched (md5-identical rebuild proof). All items are asserted by the
+extended `npm run verify:threaded-play` gate.
+
+- **Threaded RPC routing** (bridge.js `threadedRpc`):
+  - `state` now merges the wasm `cnc_port_state` JSON (fetched via
+    engineCall ON the engine thread, applied main-side with
+    applyModuleState). Pre-boot / on failure it falls back to the main-only
+    snapshot; `wasmStateSource` in the reply says which path served it.
+  - Issue-dump routes: `realEngineAnimReport`, `querySelection`,
+    `realEngineFrameSummary` (deep snapshots; optional profile/
+    playerDiagnostics flags forwarded as separate engineCalls) and
+    `d3d8TextureInventory` — the latter via a worker-realm
+    `textureInventory` command because the executor's live-texture map
+    exists only in the engine realm.
+  - `mountArchive(s)`: post-boot mounts REFUSED with an explicit error
+    (registerArchiveSet/probeArchive are main-thread wasm calls, safe only
+    pre-boot); pre-boot mounts fall through to the unchanged pipeline.
+  - Everything else keeps the explicit "not yet supported in threaded mode"
+    default — no silent main-thread wasm calls.
+- **Shader tier**: resolved main-side with the executor's exact precedence
+  (page URL `?shaderTier=` → localStorage `cncPortShaderTier`) and passed
+  through the realm-setup options; engine_realm_boot forces
+  `globalThis.__cncD3D8ShaderTier` BEFORE constructing the executor (tier is
+  sampled once at device create). Worker status posts include the resolved
+  tier. The worker realm has no page URL/localStorage — that was the gap.
+- **Threaded OPFS music/speech streams (the big audio-parity hole)**: MSS
+  stream starts hunt the stream file by reading archives out of MEMFS —
+  which holds only 0-byte markers under OPFS mounts, so threaded mode had
+  NO music/speech at all. Fix: new `opfsReadRange` realm command
+  (engine_realm_boot) reads staged FileSystemSyncAccessHandle ranges in the
+  engine realm and transfers the bytes back; `_startMssStreamAsync` parses
+  and caches the BIG directory per archive through ranged reads
+  (`mssStreamArchiveDirectoryCache` + the now-async
+  readBigDirectoryFromReader), then reads exactly the entry payload per
+  start. length 0 = stat (size only). MEMFS branch unchanged.
+- **MSS byte-copy dedupe (content-key handshake)**: the worker computes the
+  SAME content key as bridge's decoded-sample cache (riffSize + strided FNV
+  — identical algorithm, identical bytes) per sample start; bytes ship once
+  per key (transferred, not cloned — the realm stub's respond() gained a
+  transfer-list arg), key-only after. Main trusts the transport key for
+  lookup AND insert (the two sides can never diverge), and notifies
+  evictions or failed caches back via `mssCacheDrop` so the worker re-sends
+  bytes on the next start. A key-only start that misses (freshly evicted)
+  skips that ONE play and self-heals — evictions are LRU, so a
+  just-replayed sample is essentially never the victim. Counters:
+  worker status `mssForward` {starts, copies, bytesCopied, dedupeSkips};
+  main decodedCache summary gains `dedupeMisses`.
+- **Saves**: no code change needed — IDBFS mounts on the MAIN runtime
+  (preRun) and engine-thread FS writes proxy to main, so persistSaves/
+  listSaves are correctly main-side. The gate now PROVES the round trip:
+  write marker .sav → persistSaves → fresh page load → listSaves shows it.
+- **Bink/movies**: no hooks installed in EITHER realm on the play path
+  (bridge.js never installed any; only dedicated smokes do). BinkOpen fails
+  on the missing .bik files and the provider cleanly no-ops — the engine's
+  GameClient::update intro sequence (playLogoMovie → Sizzle → legal page)
+  advances past it, proven by the gate reaching the main-menu shell. When a
+  real movie consumer lands main-side, engine_realm_boot needs matching
+  forwarders (TODO remainder).
+- **Gate additions** (threaded_play_gate.mjs): browser launches with
+  `--autoplay-policy=no-user-gesture-required` (models the owner's
+  Play-click gesture that resumes audio before any engine sound starts) and
+  asserts: menu window present (movie-skip proof), state-RPC wasm fields,
+  the four issue-dump routes, placeholder captureStream live, AudioContext
+  running, music stream decoded+scheduled from OPFS, samples started, 2D
+  completions drained with zero "threaded audio completion failed" logs,
+  dedupe engaged (dedupeSkips > 0, dedupeMisses == 0; a second
+  clickWindowByName replays the GUI click as a deterministic dedupe
+  trigger), shader tier reported, setEngineResolution round trip with size
+  follow-up, and the save round trip.
+
 ## P1c root-cause find: Win32 CRITICAL_SECTION shim vs pthreads (2026-07-10)
 
 The first threaded boot froze the ENGINE THREAD forever inside
