@@ -741,6 +741,14 @@ enough.
       pthread build vs the shim/ODR surface, headless SwiftShader with
       OffscreenCanvas-in-worker (CI baseline), Safari/iPad support, and
       whether emsdk 3.1.6 is too old (an emsdk upgrade may be the true P0).
+      DONE (2026-07-10): the two browser primitives are proven on the dev
+      box's headless SwiftShader Chromium by JS-only smokes —
+      `npm run test:offscreen-worker-gl` (OffscreenCanvas WebGL2 in a worker,
+      rAF-in-worker, blocked-worker = frozen-not-broken presentation) and
+      `npm run test:opfs-sync-read` (streamed fetch→OPFS, sync-handle reads
+      at 95-565 MB/s, byte-exact vs HTTP Range); see DONE.md. Remaining spike
+      risk is the pthread/OffscreenCanvas BUILD (emsdk 3.1.6, shim/ODR) and
+      Safari/iPad — not the browser side on the CI baseline.
       NOTE (owner): do NOT add HTTP-cache/persistence layers for re-download
       avoidance yet — OPFS enters in P2 as the read-backing disk, not as a
       cache.
