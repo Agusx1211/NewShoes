@@ -349,7 +349,8 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 .about-launcher-logo img { width: 70px; height: 64px; object-fit: contain; filter: drop-shadow(0 3px 3px rgba(0,0,0,.2)); }
 
 .start-menu { max-height: calc(100vh - var(--taskbar-height) - 5px); }
-.start-content { min-height: 332px; }
+.start-content { height: min(332px, calc(100vh - var(--taskbar-height) - 120px)); min-height: 0; }
+.start-primary, .start-secondary { min-height: 0; }
 .start-primary { overflow: auto; }
 .start-primary button { min-height: 51px; }
 .start-primary .start-icon svg[href] { width: 35px; }
