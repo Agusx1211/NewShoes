@@ -135,6 +135,15 @@ async function cncPortResolveSecureOriginAction(unsupported) {
   }
 }
 
+function cncPortPlayablePage() {
+  try {
+    return Boolean(globalThis.document?.documentElement?.hasAttribute("data-cnc-play-page"))
+      || (globalThis.location?.pathname || "").endsWith("/play.html");
+  } catch (_error) {
+    return false;
+  }
+}
+
 const cncPortThreadedMode = (() => {
   try {
     // The play page is THREADED-ONLY (owner directive 2026-07-10; the
@@ -142,8 +151,7 @@ const cncPortThreadedMode = (() => {
     // the HTTPS threaded experience). Harness/index.html probe surfaces stay
     // non-threaded by default and opt in with ?threads=1.
     const threads = new URLSearchParams(globalThis.location?.search || "").get("threads");
-    const requested = threads === "1"
-      || (globalThis.location?.pathname || "").endsWith("/play.html");
+    const requested = threads === "1" || cncPortPlayablePage();
     if (!requested) return false;
     const support = cncPortThreadedRuntimeSupport();
     if (!support.supported) {
@@ -172,7 +180,7 @@ const contextPreserveDrawingBuffer = (() => {
     const explicit = params.get("preserveBuffer");
     if (explicit === "0" || explicit === "false" || explicit === "off") return false;
     if (explicit === "1" || explicit === "true" || explicit === "on") return true;
-    return !(globalThis.location?.pathname || "").endsWith("/play.html");
+    return !cncPortPlayablePage();
   } catch (_error) {
     return true;
   }
@@ -210,7 +218,7 @@ function defaultCncPortDistDir() {
       // engine — the GATE D "worker GL deficit" was this build-flavor gap);
       // harness/smoke pages keep the Debug dist-threaded for gate parity
       // with dist. An explicit ?dist= still wins in selectedCncPortDistDir.
-      if ((globalThis.location?.pathname || "").endsWith("/play.html")) {
+      if (cncPortPlayablePage()) {
         return "dist-threaded-release";
       }
       return "dist-threaded";
@@ -218,7 +226,7 @@ function defaultCncPortDistDir() {
     if (validCncPortDistDir(globalThis.__cncDefaultDistDir)) {
       return globalThis.__cncDefaultDistDir;
     }
-    if ((globalThis.location?.pathname || "").endsWith("/play.html")) {
+    if (cncPortPlayablePage()) {
       return "dist-release";
     }
   } catch (_error) {
@@ -243,8 +251,8 @@ function selectedCncPortDistDir() {
 
 function browserAssetUrl(path, cacheToken = "") {
   try {
-    const base = globalThis.location?.href
-      ?? (typeof document !== "undefined" ? document.baseURI : undefined);
+    const base = (typeof document !== "undefined" ? document.baseURI : undefined)
+      ?? globalThis.location?.href;
     const url = new URL(path, base);
     if (cacheToken) {
       url.searchParams.set("v", cacheToken);
@@ -566,16 +574,21 @@ const browserAudioRuntime = {
   source: "browser Web Audio runtime user-gesture proof",
   context: null,
   created: false,
+  contextCreations: 0,
   resumeAttempts: 0,
   resumeSuccesses: 0,
   lastResumeTrigger: null,
   lastResumeError: null,
+  lastUserActivation: null,
+  stateChanges: 0,
+  lastStateChange: null,
 };
 
 const browserAudioMixerBusNames = ["music", "sound", "sound3D", "speech"];
 const browserAudioMixerRuntime = {
   source: "browser Web Audio runtime mixer GainNode proof",
   created: false,
+  creations: 0,
   busNodes: null,
   scriptVolumes: null,
   systemVolumes: null,
@@ -792,7 +805,7 @@ function threadedWorkerDiagLevel() {
     if (diag === "lite" || diag === "full") {
       return diag;
     }
-    return (globalThis.location?.pathname || "").endsWith("/play.html") ? "lite" : "full";
+    return cncPortPlayablePage() ? "lite" : "full";
   } catch (_error) {
     return "full";
   }
@@ -1444,7 +1457,7 @@ function createThreadedEngineController() {
 }
 
 const threadedEngine = cncPortThreadedMode ? createThreadedEngineController() : null;
-if (threadedEngine && !(globalThis.location?.pathname || "").endsWith("/play.html")) {
+if (threadedEngine && !cncPortPlayablePage()) {
   // Prepare the worker realm as soon as the runtime is up — BEFORE any engine
   // start (P1a handshake rule: all realm prep must complete before boot/go
   // blocks the worker's event loop). The human launcher delays this until it
@@ -1507,6 +1520,8 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   // wasm calls).
   "resumeBrowserAudioRuntime",
   "setBrowserAudioMixerVolumes",
+  "browserAudioRuntime",
+  "browserAudioMixerRuntime",
   "shutdownRuntime",
   "forceShutdownRuntime",
   "setD3D8GammaRamp",
@@ -2026,6 +2041,7 @@ function summarizeBrowserAudioRuntime() {
     source: browserAudioRuntime.source,
     available: typeof AudioContextCtor === "function",
     created: browserAudioRuntime.created,
+    contextCreations: browserAudioRuntime.contextCreations,
     constructor: context?.constructor?.name
       ?? (typeof AudioContextCtor === "function" ? AudioContextCtor.name : null),
     contextState: context?.state ?? null,
@@ -2036,6 +2052,18 @@ function summarizeBrowserAudioRuntime() {
     resumeSuccesses: browserAudioRuntime.resumeSuccesses,
     lastResumeTrigger: browserAudioRuntime.lastResumeTrigger,
     lastResumeError: browserAudioRuntime.lastResumeError,
+    lastUserActivation: browserAudioRuntime.lastUserActivation,
+    stateChanges: browserAudioRuntime.stateChanges,
+    lastStateChange: browserAudioRuntime.lastStateChange,
+    currentTimeSeconds: Number.isFinite(context?.currentTime)
+      ? Number(context.currentTime.toFixed(6))
+      : null,
+    baseLatencySeconds: Number.isFinite(context?.baseLatency)
+      ? Number(context.baseLatency.toFixed(6))
+      : null,
+    outputLatencySeconds: Number.isFinite(context?.outputLatency)
+      ? Number(context.outputLatency.toFixed(6))
+      : null,
     runtimePlayback: false,
     engineDriven: false,
     nextRequired: "engineDrivenBrowserAudioDevice",
@@ -2057,7 +2085,19 @@ function ensureBrowserAudioRuntimeContext(trigger) {
   try {
     browserAudioRuntime.context = new AudioContextCtor();
     browserAudioRuntime.created = true;
+    browserAudioRuntime.contextCreations += 1;
     browserAudioRuntime.lastResumeError = null;
+    browserAudioRuntime.context.addEventListener?.("statechange", () => {
+      const state = browserAudioRuntime.context?.state ?? null;
+      browserAudioRuntime.stateChanges += 1;
+      browserAudioRuntime.lastStateChange = {
+        state,
+        atMs: Number(performance.now().toFixed(3)),
+      };
+      if (state === "running") {
+        ensureBrowserAudioMixerRuntime();
+      }
+    });
     return browserAudioRuntime.context;
   } catch (error) {
     browserAudioRuntime.lastResumeTrigger = trigger;
@@ -2069,6 +2109,11 @@ function ensureBrowserAudioRuntimeContext(trigger) {
 async function resumeBrowserAudioRuntime(trigger = "rpc.resumeBrowserAudioRuntime") {
   browserAudioRuntime.resumeAttempts += 1;
   browserAudioRuntime.lastResumeTrigger = String(trigger);
+  browserAudioRuntime.lastUserActivation = {
+    isActive: globalThis.navigator?.userActivation?.isActive ?? null,
+    hasBeenActive: globalThis.navigator?.userActivation?.hasBeenActive ?? null,
+    atMs: Number(performance.now().toFixed(3)),
+  };
   const context = ensureBrowserAudioRuntimeContext(browserAudioRuntime.lastResumeTrigger);
   if (!context) {
     return summarizeBrowserAudioRuntime();
@@ -2145,6 +2190,7 @@ function ensureBrowserAudioMixerRuntime() {
       browserAudioMixerRuntime.busNodes[bus] = gain;
     }
     browserAudioMixerRuntime.created = true;
+    browserAudioMixerRuntime.creations += 1;
     browserAudioMixerRuntime.lastError = null;
   }
 
@@ -2171,6 +2217,7 @@ function summarizeBrowserAudioMixerRuntime() {
     source: browserAudioMixerRuntime.source,
     available: typeof browserAudioContextCtor() === "function",
     created: browserAudioMixerRuntime.created,
+    creations: browserAudioMixerRuntime.creations,
     contextCreated: browserAudioRuntime.created,
     contextState: context?.state ?? null,
     runtimePlayback: false,
@@ -8331,7 +8378,7 @@ function ensureFixedMemfsDirectory(fs, path) {
 }
 
 function archiveNameFromUrl(url) {
-  const parsed = new URL(url, window.location.href);
+  const parsed = new URL(url, document.baseURI);
   const parts = parsed.pathname.split("/").filter(Boolean);
   return parts[parts.length - 1] || "archive.big";
 }
@@ -22398,6 +22445,14 @@ window.addEventListener("pointerdown", () => {
   void resumeBrowserAudioRuntime("window.pointerdown");
 }, { capture: true });
 
+// A pointerdown listener alone is not a portable autoplay unlock. The HTML
+// user-activation event is mouse/pointer-type dependent, while browsers
+// consistently treat the resulting trusted click as the user's playback
+// intent. Retrying here also covers keyboard-activated launcher buttons.
+window.addEventListener("click", () => {
+  void resumeBrowserAudioRuntime("window.click");
+}, { capture: true });
+
 canvas.addEventListener("pointermove", (event) => {
   const point = canvasInputPointFromEvent(event);
   void pushBrowserInputToWasmLite({
@@ -22490,10 +22545,13 @@ function browserKeyboardEventBelongsToDomUi(event) {
 }
 
 window.addEventListener("keydown", (event) => {
+  // Resume before filtering DOM controls: Enter/Space on the launch button is
+  // a legitimate activation even though the key belongs to launcher UI rather
+  // than the game's Win32 input queue.
+  void resumeBrowserAudioRuntime("window.keydown");
   if (browserKeyboardEventBelongsToDomUi(event)) {
     return;
   }
-  void resumeBrowserAudioRuntime("window.keydown");
   const virtualKey = virtualKeyFromEvent(event);
   if (virtualKey < 0) {
     return;

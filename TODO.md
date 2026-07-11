@@ -687,7 +687,16 @@ reproduce in the harness and verify each fix with a screenshot / state check.
       as a fresh-launch AudioContext/gesture-resume ordering regression and
       compare the initial launch gesture with the later Settings pointer
       gesture. The launcher Game & Display deep link does not resume or mutate
-      runtime audio and must not become a workaround for this bug.
+      runtime audio and must not become a workaround for this bug. 2026-07-11:
+      the startup-ordering regression is fixed on `fix/audio-startup-regression`:
+      trusted click and DOM-control keydown now resume before async launch work,
+      threaded main-side audio diagnostics are queryable, and three clean
+      strict-autoplay Chromium profiles reached a running singleton context +
+      connected singleton mixer without opening Settings. Keep this parent item
+      open for the remaining natural gameplay SFX/EVA/unit-speech coverage.
+      Follow-up: `verify:audio-browser-bridge-contract-frontier` currently fails
+      only because seven absolute `MilesAudioManager.cpp` line anchors predate
+      later source edits; refresh those stale verifier expectations separately.
       Related: [[frontier-2026-07-05-skirmish-sweep]] audio bug.
 - [ ] **Text renders truncated** — some strings show only one letter or a few
       letters instead of the full text. Investigate the text/font glyph
@@ -4082,6 +4091,17 @@ and then start with the PROFILE, not with any individual fix.
 - [ ] Add an automated public-tree gate for secret signatures, absolute
       symlinks, retail container extensions/magic, and unexpectedly large
       tracked blobs so the release audit cannot silently regress.
+- [ ] Add public discovery metadata after the canonical root release: a
+      `robots.txt`, `sitemap.xml`, Open Graph and Twitter cards, and
+      `SoftwareApplication` JSON-LD. The root bootstrap now has a title,
+      description, canonical URL, icons, manifest, and visible legal/source
+      links; these remaining items are search and sharing polish, not launcher
+      boot requirements.
+- [ ] Add the requested consent-gated GA4 module after the owner supplies the
+      measurement ID and event taxonomy. Load it only after the root launcher
+      passes the COI gate; resolve its URL from the Pages scope rather than the
+      generated launcher's `./harness/` base, and keep analytics failures
+      outside the runtime startup path.
 - [ ] `WebAssembly/shims/` contains a file literally named
       `GameLogic\Weaponset.h` (backslash IN the filename, matching a
       Windows-style `#include "GameLogic\WeaponSet.h"`). It works on

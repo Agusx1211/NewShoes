@@ -19,7 +19,7 @@ html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
 body { font-size: 13px; background: #153d56; user-select: none; }
 button, input, select { font: inherit; }
 button { color: inherit; }
-button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid #f0a128; outline-offset: 2px; }
+button:focus-visible, input:focus-visible, select:focus-visible, .desktop-icon-link:focus-visible { outline: 2px solid #f0a128; outline-offset: 2px; }
 .svg-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 [hidden] { display: none !important; }
@@ -42,6 +42,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .desktop-icons { position: absolute; z-index: 3; top: 18px; left: 14px; display: grid; width: 88px; gap: 11px; }
 .desktop-icon { width: 86px; min-height: 76px; padding: 5px 3px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: white; text-align: center; text-shadow: 0 1px 2px #163444, 0 1px 4px #163444; cursor: default; }
 .desktop-icon:hover, .desktop-icon:focus { background: rgba(30,92,133,.35); border-color: rgba(255,255,255,.45); }
+.desktop-icon-link { display: block; text-decoration: none; }
 .desktop-icon-art { width: 43px; height: 43px; margin: 0 auto 4px; display: grid; place-items: center; filter: drop-shadow(0 2px 1px rgba(24,48,60,.45)); }
 .desktop-icon-art svg { width: 39px; height: 39px; }
 .desktop-icon > span:last-child { display: block; line-height: 1.25; font-size: 12px; }
@@ -229,9 +230,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .programs-body { flex: 1; min-height: 0; overflow: auto; padding: 25px 30px; background: #f5f8fa; }.programs-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 15px; }.programs-hero h1 { font-size: 22px; }.programs-hero p { max-width: 460px; }
 .library-list { display: grid; gap: 7px; margin-top: 18px; }.library-row { min-height: 75px; display: grid; grid-template-columns: 47px 1fr 95px 70px 27px; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #cbd7de; border-radius: 4px; background: #fff; box-shadow: 0 1px 4px rgba(35,67,83,.05); }.library-game-art { width: 45px; height: 45px; display: grid; place-items: center; color: #e8cd6a; background: linear-gradient(145deg, #486252, #273d34); border-radius: 4px; font: bold 17px Arial; box-shadow: inset 0 0 0 1px rgba(255,255,255,.16); }.library-game-art.zero { color: #ee9a68; background: linear-gradient(145deg, #724737, #3a2927); font-size: 13px; }.library-details { display: grid; gap: 3px; }.library-details > strong { color: #314a58; font-size: 11px; }.library-details > span { color: #7b8c95; font-size: 8px; }.library-details small { color: #4d805b; font-size: 8px; }.library-details small i { display: inline-block; width: 6px; height: 6px; margin-right: 4px; border-radius: 50%; background: #5ca06b; }.library-details small b { font-weight: normal; }.library-size { display: grid; gap: 3px; color: #4f6875; font-size: 10px; text-align: right; }.library-size span { color: #83939b; font-size: 7px; }.row-launch { min-height: 28px; color: #fff; border: 1px solid #4e8060; border-radius: 3px; background: linear-gradient(#6c9b74, #4e7d5c); font-size: 9px; font-weight: bold; cursor: pointer; }.row-launch.accent { border-color: #a95732; background: linear-gradient(#dc814e, #b95f35); }.more-button { border: 0; background: transparent; color: #71848f; cursor: pointer; letter-spacing: 1px; }
 .library-game-art { position: relative; overflow: hidden; }
-.library-game-art > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.library-game-art > img { position: absolute; inset: 2px; width: calc(100% - 4px); height: calc(100% - 4px); object-fit: contain; }
 .library-game-art.has-retail-art > span { display: none; }
-.desktop-icon-art.game-art > img { position: absolute; inset: 1px; width: 41px; height: 41px; object-fit: cover; border: 1px solid rgba(255,255,255,.75); border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,.45); }
+.desktop-icon-art.game-art > img { position: absolute; inset: 1px; width: 41px; height: 41px; object-fit: contain; border: 1px solid rgba(255,255,255,.75); border-radius: 4px; background: rgba(255,255,255,.92); box-shadow: 0 1px 3px rgba(0,0,0,.45); }
 .desktop-icon-art.game-art.has-retail-art > svg { display: none; }
 .storage-overview { min-height: 95px; display: flex; align-items: center; gap: 15px; margin-top: 15px; padding: 13px 16px; background: #e9f0f4; border: 1px solid #cbd8df; border-radius: 4px; }.storage-donut { width: 62px; height: 62px; display: grid; place-items: center; border-radius: 50%; background: conic-gradient(#548cab 0 4deg, #d6e0e5 4deg); }.storage-donut::before { content: ""; position: absolute; width: 46px; height: 46px; border-radius: 50%; background: #e9f0f4; }.storage-donut span { z-index: 1; display: grid; text-align: center; color: #3c5969; }.storage-donut b { font-size: 12px; }.storage-donut small { font-size: 6px; }.storage-copy { flex: 1; }.storage-copy > strong { color: #365160; font-size: 10px; }.storage-copy p { margin: 4px 0 8px; color: #70828d; font-size: 8px; }.storage-legend { display: flex; gap: 12px; color: #7b8d96; font-size: 7px; }.storage-legend i { display: inline-block; width: 6px; height: 6px; margin-right: 3px; border-radius: 50%; }.storage-legend .game-data { background: #548cab; }.storage-legend .saves { background: #d3a448; }.storage-legend .available { background: #d6e0e5; }
 
@@ -396,6 +397,8 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 /* Project New Shoes identity and interactive desktop applications. */
 .desktop-icons { grid-template-rows: repeat(8, 78px); grid-auto-flow: column; grid-auto-columns: 92px; }
 .desktop-icon-art.app-art svg { width: 43px; height: 43px; filter: drop-shadow(1px 2px 1px rgba(0,0,0,.45)); }
+.desktop-icon-art.github-art { position: relative; width: 43px; height: 43px; border-radius: 10px; background: #fff; box-shadow: inset 0 0 0 1px rgba(0,0,0,.18); }
+.desktop-icon-art.github-art svg { width: 39px; height: 39px; fill: #181717; filter: none; }
 .desktop-icon-art.launcher-art { position: relative; }
 .desktop-icon-art.launcher-art img { width: 45px; height: 45px; max-width: none; object-fit: contain; filter: drop-shadow(1px 2px 1px rgba(0,0,0,.55)); }
 .zeroh-title-icon { width: 26px; }

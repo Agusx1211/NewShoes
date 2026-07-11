@@ -71,6 +71,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Launcher ownership and desktop polish (2026-07-11)
 
+- [x] Added a keyboard-accessible Windows-style GitHub desktop shortcut to the
+      public `Agusx1211/NewShoes` repository. It is a native new-window anchor
+      with `noopener noreferrer`, an inline official Primer Octicons GitHub
+      mark, a vendored MIT notice, no runtime fetch, and responsive desktop
+      placement. The desktop coalesces the second mouse click in a double-click
+      so one gesture opens one tab while native Enter, assistive activation,
+      mobile tap, and later independent clicks remain intact. Static, Chromium
+      Enter/double-click/mobile-popup, containment, and Pages artifact checks
+      pin the exact URL and link contract.
+- [x] Separated the user-owned wide `Install_Final.bmp` launcher banner from
+      square desktop and library icons. The four supplied retail ISOs expose
+      `GeneralsZH.ico` inside the Zero Hour `Data1.cab`; a real browser scan
+      selected that 21,630-byte source with 30 required archives found and no
+      scan errors. The launcher validates ICO directories and DIB/PNG frames,
+      selects the best square frame, and falls back to bounded PE
+      `GROUP_ICON`/`RT_ICON` extraction from `generals.exe`. The supplied retail
+      ICO selected a 48x48 24-bit frame and its executable fallback selected a
+      48x48 8-bit frame. Derived icon bytes remain local under the existing
+      presentation cache lifecycle and are cleared by Forget; no retail icon
+      is committed or fetched. Synthetic ICO/PE tests and Chromium prove square
+      decode, contain sizing, cache reuse/reset, and zero derivation egress.
+
 - [x] Made Game & Display directly reachable from launcher intake, the ready
       page, the game library, and the Start menu while retaining the existing
       `play.mjs` display/settings state as the only runtime authority. Settings
@@ -524,6 +546,22 @@ notes/p1-engine-thread.md "Default-readiness gap closure".
       start, 2D completions draining back through engineCall
       (cnc_port_mss_complete_sample) with zero "threaded audio completion
       failed" logs.
+- [x] **Cold-launch Web Audio activation no longer depends on visiting
+      Settings.** The launcher previously relied on a global `pointerdown`
+      listener and a `play.start` resume after asynchronous recorder/archive
+      setup; keyboard-activated DOM buttons were filtered before audio resume.
+      The browser bridge now retries on trusted `click`, resumes on `keydown`
+      before DOM/game-input filtering, observes context state transitions, and
+      keeps pure main-realm audio diagnostics reachable in threaded mode.
+      `verify:audio-startup-activation` launches three isolated Chromium
+      profiles with strict autoplay policy and proves the real launcher button
+      creates one running `AudioContext`, one connected four-bus mixer, an
+      advancing audio clock, preserved mute/volume settings, and no Settings
+      navigation. The asset-backed real audio event gate still proves decoded
+      non-zero samples schedule and complete through the engine path. The same
+      gate served from the unfixed `fcc143c4` parent exits 1 at the immediate
+      post-key assertion (`launch activation returned before creating the
+      AudioContext`), before the late `play.start` fallback can mask the bug.
 - [x] **Save/load round trip threaded**: persistSaves/listSaves stay
       main-side (IDBFS mounts on the MAIN runtime; engine-thread FS writes
       proxy to main); gate writes a marker .sav into the real save dir,
@@ -13601,7 +13639,7 @@ mitigation track. Items resolved or retired by the pivot:
       bounded timeouts, and concurrency cancellation. The release build uses
       only the real `cnc-port` hot-path target.
 - [x] Added a deterministic public-site packager with an explicit launcher and
-      runtime allowlist. The final combined 53-file, 11,782,505-byte audited
+      runtime allowlist. The current combined 55-file, 11,849,709-byte audited
       artifact contains the three threaded release outputs, browser shell,
       complete license, and legal page only. Packager and verifier share one
       exact manifest; demonstrated `unexpected.env` files in either the runtime
@@ -13613,18 +13651,34 @@ mitigation track. Items resolved or retired by the pivot:
       COOP/COEP/CORP without caching responses, handles project subpaths and
       deep links, updates without the HTTP cache, stops reload loops with a
       visible failure, and supports explicit unregistration. No threaded
-      fallback or third-party runtime CDN was added.
+      fallback or third-party runtime CDN was added. A version handshake makes
+      the bootstrap update and wait for the current worker even when a deployed
+      older worker already isolated the page.
+- [x] Kept the public launcher at the Pages scope root after service-worker
+      isolation instead of exposing `harness/play.html`. A separately packaged
+      root launcher preserves harness-relative modules and runtime artifacts,
+      while a play-page marker keeps the threaded release, lite diagnostics,
+      OffscreenCanvas ownership, and issue metadata independent of the visible
+      pathname. The root web-app manifest installs the canonical scope URL, and
+      legacy play links recover to it with ordinary query parameters intact.
 - [x] Proved the final artifact under a no-header HTTP server at a Pages-like
       `/CnC_Generals_Zero_Hour/` subpath in fresh headless Chromium: first
       navigation unisolated, automatic controlled reload, final
       `crossOriginIsolated=true`, `SharedArrayBuffer` available, wasm served as
       `application/wasm`, launcher visible, shared Emscripten heap live, pthread
-      realm ready, and the real viewport OffscreenCanvas transferred. The final
+      realm ready, and the real viewport OffscreenCanvas transferred. First
+      load and reload stay at the scope root in both domain-root and project-
+      subpath modes, and a legacy play URL returns to that canonical root. The final
       synthetic public-readiness + launcher-polish + Pages integration also
       proved direct links, service-worker unregistration, the prominent launcher
       About notice, complete GPL/additional terms, no-warranty text, and
-      corresponding-source link. Screenshots and machine-readable inventory
-      were retained outside the repository.
+      corresponding-source link. A persistent-profile rollout regression starts
+      with the exact worker from deployed revision `18b95831`, switches the
+      server to the new artifact, and proves bounded canonical-root navigation,
+      query and fragment preservation, a forced network reload for an identical
+      target URL, worker takeover, launcher visibility, shared heap, pthread
+      startup, and OffscreenCanvas transfer. Screenshots and machine-readable
+      inventory were retained outside the repository.
 - [x] Documented repository Settings, workflow permissions, manual deployment,
       custom domains, first-load behavior, local reproduction, asset exclusion,
       isolation/storage troubleshooting, and the remaining Firefox/Safari

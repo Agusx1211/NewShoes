@@ -61,17 +61,20 @@ try {
   await page.waitForFunction(() => window.ZeroHAnalytics.status().consent === "denied");
   const revoked = await page.evaluate(() => ({
     preference: localStorage.getItem("newShoesAnalyticsConsent.v1"),
+    disabled: window["ga-disable-G-TEST000000"],
     mock: window.__analyticsMock,
   }));
   assert.equal(revoked.preference, "denied");
+  assert.equal(revoked.disabled, true);
   assert.equal(revoked.mock.clears, 1);
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => Boolean(window.ZeroHAnalytics && window.ZeroHDesktop));
-  const returnVisit = await page.evaluate(() => ({ status: window.ZeroHAnalytics.status(), mock: window.__analyticsMock }));
+  const returnVisit = await page.evaluate(() => ({ status: window.ZeroHAnalytics.status(), mock: window.__analyticsMock, disabled: window["ga-disable-G-TEST000000"] }));
   assert.equal(returnVisit.status.active, false);
   assert.equal(returnVisit.mock.initializeCalls, 0, "stored opt-out must prevent tag initialization before UI boot");
   assert.equal(returnVisit.mock.events.length, 0);
+  assert.equal(returnVisit.disabled, true);
 
   await page.evaluate(() => window.ZeroHDesktop.openSettingsPanel("privacy"));
   await page.locator("#analyticsConsentToggle").check();
@@ -79,6 +82,7 @@ try {
   await page.evaluate(() => window.ZeroHDesktop.openSettingsPanel("game"));
   const enabled = await page.evaluate(() => window.__analyticsMock);
   assert.equal(enabled.initializeCalls, 1);
+  assert.equal(await page.evaluate(() => window["ga-disable-G-TEST000000"]), false);
   assert.equal(enabled.events.filter((event) => event.name === "settings_section_view" && event.params.section === "game").length, 1);
   assert.deepEqual(offOrigin, []);
   console.log("Analytics browser opt-out, return-visit, re-enable, and no-network smoke: OK");
@@ -86,4 +90,3 @@ try {
   await browser?.close();
   server.kill("SIGTERM");
 }
-

@@ -178,6 +178,11 @@ function productionHost(hostname) {
   return host === "newshoes.gg" || host === "www.newshoes.gg" || host.endsWith(".github.io");
 }
 
+function setGaDisabled(windowLike, measurementId, disabled) {
+  if (!/^G-[A-Z0-9]+$/.test(String(measurementId || ""))) return;
+  try { windowLike[`ga-disable-${measurementId}`] = disabled === true; } catch { /* inert host */ }
+}
+
 function readConsent(storage) {
   try {
     const value = storage?.getItem(CONSENT_STORAGE_KEY);
@@ -286,6 +291,10 @@ export function createAnalytics(options = {}) {
   // initialized, so returning visitors who opted out make no Google request.
   let consent = blockedByPrivacySignal ? "denied"
     : storedConsent === "denied" ? "denied" : "granted";
+  // This synchronous kill switch is honored by gtag itself. It must be in
+  // place before initialize() can append the Google tag on an opted-out or
+  // browser-privacy-signal visit.
+  setGaDisabled(windowLike, measurementId, consent !== "granted");
   let active = false;
   let initialized = false;
   let transportInitialized = false;
@@ -348,6 +357,7 @@ export function createAnalytics(options = {}) {
     async setConsent(next) {
       const requested = next === "granted" ? "granted" : "denied";
       consent = blockedByPrivacySignal ? "denied" : requested;
+      setGaDisabled(windowLike, measurementId, consent !== "granted");
       writeConsent(storage, consent);
       if (consent === "granted") await activate();
       else {

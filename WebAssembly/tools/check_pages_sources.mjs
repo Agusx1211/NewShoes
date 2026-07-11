@@ -15,6 +15,7 @@ const scripts = [
   "harness/d3d8_executor.mjs",
   "harness/engine_realm_boot.mjs",
   "harness/gdi_executor.mjs",
+  "harness/fixtures/coi-serviceworker-18b95831.js",
   "harness/io_worker.mjs",
   "harness/issue-recorder.mjs",
   "harness/launcher-archive-specs.js",
@@ -69,10 +70,26 @@ for (const contract of [
   'headers.set("Cross-Origin-Opener-Policy", COOP)',
   'headers.set("Cross-Origin-Embedder-Policy", COEP)',
   'url.origin !== self.location.origin',
+  'new URL("launcher.html", scopeUrl)',
+  'url.pathname === scopeUrl.pathname',
+  'Response.redirect(canonicalLocation(url), 302)',
+  'const WORKER_VERSION = "project-new-shoes.pages-root.v1"',
+  'event.data?.type === VERSION_REQUEST',
 ]) {
   if (!serviceWorker.includes(contract)) throw new Error(`Isolation worker contract missing: ${contract}`);
 }
 if (/https?:\/\//.test(serviceWorker)) throw new Error("Isolation worker must not load a third-party runtime");
+
+const bootstrap = await readFile(resolve(wasmRoot, "pages/coi-bootstrap.js"), "utf8");
+for (const contract of [
+  'const workerVersion = "project-new-shoes.pages-root.v1"',
+  "await installCurrentWorker()",
+  "await waitForCurrentWorker()",
+  "if (destination === location.href)",
+  "location.reload()",
+]) {
+  if (!bootstrap.includes(contract)) throw new Error(`Isolation bootstrap contract missing: ${contract}`);
+}
 
 const shell = spawnSync("bash", ["-n", resolve(wasmRoot, "tools/build_pages_runtime.sh")], { encoding: "utf8" });
 if (shell.status !== 0) {

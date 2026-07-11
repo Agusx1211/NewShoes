@@ -49,6 +49,7 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "udp_realm_bridge.mjs",
   "vendor/pako-LICENSE.txt",
   "vendor/pako.es5.min.js",
+  "vendor/primer-octicons-LICENSE.txt",
   "webrtc-udp-endpoint.mjs",
 ]);
 
@@ -58,10 +59,16 @@ export const PAGES_RUNTIME_FILES = Object.freeze([
   "cnc-port.worker.js",
 ]);
 
+export const PAGES_ROOT_LAUNCHER_FILES = Object.freeze([
+  "launcher.html",
+  "manifest.webmanifest",
+]);
+
 export const PAGES_OUTPUT_FILES = Object.freeze([
   ".nojekyll",
   "LICENSE.md",
   ...PAGES_TEMPLATE_FILES,
+  ...PAGES_ROOT_LAUNCHER_FILES,
   ...PAGES_HARNESS_FILES.map((name) => `harness/${name}`),
   "harness/play.html",
   ...PAGES_RUNTIME_FILES.map((name) => `dist-threaded-release/${name}`),

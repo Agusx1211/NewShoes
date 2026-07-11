@@ -90,15 +90,19 @@ Cross-Origin-Resource-Policy: same-origin
 ```
 
 The page reloads once under service-worker control, checks
-`crossOriginIsolated` and `SharedArrayBuffer`, then opens the launcher. The
+`crossOriginIsolated` and `SharedArrayBuffer`, then serves the launcher at the
+same scope-root URL. The public address stays at `https://newshoes.gg/`, or at
+the repository root for a project Pages deployment; it does not expose the
+internal `harness/play.html` template. The
 browser requirements and header values are described by
 [MDN's cross-origin isolation reference](https://developer.mozilla.org/en-US/docs/Web/API/WorkerGlobalScope/crossOriginIsolated).
 There is no single-thread fallback and no third-party runtime CDN.
 
 All service-worker URLs and scopes are relative, so both user Pages sites and
-project Pages URLs such as `https://owner.github.io/repository/` work. Direct
-links under `harness/` return through the root bootstrap when isolation is not
-ready. A custom domain works the same way, but it must be configured in
+project Pages URLs such as `https://owner.github.io/repository/` work. The
+packaged web-app manifest also starts at that scope root. Direct legacy links
+to `harness/play.html` recover to the canonical root while preserving ordinary
+launcher query parameters. A custom domain works the same way, but it must be configured in
 repository Settings; GitHub notes that committing a `CNAME` alone does not set
 the domain in [its publishing-source documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site).
 
@@ -130,7 +134,8 @@ npm run test:pages-deployment
 headers under `/CnC_Generals_Zero_Hour/`. In a fresh browser context it proves
 the initial bootstrap, controlled reload, `crossOriginIsolated`,
 `SharedArrayBuffer`, `application/wasm` delivery, actual Emscripten pthread
-startup, OffscreenCanvas transfer, and visible launcher.
+startup, OffscreenCanvas transfer, visible launcher, canonical scope-root URL
+across reloads, and legacy play-link recovery to that root.
 
 The generated `pages-dist/` and `pages-build/` directories are ignored. The
 packager and verifier share one exact file manifest. Every runtime and launcher

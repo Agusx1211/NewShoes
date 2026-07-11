@@ -40,11 +40,12 @@ function analyticsFixture({ stored, navigatorLike = {}, transport = mockTranspor
   const storage = memoryStorage(stored ? { "newShoesAnalyticsConsent.v1": stored } : {});
   const locationLike = new URL("https://newshoes.gg/harness/play.html?private=value#fragment");
   const documentLike = { querySelector: () => null };
+  const windowLike = { location: locationLike };
   const analytics = createAnalytics({
-    windowLike: { location: locationLike }, documentLike, navigatorLike, locationLike, storage,
+    windowLike, documentLike, navigatorLike, locationLike, storage,
     measurementId: "G-TEST000000", forceEnabled, transport,
   });
-  return { analytics, storage, transport };
+  return { analytics, storage, transport, windowLike };
 }
 
 // Opt-out policy: a fresh production visitor initializes once and receives a
@@ -76,21 +77,24 @@ for (const fixture of [
   assert.equal(fixture.transport.initializeCalls, 0);
   assert.equal(fixture.transport.events.length, 0);
   assert.equal(fixture.analytics.status().active, false);
+  assert.equal(fixture.windowLike["ga-disable-G-TEST000000"], true);
 }
 
 // Revoke persists, clears GA state, stops events, and re-enable reuses the
 // existing script/transport without another page view or duplicate load.
 {
-  const { analytics, storage, transport } = analyticsFixture();
+  const { analytics, storage, transport, windowLike } = analyticsFixture();
   analytics.init();
   await tick();
   assert.equal(analytics.track("app_view", { screen: "launcher" }), true);
   await analytics.setConsent("denied");
   assert.equal(storage.values.get("newShoesAnalyticsConsent.v1"), "denied");
   assert.equal(transport.clearCalls, 1);
+  assert.equal(windowLike["ga-disable-G-TEST000000"], true);
   assert.equal(analytics.track("app_view", { screen: "settings" }), false);
   const countAfterRevoke = transport.events.length;
   await analytics.setConsent("granted");
+  assert.equal(windowLike["ga-disable-G-TEST000000"], false);
   assert.equal(transport.initializeCalls, 1);
   assert.equal(transport.events.length, countAfterRevoke);
   assert.equal(analytics.track("app_view", { screen: "settings" }), true);
@@ -100,8 +104,9 @@ for (const fixture of [
 // production hostname. Forks/local artifacts remain functional without it.
 for (const measurementId of ["", "__GA_MEASUREMENT_ID__", "UA-OLD", "secret"] ) {
   const transport = mockTransport();
+  const windowLike = { location: new URL("https://newshoes.gg/") };
   const analytics = createAnalytics({
-    windowLike: { location: new URL("https://newshoes.gg/") },
+    windowLike,
     documentLike: { querySelector: () => null }, navigatorLike: {},
     locationLike: new URL("https://newshoes.gg/"), storage: memoryStorage(),
     measurementId, transport,
@@ -109,6 +114,7 @@ for (const measurementId of ["", "__GA_MEASUREMENT_ID__", "UA-OLD", "secret"] ) 
   analytics.init();
   await tick();
   assert.equal(transport.initializeCalls, 0);
+  assert.equal(Object.keys(windowLike).some((key) => key.startsWith("ga-disable-")), false);
 }
 
 // Schema and buckets reject high-cardinality or sensitive input instead of
@@ -210,4 +216,3 @@ assert.equal(canonicalScopeRoot(
 }
 
 console.log("Analytics privacy, schema, routing, transport, and lifecycle tests: OK");
-

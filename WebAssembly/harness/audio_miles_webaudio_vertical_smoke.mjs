@@ -441,7 +441,7 @@ async function resumeAudio(page) {
     return runtime?.resumeAttempts >= 1
       && runtime?.resumeSuccesses >= 1
       && runtime?.contextState === "running"
-      && runtime?.lastResumeTrigger === "canvas.pointerdown";
+      && runtime?.lastResumeTrigger === "window.click";
   }, null, { timeout: 5000 });
 }
 

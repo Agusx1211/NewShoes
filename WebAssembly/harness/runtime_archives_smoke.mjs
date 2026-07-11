@@ -1538,7 +1538,7 @@ function assertBrowserAudioRuntime(runtime, context, expected = {}) {
     if (runtime.created !== true
         || runtime.resumeAttempts < 1
         || runtime.resumeSuccesses < 1
-        || runtime.lastResumeTrigger !== "canvas.pointerdown"
+        || runtime.lastResumeTrigger !== "window.click"
         || runtime.contextState !== "running"
         || runtime.lastResumeError !== null) {
       throw new Error(`${context} browser audio gesture resume mismatch: ${JSON.stringify(runtime)}`);
@@ -4320,7 +4320,7 @@ try {
     return runtime?.resumeAttempts >= 1
       && runtime?.resumeSuccesses >= 1
       && runtime?.contextState === "running"
-      && runtime?.lastResumeTrigger === "canvas.pointerdown";
+      && runtime?.lastResumeTrigger === "window.click";
   }, null, { timeout: 5000 });
   const audioGestureResult = await page.evaluate(() => window.CnCPort.rpc("browserAudioRuntime"));
   if (!audioGestureResult.ok) {
