@@ -42,12 +42,11 @@
 //        WW3D_FORMAT_R8G8B8 / WW3D_FORMAT_R5G6B5 / WW3D_FORMAT_X1R5G5B5 ->
 //        VideoBuffer::TYPE_* / `return NULL` no-format path, with the
 //        `TheGlobalData->m_playIntro` low-mem 16-bit override.
-//   4. `W3DDisplay::drawImage` proves the SAME display-owned
+//   4. `W3DDisplay::drawImage` drives the SAME display-owned
 //      `Render2DClass` path (Reset -> Enable_Texturing -> Set_Texture ->
-//      Add_Quad -> Render) already has browser-backed textured-quad coverage
-//      through the `test:ww3d-display-drawimage-file` harness proof
-//      (`ww3d_display_drawimage_file_probe`), so the presentation quad
-//      primitive is exercised end-to-end against real assets.
+//      Add_Quad -> Render); browser-backed textured-quad coverage comes from
+//      the real boot (shellmap/skirmish UI draws) — the former range-backed
+//      drawimage-file smoke was retired 2026-07-10.
 //   5. The focused browser Bink/W3D runtime smoke proves decoded Bink sidecar
 //      pixels copied through original `BinkVideoStream::frameRender` are
 //      presented through original `W3DDisplay::drawVideoBuffer`, with browser
@@ -56,8 +55,7 @@
 //      `WinInstanceData::setVideoBuffer` path shaped like
 //      ScoreScreen::PlayMovieAndBlock.
 //   6. CMake / package facts for the current `bink-w3d-video-buffer-browser-smoke`
-//      proof, its presentation alias, and the `test:ww3d-display-drawimage-file`
-//      display draw-image target/script this verifier relies on.
+//      proof and its presentation alias.
 //
 // OPEN (explicitly NOT claimed complete by this verifier): the focused
 // `Display`, `WindowVideoManager`, blank-window, ScoreScreen,
@@ -84,8 +82,6 @@ const SOURCES = {
     "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DDisplay.cpp",
   w3dVideoBufferH:
     "GeneralsMD/Code/GameEngineDevice/Include/W3DDevice/GameClient/W3DVideobuffer.h",
-  drawImageHarness:
-    "WebAssembly/harness/display_drawimage_file_smoke.mjs",
   runtimeSmoke: "WebAssembly/tests/bink_w3d_video_buffer_upload_smoke.cpp",
   runtimeBrowserHarness: "WebAssembly/harness/bink_w3d_video_buffer_upload_smoke.mjs",
   cmake: "WebAssembly/CMakeLists.txt",
@@ -191,14 +187,12 @@ function main() {
     createVideoBuffer: {},
     drawImage: {},
     w3dVideoBufferH: {},
-    drawImageHarness: {},
     cmake: {},
     packageJson: {},
   };
 
   const w3dDisplay = readSourceLines(SOURCES.w3dDisplay);
   const w3dVideoBufferH = readSourceLines(SOURCES.w3dVideoBufferH);
-  const drawImageHarness = readSourceLines(SOURCES.drawImageHarness);
   const runtimeSmoke = readSourceLines(SOURCES.runtimeSmoke);
   const runtimeBrowserHarness = readSourceLines(SOURCES.runtimeBrowserHarness);
   const cmake = readSourceLines(SOURCES.cmake);
@@ -400,35 +394,9 @@ function main() {
       (line) => /TextureClass\*\s*W3DVideoBuffer::texture\s*\(\s*void\s*\)\s*\{\s*return\s*m_texture/.test(line)), 103,
     "W3DVideobuffer.h texture() accessor");
 
-  // ------------------------------------------------------------------
-  // 5. Browser-backed textured-quad coverage for the SAME display-owned
-  //    Render2DClass path via the existing display draw-image harness proof.
-  //    The drawImage filename probe drives Reset -> Enable_Texturing ->
-  //    Set_Texture -> Add_Quad -> Render against real BIG-backed DDS
-  //    textures and asserts a browser texture update/bind delta plus a
-  //    screenshot. This proves the presentation quad primitive is
-  //    browser-backed.
-  // ------------------------------------------------------------------
-  assertExact(errors, facts.drawImageHarness, "probeSourceLine",
-    lineNumber(drawImageHarness.lines,
-      (line) => /ww3d_display_drawimage_file_probe/.test(line)), 163,
-    "drawimage file harness probe source");
-  assertExact(errors, facts.drawImageHarness, "drawImageCalledLine",
-    lineNumber(drawImageHarness.lines,
-      (line) => /drawImageCalled\s*!==\s*true/.test(line)), 180,
-    "drawimage file harness drawImageCalled check");
-  assertExact(errors, facts.drawImageHarness, "render2dSourceLine",
-    lineNumber(drawImageHarness.lines,
-      (line) => /Render2DClass::Set_Texture/.test(line)), 189,
-    "drawimage file harness Render2DClass::Set_Texture source attribution");
-  assertExact(errors, facts.drawImageHarness, "textureDeltaCheckLine",
-    lineNumber(drawImageHarness.lines,
-      (line) => /renderResult\.textureDelta\?\.creates\s*<\s*1/.test(line)), 246,
-    "drawimage file harness texture create delta check");
-  assertExact(errors, facts.drawImageHarness, "screenshotLine",
-    lineNumber(drawImageHarness.lines,
-      (line) => /page\.locator\s*\(\s*"#viewport"\s*\)\.screenshot/.test(line)), 252,
-    "drawimage file harness viewport screenshot");
+  // (Former section 5 — the range-backed display_drawimage_file_smoke line
+  // pins — was retired 2026-07-10 with the range-backed subset-mount smokes;
+  // browser-backed Render2D quad presentation is covered by the real boot.)
 
   // ------------------------------------------------------------------
   // ------------------------------------------------------------------
@@ -876,10 +844,6 @@ function main() {
     lineNumber(packageJson.lines,
       (line) => /"test:bink-w3d-video-presentation-browser"/.test(line)), 119,
     "package.json test:bink-w3d-video-presentation-browser alias");
-  assertExact(errors, facts.packageJson, "drawimageScriptLine",
-    lineNumber(packageJson.lines,
-      (line) => /"test:ww3d-display-drawimage-file"/.test(line)), 122,
-    "package.json test:ww3d-display-drawimage-file script");
 
   // ------------------------------------------------------------------
   const report = {
@@ -895,7 +859,8 @@ function main() {
       "and W3DDisplay::createVideoBuffer creates a W3DVideoBuffer through the " +
       "original DX8Wrapper::Get_Current_Caps()/D3DFMT format-selection path. " +
       "The shared Render2DClass textured-quad primitive has browser-backed " +
-      "coverage via test:ww3d-display-drawimage-file, synthetic W3DVideoBuffer " +
+      "coverage via the real boot (the range-backed drawimage smoke was " +
+      "retired 2026-07-10), synthetic W3DVideoBuffer " +
 	      "presentation is covered by test:ww3d-display-video-buffer, and decoded " +
 	      "Bink sidecar frames now reach original W3DDisplay::drawVideoBuffer in " +
 	      "test:bink-w3d-video-presentation-browser, including a focused original " +
