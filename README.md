@@ -207,7 +207,8 @@ Development architecture, build details, and the current roadmap are in
 The `Generals/` and `GeneralsMD/` trees come from Electronic Arts' official
 source release. The repository is licensed under GPL v3 with EA's additional
 GPL section 7 terms. Read [LICENSE.md](LICENSE.md), especially the trademark,
-origin, and modified-version requirements.
+origin, modified-version, and full no-warranty terms. This modified software is
+provided as-is, without warranty, to the fullest extent permitted by law.
 
 The repository does not grant rights to Command & Conquer trademarks or retail
 game data. Seven small `RequiredAssets` paths already present in EA's source
