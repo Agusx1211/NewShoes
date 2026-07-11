@@ -592,8 +592,8 @@ async function main() {
     const shaderTier = await page.evaluate(() => window.CnCPort.state.threadedEngine?.shaderTier ?? null);
     summary.shaderTier = shaderTier;
     checks.push([
-      "worker executor resolved a shader tier (setup-options plumbing)",
-      shaderTier === "ff" || shaderTier === "ps11",
+      "worker executor uses the default enhanced shader tier (setup-options plumbing)",
+      shaderTier === "ps11",
     ]);
 
     // ---------- resolution-change flow on the engine thread ----------
