@@ -4,48 +4,46 @@ on:
   push:
     paths:
       - ".github/workflows/wasm-smoke.yml"
-      - "TODO.md"
+      - ".github/actions/setup-wasm-build/action.yml"
       - "WebAssembly/**"
+      - "Generals/Code/**"
+      - "GeneralsMD/Code/**"
   pull_request:
     paths:
       - ".github/workflows/wasm-smoke.yml"
-      - "TODO.md"
+      - ".github/actions/setup-wasm-build/action.yml"
       - "WebAssembly/**"
+      - "Generals/Code/**"
+      - "GeneralsMD/Code/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wasm-smoke-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   wasm-smoke:
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: WebAssembly/package-lock.json
-
-      - name: Install native build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build python3
-
-      - name: Install Node dependencies
-        working-directory: WebAssembly
-        run: npm ci
+      - name: Set up build environment
+        uses: ./.github/actions/setup-wasm-build
 
       - name: Install Chromium for Playwright
         working-directory: WebAssembly
         run: npx playwright install --with-deps chromium
 
       - name: Build wasm and run smoke checks
+        env:
+          EM_COMPILER_WRAPPER: ccache
         run: |
-          emscripten_version="$(cat WebAssembly/emscripten-version.txt)"
-          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "${RUNNER_TEMP}/emsdk"
-          "${RUNNER_TEMP}/emsdk/emsdk" install "${emscripten_version}"
-          "${RUNNER_TEMP}/emsdk/emsdk" activate "${emscripten_version}"
           source "${RUNNER_TEMP}/emsdk/emsdk_env.sh"
           cd WebAssembly
           npm run test:all
+          ccache --show-stats

@@ -1,0 +1,51 @@
+name: Set up wasm build
+description: Install the pinned Node, Emscripten, and native toolchain used by Project New Shoes
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node 22
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      with:
+        node-version: "22"
+        cache: npm
+        cache-dependency-path: WebAssembly/package-lock.json
+
+    - name: Install native build tools
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ccache cmake ninja-build python3
+
+    - name: Cache the pinned emsdk
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: ${{ runner.temp }}/emsdk
+        key: emsdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('WebAssembly/emscripten-version.txt') }}
+
+    - name: Install the pinned emsdk
+      shell: bash
+      run: |
+        version="$(cat WebAssembly/emscripten-version.txt)"
+        emsdk="${RUNNER_TEMP}/emsdk"
+        if [[ ! -x "${emsdk}/emsdk" ]]; then
+          rm -rf "${emsdk}"
+          git clone --depth 1 --branch "${version}" https://github.com/emscripten-core/emsdk.git "${emsdk}"
+        fi
+        "${emsdk}/emsdk" install "${version}"
+        "${emsdk}/emsdk" activate "${version}"
+
+    - name: Cache Emscripten compiler outputs
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: ~/.cache/ccache
+        key: ccache-pages-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('WebAssembly/emscripten-version.txt', 'WebAssembly/CMakeLists.txt', 'WebAssembly/src/**', 'WebAssembly/shims/**', 'GeneralsMD/Code/**') }}
+        restore-keys: |
+          ccache-pages-${{ runner.os }}-${{ runner.arch }}-
+
+    - name: Install exact Node dependencies
+      shell: bash
+      working-directory: WebAssembly
+      run: |
+        npm ci
+        npm audit --audit-level=moderate

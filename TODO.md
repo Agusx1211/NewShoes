@@ -4064,6 +4064,10 @@ and then start with the PROFILE, not with any individual fix.
       but the harness emitted no checkpoint until the call returned, so deep
       runs should keep small chunks or add timeout/progress instrumentation.
 - [ ] CI runs build + harness smoke + screenshot diffs on every change.
+- [ ] Verify the public Pages deployment manually on current Firefox and
+      Safari. Chromium's no-header project-subpath flow is automated, but the
+      other browsers still need coverage for service-worker isolation, OPFS,
+      file pickers, and the threaded WebGL worker.
 - [ ] Document how to run the harness and interpret failures.
 
 ## Cross-cutting: project hygiene

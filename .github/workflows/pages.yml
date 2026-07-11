@@ -1,0 +1,86 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build public runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-wasm-build
+
+      - name: Configure Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - name: Check release-facing sources and workflows
+        working-directory: WebAssembly
+        run: npm run check:pages
+
+      - name: Build threaded release
+        working-directory: WebAssembly
+        env:
+          EM_COMPILER_WRAPPER: ccache
+        run: |
+          source "${RUNNER_TEMP}/emsdk/emsdk_env.sh"
+          if ! npm run build:pages-runtime >"${RUNNER_TEMP}/pages-build.log" 2>&1; then
+            tail -n 200 "${RUNNER_TEMP}/pages-build.log"
+            exit 1
+          fi
+          tail -n 40 "${RUNNER_TEMP}/pages-build.log"
+          ccache --show-stats
+
+      - name: Package and audit Pages artifact
+        working-directory: WebAssembly
+        run: |
+          npm run build:pages-site
+          node tools/verify_pages_site.mjs pages-dist >"${RUNNER_TEMP}/pages-inventory.json"
+          node -e 'const x=require(process.argv[1]); console.log(JSON.stringify({files:x.files,totalBytes:x.totalBytes}, null, 2))' "${RUNNER_TEMP}/pages-inventory.json"
+
+      - name: Install Chromium
+        working-directory: WebAssembly
+        run: npx playwright install --with-deps chromium
+
+      - name: Prove Pages-like cross-origin isolation
+        working-directory: WebAssembly
+        env:
+          PAGES_SMOKE_SCREENSHOT: ${{ runner.temp }}/pages-launcher.png
+        run: npm run test:pages-deployment
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: WebAssembly/pages-dist
+
+  deploy:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
