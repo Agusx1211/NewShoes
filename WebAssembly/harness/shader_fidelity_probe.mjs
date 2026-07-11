@@ -189,13 +189,22 @@ async function closeContextBounded(context, timeoutMs = 5_000) {
   if (!context) return { attempted: false, graceful: true, error: null };
   let timeout;
   try {
-    const closePagesAndContext = async () => {
-      await Promise.all(context.pages().map((page) =>
-        page.close({ runBeforeUnload: false })));
-      await context.close();
+    const closeBrowser = async () => {
+      const page = context.pages()[0];
+      if (!page) {
+        await context.close();
+        return;
+      }
+      const browser = context.browser();
+      const disconnected = browser?.isConnected()
+        ? new Promise((resolveDisconnected) => browser.once("disconnected", resolveDisconnected))
+        : Promise.resolve();
+      const session = await context.newCDPSession(page);
+      await session.send("Browser.close");
+      await disconnected;
     };
     const result = await Promise.race([
-      closePagesAndContext().then(() => "closed"),
+      closeBrowser().then(() => "closed"),
       new Promise((resolveTimeout) => {
         timeout = setTimeout(() => resolveTimeout("timeout"), timeoutMs);
       }),
@@ -493,6 +502,4 @@ await new Promise((resolveWrite) => {
 
 const exitCode = ok ? 0 : 1;
 process.exitCode = exitCode;
-if (!close.graceful) {
-  process.exit(exitCode);
-}
+process.exit(exitCode);
