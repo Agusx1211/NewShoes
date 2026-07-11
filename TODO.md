@@ -475,6 +475,13 @@ Dev-box render-verify: symlink worktree `dist/` → main's built `dist/` renders
 
 ## Launcher follow-ups
 
+- [ ] Support non-English retail archive sets in the ownership scanner and
+      locally derived launcher presentation. The current launcher explains and
+      validates the English archive contract explicitly; adding another locale
+      requires archive-name/content fixtures and localized presentation-art
+      candidates, not a relaxed validation that could boot a mixed-language
+      library.
+
 - [ ] Headless-only early-exit capture: taking a Playwright surface screenshot
       immediately after closing the default ps11 runtime before its first
       client frame can wait on already-queued SwiftShader GPU work for more
@@ -675,6 +682,12 @@ reproduce in the harness and verify each fix with a screenshot / state check.
       direct real-audio gate now proves audible 3D SFX, 2D SFX, speech, and
       music in debug and release. Keep this open for naturally triggered
       skirmish/EVA/unit audio and sustained completion-drain verification.
+      2026-07-11 fresh owner datapoint: a launch can begin with no sound, then
+      opening browser Settings and returning causes sound to start. Treat this
+      as a fresh-launch AudioContext/gesture-resume ordering regression and
+      compare the initial launch gesture with the later Settings pointer
+      gesture. The launcher Game & Display deep link does not resume or mutate
+      runtime audio and must not become a workaround for this bug.
       Related: [[frontier-2026-07-05-skirmish-sweep]] audio bug.
 - [ ] **Text renders truncated** — some strings show only one letter or a few
       letters instead of the full text. Investigate the text/font glyph

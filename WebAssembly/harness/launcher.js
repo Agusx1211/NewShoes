@@ -1,3 +1,5 @@
+import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
+
 (() => {
   "use strict";
 
@@ -24,7 +26,7 @@
     notepad: { title: "Notepad", icon: "#i-note" },
     arcade: { title: "Project New Shoes Arcade", icon: "#i-arcade" },
     programs: { title: "Game Library", icon: "#i-apps" },
-    settings: { title: "Project New Shoes Desktop Settings", icon: "#i-gear" },
+    settings: { title: "Project New Shoes Settings", icon: "#i-gear" },
     about: { title: "About Project New Shoes", icon: "#i-info" },
   };
 
@@ -45,6 +47,7 @@
   const taskButtons = document.querySelector("#taskButtons");
   const launchOverlay = document.querySelector("#launchOverlay");
   let interfaceAudioContext = null;
+  let retailPresentationUrl = null;
 
   function readStoredLibrary() {
     try { return JSON.parse(storageGet("zeroh-library") || storageGet("fielddesk-library")) || null; }
@@ -242,6 +245,50 @@
     closeStartMenu();
     if (!wasOpen) renderTaskbar();
     playInterfaceSound("open");
+  }
+
+  function openSettingsPanel(panel = "appearance") {
+    openApp("settings");
+    const tab = document.querySelector(`[data-settings-tab="${CSS.escape(panel)}"]`);
+    tab?.click();
+    tab?.focus({ preventScroll: true });
+  }
+
+  async function refreshRetailPresentation(key = state.library?.presentationKey || null) {
+    if (retailPresentationUrl) {
+      URL.revokeObjectURL(retailPresentationUrl);
+      retailPresentationUrl = null;
+    }
+    const targets = [...document.querySelectorAll("[data-retail-presentation]")];
+    targets.forEach((image) => {
+      image.hidden = true;
+      image.removeAttribute("src");
+      image.closest(".game-card-art, .library-game-art, .game-art")?.classList.remove("has-retail-art");
+    });
+    document.documentElement.removeAttribute("data-retail-presentation-source");
+    if (!state.library && !key) return null;
+    let candidateUrl = null;
+    try {
+      const presentation = await window.ZeroHAssetLibrary.presentationForLibrary(key, {
+        cache: state.library?.mode !== "once",
+      });
+      if (!presentation?.blob) return null;
+      candidateUrl = URL.createObjectURL(presentation.blob);
+      const probe = new Image();
+      probe.src = candidateUrl;
+      await probe.decode();
+      retailPresentationUrl = candidateUrl;
+      targets.forEach((image) => {
+        image.src = candidateUrl;
+        image.hidden = false;
+        image.closest(".game-card-art, .library-game-art, .game-art")?.classList.add("has-retail-art");
+      });
+      document.documentElement.dataset.retailPresentationSource = presentation.source;
+      return presentation;
+    } catch {
+      if (candidateUrl) URL.revokeObjectURL(candidateUrl);
+      return null;
+    }
   }
 
   function closeWindow(windowEl) {
@@ -643,6 +690,7 @@
         mode: state.storageMode,
         preparedAt: Date.now(),
         totalBytes,
+        presentationKey: window.ZeroHAssetLibrary.presentationKey(result.archives),
       };
       const metadataStored = persistLibrary();
       updateLibraryUI();
@@ -653,6 +701,7 @@
         : "Zero Hour is ready to launch from your local files.");
       if (result.warning) showToast(result.warning.title || "Storage warning", result.warning.message || String(result.warning), "warning");
       if (!metadataStored) showToast("Launcher preference not saved", "The library is ready now, but this browser could not retain its launcher shortcut state.", "warning");
+      await refreshRetailPresentation();
     } catch (error) {
       showToast("Library preparation failed", error?.message || String(error), "warning");
     } finally {
@@ -733,7 +782,10 @@
         status.textContent = "Restoring permission to your original files…";
         const scan = await window.ZeroHAssetLibrary.restoreRemembered({ requestPermission: true });
         if (!scan?.ok) throw new Error("The remembered source no longer contains the complete game library");
-        await window.ZeroHAssetLibrary.prepare("remember");
+        const restored = await window.ZeroHAssetLibrary.prepare("remember");
+        state.library.presentationKey = window.ZeroHAssetLibrary.presentationKey(restored.archives);
+        persistLibrary();
+        await refreshRetailPresentation();
       }
       await window.ZeroHAssetLibrary.archivesForLaunch((progress) => {
         status.textContent = `Staging ${progress.detail}…`;
@@ -782,6 +834,7 @@
 
   document.querySelectorAll("[data-open]").forEach((button) => button.addEventListener("click", () => openApp(button.dataset.open)));
   document.querySelectorAll("[data-open-setup]").forEach((button) => button.addEventListener("click", () => openApp("setup")));
+  document.querySelectorAll("[data-open-settings]").forEach((button) => button.addEventListener("click", () => openSettingsPanel(button.dataset.openSettings)));
   document.querySelectorAll("[data-launch-game]").forEach((button) => button.addEventListener("click", launchGame));
 
   startButton.addEventListener("click", (event) => {
@@ -881,6 +934,7 @@
     storageRemove("zeroh-library");
     storageRemove("fielddesk-library");
     updateLibraryUI();
+    await refreshRetailPresentation();
     await refreshStorageUI();
     setWizardStep(1);
     openApp("setup");
@@ -890,21 +944,25 @@
   });
   document.querySelector("#endSessionButton").addEventListener("click", () => {
     closeStartMenu();
-    document.querySelectorAll(".window.is-open").forEach((windowEl) => {
-      if (windowEl.dataset.app !== "setup") closeWindow(windowEl);
+    const shutdown = requestOsShutdown({
+      gameRunning: Boolean(window.ZeroHRuntime?.started && !window.ZeroHRuntime?.closed),
+      storageBusy: state.preparingLibrary || state.launching,
+      closeWindow: () => window.close(),
+      navigate: (url) => window.location.assign(url),
+      schedule: (callback, delay) => window.setTimeout(callback, delay),
+      isDocumentHidden: () => document.hidden,
     });
-    openApp("setup");
-    setWizardStep(state.library ? 3 : 1);
-    showToast("Session refreshed", "Project New Shoes is ready for the next launch.");
+    if (shutdown.reason === "storage-busy") {
+      showToast("Finish the current file operation", "Project New Shoes will not shut down while game files are being copied or staged.", "warning");
+    } else if (shutdown.reason === "game-running") {
+      showToast("Close the game first", "Press Ctrl + Alt + Esc to return to the desktop, then choose Shut down again.", "warning");
+    }
   });
 
   document.querySelectorAll("[data-set-wallpaper]").forEach((button) => button.addEventListener("click", () => {
     desktop.dataset.wallpaper = button.dataset.setWallpaper;
     document.querySelectorAll("[data-set-wallpaper]").forEach((item) => item.classList.toggle("is-selected", item === button));
     saveSettings();
-  }));
-  document.querySelectorAll(".library-row .more-button").forEach((button) => button.addEventListener("click", () => {
-    showToast("Zero Hour library", "Use the Game Launcher to change the source or browser-storage mode.");
   }));
   document.querySelector(".tray-status").addEventListener("click", () => openApp("programs"));
   document.querySelector(".tray-network").addEventListener("click", () => {
@@ -924,6 +982,7 @@
       storageRemove("fielddesk-library");
       setWizardStep(1);
       updateLibraryUI();
+      void refreshRetailPresentation();
     }
     void refreshStorageUI();
   });
@@ -955,6 +1014,7 @@
     setWizardStep(1);
     loadSettings();
     updateLibraryUI();
+    await refreshRetailPresentation();
     applyLauncherLogo();
     window.dispatchEvent(new CustomEvent("zeroh:reset-apps"));
     showToast("Project New Shoes reset", window.ZeroHRuntime?.started
@@ -994,8 +1054,15 @@
         mode: "install",
         preparedAt: installed.preparedAt,
         totalBytes: installed.totalBytes,
+        presentationKey: window.ZeroHAssetLibrary.presentationKey(installed.archives),
       };
       persistLibrary();
+    } else if (installed && state.library?.mode === "install") {
+      const presentationKey = window.ZeroHAssetLibrary.presentationKey(installed.archives);
+      if (state.library.presentationKey !== presentationKey) {
+        state.library.presentationKey = presentationKey;
+        persistLibrary();
+      }
     }
     if (state.library) {
       state.source = { name: state.library.source, countLabel: "Zero Hour" };
@@ -1006,6 +1073,7 @@
       setWizardStep(1);
     }
     updateLibraryUI();
+    await refreshRetailPresentation();
     let relaunchRequested = false;
     try {
       relaunchRequested = sessionStorage.getItem(RELAUNCH_AFTER_RELOAD_KEY) === "1";
@@ -1020,6 +1088,9 @@
 
   window.ZeroHDesktop = {
     openApp,
+    openSettingsPanel,
+    refreshRetailPresentation,
+    requestShutdown: () => document.querySelector("#endSessionButton").click(),
     showToast,
     get preparingLibrary() { return state.preparingLibrary; },
   };

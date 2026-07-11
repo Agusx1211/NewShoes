@@ -1,4 +1,10 @@
 import "./launcher-archive-specs.js";
+import {
+  clearRetailPresentationCache,
+  retailPresentationForLibrary,
+  retailPresentationKey,
+  retailPresentationSource,
+} from "./launcher-retail-presentation.mjs";
 
 const INSTALLED_KEY = "zeroh-installed-library.v4";
 const OLD_INSTALLED_KEYS = ["zeroh-installed-library.v3", "zeroh-installed-library.v2", "zeroh-installed-library.v1"];
@@ -581,6 +587,15 @@ class AssetLibrary {
     throw new Error("Prepare your game library before launching");
   }
 
+  async presentationForLibrary(rememberedKey = null, options = {}) {
+    const archives = this.preparedArchives || this.installedLibrary()?.archives || [];
+    return retailPresentationForLibrary(archives, rememberedKey, options);
+  }
+
+  presentationKey(archives = this.preparedArchives || this.installedLibrary()?.archives || []) {
+    return retailPresentationKey(archives);
+  }
+
   async forget() {
     return this.withLibraryMutation(() => this.forgetUnlocked());
   }
@@ -592,6 +607,7 @@ class AssetLibrary {
     storageRemove(INSTALLED_KEY);
     OLD_INSTALLED_KEYS.forEach(storageRemove);
     await this.clearRememberedHandles();
+    await clearRetailPresentationCache();
     try {
       const root = await navigator.storage.getDirectory();
       await root.removeEntry("cnc-library", { recursive: true });
@@ -617,6 +633,7 @@ class AssetLibrary {
       totalBytes: installed?.totalBytes || this.scanResult?.totalBytes || 0,
       formattedBytes: formatBytes(installed?.totalBytes || this.scanResult?.totalBytes || 0),
       ready: Boolean(this.preparedArchives?.length || installed),
+      presentationSource: retailPresentationSource,
     };
   }
 }

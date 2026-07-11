@@ -55,7 +55,7 @@
           <span class="desktop-icon-art launcher-art"><img data-launcher-logo-image alt="" width="512" height="512"><i class="shortcut-arrow">↗</i></span><span>Project New Shoes Launcher</span>
         </button>
         <button class="desktop-icon game-shortcut" type="button" data-game-shortcut data-launch-game="Zero Hour" aria-label="Launch Zero Hour" hidden>
-          <span class="desktop-icon-art game-art"><svg><use href="#i-command-zero"/></svg><i class="shortcut-arrow">↗</i></span><span>Zero Hour</span>
+          <span class="desktop-icon-art game-art"><img data-retail-presentation alt="" hidden><svg><use href="#i-command-zero"/></svg><i class="shortcut-arrow">↗</i></span><span>Zero Hour</span>
         </button>
         <button class="desktop-icon" type="button" data-open="explorer" aria-label="Open Save Files">
           <span class="desktop-icon-art"><svg><use href="#i-folder"/></svg></span><span>My Files</span>
@@ -121,17 +121,55 @@
                 <div class="source-grid">
                   <button type="button" class="source-card" id="pickImageButton">
                     <span class="source-icon disc"><svg><use href="#i-disc"/></svg></span>
-                    <span class="source-copy"><strong>Disc images</strong><small>Select all Generals + Zero Hour discs</small></span>
+                    <span class="source-copy"><strong>Add Disc Images</strong><small>Select all Generals + Zero Hour discs</small></span>
                     <span class="source-arrow">›</span>
                   </button>
                   <button type="button" class="source-card" id="pickFolderButton">
                     <span class="source-icon folder"><svg><use href="#i-folder"/></svg></span>
-                    <span class="source-copy"><strong>Installed folder</strong><small>A complete Zero Hour installation</small></span>
+                    <span class="source-copy"><strong>Add Game Folder</strong><small>A complete English Zero Hour installation</small></span>
                     <span class="source-arrow">›</span>
                   </button>
                 </div>
+                <div class="launcher-quick-settings">
+                  <span><strong>Already configured?</strong> Display, fullscreen, shaders, and performance tools are available before launch.</span>
+                  <button type="button" data-open-settings="game">Game &amp; Display settings</button>
+                </div>
                 <input id="imageInput" type="file" accept=".iso,.bin,.cue,.img,.cab,.big" multiple hidden>
                 <input id="folderInput" type="file" webkitdirectory directory multiple hidden>
+
+                <section class="ownership-help" aria-labelledby="ownershipHelpTitle">
+                  <header><div><p class="eyebrow">OWNERSHIP GUIDE</p><h2 id="ownershipHelpTitle">Where to get files you own</h2></div><div class="purchase-links"><a href="https://store.steampowered.com/bundle/39394/Command__Conquer_The_Ultimate_Collection/" target="_blank" rel="noopener noreferrer">Buy on Steam</a><a href="https://www.ea.com/games/command-and-conquer/command-and-conquer-the-ultimate-collection" target="_blank" rel="noopener noreferrer">Buy from EA</a></div></header>
+                  <details>
+                    <summary>I purchased and installed it online</summary>
+                    <div class="ownership-path">
+                      <h3>Steam installation</h3>
+                      <ol>
+                        <li>Install both <strong>Command &amp; Conquer: Generals</strong> and <strong>Command &amp; Conquer: Generals: Zero Hour</strong> from The Ultimate Collection. In Steam, set the game language to English before installing or verifying the files.</li>
+                        <li>Open Steam Library, right-click Zero Hour, then choose <strong>Manage &gt; Browse local files</strong>. If Steam opens a collection folder, continue into the Zero Hour game folder.</li>
+                        <li>Return here, choose <strong>Add Game Folder</strong>, and select the root that contains the Zero Hour executable, a <code>Data</code> folder, and files such as <code>EnglishZH.big</code>, <code>INIZH.big</code>, and <code>W3DZH.big</code>. The scanner also needs the Generals base archives supplied by the same installation.</li>
+                      </ol>
+                      <h3>EA app installation</h3>
+                      <ol>
+                        <li>Install The Ultimate Collection in the EA app with English selected. Open the game&rsquo;s <strong>Manage</strong> or <strong>View properties</strong> screen to find its install location.</li>
+                        <li>Open that location in File Explorer, find the Zero Hour root, then choose <strong>Add Game Folder</strong> here. Select the folder containing the executable, <code>Data</code>, and the Zero Hour <code>.big</code> archives, not the parent that only lists every game in the collection.</li>
+                      </ol>
+                      <p><strong>What happens next:</strong> the browser asks for read permission and inventories file names and archive structure locally. Temporary mode asks again next visit. Remember mode retains a browser permission when the browser supports it. Install mode copies only the required archives into this site&rsquo;s private browser storage. Nothing is uploaded.</p>
+                      <p><strong>If validation fails:</strong> verify both Generals and Zero Hour in Steam or the EA app, confirm English is installed, and select the actual Zero Hour root. Modified or repacked releases may rename, recompress, or omit required retail archives and are not supported.</p>
+                    </div>
+                  </details>
+                  <details>
+                    <summary>I own the original discs</summary>
+                    <div class="ownership-path">
+                      <ol>
+                        <li>Create or locate readable images of media you own. This launcher does not bypass copy protection and does not provide instructions for defeating DRM.</li>
+                        <li>Choose <strong>Add Disc Images</strong> and select the complete English set together: Generals Disc 1, Generals Disc 2, Zero Hour Disc 1, and Zero Hour Disc 2. For BIN/CUE media, keep each matching pair together and select all relevant files.</li>
+                        <li>Review the selected-media list. Add another part if anything is missing, or remove a mistaken file with its Remove button. The local scanner identifies the required archives across all selected parts and reports exactly what is still missing.</li>
+                        <li>After validation, choose <strong>Just launch this time</strong>, <strong>Remember the files</strong>, or <strong>Install in this browser</strong>. Remember keeps permission when supported; Install copies the required archive set to private browser storage and can use several gigabytes.</li>
+                      </ol>
+                      <p>Only the English retail archive set is supported today. A damaged image, the wrong language, a missing second disc, or an unsupported repack will fail validation. Re-read or replace the affected media from your own copy; do not download individual game archives from third-party sites.</p>
+                    </div>
+                  </details>
+                </section>
 
                 <section id="selectedMediaPanel" class="selected-media" aria-label="Selected original media" hidden>
                   <header><div><strong>Selected media</strong><span id="selectedMediaCount"></span></div><button id="addMoreImagesButton" type="button">+ Add another disc</button></header>
@@ -221,7 +259,7 @@
 
                 <div class="game-cards">
                   <article class="game-card zero-card">
-                    <div class="game-card-art" aria-hidden="true"><span class="target-ring"></span><span class="game-number">01</span><span class="stripe-set"></span></div>
+                    <div class="game-card-art" aria-hidden="true"><img data-retail-presentation alt="" hidden><span class="target-ring"></span><span class="game-number">01</span><span class="stripe-set"></span></div>
                     <div class="game-card-content">
                       <span class="game-kicker">EXPANSION</span>
                       <h2>ZERO HOUR</h2>
@@ -233,6 +271,7 @@
 
                 <div class="ready-footer">
                   <button type="button" class="text-button" id="changeSourceButton">‹ Use different files</button>
+                  <button type="button" class="text-button" data-open-settings="game">Game &amp; Display settings</button>
                   <span><i class="online-dot"></i><span id="readyStorageLabel">Temporary session</span></span>
                 </div>
               </section>
@@ -330,15 +369,15 @@
           <div class="programs-body">
             <header class="programs-hero"><div><p class="eyebrow">PROGRAM MANAGER</p><h1>Your game library</h1><p>See what is available and how its files are stored in this browser.</p></div><button type="button" class="button primary small" data-open-setup>+ Add game files</button></header>
             <div class="library-list">
-              <article class="library-row"><span class="library-game-art zero">ZH</span><div class="library-details"><strong>Zero Hour</strong><span>Current WebAssembly target</span><small><i></i><b class="library-state-label">Original files required</b></small></div><div class="library-size">Runtime<span>Local source</span></div><button type="button" class="row-launch accent" data-launch-game="Zero Hour">Launch</button><button type="button" class="more-button" aria-label="More options">•••</button></article>
+              <article class="library-row"><span class="library-game-art zero"><img data-retail-presentation alt="" hidden><span>ZH</span></span><div class="library-details"><strong>Zero Hour</strong><span>Current WebAssembly target</span><small><i></i><b class="library-state-label">Original files required</b></small></div><div class="library-size">Runtime<span>Local source</span></div><button type="button" class="row-launch accent" data-launch-game="Zero Hour">Launch</button><button type="button" class="more-button" data-open-settings="game" aria-label="Open Game and Display settings" title="Game &amp; Display settings">⚙</button></article>
             </div>
             <section class="storage-overview"><div class="storage-donut"><span><b id="storageUsedValue">0</b><small>GB used</small></span></div><div class="storage-copy"><strong>Browser storage</strong><p id="storageCopyText">No game assets are stored in this browser yet.</p><div class="storage-legend"><span><i class="game-data"></i>Game data</span><span><i class="saves"></i>Saves</span><span><i class="available"></i>Available</span></div></div><button type="button" class="button secondary small" id="forgetLibraryButton">Forget library</button></section>
           </div>
         </article>
 
-        <article id="settingsWindow" class="window settings-window" data-app="settings" style="--x: 52%; --y: 45%; --w: 820px; --h: 610px;" aria-label="Settings">
+        <article id="settingsWindow" class="window settings-window" data-app="settings" style="--x: 52%; --y: 45%; --w: 820px; --h: 610px;" aria-label="Project New Shoes settings">
           <header class="titlebar">
-            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-gear"/></svg></span><span>Project New Shoes Desktop Settings</span></div>
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-gear"/></svg></span><span>Project New Shoes Settings</span></div>
             <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
           </header>
           <div class="settings-body">
@@ -418,12 +457,13 @@
             <button type="button" data-open="programs"><span class="start-icon"><svg><use href="#i-apps"/></svg></span><div><strong>Game Library</strong><small>Manage installed games</small></div></button>
           </div>
           <div class="start-secondary">
+            <button type="button" data-open-settings="game"><svg><use href="#i-game"/></svg> Game &amp; Display</button>
             <button type="button" data-open="settings"><svg><use href="#i-gear"/></svg> Settings</button>
             <button type="button" data-open="about"><svg><use href="#i-info"/></svg> About Project New Shoes</button>
             <div class="start-storage"><span>Browser storage</span><strong data-storage-free>Calculating…</strong><i><span></span></i></div>
           </div>
         </div>
-        <footer><button type="button" id="endSessionButton"><svg><use href="#i-power"/></svg> End session</button></footer>
+        <footer><button type="button" id="endSessionButton" aria-describedby="shutdownDescription"><svg><use href="#i-power"/></svg> Shut down</button><span id="shutdownDescription" class="sr-only">Close this browser desktop. If the browser blocks closing this tab, open the project source page.</span></footer>
       </section>
 
       <footer class="taskbar">
