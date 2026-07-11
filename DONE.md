@@ -8,6 +8,34 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Launcher exit compositor teardown (2026-07-11)
+
+- [x] Retired the exact OffscreenCanvas-transferred viewport element and its
+      promoted runtime subtree as soon as launcher exit begins, before showing
+      the desktop. This prevents Chrome from retaining the worker canvas's
+      final terrain frame as a promoted compositor layer.
+- [x] Bounded save flush, paced-loop stop, and graceful engine shutdown, with
+      a main-realm hard worker/audio/I/O fallback when a browser callback or
+      destructor does not settle. The fallback advances to the final save only
+      after explicit zero-owner worker metrics; unproven force termination
+      skips the flush and warns that final durability is unavailable. Ordinary
+      IDBFS flushes share one in-flight operation, but exit first disables
+      periodic scheduling, quiesces engine writes, drains any older snapshot,
+      and runs a distinct trailing syncfs before engine destruction. A
+      deterministic race regression proves a write made after the periodic
+      snapshot is included by the final flush.
+- [x] Extended the real threaded browser gate to capture the full desktop after
+      `ZeroHRuntime.exit()` and assert the retired viewport, bounded worker
+      cleanup, explicit worker termination, final-save ordering, visible
+      taskbar/upper-sky pixels, and absence of an upper terrain frame instead
+      of relying only on state flags. Upper desktop pixels are compared against
+      a fresh isolated desktop reference. The gate requires zero pending realm
+      commands and zero running pthread workers, clicks the actual Zero Hour
+      desktop shortcut, waits for its fresh document and second `started=true`
+      runtime, then closes that runtime cleanly too. Deterministic fault gates
+      cover stop/destructor timeouts, and a browser-injected final-save failure
+      must fail the close result while showing the user a save warning.
+
 ## Clean launcher game shutdown (2026-07-11)
 
 - [x] Replaced the launcher's overlay-only pause with a bounded real shutdown:
