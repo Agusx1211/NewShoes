@@ -13313,6 +13313,10 @@ mitigation track. Items resolved or retired by the pivot:
       duplicate `Data/Scripts` names); packaged `LooseScripts.big` is accepted;
       real Data1.cab script entries are decompressed once per CAB folder; and
       every materialized archive is structurally revalidated before launch.
+      Synthetic direct-file, boot-record-first ISO, raw MODE1/2352 BIN,
+      NONE/MSZIP CAB, wrong-edition script, corrupt BIG,
+      install/reload/restage, failure-cleanup, and real 274 MB Data1.cab cases
+      all passed with exactly 30 output archives.
 - [x] Rebranded the active launcher as Project New Shoes and fixed the selected
       square mark across its setup window, desktop, taskbar, browser favicon,
       Windows icon, Apple touch icon, and installable web app manifest. Updated
@@ -13324,11 +13328,11 @@ mitigation track. Items resolved or retired by the pivot:
       mark resolves at 512 by 512 pixels, manifest and ICO MIME types are
       correct, and the 390 px mobile layout has no horizontal overflow. Captured
       `project-new-shoes-launcher-desktop.png` and
-      `project-new-shoes-launcher-mobile.png` through the served harness.
-      Synthetic direct-file, boot-record-first ISO, raw MODE1/2352 BIN,
-      NONE/MSZIP CAB, wrong-edition script, corrupt BIG,
-      install/reload/restage, failure-cleanup, and real 274 MB Data1.cab cases
-      all passed with exactly 30 output archives.
+      `project-new-shoes-launcher-mobile.png` through the served harness. The
+      icon family now derives from a transparent 1254 px master instead of an
+      opaque black tile. Canvas sampling verified alpha 0 at all four corners
+      and alpha 255 at the emblem center, and the served desktop was recaptured
+      as `project-new-shoes-transparent-icon-desktop.png`.
 - [x] Made browser installation atomic and self-healing. Versioned install
       roots swap manifests only after both persistent and per-tab copies are
       complete, Web Locks serialize cross-tab install/forget/verification,
