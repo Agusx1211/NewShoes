@@ -162,6 +162,7 @@ class AssetLibrary {
     this.sequence = 0;
     this.sourceHandles = [];
     this.scanResult = null;
+    this.presentationIconCandidate = null;
     this.preparedArchives = null;
     this.queue = Promise.resolve();
     this.rememberedHandlesPromise = readHandles().catch(() => []);
@@ -249,11 +250,13 @@ class AssetLibrary {
     await this.discardPreparedArchives();
     this.sourceHandles = handles ? [...handles] : [];
     this.scanResult = null;
+    this.presentationIconCandidate = null;
     const sources = [...files].map((file) => ({
       file,
       path: file.relativePath || file.webkitRelativePath || file.name,
     }));
     this.scanResult = await this.request("scan", { files: sources }, onProgress);
+    this.presentationIconCandidate = this.scanResult.presentationIcon || null;
     return this.scanResult;
   }
 
@@ -264,6 +267,7 @@ class AssetLibrary {
     await this.discardPreparedArchives();
     this.sourceHandles = [];
     this.scanResult = null;
+    this.presentationIconCandidate = null;
   }
 
   async waitForRpc() {
@@ -589,7 +593,10 @@ class AssetLibrary {
 
   async presentationForLibrary(rememberedKey = null, options = {}) {
     const archives = this.preparedArchives || this.installedLibrary()?.archives || [];
-    return retailPresentationForLibrary(archives, rememberedKey, options);
+    return retailPresentationForLibrary(archives, rememberedKey, {
+      ...options,
+      iconCandidate: this.presentationIconCandidate,
+    });
   }
 
   presentationKey(archives = this.preparedArchives || this.installedLibrary()?.archives || []) {
@@ -604,6 +611,7 @@ class AssetLibrary {
     await this.discardPreparedArchives();
     this.scanResult = null;
     this.sourceHandles = [];
+    this.presentationIconCandidate = null;
     storageRemove(INSTALLED_KEY);
     OLD_INSTALLED_KEYS.forEach(storageRemove);
     await this.clearRememberedHandles();

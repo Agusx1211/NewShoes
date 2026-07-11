@@ -47,7 +47,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
   const taskButtons = document.querySelector("#taskButtons");
   const launchOverlay = document.querySelector("#launchOverlay");
   let interfaceAudioContext = null;
-  let retailPresentationUrl = null;
+  let retailPresentationUrls = [];
 
   function readStoredLibrary() {
     try { return JSON.parse(storageGet("zeroh-library") || storageGet("fielddesk-library")) || null; }
@@ -255,38 +255,62 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
   }
 
   async function refreshRetailPresentation(key = state.library?.presentationKey || null) {
-    if (retailPresentationUrl) {
-      URL.revokeObjectURL(retailPresentationUrl);
-      retailPresentationUrl = null;
-    }
-    const targets = [...document.querySelectorAll("[data-retail-presentation]")];
-    targets.forEach((image) => {
+    retailPresentationUrls.forEach((url) => URL.revokeObjectURL(url));
+    retailPresentationUrls = [];
+    const bannerTargets = [...document.querySelectorAll("[data-retail-banner]")];
+    const iconTargets = [...document.querySelectorAll("[data-retail-icon]")];
+    [...bannerTargets, ...iconTargets].forEach((image) => {
       image.hidden = true;
       image.removeAttribute("src");
       image.closest(".game-card-art, .library-game-art, .game-art")?.classList.remove("has-retail-art");
     });
     document.documentElement.removeAttribute("data-retail-presentation-source");
+    document.documentElement.removeAttribute("data-retail-icon-source");
     if (!state.library && !key) return null;
-    let candidateUrl = null;
+    let bannerUrl = null;
+    let iconUrl = null;
     try {
       const presentation = await window.ZeroHAssetLibrary.presentationForLibrary(key, {
         cache: state.library?.mode !== "once",
       });
       if (!presentation?.blob) return null;
-      candidateUrl = URL.createObjectURL(presentation.blob);
+      bannerUrl = URL.createObjectURL(presentation.blob);
       const probe = new Image();
-      probe.src = candidateUrl;
+      probe.src = bannerUrl;
       await probe.decode();
-      retailPresentationUrl = candidateUrl;
-      targets.forEach((image) => {
-        image.src = candidateUrl;
+      retailPresentationUrls.push(bannerUrl);
+      bannerTargets.forEach((image) => {
+        image.src = bannerUrl;
         image.hidden = false;
-        image.closest(".game-card-art, .library-game-art, .game-art")?.classList.add("has-retail-art");
+        image.closest(".game-card-art")?.classList.add("has-retail-art");
       });
       document.documentElement.dataset.retailPresentationSource = presentation.source;
+      if (presentation.iconBlob instanceof Blob) {
+        try {
+          iconUrl = URL.createObjectURL(presentation.iconBlob);
+          const iconProbe = new Image();
+          iconProbe.src = iconUrl;
+          await iconProbe.decode();
+          if (iconProbe.naturalWidth !== iconProbe.naturalHeight || iconProbe.naturalWidth < 16) {
+            throw new Error("Derived retail icon is not square");
+          }
+          retailPresentationUrls.push(iconUrl);
+          iconTargets.forEach((image) => {
+            image.src = iconUrl;
+            image.hidden = false;
+            image.closest(".library-game-art, .game-art")?.classList.add("has-retail-art");
+          });
+          document.documentElement.dataset.retailIconSource = presentation.iconSource
+            || (presentation.source === "browser cache" ? "browser cache" : "user-owned retail icon");
+        } catch {
+          if (iconUrl) URL.revokeObjectURL(iconUrl);
+          iconUrl = null;
+        }
+      }
       return presentation;
     } catch {
-      if (candidateUrl) URL.revokeObjectURL(candidateUrl);
+      if (bannerUrl && !retailPresentationUrls.includes(bannerUrl)) URL.revokeObjectURL(bannerUrl);
+      if (iconUrl && !retailPresentationUrls.includes(iconUrl)) URL.revokeObjectURL(iconUrl);
       return null;
     }
   }
@@ -832,6 +856,18 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     document.documentElement.style.setProperty("--ui-scale", settings.scale);
   }
 
+  document.querySelectorAll("[data-single-activation-shortcut]").forEach((shortcut) => {
+    shortcut.addEventListener("click", (event) => {
+      // A Windows desktop double-click emits click(detail=1), click(detail=2),
+      // then dblclick. Let the first trusted activation open the native anchor
+      // and suppress only the repeated mouse click. Keyboard/AT activation has
+      // detail=0, a mobile tap has detail=1, and a later click starts at 1.
+      if (event.detail > 1) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    });
+  });
   document.querySelectorAll("[data-open]").forEach((button) => button.addEventListener("click", () => openApp(button.dataset.open)));
   document.querySelectorAll("[data-open-setup]").forEach((button) => button.addEventListener("click", () => openApp("setup")));
   document.querySelectorAll("[data-open-settings]").forEach((button) => button.addEventListener("click", () => openSettingsPanel(button.dataset.openSettings)));
