@@ -80,6 +80,7 @@
     "test:real-shellmap": "npm run build:port && node harness/shellmap_real_init_gate.mjs",
     "verify:threaded-play": "npm run verify:save-persistence-order && npm run verify:runtime-shutdown-order && npm run build:port:threaded && npm run build:port:threaded:release && node harness/threaded_play_gate.mjs",
     "verify:shader-tier-config": "node harness/verify_shader_tier_config.mjs",
+    "verify:threaded-shader-fidelity": "node harness/shader_fidelity_probe.mjs",
     "verify:save-persistence-order": "node harness/save_persistence_order_smoke.mjs",
     "verify:runtime-shutdown-order": "node harness/runtime_shutdown_sequence_smoke.mjs",
     "test:real-fx-render": "npm run build:port && node harness/real_fx_render_smoke.mjs",
