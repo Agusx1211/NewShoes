@@ -106,6 +106,11 @@ const [license, index, legal, play] = await Promise.all([
   readFile(resolve(root, "legal.html"), "utf8").catch(() => ""),
   readFile(resolve(root, "harness/play.html"), "utf8").catch(() => ""),
 ]);
+const analytics = await readFile(resolve(root, "harness/analytics.mjs"), "utf8").catch(() => "");
+if (analytics.includes("__GA_MEASUREMENT_ID__")) findings.push("harness/analytics.mjs: unresolved analytics configuration marker");
+for (const match of analytics.matchAll(/\bG-[A-Z0-9]+\b/g)) {
+  if (!/^G-[A-Z0-9]+$/.test(match[0])) findings.push("harness/analytics.mjs: invalid generated measurement ID");
+}
 if (!license.includes("ADDITIONAL TERMS per GNU GPL Section 7") || !license.includes("Disclaimer of Warranty")) {
   findings.push("LICENSE.md: complete GPLv3 license and additional terms are missing");
 }

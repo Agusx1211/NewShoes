@@ -6,6 +6,34 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
   const LAUNCHER_LOGO_PATH = "./assets/launcher-logo.webp";
   const LAYOUT_VERSION = "launcher-centered-v1";
   const RELAUNCH_AFTER_RELOAD_KEY = "zeroh-relaunch-after-runtime-close";
+  const analytics = window.ZeroHAnalytics;
+
+  function track(name, params) {
+    analytics?.track(name, params);
+  }
+
+  function analyticsSourceType(source = state.source) {
+    return source?.kind === "folder" ? "folder" : "iso";
+  }
+
+  function validationReason(result) {
+    const missing = (result?.missing || []).map((value) => String(value).toLowerCase());
+    if (missing.some((value) => value.includes("english"))) return "missing_english";
+    if (missing.some((value) => value.includes("zh") || value.includes("zero"))) return "missing_zero_hour";
+    if (missing.length) return "missing_base";
+    if (result?.errors?.length) return "unsupported";
+    return "unknown";
+  }
+
+  function operationFailureReason(error) {
+    const text = `${error?.name || ""} ${error?.message || ""}`.toLowerCase();
+    if (/quota|space|storage|capacity/.test(text)) return "quota";
+    if (/permission|denied|notallowed/.test(text)) return "permission";
+    if (/source|handle|media|file.*missing/.test(text)) return "source_lost";
+    if (/unsupported|format|archive/.test(text)) return "unsupported";
+    if (/abort|cancel/.test(text)) return "cancelled";
+    return "unknown";
+  }
 
   function storageGet(key) {
     try { return localStorage.getItem(key); } catch { return null; }
@@ -48,6 +76,9 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
   const launchOverlay = document.querySelector("#launchOverlay");
   let interfaceAudioContext = null;
   let retailPresentationUrl = null;
+  let lastStorageBuckets = "";
+  let installStartedAt = 0;
+  let installProgressMilestones = new Set();
 
   function readStoredLibrary() {
     try { return JSON.parse(storageGet("zeroh-library") || storageGet("fielddesk-library")) || null; }
@@ -176,6 +207,15 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
         throw new Error("Storage estimate unavailable");
       }
       const free = Math.max(0, quota - usage);
+      const storageBuckets = {
+        available: analytics?.bucketBytes(free) || "unknown",
+        usage: analytics?.bucketBytes(usage) || "unknown",
+      };
+      const storageKey = `${storageBuckets.available}:${storageBuckets.usage}`;
+      if (storageKey !== lastStorageBuckets) {
+        lastStorageBuckets = storageKey;
+        track("storage_capacity", storageBuckets);
+      }
       const label = free >= 1024 ** 3
         ? `${(free / 1024 ** 3).toFixed(2)} GB free`
         : `${Math.round(free / 1024 ** 2)} MB free`;
@@ -245,6 +285,9 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     closeStartMenu();
     if (!wasOpen) renderTaskbar();
     playInterfaceSound("open");
+    const screen = { setup: "launcher", programs: "library", settings: "settings", explorer: "files", about: "about" }[appId];
+    if (screen && !wasOpen) track("app_view", { screen });
+    if (screen) track("launcher_navigation", { destination: screen });
   }
 
   function openSettingsPanel(panel = "appearance") {
@@ -509,6 +552,11 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
       document.querySelector("#installSizeEstimate").textContent =
         `~${(result.totalBytes / 1024 ** 3).toFixed(1)} GB`;
       if (!result.ok) {
+        track("media_validation", {
+          result: "incomplete",
+          reason: validationReason(result),
+          source_type: analyticsSourceType(source),
+        });
         title.textContent = "More original media is required";
         detail.textContent = `Missing: ${missingSourceSummary(result.missing)}`;
         showToast("Incomplete game library", "Add the remaining discs, or remove media selected by mistake.", "warning");
@@ -516,12 +564,23 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
         return;
       }
       title.textContent = "Compatible Zero Hour files found";
+      track("media_validation", {
+        result: "ready",
+        reason: "complete",
+        source_type: analyticsSourceType(source),
+      });
       detail.textContent = "All required Zero Hour and Generals base-data archives passed the local media inventory.";
       if (result.errors.length) {
         showToast("Some source files were ignored", `${result.errors.length} unreadable or unsupported file${result.errors.length === 1 ? " was" : "s were"} skipped; the required library is complete.`, "warning");
       }
       setWizardStep(2);
     } catch (error) {
+      track("media_validation", {
+        result: "failed",
+        reason: operationFailureReason(error) === "unsupported" ? "unsupported"
+          : operationFailureReason(error) === "source_lost" ? "unreadable" : "unknown",
+        source_type: analyticsSourceType(source),
+      });
       title.textContent = "Could not read this source";
       detail.textContent = error?.message || String(error);
       percent.textContent = "!";
@@ -672,11 +731,21 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     const value = Math.max(0, Math.min(100, Math.round(ratio * 100)));
     const detail = progress.detail ? `Copying ${progress.detail}` : "Copying required game files…";
     renderLibraryPreparationProgress(value, detail);
+    for (const [threshold, milestone] of [[25, "quarter"], [50, "half"], [75, "three_quarters"], [100, "complete"]]) {
+      if (value >= threshold && !installProgressMilestones.has(milestone)) {
+        installProgressMilestones.add(milestone);
+        track("install_progress", { milestone, mode: state.storageMode });
+      }
+    }
   }
 
   async function prepareLibrary() {
     if (state.preparingLibrary) return;
     const requestedMode = state.storageMode;
+    installStartedAt = Date.now();
+    installProgressMilestones = new Set(["start"]);
+    track("install_started", { mode: requestedMode, source_type: analyticsSourceType() });
+    track("install_progress", { milestone: "start", mode: requestedMode });
     setLibraryPreparationState(true, requestedMode);
     try {
       const result = await window.ZeroHAssetLibrary.prepare(
@@ -702,7 +771,16 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
       if (result.warning) showToast(result.warning.title || "Storage warning", result.warning.message || String(result.warning), "warning");
       if (!metadataStored) showToast("Launcher preference not saved", "The library is ready now, but this browser could not retain its launcher shortcut state.", "warning");
       await refreshRetailPresentation();
+      track("install_completed", {
+        mode: state.storageMode,
+        duration: analytics?.bucketDuration(Date.now() - installStartedAt) || "unknown",
+      });
     } catch (error) {
+      track("install_failed", {
+        mode: requestedMode,
+        reason: operationFailureReason(error),
+        duration: analytics?.bucketDuration(Date.now() - installStartedAt) || "unknown",
+      });
       showToast("Library preparation failed", error?.message || String(error), "warning");
     } finally {
       setLibraryPreparationState(false, requestedMode);
@@ -745,6 +823,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
   }
 
   async function launchGame() {
+    let runtimeLaunchRequested = false;
     closeStartMenu();
     if (window.ZeroHRuntime?.closing) {
       await window.ZeroHRuntime.exit();
@@ -762,6 +841,8 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     }
     if (state.launching) return;
     state.launching = true;
+    window.__newShoesLaunchStartedAt = Date.now();
+    track("game_launch", { state: "started", stage: "launcher", duration: "unknown" });
     document.querySelectorAll("[data-launch-game]").forEach((button) => { button.disabled = true; });
     launchOverlay.hidden = false;
     document.querySelector("#launchLoader").hidden = false;
@@ -792,8 +873,16 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
         fill.style.width = `${Math.min(34, Math.round((progress.completed / progress.total) * 34))}%`;
       });
       mount.textContent = "◌ Mount";
+      runtimeLaunchRequested = true;
       await window.ZeroHRuntime.launch();
     } catch (error) {
+      if (!runtimeLaunchRequested) {
+        track("game_launch", {
+          state: "failed",
+          stage: "archives",
+          duration: analytics?.bucketDuration(Date.now() - window.__newShoesLaunchStartedAt, "launch") || "unknown",
+        });
+      }
       launchOverlay.hidden = true;
       showToast("Launch failed", error?.message || String(error), "warning");
     } finally {
@@ -837,6 +926,13 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
   document.querySelectorAll("[data-open-settings]").forEach((button) => button.addEventListener("click", () => openSettingsPanel(button.dataset.openSettings)));
   document.querySelectorAll("[data-launch-game]").forEach((button) => button.addEventListener("click", launchGame));
 
+  document.querySelectorAll("[data-settings-tab]").forEach((button) => button.addEventListener("click", () => {
+    const section = button.dataset.settingsTab;
+    if (["appearance", "game", "multiplayer", "hardware", "privacy"].includes(section)) {
+      track("settings_section_view", { section });
+    }
+  }));
+
   startButton.addEventListener("click", (event) => {
     event.stopPropagation();
     const shouldOpen = startMenu.hidden;
@@ -844,6 +940,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     startButton.classList.toggle("is-active", shouldOpen);
     startButton.setAttribute("aria-expanded", String(shouldOpen));
     if (shouldOpen) playInterfaceSound("menu");
+    if (shouldOpen) track("launcher_navigation", { destination: "start_menu" });
   });
   startMenu.addEventListener("click", (event) => event.stopPropagation());
   document.addEventListener("click", closeStartMenu);
@@ -865,7 +962,11 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
       if (!files) return document.querySelector("#imageInput").click();
       const source = sourceFromFiles(files, "image", window.ZeroHAssetLibrary.sourceHandles);
       if (source) {
-        await scanSource(mergeImageSource(source));
+        const merged = mergeImageSource(source);
+        const partCount = analytics?.bucketCount(merged.items.length) || "one";
+        track("import_source_selected", { source_type: "iso", part_count: partCount });
+        track("media_parts_changed", { action: "add", part_count: partCount });
+        await scanSource(merged);
       }
     } catch (error) {
       if (error?.name !== "AbortError") showToast("Could not open media", error?.message || String(error), "warning");
@@ -878,6 +979,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
       if (!files) return document.querySelector("#folderInput").click();
       const source = sourceFromFiles(files, "folder", window.ZeroHAssetLibrary.sourceHandles);
       if (source) {
+        track("import_source_selected", { source_type: "folder", part_count: "one" });
         await scanSource(source);
       }
     } catch (error) {
@@ -887,12 +989,21 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
   document.querySelector("#imageInput").addEventListener("change", (event) => {
     const source = sourceFromFiles(event.target.files, "image");
     event.target.value = "";
-    if (source) void scanSource(mergeImageSource(source));
+    if (source) {
+      const merged = mergeImageSource(source);
+      const partCount = analytics?.bucketCount(merged.items.length) || "one";
+      track("import_source_selected", { source_type: "iso", part_count: partCount });
+      track("media_parts_changed", { action: "add", part_count: partCount });
+      void scanSource(merged);
+    }
   });
   document.querySelector("#folderInput").addEventListener("change", (event) => {
     const source = sourceFromFiles(event.target.files, "folder");
     event.target.value = "";
-    if (source) void scanSource(source);
+    if (source) {
+      track("import_source_selected", { source_type: "folder", part_count: "one" });
+      void scanSource(source);
+    }
   });
   document.querySelector("#addMoreImagesButton").addEventListener("click", () => {
     document.querySelector("#pickImageButton").click();
@@ -903,6 +1014,10 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     const index = Number(button.dataset.removeMedia);
     if (!state.source?.items?.[index]) return;
     state.source.items.splice(index, 1);
+    track("media_parts_changed", {
+      action: state.source.items.length ? "remove" : "clear",
+      part_count: analytics?.bucketCount(state.source.items.length) || "zero",
+    });
     if (state.source.kind === "image" && state.source.items.length) {
       updateSourceIdentity(state.source);
       await scanSource(state.source);
@@ -920,6 +1035,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
   document.querySelectorAll('input[name="storageMode"]').forEach((input) => input.addEventListener("change", () => {
     state.storageMode = input.value;
     syncStorageModeUI();
+    track("storage_mode_selected", { mode: state.storageMode });
   }));
   document.querySelector("#prepareLibraryButton").addEventListener("click", prepareLibrary);
   document.querySelector("#changeSourceButton").addEventListener("click", () => {
@@ -953,16 +1069,19 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
       isDocumentHidden: () => document.hidden,
     });
     if (shutdown.reason === "storage-busy") {
+      track("game_exit", { kind: "desktop_shutdown", result: "blocked_storage" });
       showToast("Finish the current file operation", "Project New Shoes will not shut down while game files are being copied or staged.", "warning");
     } else if (shutdown.reason === "game-running") {
+      track("game_exit", { kind: "desktop_shutdown", result: "blocked_game" });
       showToast("Close the game first", "Press Ctrl + Alt + Esc to return to the desktop, then choose Shut down again.", "warning");
-    }
+    } else track("game_exit", { kind: "desktop_shutdown", result: shutdown.reason === "redirected" ? "redirected" : "close_requested" });
   });
 
   document.querySelectorAll("[data-set-wallpaper]").forEach((button) => button.addEventListener("click", () => {
     desktop.dataset.wallpaper = button.dataset.setWallpaper;
     document.querySelectorAll("[data-set-wallpaper]").forEach((item) => item.classList.toggle("is-selected", item === button));
     saveSettings();
+    track("setting_changed", { category: "appearance", setting: "wallpaper", value: "enabled" });
   }));
   document.querySelector(".tray-status").addEventListener("click", () => openApp("programs"));
   document.querySelector(".tray-network").addEventListener("click", () => {
@@ -991,6 +1110,13 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
   });
   ["#scaleSelect", "#soundToggle", "#motionToggle"].forEach((selector) => document.querySelector(selector).addEventListener("change", () => {
     saveSettings();
+    const control = document.querySelector(selector);
+    const change = selector === "#scaleSelect"
+      ? { category: "appearance", setting: "ui_scale", value: "enabled" }
+      : selector === "#soundToggle"
+        ? { category: "audio", setting: "interface_sound", value: control.checked ? "enabled" : "disabled" }
+        : { category: "appearance", setting: "reduce_motion", value: control.checked ? "enabled" : "disabled" };
+    track("setting_changed", change);
     if (selector === "#soundToggle" && document.querySelector(selector).checked) playInterfaceSound("enabled");
   }));
   document.querySelector("#resetConceptButton").addEventListener("click", async () => {

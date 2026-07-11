@@ -8,6 +8,9 @@ import { parse } from "yaml";
 const wasmRoot = resolve(import.meta.dirname, "..");
 const repoRoot = resolve(wasmRoot, "..");
 const scripts = [
+  "harness/analytics.mjs",
+  "harness/analytics_unit.mjs",
+  "harness/analytics_browser_smoke.mjs",
   "harness/bridge.js",
   "harness/d3d8_executor.mjs",
   "harness/engine_realm_boot.mjs",

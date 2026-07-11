@@ -495,6 +495,22 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 .settings-nav button svg { width: 23px; height: 23px; flex: 0 0 auto; }
 .settings-nav button span { line-height: 1.25; }
 .settings-panel[hidden] { display: none; }
+
+.analytics-consent-status {
+  margin: 14px 0 8px;
+  color: #36586b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.analytics-privacy-copy {
+  max-width: 720px;
+  color: #526b78;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.analytics-privacy-copy a { color: #176a9b; }
 .game-settings-panel .setting-block { min-height: 58px; }
 .game-settings-hint { margin: -12px 0 10px; color: #6b7f8b; font-size: 8px; }
 .game-custom-resolution > div:last-child,

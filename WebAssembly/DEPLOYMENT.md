@@ -18,6 +18,34 @@ opens.
    from the Actions tab. The workflow jobs reject every non-`main` ref,
    including a manual dispatch from another branch.
 
+### Optional anonymous analytics
+
+The launcher supports privacy-bounded Google Analytics 4 events. To enable
+them, create the repository Actions secret `GA_MEASUREMENT_ID` under
+**Settings**, **Secrets and variables**, **Actions**. Its value must use the
+GA4 web-stream form `G-...`. The workflow passes it only to the static-site
+packager and does not print it. The generated browser artifact necessarily
+contains the measurement ID, which is public client configuration, not an API
+secret. A future server-side Measurement Protocol API secret would be a real
+secret and must never be placed in the artifact.
+
+If the repository secret is absent or invalid, packaging still succeeds and
+the analytics module remains inert: it loads no Google script and sends no
+requests. Pull-request CI uses a dummy measurement ID and browser tests use a
+local mock transport, so forks do not need the repository secret and never
+send test traffic to Google.
+
+On production hosts analytics is on by default. Players can turn off **Share
+anonymous usage analytics** in Desktop Settings → Privacy. That choice is read
+before the Google tag can load on later visits, clears accessible GA cookies,
+and stops later events. Global Privacy Control and Do Not Track are treated as
+automatic opt-outs. Advertising storage, advertising user data, ad
+personalization, Google signals, and personalized advertising stay disabled.
+Events use bounded categories and never include selected filenames, paths,
+disc names, free text, game/save data, issue dumps, or precise disk and hardware
+values. Google describes its processing in the
+[Google Privacy Policy](https://policies.google.com/privacy).
+
 The workflow builds the release pthread runtime with the version in
 `emscripten-version.txt`, currently Emscripten 3.1.6. It audits the static
 artifact, proves it in Chromium under a project-style subpath, uploads it, then
@@ -90,6 +118,7 @@ cd WebAssembly
 npm ci
 source /path/to/emsdk/emsdk_env.sh
 npm run check:pages
+npm run test:analytics
 npm run build:pages-runtime
 npm run test:pages-artifact-guard
 npm run verify:pages-site

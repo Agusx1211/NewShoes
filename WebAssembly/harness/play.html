@@ -386,6 +386,7 @@
               <button id="gameTab" type="button" role="tab" aria-controls="gamePanel" data-settings-tab="game"><svg><use href="#i-game"/></svg><span>Game &amp; Display</span></button>
               <button id="multiplayerTab" type="button" role="tab" aria-controls="multiplayerPanel" data-settings-tab="multiplayer"><svg><use href="#i-globe"/></svg><span>Multiplayer</span></button>
               <button id="hardwareTab" type="button" role="tab" aria-controls="hardwarePanel" data-settings-tab="hardware"><svg><use href="#i-drive"/></svg><span>Hardware &amp; Browser</span></button>
+              <button id="privacyTab" type="button" role="tab" aria-controls="privacyPanel" data-settings-tab="privacy"><svg><use href="#i-shield"/></svg><span>Privacy</span></button>
             </aside>
             <section id="appearancePanel" class="settings-panel" role="tabpanel" aria-labelledby="appearanceTab" data-settings-panel="appearance">
               <p class="eyebrow">APPEARANCE</p><h1>Make it feel like home</h1>
@@ -432,6 +433,13 @@
               <div id="hardwareNotice" class="hardware-notice" hidden></div>
               <div id="hardwareReport" class="hardware-report" aria-live="polite"></div>
               <footer class="hardware-footer"><span id="hardwareTimestamp">Not scanned yet</span><span>Values exposed by this browser only · some fields may be intentionally hidden</span></footer>
+            </section>
+            <section id="privacyPanel" class="settings-panel privacy-settings-panel" role="tabpanel" aria-labelledby="privacyTab" data-settings-panel="privacy" hidden>
+              <p class="eyebrow">PRIVACY</p><h1>Anonymous usage analytics</h1>
+              <p class="settings-intro">Help improve Project New Shoes by sharing broad, anonymous feature and reliability events.</p>
+              <label class="setting-block toggle-setting"><div><strong>Share anonymous usage analytics</strong><span>Includes launcher steps, broad success or failure categories, settings categories, and performance buckets. Never includes filenames, paths, disc names, game data, save data, free text, issue dumps, or precise hardware and storage values.</span></div><input id="analyticsConsentToggle" type="checkbox" checked><span class="toggle"></span></label>
+              <p id="analyticsConsentStatus" class="analytics-consent-status" role="status">Checking analytics preference…</p>
+              <p class="analytics-privacy-copy">Google Analytics processes opted-in usage events under the <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google Privacy Policy</a>. Advertising storage, advertising user data, ad personalization, Google signals, and personalized advertising are always disabled. Global Privacy Control or Do Not Track turns analytics off automatically.</p>
             </section>
           </div>
         </article>

@@ -16,6 +16,11 @@ const runtimeDist = resolve(process.env.PAGES_RUNTIME_DIST
   || join(wasmRoot, "pages-build/dist-threaded-release"));
 const defaultSourceUrl = "https://github.com/Agusx1211/CnC-wasm";
 const sourceUrl = String(process.env.PAGES_SOURCE_URL || defaultSourceUrl);
+const requestedMeasurementId = String(process.env.GA_MEASUREMENT_ID || "").trim();
+const measurementId = /^G-[A-Z0-9]+$/.test(requestedMeasurementId) ? requestedMeasurementId : "";
+if (requestedMeasurementId && !measurementId) {
+  console.warn("GA_MEASUREMENT_ID is invalid; analytics will be disabled in this artifact.");
+}
 
 if (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\/(?:tree|commit)\/[A-Fa-f0-9]+)?\/?$/.test(sourceUrl)) {
   throw new Error(`PAGES_SOURCE_URL must be a GitHub repository or revision URL: ${sourceUrl}`);
@@ -71,7 +76,18 @@ for (const name of PAGES_TEMPLATE_FILES) {
 }
 
 for (const name of PAGES_HARNESS_FILES) {
-  await copyRegularFile(join(wasmRoot, "harness", name), join(outputRoot, "harness", name));
+  const source = join(wasmRoot, "harness", name);
+  const destination = join(outputRoot, "harness", name);
+  if (name === "analytics.mjs") {
+    const template = await readFile(source, "utf8");
+    if (!template.includes("__GA_MEASUREMENT_ID__")) {
+      throw new Error("analytics.mjs has no measurement-ID injection marker");
+    }
+    await mkdir(dirname(destination), { recursive: true });
+    await writeFile(destination, template.replaceAll("__GA_MEASUREMENT_ID__", measurementId));
+  } else {
+    await copyRegularFile(source, destination);
+  }
 }
 
 const playSource = await readFile(join(wasmRoot, "harness", "play.html"), "utf8");

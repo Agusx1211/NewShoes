@@ -7,6 +7,7 @@ export const PAGES_TEMPLATE_FILES = Object.freeze([
 ]);
 
 export const PAGES_HARNESS_FILES = Object.freeze([
+  "analytics.mjs",
   "assets/brand/project-new-shoes-apple-touch.png",
   "assets/brand/project-new-shoes-icon-192.png",
   "assets/brand/project-new-shoes-icon-512.png",

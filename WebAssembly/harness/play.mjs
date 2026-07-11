@@ -1,3 +1,5 @@
+import "./analytics.mjs";
+
 // Human-driveable boot for the real cnc-port engine: replays the same RPC
 // sequence the startup-vertical harness uses (mount whole-file archive set ->
 // realEngineInit -> realEngineFrame loop). Mouse/keyboard/touch input already
@@ -10,6 +12,9 @@ import {
   runRuntimeShutdownSequence,
   runtimeShutdownWarning,
 } from "./runtime-shutdown-sequence.mjs";
+
+const analytics = window.ZeroHAnalytics;
+const track = (name, params) => analytics?.track(name, params);
 
 const archiveSpecs = Object.freeze(window.ZeroHArchiveSpecs.map((spec) => Object.freeze(
   spec.artifactSourceName === spec.name
@@ -733,6 +738,7 @@ async function runThreadedFrameLoop(rpc, clientFps, logicFps) {
 }
 
 async function start() {
+  let analyticsStage = "launcher";
   // Owner directive 2026-07-10: no legacy single-thread fallback — when the
   // threaded default cannot run on this origin the page redirects/blocks
   // (see the threadedUnavailable block above); it must never boot legacy.
@@ -790,6 +796,15 @@ async function start() {
     const startAudioMixer = await rpc("setBrowserAudioMixerVolumes", {
       trigger: "play.start",
     }).catch((error) => ({ ok: false, error: error?.message ?? String(error) }));
+    const audioState = startAudioRuntime?.browserAudioRuntime?.contextState
+      ?? startAudioRuntime?.contextState;
+    track("audio_activation", {
+      trigger: "play_start",
+      result: audioState === "running" ? "running" : audioState === "suspended" ? "suspended"
+        : startAudioRuntime?.ok === false ? "failed" : "unavailable",
+      recovery: false,
+    });
+    track("boot_milestone", { milestone: "audio" });
 
     // The human-playable page runs graphics diagnostics in "lite" mode: skip the
     // per-draw readPixels GPU syncs / probe objects / draw-history that the
@@ -829,6 +844,7 @@ async function start() {
     });
 
     const archives = buildArchives();
+    analyticsStage = "archives";
     const preparedAssets = archives.every((archive) => typeof archive.opfsPath === "string");
     report(`${preparedAssets ? "mounting local" : "downloading + mounting"} ${archives.length} archives...`);
     beginBootProgress(archives.length);
@@ -840,6 +856,7 @@ async function start() {
     if (mount?.archiveSet?.archiveCount !== archives.length) {
       throw launchFailure("archive mount failed", mount?.error ?? mount?.archiveSet);
     }
+    track("boot_milestone", { milestone: "archives_mounted" });
     issueRecorder.setSessionContext({
       phase: "archives-mounted",
       archiveMount: {
@@ -853,6 +870,7 @@ async function start() {
     const shellMap = queryParams.get("shellmap") !== "0";
     issueRecorder.setSessionContext({ shellMap });
     bootProgressEnginePhase();
+    analyticsStage = "engine";
     report(`running real GameEngine::init() (shell map ${shellMap ? "on" : "off"})...`);
     // Stepped init: GameEngine::init runs as budgeted slices that return to
     // the event loop between steps, so the overlay can paint real progress
@@ -894,6 +912,7 @@ async function start() {
     if (init?.ok !== true || init?.frontier?.initReturned !== true) {
       throw launchFailure("real engine init failed", init);
     }
+    track("boot_milestone", { milestone: "engine_initialized" });
     issueRecorder.setSessionContext({
       phase: "engine-initialized",
       init: {
@@ -944,12 +963,24 @@ async function start() {
     // a stale wasm without the boot export, or the window changing size during
     // the archive download.
     await applyDisplaySettings("boot");
+    analyticsStage = "display";
+    track("boot_milestone", { milestone: "first_frame" });
+    track("game_launch", {
+      state: "ready",
+      stage: "display",
+      duration: analytics?.bucketDuration(Date.now() - Number(window.__newShoesLaunchStartedAt || Date.now()), "launch") || "unknown",
+    });
     if (new URLSearchParams(window.location.search).get("replay") === "1") {
       issueRecorder.setSessionContext({ phase: "replay-ready" });
       return;
     }
     await runFrameLoop(rpc);
   } catch (error) {
+    track("game_launch", {
+      state: "failed",
+      stage: analyticsStage,
+      duration: analytics?.bucketDuration(Date.now() - Number(window.__newShoesLaunchStartedAt || Date.now()), "launch") || "unknown",
+    });
     fail(error?.message ?? String(error), error?.launchDetail ?? error);
     throw error;
   }
@@ -1045,6 +1076,7 @@ async function exitToDesktop() {
       };
       const warning = runtimeShutdownWarning(result);
       if (warning) window.ZeroHDesktop?.showToast(warning.title, warning.message, "warning");
+      track("game_exit", { kind: "game_to_desktop", result: result.ok === false ? "failed" : "success" });
       return result;
     } catch (error) {
       const result = {
@@ -1054,6 +1086,7 @@ async function exitToDesktop() {
       };
       const warning = runtimeShutdownWarning(result);
       window.ZeroHDesktop?.showToast(warning.title, warning.message, "warning");
+      track("game_exit", { kind: "game_to_desktop", result: "failed" });
       return result;
     } finally {
       gameRunning = false;
@@ -1631,6 +1664,7 @@ function bindDesktopGameSettings() {
     if (value === "dynamic") {
       customRow?.setAttribute("hidden", "");
       void setDisplaySettings({ mode: "dynamic" }, "desktop-settings");
+      track("setting_changed", { category: "display", setting: "resolution_mode", value: "dynamic" });
       return;
     }
     if (value === "custom") {
@@ -1650,6 +1684,7 @@ function bindDesktopGameSettings() {
         width: Number(match[1]),
         height: Number(match[2]),
       }, "desktop-settings");
+      track("setting_changed", { category: "display", setting: "resolution_mode", value: "fixed" });
     }
   });
   document.querySelector("#customResolutionApply")?.addEventListener("click", () => {
@@ -1657,24 +1692,33 @@ function bindDesktopGameSettings() {
     const height = Number(document.querySelector("#customResolutionHeight")?.value);
     if (!Number.isFinite(width) || !Number.isFinite(height)) return;
     void setDisplaySettings({ mode: "fixed", width, height }, "desktop-settings-custom");
+    track("setting_changed", { category: "display", setting: "resolution_mode", value: "fixed" });
   });
   document.querySelector("#fullscreenButton")?.addEventListener("click", () => {
+    track("setting_changed", { category: "display", setting: "fullscreen", value: fullscreenElement() ? "disabled" : "enabled" });
     void (fullscreenElement() ? exitFullscreen() : enterFullscreen());
   });
   document.querySelector("#shaderTierSelect")?.addEventListener("change", (event) => {
     setShaderTier(event.currentTarget.value);
+    track("setting_changed", { category: "shader", setting: "shader_tier", value: event.currentTarget.value === "ff" ? "classic" : "enhanced" });
   });
   document.querySelector("#performanceOverlayToggle")?.addEventListener("change", (event) => {
     setPerformanceOverlay({ enabled: event.currentTarget.checked });
+    track("setting_changed", { category: "performance", setting: "performance_overlay", value: event.currentTarget.checked ? "enabled" : "disabled" });
   });
-  const updateGraphSettings = () => setPerformanceOverlay({
-    historySeconds: Number(document.querySelector("#performanceHistorySelect")?.value),
-    graphMaxMs: Number(document.querySelector("#performanceGraphMaxSelect")?.value),
-  });
+  const updateGraphSettings = () => {
+    const history = Number(document.querySelector("#performanceHistorySelect")?.value);
+    setPerformanceOverlay({
+      historySeconds: history,
+      graphMaxMs: Number(document.querySelector("#performanceGraphMaxSelect")?.value),
+    });
+    track("setting_changed", { category: "performance", setting: "performance_window", value: history <= 3 ? "short" : history <= 6 ? "medium" : "long" });
+  };
   document.querySelector("#performanceHistorySelect")?.addEventListener("change", updateGraphSettings);
   document.querySelector("#performanceGraphMaxSelect")?.addEventListener("change", updateGraphSettings);
   document.querySelector("#diagnosticsSelect")?.addEventListener("change", (event) => {
     setConfiguredDiagLevel(event.currentTarget.value);
+    track("setting_changed", { category: "diagnostics", setting: "diagnostics_level", value: event.currentTarget.value });
   });
   syncDesktopGameSettings();
 }

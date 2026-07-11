@@ -8,6 +8,37 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Privacy-bounded usage analytics (2026-07-11)
+
+- [x] Added optional Google Analytics 4 collection on public production hosts,
+      configured only through build-time `GA_MEASUREMENT_ID` injection. Missing
+      or invalid configuration is an inert no-op. A fresh production visit is
+      enabled by default; Desktop Settings → Privacy provides a persistent
+      opt-out, while GPC and DNT are automatic opt-outs checked before the tag
+      can load. Revocation denies Consent Mode v2 analytics storage, leaves all
+      advertising consent denied, clears accessible GA cookies, and suppresses
+      later events. Google signals and ad-personalization signals remain off.
+- [x] Restricted telemetry to a typed allowlist of bounded enum/boolean fields
+      covering launcher navigation, local import source type and count buckets,
+      validation categories, storage/install milestones, engine boot, audio
+      activation, settings categories, game/desktop exit distinction, safe
+      external-link categories, and coarse browser capabilities. Filenames,
+      paths, ISO names, free text, asset/save contents, issue dumps, precise
+      storage values, identifiers, and raw hardware data cannot enter the event
+      sanitizer. The single manual page view uses the canonical deployment root
+      and strips harness paths, queries, and fragments.
+- [x] Verified default-on, persisted opt-out before initialization, GPC/DNT,
+      revoke/re-enable without duplicate loads, Consent Mode v2 advertising
+      denials, schema rejection, canonical custom-domain/project-subpath roots,
+      representative launcher/install/game/audio/settings events, failure
+      isolation, and idempotent listeners with an injected transport. A real
+      Chromium launcher smoke proved the Settings toggle, return-visit no-op,
+      re-enable behavior, one event per interaction, and zero off-origin test
+      requests. Pages packaging guards passed with absent, valid dummy, and
+      invalid measurement configuration.
+
+---
+
 ## Public-readiness audit and documentation (2026-07-11)
 
 - [x] Audited all 1,552 commits and 13,480 reachable blobs across a recorded
