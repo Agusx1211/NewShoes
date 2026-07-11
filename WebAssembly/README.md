@@ -25,6 +25,7 @@ rules are in [ASSETS.md](ASSETS.md).
 `build/`, `dist*`, `artifacts/`, browser profiles, certificates, and retail
 assets are generated locally and ignored.
 
+
 ## Toolchain
 
 The pinned Emscripten version is in
@@ -163,6 +164,19 @@ await window.CnCPort.play.configure({
 `ps11` is the enhanced default. `ff` selects the classic fixed-function tier.
 An explicit URL choice, such as `?shaderTier=ff`, takes precedence over stored
 settings.
+
+The real threaded shader-fidelity gate requires a persistent Chrome profile
+that already contains a locally installed archive set:
+
+```sh
+CNC_PROFILE_DIR=/tmp/cnc-shader-profile \
+  CNC_HARNESS_URL=https://127.0.0.1:8443/harness/play.html \
+  npm run verify:threaded-shader-fidelity
+```
+
+It inventories all 18 programs in the two retail shader archives, boots the
+explicit `ps11` tier, and verifies that the `Trees.vso` relative c8-c12 wind
+table changes reach WebGL uniform uploads.
 
 The lower-level RPC surface is `window.CnCPort.rpc(command, payload)`. Harnesses
 use it to boot, navigate, load maps, issue original commands, read state, record

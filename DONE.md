@@ -25,6 +25,35 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       based automation attribution. Official Steam and EA acquisition links
       were checked against their current first-party pages.
 
+## Launcher exit compositor teardown (2026-07-11)
+
+- [x] Retired the exact OffscreenCanvas-transferred viewport element and its
+      promoted runtime subtree as soon as launcher exit begins, before showing
+      the desktop. This prevents Chrome from retaining the worker canvas's
+      final terrain frame as a promoted compositor layer.
+- [x] Bounded save flush, paced-loop stop, and graceful engine shutdown, with
+      a main-realm hard worker/audio/I/O fallback when a browser callback or
+      destructor does not settle. The fallback advances to the final save only
+      after explicit zero-owner worker metrics; unproven force termination
+      skips the flush and warns that final durability is unavailable. Ordinary
+      IDBFS flushes share one in-flight operation, but exit first disables
+      periodic scheduling, quiesces engine writes, drains any older snapshot,
+      and runs a distinct trailing syncfs before engine destruction. A
+      deterministic race regression proves a write made after the periodic
+      snapshot is included by the final flush.
+- [x] Extended the real threaded browser gate to capture the full desktop after
+      `ZeroHRuntime.exit()` and assert the retired viewport, bounded worker
+      cleanup, explicit worker termination, final-save ordering, visible
+      taskbar/upper-sky pixels, and absence of an upper terrain frame instead
+      of relying only on state flags. Upper desktop pixels are compared against
+      a fresh isolated desktop reference. The gate requires zero pending realm
+      commands and zero running pthread workers, clicks the actual Zero Hour
+      desktop shortcut, waits for its fresh document and second `started=true`
+      runtime, then closes that runtime cleanly too. Deterministic fault gates
+      cover stop/destructor timeouts, and a browser-injected final-save failure
+      must fail the close result while showing the user a save warning.
+
+
 ## Clean launcher game shutdown (2026-07-11)
 
 - [x] Replaced the launcher's overlay-only pause with a bounded real shutdown:
@@ -751,6 +780,22 @@ mitigation track. Items resolved or retired by the pivot:
       URL-override, forced-executor, and invalid-value cases and captures
       `pixel-shaders-default-settings.png`; the threaded play gate now requires
       a no-setting boot to report `ps11` rather than accepting either tier.
+- [x] **Prove the owner-reported tree/wind symptom through the real threaded
+      programmable path instead of the retired `threads=0` probes.** The new
+      `verify:threaded-shader-fidelity` gate inventories all 18 retail programs
+      from `Shaders.big`/`ShadersZH.big`, requires the complete 13-pixel/1-vertex
+      shell-map registration set, the exact 19-pair linked manifest, zero
+      fallbacks, an exact END-terminated 18-file archive manifest, and a decoded,
+      varied PNG screenshot. The live `Trees.vso` relative-address observer is
+      opt-in and reuses the existing SM1 debug branch, so normal draws gain no
+      new audit call. On Mac M4 Chrome/ANGLE Metal, explicit `ps11` issued over
+      250 translated tree draws in the bounded capture and observed a distinct
+      wind-table state on every draw, with zero pair failures or fixed-function
+      fallbacks; the visible shell-map capture remained correct. This rules out
+      a translator/native-pointer regression: the apparent frozen-tree
+      regression was the launcher selecting Classic, whose original fallback
+      intentionally has no programmable sway. The ps11-default fix above makes
+      the working animated path the fresh-install/default path again.
 - [x] **Verify and harden the generic D3D8 SM1 shader tier (Path B).** Commit
       `ea206b40` supplies the generic ps.1.1/vs.1.1 bytecode-to-GLSL path; the
       real shell-map runtime now has durable coverage for its shipped effects.

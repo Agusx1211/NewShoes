@@ -1,6 +1,7 @@
 import { createD3D8Executor } from "./d3d8_executor.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
+import { createSavePersistenceCoordinator } from "./save-persistence-coordinator.mjs";
 import { createWebRtcUdpEndpoint } from "./webrtc-udp-endpoint.mjs";
 import {
   clearSharedUdpRing,
@@ -452,6 +453,8 @@ const {
   viewportArraysEqual,
   updateD3D8TextureSummary,
   d3d8PerfSummary,
+  d3d8SM1ShaderAuditSummary,
+  setD3D8SM1ShaderAuditEnabled,
   applyD3D8BoundDrawDiagnosticsLevel,
   d3dColorToNormalizedRgba,
   d3dMaterialSourceName,
@@ -822,6 +825,7 @@ function createThreadedEngineController() {
   let prepPromise = null;
   let engineThreadStarted = false;
   let shutDown = false;
+  let terminalEvidence = null;
   let lastStatus = null;
   let lastLoopError = null;
   let mssHandlers = null;
@@ -1304,9 +1308,63 @@ function createThreadedEngineController() {
     });
   }
 
+  function terminateWorker(reason) {
+    shutDown = true;
+    cncPortMssCacheDropNotifier = null;
+    inputOutbox.length = 0;
+    for (const [, entry] of pending) {
+      if (entry.timer) clearTimeout(entry.timer);
+      entry.reject(new Error(reason));
+    }
+    pending.clear();
+    publishPending();
+    try { realmPort?.close(); } catch (_error) { /* already closed */ }
+    realmPort = null;
+
+    let workerTerminated = false;
+    let workerError = null;
+    try {
+      const terminateAllThreads = cncPortEmscriptenModule?.PThread?.terminateAllThreads;
+      if (typeof terminateAllThreads === "function") {
+        terminateAllThreads.call(cncPortEmscriptenModule.PThread);
+        workerTerminated = true;
+      }
+    } catch (error) {
+      workerError = error?.message ?? String(error);
+    }
+    if (engineWorker) {
+      try {
+        engineWorker.terminate();
+        workerTerminated = true;
+      } catch (error) {
+        workerError ??= error?.message ?? String(error);
+      }
+    }
+    engineWorker = null;
+    engineThreadStarted = false;
+    const pthreadRunning = Array.isArray(cncPortEmscriptenModule?.PThread?.runningWorkers)
+      ? cncPortEmscriptenModule.PThread.runningWorkers.length
+      : null;
+    terminalEvidence = {
+      workerTerminated,
+      workerError,
+      pendingCommands: pending.size,
+      pthreadRunning,
+      engineThreadStarted,
+    };
+    terminalEvidence.ok = terminalEvidence.workerTerminated === true
+      && terminalEvidence.pendingCommands === 0
+      && terminalEvidence.pthreadRunning === 0
+      && terminalEvidence.engineThreadStarted === false;
+    return { ...terminalEvidence };
+  }
+
   async function shutdown() {
     if (shutDown) {
-      return { ok: true, alreadyStopped: true };
+      return {
+        ...(terminalEvidence ?? { ok: false }),
+        alreadyStopped: true,
+      };
     }
 
     const result = { ok: true, loopStopped: false, engineShutdown: null, opfsHandlesClosed: 0 };
@@ -1337,33 +1395,23 @@ function createThreadedEngineController() {
       }
     }
 
-    shutDown = true;
-    cncPortMssCacheDropNotifier = null;
-    inputOutbox.length = 0;
-    for (const [, entry] of pending) {
-      if (entry.timer) clearTimeout(entry.timer);
-      entry.reject(new Error("threaded engine shut down"));
-    }
-    pending.clear();
-    publishPending();
-    try { realmPort?.close(); } catch (_error) { /* already closed */ }
-    realmPort = null;
-    try {
-      const terminateAllThreads = cncPortEmscriptenModule?.PThread?.terminateAllThreads;
-      if (typeof terminateAllThreads !== "function") {
-        throw new Error("Emscripten pthread termination is unavailable");
-      }
-      terminateAllThreads.call(cncPortEmscriptenModule.PThread);
-      result.workerTerminated = true;
-    } catch (error) {
-      result.ok = false;
-      result.workerTerminated = false;
-      result.workerError = error?.message ?? String(error);
-      try { engineWorker?.terminate(); } catch (_terminateError) { /* best effort */ }
-    }
-    engineWorker = null;
-    engineThreadStarted = false;
+    const shutdownOperationsOk = result.ok;
+    const termination = terminateWorker("threaded engine shut down");
+    Object.assign(result, termination);
+    result.ok = shutdownOperationsOk === true && termination.ok === true;
     return result;
+  }
+
+  function forceShutdown(reason = "forced shutdown") {
+    if (shutDown) {
+      return {
+        ...(terminalEvidence ?? { ok: false }),
+        alreadyStopped: true,
+        forced: true,
+      };
+    }
+
+    return { ...terminateWorker(reason), forced: true };
   }
 
   // Fire-and-forget realm command (no id, no reply, no timeout entry) —
@@ -1385,6 +1433,7 @@ function createThreadedEngineController() {
     startLoop,
     stopLoop,
     shutdown,
+    forceShutdown,
     forwardInput,
     sendCommand,
     postCommand,
@@ -1459,11 +1508,14 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   "resumeBrowserAudioRuntime",
   "setBrowserAudioMixerVolumes",
   "shutdownRuntime",
+  "forceShutdownRuntime",
   "setD3D8GammaRamp",
   // Saves: IDBFS is mounted on the MAIN runtime (preRun) and the engine
   // thread's FS writes proxy to main, so persist (FS.syncfs) and the listing
   // are pure main-side JS in threaded mode too.
   "persistSaves",
+  "stopSavePersistenceScheduling",
+  "persistSavesFinal",
   "listSaves",
   // WebRTC signaling and RTCDataChannels live in the window realm. Their
   // datagrams cross into the engine worker through threadedUdpBridge.
@@ -1675,6 +1727,27 @@ async function threadedRpc(command, payload = {}) {
           liveCount: reply?.liveCount ?? 0,
           threaded: true,
           error: reply?.ok === true ? undefined : (reply?.error ?? "worker inventory failed"),
+        };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "d3d8SM1ShaderAudit": {
+      try {
+        await threadedEngine.ensureReady();
+        const reply = await threadedEngine.sendCommand({
+          cmd: "sm1ShaderAudit",
+          enable: typeof payload.enable === "boolean" ? payload.enable : undefined,
+        }, {
+          timeoutMs: 120000,
+        });
+        return {
+          ok: reply?.ok === true,
+          command,
+          audit: reply?.audit ?? {},
+          enabled: reply?.enabled,
+          threaded: true,
+          error: reply?.ok === true ? undefined : (reply?.error ?? "worker shader audit failed"),
         };
       } catch (error) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
@@ -4891,10 +4964,11 @@ function mountSaveFilesystem(m) {
   }
 }
 
-// Flush MEMFS -> IndexedDB so newly written ".sav" files persist. Safe to call
-// repeatedly; returns a promise that resolves once the flush completes.
-function persistSaveFilesystem(reason = "manual") {
-  return new Promise((resolve) => {
+// Flush MEMFS -> IndexedDB so newly written ".sav" files persist. Overlapping
+// ordinary requests share one syncfs. Runtime exit uses persistFinal instead:
+// it drains any older snapshot and starts a distinct trailing syncfs.
+const savePersistence = createSavePersistenceCoordinator(({ reason }) => (
+  new Promise((resolve) => {
     const module = cncPortEmscriptenModule;
     if (!module || !module.FS || !cncPortSaveFsMounted) {
       resolve({ ok: false, reason, error: "save filesystem not mounted" });
@@ -4914,7 +4988,23 @@ function persistSaveFilesystem(reason = "manual") {
       recordLog("saveFsSyncOutError", { reason, error: String(error) });
       resolve({ ok: false, reason, error: String(error) });
     }
-  });
+  })
+));
+
+function persistSaveFilesystem(reason = "manual") {
+  return savePersistence.persist(reason);
+}
+
+function persistScheduledSaveFilesystem(reason) {
+  return savePersistence.persistPeriodic(reason);
+}
+
+function stopSavePersistenceScheduling() {
+  return savePersistence.stopScheduling();
+}
+
+function persistFinalSaveFilesystem(reason = "runtime-exit-final") {
+  return savePersistence.persistFinal(reason);
 }
 
 // List persisted ".sav" files in the mounted save directory (harness/debug).
@@ -8382,6 +8472,18 @@ async function shutdownIoWorker() {
   return { closed, terminated: true };
 }
 
+function forceShutdownIoWorker() {
+  const worker = ioWorkerInstance;
+  try { worker?.terminate(); } catch (_error) { /* already gone */ }
+  ioWorkerInstance = null;
+  ioWorkerDisabled = true;
+  for (const [, pending] of ioWorkerPending) {
+    pending.reject(new Error("IO worker force-closed"));
+  }
+  ioWorkerPending.clear();
+  return { closed: 0, terminated: Boolean(worker), forced: true };
+}
+
 // P2 "OPFS as the disk" (threaded mode): stream one archive straight into an
 // OPFS file on the IO worker. The bytes are NEVER RAM-resident anywhere —
 // each fetch chunk is written through a FileSystemSyncAccessHandle as it
@@ -8415,7 +8517,19 @@ if (cncPortThreadedMode && typeof window !== "undefined") {
   window.addEventListener("pagehide", releaseOpfsLocksOnPageHide);
 }
 
+let browserRuntimeShutDown = false;
+
+function hasStrictEngineTerminationEvidence(engine) {
+  return engine?.ok === true
+    && engine.workerTerminated === true
+    && engine.pendingCommands === 0
+    && engine.pthreadRunning === 0
+    && engine.engineThreadStarted === false;
+}
+
 async function shutdownBrowserRuntime() {
+  browserRuntimeShutDown = true;
+  stopSavePersistenceScheduling();
   await resetBrowserInput().catch(() => null);
   const engine = threadedEngine
     ? await threadedEngine.shutdown()
@@ -8426,9 +8540,30 @@ async function shutdownBrowserRuntime() {
   const webLocksReleased = releaseOpfsWebLocks();
   await Promise.resolve();
   return {
-    ok: engine.ok === true && engine.workerTerminated !== false && audio.closed === true,
+    ok: hasStrictEngineTerminationEvidence(engine) && audio.closed === true,
     engine,
     audio,
+    io,
+    webLocksReleased,
+  };
+}
+
+function forceShutdownBrowserRuntime() {
+  browserRuntimeShutDown = true;
+  stopSavePersistenceScheduling();
+  const engine = threadedEngine
+    ? threadedEngine.forceShutdown("threaded engine force-closed")
+    : { ok: true, alreadyStopped: true, forced: true };
+  resetBrowserWebRtcUdpEndpointRuntime();
+  // Source stop/disconnect happens synchronously before this async helper's
+  // first await. Context.close is allowed to finish in the background.
+  void shutdownBrowserAudioRuntime();
+  const io = forceShutdownIoWorker();
+  const webLocksReleased = releaseOpfsWebLocks();
+  return {
+    ok: hasStrictEngineTerminationEvidence(engine),
+    forced: true,
+    engine,
     io,
     webLocksReleased,
   };
@@ -10734,9 +10869,24 @@ async function rpc(command, payload = {}) {
         const result = await persistSaveFilesystem(String(payload.reason ?? "rpc"));
         return { ok: Boolean(result.ok), command, result };
       }
+    case "stopSavePersistenceScheduling":
+      {
+        const result = stopSavePersistenceScheduling();
+        return { ok: true, command, result };
+      }
+    case "persistSavesFinal":
+      {
+        const result = await persistFinalSaveFilesystem(String(payload.reason ?? "runtime-exit-final"));
+        return { ok: Boolean(result.ok && result.finalFresh), command, result };
+      }
     case "shutdownRuntime":
       {
         const result = await shutdownBrowserRuntime();
+        return { ok: result.ok, command, result };
+      }
+    case "forceShutdownRuntime":
+      {
+        const result = forceShutdownBrowserRuntime();
         return { ok: result.ok, command, result };
       }
     case "listSaves":
@@ -10837,6 +10987,16 @@ async function rpc(command, payload = {}) {
           state: snapshotState(),
         };
       }
+    case "d3d8SM1ShaderAudit":
+      return {
+        ok: true,
+        command,
+        enabled: typeof payload.enable === "boolean"
+          ? setD3D8SM1ShaderAuditEnabled(payload.enable)
+          : undefined,
+        audit: d3d8SM1ShaderAuditSummary(),
+        state: snapshotState(),
+      };
     case "realEngineSetSkirmishLocalTemplate":
       {
         const moduleResult = await getWasmModuleForArchives("realEngineSetSkirmishLocalTemplate");
@@ -22398,23 +22558,23 @@ window.addEventListener("blur", () => {
 if (typeof document !== "undefined") {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
-      void persistSaveFilesystem("visibilitychange");
+      void persistScheduledSaveFilesystem("visibilitychange");
     }
   });
 }
 window.addEventListener("pagehide", () => {
-  void persistSaveFilesystem("pagehide");
+  void persistScheduledSaveFilesystem("pagehide");
 });
 window.addEventListener("beforeunload", () => {
   // Best-effort: fires the async syncfs; IndexedDB writes are queued even if
   // the callback never runs before navigation completes.
-  void persistSaveFilesystem("beforeunload");
+  void persistScheduledSaveFilesystem("beforeunload");
 });
 // Periodic safety flush (every 5s) so an in-game save persists even if the tab
 // is closed without a clean unload event. No-op until the FS is mounted.
 setInterval(() => {
-  if (cncPortSaveFsMounted) {
-    void persistSaveFilesystem("interval");
+  if (cncPortSaveFsMounted && !browserRuntimeShutDown) {
+    void persistScheduledSaveFilesystem("interval");
   }
 }, 5000);
 
@@ -22423,6 +22583,9 @@ window.CnCPort = {
   state: harnessState,
   d3d8BridgeCallbacks,
   persistSaves: persistSaveFilesystem,
+  persistScheduledSaves: persistScheduledSaveFilesystem,
+  persistFinalSaves: persistFinalSaveFilesystem,
+  stopSavePersistenceScheduling,
   listSaves: listSaveFiles,
   // Raw emscripten Module accessor for harness diagnostics (threaded mode:
   // lets a probe read atomic counters / last-step markers FROM THE MAIN
