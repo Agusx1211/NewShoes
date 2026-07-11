@@ -974,6 +974,14 @@ const browserPerfFields = [
   "bufferNoOverwriteUpdates",
   "bufferNoOverwriteUploadBytes",
   "bufferOrphanedUpdates",
+  "bufferDynamicRedirectedUpdates",
+  "bufferDynamicRangeUploads",
+  "bufferDynamicRangeUploadBytes",
+  "bufferDynamicRedirectFallbacks",
+  "drawDynamicVertexRedirects",
+  "drawDynamicVertexSharedFallbacks",
+  "drawDynamicIndexRedirects",
+  "drawDynamicIndexSharedFallbacks",
   "bufferResizedUpdates",
   "bufferUpdateMs",
   "bufferSubDataMs",
@@ -1294,6 +1302,18 @@ function browserPerfDelta(before, after, framesAdvanced) {
           bufferNoOverwriteUpdates: Number(delta.bufferNoOverwriteUpdates ?? 0) / framesAdvanced,
           bufferNoOverwriteUploadBytes: Number(delta.bufferNoOverwriteUploadBytes ?? 0) / framesAdvanced,
           bufferOrphanedUpdates: Number(delta.bufferOrphanedUpdates ?? 0) / framesAdvanced,
+          bufferDynamicRedirectedUpdates:
+            Number(delta.bufferDynamicRedirectedUpdates ?? 0) / framesAdvanced,
+          bufferDynamicRangeUploads: Number(delta.bufferDynamicRangeUploads ?? 0) / framesAdvanced,
+          bufferDynamicRangeUploadBytes: Number(delta.bufferDynamicRangeUploadBytes ?? 0) / framesAdvanced,
+          bufferDynamicRedirectFallbacks:
+            Number(delta.bufferDynamicRedirectFallbacks ?? 0) / framesAdvanced,
+          drawDynamicVertexRedirects: Number(delta.drawDynamicVertexRedirects ?? 0) / framesAdvanced,
+          drawDynamicVertexSharedFallbacks:
+            Number(delta.drawDynamicVertexSharedFallbacks ?? 0) / framesAdvanced,
+          drawDynamicIndexRedirects: Number(delta.drawDynamicIndexRedirects ?? 0) / framesAdvanced,
+          drawDynamicIndexSharedFallbacks:
+            Number(delta.drawDynamicIndexSharedFallbacks ?? 0) / framesAdvanced,
           bufferResizedUpdates: Number(delta.bufferResizedUpdates ?? 0) / framesAdvanced,
           bufferUpdateMs: Number(delta.bufferUpdateMs ?? 0) / framesAdvanced,
           bufferSubDataMs: Number(delta.bufferSubDataMs ?? 0) / framesAdvanced,
@@ -1474,6 +1494,9 @@ const batchSize = parsePositiveInt("PERF_PROFILE_BATCH", 1);
 const diagLevel = process.env.PERF_PROFILE_DIAG ?? "lite";
 const measuredFrameCommand = process.env.PERF_PROFILE_FRAME_COMMAND ?? "realEngineFrameSummary";
 const distDir = parseDistDir();
+const requestedShaderTier = String(process.env.PERF_PROFILE_SHADER_TIER ?? "").trim();
+const shaderTier = requestedShaderTier === "ps11" || requestedShaderTier === "ff"
+  ? requestedShaderTier : null;
 const profileScene = parseProfileScene();
 const shellMap = profileScene === "skirmish" ? true : process.env.PERF_PROFILE_SHELLMAP !== "0";
 const settledSceneUsesShellMap = profileScene === "shellmap" && shellMap;
@@ -1526,6 +1549,9 @@ try {
 
   const harnessUrl = new URL("harness/index.html", server.url);
   harnessUrl.searchParams.set("dist", distDir);
+  if (shaderTier) {
+    harnessUrl.searchParams.set("shaderTier", shaderTier);
+  }
   await page.goto(harnessUrl.href, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
   const renderer = await queryRenderer(page);
@@ -1607,6 +1633,7 @@ try {
     swiftShader: /SwiftShader/i.test(renderer),
     diagLevel,
     distDir,
+    shaderTier,
     d3d8AdjacentBatching: d3d8AdjacentBatchingActive,
     d3d8LiteVertexMirrors: d3d8LiteVertexMirrorsActive,
     d3d8BufferProducers: d3d8BufferProducersActive,

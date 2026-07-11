@@ -229,6 +229,16 @@ Bool W3DSmudgeManager::testHardwareSupport(void)
 		if (!W3DShaderManager::isRenderingToTexture())
 			return FALSE;	//can't do the test unless we're rendering to texture.
 
+#ifdef __EMSCRIPTEN__
+		// WebGL2 forbids sampling from the active color attachment. The browser
+		// D3D8 bridge resolves that attachment to a stable snapshot before the
+		// first smudge draw, so the legacy read/write capability probe (which
+		// requires a synchronous render-target readback) is neither necessary nor
+		// representative here.
+		m_hardwareSupportStatus = SMUDGE_SUPPORT_YES;
+		return TRUE;
+#endif
+
 		VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
 		DX8Wrapper::Set_Material(vmat);
 		REF_PTR_RELEASE(vmat);	//no need to keep a reference since it's a preset.

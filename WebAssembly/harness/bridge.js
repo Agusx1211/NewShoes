@@ -1474,6 +1474,49 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
+    case "realEngineDoFX":
+    case "realEngineSpawnParticleSystem": {
+      const particleOnly = command === "realEngineSpawnParticleSystem";
+      const exportName = particleOnly
+        ? "cnc_port_real_engine_spawn_particle_system"
+        : "cnc_port_real_engine_do_fx";
+      try {
+        const result = await threadedEngine.engineCall(
+          exportName,
+          "string",
+          ["string", "number", "number", "number", "number", "number"],
+          [
+            String(payload.name ?? (particleOnly ? "MicrowaveEmitter" : "WeaponFX_MOAB_Blast")),
+            Number(payload.x ?? 0),
+            Number(payload.y ?? 0),
+            Number(payload.z ?? 0),
+            payload.useViewPosition === false ? 0 : 1,
+            payload.clampToTerrain === false ? 0 : 1,
+          ],
+        );
+        return { ok: Boolean(result?.ok), command, result, threaded: true, state: snapshotState() };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineSetViewFilter": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_real_engine_set_view_filter",
+          "string",
+          ["number", "number", "number", "number"],
+          [
+            Number(payload.filter ?? 0),
+            Number(payload.mode ?? 0),
+            Number(payload.fadeFrames ?? 1),
+            Number(payload.fadeDirection ?? 1),
+          ],
+        );
+        return { ok: Boolean(result?.ok), command, result, threaded: true, state: snapshotState() };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "querySelection": {
       try {
         const result = await threadedEngine.engineCall(
@@ -4909,6 +4952,11 @@ async function loadWasmModule() {
         "string",
         ["string", "number", "number", "number", "number", "number"],
       ),
+      realEngineSpawnParticleSystem: module.cwrap(
+        "cnc_port_real_engine_spawn_particle_system",
+        "string",
+        ["string", "number", "number", "number", "number", "number"],
+      ),
       realEngineSpawnLaser: module.cwrap(
         "cnc_port_real_engine_spawn_laser",
         "string",
@@ -4918,6 +4966,11 @@ async function loadWasmModule() {
         "cnc_port_tactical_view_look_at",
         "string",
         ["number", "number", "number"],
+      ),
+      realEngineSetViewFilter: module.cwrap(
+        "cnc_port_real_engine_set_view_filter",
+        "string",
+        ["number", "number", "number", "number"],
       ),
       revealLocalMap: module.cwrap(
         "cnc_port_reveal_local_map",
@@ -10696,6 +10749,38 @@ async function rpc(command, payload = {}) {
           state: snapshotState(),
         };
       }
+    case "realEngineSpawnParticleSystem":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineSpawnParticleSystem");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineSpawnParticleSystem", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.realEngineSpawnParticleSystem(
+            String(payload.name ?? "MicrowaveEmitter"),
+            Number(payload.x ?? 0),
+            Number(payload.y ?? 0),
+            Number(payload.z ?? 0),
+            payload.useViewPosition === false ? 0 : 1,
+            payload.clampToTerrain === false ? 0 : 1,
+          ));
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        recordLog("real engine spawn particle system", { aborted, abortMessage, result });
+        return {
+          ok: Boolean(result?.ok) && !aborted,
+          command: "realEngineSpawnParticleSystem",
+          aborted,
+          abortMessage,
+          result,
+          state: snapshotState(),
+        };
+      }
     case "realEngineSpawnLaser":
       {
         const moduleResult = await getWasmModuleForArchives("realEngineSpawnLaser");
@@ -10923,6 +11008,35 @@ async function rpc(command, payload = {}) {
         return {
           ok: Boolean(result?.ok) && !aborted,
           command: "tacticalViewLookAt",
+          aborted,
+          abortMessage,
+          result,
+          state: snapshotState(),
+        };
+      }
+    case "realEngineSetViewFilter":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineSetViewFilter");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineSetViewFilter", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.realEngineSetViewFilter(
+            Number(payload.filter ?? 0),
+            Number(payload.mode ?? 0),
+            Number(payload.fadeFrames ?? 1),
+            Number(payload.fadeDirection ?? 1),
+          ));
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        return {
+          ok: Boolean(result?.ok) && !aborted,
+          command: "realEngineSetViewFilter",
           aborted,
           abortMessage,
           result,
@@ -11261,6 +11375,7 @@ async function rpc(command, payload = {}) {
         const screenshot = snapshotCanvas();
         const expectedTextureCenter = probe?.expectedTextureCenter ?? [34, 85, 170, 255];
         const expectedBackbufferCenter = probe?.expectedBackbufferCenter ?? [16, 32, 48, 255];
+        const lastOffscreenFboBind = textureProbe?.lastOffscreenFboBind ?? null;
         const textureDelta = {
           creates: (textureProbe?.creates ?? 0) - (beforeTextures.creates ?? 0),
           releases: (textureProbe?.releases ?? 0) - (beforeTextures.releases ?? 0),
@@ -11278,6 +11393,10 @@ async function rpc(command, payload = {}) {
           && probe?.lastBrowserFbo?.depthTextureId === 0
           && pixelsApproximatelyEqual(probe?.textureSample, expectedTextureCenter, 1)
           && pixelsApproximatelyEqual(screenshot.centerPixel, expectedBackbufferCenter, 1)
+          && lastOffscreenFboBind?.colorTextureId === probe?.textureId
+          && lastOffscreenFboBind?.depthTextureId === 0
+          && lastOffscreenFboBind?.attachment === "depth-stencil-renderbuffer"
+          && lastOffscreenFboBind?.storage === "depth24-stencil8"
           && textureDelta.creates === 1
           && textureDelta.releases === 1
           && textureDelta.live === 0

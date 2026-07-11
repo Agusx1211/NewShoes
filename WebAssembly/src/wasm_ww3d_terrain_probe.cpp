@@ -152,6 +152,7 @@ std::string g_ww3d_terrain_visual_scene_probe_json;
 std::string g_ww3d_terrain_visual_shroud_scene_probe_json;
 std::string g_ww3d_terrain_visual_shroud_update_scene_probe_json;
 std::string g_ww3d_terrain_full_scene_probe_json;
+std::string g_ww3d_terrain_water_type2_scene_probe_json;
 std::string g_ww3d_terrain_full_scene_shroud_update_probe_json;
 std::string g_ww3d_terrain_visual_load_window_scene_probe_json;
 std::string g_ww3d_terrain_visual_camera_pan_scene_probe_json;
@@ -6907,7 +6908,8 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	bool use_load_window,
 	bool use_camera_pan,
 	bool use_visual_shroud,
-	bool use_shroud_update)
+	bool use_shroud_update,
+	Int requested_water_type = 0)
 {
 	initMemoryManager();
 	wasm_d3d8_reset_state();
@@ -7056,6 +7058,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		global_data = NEW GlobalData;
 		if (global_data != nullptr) {
 			configure_global_data(*global_data, shroud_scene_mode);
+			global_data->m_waterType = requested_water_type;
 			TheWritableGlobalData = global_data;
 		}
 	}
@@ -7371,6 +7374,15 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	if (camera != nullptr && W3DDisplay::m_3DScene != nullptr) {
 		if (use_full_init) {
 			probe_bridge_phase_log("full-scene-render");
+		}
+		// W3DDisplay normally updates the type-2 reflection target before its
+		// main Begin_Render. This focused scene owns the lower-level WW3D loop,
+		// so reproduce that ordering explicitly.
+		if (requested_water_type == WaterRenderObjClass::WATER_TYPE_2_PVSHADER &&
+				TheWaterRenderObj != nullptr) {
+			probe_bridge_phase_log("full-scene-water-type2-reflection");
+			TheWaterRenderObj->updateRenderTargetTextures(camera);
+			probe_bridge_phase_log("full-scene-water-type2-reflection-done");
 		}
 		begin_render_result = WW3D::Begin_Render(true, true, Vector3(0.0f, 0.0f, 0.0f));
 		if (succeeded(begin_render_result)) {
@@ -13387,6 +13399,24 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_full_scene(
 		false,
 		false,
 		false);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_water_type2_scene(
+	const char *ini_archive_path,
+	const char *maps_archive_path,
+	const char *terrain_archive_path)
+{
+	return run_ww3d_terrain_visual_scene_probe(
+		g_ww3d_terrain_water_type2_scene_probe_json,
+		ini_archive_path,
+		maps_archive_path,
+		terrain_archive_path,
+		true,
+		false,
+		false,
+		false,
+		false,
+		WaterRenderObjClass::WATER_TYPE_2_PVSHADER);
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_full_scene_shroud_update(

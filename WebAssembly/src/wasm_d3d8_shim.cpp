@@ -512,6 +512,9 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	unsigned int index_count,
 	unsigned int index_size,
 	unsigned int transform_mask,
+	unsigned int world_transform_revision,
+	unsigned int view_transform_revision,
+	unsigned int projection_transform_revision,
 	unsigned int world_ptr,
 	unsigned int view_ptr,
 	unsigned int projection_ptr,
@@ -525,6 +528,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	unsigned int material_ptr,
 	unsigned int state_hash,
 	unsigned int derived_state_hash,
+	unsigned int derived_state_hash_secondary,
 	unsigned int producer_ptr,
 	int sorted_draw_profile_scope,
 	unsigned int pixel_shader,
@@ -550,278 +554,67 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			producer += code >= 0x20 && code < 0x7f ? String.fromCharCode(code) : "?";
 		}
 	}
-	const copyMatrix = (ptr) => {
-		if (!ptr || !Module.HEAPF32) {
-			return null;
-		}
-		const offset = ptr >>> 2;
-		return new Float32Array(Module.HEAPF32.subarray(offset, offset + 16));
-	};
-	const copyRenderState = (ptr) => {
-		if (!ptr || !Module.HEAPU32) {
-			return null;
-		}
-		const offset = ptr >>> 2;
-		const renderStateSlots = 50;
-		const textureStageCount = 8;
-		const textureStageStateSlots = 29;
-		const state = Module.HEAPU32.subarray(offset, offset + renderStateSlots);
-		const copyTextureStage = (stage) => {
-			const stageOffset = offset + renderStateSlots + (stage * textureStageStateSlots);
-			const read = (slot) => Module.HEAPU32[stageOffset + slot] >>> 0;
-			return {
-				stage,
-				colorOp: read(1),
-				colorArg1: read(2),
-				colorArg2: read(3),
-				alphaOp: read(4),
-				alphaArg1: read(5),
-				alphaArg2: read(6),
-				bumpEnvMat00: read(7),
-				bumpEnvMat01: read(8),
-				bumpEnvMat10: read(9),
-				bumpEnvMat11: read(10),
-				texCoordIndex: read(11),
-				addressU: read(13),
-				addressV: read(14),
-				borderColor: read(15),
-				magFilter: read(16),
-				minFilter: read(17),
-				mipFilter: read(18),
-				mipMapLodBias: read(19),
-				maxMipLevel: read(20),
-				maxAnisotropy: read(21),
-				bumpEnvLScale: read(22),
-				bumpEnvLOffset: read(23),
-				textureTransformFlags: read(24),
-				addressW: read(25),
-				colorArg0: read(26),
-				alphaArg0: read(27),
-				resultArg: read(28),
-			};
-		};
-		const textureStages = [];
-		for (let stage = 0; stage < textureStageCount; ++stage) {
-			textureStages.push(copyTextureStage(stage));
-		}
-		return {
-			cullMode: state[0] >>> 0,
-			zEnable: state[1] >>> 0,
-			zWriteEnable: state[2] >>> 0,
-			zFunc: state[3] >>> 0,
-			alphaBlendEnable: state[4] >>> 0,
-			srcBlend: state[5] >>> 0,
-			destBlend: state[6] >>> 0,
-			blendOp: state[7] >>> 0,
-			alphaTestEnable: state[8] >>> 0,
-			alphaFunc: state[9] >>> 0,
-			alphaRef: state[10] >>> 0,
-			colorWriteEnable: state[11] >>> 0,
-			textureFactor: state[12] >>> 0,
-			stencilEnable: state[13] >>> 0,
-			stencilFail: state[14] >>> 0,
-			stencilZFail: state[15] >>> 0,
-			stencilPass: state[16] >>> 0,
-			stencilFunc: state[17] >>> 0,
-			stencilRef: state[18] >>> 0,
-			stencilMask: state[19] >>> 0,
-			stencilWriteMask: state[20] >>> 0,
-			fogEnable: state[21] >>> 0,
-			fogColor: state[22] >>> 0,
-			fogStart: state[23] >>> 0,
-			fogEnd: state[24] >>> 0,
-			fogVertexMode: state[25] >>> 0,
-			rangeFogEnable: state[26] >>> 0,
-			fillMode: state[27] >>> 0,
-			zBias: state[28] >>> 0,
-			shadeMode: state[29] >>> 0,
-			lighting: state[30] >>> 0,
-			ambient: state[31] >>> 0,
-			colorVertex: state[32] >>> 0,
-			diffuseMaterialSource: state[33] >>> 0,
-			specularMaterialSource: state[34] >>> 0,
-			ambientMaterialSource: state[35] >>> 0,
-			emissiveMaterialSource: state[36] >>> 0,
-			clipping: state[37] >>> 0,
-			clipPlaneEnable: state[38] >>> 0,
-			specularEnable: state[39] >>> 0,
-			normalizeNormals: state[40] >>> 0,
-			localViewer: state[41] >>> 0,
-			pointSize: state[42] >>> 0,
-			pointSizeMin: state[43] >>> 0,
-			pointSizeMax: state[44] >>> 0,
-			pointSpriteEnable: state[45] >>> 0,
-			pointScaleEnable: state[46] >>> 0,
-			pointScaleA: state[47] >>> 0,
-			pointScaleB: state[48] >>> 0,
-			pointScaleC: state[49] >>> 0,
-			textureStages,
-		};
-	};
-	const copyClipPlanes = (ptr) => {
-		if (!ptr || !Module.HEAPF32) {
-			return null;
-		}
-		const offset = ptr >>> 2;
-		const planes = [];
-		for (let index = 0; index < 6; ++index) {
-			const base = offset + index * 4;
-			planes.push(Array.from(Module.HEAPF32.subarray(base, base + 4)));
-		}
-		return planes;
-	};
-	const copyLights = (ptr) => {
-		if (!ptr || !Module.HEAPU32 || !Module.HEAPF32) {
-			return null;
-		}
-		const lightCount = 8;
-		const lightStrideSlots = 27;
-		const u32Offset = ptr >>> 2;
-		const f32Offset = ptr >>> 2;
-		const copyColor = (base) => Array.from(Module.HEAPF32.subarray(base, base + 4));
-		const copyVector = (base) => Array.from(Module.HEAPF32.subarray(base, base + 3));
-		const lights = [];
-		for (let index = 0; index < lightCount; ++index) {
-			const baseU32 = u32Offset + index * lightStrideSlots;
-			const baseF32 = f32Offset + index * lightStrideSlots;
-			lights.push({
-				index,
-				type: Module.HEAPU32[baseU32] >>> 0,
-				enabled: Module.HEAPU32[baseU32 + 1] >>> 0,
-				diffuse: copyColor(baseF32 + 2),
-				specular: copyColor(baseF32 + 6),
-				ambient: copyColor(baseF32 + 10),
-				position: copyVector(baseF32 + 14),
-				direction: copyVector(baseF32 + 17),
-				range: Module.HEAPF32[baseF32 + 20],
-				falloff: Module.HEAPF32[baseF32 + 21],
-				attenuation0: Module.HEAPF32[baseF32 + 22],
-				attenuation1: Module.HEAPF32[baseF32 + 23],
-				attenuation2: Module.HEAPF32[baseF32 + 24],
-				theta: Module.HEAPF32[baseF32 + 25],
-				phi: Module.HEAPF32[baseF32 + 26],
+	// WebGL submission is synchronous. Pass native-state addresses through and
+	// let the bridge decode them only when its final draw-state cache misses.
+	// This avoids building hundreds of JS fields, arrays, and typed-array copies
+	// in this glue function for every newly observed native state.
+	if (Module.HEAPU32 && Module.HEAPF32) {
+		const primaryHash = derived_state_hash >>> 0;
+		const secondaryHash = derived_state_hash_secondary >>> 0;
+		const derivedKey = primaryHash + ((secondaryHash & 0x1fffff) * 0x100000000);
+		const transforms = Module.__cncPortD3D8DrawIndexedTransforms ||
+			(Module.__cncPortD3D8DrawIndexedTransforms = {});
+		transforms.world = world_ptr >>> 0;
+		transforms.view = view_ptr >>> 0;
+		transforms.projection = projection_ptr >>> 0;
+		transforms.texture0 = texture0_transform_ptr >>> 0;
+		transforms.texture1 = texture1_transform_ptr >>> 0;
+		transforms.texture2 = texture2_transform_ptr >>> 0;
+		transforms.texture3 = texture3_transform_ptr >>> 0;
+		const payload = Module.__cncPortD3D8DrawIndexedPointerPayload ||
+			(Module.__cncPortD3D8DrawIndexedPointerPayload = {
+				transforms,
+				__reusedD3D8DrawPayload: true,
+				statePayloadPointers: true,
 			});
-		}
-		return lights;
-	};
-	const copyMaterial = (ptr) => {
-		if (!ptr || !Module.HEAPF32) {
-			return null;
-		}
-		const offset = ptr >>> 2;
-		const copyColor = (base) => Array.from(Module.HEAPF32.subarray(offset + base, offset + base + 4));
-		return {
-			diffuse: copyColor(0),
-			ambient: copyColor(4),
-			specular: copyColor(8),
-			emissive: copyColor(12),
-			power: Module.HEAPF32[offset + 16],
-		};
-	};
-	const current_state_hash = state_hash >>> 0;
-	const current_derived_state_hash = derived_state_hash >>> 0;
-	const derived_state_cache_limit = 64;
-	const derived_state_cache = Module.__cncPortD3D8DerivedStatePayloadCache instanceof Map
-		? Module.__cncPortD3D8DerivedStatePayloadCache
-		: (Module.__cncPortD3D8DerivedStatePayloadCache = new Map());
-	let cached_state = null;
-	if (Module.__cncPortD3D8LastDrawDerivedStateHash === current_derived_state_hash &&
-			Module.__cncPortD3D8LastDrawStatePayload) {
-		cached_state = Module.__cncPortD3D8LastDrawStatePayload;
-	} else if (derived_state_cache.has(current_derived_state_hash)) {
-		cached_state = derived_state_cache.get(current_derived_state_hash);
-		derived_state_cache.delete(current_derived_state_hash);
-		derived_state_cache.set(current_derived_state_hash, cached_state);
-		Module.__cncPortD3D8LastDrawDerivedStateHash = current_derived_state_hash;
-		Module.__cncPortD3D8LastDrawStatePayload = cached_state;
-	} else {
-		// Shader constants ride in the derived-state cache entry: the native
-		// derived hash folds in the pixel-shader handle, the programmable
-		// vertex-shader handle, and value-hashes of both constant files, so a
-		// cache entry can never be reused across different shader state.
-		const programmableVs = (vertex_shader_fvf & 0x80000000) !== 0;
-		const copyConsts = (ptr, floatCount) => {
-			if (!ptr || !Module.HEAPF32) {
-				return null;
-			}
-			const base = ptr >>> 2;
-			return new Float32Array(Module.HEAPF32.subarray(base, base + floatCount));
-		};
-		cached_state = {
-			texture0Transform: copyMatrix(texture0_transform_ptr),
-			texture1Transform: copyMatrix(texture1_transform_ptr),
-			texture2Transform: copyMatrix(texture2_transform_ptr),
-			texture3Transform: copyMatrix(texture3_transform_ptr),
-			renderState: copyRenderState(render_state_ptr),
-			clipPlanes: copyClipPlanes(clip_planes_ptr),
-			lights: copyLights(lights_ptr),
-			material: copyMaterial(material_ptr),
-			psConstants: pixel_shader !== 0 ? copyConsts(ps_consts_ptr, 8 * 4) : null,
-			vsConstants: programmableVs ? copyConsts(vs_consts_ptr, 96 * 4) : null,
-		};
-		derived_state_cache.set(current_derived_state_hash, cached_state);
-		if (derived_state_cache.size > derived_state_cache_limit) {
-			const oldest_key = derived_state_cache.keys().next().value;
-			derived_state_cache.delete(oldest_key);
-		}
-		Module.__cncPortD3D8LastDrawDerivedStateHash = current_derived_state_hash;
-		Module.__cncPortD3D8LastDrawStatePayload = cached_state;
+		payload.primitiveType = primitive_type;
+		payload.baseVertexIndex = base_vertex_index >>> 0;
+		payload.minVertexIndex = min_vertex_index >>> 0;
+		payload.firstIndex = first_index >>> 0;
+		payload.vertexBufferId = vertex_buffer_id >>> 0;
+		payload.vertexByteOffset = vertex_byte_offset >>> 0;
+		payload.vertexBytes = vertex_byte_size >>> 0;
+		payload.vertexCount = vertex_count >>> 0;
+		payload.vertexStride = vertex_stride >>> 0;
+		payload.vertexShaderFvf = vertex_shader_fvf >>> 0;
+		payload.indexBufferId = index_buffer_id >>> 0;
+		payload.indexByteOffset = index_byte_offset >>> 0;
+		payload.indexBytes = index_byte_size >>> 0;
+		payload.indexCount = index_count >>> 0;
+		payload.indexSize = index_size >>> 0;
+		payload.transformMask = transform_mask >>> 0;
+		payload.worldTransformRevision = world_transform_revision >>> 0;
+		payload.viewTransformRevision = view_transform_revision >>> 0;
+		payload.projectionTransformRevision = projection_transform_revision >>> 0;
+		payload.transforms = transforms;
+		payload.renderStatePtr = render_state_ptr >>> 0;
+		payload.clipPlanesPtr = clip_planes_ptr >>> 0;
+		payload.lightsPtr = lights_ptr >>> 0;
+		payload.materialPtr = material_ptr >>> 0;
+		payload.psConstantsPtr = ps_consts_ptr >>> 0;
+		payload.vsConstantsPtr = vs_consts_ptr >>> 0;
+		const renderStateOffset = render_state_ptr >>> 2;
+		payload.renderStateFillMode = Module.HEAPU32[renderStateOffset + 27] >>> 0;
+		payload.renderStateShadeMode = Module.HEAPU32[renderStateOffset + 29] >>> 0;
+		payload.stateHash = state_hash >>> 0;
+		payload.derivedStateHash = derivedKey;
+		payload.pixelShaderHandle = pixel_shader >>> 0;
+		payload.producer = producer;
+		payload.sortedDrawSubmitProfile = sorted_draw_profile_scope !== 0;
+		payload.treeShroud = Module.__cncPortD3D8TreeShroud || null;
+		bridge(payload);
+		return;
 	}
-	const transforms = Module.__cncPortD3D8DrawIndexedTransforms ||
-		(Module.__cncPortD3D8DrawIndexedTransforms = {
-			world: 0,
-			view: 0,
-			projection: 0,
-			texture0: null,
-			texture1: null,
-			texture2: null,
-			texture3: null,
-		});
-	transforms.world = world_ptr >>> 0;
-	transforms.view = view_ptr >>> 0;
-	transforms.projection = projection_ptr >>> 0;
-	transforms.texture0 = cached_state.texture0Transform;
-	transforms.texture1 = cached_state.texture1Transform;
-	transforms.texture2 = cached_state.texture2Transform;
-	transforms.texture3 = cached_state.texture3Transform;
-	const payload = Module.__cncPortD3D8DrawIndexedPayload ||
-		(Module.__cncPortD3D8DrawIndexedPayload = {
-			transforms,
-			__reusedD3D8DrawPayload: true,
-		});
-	payload.primitiveType = primitive_type;
-	payload.baseVertexIndex = base_vertex_index >>> 0;
-	payload.minVertexIndex = min_vertex_index >>> 0;
-	payload.firstIndex = first_index >>> 0;
-	payload.vertexBufferId = vertex_buffer_id >>> 0;
-	payload.vertexByteOffset = vertex_byte_offset >>> 0;
-	payload.vertexBytes = vertex_byte_size >>> 0;
-	payload.vertexCount = vertex_count >>> 0;
-	payload.vertexStride = vertex_stride >>> 0;
-	payload.vertexShaderFvf = vertex_shader_fvf >>> 0;
-	payload.indexBufferId = index_buffer_id >>> 0;
-	payload.indexByteOffset = index_byte_offset >>> 0;
-	payload.indexBytes = index_byte_size >>> 0;
-	payload.indexCount = index_count >>> 0;
-	payload.indexSize = index_size >>> 0;
-	payload.transformMask = transform_mask >>> 0;
-	payload.transforms = transforms;
-	payload.renderState = cached_state.renderState;
-	payload.clipPlanes = cached_state.clipPlanes;
-	payload.lights = cached_state.lights;
-	payload.material = cached_state.material;
-	payload.stateHash = current_state_hash;
-	payload.derivedStateHash = current_derived_state_hash;
-	payload.pixelShaderHandle = pixel_shader >>> 0;
-	payload.psConstants = cached_state.psConstants || null;
-	payload.vsConstants = cached_state.vsConstants || null;
-	payload.producer = producer;
-	payload.sortedDrawSubmitProfile = sorted_draw_profile_scope !== 0;
-	// Fog-of-war shroud UV offset/scale for the tree draw (c32/c33 from
-	// W3DTreeBuffer::drawTrees).  Null unless a tree draw uploaded them; the
-	// bridge only consumes it when it identifies the tree draw.
-	payload.treeShroud = Module.__cncPortD3D8TreeShroud || null;
-	bridge(payload);
 	});
 #else
 void wasm_d3d8_browser_backbuffer_resize(unsigned int, unsigned int) {}
@@ -848,6 +641,7 @@ void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned in
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
+	unsigned int, unsigned int, unsigned int,
 	unsigned int, int, unsigned int, unsigned int, unsigned int) {}
 #endif
 
@@ -1597,6 +1391,7 @@ UINT bytes_per_pixel(D3DFORMAT format)
 		case D3DFMT_A1R5G5B5:
 		case D3DFMT_A4R4G4B4:
 		case D3DFMT_A8L8:
+		case D3DFMT_V8U8:
 			return 2;
 		case D3DFMT_A8:
 		case D3DFMT_P8:
@@ -1819,6 +1614,7 @@ bool is_browser_texture_format_supported(D3DFORMAT format)
 		case D3DFMT_A8:
 		case D3DFMT_L8:
 		case D3DFMT_A8L8:
+		case D3DFMT_V8U8:
 		case D3DFMT_DXT1:
 		case D3DFMT_DXT2:
 		case D3DFMT_DXT3:
@@ -2022,6 +1818,7 @@ constexpr UINT DRAW_TEXTURE_TRANSFORM_STAGE2 = 1u << 2;
 constexpr UINT DRAW_TEXTURE_TRANSFORM_STAGE3 = 1u << 3;
 constexpr UINT BROWSER_BUFFER_VERTEX = 1u;
 constexpr UINT BROWSER_BUFFER_INDEX = 2u;
+constexpr UINT BROWSER_RENDER_STATE_SLOTS = 256u;
 
 struct BrowserD3DTextureDirtyRegion
 {
@@ -2432,13 +2229,16 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 	UINT first_index, UINT vertex_buffer_id, UINT vertex_byte_offset,
 	UINT vertex_byte_size, UINT vertex_count, UINT vertex_stride, DWORD vertex_shader_fvf,
 	UINT index_buffer_id, UINT index_byte_offset,
-	UINT index_byte_size, UINT index_count, UINT index_size, UINT transform_mask, const D3DMATRIX *world_transform,
+	UINT index_byte_size, UINT index_count, UINT index_size, UINT transform_mask,
+	UINT world_transform_revision, UINT view_transform_revision, UINT projection_transform_revision,
+	const D3DMATRIX *world_transform,
 	const D3DMATRIX *view_transform, const D3DMATRIX *projection_transform,
 	const D3DMATRIX *texture0_transform, const D3DMATRIX *texture1_transform,
 	const D3DMATRIX *texture2_transform, const D3DMATRIX *texture3_transform,
 	const WasmD3D8DrawRenderState *render_state, const float *clip_planes,
 	const WasmD3D8DrawLight *lights, const WasmD3D8DrawMaterial *material, UINT state_hash,
-	UINT derived_state_hash, DWORD pixel_shader, const float *ps_constants, const float *vs_constants)
+	UINT derived_state_hash, UINT derived_state_hash_secondary, DWORD pixel_shader,
+	const float *ps_constants, const float *vs_constants)
 {
 	const bool profile_sorted_draw_submit = wasm_d3d8_sorted_draw_profile_enabled();
 	if (vertex_buffer_id == 0 || vertex_byte_size == 0 || index_buffer_id == 0 || index_byte_size == 0 ||
@@ -2474,6 +2274,9 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 		index_count,
 		index_size,
 		transform_mask,
+		world_transform_revision,
+		view_transform_revision,
+		projection_transform_revision,
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(world_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(view_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(projection_transform)),
@@ -2487,6 +2290,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(material)),
 		state_hash,
 		derived_state_hash,
+		derived_state_hash_secondary,
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(producer)),
 		profile_sorted_draw_submit ? 1 : 0,
 		pixel_shader,
@@ -4221,13 +4025,15 @@ public:
 		if (matrix == nullptr) {
 			return E_FAIL;
 		}
-		if (is_cached_draw_texture_transform(state)) {
-			const auto found = m_transforms.find(state);
-			if (found == m_transforms.end() || !memory_equal(found->second, *matrix)) {
+		const auto found = m_transforms.find(state);
+		const bool changed = found == m_transforms.end() || !memory_equal(found->second, *matrix);
+		if (changed) {
+			if (is_cached_draw_texture_transform(state)) {
 				invalidate_draw_derived_payload();
 			}
+			m_transforms[state] = *matrix;
+			m_transform_revisions[state] = next_transform_revision();
 		}
-		m_transforms[state] = *matrix;
 		++g_state.set_transform_calls;
 		g_state.last_set_transform_state = state;
 		g_state.last_set_transform_matrix = *matrix;
@@ -4261,13 +4067,14 @@ public:
 			identity_matrix(current);
 		}
 		const D3DMATRIX multiplied = multiply_matrix(*matrix, current);
-		if (is_cached_draw_texture_transform(state)) {
-			const auto found = m_transforms.find(state);
-			if (found == m_transforms.end() || !memory_equal(found->second, multiplied)) {
+		const bool changed = found == m_transforms.end() || !memory_equal(found->second, multiplied);
+		if (changed) {
+			if (is_cached_draw_texture_transform(state)) {
 				invalidate_draw_derived_payload();
 			}
+			m_transforms[state] = multiplied;
+			m_transform_revisions[state] = next_transform_revision();
 		}
-		m_transforms[state] = multiplied;
 		return S_OK;
 	}
 
@@ -4372,7 +4179,7 @@ public:
 		if (render_state_value(state) != value) {
 			invalidate_draw_derived_payload();
 		}
-		m_render_states[state] = value;
+		store_render_state_value(state, value);
 		++g_state.set_render_state_calls;
 		if (state == D3DRS_ZFUNC && value == D3DCMP_EQUAL) {
 			++g_state.set_render_state_zfunc_equal_calls;
@@ -4455,7 +4262,7 @@ public:
 		if (texture_stage_state_value(stage, state) != value) {
 			invalidate_draw_derived_payload();
 		}
-		m_texture_stage_states[stage][state] = value;
+		store_texture_stage_state_value(stage, state, value);
 		++g_state.set_texture_stage_state_calls;
 		if (state == D3DTSS_TEXCOORDINDEX && value == D3DTSS_TCI_CAMERASPACEPOSITION) {
 			++g_state.set_texture_stage_state_camera_space_texcoord_calls;
@@ -5150,10 +4957,27 @@ private:
 		}
 	}
 
+	void store_render_state_value(D3DRENDERSTATETYPE state, DWORD value)
+	{
+		const UINT index = static_cast<UINT>(state);
+		if (index < BROWSER_RENDER_STATE_SLOTS) {
+			m_render_state_values[index] = value;
+			m_render_state_is_set[index] = true;
+			return;
+		}
+		m_render_state_overflow[state] = value;
+	}
+
 	DWORD render_state_value(D3DRENDERSTATETYPE state) const
 	{
-		const auto found = m_render_states.find(state);
-		return found != m_render_states.end() ? found->second : default_render_state_value(state);
+		const UINT index = static_cast<UINT>(state);
+		if (index < BROWSER_RENDER_STATE_SLOTS) {
+			return m_render_state_is_set[index]
+				? m_render_state_values[index] : default_render_state_value(state);
+		}
+		const auto found = m_render_state_overflow.find(state);
+		return found != m_render_state_overflow.end()
+			? found->second : default_render_state_value(state);
 	}
 
 	DWORD default_texture_stage_state_value(DWORD stage, UINT state) const
@@ -5195,10 +5019,31 @@ private:
 		}
 	}
 
+	void store_texture_stage_state_value(
+		DWORD stage,
+		D3DTEXTURESTAGESTATETYPE state,
+		DWORD value)
+	{
+		const UINT state_index = static_cast<UINT>(state);
+		if (stage < WASM_D3D8_TEXTURE_STAGE_COUNT &&
+				state_index < WASM_D3D8_TEXTURE_STAGE_STATE_SLOTS) {
+			m_texture_stage_state_values[stage][state_index] = value;
+			m_texture_stage_state_is_set[stage][state_index] = true;
+			return;
+		}
+		m_texture_stage_state_overflow[stage][state] = value;
+	}
+
 	DWORD texture_stage_state_value(DWORD stage, UINT state) const
 	{
-		const auto stage_found = m_texture_stage_states.find(stage);
-		if (stage_found != m_texture_stage_states.end()) {
+		if (stage < WASM_D3D8_TEXTURE_STAGE_COUNT &&
+				state < WASM_D3D8_TEXTURE_STAGE_STATE_SLOTS) {
+			return m_texture_stage_state_is_set[stage][state]
+				? m_texture_stage_state_values[stage][state]
+				: default_texture_stage_state_value(stage, state);
+		}
+		const auto stage_found = m_texture_stage_state_overflow.find(stage);
+		if (stage_found != m_texture_stage_state_overflow.end()) {
 			const auto state_found =
 				stage_found->second.find(static_cast<D3DTEXTURESTAGESTATETYPE>(state));
 			if (state_found != stage_found->second.end()) {
@@ -5331,6 +5176,9 @@ private:
 		hash_matrix(transform_hash, g_state.last_draw_projection_transform);
 		const UINT derived_state_hash =
 			fnv1a_step(m_cached_draw_derived_payload.payload_hash, g_state.last_draw_transform_mask);
+		const UINT derived_state_hash_secondary = fnv1a_step(
+			m_cached_draw_derived_payload.payload_hash_secondary,
+			g_state.last_draw_transform_mask);
 		const UINT state_hash = fnv1a_step(
 			fnv1a_step(transform_hash, m_cached_draw_derived_payload.payload_hash),
 			g_state.last_draw_transform_mask);
@@ -5369,6 +5217,9 @@ private:
 			index_count,
 			index_size,
 			g_state.last_draw_transform_mask,
+			transform_revision(D3DTS_WORLD),
+			transform_revision(D3DTS_VIEW),
+			transform_revision(D3DTS_PROJECTION),
 			&g_state.last_draw_world_transform,
 			&g_state.last_draw_view_transform,
 			&g_state.last_draw_projection_transform,
@@ -5382,6 +5233,7 @@ private:
 			&g_state.last_draw_material,
 			g_state.last_draw_state_hash,
 			derived_state_hash,
+			derived_state_hash_secondary,
 			m_pixel_shader,
 			m_pixel_shader != 0 ? m_ps_constants : nullptr,
 			(m_vertex_shader & 0x80000000u) != 0 ? m_vs_constants : nullptr);
@@ -5400,6 +5252,21 @@ private:
 		}
 	}
 
+	UINT transform_revision(D3DTRANSFORMSTATETYPE state) const
+	{
+		const auto found = m_transform_revisions.find(state);
+		return found != m_transform_revisions.end() ? found->second : 0;
+	}
+
+	UINT next_transform_revision()
+	{
+		++m_next_transform_revision;
+		if (m_next_transform_revision == 0) {
+			++m_next_transform_revision;
+		}
+		return m_next_transform_revision;
+	}
+
 	void capture_draw_texture_transform(D3DTRANSFORMSTATETYPE state, UINT mask_bit, D3DMATRIX &destination) const
 	{
 		const auto found = m_transforms.find(state);
@@ -5416,6 +5283,7 @@ private:
 		bool valid = false;
 		UINT revision = 0;
 		UINT payload_hash = 0;
+		UINT payload_hash_secondary = 0;
 		UINT texture_transform_mask = 0;
 		D3DMATRIX texture0_transform = {};
 		D3DMATRIX texture1_transform = {};
@@ -5428,6 +5296,7 @@ private:
 	};
 
 	static constexpr UINT FNV1A_OFFSET_BASIS = 0x811c9dc5u;
+	static constexpr UINT FNV1A_SECONDARY_OFFSET_BASIS = 0x9e3779b9u;
 	static constexpr UINT FNV1A_PRIME = 0x01000193u;
 
 	template <typename T>
@@ -5599,8 +5468,19 @@ private:
 		std::memcpy(m_cached_draw_derived_payload.lights, g_state.last_draw_lights,
 			sizeof(m_cached_draw_derived_payload.lights));
 		UINT payload_hash = FNV1A_OFFSET_BASIS;
+		UINT payload_hash_secondary = FNV1A_SECONDARY_OFFSET_BASIS;
 		hash_draw_derived_payload(
 			payload_hash,
+			m_cached_draw_derived_payload.texture0_transform,
+			m_cached_draw_derived_payload.texture1_transform,
+			m_cached_draw_derived_payload.texture2_transform,
+			m_cached_draw_derived_payload.texture3_transform,
+			m_cached_draw_derived_payload.render_state,
+			m_cached_draw_derived_payload.clip_planes,
+			m_cached_draw_derived_payload.material,
+			m_cached_draw_derived_payload.lights);
+		hash_draw_derived_payload(
+			payload_hash_secondary,
 			m_cached_draw_derived_payload.texture0_transform,
 			m_cached_draw_derived_payload.texture1_transform,
 			m_cached_draw_derived_payload.texture2_transform,
@@ -5614,15 +5494,23 @@ private:
 		// draws across different shader state. The setters invalidate this
 		// payload whenever any of these contributions change.
 		payload_hash = fnv1a_step(payload_hash, m_pixel_shader);
+		payload_hash_secondary = fnv1a_step(payload_hash_secondary, m_pixel_shader);
 		payload_hash = fnv1a_step(payload_hash,
+			(m_vertex_shader & 0x80000000u) != 0 ? m_vertex_shader : 0u);
+		payload_hash_secondary = fnv1a_step(payload_hash_secondary,
 			(m_vertex_shader & 0x80000000u) != 0 ? m_vertex_shader : 0u);
 		if (m_pixel_shader != 0) {
 			payload_hash = fnv1a_step(payload_hash, current_ps_const_hash());
+			payload_hash_secondary = fnv1a_step(
+				payload_hash_secondary, current_ps_const_hash_secondary());
 		}
 		if ((m_vertex_shader & 0x80000000u) != 0) {
 			payload_hash = fnv1a_step(payload_hash, current_vs_const_hash());
+			payload_hash_secondary = fnv1a_step(
+				payload_hash_secondary, current_vs_const_hash_secondary());
 		}
 		m_cached_draw_derived_payload.payload_hash = payload_hash;
+		m_cached_draw_derived_payload.payload_hash_secondary = payload_hash_secondary;
 		++g_state.draw_derived_state_cache_misses;
 	}
 
@@ -5639,8 +5527,19 @@ private:
 	D3DPRESENT_PARAMETERS m_parameters = {};
 	D3DVIEWPORT8 m_viewport = {};
 	std::map<D3DTRANSFORMSTATETYPE, D3DMATRIX> m_transforms;
-	std::map<D3DRENDERSTATETYPE, DWORD> m_render_states;
-	std::map<DWORD, std::map<D3DTEXTURESTAGESTATETYPE, DWORD>> m_texture_stage_states;
+	std::map<D3DTRANSFORMSTATETYPE, UINT> m_transform_revisions;
+	UINT m_next_transform_revision = 0;
+	DWORD m_render_state_values[BROWSER_RENDER_STATE_SLOTS] = {};
+	bool m_render_state_is_set[BROWSER_RENDER_STATE_SLOTS] = {};
+	DWORD m_texture_stage_state_values
+		[WASM_D3D8_TEXTURE_STAGE_COUNT][WASM_D3D8_TEXTURE_STAGE_STATE_SLOTS] = {};
+	bool m_texture_stage_state_is_set
+		[WASM_D3D8_TEXTURE_STAGE_COUNT][WASM_D3D8_TEXTURE_STAGE_STATE_SLOTS] = {};
+	// Preserve the shim's permissive behavior for invalid/mod-defined enum
+	// values without charging every ordinary state read for a tree lookup.
+	std::map<D3DRENDERSTATETYPE, DWORD> m_render_state_overflow;
+	std::map<DWORD, std::map<D3DTEXTURESTAGESTATETYPE, DWORD>>
+		m_texture_stage_state_overflow;
 	std::map<DWORD, UINT> m_bound_texture_ids;
 	std::map<DWORD, IDirect3DBaseTexture8 *> m_bound_textures;
 	float m_clip_planes[WASM_D3D8_CLIP_PLANE_COUNT][4] = {};
@@ -5679,6 +5578,8 @@ private:
 	bool m_ps_consts_dirty = true;
 	UINT m_vs_const_hash = 0;
 	UINT m_ps_const_hash = 0;
+	UINT m_vs_const_hash_secondary = 0;
+	UINT m_ps_const_hash_secondary = 0;
 	UINT m_draw_derived_payload_revision = 1;
 	CachedDrawDerivedPayload m_cached_draw_derived_payload;
 
@@ -5719,30 +5620,60 @@ private:
 		return 0;
 	}
 
-	UINT current_vs_const_hash()
+	void refresh_vs_const_hashes()
 	{
 		if (m_vs_consts_dirty) {
 			UINT hash = FNV1A_OFFSET_BASIS;
+			UINT hash_secondary = FNV1A_SECONDARY_OFFSET_BASIS;
 			for (UINT index = 0; index < WASM_D3D8_VS_CONSTANT_COUNT * 4; ++index) {
-				hash = fnv1a_step(hash, hash_float(m_vs_constants[index]));
+				const UINT value = hash_float(m_vs_constants[index]);
+				hash = fnv1a_step(hash, value);
+				hash_secondary = fnv1a_step(hash_secondary, value);
 			}
 			m_vs_const_hash = hash;
+			m_vs_const_hash_secondary = hash_secondary;
 			m_vs_consts_dirty = false;
 		}
+	}
+
+	UINT current_vs_const_hash()
+	{
+		refresh_vs_const_hashes();
 		return m_vs_const_hash;
+	}
+
+	UINT current_vs_const_hash_secondary()
+	{
+		refresh_vs_const_hashes();
+		return m_vs_const_hash_secondary;
+	}
+
+	void refresh_ps_const_hashes()
+	{
+		if (m_ps_consts_dirty) {
+			UINT hash = FNV1A_OFFSET_BASIS;
+			UINT hash_secondary = FNV1A_SECONDARY_OFFSET_BASIS;
+			for (UINT index = 0; index < WASM_D3D8_PS_CONSTANT_COUNT * 4; ++index) {
+				const UINT value = hash_float(m_ps_constants[index]);
+				hash = fnv1a_step(hash, value);
+				hash_secondary = fnv1a_step(hash_secondary, value);
+			}
+			m_ps_const_hash = hash;
+			m_ps_const_hash_secondary = hash_secondary;
+			m_ps_consts_dirty = false;
+		}
 	}
 
 	UINT current_ps_const_hash()
 	{
-		if (m_ps_consts_dirty) {
-			UINT hash = FNV1A_OFFSET_BASIS;
-			for (UINT index = 0; index < WASM_D3D8_PS_CONSTANT_COUNT * 4; ++index) {
-				hash = fnv1a_step(hash, hash_float(m_ps_constants[index]));
-			}
-			m_ps_const_hash = hash;
-			m_ps_consts_dirty = false;
-		}
+		refresh_ps_const_hashes();
 		return m_ps_const_hash;
+	}
+
+	UINT current_ps_const_hash_secondary()
+	{
+		refresh_ps_const_hashes();
+		return m_ps_const_hash_secondary;
 	}
 };
 

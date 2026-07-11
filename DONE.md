@@ -8,6 +8,43 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Visual-effects fidelity audit (2026-07-10)
+
+- [x] **Restore `WATER_TYPE_2_PVSHADER` end to end.** The original 32-frame
+      caustic source animation is loaded without DXT compression, foreground
+      initialized, decoded from the A4R4G4B4 fallback chosen by browser caps,
+      and converted without the original edge out-of-bounds reads. The D3D8
+      shim and WebGL2 bridge now carry `D3DFMT_V8U8` as biased RG8 and recover
+      signed du/dv for SM1 sampling. The original reflected-scene target and
+      wave.vso/wave.pso draw pass the terrain smoke with translated VS/PS draws,
+      zero link failures, and zero fixed-function fallbacks. A forced Type 2 on
+      a non-programmable adapter safely uses regular water instead of touching
+      absent shader/reflection resources.
+- [x] **Exercise every shipped screen-filter variant.** Fixed the diagnostic
+      RPC's missing crossfade fade parameters, then captured black/white,
+      red/white, green/white, circle crossfade, framebuffer-alpha-mask
+      crossfade, six alpha/saturate motion-blur variants, and pan/end-pan.
+      Every mode advances FBO/draw counters and retains varied tactical pixels;
+      the complete programmable run has zero SM1 fallback/link failures and the
+      Classic fixed-function control remains healthy.
+- [x] **Prove real snow/weather rendering.** A Bitter Winter skirmish consumes
+      the map.ini `SnowEnabled` override and renders the shipped
+      `exsnowflake1.tga` DXT5 texture. Its full frame contains eight point-list
+      draws of roughly 550-650 flakes, and the screenshot visibly shows falling
+      snow over the active base.
+- [x] **Resolve the ambiguous lightning/lighting report.** Shipped gameplay has
+      no separate weather-lightning renderer; FX lists use `LightPulse` dynamic
+      point lights. A real match triggered `FX_DamageTankStruck` beside a local
+      drawable and captured 136 scene draws carrying the pulse's warm diffuse
+      color, position, fading range, and original attenuation coefficients.
+- [x] **Re-audit the remaining named effect paths.** Persistent
+      anthrax/radiation fields already run through restored OCL creation and
+      RadiusDecal rendering. Heat distortion has the existing live
+      `MicrowaveEmitter` scene-feedback proof. Tracer and rope draw modules use
+      the supported `Line3DClass` path; projectile streams use the same
+      `SegmentedLineClass` route proven by the real laser smoke; debris uses the
+      linked real W3D model/shadow path and restored OCL creation. No additional
+      browser render-state or missing-body defect was found in those paths.
 ## Legacy play-path demolition — threaded/OPFS-only play page (2026-07-11, demolition lane)
 
 OWNER DIRECTIVE step (5) ("fully migrate — delete legacy machinery") after
@@ -614,6 +651,44 @@ mitigation track. Items resolved or retired by the pivot:
         regression caught by the probe's ff baseline run).
 
 ---
+
+## Enhanced SM1 shader effects fidelity (2026-07-10)
+
+- [x] **Verify and harden the generic D3D8 SM1 shader tier (Path B).** Commit
+      `ea206b40` supplies the generic ps.1.1/vs.1.1 bytecode-to-GLSL path; the
+      real shell-map runtime now has durable coverage for its shipped effects.
+      Enhanced registered 13 pixel shaders and 1 vertex shader, linked 19
+      vertex/pixel program pairs, issued 782 shader draws on Mac M4 Chrome/
+      Metal, and recorded zero link failures, translation warnings, or
+      fixed-function fallback draws. The separate Classic boot registered no
+      SM1 shaders and continued rendering through the fixed-function path.
+- [x] **Restore flat-water vertex tint/alpha for Enhanced shaders.** The earlier
+      `XYZUV2`/`D3DTA_TFACTOR` upload optimization was valid only for the
+      fixed-function combiner; the shipped flat-water pixel shader consumes
+      interpolated `v0`, so Enhanced received the bridge's opaque-white default
+      and rendered severely over-bright water. `drawTrapezoidWater()` again uses
+      `XYZDUV2`, writes the original `flatWaterDiffuse`, and leaves stage 0 on
+      `D3DTA_DIFFUSE`. The shader-tier regression identifies the shipped
+      flat-water instruction signature and proves FVF `0x242`, 32-byte stride,
+      diffuse offset 12, and first diffuse `[131,128,120,255]`. Classic/
+      Enhanced A/B screenshots show the same dark-blue base tint while Enhanced
+      retains its additional surface sparkle.
+- [x] **Preserve shoreline destination alpha and make heat-smudge scene sampling
+      WebGL2-safe.** The default view filter now renders through its RGBA scene
+      target whenever soft water edges need destination alpha, so every
+      `DESTALPHA`/`INVDESTALPHA` shoreline draw is offscreen (34/34 on Mac
+      Metal). Render-target allocation now marks valid level-0 storage as
+      sampleable. When original smudge geometry samples the active color target,
+      the bridge copies it once per FBO bind into a stable snapshot instead of
+      creating forbidden WebGL attachment feedback. The original
+      `MicrowaveEmitter`/`SMUDGE.tga` fixture produced live particles, two scene
+      resolves, and zero incomplete FBOs on both SwiftShader and Mac Metal.
+- [x] **Exercise the shipped monochrome and motion-blur filters through the real
+      view/filter path.** A narrow real-engine RPC follows the original
+      `ScriptActions` ordering, and the shader-tier harness forces both effects,
+      captures their canvases, observes translated full-screen shader draws,
+      and confirms motion blur performs additional render-target passes. Mac M4
+      Chrome/Metal and local SwiftShader runs both pass.
 
 ## Resolution polish — the engine owns the render resolution (2026-07-09)
 
@@ -2770,7 +2845,11 @@ mitigation track. Items resolved or retired by the pivot:
       showed the shell-map water/shoreline/UI rendering normally. On Mac Metal,
       total one-frame upload traffic dropped from 107.8 KB to 102.1 KB while
       buffer updates stayed at 14, and `W3DWater.render.renderWater.before`
-      dropped from 47.4 KB to 41.4 KB.
+      dropped from 47.4 KB to 41.4 KB. **Superseded 2026-07-10:** the newly
+      enabled SM1 flat-water shader reads interpolated diffuse `v0`, not
+      `D3DTA_TFACTOR`; the optimization therefore made Enhanced water sample
+      opaque white and was reverted to the prior `XYZDUV2` vertex contract.
+      See “Enhanced SM1 shader effects fidelity” above.
 - [x] Collapse fragmented sorted shoreline draw ranges when static-index
       runs get too small. `renderShoreLinesSorted()` still uses the persistent
       static shoreline vertex/index buffers for contiguous visible tile runs,

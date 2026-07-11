@@ -1468,10 +1468,11 @@ void HeightMapRenderObjClass::On_Frame_Update(void)
 	Int numDynaLights=0;
 	W3DDynamicLight *enabledLights[MAX_ENABLED_DYNAMIC_LIGHTS];
 
-	Int yCoordMin = m_map->getDrawOrgY();
-	Int yCoordMax = m_y+m_map->getDrawOrgY();
-	Int xCoordMin = m_map->getDrawOrgX();
-	Int xCoordMax = m_x+m_map->getDrawOrgX();
+	const Int borderSize = m_map->getBorderSizeInline();
+	Int yCoordMin = m_map->getDrawOrgY() - borderSize;
+	Int yCoordMax = m_y + m_map->getDrawOrgY() - borderSize;
+	Int xCoordMin = m_map->getDrawOrgX() - borderSize;
+	Int xCoordMax = m_x + m_map->getDrawOrgX() - borderSize;
 
 	for (pDynamicLightsIterator.First(); !pDynamicLightsIterator.Is_Done(); pDynamicLightsIterator.Next())
 	{		
