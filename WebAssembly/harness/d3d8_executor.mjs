@@ -145,6 +145,7 @@ const d3d8SM1VertexShaders = new Map();
 const d3d8SM1PairPrograms = new Map();
 const d3d8SM1DrawAudit = new Map();
 let d3d8SM1DrawAuditEnabled = false;
+let d3d8SM1AuditPreviousDebugCapture;
 let d3d8SM1MostRecentVertexHandle = 0;
 let d3d8SM1MostRecentPixelHandle = 0;
 let d3d8DepthStencilProgram = null;
@@ -8353,7 +8354,6 @@ function noteD3D8SM1Draw(bridgeProgram, payload) {
     psHandle: bridgeProgram.sm1PsHandle,
     draws: 0,
     vertexConstantStateChanges: 0,
-    vertexConstantUploads: 0,
     firstVertexConstants: null,
     lastVertexConstants: null,
   };
@@ -8380,19 +8380,20 @@ function noteD3D8SM1Draw(bridgeProgram, payload) {
   d3d8SM1DrawAudit.set(pairKey, pairAudit);
 }
 
-function noteD3D8SM1VertexConstantUpload(bridgeProgram) {
-  if (!d3d8SM1DrawAuditEnabled) {
-    return;
-  }
-  const pairKey = `${bridgeProgram.sm1VsHandle}|${bridgeProgram.sm1PsHandle}`;
-  const pairAudit = d3d8SM1DrawAudit.get(pairKey);
-  if (pairAudit) {
-    pairAudit.vertexConstantUploads += 1;
-  }
-}
-
 function setD3D8SM1ShaderAuditEnabled(enabled) {
-  d3d8SM1DrawAuditEnabled = enabled === true;
+  const nextEnabled = enabled === true;
+  if (nextEnabled && !d3d8SM1DrawAuditEnabled) {
+    d3d8SM1AuditPreviousDebugCapture = globalThis.__cncSM1DebugCapture;
+    globalThis.__cncSM1DebugCapture = true;
+  } else if (!nextEnabled && d3d8SM1DrawAuditEnabled) {
+    if (d3d8SM1AuditPreviousDebugCapture === undefined) {
+      delete globalThis.__cncSM1DebugCapture;
+    } else {
+      globalThis.__cncSM1DebugCapture = d3d8SM1AuditPreviousDebugCapture;
+    }
+    d3d8SM1AuditPreviousDebugCapture = undefined;
+  }
+  d3d8SM1DrawAuditEnabled = nextEnabled;
   d3d8SM1DrawAudit.clear();
   return d3d8SM1DrawAuditEnabled;
 }
@@ -8416,7 +8417,6 @@ function d3d8SM1ShaderAuditSummary() {
       psHandle: audit.psHandle,
       draws: audit.draws,
       vertexConstantStateChanges: audit.vertexConstantStateChanges,
-      vertexConstantUploads: audit.vertexConstantUploads,
       firstVertexConstants: audit.firstVertexConstants
         ? Array.from(audit.firstVertexConstants) : null,
       lastVertexConstants: audit.lastVertexConstants
@@ -8440,7 +8440,6 @@ function uploadD3D8SM1DrawUniforms(bridgeProgram, payload, renderState) {
   if (bridgeProgram.vsConst && payload.vsConstants &&
       d3d8SM1ConstantsChanged(bridgeProgram.vsConst, payload.vsConstants)) {
     gl.uniform4fv(bridgeProgram.vsConst, payload.vsConstants);
-    noteD3D8SM1VertexConstantUpload(bridgeProgram);
     d3d8PerfStats.uniformGlCalls += 1;
   }
   if (bridgeProgram.bumpEnv) {
@@ -12160,7 +12159,6 @@ function paintD3D8DrawIndexed(payload = {}) {
         if (sm1VertexDraw) {
           d3d8PerfStats.sm1TranslatedVsDraws += 1;
         }
-        noteD3D8SM1Draw(sm1Program, payload);
       } else {
         d3d8PerfStats.sm1FallbackDraws += 1;
       }
@@ -12170,6 +12168,9 @@ function paintD3D8DrawIndexed(payload = {}) {
       // translated shader actually saw so wrong-texgen/wrong-texture bugs
       // can be pinned without guessing.
       if (globalThis.__cncSM1DebugCapture) {
+        if (sm1Program) {
+          noteD3D8SM1Draw(sm1Program, payload);
+        }
         const log = globalThis.__cncSM1DebugLog ?? (globalThis.__cncSM1DebugLog = {});
         const key = `ps${pixelShaderHandle}|vs${sm1VertexDraw ? vertexShaderFvf >>> 0 : 0}`;
         if (!log[key] || (log[key].count ?? 0) < 8) {

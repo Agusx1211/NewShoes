@@ -738,11 +738,13 @@ mitigation track. Items resolved or retired by the pivot:
       programmable path instead of the retired `threads=0` probes.** The new
       `verify:threaded-shader-fidelity` gate inventories all 18 retail programs
       from `Shaders.big`/`ShadersZH.big`, requires the complete 13-pixel/1-vertex
-      shell-map registration set and all 19 warmed pairs, and audits the live
-      `Trees.vso` relative-address path from native c8-c12 state through WebGL
-      uniform upload. On Mac M4 Chrome/ANGLE Metal, explicit `ps11` issued 260
-      translated tree draws over the bounded capture, observed 260 distinct wind
-      table states and uploads, with zero pair failures or fixed-function
+      shell-map registration set, the exact 19-pair linked manifest, zero
+      fallbacks, an exact END-terminated 18-file archive manifest, and a decoded,
+      varied PNG screenshot. The live `Trees.vso` relative-address observer is
+      opt-in and reuses the existing SM1 debug branch, so normal draws gain no
+      new audit call. On Mac M4 Chrome/ANGLE Metal, explicit `ps11` issued 260
+      translated tree draws over the bounded capture and observed 260 distinct
+      c8-c12 wind table states, with zero pair failures or fixed-function
       fallbacks; the visible shell-map capture remained correct. This rules out
       a translator/native-pointer regression: the apparent frozen-tree
       regression was the launcher selecting Classic, whose original fallback
