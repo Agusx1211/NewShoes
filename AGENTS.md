@@ -57,7 +57,7 @@ code; replace the platform layer.** Re-implement the device interfaces in
 | Bink video | WebCodecs / `<video>` |
 | Win32 (window, files, input, time) | Emscripten + DOM / Canvas / Pointer + Keyboard events |
 | GameSpy networking | WebSockets / WebRTC |
-| File/BIG archive I/O | fetch + in-memory FS |
+| File/BIG archive I/O | streamed fetch → OPFS + engine-thread sync reads |
 
 Toolchain: **Emscripten** (`emcc`/`em++`) targeting `STANDALONE_WASM`/browser.
 

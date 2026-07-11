@@ -6,6 +6,13 @@ evidence: DONE.md "Engine-thread architecture P0 spike" + threaded_boot_probe.
 This note is the durable coordination doc for the P1 lanes — update it as
 gates pass so any future session can resume without re-deriving.
 
+STATUS 2026-07-11: MIGRATION COMPLETE + LEGACY DELETED. Sections below are
+the historical record of the lanes as they ran; where they mention
+`?threads=0`, `?opfsmount=0`, `?ioworker=0`, SKIP_REFERENCE/OPFS_MOUNT gate
+modes, or the io-worker `fetchArchive` whole-buffer transfer, those were all
+DELETED by the demolition lane — see the final section "Demolition
+(2026-07-11)" for what exists now.
+
 ## Scope (P1)
 
 play.html boots the REAL engine on a pthread behind `?threads=1`
@@ -1129,3 +1136,96 @@ redirect to https://192.168.106.45:8443/harness/play.html → one-time
 `WebAssembly/harness/.certs/cert.pem` in Keychain) → threaded engine, COI
 true. The :8123 server on the Mac must be started with `HTTPS_PORT=8443`
 (or just HOST=0.0.0.0, which now defaults it).
+
+## Demolition (2026-07-11, demolition lane): legacy play path deleted
+
+Owner confirmed the HTTPS threaded experience ("excellent, finally!") →
+OWNER DIRECTIVE step (5) executed. What was deleted, what deliberately
+survives, and why:
+
+**Deleted:**
+
+- **play-page legacy mode**: `?threads=0` (play.mjs/bridge.js/play.html),
+  the play-page legacy dist selection (dist-release fallback), the
+  MEMFS-era boot banner variant, the page-driven paced/coupled frame loops
+  in play.mjs (runPacedFrameLoop/runCoupledFrameLoop — the engine-realm
+  loop is the only play loop), the boot-time reveal-pump frames, and the
+  `?ioworker=0` / `?opfsmount=0` opt-outs. play.html is threaded/OPFS-only:
+  bridge's `cncPortThreadedMode` is unconditionally true on /play.html
+  (`?threads=1` still opts harness/index.html pages in). Threaded mounts
+  are ALWAYS OPFS; a missing IO worker fails the mount loudly instead of
+  silently degrading to a MEMFS mount the engine thread could not read.
+- **io_worker `fetchArchive`** (whole-buffer transfer) + bridge's
+  `fetchArchiveBytesOffThread` + the mountArchives bounded fetch-ahead
+  prefetch pipeline. io_worker keeps fetchToOpfs / fetchRange /
+  opfsCollectNamespaces / releaseHandles / ping / busy.
+  test:io-worker-offthread reworked: heartbeat-during-fetchToOpfs +
+  byte-exactness + an explicit pin that `fetchArchive` is refused (15/15).
+- **range-backed subset-mount machinery** (bridge.js ~540 lines):
+  fetchByteRange, extractBigEntryFromUrl, extractBigEntriesFromUrl,
+  indexBigArchiveUrl, buildBigArchive, writeBigUInt32BE,
+  mountRangeBackedArchiveSet, mountBigArchiveEntry, mountShippedMeshAsset
+  (+ RPC dispatcher cases).
+- **21 legacy smokes** that only existed on that machinery (coverage owned
+  by the real boot: threaded_play_gate + shellmap_real_init_gate +
+  skirmish/startup-vertical real-init runs render terrain/trees/roads/
+  props/bridges/meshes/shell UI/text/mapped images through real init):
+  terrain_{visual,map_patch,tree_buffer,road_buffer,prop_buffer,
+  bridge_buffer}_scene + terrain_prop_buffer_render, shipped_mesh_render,
+  display_{shell_composite,mapped_image,mapped_image_clip,
+  mapped_image_unrotated,main_menu_ruler,game_text,drawimage_file},
+  main_menu_layout_image_repaint, object_ini, range_backed_archives,
+  startup_range_backed_archives smokes + plumbing_check.mjs /
+  input_fix_verification.mjs debug scripts. package.json dropped 19
+  scripts; run_vertical_integrations dropped the 11 steps that ran them.
+  The wasm-side `cnc_port_probe_ww3d_*` exports they drove are now
+  JS-orphaned (burn down with the probe surface; noted in TODO).
+- **startup_vertical_smoke.mjs phases 1-2** (archiveless boot + range-backed
+  "audio ownership" frontier boot + STARTUP_VERTICAL_REAL_INIT_ONLY flag):
+  probe-era hand-authored frontier contracts, already red on main
+  (assertFunctionLexiconRuntimeFrontier); the browser smoke is the
+  real-init vertical only now — that documented pre-existing red is gone.
+- **threaded_play_gate reference leg** (`?threads=0&dist=dist`) + the
+  OPFS_MOUNT=0 MEMFS A/B mode + SKIP_REFERENCE env: the gate boots ONE
+  threaded page; the non-threaded real-init reference is
+  shellmap_real_init_gate.mjs on harness/index.html.
+- **replay_issue_dump threads=0 pinning**: threaded dumps replay on their
+  recorded dist; dumps recorded on the retired legacy play path replay on
+  the threaded default with a loud fidelity warning.
+- **stepped_load_turret_validation_check** converted to the threaded play
+  page (persistent context for OPFS quota; profile rm'd in finally) — it
+  now guards advanceLoadSession's m_isInUpdate latch on the SHIPPING path.
+
+**Deliberately KEPT (and why):**
+
+- **The MEMFS mount pipeline** (mountArchive, mountArchives' non-threaded
+  branch, writeArchiveToMemfs — now inline sequential fetch, no worker):
+  it is THE mount path for the harness/index.html legacy-boot surface —
+  ~40 non-threaded gates/smokes (shellmap_real_init_gate, skirmish/fx/
+  laser/audio/network/bink/runtime-archives smokes, runtime_frame_profile)
+  and A/B-debug boots of the non-threaded dists. A main-thread engine
+  cannot read OPFS synchronously (sync access handles are worker-only), so
+  deleting MEMFS mounts would have killed the whole non-play verification
+  surface, not just the play-page legacy path. The play page can no longer
+  reach it.
+- **The non-threaded dist/dist-release builds** (owner caution: engine devs
+  need them for A/B debugging).
+- **io_worker `fetchRange`** (kept per directive; currently unused by
+  bridge).
+- **The audio-inventory MEMFS scan**
+  (buildAudioPayloadInventoryFromMountedArchives): still consumed by the
+  kept non-threaded runtime_archives_smoke + state snapshots; threaded OPFS
+  mounts keep marking it `{ok:false, skipped:true}`.
+- **Stepped-load engine machinery**: re-documented as the
+  PRESENTATION-YIELD mechanism (real load screen paints; frames flow on
+  the engine thread), not freeze protection.
+
+**Whole-suite honesty:** the tools/verify_* battery has 26 reds — byte-for-
+byte the SAME 26 on pristine main (pre-existing frontier-contract drift);
+worktree-only diffs were missing gitignored build/assets dirs. The bink
+presentation verifier's display_drawimage_file line pins were removed with
+the smoke (ok:true again). Post-demolition gates: verify:threaded-play,
+probe:p2-opfs, p1_scaffold_probe, test:io-worker-offthread,
+shellmap_real_init_gate (the kept index.html legacy-boot surface), fresh
+build:port + build:port:threaded:release — results in DONE.md "Legacy
+play-path demolition".

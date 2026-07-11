@@ -8,6 +8,68 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Legacy play-path demolition — threaded/OPFS-only play page (2026-07-11, demolition lane)
+
+OWNER DIRECTIVE step (5) ("fully migrate — delete legacy machinery") after
+the owner confirmed the HTTPS threaded experience. Full inventory + rationale
+in notes/p1-engine-thread.md "Demolition (2026-07-11)".
+
+- [x] **play.html is threaded/OPFS-only.** `?threads=0` legacy mode deleted
+      from play.mjs/bridge.js (bridge's cncPortThreadedMode is unconditional
+      on /play.html; ?threads=1 still opts harness pages in), play-page
+      legacy dist selection deleted (dist-threaded-release is THE play dist),
+      the MEMFS-era banner variant, the page-driven paced/coupled frame
+      loops, the reveal-pump frames, and the `?ioworker=0`/`?opfsmount=0`
+      opt-outs are gone. Threaded mounts are always OPFS; a missing IO
+      worker fails the mount loudly (no silent MEMFS degrade).
+- [x] **io-worker whole-buffer transfer deleted.** `fetchArchive` +
+      fetchWholeArchive removed from io_worker.mjs; bridge's
+      fetchArchiveBytesOffThread + the mountArchives fetch-ahead prefetch
+      pipeline removed (MEMFS mounts fetch inline, strictly sequential).
+      test:io-worker-offthread reworked to the OPFS-era contract
+      (heartbeat-during-fetchToOpfs + byte-exactness + a pin that
+      fetchArchive is refused): 15/15 green.
+- [x] **Range-backed subset-mount machinery deleted** (~540 bridge.js lines:
+      fetchByteRange / extractBigEntry(ies)FromUrl / indexBigArchiveUrl /
+      buildBigArchive / writeBigUInt32BE / mountRangeBackedArchiveSet /
+      mountBigArchiveEntry / mountShippedMeshAsset + dispatcher cases)
+      together with its 21 caller smokes (terrain_* scene/buffer, display_*,
+      shipped_mesh_render, main_menu_layout_image_repaint, object_ini,
+      range_backed/startup_range_backed, plumbing_check,
+      input_fix_verification — coverage owned by the real boot gates).
+      package.json −19 scripts; run_vertical_integrations −11 steps; the
+      bink presentation verifier's drawimage-file line pins removed
+      (ok:true). startup_vertical_smoke phases 1-2 (probe-frontier
+      preflights, already red on main) retired — the browser smoke is the
+      real-init vertical only, clearing the documented
+      assertFunctionLexiconRuntimeFrontier pre-existing red. This also
+      retires the superseded TODO "Generalize the browser range-backed BIG
+      archive reader" (the goal shipped as the threaded OPFS mount).
+- [x] **Verification surface converted, not orphaned.**
+      stepped_load_turret_validation_check now runs the threaded play page
+      (persistent context for OPFS quota) — the m_isInUpdate stepped-load
+      latch is guarded on the SHIPPING path; threaded_play_gate lost its
+      ?threads=0 reference leg + OPFS_MOUNT=0 A/B (shellmap_real_init_gate
+      on index.html is the non-threaded real-init reference);
+      replay_issue_dump replays legacy-recorded dumps on the threaded
+      default with a loud fidelity warning.
+- [x] **Deliberately KEPT:** the MEMFS mount pipeline (mountArchive /
+      mountArchives non-threaded branch / writeArchiveToMemfs) as the
+      harness/index.html legacy-boot surface — ~40 non-threaded gates/smokes
+      and A/B-debug boots of the kept dist/dist-release builds need it, and
+      a main-thread engine cannot read OPFS synchronously; the audio-
+      inventory MEMFS scan (consumed by runtime_archives_smoke + state
+      snapshots); io_worker fetchRange; the stepped-load engine machinery
+      (re-documented as the presentation-yield mechanism, not freeze
+      protection). AGENTS.md archive-I/O mapping updated to "streamed fetch
+      → OPFS + engine-thread sync reads".
+- [x] **Whole-suite honesty:** tools/verify_* battery reds are byte-for-byte
+      the same 26 as pristine main (pre-existing frontier drift; worktree
+      diffs were missing gitignored build/assets dirs). Gate results
+      (verify:threaded-play, probe:p2-opfs, p1_scaffold_probe,
+      test:io-worker-offthread, shellmap_real_init_gate, fresh build:port +
+      build:port:threaded:release) recorded in the lane report.
+
 ## Trustworthy origin: HTTPS listener + no-fallback redirect (2026-07-10, https lane)
 
 OWNER DIRECTIVE: "no legacy path or fallback — just add HTTPS to the server."
