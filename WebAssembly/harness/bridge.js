@@ -324,6 +324,7 @@ const harnessState = {
   browserCursor: {
     source: "browser_win32_cursor_css",
     cursorSet: null,
+    cursorFile: null,
     css: canvas.style.cursor || "auto",
     visible: true,
   },
@@ -1439,6 +1440,24 @@ async function threadedRpc(command, payload = {}) {
           threaded: true,
           state: snapshotState(),
         };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "setMouseCursorForHarness": {
+      try {
+        const cursor = Number(payload.cursor);
+        const applied = Number.isInteger(cursor)
+          && await threadedEngine.engineCall(
+            "cnc_port_set_mouse_cursor_for_harness", "number", ["number"], [cursor]) === 1;
+        if (applied) {
+          const moduleState = await threadedEngine.engineCall(
+            "cnc_port_state", "string", [], []);
+          if (moduleState && typeof moduleState === "object") {
+            applyModuleState(moduleState);
+          }
+        }
+        return { ok: applied, command, cursor, threaded: true, state: snapshotState() };
       } catch (error) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
@@ -4038,12 +4057,142 @@ function setFramesNodeThrottled(framesCompleted) {
   framesNode.textContent = String(framesCompleted);
 }
 
+const originalCursorManifestUrl = new URL(
+  "../artifacts/real-assets/cursors/manifest.json",
+  import.meta.url,
+);
+let originalCursorManifestPromise = null;
+let originalCursorAnimation = {
+  cursorFile: null,
+  timer: null,
+  token: 0,
+};
+
+function loadOriginalCursorManifest() {
+  if (!originalCursorManifestPromise) {
+    originalCursorManifestPromise = fetch(originalCursorManifestUrl, { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`cursor manifest fetch failed (${response.status})`);
+        }
+        return response.json();
+      })
+      .then((manifest) => {
+        if (manifest?.schema !== "cnc.original-ani-cursors.v1"
+            || !Number.isFinite(manifest.timingUnitHz)
+            || manifest.timingUnitHz <= 0
+            || !manifest.cursors) {
+          throw new Error("cursor manifest has an unsupported schema");
+        }
+        return manifest;
+      });
+  }
+  return originalCursorManifestPromise;
+}
+
+// Start this small fetch before the engine and SwiftShader begin competing
+// for the local machine. Cursor selection happens during real init, so the
+// manifest is normally ready by the first SetCursor call.
+loadOriginalCursorManifest().catch(() => {});
+
+function originalCursorKey(cursorFile) {
+  const normalized = String(cursorFile ?? "").replaceAll("\\", "/");
+  const filename = normalized.slice(normalized.lastIndexOf("/") + 1);
+  return filename.replace(/\.ani$/i, "").toLowerCase();
+}
+
+function stopOriginalCursorAnimation(cursorFile = null) {
+  if (originalCursorAnimation.timer != null) {
+    clearTimeout(originalCursorAnimation.timer);
+  }
+  originalCursorAnimation = {
+    cursorFile,
+    timer: null,
+    token: originalCursorAnimation.token + 1,
+  };
+  return originalCursorAnimation.token;
+}
+
+async function startOriginalCursorAnimation(cursorFile) {
+  const token = stopOriginalCursorAnimation(cursorFile);
+  const loadingCss = "default";
+  canvas.style.cursor = loadingCss;
+  harnessState.browserCursor = {
+    source: "game_ani_cursor_css_loading",
+    cursorSet: true,
+    cursorFile,
+    css: loadingCss,
+    visible: true,
+  };
+
+  try {
+    const manifest = await loadOriginalCursorManifest();
+    if (token !== originalCursorAnimation.token) {
+      return;
+    }
+    const cursor = manifest.cursors[originalCursorKey(cursorFile)];
+    if (!cursor || !Array.isArray(cursor.frames) || cursor.frames.length === 0
+        || !Array.isArray(cursor.sequence) || cursor.sequence.length === 0) {
+      throw new Error(`cursor asset is missing for ${cursorFile}`);
+    }
+    if (cursor.sequence.some((frameIndex) =>
+      !Number.isInteger(frameIndex) || typeof cursor.frames[frameIndex] !== "string")) {
+      throw new Error(`cursor ${cursorFile} has an invalid frame sequence`);
+    }
+
+    let step = 0;
+    const applyFrame = () => {
+      if (token !== originalCursorAnimation.token) {
+        return;
+      }
+      const frameIndex = cursor.sequence[step] ?? 0;
+      const frameFile = cursor.frames[frameIndex];
+      const frameUrl = new URL(frameFile, originalCursorManifestUrl).href;
+      const css = `url("${frameUrl}"), default`;
+      canvas.style.cursor = css;
+      harnessState.browserCursor = {
+        source: "game_ani_cursor_css",
+        cursorSet: true,
+        cursorFile,
+        css,
+        visible: true,
+        frame: frameIndex,
+        frameCount: cursor.frames.length,
+        step,
+        stepCount: cursor.sequence.length,
+        frameUrl,
+      };
+      const rate = Math.max(1, cursor.rates?.[step] ?? 1);
+      step = (step + 1) % cursor.sequence.length;
+      originalCursorAnimation.timer = cursor.sequence.length > 1
+        ? setTimeout(applyFrame, rate * 1000 / manifest.timingUnitHz)
+        : null;
+    };
+    applyFrame();
+  } catch (error) {
+    if (token !== originalCursorAnimation.token) {
+      return;
+    }
+    const css = "default";
+    canvas.style.cursor = css;
+    harnessState.browserCursor = {
+      source: "game_ani_cursor_css_fallback",
+      cursorSet: true,
+      cursorFile,
+      css,
+      visible: true,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 function syncBrowserCursor(input = harnessState.browserInput) {
   if (!input) {
     const css = canvas.style.cursor || "auto";
     harnessState.browserCursor = {
       source: "browser_win32_cursor_css",
       cursorSet: null,
+      cursorFile: null,
       css,
       visible: css !== "none",
     };
@@ -4051,18 +4200,23 @@ function syncBrowserCursor(input = harnessState.browserInput) {
   }
 
   const cursorSet = Boolean(input.cursorSet);
-  // The original game hides the Win32 cursor (SetCursor(NULL)) because it
-  // draws its own W3D cursor - which the browser build does not render yet.
-  // Hiding the CSS cursor too would leave a human player with no cursor at
-  // all, so keep the native cursor visible as the "hardware cursor" stand-in
-  // until W3DMouse rendering is ported (then honor cursorSet again).
-  const css = "default";
+  const cursorFile = typeof input.cursorFile === "string" ? input.cursorFile : null;
+  if (cursorSet && cursorFile) {
+    if (originalCursorAnimation.cursorFile !== cursorFile) {
+      startOriginalCursorAnimation(cursorFile);
+    }
+    return;
+  }
+
+  stopOriginalCursorAnimation();
+  const css = cursorSet ? "default" : "none";
   canvas.style.cursor = css;
   harnessState.browserCursor = {
     source: "browser_win32_cursor_css",
     cursorSet,
+    cursorFile,
     css,
-    visible: true,
+    visible: cursorSet,
   };
 }
 
@@ -4664,6 +4818,11 @@ async function loadWasmModule() {
         "cnc_port_query_selection",
         "string",
         [],
+      ),
+      setMouseCursorForHarness: module.cwrap(
+        "cnc_port_set_mouse_cursor_for_harness",
+        "number",
+        ["number"],
       ),
       clickWindowByName: module.cwrap(
         "cnc_port_click_window_by_name",
@@ -10648,6 +10807,25 @@ async function rpc(command, payload = {}) {
           aborted,
           abortMessage,
           result,
+          state: snapshotState(),
+        };
+      }
+    case "setMouseCursorForHarness":
+      {
+        const moduleResult = await getWasmModuleForArchives("setMouseCursorForHarness");
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        const cursor = Number(payload.cursor);
+        const applied = Number.isInteger(cursor)
+          && moduleResult.wasmModule.setMouseCursorForHarness(cursor) === 1;
+        if (applied) {
+          applyModuleState(parseModuleState(moduleResult.wasmModule.state()));
+        }
+        return {
+          ok: applied,
+          command,
+          cursor,
           state: snapshotState(),
         };
       }

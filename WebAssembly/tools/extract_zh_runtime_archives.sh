@@ -12,6 +12,8 @@ disc1_iso="${out_dir}/Disc1.iso"
 disc2_iso="${out_dir}/Disc2.iso"
 data_cab="${out_dir}/Data1.cab"
 language_cab="${out_dir}/Language.cab"
+cursor_source_dir="${out_dir}/cursor-source"
+cursor_output_dir="${out_dir}/cursors"
 base_work_dir="${out_dir}/base-generals"
 base_disc1_iso="${base_work_dir}/Disc1.iso"
 base_disc2_iso="${base_work_dir}/Disc2.iso"
@@ -357,6 +359,17 @@ ensure_iso "${disc2_image}" "${disc2_iso}"
 node "${script_dir}/build_loose_scripts_big.mjs" "${out_dir}" "${out_dir}/LooseScripts.big" >/dev/null
 7z e -y "-o${out_dir}" "${language_cab}" "${language_archives[@]}" >/dev/null
 
+# The original Win32 cursor path loads the installed Data\Cursors\*.ANI
+# files rather than BIG entries. Browsers cannot consume ANI directly, so
+# preserve each embedded CUR frame and its original RIFF timing/sequence in a
+# manifest that bridge.js can present at the browser platform boundary.
+rm -rf "${cursor_source_dir}"
+mkdir -p "${cursor_source_dir}"
+7z e -y "-o${cursor_source_dir}" "${data_cab}" "*.ani" >/dev/null
+node "${script_dir}/extract_ani_cursor_frames.mjs" \
+  "${cursor_source_dir}" "${cursor_output_dir}" >/dev/null
+rm -rf "${cursor_source_dir}"
+
 for archive in "${data_archives[@]}" "${language_archives[@]}" "${top_level_archives[@]}"; do
   require_big "${out_dir}/${archive}"
 done
@@ -381,6 +394,7 @@ printf '%s\n' \
   "${language_archives[@]}" \
   "${top_level_archives[@]}" \
   LooseScripts.big \
+  cursors/manifest.json \
   "${loose_video_payloads[@]}" \
   "${loose_script_payloads[@]}" \
   "${extracted_optional_archives[@]}" | sort -u

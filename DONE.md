@@ -8,6 +8,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Original animated cursors in the browser (2026-07-11)
+
+- [x] Replaced the Emscripten `LoadCursorFromFile` no-op with stable cursor
+      handles that retain the exact `Data\\Cursors\\*.ANI` path selected by
+      original `Win32Mouse`, and exposed that active file through the existing
+      browser-input state. `SetCursor(NULL)` now hides the browser cursor again
+      instead of forcing the generic CSS arrow to remain visible.
+- [x] Added asset-boundary conversion for all 52 shipped ANI cursors: their
+      embedded CUR frames (including original hotspots) are emitted unchanged,
+      while RIFF `seq`/`rate` data is recorded in a manifest at the native
+      60-jiffy timing base. The browser presents and animates those frames as
+      CSS custom cursors, with a visible generic fallback only when an asset is
+      unavailable.
+- [x] Extended the real threaded play gate with cursor-file, CUR-header, and
+      multi-frame animation checks through original `TheMouse` cursor ownership.
+      Local dev-box verification built the threaded `cnc-port`, passed the
+      Win32 mouse cursor regression, rendered shipped `SCCPointer`, and sampled
+      multiple shipped `SCCAttack` frames under SwiftShader (no Mac involved).
+
 ## Legacy play-path demolition — threaded/OPFS-only play page (2026-07-11, demolition lane)
 
 OWNER DIRECTIVE step (5) ("fully migrate — delete legacy machinery") after

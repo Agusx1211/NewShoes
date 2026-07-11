@@ -7605,6 +7605,17 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 	return json.c_str();
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE int cnc_port_set_mouse_cursor_for_harness(int cursor)
+{
+	if (TheMouse == NULL || cursor < Mouse::FIRST_CURSOR || cursor >= Mouse::NUM_MOUSE_CURSORS) {
+		return 0;
+	}
+
+	TheMouse->setVisibility(TRUE);
+	TheMouse->setCursor(static_cast<Mouse::MouseCursor>(cursor));
+	return TheMouse->getMouseCursor() == cursor ? 1 : 0;
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_click_window_by_name(const char *window_name)
 {
 	static std::string json;

@@ -1111,10 +1111,14 @@ std::string build_nullable_string_json(const std::string &value, bool present)
 std::string build_browser_input_json()
 {
 	char buffer[2200];
+	const std::string cursor_file_json = build_nullable_string_json(
+		WasmWin32Input::current_cursor_file != nullptr
+			? WasmWin32Input::current_cursor_file : "",
+		WasmWin32Input::current_cursor_file != nullptr);
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"browser_win32_input_shim\","
 		"\"cursor\":{\"available\":%s,\"x\":%ld,\"y\":%ld},"
-		"\"cursorSet\":%s,\"capture\":%s,"
+		"\"cursorSet\":%s,\"cursorFile\":%s,\"capture\":%s,"
 		"\"messageQueue\":{\"count\":%u,\"overflowed\":%s},"
 		"\"keyboardMessageQueue\":{\"count\":%u,\"overflowed\":%s},"
 		"\"keys\":{\"f5\":{\"down\":%s,\"pressedSinceLastQuery\":%s},"
@@ -1127,6 +1131,7 @@ std::string build_browser_input_json()
 		WasmWin32Input::cursor_position.x,
 		WasmWin32Input::cursor_position.y,
 		WasmWin32Input::current_cursor != nullptr ? "true" : "false",
+		cursor_file_json.c_str(),
 		WasmWin32Input::capture_window != nullptr ? "true" : "false",
 		WasmWin32Input::message_queue_count,
 		WasmWin32Input::message_queue_overflowed ? "true" : "false",
