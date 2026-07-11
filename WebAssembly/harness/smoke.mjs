@@ -1922,17 +1922,19 @@ try {
       "originalCursorVisibilityProbe",
       { visible: false },
     ));
-    const hiddenCursorCss = await page.locator("#viewport").evaluate((viewport) =>
+    const fallbackCursorCss = await page.locator("#viewport").evaluate((viewport) =>
       getComputedStyle(viewport).cursor);
     if (!originalCursorHidden.ok
         || originalCursorHidden.probe?.mouse?.visible !== false
         || originalCursorHidden.probe.mouse.currentCursor !== mouseCursorArrow
         || originalCursorHidden.probe.mouse.browserCursorSet !== false
         || originalCursorHidden.state.browserInput?.cursorSet !== false
-        || originalCursorHidden.state.browserCursor?.css !== "none"
-        || originalCursorHidden.state.browserCursor?.visible !== false
-        || hiddenCursorCss !== "none") {
-      throw new Error(`Original cursor hidden probe did not apply CSS cursor:none: ${JSON.stringify({ originalCursorHidden, hiddenCursorCss })}`);
+        || originalCursorHidden.state.browserCursor?.source
+          !== "browser_cursor_fallback_for_unrendered_game_cursor"
+        || originalCursorHidden.state.browserCursor?.css !== "default"
+        || originalCursorHidden.state.browserCursor?.visible !== true
+        || fallbackCursorCss !== "default") {
+      throw new Error(`Unrendered game cursor did not retain the browser pointer fallback: ${JSON.stringify({ originalCursorHidden, fallbackCursorCss })}`);
     }
 
     const resetD3DCallsBeforeFocus = originalWndProcInit.probe.resetD3D?.calls ?? 0;

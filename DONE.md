@@ -13,8 +13,10 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 - [x] Replaced the Emscripten `LoadCursorFromFile` no-op with stable cursor
       handles that retain the exact `Data\\Cursors\\*.ANI` path selected by
       original `Win32Mouse`, and exposed that active file through the existing
-      browser-input state. `SetCursor(NULL)` now hides the browser cursor again
-      instead of forcing the generic CSS arrow to remain visible.
+      browser-input state. When the original game calls `SetCursor(NULL)` to
+      delegate cursor drawing to the still-unrendered W3D/DX8/polygon device
+      path, the browser keeps a generic arrow visible so the player never loses
+      the pointer.
 - [x] Added asset-boundary conversion for all 52 shipped ANI cursors: their
       embedded CUR frames (including original hotspots) are emitted unchanged,
       while RIFF `seq`/`rate` data is recorded in a manifest at the native

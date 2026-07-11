@@ -4539,14 +4539,23 @@ function syncBrowserCursor(input = harnessState.browserInput) {
   }
 
   stopOriginalCursorAnimation();
-  const css = cursorSet ? "default" : "none";
+  // SetCursor(NULL) does not always mean "the pointer should disappear" in
+  // the original game. W3DMouse also uses it when RM_W3D/RM_DX8/RM_POLYGON
+  // takes over cursor drawing. Those device-owned cursor pixels are not yet
+  // rendered by the browser port, so honoring NULL here would leave a human
+  // player with no pointer. Keep the browser arrow as the platform fallback
+  // until those render paths are complete; explicit ANI handles above still
+  // use the original game cursor and animation.
+  const css = "default";
   canvas.style.cursor = css;
   harnessState.browserCursor = {
-    source: "browser_win32_cursor_css",
+    source: cursorSet
+      ? "browser_win32_cursor_css"
+      : "browser_cursor_fallback_for_unrendered_game_cursor",
     cursorSet,
     cursorFile,
     css,
-    visible: cursorSet,
+    visible: true,
   };
 }
 
