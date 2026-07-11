@@ -17,6 +17,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       diagnostics, but its timing-sensitive migration simulation no longer
       blocks publishing an otherwise verified artifact.
 
+## Clean wasm smoke build repair (2026-07-11)
+
+- [x] Fixed the clean-CI `w3d-device-utility-smoke` compile failure caused by
+      qualifying `fopen` through `std::` after the real-engine prelude defines
+      the path-normalizing `fopen` platform macro. The fixture now uses the
+      same plain `fopen` spelling as the original engine, so it reaches
+      `WasmRealFopenNormalized` without producing `std::WasmRealFopenNormalized`.
+      Its directory helper also normalizes recognized backslash separators to
+      POSIX slashes instead of restoring them into later nested `mkdir` calls.
+
 ## Privacy-bounded usage analytics (2026-07-11)
 
 - [x] Added optional Google Analytics 4 collection on public production hosts,

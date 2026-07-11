@@ -227,14 +227,16 @@ bool write_binary_file(const char *path, const void *payload, std::size_t payloa
 	for (const char *cursor = path; *cursor != '\0'; ++cursor) {
 		directory.push_back(*cursor);
 		if (*cursor == '/' || *cursor == '\\') {
-			const char saved = directory.back();
 			directory.back() = '\0';
 			mkdir(directory.data(), 0777);
-			directory.back() = saved;
+			directory.back() = '/';
 		}
 	}
 
-	std::FILE *file = std::fopen(path, "wb");
+	// Use the platform seam's plain fopen spelling. wasm_prerts_real.h maps it
+	// to WasmRealFopenNormalized; qualifying it as std::fopen would leave the
+	// function-like macro token inside namespace std after preprocessing.
+	std::FILE *file = fopen(path, "wb");
 	if (file == nullptr) {
 		std::fprintf(stderr, "failed to create local W3D fixture %s\n", path);
 		return false;
