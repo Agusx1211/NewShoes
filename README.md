@@ -182,25 +182,12 @@ performed hands-on playtests, chose tradeoffs, and integrated the work. Agents
 scouted the source, implemented ports, ran browser harnesses, captured GPU
 evidence, reviewed changes, and updated the project history.
 
-At the public-readiness audit snapshot, the reachable history records work by
-the following model families. Aliases were consolidated only when the commit
-metadata named the same provider and model:
-
-| Provider and model family | Authored commits |
-|---|---:|
-| OpenAI GPT-5 Codex, including Codex CLI | 1,009 |
-| Z.ai GLM-5.2, through OpenCode and Pi workers | 170 |
-| Anthropic Claude Fable 5 | 121 |
-| Anthropic Claude Opus 4.8 | 48 |
-| Anthropic Claude (model unspecified in metadata) | 3 |
-| Qwen 3.6 27B and 35B variants | 30 |
-| Mistral Medium 3.5 | 17 |
-| DeepSeek V4 Pro | 1 |
-
-Agustin and the upstream EA import author, LFeenanEA, are listed separately in
-the audit. These counts describe commit metadata, not relative contribution
-quality. The reproducible audit method and complete alias inventory are in
-[docs/public-readiness-audit.md](docs/public-readiness-audit.md).
+The commit history records work under OpenAI GPT-5 Codex and Codex CLI, Z.ai
+GLM-5.2 through OpenCode and Pi workers, Anthropic Claude Fable 5, Claude Opus
+4.8 and generic Claude identities, Qwen 3.6 27B and 35B variants, Mistral Medium
+3.5, and DeepSeek V4 Pro. Agustin and the upstream EA import author,
+LFeenanEA, are recorded separately. These names come from commit metadata and
+do not imply a ranking of contributions.
 
 ## Contributing
 
