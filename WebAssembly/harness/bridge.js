@@ -566,16 +566,21 @@ const browserAudioRuntime = {
   source: "browser Web Audio runtime user-gesture proof",
   context: null,
   created: false,
+  contextCreations: 0,
   resumeAttempts: 0,
   resumeSuccesses: 0,
   lastResumeTrigger: null,
   lastResumeError: null,
+  lastUserActivation: null,
+  stateChanges: 0,
+  lastStateChange: null,
 };
 
 const browserAudioMixerBusNames = ["music", "sound", "sound3D", "speech"];
 const browserAudioMixerRuntime = {
   source: "browser Web Audio runtime mixer GainNode proof",
   created: false,
+  creations: 0,
   busNodes: null,
   scriptVolumes: null,
   systemVolumes: null,
@@ -1507,6 +1512,8 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   // wasm calls).
   "resumeBrowserAudioRuntime",
   "setBrowserAudioMixerVolumes",
+  "browserAudioRuntime",
+  "browserAudioMixerRuntime",
   "shutdownRuntime",
   "forceShutdownRuntime",
   "setD3D8GammaRamp",
@@ -2026,6 +2033,7 @@ function summarizeBrowserAudioRuntime() {
     source: browserAudioRuntime.source,
     available: typeof AudioContextCtor === "function",
     created: browserAudioRuntime.created,
+    contextCreations: browserAudioRuntime.contextCreations,
     constructor: context?.constructor?.name
       ?? (typeof AudioContextCtor === "function" ? AudioContextCtor.name : null),
     contextState: context?.state ?? null,
@@ -2036,6 +2044,18 @@ function summarizeBrowserAudioRuntime() {
     resumeSuccesses: browserAudioRuntime.resumeSuccesses,
     lastResumeTrigger: browserAudioRuntime.lastResumeTrigger,
     lastResumeError: browserAudioRuntime.lastResumeError,
+    lastUserActivation: browserAudioRuntime.lastUserActivation,
+    stateChanges: browserAudioRuntime.stateChanges,
+    lastStateChange: browserAudioRuntime.lastStateChange,
+    currentTimeSeconds: Number.isFinite(context?.currentTime)
+      ? Number(context.currentTime.toFixed(6))
+      : null,
+    baseLatencySeconds: Number.isFinite(context?.baseLatency)
+      ? Number(context.baseLatency.toFixed(6))
+      : null,
+    outputLatencySeconds: Number.isFinite(context?.outputLatency)
+      ? Number(context.outputLatency.toFixed(6))
+      : null,
     runtimePlayback: false,
     engineDriven: false,
     nextRequired: "engineDrivenBrowserAudioDevice",
@@ -2057,7 +2077,19 @@ function ensureBrowserAudioRuntimeContext(trigger) {
   try {
     browserAudioRuntime.context = new AudioContextCtor();
     browserAudioRuntime.created = true;
+    browserAudioRuntime.contextCreations += 1;
     browserAudioRuntime.lastResumeError = null;
+    browserAudioRuntime.context.addEventListener?.("statechange", () => {
+      const state = browserAudioRuntime.context?.state ?? null;
+      browserAudioRuntime.stateChanges += 1;
+      browserAudioRuntime.lastStateChange = {
+        state,
+        atMs: Number(performance.now().toFixed(3)),
+      };
+      if (state === "running") {
+        ensureBrowserAudioMixerRuntime();
+      }
+    });
     return browserAudioRuntime.context;
   } catch (error) {
     browserAudioRuntime.lastResumeTrigger = trigger;
@@ -2069,6 +2101,11 @@ function ensureBrowserAudioRuntimeContext(trigger) {
 async function resumeBrowserAudioRuntime(trigger = "rpc.resumeBrowserAudioRuntime") {
   browserAudioRuntime.resumeAttempts += 1;
   browserAudioRuntime.lastResumeTrigger = String(trigger);
+  browserAudioRuntime.lastUserActivation = {
+    isActive: globalThis.navigator?.userActivation?.isActive ?? null,
+    hasBeenActive: globalThis.navigator?.userActivation?.hasBeenActive ?? null,
+    atMs: Number(performance.now().toFixed(3)),
+  };
   const context = ensureBrowserAudioRuntimeContext(browserAudioRuntime.lastResumeTrigger);
   if (!context) {
     return summarizeBrowserAudioRuntime();
@@ -2145,6 +2182,7 @@ function ensureBrowserAudioMixerRuntime() {
       browserAudioMixerRuntime.busNodes[bus] = gain;
     }
     browserAudioMixerRuntime.created = true;
+    browserAudioMixerRuntime.creations += 1;
     browserAudioMixerRuntime.lastError = null;
   }
 
@@ -2171,6 +2209,7 @@ function summarizeBrowserAudioMixerRuntime() {
     source: browserAudioMixerRuntime.source,
     available: typeof browserAudioContextCtor() === "function",
     created: browserAudioMixerRuntime.created,
+    creations: browserAudioMixerRuntime.creations,
     contextCreated: browserAudioRuntime.created,
     contextState: context?.state ?? null,
     runtimePlayback: false,
@@ -22398,6 +22437,14 @@ window.addEventListener("pointerdown", () => {
   void resumeBrowserAudioRuntime("window.pointerdown");
 }, { capture: true });
 
+// A pointerdown listener alone is not a portable autoplay unlock. The HTML
+// user-activation event is mouse/pointer-type dependent, while browsers
+// consistently treat the resulting trusted click as the user's playback
+// intent. Retrying here also covers keyboard-activated launcher buttons.
+window.addEventListener("click", () => {
+  void resumeBrowserAudioRuntime("window.click");
+}, { capture: true });
+
 canvas.addEventListener("pointermove", (event) => {
   const point = canvasInputPointFromEvent(event);
   void pushBrowserInputToWasmLite({
@@ -22490,10 +22537,13 @@ function browserKeyboardEventBelongsToDomUi(event) {
 }
 
 window.addEventListener("keydown", (event) => {
+  // Resume before filtering DOM controls: Enter/Space on the launch button is
+  // a legitimate activation even though the key belongs to launcher UI rather
+  // than the game's Win32 input queue.
+  void resumeBrowserAudioRuntime("window.keydown");
   if (browserKeyboardEventBelongsToDomUi(event)) {
     return;
   }
-  void resumeBrowserAudioRuntime("window.keydown");
   const virtualKey = virtualKeyFromEvent(event);
   if (virtualKey < 0) {
     return;
