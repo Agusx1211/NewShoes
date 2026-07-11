@@ -159,11 +159,20 @@ struct BrowserUdpAdapterState
 
 BrowserUdpAdapterState g_browser_udp_adapter = {};
 
+EM_JS(void, browser_udp_adapter_clear_js, (), {
+	const clear = typeof Module !== "undefined" ? Module.cncPortBrowserUdpClear : null;
+	if (typeof clear === "function") {
+		clear();
+	}
+});
+
 EM_JS(Int, browser_udp_adapter_send_js, (
 	const UnsignedByte *msg,
 	Int length,
 	UnsignedInt ip,
-	UnsignedShort port), {
+	UnsignedShort port,
+	UnsignedInt source_ip,
+	UnsignedShort source_port), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortBrowserUdpSend : null;
 	if (typeof bridge !== "function" || !msg || length <= 0) {
 		return 0;
@@ -174,6 +183,8 @@ EM_JS(Int, browser_udp_adapter_send_js, (
 			bytes,
 			ip: ip >>> 0,
 			port: port & 0xffff,
+			sourceIp: source_ip >>> 0,
+			sourcePort: source_port & 0xffff,
 		});
 		return written | 0;
 	} catch (error) {
@@ -185,6 +196,7 @@ EM_JS(Int, browser_udp_adapter_send_js, (
 EM_JS(Int, browser_udp_adapter_recv_js, (
 	UnsignedByte *msg,
 	Int capacity,
+	UnsignedShort local_port,
 	UnsignedInt *ip,
 	UnsignedShort *port), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortBrowserUdpRecv : null;
@@ -192,7 +204,7 @@ EM_JS(Int, browser_udp_adapter_recv_js, (
 		return 0;
 	}
 	try {
-		const datagram = bridge({ capacity });
+		const datagram = bridge({ capacity, port: local_port & 0xffff });
 		if (!datagram || !datagram.bytes) {
 			return 0;
 		}
@@ -302,6 +314,7 @@ extern "C" {
 void cnc_port_browser_udp_adapter_clear()
 {
 	clear_browser_udp_adapter();
+	browser_udp_adapter_clear_js();
 }
 
 Int cnc_port_browser_udp_adapter_push_incoming(
@@ -410,7 +423,9 @@ Int UDP::Write(const unsigned char *msg, UnsignedInt len, UnsignedInt IP, Unsign
 		reinterpret_cast<const UnsignedByte *>(msg),
 		static_cast<Int>(len),
 		IP,
-		port);
+		port,
+		myIP,
+		myPort);
 	if (browser_written > 0) {
 		++g_browser_udp_adapter.writes;
 		m_lastError = OK;
@@ -443,6 +458,7 @@ Int UDP::Read(unsigned char *msg, UnsignedInt len, sockaddr_in *from)
 	const Int browser_read = browser_udp_adapter_recv_js(
 		reinterpret_cast<UnsignedByte *>(msg),
 		static_cast<Int>(len),
+		myPort,
 		&ip,
 		&port);
 	if (browser_read > 0) {

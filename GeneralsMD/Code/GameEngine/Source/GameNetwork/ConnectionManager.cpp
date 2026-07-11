@@ -53,6 +53,10 @@
 #include "GameClient/DisconnectMenu.h"
 #include "GameClient/InGameUI.h"
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_browser_udp_adapter_clear();
+#endif
+
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -362,9 +366,19 @@ void ConnectionManager::doRelay() {
 			// Get the command list from the packet.
 			NetCommandList *cmdList = packet->getCommandList();
 			NetCommandRef *cmd = cmdList->getFirstMessage();
+#ifdef __EMSCRIPTEN__
+			Int browserCommandsRemaining = packet->getNumCommands();
+			if (browserCommandsRemaining < 0 || browserCommandsRemaining > MAX_MESSAGES) {
+				browserCommandsRemaining = MAX_MESSAGES;
+			}
+#endif
 
 			// Iterate through the commands in this packet and send them to the proper connections.
+#ifdef __EMSCRIPTEN__
+			while (cmd != NULL && browserCommandsRemaining-- > 0) {
+#else
 			while (cmd != NULL) {
+#endif
 				//DEBUG_LOG(("ConnectionManager::doRelay() - Looking at a command of type %s\n",
 					//GetAsciiNetCommandType(cmd->getCommand()->getNetCommandType()).str()));
 				if (CommandRequiresAck(cmd->getCommand())) {
@@ -405,10 +419,6 @@ void ConnectionManager::doRelay() {
 		++numCommands;
 	}
 	++numPackets;
-
-	// Delete this packet since we won't be needing it anymore.
-	packet->deleteInstance();
-	packet = NULL;
 
 	cmdList->deleteInstance();
 	cmdList = NULL;
@@ -1441,6 +1451,12 @@ void ConnectionManager::initTransport() {
 		delete m_transport;
 		m_transport = NULL;
 	}
+#ifdef __EMSCRIPTEN__
+	// LANAPI and the in-match Network reuse the browser endpoint. Discard any
+	// lobby datagrams before binding the new game transport so they cannot be
+	// decoded as NetPacket command streams.
+	cnc_port_browser_udp_adapter_clear();
+#endif
 	m_transport = new Transport;
 	m_transport->reset();
 	m_transport->init(m_localAddr, m_localPort);

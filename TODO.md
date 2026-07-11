@@ -3458,8 +3458,11 @@ residue and the next frontier.
 
 ## M9 — Networking (GameSpy / LAN → WS/WebRTC)
 
-- [ ] Re-target UDP transport (`udp.cpp`, `Transport`) onto WebRTC DataChannel
-      or a WebSocket relay. The browser harness now has a first relay-shaped
+- [ ] Harden the verified four-player WebRTC multiplayer path for
+      unattended/public operation. UDP re-targeting and a full four-client
+      threaded match are complete; the retained history below records the path
+      to that baseline.
+      The browser harness has a first relay-shaped
       byte-path proof: `browserNetworkRelayProbe` asks wasm to serialize a
       real original `NetPacket` frame-info command with `NetPacket::addCommand`,
       carries the packet hex between two logical browser clients through a
@@ -3499,12 +3502,23 @@ residue and the next frontier.
       `Module.cncPortBrowserUdpSend`, lets the joiner receive it through
       `Module.cncPortBrowserUdpRecv` during `LANAPI::update`, and verifies
       `handleGameStart` / `OnGameStart` create the original
-      `Network::initTransport` / `parseUserList` state. The remaining
-      production step is to extend this live endpoint into the
-      `Network::update` frame-sync loop and validate a two-client match-sync
-      harness.
-- [ ] Lockstep frame sync (`FrameData`/`FrameDataManager`/`ConnectionManager`)
-      works across browser clients. The LAN game-start vertical now reaches
+      `Network::initTransport` / `parseUserList` state. The production WebRTC
+      follow-on now extends that endpoint through `Network::update` and a
+      two-client match-sync harness, replacing the relay-shaped
+      byte path with a reliable ordered `RTCDataChannel` peer mesh, routes
+      unicast by signaling-assigned virtual IPv4 address, fans LAN broadcasts
+      out to every peer, and preserves source IP/port metadata through the
+      original wasm UDP seam. WebSocket is signaling-only (room membership,
+      SDP, ICE) and rejects binary game payloads. The two-context harness
+      proves original encrypted `Transport::doSend/doRecv`, CRC validation,
+      `ConnectionManager::doRelay`, and `FrameDataManager` readiness across a
+      direct DataChannel with zero game bytes relayed by the server.
+      Remaining work is long-session soak coverage, reconnect/disconnect
+      handling, more than four players, and public deployment hardening.
+- [ ] Validate long-session lockstep determinism, disconnect behavior, and
+      recovery across browser clients. Short live match sync through
+      `FrameData`/`FrameDataManager`/`ConnectionManager` is complete.
+      The LAN game-start vertical reaches
       original `NetworkInterface::createNetwork`, `Network::init`,
       `Network::initTransport`, and `ConnectionManager::parseUserList` for
       both host and joiner, and the single-context follow-on now drives
@@ -3520,15 +3534,15 @@ residue and the next frontier.
       `FrameData::allCommandsReady` not-ready/resend states used at the desync
       frontier. The live endpoint now carries LANAPI game-start into
       `OnGameStart` and original network setup across two browser contexts.
-      Deferred next networking slice: route `Network::update` frame commands
-      over the live shared WebSocket/WebRTC endpoint and extend coverage from
-      single-context frame readiness to a two-client match-sync harness after
-      the rendering/input/gameplay verticals are further along.
+      The four-client threaded WebRTC playable-match gate now advances real
+      simulation frames with four members and no CRC mismatch; extend it into
+      a long soak and intentional packet-loss/disconnect scenarios.
       The current WebSocket binary vertical now proves the production encrypted
       `Transport::queueSend` / `Transport::doSend` and
       `Transport::doRecv` path over browser binary frames through the wasm UDP
       adapter and live JS endpoint.
-- [ ] LAN API (`LANAPI`) over a browser-discoverable transport / relay. The
+- [ ] Harden the now-live browser `LANAPI` flow for lobby edge cases (leave,
+      kick, closed/full slots, map mismatch/transfer, and disconnect). The
       first announce/discovery slice now reaches `LANAPI::update`,
       `handleGameAnnounce`, `ParseGameOptionsString`, and `OnGameList`; the
       join/options slice now drives `RequestGameJoin`, `handleRequestJoin`,
@@ -3543,26 +3557,25 @@ residue and the next frontier.
       join/options, and game-start messages through browser `WebSocket` binary
       frames before handing them to the original LANAPI accept paths. The live
       endpoint follow-on now wires original LANAPI game-start send/receive
-      through `Transport::update` and `LANAPI::update`; LANAPI still needs that
-      live endpoint carried forward into the running `Network::update`
-      frame-sync loop.
+      through `Transport::update` and `LANAPI::update`, and the real-runtime
+      two-client gate carries it through map load and live match sync.
 - [ ] GameSpy matchmaking/chat (`GameSpy*`) → modern relay or stub gracefully.
 - [ ] NAT/firewall helpers replaced by WebRTC ICE.
+- [ ] Harden a public signaling deployment with TLS termination,
+      authentication/room authorization, rate limits, and abuse controls. The
+      bundled signaling service is sufficient for trusted LAN/testing and
+      carries no game bytes, but is intentionally not an unauthenticated public
+      matchmaking service.
 - [ ] Cross-client **determinism** validated (no desync) over many frames.
-      The current multi-frame update/desync smoke is still single-context: it
-      proves original `Network::update` progression, first-frame readiness,
-      and `FrameData` not-ready/resend states, not two browser clients using
-      the live endpoint to stay synchronized in a running match.
+      The four-client threaded WebRTC match gate now proves a short live run
+      with no CRC mismatch; extend this to a long soak with periodic state
+      hashes and representative player commands.
+- [ ] Run the four-player threaded match on an allowed real-GPU machine and
+      capture all four canvases. The 2026-07-11 four-client gate deliberately
+      disabled GPU rasterization on `llmtrain` after four simultaneous
+      SwiftShader contexts were reclaimed; networking/simulation is verified,
+      but that run is not four-client visual evidence.
 - [ ] File transfer / map transfer path.
-- [ ] Harness: drive a 2-client match in two headless contexts; assert in sync.
-      The current browser network relay proofs now include two isolated
-      Playwright contexts, a live WebSocket-backed UDP endpoint for original
-      `Transport::doSend`/`doRecv`, live LANAPI game-start into
-      `Network::initTransport` / `parseUserList`, and original
-      `ConnectionManager` frame-info relay plus `FrameDataManager` readiness,
-      but they are still setup/packet/frame readiness proofs rather than a
-      match-sync test.
-
 ---
 
 ## M10 — Hardening, content, polish

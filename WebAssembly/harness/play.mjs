@@ -45,6 +45,69 @@ const fpsNode = document.querySelector("#fps");
 const hudNode = document.querySelector("#hud");
 const gearButton = document.querySelector("#gearButton");
 const queryParams = new URLSearchParams(window.location.search);
+const networkRoomNode = document.querySelector("#networkRoom");
+const networkNameNode = document.querySelector("#networkName");
+const networkSignalingNode = document.querySelector("#networkSignaling");
+const networkStunNode = document.querySelector("#networkStun");
+const networkIceUsernameNode = document.querySelector("#networkIceUsername");
+const networkIceCredentialNode = document.querySelector("#networkIceCredential");
+const networkStatusNode = document.querySelector("#networkStatus");
+const NETWORK_SETTINGS_KEY = "cncPortNetworkSettings.v1";
+
+function defaultSignalingUrl() {
+  const url = new URL("/webrtc", window.location.href);
+  url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return url.href;
+}
+
+function loadNetworkSettings() {
+  let stored = {};
+  try {
+    stored = JSON.parse(window.localStorage?.getItem(NETWORK_SETTINGS_KEY) ?? "{}") ?? {};
+  } catch {
+    stored = {};
+  }
+  return {
+    room: queryParams.get("room") ?? stored.room ?? "",
+    name: queryParams.get("peer") ?? stored.name ?? "",
+    signalingUrl: queryParams.get("signal") ?? stored.signalingUrl ?? defaultSignalingUrl(),
+    iceServerUrl: queryParams.get("ice") ?? stored.iceServerUrl ?? "",
+    iceUsername: queryParams.get("iceUser") ?? stored.iceUsername ?? "",
+    iceCredential: "",
+  };
+}
+
+function networkSettingsFromInputs() {
+  return {
+    room: networkRoomNode?.value.trim() ?? "",
+    name: networkNameNode?.value.trim() ?? "",
+    signalingUrl: networkSignalingNode?.value.trim() || defaultSignalingUrl(),
+    iceServerUrl: networkStunNode?.value.trim() ?? "",
+    iceUsername: networkIceUsernameNode?.value ?? "",
+    iceCredential: networkIceCredentialNode?.value ?? "",
+  };
+}
+
+function initializeNetworkSettings() {
+  const settings = loadNetworkSettings();
+  if (networkRoomNode) networkRoomNode.value = settings.room;
+  if (networkNameNode) networkNameNode.value = settings.name;
+  if (networkSignalingNode) networkSignalingNode.value = settings.signalingUrl;
+  if (networkStunNode) networkStunNode.value = settings.iceServerUrl;
+  if (networkIceUsernameNode) networkIceUsernameNode.value = settings.iceUsername;
+  if (networkIceCredentialNode) networkIceCredentialNode.value = settings.iceCredential;
+}
+
+function saveNetworkSettings(settings) {
+  try {
+    const { iceCredential: _ephemeralCredential, ...persisted } = settings;
+    window.localStorage?.setItem(NETWORK_SETTINGS_KEY, JSON.stringify(persisted));
+  } catch {
+    // Storage is optional; the current launch still uses the entered values.
+  }
+}
+
+initializeNetworkSettings();
 // Engine-thread mode: the engine runs on a pthread in the threaded build and
 // bridge.js moves the frame loop into the worker realm; this page only
 // observes (status events drive the HUD). The play page is THREADED-ONLY
@@ -508,6 +571,38 @@ async function start() {
     const rawRpc = await waitForRpc();
     const rpc = issueRecorder.setRpc(rawRpc);
     activeRpc = rpc;
+    const networkSettings = networkSettingsFromInputs();
+    saveNetworkSettings(networkSettings);
+    let networkRuntime = null;
+    if (networkSettings.room) {
+      report(`joining P2P room ${networkSettings.room}...`);
+      if (networkStatusNode) networkStatusNode.textContent = "Connecting signaling and WebRTC ICE...";
+      const iceServers = networkSettings.iceServerUrl
+        ? [{
+          urls: networkSettings.iceServerUrl.split(",").map((entry) => entry.trim()).filter(Boolean),
+          ...(networkSettings.iceUsername ? { username: networkSettings.iceUsername } : {}),
+          ...(networkSettings.iceCredential ? { credential: networkSettings.iceCredential } : {}),
+        }]
+        : [];
+      const networkConnect = await rpc("browserWebRtcEndpointConnect", {
+        signalingUrl: networkSettings.signalingUrl,
+        room: networkSettings.room,
+        peerId: networkSettings.name || null,
+        displayName: networkSettings.name || null,
+        iceServers,
+      });
+      if (networkConnect?.ok !== true) {
+        throw new Error(networkConnect?.error ?? "P2P room connection failed");
+      }
+      networkRuntime = networkConnect.runtime;
+      const virtualIp = networkRuntime?.endpoint?.localIp >>> 0;
+      const ipText = [24, 16, 8, 0].map((shift) => (virtualIp >>> shift) & 0xff).join(".");
+      if (networkStatusNode) {
+        networkStatusNode.textContent = `Joined ${networkSettings.room} as ${networkRuntime.endpoint.peerId} (${ipText}). Open Multiplayer → LAN.`;
+      }
+    } else if (networkStatusNode) {
+      networkStatusNode.textContent = "Offline. Enter a shared room to enable WebRTC multiplayer.";
+    }
     const startAudioRuntime = await rpc("resumeBrowserAudioRuntime", {
       trigger: "play.start",
     }).catch((error) => ({ ok: false, error: error?.message ?? String(error) }));
@@ -546,6 +641,7 @@ async function start() {
         runtime: startAudioRuntime?.browserAudioRuntime ?? startAudioRuntime,
         mixer: startAudioMixer?.browserAudioMixerRuntime ?? startAudioMixer,
       },
+      network: networkRuntime,
     });
 
     report(`downloading + mounting ${archiveSpecs.length} archives...`);
@@ -1377,4 +1473,3 @@ window.addEventListener("keydown", (event) => {
     }
   }
 });
-

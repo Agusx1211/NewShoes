@@ -88,6 +88,10 @@
 #include "GameLogic/Weapon.h"
 #include "GameLogic/Object.h"
 #include "GameLogic/Module/BodyModule.h"
+#include "GameNetwork/LANAPI.h"
+#include "GameNetwork/LANAPICallbacks.h"
+#include "GameNetwork/LANGameInfo.h"
+#include "GameNetwork/NetworkInterface.h"
 #include "wasm_d3d8_shim.h"
 #include "Common/ThingTemplate.h"
 #include "Common/ThingFactory.h"
@@ -3679,6 +3683,8 @@ void append_game_info_json(std::string &json, const char *field_name, const Game
 			json += ",\"state\":" + std::to_string(static_cast<long long>(slot->getState()));
 			json += ",\"accepted\":";
 			json += slot->isAccepted() ? "true" : "false";
+			json += ",\"hasMap\":";
+			json += slot->hasMap() ? "true" : "false";
 			json += ",\"human\":";
 			json += slot->isHuman() ? "true" : "false";
 			json += ",\"ai\":";
@@ -3686,6 +3692,9 @@ void append_game_info_json(std::string &json, const char *field_name, const Game
 			json += ",\"color\":" + std::to_string(static_cast<long long>(slot->getColor()));
 			json += ",\"startPos\":" + std::to_string(static_cast<long long>(slot->getStartPos()));
 			json += ",\"teamNumber\":" + std::to_string(static_cast<long long>(slot->getTeamNumber()));
+			json += ",\"ip\":" + std::to_string(static_cast<unsigned long long>(slot->getIP()));
+			json += ",\"port\":" + std::to_string(static_cast<unsigned long long>(slot->getPort()));
+			json += ",\"name\":\"" + json_escape(unicode_to_debug_ascii(slot->getName())) + "\"";
 			append_player_template_json(json, "playerTemplate", slot->getPlayerTemplate());
 			append_player_template_json(json, "originalPlayerTemplate", slot->getOriginalPlayerTemplate());
 			json += "}";
@@ -5198,6 +5207,8 @@ void append_real_engine_client_state(std::string &json)
 	append_window_probe(json, "earthMapDifficulty", "MainMenu.wnd:EarthMap4");
 	append_window_probe(json, "staticTextSelectDifficulty", "MainMenu.wnd:StaticTextSelectDifficulty");
 	append_window_probe(json, "buttonSinglePlayer", "MainMenu.wnd:ButtonSinglePlayer");
+	append_window_probe(json, "buttonMultiplayer", "MainMenu.wnd:ButtonMultiplayer");
+	append_window_probe(json, "buttonNetwork", "MainMenu.wnd:ButtonNetwork");
 	append_window_probe(json, "buttonSingleBack", "MainMenu.wnd:ButtonSingleBack");
 	append_window_probe(json, "buttonUSA", "MainMenu.wnd:ButtonUSA");
 	append_window_probe(json, "buttonGLA", "MainMenu.wnd:ButtonGLA");
@@ -5213,8 +5224,26 @@ void append_real_engine_client_state(std::string &json)
 	append_window_probe(json, "buttonHard", "MainMenu.wnd:ButtonHard");
 	append_window_probe(json, "buttonDiffBack", "MainMenu.wnd:ButtonDiffBack");
 	append_window_under_probe_center(json, "underButtonSinglePlayerCenter", "MainMenu.wnd:ButtonSinglePlayer");
+	append_window_under_probe_center(json, "underButtonMultiplayerCenter", "MainMenu.wnd:ButtonMultiplayer");
+	append_window_under_probe_center(json, "underButtonNetworkCenter", "MainMenu.wnd:ButtonNetwork");
 	append_window_under_probe_center(json, "underButtonUSACenter", "MainMenu.wnd:ButtonUSA");
 	append_window_under_probe_center(json, "underButtonEasyCenter", "MainMenu.wnd:ButtonEasy");
+	json += "}";
+
+	json += ",\"lanLobby\":{\"queried\":true";
+	append_window_probe(json, "parent", "LanLobbyMenu.wnd:LanLobbyMenuParent");
+	append_window_probe(json, "buttonHost", "LanLobbyMenu.wnd:ButtonHost");
+	append_window_probe(json, "buttonJoin", "LanLobbyMenu.wnd:ButtonJoin");
+	append_window_probe(json, "buttonBack", "LanLobbyMenu.wnd:ButtonBack");
+	append_window_probe(json, "games", "LanLobbyMenu.wnd:ListboxGames");
+	json += "}";
+
+	json += ",\"lanGameOptions\":{\"queried\":true";
+	append_window_probe(json, "parent", "LanGameOptionsMenu.wnd:LanGameOptionsMenuParent");
+	append_window_probe(json, "buttonStart", "LanGameOptionsMenu.wnd:ButtonStart");
+	append_window_probe(json, "buttonAccept", "LanGameOptionsMenu.wnd:ButtonAccept");
+	append_window_probe(json, "buttonBack", "LanGameOptionsMenu.wnd:ButtonBack");
+	append_window_probe(json, "mapWindow", "LanGameOptionsMenu.wnd:MapWindow");
 	json += "}";
 
 	json += ",\"skirmishMenu\":{\"queried\":true";
@@ -7888,6 +7917,156 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_map_cache_probe()
 		json += "]";
 	}
 	json += "}";
+	return json.c_str();
+}
+
+namespace {
+
+void append_lan_runtime_json(std::string &json)
+{
+	json += "\"lanReady\":";
+	json += TheLAN != NULL ? "true" : "false";
+	if (TheLAN != NULL) {
+		json += ",\"localIp\":"
+			+ std::to_string(static_cast<unsigned long long>(TheLAN->GetLocalIP()));
+		json += ",\"localName\":\""
+			+ json_escape(unicode_to_debug_ascii(TheLAN->GetMyName())) + "\"";
+		json += ",\"host\":";
+		json += TheLAN->AmIHost() ? "true" : "false";
+		int discovered_games = 0;
+		while (discovered_games < 64
+			&& TheLAN->LookupGameByListOffset(discovered_games) != NULL) {
+			++discovered_games;
+		}
+		json += ",\"discoveredGames\":" + std::to_string(discovered_games);
+		LANGameInfo *game = TheLAN->GetMyGame();
+		if (game != NULL) {
+			json += ",\"gameName\":\""
+				+ json_escape(unicode_to_debug_ascii(game->getName())) + "\"";
+		}
+		append_game_info_json(json, "game", game);
+	} else {
+		json += ",\"localIp\":0,\"localName\":\"\",\"host\":false,\"discoveredGames\":0";
+		append_game_info_json(json, "game", NULL);
+	}
+	json += ",\"network\":{";
+	json += "\"ready\":";
+	json += TheNetwork != NULL ? "true" : "false";
+	if (TheNetwork != NULL) {
+		json += ",\"localPlayerId\":"
+			+ std::to_string(static_cast<unsigned long long>(TheNetwork->getLocalPlayerID()));
+		json += ",\"numPlayers\":" + std::to_string(TheNetwork->getNumPlayers());
+		json += ",\"executionFrame\":" + std::to_string(TheNetwork->getExecutionFrame());
+		json += ",\"frameDataReady\":";
+		json += TheNetwork->isFrameDataReady() ? "true" : "false";
+		json += ",\"runAhead\":"
+			+ std::to_string(static_cast<unsigned long long>(TheNetwork->getRunAhead()));
+		json += ",\"crcMismatch\":";
+		json += TheNetwork->sawCRCMismatch() ? "true" : "false";
+		json += ",\"packetRouter\":";
+		json += TheNetwork->isPacketRouter() ? "true" : "false";
+	}
+	json += "}";
+}
+
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_lan_state()
+{
+	static std::string json;
+	json = "{";
+	append_lan_runtime_json(json);
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_network_timeouts(
+	unsigned int disconnect_ms,
+	unsigned int player_timeout_ms)
+{
+	static std::string json;
+	if (TheWritableGlobalData == NULL) {
+		return "{\"ok\":false,\"error\":\"globalDataNotReady\"}";
+	}
+	TheWritableGlobalData->m_networkDisconnectTime = disconnect_ms;
+	TheWritableGlobalData->m_networkPlayerTimeoutTime = player_timeout_ms;
+	json = "{\"ok\":true,\"disconnectMs\":" + std::to_string(disconnect_ms);
+	json += ",\"playerTimeoutMs\":" + std::to_string(player_timeout_ms) + "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_lan_command(
+	const char *command,
+	const char *value)
+{
+	static std::string json;
+	const std::string requested = command != NULL ? command : "";
+	const char *argument = value != NULL ? value : "";
+	bool applied = false;
+	std::string error;
+
+	if (TheLAN == NULL) {
+		error = "lanNotReady";
+	} else if (requested == "update") {
+		TheLAN->update();
+		applied = true;
+	} else if (requested == "setName") {
+		UnicodeString name;
+		name.translate(AsciiString(argument));
+		TheLAN->RequestSetName(name);
+		applied = true;
+	} else if (requested == "host") {
+		UnicodeString game_name;
+		game_name.translate(AsciiString(argument));
+		TheLAN->RequestGameCreate(game_name, FALSE);
+		applied = TheLAN->GetMyGame() != NULL && TheLAN->AmIHost();
+	} else if (requested == "joinFirst") {
+		LANGameInfo *game = TheLAN->LookupGameByListOffset(0);
+		if (game == NULL) {
+			error = "noDiscoveredGame";
+		} else {
+			TheLAN->RequestGameJoin(game);
+			applied = true;
+		}
+	} else if (requested == "setMap") {
+		LANGameInfo *game = TheLAN->GetMyGame();
+		AsciiString lookup(argument);
+		lookup.toLower();
+		const MapMetaData *metadata = TheMapCache != NULL ? TheMapCache->findMap(lookup) : NULL;
+		if (game == NULL || !TheLAN->AmIHost()) {
+			error = "hostGameNotReady";
+		} else if (metadata == NULL || !metadata->m_isMultiplayer) {
+			error = "multiplayerMapNotFound";
+		} else {
+			game->setMap(lookup);
+			game->setMapCRC(metadata->m_CRC);
+			game->setMapSize(metadata->m_filesize);
+			game->adjustSlotsForMap();
+			TheLAN->RequestGameOptions(GenerateGameOptionsString(), TRUE);
+			TheLAN->RequestHasMap();
+			TheLAN->RequestGameAnnounce();
+			applied = true;
+		}
+	} else if (requested == "ready") {
+		TheLAN->RequestAccept();
+		applied = TheLAN->GetMyGame() != NULL;
+	} else if (requested == "start") {
+		TheLAN->RequestGameStart();
+		applied = TheNetwork != NULL;
+	} else {
+		error = "unknownCommand";
+	}
+
+	json = "{\"ok\":";
+	json += applied ? "true" : "false";
+	json += ",\"command\":\"" + json_escape(requested) + "\"";
+	json += ",\"value\":\"" + json_escape(argument) + "\"";
+	if (!error.empty()) {
+		json += ",\"error\":\"" + json_escape(error) + "\"";
+	}
+	json += ",\"state\":{";
+	append_lan_runtime_json(json);
+	json += "}}";
 	return json.c_str();
 }
 

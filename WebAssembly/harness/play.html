@@ -89,6 +89,38 @@
               Resolution and fullscreen live in-game behind the
               <span class="inlineGear" aria-hidden="true">⚙</span> gear.
             </p>
+
+            <h2 class="settingsHeading networkSettingsHeading">P2P multiplayer</h2>
+            <label class="networkSetting" for="networkRoom">
+              <span class="settingLabel">Room</span>
+              <input id="networkRoom" type="text" maxlength="80" placeholder="leave blank for offline">
+            </label>
+            <label class="networkSetting" for="networkName">
+              <span class="settingLabel">Player</span>
+              <input id="networkName" type="text" maxlength="64" placeholder="commander">
+            </label>
+            <details class="networkAdvanced">
+              <summary>Connection</summary>
+              <label class="networkSetting" for="networkSignaling">
+                <span class="settingLabel">Signaling</span>
+                <input id="networkSignaling" type="url" spellcheck="false" placeholder="wss://host/webrtc">
+              </label>
+              <label class="networkSetting" for="networkStun">
+                <span class="settingLabel">STUN/TURN</span>
+                <input id="networkStun" type="text" spellcheck="false" placeholder="optional ICE server URL">
+              </label>
+              <label class="networkSetting" for="networkIceUsername">
+                <span class="settingLabel">ICE user</span>
+                <input id="networkIceUsername" type="text" autocomplete="username" placeholder="TURN only">
+              </label>
+              <label class="networkSetting" for="networkIceCredential">
+                <span class="settingLabel">ICE key</span>
+                <input id="networkIceCredential" type="password" autocomplete="current-password" placeholder="TURN only">
+              </label>
+            </details>
+            <p id="networkStatus" class="settingHint" aria-live="polite">
+              Use the same room and signaling server, then open Multiplayer → LAN in the original game UI.
+            </p>
           </section>
         </div>
 
