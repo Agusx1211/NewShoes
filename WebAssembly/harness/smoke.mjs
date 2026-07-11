@@ -1929,15 +1929,11 @@ try {
         || originalCursorHidden.probe.mouse.currentCursor !== mouseCursorArrow
         || originalCursorHidden.probe.mouse.browserCursorSet !== false
         || originalCursorHidden.state.browserInput?.cursorSet !== false
-        || originalCursorHidden.state.browserCursor?.css !== "default"
-        || originalCursorHidden.state.browserCursor?.visible !== true
-        || hiddenCursorCss !== "default") {
+        || originalCursorHidden.state.browserCursor?.css !== "none"
+        || originalCursorHidden.state.browserCursor?.visible !== false
+        || hiddenCursorCss !== "none") {
       throw new Error(`Original cursor hidden probe did not apply CSS cursor:none: ${JSON.stringify({ originalCursorHidden, hiddenCursorCss })}`);
     }
-    // NOTE: cursor-hide probe expects css="default"/visible=true instead of
-    // css="none"/visible=false because bridge.js syncBrowserCursor hardcodes
-    // css="default" to avoid a cursorless UI until W3DMouse cursor rendering
-    // (the game's own cursor) is ported — see commit e97628f.
 
     const resetD3DCallsBeforeFocus = originalWndProcInit.probe.resetD3D?.calls ?? 0;
     await page.locator("#viewport").focus();

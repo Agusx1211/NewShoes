@@ -1022,6 +1022,14 @@ namespace WasmWin32Input
 inline POINT cursor_position = {0, 0};
 inline bool cursor_position_available = false;
 inline HCURSOR current_cursor = nullptr;
+struct CursorFileRecord
+{
+	char path[260] = {};
+};
+inline constexpr unsigned int CursorFileCapacity = 512;
+inline CursorFileRecord cursor_files[CursorFileCapacity] = {};
+inline unsigned int cursor_file_count = 0;
+inline const char *current_cursor_file = nullptr;
 inline HWND capture_window = nullptr;
 inline bool key_down[256] = {};
 inline bool key_pressed_since_last_query[256] = {};
@@ -1050,6 +1058,37 @@ inline unsigned int window_class_count = 0;
 inline WindowRecord windows[32] = {};
 inline unsigned int window_count = 0;
 inline std::uintptr_t next_window_handle = 0x10000;
+
+static inline HCURSOR LoadCursorFile(const char *path)
+{
+	if (path == nullptr || path[0] == '\0') {
+		return nullptr;
+	}
+
+	for (unsigned int index = 0; index < cursor_file_count; ++index) {
+		if (std::strcmp(cursor_files[index].path, path) == 0) {
+			return reinterpret_cast<HCURSOR>(&cursor_files[index]);
+		}
+	}
+
+	if (cursor_file_count >= CursorFileCapacity) {
+		return nullptr;
+	}
+
+	CursorFileRecord &record = cursor_files[cursor_file_count++];
+	std::snprintf(record.path, sizeof(record.path), "%s", path);
+	return reinterpret_cast<HCURSOR>(&record);
+}
+
+static inline const char *GetCursorFile(HCURSOR cursor)
+{
+	for (unsigned int index = 0; index < cursor_file_count; ++index) {
+		if (cursor == reinterpret_cast<HCURSOR>(&cursor_files[index])) {
+			return cursor_files[index].path;
+		}
+	}
+	return nullptr;
+}
 
 static inline bool IsValidKey(int virtual_key)
 {
@@ -1364,6 +1403,7 @@ static inline void Reset()
 	cursor_position = {0, 0};
 	cursor_position_available = false;
 	current_cursor = nullptr;
+	current_cursor_file = nullptr;
 	capture_window = nullptr;
 	message_queue_count = 0;
 	message_queue_overflowed = false;
@@ -1417,13 +1457,14 @@ static inline HCURSOR LoadCursor(HINSTANCE, LPCSTR cursor_name)
 
 static inline HCURSOR LoadCursorFromFile(LPCSTR path)
 {
-	return reinterpret_cast<HCURSOR>(const_cast<char *>(path));
+	return WasmWin32Input::LoadCursorFile(path);
 }
 
 static inline HCURSOR SetCursor(HCURSOR cursor)
 {
 	HCURSOR previous = WasmWin32Input::current_cursor;
 	WasmWin32Input::current_cursor = cursor;
+	WasmWin32Input::current_cursor_file = WasmWin32Input::GetCursorFile(cursor);
 	return previous;
 }
 

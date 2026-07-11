@@ -1518,10 +1518,6 @@ residue and the next frontier.
       `assertFunctionLexiconRuntimeFrontier`, was cleared 2026-07-11 when the
       phase-2 probe-frontier leg was retired with the range-backed
       machinery.)
-- [ ] Restore the real cursor-hide behavior in bridge.js syncBrowserCursor and
-      the smoke.mjs cursor-hidden probe assertion once W3DMouse cursor rendering
-      (the game's own cursor) is ported — currently hardcoded css="default" to
-      avoid a cursorless UI (see e97628f).
 - [ ] Migrate the legacy `ensure_booted()` probe boot and its harness gates
       onto the real lifecycle path, deleting probe-local implementations as
       real init covers them. The 2026-07-05 aggregate-smoke
@@ -2155,9 +2151,6 @@ residue and the next frontier.
       mode, gamma, window-state, front-buffer screenshot/movie-capture, and
       Direct3D render paths with browser canvas/WebGL2/WebGPU behavior, then
       verify the original display loop through harness screenshots.
-- [ ] Replace the remaining browser no-op cursor-file loading and cursor
-      presentation policy (`LoadCursorFromFile`, CSS cursor vs engine cursor)
-      before relying on original `W3DMouse.cpp` runtime cursor artwork.
 - [ ] Replace the compile-only `Water/W3DWater.cpp` D3DX/Direct3D shader,
       render-target, reflection, grid, river-water, and water-track integration
       paths with real WebGL2/WebGPU-backed behavior, then verify the original
@@ -2887,13 +2880,6 @@ residue and the next frontier.
 
 ## M5 — Input & UI
 
-- [ ] Render the real in-game cursor: the game calls `SetCursor(NULL)` and
-      draws its own `W3DMouse` cursor (Mouse.ini cursor set), which the
-      browser build does not render yet. Until it does, bridge.js keeps the
-      native CSS cursor visible as a stand-in (see fable/browser-mouse);
-      when W3DMouse renders, restore honoring the engine's cursor
-      visibility, or map the engine's DX8 hardware-cursor path to CSS
-      `cursor: url(...)` custom cursors at the platform boundary.
 - [ ] Mouse: Pointer events → engine `Mouse`/`W3DMouse` (move, buttons, wheel).
 - [ ] Promote the browser-backed frame-owned `Mouse` path from
       disabled-by-default harness opt-in to the final default gameplay
@@ -2905,7 +2891,6 @@ residue and the next frontier.
       gameplay input owner once the real engine `MessageStream` /
       `CommandList` lifecycle is no longer probe-owned.
 - [ ] Pointer lock / capture behavior where needed.
-- [ ] Cursor rendering (engine-drawn cursor vs CSS cursor).
 - [ ] Extend cursor rendering verification for future engine-drawn
       `RM_W3D` cursor pixels once W3D cursor textures are rendered by the
       normal display path.

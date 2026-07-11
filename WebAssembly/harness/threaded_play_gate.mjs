@@ -350,6 +350,76 @@ async function main() {
       Boolean(cursorMatches),
     ]);
 
+    // The original Win32 mouse owns cursor selection. The wasm platform shim
+    // preserves its LoadCursorFromFile handle, and bridge.js presents the
+    // extracted frame from the shipped ANI rather than a generic CSS arrow.
+    await page.waitForFunction(() =>
+      window.CnCPort?.state?.browserCursor?.source === "game_ani_cursor_css",
+    null, { timeout: 10000 }).catch(() => {});
+    const cursorPresentation = await page.evaluate(async () => {
+      const cursor = window.CnCPort?.state?.browserCursor ?? null;
+      const response = cursor?.frameUrl ? await fetch(cursor.frameUrl, { cache: "no-store" }) : null;
+      const bytes = response?.ok ? new Uint8Array(await response.arrayBuffer()) : null;
+      return {
+        cursor,
+        computedCss: getComputedStyle(document.querySelector("#viewport")).cursor,
+        frameFetched: response?.ok === true,
+        frameIsCur: bytes?.length >= 6
+          && bytes[0] === 0 && bytes[1] === 0
+          && bytes[2] === 2 && bytes[3] === 0,
+      };
+    });
+    summary.cursorPresentation = cursorPresentation;
+    checks.push([
+      "original SCCPointer ANI cursor is presented on the canvas",
+      cursorPresentation.cursor?.cursorFile?.toLowerCase().endsWith("sccpointer.ani")
+        && cursorPresentation.cursor?.frameCount === 1
+        && cursorPresentation.cursor?.frameUrl?.endsWith(".cur")
+        && cursorPresentation.computedCss.includes("sccpointer/frame-000.cur")
+        && cursorPresentation.frameFetched === true
+        && cursorPresentation.frameIsCur === true,
+    ]);
+
+    const attackCursorResult = await page.evaluate(() => window.CnCPort.rpc(
+      "setMouseCursorForHarness",
+      { cursor: 7 }, // Mouse::ATTACK_OBJECT
+    ));
+    await page.waitForFunction(() => {
+      const cursor = window.CnCPort?.state?.browserCursor;
+      return cursor?.source === "game_ani_cursor_css"
+        && cursor?.cursorFile?.toLowerCase().endsWith("sccattack.ani");
+    }, null, { timeout: 10000 }).catch(() => {});
+    const attackFrames = await page.evaluate(async () => {
+      const frames = new Set();
+      for (let sample = 0; sample < 12; sample += 1) {
+        const frame = window.CnCPort?.state?.browserCursor?.frame;
+        if (Number.isInteger(frame)) frames.add(frame);
+        await new Promise((resolveSample) => setTimeout(resolveSample, 80));
+      }
+      return [...frames];
+    });
+    const attackCursorPresentation = await page.evaluate(() =>
+      window.CnCPort?.state?.browserCursor ?? null);
+    const restoreCursorResult = await page.evaluate(() => window.CnCPort.rpc(
+      "setMouseCursorForHarness",
+      { cursor: 2 }, // Mouse::ARROW
+    ));
+    summary.attackCursorPresentation = {
+      rpc: attackCursorResult,
+      cursor: attackCursorPresentation,
+      observedFrames: attackFrames,
+      restoreRpc: restoreCursorResult,
+    };
+    checks.push([
+      "original SCCAttack ANI sequence animates on the canvas",
+      attackCursorResult.ok === true
+        && attackCursorPresentation?.cursorFile?.toLowerCase().endsWith("sccattack.ani")
+        && attackCursorPresentation?.frameCount === 8
+        && attackCursorPresentation?.stepCount === 10
+        && attackFrames.length >= 2
+        && restoreCursorResult.ok === true,
+    ]);
+
     // Hover/click visual evidence: sweep the mouse across the menu band and
     // capture before/after shots; a hilite change is expected but only
     // recorded (menu layout varies with resolution), the click state check
