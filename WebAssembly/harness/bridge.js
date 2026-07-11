@@ -7653,18 +7653,7 @@ function ioWorkerEnabled() {
   if (ioWorkerDisabled) {
     return false;
   }
-  if (typeof Worker !== "function") {
-    return false;
-  }
-  // Explicit opt-out escape hatch for debugging / regressions.
-  try {
-    if (globalThis.__cncIoWorker === false) {
-      return false;
-    }
-  } catch (_error) {
-    // No globalThis override in some contexts; default to enabled.
-  }
-  return true;
+  return typeof Worker === "function";
 }
 
 function ensureIoWorker() {
