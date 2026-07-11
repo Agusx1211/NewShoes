@@ -734,6 +734,20 @@ mitigation track. Items resolved or retired by the pivot:
       URL-override, forced-executor, and invalid-value cases and captures
       `pixel-shaders-default-settings.png`; the threaded play gate now requires
       a no-setting boot to report `ps11` rather than accepting either tier.
+- [x] **Prove the owner-reported tree/wind symptom through the real threaded
+      programmable path instead of the retired `threads=0` probes.** The new
+      `verify:threaded-shader-fidelity` gate inventories all 18 retail programs
+      from `Shaders.big`/`ShadersZH.big`, requires the complete 13-pixel/1-vertex
+      shell-map registration set and all 19 warmed pairs, and audits the live
+      `Trees.vso` relative-address path from native c8-c12 state through WebGL
+      uniform upload. On Mac M4 Chrome/ANGLE Metal, explicit `ps11` issued 260
+      translated tree draws over the bounded capture, observed 260 distinct wind
+      table states and uploads, with zero pair failures or fixed-function
+      fallbacks; the visible shell-map capture remained correct. This rules out
+      a translator/native-pointer regression: the apparent frozen-tree
+      regression was the launcher selecting Classic, whose original fallback
+      intentionally has no programmable sway. The ps11-default fix above makes
+      the working animated path the fresh-install/default path again.
 - [x] **Verify and harden the generic D3D8 SM1 shader tier (Path B).** Commit
       `ea206b40` supplies the generic ps.1.1/vs.1.1 bytecode-to-GLSL path; the
       real shell-map runtime now has durable coverage for its shipped effects.

@@ -908,6 +908,28 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         }
         return;
       }
+      case "sm1ShaderAudit": {
+        try {
+          const enabled = typeof msg.enable === "boolean"
+            ? d3d8Diag.setD3D8SM1ShaderAuditEnabled(msg.enable)
+            : undefined;
+          respond({
+            cmd: "sm1ShaderAuditResult",
+            id: msg.id,
+            ok: true,
+            enabled,
+            audit: d3d8Diag.d3d8SM1ShaderAuditSummary(),
+          });
+        } catch (error) {
+          respond({
+            cmd: "sm1ShaderAuditResult",
+            id: msg.id,
+            ok: false,
+            error: String((error && error.stack) || error),
+          });
+        }
+        return;
+      }
       case "opfsReadRange": {
         // Read [offset, offset+length) of a staged OPFS archive in THIS realm
         // — the sync access handles live here and reads are stateless {at}.

@@ -452,6 +452,8 @@ const {
   viewportArraysEqual,
   updateD3D8TextureSummary,
   d3d8PerfSummary,
+  d3d8SM1ShaderAuditSummary,
+  setD3D8SM1ShaderAuditEnabled,
   applyD3D8BoundDrawDiagnosticsLevel,
   d3dColorToNormalizedRgba,
   d3dMaterialSourceName,
@@ -1675,6 +1677,27 @@ async function threadedRpc(command, payload = {}) {
           liveCount: reply?.liveCount ?? 0,
           threaded: true,
           error: reply?.ok === true ? undefined : (reply?.error ?? "worker inventory failed"),
+        };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "d3d8SM1ShaderAudit": {
+      try {
+        await threadedEngine.ensureReady();
+        const reply = await threadedEngine.sendCommand({
+          cmd: "sm1ShaderAudit",
+          enable: typeof payload.enable === "boolean" ? payload.enable : undefined,
+        }, {
+          timeoutMs: 120000,
+        });
+        return {
+          ok: reply?.ok === true,
+          command,
+          audit: reply?.audit ?? {},
+          enabled: reply?.enabled,
+          threaded: true,
+          error: reply?.ok === true ? undefined : (reply?.error ?? "worker shader audit failed"),
         };
       } catch (error) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
@@ -10837,6 +10860,16 @@ async function rpc(command, payload = {}) {
           state: snapshotState(),
         };
       }
+    case "d3d8SM1ShaderAudit":
+      return {
+        ok: true,
+        command,
+        enabled: typeof payload.enable === "boolean"
+          ? setD3D8SM1ShaderAuditEnabled(payload.enable)
+          : undefined,
+        audit: d3d8SM1ShaderAuditSummary(),
+        state: snapshotState(),
+      };
     case "realEngineSetSkirmishLocalTemplate":
       {
         const moduleResult = await getWasmModuleForArchives("realEngineSetSkirmishLocalTemplate");

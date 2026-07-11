@@ -53,6 +53,17 @@ modules run with `window.CnCPortPlayConfig` using the same
 Enhanced `ps11` shaders are the default. Users can retain the Classic
 fixed-function path with `shaderTier: "ff"`, `?shaderTier=ff`, or the desktop
 Shaders setting; an explicit URL choice takes precedence over stored settings.
+The real threaded tree/shader gate needs a dedicated persistent Chrome profile
+because the runtime stages archives through OPFS:
+
+```sh
+CNC_PROFILE_DIR=/tmp/cnc-shader-profile \
+  CNC_HARNESS_URL=https://127.0.0.1:8443/harness/play.html \
+  npm run verify:threaded-shader-fidelity
+```
+
+It inventories both retail shader archives, boots explicit `ps11`, and proves
+the `Trees.vso` relative c8-c12 wind table changes and reaches WebGL uploads.
 
 Verify the local real-asset sample pipeline:
 

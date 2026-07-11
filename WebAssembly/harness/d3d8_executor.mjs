@@ -143,6 +143,8 @@ let d3d8FFFragmentSourceCache = null;
 const d3d8SM1PixelShaders = new Map();
 const d3d8SM1VertexShaders = new Map();
 const d3d8SM1PairPrograms = new Map();
+const d3d8SM1DrawAudit = new Map();
+let d3d8SM1DrawAuditEnabled = false;
 let d3d8SM1MostRecentVertexHandle = 0;
 let d3d8SM1MostRecentPixelHandle = 0;
 let d3d8DepthStencilProgram = null;
@@ -8095,7 +8097,7 @@ function registerD3D8SM1Shader(spec) {
       return false;
     }
     if (ir.isPixel) {
-      const shader = { handle: spec.handle, ir };
+      const shader = { handle: spec.handle, ir, relativeConstantReads: [] };
       // Validate translation eagerly: build (and discard) the FF-vertex-pair
       // fragment source so unsupported constructs fail at create time.
       d3d8SM1BuildFragmentSource(shader, { translatedVs: false, vsWritesFog: false });
@@ -8135,6 +8137,7 @@ function registerD3D8SM1Shader(spec) {
       }
     }
     const shader = { handle: spec.handle, ir, decl };
+    shader.relativeConstantReads = d3d8SM1RelativeConstantReads(shader);
     d3d8SM1BuildVertexSource(shader); // eager validation
     d3d8SM1VertexShaders.set(spec.handle, shader);
     d3d8SM1MostRecentVertexHandle = spec.handle;
@@ -8313,6 +8316,120 @@ function d3d8SM1ConstantsChanged(location, values) {
   return true;
 }
 
+function d3d8SM1RelativeConstantReads(shader) {
+  if (!shader?.ir?.instructions) {
+    return [];
+  }
+  const reads = [];
+  for (const instruction of shader.ir.instructions) {
+    for (const source of instruction.srcs ?? []) {
+      if (source.regType === 2 && source.relative) {
+        reads.push(source.regNum);
+      }
+    }
+  }
+  return reads;
+}
+
+function d3d8SM1ConstantSliceChanged(previous, current) {
+  if (!(previous instanceof Float32Array) || previous.length !== current.length) {
+    return true;
+  }
+  for (let index = 0; index < current.length; index += 1) {
+    if (!Object.is(previous[index], current[index])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function noteD3D8SM1Draw(bridgeProgram, payload) {
+  if (!d3d8SM1DrawAuditEnabled) {
+    return;
+  }
+  const pairKey = `${bridgeProgram.sm1VsHandle}|${bridgeProgram.sm1PsHandle}`;
+  const pairAudit = d3d8SM1DrawAudit.get(pairKey) ?? {
+    vsHandle: bridgeProgram.sm1VsHandle,
+    psHandle: bridgeProgram.sm1PsHandle,
+    draws: 0,
+    vertexConstantStateChanges: 0,
+    vertexConstantUploads: 0,
+    firstVertexConstants: null,
+    lastVertexConstants: null,
+  };
+  pairAudit.draws += 1;
+
+  const vertexShader = d3d8SM1VertexShaders.get(bridgeProgram.sm1VsHandle);
+  const relativeReads = vertexShader?.relativeConstantReads ?? [];
+  if (relativeReads.length > 0 && payload.vsConstants instanceof Float32Array) {
+    const firstRegister = Math.min(...relativeReads);
+    const start = firstRegister * 4;
+    // Capture the base relative register and the four entries selected by the
+    // shipped Trees.vso address-register path (c[a0.x + 8]). Keeping this
+    // generic still makes a modded relative-address shader observable.
+    const end = Math.min(payload.vsConstants.length, start + 5 * 4);
+    const current = payload.vsConstants.slice(start, end);
+    if (d3d8SM1ConstantSliceChanged(pairAudit.lastVertexConstants, current)) {
+      pairAudit.vertexConstantStateChanges += 1;
+      pairAudit.lastVertexConstants = current;
+      if (pairAudit.firstVertexConstants === null) {
+        pairAudit.firstVertexConstants = current.slice();
+      }
+    }
+  }
+  d3d8SM1DrawAudit.set(pairKey, pairAudit);
+}
+
+function noteD3D8SM1VertexConstantUpload(bridgeProgram) {
+  if (!d3d8SM1DrawAuditEnabled) {
+    return;
+  }
+  const pairKey = `${bridgeProgram.sm1VsHandle}|${bridgeProgram.sm1PsHandle}`;
+  const pairAudit = d3d8SM1DrawAudit.get(pairKey);
+  if (pairAudit) {
+    pairAudit.vertexConstantUploads += 1;
+  }
+}
+
+function setD3D8SM1ShaderAuditEnabled(enabled) {
+  d3d8SM1DrawAuditEnabled = enabled === true;
+  d3d8SM1DrawAudit.clear();
+  return d3d8SM1DrawAuditEnabled;
+}
+
+function d3d8SM1ShaderAuditSummary() {
+  const describeShader = (shader, isPixel) => ({
+    handle: shader.handle,
+    type: isPixel ? "pixel" : "vertex",
+    model: `${isPixel ? "ps" : "vs"}.${shader.ir.major}.${shader.ir.minor}`,
+    instructions: shader.ir.instructions.map((instruction) => instruction.name),
+    relativeConstantReads: shader.relativeConstantReads,
+    declaration: isPixel ? [] : shader.decl.map((entry) => ({ ...entry })),
+  });
+  return {
+    pixelShaders: Array.from(d3d8SM1PixelShaders.values(), (shader) =>
+      describeShader(shader, true)),
+    vertexShaders: Array.from(d3d8SM1VertexShaders.values(), (shader) =>
+      describeShader(shader, false)),
+    pairs: Array.from(d3d8SM1DrawAudit.values(), (audit) => ({
+      vsHandle: audit.vsHandle,
+      psHandle: audit.psHandle,
+      draws: audit.draws,
+      vertexConstantStateChanges: audit.vertexConstantStateChanges,
+      vertexConstantUploads: audit.vertexConstantUploads,
+      firstVertexConstants: audit.firstVertexConstants
+        ? Array.from(audit.firstVertexConstants) : null,
+      lastVertexConstants: audit.lastVertexConstants
+        ? Array.from(audit.lastVertexConstants) : null,
+    })),
+    linkedPairs: Array.from(d3d8SM1PairPrograms.values(), (entry) => ({
+      vsHandle: entry.vsHandle,
+      psHandle: entry.psHandle,
+      linked: Boolean(entry.program),
+    })),
+  };
+}
+
 // Uploads SM1 constant files + bump-env matrices for a shader-pair draw.
 function uploadD3D8SM1DrawUniforms(bridgeProgram, payload, renderState) {
   if (bridgeProgram.psConst && payload.psConstants &&
@@ -8323,6 +8440,7 @@ function uploadD3D8SM1DrawUniforms(bridgeProgram, payload, renderState) {
   if (bridgeProgram.vsConst && payload.vsConstants &&
       d3d8SM1ConstantsChanged(bridgeProgram.vsConst, payload.vsConstants)) {
     gl.uniform4fv(bridgeProgram.vsConst, payload.vsConstants);
+    noteD3D8SM1VertexConstantUpload(bridgeProgram);
     d3d8PerfStats.uniformGlCalls += 1;
   }
   if (bridgeProgram.bumpEnv) {
@@ -12042,6 +12160,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         if (sm1VertexDraw) {
           d3d8PerfStats.sm1TranslatedVsDraws += 1;
         }
+        noteD3D8SM1Draw(sm1Program, payload);
       } else {
         d3d8PerfStats.sm1FallbackDraws += 1;
       }
@@ -13510,6 +13629,8 @@ function paintD3D8DrawIndexed(payload = {}) {
     viewportArraysEqual,
     updateD3D8TextureSummary,
     d3d8PerfSummary,
+    d3d8SM1ShaderAuditSummary,
+    setD3D8SM1ShaderAuditEnabled,
     applyD3D8BoundDrawDiagnosticsLevel,
     d3dColorToNormalizedRgba,
     d3dMaterialSourceName,
