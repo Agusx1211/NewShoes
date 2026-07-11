@@ -13325,3 +13325,18 @@ mitigation track. Items resolved or retired by the pivot:
       again mounted all 30 archives and reached a visible 1440x900 real-game
       canvas with `ZeroHRuntime.started === true` and no relevant page/console
       errors.
+- [x] Made multi-part retail media manageable and edition-aware. Every selected
+      ISO/archive is now named in the source and confirmation steps, additional
+      discs merge into the active selection, and each item can be removed with
+      an immediate rescan. The worker inventories either the 14-archive vanilla
+      Generals set or the 30-archive Zero Hour set, including InstallShield's
+      `Maps.big1` retail key normalization, and the versioned OPFS manifest
+      records the selected edition. Real two-disc Generals and combined
+      four-disc Generals/Zero Hour inventories completed locally; persistent
+      Chrome profiles prepared all 14 (1,282,477,950 bytes) and all 30
+      (2,071,604,184 bytes) archives respectively. Retrying valid partial OPFS
+      synchronous writes also let the full retail CAB extractions finish
+      instead of corrupting offsets and progress near large speech archives.
+      The four-disc set then mounted all 30 retail-derived archives, returned
+      from all 43 real `GameEngine::init()` subsystems without aborting, and
+      visibly rendered the animated Zero Hour shell map under SwiftShader.

@@ -42,6 +42,7 @@
     library: readStoredLibrary(),
     windowLayout: readWindowLayout(),
   };
+  const RUNTIME_GAMES = new Set(["zeroHour"]);
 
   const desktop = document.querySelector("#desktop");
   const startMenu = document.querySelector("#startMenu");
@@ -215,7 +216,7 @@
   }
 
   function setSourcePickerBusy(busy) {
-    document.querySelectorAll("#pickImageButton, #pickFolderButton").forEach((button) => {
+    document.querySelectorAll("#pickImageButton, #pickFolderButton, #addMoreImagesButton, .selected-media-remove").forEach((button) => {
       button.disabled = busy;
     });
     document.querySelector("#scanPanel").setAttribute("aria-busy", String(busy));
@@ -437,6 +438,8 @@
   }
 
   async function scanSource(source) {
+    renderSelectedMedia(source);
+    document.querySelector("#runtimeWarning").hidden = true;
     setSourcePickerBusy(true);
     setRememberAvailability(Boolean(source.handles?.length));
     if (state.library?.mode === "once") {
@@ -477,16 +480,22 @@
       if (!result.ok) {
         title.textContent = "More original media is required";
         detail.textContent = `Missing: ${missingSourceSummary(result.missing)}`;
-        showToast("Incomplete game library", "Select both Generals and Zero Hour files or disc images.", "warning");
+        showToast("Incomplete game library", "Add the remaining discs, or remove media selected by mistake.", "warning");
+        setWizardStep(1);
         return;
       }
-      title.textContent = "Compatible Generals + Zero Hour files found";
-      detail.textContent = "All required archives passed the local media inventory.";
+      const gameLabel = result.game === "generals" ? "Generals" : "Generals + Zero Hour";
+      title.textContent = `Compatible ${gameLabel} files found`;
+      detail.textContent = result.game === "generals"
+        ? "The original Generals library is complete and ready to prepare."
+        : "All required Zero Hour and base-game archives passed the local media inventory.";
+      document.querySelector("#runtimeWarning").hidden = result.game !== "generals";
       if (result.errors.length) {
         showToast("Some source files were ignored", `${result.errors.length} unreadable or unsupported file${result.errors.length === 1 ? " was" : "s were"} skipped; the required library is complete.`, "warning");
       }
       setWizardStep(2);
     } catch (error) {
+      document.querySelector("#runtimeWarning").hidden = true;
       title.textContent = "Could not read this source";
       detail.textContent = error?.message || String(error);
       percent.textContent = "!";
@@ -496,16 +505,93 @@
     }
   }
 
-  function sourceFromFiles(files, kind) {
+  function sourceFromFiles(files, kind, sourceHandles = []) {
     const list = [...files];
     if (!list.length) return null;
     const first = list[0];
     const folderName = first.webkitRelativePath?.split("/")[0];
-    return {
-      name: kind === "folder" ? (folderName || "Installed game folder") : (list.length === 1 ? first.name : `${first.name} + ${list.length - 1} more`),
+    const handles = [...sourceHandles];
+    const source = {
+      kind,
+      name: kind === "folder" ? (folderName || handles[0]?.name || "Installed game folder") : "",
       countLabel: `${list.length} file${list.length === 1 ? "" : "s"}`,
       files: list,
+      handles,
+      items: kind === "image" ? list.map((file, index) => ({ file, handle: handles[index] || null })) : [{
+        file: null,
+        handle: handles[0] || null,
+        name: folderName || handles[0]?.name || "Installed game folder",
+        size: list.reduce((sum, file) => sum + file.size, 0),
+        fileCount: list.length,
+      }],
     };
+    updateSourceIdentity(source);
+    return source;
+  }
+
+  function formatSourceBytes(bytes) {
+    const value = Number(bytes) || 0;
+    if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(1)} GB`;
+    if (value >= 1024 ** 2) return `${(value / 1024 ** 2).toFixed(0)} MB`;
+    return `${Math.max(1, Math.round(value / 1024))} KB`;
+  }
+
+  function updateSourceIdentity(source) {
+    if (source.kind === "image") {
+      source.files = source.items.map((item) => item.file);
+      source.handles = source.items.map((item) => item.handle).filter(Boolean);
+      source.name = source.items.length === 1 ? source.items[0].file.name : `${source.items.length} selected media files`;
+      source.countLabel = `${source.items.length} file${source.items.length === 1 ? "" : "s"}`;
+    }
+    return source;
+  }
+
+  function mergeImageSource(source) {
+    if (state.source?.kind !== "image") return source;
+    const merged = [...state.source.items];
+    const keys = new Set(merged.map(({ file }) => `${file.name}\0${file.size}\0${file.lastModified}`));
+    for (const item of source.items) {
+      const key = `${item.file.name}\0${item.file.size}\0${item.file.lastModified}`;
+      if (!keys.has(key)) {
+        merged.push(item);
+        keys.add(key);
+      }
+    }
+    state.source.items = merged;
+    return updateSourceIdentity(state.source);
+  }
+
+  function renderSelectedMedia(source = state.source) {
+    const panel = document.querySelector("#selectedMediaPanel");
+    const list = document.querySelector("#selectedMediaList");
+    const items = source?.items || [];
+    panel.hidden = items.length === 0;
+    document.querySelector("#selectedMediaCount").textContent = items.length
+      ? `${items.length} item${items.length === 1 ? "" : "s"}` : "";
+    document.querySelector("#addMoreImagesButton").hidden = source?.kind !== "image";
+    list.replaceChildren(...items.map((item, index) => {
+      const file = item.file;
+      const row = document.createElement("li");
+      const name = file?.name || item.name || "Original game files";
+      const detail = file ? "Disc image or archive" : `${item.fileCount || source.files.length} files in folder`;
+      row.innerHTML = `<span class="selected-media-icon" aria-hidden="true">${file ? "◉" : "▰"}</span>`
+        + `<span class="selected-media-name"><strong></strong><span></span></span>`
+        + `<span class="selected-media-size">${formatSourceBytes(file?.size ?? item.size)}</span>`
+        + `<button type="button" class="selected-media-remove" data-remove-media="${index}">×</button>`;
+      row.querySelector("strong").textContent = name;
+      row.querySelector(".selected-media-name span").textContent = detail;
+      row.querySelector("button").setAttribute("aria-label", `Remove ${name}`);
+      return row;
+    }));
+    document.querySelector("#detectedMediaList").replaceChildren(...items.map((item, index) => {
+      const chip = document.createElement("span");
+      const name = item.file?.name || item.name || "Original game files";
+      chip.className = "detected-media-item";
+      chip.innerHTML = `<span></span><button type="button" class="selected-media-remove" data-remove-media="${index}">×</button>`;
+      chip.querySelector("span").textContent = name;
+      chip.querySelector("button").setAttribute("aria-label", `Remove ${name}`);
+      return chip;
+    }));
   }
 
   function missingSourceSummary(names) {
@@ -520,6 +606,7 @@
     button.disabled = true;
     button.textContent = state.storageMode === "install" ? "Installing original assets…" : "Preparing…";
     try {
+      window.__cncSelectedGame = state.source?.scan?.game || "zeroHour";
       const result = await window.ZeroHAssetLibrary.prepare(state.storageMode, (progress) => {
         const ratio = progress.total ? progress.completed / progress.total : 0;
         button.textContent = `${progress.detail} · ${Math.round(ratio * 100)}%`;
@@ -530,6 +617,7 @@
       state.library = {
         source: state.source?.name || "Original game media",
         mode: state.storageMode,
+        game: result.game,
         preparedAt: Date.now(),
         totalBytes,
       };
@@ -539,7 +627,7 @@
       await refreshStorageUI();
       showToast("Library ready", state.storageMode === "install"
         ? "Original assets are installed in private browser storage."
-        : "Zero Hour is ready to launch from your local files.");
+        : `${result.game === "generals" ? "Generals" : "Zero Hour"} is ready to launch from your local files.`);
       if (result.warning) showToast(result.warning.title || "Storage warning", result.warning.message || String(result.warning), "warning");
       if (!metadataStored) showToast("Launcher preference not saved", "The library is ready now, but this browser could not retain its launcher shortcut state.", "warning");
     } catch (error) {
@@ -559,12 +647,38 @@
     };
     const labels = labelsByMode[mode];
     document.querySelector("#readyStorageLabel").textContent = labels.ready;
-    document.querySelector("#readyMessage").textContent = mode === "install" ? "Zero Hour is installed and can launch without selecting the original media again." : "Zero Hour is available from your selected source.";
-    document.querySelectorAll(".library-state-label").forEach((el) => { el.textContent = state.library ? labels.state : "Original files required"; });
+    const gameName = state.library?.game === "generals" ? "Generals" : "Zero Hour";
+    document.querySelector("#readyMessage").textContent = state.library
+      ? state.library.game === "generals"
+        ? "Generals files are prepared. Its separate browser runtime is still being ported."
+        : `${gameName} is ${mode === "install" ? "installed and ready without the original media" : "available from your selected source"}.`
+      : "Add original Generals or Zero Hour media to begin.";
+    document.querySelectorAll("[data-library-game]").forEach((row) => {
+      const rowGame = row.dataset.libraryGame === "Generals" ? "generals" : "zeroHour";
+      const selected = state.library?.game === rowGame;
+      row.querySelector(".library-state-label").textContent = selected
+        ? RUNTIME_GAMES.has(rowGame) ? labels.state : "Files ready · runtime port pending"
+        : "Original files required";
+    });
     document.querySelectorAll(".library-size span").forEach((el) => { el.textContent = state.library ? labels.location : "Local source"; });
     const installed = mode === "install";
     const hasShortcuts = Boolean(state.library && (mode === "remember" || installed));
     document.querySelectorAll("[data-game-shortcut]").forEach((shortcut) => { shortcut.hidden = !hasShortcuts; });
+    document.querySelectorAll("[data-launch-game]").forEach((button) => {
+      const buttonGame = button.dataset.launchGame === "Generals" ? "generals" : "zeroHour";
+      const available = state.library?.game === buttonGame;
+      const runnable = available && RUNTIME_GAMES.has(buttonGame);
+      button.disabled = Boolean(state.library) && !runnable;
+      const label = runnable ? "Launch game"
+        : available ? "Runtime port in progress" : "Original files required";
+      if (button.classList.contains("launch-button")) {
+        button.replaceChildren(Object.assign(document.createElement("span"), {
+          textContent: runnable ? "▶" : "⌁",
+        }), ` ${label}`);
+      } else if (button.classList.contains("row-launch")) {
+        button.textContent = label;
+      }
+    });
     document.querySelector("#storageUsedValue").textContent = installed ? ((state.library?.totalBytes || 0) / 1024 ** 3).toFixed(1) : "0";
     document.querySelector("#storageCopyText").textContent = installed ? "Game assets are available for one-click launches from browser storage." : "No game assets are stored in this browser yet.";
     document.querySelector(".storage-donut").style.background = installed ? "conic-gradient(#548cab 0 270deg, #d3a448 270deg 276deg, #d6e0e5 276deg)" : "conic-gradient(#548cab 0 4deg, #d6e0e5 4deg)";
@@ -572,14 +686,22 @@
 
   async function launchGame(game) {
     closeStartMenu();
-    if (game !== "Zero Hour") {
-      showToast("Generals runtime not linked yet", "The current browser binary targets Zero Hour; Generals assets are used as its required base data.", "warning");
-      return;
-    }
+    const gameId = game === "Generals" ? "generals" : "zeroHour";
     if (!state.library) {
       openApp("setup");
       setWizardStep(1);
-      showToast("Original files required", "Add your Generals and Zero Hour media before launching.", "warning");
+      showToast("Original files required", `Add your original ${game} media before launching.`, "warning");
+      return;
+    }
+    if (state.library.game !== gameId) {
+      openApp("setup");
+      showToast("Original files required", `The prepared library contains ${state.library.game === "generals" ? "Generals" : "Zero Hour"}, not ${game}.`, "warning");
+      return;
+    }
+    if (!RUNTIME_GAMES.has(gameId)) {
+      openApp("setup");
+      setWizardStep(3);
+      showToast("Generals files are ready", "Vanilla Generals needs its own browser runtime; that engine target is still being ported.", "warning");
       return;
     }
     if (state.launching) return;
@@ -605,20 +727,21 @@
         status.textContent = "Restoring permission to your original files…";
         const scan = await window.ZeroHAssetLibrary.restoreRemembered({ requestPermission: true });
         if (!scan?.ok) throw new Error("The remembered source no longer contains the complete game library");
-        await window.ZeroHAssetLibrary.prepare("remember");
+        await window.ZeroHAssetLibrary.prepare("remember", null, gameId);
       }
-      await window.ZeroHAssetLibrary.archivesForLaunch((progress) => {
+      await window.ZeroHAssetLibrary.archivesForLaunch(gameId, (progress) => {
         status.textContent = `Staging ${progress.detail}…`;
         fill.style.width = `${Math.min(34, Math.round((progress.completed / progress.total) * 34))}%`;
       });
       mount.textContent = "◌ Mount";
+      window.__cncSelectedGame = gameId;
       await window.ZeroHRuntime.launch();
     } catch (error) {
       launchOverlay.hidden = true;
       showToast("Launch failed", error?.message || String(error), "warning");
     } finally {
       state.launching = false;
-      document.querySelectorAll("[data-launch-game]").forEach((button) => { button.disabled = false; });
+      updateLibraryUI();
     }
   }
 
@@ -682,10 +805,9 @@
     try {
       const files = await window.ZeroHAssetLibrary.pickImages();
       if (!files) return document.querySelector("#imageInput").click();
-      const source = sourceFromFiles(files, "image");
+      const source = sourceFromFiles(files, "image", window.ZeroHAssetLibrary.sourceHandles);
       if (source) {
-        source.handles = window.ZeroHAssetLibrary.sourceHandles;
-        await scanSource(source);
+        await scanSource(mergeImageSource(source));
       }
     } catch (error) {
       if (error?.name !== "AbortError") showToast("Could not open media", error?.message || String(error), "warning");
@@ -696,9 +818,8 @@
     try {
       const files = await window.ZeroHAssetLibrary.pickFolder();
       if (!files) return document.querySelector("#folderInput").click();
-      const source = sourceFromFiles(files, "folder");
+      const source = sourceFromFiles(files, "folder", window.ZeroHAssetLibrary.sourceHandles);
       if (source) {
-        source.handles = window.ZeroHAssetLibrary.sourceHandles;
         await scanSource(source);
       }
     } catch (error) {
@@ -708,13 +829,36 @@
   document.querySelector("#imageInput").addEventListener("change", (event) => {
     const source = sourceFromFiles(event.target.files, "image");
     event.target.value = "";
-    if (source) void scanSource(source);
+    if (source) void scanSource(mergeImageSource(source));
   });
   document.querySelector("#folderInput").addEventListener("change", (event) => {
     const source = sourceFromFiles(event.target.files, "folder");
     event.target.value = "";
     if (source) void scanSource(source);
   });
+  document.querySelector("#addMoreImagesButton").addEventListener("click", () => {
+    document.querySelector("#pickImageButton").click();
+  });
+  async function removeSelectedMedia(event) {
+    const button = event.target.closest("[data-remove-media]");
+    if (!button || sourceChangeNeedsReload()) return;
+    const index = Number(button.dataset.removeMedia);
+    if (!state.source?.items?.[index]) return;
+    state.source.items.splice(index, 1);
+    if (state.source.kind === "image" && state.source.items.length) {
+      updateSourceIdentity(state.source);
+      await scanSource(state.source);
+      return;
+    }
+    await window.ZeroHAssetLibrary.clearSource();
+    state.source = null;
+    renderSelectedMedia(null);
+    document.querySelector("#scanPanel").hidden = true;
+    document.querySelector("#runtimeWarning").hidden = true;
+    setRememberAvailability(false);
+  }
+  document.querySelector("#selectedMediaList").addEventListener("click", removeSelectedMedia);
+  document.querySelector("#detectedMediaList").addEventListener("click", removeSelectedMedia);
   document.querySelectorAll("[data-wizard-back]").forEach((button) => button.addEventListener("click", () => setWizardStep(Math.max(1, state.wizardStep - 1))));
   document.querySelectorAll('input[name="storageMode"]').forEach((input) => input.addEventListener("change", () => {
     state.storageMode = input.value;
@@ -772,7 +916,7 @@
   });
   window.addEventListener("storage", (event) => {
     if (event.key === "zeroh-selected-logo") applyLauncherLogo(event.newValue);
-    if (["zeroh-library", "fielddesk-library", "zeroh-installed-library.v2"].includes(event.key)) {
+    if (["zeroh-library", "fielddesk-library", "zeroh-installed-library.v3", "zeroh-installed-library.v2"].includes(event.key)) {
       state.library = readStoredLibrary();
       void reconcileStoredLibrary();
     }
@@ -830,7 +974,8 @@
   async function reconcileStoredLibrary() {
     const installed = await window.ZeroHAssetLibrary.verifyInstalledLibrary();
     const mode = state.library?.mode;
-    const invalidStoredState = state.library && !["remember", "install"].includes(mode);
+    const invalidStoredState = state.library && (!["remember", "install"].includes(mode)
+      || !["generals", "zeroHour"].includes(state.library.game));
     const missingInstalledData = mode === "install" && !installed;
     const missingRememberedSource = mode === "remember"
       && !await window.ZeroHAssetLibrary.hasRememberedSource();
@@ -843,13 +988,14 @@
       state.library = {
         source: "Installed browser library",
         mode: "install",
+        game: installed.game,
         preparedAt: installed.preparedAt,
         totalBytes: installed.totalBytes,
       };
       persistLibrary();
     }
     if (state.library) {
-      state.source = { name: state.library.source, countLabel: "2 games" };
+      state.source = { name: state.library.source, countLabel: state.library.game === "generals" ? "Generals" : "Zero Hour" };
       state.storageMode = state.library.mode;
       syncStorageModeUI();
       setWizardStep(3);

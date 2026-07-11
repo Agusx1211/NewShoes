@@ -485,7 +485,13 @@ Dev-box render-verify: symlink worktree `dist/` → main's built `dist/` renders
       Generals launch card. The integrated ZeroH launcher inventories the base
       game because Zero Hour needs its fallback archives, but the current
       `cnc-port` binary remains the project-primary Zero Hour target and the UI
-      labels the separate Generals runtime honestly as unavailable.
+      labels the separate Generals runtime honestly as unavailable. Retail-CD
+      testing on 2026-07-11 proved that the base library inventories and
+      extracts successfully, while giving those archives to the Zero Hour
+      binary exits before real init. An authentic `Generals/Code` build reaches
+      the renderer and then hits the pre-ZH W3D API/ABI mismatch; port that
+      device/library seam instead of routing base assets through the expansion
+      executable.
 - [ ] Surface the engine-owned persisted save games, replays, and captured
       screenshots in the ZeroH My Files application. The launcher no longer
       seeds fake game saves/replays/screenshots; its editable notes/import

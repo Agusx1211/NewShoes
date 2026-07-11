@@ -1,12 +1,13 @@
 import "./launcher-archive-specs.js";
 
-const INSTALLED_KEY = "zeroh-installed-library.v2";
-const OLD_INSTALLED_KEY = "zeroh-installed-library.v1";
-const LIBRARY_VERSION = 2;
+const INSTALLED_KEY = "zeroh-installed-library.v3";
+const OLD_INSTALLED_KEYS = ["zeroh-installed-library.v2", "zeroh-installed-library.v1"];
+const LIBRARY_VERSION = 3;
 const HANDLE_DB = "zeroh-asset-handles";
 const HANDLE_STORE = "sources";
 const LIBRARY_MUTATION_LOCK = "zeroh-library-mutation";
-const REQUIRED_ARCHIVE_NAMES = window.ZeroHArchiveSpecs.map((archive) => archive.name);
+const REQUIRED_ARCHIVE_NAMES = Object.fromEntries(Object.entries(window.CncArchiveSpecs)
+  .map(([game, archives]) => [game, archives.map((archive) => archive.name)]));
 
 function storageGet(key) {
   try { return localStorage.getItem(key); } catch { return null; }
@@ -125,6 +126,7 @@ class AssetLibrary {
     this.sourceHandles = [];
     this.scanResult = null;
     this.preparedArchives = null;
+    this.preparedGame = null;
     this.queue = Promise.resolve();
     this.rememberedHandlesPromise = readHandles().catch(() => []);
     this.createWorker();
@@ -219,6 +221,15 @@ class AssetLibrary {
     return this.scanResult;
   }
 
+  async clearSource() {
+    if (window.ZeroHRuntime?.started) {
+      throw new Error("Reload ZeroH before changing game files after the engine has started");
+    }
+    await this.discardPreparedArchives();
+    this.sourceHandles = [];
+    this.scanResult = null;
+  }
+
   async waitForRpc() {
     for (let attempt = 0; attempt < 600; attempt += 1) {
       if (window.CnCPort?.rpc) return window.CnCPort.rpc.bind(window.CnCPort);
@@ -236,12 +247,12 @@ class AssetLibrary {
     return allocation.namespaceRoot;
   }
 
-  async prepare(mode, onProgress = null) {
+  async prepare(mode, onProgress = null, game = this.scanResult?.game) {
     if (!["once", "remember", "install"].includes(mode)) {
       throw new Error(`Unsupported launcher storage mode: ${mode}`);
     }
-    if (mode === "install") return this.withLibraryMutation(() => this.prepareUnlocked(mode, onProgress));
-    return this.prepareUnlocked(mode, onProgress);
+    if (mode === "install") return this.withLibraryMutation(() => this.prepareUnlocked(mode, onProgress, game));
+    return this.prepareUnlocked(mode, onProgress, game);
   }
 
   withLibraryMutation(callback) {
@@ -250,8 +261,8 @@ class AssetLibrary {
       : callback();
   }
 
-  async prepareUnlocked(mode, onProgress = null) {
-    if (!this.scanResult?.ok) throw new Error("Select a complete Generals + Zero Hour asset source first");
+  async prepareUnlocked(mode, onProgress = null, game = this.scanResult?.game) {
+    if (!this.scanResult?.games?.[game]?.ok) throw new Error("Select complete original media for the game first");
     const estimate = await navigator.storage?.estimate?.();
     const quota = Number(estimate?.quota);
     const usage = Number(estimate?.usage);
@@ -274,10 +285,13 @@ class AssetLibrary {
     try {
       const result = await this.request("prepare", {
         mode,
+        game,
         namespaceRoot,
         installRoot,
       }, onProgress);
       this.preparedArchives = result.archives;
+      this.preparedGame = game;
+      result.game = game;
       result.effectiveMode = mode;
       if (mode === "install" && !persistenceGranted) {
         result.warning = {
@@ -288,6 +302,7 @@ class AssetLibrary {
       if (mode === "install" && result.installed) {
         const manifest = {
           version: LIBRARY_VERSION,
+          game,
           root: installRoot,
           preparedAt: Date.now(),
           totalBytes: result.installed.reduce((sum, archive) => sum + archive.bytes, 0),
@@ -296,7 +311,7 @@ class AssetLibrary {
         if (!storageSet(INSTALLED_KEY, JSON.stringify(manifest))) {
           throw new Error("Browser storage could not save the installed-library manifest");
         }
-        storageRemove(OLD_INSTALLED_KEY);
+        OLD_INSTALLED_KEYS.forEach(storageRemove);
         await this.clearRememberedHandles();
         if (previousInstall?.root && previousInstall.root !== installRoot) {
           await this.request("discard", { path: previousInstall.root }).catch(() => {});
@@ -322,7 +337,7 @@ class AssetLibrary {
         }
         if (result.effectiveMode !== "remember") await this.clearRememberedHandles();
         storageRemove(INSTALLED_KEY);
-        storageRemove(OLD_INSTALLED_KEY);
+        OLD_INSTALLED_KEYS.forEach(storageRemove);
         if (previousInstall?.root) {
           await this.request("discard", { path: previousInstall.root }).catch(() => {});
         }
@@ -338,13 +353,15 @@ class AssetLibrary {
   installedLibrary() {
     try {
       const value = JSON.parse(storageGet(INSTALLED_KEY) || "null");
+      const required = REQUIRED_ARCHIVE_NAMES[value?.game];
       if (value?.version !== LIBRARY_VERSION
+          || !required
           || !/^cnc-library\/install-[a-z0-9-]+$/i.test(value.root ?? "")
           || !Array.isArray(value.archives)
-          || value.archives.length !== REQUIRED_ARCHIVE_NAMES.length) return null;
+          || value.archives.length !== required.length) return null;
       const names = new Set(value.archives.map((archive) => archive?.name));
-      if (names.size !== REQUIRED_ARCHIVE_NAMES.length
-          || REQUIRED_ARCHIVE_NAMES.some((name) => !names.has(name))) return null;
+      if (names.size !== required.length
+          || required.some((name) => !names.has(name))) return null;
       if (value.archives.some((archive) => archive.opfsPath !== `${value.root}/${archive.name}`
           || !Number.isSafeInteger(archive.bytes) || archive.bytes <= 16)) return null;
       const totalBytes = value.archives.reduce((sum, archive) => sum + archive.bytes, 0);
@@ -361,7 +378,7 @@ class AssetLibrary {
 
   async verifyInstalledLibraryUnlocked() {
     const installed = this.installedLibrary();
-    storageRemove(OLD_INSTALLED_KEY);
+    OLD_INSTALLED_KEYS.forEach(storageRemove);
     if (!installed) {
       storageRemove(INSTALLED_KEY);
       await this.collectInstalledRoots(null);
@@ -425,17 +442,19 @@ class AssetLibrary {
     this.rememberedHandlesPromise = Promise.resolve([]);
   }
 
-  async archivesForLaunch(onProgress = null) {
-    if (this.preparedArchives?.length) return this.preparedArchives;
+  async archivesForLaunch(game, onProgress = null) {
+    if (this.preparedArchives?.length && this.preparedGame === game) return this.preparedArchives;
     const installed = this.installedLibrary();
-    if (installed) {
+    if (installed?.game === game) {
       const namespaceRoot = await this.allocateNamespace();
       const result = await this.request("loadInstalled", {
+        game: installed.game,
         namespaceRoot,
         installRoot: installed.root,
         archives: installed.archives,
       }, onProgress);
       this.preparedArchives = result.archives;
+      this.preparedGame = installed.game;
       return this.preparedArchives;
     }
     throw new Error("Prepare your game library before launching");
@@ -450,7 +469,7 @@ class AssetLibrary {
     this.scanResult = null;
     this.sourceHandles = [];
     storageRemove(INSTALLED_KEY);
-    storageRemove(OLD_INSTALLED_KEY);
+    OLD_INSTALLED_KEYS.forEach(storageRemove);
     await this.clearRememberedHandles();
     try {
       const root = await navigator.storage.getDirectory();
@@ -464,6 +483,7 @@ class AssetLibrary {
     const roots = new Set((this.preparedArchives || []).map((archive) =>
       String(archive.opfsPath || "").split("/").slice(0, 2).join("/")));
     this.preparedArchives = null;
+    this.preparedGame = null;
     for (const path of roots) {
       if (path) await this.request("discard", { path }).catch(() => {});
     }

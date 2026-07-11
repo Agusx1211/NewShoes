@@ -19,7 +19,8 @@ const MAX_BIG_DIRECTORY_BYTES = 64 * 1024 * 1024;
 const MAX_ISO_ROOT_BYTES = 64 * 1024 * 1024;
 const MAX_LOOSE_SCRIPT_BYTES = 16 * 1024 * 1024;
 
-const ARCHIVES = self.ZeroHArchiveSpecs;
+const ARCHIVE_SETS = self.CncArchiveSpecs;
+const ARCHIVES = ARCHIVE_SETS.zeroHour;
 
 const SCRIPT_FILES = [
   { sourceName: "SkirmishScripts.scb", path: "Data\\Scripts\\SkirmishScripts.scb" },
@@ -61,6 +62,12 @@ function ascii(bytes, start, length) {
 
 function basename(path) {
   return String(path).replaceAll("\\", "/").split("/").pop() || "";
+}
+
+function installedArchiveName(path) {
+  // InstallShield disambiguates cabinet source keys with a numeric suffix;
+  // the retail Generals Data1.cab, for example, stores Maps.big as Maps.big1.
+  return basename(path).replace(/(\.big)\d+$/i, "$1");
 }
 
 function dirname(path) {
@@ -404,11 +411,11 @@ async function scanSources(files, requestId) {
       if (lower.endsWith(".cab")) {
         const reader = new BlobReader(item.file, item.path);
         const cabinet = await parseCab(reader);
-        const names = new Set(cabinet.files.map((entry) => basename(entry.name).toLowerCase()));
+        const names = new Set(cabinet.files.map((entry) => installedArchiveName(entry.name).toLowerCase()));
         const edition = names.has("inizh.big") || names.has("englishzh.big") ? "zh"
           : names.has("ini.big") || names.has("english.big") ? "base" : "unknown";
         for (const entry of cabinet.files) {
-          const leaf = basename(entry.name);
+          const leaf = installedArchiveName(entry.name);
           addCandidate(leaf, entryEdition(entry.name, edition), {
             kind: "cab", cabinet, entry, label: `${item.path}:${entry.name}`,
           });
@@ -422,11 +429,11 @@ async function scanSources(files, requestId) {
           const entryReader = new IsoEntryReader(image, entry, iso.layout);
           if (entry.name.toLowerCase().endsWith(".cab")) {
             const cabinet = await parseCab(entryReader);
-            const names = new Set(cabinet.files.map((value) => basename(value.name).toLowerCase()));
+            const names = new Set(cabinet.files.map((value) => installedArchiveName(value.name).toLowerCase()));
             const edition = names.has("inizh.big") || names.has("englishzh.big") ? "zh"
               : names.has("ini.big") || names.has("english.big") ? "base" : "unknown";
             for (const cabEntry of cabinet.files) {
-              const leaf = basename(cabEntry.name);
+              const leaf = installedArchiveName(cabEntry.name);
               addCandidate(leaf, entryEdition(cabEntry.name, edition), {
                 kind: "cab", cabinet, entry: cabEntry,
                 label: `${item.path}:${entry.name}:${cabEntry.name}`,
@@ -446,9 +453,22 @@ async function scanSources(files, requestId) {
     }
   }
 
-  const selection = resolveCatalog();
+  const selections = {
+    generals: resolveCatalog(ARCHIVE_SETS.generals),
+    zeroHour: resolveCatalog(ARCHIVE_SETS.zeroHour),
+  };
+  const game = selections.zeroHour.missing.length === 0 ? "zeroHour"
+    : selections.generals.missing.length === 0 ? "generals" : "zeroHour";
+  const selection = selections[game];
   return {
-    ok: selection.missing.length === 0,
+    ok: Object.values(selections).some((value) => value.missing.length === 0),
+    game,
+    games: Object.fromEntries(Object.entries(selections).map(([id, value]) => [id, {
+      ok: value.missing.length === 0,
+      found: value.found,
+      missing: value.missing,
+      totalBytes: value.totalBytes,
+    }])),
     filesScanned: normalized.length,
     bytesScanned: normalized.reduce((sum, item) => sum + item.file.size, 0),
     sourceNames: normalized.map((item) => item.path),
@@ -476,12 +496,12 @@ function chooseCandidate(sourceName, edition) {
   })[0] || null;
 }
 
-function resolveCatalog() {
+function resolveCatalog(archives = ARCHIVES) {
   const selected = [];
   const found = [];
   const missing = [];
   let totalBytes = 0;
-  for (const archive of ARCHIVES) {
+  for (const archive of archives) {
     if (archive.name === "LooseScripts.big") {
       const packaged = chooseCandidate(archive.sourceName, archive.edition);
       if (packaged && (packaged.edition === archive.edition || packaged.edition === "unknown")) {
@@ -581,6 +601,22 @@ function updatedDictionary(previous, block) {
   return dictionary;
 }
 
+function writeAll(output, bytes, at, label) {
+  let offset = 0;
+  while (offset < bytes.byteLength) {
+    const remaining = bytes.byteLength - offset;
+    const written = output.write(bytes.subarray(offset), { at: at + offset });
+    if (written === 0) {
+      throw new Error(`Browser storage stopped accepting data while extracting ${label}; free browser or disk storage and try again`);
+    }
+    if (!Number.isInteger(written) || written < 0 || written > remaining) {
+      throw new Error(`${label}: invalid OPFS write result (${written} for ${remaining} bytes)`);
+    }
+    offset += written;
+  }
+  return bytes.byteLength;
+}
+
 async function copyReader(reader, outputPath, requestId, progress) {
   const output = await openOutput(outputPath);
   try {
@@ -588,8 +624,7 @@ async function copyReader(reader, outputPath, requestId, progress) {
     let offset = 0;
     while (offset < reader.size) {
       const bytes = await reader.read(offset, Math.min(chunkSize, reader.size - offset));
-      const written = output.write(bytes, { at: offset });
-      if (written !== bytes.byteLength) throw new Error(`${outputPath}: short OPFS write`);
+      const written = writeAll(output, bytes, offset, outputPath);
       offset += written;
       progress.completed += written;
       emitProgress(requestId, "prepare", basename(outputPath), progress.completed, progress.total);
@@ -652,8 +687,7 @@ async function extractCabGroup(cabinet, targets, requestId, progress, outputRoot
           const sourceEnd = Math.min(block.byteLength, entryEnd - folderCursor);
           const destination = Math.max(0, folderCursor - entry.folderOffset);
           const slice = block.subarray(sourceStart, sourceEnd);
-          const written = outputs.get(target).write(slice, { at: destination });
-          if (written !== slice.byteLength) throw new Error(`${target.archive.name}: short CAB output write`);
+          const written = writeAll(outputs.get(target), slice, destination, target.archive.name);
           progress.completed += written;
           emitProgress(requestId, "prepare", target.archive.name, progress.completed, progress.total);
         }
@@ -711,8 +745,7 @@ async function writeLooseScripts(target, outputRoot, requestId, progress) {
   }
   const output = await openOutput(`${outputRoot}/${target.archive.name}`);
   try {
-    const written = output.write(archive, { at: 0 });
-    if (written !== archive.byteLength) throw new Error(`${target.archive.name}: short OPFS write`);
+    const written = writeAll(output, archive, 0, target.archive.name);
     output.flush();
     if (output.getSize() !== archive.byteLength) throw new Error(`${target.archive.name}: OPFS size mismatch`);
   } finally {
@@ -828,7 +861,8 @@ async function materializeSelection(selection, outputRoot, requestId,
 }
 
 async function prepare(request, requestId) {
-  const selection = resolveCatalog();
+  const game = request.game === "generals" ? "generals" : "zeroHour";
+  const selection = resolveCatalog(ARCHIVE_SETS[game]);
   if (selection.missing.length) {
     throw new Error(`Missing required original game files: ${selection.missing.join(", ")}`);
   }
@@ -868,18 +902,20 @@ async function prepare(request, requestId) {
 }
 
 async function loadInstalled(request, requestId) {
+  const game = request.game === "generals" ? "generals" : "zeroHour";
+  const archivesForGame = ARCHIVE_SETS[game];
   const installed = Array.isArray(request.archives) ? request.archives : [];
   const namespaceRoot = safeDisposableRoot(request.namespaceRoot);
   const installRoot = safeDisposableRoot(request.installRoot);
   if (!namespaceRoot || !installRoot) throw new Error("Installed library paths are invalid");
   const byName = new Map(installed.map((archive) => [archive?.name, archive]));
-  if (installed.length !== ARCHIVES.length || byName.size !== ARCHIVES.length
-      || ARCHIVES.some((archive) => !byName.has(archive.name))) {
+  if (installed.length !== archivesForGame.length || byName.size !== archivesForGame.length
+      || archivesForGame.some((archive) => !byName.has(archive.name))) {
     throw new Error("Installed library manifest is incomplete");
   }
   const selection = { totalBytes: 0, selected: [] };
   try {
-    for (const expected of ARCHIVES) {
+    for (const expected of archivesForGame) {
       const archive = byName.get(expected.name);
       if (archive.opfsPath !== `${installRoot}/${expected.name}`) {
         throw new Error(`Installed library path is invalid for ${expected.name}`);

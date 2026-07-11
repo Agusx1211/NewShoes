@@ -123,17 +123,22 @@
                 <div class="source-grid">
                   <button type="button" class="source-card" id="pickImageButton">
                     <span class="source-icon disc"><svg><use href="#i-disc"/></svg></span>
-                    <span class="source-copy"><strong>Disc images</strong><small>Select all Generals + Zero Hour discs</small></span>
+                    <span class="source-copy"><strong>Disc images</strong><small>Select one or more original game discs</small></span>
                     <span class="source-arrow">›</span>
                   </button>
                   <button type="button" class="source-card" id="pickFolderButton">
                     <span class="source-icon folder"><svg><use href="#i-folder"/></svg></span>
-                    <span class="source-copy"><strong>Installed folder</strong><small>A folder containing both installations</small></span>
+                    <span class="source-copy"><strong>Installed folder</strong><small>A Generals or Zero Hour installation</small></span>
                     <span class="source-arrow">›</span>
                   </button>
                 </div>
                 <input id="imageInput" type="file" accept=".iso,.bin,.cue,.img,.cab,.big" multiple hidden>
                 <input id="folderInput" type="file" webkitdirectory directory multiple hidden>
+
+                <section id="selectedMediaPanel" class="selected-media" aria-label="Selected original media" hidden>
+                  <header><div><strong>Selected media</strong><span id="selectedMediaCount"></span></div><button id="addMoreImagesButton" type="button">+ Add another disc</button></header>
+                  <ul id="selectedMediaList"></ul>
+                </section>
 
                 <div id="scanPanel" class="scan-panel" aria-live="polite" hidden>
                   <div class="scan-title"><span class="scan-spinner"></span><strong id="scanTitle">Reading file list…</strong><span id="scanPercent">0%</span></div>
@@ -158,6 +163,10 @@
                   <div class="detected-icon"><svg><use href="#i-drive"/></svg></div>
                   <div><strong id="detectedSourceName">Original game source</strong><span id="detectedSummary">Waiting for inventory</span></div>
                   <span class="detected-ok">✓ Ready</span>
+                </div>
+                <div id="detectedMediaList" class="detected-media-list" aria-label="Media included in this library"></div>
+                <div class="space-warning" id="runtimeWarning" hidden>
+                  <span>!</span><p><strong>Vanilla runtime still in progress.</strong> These Generals files are valid and can be prepared, but the separate Generals browser executable is not linked yet.</p>
                 </div>
 
                 <fieldset class="storage-options">

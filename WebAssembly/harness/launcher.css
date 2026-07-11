@@ -116,6 +116,14 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .source-icon.folder { background: #fff3d6; }.source-icon svg { width: 35px; height: 35px; }
 .source-copy { display: grid; gap: 5px; }.source-copy strong { color: #2b4352; font-size: 13px; }.source-copy small { color: #7a8c97; font-size: 10px; }
 .source-arrow { color: #7791a1; font: 26px Georgia, serif; }
+.selected-media { margin-top: 12px; overflow: hidden; border: 1px solid #b8c9d3; border-radius: 4px; background: #fff; }
+.selected-media > header { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 10px; border-bottom: 1px solid #d6e0e5; background: #eef3f6; }
+.selected-media > header div { display: flex; align-items: baseline; gap: 7px; }.selected-media > header strong { color: #344d5c; font-size: 10px; }.selected-media > header span { color: #738691; font-size: 8px; }
+.selected-media > header button { padding: 3px 7px; color: #276f9e; border: 0; background: transparent; font-size: 9px; cursor: pointer; }.selected-media > header button:hover { text-decoration: underline; }.selected-media > header button:disabled { color: #89969d; cursor: wait; text-decoration: none; }
+.selected-media ul { max-height: 124px; margin: 0; padding: 0; overflow: auto; list-style: none; }
+.selected-media li { min-height: 39px; display: grid; grid-template-columns: 25px minmax(0, 1fr) auto 24px; align-items: center; gap: 7px; padding: 5px 8px; border-bottom: 1px solid #edf1f3; }.selected-media li:last-child { border-bottom: 0; }
+.selected-media-icon { width: 23px; height: 23px; display: grid; place-items: center; color: #3b7193; border: 1px solid #bdd0dc; border-radius: 50%; background: #eaf3f8; font-size: 11px; }.selected-media-name { min-width: 0; display: grid; gap: 2px; }.selected-media-name strong { overflow: hidden; color: #405764; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }.selected-media-name span, .selected-media-size { color: #7b8b94; font-size: 8px; }
+.selected-media-remove { width: 22px; height: 22px; padding: 0; color: #7d5550; border: 1px solid transparent; border-radius: 2px; background: transparent; font-size: 15px; line-height: 20px; cursor: pointer; }.selected-media-remove:hover { border-color: #d1aaa4; background: #fff1ef; }.selected-media-remove:disabled { opacity: .45; cursor: wait; }
 .demo-link, .text-button { align-self: flex-start; margin: 15px 0 0; padding: 3px 2px; border: 0; border-bottom: 1px solid transparent; background: transparent; color: #276f9e; font-size: 10px; cursor: pointer; }
 .demo-link:hover, .text-button:hover { border-bottom-color: currentColor; }.demo-link span { color: #dc9a2d; margin-right: 4px; }
 .privacy-note { margin-top: auto; display: flex; align-items: center; gap: 11px; padding: 11px 13px; background: #edf6f1; border: 1px solid #c9dfd1; border-radius: 4px; color: #577063; }
@@ -129,6 +137,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 
 .detected-strip { display: flex; align-items: center; gap: 11px; margin-top: 16px; padding: 10px 12px; border: 1px solid #c8d8e0; border-radius: 4px; background: #f1f7fa; }
 .detected-icon { width: 31px; height: 31px; }.detected-icon svg { width: 100%; height: 100%; }.detected-strip > div:nth-child(2) { flex: 1; display: grid; gap: 3px; }.detected-strip strong { color: #344d5c; font-size: 10px; }.detected-strip span { color: #748690; font-size: 9px; }.detected-strip .detected-ok { color: #477e59; font-weight: bold; }
+.detected-media-list { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.detected-media-item { max-width: 210px; display: flex; align-items: center; gap: 5px; padding: 4px 5px 4px 8px; color: #526975; border: 1px solid #cbd8df; border-radius: 12px; background: #fff; font-size: 8px; }
+.detected-media-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.detected-media-item .selected-media-remove { width: 17px; height: 17px; font-size: 12px; line-height: 14px; }
 .storage-options { display: grid; gap: 7px; margin: 14px 0 0; padding: 0; border: 0; }
 .storage-choice { min-height: 63px; display: grid; grid-template-columns: 17px 34px 1fr auto; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid #cbd6dc; border-radius: 4px; background: #fff; cursor: pointer; transition: .12s; }
 .storage-choice:hover { background: #f7fbfd; border-color: #88b0c9; }.storage-choice.is-selected { background: #eef6fb; border-color: #4f8fb8; box-shadow: inset 3px 0 #367eae; }

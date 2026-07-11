@@ -1329,10 +1329,11 @@ function createThreadedEngineController() {
 }
 
 const threadedEngine = cncPortThreadedMode ? createThreadedEngineController() : null;
-if (threadedEngine) {
+if (threadedEngine && !(globalThis.location?.pathname || "").endsWith("/play.html")) {
   // Prepare the worker realm as soon as the runtime is up — BEFORE any engine
   // start (P1a handshake rule: all realm prep must complete before boot/go
-  // blocks the worker's event loop).
+  // blocks the worker's event loop). The human launcher delays this until it
+  // begins preparing or staging the selected asset library.
   threadedEngine.ensureReady().catch((error) => {
     recordLog("threaded realm prep failed", { error: error?.message ?? String(error) });
   });
