@@ -39,6 +39,7 @@
     source: null,
     storageMode: "once",
     launching: false,
+    preparingLibrary: false,
     library: readStoredLibrary(),
     windowLayout: readWindowLayout(),
   };
@@ -249,6 +250,10 @@
   }
 
   function closeWindow(windowEl) {
+    if (state.preparingLibrary && windowEl.dataset.app === "setup") {
+      showToast("Installation in progress", "Keep the launcher open until ZeroH finishes copying the game files.", "warning");
+      return;
+    }
     windowEl.classList.remove("is-open", "is-minimized", "is-active");
     focusTopWindow();
     renderTaskbar();
@@ -594,16 +599,62 @@
       : `${labels.slice(0, 6).join(", ")} and ${labels.length - 6} more`;
   }
 
+  function setLibraryPreparationState(active, mode = state.storageMode) {
+    state.preparingLibrary = active;
+    const page = document.querySelector('[data-wizard-page="2"]');
+    const panel = document.querySelector("#libraryProgressPanel");
+    const installing = mode === "install";
+    page.classList.toggle("is-preparing", active);
+    page.setAttribute("aria-busy", String(active));
+    panel.hidden = !active;
+    document.querySelector("#libraryProgressEyebrow").textContent = installing
+      ? "INSTALLING ZERO HOUR" : "PREPARING ZERO HOUR";
+    document.querySelector("#libraryProgressTitle").textContent = installing
+      ? "Installing game files…" : "Preparing game files…";
+    document.querySelector("#libraryProgressCopy").textContent = installing
+      ? "Required files are being copied into this browser’s private storage."
+      : "Required files are being prepared from your selected original media.";
+    document.querySelector("#libraryProgressDetail").textContent = installing
+      ? "Checking available browser storage…" : "Preparing browser filesystem…";
+    renderLibraryPreparationProgress(0);
+    document.body.classList.toggle("library-preparing", active);
+    document.querySelectorAll(
+      '#setupWindow [data-window-action], [data-wizard-back], input[name="storageMode"], '
+        + "#prepareLibraryButton, #forgetLibraryButton, #resetConceptButton, .managed-storage-delete, "
+        + "[data-launch-game]",
+    ).forEach((control) => {
+      if (active) {
+        control.dataset.preparationDisabled = String(control.disabled);
+        control.disabled = true;
+      } else if (Object.hasOwn(control.dataset, "preparationDisabled")) {
+        control.disabled = control.dataset.preparationDisabled === "true";
+        delete control.dataset.preparationDisabled;
+      }
+    });
+  }
+
+  function renderLibraryPreparationProgress(value, detail = null) {
+    if (detail) document.querySelector("#libraryProgressDetail").textContent = detail;
+    document.querySelector("#libraryProgressPercent").textContent = `${value}%`;
+    document.querySelector("#libraryProgressFill").style.width = `${value}%`;
+    document.querySelector("#libraryProgressTrack").setAttribute("aria-valuenow", String(value));
+  }
+
+  function updateLibraryPreparationProgress(progress) {
+    const ratio = progress.total ? progress.completed / progress.total : 0;
+    const value = Math.max(0, Math.min(100, Math.round(ratio * 100)));
+    const detail = progress.detail ? `Copying ${progress.detail}` : "Copying required game files…";
+    renderLibraryPreparationProgress(value, detail);
+  }
+
   async function prepareLibrary() {
-    const button = document.querySelector("#prepareLibraryButton");
-    const original = button.innerHTML;
-    button.disabled = true;
-    button.textContent = state.storageMode === "install" ? "Installing original assets…" : "Preparing…";
+    if (state.preparingLibrary) return;
+    const requestedMode = state.storageMode;
+    setLibraryPreparationState(true, requestedMode);
     try {
-      const result = await window.ZeroHAssetLibrary.prepare(state.storageMode, (progress) => {
-        const ratio = progress.total ? progress.completed / progress.total : 0;
-        button.textContent = `${progress.detail} · ${Math.round(ratio * 100)}%`;
-      });
+      const result = await window.ZeroHAssetLibrary.prepare(
+        requestedMode, updateLibraryPreparationProgress);
+      renderLibraryPreparationProgress(100, "Finalizing game library…");
       const totalBytes = result.archives.reduce((sum, archive) => sum + archive.bytes, 0);
       state.storageMode = result.effectiveMode || state.storageMode;
       syncStorageModeUI();
@@ -625,8 +676,7 @@
     } catch (error) {
       showToast("Library preparation failed", error?.message || String(error), "warning");
     } finally {
-      button.disabled = false;
-      button.innerHTML = original;
+      setLibraryPreparationState(false, requestedMode);
     }
   }
 
@@ -979,5 +1029,9 @@
 
   void reconcileStoredLibrary();
 
-  window.ZeroHDesktop = { openApp, showToast };
+  window.ZeroHDesktop = {
+    openApp,
+    showToast,
+    get preparingLibrary() { return state.preparingLibrary; },
+  };
 })();

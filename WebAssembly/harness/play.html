@@ -191,6 +191,23 @@
                   <button type="button" class="button secondary" data-wizard-back>Back</button>
                   <button type="button" class="button primary" id="prepareLibraryButton">Prepare library <span>›</span></button>
                 </footer>
+
+                <section id="libraryProgressPanel" class="library-progress-panel" aria-live="polite" hidden>
+                  <div class="library-progress-icon" aria-hidden="true"><svg><use href="#i-box"/></svg></div>
+                  <div class="library-progress-heading">
+                    <p class="eyebrow" id="libraryProgressEyebrow">INSTALLING ZERO HOUR</p>
+                    <h2 id="libraryProgressTitle">Installing game files…</h2>
+                    <p id="libraryProgressCopy">Required files are being copied into this browser&rsquo;s private storage.</p>
+                  </div>
+                  <div class="library-progress-readout">
+                    <strong id="libraryProgressDetail">Checking available storage…</strong>
+                    <span id="libraryProgressPercent">0%</span>
+                  </div>
+                  <div id="libraryProgressTrack" class="library-progress-track" role="progressbar" aria-label="Game installation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                    <span id="libraryProgressFill"></span>
+                  </div>
+                  <p class="library-progress-warning"><span aria-hidden="true">i</span><span><strong>Please keep this tab open.</strong> ZeroH will unlock the launcher as soon as the game files are ready.</span></p>
+                </section>
               </section>
 
               <section class="wizard-page ready-page" data-wizard-page="3">

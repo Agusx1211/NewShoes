@@ -236,6 +236,10 @@
         remove.addEventListener("click", async (event) => {
           event.preventDefault();
           event.stopPropagation();
+          if (desktop.preparingLibrary) {
+            desktop.showToast("Installation in progress", "Wait until ZeroH finishes copying the game files before changing browser storage.", "warning");
+            return;
+          }
           remove.disabled = true;
           try {
             const result = await window.ZeroHAssetLibrary.deleteManagedStorage(entry.path);

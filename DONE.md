@@ -8,6 +8,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Locked launcher installation progress (2026-07-11)
+
+- [x] Replaced progress text inside the asset-preparation button with a
+      dedicated Windows-style installer screen: determinate segmented bar,
+      percentage, current archive, storage/preparation copy, and keep-open
+      guidance. The launcher locks source/storage navigation, destructive
+      storage actions, game launch buttons, and its close controls until the
+      operation succeeds or fails, then restores each control's prior state.
+      Browser verification covered a paused 42% install and screenshot,
+      successful Ready-page transition, plus failure recovery at 67% with the
+      original error surfaced and no page errors.
+
 ## Original animated cursors in the browser (2026-07-11)
 
 - [x] Replaced the Emscripten `LoadCursorFromFile` no-op with stable cursor
