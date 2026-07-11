@@ -4082,6 +4082,17 @@ and then start with the PROFILE, not with any individual fix.
 - [ ] Add an automated public-tree gate for secret signatures, absolute
       symlinks, retail container extensions/magic, and unexpectedly large
       tracked blobs so the release audit cannot silently regress.
+- [ ] Add public discovery metadata after the canonical root release: a
+      `robots.txt`, `sitemap.xml`, Open Graph and Twitter cards, and
+      `SoftwareApplication` JSON-LD. The root bootstrap now has a title,
+      description, canonical URL, icons, manifest, and visible legal/source
+      links; these remaining items are search and sharing polish, not launcher
+      boot requirements.
+- [ ] Add the requested consent-gated GA4 module after the owner supplies the
+      measurement ID and event taxonomy. Load it only after the root launcher
+      passes the COI gate; resolve its URL from the Pages scope rather than the
+      generated launcher's `./harness/` base, and keep analytics failures
+      outside the runtime startup path.
 - [ ] `WebAssembly/shims/` contains a file literally named
       `GameLogic\Weaponset.h` (backslash IN the filename, matching a
       Windows-style `#include "GameLogic\WeaponSet.h"`). It works on

@@ -14,7 +14,7 @@ const repoRoot = resolve(wasmRoot, "..");
 const outputRoot = resolve(process.argv[2] || join(wasmRoot, "pages-dist"));
 const runtimeDist = resolve(process.env.PAGES_RUNTIME_DIST
   || join(wasmRoot, "pages-build/dist-threaded-release"));
-const defaultSourceUrl = "https://github.com/Agusx1211/CnC-wasm";
+const defaultSourceUrl = "https://github.com/Agusx1211/NewShoes";
 const sourceUrl = String(process.env.PAGES_SOURCE_URL || defaultSourceUrl);
 
 if (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\/(?:tree|commit)\/[A-Fa-f0-9]+)?\/?$/.test(sourceUrl)) {
@@ -76,6 +76,13 @@ for (const name of PAGES_HARNESS_FILES) {
 
 const playSource = await readFile(join(wasmRoot, "harness", "play.html"), "utf8");
 const directBootstrap = "    <script src=\"../coi-direct.js\"></script>\n";
+const legacyDocumentHead = `    <link rel="canonical" href="../">\n${directBootstrap}`;
+const rootDocumentHead = [
+  "    <base href=\"./harness/\">",
+  "    <link rel=\"canonical\" href=\"../\">",
+  directBootstrap.trimEnd(),
+  "",
+].join("\n");
 const aboutLegalPattern = /<p class="about-legal">[\s\S]*?<\/p>/;
 const legalNotice = `<p class="about-legal" id="publicLegalNotice" style="font-size:9px;line-height:1.55;color:#536b78">Modified browser port, 2026. Copyright © Electronic Arts Inc. and Project New Shoes contributors. This GPLv3 software comes with absolutely no warranty. <a href="../legal.html">License and notices</a> · <a href="${escapeHtml(sourceUrl)}">Corresponding source</a></p>`;
 if (!playSource.includes("<head>")) throw new Error("play.html has no <head> element");
@@ -84,9 +91,28 @@ await mkdir(join(outputRoot, "harness"), { recursive: true });
 await writeFile(
   join(outputRoot, "harness", "play.html"),
   playSource
-    .replace("<head>\n", `<head>\n${directBootstrap}`)
+    .replace("<head>\n", `<head>\n${legacyDocumentHead}`)
     .replace(aboutLegalPattern, legalNotice),
 );
+await writeFile(
+  join(outputRoot, "launcher.html"),
+  playSource
+    .replace("<head>\n", `<head>\n${rootDocumentHead}`)
+    .replace('href="./manifest.webmanifest"', 'href="../manifest.webmanifest"')
+    .replace(aboutLegalPattern, legalNotice),
+);
+
+const harnessManifest = JSON.parse(await readFile(join(wasmRoot, "harness", "manifest.webmanifest"), "utf8"));
+const rootManifest = {
+  ...harnessManifest,
+  start_url: "./",
+  scope: "./",
+  icons: harnessManifest.icons.map((icon) => ({
+    ...icon,
+    src: `./harness/${String(icon.src).replace(/^\.\//, "")}`,
+  })),
+};
+await writeFile(join(outputRoot, "manifest.webmanifest"), `${JSON.stringify(rootManifest, null, 2)}\n`);
 
 for (const name of PAGES_RUNTIME_FILES) {
   await copyRegularFile(join(runtimeDist, name), join(outputRoot, "dist-threaded-release", name));

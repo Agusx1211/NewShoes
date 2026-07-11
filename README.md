@@ -16,9 +16,9 @@ players must provide files from a copy they own.
 
 ## Play
 
-**[Play Project New Shoes](http://newshoes.gg/)**
+**[Play Project New Shoes](https://newshoes.gg/)**
 
-This public URL will point to the current GitHub Pages deployment.
+This public URL points to the current GitHub Pages deployment.
 
 <p align="center">
   <img src="docs/images/project-new-shoes-zero-hour-menu.webp" alt="Zero Hour faction and skirmish menu rendered by the original engine in the Project New Shoes browser runtime" width="800"><br>

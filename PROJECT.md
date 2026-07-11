@@ -78,9 +78,11 @@ hardening, disconnect behavior, and long determinism runs remain open.
 
 ## Launcher and lifecycle
 
-`WebAssembly/harness/play.html` is the human entry point. The Project New Shoes
-desktop handles asset acquisition, install progress, display and shader
-settings, diagnostics, and launch/close lifecycle.
+`WebAssembly/harness/play.html` is the local launcher template. The public Pages
+deployment serves that launcher at its canonical scope root, including custom
+domains and project subpaths, without exposing the harness path. The Project
+New Shoes desktop handles asset acquisition, install progress, display and
+shader settings, diagnostics, and launch/close lifecycle.
 
 Closing the game persists saves, shuts down original engine ownership, closes
 audio and network state, releases OPFS handles and Web Locks, terminates the

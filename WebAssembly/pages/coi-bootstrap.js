@@ -7,7 +7,7 @@
   const status = document.querySelector("#coi-status");
   const error = document.querySelector("#coi-error");
   const retry = document.querySelector("#coi-retry");
-  const target = script?.dataset.coiTarget || "./harness/play.html";
+  const target = script?.dataset.coiTarget || "./";
   const attemptKey = "project-new-shoes-coi-bootstrap-attempts.v1";
 
   function setStatus(message) {
@@ -39,12 +39,20 @@
   }
 
   function safeTarget() {
+    const scope = new URL("./", location.href);
     const requested = new URLSearchParams(location.search).get("coi-return");
     if (requested) {
       try {
         const parsed = new URL(requested, location.href);
-        const scope = new URL("./", location.href);
         if (parsed.origin === scope.origin && parsed.pathname.startsWith(scope.pathname)) {
+          const legacyPlay = new URL("harness/play.html", scope);
+          const packagedLauncher = new URL("launcher.html", scope);
+          if (parsed.pathname === legacyPlay.pathname || parsed.pathname === packagedLauncher.pathname) {
+            const canonical = new URL(scope);
+            canonical.search = parsed.search;
+            canonical.hash = parsed.hash;
+            return canonical.href;
+          }
           return parsed.href;
         }
       } catch { /* use the default */ }

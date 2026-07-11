@@ -66,6 +66,9 @@ for (const contract of [
   'headers.set("Cross-Origin-Opener-Policy", COOP)',
   'headers.set("Cross-Origin-Embedder-Policy", COEP)',
   'url.origin !== self.location.origin',
+  'new URL("launcher.html", scopeUrl)',
+  'url.pathname === scopeUrl.pathname',
+  'Response.redirect(canonicalLocation(url), 302)',
 ]) {
   if (!serviceWorker.includes(contract)) throw new Error(`Isolation worker contract missing: ${contract}`);
 }

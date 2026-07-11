@@ -81,9 +81,16 @@ async function verifyStaticModuleReferences() {
     const extension = extname(name).toLowerCase();
     if (!new Set([".html", ".js", ".mjs"]).has(extension)) continue;
     const text = await readFile(resolve(root, name), "utf8");
+    let referenceBase = resolve(root, dirname(name));
+    if (extension === ".html") {
+      const baseHref = text.match(/<base\b[^>]*\bhref=["']([^"']+)["'][^>]*>/i)?.[1];
+      if (baseHref?.startsWith(".")) {
+        referenceBase = resolve(referenceBase, baseHref.split(/[?#]/, 1)[0]);
+      }
+    }
     for (const reference of moduleReferences(text, extension)) {
       if (!reference.startsWith(".")) continue;
-      const target = resolve(root, dirname(name), reference.split(/[?#]/, 1)[0]);
+      const target = resolve(referenceBase, reference.split(/[?#]/, 1)[0]);
       const targetName = relative(root, target).replaceAll("\\", "/");
       if (targetName.startsWith("../") || !expectedFiles.has(targetName)) {
         findings.push(`${name}: unresolved static module import ${reference}`);
@@ -100,21 +107,44 @@ for (const name of expectedFiles) {
 await verifyStaticModuleReferences();
 if (totalBytes > 250 * 1024 * 1024) findings.push(`artifact is unexpectedly large: ${totalBytes} bytes`);
 
-const [license, index, legal, play] = await Promise.all([
+const [license, index, legal, launcher, play, manifestText] = await Promise.all([
   readFile(resolve(root, "LICENSE.md"), "utf8").catch(() => ""),
   readFile(resolve(root, "index.html"), "utf8").catch(() => ""),
   readFile(resolve(root, "legal.html"), "utf8").catch(() => ""),
+  readFile(resolve(root, "launcher.html"), "utf8").catch(() => ""),
   readFile(resolve(root, "harness/play.html"), "utf8").catch(() => ""),
+  readFile(resolve(root, "manifest.webmanifest"), "utf8").catch(() => ""),
 ]);
 if (!license.includes("ADDITIONAL TERMS per GNU GPL Section 7") || !license.includes("Disclaimer of Warranty")) {
   findings.push("LICENSE.md: complete GPLv3 license and additional terms are missing");
 }
-if (!index.includes("No warranty") || !index.includes("./legal.html")) findings.push("index.html: visible legal notice is missing");
+if (!index.includes("No warranty") || !index.includes("./legal.html")
+    || !index.includes('rel="canonical" href="./"') || !index.includes('data-coi-target="./"')) {
+  findings.push("index.html: root canonical, launcher target, or visible legal notice is missing");
+}
 if (!legal.includes("absolutely no warranty") || !legal.includes("Corresponding source") || legal.includes("__PAGES_SOURCE_URL__")) {
   findings.push("legal.html: no-warranty, source, or resolved legal notice is missing");
 }
-if (!play.includes('id="publicLegalNotice"') || !play.includes("Corresponding source")) {
+if (!launcher.includes('<base href="./harness/">')
+    || !launcher.includes('rel="canonical" href="../"')
+    || !launcher.includes("data-cnc-play-page")
+    || !launcher.includes('src="../coi-direct.js"')
+    || !launcher.includes('href="../manifest.webmanifest"')
+    || !launcher.includes('id="publicLegalNotice"')) {
+  findings.push("launcher.html: canonical root launcher contract is missing");
+}
+if (!play.includes('rel="canonical" href="../"')
+    || !play.includes('id="publicLegalNotice"') || !play.includes("Corresponding source")) {
   findings.push("harness/play.html: launcher About legal notice is missing");
+}
+try {
+  const manifest = JSON.parse(manifestText);
+  if (manifest.start_url !== "./" || manifest.scope !== "./"
+      || !manifest.icons?.every((icon) => String(icon.src).startsWith("./harness/assets/"))) {
+    findings.push("manifest.webmanifest: root start URL, scope, or icon paths are invalid");
+  }
+} catch {
+  findings.push("manifest.webmanifest: root launcher manifest is invalid JSON");
 }
 
 inventory.sort((a, b) => a.name.localeCompare(b.name));
