@@ -8,6 +8,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Clean launcher game shutdown (2026-07-11)
+
+- [x] Replaced the launcher's overlay-only pause with a bounded real shutdown:
+      stop the paced frame loop, flush IDBFS saves, delete the original
+      `GameEngine` through the same ownership used by `GameMain`, stop active
+      Web Audio sources and WebRTC/input state, close staged OPFS handles,
+      release launcher Web Locks, and terminate the Emscripten pthread worker.
+      Because a transferred OffscreenCanvas cannot be reused, launching again
+      transparently reloads a fresh runtime document and resumes from the
+      installed library without asking the player to refresh manually.
+      Verified against the installed four-ISO profile on the served release
+      build: close completed in 354 ms, the original destructor succeeded, 30
+      OPFS handles and the install Web Lock were released, audio reported zero
+      active 2D/3D/stream sources with a closed context, the desktop remained
+      usable, and a subsequent Launch reached a fresh `started=true` runtime.
+
 ## Locked launcher installation progress (2026-07-11)
 
 - [x] Replaced progress text inside the asset-preparation button with a

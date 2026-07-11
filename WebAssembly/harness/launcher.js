@@ -3,6 +3,7 @@
 
   const LAUNCHER_LOGO_PATH = "./assets/launcher-logo.webp";
   const LAYOUT_VERSION = "launcher-centered-v1";
+  const RELAUNCH_AFTER_RELOAD_KEY = "zeroh-relaunch-after-runtime-close";
 
   function storageGet(key) {
     try { return localStorage.getItem(key); } catch { return null; }
@@ -702,6 +703,11 @@
       showToast("Original files required", "Add your original Generals and Zero Hour media before launching.", "warning");
       return;
     }
+    if (window.ZeroHRuntime?.closed) {
+      try { sessionStorage.setItem(RELAUNCH_AFTER_RELOAD_KEY, "1"); } catch { /* optional */ }
+      window.location.reload();
+      return;
+    }
     if (state.launching) return;
     state.launching = true;
     document.querySelectorAll("[data-launch-game]").forEach((button) => { button.disabled = true; });
@@ -743,8 +749,14 @@
   }
 
   async function exitRuntime() {
-    await window.ZeroHRuntime?.exit();
-    showToast("Returned to Project New Shoes", "The real engine is paused and your saves were flushed.");
+    const result = await window.ZeroHRuntime?.exit();
+    showToast(
+      "Returned to Project New Shoes",
+      result?.ok === false
+        ? "The game was force-closed after cleanup reported an error. Your saves were flushed."
+        : "The game engine stopped and your saves were flushed.",
+      result?.ok === false ? "warning" : undefined,
+    );
   }
 
   function updateClock() {
@@ -1000,6 +1012,14 @@
       setWizardStep(1);
     }
     updateLibraryUI();
+    let relaunchRequested = false;
+    try {
+      relaunchRequested = sessionStorage.getItem(RELAUNCH_AFTER_RELOAD_KEY) === "1";
+      sessionStorage.removeItem(RELAUNCH_AFTER_RELOAD_KEY);
+    } catch { /* optional */ }
+    if (relaunchRequested && state.library) {
+      void launchGame();
+    }
   }
 
   void reconcileStoredLibrary();

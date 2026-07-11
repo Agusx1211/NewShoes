@@ -8383,3 +8383,30 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_init_step(doubl
 	json += "}";
 	return json.c_str();
 }
+
+// Mirror GameMain's normal exit ownership. The browser frame scheduler stops
+// before calling this export, so no update can race subsystem destruction.
+// The surrounding wasm document is intentionally not reusable after this:
+// OffscreenCanvas and the pthread worker are one-shot browser resources.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_shutdown()
+{
+	static std::string json;
+	if (TheGameEngine == NULL) {
+		json = "{\"ok\":true,\"alreadyStopped\":true}";
+		return json.c_str();
+	}
+
+	try {
+		TheGameEngine->setQuitting(TRUE);
+		delete TheGameEngine;
+		TheGameEngine = NULL;
+		json = "{\"ok\":true,\"alreadyStopped\":false}";
+	} catch (const char *message) {
+		json = "{\"ok\":false,\"error\":\"";
+		json += json_escape(message != NULL ? message : "shutdown failed");
+		json += "\"}";
+	} catch (...) {
+		json = "{\"ok\":false,\"error\":\"unhandled C++ exception during GameEngine shutdown\"}";
+	}
+	return json.c_str();
+}

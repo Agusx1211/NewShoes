@@ -789,6 +789,8 @@ async function start() {
 
 let runtimeStarted = false;
 let runtimeStartPromise = null;
+let runtimeClosed = false;
+let runtimeShutdownPromise = null;
 
 function beginRuntimeStart() {
   if (runtimeStarted) return Promise.resolve();
@@ -807,6 +809,9 @@ startButton.addEventListener("click", () => {
 });
 
 async function launchFromDesktop() {
+  if (runtimeClosed) {
+    throw new Error("The closed game runtime must be restarted in a fresh page");
+  }
   overlay.hidden = false;
   if (!runtimeStarted) {
     overlay.classList.remove("is-running");
@@ -828,21 +833,36 @@ async function launchFromDesktop() {
 }
 
 async function exitToDesktop() {
-  if (activeRpc && runtimeStarted) {
-    await activeRpc("threadedStopLoop", {}).catch(() => {});
-    await activeRpc("persistSaves", { reason: "launcher-exit" }).catch(() => {});
-  }
-  overlay.hidden = true;
-  overlay.classList.remove("is-running");
-  hudNode?.classList.add("hidden");
-  gearButton?.classList.add("hidden");
-  closeSettings();
+  if (runtimeShutdownPromise) return runtimeShutdownPromise;
+  if (!activeRpc || !runtimeStarted) return null;
+
+  const shutdown = (async () => {
+    progressNode.textContent = "Closing Zero Hour…";
+    hudNode?.classList.add("hidden");
+    gearButton?.classList.add("hidden");
+    closeSettings();
+    await activeRpc("threadedStopLoop", { timeoutMs: 5000 }).catch(() => null);
+    await activeRpc("persistSaves", { reason: "launcher-exit" }).catch(() => null);
+    const result = await activeRpc("shutdownRuntime", {}).catch((error) => ({
+      ok: false,
+      error: error?.message ?? String(error),
+    }));
+    runtimeStarted = false;
+    runtimeClosed = true;
+    activeRpc = null;
+    overlay.hidden = true;
+    overlay.classList.remove("is-running");
+    return result;
+  })();
+  runtimeShutdownPromise = shutdown;
+  return shutdown;
 }
 
 window.ZeroHRuntime = {
   launch: launchFromDesktop,
   exit: exitToDesktop,
   get started() { return runtimeStarted; },
+  get closed() { return runtimeClosed; },
 };
 
 if (queryParams.get("autostart") === "1") {

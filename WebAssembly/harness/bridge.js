@@ -824,6 +824,7 @@ function createThreadedEngineController() {
   let engineWorker = null;
   let prepPromise = null;
   let engineThreadStarted = false;
+  let shutDown = false;
   let lastStatus = null;
   let lastLoopError = null;
   let mssHandlers = null;
@@ -1083,6 +1084,9 @@ function createThreadedEngineController() {
   }
 
   function sendCommand(payload, { timeoutMs = 300000, onProgress = null } = {}) {
+    if (shutDown) {
+      return Promise.reject(new Error("threaded engine has shut down"));
+    }
     const id = ++commandId;
     return new Promise((resolve, reject) => {
       const entry = {
@@ -1296,9 +1300,73 @@ function createThreadedEngineController() {
     return reply;
   }
 
-  async function stopLoop() {
+  async function stopLoop(timeoutMs = 60000) {
     await startEngineThread();
-    return sendCommand({ cmd: "stopLoop" }, { timeoutMs: 60000 });
+    return sendCommand({ cmd: "stopLoop" }, {
+      timeoutMs: Math.max(1000, Math.min(60000, Number(timeoutMs) || 60000)),
+    });
+  }
+
+  async function shutdown() {
+    if (shutDown) {
+      return { ok: true, alreadyStopped: true };
+    }
+
+    const result = { ok: true, loopStopped: false, engineShutdown: null, opfsHandlesClosed: 0 };
+    if (engineThreadStarted && realmPort) {
+      try {
+        const stopped = await sendCommand({ cmd: "stopLoop" }, { timeoutMs: 5000 });
+        result.loopStopped = stopped?.ok === true;
+      } catch (error) {
+        result.ok = false;
+        result.stopError = error?.message ?? String(error);
+      }
+      try {
+        result.engineShutdown = await engineCall(
+          "cnc_port_real_engine_shutdown", "string", [], [], { timeoutMs: 15000 });
+        if (result.engineShutdown?.ok !== true) {
+          result.ok = false;
+        }
+      } catch (error) {
+        result.ok = false;
+        result.engineError = error?.message ?? String(error);
+      }
+      try {
+        const released = await sendCommand({ cmd: "releaseOpfsHandles" }, { timeoutMs: 5000 });
+        result.opfsHandlesClosed = Number(released?.closed ?? 0);
+      } catch (error) {
+        result.ok = false;
+        result.opfsError = error?.message ?? String(error);
+      }
+    }
+
+    shutDown = true;
+    cncPortMssCacheDropNotifier = null;
+    inputOutbox.length = 0;
+    for (const [, entry] of pending) {
+      if (entry.timer) clearTimeout(entry.timer);
+      entry.reject(new Error("threaded engine shut down"));
+    }
+    pending.clear();
+    publishPending();
+    try { realmPort?.close(); } catch (_error) { /* already closed */ }
+    realmPort = null;
+    try {
+      const terminateAllThreads = cncPortEmscriptenModule?.PThread?.terminateAllThreads;
+      if (typeof terminateAllThreads !== "function") {
+        throw new Error("Emscripten pthread termination is unavailable");
+      }
+      terminateAllThreads.call(cncPortEmscriptenModule.PThread);
+      result.workerTerminated = true;
+    } catch (error) {
+      result.ok = false;
+      result.workerTerminated = false;
+      result.workerError = error?.message ?? String(error);
+      try { engineWorker?.terminate(); } catch (_terminateError) { /* best effort */ }
+    }
+    engineWorker = null;
+    engineThreadStarted = false;
+    return result;
   }
 
   // Fire-and-forget realm command (no id, no reply, no timeout entry) —
@@ -1319,6 +1387,7 @@ function createThreadedEngineController() {
     engineInit,
     startLoop,
     stopLoop,
+    shutdown,
     forwardInput,
     sendCommand,
     postCommand,
@@ -1392,6 +1461,7 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   // wasm calls).
   "resumeBrowserAudioRuntime",
   "setBrowserAudioMixerVolumes",
+  "shutdownRuntime",
   "setD3D8GammaRamp",
   // Saves: IDBFS is mounted on the MAIN runtime (preRun) and the engine
   // thread's FS writes proxy to main, so persist (FS.syncfs) and the listing
@@ -1647,7 +1717,7 @@ async function threadedRpc(command, payload = {}) {
     }
     case "threadedStopLoop": {
       try {
-        const reply = await threadedEngine.stopLoop();
+        const reply = await threadedEngine.stopLoop(payload.timeoutMs);
         return {
           ok: reply?.ok === true,
           command,
@@ -3887,6 +3957,54 @@ function cncPortMssStreamStop(payload) {
     browserMssStreamPlaybackRuntime.musicSourceActive = false;
   }
   return true;
+}
+
+async function shutdownBrowserAudioRuntime() {
+  const stopSources = (runtime) => {
+    runtime.resetGeneration = Number(runtime.resetGeneration ?? 0) + 1;
+    for (const entry of runtime.activeSources.values()) {
+      try { entry.source.onended = null; } catch (_error) { /* unavailable */ }
+      try { entry.source.stop(); } catch (_error) { /* already stopped */ }
+      try { entry.source.disconnect(); } catch (_error) { /* already disconnected */ }
+      try { entry.gain?.disconnect(); } catch (_error) { /* already disconnected */ }
+      try { entry.panner?.disconnect(); } catch (_error) { /* already disconnected */ }
+    }
+    runtime.activeSources.clear();
+    runtime.pendingCompletions?.clear();
+  };
+
+  stopSources(browserMssSamplePlaybackRuntime);
+  stopSources(browserMss3DSamplePlaybackRuntime);
+  for (const pending of browserMssStreamPlaybackRuntime.pendingStarts.values()) {
+    pending.cancelled = true;
+  }
+  browserMssStreamPlaybackRuntime.pendingStarts.clear();
+  stopSources(browserMssStreamPlaybackRuntime);
+  browserMssStreamPlaybackRuntime.musicSourceActive = false;
+
+  for (const node of Object.values(browserAudioMixerRuntime.busNodes ?? {})) {
+    try { node.disconnect(); } catch (_error) { /* already disconnected */ }
+  }
+  browserAudioMixerRuntime.busNodes = null;
+  browserAudioMixerRuntime.created = false;
+  cncPortDecodedSampleCache.clear();
+  browserAudioRequestedDecodedCache.clear();
+
+  const context = browserAudioRuntime.context;
+  if (context && context.state !== "closed") {
+    try {
+      await context.close();
+    } catch (error) {
+      browserAudioRuntime.lastResumeError = error?.message ?? String(error);
+    }
+  }
+  return {
+    closed: !context || context.state === "closed",
+    contextState: context?.state ?? null,
+    activeSamples: browserMssSamplePlaybackRuntime.activeSources.size,
+    active3DSamples: browserMss3DSamplePlaybackRuntime.activeSources.size,
+    activeStreams: browserMssStreamPlaybackRuntime.activeSources.size,
+  };
 }
 
 async function decodeMssStreamPayload(context, bytes, entry) {
@@ -8243,6 +8361,30 @@ function ioWorkerRequest(request, transfer = [], onProgress = null) {
   });
 }
 
+async function shutdownIoWorker() {
+  const worker = ioWorkerInstance;
+  if (!worker) return { closed: 0, terminated: false };
+
+  let closed = 0;
+  try {
+    const released = await Promise.race([
+      ioWorkerRequest({ kind: "releaseHandles" }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("IO worker release timed out")), 2000)),
+    ]);
+    closed = Number(released?.closed ?? 0);
+  } catch (_error) {
+    // Worker termination below is the hard lock-release guarantee.
+  }
+  worker.terminate();
+  ioWorkerInstance = null;
+  ioWorkerDisabled = true;
+  for (const [, pending] of ioWorkerPending) {
+    pending.reject(new Error("IO worker shut down"));
+  }
+  ioWorkerPending.clear();
+  return { closed, terminated: true };
+}
+
 // P2 "OPFS as the disk" (threaded mode): stream one archive straight into an
 // OPFS file on the IO worker. The bytes are NEVER RAM-resident anywhere —
 // each fetch chunk is written through a FileSystemSyncAccessHandle as it
@@ -8274,6 +8416,25 @@ if (cncPortThreadedMode && typeof window !== "undefined") {
     }
   };
   window.addEventListener("pagehide", releaseOpfsLocksOnPageHide);
+}
+
+async function shutdownBrowserRuntime() {
+  await resetBrowserInput().catch(() => null);
+  const engine = threadedEngine
+    ? await threadedEngine.shutdown()
+    : { ok: true, alreadyStopped: true };
+  resetBrowserWebRtcUdpEndpointRuntime();
+  const audio = await shutdownBrowserAudioRuntime();
+  const io = await shutdownIoWorker();
+  const webLocksReleased = releaseOpfsWebLocks();
+  await Promise.resolve();
+  return {
+    ok: engine.ok === true && engine.workerTerminated !== false && audio.closed === true,
+    engine,
+    audio,
+    io,
+    webLocksReleased,
+  };
 }
 
 // Archive mount progress -> page UI. The mount path publishes coarse
@@ -9903,7 +10064,9 @@ const OPFS_INSTALL_LOCK_PREFIX = "cnc-port-opfs-install:";
 const opfsBootId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 let opfsMountSequence = 0;
 let opfsNamespaceLockPromise = null;
+let opfsNamespaceLockRelease = null;
 const opfsInstallLockPromises = new Map();
+const opfsInstallLockReleases = new Map();
 
 function acquireOpfsNamespaceLock() {
   if (opfsNamespaceLockPromise) {
@@ -9920,9 +10083,10 @@ function acquireOpfsNamespaceLock() {
         { mode: "exclusive", ifAvailable: true },
         (lock) => {
           resolve(lock !== null);
-          // Hold the lock until the page dies (bootId is per-page random, so
-          // nobody else ever waits on it).
-          return lock === null ? null : new Promise(() => {});
+          // Hold until explicit runtime shutdown or page death.
+          return lock === null ? null : new Promise((release) => {
+            opfsNamespaceLockRelease = release;
+          });
         },
       ).catch(() => resolve(false));
     } catch (_error) {
@@ -9945,7 +10109,9 @@ function acquireOpfsInstallLock(installName) {
         { mode: "shared" },
         (lock) => {
           resolve(lock !== null);
-          return lock === null ? null : new Promise(() => {});
+          return lock === null ? null : new Promise((release) => {
+            opfsInstallLockReleases.set(installName, release);
+          });
         },
       ).catch(() => resolve(false));
     } catch {
@@ -9954,6 +10120,23 @@ function acquireOpfsInstallLock(installName) {
   });
   opfsInstallLockPromises.set(installName, promise);
   return promise;
+}
+
+function releaseOpfsWebLocks() {
+  let released = 0;
+  if (opfsNamespaceLockRelease) {
+    opfsNamespaceLockRelease();
+    opfsNamespaceLockRelease = null;
+    opfsNamespaceLockPromise = null;
+    released += 1;
+  }
+  for (const release of opfsInstallLockReleases.values()) {
+    release();
+    released += 1;
+  }
+  opfsInstallLockReleases.clear();
+  opfsInstallLockPromises.clear();
+  return released;
 }
 const opfsRegisteredPrefixes = new Set();
 
@@ -10553,6 +10736,11 @@ async function rpc(command, payload = {}) {
       {
         const result = await persistSaveFilesystem(String(payload.reason ?? "rpc"));
         return { ok: Boolean(result.ok), command, result };
+      }
+    case "shutdownRuntime":
+      {
+        const result = await shutdownBrowserRuntime();
+        return { ok: result.ok, command, result };
       }
     case "listSaves":
       // Enumerate persisted save files in the mounted save directory.
