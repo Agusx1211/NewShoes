@@ -189,8 +189,13 @@ async function closeContextBounded(context, timeoutMs = 5_000) {
   if (!context) return { attempted: false, graceful: true, error: null };
   let timeout;
   try {
+    const closePagesAndContext = async () => {
+      await Promise.all(context.pages().map((page) =>
+        page.close({ runBeforeUnload: false })));
+      await context.close();
+    };
     const result = await Promise.race([
-      context.close().then(() => "closed"),
+      closePagesAndContext().then(() => "closed"),
       new Promise((resolveTimeout) => {
         timeout = setTimeout(() => resolveTimeout("timeout"), timeoutMs);
       }),
@@ -475,8 +480,10 @@ try {
 }
 
 const close = await closeContextBounded(context);
-if (close.error) {
-  runError ??= `browser context close failed: ${close.error}`;
+if (!close.graceful) {
+  runError ??= close.error
+    ? `browser context close failed: ${close.error}`
+    : "browser context close timed out";
 }
 const ok = verificationComplete && failures.length === 0 && runError === null;
 const report = { ok, ...evidence, close, failures, error: runError };
