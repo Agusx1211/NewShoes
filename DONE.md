@@ -66,9 +66,26 @@ in notes/p1-engine-thread.md "Demolition (2026-07-11)".
 - [x] **Whole-suite honesty:** tools/verify_* battery reds are byte-for-byte
       the same 26 as pristine main (pre-existing frontier drift; worktree
       diffs were missing gitignored build/assets dirs). Gate results
-      (verify:threaded-play, probe:p2-opfs, p1_scaffold_probe,
-      test:io-worker-offthread, shellmap_real_init_gate, fresh build:port +
-      build:port:threaded:release) recorded in the lane report.
+      (2026-07-11, dev-box SwiftShader; JS-only change verified against
+      main-built dists): threaded_play_gate 30/30 PASS (title 29.7s, OPFS
+      mounts, audio/saves/resolution/issue-dump routes all green);
+      shellmap_real_init_gate exit 0 (24 archives through the new inline
+      sequential MEMFS mount, 43/43 subsystems, MainMenu shell rendered +
+      screenshot); p1_scaffold_probe 18/18; probe:p2-opfs 24/24;
+      test:io-worker-offthread 15/15 on the new contract; fresh
+      `npm run build:port` / `build:port:threaded` /
+      `build:port:threaded:release` all green (no-op incremental — zero
+      C++/CMake changes); converted stepped_load_turret_validation_check
+      PASS on the threaded page (battleship oid298: 2 turrets + 6 barrels
+      validated, exit 0, OPFS profile cleaned in finally). Pre-existing-red
+      parity double-checks: real_big_smoke fails identically on pristine
+      main (assertControlBarSchemeProbe drift; the mount itself indexes 99
+      files and parses every INI probe), and the test:all tail
+      `EXPECT_WASM=1 harness/smoke.mjs` fails at the SAME smoke.mjs:1235
+      MSS-stream-lifecycle probe on pristine main and the demolition tree
+      (note: the documented red for that smoke had listed the D3D8
+      buffer-hint probe at :3440 — the current earlier red is the MSS
+      stream probe, on both trees identically).
 
 ## Trustworthy origin: HTTPS listener + no-fallback redirect (2026-07-10, https lane)
 
