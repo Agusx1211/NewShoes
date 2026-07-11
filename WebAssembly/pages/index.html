@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#14272b">
+    <title>Project New Shoes</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+      * { box-sizing: border-box; }
+      body { min-height: 100vh; margin: 0; display: grid; place-items: center; color: #eef7f3; background: radial-gradient(circle at 50% 25%, #315f64, #14272b 48%, #091113); }
+      main { width: min(34rem, calc(100% - 2rem)); padding: 2rem; border: 1px solid #72989a; background: rgba(11, 25, 27, .92); box-shadow: 0 1.5rem 5rem #0009; }
+      h1 { margin: 0 0 .5rem; font-size: 1.55rem; }
+      p { line-height: 1.5; color: #bdd1cc; }
+      .meter { height: .45rem; margin: 1.5rem 0; overflow: hidden; background: #233c3e; }
+      .meter::after { content: ""; display: block; width: 42%; height: 100%; background: #d99445; animation: sweep 1.2s ease-in-out infinite alternate; }
+      .error { color: #ffd7ce; }
+      button { padding: .65rem .9rem; border: 1px solid #aebfba; color: inherit; background: #27484a; cursor: pointer; }
+      footer { margin-top: 1.25rem; font-size: .78rem; line-height: 1.5; color: #aabeba; }
+      a { color: #ffd18a; }
+      [hidden] { display: none; }
+      @keyframes sweep { to { transform: translateX(138%); } }
+      @media (prefers-reduced-motion: reduce) { .meter::after { animation: none; width: 100%; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Starting Project New Shoes</h1>
+      <p id="coi-status">Preparing the browser for the threaded game runtime. The first visit reloads once.</p>
+      <div class="meter" aria-hidden="true"></div>
+      <p id="coi-error" class="error" role="alert" hidden></p>
+      <button id="coi-retry" type="button" hidden>Try again</button>
+      <footer>Modified GPLv3 software, copyright © Electronic Arts Inc. and Project New Shoes contributors. No warranty. <a href="./legal.html">License and notices</a> · <a href="__PAGES_SOURCE_URL__">Corresponding source</a></footer>
+    </main>
+    <script src="./coi-bootstrap.js" data-coi-target="./harness/play.html"></script>
+  </body>
+</html>

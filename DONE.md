@@ -13561,3 +13561,40 @@ mitigation track. Items resolved or retired by the pivot:
       four persisted choices at 1920x1080 and 390x844, loaded the expected
       dimensions, suppressed the old synthetic hill layers, restored Bliss
       after reload, and reported zero console or page errors.
+
+## Asset-free GitHub Pages release path (2026-07-11)
+
+- [x] Added separate PR CI and main-only GitHub Pages deployment workflows.
+      Both use Node 22, the repository-pinned Emscripten 3.1.6 toolchain,
+      ccache, immutable official-action commit pins, least job permissions,
+      bounded timeouts, and concurrency cancellation. The release build uses
+      only the real `cnc-port` hot-path target.
+- [x] Added a deterministic public-site packager with an explicit launcher and
+      runtime allowlist. The final combined 53-file, 11,782,505-byte audited
+      artifact contains the three threaded release outputs, browser shell,
+      complete license, and legal page only. Packager and verifier share one
+      exact manifest; demonstrated `unexpected.env` files in either the runtime
+      source or output fail, as do symlinks, unresolved static imports, retail
+      archive/disc formats, private keys/certificates, local paths, profiles,
+      build caches, `node_modules`, and size drift.
+- [x] Added a repository-owned GPL cross-origin isolation service worker for
+      static GitHub Pages. It intercepts same-origin requests only, adds
+      COOP/COEP/CORP without caching responses, handles project subpaths and
+      deep links, updates without the HTTP cache, stops reload loops with a
+      visible failure, and supports explicit unregistration. No threaded
+      fallback or third-party runtime CDN was added.
+- [x] Proved the final artifact under a no-header HTTP server at a Pages-like
+      `/CnC_Generals_Zero_Hour/` subpath in fresh headless Chromium: first
+      navigation unisolated, automatic controlled reload, final
+      `crossOriginIsolated=true`, `SharedArrayBuffer` available, wasm served as
+      `application/wasm`, launcher visible, shared Emscripten heap live, pthread
+      realm ready, and the real viewport OffscreenCanvas transferred. The final
+      synthetic public-readiness + launcher-polish + Pages integration also
+      proved direct links, service-worker unregistration, the prominent launcher
+      About notice, complete GPL/additional terms, no-warranty text, and
+      corresponding-source link. Screenshots and machine-readable inventory
+      were retained outside the repository.
+- [x] Documented repository Settings, workflow permissions, manual deployment,
+      custom domains, first-load behavior, local reproduction, asset exclusion,
+      isolation/storage troubleshooting, and the remaining Firefox/Safari
+      verification gap in `WebAssembly/DEPLOYMENT.md`.
