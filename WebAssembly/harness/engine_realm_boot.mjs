@@ -506,6 +506,9 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     logicFrames: 0, // cumulative logic frames run
     startedAt: null,
     lastResult: null,
+    lastClientFrameStamp: null,
+    engineFrameTimes: [], // rolling real-engine update durations (ms)
+    presentationFrameTimes: [], // rolling intervals between presented client frames (ms)
     pacingSamples: [], // last ~900 {t, logic} for pacing-evenness probes
   };
   let framePacedFn = null;
@@ -537,6 +540,9 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     loop.clientFrames = 0;
     loop.logicFrames = 0;
     loop.startedAt = performance.now();
+    loop.lastClientFrameStamp = null;
+    loop.engineFrameTimes.length = 0;
+    loop.presentationFrameTimes.length = 0;
     loop.pacingSamples.length = 0;
     respond({ cmd: "startLoopResult", id: msg.id, ok: true, pacing, clientFps, logicFps });
   }
@@ -602,6 +608,20 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
       postToMain({ cmd: "loopError", error: loop.error, result });
       return;
     }
+    if (loop.lastClientFrameStamp !== null) {
+      loop.presentationFrameTimes.push(stamp - loop.lastClientFrameStamp);
+      if (loop.presentationFrameTimes.length > 600) {
+        loop.presentationFrameTimes.shift();
+      }
+    }
+    loop.lastClientFrameStamp = stamp;
+    const engineFrameMs = Number(result.lastFrameMs);
+    if (Number.isFinite(engineFrameMs) && engineFrameMs >= 0) {
+      loop.engineFrameTimes.push(engineFrameMs);
+      if (loop.engineFrameTimes.length > 600) {
+        loop.engineFrameTimes.shift();
+      }
+    }
     loop.clientFrames += 1;
     loop.lastResult = result;
     loop.pacingSamples.push({ t: stamp, logic: logicToRun });
@@ -629,6 +649,10 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         startedAt: loop.startedAt,
         clientFrames: loop.clientFrames,
         logicFrames: loop.logicFrames,
+      },
+      timing: {
+        engineFrameMs: loop.engineFrameTimes.slice(),
+        presentationFrameMs: loop.presentationFrameTimes.slice(),
       },
       frame: result ? {
         logicFrame: result.logicFrame,

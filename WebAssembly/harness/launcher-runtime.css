@@ -100,18 +100,8 @@ body {
   display: none;
 }
 
-.launch-overlay .exit-runtime {
-  z-index: 60;
-}
-
-.launch-overlay #gearButton,
-.launch-overlay #hud,
-.launch-overlay #fullscreenExit {
+.launch-overlay #performanceOverlay {
   position: absolute;
-}
-
-#settingsOverlay {
-  z-index: 22000;
 }
 
 #consolePanel {
@@ -132,11 +122,4 @@ body {
   cursor: not-allowed;
   filter: grayscale(.7);
   opacity: .68;
-}
-
-@media (max-width: 760px) {
-  .launch-overlay .exit-runtime {
-    right: 8px;
-    top: 8px;
-  }
 }

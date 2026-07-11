@@ -7,11 +7,13 @@
 //      800x600), the canvas backing store equals the engine resolution.
 //   2. Window resize in dynamic mode: the engine follows (debounced) and the
 //      backing store tracks it.
-//   3. Fixed resolution via the settings select: engine + backing store land
-//      on the exact WxH; the canvas letterboxes via CSS.
-//   4. The shell survives every change (MainMenu window still present).
+//   3. The running page has no custom chrome by default; its host API can
+//      enable the performance graph and manage fixed/dynamic display modes.
+//   4. Fixed resolution via the host API lands the engine + backing store on
+//      the exact WxH; the canvas letterboxes via CSS.
+//   5. The shell survives every change (MainMenu window still present).
 // Screenshots are captured at each stage for eyeballing.
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -49,25 +51,34 @@ const extraArgs = (process.env.CNC_CHROMIUM_ARGS ?? "")
   .split(",")
   .map((arg) => arg.trim())
   .filter(Boolean);
-const browser = await chromium.launch({
+const profileDir = process.env.CNC_PROBE_PROFILE ?? "/tmp/cnc-resolution-probe-profile";
+const keepProfile = process.env.CNC_PROBE_KEEP_PROFILE === "1";
+if (!keepProfile) {
+  rmSync(profileDir, { recursive: true, force: true });
+}
+mkdirSync(profileDir, { recursive: true });
+// The threaded play page mounts ~2 GB into OPFS. Incognito launch() contexts
+// use an in-memory OPFS backend capped below that on this machine; a fresh
+// persistent context gives the probe the real disk-backed browser quota.
+const browser = await chromium.launchPersistentContext(profileDir, {
   headless: true,
   executablePath,
+  viewport: { width: 1280, height: 800 },
   args: ["--autoplay-policy=no-user-gesture-required", "--window-size=1400,940", ...extraArgs],
 });
 try {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  const page = await browser.newPage();
+  await page.addInitScript(() => {
+    window.localStorage.removeItem("cncPortPerformanceOverlay.v1");
+  });
   page.on("pageerror", (error) => console.error("[res-probe] pageerror", error.message));
   const url = new URL("harness/play.html", serverUrl);
   url.searchParams.set("autostart", "1");
   url.searchParams.set("diag", "lite");
-  url.searchParams.set("dist", process.env.CNC_DIST ?? "dist");
-  // Legacy main-thread path, pinned explicitly: this probe's dist build has
-  // no pthread runtime, so it must stay legacy when the prepared
-  // threaded-by-default play-page flip lands.
-  url.searchParams.set("threads", "0");
+  url.searchParams.set("dist", process.env.CNC_DIST ?? "dist-threaded-release");
   await page.goto(url.href, { waitUntil: "domcontentloaded" });
   console.error("[res-probe] booting (waiting for overlay to hide)...");
-  await page.waitForSelector("#overlay.hidden", { state: "attached", timeout: 480_000 });
+  await page.waitForSelector("#overlay.hidden", { state: "attached", timeout: 900_000 });
 
   const readDisplayState = async () => await page.evaluate(async () => {
     const frame = await window.CnCPort.rpc("realEngineFrame", { frames: 1 });
@@ -92,7 +103,8 @@ try {
     let last = null;
     while (Date.now() < deadline) {
       last = await readDisplayState();
-      if (last.engine?.width === width && last.engine?.height === height) {
+      if (last.engine?.width === width && last.engine?.height === height
+          && last.buffer.width === width && last.buffer.height === height) {
         return last;
       }
       await settle(1000);
@@ -127,6 +139,80 @@ try {
     && state.engine?.height === expectBoot.height, state.engine);
   check("dynamic-boot buffer==engine", state.buffer.width === state.engine?.width
     && state.buffer.height === state.engine?.height, state.buffer);
+  const chromeDefault = await page.evaluate(() => ({
+    gearPresent: Boolean(document.querySelector("#gearButton")),
+    legacySettingsPresent: Boolean(document.querySelector("#settingsOverlay")),
+    statusHudPresent: Boolean(document.querySelector("#hud")),
+    exitButtonPresent: Boolean(document.querySelector("#exitRuntimeButton")),
+    performanceHidden: document.querySelector("#performanceOverlay")?.classList.contains("hidden"),
+    desktopSettingsControls: [
+      "resolutionSelectLive",
+      "fullscreenButton",
+      "shaderTierSelect",
+      "performanceOverlayToggle",
+      "diagnosticsSelect",
+    ].every((id) => Boolean(document.getElementById(id))),
+    hostApi: typeof window.CnCPort?.play?.setPerformanceOverlay === "function"
+      && typeof window.CnCPort?.play?.setDisplayMode === "function",
+  }));
+  check("running game has no custom chrome by default",
+    chromeDefault.gearPresent === false
+      && chromeDefault.legacySettingsPresent === false
+      && chromeDefault.statusHudPresent === false
+      && chromeDefault.exitButtonPresent === false
+      && chromeDefault.performanceHidden === true,
+    chromeDefault);
+  check("play settings live in desktop window and host API",
+    chromeDefault.desktopSettingsControls === true && chromeDefault.hostApi === true,
+    chromeDefault);
+
+  await page.evaluate(() => window.CnCPort.play.setPerformanceOverlay({
+    enabled: true,
+    historySeconds: 3,
+    graphMaxMs: 40,
+  }));
+  // The boot sentinel hides just before the page's final display apply and
+  // automatic loop start. Start it explicitly as well so this UI probe is
+  // not coupled to a slow SwiftShader display-apply round trip.
+  await page.evaluate(() => window.CnCPort.rpc("threadedStartLoop", {
+    clientFps: 60,
+    logicFps: 30,
+  }));
+  await page.waitForFunction(() => {
+    const snapshot = window.CnCPort?.play?.getPerformanceSnapshot?.();
+    return window.CnCPort?.state?.threadedEngine?.loop?.active === true
+      && document.querySelector("#performanceOverlay")?.classList.contains("hidden") === false
+      && snapshot?.engineFrameMs?.length > 2
+      && snapshot?.presentationFrameMs?.length > 2;
+  }, null, { timeout: 120_000 });
+  await page.locator("#performanceOverlay").screenshot({
+    path: `${outDir}/performance-overlay.png`,
+  });
+  const performanceProof = await page.evaluate(() => {
+    const canvas = document.querySelector("#performanceGraph");
+    const pixels = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    let nonTransparent = 0;
+    for (let i = 3; i < pixels.length; i += 4) {
+      if (pixels[i] !== 0) nonTransparent += 1;
+    }
+    return {
+      config: window.CnCPort.play.getConfiguration().performanceOverlay,
+      snapshot: window.CnCPort.play.getPerformanceSnapshot(),
+      clientText: document.querySelector("#performanceClientFps")?.textContent,
+      engineText: document.querySelector("#performanceEngineMs")?.textContent,
+      graphPixels: nonTransparent,
+    };
+  });
+  check("performance overlay renders rates, frame times, and graph",
+    performanceProof.config.enabled === true
+      && performanceProof.config.historySeconds === 3
+      && performanceProof.snapshot.clientFps > 0
+      && performanceProof.snapshot.engineFrameMs.length > 2
+      && performanceProof.clientText !== "—"
+      && performanceProof.engineText.endsWith(" ms")
+      && performanceProof.graphPixels > 100,
+    performanceProof);
+  await page.evaluate(() => window.CnCPort.play.setPerformanceOverlay(false));
   await shot("1-dynamic-boot.png");
 
   // --- 2. window resize in dynamic mode -------------------------------------
@@ -139,13 +225,12 @@ try {
     && state.buffer.height === state.engine?.height, state.buffer);
   await shot("2-dynamic-resize.png");
 
-  // --- 3. fixed resolution via the settings select ---------------------------
-  await page.evaluate(() => {
-    document.querySelector("#gearButton")?.click();
-    const select = document.querySelector("#resolutionSelectLive");
-    select.value = "1024x768";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  // --- 3. fixed resolution via the host window API ---------------------------
+  await page.evaluate(() => window.CnCPort.play.setDisplayMode({
+    mode: "fixed",
+    width: 1024,
+    height: 768,
+  }));
   state = await waitForEngineSize(1024, 768);
   console.error("[res-probe] post-fixed state", JSON.stringify(state));
   check("fixed engine==1024x768", state.engine?.width === 1024
@@ -155,11 +240,7 @@ try {
   await shot("3-fixed-1024.png");
 
   // --- 4. back to dynamic ----------------------------------------------------
-  await page.evaluate(() => {
-    const select = document.querySelector("#resolutionSelectLive");
-    select.value = "dynamic";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await page.evaluate(() => window.CnCPort.play.setDisplayMode({ mode: "dynamic" }));
   state = await waitForEngineSize(1000, 700);
   console.error("[res-probe] back-to-dynamic state", JSON.stringify(state));
   check("dynamic-return engine==viewport", state.engine?.width === 1000
@@ -180,5 +261,8 @@ try {
   process.exit(2);
 } finally {
   await Promise.race([browser.close(), new Promise((done) => setTimeout(done, 10_000))]);
+  if (!keepProfile) {
+    rmSync(profileDir, { recursive: true, force: true });
+  }
   await server?.close?.();
 }

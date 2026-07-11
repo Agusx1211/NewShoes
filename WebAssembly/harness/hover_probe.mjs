@@ -111,11 +111,7 @@ try {
   const url = new URL("harness/play.html", serverUrl);
   url.searchParams.set("autostart", "1");
   url.searchParams.set("diag", "lite");
-  url.searchParams.set("dist", process.env.CNC_DIST ?? "dist");
-  // Legacy main-thread path, pinned explicitly: this probe's dist build has
-  // no pthread runtime, so it must stay legacy when the prepared
-  // threaded-by-default play-page flip lands.
-  url.searchParams.set("threads", "0");
+  url.searchParams.set("dist", process.env.CNC_DIST ?? "dist-threaded-release");
   if (process.env.CNC_NOSHELLMAP === "1") {
     url.searchParams.set("shellmap", "0");
   }
@@ -127,11 +123,11 @@ try {
   checks.push(await hoverCheck("dynamic-boot-1280x800"));
 
   // fixed 1024x768 => letterboxed canvas; hover must map through the content box
-  await page.evaluate(() => {
-    const select = document.querySelector("#resolutionSelectLive");
-    select.value = "1024x768";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await page.evaluate(() => window.CnCPort.play.setDisplayMode({
+    mode: "fixed",
+    width: 1024,
+    height: 768,
+  }));
   await new Promise((r) => setTimeout(r, 3000));
   for (let i = 0; i < 40; i += 1) await frames(2);
   checks.push(await hoverCheck("fixed-1024x768-letterboxed"));
