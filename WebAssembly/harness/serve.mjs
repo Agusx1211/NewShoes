@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { attachWebRtcSignalingServer } from "./webrtc-signaling-server.mjs";
 import { DEFAULT_HTTPS_PORT, startStaticServer } from "./static-server.mjs";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
@@ -36,6 +37,10 @@ if (httpsPortEnv !== undefined && httpsPortEnv !== "") {
 }
 
 const server = await startStaticServer({ root: wasmRoot, port, host, issueDumpRoot, httpsPort, certDir });
+const signalings = [attachWebRtcSignalingServer({ server: server.server })];
+if (server.httpsServer) {
+  signalings.push(attachWebRtcSignalingServer({ server: server.httpsServer }));
+}
 
 console.log(`Harness serving ${new URL("harness/index.html", server.url).href}`);
 console.log(`Playable page   ${new URL("harness/play.html", server.url).href}`);
@@ -44,8 +49,13 @@ if (server.httpsUrl) {
   console.log(`HTTPS cert      ${server.certPath} (self-signed; trust once per device)`);
 }
 console.log(`Issue dumps     ${issueDumpRoot}`);
+console.log(`WebRTC signal  ${new URL("webrtc", server.url).href.replace(/^http/, "ws")}`);
+if (server.httpsUrl) {
+  console.log(`WebRTC signal  ${new URL("webrtc", server.httpsUrl).href.replace(/^http/, "ws")}`);
+}
 
 process.on("SIGINT", async () => {
+  for (const signaling of signalings) signaling.close();
   await server.close();
   process.exit(0);
 });

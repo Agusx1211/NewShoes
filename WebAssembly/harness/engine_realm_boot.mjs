@@ -39,6 +39,11 @@
 
 import { createD3D8Executor } from "./d3d8_executor.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
+import {
+  clearSharedUdpRing,
+  dequeueSharedUdpDatagram,
+  enqueueSharedUdpDatagram,
+} from "./udp_realm_bridge.mjs";
 
 const DEFAULT_CATCHUP_FRAMES = 2;
 const STATUS_INTERVAL_MS = 500;
@@ -255,16 +260,39 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     };
   }
 
-  // ---- UDP hooks: disabled-endpoint behavior (bridge parity) ----------------
-  let udpStubLogged = false;
-  Module.cncPortBrowserUdpSend = () => {
-    if (!udpStubLogged) {
-      udpStubLogged = true;
-      recordLog("threaded UDP hooks are engine-realm stubs (endpoint disabled)");
-    }
-    return 0;
+  // ---- UDP hooks: synchronous worker side of the main-realm WebRTC bridge ---
+  // The original UDP adapter calls these synchronously from the engine pthread.
+  // RTCDataChannel remains main-realm owned; fixed SharedArrayBuffer rings carry
+  // datagrams between realms without blocking the browser event loop.
+  const udpBridge = opts.udpBridge;
+  Module.cncPortBrowserUdpClear = () => {
+    if (!udpBridge) return 0;
+    clearSharedUdpRing(udpBridge.incoming);
+    return 1;
   };
-  Module.cncPortBrowserUdpRecv = () => null;
+  Module.cncPortBrowserUdpSend = (datagram) => {
+    const bytes = datagram?.bytes instanceof Uint8Array
+      ? datagram.bytes
+      : new Uint8Array(datagram?.bytes ?? 0);
+    if (!udpBridge || !enqueueSharedUdpDatagram(udpBridge.outgoing, datagram)) {
+      return -5;
+    }
+    postToMain({ cmd: "udpFlush" });
+    return bytes.byteLength;
+  };
+  Module.cncPortBrowserUdpRecv = ({ capacity, port } = {}) => {
+    if (!udpBridge) return null;
+    let datagram;
+    while ((datagram = dequeueSharedUdpDatagram(udpBridge.incoming)) !== null) {
+      if (datagram.destinationPort !== (Number(port) & 0xffff)) continue;
+      if (datagram.bytes.byteLength > Number(capacity ?? 0)) return null;
+      return datagram;
+    }
+    return null;
+  };
+  Module.cncPortBrowserNetworkVirtualIp = () => udpBridge
+    ? Atomics.load(new Int32Array(udpBridge.state), 0) >>> 0
+    : 0;
 
   // ---- wasm call plumbing (all deferred until the pthread ticks) -------------
   let live = false; // first tick seen -> wasm calls are safe in this realm
@@ -939,6 +967,8 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
       ...MSS_HOOKS,
       "cncPortBrowserUdpSend",
       "cncPortBrowserUdpRecv",
+      "cncPortBrowserUdpClear",
+      "cncPortBrowserNetworkVirtualIp",
       "cncPortEngineThreadTick",
     ],
     handleCommand,

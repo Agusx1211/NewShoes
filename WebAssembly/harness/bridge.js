@@ -1,5 +1,14 @@
 import { createD3D8Executor } from "./d3d8_executor.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
+import { createWebRtcUdpEndpoint } from "./webrtc-udp-endpoint.mjs";
+import {
+  clearSharedUdpRing,
+  createSharedUdpBridge,
+  dequeueSharedUdpDatagram,
+  enqueueSharedUdpDatagram,
+  sharedUdpRingCount,
+  sharedUdpRingDropped,
+} from "./udp_realm_bridge.mjs";
 
 // Engine-thread mode (plumbed like ?dist=): the REAL engine runs on a
 // pthread in the single pool worker of the dist-threaded build, and the GL
@@ -145,6 +154,9 @@ const cncPortThreadedMode = (() => {
     return false;
   }
 })();
+const threadedUdpBridge = cncPortThreadedMode && typeof SharedArrayBuffer === "function"
+  ? createSharedUdpBridge()
+  : null;
 
 const canvas = document.querySelector("#viewport");
 // preserveDrawingBuffer forces the compositor to COPY the drawing buffer every
@@ -664,6 +676,23 @@ const browserUdpEndpointRuntime = {
   defaultIncomingPort: 8088,
 };
 
+const browserWebRtcUdpEndpointRuntime = {
+  source: "GameNetwork browser WebRTC P2P UDP endpoint",
+  browserTransport: "WebRTC RTCDataChannel peer mesh",
+  productionTransport: true,
+  relayTransport: false,
+  enabled: false,
+  endpoint: null,
+  incoming: [],
+  delivered: 0,
+  deliveredBytes: 0,
+  lastSent: null,
+  lastReceived: null,
+  lastDelivered: null,
+  eventLog: [],
+  lastError: null,
+};
+
 const browserLanApiRuntime = {
   source: "GameNetwork browser LANAPI announce discovery proof",
   browserTransport: "harness relay queue",
@@ -900,6 +929,9 @@ function createThreadedEngineController() {
       case "mss":
         handleMssMessage(msg);
         return;
+      case "udpFlush":
+        drainThreadedUdpOutgoing();
+        return;
       case "status":
         applyThreadedStatus(msg);
         return;
@@ -1017,6 +1049,7 @@ function createThreadedEngineController() {
           diagLevel: threadedWorkerDiagLevel(),
           preserveDrawingBuffer: contextPreserveDrawingBuffer,
           shaderTier: threadedWorkerShaderTier(),
+          udpBridge: threadedUdpBridge,
         },
       },
     }, [offscreen]);
@@ -1262,6 +1295,11 @@ function createThreadedEngineController() {
     return reply;
   }
 
+  async function stopLoop() {
+    await startEngineThread();
+    return sendCommand({ cmd: "stopLoop" }, { timeoutMs: 60000 });
+  }
+
   // Fire-and-forget realm command (no id, no reply, no timeout entry) —
   // pagehide teardown must not allocate pending state on a dying page.
   function postCommand(payload) {
@@ -1279,6 +1317,7 @@ function createThreadedEngineController() {
     engineCall,
     engineInit,
     startLoop,
+    stopLoop,
     forwardInput,
     sendCommand,
     postCommand,
@@ -1357,6 +1396,13 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   // are pure main-side JS in threaded mode too.
   "persistSaves",
   "listSaves",
+  // WebRTC signaling and RTCDataChannels live in the window realm. Their
+  // datagrams cross into the engine worker through threadedUdpBridge.
+  "browserWebRtcEndpointConnect",
+  "browserWebRtcEndpointWaitForPeers",
+  "browserWebRtcEndpointState",
+  "browserWebRtcEndpointDisconnect",
+  "browserWebRtcEndpointClearDatagrams",
 ]);
 
 async function threadedRpc(command, payload = {}) {
@@ -1574,6 +1620,19 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
+    case "threadedStopLoop": {
+      try {
+        const reply = await threadedEngine.stopLoop();
+        return {
+          ok: reply?.ok === true,
+          command,
+          error: reply?.ok === true ? undefined : (reply?.error ?? "stopLoop failed"),
+          threaded: true,
+        };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "realEngineInit":
       try {
         return await threadedEngine.engineInit(payload);
@@ -1738,6 +1797,44 @@ async function threadedRpc(command, payload = {}) {
         const result = await threadedEngine.engineCall(
           "cnc_port_real_engine_set_skirmish_local_template", "string", ["string"],
           [String(payload.templateName ?? payload.template ?? "")]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "mapCacheProbe": {
+      try {
+        const probe = await threadedEngine.engineCall(
+          "cnc_port_map_cache_probe", "string", [], []);
+        return { ok: true, command, probe, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineSetNetworkTimeouts": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_real_engine_set_network_timeouts", "string", ["number", "number"],
+          [Number(payload.disconnectMs ?? 5000), Number(payload.playerTimeoutMs ?? 60000)]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineLanState": {
+      try {
+        const state = await threadedEngine.engineCall(
+          "cnc_port_real_engine_lan_state", "string", [], []);
+        return { ok: true, command, lan: state, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineLanCommand": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_real_engine_lan_command", "string", ["string", "string"],
+          [String(payload.action ?? payload.command ?? ""), String(payload.value ?? "")]);
         return { ok: result?.ok === true, command, result, threaded: true };
       } catch (error) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
@@ -2206,7 +2303,7 @@ function browserUdpWireSummary(bytes, ip, port) {
   };
 }
 
-function cncPortBrowserUdpSend({ bytes, ip, port }) {
+function cncPortBrowserWebSocketUdpSend({ bytes, ip, port }) {
   if (!browserUdpEndpointRuntime.enabled) {
     return 0;
   }
@@ -2229,7 +2326,7 @@ function cncPortBrowserUdpSend({ bytes, ip, port }) {
   return datagram.byteLength;
 }
 
-function cncPortBrowserUdpRecv({ capacity }) {
+function cncPortBrowserWebSocketUdpRecv({ capacity }) {
   if (!browserUdpEndpointRuntime.enabled) {
     return null;
   }
@@ -2317,6 +2414,190 @@ function connectBrowserUdpEndpoint({ webSocketUrl, client, incomingIp, incomingP
       });
     };
   });
+}
+
+function resetBrowserWebRtcUdpEndpointRuntime() {
+  browserWebRtcUdpEndpointRuntime.endpoint?.close();
+  browserWebRtcUdpEndpointRuntime.enabled = false;
+  browserWebRtcUdpEndpointRuntime.endpoint = null;
+  browserWebRtcUdpEndpointRuntime.incoming = [];
+  browserWebRtcUdpEndpointRuntime.delivered = 0;
+  browserWebRtcUdpEndpointRuntime.deliveredBytes = 0;
+  browserWebRtcUdpEndpointRuntime.lastSent = null;
+  browserWebRtcUdpEndpointRuntime.lastReceived = null;
+  browserWebRtcUdpEndpointRuntime.lastDelivered = null;
+  browserWebRtcUdpEndpointRuntime.eventLog = [];
+  browserWebRtcUdpEndpointRuntime.lastError = null;
+  if (threadedUdpBridge) {
+    clearSharedUdpRing(threadedUdpBridge.incoming);
+    clearSharedUdpRing(threadedUdpBridge.outgoing);
+    Atomics.store(new Int32Array(threadedUdpBridge.state), 0, 0);
+  }
+}
+
+function summarizeBrowserWebRtcUdpEndpointRuntime() {
+  const endpointState = browserWebRtcUdpEndpointRuntime.endpoint?.snapshot() ?? null;
+  return {
+    source: browserWebRtcUdpEndpointRuntime.source,
+    browserTransport: browserWebRtcUdpEndpointRuntime.browserTransport,
+    productionTransport: browserWebRtcUdpEndpointRuntime.productionTransport,
+    relayTransport: browserWebRtcUdpEndpointRuntime.relayTransport,
+    enabled: browserWebRtcUdpEndpointRuntime.enabled,
+    connected: endpointState?.connected === true,
+    ready: endpointState?.ready === true,
+    queuedIncoming: threadedUdpBridge
+      ? sharedUdpRingCount(threadedUdpBridge.incoming)
+      : browserWebRtcUdpEndpointRuntime.incoming.length,
+    threadedBridge: threadedUdpBridge ? {
+      queuedIncoming: sharedUdpRingCount(threadedUdpBridge.incoming),
+      queuedOutgoing: sharedUdpRingCount(threadedUdpBridge.outgoing),
+      droppedIncoming: sharedUdpRingDropped(threadedUdpBridge.incoming),
+      droppedOutgoing: sharedUdpRingDropped(threadedUdpBridge.outgoing),
+    } : null,
+    delivered: browserWebRtcUdpEndpointRuntime.delivered,
+    deliveredBytes: browserWebRtcUdpEndpointRuntime.deliveredBytes,
+    lastSent: browserWebRtcUdpEndpointRuntime.lastSent,
+    lastReceived: browserWebRtcUdpEndpointRuntime.lastReceived,
+    lastDelivered: browserWebRtcUdpEndpointRuntime.lastDelivered,
+    eventLog: [...browserWebRtcUdpEndpointRuntime.eventLog],
+    lastError: browserWebRtcUdpEndpointRuntime.lastError ?? endpointState?.lastError ?? null,
+    endpoint: endpointState,
+  };
+}
+
+async function connectBrowserWebRtcUdpEndpoint({
+  signalingUrl,
+  room,
+  peerId,
+  displayName,
+  iceServers,
+  timeoutMs = 10000,
+}) {
+  resetBrowserWebRtcUdpEndpointRuntime();
+  const endpoint = createWebRtcUdpEndpoint({
+    signalingUrl,
+    room,
+    peerId,
+    displayName,
+    iceServers,
+    onDatagram: (datagram) => {
+      if (threadedUdpBridge) {
+        if (!enqueueSharedUdpDatagram(threadedUdpBridge.incoming, datagram)) {
+          browserWebRtcUdpEndpointRuntime.lastError = "threaded WebRTC receive ring is full";
+        }
+      } else {
+        browserWebRtcUdpEndpointRuntime.incoming.push(datagram);
+      }
+      browserWebRtcUdpEndpointRuntime.lastReceived = browserUdpWireSummary(
+        datagram.bytes, datagram.ip, datagram.port);
+      browserWebRtcUdpEndpointRuntime.eventLog.push({
+        phase: "udp-read-webrtc-queue",
+        peerId: datagram.peerId,
+        destinationIp: datagram.destinationIp,
+        destinationPort: datagram.destinationPort,
+        ...browserWebRtcUdpEndpointRuntime.lastReceived,
+      });
+    },
+    onStateChange: (state) => {
+      browserWebRtcUdpEndpointRuntime.lastError = state.lastError;
+    },
+  });
+  browserWebRtcUdpEndpointRuntime.endpoint = endpoint;
+  browserWebRtcUdpEndpointRuntime.enabled = true;
+  await endpoint.connect(timeoutMs);
+  if (threadedUdpBridge) {
+    Atomics.store(new Int32Array(threadedUdpBridge.state), 0, endpoint.localIp | 0);
+  }
+  return summarizeBrowserWebRtcUdpEndpointRuntime();
+}
+
+function drainThreadedUdpOutgoing() {
+  if (!threadedUdpBridge) return;
+  let datagram;
+  while ((datagram = dequeueSharedUdpDatagram(threadedUdpBridge.outgoing)) !== null) {
+    cncPortBrowserUdpSend(datagram);
+  }
+}
+
+function cncPortBrowserWebRtcUdpSend({ bytes, ip, port, sourceIp, sourcePort }) {
+  const endpoint = browserWebRtcUdpEndpointRuntime.endpoint;
+  if (!browserWebRtcUdpEndpointRuntime.enabled || !endpoint) {
+    return 0;
+  }
+  const datagram = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const written = endpoint.sendDatagram({ bytes: datagram, ip, port, sourceIp, sourcePort });
+  if (written > 0) {
+    browserWebRtcUdpEndpointRuntime.lastSent = browserUdpWireSummary(datagram, ip >>> 0, port & 0xffff);
+    browserWebRtcUdpEndpointRuntime.eventLog.push({
+      phase: "udp-write-webrtc-send",
+      sourceIp: sourceIp >>> 0,
+      sourcePort: sourcePort & 0xffff,
+      ...browserWebRtcUdpEndpointRuntime.lastSent,
+    });
+    browserWebRtcUdpEndpointRuntime.lastError = null;
+  } else if (written < 0) {
+    browserWebRtcUdpEndpointRuntime.lastError = endpoint.snapshot().lastError;
+  }
+  return written;
+}
+
+function cncPortBrowserWebRtcUdpRecv({ capacity, port }) {
+  if (!browserWebRtcUdpEndpointRuntime.enabled) {
+    return null;
+  }
+  const destinationPort = Number(port) & 0xffff;
+  let datagram = null;
+  while (browserWebRtcUdpEndpointRuntime.incoming.length > 0) {
+    const candidate = browserWebRtcUdpEndpointRuntime.incoming.shift();
+    if (candidate.destinationPort === destinationPort) {
+      datagram = candidate;
+      break;
+    }
+  }
+  if (!datagram) {
+    return null;
+  }
+  if (datagram.bytes.byteLength > capacity) {
+    browserWebRtcUdpEndpointRuntime.lastError = "browser WebRTC incoming datagram exceeds wasm receive capacity";
+    return null;
+  }
+  browserWebRtcUdpEndpointRuntime.delivered += 1;
+  browserWebRtcUdpEndpointRuntime.deliveredBytes += datagram.bytes.byteLength;
+  browserWebRtcUdpEndpointRuntime.lastDelivered = browserUdpWireSummary(
+    datagram.bytes, datagram.ip, datagram.port);
+  browserWebRtcUdpEndpointRuntime.eventLog.push({
+    phase: "udp-read-webrtc-deliver",
+    peerId: datagram.peerId,
+    ...browserWebRtcUdpEndpointRuntime.lastDelivered,
+  });
+  browserWebRtcUdpEndpointRuntime.lastError = null;
+  return datagram;
+}
+
+function cncPortBrowserUdpSend(datagram) {
+  if (browserWebRtcUdpEndpointRuntime.enabled) {
+    return cncPortBrowserWebRtcUdpSend(datagram);
+  }
+  return cncPortBrowserWebSocketUdpSend(datagram);
+}
+
+function cncPortBrowserUdpRecv(request) {
+  if (browserWebRtcUdpEndpointRuntime.enabled) {
+    return cncPortBrowserWebRtcUdpRecv(request);
+  }
+  return cncPortBrowserWebSocketUdpRecv(request);
+}
+
+function cncPortBrowserUdpClear() {
+  if (threadedUdpBridge) {
+    clearSharedUdpRing(threadedUdpBridge.incoming);
+  }
+  browserWebRtcUdpEndpointRuntime.incoming.length = 0;
+  return 1;
+}
+
+function cncPortBrowserNetworkVirtualIp() {
+  return browserWebRtcUdpEndpointRuntime.endpoint?.localIp >>> 0;
 }
 
 function resetBrowserLanApiRuntime() {
@@ -4414,6 +4695,8 @@ async function loadWasmModule() {
       cncPortMssStreamVolumePan,
       cncPortBrowserUdpSend,
       cncPortBrowserUdpRecv,
+      cncPortBrowserUdpClear,
+      cncPortBrowserNetworkVirtualIp,
       cncGdiMeasure,
       cncGdiRasterizeGlyph,
       // Persist the in-game save directory to IndexedDB via IDBFS so ".sav"
@@ -4601,6 +4884,12 @@ async function loadWasmModule() {
         "cnc_port_real_engine_set_skirmish_local_template",
         "string",
         ["string"],
+      ),
+      realEngineLanState: module.cwrap("cnc_port_real_engine_lan_state", "string", []),
+      realEngineLanCommand: module.cwrap(
+        "cnc_port_real_engine_lan_command",
+        "string",
+        ["string", "string"],
       ),
       realEngineFrame: module.cwrap("cnc_port_real_engine_frame", "string", ["number"]),
       realEngineFrameSummary: module.cwrap(
@@ -5114,6 +5403,7 @@ function snapshotState() {
     browserNetworkRelayRuntime: summarizeBrowserNetworkRelayRuntime(),
     browserNetworkTransportRuntime: summarizeBrowserNetworkTransportRuntime(),
     browserUdpEndpointRuntime: summarizeBrowserUdpEndpointRuntime(),
+    browserWebRtcUdpEndpointRuntime: summarizeBrowserWebRtcUdpEndpointRuntime(),
     browserLanApiRuntime: summarizeBrowserLanApiRuntime(),
     audioPayloadInventory: harnessState.audioPayloadInventory,
     startupAssets: harnessState.startupAssets,
@@ -10020,6 +10310,44 @@ async function rpc(command, payload = {}) {
           result,
           state: snapshotState(),
         };
+      }
+    case "realEngineLanState":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineLanState");
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        try {
+          return {
+            ok: true,
+            command,
+            lan: JSON.parse(moduleResult.wasmModule.realEngineLanState()),
+            state: snapshotState(),
+          };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "realEngineLanCommand":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineLanCommand");
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        try {
+          const result = JSON.parse(moduleResult.wasmModule.realEngineLanCommand(
+            String(payload.action ?? payload.command ?? ""),
+            String(payload.value ?? ""),
+          ));
+          return {
+            ok: result?.ok === true,
+            command,
+            result,
+            state: snapshotState(),
+          };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
       }
     case "realEngineUpdateBreakpoint":
       {
@@ -20353,6 +20681,122 @@ async function rpc(command, payload = {}) {
           ok: true,
           command,
           runtime: summarizeBrowserUdpEndpointRuntime(),
+          state: snapshotState(),
+        };
+      }
+    case "browserWebRtcEndpointConnect":
+      {
+        try {
+          const runtime = await connectBrowserWebRtcUdpEndpoint({
+            signalingUrl: String(payload?.signalingUrl ?? ""),
+            room: String(payload?.room ?? "cnc-room"),
+            peerId: payload?.peerId == null ? null : String(payload.peerId),
+            displayName: payload?.displayName == null ? null : String(payload.displayName),
+            iceServers: Array.isArray(payload?.iceServers) ? payload.iceServers : [],
+            timeoutMs: Number(payload?.timeoutMs ?? 10000),
+          });
+          return {
+            ok: runtime.enabled === true && runtime.connected === true,
+            command,
+            runtime,
+            state: snapshotState(),
+          };
+        } catch (error) {
+          browserWebRtcUdpEndpointRuntime.lastError = error?.message ?? String(error);
+          return {
+            ok: false,
+            command,
+            error: browserWebRtcUdpEndpointRuntime.lastError,
+            runtime: summarizeBrowserWebRtcUdpEndpointRuntime(),
+            state: snapshotState(),
+          };
+        }
+      }
+    case "browserWebRtcEndpointWaitForPeers":
+      {
+        try {
+          const endpoint = browserWebRtcUdpEndpointRuntime.endpoint;
+          if (!endpoint) {
+            throw new Error("browser WebRTC endpoint is not connected");
+          }
+          await endpoint.waitForOpenPeers(
+            Math.max(0, Number(payload?.count ?? 1)),
+            Number(payload?.timeoutMs ?? 10000));
+          return {
+            ok: true,
+            command,
+            runtime: summarizeBrowserWebRtcUdpEndpointRuntime(),
+            state: snapshotState(),
+          };
+        } catch (error) {
+          browserWebRtcUdpEndpointRuntime.lastError = error?.message ?? String(error);
+          return {
+            ok: false,
+            command,
+            error: browserWebRtcUdpEndpointRuntime.lastError,
+            runtime: summarizeBrowserWebRtcUdpEndpointRuntime(),
+            state: snapshotState(),
+          };
+        }
+      }
+    case "browserWebRtcEndpointState":
+      return {
+        ok: true,
+        command,
+        runtime: summarizeBrowserWebRtcUdpEndpointRuntime(),
+        state: snapshotState(),
+      };
+    case "browserWebRtcEndpointDisconnect":
+      resetBrowserWebRtcUdpEndpointRuntime();
+      return {
+        ok: true,
+        command,
+        runtime: summarizeBrowserWebRtcUdpEndpointRuntime(),
+        state: snapshotState(),
+      };
+    case "browserWebRtcEndpointClearDatagrams":
+      return {
+        ok: cncPortBrowserUdpClear() === 1,
+        command,
+        runtime: summarizeBrowserWebRtcUdpEndpointRuntime(),
+        state: snapshotState(),
+      };
+    case "browserNetworkTransportWebRtcSendProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser WebRTC network send cannot run" };
+        }
+        const sendProbe = parseModuleState(wasmModule.probeBrowserNetworkTransportLiveSend());
+        const runtime = summarizeBrowserWebRtcUdpEndpointRuntime();
+        return {
+          ok: Boolean(sendProbe?.ok)
+            && runtime.enabled === true
+            && runtime.connected === true
+            && runtime.endpoint?.sent === 1
+            && runtime.lastSent?.bytes > 0,
+          command,
+          sendProbe,
+          browserWebRtcUdpEndpointRuntime: runtime,
+          state: snapshotState(),
+        };
+      }
+    case "browserNetworkTransportWebRtcReceiveProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser WebRTC network receive cannot run" };
+        }
+        const receiveProbe = parseModuleState(wasmModule.probeBrowserNetworkTransportLiveReceive());
+        const runtime = summarizeBrowserWebRtcUdpEndpointRuntime();
+        return {
+          ok: Boolean(receiveProbe?.ok)
+            && runtime.enabled === true
+            && runtime.delivered === 1
+            && runtime.deliveredBytes === receiveProbe.packet?.bytes + 6,
+          command,
+          receiveProbe,
+          browserWebRtcUdpEndpointRuntime: runtime,
           state: snapshotState(),
         };
       }

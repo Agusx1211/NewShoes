@@ -11183,6 +11183,60 @@ mitigation track. Items resolved or retired by the pivot:
       `Network::update` frame-sync loop across two live-endpoint browser
       clients. Verified with
       `npm --prefix WebAssembly run test:browser-lanapi-live-game-start`.
+- [x] Add a production WebRTC P2P transport under the original wasm UDP seam.
+      `webrtc-udp-endpoint.mjs` builds a reliable ordered RTCDataChannel mesh,
+      preserves binary datagram boundaries and source IP/port metadata, routes
+      unicast to signaling-assigned virtual IPv4 peers, and expands legacy
+      `INADDR_BROADCAST` sends across all open channels. `udp.cpp` now passes
+      its bound source address to the browser transport, while wasm
+      `IPEnumeration` exposes the active peer's virtual address to the original
+      LAN menus. Browser network init also stops synchronously creating the
+      invisible disconnect WND: `HideDisconnectWindow` now defers first layout
+      ownership until `ShowDisconnectWindow`, while native behavior is
+      unchanged. The signaling server is limited to eight peers per room,
+      carries only membership/SDP/ICE JSON, and rejects binary game frames.
+      The human play launcher can join a room before real engine init and
+      accepts configurable STUN/TURN credentials for LAN or internet ICE.
+      `network_webrtc_live_transport_smoke.mjs` boots two isolated browser
+      contexts and proves one original encrypted Transport datagram crosses a
+      direct DataChannel into `Transport::doRecv`, CRC validation,
+      `ConnectionManager::doRelay`, and `FrameDataManager::allCommandsReady`,
+      with zero game payload bytes on the signaling server. Verified with
+      `npm --prefix WebAssembly run build:port`, `node WebAssembly/harness/network_webrtc_live_transport_smoke.mjs`,
+      and the existing `network_websocket_live_transport_smoke.mjs` regression.
+- [x] Drive a complete two-client original LAN match over WebRTC. The new
+      `lan_webrtc_playable_match_smoke.mjs` boots two full `cnc-port` runtimes
+      with the shipped archives, enters the original Multiplayer → LAN menus,
+      and drives original `LANAPI` host announcement, discovery, join/options,
+      ready, and game-start callbacks through the direct DataChannel endpoint.
+      The Wasm LAN wire budget now accounts for four-byte `WideChar` and sends
+      active message lengths so announcements remain under the original
+      476-byte transport cap; browser ready broadcasts also apply their local
+      state through original `LANAPI::OnAccept`. Both clients load Alpine
+      Assault, create distinct local armies and faction HUDs, advance the
+      original lockstep simulation from logic frame 13 to 23 in sync with two
+      players and no CRC mismatch, and capture separate host/guest canvases.
+      The signaling server reports zero game payload bytes. Verified with
+      `npm --prefix WebAssembly run build:port` and
+      `node WebAssembly/harness/lan_webrtc_playable_match_smoke.mjs`.
+- [x] Drive a complete four-client threaded LAN match over WebRTC. The playable
+      match gate now launches four persistent browser profiles, forms the full
+      six-link RTCDataChannel mesh, joins four unique humans through original
+      LANAPI, republishes the host's authoritative four-player map after each
+      join, and runs the shipping autonomous engine-worker loops. All
+      clients load Bear Town Beatdown's same 270-object world, keep four
+      original Network members with unique IDs, advance at least three live
+      logic frames, and report no CRC mismatch; every endpoint retains three
+      open peers and signaling reports zero game-payload bytes. Threaded UDP
+      send/receive/virtual-IP hooks now cross main/engine realms through bounded
+      SharedArrayBuffer rings with destination-port filtering and a clean
+      LAN-to-game transport handoff. The optimized runtime's
+      `ConnectionManager::doRelay` null-member-call UB was removed, and browser
+      packet drains/walks are bounded so event-fed traffic yields between
+      frames. Verified entirely on `llmtrain` with a fresh
+      `build:port:threaded:release` and a four-client headless networking/
+      simulation run; GPU rasterization was disabled because the allowed GPU
+      machines were intentionally not used, so this is not visual evidence.
 - [x] Carry the LANAPI discovery/join/game-start flow through browser
       WebSocket binary frames. `lanapi_websocket_flow_smoke.mjs` boots two
       isolated Playwright contexts, builds the existing original LAN announce,

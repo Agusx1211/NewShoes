@@ -295,8 +295,19 @@ Bool Transport::doRecv()
 	TransportMessage incomingMessage;
 	unsigned char *buf = (unsigned char *)&incomingMessage;
 	int len = MAX_MESSAGE_LEN;
+#ifdef __EMSCRIPTEN__
+	// Browser datagrams arrive from an event-fed WebRTC queue. Bound one
+	// engine update's drain so a sustained or stale queue cannot monopolize the
+	// engine worker; remaining packets retain their original order next frame.
+	int browserReceiveBudget = MAX_MESSAGES;
+#endif
 //	DEBUG_LOG(("Transport::doRecv - checking\n"));
+#ifdef __EMSCRIPTEN__
+	while (browserReceiveBudget-- > 0
+		&& (len=m_udpsock->Read(buf, MAX_MESSAGE_LEN, &from)) > 0)
+#else
 	while ( (len=m_udpsock->Read(buf, MAX_MESSAGE_LEN, &from)) > 0 )
+#endif
 	{
 #if defined(_DEBUG) || defined(_INTERNAL)
 		// Packet loss simulation

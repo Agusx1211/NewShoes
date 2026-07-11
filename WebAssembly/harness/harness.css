@@ -423,6 +423,41 @@ body {
   color: var(--text-dim);
 }
 .settingHint .inlineGear { color: var(--accent); }
+.networkSettingsHeading {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.networkSetting {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+.networkSetting input {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  font: 12px/1.2 var(--sys-font);
+  padding: 8px 9px;
+  color: var(--text);
+  background: #0c1016;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+}
+.networkSetting input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.networkAdvanced summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.networkAdvanced[open] {
+  display: grid;
+  gap: 8px;
+}
 
 /* Resolution select (settings overlay). */
 select#resolutionSelectLive {

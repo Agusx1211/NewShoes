@@ -187,6 +187,15 @@ void LANAPI::sendMessage(LANMessage *msg, UnsignedInt ip /* = 0 */)
 		const char *base = reinterpret_cast<const char *>(msg);
 		switch (msg->LANMessageType)
 		{
+			case LANMessage::MSG_GAME_ANNOUNCE:
+				messageLength = static_cast<Int>(
+					reinterpret_cast<const char *>(&msg->GameInfo.isDirectConnect) - base
+					+ sizeof(msg->GameInfo.isDirectConnect));
+				break;
+			case LANMessage::MSG_REQUEST_GAME_INFO:
+				messageLength = static_cast<Int>(
+					reinterpret_cast<const char *>(&msg->PlayerInfo) - base + sizeof(msg->PlayerInfo));
+				break;
 			case LANMessage::MSG_REQUEST_JOIN:
 				messageLength = static_cast<Int>(
 					reinterpret_cast<const char *>(&msg->GameToJoin) - base + sizeof(msg->GameToJoin));
@@ -199,10 +208,23 @@ void LANAPI::sendMessage(LANMessage *msg, UnsignedInt ip /* = 0 */)
 				messageLength = static_cast<Int>(
 					reinterpret_cast<const char *>(&msg->GameNotJoined) - base + sizeof(msg->GameNotJoined));
 				break;
+			case LANMessage::MSG_REQUEST_GAME_LEAVE:
+				messageLength = static_cast<Int>(
+					reinterpret_cast<const char *>(&msg->GameToLeave) - base + sizeof(msg->GameToLeave));
+				break;
+			case LANMessage::MSG_SET_ACCEPT:
+				messageLength = static_cast<Int>(
+					reinterpret_cast<const char *>(&msg->Accept) - base + sizeof(msg->Accept));
+				break;
+			case LANMessage::MSG_MAP_AVAILABILITY:
+				messageLength = static_cast<Int>(
+					reinterpret_cast<const char *>(&msg->MapStatus) - base + sizeof(msg->MapStatus));
+				break;
 			case LANMessage::MSG_REQUEST_LOCATIONS:
 			case LANMessage::MSG_LOBBY_ANNOUNCE:
 			case LANMessage::MSG_REQUEST_LOBBY_LEAVE:
 			case LANMessage::MSG_GAME_START:
+			case LANMessage::MSG_INACTIVE:
 				messageLength = static_cast<Int>(
 					reinterpret_cast<const char *>(msg->hostName) - base + sizeof(msg->hostName));
 				break;
@@ -219,6 +241,23 @@ void LANAPI::sendMessage(LANMessage *msg, UnsignedInt ip /* = 0 */)
 				}
 				messageLength = static_cast<Int>(
 					reinterpret_cast<const char *>(msg->GameOptions.options) - base + optionsLength + 1);
+				break;
+			}
+			case LANMessage::MSG_CHAT:
+			{
+				const Int messageOffset = static_cast<Int>(
+					reinterpret_cast<const char *>(msg->Chat.message) - base);
+				const Int maxWireChars =
+					(MAX_PACKET_SIZE - messageOffset) / sizeof(msg->Chat.message[0]) - 1;
+				const Int maxChatChars = min(g_lanMaxChatLength, maxWireChars);
+				Int chatLength = 0;
+				while (chatLength < maxChatChars && msg->Chat.message[chatLength] != 0)
+				{
+					++chatLength;
+				}
+				msg->Chat.message[chatLength] = 0;
+				messageLength = static_cast<Int>(
+					messageOffset + (chatLength + 1) * sizeof(msg->Chat.message[0]));
 				break;
 			}
 			default:
@@ -783,6 +822,12 @@ void LANAPI::RequestAccept( void )
 	wcsncpy(msg.Accept.gameName, m_currentGame->getName().str(), g_lanGameNameLength);
 	msg.Accept.gameName[g_lanGameNameLength] = 0;
 	sendMessage(&msg);
+#ifdef __EMSCRIPTEN__
+	// Browser P2P broadcasts are intentionally delivered only to remote peers.
+	// Apply the local ready intent through the same original callback that an
+	// incoming MSG_SET_ACCEPT uses so the host and guests keep identical slots.
+	OnAccept(m_localIP, true);
+#endif
 }
 
 void LANAPI::RequestHasMap( void )
