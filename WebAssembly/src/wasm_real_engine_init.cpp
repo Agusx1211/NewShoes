@@ -7853,6 +7853,21 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_lan_state()
 	return json.c_str();
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_network_timeouts(
+	unsigned int disconnect_ms,
+	unsigned int player_timeout_ms)
+{
+	static std::string json;
+	if (TheWritableGlobalData == NULL) {
+		return "{\"ok\":false,\"error\":\"globalDataNotReady\"}";
+	}
+	TheWritableGlobalData->m_networkDisconnectTime = disconnect_ms;
+	TheWritableGlobalData->m_networkPlayerTimeoutTime = player_timeout_ms;
+	json = "{\"ok\":true,\"disconnectMs\":" + std::to_string(disconnect_ms);
+	json += ",\"playerTimeoutMs\":" + std::to_string(player_timeout_ms) + "}";
+	return json.c_str();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_lan_command(
 	const char *command,
 	const char *value)

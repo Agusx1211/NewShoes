@@ -159,6 +159,13 @@ struct BrowserUdpAdapterState
 
 BrowserUdpAdapterState g_browser_udp_adapter = {};
 
+EM_JS(void, browser_udp_adapter_clear_js, (), {
+	const clear = typeof Module !== "undefined" ? Module.cncPortBrowserUdpClear : null;
+	if (typeof clear === "function") {
+		clear();
+	}
+});
+
 EM_JS(Int, browser_udp_adapter_send_js, (
 	const UnsignedByte *msg,
 	Int length,
@@ -189,6 +196,7 @@ EM_JS(Int, browser_udp_adapter_send_js, (
 EM_JS(Int, browser_udp_adapter_recv_js, (
 	UnsignedByte *msg,
 	Int capacity,
+	UnsignedShort local_port,
 	UnsignedInt *ip,
 	UnsignedShort *port), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortBrowserUdpRecv : null;
@@ -196,7 +204,7 @@ EM_JS(Int, browser_udp_adapter_recv_js, (
 		return 0;
 	}
 	try {
-		const datagram = bridge({ capacity });
+		const datagram = bridge({ capacity, port: local_port & 0xffff });
 		if (!datagram || !datagram.bytes) {
 			return 0;
 		}
@@ -306,6 +314,7 @@ extern "C" {
 void cnc_port_browser_udp_adapter_clear()
 {
 	clear_browser_udp_adapter();
+	browser_udp_adapter_clear_js();
 }
 
 Int cnc_port_browser_udp_adapter_push_incoming(
@@ -449,6 +458,7 @@ Int UDP::Read(unsigned char *msg, UnsignedInt len, sockaddr_in *from)
 	const Int browser_read = browser_udp_adapter_recv_js(
 		reinterpret_cast<UnsignedByte *>(msg),
 		static_cast<Int>(len),
+		myPort,
 		&ip,
 		&port);
 	if (browser_read > 0) {

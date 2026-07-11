@@ -53,15 +53,22 @@ room-code abuse protection.
 
 ## Verified match path
 
-`npm run test:browser-lan-webrtc-playable-match` boots two complete game
-instances with the shipped archives, enters the original Multiplayer → LAN
-screens, and drives the original `LANAPI` host/discovery/join/options/ready/
-game-start flow. It then loads the same real map in both clients and advances
-the original `Network::update` lockstep simulation while asserting distinct
-local player IDs, two human armies, synchronized logic frames, and no CRC
-mismatch. The harness captures each player's canvas under
-`artifacts/networking/` and asserts that the signaling server carried zero
-game-payload bytes.
+`npm run test:browser-lan-webrtc-four-player-threaded-match` boots four complete
+threaded game instances with the shipped archives, forms the six-link direct
+peer mesh, enters the original Multiplayer → LAN screens, and drives original
+`LANAPI` host/discovery/join/options/ready/game-start flow. It selects the
+official four-player Bear Town Beatdown map, verifies four human slots and
+unique local player IDs, loads the same 270-object world on all clients, and
+advances the original `Network::update` lockstep simulation with four members
+and no CRC mismatch. Every client must retain three open RTCDataChannels, while
+the signaling server must carry zero game-payload bytes.
+
+The threaded engine worker and window-owned `RTCDataChannel`s exchange UDP
+datagrams through bounded `SharedArrayBuffer` rings. The adapter preserves
+socket destination ports and clears LAN-lobby datagrams when the original game
+transport is created. The four-player networking/simulation gate can disable
+GPU rasterization on software-only CI; that run is not visual evidence. Use a
+real-GPU playtest separately for rendering.
 
 Wasm uses four-byte `WideChar`, unlike Win32's two-byte `wchar_t`. The browser
 LAN wire budget therefore reduces the game-options field and sends only the

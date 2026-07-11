@@ -11140,6 +11140,24 @@ mitigation track. Items resolved or retired by the pivot:
       The signaling server reports zero game payload bytes. Verified with
       `npm --prefix WebAssembly run build:port` and
       `node WebAssembly/harness/lan_webrtc_playable_match_smoke.mjs`.
+- [x] Drive a complete four-client threaded LAN match over WebRTC. The playable
+      match gate now launches four persistent browser profiles, forms the full
+      six-link RTCDataChannel mesh, joins four unique humans through original
+      LANAPI, republishes the host's authoritative four-player map after each
+      join, and runs the shipping autonomous engine-worker loops. All
+      clients load Bear Town Beatdown's same 270-object world, keep four
+      original Network members with unique IDs, advance at least three live
+      logic frames, and report no CRC mismatch; every endpoint retains three
+      open peers and signaling reports zero game-payload bytes. Threaded UDP
+      send/receive/virtual-IP hooks now cross main/engine realms through bounded
+      SharedArrayBuffer rings with destination-port filtering and a clean
+      LAN-to-game transport handoff. The optimized runtime's
+      `ConnectionManager::doRelay` null-member-call UB was removed, and browser
+      packet drains/walks are bounded so event-fed traffic yields between
+      frames. Verified entirely on `llmtrain` with a fresh
+      `build:port:threaded:release` and a four-client headless networking/
+      simulation run; GPU rasterization was disabled because the allowed GPU
+      machines were intentionally not used, so this is not visual evidence.
 - [x] Carry the LANAPI discovery/join/game-start flow through browser
       WebSocket binary frames. `lanapi_websocket_flow_smoke.mjs` boots two
       isolated Playwright contexts, builds the existing original LAN announce,

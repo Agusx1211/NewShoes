@@ -3490,9 +3490,10 @@ residue and the next frontier.
 
 ## M9 — Networking (GameSpy / LAN → WS/WebRTC)
 
-- [ ] Broaden the verified WebRTC multiplayer path beyond a two-player LAN
-      match and harden it for unattended/public operation. UDP re-targeting is
-      complete; the retained history below records the path to that baseline.
+- [ ] Harden the verified four-player WebRTC multiplayer path for
+      unattended/public operation. UDP re-targeting and a full four-client
+      threaded match are complete; the retained history below records the path
+      to that baseline.
       The browser harness has a first relay-shaped
       byte-path proof: `browserNetworkRelayProbe` asks wasm to serialize a
       real original `NetPacket` frame-info command with `NetPacket::addCommand`,
@@ -3544,8 +3545,8 @@ residue and the next frontier.
       proves original encrypted `Transport::doSend/doRecv`, CRC validation,
       `ConnectionManager::doRelay`, and `FrameDataManager` readiness across a
       direct DataChannel with zero game bytes relayed by the server.
-      Remaining work is long-session soak coverage, more than two players,
-      reconnect/disconnect handling, and public deployment hardening.
+      Remaining work is long-session soak coverage, reconnect/disconnect
+      handling, more than four players, and public deployment hardening.
 - [ ] Validate long-session lockstep determinism, disconnect behavior, and
       recovery across browser clients. Short live match sync through
       `FrameData`/`FrameDataManager`/`ConnectionManager` is complete.
@@ -3565,9 +3566,9 @@ residue and the next frontier.
       `FrameData::allCommandsReady` not-ready/resend states used at the desync
       frontier. The live endpoint now carries LANAPI game-start into
       `OnGameStart` and original network setup across two browser contexts.
-      The two-client WebRTC playable-match gate now advances synchronized real
-      simulation frames with no CRC mismatch; extend it into a long soak and
-      intentional packet-loss/disconnect scenarios.
+      The four-client threaded WebRTC playable-match gate now advances real
+      simulation frames with four members and no CRC mismatch; extend it into
+      a long soak and intentional packet-loss/disconnect scenarios.
       The current WebSocket binary vertical now proves the production encrypted
       `Transport::queueSend` / `Transport::doSend` and
       `Transport::doRecv` path over browser binary frames through the wasm UDP
@@ -3597,14 +3598,15 @@ residue and the next frontier.
       bundled signaling service is sufficient for trusted LAN/testing and
       carries no game bytes, but is intentionally not an unauthenticated public
       matchmaking service.
-- [ ] Proxy the WebRTC UDP hooks across the engine-realm message channel when
-      `?threads=1`. The verified baseline runs wasm and RTCDataChannel ownership
-      in the main browser realm; the pthread build must forward send/receive and
-      virtual-IP queries rather than constructing WebRTC objects in the worker.
 - [ ] Cross-client **determinism** validated (no desync) over many frames.
-      The two-client WebRTC match gate now proves a short synchronized live
-      run with no CRC mismatch; extend this to a long soak with periodic state
+      The four-client threaded WebRTC match gate now proves a short live run
+      with no CRC mismatch; extend this to a long soak with periodic state
       hashes and representative player commands.
+- [ ] Run the four-player threaded match on an allowed real-GPU machine and
+      capture all four canvases. The 2026-07-11 four-client gate deliberately
+      disabled GPU rasterization on `llmtrain` after four simultaneous
+      SwiftShader contexts were reclaimed; networking/simulation is verified,
+      but that run is not four-client visual evidence.
 - [ ] File transfer / map transfer path.
 ---
 

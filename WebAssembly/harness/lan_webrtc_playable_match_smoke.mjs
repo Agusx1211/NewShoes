@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
@@ -11,6 +11,11 @@ const wasmRoot = resolve(harnessRoot, "..");
 const artifactRoot = resolve(wasmRoot, "artifacts/networking");
 const GAME_LAN = 1;
 const playerCount = Number.parseInt(process.env.CNC_MATCH_PLAYERS ?? "2", 10);
+const threadedTest = process.env.CNC_THREADED === "1";
+const allowWebGlContextLoss = process.env.CNC_ALLOW_WEBGL_CONTEXT_LOSS === "1";
+const maxAllowedLogicFrameSkew = threadedTest ? Math.max(6, playerCount - 1) : playerCount - 1;
+const maxAllowedFinalLogicFrameSkew = threadedTest ? 10 : maxAllowedLogicFrameSkew;
+const activeSampleInterval = threadedTest ? 5 : 30;
 let parallelClientFrames = false;
 
 if (!Number.isInteger(playerCount) || playerCount < 2 || playerCount > 8) {
@@ -67,6 +72,13 @@ async function rpc(client, command, payload = {}) {
 }
 
 async function browserRenderer(client) {
+  if (threadedTest) {
+    const result = await rpc(client, "threadedStatus");
+    return {
+      renderer: result.status?.graphics?.renderer ?? null,
+      unmaskedRenderer: result.status?.graphics?.renderer ?? null,
+    };
+  }
   return client.page.evaluate(() => {
     const canvas = document.querySelector("#viewport");
     const gl = canvas?.getContext("webgl2");
@@ -157,8 +169,11 @@ async function enterLanLobby(client) {
   }, (state) => state.lanReady === true && state.localIp !== 0, 30000, 0);
 }
 
-async function createClient(browser, serverUrl, signalingUrl, room, label, peerId) {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+async function createClient(browserOrContext, serverUrl, signalingUrl, room, label, peerId,
+  existingContext = false) {
+  const context = existingContext
+    ? browserOrContext
+    : await browserOrContext.newContext({ viewport: { width: 1280, height: 720 } });
   const page = await context.newPage();
   const client = { context, page, label, peerId, errors: [] };
   page.setDefaultTimeout(300000);
@@ -169,7 +184,12 @@ async function createClient(browser, serverUrl, signalingUrl, room, label, peerI
     if (message.type() === "error") client.errors.push(message.text());
   });
 
-  await page.goto(new URL("harness/index.html", serverUrl).href, { waitUntil: "networkidle" });
+  const pageUrl = new URL("harness/index.html", serverUrl);
+  if (threadedTest) {
+    pageUrl.searchParams.set("threads", "1");
+    pageUrl.searchParams.set("dist", process.env.CNC_THREADED_DIST ?? "dist-threaded-release");
+  }
+  await page.goto(pageUrl.href, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
   await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
 
@@ -207,6 +227,7 @@ let server;
 let signaling;
 const browsers = [];
 const clients = [];
+const profileDirs = [];
 
 try {
   await mkdir(artifactRoot, { recursive: true });
@@ -224,8 +245,25 @@ try {
     launchOptions.args = process.env.CNC_BROWSER_ARGS.split(/\s+/).filter(Boolean);
   }
   const separateBrowsers = playerCount >= 4 || process.env.CNC_BROWSER_PER_PLAYER === "1";
-  parallelClientFrames = separateBrowsers;
+  parallelClientFrames = threadedTest || separateBrowsers;
   for (let index = 0; index < playerCount; ++index) {
+    if (threadedTest) {
+      const profileDir = resolve(wasmRoot, "artifacts/pw-profiles",
+        `lan-webrtc-${playerCount}p-${index + 1}`);
+      await rm(profileDir, { recursive: true, force: true });
+      await mkdir(profileDir, { recursive: true });
+      profileDirs.push(profileDir);
+      const context = await chromium.launchPersistentContext(profileDir, {
+        ...launchOptions,
+        viewport: { width: 1280, height: 720 },
+      });
+      const host = index === 0;
+      const label = host ? "WebRTC Host" : `WebRTC Guest ${index}`;
+      const peerId = host ? "host" : `guest-${index}`;
+      clients.push(await createClient(context,
+        server.url, signalingUrl.href, room, label, peerId, true));
+      continue;
+    }
     if (separateBrowsers || browsers.length === 0) {
       browsers.push(await chromium.launch(launchOptions));
     }
@@ -270,6 +308,13 @@ try {
   const setMap = await lanCommand(host, "setMap", map);
   expect(setMap.ok === true, "host could not configure the real LAN map", setMap);
   console.error(`[lan-webrtc] host game created on ${map} (${selectedMap.players} spawns)`);
+  // Hosting announces the default map before setMap publishes the selected
+  // options. Give every LANAPI enough update turns to replace that first
+  // discovery entry before joinFirst consumes it (fast headless clients can
+  // otherwise join the stale default-map snapshot).
+  for (let update = 0; update < 12; ++update) {
+    await pumpLobby(clients);
+  }
 
   const discovered = await waitFor("guest LAN game discovery", async () => {
     await pumpLobby(clients);
@@ -289,9 +334,25 @@ try {
       await pumpLobby(clients);
       return Promise.all(clients.map((client) => lanState(client)));
     }, (states) => states.slice(0, expectedPlayers).every((state) =>
-      state.game?.numPlayers === expectedPlayers && state.game?.map === map), 45000);
+      state.game?.numPlayers === expectedPlayers), 45000);
     console.error(`[lan-webrtc] ${guest.label} joined (${expectedPlayers}/${playerCount})`);
+    const republishedMap = await lanCommand(host, "setMap", map);
+    expect(republishedMap.ok === true,
+      `host could not republish the map after ${guest.label} joined`, republishedMap);
+    for (let update = 0; update < 4; ++update) {
+      await pumpLobby(clients);
+    }
   }
+  // A fast guest can join from the host's first (default-map) announcement.
+  // The host remains authoritative: republish the chosen map after membership
+  // is complete, exactly as changing maps in the original lobby UI does.
+  const finalMap = await lanCommand(host, "setMap", map);
+  expect(finalMap.ok === true, "host could not republish the final LAN map", finalMap);
+  joined = await waitFor("final LAN map propagation", async () => {
+    await pumpLobby(clients);
+    return Promise.all(clients.map((client) => lanState(client)));
+  }, (states) => states.every((state) =>
+    state.game?.numPlayers === playerCount && state.game?.map === map), 45000);
   expect(joined?.every((state) => state.game?.numPlayers === playerCount
       && state.game?.map === map),
   "LAN game state did not converge after every guest joined", joined);
@@ -314,17 +375,67 @@ try {
   const guestNetworks = await waitFor("guest original Network start", async () => {
     await new Promise((resolveWait) => setTimeout(resolveWait, 220));
     await Promise.all(guests.map((guest) => lanCommand(guest, "update")));
-    await allFrames(guests, 1);
+    // Consume the host's game-start packet and prove every original Network
+    // exists before entering a threaded frame. A worker frame is synchronous;
+    // advancing the host early can wait for a guest the driver has not started.
     return Promise.all(guests.map((guest) => lanState(guest)));
   }, (states) => states.every((state) => state.network?.ready === true
       && state.network?.numPlayers === playerCount), 45000);
   console.error(`[lan-webrtc] all ${playerCount} original Network instances started`);
 
+  const clearedLobbyDatagrams = await Promise.all(clients.map((client) =>
+    rpc(client, "browserWebRtcEndpointClearDatagrams")));
+  expect(clearedLobbyDatagrams.every((result) => result.ok === true),
+    "stale LAN datagrams could not be cleared at the game-transport handoff",
+    clearedLobbyDatagrams);
+
+  let threadedLoops = [];
+  if (threadedTest) {
+    const verifierTimeouts = await Promise.all(clients.map((client) =>
+      rpc(client, "realEngineSetNetworkTimeouts", {
+        disconnectMs: 900000,
+        playerTimeoutMs: 900000,
+      })));
+    expect(verifierTimeouts.every((result) => result.ok === true),
+      "threaded verifier network timeouts could not be extended", verifierTimeouts);
+    const loadStepping = await Promise.all(clients.map((client) =>
+      rpc(client, "realEngineSetLoadStepping", { enabled: true, budgetMs: 5 })));
+    expect(loadStepping.every((result) => result.ok === true),
+      "threaded load stepping could not be configured", loadStepping);
+    // Match the shipping play page's autonomous engine-thread ownership. The
+    // tighter load slice keeps the slow SwiftShader verifier observable; the
+    // 30/30 gate avoids presentation-only frames while preserving simulation.
+    threadedLoops = await Promise.all(clients.map((client) =>
+      rpc(client, "threadedStartLoop", { clientFps: 30, logicFps: 30 })));
+    expect(threadedLoops.every((loop) => loop.ok === true),
+      "threaded match loops did not start", threadedLoops);
+    console.error(`[lan-webrtc] all ${playerCount} threaded play loops started`);
+  }
+
   const samples = [];
   let active = null;
   for (let tick = 0; tick < 4800; ++tick) {
-    const frames = await allFrames(clients, 1);
-    if (tick % 30 === 0) {
+    const frameRead = allFrames(clients, 1);
+    if (threadedTest && tick === 0) {
+      const firstReadSettled = await Promise.race([
+        frameRead.then(() => true),
+        new Promise((resolveWait) => setTimeout(() => resolveWait(false), 15000)),
+      ]);
+      if (!firstReadSettled) {
+        const transports = await Promise.all(clients.map((client) =>
+          rpc(client, "browserWebRtcEndpointState")));
+        console.error("[lan-webrtc] first threaded match-frame transport",
+          JSON.stringify(transports.map((transport) => ({
+            peerId: transport.runtime?.endpoint?.peerId,
+            sent: transport.runtime?.endpoint?.sent,
+            received: transport.runtime?.endpoint?.received,
+            bridge: transport.runtime?.threadedBridge,
+            error: transport.runtime?.lastError,
+          }))));
+      }
+    }
+    const frames = await frameRead;
+    if (tick % activeSampleInterval === 0) {
       const states = await Promise.all(clients.map((client) => lanState(client)));
       const sample = {
         tick,
@@ -350,7 +461,7 @@ try {
           && clientFrame.gameplay?.objectCount > 0)
           && states.every((state) => state.network?.crcMismatch === false
             && state.network?.numPlayers === playerCount)
-          && logicFrameSkew <= playerCount - 1
+          && logicFrameSkew <= maxAllowedLogicFrameSkew
           && new Set(objectCounts).size === 1
           && new Set(playerIds).size === playerCount) {
         active = { tick, logicFrameSkew, frames, states };
@@ -360,7 +471,7 @@ try {
   }
   expect(active != null, `${playerCount}-client LAN match did not become playable`, samples.slice(-12));
 
-  const requiredPostActiveLogicFrames = playerCount >= 4 ? 3 : 10;
+  const requiredPostActiveLogicFrames = threadedTest || playerCount >= 4 ? 3 : 10;
   let postActiveFrames = null;
   let postActiveStates = null;
   let postActiveDriverTicks = 0;
@@ -386,7 +497,7 @@ try {
       && postActiveFrames?.every((clientFrame, index) =>
         clientFrame.gameplay?.logicFrame >= active.frames[index].gameplay.logicFrame
           + requiredPostActiveLogicFrames)
-      && finalLogicFrameSkew <= playerCount - 1,
+      && finalLogicFrameSkew <= maxAllowedFinalLogicFrameSkew,
     "original lockstep simulation did not survive post-active frames",
     {
       activeLogicFrames: active.frames.map((clientFrame) => clientFrame.gameplay?.logicFrame),
@@ -396,6 +507,12 @@ try {
       requiredPostActiveLogicFrames,
       networks: finalStates.map((state) => state.network),
     });
+
+  if (threadedTest) {
+    const stopped = await Promise.all(clients.map((client) => rpc(client, "threadedStopLoop")));
+    expect(stopped.every((result) => result.ok === true),
+      "threaded match loops did not stop cleanly", stopped);
+  }
 
   const artifactStem = playerCount === 2 ? "lan-webrtc" : `lan-webrtc-${playerCount}p`;
   const screenshots = [];
@@ -422,12 +539,14 @@ try {
   const result = {
     ok: true,
     path: "real-lan-lobby-to-playable-webrtc-match",
+    threaded: threadedTest,
     playerCount,
     map,
     mapPlayers: selectedMap.players,
     room,
     lobby: { joined, ready },
     start: [start.result.state.network, ...guestNetworks.map((state) => state.network)],
+    threadedLoops,
     active,
     postActiveFrames,
     postActiveDriverTicks,
@@ -443,20 +562,31 @@ try {
   expect(result.signaling.gamePayloadBytes === 0
       && result.signaling.rooms?.some((activeRoom) => activeRoom.peers.length === playerCount),
   "signaling server relayed game payload bytes or lost room members", result.signaling);
-  expect(clients.every((client) => client.errors.length === 0),
-    "browser failed during playable LAN match", result.browserErrors);
+  const unexpectedBrowserErrors = result.browserErrors.flatMap(({ peerId, errors }) =>
+    errors.filter((error) => !allowWebGlContextLoss
+      || !/WebGL context (?:LOST|restored)/i.test(error))
+      .map((error) => ({ peerId, error })));
+  result.visualOk = result.browserErrors.every(({ errors }) => errors.length === 0)
+    && result.gpu.every((renderer) => Boolean(renderer.unmaskedRenderer));
+  result.visualWarningsAllowed = allowWebGlContextLoss;
+  result.unexpectedBrowserErrors = unexpectedBrowserErrors;
   const resultName = playerCount === 2
     ? "lan-webrtc-playable-match.json"
     : `lan-webrtc-${playerCount}p-playable-match.json`;
   await writeFile(resolve(artifactRoot, resultName),
     `${JSON.stringify(result, null, 2)}\n`);
+  expect(unexpectedBrowserErrors.length === 0,
+    "browser failed during playable LAN match", result.browserErrors);
   console.log(JSON.stringify(result));
 } finally {
   for (const client of clients) {
-    await client.context.close();
+    await client.context.close().catch(() => {});
   }
   for (const activeBrowser of browsers) {
-    await activeBrowser.close();
+    await activeBrowser.close().catch(() => {});
+  }
+  for (const profileDir of profileDirs) {
+    await rm(profileDir, { recursive: true, force: true });
   }
   signaling?.close();
   await server?.close();
