@@ -1,19 +1,12 @@
+import "./launcher-archive-specs.js";
+
 const INSTALLED_KEY = "zeroh-installed-library.v2";
 const OLD_INSTALLED_KEY = "zeroh-installed-library.v1";
 const LIBRARY_VERSION = 2;
 const HANDLE_DB = "zeroh-asset-handles";
 const HANDLE_STORE = "sources";
 const LIBRARY_MUTATION_LOCK = "zeroh-library-mutation";
-const REQUIRED_ARCHIVE_NAMES = [
-  "INIZH.big", "EnglishZH.big", "WindowZH.big", "MapsZH.big", "MusicZH.big",
-  "GensecZH.big", "TerrainZH.big", "TexturesZH.big", "W3DZH.big",
-  "W3DEnglishZH.big", "SpeechZH.big", "SpeechEnglishZH.big", "AudioZH.big",
-  "AudioEnglishZH.big", "ShadersZH.big", "ZZBase_INI.big", "LooseScripts.big",
-  "ZZBase_English.big", "ZZBase_Window.big", "ZZBase_Terrain.big",
-  "ZZBase_Textures.big", "ZZBase_W3D.big", "ZZBase_Shaders.big",
-  "ZZBase_Music.big", "ZZBase_Audio.big", "ZZBase_AudioEnglish.big",
-  "ZZBase_Speech.big", "ZZBase_SpeechEnglish.big", "ZZBase_Maps.big", "Gensec.big",
-];
+const REQUIRED_ARCHIVE_NAMES = window.ZeroHArchiveSpecs.map((archive) => archive.name);
 
 function formatBytes(bytes) {
   const value = Number(bytes) || 0;
@@ -120,6 +113,7 @@ class AssetLibrary {
     this.preparedArchives = null;
     this.queue = Promise.resolve();
     this.worker = null;
+    this.rememberedHandlesPromise = readHandles().catch(() => []);
     this.createWorker();
   }
 
@@ -203,7 +197,8 @@ class AssetLibrary {
       throw new Error("Reload ZeroH before changing game files after the engine has started");
     }
     await this.discardPreparedArchives();
-    if (handles) this.sourceHandles = handles;
+    this.sourceHandles = handles ? [...handles] : [];
+    this.scanResult = null;
     this.preparedArchives = null;
     const sources = [...files].map((file) => ({
       file,
@@ -231,6 +226,9 @@ class AssetLibrary {
   }
 
   async prepare(mode, onProgress = null) {
+    if (!["once", "remember", "install"].includes(mode)) {
+      throw new Error(`Unsupported launcher storage mode: ${mode}`);
+    }
     if (mode === "install" && navigator.locks?.request) {
       return navigator.locks.request(LIBRARY_MUTATION_LOCK, { mode: "exclusive" },
         () => this.prepareUnlocked(mode, onProgress));
@@ -240,16 +238,18 @@ class AssetLibrary {
 
   async prepareUnlocked(mode, onProgress = null) {
     if (!this.scanResult?.ok) throw new Error("Select a complete Generals + Zero Hour asset source first");
+    const estimate = await navigator.storage?.estimate?.();
+    const quota = Number(estimate?.quota);
+    const usage = Number(estimate?.usage);
+    const available = quota - usage;
+    const required = this.scanResult.totalBytes * (mode === "install" ? 2.05 : 1.05);
+    if (Number.isFinite(quota) && quota > 0 && Number.isFinite(usage) && available < required) {
+      throw new Error(`Browser storage needs about ${formatBytes(required)} free; ${formatBytes(available)} is available`);
+    }
     let persistenceGranted = null;
     if (mode === "install") {
-      const estimate = await navigator.storage?.estimate?.();
-      const available = Number(estimate?.quota || 0) - Number(estimate?.usage || 0);
       // The installed library remains persistent while a per-tab runtime copy
       // is staged for exclusive synchronous access handles.
-      const required = this.scanResult.totalBytes * 2.05;
-      if (available > 0 && available < required) {
-        throw new Error(`Browser storage needs about ${formatBytes(required)} free; ${formatBytes(available)} is available`);
-      }
       persistenceGranted = await navigator.storage?.persist?.().catch(() => false) ?? false;
     }
     const namespaceRoot = await this.allocateNamespace();
@@ -281,18 +281,34 @@ class AssetLibrary {
         };
         localStorage.setItem(INSTALLED_KEY, JSON.stringify(manifest));
         localStorage.removeItem(OLD_INSTALLED_KEY);
+        await this.clearRememberedHandles();
         if (previousInstall?.root && previousInstall.root !== installRoot) {
           await this.request("discard", { path: previousInstall.root }).catch(() => {});
         }
-      } else if (mode === "remember" && this.sourceHandles.length) {
-        try {
-          await storeHandles(this.sourceHandles);
-        } catch {
+      } else {
+        if (mode === "remember" && this.sourceHandles.length) {
+          try {
+            await storeHandles(this.sourceHandles);
+            this.rememberedHandlesPromise = Promise.resolve([...this.sourceHandles]);
+          } catch {
+            result.effectiveMode = "once";
+            result.warning = {
+              title: "Source permission not retained",
+              message: "This browser could not retain the source permission; files remain ready for this session.",
+            };
+          }
+        } else if (mode === "remember") {
           result.effectiveMode = "once";
           result.warning = {
             title: "Source permission not retained",
-            message: "This browser could not retain the source permission; files remain ready for this session.",
+            message: "This source does not expose a reusable browser permission; files remain ready for this session.",
           };
+        }
+        if (result.effectiveMode !== "remember") await this.clearRememberedHandles();
+        localStorage.removeItem(INSTALLED_KEY);
+        localStorage.removeItem(OLD_INSTALLED_KEY);
+        if (previousInstall?.root) {
+          await this.request("discard", { path: previousInstall.root }).catch(() => {});
         }
       }
       return result;
@@ -324,10 +340,19 @@ class AssetLibrary {
   }
 
   async verifyInstalledLibrary() {
+    if (navigator.locks?.request) {
+      return navigator.locks.request(LIBRARY_MUTATION_LOCK, { mode: "exclusive" },
+        () => this.verifyInstalledLibraryUnlocked());
+    }
+    return this.verifyInstalledLibraryUnlocked();
+  }
+
+  async verifyInstalledLibraryUnlocked() {
     const installed = this.installedLibrary();
+    localStorage.removeItem(OLD_INSTALLED_KEY);
     if (!installed) {
       localStorage.removeItem(INSTALLED_KEY);
-      localStorage.removeItem(OLD_INSTALLED_KEY);
+      await this.collectInstalledRoots(null);
       return null;
     }
     try {
@@ -339,15 +364,38 @@ class AssetLibrary {
         const file = await (await directory.getFileHandle(archive.name, { create: false })).getFile();
         if (file.size !== archive.bytes) throw new Error(`${archive.name} size changed`);
       }
+      await this.collectInstalledRoots(installed.root);
       return installed;
     } catch {
       localStorage.removeItem(INSTALLED_KEY);
+      await this.collectInstalledRoots(null);
       return null;
     }
   }
 
+  async collectInstalledRoots(keepRoot) {
+    const keepName = keepRoot?.split("/").at(-1) || null;
+    try {
+      const root = await navigator.storage.getDirectory();
+      const library = await root.getDirectoryHandle("cnc-library", { create: false });
+      for await (const [name, entry] of library.entries()) {
+        const managed = entry.kind === "directory"
+          && (name === "v1" || /^install-[a-z0-9-]+$/i.test(name));
+        if (managed && name !== keepName) {
+          try { await library.removeEntry(name, { recursive: true }); } catch { /* live/locked root */ }
+        }
+      }
+    } catch {
+      // No legacy/orphaned install roots, or another live page still owns one.
+    }
+  }
+
   async restoreRemembered({ requestPermission = false, onProgress = null } = {}) {
-    const handles = await readHandles().catch(() => []);
+    let handles = await this.rememberedHandlesPromise;
+    if (!handles.length) {
+      handles = await readHandles().catch(() => []);
+      this.rememberedHandlesPromise = Promise.resolve(handles);
+    }
     if (!handles.length) return null;
     const files = await filesFromHandles(handles, requestPermission);
     this.sourceHandles = handles;
@@ -356,7 +404,13 @@ class AssetLibrary {
 
   async hasRememberedSource() {
     const handles = await readHandles().catch(() => []);
+    this.rememberedHandlesPromise = Promise.resolve(handles);
     return handles.length > 0;
+  }
+
+  async clearRememberedHandles() {
+    try { await clearHandles(); } catch { /* IDB may be unavailable */ }
+    this.rememberedHandlesPromise = Promise.resolve([]);
   }
 
   async archivesForLaunch(onProgress = null) {
@@ -390,7 +444,7 @@ class AssetLibrary {
     this.sourceHandles = [];
     localStorage.removeItem(INSTALLED_KEY);
     localStorage.removeItem(OLD_INSTALLED_KEY);
-    await clearHandles().catch(() => {});
+    await this.clearRememberedHandles();
     try {
       const root = await navigator.storage.getDirectory();
       await root.removeEntry("cnc-library", { recursive: true });

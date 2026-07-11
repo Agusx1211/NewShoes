@@ -177,13 +177,13 @@
                   <label class="storage-choice">
                     <input type="radio" name="storageMode" value="install">
                     <span class="choice-radio"></span><span class="choice-icon package"><svg><use href="#i-box"/></svg></span>
-                    <span class="choice-text"><strong>Install in this browser</strong><small>Copy assets for one-click, offline launches.</small></span>
+                    <span class="choice-text"><strong>Install in this browser</strong><small>Copy assets so original media is not requested again.</small></span>
                     <span class="choice-meta" id="installSizeEstimate">Calculating…</span>
                   </label>
                 </fieldset>
 
                 <div class="space-warning" id="spaceWarning" hidden>
-                  <span>!</span><p><strong>Browser storage permission required.</strong> ZeroH will request persistent storage and verify quota before installing.</p>
+                  <span>!</span><p><strong>Browser storage permission required.</strong> ZeroH verifies quota for the installed copy plus a temporary per-tab launch copy.</p>
                 </div>
 
                 <footer class="wizard-actions">

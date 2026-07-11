@@ -8,45 +8,18 @@
 
 "use strict";
 
-importScripts("./vendor/pako.es5.min.js");
+importScripts("./launcher-archive-specs.js", "./vendor/pako.es5.min.js");
 
 const textDecoder = new TextDecoder("windows-1252");
 const textEncoder = new TextEncoder();
 const catalog = new Map();
 let catalogSequence = 0;
+const MAX_BIG_ENTRIES = 200000;
+const MAX_BIG_DIRECTORY_BYTES = 64 * 1024 * 1024;
+const MAX_ISO_ROOT_BYTES = 64 * 1024 * 1024;
+const MAX_LOOSE_SCRIPT_BYTES = 16 * 1024 * 1024;
 
-const ARCHIVES = [
-  ["INIZH.big", "INIZH.big", "zh"],
-  ["EnglishZH.big", "EnglishZH.big", "zh"],
-  ["WindowZH.big", "WindowZH.big", "zh"],
-  ["MapsZH.big", "MapsZH.big", "zh"],
-  ["MusicZH.big", "MusicZH.big", "zh"],
-  ["GensecZH.big", "GensecZH.big", "zh"],
-  ["TerrainZH.big", "TerrainZH.big", "zh"],
-  ["TexturesZH.big", "TexturesZH.big", "zh"],
-  ["W3DZH.big", "W3DZH.big", "zh"],
-  ["W3DEnglishZH.big", "W3DEnglishZH.big", "zh"],
-  ["SpeechZH.big", "SpeechZH.big", "zh"],
-  ["SpeechEnglishZH.big", "SpeechEnglishZH.big", "zh"],
-  ["AudioZH.big", "AudioZH.big", "zh"],
-  ["AudioEnglishZH.big", "AudioEnglishZH.big", "zh"],
-  ["ShadersZH.big", "ShadersZH.big", "zh"],
-  ["ZZBase_INI.big", "INI.big", "base"],
-  ["LooseScripts.big", "LooseScripts.big", "zh"],
-  ["ZZBase_English.big", "English.big", "base"],
-  ["ZZBase_Window.big", "Window.big", "base"],
-  ["ZZBase_Terrain.big", "Terrain.big", "base"],
-  ["ZZBase_Textures.big", "Textures.big", "base"],
-  ["ZZBase_W3D.big", "W3D.big", "base"],
-  ["ZZBase_Shaders.big", "Shaders.big", "base"],
-  ["ZZBase_Music.big", "Music.big", "base"],
-  ["ZZBase_Audio.big", "Audio.big", "base"],
-  ["ZZBase_AudioEnglish.big", "AudioEnglish.big", "base"],
-  ["ZZBase_Speech.big", "Speech.big", "base"],
-  ["ZZBase_SpeechEnglish.big", "SpeechEnglish.big", "base"],
-  ["ZZBase_Maps.big", "Maps.big", "base"],
-  ["Gensec.big", "Gensec.big", "zh"],
-].map(([name, sourceName, edition]) => ({ name, sourceName, edition }));
+const ARCHIVES = self.ZeroHArchiveSpecs;
 
 const SCRIPT_FILES = [
   { sourceName: "SkirmishScripts.scb", path: "Data\\Scripts\\SkirmishScripts.scb" },
@@ -188,13 +161,14 @@ async function validateBigReader(reader, label) {
   if (archiveSize < 16 || archiveSize > reader.size) {
     throw new Error(`${label}: BIGF header size ${archiveSize} does not fit ${reader.size} bytes`);
   }
-  if (entryCount > 1000000) throw new Error(`${label}: unreasonable BIGF entry count ${entryCount}`);
+  if (entryCount > MAX_BIG_ENTRIES) throw new Error(`${label}: unreasonable BIGF entry count ${entryCount}`);
 
   const chunkSize = 64 * 1024;
   let directory = new Uint8Array(0);
   let cursor = 0;
   const entryBounds = [];
   const ensure = async (length, message) => {
+    if (length > MAX_BIG_DIRECTORY_BYTES) throw new Error(`${label}: BIGF directory exceeds 64 MB`);
     if (length > archiveSize - 16) throw new Error(message);
     while (directory.byteLength < length) {
       const start = 16 + directory.byteLength;
@@ -245,6 +219,9 @@ async function readIsoRoot(reader) {
     size: u32(descriptor, rootOffset + 10),
     directory: true,
   };
+  if (root.size <= 0 || root.size > MAX_ISO_ROOT_BYTES) {
+    throw new Error(`${reader.label}: unreasonable ISO root directory size ${root.size}`);
+  }
   const rootReader = new IsoEntryReader(reader, root, layout);
   const bytes = await rootReader.read(0, root.size);
   const entries = [];
@@ -368,8 +345,7 @@ function inferDirectEditions(files) {
 
 function directEdition(path, directoryKinds, leaf = basename(path)) {
   const lowerLeaf = leaf.toLowerCase();
-  if (lowerLeaf.endsWith("zh.big") || lowerLeaf === "gensec.big"
-      || SCRIPT_FILES.some((script) => script.sourceName.toLowerCase() === lowerLeaf)) {
+  if (lowerLeaf.endsWith("zh.big")) {
     return "zh";
   }
   if (ARCHIVES.some((archive) => archive.edition === "base"
@@ -378,9 +354,18 @@ function directEdition(path, directoryKinds, leaf = basename(path)) {
   }
   const directory = dirname(path);
   if (directoryKinds.has(directory)) return directoryKinds.get(directory);
+  const installationRoot = [...directoryKinds.keys()]
+    .filter((root) => root && directory.startsWith(`${root}/`))
+    .sort((left, right) => right.length - left.length)[0];
+  if (installationRoot) return directoryKinds.get(installationRoot);
   const lower = path.toLowerCase();
   if (lower.includes("zero hour") || lower.includes("zerohour")) return "zh";
   return lower.includes("generals") ? "base" : "unknown";
+}
+
+function entryEdition(path, fallback) {
+  const inferred = directEdition(path, new Map());
+  return inferred === "unknown" ? fallback : inferred;
 }
 
 async function scanSources(files, requestId) {
@@ -412,7 +397,7 @@ async function scanSources(files, requestId) {
         continue;
       }
       if (SCRIPT_FILES.some((script) => script.sourceName.toLowerCase() === lower)) {
-        addCandidate(leaf, "zh", {
+        addCandidate(leaf, directEdition(item.path, directoryKinds, leaf), {
           kind: "reader", reader: new BlobReader(item.file, item.path), label: item.path,
         });
         continue;
@@ -420,11 +405,12 @@ async function scanSources(files, requestId) {
       if (lower.endsWith(".cab")) {
         const reader = new BlobReader(item.file, item.path);
         const cabinet = await parseCab(reader);
-        const names = new Set(cabinet.files.map((entry) => entry.name.toLowerCase()));
+        const names = new Set(cabinet.files.map((entry) => basename(entry.name).toLowerCase()));
         const edition = names.has("inizh.big") || names.has("englishzh.big") ? "zh"
           : names.has("ini.big") || names.has("english.big") ? "base" : "unknown";
         for (const entry of cabinet.files) {
-          addCandidate(entry.name, edition, {
+          const leaf = basename(entry.name);
+          addCandidate(leaf, entryEdition(entry.name, edition), {
             kind: "cab", cabinet, entry, label: `${item.path}:${entry.name}`,
           });
         }
@@ -437,17 +423,18 @@ async function scanSources(files, requestId) {
           const entryReader = new IsoEntryReader(image, entry, iso.layout);
           if (entry.name.toLowerCase().endsWith(".cab")) {
             const cabinet = await parseCab(entryReader);
-            const names = new Set(cabinet.files.map((value) => value.name.toLowerCase()));
+            const names = new Set(cabinet.files.map((value) => basename(value.name).toLowerCase()));
             const edition = names.has("inizh.big") || names.has("englishzh.big") ? "zh"
               : names.has("ini.big") || names.has("english.big") ? "base" : "unknown";
             for (const cabEntry of cabinet.files) {
-              addCandidate(cabEntry.name, edition, {
+              const leaf = basename(cabEntry.name);
+              addCandidate(leaf, entryEdition(cabEntry.name, edition), {
                 kind: "cab", cabinet, entry: cabEntry,
                 label: `${item.path}:${entry.name}:${cabEntry.name}`,
               });
             }
           } else if (entry.name.toLowerCase().endsWith(".big")) {
-            const edition = /zh/i.test(iso.volume) ? "zh" : "base";
+            const edition = entryEdition(entry.name, /zh/i.test(iso.volume) ? "zh" : "base");
             await validateBigReader(entryReader, `${item.path}:${entry.name}`);
             addCandidate(entry.name, edition, {
               kind: "reader", reader: entryReader, label: `${item.path}:${entry.name}`,
@@ -497,6 +484,14 @@ function resolveCatalog() {
   let totalBytes = 0;
   for (const archive of ARCHIVES) {
     if (archive.name === "LooseScripts.big") {
+      const packaged = chooseCandidate(archive.sourceName, archive.edition);
+      if (packaged && (packaged.edition === archive.edition || packaged.edition === "unknown")) {
+        const size = packaged.kind === "cab" ? packaged.entry.size : packaged.reader.size;
+        selected.push({ archive, kind: packaged.kind, candidate: packaged, size });
+        found.push({ name: archive.name, sourceName: archive.sourceName, bytes: size, source: packaged.label });
+        totalBytes += size;
+        continue;
+      }
       const scripts = SCRIPT_FILES.map((entry) => ({
         ...entry,
         candidate: chooseCandidate(entry.sourceName, "zh"),
@@ -730,19 +725,49 @@ async function writeLooseScripts(target, outputRoot, requestId, progress) {
 
 async function readCandidateBytes(candidate) {
   if (candidate.kind !== "cab") {
+    if (candidate.reader.size > MAX_LOOSE_SCRIPT_BYTES) {
+      throw new Error(`${candidate.label}: loose script exceeds 16 MB`);
+    }
     return candidate.reader.read(0, candidate.reader.size);
   }
   const { cabinet, entry } = candidate;
-  const folder = cabinet.folders[entry.folderIndex];
-  if (!folder || (folder.compression !== 0 && folder.compression !== 1)) {
-    throw new Error(`${candidate.label}: unsupported CAB folder`);
+  if (entry.size > MAX_LOOSE_SCRIPT_BYTES) {
+    throw new Error(`${candidate.label}: loose script exceeds 16 MB`);
   }
-  const output = new Uint8Array(entry.size);
+  cabinet.scriptFolderReads ||= new Map();
+  let readPromise = cabinet.scriptFolderReads.get(entry.folderIndex);
+  if (!readPromise) {
+    const entries = cabinet.files.filter((value) => value.folderIndex === entry.folderIndex
+      && SCRIPT_FILES.some((script) => script.sourceName.toLowerCase() === basename(value.name).toLowerCase()));
+    readPromise = readCabEntryGroup(cabinet, entries);
+    cabinet.scriptFolderReads.set(entry.folderIndex, readPromise);
+  }
+  try {
+    const bytes = (await readPromise).get(entry);
+    if (!bytes) throw new Error(`${candidate.label}: CAB script entry was not extracted`);
+    return bytes;
+  } catch (error) {
+    cabinet.scriptFolderReads.delete(entry.folderIndex);
+    throw error;
+  }
+}
+
+async function readCabEntryGroup(cabinet, entries) {
+  if (!entries.length) throw new Error(`${cabinet.reader.label}: no CAB script entries found`);
+  if (entries.some((entry) => entry.size > MAX_LOOSE_SCRIPT_BYTES)) {
+    throw new Error(`${cabinet.reader.label}: loose script exceeds 16 MB`);
+  }
+  const folderIndex = entries[0].folderIndex;
+  const folder = cabinet.folders[folderIndex];
+  if (!folder || (folder.compression !== 0 && folder.compression !== 1)) {
+    throw new Error(`${cabinet.reader.label}: unsupported CAB folder`);
+  }
+  const outputs = new Map(entries.map((entry) => [entry, new Uint8Array(entry.size)]));
   let dataCursor = folder.dataOffset;
   let folderCursor = 0;
   let dictionary = new Uint8Array(0);
-  const entryEnd = entry.folderOffset + entry.size;
-  for (let blockIndex = 0; blockIndex < folder.blockCount && folderCursor < entryEnd; blockIndex += 1) {
+  const finalByte = Math.max(...entries.map((entry) => entry.folderOffset + entry.size));
+  for (let blockIndex = 0; blockIndex < folder.blockCount && folderCursor < finalByte; blockIndex += 1) {
     const header = await cabinet.reader.read(dataCursor, 8 + cabinet.dataReserve);
     const compressedSize = u16(header, 4);
     const uncompressedSize = u16(header, 6);
@@ -750,25 +775,27 @@ async function readCandidateBytes(candidate) {
     let block = compressed;
     if (folder.compression === 1) {
       if (compressed[0] !== 0x43 || compressed[1] !== 0x4b) {
-        throw new Error(`${candidate.label}: invalid MSZIP block signature`);
+        throw new Error(`${cabinet.reader.label}: invalid MSZIP block signature`);
       }
       block = self.pako.inflateRaw(compressed.subarray(2),
         dictionary.byteLength ? { dictionary } : undefined);
     }
-    if (block.byteLength !== uncompressedSize) throw new Error(`${candidate.label}: CAB block size mismatch`);
+    if (block.byteLength !== uncompressedSize) throw new Error(`${cabinet.reader.label}: CAB block size mismatch`);
     const blockEnd = folderCursor + block.byteLength;
-    if (blockEnd > entry.folderOffset && folderCursor < entryEnd) {
+    for (const entry of entries) {
+      const entryEnd = entry.folderOffset + entry.size;
+      if (blockEnd <= entry.folderOffset || folderCursor >= entryEnd) continue;
       const sourceStart = Math.max(0, entry.folderOffset - folderCursor);
       const sourceEnd = Math.min(block.byteLength, entryEnd - folderCursor);
       const destination = Math.max(0, folderCursor - entry.folderOffset);
-      output.set(block.subarray(sourceStart, sourceEnd), destination);
+      outputs.get(entry).set(block.subarray(sourceStart, sourceEnd), destination);
     }
     dictionary = updatedDictionary(dictionary, block);
     folderCursor = blockEnd;
     dataCursor += 8 + cabinet.dataReserve + compressedSize;
   }
-  if (folderCursor < entryEnd) throw new Error(`${candidate.label}: CAB folder ended before file data`);
-  return output;
+  if (folderCursor < finalByte) throw new Error(`${cabinet.reader.label}: CAB folder ended before script data`);
+  return outputs;
 }
 
 async function materializeSelection(selection, outputRoot, requestId,

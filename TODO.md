@@ -475,6 +475,12 @@ Dev-box render-verify: symlink worktree `dist/` → main's built `dist/` renders
 
 ## Launcher follow-ups
 
+- [ ] Add a versioned Service Worker/cache policy for the launcher HTML, JS,
+      WebAssembly runtime, and non-user-owned UI assets before advertising a
+      fully offline launch. The current browser-install mode correctly keeps
+      the user-owned game archives in OPFS, but the launcher/runtime shell is
+      still served over HTTPS and is therefore described only as avoiding
+      repeat original-media selection.
 - [ ] Link the base Generals engine as its own browser runtime and enable the
       Generals launch card. The integrated ZeroH launcher inventories the base
       game because Zero Hour needs its fallback archives, but the current

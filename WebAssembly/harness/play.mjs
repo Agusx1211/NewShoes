@@ -3,40 +3,14 @@
 // realEngineInit -> realEngineFrame loop). Mouse/keyboard/touch input already
 // flows through bridge.js canvas listeners into the engine's Win32 queue.
 
+import "./launcher-archive-specs.js";
 import { createIssueRecorder } from "./issue-recorder.mjs";
 
-const archiveSpecs = [
-  { name: "INIZH.big" },
-  { name: "EnglishZH.big" },
-  { name: "WindowZH.big" },
-  { name: "MapsZH.big" },
-  { name: "MusicZH.big" },
-  { name: "GensecZH.big" },
-  { name: "TerrainZH.big" },
-  { name: "TexturesZH.big" },
-  { name: "W3DZH.big" },
-  { name: "W3DEnglishZH.big" },
-  { name: "SpeechZH.big" },
-  { name: "SpeechEnglishZH.big" },
-  { name: "AudioZH.big" },
-  { name: "AudioEnglishZH.big" },
-  { name: "ShadersZH.big" },
-  { name: "ZZBase_INI.big", sourceName: "INI.big" },
-  { name: "LooseScripts.big" },
-  { name: "ZZBase_English.big", sourceName: "English.big" },
-  { name: "ZZBase_Window.big", sourceName: "Window.big" },
-  { name: "ZZBase_Terrain.big", sourceName: "Terrain.big" },
-  { name: "ZZBase_Textures.big", sourceName: "Textures.big" },
-  { name: "ZZBase_W3D.big", sourceName: "W3D.big" },
-  { name: "ZZBase_Shaders.big", sourceName: "Shaders.big" },
-  { name: "ZZBase_Music.big", sourceName: "base-generals/Music.big" },
-  { name: "ZZBase_Audio.big", sourceName: "base-generals/Audio.big" },
-  { name: "ZZBase_AudioEnglish.big", sourceName: "base-generals/AudioEnglish.big" },
-  { name: "ZZBase_Speech.big", sourceName: "base-generals/Speech.big" },
-  { name: "ZZBase_SpeechEnglish.big", sourceName: "base-generals/SpeechEnglish.big" },
-  { name: "ZZBase_Maps.big", sourceName: "base-generals/Maps.big" },
-  { name: "Gensec.big" },
-];
+const archiveSpecs = Object.freeze(window.ZeroHArchiveSpecs.map((spec) => Object.freeze(
+  spec.artifactSourceName === spec.name
+    ? { name: spec.name }
+    : { name: spec.name, sourceName: spec.artifactSourceName },
+)));
 
 const overlay = document.querySelector("#launchOverlay");
 const startButton = document.querySelector("#start");
@@ -100,6 +74,14 @@ function initializeNetworkSettings() {
   if (networkIceCredentialNode) networkIceCredentialNode.value = settings.iceCredential;
 }
 
+function updateNetworkDraftStatus() {
+  if (!networkStatusNode) return;
+  const room = networkRoomNode?.value.trim();
+  networkStatusNode.textContent = room
+    ? `Ready to join ${room} when Zero Hour launches.`
+    : "Offline. Enter a shared room to enable WebRTC multiplayer.";
+}
+
 function saveNetworkSettings(settings) {
   try {
     const { iceCredential: _ephemeralCredential, ...persisted } = settings;
@@ -110,6 +92,11 @@ function saveNetworkSettings(settings) {
 }
 
 initializeNetworkSettings();
+[networkRoomNode, networkNameNode, networkSignalingNode, networkStunNode, networkIceUsernameNode]
+  .filter(Boolean)
+  .forEach((input) => input.addEventListener("change", () => saveNetworkSettings(networkSettingsFromInputs())));
+networkRoomNode?.addEventListener("input", updateNetworkDraftStatus);
+updateNetworkDraftStatus();
 // Engine-thread mode: the engine runs on a pthread in the threaded build and
 // bridge.js moves the frame loop into the worker realm; this page only
 // observes (status events drive the HUD). The play page is THREADED-ONLY

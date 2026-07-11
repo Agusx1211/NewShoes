@@ -26,6 +26,7 @@
     wizardStep: 1,
     source: null,
     storageMode: "once",
+    launching: false,
     library: readStoredLibrary(),
     windowLayout: readWindowLayout(),
   };
@@ -157,11 +158,33 @@
     document.querySelector("#spaceWarning").hidden = state.storageMode !== "install";
   }
 
+  function setRememberAvailability(available) {
+    const input = document.querySelector('input[name="storageMode"][value="remember"]');
+    if (!input) return;
+    input.disabled = !available;
+    const choice = input.closest(".storage-choice");
+    choice?.classList.toggle("is-disabled", !available);
+    const note = choice?.querySelector("small");
+    if (note) note.textContent = available
+      ? "Keep browser permission to this source when supported."
+      : "This source cannot retain a reusable browser permission.";
+    if (!available && state.storageMode === "remember") {
+      state.storageMode = "once";
+      syncStorageModeUI();
+    }
+  }
+
   function setSourcePickerBusy(busy) {
     document.querySelectorAll("#pickImageButton, #pickFolderButton").forEach((button) => {
       button.disabled = busy;
     });
     document.querySelector("#scanPanel").setAttribute("aria-busy", String(busy));
+  }
+
+  function sourceChangeNeedsReload() {
+    if (!window.ZeroHRuntime?.started) return false;
+    showToast("Reload required", "The running engine owns the current archives. Reload ZeroH before selecting a different source.", "warning");
+    return true;
   }
 
   function focusWindow(windowEl) {
@@ -356,16 +379,27 @@
 
   function setWizardStep(step) {
     state.wizardStep = step;
-    document.querySelectorAll("[data-wizard-page]").forEach((page) => page.classList.toggle("is-visible", Number(page.dataset.wizardPage) === step));
+    document.querySelectorAll("[data-wizard-page]").forEach((page) => {
+      const visible = Number(page.dataset.wizardPage) === step;
+      page.classList.toggle("is-visible", visible);
+      page.setAttribute("aria-hidden", String(!visible));
+    });
     document.querySelectorAll("[data-step-indicator]").forEach((indicator) => {
       const number = Number(indicator.dataset.stepIndicator);
       indicator.classList.toggle("is-current", number === step);
       indicator.classList.toggle("is-complete", number < step);
+      if (number === step) indicator.setAttribute("aria-current", "step");
+      else indicator.removeAttribute("aria-current");
     });
   }
 
   async function scanSource(source) {
     setSourcePickerBusy(true);
+    setRememberAvailability(Boolean(source.handles?.length));
+    if (state.library?.mode === "once") {
+      state.library = null;
+      updateLibraryUI();
+    }
     state.source = source;
     const panel = document.querySelector("#scanPanel");
     const fill = document.querySelector("#scanFill");
@@ -472,14 +506,14 @@
     };
     const labels = labelsByMode[mode];
     document.querySelector("#readyStorageLabel").textContent = labels.ready;
-    document.querySelector("#readyMessage").textContent = mode === "install" ? "Zero Hour is installed and available offline in this browser." : "Zero Hour is available from your selected source.";
+    document.querySelector("#readyMessage").textContent = mode === "install" ? "Zero Hour is installed and can launch without selecting the original media again." : "Zero Hour is available from your selected source.";
     document.querySelectorAll(".library-state-label").forEach((el) => { el.textContent = state.library ? labels.state : "Original files required"; });
     document.querySelectorAll(".library-size span").forEach((el) => { el.textContent = state.library ? labels.location : "Local source"; });
     const installed = mode === "install";
     const hasShortcuts = Boolean(state.library && (mode === "remember" || installed));
     document.querySelectorAll("[data-game-shortcut]").forEach((shortcut) => { shortcut.hidden = !hasShortcuts; });
     document.querySelector("#storageUsedValue").textContent = installed ? ((state.library?.totalBytes || 0) / 1024 ** 3).toFixed(1) : "0";
-    document.querySelector("#storageCopyText").textContent = installed ? "Game assets are available for one-click offline launches." : "No game assets are stored in this browser yet.";
+    document.querySelector("#storageCopyText").textContent = installed ? "Game assets are available for one-click launches from browser storage." : "No game assets are stored in this browser yet.";
     document.querySelector(".storage-donut").style.background = installed ? "conic-gradient(#548cab 0 270deg, #d3a448 270deg 276deg, #d6e0e5 276deg)" : "conic-gradient(#548cab 0 4deg, #d6e0e5 4deg)";
   }
 
@@ -495,6 +529,9 @@
       showToast("Original files required", "Add your Generals and Zero Hour media before launching.", "warning");
       return;
     }
+    if (state.launching) return;
+    state.launching = true;
+    document.querySelectorAll("[data-launch-game]").forEach((button) => { button.disabled = true; });
     launchOverlay.hidden = false;
     document.querySelector("#launchLoader").hidden = false;
     document.querySelector("#viewport").hidden = true;
@@ -526,6 +563,9 @@
     } catch (error) {
       launchOverlay.hidden = true;
       showToast("Launch failed", error?.message || String(error), "warning");
+    } finally {
+      state.launching = false;
+      document.querySelectorAll("[data-launch-game]").forEach((button) => { button.disabled = false; });
     }
   }
 
@@ -584,6 +624,7 @@
   });
 
   document.querySelector("#pickImageButton").addEventListener("click", async () => {
+    if (sourceChangeNeedsReload()) return;
     try {
       const files = await window.ZeroHAssetLibrary.pickImages();
       if (!files) return document.querySelector("#imageInput").click();
@@ -597,6 +638,7 @@
     }
   });
   document.querySelector("#pickFolderButton").addEventListener("click", async () => {
+    if (sourceChangeNeedsReload()) return;
     try {
       const files = await window.ZeroHAssetLibrary.pickFolder();
       if (!files) return document.querySelector("#folderInput").click();
@@ -626,10 +668,7 @@
   }));
   document.querySelector("#prepareLibraryButton").addEventListener("click", prepareLibrary);
   document.querySelector("#changeSourceButton").addEventListener("click", () => {
-    if (window.ZeroHRuntime?.started) {
-      showToast("Reload required", "The running engine owns the current archives. Reload ZeroH before selecting a different source.", "warning");
-      return;
-    }
+    if (sourceChangeNeedsReload()) return;
     document.querySelector("#scanPanel").hidden = true;
     setWizardStep(1);
   });
@@ -643,7 +682,9 @@
     await refreshStorageUI();
     setWizardStep(1);
     openApp("setup");
-    showToast("Library forgotten", "Source permissions and installed browser copies were cleared.");
+    showToast("Library forgotten", window.ZeroHRuntime?.started
+      ? "Stored assets were cleared. Reload ZeroH before selecting replacement files."
+      : "Source permissions and installed browser copies were cleared.");
   });
   document.querySelector("#endSessionButton").addEventListener("click", () => {
     closeStartMenu();
@@ -708,7 +749,9 @@
     updateLibraryUI();
     applyLauncherLogo();
     window.dispatchEvent(new CustomEvent("zeroh:reset-apps"));
-    showToast("ZeroH reset", "Library permissions, browser assets and desktop settings were cleared.");
+    showToast("ZeroH reset", window.ZeroHRuntime?.started
+      ? "Browser data was cleared. Reload ZeroH before selecting replacement files."
+      : "Library permissions, browser assets and desktop settings were cleared.");
   });
 
   document.querySelector("#exitRuntimeButton").addEventListener("click", exitRuntime);
@@ -722,16 +765,8 @@
   updateLibraryUI();
   syncStorageModeUI();
   void refreshStorageUI();
-  if (typeof window.showOpenFilePicker !== "function"
-      || typeof window.showDirectoryPicker !== "function") {
-    const remember = document.querySelector('input[name="storageMode"][value="remember"]');
-    if (remember) {
-      remember.disabled = true;
-      remember.closest(".storage-choice")?.classList.add("is-disabled");
-      const note = remember.closest(".storage-choice")?.querySelector("small");
-      if (note) note.textContent = "This browser cannot retain source permissions.";
-    }
-  }
+  setRememberAvailability(typeof window.showOpenFilePicker === "function"
+    || typeof window.showDirectoryPicker === "function");
   updateClock();
   window.setInterval(updateClock, 30_000);
 

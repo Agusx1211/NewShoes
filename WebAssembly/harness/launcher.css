@@ -132,6 +132,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .storage-options { display: grid; gap: 7px; margin: 14px 0 0; padding: 0; border: 0; }
 .storage-choice { min-height: 63px; display: grid; grid-template-columns: 17px 34px 1fr auto; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid #cbd6dc; border-radius: 4px; background: #fff; cursor: pointer; transition: .12s; }
 .storage-choice:hover { background: #f7fbfd; border-color: #88b0c9; }.storage-choice.is-selected { background: #eef6fb; border-color: #4f8fb8; box-shadow: inset 3px 0 #367eae; }
+.storage-choice.is-disabled { opacity: .55; cursor: not-allowed; }.storage-choice.is-disabled:hover { background: #fff; border-color: #cbd6dc; }
 .storage-choice input { position: absolute; opacity: 0; }.choice-radio { width: 15px; height: 15px; border: 1px solid #8ea2ae; border-radius: 50%; background: #fff; }.storage-choice.is-selected .choice-radio { border: 4px solid #337eae; }
 .choice-icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 4px; color: #fff; font-size: 20px; font-weight: bold; }.choice-icon.bolt { background: #4c8ab5; }.choice-icon.bookmark { background: #6a8f68; font-size: 17px; }.choice-icon.package { background: #f2e3cd; }.choice-icon.package svg { width: 27px; height: 27px; }
 .choice-text { display: grid; gap: 3px; }.choice-text strong { color: #304956; font-size: 11px; }.choice-text small { color: #778892; font-size: 9px; }.choice-meta { color: #5d7888; font-size: 9px; font-weight: bold; white-space: nowrap; }
