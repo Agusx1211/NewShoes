@@ -742,9 +742,9 @@ mitigation track. Items resolved or retired by the pivot:
       fallbacks, an exact END-terminated 18-file archive manifest, and a decoded,
       varied PNG screenshot. The live `Trees.vso` relative-address observer is
       opt-in and reuses the existing SM1 debug branch, so normal draws gain no
-      new audit call. On Mac M4 Chrome/ANGLE Metal, explicit `ps11` issued 260
-      translated tree draws over the bounded capture and observed 260 distinct
-      c8-c12 wind table states, with zero pair failures or fixed-function
+      new audit call. On Mac M4 Chrome/ANGLE Metal, explicit `ps11` issued over
+      250 translated tree draws in the bounded capture and observed a distinct
+      wind-table state on every draw, with zero pair failures or fixed-function
       fallbacks; the visible shell-map capture remained correct. This rules out
       a translator/native-pointer regression: the apparent frozen-tree
       regression was the launcher selecting Classic, whose original fallback
