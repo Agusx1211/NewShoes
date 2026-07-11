@@ -92,8 +92,14 @@ details.
 No retail game archive or reusable extracted retail asset was found. The
 upstream source contains seven unique `RequiredAssets` names duplicated between
 the Generals and Zero Hour trees: three TGA files, one W3D file, one INI, and
-two TBL files. The launcher retains 15 documented project UI binaries. Twenty
-unused concept logos and one image with insufficient provenance were removed.
+two TBL files. At this audit snapshot the launcher retained 15 documented
+project UI binaries and 20 unused concept logos had been removed.
+
+After the recorded snapshot, the project owner confirmed on 2026-07-11 that
+`zeroh-command-desert.webp` is project-owned and approved for publication. The
+exact prior blob and its intentional launcher references were restored, bringing
+the documented project UI inventory to 16 binaries. Its generation details are
+not known. The 20 unused logo candidates remain removed.
 
 The README screenshots were converted to opaque, stripped sRGB WebP files at
 1600×881 and 1600×876. They show locally supplied retail data for context and
@@ -145,7 +151,7 @@ details and the two old URL-userinfo literals.
 
 [`scripts/prepare_publication_mirror.sh`](../scripts/prepare_publication_mirror.sh)
 creates a new mirror, applies an external reviewed replacement file, removes the
-known historical private paths and discarded art, applies an optional mailmap,
+known historical private paths and unused logo candidates, applies an optional mailmap,
 and reruns this audit. It refuses an existing destination and never rewrites the
 source clone. `git-filter-repo` was not installed during this audit, so the
 mirror rewrite was not executed. Any rewritten mirror must still be reviewed,

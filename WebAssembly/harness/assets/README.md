@@ -8,13 +8,14 @@ runtime BIG archive inventory.
 |---|---|
 | `brand/project-new-shoes-*` | Project New Shoes identity created for this port |
 | `launcher-logo.webp` | runtime copy of the Project New Shoes mark |
+| `zeroh-command-desert.webp` | project-owned launcher artwork; ownership confirmed by the project owner on 2026-07-11 (generation details are not recorded) |
 | `zeroh-{bliss-at-war,autumn-offensive,azul-armada,red-moon-front}-*` | project-owned desktop wallpapers and swatches created for the launcher |
 
-The directory contains 15 binary UI files: six brand/icon variants, one runtime
-logo, and four full-size wallpaper/swatch pairs. Unused launcher-concept logos
-and artwork without a sufficiently clear redistribution record were removed
-before publication. The corresponding commits and `DONE.md` describe the
-retained files as project-owned UI art.
+The directory contains 16 binary UI files: six brand/icon variants, one runtime
+logo, `zeroh-command-desert.webp`, and four full-size wallpaper/swatch pairs.
+Twenty unused launcher-concept logo candidates were removed before publication.
+The corresponding commits and `DONE.md` describe the retained files as
+project-owned UI art.
 
 Do not add screenshots, extracted textures, faction art, maps, audio, videos, or
 other retail game material here. New binary artwork must include an origin and

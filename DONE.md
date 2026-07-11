@@ -25,9 +25,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       asset ownership paths, build/test flow, license boundary, and evidence-
       based automation attribution. Official Steam and EA acquisition links
       were checked against their current first-party pages.
-- [x] Removed 20 unused launcher-concept logos and one image without sufficient
-      provenance, documented the 15 retained project UI binaries, and added two
-      stripped sRGB WebP screenshots with an explicit retail-data disclaimer.
+- [x] Removed 20 unused launcher-concept logo candidates, documented the 16
+      retained project UI binaries, and added two stripped sRGB WebP screenshots
+      with an explicit retail-data disclaimer. The project owner confirmed on
+      2026-07-11 that `zeroh-command-desert.webp` is project-owned and approved
+      for publication; its exact prior blob and launcher references are retained
+      without claiming unknown generation details.
 
 ## Launcher exit compositor teardown (2026-07-11)
 

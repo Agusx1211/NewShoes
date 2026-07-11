@@ -53,7 +53,6 @@ FILTER_ARGS=(
   --path WebAssembly/dist-threaded
   --path WebAssembly/dist-threaded-release
   --path WebAssembly/harness/assets/logos
-  --path WebAssembly/harness/assets/zeroh-command-desert.webp
   --invert-paths
   --replace-text "$REPLACEMENTS_FILE"
 )
