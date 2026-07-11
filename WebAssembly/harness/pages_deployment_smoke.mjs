@@ -156,7 +156,7 @@ try {
     return {
       text: document.body.innerText,
       source: [...document.querySelectorAll("a")]
-        .find((link) => link.textContent.includes("corresponding source"))?.href || "",
+        .find((link) => link.textContent.toLowerCase().includes("corresponding source"))?.href || "",
       completeLicense: license.includes("ADDITIONAL TERMS per GNU GPL Section 7")
         && license.includes("Disclaimer of Warranty"),
     };
