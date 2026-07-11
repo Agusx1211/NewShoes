@@ -155,7 +155,7 @@ async function detectIsoLayout(reader) {
   throw new Error(`${reader.label}: not an ISO 9660 or MODE1/2352 image`);
 }
 
-async function validateBigReader(reader, label) {
+async function validateBigReader(reader, label, requiredEntries = []) {
   if (!reader || reader.size < 16) throw new Error(`${label}: BIGF archive is too small`);
   const header = await reader.read(0, 16);
   if (ascii(header, 0, 4) !== "BIGF") throw new Error(`${label}: not a BIGF archive`);
@@ -173,6 +173,7 @@ async function validateBigReader(reader, label) {
   let directory = new Uint8Array(0);
   let cursor = 0;
   let lowestOffset = { offset: Infinity, index: -1 };
+  const required = new Map(requiredEntries.map((path) => [path.toLowerCase(), path]));
   const ensure = async (length, message) => {
     if (length > MAX_BIG_DIRECTORY_BYTES) throw new Error(`${label}: BIGF directory exceeds 64 MB`);
     if (length > archiveSize - 16) throw new Error(message);
@@ -202,6 +203,9 @@ async function validateBigReader(reader, label) {
       await ensure(directory.byteLength + 1, `${label}: BIGF entry ${index} has no terminator`);
     }
     if (pathEnd === cursor + 8) throw new Error(`${label}: BIGF entry ${index} has an empty path`);
+    if (required.size) {
+      required.delete(ascii(directory, cursor + 8, pathEnd - cursor - 8).toLowerCase());
+    }
     if (offset + size > archiveSize) throw new Error(`${label}: BIGF entry ${index} extends past archive end`);
     if (offset < lowestOffset.offset) lowestOffset = { offset, index };
     cursor = pathEnd + 1;
@@ -209,6 +213,9 @@ async function validateBigReader(reader, label) {
   const dataStart = 16 + cursor;
   if (lowestOffset.offset < dataStart) {
     throw new Error(`${label}: BIGF entry ${lowestOffset.index} overlaps the directory`);
+  }
+  if (required.size) {
+    throw new Error(`${label}: required game content is missing (${[...required.values()].join(", ")})`);
   }
   return { archiveSize, entryCount };
 }
@@ -369,8 +376,13 @@ function directEdition(path, directoryKinds, leaf = basename(path)) {
 }
 
 function entryEdition(path, fallback) {
-  const inferred = directEdition(path, new Map());
-  return inferred === "unknown" ? fallback : inferred;
+  // A cabinet is an edition boundary. Zero Hour's Data1.cab deliberately
+  // contains a tiny base-named Music.big security stub; classifying entries
+  // solely by that filename makes it outrank the real Generals Music.big.
+  // ZH-suffixed names remain unambiguous, while all other cabinet members
+  // inherit the edition established from that cabinet's contents.
+  if (/zh\.big\d*$/i.test(basename(path))) return "zh";
+  return fallback === "unknown" ? directEdition(path, new Map()) : fallback;
 }
 
 async function scanSources(files, requestId) {
@@ -841,7 +853,10 @@ async function materializeSelection(selection, outputRoot, requestId,
     opfsPath: `${outputRoot}/${target.archive.name}`,
   }));
   for (const archive of archives) {
-    await validateBigReader(await readOpfsFile(archive.opfsPath), archive.name);
+    const spec = ARCHIVES.find((candidate) => candidate.name === archive.name);
+    const validation = await validateBigReader(
+      await readOpfsFile(archive.opfsPath), archive.name, spec?.requiredEntries);
+    archive.entryCount = validation.entryCount;
   }
   return archives;
 }

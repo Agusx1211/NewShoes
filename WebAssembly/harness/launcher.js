@@ -904,7 +904,7 @@
     document.querySelector('[data-settings-tab="multiplayer"]')?.click();
   });
   window.addEventListener("storage", (event) => {
-    if (["zeroh-library", "fielddesk-library", "zeroh-installed-library.v3", "zeroh-installed-library.v2"].includes(event.key)) {
+    if (["zeroh-library", "fielddesk-library", "zeroh-installed-library.v4", "zeroh-installed-library.v3", "zeroh-installed-library.v2"].includes(event.key)) {
       state.library = readStoredLibrary();
       void reconcileStoredLibrary();
     }

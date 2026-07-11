@@ -1,8 +1,8 @@
 import "./launcher-archive-specs.js";
 
-const INSTALLED_KEY = "zeroh-installed-library.v3";
-const OLD_INSTALLED_KEYS = ["zeroh-installed-library.v2", "zeroh-installed-library.v1"];
-const LIBRARY_VERSION = 3;
+const INSTALLED_KEY = "zeroh-installed-library.v4";
+const OLD_INSTALLED_KEYS = ["zeroh-installed-library.v3", "zeroh-installed-library.v2", "zeroh-installed-library.v1"];
+const LIBRARY_VERSION = 4;
 const HANDLE_DB = "zeroh-asset-handles";
 const HANDLE_STORE = "sources";
 const LIBRARY_MUTATION_LOCK = "zeroh-library-mutation";
@@ -398,15 +398,10 @@ class AssetLibrary {
   async prepareUnlocked(mode, onProgress = null) {
     if (!this.scanResult?.ok) throw new Error("Select complete Generals + Zero Hour original media first");
     await this.collectStaleRuntimeStorage();
-    const estimate = await navigator.storage?.estimate?.();
-    const quota = Number(estimate?.quota);
-    const usage = Number(estimate?.usage);
-    const available = quota - usage;
-    const required = this.scanResult.totalBytes + Math.max(32 * 1024 * 1024,
-      this.scanResult.totalBytes * 0.01);
-    if (Number.isFinite(quota) && quota > 0 && Number.isFinite(usage) && available < required) {
-      throw new Error(`Browser storage needs about ${formatBytes(required)} free; ${formatBytes(available)} is available`);
-    }
+    // StorageManager.estimate() is deliberately conservative and may report
+    // less space than an origin can actually consume. Treat the real OPFS
+    // write as authoritative: a genuinely exhausted quota fails that write
+    // and the worker reports the affected archive to the user.
     let persistenceGranted = null;
     if (mode === "install") {
       // The installed library is mounted directly through read-only OPFS
@@ -495,7 +490,8 @@ class AssetLibrary {
       if (names.size !== REQUIRED_ARCHIVE_NAMES.length
           || REQUIRED_ARCHIVE_NAMES.some((name) => !names.has(name))) return null;
       if (value.archives.some((archive) => archive.opfsPath !== `${value.root}/${archive.name}`
-          || !Number.isSafeInteger(archive.bytes) || archive.bytes <= 16)) return null;
+          || !Number.isSafeInteger(archive.bytes) || archive.bytes <= 16
+          || !Number.isSafeInteger(archive.entryCount) || archive.entryCount <= 0)) return null;
       const totalBytes = value.archives.reduce((sum, archive) => sum + archive.bytes, 0);
       if (!Number.isSafeInteger(value.totalBytes) || value.totalBytes !== totalBytes) return null;
       return value;
