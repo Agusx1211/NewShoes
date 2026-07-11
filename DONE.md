@@ -282,8 +282,8 @@ that merge stay). Details in `WebAssembly/notes/p1-engine-thread.md`
       sandbox MITM rejects the self-signed upstream on non-localhost https.)
 - [x] Mac deploy + verification (real Metal GPU): fresh builds md5-verified
       on both boxes, :8123 server restarted with HTTPS_PORT=8443 (single pid
-      serves both listeners; :8124 untouched), the interim `~/cnc-tls`
-      stopgap TLS proxy on :8443 retired. Headless-Chrome probe 10/10:
+      serves both listeners; :8124 untouched), the interim external stopgap
+      TLS proxy on :8443 retired. Headless-Chrome probe 10/10:
       http://<gpu-host>:8123/harness/play.html?autostart=1 redirects to
       https://<gpu-host>:8443/... (query preserved), COI+SAB true, ANGLE
       Metal (Apple M4), THREADED wasm instantiates (heap is a
@@ -968,8 +968,8 @@ mitigation track. Items resolved or retired by the pivot:
       resize to exactly 1000x700, fixed 1024x768 lands exactly (letterboxed),
       return to dynamic, shell alive with MainMenu after every reflow.
       Screenshots eyeballed on Metal (menu at 1280x800 and 1024x768 laid out
-      correctly, shellmap alive). In-game (real USA campaign mission via
-      `~/cnc-verify/ingame_resolution_probe.mjs` on the Mac):
+      correctly, shellmap alive). In-game (real USA campaign mission via an
+      ignored external resolution probe on the Mac):
       1280x800→1600x1000→1280x800 mid-match, both `reflow:"in-place"`,
       playerControl preserved, scene coherent in screenshots. Shellmap gate
       green on the new build; both dists rebuilt + rsynced to GPU verification host with

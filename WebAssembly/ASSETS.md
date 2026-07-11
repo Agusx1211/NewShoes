@@ -6,9 +6,10 @@ and installed game files are copyrighted third-party content. They must not be
 committed, bundled into releases, uploaded to CI, or redistributed from this
 repository.
 
-The small `RequiredAssets` files inside EA's original source tree are part of
-the upstream source release. Launcher branding and wallpapers are separate
-project UI art documented in
+Seven small `RequiredAssets` path names are duplicated between the Generals and
+Zero Hour source trees. They comprise three TGA files, one W3D file, one INI,
+and two TBL files and are part of EA's upstream source release. Launcher
+branding and wallpapers are separate project UI art documented in
 [harness/assets/README.md](harness/assets/README.md).
 
 ## Player import

@@ -14,6 +14,13 @@ The project is independent, modified software. It is not affiliated with,
 endorsed by, or supported by Electronic Arts. Retail game data is not included;
 players must provide files from a copy they own.
 
+<p align="center">
+  <img src="docs/images/project-new-shoes-zero-hour-menu.webp" alt="Zero Hour faction and skirmish menu rendered by the original engine in the Project New Shoes browser runtime" width="800"><br>
+  <img src="docs/images/project-new-shoes-launcher-ready.webp" alt="Project New Shoes launcher showing a locally installed Zero Hour library ready to launch" width="800">
+</p>
+
+<p align="center"><em>Retail game data shown in these screenshots was supplied locally for testing. No game archives or reusable extracted assets are bundled with this repository.</em></p>
+
 ## Status
 
 This is a playable development build, not a finished release. The current
@@ -35,9 +42,6 @@ Fidelity, campaigns, video, natural gameplay audio coverage, long multiplayer
 sessions, save/load coverage, performance, and browser compatibility still need
 work. Chrome and Chromium are the primary tested browsers. Firefox and Safari
 are not yet release targets.
-
-See [TODO.md](TODO.md) for open work and [DONE.md](DONE.md) for the detailed
-verification history.
 
 ## What you need
 
@@ -171,31 +175,31 @@ performed hands-on playtests, chose tradeoffs, and integrated the work. Agents
 scouted the source, implemented ports, ran browser harnesses, captured GPU
 evidence, reviewed changes, and updated the project history.
 
-At the public-readiness audit snapshot, 1,386 of 1,539 reachable commits had an
-automated model identity as author. Author aliases were consolidated into these
-model families:
+The reachable history records work by the following model families. Aliases
+were consolidated only when the commit metadata named the same provider and
+model:
 
 | Provider and model family | Authored commits |
 |---|---:|
 | OpenAI GPT-5 Codex, including Codex CLI | 996 |
 | Z.ai GLM-5.2, through OpenCode and Pi workers | 170 |
 | Anthropic Claude Fable 5 | 121 |
-| Anthropic Claude Opus 4.8 and generic Claude aliases | 51 |
+| Anthropic Claude Opus 4.8 | 48 |
+| Anthropic Claude (model unspecified in metadata) | 3 |
 | Qwen 3.6 27B and 35B variants | 30 |
 | Mistral Medium 3.5 | 17 |
 | DeepSeek V4 Pro | 1 |
 
-Agustin authored 149 commits in the same reachable history. The four remaining
-commits are the upstream EA source import authored by LFeenanEA. These counts
-describe commit metadata, not relative contribution quality. The exact audit
-method and alias inventory are recorded in
+Agustin and the upstream EA import author, LFeenanEA, are listed separately in
+the audit. These counts describe commit metadata, not relative contribution
+quality. The reproducible audit method and complete alias inventory are in
 [docs/public-readiness-audit.md](docs/public-readiness-audit.md).
 
-Contributions should preserve the original engine logic and replace only the
-platform boundary needed by the browser. Rendering work is not complete without
-a browser boot plus state or screenshot evidence. Read [AGENTS.md](AGENTS.md)
-before changing the port, then update `TODO.md` and `DONE.md` with honest
-verification status.
+## Contributing
+
+Development architecture, build details, and the current roadmap are in
+[PROJECT.md](PROJECT.md), [WebAssembly/README.md](WebAssembly/README.md), and
+[TODO.md](TODO.md). Pull requests and reproducible bug reports are welcome.
 
 ## Source, assets, and license
 
@@ -205,8 +209,10 @@ GPL section 7 terms. Read [LICENSE.md](LICENSE.md), especially the trademark,
 origin, and modified-version requirements.
 
 The repository does not grant rights to Command & Conquer trademarks or retail
-game data. The four small `RequiredAssets` files already present in EA's source
-tree are part of that upstream source release. Project launcher artwork is
+game data. Seven small `RequiredAssets` paths already present in EA's source
+tree—four asset-format files and three auxiliary INI/TBL files—are part of that
+upstream release and are duplicated between the Generals and Zero Hour trees.
+Project launcher artwork is
 documented under
 [WebAssembly/harness/assets](WebAssembly/harness/assets/README.md). Original
 BIG archives, maps, textures, models, music, speech, movies, disc images, and

@@ -23,18 +23,19 @@
 .env
 .env.*
 !.env.example
-*.pem
-*.p12
-*.pfx
-*.key
-*.crt
-*.cncdump.json
-*.cncdump.json.zip
+*.[pP][eE][mM]
+*.[pP]12
+*.[pP][fF][xX]
+*.[kK][eE][yY]
+*.[cC][rR][tT]
+*.[cC][nN][cC][dD][uU][mM][pP].[jJ][sS][oO][nN]
+*.[cC][nN][cC][dD][uU][mM][pP].[jJ][sS][oO][nN].[zZ][iI][pP]
 
 # User-owned retail media and extracted archive containers
-*.iso
-*.img
-*.cue
-*.cab
-*.big
-*.bik
+*.[iI][sS][oO]
+*.[iI][mM][gG]
+*.[bB][iI][nN]
+*.[cC][uU][eE]
+*.[cC][aA][bB]
+*.[bB][iI][gG]
+*.[bB][iI][kK]
