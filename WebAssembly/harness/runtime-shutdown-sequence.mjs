@@ -22,6 +22,20 @@ function invoke(operation) {
   }
 }
 
+function hasStrictForcedTerminationEvidence(settled) {
+  const operation = settled?.value;
+  const result = operation?.result;
+  const engine = result?.engine;
+  return settled?.ok === true
+    && operation?.ok === true
+    && result?.ok === true
+    && engine?.ok === true
+    && engine.workerTerminated === true
+    && engine.pendingCommands === 0
+    && engine.pthreadRunning === 0
+    && engine.engineThreadStarted === false;
+}
+
 export async function runRuntimeShutdownSequence(operations, timeouts = {}) {
   const stopTimeoutMs = timeouts.stopTimeoutMs ?? 6500;
   const finalSaveTimeoutMs = timeouts.finalSaveTimeoutMs ?? 10000;
@@ -44,6 +58,7 @@ export async function runRuntimeShutdownSequence(operations, timeouts = {}) {
   );
   const loopStopped = loopStop.ok && loopStop.value?.ok === true;
   let forced = null;
+  let forceQuiescenceProven = null;
   if (loopStopped) {
     order.push("frame-loop-stopped");
   } else {
@@ -52,18 +67,29 @@ export async function runRuntimeShutdownSequence(operations, timeouts = {}) {
       forceTimeoutMs,
       "forced runtime shutdown",
     );
-    order.push("worker-force-quiesced");
+    forceQuiescenceProven = hasStrictForcedTerminationEvidence(forced);
+    order.push(forceQuiescenceProven
+      ? "worker-force-quiesced"
+      : "worker-force-quiesce-failed");
   }
 
-  const saves = await settleWithin(
-    invoke(operations.persistFinalSave),
-    finalSaveTimeoutMs,
-    "final save flush",
-  );
+  const saves = loopStopped || forceQuiescenceProven
+    ? await settleWithin(
+      invoke(operations.persistFinalSave),
+      finalSaveTimeoutMs,
+      "final save flush",
+    )
+    : {
+      ok: false,
+      skipped: true,
+      error: "final durability could not be established because worker quiescence was not proven",
+    };
   const finalSaveFresh = saves.ok
     && saves.value?.ok === true
     && saves.value?.finalFresh === true;
-  order.push(finalSaveFresh ? "final-save-flushed" : "final-save-failed");
+  if (!saves.skipped) {
+    order.push(finalSaveFresh ? "final-save-flushed" : "final-save-failed");
+  }
 
   const graceful = loopStopped
     ? await settleWithin(
@@ -85,11 +111,20 @@ export async function runRuntimeShutdownSequence(operations, timeouts = {}) {
       "forced runtime shutdown",
     );
     if (forced.value) result = forced.value;
-    order.push("worker-force-terminated");
+    forceQuiescenceProven = hasStrictForcedTerminationEvidence(forced);
+    order.push(forceQuiescenceProven
+      ? "worker-force-terminated"
+      : "worker-force-termination-failed");
   }
 
   return {
-    result: { ...result, ok: result.ok === true && finalSaveFresh && saveSchedulingStopped },
+    result: {
+      ...result,
+      ok: result.ok === true
+        && finalSaveFresh
+        && saveSchedulingStopped
+        && forceQuiescenceProven !== false,
+    },
     close: {
       saveScheduling,
       loopStop,
@@ -97,12 +132,19 @@ export async function runRuntimeShutdownSequence(operations, timeouts = {}) {
       finalSaveFresh,
       graceful,
       forced,
+      forceQuiescenceProven,
       order,
     },
   };
 }
 
 export function runtimeShutdownWarning(result) {
+  if (result?.close?.forceQuiescenceProven === false) {
+    return {
+      title: "Game closed — save warning",
+      message: "The game worker could not be proven stopped, so final save durability could not be established. Your latest save may not be stored.",
+    };
+  }
   if (result?.close?.finalSaveFresh !== true) {
     return {
       title: "Game closed — save warning",

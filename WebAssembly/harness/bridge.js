@@ -823,6 +823,7 @@ function createThreadedEngineController() {
   let prepPromise = null;
   let engineThreadStarted = false;
   let shutDown = false;
+  let terminalEvidence = null;
   let lastStatus = null;
   let lastLoopError = null;
   let mssHandlers = null;
@@ -1342,18 +1343,26 @@ function createThreadedEngineController() {
     const pthreadRunning = Array.isArray(cncPortEmscriptenModule?.PThread?.runningWorkers)
       ? cncPortEmscriptenModule.PThread.runningWorkers.length
       : null;
-    return {
+    terminalEvidence = {
       workerTerminated,
       workerError,
       pendingCommands: pending.size,
       pthreadRunning,
       engineThreadStarted,
     };
+    terminalEvidence.ok = terminalEvidence.workerTerminated === true
+      && terminalEvidence.pendingCommands === 0
+      && terminalEvidence.pthreadRunning === 0
+      && terminalEvidence.engineThreadStarted === false;
+    return { ...terminalEvidence };
   }
 
   async function shutdown() {
     if (shutDown) {
-      return { ok: true, alreadyStopped: true };
+      return {
+        ...(terminalEvidence ?? { ok: false }),
+        alreadyStopped: true,
+      };
     }
 
     const result = { ok: true, loopStopped: false, engineShutdown: null, opfsHandlesClosed: 0 };
@@ -1384,31 +1393,23 @@ function createThreadedEngineController() {
       }
     }
 
-    Object.assign(result, terminateWorker("threaded engine shut down"));
-    if (!result.workerTerminated) {
-      result.ok = false;
-    }
+    const shutdownOperationsOk = result.ok;
+    const termination = terminateWorker("threaded engine shut down");
+    Object.assign(result, termination);
+    result.ok = shutdownOperationsOk === true && termination.ok === true;
     return result;
   }
 
   function forceShutdown(reason = "forced shutdown") {
     if (shutDown) {
-      const pthreadRunning = Array.isArray(cncPortEmscriptenModule?.PThread?.runningWorkers)
-        ? cncPortEmscriptenModule.PThread.runningWorkers.length
-        : null;
       return {
-        ok: true,
+        ...(terminalEvidence ?? { ok: false }),
         alreadyStopped: true,
         forced: true,
-        workerTerminated: true,
-        pendingCommands: pending.size,
-        pthreadRunning,
-        engineThreadStarted,
       };
     }
 
-    const { workerTerminated, workerError } = terminateWorker(reason);
-    return { ok: workerTerminated, forced: true, workerTerminated, workerError };
+    return { ...terminateWorker(reason), forced: true };
   }
 
   // Fire-and-forget realm command (no id, no reply, no timeout entry) —
@@ -8495,6 +8496,14 @@ if (cncPortThreadedMode && typeof window !== "undefined") {
 
 let browserRuntimeShutDown = false;
 
+function hasStrictEngineTerminationEvidence(engine) {
+  return engine?.ok === true
+    && engine.workerTerminated === true
+    && engine.pendingCommands === 0
+    && engine.pthreadRunning === 0
+    && engine.engineThreadStarted === false;
+}
+
 async function shutdownBrowserRuntime() {
   browserRuntimeShutDown = true;
   stopSavePersistenceScheduling();
@@ -8508,7 +8517,7 @@ async function shutdownBrowserRuntime() {
   const webLocksReleased = releaseOpfsWebLocks();
   await Promise.resolve();
   return {
-    ok: engine.ok === true && engine.workerTerminated !== false && audio.closed === true,
+    ok: hasStrictEngineTerminationEvidence(engine) && audio.closed === true,
     engine,
     audio,
     io,
@@ -8528,7 +8537,13 @@ function forceShutdownBrowserRuntime() {
   void shutdownBrowserAudioRuntime();
   const io = forceShutdownIoWorker();
   const webLocksReleased = releaseOpfsWebLocks();
-  return { ok: engine.workerTerminated !== false, forced: true, engine, io, webLocksReleased };
+  return {
+    ok: hasStrictEngineTerminationEvidence(engine),
+    forced: true,
+    engine,
+    io,
+    webLocksReleased,
+  };
 }
 
 // Archive mount progress -> page UI. The mount path publishes coarse

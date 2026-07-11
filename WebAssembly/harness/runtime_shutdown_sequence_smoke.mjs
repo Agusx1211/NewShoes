@@ -6,7 +6,16 @@ import {
 
 const terminated = () => ({
   ok: true,
-  result: { engine: { workerTerminated: true, pendingCommands: 0, pthreadRunning: 0 } },
+  result: {
+    ok: true,
+    engine: {
+      ok: true,
+      workerTerminated: true,
+      pendingCommands: 0,
+      pthreadRunning: 0,
+      engineThreadStarted: false,
+    },
+  },
 });
 const finalSave = () => ({ ok: true, finalFresh: true, sequence: 2 });
 const never = () => new Promise(() => {});
@@ -34,6 +43,47 @@ const fastTimeouts = {
     "final-save-flushed",
     "runtime-destroyed",
   ]);
+}
+
+for (const [name, forceShutdown] of [
+  ["rejected", () => Promise.reject(new Error("force rejected"))],
+  ["timed out", never],
+  ["reported failure", () => ({
+    ok: false,
+    result: {
+      ok: false,
+      engine: {
+        ok: false,
+        workerTerminated: false,
+        pendingCommands: 1,
+        pthreadRunning: 1,
+        engineThreadStarted: true,
+      },
+    },
+  })],
+  ["omitted terminal metrics", () => ({
+    ok: true,
+    result: { ok: true, engine: { ok: true, workerTerminated: true } },
+  })],
+]) {
+  const events = [];
+  const shutdown = await runRuntimeShutdownSequence({
+    stopSaveScheduling: () => ({ ok: true }),
+    stopLoop: never,
+    persistFinalSave: () => { events.push("save"); return finalSave(); },
+    gracefulShutdown: terminated,
+    forceShutdown,
+  }, fastTimeouts);
+  assert.equal(shutdown.result.ok, false, `${name}: close must fail`);
+  assert.equal(shutdown.close.finalSaveFresh, false, `${name}: save must not be credited`);
+  assert.equal(shutdown.close.saves.skipped, true, `${name}: save must be skipped`);
+  assert.deepEqual(events, [], `${name}: save callback must not be reached`);
+  assert.equal(shutdown.close.order.includes("worker-force-quiesced"), false);
+  assert.equal(shutdown.close.order.includes("final-save-flushed"), false);
+  assert.match(
+    runtimeShutdownWarning({ ...shutdown.result, close: shutdown.close }).message,
+    /durability could not be established/i,
+  );
 }
 
 {

@@ -16,11 +16,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       final terrain frame as a promoted compositor layer.
 - [x] Bounded save flush, paced-loop stop, and graceful engine shutdown, with
       a main-realm hard worker/audio/I/O fallback when a browser callback or
-      destructor does not settle. Ordinary IDBFS flushes share one in-flight
-      operation, but exit first disables periodic scheduling, quiesces engine
-      writes, drains any older snapshot, and runs a distinct trailing syncfs
-      before engine destruction. A deterministic race regression proves a
-      write made after the periodic snapshot is included by the final flush.
+      destructor does not settle. The fallback advances to the final save only
+      after explicit zero-owner worker metrics; unproven force termination
+      skips the flush and warns that final durability is unavailable. Ordinary
+      IDBFS flushes share one in-flight operation, but exit first disables
+      periodic scheduling, quiesces engine writes, drains any older snapshot,
+      and runs a distinct trailing syncfs before engine destruction. A
+      deterministic race regression proves a write made after the periodic
+      snapshot is included by the final flush.
 - [x] Extended the real threaded browser gate to capture the full desktop after
       `ZeroHRuntime.exit()` and assert the retired viewport, bounded worker
       cleanup, explicit worker termination, final-save ordering, visible
