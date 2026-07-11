@@ -20,6 +20,8 @@ const scripts = [
   "harness/launcher-desktop-apps.js",
   "harness/launcher-entry.mjs",
   "harness/launcher-hardware-info.js",
+  "harness/launcher-os-shutdown.mjs",
+  "harness/launcher-retail-presentation.mjs",
   "harness/launcher.js",
   "harness/opfs_realm_files.mjs",
   "harness/pages_deployment_smoke.mjs",
@@ -35,6 +37,8 @@ const scripts = [
   "tools/build_pages_site.mjs",
   "tools/build_pages_runtime.sh",
   "tools/check_pages_sources.mjs",
+  "tools/pages_artifact_guard_smoke.mjs",
+  "tools/pages_site_manifest.mjs",
   "tools/verify_pages_site.mjs",
 ];
 

@@ -14,7 +14,9 @@ opens.
    The repository can keep the default read-only token setting; the deploy job
    grants only `pages: write` and `id-token: write`, while every build job has
    `contents: read` only.
-4. Push to `main`, or run **Deploy GitHub Pages** manually from the Actions tab.
+4. Push to `main`, or select `main` and run **Deploy GitHub Pages** manually
+   from the Actions tab. The workflow jobs reject every non-`main` ref,
+   including a manual dispatch from another branch.
 
 The workflow builds the release pthread runtime with the version in
 `emscripten-version.txt`, currently Emscripten 3.1.6. It audits the static
@@ -23,9 +25,25 @@ deploys through the protected `github-pages` environment. GitHub documents this
 artifact and permission model in
 [Using custom workflows with GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
 
-The first deployment creates the `github-pages` environment automatically. A
-deployment protection rule that only permits `main` is recommended. Pull
-requests run the same build and browser proof in `ci.yml`, but cannot deploy.
+The first deployment creates the `github-pages` environment automatically. In
+**Settings**, **Environments**, **github-pages**, add a deployment branch rule
+for `main` only. The workflow also enforces this ref itself, while the
+environment rule provides an independent repository-side barrier. Pull requests
+run the same build and browser proof in `ci.yml`, but cannot deploy.
+
+## License and corresponding source
+
+The deployed artifact includes the unmodified `LICENSE.md`, including the GPLv3
+text and Electronic Arts' additional section 7 terms. The bootstrap identifies
+the copyright holders and no-warranty status. The launcher **About Project New
+Shoes** window links to a dedicated legal-notice page, the complete license,
+and the corresponding source revision used by the workflow.
+
+The Pages workflow sets that source link to the repository and exact
+`github.sha` it compiled. This keeps the object code and its preferred source
+form unambiguous even after later deployments. The notice also marks Project
+New Shoes as modified browser software from 2026 and states that it is not
+affiliated with or endorsed by Electronic Arts.
 
 ## Why the first visit reloads
 
@@ -73,7 +91,7 @@ npm ci
 source /path/to/emsdk/emsdk_env.sh
 npm run check:pages
 npm run build:pages-runtime
-npm run build:pages-site
+npm run test:pages-artifact-guard
 npm run verify:pages-site
 npx playwright install chromium
 npm run test:pages-deployment
@@ -86,10 +104,15 @@ the initial bootstrap, controlled reload, `crossOriginIsolated`,
 startup, OffscreenCanvas transfer, and visible launcher.
 
 The generated `pages-dist/` and `pages-build/` directories are ignored. The
-packager follows a fixed allowlist and dereferences the three generated runtime
-files so the Pages artifact contains no symbolic links. The audit rejects
-retail archive and disc extensions, certificates and keys, local paths,
-profiles, build caches, `node_modules`, and an unexpectedly large artifact.
+packager and verifier share one exact file manifest. Every runtime and launcher
+file is copied individually after proving it is a regular file; recursive copy
+and symlink dereferencing are forbidden. The build fails if the runtime output
+contains any fourth file, and the audit fails if the final artifact has any
+unlisted file. The guard smoke demonstrates both checks with an
+`unexpected.env` file and separately proves symlink rejection. The audit also
+rejects retail archive and disc extensions, certificates and keys, local paths,
+profiles, build caches, `node_modules`, unresolved static module imports, and
+an unexpectedly large artifact.
 The release compiler also maps the checkout prefix to `.` so C++ `__FILE__`
 strings cannot expose a developer or Actions runner path inside the wasm.
 

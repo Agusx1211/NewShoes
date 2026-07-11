@@ -133,6 +133,42 @@ try {
   const screenshot = process.env.PAGES_SMOKE_SCREENSHOT;
   if (screenshot) await page.screenshot({ path: screenshot, fullPage: true });
 
+  await page.locator('.desktop-icon[data-open="about"]').click();
+  await page.waitForSelector("#publicLegalNotice", { state: "visible" });
+  const notice = await page.evaluate(() => ({
+    text: document.querySelector("#publicLegalNotice")?.textContent || "",
+    license: document.querySelector('#publicLegalNotice a[href="../legal.html"]')?.href || "",
+    source: [...document.querySelectorAll("#publicLegalNotice a")]
+      .find((link) => link.textContent.includes("Corresponding source"))?.href || "",
+  }));
+  if (!/Copyright.*no warranty/i.test(notice.text)
+      || !notice.license.endsWith(`${prefix}legal.html`)
+      || !notice.source.startsWith("https://github.com/")) {
+    throw new Error(`Launcher legal notice check failed: ${JSON.stringify(notice)}`);
+  }
+  const legalScreenshot = process.env.PAGES_SMOKE_LEGAL_SCREENSHOT;
+  if (legalScreenshot) await page.screenshot({ path: legalScreenshot, fullPage: true });
+
+  const legalPage = await context.newPage();
+  await legalPage.goto(`${baseUrl}legal.html`, { waitUntil: "domcontentloaded" });
+  const legal = await legalPage.evaluate(async () => {
+    const license = await (await fetch("./LICENSE.md")).text();
+    return {
+      text: document.body.innerText,
+      source: [...document.querySelectorAll("a")]
+        .find((link) => link.textContent.includes("corresponding source"))?.href || "",
+      completeLicense: license.includes("ADDITIONAL TERMS per GNU GPL Section 7")
+        && license.includes("Disclaimer of Warranty"),
+    };
+  });
+  await legalPage.close();
+  if (!/modified browser port/i.test(legal.text)
+      || !/absolutely no warranty/i.test(legal.text)
+      || !legal.completeLicense
+      || !legal.source.startsWith("https://github.com/")) {
+    throw new Error(`Conveyed legal/source check failed: ${JSON.stringify(legal)}`);
+  }
+
   await page.goto(`${baseUrl}?coi-sw=unregister`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelector("#coi-status")?.textContent.includes("disabled"), null, { timeout: 30000 });
   const remainingRegistrations = await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length);
@@ -158,6 +194,7 @@ try {
     wasm,
     runtime,
     directDeepLink: true,
+    legalNotice: true,
     unregister: true,
     navigations: navigationHeaders.length,
   }, null, 2));

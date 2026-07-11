@@ -8,6 +8,7 @@
     "build:pages-site": "node tools/build_pages_site.mjs",
     "check:pages": "node tools/check_pages_sources.mjs",
     "verify:pages-site": "node tools/verify_pages_site.mjs pages-dist",
+    "test:pages-artifact-guard": "node tools/pages_artifact_guard_smoke.mjs",
     "test:pages-deployment": "node harness/pages_deployment_smoke.mjs pages-dist",
     "build:wasm": "bash tools/build_wasm.sh",
     "build:port": "CNC_BUILD_TARGETS=cnc-port bash tools/build_wasm.sh",

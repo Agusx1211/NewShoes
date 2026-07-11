@@ -43,8 +43,10 @@ jobs:
 
       - name: Package and audit Pages artifact
         working-directory: WebAssembly
+        env:
+          PAGES_SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/tree/${{ github.sha }}
         run: |
-          npm run build:pages-site
+          npm run test:pages-artifact-guard
           node tools/verify_pages_site.mjs pages-dist >"${RUNNER_TEMP}/pages-inventory.json"
           node -e 'const x=require(process.argv[1]); console.log(JSON.stringify({files:x.files,totalBytes:x.totalBytes}, null, 2))' "${RUNNER_TEMP}/pages-inventory.json"
 

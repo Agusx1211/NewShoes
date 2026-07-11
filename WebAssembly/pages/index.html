@@ -16,6 +16,8 @@
       .meter::after { content: ""; display: block; width: 42%; height: 100%; background: #d99445; animation: sweep 1.2s ease-in-out infinite alternate; }
       .error { color: #ffd7ce; }
       button { padding: .65rem .9rem; border: 1px solid #aebfba; color: inherit; background: #27484a; cursor: pointer; }
+      footer { margin-top: 1.25rem; font-size: .78rem; line-height: 1.5; color: #aabeba; }
+      a { color: #ffd18a; }
       [hidden] { display: none; }
       @keyframes sweep { to { transform: translateX(138%); } }
       @media (prefers-reduced-motion: reduce) { .meter::after { animation: none; width: 100%; } }
@@ -28,6 +30,7 @@
       <div class="meter" aria-hidden="true"></div>
       <p id="coi-error" class="error" role="alert" hidden></p>
       <button id="coi-retry" type="button" hidden>Try again</button>
+      <footer>Modified GPLv3 software, copyright © Electronic Arts Inc. and Project New Shoes contributors. No warranty. <a href="./legal.html">License and notices</a> · <a href="__PAGES_SOURCE_URL__">Corresponding source</a></footer>
     </main>
     <script src="./coi-bootstrap.js" data-coi-target="./harness/play.html"></script>
   </body>
