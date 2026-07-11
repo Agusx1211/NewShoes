@@ -8,6 +8,36 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Launcher ownership and desktop polish (2026-07-11)
+
+- [x] Made Game & Display directly reachable from launcher intake, the ready
+      page, the game library, and the Start menu while retaining the existing
+      `play.mjs` display/settings state as the only runtime authority. Settings
+      tab roles, focus, mobile horizontal navigation, and short-screen Start
+      menu containment are browser-verified.
+- [x] Added detailed English-retail onboarding for Steam, EA app, and complete
+      Generals plus Zero Hour disc/ISO sets, including expected root content,
+      multi-part review/removal, permission and storage modes, local-only
+      privacy, validation troubleshooting, honest repack limitations, and
+      primary Steam/EA purchase links verified on 2026-07-11.
+- [x] Derived Zero Hour launcher presentation from the user-owned
+      `Data\English\Install_Final.bmp` entry in `EnglishZH.big`. BIG directory
+      parsing and BMP validation operate directly on the prepared local OPFS
+      archive; Remember and Install may cache the derived Blob in browser
+      IndexedDB under an archive-manifest key, replaced when that manifest
+      changes and deleted when the library is forgotten. Temporary mode adds
+      no persistent presentation cache. Missing or unsupported art keeps the
+      project-owned fallback. A synthetic BIG/BMP browser fixture proves the
+      banner, library thumbnail, and desktop icon use the local Blob with no
+      off-origin request and no retail bytes added to Git.
+- [x] Split OS shutdown from game close. `ZeroHRuntime.exit` and
+      Ctrl+Alt+Esc still close only the game and return to the launcher
+      desktop. Start menu Shut down refuses while the game runs or launcher
+      storage is mutating, otherwise attempts `window.close()` and uses a
+      bounded redirect to the verified public source repository when a normal
+      tab cannot close itself. Deterministic unit and browser tests cover the
+      close attempt, redirect, and both refusal paths.
+
 ## Launcher exit compositor teardown (2026-07-11)
 
 - [x] Retired the exact OffscreenCanvas-transferred viewport element and its
