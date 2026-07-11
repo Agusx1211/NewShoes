@@ -13570,7 +13570,7 @@ mitigation track. Items resolved or retired by the pivot:
       bounded timeouts, and concurrency cancellation. The release build uses
       only the real `cnc-port` hot-path target.
 - [x] Added a deterministic public-site packager with an explicit launcher and
-      runtime allowlist. The current combined 55-file, 11,849,380-byte audited
+      runtime allowlist. The current combined 55-file, 11,849,709-byte audited
       artifact contains the three threaded release outputs, browser shell,
       complete license, and legal page only. Packager and verifier share one
       exact manifest; demonstrated `unexpected.env` files in either the runtime
@@ -13606,9 +13606,10 @@ mitigation track. Items resolved or retired by the pivot:
       corresponding-source link. A persistent-profile rollout regression starts
       with the exact worker from deployed revision `18b95831`, switches the
       server to the new artifact, and proves bounded canonical-root navigation,
-      query preservation, worker takeover, shared heap, pthread startup, and
-      OffscreenCanvas transfer. Screenshots and machine-readable inventory were
-      retained outside the repository.
+      query and fragment preservation, a forced network reload for an identical
+      target URL, worker takeover, launcher visibility, shared heap, pthread
+      startup, and OffscreenCanvas transfer. Screenshots and machine-readable
+      inventory were retained outside the repository.
 - [x] Documented repository Settings, workflow permissions, manual deployment,
       custom domains, first-load behavior, local reproduction, asset exclusion,
       isolation/storage troubleshooting, and the remaining Firefox/Safari

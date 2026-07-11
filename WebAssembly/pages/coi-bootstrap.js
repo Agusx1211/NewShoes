@@ -113,6 +113,17 @@
     await waitForCurrentWorker();
   }
 
+  function openTarget() {
+    const destination = safeTarget();
+    if (destination === location.href) {
+      // A same-URL replace, especially one containing a fragment, is only a
+      // same-document navigation. Reload so the new worker can serve launcher.
+      location.reload();
+      return;
+    }
+    location.replace(destination);
+  }
+
   async function unregister() {
     const registrations = await navigator.serviceWorker.getRegistrations();
     await Promise.all(registrations
@@ -146,7 +157,7 @@
       await installCurrentWorker();
       clearAttempts();
       setStatus("Browser ready. Opening the launcher…");
-      location.replace(safeTarget());
+      openTarget();
       return;
     }
     if (attempts() >= 2) {

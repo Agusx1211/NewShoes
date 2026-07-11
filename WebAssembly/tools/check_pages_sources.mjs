@@ -82,6 +82,8 @@ for (const contract of [
   'const workerVersion = "project-new-shoes.pages-root.v1"',
   "await installCurrentWorker()",
   "await waitForCurrentWorker()",
+  "if (destination === location.href)",
+  "location.reload()",
 ]) {
   if (!bootstrap.includes(contract)) throw new Error(`Isolation bootstrap contract missing: ${contract}`);
 }

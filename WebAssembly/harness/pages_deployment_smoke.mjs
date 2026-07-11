@@ -309,8 +309,9 @@ try {
     rolloutPage.on("framenavigated", (frame) => {
       if (frame === rolloutPage.mainFrame()) rolloutNavigations += 1;
     });
-    await rolloutPage.goto(`${baseUrl}?diag=lite`, { waitUntil: "domcontentloaded" });
-    await rolloutPage.waitForURL(`${baseUrl}?diag=lite`, { timeout: 30000 });
+    const rolloutUrl = `${baseUrl}?diag=lite#rollout-proof`;
+    await rolloutPage.goto(rolloutUrl, { waitUntil: "domcontentloaded" });
+    await rolloutPage.waitForURL(rolloutUrl, { timeout: 30000 });
     await rolloutPage.waitForSelector("#desktop", { state: "visible", timeout: 30000 });
     await rolloutPage.waitForFunction((expectedVersion) => new Promise((resolveVersion) => {
       if (!window.crossOriginIsolated || typeof SharedArrayBuffer !== "function"
@@ -329,12 +330,14 @@ try {
         [channel.port2],
       );
     }), rolloutWorkerVersion, { timeout: 30000 });
-    if (new URL(rolloutPage.url()).pathname !== prefix
-        || new URL(rolloutPage.url()).search !== "?diag=lite") {
-      throw new Error(`Worker rollout lost the canonical URL or query: ${rolloutPage.url()}`);
+    const rolloutLocation = new URL(rolloutPage.url());
+    if (rolloutLocation.pathname !== prefix
+        || rolloutLocation.search !== "?diag=lite"
+        || rolloutLocation.hash !== "#rollout-proof") {
+      throw new Error(`Worker rollout lost the canonical URL, query, or fragment: ${rolloutPage.url()}`);
     }
-    if (rolloutNavigations > 4) {
-      throw new Error(`Worker rollout exceeded its navigation bound: ${rolloutNavigations}`);
+    if (rolloutNavigations < 2 || rolloutNavigations > 4) {
+      throw new Error(`Worker rollout missed its navigation bound of 2-4: ${rolloutNavigations}`);
     }
 
     const rolloutPrep = await rolloutPage.evaluate(() => window.CnCPort.rpc("mountArchives", { archives: [] }));
@@ -370,7 +373,7 @@ try {
       fromRevision: oldWorkerRevision,
       toVersion: rolloutWorkerVersion,
       navigations: rolloutNavigations,
-      canonicalQueryPreserved: true,
+      canonicalLocationPreserved: true,
       threadedRuntime: true,
     },
     legacyPlayRecovery: true,

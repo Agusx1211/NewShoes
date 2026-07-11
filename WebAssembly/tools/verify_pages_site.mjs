@@ -141,6 +141,7 @@ if (!play.includes('rel="canonical" href="../"')
 }
 if (!bootstrap.includes('const workerVersion = "project-new-shoes.pages-root.v1"')
     || !bootstrap.includes("await installCurrentWorker()")
+    || !bootstrap.includes("if (destination === location.href)")
     || !serviceWorker.includes('const WORKER_VERSION = "project-new-shoes.pages-root.v1"')
     || !serviceWorker.includes("event.data?.type === VERSION_REQUEST")) {
   findings.push("coi bootstrap/worker: versioned rollout handoff is missing");
