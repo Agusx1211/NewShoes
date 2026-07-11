@@ -70,6 +70,7 @@
 #include "GameClient/Keyboard.h"
 #include "GameClient/Mouse.h"
 #include "GameClient/Shell.h"
+#include "GameClient/Smudge.h"
 #include "GameClient/HeaderTemplate.h"
 #include "GameClient/View.h"
 #include "GameClient/WinInstanceData.h"
@@ -1132,6 +1133,13 @@ void append_real_particle_state(std::string &json)
 		std::to_string(TheParticleSystemManager->getFieldParticleCount());
 	json += ",\"onScreenParticleCount\":" +
 		std::to_string(TheParticleSystemManager->getOnScreenParticleCount());
+	json += ",\"heatEffectsEnabled\":";
+	json += (TheGlobalData != NULL && TheGlobalData->m_useHeatEffects) ? "true" : "false";
+	json += ",\"smudgeManagerReady\":";
+	json += TheSmudgeManager != NULL ? "true" : "false";
+	json += ",\"smudgeCountLastFrame\":" +
+		std::to_string(TheSmudgeManager != NULL ?
+			TheSmudgeManager->getSmudgeCountLastFrame() : 0);
 	json += ",\"samples\":[";
 	ParticleSystemManager::ParticleSystemList &systems =
 		TheParticleSystemManager->getAllParticleSystems();
@@ -6288,6 +6296,53 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_tactical_view_look_at(
 	return json.c_str();
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_view_filter(
+	int filter_value,
+	int mode_value,
+	int fade_frames,
+	int fade_direction)
+{
+	static std::string json;
+	json = "{\"ok\":false,\"source\":\"real-engine-view-filter\"";
+	if (TheTacticalView == NULL) {
+		json += ",\"guard\":\"TheTacticalView\"}";
+		return json.c_str();
+	}
+	if (filter_value < FT_NULL_FILTER || filter_value >= FT_MAX ||
+		mode_value < FM_NULL_MODE || mode_value > FM_VIEW_MB_PAN_ALPHA) {
+		json += ",\"guard\":\"invalidFilterOrMode\"}";
+		return json.c_str();
+	}
+
+	const FilterTypes filter = static_cast<FilterTypes>(filter_value);
+	const FilterModes mode = static_cast<FilterModes>(mode_value);
+	Bool filter_ok = FALSE;
+	Bool mode_ok = FALSE;
+	if (filter == FT_VIEW_BW_FILTER || filter == FT_VIEW_CROSSFADE) {
+		// Preserve ScriptActions::doBlackWhiteMode and CommandXlat's crossfade
+		// ordering: select the mode, install the filter, then arm its fade.
+		mode_ok = TheTacticalView->setViewFilterMode(mode);
+		filter_ok = TheTacticalView->setViewFilter(filter);
+		TheTacticalView->setFadeParameters(fade_frames, fade_direction);
+	} else {
+		// Preserve ScriptActions::doCameraMotionBlur ordering.
+		filter_ok = TheTacticalView->setViewFilter(filter);
+		mode_ok = TheTacticalView->setViewFilterMode(mode);
+	}
+
+	json = "{\"ok\":";
+	json += filter_ok && mode_ok ? "true" : "false";
+	json += ",\"source\":\"real-engine-view-filter\"";
+	json += ",\"filter\":" + std::to_string(static_cast<Int>(TheTacticalView->getViewFilterType()));
+	json += ",\"mode\":" + std::to_string(static_cast<Int>(TheTacticalView->getViewFilterMode()));
+	json += ",\"filterSet\":";
+	json += filter_ok ? "true" : "false";
+	json += ",\"modeSet\":";
+	json += mode_ok ? "true" : "false";
+	json += "}";
+	return json.c_str();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_reveal_local_map(int permanent)
 {
 	static std::string json;
@@ -6388,6 +6443,67 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_do_fx(
 	json = "{\"ok\":true,\"source\":\"real-engine-fx-list\"";
 	json += ",\"requested\":\"" + json_escape(requested_name) + "\"";
 	json += ",\"shroud\":" + std::to_string(static_cast<Int>(shroud));
+	append_coord3d_fields(json, "position", pos);
+	json += ",\"systemsBefore\":" + std::to_string(systems_before);
+	json += ",\"systemsAfter\":" + std::to_string(systems_after);
+	json += ",\"particlesBefore\":" + std::to_string(particles_before);
+	json += ",\"particlesAfter\":" + std::to_string(particles_after);
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_spawn_particle_system(
+	const char *template_name,
+	float x,
+	float y,
+	float z,
+	int use_view_position,
+	int clamp_to_terrain)
+{
+	static std::string json;
+	const char *requested_name = (template_name != NULL && template_name[0] != '\0')
+		? template_name : "MicrowaveEmitter";
+	json = "{\"ok\":false,\"source\":\"real-engine-particle-system\"";
+	json += ",\"requested\":\"" + json_escape(requested_name) + "\"";
+	if (TheParticleSystemManager == NULL) {
+		json += ",\"guard\":\"TheParticleSystemManager\"}";
+		return json.c_str();
+	}
+
+	Coord3D pos = { x, y, z };
+	if (use_view_position != 0) {
+		if (TheTacticalView == NULL) {
+			json += ",\"guard\":\"TheTacticalView\"}";
+			return json.c_str();
+		}
+		TheTacticalView->getPosition(&pos);
+	} else if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z)) {
+		json += ",\"guard\":\"invalidPosition\"}";
+		return json.c_str();
+	}
+	if (clamp_to_terrain != 0 && TheTerrainLogic != NULL) {
+		pos.z = TheTerrainLogic->getGroundHeight(pos.x, pos.y);
+	}
+
+	const ParticleSystemTemplate *particle_template =
+		TheParticleSystemManager->findTemplate(AsciiString(requested_name));
+	if (particle_template == NULL) {
+		json += ",\"guard\":\"missingParticleSystemTemplate\"}";
+		return json.c_str();
+	}
+	const UnsignedInt systems_before = TheParticleSystemManager->getParticleSystemCount();
+	const UnsignedInt particles_before = TheParticleSystemManager->getParticleCount();
+	ParticleSystem *system = TheParticleSystemManager->createParticleSystem(particle_template);
+	if (system != NULL) {
+		system->setPosition(&pos);
+	}
+	const UnsignedInt systems_after = TheParticleSystemManager->getParticleSystemCount();
+	const UnsignedInt particles_after = TheParticleSystemManager->getParticleCount();
+
+	json = "{\"ok\":";
+	json += system != NULL ? "true" : "false";
+	json += ",\"source\":\"real-engine-particle-system\"";
+	json += ",\"requested\":\"" + json_escape(requested_name) + "\"";
 	append_coord3d_fields(json, "position", pos);
 	json += ",\"systemsBefore\":" + std::to_string(systems_before);
 	json += ",\"systemsAfter\":" + std::to_string(systems_after);

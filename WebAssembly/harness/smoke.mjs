@@ -3505,6 +3505,11 @@ try {
       || d3d8RenderTargetResult.probe?.lastBrowserFbo?.colorTextureId !== 0
       || d3d8RenderTargetResult.probe?.lastBrowserFbo?.depthTextureId !== 0
       || d3d8RenderTargetResult.probe?.textureSample?.join(",") !== "34,85,170,255"
+      || d3d8RenderTargetResult.textureProbe?.lastOffscreenFboBind?.depthTextureId !== 0
+      || d3d8RenderTargetResult.textureProbe?.lastOffscreenFboBind?.attachment !==
+        "depth-stencil-renderbuffer"
+      || d3d8RenderTargetResult.textureProbe?.lastOffscreenFboBind?.storage !==
+        "depth24-stencil8"
       || d3d8RenderTargetResult.textureDelta?.creates !== 1
       || d3d8RenderTargetResult.textureDelta?.releases !== 1
       || d3d8RenderTargetResult.textureDelta?.live !== 0
