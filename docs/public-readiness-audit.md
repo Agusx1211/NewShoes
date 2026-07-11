@@ -105,20 +105,22 @@ The README screenshots were converted to opaque, stripped sRGB WebP files at
 1600×881 and 1600×876. They show locally supplied retail data for context and
 are explicitly excluded from the repository's reusable asset inventory.
 
-## Historical findings
+## Historical findings and risk classification
 
-History is not clean enough to publish unchanged if old private machine details
-are considered sensitive:
+The full `main` ancestry was covered by the all-ref scan. It found no private
+key body, live token shape, retail archive payload, or other high-impact secret.
+The low-risk findings retained in history are:
 
-- two old `CHATAPI.CPP` blobs contain URL-userinfo literals; the current files
-  replace them with `ftp://host/path/file.rtp`;
+- two old upstream `CHATAPI.CPP` blobs contain obsolete, low-entropy
+  URL-userinfo literals; the current files replace them with
+  `ftp://host/path/file.rtp`;
 - one Pages verification blob contains the literal private-key *header* as a
   denylist test marker, not a key body;
 - four unique historical absolute-symlink blobs expose an old checkout layout;
   they occur 44 times across the audited ref trees;
 - deleted internal handoff and operational notes retain home, temporary, SSH,
   and private-network patterns; and
-- the owner's email remains in ordinary author/committer metadata.
+- ordinary author/committer metadata retains the owner's email.
 
 No historical path or blob matched a retail container extension or ISO, CAB,
 BIG, compressed-archive, or wasm magic. No blob exceeds 10 MiB.
@@ -145,14 +147,17 @@ author. These are metadata counts, not a measure of contribution quality.
 
 ## Publication decision
 
-Publishing the current tree as a squash is safe with respect to the findings
-above. Publishing the full existing history would retain private operational
-details and the two old URL-userinfo literals.
+The project owner reviewed and accepted the disclosed low-risk historical
+metadata so the complete commit history can be published and the development
+process remains visible. A squash or history rewrite is not required for this
+release. This decision does not reclassify the findings as absent: the two
+obsolete URL-userinfo blobs, historical machine/private-network paths, and
+ordinary author email metadata remain retrievable in the published history.
 
 [`scripts/prepare_publication_mirror.sh`](../scripts/prepare_publication_mirror.sh)
-creates a new mirror, applies an external reviewed replacement file, removes the
-known historical private paths and unused logo candidates, applies an optional mailmap,
-and reruns this audit. It refuses an existing destination and never rewrites the
-source clone. `git-filter-repo` was not installed during this audit, so the
-mirror rewrite was not executed. Any rewritten mirror must still be reviewed,
-built, tested, and pushed only after active work has been frozen.
+remains an optional utility for a downstream publisher who prefers sanitized
+metadata. It creates a new mirror, applies an external reviewed replacement
+file, removes the known historical private paths and unused logo candidates,
+applies an optional mailmap, and reruns this audit. It refuses an existing
+destination and never rewrites the source clone. `git-filter-repo` was not
+installed during this audit, so the optional rewrite was not executed.

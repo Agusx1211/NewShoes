@@ -31,6 +31,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       2026-07-11 that `zeroh-command-desert.webp` is project-owned and approved
       for publication; its exact prior blob and launcher references are retained
       without claiming unknown generation details.
+- [x] Recorded the owner's publication decision for the full commit history.
+      The all-ref audit found no private-key body, live token shape, retail
+      archive payload, or other high-impact secret. The owner accepts the
+      disclosed obsolete low-entropy URL-userinfo blobs, historical machine and
+      private-network paths, and ordinary author email metadata so the automated
+      development history remains visible; the sanitizer is optional.
 
 ## Launcher exit compositor teardown (2026-07-11)
 

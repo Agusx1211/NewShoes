@@ -4062,10 +4062,6 @@ and then start with the PROFILE, not with any individual fix.
 ## Cross-cutting: project hygiene
 
 - [ ] Keep `PROJECT.md`, `TODO.md`, and `DONE.md` updated as milestones move.
-- [ ] Before the first public push, decide whether to execute the history
-      rewrite in `docs/public-readiness-audit.md`. No secret or retail payload
-      was found, but deleted history still exposes old machine paths, private
-      network details, an internal handoff, and the owner's raw Git email.
 - [ ] Add an automated public-tree gate for secret signatures, absolute
       symlinks, retail container extensions/magic, and unexpectedly large
       tracked blobs so the release audit cannot silently regress.
