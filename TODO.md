@@ -4079,6 +4079,9 @@ and then start with the PROFILE, not with any individual fix.
 ## Cross-cutting: project hygiene
 
 - [ ] Keep `PROJECT.md`, `TODO.md`, and `DONE.md` updated as milestones move.
+- [ ] Add an automated public-tree gate for secret signatures, absolute
+      symlinks, retail container extensions/magic, and unexpectedly large
+      tracked blobs so the release audit cannot silently regress.
 - [ ] `WebAssembly/shims/` contains a file literally named
       `GameLogic\Weaponset.h` (backslash IN the filename, matching a
       Windows-style `#include "GameLogic\WeaponSet.h"`). It works on

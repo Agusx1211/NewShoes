@@ -8,8 +8,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
-## Public documentation and release hygiene (2026-07-11)
+## Public-readiness audit and documentation (2026-07-11)
 
+- [x] Audited all 1,552 commits and 13,480 reachable blobs across a recorded
+      15-ref manifest for credential signatures, private machine details,
+      large files, generated builds, and retail payloads. The cleaned tree has
+      zero credential or retail-container findings and no blob above 10 MiB;
+      the report separately records two historical URL-userinfo blobs and a
+      denylist-test private-key header marker.
 - [x] Removed four tracked absolute build/artifact symlinks, removed private
       machine defaults from GPU and harness tooling, generalized the tracked
       orchestration roster, and hardened `.gitignore` against generated output,
@@ -25,6 +31,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       2026-07-11 that `zeroh-command-desert.webp` is project-owned and approved
       for publication; its exact prior blob and launcher references are retained
       without claiming unknown generation details.
+- [x] Recorded the owner's publication decision for the full commit history.
+      The all-ref audit found no private-key body, live token shape, retail
+      archive payload, or other high-impact secret. The owner accepts the
+      disclosed obsolete low-entropy URL-userinfo blobs, historical machine and
+      private-network paths, and ordinary author email metadata so the automated
+      development history remains visible; the sanitizer is optional.
 
 ## Launcher ownership and desktop polish (2026-07-11)
 
@@ -13577,7 +13589,7 @@ mitigation track. Items resolved or retired by the pivot:
       `crossOriginIsolated=true`, `SharedArrayBuffer` available, wasm served as
       `application/wasm`, launcher visible, shared Emscripten heap live, pthread
       realm ready, and the real viewport OffscreenCanvas transferred. The final
-      synthetic launcher-polish + Pages integration also
+      synthetic public-readiness + launcher-polish + Pages integration also
       proved direct links, service-worker unregistration, the prominent launcher
       About notice, complete GPL/additional terms, no-warranty text, and
       corresponding-source link. Screenshots and machine-readable inventory
