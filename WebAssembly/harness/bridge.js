@@ -4487,8 +4487,8 @@ function paintBlackWindow() {
 }
 
 function syncStatus(label = harnessState.booted ? "booted" : "idle") {
-  stateNode.textContent = label;
-  framesNode.textContent = String(harnessState.frame);
+  if (stateNode) stateNode.textContent = label;
+  if (framesNode) framesNode.textContent = String(harnessState.frame);
 }
 
 // The engine ticks 30x/s during play; writing #frames every tick invalidates
@@ -4502,7 +4502,7 @@ function setFramesNodeThrottled(framesCompleted) {
     return;
   }
   framesNodeThrottleLastUpdateMs = now;
-  framesNode.textContent = String(framesCompleted);
+  if (framesNode) framesNode.textContent = String(framesCompleted);
 }
 
 const originalCursorManifestUrl = new URL(

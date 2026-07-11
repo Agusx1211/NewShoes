@@ -17,10 +17,15 @@ const startButton = document.querySelector("#start");
 const progressNode = document.querySelector("#launchStatus");
 const progressSentinel = document.querySelector("#progress");
 const bootSentinel = document.querySelector("#overlay");
-const fpsNode = document.querySelector("#fps");
-const hudNode = document.querySelector("#hud");
-const gearButton = document.querySelector("#gearButton");
 const queryParams = new URLSearchParams(window.location.search);
+const performanceOverlayNode = document.querySelector("#performanceOverlay");
+const performanceGraphNode = document.querySelector("#performanceGraph");
+const performanceClientFpsNode = document.querySelector("#performanceClientFps");
+const performanceLogicFpsNode = document.querySelector("#performanceLogicFps");
+const performanceEngineMsNode = document.querySelector("#performanceEngineMs");
+const performanceFrameMsNode = document.querySelector("#performanceFrameMs");
+const performanceP95MsNode = document.querySelector("#performanceP95Ms");
+const performanceMaxMsNode = document.querySelector("#performanceMaxMs");
 const networkRoomNode = document.querySelector("#networkRoom");
 const networkNameNode = document.querySelector("#networkName");
 const networkSignalingNode = document.querySelector("#networkSignaling");
@@ -99,7 +104,7 @@ networkRoomNode?.addEventListener("input", updateNetworkDraftStatus);
 updateNetworkDraftStatus();
 // Engine-thread mode: the engine runs on a pthread in the threaded build and
 // bridge.js moves the frame loop into the worker realm; this page only
-// observes (status events drive the HUD). The play page is THREADED-ONLY
+// observes (status events drive optional host diagnostics). The play page is THREADED-ONLY
 // (owner directive 2026-07-10; the ?threads=0 legacy escape hatch was
 // deleted after the owner confirmed the HTTPS threaded experience). Must
 // match bridge.js's cncPortThreadedMode / defaultCncPortDistDir logic.
@@ -176,6 +181,44 @@ const DEFAULT_LOGIC_FPS = 30;
 // mode, run by the engine-thread loop in engine_realm_boot.mjs).
 const DEFAULT_CLIENT_FPS = 60;
 
+const defaultPerformanceOverlayConfig = {
+  enabled: false,
+  historySeconds: 5,
+  graphMaxMs: 50,
+};
+const PERFORMANCE_OVERLAY_SETTINGS_KEY = "cncPortPerformanceOverlay.v1";
+
+function loadPerformanceOverlayConfig() {
+  try {
+    const stored = JSON.parse(
+      window.localStorage?.getItem(PERFORMANCE_OVERLAY_SETTINGS_KEY) ?? "null",
+    );
+    return normalizePerformanceOverlayConfig(stored);
+  } catch {
+    return { ...defaultPerformanceOverlayConfig };
+  }
+}
+
+function normalizePerformanceOverlayConfig(value, previous = defaultPerformanceOverlayConfig) {
+  const update = typeof value === "boolean" ? { enabled: value }
+    : value && typeof value === "object" ? value : {};
+  const historySeconds = Number(update.historySeconds ?? previous.historySeconds);
+  const graphMaxMs = Number(update.graphMaxMs ?? previous.graphMaxMs);
+  return {
+    enabled: update.enabled === undefined ? previous.enabled : update.enabled === true,
+    historySeconds: Number.isFinite(historySeconds)
+      ? Math.max(1, Math.min(10, historySeconds)) : previous.historySeconds,
+    graphMaxMs: Number.isFinite(graphMaxMs)
+      ? Math.max(8, Math.min(250, graphMaxMs)) : previous.graphMaxMs,
+  };
+}
+
+let performanceOverlayConfig = normalizePerformanceOverlayConfig(
+  window.CnCPortPlayConfig?.performanceOverlay ?? loadPerformanceOverlayConfig(),
+);
+let performanceOverlaySnapshot = null;
+let gameRunning = false;
+
 function positiveNumberParam(name, fallback) {
   const value = Number(queryParams.get(name));
   return Number.isFinite(value) && value > 0 ? value : fallback;
@@ -196,7 +239,7 @@ function selectedCncPortDistDir() {
   return validCncPortDistDir(value) ? value : fallback;
 }
 
-let configuredDiagLevel = "full";
+let configuredDiagLevel = "lite";
 
 function setConfiguredDiagLevel(level, { updateBridge = true } = {}) {
   if (level !== "full" && level !== "lite") {
@@ -508,6 +551,116 @@ function buildArchives() {
   });
 }
 
+function percentile(values, fraction) {
+  if (values.length === 0) {
+    return null;
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * fraction))];
+}
+
+function formatPerformanceValue(value, digits = 1) {
+  return Number.isFinite(value) ? Number(value).toFixed(digits) : "—";
+}
+
+function drawPerformanceSeries(context, values, maxMs, width, height, color) {
+  if (values.length < 2) {
+    return;
+  }
+  context.beginPath();
+  for (let index = 0; index < values.length; index += 1) {
+    const x = (index / (values.length - 1)) * width;
+    const y = height - Math.min(1, Math.max(0, values[index] / maxMs)) * height;
+    if (index === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+  }
+  context.strokeStyle = color;
+  context.lineWidth = 1.25;
+  context.stroke();
+}
+
+function renderPerformanceOverlay() {
+  const visible = gameRunning && performanceOverlayConfig.enabled;
+  performanceOverlayNode?.classList.toggle("hidden", !visible);
+  if (!visible || !performanceOverlaySnapshot || !performanceGraphNode) {
+    return;
+  }
+
+  const { clientFps, logicFps, engineFrameMs, presentationFrameMs } = performanceOverlaySnapshot;
+  const historyCount = Math.max(2, Math.round(
+    Math.max(clientFps || DEFAULT_CLIENT_FPS, 1) * performanceOverlayConfig.historySeconds,
+  ));
+  const engine = engineFrameMs.slice(-historyCount);
+  const presentation = presentationFrameMs.slice(-historyCount);
+  const engineCurrent = engine.at(-1);
+  const presentationCurrent = presentation.at(-1);
+  const engineP95 = percentile(engine, 0.95);
+  const engineMax = engine.length > 0 ? Math.max(...engine) : null;
+
+  if (performanceClientFpsNode) performanceClientFpsNode.textContent = formatPerformanceValue(clientFps, 1);
+  if (performanceLogicFpsNode) performanceLogicFpsNode.textContent = formatPerformanceValue(logicFps, 1);
+  if (performanceEngineMsNode) performanceEngineMsNode.textContent = `${formatPerformanceValue(engineCurrent)} ms`;
+  if (performanceFrameMsNode) performanceFrameMsNode.textContent = `${formatPerformanceValue(presentationCurrent)} ms`;
+  if (performanceP95MsNode) performanceP95MsNode.textContent = `${formatPerformanceValue(engineP95)} ms`;
+  if (performanceMaxMsNode) performanceMaxMsNode.textContent = `${formatPerformanceValue(engineMax)} ms`;
+
+  const cssWidth = 300;
+  const cssHeight = 92;
+  const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  const pixelWidth = Math.round(cssWidth * dpr);
+  const pixelHeight = Math.round(cssHeight * dpr);
+  if (performanceGraphNode.width !== pixelWidth || performanceGraphNode.height !== pixelHeight) {
+    performanceGraphNode.width = pixelWidth;
+    performanceGraphNode.height = pixelHeight;
+  }
+  const context = performanceGraphNode.getContext("2d");
+  context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  context.clearRect(0, 0, cssWidth, cssHeight);
+  context.fillStyle = "rgba(0, 0, 0, 0.25)";
+  context.fillRect(0, 0, cssWidth, cssHeight);
+
+  const maxMs = performanceOverlayConfig.graphMaxMs;
+  for (const budget of [16.67, 33.33]) {
+    if (budget >= maxMs) continue;
+    const y = cssHeight - (budget / maxMs) * cssHeight;
+    context.beginPath();
+    context.moveTo(0, y);
+    context.lineTo(cssWidth, y);
+    context.strokeStyle = "rgba(200, 218, 230, 0.16)";
+    context.lineWidth = 1;
+    context.stroke();
+    context.fillStyle = "rgba(200, 218, 230, 0.5)";
+    context.font = "9px ui-monospace, monospace";
+    context.fillText(`${budget.toFixed(1)} ms`, 4, Math.max(9, y - 3));
+  }
+  drawPerformanceSeries(context, presentation, maxMs, cssWidth, cssHeight, "#58a6ff");
+  drawPerformanceSeries(context, engine, maxMs, cssWidth, cssHeight, "#55d187");
+  context.fillStyle = "#55d187";
+  context.fillRect(cssWidth - 104, 6, 8, 2);
+  context.fillStyle = "rgba(220, 236, 246, 0.72)";
+  context.font = "9px ui-monospace, monospace";
+  context.fillText("engine", cssWidth - 92, 10);
+  context.fillStyle = "#58a6ff";
+  context.fillRect(cssWidth - 51, 6, 8, 2);
+  context.fillStyle = "rgba(220, 236, 246, 0.72)";
+  context.fillText("frame", cssWidth - 39, 10);
+}
+
+function setPerformanceOverlay(value) {
+  performanceOverlayConfig = normalizePerformanceOverlayConfig(value, performanceOverlayConfig);
+  try {
+    window.localStorage?.setItem(
+      PERFORMANCE_OVERLAY_SETTINGS_KEY,
+      JSON.stringify(performanceOverlayConfig),
+    );
+  } catch {
+    // Persistence is optional; keep the current session configured.
+  }
+  if (desktopGameSettingsBound) syncDesktopGameSettings();
+  renderPerformanceOverlay();
+  return { ...performanceOverlayConfig };
+}
+
 async function runFrameLoop(rpc) {
   // Stepped map loads are on by default in the wasm (startNewGame spreads its
   // steps across frames so the real load screen presents and the tab never
@@ -532,12 +685,12 @@ async function runFrameLoop(rpc) {
   const clientFps = Math.min(240, positiveNumberParam("clientFps", DEFAULT_CLIENT_FPS));
   // The paced loop runs IN the engine worker realm (engine_realm_boot.mjs,
   // driven by the pthread's rAF main loop); this page only starts it and
-  // renders the status feed into the HUD.
+  // renders the status feed into the opt-in performance overlay.
   return runThreadedFrameLoop(rpc, clientFps, logicFps);
 }
 
 // Threaded mode: the engine thread owns the frame loop; observe its 500ms
-// status posts for the client/logic HUD counter and surface loop errors.
+// status posts for the opt-in performance overlay and loop errors.
 async function runThreadedFrameLoop(rpc, clientFps, logicFps) {
   const start = await rpc("threadedStartLoop", { clientFps, logicFps });
   if (start?.ok !== true) {
@@ -556,7 +709,15 @@ async function runThreadedFrameLoop(rpc, clientFps, logicFps) {
       if (seconds > 0.2) {
         const client = (loop.clientFrames - previous.clientFrames) / seconds;
         const logic = (loop.logicFrames - previous.logicFrames) / seconds;
-        fpsNode.textContent = `${client.toFixed(0)}/${logic.toFixed(0)}`;
+        performanceOverlaySnapshot = {
+          clientFps: client,
+          logicFps: logic,
+          engineFrameMs: Array.isArray(status.timing?.engineFrameMs)
+            ? status.timing.engineFrameMs.filter(Number.isFinite) : [],
+          presentationFrameMs: Array.isArray(status.timing?.presentationFrameMs)
+            ? status.timing.presentationFrameMs.filter(Number.isFinite) : [],
+        };
+        renderPerformanceOverlay();
       }
     }
     previous = { now: status.now, clientFrames: loop.clientFrames, logicFrames: loop.logicFrames };
@@ -630,10 +791,13 @@ async function start() {
     // regression harness needs but the player does not. Add ?diag=full to
     // restore full diagnostics for debugging.
     const diagParam = queryParams.get("diag");
-    if (diagParam !== "full") {
-      setConfiguredDiagLevel("lite");
+    const hostDiag = window.CnCPortPlayConfig?.diagnostics;
+    if (diagParam === "full" || diagParam === "lite") {
+      setConfiguredDiagLevel(diagParam);
+    } else if (hostDiag === "full" || hostDiag === "lite") {
+      setConfiguredDiagLevel(hostDiag);
     } else {
-      setConfiguredDiagLevel("full");
+      setConfiguredDiagLevel(configuredDiagLevel);
     }
     // Archive downloads overlap (bounded parallel streamed fetch->OPFS on
     // the IO worker). Add ?fetchpar=0 to force strictly sequential downloads
@@ -755,9 +919,6 @@ async function start() {
     overlay.hidden = false;
     overlay.classList.add("is-running");
     bootSentinel?.classList.add("hidden");
-    hudNode?.classList.remove("hidden");
-    gearButton?.classList.remove("hidden");
-    document.querySelector("#exitRuntimeButton")?.removeAttribute("hidden");
     const launchFill = document.querySelector("#launchProgressFill");
     if (launchFill) launchFill.style.width = "100%";
     const engineStage = document.querySelector("#stageEngine");
@@ -768,9 +929,11 @@ async function start() {
     // From here onward the engine can be resumed without running init again,
     // even if display setup or the first paced-loop start needs a retry.
     runtimeStarted = true;
+    gameRunning = true;
+    renderPerformanceOverlay();
     issueRecorder.setSessionContext({ phase: "running" });
     viewportCanvas.focus();
-    initDisplayControls();
+    initDisplayRuntime();
     // The engine booted at the requested resolution (the boot resolutionchange
     // event recorded it); this apply is a no-op then, and covers the fallbacks:
     // a stale wasm without the boot export, or the window changing size during
@@ -821,9 +984,8 @@ async function launchFromDesktop() {
   }
   overlay.classList.add("is-running");
   viewportCanvas.hidden = false;
-  hudNode?.classList.remove("hidden");
-  gearButton?.classList.remove("hidden");
-  document.querySelector("#exitRuntimeButton")?.removeAttribute("hidden");
+  gameRunning = true;
+  renderPerformanceOverlay();
   if (activeRpc) {
     const logicFps = Math.min(240, positiveNumberParam("logicFps", DEFAULT_LOGIC_FPS));
     const clientFps = Math.min(240, positiveNumberParam("clientFps", DEFAULT_CLIENT_FPS));
@@ -838,9 +1000,8 @@ async function exitToDesktop() {
 
   const shutdown = (async () => {
     progressNode.textContent = "Closing Zero Hour…";
-    hudNode?.classList.add("hidden");
-    gearButton?.classList.add("hidden");
-    closeSettings();
+    gameRunning = false;
+    renderPerformanceOverlay();
     await activeRpc("threadedStopLoop", { timeoutMs: 5000 }).catch(() => null);
     await activeRpc("persistSaves", { reason: "launcher-exit" }).catch(() => null);
     const result = await activeRpc("shutdownRuntime", {}).catch((error) => ({
@@ -864,6 +1025,13 @@ window.ZeroHRuntime = {
   get started() { return runtimeStarted; },
   get closed() { return runtimeClosed; },
 };
+
+window.addEventListener("keydown", (event) => {
+  if (!gameRunning || !event.ctrlKey || !event.altKey || event.key !== "Escape") return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  void exitToDesktop();
+}, { capture: true });
 
 if (queryParams.get("autostart") === "1") {
   void beginRuntimeStart().catch(() => {});
@@ -966,8 +1134,7 @@ function renderConsole() {
   }
 }
 
-function toggleConsole() {
-  const show = consolePanel.classList.contains("hidden");
+function setConsoleVisible(show) {
   consolePanel.classList.toggle("hidden", !show);
   if (show) {
     renderConsole();
@@ -977,6 +1144,11 @@ function toggleConsole() {
     clearInterval(consoleTimer);
     consoleTimer = null;
   }
+  return show;
+}
+
+function toggleConsole() {
+  return setConsoleVisible(consolePanel.classList.contains("hidden"));
 }
 
 function keyboardEventBelongsToEditableTarget(event) {
@@ -991,7 +1163,7 @@ function keyboardEventBelongsToEditableTarget(event) {
   });
 }
 
-consoleToggle.addEventListener("click", toggleConsole);
+consoleToggle?.addEventListener("click", toggleConsole);
 window.addEventListener("keydown", (event) => {
   if (keyboardEventBelongsToEditableTarget(event)) {
     return;
@@ -1015,29 +1187,12 @@ window.addEventListener("keydown", (event) => {
 //     always 1:1 sharp with no letterbox.
 //   * Fixed: preset ladder or custom W x H; CSS letterboxes (object-fit:
 //     contain) so aspect is always preserved, windowed and fullscreen alike.
-//   * Engine-initiated changes (the in-game options screen) are mirrored back
-//     into the select and the persisted intent — one source of truth.
+//   * Engine-initiated changes (the original in-game Options screen) are
+//     mirrored into persisted host intent — one source of truth.
 let activeRpc = null;
-let displayControlsReady = false;
-
-const resolutionSelect = document.querySelector("#resolutionSelectLive");
-const customResolutionRow = document.querySelector("#customResolutionRow");
-const customResolutionWidth = document.querySelector("#customResolutionWidth");
-const customResolutionHeight = document.querySelector("#customResolutionHeight");
-const customResolutionApply = document.querySelector("#customResolutionApply");
-const fullscreenButton = document.querySelector("#fullscreenButton");
-const fullscreenTarget = document.querySelector(".shell") || document.body;
-
-const PRESET_RESOLUTIONS = [
-  { width: 800, height: 600, label: "800 x 600 (original)" },
-  { width: 1024, height: 768, label: "1024 x 768" },
-  { width: 1280, height: 720, label: "1280 x 720" },
-  { width: 1280, height: 1024, label: "1280 x 1024" },
-  { width: 1600, height: 900, label: "1600 x 900" },
-  { width: 1600, height: 1200, label: "1600 x 1200" },
-  { width: 1920, height: 1080, label: "1920 x 1080" },
-  { width: 2560, height: 1440, label: "2560 x 1440" },
-];
+let displayRuntimeReady = false;
+const fullscreenTarget = document.querySelector("#desktop") || document.body;
+const fullscreenCanvasTarget = document.querySelector(".shell") || document.body;
 
 // The menus are authored for >= 800x600; the engine-side hook additionally
 // clamps at 640x480..7680x4320. Dynamic sizing clamps to the authored minimum
@@ -1054,7 +1209,24 @@ const IS_IOS_LIKE = /iP(ad|hone|od)/.test(navigator.userAgent)
   || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const MAX_DYNAMIC_PIXELS = IS_IOS_LIKE ? 2_400_000 : 8_500_000;
 
-let displaySettings = loadDisplaySettings();
+function normalizeDisplaySettings(settings) {
+  if (settings?.mode === "fixed") {
+    const width = Number(settings.width);
+    const height = Number(settings.height);
+    if (!Number.isFinite(width) || !Number.isFinite(height)) {
+      throw new TypeError("fixed display mode requires finite width and height");
+    }
+    return { mode: "fixed", ...clampResolution(width, height) };
+  }
+  if (settings?.mode === "dynamic") {
+    return { mode: "dynamic" };
+  }
+  throw new TypeError('display mode must be {mode:"dynamic"} or {mode:"fixed", width, height}');
+}
+
+let displaySettings = window.CnCPortPlayConfig?.display
+  ? normalizeDisplaySettings(window.CnCPortPlayConfig.display)
+  : loadDisplaySettings();
 let lastAppliedResolution = null; // {width,height} last reported by the engine
 
 function clampResolution(width, height) {
@@ -1158,73 +1330,11 @@ async function applyDisplaySettings(reason = "settings") {
   }
 }
 
-// --- select UI ----------------------------------------------------------------
-function presetValue(width, height) {
-  return `${width}x${height}`;
-}
-
-function dynamicOptionLabel() {
-  const size = dynamicTargetResolution();
-  return size
-    ? `Dynamic — fits window (${size.width} x ${size.height})`
-    : "Dynamic — fits window";
-}
-
-function populateResolutionSelect() {
-  if (!resolutionSelect) {
-    return;
-  }
-  resolutionSelect.textContent = "";
-  const dynamicOption = document.createElement("option");
-  dynamicOption.value = "dynamic";
-  dynamicOption.textContent = dynamicOptionLabel();
-  resolutionSelect.appendChild(dynamicOption);
-  for (const preset of PRESET_RESOLUTIONS) {
-    const option = document.createElement("option");
-    option.value = presetValue(preset.width, preset.height);
-    option.textContent = preset.label;
-    resolutionSelect.appendChild(option);
-  }
-  const customOption = document.createElement("option");
-  customOption.value = "custom";
-  customOption.textContent = "Custom…";
-  resolutionSelect.appendChild(customOption);
-}
-
-function refreshDynamicOptionLabel() {
-  const option = resolutionSelect?.querySelector('option[value="dynamic"]');
-  if (option) {
-    option.textContent = dynamicOptionLabel();
-  }
-}
-
-function syncSelectToSettings() {
-  if (!resolutionSelect) {
-    return;
-  }
-  refreshDynamicOptionLabel();
-  let showCustom = false;
-  if (displaySettings.mode === "dynamic") {
-    resolutionSelect.value = "dynamic";
-  } else {
-    const value = presetValue(displaySettings.width, displaySettings.height);
-    const isPreset = PRESET_RESOLUTIONS.some(
-      (preset) => presetValue(preset.width, preset.height) === value);
-    resolutionSelect.value = isPreset ? value : "custom";
-    showCustom = !isPreset;
-    if (customResolutionWidth && customResolutionHeight) {
-      customResolutionWidth.value = String(displaySettings.width);
-      customResolutionHeight.value = String(displaySettings.height);
-    }
-  }
-  customResolutionRow?.classList.toggle("hidden", !showCustom && resolutionSelect.value !== "custom");
-}
-
-function setDisplaySettings(next, reason) {
-  displaySettings = next;
+function setDisplaySettings(next, reason = "host") {
+  displaySettings = normalizeDisplaySettings(next);
   saveDisplaySettings(displaySettings);
-  syncSelectToSettings();
-  void applyDisplaySettings(reason);
+  if (desktopGameSettingsBound) syncDesktopGameSettings();
+  return applyDisplaySettings(reason).then(() => ({ ...displaySettings }));
 }
 
 // Engine-side resolution reports: device create at boot, every RPC apply, and
@@ -1238,8 +1348,7 @@ window.addEventListener("cncport:resolutionchange", (event) => {
     return;
   }
   lastAppliedResolution = { width, height };
-  refreshDynamicOptionLabel();
-  if (source !== "engine" || !displayControlsReady) {
+  if (source !== "engine" || !displayRuntimeReady) {
     return;
   }
   const expected = targetResolutionForSettings();
@@ -1250,7 +1359,7 @@ window.addEventListener("cncport:resolutionchange", (event) => {
   }
   displaySettings = { mode: "fixed", width, height };
   saveDisplaySettings(displaySettings);
-  syncSelectToSettings();
+  if (desktopGameSettingsBound) syncDesktopGameSettings();
 });
 
 // --- fullscreen -------------------------------------------------------------
@@ -1351,10 +1460,6 @@ function onFullscreenChange() {
   } else {
     unlockEscapeKey();
   }
-  if (fullscreenButton) {
-    fullscreenButton.classList.toggle("active", active);
-    fullscreenButton.textContent = active ? "exit full" : "fullscreen";
-  }
   // Toggle the CSS fullscreen state (chrome hidden, canvas scaled to the
   // screen, letterboxed on black via object-fit: contain), then treat the
   // enter/exit as a viewport geometry change: in Dynamic mode the engine
@@ -1364,14 +1469,17 @@ function onFullscreenChange() {
   // 1:1 sharp. In fixed mode the engine keeps its resolution and only the CSS
   // scale changes. Input stays correct either way: canvasInputPointFromEvent
   // maps through the letterboxed content box to the engine display size.
-  fullscreenTarget.classList.toggle("is-fullscreen", active);
+  fullscreenCanvasTarget.classList.toggle("is-fullscreen", active);
+  const fullscreenButton = document.querySelector("#fullscreenButton");
+  if (fullscreenButton) {
+    fullscreenButton.textContent = active ? "Exit fullscreen" : "Enter fullscreen";
+  }
   onViewportGeometryChange();
 }
 
 // --- live tracking of tab size / DPR / fullscreen -----------------------------
 let resizeSettleTimer = null;
 function onViewportGeometryChange() {
-  refreshDynamicOptionLabel();
   if (displaySettings.mode !== "dynamic") {
     return;
   }
@@ -1384,132 +1492,16 @@ function onViewportGeometryChange() {
   resizeSettleTimer = setTimeout(() => {
     resizeSettleTimer = null;
     requestAnimationFrame(() => {
-      refreshDynamicOptionLabel();
       void applyDisplaySettings("geometry");
     });
   }, 350);
 }
 
-function initDisplayControls() {
-  if (displayControlsReady || !resolutionSelect) {
+function initDisplayRuntime() {
+  if (displayRuntimeReady) {
     return;
   }
-  displayControlsReady = true;
-  populateResolutionSelect();
-  syncSelectToSettings();
-
-  resolutionSelect.addEventListener("change", () => {
-    const value = resolutionSelect.value;
-    if (value === "dynamic") {
-      setDisplaySettings({ mode: "dynamic" }, "select");
-      return;
-    }
-    if (value === "custom") {
-      // Show the inputs seeded with the current size; nothing applies until
-      // the player hits Apply.
-      customResolutionRow?.classList.remove("hidden");
-      const seed = lastAppliedResolution ?? targetResolutionForSettings();
-      if (seed && customResolutionWidth && customResolutionHeight) {
-        customResolutionWidth.value = String(seed.width);
-        customResolutionHeight.value = String(seed.height);
-      }
-      return;
-    }
-    const match = /^(\d+)x(\d+)$/.exec(value);
-    if (match) {
-      setDisplaySettings(
-        { mode: "fixed", width: Number(match[1]), height: Number(match[2]) },
-        "select");
-    }
-  });
-
-  customResolutionApply?.addEventListener("click", () => {
-    const width = Math.round(Number(customResolutionWidth?.value ?? 0));
-    const height = Math.round(Number(customResolutionHeight?.value ?? 0));
-    if (!Number.isFinite(width) || !Number.isFinite(height) || width < 2 || height < 2) {
-      return;
-    }
-    const clamped = clampResolution(width, height);
-    if (customResolutionWidth && customResolutionHeight) {
-      customResolutionWidth.value = String(clamped.width);
-      customResolutionHeight.value = String(clamped.height);
-    }
-    setDisplaySettings({ mode: "fixed", width: clamped.width, height: clamped.height }, "custom");
-  });
-
-  if (fullscreenButton) {
-    if (!fullscreenSupported()) {
-      // Degrade gracefully: hide the button where fullscreen is unavailable
-      // (e.g. iPad Safari for non-video elements) so desktop keeps it.
-      fullscreenButton.classList.add("hidden");
-    } else {
-      fullscreenButton.addEventListener("click", () => {
-        if (fullscreenElement()) {
-          void exitFullscreen();
-        } else {
-          void enterFullscreen();
-        }
-      });
-    }
-  }
-
-  // Shader tier (Classic fixed-function vs Enhanced ps.1.1). The engine
-  // samples GPU capabilities once at device create, so a change applies on the
-  // next boot: persist the choice and reload. A URL ?shaderTier= param wins
-  // over the stored choice (bridge.js d3d8ShaderTierQuery order), keeping
-  // probes deterministic.
-  const shaderTierSelect = document.querySelector("#shaderTierSelect");
-  if (shaderTierSelect) {
-    let storedTier = null;
-    try {
-      storedTier = window.localStorage?.getItem("cncPortShaderTier");
-    } catch { /* storage unavailable */ }
-    const urlTier = new URLSearchParams(window.location.search).get("shaderTier");
-    // Mirror bridge.js d3d8ShaderTierQuery: url > stored > default ff.
-    const effectiveTier = urlTier === "ps11" || urlTier === "ff"
-      ? urlTier
-      : (storedTier === "ps11" || storedTier === "ff" ? storedTier : "ff");
-    shaderTierSelect.value = effectiveTier;
-    shaderTierSelect.addEventListener("change", () => {
-      try {
-        window.localStorage?.setItem("cncPortShaderTier", shaderTierSelect.value);
-      } catch { /* storage unavailable */ }
-      if (window.confirm("Shader tier applies on the next boot. Reload now?")) {
-        const reloadUrl = new URL(window.location.href);
-        reloadUrl.searchParams.delete("shaderTier");
-        window.location.href = reloadUrl.href;
-      }
-    });
-  }
-
-  // In-fullscreen exit affordance (no permanent bar): the button is revealed by
-  // CSS on hover near the top; clicking it exits. With the Esc keyboard lock a
-  // single Esc opens the in-game menu, so the exit affordances are this button
-  // and holding Esc (the browser surfaces "hold Esc to exit" automatically).
-  const fullscreenExit = document.querySelector("#fullscreenExit");
-  if (fullscreenExit) {
-    fullscreenExit.addEventListener("click", () => {
-      void exitFullscreen();
-    });
-    // Reveal the exit control when the pointer nears the top edge while
-    // fullscreen, then auto-hide shortly after, so it is discoverable without
-    // sitting on screen permanently.
-    let revealTimer = null;
-    window.addEventListener("pointermove", (event) => {
-      if (!fullscreenElement()) {
-        return;
-      }
-      if (event.clientY <= 64) {
-        fullscreenTarget.classList.add("reveal-exit");
-        if (revealTimer) {
-          clearTimeout(revealTimer);
-        }
-        revealTimer = setTimeout(() => {
-          fullscreenTarget.classList.remove("reveal-exit");
-        }, 2000);
-      }
-    });
-  }
+  displayRuntimeReady = true;
 
   document.addEventListener("fullscreenchange", onFullscreenChange);
   document.addEventListener("webkitfullscreenchange", onFullscreenChange);
@@ -1539,42 +1531,209 @@ function initDisplayControls() {
   watchDprChange();
 }
 
-// --- in-game settings overlay (opened by the gear) --------------------------
-const settingsOverlay = document.querySelector("#settingsOverlay");
-const settingsClose = document.querySelector("#settingsClose");
+let desktopGameSettingsBound = false;
 
-function openSettings() {
-  if (!settingsOverlay) {
-    return;
-  }
-  if (displayControlsReady) {
-    syncSelectToSettings();
-  }
-  settingsOverlay.classList.remove("hidden");
-  settingsOverlay.setAttribute("aria-hidden", "false");
-}
-
-function closeSettings() {
-  if (!settingsOverlay) {
-    return;
-  }
-  settingsOverlay.classList.add("hidden");
-  settingsOverlay.setAttribute("aria-hidden", "true");
-}
-
-gearButton?.addEventListener("click", openSettings);
-settingsClose?.addEventListener("click", closeSettings);
-settingsOverlay?.addEventListener("click", (event) => {
-  if (event.target instanceof Element && event.target.closest("[data-close-settings]")) {
-    closeSettings();
-  }
-});
-window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && settingsOverlay && !settingsOverlay.classList.contains("hidden")) {
-    // Only when the overlay is the topmost thing; the issue modal manages its
-    // own Escape, and fullscreen Esc is handled by the browser.
-    if (!fullscreenElement()) {
-      closeSettings();
+function syncDesktopGameSettings() {
+  const resolutionSelect = document.querySelector("#resolutionSelectLive");
+  const customRow = document.querySelector("#customResolutionRow");
+  const customWidth = document.querySelector("#customResolutionWidth");
+  const customHeight = document.querySelector("#customResolutionHeight");
+  if (resolutionSelect) {
+    if (displaySettings.mode === "dynamic") {
+      resolutionSelect.value = "dynamic";
+      customRow?.setAttribute("hidden", "");
+    } else {
+      const fixedValue = `${displaySettings.width}x${displaySettings.height}`;
+      const hasPreset = Boolean(resolutionSelect.querySelector(`option[value="${fixedValue}"]`));
+      resolutionSelect.value = hasPreset ? fixedValue : "custom";
+      customRow?.toggleAttribute("hidden", hasPreset);
+      if (customWidth) customWidth.value = String(displaySettings.width);
+      if (customHeight) customHeight.value = String(displaySettings.height);
     }
   }
-});
+  const performanceToggle = document.querySelector("#performanceOverlayToggle");
+  if (performanceToggle) performanceToggle.checked = performanceOverlayConfig.enabled;
+  const historySelect = document.querySelector("#performanceHistorySelect");
+  if (historySelect) historySelect.value = String(performanceOverlayConfig.historySeconds);
+  const graphMaxSelect = document.querySelector("#performanceGraphMaxSelect");
+  if (graphMaxSelect) graphMaxSelect.value = String(performanceOverlayConfig.graphMaxMs);
+  const diagnosticsSelect = document.querySelector("#diagnosticsSelect");
+  if (diagnosticsSelect) diagnosticsSelect.value = configuredDiagLevel;
+  const shaderTierSelect = document.querySelector("#shaderTierSelect");
+  if (shaderTierSelect) shaderTierSelect.value = effectiveShaderTier();
+  const fullscreenButton = document.querySelector("#fullscreenButton");
+  if (fullscreenButton) {
+    fullscreenButton.hidden = !fullscreenSupported();
+    fullscreenButton.textContent = fullscreenElement() ? "Exit fullscreen" : "Enter fullscreen";
+  }
+}
+
+function bindDesktopGameSettings() {
+  if (desktopGameSettingsBound) return;
+  desktopGameSettingsBound = true;
+  const resolutionSelect = document.querySelector("#resolutionSelectLive");
+  resolutionSelect?.addEventListener("change", () => {
+    const value = resolutionSelect.value;
+    const customRow = document.querySelector("#customResolutionRow");
+    if (value === "dynamic") {
+      customRow?.setAttribute("hidden", "");
+      void setDisplaySettings({ mode: "dynamic" }, "desktop-settings");
+      return;
+    }
+    if (value === "custom") {
+      customRow?.removeAttribute("hidden");
+      const seed = lastAppliedResolution ?? targetResolutionForSettings();
+      if (seed) {
+        document.querySelector("#customResolutionWidth").value = String(seed.width);
+        document.querySelector("#customResolutionHeight").value = String(seed.height);
+      }
+      return;
+    }
+    const match = /^(\d+)x(\d+)$/.exec(value);
+    if (match) {
+      customRow?.setAttribute("hidden", "");
+      void setDisplaySettings({
+        mode: "fixed",
+        width: Number(match[1]),
+        height: Number(match[2]),
+      }, "desktop-settings");
+    }
+  });
+  document.querySelector("#customResolutionApply")?.addEventListener("click", () => {
+    const width = Number(document.querySelector("#customResolutionWidth")?.value);
+    const height = Number(document.querySelector("#customResolutionHeight")?.value);
+    if (!Number.isFinite(width) || !Number.isFinite(height)) return;
+    void setDisplaySettings({ mode: "fixed", width, height }, "desktop-settings-custom");
+  });
+  document.querySelector("#fullscreenButton")?.addEventListener("click", () => {
+    void (fullscreenElement() ? exitFullscreen() : enterFullscreen());
+  });
+  document.querySelector("#shaderTierSelect")?.addEventListener("change", (event) => {
+    setShaderTier(event.currentTarget.value);
+  });
+  document.querySelector("#performanceOverlayToggle")?.addEventListener("change", (event) => {
+    setPerformanceOverlay({ enabled: event.currentTarget.checked });
+  });
+  const updateGraphSettings = () => setPerformanceOverlay({
+    historySeconds: Number(document.querySelector("#performanceHistorySelect")?.value),
+    graphMaxMs: Number(document.querySelector("#performanceGraphMaxSelect")?.value),
+  });
+  document.querySelector("#performanceHistorySelect")?.addEventListener("change", updateGraphSettings);
+  document.querySelector("#performanceGraphMaxSelect")?.addEventListener("change", updateGraphSettings);
+  document.querySelector("#diagnosticsSelect")?.addEventListener("change", (event) => {
+    setConfiguredDiagLevel(event.currentTarget.value);
+  });
+  syncDesktopGameSettings();
+}
+
+function effectiveShaderTier() {
+  const urlTier = queryParams.get("shaderTier");
+  if (urlTier === "ff" || urlTier === "ps11") {
+    return urlTier;
+  }
+  try {
+    const stored = window.localStorage?.getItem("cncPortShaderTier");
+    return stored === "ps11" ? "ps11" : "ff";
+  } catch {
+    return "ff";
+  }
+}
+
+function setShaderTier(tier, { reload = false } = {}) {
+  if (tier !== "ff" && tier !== "ps11") {
+    throw new TypeError('shader tier must be "ff" or "ps11"');
+  }
+  try {
+    window.localStorage?.setItem("cncPortShaderTier", tier);
+  } catch {
+    // Storage is optional. The host can retain CnCPortPlayConfig itself.
+  }
+  if (reload) {
+    const reloadUrl = new URL(window.location.href);
+    reloadUrl.searchParams.delete("shaderTier");
+    window.location.href = reloadUrl.href;
+  }
+  return {
+    tier,
+    requiresReload: gameRunning,
+    overriddenByUrl: queryParams.has("shaderTier"),
+  };
+}
+
+function playConfiguration() {
+  return {
+    performanceOverlay: { ...performanceOverlayConfig },
+    display: { ...displaySettings },
+    diagnostics: configuredDiagLevel,
+    shaderTier: effectiveShaderTier(),
+    consoleVisible: !consolePanel.classList.contains("hidden"),
+    fullscreen: Boolean(fullscreenElement()),
+  };
+}
+
+async function configurePlay(options = {}) {
+  if (Object.hasOwn(options, "performanceOverlay")) {
+    setPerformanceOverlay(options.performanceOverlay);
+  }
+  if (options.display) {
+    await setDisplaySettings(options.display, "host-configure");
+  }
+  if (options.diagnostics === "full" || options.diagnostics === "lite") {
+    setConfiguredDiagLevel(options.diagnostics);
+  }
+  if (options.shaderTier === "ff" || options.shaderTier === "ps11") {
+    setShaderTier(options.shaderTier);
+  }
+  if (typeof options.consoleVisible === "boolean") {
+    setConsoleVisible(options.consoleVisible);
+  }
+  if (typeof options.fullscreen === "boolean") {
+    if (options.fullscreen && !fullscreenElement()) await enterFullscreen();
+    if (!options.fullscreen && fullscreenElement()) await exitFullscreen();
+  }
+  if (desktopGameSettingsBound) syncDesktopGameSettings();
+  return playConfiguration();
+}
+
+function installPlayHostApi() {
+  if (!window.CnCPort) {
+    setTimeout(installPlayHostApi, 0);
+    return;
+  }
+  window.CnCPort.play = {
+    configure: configurePlay,
+    getConfiguration: playConfiguration,
+    setPerformanceOverlay,
+    getPerformanceSnapshot: () => performanceOverlaySnapshot
+      ? {
+          ...performanceOverlaySnapshot,
+          engineFrameMs: [...performanceOverlaySnapshot.engineFrameMs],
+          presentationFrameMs: [...performanceOverlaySnapshot.presentationFrameMs],
+        }
+      : null,
+    setDisplayMode: (settings) => setDisplaySettings(settings, "host"),
+    getDisplayMode: () => ({ ...displaySettings }),
+    enterFullscreen,
+    exitFullscreen,
+    fullscreenSupported,
+    setShaderTier,
+    getShaderTier: effectiveShaderTier,
+    setDiagnosticsLevel: setConfiguredDiagLevel,
+    setConsoleVisible,
+    issues: {
+      startRecording: (...args) => issueRecorder.startRecording(...args),
+      stopRecording: (...args) => issueRecorder.stopRecording(...args),
+      report: (...args) => issueRecorder.openIssueDialog(...args),
+      download: (...args) => issueRecorder.downloadDump(...args),
+      upload: (...args) => issueRecorder.uploadDump(...args),
+    },
+  };
+}
+
+if (window.CnCPortPlayConfig?.shaderTier === "ff"
+    || window.CnCPortPlayConfig?.shaderTier === "ps11") {
+  setShaderTier(window.CnCPortPlayConfig.shaderTier);
+}
+initDisplayRuntime();
+bindDesktopGameSettings();
+installPlayHostApi();

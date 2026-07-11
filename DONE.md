@@ -24,6 +24,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       active 2D/3D/stream sources with a closed context, the desktop remained
       usable, and a subsequent Launch reached a fresh `started=true` runtime.
 
+## Clean runtime chrome and performance overlay (2026-07-11)
+
+- [x] Removed the floating gear, status/FPS chip, settings sheet, fullscreen
+      affordance, and exit button from the running game. Display resolution,
+      fullscreen, shader tier, diagnostics, console, issue-recorder tools, and
+      performance telemetry now live in the Project New Shoes Desktop Settings window's
+      Game & Display tab and remain available to hosts through
+      `window.CnCPort.play`. `Ctrl+Alt+Esc` returns to the desktop without
+      leaving persistent chrome over the game.
+- [x] Replaced the FPS chip with a top-left performance overlay that is off by
+      default and persisted when configured. It reports client/logic FPS,
+      current engine and presentation frame times, engine p95/max, and plots
+      rolling engine/presentation series with configurable history and graph
+      scale. The threaded engine status feed now carries the real rolling
+      timing samples.
+- [x] Extended the playable-page resolution probe to prove the hidden default,
+      desktop settings/host controls, live timing data, rendered graph pixels,
+      dynamic/fixed resolution transitions, and surviving main-menu shell. The
+      full threaded SwiftShader run passed and captured the live overlay; a
+      separate browser check verified the Windows-style Settings layout.
+
 ## Locked launcher installation progress (2026-07-11)
 
 - [x] Replaced progress text inside the asset-preparation button with a

@@ -68,8 +68,8 @@ body {
 /* ---------------------------------------------------------------------------
    Playing shell (play.html). The canvas IS the window: the shell fills the
    whole viewport (no width cap, no forced aspect box) so windowed and
-   fullscreen share one geometry model. Live status is a subtle floating HUD
-   chip and settings live behind the gear.
+   fullscreen share one geometry model. The game has no custom chrome unless
+   the host explicitly enables the performance diagnostics overlay.
    --------------------------------------------------------------------------- */
 .shell.playShell {
   width: 100vw;
@@ -101,63 +101,48 @@ body {
   object-fit: contain;
 }
 
-/* --- In-game gear button (single unobtrusive control) ---------------------- */
-#gearButton {
+/* --- Opt-in performance diagnostics --------------------------------------- */
+.performanceOverlay {
   position: fixed;
-  top: max(12px, env(safe-area-inset-top));
-  right: max(12px, env(safe-area-inset-right));
-  z-index: 40;
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  cursor: pointer;
-  color: #e7eef5;
-  background: rgba(18, 22, 28, 0.62);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 10px;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  opacity: 0.55;
-  transition: opacity 0.15s ease, background 0.15s ease, transform 0.15s ease;
-}
-#gearButton:hover,
-#gearButton:focus-visible {
-  opacity: 1;
-  background: rgba(24, 30, 38, 0.9);
-  outline: none;
-}
-#gearButton:active { transform: scale(0.94); }
-#gearButton.hidden { display: none; }
-
-/* --- Subtle in-game HUD chip (replaces the gray status bar) ----------------- */
-.hud {
-  position: fixed;
-  left: 50%;
-  bottom: max(10px, env(safe-area-inset-bottom));
-  transform: translateX(-50%);
+  top: max(10px, env(safe-area-inset-top));
+  left: max(10px, env(safe-area-inset-left));
   z-index: 35;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 12px;
-  border-radius: 999px;
-  background: rgba(12, 15, 19, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: var(--text-dim);
-  font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.02em;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  opacity: 0.6;
-  transition: opacity 0.2s ease;
+  width: min(320px, calc(100vw - 20px));
+  padding: 10px;
+  color: #edf5fc;
+  background: rgba(8, 12, 16, 0.84);
+  border: 1px solid rgba(181, 207, 228, 0.2);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  font: 11px/1.25 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
   pointer-events: none;
+  user-select: none;
 }
-.hud:hover { opacity: 1; }
-.hud.hidden { display: none; }
-.hud .hudItem span { color: var(--text); }
-.hud .hudDot { color: rgba(255, 255, 255, 0.25); }
+.performanceOverlay.hidden { display: none; }
+.performanceTitle {
+  margin-bottom: 6px;
+  color: #8fa8ba;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.performanceRates,
+.performanceStats {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #8fa8ba;
+}
+.performanceRates strong { color: #e9f4fb; font-size: 16px; }
+.performanceStats strong { color: #c9dbe7; font-weight: 600; }
+#performanceGraph {
+  width: 100%;
+  height: 92px;
+  display: block;
+  margin: 7px 0 6px;
+}
 
 /* ===========================================================================
    LAUNCHER SCREEN
@@ -404,14 +389,6 @@ body {
   text-transform: uppercase;
   color: var(--text-dim);
 }
-.settingRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 40px;
-}
-.settingRowToggle { cursor: pointer; }
 .settingLabel {
   font-size: 14px;
   color: var(--text);
@@ -422,7 +399,6 @@ body {
   line-height: 1.5;
   color: var(--text-dim);
 }
-.settingHint .inlineGear { color: var(--accent); }
 .networkSettingsHeading {
   margin-top: 8px;
   padding-top: 12px;
@@ -459,45 +435,6 @@ body {
   gap: 8px;
 }
 
-/* Resolution select (settings overlay). */
-select#resolutionSelectLive {
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: 60%;
-  font: 14px/1.2 var(--sys-font);
-  padding: 9px 10px;
-  color: var(--text);
-  background: #0c1016;
-  border: 1px solid var(--line-2);
-  border-radius: 8px;
-  cursor: pointer;
-}
-select#resolutionSelectLive:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-/* Custom W x H entry (shown when the resolution select is on "Custom…"). */
-.customResolutionInputs {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-dim);
-}
-.customResolutionInputs input[type="number"] {
-  width: 72px;
-  font: 14px/1.2 var(--sys-font);
-  padding: 8px 8px;
-  color: var(--text);
-  background: #0c1016;
-  border: 1px solid var(--line-2);
-  border-radius: 8px;
-}
-.customResolutionInputs input[type="number"]:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
 .launcherFoot {
   display: flex;
   justify-content: center;
@@ -509,147 +446,6 @@ select#resolutionSelectLive:focus-visible {
   letter-spacing: 0.02em;
 }
 .buildAge.fresh { color: #7ee787; }
-
-/* ===========================================================================
-   SETTINGS OVERLAY (in-game, opened by the gear)
-   =========================================================================== */
-#settingsOverlay {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: flex;
-  justify-content: flex-end;
-}
-#settingsOverlay.hidden { display: none; }
-.settingsBackdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-}
-.settingsSheet {
-  position: relative;
-  width: min(380px, 92vw);
-  max-height: 100vh;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 18px 18px calc(24px + env(safe-area-inset-bottom));
-  padding-top: calc(18px + env(safe-area-inset-top));
-  background: linear-gradient(180deg, var(--panel-2), var(--panel));
-  border-left: 1px solid var(--line);
-  box-shadow: -20px 0 60px rgba(0, 0, 0, 0.5);
-}
-.settingsSheetHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-.settingsSheetHead h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-}
-.iconClose {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  font-size: 15px;
-  cursor: pointer;
-  color: var(--text-dim);
-  background: transparent;
-  border: 1px solid var(--line-2);
-  border-radius: 8px;
-}
-.iconClose:hover { color: var(--text); border-color: var(--line); }
-
-.settingsSection {
-  padding: 12px 0;
-  border-top: 1px solid var(--line);
-}
-.settingsSection:first-of-type { border-top: none; }
-.settingsSection h3 {
-  margin: 0 0 8px;
-  font-size: 11px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-}
-.settingRowActions { justify-content: space-between; }
-
-.pillButton {
-  font: 13px/1 var(--sys-font);
-  padding: 9px 16px;
-  cursor: pointer;
-  color: var(--text);
-  background: #20262e;
-  border: 1px solid var(--line-2);
-  border-radius: 999px;
-  transition: background 0.12s ease, border-color 0.12s ease;
-  -webkit-tap-highlight-color: transparent;
-}
-.pillButton:hover { background: #29313b; border-color: var(--line); }
-.pillButton.active {
-  background: linear-gradient(180deg, #2a4f74, #1c3d5c);
-  border-color: #4d90c4;
-  color: #fff;
-}
-
-/* --- Collapsible debug / issue-recorder tools ------------------------------ */
-.debugSection > summary {
-  cursor: pointer;
-  font-size: 11px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-  list-style: none;
-  padding: 4px 0;
-  user-select: none;
-}
-.debugSection > summary::-webkit-details-marker { display: none; }
-.debugSection > summary::before {
-  content: "▸ ";
-  color: var(--line-2);
-}
-.debugSection[open] > summary::before { content: "▾ "; }
-
-.debugControls {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 10px;
-}
-.debugControls button {
-  font: 12px/1.2 var(--sys-font);
-  padding: 9px 8px;
-  cursor: pointer;
-  background: #20262c;
-  color: #d6e2ea;
-  border: 1px solid #43515e;
-  border-radius: 8px;
-}
-.debugControls button:hover { background: #262e36; }
-.debugControls button.active {
-  background: #633322;
-  border-color: #b66a4a;
-}
-.debugOptions {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  color: var(--text-dim);
-  font: 12px/1.35 ui-monospace, monospace;
-}
-.debugOptions input { vertical-align: middle; }
-#dumpStatus {
-  grid-column: 1 / -1;
-  min-height: 1rem;
-  color: #9fb6c9;
-  font-size: 11px;
-}
 
 /* ===========================================================================
    ENGINE LOG CONSOLE PANEL
@@ -817,15 +613,6 @@ select#resolutionSelectLive:focus-visible {
   justify-content: center;
 }
 
-/* Hide the in-game HUD chip while fullscreen so nothing shows over the game. */
-.shell:fullscreen .hud,
-.shell.is-fullscreen .hud {
-  display: none;
-}
-.shell:-webkit-full-screen .hud {
-  display: none;
-}
-
 /* Canvas fills the fullscreen viewport, centered, letterboxed on BLACK. Drop
    the windowed 16:9 aspect lock; the page auto-applies a native resolution
    matched to the screen so the buffer aspect matches and the canvas fills. */
@@ -849,37 +636,4 @@ select#resolutionSelectLive:focus-visible {
   object-fit: contain;
   background: #000;
   align-self: center;
-}
-
-/* Fullscreen exit affordance: not a permanent bar. Hidden by default; shown
-   only in fullscreen, and even then it fades in on hover near the top edge so
-   it does not clutter the game. Esc also exits (standard Fullscreen API). */
-#fullscreenExit {
-  position: fixed;
-  top: 12px;
-  right: 12px;
-  z-index: 45;
-  font: 12px/1.2 var(--sys-font);
-  padding: 0.45rem 0.8rem;
-  cursor: pointer;
-  color: #fff;
-  background: rgba(28, 61, 92, 0.85);
-  border: 1px solid #4d90c4;
-  border-radius: 8px;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-  pointer-events: none;
-}
-.shell:fullscreen #fullscreenExit,
-.shell.is-fullscreen #fullscreenExit,
-.shell:-webkit-full-screen #fullscreenExit {
-  pointer-events: auto;
-}
-/* Reveal on hover over the top strip of the screen (and while hovering the
-   button itself) so there is always a visible exit without a static bar. */
-.shell:fullscreen:hover #fullscreenExit,
-.shell.is-fullscreen.reveal-exit #fullscreenExit,
-.shell:-webkit-full-screen:hover #fullscreenExit,
-#fullscreenExit:hover {
-  opacity: 1;
 }

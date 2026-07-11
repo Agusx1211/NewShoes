@@ -29,6 +29,28 @@ Extracted archives land under ignored `artifacts/real-assets/`.
 See `ASSETS.md` for the asset ownership rules and browser delivery plan.
 See `SOURCE_INVENTORY.md` for the current runtime-vs-tools library inventory.
 
+### Play-page host controls
+
+`harness/play.html` leaves the running game free of custom controls. Player-
+facing display and diagnostic options live in the Project New Shoes Desktop Settings
+window under **Game & Display**. Embedders and browser diagnostics can control
+the same settings through `window.CnCPort.play`:
+
+```js
+await window.CnCPort.play.configure({
+  performanceOverlay: { enabled: true, historySeconds: 5, graphMaxMs: 50 },
+  display: { mode: "dynamic" }, // or { mode: "fixed", width, height }
+  diagnostics: "lite",
+});
+```
+
+The performance overlay is off by default. It shows client/logic FPS, engine
+and presentation frame times, engine p95/max, and a scrolling graph when
+enabled. The same host surface exposes fullscreen, shader-tier, console, and
+issue-recorder controls. A host can provide initial settings before the page
+modules run with `window.CnCPortPlayConfig` using the same
+`performanceOverlay`, `display`, `diagnostics`, and `shaderTier` fields.
+
 Verify the local real-asset sample pipeline:
 
 ```sh

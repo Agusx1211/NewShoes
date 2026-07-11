@@ -714,7 +714,6 @@
     launchOverlay.hidden = false;
     document.querySelector("#launchLoader").hidden = false;
     document.querySelector("#viewport").hidden = true;
-    document.querySelector("#exitRuntimeButton").hidden = true;
     document.querySelector("#launchGameTitle").textContent = "ZERO HOUR";
     const fill = document.querySelector("#launchProgressFill");
     const status = document.querySelector("#launchStatus");
@@ -746,17 +745,6 @@
       state.launching = false;
       updateLibraryUI();
     }
-  }
-
-  async function exitRuntime() {
-    const result = await window.ZeroHRuntime?.exit();
-    showToast(
-      "Returned to Project New Shoes",
-      result?.ok === false
-        ? "The game was force-closed after cleanup reported an error. Your saves were flushed."
-        : "The game engine stopped and your saves were flushed.",
-      result?.ok === false ? "warning" : undefined,
-    );
   }
 
   function updateClock() {
@@ -965,8 +953,6 @@
       ? "Browser data was cleared. Reload Project New Shoes before selecting replacement files."
       : "Library permissions, browser assets and desktop settings were cleared.");
   });
-
-  document.querySelector("#exitRuntimeButton").addEventListener("click", exitRuntime);
 
   bindWindows();
   restoreWindowLayout();
