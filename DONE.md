@@ -13349,3 +13349,13 @@ mitigation track. Items resolved or retired by the pivot:
       then prepared 2,071,604,184 bytes through the real launcher UI, mounted
       all 30 archives, returned from all 43 `GameEngine::init()` subsystems
       without aborting, and visibly rendered the animated shell map.
+- [x] Replaced the XP-style launcher's low-resolution desert desktop wallpaper
+      with a project-owned 3840x2160 "Bliss at war" landscape: bright rolling
+      green hills and blue sky frame distant tanks, smoke, a helicopter, and
+      missile trails while the calm center stays readable behind the launcher.
+      A last-loaded runtime CSS override isolates the change from ongoing
+      launcher work and leaves the existing desert art inside the game cards.
+      Playwright verified the live page at 1920x1080 and 390x844 with HTTP 200,
+      the new asset selected as the `command` wallpaper, intact launcher bounds,
+      and zero console or page errors; screenshots are in the gitignored
+      `WebAssembly/artifacts/screenshots/launcher-bliss-at-war-{wide,mobile}.png`.

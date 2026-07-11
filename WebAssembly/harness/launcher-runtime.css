@@ -14,6 +14,17 @@ body {
   background: #173b52;
 }
 
+/* The default XP desktop gets a project-owned 4K pastoral battlefield. Keep
+   the desert artwork inside the launcher windows, where it supports the game
+   cards without making the desktop itself feel like a stretched thumbnail. */
+.desktop[data-wallpaper="command"] .wallpaper-art {
+  background: #4f9bc8 url("./assets/zeroh-bliss-at-war-4k.webp") center center / cover no-repeat;
+}
+
+.wallpaper-swatch.command {
+  background: #4f9bc8 url("./assets/zeroh-bliss-at-war-4k.webp") center center / cover no-repeat;
+}
+
 #overlay.boot-sentinel,
 #progress.boot-sentinel {
   display: none;
