@@ -9,20 +9,25 @@ import { chromium } from "playwright";
 import { startStaticServer } from "./static-server.mjs";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
-const wasmRoot = resolve(harnessRoot, "..");
+const wasmRoot = resolve(process.env.CNC_AUDIO_HARNESS_ROOT ?? resolve(harnessRoot, ".."));
 const coldLaunches = Math.max(1, Number(process.env.CNC_AUDIO_COLD_LAUNCHES ?? 3));
 const server = await startStaticServer({ root: wasmRoot, port: 0, host: "127.0.0.1" });
 const results = [];
 
 async function audioState(page) {
   return page.evaluate(async () => {
-    const [audio, mixer] = await Promise.all([
-      window.CnCPort.rpc("browserAudioRuntime"),
-      window.CnCPort.rpc("browserAudioMixerRuntime"),
-    ]);
+    // Use the long-standing aggregate state RPC so this gate can also run
+    // against an unfixed parent tree where the two direct threaded diagnostic
+    // routes do not exist yet. That makes the mutation/parent comparison test
+    // the activation ordering, not merely the new diagnostics surface.
+    const state = await window.CnCPort.rpc("state");
     return {
-      audio: audio.browserAudioRuntime,
-      mixer: mixer.browserAudioMixerRuntime,
+      audio: state.state?.browserAudioRuntime,
+      mixer: state.state?.browserAudioMixerRuntime,
+      userActivation: {
+        isActive: navigator.userActivation?.isActive ?? null,
+        hasBeenActive: navigator.userActivation?.hasBeenActive ?? null,
+      },
       settingsOpen: document.querySelector("#settingsWindow")?.classList.contains("is-open") === true,
     };
   });
@@ -107,9 +112,26 @@ try {
       // regression where DOM-control keydown was filtered before audio resume.
       await page.keyboard.press("Enter");
 
+      // This assertion is intentionally BEFORE any wait for a running context.
+      // The old tree can eventually recover through the late `play.start`
+      // fallback, but startup sounds may already have been requested by then.
+      // The trusted launch event itself must have entered the audio activation
+      // path synchronously, ahead of launcher archive/recorder awaits.
+      const immediate = await audioState(page);
+      assert.equal(immediate.audio.created, true,
+        "launch activation returned before creating the AudioContext");
+      assert.ok(immediate.audio.resumeAttempts >= 1,
+        "launch activation returned before attempting AudioContext.resume()");
+      assert.ok(["window.keydown", "window.click"].includes(immediate.audio.lastResumeTrigger),
+        `launch used late/non-gesture resume trigger: ${immediate.audio.lastResumeTrigger}`);
+      assert.notEqual(immediate.audio.lastResumeTrigger, "play.start",
+        "late play.start fallback masked the launcher activation regression");
+      assert.equal(immediate.audio.lastUserActivation?.isActive, true,
+        "launch resume did not execute during the trusted input event");
+
       await page.waitForFunction(async () => {
-        const result = await window.CnCPort.rpc("browserAudioRuntime");
-        return result.browserAudioRuntime?.contextState === "running";
+        const result = await window.CnCPort.rpc("state");
+        return result.state?.browserAudioRuntime?.contextState === "running";
       });
       const running = await audioState(page);
       assert.equal(running.settingsOpen, false, "audio required Settings navigation to start");
@@ -148,9 +170,20 @@ try {
         speech: 0.2,
       }, "recovery activation reset mute/volume state");
 
+      const directDiagnostics = await page.evaluate(async () => Promise.all([
+        window.CnCPort.rpc("browserAudioRuntime"),
+        window.CnCPort.rpc("browserAudioMixerRuntime"),
+      ]));
+      assert.equal(directDiagnostics[0].ok, true,
+        "threaded browserAudioRuntime diagnostic did not stay main-side");
+      assert.equal(directDiagnostics[1].ok, true,
+        "threaded browserAudioMixerRuntime diagnostic did not stay main-side");
+
       results.push({
         run,
-        trigger: running.audio.lastResumeTrigger,
+        initialUserActivation: before.userActivation,
+        launchTrigger: immediate.audio.lastResumeTrigger,
+        finalTrigger: afterRetry.audio.lastResumeTrigger,
         resumeAttempts: afterRetry.audio.resumeAttempts,
         contextCreations: afterRetry.audio.contextCreations,
         mixerCreations: afterRetry.mixer.creations,

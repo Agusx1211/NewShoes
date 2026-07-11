@@ -493,7 +493,10 @@ notes/p1-engine-thread.md "Default-readiness gap closure".
       creates one running `AudioContext`, one connected four-bus mixer, an
       advancing audio clock, preserved mute/volume settings, and no Settings
       navigation. The asset-backed real audio event gate still proves decoded
-      non-zero samples schedule and complete through the engine path.
+      non-zero samples schedule and complete through the engine path. The same
+      gate served from the unfixed `fcc143c4` parent exits 1 at the immediate
+      post-key assertion (`launch activation returned before creating the
+      AudioContext`), before the late `play.start` fallback can mask the bug.
 - [x] **Save/load round trip threaded**: persistSaves/listSaves stay
       main-side (IDBFS mounts on the MAIN runtime; engine-thread FS writes
       proxy to main); gate writes a marker .sav into the real save dir,
