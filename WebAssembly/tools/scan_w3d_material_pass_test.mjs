@@ -92,7 +92,7 @@ function syntheticBig(path, payload) {
   const big = Buffer.alloc(totalBytes);
 
   big.write("BIGF", 0, "ascii");
-  big.writeUInt32BE(totalBytes, 4);
+  big.writeUInt32LE(totalBytes, 4);
   big.writeUInt32BE(1, 8);
   big.writeUInt32BE(0, 12);
   big.writeUInt32BE(fileOffset, 0x10);

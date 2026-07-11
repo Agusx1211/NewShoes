@@ -3,6 +3,7 @@
 
   const desktop = window.ZeroHDesktop;
   const FILESYSTEM_KEY = "zeroh-filesystem-v1";
+  const MAX_IMPORT_BYTES = 512 * 1024;
   const TEXT_EXTENSIONS = new Set(["txt", "md", "ini", "log", "json", "cfg"]);
 
   function seedFileSystem() {
@@ -44,8 +45,21 @@
   const isTextNode = (node) => node?.kind === "text" || TEXT_EXTENSIONS.has(extensionOf(node?.name || ""));
 
   function persistFileSystem() {
-    try { localStorage.setItem(FILESYSTEM_KEY, JSON.stringify(fileSystem)); }
-    catch { desktop.showToast("Drive is full", "This browser could not persist another local file.", "warning"); }
+    try {
+      localStorage.setItem(FILESYSTEM_KEY, JSON.stringify(fileSystem));
+      return true;
+    } catch {
+      desktop.showToast("Drive is full", "This browser could not persist that change.", "warning");
+      return false;
+    }
+  }
+
+  function snapshotFileSystem() {
+    return JSON.stringify(fileSystem);
+  }
+
+  function restoreFileSystem(snapshot) {
+    fileSystem = JSON.parse(snapshot);
   }
 
   function formatBytes(bytes = 0) {
@@ -226,17 +240,20 @@
     const input = document.querySelector("#filePromptInput");
     const requested = input.value.trim().replace(/[\\/:*?"<>|]/g, "-");
     if (!requested) return input.focus();
+    const snapshot = snapshotFileSystem();
+    let confirmation;
     if (filePromptMode === "folder") {
       fileSystem.nodes.push({ id: `folder-${Date.now()}`, parent: currentFolderId, type: "folder", name: uniqueName(currentFolderId, requested), modified: new Date().toISOString() });
-      desktop.showToast("Folder created", requested);
+      confirmation = ["Folder created", requested];
     } else {
       const node = nodeById(selectedNodeId);
       if (!node) return closeFilePrompt();
       node.name = uniqueName(node.parent, requested, node.id);
       node.modified = new Date().toISOString();
-      desktop.showToast("Item renamed", node.name);
+      confirmation = ["Item renamed", node.name];
     }
-    persistFileSystem();
+    if (!persistFileSystem()) restoreFileSystem(snapshot);
+    else desktop.showToast(...confirmation);
     closeFilePrompt();
     renderExplorer();
   }
@@ -244,6 +261,7 @@
   function deleteSelectedNode() {
     const node = nodeById(selectedNodeId);
     if (!node || node.id === "root") return desktop.showToast("Select an item", "Choose a file or folder to delete.", "warning");
+    const snapshot = snapshotFileSystem();
     const deleted = new Set([node.id]);
     let changed = true;
     while (changed) {
@@ -252,31 +270,54 @@
     }
     fileSystem.nodes = fileSystem.nodes.filter((item) => !deleted.has(item.id));
     selectedNodeId = null;
-    persistFileSystem();
+    if (!persistFileSystem()) {
+      restoreFileSystem(snapshot);
+      renderExplorer();
+      return;
+    }
     renderExplorer();
     desktop.showToast("Deleted", node.name);
   }
 
   async function importFiles(files) {
+    const snapshot = snapshotFileSystem();
+    const rejected = [];
+    let imported = 0;
     for (const file of files) {
+      if (file.size > MAX_IMPORT_BYTES) {
+        rejected.push(`${file.name} (${formatBytes(file.size)})`);
+        continue;
+      }
       const extension = extensionOf(file.name);
       const node = { id: `file-${Date.now()}-${Math.random().toString(16).slice(2)}`, parent: currentFolderId, type: "file", kind: TEXT_EXTENSIONS.has(extension) ? "text" : extension === "rep" ? "replay" : extension === "sav" ? "save" : extension.match(/png|jpg|jpeg|webp/) ? "image" : "archive", name: uniqueName(currentFolderId, file.name), modified: new Date().toISOString(), size: file.size };
-      if (file.size <= 512 * 1024) {
+      try {
         if (node.kind === "text") {
           node.content = await file.text();
         } else {
           const buffer = new Uint8Array(await file.arrayBuffer());
           let binary = "";
-          buffer.forEach((byte) => { binary += String.fromCharCode(byte); });
+          for (let offset = 0; offset < buffer.length; offset += 0x8000) {
+            binary += String.fromCharCode(...buffer.subarray(offset, offset + 0x8000));
+          }
           node.content = `data:${file.type || "application/octet-stream"};base64,${btoa(binary)}`;
           node.encoding = "data-url";
         }
+      } catch {
+        rejected.push(file.name);
+        continue;
       }
       fileSystem.nodes.push(node);
+      imported += 1;
     }
-    persistFileSystem();
+    if (imported && !persistFileSystem()) {
+      restoreFileSystem(snapshot);
+      imported = 0;
+    }
     renderExplorer();
-    desktop.showToast("Import complete", `${files.length} file${files.length === 1 ? "" : "s"} added to ${nodeById(currentFolderId).name}.`);
+    if (imported) desktop.showToast("Import complete", `${imported} file${imported === 1 ? "" : "s"} added to ${nodeById(currentFolderId).name}.`);
+    if (rejected.length) {
+      desktop.showToast("Some files were not imported", `Virtual Drive keeps files up to 512 KB. Skipped ${rejected.join(", ")}.`, "warning");
+    }
   }
 
   // Notepad
@@ -316,6 +357,8 @@
     const editor = document.querySelector("#notepadEditor");
     let fileName = document.querySelector("#notepadFileName").value.trim() || "Untitled.txt";
     if (!extensionOf(fileName)) fileName += ".txt";
+    const snapshot = snapshotFileSystem();
+    const previousOpenNoteId = openNoteId;
     let node = nodeById(openNoteId);
     if (!node) {
       node = { id: `note-${Date.now()}`, parent: "notes", type: "file", kind: "text", name: uniqueName("notes", fileName), modified: new Date().toISOString(), size: 0, content: "" };
@@ -327,8 +370,15 @@
     node.size = new Blob([editor.value]).size;
     node.modified = new Date().toISOString();
     document.querySelector("#notepadFileName").value = node.name;
+    if (!persistFileSystem()) {
+      restoreFileSystem(snapshot);
+      openNoteId = previousOpenNoteId;
+      noteDirty = true;
+      renderExplorer();
+      updateNotepadStatus();
+      return;
+    }
     noteDirty = false;
-    persistFileSystem();
     renderExplorer();
     updateNotepadStatus();
     desktop.showToast("Document saved", `Notes\\${node.name}`);
@@ -347,7 +397,9 @@
   function normalizeAddress(value) {
     const address = value.trim();
     if (address.startsWith("zeroh://")) return address.toLowerCase();
-    if (/^https?:\/\//i.test(address)) return address;
+    if (/^https?:\/\//i.test(address)) {
+      try { return new URL(address).href; } catch { /* search for malformed URLs */ }
+    }
     if (/^[\w.-]+\.[a-z]{2,}/i.test(address)) return `https://${address}`;
     return `https://duckduckgo.com/?q=${encodeURIComponent(address)}`;
   }
@@ -585,7 +637,11 @@
   document.querySelector("#browserBack").addEventListener("click", () => { if (browserIndex > 0) { browserIndex -= 1; renderBrowser(browserHistory[browserIndex]); } });
   document.querySelector("#browserForward").addEventListener("click", () => { if (browserIndex < browserHistory.length - 1) { browserIndex += 1; renderBrowser(browserHistory[browserIndex]); } });
   document.querySelector("#browserExternal").addEventListener("click", () => { const address = browserHistory[browserIndex]; if (/^https?:\/\//.test(address)) window.open(address, "_blank", "noopener"); else desktop.showToast("Local page", "This page only exists inside ZeroH Browser."); });
-  document.querySelector("#browserFrame").addEventListener("load", () => { document.querySelector("#browserStatus").textContent = "External page loaded · use ↗ if the site blocks embedding"; });
+  document.querySelector("#browserFrame").addEventListener("load", (event) => {
+    if (!event.currentTarget.hidden) {
+      document.querySelector("#browserStatus").textContent = "External page requested · use ↗ if the site blocks embedding";
+    }
+  });
   document.querySelectorAll(".browser-favorites [data-browser-page]").forEach((button) => button.addEventListener("click", () => navigateBrowser(button.dataset.browserPage)));
 
   // Bind Arcade.

@@ -1,6 +1,18 @@
-const INSTALLED_KEY = "zeroh-installed-library.v1";
+const INSTALLED_KEY = "zeroh-installed-library.v2";
+const OLD_INSTALLED_KEY = "zeroh-installed-library.v1";
+const LIBRARY_VERSION = 2;
 const HANDLE_DB = "zeroh-asset-handles";
 const HANDLE_STORE = "sources";
+const REQUIRED_ARCHIVE_NAMES = [
+  "INIZH.big", "EnglishZH.big", "WindowZH.big", "MapsZH.big", "MusicZH.big",
+  "GensecZH.big", "TerrainZH.big", "TexturesZH.big", "W3DZH.big",
+  "W3DEnglishZH.big", "SpeechZH.big", "SpeechEnglishZH.big", "AudioZH.big",
+  "AudioEnglishZH.big", "ShadersZH.big", "ZZBase_INI.big", "LooseScripts.big",
+  "ZZBase_English.big", "ZZBase_Window.big", "ZZBase_Terrain.big",
+  "ZZBase_Textures.big", "ZZBase_W3D.big", "ZZBase_Shaders.big",
+  "ZZBase_Music.big", "ZZBase_Audio.big", "ZZBase_AudioEnglish.big",
+  "ZZBase_Speech.big", "ZZBase_SpeechEnglish.big", "ZZBase_Maps.big", "Gensec.big",
+];
 
 function formatBytes(bytes) {
   const value = Number(bytes) || 0;
@@ -30,6 +42,7 @@ async function storeHandles(handles) {
       transaction.objectStore(HANDLE_STORE).put(handles, "active");
       transaction.oncomplete = resolve;
       transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error("Source permission storage was aborted"));
     });
   } finally {
     db.close();
@@ -99,19 +112,41 @@ async function filesFromHandles(handles, requestPermission = false) {
 
 class AssetLibrary {
   constructor() {
-    this.worker = new Worker("./launcher-asset-worker.js");
     this.pending = new Map();
     this.sequence = 0;
     this.sourceHandles = [];
     this.scanResult = null;
     this.preparedArchives = null;
-    this.progressHandler = null;
-    this.worker.addEventListener("message", (event) => this.onWorkerMessage(event.data || {}));
+    this.queue = Promise.resolve();
+    this.worker = null;
+    this.createWorker();
+  }
+
+  createWorker() {
+    const worker = new Worker("./launcher-asset-worker.js");
+    this.worker = worker;
+    worker.addEventListener("message", (event) => this.onWorkerMessage(event.data || {}));
+    worker.addEventListener("error", (event) => {
+      event.preventDefault();
+      this.recoverWorker(worker, event.message || "Asset worker crashed");
+    });
+    worker.addEventListener("messageerror", () => {
+      this.recoverWorker(worker, "Asset worker returned an unreadable response");
+    });
+  }
+
+  recoverWorker(failedWorker, message) {
+    if (failedWorker !== this.worker) return;
+    this.worker = null;
+    failedWorker?.terminate();
+    for (const pending of this.pending.values()) pending.reject(new Error(message));
+    this.pending.clear();
+    this.createWorker();
   }
 
   onWorkerMessage(message) {
     if (message.kind === "progress") {
-      this.progressHandler?.(message);
+      this.pending.get(message.requestId)?.onProgress?.(message);
       return;
     }
     if (message.kind !== "result") return;
@@ -123,14 +158,21 @@ class AssetLibrary {
   }
 
   request(kind, payload = {}, onProgress = null) {
-    const requestId = ++this.sequence;
-    this.progressHandler = onProgress;
-    return new Promise((resolve, reject) => {
-      this.pending.set(requestId, { resolve, reject });
-      this.worker.postMessage({ ...payload, kind, requestId });
-    }).finally(() => {
-      this.progressHandler = null;
-    });
+    const execute = () => {
+      const requestId = ++this.sequence;
+      return new Promise((resolve, reject) => {
+        this.pending.set(requestId, { resolve, reject, onProgress });
+        try {
+          this.worker.postMessage({ ...payload, kind, requestId });
+        } catch (error) {
+          this.pending.delete(requestId);
+          reject(error);
+        }
+      });
+    };
+    const result = this.queue.then(execute, execute);
+    this.queue = result.catch(() => {});
+    return result;
   }
 
   async pickImages() {
@@ -156,6 +198,10 @@ class AssetLibrary {
   }
 
   async scan(files, { handles = null, onProgress = null } = {}) {
+    if (window.ZeroHRuntime?.started) {
+      throw new Error("Reload ZeroH before changing game files after the engine has started");
+    }
+    await this.discardPreparedArchives();
     if (handles) this.sourceHandles = handles;
     this.preparedArchives = null;
     const sources = [...files].map((file) => ({
@@ -197,30 +243,84 @@ class AssetLibrary {
       await navigator.storage?.persist?.().catch(() => false);
     }
     const namespaceRoot = await this.allocateNamespace();
-    const result = await this.request("prepare", {
-      mode,
-      namespaceRoot,
-      installRoot: "cnc-library/v1",
-    }, onProgress);
-    this.preparedArchives = result.archives;
-    if (mode === "install" && result.installed) {
-      localStorage.setItem(INSTALLED_KEY, JSON.stringify({
-        version: 1,
-        preparedAt: Date.now(),
-        totalBytes: result.installed.reduce((sum, archive) => sum + archive.bytes, 0),
-        archives: result.installed,
-      }));
-    } else if (mode === "remember" && this.sourceHandles.length) {
-      await storeHandles(this.sourceHandles);
+    const installRoot = mode === "install"
+      ? `cnc-library/install-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`
+      : null;
+    const previousInstall = this.installedLibrary();
+    try {
+      const result = await this.request("prepare", {
+        mode,
+        namespaceRoot,
+        installRoot,
+      }, onProgress);
+      this.preparedArchives = result.archives;
+      result.effectiveMode = mode;
+      if (mode === "install" && result.installed) {
+        const manifest = {
+          version: LIBRARY_VERSION,
+          root: installRoot,
+          preparedAt: Date.now(),
+          totalBytes: result.installed.reduce((sum, archive) => sum + archive.bytes, 0),
+          archives: result.installed,
+        };
+        localStorage.setItem(INSTALLED_KEY, JSON.stringify(manifest));
+        localStorage.removeItem(OLD_INSTALLED_KEY);
+        if (previousInstall?.root && previousInstall.root !== installRoot) {
+          await this.request("discard", { path: previousInstall.root }).catch(() => {});
+        }
+      } else if (mode === "remember" && this.sourceHandles.length) {
+        try {
+          await storeHandles(this.sourceHandles);
+        } catch {
+          result.effectiveMode = "once";
+          result.warning = "This browser could not retain the source permission; files remain ready for this session.";
+        }
+      }
+      return result;
+    } catch (error) {
+      await this.request("discard", { path: namespaceRoot }).catch(() => {});
+      if (installRoot) await this.request("discard", { path: installRoot }).catch(() => {});
+      throw error;
     }
-    return result;
   }
 
   installedLibrary() {
     try {
       const value = JSON.parse(localStorage.getItem(INSTALLED_KEY) || "null");
-      return value?.version === 1 && Array.isArray(value.archives) ? value : null;
+      if (value?.version !== LIBRARY_VERSION
+          || !/^cnc-library\/install-[a-z0-9-]+$/i.test(value.root ?? "")
+          || !Array.isArray(value.archives)
+          || value.archives.length !== REQUIRED_ARCHIVE_NAMES.length) return null;
+      const names = new Set(value.archives.map((archive) => archive?.name));
+      if (names.size !== REQUIRED_ARCHIVE_NAMES.length
+          || REQUIRED_ARCHIVE_NAMES.some((name) => !names.has(name))) return null;
+      if (value.archives.some((archive) => archive.opfsPath !== `${value.root}/${archive.name}`
+          || !Number.isSafeInteger(archive.bytes) || archive.bytes <= 16)) return null;
+      return value;
     } catch {
+      return null;
+    }
+  }
+
+  async verifyInstalledLibrary() {
+    const installed = this.installedLibrary();
+    if (!installed) {
+      localStorage.removeItem(INSTALLED_KEY);
+      localStorage.removeItem(OLD_INSTALLED_KEY);
+      return null;
+    }
+    try {
+      let directory = await navigator.storage.getDirectory();
+      for (const part of installed.root.split("/")) {
+        directory = await directory.getDirectoryHandle(part, { create: false });
+      }
+      for (const archive of installed.archives) {
+        const file = await (await directory.getFileHandle(archive.name, { create: false })).getFile();
+        if (file.size !== archive.bytes) throw new Error(`${archive.name} size changed`);
+      }
+      return installed;
+    } catch {
+      localStorage.removeItem(INSTALLED_KEY);
       return null;
     }
   }
@@ -233,6 +333,11 @@ class AssetLibrary {
     return this.scan(files, { handles, onProgress });
   }
 
+  async hasRememberedSource() {
+    const handles = await readHandles().catch(() => []);
+    return handles.length > 0;
+  }
+
   async archivesForLaunch(onProgress = null) {
     if (this.preparedArchives?.length) return this.preparedArchives;
     const installed = this.installedLibrary();
@@ -240,6 +345,7 @@ class AssetLibrary {
       const namespaceRoot = await this.allocateNamespace();
       const result = await this.request("loadInstalled", {
         namespaceRoot,
+        installRoot: installed.root,
         archives: installed.archives,
       }, onProgress);
       this.preparedArchives = result.archives;
@@ -249,16 +355,27 @@ class AssetLibrary {
   }
 
   async forget() {
+    await this.discardPreparedArchives();
     this.preparedArchives = null;
     this.scanResult = null;
     this.sourceHandles = [];
     localStorage.removeItem(INSTALLED_KEY);
+    localStorage.removeItem(OLD_INSTALLED_KEY);
     await clearHandles().catch(() => {});
     try {
       const root = await navigator.storage.getDirectory();
       await root.removeEntry("cnc-library", { recursive: true });
     } catch {
       // No installed OPFS library (or a live tab still has it open).
+    }
+  }
+
+  async discardPreparedArchives() {
+    const roots = new Set((this.preparedArchives || []).map((archive) =>
+      String(archive.opfsPath || "").split("/").slice(0, 2).join("/")));
+    this.preparedArchives = null;
+    for (const path of roots) {
+      if (path) await this.request("discard", { path }).catch(() => {});
     }
   }
 

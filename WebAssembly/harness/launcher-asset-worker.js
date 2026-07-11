@@ -70,6 +70,18 @@ function setU32BE(bytes, offset, value) {
   bytes[offset + 3] = value & 0xff;
 }
 
+function setU32LE(bytes, offset, value) {
+  bytes[offset] = value & 0xff;
+  bytes[offset + 1] = (value >>> 8) & 0xff;
+  bytes[offset + 2] = (value >>> 16) & 0xff;
+  bytes[offset + 3] = (value >>> 24) & 0xff;
+}
+
+function u32be(bytes, offset) {
+  return (bytes[offset] * 0x1000000 + bytes[offset + 1] * 0x10000 +
+    bytes[offset + 2] * 0x100 + bytes[offset + 3]) >>> 0;
+}
+
 function ascii(bytes, start, length) {
   return textDecoder.decode(bytes.subarray(start, start + length));
 }
@@ -150,14 +162,76 @@ async function detectIsoLayout(reader) {
     { sectorSize: 2352, dataOffset: 16, logicalSize: 2048 },
   ];
   for (const layout of layouts) {
-    const offset = 16 * layout.sectorSize + layout.dataOffset;
-    if (offset + 2048 > reader.size) continue;
-    const descriptor = await reader.read(offset, 2048);
-    if (descriptor[0] === 1 && ascii(descriptor, 1, 5) === "CD001") {
-      return { ...layout, descriptor };
+    for (let sector = 16; sector < 48; sector += 1) {
+      const offset = sector * layout.sectorSize + layout.dataOffset;
+      if (offset + layout.logicalSize > reader.size) break;
+      const descriptor = await reader.read(offset, layout.logicalSize);
+      if (ascii(descriptor, 1, 5) !== "CD001") break;
+      if (descriptor[0] === 1) {
+        return { ...layout, descriptor, descriptorSector: sector };
+      }
+      if (descriptor[0] === 255) break;
     }
   }
   throw new Error(`${reader.label}: not an ISO 9660 or MODE1/2352 image`);
+}
+
+async function validateBigReader(reader, label) {
+  if (!reader || reader.size < 16) throw new Error(`${label}: BIGF archive is too small`);
+  const header = await reader.read(0, 16);
+  if (ascii(header, 0, 4) !== "BIGF") throw new Error(`${label}: not a BIGF archive`);
+  // This field is the format's odd one out: original Win32BIGFileSystem reads
+  // it directly on little-endian x86. Count and directory entries are network
+  // byte order and are swapped by the original source.
+  const archiveSize = u32(header, 4);
+  const entryCount = u32be(header, 8);
+  if (archiveSize < 16 || archiveSize > reader.size) {
+    throw new Error(`${label}: BIGF header size ${archiveSize} exceeds ${reader.size}`);
+  }
+  if (entryCount > 1000000) throw new Error(`${label}: unreasonable BIGF entry count ${entryCount}`);
+
+  const chunkSize = 64 * 1024;
+  let directory = new Uint8Array(0);
+  let cursor = 0;
+  const entryBounds = [];
+  const ensure = async (length, message) => {
+    if (length > archiveSize - 16) throw new Error(message);
+    while (directory.byteLength < length) {
+      const start = 16 + directory.byteLength;
+      if (start >= archiveSize) throw new Error(message);
+      const next = await reader.read(start, Math.min(chunkSize, archiveSize - start));
+      if (!next.byteLength) throw new Error(message);
+      const combined = new Uint8Array(directory.byteLength + next.byteLength);
+      combined.set(directory);
+      combined.set(next, directory.byteLength);
+      directory = combined;
+    }
+  };
+
+  for (let index = 0; index < entryCount; index += 1) {
+    await ensure(cursor + 9, `${label}: BIGF directory ended before entry ${index}`);
+    const offset = u32be(directory, cursor);
+    const size = u32be(directory, cursor + 4);
+    let pathEnd = cursor + 8;
+    for (;;) {
+      while (pathEnd < directory.byteLength && directory[pathEnd] !== 0) pathEnd += 1;
+      if (pathEnd - cursor - 8 > 260) {
+        throw new Error(`${label}: BIGF entry ${index} path exceeds 260 bytes`);
+      }
+      if (pathEnd < directory.byteLength) break;
+      await ensure(directory.byteLength + 1, `${label}: BIGF entry ${index} has no terminator`);
+    }
+    if (pathEnd === cursor + 8) throw new Error(`${label}: BIGF entry ${index} has an empty path`);
+    if (offset + size > archiveSize) throw new Error(`${label}: BIGF entry ${index} extends past archive end`);
+    entryBounds.push({ offset, index });
+    cursor = pathEnd + 1;
+  }
+  const dataStart = 16 + cursor;
+  const invalidOffset = entryBounds.find((entry) => entry.offset < dataStart);
+  if (invalidOffset) {
+    throw new Error(`${label}: BIGF entry ${invalidOffset.index} overlaps the directory`);
+  }
+  return { archiveSize, entryCount };
 }
 
 async function readIsoRoot(reader) {
@@ -292,7 +366,16 @@ function inferDirectEditions(files) {
   return directoryKinds;
 }
 
-function directEdition(path, directoryKinds) {
+function directEdition(path, directoryKinds, leaf = basename(path)) {
+  const lowerLeaf = leaf.toLowerCase();
+  if (lowerLeaf.endsWith("zh.big") || lowerLeaf === "gensec.big"
+      || SCRIPT_FILES.some((script) => script.sourceName.toLowerCase() === lowerLeaf)) {
+    return "zh";
+  }
+  if (ARCHIVES.some((archive) => archive.edition === "base"
+      && archive.sourceName.toLowerCase() === lowerLeaf)) {
+    return "base";
+  }
   const directory = dirname(path);
   if (directoryKinds.has(directory)) return directoryKinds.get(directory);
   const lower = path.toLowerCase();
@@ -322,12 +405,10 @@ async function scanSources(files, requestId) {
     try {
       if (lower.endsWith(".big")) {
         const reader = new BlobReader(item.file, item.path);
-        const magic = await reader.read(0, Math.min(4, reader.size));
-        if (ascii(magic, 0, magic.length) === "BIGF") {
-          addCandidate(leaf, directEdition(item.path, directoryKinds), {
-            kind: "reader", reader, label: item.path,
-          });
-        }
+        await validateBigReader(reader, item.path);
+        addCandidate(leaf, directEdition(item.path, directoryKinds, leaf), {
+          kind: "reader", reader, label: item.path,
+        });
         continue;
       }
       if (SCRIPT_FILES.some((script) => script.sourceName.toLowerCase() === lower)) {
@@ -367,6 +448,7 @@ async function scanSources(files, requestId) {
             }
           } else if (entry.name.toLowerCase().endsWith(".big")) {
             const edition = /zh/i.test(iso.volume) ? "zh" : "base";
+            await validateBigReader(entryReader, `${item.path}:${entry.name}`);
             addCandidate(entry.name, edition, {
               kind: "reader", reader: entryReader, label: `${item.path}:${entry.name}`,
             });
@@ -393,9 +475,17 @@ async function scanSources(files, requestId) {
 
 function chooseCandidate(sourceName, edition) {
   const candidates = catalog.get(sourceName.toLowerCase()) || [];
+  const scriptName = SCRIPT_FILES.some((script) =>
+    script.sourceName.toLowerCase() === sourceName.toLowerCase());
   return [...candidates].sort((left, right) => {
-    const leftScore = left.edition === edition ? 3 : left.edition === "unknown" ? 1 : 0;
-    const rightScore = right.edition === edition ? 3 : right.edition === "unknown" ? 1 : 0;
+    const score = (candidate) => {
+      let value = candidate.edition === edition ? 6 : candidate.edition === "unknown" ? 2 : 0;
+      if (scriptName && candidate.kind === "cab") value += 3;
+      if (scriptName && /(^|[\\/])data[\\/]scripts[\\/]/i.test(candidate.label)) value += 2;
+      return value;
+    };
+    const leftScore = score(left);
+    const rightScore = score(right);
     return rightScore - leftScore || right.sequence - left.sequence;
   })[0] || null;
 }
@@ -412,8 +502,9 @@ function resolveCatalog() {
         candidate: chooseCandidate(entry.sourceName, "zh"),
       }));
       if (scripts.every((entry) => entry.candidate)) {
-        const size = scripts.reduce((sum, entry) => sum +
-          (entry.candidate.kind === "cab" ? entry.candidate.entry.size : entry.candidate.reader.size), 0) + 256;
+        const size = 16 + scripts.reduce((sum, entry) => sum + 8
+          + textEncoder.encode(entry.path).byteLength + 1
+          + (entry.candidate.kind === "cab" ? entry.candidate.entry.size : entry.candidate.reader.size), 0);
         selected.push({ archive, kind: "scripts", scripts, size });
         found.push({ name: archive.name, sourceName: "loose installer scripts", bytes: size });
         totalBytes += size;
@@ -460,6 +551,27 @@ async function readOpfsFile(path) {
   const handle = await directory.getFileHandle(name, { create: false });
   const file = await handle.getFile();
   return new BlobReader(file, path);
+}
+
+async function removeOpfsPath(path) {
+  const normalized = String(path).split("/").filter(Boolean);
+  const name = normalized.pop();
+  if (!name) return false;
+  try {
+    const parent = await getDirectory(normalized.join("/"), false);
+    await parent.removeEntry(name, { recursive: true });
+    return true;
+  } catch (error) {
+    if (error?.name === "NotFoundError") return false;
+    throw error;
+  }
+}
+
+function safeDisposableRoot(path) {
+  const normalized = String(path).replace(/^\/+|\/+$/g, "");
+  return /^cnc-archives\/ns-[a-z0-9-]+$/i.test(normalized)
+    || /^cnc-library\/install-[a-z0-9-]+$/i.test(normalized)
+    ? normalized : null;
 }
 
 function updatedDictionary(previous, block) {
@@ -554,6 +666,9 @@ async function extractCabGroup(cabinet, targets, requestId, progress, outputRoot
         folderCursor = blockEnd;
         dataCursor += 8 + cabinet.dataReserve + compressedSize;
       }
+      if (folderCursor < finalByte) {
+        throw new Error(`${cabinet.reader.label}: CAB folder ended before required files`);
+      }
       for (const target of folderTargets) {
         const output = outputs.get(target);
         output.flush();
@@ -585,7 +700,7 @@ async function writeLooseScripts(target, outputRoot, requestId, progress) {
   const total = dataStart + loaded.reduce((sum, entry) => sum + entry.bytes.byteLength, 0);
   const archive = new Uint8Array(total);
   archive.set([0x42, 0x49, 0x47, 0x46], 0);
-  setU32BE(archive, 4, total);
+  setU32LE(archive, 4, total);
   setU32BE(archive, 8, loaded.length);
   setU32BE(archive, 12, 0);
   let directoryCursor = 16;
@@ -601,8 +716,10 @@ async function writeLooseScripts(target, outputRoot, requestId, progress) {
   }
   const output = await openOutput(`${outputRoot}/${target.archive.name}`);
   try {
-    output.write(archive, { at: 0 });
+    const written = output.write(archive, { at: 0 });
+    if (written !== archive.byteLength) throw new Error(`${target.archive.name}: short OPFS write`);
     output.flush();
+    if (output.getSize() !== archive.byteLength) throw new Error(`${target.archive.name}: OPFS size mismatch`);
   } finally {
     output.close();
   }
@@ -650,11 +767,12 @@ async function readCandidateBytes(candidate) {
     folderCursor = blockEnd;
     dataCursor += 8 + cabinet.dataReserve + compressedSize;
   }
+  if (folderCursor < entryEnd) throw new Error(`${candidate.label}: CAB folder ended before file data`);
   return output;
 }
 
-async function materializeSelection(selection, outputRoot, requestId) {
-  const progress = { completed: 0, total: selection.totalBytes };
+async function materializeSelection(selection, outputRoot, requestId,
+    progress = { completed: 0, total: selection.totalBytes }) {
   const cabGroups = new Map();
   for (const target of selection.selected) {
     if (target.kind === "cab") {
@@ -670,12 +788,16 @@ async function materializeSelection(selection, outputRoot, requestId) {
   for (const [cabinet, targets] of cabGroups) {
     await extractCabGroup(cabinet, targets, requestId, progress, outputRoot);
   }
-  return selection.selected.map((target) => ({
+  const archives = selection.selected.map((target) => ({
     name: target.archive.name,
     sourceName: target.archive.sourceName,
     bytes: target.size,
     opfsPath: `${outputRoot}/${target.archive.name}`,
   }));
+  for (const archive of archives) {
+    await validateBigReader(await readOpfsFile(archive.opfsPath), archive.name);
+  }
+  return archives;
 }
 
 async function prepare(request, requestId) {
@@ -683,41 +805,71 @@ async function prepare(request, requestId) {
   if (selection.missing.length) {
     throw new Error(`Missing required original game files: ${selection.missing.join(", ")}`);
   }
-  const outputRoot = request.installRoot && request.mode === "install"
-    ? request.installRoot : request.namespaceRoot;
-  const installed = await materializeSelection(selection, outputRoot, requestId);
-  if (request.mode !== "install" || outputRoot === request.namespaceRoot) {
-    return { archives: installed, installed: request.mode === "install" ? installed : null };
-  }
-  const liveSelection = {
-    totalBytes: installed.reduce((sum, archive) => sum + archive.bytes, 0),
-    selected: [],
+  const namespaceRoot = safeDisposableRoot(request.namespaceRoot);
+  const installRoot = request.mode === "install" ? safeDisposableRoot(request.installRoot) : null;
+  if (!namespaceRoot) throw new Error("Invalid launcher archive namespace");
+  if (request.mode === "install" && !installRoot) throw new Error("Invalid browser install namespace");
+  const outputRoot = installRoot || namespaceRoot;
+  const progress = {
+    completed: 0,
+    total: selection.totalBytes * (installRoot ? 2 : 1),
   };
-  for (const archive of installed) {
-    liveSelection.selected.push({
-      archive: { name: archive.name, sourceName: archive.sourceName },
-      kind: "reader",
-      candidate: { reader: await readOpfsFile(archive.opfsPath) },
-      size: archive.bytes,
-    });
+  try {
+    const installed = await materializeSelection(selection, outputRoot, requestId, progress);
+    if (!installRoot || outputRoot === namespaceRoot) {
+      return { archives: installed, installed: installRoot ? installed : null };
+    }
+    const liveSelection = {
+      totalBytes: installed.reduce((sum, archive) => sum + archive.bytes, 0),
+      selected: [],
+    };
+    for (const archive of installed) {
+      liveSelection.selected.push({
+        archive: { name: archive.name, sourceName: archive.sourceName },
+        kind: "reader",
+        candidate: { reader: await readOpfsFile(archive.opfsPath) },
+        size: archive.bytes,
+      });
+    }
+    const archives = await materializeSelection(liveSelection, namespaceRoot, requestId, progress);
+    return { archives, installed };
+  } catch (error) {
+    await removeOpfsPath(namespaceRoot).catch(() => {});
+    if (installRoot) await removeOpfsPath(installRoot).catch(() => {});
+    throw error;
   }
-  const archives = await materializeSelection(liveSelection, request.namespaceRoot, requestId);
-  return { archives, installed };
 }
 
 async function loadInstalled(request, requestId) {
   const installed = Array.isArray(request.archives) ? request.archives : [];
-  if (installed.length !== ARCHIVES.length) throw new Error("Installed library manifest is incomplete");
-  const selection = { totalBytes: 0, selected: [] };
-  for (const archive of installed) {
-    const reader = await readOpfsFile(archive.opfsPath);
-    selection.totalBytes += reader.size;
-    selection.selected.push({
-      archive: { name: archive.name, sourceName: archive.sourceName },
-      kind: "reader", candidate: { reader }, size: reader.size,
-    });
+  const namespaceRoot = safeDisposableRoot(request.namespaceRoot);
+  const installRoot = safeDisposableRoot(request.installRoot);
+  if (!namespaceRoot || !installRoot) throw new Error("Installed library paths are invalid");
+  const byName = new Map(installed.map((archive) => [archive?.name, archive]));
+  if (installed.length !== ARCHIVES.length || byName.size !== ARCHIVES.length
+      || ARCHIVES.some((archive) => !byName.has(archive.name))) {
+    throw new Error("Installed library manifest is incomplete");
   }
-  return { archives: await materializeSelection(selection, request.namespaceRoot, requestId) };
+  const selection = { totalBytes: 0, selected: [] };
+  try {
+    for (const expected of ARCHIVES) {
+      const archive = byName.get(expected.name);
+      if (archive.opfsPath !== `${installRoot}/${expected.name}`) {
+        throw new Error(`Installed library path is invalid for ${expected.name}`);
+      }
+      const reader = await readOpfsFile(archive.opfsPath);
+      await validateBigReader(reader, expected.name);
+      selection.totalBytes += reader.size;
+      selection.selected.push({
+        archive: { name: expected.name, sourceName: expected.sourceName },
+        kind: "reader", candidate: { reader }, size: reader.size,
+      });
+    }
+    return { archives: await materializeSelection(selection, namespaceRoot, requestId) };
+  } catch (error) {
+    await removeOpfsPath(namespaceRoot).catch(() => {});
+    throw error;
+  }
 }
 
 self.onmessage = async (event) => {
@@ -728,6 +880,11 @@ self.onmessage = async (event) => {
     if (message.kind === "scan") result = await scanSources(message.files || [], requestId);
     else if (message.kind === "prepare") result = await prepare(message, requestId);
     else if (message.kind === "loadInstalled") result = await loadInstalled(message, requestId);
+    else if (message.kind === "discard") {
+      const path = safeDisposableRoot(message.path);
+      if (!path) throw new Error("Refusing to discard an unsafe OPFS path");
+      result = { removed: await removeOpfsPath(path) };
+    }
     else throw new Error(`Unknown asset worker command: ${message.kind}`);
     self.postMessage({ kind: "result", requestId, ok: true, result });
   } catch (error) {

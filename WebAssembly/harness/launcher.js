@@ -107,6 +107,44 @@
     }, 3200);
   }
 
+  async function refreshStorageUI() {
+    try {
+      const estimate = await navigator.storage?.estimate?.();
+      const quota = Number(estimate?.quota);
+      const usage = Number(estimate?.usage);
+      if (!Number.isFinite(quota) || quota <= 0 || !Number.isFinite(usage)) {
+        throw new Error("Storage estimate unavailable");
+      }
+      const free = Math.max(0, quota - usage);
+      const label = free >= 1024 ** 3
+        ? `${(free / 1024 ** 3).toFixed(1)} GB free`
+        : `${Math.round(free / 1024 ** 2)} MB free`;
+      document.querySelectorAll("[data-storage-free]").forEach((node) => { node.textContent = label; });
+      const usedPercent = Math.min(100, Math.max(0, (usage / quota) * 100));
+      document.querySelectorAll(".storage-meter-small > i span, .start-storage > i span")
+        .forEach((node) => { node.style.width = `${usedPercent.toFixed(1)}%`; });
+    } catch {
+      document.querySelectorAll("[data-storage-free]").forEach((node) => { node.textContent = "Space unavailable"; });
+      document.querySelectorAll(".storage-meter-small > i span, .start-storage > i span")
+        .forEach((node) => { node.style.width = "0%"; });
+    }
+  }
+
+  function syncStorageModeUI() {
+    document.querySelectorAll('input[name="storageMode"]').forEach((input) => {
+      input.checked = input.value === state.storageMode;
+      input.closest(".storage-choice")?.classList.toggle("is-selected", input.checked);
+    });
+    document.querySelector("#spaceWarning").hidden = state.storageMode !== "install";
+  }
+
+  function setSourcePickerBusy(busy) {
+    document.querySelectorAll("#pickImageButton, #pickFolderButton").forEach((button) => {
+      button.disabled = busy;
+    });
+    document.querySelector("#scanPanel").setAttribute("aria-busy", String(busy));
+  }
+
   function focusWindow(windowEl) {
     document.querySelectorAll(".window.is-active").forEach((el) => el.classList.remove("is-active"));
     windowEl.classList.add("is-active");
@@ -289,6 +327,7 @@
   }
 
   async function scanSource(source) {
+    setSourcePickerBusy(true);
     state.source = source;
     const panel = document.querySelector("#scanPanel");
     const fill = document.querySelector("#scanFill");
@@ -334,6 +373,8 @@
       detail.textContent = error?.message || String(error);
       percent.textContent = "!";
       showToast("Asset scan failed", detail.textContent, "warning");
+    } finally {
+      setSourcePickerBusy(false);
     }
   }
 
@@ -360,6 +401,8 @@
         button.textContent = `${progress.detail} · ${Math.round(ratio * 100)}%`;
       });
       const totalBytes = result.archives.reduce((sum, archive) => sum + archive.bytes, 0);
+      state.storageMode = result.effectiveMode || state.storageMode;
+      syncStorageModeUI();
       state.library = {
         source: state.source?.name || "Original game media",
         mode: state.storageMode,
@@ -369,9 +412,11 @@
       persistLibrary();
       updateLibraryUI();
       setWizardStep(3);
+      await refreshStorageUI();
       showToast("Library ready", state.storageMode === "install"
         ? "Original assets are installed in private browser storage."
         : "Zero Hour is ready to launch from your local files.");
+      if (result.warning) showToast("Source permission not retained", result.warning, "warning");
     } catch (error) {
       showToast("Library preparation failed", error?.message || String(error), "warning");
     } finally {
@@ -528,20 +573,25 @@
   });
   document.querySelector("#imageInput").addEventListener("change", (event) => {
     const source = sourceFromFiles(event.target.files, "image");
+    event.target.value = "";
     if (source) void scanSource(source);
   });
   document.querySelector("#folderInput").addEventListener("change", (event) => {
     const source = sourceFromFiles(event.target.files, "folder");
+    event.target.value = "";
     if (source) void scanSource(source);
   });
   document.querySelectorAll("[data-wizard-back]").forEach((button) => button.addEventListener("click", () => setWizardStep(Math.max(1, state.wizardStep - 1))));
   document.querySelectorAll('input[name="storageMode"]').forEach((input) => input.addEventListener("change", () => {
     state.storageMode = input.value;
-    document.querySelectorAll(".storage-choice").forEach((choice) => choice.classList.toggle("is-selected", choice.contains(input)));
-    document.querySelector("#spaceWarning").hidden = input.value !== "install";
+    syncStorageModeUI();
   }));
   document.querySelector("#prepareLibraryButton").addEventListener("click", prepareLibrary);
   document.querySelector("#changeSourceButton").addEventListener("click", () => {
+    if (window.ZeroHRuntime?.started) {
+      showToast("Reload required", "The running engine owns the current archives. Reload ZeroH before selecting a different source.", "warning");
+      return;
+    }
     document.querySelector("#scanPanel").hidden = true;
     setWizardStep(1);
   });
@@ -552,6 +602,7 @@
     localStorage.removeItem("zeroh-library");
     localStorage.removeItem("fielddesk-library");
     updateLibraryUI();
+    await refreshStorageUI();
     setWizardStep(1);
     openApp("setup");
     showToast("Library forgotten", "Source permissions and installed browser copies were cleared.");
@@ -612,6 +663,8 @@
   loadSettings();
   applyLauncherLogo();
   updateLibraryUI();
+  syncStorageModeUI();
+  void refreshStorageUI();
   if (typeof window.showOpenFilePicker !== "function"
       || typeof window.showDirectoryPicker !== "function") {
     const remember = document.querySelector('input[name="storageMode"][value="remember"]');
@@ -625,24 +678,39 @@
   updateClock();
   window.setInterval(updateClock, 30_000);
 
-  if (state.library) {
-    state.source = { name: state.library.source, countLabel: "2 games" };
-    state.storageMode = state.library.mode;
-    setWizardStep(3);
+  async function reconcileStoredLibrary() {
+    const installed = await window.ZeroHAssetLibrary.verifyInstalledLibrary();
+    const mode = state.library?.mode;
+    const invalidStoredState = state.library && !["remember", "install"].includes(mode);
+    const missingInstalledData = mode === "install" && !installed;
+    const missingRememberedSource = mode === "remember"
+      && !await window.ZeroHAssetLibrary.hasRememberedSource();
+    if (invalidStoredState || missingInstalledData || missingRememberedSource) {
+      state.library = null;
+      localStorage.removeItem("zeroh-library");
+      localStorage.removeItem("fielddesk-library");
+    }
+    if (installed && state.library?.mode !== "install") {
+      state.library = {
+        source: "Installed browser library",
+        mode: "install",
+        preparedAt: installed.preparedAt,
+        totalBytes: installed.totalBytes,
+      };
+      persistLibrary();
+    }
+    if (state.library) {
+      state.source = { name: state.library.source, countLabel: "2 games" };
+      state.storageMode = state.library.mode;
+      syncStorageModeUI();
+      setWizardStep(3);
+    } else {
+      setWizardStep(1);
+    }
+    updateLibraryUI();
   }
 
-  const installed = window.ZeroHAssetLibrary.installedLibrary();
-  if (installed && !state.library) {
-    state.library = {
-      source: "Installed browser library",
-      mode: "install",
-      preparedAt: installed.preparedAt,
-      totalBytes: installed.totalBytes,
-    };
-    persistLibrary();
-    updateLibraryUI();
-    setWizardStep(3);
-  }
+  void reconcileStoredLibrary();
 
   window.ZeroHDesktop = { openApp, showToast };
 })();

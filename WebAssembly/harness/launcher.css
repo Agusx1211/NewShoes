@@ -111,6 +111,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .source-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 27px; }
 .source-card { min-height: 106px; display: grid; grid-template-columns: 48px 1fr 15px; align-items: center; gap: 10px; padding: 16px; text-align: left; border: 1px solid #cbd7de; border-radius: 5px; background: linear-gradient(#fff, #f4f8fa); box-shadow: 0 2px 5px rgba(34,68,87,.08); cursor: pointer; }
 .source-card:hover { border-color: #77a7c7; background: #f5fbff; box-shadow: 0 3px 10px rgba(34,91,126,.13); transform: translateY(-1px); }
+.source-card:disabled { opacity: .55; cursor: wait; transform: none; }
 .source-icon { width: 47px; height: 47px; display: grid; place-items: center; border-radius: 50%; background: #e6f0f6; }
 .source-icon.folder { background: #fff3d6; }.source-icon svg { width: 35px; height: 35px; }
 .source-copy { display: grid; gap: 5px; }.source-copy strong { color: #2b4352; font-size: 13px; }.source-copy small { color: #7a8c97; font-size: 10px; }
@@ -417,6 +418,14 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 .settings-nav button svg { width: 23px; height: 23px; flex: 0 0 auto; }
 .settings-nav button span { line-height: 1.25; }
 .settings-panel[hidden] { display: none; }
+.multiplayer-panel { color: #314c5d; background: linear-gradient(#fff, #f4f8fa); }
+.multiplayer-copy { max-width: 560px; margin: -10px 0 18px; color: #718792; font-size: 9px; line-height: 1.55; }
+.network-field { min-height: 62px; display: grid; grid-template-columns: minmax(150px, .8fr) minmax(210px, 1.2fr); align-items: center; gap: 18px; border-bottom: 1px solid #dce5e9; }
+.network-field > span { display: grid; gap: 3px; }.network-field strong { color: #365565; font-size: 10px; }.network-field small { color: #80919a; font-size: 8px; }
+.network-field input { width: 100%; min-height: 29px; padding: 5px 8px; color: #2f4b5a; border: 1px solid #9fb2bd; border-radius: 2px; background: #fff; font: 9px Tahoma, sans-serif; box-shadow: inset 1px 1px 2px rgba(34,68,84,.08); }
+.network-field input:focus { border-color: #357eb2; outline: 1px solid #7db6dc; }
+.network-details { margin-top: 13px; border: 1px solid #bdcbd2; border-radius: 3px; background: #f8fbfc; }.network-details summary { padding: 9px 11px; color: #416477; cursor: pointer; font-size: 9px; font-weight: bold; }.network-details[open] summary { border-bottom: 1px solid #d6e0e5; }.network-details .network-field { margin: 0 11px; }
+.network-status { margin: 14px 0 0; padding: 9px 11px; color: #496c58; border: 1px solid #a9c5af; background: #eef8ef; font-size: 8px; line-height: 1.45; }
 .hardware-panel { padding: 0; color: #253c4d; background: #edf3f8; user-select: text; }
 .hardware-heading { position: sticky; z-index: 3; top: 0; min-height: 96px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 17px 20px; border-bottom: 1px solid #9db4c8; background: linear-gradient(90deg, #fdfefe, #e5eff8); box-shadow: 0 2px 4px rgba(35,70,96,.08); }
 .hardware-heading h1 { margin: 1px 0 4px; color: #174c85; font: normal 21px "Trebuchet MS", Tahoma, sans-serif; }

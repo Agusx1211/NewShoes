@@ -132,7 +132,7 @@
                     <span class="source-arrow">›</span>
                   </button>
                 </div>
-                <input id="imageInput" type="file" accept=".iso,.bin,.cue,.img" multiple hidden>
+                <input id="imageInput" type="file" accept=".iso,.bin,.cue,.img,.cab,.big" multiple hidden>
                 <input id="folderInput" type="file" webkitdirectory directory multiple hidden>
 
                 <div id="scanPanel" class="scan-panel" aria-live="polite" hidden>
@@ -249,7 +249,7 @@
               <button type="button" data-folder-shortcut="screens"><svg><use href="#i-folder"/></svg> Screenshots <span data-folder-count="screens">2</span></button>
               <h3>TOOLS</h3>
               <button type="button" data-open="notepad"><svg><use href="#i-note"/></svg> Open Notepad</button>
-              <div class="storage-meter-small"><div><span>Browser storage</span><b>1.2 GB free</b></div><i><span></span></i></div>
+              <div class="storage-meter-small"><div><span>Browser storage</span><b data-storage-free>Calculating…</b></div><i><span></span></i></div>
             </aside>
             <section class="file-area">
               <div class="file-actions">
@@ -322,6 +322,7 @@
           <div class="settings-body">
             <aside class="settings-nav" aria-label="Settings sections">
               <button type="button" class="is-selected" data-settings-tab="appearance"><svg><use href="#i-image"/></svg><span>Appearance</span></button>
+              <button type="button" data-settings-tab="multiplayer"><svg><use href="#i-globe"/></svg><span>Multiplayer</span></button>
               <button type="button" data-settings-tab="hardware"><svg><use href="#i-drive"/></svg><span>Hardware &amp; Browser</span></button>
             </aside>
             <section class="settings-panel" data-settings-panel="appearance">
@@ -332,6 +333,19 @@
               <label class="setting-block toggle-setting"><div><strong>Interface sounds</strong><span>Play small sounds for desktop actions.</span></div><input id="soundToggle" type="checkbox"><span class="toggle"></span></label>
               <label class="setting-block toggle-setting"><div><strong>Reduce motion</strong><span>Minimize animations and transitions.</span></div><input id="motionToggle" type="checkbox"><span class="toggle"></span></label>
               <button id="resetConceptButton" type="button" class="text-button reset-link">Reset ZeroH data</button>
+            </section>
+            <section class="settings-panel multiplayer-panel" data-settings-panel="multiplayer" hidden>
+              <p class="eyebrow">PEER-TO-PEER UPLINK</p><h1>Multiplayer connection</h1>
+              <p class="multiplayer-copy">Join the same signaling room before launching, then use Multiplayer → LAN inside the original game UI. Game traffic travels directly over WebRTC.</p>
+              <label class="network-field" for="networkRoom"><span><strong>Room</strong><small>Leave blank for offline play</small></span><input id="networkRoom" type="text" maxlength="80" placeholder="shared room name"></label>
+              <label class="network-field" for="networkName"><span><strong>Commander</strong><small>Name shown to peers</small></span><input id="networkName" type="text" maxlength="64" placeholder="commander"></label>
+              <details class="network-details"><summary>Advanced connection settings</summary>
+                <label class="network-field" for="networkSignaling"><span><strong>Signaling server</strong><small>Secure WebSocket endpoint</small></span><input id="networkSignaling" type="url" spellcheck="false" placeholder="wss://host/webrtc"></label>
+                <label class="network-field" for="networkStun"><span><strong>STUN / TURN URL</strong><small>Optional ICE server</small></span><input id="networkStun" type="text" spellcheck="false" placeholder="stun:host or turn:host"></label>
+                <label class="network-field" for="networkIceUsername"><span><strong>TURN username</strong><small>Optional</small></span><input id="networkIceUsername" type="text" autocomplete="username"></label>
+                <label class="network-field" for="networkIceCredential"><span><strong>TURN credential</strong><small>Kept only for this launch</small></span><input id="networkIceCredential" type="password" autocomplete="current-password"></label>
+              </details>
+              <p id="networkStatus" class="network-status" aria-live="polite">Offline. Enter a shared room to enable WebRTC multiplayer.</p>
             </section>
             <section class="settings-panel hardware-panel" data-settings-panel="hardware" hidden>
               <header class="hardware-heading">
@@ -374,7 +388,7 @@
             <button type="button" data-open="settings"><svg><use href="#i-gear"/></svg> Settings</button>
             <button type="button" data-open-logo-lab><svg><use href="#i-image"/></svg> ZeroH Identity Lab</button>
             <button type="button" data-open="about"><svg><use href="#i-info"/></svg> About ZeroH</button>
-            <div class="start-storage"><span>Browser storage</span><strong>1.2 GB free</strong><i><span></span></i></div>
+            <div class="start-storage"><span>Browser storage</span><strong data-storage-free>Calculating…</strong><i><span></span></i></div>
           </div>
         </div>
         <footer><button type="button" id="endSessionButton"><svg><use href="#i-power"/></svg> End session</button></footer>

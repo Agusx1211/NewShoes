@@ -30,6 +30,16 @@ function writeUInt32BE(bytes, offset, value) {
   bytes[offset + 3] = value & 0xff;
 }
 
+function writeUInt32LE(bytes, offset, value) {
+  if (!Number.isSafeInteger(value) || value < 0 || value > 0xffffffff) {
+    throw new Error(`BIG integer out of range: ${value}`);
+  }
+  bytes[offset] = value & 0xff;
+  bytes[offset + 1] = Math.floor(value / 0x100) & 0xff;
+  bytes[offset + 2] = Math.floor(value / 0x10000) & 0xff;
+  bytes[offset + 3] = Math.floor(value / 0x1000000) & 0xff;
+}
+
 const encoder = new TextEncoder();
 const loaded = [];
 for (const entry of entries) {
@@ -46,7 +56,9 @@ const dataStart = 0x10 + directoryBytes;
 const totalBytes = dataStart + loaded.reduce((sum, entry) => sum + entry.bytes.byteLength, 0);
 const archive = new Uint8Array(totalBytes);
 archive.set([0x42, 0x49, 0x47, 0x46], 0);
-writeUInt32BE(archive, 4, totalBytes);
+// Original Win32BIGFileSystem reads the archive-size field directly on
+// little-endian x86. Count and directory entry fields remain big-endian.
+writeUInt32LE(archive, 4, totalBytes);
 writeUInt32BE(archive, 8, loaded.length);
 writeUInt32BE(archive, 12, 0);
 
