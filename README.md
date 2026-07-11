@@ -48,7 +48,8 @@ are not yet release targets.
 The runtime currently requires a desktop Chromium browser with WebGL2,
 `SharedArrayBuffer`, cross-origin isolation, and Origin Private File System
 support. Localhost is sufficient for development. A LAN or hosted deployment
-must use HTTPS and send the COOP/COEP headers provided by the harness server.
+must use HTTPS and send the required COOP/COEP headers; see the
+[deployment guide](WebAssembly/DEPLOYMENT.md).
 
 You also need both Generals and Zero Hour retail data. The launcher supports two
 ownership paths:
