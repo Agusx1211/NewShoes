@@ -25,7 +25,7 @@ import { chromium } from "playwright";
 import { startStaticServer } from "./static-server.mjs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { access, mkdir, stat, symlink } from "node:fs/promises";
+import { access, stat } from "node:fs/promises";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
@@ -41,8 +41,8 @@ function mbps(bytes, ms) {
 }
 
 // The probe payload must be inside the static-server root. Worktrees do not
-// carry the (gitignored) artifacts/ tree; auto-link the main checkout's
-// real-assets directory when it is available.
+// carry the ignored artifacts tree, so callers can point at a prepared payload
+// with P2_PROBE_BIG.
 async function ensurePayload() {
   const override = process.env.P2_PROBE_BIG;
   if (override) {
@@ -55,14 +55,11 @@ async function ensurePayload() {
     await access(absolute);
     return servedPath;
   } catch {
-    // fall through to auto-link
+    throw new Error(
+      "missing ignored artifacts/real-assets/INIZH.big; set P2_PROBE_BIG " +
+      "to a payload path inside WebAssembly",
+    );
   }
-  const mainCopy = "/home/agusx1211/personal/CnC_Generals_Zero_Hour/WebAssembly/artifacts/real-assets";
-  await access(resolve(mainCopy, "INIZH.big"));
-  await mkdir(resolve(wasmRoot, "artifacts"), { recursive: true });
-  await symlink(mainCopy, resolve(wasmRoot, "artifacts/real-assets"), "dir");
-  await access(absolute);
-  return servedPath;
 }
 
 async function main() {

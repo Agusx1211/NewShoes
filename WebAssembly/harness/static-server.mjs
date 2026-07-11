@@ -19,10 +19,6 @@ const serverStartedAt = new Date().toISOString();
 // back to when the /__cnc_https_info announcement is unavailable.
 export const DEFAULT_HTTPS_PORT = 8443;
 
-// The owner's play URL — always part of the cert SAN set so a cert generated
-// on either box covers it.
-const OWNER_LAN_IP = "192.168.106.45";
-
 const contentTypes = new Map([
   [".css", "text/css; charset=utf-8"],
   [".html", "text/html; charset=utf-8"],
@@ -163,7 +159,7 @@ function selfSignedSanEntries() {
       dns.add(`${short}.local`);
     }
   }
-  const ips = new Set(["127.0.0.1", "::1", OWNER_LAN_IP]);
+  const ips = new Set(["127.0.0.1", "::1"]);
   for (const addresses of Object.values(networkInterfaces())) {
     for (const address of addresses ?? []) {
       if (!address.internal && address.address && !address.address.startsWith("fe80")) {

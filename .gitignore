@@ -1,11 +1,11 @@
 # WebAssembly/browser port generated files
-/WebAssembly/artifacts/
-/WebAssembly/build/
-/WebAssembly/dist/
-/WebAssembly/dist-release/
+/WebAssembly/artifacts
+/WebAssembly/build
+/WebAssembly/dist
+/WebAssembly/dist-release
 /WebAssembly/dist-release-*/
-/WebAssembly/dist-threaded/
-/WebAssembly/dist-threaded-release/
+/WebAssembly/dist-threaded
+/WebAssembly/dist-threaded-release
 /WebAssembly/err.txt
 # Per-box persistent self-signed HTTPS cert (generated once by harness/static-server.mjs)
 /WebAssembly/harness/.certs/
@@ -18,3 +18,24 @@
 /assets/docs/*
 !/assets/docs/INDEX.md
 !/assets/docs/docsearch.py
+
+# Local configuration, certificates, and issue captures
+.env
+.env.*
+!.env.example
+*.[pP][eE][mM]
+*.[pP]12
+*.[pP][fF][xX]
+*.[kK][eE][yY]
+*.[cC][rR][tT]
+*.[cC][nN][cC][dD][uU][mM][pP].[jJ][sS][oO][nN]
+*.[cC][nN][cC][dD][uU][mM][pP].[jJ][sS][oO][nN].[zZ][iI][pP]
+
+# User-owned retail media and extracted archive containers
+*.[iI][sS][oO]
+*.[iI][mM][gG]
+*.[bB][iI][nN]
+*.[cC][uU][eE]
+*.[cC][aA][bB]
+*.[bB][iI][gG]
+*.[bB][iI][kK]

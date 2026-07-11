@@ -4,224 +4,218 @@
   <img src="WebAssembly/harness/assets/brand/project-new-shoes-mark.webp" alt="Project New Shoes launcher mark" width="220">
 </p>
 
-<p align="center"><strong>The original Generals and Zero Hour engine, running in your browser.</strong></p>
+<p align="center"><strong>The original Command & Conquer: Generals Zero Hour engine, ported to WebAssembly.</strong></p>
 
-**Project New Shoes** is an independent WebAssembly port of the actual Command
-& Conquer: Generals and Zero Hour C++ source code. It compiles the genuine
-engine source already in this repository and re-targets its platform/device
-layer (DirectX 8 / W3D, Miles audio, Bink video, Win32, GameSpy) onto browser
-APIs (WebGL2/WebGPU, Web Audio, WebCodecs, DOM input, WebSockets/WebRTC).
+Project New Shoes compiles the genuine C++ engine source in this repository to
+WebAssembly and replaces its Windows device layer with browser implementations.
+It is a port of the original game, not a clone or a gameplay reimplementation.
 
-It is **not** a reimplementation, **not** a clone, and **not** an "inspired-by"
-mini-game. It is the original simulation, AI, rendering, audio, video, input, and
-networking — recompiled for the browser. The upstream source is EA's official
-Generals/Zero Hour release (preserved at the bottom of this file).
+The project is independent, modified software. It is not affiliated with,
+endorsed by, or supported by Electronic Arts. Retail game data is not included;
+players must provide files from a copy they own.
 
-> **Status: active development.** The browser runtime follows the original
-> engine lifecycle, renders the shell and main menu, and starts skirmish maps
-> with real game data. Major gameplay, fidelity, stability, and performance
-> work remains. See [Current status](#current-status).
+<p align="center">
+  <img src="docs/images/project-new-shoes-zero-hour-menu.webp" alt="Zero Hour faction and skirmish menu rendered by the original engine in the Project New Shoes browser runtime" width="800"><br>
+  <img src="docs/images/project-new-shoes-launcher-ready.webp" alt="Project New Shoes launcher showing a locally installed Zero Hour library ready to launch" width="800">
+</p>
 
-Project New Shoes does not bundle original game data. You must supply files
-from a copy you own. EA has not endorsed and does not support this project.
+<p align="center"><em>Retail game data shown in these screenshots was supplied locally for testing. No game archives or reusable extracted assets are bundled with this repository.</em></p>
 
----
+## Status
 
-## The idea in one paragraph
+This is a playable development build, not a finished release. The current
+threaded runtime:
 
-The original game already cleanly separates **platform-independent game logic**
-(`GameEngine/`) from **platform-specific device code** (`GameEngineDevice/`,
-`Libraries/`). That separation is the whole reason this port is feasible: we
-**keep the game code and replace the platform.** The simulation, AI, INI/data
-loading, object/weapon/locomotor behavior, and the W3D scene graph compile to
-wasm largely as-is; only the device interfaces that talk to DirectX, Miles,
-Bink, Win32, and GameSpy get re-implemented against browser equivalents.
+- completes the original Zero Hour engine initialization path;
+- renders the shell, menus, terrain, objects, effects, and playable skirmishes
+  through WebGL2;
+- uses translated D3D8 vertex and pixel shaders by default, with the classic
+  fixed-function path still available;
+- routes Miles-style audio calls to Web Audio;
+- imports required data from original media or an existing installation into
+  browser-local OPFS storage;
+- accepts the original mouse and keyboard input paths;
+- has save persistence and a short four-player WebRTC match gate; and
+- can close and relaunch from the browser desktop.
 
-The hard rule: **if code already exists in the original source, reuse it
-(compile/port it).** New machinery is written only when a platform/device
-dependency genuinely cannot work in the browser and must be re-targeted to a
-browser API. We do not re-write engine or data logic that already exists and is
-platform-independent.
+Fidelity, campaigns, video, natural gameplay audio coverage, long multiplayer
+sessions, save/load coverage, performance, and browser compatibility still need
+work. Chrome and Chromium are the primary tested browsers. Firefox and Safari
+are not yet release targets.
 
----
+## What you need
 
-## Where the real source lives
+The runtime currently requires a desktop Chromium browser with WebGL2,
+`SharedArrayBuffer`, cross-origin isolation, and Origin Private File System
+support. Localhost is sufficient for development. A LAN or hosted deployment
+must use HTTPS and send the required COOP/COEP headers; see the
+[deployment guide](WebAssembly/DEPLOYMENT.md).
 
+You also need both Generals and Zero Hour retail data. The launcher supports two
+ownership paths:
+
+1. **Installed digital copy:** choose the game root folder containing the
+   Generals and Zero Hour data.
+2. **Original media:** choose the complete Generals and Zero Hour disc or ISO
+   set. Multi-disc releases must be selected together.
+
+The collection is currently sold through the official
+[Steam bundle](https://store.steampowered.com/bundle/39394/Command_Conquer_The_Ultimate_Collection/)
+and the [EA app](https://www.ea.com/games/command-and-conquer/command-and-conquer-the-ultimate-collection).
+Existing original discs are also supported.
+
+Selection and extraction happen locally. The launcher reads ISO 9660 and
+MODE1/2352 images, extracts the required Cabinet members, validates the BIG
+archives, and stores the installed runtime in OPFS. It does not upload or
+redistribute the selected data. Details are in
+[WebAssembly/ASSETS.md](WebAssembly/ASSETS.md).
+
+## Architecture
+
+The original source already separates portable game systems from platform
+devices. The port keeps that boundary.
+
+```text
+GeneralsMD/Code/GameEngine
+  simulation, AI, scripts, INI, UI, objects, weapons, netcode
+                         |
+                         v
+GeneralsMD/Code/GameEngineDevice and Libraries
+  DirectX 8, Win32, Miles, Bink, GameSpy platform boundaries
+                         |
+                         v
+WebAssembly browser platform
+  pthread worker + OffscreenCanvas
+  D3D8 and SM1 shaders -> WebGL2
+  Miles API -> Web Audio
+  Win32 input/time/files -> DOM, Emscripten, OPFS
+  UDP/LAN transport -> WebRTC with WebSocket signaling
 ```
-Generals/Code/          original Generals (base game) source
-GeneralsMD/Code/        original Zero Hour source  ← primary port target
-  GameEngine/           platform-INDEPENDENT game logic (sim, AI, INI, GUI, …)
-                        → compiles to wasm largely as-is
-  GameEngineDevice/     platform-SPECIFIC device implementations:
-    W3DDevice/            3D rendering on DirectX 8 / the WW3D (W3D) engine
-    MilesAudioDevice/     audio via the Miles Sound System
-    VideoDevice/          video via Bink
-    Win32Device/          OS layer: window, files, input, timing
-  Libraries/Source/     vendored deps: DX90SDK, WWVegas (W3D), GameSpy,
-                        Compression (RefPack/zlib/LZH), STLport, …
 
-WebAssembly/            the port work area: Emscripten build, browser shims,
-                        device re-targeting, asset tooling, and the harness
+The shipping play path runs the engine on an Emscripten pthread. Rendering uses
+an `OffscreenCanvas`, so the browser main thread stays responsive while the
+original engine performs synchronous work. User-owned archives are streamed to
+OPFS. The worker opens synchronous access handles and presents the original
+filesystem code with its expected blocking read interface, without copying the
+whole game into the JavaScript heap.
+
+The D3D8 bridge has two rendering tiers:
+
+- **Enhanced**, the default, translates the shipped shader model 1.1 vertex and
+  pixel shaders to GLSL ES.
+- **Classic** emulates the fixed-function D3D8 pipeline with generated shaders.
+
+The launcher and game share a same-origin browser desktop. The launcher owns
+media selection, installation, settings, diagnostics, and lifecycle. The game
+runtime owns the original engine state. The Playwright harness drives both
+through `window.CnCPort.rpc(...)` and verifies state plus canvas screenshots.
+
+## Repository layout
+
+```text
+Generals/             EA's original Generals source
+GeneralsMD/           EA's original Zero Hour source, the primary target
+WebAssembly/
+  CMakeLists.txt      Emscripten build graph
+  shims/              Win32, DirectX, and compiler compatibility
+  src/                browser platform and engine boundary code
+  harness/            launcher, play page, RPC bridge, and browser tests
+  tools/              build, archive extraction, and verification tools
+PROJECT.md            architecture and roadmap
+TODO.md               active work
+DONE.md               completed work and verification evidence
 ```
 
-The platform-independent data layer — INI parsing in
-`GameEngine/Source/Common/INI/`, compression and BIG-archive I/O in `Libraries`
-/ `GameEngineDevice` — is reused directly, not rewritten.
+Generated builds, browser profiles, screenshots, extracted archives, and retail
+media are ignored.
 
----
+## Build and run
 
-## How it works: replacing every platform dependency
-
-The port keeps the original game code and swaps each device/library dependency
-for a browser-native target. Toolchain: **Emscripten** (`emcc`/`em++`).
-
-| Original dependency | Browser replacement |
-|---|---|
-| DirectX 8 / W3D rendering | **WebGL2** (baseline) → WebGPU (later) |
-| Miles Sound System (audio) | **Web Audio API** |
-| Bink (video) | **WebCodecs** / `<video>` |
-| Win32 — window, files, input, time | **Emscripten** + DOM / Canvas / Pointer + Keyboard events |
-| GameSpy (networking) | **WebSockets / WebRTC** |
-| File / BIG archive I/O | **fetch** + in-memory FS (MEMFS), range-backed archive streaming |
-| STLport | **libc++** (migration pass across the source) |
-| MSVC / Win32 types, pragmas, SEH | portable shims + Emscripten/Clang equivalents |
-
-Concretely, that means:
-
-- **Rendering** — the DirectX 8 calls the WW3D engine makes are serviced by a
-  D3D8→WebGL2 shim: render-state mapping, fixed-function pipeline emulation via
-  generated GLSL ES shaders, texture upload (DDS/DXT), vertex/index buffers,
-  matrix/camera setup. This is the single largest effort.
-- **Files & assets** — the original `Win32BIGFileSystem` / `FileSystem` path is
-  preserved; game data comes from **user-supplied BIG archives** fetched into
-  MEMFS (or streamed via HTTP range requests), then read by the original
-  archive/INI code. Assets are never bundled — players supply their own from
-  discs/installs they own.
-- **Audio / video / input / net** — each device interface
-  (`MilesAudioDevice`, `VideoDevice`, `Win32Device`, GameSpy) gets a browser
-  back end behind the engine's existing interface, so the engine above it is
-  unchanged.
-
----
-
-## Don't work blind: the harness
-
-A wasm/browser build is graphical and interactive, so progress is verified by a
-**scriptable headless-browser harness** (Playwright), not by eyeballing. The
-harness boots the build, drives the engine through its **own command/RPC
-surface** (`window.CnCPort.rpc(...)`), reads back structured probe state
-(draw-call counts, texture uploads, parsed-data checks), and **captures canvas
-screenshots**. Nothing rendering-related is considered done until the harness
-boots it and a screenshot or state check proves it.
-
-The work proceeds as small, individually-verified **"verticals"**: each new
-capability (a 2D blit, a font glyph, a mapped UI image, a terrain tile, a shipped
-mesh, a Bink frame) is driven end-to-end through real engine code against real
-assets and asserted on real pixels before it lands.
-
-### Running it
-
-From `WebAssembly/` (requires Emscripten, Node, and user-supplied disc images in
-`../assets` for the asset-backed smokes):
+The pinned toolchain is Emscripten 3.1.6. You also need Node.js, npm, CMake, and
+Ninja. Asset extraction tools additionally use 7-Zip.
 
 ```sh
-npm run verify:assets               # extract/verify real BIG archives from discs
-npm run build:wasm                  # build the current wasm targets
-npm run test:real-big-browser       # boot the harness, read real INIZH.big via the original BIG reader
-npm run test:vertical-integrations  # run the combined render/data verticals
+# Activate emsdk 3.1.6 first.
+cd WebAssembly
+npm install
+npm run build:port:threaded:release
+npm run serve:harness
 ```
 
-See `WebAssembly/README.md` for the full tooling, `WebAssembly/ASSETS.md` for
-asset ownership/delivery rules, and `WebAssembly/SOURCE_INVENTORY.md` for the
-runtime-vs-tools library inventory.
+Open:
 
----
+```text
+http://127.0.0.1:8080/harness/play.html
+```
 
-## Current status
+The local launcher will ask for the original installation folder or complete
+media set. The first run can take several minutes while it validates and stores
+roughly 2.1 GB of game archives.
 
-Early but moving. Roughly:
+Useful verification commands:
 
-- **Done / working:** Emscripten build skeleton and asset pipeline (extract real
-  BIG archives from discs); the platform-independent core compiles with DX/Win32
-  shims; the engine boots far enough to parse **real game data through the
-  original INI parser** (e.g. `Terrain.ini` → 247 terrain types) and read BIG
-  archives via the original `FileSystem` path; a WebGL2-backed harness with
-  RPC + screenshot capture.
-- **In progress — first pixels (W3D → WebGL2):** real game pixels are reaching
-  the canvas through the **original W3D draw path** — 2D fills/lines/gradients,
-  font/text glyphs, the real **MainMenu** logo and controls (mapped UI images
-  from real archives), real **terrain** texture tiles and a shipped-map height
-  patch rendered through `RTS3DScene`, shipped 3D meshes, and Bink frames decoded
-  to textures. Each is a verified isolated vertical; full menu/scene composition
-  is the next visible milestone.
-- **Not started yet:** input wired to a rendered, clickable GUI; a playable
-  skirmish (sim + AI + scripts driving a match); audio (Miles → Web Audio);
-  video (Bink → WebCodecs); networking (GameSpy/LAN → WS/WebRTC); hardening,
-  save/load, and full content.
+```sh
+npm run build:port
+npm run test:startup-vertical
+npm run test:skirmish-start
+npm run verify:threaded-play
+```
 
-### Milestones (rough order)
+`npm run build:port` is the normal iteration build. `npm run build:wasm`
+rebuilds the large legacy smoke surface and is intended for broader regression
+runs. Several asset-backed tests require ignored local retail data; a missing
+asset fixture is not permission to commit it.
 
-`M0` build skeleton & asset pipeline · `M1` compile the platform-independent
-core (DX/Win32 shims, STLport→libc++) · `M2` boot to a black window · `M3`
-real file/data subsystem (original INI parser reads real archives) · **`M4`
-first pixels (W3D → WebGL2)** ← current · `M5` input & UI · `M6` playable
-skirmish · `M7` audio · `M8` video · `M9` networking · `M10` hardening.
+More detail is in [WebAssembly/README.md](WebAssembly/README.md).
 
-**Definition of done:** the real Zero Hour boots in a stock browser from
-user-supplied assets, renders the menu and an in-game match, accepts input,
-plays a skirmish vs. AI with audio, and (stretch) supports multiplayer — all
-driven and verifiable through the headless harness.
+## Automation and supervision
 
-See `PROJECT.md` (architecture, milestones, risks), `TODO.md` (open checklist),
-`DONE.md` (completed history), and `IDEAS.md` (deferred designs) for detail.
+This port was developed mostly by autonomous coding agents with limited human
+supervision. Agustin Aguilar set the direction, supplied local test media,
+performed hands-on playtests, chose tradeoffs, and integrated the work. Agents
+scouted the source, implemented ports, ran browser harnesses, captured GPU
+evidence, reviewed changes, and updated the project history.
 
-### Known hard problems
+At the public-readiness audit snapshot, the reachable history records work by
+the following model families. Aliases were consolidated only when the commit
+metadata named the same provider and model:
 
-- **WW3D / DirectX 8 fixed+shader pipeline → WebGL2** — the largest single
-  effort (fixed-function emulation, shader translation, render-state mapping,
-  DDS/DXT texture formats).
-- **STLport vs libc++** behavioral differences across thousands of files, and
-  ABI/layout (`#pragma pack`, struct packing) consistency across translation
-  units.
-- **Determinism for multiplayer** — float behavior, RNG, and frame timing must
-  match across clients for lockstep sync.
-- **Threads & blocking calls** — original threading (audio/net/file) and
-  blocking I/O must map to the Emscripten main loop, Web Workers/pthreads, or
-  Asyncify without deadlocking.
-- **Assets are proprietary & user-supplied** — never bundled. Bink and Miles
-  ship only as interfaces in the source; their implementations are re-targeted,
-  not ported line-for-line.
+| Provider and model family | Authored commits |
+|---|---:|
+| OpenAI GPT-5 Codex, including Codex CLI | 1,009 |
+| Z.ai GLM-5.2, through OpenCode and Pi workers | 170 |
+| Anthropic Claude Fable 5 | 121 |
+| Anthropic Claude Opus 4.8 | 48 |
+| Anthropic Claude (model unspecified in metadata) | 3 |
+| Qwen 3.6 27B and 35B variants | 30 |
+| Mistral Medium 3.5 | 17 |
+| DeepSeek V4 Pro | 1 |
 
----
+Agustin and the upstream EA import author, LFeenanEA, are listed separately in
+the audit. These counts describe commit metadata, not relative contribution
+quality. The reproducible audit method and complete alias inventory are in
+[docs/public-readiness-audit.md](docs/public-readiness-audit.md).
 
-## Original upstream source (preservation notes)
+## Contributing
 
-The code in `Generals/` and `GeneralsMD/` is EA's official source release for
-Command & Conquer: Generals and its expansion Zero Hour, originally provided for
-preservation and Steam Workshop support
-([C&C Generals](https://steamcommunity.com/workshop/browse/?appid=2229870) ·
-[Zero Hour](https://steamcommunity.com/workshop/browse/?appid=2732960)).
+Development architecture, build details, and the current roadmap are in
+[PROJECT.md](PROJECT.md), [WebAssembly/README.md](WebAssembly/README.md), and
+[TODO.md](TODO.md). Pull requests and reproducible bug reports are welcome.
 
-To run any compiled binaries you must own the game (e.g. the
-[C&C Ultimate Collection](https://www.ea.com/en-gb/games/command-and-conquer/command-and-conquer-the-ultimate-collection/buy/pc)).
+## Source, assets, and license
 
-### Building the original Win32 source (upstream, not the wasm port)
+The `Generals/` and `GeneralsMD/` trees come from Electronic Arts' official
+source release. The repository is licensed under GPL v3 with EA's additional
+GPL section 7 terms. Read [LICENSE.md](LICENSE.md), especially the trademark,
+origin, modified-version, and full no-warranty terms. This modified software is
+provided as-is, without warranty, to the fullest extent permitted by law.
 
-The original code targets Win32. The legacy workspace `rts.dsw` builds in MSVC
-6.0 (SP6 for binary-matching Generals 1.08 / Zero Hour 1.04), or can be
-converted via MSVC .NET 2003 → MSVC 2015+. Modern MSVC enforces newer C++
-standards, so extensive changes are needed before it compiles, more so for
-Win64. Rebuilding the original tools/binaries requires replacements for several
-proprietary libraries (DirectX SDK, STLport 4.5.3, 3DSMax 4 SDK, NVASM,
-BYTEmark, Miles Sound System, Bink, SafeDisk, GameSpy SDK, ZLib, LZH-Light) —
-see the git history of this file for the original expected paths.
-
-`STLport` requires changes to compile; [stlport.diff](stlport.diff) is provided
-for the original build (apply against STLport 4.5.3).
-
----
-
-## License
-
-This repository and its contents are licensed under the GPL v3 license, with
-additional terms applied. See [LICENSE.md](LICENSE.md) for details.
+The repository does not grant rights to Command & Conquer trademarks or retail
+game data. Seven small `RequiredAssets` paths already present in EA's source
+tree—four asset-format files and three auxiliary INI/TBL files—are part of that
+upstream release and are duplicated between the Generals and Zero Hour trees.
+Project launcher artwork is
+documented under
+[WebAssembly/harness/assets](WebAssembly/harness/assets/README.md). Original
+BIG archives, maps, textures, models, music, speech, movies, disc images, and
+installed game payloads must remain local and untracked.

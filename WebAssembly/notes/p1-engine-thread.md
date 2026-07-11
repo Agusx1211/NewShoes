@@ -808,11 +808,11 @@ becomes the default.
 
 ## GATE D results (2026-07-10, final-migration lane, Mac M4 Metal)
 
-Build af478736 (dev-box dists rsync'd + md5-verified on cnc-gpu; a stale
+Build af478736 (dev-box dists rsync'd + md5-verified on GPU verification host; a stale
 `dist/cnc-port.wasm` with identical size+mtime was caught ONLY by
 `rsync --checksum` — always checksum-verify dist syncs). All probes:
-headless Chrome 150, `--enable-gpu --use-angle=metal`, playwright-core from
-`~/cnc-verify` on the Mac (`gate_d_boot_probe.mjs`, `gate_d_ab_pacing_probe.mjs`,
+headless Chrome 150, `--enable-gpu --use-angle=metal`, with probe scripts kept
+in an ignored external directory (`gate_d_boot_probe.mjs`, `gate_d_ab_pacing_probe.mjs`,
 `gate_d_perf_compare.mjs`, `gate_d_threaded_diag.mjs`,
 `gate_d_skirmish_probe.mjs` live there, uncommitted like the other Mac
 instruments). Screenshots + boot summary copied to
@@ -964,20 +964,20 @@ orphaned clones from past probe Chromes) cleaned; (2) probe Chrome
 profiles with 2.3GB OPFS each — every OPFS-mount probe MUST
 `rmSync(profile)` in its finally (a leaked profile starved the next run's
 OPFS writes into silent mount stalls: FileSystemSyncAccessHandle.write
-returns 2^32-8 and boot hangs at the overlay). `~/.Trash` was emptied
-(1.8GB). Free space steady-state is only ~3.2GiB — one OPFS probe profile
-at a time. Playwright `browser.close()` reproducibly wedges after these
+returns 2^32-8 and boot hangs at the overlay). Only one multi-gigabyte OPFS
+probe profile should be active at a time. Playwright `browser.close()`
+reproducibly wedges after these
 runs (Chrome already gone) — kill the node by PID afterwards and never
 rely on post-close code (write summaries BEFORE close).
 
 ## Owner mount-failure regression (2026-07-10, mount-failure lane)
 
 Symptom: owner's real headful Chrome at
-http://192.168.106.45:8123/harness/play.html (threaded now the play default)
+http://<gpu-host>:8123/harness/play.html (threaded now the play default)
 shows "FAILED: archive mount failed"; every headless gate green on the same
 build.
 
-**Root cause (reproduced on cnc-gpu with plain Chrome + fresh profile): the
+**Root cause (reproduced on GPU verification host with plain Chrome + fresh profile): the
 LAN-IP origin is untrustworthy.** Chrome ignores COOP/COEP on plain
 `http://192.168.x.x` ("The Cross-Origin-Opener-Policy header has been
 ignored, because the URL's origin was untrustworthy... use https or
@@ -1050,9 +1050,9 @@ mount; SECOND TAB same profile → boots (was: raw mount failure);
 reload-after-boot / reload-mid-mount / third sequential reload → all boot;
 OPFS root holds only the live namespaces afterwards. Dev-box: full
 `verify:threaded-play` (reference + threaded) and `shellmap_real_init_gate`
-green on the fixed harness. The probe instruments live in `~/cnc-verify/`
-on the Mac (secctx_probe / owner_flow_probe / lock_collision_probe /
-fix_matrix_probe, uncommitted like the other Mac instruments).
+green on the fixed harness. The probe instruments lived in an ignored external
+directory on the Mac (secctx_probe / owner_flow_probe / lock_collision_probe /
+fix_matrix_probe).
 
 Mac-session hygiene notes for future lanes: `context.close()` after
 OPFS-heavy persistent-context runs still wedges (write summaries BEFORE
@@ -1084,7 +1084,7 @@ error surfacing from that lane stay).
   (portable across dev-box OpenSSL 3.x and Mac LibreSSL 3.3, which disagree
   on `-addext`). rsa:2048/sha256, 10 years, CN=cnc-harness, SANs: localhost,
   hostname (+short, +.local), 127.0.0.1, ::1, every non-internal interface
-  address, and the owner IP 192.168.106.45 baked. **Deploy rsyncs must
+  address, and the owner IP <gpu-host> baked. **Deploy rsyncs must
   exclude `WebAssembly/harness/.certs/`** — each box keeps its own cert or
   the owner's trust decision breaks.
 
@@ -1122,17 +1122,17 @@ curl needs `--noproxy '*'`.
 **Mac verification (2026-07-10, real Metal GPU):** deployed (fresh no-op
 builds, md5-verified dists + harness overlay), :8123 server restarted as
 `HOST=0.0.0.0 PORT=8123 HTTPS_PORT=8443 node harness/serve.mjs` (single pid
-serves both listeners; :8124 untouched); the interim `~/cnc-tls` stopgap
-TLS proxy another lane had put on :8443 ("TEMPORARY ... until serve.mjs
+serves both listeners; :8124 untouched); the interim external stopgap TLS
+proxy another lane had put on :8443 ("TEMPORARY ... until serve.mjs
 ships HTTPS") was retired. Cert generated on the Mac with SANs
-localhost/m4/m4.local/127.0.0.1/::1/192.168.106.45. Headless-Chrome probe
+localhost/m4/m4.local/127.0.0.1/::1/<gpu-host>. Headless-Chrome probe
 10/10: LAN http play URL redirects to https :8443 (query preserved),
 COI+SAB true, ANGLE Metal (Apple M4), THREADED wasm instantiates (heap is a
 SharedArrayBuffer), 30/30 archives OPFS-mounted, real init → engine loop →
 shellmap title screenshot. Probe Chrome cleaned by PID, profile removed.
 
-**Owner flow:** open http://192.168.106.45:8123/harness/play.html → auto
-redirect to https://192.168.106.45:8443/harness/play.html → one-time
+**Owner flow:** open http://<gpu-host>:8123/harness/play.html → auto
+redirect to https://<gpu-host>:8443/harness/play.html → one-time
 "Advanced → Proceed" on the cert interstitial (or trust
 `WebAssembly/harness/.certs/cert.pem` in Keychain) → threaded engine, COI
 true. The :8123 server on the Mac must be started with `HTTPS_PORT=8443`

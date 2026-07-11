@@ -6,7 +6,9 @@ import { startStaticServer } from "./static-server.mjs";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
-const outDir = resolve(process.env.SHELLMAP_CAPTURE_DIR ?? "/Users/aa/cnc-verify/shellmap-texture-labels");
+const outDir = process.env.SHELLMAP_CAPTURE_DIR
+  ? resolve(process.env.SHELLMAP_CAPTURE_DIR)
+  : resolve(wasmRoot, "artifacts", "shellmap-texture-labels");
 const captureFrames = (process.env.SHELLMAP_CAPTURE_FRAMES ?? "360,720")
   .split(",")
   .map((value) => Number(value.trim()))
