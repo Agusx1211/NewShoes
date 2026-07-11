@@ -8,6 +8,18 @@ const HANDLE_STORE = "sources";
 const LIBRARY_MUTATION_LOCK = "zeroh-library-mutation";
 const REQUIRED_ARCHIVE_NAMES = window.ZeroHArchiveSpecs.map((archive) => archive.name);
 
+function storageGet(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
+function storageSet(key, value) {
+  try { localStorage.setItem(key, value); return true; } catch { return false; }
+}
+
+function storageRemove(key) {
+  try { localStorage.removeItem(key); } catch { /* storage is optional */ }
+}
+
 function formatBytes(bytes) {
   const value = Number(bytes) || 0;
   if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(1)} GB`;
@@ -281,8 +293,10 @@ class AssetLibrary {
           totalBytes: result.installed.reduce((sum, archive) => sum + archive.bytes, 0),
           archives: result.installed,
         };
-        localStorage.setItem(INSTALLED_KEY, JSON.stringify(manifest));
-        localStorage.removeItem(OLD_INSTALLED_KEY);
+        if (!storageSet(INSTALLED_KEY, JSON.stringify(manifest))) {
+          throw new Error("Browser storage could not save the installed-library manifest");
+        }
+        storageRemove(OLD_INSTALLED_KEY);
         await this.clearRememberedHandles();
         if (previousInstall?.root && previousInstall.root !== installRoot) {
           await this.request("discard", { path: previousInstall.root }).catch(() => {});
@@ -307,8 +321,8 @@ class AssetLibrary {
           };
         }
         if (result.effectiveMode !== "remember") await this.clearRememberedHandles();
-        localStorage.removeItem(INSTALLED_KEY);
-        localStorage.removeItem(OLD_INSTALLED_KEY);
+        storageRemove(INSTALLED_KEY);
+        storageRemove(OLD_INSTALLED_KEY);
         if (previousInstall?.root) {
           await this.request("discard", { path: previousInstall.root }).catch(() => {});
         }
@@ -323,7 +337,7 @@ class AssetLibrary {
 
   installedLibrary() {
     try {
-      const value = JSON.parse(localStorage.getItem(INSTALLED_KEY) || "null");
+      const value = JSON.parse(storageGet(INSTALLED_KEY) || "null");
       if (value?.version !== LIBRARY_VERSION
           || !/^cnc-library\/install-[a-z0-9-]+$/i.test(value.root ?? "")
           || !Array.isArray(value.archives)
@@ -347,9 +361,9 @@ class AssetLibrary {
 
   async verifyInstalledLibraryUnlocked() {
     const installed = this.installedLibrary();
-    localStorage.removeItem(OLD_INSTALLED_KEY);
+    storageRemove(OLD_INSTALLED_KEY);
     if (!installed) {
-      localStorage.removeItem(INSTALLED_KEY);
+      storageRemove(INSTALLED_KEY);
       await this.collectInstalledRoots(null);
       return null;
     }
@@ -365,7 +379,7 @@ class AssetLibrary {
       await this.collectInstalledRoots(installed.root);
       return installed;
     } catch {
-      localStorage.removeItem(INSTALLED_KEY);
+      storageRemove(INSTALLED_KEY);
       await this.collectInstalledRoots(null);
       return null;
     }
@@ -435,8 +449,8 @@ class AssetLibrary {
     await this.discardPreparedArchives();
     this.scanResult = null;
     this.sourceHandles = [];
-    localStorage.removeItem(INSTALLED_KEY);
-    localStorage.removeItem(OLD_INSTALLED_KEY);
+    storageRemove(INSTALLED_KEY);
+    storageRemove(OLD_INSTALLED_KEY);
     await this.clearRememberedHandles();
     try {
       const root = await navigator.storage.getDirectory();

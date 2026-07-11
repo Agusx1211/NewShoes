@@ -4,9 +4,17 @@
   const DEFAULT_LOGO_ID = "01";
   const LOGO_DECISION_VERSION = "round-01-folded-command";
 
-  if (localStorage.getItem("zeroh-logo-decision") !== LOGO_DECISION_VERSION) {
-    localStorage.setItem("zeroh-selected-logo", DEFAULT_LOGO_ID);
-    localStorage.setItem("zeroh-logo-decision", LOGO_DECISION_VERSION);
+  function storageGet(key) {
+    try { return localStorage.getItem(key); } catch { return null; }
+  }
+
+  function storageSet(key, value) {
+    try { localStorage.setItem(key, value); return true; } catch { return false; }
+  }
+
+  if (storageGet("zeroh-logo-decision") !== LOGO_DECISION_VERSION) {
+    storageSet("zeroh-selected-logo", DEFAULT_LOGO_ID);
+    storageSet("zeroh-logo-decision", LOGO_DECISION_VERSION);
   }
 
   const candidates = [
@@ -48,7 +56,7 @@
   const decisionName = document.querySelector("#decisionName");
   const decisionNote = document.querySelector("#decisionNote");
   const toast = document.querySelector("#labToast");
-  let inspectingId = localStorage.getItem("zeroh-selected-logo") || DEFAULT_LOGO_ID;
+  let inspectingId = storageGet("zeroh-selected-logo") || DEFAULT_LOGO_ID;
   let shortlist = readShortlist();
   let shortlistOnly = false;
   let previewTheme = "command";
@@ -56,7 +64,7 @@
 
   function readShortlist() {
     try {
-      const stored = JSON.parse(localStorage.getItem("zeroh-logo-shortlist") || "[]");
+      const stored = JSON.parse(storageGet("zeroh-logo-shortlist") || "[]");
       return new Set(Array.isArray(stored) ? stored : []);
     } catch {
       return new Set();
@@ -64,7 +72,7 @@
   }
 
   function renderCards() {
-    const appliedId = localStorage.getItem("zeroh-selected-logo") || DEFAULT_LOGO_ID;
+    const appliedId = storageGet("zeroh-selected-logo") || DEFAULT_LOGO_ID;
     const visible = shortlistOnly ? candidates.filter((candidate) => shortlist.has(candidate.id)) : candidates;
     grid.replaceChildren(...visible.map((candidate) => {
       const card = document.createElement("article");
@@ -111,12 +119,14 @@
     decisionName.textContent = `${candidate.id} — ${candidate.name}`;
     decisionNote.textContent = candidate.trait;
     applyButton.disabled = false;
-    applyButton.textContent = localStorage.getItem("zeroh-selected-logo") === id ? "Currently in use" : "Use this mark";
+    applyButton.textContent = storageGet("zeroh-selected-logo") === id ? "Currently in use" : "Use this mark";
   }
 
   function toggleShortlist(id) {
     if (shortlist.has(id)) shortlist.delete(id); else shortlist.add(id);
-    localStorage.setItem("zeroh-logo-shortlist", JSON.stringify([...shortlist]));
+    if (!storageSet("zeroh-logo-shortlist", JSON.stringify([...shortlist]))) {
+      showToast("Shortlist changed for this tab, but browser storage is unavailable.");
+    }
     renderCards();
   }
 
@@ -150,7 +160,10 @@
   applyButton.addEventListener("click", () => {
     if (!inspectingId) return;
     const candidate = candidates.find((item) => item.id === inspectingId);
-    localStorage.setItem("zeroh-selected-logo", inspectingId);
+    if (!storageSet("zeroh-selected-logo", inspectingId)) {
+      showToast("This browser could not save the launcher mark.");
+      return;
+    }
     window.opener?.postMessage({ type: "zeroh-logo-selected", id: inspectingId }, window.location.origin);
     applyButton.textContent = "Currently in use";
     renderCards();

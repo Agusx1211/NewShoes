@@ -5,9 +5,21 @@
   const LOGO_DECISION_VERSION = "round-01-folded-command";
   const LAYOUT_VERSION = "launcher-centered-v1";
 
-  if (localStorage.getItem("zeroh-logo-decision") !== LOGO_DECISION_VERSION) {
-    localStorage.setItem("zeroh-selected-logo", DEFAULT_LAUNCHER_LOGO);
-    localStorage.setItem("zeroh-logo-decision", LOGO_DECISION_VERSION);
+  function storageGet(key) {
+    try { return localStorage.getItem(key); } catch { return null; }
+  }
+
+  function storageSet(key, value) {
+    try { localStorage.setItem(key, value); return true; } catch { return false; }
+  }
+
+  function storageRemove(key) {
+    try { localStorage.removeItem(key); } catch { /* storage is optional */ }
+  }
+
+  if (storageGet("zeroh-logo-decision") !== LOGO_DECISION_VERSION) {
+    storageSet("zeroh-selected-logo", DEFAULT_LAUNCHER_LOGO);
+    storageSet("zeroh-logo-decision", LOGO_DECISION_VERSION);
   }
 
   const APP_META = {
@@ -39,27 +51,28 @@
   let interfaceAudioContext = null;
 
   function readStoredLibrary() {
-    try { return JSON.parse(localStorage.getItem("zeroh-library") || localStorage.getItem("fielddesk-library")) || null; }
+    try { return JSON.parse(storageGet("zeroh-library") || storageGet("fielddesk-library")) || null; }
     catch { return null; }
   }
 
   function persistLibrary() {
     if (!state.library || state.library.mode === "once") {
-      localStorage.removeItem("zeroh-library");
-      localStorage.removeItem("fielddesk-library");
-      return;
+      storageRemove("zeroh-library");
+      storageRemove("fielddesk-library");
+      return true;
     }
-    localStorage.setItem("zeroh-library", JSON.stringify(state.library));
-    localStorage.removeItem("fielddesk-library");
+    const stored = storageSet("zeroh-library", JSON.stringify(state.library));
+    storageRemove("fielddesk-library");
+    return stored;
   }
 
   function readWindowLayout() {
     try {
-      const layout = JSON.parse(localStorage.getItem("zeroh-window-layout")) || {};
-      if (localStorage.getItem("zeroh-layout-version") !== LAYOUT_VERSION) {
+      const layout = JSON.parse(storageGet("zeroh-window-layout")) || {};
+      if (storageGet("zeroh-layout-version") !== LAYOUT_VERSION) {
         delete layout.setup;
-        localStorage.setItem("zeroh-window-layout", JSON.stringify(layout));
-        localStorage.setItem("zeroh-layout-version", LAYOUT_VERSION);
+        storageSet("zeroh-window-layout", JSON.stringify(layout));
+        storageSet("zeroh-layout-version", LAYOUT_VERSION);
       }
       return layout;
     } catch {
@@ -79,7 +92,7 @@
       next.top = Math.round(windowRect.top - layerRect.top);
     }
     state.windowLayout[appId] = next;
-    localStorage.setItem("zeroh-window-layout", JSON.stringify(state.windowLayout));
+    storageSet("zeroh-window-layout", JSON.stringify(state.windowLayout));
   }
 
   function restoreWindowLayout() {
@@ -265,7 +278,7 @@
       windowEl.style.removeProperty("top");
       windowEl.style.transform = "none";
       state.windowLayout[windowEl.dataset.app].maximized = true;
-      localStorage.setItem("zeroh-window-layout", JSON.stringify(state.windowLayout));
+      storageSet("zeroh-window-layout", JSON.stringify(state.windowLayout));
     } else {
       windowEl.classList.remove("is-maximized");
       const saved = state.windowLayout[windowEl.dataset.app];
@@ -320,7 +333,7 @@
     startButton.setAttribute("aria-expanded", "false");
   }
 
-  function getLauncherLogoPath(id = localStorage.getItem("zeroh-selected-logo") || DEFAULT_LAUNCHER_LOGO) {
+  function getLauncherLogoPath(id = storageGet("zeroh-selected-logo") || DEFAULT_LAUNCHER_LOGO) {
     const number = Number(id);
     const validId = /^\d{2}$/.test(id || "") && number >= 1 && number <= 20 ? id : DEFAULT_LAUNCHER_LOGO;
     return validId === DEFAULT_LAUNCHER_LOGO
@@ -520,7 +533,7 @@
         preparedAt: Date.now(),
         totalBytes,
       };
-      persistLibrary();
+      const metadataStored = persistLibrary();
       updateLibraryUI();
       setWizardStep(3);
       await refreshStorageUI();
@@ -528,6 +541,7 @@
         ? "Original assets are installed in private browser storage."
         : "Zero Hour is ready to launch from your local files.");
       if (result.warning) showToast(result.warning.title || "Storage warning", result.warning.message || String(result.warning), "warning");
+      if (!metadataStored) showToast("Launcher preference not saved", "The library is ready now, but this browser could not retain its launcher shortcut state.", "warning");
     } catch (error) {
       showToast("Library preparation failed", error?.message || String(error), "warning");
     } finally {
@@ -621,7 +635,7 @@
 
   function loadSettings() {
     let settings = {};
-    try { settings = JSON.parse(localStorage.getItem("zeroh-settings")) || {}; } catch { /* use defaults */ }
+    try { settings = JSON.parse(storageGet("zeroh-settings")) || {}; } catch { /* use defaults */ }
     desktop.dataset.wallpaper = settings.wallpaper || "command";
     document.querySelectorAll("[data-set-wallpaper]").forEach((button) => button.classList.toggle("is-selected", button.dataset.setWallpaper === desktop.dataset.wallpaper));
     document.querySelector("#scaleSelect").value = settings.scale || "1";
@@ -638,7 +652,7 @@
       sound: document.querySelector("#soundToggle").checked,
       reduceMotion: document.querySelector("#motionToggle").checked,
     };
-    localStorage.setItem("zeroh-settings", JSON.stringify(settings));
+    storageSet("zeroh-settings", JSON.stringify(settings));
     document.body.classList.toggle("reduce-motion", settings.reduceMotion);
     document.documentElement.style.setProperty("--ui-scale", settings.scale);
   }
@@ -716,8 +730,8 @@
   document.querySelector("#forgetLibraryButton").addEventListener("click", async () => {
     await window.ZeroHAssetLibrary.forget();
     state.library = null;
-    localStorage.removeItem("zeroh-library");
-    localStorage.removeItem("fielddesk-library");
+    storageRemove("zeroh-library");
+    storageRemove("fielddesk-library");
     updateLibraryUI();
     await refreshStorageUI();
     setWizardStep(1);
@@ -772,13 +786,13 @@
   }));
   document.querySelector("#resetConceptButton").addEventListener("click", async () => {
     await window.ZeroHAssetLibrary.forget();
-    localStorage.removeItem("zeroh-library");
-    localStorage.removeItem("zeroh-settings");
-    localStorage.removeItem("fielddesk-library");
-    localStorage.removeItem("fielddesk-settings");
-    localStorage.removeItem("zeroh-window-layout");
-    localStorage.setItem("zeroh-selected-logo", DEFAULT_LAUNCHER_LOGO);
-    localStorage.removeItem("zeroh-logo-shortlist");
+    storageRemove("zeroh-library");
+    storageRemove("zeroh-settings");
+    storageRemove("fielddesk-library");
+    storageRemove("fielddesk-settings");
+    storageRemove("zeroh-window-layout");
+    storageSet("zeroh-selected-logo", DEFAULT_LAUNCHER_LOGO);
+    storageRemove("zeroh-logo-shortlist");
     state.windowLayout = {};
     document.querySelectorAll(".window").forEach((windowEl) => {
       windowEl.classList.remove("is-maximized");
@@ -822,8 +836,8 @@
       && !await window.ZeroHAssetLibrary.hasRememberedSource();
     if (invalidStoredState || missingInstalledData || missingRememberedSource) {
       state.library = null;
-      localStorage.removeItem("zeroh-library");
-      localStorage.removeItem("fielddesk-library");
+      storageRemove("zeroh-library");
+      storageRemove("fielddesk-library");
     }
     if (installed && state.library?.mode !== "install") {
       state.library = {

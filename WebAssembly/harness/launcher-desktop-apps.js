@@ -711,7 +711,7 @@
   document.querySelector("#memoryReset").addEventListener("click", resetMemory);
 
   window.addEventListener("zeroh:reset-apps", () => {
-    localStorage.removeItem(FILESYSTEM_KEY);
+    try { localStorage.removeItem(FILESYSTEM_KEY); } catch { /* storage is optional */ }
     fileSystem = seedFileSystem();
     currentFolderId = "root";
     selectedNodeId = null;

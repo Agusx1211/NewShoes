@@ -13299,9 +13299,10 @@ mitigation track. Items resolved or retired by the pivot:
       duplicate `Data/Scripts` names); packaged `LooseScripts.big` is accepted;
       real Data1.cab script entries are decompressed once per CAB folder; and
       every materialized archive is structurally revalidated before launch.
-      Synthetic direct-file, ISO, NONE/MSZIP CAB, wrong-edition script, corrupt
-      BIG, install/reload/restage, failure-cleanup, and real 274 MB Data1.cab
-      cases all passed with exactly 30 output archives.
+      Synthetic direct-file, boot-record-first ISO, raw MODE1/2352 BIN,
+      NONE/MSZIP CAB, wrong-edition script, corrupt BIG,
+      install/reload/restage, failure-cleanup, and real 274 MB Data1.cab cases
+      all passed with exactly 30 output archives.
 - [x] Made browser installation atomic and self-healing. Versioned install
       roots swap manifests only after both persistent and per-tab copies are
       complete, Web Locks serialize cross-tab install/forget/verification,
@@ -13310,7 +13311,9 @@ mitigation track. Items resolved or retired by the pivot:
       failed writes clean partial namespaces, and worker crashes reject the
       active request then recreate the worker. Two concurrent synthetic installs
       left one valid manifest/root; tampered and missing-file manifests returned
-      the launcher to source selection without stale ready state.
+      the launcher to source selection without stale ready state, and an
+      injected `localStorage` quota failure left no partial OPFS roots or page
+      errors.
 - [x] Polished the integrated desktop and launch handoff: restored WebRTC
       settings, live storage quota, mobile settings navigation, bounded and
       correctly restored windows, working Explorer list/grid views, truthful
