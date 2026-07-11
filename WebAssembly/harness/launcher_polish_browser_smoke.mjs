@@ -76,24 +76,69 @@ try {
       entryCount: 1,
       opfsPath: "launcher-polish-fixture/EnglishZH.big",
     }];
+    const iconSize = 32;
+    const iconPixels = iconSize * iconSize * 4;
+    const iconMask = iconSize * Math.ceil(iconSize / 32) * 4;
+    const iconFrame = new Uint8Array(40 + iconPixels + iconMask);
+    const iconFrameView = new DataView(iconFrame.buffer);
+    iconFrameView.setUint32(0, 40, true);
+    iconFrameView.setInt32(4, iconSize, true);
+    iconFrameView.setInt32(8, iconSize * 2, true);
+    iconFrameView.setUint16(12, 1, true);
+    iconFrameView.setUint16(14, 32, true);
+    iconFrameView.setUint32(20, iconPixels, true);
+    for (let offset = 40; offset < 40 + iconPixels; offset += 4) {
+      iconFrame[offset] = 0x35;
+      iconFrame[offset + 1] = 0x72;
+      iconFrame[offset + 2] = 0xe0;
+      iconFrame[offset + 3] = 0xff;
+    }
+    const icon = new Uint8Array(22 + iconFrame.length);
+    const iconView = new DataView(icon.buffer);
+    iconView.setUint16(2, 1, true);
+    iconView.setUint16(4, 1, true);
+    icon[6] = iconSize;
+    icon[7] = iconSize;
+    iconView.setUint16(10, 1, true);
+    iconView.setUint16(12, 32, true);
+    iconView.setUint32(14, iconFrame.length, true);
+    iconView.setUint32(18, 22, true);
+    icon.set(iconFrame, 22);
     const module = await import("./launcher-retail-presentation.mjs");
     const key = module.retailPresentationKey(archives);
     window.ZeroHAssetLibrary.preparedArchives = archives;
+    window.ZeroHAssetLibrary.presentationIconCandidate = {
+      blob: new Blob([icon], { type: "image/x-icon" }),
+      name: "GeneralsZH.ico",
+    };
     const applied = await window.ZeroHDesktop.refreshRetailPresentation(key);
     document.querySelector("[data-game-shortcut]").hidden = false;
     window.ZeroHDesktop.openApp("programs");
+    const iconImages = [...document.querySelectorAll("[data-retail-icon]")]
+      .filter((image) => !image.hidden && image.src.startsWith("blob:"));
+    const cached = await window.ZeroHAssetLibrary.presentationForLibrary(key, { cache: true });
     return {
       key,
       source: applied?.source,
-      visibleImages: [...document.querySelectorAll("[data-retail-presentation]")]
+      iconSource: document.documentElement.dataset.retailIconSource,
+      visibleBanners: [...document.querySelectorAll("[data-retail-banner]")]
         .filter((image) => !image.hidden && image.src.startsWith("blob:")).length,
+      visibleIcons: iconImages.length,
+      iconDimensions: iconImages.map((image) => [image.naturalWidth, image.naturalHeight]),
+      iconObjectFit: iconImages.map((image) => getComputedStyle(image).objectFit),
       decoratedSurfaces: document.querySelectorAll(".has-retail-art").length,
+      cachedIcon: cached?.iconBlob instanceof Blob && cached.iconImage?.width === 32,
       networkPrimitive: /\bfetch\s*\(/.test(module.extractRetailPresentationFromBig.toString()),
     };
   });
   assert.equal(presentation.source, "user-owned retail archive");
-  assert.equal(presentation.visibleImages, 3);
+  assert.equal(presentation.iconSource, "user-owned retail icon");
+  assert.equal(presentation.visibleBanners, 1);
+  assert.equal(presentation.visibleIcons, 2);
+  assert.deepEqual(presentation.iconDimensions, [[32, 32], [32, 32]]);
+  assert.deepEqual(presentation.iconObjectFit, ["contain", "contain"]);
   assert.equal(presentation.decoratedSurfaces, 3);
+  assert.equal(presentation.cachedIcon, true);
   assert.equal(presentation.networkPrimitive, false);
   const derivedShot = join(shotDir, "user-owned-derived-art.png");
   await page.screenshot({ path: derivedShot });
@@ -101,11 +146,45 @@ try {
   const externalRequests = localRequests.filter((url) => !url.startsWith(origin) && !url.startsWith(`blob:${origin}`));
   assert.deepEqual(externalRequests, [],
     `retail art derivation must not upload or fetch outside the launcher origin: ${externalRequests.join(", ")}`);
+  const reset = await page.evaluate(async () => {
+    await window.ZeroHAssetLibrary.forget();
+    await window.ZeroHDesktop.refreshRetailPresentation(null);
+    return {
+      visibleIcons: document.querySelectorAll("[data-retail-icon]:not([hidden])").length,
+      visibleBanners: document.querySelectorAll("[data-retail-banner]:not([hidden])").length,
+      decoratedSurfaces: document.querySelectorAll(".has-retail-art").length,
+      iconSource: document.documentElement.dataset.retailIconSource || null,
+    };
+  });
+  assert.deepEqual(reset, { visibleIcons: 0, visibleBanners: 0, decoratedSurfaces: 0, iconSource: null });
   await context.close();
+
+  const githubContext = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1024, height: 768 } });
+  await githubContext.route("https://github.com/Agusx1211/NewShoes", (route) => route.fulfill({
+    status: 200, contentType: "text/html", body: "<!doctype html><title>Project New Shoes on GitHub</title>",
+  }));
+  const githubPage = await githubContext.newPage();
+  await githubPage.goto(baseUrl, { waitUntil: "domcontentloaded" });
+  const githubShortcut = githubPage.locator("[data-github-shortcut]");
+  await githubShortcut.waitFor({ state: "visible" });
+  assert.equal(await githubShortcut.getAttribute("href"), "https://github.com/Agusx1211/NewShoes");
+  assert.equal(await githubShortcut.getAttribute("target"), "_blank");
+  assert.equal(await githubShortcut.getAttribute("rel"), "noopener noreferrer");
+  assert.equal(await githubShortcut.getByText("GitHub Repository", { exact: true }).isVisible(), true);
+  assert.equal(await githubShortcut.locator('use[href="#i-github"]').count(), 1);
+  await githubShortcut.focus();
+  const popupPromise = githubPage.waitForEvent("popup");
+  await githubShortcut.press("Enter");
+  const githubPopup = await popupPromise;
+  await githubPopup.waitForLoadState("domcontentloaded");
+  assert.equal(githubPopup.url(), "https://github.com/Agusx1211/NewShoes");
+  await githubContext.close();
 
   const mobileContext = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 390, height: 844 }, isMobile: true });
   const mobile = await mobileContext.newPage();
   await mobile.goto(baseUrl, { waitUntil: "domcontentloaded" });
+  const mobileGithubBox = await mobile.locator("[data-github-shortcut]").boundingBox();
+  assert.ok(mobileGithubBox && mobileGithubBox.x >= 0 && mobileGithubBox.x + mobileGithubBox.width <= 390);
   await mobile.locator(".ownership-help details").first().click();
   assert.equal(await mobile.locator(".wizard-main").evaluate((node) => node.scrollHeight > node.clientHeight), true);
   const mobileOnboardingShot = join(shotDir, "mobile-ownership-onboarding.png");
@@ -129,7 +208,7 @@ try {
   await shortContext.close();
 
   const shutdownContext = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 800, height: 600 } });
-  await shutdownContext.route("https://github.com/electronicarts/CnC_Generals_Zero_Hour", (route) => route.fulfill({
+  await shutdownContext.route("https://github.com/Agusx1211/NewShoes", (route) => route.fulfill({
     status: 200, contentType: "text/html", body: "<!doctype html><title>Project source</title>",
   }));
   const shutdown = await shutdownContext.newPage();
@@ -141,7 +220,7 @@ try {
   });
   await shutdown.locator("#startButton").click();
   await shutdown.getByRole("button", { name: "Shut down" }).click();
-  await shutdown.waitForURL("https://github.com/electronicarts/CnC_Generals_Zero_Hour");
+  await shutdown.waitForURL("https://github.com/Agusx1211/NewShoes");
   assert.equal(closeAttempted, true);
   await shutdownContext.close();
 
@@ -149,7 +228,7 @@ try {
     ok: true,
     screenshots: { fallbackShot, settingsShot, derivedShot, mobileOnboardingShot, mobileShot, shortShot },
     presentation,
-    projectUrl: "https://github.com/electronicarts/CnC_Generals_Zero_Hour",
+    projectUrl: "https://github.com/Agusx1211/NewShoes",
   }, null, 2)}\n`);
 } finally {
   await browser.close();

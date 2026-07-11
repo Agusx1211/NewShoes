@@ -40,6 +40,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Launcher ownership and desktop polish (2026-07-11)
 
+- [x] Added a keyboard-accessible Windows-style GitHub desktop shortcut to the
+      public `Agusx1211/NewShoes` repository. It is a native new-window anchor
+      with `noopener noreferrer`, an inline official Primer Octicons GitHub
+      mark, a vendored MIT notice, no runtime fetch, and responsive desktop
+      placement. Static, Chromium keyboard/popup, mobile containment, and Pages
+      artifact checks pin the exact URL and link contract.
+- [x] Separated the user-owned wide `Install_Final.bmp` launcher banner from
+      square desktop and library icons. The four supplied retail ISOs expose
+      `GeneralsZH.ico` inside the Zero Hour `Data1.cab`; a real browser scan
+      selected that 21,630-byte source with 30 required archives found and no
+      scan errors. The launcher validates ICO directories and DIB/PNG frames,
+      selects the best square frame, and falls back to bounded PE
+      `GROUP_ICON`/`RT_ICON` extraction from `generals.exe`. The supplied retail
+      ICO selected a 48x48 24-bit frame and its executable fallback selected a
+      48x48 8-bit frame. Derived icon bytes remain local under the existing
+      presentation cache lifecycle and are cleared by Forget; no retail icon
+      is committed or fetched. Synthetic ICO/PE tests and Chromium prove square
+      decode, contain sizing, cache reuse/reset, and zero derivation egress.
+
 - [x] Made Game & Display directly reachable from launcher intake, the ready
       page, the game library, and the Start menu while retaining the existing
       `play.mjs` display/settings state as the only runtime authority. Settings

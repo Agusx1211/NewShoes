@@ -14,7 +14,7 @@ const repoRoot = resolve(wasmRoot, "..");
 const outputRoot = resolve(process.argv[2] || join(wasmRoot, "pages-dist"));
 const runtimeDist = resolve(process.env.PAGES_RUNTIME_DIST
   || join(wasmRoot, "pages-build/dist-threaded-release"));
-const defaultSourceUrl = "https://github.com/Agusx1211/CnC-wasm";
+const defaultSourceUrl = "https://github.com/Agusx1211/NewShoes";
 const sourceUrl = String(process.env.PAGES_SOURCE_URL || defaultSourceUrl);
 
 if (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\/(?:tree|commit)\/[A-Fa-f0-9]+)?\/?$/.test(sourceUrl)) {

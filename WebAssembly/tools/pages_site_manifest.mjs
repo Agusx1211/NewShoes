@@ -48,6 +48,7 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "udp_realm_bridge.mjs",
   "vendor/pako-LICENSE.txt",
   "vendor/pako.es5.min.js",
+  "vendor/primer-octicons-LICENSE.txt",
   "webrtc-udp-endpoint.mjs",
 ]);
 

@@ -1,4 +1,4 @@
-export const PROJECT_GITHUB_URL = "https://github.com/electronicarts/CnC_Generals_Zero_Hour";
+export const PROJECT_GITHUB_URL = "https://github.com/Agusx1211/NewShoes";
 
 export function requestOsShutdown({
   gameRunning,

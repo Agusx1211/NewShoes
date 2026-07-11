@@ -17,6 +17,13 @@ Twenty unused launcher-concept logo candidates were removed before publication.
 The corresponding commits and `DONE.md` describe the retained files as
 project-owned UI art.
 
+The code-native `#i-github` symbol in `play.html` is the official
+`mark-github-24` path from [Primer Octicons](https://github.com/primer/octicons/blob/main/icons/mark-github-24.svg),
+copyright GitHub Inc. It is used only to identify the repository shortcut and
+is distributed under the Octicons MIT license copied at
+`../vendor/primer-octicons-LICENSE.txt`. Its inclusion does not imply GitHub
+endorsement.
+
 Do not add screenshots, extracted textures, faction art, maps, audio, videos, or
 other retail game material here. New binary artwork must include an origin and
 redistribution note in this file. If an image is adapted from a third-party

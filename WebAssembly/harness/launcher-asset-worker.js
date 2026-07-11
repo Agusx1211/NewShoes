@@ -18,6 +18,7 @@ const MAX_BIG_ENTRIES = 200000;
 const MAX_BIG_DIRECTORY_BYTES = 64 * 1024 * 1024;
 const MAX_ISO_ROOT_BYTES = 64 * 1024 * 1024;
 const MAX_LOOSE_SCRIPT_BYTES = 16 * 1024 * 1024;
+const MAX_PRESENTATION_ICON_BYTES = 32 * 1024 * 1024;
 
 const ARCHIVES = self.ZeroHArchiveSpecs;
 
@@ -419,6 +420,12 @@ async function scanSources(files, requestId) {
         });
         continue;
       }
+      if (lower === "generalszh.ico" || lower === "generals.exe") {
+        addCandidate(leaf, directEdition(item.path, directoryKinds, leaf), {
+          kind: "reader", reader: new BlobReader(item.file, item.path), label: item.path,
+        });
+        continue;
+      }
       if (lower.endsWith(".cab")) {
         const reader = new BlobReader(item.file, item.path);
         const cabinet = await parseCab(reader);
@@ -456,6 +463,10 @@ async function scanSources(files, requestId) {
             addCandidate(entry.name, edition, {
               kind: "reader", reader: entryReader, label: `${item.path}:${entry.name}`,
             });
+          } else if (["generalszh.ico", "generals.exe"].includes(entry.name.toLowerCase())) {
+            addCandidate(entry.name, /zh/i.test(iso.volume) ? "zh" : "unknown", {
+              kind: "reader", reader: entryReader, label: `${item.path}:${entry.name}`,
+            });
           }
         }
       }
@@ -465,6 +476,25 @@ async function scanSources(files, requestId) {
   }
 
   const selection = resolveCatalog();
+  const presentationCandidate = chooseCandidate("GeneralsZH.ico", "zh")
+    || chooseCandidate("generals.exe", "zh");
+  let presentationIcon = null;
+  if (presentationCandidate
+      && (presentationCandidate.edition === "zh" || presentationCandidate.edition === "unknown")) {
+    try {
+      const blob = new Blob([await readBoundedCandidateBytes(
+        presentationCandidate, MAX_PRESENTATION_ICON_BYTES, "retail icon")], {
+        type: presentationCandidate.sourceName.toLowerCase().endsWith(".ico")
+          ? "image/x-icon" : "application/vnd.microsoft.portable-executable",
+      });
+      presentationIcon = {
+        blob,
+        name: presentationCandidate.sourceName,
+      };
+    } catch (error) {
+      errors.push(`Zero Hour icon: ${error?.message || error}`);
+    }
+  }
   return {
     ok: selection.missing.length === 0,
     filesScanned: normalized.length,
@@ -474,6 +504,7 @@ async function scanSources(files, requestId) {
     missing: selection.missing,
     totalBytes: selection.totalBytes,
     errors,
+    presentationIcon,
   };
 }
 
@@ -783,10 +814,22 @@ async function readCandidateBytes(candidate) {
   }
 }
 
-async function readCabEntryGroup(cabinet, entries) {
-  if (!entries.length) throw new Error(`${cabinet.reader.label}: no CAB script entries found`);
-  if (entries.some((entry) => entry.size > MAX_LOOSE_SCRIPT_BYTES)) {
-    throw new Error(`${cabinet.reader.label}: loose script exceeds 16 MB`);
+async function readBoundedCandidateBytes(candidate, maxBytes, label) {
+  const size = candidate.kind === "cab" ? candidate.entry.size : candidate.reader.size;
+  if (!Number.isSafeInteger(size) || size < 4 || size > maxBytes) {
+    throw new Error(`${candidate.label}: ${label} exceeds ${Math.round(maxBytes / 1024 / 1024)} MB`);
+  }
+  if (candidate.kind !== "cab") return candidate.reader.read(0, size);
+  const bytes = (await readCabEntryGroup(candidate.cabinet, [candidate.entry], maxBytes))
+    .get(candidate.entry);
+  if (!bytes) throw new Error(`${candidate.label}: ${label} was not extracted`);
+  return bytes;
+}
+
+async function readCabEntryGroup(cabinet, entries, maxBytes = MAX_LOOSE_SCRIPT_BYTES) {
+  if (!entries.length) throw new Error(`${cabinet.reader.label}: no requested CAB entries found`);
+  if (entries.some((entry) => entry.size > maxBytes)) {
+    throw new Error(`${cabinet.reader.label}: requested entry exceeds ${Math.round(maxBytes / 1024 / 1024)} MB`);
   }
   const folderIndex = entries[0].folderIndex;
   const folder = cabinet.folders[folderIndex];
