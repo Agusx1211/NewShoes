@@ -10,6 +10,12 @@ const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
 const artifactRoot = resolve(wasmRoot, "artifacts/networking");
 const GAME_LAN = 1;
+const playerCount = Number.parseInt(process.env.CNC_MATCH_PLAYERS ?? "2", 10);
+let parallelClientFrames = false;
+
+if (!Number.isInteger(playerCount) || playerCount < 2 || playerCount > 8) {
+  throw new Error(`CNC_MATCH_PLAYERS must be between 2 and 8, received ${process.env.CNC_MATCH_PLAYERS}`);
+}
 
 const archiveSpecs = [
   { name: "INIZH.big" },
@@ -86,14 +92,19 @@ async function fullFrame(client, frames = 1) {
   return result.frame;
 }
 
-async function bothFrames(host, guest, frames = 1) {
+async function allFrames(clients, frames = 1) {
+  if (parallelClientFrames) {
+    return Promise.all(clients.map((client) => frame(client, frames)));
+  }
   // Keep each peer's synchronous engine+present call separate. This returns
   // to the browser between peers (letting RTCDataChannel events drain) and
-  // avoids asking a single Metal GPU process to service two blocking presents
+  // avoids asking one browser GPU process to service several blocking presents
   // concurrently.
-  const hostFrame = await frame(host, frames);
-  const guestFrame = await frame(guest, frames);
-  return [hostFrame, guestFrame];
+  const results = [];
+  for (const client of clients) {
+    results.push(await frame(client, frames));
+  }
+  return results;
 }
 
 async function lanState(client) {
@@ -117,12 +128,9 @@ async function waitFor(label, read, predicate, timeoutMs = 30000, intervalMs = 2
   throw new Error(`${label} timed out: ${JSON.stringify(last)}`);
 }
 
-async function pumpLobby(host, guest) {
-  await Promise.all([
-    lanCommand(host, "update"),
-    lanCommand(guest, "update"),
-  ]);
-  await bothFrames(host, guest, 1);
+async function pumpLobby(clients) {
+  await Promise.all(clients.map((client) => lanCommand(client, "update")));
+  await allFrames(clients, 1);
 }
 
 async function clickWindow(client, windowName) {
@@ -152,7 +160,7 @@ async function enterLanLobby(client) {
 async function createClient(browser, serverUrl, signalingUrl, room, label, peerId) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const page = await context.newPage();
-  const client = { context, page, label, errors: [] };
+  const client = { context, page, label, peerId, errors: [] };
   page.setDefaultTimeout(300000);
   page.setDefaultNavigationTimeout(300000);
   page.on("pageerror", (error) => client.errors.push(error?.message ?? String(error)));
@@ -197,9 +205,8 @@ async function createClient(browser, serverUrl, signalingUrl, room, label, peerI
 
 let server;
 let signaling;
-let browser;
-let host;
-let guest;
+const browsers = [];
+const clients = [];
 
 try {
   await mkdir(artifactRoot, { recursive: true });
@@ -216,172 +223,241 @@ try {
   if (process.env.CNC_BROWSER_ARGS) {
     launchOptions.args = process.env.CNC_BROWSER_ARGS.split(/\s+/).filter(Boolean);
   }
-  browser = await chromium.launch(launchOptions);
-  host = await createClient(browser, server.url, signalingUrl.href, room, "WebRTC Host", "host");
-  guest = await createClient(browser, server.url, signalingUrl.href, room, "WebRTC Guest", "guest");
-  await signaling.waitForPeers(2);
-  await Promise.all([
-    rpc(host, "browserWebRtcEndpointWaitForPeers", { count: 1, timeoutMs: 15000 }),
-    rpc(guest, "browserWebRtcEndpointWaitForPeers", { count: 1, timeoutMs: 15000 }),
-  ]);
+  const separateBrowsers = playerCount >= 4 || process.env.CNC_BROWSER_PER_PLAYER === "1";
+  parallelClientFrames = separateBrowsers;
+  for (let index = 0; index < playerCount; ++index) {
+    if (separateBrowsers || browsers.length === 0) {
+      browsers.push(await chromium.launch(launchOptions));
+    }
+    const host = index === 0;
+    const label = host ? "WebRTC Host" : `WebRTC Guest ${index}`;
+    const peerId = host ? "host" : `guest-${index}`;
+    const clientBrowser = separateBrowsers ? browsers[index] : browsers[0];
+    clients.push(await createClient(clientBrowser,
+      server.url, signalingUrl.href, room, label, peerId));
+  }
+  const [host, ...guests] = clients;
+  await signaling.waitForPeers(playerCount, 30000);
+  const peerConnections = await Promise.all(clients.map((client) =>
+    rpc(client, "browserWebRtcEndpointWaitForPeers", {
+      count: playerCount - 1,
+      timeoutMs: 30000,
+    })));
+  expect(peerConnections.every((result) => result.ok === true
+      && result.runtime?.endpoint?.openPeers === playerCount - 1),
+  "WebRTC clients did not form a complete peer mesh", peerConnections);
 
-  const [hostLobby, guestLobby] = await Promise.all([
-    enterLanLobby(host),
-    enterLanLobby(guest),
-  ]);
-  console.error("[lan-webrtc] both original LAN lobbies entered");
-  expect(hostLobby.localIp !== guestLobby.localIp,
-    "LAN clients received the same virtual IP", { hostLobby, guestLobby });
-  await Promise.all([
-    lanCommand(host, "setName", "WebRTC Host"),
-    lanCommand(guest, "setName", "WebRTC Guest"),
-  ]);
+  const lobbies = [];
+  for (const client of clients) {
+    lobbies.push(await enterLanLobby(client));
+  }
+  console.error(`[lan-webrtc] ${playerCount} original LAN lobbies entered`);
+  expect(new Set(lobbies.map((lobby) => lobby.localIp)).size === playerCount,
+    "LAN clients did not receive unique virtual IPs", lobbies);
+  await Promise.all(clients.map((client, index) =>
+    lanCommand(client, "setName", `P${index + 1} WebRTC`)));
 
   const hostCreate = await lanCommand(host, "host", "Browser Match");
   expect(hostCreate.ok === true, "original LANAPI did not create the host game", hostCreate);
   await frame(host, 90);
   const mapCache = await rpc(host, "mapCacheProbe");
-  const map = mapCache.probe?.firstOfficialMultiplayerMap;
-  expect(typeof map === "string" && map.length > 0,
-    "host did not expose a real multiplayer map", mapCache.probe);
+  const officialMaps = mapCache.probe?.officialMultiplayerMaps ?? [];
+  const selectedMap = officialMaps.find((candidate) => candidate.players === playerCount)
+    ?? officialMaps.find((candidate) => candidate.players >= playerCount);
+  const map = selectedMap?.key;
+  expect(typeof map === "string" && map.length > 0 && selectedMap.players >= playerCount,
+    `host did not expose an official map for ${playerCount} players`, mapCache.probe);
   const setMap = await lanCommand(host, "setMap", map);
   expect(setMap.ok === true, "host could not configure the real LAN map", setMap);
-  console.error(`[lan-webrtc] host game created on ${map}`);
+  console.error(`[lan-webrtc] host game created on ${map} (${selectedMap.players} spawns)`);
 
   const discovered = await waitFor("guest LAN game discovery", async () => {
-    await pumpLobby(host, guest);
-    return lanState(guest);
-  }, (state) => state.discoveredGames >= 1, 30000);
-  expect(discovered.game.present === false,
-    "guest unexpectedly entered a game before joining", discovered);
-  console.error("[lan-webrtc] guest discovered host over WebRTC broadcast");
+    await pumpLobby(clients);
+    return Promise.all(guests.map((guest) => lanState(guest)));
+  }, (states) => states.every((state) => state.discoveredGames >= 1), 45000);
+  expect(discovered.every((state) => state.game.present === false),
+    "a guest unexpectedly entered a game before joining", discovered);
+  console.error(`[lan-webrtc] ${guests.length} guests discovered the host over WebRTC broadcast`);
 
-  const join = await lanCommand(guest, "joinFirst");
-  expect(join.ok === true, "guest could not request the discovered game", join);
-  const joined = await waitFor("two-player original LAN lobby", async () => {
-    await pumpLobby(host, guest);
-    return Promise.all([lanState(host), lanState(guest)]);
-  }, ([hostState, guestState]) => hostState.game?.numPlayers === 2
-      && guestState.game?.numPlayers === 2
-      && hostState.game?.map === guestState.game?.map,
-  30000);
-  console.error("[lan-webrtc] guest joined original LAN game");
+  let joined = null;
+  for (let index = 0; index < guests.length; ++index) {
+    const guest = guests[index];
+    const join = await lanCommand(guest, "joinFirst");
+    expect(join.ok === true, `${guest.label} could not request the discovered game`, join);
+    const expectedPlayers = index + 2;
+    joined = await waitFor(`${expectedPlayers}-player original LAN lobby`, async () => {
+      await pumpLobby(clients);
+      return Promise.all(clients.map((client) => lanState(client)));
+    }, (states) => states.slice(0, expectedPlayers).every((state) =>
+      state.game?.numPlayers === expectedPlayers && state.game?.map === map), 45000);
+    console.error(`[lan-webrtc] ${guest.label} joined (${expectedPlayers}/${playerCount})`);
+  }
+  expect(joined?.every((state) => state.game?.numPlayers === playerCount
+      && state.game?.map === map),
+  "LAN game state did not converge after every guest joined", joined);
 
-  await Promise.all([
-    lanCommand(host, "ready"),
-    lanCommand(guest, "ready"),
-  ]);
-  const ready = await waitFor("guest ready propagation", async () => {
-    await pumpLobby(host, guest);
-    return Promise.all([lanState(host), lanState(guest)]);
-  }, ([hostState]) => hostState.game?.slots?.filter((slot) => slot.human)
-    .every((slot) => slot.accepted && slot.hasMap), 30000);
+  await Promise.all(clients.map((client) => lanCommand(client, "ready")));
+  const ready = await waitFor("ready propagation", async () => {
+    await pumpLobby(clients);
+    return Promise.all(clients.map((client) => lanState(client)));
+  }, (states) => states.every((state) => {
+    const humans = state.game?.slots?.filter((slot) => slot.human) ?? [];
+    return state.game?.numPlayers === playerCount
+      && humans.length === playerCount
+      && humans.every((slot) => slot.accepted && slot.hasMap);
+  }), 45000);
   console.error("[lan-webrtc] all human slots accepted with the map");
 
   const start = await lanCommand(host, "start");
   expect(start.ok === true && start.result?.state?.network?.ready === true,
     "host did not initialize the original Network on game start", start);
-  const guestNetwork = await waitFor("guest original Network start", async () => {
+  const guestNetworks = await waitFor("guest original Network start", async () => {
     await new Promise((resolveWait) => setTimeout(resolveWait, 220));
-    await lanCommand(guest, "update");
-    await frame(guest, 1);
-    return lanState(guest);
-  }, (state) => state.network?.ready === true, 30000);
-  console.error("[lan-webrtc] both original Network instances started");
+    await Promise.all(guests.map((guest) => lanCommand(guest, "update")));
+    await allFrames(guests, 1);
+    return Promise.all(guests.map((guest) => lanState(guest)));
+  }, (states) => states.every((state) => state.network?.ready === true
+      && state.network?.numPlayers === playerCount), 45000);
+  console.error(`[lan-webrtc] all ${playerCount} original Network instances started`);
 
   const samples = [];
   let active = null;
   for (let tick = 0; tick < 4800; ++tick) {
-    const [hostFrame, guestFrame] = await bothFrames(host, guest, 1);
+    const frames = await allFrames(clients, 1);
     if (tick % 30 === 0) {
-      const [hostNet, guestNet] = await Promise.all([lanState(host), lanState(guest)]);
+      const states = await Promise.all(clients.map((client) => lanState(client)));
       const sample = {
         tick,
-        hostLogicFrame: hostFrame.gameplay?.logicFrame,
-        guestLogicFrame: guestFrame.gameplay?.logicFrame,
-        hostObjects: hostFrame.gameplay?.objectCount,
-        guestObjects: guestFrame.gameplay?.objectCount,
-        hostNetwork: hostNet.network,
-        guestNetwork: guestNet.network,
+        clients: clients.map((client, index) => ({
+          peerId: client.peerId,
+          logicFrame: frames[index].gameplay?.logicFrame,
+          objects: frames[index].gameplay?.objectCount,
+          network: states[index].network,
+        })),
       };
       samples.push(sample);
-      console.error(`[lan-webrtc] tick=${tick} host=${sample.hostLogicFrame}/${sample.hostObjects} guest=${sample.guestLogicFrame}/${sample.guestObjects}`);
-      if (hostFrame.gameplay?.gameMode === GAME_LAN
-          && guestFrame.gameplay?.gameMode === GAME_LAN
-          && hostFrame.gameplay?.inGame === true
-          && guestFrame.gameplay?.inGame === true
-          && hostFrame.gameplay?.loadingMap === false
-          && guestFrame.gameplay?.loadingMap === false
-          && hostFrame.gameplay?.inputEnabled === true
-          && guestFrame.gameplay?.inputEnabled === true
-          && hostFrame.gameplay?.objectCount > 0
-          && guestFrame.gameplay?.objectCount > 0
-          && hostNet.network?.crcMismatch === false
-          && guestNet.network?.crcMismatch === false) {
-        active = { tick, hostFrame, guestFrame, hostNet, guestNet };
+      console.error(`[lan-webrtc] tick=${tick} ${sample.clients
+        .map((client) => `${client.peerId}=${client.logicFrame}/${client.objects}`).join(" ")}`);
+      const logicFrames = frames.map((clientFrame) => clientFrame.gameplay?.logicFrame);
+      const objectCounts = frames.map((clientFrame) => clientFrame.gameplay?.objectCount);
+      const playerIds = states.map((state) => state.network?.localPlayerId);
+      const logicFrameSkew = Math.max(...logicFrames) - Math.min(...logicFrames);
+      if (frames.every((clientFrame) => clientFrame.gameplay?.gameMode === GAME_LAN
+          && clientFrame.gameplay?.inGame === true
+          && clientFrame.gameplay?.loadingMap === false
+          && clientFrame.gameplay?.inputEnabled === true
+          && clientFrame.gameplay?.logicFrame > 0
+          && clientFrame.gameplay?.objectCount > 0)
+          && states.every((state) => state.network?.crcMismatch === false
+            && state.network?.numPlayers === playerCount)
+          && logicFrameSkew <= playerCount - 1
+          && new Set(objectCounts).size === 1
+          && new Set(playerIds).size === playerCount) {
+        active = { tick, logicFrameSkew, frames, states };
         break;
       }
     }
   }
-  expect(active != null, "two-client LAN match did not become playable", samples.slice(-12));
+  expect(active != null, `${playerCount}-client LAN match did not become playable`, samples.slice(-12));
 
+  const requiredPostActiveLogicFrames = playerCount >= 4 ? 3 : 10;
   let postActiveFrames = null;
-  for (let tick = 0; tick < 10; ++tick) {
-    postActiveFrames = await bothFrames(host, guest, 1);
+  let postActiveStates = null;
+  let postActiveDriverTicks = 0;
+  for (; postActiveDriverTicks < 600; ++postActiveDriverTicks) {
+    postActiveFrames = await allFrames(clients, 1);
+    postActiveStates = await Promise.all(clients.map((client) => lanState(client)));
+    expect(postActiveStates.every((state) => state.network?.numPlayers === playerCount
+        && state.network?.crcMismatch === false),
+    "network membership changed during the post-active drive",
+    postActiveStates.map((state) => state.network));
+    const advanced = postActiveFrames.every((clientFrame, index) =>
+      clientFrame.gameplay?.logicFrame >= active.frames[index].gameplay.logicFrame
+        + requiredPostActiveLogicFrames);
+    if (advanced) {
+      break;
+    }
   }
-  const [finalHost, finalGuest] = await Promise.all([lanState(host), lanState(guest)]);
-  expect(finalHost.network?.crcMismatch === false
-      && finalGuest.network?.crcMismatch === false
-      && postActiveFrames?.[0]?.gameplay?.logicFrame > active.hostFrame.gameplay.logicFrame
-      && postActiveFrames?.[1]?.gameplay?.logicFrame > active.guestFrame.gameplay.logicFrame
-      && postActiveFrames?.[0]?.gameplay?.logicFrame === postActiveFrames?.[1]?.gameplay?.logicFrame,
+  const finalStates = await Promise.all(clients.map((client) => lanState(client)));
+  const finalLogicFrames = postActiveFrames?.map((clientFrame) => clientFrame.gameplay?.logicFrame) ?? [];
+  const finalLogicFrameSkew = Math.max(...finalLogicFrames) - Math.min(...finalLogicFrames);
+  expect(finalStates.every((state) => state.network?.crcMismatch === false
+      && state.network?.numPlayers === playerCount)
+      && postActiveFrames?.every((clientFrame, index) =>
+        clientFrame.gameplay?.logicFrame >= active.frames[index].gameplay.logicFrame
+          + requiredPostActiveLogicFrames)
+      && finalLogicFrameSkew <= playerCount - 1,
     "original lockstep simulation did not survive post-active frames",
-    { finalHost, finalGuest, active, postActiveFrames });
+    {
+      activeLogicFrames: active.frames.map((clientFrame) => clientFrame.gameplay?.logicFrame),
+      finalLogicFrames,
+      finalLogicFrameSkew,
+      postActiveDriverTicks,
+      requiredPostActiveLogicFrames,
+      networks: finalStates.map((state) => state.network),
+    });
 
-  const hostScreenshot = resolve(artifactRoot, "lan-webrtc-host.png");
-  const guestScreenshot = resolve(artifactRoot, "lan-webrtc-guest.png");
-  await Promise.all([
-    host.page.locator("#viewport").screenshot({ path: hostScreenshot }),
-    guest.page.locator("#viewport").screenshot({ path: guestScreenshot }),
-  ]);
+  const artifactStem = playerCount === 2 ? "lan-webrtc" : `lan-webrtc-${playerCount}p`;
+  const screenshots = [];
+  for (let index = 0; index < clients.length; ++index) {
+    const suffix = playerCount === 2 ? (index === 0 ? "host" : "guest") : `player-${index + 1}`;
+    const screenshot = resolve(artifactRoot, `${artifactStem}-${suffix}.png`);
+    await clients[index].page.locator("#viewport").screenshot({ path: screenshot });
+    screenshots.push(screenshot);
+  }
 
-  const [hostGpu, guestGpu] = await Promise.all([
-    browserRenderer(host),
-    browserRenderer(guest),
-  ]);
+  const gpu = await Promise.all(clients.map((client) => browserRenderer(client)));
   const expectedRenderer = String(process.env.CNC_EXPECT_RENDERER ?? "").trim();
   if (expectedRenderer) {
-    expect(hostGpu.unmaskedRenderer?.includes(expectedRenderer)
-        && guestGpu.unmaskedRenderer?.includes(expectedRenderer),
-      "browser did not use the expected GPU renderer", { expectedRenderer, hostGpu, guestGpu });
+    expect(gpu.every((renderer) => renderer.unmaskedRenderer?.includes(expectedRenderer)),
+      "browser did not use the expected GPU renderer", { expectedRenderer, gpu });
   }
+
+  const endpointStates = await Promise.all(clients.map((client) =>
+    rpc(client, "browserWebRtcEndpointState")));
+  expect(endpointStates.every((state) => state.ok === true
+      && state.runtime?.endpoint?.openPeers === playerCount - 1),
+  "complete WebRTC peer mesh did not survive the match", endpointStates);
 
   const result = {
     ok: true,
     path: "real-lan-lobby-to-playable-webrtc-match",
+    playerCount,
     map,
+    mapPlayers: selectedMap.players,
     room,
-    lobby: { host: joined[0], guest: joined[1], ready },
-    start: { host: start.result.state.network, guest: guestNetwork.network },
+    lobby: { joined, ready },
+    start: [start.result.state.network, ...guestNetworks.map((state) => state.network)],
     active,
     postActiveFrames,
-    final: { host: finalHost, guest: finalGuest },
+    postActiveDriverTicks,
+    requiredPostActiveLogicFrames,
+    finalLogicFrameSkew,
+    final: finalStates,
+    endpoints: endpointStates.map((state) => state.runtime.endpoint),
     signaling: signaling.stats(),
-    screenshots: { host: hostScreenshot, guest: guestScreenshot },
-    gpu: { host: hostGpu, guest: guestGpu },
-    browserErrors: { host: host.errors, guest: guest.errors },
+    screenshots,
+    gpu,
+    browserErrors: clients.map((client) => ({ peerId: client.peerId, errors: client.errors })),
   };
-  expect(result.signaling.gamePayloadBytes === 0,
-    "signaling server relayed game payload bytes", result.signaling);
-  expect(host.errors.length === 0 && guest.errors.length === 0,
+  expect(result.signaling.gamePayloadBytes === 0
+      && result.signaling.rooms?.some((activeRoom) => activeRoom.peers.length === playerCount),
+  "signaling server relayed game payload bytes or lost room members", result.signaling);
+  expect(clients.every((client) => client.errors.length === 0),
     "browser failed during playable LAN match", result.browserErrors);
-  await writeFile(resolve(artifactRoot, "lan-webrtc-playable-match.json"),
+  const resultName = playerCount === 2
+    ? "lan-webrtc-playable-match.json"
+    : `lan-webrtc-${playerCount}p-playable-match.json`;
+  await writeFile(resolve(artifactRoot, resultName),
     `${JSON.stringify(result, null, 2)}\n`);
   console.log(JSON.stringify(result));
 } finally {
-  await host?.context.close();
-  await guest?.context.close();
-  await browser?.close();
+  for (const client of clients) {
+    await client.context.close();
+  }
+  for (const activeBrowser of browsers) {
+    await activeBrowser.close();
+  }
   signaling?.close();
   await server?.close();
 }
