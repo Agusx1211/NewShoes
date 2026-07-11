@@ -727,11 +727,8 @@ async function main() {
       return {
         closed: window.ZeroHRuntime.closed,
         closing: window.ZeroHRuntime.closing,
-        overlayHidden: overlay.hidden,
-        overlayDisplay: getComputedStyle(overlay).display,
-        viewportPlaceholder: viewport?.dataset.runtimePlaceholder ?? null,
-        viewportHidden: viewport?.hidden ?? null,
-        viewportRect: viewport?.getBoundingClientRect().toJSON() ?? null,
+        overlayConnected: Boolean(overlay?.isConnected),
+        viewportConnected: Boolean(viewport?.isConnected),
         centerInsideRuntime: Boolean(center?.closest("#launchOverlay")),
       };
     });
@@ -754,12 +751,8 @@ async function main() {
       "transferred game canvas is retired from the desktop compositor",
       exitDom.closed === true
         && exitDom.closing === false
-        && exitDom.overlayHidden === true
-        && exitDom.overlayDisplay === "none"
-        && exitDom.viewportPlaceholder === "closed"
-        && exitDom.viewportHidden === true
-        && exitDom.viewportRect?.width === 0
-        && exitDom.viewportRect?.height === 0
+        && exitDom.overlayConnected === false
+        && exitDom.viewportConnected === false
         && exitDom.centerInsideRuntime === false,
     ]);
     checks.push([

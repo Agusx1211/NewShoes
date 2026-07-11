@@ -974,23 +974,16 @@ function settleWithin(promise, timeoutMs, label) {
 }
 
 function retireRuntimeViewport() {
-  if (!viewportCanvas.isConnected) return false;
+  if (!viewportCanvas.isConnected && !overlay.isConnected) return false;
   // transferControlToOffscreen promotes the placeholder into its own browser
   // compositor layer. Merely hiding an ancestor can leave that layer's final
-  // terrain frame visible after its worker is terminated. Remove the exact
-  // transferred element from the document; a hidden inert clone preserves
-  // the page contract until the next launch performs its transparent reload.
-  try {
-    const placeholder = viewportCanvas.cloneNode(false);
-    placeholder.hidden = true;
-    placeholder.setAttribute("data-runtime-placeholder", "closed");
-    viewportCanvas.hidden = true;
-    viewportCanvas.replaceWith(placeholder);
-    return !viewportCanvas.isConnected && placeholder.isConnected;
-  } catch {
-    viewportCanvas.remove();
-    return !viewportCanvas.isConnected;
-  }
+  // terrain frame visible after its worker is terminated. Remove both the
+  // exact transferred element and its promoted runtime subtree. Relaunch is a
+  // fresh document because OffscreenCanvas transfer is one-shot anyway.
+  viewportCanvas.hidden = true;
+  viewportCanvas.remove();
+  overlay.remove();
+  return !viewportCanvas.isConnected && !overlay.isConnected;
 }
 
 function beginRuntimeStart() {
@@ -1058,15 +1051,11 @@ async function exitToDesktop() {
         settleWithin(runtimeRpc("threadedStopLoop", { timeoutMs: 5000 }), 6500, "frame-loop stop"),
         settleWithin(runtimeRpc("persistSaves", { reason: "launcher-exit" }), 6500, "save flush"),
       ]);
-      const graceful = await settleWithin(
-        runtimeRpc("shutdownRuntime", {}),
-        30000,
-        "runtime shutdown",
-      );
-      let result = graceful.value ?? {
-        ok: false,
-        error: graceful.error ?? "runtime shutdown failed",
-      };
+      const loopStopped = loopStop.ok && loopStop.value?.ok === true;
+      const graceful = loopStopped
+        ? await settleWithin(runtimeRpc("shutdownRuntime", {}), 30000, "runtime shutdown")
+        : { ok: false, skipped: true, error: "frame loop did not acknowledge stop" };
+      let result = graceful.value ?? { ok: false, error: graceful.error ?? "runtime shutdown failed" };
       let forced = null;
       if (!graceful.ok || result.ok !== true) {
         forced = await settleWithin(

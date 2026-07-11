@@ -10,18 +10,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Launcher exit compositor teardown (2026-07-11)
 
-- [x] Retired the exact OffscreenCanvas-transferred viewport element as soon
-      as launcher exit begins, replacing it with a hidden inert placeholder
-      before showing the desktop. This prevents Chrome from retaining the
-      worker canvas's final terrain frame as a promoted compositor layer.
+- [x] Retired the exact OffscreenCanvas-transferred viewport element and its
+      promoted runtime subtree as soon as launcher exit begins, before showing
+      the desktop. This prevents Chrome from retaining the worker canvas's
+      final terrain frame as a promoted compositor layer.
 - [x] Bounded save flush, paced-loop stop, and graceful engine shutdown, with
       a main-realm hard worker/audio/I/O fallback when a browser callback or
       destructor does not settle. Repeated IDBFS flushes now share one in-flight
       operation, and periodic persistence stops with the runtime.
 - [x] Extended the real threaded browser gate to capture the full desktop after
       `ZeroHRuntime.exit()` and assert the retired viewport, bounded worker
-      cleanup, visible taskbar pixels, screenshot variance, and transparent
-      fresh-document relaunch contract instead of relying only on state flags.
+      cleanup, visible taskbar pixels, and screenshot variance instead of
+      relying only on state flags. The installed four-ISO flow on the combined
+      default-pixel-shader main also proved the launcher-button reload reaches
+      a second fresh `started=true` runtime and closes it cleanly.
 
 ## Clean launcher game shutdown (2026-07-11)
 

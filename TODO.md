@@ -475,6 +475,14 @@ Dev-box render-verify: symlink worktree `dist/` → main's built `dist/` renders
 
 ## Launcher follow-ups
 
+- [ ] Headless-only early-exit capture: taking a Playwright surface screenshot
+      immediately after closing the default ps11 runtime before its first
+      client frame can wait on already-queued SwiftShader GPU work for more
+      than 60 seconds, even though the runtime subtree is absent and the engine
+      worker/OPFS/audio teardown has completed. The settled-frame exit capture
+      is the regression gate. If an explicit frame-zero screenshot is needed,
+      use a non-surface capture path or wait for the first presented frame.
+
 - [ ] Move the game runtime into a disposable same-origin iframe so closing it
       also releases the main-realm WebAssembly memory immediately. The current
       shutdown stops every worker/audio/network/OPFS owner and retires the
