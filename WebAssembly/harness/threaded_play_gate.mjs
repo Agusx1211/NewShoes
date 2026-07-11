@@ -91,6 +91,47 @@ async function captureViewport(page, path) {
   return buffer;
 }
 
+async function samplePageScreenshot(page, buffer) {
+  return page.evaluate(async (base64) => {
+    const raw = atob(base64);
+    const bytes = new Uint8Array(raw.length);
+    for (let index = 0; index < raw.length; index += 1) bytes[index] = raw.charCodeAt(index);
+    const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+    const scratch = document.createElement("canvas");
+    scratch.width = 128;
+    scratch.height = 80;
+    const context = scratch.getContext("2d", { willReadFrequently: true });
+    context.drawImage(bitmap, 0, 0, scratch.width, scratch.height);
+    bitmap.close();
+    const pixels = context.getImageData(0, 0, scratch.width, scratch.height).data;
+    let sum = 0;
+    let sumSquared = 0;
+    let bottomBlue = 0;
+    let bottomCount = 0;
+    for (let offset = 0; offset < pixels.length; offset += 4) {
+      const red = pixels[offset];
+      const green = pixels[offset + 1];
+      const blue = pixels[offset + 2];
+      const luminance = (red + green + blue) / 3;
+      sum += luminance;
+      sumSquared += luminance * luminance;
+      const pixelIndex = offset / 4;
+      const y = Math.floor(pixelIndex / scratch.width);
+      if (y >= 76) {
+        bottomCount += 1;
+        if (blue > red * 1.15 && blue > green * 1.05) bottomBlue += 1;
+      }
+    }
+    const count = pixels.length / 4;
+    const mean = sum / count;
+    return {
+      mean,
+      standardDeviation: Math.sqrt(Math.max(0, sumSquared / count - mean * mean)),
+      bottomBlueFraction: bottomCount > 0 ? bottomBlue / bottomCount : 0,
+    };
+  }, buffer.toString("base64"));
+}
+
 async function bootPlayPage(browser, url, label, consoleLines) {
   const page = await browser.newPage();
   // The non-threaded page saturates its main thread once the engine loop
@@ -665,6 +706,67 @@ async function main() {
     checks.push([
       "persistSaves + listSaves work on the threaded page",
       summary.saveWrite.persistedOk && summary.saveWrite.listedHere,
+    ]);
+
+    // ---------- clean launcher exit: compositor + worker teardown ----------
+    // The game canvas is transferred to OffscreenCanvas and promoted to its
+    // own compositor layer. A state-only assertion misses Chrome retaining
+    // that layer's last terrain frame over the desktop, so capture the whole
+    // page after the real launcher exit and assert desktop pixels too.
+    const exitStartedAt = Date.now();
+    const exitResult = await page.evaluate(() => window.ZeroHRuntime.exit());
+    const exitElapsedMs = Date.now() - exitStartedAt;
+    await page.waitForTimeout(250);
+    const desktopAfterExitPath = join(shotDir, "p1c-desktop-after-exit.png");
+    const desktopAfterExit = await page.screenshot({ path: desktopAfterExitPath, timeout: 60000 });
+    const desktopPixels = await samplePageScreenshot(page, desktopAfterExit);
+    const exitDom = await page.evaluate(() => {
+      const overlay = document.querySelector("#launchOverlay");
+      const viewport = document.querySelector("#viewport");
+      const center = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+      return {
+        closed: window.ZeroHRuntime.closed,
+        closing: window.ZeroHRuntime.closing,
+        overlayHidden: overlay.hidden,
+        overlayDisplay: getComputedStyle(overlay).display,
+        viewportPlaceholder: viewport?.dataset.runtimePlaceholder ?? null,
+        viewportHidden: viewport?.hidden ?? null,
+        viewportRect: viewport?.getBoundingClientRect().toJSON() ?? null,
+        centerInsideRuntime: Boolean(center?.closest("#launchOverlay")),
+      };
+    });
+    summary.cleanExit = {
+      elapsedMs: exitElapsedMs,
+      result: exitResult,
+      dom: exitDom,
+      screenshot: desktopAfterExitPath,
+      screenshotBytes: desktopAfterExit.length,
+      pixels: desktopPixels,
+    };
+    checks.push([
+      "launcher exit is bounded and terminates the engine worker",
+      exitElapsedMs < 45000
+        && exitResult?.ok === true
+        && exitResult?.close?.viewportRetired === true
+        && exitResult?.result?.engine?.workerTerminated !== false,
+    ]);
+    checks.push([
+      "transferred game canvas is retired from the desktop compositor",
+      exitDom.closed === true
+        && exitDom.closing === false
+        && exitDom.overlayHidden === true
+        && exitDom.overlayDisplay === "none"
+        && exitDom.viewportPlaceholder === "closed"
+        && exitDom.viewportHidden === true
+        && exitDom.viewportRect?.width === 0
+        && exitDom.viewportRect?.height === 0
+        && exitDom.centerInsideRuntime === false,
+    ]);
+    checks.push([
+      "post-exit desktop screenshot is visible (not a ghost game frame)",
+      desktopAfterExit.length > 10 * 1024
+        && desktopPixels.standardDeviation > 12
+        && desktopPixels.bottomBlueFraction > 0.45,
     ]);
 
     await page.close();

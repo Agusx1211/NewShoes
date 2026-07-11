@@ -1307,6 +1307,43 @@ function createThreadedEngineController() {
     });
   }
 
+  function terminateWorker(reason) {
+    shutDown = true;
+    cncPortMssCacheDropNotifier = null;
+    inputOutbox.length = 0;
+    for (const [, entry] of pending) {
+      if (entry.timer) clearTimeout(entry.timer);
+      entry.reject(new Error(reason));
+    }
+    pending.clear();
+    publishPending();
+    try { realmPort?.close(); } catch (_error) { /* already closed */ }
+    realmPort = null;
+
+    let workerTerminated = false;
+    let workerError = null;
+    try {
+      const terminateAllThreads = cncPortEmscriptenModule?.PThread?.terminateAllThreads;
+      if (typeof terminateAllThreads === "function") {
+        terminateAllThreads.call(cncPortEmscriptenModule.PThread);
+        workerTerminated = true;
+      }
+    } catch (error) {
+      workerError = error?.message ?? String(error);
+    }
+    if (engineWorker) {
+      try {
+        engineWorker.terminate();
+        workerTerminated = true;
+      } catch (error) {
+        workerError ??= error?.message ?? String(error);
+      }
+    }
+    engineWorker = null;
+    engineThreadStarted = false;
+    return { workerTerminated, workerError };
+  }
+
   async function shutdown() {
     if (shutDown) {
       return { ok: true, alreadyStopped: true };
@@ -1340,33 +1377,20 @@ function createThreadedEngineController() {
       }
     }
 
-    shutDown = true;
-    cncPortMssCacheDropNotifier = null;
-    inputOutbox.length = 0;
-    for (const [, entry] of pending) {
-      if (entry.timer) clearTimeout(entry.timer);
-      entry.reject(new Error("threaded engine shut down"));
-    }
-    pending.clear();
-    publishPending();
-    try { realmPort?.close(); } catch (_error) { /* already closed */ }
-    realmPort = null;
-    try {
-      const terminateAllThreads = cncPortEmscriptenModule?.PThread?.terminateAllThreads;
-      if (typeof terminateAllThreads !== "function") {
-        throw new Error("Emscripten pthread termination is unavailable");
-      }
-      terminateAllThreads.call(cncPortEmscriptenModule.PThread);
-      result.workerTerminated = true;
-    } catch (error) {
+    Object.assign(result, terminateWorker("threaded engine shut down"));
+    if (!result.workerTerminated) {
       result.ok = false;
-      result.workerTerminated = false;
-      result.workerError = error?.message ?? String(error);
-      try { engineWorker?.terminate(); } catch (_terminateError) { /* best effort */ }
     }
-    engineWorker = null;
-    engineThreadStarted = false;
     return result;
+  }
+
+  function forceShutdown(reason = "forced shutdown") {
+    if (shutDown) {
+      return { ok: true, alreadyStopped: true, forced: true };
+    }
+
+    const { workerTerminated, workerError } = terminateWorker(reason);
+    return { ok: workerTerminated, forced: true, workerTerminated, workerError };
   }
 
   // Fire-and-forget realm command (no id, no reply, no timeout entry) —
@@ -1388,6 +1412,7 @@ function createThreadedEngineController() {
     startLoop,
     stopLoop,
     shutdown,
+    forceShutdown,
     forwardInput,
     sendCommand,
     postCommand,
@@ -1462,6 +1487,7 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   "resumeBrowserAudioRuntime",
   "setBrowserAudioMixerVolumes",
   "shutdownRuntime",
+  "forceShutdownRuntime",
   "setD3D8GammaRamp",
   // Saves: IDBFS is mounted on the MAIN runtime (preRun) and the engine
   // thread's FS writes proxy to main, so persist (FS.syncfs) and the listing
@@ -4896,8 +4922,13 @@ function mountSaveFilesystem(m) {
 
 // Flush MEMFS -> IndexedDB so newly written ".sav" files persist. Safe to call
 // repeatedly; returns a promise that resolves once the flush completes.
+let saveFilesystemPersistInFlight = null;
+
 function persistSaveFilesystem(reason = "manual") {
-  return new Promise((resolve) => {
+  if (saveFilesystemPersistInFlight) {
+    return saveFilesystemPersistInFlight;
+  }
+  const operation = new Promise((resolve) => {
     const module = cncPortEmscriptenModule;
     if (!module || !module.FS || !cncPortSaveFsMounted) {
       resolve({ ok: false, reason, error: "save filesystem not mounted" });
@@ -4916,6 +4947,12 @@ function persistSaveFilesystem(reason = "manual") {
     } catch (error) {
       recordLog("saveFsSyncOutError", { reason, error: String(error) });
       resolve({ ok: false, reason, error: String(error) });
+    }
+  });
+  saveFilesystemPersistInFlight = operation;
+  return operation.finally(() => {
+    if (saveFilesystemPersistInFlight === operation) {
+      saveFilesystemPersistInFlight = null;
     }
   });
 }
@@ -8385,6 +8422,18 @@ async function shutdownIoWorker() {
   return { closed, terminated: true };
 }
 
+function forceShutdownIoWorker() {
+  const worker = ioWorkerInstance;
+  try { worker?.terminate(); } catch (_error) { /* already gone */ }
+  ioWorkerInstance = null;
+  ioWorkerDisabled = true;
+  for (const [, pending] of ioWorkerPending) {
+    pending.reject(new Error("IO worker force-closed"));
+  }
+  ioWorkerPending.clear();
+  return { closed: 0, terminated: Boolean(worker), forced: true };
+}
+
 // P2 "OPFS as the disk" (threaded mode): stream one archive straight into an
 // OPFS file on the IO worker. The bytes are NEVER RAM-resident anywhere —
 // each fetch chunk is written through a FileSystemSyncAccessHandle as it
@@ -8418,7 +8467,10 @@ if (cncPortThreadedMode && typeof window !== "undefined") {
   window.addEventListener("pagehide", releaseOpfsLocksOnPageHide);
 }
 
+let browserRuntimeShutDown = false;
+
 async function shutdownBrowserRuntime() {
+  browserRuntimeShutDown = true;
   await resetBrowserInput().catch(() => null);
   const engine = threadedEngine
     ? await threadedEngine.shutdown()
@@ -8435,6 +8487,20 @@ async function shutdownBrowserRuntime() {
     io,
     webLocksReleased,
   };
+}
+
+function forceShutdownBrowserRuntime() {
+  browserRuntimeShutDown = true;
+  const engine = threadedEngine
+    ? threadedEngine.forceShutdown("threaded engine force-closed")
+    : { ok: true, alreadyStopped: true, forced: true };
+  resetBrowserWebRtcUdpEndpointRuntime();
+  // Source stop/disconnect happens synchronously before this async helper's
+  // first await. Context.close is allowed to finish in the background.
+  void shutdownBrowserAudioRuntime();
+  const io = forceShutdownIoWorker();
+  const webLocksReleased = releaseOpfsWebLocks();
+  return { ok: engine.workerTerminated !== false, forced: true, engine, io, webLocksReleased };
 }
 
 // Archive mount progress -> page UI. The mount path publishes coarse
@@ -10740,6 +10806,11 @@ async function rpc(command, payload = {}) {
     case "shutdownRuntime":
       {
         const result = await shutdownBrowserRuntime();
+        return { ok: result.ok, command, result };
+      }
+    case "forceShutdownRuntime":
+      {
+        const result = forceShutdownBrowserRuntime();
         return { ok: result.ok, command, result };
       }
     case "listSaves":
@@ -22416,7 +22487,7 @@ window.addEventListener("beforeunload", () => {
 // Periodic safety flush (every 5s) so an in-game save persists even if the tab
 // is closed without a clean unload event. No-op until the FS is mounted.
 setInterval(() => {
-  if (cncPortSaveFsMounted) {
+  if (cncPortSaveFsMounted && !browserRuntimeShutDown) {
     void persistSaveFilesystem("interval");
   }
 }, 5000);

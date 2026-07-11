@@ -953,7 +953,44 @@ async function start() {
 let runtimeStarted = false;
 let runtimeStartPromise = null;
 let runtimeClosed = false;
+let runtimeClosing = false;
 let runtimeShutdownPromise = null;
+
+function settleWithin(promise, timeoutMs, label) {
+  let timer = null;
+  return Promise.race([
+    Promise.resolve(promise)
+      .then((value) => ({ ok: true, value }))
+      .catch((error) => ({ ok: false, error: error?.message ?? String(error) })),
+    new Promise((resolve) => {
+      timer = setTimeout(() => resolve({
+        ok: false,
+        timedOut: true,
+        error: `${label} timed out after ${timeoutMs}ms`,
+      }), timeoutMs);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+function retireRuntimeViewport() {
+  if (!viewportCanvas.isConnected) return false;
+  // transferControlToOffscreen promotes the placeholder into its own browser
+  // compositor layer. Merely hiding an ancestor can leave that layer's final
+  // terrain frame visible after its worker is terminated. Remove the exact
+  // transferred element from the document; a hidden inert clone preserves
+  // the page contract until the next launch performs its transparent reload.
+  try {
+    const placeholder = viewportCanvas.cloneNode(false);
+    placeholder.hidden = true;
+    placeholder.setAttribute("data-runtime-placeholder", "closed");
+    viewportCanvas.hidden = true;
+    viewportCanvas.replaceWith(placeholder);
+    return !viewportCanvas.isConnected && placeholder.isConnected;
+  } catch {
+    viewportCanvas.remove();
+    return !viewportCanvas.isConnected;
+  }
+}
 
 function beginRuntimeStart() {
   if (runtimeStarted) return Promise.resolve();
@@ -972,6 +1009,9 @@ startButton.addEventListener("click", () => {
 });
 
 async function launchFromDesktop() {
+  if (runtimeClosing && runtimeShutdownPromise) {
+    await runtimeShutdownPromise;
+  }
   if (runtimeClosed) {
     throw new Error("The closed game runtime must be restarted in a fresh page");
   }
@@ -998,22 +1038,57 @@ async function exitToDesktop() {
   if (runtimeShutdownPromise) return runtimeShutdownPromise;
   if (!activeRpc || !runtimeStarted) return null;
 
+  runtimeClosing = true;
+  const runtimeRpc = activeRpc;
   const shutdown = (async () => {
-    progressNode.textContent = "Closing Zero Hour…";
-    gameRunning = false;
-    renderPerformanceOverlay();
-    await activeRpc("threadedStopLoop", { timeoutMs: 5000 }).catch(() => null);
-    await activeRpc("persistSaves", { reason: "launcher-exit" }).catch(() => null);
-    const result = await activeRpc("shutdownRuntime", {}).catch((error) => ({
-      ok: false,
-      error: error?.message ?? String(error),
-    }));
-    runtimeStarted = false;
-    runtimeClosed = true;
-    activeRpc = null;
-    overlay.hidden = true;
-    overlay.classList.remove("is-running");
-    return result;
+    let viewportRetired = false;
+    try {
+      progressNode.textContent = "Closing Zero Hour…";
+      gameRunning = false;
+      renderPerformanceOverlay();
+      viewportRetired = retireRuntimeViewport();
+      overlay.hidden = true;
+      overlay.classList.remove("is-running");
+
+      // Stop rendering and flush saves concurrently. Both are bounded because
+      // IDBFS/browser callbacks can otherwise strand the close operation while
+      // the worker keeps presenting frames indefinitely.
+      const [loopStop, saves] = await Promise.all([
+        settleWithin(runtimeRpc("threadedStopLoop", { timeoutMs: 5000 }), 6500, "frame-loop stop"),
+        settleWithin(runtimeRpc("persistSaves", { reason: "launcher-exit" }), 6500, "save flush"),
+      ]);
+      const graceful = await settleWithin(
+        runtimeRpc("shutdownRuntime", {}),
+        30000,
+        "runtime shutdown",
+      );
+      let result = graceful.value ?? {
+        ok: false,
+        error: graceful.error ?? "runtime shutdown failed",
+      };
+      let forced = null;
+      if (!graceful.ok || result.ok !== true) {
+        forced = await settleWithin(
+          window.CnCPort.rpc("forceShutdownRuntime", {}),
+          3000,
+          "forced runtime shutdown",
+        );
+        if (forced.value) result = forced.value;
+      }
+      return {
+        ...result,
+        close: { viewportRetired, loopStop, saves, graceful, forced },
+      };
+    } finally {
+      gameRunning = false;
+      renderPerformanceOverlay();
+      overlay.hidden = true;
+      overlay.classList.remove("is-running");
+      runtimeStarted = false;
+      runtimeClosed = true;
+      runtimeClosing = false;
+      activeRpc = null;
+    }
   })();
   runtimeShutdownPromise = shutdown;
   return shutdown;
@@ -1024,6 +1099,7 @@ window.ZeroHRuntime = {
   exit: exitToDesktop,
   get started() { return runtimeStarted; },
   get closed() { return runtimeClosed; },
+  get closing() { return runtimeClosing; },
 };
 
 window.addEventListener("keydown", (event) => {

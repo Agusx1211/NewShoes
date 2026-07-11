@@ -703,6 +703,9 @@
       showToast("Original files required", "Add your original Generals and Zero Hour media before launching.", "warning");
       return;
     }
+    if (window.ZeroHRuntime?.closing) {
+      await window.ZeroHRuntime.exit();
+    }
     if (window.ZeroHRuntime?.closed) {
       try { sessionStorage.setItem(RELAUNCH_AFTER_RELOAD_KEY, "1"); } catch { /* optional */ }
       window.location.reload();

@@ -477,9 +477,10 @@ Dev-box render-verify: symlink worktree `dist/` → main's built `dist/` renders
 
 - [ ] Move the game runtime into a disposable same-origin iframe so closing it
       also releases the main-realm WebAssembly memory immediately. The current
-      shutdown stops every worker/audio/network/OPFS owner; its retained wasm
-      heap is released by the transparent fresh-document reload on the next
-      launch because OffscreenCanvas transfer is one-shot per document.
+      shutdown stops every worker/audio/network/OPFS owner and retires the
+      transferred canvas compositor layer; its retained wasm heap is released
+      by the transparent fresh-document reload on the next launch because
+      OffscreenCanvas transfer is one-shot per document.
 
 - [ ] Add a versioned Service Worker/cache policy for the launcher HTML, JS,
       WebAssembly runtime, and non-user-owned UI assets before advertising a
