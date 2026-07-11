@@ -731,7 +731,7 @@ mitigation track. Items resolved or retired by the pivot:
       `cncPortShaderTier` localStorage → `ps11`. The desktop Settings control
       visibly defaults to Enhanced, while stored `ff` and `?shaderTier=ff`
       remain deterministic. `verify:shader-tier-config` covers fresh, stored,
-      URL-override, forced-worker, and invalid-value cases and captures
+      URL-override, forced-executor, and invalid-value cases and captures
       `pixel-shaders-default-settings.png`; the threaded play gate now requires
       a no-setting boot to report `ps11` rather than accepting either tier.
 - [x] **Verify and harden the generic D3D8 SM1 shader tier (Path B).** Commit

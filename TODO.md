@@ -1322,7 +1322,7 @@ screenshots on the release build.
       before/after terrain screenshot (fine noise grain + soft lightmap/cloud).
 - [ ] **Shader-tier (Path B) follow-ups** — the D3D8 SM1 (vs.1.1/ps.1.1)
       programmable tier LANDED 2026-07-09 (see DONE.md "D3D8 SM1 shader tier"):
-      generic bytecode→GLSL translator in `bridge.js`, SM1 text assembler +
+      generic bytecode→GLSL translator in `d3d8_executor.mjs`, SM1 text assembler +
       shader objects/constants in `wasm_d3d8_shim.cpp`, selectable via
       `?shaderTier=` / play-page Settings→Shaders (default `ps11`; explicit
       `ff` remains supported).
@@ -1386,7 +1386,7 @@ screenshots on the release build.
             fixture without duplicating the retail archives.
       - [ ] **Retire the c32/c33 tree-shroud FF hack after the current ps11
             tree-fidelity pass proves the real shader path** (`uTreeShroudGen`
-            in bridge.js + the unconditional
+            in `d3d8_executor.mjs` + the unconditional
             constant upload in `W3DTreeBuffer::drawTrees`) — under ps11 the
             real `Trees.vso` computes those UVs (`oT1 = (v0 + c32) * c33`);
             the hack only serves tier ff. Re-verify trees on the user's build
