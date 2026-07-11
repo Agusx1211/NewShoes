@@ -8,6 +8,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Public-readiness audit and documentation (2026-07-11)
+
+- [x] Audited all 1,539 commits and 13,397 reachable blobs for credential
+      signatures, private machine details, large files, generated builds, and
+      retail asset payloads. No secret signature, retail container, wasm build,
+      or blob above 10 MiB was found. The report separates current-tree results
+      from historical findings in `docs/public-readiness-audit.md`.
+- [x] Removed four tracked absolute build/artifact symlinks, removed private
+      machine defaults from GPU and harness tooling, generalized the tracked
+      orchestration roster, and hardened `.gitignore` against generated output,
+      credentials, issue dumps, and retail containers.
+- [x] Rewrote the public README and WebAssembly documentation for the current
+      threaded OPFS architecture, enhanced shader default, playable maturity,
+      asset ownership paths, build/test flow, license boundary, and evidence-
+      based automation attribution. Official Steam and EA acquisition links
+      were checked against their current first-party pages.
+
 ## Clean launcher game shutdown (2026-07-11)
 
 - [x] Replaced the launcher's overlay-only pause with a bounded real shutdown:
@@ -213,7 +230,7 @@ that merge stay). Details in `WebAssembly/notes/p1-engine-thread.md`
       `WebAssembly/harness/.certs/`, reused on every start so the browser
       trust decision sticks. 10-year, CN=cnc-harness, SANs: localhost,
       hostname(+.local), 127.0.0.1/::1, every non-internal interface IP, and
-      192.168.106.45 baked. NEVER rsync one box's `.certs` over another's.
+      <gpu-host> baked. NEVER rsync one box's `.certs` over another's.
 - [x] Replaced the legacy fallback with redirect/block (bridge.js/play.mjs):
       insecure non-localhost origin → fetch `/__cnc_https_info` (announces
       the HTTPS port; baked default 8443) → `location.replace` to
@@ -238,25 +255,25 @@ that merge stay). Details in `WebAssembly/notes/p1-engine-thread.md`
       on both boxes, :8123 server restarted with HTTPS_PORT=8443 (single pid
       serves both listeners; :8124 untouched), the interim `~/cnc-tls`
       stopgap TLS proxy on :8443 retired. Headless-Chrome probe 10/10:
-      http://192.168.106.45:8123/harness/play.html?autostart=1 redirects to
-      https://192.168.106.45:8443/... (query preserved), COI+SAB true, ANGLE
+      http://<gpu-host>:8123/harness/play.html?autostart=1 redirects to
+      https://<gpu-host>:8443/... (query preserved), COI+SAB true, ANGLE
       Metal (Apple M4), THREADED wasm instantiates (heap is a
       SharedArrayBuffer), 30/30 archives OPFS-mounted, real init → engine
       loop → shellmap title screenshot (non-black, logo + animated scene).
       Owner one-time step: on first load Chrome shows the self-signed-cert
-      interstitial for https://192.168.106.45:8443 — Advanced → Proceed (or
+      interstitial for https://<gpu-host>:8443 — Advanced → Proceed (or
       trust `WebAssembly/harness/.certs/cert.pem` in Keychain), once per
       device.
 
 ## Owner play-page mount-failure regression (2026-07-10, mount-failure lane)
 
-The owner's real headful Chrome at http://192.168.106.45:8123/harness/play.html
+The owner's real headful Chrome at http://<gpu-host>:8123/harness/play.html
 (threaded default) died with "FAILED: archive mount failed"; headless gates
 were green on the same build. Reproduced + root-caused on the Mac, fixed
 JS-only (no wasm rebuild), Mac-verified. Details in
 `WebAssembly/notes/p1-engine-thread.md` "Owner mount-failure regression".
 
-- [x] Reproduce the owner's exact failure on cnc-gpu (plain Chrome, fresh
+- [x] Reproduce the owner's exact failure on GPU verification host (plain Chrome, fresh
       profile, owner URL): `FAILED: archive mount failed` ← "Wasm module
       unavailable" ← `ReferenceError: SharedArrayBuffer is not defined` —
       Chrome IGNORES COOP/COEP on the untrustworthy plain-http LAN origin
@@ -335,7 +352,7 @@ cherry-pick); NOT merged to main by the lane itself.
 Final-migration lane. Full numbers + mechanism in
 `WebAssembly/notes/p1-engine-thread.md` "GATE D results".
 
-- [x] Deploy HEAD (af478736) to cnc-gpu: repo rsync + all three dists
+- [x] Deploy HEAD (af478736) to GPU verification host: repo rsync + all three dists
       md5-verified (`rsync --checksum` caught a stale `dist/cnc-port.wasm`
       with identical size+mtime — quick-check alone is not deploy proof);
       `__cnc_build_info` reports HEAD.
@@ -633,7 +650,7 @@ mitigation track. Items resolved or retired by the pivot:
       fractional remainder carried); W3DDisplay::draw's paced branch and
       W3DView's scripted-waypoint camera stepping consume it via weak hook
       `cnc_port_client_frame_elapsed_ms` (native + coupled loop untouched).
-      Verified on cnc-gpu Metal: 0.47× → ~1.0× at the same conditions; 60Hz
+      Verified on GPU verification host Metal: 0.47× → ~1.0× at the same conditions; 60Hz
       baseline unregressed. Known cosmetic residual: rotate/pitch/zoom camera
       moves are frame-count based and still slow slightly under fps dips —
       convert to elapsed-time if noticed.
@@ -703,7 +720,7 @@ mitigation track. Items resolved or retired by the pivot:
         ocean regain its original bright sparkle-highlighted water (the
         trapezoid water ps.1.1 shader) vs the flat dark FF fallback — the
         owner's "used to feel more vivid" gap.
-      - **Verified (Metal, cnc-gpu)**: same probe on Chrome + Metal against
+      - **Verified (Metal, GPU verification host)**: same probe on Chrome + Metal against
         dist-release (md5 parity with the dev box) — ps11 shellmap renders
         the sparkle water + full menu on the real GPU, explicit ff baseline
         unchanged → default flipped to ps11. A review subagent audited the
@@ -910,7 +927,7 @@ mitigation track. Items resolved or retired by the pivot:
       `~/cnc-verify/ingame_resolution_probe.mjs` on the Mac):
       1280x800→1600x1000→1280x800 mid-match, both `reflow:"in-place"`,
       playerControl preserved, scene coherent in screenshots. Shellmap gate
-      green on the new build; both dists rebuilt + rsynced to cnc-gpu with
+      green on the new build; both dists rebuilt + rsynced to GPU verification host with
       md5 parity.
 
 ## Stepped loading — no more main-thread freezes on boot/map load (2026-07-09)
@@ -1620,7 +1637,7 @@ mitigation track. Items resolved or retired by the pivot:
       `dist-release` build by default (`defaultCncPortDistDir()` returns
       `dist-release` only for play.html) while `build:port` only updates `dist`.
       Rebuilt BOTH `dist` (build:port) and `dist-release` (build:port:release)
-      with the fix, deployed both to cnc-gpu, and confirmed on real
+      with the fix, deployed both to GPU verification host, and confirmed on real
       `ANGLE Metal Renderer: Apple M4` (renderer string checked) that the blue
       rally line renders from the building to the rally flag — in the `dist`
       build (`rally-mac.png`) AND the user-facing `dist-release` build
@@ -6051,7 +6068,7 @@ mitigation track. Items resolved or retired by the pivot:
       artifacts/real-assets/W3DZH.big artifacts/real-assets/TexturesZH.big`,
       `git diff --check`, and Mac Chrome/Metal title verification
       (`ANGLE Metal Renderer: Apple M4`, 43 subsystems, shell-map screenshot
-      refreshed at `/home/agusx1211/cnc-mac-verify/mac-verify-title.png`).
+      refreshed at `<capture-dir>/mac-verify-title.png`).
 - [x] Extend the bridge.js stateHash draw-state cache to skip per-draw
       `normalizeD3D8*` / `textureStage*` JS object rebuilds and the
       texture-availability uniform block when
@@ -6079,7 +6096,7 @@ mitigation track. Items resolved or retired by the pivot:
       Chrome/Metal shell-map captures at frames 360/720: the same generated
       infantry textures now report `ready:true`, `sampled:true`,
       `storage:"rgba8"`, `uploads:1`, and the frame-720 screenshot at
-      `/home/agusx1211/cnc-mac-verify/shellmap-texture-labels/shellmap-frame-720.png`
+      `<capture-dir>/shellmap-texture-labels/shellmap-frame-720.png`
       shows colored infantry instead of white silhouettes.
 - [x] Fix the MD_USA01/shell-map first-scene air/water/ship ordering
       regression by preventing transparent texels in opaque texture-alpha
@@ -6106,7 +6123,7 @@ mitigation track. Items resolved or retired by the pivot:
       `ANGLE Metal Renderer: Apple M4`, `battleshipCutouts:12`,
       `chinookCutouts:3`, `comancheBlends:9`, and `shockwaveBlends:105`
       with the assertion passing and screenshot
-      `/Users/aa/cnc-verify/shellmap-order-frame240-cutout-assert/shellmap-frame-240.png`.
+      `<capture-dir>/shellmap-order-frame240-cutout-assert/shellmap-frame-240.png`.
 - [x] Add a real shell-map generated-infantry texture assertion to the existing
       texture-label capture harness. `SHELLMAP_ASSERT_INFANTRY_TEXTURES=1`
       now scans the real `WW3DAssetManager`/`HLodClass` draw path for
@@ -6127,8 +6144,8 @@ mitigation track. Items resolved or retired by the pivot:
       whiteOnly:0` for `#-16711936#zhca_uirguard.tga`,
       `#-16711936#zhca_uirtunfan.tga`, `#-16711936#zhca_uiter.tga`, and
       `#-16711936#zhca_uiworker.tga`. Screenshots:
-      `/Users/aa/cnc-verify/shellmap-nightly-combined-assert/shellmap-frame-240.png`
-      and `/Users/aa/cnc-verify/shellmap-nightly-combined-assert/shellmap-frame-720.png`.
+      `<capture-dir>/shellmap-nightly-combined-assert/shellmap-frame-240.png`
+      and `<capture-dir>/shellmap-nightly-combined-assert/shellmap-frame-720.png`.
 - [x] Add a live shell-map battle-FX texture assertion for the reported
       missing explosions. `SHELLMAP_ASSERT_BATTLE_FX_TEXTURES=1` now scans the
       same real shell-map draw history for shipped explosion/shockwave/cloud
@@ -6136,7 +6153,7 @@ mitigation track. Items resolved or retired by the pivot:
       verifies the textures are ready, sampled, and uploaded. Assertion mode
       now defaults the draw-history limit to 4096 so busy shell-map frames keep
       enough 3D/effect evidence. Verified on Mac M4 Chrome/Metal with:
-      `SHELLMAP_CAPTURE_DIR=/Users/aa/cnc-verify/shellmap-nightly-battle-fx
+      `SHELLMAP_CAPTURE_DIR=<capture-dir>/shellmap-nightly-battle-fx
       SHELLMAP_CAPTURE_FRAMES=240,720 SHELLMAP_ASSERT_CUTOUT_DEPTH=1
       SHELLMAP_ASSERT_INFANTRY_TEXTURES=1
       SHELLMAP_ASSERT_BATTLE_FX_TEXTURES=1 /opt/homebrew/bin/node
@@ -6594,7 +6611,7 @@ mitigation track. Items resolved or retired by the pivot:
       messages, requires the original `MSG_DOZER_CONSTRUCT` dispatch, then
       polls `queryDrawables` for a newly-created local `AmericaBarracks`.
       Verified with local Chromium:
-      `E2E_BROWSER_EXECUTABLE=/home/agusx1211/.cache/ms-playwright/chromium-1228/chrome-linux/chrome E2E_BROWSER_ARGS='--headless=new' node harness/input_select_e2e.mjs`.
+      `E2E_BROWSER_EXECUTABLE=<chromium-executable> E2E_BROWSER_ARGS='--headless=new' node harness/input_select_e2e.mjs`.
       The run created `AmericaBarracks#224` at screen `(759,360)`, world
       `(1244.230,329.251,18.75)`, body health `1/1000`, and ended with
       `SELECT-MOVE-COMMAND-BAR-AND-CONSTRUCTION-WORK`.
@@ -6603,7 +6620,7 @@ mitigation track. Items resolved or retired by the pivot:
       structure, steps real frames, re-queries the same drawable/object id, and
       requires body health to rise above its initial placement value. Verified
       with local Chromium:
-      `E2E_BROWSER_EXECUTABLE=/home/agusx1211/.cache/ms-playwright/chromium-1228/chrome-linux/chrome E2E_BROWSER_ARGS='--headless=new' node harness/input_select_e2e.mjs`.
+      `E2E_BROWSER_EXECUTABLE=<chromium-executable> E2E_BROWSER_ARGS='--headless=new' node harness/input_select_e2e.mjs`.
       The run selected `Slth_GLAInfantryWorker#209`, dispatched
       `Slth_Command_ConstructGLABarracks` through `MSG_DOZER_CONSTRUCT`, created
       `Slth_GLABarracks#224` at body health `1/1000`, and then observed health
@@ -6623,7 +6640,7 @@ mitigation track. Items resolved or retired by the pivot:
       real `GUI_COMMAND_UNIT_BUILD` button, requires `MSG_QUEUE_UNIT_CREATE`,
       and polls live drawables for the produced unit template. Verified with
       local Chromium:
-      `E2E_BROWSER_EXECUTABLE=/home/agusx1211/.cache/ms-playwright/chromium-1228/chrome-linux/chrome E2E_BROWSER_ARGS='--headless=new' node harness/input_select_e2e.mjs`.
+      `E2E_BROWSER_EXECUTABLE=<chromium-executable> E2E_BROWSER_ARGS='--headless=new' node harness/input_select_e2e.mjs`.
       The run selected `GLAInfantryWorker#209`, built `GLABarracks#224` to
       `1000/1000` health after 600 completion frames, clicked
       `Command_ConstructGLAInfantryRebel`, observed `dispatchQueueUnitCreateCount`
@@ -6638,7 +6655,7 @@ mitigation track. Items resolved or retired by the pivot:
       `MSG_DO_ATTACKMOVETO` plus a measured unit world-position delta. The
       harness also exposes `allDrawables` and a tactical-view `lookAt` RPC for
       future object-attack framing diagnostics. Verified with local Chromium:
-      `E2E_BROWSER_EXECUTABLE=/home/agusx1211/.cache/ms-playwright/chromium-1228/chrome-linux/chrome E2E_BROWSER_ARGS='--headless=new' node harness/input_select_e2e.mjs`.
+      `E2E_BROWSER_EXECUTABLE=<chromium-executable> E2E_BROWSER_ARGS='--headless=new' node harness/input_select_e2e.mjs`.
       The run selected `Slth_GLAInfantryRebel#225`, found no hostile live
       skirmish targets, clicked `Command_AttackMove`, observed
       `dispatchLastMoveCommandTypeName=MSG_DO_ATTACKMOVETO`, and measured the
@@ -9742,7 +9759,7 @@ mitigation track. Items resolved or retired by the pivot:
       and completed post-start frames with `GAME_SKIRMISH`, `loadingMap=false`,
       223 logic objects/drawables, live input/control bar, and a selected
       controllable object. Screenshot evidence is
-      `/Users/aa/cnc-verify/cnc-skirmish-loaded-after-ai-dispatch.png`
+      `<capture-dir>/cnc-skirmish-loaded-after-ai-dispatch.png`
       with a nonblank 1280x656 canvas center pixel `[158,144,135,255]`.
 - [x] Gate Skirmish Start with a repeatable focused harness smoke.
       Added `harness/skirmish_start_smoke.mjs` and `npm run
@@ -11313,7 +11330,7 @@ mitigation track. Items resolved or retired by the pivot:
       LAN-to-game transport handoff. The optimized runtime's
       `ConnectionManager::doRelay` null-member-call UB was removed, and browser
       packet drains/walks are bounded so event-fed traffic yields between
-      frames. Verified entirely on `llmtrain` with a fresh
+      frames. Verified entirely on `development host` with a fresh
       `build:port:threaded:release` and a four-client headless networking/
       simulation run; GPU rasterization was disabled because the allowed GPU
       machines were intentionally not used, so this is not visual evidence.
@@ -12778,7 +12795,7 @@ mitigation track. Items resolved or retired by the pivot:
       `node WebAssembly/harness/mac_verify.mjs --no-build
       --target=player-control`, which reported Apple M4 Metal,
       `playerControl: YES`, 3,150 frames, and saved
-      `/home/agusx1211/cnc-mac-verify/mac-verify-player-control.png` showing
+      `<capture-dir>/mac-verify-player-control.png` showing
       the rendered MD_USA01 scene with HUD/control bar visible.
 - [x] Re-green the `EXPECT_WASM=1` aggregate smoke after the
       `edgeMapperApply` heap-corruption failure. Bisection showed

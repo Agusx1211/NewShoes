@@ -704,7 +704,7 @@ DONE.md with reasons.
       notes/p1-engine-thread.md).**
       (GATE D — RUN 2026-07-10; RESOLVED same day by the blocker-fix lane;
       full numbers in notes/p1-engine-thread.md "GATE D root cause + fix"):
-      renderer/boot/init/audio/skirmish/screenshots ALL GREEN on cnc-gpu.
+      renderer/boot/init/audio/skirmish/screenshots ALL GREEN on GPU verification host.
       The initially-reported "threaded-only GL-throughput regression"
       (~16.4k vs ~40.8k draws/s, shellmap client collapse to ~7/s) was a
       BUILD-FLAVOR artifact, not the worker: dist-threaded is a Debug build
@@ -1353,7 +1353,7 @@ screenshots on the release build.
             mid-session to bisect an artifact to one shader). Verify each
             report against the A/B pairs before chasing.
       - [x] **Metal verification of the tier pipeline.** shader-tier probe on
-            cnc-gpu (Chrome + Metal, dist-release): ps11 registers 13 ps +
+            GPU verification host (Chrome + Metal, dist-release): ps11 registers 13 ps +
             Trees.vso, links all pairs, 0 failures/fallbacks; ff baseline
             unchanged. (The original flip/revert is historical; ps11 is the
             current owner-requested default.)
@@ -3601,7 +3601,7 @@ residue and the next frontier.
       hashes and representative player commands.
 - [ ] Run the four-player threaded match on an allowed real-GPU machine and
       capture all four canvases. The 2026-07-11 four-client gate deliberately
-      disabled GPU rasterization on `llmtrain` after four simultaneous
+      disabled GPU rasterization on `development host` after four simultaneous
       SwiftShader contexts were reclaimed; networking/simulation is verified,
       but that run is not four-client visual evidence.
 - [ ] File transfer / map transfer path.
@@ -4022,7 +4022,7 @@ and then start with the PROFILE, not with any individual fix.
       so agents can reproduce late-game reports even after long nondeterministic
       play sessions.
 - [ ] Net-sync regression (two clients, assert no desync).
-- [ ] cnc-gpu disk pressure + probe-profile hygiene (found 2026-07-10, GATE D
+- [ ] GPU verification host disk pressure + probe-profile hygiene (found 2026-07-10, GATE D
       lane): the Mac's data volume sits at ~3.2GiB free steady-state, so ONE
       leaked 2.3GB OPFS probe profile silently starves the next run's OPFS
       writes (FileSystemSyncAccessHandle.write returns 2^32-8, boot hangs at
@@ -4060,6 +4060,17 @@ and then start with the PROFILE, not with any individual fix.
 ## Cross-cutting: project hygiene
 
 - [ ] Keep `PROJECT.md`, `TODO.md`, and `DONE.md` updated as milestones move.
+- [ ] Before the first public push, decide whether to execute the history
+      rewrite in `docs/public-readiness-audit.md`. No secret or retail payload
+      was found, but deleted history still exposes old machine paths, private
+      network details, an internal handoff, and the owner's raw Git email.
+- [ ] Confirm the redistribution record for all launcher artwork with the
+      project owner. History describes the 38 files as project-owned and no
+      retail payload match was found, but binary art should have an explicit
+      durable origin statement before a formal release.
+- [ ] Add an automated public-tree gate for secret signatures, absolute
+      symlinks, retail container extensions/magic, and unexpectedly large
+      tracked blobs so the release audit cannot silently regress.
 - [ ] `WebAssembly/shims/` contains a file literally named
       `GameLogic\Weaponset.h` (backslash IN the filename, matching a
       Windows-style `#include "GameLogic\WeaponSet.h"`). It works on

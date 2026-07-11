@@ -1,184 +1,80 @@
-# Asset Handling
+# Asset handling
 
-The browser port uses the original game assets supplied by the user. Game data
-is copyrighted third-party content and must not be committed, bundled into
-release artifacts, uploaded to CI logs, or redistributed from this repository.
+Project New Shoes does not include retail game data. Command & Conquer maps,
+textures, models, audio, movies, BIG archives, Cabinet payloads, disc images,
+and installed game files are copyrighted third-party content. They must not be
+committed, bundled into releases, uploaded to CI, or redistributed from this
+repository.
 
-The source code in this repository is the port target. The assets are local
-inputs owned by the user who runs the port.
+The small `RequiredAssets` files inside EA's original source tree are part of
+the upstream source release. Launcher branding and wallpapers are separate
+project UI art documented in
+[harness/assets/README.md](harness/assets/README.md).
 
-## Local Layout
+## Player import
 
-- `../assets/` holds the user's original Zero Hour disc images, and may also
-  hold optional base Command & Conquer: Generals disc images. This path is
-  ignored by git.
-- `artifacts/real-assets/` holds extracted local test archives such as
-  `INIZH.big`. This path is ignored by git.
-- `dist/` and `build/` hold generated wasm build outputs. These paths are
-  ignored by git.
+Zero Hour depends on data from both the base game and the expansion. The
+launcher supports two local ownership paths:
 
-## Browser Delivery
+1. Select an installed game root containing the Generals and Zero Hour data.
+2. Select the complete Generals and Zero Hour original media set. ISO, IMG, and
+   MODE1/2352 BIN images are supported, including multi-disc releases.
 
-The human play page uses the ZeroH launcher and never needs a server copy of
-copyrighted assets:
+The browser worker:
 
-1. The user selects all original Generals + Zero Hour ISO/IMG/BIN images or a
-   folder containing both installed games. File System Access handles are used
-   when available; the standard file/directory inputs remain the session-only
-   fallback.
-2. `harness/launcher-asset-worker.js` scans locally. It reads ISO 9660 directly
-   from 2048-byte images or MODE1/2352 BIN sectors, parses the original
-   Microsoft Cabinet files, extracts NONE/MSZIP members, validates BIGF
-   headers, and builds `LooseScripts.big`. No source bytes are uploaded.
-3. The selected storage mode writes the 30-archive runtime manifest to a
-   Web-Lock-owned per-tab OPFS namespace (session/remember) or also keeps a
-   persistent `cnc-library/v1` browser installation. Remember mode stores only
-   source handles in IndexedDB; install mode checks quota and requests
-   persistent browser storage.
-4. `window.CnCPort.rpc("mountPreparedArchives", ...)` creates the original
-   engine-visible `/assets/.../*.big` marker tree and stages the already-local
-   OPFS paths in the engine worker before `GameEngine::init()`. This avoids an
-   additional multi-gigabyte memory copy and keeps exclusive sync access
-   handles isolated per live tab.
-5. The original `Win32BIGFileSystem`, INI, object-template, UI, audio, map, and
-   gameplay code reads those archives unchanged.
+- scans folders or ISO 9660 media locally;
+- reads Microsoft Cabinet files and NONE/MSZIP members;
+- validates the expected BIG archives and required internal paths;
+- builds the small loose-script archive needed by the runtime; and
+- writes the verified installation to browser-local OPFS.
 
-The same-origin `artifacts/real-assets/` fetch flow remains a development and
-regression facility. `mountArchive` / `mountArchives` still let automated
-harnesses fetch ignored local artifacts and register an aggregate archive set
-before boot; `play.html?autostart=1` uses that path only for unattended gates.
+No selected bytes are uploaded. The authoritative archive inventory and content
+sentinels live in [harness/launcher-archive-specs.js](harness/launcher-archive-specs.js).
 
-This keeps the browser-specific boundary at file delivery. BIG parsing, INI
-parsing, object templates, UI data, audio events, maps, and gameplay behavior
-must continue to come from the original source and real archives.
+The engine worker mounts zero-byte path markers for the original filesystem and
+opens the real archive data through synchronous OPFS access handles. The
+original `Win32BIGFileSystem`, INI, object, map, UI, texture, and audio code then
+reads the user-owned archives unchanged.
 
-Do not upload assets to a server or ship default replacement data.
+## Storage modes
 
-## Required Archives
+The launcher can use an installation for the current session, remember source
+handles where the browser permits it, or retain a persistent browser
+installation. Persistent mode requests durable storage but cannot override the
+browser's actual disk quota. The OPFS write result is authoritative.
 
-The current runtime BIG inventory can be extracted from the user's local disc
-images with:
+Each live engine uses its own Web-Lock-owned namespace so multiple tabs do not
+share exclusive synchronous file handles. Closing the runtime releases its
+handles and lock.
+
+## Development fixtures
+
+These paths are intentionally ignored:
+
+| Path | Local content |
+|---|---|
+| `assets/` | original media and the local reference library, except its index and search tool |
+| `WebAssembly/artifacts/real-assets/` | extracted BIG archives and movie payloads |
+| `WebAssembly/artifacts/` | screenshots, profiles, logs, dumps, and browser profiles |
+| `WebAssembly/build/` | CMake and Emscripten build trees |
+| `WebAssembly/dist*` | generated JavaScript, wasm, and worker output |
+| `WebAssembly/harness/.certs/` | per-machine self-signed HTTPS certificate |
+
+Prepare ignored development archives with:
 
 ```sh
+cd WebAssembly
 npm run extract:runtime-archives
+npm run verify:assets
 ```
 
-The script extracts these archives into ignored `artifacts/real-assets/` and
-checks that every output has a nonempty `BIGF` archive header.
-If base Generals disc images are present, the same script also extracts
-`INI.big` and `English.big`. It auto-detects base `.bin` images in `../assets`
-when their names contain `Generals` and `Disc 1`/`Disc 2` but not `Zero Hour`;
-set `CNC_GENERALS_DISC1_IMAGE` and `CNC_GENERALS_DISC2_IMAGE` to force explicit
-paths.
-After extraction, `npm run test:runtime-archives-browser` verifies the browser
-fetch/MEMFS delivery path by loading the full archive set through the main
-`cnc-port` Playwright harness and reading each archive plus the aggregate
-archive tree with the original `Win32BIGFileSystem`. Optional base archives are
-mounted under `ZZBase_*.big` names so the aggregate `*.big` load keeps Zero Hour
-archive entries ahead of base fallback entries, matching the original expansion
-install behavior where the ZH install path is loaded before the base Generals
-install path. It also checks the C++
-bootstrap `archiveMount` state both before and after `boot`, which is the
-preload ordering the later original startup path will consume. The post-boot
-state includes `archiveMount.bootProbe`, proving the bootstrap used the
-registered aggregate path during boot. The same smoke asserts
-`assetProbe.gameText` by loading the real English `Generals.csf` through
-original `GameText.cpp` from the fetched archive set and checking known labels.
-It also asserts `assetProbe.gameData` by loading real
-`Data\INI\GameData.ini` from `INIZH.big` through original
-`Common/INI.cpp::load` into original `GlobalData.cpp`, then verifying shipped
-values. It also asserts `assetProbe.water` by loading real
-`Data\INI\Water.ini` from `INIZH.big` through original
-`Common/INI.cpp::load`, `Common/INI/INIWater.cpp`, and
-`GameClient/Water.cpp`, then checking shipped water textures, scroll/repeat
-values, and transparency settings. It also asserts `assetProbe.weather` by
-loading real `Data\INI\Weather.ini` from `INIZH.big` through original
-`Common/INI.cpp::load` and `GameClient/Snow.cpp`, then checking shipped snow
-settings. It also asserts `assetProbe.mapCache` by loading real
-`Maps\MapCache.ini` from `MapsZH.big` through original `Common/INI.cpp::load`
-and `Common/INI/INIMapCache.cpp`, then checking shipped map counts and known
-map entries. The smoke also checks `startupAssets`:
-`pending_boot_probe` before boot and `ready` after the registered archive set
-passes the boot-time archive/GameData/Water/Weather/GameText/MapCache probes.
-Full all-block original INI loading, default+shipped water/weather startup
-loading, water/weather rendering, and live map-cache rebuilding are still
-tracked separately from this bootstrap preflight.
+Many focused tests consume those ignored fixtures. A missing fixture must
+produce a clear skip or error; it is never a reason to check game data into Git.
 
-| Archive | Source | Role |
-|---|---|---|
-| `INIZH.big` | `Data1.cab` | Zero Hour INI/data definitions |
-| `W3DZH.big` | `Data1.cab` | Zero Hour W3D models |
-| `W3DEnglishZH.big` | `Language.cab` | English-localized W3D/UI assets |
-| `TexturesZH.big` | `Data1.cab` | Zero Hour textures |
-| `TerrainZH.big` | `Data1.cab` | Terrain assets |
-| `WindowZH.big` | `Data1.cab` | Shell/control bar/window assets |
-| `ShadersZH.big` | `Data1.cab` | Shader package |
-| `MapsZH.big` | `Data1.cab` | Zero Hour maps |
-| `AudioZH.big` | `Data1.cab` | Shared Zero Hour audio |
-| `AudioEnglishZH.big` | `Language.cab` | English localized audio |
-| `SpeechZH.big` | `Data1.cab` | Shared speech data |
-| `SpeechEnglishZH.big` | `Language.cab` | English localized speech |
-| `MusicZH.big` | `Data1.cab` | Zero Hour music |
-| `Music.big` | `Data1.cab` | Base shared music |
-| `EnglishZH.big` | `Language.cab` | English text/localization data |
-| `GensecZH.big` | Disc 1 / `Data1.cab` | Zero Hour security/archive data |
-| `Gensec.big` | Disc 2 | Base security/archive data |
+## Release rule
 
-Optional base startup archives:
-
-| Archive | Source | Role |
-|---|---|---|
-| `INI.big` | Base Generals `Data1.cab` | Default/startup INI files still referenced by original `GameEngine.cpp`, including `Data\INI\Default\*.ini`, `Data\INI\Rank.ini`, and `Data\INI\CommandMap.ini` |
-| `English.big` | Base Generals `Language.cab` | Base English localization fallback data |
-
-### Startup Inventory Classification
-
-`npm run inventory:startup-archives` reports why required startup files are
-missing. `optionalBaseArchives` records whether `INI.big` / `English.big` are
-present, `missingDetails` annotates each gap with `expectedSource` and
-`reason`, and `missingByReason` summarizes the counts.
-
-Reasons are:
-
-- `optionalBaseArchiveAbsent` — the file is expected from optional base
-  Generals data that is not mounted locally.
-- `missingFromBaseArchive` — the expected base archive is present but still
-  lacks the file.
-- `missing` — the Zero Hour runtime archive set itself is incomplete.
-
-Pass `--strict` to fail only on `missingFromBaseArchive` or `missing`. The
-current Zero Hour-only set stays green under `--strict` because its remaining
-default/startup INI gaps are classified as optional base archive absence.
-
-Pass `--require-base-startup` to run the bounded verification mode that proves
-the current startup-file blocker when the optional base Generals startup
-archives are supplied. It fails nonzero (`ok=false`) when any optional base
-startup archive is absent or incomplete. The JSON exposes:
-
-- `baseArchiveReadiness` — per optional base archive (`INI.big`, `English.big`):
-  `present`, `expectedStartupFileCount`, `foundStartupFileCount`,
-  `missingStartupFiles`, and `complete` (present and supplying every owned
-  base startup file).
-- `baseArchiveStartupReady` — boolean; true only when every optional base
-  startup archive is present and complete.
-- `missingBaseFiles` — every startup file missing from its owning optional base
-  archive, with `expectedSource`, `reason`, and `sourceAbsent`.
-- `requireBaseStartupFailures` — on failure under `--require-base-startup`,
-  `{ absent: [...], incomplete: [{ archive, path }] }`.
-
-The current Zero Hour-only assets fail under `--require-base-startup` by
-design, because `INI.big` / `English.big` are not mounted; use this mode to
-verify a supplied base-Generals asset set instead.
-
-The same inventory also reports `AudioManager::init` startup INI coverage via
-`audioStartupFiles`, `audioStartupReady`, and `missingAudioStartupFiles`.
-Pass `--require-audio-startup` to fail nonzero (`ok=false`) when any of those
-audio startup INIs are absent. The current Zero Hour-only set has the shipped
-`Music.ini`, `SoundEffects.ini`, `Speech.ini`, `Voice.ini`, `MiscAudio.ini`,
-and `Default\SoundEffects.ini` entries in `INIZH.big`, but still lacks
-`AudioSettings.ini`, `Default\Music.ini`, `Default\Speech.ini`, and
-`Default\Voice.ini`.
-
-This is the current runtime archive set from the installer media, not yet the
-minimum boot set. The exact boot-minimum list must be proven after the original
-engine startup and file-system paths are linked into wasm.
+Release packages may contain the port source, generated runtime code when the
+license terms are met, and launcher UI assets with documented redistribution
+rights. They must not
+contain original retail data or a preinstalled OPFS profile. Users bring their
+own data and the launcher validates it locally.
