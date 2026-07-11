@@ -107,13 +107,15 @@ for (const name of expectedFiles) {
 await verifyStaticModuleReferences();
 if (totalBytes > 250 * 1024 * 1024) findings.push(`artifact is unexpectedly large: ${totalBytes} bytes`);
 
-const [license, index, legal, launcher, play, manifestText] = await Promise.all([
+const [license, index, legal, launcher, play, manifestText, bootstrap, serviceWorker] = await Promise.all([
   readFile(resolve(root, "LICENSE.md"), "utf8").catch(() => ""),
   readFile(resolve(root, "index.html"), "utf8").catch(() => ""),
   readFile(resolve(root, "legal.html"), "utf8").catch(() => ""),
   readFile(resolve(root, "launcher.html"), "utf8").catch(() => ""),
   readFile(resolve(root, "harness/play.html"), "utf8").catch(() => ""),
   readFile(resolve(root, "manifest.webmanifest"), "utf8").catch(() => ""),
+  readFile(resolve(root, "coi-bootstrap.js"), "utf8").catch(() => ""),
+  readFile(resolve(root, "coi-serviceworker.js"), "utf8").catch(() => ""),
 ]);
 if (!license.includes("ADDITIONAL TERMS per GNU GPL Section 7") || !license.includes("Disclaimer of Warranty")) {
   findings.push("LICENSE.md: complete GPLv3 license and additional terms are missing");
@@ -136,6 +138,12 @@ if (!launcher.includes('<base href="./harness/">')
 if (!play.includes('rel="canonical" href="../"')
     || !play.includes('id="publicLegalNotice"') || !play.includes("Corresponding source")) {
   findings.push("harness/play.html: launcher About legal notice is missing");
+}
+if (!bootstrap.includes('const workerVersion = "project-new-shoes.pages-root.v1"')
+    || !bootstrap.includes("await installCurrentWorker()")
+    || !serviceWorker.includes('const WORKER_VERSION = "project-new-shoes.pages-root.v1"')
+    || !serviceWorker.includes("event.data?.type === VERSION_REQUEST")) {
+  findings.push("coi bootstrap/worker: versioned rollout handoff is missing");
 }
 try {
   const manifest = JSON.parse(manifestText);

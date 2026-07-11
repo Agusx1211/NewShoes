@@ -1,13 +1,23 @@
 #!/usr/bin/env node
 
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, relative, resolve, sep } from "node:path";
 import { chromium } from "playwright";
 
 const root = resolve(process.argv[2] || "pages-dist");
 const prefix = "/CnC_Generals_Zero_Hour/";
+const rolloutSeedName = "__coi_rollout_seed.html";
+const rolloutWorkerVersion = "project-new-shoes.pages-root.v1";
+const oldWorkerRevision = "18b95831";
+const oldWorkerSha256 = "a5b1bdd23a433a580ed71de93d5429efd3878101b3426e3d0d671ae5e0304c16";
+const oldWorkerSource = await readFile(new URL("./fixtures/coi-serviceworker-18b95831.js", import.meta.url), "utf8");
+if (createHash("sha256").update(oldWorkerSource).digest("hex") !== oldWorkerSha256) {
+  throw new Error(`The ${oldWorkerRevision} rollout worker fixture no longer matches its pinned digest`);
+}
+let serveOldServiceWorker = false;
 const mime = new Map([
   [".css", "text/css; charset=utf-8"],
   [".html", "text/html; charset=utf-8"],
@@ -36,6 +46,27 @@ const server = createServer(async (request, response) => {
   const relativeName = decodeURIComponent(url.pathname.startsWith(prefix)
     ? url.pathname.slice(prefix.length)
     : url.pathname.slice(1)) || "index.html";
+  if (relativeName === rolloutSeedName) {
+    const body = "<!doctype html><meta charset=utf-8><title>Service worker rollout seed</title>";
+    response.writeHead(200, {
+      "content-length": Buffer.byteLength(body),
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+    });
+    if (request.method === "HEAD") response.end();
+    else response.end(body);
+    return;
+  }
+  if (serveOldServiceWorker && relativeName === "coi-serviceworker.js") {
+    response.writeHead(200, {
+      "content-length": Buffer.byteLength(oldWorkerSource),
+      "content-type": "text/javascript; charset=utf-8",
+      "cache-control": "no-store",
+    });
+    if (request.method === "HEAD") response.end();
+    else response.end(oldWorkerSource);
+    return;
+  }
   const path = resolve(root, relativeName);
   if (!inside(root, path)) {
     response.writeHead(403);
@@ -227,6 +258,106 @@ try {
     await rootContext.close();
   }
 
+  const rolloutContext = await browser.newContext({ serviceWorkers: "allow" });
+  const rolloutPage = await rolloutContext.newPage();
+  const rolloutErrors = [];
+  let rolloutNavigations = 0;
+  rolloutPage.on("pageerror", (error) => rolloutErrors.push(`pageerror: ${error.message}`));
+  rolloutPage.on("response", (response) => {
+    if (response.status() >= 400
+        && !/__cnc_(build_info|https_info)/.test(response.url())
+        && !/\/artifacts\/real-assets\/cursors\/manifest\.json(?:\?|$)/.test(response.url())) {
+      rolloutErrors.push(`${response.status()} ${response.url()}`);
+    }
+  });
+  try {
+    serveOldServiceWorker = true;
+    await rolloutPage.goto(`${baseUrl}${rolloutSeedName}`, { waitUntil: "domcontentloaded" });
+    await rolloutPage.evaluate(async () => {
+      await navigator.serviceWorker.register("./coi-serviceworker.js", {
+        scope: "./",
+        updateViaCache: "none",
+      });
+      await navigator.serviceWorker.ready;
+      if (!navigator.serviceWorker.controller) {
+        await new Promise((resolveController, rejectController) => {
+          const timer = setTimeout(() => rejectController(new Error("Old worker did not claim the seed page")), 10000);
+          navigator.serviceWorker.addEventListener("controllerchange", () => {
+            clearTimeout(timer);
+            resolveController();
+          }, { once: true });
+        });
+      }
+    });
+    const oldVersion = await rolloutPage.evaluate(() => new Promise((resolveVersion) => {
+      const channel = new MessageChannel();
+      const timer = setTimeout(() => resolveVersion(null), 500);
+      channel.port1.onmessage = (event) => {
+        clearTimeout(timer);
+        resolveVersion(event.data?.version || null);
+      };
+      navigator.serviceWorker.controller.postMessage(
+        { type: "project-new-shoes:coi-worker-version" },
+        [channel.port2],
+      );
+    }));
+    if (oldVersion !== null) {
+      throw new Error(`Pinned ${oldWorkerRevision} worker unexpectedly reported version ${oldVersion}`);
+    }
+
+    serveOldServiceWorker = false;
+    rolloutPage.on("framenavigated", (frame) => {
+      if (frame === rolloutPage.mainFrame()) rolloutNavigations += 1;
+    });
+    await rolloutPage.goto(`${baseUrl}?diag=lite`, { waitUntil: "domcontentloaded" });
+    await rolloutPage.waitForURL(`${baseUrl}?diag=lite`, { timeout: 30000 });
+    await rolloutPage.waitForSelector("#desktop", { state: "visible", timeout: 30000 });
+    await rolloutPage.waitForFunction((expectedVersion) => new Promise((resolveVersion) => {
+      if (!window.crossOriginIsolated || typeof SharedArrayBuffer !== "function"
+          || !navigator.serviceWorker.controller || !window.CnCPort?.rpc) {
+        resolveVersion(false);
+        return;
+      }
+      const channel = new MessageChannel();
+      const timer = setTimeout(() => resolveVersion(false), 250);
+      channel.port1.onmessage = (event) => {
+        clearTimeout(timer);
+        resolveVersion(event.data?.version === expectedVersion);
+      };
+      navigator.serviceWorker.controller.postMessage(
+        { type: "project-new-shoes:coi-worker-version" },
+        [channel.port2],
+      );
+    }), rolloutWorkerVersion, { timeout: 30000 });
+    if (new URL(rolloutPage.url()).pathname !== prefix
+        || new URL(rolloutPage.url()).search !== "?diag=lite") {
+      throw new Error(`Worker rollout lost the canonical URL or query: ${rolloutPage.url()}`);
+    }
+    if (rolloutNavigations > 4) {
+      throw new Error(`Worker rollout exceeded its navigation bound: ${rolloutNavigations}`);
+    }
+
+    const rolloutPrep = await rolloutPage.evaluate(() => window.CnCPort.rpc("mountArchives", { archives: [] }));
+    if (rolloutPrep.ok !== false || !/Missing archive list/.test(rolloutPrep.error || "")) {
+      throw new Error(`Unexpected rollout empty-mount result: ${JSON.stringify(rolloutPrep)}`);
+    }
+    await rolloutPage.waitForFunction(() => window.CnCPort?.state?.threadedMode === true, null, { timeout: 30000 });
+    const rolloutRuntime = await rolloutPage.evaluate(() => ({
+      heapShared: window.CnCPort.engineModule()?.HEAP8?.buffer instanceof SharedArrayBuffer,
+      canvasTransferred: (() => {
+        try { document.querySelector("#viewport").transferControlToOffscreen(); return false; }
+        catch { return true; }
+      })(),
+    }));
+    if (!Object.values(rolloutRuntime).every(Boolean)) {
+      throw new Error(`Threaded runtime failed after worker rollout: ${JSON.stringify(rolloutRuntime)}`);
+    }
+    if (rolloutErrors.length) throw new Error(`Unexpected rollout browser errors:\n${rolloutErrors.join("\n")}`);
+  } finally {
+    serveOldServiceWorker = false;
+    await rolloutContext.close();
+  }
+
   console.log(JSON.stringify({
     ok: true,
     baseUrl,
@@ -235,6 +366,13 @@ try {
     runtime,
     canonicalPath: { first: firstPathname, reload: reloadPathname },
     domainRootCanonical: true,
+    workerRollout: {
+      fromRevision: oldWorkerRevision,
+      toVersion: rolloutWorkerVersion,
+      navigations: rolloutNavigations,
+      canonicalQueryPreserved: true,
+      threadedRuntime: true,
+    },
     legacyPlayRecovery: true,
     legalNotice: true,
     unregister: true,
