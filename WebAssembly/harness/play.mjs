@@ -5,6 +5,7 @@
 
 import "./launcher-archive-specs.js";
 import { createIssueRecorder } from "./issue-recorder.mjs";
+import { resolveShaderTier } from "./shader-tier-config.mjs";
 
 const archiveSpecs = Object.freeze(window.ZeroHArchiveSpecs.map((spec) => Object.freeze(
   spec.artifactSourceName === spec.name
@@ -1627,16 +1628,13 @@ function bindDesktopGameSettings() {
 }
 
 function effectiveShaderTier() {
-  const urlTier = queryParams.get("shaderTier");
-  if (urlTier === "ff" || urlTier === "ps11") {
-    return urlTier;
-  }
+  let storedTier = null;
   try {
-    const stored = window.localStorage?.getItem("cncPortShaderTier");
-    return stored === "ps11" ? "ps11" : "ff";
+    storedTier = window.localStorage?.getItem("cncPortShaderTier") ?? null;
   } catch {
-    return "ff";
+    // Storage is optional; URL and default selection still apply.
   }
+  return resolveShaderTier({ search: queryParams, storedTier }).tier;
 }
 
 function setShaderTier(tier, { reload = false } = {}) {

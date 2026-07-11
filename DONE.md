@@ -642,12 +642,11 @@ mitigation track. Items resolved or retired by the pivot:
 
 - [x] **Path B (OWNER-REQUESTED): generic D3D8 SM1 (vs.1.1/ps.1.1)
       bytecode→GLSL translation so the original programmable-shader effects
-      run in the browser.** Opt-in via `?shaderTier=ps11`, play-page
-      Settings → Shaders → Enhanced, or localStorage `cncPortShaderTier`
-      (default is Classic/ff: the tier is mechanically verified on Metal but
-      owner playtesting found visual fidelity regressions — see TODO
-      "Shader-tier (Path B) follow-ups" — so the default flip was reverted
-      pending fixes). What landed:
+      run in the browser.** Available via `?shaderTier=`, play-page Settings →
+      Shaders, or localStorage `cncPortShaderTier`. The tier originally shipped
+      opt-in, was briefly flipped and reverted during fidelity work, and became
+      the owner-requested default on 2026-07-11; Classic/ff remains available
+      as an explicit compatibility choice. What landed:
       - **Assets**: base-Generals `Shaders.big` was never extracted — recovered
         from the Generals CD1 installer cab (lowercase `shaders.big` entry, so
         the generic extract loop missed it; `extract_zh_runtime_archives.sh`
@@ -723,8 +722,18 @@ mitigation track. Items resolved or retired by the pivot:
 
 ---
 
-## Enhanced SM1 shader effects fidelity (2026-07-10)
+## Enhanced SM1 shader effects fidelity (2026-07-10 onward)
 
+- [x] **Make Enhanced ps.1.1 the default without erasing explicit Classic
+      choices.** A shared shader-tier resolver now owns the complete precedence
+      contract used by the launcher, threaded-worker setup, and renderer
+      executor: forced worker choice → valid `?shaderTier=` URL → valid
+      `cncPortShaderTier` localStorage → `ps11`. The desktop Settings control
+      visibly defaults to Enhanced, while stored `ff` and `?shaderTier=ff`
+      remain deterministic. `verify:shader-tier-config` covers fresh, stored,
+      URL-override, forced-worker, and invalid-value cases and captures
+      `pixel-shaders-default-settings.png`; the threaded play gate now requires
+      a no-setting boot to report `ps11` rather than accepting either tier.
 - [x] **Verify and harden the generic D3D8 SM1 shader tier (Path B).** Commit
       `ea206b40` supplies the generic ps.1.1/vs.1.1 bytecode-to-GLSL path; the
       real shell-map runtime now has durable coverage for its shipped effects.

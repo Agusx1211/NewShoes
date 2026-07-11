@@ -1,3 +1,5 @@
+import { resolveShaderTier } from "./shader-tier-config.mjs";
+
 // D3D8 -> WebGL2 executor for the C&C Generals Zero Hour wasm port.
 //
 // Extracted verbatim from harness/bridge.js (P1b of the engine-thread work,
@@ -8359,40 +8361,20 @@ function d3d8ShaderTierQuery() {
     harnessState.graphics.d3d8ShaderTier = tier === 1 ? "ps11" : "ff";
     return tier;
   };
+  let storedTier = null;
   try {
-    const forced = globalThis.__cncD3D8ShaderTier;
-    if (forced === "ps11" || forced === 1 || forced === true) {
-      return record(1, "forced");
-    }
-    if (forced === "ff" || forced === 0 || forced === false) {
-      return record(0, "forced");
-    }
-    if (typeof location !== "undefined") {
-      const param = new URLSearchParams(location.search).get("shaderTier");
-      if (param === "ps11") {
-        return record(1, "url");
-      }
-      if (param === "ff") {
-        return record(0, "url");
-      }
-    }
-    if (typeof localStorage !== "undefined") {
-      const stored = localStorage.getItem("cncPortShaderTier");
-      if (stored === "ps11") {
-        return record(1, "localStorage");
-      }
-      if (stored === "ff") {
-        return record(0, "localStorage");
-      }
-    }
+    storedTier = typeof localStorage !== "undefined"
+      ? localStorage.getItem("cncPortShaderTier")
+      : null;
   } catch {
-    // Fall through to the default tier.
+    // Storage is optional; URL and default selection still apply.
   }
-  // Default: fixed function. The ps11 tier renders but has open visual
-  // regressions from owner playtesting (over-bright water, stuck muzzle
-  // flash, flat lighting — see TODO "Shader-tier (Path B) follow-ups");
-  // it stays opt-in (Settings → Shaders → Enhanced) until those are fixed.
-  return record(0, "default");
+  const resolved = resolveShaderTier({
+    forcedTier: globalThis.__cncD3D8ShaderTier,
+    search: typeof location !== "undefined" ? location.search : "",
+    storedTier,
+  });
+  return record(resolved.tier === "ps11" ? 1 : 0, resolved.source);
 }
 
 function ensureD3D8DepthStencilProgram() {

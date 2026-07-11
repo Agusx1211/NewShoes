@@ -261,7 +261,8 @@ extended `npm run verify:threaded-play` gate.
   - Everything else keeps the explicit "not yet supported in threaded mode"
     default — no silent main-thread wasm calls.
 - **Shader tier**: resolved main-side with the executor's exact precedence
-  (page URL `?shaderTier=` → localStorage `cncPortShaderTier`) and passed
+  (page URL `?shaderTier=` → localStorage `cncPortShaderTier` → default
+  `ps11`) and passed
   through the realm-setup options; engine_realm_boot forces
   `globalThis.__cncD3D8ShaderTier` BEFORE constructing the executor (tier is
   sampled once at device create). Worker status posts include the resolved
