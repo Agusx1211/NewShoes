@@ -172,13 +172,43 @@ try {
   assert.equal(await githubShortcut.getAttribute("rel"), "noopener noreferrer");
   assert.equal(await githubShortcut.getByText("GitHub Repository", { exact: true }).isVisible(), true);
   assert.equal(await githubShortcut.locator('use[href="#i-github"]').count(), 1);
+  const expectSingleGithubPopup = async (activate, label) => {
+    const initialPages = githubContext.pages().length;
+    const popupPromise = githubContext.waitForEvent("page");
+    await activate();
+    const popup = await popupPromise;
+    await popup.waitForLoadState("domcontentloaded");
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(githubContext.pages().length, initialPages + 1, `${label} must add exactly one page`);
+    assert.equal(popup.url(), "https://github.com/Agusx1211/NewShoes");
+    await popup.close();
+  };
   await githubShortcut.focus();
-  const popupPromise = githubPage.waitForEvent("popup");
-  await githubShortcut.press("Enter");
-  const githubPopup = await popupPromise;
-  await githubPopup.waitForLoadState("domcontentloaded");
-  assert.equal(githubPopup.url(), "https://github.com/Agusx1211/NewShoes");
+  await expectSingleGithubPopup(() => githubShortcut.press("Enter"), "keyboard activation");
+  await expectSingleGithubPopup(() => githubShortcut.dblclick(), "desktop double-click");
   await githubContext.close();
+
+  const mobileGithubContext = await browser.newContext({
+    ignoreHTTPSErrors: true,
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  await mobileGithubContext.route("https://github.com/Agusx1211/NewShoes", (route) => route.fulfill({
+    status: 200, contentType: "text/html", body: "<!doctype html><title>Project New Shoes on GitHub</title>",
+  }));
+  const mobileGithub = await mobileGithubContext.newPage();
+  await mobileGithub.goto(baseUrl, { waitUntil: "domcontentloaded" });
+  await mobileGithub.locator('#setupWindow [data-window-action="close"]').click();
+  const mobileGithubShortcut = mobileGithub.locator("[data-github-shortcut]");
+  const mobilePopupPromise = mobileGithubContext.waitForEvent("page");
+  await mobileGithubShortcut.tap();
+  const mobilePopup = await mobilePopupPromise;
+  await mobilePopup.waitForLoadState("domcontentloaded");
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(mobileGithubContext.pages().length, 2, "one mobile tap must open exactly one tab");
+  assert.equal(mobilePopup.url(), "https://github.com/Agusx1211/NewShoes");
+  await mobileGithubContext.close();
 
   const mobileContext = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 390, height: 844 }, isMobile: true });
   const mobile = await mobileContext.newPage();

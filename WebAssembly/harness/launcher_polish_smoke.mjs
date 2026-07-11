@@ -200,9 +200,10 @@ function syntheticPeIcon() {
 }
 
 {
-  const [html, presentationSource] = await Promise.all([
+  const [html, presentationSource, launcherSource] = await Promise.all([
     readFile(new URL("./play.html", import.meta.url), "utf8"),
     readFile(new URL("./launcher-retail-presentation.mjs", import.meta.url), "utf8"),
+    readFile(new URL("./launcher.js", import.meta.url), "utf8"),
   ]);
   assert.match(html, /data-open-settings="game"/);
   assert.match(html, /I purchased and installed it online/);
@@ -211,12 +212,15 @@ function syntheticPeIcon() {
   assert.match(html, /ea\.com\/games\/command-and-conquer\/command-and-conquer-the-ultimate-collection/);
   assert.match(html, /id="endSessionButton"[^>]*>[\s\S]*Shut down/);
   assert.match(html, /data-github-shortcut[^>]*href="https:\/\/github\.com\/Agusx1211\/NewShoes"[^>]*target="_blank"[^>]*rel="noopener noreferrer"/);
+  assert.match(html, /data-github-shortcut[^>]*data-single-activation-shortcut/);
   assert.match(html, /id="i-github"/);
   assert.match(html, /data-retail-banner/);
   assert.match(html, /data-retail-icon/);
   assert.doesNotMatch(html, /data-retail-presentation(?:\s|=)/);
   assert.doesNotMatch(presentationSource, /\bfetch\s*\(|XMLHttpRequest|sendBeacon/,
     "retail presentation derivation must remain browser-local");
+  assert.match(launcherSource, /data-single-activation-shortcut[\s\S]*event\.detail > 1[\s\S]*event\.preventDefault\(\)/,
+    "desktop external shortcuts must coalesce the second click of a double-click");
 }
 
 process.stdout.write("launcher polish smoke: OK\n");

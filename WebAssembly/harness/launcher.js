@@ -856,6 +856,18 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     document.documentElement.style.setProperty("--ui-scale", settings.scale);
   }
 
+  document.querySelectorAll("[data-single-activation-shortcut]").forEach((shortcut) => {
+    shortcut.addEventListener("click", (event) => {
+      // A Windows desktop double-click emits click(detail=1), click(detail=2),
+      // then dblclick. Let the first trusted activation open the native anchor
+      // and suppress only the repeated mouse click. Keyboard/AT activation has
+      // detail=0, a mobile tap has detail=1, and a later click starts at 1.
+      if (event.detail > 1) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    });
+  });
   document.querySelectorAll("[data-open]").forEach((button) => button.addEventListener("click", () => openApp(button.dataset.open)));
   document.querySelectorAll("[data-open-setup]").forEach((button) => button.addEventListener("click", () => openApp("setup")));
   document.querySelectorAll("[data-open-settings]").forEach((button) => button.addEventListener("click", () => openSettingsPanel(button.dataset.openSettings)));

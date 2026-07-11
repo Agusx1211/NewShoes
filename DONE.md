@@ -44,8 +44,11 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       public `Agusx1211/NewShoes` repository. It is a native new-window anchor
       with `noopener noreferrer`, an inline official Primer Octicons GitHub
       mark, a vendored MIT notice, no runtime fetch, and responsive desktop
-      placement. Static, Chromium keyboard/popup, mobile containment, and Pages
-      artifact checks pin the exact URL and link contract.
+      placement. The desktop coalesces the second mouse click in a double-click
+      so one gesture opens one tab while native Enter, assistive activation,
+      mobile tap, and later independent clicks remain intact. Static, Chromium
+      Enter/double-click/mobile-popup, containment, and Pages artifact checks
+      pin the exact URL and link contract.
 - [x] Separated the user-owned wide `Install_Final.bmp` launcher banner from
       square desktop and library icons. The four supplied retail ISOs expose
       `GeneralsZH.ico` inside the Zero Hour `Data1.cab`; a real browser scan
