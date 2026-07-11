@@ -1,11 +1,11 @@
 # WebAssembly/browser port generated files
-/WebAssembly/artifacts/
-/WebAssembly/build/
-/WebAssembly/dist/
-/WebAssembly/dist-release/
+/WebAssembly/artifacts
+/WebAssembly/build
+/WebAssembly/dist
+/WebAssembly/dist-release
 /WebAssembly/dist-release-*/
-/WebAssembly/dist-threaded/
-/WebAssembly/dist-threaded-release/
+/WebAssembly/dist-threaded
+/WebAssembly/dist-threaded-release
 /WebAssembly/err.txt
 # Per-box persistent self-signed HTTPS cert (generated once by harness/static-server.mjs)
 /WebAssembly/harness/.certs/
@@ -18,3 +18,23 @@
 /assets/docs/*
 !/assets/docs/INDEX.md
 !/assets/docs/docsearch.py
+
+# Local configuration, certificates, and issue captures
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.key
+*.crt
+*.cncdump.json
+*.cncdump.json.zip
+
+# User-owned retail media and extracted archive containers
+*.iso
+*.img
+*.cue
+*.cab
+*.big
+*.bik

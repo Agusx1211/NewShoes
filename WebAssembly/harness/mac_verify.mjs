@@ -14,7 +14,7 @@
  *   node harness/mac_verify.mjs --target=title
  *   node harness/mac_verify.mjs --target=player-control
  *   node harness/mac_verify.mjs --no-build --target=title
- *   node harness/mac_verify.mjs --ssh-host=cnc-gpu --target=title
+ *   node harness/mac_verify.mjs --ssh-host=<host> --mac-worktree=<path> --target=title
  *   node harness/mac_verify.mjs --rsync-dry-run
  */
 
@@ -31,12 +31,12 @@ function parseArgs(argv) {
   const args = {
     build: true,
     target: "title",
-    sshHost: "cnc-gpu",
-    sshKey: "~/.ssh/id_ed25519_main2",
+    sshHost: process.env.CNC_GPU_SSH_HOST ?? "",
+    sshKey: process.env.CNC_GPU_SSH_KEY ?? "",
     rsyncDryRun: false,
     noBuild: false,
     screenshotDir: resolve(process.env.HOME, "cnc-mac-verify"),
-    macWorktree: "/Volumes/CnCWork/CnC_Generals_Zero_Hour",
+    macWorktree: process.env.CNC_GPU_WORKTREE ?? "",
     timeout: 600_000,       // 10 min for player-control
     titleTimeout: 300_000,  // 5 min for title probe
   };
@@ -57,7 +57,7 @@ function parseArgs(argv) {
 
 const args = parseArgs(process.argv.slice(2));
 const sshKey = args.sshKey.replace(/^~/, process.env.HOME || "");
-const sshOpts = `-i ${sshKey} -o StrictHostKeyChecking=no -o ConnectTimeout=15`;
+const sshOpts = `${sshKey ? `-i ${sshKey} ` : ""}-o StrictHostKeyChecking=no -o ConnectTimeout=15`;
 
 function ssh(cmd) {
   return execSync(`ssh ${sshOpts} ${args.sshHost} "${cmd}"`, {
@@ -92,6 +92,13 @@ console.error("[mac-verify] args:", JSON.stringify({
 }));
 if (!["title", "player-control"].includes(args.target)) {
   console.error(`[mac-verify] ERROR: unknown target "${args.target}". Use --target=title or --target=player-control`);
+  process.exit(1);
+}
+if (!args.sshHost || !args.macWorktree) {
+  console.error(
+    "[mac-verify] ERROR: provide --ssh-host and --mac-worktree " +
+    "(or CNC_GPU_SSH_HOST and CNC_GPU_WORKTREE)",
+  );
   process.exit(1);
 }
 
@@ -684,9 +691,8 @@ console.error(`[mac-verify] step5: running ${args.target} probe (timeout: ${prob
 
 let probeOutput = "";
 try {
-  // Use Mac's HOME (/Users/aa), not dev box HOME (process.env.HOME)
   probeOutput = sshLong(
-    `cd ${args.macWorktree}/WebAssembly && HOME=/Users/aa /opt/homebrew/bin/node harness/mac_verify_probe.mjs 2>&1`,
+    `cd ${args.macWorktree}/WebAssembly && /opt/homebrew/bin/node harness/mac_verify_probe.mjs 2>&1`,
     probeTimeout
   );
   console.error("[mac-verify] step5: probe completed");
