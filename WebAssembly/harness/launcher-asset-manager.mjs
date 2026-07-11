@@ -60,9 +60,11 @@ async function clearHandles() {
   const db = await openHandleDb();
   try {
     await new Promise((resolve, reject) => {
-      const request = db.transaction(HANDLE_STORE, "readwrite").objectStore(HANDLE_STORE).delete("active");
-      request.onsuccess = resolve;
-      request.onerror = () => reject(request.error);
+      const transaction = db.transaction(HANDLE_STORE, "readwrite");
+      transaction.objectStore(HANDLE_STORE).delete("active");
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error("Source permission cleanup was aborted"));
     });
   } finally {
     db.close();
@@ -112,7 +114,6 @@ class AssetLibrary {
     this.scanResult = null;
     this.preparedArchives = null;
     this.queue = Promise.resolve();
-    this.worker = null;
     this.rememberedHandlesPromise = readHandles().catch(() => []);
     this.createWorker();
   }
@@ -132,8 +133,7 @@ class AssetLibrary {
 
   recoverWorker(failedWorker, message) {
     if (failedWorker !== this.worker) return;
-    this.worker = null;
-    failedWorker?.terminate();
+    failedWorker.terminate();
     for (const pending of this.pending.values()) pending.reject(new Error(message));
     this.pending.clear();
     this.createWorker();
@@ -199,7 +199,6 @@ class AssetLibrary {
     await this.discardPreparedArchives();
     this.sourceHandles = handles ? [...handles] : [];
     this.scanResult = null;
-    this.preparedArchives = null;
     const sources = [...files].map((file) => ({
       file,
       path: file.relativePath || file.webkitRelativePath || file.name,
@@ -229,11 +228,14 @@ class AssetLibrary {
     if (!["once", "remember", "install"].includes(mode)) {
       throw new Error(`Unsupported launcher storage mode: ${mode}`);
     }
-    if (mode === "install" && navigator.locks?.request) {
-      return navigator.locks.request(LIBRARY_MUTATION_LOCK, { mode: "exclusive" },
-        () => this.prepareUnlocked(mode, onProgress));
-    }
+    if (mode === "install") return this.withLibraryMutation(() => this.prepareUnlocked(mode, onProgress));
     return this.prepareUnlocked(mode, onProgress);
+  }
+
+  withLibraryMutation(callback) {
+    return navigator.locks?.request
+      ? navigator.locks.request(LIBRARY_MUTATION_LOCK, { mode: "exclusive" }, callback)
+      : callback();
   }
 
   async prepareUnlocked(mode, onProgress = null) {
@@ -340,11 +342,7 @@ class AssetLibrary {
   }
 
   async verifyInstalledLibrary() {
-    if (navigator.locks?.request) {
-      return navigator.locks.request(LIBRARY_MUTATION_LOCK, { mode: "exclusive" },
-        () => this.verifyInstalledLibraryUnlocked());
-    }
-    return this.verifyInstalledLibraryUnlocked();
+    return this.withLibraryMutation(() => this.verifyInstalledLibraryUnlocked());
   }
 
   async verifyInstalledLibraryUnlocked() {
@@ -430,16 +428,11 @@ class AssetLibrary {
   }
 
   async forget() {
-    if (navigator.locks?.request) {
-      return navigator.locks.request(LIBRARY_MUTATION_LOCK, { mode: "exclusive" },
-        () => this.forgetUnlocked());
-    }
-    return this.forgetUnlocked();
+    return this.withLibraryMutation(() => this.forgetUnlocked());
   }
 
   async forgetUnlocked() {
     await this.discardPreparedArchives();
-    this.preparedArchives = null;
     this.scanResult = null;
     this.sourceHandles = [];
     localStorage.removeItem(INSTALLED_KEY);

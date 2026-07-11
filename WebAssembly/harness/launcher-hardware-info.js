@@ -331,7 +331,14 @@
       return true;
     } catch (error) {
       lastReport = null;
-      reportRoot.innerHTML = `<div class="hardware-error"><strong>Scan failed</strong><span>${error.message}</span></div>`;
+      const failure = document.createElement("div");
+      const title = document.createElement("strong");
+      const detail = document.createElement("span");
+      failure.className = "hardware-error";
+      title.textContent = "Scan failed";
+      detail.textContent = error?.message || String(error);
+      failure.append(title, detail);
+      reportRoot.replaceChildren(failure);
       return false;
     } finally {
       refreshButton.disabled = false;

@@ -13291,3 +13291,34 @@ mitigation track. Items resolved or retired by the pivot:
       returned from `GameEngine::init()`, reached 121 threaded client frames,
       measured canvas RGB variance 765 (0..765), and captured the visibly
       rendered animated Zero Hour shell map inside the integrated runtime.
+- [x] Hardened launcher media discovery and storage after an autonomous
+      edge-case audit. BIGF generation now uses the original reader's mixed
+      endian contract and validates bounded directories/entries; ISO probing
+      accepts boot descriptors before the primary volume descriptor; flat and
+      nested dual-install sources choose the correct edition (including
+      duplicate `Data/Scripts` names); packaged `LooseScripts.big` is accepted;
+      real Data1.cab script entries are decompressed once per CAB folder; and
+      every materialized archive is structurally revalidated before launch.
+      Synthetic direct-file, ISO, NONE/MSZIP CAB, wrong-edition script, corrupt
+      BIG, install/reload/restage, failure-cleanup, and real 274 MB Data1.cab
+      cases all passed with exactly 30 output archives.
+- [x] Made browser installation atomic and self-healing. Versioned install
+      roots swap manifests only after both persistent and per-tab copies are
+      complete, Web Locks serialize cross-tab install/forget/verification,
+      startup verifies all 30 OPFS files and removes broken/legacy/orphaned
+      roots, storage-mode changes clear superseded copies and permissions,
+      failed writes clean partial namespaces, and worker crashes reject the
+      active request then recreate the worker. Two concurrent synthetic installs
+      left one valid manifest/root; tampered and missing-file manifests returned
+      the launcher to source selection without stale ready state.
+- [x] Polished the integrated desktop and launch handoff: restored WebRTC
+      settings, live storage quota, mobile settings navigation, bounded and
+      correctly restored windows, working Explorer list/grid views, truthful
+      retained-file downloads, transactional virtual-drive edits, keyboard/ARIA
+      tab and file controls, optional interface sounds, persistent network
+      drafts, source/launch busy guards, and an awaited runtime-start promise
+      that returns mount/init failures to the desktop instead of trapping the
+      player in the overlay. Post-refactor Mac M4 Chrome/Metal verification
+      again mounted all 30 archives and reached a visible 1440x900 real-game
+      canvas with `ZeroHRuntime.started === true` and no relevant page/console
+      errors.

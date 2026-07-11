@@ -765,6 +765,9 @@ async function start() {
       engineStage.textContent = "✓ Engine";
       engineStage.classList.add("is-done");
     }
+    // From here onward the engine can be resumed without running init again,
+    // even if display setup or the first paced-loop start needs a retry.
+    runtimeStarted = true;
     issueRecorder.setSessionContext({ phase: "running" });
     viewportCanvas.focus();
     initDisplayControls();
@@ -774,12 +777,10 @@ async function start() {
     // the archive download.
     await applyDisplaySettings("boot");
     if (new URLSearchParams(window.location.search).get("replay") === "1") {
-      runtimeStarted = true;
       issueRecorder.setSessionContext({ phase: "replay-ready" });
       return;
     }
     await runFrameLoop(rpc);
-    runtimeStarted = true;
   } catch (error) {
     fail(error?.message ?? String(error), error?.launchDetail ?? error);
     throw error;
@@ -792,8 +793,10 @@ let runtimeStartPromise = null;
 function beginRuntimeStart() {
   if (runtimeStarted) return Promise.resolve();
   if (!runtimeStartPromise) {
-    runtimeStartPromise = start().finally(() => {
-      if (!runtimeStarted) runtimeStartPromise = null;
+    const attempt = start();
+    runtimeStartPromise = attempt;
+    void attempt.catch(() => {
+      if (runtimeStartPromise === attempt) runtimeStartPromise = null;
     });
   }
   return runtimeStartPromise;

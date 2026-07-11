@@ -166,7 +166,7 @@ async function validateBigReader(reader, label) {
   const chunkSize = 64 * 1024;
   let directory = new Uint8Array(0);
   let cursor = 0;
-  const entryBounds = [];
+  let lowestOffset = { offset: Infinity, index: -1 };
   const ensure = async (length, message) => {
     if (length > MAX_BIG_DIRECTORY_BYTES) throw new Error(`${label}: BIGF directory exceeds 64 MB`);
     if (length > archiveSize - 16) throw new Error(message);
@@ -197,13 +197,12 @@ async function validateBigReader(reader, label) {
     }
     if (pathEnd === cursor + 8) throw new Error(`${label}: BIGF entry ${index} has an empty path`);
     if (offset + size > archiveSize) throw new Error(`${label}: BIGF entry ${index} extends past archive end`);
-    entryBounds.push({ offset, index });
+    if (offset < lowestOffset.offset) lowestOffset = { offset, index };
     cursor = pathEnd + 1;
   }
   const dataStart = 16 + cursor;
-  const invalidOffset = entryBounds.find((entry) => entry.offset < dataStart);
-  if (invalidOffset) {
-    throw new Error(`${label}: BIGF entry ${invalidOffset.index} overlaps the directory`);
+  if (lowestOffset.offset < dataStart) {
+    throw new Error(`${label}: BIGF entry ${lowestOffset.index} overlaps the directory`);
   }
   return { archiveSize, entryCount };
 }
@@ -496,7 +495,8 @@ function resolveCatalog() {
         ...entry,
         candidate: chooseCandidate(entry.sourceName, "zh"),
       }));
-      if (scripts.every((entry) => entry.candidate)) {
+      if (scripts.every((entry) => entry.candidate
+          && (entry.candidate.edition === "zh" || entry.candidate.edition === "unknown"))) {
         const size = 16 + scripts.reduce((sum, entry) => sum + 8
           + textEncoder.encode(entry.path).byteLength + 1
           + (entry.candidate.kind === "cab" ? entry.candidate.entry.size : entry.candidate.reader.size), 0);
@@ -843,8 +843,8 @@ async function prepare(request, requestId) {
   };
   try {
     const installed = await materializeSelection(selection, outputRoot, requestId, progress);
-    if (!installRoot || outputRoot === namespaceRoot) {
-      return { archives: installed, installed: installRoot ? installed : null };
+    if (!installRoot) {
+      return { archives: installed, installed: null };
     }
     const liveSelection = {
       totalBytes: installed.reduce((sum, archive) => sum + archive.bytes, 0),

@@ -36,6 +36,7 @@
   const startButton = document.querySelector("#startButton");
   const taskButtons = document.querySelector("#taskButtons");
   const launchOverlay = document.querySelector("#launchOverlay");
+  let interfaceAudioContext = null;
 
   function readStoredLibrary() {
     try { return JSON.parse(localStorage.getItem("zeroh-library") || localStorage.getItem("fielddesk-library")) || null; }
@@ -127,6 +128,32 @@
     }, 3200);
   }
 
+  function playInterfaceSound(kind = "open") {
+    if (!document.querySelector("#soundToggle")?.checked) return;
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    try {
+      interfaceAudioContext ||= new AudioContext();
+      void interfaceAudioContext.resume().catch(() => {});
+      const now = interfaceAudioContext.currentTime;
+      const oscillator = interfaceAudioContext.createOscillator();
+      const gain = interfaceAudioContext.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.value = { open: 620, close: 420, menu: 520, enabled: 740 }[kind] || 560;
+      gain.gain.setValueAtTime(0.025, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
+      oscillator.connect(gain).connect(interfaceAudioContext.destination);
+      oscillator.start(now);
+      oscillator.stop(now + 0.05);
+      oscillator.addEventListener("ended", () => {
+        oscillator.disconnect();
+        gain.disconnect();
+      }, { once: true });
+    } catch {
+      // Audio output is optional and may be blocked by browser policy.
+    }
+  }
+
   async function refreshStorageUI() {
     try {
       const estimate = await navigator.storage?.estimate?.();
@@ -204,12 +231,14 @@
     focusWindow(windowEl);
     closeStartMenu();
     if (!wasOpen) renderTaskbar();
+    playInterfaceSound("open");
   }
 
   function closeWindow(windowEl) {
     windowEl.classList.remove("is-open", "is-minimized", "is-active");
     focusTopWindow();
     renderTaskbar();
+    playInterfaceSound("close");
   }
 
   function minimizeWindow(windowEl) {
@@ -217,6 +246,7 @@
     windowEl.classList.remove("is-active");
     focusTopWindow();
     syncTaskbarState();
+    playInterfaceSound("close");
   }
 
   function focusTopWindow() {
@@ -433,12 +463,15 @@
         `~${(result.totalBytes / 1024 ** 3).toFixed(1)} GB`;
       if (!result.ok) {
         title.textContent = "More original media is required";
-        detail.textContent = `Missing: ${result.missing.join(", ")}`;
+        detail.textContent = `Missing: ${missingSourceSummary(result.missing)}`;
         showToast("Incomplete game library", "Select both Generals and Zero Hour files or disc images.", "warning");
         return;
       }
       title.textContent = "Compatible Generals + Zero Hour files found";
       detail.textContent = "All required archives passed the local media inventory.";
+      if (result.errors.length) {
+        showToast("Some source files were ignored", `${result.errors.length} unreadable or unsupported file${result.errors.length === 1 ? " was" : "s were"} skipped; the required library is complete.`, "warning");
+      }
       setWizardStep(2);
     } catch (error) {
       title.textContent = "Could not read this source";
@@ -460,6 +493,12 @@
       countLabel: `${list.length} file${list.length === 1 ? "" : "s"}`,
       files: list,
     };
+  }
+
+  function missingSourceSummary(names) {
+    const labels = names.map((name) => name === "LooseScripts.big" ? "Zero Hour Data/Scripts" : name);
+    return labels.length <= 6 ? labels.join(", ")
+      : `${labels.slice(0, 6).join(", ")} and ${labels.length - 6} more`;
   }
 
   async function prepareLibrary() {
@@ -614,6 +653,7 @@
     startMenu.hidden = !shouldOpen;
     startButton.classList.toggle("is-active", shouldOpen);
     startButton.setAttribute("aria-expanded", String(shouldOpen));
+    if (shouldOpen) playInterfaceSound("menu");
   });
   startMenu.addEventListener("click", (event) => event.stopPropagation());
   document.addEventListener("click", closeStartMenu);
@@ -726,7 +766,10 @@
   window.addEventListener("resize", () => {
     document.querySelectorAll(".window.is-open").forEach(constrainWindow);
   });
-  ["#scaleSelect", "#soundToggle", "#motionToggle"].forEach((selector) => document.querySelector(selector).addEventListener("change", saveSettings));
+  ["#scaleSelect", "#soundToggle", "#motionToggle"].forEach((selector) => document.querySelector(selector).addEventListener("change", () => {
+    saveSettings();
+    if (selector === "#soundToggle" && document.querySelector(selector).checked) playInterfaceSound("enabled");
+  }));
   document.querySelector("#resetConceptButton").addEventListener("click", async () => {
     await window.ZeroHAssetLibrary.forget();
     localStorage.removeItem("zeroh-library");
