@@ -14,6 +14,12 @@ The project is independent, modified software. It is not affiliated with,
 endorsed by, or supported by Electronic Arts. Retail game data is not included;
 players must provide files from a copy they own.
 
+## Play
+
+**[Play Project New Shoes](http://newshoes.gg/)**
+
+This public URL will point to the current GitHub Pages deployment.
+
 <p align="center">
   <img src="docs/images/project-new-shoes-zero-hour-menu.webp" alt="Zero Hour faction and skirmish menu rendered by the original engine in the Project New Shoes browser runtime" width="800"><br>
   <img src="docs/images/project-new-shoes-launcher-ready.webp" alt="Project New Shoes launcher showing a locally installed Zero Hour library ready to launch" width="800">
