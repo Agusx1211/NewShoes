@@ -715,14 +715,10 @@ const d3d8PerfStats = {
   bufferDynamicRedirectedUpdates: 0,
   bufferDynamicRangeUploads: 0,
   bufferDynamicRangeUploadBytes: 0,
-  bufferDynamicSnapshotUploads: 0,
-  bufferDynamicSnapshotUploadBytes: 0,
   bufferDynamicRedirectFallbacks: 0,
   drawDynamicVertexRedirects: 0,
-  drawDynamicVertexSnapshotRedirects: 0,
   drawDynamicVertexSharedFallbacks: 0,
   drawDynamicIndexRedirects: 0,
-  drawDynamicIndexSnapshotRedirects: 0,
   drawDynamicIndexSharedFallbacks: 0,
   bufferResizedUpdates: 0,
   bufferUpdateMs: 0,
@@ -1156,14 +1152,10 @@ function d3d8PerfSummary() {
     bufferDynamicRedirectedUpdates: d3d8PerfStats.bufferDynamicRedirectedUpdates,
     bufferDynamicRangeUploads: d3d8PerfStats.bufferDynamicRangeUploads,
     bufferDynamicRangeUploadBytes: d3d8PerfStats.bufferDynamicRangeUploadBytes,
-    bufferDynamicSnapshotUploads: d3d8PerfStats.bufferDynamicSnapshotUploads,
-    bufferDynamicSnapshotUploadBytes: d3d8PerfStats.bufferDynamicSnapshotUploadBytes,
     bufferDynamicRedirectFallbacks: d3d8PerfStats.bufferDynamicRedirectFallbacks,
     drawDynamicVertexRedirects: d3d8PerfStats.drawDynamicVertexRedirects,
-    drawDynamicVertexSnapshotRedirects: d3d8PerfStats.drawDynamicVertexSnapshotRedirects,
     drawDynamicVertexSharedFallbacks: d3d8PerfStats.drawDynamicVertexSharedFallbacks,
     drawDynamicIndexRedirects: d3d8PerfStats.drawDynamicIndexRedirects,
-    drawDynamicIndexSnapshotRedirects: d3d8PerfStats.drawDynamicIndexSnapshotRedirects,
     drawDynamicIndexSharedFallbacks: d3d8PerfStats.drawDynamicIndexSharedFallbacks,
     bufferResizedUpdates: d3d8PerfStats.bufferResizedUpdates,
     bufferUpdateMs: roundedPerfMs(d3d8PerfStats.bufferUpdateMs),
@@ -4976,29 +4968,17 @@ function uploadD3D8DynamicSlot(resource, slot, bytes) {
   }
 }
 
-function recycleD3D8DynamicDrawSnapshots(resource) {
-  if (!(resource.dynDrawSnapshots instanceof Map)) {
-    return;
-  }
-  for (const snapshot of resource.dynDrawSnapshots.values()) {
-    recycleD3D8DynamicRangeSlot(snapshot);
-  }
-  resource.dynDrawSnapshots.clear();
-}
-
 function noteD3D8DynamicBufferUpdate(resource, start, byteLength, discard) {
   let ranges = resource.dynRanges;
   if (!Array.isArray(ranges)) {
     ranges = resource.dynRanges = [];
   }
   const end = start + byteLength;
-  resource.dynRevision = (Number(resource.dynRevision ?? 0) + 1) >>> 0;
   if (discard) {
     for (const range of ranges) {
       recycleD3D8DynamicRangeSlot(range);
     }
     ranges.length = 0;
-    recycleD3D8DynamicDrawSnapshots(resource);
   } else {
     for (let i = ranges.length - 1; i >= 0; i -= 1) {
       const range = ranges[i];
@@ -5043,36 +5023,6 @@ function ensureD3D8DynamicRangeUploaded(resource, range) {
   d3d8PerfStats.bufferDynamicRangeUploadBytes += bytes.byteLength;
   range.slot = slot;
   return slot;
-}
-
-function ensureD3D8DynamicDrawSnapshot(resource, start, end) {
-  if (!(resource.bytes instanceof Uint8Array) || start < 0 || end <= start ||
-      end > resource.bytes.byteLength) {
-    return null;
-  }
-  let snapshots = resource.dynDrawSnapshots;
-  if (!(snapshots instanceof Map)) {
-    snapshots = resource.dynDrawSnapshots = new Map();
-  }
-  const key = `${start}:${end}`;
-  let snapshot = snapshots.get(key);
-  if (!snapshot) {
-    const slot = acquireD3D8DynamicRangeSlot(resource.target);
-    if (!slot) {
-      return null;
-    }
-    snapshot = { start, end, slot, revision: -1 };
-    snapshots.set(key, snapshot);
-  }
-  const revision = Number(resource.dynRevision ?? 0) >>> 0;
-  if (snapshot.revision !== revision) {
-    const bytes = resource.bytes.subarray(start, end);
-    uploadD3D8DynamicSlot(resource, snapshot.slot, bytes);
-    snapshot.revision = revision;
-    d3d8PerfStats.bufferDynamicSnapshotUploads += 1;
-    d3d8PerfStats.bufferDynamicSnapshotUploadBytes += bytes.byteLength;
-  }
-  return snapshot;
 }
 
 // Fallback for draws whose vertex/index window is not contained in a single
@@ -5297,7 +5247,6 @@ function releaseD3D8Buffer(payload = {}) {
     }
     resource.dynRanges.length = 0;
   }
-  recycleD3D8DynamicDrawSnapshots(resource);
   d3d8Buffers.delete(key);
   d3d8BufferStats.releases += 1;
   d3d8BufferStats.lastRelease = { id, kind: resource.kindName };
@@ -14798,8 +14747,9 @@ function paintD3D8DrawIndexed(payload = {}) {
       // minVertexIndex + vertexCount) relative to the attrib base
       // (D3D8 DrawIndexedPrimitive semantics), so redirection is safe only
       // when that whole window sits inside one recorded append range.
-      // Multi-update buffers drawn across ranges take an exact draw snapshot
-      // from the CPU mirror so the shared GL ring is never rewritten in place.
+      // Multi-update buffers drawn across ranges use the authoritative shared
+      // buffer. Compact rebased snapshots do not preserve this path's complete
+      // ring/multi-pass semantics and regress projected shadows and relighting.
       // payload.vertexCount is the shim's uploaded_vertex_count =
       // minVertexIndex + NumVertices, i.e. it already measures from the
       // attrib base to the window end.
@@ -14817,18 +14767,8 @@ function paintD3D8DrawIndexed(payload = {}) {
         effectiveVertexByteOffset = vertexByteOffset - range.start;
         d3d8PerfStats.drawDynamicVertexRedirects += 1;
       } else if (vertexResource.dynRanges?.length > 0) {
-        const snapshot = ensureD3D8DynamicDrawSnapshot(
-          vertexResource, vertexByteOffset, windowEnd);
-        if (snapshot?.slot) {
-          effectiveVertexResource = { buffer: snapshot.slot.buffer };
-          effectiveVertexBufferId = snapshot.slot.id;
-          effectiveVertexByteOffset = 0;
-          d3d8PerfStats.drawDynamicVertexRedirects += 1;
-          d3d8PerfStats.drawDynamicVertexSnapshotRedirects += 1;
-        } else {
-          d3d8PerfStats.drawDynamicVertexSharedFallbacks += 1;
-          ensureD3D8DynamicSharedBufferCurrent(vertexResource);
-        }
+        d3d8PerfStats.drawDynamicVertexSharedFallbacks += 1;
+        ensureD3D8DynamicSharedBufferCurrent(vertexResource);
       }
     }
     if (indexResource.dynamic === true && temporaryIndices == null) {
@@ -14844,19 +14784,8 @@ function paintD3D8DrawIndexed(payload = {}) {
         shadeModeDraw.drawIndexByteOffset -= range.start;
         d3d8PerfStats.drawDynamicIndexRedirects += 1;
       } else if (indexResource.dynRanges?.length > 0) {
-        const snapshotStart = shadeModeDraw.drawIndexByteOffset;
-        const snapshotEnd = snapshotStart + shadeModeDraw.drawIndexCount * indexSize;
-        const snapshot = ensureD3D8DynamicDrawSnapshot(indexResource, snapshotStart, snapshotEnd);
-        if (snapshot?.slot) {
-          effectiveIndexResource = { buffer: snapshot.slot.buffer };
-          effectiveIndexBufferId = snapshot.slot.id;
-          shadeModeDraw.drawIndexByteOffset = 0;
-          d3d8PerfStats.drawDynamicIndexRedirects += 1;
-          d3d8PerfStats.drawDynamicIndexSnapshotRedirects += 1;
-        } else {
-          d3d8PerfStats.drawDynamicIndexSharedFallbacks += 1;
-          ensureD3D8DynamicSharedBufferCurrent(indexResource);
-        }
+        d3d8PerfStats.drawDynamicIndexSharedFallbacks += 1;
+        ensureD3D8DynamicSharedBufferCurrent(indexResource);
       }
     } else if (indexResource.dynamic === true) {
       // Temp-index fallback paths read the mirror, not the GL buffer.
