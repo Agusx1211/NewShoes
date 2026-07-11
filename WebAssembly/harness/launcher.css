@@ -237,7 +237,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .storage-donut { position: relative; }
 body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 
-/* ZeroH XP-material pass: original identity over period-authentic desktop chrome. */
+/* Project New Shoes XP-material pass: original identity over period-authentic desktop chrome. */
 .desktop[data-wallpaper="command"] .wallpaper-art {
   background: #182b2d url("./assets/zeroh-command-desert.webp") center center / cover no-repeat;
   filter: none;
@@ -357,7 +357,7 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
   .wizard-page { padding-top: 23px; padding-bottom: 18px; }.wizard-side { padding-top: 22px; }.wizard-side-copy { margin: 22px 0; }.source-grid { margin-top: 17px; }.source-card { min-height: 88px; }.game-card { min-height: 220px; }.wasm-badge { display: none; }
 }
 
-/* ZeroH identity and interactive desktop applications. */
+/* Project New Shoes identity and interactive desktop applications. */
 .desktop-icons { grid-template-rows: repeat(8, 78px); grid-auto-flow: column; grid-auto-columns: 92px; }
 .desktop-icon-art.app-art svg { width: 43px; height: 43px; filter: drop-shadow(1px 2px 1px rgba(0,0,0,.45)); }
 .desktop-icon-art.launcher-art { position: relative; }

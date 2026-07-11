@@ -102,7 +102,7 @@ export function attachWebRtcSignalingServer({
   const rooms = new Map();
   const waiters = [];
   const stats = {
-    source: "C&C WebRTC room signaling server",
+    source: "Project New Shoes WebRTC room signaling server",
     path,
     connections: 0,
     joined: 0,

@@ -1,5 +1,6 @@
 {
-  "name": "cnc-generals-wasm",
+  "name": "project-new-shoes",
+  "description": "Project New Shoes browser runtime for the original Generals and Zero Hour engine",
   "private": true,
   "type": "module",
   "scripts": {

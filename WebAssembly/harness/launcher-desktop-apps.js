@@ -11,13 +11,13 @@
     return {
       version: 2,
       nodes: [
-        { id: "root", parent: null, type: "folder", name: "ZeroH Drive", modified },
+        { id: "root", parent: null, type: "folder", name: "New Shoes Drive", modified },
         { id: "saves", parent: "root", type: "folder", name: "Game Saves", modified },
         { id: "replays", parent: "root", type: "folder", name: "Replays", modified },
         { id: "notes", parent: "root", type: "folder", name: "Notes", modified },
         { id: "screens", parent: "root", type: "folder", name: "Screenshots", modified },
         { id: "mods", parent: "root", type: "folder", name: "Mods", modified },
-        { id: "note-1", parent: "notes", type: "file", kind: "text", name: "Welcome to ZeroH.txt", modified, size: 268, content: "Welcome, Commander.\n\nThis Notepad document lives on the ZeroH virtual drive. Edit it, save it, close the browser, and open it again from My Files.\n\nUseful places:\n- Game Saves\n- Replays\n- Screenshots\n- Mods\n" },
+        { id: "note-1", parent: "notes", type: "file", kind: "text", name: "Welcome to Project New Shoes.txt", modified, size: 268, content: "Welcome, Commander.\n\nThis Notepad document lives on the Project New Shoes virtual drive. Edit it, save it, close the browser, and open it again from My Files.\n\nUseful places:\n- Game Saves\n- Replays\n- Screenshots\n- Mods\n" },
         { id: "note-2", parent: "notes", type: "file", kind: "text", name: "Battle plan.txt", modified, size: 151, content: "BATTLE PLAN\n===========\n1. Secure both supply docks.\n2. Scout the northern ridge.\n3. Keep one dozer in reserve.\n4. Do not panic.\n" },
         { id: "mod-readme", parent: "mods", type: "file", kind: "text", name: "About mods.txt", modified, size: 150, content: "MOD STAGING AREA\n================\nImported files remain in this browser workspace. The game currently launches only original unmodified runtime archives.\n" },
       ],
@@ -237,7 +237,7 @@
           event.preventDefault();
           event.stopPropagation();
           if (desktop.preparingLibrary) {
-            desktop.showToast("Installation in progress", "Wait until ZeroH finishes copying the game files before changing browser storage.", "warning");
+            desktop.showToast("Installation in progress", "Wait until Project New Shoes finishes copying the game files before changing browser storage.", "warning");
             return;
           }
           remove.disabled = true;
@@ -344,7 +344,7 @@
         fileSystem.nodes.forEach((item) => { if (item.parent && ids.has(item.parent) && !ids.has(item.id)) { ids.add(item.id); changed = true; } });
       }
       blob = new Blob([JSON.stringify(fileSystem.nodes.filter((item) => ids.has(item.id)), null, 2)], { type: "application/json" });
-      name = `${node.name}.zeroh-folder.json`;
+      name = `${node.name}.new-shoes-folder.json`;
     } else {
       blob = blobForNode(node);
       if (!blob) {
@@ -467,7 +467,7 @@
     const beforeCursor = editor.value.slice(0, editor.selectionStart);
     const lines = beforeCursor.split("\n");
     document.querySelector("#notepadStats").textContent = `Ln ${lines.length}, Col ${lines.at(-1).length + 1} · ${editor.value.length} characters`;
-    document.querySelector("#notepadSaveState").textContent = noteDirty ? "Modified" : openNoteId ? "Saved on ZeroH Drive" : "New document";
+    document.querySelector("#notepadSaveState").textContent = noteDirty ? "Modified" : openNoteId ? "Saved on New Shoes Drive" : "New document";
     const fileName = document.querySelector("#notepadFileName").value || "Untitled.txt";
     document.querySelector("#notepadTitle").textContent = `${noteDirty ? "*" : ""}${fileName} - Notepad`;
   }
@@ -524,17 +524,17 @@
 
   // Browser
   const browserPages = {
-    "zeroh://start": `<main class="net-home"><section class="net-hero"><div class="net-mark"><svg><use href="#i-system"/></svg></div><p>ZEROH LOCAL INTRANET</p><h1>COMMAND NET</h1><span>Local services are online. Choose a channel.</span></section><section class="net-cards"><button data-browser-page="zeroh://manual"><b>01</b><strong>FIELD MANUAL</strong><span>How this desktop works</span></button><button data-browser-page="zeroh://status"><b>02</b><strong>SYSTEM STATUS</strong><span>Runtime and storage telemetry</span></button><button data-browser-page="zeroh://arcade"><b>03</b><strong>FIELD ARCADE</strong><span>Authorized downtime</span></button></section><footer>ZEROH://LOCAL-NET · BROWSER-LOCAL UPLINK</footer></main>`,
-    "zeroh://manual": `<main class="net-document"><header><span>ZEROH FIELD MANUAL</span><h1>Browser desktop quick start</h1></header><section><h2>Game library</h2><p>Open the Game Launcher, select an owned disc image or installation folder, then choose temporary, remembered, or browser-installed storage.</p><h2>My Files</h2><p>Double-click folders to navigate. Text files open in Notepad. Imports smaller than 512 KB are retained and can be downloaded again.</p><h2>Desktop controls</h2><p>Drag title bars, double-click a title to maximize, and use the taskbar to minimize or restore applications.</p><h2>External web</h2><p>Type a URL in the address bar. Sites that disallow embedding can always be opened with the ↗ button.</p></section></main>`,
-    "zeroh://status": `<main class="net-status-page"><header><span>UPLINK TELEMETRY</span><h1>Local runtime status</h1></header><div class="status-grid"><article><i></i><strong>WASM RUNTIME</strong><b>READY</b><span>Real engine bridge loaded</span></article><article><i></i><strong>LOCAL DRIVE</strong><b>OPFS</b><span>Private browser filesystem available</span></article><article><i></i><strong>GRAPHICS</strong><b>WEBGL2</b><span>Live capability report in Settings</span></article><article><i></i><strong>NETWORK</strong><b>WEBRTC</b><span>Optional peer-to-peer transport</span></article></div></main>`,
-    "zeroh://arcade": `<main class="net-document arcade-link-page"><header><span>RECREATION CHANNEL</span><h1>Field Arcade</h1></header><section><p>Command has authorized a short break. Clear a minefield or exercise signal recall.</p><button data-browser-open-app="arcade">Open ZeroH Arcade</button></section></main>`,
+    "newshoes://start": `<main class="net-home"><section class="net-hero"><div class="net-mark"><svg><use href="#i-system"/></svg></div><p>PROJECT NEW SHOES LOCAL INTRANET</p><h1>COMMAND NET</h1><span>Local services are online. Choose a channel.</span></section><section class="net-cards"><button data-browser-page="newshoes://manual"><b>01</b><strong>FIELD MANUAL</strong><span>How this desktop works</span></button><button data-browser-page="newshoes://status"><b>02</b><strong>SYSTEM STATUS</strong><span>Runtime and storage telemetry</span></button><button data-browser-page="newshoes://arcade"><b>03</b><strong>FIELD ARCADE</strong><span>Authorized downtime</span></button></section><footer>NEWSHOES://LOCAL-NET · BROWSER-LOCAL UPLINK</footer></main>`,
+    "newshoes://manual": `<main class="net-document"><header><span>PROJECT NEW SHOES FIELD MANUAL</span><h1>Browser desktop quick start</h1></header><section><h2>Game library</h2><p>Open the Game Launcher, select an owned disc image or installation folder, then choose temporary, remembered, or browser-installed storage.</p><h2>My Files</h2><p>Double-click folders to navigate. Text files open in Notepad. Imports smaller than 512 KB are retained and can be downloaded again.</p><h2>Desktop controls</h2><p>Drag title bars, double-click a title to maximize, and use the taskbar to minimize or restore applications.</p><h2>External web</h2><p>Type a URL in the address bar. Sites that disallow embedding can always be opened with the ↗ button.</p></section></main>`,
+    "newshoes://status": `<main class="net-status-page"><header><span>UPLINK TELEMETRY</span><h1>Local runtime status</h1></header><div class="status-grid"><article><i></i><strong>WASM RUNTIME</strong><b>READY</b><span>Real engine bridge loaded</span></article><article><i></i><strong>LOCAL DRIVE</strong><b>OPFS</b><span>Private browser filesystem available</span></article><article><i></i><strong>GRAPHICS</strong><b>WEBGL2</b><span>Live capability report in Settings</span></article><article><i></i><strong>NETWORK</strong><b>WEBRTC</b><span>Optional peer-to-peer transport</span></article></div></main>`,
+    "newshoes://arcade": `<main class="net-document arcade-link-page"><header><span>RECREATION CHANNEL</span><h1>Field Arcade</h1></header><section><p>Command has authorized a short break. Clear a minefield or exercise signal recall.</p><button data-browser-open-app="arcade">Open Project New Shoes Arcade</button></section></main>`,
   };
-  let browserHistory = ["zeroh://start"];
+  let browserHistory = ["newshoes://start"];
   let browserIndex = 0;
 
   function normalizeAddress(value) {
     const address = value.trim();
-    if (address.startsWith("zeroh://")) return address.toLowerCase();
+    if (address.startsWith("newshoes://")) return address.toLowerCase();
     if (/^https?:\/\//i.test(address)) {
       try { return new URL(address).href; } catch { /* search for malformed URLs */ }
     }
@@ -786,15 +786,15 @@
   document.querySelector("#noteDownloadButton").addEventListener("click", () => downloadNode({ name: document.querySelector("#notepadFileName").value || "Untitled.txt", type: "file", kind: "text", content: editor.value, size: new Blob([editor.value]).size }));
   document.querySelector("#noteSelectAllButton").addEventListener("click", () => { editor.focus(); editor.select(); });
   document.querySelector("#noteWrapButton").addEventListener("click", () => { editor.classList.toggle("no-wrap"); desktop.showToast("Word wrap", editor.classList.contains("no-wrap") ? "Disabled" : "Enabled"); });
-  document.querySelector("#noteHelpButton").addEventListener("click", () => desktop.showToast("Notepad", "Documents save to the Notes folder on your ZeroH Drive."));
+  document.querySelector("#noteHelpButton").addEventListener("click", () => desktop.showToast("Notepad", "Documents save to the Notes folder on your New Shoes Drive."));
 
   // Bind Browser.
   document.querySelector("#browserAddressForm").addEventListener("submit", (event) => { event.preventDefault(); navigateBrowser(document.querySelector("#browserAddress").value); });
-  document.querySelector("#browserHome").addEventListener("click", () => navigateBrowser("zeroh://start"));
+  document.querySelector("#browserHome").addEventListener("click", () => navigateBrowser("newshoes://start"));
   document.querySelector("#browserReload").addEventListener("click", () => renderBrowser(browserHistory[browserIndex]));
   document.querySelector("#browserBack").addEventListener("click", () => { if (browserIndex > 0) { browserIndex -= 1; renderBrowser(browserHistory[browserIndex]); } });
   document.querySelector("#browserForward").addEventListener("click", () => { if (browserIndex < browserHistory.length - 1) { browserIndex += 1; renderBrowser(browserHistory[browserIndex]); } });
-  document.querySelector("#browserExternal").addEventListener("click", () => { const address = browserHistory[browserIndex]; if (/^https?:\/\//.test(address)) window.open(address, "_blank", "noopener"); else desktop.showToast("Local page", "This page only exists inside ZeroH Browser."); });
+  document.querySelector("#browserExternal").addEventListener("click", () => { const address = browserHistory[browserIndex]; if (/^https?:\/\//.test(address)) window.open(address, "_blank", "noopener"); else desktop.showToast("Local page", "This page only exists inside Project New Shoes Browser."); });
   document.querySelector("#browserFrame").addEventListener("load", (event) => {
     if (!event.currentTarget.hidden) {
       document.querySelector("#browserStatus").textContent = "External page requested · use ↗ if the site blocks embedding";
@@ -843,7 +843,7 @@
   persistFileSystem();
   renderExplorer();
   newNote();
-  renderBrowser("zeroh://start");
+  renderBrowser("newshoes://start");
   resetMinefield();
   resetMemory();
 

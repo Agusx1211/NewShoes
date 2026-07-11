@@ -1,7 +1,7 @@
-# WebAssembly Port
+# Project New Shoes WebAssembly runtime
 
-Working area for the browser/WebAssembly port. See the repo-root `AGENTS.md`
-for the goal and strategy.
+Working area for the Project New Shoes browser/WebAssembly port. See the
+repo-root `AGENTS.md` for the goal and strategy.
 
 **The port compiles the original source**, not reimplementations. The goal is to
 build `GeneralsMD/Code` with Emscripten and re-target its platform/device layer
@@ -211,7 +211,7 @@ INI list and the fact that browser device factories are not runtime-ready yet.
 Full original engine startup, all-block INI parsing, language initialization,
 font loading, water/weather rendering, and live map-cache rebuilds remain open.
 
-The human `harness/play.html` entry uses the integrated ZeroH desktop and local
+The human `harness/play.html` entry uses the integrated Project New Shoes desktop and local
 asset wizard instead of those development URLs. Its worker accepts installed
 folders and original ISO/IMG/MODE1-BIN media, extracts the required CAB/MSZIP
 members directly to OPFS, and calls

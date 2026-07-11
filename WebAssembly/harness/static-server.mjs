@@ -26,6 +26,7 @@ const OWNER_LAN_IP = "192.168.106.45";
 const contentTypes = new Map([
   [".css", "text/css; charset=utf-8"],
   [".html", "text/html; charset=utf-8"],
+  [".ico", "image/x-icon"],
   [".js", "text/javascript; charset=utf-8"],
   [".mjs", "text/javascript; charset=utf-8"],
   [".png", "image/png"],
@@ -33,10 +34,13 @@ const contentTypes = new Map([
   [".cncdump", "application/json; charset=utf-8"],
   [".wasm", "application/wasm"],
   [".webm", "video/webm"],
+  [".webmanifest", "application/manifest+json; charset=utf-8"],
 ]);
 
 const maxDumpUploadBytes = 256 * 1024 * 1024;
-const liveCacheExtensions = new Set([".css", ".html", ".js", ".mjs", ".wasm"]);
+const liveCacheExtensions = new Set([
+  ".css", ".html", ".ico", ".js", ".mjs", ".png", ".wasm", ".webmanifest", ".webp",
+]);
 
 function isInside(parent, child) {
   const path = relative(parent, child);

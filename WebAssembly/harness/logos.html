@@ -3,58 +3,29 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#10283b">
-    <meta name="description" content="Review and select the ZeroH launcher identity.">
-    <title>ZeroH Identity Lab — 20 logo candidates</title>
-    <link rel="icon" href="./assets/launcher-logo.webp" type="image/webp">
-    <link rel="stylesheet" href="./logos.css">
+    <meta name="theme-color" content="#111513">
+    <meta name="description" content="The finalized Project New Shoes launcher identity.">
+    <title>Project New Shoes launcher identity</title>
+    <link rel="icon" href="./assets/brand/project-new-shoes.ico" sizes="any">
+    <style>
+      :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; }
+      * { box-sizing: border-box; }
+      body { display: grid; min-height: 100vh; margin: 0; place-items: center; color: #f1ead7; background: #111513; }
+      main { width: min(90vw, 560px); padding: 48px; text-align: center; border: 1px solid #705f37; background: #181d1b; box-shadow: 0 24px 80px #0008; }
+      img { width: min(70vw, 320px); height: auto; border-radius: 12%; box-shadow: 0 20px 42px #000a; }
+      p { margin: 28px 0 6px; color: #d29538; font-size: .72rem; font-weight: 800; letter-spacing: .22em; }
+      h1 { margin: 0 0 16px; font-size: clamp(2rem, 8vw, 3.4rem); text-transform: uppercase; }
+      span { display: block; color: #b8bbb1; line-height: 1.6; }
+      a { display: inline-block; margin-top: 28px; padding: 10px 18px; color: #111513; background: #d29538; font-weight: 800; text-decoration: none; }
+    </style>
   </head>
   <body>
-    <header class="lab-header">
-      <a class="back-link" href="./" aria-label="Return to the ZeroH desktop"><span>‹</span> ZeroH Desktop</a>
-      <div class="lab-heading">
-        <p>IDENTITY LAB / ROUND 01</p>
-        <h1>Choose the launcher mark.</h1>
-        <span>Twenty original ZeroH directions, tested at window and taskbar scale.</span>
-      </div>
-      <div class="lab-count"><strong>20</strong><span>candidates</span></div>
-    </header>
-
     <main>
-      <section class="review-toolbar" aria-label="Logo review controls">
-        <div class="view-options" role="group" aria-label="Preview background">
-          <button class="is-active" type="button" data-preview-theme="command">Command</button>
-          <button type="button" data-preview-theme="desktop">Desktop</button>
-          <button type="button" data-preview-theme="paper">Paper</button>
-        </div>
-        <button class="shortlist-filter" type="button" id="shortlistFilter" aria-pressed="false">
-          <span>★</span> Shortlist <b id="shortlistCount">0</b>
-        </button>
-        <p>Click a card to inspect it. Star the ones worth keeping.</p>
-      </section>
-
-      <section class="logo-grid" id="logoGrid" aria-label="ZeroH logo candidates"></section>
-      <div class="empty-shortlist" id="emptyShortlist" hidden>
-        <span>☆</span><strong>Your shortlist is empty.</strong><p>Return to all candidates and star a few contenders.</p>
-        <button type="button" id="showAllButton">Show all 20</button>
-      </div>
+      <img src="./assets/brand/project-new-shoes-mark.webp" alt="Project New Shoes launcher mark" width="1024" height="1024">
+      <p>FINAL LAUNCHER IDENTITY</p>
+      <h1>Project New Shoes</h1>
+      <span>One text-free, square mark for the launcher, taskbar, browser tab, and installed app.</span>
+      <a href="./play.html">Return to the command center</a>
     </main>
-
-    <aside class="decision-dock" id="decisionDock" aria-live="polite">
-      <div class="decision-preview"><img id="decisionImage" alt="" hidden><span id="decisionPlaceholder">?</span></div>
-      <div class="decision-copy">
-        <small>CURRENT DECISION</small>
-        <strong id="decisionName">No candidate selected</strong>
-        <span id="decisionNote">Pick one above to see it in context.</span>
-      </div>
-      <div class="dock-taskbar" aria-label="Taskbar preview">
-        <span class="mini-start"><svg class="mini-os-mark" viewBox="0 0 48 48" aria-hidden="true"><path d="M5 41V22C5 10.5 12.9 3 24 3s19 7.5 19 19v19H5Z" fill="#e9f8ff"/><path d="M10 36V22c0-8.6 5.6-14 14-14s14 5.4 14 14v14H10Z" fill="#287dbd"/><path d="M15 36a9 9 0 0 1 18 0H15Z" fill="#edb13b"/><path d="M24 8v28M10 24h28" fill="none" stroke="#d8eff7" stroke-width="3"/></svg><strong>start</strong></span>
-        <span class="mini-task launcher-task"><img id="dockTinyImage" alt="" hidden><b>ZeroH Launcher</b></span><span class="mini-task short"></span><time>13:37</time>
-      </div>
-      <button class="apply-button" type="button" id="applyButton" disabled>Use this mark</button>
-    </aside>
-
-    <div class="lab-toast" id="labToast" role="status" hidden></div>
-    <script src="./logos.js"></script>
   </body>
 </html>

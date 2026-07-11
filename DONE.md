@@ -13275,10 +13275,10 @@ mitigation track. Items resolved or retired by the pivot:
       `DONE.md` and `git diff --check`.
 ## Launcher interface and user-owned asset delivery (2026-07-11)
 
-- [x] Ported the complete ZeroH launcher concept into the human play page:
+- [x] Ported the complete Project New Shoes launcher concept into the human play page:
       desktop/window manager, asset wizard, game library, My Files, Notepad,
       local browser pages, Arcade, settings/hardware report, About window,
-      identity lab, taskbar, and responsive styling. The real `#viewport`
+      taskbar, and responsive styling. The real `#viewport`
       canvas now takes over the concept's runtime overlay while preserving the
       existing fullscreen, diagnostics, issue recorder, WebRTC, and in-game
       settings surfaces.
@@ -13313,6 +13313,18 @@ mitigation track. Items resolved or retired by the pivot:
       duplicate `Data/Scripts` names); packaged `LooseScripts.big` is accepted;
       real Data1.cab script entries are decompressed once per CAB folder; and
       every materialized archive is structurally revalidated before launch.
+- [x] Rebranded the active launcher as Project New Shoes and fixed the selected
+      square mark across its setup window, desktop, taskbar, browser favicon,
+      Windows icon, Apple touch icon, and installable web app manifest. Updated
+      launcher copy, internal browser pages, package metadata, and project
+      documentation while retaining the established `ZeroH*` runtime globals
+      and `zeroh-*` storage keys for compatibility. Retired the candidate
+      selector in favor of a final identity reference page. Verified all eight
+      launcher applications open without page or console errors, every live
+      mark resolves at 512 by 512 pixels, manifest and ICO MIME types are
+      correct, and the 390 px mobile layout has no horizontal overflow. Captured
+      `project-new-shoes-launcher-desktop.png` and
+      `project-new-shoes-launcher-mobile.png` through the served harness.
       Synthetic direct-file, boot-record-first ISO, raw MODE1/2352 BIN,
       NONE/MSZIP CAB, wrong-edition script, corrupt BIG,
       install/reload/restage, failure-cleanup, and real 274 MB Data1.cab cases

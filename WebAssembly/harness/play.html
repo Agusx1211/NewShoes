@@ -3,10 +3,12 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#194c73">
-    <meta name="description" content="ZeroH is a browser desktop for launching user-owned classic strategy game assets in WebAssembly.">
-    <title>ZeroH — Browser Command Center</title>
-    <link rel="icon" href="./assets/launcher-logo.webp" type="image/webp">
+    <meta name="theme-color" content="#111513">
+    <meta name="description" content="Project New Shoes runs the original Generals and Zero Hour engine in your browser with game data you own.">
+    <title>Project New Shoes: Browser Command Center</title>
+    <link rel="icon" href="./assets/brand/project-new-shoes.ico" sizes="any">
+    <link rel="apple-touch-icon" href="./assets/brand/project-new-shoes-apple-touch.png">
+    <link rel="manifest" href="./manifest.webmanifest">
     <link rel="preload" href="./assets/zeroh-command-desert.webp" as="image" type="image/webp">
     <link rel="stylesheet" href="./harness.css">
     <link rel="stylesheet" href="./launcher.css">
@@ -43,14 +45,14 @@
       <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1" fill="#70a3c4"/><circle cx="16.5" cy="8.5" r="2" fill="#ffe17c"/><path d="m4.5 18 5-6 3.5 3 2.5-2 4 5H4.5Z" fill="#4e7c55"/></symbol>
     </svg>
 
-    <main id="desktop" class="desktop" data-wallpaper="command" aria-label="ZeroH browser desktop">
+    <main id="desktop" class="desktop" data-wallpaper="command" aria-label="Project New Shoes browser desktop">
       <div class="wallpaper-art" aria-hidden="true">
         <div class="sun-glow"></div><div class="ridge ridge-far"></div><div class="ridge ridge-near"></div><div class="terrain-grid"></div>
       </div>
 
       <nav class="desktop-icons" aria-label="Desktop shortcuts">
-        <button class="desktop-icon" type="button" data-open="setup" aria-label="Open ZeroH Game Launcher">
-          <span class="desktop-icon-art launcher-art"><img data-launcher-logo-image alt="" width="512" height="512"><i class="shortcut-arrow">↗</i></span><span>ZeroH Launcher</span>
+        <button class="desktop-icon" type="button" data-open="setup" aria-label="Open Project New Shoes Game Launcher">
+          <span class="desktop-icon-art launcher-art"><img data-launcher-logo-image alt="" width="512" height="512"><i class="shortcut-arrow">↗</i></span><span>Project New Shoes Launcher</span>
         </button>
         <button class="desktop-icon game-shortcut" type="button" data-game-shortcut data-launch-game="Zero Hour" aria-label="Launch Zero Hour" hidden>
           <span class="desktop-icon-art game-art"><svg><use href="#i-command-zero"/></svg><i class="shortcut-arrow">↗</i></span><span>Zero Hour</span>
@@ -58,13 +60,13 @@
         <button class="desktop-icon" type="button" data-open="explorer" aria-label="Open Save Files">
           <span class="desktop-icon-art"><svg><use href="#i-folder"/></svg></span><span>My Files</span>
         </button>
-        <button class="desktop-icon" type="button" data-open="browser" aria-label="Open ZeroH Browser">
-          <span class="desktop-icon-art app-art"><svg><use href="#i-browser"/></svg></span><span>ZeroH Browser</span>
+        <button class="desktop-icon" type="button" data-open="browser" aria-label="Open Project New Shoes Browser">
+          <span class="desktop-icon-art app-art"><svg><use href="#i-browser"/></svg></span><span>Project New Shoes Browser</span>
         </button>
         <button class="desktop-icon" type="button" data-open="notepad" aria-label="Open Notepad">
           <span class="desktop-icon-art app-art"><svg><use href="#i-note"/></svg></span><span>Notepad</span>
         </button>
-        <button class="desktop-icon" type="button" data-open="arcade" aria-label="Open ZeroH Arcade">
+        <button class="desktop-icon" type="button" data-open="arcade" aria-label="Open Project New Shoes Arcade">
           <span class="desktop-icon-art app-art"><svg><use href="#i-arcade"/></svg></span><span>Arcade</span>
         </button>
         <button class="desktop-icon" type="button" data-open="programs" aria-label="Open Game Library">
@@ -73,15 +75,15 @@
         <button class="desktop-icon" type="button" data-open="settings" aria-label="Open Settings">
           <span class="desktop-icon-art"><svg><use href="#i-gear"/></svg></span><span>Settings</span>
         </button>
-        <button class="desktop-icon" type="button" data-open="about" aria-label="Open About ZeroH">
+        <button class="desktop-icon" type="button" data-open="about" aria-label="Open About Project New Shoes">
           <span class="desktop-icon-art"><svg><use href="#i-info"/></svg></span><span>About</span>
         </button>
       </nav>
 
       <section id="windowLayer" class="window-layer" aria-label="Open applications">
-        <article id="setupWindow" class="window setup-window is-open is-active" data-app="setup" style="--x: 50%; --y: 48%; --w: 900px; --h: 640px;" aria-label="ZeroH Game Launcher">
+        <article id="setupWindow" class="window setup-window is-open is-active" data-app="setup" style="--x: 50%; --y: 48%; --w: 900px; --h: 640px;" aria-label="Project New Shoes Game Launcher">
           <header class="titlebar">
-            <div class="titlebar-title"><span class="titlebar-app-icon zeroh-title-icon"><img data-launcher-logo-image alt="" width="512" height="512"></span><span>ZeroH Game Launcher</span></div>
+            <div class="titlebar-title"><span class="titlebar-app-icon zeroh-title-icon"><img data-launcher-logo-image alt="" width="512" height="512"></span><span>Project New Shoes Game Launcher</span></div>
             <div class="window-controls">
               <button type="button" data-window-action="minimize" aria-label="Minimize">—</button>
               <button type="button" data-window-action="maximize" aria-label="Maximize">□</button>
@@ -91,10 +93,10 @@
           <div class="window-body setup-body">
             <aside class="wizard-side">
               <div class="wizard-brand">
-                <img class="zeroh-mark" data-launcher-logo-image alt="ZeroH launcher mark" width="512" height="512">
-                <div><span>ZERO<span class="brand-h">H</span></span><strong>COMMAND UPLINK</strong></div>
+                <img class="zeroh-mark" data-launcher-logo-image alt="Project New Shoes launcher mark" width="512" height="512">
+                <div><span>NEW <span class="brand-h">SHOES</span></span><strong>PROJECT COMMAND CENTER</strong></div>
               </div>
-              <p class="wizard-side-copy">Local assets.<br>Full command.<br>Zero compromise.</p>
+              <p class="wizard-side-copy">Local assets.<br>Real engine.<br>Browser native.</p>
               <ol class="wizard-steps" aria-label="Setup progress">
                 <li class="is-current" data-step-indicator="1"><span>1</span><div><strong>Find files</strong><small>Select your source</small></div></li>
                 <li data-step-indicator="2"><span>2</span><div><strong>Keep or install</strong><small>Choose storage</small></div></li>
@@ -106,7 +108,7 @@
             <div class="wizard-main">
               <section class="wizard-page is-visible" data-wizard-page="1">
                 <div class="wizard-heading">
-                  <p class="eyebrow">ZEROH COMMAND CENTER</p>
+                  <p class="eyebrow">PROJECT NEW SHOES</p>
                   <h1>Bring your Zero Hour files</h1>
                   <p>Choose your original Generals and Zero Hour disc images, or an existing Zero Hour installation. We only inspect the files needed to prepare the game.</p>
                 </div>
@@ -144,7 +146,7 @@
 
                 <div class="privacy-note">
                   <svg><use href="#i-shield"/></svg>
-                  <p><strong>Your files stay yours.</strong> ZeroH reads original media locally and writes required archives only to this origin&rsquo;s private browser storage. Nothing is uploaded.</p>
+                  <p><strong>Your files stay yours.</strong> Project New Shoes reads original media locally and writes required archives only to this origin&rsquo;s private browser storage. Nothing is uploaded.</p>
                 </div>
               </section>
 
@@ -184,7 +186,7 @@
                 </fieldset>
 
                 <div class="space-warning" id="spaceWarning" hidden>
-                  <span>!</span><p><strong>Browser storage permission required.</strong> ZeroH keeps one extracted archive set and mounts that installed copy directly when you launch.</p>
+                  <span>!</span><p><strong>Browser storage permission required.</strong> Project New Shoes keeps one extracted archive set and mounts that installed copy directly when you launch.</p>
                 </div>
 
                 <footer class="wizard-actions">
@@ -206,7 +208,7 @@
                   <div id="libraryProgressTrack" class="library-progress-track" role="progressbar" aria-label="Game installation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                     <span id="libraryProgressFill"></span>
                   </div>
-                  <p class="library-progress-warning"><span aria-hidden="true">i</span><span><strong>Please keep this tab open.</strong> ZeroH will unlock the launcher as soon as the game files are ready.</span></p>
+                  <p class="library-progress-warning"><span aria-hidden="true">i</span><span><strong>Please keep this tab open.</strong> Project New Shoes will unlock the launcher as soon as the game files are ready.</span></p>
                 </section>
               </section>
 
@@ -245,13 +247,13 @@
           </header>
           <div class="explorer-toolbar">
             <div class="nav-buttons"><button id="fileBackButton" type="button" title="Back" disabled>‹</button><button id="fileForwardButton" type="button" title="Forward" disabled>›</button><button id="fileUpButton" type="button" title="Up one level">↑</button></div>
-            <div id="fileAddressBar" class="address-bar"><svg><use href="#i-drive"/></svg><span>ZeroH Drive</span></div>
+            <div id="fileAddressBar" class="address-bar"><svg><use href="#i-drive"/></svg><span>Project New Shoes Drive</span></div>
             <label class="search-box"><span>⌕</span><input id="fileSearch" type="search" placeholder="Search this folder"></label>
           </div>
           <div class="explorer-content">
             <aside class="explorer-sidebar">
               <h3>PLACES</h3>
-              <button type="button" data-folder-shortcut="root"><svg><use href="#i-drive"/></svg> ZeroH Drive</button>
+              <button type="button" data-folder-shortcut="root"><svg><use href="#i-drive"/></svg> Project New Shoes Drive</button>
               <button type="button" data-folder-shortcut="saves"><svg><use href="#i-folder"/></svg> Game Saves <span data-folder-count="saves">4</span></button>
               <button type="button" data-folder-shortcut="replays"><svg><use href="#i-folder"/></svg> Replays <span data-folder-count="replays">2</span></button>
               <button type="button" data-folder-shortcut="notes"><svg><use href="#i-folder"/></svg> Notes <span data-folder-count="notes">2</span></button>
@@ -293,7 +295,7 @@
           </div>
         </article>
 
-        <article id="notepadWindow" class="window notepad-window" data-app="notepad" style="--x: 54%; --y: 43%; --w: 680px; --h: 500px;" aria-label="ZeroH Notepad">
+        <article id="notepadWindow" class="window notepad-window" data-app="notepad" style="--x: 54%; --y: 43%; --w: 680px; --h: 500px;" aria-label="Project New Shoes Notepad">
           <header class="titlebar"><div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-note"/></svg></span><span id="notepadTitle">Untitled - Notepad</span></div><div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div></header>
           <div class="app-menu-bar"><button type="button" id="noteNewButton"><u>N</u>ew</button><button type="button" id="noteSelectAllButton">Select <u>A</u>ll</button><button type="button" id="noteWrapButton"><u>W</u>ord Wrap</button><button type="button" id="noteHelpButton"><u>H</u>elp</button></div>
           <div class="notepad-toolbar"><label>File name <input id="notepadFileName" value="Untitled.txt" maxlength="80"></label><button id="noteOpenButton" type="button">Open…</button><button id="noteSaveButton" type="button">Save</button><button id="noteDownloadButton" type="button">Download</button></div>
@@ -301,19 +303,19 @@
           <footer class="notepad-status"><span id="notepadSaveState">New document</span><span id="notepadStats">Ln 1, Col 1 · 0 characters</span></footer>
         </article>
 
-        <article id="browserWindow" class="window browser-window" data-app="browser" style="--x: 52%; --y: 44%; --w: 900px; --h: 600px;" aria-label="ZeroH Browser">
-          <header class="titlebar"><div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-browser"/></svg></span><span>ZeroH Browser</span></div><div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div></header>
-          <div class="browser-toolbar"><button id="browserBack" type="button" title="Back">‹</button><button id="browserForward" type="button" title="Forward">›</button><button id="browserHome" type="button" title="Home">⌂</button><button id="browserReload" type="button" title="Reload">↻</button><form id="browserAddressForm"><span>Address</span><input id="browserAddress" value="zeroh://start" autocomplete="off" spellcheck="false"><button type="submit">Go</button></form><button id="browserExternal" type="button" title="Open this address in a real browser tab">↗</button></div>
-          <div class="browser-favorites"><span>Links</span><button type="button" data-browser-page="zeroh://start">Command Net</button><button type="button" data-browser-page="zeroh://manual">Field Manual</button><button type="button" data-browser-page="zeroh://status">System Status</button><button type="button" data-browser-page="zeroh://arcade">Arcade</button></div>
+        <article id="browserWindow" class="window browser-window" data-app="browser" style="--x: 52%; --y: 44%; --w: 900px; --h: 600px;" aria-label="Project New Shoes Browser">
+          <header class="titlebar"><div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-browser"/></svg></span><span>Project New Shoes Browser</span></div><div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div></header>
+          <div class="browser-toolbar"><button id="browserBack" type="button" title="Back">‹</button><button id="browserForward" type="button" title="Forward">›</button><button id="browserHome" type="button" title="Home">⌂</button><button id="browserReload" type="button" title="Reload">↻</button><form id="browserAddressForm"><span>Address</span><input id="browserAddress" value="newshoes://start" autocomplete="off" spellcheck="false"><button type="submit">Go</button></form><button id="browserExternal" type="button" title="Open this address in a real browser tab">↗</button></div>
+          <div class="browser-favorites"><span>Links</span><button type="button" data-browser-page="newshoes://start">Command Net</button><button type="button" data-browser-page="newshoes://manual">Field Manual</button><button type="button" data-browser-page="newshoes://status">System Status</button><button type="button" data-browser-page="newshoes://arcade">Arcade</button></div>
           <div id="browserPage" class="browser-page"></div>
           <iframe id="browserFrame" class="browser-frame" title="External website" sandbox="allow-forms allow-scripts allow-same-origin allow-popups" hidden></iframe>
           <footer class="browser-status"><span id="browserStatus">Local intranet</span><span>Internet zone</span></footer>
         </article>
 
-        <article id="arcadeWindow" class="window arcade-window" data-app="arcade" style="--x: 56%; --y: 45%; --w: 720px; --h: 570px;" aria-label="ZeroH Arcade">
-          <header class="titlebar"><div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-arcade"/></svg></span><span>ZeroH Arcade</span></div><div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div></header>
+        <article id="arcadeWindow" class="window arcade-window" data-app="arcade" style="--x: 56%; --y: 45%; --w: 720px; --h: 570px;" aria-label="Project New Shoes Arcade">
+          <header class="titlebar"><div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-arcade"/></svg></span><span>Project New Shoes Arcade</span></div><div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div></header>
           <div class="arcade-shell">
-            <header class="arcade-header"><div><svg><use href="#i-system"/></svg><span>ZEROH</span><strong>FIELD ARCADE</strong></div><p>AUTHORIZED DOWNTIME PROTOCOL</p></header>
+            <header class="arcade-header"><div><svg><use href="#i-system"/></svg><span>PROJECT NEW SHOES</span><strong>FIELD ARCADE</strong></div><p>AUTHORIZED DOWNTIME PROTOCOL</p></header>
             <nav class="arcade-tabs" role="tablist" aria-label="Arcade games"><button id="minefieldTab" type="button" role="tab" aria-controls="minefieldPanel" aria-selected="true" class="is-selected" data-arcade-tab="minefield">Minefield</button><button id="signalsTab" type="button" role="tab" aria-controls="signalsPanel" aria-selected="false" tabindex="-1" data-arcade-tab="signals">Signal Match</button></nav>
             <section id="minefieldPanel" class="arcade-panel is-visible" role="tabpanel" aria-labelledby="minefieldTab" data-arcade-panel="minefield"><div class="game-instructions"><div><strong>TACTICAL MINEFIELD</strong><span>Clear the sector. Right-click to flag a suspected mine.</span></div><div class="game-counters"><span>MINES <b id="mineCount">10</b></span><button id="mineReset" type="button" aria-label="Reset minefield">🙂</button><span>TIME <b id="mineTimer">000</b></span></div></div><div id="mineGrid" class="mine-grid" aria-label="Minefield game board"></div></section>
             <section id="signalsPanel" class="arcade-panel" role="tabpanel" aria-labelledby="signalsTab" data-arcade-panel="signals"><div class="game-instructions"><div><strong>SIGNAL MATCH</strong><span>Pair encrypted signals before your memory gives out.</span></div><div class="game-counters"><span>MOVES <b id="memoryMoves">0</b></span><button id="memoryReset" type="button">New grid</button><span>PAIRS <b id="memoryPairs">0/8</b></span></div></div><div id="memoryGrid" class="memory-grid" aria-label="Signal matching game board"></div></section>
@@ -336,7 +338,7 @@
 
         <article id="settingsWindow" class="window settings-window" data-app="settings" style="--x: 52%; --y: 45%; --w: 820px; --h: 610px;" aria-label="Settings">
           <header class="titlebar">
-            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-gear"/></svg></span><span>ZeroH Desktop Settings</span></div>
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-gear"/></svg></span><span>Project New Shoes Desktop Settings</span></div>
             <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
           </header>
           <div class="settings-body">
@@ -348,11 +350,10 @@
             <section id="appearancePanel" class="settings-panel" role="tabpanel" aria-labelledby="appearanceTab" data-settings-panel="appearance">
               <p class="eyebrow">APPEARANCE</p><h1>Make it feel like home</h1>
               <div class="setting-block"><div><strong>Desktop landscape</strong><span>Choose the backdrop for your command center.</span></div><div class="wallpaper-options"><button type="button" class="wallpaper-swatch command is-selected" data-set-wallpaper="command" aria-label="Command wallpaper"></button><button type="button" class="wallpaper-swatch meadow" data-set-wallpaper="meadow" aria-label="Meadow wallpaper"></button><button type="button" class="wallpaper-swatch dusk" data-set-wallpaper="dusk" aria-label="Dusk wallpaper"></button><button type="button" class="wallpaper-swatch slate" data-set-wallpaper="slate" aria-label="Slate wallpaper"></button></div></div>
-              <div class="setting-block"><div><strong>Launcher identity</strong><span>Review 20 original ZeroH marks at desktop and taskbar scale.</span></div><button type="button" class="identity-lab-button" data-open-logo-lab>Open Identity Lab</button></div>
               <label class="setting-block"><div><strong>Interface scale</strong><span>Make windows and controls larger.</span></div><select id="scaleSelect"><option value="1">100%</option><option value="1.1">110%</option><option value="1.2">120%</option></select></label>
               <label class="setting-block toggle-setting"><div><strong>Interface sounds</strong><span>Play small sounds for desktop actions.</span></div><input id="soundToggle" type="checkbox"><span class="toggle"></span></label>
               <label class="setting-block toggle-setting"><div><strong>Reduce motion</strong><span>Minimize animations and transitions.</span></div><input id="motionToggle" type="checkbox"><span class="toggle"></span></label>
-              <button id="resetConceptButton" type="button" class="text-button reset-link">Reset ZeroH data</button>
+              <button id="resetConceptButton" type="button" class="text-button reset-link">Reset Project New Shoes data</button>
             </section>
             <section id="multiplayerPanel" class="settings-panel multiplayer-panel" role="tabpanel" aria-labelledby="multiplayerTab" data-settings-panel="multiplayer" hidden>
               <p class="eyebrow">PEER-TO-PEER UPLINK</p><h1>Multiplayer connection</h1>
@@ -384,30 +385,29 @@
           </div>
         </article>
 
-        <article id="aboutWindow" class="window about-window" data-app="about" style="--x: 57%; --y: 43%; --w: 560px; --h: 420px;" aria-label="About ZeroH">
+        <article id="aboutWindow" class="window about-window" data-app="about" style="--x: 57%; --y: 43%; --w: 560px; --h: 420px;" aria-label="About Project New Shoes">
           <header class="titlebar">
-            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-info"/></svg></span><span>About ZeroH</span></div>
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-info"/></svg></span><span>About Project New Shoes</span></div>
             <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
           </header>
-          <div class="about-body"><div class="about-brand"><span class="launcher-logo-slot about-launcher-logo"><img data-launcher-logo-image alt="Selected ZeroH launcher mark" width="512" height="512"></span><div><small>Browser command center</small><h1>ZERO<span>H</span></h1><p>WebAssembly runtime</p></div></div><div class="about-card"><svg><use href="#i-globe"/></svg><div><strong>The original game engine, running on the web</strong><p>ZeroH launches the genuine C&amp;C Generals: Zero Hour source port with user-owned assets. Media stays local; the desktop, filesystem, and game runtime execute in your browser.</p></div></div><dl class="about-facts"><div><dt>Runtime</dt><dd>WebAssembly + WebGL2</dd></div><div><dt>Storage</dt><dd>OPFS browser disk</dd></div><div><dt>Current target</dt><dd>Zero Hour</dd></div></dl><p class="about-legal">Original game data is never bundled. You must supply files from your own installation or original media.</p></div>
+          <div class="about-body"><div class="about-brand"><span class="launcher-logo-slot about-launcher-logo"><img data-launcher-logo-image alt="Project New Shoes launcher mark" width="512" height="512"></span><div><small>Independent browser runtime</small><h1>NEW <span>SHOES</span></h1><p>Project New Shoes</p></div></div><div class="about-card"><svg><use href="#i-globe"/></svg><div><strong>The original game engine, running on the web</strong><p>Project New Shoes launches the original Generals and Zero Hour engine with user-owned assets. Media stays local; the desktop, filesystem, and game runtime execute in your browser.</p></div></div><dl class="about-facts"><div><dt>Runtime</dt><dd>WebAssembly + WebGL2</dd></div><div><dt>Storage</dt><dd>OPFS browser disk</dd></div><div><dt>Current target</dt><dd>Zero Hour</dd></div></dl><p class="about-legal">EA has not endorsed and does not support this product. Original game data is never bundled; you must supply files from a copy you own.</p></div>
         </article>
       </section>
 
-      <section id="startMenu" class="start-menu" aria-label="ZeroH menu" hidden>
+      <section id="startMenu" class="start-menu" aria-label="Project New Shoes menu" hidden>
         <header><span class="user-avatar">C</span><div><strong>Commander</strong><span>Local browser session</span></div></header>
         <div class="start-content">
           <div class="start-primary">
-            <button type="button" data-open="setup"><span class="start-icon"><img data-launcher-logo-image alt="" width="512" height="512"></span><div><strong>ZeroH Game Launcher</strong><small>Add files and start a game</small></div></button>
+            <button type="button" data-open="setup"><span class="start-icon"><img data-launcher-logo-image alt="" width="512" height="512"></span><div><strong>Project New Shoes Game Launcher</strong><small>Add files and start a game</small></div></button>
             <button type="button" data-open="explorer"><span class="start-icon"><svg><use href="#i-folder"/></svg></span><div><strong>My Files</strong><small>Browse folders and local files</small></div></button>
-            <button type="button" data-open="browser"><span class="start-icon"><svg><use href="#i-browser"/></svg></span><div><strong>ZeroH Browser</strong><small>Command Net and the open web</small></div></button>
+            <button type="button" data-open="browser"><span class="start-icon"><svg><use href="#i-browser"/></svg></span><div><strong>Project New Shoes Browser</strong><small>Command Net and the open web</small></div></button>
             <button type="button" data-open="notepad"><span class="start-icon"><svg><use href="#i-note"/></svg></span><div><strong>Notepad</strong><small>Write notes to your virtual drive</small></div></button>
-            <button type="button" data-open="arcade"><span class="start-icon"><svg><use href="#i-arcade"/></svg></span><div><strong>ZeroH Arcade</strong><small>Minefield and Signal Match</small></div></button>
+            <button type="button" data-open="arcade"><span class="start-icon"><svg><use href="#i-arcade"/></svg></span><div><strong>Project New Shoes Arcade</strong><small>Minefield and Signal Match</small></div></button>
             <button type="button" data-open="programs"><span class="start-icon"><svg><use href="#i-apps"/></svg></span><div><strong>Game Library</strong><small>Manage installed games</small></div></button>
           </div>
           <div class="start-secondary">
             <button type="button" data-open="settings"><svg><use href="#i-gear"/></svg> Settings</button>
-            <button type="button" data-open-logo-lab><svg><use href="#i-image"/></svg> ZeroH Identity Lab</button>
-            <button type="button" data-open="about"><svg><use href="#i-info"/></svg> About ZeroH</button>
+            <button type="button" data-open="about"><svg><use href="#i-info"/></svg> About Project New Shoes</button>
             <div class="start-storage"><span>Browser storage</span><strong data-storage-free>Calculating…</strong><i><span></span></i></div>
           </div>
         </div>
@@ -423,11 +423,11 @@
 
       <section id="launchOverlay" class="launch-overlay" hidden aria-live="polite">
         <div class="runtime-grid" aria-hidden="true"></div>
-        <button id="exitRuntimeButton" type="button" class="exit-runtime" hidden>× Exit to ZeroH</button>
+        <button id="exitRuntimeButton" type="button" class="exit-runtime" hidden>× Exit to Project New Shoes</button>
         <button id="start" type="button" hidden aria-hidden="true">Start engine</button>
         <div id="launchLoader" class="launch-loader">
           <div class="runtime-emblem"><span></span><i>ZH</i></div>
-          <p class="runtime-label">ZEROH WASM RUNTIME</p>
+          <p class="runtime-label">PROJECT NEW SHOES WASM RUNTIME</p>
           <h1 id="launchGameTitle">ZERO HOUR</h1>
           <p id="launchStatus">Preparing browser filesystem…</p>
           <div class="launch-progress"><span id="launchProgressFill"></span></div>

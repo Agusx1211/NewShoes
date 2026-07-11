@@ -1,4 +1,4 @@
-# TODO.md — Open port checklist
+# TODO.md: Project New Shoes open port checklist
 
 Open, living checklist for porting C&C Generals: Zero Hour to WebAssembly.
 Grouped by milestone (see `PROJECT.md`). `[ ]` = not started or still in
@@ -482,7 +482,7 @@ Dev-box render-verify: symlink worktree `dist/` → main's built `dist/` renders
       still served over HTTPS and is therefore described only as avoiding
       repeat original-media selection.
 - [ ] Surface the engine-owned persisted save games, replays, and captured
-      screenshots in the ZeroH My Files application. The launcher no longer
+      screenshots in the Project New Shoes My Files application. The launcher no longer
       seeds fake game saves/replays/screenshots; its editable notes/import
       workspace is real browser-local data, while game saves remain correctly
       owned by the existing IDBFS + `listSaves` runtime path.

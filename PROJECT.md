@@ -1,8 +1,8 @@
-# PROJECT.md — C&C Generals: Zero Hour → WebAssembly
+# PROJECT.md: Project New Shoes
 
 ## 1. Goal
 
-Run the **real** Command & Conquer: Generals / Zero Hour in a web browser by
+Project New Shoes runs the **real** Command & Conquer: Generals / Zero Hour in a web browser by
 compiling the **original C++ source** (already in this repo) to WebAssembly with
 Emscripten, and re-targeting its platform/device layer onto browser APIs.
 

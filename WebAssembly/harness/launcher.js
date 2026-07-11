@@ -1,8 +1,7 @@
 (() => {
   "use strict";
 
-  const DEFAULT_LAUNCHER_LOGO = "01";
-  const LOGO_DECISION_VERSION = "round-01-folded-command";
+  const LAUNCHER_LOGO_PATH = "./assets/launcher-logo.webp";
   const LAYOUT_VERSION = "launcher-centered-v1";
 
   function storageGet(key) {
@@ -17,20 +16,15 @@
     try { localStorage.removeItem(key); } catch { /* storage is optional */ }
   }
 
-  if (storageGet("zeroh-logo-decision") !== LOGO_DECISION_VERSION) {
-    storageSet("zeroh-selected-logo", DEFAULT_LAUNCHER_LOGO);
-    storageSet("zeroh-logo-decision", LOGO_DECISION_VERSION);
-  }
-
   const APP_META = {
-    setup: { title: "ZeroH Game Launcher", launcherLogo: true },
+    setup: { title: "Project New Shoes Game Launcher", launcherLogo: true },
     explorer: { title: "My Files", icon: "#i-folder" },
-    browser: { title: "ZeroH Browser", icon: "#i-browser" },
+    browser: { title: "Project New Shoes Browser", icon: "#i-browser" },
     notepad: { title: "Notepad", icon: "#i-note" },
-    arcade: { title: "ZeroH Arcade", icon: "#i-arcade" },
+    arcade: { title: "Project New Shoes Arcade", icon: "#i-arcade" },
     programs: { title: "Game Library", icon: "#i-apps" },
-    settings: { title: "ZeroH Desktop Settings", icon: "#i-gear" },
-    about: { title: "About ZeroH", icon: "#i-info" },
+    settings: { title: "Project New Shoes Desktop Settings", icon: "#i-gear" },
+    about: { title: "About Project New Shoes", icon: "#i-info" },
   };
 
   const state = {
@@ -225,7 +219,7 @@
 
   function sourceChangeNeedsReload() {
     if (!window.ZeroHRuntime?.started) return false;
-    showToast("Reload required", "The running engine owns the current archives. Reload ZeroH before selecting a different source.", "warning");
+    showToast("Reload required", "The running engine owns the current archives. Reload Project New Shoes before selecting a different source.", "warning");
     return true;
   }
 
@@ -251,7 +245,7 @@
 
   function closeWindow(windowEl) {
     if (state.preparingLibrary && windowEl.dataset.app === "setup") {
-      showToast("Installation in progress", "Keep the launcher open until ZeroH finishes copying the game files.", "warning");
+      showToast("Installation in progress", "Keep the launcher open until Project New Shoes finishes copying the game files.", "warning");
       return;
     }
     windowEl.classList.remove("is-open", "is-minimized", "is-active");
@@ -309,7 +303,7 @@
       button.dataset.app = appId;
       button.className = `task-button${windowEl.classList.contains("is-active") && !windowEl.classList.contains("is-minimized") ? " is-active" : ""}`;
       const icon = meta.launcherLogo
-        ? `<img src="${getLauncherLogoPath()}" alt="">`
+        ? `<img src="${LAUNCHER_LOGO_PATH}" alt="">`
         : `<svg><use href="${meta.icon}"/></svg>`;
       button.innerHTML = `${icon}<span>${meta.title}</span>`;
       button.addEventListener("click", () => {
@@ -339,27 +333,12 @@
     startButton.setAttribute("aria-expanded", "false");
   }
 
-  function getLauncherLogoPath(id = storageGet("zeroh-selected-logo") || DEFAULT_LAUNCHER_LOGO) {
-    const number = Number(id);
-    const validId = /^\d{2}$/.test(id || "") && number >= 1 && number <= 20 ? id : DEFAULT_LAUNCHER_LOGO;
-    return validId === DEFAULT_LAUNCHER_LOGO
-      ? "./assets/launcher-logo.webp"
-      : `./assets/logos/logo-${validId}.webp`;
-  }
-
-  function applyLauncherLogo(id) {
-    const path = getLauncherLogoPath(id);
+  function applyLauncherLogo() {
     document.querySelectorAll("[data-launcher-logo-image]").forEach((image) => {
-      image.src = path;
+      image.src = LAUNCHER_LOGO_PATH;
     });
-    document.querySelector('link[rel="icon"]')?.setAttribute("href", path);
     const taskbarLogo = taskButtons.querySelector('.task-button[data-app="setup"] img');
-    if (taskbarLogo) taskbarLogo.src = path;
-  }
-
-  function openLogoLab() {
-    closeStartMenu();
-    window.open("./logos.html", "zeroh-logo-lab");
+    if (taskbarLogo) taskbarLogo.src = LAUNCHER_LOGO_PATH;
   }
 
   function bindWindows() {
@@ -765,7 +744,7 @@
 
   async function exitRuntime() {
     await window.ZeroHRuntime?.exit();
-    showToast("Returned to ZeroH", "The real engine is paused and your saves were flushed.");
+    showToast("Returned to Project New Shoes", "The real engine is paused and your saves were flushed.");
   }
 
   function updateClock() {
@@ -898,7 +877,7 @@
     setWizardStep(1);
     openApp("setup");
     showToast("Library forgotten", window.ZeroHRuntime?.started
-      ? "Stored assets were cleared. Reload ZeroH before selecting replacement files."
+      ? "Stored assets were cleared. Reload Project New Shoes before selecting replacement files."
       : "Source permissions and installed browser copies were cleared.");
   });
   document.querySelector("#endSessionButton").addEventListener("click", () => {
@@ -908,7 +887,7 @@
     });
     openApp("setup");
     setWizardStep(state.library ? 3 : 1);
-    showToast("Session refreshed", "ZeroH is ready for the next launch.");
+    showToast("Session refreshed", "Project New Shoes is ready for the next launch.");
   });
 
   document.querySelectorAll("[data-set-wallpaper]").forEach((button) => button.addEventListener("click", () => {
@@ -924,12 +903,7 @@
     openApp("settings");
     document.querySelector('[data-settings-tab="multiplayer"]')?.click();
   });
-  document.querySelectorAll("[data-open-logo-lab]").forEach((button) => button.addEventListener("click", openLogoLab));
-  window.addEventListener("message", (event) => {
-    if (event.origin === window.location.origin && event.data?.type === "zeroh-logo-selected") applyLauncherLogo(event.data.id);
-  });
   window.addEventListener("storage", (event) => {
-    if (event.key === "zeroh-selected-logo") applyLauncherLogo(event.newValue);
     if (["zeroh-library", "fielddesk-library", "zeroh-installed-library.v3", "zeroh-installed-library.v2"].includes(event.key)) {
       state.library = readStoredLibrary();
       void reconcileStoredLibrary();
@@ -959,7 +933,8 @@
     storageRemove("fielddesk-library");
     storageRemove("fielddesk-settings");
     storageRemove("zeroh-window-layout");
-    storageSet("zeroh-selected-logo", DEFAULT_LAUNCHER_LOGO);
+    storageRemove("zeroh-selected-logo");
+    storageRemove("zeroh-logo-decision");
     storageRemove("zeroh-logo-shortlist");
     state.windowLayout = {};
     document.querySelectorAll(".window").forEach((windowEl) => {
@@ -974,8 +949,8 @@
     updateLibraryUI();
     applyLauncherLogo();
     window.dispatchEvent(new CustomEvent("zeroh:reset-apps"));
-    showToast("ZeroH reset", window.ZeroHRuntime?.started
-      ? "Browser data was cleared. Reload ZeroH before selecting replacement files."
+    showToast("Project New Shoes reset", window.ZeroHRuntime?.started
+      ? "Browser data was cleared. Reload Project New Shoes before selecting replacement files."
       : "Library permissions, browser assets and desktop settings were cleared.");
   });
 

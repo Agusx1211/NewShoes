@@ -1,4 +1,4 @@
-/* Browser-local installer media reader for the ZeroH launcher.
+/* Browser-local installer media reader for the Project New Shoes launcher.
  *
  * The worker accepts loose installed-game files, ISO 9660 images, and raw
  * MODE1/2352 BIN images. It extracts only the original BIG archives needed by

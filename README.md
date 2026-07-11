@@ -1,20 +1,29 @@
-# Command & Conquer: Generals + Zero Hour — WebAssembly Browser Port
+# Project New Shoes
 
-This repository is a **port of the actual Command & Conquer: Generals and Zero
-Hour C++ source code to WebAssembly**, so the **real game** runs in a web
-browser. It is built by compiling the genuine engine source already in this repo
-and re-targeting its platform/device layer (DirectX 8 / W3D, Miles audio, Bink
-video, Win32, GameSpy) onto browser APIs (WebGL2/WebGPU, Web Audio, WebCodecs,
-DOM input, WebSockets/WebRTC).
+<p align="center">
+  <img src="WebAssembly/harness/assets/brand/project-new-shoes-mark.webp" alt="Project New Shoes launcher mark" width="220">
+</p>
+
+<p align="center"><strong>The original Generals and Zero Hour engine, running in your browser.</strong></p>
+
+**Project New Shoes** is an independent WebAssembly port of the actual Command
+& Conquer: Generals and Zero Hour C++ source code. It compiles the genuine
+engine source already in this repository and re-targets its platform/device
+layer (DirectX 8 / W3D, Miles audio, Bink video, Win32, GameSpy) onto browser
+APIs (WebGL2/WebGPU, Web Audio, WebCodecs, DOM input, WebSockets/WebRTC).
 
 It is **not** a reimplementation, **not** a clone, and **not** an "inspired-by"
 mini-game. It is the original simulation, AI, rendering, audio, video, input, and
 networking — recompiled for the browser. The upstream source is EA's official
 Generals/Zero Hour release (preserved at the bottom of this file).
 
-> **Status: early. The engine boots, parses real game data, and is putting the
-> first real pixels on a WebGL canvas (see [Current status](#current-status)).**
-> It is not yet a playable game in the browser.
+> **Status: active development.** The browser runtime follows the original
+> engine lifecycle, renders the shell and main menu, and starts skirmish maps
+> with real game data. Major gameplay, fidelity, stability, and performance
+> work remains. See [Current status](#current-status).
+
+Project New Shoes does not bundle original game data. You must supply files
+from a copy you own. EA has not endorsed and does not support this project.
 
 ---
 

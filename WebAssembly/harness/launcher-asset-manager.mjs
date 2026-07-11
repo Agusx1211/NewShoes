@@ -238,7 +238,7 @@ class AssetLibrary {
 
   async scan(files, { handles = null, onProgress = null } = {}) {
     if (window.ZeroHRuntime?.started) {
-      throw new Error("Reload ZeroH before changing game files after the engine has started");
+      throw new Error("Reload Project New Shoes before changing game files after the engine has started");
     }
     await this.discardPreparedArchives();
     this.sourceHandles = handles ? [...handles] : [];
@@ -253,7 +253,7 @@ class AssetLibrary {
 
   async clearSource() {
     if (window.ZeroHRuntime?.started) {
-      throw new Error("Reload ZeroH before changing game files after the engine has started");
+      throw new Error("Reload Project New Shoes before changing game files after the engine has started");
     }
     await this.discardPreparedArchives();
     this.sourceHandles = [];
