@@ -38,9 +38,11 @@ const archiveSpecs = [
   { name: "Gensec.big" },
 ];
 
-const overlay = document.querySelector("#overlay");
+const overlay = document.querySelector("#launchOverlay");
 const startButton = document.querySelector("#start");
-const progressNode = document.querySelector("#progress");
+const progressNode = document.querySelector("#launchStatus");
+const progressSentinel = document.querySelector("#progress");
+const bootSentinel = document.querySelector("#overlay");
 const fpsNode = document.querySelector("#fps");
 const hudNode = document.querySelector("#hud");
 const gearButton = document.querySelector("#gearButton");
@@ -251,7 +253,23 @@ window.CnCIssueRecorder = issueRecorder;
 
 function report(message) {
   progressNode.textContent = message;
+  if (progressSentinel) progressSentinel.textContent = message;
   progressNode.classList.remove("error");
+  const fill = document.querySelector("#launchProgressFill");
+  const mountStage = document.querySelector("#stageMount");
+  const engineStage = document.querySelector("#stageEngine");
+  if (/mounting/i.test(message)) {
+    if (fill) fill.style.width = "38%";
+    if (mountStage) mountStage.textContent = "◌ Mount";
+  }
+  if (/GameEngine::init/i.test(message)) {
+    if (fill) fill.style.width = "74%";
+    if (mountStage) {
+      mountStage.textContent = "✓ Mount";
+      mountStage.classList.add("is-done");
+    }
+    if (engineStage) engineStage.textContent = "◌ Engine";
+  }
 }
 
 // --- boot progress UI (archive download/mount bar + engine-init pulse) ------
@@ -466,6 +484,7 @@ function fail(message, detail) {
     detailText = `${detailText.slice(0, 600)}…`;
   }
   progressNode.textContent = `FAILED: ${message}${detailText ? ` — ${detailText}` : ""}`;
+  if (progressSentinel) progressSentinel.textContent = progressNode.textContent;
   progressNode.classList.add("error");
   bootProgressNode?.classList.remove("indeterminate");
   startButton.disabled = false;
@@ -482,6 +501,10 @@ async function waitForRpc() {
 }
 
 function buildArchives() {
+  const prepared = window.ZeroHAssetLibrary?.preparedArchives;
+  if (Array.isArray(prepared) && prepared.length) {
+    return prepared.map((archive) => ({ ...archive }));
+  }
   return archiveSpecs.map((spec) => {
     const sourceName = spec.sourceName ?? spec.name;
     return {
@@ -644,14 +667,16 @@ async function start() {
       network: networkRuntime,
     });
 
-    report(`downloading + mounting ${archiveSpecs.length} archives...`);
-    beginBootProgress(archiveSpecs.length);
-    const mount = await rpc("mountArchives", {
+    const archives = buildArchives();
+    const preparedAssets = archives.every((archive) => typeof archive.opfsPath === "string");
+    report(`${preparedAssets ? "mounting local" : "downloading + mounting"} ${archives.length} archives...`);
+    beginBootProgress(archives.length);
+    const mount = await rpc(preparedAssets ? "mountPreparedArchives" : "mountArchives", {
       path: "/assets/real-init",
       verifyEach: false,
-      archives: buildArchives(),
+      archives,
     });
-    if (mount?.archiveSet?.archiveCount !== archiveSpecs.length) {
+    if (mount?.archiveSet?.archiveCount !== archives.length) {
       fail("archive mount failed", mount?.error ?? mount?.archiveSet);
       return;
     }
@@ -735,9 +760,22 @@ async function start() {
 
     report("");
     endBootProgress();
-    overlay.classList.add("hidden");
+    document.querySelector("#launchLoader")?.setAttribute("hidden", "");
+    viewportCanvas.hidden = false;
+    overlay.hidden = false;
+    overlay.classList.add("is-running");
+    bootSentinel?.classList.add("hidden");
     hudNode?.classList.remove("hidden");
     gearButton?.classList.remove("hidden");
+    document.querySelector("#exitRuntimeButton")?.removeAttribute("hidden");
+    const launchFill = document.querySelector("#launchProgressFill");
+    if (launchFill) launchFill.style.width = "100%";
+    const engineStage = document.querySelector("#stageEngine");
+    if (engineStage) {
+      engineStage.textContent = "✓ Engine";
+      engineStage.classList.add("is-done");
+    }
+    runtimeStarted = true;
     issueRecorder.setSessionContext({ phase: "running" });
     viewportCanvas.focus();
     initDisplayControls();
@@ -759,6 +797,48 @@ async function start() {
 startButton.addEventListener("click", () => {
   void start();
 });
+
+let runtimeStarted = false;
+
+async function launchFromDesktop() {
+  overlay.hidden = false;
+  if (!runtimeStarted) {
+    overlay.classList.remove("is-running");
+    document.querySelector("#launchLoader")?.removeAttribute("hidden");
+    viewportCanvas.hidden = true;
+    if (!startButton.disabled) startButton.click();
+    return;
+  }
+  overlay.classList.add("is-running");
+  viewportCanvas.hidden = false;
+  hudNode?.classList.remove("hidden");
+  gearButton?.classList.remove("hidden");
+  document.querySelector("#exitRuntimeButton")?.removeAttribute("hidden");
+  if (activeRpc) {
+    const logicFps = Math.min(240, positiveNumberParam("logicFps", DEFAULT_LOGIC_FPS));
+    const clientFps = Math.min(240, positiveNumberParam("clientFps", DEFAULT_CLIENT_FPS));
+    await activeRpc("threadedStartLoop", { clientFps, logicFps });
+  }
+  viewportCanvas.focus();
+}
+
+async function exitToDesktop() {
+  if (activeRpc && runtimeStarted) {
+    await activeRpc("threadedStopLoop", {}).catch(() => {});
+    await activeRpc("persistSaves", { reason: "launcher-exit" }).catch(() => {});
+  }
+  overlay.hidden = true;
+  overlay.classList.remove("is-running");
+  hudNode?.classList.add("hidden");
+  gearButton?.classList.add("hidden");
+  closeSettings();
+}
+
+window.ZeroHRuntime = {
+  launch: launchFromDesktop,
+  exit: exitToDesktop,
+  get started() { return runtimeStarted; },
+};
 
 if (queryParams.get("autostart") === "1") {
   void start();

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#10283b">
+    <meta name="description" content="Review and select the ZeroH launcher identity.">
+    <title>ZeroH Identity Lab — 20 logo candidates</title>
+    <link rel="icon" href="./assets/launcher-logo.webp" type="image/webp">
+    <link rel="stylesheet" href="./logos.css">
+  </head>
+  <body>
+    <header class="lab-header">
+      <a class="back-link" href="./" aria-label="Return to the ZeroH desktop"><span>‹</span> ZeroH Desktop</a>
+      <div class="lab-heading">
+        <p>IDENTITY LAB / ROUND 01</p>
+        <h1>Choose the launcher mark.</h1>
+        <span>Twenty original ZeroH directions, tested at window and taskbar scale.</span>
+      </div>
+      <div class="lab-count"><strong>20</strong><span>candidates</span></div>
+    </header>
+
+    <main>
+      <section class="review-toolbar" aria-label="Logo review controls">
+        <div class="view-options" role="group" aria-label="Preview background">
+          <button class="is-active" type="button" data-preview-theme="command">Command</button>
+          <button type="button" data-preview-theme="desktop">Desktop</button>
+          <button type="button" data-preview-theme="paper">Paper</button>
+        </div>
+        <button class="shortlist-filter" type="button" id="shortlistFilter" aria-pressed="false">
+          <span>★</span> Shortlist <b id="shortlistCount">0</b>
+        </button>
+        <p>Click a card to inspect it. Star the ones worth keeping.</p>
+      </section>
+
+      <section class="logo-grid" id="logoGrid" aria-label="ZeroH logo candidates"></section>
+      <div class="empty-shortlist" id="emptyShortlist" hidden>
+        <span>☆</span><strong>Your shortlist is empty.</strong><p>Return to all candidates and star a few contenders.</p>
+        <button type="button" id="showAllButton">Show all 20</button>
+      </div>
+    </main>
+
+    <aside class="decision-dock" id="decisionDock" aria-live="polite">
+      <div class="decision-preview"><img id="decisionImage" alt="" hidden><span id="decisionPlaceholder">?</span></div>
+      <div class="decision-copy">
+        <small>CURRENT DECISION</small>
+        <strong id="decisionName">No candidate selected</strong>
+        <span id="decisionNote">Pick one above to see it in context.</span>
+      </div>
+      <div class="dock-taskbar" aria-label="Taskbar preview">
+        <span class="mini-start"><svg class="mini-os-mark" viewBox="0 0 48 48" aria-hidden="true"><path d="M5 41V22C5 10.5 12.9 3 24 3s19 7.5 19 19v19H5Z" fill="#e9f8ff"/><path d="M10 36V22c0-8.6 5.6-14 14-14s14 5.4 14 14v14H10Z" fill="#287dbd"/><path d="M15 36a9 9 0 0 1 18 0H15Z" fill="#edb13b"/><path d="M24 8v28M10 24h28" fill="none" stroke="#d8eff7" stroke-width="3"/></svg><strong>start</strong></span>
+        <span class="mini-task launcher-task"><img id="dockTinyImage" alt="" hidden><b>ZeroH Launcher</b></span><span class="mini-task short"></span><time>13:37</time>
+      </div>
+      <button class="apply-button" type="button" id="applyButton" disabled>Use this mark</button>
+    </aside>
+
+    <div class="lab-toast" id="labToast" role="status" hidden></div>
+    <script src="./logos.js"></script>
+  </body>
+</html>

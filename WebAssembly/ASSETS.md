@@ -19,32 +19,40 @@ inputs owned by the user who runs the port.
 
 ## Browser Delivery
 
-The initial development path is same-origin fetch from ignored local artifacts:
+The human play page uses the ZeroH launcher and never needs a server copy of
+copyrighted assets:
 
-1. The user extracts archives into `WebAssembly/artifacts/real-assets/`.
-2. The local harness server exposes that ignored directory only on the user's
-   machine.
-3. The JS bridge preloads required archive bytes before engine startup.
-   The current harness paths are `window.CnCPort.rpc("mountArchive", { url, name })`
-   for one BIG and `window.CnCPort.rpc("mountArchives", { path, archives })`
-   for the runtime archive set. A verified archive-set mount is registered back
-   into the wasm bootstrap as the aggregate archive directory plus `*.big` mask
-   before the harness calls `boot`.
-4. The Emscripten side mounts or copies those bytes into MEMFS/IDBFS.
-5. The wasm bootstrap consumes the registered archive set during `boot` by
-   probing the aggregate path with the original `Win32BIGFileSystem`.
-6. The bootstrap reports `startupAssets` so the harness can distinguish
-   missing runtime archives, registered-but-unprobed archives, and a
-   probe-verified runtime archive set before original engine startup.
-7. The original engine BIG/file/INI code reads the mounted bytes during startup.
+1. The user selects all original Generals + Zero Hour ISO/IMG/BIN images or a
+   folder containing both installed games. File System Access handles are used
+   when available; the standard file/directory inputs remain the session-only
+   fallback.
+2. `harness/launcher-asset-worker.js` scans locally. It reads ISO 9660 directly
+   from 2048-byte images or MODE1/2352 BIN sectors, parses the original
+   Microsoft Cabinet files, extracts NONE/MSZIP members, validates BIGF
+   headers, and builds `LooseScripts.big`. No source bytes are uploaded.
+3. The selected storage mode writes the 30-archive runtime manifest to a
+   Web-Lock-owned per-tab OPFS namespace (session/remember) or also keeps a
+   persistent `cnc-library/v1` browser installation. Remember mode stores only
+   source handles in IndexedDB; install mode checks quota and requests
+   persistent browser storage.
+4. `window.CnCPort.rpc("mountPreparedArchives", ...)` creates the original
+   engine-visible `/assets/.../*.big` marker tree and stages the already-local
+   OPFS paths in the engine worker before `GameEngine::init()`. This avoids an
+   additional multi-gigabyte memory copy and keeps exclusive sync access
+   handles isolated per live tab.
+5. The original `Win32BIGFileSystem`, INI, object-template, UI, audio, map, and
+   gameplay code reads those archives unchanged.
+
+The same-origin `artifacts/real-assets/` fetch flow remains a development and
+regression facility. `mountArchive` / `mountArchives` still let automated
+harnesses fetch ignored local artifacts and register an aggregate archive set
+before boot; `play.html?autostart=1` uses that path only for unattended gates.
 
 This keeps the browser-specific boundary at file delivery. BIG parsing, INI
 parsing, object templates, UI data, audio events, maps, and gameplay behavior
 must continue to come from the original source and real archives.
 
-For a user-facing browser build, add a file picker or drag/drop flow that accepts
-the user's local BIG archives and stores them in IDBFS. Do not upload assets to a
-server. Do not ship default replacement data.
+Do not upload assets to a server or ship default replacement data.
 
 ## Required Archives
 

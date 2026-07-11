@@ -473,6 +473,19 @@ QUEUED other: shadows phased plan (blob→stencil→shaders fidelity polish), re
 
 Dev-box render-verify: symlink worktree `dist/` → main's built `dist/` renders JS-only fixes without the Mac (~4min boot).
 
+## Launcher follow-ups
+
+- [ ] Link the base Generals engine as its own browser runtime and enable the
+      Generals launch card. The integrated ZeroH launcher inventories the base
+      game because Zero Hour needs its fallback archives, but the current
+      `cnc-port` binary remains the project-primary Zero Hour target and the UI
+      labels the separate Generals runtime honestly as unavailable.
+- [ ] Surface the engine-owned persisted save games, replays, and captured
+      screenshots in the ZeroH My Files application. The launcher no longer
+      seeds fake game saves/replays/screenshots; its editable notes/import
+      workspace is real browser-local data, while game saves remain correctly
+      owned by the existing IDBFS + `listSaves` runtime path.
+
 ## Save / Load (in-game save games)
 
 The real engine's save/load system is reused as-is: `GameState::saveGame` /

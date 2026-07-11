@@ -13259,3 +13259,35 @@ mitigation track. Items resolved or retired by the pivot:
       LeftHUD radar proof, and the next attack/attack-move interaction proof is
       listed explicitly under M6. Verified with `rg` against `TODO.md` /
       `DONE.md` and `git diff --check`.
+## Launcher interface and user-owned asset delivery (2026-07-11)
+
+- [x] Ported the complete ZeroH launcher concept into the human play page:
+      desktop/window manager, asset wizard, game library, My Files, Notepad,
+      local browser pages, Arcade, settings/hardware report, About window,
+      identity lab, taskbar, and responsive styling. The real `#viewport`
+      canvas now takes over the concept's runtime overlay while preserving the
+      existing fullscreen, diagnostics, issue recorder, WebRTC, and in-game
+      settings surfaces.
+- [x] Replaced the concept's simulated source scan and the play page's
+      production-facing hard-coded archive URLs with a browser-local original
+      media pipeline. It accepts installed directories plus ISO, IMG, raw
+      MODE1/2352 BIN, CAB, and loose BIG inputs; reads ISO 9660; inventories
+      Microsoft Cabinet media; extracts NONE/MSZIP cabinet folders with their
+      rolling dictionary; validates BIGF output; builds the required
+      `LooseScripts.big`; and writes all 30 runtime archives directly into a
+      Web-Lock-owned, per-tab OPFS namespace without uploading assets.
+- [x] Implemented the launcher's three storage choices: session-only OPFS,
+      remembered File System Access handles in IndexedDB, and persistent
+      browser installation with quota checking plus an OPFS manifest. The
+      bridge can register launcher-prepared OPFS paths before real init while
+      preserving per-tab exclusive sync-handle isolation and the existing
+      server-fetch mount path for regression harnesses only.
+- [x] Verified the complete integration. Headless browser UI checks load all
+      eight concept windows without page/console errors; synthetic direct-CAB,
+      ISO 9660, and MSZIP media each inventory and prepare exactly 30 archives,
+      including `LooseScripts.big`; `mountPreparedArchives` registers all 30
+      from OPFS; install/reload/restage/forget also preserves and clears the
+      complete 30-entry manifest without errors. Mac M4 Chrome/Metal then mounted the real 30-archive set,
+      returned from `GameEngine::init()`, reached 121 threaded client frames,
+      measured canvas RGB variance 765 (0..765), and captured the visibly
+      rendered animated Zero Hour shell map inside the integrated runtime.

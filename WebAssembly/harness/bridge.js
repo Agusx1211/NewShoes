@@ -1404,6 +1404,10 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   "browserWebRtcEndpointState",
   "browserWebRtcEndpointDisconnect",
   "browserWebRtcEndpointClearDatagrams",
+  // The launcher prepares user-owned media in OPFS before boot. Namespace
+  // allocation is pure browser storage work; mounting registers the prepared
+  // paths while the main runtime still owns wasm, just like mountArchives.
+  "allocateArchiveNamespace",
 ]);
 
 async function threadedRpc(command, payload = {}) {
@@ -1447,7 +1451,8 @@ async function threadedRpc(command, payload = {}) {
       };
     }
     case "mountArchive":
-    case "mountArchives": {
+    case "mountArchives":
+    case "mountPreparedArchives": {
       if (threadedEngine.engineThreadStarted) {
         // The mount pipelines call registerArchiveSet/probeArchive wasm
         // exports on the MAIN thread — safe only before the engine pthread
@@ -9916,6 +9921,41 @@ function acquireOpfsNamespaceLock() {
 }
 const opfsRegisteredPrefixes = new Set();
 
+async function allocateArchiveNamespace() {
+  if (!opfsArchiveMountEnabled()) {
+    return {
+      ok: false,
+      command: "allocateArchiveNamespace",
+      error: "Local launcher assets require the threaded OPFS runtime",
+    };
+  }
+  await threadedEngine.ensureReady();
+  const namespace = `ns-${opfsBootId}-${++opfsMountSequence}`;
+  const namespaceLockHeld = await acquireOpfsNamespaceLock();
+  let namespaceGc = null;
+  try {
+    namespaceGc = await ioWorkerRequest({
+      kind: "opfsCollectNamespaces",
+      root: OPFS_ARCHIVE_ROOT,
+      keep: [namespace],
+      lockPrefix: OPFS_NAMESPACE_LOCK_PREFIX,
+    });
+  } catch (error) {
+    recordLog("local asset namespace gc failed", {
+      namespace,
+      error: error?.message ?? String(error),
+    });
+  }
+  return {
+    ok: true,
+    command: "allocateArchiveNamespace",
+    namespace,
+    namespaceRoot: `${OPFS_ARCHIVE_ROOT}/${namespace}`,
+    namespaceLockHeld,
+    namespaceGc,
+  };
+}
+
 function opfsArchiveMountEnabled() {
   // Threaded mode mounts on OPFS, period (the ?opfsmount=0 MEMFS escape
   // hatch was deleted with the play-page legacy path, 2026-07-10). fetchToOpfs
@@ -10144,6 +10184,123 @@ async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirec
   };
 }
 
+async function mountPreparedArchives(payload = {}) {
+  const moduleResult = await getWasmModuleForArchives("mountPreparedArchives");
+  if (moduleResult.error) {
+    return { ok: false, command: moduleResult.command, error: moduleResult.error };
+  }
+  if (!opfsArchiveMountEnabled()) {
+    return {
+      ok: false,
+      command: "mountPreparedArchives",
+      error: "Prepared launcher archives require the threaded OPFS runtime",
+    };
+  }
+  const archiveInputs = Array.isArray(payload.archives) ? payload.archives : [];
+  if (archiveInputs.length === 0) {
+    return { ok: false, command: "mountPreparedArchives", error: "Missing prepared archive list" };
+  }
+  const baseDirectory = normalizeAssetDirectory(String(payload.path ?? "/assets/real-init"));
+  if (!baseDirectory) {
+    return {
+      ok: false,
+      command: "mountPreparedArchives",
+      error: `Archive directory must stay under /assets/: ${payload.path}`,
+    };
+  }
+  await threadedEngine.ensureReady();
+
+  const archives = [];
+  const stageMap = {};
+  for (const input of archiveInputs) {
+    const name = String(input?.name ?? "");
+    const opfsPath = String(input?.opfsPath ?? "").replace(/^\/+/, "");
+    if (!/^[A-Za-z0-9_.-]+\.big$/i.test(name)) {
+      return { ok: false, command: "mountPreparedArchives", error: `Invalid prepared archive name: ${name}` };
+    }
+    if (!opfsPath.startsWith(`${OPFS_ARCHIVE_ROOT}/ns-${opfsBootId}-`)
+        || opfsPath.includes("..")) {
+      return {
+        ok: false,
+        command: "mountPreparedArchives",
+        error: `Prepared archive is outside this page's OPFS namespace: ${opfsPath}`,
+      };
+    }
+    const enginePath = `${baseDirectory}/${name}`;
+    ensureMemfsDirectory(moduleResult.wasmModule.fs, parentDirectory(enginePath));
+    moduleResult.wasmModule.fs.writeFile(enginePath, new Uint8Array(0));
+    stageMap[enginePath] = opfsPath;
+    const bytes = Number(input.bytes ?? 0);
+    archives.push({
+      name,
+      sourceName: String(input.sourceName ?? name),
+      path: enginePath,
+      bytes,
+      expectedBytes: bytes,
+      bytesMatch: Number.isSafeInteger(bytes) && bytes > 4,
+      reader: "launcher prepared OPFS",
+      opfsPath,
+    });
+  }
+
+  const prefix = baseDirectory.endsWith("/") ? baseDirectory : `${baseDirectory}/`;
+  const registered = await registerOpfsInterceptPrefix(prefix);
+  if (!registered.ok) {
+    return { ok: false, command: "mountPreparedArchives", error: registered.error, archives };
+  }
+  let staging;
+  try {
+    staging = await threadedEngine.sendCommand(
+      { cmd: "stageOpfsFiles", map: stageMap },
+      { timeoutMs: 120000 },
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      command: "mountPreparedArchives",
+      error: `Prepared OPFS staging failed: ${error?.message ?? String(error)}`,
+      archives,
+    };
+  }
+  if (staging?.ok !== true) {
+    return {
+      ok: false,
+      command: "mountPreparedArchives",
+      error: `Prepared OPFS staging failed: ${staging?.error ?? "unknown"}`,
+      archives,
+    };
+  }
+
+  rememberMountedArchives(archives);
+  harnessState.audioPayloadInventory = {
+    ok: false,
+    skipped: true,
+    source: "launcher prepared OPFS mounts",
+    error: "archive bytes live on OPFS in threaded mode; main-side inventory scan skipped",
+  };
+  const totalBytes = archives.reduce((sum, archive) => sum + archive.bytes, 0);
+  const ok = archives.every((archive) => archive.bytesMatch);
+  const archiveSet = {
+    path: baseDirectory,
+    probePath: `${baseDirectory}/*.big`,
+    archiveCount: archives.length,
+    totalBytes,
+    backing: "opfs",
+    opfsNamespace: archives[0]?.opfsPath?.split("/")[1] ?? null,
+    stagedPaths: staging.stagedPaths ?? [],
+    archives,
+    probes: [],
+  };
+  if (ok) registerArchiveSet(moduleResult.wasmModule, archiveSet);
+  recordLog("launcher archive set mounted (opfs)", {
+    path: baseDirectory,
+    archiveCount: archives.length,
+    totalBytes,
+    ok,
+  });
+  return { ok, command: "mountPreparedArchives", state: snapshotState(), archiveSet };
+}
+
 async function mountArchives(payload = {}) {
   const moduleResult = await getWasmModuleForArchives("mountArchives");
   if (moduleResult.error) {
@@ -10268,7 +10425,8 @@ async function rpc(command, payload = {}) {
   // HTTPS origin, or blocked with instructions).
   if (cncPortThreadedUnsupported
       && (command === "boot" || command === "mountArchive"
-        || command === "mountArchives" || command === "realEngineInit")) {
+        || command === "mountArchives" || command === "mountPreparedArchives"
+        || command === "realEngineInit")) {
     return {
       ok: false,
       command,
@@ -10336,6 +10494,10 @@ async function rpc(command, payload = {}) {
       }
     case "mountArchives":
       return mountArchives(payload);
+    case "allocateArchiveNamespace":
+      return allocateArchiveNamespace();
+    case "mountPreparedArchives":
+      return mountPreparedArchives(payload);
     case "realEngineInit":
       return realEngineInit(payload);
     case "persistSaves":

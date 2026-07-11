@@ -3,224 +3,436 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <title>C&C Zero Hour — play (wasm)</title>
+    <meta name="theme-color" content="#194c73">
+    <meta name="description" content="ZeroH is a browser desktop for launching user-owned classic strategy game assets in WebAssembly.">
+    <title>ZeroH — Browser Command Center</title>
+    <link rel="icon" href="./assets/launcher-logo.webp" type="image/webp">
+    <link rel="preload" href="./assets/zeroh-command-desert.webp" as="image" type="image/webp">
     <link rel="stylesheet" href="./harness.css">
+    <link rel="stylesheet" href="./launcher.css">
+    <link rel="stylesheet" href="./launcher-runtime.css">
   </head>
   <body>
-    <main class="shell playShell">
-      <button id="fullscreenExit" type="button" title="Exit fullscreen (hold Esc)">Exit fullscreen</button>
-      <canvas id="viewport" width="1280" height="720" aria-label="Game viewport" tabindex="0"></canvas>
+    <!-- Compatibility sentinels retained for the existing real-boot harnesses.
+         The visible launcher is #launchOverlay; play.mjs marks this sentinel
+         .hidden only after the real engine has returned from init. -->
+    <div id="overlay" class="boot-sentinel" aria-hidden="true"></div>
+    <span id="progress" class="boot-sentinel" aria-hidden="true"></span>
+    <svg class="svg-sprite" aria-hidden="true">
+      <symbol id="i-folder" viewBox="0 0 24 24"><path d="M2.8 6.8h7l1.8 2h9.6v9.8a2 2 0 0 1-2 2H4.8a2 2 0 0 1-2-2V6.8Z" fill="#f3bd3c"/><path d="M2.8 8.8V5.6a2 2 0 0 1 2-2h4.4l2 2h8a2 2 0 0 1 2 2v1.2H2.8Z" fill="#ffd66b"/><path d="M3.6 10.2h16.8v7.9a1.7 1.7 0 0 1-1.7 1.7H5.3a1.7 1.7 0 0 1-1.7-1.7v-7.9Z" fill="#eaaa23"/></symbol>
+      <symbol id="i-disc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.3" fill="#d7e5ee"/><path d="M12 2.7a9.3 9.3 0 0 1 8.8 6.3L14 11a2.6 2.6 0 0 0-1-1.3L12 2.7Z" fill="#eef7fa"/><path d="m4.5 17.5 5.7-4.1a2.6 2.6 0 0 0 1.7 1.2l2.4 6.3a9.3 9.3 0 0 1-9.8-3.4Z" fill="#b9d0df"/><circle cx="12" cy="12" r="2.4" fill="#6289a3"/><circle cx="12" cy="12" r=".9" fill="#d9eef6"/></symbol>
+      <symbol id="i-box" viewBox="0 0 24 24"><path d="m3 7 9-4.4L21 7v10l-9 4.4L3 17V7Z" fill="#ca8b42"/><path d="m3 7 9 4.4L21 7l-9-4.4L3 7Z" fill="#edb969"/><path d="m12 11.4 9-4.4v10l-9 4.4v-10Z" fill="#a96831"/><path d="m7.4 4.8 9 4.4v3.3l-1.8-.5-1.4 1.9v-3.4L4.8 6.4l2.6-1.6Z" fill="#ffd895"/></symbol>
+      <symbol id="i-apps" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5" fill="#4d91cf"/><rect x="13" y="3" width="8" height="8" rx="1.5" fill="#dc8446"/><rect x="3" y="13" width="8" height="8" rx="1.5" fill="#79a952"/><rect x="13" y="13" width="8" height="8" rx="1.5" fill="#e0ba3f"/></symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24"><path d="M9.8 2.6h4.4l.7 2.3c.5.2 1 .5 1.4.8l2.3-.5 2.2 3.7-1.6 1.8v1.7l1.6 1.8-2.2 3.7-2.3-.5c-.4.3-.9.6-1.4.8l-.7 2.3H9.8l-.7-2.3c-.5-.2-1-.5-1.4-.8l-2.3.5-2.2-3.7 1.6-1.8v-1.7L3.2 8.9l2.2-3.7 2.3.5c.4-.3.9-.6 1.4-.8l.7-2.3Z" fill="#7893a5"/><circle cx="12" cy="11.7" r="3.4" fill="#e8f1f5"/><circle cx="12" cy="11.7" r="1.6" fill="#65849a"/></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="#5b9dd3"/><circle cx="12" cy="7.2" r="1.3" fill="#fff"/><path d="M10.7 10.2h2.5v7.1h-2.5z" fill="#fff"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 2.2 8 3v5.9c0 5.2-3.3 8.7-8 10.7-4.7-2-8-5.5-8-10.7V5.2l8-3Z" fill="#5d9e72"/><path d="m8.2 11.8 2.3 2.3 5.4-5.5" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-game" viewBox="0 0 24 24"><path d="M5.6 7.2h12.8c2 0 3.1 1.7 3.5 4.2l.7 4.6c.4 2.5-2.3 3.8-3.9 2l-2.2-2.5h-9L5.3 18c-1.6 1.8-4.3.5-3.9-2l.7-4.6c.4-2.5 1.5-4.2 3.5-4.2Z" fill="#496d85"/><path d="M6.8 10v4M4.8 12h4" stroke="#eaf5f8" stroke-width="1.7" stroke-linecap="round"/><circle cx="16.3" cy="10.8" r="1.1" fill="#f3bd3c"/><circle cx="18.5" cy="13" r="1.1" fill="#e88a55"/></symbol>
+      <symbol id="i-save" viewBox="0 0 24 24"><path d="M4 2.8h13l3 3v15.4H4V2.8Z" fill="#5d91c2"/><path d="M7 2.8h8v6H7z" fill="#e9f3f7"/><path d="M7 13h10v8.2H7z" fill="#d5e5ed"/><path d="M9.3 15.3h5.4" stroke="#7895a6" stroke-width="1.4"/></symbol>
+      <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.3" fill="#4e8fc4"/><path d="M3 12h18M12 2.7c2.2 2.5 3.3 5.6 3.3 9.3S14.2 18.8 12 21.3C9.8 18.8 8.7 15.7 8.7 12S9.8 5.2 12 2.7Z" fill="none" stroke="#dcecf4" stroke-width="1.2"/><path d="M5.1 6.8h13.8M5.1 17.2h13.8" stroke="#dcecf4" stroke-width="1.2"/></symbol>
+      <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2.5v9" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M7.1 5.6a8.2 8.2 0 1 0 9.8 0" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14.5v4.2A1.3 1.3 0 0 0 5.3 20h13.4a1.3 1.3 0 0 0 1.3-1.3v-4.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12m0 0 4.5-4.5M12 16l-4.5-4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 18.5V20h16v-1.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-drive" viewBox="0 0 24 24"><path d="M4 4h16l2 10H2L4 4Z" fill="#a9bcc8"/><path d="M2 14h20v5.8a1.5 1.5 0 0 1-1.5 1.5h-17A1.5 1.5 0 0 1 2 19.8V14Z" fill="#dce7eb"/><circle cx="18.2" cy="17.7" r="1.2" fill="#5ba06e"/><path d="M5 17.7h8" stroke="#8298a5" stroke-width="1.4"/></symbol>
+      <symbol id="i-command-base" viewBox="0 0 48 48"><defs><linearGradient id="g-command-base" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#a5bd68"/><stop offset="1" stop-color="#334f36"/></linearGradient></defs><rect x="3" y="3" width="42" height="42" rx="5" fill="url(#g-command-base)" stroke="#d7e3a0"/><circle cx="24" cy="23" r="13" fill="none" stroke="#e8d16e" stroke-width="1.5" opacity=".8"/><path d="M24 8v30M9 23h30" stroke="#e8d16e" opacity=".45"/><path d="m14 30 4-8h13l5 8H14Zm5-8 3-5h6l3 5" fill="#263b2a"/><circle cx="20" cy="31" r="2.2" fill="#e8d16e"/><circle cx="31" cy="31" r="2.2" fill="#e8d16e"/></symbol>
+      <symbol id="i-command-zero" viewBox="0 0 48 48"><defs><linearGradient id="g-command-zero" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#d8874e"/><stop offset="1" stop-color="#5f2e27"/></linearGradient></defs><rect x="3" y="3" width="42" height="42" rx="5" fill="url(#g-command-zero)" stroke="#f2b27c"/><circle cx="24" cy="23" r="13" fill="none" stroke="#ffd078" stroke-width="1.5" opacity=".8"/><path d="M24 8v30M9 23h30" stroke="#ffd078" opacity=".45"/><path d="M18 15h12l-2 6-4 3-4-3-2-6Zm2 17h8l-4-8-4 8Z" fill="#3c2523"/><path d="M17 15h14M19 33h10" stroke="#ffd078" stroke-width="2"/></symbol>
+      <symbol id="i-system" viewBox="0 0 48 48"><defs><linearGradient id="g-os-frame" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff"/><stop offset=".52" stop-color="#cde9f5"/><stop offset="1" stop-color="#78aeca"/></linearGradient><linearGradient id="g-os-glass" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#6bc8ec"/><stop offset=".58" stop-color="#287dbd"/><stop offset="1" stop-color="#15518b"/></linearGradient><linearGradient id="g-os-sun" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffe88b"/><stop offset="1" stop-color="#e99f2d"/></linearGradient></defs><path d="M5 41V22C5 10.5 12.9 3 24 3s19 7.5 19 19v19H5Z" fill="url(#g-os-frame)" stroke="#fff" stroke-width="1"/><path d="M10 36V22c0-8.6 5.6-14 14-14s14 5.4 14 14v14H10Z" fill="url(#g-os-glass)" stroke="#246994" stroke-width="1.2"/><path d="M15 36a9 9 0 0 1 18 0H15Z" fill="url(#g-os-sun)"/><path d="M24 8v28M10 24h28" fill="none" stroke="url(#g-os-frame)" stroke-width="3"/><path d="M8 40h32" stroke="#4f87a8" stroke-width="2"/><path d="M12 18c2.1-5.2 6.1-8 11.7-8" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round" opacity=".6"/></symbol>
+      <symbol id="i-note" viewBox="0 0 48 48"><path d="M9 4h27l5 5v35H9V4Z" fill="#fffbe2" stroke="#8c8b76"/><path d="M36 4v6h6" fill="#d8d5be"/><path d="M15 15h20M15 21h20M15 27h20M15 33h14" stroke="#6687aa" stroke-width="2"/><path d="M13 4h4v40h-4z" fill="#eab84d"/></symbol>
+      <symbol id="i-browser" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="#3c91d2" stroke="#d3efff" stroke-width="2"/><path d="M5 24h38M24 4c6 6 9 13 9 20s-3 14-9 20c-6-6-9-13-9-20S18 10 24 4Z" fill="none" stroke="#e8f8ff" stroke-width="2"/><path d="M9 13h30M9 35h30" stroke="#e8f8ff" stroke-width="1.5"/><path d="m30 16 10-4-4 10-2-4-4-2Z" fill="#f1bd4c" stroke="#7d5720"/></symbol>
+      <symbol id="i-arcade" viewBox="0 0 48 48"><path d="M8 11h32l4 30H4l4-30Z" fill="#314f62" stroke="#aac4d2" stroke-width="2"/><path d="M12 16h24v14H12z" fill="#142d31" stroke="#68a39b"/><path d="m20 18 7 5-7 5v-10Z" fill="#e2b64f"/><path d="M13 35h8M17 31v8" stroke="#e9f1ed" stroke-width="2"/><circle cx="33" cy="34" r="2.5" fill="#d9693c"/><circle cx="38" cy="38" r="2.5" fill="#e4b84e"/></symbol>
+      <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 2.5h10l4 4v15H5v-19Z" fill="#fffce5" stroke="#8996a0"/><path d="M15 2.5v4h4" fill="#dbe5e9"/><path d="M8 10h8M8 13h8M8 16h6" stroke="#64809a" stroke-width="1.2"/></symbol>
+      <symbol id="i-replay" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#687eaa"/><path d="m10 7 7 5-7 5V7Z" fill="#fff"/><path d="M6 5v5h5" fill="none" stroke="#f0c45d" stroke-width="1.5"/></symbol>
+      <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1" fill="#70a3c4"/><circle cx="16.5" cy="8.5" r="2" fill="#ffe17c"/><path d="m4.5 18 5-6 3.5 3 2.5-2 4 5H4.5Z" fill="#4e7c55"/></symbol>
+    </svg>
 
-      <!-- In-game chrome: a single unobtrusive gear that opens the settings
-           overlay. No permanent gray bar. Hidden until the game is running. -->
-      <button id="gearButton" type="button" class="hidden" title="Settings, display &amp; tools" aria-label="Settings">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="3.2"></circle>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-        </svg>
-      </button>
-
-      <!-- Live status nodes bridge.js writes into. Kept present (bridge.js sets
-           their textContent directly, unguarded) but folded into a subtle,
-           unobtrusive in-game HUD chip instead of a gray toolbar. -->
-      <aside id="hud" class="hud hidden" aria-live="polite">
-        <span class="hudItem"><span id="state">idle</span></span>
-        <span class="hudDot" aria-hidden="true">·</span>
-        <span class="hudItem"><span id="fps">-</span> fps</span>
-        <span class="hudDot" aria-hidden="true">·</span>
-        <span class="hudItem"><span id="frames">0</span> frames</span>
-      </aside>
-    </main>
-
-    <!-- ===================================================================
-         LAUNCHER: shown before the game boots. A centered panel over a dark
-         background with the title, a prominent PLAY button, and pre-game
-         settings (resolution + fullscreen) that persist and apply on boot.
-         =================================================================== -->
-    <div id="overlay">
-      <div class="launcherBg" aria-hidden="true">
-        <!-- Real game splash: the original WinMain.cpp load-screen bitmap
-             (Data\English\Install_Final.bmp from EnglishZH.big), extracted to
-             PNG by tools/extract_splash_art.mjs into the gitignored
-             artifacts/real-assets/ dir the harness server already serves. On
-             404 the img removes itself and the plain gradient stays. -->
-        <img class="splashArt" src="../artifacts/real-assets/Install_Final.png"
-             alt="" decoding="async" onerror="this.remove()">
+    <main id="desktop" class="desktop" data-wallpaper="command" aria-label="ZeroH browser desktop">
+      <div class="wallpaper-art" aria-hidden="true">
+        <div class="sun-glow"></div><div class="ridge ridge-far"></div><div class="ridge ridge-near"></div><div class="terrain-grid"></div>
       </div>
-      <div class="launcherPanel" role="dialog" aria-label="Launch Command &amp; Conquer Generals Zero Hour">
-        <header class="launcherHead">
-          <p class="launcherKicker">Command &amp; Conquer</p>
-          <h1 class="launcherTitle">Generals<span class="titleZh">Zero Hour</span></h1>
-          <p class="launcherSub">The real engine, compiled to WebAssembly, running in your browser.</p>
-        </header>
 
-        <div class="launcherBody">
-          <div class="launcherPrimary">
-            <button id="start" type="button" class="playButton">
-              <span class="playGlyph" aria-hidden="true">▶</span>
-              <span class="playLabel">Play</span>
-            </button>
-            <p id="progress" class="launcherProgress" aria-live="polite"></p>
-            <!-- Boot progress: archive download/mount bar fed by the
-                 cnc-archive-progress events bridge.js emits, then an
-                 indeterminate pulse while GameEngine::init() runs. -->
-            <div id="bootProgress" class="bootProgress hidden">
-              <div class="bootBarTrack" role="progressbar" aria-label="Download progress">
-                <div id="bootBarFill" class="bootBarFill"></div>
-              </div>
-              <div class="bootStats">
-                <span id="bootBytes"></span>
-                <span id="bootRate"></span>
-              </div>
-              <p id="bootDetail" class="bootDetail"></p>
+      <nav class="desktop-icons" aria-label="Desktop shortcuts">
+        <button class="desktop-icon" type="button" data-open="setup" aria-label="Open ZeroH Game Launcher">
+          <span class="desktop-icon-art launcher-art"><img data-launcher-logo-image alt="" width="512" height="512"><i class="shortcut-arrow">↗</i></span><span>ZeroH Launcher</span>
+        </button>
+        <button class="desktop-icon game-shortcut" type="button" data-game-shortcut data-launch-game="Generals" aria-label="Launch Generals" hidden>
+          <span class="desktop-icon-art game-art"><svg><use href="#i-command-base"/></svg><i class="shortcut-arrow">↗</i></span><span>Generals</span>
+        </button>
+        <button class="desktop-icon game-shortcut" type="button" data-game-shortcut data-launch-game="Zero Hour" aria-label="Launch Zero Hour" hidden>
+          <span class="desktop-icon-art game-art"><svg><use href="#i-command-zero"/></svg><i class="shortcut-arrow">↗</i></span><span>Zero Hour</span>
+        </button>
+        <button class="desktop-icon" type="button" data-open="explorer" aria-label="Open Save Files">
+          <span class="desktop-icon-art"><svg><use href="#i-folder"/></svg></span><span>My Files</span>
+        </button>
+        <button class="desktop-icon" type="button" data-open="browser" aria-label="Open ZeroH Browser">
+          <span class="desktop-icon-art app-art"><svg><use href="#i-browser"/></svg></span><span>ZeroH Browser</span>
+        </button>
+        <button class="desktop-icon" type="button" data-open="notepad" aria-label="Open Notepad">
+          <span class="desktop-icon-art app-art"><svg><use href="#i-note"/></svg></span><span>Notepad</span>
+        </button>
+        <button class="desktop-icon" type="button" data-open="arcade" aria-label="Open ZeroH Arcade">
+          <span class="desktop-icon-art app-art"><svg><use href="#i-arcade"/></svg></span><span>Arcade</span>
+        </button>
+        <button class="desktop-icon" type="button" data-open="programs" aria-label="Open Game Library">
+          <span class="desktop-icon-art"><svg><use href="#i-apps"/></svg></span><span>Game Library</span>
+        </button>
+        <button class="desktop-icon" type="button" data-open="settings" aria-label="Open Settings">
+          <span class="desktop-icon-art"><svg><use href="#i-gear"/></svg></span><span>Settings</span>
+        </button>
+        <button class="desktop-icon" type="button" data-open="about" aria-label="Open About ZeroH">
+          <span class="desktop-icon-art"><svg><use href="#i-info"/></svg></span><span>About</span>
+        </button>
+      </nav>
+
+      <section id="windowLayer" class="window-layer" aria-label="Open applications">
+        <article id="setupWindow" class="window setup-window is-open is-active" data-app="setup" style="--x: 50%; --y: 48%; --w: 900px; --h: 640px;" aria-label="ZeroH Game Launcher">
+          <header class="titlebar">
+            <div class="titlebar-title"><span class="titlebar-app-icon zeroh-title-icon"><img data-launcher-logo-image alt="" width="512" height="512"></span><span>ZeroH Game Launcher</span></div>
+            <div class="window-controls">
+              <button type="button" data-window-action="minimize" aria-label="Minimize">—</button>
+              <button type="button" data-window-action="maximize" aria-label="Maximize">□</button>
+              <button type="button" data-window-action="close" aria-label="Close">×</button>
             </div>
-            <!-- Boot banner: the play page is threaded/OPFS-only — archives
-                 stream to browser disk storage and memory stays flat. -->
-            <p id="warning" class="launcherWarning">
-              Starting downloads ~2&nbsp;GB of game archives to this browser&rsquo;s
-              disk storage (OPFS); memory use stays flat while they stream.
-            </p>
+          </header>
+          <div class="window-body setup-body">
+            <aside class="wizard-side">
+              <div class="wizard-brand">
+                <img class="zeroh-mark" data-launcher-logo-image alt="ZeroH launcher mark" width="512" height="512">
+                <div><span>ZERO<span class="brand-h">H</span></span><strong>COMMAND UPLINK</strong></div>
+              </div>
+              <p class="wizard-side-copy">Local assets.<br>Full command.<br>Zero compromise.</p>
+              <ol class="wizard-steps" aria-label="Setup progress">
+                <li class="is-current" data-step-indicator="1"><span>1</span><div><strong>Find files</strong><small>Select your source</small></div></li>
+                <li data-step-indicator="2"><span>2</span><div><strong>Keep or install</strong><small>Choose storage</small></div></li>
+                <li data-step-indicator="3"><span>3</span><div><strong>Ready</strong><small>Choose a game</small></div></li>
+              </ol>
+              <div class="wasm-badge"><span class="wasm-cube">W</span><span>WebAssembly<br><strong>runtime ready</strong></span></div>
+            </aside>
+
+            <div class="wizard-main">
+              <section class="wizard-page is-visible" data-wizard-page="1">
+                <div class="wizard-heading">
+                  <p class="eyebrow">ZEROH COMMAND CENTER</p>
+                  <h1>Bring your game files</h1>
+                  <p>Choose an original disc image or an existing installation. We only inspect the file names needed to prepare your library.</p>
+                </div>
+
+                <div class="launcher-briefing" aria-hidden="true">
+                  <div><span>LOCAL DEPLOYMENT</span><strong>Assets never leave this machine.</strong></div>
+                  <b>01 / INTAKE</b>
+                </div>
+
+                <div class="source-grid">
+                  <button type="button" class="source-card" id="pickImageButton">
+                    <span class="source-icon disc"><svg><use href="#i-disc"/></svg></span>
+                    <span class="source-copy"><strong>Disc images</strong><small>Select all Generals + Zero Hour discs</small></span>
+                    <span class="source-arrow">›</span>
+                  </button>
+                  <button type="button" class="source-card" id="pickFolderButton">
+                    <span class="source-icon folder"><svg><use href="#i-folder"/></svg></span>
+                    <span class="source-copy"><strong>Installed folder</strong><small>A folder containing both installations</small></span>
+                    <span class="source-arrow">›</span>
+                  </button>
+                </div>
+                <input id="imageInput" type="file" accept=".iso,.bin,.cue,.img" multiple hidden>
+                <input id="folderInput" type="file" webkitdirectory directory multiple hidden>
+
+                <div id="scanPanel" class="scan-panel" aria-live="polite" hidden>
+                  <div class="scan-title"><span class="scan-spinner"></span><strong id="scanTitle">Reading file list…</strong><span id="scanPercent">0%</span></div>
+                  <div class="scan-track"><span id="scanFill"></span></div>
+                  <p id="scanDetail">Nothing is uploaded. This happens locally in your browser.</p>
+                </div>
+
+                <div class="privacy-note">
+                  <svg><use href="#i-shield"/></svg>
+                  <p><strong>Your files stay yours.</strong> ZeroH reads original media locally and writes required archives only to this origin&rsquo;s private browser storage. Nothing is uploaded.</p>
+                </div>
+              </section>
+
+              <section class="wizard-page" data-wizard-page="2">
+                <div class="wizard-heading compact-heading">
+                  <p class="eyebrow">FILES FOUND</p>
+                  <h1>How should we use them?</h1>
+                  <p>Pick what should happen after this browser session ends. You can change this later.</p>
+                </div>
+
+                <div class="detected-strip">
+                  <div class="detected-icon"><svg><use href="#i-drive"/></svg></div>
+                  <div><strong id="detectedSourceName">Original game source</strong><span id="detectedSummary">Waiting for inventory</span></div>
+                  <span class="detected-ok">✓ Ready</span>
+                </div>
+
+                <fieldset class="storage-options">
+                  <legend class="sr-only">Storage choice</legend>
+                  <label class="storage-choice is-selected">
+                    <input type="radio" name="storageMode" value="once" checked>
+                    <span class="choice-radio"></span><span class="choice-icon bolt">↯</span>
+                    <span class="choice-text"><strong>Just launch this time</strong><small>Fastest. Ask for the files again next visit.</small></span>
+                    <span class="choice-meta">0 B kept</span>
+                  </label>
+                  <label class="storage-choice">
+                    <input type="radio" name="storageMode" value="remember">
+                    <span class="choice-radio"></span><span class="choice-icon bookmark">▮</span>
+                    <span class="choice-text"><strong>Remember the files</strong><small>Keep browser permission to this source when supported.</small></span>
+                    <span class="choice-meta">No copy</span>
+                  </label>
+                  <label class="storage-choice">
+                    <input type="radio" name="storageMode" value="install">
+                    <span class="choice-radio"></span><span class="choice-icon package"><svg><use href="#i-box"/></svg></span>
+                    <span class="choice-text"><strong>Install in this browser</strong><small>Copy assets for one-click, offline launches.</small></span>
+                    <span class="choice-meta" id="installSizeEstimate">Calculating…</span>
+                  </label>
+                </fieldset>
+
+                <div class="space-warning" id="spaceWarning" hidden>
+                  <span>!</span><p><strong>Browser storage permission required.</strong> ZeroH will request persistent storage and verify quota before installing.</p>
+                </div>
+
+                <footer class="wizard-actions">
+                  <button type="button" class="button secondary" data-wizard-back>Back</button>
+                  <button type="button" class="button primary" id="prepareLibraryButton">Prepare library <span>›</span></button>
+                </footer>
+              </section>
+
+              <section class="wizard-page ready-page" data-wizard-page="3">
+                <div class="wizard-heading compact-heading">
+                  <p class="eyebrow">LIBRARY READY</p>
+                  <h1>Choose your battlefield</h1>
+                  <p id="readyMessage">Both games are available for this session.</p>
+                </div>
+
+                <div class="game-cards">
+                  <article class="game-card generals-card">
+                    <div class="game-card-art" aria-hidden="true"><span class="target-ring"></span><span class="game-number">01</span><span class="stripe-set"></span></div>
+                    <div class="game-card-content">
+                      <span class="game-kicker">THE ORIGINAL</span>
+                      <h2>GENERALS</h2>
+                      <p>Base assets · Required by Zero Hour</p>
+                      <button type="button" class="launch-button" data-launch-game="Generals"><span>⌁</span> Runtime not linked</button>
+                    </div>
+                  </article>
+                  <article class="game-card zero-card">
+                    <div class="game-card-art" aria-hidden="true"><span class="target-ring"></span><span class="game-number">02</span><span class="stripe-set"></span></div>
+                    <div class="game-card-content">
+                      <span class="game-kicker">EXPANSION</span>
+                      <h2>ZERO HOUR</h2>
+                      <p>Expansion · Ready to launch</p>
+                      <button type="button" class="launch-button accent" data-launch-game="Zero Hour"><span>▶</span> Launch game</button>
+                    </div>
+                  </article>
+                </div>
+
+                <div class="ready-footer">
+                  <button type="button" class="text-button" id="changeSourceButton">‹ Use different files</button>
+                  <span><i class="online-dot"></i><span id="readyStorageLabel">Temporary session</span></span>
+                </div>
+              </section>
+            </div>
           </div>
+        </article>
 
-          <section class="launcherSettings" aria-label="Display settings">
-            <h2 class="settingsHeading">Display</h2>
-            <p class="settingHint">
-              The game renders at your window size and follows it live.
-              Resolution and fullscreen live in-game behind the
-              <span class="inlineGear" aria-hidden="true">⚙</span> gear.
-            </p>
+        <article id="explorerWindow" class="window explorer-window" data-app="explorer" style="--x: 48%; --y: 45%; --w: 860px; --h: 560px;" aria-label="My Files">
+          <header class="titlebar">
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-folder"/></svg></span><span id="explorerTitle">My Files</span></div>
+            <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
+          </header>
+          <div class="explorer-toolbar">
+            <div class="nav-buttons"><button id="fileBackButton" type="button" title="Back" disabled>‹</button><button id="fileForwardButton" type="button" title="Forward" disabled>›</button><button id="fileUpButton" type="button" title="Up one level">↑</button></div>
+            <div id="fileAddressBar" class="address-bar"><svg><use href="#i-drive"/></svg><span>ZeroH Drive</span></div>
+            <label class="search-box"><span>⌕</span><input id="fileSearch" type="search" placeholder="Search this folder"></label>
+          </div>
+          <div class="explorer-content">
+            <aside class="explorer-sidebar">
+              <h3>PLACES</h3>
+              <button type="button" data-folder-shortcut="root"><svg><use href="#i-drive"/></svg> ZeroH Drive</button>
+              <button type="button" data-folder-shortcut="saves"><svg><use href="#i-folder"/></svg> Game Saves <span data-folder-count="saves">4</span></button>
+              <button type="button" data-folder-shortcut="replays"><svg><use href="#i-folder"/></svg> Replays <span data-folder-count="replays">2</span></button>
+              <button type="button" data-folder-shortcut="notes"><svg><use href="#i-folder"/></svg> Notes <span data-folder-count="notes">2</span></button>
+              <button type="button" data-folder-shortcut="screens"><svg><use href="#i-folder"/></svg> Screenshots <span data-folder-count="screens">2</span></button>
+              <h3>TOOLS</h3>
+              <button type="button" data-open="notepad"><svg><use href="#i-note"/></svg> Open Notepad</button>
+              <div class="storage-meter-small"><div><span>Browser storage</span><b>1.2 GB free</b></div><i><span></span></i></div>
+            </aside>
+            <section class="file-area">
+              <div class="file-actions">
+                <button type="button" class="toolbar-button primary-lite" id="newFolderButton"><svg><use href="#i-folder"/></svg> New folder</button>
+                <button type="button" class="toolbar-button" id="importFileButton"><svg><use href="#i-upload"/></svg> Import files</button>
+                <input id="fileInput" type="file" multiple hidden>
+                <button type="button" class="toolbar-button" id="downloadFileButton"><svg><use href="#i-download"/></svg> Download</button>
+                <button type="button" class="toolbar-button" id="renameFileButton">Rename</button>
+                <button type="button" class="toolbar-button danger-text" id="deleteFileButton">Delete</button>
+                <span class="view-toggle"><button type="button" class="is-selected">☷</button><button type="button">▦</button></span>
+              </div>
+              <div class="file-list-head"><span></span><span>Name</span><span>Type</span><span>Modified</span><span>Size</span><span></span></div>
+              <div id="fileList" class="file-list" role="list"></div>
+              <div id="fileEmptyState" class="file-empty" hidden><svg><use href="#i-folder"/></svg><strong>This folder is empty</strong><span>Create a folder or import a file.</span></div>
+              <footer class="file-status"><span id="fileCount">0 items</span><span id="selectedFileStatus">Select a file or folder</span></footer>
+              <div id="filePrompt" class="file-prompt" hidden>
+                <form id="filePromptForm"><label id="filePromptLabel" for="filePromptInput">Folder name</label><input id="filePromptInput" autocomplete="off" maxlength="80"><div><button type="button" class="button secondary small" id="filePromptCancel">Cancel</button><button type="submit" class="button primary small">OK</button></div></form>
+              </div>
+            </section>
+          </div>
+        </article>
 
-            <h2 class="settingsHeading networkSettingsHeading">P2P multiplayer</h2>
-            <label class="networkSetting" for="networkRoom">
-              <span class="settingLabel">Room</span>
-              <input id="networkRoom" type="text" maxlength="80" placeholder="leave blank for offline">
-            </label>
-            <label class="networkSetting" for="networkName">
-              <span class="settingLabel">Player</span>
-              <input id="networkName" type="text" maxlength="64" placeholder="commander">
-            </label>
-            <details class="networkAdvanced">
-              <summary>Connection</summary>
-              <label class="networkSetting" for="networkSignaling">
-                <span class="settingLabel">Signaling</span>
-                <input id="networkSignaling" type="url" spellcheck="false" placeholder="wss://host/webrtc">
-              </label>
-              <label class="networkSetting" for="networkStun">
-                <span class="settingLabel">STUN/TURN</span>
-                <input id="networkStun" type="text" spellcheck="false" placeholder="optional ICE server URL">
-              </label>
-              <label class="networkSetting" for="networkIceUsername">
-                <span class="settingLabel">ICE user</span>
-                <input id="networkIceUsername" type="text" autocomplete="username" placeholder="TURN only">
-              </label>
-              <label class="networkSetting" for="networkIceCredential">
-                <span class="settingLabel">ICE key</span>
-                <input id="networkIceCredential" type="password" autocomplete="current-password" placeholder="TURN only">
-              </label>
-            </details>
-            <p id="networkStatus" class="settingHint" aria-live="polite">
-              Use the same room and signaling server, then open Multiplayer → LAN in the original game UI.
-            </p>
-          </section>
+        <article id="notepadWindow" class="window notepad-window" data-app="notepad" style="--x: 54%; --y: 43%; --w: 680px; --h: 500px;" aria-label="ZeroH Notepad">
+          <header class="titlebar"><div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-note"/></svg></span><span id="notepadTitle">Untitled - Notepad</span></div><div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div></header>
+          <div class="app-menu-bar"><button type="button" id="noteNewButton"><u>N</u>ew</button><button type="button" id="noteSelectAllButton">Select <u>A</u>ll</button><button type="button" id="noteWrapButton"><u>W</u>ord Wrap</button><button type="button" id="noteHelpButton"><u>H</u>elp</button></div>
+          <div class="notepad-toolbar"><label>File name <input id="notepadFileName" value="Untitled.txt" maxlength="80"></label><button id="noteOpenButton" type="button">Open…</button><button id="noteSaveButton" type="button">Save</button><button id="noteDownloadButton" type="button">Download</button></div>
+          <textarea id="notepadEditor" class="notepad-editor" spellcheck="true" aria-label="Notepad document"></textarea>
+          <footer class="notepad-status"><span id="notepadSaveState">New document</span><span id="notepadStats">Ln 1, Col 1 · 0 characters</span></footer>
+        </article>
+
+        <article id="browserWindow" class="window browser-window" data-app="browser" style="--x: 52%; --y: 44%; --w: 900px; --h: 600px;" aria-label="ZeroH Browser">
+          <header class="titlebar"><div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-browser"/></svg></span><span>ZeroH Browser</span></div><div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div></header>
+          <div class="browser-toolbar"><button id="browserBack" type="button" title="Back">‹</button><button id="browserForward" type="button" title="Forward">›</button><button id="browserHome" type="button" title="Home">⌂</button><button id="browserReload" type="button" title="Reload">↻</button><form id="browserAddressForm"><span>Address</span><input id="browserAddress" value="zeroh://start" autocomplete="off" spellcheck="false"><button type="submit">Go</button></form><button id="browserExternal" type="button" title="Open this address in a real browser tab">↗</button></div>
+          <div class="browser-favorites"><span>Links</span><button type="button" data-browser-page="zeroh://start">Command Net</button><button type="button" data-browser-page="zeroh://manual">Field Manual</button><button type="button" data-browser-page="zeroh://status">System Status</button><button type="button" data-browser-page="zeroh://arcade">Arcade</button></div>
+          <div id="browserPage" class="browser-page"></div>
+          <iframe id="browserFrame" class="browser-frame" title="External website" sandbox="allow-forms allow-scripts allow-same-origin allow-popups" hidden></iframe>
+          <footer class="browser-status"><span id="browserStatus">Local intranet</span><span>Internet zone</span></footer>
+        </article>
+
+        <article id="arcadeWindow" class="window arcade-window" data-app="arcade" style="--x: 56%; --y: 45%; --w: 720px; --h: 570px;" aria-label="ZeroH Arcade">
+          <header class="titlebar"><div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-arcade"/></svg></span><span>ZeroH Arcade</span></div><div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div></header>
+          <div class="arcade-shell">
+            <header class="arcade-header"><div><svg><use href="#i-system"/></svg><span>ZEROH</span><strong>FIELD ARCADE</strong></div><p>AUTHORIZED DOWNTIME PROTOCOL</p></header>
+            <nav class="arcade-tabs"><button type="button" class="is-selected" data-arcade-tab="minefield">Minefield</button><button type="button" data-arcade-tab="signals">Signal Match</button></nav>
+            <section class="arcade-panel is-visible" data-arcade-panel="minefield"><div class="game-instructions"><div><strong>TACTICAL MINEFIELD</strong><span>Clear the sector. Right-click to flag a suspected mine.</span></div><div class="game-counters"><span>MINES <b id="mineCount">10</b></span><button id="mineReset" type="button">🙂</button><span>TIME <b id="mineTimer">000</b></span></div></div><div id="mineGrid" class="mine-grid" aria-label="Minefield game board"></div></section>
+            <section class="arcade-panel" data-arcade-panel="signals"><div class="game-instructions"><div><strong>SIGNAL MATCH</strong><span>Pair encrypted signals before your memory gives out.</span></div><div class="game-counters"><span>MOVES <b id="memoryMoves">0</b></span><button id="memoryReset" type="button">New grid</button><span>PAIRS <b id="memoryPairs">0/8</b></span></div></div><div id="memoryGrid" class="memory-grid" aria-label="Signal matching game board"></div></section>
+          </div>
+        </article>
+
+        <article id="programsWindow" class="window programs-window" data-app="programs" style="--x: 53%; --y: 46%; --w: 760px; --h: 515px;" aria-label="Game Library">
+          <header class="titlebar">
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-apps"/></svg></span><span>Game Library</span></div>
+            <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
+          </header>
+          <div class="programs-body">
+            <header class="programs-hero"><div><p class="eyebrow">PROGRAM MANAGER</p><h1>Your game library</h1><p>See what is available and how its files are stored in this browser.</p></div><button type="button" class="button primary small" data-open-setup>+ Add game files</button></header>
+            <div class="library-list">
+              <article class="library-row" data-library-game="Generals"><span class="library-game-art base">G</span><div class="library-details"><strong>Generals</strong><span>Base data for Zero Hour</span><small><i></i><b class="library-state-label">Original files required</b></small></div><div class="library-size">Base<span>Local source</span></div><button type="button" class="row-launch" data-launch-game="Generals">Unavailable</button><button type="button" class="more-button" aria-label="More options">•••</button></article>
+              <article class="library-row" data-library-game="Zero Hour"><span class="library-game-art zero">ZH</span><div class="library-details"><strong>Zero Hour</strong><span>Current WebAssembly target</span><small><i></i><b class="library-state-label">Original files required</b></small></div><div class="library-size">Runtime<span>Local source</span></div><button type="button" class="row-launch accent" data-launch-game="Zero Hour">Launch</button><button type="button" class="more-button" aria-label="More options">•••</button></article>
+            </div>
+            <section class="storage-overview"><div class="storage-donut"><span><b id="storageUsedValue">0</b><small>GB used</small></span></div><div class="storage-copy"><strong>Browser storage</strong><p id="storageCopyText">No game assets are stored in this browser yet.</p><div class="storage-legend"><span><i class="game-data"></i>Game data</span><span><i class="saves"></i>Saves</span><span><i class="available"></i>Available</span></div></div><button type="button" class="button secondary small" id="forgetLibraryButton">Forget library</button></section>
+          </div>
+        </article>
+
+        <article id="settingsWindow" class="window settings-window" data-app="settings" style="--x: 52%; --y: 45%; --w: 820px; --h: 610px;" aria-label="Settings">
+          <header class="titlebar">
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-gear"/></svg></span><span>ZeroH Desktop Settings</span></div>
+            <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
+          </header>
+          <div class="settings-body">
+            <aside class="settings-nav" aria-label="Settings sections">
+              <button type="button" class="is-selected" data-settings-tab="appearance"><svg><use href="#i-image"/></svg><span>Appearance</span></button>
+              <button type="button" data-settings-tab="hardware"><svg><use href="#i-drive"/></svg><span>Hardware &amp; Browser</span></button>
+            </aside>
+            <section class="settings-panel" data-settings-panel="appearance">
+              <p class="eyebrow">APPEARANCE</p><h1>Make it feel like home</h1>
+              <div class="setting-block"><div><strong>Desktop landscape</strong><span>Choose the backdrop for your command center.</span></div><div class="wallpaper-options"><button type="button" class="wallpaper-swatch command is-selected" data-set-wallpaper="command" aria-label="Command wallpaper"></button><button type="button" class="wallpaper-swatch meadow" data-set-wallpaper="meadow" aria-label="Meadow wallpaper"></button><button type="button" class="wallpaper-swatch dusk" data-set-wallpaper="dusk" aria-label="Dusk wallpaper"></button><button type="button" class="wallpaper-swatch slate" data-set-wallpaper="slate" aria-label="Slate wallpaper"></button></div></div>
+              <div class="setting-block"><div><strong>Launcher identity</strong><span>Review 20 original ZeroH marks at desktop and taskbar scale.</span></div><button type="button" class="identity-lab-button" data-open-logo-lab>Open Identity Lab</button></div>
+              <label class="setting-block"><div><strong>Interface scale</strong><span>Make windows and controls larger.</span></div><select id="scaleSelect"><option value="1">100%</option><option value="1.1">110%</option><option value="1.2">120%</option></select></label>
+              <label class="setting-block toggle-setting"><div><strong>Interface sounds</strong><span>Play small sounds for desktop actions.</span></div><input id="soundToggle" type="checkbox"><span class="toggle"></span></label>
+              <label class="setting-block toggle-setting"><div><strong>Reduce motion</strong><span>Minimize animations and transitions.</span></div><input id="motionToggle" type="checkbox"><span class="toggle"></span></label>
+              <button id="resetConceptButton" type="button" class="text-button reset-link">Reset ZeroH data</button>
+            </section>
+            <section class="settings-panel hardware-panel" data-settings-panel="hardware" hidden>
+              <header class="hardware-heading">
+                <div><p class="eyebrow">SYSTEM PROFILE</p><h1>Hardware &amp; Browser</h1><p>A live, local capability report for the WebAssembly runtime. No details leave this device.</p></div>
+                <div class="hardware-actions"><button type="button" id="copyHardwareReport">Copy report</button><button type="button" id="refreshHardwareReport">↻ Refresh</button></div>
+              </header>
+              <div class="hardware-summary" aria-live="polite">
+                <div class="readiness-score"><span>LAUNCHER READINESS</span><strong id="hardwareScore">—</strong><small id="hardwareGrade">Scanning browser…</small></div>
+                <div class="summary-stat"><span>GRAPHICS</span><strong id="graphicsSummary">Scanning…</strong><small id="graphicsDetail">Creating test context</small></div>
+                <div class="summary-stat"><span>RUNTIME</span><strong id="runtimeSummary">Scanning…</strong><small id="runtimeDetail">Checking WebAssembly</small></div>
+              </div>
+              <div id="hardwareNotice" class="hardware-notice" hidden></div>
+              <div id="hardwareReport" class="hardware-report" aria-live="polite"></div>
+              <footer class="hardware-footer"><span id="hardwareTimestamp">Not scanned yet</span><span>Values exposed by this browser only · some fields may be intentionally hidden</span></footer>
+            </section>
+          </div>
+        </article>
+
+        <article id="aboutWindow" class="window about-window" data-app="about" style="--x: 57%; --y: 43%; --w: 560px; --h: 420px;" aria-label="About ZeroH">
+          <header class="titlebar">
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-info"/></svg></span><span>About ZeroH</span></div>
+            <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
+          </header>
+          <div class="about-body"><div class="about-brand"><span class="launcher-logo-slot about-launcher-logo"><img data-launcher-logo-image alt="Selected ZeroH launcher mark" width="512" height="512"></span><div><small>Browser command center</small><h1>ZERO<span>H</span></h1><p>WebAssembly runtime</p></div></div><div class="about-card"><svg><use href="#i-globe"/></svg><div><strong>The original game engine, running on the web</strong><p>ZeroH launches the genuine C&amp;C Generals: Zero Hour source port with user-owned assets. Media stays local; the desktop, filesystem, and game runtime execute in your browser.</p></div></div><dl class="about-facts"><div><dt>Runtime</dt><dd>WebAssembly + WebGL2</dd></div><div><dt>Storage</dt><dd>OPFS browser disk</dd></div><div><dt>Current target</dt><dd>Zero Hour</dd></div></dl><p class="about-legal">Original game data is never bundled. You must supply files from your own installation or original media.</p></div>
+        </article>
+      </section>
+
+      <section id="startMenu" class="start-menu" aria-label="ZeroH menu" hidden>
+        <header><span class="user-avatar">C</span><div><strong>Commander</strong><span>Local browser session</span></div></header>
+        <div class="start-content">
+          <div class="start-primary">
+            <button type="button" data-open="setup"><span class="start-icon"><img data-launcher-logo-image alt="" width="512" height="512"></span><div><strong>ZeroH Game Launcher</strong><small>Add files and start a game</small></div></button>
+            <button type="button" data-open="explorer"><span class="start-icon"><svg><use href="#i-folder"/></svg></span><div><strong>My Files</strong><small>Browse folders and local files</small></div></button>
+            <button type="button" data-open="browser"><span class="start-icon"><svg><use href="#i-browser"/></svg></span><div><strong>ZeroH Browser</strong><small>Command Net and the open web</small></div></button>
+            <button type="button" data-open="notepad"><span class="start-icon"><svg><use href="#i-note"/></svg></span><div><strong>Notepad</strong><small>Write notes to your virtual drive</small></div></button>
+            <button type="button" data-open="arcade"><span class="start-icon"><svg><use href="#i-arcade"/></svg></span><div><strong>ZeroH Arcade</strong><small>Minefield and Signal Match</small></div></button>
+            <button type="button" data-open="programs"><span class="start-icon"><svg><use href="#i-apps"/></svg></span><div><strong>Game Library</strong><small>Manage installed games</small></div></button>
+          </div>
+          <div class="start-secondary">
+            <button type="button" data-open="settings"><svg><use href="#i-gear"/></svg> Settings</button>
+            <button type="button" data-open-logo-lab><svg><use href="#i-image"/></svg> ZeroH Identity Lab</button>
+            <button type="button" data-open="about"><svg><use href="#i-info"/></svg> About ZeroH</button>
+            <div class="start-storage"><span>Browser storage</span><strong>1.2 GB free</strong><i><span></span></i></div>
+          </div>
         </div>
+        <footer><button type="button" id="endSessionButton"><svg><use href="#i-power"/></svg> End session</button></footer>
+      </section>
 
-        <footer class="launcherFoot">
-          <span id="buildAge" class="buildAge" title="">build —</span>
-        </footer>
-      </div>
-    </div>
+      <footer class="taskbar">
+        <button id="startButton" class="start-button" type="button" aria-expanded="false" aria-controls="startMenu"><svg class="start-command-mark"><use href="#i-system"/></svg><strong>start</strong></button>
+        <div class="task-divider"></div>
+        <div id="taskButtons" class="task-buttons" aria-label="Open windows"></div>
+        <div class="tray"><button type="button" class="tray-status" title="Files stay on this device"><svg><use href="#i-shield"/></svg></button><button type="button" class="tray-network" title="Runtime available"><svg><use href="#i-globe"/></svg></button><div class="tray-clock"><strong id="clockTime">12:00</strong><span id="clockDate">JUL 09</span></div></div>
+      </footer>
 
-    <!-- ===================================================================
-         SETTINGS OVERLAY: opened by the in-game gear. Holds the live display
-         controls (resolution + fullscreen), the console toggle, and the
-         collapsible debug / issue-recorder tools.
-         =================================================================== -->
+      <section id="launchOverlay" class="launch-overlay" hidden aria-live="polite">
+        <div class="runtime-grid" aria-hidden="true"></div>
+        <button id="exitRuntimeButton" type="button" class="exit-runtime" hidden>× Exit to ZeroH</button>
+        <button id="start" type="button" hidden aria-hidden="true">Start engine</button>
+        <div id="launchLoader" class="launch-loader">
+          <div class="runtime-emblem"><span></span><i>ZH</i></div>
+          <p class="runtime-label">ZEROH WASM RUNTIME</p>
+          <h1 id="launchGameTitle">ZERO HOUR</h1>
+          <p id="launchStatus">Preparing browser filesystem…</p>
+          <div class="launch-progress"><span id="launchProgressFill"></span></div>
+          <div class="launch-stages"><span class="is-done">✓ Assets</span><span id="stageMount">○ Mount</span><span id="stageEngine">○ Engine</span></div>
+          <div id="bootProgress" class="bootProgress hidden">
+            <div class="bootBarTrack" role="progressbar" aria-label="Asset preparation progress"><div id="bootBarFill" class="bootBarFill"></div></div>
+            <div class="bootStats"><span id="bootBytes"></span><span id="bootRate"></span></div>
+            <p id="bootDetail" class="bootDetail"></p>
+          </div>
+        </div>
+        <main class="shell playShell">
+          <button id="fullscreenExit" type="button" title="Exit fullscreen (hold Esc)">Exit fullscreen</button>
+          <canvas id="viewport" width="1280" height="720" aria-label="Command &amp; Conquer: Zero Hour game viewport" tabindex="0" hidden></canvas>
+          <button id="gearButton" type="button" class="hidden" title="Settings, display &amp; tools" aria-label="Game settings">⚙</button>
+          <aside id="hud" class="hud hidden" aria-live="polite"><span id="state">idle</span><span class="hudDot">·</span><span><span id="fps">-</span> fps</span><span class="hudDot">·</span><span><span id="frames">0</span> frames</span></aside>
+        </main>
+      </section>
+
+      <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+    </main>
     <div id="settingsOverlay" class="hidden" aria-hidden="true">
       <div class="settingsBackdrop" data-close-settings></div>
-      <div class="settingsSheet" role="dialog" aria-modal="true" aria-label="Settings">
-        <header class="settingsSheetHead">
-          <h2>Settings</h2>
-          <button id="settingsClose" type="button" class="iconClose" title="Close (Esc)" aria-label="Close">✕</button>
-        </header>
-
-        <section class="settingsSection">
-          <h3>Display</h3>
-          <label class="settingRow" for="resolutionSelectLive">
-            <span class="settingLabel">Resolution</span>
-            <select id="resolutionSelectLive" title="Engine render resolution (drives the real display-mode change)"></select>
-          </label>
-          <div id="customResolutionRow" class="settingRow settingRowActions hidden">
-            <span class="settingLabel">Custom size</span>
-            <span class="customResolutionInputs">
-              <input id="customResolutionWidth" type="number" inputmode="numeric" min="640" max="7680" step="1" placeholder="width">
-              <span aria-hidden="true">x</span>
-              <input id="customResolutionHeight" type="number" inputmode="numeric" min="480" max="4320" step="1" placeholder="height">
-              <button id="customResolutionApply" type="button" class="pillButton" title="Apply custom resolution">Apply</button>
-            </span>
-          </div>
-          <div class="settingRow settingRowActions">
-            <span class="settingLabel">Fullscreen</span>
-            <button id="fullscreenButton" type="button" class="pillButton" title="Toggle fullscreen">Fullscreen</button>
-          </div>
-          <label class="settingRow" for="shaderTierSelect">
-            <span class="settingLabel">Shaders</span>
-            <select id="shaderTierSelect" title="Graphics shader tier (applies after reload — the engine samples GPU capabilities once at boot)">
-              <option value="ff">Classic (fixed function)</option>
-              <option value="ps11">Enhanced (pixel shaders)</option>
-            </select>
-          </label>
+      <div class="settingsSheet" role="dialog" aria-modal="true" aria-label="Game settings">
+        <header class="settingsSheetHead"><h2>Game settings</h2><button id="settingsClose" type="button" class="iconClose" aria-label="Close">✕</button></header>
+        <section class="settingsSection"><h3>Display</h3>
+          <label class="settingRow" for="resolutionSelectLive"><span class="settingLabel">Resolution</span><select id="resolutionSelectLive"></select></label>
+          <div id="customResolutionRow" class="settingRow settingRowActions hidden"><span class="settingLabel">Custom size</span><span class="customResolutionInputs"><input id="customResolutionWidth" type="number" min="640" max="7680" placeholder="width"><span>×</span><input id="customResolutionHeight" type="number" min="480" max="4320" placeholder="height"><button id="customResolutionApply" type="button" class="pillButton">Apply</button></span></div>
+          <div class="settingRow settingRowActions"><span class="settingLabel">Fullscreen</span><button id="fullscreenButton" type="button" class="pillButton">Fullscreen</button></div>
+          <label class="settingRow" for="shaderTierSelect"><span class="settingLabel">Shaders</span><select id="shaderTierSelect"><option value="ff">Classic</option><option value="ps11">Enhanced</option></select></label>
         </section>
-
-        <section class="settingsSection">
-          <h3>Diagnostics</h3>
-          <div class="settingRow settingRowActions">
-            <span class="settingLabel">Engine log</span>
-            <button id="consoleToggle" type="button" class="pillButton" title="Engine/harness log (also: ` key)">Console</button>
-          </div>
-        </section>
-
-        <details class="settingsSection debugSection">
-          <summary>Debug &amp; issue tools</summary>
-          <div class="debugControls" aria-label="Issue dump controls">
-            <button id="recordToggle" type="button" title="Record a rolling debug dump">Record</button>
-            <button id="issueButton" type="button" title="Capture screenshot, annotation, comment, and deep state">Report issue</button>
-            <button id="saveDump" type="button" title="Download the current .cncdump.json">Save dump</button>
-            <button id="uploadDump" type="button" title="Upload to the local harness server when available">Upload</button>
-            <div class="debugOptions">
-              <label><input id="deepCapture" type="checkbox" checked> deep</label>
-              <label><input id="videoCapture" type="checkbox" checked> video</label>
-            </div>
-            <strong id="dumpStatus">idle</strong>
-          </div>
-        </details>
+        <section class="settingsSection"><h3>Diagnostics</h3><div class="settingRow settingRowActions"><span class="settingLabel">Engine log</span><button id="consoleToggle" type="button" class="pillButton">Console</button></div></section>
+        <details class="settingsSection debugSection"><summary>Issue tools</summary><div class="debugControls"><button id="recordToggle" type="button">Record</button><button id="issueButton" type="button">Report issue</button><button id="saveDump" type="button">Save dump</button><button id="uploadDump" type="button">Upload</button><label><input id="deepCapture" type="checkbox" checked> deep</label><label><input id="videoCapture" type="checkbox" checked> video</label><strong id="dumpStatus">idle</strong></div></details>
       </div>
     </div>
-
     <div id="consolePanel" class="hidden" aria-label="Engine log"></div>
-
-    <div id="issueModal" class="hidden" aria-label="Report issue dialog">
-      <div id="issueDialog" role="dialog" aria-modal="true">
-        <div class="issueTop">
-          <input id="issueTitle" type="text" maxlength="120" placeholder="Short issue title">
-          <label class="issuePaint">color <input id="issueColor" type="color" value="#ff3b30"></label>
-          <label class="issuePaint">stroke <input id="issueStroke" type="range" min="2" max="16" value="5"></label>
-        </div>
-        <div class="issueCanvasWrap">
-          <canvas id="issueScreenshotCanvas" width="1280" height="720"></canvas>
-          <canvas id="issueAnnotationCanvas" width="1280" height="720"></canvas>
-        </div>
-        <div class="issueBottom">
-          <textarea id="issueComment" placeholder="What is wrong? What did you expect instead?"></textarea>
-          <div class="issueActions">
-            <button id="issueClear" type="button">clear</button>
-            <button id="issueCancel" type="button">cancel</button>
-            <button id="issueSave" type="button">add issue</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
+    <div id="issueModal" class="hidden" aria-label="Report issue dialog"><div id="issueDialog" role="dialog" aria-modal="true"><div class="issueTop"><input id="issueTitle" type="text" maxlength="120" placeholder="Short issue title"><label>color <input id="issueColor" type="color" value="#ff3b30"></label><label>stroke <input id="issueStroke" type="range" min="2" max="16" value="5"></label></div><div class="issueCanvasWrap"><canvas id="issueScreenshotCanvas" width="1280" height="720"></canvas><canvas id="issueAnnotationCanvas" width="1280" height="720"></canvas></div><div class="issueBottom"><textarea id="issueComment" placeholder="What is wrong? What did you expect?"></textarea><div class="issueActions"><button id="issueClear" type="button">clear</button><button id="issueCancel" type="button">cancel</button><button id="issueSave" type="button">add issue</button></div></div></div></div>
+    <span id="buildAge" hidden>build —</span>
     <script type="module" src="./bridge.js"></script>
     <script type="module" src="./play.mjs"></script>
+    <script type="module" src="./launcher-entry.mjs"></script>
   </body>
 </html>

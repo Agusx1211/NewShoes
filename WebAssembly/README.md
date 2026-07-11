@@ -211,6 +211,15 @@ INI list and the fact that browser device factories are not runtime-ready yet.
 Full original engine startup, all-block INI parsing, language initialization,
 font loading, water/weather rendering, and live map-cache rebuilds remain open.
 
+The human `harness/play.html` entry uses the integrated ZeroH desktop and local
+asset wizard instead of those development URLs. Its worker accepts installed
+folders and original ISO/IMG/MODE1-BIN media, extracts the required CAB/MSZIP
+members directly to OPFS, and calls
+`window.CnCPort.rpc("mountPreparedArchives", { path, archives })` before real
+engine init. Session, remembered-source, and persistent-browser-install modes
+are available; none upload or redistribute game data. `?autostart=1` retains
+the ignored-artifact fetch path for unattended regression gates.
+
 Run the wasm-backed smoke test:
 
 ```sh
