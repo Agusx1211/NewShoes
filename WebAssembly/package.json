@@ -78,6 +78,7 @@
     "test:real-shellmap": "npm run build:port && node harness/shellmap_real_init_gate.mjs",
     "verify:threaded-play": "npm run build:port:threaded && npm run build:port:threaded:release && node harness/threaded_play_gate.mjs",
     "test:real-fx-render": "npm run build:port && node harness/real_fx_render_smoke.mjs",
+    "test:real-heat-distortion": "npm run build:port && REAL_FX_EXPECT_HEAT=1 node harness/real_fx_render_smoke.mjs",
     "test:real-laser-draw": "npm run build:port && node harness/real_laser_draw_smoke.mjs",
     "test:weapon-impact-fx": "npm run build:port && node harness/weapon_impact_fx_smoke.mjs",
     "test:real-audio-event": "npm run build:port && node harness/real_audio_event_smoke.mjs",
