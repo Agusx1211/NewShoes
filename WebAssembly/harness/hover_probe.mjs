@@ -112,6 +112,10 @@ try {
   url.searchParams.set("autostart", "1");
   url.searchParams.set("diag", "lite");
   url.searchParams.set("dist", process.env.CNC_DIST ?? "dist");
+  // Legacy main-thread path, pinned explicitly: this probe's dist build has
+  // no pthread runtime, so it must stay legacy when the prepared
+  // threaded-by-default play-page flip lands.
+  url.searchParams.set("threads", "0");
   if (process.env.CNC_NOSHELLMAP === "1") {
     url.searchParams.set("shellmap", "0");
   }

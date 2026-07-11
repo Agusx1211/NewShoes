@@ -482,11 +482,20 @@ function validCncPortDistDir(value) {
 function selectedCncPortDistDir() {
   try {
     const params = new URLSearchParams(window.location.search);
-    const fallback = window.location.pathname.endsWith("/play.html") ? "dist-release" : "dist";
+    // Mirror bridge.js: the play page is threaded-only (RELEASE threaded
+    // build); harness/index.html surfaces are non-threaded by default and
+    // opt in with ?threads=1 (Debug dist-threaded) — the dump metadata must
+    // record the dist the page ACTUALLY loaded.
+    const threads = params.get("threads");
+    const onPlayPage = window.location.pathname.endsWith("/play.html");
+    const threadedMode = threads === "1" || onPlayPage;
+    const fallback = threadedMode
+      ? (onPlayPage ? "dist-threaded-release" : "dist-threaded")
+      : "dist";
     const value = params.get("dist") || fallback;
     return validCncPortDistDir(value) ? value : fallback;
   } catch {
-    return "dist-release";
+    return "dist-threaded-release";
   }
 }
 

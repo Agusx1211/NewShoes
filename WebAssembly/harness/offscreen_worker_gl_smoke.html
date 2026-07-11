@@ -1,0 +1,213 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>OffscreenCanvas worker WebGL2 smoke</title>
+    <style>
+      body { margin: 16px; background: #202020; color: #ddd; font-family: monospace; }
+      canvas { display: block; outline: 1px solid #555; }
+    </style>
+  </head>
+  <body>
+    <p>OffscreenCanvas worker WebGL2 smoke harness.</p>
+    <canvas id="glcanvas" width="320" height="240"></canvas>
+    <p>
+      <button id="selfrun-btn">Run self-test</button>
+      <span>(or open with <code>?autorun=1</code>; the Node driver ignores this UI)</span>
+    </p>
+    <pre id="selfrun-out"></pre>
+    <script type="module">
+      // The node driver calls these window.__* functions in sequence and takes
+      // Playwright element screenshots of #glcanvas between them. All state
+      // lives here on the main thread; the worker owns the GL context.
+      const state = {
+        worker: null,
+        latestFrame: 0,
+        heartbeatTicks: 0,
+        loopMode: null,
+        busyStartedAt: null,
+        busyTicksAtStart: null,
+        busyStartResolve: null,
+        busyEndResolve: null,
+        busyEndResult: null,
+        frameWaiters: [],
+      };
+
+      // Main-thread rAF heartbeat, running for the page's whole life. Blocked
+      // main thread = this stops ticking; that is what the smoke measures
+      // while the WORKER is deliberately blocked.
+      const heartbeat = () => {
+        state.heartbeatTicks += 1;
+        requestAnimationFrame(heartbeat);
+      };
+      requestAnimationFrame(heartbeat);
+
+      window.__startOffscreenGl = () => {
+        return new Promise((resolve, reject) => {
+          const canvas = document.getElementById("glcanvas");
+          let offscreen;
+          try {
+            if (typeof canvas.transferControlToOffscreen !== "function") {
+              resolve({ transferControlAvailable: false, webgl2InWorker: false });
+              return;
+            }
+            offscreen = canvas.transferControlToOffscreen();
+          } catch (error) {
+            reject(error);
+            return;
+          }
+
+          const worker = new Worker(
+            new URL("./offscreen_worker_gl_worker.mjs", import.meta.url),
+            { type: "module" },
+          );
+          state.worker = worker;
+
+          worker.onmessage = (event) => {
+            const message = event.data ?? {};
+            if (message.kind === "boot") {
+              worker.postMessage({ kind: "init", canvas: offscreen }, [offscreen]);
+              return;
+            }
+            if (message.kind === "ready") {
+              state.loopMode = message.loopMode;
+              resolve({ transferControlAvailable: true, ...message });
+              return;
+            }
+            if (message.kind === "loopModeChanged") {
+              state.loopMode = message.loopMode;
+              return;
+            }
+            if (message.kind === "frame") {
+              state.latestFrame = message.frame;
+              state.frameWaiters = state.frameWaiters.filter((waiter) => {
+                if (state.latestFrame >= waiter.target) {
+                  waiter.resolve(state.latestFrame);
+                  return false;
+                }
+                return true;
+              });
+              return;
+            }
+            if (message.kind === "busyStarted") {
+              state.busyStartedAt = performance.now();
+              state.busyTicksAtStart = state.heartbeatTicks;
+              if (state.busyStartResolve) {
+                state.busyStartResolve({ frameAtStart: message.frameAtStart });
+                state.busyStartResolve = null;
+              }
+              return;
+            }
+            if (message.kind === "busyEnded") {
+              const result = {
+                frameAtStart: message.frameAtStart,
+                frameAtEnd: message.frameAtEnd,
+                framesDrawnDuringBlock: message.frameAtEnd - message.frameAtStart,
+                mainThreadTicksDuringBlock:
+                  state.heartbeatTicks - (state.busyTicksAtStart ?? 0),
+                blockObservedMs: performance.now() - (state.busyStartedAt ?? 0),
+              };
+              if (state.busyEndResolve) {
+                state.busyEndResolve(result);
+                state.busyEndResolve = null;
+              } else {
+                state.busyEndResult = result;
+              }
+            }
+          };
+
+          worker.onerror = (event) => {
+            reject(new Error(event?.message ?? "offscreen GL worker crashed"));
+          };
+
+          setTimeout(() => reject(new Error("worker ready timed out")), 15000);
+        });
+      };
+
+      window.__waitForFrames = (target) => {
+        if (state.latestFrame >= target) {
+          return Promise.resolve(state.latestFrame);
+        }
+        return new Promise((resolve, reject) => {
+          state.frameWaiters.push({ target, resolve });
+          setTimeout(
+            () => reject(new Error(
+              `waitForFrames(${target}) timed out at frame ${state.latestFrame} ` +
+              `(loopMode=${state.loopMode})`,
+            )),
+            20000,
+          );
+        });
+      };
+
+      window.__frameCount = () => state.latestFrame;
+      window.__heartbeatCount = () => state.heartbeatTicks;
+      window.__loopMode = () => state.loopMode;
+
+      // Kick off the worker busy-block and resolve as soon as the worker
+      // confirms it has ENTERED the spin (so screenshots taken afterwards are
+      // genuinely inside the blocked window). The end is awaited separately.
+      window.__beginBusyBlock = (ms) => {
+        return new Promise((resolve, reject) => {
+          state.busyEndResult = null;
+          state.busyStartResolve = resolve;
+          state.worker.postMessage({ kind: "busy", ms });
+          setTimeout(() => reject(new Error("busyStarted timed out")), 5000);
+        });
+      };
+
+      window.__awaitBusyEnd = () => {
+        if (state.busyEndResult) {
+          return Promise.resolve(state.busyEndResult);
+        }
+        return new Promise((resolve, reject) => {
+          state.busyEndResolve = resolve;
+          setTimeout(() => reject(new Error("busyEnded timed out")), 15000);
+        });
+      };
+
+      // Human self-run mode: the same sequence the Node driver executes, with
+      // results rendered on the page so a person (Mac Chrome, iPad Safari) can
+      // run this without Playwright. Purely additive; the driver never uses it.
+      const selfRunButton = document.getElementById("selfrun-btn");
+      const selfRunOut = document.getElementById("selfrun-out");
+      const say = (text) => { selfRunOut.textContent += `${text}\n`; };
+      async function selfRun() {
+        selfRunButton.disabled = true;
+        try {
+          say(`userAgent: ${navigator.userAgent}`);
+          say("starting worker + transferControlToOffscreen…");
+          const info = await window.__startOffscreenGl();
+          say(`webgl2InWorker=${info.webgl2InWorker} rafInWorker=${info.rafInWorker} loopMode=${info.loopMode}`);
+          say(`renderer: ${info.rendererString ?? "n/a"}`);
+          if (!info.webgl2InWorker) {
+            say("FAIL — no WebGL2 context in the worker on this browser.");
+            return;
+          }
+          await window.__waitForFrames(15);
+          const frameA = window.__frameCount();
+          await window.__waitForFrames(frameA + 10);
+          say(`animating: ${window.__frameCount()} frames presented (triangle above should be moving)`);
+          say("blocking the worker for 2000ms — the canvas should FREEZE while this page stays responsive…");
+          await window.__beginBusyBlock(2000);
+          const block = await window.__awaitBusyEnd();
+          say(`block done: mainThreadTicksDuringBlock=${block.mainThreadTicksDuringBlock} ` +
+            `framesDrawnDuringBlock=${block.framesDrawnDuringBlock} ` +
+            `blockObservedMs=${Math.round(block.blockObservedMs)}`);
+          await window.__waitForFrames(window.__frameCount() + 10);
+          say(`resumed: ${window.__frameCount()} frames presented`);
+          const pass = block.framesDrawnDuringBlock === 0 && block.mainThreadTicksDuringBlock > 30;
+          say(pass
+            ? "PASS — worker owns GL, and a hard-blocked worker never froze this page."
+            : "CHECK — unexpected block behavior; see numbers above.");
+        } catch (error) {
+          say(`ERROR: ${error?.message ?? error}`);
+        }
+      }
+      selfRunButton.addEventListener("click", selfRun);
+      if (new URLSearchParams(location.search).get("autorun") === "1") {
+        selfRun();
+      }
+    </script>
+  </body>
+</html>

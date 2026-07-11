@@ -45,6 +45,18 @@ else
   cmake_args+=("-DCNC_WASM_NATIVE_EXCEPTIONS=OFF")
 fi
 
+# Engine-thread P0 spike: CNC_PORT_THREADS=1 builds cnc-port with pthreads
+# (see CNC_PORT_THREADS in CMakeLists.txt). Always pair it with a dedicated
+# CNC_BUILD_DIR/CNC_DIST_DIR (npm run build:port:threaded does) — -pthread is
+# a global compile flag in that configuration.
+cnc_port_threads=0
+if [[ "${CNC_PORT_THREADS:-0}" == "1" || "${CNC_PORT_THREADS:-0}" == "ON" || "${CNC_PORT_THREADS:-0}" == "true" ]]; then
+  cnc_port_threads=1
+  cmake_args+=("-DCNC_PORT_THREADS=ON")
+else
+  cmake_args+=("-DCNC_PORT_THREADS=OFF")
+fi
+
 if [[ -z "${CMAKE_GENERATOR:-}" ]] && command -v ninja >/dev/null 2>&1; then
   cmake_args+=(-G Ninja)
 fi
@@ -54,6 +66,10 @@ emcmake cmake "${cmake_args[@]}"
 check_cnc_port_artifacts() {
   test -f "${wasm_dir}/${dist_dir}/cnc-port.js"
   test -f "${wasm_dir}/${dist_dir}/cnc-port.wasm"
+  if [[ "${cnc_port_threads}" == "1" ]]; then
+    # pthread builds also emit the worker loader next to the main JS.
+    test -f "${wasm_dir}/${dist_dir}/cnc-port.worker.js"
+  fi
 }
 
 # Hot-path support: when CNC_BUILD_TARGETS is set (space-separated CMake

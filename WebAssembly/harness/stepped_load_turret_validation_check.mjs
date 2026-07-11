@@ -16,27 +16,42 @@
 // turret/barrel metadata resolved (the anim report only emits those sections
 // when TURRETS_VALID/BARRELS_VALID are set).
 //
-// Runtime: one full SwiftShader boot (~4-6 min). Run via
+// The play page is threaded-only (2026-07-10, legacy path deleted): this
+// check now guards the SHIPPING stepped-load path — the load session drains
+// inside the engine-thread frame loop, where advanceLoadSession and the
+// m_isInUpdate latch run identically. realEngineAnimReport is threaded-routed.
+//
+// Runtime: one full SwiftShader boot. Run via
 //   npm run verify:stepped-load-validation
-// after `npm run build:port`.
+// after `npm run build:port:threaded:release`.
 import assert from "node:assert/strict";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { mkdir, rm } from "node:fs/promises";
 import { chromium } from "playwright";
 import { startStaticServer } from "./static-server.mjs";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
 const server = await startStaticServer({ root: wasmRoot, port: 0, host: "127.0.0.1" });
-const browser = await chromium.launch({ headless: true, args: ["--autoplay-policy=no-user-gesture-required"] });
+// PERSISTENT context (fresh profile per run): ephemeral chromium.launch()
+// contexts back OPFS with an in-memory filesystem capped at ~1.25GiB on this
+// box — smaller than the archive set the threaded page streams to OPFS.
+const profileDir = resolve(wasmRoot, "artifacts/pw-profiles/stepped-load-validation");
+await rm(profileDir, { recursive: true, force: true });
+await mkdir(profileDir, { recursive: true });
+const browser = await chromium.launchPersistentContext(profileDir, {
+  viewport: { width: 1280, height: 800 },
+  args: ["--autoplay-policy=no-user-gesture-required"],
+});
 
 const SHIP_TEMPLATE = "AmericaVehicleBattleShip";
 const SAMPLE_ATTEMPTS = 120;
 const SAMPLE_INTERVAL_MS = 1000;
 
 try {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  const url = new URL("harness/play.html?autostart=1&diag=lite&dist=dist", server.url);
+  const page = await browser.newPage();
+  const url = new URL("harness/play.html?autostart=1&diag=lite", server.url);
   await page.goto(url.href, { waitUntil: "domcontentloaded", timeout: 60_000 });
   console.log("navigated; waiting for stepped-load boot (SwiftShader, up to 10 min)");
   await page.waitForSelector("#overlay.hidden", { state: "attached", timeout: 600_000 });
@@ -73,4 +88,7 @@ try {
 } finally {
   await browser.close().catch(() => {});
   await server.close?.();
+  // The profile holds a multi-GB OPFS archive copy; never leak it (a leaked
+  // profile starves the next run's OPFS writes into silent mount stalls).
+  await rm(profileDir, { recursive: true, force: true }).catch(() => {});
 }

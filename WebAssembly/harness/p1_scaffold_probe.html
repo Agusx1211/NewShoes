@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<!--
+  p1_scaffold_probe.html — DISPOSABLE P1a scaffold probe (design:
+  WebAssembly/notes/p1-engine-thread.md; lane P1a). Loads the THREADED build
+  (dist-threaded, `npm run build:port:threaded`) and proves the P1 runtime
+  scaffold end to end:
+    1. instantiate the pthread-enabled runtime (PTHREAD_POOL_SIZE=1),
+    2. locate the single pool worker via Module.PThread and ping the pre-js
+       realm stub over the default channel ({target:'setimmediate',
+       __cncRealm:{cmd:'ping'}} → pong),
+    3. connect a dedicated MessagePort, transfer an OffscreenCanvas, and
+       have the stub import harness/engine_realm_test_executor.mjs into the
+       WORKER realm (installs Module.cncPortD3D8Clear there),
+    4. spawn the engine pthread (_cnc_port_engine_thread_boot), release its
+       go flag (_cnc_port_engine_thread_go), and observe: heartbeat advances,
+       main rAF stays alive, and the placeholder canvas animates (the
+       engine-thread rAF main loop clears it with a heartbeat-derived color
+       through the D3D8 shim's EM_JS path),
+    5. round-trip {cmd:'callExport'} through the stub (worker-realm export
+       call) and compare with the main-realm reading of the same atomic.
+  Driven by harness/p1_scaffold_probe.mjs. NOT part of test:all.
+-->
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>cnc-port P1a engine-thread scaffold probe</title>
+  <style>
+    #engine-canvas { border: 1px solid #444; image-rendering: pixelated; }
+  </style>
+</head>
+<body>
+<h3>cnc-port P1a engine-thread scaffold probe</h3>
+<p>
+  The canvas below is a placeholder whose OffscreenCanvas was transferred into
+  the pthread worker realm. Once the engine thread's rAF main loop runs, it
+  color-cycles (cleared from the engine thread through
+  Module.cncPortD3D8Clear in the worker realm).
+  main-thread rAF ticks: <b id="raf-live">0</b>
+</p>
+<canvas id="engine-canvas" width="320" height="240"></canvas>
+<pre id="out"></pre>
+<script type="module">
+  const consoleLog = [];
+  window.__consoleLog = consoleLog;
+  function log(kind, text) {
+    consoleLog.push(`${kind}: ${text}`);
+    console.log(`[probe:${kind}] ${text}`);
+  }
+
+  // Live main-thread rAF counter: proves the page never freezes while the
+  // engine thread runs.
+  const rafLive = document.getElementById("raf-live");
+  let rafLiveTicks = 0;
+  const rafLiveTick = () => {
+    rafLiveTicks += 1;
+    rafLive.textContent = String(rafLiveTicks);
+    requestAnimationFrame(rafLiveTick);
+  };
+  requestAnimationFrame(rafLiveTick);
+  window.__mainRafTicks = () => rafLiveTicks;
+
+  let Module = null;
+  let engineWorker = null;
+  let realmPort = null; // main side of the MessageChannel to the realm stub
+  const portWaiters = []; // {match(msg), resolve}
+
+  function waitForRealmMessage(match, timeoutMs, label) {
+    return new Promise((resolve, reject) => {
+      const waiter = { match, resolve, done: false };
+      portWaiters.push(waiter);
+      setTimeout(() => {
+        if (!waiter.done) {
+          waiter.done = true;
+          reject(new Error(`timeout waiting for ${label}`));
+        }
+      }, timeoutMs);
+    });
+  }
+
+  function dispatchRealmMessage(msg) {
+    for (const waiter of portWaiters) {
+      if (!waiter.done && waiter.match(msg)) {
+        waiter.done = true;
+        waiter.resolve(msg);
+        return;
+      }
+    }
+    log("realm", `unmatched realm message: ${JSON.stringify(msg)}`);
+  }
+
+  window.__init = async () => {
+    const out = {
+      imported: false,
+      instantiated: false,
+      crossOriginIsolated: !!globalThis.crossOriginIsolated,
+      heapIsShared: null,
+      pthreadPoolWorkers: null,
+      error: null,
+    };
+    try {
+      const mod = await import("../dist-threaded/cnc-port.js");
+      out.imported = true;
+      Module = await mod.default({
+        print: (text) => log("out", text),
+        printErr: (text) => log("err", text),
+      });
+      window.__cncModule = Module;
+      out.instantiated = true;
+      out.heapIsShared =
+        typeof SharedArrayBuffer !== "undefined" &&
+        Module.HEAP8.buffer instanceof SharedArrayBuffer;
+      // PThread structure on emsdk 3.1.6: unusedWorkers[] (pool workers not
+      // yet running a pthread), runningWorkers[], pthreads{} (pthread_t ->
+      // info). With PTHREAD_POOL_SIZE=1 and PTHREAD_POOL_DELAY_LOAD unset,
+      // the runtime holds a run dependency until the single pool worker has
+      // loaded cnc-port.js — so by now the pre-js realm stub is installed.
+      const pt = Module.PThread;
+      out.pthreadPoolWorkers =
+        (pt.unusedWorkers ? pt.unusedWorkers.length : 0) +
+        (pt.runningWorkers ? pt.runningWorkers.length : 0);
+      engineWorker = (pt.unusedWorkers && pt.unusedWorkers[0]) ||
+        (pt.runningWorkers && pt.runningWorkers[0]) || null;
+      out.workerFound = !!engineWorker;
+      if (engineWorker) {
+        // Coexists with PThread's worker.onmessage (property assignment).
+        engineWorker.addEventListener("message", (event) => {
+          const data = event && event.data;
+          if (data && typeof data === "object" && data.__cncRealm) {
+            dispatchRealmMessage(data.__cncRealm);
+          }
+        });
+      }
+    } catch (e) {
+      out.error = String((e && e.stack) || e);
+    }
+    return out;
+  };
+
+  // Step 2: ping over the DEFAULT worker channel (the deliverable's stub
+  // primitive). target:'setimmediate' keeps emscripten's worker.js handler
+  // on its silent no-op branch.
+  window.__pingWorker = async () => {
+    const out = { ok: false, error: null };
+    try {
+      const pong = waitForRealmMessage((m) => m.cmd === "pong", 5000, "pong");
+      engineWorker.postMessage({ target: "setimmediate", __cncRealm: { cmd: "ping" } });
+      const msg = await pong;
+      out.ok = true;
+      out.isPthread = msg.isPthread === true;
+    } catch (e) {
+      out.error = String((e && e.stack) || e);
+    }
+    return out;
+  };
+
+  // Step 3: connect the dedicated MessagePort, then transfer the
+  // OffscreenCanvas + import the test executor into the worker realm.
+  window.__connectAndSetup = async () => {
+    const out = { connected: false, setupOk: false, error: null };
+    try {
+      const channel = new MessageChannel();
+      realmPort = channel.port1;
+      realmPort.onmessage = (event) => {
+        const data = event && event.data;
+        if (data && typeof data === "object" && data.__cncRealm) {
+          dispatchRealmMessage(data.__cncRealm);
+        }
+      };
+      const connected = waitForRealmMessage((m) => m.cmd === "connected", 5000, "connected");
+      engineWorker.postMessage(
+        { target: "setimmediate", __cncRealm: { cmd: "connect" } },
+        [channel.port2],
+      );
+      await connected;
+      out.connected = true;
+
+      const canvas = document.getElementById("engine-canvas");
+      const offscreen = canvas.transferControlToOffscreen();
+      const moduleUrl = new URL("./engine_realm_test_executor.mjs", location.href).href;
+      const setupDone = waitForRealmMessage((m) => m.cmd === "setupDone", 15000, "setupDone");
+      realmPort.postMessage(
+        { __cncRealm: { cmd: "setup", moduleUrl, canvas: offscreen } },
+        [offscreen],
+      );
+      const msg = await setupDone;
+      out.setupOk = msg.ok === true;
+      out.setupError = msg.error ?? null;
+      out.hooksInstalled = msg.hooksInstalled ?? null;
+    } catch (e) {
+      out.error = String((e && e.stack) || e);
+    }
+    return out;
+  };
+
+  // Step 4: spawn the engine pthread, release the go flag, sample heartbeat
+  // vs main rAF. NOTE: between boot and go the pthread BLOCKS its worker's
+  // event loop in the emscripten_thread_sleep poll — all realm prep must be
+  // done before this (it is; steps 2-3 ran already).
+  window.__bootAndGo = async () => {
+    const out = { error: null };
+    try {
+      out.bootRc = Module._cnc_port_engine_thread_boot();
+      // Wait for the thread entry to actually start (state 1).
+      const bootDeadline = performance.now() + 10000;
+      for (;;) {
+        out.stateAfterBoot = Module._cnc_port_engine_thread_boot_state();
+        if (out.stateAfterBoot >= 1 || performance.now() > bootDeadline) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      Module._cnc_port_engine_thread_go();
+      const rafStart = rafLiveTicks;
+      const beats = [];
+      for (let i = 0; i < 15; i += 1) {
+        await new Promise((r) => setTimeout(r, 100));
+        beats.push(Module._cnc_port_engine_thread_boot_heartbeat());
+      }
+      out.state = Module._cnc_port_engine_thread_boot_state();
+      out.heartbeats = beats;
+      out.heartbeatDelta = beats[beats.length - 1] - beats[0];
+      out.mainRafTicksDuringSample = rafLiveTicks - rafStart;
+    } catch (e) {
+      out.error = String((e && e.stack) || e);
+    }
+    return out;
+  };
+
+  // Step 5: callExport round trip through the stub (executes the export IN
+  // the worker realm, on the engine thread's wasm stack) and compare with a
+  // direct main-realm call of the same atomic getter.
+  let callExportId = 0;
+  window.__callExportRoundTrip = async () => {
+    const out = { error: null };
+    try {
+      const id = ++callExportId;
+      const result = waitForRealmMessage(
+        (m) => m.cmd === "callExportResult" && m.id === id,
+        5000,
+        `callExportResult#${id}`,
+      );
+      realmPort.postMessage({
+        __cncRealm: {
+          cmd: "callExport",
+          name: "cnc_port_engine_thread_boot_heartbeat",
+          args: [],
+          id,
+        },
+      });
+      const msg = await result;
+      const mainAfter = Module._cnc_port_engine_thread_boot_heartbeat();
+      out.workerValue = msg.value;
+      out.workerError = msg.error ?? null;
+      out.mainAfter = mainAfter;
+      // Strict ordering: the worker read the atomic while handling the
+      // request, and mainAfter was read after the reply arrived — so the
+      // worker's value can never exceed mainAfter, and on a live loop it is
+      // a recent positive tick count.
+      out.consistent =
+        typeof msg.value === "number" &&
+        msg.value > 0 &&
+        msg.value <= mainAfter;
+      out.ok = out.workerError == null && out.consistent;
+    } catch (e) {
+      out.error = String((e && e.stack) || e);
+    }
+    return out;
+  };
+
+  // Pixel probe: draw the (transferred) placeholder canvas into a 2d canvas
+  // and sample the center pixel — placeholder canvases remain valid
+  // CanvasImageSources on the main thread even after
+  // transferControlToOffscreen.
+  window.__sampleCanvasPixel = () => {
+    const canvas = document.getElementById("engine-canvas");
+    const scratch = document.createElement("canvas");
+    scratch.width = 8;
+    scratch.height = 8;
+    const ctx = scratch.getContext("2d");
+    ctx.drawImage(canvas, canvas.width / 2 - 4, canvas.height / 2 - 4, 8, 8, 0, 0, 8, 8);
+    const d = ctx.getImageData(4, 4, 1, 1).data;
+    return { r: d[0], g: d[1], b: d[2], a: d[3] };
+  };
+</script>
+</body>
+</html>

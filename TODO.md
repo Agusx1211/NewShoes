@@ -668,13 +668,6 @@ below). The existing IO-worker fetch pipeline and stepped loading remain the
 shipping behavior until P1/P2 land; superseded follow-on items were moved to
 DONE.md with reasons.
 
-- [ ] **Verify the streamed/parallel mount + stepped init/load on the real Mac
-      GPU play page as the OWNER sees it.** The loadscreen/stepped-init probes
-      cover the RPC path; confirm the human `play.html` boot shows the
-      Install_Final splash + live progress bar and that the tab stays
-      responsive through mount + init + shellmap load (screenshot/state per
-      "don't work blind"), and that `?ioworker=0`, `?fetchpar=0`,
-      `?initstep=0`, `?loadstep=0` opt-outs still reproduce legacy behavior.
 - [ ] **Stepped-load follow-ups (2026-07-09; DEMOTED 2026-07-10 by the
       engine-thread plan).** Under the adopted architecture the step yields
       become presentation-only (an over-budget step = load-bar stutter on the
@@ -686,30 +679,99 @@ DONE.md with reasons.
       of `GameStateMap.cpp:448`); (b) MP loads: PROGRESS_WAIT repeats at
       client rate instead of Sleep(100) polling — re-check testTimeOut pacing
       when real network play lands.
-- [ ] **P0 spike: engine on its own thread (owner-directed 2026-07-10).**
-      Owner wants: game's own load screens, main thread never locked, zero
-      archive memory duplication — and explicitly allows engine changes. The
-      design that meets all three is engine-on-a-pthread + OPFS-as-disk +
-      OffscreenCanvas ("the browser as a 2003 PC") — full write-up in
-      IDEAS.md. First concrete action: a CMake option that builds `cnc-port`
-      with `-pthread` + `-sPROXY_TO_PTHREAD` + `-sOFFSCREENCANVAS_SUPPORT`
-      and boots to title on SwiftShader + Mac Metal, dual-mode alongside the
-      green main-thread build. The spike exists to flush the real risks:
-      pthread build vs the shim/ODR surface, headless SwiftShader with
-      OffscreenCanvas-in-worker (CI baseline), Safari/iPad support, and
-      whether emsdk 3.1.6 is too old (an emsdk upgrade may be the true P0).
-      NOTE (owner): do NOT add HTTP-cache/persistence layers for re-download
-      avoidance yet — OPFS enters in P2 as the read-backing disk, not as a
-      cache.
-- [ ] **Audio payload inventory duplicates whole archives on the main thread
-      (2026-07-10 audit).** `buildAudioPayloadInventoryFromMountedArchives`
-      (`harness/bridge.js:18670`) does `FS.readFile` (= full copy) of every
-      audio-relevant archive right after mount — SpeechEnglishZH.big alone is
-      254MB, ~400MB transient total — then parses BIG TOCs and samples entry
-      headers, all on the main thread. Reuse the already-downloaded bytes from
-      the mount pipeline (before they're released) or move the scan into
-      `io_worker.mjs`; at minimum drop the whole-file copies (read only TOC +
-      sampled headers via streamed reads).
+- [ ] **Engine-thread architecture: remaining open items (P0-P3 themselves
+      are DONE — see DONE.md "Engine-thread architecture P0-P3" and
+      notes/p1-engine-thread.md).**
+      (GATE D — RUN 2026-07-10; RESOLVED same day by the blocker-fix lane;
+      full numbers in notes/p1-engine-thread.md "GATE D root cause + fix"):
+      renderer/boot/init/audio/skirmish/screenshots ALL GREEN on cnc-gpu.
+      The initially-reported "threaded-only GL-throughput regression"
+      (~16.4k vs ~40.8k draws/s, shellmap client collapse to ~7/s) was a
+      BUILD-FLAVOR artifact, not the worker: dist-threaded is a Debug build
+      (-O0/ASSERTIONS/JS-EH, 99.7MB wasm) and GATE D compared it against
+      dist-release (-O2/wasm-EH, 7.7MB). Proven by (a) a synthetic
+      worker-vs-main GL benchmark on Metal (70.0k draws/s BOTH realms —
+      worker GL parity) and (b) `?dist=dist` on the LEGACY main-thread path
+      reproducing the exact collapse (client 3.8-13/s, 14.5-19.8k draws/s,
+      no worker involved). FIX: `npm run build:port:threaded:release` ->
+      dist-threaded-release, now the play-page threaded default (harness
+      pages keep Debug dist-threaded). Re-run pacing A/B on Metal: threaded
+      logic 30.0 exact, client mean 39.1/s vs legacy 48.3/s (~19%, within
+      the ~20% bar; ~8% at the matched 1600-draws/frame bucket) — flip
+      UNBLOCKED and cherry-picked from `threaded-default-flip`. Still open:
+      owner playtest + deploy of dist-threaded-release alongside
+      dist-release (deploy recipe gains a third dist); re-measure the P3
+      growth-off A/B at 60fps client; Safari/iPad support unassessed;
+      headful-Chrome pacing spot-check (probes were headless).
+      (b) OPFS stat/access coverage: 0-byte MEMFS markers expose size 0 /
+      mtime 0 to Win32LocalFileSystem::getFileInfo (archive timestamp in
+      Win32BIGFile::getFileInfo) — intercept stat paths or write real sizes
+      into markers when something is proven to care.
+      (c) DONE 2026-07-10 (mount-failure lane; see DONE "Owner play-page
+      mount-failure regression"): per-boot OPFS namespaces + Web-Lock-owned
+      GC + pagehide/worker release protocol + createSyncAccessHandle
+      retry/delete-and-recreate landed; second tab now boots its own
+      namespace (Mac-verified). Residual: nothing known — if a NEW lock
+      collision shape appears, the io_worker error now names the file and
+      exception.
+      (e) measure the readahead probe + OPFS-threaded boot on the Mac M4
+      (real SSD) — dev-box numbers are the conservative bound.
+      (f) OPFS-backed (or engine-realm) audio payload inventory if that
+      diagnostics surface is wanted in threaded mode — the OPFS mount path
+      marks it `{ok:false, skipped:true}`.
+      (g) headless-harness note: ephemeral Playwright contexts cap OPFS at
+      ~1.25GiB (in-memory backend, write() returns 2^32-8 =
+      FILE_ERROR_NO_SPACE); any OPFS-mount harness run must use
+      launchPersistentContext (threaded_play_gate.mjs does).
+      (h) threaded crash surfacing: a RELEASE_CRASH inside an engine-thread
+      init step tears down the worker's emscripten main loop (ExitStatus)
+      before engine_realm_boot's pumpInit catch can post the abort — the
+      page only learns via the 600s engineInit timeout. Catch/report the
+      exit at the tick boundary (or hook the crash path to post a realm
+      message) so threaded init crashes fail fast like non-threaded ones.
+      (i) DONE 2026-07-11 (demolition lane; see DONE "Legacy play-path
+      demolition"): the play page is threaded/OPFS-only and the io-worker
+      whole-buffer transfer is deleted. The MEMFS mount pipeline itself was
+      deliberately KEPT as the harness/index.html legacy-boot surface — the
+      ~40 non-threaded index.html gates/smokes (shellmap_real_init_gate,
+      skirmish/fx/audio/network smokes) and A/B-debug boots of the
+      non-threaded dist physically require it (a main-thread engine cannot
+      read OPFS synchronously; sync access handles are worker-only).
+- [ ] **Threaded-mode (P1c) follow-ups, in threaded mode only** — REMAINDER
+      after the 2026-07-10 gap-closure lane (see DONE "Threaded default-
+      readiness gap closure"; items b/d/f/g plus the state/issue-dump/save/
+      resolution/audio verification landed there):
+      (a-remainder) canvas pixel/graphics diagnostics RPCs beyond
+      `d3d8TextureInventory` (canvas pixel samples, gamma, per-op graphics
+      summaries) still read the MAIN scratch executor or answer
+      explicit-unsupported — route worker-side equivalents through the
+      `textureInventory`-style realm commands when a probe needs them;
+      (c-remainder) Bink hooks are installed in NEITHER realm on the play
+      path (movies cleanly skip via the provider's absent-hook path — parity
+      proven by the gate's menu-reached check); when a real movie-playback
+      consumer lands main-side (browser-video manifest + WebCodecs sidecar),
+      install matching forwarders in engine_realm_boot.mjs;
+      (e-remainder) issue-recorder deep capture's direct `window.__cnc*`
+      globals (`__cncSetDiagLevel`, `__cncD3D8PerfSummary`,
+      `__cncSetD3D8SceneDrawHistoryLimit`) touch the main scratch executor in
+      threaded mode — degrade gracefully today; wire them to the realm
+      "setDiagLevel"/new diag commands for full-fidelity threaded dumps.
+- [ ] **Remaining whole-archive `FS.readFile` copies outside the inventory
+      path (2026-07-10, follow-up to the inventory partial-read fix).**
+      NON-THREADED (MEMFS-mount) path only since the threaded gap-closure
+      lane: threaded OPFS mounts now hunt stream files through cached BIG
+      directories + `opfsReadRange` realm reads (one ranged read per start).
+      (a) `_startMssStreamAsync`'s MEMFS branch (`harness/bridge.js`) still
+      copies each audio-relevant archive out of MEMFS (SpeechEnglishZH.big =
+      254MB) per `AIL_start_stream` while hunting for the stream file — a
+      runtime hot path on every music/speech stream start. (b) The
+      `mssAdpcmSamplePlaybackProbe` RPC does the same for one archive. Both
+      should reuse the `openMountedArchiveReader` +
+      `readBigDirectoryFromReader` partial-read helpers the inventory now
+      uses (and (a) should cache the parsed directory instead of re-parsing
+      per stream start — the threaded branch's
+      `mssStreamArchiveDirectoryCache` is the pattern). Low priority if the
+      MEMFS mount pipeline is deleted once threaded becomes the default.
 
 - [ ] **Resolution follow-ups (2026-07-09, after the engine-owned resolution
       rework — see DONE "Resolution polish").** (a) The in-game options
@@ -1077,13 +1139,18 @@ symptom is temporal — NOT a single still.
       of the 286s trace) — flatten the draw payload into one typed-array view;
       (d) world-matrix uniform uploads (~50% of draws, real per-object
       changes — needs UBO or transform palette to improve).
-- [ ] **Load/transition wall-time waits still block the main thread** — the
+- [ ] **Load/transition wall-time waits still block the engine thread** — the
       remaining big hitches are by-design blocking loops in the original code
       (LoadScreen voice-length wait, GameClient 4s end wait, Bink
-      frame-ready polls) which spin inside one browser task. Sleep() is now a
-      no-op (2026-07-09) so they no longer burn usleep spin, but the waits
-      still freeze the tab for their wall duration. Fixing properly means
-      pumping them through the port's frame loop (invasive; design first).
+      frame-ready polls) which spin inside one task. Sleep() is now a
+      no-op (2026-07-09) so they no longer burn usleep spin. On the threaded
+      play page these stall the ENGINE THREAD (frozen frames for their wall
+      duration — the tab/UI stays live); on non-threaded index.html boots
+      they still freeze the tab. Note the stepped-load machinery is the
+      PRESENTATION-YIELD mechanism (it lets the real load screen paint and
+      keeps frames flowing), not freeze protection — these waits are the
+      residual non-stepped spins. Fixing properly means pumping them through
+      the port's frame loop (invasive; design first).
 - [ ] **Performance still needs love (general)** — beyond stability, the loaded
       (non-shell-map) skirmish frame cost with hundreds of units is the real
       target and is not yet profiled/held to triple-digit fps. Keep pushing the
@@ -1165,6 +1232,22 @@ found several effects the original shipped that the port silently drops (shaders
 + gamma are stubbed). Each is an individual item; verify with before/after
 screenshots on the release build.
 
+- [ ] **Explosion/muzzle-flash `LightPulse` terrain illumination — prove the
+      original dynamic-light path end to end.** Source/link inspection confirms
+      that real `FXList` playback, `W3DDisplay::createLightPulse`,
+      `RTS3DScene` dynamic-light updates, `HeightMapRenderObjClass` terrain
+      vertex relighting, D3D8 vertex-buffer uploads, and WebGL diffuse-color
+      consumption are all present in `cnc-port`. The existing
+      `real_fx_render_smoke.mjs` and `weapon_impact_fx_smoke.mjs` gates only
+      assert particle work and effect-texture draws, so they can stay green if
+      the vanilla radial ground-light pulse is absent. Extend the existing real
+      weapon-impact harness path to trigger a shipped FX with a known
+      `LightPulse` over clearly visible ground; capture deterministic
+      before/peak/after frames from the same camera; assert the dynamic-light
+      lifecycle and affected terrain vertex-buffer diffuse changes; and require
+      a localized canvas luminance/color change that decays back to baseline.
+      Verify on both SwiftShader and Mac Chrome/Metal, and fix any discrepancy
+      before moving this item to `DONE.md`.
 - [ ] **Terrain noise/detail shaders — verify the detail layer is enabled at
       runtime (premise re-diagnosed).** Original investigation assumed the
       pixel-shader stub (`wasm_d3d8_shim.cpp`: `CreatePixelShader →
@@ -1370,10 +1453,10 @@ residue and the next frontier.
       `CAMERA_LETTERBOX_END`/`ENABLE_INPUT`. The 720-frame run still reaches
       logic frame 720 with zero missing texture applies, object/drawable count
       advanced to 1,284, and a black screenshot while that later script phase
-      is active. For faster deeper intro/rendering iteration,
-      `STARTUP_VERTICAL_REAL_INIT_ONLY=1` now skips only the phase1
-      archiveless and phase2 audio/frontier preflights while preserving the
-      default full startup vertical gate. It can now also run post-campaign
+      is active. (2026-07-11: the phase1 archiveless / phase2 audio-frontier
+      preflights and the `STARTUP_VERTICAL_REAL_INIT_ONLY` flag were retired
+      with the range-backed machinery — the browser smoke is real-init-only
+      now.) It can now also run post-campaign
       chunks until original player-control gates are met
       (`STARTUP_VERTICAL_POST_CAMPAIGN_UNTIL_PLAYER_CONTROL=1`) and optionally
       fail if control is not reached
@@ -1420,6 +1503,21 @@ residue and the next frontier.
       merge routine now that the aggregate lane is green again (2026-07-05).
       If it fails, fix or quarantine the specific probe immediately instead of
       letting the suite become "known red" again.
+- [ ] Re-check two smokes observed red on main against the then-current
+      dist during the P1b executor-extraction parity runs (2026-07-10; each
+      failed IDENTICALLY before/after the extraction, so not caused by it):
+      `harness/smoke.mjs` — a 2026-07-11 re-run on a FRESH no-op-incremental
+      dist now dies EARLIER, at the MSS stream lifecycle probe
+      (smoke.mjs:1235; probe reports nextRequired:webAudioPlaybackBackend;
+      identical on pristine main and the demolition tree, so the previously
+      documented D3D8 buffer-hint red at :3440 sits downstream of it) — and
+      `issue_recorder_ui_smoke.mjs` (record-button click timeout). These are
+      probe-contract drift, not dist staleness: fix or quarantine the
+      specific probes.
+      (The third red from that run, `startup_vertical_smoke.mjs`
+      `assertFunctionLexiconRuntimeFrontier`, was cleared 2026-07-11 when the
+      phase-2 probe-frontier leg was retired with the range-backed
+      machinery.)
 - [ ] Restore the real cursor-hide behavior in bridge.js syncBrowserCursor and
       the smoke.mjs cursor-hidden probe assertion once W3DMouse cursor rendering
       (the game's own cursor) is ported — currently hardcoded css="default" to
@@ -1822,6 +1920,17 @@ residue and the next frontier.
       serialize npm scripts that share `WebAssembly/build/wasm`. Concurrent
       `build:wasm` runs can race during CMake/Ninja regeneration and fail with
       `ninja: error: failed recompaction` before the harness code runs.
+- [ ] **`runtime_archives_smoke.mjs` is red on a stale ControlBarScheme
+      assertion (2026-07-10).** Against the current `dist/cnc-port.wasm`, the
+      wasm-side `controlBarScheme` asset probe reports `attempted:false` with
+      `source:"superseded by cnc_port_real_engine_init (original
+      GameClient::init -> ControlBar::init)"`, but
+      `assertControlBarSchemeProbe` (smoke line ~688) still expects the old
+      parsed-metadata shape, so the smoke dies at line ~4125 before reaching
+      the audio/data assertions. Reproduced identically on unmodified main
+      (bridge.js untouched) on 2026-07-10. Update the assertion to accept the
+      superseded-probe shape (or assert the real-engine ControlBar path
+      instead).
 - [ ] Investigate the browser-stage hang in `test:runtime-archives-browser`.
       On 2026-07-02, `timeout --kill-after=15s 300s npm --prefix WebAssembly
       run test:runtime-archives-browser` reached
@@ -2271,12 +2380,14 @@ residue and the next frontier.
       W3D draw modules. Advance the next vertical slice outside the
       already-proven shell menu path unless a new menu flow is driven through
       real original input/navigation and asset loading.
-      `test:vertical-integrations` now gates runtime archive preload/startup
-      asset consumption, range-backed startup archive delivery, WindowZH-backed
-      MainMenu dropdown/back and CreditsMenu layout callbacks, mapped-image
-      W3DDisplay rendering, composed W3DDisplay scene + real shell UI art + GameText
-      rendering, and shipped W3D mesh rendering together so cross-subsystem
-      regressions are visible; the browser-pixel repaint path now also includes
+      `test:vertical-integrations` gates runtime archive preload/startup
+      asset consumption and WindowZH-backed MainMenu dropdown/back and
+      CreditsMenu layout callbacks together so cross-subsystem regressions
+      are visible (2026-07-11: its range-backed steps — startup delivery,
+      mapped-image/shell-composite display, terrain scene/buffer, shipped
+      mesh — were retired with the range-backed machinery; that rendering
+      coverage is owned by the real boot gates now); the
+      browser-pixel repaint path now also includes
       archive-loaded shell `WindowLayout` coverage via
       `test:ww3d-window-layout-repaint`, so the next rendering slice should move
       to terrain first pixels or fuller main-menu composition instead of another
@@ -2308,8 +2419,8 @@ residue and the next frontier.
       mutation path and verify the next blocker is `createAudioManager`. Keep
       `Maps\MapCache.ini` loading deferred to its original post-audio
       `GameEngine.cpp` point (`MapCache::updateCache` at line 607).
-      `test:vertical-integrations` now asserts the runtime and range-backed
-      startup archive paths keep `SubsystemInterfaceList` ready, make
+      `test:vertical-integrations` now asserts the runtime
+      startup archive path keeps `SubsystemInterfaceList` ready, makes
       `GameLODManager` readiness depend on mounted base `INI.big`
       (`GameLODPresets.ini`), keep `MapCache` deferred, and preserve
       `createAudioManager` as the first unowned factory. The same mounted
@@ -2454,26 +2565,14 @@ residue and the next frontier.
       modulate). Next diagnostic: dump `m_timeOfDay` + terrain lighting
       values and the shroud state for tournament-city vs mountain-guns in
       the sweep, and rerun with fog/shroud disabled to bisect.
-- [ ] Generalize the browser range-backed BIG archive reader into the
-      original file/archive registration path so normal engine startup
-      can stream user-supplied runtime archives without focused harness
-      mounts or whole-archive MEMFS copies. Current coverage:
-      `npm run test:startup-range-backed-archives-browser` range-fetches
-      a startup-shaped `INIZH.big`/`EnglishZH.big`/`MapsZH.big` subset,
-      registers synthesized BIG archives before boot, proves the startup
-      asset/data preflight is ready, and confirms the next frontier is the
-      absent base Generals startup INI files. The same smoke now also mounts
-      optional base Generals startup/audio entries from `INI.big`/`English.big`
-      when present and expects the post-`CreateGameEngine` original
-      `GameEngine.cpp` init-ownership frontier. The remaining work is the normal
-      on-demand full-archive streamer without a curated entry list.
 - [ ] Hand runtime `W3DFileSystem` ownership over to the real
       `W3DDisplay` / browser display startup path once full display
       construction owns WW3D lifetime. The current smoke proves the
       shared browser runtime archive owner can expose W3D and texture
       assets through the normal file/archive system, but final startup
-      still needs display-owned WW3D file-factory lifetime and the open
-      range-backed archive streaming path above.
+      still needs display-owned WW3D file-factory lifetime (the range-backed
+      streaming idea was superseded by the shipping threaded OPFS mounts,
+      2026-07-11).
 - [ ] Expand the archive-backed `WindowLayout` repaint path from the current
       real `WindowZH.big` `Menus/Defeat.wnd` and `Menus/MainMenu.wnd`
       `MapBorder4` rectangle repaint smokes into production shell/menu
@@ -2619,7 +2718,14 @@ residue and the next frontier.
       `m_waypointBuffer==NULL`). Remaining: the shroud enable-gate, the road
       `DO_ROADS` path, water, and the weak `wasm_ww3d_terrain_probe_stubs.cpp`
       symbols still use the probe guard; a full macro/stub removal previously
-      timed out + crashed Chromium, so retire them per-subsystem. The original
+      timed out + crashed Chromium, so retire them per-subsystem. (NOTE
+      2026-07-11: the range-backed terrain/prop/tree/road/bridge/mesh scene
+      SMOKES described below were deleted with the range-backed mount
+      machinery — the rendering coverage they proved is owned by the real
+      boot gates (threaded_play_gate/shellmap_real_init_gate/skirmish
+      smokes); the wasm-side `cnc_port_probe_ww3d_*` exports they drove are
+      now JS-orphaned and can be burned down with the probe surface.) The
+      original
       `W3DBibBuffer` constructor/add/remove/clear/free lifecycle is now
       browser-harness verified through browser-backed D3D8 buffers/textures,
       and the original `W3DPropBuffer` add/update/doFullUpdate/cull/remove/clear
@@ -3889,6 +3995,26 @@ and then start with the PROFILE, not with any individual fix.
       so agents can reproduce late-game reports even after long nondeterministic
       play sessions.
 - [ ] Net-sync regression (two clients, assert no desync).
+- [ ] cnc-gpu disk pressure + probe-profile hygiene (found 2026-07-10, GATE D
+      lane): the Mac's data volume sits at ~3.2GiB free steady-state, so ONE
+      leaked 2.3GB OPFS probe profile silently starves the next run's OPFS
+      writes (FileSystemSyncAccessHandle.write returns 2^32-8, boot hangs at
+      the overlay). Every Mac probe must rmSync its persistent profile in
+      finally AND write its summary BEFORE browser.close() (playwright close
+      reproducibly wedges after these runs — kill the node by PID). Chrome
+      `code_sign_clone` orphans (one per probe launch,
+      /private/var/folders/.../X/com.google.Chrome.code_sign_clone) re-
+      accumulate — sweep them in the post-session pkill ritual. Longer term:
+      free real space on the volume (owner call: ~/llama-moe-cache 41G,
+      CnCWork sparse-image compaction, in-image .claude worktrees 25G +
+      WebAssembly/artifacts 8.5G).
+- [ ] Verify threaded issue-dump replay end to end: replay_issue_dump pins
+      the dump's recorded dist (the play page is threaded-only since
+      2026-07-11; dumps recorded on the retired legacy play path replay on
+      the threaded default with a loud fidelity warning), but a threaded
+      dump replay (input forwarding + realEngineFrameTick stepping on the
+      engine thread) has never been exercised — record a dump on the play
+      page, replay it, confirm frame-stepped reproduction works.
 - [ ] Add per-step and page-RPC timeouts to long browser integration smokes.
       A 2026-07-02 `test:vertical-integrations` run reached
       `browser-lanapi-game-start-two-contexts` after the startup/archive/audio
@@ -3916,3 +4042,24 @@ and then start with the PROFILE, not with any individual fix.
 - [ ] Track which original files are compiled, shimmed, or re-targeted (avoid
       accidental rewrites of platform-independent logic — see the hard rules).
 - [ ] Record every browser-API bridge so the original-vs-port boundary stays clear.
+
+- [ ] If the owner ever plays from a device where the one-time self-signed
+      cert trust is impractical (e.g. a managed browser), revisit Chrome
+      `--unsafely-treat-insecure-origin-as-secure` / enterprise policy as an
+      alternative. The trustworthy-origin fix itself SHIPPED 2026-07-10
+      (HTTPS listener + insecure-origin redirect, owner directive "no legacy
+      fallback" — see DONE.md); the untrusted-origin *legacy fallback* leg
+      previously suggested here is superseded by that directive (untrusted
+      origins redirect/block, never boot legacy).
+
+### OWNER DIRECTIVE (2026-07-10): fully migrate to the engine-thread path
+COMPLETE 2026-07-11. Steps (1)-(4) landed 2026-07-10 (gap closure, GATE D
+Metal verification, default flip, owner confirmation of the HTTPS threaded
+experience); step (5) — the legacy-machinery deletion — landed 2026-07-11
+(demolition lane): play page threaded/OPFS-only (`?threads=0`/`?opfsmount=0`
+deleted), io-worker whole-buffer `fetchArchive` deleted, range-backed
+subset-mount machinery + its 21 legacy smokes deleted, stepped loading
+re-documented as the presentation-yield mechanism. The MEMFS mount pipeline
+survives ONLY as the harness/index.html legacy-boot surface (non-threaded
+gates/smokes + A/B debugging of the non-threaded dists). See DONE.md
+"Legacy play-path demolition" + notes/p1-engine-thread.md.

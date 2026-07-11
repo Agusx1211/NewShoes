@@ -1,3 +1,151 @@
+import { createD3D8Executor } from "./d3d8_executor.mjs";
+import { createGdiHooks } from "./gdi_executor.mjs";
+
+// Engine-thread mode (plumbed like ?dist=): the REAL engine runs on a
+// pthread in the single pool worker of the dist-threaded build, and the GL
+// executor runs in THAT worker realm against an OffscreenCanvas transferred
+// from #viewport. Every threaded divergence in this file branches on this
+// flag. THE PLAY PAGE IS THREADED-ONLY (owner directive 2026-07-10,
+// Metal-verified — notes/p1-engine-thread.md GATE D; the ?threads=0 legacy
+// escape hatch was deleted after the owner confirmed the HTTPS threaded
+// experience). Harness/smoke pages keep the non-threaded default and opt in
+// via ?threads=1. Design + P1a/P1b mechanics: WebAssembly/notes/p1-engine-thread.md.
+// The pthread build hard-requires SharedArrayBuffer, which Chrome only
+// exposes to cross-origin-isolated pages — and COOP/COEP headers are IGNORED
+// on untrustworthy origins (plain http:// over a LAN IP; only https:// and
+// localhost qualify). Owner-facing regression 2026-07-10: the play page at
+// http://192.168.x.x:8123 died with "FAILED: archive mount failed" because
+// the threaded default tried to instantiate the pthread wasm without SAB
+// ("ReferenceError: SharedArrayBuffer is not defined"). Owner directive
+// 2026-07-10: NO legacy single-thread fallback. When threaded mode is
+// requested but this origin cannot run it, the page REDIRECTS to the
+// harness's HTTPS listener (a trustworthy origin where COOP/COEP are
+// honored); when a redirect cannot fix it (already https with a rejected
+// cert, or a localhost server not sending COOP/COEP) the boot is BLOCKED
+// with the reason — never a silent degrade to the legacy build.
+// play.mjs mirrors this check and renders the redirect/block state.
+function cncPortThreadedRuntimeSupport() {
+  const missing = [];
+  if (typeof SharedArrayBuffer !== "function") {
+    missing.push("SharedArrayBuffer");
+  }
+  if (globalThis.crossOriginIsolated !== true) {
+    missing.push("crossOriginIsolated");
+  }
+  if (missing.length === 0) {
+    return { supported: true, reason: null };
+  }
+  const origin = (() => {
+    try {
+      return globalThis.location?.origin ?? "";
+    } catch (_error) {
+      return "";
+    }
+  })();
+  const insecure = globalThis.isSecureContext !== true;
+  return {
+    supported: false,
+    reason: `engine-thread mode unavailable: missing ${missing.join(" + ")}`
+      + (insecure
+        ? ` — ${origin || "this origin"} is not a secure context (browsers ignore COOP/COEP on`
+          + " plain http:// LAN addresses; use https:// or http://localhost)"
+        : ""),
+  };
+}
+
+// Must match harness/static-server.mjs DEFAULT_HTTPS_PORT — the baked
+// fallback when the /__cnc_https_info announcement is unavailable (older
+// server without the endpoint).
+const CNC_PORT_DEFAULT_HTTPS_PORT = 8443;
+
+function cncPortIsLocalhostName(hostnameValue) {
+  const name = String(hostnameValue || "").toLowerCase();
+  return name === "localhost" || name === "127.0.0.1" || name === "[::1]" || name === "::1"
+    || name.endsWith(".localhost");
+}
+
+// Non-null when threaded mode was requested (or defaulted) but this origin
+// cannot run it: { reason, action: "pending"|"redirect"|"blocked", target }.
+// Mutated in place so harnessState always shows the resolved action.
+let cncPortThreadedUnsupported = null;
+
+async function cncPortResolveSecureOriginAction(unsupported) {
+  const location = globalThis.location;
+  if (!location || location.protocol !== "http:" || cncPortIsLocalhostName(location.hostname)) {
+    // Already https (self-signed cert rejected / COI policy) or a localhost
+    // origin whose server is not sending COOP/COEP: a redirect cannot fix
+    // either — block with the reason. localhost origins are trustworthy, so
+    // gates/probes on http://localhost never reach this path with a
+    // COOP/COEP-sending harness server.
+    unsupported.action = "blocked";
+  } else {
+    // Insecure non-localhost origin: redirect to the harness HTTPS listener.
+    // Ask the current (http) origin where it lives; fall back to the baked
+    // default port when the endpoint is missing (older server).
+    let httpsEnabled = true;
+    let httpsPort = CNC_PORT_DEFAULT_HTTPS_PORT;
+    try {
+      const response = await fetch("/__cnc_https_info", { cache: "no-store" });
+      if (response.ok) {
+        const info = await response.json();
+        httpsEnabled = info?.httpsEnabled !== false;
+        const announced = Number(info?.httpsPort);
+        if (Number.isFinite(announced) && announced > 0) {
+          httpsPort = announced;
+        }
+      }
+    } catch (_error) {
+      // No announcement — try the default port anyway.
+    }
+    if (!httpsEnabled) {
+      unsupported.action = "blocked";
+      unsupported.reason += " — and this server has no HTTPS listener"
+        + " (restart harness/serve.mjs with HTTPS_PORT=8443, or open via http://localhost)";
+    } else {
+      unsupported.action = "redirect";
+      unsupported.target = `https://${location.hostname}:${httpsPort}`
+        + `${location.pathname}${location.search}${location.hash}`;
+    }
+  }
+  try {
+    globalThis.dispatchEvent(new CustomEvent("cnc-threaded-unsupported", {
+      detail: { ...unsupported },
+    }));
+  } catch (_error) {
+    // Non-DOM realm; state.threadedUnsupported still carries the result.
+  }
+  if (unsupported.action === "redirect") {
+    console.warn(`[wasm-harness] ${unsupported.reason}; redirecting to the HTTPS origin `
+      + `${unsupported.target} (owner directive: no single-thread fallback)`);
+    globalThis.location.replace(unsupported.target);
+  } else {
+    console.error(`[wasm-harness] ${unsupported.reason}; boot BLOCKED `
+      + "(owner directive: no single-thread fallback)");
+  }
+}
+
+const cncPortThreadedMode = (() => {
+  try {
+    // The play page is THREADED-ONLY (owner directive 2026-07-10; the
+    // ?threads=0 legacy escape hatch was deleted after the owner confirmed
+    // the HTTPS threaded experience). Harness/index.html probe surfaces stay
+    // non-threaded by default and opt in with ?threads=1.
+    const threads = new URLSearchParams(globalThis.location?.search || "").get("threads");
+    const requested = threads === "1"
+      || (globalThis.location?.pathname || "").endsWith("/play.html");
+    if (!requested) return false;
+    const support = cncPortThreadedRuntimeSupport();
+    if (!support.supported) {
+      cncPortThreadedUnsupported = { reason: support.reason, action: "pending", target: null };
+      void cncPortResolveSecureOriginAction(cncPortThreadedUnsupported);
+      return false;
+    }
+    return true;
+  } catch (_error) {
+    return false;
+  }
+})();
+
 const canvas = document.querySelector("#viewport");
 // preserveDrawingBuffer forces the compositor to COPY the drawing buffer every
 // frame instead of swapping it (an extra full-framebuffer blit per frame on
@@ -15,7 +163,14 @@ const contextPreserveDrawingBuffer = (() => {
     return true;
   }
 })();
-const gl = canvas.getContext("webgl2", {
+// Threaded mode: #viewport must stay CONTEXT-FREE so transferControlToOffscreen
+// can hand it to the engine worker realm (a canvas with any context cannot be
+// transferred). The main-realm executor below is constructed against an
+// invisible scratch canvas instead, so the whole main-side diagnostics surface
+// keeps existing — it just never receives real engine draws (those happen in
+// the worker realm's executor).
+const executorCanvas = cncPortThreadedMode ? document.createElement("canvas") : canvas;
+const gl = cncPortThreadedMode ? null : canvas.getContext("webgl2", {
   alpha: false,
   antialias: false,
   depth: true,
@@ -23,57 +178,10 @@ const gl = canvas.getContext("webgl2", {
   preserveDrawingBuffer: contextPreserveDrawingBuffer,
 });
 const s3tc = gl ? gl.getExtension("WEBGL_compressed_texture_s3tc") : null;
-const provokingVertex = gl ? gl.getExtension("WEBGL_provoking_vertex") : null;
-const d3d8HasStencilBuffer = gl ? Boolean(gl.getContextAttributes()?.stencil) : false;
-let d3d8StencilValueMaskCache = null;
-const fallbackContext = gl ? null : canvas.getContext("2d", { alpha: false });
+
+const fallbackContext = gl ? null : executorCanvas.getContext("2d", { alpha: false });
 const stateNode = document.querySelector("#state");
 const framesNode = document.querySelector("#frames");
-
-// WebGL context loss (Safari/iPadOS kills contexts on memory/GPU pressure or
-// long-blocked main threads; every GL call afterwards silently no-ops and the
-// canvas turns permanently black). Full resource restoration is not
-// implemented, so surface the loss loudly instead of rendering black forever.
-let webglContextLost = false;
-let webglContextLossAt = null;
-function showWebglContextLostBanner() {
-  let banner = document.querySelector("#webglContextLostBanner");
-  if (!banner) {
-    banner = document.createElement("div");
-    banner.id = "webglContextLostBanner";
-    banner.style.cssText = [
-      "position:fixed", "top:0", "left:0", "right:0", "z-index:99999",
-      "background:#8b0000", "color:#fff", "font:600 15px system-ui,sans-serif",
-      "padding:10px 14px", "text-align:center", "cursor:pointer",
-    ].join(";");
-    banner.textContent =
-      "Graphics context was lost (browser reclaimed the GPU) — tap here to reload the game.";
-    banner.addEventListener("click", () => globalThis.location.reload());
-    document.body.appendChild(banner);
-  }
-}
-canvas.addEventListener("webglcontextlost", (event) => {
-  // preventDefault keeps a future contextrestored possible per spec; we still
-  // require a reload (resources are gone), but it stops some UAs from tearing
-  // the page down harder.
-  event.preventDefault();
-  webglContextLost = true;
-  webglContextLossAt = new Date().toISOString();
-  try {
-    console.error("[cnc-port] WebGL context LOST at", webglContextLossAt,
-      "- canvas will be black until reload");
-  } catch (_error) { /* ignore */ }
-  try { showWebglContextLostBanner(); } catch (_error) { /* ignore */ }
-  try {
-    recordLog("webgl context lost", { at: webglContextLossAt });
-  } catch (_error) { /* recordLog not defined yet during early evaluation */ }
-});
-canvas.addEventListener("webglcontextrestored", () => {
-  try {
-    console.error("[cnc-port] WebGL context restored event received; resources"
-      + " are not restorable in-place - reload required");
-  } catch (_error) { /* ignore */ }
-});
 
 function validCncPortDistDir(value) {
   return typeof value === "string" && /^dist(?:[-_][A-Za-z0-9_-]+)?$/.test(value);
@@ -81,6 +189,18 @@ function validCncPortDistDir(value) {
 
 function defaultCncPortDistDir() {
   try {
+    if (cncPortThreadedMode) {
+      // Threaded mode needs the pthread-enabled runtime (PTHREAD_POOL_SIZE=1
+      // + realm stub). The play page serves the RELEASE threaded build
+      // (dist-threaded is Debug: -O0/ASSERTIONS/JS-EH, several times slower
+      // engine — the GATE D "worker GL deficit" was this build-flavor gap);
+      // harness/smoke pages keep the Debug dist-threaded for gate parity
+      // with dist. An explicit ?dist= still wins in selectedCncPortDistDir.
+      if ((globalThis.location?.pathname || "").endsWith("/play.html")) {
+        return "dist-threaded-release";
+      }
+      return "dist-threaded";
+    }
     if (validCncPortDistDir(globalThis.__cncDefaultDistDir)) {
       return globalThis.__cncDefaultDistDir;
     }
@@ -155,1024 +275,13 @@ async function cncPortRuntimeCacheToken(distDir) {
   return token || String(Date.now());
 }
 
-let d3d8DrawProgram = null;
-// Fixed-function vertex/fragment GLSL sources, stashed when the FF draw
-// program is built; translated SM1 shaders link against them for mixed pairs
-// (FF vertex + translated pixel, translated vertex + FF pixel cascade — the
-// latter is how the shipped game drives trees: Trees.vso with the tree pixel
-// shader #if 0'd out in W3DTreeBuffer::drawTrees).
-let d3d8FFVertexSourceCache = null;
-let d3d8FFFragmentSourceCache = null;
-// Registered SM1 shader objects (from CreatePixelShader/CreateVertexShader in
-// the wasm shim) and the linked (vertexShader, pixelShader) pair programs.
-const d3d8SM1PixelShaders = new Map();
-const d3d8SM1VertexShaders = new Map();
-const d3d8SM1PairPrograms = new Map();
-let d3d8SM1MostRecentVertexHandle = 0;
-let d3d8SM1MostRecentPixelHandle = 0;
-let d3d8DepthStencilProgram = null;
-let d3d8DepthStencilNoClipProgram = null;
 let cncPortEmscriptenModule = null;
-const d3d8Buffers = new Map();
-const d3d8Textures = new Map();
-const d3d8BoundTextures = new Map();
-// Draw-cache: skips normalize* JS object rebuilds and the point-sprite +
-// texture-availability uniform blocks for repeated draw-state keys. The
-// previous draw stays as the fast path; the bounded table catches non-adjacent
-// repeats inside sorted draw runs.
-let d3d8LastDrawKey = null;
-let d3d8CachedDerived = null; // {renderState, clipPlanes, material, lights, fixedFunctionLights, directionalLights, firstDirectionalLight, vertexLayout, texture0Id, texture1Id, canSampleTexture0, canSampleTexture1, texture0Coordinates, texture1Coordinates, texture0SemanticMode, texture1SemanticMode, appliedTexture0Combiner, appliedStage1Combiner, implicitAlphaCutoutThreshold, appliedPointSprite}
-const D3D8_DERIVED_DRAW_CACHE_LIMIT = 128;
-const d3d8DerivedDrawCache = new Map();
-let d3d8DerivedDrawCacheEntries = 0;
-let d3d8DerivedDrawCacheOldest = null;
-let d3d8DerivedDrawCacheNewest = null;
-let d3d8LastTransformUniformWorld = null;
-let d3d8LastTransformUniformView = null;
-let d3d8LastTransformUniformProjection = null;
-let d3d8LastTransformUniformWorldRevision = 0;
-let d3d8LastTransformUniformViewRevision = 0;
-let d3d8LastTransformUniformProjectionRevision = 0;
-let d3d8LastPointSpriteUniformInfo = null;
-let d3d8LastVertexAttribKey = null;
-let d3d8LastDefaultVertexAttribKey = null;
-const D3D8_VERTEX_ARRAY_CACHE_LIMIT = 4096;
-const d3d8VertexArrayCache = new Map();
-let d3d8VertexArrayCacheEntries = 0;
-let d3d8VertexArrayCacheOldest = null;
-let d3d8VertexArrayCacheNewest = null;
-const d3d8ScratchVertexAttribKey = {
-  vertexBufferId: 0,
-  vertexByteOffset: 0,
-  vertexStride: 0,
-  positionAttrib: -1,
-  normalAttrib: -1,
-  diffuseAttrib: -1,
-  specularAttrib: -1,
-  texCoord0Attrib: -1,
-  texCoord1Attrib: -1,
-  positionComponents: 3,
-  pretransformed: 0,
-  normalOffset: -1,
-  diffuseOffset: -1,
-  specularOffset: -1,
-  canSampleTexture0: 0,
-  texture0UsesVertexTexCoord: 0,
-  texture0Offset: -1,
-  canSampleTexture1: 0,
-  texture1UsesVertexTexCoord: 0,
-  texture1Offset: -1,
-};
-const d3d8DrawMatrixScratch = {
-  world: new Float32Array(16),
-  view: new Float32Array(16),
-  projection: new Float32Array(16),
-};
-let d3d8CurrentVertexArray = null;
-let d3d8CurrentVertexArrayKey = null;
-let d3d8LastBaseUniformKey = null;
-let d3d8LastMaterialUniformInfo = null;
-let d3d8LastFixedLightUniformKey = null;
-let d3d8LastStageUniformKey = null;
-let d3d8LastAlphaFogUniformKey = null;
-// Map<`${colorTextureId}:${depthTextureId}`, {fbo, depthRenderbuffer, width, height}>
-const d3d8Framebuffers = new Map();
-let d3d8CurrentFramebuffer = null;
-let d3d8CurrentFramebufferWidth = 0;
-let d3d8CurrentFramebufferHeight = 0;
-let d3d8CurrentFramebufferColorTextureId = 0;
-let d3d8FramebufferBindSerial = 0;
-let d3d8CurrentProgram = null;
-let d3d8CurrentArrayBuffer = null;
-let d3d8CurrentElementArrayBuffer = null;
-let d3d8TemporaryIndexBuffer = null;
-let d3d8TemporaryIndexBufferBytes = 0;
-let d3d8CurrentDepthMask = true;
-let d3d8LastAppliedViewportKey = null;
-let d3d8CachedViewportInput = null;
-let d3d8CachedNormalizedViewport = null;
-let d3d8CurrentRenderGlState = null;
+// Why loadWasmModule returned null (surfaced in mount errors).
+let cncPortModuleLoadError = null;
 
-function setD3D8DepthMask(enabled) {
-  if (!gl) {
-    return;
-  }
-  const next = Boolean(enabled);
-  if (d3d8CurrentDepthMask !== next) {
-    gl.depthMask(next);
-    d3d8CurrentDepthMask = next;
-  }
-}
-
-function invalidateD3D8RenderGlStateCache() {
-  d3d8CurrentRenderGlState = null;
-}
-
-function d3d8RenderGlStateValueChanged(key, value) {
-  if (!d3d8CurrentRenderGlState) {
-    d3d8CurrentRenderGlState = {};
-  }
-  if (d3d8CurrentRenderGlState[key] === value) {
-    d3d8PerfStats.drawRenderStateGlCacheHits += 1;
-    return false;
-  }
-  d3d8CurrentRenderGlState[key] = value;
-  d3d8PerfStats.drawRenderStateGlCacheMisses += 1;
-  return true;
-}
-
-function setD3D8TrackedCapability(capability, key, enabled) {
-  const next = Boolean(enabled);
-  if (d3d8RenderGlStateValueChanged(key, next)) {
-    if (next) {
-      gl.enable(capability);
-    } else {
-      gl.disable(capability);
-    }
-  }
-}
-
-function applyD3D8TrackedGlState(key, value, apply) {
-  if (d3d8RenderGlStateValueChanged(key, value)) {
-    apply();
-  }
-}
-
-const D3DUSAGE_RENDERTARGET = 0x00000001;
-const D3DUSAGE_WRITEONLY = 0x00000008;
-const D3DUSAGE_DEPTHSTENCIL = 0x00000002;
-const D3DUSAGE_DYNAMIC = 0x00000200;
-const D3DLOCK_DISCARD = 0x00002000;
-const D3DLOCK_NOOVERWRITE = 0x00001000;
-const D3DFMT_R8G8B8 = 20;
-const D3DFMT_A8R8G8B8 = 21;
-const D3DFMT_X8R8G8B8 = 22;
-const D3DFMT_R5G6B5 = 23;
-const D3DFMT_X1R5G5B5 = 24;
-const D3DFMT_A1R5G5B5 = 25;
-const D3DFMT_A4R4G4B4 = 26;
-const D3DFMT_A8 = 28;
-const D3DFMT_X4R4G4B4 = 30;
-const D3DFMT_P8 = 41;
-const D3DFMT_L8 = 50;
-const D3DFMT_A8L8 = 51;
-const D3DFMT_V8U8 = 60;
-const D3DFMT_D16_LOCKABLE = 70;
-const D3DFMT_D32 = 71;
-const D3DFMT_D15S1 = 73;
-const D3DFMT_D24S8 = 75;
-const D3DFMT_D24X8 = 77;
-const D3DFMT_D24X4S4 = 79;
-const D3DFMT_D16 = 80;
-const D3DFMT_DXT1 = 0x31545844;
-const D3DFMT_DXT2 = 0x32545844;
-const D3DFMT_DXT3 = 0x33545844;
-const D3DFMT_DXT4 = 0x34545844;
-const D3DFMT_DXT5 = 0x35545844;
-const GL_GREEN = 0x1904;
 const D3DCLEAR_TARGET = 0x00000001;
-const D3DZB_FALSE = 0;
-const D3DZB_TRUE = 1;
-const D3DZB_USEW = 2;
-const D3DBLEND_ZERO = 1;
-const D3DBLEND_ONE = 2;
-const D3DBLEND_SRCCOLOR = 3;
-const D3DBLEND_INVSRCCOLOR = 4;
-const D3DBLEND_SRCALPHA = 5;
-const D3DBLEND_INVSRCALPHA = 6;
-const D3DBLEND_DESTALPHA = 7;
-const D3DBLEND_INVDESTALPHA = 8;
-const D3DBLEND_DESTCOLOR = 9;
-const D3DBLEND_INVDESTCOLOR = 10;
-const D3DBLEND_SRCALPHASAT = 11;
-const D3DBLEND_BOTHSRCALPHA = 12;
-const D3DBLEND_BOTHINVSRCALPHA = 13;
-const D3DBLENDOP_ADD = 1;
-const D3DBLENDOP_SUBTRACT = 2;
-const D3DBLENDOP_REVSUBTRACT = 3;
-const D3DBLENDOP_MIN = 4;
-const D3DBLENDOP_MAX = 5;
-const D3DCMP_NEVER = 1;
-const D3DCMP_LESS = 2;
-const D3DCMP_EQUAL = 3;
-const D3DCMP_LESSEQUAL = 4;
-const D3DCMP_GREATER = 5;
-const D3DCMP_NOTEQUAL = 6;
-const D3DCMP_GREATEREQUAL = 7;
-const D3DCMP_ALWAYS = 8;
-const D3DCULL_NONE = 1;
-const D3DCULL_CW = 2;
-const D3DCULL_CCW = 3;
-const D3DCOLORWRITEENABLE_RED = 1;
-const D3DCOLORWRITEENABLE_GREEN = 2;
-const D3DCOLORWRITEENABLE_BLUE = 4;
-const D3DCOLORWRITEENABLE_ALPHA = 8;
-const D3DMCS_MATERIAL = 0;
-const D3DMCS_COLOR1 = 1;
-const D3DMCS_COLOR2 = 2;
-const D3DLIGHT_POINT = 1;
-const D3DLIGHT_SPOT = 2;
-const D3DLIGHT_DIRECTIONAL = 3;
-const D3DFILL_POINT = 1;
-const D3DFILL_WIREFRAME = 2;
-const D3DFILL_SOLID = 3;
-const D3DSHADE_FLAT = 1;
-const D3DSHADE_GOURAUD = 2;
-const D3DSHADE_PHONG = 3;
-const D3DPT_POINTLIST = 1;
-const D3DPT_LINELIST = 2;
-const D3DPT_LINESTRIP = 3;
-const D3DPT_TRIANGLELIST = 4;
-const D3DPT_TRIANGLESTRIP = 5;
-const D3DPT_TRIANGLEFAN = 6;
-const D3DSTENCILOP_KEEP = 1;
-const D3DSTENCILOP_ZERO = 2;
-const D3DSTENCILOP_REPLACE = 3;
-const D3DSTENCILOP_INCRSAT = 4;
-const D3DSTENCILOP_DECRSAT = 5;
-const D3DSTENCILOP_INVERT = 6;
-const D3DSTENCILOP_INCR = 7;
-const D3DSTENCILOP_DECR = 8;
-const D3DFOG_LINEAR = 3;
-const D3DTSS_COLOROP = 1;
-const D3DTSS_COLORARG1 = 2;
-const D3DTSS_COLORARG2 = 3;
-const D3DTSS_ALPHAOP = 4;
-const D3DTSS_ALPHAARG1 = 5;
-const D3DTSS_ALPHAARG2 = 6;
-const D3DTSS_TEXCOORDINDEX = 11;
-const D3DTSS_ADDRESSU = 13;
-const D3DTSS_ADDRESSV = 14;
-const D3DTSS_MAGFILTER = 16;
-const D3DTSS_MINFILTER = 17;
-const D3DTSS_MIPFILTER = 18;
-const D3DTSS_MIPMAPLODBIAS = 19;
-const D3DTSS_MAXMIPLEVEL = 20;
-const D3DTSS_TEXTURETRANSFORMFLAGS = 24;
-const D3DTSS_ADDRESSW = 25;
-const D3DTSS_COLORARG0 = 26;
-const D3DTSS_ALPHAARG0 = 27;
-const D3DTSS_RESULTARG = 28;
-const D3DTOP_DISABLE = 1;
-const D3DTOP_SELECTARG1 = 2;
-const D3DTOP_SELECTARG2 = 3;
-const D3DTOP_MODULATE = 4;
-const D3DTOP_MODULATE2X = 5;
-const D3DTOP_MODULATE4X = 6;
-const D3DTOP_ADD = 7;
-const D3DTOP_ADDSIGNED = 8;
-const D3DTOP_ADDSIGNED2X = 9;
-const D3DTOP_SUBTRACT = 10;
-const D3DTOP_ADDSMOOTH = 11;
-const D3DTOP_BLENDDIFFUSEALPHA = 12;
-const D3DTOP_BLENDTEXTUREALPHA = 13;
-const D3DTOP_BLENDFACTORALPHA = 14;
-const D3DTOP_BLENDTEXTUREALPHAPM = 15;
-const D3DTOP_BLENDCURRENTALPHA = 16;
-const D3DTOP_PREMODULATE = 17;
-const D3DTOP_MODULATEALPHA_ADDCOLOR = 18;
-const D3DTOP_MODULATECOLOR_ADDALPHA = 19;
-const D3DTOP_MODULATEINVALPHA_ADDCOLOR = 20;
-const D3DTOP_MODULATEINVCOLOR_ADDALPHA = 21;
-const D3DTOP_BUMPENVMAP = 22;
-const D3DTOP_BUMPENVMAPLUMINANCE = 23;
-const D3DTOP_DOTPRODUCT3 = 24;
-const D3DTOP_MULTIPLYADD = 25;
-const D3DTOP_LERP = 26;
-const D3DTA_SELECTMASK = 0x0000000f;
-const D3DTA_DIFFUSE = 0;
-const D3DTA_CURRENT = 1;
-const D3DTA_TEXTURE = 2;
-const D3DTA_TFACTOR = 3;
-const D3DTA_SPECULAR = 4;
-const D3DTA_TEMP = 5;
-const D3DTA_COMPLEMENT = 0x00000010;
-const D3DTA_ALPHAREPLICATE = 0x00000020;
-const D3DTA_SUPPORTED_MODIFIERS = D3DTA_COMPLEMENT | D3DTA_ALPHAREPLICATE;
-const D3D8_CLIP_PLANE_COUNT = 6;
-const D3DTSS_TCI_PASSTHRU = 0x00000000;
-const D3DTSS_TCI_CAMERASPACENORMAL = 0x00010000;
-const D3DTSS_TCI_CAMERASPACEPOSITION = 0x00020000;
-const D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR = 0x00030000;
-const D3DTSS_TCI_COORDINDEX_MASK = 0x0000ffff;
-const D3DTSS_TCI_MODE_MASK = 0xffff0000;
-const D3DTADDRESS_WRAP = 1;
-const D3DTADDRESS_MIRROR = 2;
-const D3DTADDRESS_CLAMP = 3;
-const D3DTADDRESS_BORDER = 4;
-const D3DTADDRESS_MIRRORONCE = 5;
-const D3DTEXF_NONE = 0;
-const D3DTEXF_POINT = 1;
-const D3DTEXF_LINEAR = 2;
-const D3DTEXF_ANISOTROPIC = 3;
-const D3DTTFF_DISABLE = 0;
-const D3DTTFF_COUNT1 = 1;
-const D3DTTFF_COUNT2 = 2;
-const D3DTTFF_COUNT3 = 3;
-const D3DTTFF_COUNT4 = 4;
-const D3DTTFF_PROJECTED = 256;
-const D3D8_TEXTURE_STAGE_COUNT = 8;
-const D3D8_LIGHT_COUNT = 8;
-const WW3D_ACTIVE_LIGHT_COUNT = 4;
-const D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT = WW3D_ACTIVE_LIGHT_COUNT;
-const D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT = WW3D_ACTIVE_LIGHT_COUNT;
-const D3DFVF_XYZ = 0x002;
-const D3DFVF_XYZRHW = 0x004;
-const D3DFVF_XYZB4 = 0x008;
-const D3DFVF_NORMAL = 0x010;
-const D3DFVF_DIFFUSE = 0x040;
-const D3DFVF_SPECULAR = 0x080;
-const D3DFVF_TEX1 = 0x100;
+
 const D3DFVF_TEX2 = 0x200;
-const D3DFVF_TEXCOUNT_MASK = 0xf00;
-const D3DFVF_TEXCOUNT_SHIFT = 8;
-const D3D8_NORMAL_OFFSET = 12;
-const D3D8_NORMAL_MIN_STRIDE = D3D8_NORMAL_OFFSET + 12;
-const D3D8_DIFFUSE_OFFSET = 24;
-const D3D8_DIFFUSE_MIN_STRIDE = D3D8_DIFFUSE_OFFSET + 4;
-// Matches WW3D2/dx8fvf.h VertexFormatXYZNDUV1/2: XYZ, normal, diffuse, UV0/UV1.
-const D3D8_XYZNDUV_TEXCOORD0_OFFSET = 28;
-const D3D8_XYZNDUV_TEXCOORD_STRIDE = 8;
-const D3D8_XYZNDUV_TEXCOORD_SETS = 2;
-const D3D_FLOAT_ONE_BITS = 0x3f800000;
-const d3d8FloatBits = new ArrayBuffer(4);
-const d3d8FloatView = new DataView(d3d8FloatBits);
-const d3d8BufferStats = {
-  creates: 0,
-  updates: 0,
-  releases: 0,
-  uploadBytes: 0,
-  updateMs: 0,
-  bufferSubDataMs: 0,
-  mirrorBytes: 0,
-  mirrorMs: 0,
-  mirrorSkippedBytes: 0,
-  lastCreate: null,
-  lastStaticCreate: null,
-  lastDynamicCreate: null,
-  lastUpdate: null,
-  lastRelease: null,
-};
-const d3d8BufferProducerStats = new Map();
-const d3d8DrawProducerStats = new Map();
-let d3d8ViewportState = null;
-let browser_fbo_incomplete_count = 0;
-// When the player picks an explicit engine render resolution (resolution
-// selector / fullscreen auto-native), the WebGL2 backing store must stay at THAT
-// size so it matches the engine render target 1:1. Otherwise syncCanvasSize()
-// (run every draw) would reset canvas.width/height back to CSS-box x DPR, which
-// generally differs in size AND aspect from the engine resolution -> the D3D8
-// viewport scale becomes non-uniform (stretched geometry) and screen<->world
-// unproject (pick ray / building-placement hover) lands on the wrong point.
-// null = follow CSS x DPR (original behavior); {width,height} = pin the store.
-let explicitEngineBackingStore = null;
-let d3d8CurrentActiveTextureUnit = null;
-let d3d8MaxCombinedTextureImageUnits = null;
-const d3d8CurrentTexture2DBindings = new Map();
-const d3d8CurrentTexture3DBindings = new Map();
-const d3d8ViewportStats = {
-  sets: 0,
-  applications: 0,
-};
-const d3d8TextureStats = {
-  creates: 0,
-  updates: 0,
-  releases: 0,
-  binds: 0,
-  unbinds: 0,
-  releaseUnbinds: 0,
-  missingBinds: 0,
-  unsupportedUpdates: 0,
-  samplerApplications: 0,
-  dxtDecodes: 0,
-  live: 0,
-  legacyUploads: [],
-  lastCreate: null,
-  lastUpdate: null,
-  lastSubrectUpdate: null,
-  lastRelease: null,
-  lastBind: null,
-  lastReleaseUnbind: null,
-  lastMissingBind: null,
-  lastUnsupported: null,
-  lastSampler: null,
-  lastOffscreenFboBind: null,
-  lastTextureDepthFboBind: null,
-};
-const d3d8PerfStats = {
-  draws: 0,
-  drawElements: 0,
-  drawIndices: 0,
-  drawMs: 0,
-  drawBatchCandidates: 0,
-  drawBatchQueued: 0,
-  drawBatchMerged: 0,
-  drawBatchFlushes: 0,
-  drawBatchSavedDrawElements: 0,
-  drawBatchMergedIndices: 0,
-  drawBatchMaxRunLength: 0,
-  drawDepthStencilOnlyProgramDraws: 0,
-  drawDepthStencilNoDiscardDraws: 0,
-  drawDepthStencilOnlyFastDerivedDraws: 0,
-  destinationAlphaBlendDraws: 0,
-  destinationAlphaBlendOffscreenDraws: 0,
-  // Terrain noise/cloud/lightmap detail-pass diagnostics. The original
-  // TerrainShader2Stage noise/cloud pass (W3DShaderManager.cpp
-  // TerrainShader2Stage::set pass 2) binds a noise/cloud texture with
-  // D3DTSS_TCI_CAMERASPACEPOSITION generated coords + a D3DTS_TEXTURE0/1
-  // texture transform and blends multiplicatively (SRCBLEND=DESTCOLOR,
-  // DESTBLEND=ZERO). These counters let the real-GPU harness confirm the
-  // detail layer is actually emitted (vs. the LOD/Options gate leaving
-  // m_useLightMap/m_useCloudMap off, which yields flat terrain).
-  terrainNoiseMultiplyDraws: 0,
-  terrainNoiseMultiplyTransformedDraws: 0,
-  terrainNoiseMultiplyIdentityTransformDraws: 0,
-  // Translated D3D8 SM1 (ps.1.1/vs.1.1) programmable shader path.
-  sm1PixelShadersRegistered: 0,
-  sm1VertexShadersRegistered: 0,
-  sm1PairProgramsLinked: 0,
-  sm1PairProgramFailures: 0,
-  sm1ShaderDraws: 0,
-  sm1TranslatedVsDraws: 0,
-  sm1FallbackDraws: 0,
-  drawMatrixNormalizations: 0,
-  drawMatrixScratchCopies: 0,
-  drawMatrixAllocatedCopies: 0,
-  drawPayloadCalls: 0,
-  drawPayloadReused: 0,
-  drawDerivedCacheHits: 0,
-  drawDerivedCacheMisses: 0,
-  drawUniformCacheHits: 0,
-  drawUniformCacheMisses: 0,
-  drawTransformUniformCacheHits: 0,
-  drawTransformUniformCacheMisses: 0,
-  drawWorldTransformUniformCacheHits: 0,
-  drawWorldTransformUniformCacheMisses: 0,
-  drawViewTransformUniformCacheHits: 0,
-  drawViewTransformUniformCacheMisses: 0,
-  drawProjectionTransformUniformCacheHits: 0,
-  drawProjectionTransformUniformCacheMisses: 0,
-  drawPointSpriteUniformCacheHits: 0,
-  drawPointSpriteUniformCacheMisses: 0,
-  drawTextureUniformCacheHits: 0,
-  drawTextureUniformCacheMisses: 0,
-  drawTextureActiveCacheHits: 0,
-  drawTextureActiveCacheMisses: 0,
-  drawTextureBindCacheHits: 0,
-  drawTextureBindCacheMisses: 0,
-  drawTextureSamplerCacheHits: 0,
-  drawTextureSamplerCacheMisses: 0,
-  drawVertexAttribCacheHits: 0,
-  drawVertexAttribCacheMisses: 0,
-  drawVertexArrayCacheHits: 0,
-  drawVertexArrayCacheMisses: 0,
-  drawViewportCacheHits: 0,
-  drawViewportCacheMisses: 0,
-  drawRenderStateGlCacheHits: 0,
-  drawRenderStateGlCacheMisses: 0,
-  drawBaseUniformCacheHits: 0,
-  drawBaseUniformCacheMisses: 0,
-  drawMaterialUniformCacheHits: 0,
-  drawMaterialUniformCacheMisses: 0,
-  drawFixedLightUniformCacheHits: 0,
-  drawFixedLightUniformCacheMisses: 0,
-  drawStageUniformCacheHits: 0,
-  drawStageUniformCacheMisses: 0,
-  drawAlphaFogUniformCacheHits: 0,
-  drawAlphaFogUniformCacheMisses: 0,
-  uniformGlCalls: 0,
-  uniformGlSkipped: 0,
-  sortedDrawProfiledCalls: 0,
-  sortedDrawProfiledMs: 0,
-  sortedDrawPreBatchMs: 0,
-  sortedDrawDerivedMs: 0,
-  sortedDrawTextureDiagMs: 0,
-  sortedDrawViewportMs: 0,
-  sortedDrawDiagnosticsMs: 0,
-  sortedDrawGeometryMs: 0,
-  sortedDrawProgramMs: 0,
-  sortedDrawFillShadeMs: 0,
-  sortedDrawVertexAttribMs: 0,
-  sortedDrawTextureBindMs: 0,
-  sortedDrawUniformMs: 0,
-  sortedDrawApplyRenderStateMs: 0,
-  sortedDrawRenderBuildMs: 0,
-  sortedDrawRenderBaseUniformMs: 0,
-  sortedDrawRenderMaterialUniformMs: 0,
-  sortedDrawRenderLightUniformMs: 0,
-  sortedDrawRenderStageUniformMs: 0,
-  sortedDrawRenderAlphaFogUniformMs: 0,
-  sortedDrawRenderUniformMs: 0,
-  sortedDrawTransformUniformMs: 0,
-  sortedDrawTransformCompareMs: 0,
-  sortedDrawWorldTransformUniformMs: 0,
-  sortedDrawViewTransformUniformMs: 0,
-  sortedDrawProjectionTransformUniformMs: 0,
-  sortedDrawPointSpriteUniformMs: 0,
-  sortedDrawTextureUniformMs: 0,
-  sortedDrawDrawOrBatchMs: 0,
-  sortedDrawTailMs: 0,
-  clears: 0,
-  clearMs: 0,
-  clearTotalMs: 0,
-  clearInvalidateMs: 0,
-  clearSyncCanvasMs: 0,
-  clearSetupMs: 0,
-  clearContextAttrMs: 0,
-  clearDepthMaskCheckMs: 0,
-  clearDepthMaskToggleMs: 0,
-  clearPostDiagMs: 0,
-  textureUploads: 0,
-  textureUploadBytes: 0,
-  textureUploadPixels: 0,
-  textureUploadMs: 0,
-  textureConvertBytes: 0,
-  textureConvertMs: 0,
-  dxtDecodeMs: 0,
-  volumeTextureUploads: 0,
-  readPixels: 0,
-  readPixelsPixels: 0,
-  readPixelsMs: 0,
-  fboBinds: 0,
-  fboBindMs: 0,
-  fboCreates: 0,
-  fboIncomplete: 0,
-  framebufferFeedbackResolves: 0,
-  framebufferFeedbackResolveMs: 0,
-  bufferUpdates: 0,
-  bufferUploadBytes: 0,
-  bufferVertexUpdates: 0,
-  bufferVertexUploadBytes: 0,
-  bufferIndexUpdates: 0,
-  bufferIndexUploadBytes: 0,
-  bufferDynamicUpdates: 0,
-  bufferDynamicUploadBytes: 0,
-  bufferDiscardUpdates: 0,
-  bufferDiscardUploadBytes: 0,
-  bufferNoOverwriteUpdates: 0,
-  bufferNoOverwriteUploadBytes: 0,
-  bufferOrphanedUpdates: 0,
-  bufferDynamicRedirectedUpdates: 0,
-  bufferDynamicRangeUploads: 0,
-  bufferDynamicRangeUploadBytes: 0,
-  bufferDynamicRedirectFallbacks: 0,
-  drawDynamicVertexRedirects: 0,
-  drawDynamicVertexSharedFallbacks: 0,
-  drawDynamicIndexRedirects: 0,
-  drawDynamicIndexSharedFallbacks: 0,
-  bufferResizedUpdates: 0,
-  bufferUpdateMs: 0,
-  bufferSubDataMs: 0,
-  bufferMirrorBytes: 0,
-  bufferMirrorMs: 0,
-  bufferMirrorSkippedBytes: 0,
-};
-
-// Per-GL-op timing instrumentation. performance.now() twice around every GL
-// call is measurable overhead in draw-flood frames, so lite diag disables the
-// clock reads (counters keep counting; *Ms stats read 0). Full diag or
-// __cncSetD3D8PerfTiming(true) re-enables real timing.
-let d3d8PerfTimingEnabled = true;
-function perfNow() {
-  if (!d3d8PerfTimingEnabled) {
-    return 0;
-  }
-  return typeof performance !== "undefined" && typeof performance.now === "function"
-    ? performance.now()
-    : Date.now();
-}
-
-function roundedPerfMs(value) {
-  return Math.round(Number(value ?? 0) * 1000) / 1000;
-}
-
-function bufferProducerLabel(value) {
-  const label = typeof value === "string" ? value.trim() : "";
-  return label.length > 0 ? label.slice(0, 160) : "(unmarked)";
-}
-
-function noteD3D8BufferProducerUpdate({
-  producer,
-  resource,
-  byteLength,
-  updateMs,
-  subDataMs,
-  mirrorMs,
-  mirroredBytes,
-  skippedMirrorBytes,
-  discard,
-  noOverwrite,
-  orphaned,
-  resized,
-}) {
-  if (!d3d8BufferProducerTrackingEnabled || !resource) {
-    return;
-  }
-  const label = bufferProducerLabel(producer);
-  let entry = d3d8BufferProducerStats.get(label);
-  if (!entry) {
-    entry = {
-      producer: label,
-      updates: 0,
-      uploadBytes: 0,
-      vertexUpdates: 0,
-      vertexUploadBytes: 0,
-      indexUpdates: 0,
-      indexUploadBytes: 0,
-      dynamicUpdates: 0,
-      dynamicUploadBytes: 0,
-      discardUpdates: 0,
-      discardUploadBytes: 0,
-      noOverwriteUpdates: 0,
-      noOverwriteUploadBytes: 0,
-      orphanedUpdates: 0,
-      resizedUpdates: 0,
-      updateMs: 0,
-      bufferSubDataMs: 0,
-      mirrorMs: 0,
-      mirrorBytes: 0,
-      mirrorSkippedBytes: 0,
-    };
-    d3d8BufferProducerStats.set(label, entry);
-  }
-  entry.updates += 1;
-  entry.uploadBytes += byteLength;
-  if (resource.kindName === "vertex") {
-    entry.vertexUpdates += 1;
-    entry.vertexUploadBytes += byteLength;
-  } else if (resource.kindName === "index") {
-    entry.indexUpdates += 1;
-    entry.indexUploadBytes += byteLength;
-  }
-  if (resource.dynamic) {
-    entry.dynamicUpdates += 1;
-    entry.dynamicUploadBytes += byteLength;
-  }
-  if (discard) {
-    entry.discardUpdates += 1;
-    entry.discardUploadBytes += byteLength;
-  }
-  if (noOverwrite) {
-    entry.noOverwriteUpdates += 1;
-    entry.noOverwriteUploadBytes += byteLength;
-  }
-  if (orphaned) {
-    entry.orphanedUpdates += 1;
-  }
-  if (resized) {
-    entry.resizedUpdates += 1;
-  }
-  entry.updateMs += updateMs;
-  entry.bufferSubDataMs += subDataMs;
-  entry.mirrorMs += mirrorMs;
-  entry.mirrorBytes += mirroredBytes;
-  entry.mirrorSkippedBytes += skippedMirrorBytes;
-}
-
-function d3d8BufferProducerSummary() {
-  if (!d3d8BufferProducerTrackingEnabled) {
-    return [];
-  }
-  return [...d3d8BufferProducerStats.values()]
-    .sort((a, b) => b.uploadBytes - a.uploadBytes || b.updates - a.updates)
-    .slice(0, 128)
-    .map((entry) => ({
-      ...entry,
-      updateMs: roundedPerfMs(entry.updateMs),
-      bufferSubDataMs: roundedPerfMs(entry.bufferSubDataMs),
-      mirrorMs: roundedPerfMs(entry.mirrorMs),
-    }));
-}
-
-const d3d8DrawProducerPhaseSuffixes = [
-  "PreBatch",
-  "Derived",
-  "TextureDiag",
-  "Viewport",
-  "Diagnostics",
-  "Geometry",
-  "Program",
-  "FillShade",
-  "VertexAttrib",
-  "TextureBind",
-  "Uniform",
-  "ApplyRenderState",
-  "RenderBuild",
-  "RenderBaseUniform",
-  "RenderMaterialUniform",
-  "RenderLightUniform",
-  "RenderStageUniform",
-  "RenderAlphaFogUniform",
-  "RenderUniform",
-  "TransformUniform",
-  "TransformCompare",
-  "WorldTransformUniform",
-  "ViewTransformUniform",
-  "ProjectionTransformUniform",
-  "PointSpriteUniform",
-  "TextureUniform",
-  "DrawOrBatch",
-  "Tail",
-];
-const d3d8DrawProducerPhaseFields = d3d8DrawProducerPhaseSuffixes.map((suffix) => [
-  `sortedDraw${suffix}Ms`,
-  `draw${suffix}Ms`,
-]);
-const d3d8DrawProducerGenericPhaseFieldBySorted =
-  new Map(d3d8DrawProducerPhaseFields);
-
-function initialD3D8DrawProducerPhaseCounters(fieldIndex) {
-  const counters = {};
-  for (const fields of d3d8DrawProducerPhaseFields) {
-    counters[fields[fieldIndex]] = 0;
-  }
-  return counters;
-}
-
-function noteD3D8DrawProducerCall(producer, indexCount, sortedProfiled) {
-  if (!d3d8DrawProducerTrackingEnabled) {
-    return null;
-  }
-  const label = bufferProducerLabel(producer);
-  let entry = d3d8DrawProducerStats.get(label);
-  if (!entry) {
-    entry = {
-      producer: label,
-      calls: 0,
-      indices: 0,
-      drawProfiledMs: 0,
-      ...initialD3D8DrawProducerPhaseCounters(1),
-      sortedCalls: 0,
-      sortedIndices: 0,
-      sortedDrawProfiledMs: 0,
-      ...initialD3D8DrawProducerPhaseCounters(0),
-    };
-    d3d8DrawProducerStats.set(label, entry);
-  }
-  entry.calls += 1;
-  entry.indices += Number(indexCount ?? 0) >>> 0;
-  if (sortedProfiled) {
-    entry.sortedCalls += 1;
-    entry.sortedIndices += Number(indexCount ?? 0) >>> 0;
-  }
-  return entry;
-}
-
-function noteD3D8DrawProducerMs(entry, field, elapsedMs) {
-  if (!entry || typeof field !== "string" || !(field in entry)) {
-    return;
-  }
-  entry[field] += elapsedMs;
-}
-
-function noteD3D8DrawProducerPhaseMs(entry, sortedField, elapsedMs, sortedProfiled) {
-  const genericField = d3d8DrawProducerGenericPhaseFieldBySorted.get(sortedField);
-  if (genericField) {
-    noteD3D8DrawProducerMs(entry, genericField, elapsedMs);
-  }
-  if (sortedProfiled) {
-    noteD3D8DrawProducerMs(entry, sortedField, elapsedMs);
-  }
-}
-
-function d3d8DrawProducerSummary() {
-  if (!d3d8DrawProducerTrackingEnabled) {
-    return [];
-  }
-  return [...d3d8DrawProducerStats.values()]
-    .sort((a, b) =>
-      b.drawProfiledMs - a.drawProfiledMs ||
-      b.sortedDrawProfiledMs - a.sortedDrawProfiledMs ||
-      b.calls - a.calls ||
-      b.indices - a.indices)
-    .slice(0, 128)
-    .map((entry) => {
-      const rounded = { ...entry };
-      for (const key of Object.keys(rounded)) {
-        if (key.endsWith("Ms")) {
-          rounded[key] = roundedPerfMs(rounded[key]);
-        }
-      }
-      return rounded;
-    });
-}
-
-function resetD3D8UniformSubgroupCaches() {
-  d3d8LastBaseUniformKey = null;
-  d3d8LastMaterialUniformInfo = null;
-  d3d8LastFixedLightUniformKey = null;
-  d3d8LastStageUniformKey = null;
-  d3d8LastAlphaFogUniformKey = null;
-}
-
-function invalidateD3D8AppliedViewportCache() {
-  d3d8LastAppliedViewportKey = null;
-}
-
-function invalidateD3D8NormalizedViewportCache() {
-  d3d8CachedViewportInput = null;
-  d3d8CachedNormalizedViewport = null;
-}
-
-function d3d8ViewportAppliedKeyMatches(left, right) {
-  return Boolean(
-    left && right &&
-    left.x === right.x &&
-    left.y === right.y &&
-    left.width === right.width &&
-    left.height === right.height &&
-    left.minZ === right.minZ &&
-    left.maxZ === right.maxZ &&
-    left.drawingBufferWidth === right.drawingBufferWidth &&
-    left.drawingBufferHeight === right.drawingBufferHeight
-  );
-}
-
-function d3d8ViewportInputMatches(input, payload, bufferWidth, bufferHeight) {
-  return Boolean(
-    input &&
-    input.x === payload.x &&
-    input.y === payload.y &&
-    input.width === payload.width &&
-    input.height === payload.height &&
-    input.minZ === payload.minZ &&
-    input.maxZ === payload.maxZ &&
-    input.targetWidth === payload.targetWidth &&
-    input.targetHeight === payload.targetHeight &&
-    input.bufferWidth === bufferWidth &&
-    input.bufferHeight === bufferHeight
-  );
-}
-
-function d3d8PerfSummary() {
-  return {
-    draws: d3d8PerfStats.draws,
-    drawElements: d3d8PerfStats.drawElements,
-    drawIndices: d3d8PerfStats.drawIndices,
-    drawMs: roundedPerfMs(d3d8PerfStats.drawMs),
-    drawBatchCandidates: d3d8PerfStats.drawBatchCandidates,
-    drawBatchQueued: d3d8PerfStats.drawBatchQueued,
-    drawBatchMerged: d3d8PerfStats.drawBatchMerged,
-    drawBatchFlushes: d3d8PerfStats.drawBatchFlushes,
-    drawBatchSavedDrawElements: d3d8PerfStats.drawBatchSavedDrawElements,
-    drawBatchMergedIndices: d3d8PerfStats.drawBatchMergedIndices,
-    drawBatchMaxRunLength: d3d8PerfStats.drawBatchMaxRunLength,
-    drawDepthStencilOnlyProgramDraws: d3d8PerfStats.drawDepthStencilOnlyProgramDraws,
-    drawDepthStencilNoDiscardDraws: d3d8PerfStats.drawDepthStencilNoDiscardDraws,
-    drawDepthStencilOnlyFastDerivedDraws: d3d8PerfStats.drawDepthStencilOnlyFastDerivedDraws,
-    destinationAlphaBlendDraws: d3d8PerfStats.destinationAlphaBlendDraws,
-    destinationAlphaBlendOffscreenDraws: d3d8PerfStats.destinationAlphaBlendOffscreenDraws,
-    terrainNoiseMultiplyDraws: d3d8PerfStats.terrainNoiseMultiplyDraws,
-    terrainNoiseMultiplyTransformedDraws: d3d8PerfStats.terrainNoiseMultiplyTransformedDraws,
-    terrainNoiseMultiplyIdentityTransformDraws: d3d8PerfStats.terrainNoiseMultiplyIdentityTransformDraws,
-    sm1PixelShadersRegistered: d3d8PerfStats.sm1PixelShadersRegistered,
-    sm1VertexShadersRegistered: d3d8PerfStats.sm1VertexShadersRegistered,
-    sm1PairProgramsLinked: d3d8PerfStats.sm1PairProgramsLinked,
-    sm1PairProgramFailures: d3d8PerfStats.sm1PairProgramFailures,
-    sm1ShaderDraws: d3d8PerfStats.sm1ShaderDraws,
-    sm1TranslatedVsDraws: d3d8PerfStats.sm1TranslatedVsDraws,
-    sm1FallbackDraws: d3d8PerfStats.sm1FallbackDraws,
-    drawMatrixNormalizations: d3d8PerfStats.drawMatrixNormalizations,
-    drawMatrixScratchCopies: d3d8PerfStats.drawMatrixScratchCopies,
-    drawMatrixAllocatedCopies: d3d8PerfStats.drawMatrixAllocatedCopies,
-    drawPayloadCalls: d3d8PerfStats.drawPayloadCalls,
-    drawPayloadReused: d3d8PerfStats.drawPayloadReused,
-    drawDerivedCacheHits: d3d8PerfStats.drawDerivedCacheHits,
-    drawDerivedCacheMisses: d3d8PerfStats.drawDerivedCacheMisses,
-    drawUniformCacheHits: d3d8PerfStats.drawUniformCacheHits,
-    drawUniformCacheMisses: d3d8PerfStats.drawUniformCacheMisses,
-    drawTransformUniformCacheHits: d3d8PerfStats.drawTransformUniformCacheHits,
-    drawTransformUniformCacheMisses: d3d8PerfStats.drawTransformUniformCacheMisses,
-    drawWorldTransformUniformCacheHits: d3d8PerfStats.drawWorldTransformUniformCacheHits,
-    drawWorldTransformUniformCacheMisses: d3d8PerfStats.drawWorldTransformUniformCacheMisses,
-    drawViewTransformUniformCacheHits: d3d8PerfStats.drawViewTransformUniformCacheHits,
-    drawViewTransformUniformCacheMisses: d3d8PerfStats.drawViewTransformUniformCacheMisses,
-    drawProjectionTransformUniformCacheHits: d3d8PerfStats.drawProjectionTransformUniformCacheHits,
-    drawProjectionTransformUniformCacheMisses: d3d8PerfStats.drawProjectionTransformUniformCacheMisses,
-    drawPointSpriteUniformCacheHits: d3d8PerfStats.drawPointSpriteUniformCacheHits,
-    drawPointSpriteUniformCacheMisses: d3d8PerfStats.drawPointSpriteUniformCacheMisses,
-    drawTextureUniformCacheHits: d3d8PerfStats.drawTextureUniformCacheHits,
-    drawTextureUniformCacheMisses: d3d8PerfStats.drawTextureUniformCacheMisses,
-    drawTextureActiveCacheHits: d3d8PerfStats.drawTextureActiveCacheHits,
-    drawTextureActiveCacheMisses: d3d8PerfStats.drawTextureActiveCacheMisses,
-    drawTextureBindCacheHits: d3d8PerfStats.drawTextureBindCacheHits,
-    drawTextureBindCacheMisses: d3d8PerfStats.drawTextureBindCacheMisses,
-    drawTextureSamplerCacheHits: d3d8PerfStats.drawTextureSamplerCacheHits,
-    drawTextureSamplerCacheMisses: d3d8PerfStats.drawTextureSamplerCacheMisses,
-    drawVertexAttribCacheHits: d3d8PerfStats.drawVertexAttribCacheHits,
-    drawVertexAttribCacheMisses: d3d8PerfStats.drawVertexAttribCacheMisses,
-    drawVertexArrayCacheHits: d3d8PerfStats.drawVertexArrayCacheHits,
-    drawVertexArrayCacheMisses: d3d8PerfStats.drawVertexArrayCacheMisses,
-    drawViewportCacheHits: d3d8PerfStats.drawViewportCacheHits,
-    drawViewportCacheMisses: d3d8PerfStats.drawViewportCacheMisses,
-    drawRenderStateGlCacheHits: d3d8PerfStats.drawRenderStateGlCacheHits,
-    drawRenderStateGlCacheMisses: d3d8PerfStats.drawRenderStateGlCacheMisses,
-    drawBaseUniformCacheHits: d3d8PerfStats.drawBaseUniformCacheHits,
-    drawBaseUniformCacheMisses: d3d8PerfStats.drawBaseUniformCacheMisses,
-    drawMaterialUniformCacheHits: d3d8PerfStats.drawMaterialUniformCacheHits,
-    drawMaterialUniformCacheMisses: d3d8PerfStats.drawMaterialUniformCacheMisses,
-    drawFixedLightUniformCacheHits: d3d8PerfStats.drawFixedLightUniformCacheHits,
-    drawFixedLightUniformCacheMisses: d3d8PerfStats.drawFixedLightUniformCacheMisses,
-    drawStageUniformCacheHits: d3d8PerfStats.drawStageUniformCacheHits,
-    drawStageUniformCacheMisses: d3d8PerfStats.drawStageUniformCacheMisses,
-    drawAlphaFogUniformCacheHits: d3d8PerfStats.drawAlphaFogUniformCacheHits,
-    drawAlphaFogUniformCacheMisses: d3d8PerfStats.drawAlphaFogUniformCacheMisses,
-    uniformGlCalls: d3d8PerfStats.uniformGlCalls,
-    uniformGlSkipped: d3d8PerfStats.uniformGlSkipped,
-    sortedDrawProfiledCalls: d3d8PerfStats.sortedDrawProfiledCalls,
-    sortedDrawProfiledMs: roundedPerfMs(d3d8PerfStats.sortedDrawProfiledMs),
-    sortedDrawPreBatchMs: roundedPerfMs(d3d8PerfStats.sortedDrawPreBatchMs),
-    sortedDrawDerivedMs: roundedPerfMs(d3d8PerfStats.sortedDrawDerivedMs),
-    sortedDrawTextureDiagMs: roundedPerfMs(d3d8PerfStats.sortedDrawTextureDiagMs),
-    sortedDrawViewportMs: roundedPerfMs(d3d8PerfStats.sortedDrawViewportMs),
-    sortedDrawDiagnosticsMs: roundedPerfMs(d3d8PerfStats.sortedDrawDiagnosticsMs),
-    sortedDrawGeometryMs: roundedPerfMs(d3d8PerfStats.sortedDrawGeometryMs),
-    sortedDrawProgramMs: roundedPerfMs(d3d8PerfStats.sortedDrawProgramMs),
-    sortedDrawFillShadeMs: roundedPerfMs(d3d8PerfStats.sortedDrawFillShadeMs),
-    sortedDrawVertexAttribMs: roundedPerfMs(d3d8PerfStats.sortedDrawVertexAttribMs),
-    sortedDrawTextureBindMs: roundedPerfMs(d3d8PerfStats.sortedDrawTextureBindMs),
-    sortedDrawUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawUniformMs),
-    sortedDrawApplyRenderStateMs: roundedPerfMs(d3d8PerfStats.sortedDrawApplyRenderStateMs),
-    sortedDrawRenderBuildMs: roundedPerfMs(d3d8PerfStats.sortedDrawRenderBuildMs),
-    sortedDrawRenderBaseUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawRenderBaseUniformMs),
-    sortedDrawRenderMaterialUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawRenderMaterialUniformMs),
-    sortedDrawRenderLightUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawRenderLightUniformMs),
-    sortedDrawRenderStageUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawRenderStageUniformMs),
-    sortedDrawRenderAlphaFogUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawRenderAlphaFogUniformMs),
-    sortedDrawRenderUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawRenderUniformMs),
-    sortedDrawTransformUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawTransformUniformMs),
-    sortedDrawTransformCompareMs: roundedPerfMs(d3d8PerfStats.sortedDrawTransformCompareMs),
-    sortedDrawWorldTransformUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawWorldTransformUniformMs),
-    sortedDrawViewTransformUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawViewTransformUniformMs),
-    sortedDrawProjectionTransformUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawProjectionTransformUniformMs),
-    sortedDrawPointSpriteUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawPointSpriteUniformMs),
-    sortedDrawTextureUniformMs: roundedPerfMs(d3d8PerfStats.sortedDrawTextureUniformMs),
-    sortedDrawDrawOrBatchMs: roundedPerfMs(d3d8PerfStats.sortedDrawDrawOrBatchMs),
-    sortedDrawTailMs: roundedPerfMs(d3d8PerfStats.sortedDrawTailMs),
-    clears: d3d8PerfStats.clears,
-    clearMs: roundedPerfMs(d3d8PerfStats.clearMs),
-    clearTotalMs: roundedPerfMs(d3d8PerfStats.clearTotalMs),
-    clearInvalidateMs: roundedPerfMs(d3d8PerfStats.clearInvalidateMs),
-    clearSyncCanvasMs: roundedPerfMs(d3d8PerfStats.clearSyncCanvasMs),
-    clearSetupMs: roundedPerfMs(d3d8PerfStats.clearSetupMs),
-    clearContextAttrMs: roundedPerfMs(d3d8PerfStats.clearContextAttrMs),
-    clearDepthMaskCheckMs: roundedPerfMs(d3d8PerfStats.clearDepthMaskCheckMs),
-    clearDepthMaskToggleMs: roundedPerfMs(d3d8PerfStats.clearDepthMaskToggleMs),
-    clearPostDiagMs: roundedPerfMs(d3d8PerfStats.clearPostDiagMs),
-    textureUploads: d3d8PerfStats.textureUploads,
-    textureUploadBytes: d3d8PerfStats.textureUploadBytes,
-    textureUploadPixels: d3d8PerfStats.textureUploadPixels,
-    textureUploadMs: roundedPerfMs(d3d8PerfStats.textureUploadMs),
-    textureConvertBytes: d3d8PerfStats.textureConvertBytes,
-    textureConvertMs: roundedPerfMs(d3d8PerfStats.textureConvertMs),
-    dxtDecodeMs: roundedPerfMs(d3d8PerfStats.dxtDecodeMs),
-    volumeTextureUploads: d3d8PerfStats.volumeTextureUploads,
-    readPixels: d3d8PerfStats.readPixels,
-    readPixelsPixels: d3d8PerfStats.readPixelsPixels,
-    readPixelsMs: roundedPerfMs(d3d8PerfStats.readPixelsMs),
-    fboBinds: d3d8PerfStats.fboBinds,
-    fboBindMs: roundedPerfMs(d3d8PerfStats.fboBindMs),
-    fboCreates: d3d8PerfStats.fboCreates,
-    fboIncomplete: d3d8PerfStats.fboIncomplete,
-    framebufferFeedbackResolves: d3d8PerfStats.framebufferFeedbackResolves,
-    framebufferFeedbackResolveMs: roundedPerfMs(d3d8PerfStats.framebufferFeedbackResolveMs),
-    bufferUpdates: d3d8PerfStats.bufferUpdates,
-    bufferUploadBytes: d3d8PerfStats.bufferUploadBytes,
-    bufferVertexUpdates: d3d8PerfStats.bufferVertexUpdates,
-    bufferVertexUploadBytes: d3d8PerfStats.bufferVertexUploadBytes,
-    bufferIndexUpdates: d3d8PerfStats.bufferIndexUpdates,
-    bufferIndexUploadBytes: d3d8PerfStats.bufferIndexUploadBytes,
-    bufferDynamicUpdates: d3d8PerfStats.bufferDynamicUpdates,
-    bufferDynamicUploadBytes: d3d8PerfStats.bufferDynamicUploadBytes,
-    bufferDiscardUpdates: d3d8PerfStats.bufferDiscardUpdates,
-    bufferDiscardUploadBytes: d3d8PerfStats.bufferDiscardUploadBytes,
-    bufferNoOverwriteUpdates: d3d8PerfStats.bufferNoOverwriteUpdates,
-    bufferNoOverwriteUploadBytes: d3d8PerfStats.bufferNoOverwriteUploadBytes,
-    bufferOrphanedUpdates: d3d8PerfStats.bufferOrphanedUpdates,
-    bufferDynamicRedirectedUpdates: d3d8PerfStats.bufferDynamicRedirectedUpdates,
-    bufferDynamicRangeUploads: d3d8PerfStats.bufferDynamicRangeUploads,
-    bufferDynamicRangeUploadBytes: d3d8PerfStats.bufferDynamicRangeUploadBytes,
-    bufferDynamicRedirectFallbacks: d3d8PerfStats.bufferDynamicRedirectFallbacks,
-    drawDynamicVertexRedirects: d3d8PerfStats.drawDynamicVertexRedirects,
-    drawDynamicVertexSharedFallbacks: d3d8PerfStats.drawDynamicVertexSharedFallbacks,
-    drawDynamicIndexRedirects: d3d8PerfStats.drawDynamicIndexRedirects,
-    drawDynamicIndexSharedFallbacks: d3d8PerfStats.drawDynamicIndexSharedFallbacks,
-    bufferResizedUpdates: d3d8PerfStats.bufferResizedUpdates,
-    bufferUpdateMs: roundedPerfMs(d3d8PerfStats.bufferUpdateMs),
-    bufferSubDataMs: roundedPerfMs(d3d8PerfStats.bufferSubDataMs),
-    bufferMirrorBytes: d3d8PerfStats.bufferMirrorBytes,
-    bufferMirrorMs: roundedPerfMs(d3d8PerfStats.bufferMirrorMs),
-    bufferMirrorSkippedBytes: d3d8PerfStats.bufferMirrorSkippedBytes,
-    bufferProducerTracking: d3d8BufferProducerTrackingEnabled,
-    bufferProducers: d3d8BufferProducerSummary(),
-    drawProducerTracking: d3d8DrawProducerTrackingEnabled,
-    drawProducers: d3d8DrawProducerSummary(),
-  };
-}
-
-const D3D8_GAMMA_FILTER_ID = "cnc-d3d8-gamma-filter";
-const D3D8_GAMMA_SVG_NS = "http://www.w3.org/2000/svg";
-let d3d8GammaFilterNodes = null;
 
 function defaultD3D8GammaState() {
   return {
@@ -1191,6 +300,11 @@ const harnessState = {
   booted: false,
   frame: 0,
   runtime: "js-stub",
+  // Non-null when threaded mode was requested (or defaulted) but this origin
+  // cannot run it (no SAB / not crossOriginIsolated). There is NO legacy
+  // fallback (owner directive 2026-07-10): the action is "redirect" (to the
+  // harness HTTPS listener) or "blocked" (boot refused with the reason).
+  threadedUnsupported: cncPortThreadedUnsupported,
   wasm: null,
   mainLoop: {
     running: false,
@@ -1279,372 +393,117 @@ const harnessState = {
   logs: [],
 };
 
-function invalidateD3D8DrawStateCache() {
-  flushD3D8PendingDrawBatch("stateInvalidated");
-  harnessState.graphics.lastD3D8StateHash = 0;
-  harnessState.graphics.lastD3D8UniformKey = null;
-  harnessState.graphics.lastD3D8TextureUniformKey = null;
-  harnessState.graphics.lastD3D8AppliedRenderState = null;
-  d3d8LastDrawKey = null;
-  d3d8CachedDerived = null;
-  clearD3D8DerivedDrawCache();
-  resetD3D8TransformUniformCache();
-  d3d8LastPointSpriteUniformInfo = null;
-  d3d8LastVertexAttribKey = null;
-  d3d8LastDefaultVertexAttribKey = null;
-  invalidateD3D8AppliedViewportCache();
-  invalidateD3D8RenderGlStateCache();
-  resetD3D8UniformSubgroupCaches();
-}
-
-function clearD3D8DerivedDrawCache() {
-  d3d8DerivedDrawCache.clear();
-  d3d8DerivedDrawCacheEntries = 0;
-  d3d8DerivedDrawCacheOldest = null;
-  d3d8DerivedDrawCacheNewest = null;
-}
-
-function touchD3D8DerivedDrawCacheEntry(entry) {
-  if (!entry || entry === d3d8DerivedDrawCacheNewest) {
-    return;
-  }
-  if (entry.lruPrevious) {
-    entry.lruPrevious.lruNext = entry.lruNext;
-  } else if (entry === d3d8DerivedDrawCacheOldest) {
-    d3d8DerivedDrawCacheOldest = entry.lruNext;
-  }
-  if (entry.lruNext) {
-    entry.lruNext.lruPrevious = entry.lruPrevious;
-  }
-  entry.lruPrevious = d3d8DerivedDrawCacheNewest;
-  entry.lruNext = null;
-  if (d3d8DerivedDrawCacheNewest) {
-    d3d8DerivedDrawCacheNewest.lruNext = entry;
-  } else {
-    d3d8DerivedDrawCacheOldest = entry;
-  }
-  d3d8DerivedDrawCacheNewest = entry;
-}
-
-function unlinkD3D8DerivedDrawCacheEntry(entry) {
-  if (entry.lruPrevious) {
-    entry.lruPrevious.lruNext = entry.lruNext;
-  } else if (entry === d3d8DerivedDrawCacheOldest) {
-    d3d8DerivedDrawCacheOldest = entry.lruNext;
-  }
-  if (entry.lruNext) {
-    entry.lruNext.lruPrevious = entry.lruPrevious;
-  } else if (entry === d3d8DerivedDrawCacheNewest) {
-    d3d8DerivedDrawCacheNewest = entry.lruPrevious;
-  }
-  entry.lruPrevious = null;
-  entry.lruNext = null;
-}
-
-function d3d8DerivedDrawCacheEntryMatches(
-  entry,
-  derivedStateHash,
-  texture0Id,
-  texture1Id,
-  texture2Id,
-  texture3Id,
-  vertexShaderFvf,
-  vertexStride,
-  primitiveType,
-) {
-  return entry.derivedStateHash === derivedStateHash &&
-    entry.texture0Id === texture0Id &&
-    entry.texture1Id === texture1Id &&
-    entry.texture2Id === texture2Id &&
-    entry.texture3Id === texture3Id &&
-    entry.vertexShaderFvf === vertexShaderFvf &&
-    entry.vertexStride === vertexStride &&
-    entry.primitiveType === primitiveType;
-}
-
-function findD3D8DerivedDrawCacheEntry(
-  derivedStateHash,
-  texture0Id,
-  texture1Id,
-  texture2Id,
-  texture3Id,
-  vertexShaderFvf,
-  vertexStride,
-  primitiveType,
-) {
-  const bucket = d3d8DerivedDrawCache.get(derivedStateHash);
-  if (!bucket) {
-    return null;
-  }
-  for (const entry of bucket) {
-    if (d3d8DerivedDrawCacheEntryMatches(
-      entry,
-      derivedStateHash,
-      texture0Id,
-      texture1Id,
-      texture2Id,
-      texture3Id,
-      vertexShaderFvf,
-      vertexStride,
-      primitiveType,
-    )) {
-      touchD3D8DerivedDrawCacheEntry(entry);
-      return entry;
-    }
-  }
-  return null;
-}
-
-function evictOldestD3D8DerivedDrawCacheEntry() {
-  const entry = d3d8DerivedDrawCacheOldest;
-  if (!entry) {
-    return;
-  }
-  const bucket = d3d8DerivedDrawCache.get(entry.derivedStateHash);
-  const bucketIndex = bucket?.indexOf(entry) ?? -1;
-  unlinkD3D8DerivedDrawCacheEntry(entry);
-  if (bucketIndex < 0) {
-    d3d8DerivedDrawCacheEntries = Math.max(0, d3d8DerivedDrawCacheEntries - 1);
-    return;
-  }
-  bucket.splice(bucketIndex, 1);
-  d3d8DerivedDrawCacheEntries -= 1;
-  if (bucket.length === 0) {
-    d3d8DerivedDrawCache.delete(entry.derivedStateHash);
-  }
-}
-
-function rememberD3D8DerivedDrawCacheEntry(
-  derivedStateHash,
-  texture0Id,
-  texture1Id,
-  texture2Id,
-  texture3Id,
-  vertexShaderFvf,
-  vertexStride,
-  primitiveType,
-  derived,
-) {
-  let bucket = d3d8DerivedDrawCache.get(derivedStateHash);
-  if (!bucket) {
-    bucket = [];
-    d3d8DerivedDrawCache.set(derivedStateHash, bucket);
-  }
-  for (const entry of bucket) {
-    if (d3d8DerivedDrawCacheEntryMatches(
-      entry,
-      derivedStateHash,
-      texture0Id,
-      texture1Id,
-      texture2Id,
-      texture3Id,
-      vertexShaderFvf,
-      vertexStride,
-      primitiveType,
-    )) {
-      entry.derived = derived;
-      touchD3D8DerivedDrawCacheEntry(entry);
-      return entry;
-    }
-  }
-  const entry = {
-    derivedStateHash,
-    texture0Id,
-    texture1Id,
-    texture2Id,
-    texture3Id,
-    vertexShaderFvf,
-    vertexStride,
-    primitiveType,
-    derived,
-    lruPrevious: null,
-    lruNext: null,
-  };
-  bucket.push(entry);
-  touchD3D8DerivedDrawCacheEntry(entry);
-  d3d8DerivedDrawCacheEntries += 1;
-  while (d3d8DerivedDrawCacheEntries > D3D8_DERIVED_DRAW_CACHE_LIMIT) {
-    evictOldestD3D8DerivedDrawCacheEntry();
-  }
-  return entry;
-}
-
-const d3d8WarnedOnce = new Set();
-
-function warnD3D8Once(key, message, detail = {}) {
-  if (d3d8WarnedOnce.has(key)) {
-    return;
-  }
-  d3d8WarnedOnce.add(key);
-  const warning = {
-    key,
-    message,
-    ...detail,
-  };
-  const warnings = Array.isArray(harnessState.graphics.d3d8Warnings)
-    ? harnessState.graphics.d3d8Warnings.slice(-63)
-    : [];
-  warnings.push(warning);
-  harnessState.graphics.d3d8Warnings = warnings;
-  console.warn(`[D3D8 bridge] ${message}`, detail);
-}
-
-function roundedD3D8GammaMetric(value) {
-  return Math.round(Number(value) * 1000000) / 1000000;
-}
-
-function clampD3D8RampWord(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) {
-    return 0;
-  }
-  return Math.max(0, Math.min(65535, Math.trunc(number)));
-}
-
-function copyD3D8GammaRampChannel(values) {
-  const source = Array.isArray(values) || ArrayBuffer.isView(values) ? values : [];
-  const ramp = new Array(256);
-  for (let i = 0; i < 256; i++) {
-    ramp[i] = clampD3D8RampWord(source[i] ?? 0);
-  }
-  return ramp;
-}
-
-function sampleD3D8GammaRampChannel(ramp) {
-  return [0, 64, 128, 192, 255].map((index) => ramp[index] ?? 0);
-}
-
-function estimateD3D8GammaChannel(ramp) {
-  const first = (ramp[0] ?? 0) / 65535;
-  const mid = (ramp[128] ?? 0) / 65535;
-  const last = (ramp[255] ?? 0) / 65535;
-  const amplitude = last - first;
-  let exponent = 1;
-  if (amplitude > 1 / 65535) {
-    const normalizedMid = Math.max(0.000001, Math.min(0.999999, (mid - first) / amplitude));
-    const inputMid = 128 / 256;
-    exponent = Math.log(normalizedMid) / Math.log(inputMid);
-    if (!Number.isFinite(exponent) || exponent <= 0) {
-      exponent = 1;
-    }
-  }
-  return {
-    offset: roundedD3D8GammaMetric(first),
-    amplitude: roundedD3D8GammaMetric(Math.max(0, amplitude)),
-    exponent: roundedD3D8GammaMetric(exponent),
-    gamma: roundedD3D8GammaMetric(1 / exponent),
-    samples: {
-      first: ramp[0] ?? 0,
-      mid: ramp[128] ?? 0,
-      last: ramp[255] ?? 0,
-    },
-  };
-}
-
-function d3d8GammaChannelIsIdentity(channel) {
-  return Math.abs(channel.offset) <= 0.01
-    && Math.abs(channel.amplitude - 1) <= 0.015
-    && Math.abs(channel.exponent - 1) <= 0.02;
-}
-
-function ensureD3D8GammaFilterNodes() {
-  if (d3d8GammaFilterNodes) {
-    return d3d8GammaFilterNodes;
-  }
-
-  const svg = document.createElementNS(D3D8_GAMMA_SVG_NS, "svg");
-  svg.setAttribute("aria-hidden", "true");
-  svg.setAttribute("focusable", "false");
-  svg.style.position = "absolute";
-  svg.style.width = "0";
-  svg.style.height = "0";
-  svg.style.overflow = "hidden";
-
-  const filter = document.createElementNS(D3D8_GAMMA_SVG_NS, "filter");
-  filter.setAttribute("id", D3D8_GAMMA_FILTER_ID);
-  filter.setAttribute("color-interpolation-filters", "sRGB");
-
-  const transfer = document.createElementNS(D3D8_GAMMA_SVG_NS, "feComponentTransfer");
-  const red = document.createElementNS(D3D8_GAMMA_SVG_NS, "feFuncR");
-  const green = document.createElementNS(D3D8_GAMMA_SVG_NS, "feFuncG");
-  const blue = document.createElementNS(D3D8_GAMMA_SVG_NS, "feFuncB");
-  const alpha = document.createElementNS(D3D8_GAMMA_SVG_NS, "feFuncA");
-  alpha.setAttribute("type", "identity");
-  transfer.append(red, green, blue, alpha);
-  filter.append(transfer);
-  svg.append(filter);
-  (document.body ?? document.documentElement).append(svg);
-
-  d3d8GammaFilterNodes = { svg, filter, red, green, blue };
-  return d3d8GammaFilterNodes;
-}
-
-function formatD3D8GammaFilterNumber(value) {
-  const number = Number(value);
-  return String(Math.round((Number.isFinite(number) ? number : 0) * 1000000) / 1000000);
-}
-
-function d3d8GammaRampTableValues(ramp) {
-  return ramp.map((value) => formatD3D8GammaFilterNumber((value ?? 0) / 65535)).join(" ");
-}
-
-function applyD3D8GammaTableFunction(node, ramp) {
-  node.setAttribute("type", "table");
-  node.removeAttribute("amplitude");
-  node.removeAttribute("exponent");
-  node.removeAttribute("offset");
-  node.setAttribute("tableValues", d3d8GammaRampTableValues(ramp));
-}
-
-function applyD3D8GammaFilter(ramps, enabled) {
-  if (!enabled) {
-    canvas.style.filter = "";
-    return "";
-  }
-  const nodes = ensureD3D8GammaFilterNodes();
-  applyD3D8GammaTableFunction(nodes.red, ramps.red);
-  applyD3D8GammaTableFunction(nodes.green, ramps.green);
-  applyD3D8GammaTableFunction(nodes.blue, ramps.blue);
-  const cssFilter = `url(#${D3D8_GAMMA_FILTER_ID})`;
-  canvas.style.filter = cssFilter;
-  return cssFilter;
-}
-
-function setD3D8GammaRamp(payload = {}) {
-  const red = copyD3D8GammaRampChannel(payload.red);
-  const green = copyD3D8GammaRampChannel(payload.green);
-  const blue = copyD3D8GammaRampChannel(payload.blue);
-  const channels = {
-    red: estimateD3D8GammaChannel(red),
-    green: estimateD3D8GammaChannel(green),
-    blue: estimateD3D8GammaChannel(blue),
-  };
-  const applied = !d3d8GammaChannelIsIdentity(channels.red)
-    || !d3d8GammaChannelIsIdentity(channels.green)
-    || !d3d8GammaChannelIsIdentity(channels.blue);
-  const cssFilter = applyD3D8GammaFilter({ red, green, blue }, applied);
-  const summary = {
-    source: "d3d8_gamma_ramp_presentation",
-    supported: true,
-    applied,
-    filterMode: applied ? "table" : "identity",
-    lutEntries: 256,
-    flags: Number(payload.flags ?? 0) >>> 0,
-    cssFilter,
-    channels,
-    samples: {
-      red: sampleD3D8GammaRampChannel(red),
-      green: sampleD3D8GammaRampChannel(green),
-      blue: sampleD3D8GammaRampChannel(blue),
-    },
-    request: payload.request ?? null,
-  };
-  harnessState.graphics = {
-    ...harnessState.graphics,
-    d3d8Gamma: summary,
-  };
-  return summary;
-}
+// ---------------------------------------------------------------------------
+// D3D8 -> WebGL2 executor (extracted to d3d8_executor.mjs for the engine-
+// thread work; see notes/p1-engine-thread.md). Constructed exactly once with
+// this page's canvas/GL context, harness log + state sinks and fresh-view
+// wasm heap accessors. hooks = the 20 Module.cncPortD3D8* functions; diag =
+// the executor-internal surface the harness RPC/diagnostics still read.
+// Threaded mode: executorCanvas is an invisible scratch canvas (the REAL
+// executor lives in the engine worker realm, harness/engine_realm_boot.mjs);
+// this main-realm instance only keeps the diag surface alive.
+const { hooks: d3d8Hooks, diag: d3d8Diag } = createD3D8Executor({
+  canvas: executorCanvas,
+  gl,
+  s3tc,
+  fallbackContext,
+  log: recordLog,
+  state: harnessState,
+  getModule: () => cncPortEmscriptenModule,
+  getHeapU8: () => cncPortEmscriptenModule?.HEAPU8 ?? null,
+  getHeapU16: () => cncPortEmscriptenModule?.HEAPU16 ?? null,
+  getHeapU32: () => cncPortEmscriptenModule?.HEAPU32 ?? null,
+  getHeapF32: () => cncPortEmscriptenModule?.HEAPF32 ?? null,
+  getHeapF64: () => cncPortEmscriptenModule?.HEAPF64 ?? null,
+  dom: { stateNode, framesNode },
+});
+const {
+  clampNumber,
+  clearCanvas,
+  finiteNumber,
+  flushD3D8PendingDrawBatch,
+  invalidateCanvasDisplaySizeCache,
+  normalizeD3D8Light,
+  normalizeD3D8Material,
+  normalizeRgba,
+  pixelHasColor,
+  pixelsApproximatelyEqual,
+  roundedD3D8GammaMetric,
+  sampleCanvasPixel,
+  sampleCanvasRegion,
+  sampleD3D8TexturePixel,
+  sampleVirtualCanvasPixel,
+  syncCanvasSize,
+  updateD3D8BufferSummary,
+  viewportArraysEqual,
+  updateD3D8TextureSummary,
+  d3d8PerfSummary,
+  applyD3D8BoundDrawDiagnosticsLevel,
+  d3dColorToNormalizedRgba,
+  d3dMaterialSourceName,
+  paintCanvasRgba,
+  setD3D8GammaRamp,
+  onD3D8BackbufferResize,
+  sampleD3D8TextureCenter,
+  d3d8Textures,
+  d3d8DiagLevelValue,
+  D3D8_XYZNDUV_TEXCOORD0_OFFSET,
+  D3D8_XYZNDUV_TEXCOORD_STRIDE,
+  D3DBLEND_INVSRCALPHA,
+  D3DBLEND_ONE,
+  D3DBLEND_SRCALPHA,
+  D3DBLEND_ZERO,
+  D3DCMP_EQUAL,
+  D3DCMP_LESS,
+  D3DCOLORWRITEENABLE_BLUE,
+  D3DCOLORWRITEENABLE_GREEN,
+  D3DCOLORWRITEENABLE_RED,
+  D3DCULL_CW,
+  D3DFILL_WIREFRAME,
+  D3DFMT_A4R4G4B4,
+  D3DFMT_A8R8G8B8,
+  D3DFMT_X8R8G8B8,
+  D3DFOG_LINEAR,
+  D3DFVF_DIFFUSE,
+  D3DFVF_NORMAL,
+  D3DFVF_SPECULAR,
+  D3DFVF_TEX1,
+  D3DFVF_XYZ,
+  D3DLIGHT_DIRECTIONAL,
+  D3DLIGHT_POINT,
+  D3DLIGHT_SPOT,
+  D3DMCS_COLOR1,
+  D3DMCS_COLOR2,
+  D3DMCS_MATERIAL,
+  D3DPT_POINTLIST,
+  D3DPT_TRIANGLELIST,
+  D3DPT_TRIANGLESTRIP,
+  D3DSHADE_FLAT,
+  D3DTADDRESS_CLAMP,
+  D3DTADDRESS_WRAP,
+  D3DTA_ALPHAREPLICATE,
+  D3DTA_CURRENT,
+  D3DTA_DIFFUSE,
+  D3DTA_TEXTURE,
+  D3DTA_TFACTOR,
+  D3DTEXF_LINEAR,
+  D3DTEXF_NONE,
+  D3DTEXF_POINT,
+  D3DTOP_DISABLE,
+  D3DTOP_DOTPRODUCT3,
+  D3DTOP_MODULATE,
+  D3DTOP_MULTIPLYADD,
+  D3DTOP_SELECTARG1,
+  D3DTSS_TCI_CAMERASPACENORMAL,
+  D3DTSS_TCI_CAMERASPACEPOSITION,
+  D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR,
+  D3DTTFF_COUNT2,
+  D3DTTFF_COUNT3,
+  D3DTTFF_DISABLE,
+  D3DTTFF_PROJECTED,
+  D3DZB_TRUE,
+  GL_GREEN,
+} = d3d8Diag;
 
 function buildD3D8GammaRampPayload(payload = {}) {
   const gamma = clampNumber(payload.gamma, 0.6, 6.0, 1.0);
@@ -1855,6 +714,1045 @@ wasmModulePromise.then((wasmModule) => {
   resolvedWasmModule = wasmModule;
 }).catch(() => {});
 
+// ============================================================================
+// P1c: threaded engine controller (?threads=1)
+//
+// Owns the main-realm side of the engine-thread architecture
+// (notes/p1-engine-thread.md): prepares the single pool worker's realm BEFORE
+// the engine pthread is spawned (connect a dedicated MessagePort, transfer the
+// #viewport OffscreenCanvas, import harness/engine_realm_boot.mjs), then
+// drives boot/go, forwards input/RPC over the port, and executes the MSS
+// audio bodies main-side when the engine realm posts them over.
+// ============================================================================
+
+// Fresh main-realm heap view: with pthreads+ALLOW_MEMORY_GROWTH the ENGINE
+// thread grows the shared memory and only ITS realm's Module.HEAP* views are
+// refreshed synchronously; the main realm's cached view goes stale (it still
+// aliases the same SharedArrayBuffer but misses the newly grown tail). The
+// emscripten factory exposes Module.wasmMemory in every realm, so rebuild a
+// view whenever the buffer identity changed (memory.grow returns a NEW SAB
+// object).
+let cncPortFreshHeapCache = null;
+function freshMainHeapU8() {
+  const module = cncPortEmscriptenModule;
+  if (!module) {
+    return null;
+  }
+  const memoryBuffer = module.wasmMemory?.buffer;
+  if (memoryBuffer) {
+    if (!cncPortFreshHeapCache || cncPortFreshHeapCache.buffer !== memoryBuffer) {
+      cncPortFreshHeapCache = new Uint8Array(memoryBuffer);
+    }
+    return cncPortFreshHeapCache;
+  }
+  return module.HEAPU8 ?? null;
+}
+
+function threadedWorkerDiagLevel() {
+  // The worker realm's URL carries no page params, so decide here with the
+  // same defaults the pages use: explicit ?diag= wins; play.html defaults to
+  // "lite"; harness/probe pages default to "full".
+  try {
+    const params = new URLSearchParams(globalThis.location?.search || "");
+    const diag = params.get("diag");
+    if (diag === "lite" || diag === "full") {
+      return diag;
+    }
+    return (globalThis.location?.pathname || "").endsWith("/play.html") ? "lite" : "full";
+  } catch (_error) {
+    return "full";
+  }
+}
+
+function threadedWorkerShaderTier() {
+  // The executor samples the shader tier once at device create via
+  // d3d8ShaderTierQuery (URL ?shaderTier= param, then localStorage
+  // "cncPortShaderTier", default ff). The WORKER realm has neither the page
+  // URL nor localStorage, so resolve the tier here with the same precedence
+  // and hand it through the setup options (engine_realm_boot forces it via
+  // globalThis.__cncD3D8ShaderTier before constructing the executor).
+  try {
+    const params = new URLSearchParams(globalThis.location?.search || "");
+    const fromUrl = params.get("shaderTier");
+    if (fromUrl === "ps11" || fromUrl === "ff") {
+      return fromUrl;
+    }
+    const stored = globalThis.localStorage?.getItem("cncPortShaderTier");
+    if (stored === "ps11" || stored === "ff") {
+      return stored;
+    }
+  } catch (_error) {
+    // Fall through to the executor default (ff).
+  }
+  return null;
+}
+
+function createThreadedEngineController() {
+  const pending = new Map(); // id -> { resolve, reject, timer, resetTimer }
+  let commandId = 0;
+  let realmPort = null;
+  let engineWorker = null;
+  let prepPromise = null;
+  let engineThreadStarted = false;
+  let lastStatus = null;
+  let lastLoopError = null;
+  let mssHandlers = null;
+
+  function threadedLog(message, data) {
+    recordLog(`threaded ${message}`, data);
+  }
+
+  function mssHandlerMap() {
+    if (!mssHandlers) {
+      mssHandlers = {
+        cncPortMssSampleStart,
+        cncPortMssSampleStop,
+        cncPortMssSampleEnd,
+        cncPortMssSampleRelease,
+        cncPortMss3DSampleStart,
+        cncPortMss3DSamplePositionUpdate,
+        cncPortMss3DListenerUpdate,
+        cncPortMss3DSampleStop,
+        cncPortMss3DSampleEnd,
+        cncPortMss3DSampleRelease,
+        cncPortMssStreamStart,
+        cncPortMssStreamStop,
+        cncPortMssStreamVolumePan,
+      };
+    }
+    return mssHandlers;
+  }
+
+  function handleMssMessage(msg) {
+    const handler = mssHandlerMap()[msg.hook];
+    if (typeof handler !== "function") {
+      threadedLog("mss hook unknown", { hook: msg.hook });
+      return;
+    }
+    // Sample-start payloads arrive with a worker-side COPY of the RIFF bytes
+    // (padded, dataPtr rewritten to 4 — see engine_realm_boot.mjs) on their
+    // FIRST send per content key, then key-only (dedupe); everything else
+    // reads nothing or reads the SHARED heap through a fresh view.
+    const heap = msg.bytes instanceof Uint8Array ? msg.bytes : freshMainHeapU8();
+    try {
+      handler(msg.payload ?? {}, heap);
+    } catch (error) {
+      threadedLog("mss hook failed", { hook: msg.hook, error: error?.message ?? String(error) });
+    }
+    // Dedupe-correctness backstop: the worker marked this key "sent" when the
+    // bytes shipped, but the start may have bailed before caching (suspended
+    // AudioContext, missing mixer, decode failure). If the decoded cache does
+    // not hold the key now, tell the worker to re-send bytes next start.
+    const sentKey = typeof msg.payload?.cacheKey === "string" ? msg.payload.cacheKey : null;
+    if (sentKey && msg.bytes instanceof Uint8Array && !cncPortDecodedSampleCache.has(sentKey)) {
+      notifyMssCacheDrop([sentKey]);
+    }
+  }
+
+  function applyThreadedStatus(status) {
+    lastStatus = status;
+    harnessState.threadedEngine = status;
+    const size = status.engineDisplaySize;
+    if (size && Number.isFinite(size.width) && size.width > 1
+        && Number.isFinite(size.height) && size.height > 1) {
+      const previous = harnessState.engineDisplaySize;
+      if (!previous || previous.width !== size.width || previous.height !== size.height) {
+        harnessState.engineDisplaySize = { width: size.width, height: size.height };
+        try {
+          window.dispatchEvent(new CustomEvent("cncport:resolutionchange", {
+            detail: { width: size.width, height: size.height, source: "engine" },
+          }));
+        } catch (_error) {
+          // no DOM event support — state still updated
+        }
+      }
+    }
+    try {
+      window.dispatchEvent(new CustomEvent("cncport:threadedstatus", { detail: status }));
+    } catch (_error) {
+      // no DOM event support
+    }
+  }
+
+  function publishPending() {
+    harnessState.threadedPendingCommands = Array.from(pending.values())
+      .map((entry) => entry.cmdName ?? "?");
+  }
+
+  function settlePending(id, settle) {
+    const entry = pending.get(id);
+    if (!entry) {
+      return null;
+    }
+    pending.delete(id);
+    publishPending();
+    if (entry.timer) {
+      clearTimeout(entry.timer);
+    }
+    return settle(entry);
+  }
+
+  function dispatchRealmMessage(msg) {
+    if (!msg || typeof msg !== "object") {
+      return;
+    }
+    switch (msg.cmd) {
+      case "mss":
+        handleMssMessage(msg);
+        return;
+      case "status":
+        applyThreadedStatus(msg);
+        return;
+      case "live":
+        threadedLog("engine thread live");
+        return;
+      case "engineInitProgress": {
+        const entry = pending.get(msg.id);
+        if (entry?.onProgress) {
+          entry.onProgress(msg.step);
+        }
+        return;
+      }
+      case "loopError":
+        lastLoopError = msg.error ?? "unknown";
+        threadedLog("frame loop error", { error: msg.error, result: msg.result ?? null });
+        try {
+          window.dispatchEvent(new CustomEvent("cncport:threadedlooperror", { detail: msg }));
+        } catch (_error) { /* no DOM event support */ }
+        return;
+      case "tickError":
+        threadedLog("engine tick error", { error: msg.error });
+        return;
+      case "moduleCommandError":
+        threadedLog("realm command error", { sourceCmd: msg.sourceCmd, error: msg.error });
+        return;
+      default: {
+        // id-carrying replies (engineCallResult / engineInitDone /
+        // startLoopResult / statusResult / ...) settle their pending entry.
+        if (msg.id !== undefined && pending.has(msg.id)) {
+          settlePending(msg.id, (entry) => entry.resolve(msg));
+          return;
+        }
+        // pong / connected / setupDone during prep are awaited by matcher
+        // callbacks registered in prepWaiters below.
+        for (const waiter of prepWaiters) {
+          if (!waiter.done && waiter.match(msg)) {
+            waiter.done = true;
+            waiter.resolve(msg);
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  const prepWaiters = [];
+  function waitForRealmMessage(match, timeoutMs, label) {
+    return new Promise((resolve, reject) => {
+      const waiter = { match, resolve, done: false };
+      prepWaiters.push(waiter);
+      setTimeout(() => {
+        if (!waiter.done) {
+          waiter.done = true;
+          reject(new Error(`threaded realm prep timed out waiting for ${label}`));
+        }
+      }, timeoutMs);
+    });
+  }
+
+  async function prepare() {
+    await wasmModulePromise;
+    const module = cncPortEmscriptenModule;
+    if (!module) {
+      throw new Error("threaded mode: wasm module unavailable");
+    }
+    if (!(module.HEAP8?.buffer instanceof SharedArrayBuffer)) {
+      throw new Error("threaded mode requires the pthread build (dist-threaded) + crossOriginIsolated");
+    }
+    const pt = module.PThread;
+    engineWorker = (pt?.unusedWorkers && pt.unusedWorkers[0])
+      || (pt?.runningWorkers && pt.runningWorkers[0]) || null;
+    if (!engineWorker) {
+      throw new Error("threaded mode: no pthread pool worker found");
+    }
+    // Coexists with PThread's worker.onmessage (property assignment).
+    engineWorker.addEventListener("message", (event) => {
+      const data = event?.data;
+      if (data && typeof data === "object" && data.__cncRealm) {
+        dispatchRealmMessage(data.__cncRealm);
+      }
+    });
+
+    const pong = waitForRealmMessage((m) => m.cmd === "pong", 10000, "pong");
+    engineWorker.postMessage({ target: "setimmediate", __cncRealm: { cmd: "ping" } });
+    await pong;
+
+    const channel = new MessageChannel();
+    realmPort = channel.port1;
+    realmPort.onmessage = (event) => {
+      const data = event?.data;
+      if (data && typeof data === "object" && data.__cncRealm) {
+        dispatchRealmMessage(data.__cncRealm);
+      }
+    };
+    const connected = waitForRealmMessage((m) => m.cmd === "connected", 10000, "connected");
+    engineWorker.postMessage(
+      { target: "setimmediate", __cncRealm: { cmd: "connect" } },
+      [channel.port2],
+    );
+    await connected;
+    // MSS dedupe handshake (see cncPortDecodedSampleCache): dropped decode
+    // cache keys must reach the worker so it re-sends sample bytes.
+    cncPortMssCacheDropNotifier = (keys) => sendPortCommand({ cmd: "mssCacheDrop", keys });
+
+    const offscreen = canvas.transferControlToOffscreen();
+    const moduleUrl = new URL("./engine_realm_boot.mjs", import.meta.url).href;
+    const setupDone = waitForRealmMessage((m) => m.cmd === "setupDone", 30000, "setupDone");
+    realmPort.postMessage({
+      __cncRealm: {
+        cmd: "setup",
+        moduleUrl,
+        canvas: offscreen,
+        options: {
+          diagLevel: threadedWorkerDiagLevel(),
+          preserveDrawingBuffer: contextPreserveDrawingBuffer,
+          shaderTier: threadedWorkerShaderTier(),
+        },
+      },
+    }, [offscreen]);
+    const setup = await setupDone;
+    if (setup.ok !== true) {
+      throw new Error(`threaded realm setup failed: ${setup.error ?? "unknown"}`);
+    }
+    threadedLog("realm setup complete", {
+      hooksInstalled: setup.hooksInstalled?.length ?? 0,
+      moduleCommandHandler: setup.moduleCommandHandler === true,
+    });
+    // Pin the standing worker->main channel inside the boot module (its
+    // unsolicited posts — status/mss/loopError — ride this respond closure).
+    sendPortCommand({ cmd: "attachMainPort" });
+    harnessState.threadedMode = true;
+  }
+
+  function ensureReady() {
+    if (!prepPromise) {
+      prepPromise = prepare();
+    }
+    return prepPromise;
+  }
+
+  function sendPortCommand(payload, transfer) {
+    if (!realmPort) {
+      throw new Error("threaded realm port not connected");
+    }
+    realmPort.postMessage({ __cncRealm: payload }, transfer ?? []);
+  }
+
+  function sendCommand(payload, { timeoutMs = 300000, onProgress = null } = {}) {
+    const id = ++commandId;
+    return new Promise((resolve, reject) => {
+      const entry = {
+        resolve,
+        reject,
+        onProgress: null,
+        timer: null,
+        cmdName: payload.cmd === "engineCall" ? `engineCall:${payload.name}` : payload.cmd,
+      };
+      const armTimer = () => {
+        if (entry.timer) {
+          clearTimeout(entry.timer);
+        }
+        entry.timer = setTimeout(() => {
+          pending.delete(id);
+          publishPending();
+          reject(new Error(`threaded command ${entry.cmdName} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      };
+      // Progress messages prove the engine thread is alive — re-arm the
+      // deadline instead of giving a long op a fixed budget.
+      entry.onProgress = (step) => {
+        armTimer();
+        if (onProgress) {
+          onProgress(step);
+        }
+      };
+      pending.set(id, entry);
+      publishPending();
+      armTimer();
+      try {
+        sendPortCommand({ ...payload, id });
+      } catch (error) {
+        pending.delete(id);
+        publishPending();
+        clearTimeout(entry.timer);
+        reject(error);
+      }
+    });
+  }
+
+  async function engineCall(name, returnType, argTypes, args, options = {}) {
+    await ensureReady();
+    const reply = await sendCommand({
+      cmd: "engineCall",
+      name,
+      returnType,
+      argTypes,
+      args,
+      parseJson: options.parseJson !== false,
+    }, { timeoutMs: options.timeoutMs ?? 300000 });
+    if (reply.ok !== true) {
+      throw new Error(reply.error ?? `threaded engine call ${name} failed`);
+    }
+    return reply.value;
+  }
+
+  // ---- ordered input forwarding with pointermove coalescing ------------------
+  // Entries flush once per task (microtask boundary); consecutive
+  // pointermove-only entries collapse to the latest one, mirroring how the
+  // Win32 message queue naturally coalesces WM_MOUSEMOVE.
+  const inputOutbox = [];
+  let inputFlushScheduled = false;
+  const WM_MOUSEMOVE = 0x0200;
+
+  function flushInputOutbox() {
+    inputFlushScheduled = false;
+    if (inputOutbox.length === 0 || !realmPort) {
+      inputOutbox.length = 0;
+      return;
+    }
+    const batch = inputOutbox.splice(0);
+    try {
+      sendPortCommand({ cmd: "input", batch });
+    } catch (_error) {
+      // Port gone (realm setup failed) — input is droppable.
+    }
+  }
+
+  function forwardInput(entry) {
+    const isMove = entry.win32?.message === WM_MOUSEMOVE
+      && entry.virtualKey === undefined
+      && (entry.directInputCode ?? -1) < 0
+      && entry.reset !== true;
+    const last = inputOutbox[inputOutbox.length - 1];
+    if (isMove && last && last.__move === true) {
+      inputOutbox[inputOutbox.length - 1] = { ...entry, __move: true };
+    } else {
+      inputOutbox.push(isMove ? { ...entry, __move: true } : entry);
+    }
+    if (!inputFlushScheduled) {
+      inputFlushScheduled = true;
+      queueMicrotask(flushInputOutbox);
+    }
+  }
+
+  // ---- boot/go + real init orchestration -------------------------------------
+  async function startEngineThread() {
+    await ensureReady();
+    if (engineThreadStarted) {
+      return;
+    }
+    const module = cncPortEmscriptenModule;
+    const rc = module._cnc_port_engine_thread_boot();
+    if (rc !== 0) {
+      throw new Error(`cnc_port_engine_thread_boot failed rc=${rc}`);
+    }
+    const deadline = performance.now() + 15000;
+    while (module._cnc_port_engine_thread_boot_state() < 1) {
+      if (performance.now() > deadline) {
+        throw new Error("engine pthread did not reach its go-flag poll within 15s");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    module._cnc_port_engine_thread_go();
+    engineThreadStarted = true;
+    threadedLog("engine pthread started (boot+go)");
+  }
+
+  async function engineInit(payload = {}) {
+    await startEngineThread();
+    const traceStart = harnessState.logs.length;
+    const onProgress = (step) => {
+      harnessState.realEngineInitProgress = step;
+      try {
+        window.dispatchEvent(new CustomEvent("cncport:initprogress", { detail: step }));
+      } catch (_error) { /* no DOM */ }
+    };
+    let reply = null;
+    let aborted = false;
+    let abortMessage = null;
+    try {
+      reply = await sendCommand({
+        cmd: "engineInit",
+        runDirectory: String(payload.runDirectory ?? "/assets/runtime"),
+        shellMap: payload.shellMap === true,
+        stepped: payload.stepped !== false,
+        bootWidth: payload.bootWidth,
+        bootHeight: payload.bootHeight,
+        stepBudgetMs: payload.stepBudgetMs,
+      }, {
+        // SwiftShader full boots take minutes; each init slice posts progress
+        // which re-arms this deadline, so a genuine hang is what times out.
+        timeoutMs: 600000,
+        onProgress,
+      });
+    } catch (error) {
+      aborted = true;
+      abortMessage = error?.message ?? String(error);
+    }
+    const result = reply?.result ?? null;
+    if (result?.aborted) {
+      aborted = true;
+      abortMessage = result.abortMessage ?? abortMessage ?? "unknown";
+    }
+    const frontier = result?.frontier ?? null;
+    // Same stdout-trace digest the non-threaded path builds: pthread printf is
+    // proxied to the main runtime's print handlers, so the subsystem trace
+    // still lands in harnessState.logs.
+    const traceLines = harnessState.logs
+      .slice(traceStart)
+      .map((entry) => entry?.data?.text)
+      .filter((text) => typeof text === "string"
+        && (text.startsWith("cnc-port: real-init") || text.startsWith("cnc-port: RELEASE_CRASH")));
+    const releaseCrash = traceLines.find((text) => text.startsWith("cnc-port: RELEASE_CRASH")) ?? null;
+    const completed = traceLines
+      .filter((text) => text.startsWith("cnc-port: real-init subsystem-done "))
+      .map((text) => text.slice("cnc-port: real-init subsystem-done ".length));
+    recordLog("real engine init (threaded)", {
+      aborted,
+      abortMessage,
+      releaseCrash,
+      subsystemsCompleted: completed.length,
+      initReturned: Boolean(frontier?.initReturned),
+    });
+    harnessState.realEngineInit = {
+      attempted: true,
+      threaded: true,
+      runDirectory: String(payload.runDirectory ?? "/assets/runtime"),
+      aborted,
+      abortMessage,
+      releaseCrash,
+      trace: traceLines,
+      subsystemsCompleted: completed,
+      frontier,
+    };
+    return {
+      ok: Boolean(frontier?.initReturned) && !aborted,
+      command: "realEngineInit",
+      threaded: true,
+      runDirectory: String(payload.runDirectory ?? "/assets/runtime"),
+      aborted,
+      abortMessage,
+      releaseCrash,
+      trace: traceLines,
+      subsystemsCompleted: completed,
+      inFlightSubsystem: null,
+      frontier,
+      state: snapshotState(),
+    };
+  }
+
+  async function startLoop(payload = {}) {
+    await startEngineThread();
+    const reply = await sendCommand({
+      cmd: "startLoop",
+      clientFps: payload.clientFps,
+      logicFps: payload.logicFps,
+      catchup: payload.catchup,
+    }, { timeoutMs: 60000 });
+    return reply;
+  }
+
+  // Fire-and-forget realm command (no id, no reply, no timeout entry) —
+  // pagehide teardown must not allocate pending state on a dying page.
+  function postCommand(payload) {
+    try {
+      sendPortCommand(payload);
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  return {
+    ensureReady,
+    startEngineThread,
+    engineCall,
+    engineInit,
+    startLoop,
+    forwardInput,
+    sendCommand,
+    postCommand,
+    get lastStatus() { return lastStatus; },
+    get lastLoopError() { return lastLoopError; },
+    get engineThreadStarted() { return engineThreadStarted; },
+  };
+}
+
+const threadedEngine = cncPortThreadedMode ? createThreadedEngineController() : null;
+if (threadedEngine) {
+  // Prepare the worker realm as soon as the runtime is up — BEFORE any engine
+  // start (P1a handshake rule: all realm prep must complete before boot/go
+  // blocks the worker's event loop).
+  threadedEngine.ensureReady().catch((error) => {
+    recordLog("threaded realm prep failed", { error: error?.message ?? String(error) });
+  });
+}
+
+// Redirect Web Audio completion callbacks into the engine realm in threaded
+// mode (they call cnc_port_mss_complete_* which touches engine state and must
+// run on the engine thread).
+function notifyEngineAudioCompletedThreaded(fnName, handle) {
+  const numericHandle = Number(handle) >>> 0;
+  if (!numericHandle) {
+    return true;
+  }
+  if (!threadedEngine) {
+    return false;
+  }
+  threadedEngine.engineCall(fnName, null, ["number"], [numericHandle], { timeoutMs: 60000 })
+    .catch((error) => {
+      recordLog("threaded audio completion failed", {
+        fnName,
+        error: error?.message ?? String(error),
+      });
+    });
+  return true;
+}
+
+// Threaded capture of the #viewport placeholder canvas: the transferred
+// canvas commits frames from the worker; drawImage on the placeholder is the
+// spec-supported way to read them back on main.
+function snapshotThreadedViewport() {
+  const scratch = document.createElement("canvas");
+  const width = harnessState.engineDisplaySize?.width ?? canvas.width;
+  const height = harnessState.engineDisplaySize?.height ?? canvas.height;
+  scratch.width = Math.max(1, width);
+  scratch.height = Math.max(1, height);
+  const context = scratch.getContext("2d");
+  try {
+    context.drawImage(canvas, 0, 0, scratch.width, scratch.height);
+    return scratch.toDataURL("image/png");
+  } catch (error) {
+    recordLog("threaded snapshot failed", { error: error?.message ?? String(error) });
+    return null;
+  }
+}
+
+// RPC routing gate for threaded mode. Returns undefined to fall through to
+// the regular (main-side JS only) handler; anything else is the final RPC
+// result. Commands that would call wasm exports from the MAIN thread while
+// the engine runs on the pthread are either routed over the realm port or
+// answered with an explicit unsupported error — never allowed through and
+// never hung.
+const THREADED_MAIN_SIDE_COMMANDS = new Set([
+  // mountArchive/mountArchives are handled in the switch below: pre-boot they
+  // fall through to the main-side pipeline (main still owns the wasm), post
+  // boot they are refused (registerArchiveSet/probeArchive are main-thread
+  // wasm calls).
+  "resumeBrowserAudioRuntime",
+  "setBrowserAudioMixerVolumes",
+  "setD3D8GammaRamp",
+  // Saves: IDBFS is mounted on the MAIN runtime (preRun) and the engine
+  // thread's FS writes proxy to main, so persist (FS.syncfs) and the listing
+  // are pure main-side JS in threaded mode too.
+  "persistSaves",
+  "listSaves",
+]);
+
+async function threadedRpc(command, payload = {}) {
+  if (!threadedEngine) {
+    return undefined;
+  }
+  if (THREADED_MAIN_SIDE_COMMANDS.has(command)) {
+    return undefined; // pure main-side JS/FS/WebAudio — unchanged behavior
+  }
+  switch (command) {
+    case "state": {
+      // Parity with the non-threaded handler: fetch the wasm cnc_port_state
+      // JSON ON the engine thread and merge it into harnessState via
+      // applyModuleState, then return the main-side snapshot. Before the
+      // engine pthread starts (or if the round trip fails) fall back to the
+      // main-only snapshot — never a main-thread wasm call, never a hang.
+      let wasmStateSource = "unavailable (engine thread not started)";
+      if (threadedEngine.engineThreadStarted) {
+        try {
+          const moduleState = await threadedEngine.engineCall(
+            "cnc_port_state", "string", [], [], { timeoutMs: 120000 });
+          if (moduleState && typeof moduleState === "object") {
+            applyModuleState(moduleState);
+            harnessState.wasm = "loaded";
+            wasmStateSource = "engine-thread";
+          } else {
+            wasmStateSource = "cnc_port_state returned a non-object payload";
+          }
+        } catch (error) {
+          wasmStateSource = `cnc_port_state failed: ${error?.message ?? String(error)}`;
+        }
+      }
+      return {
+        ok: true,
+        command,
+        state: snapshotState(),
+        logs: [...harnessState.logs],
+        threaded: true,
+        wasmStateSource,
+        threadedEngine: threadedEngine.lastStatus,
+      };
+    }
+    case "mountArchive":
+    case "mountArchives": {
+      if (threadedEngine.engineThreadStarted) {
+        // The mount pipelines call registerArchiveSet/probeArchive wasm
+        // exports on the MAIN thread — safe only before the engine pthread
+        // runs (play boots mount-first). Refuse loudly instead of racing the
+        // engine thread on the shared wasm.
+        return {
+          ok: false,
+          command,
+          threaded: true,
+          error: "post-boot mounts are unsupported in threaded mode: the mount "
+            + "pipeline calls registerArchiveSet/probeArchive wasm exports on the "
+            + "main thread, which is only safe before the engine pthread starts. "
+            + "Mount all archives before realEngineInit.",
+        };
+      }
+      return undefined; // pre-boot: main still owns the wasm — unchanged pipeline
+    }
+    case "realEngineAnimReport": {
+      try {
+        const report = await threadedEngine.engineCall(
+          "cnc_port_real_engine_anim_report", "string", ["number"],
+          [Number(payload.maxEntries ?? 0)]);
+        return { ok: report?.ok === true, command, report, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineDoFX":
+    case "realEngineSpawnParticleSystem": {
+      const particleOnly = command === "realEngineSpawnParticleSystem";
+      const exportName = particleOnly
+        ? "cnc_port_real_engine_spawn_particle_system"
+        : "cnc_port_real_engine_do_fx";
+      try {
+        const result = await threadedEngine.engineCall(
+          exportName,
+          "string",
+          ["string", "number", "number", "number", "number", "number"],
+          [
+            String(payload.name ?? (particleOnly ? "MicrowaveEmitter" : "WeaponFX_MOAB_Blast")),
+            Number(payload.x ?? 0),
+            Number(payload.y ?? 0),
+            Number(payload.z ?? 0),
+            payload.useViewPosition === false ? 0 : 1,
+            payload.clampToTerrain === false ? 0 : 1,
+          ],
+        );
+        return { ok: Boolean(result?.ok), command, result, threaded: true, state: snapshotState() };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineSetViewFilter": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_real_engine_set_view_filter",
+          "string",
+          ["number", "number", "number", "number"],
+          [
+            Number(payload.filter ?? 0),
+            Number(payload.mode ?? 0),
+            Number(payload.fadeFrames ?? 1),
+            Number(payload.fadeDirection ?? 1),
+          ],
+        );
+        return { ok: Boolean(result?.ok), command, result, threaded: true, state: snapshotState() };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "querySelection": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_query_selection", "string", [], []);
+        return {
+          ok: Boolean(result?.ready),
+          command,
+          result,
+          threaded: true,
+          state: snapshotState(),
+        };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineFrameSummary": {
+      // Issue-recorder deep snapshots use this; the frames interleave with
+      // the engine-thread paced loop exactly like they interleave with the
+      // page-driven loop in non-threaded mode.
+      try {
+        const frames = Math.max(1, Math.min(600, Math.trunc(Number(payload.frames ?? 1))));
+        if (payload.profile !== undefined) {
+          await threadedEngine.engineCall(
+            "cnc_port_real_engine_set_frame_profile", null, ["number"],
+            [payload.profile === true ? 1 : 0]);
+        }
+        if (payload.playerDiagnostics !== undefined) {
+          await threadedEngine.engineCall(
+            "cnc_port_real_engine_set_player_diagnostics", null, ["number"],
+            [payload.playerDiagnostics === true ? 1 : 0]);
+        }
+        const frame = await threadedEngine.engineCall(
+          "cnc_port_real_engine_frame_summary", "string", ["number"], [frames]);
+        return {
+          ok: Boolean(frame?.framesCompleted > 0),
+          command,
+          aborted: false,
+          frame,
+          threaded: true,
+          state: snapshotState(),
+        };
+      } catch (error) {
+        return {
+          ok: false, command, aborted: true,
+          abortMessage: error?.message ?? String(error), threaded: true,
+        };
+      }
+    }
+    case "d3d8TextureInventory": {
+      // The D3D8 executor (and its live-texture map) runs in the ENGINE realm
+      // in threaded mode — the main-side executor is a blank scratch canvas.
+      // Route the inventory to the worker realm (pure JS + GL reads there).
+      try {
+        await threadedEngine.ensureReady();
+        const reply = await threadedEngine.sendCommand({
+          cmd: "textureInventory",
+          sizes: Array.isArray(payload.sizes) ? payload.sizes : undefined,
+          sampleLimit: payload.sampleLimit,
+        }, { timeoutMs: 120000 });
+        return {
+          ok: reply?.ok === true,
+          command,
+          inventory: reply?.inventory ?? {},
+          liveCount: reply?.liveCount ?? 0,
+          threaded: true,
+          error: reply?.ok === true ? undefined : (reply?.error ?? "worker inventory failed"),
+        };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "screenshot":
+      return { ok: true, command, screenshot: snapshotThreadedViewport(), threaded: true };
+    case "threadedStatus": {
+      await threadedEngine.ensureReady();
+      if (threadedEngine.engineThreadStarted) {
+        // Long engine frames (shellmap load slices under SwiftShader) delay
+        // port replies by tens of seconds — give the round trip real room.
+        const reply = await threadedEngine.sendCommand({ cmd: "status" }, { timeoutMs: 120000 });
+        return { ok: true, command, status: reply, threaded: true };
+      }
+      return { ok: true, command, status: threadedEngine.lastStatus, threaded: true };
+    }
+    case "threadedPacingSamples": {
+      const reply = await threadedEngine.sendCommand({ cmd: "pacingSamples" }, { timeoutMs: 120000 });
+      return { ok: true, command, samples: reply.samples ?? [], threaded: true };
+    }
+    case "threadedStartLoop": {
+      try {
+        const reply = await threadedEngine.startLoop(payload);
+        return {
+          ok: reply.ok === true,
+          command,
+          pacing: reply.pacing ?? null,
+          clientFps: reply.clientFps,
+          logicFps: reply.logicFps,
+          error: reply.ok === true ? undefined : (reply.error ?? "startLoop failed"),
+          threaded: true,
+        };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineInit":
+      try {
+        return await threadedEngine.engineInit(payload);
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    case "realEngineFrame": {
+      try {
+        const frames = Math.max(1, Math.min(600, Math.trunc(Number(payload.frames ?? 1))));
+        const frame = await threadedEngine.engineCall(
+          "cnc_port_real_engine_frame", "string", ["number"], [frames]);
+        return {
+          ok: Boolean(frame?.framesCompleted > 0),
+          command,
+          aborted: false,
+          frame,
+          threaded: true,
+          state: snapshotState(),
+        };
+      } catch (error) {
+        return {
+          ok: false, command, aborted: true,
+          abortMessage: error?.message ?? String(error), threaded: true,
+        };
+      }
+    }
+    case "realEngineFramePaced": {
+      try {
+        const frame = await threadedEngine.engineCall(
+          "cnc_port_real_engine_frame_paced", "string", ["number"],
+          [payload.runLogic === false ? 0 : 1]);
+        return { ok: frame?.tick === true, command, frame, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineSetClientPacing": {
+      try {
+        const pacing = await threadedEngine.engineCall(
+          "cnc_port_real_engine_set_client_pacing", "string", ["number", "number"],
+          [Number(payload.clientFps ?? 60), Number(payload.logicFps ?? 30)]);
+        return { ok: pacing?.ok === true, command, ...pacing, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineSetLoadStepping": {
+      try {
+        const stepping = await threadedEngine.engineCall(
+          "cnc_port_real_engine_set_load_stepping", "string", ["number", "number"],
+          [payload.enabled === false ? 0 : 1, Number(payload.budgetMs ?? 0)]);
+        return { ok: true, command, stepping, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineFrontier": {
+      try {
+        const frontier = await threadedEngine.engineCall(
+          "cnc_port_real_engine_frontier", "string", [], []);
+        return { ok: true, command, frontier, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "setEngineResolution": {
+      const width = Math.max(1, Math.round(Number(payload.width ?? 0)));
+      const height = Math.max(1, Math.round(Number(payload.height ?? 0)));
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width < 2 || height < 2) {
+        return { ok: false, command, error: "invalid width/height", threaded: true };
+      }
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_real_engine_set_resolution", "string", ["number", "number"],
+          [width, height]);
+        return {
+          ok: result?.ok === true,
+          command,
+          requested: { width, height },
+          applied: {
+            width: Number.isFinite(result?.width) && result.width > 0 ? result.width : width,
+            height: Number.isFinite(result?.height) && result.height > 0 ? result.height : height,
+          },
+          reflow: result?.reflow ?? null,
+          error: result?.ok === true ? undefined : (result?.error ?? "resolution change refused"),
+          threaded: true,
+        };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "postMessage": {
+      // Synthetic win32 message from the harness/pages: ride the ordered
+      // input-forwarding path (applied on the engine thread between frames).
+      await threadedEngine.ensureReady();
+      threadedEngine.forwardInput({
+        cursor: payload.point ?? null,
+        win32: {
+          message: Number(payload.message ?? 0),
+          wParam: Number(payload.wParam ?? 0),
+          lParam: Number(payload.lParam ?? 0),
+          px: payload.point?.x ?? 0,
+          py: payload.point?.y ?? 0,
+        },
+      });
+      return { ok: true, command, forwarded: true, threaded: true, state: snapshotState() };
+    }
+    case "realEngineDumpWindows": {
+      try {
+        const windows = await threadedEngine.engineCall(
+          "cnc_port_real_engine_dump_windows", "string", [], []);
+        return { ok: true, command, windows, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "probeBrowserInput": {
+      try {
+        const probe = await threadedEngine.engineCall(
+          "cnc_port_probe_browser_input", "string", [], []);
+        return { ok: true, command, probe, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "queryDrawables": {
+      try {
+        const drawables = await threadedEngine.engineCall(
+          "cnc_port_query_drawables", "string", [], []);
+        return { ok: true, command, drawables, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "clickWindowByName": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_click_window_by_name", "string", ["string"],
+          // payload.name matches the non-threaded handler's contract.
+          [String(payload.name ?? payload.window ?? payload.windowName ?? "")]);
+        // The export's JSON has no "ok" field — clicked is the success signal.
+        return { ok: result?.clicked === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineSetSkirmishMap": {
+      // Same export the non-threaded handler cwraps; executed on the engine
+      // thread. Enables in-game (skirmish) drives/measurements in threaded
+      // mode (P3 fixed-heap sizing used this first).
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_real_engine_set_skirmish_map", "string", ["string"],
+          [String(payload.map ?? payload.mapName ?? "")]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineSetSkirmishLocalTemplate": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_real_engine_set_skirmish_local_template", "string", ["string"],
+          [String(payload.templateName ?? payload.template ?? "")]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    default:
+      return {
+        ok: false,
+        command,
+        error: "not yet supported in threaded mode",
+        threaded: true,
+      };
+  }
+}
+
 function browserAudioContextCtor() {
   return globalThis.AudioContext || globalThis.webkitAudioContext || null;
 }
@@ -1916,7 +1814,15 @@ async function resumeBrowserAudioRuntime(trigger = "rpc.resumeBrowserAudioRuntim
 
   try {
     if (typeof context.resume === "function" && context.state !== "running") {
-      await context.resume();
+      // Under the autoplay policy context.resume() stays PENDING (not
+      // rejected) until a user gesture — a gesture-less boot (headless
+      // ?autostart=1 probes) would hang forever on this await. Give it a
+      // short window and move on; the window pointerdown/keydown listeners
+      // re-resume on the first real gesture.
+      await Promise.race([
+        context.resume(),
+        new Promise((resolve) => setTimeout(resolve, 3000)),
+      ]);
     }
     if (context.state === "running") {
       browserAudioRuntime.resumeSuccesses += 1;
@@ -2637,6 +2543,7 @@ function summarizeBrowserMssStreamPlaybackRuntime() {
     lastVolumeUpdate: browserMssStreamPlaybackRuntime.lastVolumeUpdate,
     eventLog: [...browserMssStreamPlaybackRuntime.eventLog],
     lastError: browserMssStreamPlaybackRuntime.lastError,
+    lastArchiveError: browserMssStreamPlaybackRuntime.lastArchiveError,
   };
 }
 
@@ -2675,7 +2582,24 @@ function readMssSampleWaveBytes(payload, heapu8) {
 const cncPortDecodedSampleCache = new Map();
 let cncPortDecodedSampleCacheBytes = 0;
 const CNC_PORT_DECODED_SAMPLE_CACHE_MAX_BYTES = 96 * 1024 * 1024;
-const cncPortDecodedSampleCacheStats = { hits: 0, misses: 0, evictions: 0 };
+const cncPortDecodedSampleCacheStats = { hits: 0, misses: 0, evictions: 0, dedupeMisses: 0 };
+
+// Threaded-mode dedupe handshake: the ENGINE realm forwards sample-start
+// payloads with a content cacheKey and skips the byte copy once main has the
+// decoded entry. When main drops a key (LRU eviction, or a start that failed
+// before caching), it must tell the worker so the next start re-sends bytes.
+// Installed by the threaded controller; null (no-op) in non-threaded mode.
+let cncPortMssCacheDropNotifier = null;
+function notifyMssCacheDrop(keys) {
+  if (cncPortMssCacheDropNotifier && keys.length > 0) {
+    try {
+      cncPortMssCacheDropNotifier(keys);
+    } catch (_error) {
+      // Port gone — the worker will simply keep sending key-only starts,
+      // each of which re-notifies here.
+    }
+  }
+}
 
 function summarizeDecodedSampleCache() {
   return {
@@ -2684,6 +2608,7 @@ function summarizeDecodedSampleCache() {
     hits: cncPortDecodedSampleCacheStats.hits,
     misses: cncPortDecodedSampleCacheStats.misses,
     evictions: cncPortDecodedSampleCacheStats.evictions,
+    dedupeMisses: cncPortDecodedSampleCacheStats.dedupeMisses,
   };
 }
 
@@ -2706,8 +2631,31 @@ function mssSampleCacheKey(heapu8, dataPtr, riffSize) {
 }
 
 function getOrDecodeMssSampleBuffer(context, payload, heapu8) {
+  // Threaded transport key: the engine realm computed the SAME content key
+  // over the same bytes (engine_realm_boot.mjs) — trust it both for lookup
+  // and as the insert key so the two sides can never diverge.
+  const transportKey = typeof payload?.cacheKey === "string" ? payload.cacheKey : null;
+  if (transportKey) {
+    const cached = cncPortDecodedSampleCache.get(transportKey);
+    if (cached) {
+      cncPortDecodedSampleCache.delete(transportKey);
+      cncPortDecodedSampleCache.set(transportKey, cached);
+      cached.plays += 1;
+      cncPortDecodedSampleCacheStats.hits += 1;
+      return cached;
+    }
+    if (!Number(payload?.dataPtr ?? 0)) {
+      // Key-only start (worker skipped the byte copy) after this side evicted
+      // the entry: notify the drop so the next start re-sends bytes. This one
+      // play is skipped — evictions target least-recently-used entries, so a
+      // just-replayed sample is essentially never the victim.
+      cncPortDecodedSampleCacheStats.dedupeMisses += 1;
+      notifyMssCacheDrop([transportKey]);
+      throw new Error(`MSS dedupe miss: decoded cache no longer holds ${transportKey}`);
+    }
+  }
   const { dataPtr, riffSize } = mssSampleWaveRange(payload, heapu8);
-  const key = mssSampleCacheKey(heapu8, dataPtr, riffSize);
+  const key = transportKey ?? mssSampleCacheKey(heapu8, dataPtr, riffSize);
   let entry = cncPortDecodedSampleCache.get(key);
   if (entry) {
     // Map preserves insertion order; re-insert to keep LRU eviction honest.
@@ -2739,12 +2687,17 @@ function getOrDecodeMssSampleBuffer(context, payload, heapu8) {
   };
   cncPortDecodedSampleCache.set(key, entry);
   cncPortDecodedSampleCacheBytes += entry.decodedFloatBytes;
+  const evictedKeys = [];
   while (cncPortDecodedSampleCacheBytes > CNC_PORT_DECODED_SAMPLE_CACHE_MAX_BYTES
       && cncPortDecodedSampleCache.size > 1) {
     const oldest = cncPortDecodedSampleCache.entries().next().value;
     cncPortDecodedSampleCache.delete(oldest[0]);
     cncPortDecodedSampleCacheBytes -= oldest[1].decodedFloatBytes;
     cncPortDecodedSampleCacheStats.evictions += 1;
+    evictedKeys.push(oldest[0]);
+  }
+  if (evictedKeys.length > 0) {
+    notifyMssCacheDrop(evictedKeys);
   }
   return entry;
 }
@@ -2764,6 +2717,12 @@ function clamp01(value) {
 // wrappers are built via cwrap and cached per function name.
 const cncPortAudioCompletionWrappers = new Map(); // fnName -> cwrapped fn
 function notifyEngineAudioCompleted(fnName, handle) {
+  if (cncPortThreadedMode) {
+    // The completion export touches engine state — it must run on the engine
+    // thread. Fire-and-forget through the realm-port engine-call primitive.
+    notifyEngineAudioCompletedThreaded(fnName, handle);
+    return;
+  }
   const module = cncPortEmscriptenModule;
   if (!module || typeof module.cwrap !== "function") {
     return;
@@ -3276,6 +3235,7 @@ const browserMssStreamPlaybackRuntime = {
   lastEvent: null,
   lastVolumeUpdate: null,
   lastError: null,
+  lastArchiveError: null,
 };
 
 function resetBrowserMssStreamPlaybackRuntime() {
@@ -3326,6 +3286,41 @@ function cncPortMssStreamVolumePan(payload) {
     active.pan = pan;
   }
   return true;
+}
+
+// ---- threaded OPFS archive reads for the MSS stream path -------------------
+// In threaded mode the archive bytes live on OPFS (0-byte MEMFS markers only),
+// so the stream-file hunt below cannot fs.readFile them. The staged
+// FileSystemSyncAccessHandle objects live in the ENGINE realm; the
+// "opfsReadRange" realm command (engine_realm_boot.mjs) reads ranges there
+// and transfers the bytes back. The parsed BIG directory is cached per
+// archive so each stream start costs exactly one range read for the payload.
+const mssStreamArchiveDirectoryCache = new Map(); // archive memfs path -> entries[]
+
+async function opfsRealmReadRange(path, offset, length) {
+  if (!threadedEngine) {
+    throw new Error("opfsReadRange requires threaded mode");
+  }
+  const reply = await threadedEngine.sendCommand(
+    { cmd: "opfsReadRange", path, offset, length },
+    { timeoutMs: 120000 },
+  );
+  if (reply?.ok !== true) {
+    throw new Error(reply?.error ?? `opfsReadRange failed for ${path}`);
+  }
+  return reply; // { size, bytes }
+}
+
+async function openOpfsArchiveReader(path) {
+  const stat = await opfsRealmReadRange(path, 0, 0);
+  return {
+    size: Number(stat.size ?? 0),
+    async readAt(position, length) {
+      const reply = await opfsRealmReadRange(path, position, length);
+      return reply.bytes instanceof Uint8Array ? reply.bytes : new Uint8Array(0);
+    },
+    close() {},
+  };
 }
 
 function normalizeBrowserAudioLookupPath(path) {
@@ -3396,7 +3391,15 @@ async function _startMssStreamAsync(payload) {
 
   // Search mounted audio archives for the stream file.
   const normalizedFilename = normalizeBrowserAudioLookupPath(filename);
+  const entryMatchesFilename = (candidate) => {
+    const c = normalizeBrowserAudioLookupPath(candidate.normalizedPath);
+    return (
+      c === normalizedFilename ||
+      c.endsWith("\\" + normalizedFilename)
+    );
+  };
   let archiveBytes = null;
+  let opfsPayloadBytes = null;
   let entry = null;
 
   for (const mounted of harnessState.mountedArchives) {
@@ -3404,27 +3407,50 @@ async function _startMssStreamAsync(payload) {
       continue;
     }
     try {
-      archiveBytes = wasmModule.fs.readFile(mounted.path);
-      const entries = readBigDirectoryFromBytes(archiveBytes, mounted.name);
-      entry = entries.find((candidate) => {
-        const c = normalizeBrowserAudioLookupPath(candidate.normalizedPath);
-        return (
-          c === normalizedFilename ||
-          c.endsWith("\\" + normalizedFilename)
-        );
-      });
-      if (entry) break;
-    } catch { /* skip unreadable archive */ }
+      if (mounted.opfsPath) {
+        // Threaded OPFS mount: the bytes never entered MEMFS. Parse (and
+        // cache) the BIG directory through realm-port range reads against the
+        // staged sync-access handles, then read just the entry payload.
+        let entries = mssStreamArchiveDirectoryCache.get(mounted.path);
+        if (!entries) {
+          const reader = await openOpfsArchiveReader(mounted.path);
+          entries = await readBigDirectoryFromReader(reader, mounted.name);
+          mssStreamArchiveDirectoryCache.set(mounted.path, entries);
+        }
+        entry = entries.find(entryMatchesFilename) ?? null;
+        if (entry) {
+          const range = await opfsRealmReadRange(mounted.path, entry.offset, entry.size);
+          opfsPayloadBytes = range.bytes instanceof Uint8Array ? range.bytes : null;
+          if (!opfsPayloadBytes || opfsPayloadBytes.byteLength !== entry.size) {
+            throw new Error(`OPFS stream payload short read for ${entry.path}`);
+          }
+          break;
+        }
+      } else {
+        archiveBytes = wasmModule.fs.readFile(mounted.path);
+        const entries = readBigDirectoryFromBytes(archiveBytes, mounted.name);
+        entry = entries.find(entryMatchesFilename) ?? null;
+        if (entry) break;
+      }
+    } catch (archiveError) {
+      // Skip unreadable archive, but keep the reason visible for diagnostics.
+      browserMssStreamPlaybackRuntime.lastArchiveError = {
+        archive: mounted.name,
+        error: archiveError?.message ?? String(archiveError),
+      };
+      entry = null;
+    }
   }
 
-  if (!entry || !archiveBytes) {
+  if (!entry || (!archiveBytes && !opfsPayloadBytes)) {
     browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
     browserMssStreamPlaybackRuntime.lastError =
       `Stream file not found in any mounted archive: ${filename}`;
     return;
   }
 
-  const payloadBytes = archiveBytes.subarray(entry.offset, entry.offset + entry.size);
+  const payloadBytes = opfsPayloadBytes
+    ?? archiveBytes.subarray(entry.offset, entry.offset + entry.size);
 
   let decoded;
   try {
@@ -3943,320 +3969,6 @@ async function playBrowserAudioRequestPathLiveEvent(payload = {}) {
   return summarizeBrowserAudioRequestPathRuntime();
 }
 
-// getBoundingClientRect() forces style/layout and is on the per-draw path via
-// syncCanvasSize(), so the display size is cached and only recomputed when a
-// size-affecting event fires (resize, fullscreen, dpr change, engine-display /
-// backing-store updates below).
-let cachedCanvasDisplaySize = null;
-function invalidateCanvasDisplaySizeCache() {
-  cachedCanvasDisplaySize = null;
-}
-if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
-  window.addEventListener("resize", invalidateCanvasDisplaySizeCache);
-  document.addEventListener("fullscreenchange", invalidateCanvasDisplaySizeCache);
-  document.addEventListener("webkitfullscreenchange", invalidateCanvasDisplaySizeCache);
-  if (typeof ResizeObserver === "function" && canvas) {
-    new ResizeObserver(invalidateCanvasDisplaySizeCache).observe(canvas);
-  }
-  const watchDevicePixelRatio = () => {
-    try {
-      const mql = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
-      mql.addEventListener("change", () => {
-        invalidateCanvasDisplaySizeCache();
-        watchDevicePixelRatio();
-      }, { once: true });
-    } catch (_error) {
-      // matchMedia unavailable; resize events still invalidate.
-    }
-  };
-  watchDevicePixelRatio();
-}
-
-function getCanvasDisplaySize() {
-  if (cachedCanvasDisplaySize) {
-    return cachedCanvasDisplaySize;
-  }
-  const rect = canvas.getBoundingClientRect();
-  const devicePixelRatio = window.devicePixelRatio || 1;
-  const cssWidth = rect.width || canvas.width;
-  const cssHeight = rect.height || canvas.height;
-
-  // Single sizing rule: once the engine device exists, the backing store is
-  // PINNED to the engine render resolution (the D3D8 shim reports it via
-  // onD3D8BackbufferResize on device create and every Reset), so the drawing
-  // buffer always matches the render target 1:1 — no stretch, correct
-  // unproject/pick-ray, identical in windowed and fullscreen (the CSS
-  // `object-fit: contain` letterboxes it into whatever box the page gives
-  // the canvas). cssWidth/cssHeight still report the real CSS box so
-  // pointer->engine mapping and refreshCanvasState stay accurate. Pre-engine
-  // pages (probes without the real device) fall through to CSS x DPR.
-  if (explicitEngineBackingStore
-      && explicitEngineBackingStore.width > 0
-      && explicitEngineBackingStore.height > 0) {
-    cachedCanvasDisplaySize = {
-      width: explicitEngineBackingStore.width,
-      height: explicitEngineBackingStore.height,
-      cssWidth,
-      cssHeight,
-      devicePixelRatio,
-    };
-    return cachedCanvasDisplaySize;
-  }
-
-  cachedCanvasDisplaySize = {
-    width: Math.max(1, Math.round(cssWidth * devicePixelRatio)),
-    height: Math.max(1, Math.round(cssHeight * devicePixelRatio)),
-    cssWidth,
-    cssHeight,
-    devicePixelRatio,
-  };
-  return cachedCanvasDisplaySize;
-}
-
-function refreshCanvasState(displaySize = getCanvasDisplaySize()) {
-  const previousGraphics = harnessState.graphics ?? {};
-  harnessState.canvas = {
-    width: canvas.width,
-    height: canvas.height,
-    cssWidth: Math.round(displaySize.cssWidth),
-    cssHeight: Math.round(displaySize.cssHeight),
-    devicePixelRatio: displaySize.devicePixelRatio,
-  };
-  harnessState.graphics = {
-    ...previousGraphics,
-    api: gl ? "webgl2" : "2d-fallback",
-    ok: Boolean(gl),
-    contextLost: gl ? gl.isContextLost() : false,
-    drawingBufferWidth: gl ? gl.drawingBufferWidth : canvas.width,
-    drawingBufferHeight: gl ? gl.drawingBufferHeight : canvas.height,
-    // The ~150-field perf summary is too expensive to rebuild on the clear/draw
-    // path in lite mode; snapshotState() force-refreshes it for RPC consumers.
-    d3d8Perf: d3d8DiagLevel === "full"
-      ? d3d8PerfSummary()
-      : (previousGraphics.d3d8Perf ?? null),
-  };
-}
-
-function syncCanvasSize(options = {}) {
-  if (options.flushPending !== false) {
-    flushD3D8PendingDrawBatch("syncCanvasSize");
-  }
-  const displaySize = getCanvasDisplaySize();
-  const restoreViewport = options.restoreViewport !== false;
-  const refreshState = options.refreshState !== false;
-  let resized = false;
-  if (canvas.width !== displaySize.width || canvas.height !== displaySize.height) {
-    canvas.width = displaySize.width;
-    canvas.height = displaySize.height;
-    resized = true;
-  }
-  if (resized) {
-    invalidateD3D8NormalizedViewportCache();
-  }
-  if (gl && restoreViewport) {
-    restoreFullCanvasViewport();
-  } else if (resized) {
-    invalidateD3D8AppliedViewportCache();
-  }
-  if (refreshState || resized) {
-    refreshCanvasState(displaySize);
-  }
-}
-
-// The engine owns the render resolution. The D3D8 shim calls this on device
-// create and on every device Reset (any TheDisplay->setDisplayMode — whether
-// the page's setEngineResolution RPC or the in-game options screen drove it),
-// making the engine backbuffer the single source of truth for the WebGL2
-// backing store. Pin the store to it, resize the canvas, refresh the caches,
-// and broadcast so the page UI can mirror engine-initiated changes.
-function onD3D8BackbufferResize(width, height, source = "engine") {
-  const bufferWidth = Math.round(Number(width) || 0);
-  const bufferHeight = Math.round(Number(height) || 0);
-  if (bufferWidth < 2 || bufferHeight < 2) {
-    return;
-  }
-  // Flush draws batched against the OLD buffer before the size changes.
-  flushD3D8PendingDrawBatch("backbufferResize");
-  explicitEngineBackingStore = { width: bufferWidth, height: bufferHeight };
-  harnessState.engineDisplaySize = { width: bufferWidth, height: bufferHeight };
-  invalidateCanvasDisplaySizeCache();
-  if (canvas.width !== bufferWidth || canvas.height !== bufferHeight) {
-    canvas.width = bufferWidth;
-    canvas.height = bufferHeight;
-  }
-  invalidateD3D8NormalizedViewportCache();
-  invalidateD3D8AppliedViewportCache();
-  if (gl) {
-    restoreFullCanvasViewport();
-  }
-  refreshCanvasState();
-  recordLog("d3d8 backbuffer resize", { width: bufferWidth, height: bufferHeight, source });
-  if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
-    try {
-      window.dispatchEvent(new CustomEvent("cncport:resolutionchange", {
-        detail: { width: bufferWidth, height: bufferHeight, source },
-      }));
-    } catch {
-      // worker context without CustomEvent — state RPC still reflects the size
-    }
-  }
-}
-
-// Browser-native pixel size for the shim's adapter mode table (the size the
-// canvas CSS box occupies x devicePixelRatio — rendering at it is 1:1 sharp).
-function d3d8NativeModeQuery() {
-  const rect = canvas.getBoundingClientRect();
-  const dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
-  const cssWidth = rect.width || canvas.width || 0;
-  const cssHeight = rect.height || canvas.height || 0;
-  return {
-    width: Math.round(cssWidth * dpr),
-    height: Math.round(cssHeight * dpr),
-  };
-}
-
-function finiteNumber(value, fallback) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function clampNumber(value, min, max, fallback) {
-  return Math.max(min, Math.min(max, finiteNumber(value, fallback)));
-}
-
-function currentDrawingBufferSize() {
-  return {
-    width: gl ? gl.drawingBufferWidth : canvas.width,
-    height: gl ? gl.drawingBufferHeight : canvas.height,
-  };
-}
-
-function restoreFullCanvasViewport() {
-  if (!gl) {
-    return;
-  }
-  gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
-  gl.disable(gl.SCISSOR_TEST);
-  gl.depthRange(0, 1);
-  invalidateD3D8AppliedViewportCache();
-}
-
-function normalizeD3D8Viewport(payload = {}, drawingBuffer = currentDrawingBufferSize()) {
-  const bufferWidth = Math.max(0, drawingBuffer.width);
-  const bufferHeight = Math.max(0, drawingBuffer.height);
-  const requested = {
-    x: Math.trunc(finiteNumber(payload.x, 0)),
-    y: Math.trunc(finiteNumber(payload.y, 0)),
-    width: Math.trunc(finiteNumber(payload.width, bufferWidth)),
-    height: Math.trunc(finiteNumber(payload.height, bufferHeight)),
-    minZ: finiteNumber(payload.minZ, 0),
-    maxZ: finiteNumber(payload.maxZ, 1),
-    targetWidth: Math.trunc(finiteNumber(payload.targetWidth, payload.width ?? bufferWidth)),
-    targetHeight: Math.trunc(finiteNumber(payload.targetHeight, payload.height ?? bufferHeight)),
-  };
-  const targetWidth = Math.max(1, requested.targetWidth);
-  const targetHeight = Math.max(1, requested.targetHeight);
-  const x = Math.max(0, Math.min(targetWidth, requested.x));
-  const y = Math.max(0, Math.min(targetHeight, requested.y));
-  const width = Math.max(0, Math.min(Math.max(0, requested.width), targetWidth - x));
-  const height = Math.max(0, Math.min(Math.max(0, requested.height), targetHeight - y));
-  const minZ = clampNumber(requested.minZ, 0, 1, 0);
-  const maxZ = Math.max(minZ, clampNumber(requested.maxZ, 0, 1, 1));
-  const d3d = { x, y, width, height, minZ, maxZ };
-  const scaleX = bufferWidth / targetWidth;
-  const scaleY = bufferHeight / targetHeight;
-  const glX = Math.round(x * scaleX);
-  const glTop = Math.round(y * scaleY);
-  const glWidth = Math.round(width * scaleX);
-  const glHeight = Math.round(height * scaleY);
-  const glViewport = {
-    x: glX,
-    y: Math.max(0, bufferHeight - glTop - glHeight),
-    width: glWidth,
-    height: glHeight,
-    minZ,
-    maxZ,
-  };
-  const appliedKey = {
-    x: glViewport.x,
-    y: glViewport.y,
-    width: glViewport.width,
-    height: glViewport.height,
-    minZ: glViewport.minZ,
-    maxZ: glViewport.maxZ,
-    drawingBufferWidth: bufferWidth,
-    drawingBufferHeight: bufferHeight,
-  };
-  return {
-    requested,
-    d3d,
-    gl: glViewport,
-    appliedKey,
-    renderTarget: {
-      width: targetWidth,
-      height: targetHeight,
-      scaleX,
-      scaleY,
-    },
-    drawingBuffer,
-    clipped: requested.x !== x ||
-      requested.y !== y ||
-      requested.width !== width ||
-      requested.height !== height ||
-      requested.minZ !== minZ ||
-      requested.maxZ !== maxZ,
-  };
-}
-
-function currentD3D8ViewportPayload(drawingBuffer = currentDrawingBufferSize()) {
-  if (d3d8ViewportState) {
-    return d3d8ViewportState;
-  }
-  return {
-    x: 0,
-    y: 0,
-    width: drawingBuffer.width,
-    height: drawingBuffer.height,
-    minZ: 0,
-    maxZ: 1,
-    targetWidth: drawingBuffer.width,
-    targetHeight: drawingBuffer.height,
-  };
-}
-
-function cachedD3D8NormalizedViewport() {
-  const drawingBuffer = currentDrawingBufferSize();
-  const bufferWidth = Math.max(0, drawingBuffer.width);
-  const bufferHeight = Math.max(0, drawingBuffer.height);
-  const payload = currentD3D8ViewportPayload({ width: bufferWidth, height: bufferHeight });
-  if (d3d8CachedNormalizedViewport &&
-      d3d8ViewportInputMatches(d3d8CachedViewportInput, payload, bufferWidth, bufferHeight)) {
-    return d3d8CachedNormalizedViewport;
-  }
-  const viewport = normalizeD3D8Viewport(payload, { width: bufferWidth, height: bufferHeight });
-  d3d8CachedViewportInput = {
-    x: payload.x,
-    y: payload.y,
-    width: payload.width,
-    height: payload.height,
-    minZ: payload.minZ,
-    maxZ: payload.maxZ,
-    targetWidth: payload.targetWidth,
-    targetHeight: payload.targetHeight,
-    bufferWidth,
-    bufferHeight,
-  };
-  d3d8CachedNormalizedViewport = viewport;
-  return viewport;
-}
-
-function viewportArraysEqual(left, right, tolerance = 0) {
-  return Array.isArray(left) &&
-    Array.isArray(right) &&
-    left.length === right.length &&
-    left.every((component, index) => Math.abs(component - right[index]) <= tolerance);
-}
-
 function expectedD3D8ViewportGlBox(d3dViewport = {}, renderTarget = {}, drawingBuffer = {}) {
   const targetWidth = Math.max(1, Math.trunc(finiteNumber(renderTarget.width, d3dViewport.width ?? 1)));
   const targetHeight = Math.max(1, Math.trunc(finiteNumber(renderTarget.height, d3dViewport.height ?? 1)));
@@ -4271,4372 +3983,8 @@ function expectedD3D8ViewportGlBox(d3dViewport = {}, renderTarget = {}, drawingB
   return [x, Math.max(0, bufferHeight - top - height), width, height];
 }
 
-function applyD3D8Viewport(reason = "draw") {
-  const viewport = cachedD3D8NormalizedViewport();
-  d3d8ViewportStats.applications += 1;
-  const viewportKey = viewport.appliedKey;
-  if (!gl) {
-    const probe = {
-      ok: false,
-      source: "browser_d3d8_viewport",
-      api: harnessState.graphics?.api ?? "2d-fallback",
-      reason,
-      sets: d3d8ViewportStats.sets,
-      applications: d3d8ViewportStats.applications,
-      requested: viewport.requested,
-      d3d: viewport.d3d,
-      gl: viewport.gl,
-      renderTarget: viewport.renderTarget,
-      drawingBuffer: viewport.drawingBuffer,
-      scissorEnabled: false,
-    };
-    harnessState.graphics = {
-      ...harnessState.graphics,
-      d3d8Viewport: probe,
-    };
-    return probe;
-  }
-
-  const cacheHit = d3d8ViewportAppliedKeyMatches(d3d8LastAppliedViewportKey, viewportKey);
-  if (cacheHit) {
-    d3d8PerfStats.drawViewportCacheHits += 1;
-  } else {
-    d3d8PerfStats.drawViewportCacheMisses += 1;
-    gl.viewport(viewport.gl.x, viewport.gl.y, viewport.gl.width, viewport.gl.height);
-    gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(viewport.gl.x, viewport.gl.y, viewport.gl.width, viewport.gl.height);
-    gl.depthRange(viewport.gl.minZ, viewport.gl.maxZ);
-    d3d8LastAppliedViewportKey = viewportKey;
-  }
-
-  if (d3d8DiagLevel !== "full") {
-    return {
-      ok: true,
-      source: "browser_d3d8_viewport",
-      d3d: viewport.d3d,
-      gl: viewport.gl,
-      lite: true,
-      cacheHit,
-    };
-  }
-
-  const actualViewport = Array.from(gl.getParameter(gl.VIEWPORT));
-  const actualScissor = Array.from(gl.getParameter(gl.SCISSOR_BOX));
-  const actualDepthRange = Array.from(gl.getParameter(gl.DEPTH_RANGE));
-  const expectedBox = [viewport.gl.x, viewport.gl.y, viewport.gl.width, viewport.gl.height];
-  const expectedDepth = [viewport.gl.minZ, viewport.gl.maxZ];
-  const scissorEnabled = gl.isEnabled(gl.SCISSOR_TEST);
-  const probe = {
-    ok: viewportArraysEqual(actualViewport, expectedBox) &&
-      viewportArraysEqual(actualScissor, expectedBox) &&
-      viewportArraysEqual(actualDepthRange, expectedDepth, 0.00001) &&
-      scissorEnabled,
-    source: "browser_d3d8_viewport",
-    api: harnessState.graphics?.api ?? "webgl2",
-    reason,
-    sets: d3d8ViewportStats.sets,
-    applications: d3d8ViewportStats.applications,
-    cacheHit,
-    requested: viewport.requested,
-    d3d: viewport.d3d,
-    gl: viewport.gl,
-    renderTarget: viewport.renderTarget,
-    actual: {
-      viewport: actualViewport,
-      scissor: actualScissor,
-      depthRange: actualDepthRange,
-    },
-    drawingBuffer: viewport.drawingBuffer,
-    clipped: viewport.clipped,
-    scissorEnabled,
-  };
-  harnessState.graphics = {
-    ...harnessState.graphics,
-    d3d8Viewport: probe,
-  };
-  return probe;
-}
-
-function setD3D8Viewport(payload = {}) {
-  d3d8ViewportStats.sets += 1;
-  // A D3D SetViewport only affects viewport/scissor/depthRange — none of the
-  // tracked blend/cull/stencil GL state, uniforms, or vertex attribs. The
-  // renderUniform key stores viewport values and is compared against the
-  // freshly applied viewport per draw, so invalidating only the viewport
-  // caches keeps every other cache warm. (This used to nuke the entire draw
-  // state cache, forcing a full GL-state + uniform re-upload on the first
-  // draw after every SetViewport — dozens of times per frame.)
-  flushD3D8PendingDrawBatch("setViewport");
-  invalidateD3D8NormalizedViewportCache();
-  d3d8ViewportState = {
-    x: Number(payload.x ?? 0) >>> 0,
-    y: Number(payload.y ?? 0) >>> 0,
-    width: Number(payload.width ?? 0) >>> 0,
-    height: Number(payload.height ?? 0) >>> 0,
-    minZ: finiteNumber(payload.minZ, 0),
-    maxZ: finiteNumber(payload.maxZ, 1),
-    targetWidth: Number(payload.targetWidth ?? payload.width ?? 0) >>> 0,
-    targetHeight: Number(payload.targetHeight ?? payload.height ?? 0) >>> 0,
-  };
-  return applyD3D8Viewport("set");
-}
-
-function clampColorByte(value, fallback) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) {
-    return fallback;
-  }
-  return Math.max(0, Math.min(255, Math.round(number)));
-}
-
-function normalizeRgba(payload = {}, fallback = [0, 0, 0, 255]) {
-  const source = Array.isArray(payload.rgba)
-    ? payload.rgba
-    : [payload.r, payload.g, payload.b, payload.a];
-
-  return [
-    clampColorByte(source[0], fallback[0]),
-    clampColorByte(source[1], fallback[1]),
-    clampColorByte(source[2], fallback[2]),
-    clampColorByte(source[3], fallback[3]),
-  ];
-}
-
 function d3dColorFromRgba(rgba) {
   return (((rgba[3] << 24) >>> 0) | (rgba[0] << 16) | (rgba[1] << 8) | rgba[2]) >>> 0;
-}
-
-function d3d8BufferKindName(kind) {
-  switch (Number(kind) >>> 0) {
-    case 1:
-      return "vertex";
-    case 2:
-      return "index";
-    default:
-      return "unknown";
-  }
-}
-
-function d3d8BufferKey(kind, id) {
-  return `${d3d8BufferKindName(kind)}:${Number(id) >>> 0}`;
-}
-
-function d3d8BufferTarget(kind) {
-  if (!gl) {
-    return 0;
-  }
-  return d3d8BufferKindName(kind) === "index" ? gl.ELEMENT_ARRAY_BUFFER : gl.ARRAY_BUFFER;
-}
-
-function bindD3D8Program(program) {
-  if (!gl || d3d8CurrentProgram === program) {
-    return;
-  }
-  gl.useProgram(program);
-  d3d8CurrentProgram = program;
-  d3d8LastVertexAttribKey = null;
-  d3d8LastDefaultVertexAttribKey = null;
-  resetD3D8TransformUniformCache();
-  resetD3D8UniformSubgroupCaches();
-  harnessState.graphics.lastD3D8AppliedRenderState = null;
-  harnessState.graphics.lastD3D8UniformKey = null;
-  harnessState.graphics.lastD3D8TextureUniformKey = null;
-}
-
-function d3d8VertexArraySupported() {
-  return Boolean(gl && typeof gl.createVertexArray === "function" && typeof gl.bindVertexArray === "function");
-}
-
-function setD3D8ScratchVertexAttribKey({
-  vertexBufferId,
-  vertexByteOffset,
-  vertexStride,
-  bridgeProgram,
-  vertexLayout,
-  canSampleTexture0,
-  texture0Coordinates,
-  canSampleTexture1,
-  texture1Coordinates,
-}) {
-  d3d8ScratchVertexAttribKey.vertexBufferId = vertexBufferId;
-  d3d8ScratchVertexAttribKey.vertexByteOffset = vertexByteOffset;
-  d3d8ScratchVertexAttribKey.vertexStride = vertexStride;
-  d3d8ScratchVertexAttribKey.positionAttrib = bridgeProgram.position;
-  d3d8ScratchVertexAttribKey.normalAttrib = bridgeProgram.normal;
-  d3d8ScratchVertexAttribKey.diffuseAttrib = bridgeProgram.diffuse;
-  d3d8ScratchVertexAttribKey.specularAttrib = bridgeProgram.specular;
-  d3d8ScratchVertexAttribKey.texCoord0Attrib = bridgeProgram.texCoord0;
-  d3d8ScratchVertexAttribKey.texCoord1Attrib = bridgeProgram.texCoord1;
-  d3d8ScratchVertexAttribKey.positionComponents = vertexLayout.positionComponents ?? 3;
-  d3d8ScratchVertexAttribKey.pretransformed = vertexLayout.pretransformed ? 1 : 0;
-  d3d8ScratchVertexAttribKey.normalOffset = vertexLayout.normalOffset ?? -1;
-  d3d8ScratchVertexAttribKey.diffuseOffset = vertexLayout.diffuseOffset ?? -1;
-  d3d8ScratchVertexAttribKey.specularOffset = vertexLayout.specularOffset ?? -1;
-  d3d8ScratchVertexAttribKey.canSampleTexture0 = canSampleTexture0 ? 1 : 0;
-  d3d8ScratchVertexAttribKey.texture0UsesVertexTexCoord = texture0Coordinates.usesVertexTexCoord ? 1 : 0;
-  d3d8ScratchVertexAttribKey.texture0Offset = texture0Coordinates.offset ?? -1;
-  d3d8ScratchVertexAttribKey.canSampleTexture1 = canSampleTexture1 ? 1 : 0;
-  d3d8ScratchVertexAttribKey.texture1UsesVertexTexCoord = texture1Coordinates.usesVertexTexCoord ? 1 : 0;
-  d3d8ScratchVertexAttribKey.texture1Offset = texture1Coordinates.offset ?? -1;
-  return d3d8ScratchVertexAttribKey;
-}
-
-function cloneD3D8VertexAttribKey(key) {
-  return {
-    vertexBufferId: key.vertexBufferId,
-    vertexByteOffset: key.vertexByteOffset,
-    vertexStride: key.vertexStride,
-    positionAttrib: key.positionAttrib,
-    normalAttrib: key.normalAttrib,
-    diffuseAttrib: key.diffuseAttrib,
-    specularAttrib: key.specularAttrib,
-    texCoord0Attrib: key.texCoord0Attrib,
-    texCoord1Attrib: key.texCoord1Attrib,
-    positionComponents: key.positionComponents,
-    pretransformed: key.pretransformed,
-    normalOffset: key.normalOffset,
-    diffuseOffset: key.diffuseOffset,
-    specularOffset: key.specularOffset,
-    canSampleTexture0: key.canSampleTexture0,
-    texture0UsesVertexTexCoord: key.texture0UsesVertexTexCoord,
-    texture0Offset: key.texture0Offset,
-    canSampleTexture1: key.canSampleTexture1,
-    texture1UsesVertexTexCoord: key.texture1UsesVertexTexCoord,
-    texture1Offset: key.texture1Offset,
-  };
-}
-
-function d3d8VertexAttribKeyMatches(entry, key) {
-  return entry !== null &&
-    entry.vertexBufferId === key.vertexBufferId &&
-    entry.vertexByteOffset === key.vertexByteOffset &&
-    entry.vertexStride === key.vertexStride &&
-    entry.positionAttrib === key.positionAttrib &&
-    entry.normalAttrib === key.normalAttrib &&
-    entry.diffuseAttrib === key.diffuseAttrib &&
-    entry.specularAttrib === key.specularAttrib &&
-    entry.texCoord0Attrib === key.texCoord0Attrib &&
-    entry.texCoord1Attrib === key.texCoord1Attrib &&
-    entry.positionComponents === key.positionComponents &&
-    entry.pretransformed === key.pretransformed &&
-    entry.normalOffset === key.normalOffset &&
-    entry.diffuseOffset === key.diffuseOffset &&
-    entry.specularOffset === key.specularOffset &&
-    entry.canSampleTexture0 === key.canSampleTexture0 &&
-    entry.texture0UsesVertexTexCoord === key.texture0UsesVertexTexCoord &&
-    entry.texture0Offset === key.texture0Offset &&
-    entry.canSampleTexture1 === key.canSampleTexture1 &&
-    entry.texture1UsesVertexTexCoord === key.texture1UsesVertexTexCoord &&
-    entry.texture1Offset === key.texture1Offset;
-}
-
-function d3d8VertexArrayKeyMatches(entry, key, indexBufferId) {
-  return d3d8VertexAttribKeyMatches(entry, key) &&
-    entry.indexBufferId === indexBufferId;
-}
-
-function d3d8VertexArrayCacheBucket(vertexBufferId, indexBufferId, create = false) {
-  let byIndexBuffer = d3d8VertexArrayCache.get(vertexBufferId);
-  if (!byIndexBuffer) {
-    if (!create) {
-      return null;
-    }
-    byIndexBuffer = new Map();
-    d3d8VertexArrayCache.set(vertexBufferId, byIndexBuffer);
-  }
-  let bucket = byIndexBuffer.get(indexBufferId);
-  if (!bucket) {
-    if (!create) {
-      return null;
-    }
-    bucket = [];
-    byIndexBuffer.set(indexBufferId, bucket);
-  }
-  return bucket;
-}
-
-function touchD3D8VertexArrayCacheEntry(entry) {
-  if (!entry || entry === d3d8VertexArrayCacheNewest) {
-    return;
-  }
-  if (entry.lruPrevious) {
-    entry.lruPrevious.lruNext = entry.lruNext;
-  } else if (entry === d3d8VertexArrayCacheOldest) {
-    d3d8VertexArrayCacheOldest = entry.lruNext;
-  }
-  if (entry.lruNext) {
-    entry.lruNext.lruPrevious = entry.lruPrevious;
-  }
-  entry.lruPrevious = d3d8VertexArrayCacheNewest;
-  entry.lruNext = null;
-  if (d3d8VertexArrayCacheNewest) {
-    d3d8VertexArrayCacheNewest.lruNext = entry;
-  } else {
-    d3d8VertexArrayCacheOldest = entry;
-  }
-  d3d8VertexArrayCacheNewest = entry;
-}
-
-function unlinkD3D8VertexArrayCacheEntry(entry) {
-  if (!entry) {
-    return;
-  }
-  if (entry.lruPrevious) {
-    entry.lruPrevious.lruNext = entry.lruNext;
-  } else if (entry === d3d8VertexArrayCacheOldest) {
-    d3d8VertexArrayCacheOldest = entry.lruNext;
-  }
-  if (entry.lruNext) {
-    entry.lruNext.lruPrevious = entry.lruPrevious;
-  } else if (entry === d3d8VertexArrayCacheNewest) {
-    d3d8VertexArrayCacheNewest = entry.lruPrevious;
-  }
-  entry.lruPrevious = null;
-  entry.lruNext = null;
-}
-
-function findD3D8VertexArrayCacheEntry(key, indexBufferId) {
-  const bucket = d3d8VertexArrayCacheBucket(key.vertexBufferId, indexBufferId, false);
-  if (!bucket) {
-    return null;
-  }
-  for (const entry of bucket) {
-    if (d3d8VertexArrayKeyMatches(entry, key, indexBufferId)) {
-      touchD3D8VertexArrayCacheEntry(entry);
-      return entry;
-    }
-  }
-  return null;
-}
-
-function deleteD3D8VertexArrayCacheEntry(entry) {
-  if (!entry) {
-    return;
-  }
-  if (entry.vertexArray === d3d8CurrentVertexArray) {
-    bindD3D8DefaultVertexArray();
-  }
-  if (entry === d3d8CurrentVertexArrayKey) {
-    d3d8CurrentVertexArrayKey = null;
-  }
-  if (entry === d3d8LastVertexAttribKey) {
-    d3d8LastVertexAttribKey = null;
-  }
-  if (gl && entry.vertexArray && typeof gl.deleteVertexArray === "function") {
-    gl.deleteVertexArray(entry.vertexArray);
-  }
-}
-
-function evictOldestD3D8VertexArrayCacheEntry() {
-  const entry = d3d8VertexArrayCacheOldest;
-  if (!entry) {
-    return;
-  }
-  const byIndexBuffer = d3d8VertexArrayCache.get(entry.vertexBufferId);
-  const bucket = byIndexBuffer?.get(entry.indexBufferId);
-  const bucketIndex = bucket?.indexOf(entry) ?? -1;
-  if (bucketIndex < 0) {
-    unlinkD3D8VertexArrayCacheEntry(entry);
-    deleteD3D8VertexArrayCacheEntry(entry);
-    d3d8VertexArrayCacheEntries = Math.max(0, d3d8VertexArrayCacheEntries - 1);
-    return;
-  }
-  bucket.splice(bucketIndex, 1);
-  unlinkD3D8VertexArrayCacheEntry(entry);
-  deleteD3D8VertexArrayCacheEntry(entry);
-  d3d8VertexArrayCacheEntries -= 1;
-  if (bucket.length === 0) {
-    byIndexBuffer.delete(entry.indexBufferId);
-    if (byIndexBuffer?.size === 0) {
-      d3d8VertexArrayCache.delete(entry.vertexBufferId);
-    }
-  }
-}
-
-function bindD3D8VertexArray(vertexArray, vertexAttribKey = null, elementArrayBuffer = null, vertexArrayKey = null) {
-  if (!d3d8VertexArraySupported()) {
-    return;
-  }
-  if (d3d8CurrentVertexArray === vertexArray) {
-    d3d8CurrentVertexArrayKey = vertexArrayKey;
-    d3d8LastVertexAttribKey = vertexAttribKey;
-    d3d8CurrentElementArrayBuffer = elementArrayBuffer;
-    return;
-  }
-  gl.bindVertexArray(vertexArray);
-  d3d8CurrentVertexArray = vertexArray;
-  d3d8CurrentVertexArrayKey = vertexArrayKey;
-  d3d8LastVertexAttribKey = vertexAttribKey;
-  d3d8CurrentElementArrayBuffer = elementArrayBuffer;
-}
-
-function bindD3D8DefaultVertexArray() {
-  if (d3d8CurrentVertexArray !== null) {
-    bindD3D8VertexArray(null, null, null);
-  }
-}
-
-function bindD3D8ArrayBuffer(buffer) {
-  if (!gl || d3d8CurrentArrayBuffer === buffer) {
-    return;
-  }
-  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-  d3d8CurrentArrayBuffer = buffer;
-}
-
-function bindD3D8ElementArrayBuffer(buffer) {
-  bindD3D8DefaultVertexArray();
-  if (!gl || d3d8CurrentElementArrayBuffer === buffer) {
-    return;
-  }
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer);
-  d3d8CurrentElementArrayBuffer = buffer;
-}
-
-function bindD3D8ElementArrayBufferForVertexArray(buffer) {
-  if (!gl || d3d8CurrentElementArrayBuffer === buffer) {
-    return;
-  }
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer);
-  d3d8CurrentElementArrayBuffer = buffer;
-}
-
-function invalidateD3D8VertexArrayCache() {
-  if (!gl) {
-    d3d8VertexArrayCache.clear();
-    d3d8VertexArrayCacheEntries = 0;
-    d3d8VertexArrayCacheOldest = null;
-    d3d8VertexArrayCacheNewest = null;
-    d3d8CurrentVertexArray = null;
-    d3d8CurrentVertexArrayKey = null;
-    d3d8LastVertexAttribKey = null;
-    d3d8LastDefaultVertexAttribKey = null;
-    return;
-  }
-  bindD3D8DefaultVertexArray();
-  for (const byIndexBuffer of d3d8VertexArrayCache.values()) {
-    for (const bucket of byIndexBuffer.values()) {
-      for (const entry of bucket) {
-        deleteD3D8VertexArrayCacheEntry(entry);
-      }
-    }
-  }
-  d3d8VertexArrayCache.clear();
-  d3d8VertexArrayCacheEntries = 0;
-  d3d8VertexArrayCacheOldest = null;
-  d3d8VertexArrayCacheNewest = null;
-  d3d8LastVertexAttribKey = null;
-  d3d8LastDefaultVertexAttribKey = null;
-}
-
-function forgetD3D8BufferBinding(buffer) {
-  invalidateD3D8VertexArrayCache();
-  if (d3d8CurrentArrayBuffer === buffer) {
-    d3d8CurrentArrayBuffer = null;
-  }
-  if (d3d8CurrentElementArrayBuffer === buffer) {
-    d3d8CurrentElementArrayBuffer = null;
-  }
-  d3d8LastVertexAttribKey = null;
-  d3d8LastDefaultVertexAttribKey = null;
-}
-
-function getD3D8TemporaryIndexBuffer(byteLength) {
-  const requiredBytes = Number(byteLength ?? 0) >>> 0;
-  if (!gl || requiredBytes === 0) {
-    return null;
-  }
-  if (!d3d8TemporaryIndexBuffer) {
-    d3d8TemporaryIndexBuffer = gl.createBuffer();
-    d3d8TemporaryIndexBufferBytes = 0;
-  }
-  if (!d3d8TemporaryIndexBuffer) {
-    return null;
-  }
-  bindD3D8ElementArrayBuffer(d3d8TemporaryIndexBuffer);
-  if (requiredBytes > d3d8TemporaryIndexBufferBytes) {
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, requiredBytes, gl.STREAM_DRAW);
-    d3d8TemporaryIndexBufferBytes = requiredBytes;
-  }
-  return d3d8TemporaryIndexBuffer;
-}
-
-function d3d8BufferUsageInfo(usage) {
-  const d3dUsage = Number(usage ?? 0) >>> 0;
-  const dynamic = Boolean(d3dUsage & D3DUSAGE_DYNAMIC);
-  const writeOnly = Boolean(d3dUsage & D3DUSAGE_WRITEONLY);
-  const glUsage = dynamic ? gl.STREAM_DRAW : writeOnly ? gl.STATIC_DRAW : gl.DYNAMIC_DRAW;
-  const glUsageName = dynamic ? "streamDraw" : writeOnly ? "staticDraw" : "dynamicDraw";
-  return {
-    d3dUsage,
-    dynamic,
-    writeOnly,
-    glUsage,
-    glUsageName,
-  };
-}
-
-function updateD3D8BufferSummary(force = false) {
-  if (!force && d3d8DiagLevel !== "full") {
-    // Runs per buffer create/update/release; deferred in lite mode the same
-    // way as updateD3D8TextureSummary (snapshotState() force-refreshes).
-    return;
-  }
-  let liveVertex = 0;
-  let liveIndex = 0;
-  for (const resource of d3d8Buffers.values()) {
-    if (resource.kindName === "vertex") {
-      liveVertex += 1;
-    } else if (resource.kindName === "index") {
-      liveIndex += 1;
-    }
-  }
-  harnessState.graphics = {
-    ...harnessState.graphics,
-    d3d8Buffers: {
-      creates: d3d8BufferStats.creates,
-      updates: d3d8BufferStats.updates,
-      releases: d3d8BufferStats.releases,
-      uploadBytes: d3d8BufferStats.uploadBytes,
-      updateMs: roundedPerfMs(d3d8BufferStats.updateMs),
-      bufferSubDataMs: roundedPerfMs(d3d8BufferStats.bufferSubDataMs),
-      mirrorBytes: d3d8BufferStats.mirrorBytes,
-      mirrorMs: roundedPerfMs(d3d8BufferStats.mirrorMs),
-      mirrorSkippedBytes: d3d8BufferStats.mirrorSkippedBytes,
-      liveVertex,
-      liveIndex,
-      lastCreate: d3d8BufferStats.lastCreate,
-      lastStaticCreate: d3d8BufferStats.lastStaticCreate,
-      lastDynamicCreate: d3d8BufferStats.lastDynamicCreate,
-      lastUpdate: d3d8BufferStats.lastUpdate,
-      lastRelease: d3d8BufferStats.lastRelease,
-    },
-  };
-}
-
-function shouldMirrorD3D8Buffer(resource) {
-  if (!resource) {
-    return false;
-  }
-  if (d3d8DiagLevel === "full") {
-    return true;
-  }
-  if (resource.kindName === "vertex") {
-    return d3d8LiteVertexBufferMirrorsEnabled;
-  }
-  // Lite-mode rendering does not inspect normal vertex buffers. Keep index
-  // mirrors so flat-shade/wireframe fallback paths can still build temporary
-  // element arrays without falling out of the real render path.
-  return resource.kindName === "index";
-}
-
-function createD3D8Buffer(payload = {}) {
-  if (!gl) {
-    return 0;
-  }
-  flushD3D8PendingDrawBatch("bufferCreate");
-  const kind = Number(payload.kind ?? 0) >>> 0;
-  const id = Number(payload.id ?? 0) >>> 0;
-  const byteSize = Number(payload.byteSize ?? 0) >>> 0;
-  const usageInfo = d3d8BufferUsageInfo(payload.usage);
-  const target = d3d8BufferTarget(kind);
-  if (id === 0 || byteSize === 0 || target === 0 || d3d8BufferKindName(kind) === "unknown") {
-    return 0;
-  }
-
-  const key = d3d8BufferKey(kind, id);
-  const existing = d3d8Buffers.get(key);
-  if (existing) {
-    forgetD3D8BufferBinding(existing.buffer);
-    gl.deleteBuffer(existing.buffer);
-  }
-
-  const buffer = gl.createBuffer();
-  if (target === gl.ARRAY_BUFFER) {
-    bindD3D8ArrayBuffer(buffer);
-  } else {
-    bindD3D8ElementArrayBuffer(buffer);
-  }
-  gl.bufferData(target, byteSize, usageInfo.glUsage);
-  const record = {
-    id,
-    kind,
-    kindName: d3d8BufferKindName(kind),
-    byteSize,
-    target,
-    buffer,
-    bytes: null,
-    d3dUsage: usageInfo.d3dUsage,
-    dynamic: usageInfo.dynamic,
-    writeOnly: usageInfo.writeOnly,
-    glUsage: usageInfo.glUsage,
-    glUsageName: usageInfo.glUsageName,
-    uploads: 0,
-  };
-  d3d8Buffers.set(key, record);
-  d3d8BufferStats.creates += 1;
-  d3d8BufferStats.lastCreate = {
-    id,
-    kind: record.kindName,
-    byteSize,
-    d3dUsage: record.d3dUsage,
-    dynamic: record.dynamic,
-    writeOnly: record.writeOnly,
-    glUsage: record.glUsageName,
-  };
-  if (record.dynamic) {
-    d3d8BufferStats.lastDynamicCreate = d3d8BufferStats.lastCreate;
-  } else if (record.writeOnly) {
-    d3d8BufferStats.lastStaticCreate = d3d8BufferStats.lastCreate;
-  }
-  updateD3D8BufferSummary();
-  return 1;
-}
-
-// ── Dynamic-buffer append redirection ────────────────────────────────────
-// The engine streams CPU-built geometry (skinned meshes, particles, UI)
-// through shared D3DUSAGE_DYNAMIC ring buffers: DISCARD at wrap, NOOVERWRITE
-// appends between, one lock per mesh, ~1000 locks/frame in unit-heavy
-// scenes. GL has no NOOVERWRITE contract, so uploading an append into the
-// shared GL buffer while earlier draws in the same frame still read it makes
-// ANGLE's Metal backend end the current render encoder (staging blit or
-// whole-buffer copy) — a full tile load/store per append. Measured on the
-// campaign intro: ~950 appends/frame pinned the crush at 3.4fps while a
-// fresh-storage-per-append experiment ran the same scene at 60fps.
-//
-// Fix: never upload dynamic appends into the shared GL buffer. Each append
-// is recorded as a range over the CPU mirror; the first draw that references
-// a range uploads it once into a small dedicated pool buffer (bufferData
-// full-replace → fresh ANGLE storage, no in-flight sync, no encoder break)
-// and the draw binds that pool buffer with offset adjusted by the range
-// start. Ranges are immutable until the next DISCARD recycles their pool
-// slots, so multi-pass re-draws and out-of-order references stay correct.
-const D3D8_DYNAMIC_RANGE_BUFFER_ID_BASE = 0x40000000;
-// One pool per GL target: a WebGL buffer object is permanently typed by its
-// first bind target, so vertex and element slots must never mix.
-const d3d8DynamicRangeSlotPools = new Map();
-let d3d8DynamicRangeSlotCounter = 0;
-
-function acquireD3D8DynamicRangeSlot(target) {
-  let pool = d3d8DynamicRangeSlotPools.get(target);
-  if (!pool) {
-    pool = [];
-    d3d8DynamicRangeSlotPools.set(target, pool);
-  }
-  const pooled = pool.pop();
-  if (pooled) {
-    return pooled;
-  }
-  const buffer = gl.createBuffer();
-  if (!buffer) {
-    return null;
-  }
-  d3d8DynamicRangeSlotCounter += 1;
-  return {
-    buffer,
-    target,
-    id: D3D8_DYNAMIC_RANGE_BUFFER_ID_BASE + d3d8DynamicRangeSlotCounter,
-  };
-}
-
-function recycleD3D8DynamicRangeSlot(range) {
-  if (!range.slot) {
-    return;
-  }
-  // Never delete pool buffers: cached VAOs may still reference them, and
-  // reuse via bufferData full-replace is always safe (fresh storage). The
-  // pool's high-water mark is bounded by the max concurrent ranges.
-  let pool = d3d8DynamicRangeSlotPools.get(range.slot.target);
-  if (!pool) {
-    pool = [];
-    d3d8DynamicRangeSlotPools.set(range.slot.target, pool);
-  }
-  pool.push(range.slot);
-  range.slot = null;
-}
-
-function uploadD3D8DynamicSlot(resource, slot, bytes) {
-  if (resource.target === gl.ELEMENT_ARRAY_BUFFER) {
-    // Element bindings live in the VAO: park on the default vertex array so
-    // the upload cannot clobber a cached VAO's element buffer.
-    bindD3D8DefaultVertexArray();
-    bindD3D8ElementArrayBuffer(slot.buffer);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, bytes, gl.STREAM_DRAW);
-  } else {
-    bindD3D8ArrayBuffer(slot.buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, bytes, gl.STREAM_DRAW);
-  }
-}
-
-function noteD3D8DynamicBufferUpdate(resource, start, byteLength, discard) {
-  let ranges = resource.dynRanges;
-  if (!Array.isArray(ranges)) {
-    ranges = resource.dynRanges = [];
-  }
-  const end = start + byteLength;
-  if (discard) {
-    for (const range of ranges) {
-      recycleD3D8DynamicRangeSlot(range);
-    }
-    ranges.length = 0;
-  } else {
-    for (let i = ranges.length - 1; i >= 0; i -= 1) {
-      const range = ranges[i];
-      if (range.start < end && start < range.end) {
-        recycleD3D8DynamicRangeSlot(range);
-        ranges.splice(i, 1);
-      }
-    }
-  }
-  ranges.push({ start, end, slot: null });
-  resource.dynSharedClean = false;
-}
-
-function findD3D8DynamicRange(resource, byteOffset) {
-  const ranges = resource.dynRanges;
-  if (!Array.isArray(ranges)) {
-    return null;
-  }
-  for (let i = ranges.length - 1; i >= 0; i -= 1) {
-    const range = ranges[i];
-    if (byteOffset >= range.start && byteOffset < range.end) {
-      return range;
-    }
-  }
-  return null;
-}
-
-function ensureD3D8DynamicRangeUploaded(resource, range) {
-  if (range.slot) {
-    return range.slot;
-  }
-  if (!(resource.bytes instanceof Uint8Array) || range.end > resource.bytes.byteLength) {
-    return null;
-  }
-  const slot = acquireD3D8DynamicRangeSlot(resource.target);
-  if (!slot) {
-    return null;
-  }
-  const bytes = resource.bytes.subarray(range.start, range.end);
-  uploadD3D8DynamicSlot(resource, slot, bytes);
-  d3d8PerfStats.bufferDynamicRangeUploads += 1;
-  d3d8PerfStats.bufferDynamicRangeUploadBytes += bytes.byteLength;
-  range.slot = slot;
-  return slot;
-}
-
-// Fallback for draws whose vertex/index window is not contained in a single
-// recorded range (buffers filled by several partial updates and drawn across
-// them — terrain chunks, atlases). Refresh the shared GL buffer from the
-// whole mirror once and mark it clean until the next update, then draw
-// unredirected. Rarely-updated buffers thus pay one full upload per actual
-// change instead of a mid-frame sync per draw.
-function ensureD3D8DynamicSharedBufferCurrent(resource) {
-  if (resource.dynSharedClean === true) {
-    return true;
-  }
-  if (!(resource.bytes instanceof Uint8Array)) {
-    return false;
-  }
-  if (resource.target === gl.ELEMENT_ARRAY_BUFFER) {
-    bindD3D8DefaultVertexArray();
-    bindD3D8ElementArrayBuffer(resource.buffer);
-  } else {
-    bindD3D8ArrayBuffer(resource.buffer);
-  }
-  gl.bufferData(
-    resource.target,
-    resource.bytes.subarray(0, Math.min(resource.byteSize, resource.bytes.byteLength)),
-    resource.glUsage,
-  );
-  resource.dynSharedClean = true;
-  d3d8PerfStats.bufferDynamicRedirectFallbacks += 1;
-  return true;
-}
-
-function updateD3D8Buffer(payload = {}) {
-  if (!gl || !(payload.bytes instanceof Uint8Array)) {
-    return 0;
-  }
-  const updateStartedAt = perfNow();
-  flushD3D8PendingDrawBatch("bufferUpdate");
-  const kind = Number(payload.kind ?? 0) >>> 0;
-  const id = Number(payload.id ?? 0) >>> 0;
-  const bytes = payload.bytes;
-  const byteOffset = Number(payload.byteOffset ?? 0) >>> 0;
-  const lockFlags = Number(payload.lockFlags ?? 0) >>> 0;
-  const requiredByteSize = byteOffset + bytes.byteLength;
-  const key = d3d8BufferKey(kind, id);
-  let resource = d3d8Buffers.get(key);
-  if (!resource) {
-    if (!createD3D8Buffer({ kind, id, byteSize: requiredByteSize, usage: payload.usage })) {
-      return 0;
-    }
-    resource = d3d8Buffers.get(key);
-  }
-  if (!resource || bytes.byteLength === 0) {
-    return 0;
-  }
-
-  // Dynamic buffers that follow the streaming ring pattern (DISCARD at wrap,
-  // NOOVERWRITE appends between — the per-mesh lock/draw stream that caused
-  // the per-append ANGLE Metal pass breaks) are redirected: appends stay in
-  // the CPU mirror and reach the GPU as per-range pool buffers at draw time.
-  // Dynamic buffers filled with PLAIN locks (roads, other build-once
-  // geometry) are NOT redirected: their draws may use conservative
-  // minVertexIndex/vertexCount windows that exceed the locked range, which is
-  // harmless against a full-size buffer but out-of-bounds against an
-  // exact-size pool slot (WebGL then drops or zeroes the draw). Those buffers
-  // take the cached whole-mirror refresh path instead (one fresh-storage
-  // bufferData per actual change — still no per-draw in-flight sync).
-  const discard = Boolean(resource.dynamic && (lockFlags & D3DLOCK_DISCARD));
-  if (resource.dynamic === true &&
-      (lockFlags & (D3DLOCK_DISCARD | D3DLOCK_NOOVERWRITE)) !== 0) {
-    resource.dynRingPattern = true;
-  }
-  const dynamicRedirect = resource.dynamic === true && resource.dynRingPattern === true;
-  let resized = false;
-  let orphaned = false;
-  if (dynamicRedirect) {
-    if (requiredByteSize > resource.byteSize) {
-      resource.byteSize = requiredByteSize;
-      resized = true;
-    }
-  } else {
-    if (resource.target === gl.ARRAY_BUFFER) {
-      bindD3D8ArrayBuffer(resource.buffer);
-    } else {
-      bindD3D8ElementArrayBuffer(resource.buffer);
-    }
-    if (requiredByteSize > resource.byteSize) {
-      gl.bufferData(resource.target, requiredByteSize, resource.glUsage);
-      resource.byteSize = requiredByteSize;
-      resized = true;
-    }
-  }
-  const mirrorStartedAt = perfNow();
-  let mirroredBytes = 0;
-  let skippedMirrorBytes = 0;
-  if (dynamicRedirect || shouldMirrorD3D8Buffer(resource)) {
-    if (!(resource.bytes instanceof Uint8Array)) {
-      resource.bytes = new Uint8Array(resource.byteSize);
-    } else if (resource.bytes.byteLength < resource.byteSize) {
-      const mirror = new Uint8Array(resource.byteSize);
-      mirror.set(resource.bytes.subarray(0, Math.min(resource.bytes.byteLength, mirror.byteLength)));
-      resource.bytes = mirror;
-    }
-    if (discard) {
-      resource.bytes.fill(0);
-      mirroredBytes += resource.byteSize;
-    }
-    resource.bytes.set(bytes, byteOffset);
-    mirroredBytes += bytes.byteLength;
-  } else {
-    resource.bytes = null;
-    skippedMirrorBytes += bytes.byteLength + (discard ? resource.byteSize : 0);
-  }
-  const mirrorMs = perfNow() - mirrorStartedAt;
-  let subDataMs = 0;
-  if (dynamicRedirect) {
-    noteD3D8DynamicBufferUpdate(resource, byteOffset, bytes.byteLength, discard);
-    d3d8PerfStats.bufferDynamicRedirectedUpdates += 1;
-  } else {
-    const subDataStartedAt = perfNow();
-    gl.bufferSubData(resource.target, byteOffset, bytes);
-    subDataMs = perfNow() - subDataStartedAt;
-  }
-  const updateMs = perfNow() - updateStartedAt;
-  const noOverwrite = Boolean(lockFlags & D3DLOCK_NOOVERWRITE);
-  resource.uploads += 1;
-  d3d8BufferStats.updates += 1;
-  d3d8BufferStats.uploadBytes += bytes.byteLength;
-  d3d8BufferStats.updateMs += updateMs;
-  d3d8BufferStats.bufferSubDataMs += subDataMs;
-  d3d8BufferStats.mirrorBytes += mirroredBytes;
-  d3d8BufferStats.mirrorMs += mirrorMs;
-  d3d8BufferStats.mirrorSkippedBytes += skippedMirrorBytes;
-  d3d8PerfStats.bufferUpdates += 1;
-  d3d8PerfStats.bufferUploadBytes += bytes.byteLength;
-  if (resource.kindName === "vertex") {
-    d3d8PerfStats.bufferVertexUpdates += 1;
-    d3d8PerfStats.bufferVertexUploadBytes += bytes.byteLength;
-  } else if (resource.kindName === "index") {
-    d3d8PerfStats.bufferIndexUpdates += 1;
-    d3d8PerfStats.bufferIndexUploadBytes += bytes.byteLength;
-  }
-  if (resource.dynamic) {
-    d3d8PerfStats.bufferDynamicUpdates += 1;
-    d3d8PerfStats.bufferDynamicUploadBytes += bytes.byteLength;
-  }
-  if (discard) {
-    d3d8PerfStats.bufferDiscardUpdates += 1;
-    d3d8PerfStats.bufferDiscardUploadBytes += bytes.byteLength;
-  }
-  if (noOverwrite) {
-    d3d8PerfStats.bufferNoOverwriteUpdates += 1;
-    d3d8PerfStats.bufferNoOverwriteUploadBytes += bytes.byteLength;
-  }
-  if (orphaned) {
-    d3d8PerfStats.bufferOrphanedUpdates += 1;
-  }
-  if (resized) {
-    d3d8PerfStats.bufferResizedUpdates += 1;
-  }
-  d3d8PerfStats.bufferUpdateMs += updateMs;
-  d3d8PerfStats.bufferSubDataMs += subDataMs;
-  d3d8PerfStats.bufferMirrorBytes += mirroredBytes;
-  d3d8PerfStats.bufferMirrorMs += mirrorMs;
-  d3d8PerfStats.bufferMirrorSkippedBytes += skippedMirrorBytes;
-  const producer = d3d8BufferProducerTrackingEnabled ? bufferProducerLabel(payload.producer) : "";
-  noteD3D8BufferProducerUpdate({
-    producer,
-    resource,
-    byteLength: bytes.byteLength,
-    updateMs,
-    subDataMs,
-    mirrorMs,
-    mirroredBytes,
-    skippedMirrorBytes,
-    discard,
-    noOverwrite,
-    orphaned,
-    resized,
-  });
-  d3d8BufferStats.lastUpdate = {
-    id,
-    kind: resource.kindName,
-    byteOffset,
-    byteSize: bytes.byteLength,
-    d3dUsage: resource.d3dUsage,
-    glUsage: resource.glUsageName,
-    lockFlags,
-    discard: Boolean(lockFlags & D3DLOCK_DISCARD),
-    noOverwrite,
-    orphaned,
-    resized,
-    mirrored: mirroredBytes > 0,
-    mirrorBytes: mirroredBytes,
-    mirrorSkippedBytes: skippedMirrorBytes,
-    mirrorMs: roundedPerfMs(mirrorMs),
-    bufferSubDataMs: roundedPerfMs(subDataMs),
-    updateMs: roundedPerfMs(updateMs),
-    uploads: resource.uploads,
-    producer: d3d8BufferProducerTrackingEnabled ? producer : null,
-  };
-  updateD3D8BufferSummary();
-  return 1;
-}
-
-function releaseD3D8Buffer(payload = {}) {
-  if (!gl) {
-    return 0;
-  }
-  flushD3D8PendingDrawBatch("bufferRelease");
-  const kind = Number(payload.kind ?? 0) >>> 0;
-  const id = Number(payload.id ?? 0) >>> 0;
-  const key = d3d8BufferKey(kind, id);
-  const resource = d3d8Buffers.get(key);
-  if (!resource) {
-    return 0;
-  }
-  forgetD3D8BufferBinding(resource.buffer);
-  gl.deleteBuffer(resource.buffer);
-  if (Array.isArray(resource.dynRanges)) {
-    for (const range of resource.dynRanges) {
-      recycleD3D8DynamicRangeSlot(range);
-    }
-    resource.dynRanges.length = 0;
-  }
-  d3d8Buffers.delete(key);
-  d3d8BufferStats.releases += 1;
-  d3d8BufferStats.lastRelease = { id, kind: resource.kindName };
-  updateD3D8BufferSummary();
-  return 1;
-}
-
-function d3d8TextureLevelSize(resource, level) {
-  let width = resource.width;
-  let height = resource.height;
-  let depth = resource.depth ?? 1;
-  for (let index = 0; index < level; ++index) {
-    width = Math.max(1, width >> 1);
-    height = Math.max(1, height >> 1);
-    depth = Math.max(1, depth >> 1);
-  }
-  return { width, height, depth };
-}
-
-function scale5(value) {
-  return (value << 3) | (value >> 2);
-}
-
-function scale4(value) {
-  return (value << 4) | value;
-}
-
-function d3d8TextureFormatInfo(format) {
-  const d3dFormat = Number(format ?? 0) >>> 0;
-  switch (d3dFormat) {
-    case D3DFMT_R8G8B8:
-    case D3DFMT_A8R8G8B8:
-    case D3DFMT_X8R8G8B8:
-    case D3DFMT_A1R5G5B5:
-    case D3DFMT_A4R4G4B4:
-    case D3DFMT_X1R5G5B5:
-    case D3DFMT_X4R4G4B4:
-      return {
-        d3dFormat,
-        supported: true,
-        internalFormat: gl.RGBA8,
-        format: gl.RGBA,
-        type: gl.UNSIGNED_BYTE,
-        storage: "rgba8",
-      };
-    case D3DFMT_R5G6B5:
-      return {
-        d3dFormat,
-        supported: true,
-        internalFormat: gl.RGB565,
-        format: gl.RGB,
-        type: gl.UNSIGNED_SHORT_5_6_5,
-        storage: "rgb565",
-      };
-    case D3DFMT_A8:
-      // D3D8 fixed-function sampler contract for A8: RGB = 0, A = alpha.
-      return {
-        d3dFormat,
-        supported: true,
-        internalFormat: gl.R8,
-        format: gl.RED,
-        type: gl.UNSIGNED_BYTE,
-        storage: "r8-alpha",
-        swizzle: { r: gl.ZERO, g: gl.ZERO, b: gl.ZERO, a: gl.RED },
-        semantic: "alpha",
-      };
-    case D3DFMT_L8:
-      // D3D8 fixed-function sampler contract for L8: RGB = luminance, A = 1.
-      return {
-        d3dFormat,
-        supported: true,
-        internalFormat: gl.R8,
-        format: gl.RED,
-        type: gl.UNSIGNED_BYTE,
-        storage: "r8-luminance",
-        swizzle: { r: gl.RED, g: gl.RED, b: gl.RED, a: gl.ONE },
-        semantic: "luminance",
-      };
-    case D3DFMT_A8L8:
-      // D3D8 fixed-function sampler contract for A8L8: RGB = luminance, A = alpha.
-      return {
-        d3dFormat,
-        supported: true,
-        internalFormat: gl.RG8,
-        format: gl.RG,
-        type: gl.UNSIGNED_BYTE,
-        storage: "rg8-luminance-alpha",
-        swizzle: { r: gl.RED, g: gl.RED, b: gl.RED, a: GL_GREEN },
-        semantic: "luminanceAlpha",
-      };
-    case D3DFMT_V8U8:
-      // D3D8 V8U8 is laid out as little-endian U,V signed two's-complement
-      // bytes. WebGL2's ordinary RG8 sampling is unsigned, so bias each byte
-      // into monotonic UNORM storage before upload and reconstruct the signed
-      // vector in d3dTextureSample(). Keeping the bias in the texture preserves
-      // bilinear filtering across the signed zero crossing.
-      return {
-        d3dFormat,
-        supported: true,
-        internalFormat: gl.RG8,
-        format: gl.RG,
-        type: gl.UNSIGNED_BYTE,
-        storage: "rg8-v8u8",
-        semantic: "signedBump",
-      };
-    case D3DFMT_DXT1:
-      return s3tc ? {
-        d3dFormat,
-        supported: true,
-        compressed: true,
-        internalFormat: s3tc.COMPRESSED_RGB_S3TC_DXT1_EXT,
-        format: 0,
-        type: 0,
-        storage: "dxt1",
-        blockBytes: 8,
-      } : {
-        d3dFormat,
-        supported: true,
-        compressed: false,
-        internalFormat: gl.RGBA8,
-        format: gl.RGBA,
-        type: gl.UNSIGNED_BYTE,
-        storage: "rgba8",
-        dxtDecode: "DXT1",
-        blockBytes: 8,
-      };
-    case D3DFMT_DXT2:
-      return s3tc ? {
-        d3dFormat,
-        supported: true,
-        compressed: true,
-        internalFormat: s3tc.COMPRESSED_RGBA_S3TC_DXT3_EXT,
-        format: 0,
-        type: 0,
-        storage: "dxt2",
-        aliasedStorage: "dxt3",
-        premultipliedAlpha: true,
-        blockBytes: 16,
-      } : {
-        d3dFormat,
-        supported: true,
-        compressed: false,
-        internalFormat: gl.RGBA8,
-        format: gl.RGBA,
-        type: gl.UNSIGNED_BYTE,
-        storage: "rgba8",
-        dxtDecode: "DXT3",
-        blockBytes: 16,
-        premultipliedAlpha: true,
-      };
-    case D3DFMT_DXT3:
-      return s3tc ? {
-        d3dFormat,
-        supported: true,
-        compressed: true,
-        internalFormat: s3tc.COMPRESSED_RGBA_S3TC_DXT3_EXT,
-        format: 0,
-        type: 0,
-        storage: "dxt3",
-        blockBytes: 16,
-      } : {
-        d3dFormat,
-        supported: true,
-        compressed: false,
-        internalFormat: gl.RGBA8,
-        format: gl.RGBA,
-        type: gl.UNSIGNED_BYTE,
-        storage: "rgba8",
-        dxtDecode: "DXT3",
-        blockBytes: 16,
-      };
-    case D3DFMT_DXT4:
-      return s3tc ? {
-        d3dFormat,
-        supported: true,
-        compressed: true,
-        internalFormat: s3tc.COMPRESSED_RGBA_S3TC_DXT5_EXT,
-        format: 0,
-        type: 0,
-        storage: "dxt4",
-        aliasedStorage: "dxt5",
-        premultipliedAlpha: true,
-        blockBytes: 16,
-      } : {
-        d3dFormat,
-        supported: true,
-        compressed: false,
-        internalFormat: gl.RGBA8,
-        format: gl.RGBA,
-        type: gl.UNSIGNED_BYTE,
-        storage: "rgba8",
-        dxtDecode: "DXT5",
-        blockBytes: 16,
-        premultipliedAlpha: true,
-      };
-    case D3DFMT_DXT5:
-      return s3tc ? {
-        d3dFormat,
-        supported: true,
-        compressed: true,
-        internalFormat: s3tc.COMPRESSED_RGBA_S3TC_DXT5_EXT,
-        format: 0,
-        type: 0,
-        storage: "dxt5",
-        blockBytes: 16,
-      } : {
-        d3dFormat,
-        supported: true,
-        compressed: false,
-        internalFormat: gl.RGBA8,
-        format: gl.RGBA,
-        type: gl.UNSIGNED_BYTE,
-        storage: "rgba8",
-        dxtDecode: "DXT5",
-        blockBytes: 16,
-      };
-    case D3DFMT_P8:
-      return {
-        d3dFormat,
-        supported: false,
-        reason: "P8 needs the engine palette before WebGL upload",
-      };
-    default:
-      return {
-        d3dFormat,
-        supported: false,
-        reason: "format is not implemented by the initial uncompressed texture bridge",
-      };
-  }
-}
-
-function d3d8DepthStencilFormatInfo(format) {
-  const d3dFormat = Number(format ?? 0) >>> 0;
-  switch (d3dFormat) {
-    case D3DFMT_D16_LOCKABLE:
-    case D3DFMT_D16:
-      return {
-        d3dFormat,
-        supported: true,
-        internalFormat: gl.DEPTH_COMPONENT16,
-        format: gl.DEPTH_COMPONENT,
-        type: gl.UNSIGNED_SHORT,
-        attachment: gl.DEPTH_ATTACHMENT,
-        storage: "depth16",
-      };
-    case D3DFMT_D24X8:
-      return {
-        d3dFormat,
-        supported: true,
-        internalFormat: gl.DEPTH_COMPONENT24,
-        format: gl.DEPTH_COMPONENT,
-        type: gl.UNSIGNED_INT,
-        attachment: gl.DEPTH_ATTACHMENT,
-        storage: "depth24",
-      };
-    case D3DFMT_D24S8:
-      return {
-        d3dFormat,
-        supported: true,
-        internalFormat: gl.DEPTH24_STENCIL8,
-        format: gl.DEPTH_STENCIL,
-        type: gl.UNSIGNED_INT_24_8,
-        attachment: gl.DEPTH_STENCIL_ATTACHMENT,
-        storage: "depth24-stencil8",
-      };
-    case D3DFMT_D15S1:
-    case D3DFMT_D24X4S4:
-    case D3DFMT_D32:
-    default:
-      return {
-        d3dFormat,
-        supported: false,
-        reason: "depth/stencil format is not implemented by the WebGL2 FBO bridge",
-      };
-  }
-}
-
-function isD3D8DepthStencilTexture(resource) {
-  return Boolean(resource) && (Number(resource.usage ?? 0) & D3DUSAGE_DEPTHSTENCIL) !== 0;
-}
-
-function convertD3D8TextureBytes(format, bytes, width, height, depth = 1) {
-  const d3dFormat = Number(format ?? 0) >>> 0;
-  const pixelCount = width * height * depth;
-  if (d3dFormat === D3DFMT_A8R8G8B8 || d3dFormat === D3DFMT_X8R8G8B8) {
-    const output = new Uint8Array(pixelCount * 4);
-    for (let pixel = 0; pixel < pixelCount; ++pixel) {
-      const source = pixel * 4;
-      const target = pixel * 4;
-      output[target] = bytes[source + 2];
-      output[target + 1] = bytes[source + 1];
-      output[target + 2] = bytes[source];
-      output[target + 3] = d3dFormat === D3DFMT_X8R8G8B8 ? 255 : bytes[source + 3];
-    }
-    return output;
-  }
-  if (d3dFormat === D3DFMT_R8G8B8) {
-    const output = new Uint8Array(pixelCount * 4);
-    for (let pixel = 0; pixel < pixelCount; ++pixel) {
-      const source = pixel * 3;
-      const target = pixel * 4;
-      output[target] = bytes[source + 2];
-      output[target + 1] = bytes[source + 1];
-      output[target + 2] = bytes[source];
-      output[target + 3] = 255;
-    }
-    return output;
-  }
-  if (d3dFormat === D3DFMT_A1R5G5B5 || d3dFormat === D3DFMT_X1R5G5B5) {
-    const output = new Uint8Array(pixelCount * 4);
-    for (let pixel = 0; pixel < pixelCount; ++pixel) {
-      const source = pixel * 2;
-      const value = bytes[source] | (bytes[source + 1] << 8);
-      const target = pixel * 4;
-      output[target] = scale5((value >> 10) & 0x1f);
-      output[target + 1] = scale5((value >> 5) & 0x1f);
-      output[target + 2] = scale5(value & 0x1f);
-      output[target + 3] = d3dFormat === D3DFMT_X1R5G5B5 ? 255 : (value & 0x8000) ? 255 : 0;
-    }
-    return output;
-  }
-  if (d3dFormat === D3DFMT_A4R4G4B4 || d3dFormat === D3DFMT_X4R4G4B4) {
-    const output = new Uint8Array(pixelCount * 4);
-    for (let pixel = 0; pixel < pixelCount; ++pixel) {
-      const source = pixel * 2;
-      const value = bytes[source] | (bytes[source + 1] << 8);
-      const target = pixel * 4;
-      output[target] = scale4((value >> 8) & 0x0f);
-      output[target + 1] = scale4((value >> 4) & 0x0f);
-      output[target + 2] = scale4(value & 0x0f);
-      output[target + 3] = d3dFormat === D3DFMT_X4R4G4B4 ? 255 : scale4((value >> 12) & 0x0f);
-    }
-    return output;
-  }
-  if (d3dFormat === D3DFMT_V8U8) {
-    const output = new Uint8Array(pixelCount * 2);
-    for (let channel = 0; channel < output.length; ++channel) {
-      // Reinterpret the source byte as int8, then bias [-128, 127] to
-      // [0, 255]. The fragment shader performs the inverse normalization.
-      output[channel] = (bytes[channel] + 128) & 0xff;
-    }
-    return output;
-  }
-  return bytes;
-}
-
-// DXT/BCn block decoders - CPU fallback when WEBGL_compressed_texture_s3tc unavailable
-// Reference: Wine wined3d/utils.c:440, standard DXT spec
-
-/**
- * Decode a single DXT1 (BC1) block to 4x4 RGBA8
- * DXT1: 8 bytes -> 4x4 pixels. Two RGB565 endpoints + 4-color palette + 16×2-bit indices
- */
-function decodeDxt1Block(blockBytes, target, width, height, x, y) {
-  const c0 = (blockBytes[0] | (blockBytes[1] << 8));
-  const c1 = (blockBytes[2] | (blockBytes[3] << 8));
-  
-  // Extract RGB565 components
-  const r0 = scale5((c0 >> 11) & 0x1F);
-  const g0 = scale6((c0 >> 5) & 0x3F);
-  const b0 = scale5(c0 & 0x1F);
-  
-  const r1 = scale5((c1 >> 11) & 0x1F);
-  const g1 = scale6((c1 >> 5) & 0x3F);
-  const b1 = scale5(c1 & 0x1F);
-  
-  // Generate color palette per BC1 spec:
-  // c0 > c1: 4-color mode: [c0, c1, (2*c0 + c1)/3, (c0 + 2*c1)/3]
-  // c0 <= c1: 3-color + transparent mode: [c0, c1, (c0 + c1)/2, transparent black]
-  const colors = [
-    { r: r0, g: g0, b: b0, a: 255 },
-    { r: r1, g: g1, b: b1, a: 255 },
-    { r: c0 > c1 ? Math.round((2 * r0 + r1) / 3) : Math.round((r0 + r1) / 2),
-      g: c0 > c1 ? Math.round((2 * g0 + g1) / 3) : Math.round((g0 + g1) / 2),
-      b: c0 > c1 ? Math.round((2 * b0 + b1) / 3) : Math.round((b0 + b1) / 2),
-      a: 255 },
-    { r: c0 > c1 ? Math.round((r0 + 2 * r1) / 3) : 0,
-      g: c0 > c1 ? Math.round((g0 + 2 * g1) / 3) : 0,
-      b: c0 > c1 ? Math.round((b0 + 2 * b1) / 3) : 0,
-      a: c0 > c1 ? 255 : 0 }
-  ];
-  
-  // Extract 2-bit indices (16 pixels, 2 bits each = 4 bytes)
-  const indices = blockBytes[4] | (blockBytes[5] << 8) | (blockBytes[6] << 16) | (blockBytes[7] << 24);
-  
-  // Write 4x4 block
-  for (let py = 0; py < 4; py++) {
-    for (let px = 0; px < 4; px++) {
-      const pixelIndex = py * 4 + px;
-      const colorIndex = (indices >> (pixelIndex * 2)) & 0x03;
-      const color = colors[colorIndex];
-      
-      const tx = x + px;
-      const ty = y + py;
-      
-      if (tx < width && ty < height) {
-        const offset = (ty * width + tx) * 4;
-        target[offset] = color.r;
-        target[offset + 1] = color.g;
-        target[offset + 2] = color.b;
-        target[offset + 3] = color.a;
-      }
-    }
-  }
-}
-
-/**
- * Decode a single DXT3 (BC2) block to 4x4 RGBA8
- * DXT3: 16 bytes -> 4x4 pixels. 8 bytes explicit alpha (4-bit per pixel) + 8 bytes DXT1 color
- */
-function decodeDxt3Block(blockData, blockBytes, target, width, height, x, y) {
-  // First 8 bytes: alpha values (4-bit each, 4 values per byte)
-  const alphaBytes = blockBytes.subarray(0, 8);
-  // Last 8 bytes: DXT1 color data
-  const colorBytes = blockBytes.subarray(8, 16);
-  
-  // Decode alpha values
-  const alphaValues = [];
-  for (let i = 0; i < 8; i++) {
-    const byte = alphaBytes[i];
-    alphaValues.push(
-      scale4(byte & 0x0F), // scale4 for alpha: 0-15 -> 0-255
-      scale4((byte >> 4) & 0x0F)
-    );
-  }
-  
-  // Decode color data (same as DXT1)
-  const c0 = (colorBytes[0] | (colorBytes[1] << 8));
-  const c1 = (colorBytes[2] | (colorBytes[3] << 8));
-  
-  const r0 = scale5((c0 >> 11) & 0x1F);
-  const g0 = scale6((c0 >> 5) & 0x3F);
-  const b0 = scale5(c0 & 0x1F);
-  
-  const r1 = scale5((c1 >> 11) & 0x1F);
-  const g1 = scale6((c1 >> 5) & 0x3F);
-  const b1 = scale5(c1 & 0x1F);
-  
-  // Generate color palette per BC1 spec:
-  // c0 > c1: 4-color mode: [c0, c1, (2*c0 + c1)/3, (c0 + 2*c1)/3]
-  // c0 <= c1: 3-color + transparent mode: [c0, c1, (c0 + c1)/2, transparent black]
-  const colors = [
-    { r: r0, g: g0, b: b0 },
-    { r: r1, g: g1, b: b1 },
-    { r: c0 > c1 ? Math.round((2 * r0 + r1) / 3) : Math.round((r0 + r1) / 2),
-      g: c0 > c1 ? Math.round((2 * g0 + g1) / 3) : Math.round((g0 + g1) / 2),
-      b: c0 > c1 ? Math.round((2 * b0 + b1) / 3) : Math.round((b0 + b1) / 2) },
-    { r: c0 > c1 ? Math.round((r0 + 2 * r1) / 3) : 0,
-      g: c0 > c1 ? Math.round((g0 + 2 * g1) / 3) : 0,
-      b: c0 > c1 ? Math.round((b0 + 2 * b1) / 3) : 0 }
-  ];
-  
-  // Extract color indices
-  const colorIndices = colorBytes[4] | (colorBytes[5] << 8) | (colorBytes[6] << 16) | (colorBytes[7] << 24);
-  
-  // Write 4x4 block
-  for (let py = 0; py < 4; py++) {
-    for (let px = 0; px < 4; px++) {
-      const pixelIndex = py * 4 + px;
-      const colorIndex = (colorIndices >> (pixelIndex * 2)) & 0x03;
-      const color = colors[colorIndex];
-      const alphaIndex = pixelIndex;
-      
-      const tx = x + px;
-      const ty = y + py;
-      
-      if (tx < width && ty < height) {
-        const offset = (ty * width + tx) * 4;
-        target[offset] = color.r;
-        target[offset + 1] = color.g;
-        target[offset + 2] = color.b;
-        target[offset + 3] = alphaValues[alphaIndex];
-      }
-    }
-  }
-}
-
-/**
- * Decode a single DXT5 (BC3) block to 4x4 RGBA8
- * DXT5: 16 bytes -> 4x4 pixels. 8 bytes alpha (2 endpoints + 6×3-bit indices) + 8 bytes DXT1 color
- */
-function decodeDxt5Block(blockData, blockBytes, target, width, height, x, y) {
-  // First 8 bytes: alpha data
-  const alpha0 = blockBytes[0];
-  const alpha1 = blockBytes[1];
-  const alphaIndices = blockBytes[2] | (blockBytes[3] << 8) | (blockBytes[4] << 16) | 
-                      (blockBytes[5] << 24) | (blockBytes[6] << 32) | (blockBytes[7] << 40);
-  
-  // Generate 8 alpha values per BC3 spec:
-  // alpha0 > alpha1: 8-value interpolation mode
-  // alpha0 <= alpha1: 6-value interpolation + 0 and 255 mode
-  const alphaValues = [
-    alpha0,
-    alpha1,
-    alpha0 > alpha1 ? Math.round((6 * alpha0 + alpha1) / 7) : Math.round((4 * alpha0 + alpha1) / 5),
-    alpha0 > alpha1 ? Math.round((5 * alpha0 + 2 * alpha1) / 7) : Math.round((3 * alpha0 + 2 * alpha1) / 5),
-    alpha0 > alpha1 ? Math.round((4 * alpha0 + 3 * alpha1) / 7) : Math.round((2 * alpha0 + 3 * alpha1) / 5),
-    alpha0 > alpha1 ? Math.round((3 * alpha0 + 4 * alpha1) / 7) : Math.round((alpha0 + 4 * alpha1) / 5),
-    alpha0 > alpha1 ? Math.round((2 * alpha0 + 5 * alpha1) / 7) : 0,
-    alpha0 > alpha1 ? Math.round((alpha0 + 6 * alpha1) / 7) : 255
-  ];
-  
-  // Last 8 bytes: DXT1 color data
-  const colorBytes = blockBytes.subarray(8, 16);
-  
-  // Decode color data (same as DXT1)
-  const c0 = (colorBytes[0] | (colorBytes[1] << 8));
-  const c1 = (colorBytes[2] | (colorBytes[3] << 8));
-  
-  const r0 = scale5((c0 >> 11) & 0x1F);
-  const g0 = scale6((c0 >> 5) & 0x3F);
-  const b0 = scale5(c0 & 0x1F);
-  
-  const r1 = scale5((c1 >> 11) & 0x1F);
-  const g1 = scale6((c1 >> 5) & 0x3F);
-  const b1 = scale5(c1 & 0x1F);
-  
-  // Generate color palette per BC1 spec:
-  // c0 > c1: 4-color mode: [c0, c1, (2*c0 + c1)/3, (c0 + 2*c1)/3]
-  // c0 <= c1: 3-color + transparent mode: [c0, c1, (c0 + c1)/2, transparent black]
-  const colors = [
-    { r: r0, g: g0, b: b0 },
-    { r: r1, g: g1, b: b1 },
-    { r: c0 > c1 ? Math.round((2 * r0 + r1) / 3) : Math.round((r0 + r1) / 2),
-      g: c0 > c1 ? Math.round((2 * g0 + g1) / 3) : Math.round((g0 + g1) / 2),
-      b: c0 > c1 ? Math.round((2 * b0 + b1) / 3) : Math.round((b0 + b1) / 2) },
-    { r: c0 > c1 ? Math.round((r0 + 2 * r1) / 3) : 0,
-      g: c0 > c1 ? Math.round((g0 + 2 * g1) / 3) : 0,
-      b: c0 > c1 ? Math.round((b0 + 2 * b1) / 3) : 0 }
-  ];
-  
-  // Extract color indices
-  const colorIndices = colorBytes[4] | (colorBytes[5] << 8) | (colorBytes[6] << 16) | (colorBytes[7] << 24);
-  
-  // Write 4x4 block
-  for (let py = 0; py < 4; py++) {
-    for (let px = 0; px < 4; px++) {
-      const pixelIndex = py * 4 + px;
-      const colorIndex = (colorIndices >> (pixelIndex * 2)) & 0x03;
-      const alphaIndex = (alphaIndices >> (pixelIndex * 3)) & 0x07;
-      const color = colors[colorIndex];
-      const alpha = alphaValues[alphaIndex];
-      
-      const tx = x + px;
-      const ty = y + py;
-      
-      if (tx < width && ty < height) {
-        const offset = (ty * width + tx) * 4;
-        target[offset] = color.r;
-        target[offset + 1] = color.g;
-        target[offset + 2] = color.b;
-        target[offset + 3] = alpha;
-      }
-    }
-  }
-}
-
-/**
- * Main DXT decoder function
- * Decodes DXT1/DXT3/DXT5 compressed texture data to RGBA8
- * Handles non-multiple-of-4 dimensions by clamping block writes
- */
-function decodeDxtToRgba8(bytes, width, height, dxtKind) {
-  if (!bytes || !width || !height) {
-    return null;
-  }
-  d3d8TextureStats.dxtDecodes += 1;
-  
-  const pixelCount = width * height;
-  const target = new Uint8Array(pixelCount * 4);
-  
-  // Calculate number of blocks in each dimension
-  const blockWidth = Math.ceil(width / 4);
-  const blockHeight = Math.ceil(height / 4);
-  
-  let bytesPerBlock = 8;
-  let decoder;
-  
-  switch (dxtKind) {
-    case "DXT1":
-      bytesPerBlock = 8;
-      decoder = decodeDxt1Block;
-      break;
-    case "DXT3":
-    case "DXT2": // Treat DXT2 like DXT3 (premultiplied alpha handled as straight for now)
-      bytesPerBlock = 16;
-      decoder = decodeDxt3Block;
-      break;
-    case "DXT5":
-    case "DXT4": // Treat DXT4 like DXT5 (premultiplied alpha handled as straight for now)
-      bytesPerBlock = 16;
-      decoder = decodeDxt5Block;
-      break;
-    default:
-      console.warn(`Unknown DXT format: ${dxtKind}`);
-      return null;
-  }
-  
-  const totalBlocks = blockWidth * blockHeight;
-  const expectedBytes = totalBlocks * bytesPerBlock;
-  
-  if (bytes.length < expectedBytes) {
-    console.warn(`DXT data too short: expected ${expectedBytes} bytes, got ${bytes.length}`);
-    return null;
-  }
-  
-  // Decode each block
-  for (let by = 0; by < blockHeight; by++) {
-    for (let bx = 0; bx < blockWidth; bx++) {
-      const blockOffset = (by * blockWidth + bx) * bytesPerBlock;
-      const blockBytes = bytes.subarray(blockOffset, blockOffset + bytesPerBlock);
-      const x = bx * 4;
-      const y = by * 4;
-      
-      decoder(null, blockBytes, target, width, height, x, y);
-    }
-  }
-  
-  return target;
-}
-
-// Helper functions for DXT decoding
-function scale6(value) {
-  return (value << 2) | (value >> 4);
-}
-
-function d3d8TextureUploadView(info, bytes) {
-  if (info.type !== gl.UNSIGNED_SHORT_5_6_5) {
-    return bytes;
-  }
-  const copy = new Uint8Array(bytes);
-  return new Uint16Array(copy.buffer);
-}
-
-function applyD3D8TextureSwizzleIfChanged(resource, info) {
-  if (!resource || !info?.swizzle) {
-    return null;
-  }
-  if (resource.swizzleStorage === info.storage) {
-    return resource.swizzleApplied || null;
-  }
-  // Keep the raw R/RG texture storage stable; the draw shader reconstructs
-  // D3D8 legacy sampler semantics before the fixed-function combiner runs.
-  resource.swizzleStorage = info.storage;
-  resource.swizzleSemantic = info.semantic;
-  resource.swizzleApplied = {
-    r: info.swizzle.r,
-    g: info.swizzle.g,
-    b: info.swizzle.b,
-    a: info.swizzle.a,
-    semantic: info.semantic,
-    storage: info.storage,
-    appliedBy: "shader",
-  };
-  return resource.swizzleApplied;
-}
-
-function decodeLegacyD3D8PixelFromRgba(rgba, semantic) {
-  if (!Array.isArray(rgba) || rgba.length < 4) {
-    return null;
-  }
-  switch (semantic) {
-    case "alpha":
-    case "luminance":
-      return [rgba[0]];
-    case "luminanceAlpha":
-      return [rgba[0], rgba[1]];
-    default:
-      return null;
-  }
-}
-
-function d3dTextureAddressToGl(address) {
-  switch (Number(address) >>> 0) {
-    case D3DTADDRESS_WRAP:
-      return { value: gl.REPEAT, supported: true, name: "repeat" };
-    case D3DTADDRESS_MIRROR:
-      return { value: gl.MIRRORED_REPEAT, supported: true, name: "mirroredRepeat" };
-    case D3DTADDRESS_CLAMP:
-      return { value: gl.CLAMP_TO_EDGE, supported: true, name: "clampToEdge" };
-    case D3DTADDRESS_BORDER:
-      return { value: gl.CLAMP_TO_EDGE, supported: false, name: "borderFallbackClamp" };
-    case D3DTADDRESS_MIRRORONCE:
-      return { value: gl.MIRRORED_REPEAT, supported: false, name: "mirrorOnceFallbackMirror" };
-    default:
-      return { value: gl.CLAMP_TO_EDGE, supported: false, name: "unknownFallbackClamp" };
-  }
-}
-
-function d3dTextureMagFilterToGl(filter) {
-  switch (Number(filter) >>> 0) {
-    case D3DTEXF_POINT:
-      return { value: gl.NEAREST, supported: true, name: "nearest" };
-    case D3DTEXF_LINEAR:
-    case D3DTEXF_ANISOTROPIC:
-      return { value: gl.LINEAR, supported: true, name: "linear" };
-    default:
-      return { value: gl.NEAREST, supported: false, name: "unknownFallbackNearest" };
-  }
-}
-
-function d3dTextureMinFilterToGl(minFilter, mipFilter, hasCompleteMipChain) {
-  const min = Number(minFilter) >>> 0;
-  const mip = Number(mipFilter) >>> 0;
-  const linearMin = min === D3DTEXF_LINEAR || min === D3DTEXF_ANISOTROPIC;
-  const base = linearMin ? gl.LINEAR : gl.NEAREST;
-  const supportedMin = min === D3DTEXF_POINT || min === D3DTEXF_LINEAR || min === D3DTEXF_ANISOTROPIC;
-  if (mip === D3DTEXF_NONE || !hasCompleteMipChain) {
-    return {
-      value: base,
-      supported: supportedMin && (mip === D3DTEXF_NONE || mip === D3DTEXF_POINT || mip === D3DTEXF_LINEAR),
-      name: base === gl.LINEAR ? "linear" : "nearest",
-      usedMipmaps: false,
-      requestedMipmaps: mip !== D3DTEXF_NONE,
-      fallbackReason: mip !== D3DTEXF_NONE && !hasCompleteMipChain ? "incomplete mip chain" : null,
-    };
-  }
-  if (mip === D3DTEXF_POINT) {
-    return {
-      value: linearMin ? gl.LINEAR_MIPMAP_NEAREST : gl.NEAREST_MIPMAP_NEAREST,
-      supported: supportedMin,
-      name: linearMin ? "linearMipmapNearest" : "nearestMipmapNearest",
-      usedMipmaps: true,
-      requestedMipmaps: true,
-      fallbackReason: null,
-    };
-  }
-  if (mip === D3DTEXF_LINEAR) {
-    return {
-      value: linearMin ? gl.LINEAR_MIPMAP_LINEAR : gl.NEAREST_MIPMAP_LINEAR,
-      supported: supportedMin,
-      name: linearMin ? "linearMipmapLinear" : "nearestMipmapLinear",
-      usedMipmaps: true,
-      requestedMipmaps: true,
-      fallbackReason: null,
-    };
-  }
-  return {
-    value: base,
-    supported: false,
-    name: base === gl.LINEAR ? "unknownMipFallbackLinear" : "unknownMipFallbackNearest",
-    usedMipmaps: false,
-    requestedMipmaps: true,
-    fallbackReason: "unsupported mip filter",
-  };
-}
-
-function d3dDwordToFloat(value) {
-  d3d8FloatView.setUint32(0, Number(value) >>> 0, true);
-  const decoded = d3d8FloatView.getFloat32(0, true);
-  return Number.isFinite(decoded) ? decoded : 0.0;
-}
-
-function d3dColorToNormalizedRgba(value) {
-  const color = Number(value) >>> 0;
-  return [
-    ((color >>> 16) & 0xff) / 255,
-    ((color >>> 8) & 0xff) / 255,
-    (color & 0xff) / 255,
-    ((color >>> 24) & 0xff) / 255,
-  ];
-}
-
-const DEFAULT_D3D8_MATERIAL = {
-  diffuse: [1, 1, 1, 1],
-  ambient: [1, 1, 1, 1],
-  specular: [0, 0, 0, 0],
-  emissive: [0, 0, 0, 0],
-  power: 1,
-};
-
-function normalizeD3D8ColorValue(value, fallback) {
-  const source = Array.isArray(value)
-    ? value
-    : [value?.r, value?.g, value?.b, value?.a];
-  return [0, 1, 2, 3].map((index) => {
-    const component = Number(source[index] ?? fallback[index]);
-    return Number.isFinite(component) ? component : fallback[index];
-  });
-}
-
-function normalizeD3D8Material(material = {}) {
-  const source = material ?? {};
-  const power = Number(source.power ?? DEFAULT_D3D8_MATERIAL.power);
-  return {
-    diffuse: normalizeD3D8ColorValue(source.diffuse, DEFAULT_D3D8_MATERIAL.diffuse),
-    ambient: normalizeD3D8ColorValue(source.ambient, DEFAULT_D3D8_MATERIAL.ambient),
-    specular: normalizeD3D8ColorValue(source.specular, DEFAULT_D3D8_MATERIAL.specular),
-    emissive: normalizeD3D8ColorValue(source.emissive, DEFAULT_D3D8_MATERIAL.emissive),
-    power: Number.isFinite(power) ? power : DEFAULT_D3D8_MATERIAL.power,
-  };
-}
-
-function normalizeD3D8Vector3(value, fallback = [0, 0, 0]) {
-  const source = Array.isArray(value)
-    ? value
-    : [value?.x, value?.y, value?.z];
-  return [0, 1, 2].map((index) => {
-    const component = Number(source[index] ?? fallback[index]);
-    return Number.isFinite(component) ? component : fallback[index];
-  });
-}
-
-function normalizeD3D8Light(light = {}, index = 0) {
-  return {
-    index: Number(light?.index ?? index) >>> 0,
-    type: Number(light?.type ?? 0) >>> 0,
-    enabled: Number(light?.enabled ?? 0) !== 0,
-    diffuse: normalizeD3D8ColorValue(light?.diffuse, [0, 0, 0, 1]),
-    specular: normalizeD3D8ColorValue(light?.specular, [0, 0, 0, 1]),
-    ambient: normalizeD3D8ColorValue(light?.ambient, [0, 0, 0, 1]),
-    position: normalizeD3D8Vector3(light?.position),
-    direction: normalizeD3D8Vector3(light?.direction, [0, 0, 1]),
-    range: finiteNumber(light?.range, 0),
-    falloff: finiteNumber(light?.falloff, 0),
-    attenuation0: finiteNumber(light?.attenuation0, 0),
-    attenuation1: finiteNumber(light?.attenuation1, 0),
-    attenuation2: finiteNumber(light?.attenuation2, 0),
-    theta: finiteNumber(light?.theta, 0),
-    phi: finiteNumber(light?.phi, 0),
-  };
-}
-
-function normalizeD3D8Lights(lights) {
-  return Array.from({ length: D3D8_LIGHT_COUNT }, (_, index) =>
-    normalizeD3D8Light(Array.isArray(lights) ? lights[index] : null, index));
-}
-
-function d3d8DirectionalLights(lights) {
-  return lights
-    .filter((light) => light.enabled && light.type === D3DLIGHT_DIRECTIONAL)
-    .slice(0, D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT);
-}
-
-function d3d8FixedFunctionLights(lights) {
-  return lights
-    .filter((light) => light.enabled
-      && (light.type === D3DLIGHT_POINT
-        || light.type === D3DLIGHT_SPOT
-        || light.type === D3DLIGHT_DIRECTIONAL))
-    .slice(0, D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT);
-}
-
-function d3d8FixedLightUniformKey(lights) {
-  const values = [lights.length];
-  for (const light of lights) {
-    values.push(light.type);
-    values.push(...light.diffuse);
-    values.push(...light.specular);
-    values.push(...light.ambient);
-    values.push(...light.position);
-    values.push(...light.direction);
-    values.push(
-      light.range,
-      light.attenuation0,
-      light.attenuation1,
-      light.attenuation2,
-      light.theta,
-      light.phi,
-      light.falloff,
-    );
-  }
-  return values.join(",");
-}
-
-function d3d8ViewportUniformKey(viewport) {
-  const d3d = viewport?.d3d;
-  if (!d3d) {
-    return "0,0,0,0";
-  }
-  return [
-    finiteNumber(d3d.x, 0),
-    finiteNumber(d3d.y, 0),
-    Math.max(1, finiteNumber(d3d.width, 1)),
-    Math.max(1, finiteNumber(d3d.height, 1)),
-  ].join(",");
-}
-
-function d3d8CaptureRenderUniformKey(
-    derivedStateHash,
-    primitiveType,
-    usePositionTransforms,
-    vertexPretransformed,
-    appliedViewport) {
-  const d3d = vertexPretransformed ? appliedViewport?.d3d : null;
-  return {
-    derivedStateHash,
-    primitiveType,
-    usePositionTransforms: usePositionTransforms ? 1 : 0,
-    vertexPretransformed: vertexPretransformed ? 1 : 0,
-    viewportX: d3d ? finiteNumber(d3d.x, 0) : 0,
-    viewportY: d3d ? finiteNumber(d3d.y, 0) : 0,
-    viewportWidth: d3d ? Math.max(1, finiteNumber(d3d.width, 1)) : 0,
-    viewportHeight: d3d ? Math.max(1, finiteNumber(d3d.height, 1)) : 0,
-  };
-}
-
-function d3d8RenderUniformKeyMatches(
-    key,
-    derivedStateHash,
-    primitiveType,
-    usePositionTransforms,
-    vertexPretransformed,
-    appliedViewport) {
-  if (!key ||
-      key.derivedStateHash !== derivedStateHash ||
-      key.primitiveType !== primitiveType ||
-      key.usePositionTransforms !== (usePositionTransforms ? 1 : 0) ||
-      key.vertexPretransformed !== (vertexPretransformed ? 1 : 0)) {
-    return false;
-  }
-  const d3d = vertexPretransformed ? appliedViewport?.d3d : null;
-  const viewportX = d3d ? finiteNumber(d3d.x, 0) : 0;
-  const viewportY = d3d ? finiteNumber(d3d.y, 0) : 0;
-  const viewportWidth = d3d ? Math.max(1, finiteNumber(d3d.width, 1)) : 0;
-  const viewportHeight = d3d ? Math.max(1, finiteNumber(d3d.height, 1)) : 0;
-  return key.viewportX === viewportX &&
-    key.viewportY === viewportY &&
-    key.viewportWidth === viewportWidth &&
-    key.viewportHeight === viewportHeight;
-}
-
-function d3d8BaseUniformKey(useTransforms, usePretransformedPosition, appliedViewport,
-    appliedRenderState, clipPlanes, shadeModeDraw) {
-  const values = [
-    useTransforms ? 1 : 0,
-    usePretransformedPosition ? 1 : 0,
-    usePretransformedPosition ? d3d8ViewportUniformKey(appliedViewport) : "",
-    appliedRenderState.depth.bias.ndc,
-    usePretransformedPosition ? 0 : appliedRenderState.clipPlanes.mask,
-    shadeModeDraw.usesFlatShader ? 1 : 0,
-    appliedRenderState.lighting.shaderEnabled ? 1 : 0,
-    appliedRenderState.lighting.specular.enabled ? 1 : 0,
-    appliedRenderState.lighting.normalizeNormals.enabled ? 1 : 0,
-    appliedRenderState.lighting.localViewer.enabled ? 1 : 0,
-    appliedRenderState.materialSources.colorVertex.enabled ? 1 : 0,
-  ];
-  if (!usePretransformedPosition && appliedRenderState.clipPlanes.mask !== 0) {
-    for (let planeIndex = 0; planeIndex < D3D8_CLIP_PLANE_COUNT; ++planeIndex) {
-      values.push(...(clipPlanes[planeIndex] ?? [0, 0, 0, 0]));
-    }
-  }
-  return values.join(",");
-}
-
-function d3d8StageUniformKey(renderState) {
-  const stage0 = renderState.textureStages[0];
-  const stage1 = renderState.textureStages[1];
-  const stage2 = renderState.textureStages[2];
-  const stage3 = renderState.textureStages[3];
-  return [
-    renderState.textureFactor,
-    stage0.colorOp,
-    stage0.colorArg0,
-    stage0.colorArg1,
-    stage0.colorArg2,
-    stage0.alphaOp,
-    stage0.alphaArg0,
-    stage0.alphaArg1,
-    stage0.alphaArg2,
-    stage0.resultArg,
-    stage1.colorOp,
-    stage1.colorArg0,
-    stage1.colorArg1,
-    stage1.colorArg2,
-    stage1.alphaOp,
-    stage1.alphaArg0,
-    stage1.alphaArg1,
-    stage1.alphaArg2,
-    stage1.resultArg,
-    stage2.colorOp,
-    stage2.colorArg0,
-    stage2.colorArg1,
-    stage2.colorArg2,
-    stage2.alphaOp,
-    stage2.alphaArg0,
-    stage2.alphaArg1,
-    stage2.alphaArg2,
-    stage2.resultArg,
-    stage3.colorOp,
-    stage3.colorArg0,
-    stage3.colorArg1,
-    stage3.colorArg2,
-    stage3.alphaOp,
-    stage3.alphaArg0,
-    stage3.alphaArg1,
-    stage3.alphaArg2,
-    stage3.resultArg,
-  ].join(",");
-}
-
-function d3d8AlphaFogUniformKey(renderState, appliedRenderState) {
-  return [
-    appliedRenderState.alphaTest.enabled ? 1 : 0,
-    renderState.alphaFunc,
-    appliedRenderState.alphaTest.ref,
-    appliedRenderState.fog.enabled ? 1 : 0,
-    appliedRenderState.fog.rangeEnabled ? 1 : 0,
-    ...appliedRenderState.fog.color,
-    appliedRenderState.fog.start,
-    appliedRenderState.fog.end,
-  ].join(",");
-}
-
-function d3d8TextureLayoutUniformKey({
-  renderState,
-  canSampleTexture0,
-  canSampleTexture1,
-  canSampleTexture2,
-  canSampleTexture3,
-  texture0Coordinates,
-  texture1Coordinates,
-  texture2Coordinates,
-  texture3Coordinates,
-  texture0SemanticMode,
-  texture1SemanticMode,
-  texture2SemanticMode,
-  texture3SemanticMode,
-  texture0FlipY,
-  texture1FlipY,
-  texture2FlipY,
-  texture3FlipY,
-  implicitAlphaCutoutThreshold,
-  texture0Transform,
-  texture1Transform,
-  texture2Transform,
-  texture3Transform,
-}) {
-  const values = [implicitAlphaCutoutThreshold];
-  const pushStage = (stage, canSampleTexture, coordinates, semanticMode, flipY,
-      textureTransform, includeCoordSet = false) => {
-    const transformApplied = Boolean(canSampleTexture && coordinates.transformApplied);
-    values.push(
-      canSampleTexture ? 1 : 0,
-      canSampleTexture ? coordinates.mode : D3DTSS_TCI_PASSTHRU,
-      transformApplied ? 1 : 0,
-      transformApplied ? coordinates.textureTransformComponentCount : 0,
-      transformApplied && coordinates.textureTransformProjected ? 1 : 0,
-      canSampleTexture ? Number(stage.mipMapLodBias ?? 0) >>> 0 : 0,
-      canSampleTexture ? semanticMode : 0,
-      canSampleTexture && flipY ? 1 : 0,
-    );
-    // Stages 2/3 select which vertex UV set feeds the shader, so the coordinate
-    // index participates in the layout key. Stages 0/1 always map coordSet->attr
-    // 1:1 in the vertex fetch, so their key is left unchanged.
-    if (includeCoordSet) {
-      values.push(canSampleTexture ? (coordinates.coordSet >>> 0) : 0);
-    }
-    if (transformApplied) {
-      values.push(...textureTransform);
-    }
-  };
-  pushStage(
-    renderState.textureStages[0],
-    canSampleTexture0,
-    texture0Coordinates,
-    texture0SemanticMode,
-    texture0FlipY,
-    texture0Transform,
-  );
-  pushStage(
-    renderState.textureStages[1],
-    canSampleTexture1,
-    texture1Coordinates,
-    texture1SemanticMode,
-    texture1FlipY,
-    texture1Transform,
-  );
-  pushStage(
-    renderState.textureStages[2],
-    canSampleTexture2,
-    texture2Coordinates,
-    texture2SemanticMode,
-    texture2FlipY,
-    texture2Transform,
-    true,
-  );
-  pushStage(
-    renderState.textureStages[3],
-    canSampleTexture3,
-    texture3Coordinates,
-    texture3SemanticMode,
-    texture3FlipY,
-    texture3Transform,
-    true,
-  );
-  return values.join(",");
-}
-
-function flattenD3D8LightType(lights) {
-  const values = [];
-  for (let index = 0; index < D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT; ++index) {
-    values.push(lights[index]?.type ?? 0);
-  }
-  return new Int32Array(values);
-}
-
-function flattenD3D8LightColor(lights, field, count = D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT) {
-  const values = [];
-  for (let index = 0; index < count; ++index) {
-    values.push(...(lights[index]?.[field] ?? [0, 0, 0, 1]));
-  }
-  return new Float32Array(values);
-}
-
-function flattenD3D8LightVector(lights, field, fallback, count = D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT) {
-  const values = [];
-  for (let index = 0; index < count; ++index) {
-    values.push(...(lights[index]?.[field] ?? fallback));
-  }
-  return new Float32Array(values);
-}
-
-function flattenD3D8LightDirection(lights, count = D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT) {
-  return flattenD3D8LightVector(lights, "direction", [0, 0, 1], count);
-}
-
-function flattenD3D8LightRangeAttenuation(lights) {
-  const values = [];
-  for (let index = 0; index < D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT; ++index) {
-    const light = lights[index] ?? {};
-    values.push(
-      finiteNumber(light.range, 0),
-      finiteNumber(light.attenuation0, 0),
-      finiteNumber(light.attenuation1, 0),
-      finiteNumber(light.attenuation2, 0),
-    );
-  }
-  return new Float32Array(values);
-}
-
-function flattenD3D8LightSpot(lights) {
-  const values = [];
-  for (let index = 0; index < D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT; ++index) {
-    const light = lights[index] ?? {};
-    values.push(
-      finiteNumber(light.theta, 0),
-      finiteNumber(light.phi, 0),
-      finiteNumber(light.falloff, 0),
-    );
-  }
-  return new Float32Array(values);
-}
-
-function textureHasCompleteMipChain(resource) {
-  if (!resource || resource.levels <= 1) {
-    return false;
-  }
-  if (typeof resource.completeMipChain === "boolean") {
-    return resource.completeMipChain;
-  }
-  for (let level = 0; level < resource.levels; ++level) {
-    if (!resource.initializedLevels.has(String(level))) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function updateD3D8TextureMipCompleteness(resource) {
-  if (!resource) {
-    return false;
-  }
-  let complete = false;
-  if (resource.levels > 1 && resource.initializedLevels?.size >= resource.levels) {
-    complete = true;
-    for (let level = 0; level < resource.levels; ++level) {
-      if (!resource.initializedLevels.has(String(level))) {
-        complete = false;
-        break;
-      }
-    }
-  }
-  resource.completeMipChain = complete;
-  return complete;
-}
-
-function d3d8SamplerStateMatches(resource, {
-  min,
-  mag,
-  wrapS,
-  wrapT,
-  baseLevel,
-  maxLevel,
-  lodBiasBits,
-  completeMipChain,
-}) {
-  const key = resource?.samplerStateKey;
-  return Boolean(key) &&
-    key.min === min.value &&
-    key.mag === mag.value &&
-    key.wrapS === wrapS.value &&
-    key.wrapT === wrapT.value &&
-    key.baseLevel === baseLevel &&
-    key.maxLevel === maxLevel &&
-    key.lodBiasBits === lodBiasBits &&
-    key.completeMipChain === (completeMipChain ? 1 : 0);
-}
-
-function captureD3D8TextureSamplerRawKey(textureStage, resource, samplerParams = null) {
-  if (!resource?.texture || !textureStage) {
-    return null;
-  }
-  return {
-    minFilter: Number(textureStage.minFilter ?? 0) >>> 0,
-    magFilter: Number(textureStage.magFilter ?? 0) >>> 0,
-    mipFilter: Number(textureStage.mipFilter ?? 0) >>> 0,
-    addressU: Number(textureStage.addressU ?? 0) >>> 0,
-    addressV: Number(textureStage.addressV ?? 0) >>> 0,
-    maxMipLevel: Number(textureStage.maxMipLevel ?? 0) >>> 0,
-    mipMapLodBias: Number(textureStage.mipMapLodBias ?? 0) >>> 0,
-    levelCount: Math.max(1, Number(resource.levels ?? 1) >>> 0),
-    completeMipChain: (samplerParams?.completeMipChain ?? textureHasCompleteMipChain(resource)) ? 1 : 0,
-  };
-}
-
-function d3d8TextureSamplerRawStateCurrent(textureStage, resource) {
-  const key = resource?.samplerD3DStateKey;
-  if (!resource?.samplerState || !resource?.texture || !textureStage || !key) {
-    return false;
-  }
-  const levelCount = Math.max(1, Number(resource.levels ?? 1) >>> 0);
-  const completeMipChain = textureHasCompleteMipChain(resource) ? 1 : 0;
-  return Boolean(
-    key.minFilter === (Number(textureStage.minFilter ?? 0) >>> 0) &&
-    key.magFilter === (Number(textureStage.magFilter ?? 0) >>> 0) &&
-    key.mipFilter === (Number(textureStage.mipFilter ?? 0) >>> 0) &&
-    key.addressU === (Number(textureStage.addressU ?? 0) >>> 0) &&
-    key.addressV === (Number(textureStage.addressV ?? 0) >>> 0) &&
-    key.maxMipLevel === (Number(textureStage.maxMipLevel ?? 0) >>> 0) &&
-    key.mipMapLodBias === (Number(textureStage.mipMapLodBias ?? 0) >>> 0) &&
-    key.levelCount === levelCount &&
-    key.completeMipChain === completeMipChain
-  );
-}
-
-function d3d8TextureSamplerParams(textureStage, resource) {
-  if (!resource?.texture || !textureStage) {
-    return null;
-  }
-  const completeMipChain = textureHasCompleteMipChain(resource);
-  const min = d3dTextureMinFilterToGl(textureStage.minFilter, textureStage.mipFilter, completeMipChain);
-  const mag = d3dTextureMagFilterToGl(textureStage.magFilter);
-  const wrapS = d3dTextureAddressToGl(textureStage.addressU);
-  const wrapT = d3dTextureAddressToGl(textureStage.addressV);
-  const levelCount = Math.max(1, Number(resource.levels ?? 1) >>> 0);
-  const highestLevel = levelCount - 1;
-  const requestedMaxMipLevel = Number(textureStage.maxMipLevel ?? 0) >>> 0;
-  const baseLevel = completeMipChain ? Math.min(requestedMaxMipLevel, highestLevel) : 0;
-  const maxLevel = completeMipChain ? Math.max(baseLevel, highestLevel) : 0;
-  const lodBiasBits = Number(textureStage.mipMapLodBias ?? 0) >>> 0;
-  const lodBias = d3dDwordToFloat(lodBiasBits);
-  return {
-    completeMipChain,
-    min,
-    mag,
-    wrapS,
-    wrapT,
-    baseLevel,
-    maxLevel,
-    lodBiasBits,
-    lodBias,
-    requestedMaxMipLevel,
-  };
-}
-
-function d3d8TextureSamplerStateCurrent(textureStage, resource, params = null) {
-  const samplerParams = params ?? d3d8TextureSamplerParams(textureStage, resource);
-  return Boolean(
-    resource?.samplerState &&
-    samplerParams &&
-    d3d8SamplerStateMatches(resource, samplerParams));
-}
-
-function applyD3D8TextureSamplerToBoundTexture(stage, textureStage, resource, params = null) {
-  if (!gl || !resource?.texture || !textureStage) {
-    return null;
-  }
-  const samplerParams = params ?? d3d8TextureSamplerParams(textureStage, resource);
-  if (!samplerParams) {
-    return null;
-  }
-  const {
-    completeMipChain,
-    min,
-    mag,
-    wrapS,
-    wrapT,
-    baseLevel,
-    maxLevel,
-    lodBiasBits,
-    lodBias,
-    requestedMaxMipLevel,
-  } = samplerParams;
-  if (d3d8TextureSamplerStateCurrent(textureStage, resource, samplerParams)) {
-    if (d3d8DiagLevel === "full") {
-      d3d8TextureStats.lastSampler = resource.samplerState;
-      updateD3D8TextureSummary();
-    }
-    return resource.samplerState;
-  }
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, min.value);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, mag.value);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrapS.value);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrapT.value);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_BASE_LEVEL, baseLevel);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, maxLevel);
-
-  const applied = {
-    stage,
-    textureId: resource.id,
-    d3d: {
-      minFilter: Number(textureStage.minFilter) >>> 0,
-      magFilter: Number(textureStage.magFilter) >>> 0,
-      mipFilter: Number(textureStage.mipFilter) >>> 0,
-      addressU: Number(textureStage.addressU) >>> 0,
-      addressV: Number(textureStage.addressV) >>> 0,
-      maxMipLevel: requestedMaxMipLevel,
-      mipMapLodBiasBits: lodBiasBits,
-      mipMapLodBias: lodBias,
-    },
-    gl: {
-      minFilter: min.value,
-      magFilter: mag.value,
-      wrapS: wrapS.value,
-      wrapT: wrapT.value,
-      baseLevel,
-      maxLevel,
-      lodBias,
-      lodBiasSource: "shader",
-    },
-    names: {
-      minFilter: min.name,
-      magFilter: mag.name,
-      wrapS: wrapS.name,
-      wrapT: wrapT.name,
-    },
-    completeMipChain,
-    maxMipLevelClamped: requestedMaxMipLevel !== baseLevel,
-    usedMipmaps: min.usedMipmaps,
-    requestedMipmaps: min.requestedMipmaps,
-    fallbackReason: min.fallbackReason,
-    supported: min.supported && mag.supported && wrapS.supported && wrapT.supported,
-  };
-  resource.samplerState = applied;
-  resource.samplerStateKey = {
-    min: min.value,
-    mag: mag.value,
-    wrapS: wrapS.value,
-    wrapT: wrapT.value,
-    baseLevel,
-    maxLevel,
-    lodBiasBits,
-    completeMipChain: completeMipChain ? 1 : 0,
-  };
-  resource.samplerD3DStateKey = captureD3D8TextureSamplerRawKey(textureStage, resource, samplerParams);
-  d3d8TextureStats.samplerApplications += 1;
-  d3d8TextureStats.lastSampler = applied;
-  updateD3D8TextureSummary();
-  return applied;
-}
-
-function d3dTextureCombinerOpName(op) {
-  switch (Number(op) >>> 0) {
-    case D3DTOP_DISABLE:
-      return "disable";
-    case D3DTOP_SELECTARG1:
-      return "selectArg1";
-    case D3DTOP_SELECTARG2:
-      return "selectArg2";
-    case D3DTOP_MODULATE:
-      return "modulate";
-    case D3DTOP_MODULATE2X:
-      return "modulate2X";
-    case D3DTOP_MODULATE4X:
-      return "modulate4X";
-    case D3DTOP_ADD:
-      return "add";
-    case D3DTOP_ADDSIGNED:
-      return "addSigned";
-    case D3DTOP_ADDSIGNED2X:
-      return "addSigned2X";
-    case D3DTOP_SUBTRACT:
-      return "subtract";
-    case D3DTOP_ADDSMOOTH:
-      return "addSmooth";
-    case D3DTOP_BLENDDIFFUSEALPHA:
-      return "blendDiffuseAlpha";
-    case D3DTOP_BLENDTEXTUREALPHA:
-      return "blendTextureAlpha";
-    case D3DTOP_BLENDFACTORALPHA:
-      return "blendFactorAlpha";
-    case D3DTOP_BLENDTEXTUREALPHAPM:
-      return "blendTextureAlphaPremultiplied";
-    case D3DTOP_BLENDCURRENTALPHA:
-      return "blendCurrentAlpha";
-    case D3DTOP_PREMODULATE:
-      return "premodulate";
-    case D3DTOP_MODULATEALPHA_ADDCOLOR:
-      return "modulateAlphaAddColor";
-    case D3DTOP_MODULATECOLOR_ADDALPHA:
-      return "modulateColorAddAlpha";
-    case D3DTOP_MODULATEINVALPHA_ADDCOLOR:
-      return "modulateInvAlphaAddColor";
-    case D3DTOP_MODULATEINVCOLOR_ADDALPHA:
-      return "modulateInvColorAddAlpha";
-    case D3DTOP_BUMPENVMAP:
-      return "bumpEnvMap";
-    case D3DTOP_BUMPENVMAPLUMINANCE:
-      return "bumpEnvMapLuminance";
-    case D3DTOP_DOTPRODUCT3:
-      return "dotProduct3";
-    case D3DTOP_MULTIPLYADD:
-      return "multiplyAdd";
-    case D3DTOP_LERP:
-      return "lerp";
-    default:
-      return "unsupported";
-  }
-}
-
-function d3dTextureCombinerOpSupported(op, target = "color") {
-  switch (Number(op) >>> 0) {
-    case D3DTOP_DISABLE:
-    case D3DTOP_SELECTARG1:
-    case D3DTOP_SELECTARG2:
-    case D3DTOP_MODULATE:
-    case D3DTOP_MODULATE2X:
-    case D3DTOP_MODULATE4X:
-    case D3DTOP_ADD:
-    case D3DTOP_ADDSIGNED:
-    case D3DTOP_ADDSIGNED2X:
-    case D3DTOP_SUBTRACT:
-    case D3DTOP_ADDSMOOTH:
-    case D3DTOP_BLENDDIFFUSEALPHA:
-    case D3DTOP_BLENDTEXTUREALPHA:
-    case D3DTOP_BLENDFACTORALPHA:
-    case D3DTOP_BLENDTEXTUREALPHAPM:
-    case D3DTOP_BLENDCURRENTALPHA:
-    case D3DTOP_DOTPRODUCT3:
-    case D3DTOP_MULTIPLYADD:
-    case D3DTOP_LERP:
-      return true;
-    case D3DTOP_MODULATEALPHA_ADDCOLOR:
-    case D3DTOP_MODULATECOLOR_ADDALPHA:
-    case D3DTOP_MODULATEINVALPHA_ADDCOLOR:
-    case D3DTOP_MODULATEINVCOLOR_ADDALPHA:
-      return target === "color";
-    default:
-      return false;
-  }
-}
-
-function d3dTextureCombinerOpUsesArg0(op) {
-  const normalized = Number(op) >>> 0;
-  return normalized === D3DTOP_MULTIPLYADD || normalized === D3DTOP_LERP;
-}
-
-function d3dTextureCombinerOpUsesArg1(op) {
-  switch (Number(op) >>> 0) {
-    case D3DTOP_SELECTARG1:
-    case D3DTOP_MODULATE:
-    case D3DTOP_MODULATE2X:
-    case D3DTOP_MODULATE4X:
-    case D3DTOP_ADD:
-    case D3DTOP_ADDSIGNED:
-    case D3DTOP_ADDSIGNED2X:
-    case D3DTOP_SUBTRACT:
-    case D3DTOP_ADDSMOOTH:
-    case D3DTOP_BLENDDIFFUSEALPHA:
-    case D3DTOP_BLENDTEXTUREALPHA:
-    case D3DTOP_BLENDFACTORALPHA:
-    case D3DTOP_BLENDTEXTUREALPHAPM:
-    case D3DTOP_BLENDCURRENTALPHA:
-    case D3DTOP_PREMODULATE:
-    case D3DTOP_MODULATEALPHA_ADDCOLOR:
-    case D3DTOP_MODULATECOLOR_ADDALPHA:
-    case D3DTOP_MODULATEINVALPHA_ADDCOLOR:
-    case D3DTOP_MODULATEINVCOLOR_ADDALPHA:
-    case D3DTOP_BUMPENVMAP:
-    case D3DTOP_BUMPENVMAPLUMINANCE:
-    case D3DTOP_DOTPRODUCT3:
-    case D3DTOP_MULTIPLYADD:
-    case D3DTOP_LERP:
-      return true;
-    default:
-      return false;
-  }
-}
-
-function d3dTextureCombinerOpUsesArg2(op) {
-  switch (Number(op) >>> 0) {
-    case D3DTOP_SELECTARG2:
-    case D3DTOP_MODULATE:
-    case D3DTOP_MODULATE2X:
-    case D3DTOP_MODULATE4X:
-    case D3DTOP_ADD:
-    case D3DTOP_ADDSIGNED:
-    case D3DTOP_ADDSIGNED2X:
-    case D3DTOP_SUBTRACT:
-    case D3DTOP_ADDSMOOTH:
-    case D3DTOP_BLENDDIFFUSEALPHA:
-    case D3DTOP_BLENDTEXTUREALPHA:
-    case D3DTOP_BLENDFACTORALPHA:
-    case D3DTOP_BLENDTEXTUREALPHAPM:
-    case D3DTOP_BLENDCURRENTALPHA:
-    case D3DTOP_PREMODULATE:
-    case D3DTOP_MODULATEALPHA_ADDCOLOR:
-    case D3DTOP_MODULATECOLOR_ADDALPHA:
-    case D3DTOP_MODULATEINVALPHA_ADDCOLOR:
-    case D3DTOP_MODULATEINVCOLOR_ADDALPHA:
-    case D3DTOP_BUMPENVMAP:
-    case D3DTOP_BUMPENVMAPLUMINANCE:
-    case D3DTOP_DOTPRODUCT3:
-    case D3DTOP_MULTIPLYADD:
-    case D3DTOP_LERP:
-      return true;
-    default:
-      return false;
-  }
-}
-
-function d3dTextureCombinerArgBaseName(arg) {
-  switch ((Number(arg) >>> 0) & D3DTA_SELECTMASK) {
-    case D3DTA_DIFFUSE:
-      return "diffuse";
-    case D3DTA_CURRENT:
-      return "current";
-    case D3DTA_TEXTURE:
-      return "texture";
-    case D3DTA_TFACTOR:
-      return "textureFactor";
-    case D3DTA_SPECULAR:
-      return "specular";
-    case D3DTA_TEMP:
-      return "temp";
-    default:
-      return "unsupported";
-  }
-}
-
-function d3dTextureCombinerArgSupported(arg) {
-  const normalized = Number(arg) >>> 0;
-  const baseName = d3dTextureCombinerArgBaseName(normalized);
-  const modifiers = normalized & ~D3DTA_SELECTMASK;
-  return baseName !== "unsupported" && (modifiers & ~D3DTA_SUPPORTED_MODIFIERS) === 0;
-}
-
-function d3dTextureCombinerResultArgSupported(arg) {
-  const normalized = Number(arg) >>> 0;
-  return normalized === D3DTA_CURRENT || normalized === D3DTA_TEMP;
-}
-
-function d3dTextureCombinerArgName(arg) {
-  const normalized = Number(arg) >>> 0;
-  if (!d3dTextureCombinerArgSupported(normalized)) {
-    return "unsupported";
-  }
-  let name = d3dTextureCombinerArgBaseName(normalized);
-  if (normalized & D3DTA_ALPHAREPLICATE) {
-    name += "AlphaReplicate";
-  }
-  if (normalized & D3DTA_COMPLEMENT) {
-    name += "Complement";
-  }
-  return name;
-}
-
-function d3dTextureCoordinateModeName(mode) {
-  switch (Number(mode) >>> 0) {
-    case D3DTSS_TCI_PASSTHRU:
-      return "passthru";
-    case D3DTSS_TCI_CAMERASPACENORMAL:
-      return "cameraSpaceNormal";
-    case D3DTSS_TCI_CAMERASPACEPOSITION:
-      return "cameraSpacePosition";
-    case D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR:
-      return "cameraSpaceReflectionVector";
-    default:
-      return "unsupported";
-  }
-}
-
-function d3dTextureTransformFlagsName(flags) {
-  const normalizedFlags = Number(flags) >>> 0;
-  if (normalizedFlags === D3DTTFF_DISABLE) {
-    return "disable";
-  }
-  const projected = (normalizedFlags & D3DTTFF_PROJECTED) !== 0;
-  const count = normalizedFlags & ~D3DTTFF_PROJECTED;
-  const suffix = projected ? "Projected" : "";
-  switch (count) {
-    case D3DTTFF_COUNT1:
-      return `count1${suffix}`;
-    case D3DTTFF_COUNT2:
-      return `count2${suffix}`;
-    case D3DTTFF_COUNT3:
-      return `count3${suffix}`;
-    case D3DTTFF_COUNT4:
-      return `count4${suffix}`;
-    default:
-      return "unsupported";
-  }
-}
-
-function d3dTextureTransformFlagsInfo(flags) {
-  const normalizedFlags = Number(flags) >>> 0;
-  const projected = (normalizedFlags & D3DTTFF_PROJECTED) !== 0;
-  const count = normalizedFlags & ~D3DTTFF_PROJECTED;
-  let componentCount = 0;
-  switch (count) {
-    case D3DTTFF_COUNT1:
-    case D3DTTFF_COUNT2:
-    case D3DTTFF_COUNT3:
-    case D3DTTFF_COUNT4:
-      componentCount = count;
-      break;
-    default:
-      componentCount = 0;
-      break;
-  }
-  const twoDSamplerSupported = normalizedFlags === D3DTTFF_DISABLE ||
-    (!projected && componentCount >= 2 && componentCount <= 4) ||
-    (projected && componentCount === 3);
-  return {
-    modeName: d3dTextureTransformFlagsName(normalizedFlags),
-    componentCount,
-    projected,
-    twoDSamplerSupported,
-  };
-}
-
-function d3d8TexCoordComponentCount(fvf, coordSet) {
-  const encoded = (Number(fvf) >>> (16 + coordSet * 2)) & 0x3;
-  switch (encoded) {
-    case 1:
-      return 3;
-    case 2:
-      return 4;
-    case 3:
-      return 1;
-    case 0:
-    default:
-      return 2;
-  }
-}
-
-function d3d8LegacyVertexLayoutInfo(vertexStride) {
-  const stride = Number(vertexStride) >>> 0;
-  return {
-    source: "legacy-xyzn-duv",
-    fvf: 0,
-    stride,
-    positionOffset: 0,
-    positionComponents: 3,
-    pretransformed: false,
-    normalOffset: stride >= D3D8_NORMAL_MIN_STRIDE ? D3D8_NORMAL_OFFSET : null,
-    diffuseOffset: stride >= D3D8_DIFFUSE_MIN_STRIDE ? D3D8_DIFFUSE_OFFSET : null,
-    specularOffset: null,
-    texCoords: Array.from({ length: D3D8_XYZNDUV_TEXCOORD_SETS }, (_, coordSet) => {
-      const offset = D3D8_XYZNDUV_TEXCOORD0_OFFSET +
-        (coordSet * D3D8_XYZNDUV_TEXCOORD_STRIDE);
-      return {
-        coordSet,
-        offset,
-        components: 2,
-        available: stride >= offset + D3D8_XYZNDUV_TEXCOORD_STRIDE,
-      };
-    }),
-  };
-}
-
-function d3d8VertexLayoutInfo(fvf, vertexStride) {
-  const normalizedFvf = Number(fvf ?? 0) >>> 0;
-  const stride = Number(vertexStride) >>> 0;
-  if (normalizedFvf === 0) {
-    return d3d8LegacyVertexLayoutInfo(stride);
-  }
-
-  let offset = 0;
-  let positionComponents = 0;
-  if ((normalizedFvf & D3DFVF_XYZRHW) === D3DFVF_XYZRHW) {
-    positionComponents = 4;
-    offset += 4 * 4;
-  } else if ((normalizedFvf & D3DFVF_XYZB4) === D3DFVF_XYZB4) {
-    positionComponents = 7;
-    offset += 7 * 4;
-  } else if ((normalizedFvf & D3DFVF_XYZ) === D3DFVF_XYZ) {
-    positionComponents = 3;
-    offset += 3 * 4;
-  }
-
-  const normalOffset = (normalizedFvf & D3DFVF_NORMAL) === D3DFVF_NORMAL
-    ? offset
-    : null;
-  if ((normalizedFvf & D3DFVF_NORMAL) === D3DFVF_NORMAL) {
-    offset += 3 * 4;
-  }
-
-  const diffuseOffset = (normalizedFvf & D3DFVF_DIFFUSE) === D3DFVF_DIFFUSE
-    ? offset
-    : null;
-  if (diffuseOffset !== null) {
-    offset += 4;
-  }
-
-  const specularOffset = (normalizedFvf & D3DFVF_SPECULAR) === D3DFVF_SPECULAR
-    ? offset
-    : null;
-  if (specularOffset !== null) {
-    offset += 4;
-  }
-
-  const texCoordCount = (normalizedFvf & D3DFVF_TEXCOUNT_MASK) >>> D3DFVF_TEXCOUNT_SHIFT;
-  const texCoords = [];
-  for (let coordSet = 0; coordSet < texCoordCount; ++coordSet) {
-    const components = d3d8TexCoordComponentCount(normalizedFvf, coordSet);
-    texCoords.push({
-      coordSet,
-      offset,
-      components,
-      available: components >= 2 && stride >= offset + 2 * 4,
-    });
-    offset += components * 4;
-  }
-
-  return {
-    source: "fvf",
-    fvf: normalizedFvf,
-    stride,
-    positionOffset: 0,
-    positionComponents,
-    pretransformed: (normalizedFvf & D3DFVF_XYZRHW) === D3DFVF_XYZRHW,
-    normalOffset: normalOffset !== null && stride >= normalOffset + 3 * 4 ? normalOffset : null,
-    diffuseOffset: diffuseOffset !== null && stride >= diffuseOffset + 4 ? diffuseOffset : null,
-    specularOffset: specularOffset !== null && stride >= specularOffset + 4 ? specularOffset : null,
-    texCoords,
-    computedStride: offset,
-  };
-}
-
-function textureStageCoordinateInfo(textureStage, stage, vertexStride, vertexLayout, textureTransform = null) {
-  const texCoordIndex = Number(textureStage?.texCoordIndex ?? 0) >>> 0;
-  const mode = texCoordIndex & D3DTSS_TCI_MODE_MASK;
-  const coordSet = texCoordIndex & D3DTSS_TCI_COORDINDEX_MASK;
-  const textureTransformFlags = Number(textureStage?.textureTransformFlags ?? D3DTTFF_DISABLE) >>> 0;
-  const layout = vertexLayout ?? d3d8LegacyVertexLayoutInfo(vertexStride);
-  const texCoord = Array.isArray(layout.texCoords) ? layout.texCoords[coordSet] : null;
-  const texCoordOffset = Number(texCoord?.offset ?? 0) >>> 0;
-  const passthru = mode === D3DTSS_TCI_PASSTHRU;
-  const generated = mode === D3DTSS_TCI_CAMERASPACENORMAL ||
-    mode === D3DTSS_TCI_CAMERASPACEPOSITION ||
-    mode === D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR;
-  const coordSetAvailable = Boolean(texCoord?.available);
-  const transformInfo = d3dTextureTransformFlagsInfo(textureTransformFlags);
-  const transformApplied = textureTransformFlags !== D3DTTFF_DISABLE &&
-    textureTransform !== null &&
-    transformInfo.twoDSamplerSupported;
-  const transformSupported = textureTransformFlags === D3DTTFF_DISABLE || transformApplied;
-  const coordinateSupported = (passthru && coordSetAvailable) || generated;
-  return {
-    stage,
-    texCoordIndex,
-    mode,
-    modeName: d3dTextureCoordinateModeName(mode),
-    coordSet,
-    layoutSource: layout.source,
-    offset: passthru && coordSetAvailable ? texCoordOffset : null,
-    components: passthru && coordSetAvailable ? texCoord.components : generated ? 3 : 0,
-    generated,
-    usesVertexTexCoord: passthru,
-    textureTransformFlags,
-    textureTransformModeName: transformInfo.modeName,
-    textureTransformComponentCount: transformInfo.componentCount,
-    textureTransformProjected: transformInfo.projected,
-    transformSupported,
-    transformApplied,
-    supported: coordinateSupported && transformSupported,
-  };
-}
-
-function disabledTextureStageCoordinateInfo(stage) {
-  const transformInfo = d3dTextureTransformFlagsInfo(D3DTTFF_DISABLE);
-  return {
-    stage,
-    texCoordIndex: stage,
-    mode: D3DTSS_TCI_PASSTHRU,
-    modeName: d3dTextureCoordinateModeName(D3DTSS_TCI_PASSTHRU),
-    coordSet: stage,
-    layoutSource: "depth-stencil-only",
-    offset: null,
-    components: 0,
-    generated: false,
-    usesVertexTexCoord: false,
-    textureTransformFlags: D3DTTFF_DISABLE,
-    textureTransformModeName: transformInfo.modeName,
-    textureTransformComponentCount: transformInfo.componentCount,
-    textureTransformProjected: transformInfo.projected,
-    transformSupported: true,
-    transformApplied: false,
-    supported: false,
-  };
-}
-
-function textureStageCombinerInfo(textureStage, stage, canSampleTexture) {
-  if (!textureStage) {
-    return null;
-  }
-  const colorOp = Number(textureStage.colorOp) >>> 0;
-  const colorArg0 = Number(textureStage.colorArg0) >>> 0;
-  const colorArg1 = Number(textureStage.colorArg1) >>> 0;
-  const colorArg2 = Number(textureStage.colorArg2) >>> 0;
-  const resultArg = Number(textureStage.resultArg) >>> 0;
-  const colorArg0Base = colorArg0 & D3DTA_SELECTMASK;
-  const colorArg1Base = colorArg1 & D3DTA_SELECTMASK;
-  const colorArg2Base = colorArg2 & D3DTA_SELECTMASK;
-  const colorNeedsArg0 = d3dTextureCombinerOpUsesArg0(colorOp);
-  const colorNeedsArg1 = d3dTextureCombinerOpUsesArg1(colorOp);
-  const colorNeedsArg2 = d3dTextureCombinerOpUsesArg2(colorOp);
-  const supportedOp = d3dTextureCombinerOpSupported(colorOp, "color");
-  const supportedArg0 = !colorNeedsArg0 || d3dTextureCombinerArgSupported(colorArg0);
-  const supportedArg1 = !colorNeedsArg1 || d3dTextureCombinerArgSupported(colorArg1);
-  const supportedArg2 = !colorNeedsArg2 || d3dTextureCombinerArgSupported(colorArg2);
-  const supportedResultArg = d3dTextureCombinerResultArgSupported(resultArg);
-  const needsTexture = (colorNeedsArg0 && colorArg0Base === D3DTA_TEXTURE)
-    || (colorNeedsArg1 && colorArg1Base === D3DTA_TEXTURE)
-    || (colorNeedsArg2 && colorArg2Base === D3DTA_TEXTURE);
-  const alphaOp = Number(textureStage.alphaOp) >>> 0;
-  const alphaArg0 = Number(textureStage.alphaArg0) >>> 0;
-  const alphaArg1 = Number(textureStage.alphaArg1) >>> 0;
-  const alphaArg2 = Number(textureStage.alphaArg2) >>> 0;
-  const alphaArg0Base = alphaArg0 & D3DTA_SELECTMASK;
-  const alphaArg1Base = alphaArg1 & D3DTA_SELECTMASK;
-  const alphaArg2Base = alphaArg2 & D3DTA_SELECTMASK;
-  const stageAlphaPassesCurrent = alphaOp === D3DTOP_SELECTARG2 && alphaArg2Base === D3DTA_CURRENT;
-  const alphaNeedsArg0 = d3dTextureCombinerOpUsesArg0(alphaOp);
-  const alphaNeedsArg1 = d3dTextureCombinerOpUsesArg1(alphaOp);
-  const alphaNeedsArg2 = d3dTextureCombinerOpUsesArg2(alphaOp);
-  const supportedAlphaOp = stage <= 3
-    ? d3dTextureCombinerOpSupported(alphaOp, "alpha")
-    : alphaOp === D3DTOP_DISABLE || stageAlphaPassesCurrent;
-  const supportedAlphaArg0 = !alphaNeedsArg0 || d3dTextureCombinerArgSupported(alphaArg0);
-  const supportedAlphaArg1 = !alphaNeedsArg1 || d3dTextureCombinerArgSupported(alphaArg1);
-  const supportedAlphaArg2 = !alphaNeedsArg2 || d3dTextureCombinerArgSupported(alphaArg2);
-  const needsTextureAlpha = (alphaNeedsArg0 && alphaArg0Base === D3DTA_TEXTURE)
-    || (alphaNeedsArg1 && alphaArg1Base === D3DTA_TEXTURE)
-    || (alphaNeedsArg2 && alphaArg2Base === D3DTA_TEXTURE);
-  return {
-    stage,
-    colorOp,
-    colorArg0,
-    colorArg1,
-    colorArg2,
-    resultArg,
-    alphaOp,
-    alphaArg0,
-    alphaArg1,
-    alphaArg2,
-    opName: d3dTextureCombinerOpName(colorOp),
-    arg0Name: d3dTextureCombinerArgName(colorArg0),
-    arg1Name: d3dTextureCombinerArgName(colorArg1),
-    arg2Name: d3dTextureCombinerArgName(colorArg2),
-    resultArgName: d3dTextureCombinerArgName(resultArg),
-    alphaOpName: d3dTextureCombinerOpName(alphaOp),
-    alphaArg0Name: d3dTextureCombinerArgName(alphaArg0),
-    alphaArg1Name: d3dTextureCombinerArgName(alphaArg1),
-    alphaArg2Name: d3dTextureCombinerArgName(alphaArg2),
-    supportsColorOp: supportedOp,
-    supportsColorArgs: supportedArg0 && supportedArg1 && supportedArg2,
-    supportsResultArg: supportedResultArg,
-    supportsAlphaOp: supportedAlphaOp,
-    supportsAlphaArgs: supportedAlphaArg0 && supportedAlphaArg1 && supportedAlphaArg2,
-    needsTexture,
-    needsTextureAlpha,
-    textureAvailable: Boolean(canSampleTexture),
-    supported: supportedOp && supportedArg0 && supportedArg1 && supportedArg2 && supportedResultArg
-      && supportedAlphaOp && supportedAlphaArg0 && supportedAlphaArg1 && supportedAlphaArg2
-      && (!needsTexture || canSampleTexture)
-      && (!needsTextureAlpha || canSampleTexture),
-  };
-}
-
-function warnD3D8CombinerDiagnostics(renderState, stage0Combiner, stage1Combiner,
-    stage2Combiner, stage3Combiner, drawSequence) {
-  for (const combiner of [stage0Combiner, stage1Combiner, stage2Combiner, stage3Combiner]) {
-    if (!combiner || combiner.supported) {
-      continue;
-    }
-    const reasons = [];
-    if (!combiner.supportsColorOp) {
-      reasons.push(`colorOp=${combiner.opName}`);
-    }
-    if (!combiner.supportsColorArgs) {
-      reasons.push("colorArgs");
-    }
-    if (!combiner.supportsResultArg) {
-      reasons.push(`resultArg=${combiner.resultArgName}`);
-    }
-    if (!combiner.supportsAlphaOp) {
-      reasons.push(`alphaOp=${combiner.alphaOpName}`);
-    }
-    if (!combiner.supportsAlphaArgs) {
-      reasons.push("alphaArgs");
-    }
-    if ((combiner.needsTexture || combiner.needsTextureAlpha) && !combiner.textureAvailable) {
-      reasons.push("textureUnavailable");
-    }
-    warnD3D8Once(
-      `combiner:${combiner.stage}:${combiner.colorOp}:${combiner.alphaOp}:${reasons.join(",")}`,
-      `texture combiner stage ${combiner.stage} is not fully supported`,
-      {
-        drawSequence,
-        stage: combiner.stage,
-        reasons,
-        colorOp: combiner.colorOp,
-        colorOpName: combiner.opName,
-        alphaOp: combiner.alphaOp,
-        alphaOpName: combiner.alphaOpName,
-        colorArgs: [combiner.arg0Name, combiner.arg1Name, combiner.arg2Name],
-        alphaArgs: [combiner.alphaArg0Name, combiner.alphaArg1Name, combiner.alphaArg2Name],
-      },
-    );
-  }
-
-  // Stages 0-3 are now rendered by the fixed-function combiner cascade. Stages
-  // 4-7 are still not sampled by the browser shader, so keep warning if the
-  // engine ever activates one (the shipped fixed-function paths top out at 4
-  // simultaneous stages, so this should stay silent).
-  for (let stage = 4; stage < D3D8_TEXTURE_STAGE_COUNT; ++stage) {
-    const textureStage = renderState?.textureStages?.[stage];
-    if (!textureStage) {
-      continue;
-    }
-    const colorOp = Number(textureStage.colorOp ?? D3DTOP_DISABLE) >>> 0;
-    const alphaOp = Number(textureStage.alphaOp ?? D3DTOP_DISABLE) >>> 0;
-    if (colorOp === D3DTOP_DISABLE && alphaOp === D3DTOP_DISABLE) {
-      continue;
-    }
-    warnD3D8Once(
-      `stage:${stage}:${colorOp}:${alphaOp}`,
-      `texture stage ${stage} is active but the browser shader currently renders only stages 0-3`,
-      {
-        drawSequence,
-        stage,
-        colorOp,
-        colorOpName: d3dTextureCombinerOpName(colorOp),
-        alphaOp,
-        alphaOpName: d3dTextureCombinerOpName(alphaOp),
-        colorArg1: d3dTextureCombinerArgName(textureStage.colorArg1),
-        colorArg2: d3dTextureCombinerArgName(textureStage.colorArg2),
-        alphaArg1: d3dTextureCombinerArgName(textureStage.alphaArg1),
-        alphaArg2: d3dTextureCombinerArgName(textureStage.alphaArg2),
-      },
-    );
-  }
-}
-
-function d3d8TextureFormatHasAlpha(format) {
-  switch (Number(format) >>> 0) {
-    case D3DFMT_A8R8G8B8:
-    case D3DFMT_A1R5G5B5:
-    case D3DFMT_A4R4G4B4:
-    case D3DFMT_A8:
-    case D3DFMT_A8L8:
-    case D3DFMT_DXT1:
-    case D3DFMT_DXT2:
-    case D3DFMT_DXT3:
-    case D3DFMT_DXT4:
-    case D3DFMT_DXT5:
-      return true;
-    default:
-      return false;
-  }
-}
-
-function d3d8TextureStageAlphaUsesBase(textureStage, base) {
-  if (!textureStage || Number(textureStage.alphaOp) >>> 0 === D3DTOP_DISABLE) {
-    return false;
-  }
-  const alphaOp = Number(textureStage.alphaOp) >>> 0;
-  const alphaArg0 = Number(textureStage.alphaArg0) >>> 0;
-  const alphaArg1 = Number(textureStage.alphaArg1) >>> 0;
-  const alphaArg2 = Number(textureStage.alphaArg2) >>> 0;
-  return (d3dTextureCombinerOpUsesArg0(alphaOp) && (alphaArg0 & D3DTA_SELECTMASK) === base)
-    || (d3dTextureCombinerOpUsesArg1(alphaOp) && (alphaArg1 & D3DTA_SELECTMASK) === base)
-    || (d3dTextureCombinerOpUsesArg2(alphaOp) && (alphaArg2 & D3DTA_SELECTMASK) === base);
-}
-
-function d3d8FinalAlphaMayUseTexture(renderState, canSampleTexture0, texture0Resource,
-    canSampleTexture1, texture1Resource) {
-  const stage0 = renderState?.textureStages?.[0] ?? null;
-  const stage1 = renderState?.textureStages?.[1] ?? null;
-  const stage0TextureAlpha = Boolean(
-    canSampleTexture0 &&
-    d3d8TextureFormatHasAlpha(texture0Resource?.format) &&
-    d3d8TextureStageAlphaUsesBase(stage0, D3DTA_TEXTURE),
-  );
-  const stage0CurrentAlpha = stage0TextureAlpha &&
-    ((Number(stage0?.resultArg ?? D3DTA_CURRENT) >>> 0) !== D3DTA_TEMP);
-  const stage0TempAlpha = stage0TextureAlpha &&
-    ((Number(stage0?.resultArg ?? D3DTA_CURRENT) >>> 0) === D3DTA_TEMP);
-
-  const stage1AlphaOp = Number(stage1?.alphaOp ?? D3DTOP_DISABLE) >>> 0;
-  if (stage1AlphaOp === D3DTOP_DISABLE) {
-    return stage0CurrentAlpha;
-  }
-
-  const stage1TextureAlpha = Boolean(
-    canSampleTexture1 &&
-    d3d8TextureFormatHasAlpha(texture1Resource?.format) &&
-    d3d8TextureStageAlphaUsesBase(stage1, D3DTA_TEXTURE),
-  );
-  return stage1TextureAlpha ||
-    (stage0CurrentAlpha && d3d8TextureStageAlphaUsesBase(stage1, D3DTA_CURRENT)) ||
-    (stage0TempAlpha && d3d8TextureStageAlphaUsesBase(stage1, D3DTA_TEMP));
-}
-
-function d3d8ImplicitAlphaCutoutThreshold(renderState, canSampleTexture0, texture0Resource,
-    canSampleTexture1, texture1Resource) {
-  if (!renderState ||
-      renderState.alphaTestEnable !== 0 ||
-      renderState.alphaBlendEnable !== 0 ||
-      renderState.zEnable === D3DZB_FALSE ||
-      renderState.zWriteEnable === 0) {
-    return -1;
-  }
-  return d3d8FinalAlphaMayUseTexture(
-    renderState,
-    canSampleTexture0,
-    texture0Resource,
-    canSampleTexture1,
-    texture1Resource,
-  ) ? (1 / 255) : -1;
-}
-
-function d3d8TextureSemanticMode(resource) {
-  switch (resource?.semantic) {
-    case "alpha":
-      return 1;
-    case "luminance":
-      return 2;
-    case "luminanceAlpha":
-      return 3;
-    case "signedBump":
-      return 4;
-    default:
-      return 0;
-  }
-}
-
-function invalidateD3D8GlTextureBindingCache(stage = null) {
-  d3d8CurrentActiveTextureUnit = null;
-  if (stage === null || stage === undefined) {
-    d3d8MaxCombinedTextureImageUnits = null;
-    d3d8CurrentTexture2DBindings.clear();
-    d3d8CurrentTexture3DBindings.clear();
-    return;
-  }
-  const unit = Number(stage) >>> 0;
-  d3d8CurrentTexture2DBindings.delete(unit);
-  d3d8CurrentTexture3DBindings.delete(unit);
-}
-
-function setD3D8ActiveTextureUnitCached(stage) {
-  const unit = Number(stage) >>> 0;
-  if (d3d8CurrentActiveTextureUnit === unit) {
-    d3d8PerfStats.drawTextureActiveCacheHits += 1;
-    return;
-  }
-  gl.activeTexture(gl.TEXTURE0 + unit);
-  d3d8CurrentActiveTextureUnit = unit;
-  d3d8PerfStats.drawTextureActiveCacheMisses += 1;
-}
-
-function d3d8FeedbackSafeTextureResource(resource) {
-  if (!gl || !resource?.texture || d3d8CurrentFramebuffer === null ||
-      resource.id !== d3d8CurrentFramebufferColorTextureId) {
-    return resource;
-  }
-
-  let snapshot = resource.feedbackSnapshot;
-  if (!snapshot) {
-    snapshot = {
-      id: resource.id,
-      width: resource.width,
-      height: resource.height,
-      levels: 1,
-      format: resource.format,
-      texture: gl.createTexture(),
-      target: gl.TEXTURE_2D,
-      type: "feedback-snapshot",
-      completeMipChain: true,
-      samplerState: null,
-      samplerStateKey: null,
-      samplerD3DStateKey: null,
-      resolvedBindSerial: -1,
-      renderTargetYFlipped: true,
-    };
-    withPreservedD3D8TextureUnit(() => {
-      gl.bindTexture(gl.TEXTURE_2D, snapshot.texture);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texImage2D(
-        gl.TEXTURE_2D,
-        0,
-        gl.RGBA8,
-        snapshot.width,
-        snapshot.height,
-        0,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        null,
-      );
-    });
-    resource.feedbackSnapshot = snapshot;
-  }
-
-  if (snapshot.resolvedBindSerial !== d3d8FramebufferBindSerial) {
-    const startedAt = perfNow();
-    withPreservedD3D8TextureUnit(() => {
-      gl.bindTexture(gl.TEXTURE_2D, snapshot.texture);
-      gl.copyTexSubImage2D(
-        gl.TEXTURE_2D,
-        0,
-        0,
-        0,
-        0,
-        0,
-        snapshot.width,
-        snapshot.height,
-      );
-    });
-    snapshot.resolvedBindSerial = d3d8FramebufferBindSerial;
-    d3d8PerfStats.framebufferFeedbackResolves += 1;
-    d3d8PerfStats.framebufferFeedbackResolveMs += perfNow() - startedAt;
-  }
-  return snapshot;
-}
-
-function bindD3D8DrawTexture2D(stage, resource) {
-  if (!gl || !resource?.texture) {
-    return;
-  }
-  const unit = Number(stage) >>> 0;
-  setD3D8ActiveTextureUnitCached(unit);
-  if (d3d8CurrentTexture2DBindings.get(unit) === resource.texture) {
-    d3d8PerfStats.drawTextureBindCacheHits += 1;
-    return;
-  }
-  gl.bindTexture(gl.TEXTURE_2D, resource.texture);
-  d3d8CurrentTexture2DBindings.set(unit, resource.texture);
-  d3d8PerfStats.drawTextureBindCacheMisses += 1;
-}
-
-function ensureD3D8DrawTexture2D(stage, textureStage, resource) {
-  if (!gl || !resource?.texture || !textureStage) {
-    return null;
-  }
-  const sampleResource = d3d8FeedbackSafeTextureResource(resource);
-  const unit = Number(stage) >>> 0;
-  const textureBound = d3d8CurrentTexture2DBindings.get(unit) === sampleResource.texture;
-  const rawSamplerCurrent = d3d8TextureSamplerRawStateCurrent(textureStage, sampleResource);
-  if (textureBound && rawSamplerCurrent) {
-    d3d8PerfStats.drawTextureBindCacheHits += 1;
-    d3d8PerfStats.drawTextureSamplerCacheHits += 1;
-    return sampleResource.samplerState;
-  }
-
-  bindD3D8DrawTexture2D(unit, sampleResource);
-  if (rawSamplerCurrent) {
-    d3d8PerfStats.drawTextureSamplerCacheHits += 1;
-    return sampleResource.samplerState;
-  }
-  const samplerParams = d3d8TextureSamplerParams(textureStage, sampleResource);
-  const samplerCurrent = d3d8TextureSamplerStateCurrent(textureStage, sampleResource, samplerParams);
-  if (samplerCurrent) {
-    d3d8PerfStats.drawTextureSamplerCacheHits += 1;
-    return sampleResource.samplerState;
-  }
-  d3d8PerfStats.drawTextureSamplerCacheMisses += 1;
-  return applyD3D8TextureSamplerToBoundTexture(unit, textureStage, sampleResource, samplerParams);
-}
-
-function withPreservedD3D8TextureBinding(target, callback) {
-  if (!gl) {
-    return null;
-  }
-  flushD3D8PendingDrawBatch("preserveTextureBinding");
-  const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
-  gl.activeTexture(gl.TEXTURE0);
-  const binding = target === gl.TEXTURE_3D ? gl.TEXTURE_BINDING_3D : gl.TEXTURE_BINDING_2D;
-  const previousTexture = gl.getParameter(binding);
-  try {
-    return callback();
-  } finally {
-    gl.bindTexture(target, previousTexture);
-    gl.activeTexture(previousActiveTexture);
-    invalidateD3D8GlTextureBindingCache();
-  }
-}
-
-function withPreservedD3D8TextureUnit(callback) {
-  if (!gl) {
-    return null;
-  }
-  return withPreservedD3D8TextureBinding(gl.TEXTURE_2D, callback);
-}
-
-function timedReadPixels(x, y, width, height, format, type, pixels) {
-  flushD3D8PendingDrawBatch("readPixels");
-  const startedAt = perfNow();
-  gl.readPixels(x, y, width, height, format, type, pixels);
-  d3d8PerfStats.readPixels += 1;
-  d3d8PerfStats.readPixelsPixels += Math.max(0, Number(width ?? 0) * Number(height ?? 0));
-  d3d8PerfStats.readPixelsMs += perfNow() - startedAt;
-}
-
-function timedGlClear(bits) {
-  const startedAt = perfNow();
-  gl.clear(bits);
-  d3d8PerfStats.clears += 1;
-  d3d8PerfStats.clearMs += perfNow() - startedAt;
-}
-
-function sampleD3D8TexturePixel(resource, x, y) {
-  if (!gl || !resource?.texture || (resource.target ?? gl.TEXTURE_2D) !== gl.TEXTURE_2D) {
-    return null;
-  }
-  flushD3D8PendingDrawBatch("sampleTexturePixel");
-  const framebuffer = gl.createFramebuffer();
-  const previousFramebuffer = gl.getParameter(gl.FRAMEBUFFER_BINDING);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, resource.texture, 0);
-  const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-  let pixel = null;
-  if (status === gl.FRAMEBUFFER_COMPLETE) {
-    const readX = Math.max(0, Math.min(resource.width - 1, Math.trunc(x)));
-    const readY = Math.max(0, Math.min(resource.height - 1, Math.trunc(y)));
-    const pixels = new Uint8Array(4);
-    timedReadPixels(readX, readY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-    pixel = Array.from(pixels);
-  }
-  gl.bindFramebuffer(gl.FRAMEBUFFER, previousFramebuffer);
-  gl.deleteFramebuffer(framebuffer);
-  return pixel;
-}
-
-function sampleD3D8TextureProbe(resource) {
-  if (!resource?.width || !resource?.height) {
-    return null;
-  }
-  return {
-    topLeft: sampleD3D8TexturePixel(resource, 0, 0),
-    center: sampleD3D8TexturePixel(
-      resource,
-      Math.floor(resource.width / 2),
-      Math.floor(resource.height / 2),
-    ),
-    bottomRight: sampleD3D8TexturePixel(resource, resource.width - 1, resource.height - 1),
-  };
-}
-
-function sampleD3D8TextureCenter(textureId) {
-  const id = Number(textureId ?? 0) >>> 0;
-  const resource = d3d8Textures.get(id);
-  if (!resource?.width || !resource?.height) {
-    return null;
-  }
-  return sampleD3D8TexturePixel(
-    resource,
-    Math.floor(resource.width / 2),
-    Math.floor(resource.height / 2),
-  );
-}
-
-function updateD3D8TextureSummary(force = false) {
-  d3d8TextureStats.live = d3d8Textures.size;
-  const boundTextures = {};
-  for (const [stage, textureId] of d3d8BoundTextures.entries()) {
-    boundTextures[String(stage)] = textureId;
-  }
-  harnessState.graphics = {
-    ...harnessState.graphics,
-    browserFboIncompleteCount: browser_fbo_incomplete_count,
-    browserFboCount: d3d8Framebuffers.size,
-    d3d8Textures: {
-      creates: d3d8TextureStats.creates,
-      updates: d3d8TextureStats.updates,
-      releases: d3d8TextureStats.releases,
-      binds: d3d8TextureStats.binds,
-      unbinds: d3d8TextureStats.unbinds,
-      releaseUnbinds: d3d8TextureStats.releaseUnbinds,
-      missingBinds: d3d8TextureStats.missingBinds,
-      unsupportedUpdates: d3d8TextureStats.unsupportedUpdates,
-      samplerApplications: d3d8TextureStats.samplerApplications,
-      dxtDecodes: d3d8TextureStats.dxtDecodes,
-      live: d3d8TextureStats.live,
-      browserFboCount: d3d8Framebuffers.size,
-      legacyUploads: d3d8TextureStats.legacyUploads,
-      boundTextures,
-      lastCreate: d3d8TextureStats.lastCreate,
-      lastUpdate: d3d8TextureStats.lastUpdate,
-      lastSubrectUpdate: d3d8TextureStats.lastSubrectUpdate,
-      lastRelease: d3d8TextureStats.lastRelease,
-      lastBind: d3d8TextureStats.lastBind,
-      lastReleaseUnbind: d3d8TextureStats.lastReleaseUnbind,
-      lastMissingBind: d3d8TextureStats.lastMissingBind,
-      lastUnsupported: d3d8TextureStats.lastUnsupported,
-      lastSampler: d3d8TextureStats.lastSampler,
-      lastOffscreenFboBind: d3d8TextureStats.lastOffscreenFboBind,
-      lastTextureDepthFboBind: d3d8TextureStats.lastTextureDepthFboBind,
-    },
-    // Rebuilding the ~150-field perf summary on every texture op is the
-    // expensive part of this publish; lite mode keeps the previous value
-    // (snapshotState() and forced callers refresh it per query instead).
-    d3d8Perf: force || d3d8DiagLevel === "full"
-      ? d3d8PerfSummary()
-      : (harnessState.graphics?.d3d8Perf ?? null),
-  };
-}
-
-function updateD3D8TextureBindSummary() {
-  if (d3d8DiagLevel === "full") {
-    updateD3D8TextureSummary();
-  }
-}
-
-function createD3D8Texture(payload = {}) {
-  if (!gl) {
-    return 0;
-  }
-  const id = Number(payload.id ?? 0) >>> 0;
-  const width = Number(payload.width ?? 0) >>> 0;
-  const height = Number(payload.height ?? 0) >>> 0;
-  const levels = Math.max(1, Number(payload.levels ?? 1) >>> 0);
-  const format = Number(payload.format ?? 0) >>> 0;
-  if (id === 0 || width === 0 || height === 0) {
-    return 0;
-  }
-
-  const existing = d3d8Textures.get(id);
-  if (existing) {
-    releaseD3D8FramebufferEntriesForTexture(id);
-    if (existing.feedbackSnapshot?.texture) {
-      gl.deleteTexture(existing.feedbackSnapshot.texture);
-    }
-    gl.deleteTexture(existing.texture);
-  }
-
-  const texture = gl.createTexture();
-  withPreservedD3D8TextureUnit(() => {
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  });
-  const resource = {
-    id,
-    width,
-    height,
-    levels,
-    format,
-    usage: Number(payload.usage ?? 0) >>> 0,
-    pool: Number(payload.pool ?? 0) >>> 0,
-    texture,
-    target: gl.TEXTURE_2D,
-    type: "2d",
-    depth: 1,
-    initializedLevels: new Set(),
-    levelFormats: new Map(),
-    completeMipChain: false,
-    uploads: 0,
-    samplerState: null,
-    samplerStateKey: null,
-    samplerD3DStateKey: null,
-    renderTargetYFlipped:
-      ((Number(payload.usage ?? 0) >>> 0) & D3DUSAGE_RENDERTARGET) !== 0,
-  };
-  d3d8Textures.set(id, resource);
-  // D3D8 semantics: a created texture bound to a stage is ALWAYS sampleable — it
-  // samples whatever storage is in place even before the app writes content. The
-  // bridge otherwise treats a texture whose level 0 has not been uploaded as
-  // un-sampleable (canSampleTexture*), and the fragment shader substitutes opaque
-  // WHITE for it (`vec4(1.0)`), turning any MODULATE-by-that-texture into a no-op.
-  // A POOL_DEFAULT texture created with no content and filled later via
-  // CopyRects/UpdateSurface — e.g. the W3DShroud fog-of-war texture that the tree
-  // draw MODULATEs at STAGE 1 — is exactly this case: on any frame the engine
-  // binds it before/without a captured level-0 upload, the shroud reads white and
-  // the trees never darken in fog (while buildings, shrouded via a separate
-  // already-updated pass, do). Allocate defined level-0 storage now and mark it
-  // initialized so the texture samples defined (zeroed) storage the moment it is
-  // bound, matching D3D8. Scoped to plain 2D textures in the DEFAULT pool that are
-  // NOT render targets / depth-stencils (those keep their own rtAllocated path),
-  // and harmless for textures that later receive real content (their update
-  // re-uploads over level 0 via texSubImage2D).
-  const poolDefaultBlittable =
-    (resource.pool >>> 0) === 0 /* D3DPOOL_DEFAULT */ &&
-    (resource.usage & (D3DUSAGE_RENDERTARGET | D3DUSAGE_DEPTHSTENCIL)) === 0 &&
-    !resource.initializedLevels.has("0");
-  if (poolDefaultBlittable) {
-    const createInfo = d3d8TextureFormatInfo(format);
-    if (createInfo.supported && !createInfo.compressed) {
-      withPreservedD3D8TextureUnit(() => {
-        gl.bindTexture(gl.TEXTURE_2D, texture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, createInfo.internalFormat,
-          width, height, 0, createInfo.format, createInfo.type, null);
-      });
-      resource.initializedLevels.add("0");
-      resource.levelFormats.set("0", createInfo.storage);
-      resource.storage = createInfo.storage;
-      updateD3D8TextureMipCompleteness(resource);
-    }
-  }
-  d3d8TextureStats.creates += 1;
-  d3d8TextureStats.lastCreate = {
-    id,
-    width,
-    height,
-    depth: resource.depth,
-    levels,
-    format,
-    type: resource.type,
-    usage: resource.usage,
-    pool: resource.pool,
-  };
-  updateD3D8TextureSummary();
-  return 1;
-}
-
-function d3d8FramebufferKey(colorTextureId, depthTextureId) {
-  return `${Number(colorTextureId ?? 0) >>> 0}:${Number(depthTextureId ?? 0) >>> 0}`;
-}
-
-function deleteD3D8FramebufferEntry(key, entry) {
-  if (!gl || !entry) {
-    return;
-  }
-  if (d3d8CurrentFramebuffer === entry.fbo) {
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    d3d8CurrentFramebuffer = null;
-    d3d8CurrentFramebufferWidth = 0;
-    d3d8CurrentFramebufferHeight = 0;
-    d3d8CurrentFramebufferColorTextureId = 0;
-  }
-  if (entry.fbo) {
-    gl.deleteFramebuffer(entry.fbo);
-  }
-  if (entry.depthRenderbuffer) {
-    gl.deleteRenderbuffer(entry.depthRenderbuffer);
-  }
-  d3d8Framebuffers.delete(key);
-}
-
-function releaseD3D8FramebufferEntriesForTexture(textureId) {
-  const id = Number(textureId ?? 0) >>> 0;
-  if (id === 0) {
-    return;
-  }
-  for (const [key, entry] of Array.from(d3d8Framebuffers.entries())) {
-    if (entry?.colorTextureId === id || entry?.depthTextureId === id) {
-      deleteD3D8FramebufferEntry(key, entry);
-    }
-  }
-}
-
-function ensureD3D8DepthTextureStorage(resource) {
-  if (!gl || !resource || (resource.target ?? gl.TEXTURE_2D) !== gl.TEXTURE_2D) {
-    return null;
-  }
-  const info = d3d8DepthStencilFormatInfo(resource.format);
-  if (!info.supported) {
-    d3d8TextureStats.unsupportedUpdates += 1;
-    d3d8TextureStats.lastUnsupported = {
-      id: resource.id,
-      format: resource.format,
-      reason: info.reason,
-    };
-    updateD3D8TextureSummary();
-    return null;
-  }
-  withPreservedD3D8TextureUnit(() => {
-    gl.bindTexture(gl.TEXTURE_2D, resource.texture);
-    if (!resource.rtAllocated || resource.storage !== info.storage) {
-      gl.texImage2D(
-        gl.TEXTURE_2D,
-        0,
-        info.internalFormat,
-        resource.width,
-        resource.height,
-        0,
-        info.format,
-        info.type,
-        null
-      );
-      resource.rtAllocated = true;
-      resource.initializedLevels.add("0");
-      resource.levelFormats.set("0", info.storage);
-      updateD3D8TextureMipCompleteness(resource);
-      resource.storage = info.storage;
-    }
-  });
-  return info;
-}
-
-function bindD3D8Framebuffer(payload = {}) {
-  // Reset state hash: framebuffer/viewport change outside the draw path.
-  invalidateD3D8DrawStateCache();
-  if (!gl) {
-    return 0;
-  }
-  const bindStartedAt = perfNow();
-  const finishFboBind = (result) => {
-    d3d8PerfStats.fboBinds += 1;
-    d3d8PerfStats.fboBindMs += perfNow() - bindStartedAt;
-    d3d8PerfStats.fboIncomplete = browser_fbo_incomplete_count;
-    if (d3d8DiagLevel === "full") {
-      harnessState.graphics.d3d8Perf = d3d8PerfSummary();
-    }
-    return result;
-  };
-  const colorTextureId = Number(payload.colorTextureId ?? 0) >>> 0;
-  const depthTextureId = Number(payload.depthTextureId ?? 0) >>> 0;
-  const width = Number(payload.width ?? 0) >>> 0;
-  const height = Number(payload.height ?? 0) >>> 0;
-  d3d8FramebufferBindSerial += 1;
-
-  if (colorTextureId === 0) {
-    // Bind backbuffer (default framebuffer)
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
-    d3d8CurrentFramebuffer = null;
-    d3d8CurrentFramebufferWidth = 0;
-    d3d8CurrentFramebufferHeight = 0;
-    d3d8CurrentFramebufferColorTextureId = 0;
-    return finishFboBind(1);
-  }
-
-  const framebufferKey = d3d8FramebufferKey(colorTextureId, depthTextureId);
-  let fboEntry = d3d8Framebuffers.get(framebufferKey);
-  if (!fboEntry) {
-    const colorTexture = d3d8Textures.get(colorTextureId);
-    if (!colorTexture || !colorTexture.texture) {
-      return finishFboBind(0);
-    }
-    let depthTexture = null;
-    let depthInfo = null;
-    if (depthTextureId !== 0) {
-      depthTexture = d3d8Textures.get(depthTextureId);
-      if (!depthTexture || !depthTexture.texture || !isD3D8DepthStencilTexture(depthTexture)) {
-        d3d8TextureStats.unsupportedUpdates += 1;
-        d3d8TextureStats.lastUnsupported = {
-          id: depthTextureId,
-          format: depthTexture?.format ?? 0,
-          reason: "depth FBO attachment requires a D3DUSAGE_DEPTHSTENCIL 2D texture",
-        };
-        updateD3D8TextureSummary();
-        return finishFboBind(0);
-      }
-      if (depthTexture.width < width || depthTexture.height < height) {
-        d3d8TextureStats.unsupportedUpdates += 1;
-        d3d8TextureStats.lastUnsupported = {
-          id: depthTextureId,
-          format: depthTexture.format,
-          width: depthTexture.width,
-          height: depthTexture.height,
-          colorWidth: width,
-          colorHeight: height,
-          reason: "D3D8 depth-stencil surface is smaller than the render target",
-        };
-        updateD3D8TextureSummary();
-        return finishFboBind(0);
-      }
-      depthInfo = ensureD3D8DepthTextureStorage(depthTexture);
-      if (!depthInfo) {
-        return finishFboBind(0);
-      }
-    }
-
-    const fbo = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-
-    // Ensure the color texture has allocated GL storage before FBO attach.
-    // A texture created via createD3D8Texture has no storage until
-    // updateD3D8Texture uploads pixel data; attaching a bare texture to an
-    // FBO makes it INCOMPLETE and the renderer silently falls back to the
-    // backbuffer, defeating RTT entirely.
-    withPreservedD3D8TextureUnit(() => {
-      gl.bindTexture(gl.TEXTURE_2D, colorTexture.texture);
-      if (!colorTexture.rtAllocated) {
-        gl.texImage2D(
-          gl.TEXTURE_2D,
-          0,
-          gl.RGBA,
-          width,
-          height,
-          0,
-          gl.RGBA,
-          gl.UNSIGNED_BYTE,
-          null
-        );
-        colorTexture.rtAllocated = true;
-      }
-    });
-
-    // Attach color texture
-    gl.framebufferTexture2D(
-      gl.FRAMEBUFFER,
-      gl.COLOR_ATTACHMENT0,
-      gl.TEXTURE_2D,
-      colorTexture.texture,
-      0
-    );
-
-    let depthRenderbuffer = null;
-    let depthAttachment = "depth-renderbuffer";
-    let depthStorage = "depth16";
-    if (depthTextureId !== 0 && depthTexture && depthInfo) {
-      gl.framebufferTexture2D(
-        gl.FRAMEBUFFER,
-        depthInfo.attachment,
-        gl.TEXTURE_2D,
-        depthTexture.texture,
-        0
-      );
-      depthAttachment = "texture";
-      depthStorage = depthInfo.storage;
-    } else {
-      depthRenderbuffer = gl.createRenderbuffer();
-      gl.bindRenderbuffer(gl.RENDERBUFFER, depthRenderbuffer);
-      if (d3d8HasStencilBuffer) {
-        // The native D3D8 device exposes a D24S8 auto depth/stencil surface.
-        // RTT callers that omit an explicit depth texture still expect the
-        // matching implicit surface, including stencil for projected shadows.
-        gl.renderbufferStorage(
-          gl.RENDERBUFFER,
-          gl.DEPTH24_STENCIL8,
-          width,
-          height
-        );
-        gl.framebufferRenderbuffer(
-          gl.FRAMEBUFFER,
-          gl.DEPTH_STENCIL_ATTACHMENT,
-          gl.RENDERBUFFER,
-          depthRenderbuffer
-        );
-        depthAttachment = "depth-stencil-renderbuffer";
-        depthStorage = "depth24-stencil8";
-      } else {
-        gl.renderbufferStorage(
-          gl.RENDERBUFFER,
-          gl.DEPTH_COMPONENT16,
-          width,
-          height
-        );
-        gl.framebufferRenderbuffer(
-          gl.FRAMEBUFFER,
-          gl.DEPTH_ATTACHMENT,
-          gl.RENDERBUFFER,
-          depthRenderbuffer
-        );
-      }
-    }
-
-    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-    if (status !== gl.FRAMEBUFFER_COMPLETE) {
-      browser_fbo_incomplete_count += 1;
-      const statusName = status === gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT
-        ? "INCOMPLETE_ATTACHMENT"
-        : status === gl.FRAMEBUFFER_MISSING_ATTACHMENT
-          ? "MISSING_ATTACHMENT"
-          : status === gl.FRAMEBUFFER_UNSUPPORTED
-            ? "UNSUPPORTED"
-            : "UNKNOWN";
-      console.warn(
-        `FBO incomplete for texture ${colorTextureId}: status ${statusName} (0x${status.toString(16)})`
-      );
-      gl.deleteFramebuffer(fbo);
-      if (depthRenderbuffer) {
-        gl.deleteRenderbuffer(depthRenderbuffer);
-      }
-      // Do NOT fall back to the default framebuffer — that would make offscreen
-      // draws pollute the main color+depth buffer. Restore the previous
-      // framebuffer instead.
-      gl.bindFramebuffer(gl.FRAMEBUFFER, d3d8CurrentFramebuffer);
-      return finishFboBind(0);
-    }
-
-    // A render-target allocation is valid level-0 texture storage, and every
-    // successful scene pass writes it before the engine samples it. Keep the
-    // normal texture-readiness bookkeeping in sync so post-processing and
-    // heat-smudge draws do not substitute the fixed-function white fallback.
-    colorTexture.initializedLevels.add("0");
-    colorTexture.levelFormats.set("0", "rgba8");
-    colorTexture.storage = "rgba8";
-    updateD3D8TextureMipCompleteness(colorTexture);
-
-    fboEntry = {
-      fbo,
-      colorTextureId,
-      depthTextureId,
-      depthRenderbuffer,
-      depthAttachment,
-      depthStorage,
-      width,
-      height,
-    };
-    d3d8Framebuffers.set(framebufferKey, fboEntry);
-    d3d8PerfStats.fboCreates += 1;
-  } else {
-    // FBO completeness is validated at creation. Texture release/recreation and
-    // level-0 storage changes evict their cached attachments, so a cache hit can
-    // bind directly without a synchronous GPU completeness query.
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fboEntry.fbo);
-  }
-
-  // Set viewport to match RT size
-  if (fboEntry.width !== d3d8CurrentFramebufferWidth ||
-      fboEntry.height !== d3d8CurrentFramebufferHeight) {
-    gl.viewport(0, 0, fboEntry.width, fboEntry.height);
-    d3d8CurrentFramebufferWidth = fboEntry.width;
-    d3d8CurrentFramebufferHeight = fboEntry.height;
-  }
-
-  d3d8CurrentFramebuffer = fboEntry.fbo;
-  d3d8CurrentFramebufferColorTextureId = colorTextureId;
-  const offscreenFboBind = {
-    colorTextureId,
-    depthTextureId,
-    width,
-    height,
-    attachment: fboEntry.depthAttachment,
-    storage: fboEntry.depthStorage,
-  };
-  const previousOffscreenFboBind = d3d8TextureStats.lastOffscreenFboBind;
-  const offscreenFboChanged = previousOffscreenFboBind?.colorTextureId !== colorTextureId ||
-    previousOffscreenFboBind?.depthTextureId !== depthTextureId ||
-    previousOffscreenFboBind?.width !== width ||
-    previousOffscreenFboBind?.height !== height ||
-    previousOffscreenFboBind?.attachment !== fboEntry.depthAttachment ||
-    previousOffscreenFboBind?.storage !== fboEntry.depthStorage;
-  d3d8TextureStats.lastOffscreenFboBind = offscreenFboBind;
-  if (depthTextureId !== 0) {
-    d3d8TextureStats.lastTextureDepthFboBind = {
-      ...offscreenFboBind,
-    };
-  }
-  if (offscreenFboChanged || depthTextureId !== 0) {
-    updateD3D8TextureSummary();
-  }
-  return finishFboBind(1);
-}
-
-function createD3D8VolumeTexture(payload = {}) {
-  if (!gl) {
-    return 0;
-  }
-  const id = Number(payload.id ?? 0) >>> 0;
-  const width = Number(payload.width ?? 0) >>> 0;
-  const height = Number(payload.height ?? 0) >>> 0;
-  const depth = Number(payload.depth ?? 0) >>> 0;
-  const levels = Math.max(1, Number(payload.levels ?? 1) >>> 0);
-  const format = Number(payload.format ?? 0) >>> 0;
-  if (id === 0 || width === 0 || height === 0 || depth === 0) {
-    return 0;
-  }
-
-  const existing = d3d8Textures.get(id);
-  if (existing) {
-    releaseD3D8FramebufferEntriesForTexture(id);
-    gl.deleteTexture(existing.texture);
-  }
-
-  const texture = gl.createTexture();
-  withPreservedD3D8TextureBinding(gl.TEXTURE_3D, () => {
-    gl.bindTexture(gl.TEXTURE_3D, texture);
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
-  });
-  const resource = {
-    id,
-    width,
-    height,
-    depth,
-    levels,
-    format,
-    usage: Number(payload.usage ?? 0) >>> 0,
-    pool: Number(payload.pool ?? 0) >>> 0,
-    texture,
-    target: gl.TEXTURE_3D,
-    type: "volume",
-    initializedLevels: new Set(),
-    levelFormats: new Map(),
-    completeMipChain: false,
-    uploads: 0,
-    samplerState: null,
-    samplerStateKey: null,
-    samplerD3DStateKey: null,
-  };
-  d3d8Textures.set(id, resource);
-  d3d8TextureStats.creates += 1;
-  d3d8TextureStats.lastCreate = {
-    id,
-    width,
-    height,
-    depth,
-    levels,
-    format,
-    type: resource.type,
-    usage: resource.usage,
-    pool: resource.pool,
-  };
-  updateD3D8TextureSummary();
-  return 1;
-}
-
-function updateD3D8Texture(payload = {}) {
-  if (!gl || !(payload.bytes instanceof Uint8Array)) {
-    return 0;
-  }
-  flushD3D8PendingDrawBatch("textureUpdate");
-  const id = Number(payload.id ?? 0) >>> 0;
-  const level = Number(payload.level ?? 0) >>> 0;
-  const x = Number(payload.x ?? 0) >>> 0;
-  const y = Number(payload.y ?? 0) >>> 0;
-  const width = Number(payload.width ?? 0) >>> 0;
-  const height = Number(payload.height ?? 0) >>> 0;
-  const format = Number(payload.format ?? 0) >>> 0;
-  let resource = d3d8Textures.get(id);
-  if (!resource) {
-    if (!createD3D8Texture({ id, width, height, levels: level + 1, format, usage: payload.usage })) {
-      return 0;
-    }
-    resource = d3d8Textures.get(id);
-  }
-  if (!resource || (resource.target ?? gl.TEXTURE_2D) !== gl.TEXTURE_2D ||
-      width === 0 || height === 0 || level >= resource.levels) {
-    return 0;
-  }
-
-  const info = d3d8TextureFormatInfo(format);
-  if (!info.supported) {
-    d3d8TextureStats.unsupportedUpdates += 1;
-    d3d8TextureStats.lastUnsupported = {
-      id,
-      level,
-      format,
-      reason: info.reason,
-    };
-    updateD3D8TextureSummary();
-    return 0;
-  }
-
-  const levelSize = d3d8TextureLevelSize(resource, level);
-  if (x + width > levelSize.width || y + height > levelSize.height) {
-    return 0;
-  }
-
-  const convertStartedAt = perfNow();
-  // Handle DXT CPU decoding fallback
-  let uploadBytes;
-  if (info.dxtDecode) {
-    // For DXT CPU path, we need to decode the entire level, not just the sub-rect
-    // This is because DXT compression works on 4x4 blocks
-    if (x !== 0 || y !== 0 || width !== levelSize.width || height !== levelSize.height) {
-      // For sub-rect updates with DXT, decode the full level and extract the sub-rect
-      const decodeStartedAt = perfNow();
-      const fullLevelBytes = decodeDxtToRgba8(payload.bytes, levelSize.width, levelSize.height, info.dxtDecode);
-      d3d8PerfStats.dxtDecodeMs += perfNow() - decodeStartedAt;
-      if (!fullLevelBytes) {
-        d3d8TextureStats.unsupportedUpdates += 1;
-        d3d8TextureStats.lastUnsupported = {
-          id,
-          level,
-          format,
-          reason: "DXT CPU decode failed for sub-rect update",
-        };
-        updateD3D8TextureSummary();
-        return 0;
-      }
-      
-      // Extract the sub-rect from the decoded full level
-      const subRectBytes = new Uint8Array(width * height * 4);
-      for (let sy = 0; sy < height; sy++) {
-        for (let sx = 0; sx < width; sx++) {
-          const srcOffset = ((y + sy) * levelSize.width + (x + sx)) * 4;
-          const dstOffset = (sy * width + sx) * 4;
-          subRectBytes[dstOffset] = fullLevelBytes[srcOffset];
-          subRectBytes[dstOffset + 1] = fullLevelBytes[srcOffset + 1];
-          subRectBytes[dstOffset + 2] = fullLevelBytes[srcOffset + 2];
-          subRectBytes[dstOffset + 3] = fullLevelBytes[srcOffset + 3];
-        }
-      }
-      uploadBytes = subRectBytes;
-    } else {
-      // Full level update - decode directly
-      const decodeStartedAt = perfNow();
-      uploadBytes = decodeDxtToRgba8(payload.bytes, width, height, info.dxtDecode);
-      d3d8PerfStats.dxtDecodeMs += perfNow() - decodeStartedAt;
-      if (!uploadBytes) {
-        d3d8TextureStats.unsupportedUpdates += 1;
-        d3d8TextureStats.lastUnsupported = {
-          id,
-          level,
-          format,
-          reason: "DXT CPU decode failed",
-        };
-        updateD3D8TextureSummary();
-        return 0;
-      }
-    }
-  } else {
-    if (info.compressed && (x !== 0 || y !== 0 || width !== levelSize.width || height !== levelSize.height)) {
-      d3d8TextureStats.unsupportedUpdates += 1;
-      d3d8TextureStats.lastUnsupported = {
-        id,
-        level,
-        format,
-        reason: "compressed DXT sub-rectangle updates are not implemented",
-      };
-      updateD3D8TextureSummary();
-      return 0;
-    }
-
-    const convertedBytes = info.compressed
-      ? payload.bytes
-      : convertD3D8TextureBytes(format, payload.bytes, width, height);
-    uploadBytes = info.compressed ? convertedBytes : d3d8TextureUploadView(info, convertedBytes);
-  }
-  d3d8PerfStats.textureConvertBytes += Number(payload.bytes.byteLength ?? 0) >>> 0;
-  d3d8PerfStats.textureConvertMs += perfNow() - convertStartedAt;
-  resource.storage = info.storage;
-  resource.semantic = info.semantic || null;
-  const levelKey = String(level);
-  const levelInitialized = resource.initializedLevels.has(levelKey);
-  const levelFormat = resource.levelFormats.get(levelKey);
-  // An FBO stays complete across ordinary texSubImage2D writes. If an upload
-  // actually changes level-0 storage, discard any cached attachment now so the
-  // next SetRenderTarget recreates and validates it once. This makes a
-  // synchronous checkFramebufferStatus on every render-target bind unnecessary.
-  if (level === 0 && (!levelInitialized || levelFormat !== info.storage)) {
-    releaseD3D8FramebufferEntriesForTexture(id);
-  }
-  let swizzleApplied = resource.swizzleApplied || null;
-  const uploadStartedAt = perfNow();
-  withPreservedD3D8TextureUnit(() => {
-    gl.bindTexture(gl.TEXTURE_2D, resource.texture);
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    if (!levelInitialized || levelFormat !== info.storage) {
-      if (info.compressed && !info.dxtDecode) {
-        gl.compressedTexImage2D(gl.TEXTURE_2D, level, info.internalFormat, width, height, 0, uploadBytes);
-      } else if (x === 0 && y === 0 && width === levelSize.width && height === levelSize.height) {
-        gl.texImage2D(gl.TEXTURE_2D, level, info.internalFormat, width, height, 0,
-          info.format, info.type, uploadBytes);
-      } else {
-        gl.texImage2D(gl.TEXTURE_2D, level, info.internalFormat, levelSize.width, levelSize.height, 0,
-          info.format, info.type, null);
-        gl.texSubImage2D(gl.TEXTURE_2D, level, x, y, width, height, info.format, info.type, uploadBytes);
-      }
-      resource.initializedLevels.add(levelKey);
-      resource.levelFormats.set(levelKey, info.storage);
-      updateD3D8TextureMipCompleteness(resource);
-    } else {
-      if (info.compressed && !info.dxtDecode) {
-        gl.compressedTexImage2D(gl.TEXTURE_2D, level, info.internalFormat, width, height, 0, uploadBytes);
-      } else {
-        gl.texSubImage2D(gl.TEXTURE_2D, level, x, y, width, height, info.format, info.type, uploadBytes);
-      }
-    }
-    swizzleApplied = applyD3D8TextureSwizzleIfChanged(resource, info);
-  });
-  d3d8PerfStats.textureUploads += 1;
-  d3d8PerfStats.textureUploadBytes += Number(uploadBytes.byteLength ?? 0) >>> 0;
-  d3d8PerfStats.textureUploadPixels += Math.max(0, width * height);
-  d3d8PerfStats.textureUploadMs += perfNow() - uploadStartedAt;
-  invalidateD3D8DrawStateCache();
-
-  resource.uploads += 1;
-  d3d8TextureStats.updates += 1;
-  let samplePixel = null;
-  let legacySamplePixel = null;
-  if (d3d8DiagLevel === "full" && level === 0 && !info.compressed) {
-    samplePixel = sampleD3D8TexturePixel(resource, x, y);
-    if (samplePixel && info.semantic) {
-      legacySamplePixel = decodeLegacyD3D8PixelFromRgba(samplePixel, info.semantic);
-    }
-  }
-  d3d8TextureStats.lastUpdate = {
-    id,
-    level,
-    x,
-    y,
-    width,
-    height,
-    format,
-    storage: info.storage,
-    aliasedStorage: info.aliasedStorage || null,
-    premultipliedAlpha: Boolean(info.premultipliedAlpha),
-    compressed: Boolean(info.compressed),
-    blockBytes: Number(info.blockBytes ?? 0) >>> 0,
-    semantic: info.semantic || null,
-    swizzle: swizzleApplied,
-    pitch: Number(payload.pitch ?? 0) >>> 0,
-    rowBytes: Number(payload.rowBytes ?? 0) >>> 0,
-    byteSize: payload.bytes.byteLength,
-    convertedByteSize: uploadBytes.byteLength,
-    usage: Number(payload.usage ?? 0) >>> 0,
-    lockFlags: Number(payload.lockFlags ?? 0) >>> 0,
-    uploads: resource.uploads,
-    samplePixel,
-    legacySamplePixel: level === 0 && info.semantic ? legacySamplePixel : null,
-  };
-  if (level === 0 && info.semantic) {
-    d3d8TextureStats.legacyUploads.push({
-      id,
-      format,
-      storage: info.storage,
-      semantic: info.semantic,
-      swizzle: swizzleApplied,
-      width,
-      height,
-      samplePixel,
-      legacySamplePixel,
-    });
-    if (d3d8TextureStats.legacyUploads.length > 64) {
-      d3d8TextureStats.legacyUploads.shift();
-    }
-  }
-  if (x !== 0 || y !== 0 || width !== levelSize.width || height !== levelSize.height) {
-    d3d8TextureStats.lastSubrectUpdate = d3d8TextureStats.lastUpdate;
-  }
-  updateD3D8TextureSummary();
-  return 1;
-}
-
-function updateD3D8VolumeTexture(payload = {}) {
-  if (!gl || !(payload.bytes instanceof Uint8Array)) {
-    return 0;
-  }
-  flushD3D8PendingDrawBatch("volumeTextureUpdate");
-  const id = Number(payload.id ?? 0) >>> 0;
-  const level = Number(payload.level ?? 0) >>> 0;
-  const x = Number(payload.x ?? 0) >>> 0;
-  const y = Number(payload.y ?? 0) >>> 0;
-  const z = Number(payload.z ?? 0) >>> 0;
-  const width = Number(payload.width ?? 0) >>> 0;
-  const height = Number(payload.height ?? 0) >>> 0;
-  const depth = Number(payload.depth ?? 0) >>> 0;
-  const format = Number(payload.format ?? 0) >>> 0;
-  let resource = d3d8Textures.get(id);
-  if (!resource) {
-    if (!createD3D8VolumeTexture({
-      id,
-      width,
-      height,
-      depth,
-      levels: level + 1,
-      format,
-      usage: payload.usage,
-    })) {
-      return 0;
-    }
-    resource = d3d8Textures.get(id);
-  }
-  if (!resource || resource.target !== gl.TEXTURE_3D ||
-      width === 0 || height === 0 || depth === 0 || level >= resource.levels) {
-    return 0;
-  }
-
-  const info = d3d8TextureFormatInfo(format);
-  if (!info.supported) {
-    d3d8TextureStats.unsupportedUpdates += 1;
-    d3d8TextureStats.lastUnsupported = {
-      id,
-      level,
-      format,
-      type: resource.type,
-      reason: info.reason,
-    };
-    updateD3D8TextureSummary();
-    return 0;
-  }
-  if (info.compressed && !info.dxtDecode) {
-    d3d8TextureStats.unsupportedUpdates += 1;
-    d3d8TextureStats.lastUnsupported = {
-      id,
-      level,
-      format,
-      type: resource.type,
-      reason: "compressed volume texture updates are not implemented",
-    };
-    updateD3D8TextureSummary();
-    return 0;
-  }
-  
-  // Handle DXT CPU decoding for volume textures
-  if (info.dxtDecode) {
-    // Volume DXT decoding is not implemented - reject for now
-    d3d8TextureStats.unsupportedUpdates += 1;
-    d3d8TextureStats.lastUnsupported = {
-      id,
-      level,
-      format,
-      type: resource.type,
-      reason: "DXT CPU decode for volume textures not implemented",
-    };
-    updateD3D8TextureSummary();
-    return 0;
-  }
-
-  const levelSize = d3d8TextureLevelSize(resource, level);
-  if (x + width > levelSize.width || y + height > levelSize.height || z + depth > levelSize.depth) {
-    return 0;
-  }
-
-  const convertStartedAt = perfNow();
-  const convertedBytes = convertD3D8TextureBytes(format, payload.bytes, width, height, depth);
-  const uploadBytes = d3d8TextureUploadView(info, convertedBytes);
-  d3d8PerfStats.textureConvertBytes += Number(payload.bytes.byteLength ?? 0) >>> 0;
-  d3d8PerfStats.textureConvertMs += perfNow() - convertStartedAt;
-  resource.storage = info.storage;
-  resource.semantic = info.semantic || null;
-  const levelKey = String(level);
-  const levelInitialized = resource.initializedLevels.has(levelKey);
-  const levelFormat = resource.levelFormats.get(levelKey);
-  let swizzleApplied = resource.swizzleApplied || null;
-  const uploadStartedAt = perfNow();
-  withPreservedD3D8TextureBinding(gl.TEXTURE_3D, () => {
-    gl.bindTexture(gl.TEXTURE_3D, resource.texture);
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    if (!levelInitialized || levelFormat !== info.storage) {
-      if (x === 0 && y === 0 && z === 0 &&
-          width === levelSize.width && height === levelSize.height && depth === levelSize.depth) {
-        gl.texImage3D(gl.TEXTURE_3D, level, info.internalFormat, width, height, depth, 0,
-          info.format, info.type, uploadBytes);
-      } else {
-        gl.texImage3D(gl.TEXTURE_3D, level, info.internalFormat,
-          levelSize.width, levelSize.height, levelSize.depth, 0, info.format, info.type, null);
-        gl.texSubImage3D(gl.TEXTURE_3D, level, x, y, z, width, height, depth,
-          info.format, info.type, uploadBytes);
-      }
-      resource.initializedLevels.add(levelKey);
-      resource.levelFormats.set(levelKey, info.storage);
-      updateD3D8TextureMipCompleteness(resource);
-    } else {
-      gl.texSubImage3D(gl.TEXTURE_3D, level, x, y, z, width, height, depth,
-        info.format, info.type, uploadBytes);
-    }
-    swizzleApplied = applyD3D8TextureSwizzleIfChanged(resource, info);
-  });
-  d3d8PerfStats.textureUploads += 1;
-  d3d8PerfStats.volumeTextureUploads += 1;
-  d3d8PerfStats.textureUploadBytes += Number(uploadBytes.byteLength ?? 0) >>> 0;
-  d3d8PerfStats.textureUploadPixels += Math.max(0, width * height * depth);
-  d3d8PerfStats.textureUploadMs += perfNow() - uploadStartedAt;
-  invalidateD3D8DrawStateCache();
-
-  resource.uploads += 1;
-  d3d8TextureStats.updates += 1;
-  d3d8TextureStats.lastUpdate = {
-    id,
-    level,
-    x,
-    y,
-    z,
-    width,
-    height,
-    depth,
-    format,
-    storage: info.storage,
-    type: resource.type,
-    compressed: false,
-    blockBytes: 0,
-    semantic: info.semantic || null,
-    swizzle: swizzleApplied,
-    pitch: Number(payload.rowPitch ?? 0) >>> 0,
-    rowPitch: Number(payload.rowPitch ?? 0) >>> 0,
-    rowBytes: Number(payload.rowBytes ?? 0) >>> 0,
-    slicePitch: Number(payload.slicePitch ?? 0) >>> 0,
-    byteSize: payload.bytes.byteLength,
-    convertedByteSize: convertedBytes.byteLength,
-    usage: Number(payload.usage ?? 0) >>> 0,
-    lockFlags: Number(payload.lockFlags ?? 0) >>> 0,
-    uploads: resource.uploads,
-    samplePixel: null,
-    legacySamplePixel: null,
-  };
-  if (x !== 0 || y !== 0 || z !== 0 ||
-      width !== levelSize.width || height !== levelSize.height || depth !== levelSize.depth) {
-    d3d8TextureStats.lastSubrectUpdate = d3d8TextureStats.lastUpdate;
-  }
-  updateD3D8TextureSummary();
-  return 1;
-}
-
-function releaseD3D8Texture(payload = {}) {
-  if (!gl) {
-    return 0;
-  }
-  flushD3D8PendingDrawBatch("textureRelease");
-  const id = Number(payload.id ?? 0) >>> 0;
-  const resource = d3d8Textures.get(id);
-  if (!resource) {
-    return 0;
-  }
-  const target = resource.target ?? gl.TEXTURE_2D;
-  const releasedBindings = [];
-  for (const [stage, textureId] of d3d8BoundTextures.entries()) {
-    if (textureId === id) {
-      const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
-      gl.activeTexture(gl.TEXTURE0 + stage);
-      gl.bindTexture(target, null);
-      gl.activeTexture(previousActiveTexture);
-      d3d8CurrentActiveTextureUnit = null;
-      d3d8CurrentTexture2DBindings.set(stage, null);
-      d3d8CurrentTexture3DBindings.set(stage, null);
-      d3d8BoundTextures.delete(stage);
-      releasedBindings.push(stage);
-    }
-  }
-  if (resource.feedbackSnapshot?.texture) {
-    gl.deleteTexture(resource.feedbackSnapshot.texture);
-  }
-  gl.deleteTexture(resource.texture);
-  invalidateD3D8GlTextureBindingCache();
-  invalidateD3D8DrawStateCache();
-  if (releasedBindings.length > 0) {
-    d3d8TextureStats.releaseUnbinds += releasedBindings.length;
-    d3d8TextureStats.lastReleaseUnbind = { id, stages: releasedBindings };
-  }
-  d3d8TextureStats.lastRelease = { id, type: resource.type || "2d", depth: resource.depth ?? 1, releasedBindings };
-  releaseD3D8FramebufferEntriesForTexture(id);
-  d3d8Textures.delete(id);
-  d3d8TextureStats.releases += 1;
-  updateD3D8TextureSummary();
-  return 1;
-}
-
-function bindD3D8Texture(payload = {}) {
-  if (!gl) {
-    return 0;
-  }
-  flushD3D8PendingDrawBatch("textureBind");
-  const stage = Number(payload.stage ?? 0) >>> 0;
-  const id = Number(payload.id ?? 0) >>> 0;
-  const maxTextureUnits = d3d8MaxCombinedTextureImageUnits ??
-    (d3d8MaxCombinedTextureImageUnits = gl.getParameter(gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS));
-  if (stage >= maxTextureUnits) {
-    d3d8TextureStats.missingBinds += 1;
-    d3d8TextureStats.lastMissingBind = {
-      stage,
-      id,
-      reason: "stage exceeds WebGL texture units",
-      maxTextureUnits,
-    };
-    updateD3D8TextureBindSummary();
-    return 0;
-  }
-
-  if (id === 0) {
-    d3d8BoundTextures.delete(stage);
-    d3d8TextureStats.unbinds += 1;
-    d3d8TextureStats.lastBind = {
-      stage,
-      id,
-      ok: true,
-      nullBind: true,
-      boundTexture: null,
-    };
-    updateD3D8TextureBindSummary();
-    return 1;
-  }
-
-  const resource = d3d8Textures.get(id);
-  if (!resource) {
-    d3d8TextureStats.missingBinds += 1;
-    d3d8TextureStats.lastMissingBind = {
-      stage,
-      id,
-      reason: "texture id is not live",
-    };
-    updateD3D8TextureBindSummary();
-    return 0;
-  }
-
-  d3d8BoundTextures.set(stage, id);
-  d3d8TextureStats.binds += 1;
-  d3d8TextureStats.lastBind = {
-    stage,
-    id,
-    ok: true,
-    nullBind: false,
-    width: resource.width,
-    height: resource.height,
-    depth: resource.depth ?? 1,
-    levels: resource.levels,
-    format: resource.format,
-    type: resource.type || "2d",
-    uploads: resource.uploads,
-  };
-  updateD3D8TextureBindSummary();
-  return 1;
-}
-
-function sampleCanvasPixel(x = 0, y = 0) {
-  const pixels = new Uint8Array(4);
-  if (gl) {
-    const readX = Math.max(0, Math.min(gl.drawingBufferWidth - 1, Math.trunc(x)));
-    const readY = Math.max(0, Math.min(gl.drawingBufferHeight - 1, Math.trunc(y)));
-    timedReadPixels(readX, gl.drawingBufferHeight - 1 - readY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-  } else if (fallbackContext) {
-    const readX = Math.max(0, Math.min(canvas.width - 1, Math.trunc(x)));
-    const readY = Math.max(0, Math.min(canvas.height - 1, Math.trunc(y)));
-    pixels.set(fallbackContext.getImageData(readX, readY, 1, 1).data);
-  }
-  return Array.from(pixels);
-}
-
-function sampleVirtualCanvasPixel(x = 0, y = 0, virtualWidth = 800, virtualHeight = 600) {
-  syncCanvasSize();
-  const canvasWidth = gl ? gl.drawingBufferWidth : canvas.width;
-  const canvasHeight = gl ? gl.drawingBufferHeight : canvas.height;
-  return sampleCanvasPixel(
-    Math.floor((Number(x) / virtualWidth) * canvasWidth),
-    Math.floor((Number(y) / virtualHeight) * canvasHeight),
-  );
-}
-
-function sampleCanvasRegion(rect = {}, threshold = 8) {
-  syncCanvasSize();
-  const canvasWidth = gl ? gl.drawingBufferWidth : canvas.width;
-  const canvasHeight = gl ? gl.drawingBufferHeight : canvas.height;
-  const left = Math.max(0, Math.min(canvasWidth, Math.floor(Number(rect.left ?? rect.x ?? 0))));
-  const top = Math.max(0, Math.min(canvasHeight, Math.floor(Number(rect.top ?? rect.y ?? 0))));
-  const right = Math.max(left, Math.min(canvasWidth, Math.ceil(Number(rect.right ?? (left + (rect.width ?? 0))))));
-  const bottom = Math.max(top, Math.min(canvasHeight, Math.ceil(Number(rect.bottom ?? (top + (rect.height ?? 0))))));
-  const width = right - left;
-  const height = bottom - top;
-  const result = {
-    left,
-    top,
-    right,
-    bottom,
-    width,
-    height,
-    pixelCount: width * height,
-    coloredPixelCount: 0,
-    maxComponent: 0,
-    brightestPixel: [0, 0, 0, 0],
-  };
-  if (width <= 0 || height <= 0) {
-    return result;
-  }
-
-  let data = null;
-  if (gl) {
-    data = new Uint8Array(width * height * 4);
-    const readY = Math.max(0, gl.drawingBufferHeight - bottom);
-    timedReadPixels(left, readY, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
-  } else if (fallbackContext) {
-    data = fallbackContext.getImageData(left, top, width, height).data;
-  } else {
-    return result;
-  }
-
-  for (let offset = 0; offset < data.length; offset += 4) {
-    const pixel = [data[offset], data[offset + 1], data[offset + 2], data[offset + 3]];
-    const maxComponent = Math.max(pixel[0], pixel[1], pixel[2]);
-    if (maxComponent > result.maxComponent) {
-      result.maxComponent = maxComponent;
-      result.brightestPixel = pixel;
-    }
-    if (maxComponent > threshold && pixel[3] > 0) {
-      result.coloredPixelCount += 1;
-    }
-  }
-  result.coverageRatio = result.pixelCount > 0
-    ? result.coloredPixelCount / result.pixelCount
-    : 0;
-  return result;
-}
-
-function pixelsApproximatelyEqual(left, right, tolerance = 1) {
-  return left.length === right.length
-    && left.every((component, index) => Math.abs(component - right[index]) <= tolerance);
 }
 
 function floatVectorApproximatelyEqual(left, right, tolerance = 0.00001) {
@@ -8644,3281 +3992,6 @@ function floatVectorApproximatelyEqual(left, right, tolerance = 0.00001) {
     && Array.isArray(right)
     && left.length === right.length
     && left.every((component, index) => Math.abs(component - right[index]) <= tolerance);
-}
-
-function paintCanvasRgba(rgba) {
-  // Reset state hash: clear changes GL state outside the draw path.
-  invalidateD3D8DrawStateCache();
-  syncCanvasSize();
-  if (gl) {
-    gl.clearColor(rgba[0] / 255, rgba[1] / 255, rgba[2] / 255, rgba[3] / 255);
-    gl.clearDepth(1);
-    // D3D8's Clear ignores the depth/stencil write masks, but WebGL's
-    // gl.clear RESPECTS gl.depthMask: if a prior draw left depth writes
-    // disabled, the depth clear is silently skipped, leaving stale depth
-    // that later geometry fails the depth test against (same class as the
-    // black-terrain bug fixed in 08a1839). Force the depth write mask on
-    // for the clear, then restore it.
-    const restoreDepthMask = !d3d8CurrentDepthMask;
-    if (restoreDepthMask) {
-      setD3D8DepthMask(true);
-    }
-    timedGlClear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    if (restoreDepthMask) {
-      setD3D8DepthMask(false);
-    }
-  } else if (fallbackContext) {
-    fallbackContext.fillStyle = `rgb(${rgba[0]} ${rgba[1]} ${rgba[2]})`;
-    fallbackContext.fillRect(0, 0, canvas.width, canvas.height);
-  }
-  refreshCanvasState();
-  return sampleCanvasPixel(0, 0);
-}
-
-function clearCanvas(payload = {}) {
-  const rgba = normalizeRgba(payload);
-  const pixel = paintCanvasRgba(rgba);
-  const ok = pixelsApproximatelyEqual(pixel, rgba);
-  harnessState.graphics = {
-    ...harnessState.graphics,
-    lastClearColor: rgba,
-    lastClearPixel: pixel,
-    lastClearOk: ok,
-  };
-
-  return {
-    ok,
-    source: gl ? "browser_webgl2_clear" : "browser_2d_clear",
-    api: harnessState.graphics.api,
-    clearColor: rgba,
-    topLeftPixel: pixel,
-  };
-}
-
-function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
-  const clearTotalStartedAt = perfNow();
-  // Clear only touches clearColor/clearDepth/clearStencil (untracked), the
-  // depth mask (via the tracked setD3D8DepthMask, restored below), the
-  // stencil mask (tracked cache synced below), and — through syncCanvasSize's
-  // restoreFullCanvasViewport — viewport/scissor, whose applied-viewport cache
-  // that helper invalidates itself. The blend/cull/uniform/vertex-attrib
-  // caches all stay valid, so only the pending batch needs flushing here
-  // (it must draw under the pre-clear state).
-  const invalidateStartedAt = perfNow();
-  flushD3D8PendingDrawBatch("clear");
-  d3d8PerfStats.clearInvalidateMs += perfNow() - invalidateStartedAt;
-  const clearFlags = flags >>> 0;
-  const rgba = [
-    clampColorByte(red, 0),
-    clampColorByte(green, 0),
-    clampColorByte(blue, 0),
-    clampColorByte(alpha, 255),
-  ];
-  const syncStartedAt = perfNow();
-  syncCanvasSize();
-  d3d8PerfStats.clearSyncCanvasMs += perfNow() - syncStartedAt;
-  if (gl) {
-    const setupStartedAt = perfNow();
-    let clearBits = 0;
-    if ((clearFlags & 0x1) !== 0) {
-      gl.clearColor(rgba[0] / 255, rgba[1] / 255, rgba[2] / 255, rgba[3] / 255);
-      clearBits |= gl.COLOR_BUFFER_BIT;
-    }
-    if ((clearFlags & 0x2) !== 0) {
-      gl.clearDepth(Number(z));
-      clearBits |= gl.DEPTH_BUFFER_BIT;
-    }
-    let hasStencilBuffer = false;
-    if ((clearFlags & 0x4) !== 0) {
-      const contextAttrStartedAt = perfNow();
-      hasStencilBuffer = Boolean(gl.getContextAttributes()?.stencil);
-      d3d8PerfStats.clearContextAttrMs += perfNow() - contextAttrStartedAt;
-    }
-    if ((clearFlags & 0x4) !== 0 && hasStencilBuffer) {
-      const clearStencilMask = d3d8EffectiveStencilValue(0xffffffff);
-      gl.stencilMask(clearStencilMask);
-      // stencilMask is a tracked render-state key; keep the cache in sync so
-      // the next draw's tracked apply doesn't skip a needed gl.stencilMask.
-      if (d3d8CurrentRenderGlState) {
-        d3d8CurrentRenderGlState.stencilMask = clearStencilMask;
-      }
-      gl.clearStencil(d3d8EffectiveStencilValue(stencil));
-      clearBits |= gl.STENCIL_BUFFER_BIT;
-    }
-    d3d8PerfStats.clearSetupMs += perfNow() - setupStartedAt;
-    if (clearBits !== 0) {
-      // D3D8's Clear ignores the depth/stencil write masks, but WebGL's
-      // gl.clear RESPECTS gl.depthMask: if a prior draw left depth writes
-      // disabled (e.g. a transparent/UI pass with ZWRITE off), the depth clear
-      // is silently skipped, leaving a stale depth buffer that later geometry
-      // (the terrain) fails the depth test against — the whole map renders
-      // black. Force the depth write mask on for the clear, then restore it.
-      // (Stencil already forces stencilMask above before clearing stencil.)
-      const depthMaskCheckStartedAt = perfNow();
-      const restoreDepthMask =
-        (clearBits & gl.DEPTH_BUFFER_BIT) !== 0 && !d3d8CurrentDepthMask;
-      d3d8PerfStats.clearDepthMaskCheckMs += perfNow() - depthMaskCheckStartedAt;
-      if (restoreDepthMask) {
-        const depthMaskToggleStartedAt = perfNow();
-        setD3D8DepthMask(true);
-        d3d8PerfStats.clearDepthMaskToggleMs += perfNow() - depthMaskToggleStartedAt;
-      }
-      timedGlClear(clearBits);
-      if (restoreDepthMask) {
-        const depthMaskToggleStartedAt = perfNow();
-        setD3D8DepthMask(false);
-        d3d8PerfStats.clearDepthMaskToggleMs += perfNow() - depthMaskToggleStartedAt;
-      }
-    }
-  } else if (fallbackContext && (clearFlags & 0x1) !== 0) {
-    fallbackContext.fillStyle = `rgb(${rgba[0]} ${rgba[1]} ${rgba[2]})`;
-    fallbackContext.fillRect(0, 0, canvas.width, canvas.height);
-  }
-  if (d3d8DiagLevel !== "full") {
-    d3d8PerfStats.clearTotalMs += perfNow() - clearTotalStartedAt;
-    return 1; // lite: skip the post-clear readPixels + probe
-  }
-  const postDiagStartedAt = perfNow();
-  refreshCanvasState();
-  const pixel = sampleCanvasPixel(0, 0);
-  const colorOk = (clearFlags & 0x1) === 0 || pixelsApproximatelyEqual(pixel, rgba);
-  const probe = {
-    ok: colorOk,
-    source: "browser_d3d8_clear",
-    api: harnessState.graphics.api,
-    flags: clearFlags,
-    clearColor: rgba,
-    topLeftPixel: pixel,
-    z: Number(z),
-    stencil: stencil >>> 0,
-  };
-  harnessState.graphics = {
-    ...harnessState.graphics,
-    lastD3D8Clear: probe,
-    lastClearColor: rgba,
-    lastClearPixel: pixel,
-    lastClearOk: colorOk,
-  };
-  d3d8PerfStats.clearPostDiagMs += perfNow() - postDiagStartedAt;
-  d3d8PerfStats.clearTotalMs += perfNow() - clearTotalStartedAt;
-  return colorOk ? 1 : 0;
-}
-
-function compileShader(type, source) {
-  const shader = gl.createShader(type);
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const info = gl.getShaderInfoLog(shader);
-    gl.deleteShader(shader);
-    throw new Error(`D3D8 bridge shader compile failed: ${info}`);
-  }
-  return shader;
-}
-
-function ensureD3D8DrawProgram() {
-  if (!gl) {
-    return null;
-  }
-  if (d3d8DrawProgram) {
-    return d3d8DrawProgram;
-  }
-
-  const vertexSource = `#version 300 es
-    in vec4 aPosition;
-    in vec3 aNormal;
-    in vec4 aDiffuseBgra;
-    in vec4 aSpecularBgra;
-    in vec2 aTexCoord0;
-    in vec2 aTexCoord1;
-    uniform float uScale;
-    uniform bool uUseTransforms;
-    uniform bool uPretransformedPosition;
-    uniform vec4 uD3DViewport;
-    uniform mat4 uWorld;
-    uniform mat4 uView;
-    uniform mat4 uProjection;
-    uniform float uDepthBias;
-    uniform int uTexture0CoordinateMode;
-    uniform bool uUseTexture0Transform;
-    uniform mat4 uTexture0Transform;
-    uniform int uTexture0TransformComponentCount;
-    uniform bool uTexture0TransformProjected;
-    uniform int uTexture1CoordinateMode;
-    uniform bool uUseTexture1Transform;
-    uniform mat4 uTexture1Transform;
-    uniform int uTexture1TransformComponentCount;
-    uniform bool uTexture1TransformProjected;
-    uniform int uTexture2CoordinateMode;
-    uniform int uTexture2CoordSet;
-    uniform bool uUseTexture2Transform;
-    uniform mat4 uTexture2Transform;
-    uniform int uTexture2TransformComponentCount;
-    uniform bool uTexture2TransformProjected;
-    uniform int uTexture3CoordinateMode;
-    uniform int uTexture3CoordSet;
-    uniform bool uUseTexture3Transform;
-    uniform mat4 uTexture3Transform;
-    uniform int uTexture3TransformComponentCount;
-    uniform bool uTexture3TransformProjected;
-    uniform float uPointSize;
-    uniform float uPointSizeMin;
-    uniform float uPointSizeMax;
-    uniform bool uPointScaleEnable;
-    uniform float uPointScaleA;
-    uniform float uPointScaleB;
-    uniform float uPointScaleC;
-    uniform float uPointViewportHeight;
-    uniform bool uLightingEnabled;
-    uniform bool uSpecularEnabled;
-    uniform bool uNormalizeNormals;
-    uniform bool uLocalViewer;
-    uniform bool uColorVertexEnabled;
-    uniform vec4 uSceneAmbient;
-    uniform vec4 uMaterialDiffuse;
-    uniform vec4 uMaterialAmbient;
-    uniform vec4 uMaterialSpecular;
-    uniform vec4 uMaterialEmissive;
-    uniform float uMaterialPower;
-    uniform int uDiffuseMaterialSource;
-    uniform int uSpecularMaterialSource;
-    uniform int uAmbientMaterialSource;
-    uniform int uEmissiveMaterialSource;
-    uniform int uFixedLightCount;
-    uniform int uFixedLightType[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
-    uniform vec4 uFixedLightDiffuse[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
-    uniform vec4 uFixedLightSpecular[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
-    uniform vec4 uFixedLightAmbient[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
-    uniform vec3 uFixedLightPosition[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
-    uniform vec3 uFixedLightDirection[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
-    uniform vec4 uFixedLightRangeAttenuation[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
-    uniform vec3 uFixedLightSpot[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
-    // Fog-of-war shroud UV generation for the tree draw (Trees.nvv fallback).
-    // The tree FVF (XYZNDUV1) has no stage-1 UVs, so when uTreeShroudGen is set
-    // the stage-1 texcoord is generated from world position: (worldXY + off)*scl.
-    uniform bool uTreeShroudGen;
-    uniform vec2 uTreeShroudOffset;
-    uniform vec2 uTreeShroudScale;
-    out vec4 vColor;
-    out vec4 vSpecularColor;
-    flat out vec4 vFlatColor;
-    out vec2 vTexCoord0;
-    out vec2 vTexCoord1;
-    out vec2 vTexCoord2;
-    out vec2 vTexCoord3;
-    out vec4 vClipPosition;
-    out float vFogDepth;
-    out float vFogRangeDistance;
-    vec4 d3dMaterialSourceColor(int source, vec4 materialColor, vec4 color1, vec4 color2) {
-      if (!uColorVertexEnabled) {
-        return materialColor;
-      }
-      if (source == 1) {
-        return color1;
-      }
-      if (source == 2) {
-        return color2;
-      }
-      return materialColor;
-    }
-    float d3dLightAttenuation(int index, float distanceToLight) {
-      vec4 rangeAttenuation = uFixedLightRangeAttenuation[index];
-      float range = rangeAttenuation.x;
-      if (range > 0.0 && distanceToLight > range) {
-        return 0.0;
-      }
-      float denominator =
-        rangeAttenuation.y +
-        rangeAttenuation.z * distanceToLight +
-        rangeAttenuation.w * distanceToLight * distanceToLight;
-      if (denominator <= 0.000001) {
-        return 1.0;
-      }
-      return 1.0 / denominator;
-    }
-    float d3dSpotEffect(int index, vec3 lightDirection) {
-      if (uFixedLightType[index] != 2) {
-        return 1.0;
-      }
-      vec3 spotDirectionSource = uFixedLightDirection[index];
-      vec3 spotDirection = length(spotDirectionSource) > 0.000001
-        ? normalize(spotDirectionSource)
-        : vec3(0.0, 0.0, -1.0);
-      float rho = dot(spotDirection, -lightDirection);
-      vec3 spot = uFixedLightSpot[index];
-      float cosTheta = cos(max(spot.x, 0.0) * 0.5);
-      float cosPhi = cos(max(spot.y, spot.x) * 0.5);
-      if (rho <= cosPhi) {
-        return 0.0;
-      }
-      if (rho >= cosTheta || abs(cosTheta - cosPhi) < 0.000001) {
-        return 1.0;
-      }
-      float coneAmount = clamp((rho - cosPhi) / (cosTheta - cosPhi), 0.0, 1.0);
-      float falloff = max(spot.z, 0.0);
-      return falloff == 0.0 ? 1.0 : pow(coneAmount, falloff);
-    }
-    vec4 d3dApplyLighting(vec4 color1, vec4 color2, vec3 worldPosition, vec3 normal, vec3 viewDirection) {
-      vec4 diffuseMaterial = d3dMaterialSourceColor(uDiffuseMaterialSource, uMaterialDiffuse, color1, color2);
-      vec4 specularMaterial = d3dMaterialSourceColor(uSpecularMaterialSource, uMaterialSpecular, color1, color2);
-      vec4 ambientMaterial = d3dMaterialSourceColor(uAmbientMaterialSource, uMaterialAmbient, color1, color2);
-      vec4 emissiveMaterial = d3dMaterialSourceColor(uEmissiveMaterialSource, uMaterialEmissive, color1, color2);
-      vec3 litRgb = emissiveMaterial.rgb + ambientMaterial.rgb * uSceneAmbient.rgb;
-      vec3 effectiveNormal = uNormalizeNormals
-        ? (length(normal) > 0.000001 ? normalize(normal) : vec3(0.0, 0.0, 1.0))
-        : normal;
-      if (length(effectiveNormal) <= 0.000001) {
-        effectiveNormal = vec3(0.0, 0.0, 1.0);
-      }
-      vec3 unitViewDirection = length(viewDirection) > 0.000001
-        ? normalize(viewDirection)
-        : vec3(0.0, 0.0, 1.0);
-      for (int index = 0; index < ${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}; ++index) {
-        if (index >= uFixedLightCount) {
-          break;
-        }
-        vec3 lightVector = uFixedLightType[index] == 3
-          ? -uFixedLightDirection[index]
-          : uFixedLightPosition[index] - worldPosition;
-        float distanceToLight = length(lightVector);
-        vec3 lightDirection = distanceToLight > 0.000001 ? normalize(lightVector) : effectiveNormal;
-        float attenuation = uFixedLightType[index] == 3
-          ? 1.0
-          : d3dLightAttenuation(index, distanceToLight) * d3dSpotEffect(index, lightDirection);
-        float diffuseAmount = max(dot(effectiveNormal, lightDirection), 0.0);
-        litRgb += ambientMaterial.rgb * uFixedLightAmbient[index].rgb * attenuation;
-        litRgb += diffuseMaterial.rgb * uFixedLightDiffuse[index].rgb * diffuseAmount * attenuation;
-        if (uSpecularEnabled && diffuseAmount > 0.0 && attenuation > 0.0) {
-          vec3 halfSource = lightDirection + unitViewDirection;
-          vec3 halfVector = length(halfSource) > 0.000001 ? normalize(halfSource) : effectiveNormal;
-          float specularDot = max(dot(effectiveNormal, halfVector), 0.0);
-          float specularPower = max(uMaterialPower, 0.0);
-          float specularAmount = specularPower == 0.0 ? 1.0 : pow(specularDot, specularPower);
-          litRgb += specularMaterial.rgb * uFixedLightSpecular[index].rgb * specularAmount * attenuation;
-        }
-      }
-      return vec4(clamp(litRgb, 0.0, 1.0), diffuseMaterial.a);
-    }
-    vec4 d3dTextureCoordinateSource(
-      vec2 texCoord,
-      int coordinateMode,
-      vec3 cameraSpacePosition,
-      vec3 cameraSpaceNormal) {
-      if (coordinateMode == ${D3DTSS_TCI_CAMERASPACENORMAL}) {
-        vec3 normal = length(cameraSpaceNormal) > 0.000001
-          ? normalize(cameraSpaceNormal)
-          : vec3(0.0, 0.0, 1.0);
-        return vec4(normal, 1.0);
-      }
-      if (coordinateMode == ${D3DTSS_TCI_CAMERASPACEPOSITION}) {
-        return vec4(cameraSpacePosition, 1.0);
-      }
-      if (coordinateMode == ${D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR}) {
-        vec3 normal = length(cameraSpaceNormal) > 0.000001
-          ? normalize(cameraSpaceNormal)
-          : vec3(0.0, 0.0, 1.0);
-        vec3 incident = length(cameraSpacePosition) > 0.000001
-          ? normalize(cameraSpacePosition)
-          : vec3(0.0, 0.0, 1.0);
-        return vec4(reflect(incident, normal), 1.0);
-      }
-      return vec4(texCoord, 0.0, 1.0);
-    }
-    vec2 d3dApplyTextureTransform(vec4 texCoord, mat4 transformMatrix, int componentCount, bool projected) {
-      vec4 transformed = transformMatrix * texCoord;
-      if (projected) {
-        float divisor = componentCount == 4 ? transformed.w : transformed.z;
-        if (abs(divisor) > 0.000001) {
-          return transformed.xy / divisor;
-        }
-      }
-      return transformed.xy;
-    }
-    vec4 d3dPretransformedPositionToClip(vec4 screenPosition) {
-      vec2 viewportOrigin = uD3DViewport.xy;
-      vec2 viewportSize = max(uD3DViewport.zw, vec2(1.0));
-      // D3D8 rasterizes XYZRHW coordinates at integer pixel centers. WebGL
-      // uses half-integer centers, so translate by half a pixel while mapping
-      // to clip space. This makes the engine's -0.5 fullscreen quads land on
-      // exact texel centers instead of bilinearly blurring the scene copy.
-      vec2 webGlPosition = screenPosition.xy + vec2(0.5);
-      vec3 ndc = vec3(
-        ((webGlPosition.x - viewportOrigin.x) / viewportSize.x) * 2.0 - 1.0,
-        1.0 - ((webGlPosition.y - viewportOrigin.y) / viewportSize.y) * 2.0,
-        screenPosition.z * 2.0 - 1.0
-      );
-      float rhw = abs(screenPosition.w) > 0.000001 ? screenPosition.w : 1.0;
-      float clipW = 1.0 / rhw;
-      return vec4(ndc * clipW, clipW);
-    }
-    void main() {
-      vec4 worldPosition = vec4(aPosition.xyz, 1.0);
-      vec4 viewPosition = worldPosition;
-      vec3 worldNormal = aNormal;
-      vec3 cameraSpaceNormal = aNormal;
-      vec3 viewDirection = vec3(0.0, 0.0, 1.0);
-      if (uPretransformedPosition) {
-        gl_Position = d3dPretransformedPositionToClip(aPosition);
-        vFogDepth = 0.0;
-        vFogRangeDistance = 0.0;
-      } else if (uUseTransforms) {
-        worldPosition = uWorld * vec4(aPosition.xyz, 1.0);
-        mat3 worldNormalMatrix = transpose(inverse(mat3(uWorld)));
-        worldNormal = worldNormalMatrix * aNormal;
-        viewPosition = uView * worldPosition;
-        cameraSpaceNormal = mat3(uView) * worldNormal;
-        vec4 cameraWorld = inverse(uView) * vec4(0.0, 0.0, 0.0, 1.0);
-        vec3 cameraPosition = cameraWorld.xyz / max(abs(cameraWorld.w), 0.000001);
-        vec4 cameraForwardWorld = inverse(uView) * vec4(0.0, 0.0, 1.0, 0.0);
-        vec3 orthogonalViewDirection = length(cameraForwardWorld.xyz) > 0.000001
-          ? normalize(cameraForwardWorld.xyz)
-          : viewDirection;
-        vec3 worldToCamera = cameraPosition - worldPosition.xyz;
-        vec3 localViewDirection = length(worldToCamera) > 0.000001
-          ? normalize(worldToCamera)
-          : orthogonalViewDirection;
-        viewDirection = uLocalViewer ? localViewDirection : orthogonalViewDirection;
-        vec4 d3dClip = uProjection * viewPosition;
-        gl_Position = vec4(d3dClip.x, d3dClip.y, d3dClip.z * 2.0 - d3dClip.w, d3dClip.w);
-        vFogDepth = max(viewPosition.z, 0.0);
-        vFogRangeDistance = length(viewPosition.xyz);
-      } else {
-        gl_Position = vec4(aPosition.x / uScale, aPosition.y / uScale, 0.0, 1.0);
-        vFogDepth = 0.0;
-        vFogRangeDistance = 0.0;
-      }
-      gl_Position.z -= uDepthBias * gl_Position.w;
-      float d3dPointSize = max(uPointSize, 0.0);
-      if (uPointScaleEnable) {
-        float eyeDistance = max(length(viewPosition.xyz), 0.000001);
-        float attenuation = max(
-          uPointScaleA + uPointScaleB * eyeDistance + uPointScaleC * eyeDistance * eyeDistance,
-          0.000001);
-        d3dPointSize = max(uPointViewportHeight, 1.0) * d3dPointSize * inversesqrt(attenuation);
-      }
-      float d3dPointSizeMin = max(uPointSizeMin, 0.0);
-      float d3dPointSizeMax = max(uPointSizeMax, d3dPointSizeMin);
-      gl_PointSize = clamp(d3dPointSize, d3dPointSizeMin, d3dPointSizeMax);
-      vClipPosition = worldPosition;
-      vec4 color1 = vec4(aDiffuseBgra.b, aDiffuseBgra.g, aDiffuseBgra.r, aDiffuseBgra.a);
-      vec4 color2 = vec4(aSpecularBgra.b, aSpecularBgra.g, aSpecularBgra.r, aSpecularBgra.a);
-      vSpecularColor = color2;
-      vColor = uLightingEnabled ? d3dApplyLighting(color1, color2, worldPosition.xyz, worldNormal, viewDirection) : color1;
-      vFlatColor = vColor;
-      vec4 texture0Coordinate = d3dTextureCoordinateSource(
-        aTexCoord0,
-        uTexture0CoordinateMode,
-        viewPosition.xyz,
-        cameraSpaceNormal);
-      if (uUseTexture0Transform) {
-        vTexCoord0 = d3dApplyTextureTransform(
-          texture0Coordinate,
-          uTexture0Transform,
-          uTexture0TransformComponentCount,
-          uTexture0TransformProjected);
-      } else {
-        vTexCoord0 = texture0Coordinate.xy;
-      }
-      vec4 texture1Coordinate = d3dTextureCoordinateSource(
-        aTexCoord1,
-        uTexture1CoordinateMode,
-        viewPosition.xyz,
-        cameraSpaceNormal);
-      if (uTreeShroudGen) {
-        // Trees.nvv: oT1 = (v0 + c32) * c33, per-vertex from world position.
-        vTexCoord1 = (worldPosition.xy + uTreeShroudOffset) * uTreeShroudScale;
-      } else if (uUseTexture1Transform) {
-        vTexCoord1 = d3dApplyTextureTransform(
-          texture1Coordinate,
-          uTexture1Transform,
-          uTexture1TransformComponentCount,
-          uTexture1TransformProjected);
-      } else {
-        vTexCoord1 = texture1Coordinate.xy;
-      }
-      // Stages 2/3 either read a generated camera-space coord (the terrain/water
-      // noise + lightmap layers use D3DTSS_TCI_CAMERASPACEPOSITION) or reuse an
-      // existing vertex UV set selected by D3DTSS_TEXCOORDINDEX (coordSet 0/1,
-      // the only sets the XYZNDUV FVF exposes). uTextureNCoordSet picks the base
-      // UV; the transform (STRETCH_FACTOR noise projection etc.) is then applied.
-      vec2 texCoord2Base = uTexture2CoordSet == 1 ? aTexCoord1 : aTexCoord0;
-      vec4 texture2Coordinate = d3dTextureCoordinateSource(
-        texCoord2Base,
-        uTexture2CoordinateMode,
-        viewPosition.xyz,
-        cameraSpaceNormal);
-      if (uUseTexture2Transform) {
-        vTexCoord2 = d3dApplyTextureTransform(
-          texture2Coordinate,
-          uTexture2Transform,
-          uTexture2TransformComponentCount,
-          uTexture2TransformProjected);
-      } else {
-        vTexCoord2 = texture2Coordinate.xy;
-      }
-      vec2 texCoord3Base = uTexture3CoordSet == 1 ? aTexCoord1 : aTexCoord0;
-      vec4 texture3Coordinate = d3dTextureCoordinateSource(
-        texCoord3Base,
-        uTexture3CoordinateMode,
-        viewPosition.xyz,
-        cameraSpaceNormal);
-      if (uUseTexture3Transform) {
-        vTexCoord3 = d3dApplyTextureTransform(
-          texture3Coordinate,
-          uTexture3Transform,
-          uTexture3TransformComponentCount,
-          uTexture3TransformProjected);
-      } else {
-        vTexCoord3 = texture3Coordinate.xy;
-      }
-    }
-  `;
-  // Stashed so translated-shader pair programs (see
-  // ensureD3D8ShaderPairProgram) can link the exact same fixed-function
-  // vertex stage against a translated SM1 fragment stage.
-  d3d8FFVertexSourceCache = vertexSource;
-  const vertexShader = compileShader(gl.VERTEX_SHADER, vertexSource);
-  const fragmentSource = `#version 300 es
-    precision highp float;
-    in vec4 vColor;
-    in vec4 vSpecularColor;
-    flat in vec4 vFlatColor;
-    in vec2 vTexCoord0;
-    in vec2 vTexCoord1;
-    in vec2 vTexCoord2;
-    in vec2 vTexCoord3;
-    in vec4 vClipPosition;
-    in float vFogDepth;
-    in float vFogRangeDistance;
-    uniform int uClipPlaneMask;
-    uniform vec4 uClipPlanes[6];
-    uniform bool uUseFlatShade;
-    uniform bool uDrawingPoints;
-    uniform bool uPointSpriteEnable;
-    uniform bool uUseTexture0;
-    uniform sampler2D uTexture0;
-    uniform float uTexture0LodBias;
-    uniform int uTexture0Semantic;
-    uniform bool uTexture0FlipY;
-    uniform bool uUseTexture1;
-    uniform sampler2D uTexture1;
-    uniform float uTexture1LodBias;
-    uniform int uTexture1Semantic;
-    uniform bool uTexture1FlipY;
-    uniform bool uUseTexture2;
-    uniform sampler2D uTexture2;
-    uniform float uTexture2LodBias;
-    uniform int uTexture2Semantic;
-    uniform bool uTexture2FlipY;
-    uniform bool uUseTexture3;
-    uniform sampler2D uTexture3;
-    uniform float uTexture3LodBias;
-    uniform int uTexture3Semantic;
-    uniform bool uTexture3FlipY;
-    uniform vec4 uTextureFactor;
-    uniform int uStage0ColorOp;
-    uniform int uStage0ColorArg0;
-    uniform int uStage0ColorArg1;
-    uniform int uStage0ColorArg2;
-    uniform int uStage0AlphaOp;
-    uniform int uStage0AlphaArg0;
-    uniform int uStage0AlphaArg1;
-    uniform int uStage0AlphaArg2;
-    uniform int uStage0ResultArg;
-    uniform int uStage1ColorOp;
-    uniform int uStage1ColorArg0;
-    uniform int uStage1ColorArg1;
-    uniform int uStage1ColorArg2;
-    uniform int uStage1AlphaOp;
-    uniform int uStage1AlphaArg0;
-    uniform int uStage1AlphaArg1;
-    uniform int uStage1AlphaArg2;
-    uniform int uStage1ResultArg;
-    uniform int uStage2ColorOp;
-    uniform int uStage2ColorArg0;
-    uniform int uStage2ColorArg1;
-    uniform int uStage2ColorArg2;
-    uniform int uStage2AlphaOp;
-    uniform int uStage2AlphaArg0;
-    uniform int uStage2AlphaArg1;
-    uniform int uStage2AlphaArg2;
-    uniform int uStage2ResultArg;
-    uniform int uStage3ColorOp;
-    uniform int uStage3ColorArg0;
-    uniform int uStage3ColorArg1;
-    uniform int uStage3ColorArg2;
-    uniform int uStage3AlphaOp;
-    uniform int uStage3AlphaArg0;
-    uniform int uStage3AlphaArg1;
-    uniform int uStage3AlphaArg2;
-    uniform int uStage3ResultArg;
-    uniform bool uAlphaTestEnabled;
-    uniform int uAlphaFunc;
-    uniform float uAlphaRef;
-    uniform float uImplicitAlphaCutoutThreshold;
-    uniform bool uFogEnabled;
-    uniform bool uFogRangeEnabled;
-    uniform vec3 uFogColor;
-    uniform float uFogStart;
-    uniform float uFogEnd;
-    out vec4 fragColor;
-    bool d3dAlphaCompare(float value, float reference) {
-      if (uAlphaFunc == 1) {
-        return false;
-      }
-      if (uAlphaFunc == 2) {
-        return value < reference;
-      }
-      if (uAlphaFunc == 3) {
-        return value == reference;
-      }
-      if (uAlphaFunc == 4) {
-        return value <= reference;
-      }
-      if (uAlphaFunc == 5) {
-        return value > reference;
-      }
-      if (uAlphaFunc == 6) {
-        return value != reference;
-      }
-      if (uAlphaFunc == 7) {
-        return value >= reference;
-      }
-      return true;
-    }
-    vec4 d3dTextureSample(vec4 rawSample, int semantic) {
-      if (semantic == 1) {
-        return vec4(0.0, 0.0, 0.0, rawSample.r);
-      }
-      if (semantic == 2) {
-        return vec4(rawSample.r, rawSample.r, rawSample.r, 1.0);
-      }
-      if (semantic == 3) {
-        return vec4(rawSample.r, rawSample.r, rawSample.r, rawSample.g);
-      }
-      if (semantic == 4) {
-        vec2 signedBump = clamp((rawSample.rg * 255.0 - 128.0) / 127.0, -1.0, 1.0);
-        return vec4(signedBump, 0.0, 1.0);
-      }
-      return rawSample;
-    }
-    vec2 d3dTextureCoordinate(vec2 coordinate, bool flipY) {
-      return flipY ? vec2(coordinate.x, 1.0 - coordinate.y) : coordinate;
-    }
-    // D3DTA_DIFFUSE == 0, D3DTA_CURRENT == 1, D3DTA_TEXTURE == 2,
-    // D3DTA_TFACTOR == 3, D3DTA_SPECULAR == 4, D3DTA_TEMP == 5.
-    // D3DTA_COMPLEMENT == 0x10, D3DTA_ALPHAREPLICATE == 0x20.
-    vec4 d3dCombinerSource(int arg, vec4 textureColor, vec4 currentColor, vec4 diffuseColor,
-        vec4 specularColor, vec4 tempColor) {
-      int source = arg & 15;
-      if (source == 0) {
-        return diffuseColor;
-      }
-      if (source == 1) {
-        return currentColor;
-      }
-      if (source == 2) {
-        return textureColor;
-      }
-      if (source == 3) {
-        return uTextureFactor;
-      }
-      if (source == 4) {
-        return specularColor;
-      }
-      if (source == 5) {
-        return tempColor;
-      }
-      return currentColor;
-    }
-    vec3 d3dCombinerColorArg(int arg, vec4 textureColor, vec4 currentColor, vec4 diffuseColor,
-        vec4 specularColor, vec4 tempColor) {
-      vec4 source = d3dCombinerSource(arg, textureColor, currentColor, diffuseColor, specularColor, tempColor);
-      vec3 value = (arg & 32) != 0 ? vec3(source.a) : source.rgb;
-      if ((arg & 16) != 0) {
-        value = vec3(1.0) - value;
-      }
-      return value;
-    }
-    vec3 d3dDotProduct3(vec3 arg1, vec3 arg2) {
-      return vec3(clamp(dot(arg1 * 2.0 - 1.0, arg2 * 2.0 - 1.0), 0.0, 1.0));
-    }
-    float d3dCombinerBlendFactor(int op, vec4 textureColor, vec4 currentColor, vec4 diffuseColor) {
-      if (op == 12) {
-        return diffuseColor.a;
-      }
-      if (op == 13) {
-        return textureColor.a;
-      }
-      if (op == 14) {
-        return uTextureFactor.a;
-      }
-      if (op == 16) {
-        return currentColor.a;
-      }
-      return 0.0;
-    }
-    float d3dCombinerAlphaArg(int arg, vec4 textureColor, vec4 currentColor, vec4 diffuseColor,
-        vec4 specularColor, vec4 tempColor);
-    vec3 d3dApplyColorOp(int op, vec3 arg0, vec3 arg1, float arg1Alpha, vec3 arg2,
-        vec4 textureColor, vec4 currentColor, vec4 diffuseColor) {
-      if (op == 2) {
-        return arg1;
-      }
-      if (op == 3) {
-        return arg2;
-      }
-      if (op == 4) {
-        return arg1 * arg2;
-      }
-      if (op == 5) {
-        return clamp(arg1 * arg2 * 2.0, 0.0, 1.0);
-      }
-      if (op == 6) {
-        return clamp(arg1 * arg2 * 4.0, 0.0, 1.0);
-      }
-      if (op == 7) {
-        return clamp(arg1 + arg2, 0.0, 1.0);
-      }
-      if (op == 8) {
-        return clamp(arg1 + arg2 - vec3(0.5), 0.0, 1.0);
-      }
-      if (op == 9) {
-        return clamp((arg1 + arg2 - vec3(0.5)) * 2.0, 0.0, 1.0);
-      }
-      if (op == 10) {
-        return clamp(arg1 - arg2, 0.0, 1.0);
-      }
-      if (op == 11) {
-        return clamp(arg1 + arg2 - arg1 * arg2, 0.0, 1.0);
-      }
-      if (op == 12 || op == 13 || op == 14 || op == 16) {
-        float factor = d3dCombinerBlendFactor(op, textureColor, currentColor, diffuseColor);
-        return mix(arg2, arg1, factor);
-      }
-      if (op == 15) {
-        return clamp(arg1 + arg2 * (1.0 - textureColor.a), 0.0, 1.0);
-      }
-      if (op == 18) {
-        return clamp(arg1 + arg1Alpha * arg2, 0.0, 1.0);
-      }
-      if (op == 19) {
-        return clamp(arg1 * arg2 + vec3(arg1Alpha), 0.0, 1.0);
-      }
-      if (op == 20) {
-        return clamp((1.0 - arg1Alpha) * arg2 + arg1, 0.0, 1.0);
-      }
-      if (op == 21) {
-        return clamp((vec3(1.0) - arg1) * arg2 + vec3(arg1Alpha), 0.0, 1.0);
-      }
-      if (op == 24) {
-        return d3dDotProduct3(arg1, arg2);
-      }
-      if (op == 25) {
-        return clamp(arg0 + arg1 * arg2, 0.0, 1.0);
-      }
-      if (op == 26) {
-        return clamp(arg0 * arg1 + (vec3(1.0) - arg0) * arg2, 0.0, 1.0);
-      }
-      return currentColor.rgb;
-    }
-    float d3dApplyAlphaOp(int op, float arg0, float arg1, float arg2,
-        vec4 textureColor, vec4 currentColor, vec4 diffuseColor) {
-      if (op == 2) {
-        return arg1;
-      }
-      if (op == 3) {
-        return arg2;
-      }
-      if (op == 4) {
-        return arg1 * arg2;
-      }
-      if (op == 5) {
-        return clamp(arg1 * arg2 * 2.0, 0.0, 1.0);
-      }
-      if (op == 6) {
-        return clamp(arg1 * arg2 * 4.0, 0.0, 1.0);
-      }
-      if (op == 7) {
-        return clamp(arg1 + arg2, 0.0, 1.0);
-      }
-      if (op == 8) {
-        return clamp(arg1 + arg2 - 0.5, 0.0, 1.0);
-      }
-      if (op == 9) {
-        return clamp((arg1 + arg2 - 0.5) * 2.0, 0.0, 1.0);
-      }
-      if (op == 10) {
-        return clamp(arg1 - arg2, 0.0, 1.0);
-      }
-      if (op == 11) {
-        return clamp(arg1 + arg2 - arg1 * arg2, 0.0, 1.0);
-      }
-      if (op == 12 || op == 13 || op == 14 || op == 16) {
-        float factor = d3dCombinerBlendFactor(op, textureColor, currentColor, diffuseColor);
-        return mix(arg2, arg1, factor);
-      }
-      if (op == 15) {
-        return clamp(arg1 + arg2 * (1.0 - textureColor.a), 0.0, 1.0);
-      }
-      if (op == 25) {
-        return clamp(arg0 + arg1 * arg2, 0.0, 1.0);
-      }
-      if (op == 26) {
-        return clamp(arg0 * arg1 + (1.0 - arg0) * arg2, 0.0, 1.0);
-      }
-      return currentColor.a;
-    }
-    vec3 d3dStage0Color(vec4 diffuseColor, vec4 textureColor, vec4 tempColor) {
-      if (uStage0ColorOp == 1) {
-        return diffuseColor.rgb;
-      }
-      vec3 arg0 = d3dCombinerColorArg(
-        uStage0ColorArg0, textureColor, diffuseColor, diffuseColor, vSpecularColor, tempColor);
-      vec3 arg1 = d3dCombinerColorArg(
-        uStage0ColorArg1, textureColor, diffuseColor, diffuseColor, vSpecularColor, tempColor);
-      float arg1Alpha = d3dCombinerAlphaArg(
-        uStage0ColorArg1, textureColor, diffuseColor, diffuseColor, vSpecularColor, tempColor);
-      vec3 arg2 = d3dCombinerColorArg(
-        uStage0ColorArg2, textureColor, diffuseColor, diffuseColor, vSpecularColor, tempColor);
-      return d3dApplyColorOp(
-        uStage0ColorOp, arg0, arg1, arg1Alpha, arg2, textureColor, diffuseColor, diffuseColor);
-    }
-    float d3dCombinerAlphaArg(int arg, vec4 textureColor, vec4 currentColor, vec4 diffuseColor,
-        vec4 specularColor, vec4 tempColor) {
-      vec4 source = d3dCombinerSource(arg, textureColor, currentColor, diffuseColor, specularColor, tempColor);
-      float value = source.a;
-      if ((arg & 16) != 0) {
-        value = 1.0 - value;
-      }
-      return value;
-    }
-    float d3dStage0Alpha(vec4 diffuseColor, vec4 textureColor, vec4 tempColor) {
-      if (uStage0AlphaOp == 1) {
-        return diffuseColor.a;
-      }
-      float arg0 = d3dCombinerAlphaArg(
-        uStage0AlphaArg0, textureColor, diffuseColor, diffuseColor, vSpecularColor, tempColor);
-      float arg1 = d3dCombinerAlphaArg(
-        uStage0AlphaArg1, textureColor, diffuseColor, diffuseColor, vSpecularColor, tempColor);
-      float arg2 = d3dCombinerAlphaArg(
-        uStage0AlphaArg2, textureColor, diffuseColor, diffuseColor, vSpecularColor, tempColor);
-      if (uStage0AlphaOp == 24) {
-        vec3 colorArg1 = d3dCombinerColorArg(
-          uStage0AlphaArg1, textureColor, diffuseColor, diffuseColor, vSpecularColor, tempColor);
-        vec3 colorArg2 = d3dCombinerColorArg(
-          uStage0AlphaArg2, textureColor, diffuseColor, diffuseColor, vSpecularColor, tempColor);
-        return d3dDotProduct3(colorArg1, colorArg2).r;
-      }
-      return d3dApplyAlphaOp(uStage0AlphaOp, arg0, arg1, arg2, textureColor, diffuseColor, diffuseColor);
-    }
-    vec3 d3dStage1Color(vec4 diffuseColor, vec4 textureColor, vec4 currentColor, vec4 tempColor) {
-      if (uStage1ColorOp == 1) {
-        return currentColor.rgb;
-      }
-      vec3 arg0 = d3dCombinerColorArg(
-        uStage1ColorArg0, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
-      vec3 arg1 = d3dCombinerColorArg(
-        uStage1ColorArg1, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
-      float arg1Alpha = d3dCombinerAlphaArg(
-        uStage1ColorArg1, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
-      vec3 arg2 = d3dCombinerColorArg(
-        uStage1ColorArg2, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
-      return d3dApplyColorOp(
-        uStage1ColorOp, arg0, arg1, arg1Alpha, arg2, textureColor, currentColor, diffuseColor);
-    }
-    float d3dStage1Alpha(vec4 diffuseColor, vec4 textureColor, vec4 currentColor, vec4 tempColor) {
-      if (uStage1AlphaOp == 1) {
-        return currentColor.a;
-      }
-      float arg0 = d3dCombinerAlphaArg(
-        uStage1AlphaArg0, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
-      float arg1 = d3dCombinerAlphaArg(
-        uStage1AlphaArg1, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
-      float arg2 = d3dCombinerAlphaArg(
-        uStage1AlphaArg2, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
-      if (uStage1AlphaOp == 24) {
-        vec3 colorArg1 = d3dCombinerColorArg(
-          uStage1AlphaArg1, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
-        vec3 colorArg2 = d3dCombinerColorArg(
-          uStage1AlphaArg2, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
-        return d3dDotProduct3(colorArg1, colorArg2).r;
-      }
-      return d3dApplyAlphaOp(uStage1AlphaOp, arg0, arg1, arg2, textureColor, currentColor, diffuseColor);
-    }
-    // Generic cascade stage used for texture stages 2 and 3. D3D8 stages 2..7
-    // feed the previous stage's result in as CURRENT, exactly like stage 1, so a
-    // single parameterised combiner reproduces every additional stage. The op/arg
-    // selectors arrive as uniforms rather than hard-coded per-stage names.
-    vec3 d3dStageColor(int colorOp, int colorArg0, int colorArg1, int colorArg2,
-        vec4 diffuseColor, vec4 textureColor, vec4 currentColor, vec4 tempColor) {
-      if (colorOp == 1) {
-        return currentColor.rgb;
-      }
-      vec3 arg0 = d3dCombinerColorArg(
-        colorArg0, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
-      vec3 arg1 = d3dCombinerColorArg(
-        colorArg1, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
-      float arg1Alpha = d3dCombinerAlphaArg(
-        colorArg1, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
-      vec3 arg2 = d3dCombinerColorArg(
-        colorArg2, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
-      return d3dApplyColorOp(
-        colorOp, arg0, arg1, arg1Alpha, arg2, textureColor, currentColor, diffuseColor);
-    }
-    float d3dStageAlpha(int alphaOp, int alphaArg0, int alphaArg1, int alphaArg2,
-        vec4 diffuseColor, vec4 textureColor, vec4 currentColor, vec4 tempColor) {
-      if (alphaOp == 1) {
-        return currentColor.a;
-      }
-      float arg0 = d3dCombinerAlphaArg(
-        alphaArg0, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
-      float arg1 = d3dCombinerAlphaArg(
-        alphaArg1, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
-      float arg2 = d3dCombinerAlphaArg(
-        alphaArg2, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
-      if (alphaOp == 24) {
-        vec3 colorArg1 = d3dCombinerColorArg(
-          alphaArg1, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
-        vec3 colorArg2 = d3dCombinerColorArg(
-          alphaArg2, textureColor, currentColor, diffuseColor, vSpecularColor, tempColor);
-        return d3dDotProduct3(colorArg1, colorArg2).r;
-      }
-      return d3dApplyAlphaOp(alphaOp, arg0, arg1, arg2, textureColor, currentColor, diffuseColor);
-    }
-    void main() {
-      for (int index = 0; index < 6; ++index) {
-        if ((uClipPlaneMask & (1 << index)) != 0 && dot(uClipPlanes[index], vClipPosition) < 0.0) {
-          discard;
-        }
-      }
-      vec2 pointTexCoord = gl_PointCoord;
-      vec2 texture0Coord = (uDrawingPoints && uPointSpriteEnable) ? pointTexCoord : vTexCoord0;
-      vec2 texture1Coord = (uDrawingPoints && uPointSpriteEnable) ? pointTexCoord : vTexCoord1;
-      vec4 texture0Color = uUseTexture0
-        ? d3dTextureSample(texture(uTexture0,
-            d3dTextureCoordinate(texture0Coord, uTexture0FlipY), uTexture0LodBias), uTexture0Semantic)
-        : vec4(1.0);
-      vec4 texture1Color = uUseTexture1
-        ? d3dTextureSample(texture(uTexture1,
-            d3dTextureCoordinate(texture1Coord, uTexture1FlipY), uTexture1LodBias), uTexture1Semantic)
-        : vec4(1.0);
-      vec4 texture2Color = uUseTexture2
-        ? d3dTextureSample(texture(uTexture2,
-            d3dTextureCoordinate(vTexCoord2, uTexture2FlipY), uTexture2LodBias), uTexture2Semantic)
-        : vec4(1.0);
-      vec4 texture3Color = uUseTexture3
-        ? d3dTextureSample(texture(uTexture3,
-            d3dTextureCoordinate(vTexCoord3, uTexture3FlipY), uTexture3LodBias), uTexture3Semantic)
-        : vec4(1.0);
-      vec4 diffuseColor = uUseFlatShade ? vFlatColor : vColor;
-      // Stage 0. CURRENT starts as DIFFUSE; TEMP starts cleared. Each stage's
-      // D3DTSS_RESULTARG picks whether its computed value lands in CURRENT
-      // (D3DTA_CURRENT) or TEMP (D3DTA_TEMP == 5), leaving the other register
-      // untouched so it survives into later stages.
-      vec4 stage0ComputedColor = vec4(
-        d3dStage0Color(diffuseColor, texture0Color, vec4(0.0)),
-        d3dStage0Alpha(diffuseColor, texture0Color, vec4(0.0))
-      );
-      vec4 currentColor = uStage0ResultArg == 5 ? diffuseColor : stage0ComputedColor;
-      vec4 tempColor = uStage0ResultArg == 5 ? stage0ComputedColor : vec4(0.0);
-      // Stage 1 (unchanged combiner functions; result now routed through
-      // D3DTSS_RESULTARG so it can feed stage 2 as CURRENT or TEMP).
-      vec4 stage1ComputedColor = vec4(
-        d3dStage1Color(diffuseColor, texture1Color, currentColor, tempColor),
-        d3dStage1Alpha(diffuseColor, texture1Color, currentColor, tempColor)
-      );
-      if (uStage1ResultArg == 5) {
-        tempColor = stage1ComputedColor;
-      } else {
-        currentColor = stage1ComputedColor;
-      }
-      // Stage 2/3 — D3D8 texture-stage CASCADE TERMINATION. Per the D3D8 SDK
-      // (Textures/Blending/TextureBlendingOperations): "You can disable a
-      // texture stage AND ANY SUBSEQUENT texture blending stages in the cascade
-      // by setting the color operation for that stage to D3DTOP_DISABLE." So the
-      // FIRST stage whose colorOp is DISABLE ends the cascade — every higher
-      // stage is ignored regardless of its own (possibly STALE) state. The
-      // engine only resets the stages a given shader uses (terrain is 2-stage,
-      // stops at stage 1), leaving stage 2/3 combiner state from an earlier
-      // 4-stage draw (e.g. river/trapezoid water) resident. Gating stages 2/3
-      // only on their own colorOp let that stale stage-3 combiner (a MODULATE by
-      // a bound water/noise texture) leak onto the next terrain draw and multiply
-      // it toward black — the faceted black holes. Track a cascade-active flag
-      // that goes false at the first DISABLE stage and require it for 2 and 3,
-      // matching hardware and keeping 0/1-only draws byte-for-byte identical.
-      bool cascadeActive = uStage1ColorOp != 1;
-      if (cascadeActive && uStage2ColorOp != 1) {
-        vec4 stage2ComputedColor = vec4(
-          d3dStageColor(uStage2ColorOp, uStage2ColorArg0, uStage2ColorArg1, uStage2ColorArg2,
-            diffuseColor, texture2Color, currentColor, tempColor),
-          d3dStageAlpha(uStage2AlphaOp, uStage2AlphaArg0, uStage2AlphaArg1, uStage2AlphaArg2,
-            diffuseColor, texture2Color, currentColor, tempColor)
-        );
-        if (uStage2ResultArg == 5) {
-          tempColor = stage2ComputedColor;
-        } else {
-          currentColor = stage2ComputedColor;
-        }
-      } else {
-        cascadeActive = false;
-      }
-      // Stage 3 runs only if stages 1 AND 2 both stayed enabled (cascade intact).
-      if (cascadeActive && uStage3ColorOp != 1) {
-        vec4 stage3ComputedColor = vec4(
-          d3dStageColor(uStage3ColorOp, uStage3ColorArg0, uStage3ColorArg1, uStage3ColorArg2,
-            diffuseColor, texture3Color, currentColor, tempColor),
-          d3dStageAlpha(uStage3AlphaOp, uStage3AlphaArg0, uStage3AlphaArg1, uStage3AlphaArg2,
-            diffuseColor, texture3Color, currentColor, tempColor)
-        );
-        if (uStage3ResultArg == 5) {
-          tempColor = stage3ComputedColor;
-        } else {
-          currentColor = stage3ComputedColor;
-        }
-      }
-      vec4 color = currentColor;
-      if (!uAlphaTestEnabled && uImplicitAlphaCutoutThreshold >= 0.0 &&
-          color.a <= uImplicitAlphaCutoutThreshold) {
-        discard;
-      }
-      if (uAlphaTestEnabled && !d3dAlphaCompare(color.a, uAlphaRef)) {
-        discard;
-      }
-      if (uFogEnabled) {
-        float fogDistance = uFogRangeEnabled ? vFogRangeDistance : vFogDepth;
-        float fogAmount = clamp((fogDistance - uFogStart) / max(uFogEnd - uFogStart, 0.000001), 0.0, 1.0);
-        color.rgb = mix(color.rgb, uFogColor, fogAmount);
-      }
-      fragColor = color;
-    }
-  `;
-  d3d8FFFragmentSourceCache = fragmentSource;
-  const fragmentShader = compileShader(gl.FRAGMENT_SHADER, fragmentSource);
-  const program = gl.createProgram();
-  gl.attachShader(program, vertexShader);
-  gl.attachShader(program, fragmentShader);
-  gl.linkProgram(program);
-  gl.deleteShader(vertexShader);
-  gl.deleteShader(fragmentShader);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    const info = gl.getProgramInfoLog(program);
-    gl.deleteProgram(program);
-    throw new Error(`D3D8 bridge program link failed: ${info}`);
-  }
-
-  d3d8DrawProgram = buildD3D8DrawProgramLocations(program);
-  return d3d8DrawProgram;
-}
-
-// Location table shared by the fixed-function draw program and the translated
-// SM1 shader-pair programs (absent uniforms resolve to null; every cached
-// uniform setter tolerates that).
-function buildD3D8DrawProgramLocations(program) {
-  return {
-    program,
-    position: gl.getAttribLocation(program, "aPosition"),
-    normal: gl.getAttribLocation(program, "aNormal"),
-    diffuse: gl.getAttribLocation(program, "aDiffuseBgra"),
-    specular: gl.getAttribLocation(program, "aSpecularBgra"),
-    texCoord0: gl.getAttribLocation(program, "aTexCoord0"),
-    texCoord1: gl.getAttribLocation(program, "aTexCoord1"),
-    scale: gl.getUniformLocation(program, "uScale"),
-    useTransforms: gl.getUniformLocation(program, "uUseTransforms"),
-    pretransformedPosition: gl.getUniformLocation(program, "uPretransformedPosition"),
-    d3dViewport: gl.getUniformLocation(program, "uD3DViewport"),
-    world: gl.getUniformLocation(program, "uWorld"),
-    view: gl.getUniformLocation(program, "uView"),
-    projection: gl.getUniformLocation(program, "uProjection"),
-    depthBias: gl.getUniformLocation(program, "uDepthBias"),
-    clipPlaneMask: gl.getUniformLocation(program, "uClipPlaneMask"),
-    clipPlanes: gl.getUniformLocation(program, "uClipPlanes[0]"),
-    useFlatShade: gl.getUniformLocation(program, "uUseFlatShade"),
-    texture0CoordinateMode: gl.getUniformLocation(program, "uTexture0CoordinateMode"),
-    useTexture0Transform: gl.getUniformLocation(program, "uUseTexture0Transform"),
-    texture0Transform: gl.getUniformLocation(program, "uTexture0Transform"),
-    texture0TransformComponentCount: gl.getUniformLocation(program, "uTexture0TransformComponentCount"),
-    texture0TransformProjected: gl.getUniformLocation(program, "uTexture0TransformProjected"),
-    texture1CoordinateMode: gl.getUniformLocation(program, "uTexture1CoordinateMode"),
-    useTexture1Transform: gl.getUniformLocation(program, "uUseTexture1Transform"),
-    texture1Transform: gl.getUniformLocation(program, "uTexture1Transform"),
-    texture1TransformComponentCount: gl.getUniformLocation(program, "uTexture1TransformComponentCount"),
-    texture1TransformProjected: gl.getUniformLocation(program, "uTexture1TransformProjected"),
-    treeShroudGen: gl.getUniformLocation(program, "uTreeShroudGen"),
-    treeShroudOffset: gl.getUniformLocation(program, "uTreeShroudOffset"),
-    treeShroudScale: gl.getUniformLocation(program, "uTreeShroudScale"),
-    texture2CoordinateMode: gl.getUniformLocation(program, "uTexture2CoordinateMode"),
-    texture2CoordSet: gl.getUniformLocation(program, "uTexture2CoordSet"),
-    useTexture2Transform: gl.getUniformLocation(program, "uUseTexture2Transform"),
-    texture2Transform: gl.getUniformLocation(program, "uTexture2Transform"),
-    texture2TransformComponentCount: gl.getUniformLocation(program, "uTexture2TransformComponentCount"),
-    texture2TransformProjected: gl.getUniformLocation(program, "uTexture2TransformProjected"),
-    texture3CoordinateMode: gl.getUniformLocation(program, "uTexture3CoordinateMode"),
-    texture3CoordSet: gl.getUniformLocation(program, "uTexture3CoordSet"),
-    useTexture3Transform: gl.getUniformLocation(program, "uUseTexture3Transform"),
-    texture3Transform: gl.getUniformLocation(program, "uTexture3Transform"),
-    texture3TransformComponentCount: gl.getUniformLocation(program, "uTexture3TransformComponentCount"),
-    texture3TransformProjected: gl.getUniformLocation(program, "uTexture3TransformProjected"),
-    pointSize: gl.getUniformLocation(program, "uPointSize"),
-    pointSizeMin: gl.getUniformLocation(program, "uPointSizeMin"),
-    pointSizeMax: gl.getUniformLocation(program, "uPointSizeMax"),
-    pointScaleEnable: gl.getUniformLocation(program, "uPointScaleEnable"),
-    pointScaleA: gl.getUniformLocation(program, "uPointScaleA"),
-    pointScaleB: gl.getUniformLocation(program, "uPointScaleB"),
-    pointScaleC: gl.getUniformLocation(program, "uPointScaleC"),
-    pointViewportHeight: gl.getUniformLocation(program, "uPointViewportHeight"),
-    lightingEnabled: gl.getUniformLocation(program, "uLightingEnabled"),
-    specularEnabled: gl.getUniformLocation(program, "uSpecularEnabled"),
-    normalizeNormals: gl.getUniformLocation(program, "uNormalizeNormals"),
-    localViewer: gl.getUniformLocation(program, "uLocalViewer"),
-    colorVertexEnabled: gl.getUniformLocation(program, "uColorVertexEnabled"),
-    sceneAmbient: gl.getUniformLocation(program, "uSceneAmbient"),
-    materialDiffuse: gl.getUniformLocation(program, "uMaterialDiffuse"),
-    materialAmbient: gl.getUniformLocation(program, "uMaterialAmbient"),
-    materialSpecular: gl.getUniformLocation(program, "uMaterialSpecular"),
-    materialEmissive: gl.getUniformLocation(program, "uMaterialEmissive"),
-    materialPower: gl.getUniformLocation(program, "uMaterialPower"),
-    diffuseMaterialSource: gl.getUniformLocation(program, "uDiffuseMaterialSource"),
-    specularMaterialSource: gl.getUniformLocation(program, "uSpecularMaterialSource"),
-    ambientMaterialSource: gl.getUniformLocation(program, "uAmbientMaterialSource"),
-    emissiveMaterialSource: gl.getUniformLocation(program, "uEmissiveMaterialSource"),
-    fixedLightCount: gl.getUniformLocation(program, "uFixedLightCount"),
-    fixedLightType: gl.getUniformLocation(program, "uFixedLightType[0]"),
-    fixedLightDiffuse: gl.getUniformLocation(program, "uFixedLightDiffuse[0]"),
-    fixedLightSpecular: gl.getUniformLocation(program, "uFixedLightSpecular[0]"),
-    fixedLightAmbient: gl.getUniformLocation(program, "uFixedLightAmbient[0]"),
-    fixedLightPosition: gl.getUniformLocation(program, "uFixedLightPosition[0]"),
-    fixedLightDirection: gl.getUniformLocation(program, "uFixedLightDirection[0]"),
-    fixedLightRangeAttenuation: gl.getUniformLocation(program, "uFixedLightRangeAttenuation[0]"),
-    fixedLightSpot: gl.getUniformLocation(program, "uFixedLightSpot[0]"),
-    useTexture0: gl.getUniformLocation(program, "uUseTexture0"),
-    drawingPoints: gl.getUniformLocation(program, "uDrawingPoints"),
-    pointSpriteEnable: gl.getUniformLocation(program, "uPointSpriteEnable"),
-    texture0: gl.getUniformLocation(program, "uTexture0"),
-    texture0LodBias: gl.getUniformLocation(program, "uTexture0LodBias"),
-    texture0Semantic: gl.getUniformLocation(program, "uTexture0Semantic"),
-    texture0FlipY: gl.getUniformLocation(program, "uTexture0FlipY"),
-    useTexture1: gl.getUniformLocation(program, "uUseTexture1"),
-    texture1: gl.getUniformLocation(program, "uTexture1"),
-    texture1LodBias: gl.getUniformLocation(program, "uTexture1LodBias"),
-    texture1Semantic: gl.getUniformLocation(program, "uTexture1Semantic"),
-    texture1FlipY: gl.getUniformLocation(program, "uTexture1FlipY"),
-    useTexture2: gl.getUniformLocation(program, "uUseTexture2"),
-    texture2: gl.getUniformLocation(program, "uTexture2"),
-    texture2LodBias: gl.getUniformLocation(program, "uTexture2LodBias"),
-    texture2Semantic: gl.getUniformLocation(program, "uTexture2Semantic"),
-    texture2FlipY: gl.getUniformLocation(program, "uTexture2FlipY"),
-    useTexture3: gl.getUniformLocation(program, "uUseTexture3"),
-    texture3: gl.getUniformLocation(program, "uTexture3"),
-    texture3LodBias: gl.getUniformLocation(program, "uTexture3LodBias"),
-    texture3Semantic: gl.getUniformLocation(program, "uTexture3Semantic"),
-    texture3FlipY: gl.getUniformLocation(program, "uTexture3FlipY"),
-    textureFactor: gl.getUniformLocation(program, "uTextureFactor"),
-    stage0ColorOp: gl.getUniformLocation(program, "uStage0ColorOp"),
-    stage0ColorArg0: gl.getUniformLocation(program, "uStage0ColorArg0"),
-    stage0ColorArg1: gl.getUniformLocation(program, "uStage0ColorArg1"),
-    stage0ColorArg2: gl.getUniformLocation(program, "uStage0ColorArg2"),
-    stage0AlphaOp: gl.getUniformLocation(program, "uStage0AlphaOp"),
-    stage0AlphaArg0: gl.getUniformLocation(program, "uStage0AlphaArg0"),
-    stage0AlphaArg1: gl.getUniformLocation(program, "uStage0AlphaArg1"),
-    stage0AlphaArg2: gl.getUniformLocation(program, "uStage0AlphaArg2"),
-    stage0ResultArg: gl.getUniformLocation(program, "uStage0ResultArg"),
-    stage1ColorOp: gl.getUniformLocation(program, "uStage1ColorOp"),
-    stage1ColorArg0: gl.getUniformLocation(program, "uStage1ColorArg0"),
-    stage1ColorArg1: gl.getUniformLocation(program, "uStage1ColorArg1"),
-    stage1ColorArg2: gl.getUniformLocation(program, "uStage1ColorArg2"),
-    stage1AlphaOp: gl.getUniformLocation(program, "uStage1AlphaOp"),
-    stage1AlphaArg0: gl.getUniformLocation(program, "uStage1AlphaArg0"),
-    stage1AlphaArg1: gl.getUniformLocation(program, "uStage1AlphaArg1"),
-    stage1AlphaArg2: gl.getUniformLocation(program, "uStage1AlphaArg2"),
-    stage1ResultArg: gl.getUniformLocation(program, "uStage1ResultArg"),
-    stage2ColorOp: gl.getUniformLocation(program, "uStage2ColorOp"),
-    stage2ColorArg0: gl.getUniformLocation(program, "uStage2ColorArg0"),
-    stage2ColorArg1: gl.getUniformLocation(program, "uStage2ColorArg1"),
-    stage2ColorArg2: gl.getUniformLocation(program, "uStage2ColorArg2"),
-    stage2AlphaOp: gl.getUniformLocation(program, "uStage2AlphaOp"),
-    stage2AlphaArg0: gl.getUniformLocation(program, "uStage2AlphaArg0"),
-    stage2AlphaArg1: gl.getUniformLocation(program, "uStage2AlphaArg1"),
-    stage2AlphaArg2: gl.getUniformLocation(program, "uStage2AlphaArg2"),
-    stage2ResultArg: gl.getUniformLocation(program, "uStage2ResultArg"),
-    stage3ColorOp: gl.getUniformLocation(program, "uStage3ColorOp"),
-    stage3ColorArg0: gl.getUniformLocation(program, "uStage3ColorArg0"),
-    stage3ColorArg1: gl.getUniformLocation(program, "uStage3ColorArg1"),
-    stage3ColorArg2: gl.getUniformLocation(program, "uStage3ColorArg2"),
-    stage3AlphaOp: gl.getUniformLocation(program, "uStage3AlphaOp"),
-    stage3AlphaArg0: gl.getUniformLocation(program, "uStage3AlphaArg0"),
-    stage3AlphaArg1: gl.getUniformLocation(program, "uStage3AlphaArg1"),
-    stage3AlphaArg2: gl.getUniformLocation(program, "uStage3AlphaArg2"),
-    stage3ResultArg: gl.getUniformLocation(program, "uStage3ResultArg"),
-    alphaTestEnabled: gl.getUniformLocation(program, "uAlphaTestEnabled"),
-    alphaFunc: gl.getUniformLocation(program, "uAlphaFunc"),
-    alphaRef: gl.getUniformLocation(program, "uAlphaRef"),
-    implicitAlphaCutoutThreshold: gl.getUniformLocation(program, "uImplicitAlphaCutoutThreshold"),
-    fogEnabled: gl.getUniformLocation(program, "uFogEnabled"),
-    fogRangeEnabled: gl.getUniformLocation(program, "uFogRangeEnabled"),
-    fogColor: gl.getUniformLocation(program, "uFogColor"),
-    fogStart: gl.getUniformLocation(program, "uFogStart"),
-    fogEnd: gl.getUniformLocation(program, "uFogEnd"),
-  };
-}
-
-// --- D3D8 SM1 (vs.1.1 / ps.1.x) token stream -> GLSL ES 3.00 translation ---
-// The wasm shim registers each CreatePixelShader/CreateVertexShader token
-// stream here (cncPortD3D8ShaderCreate). Streams are parsed to a small IR at
-// registration; GLSL is emitted per linked (vertexShader, pixelShader) pair so
-// the varying interface can adapt (fixed-function vertex stage feeding a
-// translated fragment stage vs a fully translated pair). Semantics follow the
-// DirectX 8.1 SDK shader reference (assets/docs/graphics/dx8-sdk-docs);
-// bytecode layout cross-checked against WineD3D's SM1 frontend.
-
-const D3D8_SM1_OPCODES = new Map([
-  [0, { name: "nop", dst: 0, srcs: 0 }],
-  [1, { name: "mov", dst: 1, srcs: 1 }],
-  [2, { name: "add", dst: 1, srcs: 2 }],
-  [3, { name: "sub", dst: 1, srcs: 2 }],
-  [4, { name: "mad", dst: 1, srcs: 3 }],
-  [5, { name: "mul", dst: 1, srcs: 2 }],
-  [6, { name: "rcp", dst: 1, srcs: 1 }],
-  [7, { name: "rsq", dst: 1, srcs: 1 }],
-  [8, { name: "dp3", dst: 1, srcs: 2 }],
-  [9, { name: "dp4", dst: 1, srcs: 2 }],
-  [10, { name: "min", dst: 1, srcs: 2 }],
-  [11, { name: "max", dst: 1, srcs: 2 }],
-  [12, { name: "slt", dst: 1, srcs: 2 }],
-  [13, { name: "sge", dst: 1, srcs: 2 }],
-  [14, { name: "exp", dst: 1, srcs: 1 }],
-  [15, { name: "log", dst: 1, srcs: 1 }],
-  [16, { name: "lit", dst: 1, srcs: 1 }],
-  [17, { name: "dst", dst: 1, srcs: 2 }],
-  [18, { name: "lrp", dst: 1, srcs: 3 }],
-  [19, { name: "frc", dst: 1, srcs: 1 }],
-  [20, { name: "m4x4", dst: 1, srcs: 2 }],
-  [21, { name: "m4x3", dst: 1, srcs: 2 }],
-  [22, { name: "m3x4", dst: 1, srcs: 2 }],
-  [23, { name: "m3x3", dst: 1, srcs: 2 }],
-  [24, { name: "m3x2", dst: 1, srcs: 2 }],
-  [64, { name: "texcoord", dst: 1, srcs: 0 }],
-  [65, { name: "texkill", dst: 1, srcs: 0 }],
-  [66, { name: "tex", dst: 1, srcs: 0 }],
-  [67, { name: "texbem", dst: 1, srcs: 1 }],
-  [68, { name: "texbeml", dst: 1, srcs: 1 }],
-  [78, { name: "expp", dst: 1, srcs: 1 }],
-  [79, { name: "logp", dst: 1, srcs: 1 }],
-  [80, { name: "cnd", dst: 1, srcs: 3 }],
-  [81, { name: "def", dst: 1, srcs: 0, floats: 4 }],
-  [88, { name: "cmp", dst: 1, srcs: 3 }],
-]);
-
-function d3d8SM1DecodeParam(token) {
-  return {
-    regType: (token >>> 28) & 0x7,
-    regNum: token & 0x7ff,
-    // Destination fields
-    writeMask: (token >>> 16) & 0xf,
-    shift: (token >>> 24) & 0xf,
-    saturate: (token & 0x00100000) !== 0,
-    // Source fields
-    swizzle: (token >>> 16) & 0xff,
-    modifier: (token >>> 24) & 0xf,
-    relative: (token & 0x2000) !== 0,
-  };
-}
-
-// Parses a D3D8 SM1 token stream to IR. Returns null (with a console warning)
-// for anything outside the supported subset so the shim can report failure
-// and the engine can take its original fixed-function fallback.
-function parseD3D8SM1Tokens(tokens) {
-  if (!tokens || tokens.length < 2) {
-    return null;
-  }
-  const version = tokens[0] >>> 0;
-  const versionKind = (version & 0xffff0000) >>> 0;
-  const isPixel = versionKind === 0xffff0000;
-  const isVertex = versionKind === 0xfffe0000;
-  if (!isPixel && !isVertex) {
-    return null;
-  }
-  const major = (version >>> 8) & 0xff;
-  const minor = version & 0xff;
-  if (major !== 1) {
-    console.warn(`D3D8 SM1: unsupported shader model ${major}.${minor}`);
-    return null;
-  }
-  if (isPixel && minor >= 4) {
-    // ps.1.4 has phase/texld semantics this translator does not model; the
-    // shipped Generals/Zero Hour corpus is entirely ps.1.1.
-    console.warn("D3D8 SM1: ps.1.4 shaders are not supported");
-    return null;
-  }
-  const instructions = [];
-  let index = 1;
-  while (index < tokens.length) {
-    const token = tokens[index] >>> 0;
-    if (token === 0x0000ffff) {
-      return { isPixel, major, minor, instructions };
-    }
-    if ((token & 0xffff) === 0xfffe) { // comment block
-      index += 1 + ((token >>> 16) & 0x7fff);
-      continue;
-    }
-    const opcode = token & 0xffff;
-    const info = D3D8_SM1_OPCODES.get(opcode);
-    if (!info) {
-      console.warn(`D3D8 SM1: unsupported opcode ${opcode}`);
-      return null;
-    }
-    const instruction = {
-      opcode,
-      name: info.name,
-      coissue: (token & 0x40000000) !== 0,
-      dst: null,
-      srcs: [],
-      floats: null,
-    };
-    index += 1;
-    if (info.dst) {
-      instruction.dst = d3d8SM1DecodeParam(tokens[index] >>> 0);
-      index += 1;
-    }
-    for (let s = 0; s < info.srcs; s += 1) {
-      instruction.srcs.push(d3d8SM1DecodeParam(tokens[index] >>> 0));
-      index += 1;
-    }
-    if (info.floats) {
-      const floatView = new Float32Array(tokens.buffer, tokens.byteOffset + index * 4, info.floats);
-      instruction.floats = Array.from(floatView);
-      index += info.floats;
-    }
-    instructions.push(instruction);
-  }
-  console.warn("D3D8 SM1: token stream missing END token");
-  return null;
-}
-
-const D3D8_SM1_COMPONENTS = ["x", "y", "z", "w"];
-
-function d3d8SM1SwizzleSuffix(swizzle) {
-  if (swizzle === 0xe4) {
-    return "";
-  }
-  let suffix = ".";
-  for (let c = 0; c < 4; c += 1) {
-    suffix += D3D8_SM1_COMPONENTS[(swizzle >>> (c * 2)) & 0x3];
-  }
-  return suffix;
-}
-
-function d3d8SM1WriteMaskSuffix(mask) {
-  let suffix = "";
-  for (let c = 0; c < 4; c += 1) {
-    if (mask & (1 << c)) {
-      suffix += D3D8_SM1_COMPONENTS[c];
-    }
-  }
-  return suffix;
-}
-
-// Source register value expression (before swizzle/modifier), per shader kind.
-function d3d8SM1RegisterExpr(param, ctx) {
-  const n = param.regNum;
-  if (ctx.isPixel) {
-    switch (param.regType) {
-      case 0: return `psR${n}`;
-      case 1: return `psV${n}`;
-      case 2:
-        ctx.usedConstants.add(n);
-        return ctx.defConstants.has(n) ? `psC${n}` : `uPsConst[${n}]`;
-      case 3:
-        ctx.usedTexRegisters.add(n);
-        return `psT${n}`;
-      default:
-        throw new Error(`ps: unsupported source register type ${param.regType}`);
-    }
-  }
-  switch (param.regType) {
-    case 0: ctx.usedTemps.add(n); return `vsR${n}`;
-    case 1: ctx.usedInputs.add(n); return `vsV${n}`;
-    case 2:
-      if (param.relative) {
-        ctx.usesAddress = true;
-        return `uVsConst[vsA0 + ${n}]`;
-      }
-      return `uVsConst[${n}]`;
-    case 3: ctx.usesAddress = true; return "vec4(float(vsA0))";
-    default:
-      throw new Error(`vs: unsupported source register type ${param.regType}`);
-  }
-}
-
-// vs matrix macros need the constant register file with an offset applied.
-function d3d8SM1OffsetConstExpr(param, offset) {
-  if (param.regType !== 2) {
-    throw new Error("SM1 matrix op source must be a constant register");
-  }
-  if (param.relative) {
-    return `uVsConst[vsA0 + ${param.regNum + offset}]`;
-  }
-  return `uVsConst[${param.regNum + offset}]`;
-}
-
-function d3d8SM1SourceExpr(param, ctx) {
-  let expr = d3d8SM1RegisterExpr(param, ctx) + d3d8SM1SwizzleSuffix(param.swizzle);
-  switch (param.modifier) {
-    case 0: break;
-    case 1: expr = `(-(${expr}))`; break;                        // negate
-    case 2: expr = `((${expr}) - 0.5)`; break;                   // bias
-    case 3: expr = `(-((${expr}) - 0.5))`; break;                // bias + negate
-    case 4: expr = `(((${expr}) - 0.5) * 2.0)`; break;           // _bx2 (signed scale)
-    case 5: expr = `(-(((${expr}) - 0.5) * 2.0))`; break;        // _bx2 + negate
-    case 6: expr = `(1.0 - (${expr}))`; break;                   // complement
-    case 7: expr = `((${expr}) * 2.0)`; break;                   // _x2 (ps.1.4)
-    case 8: expr = `(-((${expr}) * 2.0))`; break;                // _x2 + negate
-    default:
-      throw new Error(`SM1: unsupported source modifier ${param.modifier}`);
-  }
-  return expr;
-}
-
-function d3d8SM1ArithmeticExpr(instruction, ctx) {
-  const s = instruction.srcs.map((src) => d3d8SM1SourceExpr(src, ctx));
-  switch (instruction.name) {
-    case "mov": return s[0];
-    case "add": return `(${s[0]} + ${s[1]})`;
-    case "sub": return `(${s[0]} - ${s[1]})`;
-    case "mul": return `(${s[0]} * ${s[1]})`;
-    case "mad": return `(${s[0]} * ${s[1]} + ${s[2]})`;
-    case "dp3": return `vec4(dot((${s[0]}).xyz, (${s[1]}).xyz))`;
-    case "dp4": return `vec4(dot(${s[0]}, ${s[1]}))`;
-    case "min": return `min(${s[0]}, ${s[1]})`;
-    case "max": return `max(${s[0]}, ${s[1]})`;
-    case "slt": return `vec4(lessThan(${s[0]}, ${s[1]}))`;
-    case "sge": return `vec4(greaterThanEqual(${s[0]}, ${s[1]}))`;
-    case "frc": return `fract(${s[0]})`;
-    case "rcp": return `vec4(1.0 / (${s[0]}).x)`;
-    case "rsq": return `vec4(inversesqrt(max(abs((${s[0]}).x), 1.0e-12)))`;
-    case "exp": case "expp": return `vec4(exp2((${s[0]}).x))`;
-    case "log": case "logp": return `vec4(log2(max(abs((${s[0]}).x), 1.0e-12)))`;
-    case "dst": return `vec4(1.0, (${s[0]}).y * (${s[1]}).y, (${s[0]}).z, (${s[1]}).w)`;
-    case "lit": return `d3dSM1Lit(${s[0]})`;
-    // lrp d, s0, s1, s2 = s0*s1 + (1-s0)*s2
-    case "lrp": return `mix(${s[2]}, ${s[1]}, ${s[0]})`;
-    // cnd d, s0, s1, s2 = s0 > 0.5 ? s1 : s2 (per component)
-    case "cnd": return `mix(${s[2]}, ${s[1]}, vec4(greaterThan(${s[0]}, vec4(0.5))))`;
-    // cmp d, s0, s1, s2 = s0 >= 0 ? s1 : s2 (per component)
-    case "cmp": return `mix(${s[2]}, ${s[1]}, vec4(greaterThanEqual(${s[0]}, vec4(0.0))))`;
-    case "m4x4": {
-      const v = s[0];
-      const c = instruction.srcs[1];
-      return `vec4(dot(${v}, ${d3d8SM1OffsetConstExpr(c, 0)}), dot(${v}, ${d3d8SM1OffsetConstExpr(c, 1)}), ` +
-        `dot(${v}, ${d3d8SM1OffsetConstExpr(c, 2)}), dot(${v}, ${d3d8SM1OffsetConstExpr(c, 3)}))`;
-    }
-    case "m4x3": {
-      const v = s[0];
-      const c = instruction.srcs[1];
-      return `vec4(dot(${v}, ${d3d8SM1OffsetConstExpr(c, 0)}), dot(${v}, ${d3d8SM1OffsetConstExpr(c, 1)}), ` +
-        `dot(${v}, ${d3d8SM1OffsetConstExpr(c, 2)}), 0.0)`;
-    }
-    case "m3x4": {
-      const v = `(${s[0]}).xyz`;
-      const c = instruction.srcs[1];
-      return `vec4(dot(${v}, ${d3d8SM1OffsetConstExpr(c, 0)}.xyz), dot(${v}, ${d3d8SM1OffsetConstExpr(c, 1)}.xyz), ` +
-        `dot(${v}, ${d3d8SM1OffsetConstExpr(c, 2)}.xyz), dot(${v}, ${d3d8SM1OffsetConstExpr(c, 3)}.xyz))`;
-    }
-    case "m3x3": {
-      const v = `(${s[0]}).xyz`;
-      const c = instruction.srcs[1];
-      return `vec4(dot(${v}, ${d3d8SM1OffsetConstExpr(c, 0)}.xyz), dot(${v}, ${d3d8SM1OffsetConstExpr(c, 1)}.xyz), ` +
-        `dot(${v}, ${d3d8SM1OffsetConstExpr(c, 2)}.xyz), 0.0)`;
-    }
-    case "m3x2": {
-      const v = `(${s[0]}).xyz`;
-      const c = instruction.srcs[1];
-      return `vec4(dot(${v}, ${d3d8SM1OffsetConstExpr(c, 0)}.xyz), dot(${v}, ${d3d8SM1OffsetConstExpr(c, 1)}.xyz), 0.0, 0.0)`;
-    }
-    default:
-      throw new Error(`SM1: no expression for ${instruction.name}`);
-  }
-}
-
-function d3d8SM1ApplyDestModifiers(expr, dst) {
-  let out = expr;
-  switch (dst.shift) {
-    case 0: break;
-    case 1: out = `((${out}) * 2.0)`; break;
-    case 2: out = `((${out}) * 4.0)`; break;
-    case 3: out = `((${out}) * 8.0)`; break;
-    case 0xf: out = `((${out}) * 0.5)`; break;
-    case 0xe: out = `((${out}) * 0.25)`; break;
-    case 0xd: out = `((${out}) * 0.125)`; break;
-    default:
-      throw new Error(`SM1: unsupported destination shift ${dst.shift}`);
-  }
-  if (dst.saturate) {
-    out = `clamp(${out}, 0.0, 1.0)`;
-  }
-  return out;
-}
-
-function d3d8SM1DestName(dst, ctx) {
-  if (ctx.isPixel) {
-    switch (dst.regType) {
-      case 0: return `psR${dst.regNum}`;
-      case 3: ctx.usedTexRegisters.add(dst.regNum); return `psT${dst.regNum}`;
-      default:
-        throw new Error(`ps: unsupported destination register type ${dst.regType}`);
-    }
-  }
-  switch (dst.regType) {
-    case 0: ctx.usedTemps.add(dst.regNum); return `vsR${dst.regNum}`;
-    case 3: ctx.usesAddress = true; return "vsA0"; // handled specially by mov
-    case 4:
-      if (dst.regNum === 0) { ctx.writesPosition = true; return "vsOPos"; }
-      if (dst.regNum === 1) { ctx.writesFog = true; return "vsOFog"; }
-      return "vsOPts";
-    case 5: ctx.usedColorOutputs.add(dst.regNum); return `vsOD${dst.regNum}`;
-    case 6: ctx.usedTexOutputs.add(dst.regNum); return `vsOT${dst.regNum}`;
-    default:
-      throw new Error(`vs: unsupported destination register type ${dst.regType}`);
-  }
-}
-
-function d3d8SM1WriteStatement(dst, valueExpr, ctx) {
-  const destName = d3d8SM1DestName(dst, ctx);
-  if (!ctx.isPixel && dst.regType === 3) {
-    // mov a0.x — D3D8 vs.1.1 address loads use floor semantics.
-    return `vsA0 = int(floor((${valueExpr}).x));`;
-  }
-  let finalExpr = d3d8SM1ApplyDestModifiers(valueExpr, dst);
-  if (ctx.isPixel && !dst.saturate) {
-    // ps.1.x register saturation: every arithmetic result is clamped to
-    // [-MaxPixelShaderValue, +MaxPixelShaderValue] (= [-1, 1] per the caps we
-    // report) BEFORE it can be read back. Skipping this lets intermediates
-    // overshoot 1.0 and re-enter later instructions (e.g. the water shaders'
-    // sparkle mad feeding a shroud mul), rendering brighter than hardware.
-    finalExpr = `clamp(${finalExpr}, -1.0, 1.0)`;
-  }
-  if (dst.writeMask === 0xf) {
-    return `${destName} = ${finalExpr};`;
-  }
-  const mask = d3d8SM1WriteMaskSuffix(dst.writeMask);
-  return `${destName}.${mask} = (${finalExpr}).${mask};`;
-}
-
-// Stage texture sample honoring the same semantic/LOD-bias plumbing as the
-// fixed-function fragment stage. Unbound stages sample opaque black (D3D8).
-function d3d8SM1SampleExpr(stage, coordExpr) {
-  return `(uUseTexture${stage} ? d3dTextureSample(texture(uTexture${stage}, ` +
-    `d3dTextureCoordinate(${coordExpr}, uTexture${stage}FlipY), ` +
-    `uTexture${stage}LodBias), uTexture${stage}Semantic) : vec4(0.0, 0.0, 0.0, 1.0))`;
-}
-
-// Emits the pixel-shader instruction body (statement list) for a parsed IR.
-function d3d8SM1EmitPixelBody(ir, ctx) {
-  const lines = [];
-  const instructions = ir.instructions;
-  for (let i = 0; i < instructions.length; i += 1) {
-    const instruction = instructions[i];
-    const stage = instruction.dst ? instruction.dst.regNum : 0;
-    switch (instruction.name) {
-      case "nop":
-        continue;
-      case "def": {
-        ctx.defConstants.set(instruction.dst.regNum, instruction.floats);
-        continue;
-      }
-      case "tex":
-        ctx.usedTexRegisters.add(stage);
-        ctx.sampledStages.add(stage);
-        lines.push(`psT${stage} = ${d3d8SM1SampleExpr(stage, `vTexCoord${stage}`)};`);
-        continue;
-      case "texcoord":
-        ctx.usedTexRegisters.add(stage);
-        lines.push(`psT${stage} = vec4(clamp(vTexCoord${stage}, 0.0, 1.0), 0.0, 1.0);`);
-        continue;
-      case "texkill":
-        lines.push(`if (any(lessThan(vTexCoord${stage}, vec2(0.0)))) { discard; }`);
-        continue;
-      case "texbem":
-      case "texbeml": {
-        ctx.usedTexRegisters.add(stage);
-        ctx.sampledStages.add(stage);
-        ctx.usesBumpEnv = true;
-        const src = d3d8SM1SourceExpr(instruction.srcs[0], ctx);
-        // D3D8 texbem: u' = u + du*M00 + dv*M10, v' = v + du*M01 + dv*M11
-        // with (du, dv) = source.rg and M packed as uBumpEnv[stage] =
-        // (m00, m01, m10, m11).
-        const coord = `(vTexCoord${stage} + vec2(` +
-          `dot(vec2(uBumpEnv[${stage}].x, uBumpEnv[${stage}].z), (${src}).xy), ` +
-          `dot(vec2(uBumpEnv[${stage}].y, uBumpEnv[${stage}].w), (${src}).xy)))`;
-        let sample = d3d8SM1SampleExpr(stage, coord);
-        if (instruction.name === "texbeml") {
-          ctx.usesBumpEnvL = true;
-          sample = `((${sample}) * ((${src}).z * uBumpEnvL[${stage}].x + uBumpEnvL[${stage}].y))`;
-        }
-        lines.push(`psT${stage} = ${sample};`);
-        continue;
-      }
-      default:
-        break;
-    }
-    // Arithmetic. Co-issued pairs (rgb op + alpha op) read their sources
-    // before either result lands, so compute both into temporaries first.
-    const next = instructions[i + 1];
-    if (next && next.coissue && instruction.dst && next.dst) {
-      const exprA = d3d8SM1ArithmeticExpr(instruction, ctx);
-      const exprB = d3d8SM1ArithmeticExpr(next, ctx);
-      lines.push(`vec4 psCo${i}A = ${exprA};`);
-      lines.push(`vec4 psCo${i}B = ${exprB};`);
-      lines.push(d3d8SM1WriteStatement(instruction.dst, `psCo${i}A`, ctx));
-      lines.push(d3d8SM1WriteStatement(next.dst, `psCo${i}B`, ctx));
-      i += 1;
-      continue;
-    }
-    lines.push(d3d8SM1WriteStatement(instruction.dst, d3d8SM1ArithmeticExpr(instruction, ctx), ctx));
-  }
-  return lines;
-}
-
-// Builds the complete fragment shader source for a translated pixel shader.
-// options.translatedVs selects the varying interface: fixed-function vertex
-// pairs get the FF varyings (clip planes, depth fog); translated-vs pairs get
-// the SM1 vertex outputs (oFog-driven fog, no user clip planes).
-function d3d8SM1BuildFragmentSource(psShader, options) {
-  const ctx = {
-    isPixel: true,
-    usedConstants: new Set(),
-    usedTexRegisters: new Set(),
-    sampledStages: new Set(),
-    defConstants: new Map(),
-    usesBumpEnv: false,
-    usesBumpEnvL: false,
-  };
-  const body = d3d8SM1EmitPixelBody(psShader.ir, ctx);
-  const lines = [];
-  lines.push("#version 300 es");
-  lines.push("precision highp float;");
-  lines.push("in vec4 vColor;");
-  lines.push("in vec4 vSpecularColor;");
-  lines.push("flat in vec4 vFlatColor;");
-  for (let stage = 0; stage < 4; stage += 1) {
-    lines.push(`in vec2 vTexCoord${stage};`);
-  }
-  if (options.translatedVs) {
-    if (options.vsWritesFog) {
-      lines.push("in float vVsFog;");
-    }
-  } else {
-    lines.push("in vec4 vClipPosition;");
-    lines.push("in float vFogDepth;");
-    lines.push("in float vFogRangeDistance;");
-    lines.push("uniform int uClipPlaneMask;");
-    lines.push("uniform vec4 uClipPlanes[6];");
-  }
-  lines.push("uniform bool uUseFlatShade;");
-  for (let stage = 0; stage < 4; stage += 1) {
-    lines.push(`uniform bool uUseTexture${stage};`);
-    lines.push(`uniform sampler2D uTexture${stage};`);
-    lines.push(`uniform float uTexture${stage}LodBias;`);
-    lines.push(`uniform int uTexture${stage}Semantic;`);
-    lines.push(`uniform bool uTexture${stage}FlipY;`);
-  }
-  lines.push("uniform vec4 uPsConst[8];");
-  if (ctx.usesBumpEnv) {
-    lines.push("uniform vec4 uBumpEnv[4];");
-  }
-  if (ctx.usesBumpEnvL) {
-    lines.push("uniform vec2 uBumpEnvL[4];");
-  }
-  lines.push("uniform bool uAlphaTestEnabled;");
-  lines.push("uniform int uAlphaFunc;");
-  lines.push("uniform float uAlphaRef;");
-  lines.push("uniform bool uFogEnabled;");
-  lines.push("uniform bool uFogRangeEnabled;");
-  lines.push("uniform vec3 uFogColor;");
-  lines.push("uniform float uFogStart;");
-  lines.push("uniform float uFogEnd;");
-  lines.push("out vec4 fragColor;");
-  lines.push("bool d3dAlphaCompare(float value, float reference) {");
-  lines.push("  if (uAlphaFunc == 1) { return false; }");
-  lines.push("  if (uAlphaFunc == 2) { return value < reference; }");
-  lines.push("  if (uAlphaFunc == 3) { return value == reference; }");
-  lines.push("  if (uAlphaFunc == 4) { return value <= reference; }");
-  lines.push("  if (uAlphaFunc == 5) { return value > reference; }");
-  lines.push("  if (uAlphaFunc == 6) { return value != reference; }");
-  lines.push("  if (uAlphaFunc == 7) { return value >= reference; }");
-  lines.push("  return true;");
-  lines.push("}");
-  lines.push("vec4 d3dTextureSample(vec4 rawSample, int semantic) {");
-  lines.push("  if (semantic == 1) { return vec4(0.0, 0.0, 0.0, rawSample.r); }");
-  lines.push("  if (semantic == 2) { return vec4(rawSample.r, rawSample.r, rawSample.r, 1.0); }");
-  lines.push("  if (semantic == 3) { return vec4(rawSample.r, rawSample.r, rawSample.r, rawSample.g); }");
-  lines.push("  if (semantic == 4) {");
-  lines.push("    vec2 signedBump = clamp((rawSample.rg * 255.0 - 128.0) / 127.0, -1.0, 1.0);");
-  lines.push("    return vec4(signedBump, 0.0, 1.0);");
-  lines.push("  }");
-  lines.push("  return rawSample;");
-  lines.push("}");
-  lines.push("vec2 d3dTextureCoordinate(vec2 coordinate, bool flipY) {");
-  lines.push("  return flipY ? vec2(coordinate.x, 1.0 - coordinate.y) : coordinate;");
-  lines.push("}");
-  lines.push("void main() {");
-  if (!options.translatedVs) {
-    lines.push("  for (int index = 0; index < 6; ++index) {");
-    lines.push("    if ((uClipPlaneMask & (1 << index)) != 0 && dot(uClipPlanes[index], vClipPosition) < 0.0) {");
-    lines.push("      discard;");
-    lines.push("    }");
-    lines.push("  }");
-  }
-  // ps.1.x color inputs are clamped to [0, 1] on read.
-  lines.push("  vec4 psV0 = clamp(uUseFlatShade ? vFlatColor : vColor, 0.0, 1.0);");
-  lines.push("  vec4 psV1 = clamp(vSpecularColor, 0.0, 1.0);");
-  lines.push("  vec4 psR0 = vec4(0.0);");
-  lines.push("  vec4 psR1 = vec4(0.0);");
-  for (const reg of Array.from(ctx.usedTexRegisters).sort()) {
-    lines.push(`  vec4 psT${reg} = vec4(0.0);`);
-  }
-  for (const [reg, values] of ctx.defConstants) {
-    lines.push(`  vec4 psC${reg} = vec4(${values.map((v) => Number(v).toFixed(6)).join(", ")});`);
-  }
-  for (const line of body) {
-    lines.push(`  ${line}`);
-  }
-  lines.push("  vec4 psOut = psR0;");
-  // Fidelity debugging: set globalThis.__cncSM1VisualizeStage = N BEFORE the
-  // shaders are created (page init script) to render fract(vTexCoordN) instead
-  // of the shader result — a direct view of the interpolated texgen coords.
-  const visualizeStage = Number(globalThis.__cncSM1VisualizeStage);
-  if (Number.isInteger(visualizeStage) && visualizeStage >= 0 && visualizeStage <= 3) {
-    lines.push(`  psOut = vec4(fract(vTexCoord${visualizeStage}), 0.0, 1.0);`);
-  }
-  lines.push("  if (uAlphaTestEnabled && !d3dAlphaCompare(psOut.a, uAlphaRef)) {");
-  lines.push("    discard;");
-  lines.push("  }");
-  if (options.translatedVs) {
-    if (options.vsWritesFog) {
-      // With a programmable vertex shader D3D8 fog blends by the oFog factor
-      // directly (1 = unfogged).
-      lines.push("  if (uFogEnabled) {");
-      lines.push("    psOut.rgb = mix(uFogColor, psOut.rgb, clamp(vVsFog, 0.0, 1.0));");
-      lines.push("  }");
-    }
-  } else {
-    lines.push("  if (uFogEnabled) {");
-    lines.push("    float fogDistance = uFogRangeEnabled ? vFogRangeDistance : vFogDepth;");
-    lines.push("    float fogAmount = clamp((fogDistance - uFogStart) / max(uFogEnd - uFogStart, 0.000001), 0.0, 1.0);");
-    lines.push("    psOut.rgb = mix(psOut.rgb, uFogColor, fogAmount);");
-    lines.push("  }");
-  }
-  lines.push("  fragColor = psOut;");
-  lines.push("}");
-  return { source: lines.join("\n"), sampledStages: ctx.sampledStages, usesBumpEnv: ctx.usesBumpEnv };
-}
-
-// D3DVSDT vertex declaration type -> GL attribute pointer description.
-const D3D8_SM1_DECL_TYPES = [
-  { size: 1, glType: "FLOAT", normalized: false, bgra: false },   // FLOAT1
-  { size: 2, glType: "FLOAT", normalized: false, bgra: false },   // FLOAT2
-  { size: 3, glType: "FLOAT", normalized: false, bgra: false },   // FLOAT3
-  { size: 4, glType: "FLOAT", normalized: false, bgra: false },   // FLOAT4
-  { size: 4, glType: "UNSIGNED_BYTE", normalized: true, bgra: true },  // D3DCOLOR
-  { size: 4, glType: "UNSIGNED_BYTE", normalized: false, bgra: false }, // UBYTE4
-  { size: 2, glType: "SHORT", normalized: false, bgra: false },   // SHORT2
-  { size: 4, glType: "SHORT", normalized: false, bgra: false },   // SHORT4
-];
-
-// Builds the complete vertex shader source for a translated SM1 vertex shader.
-function d3d8SM1BuildVertexSource(vsShader) {
-  const ctx = {
-    isPixel: false,
-    usedTemps: new Set(),
-    usedInputs: new Set(),
-    usedColorOutputs: new Set(),
-    usedTexOutputs: new Set(),
-    usesAddress: false,
-    writesPosition: false,
-    writesFog: false,
-  };
-  const body = [];
-  const instructions = vsShader.ir.instructions;
-  for (const instruction of instructions) {
-    if (instruction.name === "nop") {
-      continue;
-    }
-    if (instruction.name === "def") {
-      throw new Error("vs def constants not supported");
-    }
-    body.push(d3d8SM1WriteStatement(instruction.dst, d3d8SM1ArithmeticExpr(instruction, ctx), ctx));
-  }
-  const declByRegister = new Map();
-  for (const entry of vsShader.decl) {
-    declByRegister.set(entry.register, entry);
-  }
-  const lines = [];
-  lines.push("#version 300 es");
-  for (const entry of vsShader.decl) {
-    lines.push(`in vec4 aVs${entry.register};`);
-  }
-  lines.push("uniform vec4 uVsConst[96];");
-  lines.push("uniform float uDepthBias;");
-  // Full fixed-function varying interface: a translated vertex shader must
-  // link against BOTH translated fragments and the FF fragment cascade (the
-  // shipped tree path is Trees.vso + FF pixel stages), and the FF fragment
-  // statically reads vClipPosition/vFogDepth/vFogRangeDistance.
-  lines.push("out vec4 vColor;");
-  lines.push("out vec4 vSpecularColor;");
-  lines.push("flat out vec4 vFlatColor;");
-  for (let stage = 0; stage < 4; stage += 1) {
-    lines.push(`out vec2 vTexCoord${stage};`);
-  }
-  lines.push("out vec4 vClipPosition;");
-  lines.push("out float vFogDepth;");
-  lines.push("out float vFogRangeDistance;");
-  if (ctx.writesFog) {
-    lines.push("out float vVsFog;");
-  }
-  lines.push("vec4 d3dSM1Lit(vec4 src) {");
-  lines.push("  float power = clamp(src.w, -127.9961, 127.9961);");
-  lines.push("  float specular = src.x > 0.0 ? pow(max(src.y, 0.0), power) : 0.0;");
-  lines.push("  return vec4(1.0, max(src.x, 0.0), specular, 1.0);");
-  lines.push("}");
-  lines.push("void main() {");
-  for (const entry of vsShader.decl) {
-    const type = D3D8_SM1_DECL_TYPES[entry.type];
-    lines.push(`  vec4 vsV${entry.register} = aVs${entry.register}${type && type.bgra ? ".bgra" : ""};`);
-  }
-  for (const reg of Array.from(ctx.usedInputs).sort()) {
-    if (!declByRegister.has(reg)) {
-      lines.push(`  vec4 vsV${reg} = vec4(0.0, 0.0, 0.0, 1.0);`);
-    }
-  }
-  for (const reg of Array.from(ctx.usedTemps).sort()) {
-    lines.push(`  vec4 vsR${reg} = vec4(0.0);`);
-  }
-  if (ctx.usesAddress) {
-    lines.push("  int vsA0 = 0;");
-  }
-  lines.push("  vec4 vsOPos = vec4(0.0);");
-  lines.push("  vec4 vsOPts = vec4(0.0);");
-  lines.push("  vec4 vsOFog = vec4(1.0);");
-  lines.push("  vec4 vsOD0 = vec4(1.0);");
-  lines.push("  vec4 vsOD1 = vec4(0.0);");
-  for (const reg of Array.from(ctx.usedTexOutputs).sort()) {
-    lines.push(`  vec4 vsOT${reg} = vec4(0.0);`);
-  }
-  for (const line of body) {
-    lines.push(`  ${line}`);
-  }
-  // D3D clip space -> GL clip space (z in [0,w] -> [-w,w]), matching the
-  // fixed-function vertex stage, including the shim depth-bias convention.
-  lines.push("  gl_Position = vec4(vsOPos.x, vsOPos.y, vsOPos.z * 2.0 - vsOPos.w, vsOPos.w);");
-  lines.push("  gl_Position.z -= uDepthBias * gl_Position.w;");
-  lines.push("  vColor = clamp(vsOD0, 0.0, 1.0);");
-  lines.push("  vFlatColor = vColor;");
-  lines.push("  vSpecularColor = clamp(vsOD1, 0.0, 1.0);");
-  for (let stage = 0; stage < 4; stage += 1) {
-    lines.push(ctx.usedTexOutputs.has(stage)
-      ? `  vTexCoord${stage} = vsOT${stage}.xy;`
-      : `  vTexCoord${stage} = vec2(0.0);`);
-  }
-  // Zeroed FF-interface varyings: user clip planes evaluate to dot(plane, 0)
-  // == 0 (no discard) and linear fog to amount 0 (matching D3D8, where a
-  // vertex shader that does not write oFog produces unfogged output).
-  lines.push("  vClipPosition = vec4(0.0);");
-  lines.push("  vFogDepth = 0.0;");
-  lines.push("  vFogRangeDistance = 0.0;");
-  if (ctx.writesFog) {
-    lines.push("  vVsFog = vsOFog.x;");
-  }
-  lines.push("}");
-  return { source: lines.join("\n"), writesFog: ctx.writesFog };
-}
-
-// Registration entry point for the wasm shim (Module.cncPortD3D8ShaderCreate).
-function registerD3D8SM1Shader(spec) {
-  try {
-    const ir = parseD3D8SM1Tokens(spec.tokens);
-    if (!ir || ir.isPixel !== Boolean(spec.isPixel)) {
-      return false;
-    }
-    if (ir.isPixel) {
-      const shader = { handle: spec.handle, ir };
-      // Validate translation eagerly: build (and discard) the FF-vertex-pair
-      // fragment source so unsupported constructs fail at create time.
-      d3d8SM1BuildFragmentSource(shader, { translatedVs: false, vsWritesFog: false });
-      d3d8SM1PixelShaders.set(spec.handle, shader);
-      d3d8SM1MostRecentPixelHandle = spec.handle;
-      d3d8PerfStats.sm1PixelShadersRegistered += 1;
-      // Warm the likely pairings so first use never compiles mid-frame: the
-      // FF-vertex pair (terrain/roads/water/BW filter) and, when a vertex
-      // shader was just created (Trees.vso -> Trees.pso), the translated-vs
-      // pair. The reverse order (wave.pso -> wave.vso) is warmed at vertex
-      // registration below.
-      if (gl) {
-        ensureD3D8ShaderPairProgram(0, spec.handle);
-        if (d3d8SM1MostRecentVertexHandle !== 0) {
-          ensureD3D8ShaderPairProgram(d3d8SM1MostRecentVertexHandle, spec.handle);
-        }
-      }
-      return true;
-    }
-    const decl = [];
-    if (spec.declTriples) {
-      for (let index = 0; index + 2 < spec.declTriples.length; index += 3) {
-        decl.push({
-          register: spec.declTriples[index] >>> 0,
-          type: spec.declTriples[index + 1] >>> 0,
-          offset: spec.declTriples[index + 2] >>> 0,
-        });
-      }
-    }
-    if (decl.length === 0) {
-      return false;
-    }
-    for (const entry of decl) {
-      if (!D3D8_SM1_DECL_TYPES[entry.type]) {
-        console.warn(`D3D8 SM1: unsupported vertex declaration type ${entry.type}`);
-        return false;
-      }
-    }
-    const shader = { handle: spec.handle, ir, decl };
-    d3d8SM1BuildVertexSource(shader); // eager validation
-    d3d8SM1VertexShaders.set(spec.handle, shader);
-    d3d8SM1MostRecentVertexHandle = spec.handle;
-    d3d8PerfStats.sm1VertexShadersRegistered += 1;
-    // Warm the translated-vs + FF-pixel pair (the shipped tree path draws
-    // with the vertex shader alone — its SetPixelShader call is #if 0'd out)
-    // and the just-created-pixel pair (W3DWater creates wave.pso BEFORE
-    // wave.vso, so the ps-side warm-up above can't see this vs yet).
-    if (gl) {
-      ensureD3D8ShaderPairProgram(spec.handle, 0);
-      if (d3d8SM1MostRecentPixelHandle !== 0) {
-        ensureD3D8ShaderPairProgram(spec.handle, d3d8SM1MostRecentPixelHandle);
-      }
-    }
-    return true;
-  } catch (error) {
-    console.warn(`D3D8 SM1: shader registration failed: ${error?.message ?? error}`);
-    return false;
-  }
-}
-
-function deleteD3D8SM1Shader(isPixel, handle) {
-  if (isPixel) {
-    d3d8SM1PixelShaders.delete(handle);
-    if (d3d8SM1MostRecentPixelHandle === handle) {
-      d3d8SM1MostRecentPixelHandle = 0;
-    }
-  } else {
-    d3d8SM1VertexShaders.delete(handle);
-    if (d3d8SM1MostRecentVertexHandle === handle) {
-      d3d8SM1MostRecentVertexHandle = 0;
-    }
-  }
-  for (const [key, entry] of Array.from(d3d8SM1PairPrograms)) {
-    if ((isPixel && entry.psHandle === handle) || (!isPixel && entry.vsHandle === handle)) {
-      if (entry.program && gl) {
-        gl.deleteProgram(entry.program.program);
-      }
-      d3d8SM1PairPrograms.delete(key);
-    }
-  }
-}
-
-// Linked program for a (vertexShader, pixelShader) pair. Handle 0 on either
-// side selects the corresponding fixed-function stage: FF vertex + translated
-// pixel (terrain/roads/water/BW filter) or translated vertex + FF pixel
-// cascade (the shipped tree path — Trees.vso with the tree pixel shader
-// #if 0'd out). Returns null when the pair cannot be built (the caller falls
-// back to the fixed-function program and counts it).
-function ensureD3D8ShaderPairProgram(vsHandle, psHandle) {
-  if (!gl || (psHandle === 0 && vsHandle === 0)) {
-    return null;
-  }
-  const key = `${vsHandle}|${psHandle}`;
-  const cached = d3d8SM1PairPrograms.get(key);
-  if (cached !== undefined) {
-    return cached.program;
-  }
-  let entry = { vsHandle, psHandle, program: null };
-  d3d8SM1PairPrograms.set(key, entry);
-  const psShader = psHandle !== 0 ? d3d8SM1PixelShaders.get(psHandle) : null;
-  if (psHandle !== 0 && !psShader) {
-    return null;
-  }
-  let vsSource = null;
-  let vsShader = null;
-  if (vsHandle === 0) {
-    ensureD3D8DrawProgram();
-    vsSource = d3d8FFVertexSourceCache;
-  } else {
-    vsShader = d3d8SM1VertexShaders.get(vsHandle);
-    if (!vsShader) {
-      return null;
-    }
-  }
-  try {
-    let vsBuild = null;
-    if (vsShader) {
-      vsBuild = d3d8SM1BuildVertexSource(vsShader);
-      vsSource = vsBuild.source;
-    }
-    let fsBuild;
-    if (psShader) {
-      fsBuild = d3d8SM1BuildFragmentSource(psShader, {
-        translatedVs: Boolean(vsShader),
-        vsWritesFog: Boolean(vsBuild?.writesFog),
-      });
-    } else {
-      // Translated vertex + fixed-function pixel cascade: reuse the FF
-      // fragment verbatim (uniform-driven texture stages, alpha test, fog).
-      ensureD3D8DrawProgram();
-      fsBuild = { source: d3d8FFFragmentSourceCache, sampledStages: null, usesBumpEnv: false };
-    }
-    const vertexShader = compileShader(gl.VERTEX_SHADER, vsSource);
-    const fragmentShader = compileShader(gl.FRAGMENT_SHADER, fsBuild.source);
-    const program = gl.createProgram();
-    gl.attachShader(program, vertexShader);
-    gl.attachShader(program, fragmentShader);
-    gl.linkProgram(program);
-    gl.deleteShader(vertexShader);
-    gl.deleteShader(fragmentShader);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      const info = gl.getProgramInfoLog(program);
-      gl.deleteProgram(program);
-      throw new Error(`link failed: ${info}`);
-    }
-    const bridgeProgram = buildD3D8DrawProgramLocations(program);
-    bridgeProgram.psConst = gl.getUniformLocation(program, "uPsConst[0]");
-    bridgeProgram.bumpEnv = gl.getUniformLocation(program, "uBumpEnv[0]");
-    bridgeProgram.bumpEnvL = gl.getUniformLocation(program, "uBumpEnvL[0]");
-    bridgeProgram.vsConst = gl.getUniformLocation(program, "uVsConst[0]");
-    bridgeProgram.sm1Pair = true;
-    bridgeProgram.sm1PsHandle = psHandle;
-    bridgeProgram.sm1VsHandle = vsHandle;
-    bridgeProgram.sm1SampledStages = fsBuild.sampledStages;
-    if (vsShader) {
-      bridgeProgram.declLayout = vsShader.decl.map((declEntry) => ({
-        ...declEntry,
-        location: gl.getAttribLocation(program, `aVs${declEntry.register}`),
-      }));
-    }
-    entry.program = bridgeProgram;
-    d3d8PerfStats.sm1PairProgramsLinked += 1;
-    return bridgeProgram;
-  } catch (error) {
-    console.warn(`D3D8 SM1: pair program (vs=${vsHandle}, ps=${psHandle}) failed: ${error?.message ?? error}`);
-    d3d8PerfStats.sm1PairProgramFailures += 1;
-    return null;
-  }
-}
-
-// Vertex attribute setup for translated-vs draws: bind by the shader's
-// D3DVSD declaration instead of the FVF layout. Bypasses the FVF VAO cache
-// (these draws are few per frame); resets the FF attrib caches so the next
-// fixed-function draw rebinds cleanly.
-function configureD3D8SM1DeclAttributes(bridgeProgram, vertexResource, vertexByteOffset, vertexStride) {
-  bindD3D8DefaultVertexArray();
-  bindD3D8ArrayBuffer(vertexResource.buffer);
-  for (const entry of bridgeProgram.declLayout) {
-    if (entry.location < 0) {
-      continue;
-    }
-    const type = D3D8_SM1_DECL_TYPES[entry.type];
-    gl.enableVertexAttribArray(entry.location);
-    gl.vertexAttribPointer(
-      entry.location,
-      type.size,
-      gl[type.glType],
-      type.normalized,
-      vertexStride,
-      vertexByteOffset + entry.offset,
-    );
-  }
-  d3d8LastVertexAttribKey = null;
-  d3d8LastDefaultVertexAttribKey = null;
-}
-
-// Skips a constant-file upload when the program already holds these values.
-function d3d8SM1ConstantsChanged(location, values) {
-  const last = location.__cncSM1Last;
-  if (last && last.length === values.length) {
-    let index = 0;
-    for (; index < values.length; index += 1) {
-      if (last[index] !== values[index]) {
-        break;
-      }
-    }
-    if (index === values.length) {
-      d3d8PerfStats.uniformGlSkipped += 1;
-      return false;
-    }
-    last.set(values);
-    return true;
-  }
-  location.__cncSM1Last = new Float32Array(values);
-  return true;
-}
-
-// Uploads SM1 constant files + bump-env matrices for a shader-pair draw.
-function uploadD3D8SM1DrawUniforms(bridgeProgram, payload, renderState) {
-  if (bridgeProgram.psConst && payload.psConstants &&
-      d3d8SM1ConstantsChanged(bridgeProgram.psConst, payload.psConstants)) {
-    gl.uniform4fv(bridgeProgram.psConst, payload.psConstants);
-    d3d8PerfStats.uniformGlCalls += 1;
-  }
-  if (bridgeProgram.vsConst && payload.vsConstants &&
-      d3d8SM1ConstantsChanged(bridgeProgram.vsConst, payload.vsConstants)) {
-    gl.uniform4fv(bridgeProgram.vsConst, payload.vsConstants);
-    d3d8PerfStats.uniformGlCalls += 1;
-  }
-  if (bridgeProgram.bumpEnv) {
-    const bump = d3d8SM1BumpEnvScratch;
-    for (let stage = 0; stage < 4; stage += 1) {
-      const stageState = renderState.textureStages[stage];
-      bump[stage * 4] = d3dDwordToFloat(stageState.bumpEnvMat00);
-      bump[stage * 4 + 1] = d3dDwordToFloat(stageState.bumpEnvMat01);
-      bump[stage * 4 + 2] = d3dDwordToFloat(stageState.bumpEnvMat10);
-      bump[stage * 4 + 3] = d3dDwordToFloat(stageState.bumpEnvMat11);
-    }
-    gl.uniform4fv(bridgeProgram.bumpEnv, bump);
-    d3d8PerfStats.uniformGlCalls += 1;
-  }
-  if (bridgeProgram.bumpEnvL) {
-    const bumpL = d3d8SM1BumpEnvLScratch;
-    for (let stage = 0; stage < 4; stage += 1) {
-      const stageState = renderState.textureStages[stage];
-      bumpL[stage * 2] = d3dDwordToFloat(stageState.bumpEnvLScale);
-      bumpL[stage * 2 + 1] = d3dDwordToFloat(stageState.bumpEnvLOffset);
-    }
-    gl.uniform2fv(bridgeProgram.bumpEnvL, bumpL);
-    d3d8PerfStats.uniformGlCalls += 1;
-  }
-}
-
-const d3d8SM1BumpEnvScratch = new Float32Array(16);
-const d3d8SM1BumpEnvLScratch = new Float32Array(8);
-
-// Shader tier the wasm shim samples once at device create
-// (Module.cncPortD3D8ShaderTier): 1 = advertise ps.1.1/vs.1.1 (programmable
-// paths), 0 = historical fixed-function-only adapter.
-function d3d8ShaderTierQuery() {
-  const record = (tier, source) => {
-    globalThis.__cncD3D8ShaderTierLast = { tier, source };
-    harnessState.graphics.d3d8ShaderTier = tier === 1 ? "ps11" : "ff";
-    return tier;
-  };
-  try {
-    const forced = globalThis.__cncD3D8ShaderTier;
-    if (forced === "ps11" || forced === 1 || forced === true) {
-      return record(1, "forced");
-    }
-    if (forced === "ff" || forced === 0 || forced === false) {
-      return record(0, "forced");
-    }
-    if (typeof location !== "undefined") {
-      const param = new URLSearchParams(location.search).get("shaderTier");
-      if (param === "ps11") {
-        return record(1, "url");
-      }
-      if (param === "ff") {
-        return record(0, "url");
-      }
-    }
-    if (typeof localStorage !== "undefined") {
-      const stored = localStorage.getItem("cncPortShaderTier");
-      if (stored === "ps11") {
-        return record(1, "localStorage");
-      }
-      if (stored === "ff") {
-        return record(0, "localStorage");
-      }
-    }
-  } catch {
-    // Fall through to the default tier.
-  }
-  // Default: fixed function. The ps11 tier renders but has open visual
-  // regressions from owner playtesting (over-bright water, stuck muzzle
-  // flash, flat lighting — see TODO "Shader-tier (Path B) follow-ups");
-  // it stays opt-in (Settings → Shaders → Enhanced) until those are fixed.
-  return record(0, "default");
-}
-
-function ensureD3D8DepthStencilProgram() {
-  if (!gl) {
-    return null;
-  }
-  if (d3d8DepthStencilProgram) {
-    return d3d8DepthStencilProgram;
-  }
-
-  const vertexShader = compileShader(gl.VERTEX_SHADER, `#version 300 es
-    in vec4 aPosition;
-    uniform float uScale;
-    uniform bool uUseTransforms;
-    uniform bool uPretransformedPosition;
-    uniform vec4 uD3DViewport;
-    uniform mat4 uWorld;
-    uniform mat4 uView;
-    uniform mat4 uProjection;
-    uniform float uDepthBias;
-    out vec4 vClipPosition;
-    vec4 d3dPretransformedPositionToClip(vec4 screenPosition) {
-      vec2 viewportOrigin = uD3DViewport.xy;
-      vec2 viewportSize = max(uD3DViewport.zw, vec2(1.0));
-      vec2 webGlPosition = screenPosition.xy + vec2(0.5);
-      vec3 ndc = vec3(
-        ((webGlPosition.x - viewportOrigin.x) / viewportSize.x) * 2.0 - 1.0,
-        1.0 - ((webGlPosition.y - viewportOrigin.y) / viewportSize.y) * 2.0,
-        screenPosition.z * 2.0 - 1.0
-      );
-      float rhw = abs(screenPosition.w) > 0.000001 ? screenPosition.w : 1.0;
-      float clipW = 1.0 / rhw;
-      return vec4(ndc * clipW, clipW);
-    }
-    void main() {
-      vec4 worldPosition = vec4(aPosition.xyz, 1.0);
-      if (uPretransformedPosition) {
-        gl_Position = d3dPretransformedPositionToClip(aPosition);
-      } else if (uUseTransforms) {
-        worldPosition = uWorld * vec4(aPosition.xyz, 1.0);
-        vec4 viewPosition = uView * worldPosition;
-        vec4 d3dClip = uProjection * viewPosition;
-        gl_Position = vec4(d3dClip.x, d3dClip.y, d3dClip.z * 2.0 - d3dClip.w, d3dClip.w);
-      } else {
-        gl_Position = vec4(aPosition.x / uScale, aPosition.y / uScale, 0.0, 1.0);
-      }
-      gl_Position.z -= uDepthBias * gl_Position.w;
-      gl_PointSize = 1.0;
-      vClipPosition = worldPosition;
-    }
-  `);
-  const fragmentShader = compileShader(gl.FRAGMENT_SHADER, `#version 300 es
-    precision highp float;
-    in vec4 vClipPosition;
-    uniform int uClipPlaneMask;
-    uniform vec4 uClipPlanes[6];
-    out vec4 fragColor;
-    void main() {
-      for (int index = 0; index < 6; ++index) {
-        if ((uClipPlaneMask & (1 << index)) != 0 && dot(uClipPlanes[index], vClipPosition) < 0.0) {
-          discard;
-        }
-      }
-      fragColor = vec4(1.0);
-    }
-  `);
-  const program = gl.createProgram();
-  gl.attachShader(program, vertexShader);
-  gl.attachShader(program, fragmentShader);
-  gl.linkProgram(program);
-  gl.deleteShader(vertexShader);
-  gl.deleteShader(fragmentShader);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    const info = gl.getProgramInfoLog(program);
-    gl.deleteProgram(program);
-    throw new Error(`D3D8 depth/stencil bridge program link failed: ${info}`);
-  }
-
-  d3d8DepthStencilProgram = {
-    program,
-    position: gl.getAttribLocation(program, "aPosition"),
-    normal: -1,
-    diffuse: -1,
-    specular: -1,
-    texCoord0: -1,
-    texCoord1: -1,
-    scale: gl.getUniformLocation(program, "uScale"),
-    useTransforms: gl.getUniformLocation(program, "uUseTransforms"),
-    pretransformedPosition: gl.getUniformLocation(program, "uPretransformedPosition"),
-    d3dViewport: gl.getUniformLocation(program, "uD3DViewport"),
-    world: gl.getUniformLocation(program, "uWorld"),
-    view: gl.getUniformLocation(program, "uView"),
-    projection: gl.getUniformLocation(program, "uProjection"),
-    depthBias: gl.getUniformLocation(program, "uDepthBias"),
-    texture0CoordinateMode: null,
-    useTexture0Transform: null,
-    texture0Transform: null,
-    texture0TransformComponentCount: null,
-    texture0TransformProjected: null,
-    texture1CoordinateMode: null,
-    useTexture1Transform: null,
-    texture1Transform: null,
-    texture1TransformComponentCount: null,
-    texture1TransformProjected: null,
-    texture2CoordinateMode: null,
-    texture2CoordSet: null,
-    useTexture2Transform: null,
-    texture2Transform: null,
-    texture2TransformComponentCount: null,
-    texture2TransformProjected: null,
-    texture3CoordinateMode: null,
-    texture3CoordSet: null,
-    useTexture3Transform: null,
-    texture3Transform: null,
-    texture3TransformComponentCount: null,
-    texture3TransformProjected: null,
-    pointSize: null,
-    pointSizeMin: null,
-    pointSizeMax: null,
-    pointScaleEnable: null,
-    pointScaleA: null,
-    pointScaleB: null,
-    pointScaleC: null,
-    pointViewportHeight: null,
-    lightingEnabled: null,
-    specularEnabled: null,
-    normalizeNormals: null,
-    localViewer: null,
-    colorVertexEnabled: null,
-    sceneAmbient: null,
-    materialDiffuse: null,
-    materialAmbient: null,
-    materialSpecular: null,
-    materialEmissive: null,
-    materialPower: null,
-    diffuseMaterialSource: null,
-    specularMaterialSource: null,
-    ambientMaterialSource: null,
-    emissiveMaterialSource: null,
-    fixedLightCount: null,
-    fixedLightType: null,
-    fixedLightDiffuse: null,
-    fixedLightSpecular: null,
-    fixedLightAmbient: null,
-    fixedLightPosition: null,
-    fixedLightDirection: null,
-    fixedLightRangeAttenuation: null,
-    fixedLightSpot: null,
-    useTexture0: null,
-    drawingPoints: null,
-    pointSpriteEnable: null,
-    texture0: null,
-    texture0LodBias: null,
-    texture0Semantic: null,
-    texture0FlipY: null,
-    useTexture1: null,
-    texture1: null,
-    texture1LodBias: null,
-    texture1Semantic: null,
-    texture1FlipY: null,
-    useTexture2: null,
-    texture2: null,
-    texture2LodBias: null,
-    texture2Semantic: null,
-    texture2FlipY: null,
-    useTexture3: null,
-    texture3: null,
-    texture3LodBias: null,
-    texture3Semantic: null,
-    texture3FlipY: null,
-    textureFactor: null,
-    stage0ColorOp: null,
-    stage0ColorArg0: null,
-    stage0ColorArg1: null,
-    stage0ColorArg2: null,
-    stage0AlphaOp: null,
-    stage0AlphaArg0: null,
-    stage0AlphaArg1: null,
-    stage0AlphaArg2: null,
-    stage0ResultArg: null,
-    stage1ColorOp: null,
-    stage1ColorArg0: null,
-    stage1ColorArg1: null,
-    stage1ColorArg2: null,
-    stage1AlphaOp: null,
-    stage1AlphaArg0: null,
-    stage1AlphaArg1: null,
-    stage1AlphaArg2: null,
-    stage1ResultArg: null,
-    stage2ColorOp: null,
-    stage2ColorArg0: null,
-    stage2ColorArg1: null,
-    stage2ColorArg2: null,
-    stage2AlphaOp: null,
-    stage2AlphaArg0: null,
-    stage2AlphaArg1: null,
-    stage2AlphaArg2: null,
-    stage2ResultArg: null,
-    stage3ColorOp: null,
-    stage3ColorArg0: null,
-    stage3ColorArg1: null,
-    stage3ColorArg2: null,
-    stage3AlphaOp: null,
-    stage3AlphaArg0: null,
-    stage3AlphaArg1: null,
-    stage3AlphaArg2: null,
-    stage3ResultArg: null,
-    alphaTestEnabled: null,
-    alphaFunc: null,
-    alphaRef: null,
-    implicitAlphaCutoutThreshold: null,
-    fogEnabled: null,
-    fogRangeEnabled: null,
-    fogColor: null,
-    fogStart: null,
-    fogEnd: null,
-    clipPlaneMask: gl.getUniformLocation(program, "uClipPlaneMask"),
-    clipPlanes: gl.getUniformLocation(program, "uClipPlanes[0]"),
-    useFlatShade: null,
-  };
-  return d3d8DepthStencilProgram;
-}
-
-// No-discard depth/stencil variant for draws with no active clip planes —
-// which is every stencil-shadow-volume draw in practice. `discard` in a
-// fragment shader (even behind a uniform branch that never takes it) disables
-// early depth/stencil rejection, so the clip-plane FS above forces the GPU to
-// run a fragment program for every fragment of every shadow volume. Volume
-// fill covers the screen many times over in unit-heavy scenes, which is what
-// crushed the campaign-intro frame rate on Apple GPUs. With no discard (and
-// color writes already masked off) the hardware performs the whole stencil
-// update with early fragment tests and no fragment shader work.
-function ensureD3D8DepthStencilNoClipProgram() {
-  if (!gl) {
-    return null;
-  }
-  if (d3d8DepthStencilNoClipProgram) {
-    return d3d8DepthStencilNoClipProgram;
-  }
-  const template = ensureD3D8DepthStencilProgram();
-  if (!template) {
-    return null;
-  }
-  const vertexShader = compileShader(gl.VERTEX_SHADER, `#version 300 es
-    in vec4 aPosition;
-    uniform float uScale;
-    uniform bool uUseTransforms;
-    uniform bool uPretransformedPosition;
-    uniform vec4 uD3DViewport;
-    uniform mat4 uWorld;
-    uniform mat4 uView;
-    uniform mat4 uProjection;
-    uniform float uDepthBias;
-    vec4 d3dPretransformedPositionToClip(vec4 screenPosition) {
-      vec2 viewportOrigin = uD3DViewport.xy;
-      vec2 viewportSize = max(uD3DViewport.zw, vec2(1.0));
-      vec2 webGlPosition = screenPosition.xy + vec2(0.5);
-      vec3 ndc = vec3(
-        ((webGlPosition.x - viewportOrigin.x) / viewportSize.x) * 2.0 - 1.0,
-        1.0 - ((webGlPosition.y - viewportOrigin.y) / viewportSize.y) * 2.0,
-        screenPosition.z * 2.0 - 1.0
-      );
-      float rhw = abs(screenPosition.w) > 0.000001 ? screenPosition.w : 1.0;
-      float clipW = 1.0 / rhw;
-      return vec4(ndc * clipW, clipW);
-    }
-    void main() {
-      if (uPretransformedPosition) {
-        gl_Position = d3dPretransformedPositionToClip(aPosition);
-      } else if (uUseTransforms) {
-        vec4 worldPosition = uWorld * vec4(aPosition.xyz, 1.0);
-        vec4 viewPosition = uView * worldPosition;
-        vec4 d3dClip = uProjection * viewPosition;
-        gl_Position = vec4(d3dClip.x, d3dClip.y, d3dClip.z * 2.0 - d3dClip.w, d3dClip.w);
-      } else {
-        gl_Position = vec4(aPosition.x / uScale, aPosition.y / uScale, 0.0, 1.0);
-      }
-      gl_Position.z -= uDepthBias * gl_Position.w;
-      gl_PointSize = 1.0;
-    }
-  `);
-  const fragmentShader = compileShader(gl.FRAGMENT_SHADER, `#version 300 es
-    precision highp float;
-    out vec4 fragColor;
-    void main() {
-      fragColor = vec4(1.0);
-    }
-  `);
-  const program = gl.createProgram();
-  gl.attachShader(program, vertexShader);
-  gl.attachShader(program, fragmentShader);
-  gl.linkProgram(program);
-  gl.deleteShader(vertexShader);
-  gl.deleteShader(fragmentShader);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    const info = gl.getProgramInfoLog(program);
-    gl.deleteProgram(program);
-    throw new Error(`D3D8 depth/stencil no-clip bridge program link failed: ${info}`);
-  }
-  d3d8DepthStencilNoClipProgram = {
-    ...template,
-    program,
-    position: gl.getAttribLocation(program, "aPosition"),
-    scale: gl.getUniformLocation(program, "uScale"),
-    useTransforms: gl.getUniformLocation(program, "uUseTransforms"),
-    pretransformedPosition: gl.getUniformLocation(program, "uPretransformedPosition"),
-    d3dViewport: gl.getUniformLocation(program, "uD3DViewport"),
-    world: gl.getUniformLocation(program, "uWorld"),
-    view: gl.getUniformLocation(program, "uView"),
-    projection: gl.getUniformLocation(program, "uProjection"),
-    depthBias: gl.getUniformLocation(program, "uDepthBias"),
-    clipPlaneMask: null,
-    clipPlanes: null,
-  };
-  return d3d8DepthStencilNoClipProgram;
-}
-
-function d3dPrimitiveToGl(primitiveType) {
-  if (!gl) {
-    return null;
-  }
-  switch (Number(primitiveType)) {
-    case D3DPT_POINTLIST:
-      return gl.POINTS;
-    case D3DPT_LINELIST:
-      return gl.LINES;
-    case D3DPT_LINESTRIP:
-      return gl.LINE_STRIP;
-    case D3DPT_TRIANGLELIST:
-      return gl.TRIANGLES;
-    case D3DPT_TRIANGLESTRIP:
-      return gl.TRIANGLE_STRIP;
-    case D3DPT_TRIANGLEFAN:
-      return gl.TRIANGLE_FAN;
-    default:
-      return null;
-  }
-}
-
-function d3d8GlPrimitiveSupported(primitive) {
-  return gl && (
-    primitive === gl.POINTS ||
-    primitive === gl.LINES ||
-    primitive === gl.LINE_STRIP ||
-    primitive === gl.TRIANGLES ||
-    primitive === gl.TRIANGLE_STRIP ||
-    primitive === gl.TRIANGLE_FAN
-  );
-}
-
-function glPrimitiveName(primitive) {
-  if (!gl) {
-    return "unknown";
-  }
-  switch (primitive) {
-    case gl.POINTS:
-      return "points";
-    case gl.LINES:
-      return "lines";
-    case gl.LINE_STRIP:
-      return "lineStrip";
-    case gl.TRIANGLES:
-      return "triangles";
-    case gl.TRIANGLE_STRIP:
-      return "triangleStrip";
-    case gl.TRIANGLE_FAN:
-      return "triangleFan";
-    default:
-      return "unknown";
-  }
-}
-
-function d3dFillModeName(fillMode) {
-  switch (Number(fillMode) >>> 0) {
-    case D3DFILL_POINT:
-      return "point";
-    case D3DFILL_WIREFRAME:
-      return "wireframe";
-    case D3DFILL_SOLID:
-      return "solid";
-    default:
-      return "unknown";
-  }
-}
-
-function d3dShadeModeName(shadeMode) {
-  switch (Number(shadeMode) >>> 0) {
-    case D3DSHADE_FLAT:
-      return "flat";
-    case D3DSHADE_GOURAUD:
-      return "gouraud";
-    case D3DSHADE_PHONG:
-      return "phong";
-    default:
-      return "unknown";
-  }
-}
-
-function d3dMaterialSourceName(source) {
-  switch (Number(source) >>> 0) {
-    case D3DMCS_MATERIAL:
-      return "material";
-    case D3DMCS_COLOR1:
-      return "color1";
-    case D3DMCS_COLOR2:
-      return "color2";
-    default:
-      return "unknown";
-  }
-}
-
-function d3d8DepthBiasInfo(zBias) {
-  const raw = Number(zBias ?? 0) >>> 0;
-  const clamped = Math.max(0, Math.min(16, raw));
-  // Shader applies gl_Position.z -= ndc * w (constant NDC bias of -ndc) => [0,1] depth bias = -ndc/2.
-  // D3D8 24/32-bit target uses -ZBias/((1<<20)-1) (d3d8to9 CalcDepthBias). So ndc = 2*clamped/((1<<20)-1).
-  const D3D8_DEPTH_BIAS_DENOM = (1 << 20) - 1;
-  // The constant-NDC shift above is uniform across a primitive and does NOT scale
-  // with the polygon's window-space depth slope, so it cannot reliably win the
-  // depth test for large coplanar meshes (e.g. the terrain-tessellated projected
-  // insignia/shadow decals, which span many terrain cells over a big depth range).
-  // On such meshes ZBIAS=1 only shifted depth ~1e-6, well below the depth-buffer
-  // quantisation at gameplay camera distances, so half the decal triangles lost
-  // the z-fight against the plaza and the decal rendered clipped along the terrain
-  // cell diagonals and flickered. D3D8's D3DRS_ZBIAS was, on real hardware, a
-  // polygon-offset-style bias; emulate that here with gl.polygonOffset (slope
-  // scaled) which robustly biases coplanar geometry toward the camera regardless
-  // of depth encoding. Negative factor/units pull the primitive nearer (smaller
-  // depth), matching a positive D3D8 ZBIAS. Factor gives the slope-scaled term
-  // that defeats z-fighting across the whole mesh; units adds a small constant
-  // floor so flat, camera-facing decals still bias.
-  const polygonOffset = clamped > 0
-    ? { enabled: true, factor: -clamped, units: -2 * clamped }
-    : { enabled: false, factor: 0, units: 0 };
-  return { raw, clamped, ndc: (2.0 * clamped) / D3D8_DEPTH_BIAS_DENOM, polygonOffset };
-}
-
-function d3d8PointSpriteInfo(renderState, primitiveType, viewport) {
-  const pointSize = Math.max(0, d3dDwordToFloat(renderState.pointSize));
-  const pointSizeMin = Math.max(0, d3dDwordToFloat(renderState.pointSizeMin));
-  const pointSizeMax = Math.max(pointSizeMin, d3dDwordToFloat(renderState.pointSizeMax));
-  const scaleA = Math.max(0, d3dDwordToFloat(renderState.pointScaleA));
-  const scaleB = Math.max(0, d3dDwordToFloat(renderState.pointScaleB));
-  const scaleC = Math.max(0, d3dDwordToFloat(renderState.pointScaleC));
-  const viewportHeight = Math.max(
-    1,
-    Number(viewport?.gl?.height ?? viewport?.d3d?.height ?? viewport?.requested?.height ?? 1),
-  );
-  return {
-    drawingPoints: (Number(primitiveType ?? 0) >>> 0) === D3DPT_POINTLIST,
-    spriteEnable: Number(renderState.pointSpriteEnable ?? 0) !== 0,
-    scaleEnable: Number(renderState.pointScaleEnable ?? 0) !== 0,
-    pointSize,
-    pointSizeMin,
-    pointSizeMax,
-    scaleA,
-    scaleB,
-    scaleC,
-    viewportHeight,
-  };
-}
-
-function d3d8PointSpriteUniformsEqual(left, right) {
-  return Boolean(
-    left && right &&
-    left.drawingPoints === right.drawingPoints &&
-    left.spriteEnable === right.spriteEnable &&
-    left.scaleEnable === right.scaleEnable &&
-    left.pointSize === right.pointSize &&
-    left.pointSizeMin === right.pointSizeMin &&
-    left.pointSizeMax === right.pointSizeMax &&
-    left.scaleA === right.scaleA &&
-    left.scaleB === right.scaleB &&
-    left.scaleC === right.scaleC &&
-    left.viewportHeight === right.viewportHeight
-  );
-}
-
-function d3dPrimitiveIsTriangle(primitiveType) {
-  const type = Number(primitiveType) >>> 0;
-  return type === D3DPT_TRIANGLELIST || type === D3DPT_TRIANGLESTRIP || type === D3DPT_TRIANGLEFAN;
-}
-
-function d3d8CanUseDepthStencilOnlyProgramBase(renderState, primitiveType) {
-  const colorWrites = Number(renderState?.colorWriteEnable ?? (
-    D3DCOLORWRITEENABLE_RED |
-    D3DCOLORWRITEENABLE_GREEN |
-    D3DCOLORWRITEENABLE_BLUE |
-    D3DCOLORWRITEENABLE_ALPHA
-  )) >>> 0;
-  return (colorWrites & (
-    D3DCOLORWRITEENABLE_RED |
-    D3DCOLORWRITEENABLE_GREEN |
-    D3DCOLORWRITEENABLE_BLUE |
-    D3DCOLORWRITEENABLE_ALPHA
-  )) === 0 &&
-    Number(renderState?.alphaTestEnable ?? 0) === 0 &&
-    Number(renderState?.fillMode ?? D3DFILL_SOLID) === D3DFILL_SOLID &&
-    d3dPrimitiveIsTriangle(primitiveType);
-}
-
-function d3d8ImplicitAlphaCutoutCannotApply(renderState) {
-  return Boolean(
-    renderState &&
-    (renderState.alphaBlendEnable !== 0 ||
-      renderState.zEnable === D3DZB_FALSE ||
-      renderState.zWriteEnable === 0)
-  );
-}
-
-function d3d8CanUseDepthStencilOnlyProgramWithoutTextureProbe(renderState, primitiveType) {
-  return d3d8CanUseDepthStencilOnlyProgramBase(renderState, primitiveType) &&
-    d3d8ImplicitAlphaCutoutCannotApply(renderState);
-}
-
-function d3d8CanUseDepthStencilOnlyProgram(renderState, primitiveType, implicitAlphaCutoutThreshold) {
-  return d3d8CanUseDepthStencilOnlyProgramBase(renderState, primitiveType) &&
-    implicitAlphaCutoutThreshold < 0;
-}
-
-function readD3D8Index(indexBytes, byteOffset, index, indexSize) {
-  const absolute = byteOffset + index * indexSize;
-  if (!(indexBytes instanceof Uint8Array) || absolute + indexSize > indexBytes.byteLength) {
-    return null;
-  }
-  if (indexSize === 2) {
-    return indexBytes[absolute] | (indexBytes[absolute + 1] << 8);
-  }
-  if (indexSize === 4) {
-    return (indexBytes[absolute] |
-      (indexBytes[absolute + 1] << 8) |
-      (indexBytes[absolute + 2] << 16) |
-      (indexBytes[absolute + 3] << 24)) >>> 0;
-  }
-  return null;
-}
-
-function projectD3D8VertexToNdc(vertexBytes, vertexByteOffset, vertexStride, transforms, vertexIndex) {
-  if (!(vertexBytes instanceof Uint8Array) || !transforms || vertexStride < 12 || vertexIndex === null) {
-    return null;
-  }
-  const base = vertexByteOffset + vertexIndex * vertexStride;
-  if (base < 0 || base + 12 > vertexBytes.byteLength) {
-    return null;
-  }
-  const view = new DataView(vertexBytes.buffer, vertexBytes.byteOffset, vertexBytes.byteLength);
-  const position = [
-    readD3D8Float32(view, base),
-    readD3D8Float32(view, base + 4),
-    readD3D8Float32(view, base + 8),
-  ];
-  const worldPosition = multiplyD3D8ColumnMatrixVector(transforms.world, [...position, 1]);
-  const viewPosition = multiplyD3D8ColumnMatrixVector(transforms.view, worldPosition);
-  const d3dClip = multiplyD3D8ColumnMatrixVector(transforms.projection, viewPosition);
-  const glClip = [d3dClip[0], d3dClip[1], d3dClip[2] * 2.0 - d3dClip[3], d3dClip[3]];
-  if (Math.abs(glClip[3]) <= 0.000001) {
-    return null;
-  }
-  return [
-    glClip[0] / glClip[3],
-    glClip[1] / glClip[3],
-    glClip[2] / glClip[3],
-  ];
-}
-
-function projectD3D8PretransformedVertex(vertexBytes, vertexByteOffset, vertexStride, viewport, vertexIndex) {
-  if (!(vertexBytes instanceof Uint8Array) || vertexStride < 16 || vertexIndex === null) {
-    return null;
-  }
-  const base = vertexByteOffset + vertexIndex * vertexStride;
-  if (base < 0 || base + 16 > vertexBytes.byteLength) {
-    return null;
-  }
-  const d3dViewport = viewport?.d3d ?? {};
-  const viewportX = finiteNumber(d3dViewport.x, 0);
-  const viewportY = finiteNumber(d3dViewport.y, 0);
-  const viewportWidth = Math.max(1, finiteNumber(d3dViewport.width, 1));
-  const viewportHeight = Math.max(1, finiteNumber(d3dViewport.height, 1));
-  const view = new DataView(vertexBytes.buffer, vertexBytes.byteOffset, vertexBytes.byteLength);
-  const x = readD3D8Float32(view, base);
-  const y = readD3D8Float32(view, base + 4);
-  const z = readD3D8Float32(view, base + 8);
-  const rhw = readD3D8Float32(view, base + 12);
-  const clipW = Math.abs(rhw) > 0.000001 ? 1.0 / rhw : 1.0;
-  return {
-    ndc: [
-      ((x - viewportX) / viewportWidth) * 2.0 - 1.0,
-      1.0 - ((y - viewportY) / viewportHeight) * 2.0,
-      z * 2.0 - 1.0,
-    ],
-    clipW,
-  };
-}
-
-function d3d8ProjectedTriangleArea(a, b, c) {
-  if (!a || !b || !c) {
-    return null;
-  }
-  return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-}
-
-function d3d8TriangleCullInfo(area, cullMode) {
-  if (!Number.isFinite(area)) {
-    return { winding: "unknown", culled: false, degenerate: false };
-  }
-  if (Math.abs(area) <= 0.0000001) {
-    return { winding: "degenerate", culled: false, degenerate: true };
-  }
-  const winding = area < 0 ? "cw" : "ccw";
-  return {
-    winding,
-    culled: (cullMode === D3DCULL_CW && winding === "cw") ||
-      (cullMode === D3DCULL_CCW && winding === "ccw"),
-    degenerate: false,
-  };
-}
-
-function buildD3D8FlatShadeIndices(indexResource, indexByteOffset, indexCount, indexSize, primitiveType) {
-  const indexBytes = indexResource?.bytes;
-  const requiredByteSize = indexByteOffset + indexCount * indexSize;
-  if (!(indexBytes instanceof Uint8Array)) {
-    return { supported: false, reason: "missingIndexMirror" };
-  }
-  if (requiredByteSize > indexBytes.byteLength) {
-    return { supported: false, reason: "indexRangeOutOfBounds" };
-  }
-
-  const triangles = [];
-  let sourceTriangleCount = 0;
-  const addTriangle = (a, b, c, first) => {
-    if (a === null || b === null || c === null || a === b || b === c || c === a) {
-      return;
-    }
-    if (first === a) {
-      triangles.push(b, c, a);
-    } else if (first === b) {
-      triangles.push(c, a, b);
-    } else {
-      triangles.push(a, b, c);
-    }
-    sourceTriangleCount += 1;
-  };
-  const readIndex = (index) => readD3D8Index(indexBytes, indexByteOffset, index, indexSize);
-  switch (Number(primitiveType) >>> 0) {
-    case D3DPT_TRIANGLELIST:
-      for (let index = 0; index + 2 < indexCount; index += 3) {
-        const a = readIndex(index);
-        const b = readIndex(index + 1);
-        const c = readIndex(index + 2);
-        addTriangle(a, b, c, a);
-      }
-      break;
-    case D3DPT_TRIANGLESTRIP:
-      for (let index = 0; index + 2 < indexCount; ++index) {
-        const a = readIndex(index);
-        const b = readIndex(index + 1);
-        const c = readIndex(index + 2);
-        if ((index & 1) === 0) {
-          addTriangle(a, b, c, a);
-        } else {
-          addTriangle(b, a, c, a);
-        }
-      }
-      break;
-    case D3DPT_TRIANGLEFAN:
-      for (let index = 1; index + 1 < indexCount; ++index) {
-        const a = readIndex(0);
-        const b = readIndex(index);
-        const c = readIndex(index + 1);
-        addTriangle(a, b, c, b);
-      }
-      break;
-    default:
-      return { supported: false, reason: "nonTrianglePrimitive" };
-  }
-
-  if (triangles.length === 0) {
-    return { supported: false, reason: "emptyFlatShadeTriangles" };
-  }
-  const IndexArray = indexSize === 4 ? Uint32Array : Uint16Array;
-  return {
-    supported: true,
-    triangleIndices: new IndexArray(triangles),
-    generatedIndexCount: triangles.length,
-    sourceTriangleCount,
-    indexTypeName: indexSize === 4 ? "uint32" : "uint16",
-  };
-}
-
-function buildD3D8WireframeIndices(
-  indexResource,
-  indexByteOffset,
-  indexCount,
-  indexSize,
-  primitiveType,
-  options = {},
-) {
-  const indexBytes = indexResource?.bytes;
-  const requiredByteSize = indexByteOffset + indexCount * indexSize;
-  if (!(indexBytes instanceof Uint8Array)) {
-    return { supported: false, reason: "missingIndexMirror" };
-  }
-  if (requiredByteSize > indexBytes.byteLength) {
-    return { supported: false, reason: "indexRangeOutOfBounds" };
-  }
-
-  const vertexBytes = options.vertexResource?.bytes;
-  const vertexByteOffset = Number(options.vertexByteOffset ?? 0) >>> 0;
-  const vertexStride = Number(options.vertexStride ?? 0) >>> 0;
-  const cullMode = Number(options.cullMode ?? D3DCULL_NONE) >>> 0;
-  const cullRequested = cullMode === D3DCULL_CW || cullMode === D3DCULL_CCW;
-  const cullingAvailable = Boolean(cullRequested &&
-    vertexBytes instanceof Uint8Array &&
-    options.transforms &&
-    vertexStride >= 12);
-  const projectedVertex = (vertexIndex) =>
-    projectD3D8VertexToNdc(vertexBytes, vertexByteOffset, vertexStride, options.transforms, vertexIndex);
-  const edges = [];
-  let sourceTriangleCount = 0;
-  let emittedTriangleCount = 0;
-  let culledTriangleCount = 0;
-  let degenerateTriangleCount = 0;
-  let cwTriangleCount = 0;
-  let ccwTriangleCount = 0;
-  const addTriangle = (a, b, c) => {
-    if (a === null || b === null || c === null || a === b || b === c || c === a) {
-      degenerateTriangleCount += 1;
-      return;
-    }
-    sourceTriangleCount += 1;
-    if (cullingAvailable) {
-      const area = d3d8ProjectedTriangleArea(
-        projectedVertex(a),
-        projectedVertex(b),
-        projectedVertex(c),
-      );
-      const cullInfo = d3d8TriangleCullInfo(area, cullMode);
-      if (cullInfo.degenerate) {
-        degenerateTriangleCount += 1;
-        return;
-      }
-      if (cullInfo.winding === "cw") {
-        cwTriangleCount += 1;
-      } else if (cullInfo.winding === "ccw") {
-        ccwTriangleCount += 1;
-      }
-      if (cullInfo.culled) {
-        culledTriangleCount += 1;
-        return;
-      }
-    }
-    edges.push(a, b, b, c, c, a);
-    emittedTriangleCount += 1;
-  };
-  const readIndex = (index) => readD3D8Index(indexBytes, indexByteOffset, index, indexSize);
-  switch (Number(primitiveType) >>> 0) {
-    case D3DPT_TRIANGLELIST:
-      for (let index = 0; index + 2 < indexCount; index += 3) {
-        addTriangle(readIndex(index), readIndex(index + 1), readIndex(index + 2));
-      }
-      break;
-    case D3DPT_TRIANGLESTRIP:
-      for (let index = 0; index + 2 < indexCount; ++index) {
-        const a = readIndex(index);
-        const b = readIndex(index + 1);
-        const c = readIndex(index + 2);
-        if ((index & 1) === 0) {
-          addTriangle(a, b, c);
-        } else {
-          addTriangle(b, a, c);
-        }
-      }
-      break;
-    case D3DPT_TRIANGLEFAN:
-      for (let index = 1; index + 1 < indexCount; ++index) {
-        addTriangle(readIndex(0), readIndex(index), readIndex(index + 1));
-      }
-      break;
-    default:
-      return { supported: false, reason: "nonTrianglePrimitive" };
-  }
-
-  const IndexArray = indexSize === 4 ? Uint32Array : Uint16Array;
-  if (edges.length === 0 && !(cullingAvailable && sourceTriangleCount > 0 && culledTriangleCount > 0)) {
-    return { supported: false, reason: "emptyWireframe" };
-  }
-  return {
-    supported: true,
-    lineIndices: new IndexArray(edges),
-    generatedIndexCount: edges.length,
-    sourceTriangleCount,
-    indexTypeName: indexSize === 4 ? "uint32" : "uint16",
-    cullMode,
-    cullingRequested: cullRequested,
-    cullingApplied: cullingAvailable,
-    emittedTriangleCount,
-    culledTriangleCount,
-    degenerateTriangleCount,
-    cwTriangleCount,
-    ccwTriangleCount,
-  };
-}
-
-function createD3D8FillModeDrawInfo(
-  renderState,
-  primitiveType,
-  indexResource,
-  indexByteOffset,
-  indexCount,
-  indexSize,
-  options = {},
-) {
-  const mode = Number(renderState.fillMode ?? D3DFILL_SOLID) >>> 0;
-  const baseGlPrimitive = d3dPrimitiveToGl(primitiveType);
-  const info = {
-    mode,
-    modeName: d3dFillModeName(mode),
-    requestedPrimitiveType: Number(primitiveType ?? 0) >>> 0,
-    originalPrimitiveName: glPrimitiveName(baseGlPrimitive),
-    glPrimitive: baseGlPrimitive,
-    glPrimitiveName: glPrimitiveName(baseGlPrimitive),
-    drawIndexCount: indexCount,
-    drawIndexByteOffset: indexByteOffset,
-    generatedIndexCount: 0,
-    sourceTriangleCount: 0,
-    emittedTriangleCount: 0,
-    culledTriangleCount: 0,
-    degenerateTriangleCount: 0,
-    cwTriangleCount: 0,
-    ccwTriangleCount: 0,
-    cullMode: Number(renderState.cullMode ?? D3DCULL_NONE) >>> 0,
-    cullingRequested: false,
-    cullingApplied: false,
-    indexTypeName: indexSize === 4 ? "uint32" : "uint16",
-    temporaryIndexBuffer: false,
-    pointFill: false,
-    wireframe: false,
-    supported: d3d8GlPrimitiveSupported(baseGlPrimitive),
-    fallbackReason: d3d8GlPrimitiveSupported(baseGlPrimitive) ? null : "unsupportedPrimitive",
-  };
-
-  if (!info.supported) {
-    return info;
-  }
-  if (mode === D3DFILL_POINT) {
-    info.pointFill = true;
-    info.glPrimitive = gl.POINTS;
-    info.glPrimitiveName = glPrimitiveName(info.glPrimitive);
-    return info;
-  }
-  if (mode !== D3DFILL_WIREFRAME) {
-    return info;
-  }
-  if (!d3dPrimitiveIsTriangle(primitiveType)) {
-    return info;
-  }
-
-  const wireframe = buildD3D8WireframeIndices(
-    indexResource,
-    indexByteOffset,
-    indexCount,
-    indexSize,
-    primitiveType,
-    {
-      ...options,
-      cullMode: info.cullMode,
-    },
-  );
-  info.wireframe = true;
-  info.supported = wireframe.supported;
-  info.fallbackReason = wireframe.supported ? null : wireframe.reason;
-  info.generatedIndexCount = wireframe.generatedIndexCount ?? 0;
-  info.sourceTriangleCount = wireframe.sourceTriangleCount ?? 0;
-  info.emittedTriangleCount = wireframe.emittedTriangleCount ?? 0;
-  info.culledTriangleCount = wireframe.culledTriangleCount ?? 0;
-  info.degenerateTriangleCount = wireframe.degenerateTriangleCount ?? 0;
-  info.cwTriangleCount = wireframe.cwTriangleCount ?? 0;
-  info.ccwTriangleCount = wireframe.ccwTriangleCount ?? 0;
-  info.cullingRequested = wireframe.cullingRequested === true;
-  info.cullingApplied = wireframe.cullingApplied === true;
-  info.indexTypeName = wireframe.indexTypeName ?? info.indexTypeName;
-  if (wireframe.supported) {
-    info.glPrimitive = gl.LINES;
-    info.glPrimitiveName = glPrimitiveName(info.glPrimitive);
-    info.drawIndexCount = wireframe.generatedIndexCount;
-    info.drawIndexByteOffset = 0;
-    info.lineIndices = wireframe.lineIndices;
-    info.temporaryIndexBuffer = true;
-  }
-  return info;
-}
-
-function hasD3D8FirstVertexConventionExtension() {
-  return Boolean(provokingVertex &&
-      typeof provokingVertex.provokingVertexWEBGL === "function" &&
-      typeof provokingVertex.FIRST_VERTEX_CONVENTION_WEBGL === "number" &&
-      typeof provokingVertex.LAST_VERTEX_CONVENTION_WEBGL === "number");
-}
-
-// Current provoking-vertex convention; WebGL contexts start with LAST. Only
-// flat-shaded draws read flat varyings (uUseFlatShade gates vFlatColor), so
-// the active convention is irrelevant to every other draw and can be tracked
-// lazily instead of set/restored around each flat draw.
-let d3d8ProvokingVertexFirstApplied = false;
-
-function setD3D8FirstVertexConvention(enabled) {
-  if (!hasD3D8FirstVertexConventionExtension()) {
-    return false;
-  }
-  const wantFirst = enabled === true;
-  if (d3d8ProvokingVertexFirstApplied === wantFirst) {
-    return true;
-  }
-  if (wantFirst) {
-    provokingVertex.provokingVertexWEBGL(provokingVertex.FIRST_VERTEX_CONVENTION_WEBGL);
-  } else {
-    provokingVertex.provokingVertexWEBGL(provokingVertex.LAST_VERTEX_CONVENTION_WEBGL);
-  }
-  d3d8ProvokingVertexFirstApplied = wantFirst;
-  return true;
-}
-
-function createD3D8ShadeModeDrawInfo(
-  renderState,
-  primitiveType,
-  indexResource,
-  indexByteOffset,
-  indexCount,
-  indexSize,
-  fillModeDraw,
-) {
-  const mode = Number(renderState.shadeMode ?? D3DSHADE_GOURAUD) >>> 0;
-  const flat = mode === D3DSHADE_FLAT;
-  const info = {
-    mode,
-    modeName: d3dShadeModeName(mode),
-    flat,
-    gouraud: mode === D3DSHADE_GOURAUD,
-    phongRequested: mode === D3DSHADE_PHONG,
-    usesFlatShader: flat,
-    usesFirstVertexConvention: false,
-    rotatedIndexBuffer: false,
-    temporaryIndexBuffer: false,
-    glPrimitive: fillModeDraw.glPrimitive,
-    glPrimitiveName: fillModeDraw.glPrimitiveName,
-    drawIndexCount: fillModeDraw.drawIndexCount,
-    drawIndexByteOffset: fillModeDraw.drawIndexByteOffset,
-    generatedIndexCount: 0,
-    sourceTriangleCount: 0,
-    indexTypeName: indexSize === 4 ? "uint32" : "uint16",
-    supported: fillModeDraw.supported,
-    fallbackReason: fillModeDraw.fallbackReason,
-  };
-
-  if (!info.supported || !flat) {
-    return info;
-  }
-
-  if (fillModeDraw.temporaryIndexBuffer || !d3dPrimitiveIsTriangle(primitiveType)) {
-    return info;
-  }
-
-  if (hasD3D8FirstVertexConventionExtension()) {
-    info.usesFirstVertexConvention = true;
-    return info;
-  }
-
-  const flatShade = buildD3D8FlatShadeIndices(
-    indexResource,
-    indexByteOffset,
-    indexCount,
-    indexSize,
-    primitiveType,
-  );
-  info.supported = flatShade.supported;
-  info.fallbackReason = flatShade.supported ? null : flatShade.reason;
-  info.generatedIndexCount = flatShade.generatedIndexCount ?? 0;
-  info.sourceTriangleCount = flatShade.sourceTriangleCount ?? 0;
-  info.indexTypeName = flatShade.indexTypeName ?? info.indexTypeName;
-  if (flatShade.supported) {
-    info.glPrimitive = gl.TRIANGLES;
-    info.glPrimitiveName = glPrimitiveName(info.glPrimitive);
-    info.drawIndexCount = flatShade.generatedIndexCount;
-    info.drawIndexByteOffset = 0;
-    info.triangleIndices = flatShade.triangleIndices;
-    info.rotatedIndexBuffer = true;
-    info.temporaryIndexBuffer = true;
-  }
-  return info;
-}
-
-function createD3D8LiteSolidDrawInfo(renderState, primitiveType, indexByteOffset, indexCount) {
-  const fillMode = Number(renderState.fillMode ?? D3DFILL_SOLID) >>> 0;
-  const shadeMode = Number(renderState.shadeMode ?? D3DSHADE_GOURAUD) >>> 0;
-  if (fillMode !== D3DFILL_SOLID || shadeMode === D3DSHADE_FLAT) {
-    return null;
-  }
-  const glPrimitive = d3dPrimitiveToGl(primitiveType);
-  const supported = d3d8GlPrimitiveSupported(glPrimitive);
-  return {
-    fillModeDraw: {
-      glPrimitive,
-      drawIndexCount: indexCount,
-      drawIndexByteOffset: indexByteOffset,
-      temporaryIndexBuffer: false,
-      supported,
-      fallbackReason: supported ? null : "unsupportedPrimitive",
-    },
-    shadeModeDraw: {
-      usesFlatShader: false,
-      usesFirstVertexConvention: false,
-      glPrimitive,
-      drawIndexCount: indexCount,
-      drawIndexByteOffset: indexByteOffset,
-      supported,
-      fallbackReason: supported ? null : "unsupportedPrimitive",
-    },
-  };
-}
-
-function d3d8FillModeProbeInfo(fillModeDraw) {
-  if (!fillModeDraw) {
-    return null;
-  }
-  return {
-    mode: fillModeDraw.mode,
-    modeName: fillModeDraw.modeName,
-    requestedPrimitiveType: fillModeDraw.requestedPrimitiveType,
-    originalPrimitiveName: fillModeDraw.originalPrimitiveName,
-    glPrimitiveName: fillModeDraw.glPrimitiveName,
-    drawIndexCount: fillModeDraw.drawIndexCount,
-    drawIndexByteOffset: fillModeDraw.drawIndexByteOffset,
-    generatedIndexCount: fillModeDraw.generatedIndexCount,
-    sourceTriangleCount: fillModeDraw.sourceTriangleCount,
-    emittedTriangleCount: fillModeDraw.emittedTriangleCount,
-    culledTriangleCount: fillModeDraw.culledTriangleCount,
-    degenerateTriangleCount: fillModeDraw.degenerateTriangleCount,
-    cwTriangleCount: fillModeDraw.cwTriangleCount,
-    ccwTriangleCount: fillModeDraw.ccwTriangleCount,
-    cullMode: fillModeDraw.cullMode,
-    cullingRequested: fillModeDraw.cullingRequested,
-    cullingApplied: fillModeDraw.cullingApplied,
-    indexTypeName: fillModeDraw.indexTypeName,
-    temporaryIndexBuffer: fillModeDraw.temporaryIndexBuffer,
-    pointFill: fillModeDraw.pointFill,
-    wireframe: fillModeDraw.wireframe,
-    supported: fillModeDraw.supported,
-    fallbackReason: fillModeDraw.fallbackReason,
-  };
-}
-
-function d3d8ShadeModeProbeInfo(shadeModeDraw) {
-  if (!shadeModeDraw) {
-    return null;
-  }
-  return {
-    mode: shadeModeDraw.mode,
-    modeName: shadeModeDraw.modeName,
-    flat: shadeModeDraw.flat,
-    gouraud: shadeModeDraw.gouraud,
-    phongRequested: shadeModeDraw.phongRequested,
-    usesFlatShader: shadeModeDraw.usesFlatShader,
-    usesFirstVertexConvention: shadeModeDraw.usesFirstVertexConvention,
-    rotatedIndexBuffer: shadeModeDraw.rotatedIndexBuffer,
-    temporaryIndexBuffer: shadeModeDraw.temporaryIndexBuffer,
-    glPrimitiveName: shadeModeDraw.glPrimitiveName,
-    drawIndexCount: shadeModeDraw.drawIndexCount,
-    drawIndexByteOffset: shadeModeDraw.drawIndexByteOffset,
-    generatedIndexCount: shadeModeDraw.generatedIndexCount,
-    sourceTriangleCount: shadeModeDraw.sourceTriangleCount,
-    indexTypeName: shadeModeDraw.indexTypeName,
-    supported: shadeModeDraw.supported,
-    fallbackReason: shadeModeDraw.fallbackReason,
-  };
-}
-
-function pixelHasColor(pixel, threshold = 8) {
-  return Array.isArray(pixel) && pixel.slice(0, 3).some((component) => component > threshold);
 }
 
 function pixelLooksRed(pixel) {
@@ -11983,4011 +4056,6 @@ function pixelLooksMessageBoxBlueTint(pixel) {
       && pixel[2] >= 72
       && pixel[2] <= 112
       && pixel[3] >= 200);
-}
-
-function copyD3DMatrixFromHeap(ptr, scratch) {
-  const address = Number(ptr ?? 0) >>> 0;
-  const heap = cncPortEmscriptenModule?.HEAPF32;
-  if (address === 0 || !(heap instanceof Float32Array)) {
-    return null;
-  }
-  let target = scratch;
-  if (!(target instanceof Float32Array) || target.length !== 16) {
-    target = new Float32Array(16);
-    d3d8PerfStats.drawMatrixAllocatedCopies += 1;
-  }
-  const offset = address >>> 2;
-  if (offset + 16 > heap.length) {
-    return null;
-  }
-  for (let index = 0; index < 16; ++index) {
-    const value = heap[offset + index];
-    if (!Number.isFinite(value)) {
-      return null;
-    }
-    target[index] = value;
-  }
-  d3d8PerfStats.drawMatrixNormalizations += 1;
-  d3d8PerfStats.drawMatrixScratchCopies += 1;
-  return target;
-}
-
-function normalizeD3DMatrix(matrix, scratch = null) {
-  if (typeof matrix === "number") {
-    return copyD3DMatrixFromHeap(matrix, scratch);
-  }
-  const isSequence = Array.isArray(matrix) || ArrayBuffer.isView(matrix);
-  if (!isSequence || matrix.length !== 16) {
-    return null;
-  }
-  for (let index = 0; index < 16; ++index) {
-    if (!Number.isFinite(matrix[index])) {
-      return null;
-    }
-  }
-  d3d8PerfStats.drawMatrixNormalizations += 1;
-  if (scratch instanceof Float32Array && scratch.length === 16) {
-    scratch.set(matrix);
-    d3d8PerfStats.drawMatrixScratchCopies += 1;
-    return scratch;
-  }
-  if (matrix instanceof Float32Array) {
-    return matrix;
-  }
-  d3d8PerfStats.drawMatrixAllocatedCopies += 1;
-  return new Float32Array(matrix);
-}
-
-function d3d8MatrixEquals(left, right) {
-  if (left === right) {
-    return left !== null;
-  }
-  if (!left || !right || left.length !== 16 || right.length !== 16) {
-    return false;
-  }
-  for (let index = 0; index < 16; ++index) {
-    if (left[index] !== right[index]) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function d3d8NumericArrayEquals(left, right) {
-  if (left === right) {
-    return true;
-  }
-  if (!left || !right || left.length !== right.length) {
-    return false;
-  }
-  for (let index = 0; index < left.length; ++index) {
-    if (left[index] !== right[index]) {
-      return false;
-    }
-  }
-  return true;
-}
-
-// Per-location uniform value caches. The group-level keys in the draw path
-// skip whole uniform blocks when nothing in the group changed, but a group
-// miss re-runs every setter in the block while typically only one or two
-// values actually differ. These setters store the last uploaded value on the
-// WebGLUniformLocation itself and skip redundant gl.uniform* calls. Each
-// location object is fetched exactly once per program (createD3D8DrawProgram /
-// the depth-stencil program), and GL uniform state is per-program, so caching
-// on the location is exact and survives program switches. Every skipped call
-// also saves the GPU process one command to decode — the saturated resource
-// in unit-heavy scenes.
-function d3d8CachedUniform1i(location, value) {
-  if (!location) {
-    return;
-  }
-  if (location.__cncLast === value) {
-    d3d8PerfStats.uniformGlSkipped += 1;
-    return;
-  }
-  location.__cncLast = value;
-  d3d8PerfStats.uniformGlCalls += 1;
-  gl.uniform1i(location, value);
-}
-
-function d3d8CachedUniform1f(location, value) {
-  if (!location) {
-    return;
-  }
-  if (location.__cncLast === value) {
-    d3d8PerfStats.uniformGlSkipped += 1;
-    return;
-  }
-  location.__cncLast = value;
-  d3d8PerfStats.uniformGlCalls += 1;
-  gl.uniform1f(location, value);
-}
-
-function d3d8CachedUniform2f(location, x, y) {
-  if (!location) {
-    return;
-  }
-  if (location.__cncLastX === x && location.__cncLastY === y) {
-    d3d8PerfStats.uniformGlSkipped += 1;
-    return;
-  }
-  location.__cncLastX = x;
-  location.__cncLastY = y;
-  d3d8PerfStats.uniformGlCalls += 1;
-  gl.uniform2f(location, x, y);
-}
-
-function d3d8CachedUniform4f(location, x, y, z, w) {
-  if (!location) {
-    return;
-  }
-  if (location.__cncLastX === x && location.__cncLastY === y &&
-      location.__cncLastZ === z && location.__cncLastW === w) {
-    d3d8PerfStats.uniformGlSkipped += 1;
-    return;
-  }
-  location.__cncLastX = x;
-  location.__cncLastY = y;
-  location.__cncLastZ = z;
-  location.__cncLastW = w;
-  d3d8PerfStats.uniformGlCalls += 1;
-  gl.uniform4f(location, x, y, z, w);
-}
-
-function d3d8CachedUniformMatrix4fv(location, matrix) {
-  if (!location) {
-    return;
-  }
-  const cached = location.__cncLastMat;
-  if (cached && d3d8MatrixEquals(cached, matrix)) {
-    d3d8PerfStats.uniformGlSkipped += 1;
-    return;
-  }
-  location.__cncLastMat = rememberD3D8TransformUniformSnapshot(cached, matrix);
-  d3d8PerfStats.uniformGlCalls += 1;
-  gl.uniformMatrix4fv(location, false, matrix);
-}
-
-function d3d8UploadChangedUniformMatrix4fv(location, matrix) {
-  if (!location) {
-    return;
-  }
-  d3d8PerfStats.uniformGlCalls += 1;
-  gl.uniformMatrix4fv(location, false, matrix);
-}
-
-function setD3D8Uniform3FromArray(location, values) {
-  if (!location) {
-    return;
-  }
-  if (location.__cncLastX === values[0] && location.__cncLastY === values[1] &&
-      location.__cncLastZ === values[2]) {
-    d3d8PerfStats.uniformGlSkipped += 1;
-    return;
-  }
-  location.__cncLastX = values[0];
-  location.__cncLastY = values[1];
-  location.__cncLastZ = values[2];
-  d3d8PerfStats.uniformGlCalls += 1;
-  gl.uniform3f(location, values[0], values[1], values[2]);
-}
-
-function setD3D8Uniform4FromArray(location, values) {
-  d3d8CachedUniform4f(location, values[0], values[1], values[2], values[3]);
-}
-
-function resetD3D8TransformUniformCache() {
-  d3d8LastTransformUniformWorld = null;
-  d3d8LastTransformUniformView = null;
-  d3d8LastTransformUniformProjection = null;
-  d3d8LastTransformUniformWorldRevision = 0;
-  d3d8LastTransformUniformViewRevision = 0;
-  d3d8LastTransformUniformProjectionRevision = 0;
-}
-
-function rememberD3D8TransformUniformSnapshot(cached, values) {
-  const snapshot = cached instanceof Float32Array && cached.length === 16
-    ? cached
-    : new Float32Array(16);
-  snapshot.set(values);
-  return snapshot;
-}
-
-function rememberD3D8WorldTransformUniform(world) {
-  d3d8LastTransformUniformWorld = rememberD3D8TransformUniformSnapshot(
-    d3d8LastTransformUniformWorld,
-    world,
-  );
-}
-
-function rememberD3D8ViewTransformUniform(view) {
-  d3d8LastTransformUniformView = rememberD3D8TransformUniformSnapshot(
-    d3d8LastTransformUniformView,
-    view,
-  );
-}
-
-function rememberD3D8ProjectionTransformUniform(projection) {
-  d3d8LastTransformUniformProjection = rememberD3D8TransformUniformSnapshot(
-    d3d8LastTransformUniformProjection,
-    projection,
-  );
-}
-
-function d3d8MaterialUniformsEqual(renderState, material) {
-  const cached = d3d8LastMaterialUniformInfo;
-  return cached !== null &&
-    cached.ambient === renderState.ambient &&
-    cached.power === material.power &&
-    cached.diffuseMaterialSource === renderState.diffuseMaterialSource &&
-    cached.specularMaterialSource === renderState.specularMaterialSource &&
-    cached.ambientMaterialSource === renderState.ambientMaterialSource &&
-    cached.emissiveMaterialSource === renderState.emissiveMaterialSource &&
-    d3d8NumericArrayEquals(cached.diffuse, material.diffuse) &&
-    d3d8NumericArrayEquals(cached.materialAmbient, material.ambient) &&
-    d3d8NumericArrayEquals(cached.specular, material.specular) &&
-    d3d8NumericArrayEquals(cached.emissive, material.emissive);
-}
-
-function rememberD3D8MaterialUniforms(renderState, material) {
-  d3d8LastMaterialUniformInfo = {
-    ambient: renderState.ambient,
-    diffuse: material.diffuse.slice(),
-    materialAmbient: material.ambient.slice(),
-    specular: material.specular.slice(),
-    emissive: material.emissive.slice(),
-    power: material.power,
-    diffuseMaterialSource: renderState.diffuseMaterialSource,
-    specularMaterialSource: renderState.specularMaterialSource,
-    ambientMaterialSource: renderState.ambientMaterialSource,
-    emissiveMaterialSource: renderState.emissiveMaterialSource,
-  };
-}
-
-function isIdentityD3DMatrix(matrix) {
-  if (!matrix || matrix.length !== 16) {
-    return false;
-  }
-  for (let index = 0; index < 16; ++index) {
-    const expected = index % 5 === 0 ? 1 : 0;
-    if (Math.abs(matrix[index] - expected) > 0.000001) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function multiplyD3D8ColumnMatrixVector(matrix, vector) {
-  if (!matrix || matrix.length !== 16) {
-    return vector.slice();
-  }
-  const [x, y, z, w] = vector;
-  return [
-    matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12] * w,
-    matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13] * w,
-    matrix[2] * x + matrix[6] * y + matrix[10] * z + matrix[14] * w,
-    matrix[3] * x + matrix[7] * y + matrix[11] * z + matrix[15] * w,
-  ];
-}
-
-function readD3D8Float32(view, offset) {
-  if (!view || offset < 0 || offset + 4 > view.byteLength) {
-    return 0;
-  }
-  const value = view.getFloat32(offset, true);
-  return Number.isFinite(value) ? value : 0;
-}
-
-function d3d8DiffuseRgbaFromBytes(bytes, offset) {
-  if (!(bytes instanceof Uint8Array) || offset < 0 || offset + 4 > bytes.byteLength) {
-    return null;
-  }
-  return [
-    bytes[offset + 2],
-    bytes[offset + 1],
-    bytes[offset],
-    bytes[offset + 3],
-  ];
-}
-
-function collectD3D8IndexedVertexIndices(indexResource, indexByteOffset, indexCount, indexSize, availableVertices) {
-  const indexBytes = indexResource?.bytes;
-  const requiredByteSize = indexByteOffset + indexCount * indexSize;
-  if (!(indexBytes instanceof Uint8Array) ||
-      requiredByteSize > indexBytes.byteLength ||
-      (indexSize !== 2 && indexSize !== 4) ||
-      availableVertices <= 0) {
-    return null;
-  }
-
-  const indices = new Set();
-  let min = Number.POSITIVE_INFINITY;
-  let max = Number.NEGATIVE_INFINITY;
-  let outOfRange = 0;
-  for (let index = 0; index < indexCount; ++index) {
-    const vertexIndex = readD3D8Index(indexBytes, indexByteOffset, index, indexSize);
-    if (!Number.isInteger(vertexIndex) || vertexIndex < 0 || vertexIndex >= availableVertices) {
-      outOfRange += 1;
-      continue;
-    }
-    indices.add(vertexIndex);
-    min = Math.min(min, vertexIndex);
-    max = Math.max(max, vertexIndex);
-  }
-
-  if (indices.size === 0) {
-    return { indices: [], min: null, max: null, outOfRange };
-  }
-  return {
-    indices: Array.from(indices).sort((left, right) => left - right),
-    min,
-    max,
-    outOfRange,
-  };
-}
-
-function inspectD3D8DrawVertices(resource, byteOffset, vertexStride, vertexCount, vertexLayout,
-    transforms, viewport, indexResource = null, indexByteOffset = 0, indexCount = 0, indexSize = 0) {
-  const bytes = resource?.bytes;
-  if (!(bytes instanceof Uint8Array) || vertexStride < 12 || vertexCount === 0) {
-    return null;
-  }
-  const availableVertices = Math.min(
-    vertexCount,
-    Math.floor(Math.max(0, bytes.byteLength - byteOffset) / vertexStride),
-  );
-  if (availableVertices <= 0) {
-    return null;
-  }
-  const indexedVertices = collectD3D8IndexedVertexIndices(
-    indexResource,
-    indexByteOffset,
-    indexCount,
-    indexSize,
-    availableVertices,
-  );
-  const inspectedVertexIndices = indexedVertices?.indices?.length
-    ? indexedVertices.indices
-    : Array.from({ length: availableVertices }, (_, index) => index);
-
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const bounds = {
-    min: [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY],
-    max: [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY],
-  };
-  const diffuse = {
-    available: vertexLayout?.diffuseOffset !== null,
-    sampleCount: 0,
-    nonBlackRgb: 0,
-    checksum: 2166136261,
-    min: [255, 255, 255, 255],
-    max: [0, 0, 0, 0],
-    average: [0, 0, 0, 0],
-  };
-  const pretransformed = vertexLayout?.pretransformed === true;
-  const projected = (transforms || pretransformed) ? {
-    sampleCount: 0,
-    visible: 0,
-    behindOrInvalidW: 0,
-    ndcMin: [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY],
-    ndcMax: [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY],
-    screenMin: [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY],
-    screenMax: [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY],
-    clipWMin: Number.POSITIVE_INFINITY,
-    clipWMax: Number.NEGATIVE_INFINITY,
-  } : null;
-  const samples = [];
-  const sampleCount = Math.min(8, inspectedVertexIndices.length);
-  const sampleIndices = new Set(Array.from({ length: sampleCount }, (_, index) =>
-    inspectedVertexIndices[Math.min(
-      inspectedVertexIndices.length - 1,
-      Math.floor((index * (inspectedVertexIndices.length - 1)) / 7),
-    )]));
-
-  for (const vertexIndex of inspectedVertexIndices) {
-    const base = byteOffset + vertexIndex * vertexStride;
-    const position = [
-      readD3D8Float32(view, base),
-      readD3D8Float32(view, base + 4),
-      readD3D8Float32(view, base + 8),
-    ];
-    const positionRhw = pretransformed && base + 16 <= bytes.byteLength
-      ? readD3D8Float32(view, base + 12)
-      : null;
-    for (let axis = 0; axis < 3; ++axis) {
-      bounds.min[axis] = Math.min(bounds.min[axis], position[axis]);
-      bounds.max[axis] = Math.max(bounds.max[axis], position[axis]);
-    }
-
-    const diffuseOffset = vertexLayout?.diffuseOffset;
-    const rgba = diffuse.available
-      ? d3d8DiffuseRgbaFromBytes(bytes, base + diffuseOffset)
-      : null;
-    if (rgba) {
-      diffuse.sampleCount += 1;
-      if (rgba[0] > 0 || rgba[1] > 0 || rgba[2] > 0) {
-        diffuse.nonBlackRgb += 1;
-      }
-      for (let component = 0; component < 4; ++component) {
-        diffuse.min[component] = Math.min(diffuse.min[component], rgba[component]);
-        diffuse.max[component] = Math.max(diffuse.max[component], rgba[component]);
-        diffuse.average[component] += rgba[component];
-        diffuse.checksum = Math.imul(diffuse.checksum ^ rgba[component], 16777619) >>> 0;
-      }
-    }
-
-    if (projected) {
-      let ndcInfo = null;
-      if (pretransformed) {
-        ndcInfo = projectD3D8PretransformedVertex(bytes, byteOffset, vertexStride, viewport, vertexIndex);
-      } else if (transforms) {
-        const worldPosition = multiplyD3D8ColumnMatrixVector(transforms.world, [...position, 1]);
-        const viewPosition = multiplyD3D8ColumnMatrixVector(transforms.view, worldPosition);
-        const d3dClip = multiplyD3D8ColumnMatrixVector(transforms.projection, viewPosition);
-        const glClip = [d3dClip[0], d3dClip[1], d3dClip[2] * 2.0 - d3dClip[3], d3dClip[3]];
-        ndcInfo = Math.abs(glClip[3]) <= 0.000001
-          ? null
-          : { ndc: [glClip[0] / glClip[3], glClip[1] / glClip[3], glClip[2] / glClip[3]], clipW: glClip[3] };
-      }
-      projected.sampleCount += 1;
-      if (!ndcInfo) {
-        projected.behindOrInvalidW += 1;
-      } else {
-        const { ndc, clipW } = ndcInfo;
-        projected.clipWMin = Math.min(projected.clipWMin, clipW);
-        projected.clipWMax = Math.max(projected.clipWMax, clipW);
-        for (let axis = 0; axis < 3; ++axis) {
-          projected.ndcMin[axis] = Math.min(projected.ndcMin[axis], ndc[axis]);
-          projected.ndcMax[axis] = Math.max(projected.ndcMax[axis], ndc[axis]);
-        }
-        if (ndc[0] >= -1 && ndc[0] <= 1 && ndc[1] >= -1 && ndc[1] <= 1 && ndc[2] >= -1 && ndc[2] <= 1) {
-          projected.visible += 1;
-        }
-        if (viewport?.gl) {
-          const screenX = viewport.gl.x + (ndc[0] * 0.5 + 0.5) * viewport.gl.width;
-          const screenY = viewport.gl.y + (1.0 - (ndc[1] * 0.5 + 0.5)) * viewport.gl.height;
-          projected.screenMin[0] = Math.min(projected.screenMin[0], screenX);
-          projected.screenMin[1] = Math.min(projected.screenMin[1], screenY);
-          projected.screenMax[0] = Math.max(projected.screenMax[0], screenX);
-          projected.screenMax[1] = Math.max(projected.screenMax[1], screenY);
-        }
-      }
-    }
-
-    if (sampleIndices.has(vertexIndex)) {
-      const texCoords = [];
-      for (const texCoord of vertexLayout?.texCoords ?? []) {
-        if (texCoord.available) {
-          const coordBase = base + texCoord.offset;
-          texCoords.push({
-            coordSet: texCoord.coordSet,
-            uv: [
-              readD3D8Float32(view, coordBase),
-              readD3D8Float32(view, coordBase + 4),
-            ],
-          });
-        }
-      }
-      samples.push({
-        index: vertexIndex,
-        position,
-        rhw: positionRhw,
-        diffuse: rgba,
-        texCoords,
-      });
-    }
-  }
-
-  if (diffuse.sampleCount > 0) {
-    for (let component = 0; component < 4; ++component) {
-      diffuse.average[component] = Number((diffuse.average[component] / diffuse.sampleCount).toFixed(3));
-    }
-  } else {
-    diffuse.checksum = null;
-    diffuse.min = null;
-    diffuse.max = null;
-    diffuse.average = null;
-  }
-
-  return {
-    availableVertices,
-    inspectedVertices: inspectedVertexIndices.length,
-    indexRange: indexedVertices ? {
-      min: indexedVertices.min,
-      max: indexedVertices.max,
-      outOfRange: indexedVertices.outOfRange,
-    } : null,
-    positionBounds: bounds,
-    diffuse,
-    projected,
-    samples,
-  };
-}
-
-function inspectD3D8IndexedTriangles(vertexResource, vertexByteOffset, vertexStride,
-    indexResource, indexByteOffset, indexCount, indexSize, primitiveType, transforms,
-    vertexLayout = null, viewport = null) {
-  const vertexBytes = vertexResource?.bytes;
-  const indexBytes = indexResource?.bytes;
-  if (!(vertexBytes instanceof Uint8Array) ||
-      !(indexBytes instanceof Uint8Array) ||
-      vertexStride < 12 ||
-      (!transforms && vertexLayout?.pretransformed !== true) ||
-      indexCount < 3 ||
-      (indexSize !== 2 && indexSize !== 4)) {
-    return null;
-  }
-
-  const readProjected = (vertexIndex) => {
-    if (vertexLayout?.pretransformed === true) {
-      return projectD3D8PretransformedVertex(
-        vertexBytes,
-        vertexByteOffset,
-        vertexStride,
-        viewport,
-        vertexIndex,
-      )?.ndc ?? null;
-    }
-    return projectD3D8VertexToNdc(vertexBytes, vertexByteOffset, vertexStride, transforms, vertexIndex);
-  };
-  const areaFor = (ia, ib, ic) => {
-    return d3d8ProjectedTriangleArea(readProjected(ia), readProjected(ib), readProjected(ic));
-  };
-  const readIndex = (index) => readD3D8Index(indexBytes, indexByteOffset, index, indexSize);
-  const result = {
-    primitiveType,
-    inspected: 0,
-    cw: 0,
-    ccw: 0,
-    degenerate: 0,
-    samples: [],
-  };
-  const recordTriangle = (triangleIndex, ia, ib, ic) => {
-    if (ia < 0 || ib < 0 || ic < 0) {
-      return;
-    }
-    const area = areaFor(ia, ib, ic);
-    if (!Number.isFinite(area)) {
-      return;
-    }
-    result.inspected += 1;
-    if (Math.abs(area) <= 0.0000001) {
-      result.degenerate += 1;
-    } else if (area < 0) {
-      result.cw += 1;
-    } else {
-      result.ccw += 1;
-    }
-    if (result.samples.length < 8) {
-      result.samples.push({
-        triangleIndex,
-        indices: [ia, ib, ic],
-        ndcSignedArea: Number(area.toFixed(8)),
-        winding: Math.abs(area) <= 0.0000001 ? "degenerate" : (area < 0 ? "cw" : "ccw"),
-      });
-    }
-  };
-
-  if (primitiveType === D3DPT_TRIANGLELIST) {
-    const triangleCount = Math.floor(indexCount / 3);
-    for (let triangleIndex = 0; triangleIndex < triangleCount; ++triangleIndex) {
-      const index = triangleIndex * 3;
-      recordTriangle(triangleIndex, readIndex(index), readIndex(index + 1), readIndex(index + 2));
-    }
-  } else if (primitiveType === D3DPT_TRIANGLESTRIP) {
-    for (let triangleIndex = 0; triangleIndex < indexCount - 2; ++triangleIndex) {
-      const ia = readIndex(triangleIndex);
-      const ib = readIndex(triangleIndex + 1);
-      const ic = readIndex(triangleIndex + 2);
-      if (ia === ib || ib === ic || ia === ic) {
-        result.degenerate += 1;
-        continue;
-      }
-      if (triangleIndex % 2 === 0) {
-        recordTriangle(triangleIndex, ia, ib, ic);
-      } else {
-        recordTriangle(triangleIndex, ib, ia, ic);
-      }
-    }
-  }
-
-  return result.inspected > 0 ? result : null;
-}
-
-function d3d8TextureStageDrawSummary(textureStage = {}) {
-  return {
-    colorOp: textureStage.colorOp,
-    colorArg0: textureStage.colorArg0,
-    colorArg1: textureStage.colorArg1,
-    colorArg2: textureStage.colorArg2,
-    alphaOp: textureStage.alphaOp,
-    alphaArg0: textureStage.alphaArg0,
-    alphaArg1: textureStage.alphaArg1,
-    alphaArg2: textureStage.alphaArg2,
-    texCoordIndex: textureStage.texCoordIndex,
-    addressU: textureStage.addressU,
-    addressV: textureStage.addressV,
-    minFilter: textureStage.minFilter,
-    magFilter: textureStage.magFilter,
-    mipFilter: textureStage.mipFilter,
-    textureTransformFlags: textureStage.textureTransformFlags,
-  };
-}
-
-function d3d8DrawVertexSummary(vertexDiagnostics) {
-  if (!vertexDiagnostics) {
-    return null;
-  }
-  return {
-    availableVertices: vertexDiagnostics.availableVertices,
-    inspectedVertices: vertexDiagnostics.inspectedVertices,
-    indexRange: vertexDiagnostics.indexRange,
-    positionBounds: vertexDiagnostics.positionBounds,
-    diffuse: vertexDiagnostics.diffuse,
-    projected: vertexDiagnostics.projected,
-    triangles: vertexDiagnostics.triangles,
-    samples: vertexDiagnostics.samples,
-  };
-}
-
-function sampleD3D8TextureAtVertexSamples(resource, vertexDiagnostics, coordSet) {
-  if (!resource?.width || !resource?.height || !Array.isArray(vertexDiagnostics?.samples)) {
-    return [];
-  }
-  const samples = [];
-  for (const sample of vertexDiagnostics.samples) {
-    const texCoord = sample.texCoords?.find((coord) => coord.coordSet === coordSet);
-    if (!texCoord) {
-      continue;
-    }
-    const u = Number(texCoord.uv?.[0] ?? 0);
-    const v = Number(texCoord.uv?.[1] ?? 0);
-    if (!Number.isFinite(u) || !Number.isFinite(v)) {
-      continue;
-    }
-    const x = Math.max(0, Math.min(resource.width - 1, Math.floor(u * resource.width)));
-    const y = Math.max(0, Math.min(resource.height - 1, Math.floor(v * resource.height)));
-    samples.push({
-      vertexIndex: sample.index,
-      uv: [u, v],
-      xy: [x, y],
-      pixel: sampleD3D8TexturePixel(resource, x, y),
-    });
-  }
-  return samples;
-}
-
-function defaultD3D8TextureStageValue(stage, state) {
-  switch (Number(state) >>> 0) {
-    case D3DTSS_COLOROP:
-      return stage === 0 ? D3DTOP_MODULATE : D3DTOP_DISABLE;
-    case D3DTSS_COLORARG1:
-      return D3DTA_TEXTURE;
-    case D3DTSS_COLORARG2:
-      return D3DTA_CURRENT;
-    case D3DTSS_ALPHAOP:
-      return stage === 0 ? D3DTOP_SELECTARG1 : D3DTOP_DISABLE;
-    case D3DTSS_ALPHAARG1:
-      return D3DTA_TEXTURE;
-    case D3DTSS_ALPHAARG2:
-      return D3DTA_CURRENT;
-    case D3DTSS_TEXCOORDINDEX:
-      return stage;
-    case D3DTSS_ADDRESSU:
-    case D3DTSS_ADDRESSV:
-    case D3DTSS_ADDRESSW:
-      return D3DTADDRESS_WRAP;
-    case D3DTSS_MAGFILTER:
-    case D3DTSS_MINFILTER:
-      return D3DTEXF_POINT;
-    case D3DTSS_MIPFILTER:
-      return D3DTEXF_NONE;
-    case D3DTSS_MIPMAPLODBIAS:
-    case D3DTSS_MAXMIPLEVEL:
-      return 0;
-    case D3DTSS_TEXTURETRANSFORMFLAGS:
-      return D3DTTFF_DISABLE;
-    case D3DTSS_COLORARG0:
-    case D3DTSS_ALPHAARG0:
-    case D3DTSS_RESULTARG:
-      return D3DTA_CURRENT;
-    default:
-      return 0;
-  }
-}
-
-function normalizeD3D8TextureStageState(textureStage = {}, stageIndex = 0) {
-  const stage = Number(textureStage?.stage ?? stageIndex) >>> 0;
-  const value = (key, state) =>
-    Number(textureStage?.[key] ?? defaultD3D8TextureStageValue(stage, state)) >>> 0;
-  return {
-    stage,
-    colorOp: value("colorOp", D3DTSS_COLOROP),
-    colorArg1: value("colorArg1", D3DTSS_COLORARG1),
-    colorArg2: value("colorArg2", D3DTSS_COLORARG2),
-    alphaOp: value("alphaOp", D3DTSS_ALPHAOP),
-    alphaArg1: value("alphaArg1", D3DTSS_ALPHAARG1),
-    alphaArg2: value("alphaArg2", D3DTSS_ALPHAARG2),
-    texCoordIndex: value("texCoordIndex", D3DTSS_TEXCOORDINDEX),
-    addressU: value("addressU", D3DTSS_ADDRESSU),
-    addressV: value("addressV", D3DTSS_ADDRESSV),
-    magFilter: value("magFilter", D3DTSS_MAGFILTER),
-    minFilter: value("minFilter", D3DTSS_MINFILTER),
-    mipFilter: value("mipFilter", D3DTSS_MIPFILTER),
-    textureTransformFlags: value("textureTransformFlags", D3DTSS_TEXTURETRANSFORMFLAGS),
-    addressW: value("addressW", D3DTSS_ADDRESSW),
-    colorArg0: value("colorArg0", D3DTSS_COLORARG0),
-    alphaArg0: value("alphaArg0", D3DTSS_ALPHAARG0),
-    resultArg: value("resultArg", D3DTSS_RESULTARG),
-    borderColor: Number(textureStage?.borderColor ?? 0) >>> 0,
-    maxMipLevel: value("maxMipLevel", D3DTSS_MAXMIPLEVEL),
-    maxAnisotropy: Number(textureStage?.maxAnisotropy ?? 1) >>> 0,
-    mipMapLodBias: value("mipMapLodBias", D3DTSS_MIPMAPLODBIAS),
-    bumpEnvMat00: Number(textureStage?.bumpEnvMat00 ?? 0) >>> 0,
-    bumpEnvMat01: Number(textureStage?.bumpEnvMat01 ?? 0) >>> 0,
-    bumpEnvMat10: Number(textureStage?.bumpEnvMat10 ?? 0) >>> 0,
-    bumpEnvMat11: Number(textureStage?.bumpEnvMat11 ?? 0) >>> 0,
-    bumpEnvLScale: Number(textureStage?.bumpEnvLScale ?? 0) >>> 0,
-    bumpEnvLOffset: Number(textureStage?.bumpEnvLOffset ?? 0) >>> 0,
-  };
-}
-
-function normalizeD3D8TextureStages(textureStages) {
-  return Array.from({ length: D3D8_TEXTURE_STAGE_COUNT }, (_, stage) =>
-    normalizeD3D8TextureStageState(Array.isArray(textureStages) ? textureStages[stage] : null, stage));
-}
-
-function normalizeD3D8ClipPlanes(clipPlanes) {
-  return Array.from({ length: D3D8_CLIP_PLANE_COUNT }, (_, planeIndex) => {
-    const source = Array.isArray(clipPlanes) ? clipPlanes[planeIndex] : null;
-    return Array.from({ length: 4 }, (_, component) => {
-      const value = Number(Array.isArray(source) ? source[component] : 0);
-      return Number.isFinite(value) ? value : 0;
-    });
-  });
-}
-
-function flattenD3D8ClipPlanes(clipPlanes) {
-  const flat = new Float32Array(D3D8_CLIP_PLANE_COUNT * 4);
-  for (let planeIndex = 0; planeIndex < D3D8_CLIP_PLANE_COUNT; ++planeIndex) {
-    for (let component = 0; component < 4; ++component) {
-      flat[planeIndex * 4 + component] = clipPlanes[planeIndex]?.[component] ?? 0;
-    }
-  }
-  return flat;
-}
-
-function d3d8ClipPlaneMask(renderState) {
-  return renderState.clipping !== 0
-    ? (renderState.clipPlaneEnable & ((1 << D3D8_CLIP_PLANE_COUNT) - 1))
-    : 0;
-}
-
-function d3d8ClipPlaneInfo(renderState, clipPlanes) {
-  const mask = d3d8ClipPlaneMask(renderState);
-  return {
-    enabled: mask !== 0,
-    clipping: renderState.clipping,
-    mask,
-    enabledIndices: Array.from({ length: D3D8_CLIP_PLANE_COUNT }, (_, index) => index)
-      .filter((index) => (mask & (1 << index)) !== 0),
-    planes: clipPlanes.map((plane) => plane.slice()),
-  };
-}
-
-// Detect and count terrain noise/cloud/lightmap "detail" multiply passes.
-//
-// The original engine renders the fine terrain noise + lightmap detail through
-// the fixed-function TerrainShader2Stage noise/cloud pass (the browser D3D8
-// adapter deliberately reports a fixed-function Voodoo5-class device, so
-// W3DShaderManager selects this fallback rather than the ps.1.1
-// terrainnoise*.pso path). That pass — and the single-pass
-// ST_TERRAIN_BASE_NOISE12 variant — is identified by:
-//   * a texture sampled with D3DTSS_TCI_CAMERASPACEPOSITION generated coords
-//     plus a D3DTS_TEXTURE0/1 texture transform (the STRETCH_FACTOR + sliding
-//     offset projection from updateNoise1/updateNoise2), and
-//   * a multiplicative framebuffer blend: SRCBLEND=DESTCOLOR, DESTBLEND=ZERO.
-// See GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/
-// W3DShaderManager.cpp (TerrainShader2Stage::set, pass 2).
-//
-// This diagnostic is pure instrumentation (no rendering change): it lets the
-// real-GPU harness confirm the detail layer is actually being emitted. A flat
-// terrain almost always means the engine LOD / Options gate left
-// m_useLightMap / m_useCloudMap off, so ST_TERRAIN_BASE_NOISE* is never
-// selected and these draws never occur (counter stays 0) — not a lost pass in
-// the D3D8 -> WebGL2 bridge, which faithfully replays each pass.
-function d3d8NoteTerrainNoiseMultiplyDraw(
-  renderState,
-  canSampleTexture0,
-  texture0Coordinates,
-  texture0Transform,
-  canSampleTexture1,
-  texture1Coordinates,
-  texture1Transform,
-) {
-  if (!renderState || Number(renderState.alphaBlendEnable ?? 0) === 0) {
-    return;
-  }
-  const srcBlend = Number(renderState.srcBlend ?? D3DBLEND_ONE) >>> 0;
-  const destBlend = Number(renderState.destBlend ?? D3DBLEND_ZERO) >>> 0;
-  // The multiplicative "modulate onto framebuffer" blend that the noise/cloud
-  // pass uses. This is what darkens/tints the terrain by the noise pattern.
-  if (srcBlend !== D3DBLEND_DESTCOLOR || destBlend !== D3DBLEND_ZERO) {
-    return;
-  }
-  const stage0IsProjectedNoise = Boolean(
-    canSampleTexture0 &&
-    texture0Coordinates &&
-    texture0Coordinates.mode === D3DTSS_TCI_CAMERASPACEPOSITION);
-  const stage1IsProjectedNoise = Boolean(
-    canSampleTexture1 &&
-    texture1Coordinates &&
-    texture1Coordinates.mode === D3DTSS_TCI_CAMERASPACEPOSITION);
-  if (!stage0IsProjectedNoise && !stage1IsProjectedNoise) {
-    return;
-  }
-  d3d8PerfStats.terrainNoiseMultiplyDraws += 1;
-  // Whether the projection matrix is non-identity. An identity transform on a
-  // camera-space-position noise pass would collapse the noise UVs and flatten
-  // the detail, so the harness can use this to distinguish "detail present"
-  // from "detail collapsed".
-  const stage0Transformed = stage0IsProjectedNoise &&
-    texture0Coordinates.transformApplied &&
-    !isIdentityD3DMatrix(texture0Transform);
-  const stage1Transformed = stage1IsProjectedNoise &&
-    texture1Coordinates.transformApplied &&
-    !isIdentityD3DMatrix(texture1Transform);
-  if (stage0Transformed || stage1Transformed) {
-    d3d8PerfStats.terrainNoiseMultiplyTransformedDraws += 1;
-  } else {
-    d3d8PerfStats.terrainNoiseMultiplyIdentityTransformDraws += 1;
-  }
-}
-
-function normalizeD3D8RenderState(renderState = {}) {
-  return {
-    cullMode: Number(renderState.cullMode ?? D3DCULL_CW) >>> 0,
-    zEnable: Number(renderState.zEnable ?? D3DZB_TRUE) >>> 0,
-    zWriteEnable: Number(renderState.zWriteEnable ?? 1) >>> 0,
-    zFunc: Number(renderState.zFunc ?? D3DCMP_LESSEQUAL) >>> 0,
-    alphaBlendEnable: Number(renderState.alphaBlendEnable ?? 0) >>> 0,
-    srcBlend: Number(renderState.srcBlend ?? D3DBLEND_ONE) >>> 0,
-    destBlend: Number(renderState.destBlend ?? D3DBLEND_ZERO) >>> 0,
-    blendOp: Number(renderState.blendOp ?? D3DBLENDOP_ADD) >>> 0,
-    alphaTestEnable: Number(renderState.alphaTestEnable ?? 0) >>> 0,
-    alphaFunc: Number(renderState.alphaFunc ?? D3DCMP_LESSEQUAL) >>> 0,
-    alphaRef: Number(renderState.alphaRef ?? 0) >>> 0,
-    colorWriteEnable: Number(renderState.colorWriteEnable ??
-      (D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
-        D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA)) >>> 0,
-    textureFactor: Number(renderState.textureFactor ?? 0) >>> 0,
-    stencilEnable: Number(renderState.stencilEnable ?? 0) >>> 0,
-    stencilFail: Number(renderState.stencilFail ?? D3DSTENCILOP_KEEP) >>> 0,
-    stencilZFail: Number(renderState.stencilZFail ?? D3DSTENCILOP_KEEP) >>> 0,
-    stencilPass: Number(renderState.stencilPass ?? D3DSTENCILOP_KEEP) >>> 0,
-    stencilFunc: Number(renderState.stencilFunc ?? D3DCMP_ALWAYS) >>> 0,
-    stencilRef: Number(renderState.stencilRef ?? 0) >>> 0,
-    stencilMask: Number(renderState.stencilMask ?? 0xffffffff) >>> 0,
-    stencilWriteMask: Number(renderState.stencilWriteMask ?? 0xffffffff) >>> 0,
-    fogEnable: Number(renderState.fogEnable ?? 0) >>> 0,
-    fogColor: Number(renderState.fogColor ?? 0) >>> 0,
-    fogStart: Number(renderState.fogStart ?? 0) >>> 0,
-    fogEnd: Number(renderState.fogEnd ?? D3D_FLOAT_ONE_BITS) >>> 0,
-    fogVertexMode: Number(renderState.fogVertexMode ?? D3DFOG_LINEAR) >>> 0,
-    rangeFogEnable: Number(renderState.rangeFogEnable ?? 0) >>> 0,
-    fillMode: Number(renderState.fillMode ?? D3DFILL_SOLID) >>> 0,
-    zBias: Number(renderState.zBias ?? 0) >>> 0,
-    shadeMode: Number(renderState.shadeMode ?? D3DSHADE_GOURAUD) >>> 0,
-    lighting: Number(renderState.lighting ?? 1) >>> 0,
-    specularEnable: Number(renderState.specularEnable ?? 0) >>> 0,
-    normalizeNormals: Number(renderState.normalizeNormals ?? 0) >>> 0,
-    localViewer: Number(renderState.localViewer ?? 1) >>> 0,
-    ambient: Number(renderState.ambient ?? 0) >>> 0,
-    colorVertex: Number(renderState.colorVertex ?? 1) >>> 0,
-    diffuseMaterialSource: Number(renderState.diffuseMaterialSource ?? D3DMCS_COLOR1) >>> 0,
-    specularMaterialSource: Number(renderState.specularMaterialSource ?? D3DMCS_COLOR2) >>> 0,
-    ambientMaterialSource: Number(renderState.ambientMaterialSource ?? D3DMCS_MATERIAL) >>> 0,
-    emissiveMaterialSource: Number(renderState.emissiveMaterialSource ?? D3DMCS_MATERIAL) >>> 0,
-    clipping: Number(renderState.clipping ?? 1) >>> 0,
-    clipPlaneEnable: Number(renderState.clipPlaneEnable ?? 0) >>> 0,
-    pointSize: Number(renderState.pointSize ?? D3D_FLOAT_ONE_BITS) >>> 0,
-    pointSizeMin: Number(renderState.pointSizeMin ?? 0) >>> 0,
-    pointSizeMax: Number(renderState.pointSizeMax ?? 0x42800000) >>> 0,
-    pointSpriteEnable: Number(renderState.pointSpriteEnable ?? 0) >>> 0,
-    pointScaleEnable: Number(renderState.pointScaleEnable ?? 0) >>> 0,
-    pointScaleA: Number(renderState.pointScaleA ?? D3D_FLOAT_ONE_BITS) >>> 0,
-    pointScaleB: Number(renderState.pointScaleB ?? 0) >>> 0,
-    pointScaleC: Number(renderState.pointScaleC ?? 0) >>> 0,
-    textureStages: normalizeD3D8TextureStages(renderState.textureStages),
-  };
-}
-
-function d3dCmpToGl(compareFunc) {
-  switch (Number(compareFunc) >>> 0) {
-    case D3DCMP_NEVER:
-      return gl.NEVER;
-    case D3DCMP_LESS:
-      return gl.LESS;
-    case D3DCMP_EQUAL:
-      return gl.EQUAL;
-    case D3DCMP_LESSEQUAL:
-      return gl.LEQUAL;
-    case D3DCMP_GREATER:
-      return gl.GREATER;
-    case D3DCMP_NOTEQUAL:
-      return gl.NOTEQUAL;
-    case D3DCMP_GREATEREQUAL:
-      return gl.GEQUAL;
-    case D3DCMP_ALWAYS:
-    default:
-      return gl.ALWAYS;
-  }
-}
-
-function d3dBlendFactorToGl(blendFactor) {
-  switch (Number(blendFactor) >>> 0) {
-    case D3DBLEND_ZERO:
-      return gl.ZERO;
-    case D3DBLEND_ONE:
-      return gl.ONE;
-    case D3DBLEND_SRCCOLOR:
-      return gl.SRC_COLOR;
-    case D3DBLEND_INVSRCCOLOR:
-      return gl.ONE_MINUS_SRC_COLOR;
-    case D3DBLEND_SRCALPHA:
-    case D3DBLEND_BOTHSRCALPHA:
-      return gl.SRC_ALPHA;
-    case D3DBLEND_INVSRCALPHA:
-    case D3DBLEND_BOTHINVSRCALPHA:
-      return gl.ONE_MINUS_SRC_ALPHA;
-    case D3DBLEND_DESTALPHA:
-      return gl.DST_ALPHA;
-    case D3DBLEND_INVDESTALPHA:
-      return gl.ONE_MINUS_DST_ALPHA;
-    case D3DBLEND_DESTCOLOR:
-      return gl.DST_COLOR;
-    case D3DBLEND_INVDESTCOLOR:
-      return gl.ONE_MINUS_DST_COLOR;
-    case D3DBLEND_SRCALPHASAT:
-      return gl.SRC_ALPHA_SATURATE;
-    default:
-      return gl.ONE;
-  }
-}
-
-function d3dBlendOpToGl(blendOp) {
-  switch (Number(blendOp) >>> 0) {
-    case D3DBLENDOP_SUBTRACT:
-      return gl.FUNC_SUBTRACT;
-    case D3DBLENDOP_REVSUBTRACT:
-      return gl.FUNC_REVERSE_SUBTRACT;
-    case D3DBLENDOP_MIN:
-      return gl.MIN;
-    case D3DBLENDOP_MAX:
-      return gl.MAX;
-    case D3DBLENDOP_ADD:
-    default:
-      return gl.FUNC_ADD;
-  }
-}
-
-function d3dStencilOpToGl(stencilOp) {
-  switch (Number(stencilOp) >>> 0) {
-    case D3DSTENCILOP_ZERO:
-      return gl.ZERO;
-    case D3DSTENCILOP_REPLACE:
-      return gl.REPLACE;
-    case D3DSTENCILOP_INCRSAT:
-      return gl.INCR;
-    case D3DSTENCILOP_DECRSAT:
-      return gl.DECR;
-    case D3DSTENCILOP_INVERT:
-      return gl.INVERT;
-    case D3DSTENCILOP_INCR:
-      return gl.INCR_WRAP;
-    case D3DSTENCILOP_DECR:
-      return gl.DECR_WRAP;
-    case D3DSTENCILOP_KEEP:
-    default:
-      return gl.KEEP;
-  }
-}
-
-function d3d8StencilValueMask() {
-  if (!gl || !d3d8HasStencilBuffer) {
-    return 0;
-  }
-  if (d3d8StencilValueMaskCache != null) {
-    return d3d8StencilValueMaskCache;
-  }
-  const bits = Math.max(0, Math.min(32, Number(gl.getParameter(gl.STENCIL_BITS) ?? 0)));
-  d3d8StencilValueMaskCache = bits >= 32
-    ? 0xffffffff
-    : ((2 ** bits) - 1) >>> 0;
-  return d3d8StencilValueMaskCache;
-}
-
-function d3d8EffectiveStencilValue(value) {
-  return (((Number(value ?? 0) >>> 0) & d3d8StencilValueMask()) >>> 0);
-}
-
-function applyD3D8RenderState(renderState, options = {}) {
-  const state = options.normalized === true
-    ? renderState
-    : normalizeD3D8RenderState(renderState);
-  const cullEnabled = state.cullMode === D3DCULL_CW || state.cullMode === D3DCULL_CCW;
-  const cullFace = options.invertCullWinding
-    ? (state.cullMode === D3DCULL_CW ? gl.FRONT : gl.BACK)
-    : (state.cullMode === D3DCULL_CCW ? gl.FRONT : gl.BACK);
-  const depthEnabled = state.zEnable === D3DZB_TRUE || state.zEnable === D3DZB_USEW;
-  const depthFunc = d3dCmpToGl(state.zFunc);
-  const blendEnabled = state.alphaBlendEnable !== 0;
-  const srcBlend = d3dBlendFactorToGl(state.srcBlend);
-  const destBlend = d3dBlendFactorToGl(state.destBlend);
-  const blendEquation = d3dBlendOpToGl(state.blendOp);
-  const stencilAvailable = d3d8HasStencilBuffer;
-  const stencilEnabled = stencilAvailable && state.stencilEnable !== 0;
-  const stencilFunc = d3dCmpToGl(state.stencilFunc);
-  const stencilFail = d3dStencilOpToGl(state.stencilFail);
-  const stencilZFail = d3dStencilOpToGl(state.stencilZFail);
-  const stencilPass = d3dStencilOpToGl(state.stencilPass);
-  const stencilRef = d3d8EffectiveStencilValue(state.stencilRef);
-  const stencilMask = d3d8EffectiveStencilValue(state.stencilMask);
-  const stencilWriteMask = d3d8EffectiveStencilValue(state.stencilWriteMask);
-  const fogStart = d3dDwordToFloat(state.fogStart);
-  const fogEnd = d3dDwordToFloat(state.fogEnd);
-  const fogEnabled = state.fogEnable !== 0 &&
-    state.fogVertexMode === D3DFOG_LINEAR &&
-    Number.isFinite(fogStart) &&
-    Number.isFinite(fogEnd) &&
-    fogEnd > fogStart;
-  const fogColor = d3dColorToNormalizedRgba(state.fogColor).slice(0, 3);
-  const depthBias = d3d8DepthBiasInfo(state.zBias);
-  const colorMask = {
-    r: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_RED),
-    g: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_GREEN),
-    b: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_BLUE),
-    a: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_ALPHA),
-  };
-
-  applyD3D8TrackedGlState("frontFace", gl.CCW, () => gl.frontFace(gl.CCW));
-  setD3D8TrackedCapability(gl.CULL_FACE, "cullEnabled", cullEnabled);
-  if (cullEnabled) {
-    applyD3D8TrackedGlState("cullFace", cullFace, () => gl.cullFace(cullFace));
-  }
-
-  setD3D8TrackedCapability(gl.DEPTH_TEST, "depthEnabled", depthEnabled);
-  setD3D8DepthMask(state.zWriteEnable !== 0);
-  applyD3D8TrackedGlState("depthFunc", depthFunc, () => gl.depthFunc(depthFunc));
-
-  // Emulate D3D8 D3DRS_ZBIAS with a slope-scaled polygon offset (see
-  // d3d8DepthBiasInfo). This is what pulls the terrain-tessellated projected
-  // insignia/shadow/scorch decals cleanly in front of the plaza they sit on so
-  // the whole decal wins the depth test instead of z-fighting/half-clipping.
-  // Tracked so the offset is fully reset (disabled + 0,0) on the very next draw
-  // that carries ZBIAS==0, mirroring the engine's set/reset-to-0 bracketing and
-  // preventing any cross-draw bias leak.
-  const polygonOffset = depthBias.polygonOffset;
-  setD3D8TrackedCapability(gl.POLYGON_OFFSET_FILL, "polygonOffsetEnabled", polygonOffset.enabled);
-  applyD3D8TrackedGlState(
-    "polygonOffset",
-    `${polygonOffset.factor},${polygonOffset.units}`,
-    () => gl.polygonOffset(polygonOffset.factor, polygonOffset.units),
-  );
-
-  setD3D8TrackedCapability(gl.BLEND, "blendEnabled", blendEnabled);
-  applyD3D8TrackedGlState("blendFunc", `${srcBlend},${destBlend}`,
-    () => gl.blendFunc(srcBlend, destBlend));
-  applyD3D8TrackedGlState("blendEquation", blendEquation,
-    () => gl.blendEquation(blendEquation));
-  applyD3D8TrackedGlState(
-    "colorMask",
-    `${colorMask.r ? 1 : 0},${colorMask.g ? 1 : 0},${colorMask.b ? 1 : 0},${colorMask.a ? 1 : 0}`,
-    () => gl.colorMask(colorMask.r, colorMask.g, colorMask.b, colorMask.a),
-  );
-  setD3D8TrackedCapability(gl.STENCIL_TEST, "stencilEnabled", stencilEnabled);
-  if (stencilEnabled) {
-    applyD3D8TrackedGlState("stencilFunc", `${stencilFunc},${stencilRef},${stencilMask}`,
-      () => gl.stencilFunc(stencilFunc, stencilRef, stencilMask));
-    applyD3D8TrackedGlState("stencilOp", `${stencilFail},${stencilZFail},${stencilPass}`,
-      () => gl.stencilOp(stencilFail, stencilZFail, stencilPass));
-    applyD3D8TrackedGlState("stencilMask", stencilWriteMask,
-      () => gl.stencilMask(stencilWriteMask));
-  } else {
-    const resetStencilMask = d3d8EffectiveStencilValue(0xffffffff);
-    applyD3D8TrackedGlState("stencilFunc", `${gl.ALWAYS},0,${resetStencilMask}`,
-      () => gl.stencilFunc(gl.ALWAYS, 0, resetStencilMask));
-    applyD3D8TrackedGlState("stencilOp", `${gl.KEEP},${gl.KEEP},${gl.KEEP}`,
-      () => gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP));
-    applyD3D8TrackedGlState("stencilMask", resetStencilMask,
-      () => gl.stencilMask(resetStencilMask));
-  }
-
-  return {
-    d3d: state,
-    cull: {
-      enabled: cullEnabled,
-      frontFace: gl.CCW,
-      cullFace: cullEnabled ? cullFace : gl.BACK,
-      invertWinding: Boolean(options.invertCullWinding),
-    },
-    depth: {
-      enabled: depthEnabled,
-      mask: state.zWriteEnable !== 0,
-      func: depthFunc,
-      bias: depthBias,
-    },
-    blend: {
-      enabled: blendEnabled,
-      src: srcBlend,
-      dest: destBlend,
-      equation: blendEquation,
-    },
-    stencil: {
-      available: stencilAvailable,
-      enabled: stencilEnabled,
-      func: stencilFunc,
-      fail: stencilFail,
-      zFail: stencilZFail,
-      pass: stencilPass,
-      ref: stencilRef,
-      mask: stencilMask,
-      writeMask: stencilWriteMask,
-      d3dRef: state.stencilRef,
-      d3dMask: state.stencilMask,
-      d3dWriteMask: state.stencilWriteMask,
-    },
-    alphaTest: {
-      enabled: state.alphaTestEnable !== 0,
-      func: d3dCmpToGl(state.alphaFunc),
-      ref: (state.alphaRef & 0xff) / 255,
-    },
-    fog: {
-      enabled: fogEnabled,
-      color: fogColor,
-      start: fogStart,
-      end: fogEnd,
-      vertexMode: state.fogVertexMode,
-      rangeEnabled: state.rangeFogEnable !== 0,
-    },
-    fillMode: {
-      mode: state.fillMode,
-      name: d3dFillModeName(state.fillMode),
-    },
-    shadeMode: {
-      mode: state.shadeMode,
-      name: d3dShadeModeName(state.shadeMode),
-      flat: state.shadeMode === D3DSHADE_FLAT,
-      gouraud: state.shadeMode === D3DSHADE_GOURAUD,
-      phongRequested: state.shadeMode === D3DSHADE_PHONG,
-    },
-    lighting: {
-      enabled: state.lighting !== 0,
-      normalizeNormals: {
-        enabled: state.normalizeNormals !== 0,
-        value: state.normalizeNormals,
-      },
-      localViewer: {
-        enabled: state.localViewer !== 0,
-        value: state.localViewer,
-      },
-    },
-    ambient: {
-      color: state.ambient,
-      rgba: d3dColorToNormalizedRgba(state.ambient),
-    },
-    materialSources: {
-      colorVertex: {
-        enabled: state.colorVertex !== 0,
-        value: state.colorVertex,
-      },
-      diffuse: {
-        source: state.diffuseMaterialSource,
-        name: d3dMaterialSourceName(state.diffuseMaterialSource),
-      },
-      specular: {
-        source: state.specularMaterialSource,
-        name: d3dMaterialSourceName(state.specularMaterialSource),
-      },
-      ambient: {
-        source: state.ambientMaterialSource,
-        name: d3dMaterialSourceName(state.ambientMaterialSource),
-      },
-      emissive: {
-        source: state.emissiveMaterialSource,
-        name: d3dMaterialSourceName(state.emissiveMaterialSource),
-      },
-    },
-    colorWrite: colorMask,
-  };
-}
-
-// Graphics diagnostics level. "full" (default) keeps every per-draw probe,
-// texture sample, draw-history entry, and the two readPixels GPU syncs that the
-// startup-vertical gates and regression smokes assert on. "lite" skips those
-// harness-only costs on the hot path (readPixels flushes dominate render time)
-// while still doing the real draw — for the human-playable page. Never change
-// the default: existing gates depend on "full".
-let d3d8DiagLevel = "full";
-// null = follow diag level (full => timed, lite => untimed); boolean = forced.
-let d3d8PerfTimingOverride = null;
-function syncD3D8PerfTimingEnabled() {
-  d3d8PerfTimingEnabled = d3d8PerfTimingOverride ?? (d3d8DiagLevel === "full");
-}
-let d3d8SceneDrawHistoryLimit = 256;
-let d3d8AdjacentDrawBatchingEnabled = true;
-let d3d8LiteVertexBufferMirrorsEnabled = false;
-let d3d8BufferProducerTrackingEnabled = false;
-let d3d8DrawProducerTrackingEnabled = false;
-let d3d8BoundDrawDiagnosticsSetter = null;
-let d3d8BoundDrawDiagnosticsEnabled = d3d8DiagLevel === "full";
-function setD3D8BoundDrawDiagnostics(enabled) {
-  d3d8BoundDrawDiagnosticsEnabled = !(enabled === false || enabled === 0 || enabled === "0");
-  if (typeof d3d8BoundDrawDiagnosticsSetter === "function") {
-    d3d8BoundDrawDiagnosticsSetter(d3d8BoundDrawDiagnosticsEnabled ? 1 : 0);
-  }
-  return d3d8BoundDrawDiagnosticsEnabled;
-}
-function applyD3D8BoundDrawDiagnosticsLevel() {
-  // Buffer checksums and byte-range capture are regression evidence, not draw
-  // inputs. Keep them in full diagnostics and off the human play hot path.
-  return setD3D8BoundDrawDiagnostics(d3d8DiagLevel === "full");
-}
-function setD3D8BufferProducerTracking(enabled) {
-  d3d8BufferProducerTrackingEnabled = enabled === true || enabled === 1 || enabled === "1";
-  if (typeof globalThis !== "undefined") {
-    globalThis.__cncD3D8BufferProducerTrackingEnabled = d3d8BufferProducerTrackingEnabled;
-  }
-  return d3d8BufferProducerTrackingEnabled;
-}
-function setD3D8DrawProducerTracking(enabled) {
-  d3d8DrawProducerTrackingEnabled = enabled === true || enabled === 1 || enabled === "1";
-  if (typeof globalThis !== "undefined") {
-    globalThis.__cncD3D8DrawProducerTrackingEnabled = d3d8DrawProducerTrackingEnabled;
-  }
-  return d3d8DrawProducerTrackingEnabled;
-}
-try {
-  const _params = new URLSearchParams(globalThis.location?.search || "");
-  const _diag = _params.get("diag");
-  if (_diag === "lite" || _diag === "full") d3d8DiagLevel = _diag;
-  const _perfTiming = _params.get("perfTiming");
-  if (_perfTiming === "1" || _perfTiming === "true") d3d8PerfTimingOverride = true;
-  else if (_perfTiming === "0" || _perfTiming === "false") d3d8PerfTimingOverride = false;
-  syncD3D8PerfTimingEnabled();
-  const _historyLimit = Number(_params.get("drawHistoryLimit"));
-  if (Number.isFinite(_historyLimit) && _historyLimit > 0) {
-    d3d8SceneDrawHistoryLimit = Math.min(8192, Math.max(1, Math.trunc(_historyLimit)));
-  }
-  const _batchAdjacent = _params.get("d3d8Batch");
-  if (_batchAdjacent === "0" || _batchAdjacent === "false" || _batchAdjacent === "off") {
-    d3d8AdjacentDrawBatchingEnabled = false;
-  }
-  const _liteVertexMirrors = _params.get("d3d8LiteVertexMirrors");
-  if (_liteVertexMirrors === "1" || _liteVertexMirrors === "true" || _liteVertexMirrors === "on") {
-    d3d8LiteVertexBufferMirrorsEnabled = true;
-  }
-  const _bufferProducers = _params.get("d3d8BufferProducers");
-  if (_bufferProducers === "1" || _bufferProducers === "true" || _bufferProducers === "on") {
-    d3d8BufferProducerTrackingEnabled = true;
-  }
-  const _drawProducers = _params.get("d3d8DrawProducers");
-  if (_drawProducers === "1" || _drawProducers === "true" || _drawProducers === "on") {
-    d3d8DrawProducerTrackingEnabled = true;
-  }
-} catch (_e) { /* no location (node context) */ }
-setD3D8BufferProducerTracking(d3d8BufferProducerTrackingEnabled);
-setD3D8DrawProducerTracking(d3d8DrawProducerTrackingEnabled);
-if (typeof globalThis !== "undefined") {
-  globalThis.__cncSetDiagLevel = (lvl) => {
-    if (lvl === "lite" || lvl === "full") {
-      flushD3D8PendingDrawBatch("setDiagLevel");
-      if (d3d8DiagLevel !== lvl) {
-        invalidateD3D8DrawStateCache();
-      }
-      d3d8DiagLevel = lvl;
-      syncD3D8PerfTimingEnabled();
-      applyD3D8BoundDrawDiagnosticsLevel();
-    }
-    return d3d8DiagLevel;
-  };
-  globalThis.__cncSetD3D8PerfTiming = (enabled) => {
-    d3d8PerfTimingOverride = enabled == null ? null : Boolean(enabled);
-    syncD3D8PerfTimingEnabled();
-    return d3d8PerfTimingEnabled;
-  };
-  globalThis.__cncSetD3D8SceneDrawHistoryLimit = (limit) => {
-    const numericLimit = Number(limit);
-    if (Number.isFinite(numericLimit) && numericLimit > 0) {
-      d3d8SceneDrawHistoryLimit = Math.min(8192, Math.max(1, Math.trunc(numericLimit)));
-    }
-    return d3d8SceneDrawHistoryLimit;
-  };
-  globalThis.__cncClearD3D8SceneDrawHistory = () => {
-    flushD3D8PendingDrawBatch("clearSceneDrawHistory");
-    harnessState.graphics = {
-      ...harnessState.graphics,
-      d3d8DrawHistory: [],
-      d3d8SceneDrawHistory: [],
-    };
-    return true;
-  };
-  globalThis.__cncD3D8PerfSummary = () => {
-    flushD3D8PendingDrawBatch("perfSummary");
-    return d3d8PerfSummary();
-  };
-  // Recent harness log entries (incl. wasm stdout/stderr) for probes chasing
-  // shim-side messages like SM1 shader create/assemble failures.
-  globalThis.__cncHarnessLogTail = (count = 100) =>
-    harnessState.logs.slice(-Math.max(1, Math.min(500, Number(count) || 100)));
-  // Pixel-sample a live texture's center texel (fidelity debugging: "is the
-  // cloud texture the shader binds actually a cloud, or a white fallback?").
-  globalThis.__cncSampleTextureCenter = (textureId) => sampleD3D8TextureCenter(textureId);
-  // Blit a live texture (incl. compressed formats FBO-attach can't read) into
-  // an RGBA scratch target and return an NxN grid + channel stats.
-  globalThis.__cncBlitTexture = (textureId, grid = 8) => {
-    const resource = d3d8Textures.get(Number(textureId) >>> 0);
-    if (!gl || !resource?.texture) {
-      return null;
-    }
-    flushD3D8PendingDrawBatch("blitTexture");
-    const size = 64;
-    const vs = "#version 300 es\nvoid main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0-1.0,0,1);}";
-    const fs = "#version 300 es\nprecision highp float;uniform sampler2D uT;out vec4 o;" +
-      "void main(){o=textureLod(uT, gl_FragCoord.xy/64.0, 0.0);}";
-    const compileBlit = (type, source) => {
-      const shader = gl.createShader(type);
-      gl.shaderSource(shader, source);
-      gl.compileShader(shader);
-      return shader;
-    };
-    const program = gl.createProgram();
-    gl.attachShader(program, compileBlit(gl.VERTEX_SHADER, vs));
-    gl.attachShader(program, compileBlit(gl.FRAGMENT_SHADER, fs));
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      const info = gl.getProgramInfoLog(program);
-      gl.deleteProgram(program);
-      return { error: info };
-    }
-    const previousProgram = gl.getParameter(gl.CURRENT_PROGRAM);
-    const previousFramebuffer = gl.getParameter(gl.FRAMEBUFFER_BINDING);
-    const previousActive = gl.getParameter(gl.ACTIVE_TEXTURE);
-    const previousViewport = gl.getParameter(gl.VIEWPORT);
-    const target = gl.createTexture();
-    gl.activeTexture(gl.TEXTURE15);
-    gl.bindTexture(gl.TEXTURE_2D, target);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    const framebuffer = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, target, 0);
-    gl.useProgram(program);
-    gl.activeTexture(gl.TEXTURE0 + 14);
-    gl.bindTexture(gl.TEXTURE_2D, resource.texture);
-    gl.uniform1i(gl.getUniformLocation(program, "uT"), 14);
-    gl.viewport(0, 0, size, size);
-    gl.disable(gl.DEPTH_TEST);
-    gl.disable(gl.BLEND);
-    gl.disable(gl.SCISSOR_TEST);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-    const pixels = new Uint8Array(size * size * 4);
-    gl.readPixels(0, 0, size, size, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-    // restore
-    gl.bindFramebuffer(gl.FRAMEBUFFER, previousFramebuffer);
-    gl.useProgram(previousProgram);
-    gl.activeTexture(gl.TEXTURE0 + 14);
-    gl.bindTexture(gl.TEXTURE_2D, null);
-    gl.activeTexture(previousActive);
-    gl.viewport(previousViewport[0], previousViewport[1], previousViewport[2], previousViewport[3]);
-    gl.deleteFramebuffer(framebuffer);
-    gl.deleteTexture(target);
-    gl.deleteProgram(program);
-    // The draw-state caches now disagree with real GL state; force reapply.
-    harnessState.graphics.lastD3D8AppliedRenderState = null;
-    let min = 255; let max = 0; let sum = 0;
-    const gridValues = [];
-    const step = Math.max(1, Math.floor(size / grid));
-    for (let y = 0; y < size; y += 1) {
-      for (let x = 0; x < size; x += 1) {
-        const v = pixels[(y * size + x) * 4];
-        min = Math.min(min, v); max = Math.max(max, v); sum += v;
-      }
-    }
-    for (let gy = 0; gy < grid; gy += 1) {
-      const row = [];
-      for (let gx = 0; gx < grid; gx += 1) {
-        row.push(pixels[((gy * step) * size + gx * step) * 4]);
-      }
-      gridValues.push(row);
-    }
-    return { min, max, mean: Math.round(sum / (size * size)), grid: gridValues,
-      width: resource.width, height: resource.height };
-  };
-  globalThis.__cncSetD3D8AdjacentBatching = (enabled) => {
-    flushD3D8PendingDrawBatch("setAdjacentBatching");
-    d3d8AdjacentDrawBatchingEnabled = !(enabled === false || enabled === 0 || enabled === "0");
-    return d3d8AdjacentDrawBatchingEnabled;
-  };
-  globalThis.__cncGetD3D8AdjacentBatching = () => d3d8AdjacentDrawBatchingEnabled;
-  globalThis.__cncSetD3D8LiteVertexMirrors = (enabled) => {
-    d3d8LiteVertexBufferMirrorsEnabled = enabled === true || enabled === 1 || enabled === "1";
-    return d3d8LiteVertexBufferMirrorsEnabled;
-  };
-  globalThis.__cncGetD3D8LiteVertexMirrors = () => d3d8LiteVertexBufferMirrorsEnabled;
-  globalThis.__cncSetD3D8BufferProducerTracking = setD3D8BufferProducerTracking;
-  globalThis.__cncGetD3D8BufferProducerTracking = () => d3d8BufferProducerTrackingEnabled;
-  globalThis.__cncSetD3D8DrawProducerTracking = setD3D8DrawProducerTracking;
-  globalThis.__cncGetD3D8DrawProducerTracking = () => d3d8DrawProducerTrackingEnabled;
-  globalThis.__cncSetD3D8BoundDrawDiagnostics = setD3D8BoundDrawDiagnostics;
-  globalThis.__cncGetD3D8BoundDrawDiagnostics = () => d3d8BoundDrawDiagnosticsEnabled;
-  globalThis.__cncFlushD3D8PendingDrawBatch = () => flushD3D8PendingDrawBatch("manual");
-}
-
-let d3d8PendingDrawBatch = null;
-
-function d3d8AdjacentDrawBatchingActive() {
-  return Boolean(gl && d3d8AdjacentDrawBatchingEnabled && d3d8DiagLevel !== "full");
-}
-
-function d3d8AdjacentDrawBatchInfo({
-  stateHash,
-  derivedStateHash,
-  primitiveType,
-  baseGlPrimitive,
-  vertexBufferId,
-  indexBufferId,
-  vertexByteOffset,
-  vertexStride,
-  vertexShaderFvf,
-  vertexByteSize,
-  indexByteSize,
-  indexSize,
-  indexByteOffset,
-  indexCount,
-  usePersistentBuffers,
-  fillMode,
-  shadeMode,
-}) {
-  if (!d3d8AdjacentDrawBatchingActive()) {
-    return null;
-  }
-  const safeFillMode = Number(fillMode ?? D3DFILL_SOLID) >>> 0;
-  const safeShadeMode = Number(shadeMode ?? D3DSHADE_GOURAUD) >>> 0;
-  if (safeFillMode !== D3DFILL_SOLID || safeShadeMode !== D3DSHADE_GOURAUD) {
-    return null;
-  }
-  if ((Number(primitiveType ?? 0) >>> 0) !== D3DPT_TRIANGLELIST || baseGlPrimitive !== gl.TRIANGLES) {
-    return null;
-  }
-  const safeDerivedStateHash = Number(derivedStateHash ?? 0);
-  if ((Number(stateHash ?? 0) >>> 0) === 0 ||
-      !Number.isSafeInteger(safeDerivedStateHash) || safeDerivedStateHash === 0) {
-    return null;
-  }
-  if (!usePersistentBuffers ||
-      vertexBufferId === 0 || indexBufferId === 0 || vertexStride < 12 ||
-      indexCount === 0 || (indexCount % 3) !== 0 ||
-      !(indexSize === 2 || indexSize === 4) ||
-      vertexByteSize === 0 || indexByteSize === 0) {
-    return null;
-  }
-  const texture0Id = Number(d3d8BoundTextures.get(0) ?? 0) >>> 0;
-  const texture1Id = Number(d3d8BoundTextures.get(1) ?? 0) >>> 0;
-  const indexEndByteOffset = indexByteOffset + indexCount * indexSize;
-  if (!Number.isSafeInteger(indexEndByteOffset)) {
-    return null;
-  }
-  return {
-    stateHash: Number(stateHash) >>> 0,
-    derivedStateHash: safeDerivedStateHash,
-    primitiveType: Number(primitiveType) >>> 0,
-    vertexBufferId,
-    indexBufferId,
-    vertexByteOffset,
-    vertexStride,
-    vertexShaderFvf,
-    texture0Id,
-    texture1Id,
-    glPrimitive: baseGlPrimitive,
-    indexType: indexSize === 4 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
-    indexSize,
-    indexByteOffset,
-    indexCount,
-    nextIndexByteOffset: indexEndByteOffset,
-  };
-}
-
-function d3d8AdjacentDrawBatchKeyMatches(left, right) {
-  return Boolean(left && right &&
-    left.stateHash === right.stateHash &&
-    left.derivedStateHash === right.derivedStateHash &&
-    left.primitiveType === right.primitiveType &&
-    left.vertexBufferId === right.vertexBufferId &&
-    left.indexBufferId === right.indexBufferId &&
-    left.vertexByteOffset === right.vertexByteOffset &&
-    left.vertexStride === right.vertexStride &&
-    left.vertexShaderFvf === right.vertexShaderFvf &&
-    left.indexSize === right.indexSize &&
-    left.texture0Id === right.texture0Id &&
-    left.texture1Id === right.texture1Id);
-}
-
-function tryMergeD3D8PendingDrawBatch(batchInfo) {
-  const pending = d3d8PendingDrawBatch;
-  if (!d3d8AdjacentDrawBatchKeyMatches(pending, batchInfo) ||
-      pending.nextIndexByteOffset !== batchInfo.indexByteOffset) {
-    return false;
-  }
-  pending.indexCount += batchInfo.indexCount;
-  pending.nextIndexByteOffset = batchInfo.nextIndexByteOffset;
-  pending.logicalDraws += 1;
-  d3d8PerfStats.drawBatchCandidates += 1;
-  d3d8PerfStats.drawBatchMerged += 1;
-  d3d8PerfStats.drawBatchSavedDrawElements += 1;
-  d3d8PerfStats.drawBatchMergedIndices += batchInfo.indexCount;
-  d3d8PerfStats.drawBatchMaxRunLength = Math.max(
-    d3d8PerfStats.drawBatchMaxRunLength,
-    pending.logicalDraws,
-  );
-  return true;
-}
-
-function queueD3D8PendingDrawBatch(batchInfo) {
-  if (!batchInfo) {
-    return false;
-  }
-  d3d8PendingDrawBatch = {
-    ...batchInfo,
-    logicalDraws: 1,
-  };
-  d3d8PerfStats.drawBatchCandidates += 1;
-  d3d8PerfStats.drawBatchQueued += 1;
-  d3d8PerfStats.drawBatchMaxRunLength = Math.max(d3d8PerfStats.drawBatchMaxRunLength, 1);
-  return true;
-}
-
-function flushD3D8PendingDrawBatch(_reason = "flush") {
-  const pending = d3d8PendingDrawBatch;
-  if (!pending || !gl) {
-    d3d8PendingDrawBatch = null;
-    return 0;
-  }
-  d3d8PendingDrawBatch = null;
-  const drawStartedAt = perfNow();
-  gl.drawElements(
-    pending.glPrimitive,
-    pending.indexCount,
-    pending.indexType,
-    pending.indexByteOffset,
-  );
-  d3d8PerfStats.draws += 1;
-  d3d8PerfStats.drawElements += 1;
-  d3d8PerfStats.drawIndices += Number(pending.indexCount ?? 0) >>> 0;
-  d3d8PerfStats.drawMs += perfNow() - drawStartedAt;
-  d3d8PerfStats.drawBatchFlushes += 1;
-  return 1;
-}
-
-function applyD3D8DefaultVertexAttribValues(
-  bridgeProgram,
-  vertexLayout,
-  canSampleTexture0,
-  texture0Coordinates,
-  canSampleTexture1,
-  texture1Coordinates,
-) {
-  const defaultKey = [
-    bridgeProgram.normal,
-    vertexLayout.normalOffset === null ? 1 : 0,
-    bridgeProgram.diffuse,
-    vertexLayout.diffuseOffset === null ? 1 : 0,
-    bridgeProgram.specular,
-    vertexLayout.specularOffset === null ? 1 : 0,
-    bridgeProgram.texCoord0,
-    !(canSampleTexture0 && texture0Coordinates.usesVertexTexCoord && texture0Coordinates.offset !== null) ? 1 : 0,
-    bridgeProgram.texCoord1,
-    !(canSampleTexture1 && texture1Coordinates.usesVertexTexCoord && texture1Coordinates.offset !== null) ? 1 : 0,
-  ].join(",");
-  if (defaultKey === d3d8LastDefaultVertexAttribKey) {
-    return;
-  }
-  if (bridgeProgram.normal >= 0 && vertexLayout.normalOffset === null) {
-    gl.vertexAttrib3f(bridgeProgram.normal, 0, 0, 1);
-  }
-  if (bridgeProgram.diffuse >= 0 && vertexLayout.diffuseOffset === null) {
-    gl.vertexAttrib4f(bridgeProgram.diffuse, 1, 1, 1, 1);
-  }
-  if (bridgeProgram.specular >= 0 && vertexLayout.specularOffset === null) {
-    gl.vertexAttrib4f(bridgeProgram.specular, 0, 0, 0, 1);
-  }
-  if (bridgeProgram.texCoord0 >= 0 &&
-      !(canSampleTexture0 && texture0Coordinates.usesVertexTexCoord && texture0Coordinates.offset !== null)) {
-    gl.vertexAttrib2f(bridgeProgram.texCoord0, 0, 0);
-  }
-  if (bridgeProgram.texCoord1 >= 0 &&
-      !(canSampleTexture1 && texture1Coordinates.usesVertexTexCoord && texture1Coordinates.offset !== null)) {
-    gl.vertexAttrib2f(bridgeProgram.texCoord1, 0, 0);
-  }
-  d3d8LastDefaultVertexAttribKey = defaultKey;
-}
-
-function configureD3D8VertexAttribPointers({
-  bridgeProgram,
-  vertexResource,
-  vertexByteOffset,
-  vertexStride,
-  vertexLayout,
-  canSampleTexture0,
-  texture0Coordinates,
-  canSampleTexture1,
-  texture1Coordinates,
-}) {
-  bindD3D8ArrayBuffer(vertexResource.buffer);
-  const positionComponents = vertexLayout?.pretransformed ? 4 : 3;
-  gl.enableVertexAttribArray(bridgeProgram.position);
-  gl.vertexAttribPointer(bridgeProgram.position, positionComponents, gl.FLOAT, false, vertexStride, vertexByteOffset);
-  if (bridgeProgram.normal >= 0 && vertexLayout.normalOffset !== null) {
-    gl.enableVertexAttribArray(bridgeProgram.normal);
-    gl.vertexAttribPointer(bridgeProgram.normal, 3, gl.FLOAT, false,
-      vertexStride, vertexByteOffset + vertexLayout.normalOffset);
-  } else if (bridgeProgram.normal >= 0) {
-    gl.disableVertexAttribArray(bridgeProgram.normal);
-  }
-  if (bridgeProgram.diffuse >= 0 && vertexLayout.diffuseOffset !== null) {
-    gl.enableVertexAttribArray(bridgeProgram.diffuse);
-    gl.vertexAttribPointer(bridgeProgram.diffuse, 4, gl.UNSIGNED_BYTE, true,
-      vertexStride, vertexByteOffset + vertexLayout.diffuseOffset);
-  } else if (bridgeProgram.diffuse >= 0) {
-    gl.disableVertexAttribArray(bridgeProgram.diffuse);
-  }
-  if (bridgeProgram.specular >= 0 && vertexLayout.specularOffset !== null) {
-    gl.enableVertexAttribArray(bridgeProgram.specular);
-    gl.vertexAttribPointer(bridgeProgram.specular, 4, gl.UNSIGNED_BYTE, true,
-      vertexStride, vertexByteOffset + vertexLayout.specularOffset);
-  } else if (bridgeProgram.specular >= 0) {
-    gl.disableVertexAttribArray(bridgeProgram.specular);
-  }
-  if (bridgeProgram.texCoord0 >= 0 && canSampleTexture0 &&
-      texture0Coordinates.usesVertexTexCoord && texture0Coordinates.offset !== null) {
-    gl.enableVertexAttribArray(bridgeProgram.texCoord0);
-    gl.vertexAttribPointer(bridgeProgram.texCoord0, 2, gl.FLOAT, false,
-      vertexStride, vertexByteOffset + texture0Coordinates.offset);
-  } else if (bridgeProgram.texCoord0 >= 0) {
-    gl.disableVertexAttribArray(bridgeProgram.texCoord0);
-  }
-  if (bridgeProgram.texCoord1 >= 0 && canSampleTexture1 &&
-      texture1Coordinates.usesVertexTexCoord && texture1Coordinates.offset !== null) {
-    gl.enableVertexAttribArray(bridgeProgram.texCoord1);
-    gl.vertexAttribPointer(bridgeProgram.texCoord1, 2, gl.FLOAT, false,
-      vertexStride, vertexByteOffset + texture1Coordinates.offset);
-  } else if (bridgeProgram.texCoord1 >= 0) {
-    gl.disableVertexAttribArray(bridgeProgram.texCoord1);
-  }
-  applyD3D8DefaultVertexAttribValues(
-    bridgeProgram,
-    vertexLayout,
-    canSampleTexture0,
-    texture0Coordinates,
-    canSampleTexture1,
-    texture1Coordinates,
-  );
-}
-
-function rememberD3D8VertexArray(key, indexBufferId, vertexArray, elementArrayBuffer) {
-  if (!key || !vertexArray) {
-    return null;
-  }
-  const bucket = d3d8VertexArrayCacheBucket(key.vertexBufferId, indexBufferId, true);
-  for (const entry of bucket) {
-    if (d3d8VertexArrayKeyMatches(entry, key, indexBufferId)) {
-      if (entry.vertexArray !== vertexArray) {
-        deleteD3D8VertexArrayCacheEntry(entry);
-      }
-      entry.vertexArray = vertexArray;
-      entry.elementArrayBuffer = elementArrayBuffer;
-      touchD3D8VertexArrayCacheEntry(entry);
-      return entry;
-    }
-  }
-  const entry = cloneD3D8VertexAttribKey(key);
-  entry.indexBufferId = indexBufferId;
-  entry.vertexArray = vertexArray;
-  entry.elementArrayBuffer = elementArrayBuffer;
-  entry.lruPrevious = null;
-  entry.lruNext = null;
-  bucket.push(entry);
-  touchD3D8VertexArrayCacheEntry(entry);
-  d3d8VertexArrayCacheEntries += 1;
-  while (d3d8VertexArrayCacheEntries > D3D8_VERTEX_ARRAY_CACHE_LIMIT) {
-    evictOldestD3D8VertexArrayCacheEntry();
-  }
-  return entry;
-}
-
-function copyD3D8RenderStateFromWasm(ptr) {
-  const heap = cncPortEmscriptenModule?.HEAPU32;
-  const address = Number(ptr ?? 0) >>> 0;
-  const renderStateSlots = 50;
-  const textureStageCount = 8;
-  const textureStageStateSlots = 29;
-  const offset = address >>> 2;
-  if (address === 0 || !(heap instanceof Uint32Array) ||
-      offset + renderStateSlots + textureStageCount * textureStageStateSlots > heap.length) {
-    return null;
-  }
-  const readState = (slot) => heap[offset + slot] >>> 0;
-  const textureStages = [];
-  for (let stage = 0; stage < textureStageCount; stage += 1) {
-    const stageOffset = offset + renderStateSlots + stage * textureStageStateSlots;
-    const read = (slot) => heap[stageOffset + slot] >>> 0;
-    textureStages.push({
-      stage,
-      colorOp: read(1),
-      colorArg1: read(2),
-      colorArg2: read(3),
-      alphaOp: read(4),
-      alphaArg1: read(5),
-      alphaArg2: read(6),
-      bumpEnvMat00: read(7),
-      bumpEnvMat01: read(8),
-      bumpEnvMat10: read(9),
-      bumpEnvMat11: read(10),
-      texCoordIndex: read(11),
-      addressU: read(13),
-      addressV: read(14),
-      borderColor: read(15),
-      magFilter: read(16),
-      minFilter: read(17),
-      mipFilter: read(18),
-      mipMapLodBias: read(19),
-      maxMipLevel: read(20),
-      maxAnisotropy: read(21),
-      bumpEnvLScale: read(22),
-      bumpEnvLOffset: read(23),
-      textureTransformFlags: read(24),
-      addressW: read(25),
-      colorArg0: read(26),
-      alphaArg0: read(27),
-      resultArg: read(28),
-    });
-  }
-  return {
-    cullMode: readState(0),
-    zEnable: readState(1),
-    zWriteEnable: readState(2),
-    zFunc: readState(3),
-    alphaBlendEnable: readState(4),
-    srcBlend: readState(5),
-    destBlend: readState(6),
-    blendOp: readState(7),
-    alphaTestEnable: readState(8),
-    alphaFunc: readState(9),
-    alphaRef: readState(10),
-    colorWriteEnable: readState(11),
-    textureFactor: readState(12),
-    stencilEnable: readState(13),
-    stencilFail: readState(14),
-    stencilZFail: readState(15),
-    stencilPass: readState(16),
-    stencilFunc: readState(17),
-    stencilRef: readState(18),
-    stencilMask: readState(19),
-    stencilWriteMask: readState(20),
-    fogEnable: readState(21),
-    fogColor: readState(22),
-    fogStart: readState(23),
-    fogEnd: readState(24),
-    fogVertexMode: readState(25),
-    rangeFogEnable: readState(26),
-    fillMode: readState(27),
-    zBias: readState(28),
-    shadeMode: readState(29),
-    lighting: readState(30),
-    ambient: readState(31),
-    colorVertex: readState(32),
-    diffuseMaterialSource: readState(33),
-    specularMaterialSource: readState(34),
-    ambientMaterialSource: readState(35),
-    emissiveMaterialSource: readState(36),
-    clipping: readState(37),
-    clipPlaneEnable: readState(38),
-    specularEnable: readState(39),
-    normalizeNormals: readState(40),
-    localViewer: readState(41),
-    pointSize: readState(42),
-    pointSizeMin: readState(43),
-    pointSizeMax: readState(44),
-    pointSpriteEnable: readState(45),
-    pointScaleEnable: readState(46),
-    pointScaleA: readState(47),
-    pointScaleB: readState(48),
-    pointScaleC: readState(49),
-    textureStages,
-  };
-}
-
-function copyD3D8ClipPlanesFromWasm(ptr) {
-  const heap = cncPortEmscriptenModule?.HEAPF32;
-  const address = Number(ptr ?? 0) >>> 0;
-  const offset = address >>> 2;
-  if (address === 0 || !(heap instanceof Float32Array) || offset + 24 > heap.length) {
-    return null;
-  }
-  return Array.from({ length: 6 }, (_, index) => {
-    const base = offset + index * 4;
-    return [heap[base], heap[base + 1], heap[base + 2], heap[base + 3]];
-  });
-}
-
-function copyD3D8LightsFromWasm(ptr) {
-  const heapU32 = cncPortEmscriptenModule?.HEAPU32;
-  const heapF32 = cncPortEmscriptenModule?.HEAPF32;
-  const address = Number(ptr ?? 0) >>> 0;
-  const offset = address >>> 2;
-  const lightStrideSlots = 27;
-  if (address === 0 || !(heapU32 instanceof Uint32Array) || !(heapF32 instanceof Float32Array) ||
-      offset + D3D8_LIGHT_COUNT * lightStrideSlots > heapU32.length) {
-    return null;
-  }
-  const color = (base) => [heapF32[base], heapF32[base + 1], heapF32[base + 2], heapF32[base + 3]];
-  const vector = (base) => [heapF32[base], heapF32[base + 1], heapF32[base + 2]];
-  return Array.from({ length: D3D8_LIGHT_COUNT }, (_, index) => {
-    const base = offset + index * lightStrideSlots;
-    return {
-      index,
-      type: heapU32[base] >>> 0,
-      enabled: (heapU32[base + 1] >>> 0) !== 0,
-      diffuse: color(base + 2),
-      specular: color(base + 6),
-      ambient: color(base + 10),
-      position: vector(base + 14),
-      direction: vector(base + 17),
-      range: heapF32[base + 20],
-      falloff: heapF32[base + 21],
-      attenuation0: heapF32[base + 22],
-      attenuation1: heapF32[base + 23],
-      attenuation2: heapF32[base + 24],
-      theta: heapF32[base + 25],
-      phi: heapF32[base + 26],
-    };
-  });
-}
-
-function copyD3D8MaterialFromWasm(ptr) {
-  const heap = cncPortEmscriptenModule?.HEAPF32;
-  const address = Number(ptr ?? 0) >>> 0;
-  const offset = address >>> 2;
-  if (address === 0 || !(heap instanceof Float32Array) || offset + 17 > heap.length) {
-    return null;
-  }
-  const color = (base) => [heap[offset + base], heap[offset + base + 1],
-    heap[offset + base + 2], heap[offset + base + 3]];
-  return {
-    diffuse: color(0),
-    ambient: color(4),
-    specular: color(8),
-    emissive: color(12),
-    power: heap[offset + 16],
-  };
-}
-
-function d3d8WasmFloatView(ptr, floatCount) {
-  const heap = cncPortEmscriptenModule?.HEAPF32;
-  const address = Number(ptr ?? 0) >>> 0;
-  const offset = address >>> 2;
-  if (address === 0 || !(heap instanceof Float32Array) || offset + floatCount > heap.length) {
-    return null;
-  }
-  return heap.subarray(offset, offset + floatCount);
-}
-
-function paintD3D8DrawIndexed(payload = {}) {
-  const drawSequence = (Number(harnessState.graphics.d3d8DrawIndexedSequence ?? 0) >>> 0) + 1;
-  const vertexByteSize = Number(payload.vertexBytes ?? 0) >>> 0;
-  const indexByteSize = Number(payload.indexBytes ?? 0) >>> 0;
-  const vertexBufferId = Number(payload.vertexBufferId ?? 0) >>> 0;
-  const indexBufferId = Number(payload.indexBufferId ?? 0) >>> 0;
-  const vertexByteOffset = Number(payload.vertexByteOffset ?? 0) >>> 0;
-  const indexByteOffset = Number(payload.indexByteOffset ?? 0) >>> 0;
-  const vertexStride = Number(payload.vertexStride ?? 0) >>> 0;
-  const vertexShaderFvf = Number(payload.vertexShaderFvf ?? 0) >>> 0;
-  // Programmable SM1 shader state: pixel-shader handle rides its own payload
-  // field; a vertex-shader handle travels the vertexShaderFvf field with bit
-  // 31 set (never valid in an FVF code). Both are folded into the native
-  // derivedStateHash, so every downstream cache/batch key already separates
-  // shader draws from fixed-function draws.
-  const pixelShaderHandle = Number(payload.pixelShaderHandle ?? 0) >>> 0;
-  const sm1VertexDraw = (vertexShaderFvf & 0x80000000) !== 0;
-  const pointerStatePayload = payload.statePayloadPointers === true;
-  if (pointerStatePayload) {
-    payload.psConstants = pixelShaderHandle !== 0
-      ? d3d8WasmFloatView(payload.psConstantsPtr, 8 * 4)
-      : null;
-    payload.vsConstants = sm1VertexDraw
-      ? d3d8WasmFloatView(payload.vsConstantsPtr, 96 * 4)
-      : null;
-  }
-  const vertexCount = Number(payload.vertexCount ?? 0) >>> 0;
-  const indexSize = Number(payload.indexSize ?? 0) >>> 0;
-  const indexCount = Number(payload.indexCount ?? 0) >>> 0;
-  const primitiveType = Number(payload.primitiveType ?? 0) >>> 0;
-  d3d8PerfStats.drawPayloadCalls += 1;
-  if (payload.__reusedD3D8DrawPayload === true) {
-    d3d8PerfStats.drawPayloadReused += 1;
-  }
-  const sortedDrawProfiled = payload.sortedDrawSubmitProfile === true;
-  const drawProducer = d3d8DrawProducerTrackingEnabled ? bufferProducerLabel(payload.producer) : null;
-  const drawProducerStartedAt = d3d8DrawProducerTrackingEnabled ? perfNow() : 0;
-  const drawProducerEntry = d3d8DrawProducerTrackingEnabled
-    ? noteD3D8DrawProducerCall(payload.producer, indexCount, sortedDrawProfiled)
-    : null;
-  const drawSubphaseProfiled = sortedDrawProfiled || drawProducerEntry !== null;
-  const sortedDrawStartedAt = sortedDrawProfiled ? perfNow() : 0;
-  const drawPhaseStartedAt = drawSubphaseProfiled ? perfNow() : 0;
-  let drawPhaseStartedAtCurrent = drawPhaseStartedAt;
-  let drawSubphaseStartedAtCurrent = drawPhaseStartedAt;
-  const finishDrawProducerProfile = drawProducerEntry
-    ? () => {
-        noteD3D8DrawProducerMs(drawProducerEntry, "drawProfiledMs", perfNow() - drawProducerStartedAt);
-      }
-    : () => {};
-  const finishSortedDrawProfile = sortedDrawProfiled
-    ? () => {
-        const elapsed = perfNow() - sortedDrawStartedAt;
-        d3d8PerfStats.sortedDrawProfiledMs += elapsed;
-        noteD3D8DrawProducerMs(drawProducerEntry, "sortedDrawProfiledMs", elapsed);
-      }
-    : () => {};
-  const recordDrawPhase = drawSubphaseProfiled
-    ? (field) => {
-        const now = perfNow();
-        const elapsed = now - drawPhaseStartedAtCurrent;
-        if (sortedDrawProfiled) {
-          d3d8PerfStats[field] += elapsed;
-        }
-        noteD3D8DrawProducerPhaseMs(drawProducerEntry, field, elapsed, sortedDrawProfiled);
-        drawPhaseStartedAtCurrent = now;
-      }
-    : null;
-  const resetDrawSubphase = drawSubphaseProfiled
-    ? () => {
-        drawSubphaseStartedAtCurrent = perfNow();
-      }
-    : null;
-  const recordDrawSubphase = drawSubphaseProfiled
-    ? (field) => {
-        const now = perfNow();
-        const elapsed = now - drawSubphaseStartedAtCurrent;
-        if (sortedDrawProfiled) {
-          d3d8PerfStats[field] += elapsed;
-        }
-        noteD3D8DrawProducerPhaseMs(drawProducerEntry, field, elapsed, sortedDrawProfiled);
-        drawSubphaseStartedAtCurrent = now;
-      }
-    : null;
-  if (sortedDrawProfiled) {
-    d3d8PerfStats.sortedDrawProfiledCalls += 1;
-  }
-  const baseGlPrimitive = d3dPrimitiveToGl(primitiveType);
-  const vertexResource = d3d8Buffers.get(d3d8BufferKey(1, vertexBufferId));
-  const indexResource = d3d8Buffers.get(d3d8BufferKey(2, indexBufferId));
-  const usePersistentBuffers = Boolean(vertexResource && indexResource);
-  const stateHash = Number(payload.stateHash ?? 0) >>> 0;
-  const derivedStateHash = Number(payload.derivedStateHash ?? payload.stateHash ?? 0);
-  const earlyBatchInfo = d3d8AdjacentDrawBatchInfo({
-    stateHash,
-    derivedStateHash,
-    primitiveType,
-    baseGlPrimitive,
-    vertexBufferId,
-    indexBufferId,
-    vertexByteOffset,
-    vertexStride,
-    vertexShaderFvf,
-    vertexByteSize,
-    indexByteSize,
-    indexSize,
-    indexByteOffset,
-    indexCount,
-    // Dynamic-redirected draws bind per-range pool buffers, so contiguity of
-    // the original ring offsets says nothing about GL-buffer contiguity —
-    // exclude them from adjacent batching (it merged ~0 such draws anyway).
-    usePersistentBuffers: usePersistentBuffers &&
-      vertexResource?.dynamic !== true &&
-      indexResource?.dynamic !== true,
-    fillMode: payload.renderStateFillMode ?? payload.renderState?.fillMode,
-    shadeMode: payload.renderStateShadeMode ?? payload.renderState?.shadeMode,
-  });
-  if (tryMergeD3D8PendingDrawBatch(earlyBatchInfo)) {
-    recordDrawPhase?.("sortedDrawPreBatchMs");
-    finishSortedDrawProfile();
-    finishDrawProducerProfile();
-    harnessState.graphics.d3d8DrawIndexedSequence = drawSequence;
-    return 1;
-  }
-  flushD3D8PendingDrawBatch("drawBreak");
-  recordDrawPhase?.("sortedDrawPreBatchMs");
-  const worldRevision = pointerStatePayload ? Number(payload.worldTransformRevision ?? 0) >>> 0 : 0;
-  const viewRevision = pointerStatePayload ? Number(payload.viewTransformRevision ?? 0) >>> 0 : 0;
-  const projectionRevision = pointerStatePayload
-    ? Number(payload.projectionTransformRevision ?? 0) >>> 0
-    : 0;
-  const worldRevisionUnchanged = worldRevision !== 0 &&
-    worldRevision === d3d8LastTransformUniformWorldRevision && d3d8LastTransformUniformWorld !== null;
-  const viewRevisionUnchanged = viewRevision !== 0 &&
-    viewRevision === d3d8LastTransformUniformViewRevision && d3d8LastTransformUniformView !== null;
-  const projectionRevisionUnchanged = projectionRevision !== 0 &&
-    projectionRevision === d3d8LastTransformUniformProjectionRevision &&
-    d3d8LastTransformUniformProjection !== null;
-  const world = worldRevisionUnchanged
-    ? d3d8LastTransformUniformWorld
-    : normalizeD3DMatrix(payload.transforms?.world, d3d8DrawMatrixScratch.world);
-  const view = viewRevisionUnchanged
-    ? d3d8LastTransformUniformView
-    : normalizeD3DMatrix(payload.transforms?.view, d3d8DrawMatrixScratch.view);
-  const projection = projectionRevisionUnchanged
-    ? d3d8LastTransformUniformProjection
-    : normalizeD3DMatrix(payload.transforms?.projection, d3d8DrawMatrixScratch.projection);
-  let texture0Transform, texture1Transform, texture2Transform, texture3Transform;
-  const transformMask = Number(payload.transformMask ?? 0) >>> 0;
-  const useTransforms = transformMask === 7 && world !== null && view !== null && projection !== null;
-  const matrixTransformsAreIdentity =
-    useTransforms &&
-    isIdentityD3DMatrix(world) &&
-    isIdentityD3DMatrix(view) &&
-    isIdentityD3DMatrix(projection);
-  // --- Draw-cache: compare key fields and gate normalize* + derived-object rebuilds ---
-  // Key = (derivedStateHash, tex0Id, tex1Id, fvf, stride, primitiveType).
-  // primitiveType is added because it affects point-sprite semantics and is NOT
-  // covered by the native state hash. The derived hash excludes per-draw
-  // world/view/projection transforms but still includes texture transforms and
-  // all render/material/light state used by the derived JS objects below.
-  const drawCacheTexture0Id = Number(d3d8BoundTextures.get(0) ?? 0) >>> 0;
-  const drawCacheTexture1Id = Number(d3d8BoundTextures.get(1) ?? 0) >>> 0;
-  const drawCacheTexture2Id = Number(d3d8BoundTextures.get(2) ?? 0) >>> 0;
-  const drawCacheTexture3Id = Number(d3d8BoundTextures.get(3) ?? 0) >>> 0;
-  let drawCacheHit = d3d8CachedDerived !== null &&
-    d3d8LastDrawKey !== null &&
-    d3d8LastDrawKey.derivedStateHash === derivedStateHash &&
-    d3d8LastDrawKey.texture0Id === drawCacheTexture0Id &&
-    d3d8LastDrawKey.texture1Id === drawCacheTexture1Id &&
-    d3d8LastDrawKey.texture2Id === drawCacheTexture2Id &&
-    d3d8LastDrawKey.texture3Id === drawCacheTexture3Id &&
-    d3d8LastDrawKey.vertexShaderFvf === vertexShaderFvf &&
-    d3d8LastDrawKey.vertexStride === vertexStride &&
-    d3d8LastDrawKey.primitiveType === primitiveType;
-  if (!drawCacheHit) {
-    const cachedEntry = findD3D8DerivedDrawCacheEntry(
-      derivedStateHash,
-      drawCacheTexture0Id,
-      drawCacheTexture1Id,
-      drawCacheTexture2Id,
-      drawCacheTexture3Id,
-      vertexShaderFvf,
-      vertexStride,
-      primitiveType,
-    );
-    if (cachedEntry !== null) {
-      d3d8LastDrawKey = cachedEntry;
-      d3d8CachedDerived = cachedEntry.derived;
-      drawCacheHit = true;
-    }
-  }
-  if (drawCacheHit) {
-    d3d8PerfStats.drawDerivedCacheHits += 1;
-  } else {
-    d3d8PerfStats.drawDerivedCacheMisses += 1;
-  }
-
-  let renderState, clipPlanes, material, lights;
-  let fixedFunctionLights, directionalLights, firstDirectionalLight;
-  let vertexLayout;
-  let texture0Id, texture0Resource, texture0Ready;
-  let texture1Id, texture1Resource, texture1Ready;
-  let texture2Id, texture2Resource, texture2Ready;
-  let texture3Id, texture3Resource, texture3Ready;
-  let texture0Coordinates, texture1Coordinates;
-  let texture2Coordinates, texture3Coordinates;
-  let drawUsesPointSpriteCoordinates;
-  let canSampleTexture0, canSampleTexture1;
-  let canSampleTexture2, canSampleTexture3;
-  let texture0SemanticMode, texture1SemanticMode;
-  let texture2SemanticMode, texture3SemanticMode;
-  let appliedTexture0Combiner, appliedStage1Combiner;
-  let appliedStage2Combiner, appliedStage3Combiner;
-  let implicitAlphaCutoutThreshold;
-  let depthStencilOnlyFastDerived = false;
-
-  if (drawCacheHit) {
-    // Reuse cached derived objects — GL retains state between identical draws,
-    // so re-issuing normalize* allocations and uniform writes is redundant.
-    const c = d3d8CachedDerived;
-    renderState = c.renderState;
-    clipPlanes = c.clipPlanes;
-    material = c.material;
-    lights = c.lights;
-    fixedFunctionLights = c.fixedFunctionLights;
-    directionalLights = c.directionalLights;
-    firstDirectionalLight = c.firstDirectionalLight;
-    vertexLayout = c.vertexLayout;
-    texture0Id = c.texture0Id;
-    texture0Resource = texture0Id !== 0 ? d3d8Textures.get(texture0Id) : null;
-    texture0Ready = c.texture0Ready;
-    texture1Id = c.texture1Id;
-    texture1Resource = texture1Id !== 0 ? d3d8Textures.get(texture1Id) : null;
-    texture1Ready = c.texture1Ready;
-    texture2Id = c.texture2Id;
-    texture2Resource = texture2Id !== 0 ? d3d8Textures.get(texture2Id) : null;
-    texture2Ready = c.texture2Ready;
-    texture3Id = c.texture3Id;
-    texture3Resource = texture3Id !== 0 ? d3d8Textures.get(texture3Id) : null;
-    texture3Ready = c.texture3Ready;
-    texture0Coordinates = c.texture0Coordinates;
-    texture1Coordinates = c.texture1Coordinates;
-    texture2Coordinates = c.texture2Coordinates;
-    texture3Coordinates = c.texture3Coordinates;
-    drawUsesPointSpriteCoordinates = c.drawUsesPointSpriteCoordinates;
-    canSampleTexture0 = c.canSampleTexture0;
-    canSampleTexture1 = c.canSampleTexture1;
-    canSampleTexture2 = c.canSampleTexture2;
-    canSampleTexture3 = c.canSampleTexture3;
-    texture0SemanticMode = c.texture0SemanticMode;
-    texture1SemanticMode = c.texture1SemanticMode;
-    texture2SemanticMode = c.texture2SemanticMode;
-    texture3SemanticMode = c.texture3SemanticMode;
-    appliedTexture0Combiner = c.appliedTexture0Combiner;
-    appliedStage1Combiner = c.appliedStage1Combiner;
-    appliedStage2Combiner = c.appliedStage2Combiner;
-    appliedStage3Combiner = c.appliedStage3Combiner;
-    implicitAlphaCutoutThreshold = c.implicitAlphaCutoutThreshold;
-    depthStencilOnlyFastDerived = c.depthStencilOnlyFastDerived === true;
-    texture0Transform = c.texture0Transform;
-    texture1Transform = c.texture1Transform;
-    texture2Transform = c.texture2Transform;
-    texture3Transform = c.texture3Transform;
-  } else {
-    // The native D3D8 shim exports complete, immutable state records with all
-    // defaults already materialized. Synthetic harness calls still take the
-    // defensive normalizers, but real draws can retain the canonical payload
-    // directly instead of rebuilding roughly 300 scalar/object fields on each
-    // derived-cache miss.
-    const canonicalStatePayload = payload.statePayloadCanonical === true;
-    renderState = pointerStatePayload
-      ? copyD3D8RenderStateFromWasm(payload.renderStatePtr)
-      : canonicalStatePayload
-        ? payload.renderState
-        : normalizeD3D8RenderState(payload.renderState);
-    clipPlanes = pointerStatePayload
-      ? copyD3D8ClipPlanesFromWasm(payload.clipPlanesPtr)
-      : canonicalStatePayload
-        ? payload.clipPlanes
-        : normalizeD3D8ClipPlanes(payload.clipPlanes);
-    material = pointerStatePayload
-      ? copyD3D8MaterialFromWasm(payload.materialPtr)
-      : canonicalStatePayload
-        ? payload.material
-        : normalizeD3D8Material(payload.material);
-    renderState ??= normalizeD3D8RenderState();
-    clipPlanes ??= normalizeD3D8ClipPlanes();
-    material ??= normalizeD3D8Material();
-    // D3D ignores the texture matrix while transform flags are disabled. Most
-    // scene states disable all four, so do not allocate and copy 64 floats for
-    // matrices that cannot reach a shader.
-    texture0Transform = renderState.textureStages[0].textureTransformFlags !== 0
-      ? normalizeD3DMatrix(payload.transforms?.texture0)
-      : null;
-    texture1Transform = renderState.textureStages[1].textureTransformFlags !== 0
-      ? normalizeD3DMatrix(payload.transforms?.texture1)
-      : null;
-    texture2Transform = renderState.textureStages[2].textureTransformFlags !== 0
-      ? normalizeD3DMatrix(payload.transforms?.texture2)
-      : null;
-    texture3Transform = renderState.textureStages[3].textureTransformFlags !== 0
-      ? normalizeD3DMatrix(payload.transforms?.texture3)
-      : null;
-    // Translated-vs draws carry a shader handle, not an FVF: attributes come
-    // from the shader's D3DVSD declaration (bound in
-    // configureD3D8SM1DeclAttributes), so substitute a minimal layout for the
-    // FVF-driven consumers (fill/shade fallbacks, pretransform checks).
-    vertexLayout = sm1VertexDraw
-      ? {
-          positionComponents: 3,
-          pretransformed: false,
-          normalOffset: null,
-          diffuseOffset: null,
-          specularOffset: null,
-          texCoords: [],
-        }
-      : d3d8VertexLayoutInfo(vertexShaderFvf, vertexStride);
-    texture0Id = drawCacheTexture0Id;
-    texture1Id = drawCacheTexture1Id;
-    texture2Id = drawCacheTexture2Id;
-    texture3Id = drawCacheTexture3Id;
-    depthStencilOnlyFastDerived = pixelShaderHandle === 0 && !sm1VertexDraw &&
-      d3d8DiagLevel !== "full" &&
-      d3d8CanUseDepthStencilOnlyProgramWithoutTextureProbe(renderState, primitiveType);
-    if (depthStencilOnlyFastDerived) {
-      lights = [];
-      fixedFunctionLights = [];
-      directionalLights = [];
-      firstDirectionalLight = null;
-      texture0Resource = null;
-      texture0Ready = false;
-      texture1Resource = null;
-      texture1Ready = false;
-      texture2Resource = null;
-      texture2Ready = false;
-      texture3Resource = null;
-      texture3Ready = false;
-      texture0Coordinates = disabledTextureStageCoordinateInfo(0);
-      texture1Coordinates = disabledTextureStageCoordinateInfo(1);
-      texture2Coordinates = disabledTextureStageCoordinateInfo(2);
-      texture3Coordinates = disabledTextureStageCoordinateInfo(3);
-      drawUsesPointSpriteCoordinates = false;
-      canSampleTexture0 = false;
-      canSampleTexture1 = false;
-      canSampleTexture2 = false;
-      canSampleTexture3 = false;
-      texture0SemanticMode = 0;
-      texture1SemanticMode = 0;
-      texture2SemanticMode = 0;
-      texture3SemanticMode = 0;
-      appliedTexture0Combiner = null;
-      appliedStage1Combiner = null;
-      appliedStage2Combiner = null;
-      appliedStage3Combiner = null;
-      implicitAlphaCutoutThreshold = -1;
-    } else {
-      lights = pointerStatePayload
-        ? copyD3D8LightsFromWasm(payload.lightsPtr)
-        : canonicalStatePayload
-          ? payload.lights
-          : normalizeD3D8Lights(payload.lights);
-      lights ??= normalizeD3D8Lights();
-      fixedFunctionLights = d3d8FixedFunctionLights(lights);
-      directionalLights = d3d8DirectionalLights(lights);
-      firstDirectionalLight = directionalLights[0] ?? null;
-      texture0Resource = texture0Id !== 0 ? d3d8Textures.get(texture0Id) : null;
-      texture0Ready = Boolean(
-        (texture0Resource?.target ?? gl?.TEXTURE_2D) === gl?.TEXTURE_2D &&
-        texture0Resource?.initializedLevels?.has("0"));
-      texture1Resource = texture1Id !== 0 ? d3d8Textures.get(texture1Id) : null;
-      texture1Ready = Boolean(
-        (texture1Resource?.target ?? gl?.TEXTURE_2D) === gl?.TEXTURE_2D &&
-        texture1Resource?.initializedLevels?.has("0"));
-      texture2Resource = texture2Id !== 0 ? d3d8Textures.get(texture2Id) : null;
-      texture2Ready = Boolean(
-        (texture2Resource?.target ?? gl?.TEXTURE_2D) === gl?.TEXTURE_2D &&
-        texture2Resource?.initializedLevels?.has("0"));
-      texture3Resource = texture3Id !== 0 ? d3d8Textures.get(texture3Id) : null;
-      texture3Ready = Boolean(
-        (texture3Resource?.target ?? gl?.TEXTURE_2D) === gl?.TEXTURE_2D &&
-        texture3Resource?.initializedLevels?.has("0"));
-      texture0Coordinates = textureStageCoordinateInfo(
-        renderState.textureStages[0],
-        0,
-        vertexStride,
-        vertexLayout,
-        texture0Transform,
-      );
-      texture1Coordinates = textureStageCoordinateInfo(
-        renderState.textureStages[1],
-        1,
-        vertexStride,
-        vertexLayout,
-        texture1Transform,
-      );
-      texture2Coordinates = textureStageCoordinateInfo(
-        renderState.textureStages[2],
-        2,
-        vertexStride,
-        vertexLayout,
-        texture2Transform,
-      );
-      texture3Coordinates = textureStageCoordinateInfo(
-        renderState.textureStages[3],
-        3,
-        vertexStride,
-        vertexLayout,
-        texture3Transform,
-      );
-      drawUsesPointSpriteCoordinates =
-        (Number(payload.primitiveType ?? 0) >>> 0) === D3DPT_POINTLIST &&
-        Number(renderState.pointSpriteEnable ?? 0) !== 0;
-      canSampleTexture0 = Boolean(
-        texture0Ready && (texture0Coordinates.supported || drawUsesPointSpriteCoordinates));
-      canSampleTexture1 = Boolean(
-        texture1Ready && (texture1Coordinates.supported || drawUsesPointSpriteCoordinates));
-      // Stages 2/3 do not participate in point-sprite gl_PointCoord substitution;
-      // they read either a vertex UV set (coordSet 0/1) or a generated
-      // camera-space coordinate.
-      canSampleTexture2 = Boolean(texture2Ready && texture2Coordinates.supported);
-      canSampleTexture3 = Boolean(texture3Ready && texture3Coordinates.supported);
-      if (sm1VertexDraw) {
-        // Translated-vs draws source texture coordinates from the vertex
-        // shader's oT outputs, not the FVF/texgen pipeline — sampling only
-        // requires the texture itself to be ready.
-        canSampleTexture0 = texture0Ready;
-        canSampleTexture1 = texture1Ready;
-        canSampleTexture2 = texture2Ready;
-        canSampleTexture3 = texture3Ready;
-      }
-      texture0SemanticMode = canSampleTexture0 ? d3d8TextureSemanticMode(texture0Resource) : 0;
-      texture1SemanticMode = canSampleTexture1 ? d3d8TextureSemanticMode(texture1Resource) : 0;
-      texture2SemanticMode = canSampleTexture2 ? d3d8TextureSemanticMode(texture2Resource) : 0;
-      texture3SemanticMode = canSampleTexture3 ? d3d8TextureSemanticMode(texture3Resource) : 0;
-      appliedTexture0Combiner = textureStageCombinerInfo(renderState.textureStages[0], 0, canSampleTexture0);
-      appliedStage1Combiner = textureStageCombinerInfo(renderState.textureStages[1], 1, canSampleTexture1);
-      appliedStage2Combiner = textureStageCombinerInfo(renderState.textureStages[2], 2, canSampleTexture2);
-      appliedStage3Combiner = textureStageCombinerInfo(renderState.textureStages[3], 3, canSampleTexture3);
-      implicitAlphaCutoutThreshold = d3d8ImplicitAlphaCutoutThreshold(
-        renderState,
-        canSampleTexture0,
-        texture0Resource,
-        canSampleTexture1,
-        texture1Resource,
-      );
-    }
-    // Update draw-cache for next draw
-    d3d8CachedDerived = {
-      renderState, clipPlanes, material, lights,
-      fixedFunctionLights, directionalLights, firstDirectionalLight,
-      vertexLayout,
-      texture0Id, texture0Ready, texture1Id, texture1Ready,
-      texture2Id, texture2Ready, texture3Id, texture3Ready,
-      texture0Coordinates, texture1Coordinates,
-      texture2Coordinates, texture3Coordinates,
-      drawUsesPointSpriteCoordinates,
-      canSampleTexture0, canSampleTexture1,
-      canSampleTexture2, canSampleTexture3,
-      texture0SemanticMode, texture1SemanticMode,
-      texture2SemanticMode, texture3SemanticMode,
-      appliedTexture0Combiner, appliedStage1Combiner,
-      appliedStage2Combiner, appliedStage3Combiner,
-      implicitAlphaCutoutThreshold,
-      depthStencilOnlyFastDerived,
-      texture0Transform, texture1Transform,
-      texture2Transform, texture3Transform,
-    };
-    d3d8LastDrawKey = rememberD3D8DerivedDrawCacheEntry(
-      derivedStateHash,
-      texture0Id,
-      texture1Id,
-      texture2Id,
-      texture3Id,
-      vertexShaderFvf,
-      vertexStride,
-      primitiveType,
-      d3d8CachedDerived,
-    );
-  }
-  if (depthStencilOnlyFastDerived) {
-    d3d8PerfStats.drawDepthStencilOnlyFastDerivedDraws += 1;
-  }
-  const usesDestinationAlpha = renderState.alphaBlendEnable !== 0 &&
-    (renderState.srcBlend === D3DBLEND_DESTALPHA ||
-      renderState.srcBlend === D3DBLEND_INVDESTALPHA ||
-      renderState.destBlend === D3DBLEND_DESTALPHA ||
-      renderState.destBlend === D3DBLEND_INVDESTALPHA);
-  if (usesDestinationAlpha) {
-    d3d8PerfStats.destinationAlphaBlendDraws += 1;
-    if (d3d8CurrentFramebuffer !== null) {
-      d3d8PerfStats.destinationAlphaBlendOffscreenDraws += 1;
-    }
-  }
-  // Terrain noise/cloud/lightmap detail-pass diagnostic. The original
-  // TerrainShader2Stage::set(pass==2) noise/cloud pass (and the single-pass
-  // ST_TERRAIN_BASE_NOISE12 variant) projects a noise/cloud texture onto the
-  // terrain via D3DTSS_TCI_CAMERASPACEPOSITION generated coordinates plus a
-  // D3DTS_TEXTURE0/1 texture transform, then blends multiplicatively with
-  // SRCBLEND=DESTCOLOR / DESTBLEND=ZERO (see
-  // GeneralsMD/.../W3DDevice/GameClient/W3DShaderManager.cpp). Counting these
-  // draws (and whether their texture transform is non-identity) lets the
-  // real-GPU harness confirm the fine noise + lightmap detail layer is
-  // actually being emitted. If terrain looks flat, the usual cause is the
-  // engine LOD / Options gate leaving m_useLightMap / m_useCloudMap off so the
-  // ST_TERRAIN_BASE_NOISE* technique is never selected upstream (in which case
-  // this counter stays 0), not a lost pass in the D3D8->WebGL2 bridge.
-  d3d8NoteTerrainNoiseMultiplyDraw(
-    renderState,
-    canSampleTexture0,
-    texture0Coordinates,
-    texture0Transform,
-    canSampleTexture1,
-    texture1Coordinates,
-    texture1Transform,
-  );
-  const vertexPretransformed = vertexLayout?.pretransformed === true;
-  const usePositionTransforms = useTransforms && !vertexPretransformed;
-  const includeSceneDrawHistory = usePositionTransforms || vertexPretransformed;
-  const usesIdentityClipSpace = usePositionTransforms && matrixTransformsAreIdentity;
-  recordDrawPhase?.("sortedDrawDerivedMs");
-  warnD3D8CombinerDiagnostics(renderState, appliedTexture0Combiner, appliedStage1Combiner,
-    appliedStage2Combiner, appliedStage3Combiner, drawSequence);
-  if (d3d8DiagLevel === "full" && texture0Resource) {
-    const caps = (harnessState.graphics.uiDrawCaptures ??= { atlas: [], small: [], census: {} });
-    const dimKey = `${texture0Resource.width}x${texture0Resource.height}`;
-    const census = caps.census;
-    if (!census[dimKey]) {
-      census[dimKey] = {
-        count: 0,
-        ready: texture0Ready,
-        uploads: texture0Resource.uploads ?? 0,
-        initializedLevels: Array.from(texture0Resource.initializedLevels ?? []),
-        firstDrawSeq: drawSequence,
-        pixelSample: texture0Ready
-          ? sampleD3D8TexturePixel(texture0Resource,
-              Math.floor(texture0Resource.width / 2),
-              Math.floor(texture0Resource.height / 2))
-          : null,
-        renderState: {
-          zEnable: renderState.zEnable, zWriteEnable: renderState.zWriteEnable, zFunc: renderState.zFunc,
-          alphaBlendEnable: renderState.alphaBlendEnable, srcBlend: renderState.srcBlend,
-          destBlend: renderState.destBlend, textureFactor: renderState.textureFactor,
-        },
-        stage0: d3d8TextureStageDrawSummary(renderState.textureStages[0]),
-      };
-    }
-    census[dimKey].count += 1;
-    if (texture0Resource.width === 1024 && texture0Resource.height === 256 && caps.atlas.length < 8) {
-      caps.atlas.push({
-        drawSeq: drawSequence,
-        frame: harnessState.frame,
-        texture0: {
-          id: texture0Id,
-          width: texture0Resource.width,
-          height: texture0Resource.height,
-          uploads: texture0Resource.uploads ?? 0,
-          ready: texture0Ready,
-          initializedLevels: Array.from(texture0Resource.initializedLevels ?? []),
-          format: texture0Resource.format,
-        },
-        canSampleTexture0,
-        texture0PixelSample: texture0Ready
-          ? sampleD3D8TexturePixel(texture0Resource, 400, 160)
-          : null,
-        primitiveType: Number(payload.primitiveType ?? 0) >>> 0,
-        vertexCount,
-        indexCount,
-        renderState: {
-          zEnable: renderState.zEnable,
-          zWriteEnable: renderState.zWriteEnable,
-          zFunc: renderState.zFunc,
-          alphaBlendEnable: renderState.alphaBlendEnable,
-          srcBlend: renderState.srcBlend,
-          destBlend: renderState.destBlend,
-          alphaTestEnable: renderState.alphaTestEnable,
-          textureFactor: renderState.textureFactor,
-        },
-        stage0: d3d8TextureStageDrawSummary(renderState.textureStages[0]),
-        stage1: d3d8TextureStageDrawSummary(renderState.textureStages[1]),
-      });
-    } else if (texture0Resource.width > 0 && texture0Resource.width <= 128 && texture0Ready && caps.small.length < 4) {
-      caps.small.push({
-        drawSeq: drawSequence,
-        texture0: { width: texture0Resource.width, height: texture0Resource.height, uploads: texture0Resource.uploads ?? 0 },
-        renderState: {
-          zEnable: renderState.zEnable, zWriteEnable: renderState.zWriteEnable, zFunc: renderState.zFunc,
-          alphaBlendEnable: renderState.alphaBlendEnable, srcBlend: renderState.srcBlend, destBlend: renderState.destBlend,
-          textureFactor: renderState.textureFactor,
-        },
-        stage0: d3d8TextureStageDrawSummary(renderState.textureStages[0]),
-        texture0PixelSample: sampleD3D8TexturePixel(texture0Resource, Math.floor(texture0Resource.width / 2), Math.floor(texture0Resource.height / 2)),
-      });
-    }
-  }
-  recordDrawPhase?.("sortedDrawTextureDiagMs");
-  let appliedViewport = null;
-  let appliedRenderState = null;
-  let appliedTexture0Sampler = null;
-  let appliedTexture1Sampler = null;
-  let appliedTexture2Sampler = null;
-  let appliedTexture3Sampler = null;
-  let appliedFillMode = null;
-  let appliedShadeMode = null;
-  let appliedPointSprite = null;
-  let vertexDiagnostics = null;
-  let drawOk = false;
-  const collectDrawDiagnostics = d3d8DiagLevel === "full";
-  syncCanvasSize({ restoreViewport: false, refreshState: false, flushPending: false });
-  appliedViewport = applyD3D8Viewport("draw");
-  appliedPointSprite = d3d8PointSpriteInfo(renderState, payload.primitiveType, appliedViewport);
-  recordDrawPhase?.("sortedDrawViewportMs");
-  if (collectDrawDiagnostics) {
-    vertexDiagnostics = inspectD3D8DrawVertices(
-      vertexResource,
-      vertexByteOffset,
-      vertexStride,
-      vertexCount,
-      vertexLayout,
-      usePositionTransforms ? { world, view, projection } : null,
-      appliedViewport,
-      indexResource,
-      indexByteOffset,
-      indexCount,
-      indexSize,
-    );
-    if (vertexDiagnostics) {
-      vertexDiagnostics.triangles = inspectD3D8IndexedTriangles(
-        vertexResource,
-        vertexByteOffset,
-        vertexStride,
-        indexResource,
-        indexByteOffset,
-        indexCount,
-        indexSize,
-        payload.primitiveType,
-        usePositionTransforms ? { world, view, projection } : null,
-        vertexLayout,
-        appliedViewport,
-      );
-    }
-  }
-  const preDrawCenterPixel = collectDrawDiagnostics
-    ? sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2))
-    : null;
-  let centerPixel = preDrawCenterPixel;
-  recordDrawPhase?.("sortedDrawDiagnosticsMs");
-  resetDrawSubphase?.();
-
-  if (gl && d3d8GlPrimitiveSupported(baseGlPrimitive) && usePersistentBuffers &&
-      vertexByteSize > 0 && indexByteSize > 0 &&
-      vertexStride >= 12 && indexCount > 0 && (indexSize === 2 || indexSize === 4)) {
-    const depthStencilOnlyDraw = pixelShaderHandle === 0 && !sm1VertexDraw &&
-      d3d8CanUseDepthStencilOnlyProgram(
-        renderState,
-        payload.primitiveType,
-        implicitAlphaCutoutThreshold,
-      );
-    // Shadow-volume (and other color-masked) draws with no active clip
-    // planes take the discard-free program so the GPU keeps early
-    // depth/stencil rejection — see ensureD3D8DepthStencilNoClipProgram.
-    const depthStencilNeedsClipPlanes = depthStencilOnlyDraw &&
-      !vertexPretransformed &&
-      d3d8ClipPlaneMask(renderState) !== 0;
-    let bridgeProgram = depthStencilOnlyDraw
-      ? (depthStencilNeedsClipPlanes
-        ? ensureD3D8DepthStencilProgram()
-        : ensureD3D8DepthStencilNoClipProgram())
-      : ensureD3D8DrawProgram();
-    if (pixelShaderHandle !== 0 || sm1VertexDraw) {
-      // Programmable SM1 draw: use the translated (vertexShader, pixelShader)
-      // pair program. A missing pair (translation failed, vs-only draw)
-      // falls back to the fixed-function program so the draw stays visible
-      // and the failure is countable.
-      // Debug bisection: globalThis.__cncSM1ForceFallback (a Set of ps
-      // handles, or true for all) forces specific shaders back to the FF
-      // program mid-session so an artifact can be pinned to one shader.
-      const sm1ForceFallback = globalThis.__cncSM1ForceFallback === true ||
-        (globalThis.__cncSM1ForceFallback instanceof Set &&
-          globalThis.__cncSM1ForceFallback.has(pixelShaderHandle));
-      const sm1Program = sm1ForceFallback ? null : ensureD3D8ShaderPairProgram(
-        sm1VertexDraw ? vertexShaderFvf : 0,
-        pixelShaderHandle,
-      );
-      if (sm1Program) {
-        bridgeProgram = sm1Program;
-        d3d8PerfStats.sm1ShaderDraws += 1;
-        if (sm1VertexDraw) {
-          d3d8PerfStats.sm1TranslatedVsDraws += 1;
-        }
-      } else {
-        d3d8PerfStats.sm1FallbackDraws += 1;
-      }
-      // Fidelity debugging: capture one representative draw state per pixel
-      // shader when globalThis.__cncSM1DebugCapture is set (read the map from
-      // globalThis.__cncSM1DebugLog). Records the per-stage inputs a
-      // translated shader actually saw so wrong-texgen/wrong-texture bugs
-      // can be pinned without guessing.
-      if (globalThis.__cncSM1DebugCapture) {
-        const log = globalThis.__cncSM1DebugLog ?? (globalThis.__cncSM1DebugLog = {});
-        const key = `ps${pixelShaderHandle}|vs${sm1VertexDraw ? vertexShaderFvf >>> 0 : 0}`;
-        if (!log[key] || (log[key].count ?? 0) < 8) {
-          const pixelShader = d3d8SM1PixelShaders.get(pixelShaderHandle);
-          const entry = log[key] ?? (log[key] = {
-            count: 0,
-            instructions: pixelShader?.ir?.instructions?.map((instruction) => instruction.name) ?? [],
-            samples: [],
-          });
-          const diffuseOffset = vertexLayout?.diffuseOffset ?? null;
-          const diffuseByteOffset = diffuseOffset === null
-            ? -1
-            : vertexByteOffset + diffuseOffset;
-          const firstVertexDiffuse = diffuseByteOffset >= 0 &&
-              vertexResource?.bytes instanceof Uint8Array &&
-              diffuseByteOffset + 4 <= vertexResource.bytes.byteLength
-            ? d3d8DiffuseRgbaFromBytes(vertexResource.bytes, diffuseByteOffset)
-            : null;
-          entry.count += 1;
-          entry.samples.push({
-            usedPairProgram: Boolean(sm1Program),
-            vertexShaderFvf,
-            vertexStride,
-            diffuseOffset,
-            firstVertexDiffuse,
-            canSample: [canSampleTexture0, canSampleTexture1, canSampleTexture2, canSampleTexture3],
-            textureIds: [texture0Id, texture1Id, texture2Id, texture3Id],
-            stages: [0, 1, 2, 3].map((stage) => {
-              const info = [texture0Coordinates, texture1Coordinates,
-                texture2Coordinates, texture3Coordinates][stage];
-              return {
-                mode: info?.modeName,
-                generated: info?.generated,
-                transformApplied: info?.transformApplied,
-                supported: info?.supported,
-              };
-            }),
-            texture2Transform: texture2Transform ? Array.from(texture2Transform) : null,
-            texture3Transform: texture3Transform ? Array.from(texture3Transform) : null,
-            psConstants: payload.psConstants ? Array.from(payload.psConstants.slice(0, 8)) : null,
-          });
-        } else {
-          log[key].count += 1;
-        }
-      }
-    }
-    if (depthStencilOnlyDraw) {
-      d3d8PerfStats.drawDepthStencilOnlyProgramDraws += 1;
-      if (!depthStencilNeedsClipPlanes) {
-        d3d8PerfStats.drawDepthStencilNoDiscardDraws += 1;
-      }
-    }
-    bindD3D8Program(bridgeProgram.program);
-    const drawCanSampleTexture0 = depthStencilOnlyDraw ? false : canSampleTexture0;
-    const drawCanSampleTexture1 = depthStencilOnlyDraw ? false : canSampleTexture1;
-    const drawCanSampleTexture2 = depthStencilOnlyDraw ? false : canSampleTexture2;
-    const drawCanSampleTexture3 = depthStencilOnlyDraw ? false : canSampleTexture3;
-    const texture0FlipY = Boolean(canSampleTexture0 && texture0Resource?.renderTargetYFlipped);
-    const texture1FlipY = Boolean(canSampleTexture1 && texture1Resource?.renderTargetYFlipped);
-    const texture2FlipY = Boolean(canSampleTexture2 && texture2Resource?.renderTargetYFlipped);
-    const texture3FlipY = Boolean(canSampleTexture3 && texture3Resource?.renderTargetYFlipped);
-    let textureUniformKey = "depth-stencil-only";
-    if (!depthStencilOnlyDraw) {
-      textureUniformKey = d3d8CachedDerived.textureUniformKey;
-      if (textureUniformKey === undefined) {
-        textureUniformKey = d3d8TextureLayoutUniformKey({
-          renderState,
-          canSampleTexture0,
-          canSampleTexture1,
-          canSampleTexture2,
-          canSampleTexture3,
-          texture0Coordinates,
-          texture1Coordinates,
-          texture2Coordinates,
-          texture3Coordinates,
-          texture0SemanticMode,
-          texture1SemanticMode,
-          texture2SemanticMode,
-          texture3SemanticMode,
-          texture0FlipY,
-          texture1FlipY,
-          texture2FlipY,
-          texture3FlipY,
-          implicitAlphaCutoutThreshold,
-          texture0Transform,
-          texture1Transform,
-          texture2Transform,
-          texture3Transform,
-        });
-        d3d8CachedDerived.textureUniformKey = textureUniformKey;
-      }
-    }
-    const renderUniformUnchanged =
-      d3d8RenderUniformKeyMatches(
-        harnessState.graphics.lastD3D8UniformKey,
-        derivedStateHash,
-        primitiveType,
-        usePositionTransforms,
-        vertexPretransformed,
-        appliedViewport,
-      ) &&
-      harnessState.graphics.lastD3D8AppliedRenderState != null;
-    const textureUniformUnchanged =
-      textureUniformKey === harnessState.graphics.lastD3D8TextureUniformKey;
-    if (renderUniformUnchanged) {
-      d3d8PerfStats.drawUniformCacheHits += 1;
-    } else {
-      d3d8PerfStats.drawUniformCacheMisses += 1;
-    }
-    if (textureUniformUnchanged) {
-      d3d8PerfStats.drawTextureUniformCacheHits += 1;
-    } else {
-      d3d8PerfStats.drawTextureUniformCacheMisses += 1;
-    }
-    recordDrawSubphase?.("sortedDrawProgramMs");
-    let fillModeDraw, shadeModeDraw;
-    // Per-draw geometry setup: ALWAYS executed (not skippable — geometry changes
-    // every draw even when render state is identical).
-    const liteSolidDrawInfo = d3d8DiagLevel !== "full"
-      ? createD3D8LiteSolidDrawInfo(renderState, payload.primitiveType, indexByteOffset, indexCount)
-      : null;
-    if (liteSolidDrawInfo) {
-      fillModeDraw = liteSolidDrawInfo.fillModeDraw;
-      shadeModeDraw = liteSolidDrawInfo.shadeModeDraw;
-    } else {
-      fillModeDraw = createD3D8FillModeDrawInfo(
-        renderState,
-        payload.primitiveType,
-        indexResource,
-        indexByteOffset,
-        indexCount,
-        indexSize,
-        {
-          vertexResource,
-          vertexByteOffset,
-          vertexStride,
-          transforms: usePositionTransforms ? { world, view, projection } : null,
-        },
-      );
-      shadeModeDraw = createD3D8ShadeModeDrawInfo(
-        renderState,
-        payload.primitiveType,
-        indexResource,
-        indexByteOffset,
-        indexCount,
-        indexSize,
-        fillModeDraw,
-      );
-    }
-    recordDrawSubphase?.("sortedDrawFillShadeMs");
-    const temporaryIndices = fillModeDraw.lineIndices ?? shadeModeDraw.triangleIndices ?? null;
-    // Dynamic-buffer append redirection: bind the per-range pool buffer the
-    // append landed in (uploaded lazily, fresh storage — never a mid-frame
-    // write into a GPU-in-flight buffer) with offsets rebased to the range
-    // start. Mirror-reading paths above (fill/shade fallbacks) keep original
-    // offsets; only the GL binding below uses the effective values.
-    let effectiveVertexResource = vertexResource;
-    let effectiveVertexBufferId = vertexBufferId;
-    let effectiveVertexByteOffset = vertexByteOffset;
-    let effectiveIndexResource = indexResource;
-    let effectiveIndexBufferId = indexBufferId;
-    if (vertexResource.dynamic === true) {
-      // The draw may only read vertices [minVertexIndex,
-      // minVertexIndex + vertexCount) relative to the attrib base
-      // (D3D8 DrawIndexedPrimitive semantics), so redirection is safe only
-      // when that whole window sits inside one recorded append range.
-      // Multi-update buffers drawn across ranges use the authoritative shared
-      // buffer. Compact rebased snapshots do not preserve this path's complete
-      // ring/multi-pass semantics and regress projected shadows and relighting.
-      // payload.vertexCount is the shim's uploaded_vertex_count =
-      // minVertexIndex + NumVertices, i.e. it already measures from the
-      // attrib base to the window end.
-      const minVertexIndex = Number(payload.minVertexIndex ?? 0) >>> 0;
-      const windowStart = vertexByteOffset + minVertexIndex * vertexStride;
-      const windowEnd = vertexByteOffset + vertexCount * vertexStride;
-      const range = findD3D8DynamicRange(vertexResource, windowStart);
-      const slot = range && vertexByteOffset >= range.start && windowEnd <= range.end &&
-          vertexCount > minVertexIndex
-        ? ensureD3D8DynamicRangeUploaded(vertexResource, range)
-        : null;
-      if (slot) {
-        effectiveVertexResource = { buffer: slot.buffer };
-        effectiveVertexBufferId = slot.id;
-        effectiveVertexByteOffset = vertexByteOffset - range.start;
-        d3d8PerfStats.drawDynamicVertexRedirects += 1;
-      } else if (vertexResource.dynRanges?.length > 0) {
-        d3d8PerfStats.drawDynamicVertexSharedFallbacks += 1;
-        ensureD3D8DynamicSharedBufferCurrent(vertexResource);
-      }
-    }
-    if (indexResource.dynamic === true && temporaryIndices == null) {
-      const range = findD3D8DynamicRange(indexResource, indexByteOffset);
-      const slot = range && shadeModeDraw.drawIndexByteOffset >= range.start &&
-          (shadeModeDraw.drawIndexByteOffset +
-            shadeModeDraw.drawIndexCount * indexSize) <= range.end
-        ? ensureD3D8DynamicRangeUploaded(indexResource, range)
-        : null;
-      if (slot) {
-        effectiveIndexResource = { buffer: slot.buffer };
-        effectiveIndexBufferId = slot.id;
-        shadeModeDraw.drawIndexByteOffset -= range.start;
-        d3d8PerfStats.drawDynamicIndexRedirects += 1;
-      } else if (indexResource.dynRanges?.length > 0) {
-        d3d8PerfStats.drawDynamicIndexSharedFallbacks += 1;
-        ensureD3D8DynamicSharedBufferCurrent(indexResource);
-      }
-    } else if (indexResource.dynamic === true) {
-      // Temp-index fallback paths read the mirror, not the GL buffer.
-    }
-    let vertexAttribKey = null;
-    if (bridgeProgram.declLayout) {
-      // Translated-vs draw: attributes bind by the shader's D3DVSD
-      // declaration, bypassing the FVF attribute/VAO caches.
-      configureD3D8SM1DeclAttributes(
-        bridgeProgram,
-        effectiveVertexResource,
-        effectiveVertexByteOffset,
-        vertexStride,
-      );
-    } else {
-    vertexAttribKey = setD3D8ScratchVertexAttribKey({
-      vertexBufferId: effectiveVertexBufferId,
-      vertexByteOffset: effectiveVertexByteOffset,
-      vertexStride,
-      bridgeProgram,
-      vertexLayout,
-      canSampleTexture0: drawCanSampleTexture0,
-      texture0Coordinates,
-      canSampleTexture1: drawCanSampleTexture1,
-      texture1Coordinates,
-    });
-    const canUseVertexArrayCache = Boolean(
-      d3d8VertexArraySupported() &&
-      temporaryIndices == null,
-    );
-    const currentVertexArrayMatches =
-      d3d8CurrentVertexArray !== null &&
-      d3d8VertexArrayKeyMatches(d3d8CurrentVertexArrayKey, vertexAttribKey, effectiveIndexBufferId);
-    const vertexAttribAlreadyBound = currentVertexArrayMatches ||
-      (d3d8CurrentVertexArray === null &&
-        d3d8VertexAttribKeyMatches(d3d8LastVertexAttribKey, vertexAttribKey));
-    if (vertexAttribAlreadyBound) {
-      d3d8PerfStats.drawVertexAttribCacheHits += 1;
-      if (currentVertexArrayMatches && canUseVertexArrayCache && d3d8CurrentVertexArrayKey) {
-        touchD3D8VertexArrayCacheEntry(d3d8CurrentVertexArrayKey);
-      }
-    } else {
-      const cachedVertexArray = canUseVertexArrayCache
-        ? findD3D8VertexArrayCacheEntry(vertexAttribKey, effectiveIndexBufferId)
-        : null;
-      if (cachedVertexArray?.vertexArray) {
-        d3d8PerfStats.drawVertexAttribCacheHits += 1;
-        d3d8PerfStats.drawVertexArrayCacheHits += 1;
-        bindD3D8VertexArray(
-          cachedVertexArray.vertexArray,
-          cachedVertexArray,
-          cachedVertexArray.elementArrayBuffer,
-          cachedVertexArray,
-        );
-        applyD3D8DefaultVertexAttribValues(
-          bridgeProgram,
-          vertexLayout,
-          drawCanSampleTexture0,
-          texture0Coordinates,
-          drawCanSampleTexture1,
-          texture1Coordinates,
-        );
-      } else {
-        d3d8PerfStats.drawVertexAttribCacheMisses += 1;
-        if (canUseVertexArrayCache) {
-          d3d8PerfStats.drawVertexArrayCacheMisses += 1;
-          const vertexArray = gl.createVertexArray();
-          if (vertexArray) {
-            const cachedEntry = rememberD3D8VertexArray(
-              vertexAttribKey,
-              effectiveIndexBufferId,
-              vertexArray,
-              effectiveIndexResource.buffer,
-            );
-            bindD3D8VertexArray(vertexArray, cachedEntry, null, cachedEntry);
-            configureD3D8VertexAttribPointers({
-              bridgeProgram,
-              vertexResource: effectiveVertexResource,
-              vertexByteOffset: effectiveVertexByteOffset,
-              vertexStride,
-              vertexLayout,
-              canSampleTexture0: drawCanSampleTexture0,
-              texture0Coordinates,
-              canSampleTexture1: drawCanSampleTexture1,
-              texture1Coordinates,
-            });
-            bindD3D8ElementArrayBufferForVertexArray(effectiveIndexResource.buffer);
-          } else {
-            bindD3D8DefaultVertexArray();
-            configureD3D8VertexAttribPointers({
-              bridgeProgram,
-              vertexResource: effectiveVertexResource,
-              vertexByteOffset: effectiveVertexByteOffset,
-              vertexStride,
-              vertexLayout,
-              canSampleTexture0: drawCanSampleTexture0,
-              texture0Coordinates,
-              canSampleTexture1: drawCanSampleTexture1,
-              texture1Coordinates,
-            });
-          }
-        } else {
-          bindD3D8DefaultVertexArray();
-          configureD3D8VertexAttribPointers({
-            bridgeProgram,
-            vertexResource: effectiveVertexResource,
-            vertexByteOffset: effectiveVertexByteOffset,
-            vertexStride,
-            vertexLayout,
-            canSampleTexture0: drawCanSampleTexture0,
-            texture0Coordinates,
-            canSampleTexture1: drawCanSampleTexture1,
-            texture1Coordinates,
-          });
-        }
-        if (!d3d8VertexAttribKeyMatches(d3d8LastVertexAttribKey, vertexAttribKey)) {
-          d3d8LastVertexAttribKey = cloneD3D8VertexAttribKey(vertexAttribKey);
-        }
-      }
-    }
-    }
-    recordDrawSubphase?.("sortedDrawVertexAttribMs");
-    // Texture handles are not in the state hash, so bind/sampler state is
-    // cached against the actual WebGL texture unit state.
-    if (drawCanSampleTexture0) {
-      appliedTexture0Sampler = ensureD3D8DrawTexture2D(
-        0,
-        renderState.textureStages[0],
-        texture0Resource,
-      );
-    }
-    if (drawCanSampleTexture1) {
-      appliedTexture1Sampler = ensureD3D8DrawTexture2D(
-        1,
-        renderState.textureStages[1],
-        texture1Resource,
-      );
-    }
-    if (drawCanSampleTexture2) {
-      appliedTexture2Sampler = ensureD3D8DrawTexture2D(
-        2,
-        renderState.textureStages[2],
-        texture2Resource,
-      );
-    }
-    if (drawCanSampleTexture3) {
-      appliedTexture3Sampler = ensureD3D8DrawTexture2D(
-        3,
-        renderState.textureStages[3],
-        texture3Resource,
-      );
-    }
-    if (bridgeProgram.sm1Pair) {
-      uploadD3D8SM1DrawUniforms(bridgeProgram, payload, renderState);
-    }
-    recordDrawSubphase?.("sortedDrawTextureBindMs");
-    recordDrawPhase?.("sortedDrawGeometryMs");
-    resetDrawSubphase?.();
-    // Apply render/material/light uniforms only when changed. This key excludes
-    // world/view/projection and bound texture IDs; those have narrower caches
-    // below.
-    if (!renderUniformUnchanged) {
-      const applyRenderStateStartedAt = drawSubphaseProfiled ? perfNow() : 0;
-      appliedRenderState = applyD3D8RenderState(renderState, {
-        invertCullWinding: false,
-        normalized: true,
-      });
-      if (drawSubphaseProfiled) {
-        const elapsed = perfNow() - applyRenderStateStartedAt;
-        if (sortedDrawProfiled) {
-          d3d8PerfStats.sortedDrawApplyRenderStateMs += elapsed;
-        }
-        noteD3D8DrawProducerPhaseMs(
-          drawProducerEntry,
-          "sortedDrawApplyRenderStateMs",
-          elapsed,
-          sortedDrawProfiled,
-        );
-      }
-      let renderUniformDetailStartedAt = drawSubphaseProfiled ? perfNow() : 0;
-      const recordRenderUniformDetail = drawSubphaseProfiled
-        ? (field) => {
-            const now = perfNow();
-            const elapsed = now - renderUniformDetailStartedAt;
-            if (sortedDrawProfiled) {
-              d3d8PerfStats[field] += elapsed;
-            }
-            noteD3D8DrawProducerPhaseMs(drawProducerEntry, field, elapsed, sortedDrawProfiled);
-            renderUniformDetailStartedAt = now;
-          }
-        : null;
-      appliedRenderState.clipPlanes = d3d8CachedDerived.clipPlaneInfo ??=
-        d3d8ClipPlaneInfo(renderState, clipPlanes);
-      appliedRenderState.lighting = {
-        ...appliedRenderState.lighting,
-        shaderEnabled: !depthStencilOnlyDraw &&
-          !vertexPretransformed &&
-          appliedRenderState.lighting.enabled &&
-          fixedFunctionLights.length > 0,
-        normalTransform: {
-          source: usePositionTransforms ? "inverseTransposeWorld" : "attribute",
-          inverseTransposeWorld: Boolean(usePositionTransforms),
-          normalizeNormals: renderState.normalizeNormals !== 0,
-        },
-        viewDirection: {
-          source: renderState.localViewer !== 0 ? "cameraRelative" : "orthogonal",
-          localViewer: renderState.localViewer !== 0,
-        },
-        specular: {
-          enabled: renderState.specularEnable !== 0,
-          material: material.specular,
-          power: material.power,
-          source: renderState.specularMaterialSource,
-          sourceName: d3dMaterialSourceName(renderState.specularMaterialSource),
-        },
-        fixedFunctionLightSupported: fixedFunctionLights.length > 0,
-        fixedFunctionLightCount: fixedFunctionLights.length,
-        fixedFunctionLights,
-        directionalLightSupported: directionalLights.length > 0,
-        directionalLightCount: directionalLights.length,
-        directionalLights,
-        firstDirectionalLight,
-      };
-      recordRenderUniformDetail?.("sortedDrawRenderBuildMs");
-      const baseUniformKey = d3d8BaseUniformKey(
-        usePositionTransforms,
-        vertexPretransformed,
-        appliedViewport,
-        appliedRenderState,
-        clipPlanes,
-        shadeModeDraw,
-      );
-      if (baseUniformKey === d3d8LastBaseUniformKey) {
-        d3d8PerfStats.drawBaseUniformCacheHits += 1;
-      } else {
-        d3d8PerfStats.drawBaseUniformCacheMisses += 1;
-        d3d8CachedUniform1f(bridgeProgram.scale, 1.0);
-        d3d8CachedUniform1i(bridgeProgram.useTransforms, usePositionTransforms ? 1 : 0);
-        if (bridgeProgram.pretransformedPosition) {
-          d3d8CachedUniform1i(bridgeProgram.pretransformedPosition, vertexPretransformed ? 1 : 0);
-        }
-        if (bridgeProgram.d3dViewport && vertexPretransformed) {
-          const viewport = appliedViewport?.d3d ?? { x: 0, y: 0, width: 1, height: 1 };
-          d3d8CachedUniform4f(
-            bridgeProgram.d3dViewport,
-            finiteNumber(viewport.x, 0),
-            finiteNumber(viewport.y, 0),
-            Math.max(1, finiteNumber(viewport.width, 1)),
-            Math.max(1, finiteNumber(viewport.height, 1)),
-          );
-        }
-        if (bridgeProgram.depthBias) {
-          d3d8CachedUniform1f(bridgeProgram.depthBias, appliedRenderState.depth.bias.ndc);
-        }
-        const effectiveClipPlaneMask = vertexPretransformed ? 0 : appliedRenderState.clipPlanes.mask;
-        if (bridgeProgram.clipPlaneMask) {
-          d3d8CachedUniform1i(bridgeProgram.clipPlaneMask, effectiveClipPlaneMask);
-        }
-        if (bridgeProgram.clipPlanes && effectiveClipPlaneMask !== 0) {
-          gl.uniform4fv(bridgeProgram.clipPlanes, flattenD3D8ClipPlanes(clipPlanes));
-        }
-        if (bridgeProgram.useFlatShade) {
-          d3d8CachedUniform1i(bridgeProgram.useFlatShade, shadeModeDraw.usesFlatShader ? 1 : 0);
-        }
-        if (bridgeProgram.lightingEnabled) {
-          d3d8CachedUniform1i(bridgeProgram.lightingEnabled, appliedRenderState.lighting.shaderEnabled ? 1 : 0);
-        }
-        if (bridgeProgram.specularEnabled) {
-          d3d8CachedUniform1i(bridgeProgram.specularEnabled,
-            appliedRenderState.lighting.specular.enabled ? 1 : 0);
-        }
-        if (bridgeProgram.normalizeNormals) {
-          d3d8CachedUniform1i(bridgeProgram.normalizeNormals,
-            appliedRenderState.lighting.normalizeNormals.enabled ? 1 : 0);
-        }
-        if (bridgeProgram.localViewer) {
-          d3d8CachedUniform1i(bridgeProgram.localViewer,
-            appliedRenderState.lighting.localViewer.enabled ? 1 : 0);
-        }
-        if (bridgeProgram.colorVertexEnabled) {
-          d3d8CachedUniform1i(bridgeProgram.colorVertexEnabled,
-            appliedRenderState.materialSources.colorVertex.enabled ? 1 : 0);
-        }
-        d3d8LastBaseUniformKey = baseUniformKey;
-      }
-      recordRenderUniformDetail?.("sortedDrawRenderBaseUniformMs");
-      const lightingUniformsNeeded = Boolean(appliedRenderState.lighting.shaderEnabled);
-      if (!lightingUniformsNeeded) {
-        d3d8PerfStats.drawMaterialUniformCacheHits += 1;
-      } else if (d3d8MaterialUniformsEqual(renderState, material)) {
-        d3d8PerfStats.drawMaterialUniformCacheHits += 1;
-      } else {
-        d3d8PerfStats.drawMaterialUniformCacheMisses += 1;
-        if (bridgeProgram.sceneAmbient) {
-          setD3D8Uniform4FromArray(bridgeProgram.sceneAmbient, appliedRenderState.ambient.rgba);
-        }
-        if (bridgeProgram.materialDiffuse) {
-          setD3D8Uniform4FromArray(bridgeProgram.materialDiffuse, material.diffuse);
-        }
-        if (bridgeProgram.materialAmbient) {
-          setD3D8Uniform4FromArray(bridgeProgram.materialAmbient, material.ambient);
-        }
-        if (bridgeProgram.materialSpecular) {
-          setD3D8Uniform4FromArray(bridgeProgram.materialSpecular, material.specular);
-        }
-        if (bridgeProgram.materialEmissive) {
-          setD3D8Uniform4FromArray(bridgeProgram.materialEmissive, material.emissive);
-        }
-        if (bridgeProgram.materialPower) {
-          d3d8CachedUniform1f(bridgeProgram.materialPower, material.power);
-        }
-        if (bridgeProgram.diffuseMaterialSource) {
-          d3d8CachedUniform1i(bridgeProgram.diffuseMaterialSource, renderState.diffuseMaterialSource);
-        }
-        if (bridgeProgram.specularMaterialSource) {
-          d3d8CachedUniform1i(bridgeProgram.specularMaterialSource, renderState.specularMaterialSource);
-        }
-        if (bridgeProgram.ambientMaterialSource) {
-          d3d8CachedUniform1i(bridgeProgram.ambientMaterialSource, renderState.ambientMaterialSource);
-        }
-        if (bridgeProgram.emissiveMaterialSource) {
-          d3d8CachedUniform1i(bridgeProgram.emissiveMaterialSource, renderState.emissiveMaterialSource);
-        }
-        rememberD3D8MaterialUniforms(renderState, material);
-      }
-      recordRenderUniformDetail?.("sortedDrawRenderMaterialUniformMs");
-      if (!lightingUniformsNeeded) {
-        d3d8PerfStats.drawFixedLightUniformCacheHits += 1;
-      } else {
-        const fixedLightUniformKey = d3d8CachedDerived.fixedLightUniformKey ??=
-          d3d8FixedLightUniformKey(fixedFunctionLights);
-        if (fixedLightUniformKey === d3d8LastFixedLightUniformKey) {
-          d3d8PerfStats.drawFixedLightUniformCacheHits += 1;
-        } else {
-          d3d8PerfStats.drawFixedLightUniformCacheMisses += 1;
-          if (bridgeProgram.fixedLightCount) {
-            d3d8CachedUniform1i(bridgeProgram.fixedLightCount, fixedFunctionLights.length);
-          }
-          if (bridgeProgram.fixedLightType) {
-            gl.uniform1iv(bridgeProgram.fixedLightType, flattenD3D8LightType(fixedFunctionLights));
-          }
-          if (bridgeProgram.fixedLightDiffuse) {
-            gl.uniform4fv(bridgeProgram.fixedLightDiffuse,
-              flattenD3D8LightColor(fixedFunctionLights, "diffuse", D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
-          }
-          if (bridgeProgram.fixedLightSpecular) {
-            gl.uniform4fv(bridgeProgram.fixedLightSpecular,
-              flattenD3D8LightColor(fixedFunctionLights, "specular", D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
-          }
-          if (bridgeProgram.fixedLightAmbient) {
-            gl.uniform4fv(bridgeProgram.fixedLightAmbient,
-              flattenD3D8LightColor(fixedFunctionLights, "ambient", D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
-          }
-          if (bridgeProgram.fixedLightPosition) {
-            gl.uniform3fv(bridgeProgram.fixedLightPosition,
-              flattenD3D8LightVector(fixedFunctionLights, "position", [0, 0, 0],
-                D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
-          }
-          if (bridgeProgram.fixedLightDirection) {
-            gl.uniform3fv(bridgeProgram.fixedLightDirection,
-              flattenD3D8LightDirection(fixedFunctionLights, D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT));
-          }
-          if (bridgeProgram.fixedLightRangeAttenuation) {
-            gl.uniform4fv(bridgeProgram.fixedLightRangeAttenuation,
-              flattenD3D8LightRangeAttenuation(fixedFunctionLights));
-          }
-          if (bridgeProgram.fixedLightSpot) {
-            gl.uniform3fv(bridgeProgram.fixedLightSpot, flattenD3D8LightSpot(fixedFunctionLights));
-          }
-          d3d8LastFixedLightUniformKey = fixedLightUniformKey;
-        }
-      }
-      recordRenderUniformDetail?.("sortedDrawRenderLightUniformMs");
-      const stageUniformKey = depthStencilOnlyDraw
-        ? null
-        : d3d8CachedDerived.stageUniformKey ??= d3d8StageUniformKey(renderState);
-      if (depthStencilOnlyDraw) {
-        d3d8PerfStats.drawStageUniformCacheHits += 1;
-      } else if (stageUniformKey === d3d8LastStageUniformKey) {
-        d3d8PerfStats.drawStageUniformCacheHits += 1;
-      } else {
-        d3d8PerfStats.drawStageUniformCacheMisses += 1;
-        if (bridgeProgram.textureFactor) {
-          setD3D8Uniform4FromArray(
-            bridgeProgram.textureFactor,
-            d3dColorToNormalizedRgba(renderState.textureFactor),
-          );
-        }
-        if (bridgeProgram.stage0ColorOp) {
-          d3d8CachedUniform1i(bridgeProgram.stage0ColorOp, renderState.textureStages[0].colorOp);
-        }
-        if (bridgeProgram.stage0ColorArg0) {
-          d3d8CachedUniform1i(bridgeProgram.stage0ColorArg0, renderState.textureStages[0].colorArg0);
-        }
-        if (bridgeProgram.stage0ColorArg1) {
-          d3d8CachedUniform1i(bridgeProgram.stage0ColorArg1, renderState.textureStages[0].colorArg1);
-        }
-        if (bridgeProgram.stage0ColorArg2) {
-          d3d8CachedUniform1i(bridgeProgram.stage0ColorArg2, renderState.textureStages[0].colorArg2);
-        }
-        if (bridgeProgram.stage0AlphaOp) {
-          d3d8CachedUniform1i(bridgeProgram.stage0AlphaOp, renderState.textureStages[0].alphaOp);
-        }
-        if (bridgeProgram.stage0AlphaArg0) {
-          d3d8CachedUniform1i(bridgeProgram.stage0AlphaArg0, renderState.textureStages[0].alphaArg0);
-        }
-        if (bridgeProgram.stage0AlphaArg1) {
-          d3d8CachedUniform1i(bridgeProgram.stage0AlphaArg1, renderState.textureStages[0].alphaArg1);
-        }
-        if (bridgeProgram.stage0AlphaArg2) {
-          d3d8CachedUniform1i(bridgeProgram.stage0AlphaArg2, renderState.textureStages[0].alphaArg2);
-        }
-        if (bridgeProgram.stage0ResultArg) {
-          d3d8CachedUniform1i(bridgeProgram.stage0ResultArg, renderState.textureStages[0].resultArg);
-        }
-        if (bridgeProgram.stage1ColorOp) {
-          d3d8CachedUniform1i(bridgeProgram.stage1ColorOp, renderState.textureStages[1].colorOp);
-        }
-        if (bridgeProgram.stage1ColorArg0) {
-          d3d8CachedUniform1i(bridgeProgram.stage1ColorArg0, renderState.textureStages[1].colorArg0);
-        }
-        if (bridgeProgram.stage1ColorArg1) {
-          d3d8CachedUniform1i(bridgeProgram.stage1ColorArg1, renderState.textureStages[1].colorArg1);
-        }
-        if (bridgeProgram.stage1ColorArg2) {
-          d3d8CachedUniform1i(bridgeProgram.stage1ColorArg2, renderState.textureStages[1].colorArg2);
-        }
-        if (bridgeProgram.stage1AlphaOp) {
-          d3d8CachedUniform1i(bridgeProgram.stage1AlphaOp, renderState.textureStages[1].alphaOp);
-        }
-        if (bridgeProgram.stage1AlphaArg0) {
-          d3d8CachedUniform1i(bridgeProgram.stage1AlphaArg0, renderState.textureStages[1].alphaArg0);
-        }
-        if (bridgeProgram.stage1AlphaArg1) {
-          d3d8CachedUniform1i(bridgeProgram.stage1AlphaArg1, renderState.textureStages[1].alphaArg1);
-        }
-        if (bridgeProgram.stage1AlphaArg2) {
-          d3d8CachedUniform1i(bridgeProgram.stage1AlphaArg2, renderState.textureStages[1].alphaArg2);
-        }
-        if (bridgeProgram.stage1ResultArg) {
-          d3d8CachedUniform1i(bridgeProgram.stage1ResultArg, renderState.textureStages[1].resultArg);
-        }
-        // Stages 2 and 3 use the same combiner uniforms as 0/1, chained through
-        // CURRENT/TEMP by D3DTSS_RESULTARG. A disabled stage (colorOp==DISABLE)
-        // passes CURRENT through in the shader, so uploading these is harmless
-        // for 0/1-only draws.
-        for (const stageIndex of [2, 3]) {
-          const stage = renderState.textureStages[stageIndex];
-          const p = bridgeProgram;
-          const colorOp = p[`stage${stageIndex}ColorOp`];
-          if (colorOp) {
-            d3d8CachedUniform1i(colorOp, stage.colorOp);
-            d3d8CachedUniform1i(p[`stage${stageIndex}ColorArg0`], stage.colorArg0);
-            d3d8CachedUniform1i(p[`stage${stageIndex}ColorArg1`], stage.colorArg1);
-            d3d8CachedUniform1i(p[`stage${stageIndex}ColorArg2`], stage.colorArg2);
-            d3d8CachedUniform1i(p[`stage${stageIndex}AlphaOp`], stage.alphaOp);
-            d3d8CachedUniform1i(p[`stage${stageIndex}AlphaArg0`], stage.alphaArg0);
-            d3d8CachedUniform1i(p[`stage${stageIndex}AlphaArg1`], stage.alphaArg1);
-            d3d8CachedUniform1i(p[`stage${stageIndex}AlphaArg2`], stage.alphaArg2);
-            d3d8CachedUniform1i(p[`stage${stageIndex}ResultArg`], stage.resultArg);
-          }
-        }
-        d3d8LastStageUniformKey = stageUniformKey;
-      }
-      recordRenderUniformDetail?.("sortedDrawRenderStageUniformMs");
-      const alphaFogUniformKey = depthStencilOnlyDraw
-        ? null
-        : d3d8CachedDerived.alphaFogUniformKey ??=
-          d3d8AlphaFogUniformKey(renderState, appliedRenderState);
-      if (depthStencilOnlyDraw) {
-        d3d8PerfStats.drawAlphaFogUniformCacheHits += 1;
-      } else if (alphaFogUniformKey === d3d8LastAlphaFogUniformKey) {
-        d3d8PerfStats.drawAlphaFogUniformCacheHits += 1;
-      } else {
-        d3d8PerfStats.drawAlphaFogUniformCacheMisses += 1;
-        if (bridgeProgram.alphaTestEnabled) {
-          d3d8CachedUniform1i(bridgeProgram.alphaTestEnabled, appliedRenderState.alphaTest.enabled ? 1 : 0);
-        }
-        if (bridgeProgram.alphaFunc) {
-          d3d8CachedUniform1i(bridgeProgram.alphaFunc, renderState.alphaFunc);
-        }
-        if (bridgeProgram.alphaRef) {
-          d3d8CachedUniform1f(bridgeProgram.alphaRef, appliedRenderState.alphaTest.ref);
-        }
-        if (bridgeProgram.fogEnabled) {
-          d3d8CachedUniform1i(bridgeProgram.fogEnabled, appliedRenderState.fog.enabled ? 1 : 0);
-        }
-        if (bridgeProgram.fogRangeEnabled) {
-          d3d8CachedUniform1i(bridgeProgram.fogRangeEnabled, appliedRenderState.fog.rangeEnabled ? 1 : 0);
-        }
-        if (bridgeProgram.fogColor) {
-          setD3D8Uniform3FromArray(bridgeProgram.fogColor, appliedRenderState.fog.color);
-        }
-        if (bridgeProgram.fogStart) {
-          d3d8CachedUniform1f(bridgeProgram.fogStart, appliedRenderState.fog.start);
-        }
-        if (bridgeProgram.fogEnd) {
-          d3d8CachedUniform1f(bridgeProgram.fogEnd, appliedRenderState.fog.end);
-        }
-        d3d8LastAlphaFogUniformKey = alphaFogUniformKey;
-      }
-      recordRenderUniformDetail?.("sortedDrawRenderAlphaFogUniformMs");
-      harnessState.graphics.lastD3D8AppliedRenderState = appliedRenderState;
-      harnessState.graphics.lastD3D8UniformKey = d3d8CaptureRenderUniformKey(
-        derivedStateHash,
-        primitiveType,
-        usePositionTransforms,
-        vertexPretransformed,
-        appliedViewport,
-      );
-    } else {
-      appliedRenderState = harnessState.graphics.lastD3D8AppliedRenderState;
-    }
-    recordDrawSubphase?.("sortedDrawRenderUniformMs");
-    if (usePositionTransforms) {
-      // Direct3D stores row-vector matrices row-major; WebGL interprets this
-      // memory as column-major, giving the transpose needed for GLSL
-      // column-vector multiplication. The broad uniform cache excludes object
-      // transforms, so each matrix upload is cached by its exact uploaded value.
-      let transformDetailStartedAt = drawSubphaseProfiled ? perfNow() : 0;
-      const recordTransformDetail = drawSubphaseProfiled
-        ? (field) => {
-            const now = perfNow();
-            const elapsed = now - transformDetailStartedAt;
-            if (sortedDrawProfiled) {
-              d3d8PerfStats[field] += elapsed;
-            }
-            noteD3D8DrawProducerPhaseMs(drawProducerEntry, field, elapsed, sortedDrawProfiled);
-            transformDetailStartedAt = now;
-          }
-        : null;
-      const worldTransformUnchanged = worldRevisionUnchanged ||
-        d3d8MatrixEquals(d3d8LastTransformUniformWorld, world);
-      const viewTransformUnchanged = viewRevisionUnchanged ||
-        d3d8MatrixEquals(d3d8LastTransformUniformView, view);
-      const projectionTransformUnchanged = projectionRevisionUnchanged ||
-        d3d8MatrixEquals(d3d8LastTransformUniformProjection, projection);
-      recordTransformDetail?.("sortedDrawTransformCompareMs");
-      if (worldTransformUnchanged && viewTransformUnchanged && projectionTransformUnchanged) {
-        d3d8PerfStats.drawTransformUniformCacheHits += 1;
-      } else {
-        d3d8PerfStats.drawTransformUniformCacheMisses += 1;
-      }
-      if (worldTransformUnchanged) {
-        d3d8PerfStats.drawWorldTransformUniformCacheHits += 1;
-        d3d8LastTransformUniformWorldRevision = worldRevision;
-      } else {
-        d3d8PerfStats.drawWorldTransformUniformCacheMisses += 1;
-        d3d8UploadChangedUniformMatrix4fv(bridgeProgram.world, world);
-        rememberD3D8WorldTransformUniform(world);
-        d3d8LastTransformUniformWorldRevision = worldRevision;
-      }
-      recordTransformDetail?.("sortedDrawWorldTransformUniformMs");
-      if (viewTransformUnchanged) {
-        d3d8PerfStats.drawViewTransformUniformCacheHits += 1;
-        d3d8LastTransformUniformViewRevision = viewRevision;
-      } else {
-        d3d8PerfStats.drawViewTransformUniformCacheMisses += 1;
-        d3d8UploadChangedUniformMatrix4fv(bridgeProgram.view, view);
-        rememberD3D8ViewTransformUniform(view);
-        d3d8LastTransformUniformViewRevision = viewRevision;
-      }
-      recordTransformDetail?.("sortedDrawViewTransformUniformMs");
-      if (projectionTransformUnchanged) {
-        d3d8PerfStats.drawProjectionTransformUniformCacheHits += 1;
-        d3d8LastTransformUniformProjectionRevision = projectionRevision;
-      } else {
-        d3d8PerfStats.drawProjectionTransformUniformCacheMisses += 1;
-        d3d8UploadChangedUniformMatrix4fv(bridgeProgram.projection, projection);
-        rememberD3D8ProjectionTransformUniform(projection);
-        d3d8LastTransformUniformProjectionRevision = projectionRevision;
-      }
-      recordTransformDetail?.("sortedDrawProjectionTransformUniformMs");
-    }
-    // Non-transformed draws leave these uniforms unused but still current.
-    // Keep the cache hot for the next transformed world-space draw.
-    recordDrawSubphase?.("sortedDrawTransformUniformMs");
-    harnessState.graphics.lastD3D8StateHash = stateHash;
-    if (depthStencilOnlyDraw) {
-      d3d8PerfStats.drawPointSpriteUniformCacheHits += 1;
-    } else if (d3d8PointSpriteUniformsEqual(d3d8LastPointSpriteUniformInfo, appliedPointSprite)) {
-      d3d8PerfStats.drawPointSpriteUniformCacheHits += 1;
-    } else {
-      d3d8PerfStats.drawPointSpriteUniformCacheMisses += 1;
-      if (bridgeProgram.drawingPoints !== null) {
-        d3d8CachedUniform1i(bridgeProgram.drawingPoints, appliedPointSprite.drawingPoints ? 1 : 0);
-      }
-      if (bridgeProgram.pointSpriteEnable !== null) {
-        d3d8CachedUniform1i(bridgeProgram.pointSpriteEnable, appliedPointSprite.spriteEnable ? 1 : 0);
-      }
-      if (bridgeProgram.pointSize !== null) {
-        d3d8CachedUniform1f(bridgeProgram.pointSize, appliedPointSprite.pointSize);
-      }
-      if (bridgeProgram.pointSizeMin !== null) {
-        d3d8CachedUniform1f(bridgeProgram.pointSizeMin, appliedPointSprite.pointSizeMin);
-      }
-      if (bridgeProgram.pointSizeMax !== null) {
-        d3d8CachedUniform1f(bridgeProgram.pointSizeMax, appliedPointSprite.pointSizeMax);
-      }
-      if (bridgeProgram.pointScaleEnable !== null) {
-        d3d8CachedUniform1i(bridgeProgram.pointScaleEnable, appliedPointSprite.scaleEnable ? 1 : 0);
-      }
-      if (bridgeProgram.pointScaleA !== null) {
-        d3d8CachedUniform1f(bridgeProgram.pointScaleA, appliedPointSprite.scaleA);
-      }
-      if (bridgeProgram.pointScaleB !== null) {
-        d3d8CachedUniform1f(bridgeProgram.pointScaleB, appliedPointSprite.scaleB);
-      }
-      if (bridgeProgram.pointScaleC !== null) {
-        d3d8CachedUniform1f(bridgeProgram.pointScaleC, appliedPointSprite.scaleC);
-      }
-      if (bridgeProgram.pointViewportHeight !== null) {
-        d3d8CachedUniform1f(bridgeProgram.pointViewportHeight, appliedPointSprite.viewportHeight);
-      }
-      d3d8LastPointSpriteUniformInfo = { ...appliedPointSprite };
-    }
-    recordDrawSubphase?.("sortedDrawPointSpriteUniformMs");
-    // Texture-layout uniforms change when sampling availability, texture
-    // coordinate generation, texture transforms, semantic mode, LOD bias, or
-    // implicit alpha cutoff changes. Texture object binding is handled above.
-    if (depthStencilOnlyDraw) {
-      harnessState.graphics.lastD3D8TextureUniformKey = textureUniformKey;
-    } else if (!textureUniformUnchanged) {
-      if (bridgeProgram.texture0CoordinateMode) {
-        d3d8CachedUniform1i(bridgeProgram.texture0CoordinateMode,
-          canSampleTexture0 ? texture0Coordinates.mode : D3DTSS_TCI_PASSTHRU);
-      }
-      if (bridgeProgram.useTexture0Transform) {
-        d3d8CachedUniform1i(bridgeProgram.useTexture0Transform,
-          canSampleTexture0 && texture0Coordinates.transformApplied ? 1 : 0);
-      }
-      if (bridgeProgram.texture0TransformComponentCount) {
-        d3d8CachedUniform1i(bridgeProgram.texture0TransformComponentCount,
-          canSampleTexture0 && texture0Coordinates.transformApplied
-            ? texture0Coordinates.textureTransformComponentCount
-            : 0);
-      }
-      if (bridgeProgram.texture0TransformProjected) {
-        d3d8CachedUniform1i(bridgeProgram.texture0TransformProjected,
-          canSampleTexture0 &&
-            texture0Coordinates.transformApplied &&
-            texture0Coordinates.textureTransformProjected
-            ? 1
-            : 0);
-      }
-      if (bridgeProgram.texture0Transform && canSampleTexture0 && texture0Coordinates.transformApplied) {
-        d3d8CachedUniformMatrix4fv(bridgeProgram.texture0Transform, texture0Transform);
-      }
-      if (bridgeProgram.texture1CoordinateMode) {
-        d3d8CachedUniform1i(bridgeProgram.texture1CoordinateMode,
-          canSampleTexture1 ? texture1Coordinates.mode : D3DTSS_TCI_PASSTHRU);
-      }
-      if (bridgeProgram.useTexture1Transform) {
-        d3d8CachedUniform1i(bridgeProgram.useTexture1Transform,
-          canSampleTexture1 && texture1Coordinates.transformApplied ? 1 : 0);
-      }
-      if (bridgeProgram.texture1TransformComponentCount) {
-        d3d8CachedUniform1i(bridgeProgram.texture1TransformComponentCount,
-          canSampleTexture1 && texture1Coordinates.transformApplied
-            ? texture1Coordinates.textureTransformComponentCount
-            : 0);
-      }
-      if (bridgeProgram.texture1TransformProjected) {
-        d3d8CachedUniform1i(bridgeProgram.texture1TransformProjected,
-          canSampleTexture1 &&
-            texture1Coordinates.transformApplied &&
-            texture1Coordinates.textureTransformProjected
-            ? 1
-            : 0);
-      }
-      if (bridgeProgram.texture1Transform && canSampleTexture1 && texture1Coordinates.transformApplied) {
-        d3d8CachedUniformMatrix4fv(bridgeProgram.texture1Transform, texture1Transform);
-      }
-      if (bridgeProgram.useTexture0) {
-        d3d8CachedUniform1i(bridgeProgram.useTexture0, canSampleTexture0 ? 1 : 0);
-      }
-      if (bridgeProgram.implicitAlphaCutoutThreshold) {
-        d3d8CachedUniform1f(bridgeProgram.implicitAlphaCutoutThreshold, implicitAlphaCutoutThreshold);
-      }
-      if (bridgeProgram.texture0) {
-        d3d8CachedUniform1i(bridgeProgram.texture0, 0);
-      }
-      if (bridgeProgram.texture0LodBias) {
-        const texture0LodBias = canSampleTexture0
-          ? d3dDwordToFloat(renderState.textureStages[0].mipMapLodBias)
-          : 0.0;
-        d3d8CachedUniform1f(bridgeProgram.texture0LodBias, texture0LodBias);
-      }
-      if (bridgeProgram.texture0Semantic) {
-        d3d8CachedUniform1i(bridgeProgram.texture0Semantic, texture0SemanticMode);
-      }
-      if (bridgeProgram.texture0FlipY) {
-        d3d8CachedUniform1i(bridgeProgram.texture0FlipY, texture0FlipY ? 1 : 0);
-      }
-      if (bridgeProgram.useTexture1) {
-        d3d8CachedUniform1i(bridgeProgram.useTexture1, canSampleTexture1 ? 1 : 0);
-      }
-      if (bridgeProgram.texture1) {
-        d3d8CachedUniform1i(bridgeProgram.texture1, 1);
-      }
-      if (bridgeProgram.texture1LodBias) {
-        const texture1LodBias = canSampleTexture1
-          ? d3dDwordToFloat(renderState.textureStages[1].mipMapLodBias)
-          : 0.0;
-        d3d8CachedUniform1f(bridgeProgram.texture1LodBias, texture1LodBias);
-      }
-      if (bridgeProgram.texture1Semantic) {
-        d3d8CachedUniform1i(bridgeProgram.texture1Semantic, texture1SemanticMode);
-      }
-      if (bridgeProgram.texture1FlipY) {
-        d3d8CachedUniform1i(bridgeProgram.texture1FlipY, texture1FlipY ? 1 : 0);
-      }
-      // Stages 2 and 3: coordinate mode, coordSet selection, texture transform,
-      // sampler unit, LOD bias, semantic mode. The bridge samples texture unit
-      // == stage index (uTexture2->unit 2, uTexture3->unit 3).
-      const p = bridgeProgram;
-      const stage23 = [
-        {
-          index: 2,
-          canSample: canSampleTexture2,
-          coords: texture2Coordinates,
-          transform: texture2Transform,
-          semantic: texture2SemanticMode,
-          flipY: texture2FlipY,
-        },
-        {
-          index: 3,
-          canSample: canSampleTexture3,
-          coords: texture3Coordinates,
-          transform: texture3Transform,
-          semantic: texture3SemanticMode,
-          flipY: texture3FlipY,
-        },
-      ];
-      for (const s of stage23) {
-        const coordModeLoc = p[`texture${s.index}CoordinateMode`];
-        if (!coordModeLoc && !p[`useTexture${s.index}`]) {
-          continue;
-        }
-        const transformApplied = Boolean(s.canSample && s.coords.transformApplied);
-        if (coordModeLoc) {
-          d3d8CachedUniform1i(coordModeLoc, s.canSample ? s.coords.mode : D3DTSS_TCI_PASSTHRU);
-        }
-        if (p[`texture${s.index}CoordSet`]) {
-          d3d8CachedUniform1i(p[`texture${s.index}CoordSet`], s.canSample ? (s.coords.coordSet >>> 0) : 0);
-        }
-        if (p[`useTexture${s.index}Transform`]) {
-          d3d8CachedUniform1i(p[`useTexture${s.index}Transform`], transformApplied ? 1 : 0);
-        }
-        if (p[`texture${s.index}TransformComponentCount`]) {
-          d3d8CachedUniform1i(p[`texture${s.index}TransformComponentCount`],
-            transformApplied ? s.coords.textureTransformComponentCount : 0);
-        }
-        if (p[`texture${s.index}TransformProjected`]) {
-          d3d8CachedUniform1i(p[`texture${s.index}TransformProjected`],
-            transformApplied && s.coords.textureTransformProjected ? 1 : 0);
-        }
-        if (p[`texture${s.index}Transform`] && transformApplied) {
-          d3d8CachedUniformMatrix4fv(p[`texture${s.index}Transform`], s.transform);
-        }
-        if (p[`useTexture${s.index}`]) {
-          d3d8CachedUniform1i(p[`useTexture${s.index}`], s.canSample ? 1 : 0);
-        }
-        if (p[`texture${s.index}`]) {
-          d3d8CachedUniform1i(p[`texture${s.index}`], s.index);
-        }
-        if (p[`texture${s.index}LodBias`]) {
-          d3d8CachedUniform1f(p[`texture${s.index}LodBias`],
-            s.canSample ? d3dDwordToFloat(renderState.textureStages[s.index].mipMapLodBias) : 0.0);
-        }
-        if (p[`texture${s.index}Semantic`]) {
-          d3d8CachedUniform1i(p[`texture${s.index}Semantic`], s.semantic);
-        }
-        if (p[`texture${s.index}FlipY`]) {
-          d3d8CachedUniform1i(p[`texture${s.index}FlipY`], s.flipY ? 1 : 0);
-        }
-      }
-      harnessState.graphics.lastD3D8TextureUniformKey = textureUniformKey;
-    }
-    // Fog-of-war shroud UV generation for trees.  The tree FVF (XYZNDUV1) has
-    // only one UV set, so stage 1 (the shroud) has no per-vertex UVs and would
-    // otherwise sample a single corner texel (always bright) -> trees never
-    // darken in fog.  W3DTreeBuffer's Trees.nvv path generates the shroud UV
-    // per-vertex from world position; reproduce it here (oT1 = (worldXY + c32) *
-    // c33) using the c32/c33 constants captured from SetVertexShaderConstant.
-    // This runs every draw (outside the texture-uniform cache) so uTreeShroudGen
-    // is reliably reset to 0 for every non-tree draw; the per-location value
-    // cache in d3d8CachedUniform1i keeps that free except on actual toggles.
-    if (bridgeProgram.treeShroudGen) {
-      const treeShroud = payload.treeShroud;
-      const isTreeShroudDraw =
-        vertexShaderFvf === (D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_TEX1) &&
-        vertexStride === 36 &&
-        canSampleTexture1 &&
-        treeShroud &&
-        Array.isArray(treeShroud.c33) &&
-        treeShroud.c33[0] !== 0;
-      d3d8CachedUniform1i(bridgeProgram.treeShroudGen, isTreeShroudDraw ? 1 : 0);
-      if (isTreeShroudDraw) {
-        if (bridgeProgram.treeShroudOffset) {
-          d3d8CachedUniform2f(bridgeProgram.treeShroudOffset, treeShroud.c32[0], treeShroud.c32[1]);
-        }
-        if (bridgeProgram.treeShroudScale) {
-          d3d8CachedUniform2f(bridgeProgram.treeShroudScale, treeShroud.c33[0], treeShroud.c33[1]);
-        }
-      }
-    }
-    recordDrawSubphase?.("sortedDrawTextureUniformMs");
-    recordDrawPhase?.("sortedDrawUniformMs");
-    let temporaryIndexBuffer = null;
-    // Lazy provoking-vertex tracking: any pending batch was flushed earlier in
-    // this call (batch state keys never match a flat draw), and queued draws
-    // are always non-flat, so setting the convention here cannot retroactively
-    // affect earlier draws.
-    setD3D8FirstVertexConvention(shadeModeDraw.usesFirstVertexConvention === true);
-    if (shadeModeDraw.supported &&
-        (temporaryIndices instanceof Uint16Array || temporaryIndices instanceof Uint32Array)) {
-      temporaryIndexBuffer = getD3D8TemporaryIndexBuffer(temporaryIndices.byteLength);
-      if (temporaryIndexBuffer) {
-        // bufferData (not bufferSubData): the temporary element buffer is
-        // reused every fallback draw, and rewriting live storage mid-frame
-        // forces the same ANGLE Metal in-flight sync the dynamic-buffer
-        // redirection exists to avoid. Full-replace gets fresh storage.
-        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, temporaryIndices, gl.STREAM_DRAW);
-      } else {
-        shadeModeDraw.supported = false;
-        shadeModeDraw.fallbackReason = "temporaryIndexBufferCreateFailed";
-      }
-    } else if (
-      d3d8CurrentVertexArray !== null &&
-      d3d8VertexArrayKeyMatches(d3d8CurrentVertexArrayKey, vertexAttribKey, effectiveIndexBufferId)
-    ) {
-      bindD3D8ElementArrayBufferForVertexArray(effectiveIndexResource.buffer);
-    } else {
-      bindD3D8ElementArrayBuffer(effectiveIndexResource.buffer);
-    }
-    if (d3d8DiagLevel === "full") {
-      appliedFillMode = d3d8FillModeProbeInfo(fillModeDraw);
-      appliedShadeMode = d3d8ShadeModeProbeInfo(shadeModeDraw);
-    }
-    // Fidelity debugging: read back the ACTUAL GL uniform values + texture
-    // bindings for the next draw using pixel shader
-    // globalThis.__cncSM1UniformDumpPs (ground truth for "was the upload
-    // right"; result in globalThis.__cncSM1UniformDump).
-    if (globalThis.__cncSM1UniformDumpPs &&
-        pixelShaderHandle === globalThis.__cncSM1UniformDumpPs &&
-        bridgeProgram.sm1Pair) {
-      globalThis.__cncSM1UniformDumpCount = (globalThis.__cncSM1UniformDumpCount ?? 0) + 1;
-      if (globalThis.__cncSM1UniformDumpCount >= 8) {
-        globalThis.__cncSM1UniformDumpPs = 0;
-      }
-      const readUniform = (loc) => {
-        try {
-          const value = loc ? gl.getUniform(bridgeProgram.program, loc) : null;
-          return value?.length ? Array.from(value) : value;
-        } catch (error) {
-          return `err:${error?.message}`;
-        }
-      };
-      const previousActive = gl.getParameter(gl.ACTIVE_TEXTURE);
-      const boundAt = [];
-      for (let unit = 0; unit < 4; unit += 1) {
-        gl.activeTexture(gl.TEXTURE0 + unit);
-        boundAt.push(gl.getParameter(gl.TEXTURE_BINDING_2D) ? 1 : 0);
-      }
-      gl.activeTexture(previousActive);
-      const dumpEntry = {
-        psHandle: pixelShaderHandle,
-        useTexture: [bridgeProgram.useTexture0, bridgeProgram.useTexture1,
-          bridgeProgram.useTexture2, bridgeProgram.useTexture3].map(readUniform),
-        samplerUnits: [bridgeProgram.texture0, bridgeProgram.texture1,
-          bridgeProgram.texture2, bridgeProgram.texture3].map(readUniform),
-        coordModes: [bridgeProgram.texture0CoordinateMode, bridgeProgram.texture1CoordinateMode,
-          bridgeProgram.texture2CoordinateMode, bridgeProgram.texture3CoordinateMode].map(readUniform),
-        useTransforms: [bridgeProgram.useTexture0Transform, bridgeProgram.useTexture1Transform,
-          bridgeProgram.useTexture2Transform, bridgeProgram.useTexture3Transform].map(readUniform),
-        semantics: [bridgeProgram.texture0Semantic, bridgeProgram.texture1Semantic,
-          bridgeProgram.texture2Semantic, bridgeProgram.texture3Semantic].map(readUniform),
-        lodBias: [bridgeProgram.texture0LodBias, bridgeProgram.texture1LodBias,
-          bridgeProgram.texture2LodBias, bridgeProgram.texture3LodBias].map(readUniform),
-        tex2Transform: readUniform(bridgeProgram.texture2Transform),
-        tex3Transform: readUniform(bridgeProgram.texture3Transform),
-        coordSets: [null, null, bridgeProgram.texture2CoordSet, bridgeProgram.texture3CoordSet].map(readUniform),
-        unitHasTexture: boundAt,
-        useTransformsFlag: readUniform(bridgeProgram.useTransforms),
-        lightingEnabled: readUniform(bridgeProgram.lightingEnabled),
-        textureIds: [texture0Id, texture1Id, texture2Id, texture3Id],
-        indexCount,
-      };
-      (globalThis.__cncSM1UniformDumps ?? (globalThis.__cncSM1UniformDumps = [])).push(dumpEntry);
-      globalThis.__cncSM1UniformDump = dumpEntry;
-    }
-    if (fillModeDraw.supported && shadeModeDraw.supported) {
-      const canQueueAdjacentBatch = Boolean(
-        earlyBatchInfo &&
-        temporaryIndices == null &&
-        shadeModeDraw.usesFirstVertexConvention !== true &&
-        shadeModeDraw.glPrimitive === earlyBatchInfo.glPrimitive &&
-        shadeModeDraw.drawIndexCount === earlyBatchInfo.indexCount &&
-        shadeModeDraw.drawIndexByteOffset === earlyBatchInfo.indexByteOffset,
-      );
-      if (canQueueAdjacentBatch) {
-        queueD3D8PendingDrawBatch(earlyBatchInfo);
-      } else {
-        const drawStartedAt = perfNow();
-        gl.drawElements(
-          shadeModeDraw.glPrimitive,
-          shadeModeDraw.drawIndexCount,
-          indexSize === 4 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
-          shadeModeDraw.drawIndexByteOffset,
-        );
-        d3d8PerfStats.draws += 1;
-        d3d8PerfStats.drawElements += 1;
-        d3d8PerfStats.drawIndices += Number(shadeModeDraw.drawIndexCount ?? 0) >>> 0;
-        d3d8PerfStats.drawMs += perfNow() - drawStartedAt;
-      }
-    }
-    recordDrawPhase?.("sortedDrawDrawOrBatchMs");
-    if (d3d8DiagLevel === "full") {
-      refreshCanvasState();
-      centerPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
-      drawOk = fillModeDraw.supported && shadeModeDraw.supported && pixelHasColor(centerPixel);
-    } else {
-      drawOk = fillModeDraw.supported && shadeModeDraw.supported;
-    }
-  }
-
-  if (d3d8DiagLevel !== "full") {
-    // lite: skip the ~40-field probe, per-draw texture sampling, and the
-    // spread-copied draw-history array — keep only the cheap sequence counter.
-    recordDrawPhase?.("sortedDrawTailMs");
-    finishSortedDrawProfile();
-    finishDrawProducerProfile();
-    harnessState.graphics.d3d8DrawIndexedSequence = drawSequence;
-    return drawOk ? 1 : 0;
-  }
-
-  const probe = {
-    ok: drawOk,
-    source: "browser_d3d8_draw_indexed",
-    drawSequence,
-    producer: drawProducer,
-    api: harnessState.graphics.api,
-    viewport: appliedViewport,
-    primitiveType: Number(payload.primitiveType ?? 0),
-    baseVertexIndex: Number(payload.baseVertexIndex ?? 0) >>> 0,
-    minVertexIndex: Number(payload.minVertexIndex ?? 0) >>> 0,
-    firstIndex: Number(payload.firstIndex ?? 0) >>> 0,
-    vertexBufferId,
-    vertexByteOffset,
-    vertexBytes: vertexByteSize,
-    vertexCount,
-    vertexStride,
-    vertexShaderFvf,
-    vertexLayout,
-    vertexDiagnostics,
-    indexBufferId,
-    indexByteOffset,
-    indexBytes: indexByteSize,
-    indexCount,
-    indexSize,
-    usedPersistentBuffers: usePersistentBuffers,
-    transformMask,
-    usedTransforms: Boolean(usePositionTransforms),
-    pretransformedPosition: Boolean(vertexPretransformed),
-    usedIdentityClipSpace: Boolean(usesIdentityClipSpace),
-    renderState,
-    clipPlanes,
-    lights,
-    material,
-    appliedRenderState,
-    appliedMaterial: material,
-    fillMode: appliedFillMode,
-    shadeMode: appliedShadeMode,
-    pointSprite: appliedPointSprite,
-    boundTextures: Object.fromEntries(d3d8BoundTextures),
-    texture0: {
-      id: texture0Id,
-      ready: texture0Ready,
-      sampled: canSampleTexture0,
-      levels: texture0Resource?.levels ?? 0,
-      initializedLevels: texture0Resource
-        ? Array.from(texture0Resource.initializedLevels).map((level) => Number(level)).sort((a, b) => a - b)
-        : [],
-      completeMipChain: textureHasCompleteMipChain(texture0Resource),
-      texCoordIndex: texture0Coordinates.texCoordIndex,
-      texCoordMode: texture0Coordinates.mode,
-      texCoordModeName: texture0Coordinates.modeName,
-      texCoordSet: texture0Coordinates.coordSet,
-      texCoordOffset: canSampleTexture0 ? texture0Coordinates.offset : null,
-      texCoordComponents: texture0Coordinates.components,
-      texCoordGenerated: texture0Coordinates.generated,
-      texCoordUsesVertex: texture0Coordinates.usesVertexTexCoord,
-      textureTransformFlags: texture0Coordinates.textureTransformFlags,
-      textureTransformModeName: texture0Coordinates.textureTransformModeName,
-      textureTransformComponentCount: texture0Coordinates.textureTransformComponentCount,
-      textureTransformProjected: texture0Coordinates.textureTransformProjected,
-      textureTransformSupported: texture0Coordinates.transformSupported,
-      textureTransformApplied: Boolean(canSampleTexture0 && texture0Coordinates.transformApplied),
-      textureTransformMatrix: texture0Transform !== null ? Array.from(texture0Transform) : null,
-      texCoordSupported: texture0Coordinates.supported,
-      width: texture0Resource?.width ?? 0,
-      height: texture0Resource?.height ?? 0,
-      format: texture0Resource?.format ?? 0,
-      storage: texture0Resource?.storage ?? null,
-      semantic: texture0Resource?.semantic ?? null,
-      semanticMode: texture0SemanticMode,
-      uploads: texture0Resource?.uploads ?? 0,
-      samplePixels: sampleD3D8TextureProbe(texture0Resource),
-      sampleVertexPixels: sampleD3D8TextureAtVertexSamples(
-        texture0Resource,
-        vertexDiagnostics,
-        texture0Coordinates.coordSet,
-      ),
-      sampler: appliedTexture0Sampler ?? texture0Resource?.samplerState ?? null,
-      combiner: appliedTexture0Combiner,
-    },
-    texture1: {
-      id: texture1Id,
-      ready: texture1Ready,
-      sampled: canSampleTexture1,
-      levels: texture1Resource?.levels ?? 0,
-      initializedLevels: texture1Resource
-        ? Array.from(texture1Resource.initializedLevels).map((level) => Number(level)).sort((a, b) => a - b)
-        : [],
-      completeMipChain: textureHasCompleteMipChain(texture1Resource),
-      texCoordIndex: texture1Coordinates.texCoordIndex,
-      texCoordMode: texture1Coordinates.mode,
-      texCoordModeName: texture1Coordinates.modeName,
-      texCoordSet: texture1Coordinates.coordSet,
-      texCoordOffset: canSampleTexture1 ? texture1Coordinates.offset : null,
-      texCoordComponents: texture1Coordinates.components,
-      texCoordGenerated: texture1Coordinates.generated,
-      texCoordUsesVertex: texture1Coordinates.usesVertexTexCoord,
-      textureTransformFlags: texture1Coordinates.textureTransformFlags,
-      textureTransformModeName: texture1Coordinates.textureTransformModeName,
-      textureTransformComponentCount: texture1Coordinates.textureTransformComponentCount,
-      textureTransformProjected: texture1Coordinates.textureTransformProjected,
-      textureTransformSupported: texture1Coordinates.transformSupported,
-      textureTransformApplied: Boolean(canSampleTexture1 && texture1Coordinates.transformApplied),
-      textureTransformMatrix: texture1Transform !== null ? Array.from(texture1Transform) : null,
-      texCoordSupported: texture1Coordinates.supported,
-      width: texture1Resource?.width ?? 0,
-      height: texture1Resource?.height ?? 0,
-      format: texture1Resource?.format ?? 0,
-      storage: texture1Resource?.storage ?? null,
-      semantic: texture1Resource?.semantic ?? null,
-      semanticMode: texture1SemanticMode,
-      uploads: texture1Resource?.uploads ?? 0,
-      samplePixels: sampleD3D8TextureProbe(texture1Resource),
-      sampleVertexPixels: sampleD3D8TextureAtVertexSamples(
-        texture1Resource,
-        vertexDiagnostics,
-        texture1Coordinates.coordSet,
-      ),
-      sampler: appliedTexture1Sampler ?? texture1Resource?.samplerState ?? null,
-      combiner: appliedStage1Combiner,
-    },
-    stage1Combiner: appliedStage1Combiner,
-    textureFactor: renderState.textureFactor,
-    implicitAlphaCutout: {
-      enabled: implicitAlphaCutoutThreshold >= 0,
-      threshold: implicitAlphaCutoutThreshold >= 0 ? implicitAlphaCutoutThreshold : null,
-    },
-    preDrawCenterPixel,
-    centerPixel,
-  };
-  const drawHistoryEntry = {
-      ok: probe.ok,
-      drawSequence: probe.drawSequence,
-      producer: probe.producer,
-      primitiveType: probe.primitiveType,
-      baseVertexIndex: probe.baseVertexIndex,
-      minVertexIndex: probe.minVertexIndex,
-      firstIndex: probe.firstIndex,
-      vertexBufferId: probe.vertexBufferId,
-      vertexCount: probe.vertexCount,
-      vertexStride: probe.vertexStride,
-      vertexShaderFvf: probe.vertexShaderFvf,
-      pretransformedPosition: probe.pretransformedPosition,
-      indexBufferId: probe.indexBufferId,
-      indexCount: probe.indexCount,
-      renderState: {
-        cullMode: renderState.cullMode,
-        zEnable: renderState.zEnable,
-        zWriteEnable: renderState.zWriteEnable,
-        zFunc: renderState.zFunc,
-        alphaBlendEnable: renderState.alphaBlendEnable,
-        srcBlend: renderState.srcBlend,
-        destBlend: renderState.destBlend,
-        alphaTestEnable: renderState.alphaTestEnable,
-        alphaFunc: renderState.alphaFunc,
-        alphaRef: renderState.alphaRef,
-        colorWriteEnable: renderState.colorWriteEnable,
-        stencilEnable: renderState.stencilEnable,
-        stencilFail: renderState.stencilFail,
-        stencilZFail: renderState.stencilZFail,
-        stencilPass: renderState.stencilPass,
-        stencilFunc: renderState.stencilFunc,
-        stencilRef: renderState.stencilRef,
-        stencilMask: renderState.stencilMask,
-        stencilWriteMask: renderState.stencilWriteMask,
-        fillMode: renderState.fillMode,
-        zBias: renderState.zBias,
-        shadeMode: renderState.shadeMode,
-        lighting: renderState.lighting,
-        clipping: renderState.clipping,
-        clipPlaneEnable: renderState.clipPlaneEnable,
-        textureStage0: d3d8TextureStageDrawSummary(renderState.textureStages[0]),
-        textureStage1: d3d8TextureStageDrawSummary(renderState.textureStages[1]),
-      },
-      appliedRenderState: {
-        cull: appliedRenderState?.cull ?? null,
-        depth: appliedRenderState?.depth ?? null,
-        blend: appliedRenderState?.blend ?? null,
-        stencil: appliedRenderState?.stencil ?? null,
-        alphaTest: appliedRenderState?.alphaTest ?? null,
-        implicitAlphaCutout: probe.implicitAlphaCutout,
-        colorWrite: appliedRenderState?.colorWrite ?? null,
-        clipPlanes: appliedRenderState?.clipPlanes ?? null,
-      },
-      activeLights: d3d8DiagLevel === "full" ? fixedFunctionLights.map((light) => ({
-        index: light.index,
-        type: light.type,
-        diffuse: light.diffuse,
-        position: light.position,
-        range: light.range,
-        attenuation0: light.attenuation0,
-        attenuation1: light.attenuation1,
-        attenuation2: light.attenuation2,
-      })) : [],
-      boundTextures: probe.boundTextures,
-      texture0: {
-        id: probe.texture0.id,
-        ready: probe.texture0.ready,
-        sampled: probe.texture0.sampled,
-        width: probe.texture0.width,
-        height: probe.texture0.height,
-        format: probe.texture0.format,
-        storage: probe.texture0.storage,
-        semantic: probe.texture0.semantic,
-        semanticMode: probe.texture0.semanticMode,
-        uploads: probe.texture0.uploads,
-        completeMipChain: probe.texture0.completeMipChain,
-        texCoordIndex: probe.texture0.texCoordIndex,
-        texCoordSet: probe.texture0.texCoordSet,
-        textureTransformFlags: probe.texture0.textureTransformFlags,
-        samplePixels: probe.texture0.samplePixels,
-        sampleVertexPixels: probe.texture0.sampleVertexPixels,
-        combiner: probe.texture0.combiner,
-      },
-      texture1: {
-        id: probe.texture1.id,
-        ready: probe.texture1.ready,
-        sampled: probe.texture1.sampled,
-        width: probe.texture1.width,
-        height: probe.texture1.height,
-        format: probe.texture1.format,
-        storage: probe.texture1.storage,
-        semantic: probe.texture1.semantic,
-        semanticMode: probe.texture1.semanticMode,
-        uploads: probe.texture1.uploads,
-        completeMipChain: probe.texture1.completeMipChain,
-        texCoordIndex: probe.texture1.texCoordIndex,
-        texCoordSet: probe.texture1.texCoordSet,
-        textureTransformFlags: probe.texture1.textureTransformFlags,
-        samplePixels: probe.texture1.samplePixels,
-        sampleVertexPixels: probe.texture1.sampleVertexPixels,
-        combiner: probe.texture1.combiner,
-      },
-      vertexSummary: d3d8DrawVertexSummary(vertexDiagnostics),
-      preDrawCenterPixel,
-      centerPixel,
-  };
-  const drawHistory = [
-    ...(Array.isArray(harnessState.graphics.d3d8DrawHistory)
-      ? harnessState.graphics.d3d8DrawHistory
-      : []),
-    drawHistoryEntry,
-  ].slice(-64);
-  const sceneDrawHistory = includeSceneDrawHistory
-    ? [
-        ...(Array.isArray(harnessState.graphics.d3d8SceneDrawHistory)
-          ? harnessState.graphics.d3d8SceneDrawHistory
-          : []),
-        drawHistoryEntry,
-      ].slice(-d3d8SceneDrawHistoryLimit)
-    : (Array.isArray(harnessState.graphics.d3d8SceneDrawHistory)
-        ? harnessState.graphics.d3d8SceneDrawHistory
-        : []);
-  harnessState.graphics = {
-    ...harnessState.graphics,
-    d3d8DrawIndexedSequence: drawSequence,
-    d3d8DrawHistory: drawHistory,
-    d3d8SceneDrawHistory: sceneDrawHistory,
-    lastD3D8DrawIndexed: probe,
-    d3d8Perf: d3d8PerfSummary(),
-  };
-  recordDrawPhase?.("sortedDrawTailMs");
-  finishSortedDrawProfile();
-  finishDrawProducerProfile();
-  return drawOk ? 1 : 0;
 }
 
 function paintBlackWindow() {
@@ -16058,7 +4126,7 @@ function recordLog(message, data = null) {
   // which the user records traces): a burst of engine stdout during texture
   // loads showed up as ~160ms of recordLog inside one hitch. Keep the console
   // mirror for full diag only; the entries above stay queryable either way.
-  if (d3d8DiagLevel === "full") {
+  if (d3d8DiagLevelValue() === "full") {
     console.info("[wasm-harness]", entry.message, entry.data ?? "");
   }
   return entry;
@@ -16146,107 +4214,10 @@ function applyModuleState(moduleState) {
 // Backs the original WW3D FontCharsClass / Render2DSentenceClass text path.
 // The C++ side (wasm_win32_gdi_browser.cpp) calls these synchronous hooks via
 // EM_ASM; they rasterize glyphs through a Canvas 2D context and write BGR
-// pixels back into the wasm DIB-section buffer.
-let gdiCanvas = null;
-let gdiCtx = null;
-
-function gdiEnsureContext() {
-  if (gdiCtx) {
-    return gdiCtx;
-  }
-  gdiCanvas = document.createElement("canvas");
-  gdiCtx = gdiCanvas.getContext("2d", { willReadFrequently: true });
-  return gdiCtx;
-}
-
-function gdiFontCss(face, logicalHeight, weight, italic) {
-  const px = Math.max(1, Math.abs((logicalHeight | 0) || 16));
-  const wght = weight || 400;
-  const ital = italic ? "italic " : "";
-  const family = face && face.length ? JSON.stringify(String(face)) : "Arial";
-  return `${ital}${wght} ${px}px ${family}`;
-}
-
-function gdiCssColor(rgb) {
-  const v = rgb >>> 0;
-  const r = v & 0xff;
-  const g = (v >> 8) & 0xff;
-  const b = (v >> 16) & 0xff;
-  return `rgb(${r},${g},${b})`;
-}
-
-// Measure: synchronous canvas.measureText + fontBoundingBox metrics.  Returns
-// {width,height,ascent,overhang} in device pixels.  overhang is left at 0
-// because canvas TextMetrics exposes no direct equivalent; the original
-// FontCharsClass zeroes overhang for the Generals/Arial path regardless.
-function cncGdiMeasure(face, logicalHeight, weight, italic, str) {
-  const ctx = gdiEnsureContext();
-  if (!ctx || typeof str !== "string" || str.length === 0) {
-    return null;
-  }
-  ctx.font = gdiFontCss(face, logicalHeight, weight, italic);
-  const m = ctx.measureText(str);
-  const px = Math.max(1, Math.abs((logicalHeight | 0) || 16));
-  const ascent = Math.ceil(m.fontBoundingBoxAscent || (px * 0.8));
-  const descent = Math.ceil(m.fontBoundingBoxDescent || (px * 0.2));
-  const width = Math.ceil(m.width);
-  return { width, height: ascent + descent, ascent, overhang: 0 };
-}
-
-// Rasterize one UTF-16 code unit at (x,y) honoring ETO_OPAQUE.  Writes 24bpp
-// BGR, DWORD-padded stride, top-down into the wasm heap at bitsPtr.
-function cncGdiRasterizeGlyph(
-  face,
-  logicalHeight,
-  weight,
-  italic,
-  code,
-  x,
-  y,
-  bitsPtr,
-  bmpW,
-  bmpH,
-  stride,
-  textColorRgb,
-  bkColorRgb,
-  opaque,
-  heapu8,
-) {
-  const ctx = gdiEnsureContext();
-  if (!ctx || bmpW <= 0 || bmpH <= 0 || stride < bmpW * 3) {
-    return false;
-  }
-  if (!(heapu8 instanceof Uint8Array)) {
-    return false;
-  }
-  if (gdiCanvas.width !== bmpW) {
-    gdiCanvas.width = bmpW;
-  }
-  if (gdiCanvas.height !== bmpH) {
-    gdiCanvas.height = bmpH;
-  }
-  ctx.font = gdiFontCss(face, logicalHeight, weight, italic);
-  ctx.textBaseline = "top";
-  ctx.textAlign = "left";
-  if (opaque) {
-    ctx.fillStyle = gdiCssColor(bkColorRgb);
-    ctx.fillRect(0, 0, bmpW, bmpH);
-  }
-  ctx.fillStyle = gdiCssColor(textColorRgb);
-  ctx.fillText(String.fromCharCode(code), x, y);
-  const img = ctx.getImageData(0, 0, bmpW, bmpH).data;
-  for (let row = 0; row < bmpH; row++) {
-    let dst = (bitsPtr | 0) + row * stride;
-    const srcRow = row * bmpW * 4;
-    for (let col = 0; col < bmpW; col++) {
-      const s = srcRow + col * 4;
-      heapu8[dst++] = img[s + 2]; // B
-      heapu8[dst++] = img[s + 1]; // G
-      heapu8[dst++] = img[s + 0]; // R
-    }
-  }
-  return true;
-}
+// pixels back into the wasm DIB-section buffer. Extracted VERBATIM to
+// harness/gdi_executor.mjs (P1c) so the engine worker realm can install the
+// same rasterizer against an OffscreenCanvas in threaded mode.
+const { cncGdiMeasure, cncGdiRasterizeGlyph } = createGdiHooks();
 
 // ---------------------------------------------------------------------------
 // Persistent save games (IDBFS)
@@ -16417,31 +4388,17 @@ async function loadWasmModule() {
     const moduleExports = await import(browserAssetUrl(`../${distDir}/cnc-port.js`, runtimeCacheToken));
     const createModule = moduleExports.default ?? moduleExports.createCncPortModule;
     const module = await createModule({
-      locateFile: (path) => path.endsWith(".wasm")
+      // .wasm AND the pthread pool worker script (threaded build) live in the
+      // dist directory; returning a bare relative path from locateFile makes
+      // the browser resolve it against the DOCUMENT (harness/) and 404 — the
+      // module factory then waits on its worker-pool run dependency forever.
+      locateFile: (path) => (path.endsWith(".wasm") || path.endsWith(".js"))
         ? browserAssetUrl(`../${distDir}/${path}`, runtimeCacheToken)
         : path,
       print: (text) => recordLog("wasm stdout", { text: String(text) }),
       printErr: (text) => recordLog("wasm stderr", { text: String(text) }),
-      cncPortD3D8Clear: paintD3D8Clear,
-      cncPortD3D8SetViewport: setD3D8Viewport,
-      cncPortD3D8SetGammaRamp: setD3D8GammaRamp,
-      cncPortD3D8BackbufferResize: onD3D8BackbufferResize,
-      cncPortD3D8NativeMode: d3d8NativeModeQuery,
-      cncPortD3D8BufferCreate: createD3D8Buffer,
-      cncPortD3D8BufferUpdate: updateD3D8Buffer,
-      cncPortD3D8BufferRelease: releaseD3D8Buffer,
-      cncPortD3D8TextureCreate: createD3D8Texture,
-      cncPortD3D8TextureUpdate: updateD3D8Texture,
-      cncPortD3D8VolumeTextureCreate: createD3D8VolumeTexture,
-      cncPortD3D8VolumeTextureUpdate: updateD3D8VolumeTexture,
-      cncPortD3D8TextureRelease: releaseD3D8Texture,
-      cncPortD3D8TextureBind: bindD3D8Texture,
-      cncPortD3D8TextureSampleCenter: sampleD3D8TextureCenter,
-		cncPortD3D8BindFramebuffer: bindD3D8Framebuffer,
-      cncPortD3D8DrawIndexed: paintD3D8DrawIndexed,
-      cncPortD3D8ShaderTier: d3d8ShaderTierQuery,
-      cncPortD3D8ShaderCreate: registerD3D8SM1Shader,
-      cncPortD3D8ShaderDelete: deleteD3D8SM1Shader,
+      // The 20 cncPortD3D8* hooks (see d3d8_executor.mjs).
+      ...d3d8Hooks,
       cncPortMssSampleStart,
       cncPortMssSampleStop,
       cncPortMssSampleEnd,
@@ -16477,11 +4434,11 @@ async function loadWasmModule() {
     });
     cncPortEmscriptenModule = module;
     harnessState.moduleDistDir = distDir;
-    d3d8BoundDrawDiagnosticsSetter = module.cwrap(
+    d3d8Diag.setBoundDrawDiagnosticsSetter(module.cwrap(
       "cnc_port_d3d8_set_bound_draw_diagnostics",
       null,
       ["number"],
-    );
+    ));
     applyD3D8BoundDrawDiagnosticsLevel();
 
     return {
@@ -16942,8 +4899,6 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_terrain_visual_shroud_update_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainFullScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_full_scene", "string", ["string", "string", "string"]),
-      probeWW3DTerrainWaterType2Scene: module.cwrap(
-        "cnc_port_probe_ww3d_terrain_water_type2_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainFullSceneShroudUpdate: module.cwrap(
         "cnc_port_probe_ww3d_terrain_full_scene_shroud_update", "string", ["string", "string", "string"]),
       probeWW3DTerrainVisualLoadWindowScene: module.cwrap(
@@ -17042,34 +4997,18 @@ async function loadWasmModule() {
       heapU8: () => module.HEAPU8,
     };
   } catch (error) {
+    // Keep the underlying reason: getWasmModuleForArchives folds it into the
+    // mount error so a failed page shows the ROOT CAUSE (e.g. "SharedArray-
+    // Buffer is not defined" on an untrustworthy origin), not a bare
+    // "Wasm module unavailable".
+    cncPortModuleLoadError = String(error?.message ?? error);
     console.info("[wasm-harness] wasm module unavailable; using JS boot stub", error);
     return null;
   }
 }
 
 function d3d8BridgeCallbacks() {
-  return {
-    cncPortD3D8Clear: paintD3D8Clear,
-    cncPortD3D8SetViewport: setD3D8Viewport,
-    cncPortD3D8SetGammaRamp: setD3D8GammaRamp,
-    cncPortD3D8BackbufferResize: onD3D8BackbufferResize,
-    cncPortD3D8NativeMode: d3d8NativeModeQuery,
-    cncPortD3D8BufferCreate: createD3D8Buffer,
-    cncPortD3D8BufferUpdate: updateD3D8Buffer,
-    cncPortD3D8BufferRelease: releaseD3D8Buffer,
-    cncPortD3D8TextureCreate: createD3D8Texture,
-    cncPortD3D8TextureUpdate: updateD3D8Texture,
-    cncPortD3D8VolumeTextureCreate: createD3D8VolumeTexture,
-    cncPortD3D8VolumeTextureUpdate: updateD3D8VolumeTexture,
-    cncPortD3D8TextureRelease: releaseD3D8Texture,
-    cncPortD3D8TextureBind: bindD3D8Texture,
-    cncPortD3D8TextureSampleCenter: sampleD3D8TextureCenter,
-    cncPortD3D8DrawIndexed: paintD3D8DrawIndexed,
-		cncPortD3D8BindFramebuffer: bindD3D8Framebuffer,
-    cncPortD3D8ShaderTier: d3d8ShaderTierQuery,
-    cncPortD3D8ShaderCreate: registerD3D8SM1Shader,
-    cncPortD3D8ShaderDelete: deleteD3D8SM1Shader,
-  };
+  return { ...d3d8Hooks };
 }
 
 function parseModuleState(stateJson) {
@@ -17123,7 +5062,7 @@ function snapshotState() {
   syncCanvasSize();
   // Lite mode defers the per-op graphics summaries; RPC consumers still expect
   // point-in-time data, so rebuild them here where the cost is per-query.
-  if (d3d8DiagLevel !== "full") {
+  if (d3d8DiagLevelValue() !== "full") {
     updateD3D8TextureSummary(true);
     updateD3D8BufferSummary(true);
     harnessState.graphics = {
@@ -17134,8 +5073,8 @@ function snapshotState() {
   return {
     booted: harnessState.booted,
     frame: harnessState.frame,
-    webglContextLost,
-    webglContextLossAt,
+    webglContextLost: d3d8Diag.webglContextLost(),
+    webglContextLossAt: d3d8Diag.webglContextLossAt(),
     runtime: harnessState.runtime,
     wasm: harnessState.wasm,
     mainLoop: harnessState.mainLoop,
@@ -17426,9 +5365,118 @@ function readBigDirectoryFromBytes(bytes, archiveName) {
   return entries;
 }
 
-function readMountedBigText(archiveBytes, entry) {
-  const bytes = archiveBytes.subarray(entry.offset, entry.offset + entry.size);
-  return new TextDecoder("windows-1252").decode(bytes);
+// Opens a mounted MEMFS file for bounded partial reads via the Emscripten FS
+// stream API so callers never have to copy a whole archive out of MEMFS
+// (FS.readFile) just to sample a few byte ranges from it.
+function openMountedArchiveReader(fs, path) {
+  const size = fs.stat(path).size;
+  const stream = fs.open(path, "r");
+  return {
+    size,
+    readAt(position, length) {
+      const start = Math.max(0, Math.min(position, size));
+      const wanted = Math.max(0, Math.min(length, size - start));
+      const buffer = new Uint8Array(wanted);
+      let total = 0;
+      while (total < wanted) {
+        const read = fs.read(stream, buffer, total, wanted - total, start + total);
+        if (read <= 0) {
+          break;
+        }
+        total += read;
+      }
+      return total === wanted ? buffer : buffer.subarray(0, total);
+    },
+    close() {
+      try {
+        fs.close(stream);
+      } catch {
+        // Stream already closed; nothing left to release.
+      }
+    },
+  };
+}
+
+// Partial-read variant of readBigDirectoryFromBytes: parses the BIGF header +
+// directory through bounded chunked reads instead of requiring the whole
+// archive in memory. Semantics and error messages mirror
+// readBigDirectoryFromBytes. Async so readers may be remote (the threaded
+// OPFS realm reader awaits port round trips); MEMFS readers return plain
+// values and are unaffected by the awaits.
+async function readBigDirectoryFromReader(reader, archiveName) {
+  if (reader.size < 16) {
+    throw new Error(`${archiveName} is too small to be a BIGF archive`);
+  }
+  const header = await reader.readAt(0, 16);
+  const magic = String.fromCharCode(...header.subarray(0, 4));
+  if (magic !== "BIGF") {
+    throw new Error(`${archiveName} is not a BIGF archive`);
+  }
+
+  const entryCount = readBigUInt32BE(header, 8);
+  if (entryCount > 1000000) {
+    throw new Error(`${archiveName} has an invalid BIGF entry count: ${entryCount}`);
+  }
+
+  const decoder = new TextDecoder("ascii");
+  const entries = [];
+  const directoryStart = 0x10;
+  const chunkSize = 64 * 1024;
+  const directoryCapacity = reader.size - directoryStart;
+  let directoryBytes = new Uint8Array(0);
+
+  const ensureDirectoryBytes = async (requiredLength, failureMessage) => {
+    while (directoryBytes.byteLength < requiredLength) {
+      if (directoryBytes.byteLength >= directoryCapacity) {
+        throw new Error(failureMessage);
+      }
+      const start = directoryStart + directoryBytes.byteLength;
+      const next = await reader.readAt(start, Math.min(chunkSize, reader.size - start));
+      if (next.byteLength === 0) {
+        throw new Error(failureMessage);
+      }
+      directoryBytes = appendBytes(directoryBytes, next);
+    }
+  };
+
+  let cursor = 0;
+  for (let index = 0; index < entryCount; ++index) {
+    await ensureDirectoryBytes(cursor + 9, `${archiveName} BIGF directory ended before entry ${index}`);
+    const offset = readBigUInt32BE(directoryBytes, cursor);
+    const size = readBigUInt32BE(directoryBytes, cursor + 4);
+    const pathStart = cursor + 8;
+    let pathEnd = pathStart;
+    for (;;) {
+      while (pathEnd < directoryBytes.byteLength && directoryBytes[pathEnd] !== 0) {
+        pathEnd += 1;
+      }
+      if (pathEnd < directoryBytes.byteLength) {
+        break;
+      }
+      await ensureDirectoryBytes(
+        directoryBytes.byteLength + 1,
+        `${archiveName} BIGF entry ${index} has no terminator`,
+      );
+    }
+    if (offset + size > reader.size) {
+      throw new Error(`${archiveName} BIGF entry extends past archive end`);
+    }
+
+    const path = decoder.decode(directoryBytes.subarray(pathStart, pathEnd));
+    entries.push({
+      archive: archiveName,
+      path,
+      normalizedPath: normalizeBigPath(path),
+      offset,
+      size,
+    });
+    cursor = pathEnd + 1;
+  }
+  return entries;
+}
+
+function decodeMountedBigTextBytes(payloadBytes) {
+  return new TextDecoder("windows-1252").decode(payloadBytes);
 }
 
 function stripIniComment(line) {
@@ -17606,8 +5654,11 @@ function parseAudioWavFmt(header) {
   return null;
 }
 
-function classifyAudioPayloadFormat(archiveBytes, entry) {
-  const header = archiveBytes.subarray(entry.offset, Math.min(entry.offset + 64, archiveBytes.byteLength));
+// Callers pass the payload's first audioPayloadHeaderSampleBytes bytes
+// (clamped to the archive end), not the whole archive.
+const audioPayloadHeaderSampleBytes = 64;
+
+function classifyAudioPayloadFormat(header, entry) {
   const extension = audioPayloadExtension(entry.path);
   const magic = audioPayloadMagic(header);
   const wavFmt = magic === "riff-wave" ? parseAudioWavFmt(header) : null;
@@ -18774,7 +6825,7 @@ async function buildBrowserAudio3DPositioningProof(decodedPayloads) {
   }
 }
 
-function buildAudioDecodeAndBufferProofs(entryIndex, archiveBytesByName) {
+function buildAudioDecodeAndBufferProofs(entryIndex, readEntryBytes) {
   const errors = [];
   const proofs = [];
   const decodedPayloads = [];
@@ -18784,13 +6835,18 @@ function buildAudioDecodeAndBufferProofs(entryIndex, archiveBytesByName) {
       errors.push(`decode proof payload not found: ${target.path}`);
       continue;
     }
-    const archiveBytes = archiveBytesByName.get(entry.archive);
-    if (!archiveBytes) {
+    let payloadBytes;
+    try {
+      payloadBytes = readEntryBytes(entry.archive, entry);
+    } catch (error) {
+      errors.push(`${target.path}: ${error?.message ?? String(error)}`);
+      continue;
+    }
+    if (!payloadBytes) {
       errors.push(`decode proof archive bytes not found: ${entry.archive}`);
       continue;
     }
     try {
-      const payloadBytes = archiveBytes.subarray(entry.offset, entry.offset + entry.size);
       const decoded = decodeAudioWavPayload(payloadBytes);
       const decodedFrames = decoded.samples.length / decoded.info.channels;
       decodedPayloads.push({
@@ -18862,7 +6918,7 @@ function selectRequestedDecodeCacheTargets(requestedPayloadCachePlan) {
   ];
 }
 
-async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, entryIndex, archiveBytesByName) {
+async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, entryIndex, readEntryBytes) {
   const errors = [];
   const entries = [];
   const decodedCache = new Map();
@@ -18883,14 +6939,19 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
       );
       continue;
     }
-    const archiveBytes = archiveBytesByName.get(target.archive);
-    if (!archiveBytes) {
+    let payloadBytes;
+    try {
+      payloadBytes = readEntryBytes(target.archive, entry);
+    } catch (error) {
+      errors.push(`${target.cacheKey}: ${error?.message ?? String(error)}`);
+      continue;
+    }
+    if (!payloadBytes) {
       errors.push(`requested decode-cache archive bytes not found: ${target.archive}`);
       continue;
     }
 
     try {
-      const payloadBytes = archiveBytes.subarray(entry.offset, entry.offset + entry.size);
       if (target.extension === "mp3") {
         const decoded = await decodeWebAudioPayload(payloadBytes);
         const cacheEntry = {
@@ -19321,18 +7382,32 @@ function buildAudioRequestedPayloadCachePlan(refsBySection) {
 }
 
 async function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
+  // Readers stay open across the scan (directory, entry-header sampling, INI
+  // text, decode/cache proofs) and always close on the way out, including the
+  // early ok:false returns.
+  const openArchiveReaders = [];
+  try {
+    return await buildAudioPayloadInventoryWithReaders(wasmModule, archives, openArchiveReaders);
+  } finally {
+    for (const reader of openArchiveReaders) {
+      reader.close();
+    }
+  }
+}
+
+async function buildAudioPayloadInventoryWithReaders(wasmModule, archives, openArchiveReaders) {
   const mountedArchives = [];
   const entryIndex = new Map();
   const iniFiles = {};
   const iniTexts = {};
   const payloadFormats = newAudioFormatSummary("mounted BIG Data\\Audio entry headers");
   payloadFormats.archives = {};
-  const archiveBytesByName = new Map();
+  const archiveReadersByName = new Map();
 
   for (const archive of archives.filter(isAudioPayloadRelevantArchive)) {
-    let archiveBytes;
+    let reader;
     try {
-      archiveBytes = wasmModule.fs.readFile(archive.path);
+      reader = openMountedArchiveReader(wasmModule.fs, archive.path);
     } catch (error) {
       return {
         ok: false,
@@ -19340,14 +7415,15 @@ async function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archive
         error: error?.message ?? String(error),
       };
     }
-    archiveBytesByName.set(archive.name, archiveBytes);
+    openArchiveReaders.push(reader);
+    archiveReadersByName.set(archive.name, reader);
     if (archive.sourceName) {
-      archiveBytesByName.set(archive.sourceName, archiveBytes);
+      archiveReadersByName.set(archive.sourceName, reader);
     }
 
     let entries;
     try {
-      entries = readBigDirectoryFromBytes(archiveBytes, archive.name);
+      entries = await readBigDirectoryFromReader(reader, archive.name);
     } catch (error) {
       return {
         ok: false,
@@ -19359,7 +7435,10 @@ async function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archive
     const archiveFormats = newAudioFormatSummary(`${archive.name} Data\\Audio entry headers`);
     for (const entry of entries) {
       if (entry.normalizedPath.startsWith("data\\audio\\")) {
-        entry.format = classifyAudioPayloadFormat(archiveBytes, entry);
+        entry.format = classifyAudioPayloadFormat(
+          reader.readAt(entry.offset, audioPayloadHeaderSampleBytes),
+          entry,
+        );
         addAudioFormatSummaryEntry(archiveFormats, entry);
         addAudioFormatSummaryEntry(payloadFormats, entry);
       }
@@ -19386,7 +7465,7 @@ async function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archive
       const entry = entries.find((candidate) =>
         candidate.normalizedPath === normalizeBigPath(iniPath));
       if (entry) {
-        iniTexts[iniPath] = readMountedBigText(archiveBytes, entry);
+        iniTexts[iniPath] = decodeMountedBigTextBytes(reader.readAt(entry.offset, entry.size));
         iniFiles[iniPath] = {
           present: true,
           archive: archive.name,
@@ -19496,14 +7575,23 @@ async function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archive
     : payloadFormats.requiresTranscode > 0
       ? "imaAdpcmDecoder"
       : "decodeAudioDataHarness";
-  const audioProofs = buildAudioDecodeAndBufferProofs(entryIndex, archiveBytesByName);
+  // On-demand partial reads for the handful of proof payloads; returns null
+  // when the archive is not part of the scanned reader set.
+  const readEntryBytes = (archiveName, entry) => {
+    const reader = archiveReadersByName.get(archiveName);
+    if (!reader) {
+      return null;
+    }
+    return reader.readAt(entry.offset, entry.size);
+  };
+  const audioProofs = buildAudioDecodeAndBufferProofs(entryIndex, readEntryBytes);
   const decodeProofs = audioProofs.decodeProofs;
   const webAudioBufferProofs = audioProofs.webAudioBufferProofs;
   const requestedPayloadCachePlan = buildAudioRequestedPayloadCachePlan(refsBySection);
   const requestedPayloadDecodeCacheProof = await buildRequestedAudioDecodeCacheProof(
     requestedPayloadCachePlan,
     entryIndex,
-    archiveBytesByName,
+    readEntryBytes,
   );
   if (decodeProofs.ready && webAudioBufferProofs.ready && payloadFormats.nextRequired === "imaAdpcmDecoder") {
     payloadFormats.nextRequired = "requestedPayloadDecodeCache";
@@ -19601,18 +7689,14 @@ function archivePathFromPayload(payload, baseDirectory = "/assets") {
 }
 
 // ---------------------------------------------------------------------------
-// IO worker client (first slice of "move IO to its own thread").
+// IO worker client.
 //
-// A dedicated module Web Worker (harness/io_worker.mjs) does the archive
-// `fetch()` + `arrayBuffer()` off the main thread and transfers the finished
-// bytes back (zero-copy). The main thread only performs the single
-// `FS.writeFile` memcpy into the wasm heap. This keeps the ~1.6 GB archive
-// download and its decode from contending with the WebGL/engine main thread.
-//
-// It is opt-outable: set `window.__cncIoWorker = false` (or `?ioworker=0` via
-// the page, handled by the caller) to force the legacy inline fetch. Any worker
-// failure transparently falls back to the inline path, so this never blocks a
-// mount that would otherwise succeed.
+// A dedicated module Web Worker (harness/io_worker.mjs) streams archive
+// downloads straight into OPFS (fetchToOpfs) for the threaded mount path and
+// garbage-collects per-boot OPFS namespaces. The MEMFS-era whole-buffer
+// `fetchArchive` transfer command was deleted 2026-07-10 with the play-page
+// legacy path; the surviving MEMFS mounts (harness/index.html legacy-boot
+// surface) fetch inline on the main thread.
 let ioWorkerInstance = null;
 let ioWorkerNextId = 1;
 let ioWorkerDisabled = false;
@@ -19622,18 +7706,7 @@ function ioWorkerEnabled() {
   if (ioWorkerDisabled) {
     return false;
   }
-  if (typeof Worker !== "function") {
-    return false;
-  }
-  // Explicit opt-out escape hatch for debugging / regressions.
-  try {
-    if (globalThis.__cncIoWorker === false) {
-      return false;
-    }
-  } catch (_error) {
-    // No globalThis override in some contexts; default to enabled.
-  }
-  return true;
+  return typeof Worker === "function";
 }
 
 function ensureIoWorker() {
@@ -19706,13 +7779,37 @@ function ioWorkerRequest(request, transfer = [], onProgress = null) {
   });
 }
 
-// Fetch a whole archive off the main thread; resolves to a Uint8Array view of
-// the transferred ArrayBuffer. Rejects (so the caller falls back inline) if the
-// worker is unavailable or the fetch fails. `onProgress` (optional) receives
-// the worker's streamed { url, received, total } download progress messages.
-async function fetchArchiveBytesOffThread(url, onProgress = null) {
-  const response = await ioWorkerRequest({ kind: "fetchArchive", url }, [], onProgress);
-  return new Uint8Array(response.bytes);
+// P2 "OPFS as the disk" (threaded mode): stream one archive straight into an
+// OPFS file on the IO worker. The bytes are NEVER RAM-resident anywhere —
+// each fetch chunk is written through a FileSystemSyncAccessHandle as it
+// arrives — and the worker's streamed progress messages keep feeding the
+// play UI exactly like fetchArchive. Resolves { bytesWritten, status }.
+async function fetchArchiveToOpfsOffThread(url, opfsPath, onProgress = null) {
+  const response = await ioWorkerRequest({ kind: "fetchToOpfs", url, opfsPath }, [], onProgress);
+  return { bytesWritten: Number(response.bytesWritten), status: response.status };
+}
+
+// Release the OPFS exclusive locks (engine realm's staged handles + any
+// in-flight IO-worker handles) as soon as the page starts going away —
+// browsers reap a dead page's workers asynchronously, and until then those
+// locks would collide with the NEXT boot's mount. Best-effort: delivery
+// during teardown is not guaranteed (the per-boot namespace + GC in
+// mountArchivesToOpfs is the hard guarantee; this just releases early in the
+// common case).
+if (cncPortThreadedMode && typeof window !== "undefined") {
+  const releaseOpfsLocksOnPageHide = () => {
+    try {
+      threadedEngine?.postCommand({ cmd: "releaseOpfsHandles" });
+    } catch (_error) {
+      // realm port not connected yet
+    }
+    try {
+      ioWorkerInstance?.postMessage({ kind: "releaseHandles" });
+    } catch (_error) {
+      // worker gone
+    }
+  };
+  window.addEventListener("pagehide", releaseOpfsLocksOnPageHide);
 }
 
 // Archive mount progress -> page UI. The mount path publishes coarse
@@ -19741,11 +7838,9 @@ function archiveFetchProgressReporter(archive, context = null) {
   };
 }
 
-// How many archives to download concurrently while mounting a set. The bytes
-// still hit MEMFS strictly sequentially in registration order; this only lets
-// the next fetches overlap the current write. `window.__cncFetchParallel =
-// false` (page: ?fetchpar=0) opts out; the worker-less fallback stays fully
-// sequential so the legacy inline path is unchanged.
+// How many archives the OPFS mount downloads concurrently (io_worker
+// fetchToOpfs streams). `window.__cncFetchParallel = false` (page:
+// ?fetchpar=0) opts out to strictly sequential downloads.
 const ARCHIVE_FETCH_PARALLELISM = 3;
 
 function archiveFetchParallelism() {
@@ -19759,20 +7854,12 @@ function archiveFetchParallelism() {
   return ioWorkerEnabled() ? ARCHIVE_FETCH_PARALLELISM : 1;
 }
 
-// Download one archive's bytes, preferring the IO worker (streamed, off the
-// main thread) and falling back to the inline main-thread fetch. Returns
-// { bytes, reader } or { error } for an HTTP failure (network errors throw,
-// matching the legacy inline path).
-async function fetchArchiveBytesWithFallback(archive, onProgress = null) {
-  if (ioWorkerEnabled()) {
-    try {
-      const bytes = await fetchArchiveBytesOffThread(archive.url, onProgress);
-      return { bytes, reader: "io-worker fetch" };
-    } catch (_workerError) {
-      // Fall back to the inline main-thread fetch below.
-    }
-  }
-
+// Download one archive's bytes with an inline main-thread fetch (MEMFS
+// mounts are the non-threaded harness/index.html legacy-boot surface only;
+// the threaded/OPFS mount path streams through the IO worker instead).
+// Returns { bytes, reader } or { error } for an HTTP failure (network errors
+// throw).
+async function fetchArchiveBytesInline(archive, onProgress = null) {
   const response = await fetch(archive.url);
   if (!response.ok) {
     return {
@@ -19808,27 +7895,15 @@ async function writeArchiveToMemfs(wasmModule, payload, baseDirectory = "/assets
     });
   };
 
-  let bytes = null;
-  let reader = "main-thread fetch";
-
-  if (options.prefetched) {
-    // mountArchives' bounded fetch-ahead pipeline already downloaded this one.
-    if (options.prefetched.error) {
-      return { error: options.prefetched.error };
-    }
-    bytes = options.prefetched.bytes;
-    reader = options.prefetched.reader;
-  } else {
-    const fetched = await fetchArchiveBytesWithFallback(
-      archive,
-      emitProgress ? archiveFetchProgressReporter(archive, progressContext) : null,
-    );
-    if (fetched.error) {
-      return { error: fetched.error };
-    }
-    bytes = fetched.bytes;
-    reader = fetched.reader;
+  const fetched = await fetchArchiveBytesInline(
+    archive,
+    emitProgress ? archiveFetchProgressReporter(archive, progressContext) : null,
+  );
+  if (fetched.error) {
+    return { error: fetched.error };
   }
+  const bytes = fetched.bytes;
+  const reader = fetched.reader;
 
   reportPhase("write", bytes.byteLength);
   // Give the page a task boundary to paint the "mounting <name>" state before
@@ -20189,8 +8264,11 @@ function canvasInputPointFromEvent(event) {
   // aspect so clicks / building placement land on the right engine point instead
   // of being offset by the black letterbox bars. When the buffer aspect matches
   // the box (e.g. the dynamic "Native" option) this degenerates to the full rect.
-  const bufferWidth = canvas.width;
-  const bufferHeight = canvas.height;
+  // Threaded mode: the placeholder's width/height attributes freeze at their
+  // transfer-time values (the worker owns the real backing size), so use the
+  // engine display size relayed through the worker status messages instead.
+  const bufferWidth = cncPortThreadedMode ? targetWidth : canvas.width;
+  const bufferHeight = cncPortThreadedMode ? targetHeight : canvas.height;
   if (rect.width > 0 && rect.height > 0
       && bufferWidth > 0 && bufferHeight > 0) {
     const scale = Math.min(rect.width / bufferWidth, rect.height / bufferHeight);
@@ -20408,6 +8486,14 @@ async function pushBrowserInputToWasm({
   timestamp = 0,
   win32Message = null,
 } = {}) {
+  if (cncPortThreadedMode) {
+    // Same forwarding as the lite path (the full-state JSON round trip is a
+    // main-thread wasm call and cannot run while the engine thread owns wasm).
+    await pushBrowserInputToWasmLite({
+      cursor, virtualKey, keyDown, directInputCode, timestamp, win32Message,
+    });
+    return snapshotState();
+  }
   const wasmModule = await wasmModulePromise;
   if (!wasmModule) {
     return null;
@@ -20465,6 +8551,37 @@ async function pushBrowserInputToWasmLite({
   timestamp = 0,
   win32Message = null,
 } = {}) {
+  if (cncPortThreadedMode) {
+    // Forward the SAME lite numeric calls over the realm port; the engine
+    // realm applies them in order between frames (engine_realm_boot.mjs).
+    // Pure pointermoves omit the key fields so the outbox can coalesce them.
+    try {
+      await threadedEngine.ensureReady();
+      const entry = {
+        cursor,
+        win32: win32Message ? {
+          message: win32Message.message,
+          wParam: win32Message.wParam ?? 0,
+          lParam: win32Message.lParam ?? 0,
+          px: win32Message.point?.x ?? cursor?.x ?? 0,
+          py: win32Message.point?.y ?? cursor?.y ?? 0,
+        } : null,
+      };
+      if (virtualKey >= 0 || keyDown) {
+        entry.virtualKey = virtualKey;
+        entry.keyDown = keyDown;
+      }
+      if (directInputCode >= 0) {
+        entry.directInputCode = directInputCode;
+        entry.timestamp = timestamp || performance.now();
+        entry.keyDown = keyDown;
+      }
+      threadedEngine.forwardInput(entry);
+    } catch (_error) {
+      // Realm not ready yet (archive download phase) — input is droppable.
+    }
+    return null;
+  }
   const wasmModule = await wasmModulePromise;
   if (!wasmModule) {
     return null;
@@ -20508,6 +8625,24 @@ async function postBrowserMessageToWasm({
   lParam = 0,
   point = null,
 } = {}) {
+  if (cncPortThreadedMode) {
+    try {
+      await threadedEngine.ensureReady();
+      threadedEngine.forwardInput({
+        cursor: point,
+        win32: {
+          message: Number(message),
+          wParam: Number(wParam),
+          lParam: Number(lParam),
+          px: point?.x ?? 0,
+          py: point?.y ?? 0,
+        },
+      });
+    } catch (_error) {
+      // Realm not ready yet — droppable.
+    }
+    return snapshotState();
+  }
   const wasmModule = await wasmModulePromise;
   if (!wasmModule) {
     return null;
@@ -20543,6 +8678,17 @@ async function postBrowserTextToWasm(text) {
 }
 
 async function resetBrowserInput() {
+  if (cncPortThreadedMode) {
+    resetDoubleClickState();
+    resetBrowserPointerCaptureState();
+    try {
+      await threadedEngine.ensureReady();
+      threadedEngine.forwardInput({ reset: true });
+    } catch (_error) {
+      // Realm not ready yet — droppable.
+    }
+    return snapshotState();
+  }
   const wasmModule = await wasmModulePromise;
   if (!wasmModule) {
     return null;
@@ -21046,6 +9192,18 @@ async function resetOriginalKeyboardInput() {
 }
 
 async function queueOriginalKeyboardFocusLost() {
+  if (cncPortThreadedMode) {
+    // Focus-lost queueing touches the engine's keyboard state — run it on the
+    // engine thread; the probe JSON return is not needed for the focus path.
+    try {
+      await threadedEngine.engineCall(
+        "cnc_port_queue_original_keyboard_focus_lost", "string", [], [],
+        { timeoutMs: 30000, parseJson: true });
+    } catch (error) {
+      recordLog("threaded focus-lost queue failed", { error: error?.message ?? String(error) });
+    }
+    return snapshotState();
+  }
   const wasmModule = await wasmModulePromise;
   if (!wasmModule) {
     return null;
@@ -21069,7 +9227,8 @@ function rememberMountedArchives(archives) {
 async function getWasmModuleForArchives(command) {
   const wasmModule = await wasmModulePromise;
   if (!wasmModule) {
-    return { error: "Wasm module unavailable; archive cannot be mounted", command };
+    const cause = cncPortModuleLoadError ? ` (${cncPortModuleLoadError})` : "";
+    return { error: `Wasm module unavailable; archive cannot be mounted${cause}`, command };
   }
   return { wasmModule };
 }
@@ -21239,6 +9398,303 @@ async function mountArchive(payload = {}) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// P2 threaded mount path: archives live on OPFS, not MEMFS (design:
+// notes/p1-engine-thread.md "P2-prep results"; IDEAS.md "the browser as a
+// 2003 PC"). In threaded mode every archive is streamed fetch->OPFS on the
+// IO worker (never RAM-resident), a 0-byte MEMFS MARKER file is created at
+// the engine path (FindFirstFile's *.big enumeration walks MEMFS via
+// readdir+stat; open() is then intercepted to OPFS by the shims/io.h seam in
+// src/wasm_opfs_files.cpp), and the {enginePath -> opfsPath} map is staged
+// in the ENGINE pthread's realm (opfs_realm_files.mjs pre-opens the sync
+// access handles) BEFORE the engine pthread spawns — the async handle opens
+// need the pool worker's free event loop (P1a ordering rule), which awaiting
+// the staging round trip here guarantees: play.html only calls
+// realEngineInit (boot+go) after the mount resolves.
+//
+// No cache/skip layer (owner rule): OPFS is the read disk, every boot
+// re-streams the archive set into a fresh per-boot namespace directory and
+// garbage-collects namespaces whose owner page is gone (Web Lock released),
+// so disk usage stays bounded at one archive set per LIVE tab.
+//
+// The non-threaded MEMFS mount path below survives ONLY as the
+// harness/index.html legacy-boot surface (the non-threaded probe/gate pages
+// and A/B-debug boots of the non-threaded dist); the play page can no longer
+// reach it (threaded/OPFS-only since 2026-07-10).
+const OPFS_ARCHIVE_ROOT = "cnc-archives";
+// Per-boot OPFS namespace (owner regression 2026-07-10 hardening): staged
+// FileSystemSyncAccessHandles hold EXCLUSIVE per-file locks for the page
+// lifetime, and a reloaded page's old engine worker is not reaped
+// synchronously — so rewriting fixed paths every boot could collide with a
+// stale holder (NoModificationAllowedError) and kill the whole mount. Every
+// mount therefore writes into a fresh <root>/ns-<bootId>-<seq>/ directory
+// (fresh names can never be lock-held), the page marks its namespaces as
+// LIVE by holding a Web Lock named `${OPFS_NAMESPACE_LOCK_PREFIX}<bootId>`
+// (auto-released on page death, unlike OPFS handles), and every mount first
+// asks the IO worker to garbage-collect namespaces whose owner lock is gone.
+// A second live tab keeps its lock -> its namespace survives -> both tabs
+// work independently instead of one failing with a raw mount error.
+const OPFS_NAMESPACE_LOCK_PREFIX = "cnc-port-opfs-ns:";
+const opfsBootId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+let opfsMountSequence = 0;
+let opfsNamespaceLockPromise = null;
+
+function acquireOpfsNamespaceLock() {
+  if (opfsNamespaceLockPromise) {
+    return opfsNamespaceLockPromise;
+  }
+  opfsNamespaceLockPromise = new Promise((resolve) => {
+    try {
+      if (!navigator.locks || typeof navigator.locks.request !== "function") {
+        resolve(false);
+        return;
+      }
+      navigator.locks.request(
+        `${OPFS_NAMESPACE_LOCK_PREFIX}${opfsBootId}`,
+        { mode: "exclusive", ifAvailable: true },
+        (lock) => {
+          resolve(lock !== null);
+          // Hold the lock until the page dies (bootId is per-page random, so
+          // nobody else ever waits on it).
+          return lock === null ? null : new Promise(() => {});
+        },
+      ).catch(() => resolve(false));
+    } catch (_error) {
+      resolve(false);
+    }
+  });
+  return opfsNamespaceLockPromise;
+}
+const opfsRegisteredPrefixes = new Set();
+
+function opfsArchiveMountEnabled() {
+  // Threaded mode mounts on OPFS, period (the ?opfsmount=0 MEMFS escape
+  // hatch was deleted with the play-page legacy path, 2026-07-10). fetchToOpfs
+  // needs the IO worker (sync access handles are worker-only); if the worker
+  // cannot start, mountArchivesToOpfs fails LOUDLY instead of silently
+  // degrading to a MEMFS mount the engine thread could not read.
+  return cncPortThreadedMode && Boolean(threadedEngine);
+}
+
+function opfsPathForArchive(namespace, memfsPath) {
+  return `${OPFS_ARCHIVE_ROOT}/${namespace}${memfsPath}`;
+}
+
+// Register the fd-intercept prefix (process-global wasm state). Pre-boot the
+// main thread still owns the wasm (exactly like the MEMFS mount's FS
+// writes); once the engine thread runs, the call routes through the engine
+// realm instead — main never calls wasm exports in threaded mode after boot.
+async function registerOpfsInterceptPrefix(prefix) {
+  if (opfsRegisteredPrefixes.has(prefix)) {
+    return { ok: true };
+  }
+  let rc;
+  if (threadedEngine.engineThreadStarted) {
+    rc = await threadedEngine.engineCall(
+      "cnc_port_opfs_register_prefix", "number", ["string"], [prefix], { parseJson: false });
+  } else {
+    rc = cncPortEmscriptenModule.cwrap(
+      "cnc_port_opfs_register_prefix", "number", ["string"])(prefix);
+  }
+  if (!(Number(rc) >= 1)) {
+    return { ok: false, error: `cnc_port_opfs_register_prefix(${prefix}) rc=${rc}` };
+  }
+  opfsRegisteredPrefixes.add(prefix);
+  return { ok: true };
+}
+
+async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirectory) {
+  const emitProgressEvents = payload.progressEvents !== false;
+  const parsedArchives = archiveInputs.map((input) => archivePathFromPayload(input, baseDirectory));
+  const parseError = parsedArchives.find((archive) => archive.error);
+  if (parseError) {
+    return { ok: false, command: "mountArchives", error: parseError.error };
+  }
+
+  // The staging command rides the realm port — realm prep must be complete.
+  await threadedEngine.ensureReady();
+
+  // Fresh per-mount namespace under the archive root; mark it live (Web
+  // Lock) BEFORE collecting garbage so a concurrent tab's GC never deletes
+  // files we are about to write, then reclaim dead namespaces (previous
+  // boots) best-effort. GC failures are non-fatal by design: the fresh
+  // namespace never collides with a stale lock holder.
+  const namespace = `ns-${opfsBootId}-${++opfsMountSequence}`;
+  const namespaceLockHeld = await acquireOpfsNamespaceLock();
+  let namespaceGc = null;
+  try {
+    namespaceGc = await ioWorkerRequest({
+      kind: "opfsCollectNamespaces",
+      root: OPFS_ARCHIVE_ROOT,
+      keep: [namespace],
+      lockPrefix: OPFS_NAMESPACE_LOCK_PREFIX,
+    });
+    recordLog("opfs namespace gc", {
+      namespace,
+      lockHeld: namespaceLockHeld,
+      removed: namespaceGc.removed,
+      kept: namespaceGc.kept,
+      failed: namespaceGc.failed,
+    });
+  } catch (error) {
+    recordLog("opfs namespace gc failed", { namespace, error: error?.message ?? String(error) });
+  }
+
+  // Bounded-parallel streamed downloads (same fetch parallelism as the MEMFS
+  // pipeline); there is no sequential write phase, so archives complete in
+  // whatever order the network delivers while `results` keeps input order.
+  const parallelism = Math.max(1, Math.min(archiveFetchParallelism(), parsedArchives.length));
+  const results = new Array(parsedArchives.length).fill(null);
+  let nextDownloadIndex = 0;
+  const downloadWorker = async () => {
+    for (;;) {
+      const index = nextDownloadIndex++;
+      if (index >= parsedArchives.length) {
+        return;
+      }
+      const archive = parsedArchives[index];
+      const progressContext = { index, count: parsedArchives.length };
+      const onProgress = emitProgressEvents
+        ? archiveFetchProgressReporter(archive, progressContext)
+        : null;
+      const opfsPath = opfsPathForArchive(namespace, archive.memfsPath);
+      try {
+        const { bytesWritten } = await fetchArchiveToOpfsOffThread(archive.url, opfsPath, onProgress);
+        results[index] = { bytesWritten, opfsPath };
+        if (emitProgressEvents) {
+          emitArchiveProgress({
+            phase: "done",
+            name: archive.name,
+            url: archive.url,
+            received: bytesWritten,
+            total: bytesWritten,
+            ...progressContext,
+          });
+        }
+      } catch (error) {
+        results[index] = {
+          error: `${archive.name} fetchToOpfs failed: ${error?.message ?? String(error)}`,
+        };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: parallelism }, downloadWorker));
+
+  const archives = [];
+  const stageMap = {};
+  for (let index = 0; index < parsedArchives.length; index += 1) {
+    const parsed = parsedArchives[index];
+    const result = results[index];
+    if (!result || result.error) {
+      return {
+        ok: false,
+        command: "mountArchives",
+        error: result?.error ?? `${parsed.name} download did not complete`,
+        archives,
+        opfsNamespace: namespace,
+        opfsNamespaceGc: namespaceGc,
+      };
+    }
+    // 0-byte MEMFS marker at the engine path (directory-enumeration
+    // contract, proven by probe:p2-opfs). Known caveat: stat/getFileInfo see
+    // size 0 / mtime 0 — cover the stat path in the intercept if something
+    // is proven to care.
+    ensureMemfsDirectory(wasmModule.fs, parentDirectory(parsed.memfsPath));
+    wasmModule.fs.writeFile(parsed.memfsPath, new Uint8Array(0));
+    stageMap[parsed.memfsPath] = result.opfsPath;
+    const input = archiveInputs[index];
+    const expectedBytes = Number(input.expectedBytes ?? input.bytes ?? result.bytesWritten);
+    archives.push({
+      name: parsed.name,
+      sourceName: String(input.sourceName ?? parsed.name),
+      path: parsed.memfsPath,
+      bytes: result.bytesWritten,
+      reader: "io-worker fetchToOpfs",
+      opfsPath: result.opfsPath,
+      expectedBytes,
+      bytesMatch: result.bytesWritten === expectedBytes,
+    });
+  }
+
+  const prefix = baseDirectory.endsWith("/") ? baseDirectory : `${baseDirectory}/`;
+  const registered = await registerOpfsInterceptPrefix(prefix);
+  if (!registered.ok) {
+    return { ok: false, command: "mountArchives", error: registered.error, archives };
+  }
+
+  let staging = null;
+  try {
+    staging = await threadedEngine.sendCommand(
+      { cmd: "stageOpfsFiles", map: stageMap },
+      { timeoutMs: 120000 },
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      command: "mountArchives",
+      error: `OPFS realm staging failed: ${error?.message ?? String(error)}`,
+      archives,
+    };
+  }
+  if (staging?.ok !== true) {
+    return {
+      ok: false,
+      command: "mountArchives",
+      error: `OPFS realm staging failed: ${staging?.error ?? "unknown"}`,
+      archives,
+    };
+  }
+
+  rememberMountedArchives(archives);
+  // The archive bytes never enter MEMFS, so the main-side audio payload
+  // inventory scan (diagnostics consumed by state snapshots and the
+  // non-threaded runtime-archives smoke) cannot read them here; mark it
+  // skipped explicitly instead of failing it with a confusing read error.
+  harnessState.audioPayloadInventory = {
+    ok: false,
+    skipped: true,
+    source: "threaded OPFS mounts",
+    error: "archive bytes live on OPFS in threaded mode; main-side inventory scan skipped",
+  };
+
+  // No probeArchive verification: the probe opens archives through the
+  // engine's C++ path on the MAIN thread, whose realm has no staged OPFS
+  // handles (it would read the 0-byte markers). Byte counts from the
+  // streamed writes + the engine's own init (which opens every archive on
+  // the engine thread) are the verification on this path.
+  const ok = archives.every((archive) => archive.bytesMatch);
+  const totalBytes = archives.reduce((sum, archive) => sum + archive.bytes, 0);
+  const archiveSet = {
+    path: baseDirectory,
+    probePath: `${baseDirectory}/*.big`,
+    archiveCount: archives.length,
+    totalBytes,
+    backing: "opfs",
+    opfsNamespace: namespace,
+    opfsNamespaceGc: namespaceGc,
+    stagedPaths: staging.stagedPaths ?? [],
+    archives,
+    probes: [],
+  };
+  if (ok) {
+    registerArchiveSet(wasmModule, archiveSet);
+  }
+
+  recordLog("archive set mounted (opfs)", {
+    path: baseDirectory,
+    archiveCount: archives.length,
+    totalBytes,
+    ok,
+  });
+
+  return {
+    ok,
+    command: "mountArchives",
+    state: snapshotState(),
+    archiveSet,
+  };
+}
+
 async function mountArchives(payload = {}) {
   const moduleResult = await getWasmModuleForArchives("mountArchives");
   if (moduleResult.error) {
@@ -21255,46 +9711,22 @@ async function mountArchives(payload = {}) {
     return { ok: false, command: "mountArchives", error: `Archive directory must stay under /assets/: ${payload.path}` };
   }
 
-  // Bounded fetch-ahead pipeline: while archive N writes into MEMFS, archives
-  // N+1..N+2 already download (on the IO worker), so the network never idles
-  // behind the sequential main-thread memcpys. Registration order and the
-  // sequential writes are preserved exactly; only the fetches overlap. At most
-  // archiveFetchParallelism() (=3) archive buffers are alive at once: the one
-  // being written plus up to two in flight.
-  const prefetchWindow = archiveFetchParallelism();
+  if (opfsArchiveMountEnabled()) {
+    return mountArchivesToOpfs(moduleResult.wasmModule, payload, archiveInputs, baseDirectory);
+  }
+
+  // MEMFS mounts survive ONLY as the harness/index.html legacy-boot surface
+  // (non-threaded probe/gate pages and A/B-debug boots of the non-threaded
+  // dist). The play-page fetch-ahead pipeline that overlapped downloads with
+  // the sequential writes was deleted with the play-page legacy path
+  // (2026-07-10): archives fetch inline and mount strictly sequentially.
   const emitProgressEvents = payload.progressEvents !== false;
-  const parsedArchives = archiveInputs.map((input) => archivePathFromPayload(input, baseDirectory));
-  const prefetches = new Array(archiveInputs.length).fill(null);
-  const startPrefetch = (index) => {
-    if (index >= archiveInputs.length || prefetches[index] || parsedArchives[index].error) {
-      return;
-    }
-    const onProgress = emitProgressEvents
-      ? archiveFetchProgressReporter(parsedArchives[index], {
-        index,
-        count: archiveInputs.length,
-      })
-      : null;
-    // Capture rejections as values so an unawaited lookahead fetch can never
-    // become an unhandled rejection; the throw is replayed on await below.
-    prefetches[index] = fetchArchiveBytesWithFallback(parsedArchives[index], onProgress)
-      .catch((error) => ({ thrown: error }));
-  };
 
   const archives = [];
   const archiveProbes = [];
   for (let index = 0; index < archiveInputs.length; index += 1) {
-    for (let ahead = index; ahead < Math.min(index + prefetchWindow, archiveInputs.length); ahead += 1) {
-      startPrefetch(ahead);
-    }
     const input = archiveInputs[index];
-    const prefetched = prefetches[index] ? await prefetches[index] : null;
-    prefetches[index] = null; // release the buffer reference promptly
-    if (prefetched?.thrown) {
-      throw prefetched.thrown;
-    }
     const archive = await writeArchiveToMemfs(moduleResult.wasmModule, input, baseDirectory, {
-      prefetched,
       emitProgress: emitProgressEvents,
       progressContext: { index, count: archiveInputs.length },
     });
@@ -21373,17 +9805,6 @@ function readBigUInt32BE(bytes, offset) {
     bytes[offset + 3];
 }
 
-function writeBigUInt32BE(bytes, offset, value) {
-  if (!Number.isSafeInteger(value) || value < 0 || value > 0xffffffff) {
-    throw new Error(`BIG archive integer out of range: ${value}`);
-  }
-
-  bytes[offset] = Math.floor(value / 0x1000000) & 0xff;
-  bytes[offset + 1] = Math.floor(value / 0x10000) & 0xff;
-  bytes[offset + 2] = Math.floor(value / 0x100) & 0xff;
-  bytes[offset + 3] = value & 0xff;
-}
-
 function appendBytes(left, right) {
   const combined = new Uint8Array(left.byteLength + right.byteLength);
   combined.set(left, 0);
@@ -21391,540 +9812,35 @@ function appendBytes(left, right) {
   return combined;
 }
 
-async function fetchByteRange(url, start, end) {
-  const response = await fetch(url, {
-    headers: {
-      Range: `bytes=${start}-${end}`,
-    },
-  });
-  if (response.status !== 206) {
-    throw new Error(`Range fetch failed for ${url} ${start}-${end}: HTTP ${response.status}`);
-  }
-
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  const contentRange = response.headers.get("Content-Range");
-  const rangeMatch = contentRange?.match(/^bytes\s+(\d+)-(\d+)\/(\d+|\*)$/i);
-  const responseStart = rangeMatch ? Number(rangeMatch[1]) : start;
-  const responseEnd = rangeMatch ? Number(rangeMatch[2]) : end;
-  if (responseStart !== start || responseEnd > end) {
-    throw new Error(`Unexpected Content-Range for ${url} ${start}-${end}: ${contentRange}`);
-  }
-  const expectedLength = responseEnd - responseStart + 1;
-  if (bytes.byteLength !== expectedLength) {
-    throw new Error(`Range fetch length mismatch for ${url} ${start}-${end}: ${bytes.byteLength} != ${expectedLength}`);
-  }
-
-  return bytes;
-}
-
-async function extractBigEntryFromUrl(url, entryName) {
-  const wanted = String(entryName ?? "").replaceAll("/", "\\").toLowerCase();
-  if (!wanted) {
-    throw new Error("Missing BIG archive entry name");
-  }
-
-  const header = await fetchByteRange(url, 0, 15);
-  const magic = String.fromCharCode(...header.subarray(0, 4));
-  if (magic !== "BIGF") {
-    throw new Error(`${url} is not a BIGF archive`);
-  }
-
-  const count = readBigUInt32BE(header, 8);
-  if (count === 0 || count > 1000000) {
-    throw new Error(`${url} has an invalid BIGF entry count: ${count}`);
-  }
-
-  const decoder = new TextDecoder("ascii");
-  const directoryStart = 0x10;
-  const chunkSize = 64 * 1024;
-  let directoryBytes = new Uint8Array(0);
-  let cursor = 0;
-
-  const ensureDirectoryBytes = async (requiredLength) => {
-    while (directoryBytes.byteLength < requiredLength) {
-      const start = directoryStart + directoryBytes.byteLength;
-      const next = await fetchByteRange(url, start, start + chunkSize - 1);
-      if (next.byteLength === 0) {
-        throw new Error(`${url} ended before BIGF directory entry ${entryName}`);
-      }
-      directoryBytes = appendBytes(directoryBytes, next);
-    }
-  };
-
-  for (let index = 0; index < count; ++index) {
-    await ensureDirectoryBytes(cursor + 9);
-    const offset = readBigUInt32BE(directoryBytes, cursor);
-    const size = readBigUInt32BE(directoryBytes, cursor + 4);
-    const pathStart = cursor + 8;
-    let pathEnd = -1;
-    while (pathEnd < 0) {
-      for (let scan = pathStart; scan < directoryBytes.byteLength; ++scan) {
-        if (directoryBytes[scan] === 0) {
-          pathEnd = scan;
-          break;
-        }
-      }
-      if (pathEnd < 0) {
-        await ensureDirectoryBytes(directoryBytes.byteLength + 1);
-      }
-    }
-
-    const path = decoder.decode(directoryBytes.subarray(pathStart, pathEnd));
-    cursor = pathEnd + 1;
-    if (path.replaceAll("/", "\\").toLowerCase() === wanted) {
-      const bytes = await fetchByteRange(url, offset, offset + size - 1);
-      return {
-        path,
-        offset,
-        size,
-        bytes,
-        directoryBytes: directoryBytes.byteLength,
-        indexedEntries: index + 1,
-      };
-    }
-  }
-
-  throw new Error(`${entryName} was not found in ${url}`);
-}
-
-async function indexBigArchiveUrl(url) {
-  const header = await fetchByteRange(url, 0, 15);
-  const magic = String.fromCharCode(...header.subarray(0, 4));
-  if (magic !== "BIGF") {
-    throw new Error(`${url} is not a BIGF archive`);
-  }
-
-  const count = readBigUInt32BE(header, 8);
-  if (count === 0 || count > 1000000) {
-    throw new Error(`${url} has an invalid BIGF entry count: ${count}`);
-  }
-
-  const decoder = new TextDecoder("ascii");
-  const directoryStart = 0x10;
-  const chunkSize = 64 * 1024;
-  let directoryBytes = new Uint8Array(0);
-  let cursor = 0;
-  const entries = new Map();
-
-  const ensureDirectoryBytes = async (requiredLength) => {
-    while (directoryBytes.byteLength < requiredLength) {
-      const start = directoryStart + directoryBytes.byteLength;
-      const next = await fetchByteRange(url, start, start + chunkSize - 1);
-      if (next.byteLength === 0) {
-        throw new Error(`${url} ended before BIGF directory entry ${entries.size + 1}`);
-      }
-      directoryBytes = appendBytes(directoryBytes, next);
-    }
-  };
-
-  for (let index = 0; index < count; ++index) {
-    await ensureDirectoryBytes(cursor + 9);
-    const offset = readBigUInt32BE(directoryBytes, cursor);
-    const size = readBigUInt32BE(directoryBytes, cursor + 4);
-    const pathStart = cursor + 8;
-    let pathEnd = -1;
-    while (pathEnd < 0) {
-      for (let scan = pathStart; scan < directoryBytes.byteLength; ++scan) {
-        if (directoryBytes[scan] === 0) {
-          pathEnd = scan;
-          break;
-        }
-      }
-      if (pathEnd < 0) {
-        await ensureDirectoryBytes(directoryBytes.byteLength + 1);
-      }
-    }
-
-    const path = decoder.decode(directoryBytes.subarray(pathStart, pathEnd));
-    cursor = pathEnd + 1;
-    entries.set(path.replaceAll("/", "\\").toLowerCase(), {
-      path,
-      offset,
-      size,
-      indexedEntries: index + 1,
-    });
-  }
-
-  return {
-    entries,
-    directoryBytes: directoryBytes.byteLength,
-    indexedEntries: count,
-  };
-}
-
-async function extractBigEntriesFromUrl(url, entryNames) {
-  const requestedEntries = entryNames.map((entryName, index) => {
-    const wanted = String(entryName ?? "").replaceAll("/", "\\").toLowerCase();
-    if (!wanted) {
-      throw new Error("Missing BIG archive entry name");
-    }
-    return { wanted, entryName, index };
-  });
-
-  const archiveIndex = await indexBigArchiveUrl(url);
-  const matchedEntries = requestedEntries.map((request) => {
-    const entry = archiveIndex.entries.get(request.wanted);
-    if (!entry) {
-      throw new Error(`${request.entryName} was not found in ${url}`);
-    }
-    return {
-      ...entry,
-      requestIndex: request.index,
-    };
-  });
-
-  const coalesceGapBytes = 64 * 1024;
-  const groups = [];
-  for (const entry of [...matchedEntries].sort((left, right) => left.offset - right.offset)) {
-    const endExclusive = entry.offset + entry.size;
-    const lastGroup = groups[groups.length - 1];
-    if (lastGroup && entry.offset <= lastGroup.endExclusive + coalesceGapBytes) {
-      lastGroup.endExclusive = Math.max(lastGroup.endExclusive, endExclusive);
-      lastGroup.entries.push(entry);
-    } else {
-      groups.push({
-        start: entry.offset,
-        endExclusive,
-        entries: [entry],
-      });
-    }
-  }
-
-  const extractedEntries = new Array(matchedEntries.length);
-  for (const group of groups) {
-    const groupBytes = await fetchByteRange(url, group.start, group.endExclusive - 1);
-    for (const entry of group.entries) {
-      const start = entry.offset - group.start;
-      const bytes = groupBytes.subarray(start, start + entry.size);
-      extractedEntries[entry.requestIndex] = {
-        path: entry.path,
-        offset: entry.offset,
-        size: entry.size,
-        bytes,
-        directoryBytes: archiveIndex.directoryBytes,
-        indexedEntries: archiveIndex.indexedEntries,
-      };
-    }
-  }
-
-  return extractedEntries;
-}
-
-function buildBigArchive(entries) {
-  const encoder = new TextEncoder();
-  const normalizedEntries = entries.map((entry) => {
-    const path = String(entry.path ?? "").replaceAll("/", "\\");
-    if (!path || path.includes("\0")) {
-      throw new Error(`Invalid BIG archive entry path: ${path}`);
-    }
-
-    const pathBytes = encoder.encode(path);
-    const bytes = entry.bytes instanceof Uint8Array ? entry.bytes : new Uint8Array(entry.bytes ?? []);
-    return {
-      ...entry,
-      path,
-      pathBytes,
-      bytes,
-    };
-  });
-
-  const directoryBytes = normalizedEntries.reduce(
-    (sum, entry) => sum + 8 + entry.pathBytes.byteLength + 1,
-    0,
-  );
-  const dataStart = 0x10 + directoryBytes;
-  const totalBytes = dataStart + normalizedEntries.reduce(
-    (sum, entry) => sum + entry.bytes.byteLength,
-    0,
-  );
-  if (totalBytes > 0xffffffff) {
-    throw new Error(`Synthesized BIG archive is too large: ${totalBytes}`);
-  }
-
-  const archiveBytes = new Uint8Array(totalBytes);
-  archiveBytes.set([0x42, 0x49, 0x47, 0x46], 0); // BIGF
-  writeBigUInt32BE(archiveBytes, 4, totalBytes);
-  writeBigUInt32BE(archiveBytes, 8, normalizedEntries.length);
-  writeBigUInt32BE(archiveBytes, 12, 0);
-
-  let directoryCursor = 0x10;
-  let dataCursor = dataStart;
-  const manifest = [];
-  for (const entry of normalizedEntries) {
-    writeBigUInt32BE(archiveBytes, directoryCursor, dataCursor);
-    writeBigUInt32BE(archiveBytes, directoryCursor + 4, entry.bytes.byteLength);
-    archiveBytes.set(entry.pathBytes, directoryCursor + 8);
-    archiveBytes[directoryCursor + 8 + entry.pathBytes.byteLength] = 0;
-    archiveBytes.set(entry.bytes, dataCursor);
-    manifest.push({
-      path: entry.path,
-      bytes: entry.bytes.byteLength,
-      offset: dataCursor,
-      sourceOffset: entry.offset,
-      sourceArchive: entry.sourceArchive,
-      sourceIndexedEntries: entry.indexedEntries,
-      sourceDirectoryBytes: entry.directoryBytes,
-      reader: "browser fetch Range",
-    });
-    directoryCursor += 8 + entry.pathBytes.byteLength + 1;
-    dataCursor += entry.bytes.byteLength;
-  }
-
-  return {
-    bytes: archiveBytes,
-    entries: manifest,
-    directoryBytes,
-    dataStart,
-  };
-}
-
-async function mountRangeBackedArchiveSet(payload = {}) {
-  const moduleResult = await getWasmModuleForArchives("mountRangeBackedArchiveSet");
-  if (moduleResult.error) {
-    return { ok: false, command: moduleResult.command, error: moduleResult.error };
-  }
-
-  const archiveInputs = Array.isArray(payload.archives) ? payload.archives : [];
-  if (archiveInputs.length === 0) {
-    return { ok: false, command: "mountRangeBackedArchiveSet", error: "Missing archive list" };
-  }
-
-  const baseDirectory = normalizeAssetDirectory(String(payload.path ?? "/assets/runtime"));
-  if (!baseDirectory) {
-    return {
-      ok: false,
-      command: "mountRangeBackedArchiveSet",
-      error: `Archive directory must stay under /assets/: ${payload.path}`,
-    };
-  }
-
-  const archives = [];
-  const archiveProbes = [];
-  const shouldRegister = payload.register !== false;
-  for (const input of archiveInputs) {
-    const archive = archivePathFromPayload(input, baseDirectory);
-    if (archive.error) {
-      return { ok: false, command: "mountRangeBackedArchiveSet", error: archive.error, archives };
-    }
-
-    const entryNames = Array.isArray(input.entries) ? input.entries : [];
-    if (entryNames.length === 0) {
-      return {
-        ok: false,
-        command: "mountRangeBackedArchiveSet",
-        error: `Missing range-backed entries for ${archive.name}`,
-        archives,
-      };
-    }
-
-    const entries = [];
-    try {
-      const extractedEntries = await extractBigEntriesFromUrl(archive.url, entryNames);
-      entries.push(...extractedEntries.map((entry) => ({
-        ...entry,
-        sourceArchive: String(input.sourceArchive ?? archive.url),
-      })));
-    } catch (error) {
-      return {
-        ok: false,
-        command: "mountRangeBackedArchiveSet",
-        error: error?.message ?? String(error),
-        archives,
-      };
-    }
-
-    let generated;
-    try {
-      generated = buildBigArchive(entries);
-      ensureMemfsDirectory(moduleResult.wasmModule.fs, parentDirectory(archive.memfsPath));
-      moduleResult.wasmModule.fs.writeFile(archive.memfsPath, generated.bytes);
-    } catch (error) {
-      return {
-        ok: false,
-        command: "mountRangeBackedArchiveSet",
-        error: error?.message ?? String(error),
-        archives,
-      };
-    }
-
-    const assetProbe = !shouldRegister || payload.verifyEach === false
-      ? null
-      : probeArchive(moduleResult.wasmModule, archive.memfsPath);
-    const mountedArchive = {
-      name: archive.name,
-      sourceName: String(input.sourceName ?? input.sourceArchive ?? archive.name),
-      path: archive.memfsPath,
-      bytes: generated.bytes.byteLength,
-      sourceBytes: Number(input.expectedSourceBytes ?? input.sourceBytes ?? 0),
-      directoryBytes: generated.directoryBytes,
-      dataStart: generated.dataStart,
-      entries: generated.entries,
-      entryCount: generated.entries.length,
-      reader: "browser fetch Range -> synthesized BIG",
-      storage: "range-backed-subset-big",
-    };
-    archives.push(mountedArchive);
-    if (assetProbe) {
-      const probeOk = archiveProbeOkForMount(assetProbe, mountedArchive);
-      archiveProbes.push({
-        name: archive.name,
-        sourceName: mountedArchive.sourceName,
-        path: archive.memfsPath,
-        ok: probeOk,
-        strictOk: Boolean(assetProbe.ok),
-        optionalBaseArchive: isOptionalBaseArchive(mountedArchive),
-        loaded: Boolean(assetProbe.loaded),
-        indexedFiles: assetProbe.indexedFiles,
-        sampleBytes: assetProbe.sampleBytes,
-      });
-    }
-  }
-
-  const probePath = `${baseDirectory}/*.big`;
-  const aggregateProbe = shouldRegister
-    ? probeArchive(moduleResult.wasmModule, probePath)
-    : { ok: true };
-  rememberMountedArchives(archives);
-
-  const allArchiveProbesOk = archiveProbes.every((archive) => archive.ok);
-  const ok = Boolean(aggregateProbe?.ok) && allArchiveProbesOk;
-  const totalBytes = archives.reduce((sum, archive) => sum + archive.bytes, 0);
-  const sourceTotalBytes = archives.reduce((sum, archive) => sum + archive.sourceBytes, 0);
-  const archiveSet = {
-    path: baseDirectory,
-    probePath,
-    archiveCount: archives.length,
-    totalBytes,
-    sourceTotalBytes,
-    archives,
-    probes: archiveProbes,
-    reader: shouldRegister
-      ? "browser fetch Range -> synthesized BIG -> Win32BIGFileSystem"
-      : "browser fetch Range -> synthesized BIG",
-    storage: "range-backed-subset-big",
-    registered: shouldRegister && ok,
-  };
-  if (ok && shouldRegister) {
-    registerArchiveSet(moduleResult.wasmModule, archiveSet);
-  }
-
-  recordLog("range-backed archive set mounted", {
-    path: baseDirectory,
-    archiveCount: archives.length,
-    totalBytes,
-    sourceTotalBytes,
-    ok,
-  });
-
-  return {
-    ok,
-    command: "mountRangeBackedArchiveSet",
-    state: snapshotState(),
-    archiveSet,
-  };
-}
-
-async function mountBigArchiveEntry(payload = {}) {
-  const moduleResult = await getWasmModuleForArchives("mountBigArchiveEntry");
-  if (moduleResult.error) {
-    return { ok: false, command: moduleResult.command, error: moduleResult.error };
-  }
-
-  try {
-    const url = String(payload.url ?? "");
-    const mountPath = String(payload.path ?? "").replaceAll("\\", "/");
-    if (!url) {
-      throw new Error("Missing archive URL");
-    }
-    if (!mountPath.startsWith("/") ||
-        mountPath.split("/").some((part) => part === "." || part === "..")) {
-      throw new Error(`Invalid MEMFS mount path: ${mountPath}`);
-    }
-
-    const entry = await extractBigEntryFromUrl(url, payload.entry);
-    ensureFixedMemfsDirectory(moduleResult.wasmModule.fs, parentDirectory(mountPath));
-    moduleResult.wasmModule.fs.writeFile(mountPath, entry.bytes);
-    recordLog("BIG archive entry mounted", {
-      path: mountPath,
-      bytes: entry.size,
-      offset: entry.offset,
-      archiveEntry: entry.path,
-      sourceArchive: String(payload.sourceArchive ?? url),
-    });
-
-    return {
-      ok: true,
-      command: "mountBigArchiveEntry",
-      asset: {
-        path: mountPath,
-        sourceArchive: String(payload.sourceArchive ?? url),
-        archiveUrl: url,
-        archiveEntry: entry.path,
-        offset: entry.offset,
-        bytes: entry.size,
-        directoryBytes: entry.directoryBytes,
-        indexedEntries: entry.indexedEntries,
-        reader: "browser fetch Range",
-      },
-      state: snapshotState(),
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      command: "mountBigArchiveEntry",
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
-async function mountShippedMeshAsset(payload = {}) {
-  const moduleResult = await getWasmModuleForArchives("mountShippedMeshAsset");
-  if (moduleResult.error) {
-    return { ok: false, command: moduleResult.command, error: moduleResult.error };
-  }
-
-  const requestedPath = String(payload.path ?? "").replaceAll("\\", "/");
-  const mountPaths = new Map([
-    ["Art/W3D/CINE_Moon.W3D", "/Art/W3D/CINE_Moon.W3D"],
-    ["Art/Textures/cine_moon.dds", "/art/textures/cine_moon.dds"],
-  ]);
-  const path = mountPaths.get(requestedPath);
-  if (!path) {
-    return {
-      ok: false,
-      command: "mountShippedMeshAsset",
-      error: `Unsupported shipped mesh asset path: ${requestedPath}`,
-    };
-  }
-
-  const rawBytes = payload.bytes;
-  const bytes = rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(rawBytes ?? []);
-  if (bytes.byteLength === 0) {
-    return { ok: false, command: "mountShippedMeshAsset", error: "Missing asset bytes" };
-  }
-
-  ensureFixedMemfsDirectory(moduleResult.wasmModule.fs, parentDirectory(path));
-  moduleResult.wasmModule.fs.writeFile(path, bytes);
-  recordLog("shipped mesh asset mounted", {
-    path,
-    bytes: bytes.byteLength,
-    sourceArchive: String(payload.sourceArchive ?? ""),
-  });
-
-  return {
-    ok: true,
-    command: "mountShippedMeshAsset",
-    asset: {
-      path,
-      sourceArchive: String(payload.sourceArchive ?? ""),
-      archiveEntry: requestedPath,
-      bytes: bytes.byteLength,
-    },
-    state: snapshotState(),
-  };
-}
-
 async function rpc(command, payload = {}) {
+  // Owner directive 2026-07-10: never silently boot the legacy single-thread
+  // path when threaded mode was requested but this origin cannot run it.
+  // Refuse the boot-critical commands loudly (the page is redirecting to the
+  // HTTPS origin, or blocked with instructions).
+  if (cncPortThreadedUnsupported
+      && (command === "boot" || command === "mountArchive"
+        || command === "mountArchives" || command === "realEngineInit")) {
+    return {
+      ok: false,
+      command,
+      error: `${cncPortThreadedUnsupported.reason} — boot refused `
+        + "(owner directive: no single-thread fallback; "
+        + (cncPortThreadedUnsupported.action === "redirect"
+          ? `redirecting to ${cncPortThreadedUnsupported.target})`
+          : "serve over https:// or open via http://localhost)"),
+      threadedUnsupported: { ...cncPortThreadedUnsupported },
+    };
+  }
+  if (cncPortThreadedMode) {
+    // Threaded routing choke point: engine-touching commands execute ON the
+    // engine thread via the realm port; pure-JS commands fall through; the
+    // rest answer with an explicit unsupported error (never a main-thread
+    // wasm call, never a hang). See threadedRpc above.
+    const routed = await threadedRpc(command, payload);
+    if (routed !== undefined) {
+      return routed;
+    }
+  }
   switch (command) {
     case "boot":
       return { ok: true, command, state: await boot(payload) };
@@ -22873,12 +10789,6 @@ async function rpc(command, payload = {}) {
           state: snapshotState(),
         };
       }
-    case "mountRangeBackedArchiveSet":
-      return mountRangeBackedArchiveSet(payload);
-    case "mountBigArchiveEntry":
-      return mountBigArchiveEntry(payload);
-    case "mountShippedMeshAsset":
-      return mountShippedMeshAsset(payload);
     case "startMainLoop":
       {
         const wasmModule = await wasmModulePromise;
@@ -30252,7 +18162,6 @@ async function rpc(command, payload = {}) {
     case "ww3dTerrainVisualShroudScene":
     case "ww3dTerrainVisualShroudUpdateScene":
     case "ww3dTerrainFullScene":
-    case "ww3dTerrainWaterType2Scene":
     case "ww3dTerrainFullSceneShroudUpdate":
     case "ww3dTerrainVisualLoadWindowScene":
     case "ww3dTerrainVisualCameraPanScene":
@@ -30262,8 +18171,7 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: "Wasm module unavailable; visual-owned WW3D terrain scene cannot render" };
         }
         const fullInitShroudUpdateMode = command === "ww3dTerrainFullSceneShroudUpdate";
-        const waterType2Mode = command === "ww3dTerrainWaterType2Scene";
-        const fullInitMode = command === "ww3dTerrainFullScene" || waterType2Mode || fullInitShroudUpdateMode;
+        const fullInitMode = command === "ww3dTerrainFullScene" || fullInitShroudUpdateMode;
         const visualShroudUpdateMode = command === "ww3dTerrainVisualShroudUpdateScene";
         const visualShroudMode = command === "ww3dTerrainVisualShroudScene" || visualShroudUpdateMode;
         const loadWindowMode = command === "ww3dTerrainVisualLoadWindowScene";
@@ -30311,8 +18219,6 @@ async function rpc(command, payload = {}) {
         const probe = parseModuleState(
           (fullInitShroudUpdateMode
             ? wasmModule.probeWW3DTerrainFullSceneShroudUpdate
-            : (waterType2Mode
-            ? wasmModule.probeWW3DTerrainWaterType2Scene
             : (fullInitMode
             ? wasmModule.probeWW3DTerrainFullScene
             : (loadWindowMode
@@ -30323,7 +18229,7 @@ async function rpc(command, payload = {}) {
                   ? (visualShroudUpdateMode
                     ? wasmModule.probeWW3DTerrainVisualShroudUpdateScene
                     : wasmModule.probeWW3DTerrainVisualShroudScene)
-                  : wasmModule.probeWW3DTerrainVisualScene))))))(
+                  : wasmModule.probeWW3DTerrainVisualScene)))))(
             iniArchivePath,
             mapsArchivePath,
             terrainArchivePath,
@@ -33502,4 +21408,9 @@ window.CnCPort = {
   d3d8BridgeCallbacks,
   persistSaves: persistSaveFilesystem,
   listSaves: listSaveFiles,
+  // Raw emscripten Module accessor for harness diagnostics (threaded mode:
+  // lets a probe read atomic counters / last-step markers FROM THE MAIN
+  // THREAD while the engine thread is busy inside a long wasm call and the
+  // realm port cannot answer).
+  engineModule: () => cncPortEmscriptenModule,
 };

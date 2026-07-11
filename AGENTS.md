@@ -57,7 +57,7 @@ code; replace the platform layer.** Re-implement the device interfaces in
 | Bink video | WebCodecs / `<video>` |
 | Win32 (window, files, input, time) | Emscripten + DOM / Canvas / Pointer + Keyboard events |
 | GameSpy networking | WebSockets / WebRTC |
-| File/BIG archive I/O | fetch + in-memory FS |
+| File/BIG archive I/O | streamed fetch → OPFS + engine-thread sync reads |
 
 Toolchain: **Emscripten** (`emcc`/`em++`) targeting `STANDALONE_WASM`/browser.
 
@@ -180,12 +180,22 @@ How to use it:
   it through one (files collapse silently in transit).
 - **Sync** (dev box → Mac; the dev box stays the build machine):
   `rsync -az --exclude WebAssembly/build --exclude WebAssembly/node_modules \
+    --exclude WebAssembly/harness/.certs \
     ~/personal/CnC_Generals_Zero_Hour/ cnc-gpu:/Volumes/CnCWork/CnC_Generals_Zero_Hour/`
   Syncing `WebAssembly/dist/` this way ships fresh builds for verification.
-- **Harness server**: `HOST=0.0.0.0 PORT=8123 node harness/serve.mjs` from
-  `WebAssembly/` on the Mac (usually already running). The human-playable
-  page is `http://192.168.106.45:8123/harness/play.html` — the project owner
-  plays from this URL; keep it working.
+  `harness/.certs` (each box's persistent self-signed HTTPS cert) must NEVER
+  be rsynced between boxes — replacing the Mac's cert breaks the owner's
+  one-time browser trust decision.
+- **Harness server**: `HOST=0.0.0.0 PORT=8123 HTTPS_PORT=8443 node
+  harness/serve.mjs` from `WebAssembly/` on the Mac (usually already
+  running; HOST=0.0.0.0 defaults HTTPS_PORT to 8443 anyway). The
+  human-playable page is `http://192.168.106.45:8123/harness/play.html` —
+  the project owner plays from this URL; keep it working. The plain LAN-IP
+  origin is untrustworthy (no SharedArrayBuffer for the threaded default),
+  so that page auto-redirects to
+  `https://192.168.106.45:8443/harness/play.html` (self-signed cert, trusted
+  once per device); there is NO legacy single-thread fallback (owner
+  directive 2026-07-10).
 - **Headless GPU probes**: `~/cnc-verify/` on the Mac has `playwright-core`
   installed; launch with
   `executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"`

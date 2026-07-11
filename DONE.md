@@ -45,6 +45,368 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `SegmentedLineClass` route proven by the real laser smoke; debris uses the
       linked real W3D model/shadow path and restored OCL creation. No additional
       browser render-state or missing-body defect was found in those paths.
+## Legacy play-path demolition — threaded/OPFS-only play page (2026-07-11, demolition lane)
+
+OWNER DIRECTIVE step (5) ("fully migrate — delete legacy machinery") after
+the owner confirmed the HTTPS threaded experience. Full inventory + rationale
+in notes/p1-engine-thread.md "Demolition (2026-07-11)".
+
+- [x] **play.html is threaded/OPFS-only.** `?threads=0` legacy mode deleted
+      from play.mjs/bridge.js (bridge's cncPortThreadedMode is unconditional
+      on /play.html; ?threads=1 still opts harness pages in), play-page
+      legacy dist selection deleted (dist-threaded-release is THE play dist),
+      the MEMFS-era banner variant, the page-driven paced/coupled frame
+      loops, the reveal-pump frames, and the `?ioworker=0`/`?opfsmount=0`
+      opt-outs are gone. Threaded mounts are always OPFS; a missing IO
+      worker fails the mount loudly (no silent MEMFS degrade).
+- [x] **io-worker whole-buffer transfer deleted.** `fetchArchive` +
+      fetchWholeArchive removed from io_worker.mjs; bridge's
+      fetchArchiveBytesOffThread + the mountArchives fetch-ahead prefetch
+      pipeline removed (MEMFS mounts fetch inline, strictly sequential).
+      test:io-worker-offthread reworked to the OPFS-era contract
+      (heartbeat-during-fetchToOpfs + byte-exactness + a pin that
+      fetchArchive is refused): 15/15 green.
+- [x] **Range-backed subset-mount machinery deleted** (~540 bridge.js lines:
+      fetchByteRange / extractBigEntry(ies)FromUrl / indexBigArchiveUrl /
+      buildBigArchive / writeBigUInt32BE / mountRangeBackedArchiveSet /
+      mountBigArchiveEntry / mountShippedMeshAsset + dispatcher cases)
+      together with its 21 caller smokes (terrain_* scene/buffer, display_*,
+      shipped_mesh_render, main_menu_layout_image_repaint, object_ini,
+      range_backed/startup_range_backed, plumbing_check,
+      input_fix_verification — coverage owned by the real boot gates).
+      package.json −19 scripts; run_vertical_integrations −11 steps; the
+      bink presentation verifier's drawimage-file line pins removed
+      (ok:true). startup_vertical_smoke phases 1-2 (probe-frontier
+      preflights, already red on main) retired — the browser smoke is the
+      real-init vertical only, clearing the documented
+      assertFunctionLexiconRuntimeFrontier pre-existing red. This also
+      retires the superseded TODO "Generalize the browser range-backed BIG
+      archive reader" (the goal shipped as the threaded OPFS mount).
+- [x] **Verification surface converted, not orphaned.**
+      stepped_load_turret_validation_check now runs the threaded play page
+      (persistent context for OPFS quota) — the m_isInUpdate stepped-load
+      latch is guarded on the SHIPPING path; threaded_play_gate lost its
+      ?threads=0 reference leg + OPFS_MOUNT=0 A/B (shellmap_real_init_gate
+      on index.html is the non-threaded real-init reference);
+      replay_issue_dump replays legacy-recorded dumps on the threaded
+      default with a loud fidelity warning.
+- [x] **Deliberately KEPT:** the MEMFS mount pipeline (mountArchive /
+      mountArchives non-threaded branch / writeArchiveToMemfs) as the
+      harness/index.html legacy-boot surface — ~40 non-threaded gates/smokes
+      and A/B-debug boots of the kept dist/dist-release builds need it, and
+      a main-thread engine cannot read OPFS synchronously; the audio-
+      inventory MEMFS scan (consumed by runtime_archives_smoke + state
+      snapshots); io_worker fetchRange; the stepped-load engine machinery
+      (re-documented as the presentation-yield mechanism, not freeze
+      protection). AGENTS.md archive-I/O mapping updated to "streamed fetch
+      → OPFS + engine-thread sync reads".
+- [x] **Whole-suite honesty:** tools/verify_* battery reds are byte-for-byte
+      the same 26 as pristine main (pre-existing frontier drift; worktree
+      diffs were missing gitignored build/assets dirs). Gate results
+      (2026-07-11, dev-box SwiftShader; JS-only change verified against
+      main-built dists): threaded_play_gate 30/30 PASS (title 29.7s, OPFS
+      mounts, audio/saves/resolution/issue-dump routes all green);
+      shellmap_real_init_gate exit 0 (24 archives through the new inline
+      sequential MEMFS mount, 43/43 subsystems, MainMenu shell rendered +
+      screenshot); p1_scaffold_probe 18/18; probe:p2-opfs 24/24;
+      test:io-worker-offthread 15/15 on the new contract; fresh
+      `npm run build:port` / `build:port:threaded` /
+      `build:port:threaded:release` all green (no-op incremental — zero
+      C++/CMake changes); converted stepped_load_turret_validation_check
+      PASS on the threaded page (battleship oid298: 2 turrets + 6 barrels
+      validated, exit 0, OPFS profile cleaned in finally). Pre-existing-red
+      parity double-checks: real_big_smoke fails identically on pristine
+      main (assertControlBarSchemeProbe drift; the mount itself indexes 99
+      files and parses every INI probe), and the test:all tail
+      `EXPECT_WASM=1 harness/smoke.mjs` fails at the SAME smoke.mjs:1235
+      MSS-stream-lifecycle probe on pristine main and the demolition tree
+      (note: the documented red for that smoke had listed the D3D8
+      buffer-hint probe at :3440 — the current earlier red is the MSS
+      stream probe, on both trees identically).
+
+## Trustworthy origin: HTTPS listener + no-fallback redirect (2026-07-10, https lane)
+
+OWNER DIRECTIVE: "no legacy path or fallback — just add HTTPS to the server."
+Supersedes the untrusted-origin threaded→legacy auto-fallback shipped in
+8b1cd316 (the OPFS namespacing/lock-hardening and error-detail surfacing from
+that merge stay). Details in `WebAssembly/notes/p1-engine-thread.md`
+"HTTPS listener".
+
+- [x] HTTPS listener in `harness/static-server.mjs` (same handler + COOP/COEP
+      headers over TLS) + `serve.mjs`: `HTTPS_PORT=<port>` forces,
+      `HTTPS_PORT=0` disables, unset defaults to 8443 when HOST is
+      non-localhost or a cert exists. Opt-in only — gates' self-spawned
+      ephemeral localhost servers unaffected.
+- [x] Self-signed cert generated ONCE via openssl (`-config` file, portable
+      across OpenSSL 3.x / the Mac's LibreSSL) into gitignored
+      `WebAssembly/harness/.certs/`, reused on every start so the browser
+      trust decision sticks. 10-year, CN=cnc-harness, SANs: localhost,
+      hostname(+.local), 127.0.0.1/::1, every non-internal interface IP, and
+      192.168.106.45 baked. NEVER rsync one box's `.certs` over another's.
+- [x] Replaced the legacy fallback with redirect/block (bridge.js/play.mjs):
+      insecure non-localhost origin → fetch `/__cnc_https_info` (announces
+      the HTTPS port; baked default 8443) → `location.replace` to
+      `https://<host>:<port><path+query>`; already-https-but-no-SAB (cert
+      rejected) or localhost-without-COOP/COEP → BLOCKED with instructions on
+      the page; bridge `rpc()` refuses boot/mount/realEngineInit while
+      unsupported (`state.threadedUnsupported` = {reason, action, target}).
+      localhost origins never redirect (gates unaffected); explicit
+      `?threads=0` keeps working as the only — deliberate — legacy entry.
+- [x] Path-aware boot banner (owner-flagged): play.html default copy now says
+      archives stream to disk (OPFS, memory stays flat); the MEMFS
+      "~2 GB into browser memory / phones will run out" warning only renders
+      on the explicit `?threads=0` legacy path.
+- [x] Dev-box verification: 14/14 redirect-probe checks (LAN http → https
+      redirect 633ms + COI/SAB true; localhost no-redirect; no-HTTPS server
+      blocks loudly, mountArchives refused, Start fails loudly; banner
+      per-path), `test:io-worker-offthread` 15/15, `shellmap_real_init_gate`
+      + `threaded_play_gate` green, all four cnc-port builds no-op
+      incremental. (Dev-box quirk: strip proxy env for Chromium probes — the
+      sandbox MITM rejects the self-signed upstream on non-localhost https.)
+- [x] Mac deploy + verification (real Metal GPU): fresh builds md5-verified
+      on both boxes, :8123 server restarted with HTTPS_PORT=8443 (single pid
+      serves both listeners; :8124 untouched), the interim `~/cnc-tls`
+      stopgap TLS proxy on :8443 retired. Headless-Chrome probe 10/10:
+      http://192.168.106.45:8123/harness/play.html?autostart=1 redirects to
+      https://192.168.106.45:8443/... (query preserved), COI+SAB true, ANGLE
+      Metal (Apple M4), THREADED wasm instantiates (heap is a
+      SharedArrayBuffer), 30/30 archives OPFS-mounted, real init → engine
+      loop → shellmap title screenshot (non-black, logo + animated scene).
+      Owner one-time step: on first load Chrome shows the self-signed-cert
+      interstitial for https://192.168.106.45:8443 — Advanced → Proceed (or
+      trust `WebAssembly/harness/.certs/cert.pem` in Keychain), once per
+      device.
+
+## Owner play-page mount-failure regression (2026-07-10, mount-failure lane)
+
+The owner's real headful Chrome at http://192.168.106.45:8123/harness/play.html
+(threaded default) died with "FAILED: archive mount failed"; headless gates
+were green on the same build. Reproduced + root-caused on the Mac, fixed
+JS-only (no wasm rebuild), Mac-verified. Details in
+`WebAssembly/notes/p1-engine-thread.md` "Owner mount-failure regression".
+
+- [x] Reproduce the owner's exact failure on cnc-gpu (plain Chrome, fresh
+      profile, owner URL): `FAILED: archive mount failed` ← "Wasm module
+      unavailable" ← `ReferenceError: SharedArrayBuffer is not defined` —
+      Chrome IGNORES COOP/COEP on the untrustworthy plain-http LAN origin
+      (`isSecureContext:false`, `crossOriginIsolated:false`, OPFS + Web Locks
+      also absent). localhost:8123 on the same box has everything — that is
+      why every headless gate stayed green. NOT the OPFS-lock theory.
+- [x] Fix (bridge.js + play.mjs): threaded mode now requires
+      `SharedArrayBuffer` + `crossOriginIsolated` (cncPortThreadedRuntimeSupport);
+      when the environment can't run it, BOTH files fall back to the legacy
+      single-threaded path/dist with a visible on-page note + console warning
+      + `state.threadedFallbackReason`; loadWasmModule failures are captured
+      and folded into mount errors (no more bare "Wasm module unavailable").
+- [x] ALSO fixed the real (deferred) OPFS sync-handle collision, reproduced
+      on a secure origin: second tab in the same profile failed its mount
+      with NoModificationAllowedError ("Access Handles cannot be created if
+      there is another open Access Handle...") because staged handles hold
+      exclusive locks for the page lifetime. Hardening: (a) every mount
+      writes to a fresh `cnc-archives/ns-<bootId>-<seq>/` namespace (fresh
+      names can never be lock-held) while holding a
+      `cnc-port-opfs-ns:<bootId>` Web Lock; (b) the IO worker GCs namespaces
+      whose owner lock is gone (live tabs keep theirs — two tabs now BOTH
+      run); (c) createSyncAccessHandle retries ~1.5s then
+      delete-and-recreates, and its final error names the file + exception;
+      (d) pagehide posts releaseOpfsHandles to the engine realm
+      (opfs_realm_files closeAll) and releaseHandles to the IO worker so a
+      dying page drops its locks early; (e) play.mjs fail() renders the
+      failure DETAIL on the page (archive + exception), not just in console.
+- [x] Mac verification matrix (fixed harness on :8151 against the deployed
+      md5-verified dists, reused persistent profile, ANGLE Metal):
+      LAN-IP origin → legacy fallback BOOTS to title with the visible note;
+      localhost threaded boot → title (namespaced OPFS mount); second tab
+      same profile → BOOTS (was: raw mount failure); reload-after-boot,
+      reload-mid-mount, 3rd sequential reload → all boot; namespace GC keeps
+      the OPFS root at the live namespaces only.
+- [x] Dev-box gates on the fixed harness: full `verify:threaded-play`
+      (reference + threaded legs) exit 0, "threaded play gate: OK" with all
+      checks PASS incl. the OPFS-backed-mount, save-round-trip and audio
+      checks; `test:io-worker-offthread` 15/15; `shellmap_real_init_gate`
+      green (legacy path = what the LAN fallback serves).
+
+## GATE D blocker root-caused + flip unblocked (2026-07-10, blocker-fix lane)
+
+Full numbers in `WebAssembly/notes/p1-engine-thread.md` "GATE D root cause +
+fix". Branch: worktree blocker-fix lane (root-cause commit + flip
+cherry-pick); NOT merged to main by the lane itself.
+
+- [x] Root-cause the GATE D "worker GL throughput regression": it was
+      **Debug-vs-Release wasm**, not the worker. `build:port:threaded` builds
+      Debug (-O0, ASSERTIONS=1, JS-EH, 99.7MB wasm); GATE D compared it
+      against dist-release (-O2, wasm-EH, 7.7MB). Proven on Mac Metal by
+      (a) a synthetic worker-vs-main GL benchmark at the executor's measured
+      call mix — 70.0k draws/s in BOTH realms (worker parity to 0.1%; CPU
+      loop parity 730 Mops/s both; SAB/attrs/captureStream variants all
+      cleared), and (b) `?dist=dist` on the LEGACY main-thread path
+      reproducing the exact collapse (client 3.8-13/s, 14.5-19.8k draws/s —
+      GATE D's "threaded" numbers, no worker involved).
+- [x] Fix: `npm run build:port:threaded:release` -> dist-threaded-release
+      (first Release+pthread+wasm-EH build; links/runs fine on emsdk 3.1.6);
+      play.html threaded mode defaults to it (harness pages keep Debug
+      dist-threaded); issue-recorder metadata + replay pins follow;
+      `verify:threaded-play` builds both threaded dists; gate gained
+      THREADED_PLAY_DIST.
+- [x] Re-run the lane-D pacing A/B on Mac Metal (same methodology, 120s):
+      threaded-release logic 30.0 exact all settled buckets, client mean
+      39.1/s vs legacy 48.3/s headless (~19%, within the ~20% bar; ~8% at
+      the matched ~1600-draws/frame bucket); HEADFUL (owner-realistic)
+      client 52.6-60/s with logic 30.0 exact — the 60/30 bar met without
+      any Chrome flags. Title screenshot
+      `WebAssembly/artifacts/screenshots/threaded-release-title-metal.png`.
+- [x] Cherry-pick the prepared flip (f002675d): play.html defaults to the
+      engine-thread path (?threads=0 = legacy escape hatch), resolved to
+      serve dist-threaded-release on the play page.
+
+## GATE D Mac Metal verification of the threaded path — run (2026-07-10)
+
+Final-migration lane. Full numbers + mechanism in
+`WebAssembly/notes/p1-engine-thread.md` "GATE D results".
+
+- [x] Deploy HEAD (af478736) to cnc-gpu: repo rsync + all three dists
+      md5-verified (`rsync --checksum` caught a stale `dist/cnc-port.wasm`
+      with identical size+mtime — quick-check alone is not deploy proof);
+      `__cnc_build_info` reports HEAD.
+- [x] Metal-verify `?threads=1` on the real M4 GPU: renderer `ANGLE Metal
+      Renderer: Apple M4` in the ENGINE worker's own context (new
+      `threadedEngine.graphics.renderer`/`d3d8Perf` status feed), boot to
+      title 25.2s (OPFS from-empty), init 43/43 on the pthread, shellmap
+      title screenshot, audio decode/schedule/completion/dedupe counters all
+      advancing, real skirmish via the engine's own click path to PLAYER
+      CONTROL (in-match logic 29.98/s exact, client 43.9/s) — artifacts in
+      `WebAssembly/artifacts/screenshots/gate-d-*`.
+- [x] Measure the 60/30 flip bar at the shellmap vs the legacy path (A/B,
+      same box/flags/scene): legacy logic 30.0/s exact + client 34-58/s for
+      120s; threaded collapses to client ~7/s / logic ~14/s as the shellmap
+      battle grows to ~1645 draws/frame. Root mechanism measured: identical
+      per-draw GL mix but ~2.5x lower sustained GL throughput from the
+      worker context (~16.4k vs ~40.8k draws/s). Eliminated: rAF throttling,
+      SwiftShader fallback, --disable-gpu-compositing, cache regressions.
+      **Default flip therefore NOT landed** — prepared on branch
+      `threaded-default-flip`; behavior-neutral prep (probe `threads=0`
+      pins, replay threads-by-dump-origin, worker graphics status) landed on
+      the main line with `verify:threaded-play` 30/30 green.
+
+Gap-closure lane for the owner directive "fully migrate to the engine-thread
+path": every functional gap named for making `?threads=1` the play.html
+default, minus the default flip itself (orchestrator step after Metal
+verification). All verified by the extended `npm run verify:threaded-play`
+gate; default (non-threaded) build byte-identical (md5-proven). Details in
+notes/p1-engine-thread.md "Default-readiness gap closure".
+
+- [x] **Bink/movies in the engine realm**: verified clean-skip parity — the
+      play path installs Bink hooks in NEITHER realm (bridge.js never did);
+      the provider's absent-hook path no-ops every movie and the gate's new
+      "main-menu shell reached" check proves the boot intro/logo path
+      completes without hanging under ?threads=1.
+- [x] **Threaded `state` RPC carries the wasm `cnc_port_state` fields**:
+      routed via engineCall on the engine thread + applyModuleState main-side
+      (falls back to the main-only snapshot pre-boot / on failure;
+      `wasmStateSource` reports which). Gate-checked.
+- [x] **Issue-dump capture RPCs routed**: realEngineAnimReport,
+      querySelection, realEngineFrameSummary (deep snapshots) via engineCall;
+      d3d8TextureInventory via a new worker-realm `textureInventory` command
+      (the executor's texture map lives in the engine realm). Placeholder
+      canvas captureStream verified live for the video capture path.
+- [x] **Post-boot `mountArchive(s)` guarded**: refused with an explicit error
+      once the engine pthread runs (registerArchiveSet/probeArchive are
+      main-thread wasm calls); pre-boot mounts fall through unchanged.
+- [x] **Shader tier plumbed to the worker realm**: resolved main-side (page
+      URL ?shaderTier= → localStorage cncPortShaderTier) and passed through
+      setup options; engine_realm_boot forces globalThis.__cncD3D8ShaderTier
+      before executor construction; worker status posts report the tier.
+- [x] **Threaded OPFS music/speech streams**: MSS stream starts could not
+      read archive bytes (MEMFS holds 0-byte markers) → new `opfsReadRange`
+      realm command reads the staged sync-access handles in the engine realm;
+      the stream path parses + caches BIG directories via ranged reads and
+      fetches exactly the entry payload per start. Gate-checked (music
+      decoded + scheduled from OPFS-backed archives).
+- [x] **MSS byte-copy dedupe**: content-key handshake — the worker computes
+      the same key as bridge's decoded-sample cache, ships bytes once per
+      key, key-only after; main notifies evictions/failed caches back
+      (mssCacheDrop) so bytes re-send. Realm stub respond() gained a
+      transfer-list arg (first-send copies + opfsReadRange payloads move,
+      not clone). Gate-checked (dedupeSkips > 0, dedupeMisses == 0).
+- [x] **Audio completion-drain + audible-path verification**: gate boots with
+      autoplay authorized (models the owner's Play-click gesture), asserts
+      AudioContext running, stream decode+schedule, sample decode+buffer+
+      start, 2D completions draining back through engineCall
+      (cnc_port_mss_complete_sample) with zero "threaded audio completion
+      failed" logs.
+- [x] **Save/load round trip threaded**: persistSaves/listSaves stay
+      main-side (IDBFS mounts on the MAIN runtime; engine-thread FS writes
+      proxy to main); gate writes a marker .sav into the real save dir,
+      persists, and a FRESH page load lists it back (then cleans up).
+- [x] **Resolution-change flow threaded**: setEngineResolution (already
+      routed) now gate-verified end to end — engine-thread reflow +
+      engineDisplaySize follow-up via worker status posts.
+
+## Engine-thread architecture P0-P3 — landed (2026-07-10)
+
+The engine-on-a-pthread + OPFS-as-disk + OffscreenCanvas architecture
+(IDEAS.md "the browser as a 2003 PC") is live behind `play.html?threads=1`
+on the dist-threaded build. Durable design/mechanism/measurement record:
+`WebAssembly/notes/p1-engine-thread.md`. Still open in TODO: GATE D (Mac
+Metal 60/30 + owner playtest), Safari/iPad, threaded-mode follow-ups, and
+the OPFS operational items (stat coverage, handle lifecycle, crash
+surfacing).
+
+- [x] **P0 spike: engine on its own thread.** Dual-mode `CNC_PORT_THREADS`
+      CMake option + `npm run build:port:threaded` (build/wasm-threaded →
+      dist-threaded); full 1309-TU pthread build links clean on emsdk 3.1.6
+      (no ODR/shim breakage). PROXY_TO_PTHREAD is a hard error with
+      --no-entry → engine pthread spawned explicitly. EXPORT_ES6+MODULARIZE+
+      pthreads works at runtime; realm split confirmed; real init on a
+      pthread runs to TheWritableGlobalData with no assets (no
+      thread-specific crash). Browser primitives proven by JS smokes:
+      test:offscreen-worker-gl, test:opfs-sync-read.
+- [x] **P1a runtime scaffold.** PTHREAD_POOL_SIZE=1 + threads_realm_stub
+      pre-js (ping/setup/callExport realm protocol) +
+      src/wasm_engine_thread_boot.cpp (boot/go/heartbeat;
+      emscripten_set_main_loop ON the pthread — rAF ticks in the worker
+      realm, 'unwind' keep-alive). p1_scaffold_probe 18/18.
+- [x] **P1b executor extraction.** The full D3D8→WebGL2 executor (~12.3k
+      lines, 20 hooks) moved to realm-agnostic harness/d3d8_executor.mjs
+      consumed by both realms; non-threaded parity proven pixel-identical
+      (shellmap gate screenshot diff bbox None).
+- [x] **P1c integration (GATES B+C).** play.html?threads=1 boots the REAL
+      engine on the pthread: engine_realm_boot.mjs (executor+GDI+MSS
+      forwarders+UDP stubs+stepped-init pump+paced loop), bridge threaded
+      controller/routing/input forwarding, threaded_play_gate green.
+      Root-cause find: shims/windows.h InitializeCriticalSection left the
+      shim recursive_mutex unconstructed — placement-new fix (engine thread
+      parked forever in W3DMouse::draw before it).
+- [x] **P2 OPFS-as-disk mounts.** fetchToOpfs streamed mounts + fd-intercept
+      seam (shims/io.h + src/wasm_opfs_files.cpp, 64KB per-fd readahead:
+      TOC walk 2137ms → 1.56ms) + engine-realm staged sync handles.
+      Threaded boot to title 17.4s vs 115.9s MEMFS-threaded; main-thread JS
+      heap 2222 MiB → 12 MiB (2.2GB archive set on disk, wasm 0.16GiB).
+      Relative-path absolutization fix in the intercept (engine chdir +
+      relative opens).
+- [x] **P3 fixed-size heap on the threaded build (2026-07-10, lane P3).**
+      Threaded build links ALLOW_MEMORY_GROWTH=0 + INITIAL_MEMORY=2GiB (==
+      the growth build's MAXIMUM → identical OOM ceiling, no new abort
+      threshold; Chromium commits the shared memory lazily — renderer RSS
+      ~0.9GiB peak through boot+skirmish, never 2GiB). Removes the
+      pthreads+growth JS heap-access tax at the source: 239 GROWABLE_HEAP_*
+      wrappers → 0 in dist-threaded/cnc-port.js, em++ -Wpthreads-mem-growth
+      warning gone. Measured A/B (2 runs each, back-to-back): NO end-to-end
+      delta above SwiftShader box noise (title 19.0/17.6s ON vs 17.3/22.3s
+      OFF; p2-opfs within noise) — the hot JS paths already used fresh-view
+      accessors/realm-local views; the win is the deleted stale-view bug
+      class + free wrapper removal; Mac Metal re-measure rides GATE D.
+      Sizing measured via the new harness/threaded_skirmish_memory_probe.mjs
+      (threaded RPC routing added for realEngineSetSkirmishMap/
+      SetSkirmishLocalTemplate; clickWindowByName threaded route fixed to
+      honor payload.name + derive ok from clicked): growth-ON wasm 229MiB at
+      title, 275.4MiB peak in a live screenshot-verified skirmish; growth-OFF
+      match runs OOM-free to 486 logic frames. Full verify:threaded-play
+      14/14 on the final flags; default build proven BYTE-IDENTICAL (md5) and
+      ninja-flag-identical. Range-backed mount machinery audited for the
+      scheduled P2-landing retirement: NOT deleted — load-bearing for ~18
+      wired legacy smokes; retirement rescheduled with the legacy-smoke
+      burn-down (see TODO). Details: notes/p1-engine-thread.md "P3 results".
 
 ## I/O strategy pivot — engine-thread + OPFS-disk direction adopted (2026-07-10)
 
@@ -81,6 +443,68 @@ mitigation track. Items resolved or retired by the pivot:
       over ~60k entries; P2 removes the probe/register mount pipeline, so the
       measurement work is retired with it. Revisit only on pre-P2 boot pain
       (cheap partial: `verifyEach:false` on the play path).
+
+## Engine-thread architecture P0 spike — browser-primitive feasibility smokes (2026-07-10)
+
+- [x] **OffscreenCanvas WebGL2-in-worker proven on the CI baseline
+      (headless SwiftShader Chromium 149).** JS-only smoke
+      `npm run test:offscreen-worker-gl`
+      (harness/offscreen_worker_gl_smoke.{mjs,html} +
+      offscreen_worker_gl_worker.mjs): transferControlToOffscreen → module
+      worker → getContext("webgl2") succeeds (renderer "ANGLE … SwiftShader
+      driver"); requestAnimationFrame IS available in dedicated workers and
+      drove the loop (setTimeout fallback exists but was not needed); frames
+      drawn in the worker present on the page's placeholder canvas
+      (Playwright element screenshots non-black, differ across ~10 frames —
+      verified by pixel decode, not just exit code). Blocked-worker behavior
+      (the load-screen question): during a 2s synchronous worker busy-loop
+      the MAIN thread kept ticking (120 rAF ticks), zero frames drew or
+      presented during the block (screenshots identical), the canvas kept
+      showing the last presented frame (frozen, not broken/black), and
+      animation resumed after the block. Matches the IDEAS.md design
+      assumption exactly: a hard-blocked engine thread = frozen load screen,
+      never a locked tab.
+- [x] **OPFS streamed-download + synchronous reads proven on the CI
+      baseline.** JS-only smoke `npm run test:opfs-sync-read`
+      (harness/opfs_sync_read_smoke.{mjs,html} + opfs_sync_read_worker.mjs):
+      navigator.storage.getDirectory + createSyncAccessHandle both available
+      in a dedicated worker; the real 18MB INIZH.big streamed
+      fetch→OPFS chunk-by-chunk (peak JS-held buffer = one 2MB fetch chunk,
+      never resident) at ~52-85 MB/s; fresh sync handle then read it back
+      genuinely synchronously — 16B header ("BIGF"), 256KB TOC read
+      ~83 MB/s, 200 random 64KB reads ~96 MB/s, 16 sequential 1MB reads
+      ~565 MB/s; 5 sampled OPFS ranges byte-matched main-thread HTTP Range
+      fetches exactly; file removed after. Quota reported 4-5GB for the
+      default (non-persistent) Playwright profile — enough for the full
+      ~2GB archive set, but worth re-checking on real user profiles/Safari.
+## Audio payload inventory: partial reads instead of whole-archive copies (2026-07-10)
+
+- [x] **Audio payload inventory duplicates whole archives on the main thread
+      (2026-07-10 audit) — fixed via FS-stream partial reads.**
+      `buildAudioPayloadInventoryFromMountedArchives` (bridge.js) used to
+      `FS.readFile` every audio-relevant archive after each `mountArchives`
+      (SpeechEnglishZH.big alone 254MB; ~386MB duplicated for the standard
+      audio set) and hold all copies in `archiveBytesByName` across the scan.
+      Now it opens each archive once via the Emscripten FS stream API
+      (`openMountedArchiveReader`: FS.stat/open/read/close) and reads only:
+      the BIGF header + directory in 64KB chunks
+      (`readBigDirectoryFromReader`, mirroring `extractBigEntryFromUrl`'s
+      range strategy with `readBigDirectoryFromBytes`'s exact semantics +
+      error messages), 64-byte payload headers for
+      `classifyAudioPayloadFormat`, the small audio INI text ranges, and the
+      few full decode/cache-proof payloads on demand through a
+      `readEntryBytes(archiveName, entry)` accessor now threaded into
+      `buildAudioDecodeAndBufferProofs` / `buildRequestedAudioDecodeCacheProof`
+      (replacing the `archiveBytesByName` Map). Inventory output proven
+      byte-identical pre/post (A/B JSON diff over a real 8-archive mount incl.
+      base INI.big, deterministic across runs); JS-heap last-sample dropped
+      818MB→432MB (= the 386MB duplicate set) with mount time unchanged;
+      node equivalence test covered 8 malformed-BIGF error paths with
+      identical messages plus a >64KB-directory archive and a chunked mock-FS
+      read loop. `test:io-worker-offthread` green. Note:
+      `runtime_archives_smoke.mjs` could not gate this — it is red on a
+      pre-existing stale ControlBarScheme assertion before the audio
+      assertions run (reproduced on unmodified main; tracked in TODO.md).
 
 ## Stepped-load validation regression — frozen turrets / stuck muzzle flashes (2026-07-10)
 
