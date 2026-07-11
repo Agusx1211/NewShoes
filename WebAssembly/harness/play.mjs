@@ -6,6 +6,10 @@
 import "./launcher-archive-specs.js";
 import { createIssueRecorder } from "./issue-recorder.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
+import {
+  runRuntimeShutdownSequence,
+  runtimeShutdownWarning,
+} from "./runtime-shutdown-sequence.mjs";
 
 const archiveSpecs = Object.freeze(window.ZeroHArchiveSpecs.map((spec) => Object.freeze(
   spec.artifactSourceName === spec.name
@@ -957,22 +961,6 @@ let runtimeClosed = false;
 let runtimeClosing = false;
 let runtimeShutdownPromise = null;
 
-function settleWithin(promise, timeoutMs, label) {
-  let timer = null;
-  return Promise.race([
-    Promise.resolve(promise)
-      .then((value) => ({ ok: true, value }))
-      .catch((error) => ({ ok: false, error: error?.message ?? String(error) })),
-    new Promise((resolve) => {
-      timer = setTimeout(() => resolve({
-        ok: false,
-        timedOut: true,
-        error: `${label} timed out after ${timeoutMs}ms`,
-      }), timeoutMs);
-    }),
-  ]).finally(() => clearTimeout(timer));
-}
-
 function retireRuntimeViewport() {
   if (!viewportCanvas.isConnected && !overlay.isConnected) return false;
   // transferControlToOffscreen promotes the placeholder into its own browser
@@ -1044,31 +1032,29 @@ async function exitToDesktop() {
       overlay.hidden = true;
       overlay.classList.remove("is-running");
 
-      // Stop rendering and flush saves concurrently. Both are bounded because
-      // IDBFS/browser callbacks can otherwise strand the close operation while
-      // the worker keeps presenting frames indefinitely.
-      const [loopStop, saves] = await Promise.all([
-        settleWithin(runtimeRpc("threadedStopLoop", { timeoutMs: 5000 }), 6500, "frame-loop stop"),
-        settleWithin(runtimeRpc("persistSaves", { reason: "launcher-exit" }), 6500, "save flush"),
-      ]);
-      const loopStopped = loopStop.ok && loopStop.value?.ok === true;
-      const graceful = loopStopped
-        ? await settleWithin(runtimeRpc("shutdownRuntime", {}), 30000, "runtime shutdown")
-        : { ok: false, skipped: true, error: "frame loop did not acknowledge stop" };
-      let result = graceful.value ?? { ok: false, error: graceful.error ?? "runtime shutdown failed" };
-      let forced = null;
-      if (!graceful.ok || result.ok !== true) {
-        forced = await settleWithin(
-          window.CnCPort.rpc("forceShutdownRuntime", {}),
-          3000,
-          "forced runtime shutdown",
-        );
-        if (forced.value) result = forced.value;
-      }
-      return {
-        ...result,
-        close: { viewportRetired, loopStop, saves, graceful, forced },
+      const sequence = await runRuntimeShutdownSequence({
+        stopSaveScheduling: () => window.CnCPort.stopSavePersistenceScheduling(),
+        stopLoop: () => runtimeRpc("threadedStopLoop", { timeoutMs: 5000 }),
+        persistFinalSave: () => window.CnCPort.persistFinalSaves("launcher-exit-final"),
+        gracefulShutdown: () => runtimeRpc("shutdownRuntime", {}),
+        forceShutdown: () => window.CnCPort.rpc("forceShutdownRuntime", {}),
+      });
+      const result = {
+        ...sequence.result,
+        close: { viewportRetired, ...sequence.close },
       };
+      const warning = runtimeShutdownWarning(result);
+      if (warning) window.ZeroHDesktop?.showToast(warning.title, warning.message, "warning");
+      return result;
+    } catch (error) {
+      const result = {
+        ok: false,
+        error: error?.message ?? String(error),
+        close: { viewportRetired, finalSaveFresh: false },
+      };
+      const warning = runtimeShutdownWarning(result);
+      window.ZeroHDesktop?.showToast(warning.title, warning.message, "warning");
+      return result;
     } finally {
       gameRunning = false;
       renderPerformanceOverlay();
@@ -1078,6 +1064,7 @@ async function exitToDesktop() {
       runtimeClosed = true;
       runtimeClosing = false;
       activeRpc = null;
+      window.dispatchEvent(new CustomEvent("cncport:runtimeclosed"));
     }
   })();
   runtimeShutdownPromise = shutdown;

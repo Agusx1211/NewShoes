@@ -16,14 +16,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       final terrain frame as a promoted compositor layer.
 - [x] Bounded save flush, paced-loop stop, and graceful engine shutdown, with
       a main-realm hard worker/audio/I/O fallback when a browser callback or
-      destructor does not settle. Repeated IDBFS flushes now share one in-flight
-      operation, and periodic persistence stops with the runtime.
+      destructor does not settle. Ordinary IDBFS flushes share one in-flight
+      operation, but exit first disables periodic scheduling, quiesces engine
+      writes, drains any older snapshot, and runs a distinct trailing syncfs
+      before engine destruction. A deterministic race regression proves a
+      write made after the periodic snapshot is included by the final flush.
 - [x] Extended the real threaded browser gate to capture the full desktop after
       `ZeroHRuntime.exit()` and assert the retired viewport, bounded worker
-      cleanup, visible taskbar pixels, and screenshot variance instead of
-      relying only on state flags. The installed four-ISO flow on the combined
-      default-pixel-shader main also proved the launcher-button reload reaches
-      a second fresh `started=true` runtime and closes it cleanly.
+      cleanup, explicit worker termination, final-save ordering, visible
+      taskbar/upper-sky pixels, and absence of an upper terrain frame instead
+      of relying only on state flags. Upper desktop pixels are compared against
+      a fresh isolated desktop reference. The gate requires zero pending realm
+      commands and zero running pthread workers, clicks the actual Zero Hour
+      desktop shortcut, waits for its fresh document and second `started=true`
+      runtime, then closes that runtime cleanly too. Deterministic fault gates
+      cover stop/destructor timeouts, and a browser-injected final-save failure
+      must fail the close result while showing the user a save warning.
 
 ## Clean launcher game shutdown (2026-07-11)
 

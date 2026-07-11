@@ -1,6 +1,7 @@
 import { createD3D8Executor } from "./d3d8_executor.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
+import { createSavePersistenceCoordinator } from "./save-persistence-coordinator.mjs";
 import { createWebRtcUdpEndpoint } from "./webrtc-udp-endpoint.mjs";
 import {
   clearSharedUdpRing,
@@ -1338,7 +1339,16 @@ function createThreadedEngineController() {
     }
     engineWorker = null;
     engineThreadStarted = false;
-    return { workerTerminated, workerError };
+    const pthreadRunning = Array.isArray(cncPortEmscriptenModule?.PThread?.runningWorkers)
+      ? cncPortEmscriptenModule.PThread.runningWorkers.length
+      : null;
+    return {
+      workerTerminated,
+      workerError,
+      pendingCommands: pending.size,
+      pthreadRunning,
+      engineThreadStarted,
+    };
   }
 
   async function shutdown() {
@@ -1383,7 +1393,18 @@ function createThreadedEngineController() {
 
   function forceShutdown(reason = "forced shutdown") {
     if (shutDown) {
-      return { ok: true, alreadyStopped: true, forced: true };
+      const pthreadRunning = Array.isArray(cncPortEmscriptenModule?.PThread?.runningWorkers)
+        ? cncPortEmscriptenModule.PThread.runningWorkers.length
+        : null;
+      return {
+        ok: true,
+        alreadyStopped: true,
+        forced: true,
+        workerTerminated: true,
+        pendingCommands: pending.size,
+        pthreadRunning,
+        engineThreadStarted,
+      };
     }
 
     const { workerTerminated, workerError } = terminateWorker(reason);
@@ -1490,6 +1511,8 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   // thread's FS writes proxy to main, so persist (FS.syncfs) and the listing
   // are pure main-side JS in threaded mode too.
   "persistSaves",
+  "stopSavePersistenceScheduling",
+  "persistSavesFinal",
   "listSaves",
   // WebRTC signaling and RTCDataChannels live in the window realm. Their
   // datagrams cross into the engine worker through threadedUdpBridge.
@@ -4917,15 +4940,11 @@ function mountSaveFilesystem(m) {
   }
 }
 
-// Flush MEMFS -> IndexedDB so newly written ".sav" files persist. Safe to call
-// repeatedly; returns a promise that resolves once the flush completes.
-let saveFilesystemPersistInFlight = null;
-
-function persistSaveFilesystem(reason = "manual") {
-  if (saveFilesystemPersistInFlight) {
-    return saveFilesystemPersistInFlight;
-  }
-  const operation = new Promise((resolve) => {
+// Flush MEMFS -> IndexedDB so newly written ".sav" files persist. Overlapping
+// ordinary requests share one syncfs. Runtime exit uses persistFinal instead:
+// it drains any older snapshot and starts a distinct trailing syncfs.
+const savePersistence = createSavePersistenceCoordinator(({ reason }) => (
+  new Promise((resolve) => {
     const module = cncPortEmscriptenModule;
     if (!module || !module.FS || !cncPortSaveFsMounted) {
       resolve({ ok: false, reason, error: "save filesystem not mounted" });
@@ -4945,13 +4964,23 @@ function persistSaveFilesystem(reason = "manual") {
       recordLog("saveFsSyncOutError", { reason, error: String(error) });
       resolve({ ok: false, reason, error: String(error) });
     }
-  });
-  saveFilesystemPersistInFlight = operation;
-  return operation.finally(() => {
-    if (saveFilesystemPersistInFlight === operation) {
-      saveFilesystemPersistInFlight = null;
-    }
-  });
+  })
+));
+
+function persistSaveFilesystem(reason = "manual") {
+  return savePersistence.persist(reason);
+}
+
+function persistScheduledSaveFilesystem(reason) {
+  return savePersistence.persistPeriodic(reason);
+}
+
+function stopSavePersistenceScheduling() {
+  return savePersistence.stopScheduling();
+}
+
+function persistFinalSaveFilesystem(reason = "runtime-exit-final") {
+  return savePersistence.persistFinal(reason);
 }
 
 // List persisted ".sav" files in the mounted save directory (harness/debug).
@@ -8468,6 +8497,7 @@ let browserRuntimeShutDown = false;
 
 async function shutdownBrowserRuntime() {
   browserRuntimeShutDown = true;
+  stopSavePersistenceScheduling();
   await resetBrowserInput().catch(() => null);
   const engine = threadedEngine
     ? await threadedEngine.shutdown()
@@ -8488,6 +8518,7 @@ async function shutdownBrowserRuntime() {
 
 function forceShutdownBrowserRuntime() {
   browserRuntimeShutDown = true;
+  stopSavePersistenceScheduling();
   const engine = threadedEngine
     ? threadedEngine.forceShutdown("threaded engine force-closed")
     : { ok: true, alreadyStopped: true, forced: true };
@@ -10799,6 +10830,16 @@ async function rpc(command, payload = {}) {
       {
         const result = await persistSaveFilesystem(String(payload.reason ?? "rpc"));
         return { ok: Boolean(result.ok), command, result };
+      }
+    case "stopSavePersistenceScheduling":
+      {
+        const result = stopSavePersistenceScheduling();
+        return { ok: true, command, result };
+      }
+    case "persistSavesFinal":
+      {
+        const result = await persistFinalSaveFilesystem(String(payload.reason ?? "runtime-exit-final"));
+        return { ok: Boolean(result.ok && result.finalFresh), command, result };
       }
     case "shutdownRuntime":
       {
@@ -22469,23 +22510,23 @@ window.addEventListener("blur", () => {
 if (typeof document !== "undefined") {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
-      void persistSaveFilesystem("visibilitychange");
+      void persistScheduledSaveFilesystem("visibilitychange");
     }
   });
 }
 window.addEventListener("pagehide", () => {
-  void persistSaveFilesystem("pagehide");
+  void persistScheduledSaveFilesystem("pagehide");
 });
 window.addEventListener("beforeunload", () => {
   // Best-effort: fires the async syncfs; IndexedDB writes are queued even if
   // the callback never runs before navigation completes.
-  void persistSaveFilesystem("beforeunload");
+  void persistScheduledSaveFilesystem("beforeunload");
 });
 // Periodic safety flush (every 5s) so an in-game save persists even if the tab
 // is closed without a clean unload event. No-op until the FS is mounted.
 setInterval(() => {
   if (cncPortSaveFsMounted && !browserRuntimeShutDown) {
-    void persistSaveFilesystem("interval");
+    void persistScheduledSaveFilesystem("interval");
   }
 }, 5000);
 
@@ -22494,6 +22535,9 @@ window.CnCPort = {
   state: harnessState,
   d3d8BridgeCallbacks,
   persistSaves: persistSaveFilesystem,
+  persistScheduledSaves: persistScheduledSaveFilesystem,
+  persistFinalSaves: persistFinalSaveFilesystem,
+  stopSavePersistenceScheduling,
   listSaves: listSaveFiles,
   // Raw emscripten Module accessor for harness diagnostics (threaded mode:
   // lets a probe read atomic counters / last-step markers FROM THE MAIN

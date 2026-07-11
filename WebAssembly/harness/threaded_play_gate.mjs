@@ -108,6 +108,9 @@ async function samplePageScreenshot(page, buffer) {
     let sumSquared = 0;
     let bottomBlue = 0;
     let bottomCount = 0;
+    let upperEdgeSky = 0;
+    let upperEdgeTerrain = 0;
+    let upperEdgeCount = 0;
     for (let offset = 0; offset < pixels.length; offset += 4) {
       const red = pixels[offset];
       const green = pixels[offset + 1];
@@ -116,7 +119,13 @@ async function samplePageScreenshot(page, buffer) {
       sum += luminance;
       sumSquared += luminance * luminance;
       const pixelIndex = offset / 4;
+      const x = pixelIndex % scratch.width;
       const y = Math.floor(pixelIndex / scratch.width);
+      if (y < 50 && (x < 19 || x >= 109)) {
+        upperEdgeCount += 1;
+        if (blue > 90 && blue > red * 1.2 && blue > green * 1.02) upperEdgeSky += 1;
+        if (red > blue * 1.2 && green > blue * 1.08 && red < 210) upperEdgeTerrain += 1;
+      }
       if (y >= 76) {
         bottomCount += 1;
         if (blue > red * 1.15 && blue > green * 1.05) bottomBlue += 1;
@@ -128,8 +137,53 @@ async function samplePageScreenshot(page, buffer) {
       mean,
       standardDeviation: Math.sqrt(Math.max(0, sumSquared / count - mean * mean)),
       bottomBlueFraction: bottomCount > 0 ? bottomBlue / bottomCount : 0,
+      upperEdgeSkyFraction: upperEdgeCount > 0 ? upperEdgeSky / upperEdgeCount : 0,
+      upperEdgeTerrainFraction: upperEdgeCount > 0 ? upperEdgeTerrain / upperEdgeCount : 0,
     };
   }, buffer.toString("base64"));
+}
+
+async function compareUpperDesktopScreenshots(page, actual, reference) {
+  return page.evaluate(async ([actualBase64, referenceBase64]) => {
+    async function pixels(base64) {
+      const raw = atob(base64);
+      const bytes = new Uint8Array(raw.length);
+      for (let index = 0; index < raw.length; index += 1) bytes[index] = raw.charCodeAt(index);
+      const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+      const scratch = document.createElement("canvas");
+      scratch.width = 128;
+      scratch.height = 80;
+      const context = scratch.getContext("2d", { willReadFrequently: true });
+      context.drawImage(bitmap, 0, 0, scratch.width, scratch.height);
+      bitmap.close();
+      return context.getImageData(0, 0, scratch.width, scratch.height).data;
+    }
+    const [actualPixels, referencePixels] = await Promise.all([
+      pixels(actualBase64),
+      pixels(referenceBase64),
+    ]);
+    let difference = 0;
+    let changed = 0;
+    let count = 0;
+    for (let y = 0; y < 50; y += 1) {
+      for (let x = 0; x < 128; x += 1) {
+        if (x >= 19 && x < 109) continue;
+        const offset = (y * 128 + x) * 4;
+        const pixelDifference = (
+          Math.abs(actualPixels[offset] - referencePixels[offset])
+          + Math.abs(actualPixels[offset + 1] - referencePixels[offset + 1])
+          + Math.abs(actualPixels[offset + 2] - referencePixels[offset + 2])
+        ) / 3;
+        difference += pixelDifference;
+        if (pixelDifference > 24) changed += 1;
+        count += 1;
+      }
+    }
+    return {
+      meanAbsoluteDifference: difference / count,
+      changedFraction: changed / count,
+    };
+  }, [actual.toString("base64"), reference.toString("base64")]);
 }
 
 async function bootPlayPage(browser, url, label, consoleLines) {
@@ -204,6 +258,25 @@ async function main() {
   const checks = [];
   let failure = null;
   try {
+    // Isolate the visual reference from the persistent game profile. Closing
+    // a same-profile reference page would launch its own pagehide IDBFS flush
+    // and can contend with the save-order race this gate intentionally tests.
+    const referenceBrowser = await chromium.launch({ headless: true });
+    const desktopReferencePath = join(shotDir, "p1c-desktop-reference.png");
+    let desktopReference;
+    try {
+      const referenceContext = await referenceBrowser.newContext({ viewport: { width: 1280, height: 800 } });
+      const referencePage = await referenceContext.newPage();
+      await referencePage.goto(new URL("harness/play.html", server.url).href, { waitUntil: "load" });
+      await referencePage.waitForFunction(() => window.ZeroHRuntime && window.ZeroHDesktop, null, {
+        timeout: 120000,
+      });
+      desktopReference = await referencePage.screenshot({ path: desktopReferencePath });
+    } finally {
+      await referenceBrowser.close();
+    }
+    summary.desktopReference = desktopReferencePath;
+
     // ---------- threaded boot (GATE B) ----------
     const threadedQuery = "harness/play.html?autostart=1"
       + (threadedPlayDist ? `&dist=${threadedPlayDist}` : "");
@@ -694,18 +767,24 @@ async function main() {
           module.FS.mkdir(current);
         } catch { /* exists */ }
       }
+      module.FS.writeFile(`${dir}/${markerName}`, new Uint8Array([0x4f, 0x4c, 0x44]));
+      // Start the same coordinator path used by the five-second interval, then
+      // mutate the save AFTER syncfs has begun. Exit must drain this older
+      // snapshot and issue a fresh trailing syncfs containing "SAVE!".
+      window.__threadedGatePreExitPersist = window.CnCPort.persistScheduledSaves(
+        "threaded-gate-periodic-race",
+      );
       module.FS.writeFile(`${dir}/${markerName}`, new Uint8Array([0x53, 0x41, 0x56, 0x45, 0x21]));
-      const persisted = await window.CnCPort.rpc("persistSaves", { reason: "threaded-gate" });
       const listed = await window.CnCPort.rpc("listSaves");
-      return { persisted, listed };
+      return { periodicStarted: true, listed };
     }, saveMarker);
     summary.saveWrite = {
-      persistedOk: saveWrite?.persisted?.ok === true,
+      periodicStarted: saveWrite?.periodicStarted === true,
       listedHere: (saveWrite?.listed?.files ?? []).some((file) => file.name === saveMarker),
     };
     checks.push([
-      "persistSaves + listSaves work on the threaded page",
-      summary.saveWrite.persistedOk && summary.saveWrite.listedHere,
+      "periodic save race is armed after syncfs starts",
+      summary.saveWrite.periodicStarted && summary.saveWrite.listedHere,
     ]);
 
     // ---------- clean launcher exit: compositor + worker teardown ----------
@@ -720,6 +799,11 @@ async function main() {
     const desktopAfterExitPath = join(shotDir, "p1c-desktop-after-exit.png");
     const desktopAfterExit = await page.screenshot({ path: desktopAfterExitPath, timeout: 60000 });
     const desktopPixels = await samplePageScreenshot(page, desktopAfterExit);
+    const desktopComparison = await compareUpperDesktopScreenshots(
+      page,
+      desktopAfterExit,
+      desktopReference,
+    );
     const exitDom = await page.evaluate(() => {
       const overlay = document.querySelector("#launchOverlay");
       const viewport = document.querySelector("#viewport");
@@ -739,13 +823,26 @@ async function main() {
       screenshot: desktopAfterExitPath,
       screenshotBytes: desktopAfterExit.length,
       pixels: desktopPixels,
+      referenceComparison: desktopComparison,
     };
     checks.push([
       "launcher exit is bounded and terminates the engine worker",
       exitElapsedMs < 45000
         && exitResult?.ok === true
         && exitResult?.close?.viewportRetired === true
-        && exitResult?.result?.engine?.workerTerminated !== false,
+        && exitResult?.result?.engine?.workerTerminated === true
+        && exitResult?.result?.engine?.pendingCommands === 0
+        && exitResult?.result?.engine?.pthreadRunning === 0
+        && exitResult?.result?.engine?.engineThreadStarted === false
+        && exitResult?.close?.finalSaveFresh === true
+        && exitResult?.close?.saves?.value?.sequence
+          > exitResult?.close?.saveScheduling?.value?.sequence
+        && JSON.stringify(exitResult?.close?.order) === JSON.stringify([
+          "save-scheduling-stopped",
+          "frame-loop-stopped",
+          "final-save-flushed",
+          "runtime-destroyed",
+        ]),
     ]);
     checks.push([
       "transferred game canvas is retired from the desktop compositor",
@@ -756,10 +853,82 @@ async function main() {
         && exitDom.centerInsideRuntime === false,
     ]);
     checks.push([
-      "post-exit desktop screenshot is visible (not a ghost game frame)",
+      "post-exit upper desktop shows sky instead of a ghost terrain frame",
       desktopAfterExit.length > 10 * 1024
         && desktopPixels.standardDeviation > 12
-        && desktopPixels.bottomBlueFraction > 0.45,
+        && desktopPixels.bottomBlueFraction > 0.45
+        && desktopPixels.upperEdgeSkyFraction > 0.35
+        && desktopPixels.upperEdgeTerrainFraction < 0.25
+        && desktopComparison.meanAbsoluteDifference < 18
+        && desktopComparison.changedFraction < 0.2,
+    ]);
+
+    // Exercise the user's actual desktop path: click the visible Zero Hour
+    // shortcut, observe the fresh document load, wait for autostart to reach a
+    // second real runtime, and close that runtime through the same durable
+    // shutdown sequence. This is deliberately not location.reload() from the
+    // test: the launcher's click handler owns the transparent reload contract.
+    const shortcut = page.locator("[data-game-shortcut]");
+    await shortcut.waitFor({ state: "visible", timeout: 30000 });
+    const reloaded = page.waitForEvent("domcontentloaded", { timeout: 120000 });
+    await shortcut.click();
+    await reloaded;
+    await page.waitForFunction(() => window.ZeroHRuntime?.started === true, null, {
+      timeout: BOOT_TIMEOUT_MS,
+      polling: 500,
+    });
+    const relaunchState = await page.evaluate(() => ({
+      started: window.ZeroHRuntime.started,
+      closed: window.ZeroHRuntime.closed,
+      shaderTier: window.CnCPort?.state?.threadedEngine?.shaderTier ?? null,
+      saveBytes: Array.from(window.CnCPort.engineModule().FS.readFile(
+        "/home/web_user/Command and Conquer Generals Zero Hour Data/Save/__threaded_gate_roundtrip.sav",
+      )),
+    }));
+    const relaunchExit = await page.evaluate(() => window.ZeroHRuntime.exit());
+    summary.cleanExit.relaunch = { state: relaunchState, exit: relaunchExit };
+    checks.push([
+      "desktop shortcut transparently relaunches and cleanly closes a fresh runtime",
+      relaunchState.started === true
+        && relaunchState.closed === false
+        && JSON.stringify(relaunchState.saveBytes) === JSON.stringify([0x53, 0x41, 0x56, 0x45, 0x21])
+        && relaunchExit?.ok === true
+        && relaunchExit?.result?.engine?.workerTerminated === true
+        && relaunchExit?.result?.engine?.pendingCommands === 0
+        && relaunchExit?.result?.engine?.pthreadRunning === 0
+        && relaunchExit?.result?.engine?.engineThreadStarted === false
+        && relaunchExit?.close?.viewportRetired === true
+        && relaunchExit?.close?.finalSaveFresh === true,
+    ]);
+
+    const warningShortcut = page.locator("[data-game-shortcut]");
+    await warningShortcut.waitFor({ state: "visible", timeout: 30000 });
+    const warningReload = page.waitForEvent("domcontentloaded", { timeout: 120000 });
+    await warningShortcut.click();
+    await warningReload;
+    await page.waitForFunction(() => window.ZeroHRuntime?.started === true, null, {
+      timeout: BOOT_TIMEOUT_MS,
+      polling: 500,
+    });
+    await page.evaluate(() => {
+      window.CnCPort.persistFinalSaves = () => Promise.resolve({
+        ok: false,
+        finalFresh: false,
+        error: "threaded gate injected final-save failure",
+      });
+    });
+    const failedSaveExit = await page.evaluate(() => window.ZeroHRuntime.exit());
+    const failedSaveWarning = await page.locator(".toast.warning").last().textContent();
+    summary.cleanExit.failedSave = { exit: failedSaveExit, warning: failedSaveWarning };
+    checks.push([
+      "final-save failure fails close and shows a visible warning",
+      failedSaveExit?.ok === false
+        && failedSaveExit?.close?.finalSaveFresh === false
+        && failedSaveExit?.result?.engine?.workerTerminated === true
+        && failedSaveExit?.result?.engine?.pendingCommands === 0
+        && failedSaveExit?.result?.engine?.pthreadRunning === 0
+        && /save warning/i.test(failedSaveWarning ?? "")
+        && /latest save/i.test(failedSaveWarning ?? ""),
     ]);
 
     await page.close();

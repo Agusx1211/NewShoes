@@ -697,18 +697,18 @@
 
   async function launchGame() {
     closeStartMenu();
-    if (!state.library) {
-      openApp("setup");
-      setWizardStep(1);
-      showToast("Original files required", "Add your original Generals and Zero Hour media before launching.", "warning");
-      return;
-    }
     if (window.ZeroHRuntime?.closing) {
       await window.ZeroHRuntime.exit();
     }
     if (window.ZeroHRuntime?.closed) {
       try { sessionStorage.setItem(RELAUNCH_AFTER_RELOAD_KEY, "1"); } catch { /* optional */ }
       window.location.reload();
+      return;
+    }
+    if (!state.library) {
+      openApp("setup");
+      setWizardStep(1);
+      showToast("Original files required", "Add your original Generals and Zero Hour media before launching.", "warning");
       return;
     }
     if (state.launching) return;
@@ -798,6 +798,11 @@
     if (event.key === "Escape") {
       closeStartMenu();
     }
+  });
+  window.addEventListener("cncport:runtimeclosed", () => {
+    document.querySelectorAll("[data-game-shortcut]").forEach((shortcut) => {
+      shortcut.hidden = false;
+    });
   });
 
   document.querySelector("#pickImageButton").addEventListener("click", async () => {
