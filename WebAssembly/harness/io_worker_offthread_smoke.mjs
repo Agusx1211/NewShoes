@@ -1,11 +1,14 @@
-// io_worker_offthread_smoke.mjs — proves harness/io_worker.mjs fetches bytes off
-// the main thread and that the main thread stays responsive while it does.
+// io_worker_offthread_smoke.mjs — proves harness/io_worker.mjs streams bytes
+// to OPFS off the main thread and that the main thread stays responsive
+// while it does.
 //
-// This is the first-slice verification for "move IO to its own thread": it does
-// NOT need the 1.6 GB archive set. It fetches a served file through the IO
-// worker while a main-thread rAF heartbeat runs, and asserts (a) the worker
-// returned the right bytes via a zero-copy Transferable, and (b) the main-thread
-// heartbeat kept ticking during the fetch (i.e. the fetch did not block it).
+// It does NOT need the 1.6 GB archive set. It streams a served file into
+// OPFS through the IO worker (fetchToOpfs — the shipping mount transport)
+// while a main-thread rAF heartbeat runs, and asserts (a) the streamed bytes
+// are byte-exact, (b) the main-thread heartbeat kept ticking during the
+// fetch and during a worker CPU-busy task, and (c) the retired whole-buffer
+// fetchArchive command is refused (deleted 2026-07-10 with the play-page
+// MEMFS pipeline).
 //
 // Run: node harness/io_worker_offthread_smoke.mjs
 
@@ -51,7 +54,7 @@ async function main() {
     // Assertions.
     const checks = [];
     checks.push(["worker reported ready", result.ready === true]);
-    checks.push(["worker returned bytes", Number(result.byteLength) > 0]);
+    checks.push(["worker streamed bytes to OPFS", Number(result.byteLength) > 0]);
     checks.push([
       "byte length matches served file",
       Number(result.byteLength) === fileStat.size,
@@ -64,8 +67,8 @@ async function main() {
       Number(result.heartbeatTicksDuringFetch) >= 1,
     ]);
     checks.push([
-      "worker fetch produced a detached (transferred) buffer",
-      result.transferred === true,
+      "retired whole-buffer fetchArchive command is refused",
+      result.fetchArchiveRefused === true,
     ]);
     // A 300ms busy task on the worker thread must NOT freeze the main-thread
     // heartbeat: at ~60fps we expect well over 5 ticks in 300ms. This is the
@@ -90,8 +93,8 @@ async function main() {
       "final progress covered the full payload",
       Number(result.progressMaxReceived) === fileStat.size,
     ]);
-    // fetchToOpfs checks: bytes streamed into OPFS must match the served file
-    // exactly, with the same progress-message contract as fetchArchive.
+    // Byte-exactness leg: bytes streamed into OPFS must match the served
+    // file exactly (read back through the async File API).
     checks.push([
       "fetchToOpfs wrote the full payload to OPFS",
       Number(opfsResult.bytesWritten) === fileStat.size,

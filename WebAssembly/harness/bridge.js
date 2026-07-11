@@ -5,11 +5,11 @@ import { createGdiHooks } from "./gdi_executor.mjs";
 // pthread in the single pool worker of the dist-threaded build, and the GL
 // executor runs in THAT worker realm against an OffscreenCanvas transferred
 // from #viewport. Every threaded divergence in this file branches on this
-// flag. THREADED IS THE DEFAULT ON THE PLAY PAGE (owner directive
-// 2026-07-10, Metal-verified — notes/p1-engine-thread.md GATE D);
-// ?threads=0 keeps the legacy single-threaded path as a transition escape
-// hatch. Harness/smoke pages keep the legacy default and opt in via
-// ?threads=1. Design + P1a/P1b mechanics: WebAssembly/notes/p1-engine-thread.md.
+// flag. THE PLAY PAGE IS THREADED-ONLY (owner directive 2026-07-10,
+// Metal-verified — notes/p1-engine-thread.md GATE D; the ?threads=0 legacy
+// escape hatch was deleted after the owner confirmed the HTTPS threaded
+// experience). Harness/smoke pages keep the non-threaded default and opt in
+// via ?threads=1. Design + P1a/P1b mechanics: WebAssembly/notes/p1-engine-thread.md.
 // The pthread build hard-requires SharedArrayBuffer, which Chrome only
 // exposes to cross-origin-isolated pages — and COOP/COEP headers are IGNORED
 // on untrustworthy origins (plain http:// over a LAN IP; only https:// and
@@ -7637,18 +7637,14 @@ function archivePathFromPayload(payload, baseDirectory = "/assets") {
 }
 
 // ---------------------------------------------------------------------------
-// IO worker client (first slice of "move IO to its own thread").
+// IO worker client.
 //
-// A dedicated module Web Worker (harness/io_worker.mjs) does the archive
-// `fetch()` + `arrayBuffer()` off the main thread and transfers the finished
-// bytes back (zero-copy). The main thread only performs the single
-// `FS.writeFile` memcpy into the wasm heap. This keeps the ~1.6 GB archive
-// download and its decode from contending with the WebGL/engine main thread.
-//
-// It is opt-outable: set `window.__cncIoWorker = false` (or `?ioworker=0` via
-// the page, handled by the caller) to force the legacy inline fetch. Any worker
-// failure transparently falls back to the inline path, so this never blocks a
-// mount that would otherwise succeed.
+// A dedicated module Web Worker (harness/io_worker.mjs) streams archive
+// downloads straight into OPFS (fetchToOpfs) for the threaded mount path and
+// garbage-collects per-boot OPFS namespaces. The MEMFS-era whole-buffer
+// `fetchArchive` transfer command was deleted 2026-07-10 with the play-page
+// legacy path; the surviving MEMFS mounts (harness/index.html legacy-boot
+// surface) fetch inline on the main thread.
 let ioWorkerInstance = null;
 let ioWorkerNextId = 1;
 let ioWorkerDisabled = false;
@@ -7742,15 +7738,6 @@ function ioWorkerRequest(request, transfer = [], onProgress = null) {
   });
 }
 
-// Fetch a whole archive off the main thread; resolves to a Uint8Array view of
-// the transferred ArrayBuffer. Rejects (so the caller falls back inline) if the
-// worker is unavailable or the fetch fails. `onProgress` (optional) receives
-// the worker's streamed { url, received, total } download progress messages.
-async function fetchArchiveBytesOffThread(url, onProgress = null) {
-  const response = await ioWorkerRequest({ kind: "fetchArchive", url }, [], onProgress);
-  return new Uint8Array(response.bytes);
-}
-
 // P2 "OPFS as the disk" (threaded mode): stream one archive straight into an
 // OPFS file on the IO worker. The bytes are NEVER RAM-resident anywhere —
 // each fetch chunk is written through a FileSystemSyncAccessHandle as it
@@ -7810,11 +7797,9 @@ function archiveFetchProgressReporter(archive, context = null) {
   };
 }
 
-// How many archives to download concurrently while mounting a set. The bytes
-// still hit MEMFS strictly sequentially in registration order; this only lets
-// the next fetches overlap the current write. `window.__cncFetchParallel =
-// false` (page: ?fetchpar=0) opts out; the worker-less fallback stays fully
-// sequential so the legacy inline path is unchanged.
+// How many archives the OPFS mount downloads concurrently (io_worker
+// fetchToOpfs streams). `window.__cncFetchParallel = false` (page:
+// ?fetchpar=0) opts out to strictly sequential downloads.
 const ARCHIVE_FETCH_PARALLELISM = 3;
 
 function archiveFetchParallelism() {
@@ -7828,20 +7813,12 @@ function archiveFetchParallelism() {
   return ioWorkerEnabled() ? ARCHIVE_FETCH_PARALLELISM : 1;
 }
 
-// Download one archive's bytes, preferring the IO worker (streamed, off the
-// main thread) and falling back to the inline main-thread fetch. Returns
-// { bytes, reader } or { error } for an HTTP failure (network errors throw,
-// matching the legacy inline path).
-async function fetchArchiveBytesWithFallback(archive, onProgress = null) {
-  if (ioWorkerEnabled()) {
-    try {
-      const bytes = await fetchArchiveBytesOffThread(archive.url, onProgress);
-      return { bytes, reader: "io-worker fetch" };
-    } catch (_workerError) {
-      // Fall back to the inline main-thread fetch below.
-    }
-  }
-
+// Download one archive's bytes with an inline main-thread fetch (MEMFS
+// mounts are the non-threaded harness/index.html legacy-boot surface only;
+// the threaded/OPFS mount path streams through the IO worker instead).
+// Returns { bytes, reader } or { error } for an HTTP failure (network errors
+// throw).
+async function fetchArchiveBytesInline(archive, onProgress = null) {
   const response = await fetch(archive.url);
   if (!response.ok) {
     return {
@@ -7877,27 +7854,15 @@ async function writeArchiveToMemfs(wasmModule, payload, baseDirectory = "/assets
     });
   };
 
-  let bytes = null;
-  let reader = "main-thread fetch";
-
-  if (options.prefetched) {
-    // mountArchives' bounded fetch-ahead pipeline already downloaded this one.
-    if (options.prefetched.error) {
-      return { error: options.prefetched.error };
-    }
-    bytes = options.prefetched.bytes;
-    reader = options.prefetched.reader;
-  } else {
-    const fetched = await fetchArchiveBytesWithFallback(
-      archive,
-      emitProgress ? archiveFetchProgressReporter(archive, progressContext) : null,
-    );
-    if (fetched.error) {
-      return { error: fetched.error };
-    }
-    bytes = fetched.bytes;
-    reader = fetched.reader;
+  const fetched = await fetchArchiveBytesInline(
+    archive,
+    emitProgress ? archiveFetchProgressReporter(archive, progressContext) : null,
+  );
+  if (fetched.error) {
+    return { error: fetched.error };
   }
+  const bytes = fetched.bytes;
+  const reader = fetched.reader;
 
   reportPhase("write", bytes.byteLength);
   // Give the page a task boundary to paint the "mounting <name>" state before
@@ -9709,46 +9674,18 @@ async function mountArchives(payload = {}) {
     return mountArchivesToOpfs(moduleResult.wasmModule, payload, archiveInputs, baseDirectory);
   }
 
-  // Bounded fetch-ahead pipeline: while archive N writes into MEMFS, archives
-  // N+1..N+2 already download (on the IO worker), so the network never idles
-  // behind the sequential main-thread memcpys. Registration order and the
-  // sequential writes are preserved exactly; only the fetches overlap. At most
-  // archiveFetchParallelism() (=3) archive buffers are alive at once: the one
-  // being written plus up to two in flight.
-  const prefetchWindow = archiveFetchParallelism();
+  // MEMFS mounts survive ONLY as the harness/index.html legacy-boot surface
+  // (non-threaded probe/gate pages and A/B-debug boots of the non-threaded
+  // dist). The play-page fetch-ahead pipeline that overlapped downloads with
+  // the sequential writes was deleted with the play-page legacy path
+  // (2026-07-10): archives fetch inline and mount strictly sequentially.
   const emitProgressEvents = payload.progressEvents !== false;
-  const parsedArchives = archiveInputs.map((input) => archivePathFromPayload(input, baseDirectory));
-  const prefetches = new Array(archiveInputs.length).fill(null);
-  const startPrefetch = (index) => {
-    if (index >= archiveInputs.length || prefetches[index] || parsedArchives[index].error) {
-      return;
-    }
-    const onProgress = emitProgressEvents
-      ? archiveFetchProgressReporter(parsedArchives[index], {
-        index,
-        count: archiveInputs.length,
-      })
-      : null;
-    // Capture rejections as values so an unawaited lookahead fetch can never
-    // become an unhandled rejection; the throw is replayed on await below.
-    prefetches[index] = fetchArchiveBytesWithFallback(parsedArchives[index], onProgress)
-      .catch((error) => ({ thrown: error }));
-  };
 
   const archives = [];
   const archiveProbes = [];
   for (let index = 0; index < archiveInputs.length; index += 1) {
-    for (let ahead = index; ahead < Math.min(index + prefetchWindow, archiveInputs.length); ahead += 1) {
-      startPrefetch(ahead);
-    }
     const input = archiveInputs[index];
-    const prefetched = prefetches[index] ? await prefetches[index] : null;
-    prefetches[index] = null; // release the buffer reference promptly
-    if (prefetched?.thrown) {
-      throw prefetched.thrown;
-    }
     const archive = await writeArchiveToMemfs(moduleResult.wasmModule, input, baseDirectory, {
-      prefetched,
       emitProgress: emitProgressEvents,
       progressContext: { index, count: archiveInputs.length },
     });
