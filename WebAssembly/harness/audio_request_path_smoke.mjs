@@ -145,7 +145,7 @@ function assertBrowserAudioRuntime(runtime, context) {
       && runtime.contextState === "running"
       && runtime.resumeAttempts >= 1
       && runtime.resumeSuccesses >= 1
-      && runtime.lastResumeTrigger === "canvas.pointerdown"
+      && runtime.lastResumeTrigger === "window.click"
       && runtime.lastResumeError === null,
     `${context} did not resume Web Audio`, runtime);
 }
@@ -309,7 +309,7 @@ try {
     return runtime?.resumeAttempts >= 1
       && runtime?.resumeSuccesses >= 1
       && runtime?.contextState === "running"
-      && runtime?.lastResumeTrigger === "canvas.pointerdown";
+      && runtime?.lastResumeTrigger === "window.click";
   }, null, { timeout: 5000 });
   const audioGestureResult = await page.evaluate(() => window.CnCPort.rpc("browserAudioRuntime"));
   expect(audioGestureResult.ok === true, "browser audio runtime RPC failed after gesture", audioGestureResult);

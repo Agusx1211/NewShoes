@@ -493,6 +493,22 @@ notes/p1-engine-thread.md "Default-readiness gap closure".
       start, 2D completions draining back through engineCall
       (cnc_port_mss_complete_sample) with zero "threaded audio completion
       failed" logs.
+- [x] **Cold-launch Web Audio activation no longer depends on visiting
+      Settings.** The launcher previously relied on a global `pointerdown`
+      listener and a `play.start` resume after asynchronous recorder/archive
+      setup; keyboard-activated DOM buttons were filtered before audio resume.
+      The browser bridge now retries on trusted `click`, resumes on `keydown`
+      before DOM/game-input filtering, observes context state transitions, and
+      keeps pure main-realm audio diagnostics reachable in threaded mode.
+      `verify:audio-startup-activation` launches three isolated Chromium
+      profiles with strict autoplay policy and proves the real launcher button
+      creates one running `AudioContext`, one connected four-bus mixer, an
+      advancing audio clock, preserved mute/volume settings, and no Settings
+      navigation. The asset-backed real audio event gate still proves decoded
+      non-zero samples schedule and complete through the engine path. The same
+      gate served from the unfixed `fcc143c4` parent exits 1 at the immediate
+      post-key assertion (`launch activation returned before creating the
+      AudioContext`), before the late `play.start` fallback can mask the bug.
 - [x] **Save/load round trip threaded**: persistSaves/listSaves stay
       main-side (IDBFS mounts on the MAIN runtime; engine-thread FS writes
       proxy to main); gate writes a marker .sav into the real save dir,

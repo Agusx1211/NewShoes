@@ -262,7 +262,7 @@ const steps = [
       expect(payload.path === "browser-audio-request-path"
           && payload.archiveCount >= 17
           && payload.audioContext?.state === "running"
-          && payload.audioContext?.resumeTrigger === "canvas.pointerdown"
+          && payload.audioContext?.resumeTrigger === "window.click"
           && payload.mixer?.source === "browser Web Audio runtime mixer GainNode proof"
           && payload.mixer?.nodeGraph?.includes("GainNode")
           && payload.mixer?.nodeGraph?.includes("AudioDestinationNode")

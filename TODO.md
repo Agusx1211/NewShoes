@@ -687,7 +687,16 @@ reproduce in the harness and verify each fix with a screenshot / state check.
       as a fresh-launch AudioContext/gesture-resume ordering regression and
       compare the initial launch gesture with the later Settings pointer
       gesture. The launcher Game & Display deep link does not resume or mutate
-      runtime audio and must not become a workaround for this bug.
+      runtime audio and must not become a workaround for this bug. 2026-07-11:
+      the startup-ordering regression is fixed on `fix/audio-startup-regression`:
+      trusted click and DOM-control keydown now resume before async launch work,
+      threaded main-side audio diagnostics are queryable, and three clean
+      strict-autoplay Chromium profiles reached a running singleton context +
+      connected singleton mixer without opening Settings. Keep this parent item
+      open for the remaining natural gameplay SFX/EVA/unit-speech coverage.
+      Follow-up: `verify:audio-browser-bridge-contract-frontier` currently fails
+      only because seven absolute `MilesAudioManager.cpp` line anchors predate
+      later source edits; refresh those stale verifier expectations separately.
       Related: [[frontier-2026-07-05-skirmish-sweep]] audio bug.
 - [ ] **Text renders truncated** — some strings show only one letter or a few
       letters instead of the full text. Investigate the text/font glyph
