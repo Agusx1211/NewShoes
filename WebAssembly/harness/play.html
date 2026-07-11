@@ -259,13 +259,13 @@
                 <button type="button" class="toolbar-button" id="downloadFileButton"><svg><use href="#i-download"/></svg> Download</button>
                 <button type="button" class="toolbar-button" id="renameFileButton">Rename</button>
                 <button type="button" class="toolbar-button danger-text" id="deleteFileButton">Delete</button>
-                <span class="view-toggle"><button type="button" class="is-selected">☷</button><button type="button">▦</button></span>
+                <span class="view-toggle" aria-label="File view"><button type="button" class="is-selected" data-file-view="list" aria-label="List view" aria-pressed="true">☷</button><button type="button" data-file-view="grid" aria-label="Grid view" aria-pressed="false">▦</button></span>
               </div>
               <div class="file-list-head"><span></span><span>Name</span><span>Type</span><span>Modified</span><span>Size</span><span></span></div>
               <div id="fileList" class="file-list" role="list"></div>
               <div id="fileEmptyState" class="file-empty" hidden><svg><use href="#i-folder"/></svg><strong>This folder is empty</strong><span>Create a folder or import a file.</span></div>
               <footer class="file-status"><span id="fileCount">0 items</span><span id="selectedFileStatus">Select a file or folder</span></footer>
-              <div id="filePrompt" class="file-prompt" hidden>
+              <div id="filePrompt" class="file-prompt" role="dialog" aria-modal="true" aria-labelledby="filePromptLabel" hidden>
                 <form id="filePromptForm"><label id="filePromptLabel" for="filePromptInput">Folder name</label><input id="filePromptInput" autocomplete="off" maxlength="80"><div><button type="button" class="button secondary small" id="filePromptCancel">Cancel</button><button type="submit" class="button primary small">OK</button></div></form>
               </div>
             </section>
@@ -293,9 +293,9 @@
           <header class="titlebar"><div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-arcade"/></svg></span><span>ZeroH Arcade</span></div><div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div></header>
           <div class="arcade-shell">
             <header class="arcade-header"><div><svg><use href="#i-system"/></svg><span>ZEROH</span><strong>FIELD ARCADE</strong></div><p>AUTHORIZED DOWNTIME PROTOCOL</p></header>
-            <nav class="arcade-tabs"><button type="button" class="is-selected" data-arcade-tab="minefield">Minefield</button><button type="button" data-arcade-tab="signals">Signal Match</button></nav>
-            <section class="arcade-panel is-visible" data-arcade-panel="minefield"><div class="game-instructions"><div><strong>TACTICAL MINEFIELD</strong><span>Clear the sector. Right-click to flag a suspected mine.</span></div><div class="game-counters"><span>MINES <b id="mineCount">10</b></span><button id="mineReset" type="button">🙂</button><span>TIME <b id="mineTimer">000</b></span></div></div><div id="mineGrid" class="mine-grid" aria-label="Minefield game board"></div></section>
-            <section class="arcade-panel" data-arcade-panel="signals"><div class="game-instructions"><div><strong>SIGNAL MATCH</strong><span>Pair encrypted signals before your memory gives out.</span></div><div class="game-counters"><span>MOVES <b id="memoryMoves">0</b></span><button id="memoryReset" type="button">New grid</button><span>PAIRS <b id="memoryPairs">0/8</b></span></div></div><div id="memoryGrid" class="memory-grid" aria-label="Signal matching game board"></div></section>
+            <nav class="arcade-tabs" role="tablist" aria-label="Arcade games"><button id="minefieldTab" type="button" role="tab" aria-controls="minefieldPanel" aria-selected="true" class="is-selected" data-arcade-tab="minefield">Minefield</button><button id="signalsTab" type="button" role="tab" aria-controls="signalsPanel" aria-selected="false" tabindex="-1" data-arcade-tab="signals">Signal Match</button></nav>
+            <section id="minefieldPanel" class="arcade-panel is-visible" role="tabpanel" aria-labelledby="minefieldTab" data-arcade-panel="minefield"><div class="game-instructions"><div><strong>TACTICAL MINEFIELD</strong><span>Clear the sector. Right-click to flag a suspected mine.</span></div><div class="game-counters"><span>MINES <b id="mineCount">10</b></span><button id="mineReset" type="button" aria-label="Reset minefield">🙂</button><span>TIME <b id="mineTimer">000</b></span></div></div><div id="mineGrid" class="mine-grid" aria-label="Minefield game board"></div></section>
+            <section id="signalsPanel" class="arcade-panel" role="tabpanel" aria-labelledby="signalsTab" data-arcade-panel="signals"><div class="game-instructions"><div><strong>SIGNAL MATCH</strong><span>Pair encrypted signals before your memory gives out.</span></div><div class="game-counters"><span>MOVES <b id="memoryMoves">0</b></span><button id="memoryReset" type="button">New grid</button><span>PAIRS <b id="memoryPairs">0/8</b></span></div></div><div id="memoryGrid" class="memory-grid" aria-label="Signal matching game board"></div></section>
           </div>
         </article>
 
@@ -320,12 +320,12 @@
             <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
           </header>
           <div class="settings-body">
-            <aside class="settings-nav" aria-label="Settings sections">
-              <button type="button" class="is-selected" data-settings-tab="appearance"><svg><use href="#i-image"/></svg><span>Appearance</span></button>
-              <button type="button" data-settings-tab="multiplayer"><svg><use href="#i-globe"/></svg><span>Multiplayer</span></button>
-              <button type="button" data-settings-tab="hardware"><svg><use href="#i-drive"/></svg><span>Hardware &amp; Browser</span></button>
+            <aside class="settings-nav" role="tablist" aria-label="Settings sections">
+              <button id="appearanceTab" type="button" role="tab" aria-controls="appearancePanel" class="is-selected" data-settings-tab="appearance"><svg><use href="#i-image"/></svg><span>Appearance</span></button>
+              <button id="multiplayerTab" type="button" role="tab" aria-controls="multiplayerPanel" data-settings-tab="multiplayer"><svg><use href="#i-globe"/></svg><span>Multiplayer</span></button>
+              <button id="hardwareTab" type="button" role="tab" aria-controls="hardwarePanel" data-settings-tab="hardware"><svg><use href="#i-drive"/></svg><span>Hardware &amp; Browser</span></button>
             </aside>
-            <section class="settings-panel" data-settings-panel="appearance">
+            <section id="appearancePanel" class="settings-panel" role="tabpanel" aria-labelledby="appearanceTab" data-settings-panel="appearance">
               <p class="eyebrow">APPEARANCE</p><h1>Make it feel like home</h1>
               <div class="setting-block"><div><strong>Desktop landscape</strong><span>Choose the backdrop for your command center.</span></div><div class="wallpaper-options"><button type="button" class="wallpaper-swatch command is-selected" data-set-wallpaper="command" aria-label="Command wallpaper"></button><button type="button" class="wallpaper-swatch meadow" data-set-wallpaper="meadow" aria-label="Meadow wallpaper"></button><button type="button" class="wallpaper-swatch dusk" data-set-wallpaper="dusk" aria-label="Dusk wallpaper"></button><button type="button" class="wallpaper-swatch slate" data-set-wallpaper="slate" aria-label="Slate wallpaper"></button></div></div>
               <div class="setting-block"><div><strong>Launcher identity</strong><span>Review 20 original ZeroH marks at desktop and taskbar scale.</span></div><button type="button" class="identity-lab-button" data-open-logo-lab>Open Identity Lab</button></div>
@@ -334,7 +334,7 @@
               <label class="setting-block toggle-setting"><div><strong>Reduce motion</strong><span>Minimize animations and transitions.</span></div><input id="motionToggle" type="checkbox"><span class="toggle"></span></label>
               <button id="resetConceptButton" type="button" class="text-button reset-link">Reset ZeroH data</button>
             </section>
-            <section class="settings-panel multiplayer-panel" data-settings-panel="multiplayer" hidden>
+            <section id="multiplayerPanel" class="settings-panel multiplayer-panel" role="tabpanel" aria-labelledby="multiplayerTab" data-settings-panel="multiplayer" hidden>
               <p class="eyebrow">PEER-TO-PEER UPLINK</p><h1>Multiplayer connection</h1>
               <p class="multiplayer-copy">Join the same signaling room before launching, then use Multiplayer → LAN inside the original game UI. Game traffic travels directly over WebRTC.</p>
               <label class="network-field" for="networkRoom"><span><strong>Room</strong><small>Leave blank for offline play</small></span><input id="networkRoom" type="text" maxlength="80" placeholder="shared room name"></label>
@@ -347,7 +347,7 @@
               </details>
               <p id="networkStatus" class="network-status" aria-live="polite">Offline. Enter a shared room to enable WebRTC multiplayer.</p>
             </section>
-            <section class="settings-panel hardware-panel" data-settings-panel="hardware" hidden>
+            <section id="hardwarePanel" class="settings-panel hardware-panel" role="tabpanel" aria-labelledby="hardwareTab" data-settings-panel="hardware" hidden>
               <header class="hardware-heading">
                 <div><p class="eyebrow">SYSTEM PROFILE</p><h1>Hardware &amp; Browser</h1><p>A live, local capability report for the WebAssembly runtime. No details leave this device.</p></div>
                 <div class="hardware-actions"><button type="button" id="copyHardwareReport">Copy report</button><button type="button" id="refreshHardwareReport">↻ Refresh</button></div>

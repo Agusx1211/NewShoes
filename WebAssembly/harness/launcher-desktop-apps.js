@@ -38,6 +38,7 @@
   let folderHistory = ["root"];
   let folderHistoryIndex = 0;
   let filePromptMode = "folder";
+  let fileView = "list";
 
   const nodeById = (id) => fileSystem.nodes.find((node) => node.id === id);
   const childrenOf = (id) => fileSystem.nodes.filter((node) => node.parent === id);
@@ -136,6 +137,14 @@
       .filter((node) => node.name.toLowerCase().includes(query))
       .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "folder" ? -1 : 1));
     const list = document.querySelector("#fileList");
+    list.classList.toggle("is-grid", fileView === "grid");
+    list.hidden = nodes.length === 0;
+    document.querySelector(".file-list-head").hidden = fileView === "grid" || nodes.length === 0;
+    document.querySelectorAll("[data-file-view]").forEach((button) => {
+      const selected = button.dataset.fileView === fileView;
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    });
     list.replaceChildren();
 
     nodes.forEach((node) => {
@@ -143,6 +152,8 @@
       row.className = `file-row${node.id === selectedNodeId ? " is-selected" : ""}`;
       row.dataset.nodeId = node.id;
       row.role = "listitem";
+      row.tabIndex = 0;
+      row.setAttribute("aria-label", `${node.name}, ${typeLabel(node)}`);
       row.innerHTML = `<span><i class="file-check"></i></span><span class="file-name"><svg><use href="${nodeIcon(node)}"/></svg><strong></strong></span><span><i class="file-type">${typeLabel(node)}</i></span><span>${formatModified(node.modified)}</span><span>${node.type === "folder" ? "—" : formatBytes(node.size)}</span><button type="button" class="file-download" aria-label="${node.type === "folder" ? "Open folder" : "Download file"}"><svg><use href="${node.type === "folder" ? "#i-folder" : "#i-download"}"/></svg></button>`;
       row.querySelector("strong").textContent = node.name;
       row.addEventListener("click", (event) => {
@@ -151,6 +162,15 @@
         renderExplorer();
       });
       row.addEventListener("dblclick", () => openNode(node));
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") openNode(node);
+        if (event.key === " ") {
+          event.preventDefault();
+          selectedNodeId = selectedNodeId === node.id ? null : node.id;
+          renderExplorer();
+          document.querySelector(`[data-node-id="${CSS.escape(node.id)}"]`)?.focus();
+        }
+      });
       row.querySelector(".file-download").addEventListener("click", () => node.type === "folder" ? navigateTo(node.id) : downloadNode(node));
       list.append(row);
     });
@@ -182,6 +202,12 @@
     renderExplorer();
   }
 
+  function setFileView(view) {
+    if (view !== "list" && view !== "grid") return;
+    fileView = view;
+    renderExplorer();
+  }
+
   function openNode(node) {
     if (node.type === "folder") return navigateTo(node.id);
     if (isTextNode(node)) return openTextFile(node.id);
@@ -196,7 +222,8 @@
       const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
       return new Blob([bytes], { type: mime });
     }
-    return new Blob([node.content || `ZeroH placeholder for ${node.name}\n`], { type: isTextNode(node) ? "text/plain" : "application/octet-stream" });
+    if (typeof node.content !== "string") return null;
+    return new Blob([node.content], { type: isTextNode(node) ? "text/plain" : "application/octet-stream" });
   }
 
   function downloadNode(node) {
@@ -213,6 +240,10 @@
       name = `${node.name}.zeroh-folder.json`;
     } else {
       blob = blobForNode(node);
+      if (!blob) {
+        desktop.showToast("File data unavailable", `${node.name} has no retained browser-local content.`, "warning");
+        return;
+      }
     }
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -472,6 +503,8 @@
       button.type = "button";
       button.className = `mine-cell${cell.revealed ? " is-revealed" : ""}${cell.flagged ? " is-flagged" : ""}${cell.revealed && cell.mine ? " is-mine" : ""}${cell.revealed && cell.nearby ? ` n${cell.nearby}` : ""}`;
       button.textContent = cell.flagged ? "⚑" : cell.revealed && cell.mine ? "✹" : cell.revealed && cell.nearby ? String(cell.nearby) : "";
+      button.setAttribute("aria-label", cell.flagged ? "Flagged cell" : !cell.revealed ? "Hidden cell"
+        : cell.mine ? "Revealed mine" : cell.nearby ? `${cell.nearby} adjacent mines` : "Clear cell");
       button.addEventListener("click", () => revealMineCell(index));
       button.addEventListener("contextmenu", (event) => { event.preventDefault(); toggleMineFlag(index); });
       grid.append(button);
@@ -542,6 +575,7 @@
   // Signal Match
   const MEMORY_SIGNALS = ["◆", "●", "▲", "✦", "⬢", "⌁", "✚", "◈"];
   let memoryState;
+  let memoryGeneration = 0;
 
   function shuffle(values) {
     for (let index = values.length - 1; index > 0; index -= 1) {
@@ -559,6 +593,7 @@
       button.type = "button";
       button.className = `memory-card${card.revealed || card.matched ? " is-revealed" : ""}${card.matched ? " is-matched" : ""}`;
       button.innerHTML = `<span>${card.revealed || card.matched ? card.signal : "?"}</span>`;
+      button.setAttribute("aria-label", card.matched ? `Matched ${card.signal}` : card.revealed ? `Signal ${card.signal}` : "Hidden signal");
       button.addEventListener("click", () => revealMemoryCard(index));
       grid.append(button);
     });
@@ -587,7 +622,9 @@
       renderMemory();
     } else {
       memoryState.locked = true;
+      const generation = memoryGeneration;
       window.setTimeout(() => {
+        if (generation !== memoryGeneration) return;
         memoryState.cards[first].revealed = false;
         memoryState.cards[second].revealed = false;
         memoryState.open = [];
@@ -598,6 +635,7 @@
   }
 
   function resetMemory() {
+    memoryGeneration += 1;
     memoryState = { cards: shuffle([...MEMORY_SIGNALS, ...MEMORY_SIGNALS]).map((signal) => ({ signal, revealed: false, matched: false })), open: [], moves: 0, pairs: 0, locked: false };
     renderMemory();
   }
@@ -611,11 +649,15 @@
   document.querySelector("#newFolderButton").addEventListener("click", () => openFilePrompt("folder"));
   document.querySelector("#renameFileButton").addEventListener("click", () => openFilePrompt("rename"));
   document.querySelector("#deleteFileButton").addEventListener("click", deleteSelectedNode);
+  document.querySelectorAll("[data-file-view]").forEach((button) => button.addEventListener("click", () => setFileView(button.dataset.fileView)));
   document.querySelector("#downloadFileButton").addEventListener("click", () => { const node = nodeById(selectedNodeId); if (node) downloadNode(node); else desktop.showToast("Select an item", "Choose something to download.", "warning"); });
   document.querySelector("#importFileButton").addEventListener("click", () => document.querySelector("#fileInput").click());
   document.querySelector("#fileInput").addEventListener("change", async (event) => { if (event.target.files.length) await importFiles([...event.target.files]); event.target.value = ""; });
   document.querySelector("#filePromptCancel").addEventListener("click", closeFilePrompt);
   document.querySelector("#filePromptForm").addEventListener("submit", (event) => { event.preventDefault(); submitFilePrompt(); });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !document.querySelector("#filePrompt").hidden) closeFilePrompt();
+  });
 
   // Bind Notepad.
   const editor = document.querySelector("#notepadEditor");
@@ -645,10 +687,26 @@
   document.querySelectorAll(".browser-favorites [data-browser-page]").forEach((button) => button.addEventListener("click", () => navigateBrowser(button.dataset.browserPage)));
 
   // Bind Arcade.
-  document.querySelectorAll("[data-arcade-tab]").forEach((button) => button.addEventListener("click", () => {
-    document.querySelectorAll("[data-arcade-tab]").forEach((tab) => tab.classList.toggle("is-selected", tab === button));
+  const arcadeTabs = [...document.querySelectorAll("[data-arcade-tab]")];
+  function selectArcadeTab(button) {
+    arcadeTabs.forEach((tab) => {
+      const selected = tab === button;
+      tab.classList.toggle("is-selected", selected);
+      tab.setAttribute("aria-selected", String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+    });
     document.querySelectorAll("[data-arcade-panel]").forEach((panel) => panel.classList.toggle("is-visible", panel.dataset.arcadePanel === button.dataset.arcadeTab));
-  }));
+  }
+  arcadeTabs.forEach((button, index) => {
+    button.addEventListener("click", () => selectArcadeTab(button));
+    button.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      const next = arcadeTabs[(index + (event.key === "ArrowRight" ? 1 : -1) + arcadeTabs.length) % arcadeTabs.length];
+      next.focus();
+      selectArcadeTab(next);
+    });
+  });
   document.querySelector("#mineReset").addEventListener("click", resetMinefield);
   document.querySelector("#memoryReset").addEventListener("click", resetMemory);
 

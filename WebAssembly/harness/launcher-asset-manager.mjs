@@ -3,6 +3,7 @@ const OLD_INSTALLED_KEY = "zeroh-installed-library.v1";
 const LIBRARY_VERSION = 2;
 const HANDLE_DB = "zeroh-asset-handles";
 const HANDLE_STORE = "sources";
+const LIBRARY_MUTATION_LOCK = "zeroh-library-mutation";
 const REQUIRED_ARCHIVE_NAMES = [
   "INIZH.big", "EnglishZH.big", "WindowZH.big", "MapsZH.big", "MusicZH.big",
   "GensecZH.big", "TerrainZH.big", "TexturesZH.big", "W3DZH.big",
@@ -230,7 +231,16 @@ class AssetLibrary {
   }
 
   async prepare(mode, onProgress = null) {
+    if (mode === "install" && navigator.locks?.request) {
+      return navigator.locks.request(LIBRARY_MUTATION_LOCK, { mode: "exclusive" },
+        () => this.prepareUnlocked(mode, onProgress));
+    }
+    return this.prepareUnlocked(mode, onProgress);
+  }
+
+  async prepareUnlocked(mode, onProgress = null) {
     if (!this.scanResult?.ok) throw new Error("Select a complete Generals + Zero Hour asset source first");
+    let persistenceGranted = null;
     if (mode === "install") {
       const estimate = await navigator.storage?.estimate?.();
       const available = Number(estimate?.quota || 0) - Number(estimate?.usage || 0);
@@ -240,7 +250,7 @@ class AssetLibrary {
       if (available > 0 && available < required) {
         throw new Error(`Browser storage needs about ${formatBytes(required)} free; ${formatBytes(available)} is available`);
       }
-      await navigator.storage?.persist?.().catch(() => false);
+      persistenceGranted = await navigator.storage?.persist?.().catch(() => false) ?? false;
     }
     const namespaceRoot = await this.allocateNamespace();
     const installRoot = mode === "install"
@@ -255,6 +265,12 @@ class AssetLibrary {
       }, onProgress);
       this.preparedArchives = result.archives;
       result.effectiveMode = mode;
+      if (mode === "install" && !persistenceGranted) {
+        result.warning = {
+          title: "Persistent storage not granted",
+          message: "The library is installed, but this browser may reclaim it automatically when storage is low.",
+        };
+      }
       if (mode === "install" && result.installed) {
         const manifest = {
           version: LIBRARY_VERSION,
@@ -273,7 +289,10 @@ class AssetLibrary {
           await storeHandles(this.sourceHandles);
         } catch {
           result.effectiveMode = "once";
-          result.warning = "This browser could not retain the source permission; files remain ready for this session.";
+          result.warning = {
+            title: "Source permission not retained",
+            message: "This browser could not retain the source permission; files remain ready for this session.",
+          };
         }
       }
       return result;
@@ -296,6 +315,8 @@ class AssetLibrary {
           || REQUIRED_ARCHIVE_NAMES.some((name) => !names.has(name))) return null;
       if (value.archives.some((archive) => archive.opfsPath !== `${value.root}/${archive.name}`
           || !Number.isSafeInteger(archive.bytes) || archive.bytes <= 16)) return null;
+      const totalBytes = value.archives.reduce((sum, archive) => sum + archive.bytes, 0);
+      if (!Number.isSafeInteger(value.totalBytes) || value.totalBytes !== totalBytes) return null;
       return value;
     } catch {
       return null;
@@ -355,6 +376,14 @@ class AssetLibrary {
   }
 
   async forget() {
+    if (navigator.locks?.request) {
+      return navigator.locks.request(LIBRARY_MUTATION_LOCK, { mode: "exclusive" },
+        () => this.forgetUnlocked());
+    }
+    return this.forgetUnlocked();
+  }
+
+  async forgetUnlocked() {
     await this.discardPreparedArchives();
     this.preparedArchives = null;
     this.scanResult = null;

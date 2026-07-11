@@ -328,8 +328,11 @@
       lastReport = await collectReport();
       renderReport(lastReport);
       hasScanned = true;
+      return true;
     } catch (error) {
+      lastReport = null;
       reportRoot.innerHTML = `<div class="hardware-error"><strong>Scan failed</strong><span>${error.message}</span></div>`;
+      return false;
     } finally {
       refreshButton.disabled = false;
       refreshButton.textContent = "↻ Refresh";
@@ -338,7 +341,7 @@
   }
 
   async function copyReport() {
-    if (!lastReport) await refreshReport();
+    if (!lastReport && !await refreshReport()) return;
     const text = JSON.stringify(lastReport, null, 2);
     try {
       if (navigator.clipboard?.writeText) {
@@ -364,12 +367,23 @@
       const selected = tab.dataset.settingsTab === tabName;
       tab.classList.toggle("is-selected", selected);
       tab.setAttribute("aria-selected", String(selected));
+      tab.tabIndex = selected ? 0 : -1;
     });
     panels.forEach((panel) => { panel.hidden = panel.dataset.settingsPanel !== tabName; });
     if (tabName === "hardware" && !hasScanned) refreshReport();
   }
 
   tabs.forEach((tab) => tab.addEventListener("click", () => selectTab(tab.dataset.settingsTab)));
+  tabs.forEach((tab, index) => tab.addEventListener("keydown", (event) => {
+    const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+    if (!keys.includes(event.key)) return;
+    event.preventDefault();
+    const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1
+      : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    tabs[nextIndex].focus();
+    selectTab(tabs[nextIndex].dataset.settingsTab);
+  }));
   refreshButton.addEventListener("click", refreshReport);
   copyButton.addEventListener("click", copyReport);
+  selectTab(tabs.find((tab) => tab.classList.contains("is-selected"))?.dataset.settingsTab || "appearance");
 })();

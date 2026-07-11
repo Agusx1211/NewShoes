@@ -490,6 +490,12 @@ function fail(message, detail) {
   startButton.disabled = false;
 }
 
+function launchFailure(message, detail) {
+  const error = new Error(message);
+  error.launchDetail = detail;
+  return error;
+}
+
 async function waitForRpc() {
   for (let i = 0; i < 600; i += 1) {
     if (window.CnCPort?.rpc) {
@@ -548,8 +554,7 @@ async function runFrameLoop(rpc) {
 async function runThreadedFrameLoop(rpc, clientFps, logicFps) {
   const start = await rpc("threadedStartLoop", { clientFps, logicFps });
   if (start?.ok !== true) {
-    fail("threaded frame loop failed to start", start);
-    return;
+    throw launchFailure("threaded frame loop failed to start", start);
   }
   console.log("[play] threaded frame loop started", start.pacing ?? start);
   let previous = null;
@@ -585,7 +590,7 @@ async function start() {
         ? `redirecting to ${detail.target}`
         : threadedBlockedMessage(detail));
     startButton.disabled = true;
-    return;
+    throw launchFailure("engine-thread mode unavailable on this origin", detail);
   }
   startButton.disabled = true;
   try {
@@ -677,8 +682,7 @@ async function start() {
       archives,
     });
     if (mount?.archiveSet?.archiveCount !== archives.length) {
-      fail("archive mount failed", mount?.error ?? mount?.archiveSet);
-      return;
+      throw launchFailure("archive mount failed", mount?.error ?? mount?.archiveSet);
     }
     issueRecorder.setSessionContext({
       phase: "archives-mounted",
@@ -732,8 +736,7 @@ async function start() {
     console.log("[play] boot: realEngineInit resolved",
       { ok: init?.ok, initReturned: init?.frontier?.initReturned });
     if (init?.ok !== true || init?.frontier?.initReturned !== true) {
-      fail("real engine init failed", init);
-      return;
+      throw launchFailure("real engine init failed", init);
     }
     issueRecorder.setSessionContext({
       phase: "engine-initialized",
@@ -775,7 +778,6 @@ async function start() {
       engineStage.textContent = "✓ Engine";
       engineStage.classList.add("is-done");
     }
-    runtimeStarted = true;
     issueRecorder.setSessionContext({ phase: "running" });
     viewportCanvas.focus();
     initDisplayControls();
@@ -785,20 +787,34 @@ async function start() {
     // the archive download.
     await applyDisplaySettings("boot");
     if (new URLSearchParams(window.location.search).get("replay") === "1") {
+      runtimeStarted = true;
       issueRecorder.setSessionContext({ phase: "replay-ready" });
       return;
     }
     await runFrameLoop(rpc);
+    runtimeStarted = true;
   } catch (error) {
-    fail(error?.message ?? String(error), error);
+    fail(error?.message ?? String(error), error?.launchDetail ?? error);
+    throw error;
   }
 }
 
-startButton.addEventListener("click", () => {
-  void start();
-});
-
 let runtimeStarted = false;
+let runtimeStartPromise = null;
+
+function beginRuntimeStart() {
+  if (runtimeStarted) return Promise.resolve();
+  if (!runtimeStartPromise) {
+    runtimeStartPromise = start().finally(() => {
+      if (!runtimeStarted) runtimeStartPromise = null;
+    });
+  }
+  return runtimeStartPromise;
+}
+
+startButton.addEventListener("click", () => {
+  void beginRuntimeStart().catch(() => {});
+});
 
 async function launchFromDesktop() {
   overlay.hidden = false;
@@ -806,8 +822,7 @@ async function launchFromDesktop() {
     overlay.classList.remove("is-running");
     document.querySelector("#launchLoader")?.removeAttribute("hidden");
     viewportCanvas.hidden = true;
-    if (!startButton.disabled) startButton.click();
-    return;
+    return beginRuntimeStart();
   }
   overlay.classList.add("is-running");
   viewportCanvas.hidden = false;
@@ -841,7 +856,7 @@ window.ZeroHRuntime = {
 };
 
 if (queryParams.get("autostart") === "1") {
-  void start();
+  void beginRuntimeStart().catch(() => {});
 }
 
 // --- "Build: N min ago" indicator -------------------------------------------

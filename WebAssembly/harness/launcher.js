@@ -85,13 +85,32 @@
     document.querySelectorAll(".window").forEach((windowEl) => {
       const saved = state.windowLayout[windowEl.dataset.app];
       if (!saved) return;
-      if (Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
+      if (saved.maximized) {
+        windowEl.classList.add("is-maximized");
+        windowEl.style.removeProperty("left");
+        windowEl.style.removeProperty("top");
+        windowEl.style.transform = "none";
+      } else if (Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
         windowEl.style.left = `${saved.left}px`;
         windowEl.style.top = `${saved.top}px`;
         windowEl.style.transform = "none";
       }
-      windowEl.classList.toggle("is-maximized", Boolean(saved.maximized));
     });
+  }
+
+  function constrainWindow(windowEl) {
+    if (window.innerWidth <= 760 || windowEl.classList.contains("is-maximized")) return;
+    const layerRect = document.querySelector("#windowLayer").getBoundingClientRect();
+    const windowRect = windowEl.getBoundingClientRect();
+    const currentLeft = windowRect.left - layerRect.left;
+    const currentTop = windowRect.top - layerRect.top;
+    const left = Math.min(Math.max(0, currentLeft), Math.max(0, layerRect.width - windowRect.width));
+    const top = Math.min(Math.max(0, currentTop), Math.max(0, layerRect.height - windowRect.height));
+    if (Math.abs(left - currentLeft) > 0.5 || Math.abs(top - currentTop) > 0.5) {
+      windowEl.style.left = `${Math.round(left)}px`;
+      windowEl.style.top = `${Math.round(top)}px`;
+      windowEl.style.transform = "none";
+    }
   }
 
   function showToast(title, message, kind = "success") {
@@ -158,6 +177,7 @@
     const wasOpen = windowEl.classList.contains("is-open");
     windowEl.classList.add("is-open");
     windowEl.classList.remove("is-minimized");
+    constrainWindow(windowEl);
     focusWindow(windowEl);
     closeStartMenu();
     if (!wasOpen) renderTaskbar();
@@ -184,9 +204,27 @@
   }
 
   function toggleMaximize(windowEl) {
-    windowEl.classList.toggle("is-maximized");
+    const maximizing = !windowEl.classList.contains("is-maximized");
+    if (maximizing) {
+      saveWindowLayout(windowEl);
+      windowEl.classList.add("is-maximized");
+      windowEl.style.removeProperty("left");
+      windowEl.style.removeProperty("top");
+      windowEl.style.transform = "none";
+      state.windowLayout[windowEl.dataset.app].maximized = true;
+      localStorage.setItem("zeroh-window-layout", JSON.stringify(state.windowLayout));
+    } else {
+      windowEl.classList.remove("is-maximized");
+      const saved = state.windowLayout[windowEl.dataset.app];
+      if (Number.isFinite(saved?.left) && Number.isFinite(saved?.top)) {
+        windowEl.style.left = `${saved.left}px`;
+        windowEl.style.top = `${saved.top}px`;
+      }
+      windowEl.style.transform = "none";
+      constrainWindow(windowEl);
+      saveWindowLayout(windowEl);
+    }
     focusWindow(windowEl);
-    saveWindowLayout(windowEl);
   }
 
   function renderTaskbar() {
@@ -416,7 +454,7 @@
       showToast("Library ready", state.storageMode === "install"
         ? "Original assets are installed in private browser storage."
         : "Zero Hour is ready to launch from your local files.");
-      if (result.warning) showToast("Source permission not retained", result.warning, "warning");
+      if (result.warning) showToast(result.warning.title || "Storage warning", result.warning.message || String(result.warning), "warning");
     } catch (error) {
       showToast("Library preparation failed", error?.message || String(error), "warning");
     } finally {
@@ -622,12 +660,30 @@
     document.querySelectorAll("[data-set-wallpaper]").forEach((item) => item.classList.toggle("is-selected", item === button));
     saveSettings();
   }));
+  document.querySelectorAll(".library-row .more-button").forEach((button) => button.addEventListener("click", () => {
+    const game = button.closest("[data-library-game]")?.dataset.libraryGame || "Game";
+    showToast(`${game} library`, game === "Generals"
+      ? "Generals assets provide the base data required by the current Zero Hour runtime."
+      : "Use the Game Launcher to change the source or browser-storage mode.");
+  }));
+  document.querySelector(".tray-status").addEventListener("click", () => openApp("programs"));
+  document.querySelector(".tray-network").addEventListener("click", () => {
+    openApp("settings");
+    document.querySelector('[data-settings-tab="multiplayer"]')?.click();
+  });
   document.querySelectorAll("[data-open-logo-lab]").forEach((button) => button.addEventListener("click", openLogoLab));
   window.addEventListener("message", (event) => {
     if (event.origin === window.location.origin && event.data?.type === "zeroh-logo-selected") applyLauncherLogo(event.data.id);
   });
   window.addEventListener("storage", (event) => {
     if (event.key === "zeroh-selected-logo") applyLauncherLogo(event.newValue);
+    if (["zeroh-library", "fielddesk-library", "zeroh-installed-library.v2"].includes(event.key)) {
+      state.library = readStoredLibrary();
+      void reconcileStoredLibrary();
+    }
+  });
+  window.addEventListener("resize", () => {
+    document.querySelectorAll(".window.is-open").forEach(constrainWindow);
   });
   ["#scaleSelect", "#soundToggle", "#motionToggle"].forEach((selector) => document.querySelector(selector).addEventListener("change", saveSettings));
   document.querySelector("#resetConceptButton").addEventListener("click", async () => {
@@ -659,6 +715,7 @@
 
   bindWindows();
   restoreWindowLayout();
+  document.querySelectorAll(".window.is-open").forEach(constrainWindow);
   renderTaskbar();
   loadSettings();
   applyLauncherLogo();

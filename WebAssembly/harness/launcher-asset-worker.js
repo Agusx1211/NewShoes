@@ -186,7 +186,7 @@ async function validateBigReader(reader, label) {
   const archiveSize = u32(header, 4);
   const entryCount = u32be(header, 8);
   if (archiveSize < 16 || archiveSize > reader.size) {
-    throw new Error(`${label}: BIGF header size ${archiveSize} exceeds ${reader.size}`);
+    throw new Error(`${label}: BIGF header size ${archiveSize} does not fit ${reader.size} bytes`);
   }
   if (entryCount > 1000000) throw new Error(`${label}: unreasonable BIGF entry count ${entryCount}`);
 
