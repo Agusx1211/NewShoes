@@ -6,6 +6,13 @@ evidence: DONE.md "Engine-thread architecture P0 spike" + threaded_boot_probe.
 This note is the durable coordination doc for the P1 lanes — update it as
 gates pass so any future session can resume without re-deriving.
 
+STATUS 2026-07-11: MIGRATION COMPLETE + LEGACY DELETED. Sections below are
+the historical record of the lanes as they ran; where they mention
+`?threads=0`, `?opfsmount=0`, `?ioworker=0`, SKIP_REFERENCE/OPFS_MOUNT gate
+modes, or the io-worker `fetchArchive` whole-buffer transfer, those were all
+DELETED by the demolition lane — see the final section "Demolition
+(2026-07-11)" for what exists now.
+
 ## Scope (P1)
 
 play.html boots the REAL engine on a pthread behind `?threads=1`
@@ -198,13 +205,15 @@ for P1c:
       round-trip, no worker GL context loss. SwiftShader rates: client
       ~1.1/s, logic ~2.2/s (catchup bound; sim slows gracefully under
       software-raster overload — exact 60/30 is a Mac Metal measurement).
-- [~] GATE D Mac Metal — RUN 2026-07-10 (final-migration lane): renderer /
-      boot / init / audio / skirmish / screenshots ALL GREEN on real Metal,
-      but the 60/30 pacing bar FAILS with a measured threaded-only GL
-      throughput regression (details in "GATE D" section below). THE FLIP IS
-      BLOCKED on that regression; the flip diff is prepared on branch
-      `threaded-default-flip` (bridge.js/play.mjs/issue-recorder.mjs) and all
-      behavior-neutral probe pins (`threads=0`) are already landed.
+- [x] GATE D Mac Metal — RUN 2026-07-10 (final-migration lane): renderer /
+      boot / init / audio / skirmish / screenshots ALL GREEN on real Metal;
+      the 60/30 pacing bar initially FAILED with what looked like a
+      threaded-only GL throughput regression. RESOLVED same day (blocker-fix
+      lane): the regression was **Debug-vs-Release wasm** — dist-threaded is
+      a Debug build and the A/B compared it against dist-release. With the
+      new dist-threaded-release build the pacing bar is MET on Metal
+      (logic 30.0 exact, client within ~19% of legacy at the shellmap; full
+      numbers in "GATE D root cause + fix" below) and the flip is unblocked.
 - [x] Default-readiness gap closure — GREEN 2026-07-10 (gap-closure lane):
       threaded state/issue-dump/mount-guard/shader-tier RPC routing, OPFS
       stream reads (music/speech restored under OPFS mounts), MSS byte-copy
@@ -867,14 +876,86 @@ bindings, command-buffer scheduling for dedicated workers). Also re-check
 headful Chrome (probes were headless; do not assume it differs without
 measuring — the owner plays headful).
 
-**Flip decision: NOT flipped** (mission bar not met). The full flip diff
-(bridge.js play-page default + play.mjs + issue-recorder dist-metadata
-mirror) is committed on branch `threaded-default-flip`; behavior-neutral
-prep (probe `threads=0` pins, replay-by-dump-origin threads pin, worker
-renderer/d3d8Perf status) is on the main line. Local
-`verify:threaded-play` (30/30) is green with those pins, and
-`issue_recorder_ui_smoke`'s timeout is pre-existing (fails identically on
-pristine main).
+## GATE D root cause + fix (2026-07-10, blocker-fix lane): it was Debug-vs-Release wasm, not the worker
+
+**The "worker GL throughput regression" above was a build-flavor artifact.**
+The GATE D A/B compared `play.html?autostart=1` (= **dist-release**: Release,
+-O2, ASSERTIONS=0, native wasm-EH, 7.7MB wasm) against `?threads=1`
+(= **dist-threaded**: `build:port:threaded` has no BUILD_TYPE, and
+tools/build_wasm.sh defaults to **Debug** — -O0, ASSERTIONS=1, WWDEBUG,
+DEBUG_LOGGING, emscripten JS-EH, 99.7MB wasm). The engine simply produced
+draws ~2.5x slower; the GL side consumed them identically in both realms.
+That is why the per-draw GL call mix and cache ratios were identical while
+"throughput" differed — draws/s was measuring the WASM ENGINE, not the GL
+context.
+
+Isolation evidence (Mac M4, Chrome 150 headless, ANGLE Metal, same day/box):
+
+1. **Synthetic worker-vs-main GL benchmark** (no wasm; executor-shaped mix:
+   ~0.77 uniform calls/draw, 732 indices/draw, VAO/texture churn, fence
+   completion tracking): main-1600 **69,952 draws/s @ 43.7fps** vs
+   worker-transferred-1600 **70,002 draws/s @ 43.8fps** vs worker-own
+   69,951 draws/s — worker GL parity to 0.1%, at 4x the real engine's draw
+   rate. Pure-CPU JS in worker == main (730 Mops/s both; no E-core/QoS
+   penalty). Files: cnc-verify glbench/ on the Mac (gl_bench_core.mjs,
+   run_gl_bench.mjs; not committed — synthetic scaffolding).
+2. **debug-legacy reproduction** (`?dist=dist` on the LEGACY main-thread
+   path, no worker anywhere): client 3.8-13.4/s, logic 7.6-25.3/s,
+   **14.5-19.8k draws/s** — the GATE D "threaded" collapse numbers, on the
+   main thread. (flavor_ab_probe.mjs, same 120s/10s-bucket methodology.)
+3. Eliminated by 1+2 in one stroke: worker rAF, OffscreenCanvas
+   transfer/commit path, context-attribute diffs, SAB-view upload paths
+   (debug-legacy has a non-shared heap and still collapses), captureStream,
+   Chrome flags (none used beyond the standard probe set).
+4. Synthetic attribute/capture sweeps (same benchmark, worker-transferred,
+   1600 draws/frame): preserveDrawingBuffer true/false = no delta (70.0k
+   draws/s both); captureStream(5) on the placeholder costs ~9% in the
+   worker leg only (70.0k -> 64.1k draws/s; nothing on main) — real but far
+   too small to matter; **`desynchronized: true` on a transferred
+   OffscreenCanvas context kills the page in Chrome 150** (target closed —
+   never ship that attribute on the threaded path).
+
+**Fix: `npm run build:port:threaded:release`** -> dist-threaded-release
+(Release, -O2, wasm-EH, CNC_PORT_THREADS=1, fixed 2GiB heap,
+PTHREAD_POOL_SIZE=1 — first Release+pthread+wasm-EH build; links and runs
+fine on emsdk 3.1.6). play.html in threaded mode now defaults to
+dist-threaded-release (bridge.js defaultCncPortDistDir + play.mjs, mirroring
+the legacy dist/dist-release convention); harness pages keep the Debug
+dist-threaded; issue-recorder dump metadata + replay_issue_dump threads/dist
+pins follow; threaded_play_gate gained THREADED_PLAY_DIST and
+verify:threaded-play now builds both threaded dists.
+
+**Re-run of the lane-D pacing A/B (same methodology/box/day, 120s window,
+10s buckets, Mac Metal headless):**
+
+| leg | logic /s | client /s | draws/s |
+|---|---|---|---|
+| release-legacy (`?autostart=1`) | 30.0 exact all settled buckets | 35.4-58.8 (mean 48.3) | 40-58k |
+| debug-legacy (`?dist=dist`) | 7.6-25.3 | 3.8-13.4 | 14.5-19.8k |
+| **threaded-release** (`?threads=1&dist=dist-threaded-release`) | **30.0 exact all settled buckets** | **32.7-43.4 (mean 39.1)** | up to 51.5k |
+
+Threaded client is within ~19% of legacy on the window mean and within ~8%
+at the matched escalated bucket (~1600 draws/frame: 32.7/s vs 35.4/s), with
+logic 30.0 exact throughout — **the flip bar (shellmap client within ~20% of
+legacy, 60/30 pacing intact) is MET**. Boot to title 26s (OPFS mounts
+from-empty). The residual ~20% in light buckets is the pthread build's
+remaining costs (atomics/locked malloc + worker-realm forwarding), not a GL
+ceiling — legacy peaks 58.8/s where threaded holds ~43/s; both are far above
+the 30/s logic gate and the felt-60Hz bar is a display-rate concern only at
+peaks, not the crush the blocker described.
+
+**HEADFUL spot-check (the owner-realistic config: real window, GPU
+compositing ON, no --disable-gpu-compositing), threaded-release, 90s:**
+client **52.6-60/s** through the escalated shellmap (55.2/s at 1514
+draws/frame; 83k draws/s peak), logic 30.0 exact in every settled bucket,
+maxGap 19-33ms (single 2.2s gap = a shellmap load slice). Headless numbers
+above are the CONSERVATIVE bound — headless BeginFrame throttling caps the
+client ~44/s; headful hits the actual 60Hz bar. The GATE D-era headful
+question is closed: no Chrome flags are needed.
+
+**Flip decision: UNBLOCKED** — the prepared flip diff from
+`threaded-default-flip` (f002675d) is cherry-picked on this lane's branch
+with the dist default resolved to dist-threaded-release on the play page.
 
 **Mac hygiene this lane:** the data volume hit 100% full twice — (1)
 Chrome `code_sign_clone` leak (51GB logical / ~1.4GB physical across 38
@@ -887,3 +968,264 @@ returns 2^32-8 and boot hangs at the overlay). `~/.Trash` was emptied
 at a time. Playwright `browser.close()` reproducibly wedges after these
 runs (Chrome already gone) — kill the node by PID afterwards and never
 rely on post-close code (write summaries BEFORE close).
+
+## Owner mount-failure regression (2026-07-10, mount-failure lane)
+
+Symptom: owner's real headful Chrome at
+http://192.168.106.45:8123/harness/play.html (threaded now the play default)
+shows "FAILED: archive mount failed"; every headless gate green on the same
+build.
+
+**Root cause (reproduced on cnc-gpu with plain Chrome + fresh profile): the
+LAN-IP origin is untrustworthy.** Chrome ignores COOP/COEP on plain
+`http://192.168.x.x` ("The Cross-Origin-Opener-Policy header has been
+ignored, because the URL's origin was untrustworthy... use https or
+localhost"), so `crossOriginIsolated` is false, `SharedArrayBuffer` does not
+exist, and OPFS/Web Locks are absent too. The pthread build then dies at
+module scope (`ReferenceError: SharedArrayBuffer is not defined`),
+loadWasmModule returns null, and play.mjs surfaced the generic mount failure.
+localhost IS a trustworthy origin — which is why the gates (all localhost)
+never saw it. The GATE D probes and the headful spot-check also ran
+localhost; the owner was the first threaded LAN-IP client.
+
+**Fix (JS-only, no wasm rebuild):**
+
+- bridge.js `cncPortThreadedRuntimeSupport()` + play.mjs mirror: threaded
+  mode engages only when `SharedArrayBuffer` + `crossOriginIsolated` are
+  present. Otherwise both originally fell back to the legacy single-threaded
+  path/dist-release with a visible on-page note and
+  `state.threadedFallbackReason`. **SUPERSEDED same day by owner directive
+  ("no legacy path or fallback — just add HTTPS to the server"): the
+  fallback is replaced by an HTTPS redirect / hard block — see the "HTTPS
+  listener" section below.** The OPFS namespacing/lock hardening and
+  error-detail surfacing from this lane remain in force.
+- Error surfacing: loadWasmModule failures are captured
+  (`cncPortModuleLoadError`) and folded into mount errors; play.mjs `fail()`
+  now renders the failure detail on the page; io_worker errors keep the
+  DOMException name.
+
+**Second real bug fixed in the same lane — the deferred TODO (c) OPFS
+sync-handle collision, reproduced on a SECURE origin** (localhost, reused
+persistent profile): a second tab's mount failed with
+NoModificationAllowedError ("Access Handles cannot be created if there is
+another open Access Handle or Writable stream associated with the same
+file") because the engine realm's staged handles hold exclusive per-file
+locks for the page lifetime and the mount rewrote fixed OPFS paths.
+Single-tab reload and reload-mid-mount did NOT collide on this box (Chrome
+reaped the old worker fast enough), but that timing is not guaranteed.
+
+Hardening shipped (bridge.js mountArchivesToOpfs, io_worker.mjs,
+opfs_realm_files.mjs, engine_realm_boot.mjs):
+
+- **Per-mount namespaces**: archives stream to
+  `cnc-archives/ns-<bootId>-<seq>/<memfsPath>`; fresh names can never be
+  lock-held, so a wedged stale holder can NEVER block a new boot. The page
+  holds a `cnc-port-opfs-ns:<bootId>` Web Lock (auto-released on page death
+  — unlike OPFS handles) acquired BEFORE GC so a concurrent tab's GC never
+  deletes files a mid-boot tab is writing.
+- **Namespace GC** (io_worker `opfsCollectNamespaces`): before downloading,
+  remove every child of `cnc-archives` except the current namespace and
+  namespaces whose owner lock is still held (`navigator.locks.query()` in
+  the worker). Lock-held removeEntry failures are per-entry and non-fatal.
+  Legacy fixed-layout dirs (`cnc-archives/assets/...`) collect on the first
+  post-fix boot. Two live tabs each keep their namespace: disk = one archive
+  set per LIVE tab (second-tab support costs ~2.2GB while both live).
+- **Release protocol**: pagehide fires `releaseOpfsHandles` into the engine
+  realm (opfs_realm_files.mjs `registry.closeAll()`) and `releaseHandles`
+  to the IO worker (tracked open-handle set) — locks drop early in the
+  common case; the namespace scheme is the hard guarantee when teardown
+  delivery loses the race.
+- **createSyncAccessHandleRobust** (io_worker): on
+  NoModificationAllowedError/InvalidStateError retry ~1.5s, then
+  delete-and-recreate the file, then throw an error naming the opfsPath and
+  the underlying exception ("another tab or a not-yet-reaped worker likely
+  holds this file's exclusive OPFS lock").
+
+**Mac verification matrix** (fixed harness served standalone on :8151 with
+symlinks to the deployed md5-verified dists; reused persistent profile;
+headless Chrome 150 + ANGLE Metal): LAN-IP origin → legacy fallback boots to
+title with the visible note; localhost threaded → title on a namespaced OPFS
+mount; SECOND TAB same profile → boots (was: raw mount failure);
+reload-after-boot / reload-mid-mount / third sequential reload → all boot;
+OPFS root holds only the live namespaces afterwards. Dev-box: full
+`verify:threaded-play` (reference + threaded) and `shellmap_real_init_gate`
+green on the fixed harness. The probe instruments live in `~/cnc-verify/`
+on the Mac (secctx_probe / owner_flow_probe / lock_collision_probe /
+fix_matrix_probe, uncommitted like the other Mac instruments).
+
+Mac-session hygiene notes for future lanes: `context.close()` after
+OPFS-heavy persistent-context runs still wedges (write summaries BEFORE
+close, exit hard, then clean Chrome by PID + `rm -rf` the probe profile —
+one leaked 2.9GB profile was cleaned this lane); a stray playwright-flagged
+Chrome (start 00:47) not owned by this lane was left untouched.
+
+## HTTPS listener + no-fallback redirect (2026-07-10, https lane)
+
+OWNER DIRECTIVE (firm): "no legacy path or fallback — just add HTTPS to the
+server." This replaces the untrusted-origin threaded→legacy auto-fallback
+from the mount-failure lane above (the OPFS namespacing/lock hardening and
+error surfacing from that lane stay).
+
+**Server (harness/static-server.mjs + serve.mjs):**
+
+- `startStaticServer` gained opt-in `httpsPort`/`certDir` options: the SAME
+  request handler (COOP/COEP and all endpoints included) is also served via
+  `node:https`. Opt-in means every gate's self-spawned ephemeral localhost
+  server is byte-for-byte unaffected. The HTTPS listener starts BEFORE the
+  HTTP one so `/__cnc_https_info` (announces `{httpsEnabled, httpsPort}`)
+  can never race a request.
+- serve.mjs: `HTTPS_PORT=<port>` forces, `HTTPS_PORT=0` disables, unset
+  defaults to 8443 when HOST is non-localhost OR a cert already exists.
+- Cert: generated ONCE by `ensureSelfSignedCert` into gitignored
+  `WebAssembly/harness/.certs/` (cert.pem/key.pem/san.cnf) and REUSED on
+  every later start — the browser trust decision is per-cert, so
+  regeneration would re-prompt the owner. openssl via a `-config` file
+  (portable across dev-box OpenSSL 3.x and Mac LibreSSL 3.3, which disagree
+  on `-addext`). rsa:2048/sha256, 10 years, CN=cnc-harness, SANs: localhost,
+  hostname (+short, +.local), 127.0.0.1, ::1, every non-internal interface
+  address, and the owner IP 192.168.106.45 baked. **Deploy rsyncs must
+  exclude `WebAssembly/harness/.certs/`** — each box keeps its own cert or
+  the owner's trust decision breaks.
+
+**Page (bridge.js + play.mjs):** when threaded is requested (play default)
+but SAB/COI are missing, there is NO legacy boot:
+
+- insecure non-localhost origin → bridge fetches `/__cnc_https_info` (baked
+  default 8443 if the endpoint is missing) and `location.replace`s to
+  `https://<same-host>:<port><same path+query+hash>`;
+- already-https-but-no-SAB (cert rejected) or localhost-without-COOP/COEP →
+  BLOCKED: on-page instructions (trust/proceed the cert, or restart serve
+  with HTTPS_PORT for the no-listener case), console.error;
+- `state.threadedUnsupported = { reason, action: "redirect"|"blocked",
+  target }` replaces `threadedFallbackReason`; a `cnc-threaded-unsupported`
+  window event fires when the action resolves; bridge `rpc()` refuses
+  boot/mountArchive(s)/realEngineInit while unsupported so nothing can
+  silently degrade;
+- localhost origins never redirect (trustworthy; all gates keep working);
+  explicit `?threads=0` remains the only — deliberate — legacy entry.
+- Path-aware boot banner (owner-flagged): play.html's default copy now
+  describes the OPFS mount (archives → browser disk, memory flat); the
+  MEMFS "~2 GB into browser memory / phones" warning renders only on the
+  explicit `?threads=0` path (play.mjs swaps it in).
+
+**Dev-box verification:** 14/14 redirect-probe checks (LAN http → redirect
+in 633ms, COI+SAB true after; localhost untouched; HTTPS_PORT=0 server →
+blocked note + mountArchives boot-refusal + loud Start failure; banner per
+path), io-worker-offthread 15/15, shellmap_real_init_gate + full
+threaded_play_gate green, four cnc-port builds no-op incremental. Dev-box
+probe quirk: the sandbox `HTTPS_PROXY` env MITMs Chromium's NON-localhost
+https and rejects the self-signed upstream (alert 42 → ERR_EMPTY_RESPONSE)
+— strip proxy env vars from the Chromium launch env for LAN-https probes;
+curl needs `--noproxy '*'`.
+
+**Mac verification (2026-07-10, real Metal GPU):** deployed (fresh no-op
+builds, md5-verified dists + harness overlay), :8123 server restarted as
+`HOST=0.0.0.0 PORT=8123 HTTPS_PORT=8443 node harness/serve.mjs` (single pid
+serves both listeners; :8124 untouched); the interim `~/cnc-tls` stopgap
+TLS proxy another lane had put on :8443 ("TEMPORARY ... until serve.mjs
+ships HTTPS") was retired. Cert generated on the Mac with SANs
+localhost/m4/m4.local/127.0.0.1/::1/192.168.106.45. Headless-Chrome probe
+10/10: LAN http play URL redirects to https :8443 (query preserved),
+COI+SAB true, ANGLE Metal (Apple M4), THREADED wasm instantiates (heap is a
+SharedArrayBuffer), 30/30 archives OPFS-mounted, real init → engine loop →
+shellmap title screenshot. Probe Chrome cleaned by PID, profile removed.
+
+**Owner flow:** open http://192.168.106.45:8123/harness/play.html → auto
+redirect to https://192.168.106.45:8443/harness/play.html → one-time
+"Advanced → Proceed" on the cert interstitial (or trust
+`WebAssembly/harness/.certs/cert.pem` in Keychain) → threaded engine, COI
+true. The :8123 server on the Mac must be started with `HTTPS_PORT=8443`
+(or just HOST=0.0.0.0, which now defaults it).
+
+## Demolition (2026-07-11, demolition lane): legacy play path deleted
+
+Owner confirmed the HTTPS threaded experience ("excellent, finally!") →
+OWNER DIRECTIVE step (5) executed. What was deleted, what deliberately
+survives, and why:
+
+**Deleted:**
+
+- **play-page legacy mode**: `?threads=0` (play.mjs/bridge.js/play.html),
+  the play-page legacy dist selection (dist-release fallback), the
+  MEMFS-era boot banner variant, the page-driven paced/coupled frame loops
+  in play.mjs (runPacedFrameLoop/runCoupledFrameLoop — the engine-realm
+  loop is the only play loop), the boot-time reveal-pump frames, and the
+  `?ioworker=0` / `?opfsmount=0` opt-outs. play.html is threaded/OPFS-only:
+  bridge's `cncPortThreadedMode` is unconditionally true on /play.html
+  (`?threads=1` still opts harness/index.html pages in). Threaded mounts
+  are ALWAYS OPFS; a missing IO worker fails the mount loudly instead of
+  silently degrading to a MEMFS mount the engine thread could not read.
+- **io_worker `fetchArchive`** (whole-buffer transfer) + bridge's
+  `fetchArchiveBytesOffThread` + the mountArchives bounded fetch-ahead
+  prefetch pipeline. io_worker keeps fetchToOpfs / fetchRange /
+  opfsCollectNamespaces / releaseHandles / ping / busy.
+  test:io-worker-offthread reworked: heartbeat-during-fetchToOpfs +
+  byte-exactness + an explicit pin that `fetchArchive` is refused (15/15).
+- **range-backed subset-mount machinery** (bridge.js ~540 lines):
+  fetchByteRange, extractBigEntryFromUrl, extractBigEntriesFromUrl,
+  indexBigArchiveUrl, buildBigArchive, writeBigUInt32BE,
+  mountRangeBackedArchiveSet, mountBigArchiveEntry, mountShippedMeshAsset
+  (+ RPC dispatcher cases).
+- **21 legacy smokes** that only existed on that machinery (coverage owned
+  by the real boot: threaded_play_gate + shellmap_real_init_gate +
+  skirmish/startup-vertical real-init runs render terrain/trees/roads/
+  props/bridges/meshes/shell UI/text/mapped images through real init):
+  terrain_{visual,map_patch,tree_buffer,road_buffer,prop_buffer,
+  bridge_buffer}_scene + terrain_prop_buffer_render, shipped_mesh_render,
+  display_{shell_composite,mapped_image,mapped_image_clip,
+  mapped_image_unrotated,main_menu_ruler,game_text,drawimage_file},
+  main_menu_layout_image_repaint, object_ini, range_backed_archives,
+  startup_range_backed_archives smokes + plumbing_check.mjs /
+  input_fix_verification.mjs debug scripts. package.json dropped 19
+  scripts; run_vertical_integrations dropped the 11 steps that ran them.
+  The wasm-side `cnc_port_probe_ww3d_*` exports they drove are now
+  JS-orphaned (burn down with the probe surface; noted in TODO).
+- **startup_vertical_smoke.mjs phases 1-2** (archiveless boot + range-backed
+  "audio ownership" frontier boot + STARTUP_VERTICAL_REAL_INIT_ONLY flag):
+  probe-era hand-authored frontier contracts, already red on main
+  (assertFunctionLexiconRuntimeFrontier); the browser smoke is the
+  real-init vertical only now — that documented pre-existing red is gone.
+- **threaded_play_gate reference leg** (`?threads=0&dist=dist`) + the
+  OPFS_MOUNT=0 MEMFS A/B mode + SKIP_REFERENCE env: the gate boots ONE
+  threaded page; the non-threaded real-init reference is
+  shellmap_real_init_gate.mjs on harness/index.html.
+- **replay_issue_dump threads=0 pinning**: threaded dumps replay on their
+  recorded dist; dumps recorded on the retired legacy play path replay on
+  the threaded default with a loud fidelity warning.
+- **stepped_load_turret_validation_check** converted to the threaded play
+  page (persistent context for OPFS quota; profile rm'd in finally) — it
+  now guards advanceLoadSession's m_isInUpdate latch on the SHIPPING path.
+
+**Deliberately KEPT (and why):**
+
+- **The MEMFS mount pipeline** (mountArchive, mountArchives' non-threaded
+  branch, writeArchiveToMemfs — now inline sequential fetch, no worker):
+  it is THE mount path for the harness/index.html legacy-boot surface —
+  ~40 non-threaded gates/smokes (shellmap_real_init_gate, skirmish/fx/
+  laser/audio/network/bink/runtime-archives smokes, runtime_frame_profile)
+  and A/B-debug boots of the non-threaded dists. A main-thread engine
+  cannot read OPFS synchronously (sync access handles are worker-only), so
+  deleting MEMFS mounts would have killed the whole non-play verification
+  surface, not just the play-page legacy path. The play page can no longer
+  reach it.
+- **The non-threaded dist/dist-release builds** (owner caution: engine devs
+  need them for A/B debugging).
+- **io_worker `fetchRange`** (kept per directive; currently unused by
+  bridge).
+- **The audio-inventory MEMFS scan**
+  (buildAudioPayloadInventoryFromMountedArchives): still consumed by the
+  kept non-threaded runtime_archives_smoke + state snapshots; threaded OPFS
+  mounts keep marking it `{ok:false, skipped:true}`.
+- **Stepped-load engine machinery**: re-documented as the
+  PRESENTATION-YIELD mechanism (real load screen paints; frames flow on
+  the engine thread), not freeze protection.
+
+**Whole-suite honesty:** the tools/verify_* battery has 26 reds — byte-for-
+byte the SAME 26 on pristine main (pre-existing frontier-contract drift);
+worktree-only diffs were missing gitignored build/assets dirs. The bink
+presentation verifier's display_drawimage_file line pins were removed with
+the smoke (ok:true again). Post-demolition gates: verify:threaded-play,
+probe:p2-opfs, p1_scaffold_probe, test:io-worker-offthread,
+shellmap_real_init_gate (the kept index.html legacy-boot surface), fresh
+build:port + build:port:threaded:release — results in DONE.md "Legacy
+play-path demolition".

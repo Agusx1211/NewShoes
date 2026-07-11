@@ -7,8 +7,9 @@
   <body>
     <p>IO worker off-thread smoke harness.</p>
     <script type="module">
-      // Drive harness/io_worker.mjs directly to prove it fetches off the main
-      // thread while a main-thread rAF heartbeat keeps ticking.
+      // Drive harness/io_worker.mjs directly to prove it streams bytes to
+      // OPFS off the main thread while a main-thread rAF heartbeat keeps
+      // ticking.
       window.__runIoWorkerSmoke = (payloadUrl) => {
         return new Promise((resolve, reject) => {
           let ready = false;
@@ -29,6 +30,7 @@
 
           const startedAt = performance.now();
           const progressEvents = [];
+          const opfsPath = "cnc-io-smoke/heartbeat.bin";
 
           worker.onmessage = (event) => {
             const message = event.data ?? {};
@@ -42,12 +44,14 @@
             }
             if (message.kind === "ready") {
               ready = true;
-              // Start the main-thread heartbeat, then issue the off-thread fetch.
+              // Start the main-thread heartbeat, then issue the off-thread
+              // streamed fetch->OPFS (the shipping mount transport; the
+              // whole-buffer fetchArchive command was deleted 2026-07-10).
               heartbeatRunning = true;
               requestAnimationFrame(tick);
               const heartbeatBaseline = heartbeatTicks;
               const fetchStartedAt = performance.now();
-              worker.postMessage({ id: 1, kind: "fetchArchive", url: payloadUrl });
+              worker.postMessage({ id: 1, kind: "fetchToOpfs", url: payloadUrl, opfsPath });
               worker.__fetchStartedAt = fetchStartedAt;
               worker.__heartbeatBaseline = heartbeatBaseline;
               return;
@@ -59,19 +63,12 @@
                 worker.terminate();
                 return;
               }
-              const buffer = message.bytes;
-              const byteLength = buffer.byteLength;
-              // A transferred ArrayBuffer is detached on the worker side; on the
-              // main side it is a fresh, non-zero buffer. We prove transfer by
-              // confirming we received a real ArrayBuffer with the expected size.
-              const transferred = buffer instanceof ArrayBuffer && byteLength > 0;
               const heartbeatTicksDuringFetch =
                 heartbeatTicks - (worker.__heartbeatBaseline ?? 0);
               const fetchMs = performance.now() - (worker.__fetchStartedAt ?? startedAt);
               worker.__fetchResult = {
                 ready,
-                byteLength,
-                transferred,
+                byteLength: Number(message.bytesWritten),
                 heartbeatTicksDuringFetch,
                 fetchMs,
                 progressEventCount: progressEvents.length,
@@ -80,6 +77,14 @@
                 progressTotal: progressEvents.reduce(
                   (max, progress) => Math.max(max, progress.total), 0),
               };
+              // The whole-buffer fetchArchive command was deleted with the
+              // MEMFS play-page pipeline; pin that the worker refuses it.
+              worker.postMessage({ id: 3, kind: "fetchArchive", url: payloadUrl });
+              return;
+            }
+            if (message.id === 3) {
+              worker.__fetchResult.fetchArchiveRefused = message.ok === false
+                && String(message.error ?? "").includes("Unknown IO worker command");
               // Now run a deliberate 300ms CPU-busy task ON THE WORKER and count
               // main-thread heartbeat ticks during it: the unambiguous proof
               // that heavy off-thread work does not freeze the main thread.
@@ -94,7 +99,11 @@
                 heartbeatTicks - (worker.__busyBaseline ?? 0);
               const result = worker.__fetchResult ?? {};
               worker.terminate();
-              resolve({ ...result, heartbeatTicksDuringBusy });
+              // Clean up the scratch OPFS entry (best effort).
+              navigator.storage.getDirectory()
+                .then((root) => root.removeEntry("cnc-io-smoke", { recursive: true }))
+                .catch(() => {})
+                .finally(() => resolve({ ...result, heartbeatTicksDuringBusy }));
             }
           };
 

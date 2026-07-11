@@ -168,6 +168,27 @@ function ensureRegistry(Module) {
     return -1;
   };
 
+  // Close every staged handle + every virtual open (pagehide teardown from
+  // the main realm via engine_realm_boot's "releaseOpfsHandles" command).
+  // Releasing the exclusive OPFS locks eagerly keeps a dying page's worker
+  // from blocking the NEXT boot's writes until the browser reaps it.
+  registry.closeAll = () => {
+    let closed = 0;
+    for (const entry of registry.files.values()) {
+      try {
+        entry.handle.close();
+        closed += 1;
+      } catch {
+        // already closed
+      }
+    }
+    registry.files.clear();
+    registry.openIds.length = 0;
+    registry.freeIds.length = 0;
+    diag.stagedPaths = [];
+    return closed;
+  };
+
   globalThis.__cncOpfsDiag = diag;
 
   // Diag responder: the threads_realm_stub silently ignores __cncRealm

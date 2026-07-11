@@ -108,12 +108,27 @@ function saveNetworkSettings(settings) {
 }
 
 initializeNetworkSettings();
-// Engine-thread mode (?threads=1): the engine runs on a pthread in the
-// dist-threaded build and bridge.js moves the frame loop into the worker
-// realm; this page only observes (status events drive the HUD). Must match
-// bridge.js's cncPortThreadedMode / defaultCncPortDistDir logic. Declared
-// before the selectedCncPortDistDir() call below (TDZ).
-const threadedMode = queryParams.get("threads") === "1";
+// Engine-thread mode: the engine runs on a pthread in the threaded build and
+// bridge.js moves the frame loop into the worker realm; this page only
+// observes (status events drive the HUD). The play page is THREADED-ONLY
+// (owner directive 2026-07-10; the ?threads=0 legacy escape hatch was
+// deleted after the owner confirmed the HTTPS threaded experience). Must
+// match bridge.js's cncPortThreadedMode / defaultCncPortDistDir logic.
+// Declared before the selectedCncPortDistDir() call below (TDZ).
+//
+// The pthread build needs SharedArrayBuffer, which only exists on
+// cross-origin-isolated pages — and COOP/COEP are IGNORED on untrustworthy
+// origins (plain http:// over a LAN IP; only https:// and localhost count).
+// NO legacy single-thread fallback: when the threaded page cannot run here,
+// bridge.js redirects to the harness HTTPS listener (a trustworthy origin);
+// when a redirect cannot fix it, the boot is blocked with the reason (see
+// threadedUnavailable below).
+// Must match bridge.js's cncPortThreadedRuntimeSupport()/cncPortThreadedMode:
+// both realms decide from the same synchronous globals, so they always agree.
+const threadedSupported = typeof SharedArrayBuffer === "function"
+  && window.crossOriginIsolated === true;
+const threadedMode = threadedSupported;
+const threadedUnavailable = !threadedSupported;
 const viewportCanvas = document.querySelector("#viewport");
 const selectedDistDir = selectedCncPortDistDir();
 
@@ -169,10 +184,8 @@ function loadDisplaySettings() {
 
 const DEFAULT_LOGIC_FPS = 30;
 // Display-rate client over the authentic 30Hz sim (GameEngine::update paced
-// mode). ?clientFps=30 (or any value <= logicFps) falls back to the legacy
-// coupled loop.
+// mode, run by the engine-thread loop in engine_realm_boot.mjs).
 const DEFAULT_CLIENT_FPS = 60;
-const DEFAULT_CATCHUP_FRAMES = 2;
 
 function positiveNumberParam(name, fallback) {
   const value = Number(queryParams.get(name));
@@ -184,7 +197,12 @@ function validCncPortDistDir(value) {
 }
 
 function selectedCncPortDistDir() {
-  const fallback = threadedMode ? "dist-threaded" : "dist-release";
+  // The play page serves the RELEASE threaded build: dist-threaded is a
+  // Debug build (-O0, ASSERTIONS=1, JS-EH) that runs the engine several times
+  // slower — comparing it against a release build is what produced the
+  // phantom "worker GL throughput regression" in notes/p1-engine-thread.md
+  // GATE D. An explicit ?dist= (e.g. dist-threaded for a Debug run) wins.
+  const fallback = "dist-threaded-release";
   const value = queryParams.get("dist") || fallback;
   return validCncPortDistDir(value) ? value : fallback;
 }
@@ -384,10 +402,70 @@ window.addEventListener("cnc-archive-progress", (event) => {
   renderBootProgress(event.detail ?? {});
 });
 
+// Owner directive 2026-07-10: the play page NEVER falls back to the legacy
+// single-threaded build. When the threaded default cannot run on this origin
+// (no SAB / not COI), bridge.js — which evaluates first — resolves the fix:
+// redirect to the harness HTTPS listener (insecure LAN origin) or block the
+// boot with instructions (https with a rejected cert / localhost without
+// COOP/COEP). This block renders that state on the page and keeps start()
+// from ever booting; a silent mode change is how phantom perf reports start.
+function threadedBlockedMessage(detail) {
+  if (window.location.protocol === "https:") {
+    return "engine-thread mode is unavailable on this HTTPS origin: SharedArrayBuffer is still"
+      + " missing, which usually means the harness's self-signed certificate was rejected."
+      + " Click through the browser warning (Advanced → Proceed) or trust the certificate"
+      + " (WebAssembly/harness/.certs/cert.pem on the server), then reload."
+      + " There is no single-thread fallback.";
+  }
+  return `${detail?.reason ?? "engine-thread mode unavailable on this origin"}`
+    + " — boot blocked; there is no single-thread fallback.";
+}
+
+if (threadedUnavailable) {
+  startButton.disabled = true;
+  try {
+    const note = document.createElement("p");
+    note.id = "threadedRedirectNote";
+    note.className = "launcherProgress";
+    note.style.color = "#e0b050";
+    note.textContent = "engine-thread mode unavailable on this origin —"
+      + " resolving the HTTPS redirect...";
+    progressNode?.parentElement?.insertBefore(note, progressNode);
+    const renderUnsupported = (detail) => {
+      if (detail?.action === "redirect") {
+        note.textContent = `redirecting to ${detail.target}`
+          + " (the engine thread needs a secure origin for SharedArrayBuffer)..."
+          + " Accept the self-signed certificate once if the browser warns.";
+      } else if (detail?.action === "blocked") {
+        note.style.color = "#e05050";
+        note.textContent = threadedBlockedMessage(detail);
+      }
+    };
+    window.addEventListener("cnc-threaded-unsupported", (event) => renderUnsupported(event.detail));
+    const current = window.CnCPort?.state?.threadedUnsupported;
+    if (current && current.action !== "pending") {
+      renderUnsupported(current);
+    }
+  } catch {
+    // Best-effort; bridge.js's console error/redirect still tells the story.
+  }
+}
+
 function fail(message, detail) {
   console.error("[play]", message, detail ?? "");
   issueRecorder.noteFailure(message, detail);
-  progressNode.textContent = `FAILED: ${message}`;
+  let detailText = "";
+  try {
+    detailText = typeof detail === "string" ? detail
+      : detail?.error ? String(detail.error)
+        : detail !== undefined && detail !== null ? JSON.stringify(detail) : "";
+  } catch {
+    detailText = String(detail);
+  }
+  if (detailText.length > 600) {
+    detailText = `${detailText.slice(0, 600)}…`;
+  }
+  progressNode.textContent = `FAILED: ${message}${detailText ? ` — ${detailText}` : ""}`;
   progressNode.classList.add("error");
   bootProgressNode?.classList.remove("indeterminate");
   startButton.disabled = false;
@@ -436,24 +514,10 @@ async function runFrameLoop(rpc) {
 
   const logicFps = Math.min(240, positiveNumberParam("logicFps", DEFAULT_LOGIC_FPS));
   const clientFps = Math.min(240, positiveNumberParam("clientFps", DEFAULT_CLIENT_FPS));
-  if (threadedMode) {
-    // The paced loop runs IN the engine worker realm (engine_realm_boot.mjs,
-    // driven by the pthread's rAF main loop); this page only starts it and
-    // renders the status feed into the HUD.
-    return runThreadedFrameLoop(rpc, clientFps, logicFps);
-  }
-  if (clientFps > logicFps) {
-    try {
-      const pacing = await rpc("realEngineSetClientPacing", { clientFps, logicFps });
-      if (pacing?.ok === true) {
-        return runPacedFrameLoop(rpc, clientFps, logicFps);
-      }
-      console.warn("[play] paced mode unavailable, using coupled loop", pacing);
-    } catch (error) {
-      console.warn("[play] paced mode setup threw, using coupled loop", error);
-    }
-  }
-  return runCoupledFrameLoop(rpc, logicFps);
+  // The paced loop runs IN the engine worker realm (engine_realm_boot.mjs,
+  // driven by the pthread's rAF main loop); this page only starts it and
+  // renders the status feed into the HUD.
+  return runThreadedFrameLoop(rpc, clientFps, logicFps);
 }
 
 // Threaded mode: the engine thread owns the frame loop; observe its 500ms
@@ -487,211 +551,19 @@ async function runThreadedFrameLoop(rpc, clientFps, logicFps) {
   });
 }
 
-// Paced loop: one GameEngine::update per display frame (smooth client —
-// camera, input, UI, W3D animation), with TheGameLogic gated to an absolute
-// drift-free logicFps schedule so sim speed is exactly the original 30Hz.
-// Frames are scheduled to the nearest display tick (half-refresh hysteresis)
-// so a 60Hz display gets a perfectly even run-run pattern instead of the
-// accumulator's occasional 50ms/17ms judder pairs.
-async function runPacedFrameLoop(rpc, clientFps, logicFps) {
-  const clientPeriod = 1000 / clientFps;
-  const logicPeriod = 1000 / logicFps;
-  const rafDeltas = [];
-  let refreshMs = 1000 / 60;
-  let lastStamp = null;
-  let nextClientDue = null;
-  let nextLogicDue = null;
-  let running = true;
-  let windowStart = null;
-  let windowClient = 0;
-  let windowLogic = 0;
-  // Diagnostics: last ~15s of {t: RAF stamp, logic: logic frames run} so a
-  // probe can verify pacing evenness (window.__cncPacingSamples).
-  const pacingSamples = [];
-  window.__cncPacingSamples = pacingSamples;
-
-  const step = async (animationStamp) => {
-    if (!running) {
-      return;
-    }
-    const stamp = Number.isFinite(animationStamp) ? animationStamp : performance.now();
-    if (lastStamp !== null) {
-      const delta = stamp - lastStamp;
-      if (delta > 1 && delta < 100) {
-        rafDeltas.push(delta);
-        if (rafDeltas.length > 20) {
-          rafDeltas.shift();
-        }
-        const sorted = [...rafDeltas].sort((a, b) => a - b);
-        refreshMs = sorted[Math.floor(sorted.length / 2)];
-      }
-    }
-    lastStamp = stamp;
-    const halfTick = refreshMs / 2;
-    if (nextClientDue === null) {
-      nextClientDue = stamp;
-      nextLogicDue = stamp;
-    }
-
-    // Client frame due? Only skips ticks when the display refresh outruns
-    // clientFps (e.g. 120Hz display with clientFps=60).
-    if (stamp < nextClientDue - halfTick) {
-      requestAnimationFrame(step);
-      return;
-    }
-    nextClientDue += clientPeriod;
-    if (stamp - nextClientDue > 4 * clientPeriod) {
-      nextClientDue = stamp + clientPeriod;
-    }
-
-    // Logic frames due at this client tick (normally 0 or 1; brief stalls
-    // catch up by at most DEFAULT_CATCHUP_FRAMES, long stalls resync and the
-    // game simply slows, matching the original engine under load).
-    let logicToRun = 0;
-    while (stamp >= nextLogicDue - halfTick && logicToRun < DEFAULT_CATCHUP_FRAMES) {
-      logicToRun += 1;
-      nextLogicDue += logicPeriod;
-    }
-    if (stamp - nextLogicDue > 4 * logicPeriod) {
-      nextLogicDue = stamp + logicPeriod;
-    }
-
-    try {
-      let result = null;
-      if (logicToRun === 0) {
-        const startedAt = performance.now();
-        result = await rpc("realEngineFramePaced", { runLogic: false });
-        issueRecorder.noteFrame(
-          "realEngineFramePaced", { runLogic: false }, result, performance.now() - startedAt);
-      } else {
-        for (let i = 0; i < logicToRun; i += 1) {
-          // The recorder occasionally swaps in the rich summary frame for
-          // issue evidence; it runs logic unconditionally, so only allow it
-          // on scheduled logic ticks to keep sim pacing exact.
-          const command = issueRecorder.frameCommand();
-          const startedAt = performance.now();
-          if (command === "realEngineFrameTick") {
-            result = await rpc("realEngineFramePaced", { runLogic: true });
-            issueRecorder.noteFrame(
-              "realEngineFramePaced", { runLogic: true }, result, performance.now() - startedAt);
-          } else {
-            result = await rpc(command, { frames: 1 });
-            issueRecorder.noteFrame(command, { frames: 1 }, result, performance.now() - startedAt);
-          }
-          windowLogic += 1;
-        }
-      }
-      if (result?.ok !== true) {
-        running = false;
-        fail("engine frame failed", result);
-        return;
-      }
-    } catch (error) {
-      running = false;
-      fail("engine frame threw", error);
-      return;
-    }
-    windowClient += 1;
-    pacingSamples.push({ t: stamp, logic: logicToRun });
-    if (pacingSamples.length > 900) {
-      pacingSamples.splice(0, pacingSamples.length - 900);
-    }
-
-    if (windowStart === null) {
-      windowStart = stamp;
-    } else if (stamp - windowStart >= 1000) {
-      const seconds = (stamp - windowStart) / 1000;
-      fpsNode.textContent =
-        `${(windowClient / seconds).toFixed(0)}/${(windowLogic / seconds).toFixed(0)}`;
-      windowStart = stamp;
-      windowClient = 0;
-      windowLogic = 0;
-    }
-    requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-}
-
-async function runCoupledFrameLoop(rpc, logicFps) {
-  const logicFrameMs = 1000 / logicFps;
-  const maxCatchupFrames = Math.max(
-    1,
-    Math.min(8, Math.floor(positiveNumberParam("catchup", DEFAULT_CATCHUP_FRAMES))),
-  );
-  const maxAccumulatedMs = logicFrameMs * maxCatchupFrames;
-  let lastAnimationStamp = null;
-  let lastTickStamp = performance.now();
-  let lastFramesCompleted = null;
-  let lastEngineFrameMs = 0;
-  let accumulatedMs = logicFrameMs;
-  let smoothedFps = 0;
-  let running = true;
-
-  const step = async (animationStamp) => {
-    if (!running) {
-      return;
-    }
-    const stamp = Number.isFinite(animationStamp) ? animationStamp : performance.now();
-    const elapsedMs = lastAnimationStamp === null ? 0 : Math.max(0, stamp - lastAnimationStamp);
-    lastAnimationStamp = stamp;
-    accumulatedMs = Math.min(accumulatedMs + elapsedMs, maxAccumulatedMs);
-
-    const dueFrames = Math.floor(accumulatedMs / logicFrameMs);
-    const catchupLimit = lastEngineFrameMs > logicFrameMs ? 1 : maxCatchupFrames;
-    const framesToRun = Math.min(catchupLimit, dueFrames);
-    if (framesToRun <= 0) {
-      requestAnimationFrame(step);
-      return;
-    }
-    accumulatedMs -= framesToRun * logicFrameMs;
-
-    let result = null;
-    try {
-      // The original execute loop caps update cadence at the INI FPS limit.
-      // RPC stepping bypasses that limiter, so pace the human page here until
-      // the runtime owns a browser main loop; the recorder can occasionally
-      // swap in the richer frame-summary RPC for issue evidence.
-      const command = issueRecorder.frameCommand();
-      const payload = { frames: framesToRun };
-      const startedAt = performance.now();
-      result = await rpc(command, payload);
-      issueRecorder.noteFrame(command, payload, result, performance.now() - startedAt);
-      if (result?.ok !== true) {
-        running = false;
-        fail("engine frame failed", result);
-        return;
-      }
-    } catch (error) {
-      running = false;
-      fail("engine frame threw", error);
-      return;
-    }
-
-    const now = performance.now();
-    const reportedFrameMs = Number(result?.frame?.lastFrameMs);
-    lastEngineFrameMs = Number.isFinite(reportedFrameMs)
-      ? reportedFrameMs
-      : (now - lastTickStamp) / Math.max(1, framesToRun);
-    const framesCompleted = Number(result?.frame?.framesCompleted);
-    let completedDelta = framesToRun;
-    if (Number.isFinite(framesCompleted)) {
-      if (lastFramesCompleted !== null && framesCompleted >= lastFramesCompleted) {
-        completedDelta = framesCompleted - lastFramesCompleted;
-      }
-      lastFramesCompleted = framesCompleted;
-    }
-    if (completedDelta > 0) {
-      const instant = (completedDelta * 1000) / Math.max(1, now - lastTickStamp);
-      smoothedFps = smoothedFps === 0 ? instant : smoothedFps * 0.9 + instant * 0.1;
-      fpsNode.textContent = smoothedFps.toFixed(1);
-    }
-    lastTickStamp = now;
-    requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-}
-
 async function start() {
+  // Owner directive 2026-07-10: no legacy single-thread fallback — when the
+  // threaded default cannot run on this origin the page redirects/blocks
+  // (see the threadedUnavailable block above); it must never boot legacy.
+  if (threadedUnavailable) {
+    const detail = window.CnCPort?.state?.threadedUnsupported;
+    fail("engine-thread mode unavailable on this origin",
+      detail?.action === "redirect"
+        ? `redirecting to ${detail.target}`
+        : threadedBlockedMessage(detail));
+    startButton.disabled = true;
+    return;
+  }
   startButton.disabled = true;
   try {
     await recorderReady;
@@ -748,30 +620,22 @@ async function start() {
     } else {
       setConfiguredDiagLevel("full");
     }
-    // The archive download + decode runs on a dedicated IO Web Worker by
-    // default (bridge.js), so it does not contend with the WebGL/engine main
-    // thread. Add ?ioworker=0 to force the legacy inline main-thread fetch for
-    // debugging or regression comparison.
-    if (queryParams.get("ioworker") === "0") {
-      window.__cncIoWorker = false;
-    }
-    // Archive downloads overlap (bounded fetch-ahead on the IO worker) while
-    // the MEMFS writes stay sequential. Add ?fetchpar=0 to force strictly
-    // sequential downloads for debugging or regression comparison.
+    // Archive downloads overlap (bounded parallel streamed fetch->OPFS on
+    // the IO worker). Add ?fetchpar=0 to force strictly sequential downloads
+    // for debugging or regression comparison.
     if (queryParams.get("fetchpar") === "0") {
       window.__cncFetchParallel = false;
-    }
-    // Threaded mode mounts archives onto OPFS (streamed fetch->disk, no
-    // MEMFS residency). Add ?opfsmount=0 to force the MEMFS mount even in
-    // threaded mode (memory A/B comparison / debugging).
-    if (queryParams.get("opfsmount") === "0") {
-      window.__cncOpfsMount = false;
     }
 
     issueRecorder.setSessionContext({
       phase: "starting",
       diagLevel: configuredDiagLevel,
       distDir: selectedDistDir,
+      threaded: {
+        requested: true,
+        supported: threadedSupported,
+        mode: threadedMode,
+      },
       pageParams: Object.fromEntries(queryParams),
       audio: {
         runtime: startAudioRuntime?.browserAudioRuntime ?? startAudioRuntime,
@@ -858,19 +722,14 @@ async function start() {
     // The original menu waits for mouse movement before finishing its
     // first-run reveal transition; post two synthetic moves so the buttons
     // appear without the player having to wiggle the cursor first.
+    // No reveal-pump frames needed: the engine-thread paced loop starts
+    // right below and supplies frames continuously.
     for (const point of [{ x: 32, y: 32 }, { x: 96, y: 96 }]) {
       await rpc("postMessage", {
         message: 0x0200,
         lParam: ((point.y & 0xffff) << 16) | (point.x & 0xffff),
         point,
       });
-      if (!threadedMode) {
-        // Threaded mode: the engine-thread paced loop starts right below and
-        // supplies frames continuously, so these reveal-pump frames are
-        // redundant — and each one is a long-blocking engine call while the
-        // shellmap load session is draining.
-        await rpc("realEngineFrame", { frames: 2 });
-      }
     }
     console.log("[play] boot: menu reveal moves posted");
 

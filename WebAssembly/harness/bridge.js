@@ -2,15 +2,146 @@ import { createD3D8Executor } from "./d3d8_executor.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
 import { createWebRtcUdpEndpoint } from "./webrtc-udp-endpoint.mjs";
 
-// Engine-thread mode (?threads=1, plumbed like ?dist=): the REAL engine runs
-// on a pthread in the single pool worker of the dist-threaded build, and the
-// GL executor runs in THAT worker realm against an OffscreenCanvas transferred
-// from #viewport. The DEFAULT (no param) path must stay behavior-identical —
-// every threaded divergence in this file branches on this flag.
-// Design + P1a/P1b mechanics: WebAssembly/notes/p1-engine-thread.md.
+// Engine-thread mode (plumbed like ?dist=): the REAL engine runs on a
+// pthread in the single pool worker of the dist-threaded build, and the GL
+// executor runs in THAT worker realm against an OffscreenCanvas transferred
+// from #viewport. Every threaded divergence in this file branches on this
+// flag. THE PLAY PAGE IS THREADED-ONLY (owner directive 2026-07-10,
+// Metal-verified — notes/p1-engine-thread.md GATE D; the ?threads=0 legacy
+// escape hatch was deleted after the owner confirmed the HTTPS threaded
+// experience). Harness/smoke pages keep the non-threaded default and opt in
+// via ?threads=1. Design + P1a/P1b mechanics: WebAssembly/notes/p1-engine-thread.md.
+// The pthread build hard-requires SharedArrayBuffer, which Chrome only
+// exposes to cross-origin-isolated pages — and COOP/COEP headers are IGNORED
+// on untrustworthy origins (plain http:// over a LAN IP; only https:// and
+// localhost qualify). Owner-facing regression 2026-07-10: the play page at
+// http://192.168.x.x:8123 died with "FAILED: archive mount failed" because
+// the threaded default tried to instantiate the pthread wasm without SAB
+// ("ReferenceError: SharedArrayBuffer is not defined"). Owner directive
+// 2026-07-10: NO legacy single-thread fallback. When threaded mode is
+// requested but this origin cannot run it, the page REDIRECTS to the
+// harness's HTTPS listener (a trustworthy origin where COOP/COEP are
+// honored); when a redirect cannot fix it (already https with a rejected
+// cert, or a localhost server not sending COOP/COEP) the boot is BLOCKED
+// with the reason — never a silent degrade to the legacy build.
+// play.mjs mirrors this check and renders the redirect/block state.
+function cncPortThreadedRuntimeSupport() {
+  const missing = [];
+  if (typeof SharedArrayBuffer !== "function") {
+    missing.push("SharedArrayBuffer");
+  }
+  if (globalThis.crossOriginIsolated !== true) {
+    missing.push("crossOriginIsolated");
+  }
+  if (missing.length === 0) {
+    return { supported: true, reason: null };
+  }
+  const origin = (() => {
+    try {
+      return globalThis.location?.origin ?? "";
+    } catch (_error) {
+      return "";
+    }
+  })();
+  const insecure = globalThis.isSecureContext !== true;
+  return {
+    supported: false,
+    reason: `engine-thread mode unavailable: missing ${missing.join(" + ")}`
+      + (insecure
+        ? ` — ${origin || "this origin"} is not a secure context (browsers ignore COOP/COEP on`
+          + " plain http:// LAN addresses; use https:// or http://localhost)"
+        : ""),
+  };
+}
+
+// Must match harness/static-server.mjs DEFAULT_HTTPS_PORT — the baked
+// fallback when the /__cnc_https_info announcement is unavailable (older
+// server without the endpoint).
+const CNC_PORT_DEFAULT_HTTPS_PORT = 8443;
+
+function cncPortIsLocalhostName(hostnameValue) {
+  const name = String(hostnameValue || "").toLowerCase();
+  return name === "localhost" || name === "127.0.0.1" || name === "[::1]" || name === "::1"
+    || name.endsWith(".localhost");
+}
+
+// Non-null when threaded mode was requested (or defaulted) but this origin
+// cannot run it: { reason, action: "pending"|"redirect"|"blocked", target }.
+// Mutated in place so harnessState always shows the resolved action.
+let cncPortThreadedUnsupported = null;
+
+async function cncPortResolveSecureOriginAction(unsupported) {
+  const location = globalThis.location;
+  if (!location || location.protocol !== "http:" || cncPortIsLocalhostName(location.hostname)) {
+    // Already https (self-signed cert rejected / COI policy) or a localhost
+    // origin whose server is not sending COOP/COEP: a redirect cannot fix
+    // either — block with the reason. localhost origins are trustworthy, so
+    // gates/probes on http://localhost never reach this path with a
+    // COOP/COEP-sending harness server.
+    unsupported.action = "blocked";
+  } else {
+    // Insecure non-localhost origin: redirect to the harness HTTPS listener.
+    // Ask the current (http) origin where it lives; fall back to the baked
+    // default port when the endpoint is missing (older server).
+    let httpsEnabled = true;
+    let httpsPort = CNC_PORT_DEFAULT_HTTPS_PORT;
+    try {
+      const response = await fetch("/__cnc_https_info", { cache: "no-store" });
+      if (response.ok) {
+        const info = await response.json();
+        httpsEnabled = info?.httpsEnabled !== false;
+        const announced = Number(info?.httpsPort);
+        if (Number.isFinite(announced) && announced > 0) {
+          httpsPort = announced;
+        }
+      }
+    } catch (_error) {
+      // No announcement — try the default port anyway.
+    }
+    if (!httpsEnabled) {
+      unsupported.action = "blocked";
+      unsupported.reason += " — and this server has no HTTPS listener"
+        + " (restart harness/serve.mjs with HTTPS_PORT=8443, or open via http://localhost)";
+    } else {
+      unsupported.action = "redirect";
+      unsupported.target = `https://${location.hostname}:${httpsPort}`
+        + `${location.pathname}${location.search}${location.hash}`;
+    }
+  }
+  try {
+    globalThis.dispatchEvent(new CustomEvent("cnc-threaded-unsupported", {
+      detail: { ...unsupported },
+    }));
+  } catch (_error) {
+    // Non-DOM realm; state.threadedUnsupported still carries the result.
+  }
+  if (unsupported.action === "redirect") {
+    console.warn(`[wasm-harness] ${unsupported.reason}; redirecting to the HTTPS origin `
+      + `${unsupported.target} (owner directive: no single-thread fallback)`);
+    globalThis.location.replace(unsupported.target);
+  } else {
+    console.error(`[wasm-harness] ${unsupported.reason}; boot BLOCKED `
+      + "(owner directive: no single-thread fallback)");
+  }
+}
+
 const cncPortThreadedMode = (() => {
   try {
-    return new URLSearchParams(globalThis.location?.search || "").get("threads") === "1";
+    // The play page is THREADED-ONLY (owner directive 2026-07-10; the
+    // ?threads=0 legacy escape hatch was deleted after the owner confirmed
+    // the HTTPS threaded experience). Harness/index.html probe surfaces stay
+    // non-threaded by default and opt in with ?threads=1.
+    const threads = new URLSearchParams(globalThis.location?.search || "").get("threads");
+    const requested = threads === "1"
+      || (globalThis.location?.pathname || "").endsWith("/play.html");
+    if (!requested) return false;
+    const support = cncPortThreadedRuntimeSupport();
+    if (!support.supported) {
+      cncPortThreadedUnsupported = { reason: support.reason, action: "pending", target: null };
+      void cncPortResolveSecureOriginAction(cncPortThreadedUnsupported);
+      return false;
+    }
+    return true;
   } catch (_error) {
     return false;
   }
@@ -60,8 +191,15 @@ function validCncPortDistDir(value) {
 function defaultCncPortDistDir() {
   try {
     if (cncPortThreadedMode) {
-      // ?threads=1 needs the pthread-enabled runtime (PTHREAD_POOL_SIZE=1 +
-      // realm stub). An explicit ?dist= still wins in selectedCncPortDistDir.
+      // Threaded mode needs the pthread-enabled runtime (PTHREAD_POOL_SIZE=1
+      // + realm stub). The play page serves the RELEASE threaded build
+      // (dist-threaded is Debug: -O0/ASSERTIONS/JS-EH, several times slower
+      // engine — the GATE D "worker GL deficit" was this build-flavor gap);
+      // harness/smoke pages keep the Debug dist-threaded for gate parity
+      // with dist. An explicit ?dist= still wins in selectedCncPortDistDir.
+      if ((globalThis.location?.pathname || "").endsWith("/play.html")) {
+        return "dist-threaded-release";
+      }
       return "dist-threaded";
     }
     if (validCncPortDistDir(globalThis.__cncDefaultDistDir)) {
@@ -139,6 +277,8 @@ async function cncPortRuntimeCacheToken(distDir) {
 }
 
 let cncPortEmscriptenModule = null;
+// Why loadWasmModule returned null (surfaced in mount errors).
+let cncPortModuleLoadError = null;
 
 const D3DCLEAR_TARGET = 0x00000001;
 
@@ -161,6 +301,11 @@ const harnessState = {
   booted: false,
   frame: 0,
   runtime: "js-stub",
+  // Non-null when threaded mode was requested (or defaulted) but this origin
+  // cannot run it (no SAB / not crossOriginIsolated). There is NO legacy
+  // fallback (owner directive 2026-07-10): the action is "redirect" (to the
+  // harness HTTPS listener) or "blocked" (boot refused with the reason).
+  threadedUnsupported: cncPortThreadedUnsupported,
   wasm: null,
   mainLoop: {
     running: false,
@@ -1135,6 +1280,17 @@ function createThreadedEngineController() {
     return reply;
   }
 
+  // Fire-and-forget realm command (no id, no reply, no timeout entry) —
+  // pagehide teardown must not allocate pending state on a dying page.
+  function postCommand(payload) {
+    try {
+      sendPortCommand(payload);
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  }
+
   return {
     ensureReady,
     startEngineThread,
@@ -1143,6 +1299,7 @@ function createThreadedEngineController() {
     startLoop,
     forwardInput,
     sendCommand,
+    postCommand,
     get lastStatus() { return lastStatus; },
     get lastLoopError() { return lastLoopError; },
     get engineThreadStarted() { return engineThreadStarted; },
@@ -4969,6 +5126,11 @@ async function loadWasmModule() {
       heapU8: () => module.HEAPU8,
     };
   } catch (error) {
+    // Keep the underlying reason: getWasmModuleForArchives folds it into the
+    // mount error so a failed page shows the ROOT CAUSE (e.g. "SharedArray-
+    // Buffer is not defined" on an untrustworthy origin), not a bare
+    // "Wasm module unavailable".
+    cncPortModuleLoadError = String(error?.message ?? error);
     console.info("[wasm-harness] wasm module unavailable; using JS boot stub", error);
     return null;
   }
@@ -5366,8 +5528,7 @@ function openMountedArchiveReader(fs, path) {
 }
 
 // Partial-read variant of readBigDirectoryFromBytes: parses the BIGF header +
-// directory through bounded chunked reads (same strategy as
-// extractBigEntryFromUrl's range fetches) instead of requiring the whole
+// directory through bounded chunked reads instead of requiring the whole
 // archive in memory. Semantics and error messages mirror
 // readBigDirectoryFromBytes. Async so readers may be remote (the threaded
 // OPFS realm reader awaits port round trips); MEMFS readers return plain
@@ -7658,18 +7819,14 @@ function archivePathFromPayload(payload, baseDirectory = "/assets") {
 }
 
 // ---------------------------------------------------------------------------
-// IO worker client (first slice of "move IO to its own thread").
+// IO worker client.
 //
-// A dedicated module Web Worker (harness/io_worker.mjs) does the archive
-// `fetch()` + `arrayBuffer()` off the main thread and transfers the finished
-// bytes back (zero-copy). The main thread only performs the single
-// `FS.writeFile` memcpy into the wasm heap. This keeps the ~1.6 GB archive
-// download and its decode from contending with the WebGL/engine main thread.
-//
-// It is opt-outable: set `window.__cncIoWorker = false` (or `?ioworker=0` via
-// the page, handled by the caller) to force the legacy inline fetch. Any worker
-// failure transparently falls back to the inline path, so this never blocks a
-// mount that would otherwise succeed.
+// A dedicated module Web Worker (harness/io_worker.mjs) streams archive
+// downloads straight into OPFS (fetchToOpfs) for the threaded mount path and
+// garbage-collects per-boot OPFS namespaces. The MEMFS-era whole-buffer
+// `fetchArchive` transfer command was deleted 2026-07-10 with the play-page
+// legacy path; the surviving MEMFS mounts (harness/index.html legacy-boot
+// surface) fetch inline on the main thread.
 let ioWorkerInstance = null;
 let ioWorkerNextId = 1;
 let ioWorkerDisabled = false;
@@ -7679,18 +7836,7 @@ function ioWorkerEnabled() {
   if (ioWorkerDisabled) {
     return false;
   }
-  if (typeof Worker !== "function") {
-    return false;
-  }
-  // Explicit opt-out escape hatch for debugging / regressions.
-  try {
-    if (globalThis.__cncIoWorker === false) {
-      return false;
-    }
-  } catch (_error) {
-    // No globalThis override in some contexts; default to enabled.
-  }
-  return true;
+  return typeof Worker === "function";
 }
 
 function ensureIoWorker() {
@@ -7763,15 +7909,6 @@ function ioWorkerRequest(request, transfer = [], onProgress = null) {
   });
 }
 
-// Fetch a whole archive off the main thread; resolves to a Uint8Array view of
-// the transferred ArrayBuffer. Rejects (so the caller falls back inline) if the
-// worker is unavailable or the fetch fails. `onProgress` (optional) receives
-// the worker's streamed { url, received, total } download progress messages.
-async function fetchArchiveBytesOffThread(url, onProgress = null) {
-  const response = await ioWorkerRequest({ kind: "fetchArchive", url }, [], onProgress);
-  return new Uint8Array(response.bytes);
-}
-
 // P2 "OPFS as the disk" (threaded mode): stream one archive straight into an
 // OPFS file on the IO worker. The bytes are NEVER RAM-resident anywhere —
 // each fetch chunk is written through a FileSystemSyncAccessHandle as it
@@ -7780,6 +7917,29 @@ async function fetchArchiveBytesOffThread(url, onProgress = null) {
 async function fetchArchiveToOpfsOffThread(url, opfsPath, onProgress = null) {
   const response = await ioWorkerRequest({ kind: "fetchToOpfs", url, opfsPath }, [], onProgress);
   return { bytesWritten: Number(response.bytesWritten), status: response.status };
+}
+
+// Release the OPFS exclusive locks (engine realm's staged handles + any
+// in-flight IO-worker handles) as soon as the page starts going away —
+// browsers reap a dead page's workers asynchronously, and until then those
+// locks would collide with the NEXT boot's mount. Best-effort: delivery
+// during teardown is not guaranteed (the per-boot namespace + GC in
+// mountArchivesToOpfs is the hard guarantee; this just releases early in the
+// common case).
+if (cncPortThreadedMode && typeof window !== "undefined") {
+  const releaseOpfsLocksOnPageHide = () => {
+    try {
+      threadedEngine?.postCommand({ cmd: "releaseOpfsHandles" });
+    } catch (_error) {
+      // realm port not connected yet
+    }
+    try {
+      ioWorkerInstance?.postMessage({ kind: "releaseHandles" });
+    } catch (_error) {
+      // worker gone
+    }
+  };
+  window.addEventListener("pagehide", releaseOpfsLocksOnPageHide);
 }
 
 // Archive mount progress -> page UI. The mount path publishes coarse
@@ -7808,11 +7968,9 @@ function archiveFetchProgressReporter(archive, context = null) {
   };
 }
 
-// How many archives to download concurrently while mounting a set. The bytes
-// still hit MEMFS strictly sequentially in registration order; this only lets
-// the next fetches overlap the current write. `window.__cncFetchParallel =
-// false` (page: ?fetchpar=0) opts out; the worker-less fallback stays fully
-// sequential so the legacy inline path is unchanged.
+// How many archives the OPFS mount downloads concurrently (io_worker
+// fetchToOpfs streams). `window.__cncFetchParallel = false` (page:
+// ?fetchpar=0) opts out to strictly sequential downloads.
 const ARCHIVE_FETCH_PARALLELISM = 3;
 
 function archiveFetchParallelism() {
@@ -7826,20 +7984,12 @@ function archiveFetchParallelism() {
   return ioWorkerEnabled() ? ARCHIVE_FETCH_PARALLELISM : 1;
 }
 
-// Download one archive's bytes, preferring the IO worker (streamed, off the
-// main thread) and falling back to the inline main-thread fetch. Returns
-// { bytes, reader } or { error } for an HTTP failure (network errors throw,
-// matching the legacy inline path).
-async function fetchArchiveBytesWithFallback(archive, onProgress = null) {
-  if (ioWorkerEnabled()) {
-    try {
-      const bytes = await fetchArchiveBytesOffThread(archive.url, onProgress);
-      return { bytes, reader: "io-worker fetch" };
-    } catch (_workerError) {
-      // Fall back to the inline main-thread fetch below.
-    }
-  }
-
+// Download one archive's bytes with an inline main-thread fetch (MEMFS
+// mounts are the non-threaded harness/index.html legacy-boot surface only;
+// the threaded/OPFS mount path streams through the IO worker instead).
+// Returns { bytes, reader } or { error } for an HTTP failure (network errors
+// throw).
+async function fetchArchiveBytesInline(archive, onProgress = null) {
   const response = await fetch(archive.url);
   if (!response.ok) {
     return {
@@ -7875,27 +8025,15 @@ async function writeArchiveToMemfs(wasmModule, payload, baseDirectory = "/assets
     });
   };
 
-  let bytes = null;
-  let reader = "main-thread fetch";
-
-  if (options.prefetched) {
-    // mountArchives' bounded fetch-ahead pipeline already downloaded this one.
-    if (options.prefetched.error) {
-      return { error: options.prefetched.error };
-    }
-    bytes = options.prefetched.bytes;
-    reader = options.prefetched.reader;
-  } else {
-    const fetched = await fetchArchiveBytesWithFallback(
-      archive,
-      emitProgress ? archiveFetchProgressReporter(archive, progressContext) : null,
-    );
-    if (fetched.error) {
-      return { error: fetched.error };
-    }
-    bytes = fetched.bytes;
-    reader = fetched.reader;
+  const fetched = await fetchArchiveBytesInline(
+    archive,
+    emitProgress ? archiveFetchProgressReporter(archive, progressContext) : null,
+  );
+  if (fetched.error) {
+    return { error: fetched.error };
   }
+  const bytes = fetched.bytes;
+  const reader = fetched.reader;
 
   reportPhase("write", bytes.byteLength);
   // Give the page a task boundary to paint the "mounting <name>" state before
@@ -9219,7 +9357,8 @@ function rememberMountedArchives(archives) {
 async function getWasmModuleForArchives(command) {
   const wasmModule = await wasmModulePromise;
   if (!wasmModule) {
-    return { error: "Wasm module unavailable; archive cannot be mounted", command };
+    const cause = cncPortModuleLoadError ? ` (${cncPortModuleLoadError})` : "";
+    return { error: `Wasm module unavailable; archive cannot be mounted${cause}`, command };
   }
   return { wasmModule };
 }
@@ -9404,33 +9543,71 @@ async function mountArchive(payload = {}) {
 // realEngineInit (boot+go) after the mount resolves.
 //
 // No cache/skip layer (owner rule): OPFS is the read disk, every boot
-// re-streams the archive set (fetchToOpfs truncates + rewrites in place, so
-// disk usage stays bounded at one archive set).
+// re-streams the archive set into a fresh per-boot namespace directory and
+// garbage-collects namespaces whose owner page is gone (Web Lock released),
+// so disk usage stays bounded at one archive set per LIVE tab.
 //
-// The non-threaded path is untouched: opfsArchiveMountEnabled() is false
-// outside ?threads=1, and ?opfsmount=0 (window.__cncOpfsMount = false)
-// forces the MEMFS mount even in threaded mode (A/B memory comparison).
+// The non-threaded MEMFS mount path below survives ONLY as the
+// harness/index.html legacy-boot surface (the non-threaded probe/gate pages
+// and A/B-debug boots of the non-threaded dist); the play page can no longer
+// reach it (threaded/OPFS-only since 2026-07-10).
 const OPFS_ARCHIVE_ROOT = "cnc-archives";
+// Per-boot OPFS namespace (owner regression 2026-07-10 hardening): staged
+// FileSystemSyncAccessHandles hold EXCLUSIVE per-file locks for the page
+// lifetime, and a reloaded page's old engine worker is not reaped
+// synchronously — so rewriting fixed paths every boot could collide with a
+// stale holder (NoModificationAllowedError) and kill the whole mount. Every
+// mount therefore writes into a fresh <root>/ns-<bootId>-<seq>/ directory
+// (fresh names can never be lock-held), the page marks its namespaces as
+// LIVE by holding a Web Lock named `${OPFS_NAMESPACE_LOCK_PREFIX}<bootId>`
+// (auto-released on page death, unlike OPFS handles), and every mount first
+// asks the IO worker to garbage-collect namespaces whose owner lock is gone.
+// A second live tab keeps its lock -> its namespace survives -> both tabs
+// work independently instead of one failing with a raw mount error.
+const OPFS_NAMESPACE_LOCK_PREFIX = "cnc-port-opfs-ns:";
+const opfsBootId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+let opfsMountSequence = 0;
+let opfsNamespaceLockPromise = null;
+
+function acquireOpfsNamespaceLock() {
+  if (opfsNamespaceLockPromise) {
+    return opfsNamespaceLockPromise;
+  }
+  opfsNamespaceLockPromise = new Promise((resolve) => {
+    try {
+      if (!navigator.locks || typeof navigator.locks.request !== "function") {
+        resolve(false);
+        return;
+      }
+      navigator.locks.request(
+        `${OPFS_NAMESPACE_LOCK_PREFIX}${opfsBootId}`,
+        { mode: "exclusive", ifAvailable: true },
+        (lock) => {
+          resolve(lock !== null);
+          // Hold the lock until the page dies (bootId is per-page random, so
+          // nobody else ever waits on it).
+          return lock === null ? null : new Promise(() => {});
+        },
+      ).catch(() => resolve(false));
+    } catch (_error) {
+      resolve(false);
+    }
+  });
+  return opfsNamespaceLockPromise;
+}
 const opfsRegisteredPrefixes = new Set();
 
 function opfsArchiveMountEnabled() {
-  if (!cncPortThreadedMode || !threadedEngine) {
-    return false;
-  }
-  try {
-    if (globalThis.__cncOpfsMount === false) {
-      return false; // page opt-out: keep the MEMFS threaded mount
-    }
-  } catch (_error) {
-    // no override available
-  }
-  // fetchToOpfs needs the IO worker (sync access handles are worker-only);
-  // without it the MEMFS mount path below still works in threaded mode.
-  return ioWorkerEnabled();
+  // Threaded mode mounts on OPFS, period (the ?opfsmount=0 MEMFS escape
+  // hatch was deleted with the play-page legacy path, 2026-07-10). fetchToOpfs
+  // needs the IO worker (sync access handles are worker-only); if the worker
+  // cannot start, mountArchivesToOpfs fails LOUDLY instead of silently
+  // degrading to a MEMFS mount the engine thread could not read.
+  return cncPortThreadedMode && Boolean(threadedEngine);
 }
 
-function opfsPathForArchive(memfsPath) {
-  return `${OPFS_ARCHIVE_ROOT}${memfsPath}`;
+function opfsPathForArchive(namespace, memfsPath) {
+  return `${OPFS_ARCHIVE_ROOT}/${namespace}${memfsPath}`;
 }
 
 // Register the fd-intercept prefix (process-global wasm state). Pre-boot the
@@ -9467,6 +9644,32 @@ async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirec
   // The staging command rides the realm port — realm prep must be complete.
   await threadedEngine.ensureReady();
 
+  // Fresh per-mount namespace under the archive root; mark it live (Web
+  // Lock) BEFORE collecting garbage so a concurrent tab's GC never deletes
+  // files we are about to write, then reclaim dead namespaces (previous
+  // boots) best-effort. GC failures are non-fatal by design: the fresh
+  // namespace never collides with a stale lock holder.
+  const namespace = `ns-${opfsBootId}-${++opfsMountSequence}`;
+  const namespaceLockHeld = await acquireOpfsNamespaceLock();
+  let namespaceGc = null;
+  try {
+    namespaceGc = await ioWorkerRequest({
+      kind: "opfsCollectNamespaces",
+      root: OPFS_ARCHIVE_ROOT,
+      keep: [namespace],
+      lockPrefix: OPFS_NAMESPACE_LOCK_PREFIX,
+    });
+    recordLog("opfs namespace gc", {
+      namespace,
+      lockHeld: namespaceLockHeld,
+      removed: namespaceGc.removed,
+      kept: namespaceGc.kept,
+      failed: namespaceGc.failed,
+    });
+  } catch (error) {
+    recordLog("opfs namespace gc failed", { namespace, error: error?.message ?? String(error) });
+  }
+
   // Bounded-parallel streamed downloads (same fetch parallelism as the MEMFS
   // pipeline); there is no sequential write phase, so archives complete in
   // whatever order the network delivers while `results` keeps input order.
@@ -9484,7 +9687,7 @@ async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirec
       const onProgress = emitProgressEvents
         ? archiveFetchProgressReporter(archive, progressContext)
         : null;
-      const opfsPath = opfsPathForArchive(archive.memfsPath);
+      const opfsPath = opfsPathForArchive(namespace, archive.memfsPath);
       try {
         const { bytesWritten } = await fetchArchiveToOpfsOffThread(archive.url, opfsPath, onProgress);
         results[index] = { bytesWritten, opfsPath };
@@ -9518,6 +9721,8 @@ async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirec
         command: "mountArchives",
         error: result?.error ?? `${parsed.name} download did not complete`,
         archives,
+        opfsNamespace: namespace,
+        opfsNamespaceGc: namespaceGc,
       };
     }
     // 0-byte MEMFS marker at the engine path (directory-enumeration
@@ -9595,6 +9800,8 @@ async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirec
     archiveCount: archives.length,
     totalBytes,
     backing: "opfs",
+    opfsNamespace: namespace,
+    opfsNamespaceGc: namespaceGc,
     stagedPaths: staging.stagedPaths ?? [],
     archives,
     probes: [],
@@ -9638,46 +9845,18 @@ async function mountArchives(payload = {}) {
     return mountArchivesToOpfs(moduleResult.wasmModule, payload, archiveInputs, baseDirectory);
   }
 
-  // Bounded fetch-ahead pipeline: while archive N writes into MEMFS, archives
-  // N+1..N+2 already download (on the IO worker), so the network never idles
-  // behind the sequential main-thread memcpys. Registration order and the
-  // sequential writes are preserved exactly; only the fetches overlap. At most
-  // archiveFetchParallelism() (=3) archive buffers are alive at once: the one
-  // being written plus up to two in flight.
-  const prefetchWindow = archiveFetchParallelism();
+  // MEMFS mounts survive ONLY as the harness/index.html legacy-boot surface
+  // (non-threaded probe/gate pages and A/B-debug boots of the non-threaded
+  // dist). The play-page fetch-ahead pipeline that overlapped downloads with
+  // the sequential writes was deleted with the play-page legacy path
+  // (2026-07-10): archives fetch inline and mount strictly sequentially.
   const emitProgressEvents = payload.progressEvents !== false;
-  const parsedArchives = archiveInputs.map((input) => archivePathFromPayload(input, baseDirectory));
-  const prefetches = new Array(archiveInputs.length).fill(null);
-  const startPrefetch = (index) => {
-    if (index >= archiveInputs.length || prefetches[index] || parsedArchives[index].error) {
-      return;
-    }
-    const onProgress = emitProgressEvents
-      ? archiveFetchProgressReporter(parsedArchives[index], {
-        index,
-        count: archiveInputs.length,
-      })
-      : null;
-    // Capture rejections as values so an unawaited lookahead fetch can never
-    // become an unhandled rejection; the throw is replayed on await below.
-    prefetches[index] = fetchArchiveBytesWithFallback(parsedArchives[index], onProgress)
-      .catch((error) => ({ thrown: error }));
-  };
 
   const archives = [];
   const archiveProbes = [];
   for (let index = 0; index < archiveInputs.length; index += 1) {
-    for (let ahead = index; ahead < Math.min(index + prefetchWindow, archiveInputs.length); ahead += 1) {
-      startPrefetch(ahead);
-    }
     const input = archiveInputs[index];
-    const prefetched = prefetches[index] ? await prefetches[index] : null;
-    prefetches[index] = null; // release the buffer reference promptly
-    if (prefetched?.thrown) {
-      throw prefetched.thrown;
-    }
     const archive = await writeArchiveToMemfs(moduleResult.wasmModule, input, baseDirectory, {
-      prefetched,
       emitProgress: emitProgressEvents,
       progressContext: { index, count: archiveInputs.length },
     });
@@ -9756,17 +9935,6 @@ function readBigUInt32BE(bytes, offset) {
     bytes[offset + 3];
 }
 
-function writeBigUInt32BE(bytes, offset, value) {
-  if (!Number.isSafeInteger(value) || value < 0 || value > 0xffffffff) {
-    throw new Error(`BIG archive integer out of range: ${value}`);
-  }
-
-  bytes[offset] = Math.floor(value / 0x1000000) & 0xff;
-  bytes[offset + 1] = Math.floor(value / 0x10000) & 0xff;
-  bytes[offset + 2] = Math.floor(value / 0x100) & 0xff;
-  bytes[offset + 3] = value & 0xff;
-}
-
 function appendBytes(left, right) {
   const combined = new Uint8Array(left.byteLength + right.byteLength);
   combined.set(left, 0);
@@ -9774,533 +9942,25 @@ function appendBytes(left, right) {
   return combined;
 }
 
-async function fetchByteRange(url, start, end) {
-  const response = await fetch(url, {
-    headers: {
-      Range: `bytes=${start}-${end}`,
-    },
-  });
-  if (response.status !== 206) {
-    throw new Error(`Range fetch failed for ${url} ${start}-${end}: HTTP ${response.status}`);
-  }
-
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  const expectedLength = end - start + 1;
-  if (bytes.byteLength !== expectedLength) {
-    throw new Error(`Range fetch length mismatch for ${url} ${start}-${end}: ${bytes.byteLength} != ${expectedLength}`);
-  }
-
-  return bytes;
-}
-
-async function extractBigEntryFromUrl(url, entryName) {
-  const wanted = String(entryName ?? "").replaceAll("/", "\\").toLowerCase();
-  if (!wanted) {
-    throw new Error("Missing BIG archive entry name");
-  }
-
-  const header = await fetchByteRange(url, 0, 15);
-  const magic = String.fromCharCode(...header.subarray(0, 4));
-  if (magic !== "BIGF") {
-    throw new Error(`${url} is not a BIGF archive`);
-  }
-
-  const count = readBigUInt32BE(header, 8);
-  if (count === 0 || count > 1000000) {
-    throw new Error(`${url} has an invalid BIGF entry count: ${count}`);
-  }
-
-  const decoder = new TextDecoder("ascii");
-  const directoryStart = 0x10;
-  const chunkSize = 64 * 1024;
-  let directoryBytes = new Uint8Array(0);
-  let cursor = 0;
-
-  const ensureDirectoryBytes = async (requiredLength) => {
-    while (directoryBytes.byteLength < requiredLength) {
-      const start = directoryStart + directoryBytes.byteLength;
-      const next = await fetchByteRange(url, start, start + chunkSize - 1);
-      if (next.byteLength === 0) {
-        throw new Error(`${url} ended before BIGF directory entry ${entryName}`);
-      }
-      directoryBytes = appendBytes(directoryBytes, next);
-    }
-  };
-
-  for (let index = 0; index < count; ++index) {
-    await ensureDirectoryBytes(cursor + 9);
-    const offset = readBigUInt32BE(directoryBytes, cursor);
-    const size = readBigUInt32BE(directoryBytes, cursor + 4);
-    const pathStart = cursor + 8;
-    let pathEnd = -1;
-    while (pathEnd < 0) {
-      for (let scan = pathStart; scan < directoryBytes.byteLength; ++scan) {
-        if (directoryBytes[scan] === 0) {
-          pathEnd = scan;
-          break;
-        }
-      }
-      if (pathEnd < 0) {
-        await ensureDirectoryBytes(directoryBytes.byteLength + 1);
-      }
-    }
-
-    const path = decoder.decode(directoryBytes.subarray(pathStart, pathEnd));
-    cursor = pathEnd + 1;
-    if (path.replaceAll("/", "\\").toLowerCase() === wanted) {
-      const bytes = await fetchByteRange(url, offset, offset + size - 1);
-      return {
-        path,
-        offset,
-        size,
-        bytes,
-        directoryBytes: directoryBytes.byteLength,
-        indexedEntries: index + 1,
-      };
-    }
-  }
-
-  throw new Error(`${entryName} was not found in ${url}`);
-}
-
-async function indexBigArchiveUrl(url) {
-  const header = await fetchByteRange(url, 0, 15);
-  const magic = String.fromCharCode(...header.subarray(0, 4));
-  if (magic !== "BIGF") {
-    throw new Error(`${url} is not a BIGF archive`);
-  }
-
-  const count = readBigUInt32BE(header, 8);
-  if (count === 0 || count > 1000000) {
-    throw new Error(`${url} has an invalid BIGF entry count: ${count}`);
-  }
-
-  const decoder = new TextDecoder("ascii");
-  const directoryStart = 0x10;
-  const chunkSize = 64 * 1024;
-  let directoryBytes = new Uint8Array(0);
-  let cursor = 0;
-  const entries = new Map();
-
-  const ensureDirectoryBytes = async (requiredLength) => {
-    while (directoryBytes.byteLength < requiredLength) {
-      const start = directoryStart + directoryBytes.byteLength;
-      const next = await fetchByteRange(url, start, start + chunkSize - 1);
-      if (next.byteLength === 0) {
-        throw new Error(`${url} ended before BIGF directory entry ${entries.size + 1}`);
-      }
-      directoryBytes = appendBytes(directoryBytes, next);
-    }
-  };
-
-  for (let index = 0; index < count; ++index) {
-    await ensureDirectoryBytes(cursor + 9);
-    const offset = readBigUInt32BE(directoryBytes, cursor);
-    const size = readBigUInt32BE(directoryBytes, cursor + 4);
-    const pathStart = cursor + 8;
-    let pathEnd = -1;
-    while (pathEnd < 0) {
-      for (let scan = pathStart; scan < directoryBytes.byteLength; ++scan) {
-        if (directoryBytes[scan] === 0) {
-          pathEnd = scan;
-          break;
-        }
-      }
-      if (pathEnd < 0) {
-        await ensureDirectoryBytes(directoryBytes.byteLength + 1);
-      }
-    }
-
-    const path = decoder.decode(directoryBytes.subarray(pathStart, pathEnd));
-    cursor = pathEnd + 1;
-    entries.set(path.replaceAll("/", "\\").toLowerCase(), {
-      path,
-      offset,
-      size,
-      indexedEntries: index + 1,
-    });
-  }
-
-  return {
-    entries,
-    directoryBytes: directoryBytes.byteLength,
-    indexedEntries: count,
-  };
-}
-
-async function extractBigEntriesFromUrl(url, entryNames) {
-  const requestedEntries = entryNames.map((entryName, index) => {
-    const wanted = String(entryName ?? "").replaceAll("/", "\\").toLowerCase();
-    if (!wanted) {
-      throw new Error("Missing BIG archive entry name");
-    }
-    return { wanted, entryName, index };
-  });
-
-  const archiveIndex = await indexBigArchiveUrl(url);
-  const matchedEntries = requestedEntries.map((request) => {
-    const entry = archiveIndex.entries.get(request.wanted);
-    if (!entry) {
-      throw new Error(`${request.entryName} was not found in ${url}`);
-    }
-    return {
-      ...entry,
-      requestIndex: request.index,
-    };
-  });
-
-  const coalesceGapBytes = 64 * 1024;
-  const groups = [];
-  for (const entry of [...matchedEntries].sort((left, right) => left.offset - right.offset)) {
-    const endExclusive = entry.offset + entry.size;
-    const lastGroup = groups[groups.length - 1];
-    if (lastGroup && entry.offset <= lastGroup.endExclusive + coalesceGapBytes) {
-      lastGroup.endExclusive = Math.max(lastGroup.endExclusive, endExclusive);
-      lastGroup.entries.push(entry);
-    } else {
-      groups.push({
-        start: entry.offset,
-        endExclusive,
-        entries: [entry],
-      });
-    }
-  }
-
-  const extractedEntries = new Array(matchedEntries.length);
-  for (const group of groups) {
-    const groupBytes = await fetchByteRange(url, group.start, group.endExclusive - 1);
-    for (const entry of group.entries) {
-      const start = entry.offset - group.start;
-      const bytes = groupBytes.subarray(start, start + entry.size);
-      extractedEntries[entry.requestIndex] = {
-        path: entry.path,
-        offset: entry.offset,
-        size: entry.size,
-        bytes,
-        directoryBytes: archiveIndex.directoryBytes,
-        indexedEntries: archiveIndex.indexedEntries,
-      };
-    }
-  }
-
-  return extractedEntries;
-}
-
-function buildBigArchive(entries) {
-  const encoder = new TextEncoder();
-  const normalizedEntries = entries.map((entry) => {
-    const path = String(entry.path ?? "").replaceAll("/", "\\");
-    if (!path || path.includes("\0")) {
-      throw new Error(`Invalid BIG archive entry path: ${path}`);
-    }
-
-    const pathBytes = encoder.encode(path);
-    const bytes = entry.bytes instanceof Uint8Array ? entry.bytes : new Uint8Array(entry.bytes ?? []);
-    return {
-      ...entry,
-      path,
-      pathBytes,
-      bytes,
-    };
-  });
-
-  const directoryBytes = normalizedEntries.reduce(
-    (sum, entry) => sum + 8 + entry.pathBytes.byteLength + 1,
-    0,
-  );
-  const dataStart = 0x10 + directoryBytes;
-  const totalBytes = dataStart + normalizedEntries.reduce(
-    (sum, entry) => sum + entry.bytes.byteLength,
-    0,
-  );
-  if (totalBytes > 0xffffffff) {
-    throw new Error(`Synthesized BIG archive is too large: ${totalBytes}`);
-  }
-
-  const archiveBytes = new Uint8Array(totalBytes);
-  archiveBytes.set([0x42, 0x49, 0x47, 0x46], 0); // BIGF
-  writeBigUInt32BE(archiveBytes, 4, totalBytes);
-  writeBigUInt32BE(archiveBytes, 8, normalizedEntries.length);
-  writeBigUInt32BE(archiveBytes, 12, 0);
-
-  let directoryCursor = 0x10;
-  let dataCursor = dataStart;
-  const manifest = [];
-  for (const entry of normalizedEntries) {
-    writeBigUInt32BE(archiveBytes, directoryCursor, dataCursor);
-    writeBigUInt32BE(archiveBytes, directoryCursor + 4, entry.bytes.byteLength);
-    archiveBytes.set(entry.pathBytes, directoryCursor + 8);
-    archiveBytes[directoryCursor + 8 + entry.pathBytes.byteLength] = 0;
-    archiveBytes.set(entry.bytes, dataCursor);
-    manifest.push({
-      path: entry.path,
-      bytes: entry.bytes.byteLength,
-      offset: dataCursor,
-      sourceOffset: entry.offset,
-      sourceArchive: entry.sourceArchive,
-      sourceIndexedEntries: entry.indexedEntries,
-      sourceDirectoryBytes: entry.directoryBytes,
-      reader: "browser fetch Range",
-    });
-    directoryCursor += 8 + entry.pathBytes.byteLength + 1;
-    dataCursor += entry.bytes.byteLength;
-  }
-
-  return {
-    bytes: archiveBytes,
-    entries: manifest,
-    directoryBytes,
-    dataStart,
-  };
-}
-
-async function mountRangeBackedArchiveSet(payload = {}) {
-  const moduleResult = await getWasmModuleForArchives("mountRangeBackedArchiveSet");
-  if (moduleResult.error) {
-    return { ok: false, command: moduleResult.command, error: moduleResult.error };
-  }
-
-  const archiveInputs = Array.isArray(payload.archives) ? payload.archives : [];
-  if (archiveInputs.length === 0) {
-    return { ok: false, command: "mountRangeBackedArchiveSet", error: "Missing archive list" };
-  }
-
-  const baseDirectory = normalizeAssetDirectory(String(payload.path ?? "/assets/runtime"));
-  if (!baseDirectory) {
-    return {
-      ok: false,
-      command: "mountRangeBackedArchiveSet",
-      error: `Archive directory must stay under /assets/: ${payload.path}`,
-    };
-  }
-
-  const archives = [];
-  const archiveProbes = [];
-  const shouldRegister = payload.register !== false;
-  for (const input of archiveInputs) {
-    const archive = archivePathFromPayload(input, baseDirectory);
-    if (archive.error) {
-      return { ok: false, command: "mountRangeBackedArchiveSet", error: archive.error, archives };
-    }
-
-    const entryNames = Array.isArray(input.entries) ? input.entries : [];
-    if (entryNames.length === 0) {
-      return {
-        ok: false,
-        command: "mountRangeBackedArchiveSet",
-        error: `Missing range-backed entries for ${archive.name}`,
-        archives,
-      };
-    }
-
-    const entries = [];
-    try {
-      const extractedEntries = await extractBigEntriesFromUrl(archive.url, entryNames);
-      entries.push(...extractedEntries.map((entry) => ({
-        ...entry,
-        sourceArchive: String(input.sourceArchive ?? archive.url),
-      })));
-    } catch (error) {
-      return {
-        ok: false,
-        command: "mountRangeBackedArchiveSet",
-        error: error?.message ?? String(error),
-        archives,
-      };
-    }
-
-    let generated;
-    try {
-      generated = buildBigArchive(entries);
-      ensureMemfsDirectory(moduleResult.wasmModule.fs, parentDirectory(archive.memfsPath));
-      moduleResult.wasmModule.fs.writeFile(archive.memfsPath, generated.bytes);
-    } catch (error) {
-      return {
-        ok: false,
-        command: "mountRangeBackedArchiveSet",
-        error: error?.message ?? String(error),
-        archives,
-      };
-    }
-
-    const assetProbe = !shouldRegister || payload.verifyEach === false
-      ? null
-      : probeArchive(moduleResult.wasmModule, archive.memfsPath);
-    const mountedArchive = {
-      name: archive.name,
-      sourceName: String(input.sourceName ?? input.sourceArchive ?? archive.name),
-      path: archive.memfsPath,
-      bytes: generated.bytes.byteLength,
-      sourceBytes: Number(input.expectedSourceBytes ?? input.sourceBytes ?? 0),
-      directoryBytes: generated.directoryBytes,
-      dataStart: generated.dataStart,
-      entries: generated.entries,
-      entryCount: generated.entries.length,
-      reader: "browser fetch Range -> synthesized BIG",
-      storage: "range-backed-subset-big",
-    };
-    archives.push(mountedArchive);
-    if (assetProbe) {
-      const probeOk = archiveProbeOkForMount(assetProbe, mountedArchive);
-      archiveProbes.push({
-        name: archive.name,
-        sourceName: mountedArchive.sourceName,
-        path: archive.memfsPath,
-        ok: probeOk,
-        strictOk: Boolean(assetProbe.ok),
-        optionalBaseArchive: isOptionalBaseArchive(mountedArchive),
-        loaded: Boolean(assetProbe.loaded),
-        indexedFiles: assetProbe.indexedFiles,
-        sampleBytes: assetProbe.sampleBytes,
-      });
-    }
-  }
-
-  const probePath = `${baseDirectory}/*.big`;
-  const aggregateProbe = shouldRegister
-    ? probeArchive(moduleResult.wasmModule, probePath)
-    : { ok: true };
-  rememberMountedArchives(archives);
-
-  const allArchiveProbesOk = archiveProbes.every((archive) => archive.ok);
-  const ok = Boolean(aggregateProbe?.ok) && allArchiveProbesOk;
-  const totalBytes = archives.reduce((sum, archive) => sum + archive.bytes, 0);
-  const sourceTotalBytes = archives.reduce((sum, archive) => sum + archive.sourceBytes, 0);
-  const archiveSet = {
-    path: baseDirectory,
-    probePath,
-    archiveCount: archives.length,
-    totalBytes,
-    sourceTotalBytes,
-    archives,
-    probes: archiveProbes,
-    reader: shouldRegister
-      ? "browser fetch Range -> synthesized BIG -> Win32BIGFileSystem"
-      : "browser fetch Range -> synthesized BIG",
-    storage: "range-backed-subset-big",
-    registered: shouldRegister && ok,
-  };
-  if (ok && shouldRegister) {
-    registerArchiveSet(moduleResult.wasmModule, archiveSet);
-  }
-
-  recordLog("range-backed archive set mounted", {
-    path: baseDirectory,
-    archiveCount: archives.length,
-    totalBytes,
-    sourceTotalBytes,
-    ok,
-  });
-
-  return {
-    ok,
-    command: "mountRangeBackedArchiveSet",
-    state: snapshotState(),
-    archiveSet,
-  };
-}
-
-async function mountBigArchiveEntry(payload = {}) {
-  const moduleResult = await getWasmModuleForArchives("mountBigArchiveEntry");
-  if (moduleResult.error) {
-    return { ok: false, command: moduleResult.command, error: moduleResult.error };
-  }
-
-  try {
-    const url = String(payload.url ?? "");
-    const mountPath = String(payload.path ?? "").replaceAll("\\", "/");
-    if (!url) {
-      throw new Error("Missing archive URL");
-    }
-    if (!mountPath.startsWith("/") ||
-        mountPath.split("/").some((part) => part === "." || part === "..")) {
-      throw new Error(`Invalid MEMFS mount path: ${mountPath}`);
-    }
-
-    const entry = await extractBigEntryFromUrl(url, payload.entry);
-    ensureFixedMemfsDirectory(moduleResult.wasmModule.fs, parentDirectory(mountPath));
-    moduleResult.wasmModule.fs.writeFile(mountPath, entry.bytes);
-    recordLog("BIG archive entry mounted", {
-      path: mountPath,
-      bytes: entry.size,
-      offset: entry.offset,
-      archiveEntry: entry.path,
-      sourceArchive: String(payload.sourceArchive ?? url),
-    });
-
-    return {
-      ok: true,
-      command: "mountBigArchiveEntry",
-      asset: {
-        path: mountPath,
-        sourceArchive: String(payload.sourceArchive ?? url),
-        archiveUrl: url,
-        archiveEntry: entry.path,
-        offset: entry.offset,
-        bytes: entry.size,
-        directoryBytes: entry.directoryBytes,
-        indexedEntries: entry.indexedEntries,
-        reader: "browser fetch Range",
-      },
-      state: snapshotState(),
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      command: "mountBigArchiveEntry",
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
-async function mountShippedMeshAsset(payload = {}) {
-  const moduleResult = await getWasmModuleForArchives("mountShippedMeshAsset");
-  if (moduleResult.error) {
-    return { ok: false, command: moduleResult.command, error: moduleResult.error };
-  }
-
-  const requestedPath = String(payload.path ?? "").replaceAll("\\", "/");
-  const mountPaths = new Map([
-    ["Art/W3D/CINE_Moon.W3D", "/Art/W3D/CINE_Moon.W3D"],
-    ["Art/Textures/cine_moon.dds", "/art/textures/cine_moon.dds"],
-  ]);
-  const path = mountPaths.get(requestedPath);
-  if (!path) {
-    return {
-      ok: false,
-      command: "mountShippedMeshAsset",
-      error: `Unsupported shipped mesh asset path: ${requestedPath}`,
-    };
-  }
-
-  const rawBytes = payload.bytes;
-  const bytes = rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(rawBytes ?? []);
-  if (bytes.byteLength === 0) {
-    return { ok: false, command: "mountShippedMeshAsset", error: "Missing asset bytes" };
-  }
-
-  ensureFixedMemfsDirectory(moduleResult.wasmModule.fs, parentDirectory(path));
-  moduleResult.wasmModule.fs.writeFile(path, bytes);
-  recordLog("shipped mesh asset mounted", {
-    path,
-    bytes: bytes.byteLength,
-    sourceArchive: String(payload.sourceArchive ?? ""),
-  });
-
-  return {
-    ok: true,
-    command: "mountShippedMeshAsset",
-    asset: {
-      path,
-      sourceArchive: String(payload.sourceArchive ?? ""),
-      archiveEntry: requestedPath,
-      bytes: bytes.byteLength,
-    },
-    state: snapshotState(),
-  };
-}
-
 async function rpc(command, payload = {}) {
+  // Owner directive 2026-07-10: never silently boot the legacy single-thread
+  // path when threaded mode was requested but this origin cannot run it.
+  // Refuse the boot-critical commands loudly (the page is redirecting to the
+  // HTTPS origin, or blocked with instructions).
+  if (cncPortThreadedUnsupported
+      && (command === "boot" || command === "mountArchive"
+        || command === "mountArchives" || command === "realEngineInit")) {
+    return {
+      ok: false,
+      command,
+      error: `${cncPortThreadedUnsupported.reason} — boot refused `
+        + "(owner directive: no single-thread fallback; "
+        + (cncPortThreadedUnsupported.action === "redirect"
+          ? `redirecting to ${cncPortThreadedUnsupported.target})`
+          : "serve over https:// or open via http://localhost)"),
+      threadedUnsupported: { ...cncPortThreadedUnsupported },
+    };
+  }
   if (cncPortThreadedMode) {
     // Threaded routing choke point: engine-touching commands execute ON the
     // engine thread via the realm port; pure-JS commands fall through; the
@@ -11236,12 +10896,6 @@ async function rpc(command, payload = {}) {
           state: snapshotState(),
         };
       }
-    case "mountRangeBackedArchiveSet":
-      return mountRangeBackedArchiveSet(payload);
-    case "mountBigArchiveEntry":
-      return mountBigArchiveEntry(payload);
-    case "mountShippedMeshAsset":
-      return mountShippedMeshAsset(payload);
     case "startMainLoop":
       {
         const wasmModule = await wasmModulePromise;

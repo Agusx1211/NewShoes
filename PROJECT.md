@@ -72,7 +72,7 @@ The engine is already split along a device-interface seam. The plan exploits it:
                         │  browser APIs (via Emscripten + JS bridge)
         ┌───────────────┴─────────────────────────────┐
         │  WebGL2/WebGPU · Web Audio · WebCodecs ·     │
-        │  Pointer/Keyboard · MEMFS/IDBFS · fetch ·    │
+        │  Pointer/Keyboard · OPFS/IDBFS · fetch ·     │
         │  WebSocket/WebRTC                            │
         └──────────────────────────────────────────────┘
 ```
@@ -86,7 +86,7 @@ Mapping table (from `AGENTS.md`):
 | Bink video                    | WebCodecs / `<video>`                            |
 | Win32 (window/files/input/time)| Emscripten + DOM / Canvas / Pointer + Keyboard  |
 | GameSpy networking            | WebSockets / WebRTC                              |
-| File / BIG archive I/O        | fetch + in-memory FS (MEMFS/IDBFS)               |
+| File / BIG archive I/O        | streamed fetch → OPFS + engine-thread sync reads (saves: IDBFS) |
 
 ## 4. Toolchain
 

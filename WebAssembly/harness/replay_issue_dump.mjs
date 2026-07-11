@@ -112,12 +112,20 @@ function replayUrl(serverUrl, dump) {
   } else {
     params.set("diag", "lite");
   }
-  // Replay on the path the dump was RECORDED on: dumps from the threaded
-  // play page carry build.distDir === "dist-threaded"; everything else was
-  // recorded on the legacy main-thread path, so pin threads=0 there. Pinning
-  // explicitly keeps replays faithful when the prepared threaded-by-default
-  // play-page flip lands.
-  params.set("threads", dump.build?.distDir === "dist-threaded" ? "1" : "0");
+  // The play page is threaded-only (the ?threads=0 legacy path was deleted
+  // 2026-07-10): threaded dumps replay on the exact dist they were recorded
+  // on; dumps recorded on the retired legacy main-thread play path replay on
+  // the threaded default with a loud fidelity warning (the legacy path no
+  // longer exists to replay on).
+  const threadedDump = dump.build?.distDir === "dist-threaded"
+    || dump.build?.distDir === "dist-threaded-release";
+  if (threadedDump) {
+    params.set("dist", dump.build.distDir);
+  } else if (dump.build?.distDir) {
+    console.warn(`[replay] dump was recorded on the retired legacy main-thread play path `
+      + `(distDir=${dump.build.distDir}); replaying on the threaded default — `
+      + "engine behavior is identical, but build flavor/pacing may differ from the recording");
+  }
   return new URL(`harness/play.html?${params}`, serverUrl).href;
 }
 
