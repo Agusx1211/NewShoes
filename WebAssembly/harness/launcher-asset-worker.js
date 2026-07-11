@@ -853,67 +853,19 @@ async function prepare(request, requestId) {
   }
   const namespaceRoot = safeDisposableRoot(request.namespaceRoot);
   const installRoot = request.mode === "install" ? safeDisposableRoot(request.installRoot) : null;
-  if (!namespaceRoot) throw new Error("Invalid launcher archive namespace");
+  if (!installRoot && !namespaceRoot) throw new Error("Invalid launcher archive namespace");
   if (request.mode === "install" && !installRoot) throw new Error("Invalid browser install namespace");
   const outputRoot = installRoot || namespaceRoot;
   const progress = {
     completed: 0,
-    total: selection.totalBytes * (installRoot ? 2 : 1),
+    total: selection.totalBytes,
   };
   try {
-    const installed = await materializeSelection(selection, outputRoot, requestId, progress);
-    if (!installRoot) {
-      return { archives: installed, installed: null };
-    }
-    const liveSelection = {
-      totalBytes: installed.reduce((sum, archive) => sum + archive.bytes, 0),
-      selected: [],
-    };
-    for (const archive of installed) {
-      liveSelection.selected.push({
-        archive: { name: archive.name, sourceName: archive.sourceName },
-        kind: "reader",
-        candidate: { reader: await readOpfsFile(archive.opfsPath) },
-        size: archive.bytes,
-      });
-    }
-    const archives = await materializeSelection(liveSelection, namespaceRoot, requestId, progress);
-    return { archives, installed };
+    const archives = await materializeSelection(selection, outputRoot, requestId, progress);
+    return { archives, installed: installRoot ? archives : null };
   } catch (error) {
-    await removeOpfsPath(namespaceRoot).catch(() => {});
+    if (namespaceRoot) await removeOpfsPath(namespaceRoot).catch(() => {});
     if (installRoot) await removeOpfsPath(installRoot).catch(() => {});
-    throw error;
-  }
-}
-
-async function loadInstalled(request, requestId) {
-  const installed = Array.isArray(request.archives) ? request.archives : [];
-  const namespaceRoot = safeDisposableRoot(request.namespaceRoot);
-  const installRoot = safeDisposableRoot(request.installRoot);
-  if (!namespaceRoot || !installRoot) throw new Error("Installed library paths are invalid");
-  const byName = new Map(installed.map((archive) => [archive?.name, archive]));
-  if (installed.length !== ARCHIVES.length || byName.size !== ARCHIVES.length
-      || ARCHIVES.some((archive) => !byName.has(archive.name))) {
-    throw new Error("Installed library manifest is incomplete");
-  }
-  const selection = { totalBytes: 0, selected: [] };
-  try {
-    for (const expected of ARCHIVES) {
-      const archive = byName.get(expected.name);
-      if (archive.opfsPath !== `${installRoot}/${expected.name}`) {
-        throw new Error(`Installed library path is invalid for ${expected.name}`);
-      }
-      const reader = await readOpfsFile(archive.opfsPath);
-      await validateBigReader(reader, expected.name);
-      selection.totalBytes += reader.size;
-      selection.selected.push({
-        archive: { name: expected.name, sourceName: expected.sourceName },
-        kind: "reader", candidate: { reader }, size: reader.size,
-      });
-    }
-    return { archives: await materializeSelection(selection, namespaceRoot, requestId) };
-  } catch (error) {
-    await removeOpfsPath(namespaceRoot).catch(() => {});
     throw error;
   }
 }
@@ -925,7 +877,6 @@ self.onmessage = async (event) => {
     let result;
     if (message.kind === "scan") result = await scanSources(message.files || [], requestId);
     else if (message.kind === "prepare") result = await prepare(message, requestId);
-    else if (message.kind === "loadInstalled") result = await loadInstalled(message, requestId);
     else if (message.kind === "discard") {
       const path = safeDisposableRoot(message.path);
       if (!path) throw new Error("Refusing to discard an unsafe OPFS path");

@@ -24,10 +24,11 @@
 // of later stageOpfsFiles imports merge into the same open-file table and
 // the hooks/diag/message-listener are installed exactly once.
 //
-// createSyncAccessHandle takes an EXCLUSIVE lock per OPFS file, so exactly
-// one handle is opened per opfsPath and all virtual opens of that path share
-// it — safe because every read is stateless (`read(view, { at })`), the C
-// side owns the per-fd position. Closed virtual-open ids are recycled
+// Runtime archives are opened read-only, allowing an installed archive set to
+// be mounted directly (and by multiple tabs) without a per-tab disk copy.
+// Exactly one handle is opened per opfsPath in this realm and all virtual
+// opens share it — safe because every read is stateless (`read(view, { at })`),
+// the C side owns the per-fd position. Closed virtual-open ids are recycled
 // through a free-list (the engine re-opens the archive for every inner-file
 // read, so the id table must not grow with session length).
 //
@@ -62,6 +63,17 @@ async function resolveOpfsFileHandle(opfsPath) {
     directory = await directory.getDirectoryHandle(part, { create: false });
   }
   return directory.getFileHandle(parts[parts.length - 1], { create: false });
+}
+
+async function createReadAccessHandle(fileHandle) {
+  try {
+    return await fileHandle.createSyncAccessHandle({ mode: "read-only" });
+  } catch (error) {
+    // Chromium before the access-mode extension rejects the options object.
+    // Preserve the prior exclusive-read behavior on those browsers.
+    if (error?.name !== "TypeError" && error?.name !== "NotSupportedError") throw error;
+    return fileHandle.createSyncAccessHandle();
+  }
 }
 
 function ensureRegistry(Module) {
@@ -246,7 +258,7 @@ export default async function setupOpfsRealmFiles({ Module }) {
     if (typeof fileHandle.createSyncAccessHandle !== "function") {
       throw new Error("createSyncAccessHandle unavailable in this realm (not a dedicated worker?)");
     }
-    const handle = await fileHandle.createSyncAccessHandle();
+    const handle = await createReadAccessHandle(fileHandle);
     registry.files.set(enginePath, { handle, size: handle.getSize(), opfsPath });
     stagedPaths.push(enginePath);
   }

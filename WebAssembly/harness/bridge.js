@@ -9890,9 +9890,11 @@ const OPFS_ARCHIVE_ROOT = "cnc-archives";
 // A second live tab keeps its lock -> its namespace survives -> both tabs
 // work independently instead of one failing with a raw mount error.
 const OPFS_NAMESPACE_LOCK_PREFIX = "cnc-port-opfs-ns:";
+const OPFS_INSTALL_LOCK_PREFIX = "cnc-port-opfs-install:";
 const opfsBootId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 let opfsMountSequence = 0;
 let opfsNamespaceLockPromise = null;
+const opfsInstallLockPromises = new Map();
 
 function acquireOpfsNamespaceLock() {
   if (opfsNamespaceLockPromise) {
@@ -9919,6 +9921,30 @@ function acquireOpfsNamespaceLock() {
     }
   });
   return opfsNamespaceLockPromise;
+}
+
+function acquireOpfsInstallLock(installName) {
+  if (opfsInstallLockPromises.has(installName)) return opfsInstallLockPromises.get(installName);
+  const promise = new Promise((resolve) => {
+    try {
+      if (!navigator.locks || typeof navigator.locks.request !== "function") {
+        resolve(false);
+        return;
+      }
+      navigator.locks.request(
+        `${OPFS_INSTALL_LOCK_PREFIX}${installName}`,
+        { mode: "shared" },
+        (lock) => {
+          resolve(lock !== null);
+          return lock === null ? null : new Promise(() => {});
+        },
+      ).catch(() => resolve(false));
+    } catch {
+      resolve(false);
+    }
+  });
+  opfsInstallLockPromises.set(installName, promise);
+  return promise;
 }
 const opfsRegisteredPrefixes = new Set();
 
@@ -10213,19 +10239,28 @@ async function mountPreparedArchives(payload = {}) {
 
   const archives = [];
   const stageMap = {};
+  let installedRootName = null;
   for (const input of archiveInputs) {
     const name = String(input?.name ?? "");
     const opfsPath = String(input?.opfsPath ?? "").replace(/^\/+/, "");
     if (!/^[A-Za-z0-9_.-]+\.big$/i.test(name)) {
       return { ok: false, command: "mountPreparedArchives", error: `Invalid prepared archive name: ${name}` };
     }
-    if (!opfsPath.startsWith(`${OPFS_ARCHIVE_ROOT}/ns-${opfsBootId}-`)
-        || opfsPath.includes("..")) {
+    const installedMatch = /^cnc-library\/(install-[a-z0-9-]+)\/([A-Za-z0-9_.-]+\.big)$/i.exec(opfsPath);
+    const inPageNamespace = opfsPath.startsWith(`${OPFS_ARCHIVE_ROOT}/ns-${opfsBootId}-`);
+    const inInstalledLibrary = installedMatch?.[2]?.toLowerCase() === name.toLowerCase();
+    if ((!inPageNamespace && !inInstalledLibrary) || opfsPath.includes("..")) {
       return {
         ok: false,
         command: "mountPreparedArchives",
-        error: `Prepared archive is outside this page's OPFS namespace: ${opfsPath}`,
+        error: `Prepared archive is outside managed launcher storage: ${opfsPath}`,
       };
+    }
+    if (inInstalledLibrary) {
+      if (installedRootName && installedRootName !== installedMatch[1]) {
+        return { ok: false, command: "mountPreparedArchives", error: "Installed archives span multiple library roots" };
+      }
+      installedRootName = installedMatch[1];
     }
     const enginePath = `${baseDirectory}/${name}`;
     ensureMemfsDirectory(moduleResult.wasmModule.fs, parentDirectory(enginePath));
@@ -10243,6 +10278,8 @@ async function mountPreparedArchives(payload = {}) {
       opfsPath,
     });
   }
+
+  if (installedRootName) await acquireOpfsInstallLock(installedRootName);
 
   const prefix = baseDirectory.endsWith("/") ? baseDirectory : `${baseDirectory}/`;
   const registered = await registerOpfsInterceptPrefix(prefix);

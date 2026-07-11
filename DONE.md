@@ -13349,6 +13349,18 @@ mitigation track. Items resolved or retired by the pivot:
       then prepared 2,071,604,184 bytes through the real launcher UI, mounted
       all 30 archives, returned from all 43 `GameEngine::init()` subsystems
       without aborting, and visibly rendered the animated shell map.
+- [x] Made launcher storage understandable and single-copy. My Files now has a
+      real Browser Storage view that inventories launcher-managed OPFS sets,
+      expands them into their actual archive names/sizes, distinguishes
+      installed, active, stale, and orphaned data, and safely deletes or cleans
+      anything not held by a live game tab. Stale temporary namespaces are
+      reclaimed before quota checks, quota/usage labels retain two decimal
+      places, and install mounts its persistent archives directly through
+      read-only sync handles instead of creating a second 1.93 GiB per-tab
+      copy. The supplied four ISOs installed all 30 archives under a simulated
+      2.05 GiB allowance, left no runtime-copy directory, survived a page
+      reload, mounted the installed paths directly, completed all 43 real init
+      subsystems without aborting, and visibly rendered the shell map.
 - [x] Replaced the XP-style launcher's low-resolution desert desktop wallpaper
       with a project-owned 3840x2160 "Bliss at war" landscape: bright rolling
       green hills and blue sky frame distant tanks, smoke, a helicopter, and

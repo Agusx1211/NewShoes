@@ -184,7 +184,7 @@
                 </fieldset>
 
                 <div class="space-warning" id="spaceWarning" hidden>
-                  <span>!</span><p><strong>Browser storage permission required.</strong> ZeroH verifies quota for the installed copy plus a temporary per-tab launch copy.</p>
+                  <span>!</span><p><strong>Browser storage permission required.</strong> ZeroH keeps one extracted archive set and mounts that installed copy directly when you launch.</p>
                 </div>
 
                 <footer class="wizard-actions">
@@ -239,11 +239,13 @@
               <button type="button" data-folder-shortcut="replays"><svg><use href="#i-folder"/></svg> Replays <span data-folder-count="replays">2</span></button>
               <button type="button" data-folder-shortcut="notes"><svg><use href="#i-folder"/></svg> Notes <span data-folder-count="notes">2</span></button>
               <button type="button" data-folder-shortcut="screens"><svg><use href="#i-folder"/></svg> Screenshots <span data-folder-count="screens">2</span></button>
+              <button type="button" id="browserStorageShortcut"><svg><use href="#i-drive"/></svg> Browser Storage</button>
               <h3>TOOLS</h3>
               <button type="button" data-open="notepad"><svg><use href="#i-note"/></svg> Open Notepad</button>
               <div class="storage-meter-small"><div><span>Browser storage</span><b data-storage-free>Calculating…</b></div><i><span></span></i></div>
             </aside>
             <section class="file-area">
+              <div id="virtualFilePanel" class="virtual-file-panel">
               <div class="file-actions">
                 <button type="button" class="toolbar-button primary-lite" id="newFolderButton"><svg><use href="#i-folder"/></svg> New folder</button>
                 <button type="button" class="toolbar-button" id="importFileButton"><svg><use href="#i-upload"/></svg> Import files</button>
@@ -260,6 +262,16 @@
               <div id="filePrompt" class="file-prompt" role="dialog" aria-modal="true" aria-labelledby="filePromptLabel" hidden>
                 <form id="filePromptForm"><label id="filePromptLabel" for="filePromptInput">Folder name</label><input id="filePromptInput" autocomplete="off" maxlength="80"><div><button type="button" class="button secondary small" id="filePromptCancel">Cancel</button><button type="submit" class="button primary small">OK</button></div></form>
               </div>
+              </div>
+              <section id="managedStoragePanel" class="managed-storage-panel" aria-label="Launcher-managed browser storage" hidden>
+                <header>
+                  <div><strong>Browser Storage</strong><span id="managedStorageSummary">Calculating usage…</span></div>
+                  <div><button type="button" class="toolbar-button" id="refreshManagedStorageButton">Refresh</button><button type="button" class="toolbar-button danger-text" id="cleanStaleStorageButton">Clean stale files</button></div>
+                </header>
+                <div id="managedStorageList" class="managed-storage-list"></div>
+                <div id="managedStorageEmpty" class="file-empty" hidden><svg><use href="#i-drive"/></svg><strong>No launcher files stored</strong><span>Temporary launch files and installed game archives will appear here.</span></div>
+                <footer class="file-status"><span id="managedStorageCount">0 storage sets</span><span>Expand a set to inspect its archives</span></footer>
+              </section>
             </section>
           </div>
         </article>

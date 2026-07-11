@@ -6,6 +6,10 @@ const LIBRARY_VERSION = 3;
 const HANDLE_DB = "zeroh-asset-handles";
 const HANDLE_STORE = "sources";
 const LIBRARY_MUTATION_LOCK = "zeroh-library-mutation";
+const RUNTIME_ROOT = "cnc-archives";
+const INSTALL_ROOT = "cnc-library";
+const RUNTIME_LOCK_PREFIX = "cnc-port-opfs-ns:";
+const INSTALL_LOCK_PREFIX = "cnc-port-opfs-install:";
 const REQUIRED_ARCHIVE_NAMES = window.ZeroHArchiveSpecs.map((archive) => archive.name);
 
 function storageGet(key) {
@@ -22,9 +26,37 @@ function storageRemove(key) {
 
 function formatBytes(bytes) {
   const value = Number(bytes) || 0;
-  if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(1)} GB`;
+  if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(2)} GB`;
   if (value >= 1024 ** 2) return `${(value / 1024 ** 2).toFixed(0)} MB`;
   return `${(value / 1024).toFixed(0)} KB`;
+}
+
+async function directorySummary(directory, prefix = "") {
+  const files = [];
+  let totalBytes = 0;
+  for await (const [name, entry] of directory.entries()) {
+    const path = prefix ? `${prefix}/${name}` : name;
+    if (entry.kind === "directory") {
+      const nested = await directorySummary(entry, path);
+      files.push(...nested.files);
+      totalBytes += nested.totalBytes;
+    } else {
+      const file = await entry.getFile();
+      files.push({ name, path, bytes: file.size, modified: file.lastModified || 0 });
+      totalBytes += file.size;
+    }
+  }
+  return { files, totalBytes };
+}
+
+async function heldLockNames() {
+  try {
+    const snapshot = await navigator.locks?.query?.();
+    if (!snapshot) return { available: false, names: new Set() };
+    return { available: true, names: new Set((snapshot.held || []).map((lock) => lock.name)) };
+  } catch {
+    return { available: false, names: new Set() };
+  }
 }
 
 function openHandleDb() {
@@ -245,6 +277,110 @@ class AssetLibrary {
     return allocation.namespaceRoot;
   }
 
+  async collectStaleRuntimeStorage() {
+    const locks = await heldLockNames();
+    if (!locks.available) return { removed: [], failed: [], skipped: true };
+    const removed = [];
+    const failed = [];
+    try {
+      const root = await navigator.storage.getDirectory();
+      const runtime = await root.getDirectoryHandle(RUNTIME_ROOT, { create: false });
+      for await (const [name, entry] of runtime.entries()) {
+        const match = entry.kind === "directory" ? /^ns-(.+)-\d+$/.exec(name) : null;
+        if (!match || locks.names.has(`${RUNTIME_LOCK_PREFIX}${match[1]}`)) continue;
+        try {
+          await runtime.removeEntry(name, { recursive: true });
+          removed.push(name);
+        } catch (error) {
+          failed.push({ name, error: error?.message || String(error) });
+        }
+      }
+    } catch {
+      // No temporary runtime storage yet.
+    }
+    return { removed, failed, skipped: false };
+  }
+
+  async managedStorageInventory() {
+    const locks = await heldLockNames();
+    const installed = this.installedLibrary();
+    const entries = [];
+    const root = await navigator.storage.getDirectory();
+    const collectRoot = async (rootName, pattern, describe) => {
+      let parent;
+      try {
+        parent = await root.getDirectoryHandle(rootName, { create: false });
+      } catch {
+        return;
+      }
+      for await (const [name, entry] of parent.entries()) {
+        if (entry.kind !== "directory" || !pattern.test(name)) continue;
+        const summary = await directorySummary(entry);
+        entries.push(describe(name, summary));
+      }
+    };
+    await collectRoot(RUNTIME_ROOT, /^ns-.+-\d+$/, (name, summary) => {
+      const bootId = /^ns-(.+)-\d+$/.exec(name)?.[1] || "";
+      const active = locks.names.has(`${RUNTIME_LOCK_PREFIX}${bootId}`);
+      return {
+        path: `${RUNTIME_ROOT}/${name}`,
+        name: active ? "Active launch files" : "Temporary launch files",
+        detail: name,
+        kind: "temporary",
+        state: active ? "active" : "stale",
+        deletable: !active && locks.available,
+        ...summary,
+      };
+    });
+    await collectRoot(INSTALL_ROOT, /^install-[a-z0-9-]+$/i, (name, summary) => {
+      const path = `${INSTALL_ROOT}/${name}`;
+      const active = locks.names.has(`${INSTALL_LOCK_PREFIX}${name}`);
+      const current = installed?.root === path;
+      return {
+        path,
+        name: current ? "Installed Zero Hour library" : "Unrecognized installed files",
+        detail: name,
+        kind: "installed",
+        state: active ? "active" : current ? "installed" : "orphaned",
+        deletable: locks.available && !active,
+        ...summary,
+      };
+    });
+    const estimate = await navigator.storage?.estimate?.();
+    entries.sort((left, right) => left.kind.localeCompare(right.kind) || left.name.localeCompare(right.name));
+    return {
+      entries,
+      quota: Number(estimate?.quota) || 0,
+      usage: Number(estimate?.usage) || 0,
+    };
+  }
+
+  async deleteManagedStorage(path) {
+    const normalized = String(path || "").replace(/^\/+|\/+$/g, "");
+    const runtimeMatch = /^cnc-archives\/(ns-(.+)-\d+)$/.exec(normalized);
+    const installMatch = /^cnc-library\/(install-[a-z0-9-]+)$/i.exec(normalized);
+    if (!runtimeMatch && !installMatch) throw new Error("This is not launcher-managed storage");
+    const locks = await heldLockNames();
+    if (!locks.available) {
+      throw new Error("This browser cannot verify whether another game tab is using these files");
+    }
+    if (runtimeMatch && locks.names.has(`${RUNTIME_LOCK_PREFIX}${runtimeMatch[2]}`)) {
+      throw new Error("Active launch files cannot be deleted; close their game tab first");
+    }
+    if (installMatch && locks.names.has(`${INSTALL_LOCK_PREFIX}${installMatch[1]}`)) {
+      throw new Error("The installed library is in use; close its game tab first");
+    }
+    if (installMatch && this.installedLibrary()?.root === normalized) {
+      await this.forget();
+      return { removed: true, libraryRemoved: true };
+    }
+    const parts = normalized.split("/");
+    const root = await navigator.storage.getDirectory();
+    const parent = await root.getDirectoryHandle(parts[0], { create: false });
+    await parent.removeEntry(parts[1], { recursive: true });
+    return { removed: true, libraryRemoved: false };
+  }
+
   async prepare(mode, onProgress = null) {
     if (!["once", "remember", "install"].includes(mode)) {
       throw new Error(`Unsupported launcher storage mode: ${mode}`);
@@ -261,21 +397,23 @@ class AssetLibrary {
 
   async prepareUnlocked(mode, onProgress = null) {
     if (!this.scanResult?.ok) throw new Error("Select complete Generals + Zero Hour original media first");
+    await this.collectStaleRuntimeStorage();
     const estimate = await navigator.storage?.estimate?.();
     const quota = Number(estimate?.quota);
     const usage = Number(estimate?.usage);
     const available = quota - usage;
-    const required = this.scanResult.totalBytes * (mode === "install" ? 2.05 : 1.05);
+    const required = this.scanResult.totalBytes + Math.max(32 * 1024 * 1024,
+      this.scanResult.totalBytes * 0.01);
     if (Number.isFinite(quota) && quota > 0 && Number.isFinite(usage) && available < required) {
       throw new Error(`Browser storage needs about ${formatBytes(required)} free; ${formatBytes(available)} is available`);
     }
     let persistenceGranted = null;
     if (mode === "install") {
-      // The installed library remains persistent while a per-tab runtime copy
-      // is staged for exclusive synchronous access handles.
+      // The installed library is mounted directly through read-only OPFS
+      // access handles, so installation and launch need only one archive set.
       persistenceGranted = await navigator.storage?.persist?.().catch(() => false) ?? false;
     }
-    const namespaceRoot = await this.allocateNamespace();
+    const namespaceRoot = mode === "install" ? null : await this.allocateNamespace();
     const installRoot = mode === "install"
       ? `cnc-library/install-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`
       : null;
@@ -339,7 +477,7 @@ class AssetLibrary {
       }
       return result;
     } catch (error) {
-      await this.request("discard", { path: namespaceRoot }).catch(() => {});
+      if (namespaceRoot) await this.request("discard", { path: namespaceRoot }).catch(() => {});
       if (installRoot) await this.request("discard", { path: installRoot }).catch(() => {});
       throw error;
     }
@@ -440,13 +578,8 @@ class AssetLibrary {
     if (this.preparedArchives?.length) return this.preparedArchives;
     const installed = this.installedLibrary();
     if (installed) {
-      const namespaceRoot = await this.allocateNamespace();
-      const result = await this.request("loadInstalled", {
-        namespaceRoot,
-        installRoot: installed.root,
-        archives: installed.archives,
-      }, onProgress);
-      this.preparedArchives = result.archives;
+      onProgress?.({ detail: "Installed Zero Hour library", completed: 1, total: 1 });
+      this.preparedArchives = installed.archives.map((archive) => ({ ...archive }));
       return this.preparedArchives;
     }
     throw new Error("Prepare your game library before launching");
@@ -473,7 +606,8 @@ class AssetLibrary {
 
   async discardPreparedArchives() {
     const roots = new Set((this.preparedArchives || []).map((archive) =>
-      String(archive.opfsPath || "").split("/").slice(0, 2).join("/")));
+      String(archive.opfsPath || "").split("/").slice(0, 2).join("/"))
+      .filter((path) => path.startsWith(`${RUNTIME_ROOT}/`)));
     this.preparedArchives = null;
     for (const path of roots) {
       if (path) await this.request("discard", { path }).catch(() => {});

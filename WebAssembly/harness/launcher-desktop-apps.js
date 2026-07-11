@@ -39,6 +39,7 @@
   let folderHistoryIndex = 0;
   let filePromptMode = "folder";
   let fileView = "list";
+  let storageView = false;
 
   const nodeById = (id) => fileSystem.nodes.find((node) => node.id === id);
   const childrenOf = (id) => fileSystem.nodes.filter((node) => node.parent === id);
@@ -66,6 +67,7 @@
   function formatBytes(bytes = 0) {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   }
 
@@ -188,9 +190,110 @@
     renderAddressBar();
   }
 
+  function renderStorageAddressBar() {
+    const bar = document.querySelector("#fileAddressBar");
+    bar.replaceChildren();
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.innerHTML = '<use href="#i-drive"/>';
+    const label = document.createElement("span");
+    label.textContent = "Browser Storage";
+    bar.append(icon, label);
+  }
+
+  async function renderManagedStorage() {
+    const list = document.querySelector("#managedStorageList");
+    const empty = document.querySelector("#managedStorageEmpty");
+    const summary = document.querySelector("#managedStorageSummary");
+    list.replaceChildren();
+    empty.hidden = true;
+    summary.textContent = "Calculating usage…";
+    try {
+      const inventory = await window.ZeroHAssetLibrary.managedStorageInventory();
+      if (!storageView) return;
+      const free = Math.max(0, inventory.quota - inventory.usage);
+      summary.textContent = `${formatBytes(inventory.usage)} used · ${formatBytes(free)} available to this site`;
+      document.querySelector("#managedStorageCount").textContent =
+        `${inventory.entries.length} storage set${inventory.entries.length === 1 ? "" : "s"}`;
+      empty.hidden = inventory.entries.length > 0;
+      list.hidden = inventory.entries.length === 0;
+      for (const entry of inventory.entries) {
+        const details = document.createElement("details");
+        details.className = "managed-storage-set";
+        const row = document.createElement("summary");
+        row.innerHTML = '<span class="managed-storage-set-title"><strong></strong><span></span></span>'
+          + '<span class="managed-storage-state"></span><span class="managed-storage-size"></span>'
+          + '<button type="button" class="managed-storage-delete">Delete</button>';
+        row.querySelector("strong").textContent = entry.name;
+        row.querySelector(".managed-storage-set-title span").textContent =
+          `${entry.detail} · ${entry.files.length} file${entry.files.length === 1 ? "" : "s"}`;
+        const state = row.querySelector(".managed-storage-state");
+        state.textContent = entry.state;
+        state.classList.add(entry.state);
+        row.querySelector(".managed-storage-size").textContent = formatBytes(entry.totalBytes);
+        const remove = row.querySelector(".managed-storage-delete");
+        remove.disabled = !entry.deletable;
+        remove.title = entry.deletable ? `Delete ${entry.name}` : "This storage set is currently in use";
+        remove.addEventListener("click", async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          remove.disabled = true;
+          try {
+            const result = await window.ZeroHAssetLibrary.deleteManagedStorage(entry.path);
+            window.dispatchEvent(new CustomEvent("zeroh:managed-storage-changed", {
+              detail: result,
+            }));
+            desktop.showToast("Storage deleted", `${entry.name} was removed.`);
+          } catch (error) {
+            desktop.showToast("Could not delete storage", error?.message || String(error), "warning");
+          }
+          await renderManagedStorage();
+        });
+        const files = document.createElement("div");
+        files.className = "managed-storage-files";
+        for (const file of entry.files.sort((left, right) => left.path.localeCompare(right.path))) {
+          const fileRow = document.createElement("div");
+          fileRow.className = "managed-storage-file";
+          const name = document.createElement("span");
+          const size = document.createElement("span");
+          name.textContent = file.path;
+          size.textContent = formatBytes(file.bytes);
+          fileRow.append(name, size);
+          files.append(fileRow);
+        }
+        details.append(row, files);
+        list.append(details);
+      }
+    } catch (error) {
+      summary.textContent = "Storage inventory unavailable";
+      list.hidden = true;
+      empty.hidden = false;
+      desktop.showToast("Could not inspect browser storage", error?.message || String(error), "warning");
+    }
+  }
+
+  function showManagedStorage() {
+    storageView = true;
+    document.querySelector("#virtualFilePanel").hidden = true;
+    document.querySelector("#managedStoragePanel").hidden = false;
+    document.querySelector("#fileSearch").disabled = true;
+    document.querySelector("#explorerTitle").textContent = "Browser Storage - My Files";
+    document.querySelectorAll("[data-folder-shortcut]").forEach((button) => button.classList.remove("is-selected"));
+    document.querySelector("#browserStorageShortcut").classList.add("is-selected");
+    ["#fileBackButton", "#fileForwardButton", "#fileUpButton"].forEach((selector) => {
+      document.querySelector(selector).disabled = true;
+    });
+    renderStorageAddressBar();
+    void renderManagedStorage();
+  }
+
   function navigateTo(folderId, addHistory = true) {
     const folder = nodeById(folderId);
     if (!folder || folder.type !== "folder") return;
+    storageView = false;
+    document.querySelector("#virtualFilePanel").hidden = false;
+    document.querySelector("#managedStoragePanel").hidden = true;
+    document.querySelector("#fileSearch").disabled = false;
+    document.querySelector("#browserStorageShortcut").classList.remove("is-selected");
     currentFolderId = folder.id;
     selectedNodeId = null;
     document.querySelector("#fileSearch").value = "";
@@ -646,6 +749,15 @@
   document.querySelector("#fileForwardButton").addEventListener("click", () => { if (folderHistoryIndex < folderHistory.length - 1) { folderHistoryIndex += 1; navigateTo(folderHistory[folderHistoryIndex], false); } });
   document.querySelector("#fileUpButton").addEventListener("click", () => { const parent = nodeById(currentFolderId)?.parent; if (parent) navigateTo(parent); });
   document.querySelectorAll("[data-folder-shortcut]").forEach((button) => button.addEventListener("click", () => navigateTo(button.dataset.folderShortcut)));
+  document.querySelector("#browserStorageShortcut").addEventListener("click", showManagedStorage);
+  document.querySelector("#refreshManagedStorageButton").addEventListener("click", () => void renderManagedStorage());
+  document.querySelector("#cleanStaleStorageButton").addEventListener("click", async () => {
+    const result = await window.ZeroHAssetLibrary.collectStaleRuntimeStorage();
+    window.dispatchEvent(new CustomEvent("zeroh:managed-storage-changed"));
+    desktop.showToast("Temporary storage cleaned",
+      result.removed.length ? `${result.removed.length} stale launch set${result.removed.length === 1 ? "" : "s"} removed.` : "No removable temporary launch files were found.");
+    await renderManagedStorage();
+  });
   document.querySelector("#newFolderButton").addEventListener("click", () => openFilePrompt("folder"));
   document.querySelector("#renameFileButton").addEventListener("click", () => openFilePrompt("rename"));
   document.querySelector("#deleteFileButton").addEventListener("click", deleteSelectedNode);
@@ -719,7 +831,7 @@
     folderHistoryIndex = 0;
     persistFileSystem();
     newNote();
-    renderExplorer();
+    navigateTo("root", false);
     resetMinefield();
     resetMemory();
   });
@@ -731,5 +843,5 @@
   resetMinefield();
   resetMemory();
 
-  window.ZeroHApps = { navigateTo, openTextFile, getFileSystem: () => fileSystem };
+  window.ZeroHApps = { navigateTo, showManagedStorage, openTextFile, getFileSystem: () => fileSystem };
 })();

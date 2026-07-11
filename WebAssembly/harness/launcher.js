@@ -169,6 +169,7 @@
 
   async function refreshStorageUI() {
     try {
+      await window.ZeroHAssetLibrary?.collectStaleRuntimeStorage?.();
       const estimate = await navigator.storage?.estimate?.();
       const quota = Number(estimate?.quota);
       const usage = Number(estimate?.usage);
@@ -177,7 +178,7 @@
       }
       const free = Math.max(0, quota - usage);
       const label = free >= 1024 ** 3
-        ? `${(free / 1024 ** 3).toFixed(1)} GB free`
+        ? `${(free / 1024 ** 3).toFixed(2)} GB free`
         : `${Math.round(free / 1024 ** 2)} MB free`;
       document.querySelectorAll("[data-storage-free]").forEach((node) => { node.textContent = label; });
       const usedPercent = Math.min(100, Math.max(0, (usage / quota) * 100));
@@ -883,6 +884,16 @@
       state.library = readStoredLibrary();
       void reconcileStoredLibrary();
     }
+  });
+  window.addEventListener("zeroh:managed-storage-changed", (event) => {
+    if (event.detail?.libraryRemoved) {
+      state.library = null;
+      storageRemove("zeroh-library");
+      storageRemove("fielddesk-library");
+      setWizardStep(1);
+      updateLibraryUI();
+    }
+    void refreshStorageUI();
   });
   window.addEventListener("resize", () => {
     document.querySelectorAll(".window.is-open").forEach(constrainWindow);
