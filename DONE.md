@@ -13385,3 +13385,13 @@ mitigation track. Items resolved or retired by the pivot:
       the new asset selected as the `command` wallpaper, intact launcher bounds,
       and zero console or page errors; screenshots are in the gitignored
       `WebAssembly/artifacts/screenshots/launcher-bliss-at-war-{wide,mobile}.png`.
+- [x] Completed the XP-classics-at-war wallpaper set while keeping Bliss at War
+      as the default: Autumn Offensive adds an armored convoy to a golden
+      forest road, Azul Armada places a naval task force beyond a tropical
+      lagoon, and Red Moon Front brings an armored column into a red-rock
+      twilight. The three alternates use crisp 2560x1440 assets and every
+      chooser swatch has a dedicated 320x180 thumbnail, avoiding full-size
+      texture decodes just to render the settings picker. Playwright cycled all
+      four persisted choices at 1920x1080 and 390x844, loaded the expected
+      dimensions, suppressed the old synthetic hill layers, restored Bliss
+      after reload, and reported zero console or page errors.

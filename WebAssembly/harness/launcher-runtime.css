@@ -22,7 +22,48 @@ body {
 }
 
 .wallpaper-swatch.command {
-  background: #4f9bc8 url("./assets/zeroh-bliss-at-war-4k.webp") center center / cover no-repeat;
+  background: #4f9bc8 url("./assets/zeroh-bliss-at-war-swatch.webp") center center / cover no-repeat;
+}
+
+/* Keep the original persisted wallpaper keys, but give every choice a real
+   XP-classic-at-war image instead of recoloring the synthetic hill shapes. */
+.desktop[data-wallpaper="meadow"] .wallpaper-art {
+  background: #a96428 url("./assets/zeroh-autumn-offensive-1440p.webp") center center / cover no-repeat;
+  filter: none;
+}
+
+.desktop[data-wallpaper="slate"] .wallpaper-art {
+  background: #35aaca url("./assets/zeroh-azul-armada-1440p.webp") center center / cover no-repeat;
+  filter: none;
+}
+
+.desktop[data-wallpaper="dusk"] .wallpaper-art {
+  background: #53241f url("./assets/zeroh-red-moon-front-1440p.webp") center center / cover no-repeat;
+  filter: none;
+}
+
+.wallpaper-swatch.meadow {
+  background: #a96428 url("./assets/zeroh-autumn-offensive-swatch.webp") center center / cover no-repeat;
+}
+
+.wallpaper-swatch.slate {
+  background: #35aaca url("./assets/zeroh-azul-armada-swatch.webp") center center / cover no-repeat;
+}
+
+.wallpaper-swatch.dusk {
+  background: #53241f url("./assets/zeroh-red-moon-front-swatch.webp") center center / cover no-repeat;
+}
+
+.desktop[data-wallpaper="meadow"] .sun-glow,
+.desktop[data-wallpaper="meadow"] .ridge,
+.desktop[data-wallpaper="meadow"] .terrain-grid,
+.desktop[data-wallpaper="slate"] .sun-glow,
+.desktop[data-wallpaper="slate"] .ridge,
+.desktop[data-wallpaper="slate"] .terrain-grid,
+.desktop[data-wallpaper="dusk"] .sun-glow,
+.desktop[data-wallpaper="dusk"] .ridge,
+.desktop[data-wallpaper="dusk"] .terrain-grid {
+  display: none;
 }
 
 #overlay.boot-sentinel,
