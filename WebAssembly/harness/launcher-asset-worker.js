@@ -19,8 +19,7 @@ const MAX_BIG_DIRECTORY_BYTES = 64 * 1024 * 1024;
 const MAX_ISO_ROOT_BYTES = 64 * 1024 * 1024;
 const MAX_LOOSE_SCRIPT_BYTES = 16 * 1024 * 1024;
 
-const ARCHIVE_SETS = self.CncArchiveSpecs;
-const ARCHIVES = ARCHIVE_SETS.zeroHour;
+const ARCHIVES = self.ZeroHArchiveSpecs;
 
 const SCRIPT_FILES = [
   { sourceName: "SkirmishScripts.scb", path: "Data\\Scripts\\SkirmishScripts.scb" },
@@ -453,22 +452,9 @@ async function scanSources(files, requestId) {
     }
   }
 
-  const selections = {
-    generals: resolveCatalog(ARCHIVE_SETS.generals),
-    zeroHour: resolveCatalog(ARCHIVE_SETS.zeroHour),
-  };
-  const game = selections.zeroHour.missing.length === 0 ? "zeroHour"
-    : selections.generals.missing.length === 0 ? "generals" : "zeroHour";
-  const selection = selections[game];
+  const selection = resolveCatalog();
   return {
-    ok: Object.values(selections).some((value) => value.missing.length === 0),
-    game,
-    games: Object.fromEntries(Object.entries(selections).map(([id, value]) => [id, {
-      ok: value.missing.length === 0,
-      found: value.found,
-      missing: value.missing,
-      totalBytes: value.totalBytes,
-    }])),
+    ok: selection.missing.length === 0,
     filesScanned: normalized.length,
     bytesScanned: normalized.reduce((sum, item) => sum + item.file.size, 0),
     sourceNames: normalized.map((item) => item.path),
@@ -496,12 +482,12 @@ function chooseCandidate(sourceName, edition) {
   })[0] || null;
 }
 
-function resolveCatalog(archives = ARCHIVES) {
+function resolveCatalog() {
   const selected = [];
   const found = [];
   const missing = [];
   let totalBytes = 0;
-  for (const archive of archives) {
+  for (const archive of ARCHIVES) {
     if (archive.name === "LooseScripts.big") {
       const packaged = chooseCandidate(archive.sourceName, archive.edition);
       if (packaged && (packaged.edition === archive.edition || packaged.edition === "unknown")) {
@@ -861,8 +847,7 @@ async function materializeSelection(selection, outputRoot, requestId,
 }
 
 async function prepare(request, requestId) {
-  const game = request.game === "generals" ? "generals" : "zeroHour";
-  const selection = resolveCatalog(ARCHIVE_SETS[game]);
+  const selection = resolveCatalog();
   if (selection.missing.length) {
     throw new Error(`Missing required original game files: ${selection.missing.join(", ")}`);
   }
@@ -902,20 +887,18 @@ async function prepare(request, requestId) {
 }
 
 async function loadInstalled(request, requestId) {
-  const game = request.game === "generals" ? "generals" : "zeroHour";
-  const archivesForGame = ARCHIVE_SETS[game];
   const installed = Array.isArray(request.archives) ? request.archives : [];
   const namespaceRoot = safeDisposableRoot(request.namespaceRoot);
   const installRoot = safeDisposableRoot(request.installRoot);
   if (!namespaceRoot || !installRoot) throw new Error("Installed library paths are invalid");
   const byName = new Map(installed.map((archive) => [archive?.name, archive]));
-  if (installed.length !== archivesForGame.length || byName.size !== archivesForGame.length
-      || archivesForGame.some((archive) => !byName.has(archive.name))) {
+  if (installed.length !== ARCHIVES.length || byName.size !== ARCHIVES.length
+      || ARCHIVES.some((archive) => !byName.has(archive.name))) {
     throw new Error("Installed library manifest is incomplete");
   }
   const selection = { totalBytes: 0, selected: [] };
   try {
-    for (const expected of archivesForGame) {
+    for (const expected of ARCHIVES) {
       const archive = byName.get(expected.name);
       if (archive.opfsPath !== `${installRoot}/${expected.name}`) {
         throw new Error(`Installed library path is invalid for ${expected.name}`);

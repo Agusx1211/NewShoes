@@ -2,7 +2,7 @@
 (() => {
   "use strict";
 
-  const zeroHour = [
+  const specs = [
     ["INIZH.big", "INIZH.big", "zh"],
     ["EnglishZH.big", "EnglishZH.big", "zh"],
     ["WindowZH.big", "WindowZH.big", "zh"],
@@ -36,16 +36,5 @@
   ].map(([name, sourceName, edition, artifactSourceName = sourceName]) =>
     Object.freeze({ name, sourceName, edition, artifactSourceName }));
 
-  const generals = [
-    "INI.big", "English.big", "Window.big", "Maps.big", "Terrain.big", "Textures.big",
-    "W3D.big", "Shaders.big", "Music.big", "Audio.big", "AudioEnglish.big",
-    "Speech.big", "SpeechEnglish.big", "Gensec.big",
-  ].map((name) => Object.freeze({ name, sourceName: name, edition: "base", artifactSourceName: name }));
-
-  globalThis.CncArchiveSpecs = Object.freeze({
-    generals: Object.freeze(generals),
-    zeroHour: Object.freeze(zeroHour),
-  });
-  // Existing harnesses target Zero Hour and keep their original contract.
-  globalThis.ZeroHArchiveSpecs = globalThis.CncArchiveSpecs.zeroHour;
+  globalThis.ZeroHArchiveSpecs = Object.freeze(specs);
 })();

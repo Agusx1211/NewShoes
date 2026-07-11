@@ -13340,3 +13340,12 @@ mitigation track. Items resolved or retired by the pivot:
       The four-disc set then mounted all 30 retail-derived archives, returned
       from all 43 real `GameEngine::init()` subsystems without aborting, and
       visibly rendered the animated Zero Hour shell map under SwiftShader.
+- [x] Narrowed the integrated launcher back to its product target: Zero Hour
+      only. Removed the vanilla Generals shortcut, ready card, library row,
+      runtime warning, base-only archive contract, and dormant edition-routing
+      state. Generals retail media remains required and clearly described as
+      Zero Hour base data; only the complete 30-archive Generals + Zero Hour
+      inventory can become a launchable library. The supplied four retail ISOs
+      then prepared 2,071,604,184 bytes through the real launcher UI, mounted
+      all 30 archives, returned from all 43 `GameEngine::init()` subsystems
+      without aborting, and visibly rendered the animated shell map.

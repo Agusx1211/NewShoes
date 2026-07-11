@@ -153,7 +153,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .button { min-height: 34px; padding: 0 17px; border-radius: 3px; font-weight: bold; font-size: 10px; cursor: pointer; }.button.primary { color: #fff; border: 1px solid #135984; background: linear-gradient(#3787bb, #196a9f); box-shadow: inset 0 1px rgba(255,255,255,.3), 0 1px 2px rgba(33,70,93,.18); }.button.primary:hover { filter: brightness(1.08); }.button.secondary { color: #526a78; border: 1px solid #b9c7cf; background: linear-gradient(#fff, #edf2f5); }.button.small { min-height: 30px; padding: 0 12px; font-size: 9px; }
 .button span { margin-left: 8px; font-size: 16px; vertical-align: -1px; }
 
-.ready-page { padding-bottom: 20px; }.game-cards { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
+.ready-page { padding-bottom: 20px; }.game-cards { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 560px); justify-content: center; gap: 14px; margin-top: 18px; }
 .game-card { position: relative; min-height: 260px; overflow: hidden; border: 1px solid #9bab9b; border-radius: 5px; background: #34483f; box-shadow: 0 4px 12px rgba(32,58,48,.18); color: #fff; }
 .game-card.zero-card { border-color: #9f765c; background: #4d332d; }
 .game-card-art { position: absolute; inset: 0; overflow: hidden; background: radial-gradient(circle at 85% 15%, rgba(229,193,101,.22), transparent 30%), linear-gradient(145deg, transparent 43%, rgba(255,255,255,.05) 43% 44%, transparent 44%), repeating-linear-gradient(120deg, rgba(255,255,255,.02) 0 2px, transparent 2px 9px); }
