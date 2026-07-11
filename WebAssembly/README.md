@@ -50,6 +50,9 @@ enabled. The same host surface exposes fullscreen, shader-tier, console, and
 issue-recorder controls. A host can provide initial settings before the page
 modules run with `window.CnCPortPlayConfig` using the same
 `performanceOverlay`, `display`, `diagnostics`, and `shaderTier` fields.
+Enhanced `ps11` shaders are the default. Users can retain the Classic
+fixed-function path with `shaderTier: "ff"`, `?shaderTier=ff`, or the desktop
+Shaders setting; an explicit URL choice takes precedence over stored settings.
 
 Verify the local real-asset sample pipeline:
 

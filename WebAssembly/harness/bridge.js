@@ -1,5 +1,6 @@
 import { createD3D8Executor } from "./d3d8_executor.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
+import { resolveShaderTier } from "./shader-tier-config.mjs";
 import { createWebRtcUdpEndpoint } from "./webrtc-udp-endpoint.mjs";
 import {
   clearSharedUdpRing,
@@ -797,24 +798,20 @@ function threadedWorkerDiagLevel() {
 function threadedWorkerShaderTier() {
   // The executor samples the shader tier once at device create via
   // d3d8ShaderTierQuery (URL ?shaderTier= param, then localStorage
-  // "cncPortShaderTier", default ff). The WORKER realm has neither the page
+  // "cncPortShaderTier", default ps11). The WORKER realm has neither the page
   // URL nor localStorage, so resolve the tier here with the same precedence
   // and hand it through the setup options (engine_realm_boot forces it via
   // globalThis.__cncD3D8ShaderTier before constructing the executor).
+  let storedTier = null;
   try {
-    const params = new URLSearchParams(globalThis.location?.search || "");
-    const fromUrl = params.get("shaderTier");
-    if (fromUrl === "ps11" || fromUrl === "ff") {
-      return fromUrl;
-    }
-    const stored = globalThis.localStorage?.getItem("cncPortShaderTier");
-    if (stored === "ps11" || stored === "ff") {
-      return stored;
-    }
+    storedTier = globalThis.localStorage?.getItem("cncPortShaderTier") ?? null;
   } catch (_error) {
-    // Fall through to the executor default (ff).
+    // Storage is optional; URL and default selection still apply.
   }
-  return null;
+  return resolveShaderTier({
+    search: globalThis.location?.search || "",
+    storedTier,
+  }).tier;
 }
 
 function createThreadedEngineController() {

@@ -1323,12 +1323,13 @@ screenshots on the release build.
       before/after terrain screenshot (fine noise grain + soft lightmap/cloud).
 - [ ] **Shader-tier (Path B) follow-ups** — the D3D8 SM1 (vs.1.1/ps.1.1)
       programmable tier LANDED 2026-07-09 (see DONE.md "D3D8 SM1 shader tier"):
-      generic bytecode→GLSL translator in `bridge.js`, SM1 text assembler +
+      generic bytecode→GLSL translator in `d3d8_executor.mjs`, SM1 text assembler +
       shader objects/constants in `wasm_d3d8_shim.cpp`, selectable via
-      `?shaderTier=ps11` / play-page Settings→Shaders (default still `ff`).
+      `?shaderTier=` / play-page Settings→Shaders (default `ps11`; explicit
+      `ff` remains supported).
       Remaining:
       - [ ] **Remaining ps11 visual regressions from owner playtest
-            (2026-07-09) — fix before re-flipping the default.** The tier is
+            (2026-07-09) — fix under the owner-requested ps11 default.** The tier is
             mechanically green (probes, Metal), but the owner still needs to
             review motion blur (reported "a bit off") and the overall flatter
             lighting. **The radioactive/over-bright flat water is resolved
@@ -1340,9 +1341,10 @@ screenshots on the release build.
             turned out to be tier-INDEPENDENT — they were the stepped-load
             validation regression, root-caused and fixed 2026-07-10; see
             DONE.md. Only genuinely shader-tier visual issues remain here.)
-            Default was REVERTED to ff the same day (`d3d8ShaderTierQuery`
-            default 0); Enhanced stays opt-in in Settings→Shaders. First fix
-            applied: ps.1.x REGISTER SATURATION (every arithmetic result
+            Default was REVERTED to ff the same day, then restored to ps11 on
+            2026-07-11 at the owner's direction. Classic remains an explicit
+            Settings/URL choice. First fix applied: ps.1.x REGISTER SATURATION
+            (every arithmetic result
             clamps to [-1,1] before reuse — the water sparkle `mad` overshoot
             feeding later muls was rendering brighter than hardware). Tools
             built for the rest: `harness/shader_ab_probe.mjs`
@@ -1354,8 +1356,8 @@ screenshots on the release build.
       - [x] **Metal verification of the tier pipeline.** shader-tier probe on
             cnc-gpu (Chrome + Metal, dist-release): ps11 registers 13 ps +
             Trees.vso, links all pairs, 0 failures/fallbacks; ff baseline
-            unchanged. (Default flip DONE then REVERTED same day per the
-            regressions above.)
+            unchanged. (The original flip/revert is historical; ps11 is the
+            current owner-requested default.)
       - [x] **WATER_TYPE_2_PVSHADER wave water supports D3DFMT_V8U8.** The old
             GeForce3 path now loads and converts all 32 caustic frames (including
             the browser cap's A4R4G4B4 source fallback), uploads signed V8U8 as
@@ -1377,8 +1379,15 @@ screenshots on the release build.
             entire shipped corpus is ps.1.1. If a mod ships 1.4 bytecode the
             create fails cleanly and the engine falls back to fixed function —
             revisit only if real content needs it.
-      - [ ] **Retire the c32/c33 tree-shroud FF hack once ps11 is the
-            default** (`uTreeShroudGen` in bridge.js + the unconditional
+      - [ ] **Migrate `shader_tier_probe.mjs` and `shader_ab_probe.mjs` to the
+            threaded launcher/install lifecycle.** Both still pin the deleted
+            `?threads=0` path and wait for the old direct-asset autostart, so
+            they no longer reach their real-engine assertions on the integrated
+            play page. Reuse an installed OPFS profile or add a bounded install
+            fixture without duplicating the retail archives.
+      - [ ] **Retire the c32/c33 tree-shroud FF hack after the current ps11
+            tree-fidelity pass proves the real shader path** (`uTreeShroudGen`
+            in `d3d8_executor.mjs` + the unconditional
             constant upload in `W3DTreeBuffer::drawTrees`) — under ps11 the
             real `Trees.vso` computes those UVs (`oT1 = (v0 + c32) * c33`);
             the hack only serves tier ff. Re-verify trees on the user's build
