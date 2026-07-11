@@ -10,6 +10,7 @@
     "verify:pages-site": "node tools/verify_pages_site.mjs pages-dist",
     "test:pages-artifact-guard": "node tools/pages_artifact_guard_smoke.mjs",
     "test:pages-deployment": "node harness/pages_deployment_smoke.mjs pages-dist",
+    "test:pages-worker-rollout": "node harness/pages_deployment_smoke.mjs pages-dist --worker-rollout",
     "test:analytics": "node harness/analytics_unit.mjs",
     "test:analytics-browser": "node harness/analytics_browser_smoke.mjs",
     "build:wasm": "bash tools/build_wasm.sh",

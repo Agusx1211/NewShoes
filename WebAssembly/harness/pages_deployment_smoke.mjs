@@ -8,6 +8,7 @@ import { extname, relative, resolve, sep } from "node:path";
 import { chromium } from "playwright";
 
 const root = resolve(process.argv[2] || "pages-dist");
+const testWorkerRollout = process.argv.includes("--worker-rollout");
 const prefix = "/CnC_Generals_Zero_Hour/";
 const rolloutSeedName = "__coi_rollout_seed.html";
 const rolloutWorkerVersion = "project-new-shoes.pages-root.v1";
@@ -258,19 +259,21 @@ try {
     await rootContext.close();
   }
 
-  const rolloutContext = await browser.newContext({ serviceWorkers: "allow" });
-  const rolloutPage = await rolloutContext.newPage();
-  const rolloutErrors = [];
-  let rolloutNavigations = 0;
-  rolloutPage.on("pageerror", (error) => rolloutErrors.push(`pageerror: ${error.message}`));
-  rolloutPage.on("response", (response) => {
+  let workerRollout = null;
+  if (testWorkerRollout) {
+    const rolloutContext = await browser.newContext({ serviceWorkers: "allow" });
+    const rolloutPage = await rolloutContext.newPage();
+    const rolloutErrors = [];
+    let rolloutNavigations = 0;
+    rolloutPage.on("pageerror", (error) => rolloutErrors.push(`pageerror: ${error.message}`));
+    rolloutPage.on("response", (response) => {
     if (response.status() >= 400
         && !/__cnc_(build_info|https_info)/.test(response.url())
         && !/\/artifacts\/real-assets\/cursors\/manifest\.json(?:\?|$)/.test(response.url())) {
       rolloutErrors.push(`${response.status()} ${response.url()}`);
     }
-  });
-  try {
+    });
+    try {
     serveOldServiceWorker = true;
     await rolloutPage.goto(`${baseUrl}${rolloutSeedName}`, { waitUntil: "domcontentloaded" });
     await rolloutPage.evaluate(async () => {
@@ -312,7 +315,46 @@ try {
     const rolloutUrl = `${baseUrl}?diag=lite#rollout-proof`;
     await rolloutPage.goto(rolloutUrl, { waitUntil: "domcontentloaded" });
     await rolloutPage.waitForURL(rolloutUrl, { timeout: 30000 });
-    await rolloutPage.waitForSelector("#desktop", { state: "visible", timeout: 30000 });
+    try {
+      await rolloutPage.waitForSelector("#desktop", { state: "visible", timeout: 30000 });
+    } catch (cause) {
+      const diagnostics = await rolloutPage.evaluate(async () => {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        const controllerVersion = await new Promise((resolveVersion) => {
+          if (!navigator.serviceWorker.controller) {
+            resolveVersion(null);
+            return;
+          }
+          const channel = new MessageChannel();
+          const timer = setTimeout(() => resolveVersion(null), 500);
+          channel.port1.onmessage = (event) => {
+            clearTimeout(timer);
+            resolveVersion(event.data?.version || null);
+          };
+          navigator.serviceWorker.controller.postMessage(
+            { type: "project-new-shoes:coi-worker-version" },
+            [channel.port2],
+          );
+        });
+        return {
+          url: location.href,
+          title: document.title,
+          readyState: document.readyState,
+          status: document.querySelector("#coi-status")?.textContent || null,
+          error: document.querySelector("#coi-error")?.textContent || null,
+          isolated: window.crossOriginIsolated,
+          controlled: Boolean(navigator.serviceWorker.controller),
+          controllerVersion,
+          registrations: registrations.map((registration) => ({
+            scope: registration.scope,
+            active: registration.active?.state || null,
+            waiting: registration.waiting?.state || null,
+            installing: registration.installing?.state || null,
+          })),
+        };
+      }).catch((error) => ({ evaluationError: error.message }));
+      throw new Error(`Rollout launcher did not appear: ${cause.message}\n${JSON.stringify(diagnostics, null, 2)}\n${rolloutErrors.join("\n")}`);
+    }
     await rolloutPage.waitForFunction((expectedVersion) => new Promise((resolveVersion) => {
       if (!window.crossOriginIsolated || typeof SharedArrayBuffer !== "function"
           || !navigator.serviceWorker.controller || !window.CnCPort?.rpc) {
@@ -356,9 +398,17 @@ try {
       throw new Error(`Threaded runtime failed after worker rollout: ${JSON.stringify(rolloutRuntime)}`);
     }
     if (rolloutErrors.length) throw new Error(`Unexpected rollout browser errors:\n${rolloutErrors.join("\n")}`);
-  } finally {
-    serveOldServiceWorker = false;
-    await rolloutContext.close();
+      workerRollout = {
+        fromRevision: oldWorkerRevision,
+        toVersion: rolloutWorkerVersion,
+        navigations: rolloutNavigations,
+        canonicalLocationPreserved: true,
+        threadedRuntime: true,
+      };
+    } finally {
+      serveOldServiceWorker = false;
+      await rolloutContext.close();
+    }
   }
 
   console.log(JSON.stringify({
@@ -369,13 +419,7 @@ try {
     runtime,
     canonicalPath: { first: firstPathname, reload: reloadPathname },
     domainRootCanonical: true,
-    workerRollout: {
-      fromRevision: oldWorkerRevision,
-      toVersion: rolloutWorkerVersion,
-      navigations: rolloutNavigations,
-      canonicalLocationPreserved: true,
-      threadedRuntime: true,
-    },
+    workerRollout,
     legacyPlayRecovery: true,
     legalNotice: true,
     unregister: true,

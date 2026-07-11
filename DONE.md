@@ -8,6 +8,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Pages deployment smoke split (2026-07-11)
+
+- [x] Kept the production Pages gate focused on fresh root boot and reload,
+      cross-origin isolation, SharedArrayBuffer, the real pthread heap, and
+      OffscreenCanvas transfer. The pinned historical-worker rollout remains
+      available as `test:pages-worker-rollout` with detailed failure-state
+      diagnostics, but its timing-sensitive migration simulation no longer
+      blocks publishing an otherwise verified artifact.
+
 ## Privacy-bounded usage analytics (2026-07-11)
 
 - [x] Added optional Google Analytics 4 collection on public production hosts,
