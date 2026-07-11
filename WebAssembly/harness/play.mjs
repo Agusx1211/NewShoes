@@ -6,6 +6,10 @@
 import "./launcher-archive-specs.js";
 import { createIssueRecorder } from "./issue-recorder.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
+import {
+  runRuntimeShutdownSequence,
+  runtimeShutdownWarning,
+} from "./runtime-shutdown-sequence.mjs";
 
 const archiveSpecs = Object.freeze(window.ZeroHArchiveSpecs.map((spec) => Object.freeze(
   spec.artifactSourceName === spec.name
@@ -954,7 +958,21 @@ async function start() {
 let runtimeStarted = false;
 let runtimeStartPromise = null;
 let runtimeClosed = false;
+let runtimeClosing = false;
 let runtimeShutdownPromise = null;
+
+function retireRuntimeViewport() {
+  if (!viewportCanvas.isConnected && !overlay.isConnected) return false;
+  // transferControlToOffscreen promotes the placeholder into its own browser
+  // compositor layer. Merely hiding an ancestor can leave that layer's final
+  // terrain frame visible after its worker is terminated. Remove both the
+  // exact transferred element and its promoted runtime subtree. Relaunch is a
+  // fresh document because OffscreenCanvas transfer is one-shot anyway.
+  viewportCanvas.hidden = true;
+  viewportCanvas.remove();
+  overlay.remove();
+  return !viewportCanvas.isConnected && !overlay.isConnected;
+}
 
 function beginRuntimeStart() {
   if (runtimeStarted) return Promise.resolve();
@@ -973,6 +991,9 @@ startButton.addEventListener("click", () => {
 });
 
 async function launchFromDesktop() {
+  if (runtimeClosing && runtimeShutdownPromise) {
+    await runtimeShutdownPromise;
+  }
   if (runtimeClosed) {
     throw new Error("The closed game runtime must be restarted in a fresh page");
   }
@@ -999,22 +1020,52 @@ async function exitToDesktop() {
   if (runtimeShutdownPromise) return runtimeShutdownPromise;
   if (!activeRpc || !runtimeStarted) return null;
 
+  runtimeClosing = true;
+  const runtimeRpc = activeRpc;
   const shutdown = (async () => {
-    progressNode.textContent = "Closing Zero Hour…";
-    gameRunning = false;
-    renderPerformanceOverlay();
-    await activeRpc("threadedStopLoop", { timeoutMs: 5000 }).catch(() => null);
-    await activeRpc("persistSaves", { reason: "launcher-exit" }).catch(() => null);
-    const result = await activeRpc("shutdownRuntime", {}).catch((error) => ({
-      ok: false,
-      error: error?.message ?? String(error),
-    }));
-    runtimeStarted = false;
-    runtimeClosed = true;
-    activeRpc = null;
-    overlay.hidden = true;
-    overlay.classList.remove("is-running");
-    return result;
+    let viewportRetired = false;
+    try {
+      progressNode.textContent = "Closing Zero Hour…";
+      gameRunning = false;
+      renderPerformanceOverlay();
+      viewportRetired = retireRuntimeViewport();
+      overlay.hidden = true;
+      overlay.classList.remove("is-running");
+
+      const sequence = await runRuntimeShutdownSequence({
+        stopSaveScheduling: () => window.CnCPort.stopSavePersistenceScheduling(),
+        stopLoop: () => runtimeRpc("threadedStopLoop", { timeoutMs: 5000 }),
+        persistFinalSave: () => window.CnCPort.persistFinalSaves("launcher-exit-final"),
+        gracefulShutdown: () => runtimeRpc("shutdownRuntime", {}),
+        forceShutdown: () => window.CnCPort.rpc("forceShutdownRuntime", {}),
+      });
+      const result = {
+        ...sequence.result,
+        close: { viewportRetired, ...sequence.close },
+      };
+      const warning = runtimeShutdownWarning(result);
+      if (warning) window.ZeroHDesktop?.showToast(warning.title, warning.message, "warning");
+      return result;
+    } catch (error) {
+      const result = {
+        ok: false,
+        error: error?.message ?? String(error),
+        close: { viewportRetired, finalSaveFresh: false },
+      };
+      const warning = runtimeShutdownWarning(result);
+      window.ZeroHDesktop?.showToast(warning.title, warning.message, "warning");
+      return result;
+    } finally {
+      gameRunning = false;
+      renderPerformanceOverlay();
+      overlay.hidden = true;
+      overlay.classList.remove("is-running");
+      runtimeStarted = false;
+      runtimeClosed = true;
+      runtimeClosing = false;
+      activeRpc = null;
+      window.dispatchEvent(new CustomEvent("cncport:runtimeclosed"));
+    }
   })();
   runtimeShutdownPromise = shutdown;
   return shutdown;
@@ -1025,6 +1076,7 @@ window.ZeroHRuntime = {
   exit: exitToDesktop,
   get started() { return runtimeStarted; },
   get closed() { return runtimeClosed; },
+  get closing() { return runtimeClosing; },
 };
 
 window.addEventListener("keydown", (event) => {
