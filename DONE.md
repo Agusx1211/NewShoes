@@ -10,11 +10,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Public-readiness audit and documentation (2026-07-11)
 
-- [x] Audited all 1,539 commits and 13,397 reachable blobs for credential
-      signatures, private machine details, large files, generated builds, and
-      retail asset payloads. No secret signature, retail container, wasm build,
-      or blob above 10 MiB was found. The report separates current-tree results
-      from historical findings in `docs/public-readiness-audit.md`.
+- [x] Audited all 1,552 commits and 13,480 reachable blobs across a recorded
+      15-ref manifest for credential signatures, private machine details,
+      large files, generated builds, and retail payloads. The cleaned tree has
+      zero credential or retail-container findings and no blob above 10 MiB;
+      the report separately records two historical URL-userinfo blobs and a
+      denylist-test private-key header marker.
 - [x] Removed four tracked absolute build/artifact symlinks, removed private
       machine defaults from GPU and harness tooling, generalized the tracked
       orchestration roster, and hardened `.gitignore` against generated output,
@@ -24,6 +25,9 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       asset ownership paths, build/test flow, license boundary, and evidence-
       based automation attribution. Official Steam and EA acquisition links
       were checked against their current first-party pages.
+- [x] Removed 20 unused launcher-concept logos and one image without sufficient
+      provenance, documented the 15 retained project UI binaries, and added two
+      stripped sRGB WebP screenshots with an explicit retail-data disclaimer.
 
 ## Launcher exit compositor teardown (2026-07-11)
 

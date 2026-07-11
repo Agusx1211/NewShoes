@@ -95,4 +95,3 @@ PY
 echo "sanitized mirror: $MIRROR_PATH"
 echo "before/after audit: $AUDIT_ROOT"
 echo "review and test this mirror before pushing any ref"
-

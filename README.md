@@ -176,13 +176,13 @@ performed hands-on playtests, chose tradeoffs, and integrated the work. Agents
 scouted the source, implemented ports, ran browser harnesses, captured GPU
 evidence, reviewed changes, and updated the project history.
 
-The reachable history records work by the following model families. Aliases
-were consolidated only when the commit metadata named the same provider and
-model:
+At the public-readiness audit snapshot, the reachable history records work by
+the following model families. Aliases were consolidated only when the commit
+metadata named the same provider and model:
 
 | Provider and model family | Authored commits |
 |---|---:|
-| OpenAI GPT-5 Codex, including Codex CLI | 996 |
+| OpenAI GPT-5 Codex, including Codex CLI | 1,009 |
 | Z.ai GLM-5.2, through OpenCode and Pi workers | 170 |
 | Anthropic Claude Fable 5 | 121 |
 | Anthropic Claude Opus 4.8 | 48 |

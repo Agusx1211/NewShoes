@@ -4066,10 +4066,6 @@ and then start with the PROFILE, not with any individual fix.
       rewrite in `docs/public-readiness-audit.md`. No secret or retail payload
       was found, but deleted history still exposes old machine paths, private
       network details, an internal handoff, and the owner's raw Git email.
-- [ ] Confirm the redistribution record for all launcher artwork with the
-      project owner. History describes the 38 files as project-owned and no
-      retail payload match was found, but binary art should have an explicit
-      durable origin statement before a formal release.
 - [ ] Add an automated public-tree gate for secret signatures, absolute
       symlinks, retail container extensions/magic, and unexpectedly large
       tracked blobs so the release audit cannot silently regress.

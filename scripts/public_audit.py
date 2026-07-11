@@ -14,7 +14,8 @@ from pathlib import Path
 
 
 CONTENT_PATTERNS = {
-    "credential.private-key": rb"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----",
+    "sensitive.private-key-header": rb"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----",
+    "credential.private-key-body": rb"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----[\s\S]{64,65536}-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----",
     "credential.aws-access-key": rb"(?<![A-Z0-9])(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Z0-9])",
     "credential.github-token": rb"(?<![A-Za-z0-9_])gh(?:p|o|u|s|r)_[A-Za-z0-9_]{20,}",
     "credential.gitlab-token": rb"(?<![A-Za-z0-9_-])glpat-[A-Za-z0-9_-]{20,}",
