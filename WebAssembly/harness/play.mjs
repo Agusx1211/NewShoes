@@ -551,7 +551,7 @@ function buildArchives() {
     return {
       name: spec.name,
       sourceName,
-      url: new URL(`../artifacts/real-assets/${sourceName}`, window.location.href).href,
+      url: new URL(`../artifacts/real-assets/${sourceName}`, document.baseURI).href,
     };
   });
 }
@@ -1125,8 +1125,8 @@ async function headLastModifiedMs(url) {
 async function refreshBuildAge() {
   try {
     const [wasmBuiltMs, bridgeBuiltMs] = await Promise.all([
-      headLastModifiedMs(new URL(`../${selectedDistDir}/cnc-port.wasm`, window.location.href)),
-      headLastModifiedMs(new URL("./bridge.js", window.location.href)),
+      headLastModifiedMs(new URL(`../${selectedDistDir}/cnc-port.wasm`, document.baseURI)),
+      headLastModifiedMs(new URL("./bridge.js", document.baseURI)),
     ]);
     const builtMs = Math.max(wasmBuiltMs ?? 0, bridgeBuiltMs ?? 0);
     if (builtMs === 0) {

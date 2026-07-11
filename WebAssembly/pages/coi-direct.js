@@ -2,9 +2,23 @@
 
 (() => {
   "use strict";
-  if (window.crossOriginIsolated && typeof SharedArrayBuffer === "function") return;
+  const script = document.currentScript;
+  const entry = new URL("./", script?.src || new URL("../", location.href));
+  const legacyPlay = new URL("harness/play.html", entry);
+  const packagedLauncher = new URL("launcher.html", entry);
+  const isLegacyLocation = location.pathname === legacyPlay.pathname
+    || location.pathname === packagedLauncher.pathname;
+
+  if (window.crossOriginIsolated && typeof SharedArrayBuffer === "function") {
+    if (isLegacyLocation) {
+      const canonical = new URL(entry);
+      canonical.search = location.search;
+      canonical.hash = location.hash;
+      location.replace(canonical);
+    }
+    return;
+  }
   document.documentElement.hidden = true;
-  const entry = new URL("../", location.href);
   entry.searchParams.set("coi-return", location.href);
   location.replace(entry);
 })();

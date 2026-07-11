@@ -135,6 +135,15 @@ async function cncPortResolveSecureOriginAction(unsupported) {
   }
 }
 
+function cncPortPlayablePage() {
+  try {
+    return Boolean(globalThis.document?.documentElement?.hasAttribute("data-cnc-play-page"))
+      || (globalThis.location?.pathname || "").endsWith("/play.html");
+  } catch (_error) {
+    return false;
+  }
+}
+
 const cncPortThreadedMode = (() => {
   try {
     // The play page is THREADED-ONLY (owner directive 2026-07-10; the
@@ -142,8 +151,7 @@ const cncPortThreadedMode = (() => {
     // the HTTPS threaded experience). Harness/index.html probe surfaces stay
     // non-threaded by default and opt in with ?threads=1.
     const threads = new URLSearchParams(globalThis.location?.search || "").get("threads");
-    const requested = threads === "1"
-      || (globalThis.location?.pathname || "").endsWith("/play.html");
+    const requested = threads === "1" || cncPortPlayablePage();
     if (!requested) return false;
     const support = cncPortThreadedRuntimeSupport();
     if (!support.supported) {
@@ -172,7 +180,7 @@ const contextPreserveDrawingBuffer = (() => {
     const explicit = params.get("preserveBuffer");
     if (explicit === "0" || explicit === "false" || explicit === "off") return false;
     if (explicit === "1" || explicit === "true" || explicit === "on") return true;
-    return !(globalThis.location?.pathname || "").endsWith("/play.html");
+    return !cncPortPlayablePage();
   } catch (_error) {
     return true;
   }
@@ -210,7 +218,7 @@ function defaultCncPortDistDir() {
       // engine — the GATE D "worker GL deficit" was this build-flavor gap);
       // harness/smoke pages keep the Debug dist-threaded for gate parity
       // with dist. An explicit ?dist= still wins in selectedCncPortDistDir.
-      if ((globalThis.location?.pathname || "").endsWith("/play.html")) {
+      if (cncPortPlayablePage()) {
         return "dist-threaded-release";
       }
       return "dist-threaded";
@@ -218,7 +226,7 @@ function defaultCncPortDistDir() {
     if (validCncPortDistDir(globalThis.__cncDefaultDistDir)) {
       return globalThis.__cncDefaultDistDir;
     }
-    if ((globalThis.location?.pathname || "").endsWith("/play.html")) {
+    if (cncPortPlayablePage()) {
       return "dist-release";
     }
   } catch (_error) {
@@ -243,8 +251,8 @@ function selectedCncPortDistDir() {
 
 function browserAssetUrl(path, cacheToken = "") {
   try {
-    const base = globalThis.location?.href
-      ?? (typeof document !== "undefined" ? document.baseURI : undefined);
+    const base = (typeof document !== "undefined" ? document.baseURI : undefined)
+      ?? globalThis.location?.href;
     const url = new URL(path, base);
     if (cacheToken) {
       url.searchParams.set("v", cacheToken);
@@ -797,7 +805,7 @@ function threadedWorkerDiagLevel() {
     if (diag === "lite" || diag === "full") {
       return diag;
     }
-    return (globalThis.location?.pathname || "").endsWith("/play.html") ? "lite" : "full";
+    return cncPortPlayablePage() ? "lite" : "full";
   } catch (_error) {
     return "full";
   }
@@ -1449,7 +1457,7 @@ function createThreadedEngineController() {
 }
 
 const threadedEngine = cncPortThreadedMode ? createThreadedEngineController() : null;
-if (threadedEngine && !(globalThis.location?.pathname || "").endsWith("/play.html")) {
+if (threadedEngine && !cncPortPlayablePage()) {
   // Prepare the worker realm as soon as the runtime is up — BEFORE any engine
   // start (P1a handshake rule: all realm prep must complete before boot/go
   // blocks the worker's event loop). The human launcher delays this until it
@@ -8370,7 +8378,7 @@ function ensureFixedMemfsDirectory(fs, path) {
 }
 
 function archiveNameFromUrl(url) {
-  const parsed = new URL(url, window.location.href);
+  const parsed = new URL(url, document.baseURI);
   const parts = parsed.pathname.split("/").filter(Boolean);
   return parts[parts.length - 1] || "archive.big";
 }

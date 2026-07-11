@@ -448,7 +448,7 @@ async function queryServerBuildInfo() {
 }
 
 async function collectBuildAssets() {
-  const base = window.location.href;
+  const base = document.baseURI;
   const selectedDistDir = selectedCncPortDistDir();
   const urls = [
     `../${selectedDistDir}/cnc-port.wasm`,
@@ -487,7 +487,8 @@ function selectedCncPortDistDir() {
     // opt in with ?threads=1 (Debug dist-threaded) — the dump metadata must
     // record the dist the page ACTUALLY loaded.
     const threads = params.get("threads");
-    const onPlayPage = window.location.pathname.endsWith("/play.html");
+    const onPlayPage = document.documentElement.hasAttribute("data-cnc-play-page")
+      || window.location.pathname.endsWith("/play.html");
     const threadedMode = threads === "1" || onPlayPage;
     const fallback = threadedMode
       ? (onPlayPage ? "dist-threaded-release" : "dist-threaded")

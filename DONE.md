@@ -13608,7 +13608,7 @@ mitigation track. Items resolved or retired by the pivot:
       bounded timeouts, and concurrency cancellation. The release build uses
       only the real `cnc-port` hot-path target.
 - [x] Added a deterministic public-site packager with an explicit launcher and
-      runtime allowlist. The final combined 53-file, 11,782,505-byte audited
+      runtime allowlist. The current combined 55-file, 11,849,709-byte audited
       artifact contains the three threaded release outputs, browser shell,
       complete license, and legal page only. Packager and verifier share one
       exact manifest; demonstrated `unexpected.env` files in either the runtime
@@ -13620,18 +13620,34 @@ mitigation track. Items resolved or retired by the pivot:
       COOP/COEP/CORP without caching responses, handles project subpaths and
       deep links, updates without the HTTP cache, stops reload loops with a
       visible failure, and supports explicit unregistration. No threaded
-      fallback or third-party runtime CDN was added.
+      fallback or third-party runtime CDN was added. A version handshake makes
+      the bootstrap update and wait for the current worker even when a deployed
+      older worker already isolated the page.
+- [x] Kept the public launcher at the Pages scope root after service-worker
+      isolation instead of exposing `harness/play.html`. A separately packaged
+      root launcher preserves harness-relative modules and runtime artifacts,
+      while a play-page marker keeps the threaded release, lite diagnostics,
+      OffscreenCanvas ownership, and issue metadata independent of the visible
+      pathname. The root web-app manifest installs the canonical scope URL, and
+      legacy play links recover to it with ordinary query parameters intact.
 - [x] Proved the final artifact under a no-header HTTP server at a Pages-like
       `/CnC_Generals_Zero_Hour/` subpath in fresh headless Chromium: first
       navigation unisolated, automatic controlled reload, final
       `crossOriginIsolated=true`, `SharedArrayBuffer` available, wasm served as
       `application/wasm`, launcher visible, shared Emscripten heap live, pthread
-      realm ready, and the real viewport OffscreenCanvas transferred. The final
+      realm ready, and the real viewport OffscreenCanvas transferred. First
+      load and reload stay at the scope root in both domain-root and project-
+      subpath modes, and a legacy play URL returns to that canonical root. The final
       synthetic public-readiness + launcher-polish + Pages integration also
       proved direct links, service-worker unregistration, the prominent launcher
       About notice, complete GPL/additional terms, no-warranty text, and
-      corresponding-source link. Screenshots and machine-readable inventory
-      were retained outside the repository.
+      corresponding-source link. A persistent-profile rollout regression starts
+      with the exact worker from deployed revision `18b95831`, switches the
+      server to the new artifact, and proves bounded canonical-root navigation,
+      query and fragment preservation, a forced network reload for an identical
+      target URL, worker takeover, launcher visibility, shared heap, pthread
+      startup, and OffscreenCanvas transfer. Screenshots and machine-readable
+      inventory were retained outside the repository.
 - [x] Documented repository Settings, workflow permissions, manual deployment,
       custom domains, first-load behavior, local reproduction, asset exclusion,
       isolation/storage troubleshooting, and the remaining Firefox/Safari

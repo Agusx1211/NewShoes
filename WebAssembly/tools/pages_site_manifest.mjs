@@ -58,10 +58,16 @@ export const PAGES_RUNTIME_FILES = Object.freeze([
   "cnc-port.worker.js",
 ]);
 
+export const PAGES_ROOT_LAUNCHER_FILES = Object.freeze([
+  "launcher.html",
+  "manifest.webmanifest",
+]);
+
 export const PAGES_OUTPUT_FILES = Object.freeze([
   ".nojekyll",
   "LICENSE.md",
   ...PAGES_TEMPLATE_FILES,
+  ...PAGES_ROOT_LAUNCHER_FILES,
   ...PAGES_HARNESS_FILES.map((name) => `harness/${name}`),
   "harness/play.html",
   ...PAGES_RUNTIME_FILES.map((name) => `dist-threaded-release/${name}`),
