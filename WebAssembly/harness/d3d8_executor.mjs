@@ -259,6 +259,22 @@ function d3d8RenderGlStateValueChanged(key, value) {
   return true;
 }
 
+function d3d8RenderGlStateTupleChanged(key, first, second, third, fourth) {
+  if (!d3d8CurrentRenderGlState) {
+    d3d8CurrentRenderGlState = {};
+  }
+  const previous = d3d8CurrentRenderGlState[key];
+  if (previous !== undefined &&
+      previous[0] === first && previous[1] === second &&
+      previous[2] === third && previous[3] === fourth) {
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.drawRenderStateGlCacheHits += 1;
+    return false;
+  }
+  d3d8CurrentRenderGlState[key] = [first, second, third, fourth];
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawRenderStateGlCacheMisses += 1;
+  return true;
+}
+
 function setD3D8TrackedCapability(capability, key, enabled) {
   const next = Boolean(enabled);
   if (d3d8RenderGlStateValueChanged(key, next)) {
@@ -267,12 +283,6 @@ function setD3D8TrackedCapability(capability, key, enabled) {
     } else {
       gl.disable(capability);
     }
-  }
-}
-
-function applyD3D8TrackedGlState(key, value, apply) {
-  if (d3d8RenderGlStateValueChanged(key, value)) {
-    apply();
   }
 }
 
@@ -749,7 +759,7 @@ function noteD3D8BufferProducerUpdate({
   orphaned,
   resized,
 }) {
-  if (!d3d8BufferProducerTrackingEnabled || !resource) {
+  if (!resource) {
     return;
   }
   const label = bufferProducerLabel(producer);
@@ -2775,20 +2785,22 @@ function updateD3D8Buffer(payload = {}) {
   if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferMirrorMs += mirrorMs;
   if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferMirrorSkippedBytes += skippedMirrorBytes;
   const producer = d3d8BufferProducerTrackingEnabled ? bufferProducerLabel(payload.producer) : "";
-  noteD3D8BufferProducerUpdate({
-    producer,
-    resource,
-    byteLength: bytes.byteLength,
-    updateMs,
-    subDataMs,
-    mirrorMs,
-    mirroredBytes,
-    skippedMirrorBytes,
-    discard,
-    noOverwrite,
-    orphaned,
-    resized,
-  });
+  if (d3d8BufferProducerTrackingEnabled) {
+    noteD3D8BufferProducerUpdate({
+      producer,
+      resource,
+      byteLength: bytes.byteLength,
+      updateMs,
+      subDataMs,
+      mirrorMs,
+      mirroredBytes,
+      skippedMirrorBytes,
+      discard,
+      noOverwrite,
+      orphaned,
+      resized,
+    });
+  }
   d3d8BufferStats.lastUpdate = {
     id,
     kind: resource.kindName,
@@ -10472,7 +10484,7 @@ function d3d8NoteTerrainNoiseMultiplyDraw(
   if (!stage0IsProjectedNoise && !stage1IsProjectedNoise) {
     return;
   }
-  if (d3d8PerfCountersEnabled) d3d8PerfStats.terrainNoiseMultiplyDraws += 1;
+  d3d8PerfStats.terrainNoiseMultiplyDraws += 1;
   // Whether the projection matrix is non-identity. An identity transform on a
   // camera-space-position noise pass would collapse the noise UVs and flatten
   // the detail, so the harness can use this to distinguish "detail present"
@@ -10484,9 +10496,9 @@ function d3d8NoteTerrainNoiseMultiplyDraw(
     texture1Coordinates.transformApplied &&
     !isIdentityD3DMatrix(texture1Transform);
   if (stage0Transformed || stage1Transformed) {
-    if (d3d8PerfCountersEnabled) d3d8PerfStats.terrainNoiseMultiplyTransformedDraws += 1;
+    d3d8PerfStats.terrainNoiseMultiplyTransformedDraws += 1;
   } else {
-    if (d3d8PerfCountersEnabled) d3d8PerfStats.terrainNoiseMultiplyIdentityTransformDraws += 1;
+    d3d8PerfStats.terrainNoiseMultiplyIdentityTransformDraws += 1;
   }
 }
 
@@ -10657,6 +10669,11 @@ function d3d8EffectiveStencilValue(value) {
   return (((Number(value ?? 0) >>> 0) & d3d8StencilValueMask()) >>> 0);
 }
 
+const D3D8_NORMALIZED_RENDER_STATE_OPTIONS = {
+  invertCullWinding: false,
+  normalized: true,
+};
+
 function applyD3D8RenderState(renderState, options = {}) {
   const state = options.normalized === true
     ? renderState
@@ -10689,22 +10706,24 @@ function applyD3D8RenderState(renderState, options = {}) {
     fogEnd > fogStart;
   const fogColor = d3dColorToNormalizedRgba(state.fogColor).slice(0, 3);
   const depthBias = d3d8DepthBiasInfo(state.zBias);
-  const colorMask = {
-    r: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_RED),
-    g: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_GREEN),
-    b: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_BLUE),
-    a: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_ALPHA),
-  };
+  const colorMaskR = Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_RED);
+  const colorMaskG = Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_GREEN);
+  const colorMaskB = Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_BLUE);
+  const colorMaskA = Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_ALPHA);
 
-  applyD3D8TrackedGlState("frontFace", gl.CCW, () => gl.frontFace(gl.CCW));
+  if (d3d8RenderGlStateValueChanged("frontFace", gl.CCW)) {
+    gl.frontFace(gl.CCW);
+  }
   setD3D8TrackedCapability(gl.CULL_FACE, "cullEnabled", cullEnabled);
-  if (cullEnabled) {
-    applyD3D8TrackedGlState("cullFace", cullFace, () => gl.cullFace(cullFace));
+  if (cullEnabled && d3d8RenderGlStateValueChanged("cullFace", cullFace)) {
+    gl.cullFace(cullFace);
   }
 
   setD3D8TrackedCapability(gl.DEPTH_TEST, "depthEnabled", depthEnabled);
   setD3D8DepthMask(state.zWriteEnable !== 0);
-  applyD3D8TrackedGlState("depthFunc", depthFunc, () => gl.depthFunc(depthFunc));
+  if (d3d8RenderGlStateValueChanged("depthFunc", depthFunc)) {
+    gl.depthFunc(depthFunc);
+  }
 
   // Emulate D3D8 D3DRS_ZBIAS with a slope-scaled polygon offset (see
   // d3d8DepthBiasInfo). This is what pulls the terrain-tessellated projected
@@ -10715,40 +10734,78 @@ function applyD3D8RenderState(renderState, options = {}) {
   // preventing any cross-draw bias leak.
   const polygonOffset = depthBias.polygonOffset;
   setD3D8TrackedCapability(gl.POLYGON_OFFSET_FILL, "polygonOffsetEnabled", polygonOffset.enabled);
-  applyD3D8TrackedGlState(
-    "polygonOffset",
-    `${polygonOffset.factor},${polygonOffset.units}`,
-    () => gl.polygonOffset(polygonOffset.factor, polygonOffset.units),
-  );
-
-  setD3D8TrackedCapability(gl.BLEND, "blendEnabled", blendEnabled);
-  applyD3D8TrackedGlState("blendFunc", `${srcBlend},${destBlend}`,
-    () => gl.blendFunc(srcBlend, destBlend));
-  applyD3D8TrackedGlState("blendEquation", blendEquation,
-    () => gl.blendEquation(blendEquation));
-  applyD3D8TrackedGlState(
-    "colorMask",
-    `${colorMask.r ? 1 : 0},${colorMask.g ? 1 : 0},${colorMask.b ? 1 : 0},${colorMask.a ? 1 : 0}`,
-    () => gl.colorMask(colorMask.r, colorMask.g, colorMask.b, colorMask.a),
-  );
-  setD3D8TrackedCapability(gl.STENCIL_TEST, "stencilEnabled", stencilEnabled);
-  if (stencilEnabled) {
-    applyD3D8TrackedGlState("stencilFunc", `${stencilFunc},${stencilRef},${stencilMask}`,
-      () => gl.stencilFunc(stencilFunc, stencilRef, stencilMask));
-    applyD3D8TrackedGlState("stencilOp", `${stencilFail},${stencilZFail},${stencilPass}`,
-      () => gl.stencilOp(stencilFail, stencilZFail, stencilPass));
-    applyD3D8TrackedGlState("stencilMask", stencilWriteMask,
-      () => gl.stencilMask(stencilWriteMask));
-  } else {
-    const resetStencilMask = d3d8EffectiveStencilValue(0xffffffff);
-    applyD3D8TrackedGlState("stencilFunc", `${gl.ALWAYS},0,${resetStencilMask}`,
-      () => gl.stencilFunc(gl.ALWAYS, 0, resetStencilMask));
-    applyD3D8TrackedGlState("stencilOp", `${gl.KEEP},${gl.KEEP},${gl.KEEP}`,
-      () => gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP));
-    applyD3D8TrackedGlState("stencilMask", resetStencilMask,
-      () => gl.stencilMask(resetStencilMask));
+  if (d3d8RenderGlStateTupleChanged(
+    "polygonOffset", polygonOffset.factor, polygonOffset.units)) {
+    gl.polygonOffset(polygonOffset.factor, polygonOffset.units);
   }
 
+  setD3D8TrackedCapability(gl.BLEND, "blendEnabled", blendEnabled);
+  if (d3d8RenderGlStateTupleChanged("blendFunc", srcBlend, destBlend)) {
+    gl.blendFunc(srcBlend, destBlend);
+  }
+  if (d3d8RenderGlStateValueChanged("blendEquation", blendEquation)) {
+    gl.blendEquation(blendEquation);
+  }
+  if (d3d8RenderGlStateTupleChanged(
+    "colorMask", colorMaskR, colorMaskG, colorMaskB, colorMaskA)) {
+    gl.colorMask(colorMaskR, colorMaskG, colorMaskB, colorMaskA);
+  }
+  setD3D8TrackedCapability(gl.STENCIL_TEST, "stencilEnabled", stencilEnabled);
+  if (stencilEnabled) {
+    if (d3d8RenderGlStateTupleChanged("stencilFunc", stencilFunc, stencilRef, stencilMask)) {
+      gl.stencilFunc(stencilFunc, stencilRef, stencilMask);
+    }
+    if (d3d8RenderGlStateTupleChanged("stencilOp", stencilFail, stencilZFail, stencilPass)) {
+      gl.stencilOp(stencilFail, stencilZFail, stencilPass);
+    }
+    if (d3d8RenderGlStateValueChanged("stencilMask", stencilWriteMask)) {
+      gl.stencilMask(stencilWriteMask);
+    }
+  } else {
+    const resetStencilMask = d3d8EffectiveStencilValue(0xffffffff);
+    if (d3d8RenderGlStateTupleChanged("stencilFunc", gl.ALWAYS, 0, resetStencilMask)) {
+      gl.stencilFunc(gl.ALWAYS, 0, resetStencilMask);
+    }
+    if (d3d8RenderGlStateTupleChanged("stencilOp", gl.KEEP, gl.KEEP, gl.KEEP)) {
+      gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+    }
+    if (d3d8RenderGlStateValueChanged("stencilMask", resetStencilMask)) {
+      gl.stencilMask(resetStencilMask);
+    }
+  }
+
+  if (d3d8DiagLevel !== "full") {
+    return {
+      depth: { bias: depthBias },
+      alphaTest: {
+        enabled: state.alphaTestEnable !== 0,
+        ref: (state.alphaRef & 0xff) / 255,
+      },
+      fog: {
+        enabled: fogEnabled,
+        color: fogColor,
+        start: fogStart,
+        end: fogEnd,
+        rangeEnabled: state.rangeFogEnable !== 0,
+      },
+      lighting: {
+        enabled: state.lighting !== 0,
+        normalizeNormals: { enabled: state.normalizeNormals !== 0 },
+        localViewer: { enabled: state.localViewer !== 0 },
+      },
+      ambient: { rgba: d3dColorToNormalizedRgba(state.ambient) },
+      materialSources: {
+        colorVertex: { enabled: state.colorVertex !== 0 },
+      },
+    };
+  }
+
+  const colorMask = {
+    r: colorMaskR,
+    g: colorMaskG,
+    b: colorMaskB,
+    a: colorMaskA,
+  };
   return {
     d3d: state,
     cull: {
@@ -11594,14 +11651,14 @@ function paintD3D8DrawIndexed(payload = {}) {
     ? () => {
         noteD3D8DrawProducerMs(drawProducerEntry, "drawProfiledMs", perfNow() - drawProducerStartedAt);
       }
-    : () => {};
+    : null;
   const finishSortedDrawProfile = sortedDrawProfiled
     ? () => {
         const elapsed = perfNow() - sortedDrawStartedAt;
         if (d3d8PerfCountersEnabled) d3d8PerfStats.sortedDrawProfiledMs += elapsed;
         noteD3D8DrawProducerMs(drawProducerEntry, "sortedDrawProfiledMs", elapsed);
       }
-    : () => {};
+    : null;
   const recordDrawPhase = drawSubphaseProfiled
     ? (field) => {
         const now = perfNow();
@@ -11664,8 +11721,8 @@ function paintD3D8DrawIndexed(payload = {}) {
   });
   if (tryMergeD3D8PendingDrawBatch(earlyBatchInfo)) {
     recordDrawPhase?.("sortedDrawPreBatchMs");
-    finishSortedDrawProfile();
-    finishDrawProducerProfile();
+    finishSortedDrawProfile?.();
+    finishDrawProducerProfile?.();
     harnessState.graphics.d3d8DrawIndexedSequence = drawSequence;
     return 1;
   }
@@ -12085,22 +12142,26 @@ function paintD3D8DrawIndexed(payload = {}) {
   // engine LOD / Options gate leaving m_useLightMap / m_useCloudMap off so the
   // ST_TERRAIN_BASE_NOISE* technique is never selected upstream (in which case
   // this counter stays 0), not a lost pass in the D3D8->WebGL2 bridge.
-  d3d8NoteTerrainNoiseMultiplyDraw(
-    renderState,
-    canSampleTexture0,
-    texture0Coordinates,
-    texture0Transform,
-    canSampleTexture1,
-    texture1Coordinates,
-    texture1Transform,
-  );
+  if (d3d8PerfCountersEnabled) {
+    d3d8NoteTerrainNoiseMultiplyDraw(
+      renderState,
+      canSampleTexture0,
+      texture0Coordinates,
+      texture0Transform,
+      canSampleTexture1,
+      texture1Coordinates,
+      texture1Transform,
+    );
+  }
   const vertexPretransformed = vertexLayout?.pretransformed === true;
   const usePositionTransforms = useTransforms && !vertexPretransformed;
   const includeSceneDrawHistory = usePositionTransforms || vertexPretransformed;
   const usesIdentityClipSpace = usePositionTransforms && matrixTransformsAreIdentity;
   recordDrawPhase?.("sortedDrawDerivedMs");
-  warnD3D8CombinerDiagnostics(renderState, appliedTexture0Combiner, appliedStage1Combiner,
-    appliedStage2Combiner, appliedStage3Combiner, drawSequence);
+  if (d3d8DiagLevel === "full") {
+    warnD3D8CombinerDiagnostics(renderState, appliedTexture0Combiner, appliedStage1Combiner,
+      appliedStage2Combiner, appliedStage3Combiner, drawSequence);
+  }
   if (d3d8DiagLevel === "full" && texture0Resource) {
     const caps = (harnessState.graphics.uiDrawCaptures ??= { atlas: [], small: [], census: {} });
     const dimKey = `${texture0Resource.width}x${texture0Resource.height}`;
@@ -12648,10 +12709,10 @@ function paintD3D8DrawIndexed(payload = {}) {
     // below.
     if (!renderUniformUnchanged) {
       const applyRenderStateStartedAt = drawSubphaseProfiled ? perfNow() : 0;
-      appliedRenderState = applyD3D8RenderState(renderState, {
-        invertCullWinding: false,
-        normalized: true,
-      });
+      appliedRenderState = applyD3D8RenderState(
+        renderState,
+        D3D8_NORMALIZED_RENDER_STATE_OPTIONS,
+      );
       if (drawSubphaseProfiled) {
         const elapsed = perfNow() - applyRenderStateStartedAt;
         if (sortedDrawProfiled) {
@@ -13416,8 +13477,8 @@ function paintD3D8DrawIndexed(payload = {}) {
     // lite: skip the ~40-field probe, per-draw texture sampling, and the
     // spread-copied draw-history array — keep only the cheap sequence counter.
     recordDrawPhase?.("sortedDrawTailMs");
-    finishSortedDrawProfile();
-    finishDrawProducerProfile();
+    finishSortedDrawProfile?.();
+    finishDrawProducerProfile?.();
     harnessState.graphics.d3d8DrawIndexedSequence = drawSequence;
     return drawOk ? 1 : 0;
   }
@@ -13684,8 +13745,8 @@ function paintD3D8DrawIndexed(payload = {}) {
     d3d8Perf: d3d8PerfSummary(),
   };
   recordDrawPhase?.("sortedDrawTailMs");
-  finishSortedDrawProfile();
-  finishDrawProducerProfile();
+  finishSortedDrawProfile?.();
+  finishDrawProducerProfile?.();
   return drawOk ? 1 : 0;
 }
 

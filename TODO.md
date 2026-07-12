@@ -3814,6 +3814,12 @@ and then start with the PROFILE, not with any individual fix.
       35.33, and 35.33 per frame respectively while retaining full state in
       diagnostic mode. The broader TODO stays open for remaining render-state
       objects, command buffering, and a DevTools memory/GC proof.
+      2026-07-12: a follow-up removed per-state callback closures, composite
+      state-key strings, per-draw no-op profiling closures, and the full
+      diagnostic applied-state object graph from lite gameplay. Two RTX 4080
+      shell-map runs averaged 2.1% lower wall time and 3.7% lower engine time,
+      with wall p95/p99 down 3.8%/3.9% and engine p99 down 15.1%. Full
+      diagnostics retain the complete state graph and warning/counter paths.
       Verify future work with p95/p99 frame time + a DevTools memory timeline.
       (by Claude)
 - [ ] **Optimize the real `HeightMap.render.tilePasses` bucket, not terrain

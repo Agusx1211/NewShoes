@@ -8,6 +8,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Lite-play D3D8 state-allocation reduction (2026-07-12)
+
+- [x] Removed callback closures from cached WebGL render-state application,
+      replaced per-call composite state-key strings with exact tuple snapshots,
+      stopped allocating two no-op profiling closures per unprofiled draw, and
+      kept the full applied-state diagnostic object graph and combiner warnings
+      out of lite gameplay. The lean state summary retains every field consumed
+      by shaders and uniform caches; GL calls, draw order, render values,
+      shaders, resolution, effects, simulation, and LOD are unchanged. Across
+      two 600-frame RTX 4080 Vulkan/ANGLE comparisons, wall-frame average fell
+      from 9.58 to 9.38 ms and engine-frame average from 5.85 to 5.64 ms; wall
+      p95/p99 improved from 13.75/15.52 to 13.23/14.92 ms and engine p99 from
+      9.95 to 8.45 ms. A mutable adjacent-batch scratch object was separately
+      rejected after regressing wall and engine latency. The retained path
+      passed the full `EXPECT_WASM=1` browser smoke and an RTX active-skirmish
+      run with 224 objects, active human/AI state, and intact terrain, lighting,
+      shadows, models, textures, and UI in the captured screenshot.
+
 ## Lite-play D3D8 counter overhead removal (2026-07-12)
 
 - [x] Removed detailed D3D8 performance-counter bookkeeping from the lite
