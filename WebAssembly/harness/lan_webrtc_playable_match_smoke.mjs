@@ -3,8 +3,8 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { startNostrTestRelayServer } from "./nostr-test-relay-server.mjs";
 import { startStaticServer } from "./static-server.mjs";
-import { attachWebRtcSignalingServer } from "./webrtc-signaling-server.mjs";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
@@ -16,6 +16,9 @@ const allowWebGlContextLoss = process.env.CNC_ALLOW_WEBGL_CONTEXT_LOSS === "1";
 const maxAllowedLogicFrameSkew = threadedTest ? Math.max(6, playerCount - 1) : playerCount - 1;
 const maxAllowedFinalLogicFrameSkew = threadedTest ? 10 : maxAllowedLogicFrameSkew;
 const activeSampleInterval = threadedTest ? 5 : 30;
+const publicDiscovery = process.env.CNC_TRYSTERO_PUBLIC === "1";
+const configuredRelayUrls = String(process.env.CNC_TRYSTERO_RELAYS ?? "")
+  .split(",").map((url) => url.trim()).filter(Boolean);
 let parallelClientFrames = false;
 
 if (!Number.isInteger(playerCount) || playerCount < 2 || playerCount > 8) {
@@ -169,11 +172,14 @@ async function enterLanLobby(client) {
   }, (state) => state.lanReady === true && state.localIp !== 0, 30000, 0);
 }
 
-async function createClient(browserOrContext, serverUrl, signalingUrl, room, label, peerId,
+async function createClient(browserOrContext, serverUrl, relayUrls, room, label, peerId,
   existingContext = false) {
   const context = existingContext
     ? browserOrContext
-    : await browserOrContext.newContext({ viewport: { width: 1280, height: 720 } });
+    : await browserOrContext.newContext({
+      viewport: { width: 1280, height: 720 },
+      ignoreHTTPSErrors: process.env.CNC_IGNORE_HTTPS_ERRORS === "1",
+    });
   const page = await context.newPage();
   const client = { context, page, label, peerId, errors: [] };
   page.setDefaultTimeout(300000);
@@ -203,11 +209,12 @@ async function createClient(browserOrContext, serverUrl, signalingUrl, room, lab
   console.error(`[lan-webrtc] ${label} archives mounted`);
 
   const connected = await rpc(client, "browserWebRtcEndpointConnect", {
-    signalingUrl,
     room,
     peerId,
     displayName: label,
     iceServers: [],
+    relayUrls: relayUrls.length ? relayUrls : null,
+    timeoutMs: 30000,
   });
   expect(connected.ok === true, `${label} failed to connect WebRTC`, connected);
 
@@ -224,7 +231,7 @@ async function createClient(browserOrContext, serverUrl, signalingUrl, room, lab
 }
 
 let server;
-let signaling;
+let testRelay;
 const browsers = [];
 const clients = [];
 const profileDirs = [];
@@ -232,12 +239,16 @@ const profileDirs = [];
 try {
   await mkdir(artifactRoot, { recursive: true });
   server = await startStaticServer({ root: wasmRoot });
-  signaling = attachWebRtcSignalingServer({ server: server.server });
-  const signalingUrl = new URL("/webrtc", server.url);
-  signalingUrl.protocol = "ws:";
+  if (!publicDiscovery && configuredRelayUrls.length === 0) {
+    testRelay = await startNostrTestRelayServer();
+  }
+  const relayUrls = testRelay ? [testRelay.url] : configuredRelayUrls;
   const room = `playable-match-${Date.now()}`;
 
   const launchOptions = {};
+  if (process.env.CNC_IGNORE_HTTPS_ERRORS === "1") {
+    launchOptions.ignoreHTTPSErrors = true;
+  }
   if (process.env.CNC_BROWSER_EXECUTABLE) {
     launchOptions.executablePath = process.env.CNC_BROWSER_EXECUTABLE;
   }
@@ -245,7 +256,8 @@ try {
     launchOptions.args = process.env.CNC_BROWSER_ARGS.split(/\s+/).filter(Boolean);
   }
   const separateBrowsers = playerCount >= 4 || process.env.CNC_BROWSER_PER_PLAYER === "1";
-  parallelClientFrames = threadedTest || separateBrowsers;
+  parallelClientFrames = process.env.CNC_SERIAL_CLIENT_FRAMES !== "1"
+    && (threadedTest || separateBrowsers);
   for (let index = 0; index < playerCount; ++index) {
     if (threadedTest) {
       const profileDir = resolve(wasmRoot, "artifacts/pw-profiles",
@@ -261,7 +273,7 @@ try {
       const label = host ? "WebRTC Host" : `WebRTC Guest ${index}`;
       const peerId = host ? "host" : `guest-${index}`;
       clients.push(await createClient(context,
-        server.url, signalingUrl.href, room, label, peerId, true));
+        server.url, relayUrls, room, label, peerId, true));
       continue;
     }
     if (separateBrowsers || browsers.length === 0) {
@@ -272,14 +284,13 @@ try {
     const peerId = host ? "host" : `guest-${index}`;
     const clientBrowser = separateBrowsers ? browsers[index] : browsers[0];
     clients.push(await createClient(clientBrowser,
-      server.url, signalingUrl.href, room, label, peerId));
+      server.url, relayUrls, room, label, peerId));
   }
   const [host, ...guests] = clients;
-  await signaling.waitForPeers(playerCount, 30000);
   const peerConnections = await Promise.all(clients.map((client) =>
     rpc(client, "browserWebRtcEndpointWaitForPeers", {
       count: playerCount - 1,
-      timeoutMs: 30000,
+      timeoutMs: 60000,
     })));
   expect(peerConnections.every((result) => result.ok === true
       && result.runtime?.endpoint?.openPeers === playerCount - 1),
@@ -390,14 +401,18 @@ try {
     clearedLobbyDatagrams);
 
   let threadedLoops = [];
+  // The manual-frame verifier intentionally serializes expensive engine +
+  // SwiftShader work across browser clients. Keep the original disconnect
+  // logic enabled, but prevent wall-clock verifier stalls from looking like a
+  // network failure; the shipping autonomous loop does not have this delay.
+  const verifierTimeouts = await Promise.all(clients.map((client) =>
+    rpc(client, "realEngineSetNetworkTimeouts", {
+      disconnectMs: 900000,
+      playerTimeoutMs: 900000,
+    })));
+  expect(verifierTimeouts.every((result) => result.ok === true),
+    "verifier network timeouts could not be extended", verifierTimeouts);
   if (threadedTest) {
-    const verifierTimeouts = await Promise.all(clients.map((client) =>
-      rpc(client, "realEngineSetNetworkTimeouts", {
-        disconnectMs: 900000,
-        playerTimeoutMs: 900000,
-      })));
-    expect(verifierTimeouts.every((result) => result.ok === true),
-      "threaded verifier network timeouts could not be extended", verifierTimeouts);
     const loadStepping = await Promise.all(clients.map((client) =>
       rpc(client, "realEngineSetLoadStepping", { enabled: true, budgetMs: 5 })));
     expect(loadStepping.every((result) => result.ok === true),
@@ -554,14 +569,24 @@ try {
     finalLogicFrameSkew,
     final: finalStates,
     endpoints: endpointStates.map((state) => state.runtime.endpoint),
-    signaling: signaling.stats(),
+    discovery: {
+      strategy: "trystero-nostr",
+      configuredRelays: relayUrls,
+      testRelay: testRelay?.stats() ?? null,
+    },
     screenshots,
     gpu,
     browserErrors: clients.map((client) => ({ peerId: client.peerId, errors: client.errors })),
   };
-  expect(result.signaling.gamePayloadBytes === 0
-      && result.signaling.rooms?.some((activeRoom) => activeRoom.peers.length === playerCount),
-  "signaling server relayed game payload bytes or lost room members", result.signaling);
+  expect(result.endpoints.every((endpoint) => endpoint.discoveryStrategy === "trystero-nostr"
+      && endpoint.openPeers === playerCount - 1)
+      && (!result.discovery.testRelay
+        || (result.discovery.testRelay.activeConnections === playerCount
+          && result.discovery.testRelay.binaryMessagesRejected === 0)),
+  "Trystero discovery lost room members or carried a binary game payload", {
+    endpoints: result.endpoints,
+    discovery: result.discovery,
+  });
   const unexpectedBrowserErrors = result.browserErrors.flatMap(({ peerId, errors }) =>
     errors.filter((error) => !allowWebGlContextLoss
       || !/WebGL context (?:LOST|restored)/i.test(error))
@@ -588,6 +613,6 @@ try {
   for (const profileDir of profileDirs) {
     await rm(profileDir, { recursive: true, force: true });
   }
-  signaling?.close();
+  await testRelay?.close().catch(() => {});
   await server?.close();
 }

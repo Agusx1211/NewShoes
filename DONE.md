@@ -11624,6 +11624,22 @@ mitigation track. Items resolved or retired by the pivot:
       `build:port:threaded:release` and a four-client headless networking/
       simulation run; GPU rasterization was disabled because the allowed GPU
       machines were intentionally not used, so this is not visual evidence.
+- [x] Replace the project-owned WebSocket signaling service with Trystero for
+      the simulated-LAN multiplayer path. The launcher now joins rooms through
+      redundant public Nostr relays, exchanges transport metadata during the
+      Trystero admission handshake, derives collision-checked private `10/8`
+      virtual addresses from peer IDs, and opens a dedicated reliable/ordered
+      `cnc-udp-v1` DataChannel so original encrypted LAN and lockstep datagrams
+      never enter the discovery protocol. The browser bundle is pinned and
+      reproducibly generated from Trystero 0.25.2 with its MIT notices included
+      in Pages/Cloudflare artifacts; the obsolete `/webrtc` server and launcher
+      URL setting are removed. A protocol-shaped local Nostr fixture makes CI
+      deterministic without becoming production infrastructure. Verified with
+      the two-context original `Transport::doSend/doRecv` gate, a public Nostr
+      relay run, and a complete two-player original LAN lobby-to-rendered-match
+      run with no dropped datagrams or CRC mismatch. A four-client threaded run
+      also formed all six peer links and started four original `Network`
+      instances before the memory-constrained SwiftShader host timed out.
 - [x] Carry the LANAPI discovery/join/game-start flow through browser
       WebSocket binary frames. `lanapi_websocket_flow_smoke.mjs` boots two
       isolated Playwright contexts, builds the existing original LAN announce,

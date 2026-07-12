@@ -13,4 +13,5 @@ export CNC_BUILD_TARGETS=cnc-port
 export CMAKE_CXX_FLAGS="-O2 -ffile-prefix-map=${repo_root}=."
 export WASM_EXCEPTIONS=1
 
+node "${script_dir}/build_trystero_bundle.mjs" --check
 exec bash "${script_dir}/build_wasm.sh"

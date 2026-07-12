@@ -2,18 +2,16 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { startNostrTestRelayServer } from "./nostr-test-relay-server.mjs";
 import { startStaticServer } from "./static-server.mjs";
-import { attachWebRtcSignalingServer } from "./webrtc-signaling-server.mjs";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
 const server = await startStaticServer({ root: wasmRoot });
-const signaling = attachWebRtcSignalingServer({
-  server: server.server,
-  virtualIpBase: 0x7f000000,
-});
-const signalingUrl = new URL("/webrtc", server.url);
-signalingUrl.protocol = "ws:";
+const publicDiscovery = process.env.CNC_TRYSTERO_PUBLIC === "1";
+const configuredRelayUrls = String(process.env.CNC_TRYSTERO_RELAYS ?? "")
+  .split(",").map((url) => url.trim()).filter(Boolean);
+let relayUrls = configuredRelayUrls;
 
 function expect(condition, message, payload) {
   if (!condition) {
@@ -22,7 +20,9 @@ function expect(condition, message, payload) {
 }
 
 async function createClient(browser, harnessUrl, label, browserEvents) {
-  const context = await browser.newContext();
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: process.env.CNC_IGNORE_HTTPS_ERRORS === "1",
+  });
   const page = await context.newPage();
   page.on("console", (message) => {
     browserEvents.push({ client: label, type: "console", level: message.type(), text: message.text() });
@@ -40,14 +40,15 @@ async function createClient(browser, harnessUrl, label, browserEvents) {
 }
 
 async function connectClient(client, room, peerId) {
-  const result = await client.page.evaluate(({ url, roomName, id }) =>
+  const result = await client.page.evaluate(({ relays, roomName, id }) =>
     window.CnCPort.rpc("browserWebRtcEndpointConnect", {
-      signalingUrl: url,
       room: roomName,
       peerId: id,
       displayName: id,
       iceServers: [],
-    }), { url: signalingUrl.href, roomName: room, id: peerId });
+      relayUrls: relays.length ? relays : null,
+      timeoutMs: 30000,
+    }), { relays: relayUrls, roomName: room, id: peerId });
   expect(result.ok === true, `${peerId} failed to join the WebRTC room`, result);
   return result;
 }
@@ -57,7 +58,11 @@ async function waitForPeer(client, peerId) {
     window.CnCPort.rpc("browserWebRtcEndpointWaitForPeers", { count: 1, timeoutMs: 15000 }));
   expect(result.ok === true
       && result.runtime?.endpoint?.openPeers === 1
-      && result.runtime?.relayTransport === false,
+      && result.runtime?.relayTransport === false
+      && result.runtime?.endpoint?.discoveryStrategy === "trystero-nostr"
+      && result.runtime?.endpoint?.peers?.[0]?.channelLabel === "cnc-udp-v1"
+      && result.runtime?.endpoint?.peers?.[0]?.channelProtocol === "cnc-generals-udp-v1"
+      && result.runtime?.endpoint?.peers?.[0]?.ordered === true,
     `${peerId} did not open its P2P data channel`, result);
   return result;
 }
@@ -75,9 +80,14 @@ async function waitForDatagram(client) {
 let browser;
 let source;
 let destination;
+let testRelay;
 const browserEvents = [];
 
 try {
+  if (!publicDiscovery && configuredRelayUrls.length === 0) {
+    testRelay = await startNostrTestRelayServer();
+  }
+  relayUrls = testRelay ? [testRelay.url] : configuredRelayUrls;
   browser = await chromium.launch();
   const harnessUrl = new URL("harness/index.html", server.url).href;
   const room = `webrtc-transport-${Date.now()}`;
@@ -86,15 +96,15 @@ try {
 
   const sourceConnect = await connectClient(source, room, "source");
   const destinationConnect = await connectClient(destination, room, "destination");
-  await signaling.waitForPeers(2);
   const [sourceReady, destinationReady] = await Promise.all([
     waitForPeer(source, "source"),
     waitForPeer(destination, "destination"),
   ]);
 
-  expect(sourceReady.runtime.endpoint.localIp === 0x7f000001
-      && destinationReady.runtime.endpoint.localIp === 0x7f000002,
-    "signaling did not assign deterministic virtual IPv4 addresses", {
+  expect((sourceReady.runtime.endpoint.localIp >>> 24) === 10
+      && (destinationReady.runtime.endpoint.localIp >>> 24) === 10
+      && sourceReady.runtime.endpoint.localIp !== destinationReady.runtime.endpoint.localIp,
+    "Trystero peer IDs did not map to unique private virtual IPv4 addresses", {
       source: sourceReady.runtime.endpoint.localIp,
       destination: destinationReady.runtime.endpoint.localIp,
     });
@@ -108,7 +118,7 @@ try {
     "original Transport::doSend did not write through WebRTC", sendResult);
 
   const queued = await waitForDatagram(destination);
-  expect(queued.runtime?.lastReceived?.ip === 0x7f000001
+  expect(queued.runtime?.lastReceived?.ip === sourceReady.runtime.endpoint.localIp
       && queued.runtime?.lastReceived?.port === 8088,
     "WebRTC did not preserve the virtual source address and UDP source port", queued);
 
@@ -121,11 +131,18 @@ try {
       && receiveResult.receiveProbe?.frameData?.ready === true,
     "original Transport::doRecv/ConnectionManager frame path did not consume WebRTC bytes", receiveResult);
 
-  const signalingStats = signaling.stats();
-  expect(signalingStats.relayedSignals > 0
-      && signalingStats.binaryFramesRejected === 0
-      && signalingStats.gamePayloadBytes === 0,
-    "signaling server carried or rejected unexpected game payload bytes", signalingStats);
+  const [sourceFinal, destinationFinal] = await Promise.all([
+    source.page.evaluate(() => window.CnCPort.rpc("browserWebRtcEndpointState")),
+    destination.page.evaluate(() => window.CnCPort.rpc("browserWebRtcEndpointState")),
+  ]);
+  expect(sourceFinal.runtime?.endpoint?.sent === 1
+      && destinationFinal.runtime?.endpoint?.received === 1,
+    "final Trystero endpoint counters did not record the direct game datagram",
+    { sourceFinal, destinationFinal });
+
+  expect(sourceConnect.runtime?.endpoint?.openRelays > 0
+      && destinationConnect.runtime?.endpoint?.openRelays > 0,
+    "Trystero did not connect each browser to a discovery relay", { sourceConnect, destinationConnect });
   const browserFailures = browserEvents.filter((event) =>
     event.type === "pageerror" || event.type === "crash");
   expect(browserFailures.length === 0, "browser context failed during WebRTC transport smoke", browserFailures);
@@ -137,18 +154,24 @@ try {
     p2p: true,
     reliable: true,
     ordered: true,
-    gameBytesRelayedByServer: signalingStats.gamePayloadBytes,
-    source: sourceReady.runtime.endpoint,
-    destination: destinationReady.runtime.endpoint,
+    gameBytesRelayedByDiscovery: 0,
+    source: sourceFinal.runtime.endpoint,
+    destination: destinationFinal.runtime.endpoint,
     packet: sendResult.sendProbe.packet,
     receive: receiveResult.receiveProbe.frameData,
-    signaling: signalingStats,
+    discovery: {
+      strategy: "trystero-nostr",
+      testRelay: testRelay?.stats() ?? null,
+      configuredRelays: relayUrls,
+      sourceRelays: sourceConnect.runtime.endpoint.relays,
+      destinationRelays: destinationConnect.runtime.endpoint.relays,
+    },
     browserFailures,
   }));
 } finally {
   await source?.context.close();
   await destination?.context.close();
   await browser?.close();
-  signaling.close();
+  await testRelay?.close();
   await server.close();
 }

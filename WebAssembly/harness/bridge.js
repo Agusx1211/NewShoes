@@ -2630,7 +2630,7 @@ function connectBrowserUdpEndpoint({ webSocketUrl, client, incomingIp, incomingP
 }
 
 function resetBrowserWebRtcUdpEndpointRuntime() {
-  browserWebRtcUdpEndpointRuntime.endpoint?.close();
+  const closePromise = browserWebRtcUdpEndpointRuntime.endpoint?.close() ?? Promise.resolve();
   browserWebRtcUdpEndpointRuntime.enabled = false;
   browserWebRtcUdpEndpointRuntime.endpoint = null;
   browserWebRtcUdpEndpointRuntime.incoming = [];
@@ -2646,6 +2646,7 @@ function resetBrowserWebRtcUdpEndpointRuntime() {
     clearSharedUdpRing(threadedUdpBridge.outgoing);
     Atomics.store(new Int32Array(threadedUdpBridge.state), 0, 0);
   }
+  return closePromise;
 }
 
 function summarizeBrowserWebRtcUdpEndpointRuntime() {
@@ -2679,20 +2680,20 @@ function summarizeBrowserWebRtcUdpEndpointRuntime() {
 }
 
 async function connectBrowserWebRtcUdpEndpoint({
-  signalingUrl,
   room,
   peerId,
   displayName,
   iceServers,
-  timeoutMs = 10000,
+  relayUrls,
+  timeoutMs = 20000,
 }) {
-  resetBrowserWebRtcUdpEndpointRuntime();
+  await resetBrowserWebRtcUdpEndpointRuntime();
   const endpoint = createWebRtcUdpEndpoint({
-    signalingUrl,
     room,
     peerId,
     displayName,
     iceServers,
+    relayUrls,
     onDatagram: (datagram) => {
       if (threadedUdpBridge) {
         if (!enqueueSharedUdpDatagram(threadedUdpBridge.incoming, datagram)) {
@@ -5229,7 +5230,7 @@ async function loadWasmModule() {
       probeBrowserNetworkTransportLiveSend: module.cwrap(
         "cnc_port_probe_browser_network_transport_live_send",
         "string",
-        [],
+        ["number"],
       ),
       probeBrowserNetworkTransportLiveReceive: module.cwrap(
         "cnc_port_probe_browser_network_transport_live_receive",
@@ -5306,6 +5307,11 @@ async function loadWasmModule() {
         "cnc_port_real_engine_set_skirmish_local_template",
         "string",
         ["string"],
+      ),
+      realEngineSetNetworkTimeouts: module.cwrap(
+        "cnc_port_real_engine_set_network_timeouts",
+        "string",
+        ["number", "number"],
       ),
       realEngineLanState: module.cwrap("cnc_port_real_engine_lan_state", "string", []),
       realEngineLanCommand: module.cwrap(
@@ -8582,7 +8588,7 @@ async function shutdownBrowserRuntime() {
   const engine = threadedEngine
     ? await threadedEngine.shutdown()
     : { ok: true, alreadyStopped: true };
-  resetBrowserWebRtcUdpEndpointRuntime();
+  await resetBrowserWebRtcUdpEndpointRuntime();
   const audio = await shutdownBrowserAudioRuntime();
   const io = await shutdownIoWorker();
   const webLocksReleased = releaseOpfsWebLocks();
@@ -11085,6 +11091,22 @@ async function rpc(command, payload = {}) {
             lan: JSON.parse(moduleResult.wasmModule.realEngineLanState()),
             state: snapshotState(),
           };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "realEngineSetNetworkTimeouts":
+      {
+        const moduleResult = await getWasmModuleForArchives(command);
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        try {
+          const result = JSON.parse(moduleResult.wasmModule.realEngineSetNetworkTimeouts(
+            Number(payload.disconnectMs ?? 5000),
+            Number(payload.playerTimeoutMs ?? 60000),
+          ));
+          return { ok: result?.ok === true, command, result, state: snapshotState() };
         } catch (error) {
           return { ok: false, command, error: error?.message ?? String(error) };
         }
@@ -21473,12 +21495,12 @@ async function rpc(command, payload = {}) {
       {
         try {
           const runtime = await connectBrowserWebRtcUdpEndpoint({
-            signalingUrl: String(payload?.signalingUrl ?? ""),
             room: String(payload?.room ?? "cnc-room"),
             peerId: payload?.peerId == null ? null : String(payload.peerId),
             displayName: payload?.displayName == null ? null : String(payload.displayName),
             iceServers: Array.isArray(payload?.iceServers) ? payload.iceServers : [],
-            timeoutMs: Number(payload?.timeoutMs ?? 10000),
+            relayUrls: Array.isArray(payload?.relayUrls) ? payload.relayUrls : null,
+            timeoutMs: Number(payload?.timeoutMs ?? 20000),
           });
           return {
             ok: runtime.enabled === true && runtime.connected === true,
@@ -21532,7 +21554,7 @@ async function rpc(command, payload = {}) {
         state: snapshotState(),
       };
     case "browserWebRtcEndpointDisconnect":
-      resetBrowserWebRtcUdpEndpointRuntime();
+      await resetBrowserWebRtcUdpEndpointRuntime();
       return {
         ok: true,
         command,
@@ -21552,7 +21574,10 @@ async function rpc(command, payload = {}) {
         if (!wasmModule) {
           return { ok: false, command, error: "Wasm module unavailable; browser WebRTC network send cannot run" };
         }
-        const sendProbe = parseModuleState(wasmModule.probeBrowserNetworkTransportLiveSend());
+        const destinationIp = browserWebRtcUdpEndpointRuntime.endpoint?.snapshot()
+          ?.peers?.find((peer) => peer.channelState === "open")?.virtualIp ?? 0;
+        const sendProbe = parseModuleState(
+          wasmModule.probeBrowserNetworkTransportLiveSend(destinationIp));
         const runtime = summarizeBrowserWebRtcUdpEndpointRuntime();
         return {
           ok: Boolean(sendProbe?.ok)
@@ -21591,7 +21616,7 @@ async function rpc(command, payload = {}) {
         if (!wasmModule) {
           return { ok: false, command, error: "Wasm module unavailable; browser network live send cannot run" };
         }
-        const sendProbe = parseModuleState(wasmModule.probeBrowserNetworkTransportLiveSend());
+        const sendProbe = parseModuleState(wasmModule.probeBrowserNetworkTransportLiveSend(0));
         const runtime = summarizeBrowserUdpEndpointRuntime();
         return {
           ok: Boolean(sendProbe?.ok)

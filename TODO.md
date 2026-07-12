@@ -3566,15 +3566,16 @@ residue and the next frontier.
       follow-on now extends that endpoint through `Network::update` and a
       two-client match-sync harness, replacing the relay-shaped
       byte path with a reliable ordered `RTCDataChannel` peer mesh, routes
-      unicast by signaling-assigned virtual IPv4 address, fans LAN broadcasts
-      out to every peer, and preserves source IP/port metadata through the
-      original wasm UDP seam. WebSocket is signaling-only (room membership,
-      SDP, ICE) and rejects binary game payloads. The two-context harness
+      unicast by deterministic peer-derived virtual IPv4 address, fans LAN
+      broadcasts out to every peer, and preserves source IP/port metadata
+      through the original wasm UDP seam. Trystero uses redundant Nostr relays
+      only for decentralized discovery and encrypted SDP exchange, while game
+      traffic uses a separate dedicated DataChannel. The two-context harness
       proves original encrypted `Transport::doSend/doRecv`, CRC validation,
       `ConnectionManager::doRelay`, and `FrameDataManager` readiness across a
-      direct DataChannel with zero game bytes relayed by the server.
+      direct DataChannel with zero game bytes sent through discovery relays.
       Remaining work is long-session soak coverage, reconnect/disconnect
-      handling, more than four players, and public deployment hardening.
+      handling, more than four players, and authenticated invitations.
 - [ ] Validate long-session lockstep determinism, disconnect behavior, and
       recovery across browser clients. Short live match sync through
       `FrameData`/`FrameDataManager`/`ConnectionManager` is complete.
@@ -3621,11 +3622,16 @@ residue and the next frontier.
       two-client gate carries it through map load and live match sync.
 - [ ] GameSpy matchmaking/chat (`GameSpy*`) → modern relay or stub gracefully.
 - [ ] NAT/firewall helpers replaced by WebRTC ICE.
-- [ ] Harden a public signaling deployment with TLS termination,
-      authentication/room authorization, rate limits, and abuse controls. The
-      bundled signaling service is sufficient for trusted LAN/testing and
-      carries no game bytes, but is intentionally not an unauthenticated public
-      matchmaking service.
+- [ ] Add authenticated invitations and abuse-resistant public matchmaking on
+      top of decentralized Trystero discovery. Shared room codes currently act
+      as discovery secrets; they are not accounts, moderation, revocation, or
+      durable room authorization.
+- [ ] Measure and, if needed, reduce Trystero's 20-offer warm pool cost with
+      four to eight full game clients. The 2026-07-12 four-client threaded
+      SwiftShader run formed the complete mesh and started all original
+      `Network` instances, but this 22 GiB development host exhausted RAM/swap
+      before the post-load frame query completed; keep the existing real-GPU
+      four-client follow-up and add a browser peer-connection/memory profile.
 - [ ] Cross-client **determinism** validated (no desync) over many frames.
       The four-client threaded WebRTC match gate now proves a short live run
       with no CRC mismatch; extend this to a long soak with periodic state

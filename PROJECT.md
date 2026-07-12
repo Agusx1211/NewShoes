@@ -40,7 +40,8 @@ work. The worker owns:
 - the original simulation, UI, renderer, audio manager, and network objects.
 
 The main realm owns the browser desktop, launcher, input forwarding, Web Audio
-nodes, media installation, settings, issue capture, and WebRTC signaling.
+nodes, media installation, settings, issue capture, and Trystero/WebRTC peer
+discovery and transport.
 
 ### Rendering
 
@@ -72,9 +73,10 @@ fixtures used by focused tests. Full game movie playback and audio sync are not
 complete.
 
 The original UDP and lockstep packet paths are retained behind a browser
-transport adapter. WebRTC data channels carry game packets and WebSockets carry
-signaling only. A short four-player threaded match is verified; public service
-hardening, disconnect behavior, and long determinism runs remain open.
+transport adapter. Dedicated WebRTC data channels carry game packets, while
+Trystero uses redundant public Nostr relays only for decentralized discovery
+and encrypted SDP exchange. A short four-player threaded match is verified;
+disconnect behavior and long determinism runs remain open.
 
 ## Launcher and lifecycle
 
@@ -132,7 +134,7 @@ Still open:
 - complete campaign, challenge, save/load, and win/loss flows;
 - remaining shader, animation, terrain, effect, and UI fidelity;
 - complete natural gameplay audio and movie playback;
-- long multiplayer determinism, reconnect, and public signaling hardening;
+- long multiplayer determinism, reconnect, and authenticated invitations;
 - memory, performance, context-loss, and crash recovery work;
 - Chrome hardening plus Firefox and Safari support; and
 - removal of the remaining legacy probe and compatibility surface.

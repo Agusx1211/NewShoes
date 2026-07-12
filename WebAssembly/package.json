@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:browser-vendor": "node tools/build_trystero_bundle.mjs",
     "build:pages-runtime": "bash tools/build_pages_runtime.sh",
     "build:pages-site": "node tools/build_pages_site.mjs",
     "build:cloudflare-site": "node tools/build_cloudflare_site.mjs pages-dist cloudflare-dist",
-    "check:pages": "node tools/check_pages_sources.mjs",
+    "check:pages": "node tools/build_trystero_bundle.mjs --check && node tools/check_pages_sources.mjs",
     "verify:pages-site": "node tools/verify_pages_site.mjs pages-dist",
     "verify:cloudflare-site": "node tools/verify_cloudflare_site.mjs cloudflare-dist",
     "test:pages-artifact-guard": "node tools/pages_artifact_guard_smoke.mjs",
@@ -82,7 +83,6 @@
     "verify:cnc-port-weak-stubs": "node tools/verify_cnc_port_weak_stubs.mjs",
     "test:w3d-material-scan": "node tools/scan_w3d_material_pass_test.mjs",
     "serve:harness": "node harness/serve.mjs",
-    "serve:webrtc-signaling": "node harness/run-webrtc-signaling-server.mjs",
     "test:io-worker-offthread": "node harness/io_worker_offthread_smoke.mjs",
     "test:offscreen-worker-gl": "node harness/offscreen_worker_gl_smoke.mjs",
     "test:opfs-sync-read": "node harness/opfs_sync_read_smoke.mjs",
@@ -225,8 +225,11 @@
     "verify:bink-loadscore-movie-frontier:strict": "node tools/verify_bink_loadscore_movie_frontier.mjs"
   },
   "devDependencies": {
+    "esbuild": "0.28.1",
     "playwright": "1.61.0",
+    "trystero": "0.25.2",
     "wrangler": "4.110.0",
+    "ws": "8.21.0",
     "yaml": "2.9.0"
   }
 }

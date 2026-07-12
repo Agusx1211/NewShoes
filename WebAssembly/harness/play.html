@@ -417,12 +417,11 @@
             </section>
             <section id="multiplayerPanel" class="settings-panel multiplayer-panel" role="tabpanel" aria-labelledby="multiplayerTab" data-settings-panel="multiplayer" hidden>
               <p class="eyebrow">PEER-TO-PEER UPLINK</p><h1>Multiplayer connection</h1>
-              <p class="multiplayer-copy">Join the same signaling room before launching, then use Multiplayer → LAN inside the original game UI. Game traffic travels directly over WebRTC.</p>
+              <p class="multiplayer-copy">Join the same room before launching, then use Multiplayer → LAN inside the original game UI. Trystero discovers peers through public decentralized relays; game traffic travels directly over WebRTC.</p>
               <label class="network-field" for="networkRoom"><span><strong>Room</strong><small>Leave blank for offline play</small></span><input id="networkRoom" type="text" maxlength="80" placeholder="shared room name"></label>
               <label class="network-field" for="networkName"><span><strong>Commander</strong><small>Name shown to peers</small></span><input id="networkName" type="text" maxlength="64" placeholder="commander"></label>
               <details class="network-details"><summary>Advanced connection settings</summary>
-                <label class="network-field" for="networkSignaling"><span><strong>Signaling server</strong><small>Secure WebSocket endpoint</small></span><input id="networkSignaling" type="url" spellcheck="false" placeholder="wss://host/webrtc"></label>
-                <label class="network-field" for="networkStun"><span><strong>STUN / TURN URL</strong><small>Optional ICE server</small></span><input id="networkStun" type="text" spellcheck="false" placeholder="stun:host or turn:host"></label>
+                <label class="network-field" for="networkStun"><span><strong>Additional STUN / TURN URL</strong><small>Optional; public STUN is built in</small></span><input id="networkStun" type="text" spellcheck="false" placeholder="stun:host or turn:host"></label>
                 <label class="network-field" for="networkIceUsername"><span><strong>TURN username</strong><small>Optional</small></span><input id="networkIceUsername" type="text" autocomplete="username"></label>
                 <label class="network-field" for="networkIceCredential"><span><strong>TURN credential</strong><small>Kept only for this launch</small></span><input id="networkIceCredential" type="password" autocomplete="current-password"></label>
               </details>

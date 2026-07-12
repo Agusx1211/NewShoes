@@ -2133,7 +2133,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_build_browser_network_transport_wire_p
 	return g_browser_network_transport_wire_build_json;
 }
 
-EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_browser_network_transport_live_send()
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_browser_network_transport_live_send(UnsignedInt remote_ip)
 {
 	if (!isMemoryManagerOfficiallyInited()) {
 		initMemoryManager();
@@ -2152,6 +2152,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_browser_network_transport_live_s
 
 	const int packet_length = packet->getLength();
 	const int commands = packet->getNumCommands();
+	if (remote_ip == 0) {
+		remote_ip = kTransportWireRemoteIp;
+	}
 	const bool payload_encoded = encode_hex(
 		packet->getData(),
 		packet_length,
@@ -2166,7 +2169,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_browser_network_transport_live_s
 	int queued_slot = -1;
 	if (initialized) {
 		queued = transport.queueSend(
-			kTransportWireRemoteIp,
+			remote_ip,
 			kTransportWireRemotePort,
 			packet->getData(),
 			packet_length);
@@ -2244,7 +2247,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_browser_network_transport_live_s
 		adapter_writes,
 		fallback_outgoing,
 		adapter_dropped,
-		kTransportWireRemoteIp,
+		remote_ip,
 		kTransportWireRemotePort);
 	return g_browser_network_transport_live_send_json;
 }

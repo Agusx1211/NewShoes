@@ -44,6 +44,7 @@ const scripts = [
   "tools/build_pages_site.mjs",
   "tools/build_cloudflare_site.mjs",
   "tools/build_pages_runtime.sh",
+  "tools/build_trystero_bundle.mjs",
   "tools/check_pages_sources.mjs",
   "tools/cloudflare_artifact_guard_smoke.mjs",
   "tools/cloudflare_site_manifest.mjs",

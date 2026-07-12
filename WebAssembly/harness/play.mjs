@@ -38,18 +38,11 @@ const performanceP95MsNode = document.querySelector("#performanceP95Ms");
 const performanceMaxMsNode = document.querySelector("#performanceMaxMs");
 const networkRoomNode = document.querySelector("#networkRoom");
 const networkNameNode = document.querySelector("#networkName");
-const networkSignalingNode = document.querySelector("#networkSignaling");
 const networkStunNode = document.querySelector("#networkStun");
 const networkIceUsernameNode = document.querySelector("#networkIceUsername");
 const networkIceCredentialNode = document.querySelector("#networkIceCredential");
 const networkStatusNode = document.querySelector("#networkStatus");
 const NETWORK_SETTINGS_KEY = "cncPortNetworkSettings.v1";
-
-function defaultSignalingUrl() {
-  const url = new URL("/webrtc", window.location.href);
-  url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return url.href;
-}
 
 function loadNetworkSettings() {
   let stored = {};
@@ -61,7 +54,6 @@ function loadNetworkSettings() {
   return {
     room: queryParams.get("room") ?? stored.room ?? "",
     name: queryParams.get("peer") ?? stored.name ?? "",
-    signalingUrl: queryParams.get("signal") ?? stored.signalingUrl ?? defaultSignalingUrl(),
     iceServerUrl: queryParams.get("ice") ?? stored.iceServerUrl ?? "",
     iceUsername: queryParams.get("iceUser") ?? stored.iceUsername ?? "",
     iceCredential: "",
@@ -72,7 +64,6 @@ function networkSettingsFromInputs() {
   return {
     room: networkRoomNode?.value.trim() ?? "",
     name: networkNameNode?.value.trim() ?? "",
-    signalingUrl: networkSignalingNode?.value.trim() || defaultSignalingUrl(),
     iceServerUrl: networkStunNode?.value.trim() ?? "",
     iceUsername: networkIceUsernameNode?.value ?? "",
     iceCredential: networkIceCredentialNode?.value ?? "",
@@ -83,7 +74,6 @@ function initializeNetworkSettings() {
   const settings = loadNetworkSettings();
   if (networkRoomNode) networkRoomNode.value = settings.room;
   if (networkNameNode) networkNameNode.value = settings.name;
-  if (networkSignalingNode) networkSignalingNode.value = settings.signalingUrl;
   if (networkStunNode) networkStunNode.value = settings.iceServerUrl;
   if (networkIceUsernameNode) networkIceUsernameNode.value = settings.iceUsername;
   if (networkIceCredentialNode) networkIceCredentialNode.value = settings.iceCredential;
@@ -107,7 +97,7 @@ function saveNetworkSettings(settings) {
 }
 
 initializeNetworkSettings();
-[networkRoomNode, networkNameNode, networkSignalingNode, networkStunNode, networkIceUsernameNode]
+[networkRoomNode, networkNameNode, networkStunNode, networkIceUsernameNode]
   .filter(Boolean)
   .forEach((input) => input.addEventListener("change", () => saveNetworkSettings(networkSettingsFromInputs())));
 networkRoomNode?.addEventListener("input", updateNetworkDraftStatus);
@@ -763,7 +753,7 @@ async function start() {
     let networkRuntime = null;
     if (networkSettings.room) {
       report(`joining P2P room ${networkSettings.room}...`);
-      if (networkStatusNode) networkStatusNode.textContent = "Connecting signaling and WebRTC ICE...";
+      if (networkStatusNode) networkStatusNode.textContent = "Discovering peers and connecting WebRTC ICE...";
       const iceServers = networkSettings.iceServerUrl
         ? [{
           urls: networkSettings.iceServerUrl.split(",").map((entry) => entry.trim()).filter(Boolean),
@@ -772,7 +762,6 @@ async function start() {
         }]
         : [];
       const networkConnect = await rpc("browserWebRtcEndpointConnect", {
-        signalingUrl: networkSettings.signalingUrl,
         room: networkSettings.room,
         peerId: networkSettings.name || null,
         displayName: networkSettings.name || null,
@@ -785,7 +774,7 @@ async function start() {
       const virtualIp = networkRuntime?.endpoint?.localIp >>> 0;
       const ipText = [24, 16, 8, 0].map((shift) => (virtualIp >>> shift) & 0xff).join(".");
       if (networkStatusNode) {
-        networkStatusNode.textContent = `Joined ${networkSettings.room} as ${networkRuntime.endpoint.peerId} (${ipText}). Open Multiplayer → LAN.`;
+        networkStatusNode.textContent = `Joined ${networkSettings.room} as ${networkRuntime.endpoint.displayName} (${ipText}). Open Multiplayer → LAN.`;
       }
     } else if (networkStatusNode) {
       networkStatusNode.textContent = "Offline. Enter a shared room to enable WebRTC multiplayer.";
