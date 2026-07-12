@@ -48,6 +48,7 @@
 #include "GameClient/ControlBarScheme.h"
 #include "GameClient/Gadget.h"
 #include "GameClient/GadgetPushButton.h"
+#include "GameClient/GadgetTextEntry.h"
 #include "WW3D2/assetmgr.h"
 #include "WW3D2/texture.h"
 #include "WW3D2/ww3d.h"
@@ -67,6 +68,7 @@
 #include "W3DDevice/GameClient/W3DGameWindow.h"
 #include "GameClient/GameWindowTransitions.h"
 #include "GameClient/InGameUI.h"
+#include "GameClient/IMEManager.h"
 #include "GameClient/Keyboard.h"
 #include "GameClient/Mouse.h"
 #include "GameClient/Shell.h"
@@ -5253,6 +5255,23 @@ void append_real_engine_client_state(std::string &json)
 	append_window_probe(json, "buttonBack", "SkirmishGameOptionsMenu.wnd:ButtonBack");
 	append_window_probe(json, "mapWindow", "SkirmishGameOptionsMenu.wnd:MapWindow");
 	append_window_probe(json, "sliderGameSpeed", "SkirmishGameOptionsMenu.wnd:SliderGameSpeed");
+	GameWindow *skirmish_player_name =
+		find_window_by_name("SkirmishGameOptionsMenu.wnd:TextEntryPlayerName");
+	json += ",\"textEntryPlayerName\":";
+	append_window_json(json, skirmish_player_name,
+		"SkirmishGameOptionsMenu.wnd:TextEntryPlayerName");
+	json += ",\"playerNameText\":";
+	if (skirmish_player_name != NULL) {
+		json += "\"" + json_escape(unicode_to_debug_ascii(
+			GadgetTextEntryGetText(skirmish_player_name))) + "\"";
+	} else {
+		json += "null";
+	}
+	json += ",\"imeAttached\":";
+	json += TheIMEManager != NULL &&
+		TheIMEManager->isAttachedTo(skirmish_player_name) ? "true" : "false";
+	json += ",\"imeComposing\":";
+	json += TheIMEManager != NULL && TheIMEManager->isComposing() ? "true" : "false";
 	append_window_under_probe_center(json, "underButtonStartCenter", "SkirmishGameOptionsMenu.wnd:ButtonStart");
 	json += "}";
 

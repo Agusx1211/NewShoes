@@ -3,13 +3,13 @@
 html,
 body {
   width: 100%;
-  height: 100%;
+  height: var(--desktop-viewport-height);
   overflow: hidden;
 }
 
 body {
   display: block;
-  min-height: 100vh;
+  min-height: var(--desktop-viewport-height);
   color: #1d3542;
   background: #173b52;
 }

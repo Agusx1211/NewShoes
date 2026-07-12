@@ -93,7 +93,9 @@ const bootstrap = await readFile(resolve(wasmRoot, "pages/coi-bootstrap.js"), "u
 for (const contract of [
   'const workerVersion = "project-new-shoes.pages-root.v1"',
   "await installCurrentWorker()",
-  "await waitForCurrentWorker()",
+  "await waitForCurrentWorker(registration)",
+  "const active = registration.active",
+  "await serviceWorkerVersion(active) === workerVersion",
   "if (destination === location.href)",
   "location.reload()",
 ]) {
