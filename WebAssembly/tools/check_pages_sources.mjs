@@ -8,10 +8,13 @@ import { parse } from "yaml";
 const wasmRoot = resolve(import.meta.dirname, "..");
 const repoRoot = resolve(wasmRoot, "..");
 const scripts = [
+  "cloudflare/coi-serviceworker.js",
+  "cloudflare/retire-service-worker.js",
   "harness/analytics.mjs",
   "harness/analytics_unit.mjs",
   "harness/analytics_browser_smoke.mjs",
   "harness/bridge.js",
+  "harness/cloudflare_deployment_smoke.mjs",
   "harness/d3d8_executor.mjs",
   "harness/engine_realm_boot.mjs",
   "harness/gdi_executor.mjs",
@@ -39,10 +42,14 @@ const scripts = [
   "pages/coi-direct.js",
   "pages/coi-serviceworker.js",
   "tools/build_pages_site.mjs",
+  "tools/build_cloudflare_site.mjs",
   "tools/build_pages_runtime.sh",
   "tools/check_pages_sources.mjs",
+  "tools/cloudflare_artifact_guard_smoke.mjs",
+  "tools/cloudflare_site_manifest.mjs",
   "tools/pages_artifact_guard_smoke.mjs",
   "tools/pages_site_manifest.mjs",
+  "tools/verify_cloudflare_site.mjs",
   "tools/verify_pages_site.mjs",
 ];
 
@@ -57,6 +64,7 @@ for (const script of scripts.filter((name) => !name.endsWith(".sh"))) {
 for (const workflow of [
   ".github/actions/setup-wasm-build/action.yml",
   ".github/workflows/ci.yml",
+  ".github/workflows/cloudflare-pages.yml",
   ".github/workflows/pages.yml",
   ".github/workflows/wasm-smoke.yml",
 ]) {
@@ -97,4 +105,4 @@ if (shell.status !== 0) {
   throw new Error("Syntax check failed: tools/build_pages_runtime.sh");
 }
 
-console.log(`Checked ${scripts.length - 1} JavaScript files, 1 shell file, and 4 workflow YAML files.`);
+console.log(`Checked ${scripts.length - 1} JavaScript files, 1 shell file, and 5 workflow YAML files.`);

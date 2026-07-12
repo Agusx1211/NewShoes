@@ -50,6 +50,29 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       emsdk's legacy Node and fail on supported built-ins such as
       `node:timers/promises`.
 
+## Cloudflare Pages direct-header deployment (2026-07-12)
+
+- [x] Added a main-only GitHub Actions deployment for a Cloudflare Pages
+      Direct Upload project. It builds the threaded release, derives an exact
+      allowlisted artifact from the verified GitHub Pages staging output,
+      audits and boots it, then deploys through a pinned Wrangler version using
+      credentials held by the protected `cloudflare-pages` environment. Its
+      build step also restores the configured Node 22 after sourcing emsdk.
+- [x] Replaced the GitHub Pages isolation bootstrap with first-response COOP,
+      COEP, and CORP rules in Cloudflare's `_headers` file. The canonical
+      launcher now renders directly at `/`, old launcher links redirect to the
+      root, and fresh profiles have no service-worker registration or bootstrap
+      reload.
+- [x] Preserved an upgrade path for profiles controlled by the former GitHub
+      Pages isolation worker. A one-time worker at the historical URL claims,
+      unregisters, and reloads those clients, while a real Chromium migration
+      smoke proves the old worker disappears and direct-header isolation,
+      SharedArrayBuffer, the pthread heap, and the launcher remain available.
+- [x] Added fail-closed Cloudflare artifact checks for the exact file set,
+      symlinks, retail media, credentials and host paths, unresolved modules,
+      legal notices, response rules, Cloudflare's per-file limit, and the
+      legacy-worker retirement contract.
+
 ## Pages deployment smoke split (2026-07-11)
 
 - [x] Kept the production Pages gate focused on fresh root boot and reload,

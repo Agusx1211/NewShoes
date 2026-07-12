@@ -1,5 +1,8 @@
 # Public deployment
 
+GitHub Pages remains the current fallback deployment. The direct-header
+Cloudflare Pages integration is documented in [CLOUDFLARE.md](CLOUDFLARE.md).
+
 The public site is an asset-free Project New Shoes launcher and the threaded
 Zero Hour WebAssembly runtime. It never includes retail game archives, disc
 images, installed game files, browser profiles, issue dumps, or local TLS

@@ -18,6 +18,11 @@ shares structure and follows behind.
 
 ## Current integration status (autonomous session)
 
+- [ ] Configure the protected `cloudflare-pages` GitHub environment with the
+      Cloudflare account ID, Pages API token, and Direct Upload project name;
+      deploy to its `pages.dev` URL, verify first-response isolation, then move
+      `newshoes.gg` only after the fallback and rollback path are confirmed.
+
 - [ ] Stabilize the pinned old-service-worker rollout simulation on constrained
       shared CI runners before making it deployment-blocking again. Keep using
       `npm run test:pages-worker-rollout` when changing the Pages bootstrap or

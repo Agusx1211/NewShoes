@@ -6,9 +6,13 @@
   "scripts": {
     "build:pages-runtime": "bash tools/build_pages_runtime.sh",
     "build:pages-site": "node tools/build_pages_site.mjs",
+    "build:cloudflare-site": "node tools/build_cloudflare_site.mjs pages-dist cloudflare-dist",
     "check:pages": "node tools/check_pages_sources.mjs",
     "verify:pages-site": "node tools/verify_pages_site.mjs pages-dist",
+    "verify:cloudflare-site": "node tools/verify_cloudflare_site.mjs cloudflare-dist",
     "test:pages-artifact-guard": "node tools/pages_artifact_guard_smoke.mjs",
+    "test:cloudflare-artifact-guard": "node tools/cloudflare_artifact_guard_smoke.mjs",
+    "test:cloudflare-deployment": "node harness/cloudflare_deployment_smoke.mjs cloudflare-dist",
     "test:pages-deployment": "node harness/pages_deployment_smoke.mjs pages-dist",
     "test:pages-worker-rollout": "node harness/pages_deployment_smoke.mjs pages-dist --worker-rollout",
     "test:analytics": "node harness/analytics_unit.mjs",
@@ -222,6 +226,7 @@
   },
   "devDependencies": {
     "playwright": "1.61.0",
+    "wrangler": "4.110.0",
     "yaml": "2.9.0"
   }
 }

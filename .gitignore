@@ -8,6 +8,8 @@
 /WebAssembly/dist-threaded-release
 /WebAssembly/pages-build/
 /WebAssembly/pages-dist/
+/WebAssembly/cloudflare-dist/
+/WebAssembly/.wrangler/
 /WebAssembly/err.txt
 # Per-box persistent self-signed HTTPS cert (generated once by harness/static-server.mjs)
 /WebAssembly/harness/.certs/

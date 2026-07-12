@@ -1,0 +1,93 @@
+name: Deploy Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build, verify, and deploy
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment:
+      name: cloudflare-pages
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-wasm-build
+
+      - name: Check release-facing sources and workflows
+        working-directory: WebAssembly
+        run: npm run check:pages
+
+      - name: Build threaded release
+        working-directory: WebAssembly
+        env:
+          EM_COMPILER_WRAPPER: ccache
+        run: |
+          host_node_bin="$(dirname "$(command -v node)")"
+          source "${RUNNER_TEMP}/emsdk/emsdk_env.sh"
+          export PATH="${host_node_bin}:${PATH}"
+          node --version
+          if ! npm run build:pages-runtime >"${RUNNER_TEMP}/cloudflare-build.log" 2>&1; then
+            tail -n 200 "${RUNNER_TEMP}/cloudflare-build.log"
+            exit 1
+          fi
+          tail -n 40 "${RUNNER_TEMP}/cloudflare-build.log"
+          ccache --show-stats
+
+      - name: Package and audit direct-header artifact
+        working-directory: WebAssembly
+        env:
+          PAGES_SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/tree/${{ github.sha }}
+          GA_MEASUREMENT_ID: ${{ secrets.GA_MEASUREMENT_ID }}
+        run: |
+          npm run test:pages-artifact-guard
+          npm run test:cloudflare-artifact-guard
+          node tools/verify_cloudflare_site.mjs cloudflare-dist >"${RUNNER_TEMP}/cloudflare-inventory.json"
+          node -e 'const x=require(process.argv[1]); console.log(JSON.stringify({files:x.files,totalBytes:x.totalBytes}, null, 2))' "${RUNNER_TEMP}/cloudflare-inventory.json"
+
+      - name: Install Chromium
+        working-directory: WebAssembly
+        run: npx playwright install --with-deps chromium
+
+      - name: Prove direct-header threaded deployment
+        working-directory: WebAssembly
+        env:
+          CLOUDFLARE_SMOKE_SCREENSHOT: ${{ runner.temp }}/cloudflare-launcher.png
+        run: npm run test:cloudflare-deployment
+
+      - name: Validate Cloudflare configuration
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+        run: |
+          test -n "${CLOUDFLARE_ACCOUNT_ID}" || { echo "CLOUDFLARE_ACCOUNT_ID is not configured"; exit 1; }
+          test -n "${CLOUDFLARE_API_TOKEN}" || { echo "CLOUDFLARE_API_TOKEN is not configured"; exit 1; }
+          test -n "${CLOUDFLARE_PAGES_PROJECT}" || { echo "CLOUDFLARE_PAGES_PROJECT is not configured"; exit 1; }
+
+      - name: Deploy to Cloudflare Pages
+        working-directory: WebAssembly
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+        run: >-
+          npx wrangler pages deploy cloudflare-dist
+          --project-name="${CLOUDFLARE_PAGES_PROJECT}"
+          --branch=main
+          --commit-hash="${GITHUB_SHA}"
+          --commit-dirty=false
