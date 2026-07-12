@@ -872,7 +872,7 @@ function assertMssStreamLifecycleProbe(probe, label) {
       || probe.calls?.AIL_open_stream !== true
       || probe.calls?.AIL_open_stream_by_sample !== true
       || probe.calls?.AIL_register_stream_callback !== true
-      || probe.calls?.AIL_set_stream_volume !== 88
+      || probe.calls?.AIL_set_stream_volume !== 95
       || probe.calls?.AIL_set_stream_pan !== 48
       || Math.abs((probe.calls?.AIL_set_stream_volume_pan?.volume ?? 0) - 0.75) > 0.001
       || Math.abs((probe.calls?.AIL_set_stream_volume_pan?.pan ?? 0) - 0.375) > 0.001
@@ -3430,7 +3430,8 @@ try {
       || d3d8BufferHintsResult.browserProbe?.lastUpdate?.glUsage !== "streamDraw"
       || d3d8BufferHintsResult.browserProbe?.lastUpdate?.discard !== true
       || d3d8BufferHintsResult.browserProbe?.lastUpdate?.noOverwrite !== false
-      || d3d8BufferHintsResult.browserProbe?.lastUpdate?.orphaned !== true
+      || d3d8BufferHintsResult.browserProbe?.lastUpdate?.dynamicRedirected !== true
+      || d3d8BufferHintsResult.browserProbe?.lastUpdate?.orphaned !== false
       || d3d8BufferHintsResult.browserProbe?.lastUpdate?.byteOffset !== 0
       || d3d8BufferHintsResult.browserProbe?.lastUpdate?.byteSize !== 32
       || d3d8BufferHintsResult.browserProbe?.liveVertex !== 0
@@ -5395,15 +5396,16 @@ try {
   const ww3dShaderManagerResult = await page.evaluate(() => window.CnCPort.rpc("ww3dShaderManager"));
   if (!ww3dShaderManagerResult.ok
       || ww3dShaderManagerResult.probe?.source !== "ww3d_shader_manager_probe"
-      || ww3dShaderManagerResult.probe?.adapter?.vendorId !== 0x121a
-      || ww3dShaderManagerResult.probe?.adapter?.deviceId !== 0x0009
-      || ww3dShaderManagerResult.probe?.caps?.pixelShaderVersion !== 0
+      || ww3dShaderManagerResult.probe?.adapter?.vendorId !== 0
+      || ww3dShaderManagerResult.probe?.adapter?.deviceId !== 0
+      || ww3dShaderManagerResult.probe?.caps?.pixelShaderVersion !== 0xffff0101
+      || ww3dShaderManagerResult.probe?.caps?.vertexShaderVersion !== 0xfffe0101
       || ww3dShaderManagerResult.probe?.chipsetAfter !== ww3dShaderManagerResult.probe?.expectedChipset
       || ww3dShaderManagerResult.probe?.canRenderToTexture !== true
       || ww3dShaderManagerResult.probe?.shaderPasses?.terrainBase <= 0
       || ww3dShaderManagerResult.probe?.shaderPasses?.terrainNoise12 <= 0
       || ww3dShaderManagerResult.probe?.calls?.createTexture < 1
-      || ww3dShaderManagerResult.probe?.calls?.createPixelShaderUnavailable !== true) {
+      || ww3dShaderManagerResult.probe?.calls?.invalidPixelShaderRejected !== true) {
     throw new Error(`WW3D shader manager probe failed: ${JSON.stringify(ww3dShaderManagerResult)}`);
   }
 
@@ -6752,6 +6754,14 @@ try {
     throw new Error(
       `Projection state apply probe failed: ${JSON.stringify(projectionStateApplyResult)}`,
     );
+  }
+
+  const releasedProbeCanvas = await page.evaluate(() =>
+    window.CnCPort.rpc("releaseD3D8ProbeBackingStore"));
+  if (!releasedProbeCanvas.ok
+      || releasedProbeCanvas.state?.canvas?.width !== 1280
+      || releasedProbeCanvas.state?.canvas?.height !== 720) {
+    throw new Error(`Focused D3D8 probe canvas release failed: ${JSON.stringify(releasedProbeCanvas)}`);
   }
 
   const gdiFontProbeResult = await page.evaluate(() => window.CnCPort.rpc("gdiFontProbe", {

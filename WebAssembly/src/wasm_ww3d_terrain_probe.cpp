@@ -12878,11 +12878,12 @@ const char *run_ww3d_shader_manager_probe(std::string &target_json)
 		succeeded(set_device_result) &&
 		adapter_result == S_OK &&
 		caps_result == S_OK &&
-		adapter.VendorId == 0x121a &&
-		adapter.DeviceId == 0x0009 &&
-		caps.PixelShaderVersion == 0 &&
+		adapter.VendorId == 0 &&
+		adapter.DeviceId == 0 &&
+		caps.PixelShaderVersion == 0xffff0101u &&
+		caps.VertexShaderVersion == 0xfffe0101u &&
 		create_pixel_shader_result == D3DERR_NOTAVAILABLE &&
-		chipset_after == DC_VOODOO5 &&
+		chipset_after == DC_GENERIC_PIXEL_SHADER_1_1 &&
 		can_render_to_texture &&
 		terrain_base_passes > 0 &&
 		terrain_noise12_passes > 0 &&
@@ -12905,7 +12906,7 @@ const char *run_ww3d_shader_manager_probe(std::string &target_json)
 		"\"chipsetBefore\":%d,\"chipsetAfter\":%d,\"expectedChipset\":%d,"
 		"\"shaderManagerInitialized\":%s,\"canRenderToTexture\":%s,"
 		"\"shaderPasses\":{\"terrainBase\":%d,\"terrainNoise12\":%d,\"flatTerrainBase\":%d},"
-		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,\"createPixelShaderUnavailable\":%s}}",
+		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,\"invalidPixelShaderRejected\":%s}}",
 		bool_json(ok),
 		bool_json(global_data_ready),
 		init_result,
@@ -12923,7 +12924,7 @@ const char *run_ww3d_shader_manager_probe(std::string &target_json)
 		static_cast<unsigned long>(caps.MaxTextureBlendStages),
 		static_cast<int>(chipset_before),
 		static_cast<int>(chipset_after),
-		static_cast<int>(DC_VOODOO5),
+		static_cast<int>(DC_GENERIC_PIXEL_SHADER_1_1),
 		bool_json(shader_manager_initialized),
 		bool_json(can_render_to_texture),
 		terrain_base_passes,

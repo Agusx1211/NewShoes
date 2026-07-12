@@ -8,6 +8,43 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Wasm CPU calibration smoke repair (2026-07-12)
+
+- [x] Updated the WWLib CPU-detection smoke to match the wasm workload
+      calibration used by GameLOD since July 3. The test now requires a
+      positive calibrated MHz value and proves that ticks-per-second and its
+      reciprocal are internally consistent, while continuing to require the
+      unavailable CPUID, RDTSC, SIMD, and cache capability contract.
+- [x] Restored the asset-free contract of `test:all` by keeping the strict
+      retail-backed W3D layout and new-game dispatch integrations in their
+      dedicated tests instead of the public CI aggregate. Those smokes still
+      fail when their `WindowZH.big`/`INIZH.big` or base `Window.big`/map/INI
+      archives are absent; no game data or synthetic replacement is added to
+      CI.
+- [x] Repaired the aggregate MSS stream-lifecycle contract after normalized
+      float volume/pan began mirroring `0.75` into Miles' integer scale as
+      `95`. The C++ probe and both asset-free and archive-backed browser
+      assertions now validate the current state while still requiring
+      `playbackReady:false` and the documented Web Audio backend frontier.
+- [x] Updated the aggregate D3D8 buffer-hint probe for the July 10 dynamic
+      buffer redirect path. Diagnostics now distinguish redirected ring
+      updates from legacy GL buffer orphaning, and the browser gate requires a
+      `DISCARD` update to be redirected without being orphaned.
+- [x] Extended `wasm_d3d8_reset_state()` across the browser boundary so the
+      extracted WebGL executor invalidates derived draw, transform-uniform,
+      viewport, render-state, and uniform-subgroup caches with each focused
+      probe reset. C++ and browser probe state no longer diverge after a long
+      aggregate sequence, and the transformed-specular exact-pixel proof now
+      passes on that shared page without an isolation workaround.
+- [x] Updated the WW3D shader-manager regression for the enhanced pixel-shader
+      default. It now requires the generic ps.1.1 adapter identity, matching
+      vertex/pixel shader caps, and `DC_GENERIC_PIXEL_SHADER_1_1` selection
+      instead of the retired Voodoo5 fixed-function default.
+- [x] Added an explicit focused-probe canvas release to the browser harness.
+      After the aggregate finishes its WW3D pixel checks, it releases the last
+      synthetic 320x240 backbuffer and proves the canvas returned to the
+      1280x720 CSS-owned viewport before GDI and final screenshot checks.
+
 ## Pages deployment smoke split (2026-07-11)
 
 - [x] Kept the production Pages gate focused on fresh root boot and reload,
@@ -3807,8 +3844,9 @@ mitigation track. Items resolved or retired by the pivot:
       smoke-test the legacy `FrameTimer`/`TickCount` globals.
 - [x] `WWVegas/WWLib` CPU detection/system log (`cpudetect.cpp`) compiles
       under wasm and smoke-tests conservative browser reporting: CPUID, RDTSC,
-      SIMD, CPU MHz, and cache details unavailable; OS and memory values routed
-      through the browser Win32 shims.
+      SIMD, and cache details unavailable; a timed wasm workload supplies the
+      legacy GameLOD MHz estimate, while OS and memory values route through the
+      browser Win32 shims.
 - [x] `WWVegas/WWLib` mutex and critical-section wrappers (`mutex.cpp`)
       compile against browser Win32 synchronization shims and smoke-test
       original `MutexClass`, `CriticalSectionClass`, and

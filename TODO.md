@@ -1569,17 +1569,11 @@ residue and the next frontier.
       merge routine now that the aggregate lane is green again (2026-07-05).
       If it fails, fix or quarantine the specific probe immediately instead of
       letting the suite become "known red" again.
-- [ ] Re-check two smokes observed red on main against the then-current
-      dist during the P1b executor-extraction parity runs (2026-07-10; each
-      failed IDENTICALLY before/after the extraction, so not caused by it):
-      `harness/smoke.mjs` — a 2026-07-11 re-run on a FRESH no-op-incremental
-      dist now dies EARLIER, at the MSS stream lifecycle probe
-      (smoke.mjs:1235; probe reports nextRequired:webAudioPlaybackBackend;
-      identical on pristine main and the demolition tree, so the previously
-      documented D3D8 buffer-hint red at :3440 sits downstream of it) — and
-      `issue_recorder_ui_smoke.mjs` (record-button click timeout). These are
-      probe-contract drift, not dist staleness: fix or quarantine the
-      specific probes.
+- [ ] Re-check `issue_recorder_ui_smoke.mjs` after its record-button click
+      timeout during the P1b executor-extraction parity runs (2026-07-10).
+      The failure was identical before and after that extraction, so treat it
+      as probe-contract drift rather than executor fallout and fix or
+      quarantine the specific assertion.
       (The third red from that run, `startup_vertical_smoke.mjs`
       `assertFunctionLexiconRuntimeFrontier`, was cleared 2026-07-11 when the
       phase-2 probe-frontier leg was retired with the range-backed

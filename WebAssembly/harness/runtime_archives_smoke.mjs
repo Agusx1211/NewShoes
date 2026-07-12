@@ -1437,7 +1437,7 @@ function assertMssStreamLifecycleProbe(probe, context) {
       || probe.calls?.AIL_open_stream !== true
       || probe.calls?.AIL_open_stream_by_sample !== true
       || probe.calls?.AIL_register_stream_callback !== true
-      || probe.calls?.AIL_set_stream_volume !== 88
+      || probe.calls?.AIL_set_stream_volume !== 95
       || probe.calls?.AIL_set_stream_pan !== 48
       || Math.abs((probe.calls?.AIL_set_stream_volume_pan?.volume ?? 0) - 0.75) > 0.001
       || Math.abs((probe.calls?.AIL_set_stream_volume_pan?.pan ?? 0) - 0.375) > 0.001

@@ -47,11 +47,15 @@ int main()
 		return 1;
 	}
 
-	if (!expect(CPUDetectClass::Get_Processor_Speed() == 0, "processor speed should be unavailable") ||
-			!expect(CPUDetectClass::Get_Processor_Ticks_Per_Second() == 0,
-				"processor ticks should be unavailable") ||
-			!expect(CPUDetectClass::Get_Inv_Processor_Ticks_Per_Second() == 0.0,
-				"inverse processor ticks should be unavailable") ||
+	const int processor_speed = CPUDetectClass::Get_Processor_Speed();
+	const sint64 processor_ticks = CPUDetectClass::Get_Processor_Ticks_Per_Second();
+	const double inverse_processor_ticks = CPUDetectClass::Get_Inv_Processor_Ticks_Per_Second();
+	const double inverse_product = inverse_processor_ticks * static_cast<double>(processor_ticks);
+	if (!expect(processor_speed > 0, "wasm processor calibration should report a positive speed") ||
+			!expect(processor_ticks == static_cast<sint64>(processor_speed) * 1000000,
+				"processor ticks should match the calibrated MHz value") ||
+			!expect(inverse_product > 0.999 && inverse_product < 1.001,
+				"inverse processor ticks should be the reciprocal of processor ticks") ||
 			!expect(CPUDetectClass::Get_Feature_Bits() == 0, "feature bits should be zero") ||
 			!expect(CPUDetectClass::Get_Extended_Feature_Bits() == 0,
 				"extended feature bits should be zero")) {
@@ -103,7 +107,9 @@ int main()
 		<< "{\"compiled\":\"cpudetect.cpp\","
 		<< "\"cpuid\":false,"
 		<< "\"rdtsc\":false,"
-		<< "\"totalPhysical\":" << total_physical
+		<< "\"processorSpeed\":" << processor_speed
+		<< ",\"processorTicks\":" << processor_ticks
+		<< ",\"totalPhysical\":" << total_physical
 		<< ",\"availablePhysical\":" << available_physical
 		<< "}\n";
 	return 0;

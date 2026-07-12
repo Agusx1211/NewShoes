@@ -1682,6 +1682,15 @@ function onD3D8BackbufferResize(width, height, source = "engine") {
   }
 }
 
+function releaseD3D8ProbeBackingStore() {
+  flushD3D8PendingDrawBatch("releaseProbeBackingStore");
+  explicitEngineBackingStore = null;
+  harnessState.engineDisplaySize = null;
+  invalidateCanvasDisplaySizeCache();
+  syncCanvasSize();
+  recordLog("d3d8 probe backing store released");
+}
+
 // Browser-native pixel size for the shim's adapter mode table (the size the
 // canvas CSS box occupies x devicePixelRatio — rendering at it is 1:1 sharp).
 function d3d8NativeModeQuery() {
@@ -2776,6 +2785,7 @@ function updateD3D8Buffer(payload = {}) {
     lockFlags,
     discard: Boolean(lockFlags & D3DLOCK_DISCARD),
     noOverwrite,
+    dynamicRedirected: dynamicRedirect,
     orphaned,
     resized,
     mirrored: mirroredBytes > 0,
@@ -13580,9 +13590,10 @@ function paintD3D8DrawIndexed(payload = {}) {
   return drawOk ? 1 : 0;
 }
 
-  // The 20 cncPortD3D8* engine hooks, ready to spread into the emscripten
+  // The cncPortD3D8* engine hooks, ready to spread into the emscripten
   // Module config object (plus d3d8BridgeCallbacks() on window.CnCPort).
   const hooks = {
+    cncPortD3D8ResetState: invalidateD3D8DrawStateCache,
     cncPortD3D8Clear: paintD3D8Clear,
     cncPortD3D8SetViewport: setD3D8Viewport,
     cncPortD3D8SetGammaRamp: setD3D8GammaRamp,
@@ -13638,6 +13649,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     paintCanvasRgba,
     setD3D8GammaRamp,
     onD3D8BackbufferResize,
+    releaseD3D8ProbeBackingStore,
     sampleD3D8TextureCenter,
     d3d8Textures,
     // mutable executor state, exposed as getters

@@ -469,6 +469,7 @@ const {
   paintCanvasRgba,
   setD3D8GammaRamp,
   onD3D8BackbufferResize,
+  releaseD3D8ProbeBackingStore,
   sampleD3D8TextureCenter,
   d3d8Textures,
   d3d8DiagLevelValue,
@@ -5099,7 +5100,7 @@ async function loadWasmModule() {
         : path,
       print: (text) => recordLog("wasm stdout", { text: String(text) }),
       printErr: (text) => recordLog("wasm stderr", { text: String(text) }),
-      // The 20 cncPortD3D8* hooks (see d3d8_executor.mjs).
+      // The cncPortD3D8* hooks (see d3d8_executor.mjs).
       ...d3d8Hooks,
       cncPortMssSampleStart,
       cncPortMssSampleStop,
@@ -12115,6 +12116,9 @@ async function rpc(command, payload = {}) {
         const probe = clearCanvas(payload);
         return { ok: probe.ok, command, probe, state: snapshotState() };
       }
+    case "releaseD3D8ProbeBackingStore":
+      releaseD3D8ProbeBackingStore();
+      return { ok: true, command, state: snapshotState() };
     case "d3d8Clear":
       {
         const wasmModule = await wasmModulePromise;
@@ -12329,7 +12333,8 @@ async function rpc(command, payload = {}) {
           && browserProbe?.lastUpdate?.glUsage === "streamDraw"
           && browserProbe?.lastUpdate?.discard === true
           && browserProbe?.lastUpdate?.noOverwrite === false
-          && browserProbe?.lastUpdate?.orphaned === true
+          && browserProbe?.lastUpdate?.dynamicRedirected === true
+          && browserProbe?.lastUpdate?.orphaned === false
           && browserProbe?.lastUpdate?.byteOffset === probe.dynamicUpdate?.offset
           && browserProbe?.lastUpdate?.byteSize === probe.dynamicUpdate?.bytes
           && browserProbe?.lastUpdate?.d3dUsage === probe.dynamicUpdate?.usage
@@ -18895,15 +18900,16 @@ async function rpc(command, payload = {}) {
         const probe = parseModuleState(wasmModule.probeWW3DShaderManager());
         const ok = Boolean(probe.ok)
           && probe.source === "ww3d_shader_manager_probe"
-          && probe.adapter?.vendorId === 0x121a
-          && probe.adapter?.deviceId === 0x0009
-          && probe.caps?.pixelShaderVersion === 0
+          && probe.adapter?.vendorId === 0
+          && probe.adapter?.deviceId === 0
+          && probe.caps?.pixelShaderVersion === 0xffff0101
+          && probe.caps?.vertexShaderVersion === 0xfffe0101
           && probe.chipsetAfter === probe.expectedChipset
           && probe.canRenderToTexture === true
           && (probe.shaderPasses?.terrainBase ?? 0) > 0
           && (probe.shaderPasses?.terrainNoise12 ?? 0) > 0
           && probe.calls?.createTexture >= 1
-          && probe.calls?.createPixelShaderUnavailable === true;
+          && probe.calls?.invalidPixelShaderRejected === true;
         return {
           ok,
           command,

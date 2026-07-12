@@ -93,6 +93,12 @@ EM_JS(void, wasm_d3d8_browser_backbuffer_resize, (unsigned int width, unsigned i
 	}
 	bridge(width >>> 0, height >>> 0);
 });
+EM_JS(void, wasm_d3d8_browser_reset_state, (), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8ResetState : null;
+	if (typeof bridge === "function") {
+		bridge();
+	}
+});
 // Browser-native display pixel size (canvas CSS box x devicePixelRatio),
 // packed (width << 16) | height so the adapter mode table can expose it as a
 // real display mode. Returns 0 when the bridge is absent (probe pages).
@@ -618,6 +624,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	});
 #else
 void wasm_d3d8_browser_backbuffer_resize(unsigned int, unsigned int) {}
+void wasm_d3d8_browser_reset_state() {}
 unsigned int wasm_d3d8_browser_native_mode() { return 0; }
 void wasm_d3d8_browser_clear_target(unsigned int, unsigned int, double, unsigned int) {}
 void wasm_d3d8_browser_set_viewport(unsigned int, unsigned int, unsigned int, unsigned int, double, double,
@@ -5809,6 +5816,7 @@ private:
 extern "C" void wasm_d3d8_reset_state()
 {
 	std::memset(&g_state, 0, sizeof(g_state));
+	wasm_d3d8_browser_reset_state();
 }
 
 extern "C" const WasmD3D8ShimState *wasm_d3d8_get_state()

@@ -112,7 +112,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_mss_stream_lifecycle()
 		digital != nullptr &&
 		stream_allocated &&
 		previous_callback == nullptr &&
-		stream_volume == 88 &&
+		stream_volume == 95 &&
 		stream_pan == 48 &&
 		volume_pan_volume > 0.749f &&
 		volume_pan_volume < 0.751f &&
