@@ -510,10 +510,20 @@ async function main() {
       loopError: loopB?.error ?? null,
       frame: statusB?.status?.frame ?? null,
     };
+    const drawBatchPerf = statusB?.status?.graphics?.d3d8Perf ?? {};
+    summary.pacing.drawBatches = {
+      queued: drawBatchPerf.drawBatchQueued ?? null,
+      flushed: drawBatchPerf.drawBatchFlushes ?? null,
+    };
     log(`paced loop measured over ${seconds.toFixed(1)}s: client ${clientRate.toFixed(1)}/s logic ${logicRate.toFixed(1)}/s`);
     checks.push(["paced loop active on the engine thread", loopB?.active === true]);
     checks.push(["client frames advancing", clientRate > 1]);
     checks.push(["logic frames advancing", logicRate > 0.5]);
+    checks.push([
+      "threaded frame boundaries submit every queued draw batch",
+      Number(drawBatchPerf.drawBatchQueued ?? -1) >= 0
+        && drawBatchPerf.drawBatchQueued === drawBatchPerf.drawBatchFlushes,
+    ]);
     checks.push([
       // Paced-mode invariant: logic never exceeds catchup (2) logic frames
       // per client frame. Under SwiftShader overload the loop legitimately

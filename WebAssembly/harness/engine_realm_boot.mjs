@@ -702,6 +702,18 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
   };
   let framePacedFn = null;
 
+  function runPacedFrame(runLogic) {
+    try {
+      return parseMaybeJson(framePacedFn(runLogic ? 1 : 0));
+    } finally {
+      // Lite rendering may defer the final indexed draw so it can be merged
+      // with an adjacent range.  The main-realm frame RPCs flush that draw
+      // after every engine frame; the autonomous worker loop must preserve
+      // the same frame boundary or the next frame's clear discards it.
+      d3d8Diag.flushD3D8PendingDrawBatch("threadedFramePaced");
+    }
+  }
+
   function startLoop(msg, respond) {
     const clientFps = Math.max(1, Math.min(240, Number(msg.clientFps ?? 60)));
     const logicFps = Math.max(1, Math.min(240, Number(msg.logicFps ?? 30)));
@@ -776,10 +788,10 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     let result = null;
     try {
       if (logicToRun === 0) {
-        result = parseMaybeJson(framePacedFn(0));
+        result = runPacedFrame(false);
       } else {
         for (let i = 0; i < logicToRun; i += 1) {
-          result = parseMaybeJson(framePacedFn(1));
+          result = runPacedFrame(true);
           loop.logicFrames += 1;
         }
       }
