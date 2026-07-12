@@ -10,5 +10,5 @@ them as the current backlog. Current work is tracked in the
 
 Frozen snapshot hashes:
 
-- `TODO.md`: `940d7f5aa852848f20e018b8b3d695e153fc17515b2e3b8f1b44bf378f930d74`
-- `DONE.md`: `b2dfad41c8b6951acc975b72ce919b35aea7368ce21da10a4b00897202ad2f04`
+- `TODO.md`: `0d1879de8c05b832039586811190e1b6ff2c686f2647d97acca870067a14e3c5`
+- `DONE.md`: `86092628213840d603fcefb5757e0f7a7eeaec7bd92802c0084331f6bff9e1e1`
