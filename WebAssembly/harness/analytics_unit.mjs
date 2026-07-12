@@ -117,6 +117,31 @@ for (const measurementId of ["", "__GA_MEASUREMENT_ID__", "UA-OLD", "secret"] ) 
   assert.equal(Object.keys(windowLike).some((key) => key.startsWith("ga-disable-")), false);
 }
 
+// Analytics runs on exact public production hosts, including the canonical
+// Cloudflare Pages domain, but not hash-prefixed preview deployments.
+for (const hostname of ["newshoes.gg", "www.newshoes.gg", "newshoes.pages.dev", "agusx1211.github.io"]) {
+  const transport = mockTransport();
+  const locationLike = new URL(`https://${hostname}/`);
+  createAnalytics({
+    windowLike: { location: locationLike },
+    documentLike: { querySelector: () => null }, navigatorLike: {},
+    locationLike, storage: memoryStorage(), measurementId: "G-TEST000000", transport,
+  }).init();
+  await tick();
+  assert.equal(transport.initializeCalls, 1, `${hostname} should enable analytics`);
+}
+for (const hostname of ["29f694cd.newshoes.pages.dev", "preview.pages.dev", "localhost"]) {
+  const transport = mockTransport();
+  const locationLike = new URL(`https://${hostname}/`);
+  createAnalytics({
+    windowLike: { location: locationLike },
+    documentLike: { querySelector: () => null }, navigatorLike: {},
+    locationLike, storage: memoryStorage(), measurementId: "G-TEST000000", transport,
+  }).init();
+  await tick();
+  assert.equal(transport.initializeCalls, 0, `${hostname} should keep analytics disabled`);
+}
+
 // Schema and buckets reject high-cardinality or sensitive input instead of
 // truncating it into something that might still identify local media.
 assert.deepEqual(sanitizeEvent("media_validation", { result: "ready", reason: "complete", source_type: "iso" }),

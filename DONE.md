@@ -52,6 +52,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## Cloudflare Pages direct-header deployment (2026-07-12)
 
+- [x] Configured the protected `cloudflare-pages` GitHub environment and
+      deployed the verified direct-header artifact to `newshoes.pages.dev`.
+      The live first response provides COOP/COEP/CORP, and a fresh Chromium
+      profile exposes SharedArrayBuffer without a controlling service worker.
+- [x] Enabled the canonical `newshoes.pages.dev` production hostname for the
+      build-injected GA4 transport while keeping hash-prefixed Cloudflare
+      preview deployments analytics-free.
 - [x] Added a main-only GitHub Actions deployment for a Cloudflare Pages
       Direct Upload project. It builds the threaded release, derives an exact
       allowlisted artifact from the verified GitHub Pages staging output,

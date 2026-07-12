@@ -175,7 +175,10 @@ function privacySignalEnabled(navigatorLike) {
 
 function productionHost(hostname) {
   const host = String(hostname || "").toLowerCase();
-  return host === "newshoes.gg" || host === "www.newshoes.gg" || host.endsWith(".github.io");
+  return host === "newshoes.gg"
+    || host === "www.newshoes.gg"
+    || host === "newshoes.pages.dev"
+    || host.endsWith(".github.io");
 }
 
 function setGaDisabled(windowLike, measurementId, disabled) {
