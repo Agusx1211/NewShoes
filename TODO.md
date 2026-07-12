@@ -3727,44 +3727,6 @@ and then start with the PROFILE, not with any individual fix.
       `diag=lite` has no warmup readbacks; DevTools is still needed before
       changing buffer/shader/draw submission internals that might be dominated
       by asynchronous ANGLE/GPU stalls.
-- [ ] **Try a per-frame draw command buffer to collapse per-draw wasm↔JS
-      crossings (structural complement to the per-draw uniform caching above).**
-      Profiles prove the sorted cost is *submission* (`sortedDrawUniformMs`
-      ~7.7 ms, `browserDrawIndexed`), not the sort (~0.01 ms) or the GL draw
-      (~0.02 ms): it is the per-draw EM_JS boundary crossing (27-arg call, ~5
-      matrix copies + state block, ~500/frame). The W3D `SortingRenderer` is
-      designed around D3D8's "thousands of tiny state-changing draws are free"
-      (transparent polys are depth-sorted → can't batch by material → ~1
-      draw/particle); D3D8 ate that, the wasm↔JS boundary does not, so cost
-      scales linearly with particle count — the root of the shell-map particle
-      FPS death-spiral (goal is to *handle* the particles, NOT cull via
-      dynamic-LOD `m_dynamicParticleSkipMask`). Idea: have
-      `DX8Wrapper::Draw`/`browser_draw_indexed` *append* each draw (indices into
-      the shared dynamic VB + a state/uniform token) into a wasm-heap command
-      list, then cross to JS **once per frame** and replay into WebGL. WebGL
-      still issues N `drawElements` (cheap), but you kill N boundary crossings +
-      ~N×5 matrix allocations. Attacks the *number* of crossings; the uniform
-      cache attacks *cost per* crossing — they compose, and the same shape may
-      help remaining ordered Render2D/text draws after the W3DDisplay GUI batch.
-      Verify against shell-map goldens; re-measure
-      `sortedDrawUniformMs`/`browserDrawIndexed` + particle-count-vs-FPS. (by Claude)
-      2026-07-12 RTX 4080 follow-up reproduced this with the unchanged original
-      `WeaponFX_MOAB_Blast` in a real skirmish and paired each effect pass with
-      an immediately preceding same-page baseline. Eight simultaneous blasts
-      raised visible particles from ~11 to ~2,150 and draws from ~270 to ~1,990
-      per frame at normal camera height, nearly one extra draw per particle.
-      With detailed counters disabled, wall/engine time rose from 4.54/4.47 to
-      12.58/12.48 ms; moving the real camera from 310 to 210 units above ground
-      with the same eight effects raised wall/engine time from 4.43/4.36 to
-      13.59/13.49 ms. WebGL timer queries measured GPU work at ~0.7 ms baseline,
-      10.4 ms with the normal-height effects, and 16.1 ms close-up (22.6 ms
-      p99). Texture uploads and uniform-call counts stayed effectively flat;
-      effect geometry added ~0.8-1.1 MiB/frame but `bufferSubData` remained
-      ~0.02 ms. This pins two independent no-quality-loss targets: specialize
-      the common unlit single-texture fixed-function particle shader to reduce
-      close-up fragment cost, and collapse the depth-sorted run submission
-      path (command list first; texture-array/atlas state unification if needed)
-      while preserving every particle and the exact sorted triangle order.
 - [ ] **Profile a LOADED skirmish (hundreds of units) — the real perf target,
       never yet measured.** All perf work to date optimizes the ~9 ms shell-map
       background; the scene that actually matters (an active battle with
