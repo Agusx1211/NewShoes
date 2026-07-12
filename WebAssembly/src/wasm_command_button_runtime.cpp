@@ -32,7 +32,7 @@
 // Fix: mark every definition here that the real ControlBar.cpp also provides as
 // weak, so the real strong implementation always wins wherever ControlBar.cpp
 // is linked (cnc-port), while the INI-runtime-only targets that do NOT link
-// ControlBar.cpp still get these weak fallbacks.  See TODO.md
+// ControlBar.cpp still get these weak fallbacks.  See archive/TODO.md
 // "Purchased special powers can't be activated".
 #if defined(__GNUC__) || defined(__clang__)
 #define CNC_PORT_CB_WEAK __attribute__((weak))

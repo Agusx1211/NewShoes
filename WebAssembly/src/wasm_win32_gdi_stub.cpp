@@ -1,7 +1,7 @@
 // Browser no-op stubs for Win32 GDI entry points that are transitively
 // referenced by the original WW3D asset-manager/font surface. Renderer probes
 // do not reach these paths; real browser font/surface rendering is tracked in
-// TODO.md before DisplayString/GDI text can be considered ported.
+// archive/TODO.md before DisplayString/GDI text was considered ported.
 
 #include "windows.h"
 

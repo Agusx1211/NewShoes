@@ -1,4 +1,0 @@
-interface:
-  display_name: "Lead"
-  short_description: "Hands-on lead mode with delegated support"
-  default_prompt: "Use lead mode to coordinate sub-agents while personally coding or reviewing the highest-value work."

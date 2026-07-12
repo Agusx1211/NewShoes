@@ -1,11 +1,11 @@
-# Project New Shoes architecture and roadmap
+# Project New Shoes architecture and product direction
 
 ## Goal
 
-Project New Shoes runs the original Command & Conquer: Generals Zero Hour C++
-engine in a browser. The port compiles the real engine to WebAssembly and
-replaces platform-specific dependencies with browser implementations. It does
-not reimplement simulation, AI, scripts, units, weapons, maps, or game rules.
+Project New Shoes runs the Command & Conquer: Generals Zero Hour C++ engine in a
+browser. The foundational WebAssembly port is in place; current development
+focuses on product features, fidelity, compatibility, performance, hardening,
+and cleanup.
 
 Zero Hour in `GeneralsMD/Code` is the primary target. The base Generals source
 in `Generals/Code` is retained and supplies data required by the expansion, but
@@ -15,18 +15,22 @@ a separate vanilla Generals runtime is not currently exposed by the launcher.
 
 The original code already has the separation the browser port needs:
 
-| Source area | Responsibility | Port policy |
+| Source area | Responsibility | Development policy |
 |---|---|---|
-| `GameEngine` | simulation, AI, INI, scripts, UI logic, objects, weapons, networking protocol | compile and preserve |
-| `GameEngineDevice/W3DDevice` and `WWVegas/WW3D2` | DirectX 8 rendering | re-target device calls to WebGL2 |
-| `MilesAudioDevice` and Miles interfaces | audio device and mixing | re-target to Web Audio |
-| `VideoDevice/Bink` | movie playback | bridge to browser-decodable sidecars and video surfaces |
-| `Win32Device` | windows, files, input, clocks, CD checks | map to Emscripten, DOM, and OPFS |
-| `GameSpy` and UDP transport | lobby and packet transport | retain lockstep protocol; bridge transport to WebRTC and WebSockets |
+| `GameEngine` | simulation, AI, INI, scripts, UI logic, objects, weapons, networking protocol | primary owner for engine and gameplay behavior; edit deliberately and test at this level |
+| `GameEngineDevice/W3DDevice` and `WWVegas/WW3D2` | DirectX 8 rendering | extend the original rendering path and map its device operations to WebGL2 |
+| `MilesAudioDevice` and Miles interfaces | audio device and mixing | preserve engine-facing semantics while implementing playback through Web Audio |
+| `VideoDevice/Bink` | movie playback | preserve player ownership while bridging browser-decodable media and video surfaces |
+| `Win32Device` | windows, files, input, clocks, CD checks | implement the required OS semantics through Emscripten, DOM, and OPFS |
+| `GameSpy` and UDP transport | lobby and packet transport | retain the game protocol while using WebRTC and WebSockets for browser transport |
 
-Changes to original engine code are allowed only when a browser constraint
-cannot be solved at the device boundary. Such changes preserve behavior and
-change scheduling, I/O, or platform ownership only.
+This boundary describes ownership, not a prohibition on engine changes. Core
+engine files may be changed when they are the correct place for a feature or
+fix. Make those edits carefully: understand the real call path and invariants,
+keep the change focused, and protect simulation, save, data, and network
+compatibility unless the task intentionally changes them. Do not build a
+parallel browser-only implementation or a dummy shim merely to avoid a proper
+engine change.
 
 ## Runtime architecture
 
@@ -91,29 +95,33 @@ document because an `OffscreenCanvas` transfer is one-shot.
 
 ## Verification model
 
-A graphical wasm port cannot be validated by compilation alone. The harness
+A graphical wasm product cannot be validated by compilation alone. The harness
 uses Playwright to boot the real runtime, drive original input and command
 paths, query structured engine state, and capture canvas screenshots.
 
-The inner build loop is:
+The normal iteration build is:
 
 ```sh
 cd WebAssembly
 npm run build:port
-npm run test:startup-vertical
 ```
 
-The threaded shipping path is gated with:
+Follow it with the focused test or harness flow that exercises the changed
+feature. Use `npm run test:startup-vertical` when startup behavior is relevant;
+it is a regression gate, not the universal definition of product progress.
+
+Changes that affect the threaded shipping path should also run:
 
 ```sh
 npm run verify:threaded-play
 ```
 
 `npm run build:wasm` builds the broad legacy smoke surface and is reserved for
-regression passes. New product verification should target `cnc-port` and the
-real lifecycle, not add isolated probe executables.
+regression passes. Product verification should exercise `cnc-port` through the
+real feature path; focused tests supplement that evidence rather than replacing
+it.
 
-## Current maturity
+## Current product state
 
 Verified today:
 
@@ -127,7 +135,7 @@ Verified today:
 - short WebRTC multiplayer paths up to four players; and
 - launcher shutdown and clean relaunch.
 
-Still open:
+Ongoing product areas include:
 
 - complete campaign, challenge, save/load, and win/loss flows;
 - remaining shader, animation, terrain, effect, and UI fidelity;
@@ -137,15 +145,25 @@ Still open:
 - Chrome hardening plus Firefox and Safari support; and
 - removal of the remaining legacy probe and compatibility surface.
 
-The active backlog is [TODO.md](TODO.md). Completed evidence is in
-[DONE.md](DONE.md).
+This list is architectural context, not a backlog. GitHub Issues in
+[`Agusx1211/NewShoes`](https://github.com/Agusx1211/NewShoes/issues) are the
+canonical tracker for current features, bugs, follow-ups, and completion state.
+The original port checklist and completion log are retired, frozen snapshots
+under [`archive/`](archive/).
 
 ## Repository rules
 
-- Reuse original code whenever it exists.
+- Change original engine code carefully when it is the right ownership point;
+  prefer focused edits over parallel reimplementations or broad rewrites.
 - Keep retail assets, extracted archives, builds, profiles, and screenshots
   untracked.
-- Keep the real engine lifecycle as the progress metric.
+- Do not add stubs, no-op shims, canned-success paths, or fake compatibility
+  behavior without explicit approval.
 - Verify rendering with browser state or pixels.
-- Record new work in `TODO.md` and move verified completion to `DONE.md`.
+- Track durable work and coordination in `Agusx1211/NewShoes` GitHub Issues.
+- Develop on a branch from `main` in an isolated
+  `~/worktrees/<project>/<feature>` worktree, avoid collisions with other agents,
+  and remove the worktree when the task is finished.
+- Keep the archived port checklists frozen; they are historical evidence, not
+  the current workflow.
 - Check [LICENSE.md](LICENSE.md) before redistributing modified builds.
