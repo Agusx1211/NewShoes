@@ -13704,6 +13704,16 @@ mitigation track. Items resolved or retired by the pivot:
       opaque black tile. Canvas sampling verified alpha 0 at all four corners
       and alpha 255 at the emblem center, and the served desktop was recaptured
       as `project-new-shoes-transparent-icon-desktop.png`.
+- [x] Kept the Project New Shoes taskbar accessible on iPhone and iPad Safari.
+      The desktop now follows the dynamic viewport height with a `vh` fallback,
+      and the taskbar, window layer, and Start menu reserve the bottom safe-area
+      inset instead of anchoring below the visible browser viewport. Extended
+      the launcher browser check with a 390x844 phone viewport, a reduced
+      390x664 phone viewport that models expanded browser chrome, and an
+      834x1112 tablet viewport. All three keep the taskbar inside the visible
+      bounds; the tablet Start menu is also fully contained. The full launcher
+      interaction suite and static launcher check passed, with phone, tablet,
+      short-screen, and desktop screenshots captured without layout regressions.
 - [x] Made browser installation atomic and self-healing. Versioned install
       roots swap manifests only after both persistent and per-tab copies are
       complete, Web Locks serialize cross-tab install/forget/verification,
