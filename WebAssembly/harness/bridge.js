@@ -10456,48 +10456,106 @@ async function registerOpfsInterceptPrefix(prefix) {
   return { ok: true };
 }
 
-const BINK_RUNTIME_FILES = [
-  {
-    name: "GC_Background.bik",
-    url: new URL("../artifacts/real-assets/GC_Background.bik", import.meta.url).href,
-    enginePath: "Data/English/Movies/GC_Background.bik",
-  },
-  {
-    name: "GC_Background.bik (generic)",
-    url: new URL("../artifacts/real-assets/GC_Background.bik", import.meta.url).href,
-    enginePath: "Data/Movies/GC_Background.bik",
-  },
-  {
-    name: "VS_small.bik",
-    url: new URL("../artifacts/real-assets/VS_small.bik", import.meta.url).href,
-    enginePath: "Data/English/Movies/VS_small.bik",
-  },
-  {
-    name: "VS_small.bik (generic)",
-    url: new URL("../artifacts/real-assets/VS_small.bik", import.meta.url).href,
-    enginePath: "Data/Movies/VS_small.bik",
-  },
-  {
-    name: "bink-browser-video-manifest.json",
-    url: new URL(
-      "../artifacts/browser-video/bink/bink-browser-video-manifest.json",
-      import.meta.url,
-    ).href,
-    enginePath: "artifacts/browser-video/bink/bink-browser-video-manifest.json",
-  },
-];
+const BINK_MANIFEST_URL = new URL(
+  "../artifacts/browser-video/bink/bink-browser-video-manifest.json",
+  import.meta.url,
+).href;
 
-async function stageBinkRuntimeFiles(wasmModule, namespace, baseDirectory, stageMap) {
+async function binkRuntimeFiles() {
+  const response = await fetch(BINK_MANIFEST_URL, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Bink video manifest fetch failed (${response.status})`);
+  const manifest = await response.json();
+  if (manifest?.ok !== true || !Array.isArray(manifest.payloads) || manifest.payloads.length === 0) {
+    throw new Error("Bink video manifest is incomplete");
+  }
+  const files = manifest.payloads.map((payload) => {
+    const sourceFile = String(payload?.sourceFile ?? "");
+    if (!/^[A-Za-z0-9_.-]+\.bik$/i.test(sourceFile)) {
+      throw new Error(`Bink video manifest contains an unsafe source file: ${sourceFile}`);
+    }
+    return {
+      name: sourceFile,
+      sourceFile,
+      url: new URL(`../artifacts/real-assets/${encodeURIComponent(sourceFile)}`, import.meta.url).href,
+      // The original BinkVideoPlayer always appends the lowercase VIDEO_EXT
+      // ("bik"). Win32 was case-insensitive even when the cabinet entry was
+      // named EA_LOGO.BIK; the OPFS path map must preserve that behavior.
+      enginePath: `Data/English/Movies/${sourceFile.replace(/\.bik$/i, ".bik")}`,
+    };
+  });
+  for (const localized of [...files]) {
+    files.push({
+      ...localized,
+      name: `${localized.name} (generic)`,
+      enginePath: `Data/Movies/${localized.sourceFile.replace(/\.bik$/i, ".bik")}`,
+    });
+  }
+  files.push({
+    name: "bink-browser-video-manifest.json",
+    url: BINK_MANIFEST_URL,
+    enginePath: "artifacts/browser-video/bink/bink-browser-video-manifest.json",
+  });
+  return { files, manifest };
+}
+
+async function stageBinkRuntimeFiles(
+  wasmModule, namespace, baseDirectory, stageMap, preparedVideos = [],
+) {
+  const runtime = await binkRuntimeFiles();
   const files = [];
-  for (const file of BINK_RUNTIME_FILES) {
+  const stagedSources = new Map();
+  const preparedByName = new Map(preparedVideos.map((video) =>
+    [String(video.name).toLowerCase(), video]));
+  for (const file of runtime.files) {
     const enginePath = `${baseDirectory}/${file.enginePath}`;
     const opfsPath = opfsPathForArchive(namespace, enginePath);
     try {
+      const staged = file.sourceFile
+        ? stagedSources.get(file.sourceFile.toLowerCase())
+        : null;
+      if (staged) {
+        ensureMemfsDirectory(wasmModule.fs, parentDirectory(enginePath));
+        wasmModule.fs.writeFile(enginePath, new Uint8Array(0));
+        stageMap[enginePath] = staged.opfsPath;
+        files.push({
+          ...file,
+          enginePath,
+          opfsPath: staged.opfsPath,
+          bytes: staged.bytes,
+          ok: true,
+          alias: true,
+        });
+        continue;
+      }
+      const prepared = file.sourceFile
+        ? preparedByName.get(file.sourceFile.toLowerCase())
+        : null;
+      if (prepared) {
+        ensureMemfsDirectory(wasmModule.fs, parentDirectory(enginePath));
+        wasmModule.fs.writeFile(enginePath, new Uint8Array(0));
+        stageMap[enginePath] = prepared.opfsPath;
+        files.push({
+          ...file,
+          enginePath,
+          opfsPath: prepared.opfsPath,
+          bytes: prepared.bytes,
+          ok: prepared.bytes > 0,
+          prepared: true,
+        });
+        stagedSources.set(file.sourceFile.toLowerCase(), {
+          opfsPath: prepared.opfsPath,
+          bytes: prepared.bytes,
+        });
+        continue;
+      }
       const { bytesWritten } = await fetchArchiveToOpfsOffThread(file.url, opfsPath);
       ensureMemfsDirectory(wasmModule.fs, parentDirectory(enginePath));
       wasmModule.fs.writeFile(enginePath, new Uint8Array(0));
       stageMap[enginePath] = opfsPath;
       files.push({ ...file, enginePath, opfsPath, bytes: bytesWritten, ok: bytesWritten > 0 });
+      if (file.sourceFile) {
+        stagedSources.set(file.sourceFile.toLowerCase(), { opfsPath, bytes: bytesWritten });
+      }
     } catch (error) {
       files.push({
         ...file,
@@ -10511,6 +10569,7 @@ async function stageBinkRuntimeFiles(wasmModule, namespace, baseDirectory, stage
   }
   harnessState.binkVideoAssets = {
     ready: files.every((file) => file.ok),
+    payloadCount: runtime.manifest.payloads.length,
     files,
   };
   recordLog("Bink runtime files staged", {
@@ -10518,6 +10577,15 @@ async function stageBinkRuntimeFiles(wasmModule, namespace, baseDirectory, stage
     files: files.map((file) => ({ name: file.name, ok: file.ok, bytes: file.bytes })),
   });
   return files;
+}
+
+function skipBinkRuntimeFiles() {
+  harnessState.binkVideoAssets = {
+    ready: false,
+    skipped: true,
+    reason: "optional videos were not selected during library preparation",
+    files: [],
+  };
 }
 
 async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirectory) {
@@ -10633,7 +10701,11 @@ async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirec
     });
   }
 
-  await stageBinkRuntimeFiles(wasmModule, namespace, baseDirectory, stageMap);
+  if (payload.includeVideos === true) {
+    await stageBinkRuntimeFiles(wasmModule, namespace, baseDirectory, stageMap);
+  } else {
+    skipBinkRuntimeFiles();
+  }
 
   const prefix = baseDirectory.endsWith("/") ? baseDirectory : `${baseDirectory}/`;
   const registered = await registerOpfsInterceptPrefix(prefix);
@@ -10782,9 +10854,42 @@ async function mountPreparedArchives(payload = {}) {
     });
   }
 
-  const binkNamespace = `ns-${opfsBootId}-video-${++opfsMountSequence}`;
-  await acquireOpfsNamespaceLock();
-  await stageBinkRuntimeFiles(moduleResult.wasmModule, binkNamespace, baseDirectory, stageMap);
+  const preparedVideos = [];
+  for (const input of Array.isArray(payload.videos) ? payload.videos : []) {
+    const name = String(input?.name ?? "");
+    const opfsPath = String(input?.opfsPath ?? "").replace(/^\/+/, "");
+    if (!/^[A-Za-z0-9_.-]+\.bik$/i.test(name)) {
+      return { ok: false, command: "mountPreparedArchives", error: `Invalid prepared video name: ${name}` };
+    }
+    const installedMatch = /^cnc-library\/(install-[a-z0-9-]+)\/movies\/([A-Za-z0-9_.-]+\.bik)$/i.exec(opfsPath);
+    const inPageNamespace = opfsPath.startsWith(`${OPFS_ARCHIVE_ROOT}/ns-${opfsBootId}-`)
+      && opfsPath.toLowerCase().endsWith(`/movies/${name.toLowerCase()}`);
+    const inInstalledLibrary = installedMatch?.[2]?.toLowerCase() === name.toLowerCase();
+    if ((!inPageNamespace && !inInstalledLibrary) || opfsPath.includes("..")) {
+      return {
+        ok: false,
+        command: "mountPreparedArchives",
+        error: `Prepared video is outside managed launcher storage: ${opfsPath}`,
+      };
+    }
+    if (inInstalledLibrary && installedRootName && installedRootName !== installedMatch[1]) {
+      return { ok: false, command: "mountPreparedArchives", error: "Installed videos and archives span multiple library roots" };
+    }
+    const bytes = Number(input.bytes ?? 0);
+    if (!Number.isSafeInteger(bytes) || bytes <= 48) {
+      return { ok: false, command: "mountPreparedArchives", error: `Invalid prepared video size: ${name}` };
+    }
+    preparedVideos.push({ name, opfsPath, bytes });
+  }
+
+  if (payload.includeVideos === true) {
+    const binkNamespace = `ns-${opfsBootId}-video-${++opfsMountSequence}`;
+    await acquireOpfsNamespaceLock();
+    await stageBinkRuntimeFiles(
+      moduleResult.wasmModule, binkNamespace, baseDirectory, stageMap, preparedVideos);
+  } else {
+    skipBinkRuntimeFiles();
+  }
 
   if (installedRootName) await acquireOpfsInstallLock(installedRootName);
 

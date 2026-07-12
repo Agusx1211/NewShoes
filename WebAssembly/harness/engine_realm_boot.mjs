@@ -275,6 +275,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     bytesReceived: 0,
     bytesCopied: 0,
     lastCopy: null,
+    openedSourcePaths: [],
   };
 
   Module.cncPortBinkVideoOpen = (payload) => {
@@ -282,6 +283,8 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     closedBinkHandles.delete(handle);
     if (handle) binkFrames.set(handle, { frameNum: 0, width: 0, height: 0, bytes: null });
     binkStats.opens += 1;
+    const sourcePath = String(payload?.sourcePath ?? "");
+    if (sourcePath) binkStats.openedSourcePaths = [...binkStats.openedSourcePaths, sourcePath].slice(-16);
     postToMain({ cmd: "bink", hook: "open", payload: payload ?? null });
   };
   Module.cncPortBinkVideoEvent = (payload) => {
@@ -947,14 +950,13 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         // from OPFS. Pure JS + OPFS (no wasm calls), so it is safe before
         // the engine pthread runs — and it MUST complete before boot/go
         // (async handle opens need this worker's free event loop; see
-        // notes/p1-engine-thread.md "P2-prep results"). The path map rides
-        // the module URL query because opfs_realm_files.mjs derives its map
-        // from import.meta.url; instances merge into one realm registry.
+        // notes/p1-engine-thread.md "P2-prep results"). Pass the map as data,
+        // not in the module URL: a complete optional-video library has enough
+        // paths to exceed Chromium's dynamic-import URL limit.
         const map = msg.map && typeof msg.map === "object" ? msg.map : {};
         const moduleUrl = new URL("./opfs_realm_files.mjs", import.meta.url);
-        moduleUrl.searchParams.set("map", JSON.stringify(map));
         import(moduleUrl.href)
-          .then((opfsModule) => opfsModule.default({ Module }))
+          .then((opfsModule) => opfsModule.default({ Module, map }))
           .then((result) => {
             recordLog("opfs archive handles staged", {
               staged: result?.stagedPaths?.length ?? 0,

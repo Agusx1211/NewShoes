@@ -63,6 +63,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     wizardStep: 1,
     source: null,
     storageMode: "once",
+    includeVideos: false,
     launching: false,
     preparingLibrary: false,
     library: readStoredLibrary(),
@@ -236,6 +237,28 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
       input.closest(".storage-choice")?.classList.toggle("is-selected", input.checked);
     });
     document.querySelector("#spaceWarning").hidden = state.storageMode !== "install";
+  }
+
+  function syncVideoOptionUI() {
+    const input = document.querySelector("#includeVideosToggle");
+    if (!input) return;
+    input.checked = state.includeVideos;
+    document.querySelector("#includeVideosChoice")?.classList.toggle("is-selected", input.checked);
+    updateInstallSizeEstimate();
+  }
+
+  function updateInstallSizeEstimate() {
+    const scan = state.source?.scan;
+    if (!scan) return;
+    // The supplied English corpus produces browser sidecars at ~49% of the
+    // source BIK size (305,435,862 / 618,084,532 bytes). Round to 1.5x so the
+    // install estimate covers both copies without promising byte precision.
+    const videoInstallBytes = Math.ceil(Number(scan.videoBytes ?? 0) * 1.5);
+    const bytes = scan.totalBytes + (state.includeVideos ? videoInstallBytes : 0);
+    const videoSuffix = state.includeVideos && scan.videoCount
+      ? ` · ${scan.videoCount} videos` : "";
+    document.querySelector("#installSizeEstimate").textContent =
+      `~${(bytes / 1024 ** 3).toFixed(1)} GB${videoSuffix}`;
   }
 
   function setRememberAvailability(available) {
@@ -573,8 +596,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
       document.querySelector("#detectedSourceName").textContent = source.name;
       document.querySelector("#detectedSummary").textContent =
         `${result.found.length} archives · ${(result.totalBytes / 1024 ** 3).toFixed(1)} GB`;
-      document.querySelector("#installSizeEstimate").textContent =
-        `~${(result.totalBytes / 1024 ** 3).toFixed(1)} GB`;
+      updateInstallSizeEstimate();
       if (!result.ok) {
         track("media_validation", {
           result: "incomplete",
@@ -730,7 +752,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     document.body.classList.toggle("library-preparing", active);
     document.querySelectorAll(
       '#setupWindow [data-window-action], [data-wizard-back], input[name="storageMode"], '
-        + "#prepareLibraryButton, #forgetLibraryButton, #resetConceptButton, .managed-storage-delete, "
+        + "#includeVideosToggle, #prepareLibraryButton, #forgetLibraryButton, #resetConceptButton, .managed-storage-delete, "
         + "[data-launch-game]",
     ).forEach((control) => {
       if (active) {
@@ -772,10 +794,12 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     track("install_progress", { milestone: "start", mode: requestedMode });
     setLibraryPreparationState(true, requestedMode);
     try {
+      window.ZeroHAssetLibrary.includeVideos = state.includeVideos;
       const result = await window.ZeroHAssetLibrary.prepare(
         requestedMode, updateLibraryPreparationProgress);
       renderLibraryPreparationProgress(100, "Finalizing game library…");
-      const totalBytes = result.archives.reduce((sum, archive) => sum + archive.bytes, 0);
+      const totalBytes = [...result.archives, ...(result.videos ?? [])]
+        .reduce((sum, file) => sum + file.bytes, 0);
       state.storageMode = result.effectiveMode || state.storageMode;
       syncStorageModeUI();
       state.library = {
@@ -783,6 +807,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
         mode: state.storageMode,
         preparedAt: Date.now(),
         totalBytes,
+        includeVideos: state.includeVideos,
         presentationKey: window.ZeroHAssetLibrary.presentationKey(result.archives),
       };
       const metadataStored = persistLibrary();
@@ -821,7 +846,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     const labels = labelsByMode[mode];
     document.querySelector("#readyStorageLabel").textContent = labels.ready;
     document.querySelector("#readyMessage").textContent = state.library
-      ? `Zero Hour is ${mode === "install" ? "installed and ready without the original media" : "available from your selected source"}.`
+      ? `Zero Hour is ${mode === "install" ? "installed and ready without the original media" : "available from your selected source"}${state.library.includeVideos ? " with original videos" : " without optional videos"}.`
       : "Add the original Generals and Zero Hour media to begin.";
     document.querySelectorAll(".library-state-label").forEach((label) => {
       label.textContent = state.library ? labels.state : "Original files required";
@@ -883,6 +908,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     mount.classList.remove("is-done");
     engine.classList.remove("is-done");
     try {
+      window.ZeroHAssetLibrary.includeVideos = state.library.includeVideos === true;
       if (state.library.mode === "remember" && !window.ZeroHAssetLibrary.preparedArchives) {
         status.textContent = "Restoring permission to your original files…";
         const scan = await window.ZeroHAssetLibrary.restoreRemembered({ requestPermission: true });
@@ -1077,6 +1103,15 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     syncStorageModeUI();
     track("storage_mode_selected", { mode: state.storageMode });
   }));
+  document.querySelector("#includeVideosToggle").addEventListener("change", (event) => {
+    state.includeVideos = event.currentTarget.checked;
+    syncVideoOptionUI();
+    track("setting_changed", {
+      category: "installation",
+      setting: "include_videos",
+      value: state.includeVideos ? "enabled" : "disabled",
+    });
+  });
   document.querySelector("#prepareLibraryButton").addEventListener("click", prepareLibrary);
   document.querySelector("#changeSourceButton").addEventListener("click", () => {
     if (sourceChangeNeedsReload()) return;
@@ -1087,6 +1122,8 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
   document.querySelector("#forgetLibraryButton").addEventListener("click", async () => {
     await window.ZeroHAssetLibrary.forget();
     state.library = null;
+    state.includeVideos = false;
+    syncVideoOptionUI();
     storageRemove("zeroh-library");
     storageRemove("fielddesk-library");
     updateLibraryUI();
@@ -1129,7 +1166,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     document.querySelector('[data-settings-tab="multiplayer"]')?.click();
   });
   window.addEventListener("storage", (event) => {
-    if (["zeroh-library", "fielddesk-library", "zeroh-installed-library.v4", "zeroh-installed-library.v3", "zeroh-installed-library.v2"].includes(event.key)) {
+    if (["zeroh-library", "fielddesk-library", "zeroh-installed-library.v5", "zeroh-installed-library.v4", "zeroh-installed-library.v3", "zeroh-installed-library.v2"].includes(event.key)) {
       state.library = readStoredLibrary();
       void reconcileStoredLibrary();
     }
@@ -1196,6 +1233,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
   applyLauncherLogo();
   updateLibraryUI();
   syncStorageModeUI();
+  syncVideoOptionUI();
   void refreshStorageUI();
   setRememberAvailability(typeof window.showOpenFilePicker === "function"
     || typeof window.showDirectoryPicker === "function");
@@ -1220,6 +1258,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
         mode: "install",
         preparedAt: installed.preparedAt,
         totalBytes: installed.totalBytes,
+        includeVideos: installed.includeVideos === true,
         presentationKey: window.ZeroHAssetLibrary.presentationKey(installed.archives),
       };
       persistLibrary();
@@ -1233,7 +1272,9 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     if (state.library) {
       state.source = { name: state.library.source, countLabel: "Zero Hour" };
       state.storageMode = state.library.mode;
+      state.includeVideos = state.library.includeVideos === true;
       syncStorageModeUI();
+      syncVideoOptionUI();
       setWizardStep(3);
     } else {
       setWizardStep(1);

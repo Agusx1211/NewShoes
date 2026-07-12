@@ -3517,7 +3517,11 @@ residue and the next frontier.
       It is source-only and does NOT complete runtime Bink audio playback,
       per-frame audio-clock frame progression (`BinkWait`), or a Web Audio /
       DirectSound handoff; those remain open.
-- [ ] Logo / intro movie plays.
+- [ ] Make the optional-video installer generate and cache browser-decodable
+      sidecars entirely in the browser from the selected user-owned BIK files.
+      The current development/runtime path consumes host-prepared WebM
+      sidecars; production installation must stay local and cannot depend on
+      copyrighted derivatives being deployed with the site.
 - [ ] Mission briefing / cutscene playback with audio sync.
 - [ ] In-engine video surfaces (e.g. comms video) render to a texture.
 - [ ] Skippable; integrates with game flow/state machine.

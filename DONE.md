@@ -10721,6 +10721,30 @@ mitigation track. Items resolved or retired by the pivot:
 
 ## M8 — Video (Bink → WebCodecs)
 
+- [x] Play the original automatic EA-logo and Zero Hour sizzle sequence, and
+      make the complete retail movie library optional at installation. The
+      launcher now presents an unchecked-by-default `Include original videos`
+      choice with an accessible tooltip explaining the measured English-media
+      cost (618,084,532 bytes of source BIKs plus 305,435,862 bytes of VP9/Opus
+      WebM sidecars, about 0.9 GB). Its worker inventories loose installed BIKs
+      and BIK entries in ISO/CAB media, copies them only when selected, keeps
+      them in the installed-library v5 manifest, validates BIK/KB2 headers,
+      and reuses those OPFS files at launch. Runtime extraction/transcoding
+      now covers all 70 supplied Zero Hour/base Generals movies and generates
+      the manifest dynamically instead of naming two test clips. The original
+      player receives localized and generic Win32-compatible aliases without
+      duplicating stored bytes; manifest source matching is case-insensitive
+      for cabinet names such as `EA_LOGO.BIK`. Large path maps are passed to
+      the engine realm as message data rather than dynamic-import query text,
+      avoiding Chromium's URL limit. The browser decoder now emits the exact
+      terminal frame on `ended`, allowing original `Display::playLogoMovie`
+      hold/copyright timing to advance naturally into `Display::playMovie`
+      for the sizzle. The release threaded gate observed
+      `Data\\Movies\\EA_LOGO.bik` followed by
+      `Data\\Movies\\sizzle_review.bik`, copied decoded frames with zero
+      misses, captured the real sizzle frame, closed the decoder, and shut the
+      worker down cleanly. Browser-local sidecar generation and complete
+      movie/audio-clock synchronization remain open in `TODO.md`.
 - [x] Re-target the production threaded Bink path to browser video sidecars.
       The play-page mount now stages the user-extracted `GC_Background.bik` and
       `VS_small.bik` payloads at both original localized and generic paths plus

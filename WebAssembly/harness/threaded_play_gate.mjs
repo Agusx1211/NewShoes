@@ -66,6 +66,7 @@ const SETTLE_MS = Number(process.env.SETTLE_MS ?? 30000);
 // iteration fast while retaining the same real play page, archive mount,
 // engine loop, and screenshot path as the complete threaded gate.
 const BINK_VIDEO_ONLY = process.env.BINK_VIDEO_ONLY === "1";
+const BINK_VIDEO_DISABLED = process.env.BINK_VIDEO_DISABLED === "1";
 
 class BinkVideoGateComplete extends Error {}
 
@@ -197,27 +198,35 @@ async function runBinkVideoGate(page, summary, checks) {
     const state = await window.CnCPort.rpc("state");
     return state?.state?.binkVideoAssets ?? null;
   });
-  const moviePlay = await page.evaluate(() => window.CnCPort.rpc(
-    "realEnginePlayMovie",
-    // VSSmall is the internal Video.ini key; it resolves to VS_small.bik.
-    { name: "VSSmall" },
-  ));
+  const startupFrame = await page.evaluate(() =>
+    window.CnCPort.rpc("realEngineFrameSummary", { frames: 1 }));
+  const statusBeforeDiagnostic = await page.evaluate(() =>
+    window.CnCPort.state.threadedEngine?.bink ?? null);
+  let diagnosticPlays = [];
+  if ((statusBeforeDiagnostic?.openedSourcePaths?.length ?? 0) === 0) {
+    for (const name of ["EALogoMovie", "Sizzle"]) {
+      const play = await page.evaluate((movieName) =>
+        window.CnCPort.rpc("realEnginePlayMovie", { name: movieName }), name);
+      diagnosticPlays.push({ name, play });
+      if (play?.result?.moviePlaying === true) break;
+    }
+  }
   let frameWaitError = null;
   try {
-    if (moviePlay?.result?.moviePlaying !== true) {
-      throw new Error("movie did not open");
-    }
     await page.waitForFunction(() => {
       const bink = window.CnCPort?.state?.threadedEngine?.bink;
-      return ((bink?.framesReceived ?? 0) >= 3 && (bink?.copies ?? 0) >= 2)
-        || (bink?.closes ?? 0) >= 1;
+      const opened = bink?.openedSourcePaths ?? [];
+      return opened.some((path) => /EA_LOGO(?:640)?\.BIK$/i.test(path))
+        && opened.some((path) => /sizzle_review(?:640)?\.bik$/i.test(path))
+        && (bink?.framesReceived ?? 0) >= 3
+        && (bink?.copies ?? 0) >= 2;
     }, null, { timeout: 60000, polling: 250 });
   } catch (error) {
     frameWaitError = error?.message ?? String(error);
   }
   const movieStatus = await page.evaluate(() => window.CnCPort.state.threadedEngine?.bink ?? null);
   const decoderStatus = await page.evaluate(() => window.CnCPort.state.binkVideo ?? null);
-  const movieShotPath = join(shotDir, "p1c-bink-vs-small-threaded.png");
+  const movieShotPath = join(shotDir, "p1c-bink-natural-intro-threaded.png");
   const movieShot = await captureViewport(page, movieShotPath);
   const moviePixels = await samplePageScreenshot(page, movieShot);
   const movieStop = await page.evaluate(() => window.CnCPort.rpc("realEngineStopMovie"));
@@ -228,7 +237,8 @@ async function runBinkVideoGate(page, summary, checks) {
     window.CnCPort.state.threadedEngine?.bink ?? null);
   summary.binkVideo = {
     assets: binkAssets,
-    play: moviePlay,
+    startupFrame,
+    diagnosticPlays,
     frameWaitError,
     decoder: decoderStatus,
     status: movieStatus,
@@ -243,13 +253,18 @@ async function runBinkVideoGate(page, summary, checks) {
     binkAssets?.ready === true,
   ]);
   checks.push([
-    "original Display::playMovie opens VSSmall",
-    moviePlay?.ok === true && moviePlay?.result?.moviePlaying === true,
+    "original boot flow opens EA logo then sizzle",
+    (() => {
+      const opened = movieStatus?.openedSourcePaths ?? [];
+      const logo = opened.findIndex((path) => /EA_LOGO(?:640)?\.BIK$/i.test(path));
+      const sizzle = opened.findIndex((path) => /sizzle_review(?:640)?\.bik$/i.test(path));
+      return logo >= 0 && sizzle > logo;
+    })(),
   ]);
   checks.push([
     "browser-decoded Bink frames reach and copy in the engine worker",
     frameWaitError == null
-      && movieStatus?.opens >= 1
+      && movieStatus?.opens >= 2
       && movieStatus?.framesReceived >= 3
       && movieStatus?.copies >= 2
       && movieStatus?.bytesCopied > 0,
@@ -362,6 +377,7 @@ async function main() {
     // ---------- threaded boot (GATE B) ----------
     const threadedQuery = "harness/play.html?autostart=1"
       + (BINK_VIDEO_ONLY ? "&shellmap=0" : "")
+      + (BINK_VIDEO_ONLY && !BINK_VIDEO_DISABLED ? "&videos=1" : "")
       + (threadedPlayDist ? `&dist=${threadedPlayDist}` : "");
     log(`booting THREADED (${threadedPlayDist || "dist-threaded-release"}, engine on pthread, OPFS mounts)...`);
     const bootStartedAt = Date.now();
@@ -511,7 +527,24 @@ async function main() {
       && logicRate >= 27 && logicRate <= 33;
 
     if (BINK_VIDEO_ONLY) {
-      await runBinkVideoGate(page, summary, checks);
+      if (BINK_VIDEO_DISABLED) {
+        const disabledVideo = await page.evaluate(async () => {
+          const state = await window.CnCPort.rpc("state");
+          return {
+            assets: state?.state?.binkVideoAssets ?? null,
+            worker: window.CnCPort.state.threadedEngine?.bink ?? null,
+          };
+        });
+        summary.binkVideoDisabled = disabledVideo;
+        checks.push([
+          "optional videos stay unstaged when installation choice is off",
+          disabledVideo.assets?.skipped === true
+            && disabledVideo.assets?.files?.length === 0
+            && disabledVideo.worker?.opens === 0,
+        ]);
+      } else {
+        await runBinkVideoGate(page, summary, checks);
+      }
       summary.videoOnlyExit = await page.evaluate(() => window.ZeroHRuntime.exit());
       checks.push([
         "video-only gate shuts the threaded runtime down cleanly",

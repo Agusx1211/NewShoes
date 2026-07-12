@@ -51,6 +51,9 @@ export function createBinkVideoRuntime({ sendFrame, log = () => {} } = {}) {
       session.video.removeEventListener("timeupdate", session.fallbackFrameHandler);
       session.video.removeEventListener("seeked", session.fallbackFrameHandler);
     }
+    if (session.endedFrameHandler) {
+      session.video.removeEventListener("ended", session.endedFrameHandler);
+    }
     session.video.removeAttribute("src");
     session.video.load();
     session.canvas.width = 1;
@@ -160,11 +163,20 @@ export function createBinkVideoRuntime({ sendFrame, log = () => {} } = {}) {
       closed: false,
       frameCallbackId: null,
       fallbackFrameHandler: null,
+      endedFrameHandler: null,
       lastFrameNum: Number(payload.frameNum ?? 1) >>> 0,
       framesTransferred: 0,
     };
     sessions.set(handle, session);
     diagnostics.opens += 1;
+    session.endedFrameHandler = () => {
+      // requestVideoFrameCallback reports the timestamp of the last decoded
+      // sample, which can map to Frames-1 even though playback has ended.
+      // Bink's original caller waits for FrameNum == Frames before applying
+      // its logo/copyright hold and advancing to the next movie.
+      transferFrame(session, session.durationSeconds || session.video.duration);
+    };
+    video.addEventListener("ended", session.endedFrameHandler);
     video.addEventListener("loadeddata", () => {
       transferFrame(session, video.currentTime);
       scheduleFrames(session);

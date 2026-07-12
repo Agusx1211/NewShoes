@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
@@ -71,6 +72,14 @@ std::string dirname_of(const std::string &path)
 	const std::string normalized = normalize_slashes(path);
 	const std::size_t slash = normalized.find_last_of('/');
 	return slash == std::string::npos ? std::string() : normalized.substr(0, slash);
+}
+
+bool equals_no_case(const std::string &left, const std::string &right)
+{
+	return left.size() == right.size() && std::equal(
+		left.begin(), left.end(), right.begin(), [](unsigned char a, unsigned char b) {
+			return std::tolower(a) == std::tolower(b);
+		});
 }
 
 void copy_string(char *dest, std::size_t dest_size, const std::string &value)
@@ -287,7 +296,7 @@ bool parse_manifest_payload(const std::string &manifest, const std::string &sour
 		const std::string section = manifest.substr(
 			source_key,
 			next_source_key == std::string::npos ? std::string::npos : next_source_key - source_key);
-		if (json_string_value(section, "sourceFile") != source_file) {
+		if (!equals_no_case(json_string_value(section, "sourceFile"), source_file)) {
 			search_pos = source_key + 12;
 			continue;
 		}

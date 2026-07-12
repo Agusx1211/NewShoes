@@ -19,10 +19,9 @@
 // `--expect-current-zh` self-checks the JSON shape against the current Zero
 // Hour runtime asset set. The expectation reflects the data actually observed:
 // the current runtime BIG set contains no `.bik` entries, and the assets dir
-// is in one of two honest loose-file states for the disc cabinet (Data1.cab)
-// Bink files (GC_Background.bik / VS_small.bik): either not extracted yet
-// (zero loose `.bik`) or extracted (exactly those two loose `.bik` files with
-// BIK/KB2 signatures). This does not invent entries.
+// is either not extracted yet or contains at least the two Data1.cab movies.
+// When optional localized/base movie cabinets are available, their complete
+// loose BIK inventory is also valid. This does not invent entries.
 
 import { open, readdir, stat } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
@@ -56,10 +55,8 @@ function usage() {
     "                          runtime BIG set has no `.bik` entries, and the",
     "                          assets dir is in one of two honest loose-file",
     "                          states for the disc cabinet (Data1.cab) Bink",
-    "                          files (GC_Background.bik / VS_small.bik): either",
-    "                          not extracted yet (zero loose `.bik`) or",
-    "                          extracted (exactly those two loose `.bik` files",
-    "                          with BIK/KB2 signatures).",
+    "                          files (GC_Background.bik / VS_small.bik), plus",
+    "                          any extracted localized/base movie cabinets.",
   ].join("\n");
 }
 
@@ -446,27 +443,20 @@ function assertShapeForCurrentZh(report) {
   // loose extraction yet:
   //   1. not extracted yet: zero loose `.bik`, looseBikExtractionRequired true
   //      (and Data1.cab may or may not be present in the assets dir); or
-  //   2. extracted: exactly GC_Background.bik and VS_small.bik as loose
-  //      `.bik` files, each with a BIK or KB2 Bink signature.
-  const expectedLooseNames = EXPECTED_LOOSE_CAB_BIKS.slice().sort();
+  //   2. extracted: at least GC_Background.bik and VS_small.bik, optionally
+  //      followed by the localized/base movie cabinet inventory.
+  const expectedLooseNames = EXPECTED_LOOSE_CAB_BIKS.map((name) => name.toLowerCase());
   const actualLooseNames = report.looseBikFiles
-    .map((entry) => entry.path)
+    .map((entry) => entry.path.toLowerCase())
     .sort();
 
   const extracted = actualLooseNames.length > 0;
   if (extracted) {
-    if (actualLooseNames.length !== expectedLooseNames.length) {
-      failures.push(
-        `expected zero or exactly ${expectedLooseNames.length} loose \`.bik\` files on the current Zero Hour assets dir, found ${actualLooseNames.length}: ${actualLooseNames.join(", ")}`,
-      );
-    } else {
-      for (let i = 0; i < expectedLooseNames.length; ++i) {
-        if (actualLooseNames[i] !== expectedLooseNames[i]) {
-          failures.push(
-            `expected loose \`.bik\` set ${JSON.stringify(expectedLooseNames)} but found ${JSON.stringify(actualLooseNames)}`,
-          );
-          break;
-        }
+    for (const expected of expectedLooseNames) {
+      if (!actualLooseNames.includes(expected)) {
+        failures.push(
+          `expected extracted loose \`.bik\` inventory to include ${expected}, found ${JSON.stringify(actualLooseNames)}`,
+        );
       }
     }
     for (const entry of report.looseBikFiles) {
