@@ -203,6 +203,11 @@ assert.equal(canonicalScopeRoot(
   void transport.initialize();
   assert.equal(appended.length, 1);
   assert.equal(appended[0].src, "https://www.googletagmanager.com/gtag/js?id=G-TEST000000");
+  assert.equal(
+    windowLike.dataLayer.every((entry) => Object.prototype.toString.call(entry) === "[object Arguments]"),
+    true,
+    "gtag commands must use canonical Arguments objects rather than inert arrays",
+  );
   assert.equal(windowLike.dataLayer.filter((entry) => entry[0] === "config").length, 1);
   const config = windowLike.dataLayer.find((entry) => entry[0] === "config")[2];
   assert.deepEqual(config, { send_page_view: false, allow_google_signals: false, allow_ad_personalization_signals: false });

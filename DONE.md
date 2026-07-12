@@ -102,6 +102,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `std::fopen` spellings to the same platform-safe plain call before the
       clean CI build could fail one target at a time.
 
+## GA4 collection transport repair (2026-07-12)
+
+- [x] Corrected the GA4 transport to enqueue canonical JavaScript `Arguments`
+      objects instead of plain arrays. An end-to-end Google-tag A/B proved the
+      former transport initialized but emitted no collection request, while
+      the canonical command shape emits the expected GA4 beacon.
+
 ## Privacy-bounded usage analytics (2026-07-11)
 
 - [x] Added optional Google Analytics 4 collection on public production hosts,

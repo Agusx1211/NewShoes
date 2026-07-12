@@ -231,10 +231,13 @@ function clearAnalyticsCookies(documentLike, locationLike, measurementId) {
 export function createGtagTransport({ windowLike, documentLike, measurementId = DEFAULT_MEASUREMENT_ID }) {
   let initialized = false;
   let scriptPromise = null;
-  const command = (...args) => {
+  // Google consumes the Arguments objects produced by its canonical gtag
+  // wrapper. Plain arrays look equivalent but initialize without emitting
+  // collection requests.
+  function command() {
     windowLike.dataLayer = windowLike.dataLayer || [];
-    windowLike.dataLayer.push(args);
-  };
+    windowLike.dataLayer.push(arguments);
+  }
   return {
     async initialize() {
       if (initialized) return scriptPromise;
