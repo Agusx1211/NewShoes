@@ -73,6 +73,7 @@
 #include "GameClient/Smudge.h"
 #include "GameClient/HeaderTemplate.h"
 #include "GameClient/View.h"
+#include "GameClient/VideoPlayer.h"
 #include "GameClient/WinInstanceData.h"
 #include "GameClient/WindowLayout.h"
 #include "GameNetwork/GameInfo.h"
@@ -6944,6 +6945,54 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_stop_audio_even
 	json += ",\"handle\":" + std::to_string(static_cast<unsigned long long>(handle));
 	json += ",\"pumpFrames\":" + std::to_string(pump_frames > 0 ? pump_frames : 0);
 	json += ",\"framesCompleted\":" + std::to_string(g_frame_state.frames_completed);
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_play_movie(
+	const char *movie_name)
+{
+	static std::string json;
+	const char *requested = movie_name != NULL && movie_name[0] != '\0'
+		? movie_name : "VSSmall";
+	json = "{\"source\":\"real-engine-display-movie\"";
+	json += ",\"requested\":\"" + json_escape(requested) + "\"";
+	const Video *video = TheVideoPlayer != NULL
+		? TheVideoPlayer->getVideo(AsciiString(requested)) : NULL;
+	json += ",\"videoPlayerReady\":";
+	json += TheVideoPlayer != NULL ? "true" : "false";
+	json += ",\"registered\":";
+	json += video != NULL ? "true" : "false";
+	json += ",\"filename\":\"";
+	json += video != NULL ? json_escape(video->m_filename.str()) : "";
+	json += "\"";
+	if (TheDisplay == NULL) {
+		json += ",\"ok\":false,\"guard\":\"TheDisplay\"}";
+		return json.c_str();
+	}
+
+	TheDisplay->playMovie(AsciiString(requested));
+	json += ",\"ok\":";
+	json += TheDisplay->isMoviePlaying() ? "true" : "false";
+	json += ",\"moviePlaying\":";
+	json += TheDisplay->isMoviePlaying() ? "true" : "false";
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_stop_movie()
+{
+	static std::string json;
+	if (TheDisplay == NULL) {
+		return "{\"ok\":false,\"source\":\"real-engine-display-movie\",\"guard\":\"TheDisplay\"}";
+	}
+	const Bool was_playing = TheDisplay->isMoviePlaying();
+	TheDisplay->stopMovie();
+	json = "{\"ok\":true,\"source\":\"real-engine-display-movie\"";
+	json += ",\"wasPlaying\":";
+	json += was_playing ? "true" : "false";
+	json += ",\"moviePlaying\":";
+	json += TheDisplay->isMoviePlaying() ? "true" : "false";
 	json += "}";
 	return json.c_str();
 }

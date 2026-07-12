@@ -1,4 +1,5 @@
 import { createD3D8Executor } from "./d3d8_executor.mjs";
+import { createBinkVideoRuntime } from "./bink_runtime.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
 import { createSavePersistenceCoordinator } from "./save-persistence-coordinator.mjs";
@@ -401,6 +402,8 @@ const harnessState = {
   moduleFactoryRuntime: null,
   particleSystemRuntime: null,
   audioRuntimeAssets: null,
+  binkVideoAssets: null,
+  binkVideo: null,
   audioPayloadInventory: null,
   startupAssets: null,
   dataSummary: null,
@@ -843,6 +846,7 @@ function createThreadedEngineController() {
   let lastStatus = null;
   let lastLoopError = null;
   let mssHandlers = null;
+  let binkRuntime = null;
 
   function threadedLog(message, data) {
     recordLog(`threaded ${message}`, data);
@@ -895,6 +899,28 @@ function createThreadedEngineController() {
     }
   }
 
+  function binkVideoRuntime() {
+    if (!binkRuntime) {
+      binkRuntime = createBinkVideoRuntime({
+        log: (message, data) => threadedLog(message, data),
+        sendFrame: ({ handle, frameNum, width, height, bytes }) => {
+          sendPortCommand({ cmd: "binkFrame", handle, frameNum, width, height, bytes }, [bytes.buffer]);
+        },
+      });
+    }
+    return binkRuntime;
+  }
+
+  function handleBinkMessage(msg) {
+    const runtime = binkVideoRuntime();
+    const payload = msg.payload ?? {};
+    if (msg.hook === "open") runtime.open(payload);
+    else if (msg.hook === "event") runtime.event(payload);
+    else if (msg.hook === "close") runtime.close(payload);
+    else threadedLog("bink hook unknown", { hook: msg.hook });
+    harnessState.binkVideo = runtime.snapshot();
+  }
+
   function applyThreadedStatus(status) {
     lastStatus = status;
     harnessState.threadedEngine = status;
@@ -945,6 +971,9 @@ function createThreadedEngineController() {
     switch (msg.cmd) {
       case "mss":
         handleMssMessage(msg);
+        return;
+      case "bink":
+        handleBinkMessage(msg);
         return;
       case "udpFlush":
         drainThreadedUdpOutgoing();
@@ -1325,6 +1354,8 @@ function createThreadedEngineController() {
   function terminateWorker(reason) {
     shutDown = true;
     cncPortMssCacheDropNotifier = null;
+    binkRuntime?.shutdown();
+    binkRuntime = null;
     inputOutbox.length = 0;
     for (const [, entry] of pending) {
       if (entry.timer) clearTimeout(entry.timer);
@@ -1430,9 +1461,9 @@ function createThreadedEngineController() {
 
   // Fire-and-forget realm command (no id, no reply, no timeout entry) —
   // pagehide teardown must not allocate pending state on a dying page.
-  function postCommand(payload) {
+  function postCommand(payload, transfer) {
     try {
-      sendPortCommand(payload);
+      sendPortCommand(payload, transfer);
       return true;
     } catch (_error) {
       return false;
@@ -1612,6 +1643,28 @@ async function threadedRpc(command, payload = {}) {
           "cnc_port_real_engine_anim_report", "string", ["number"],
           [Number(payload.maxEntries ?? 0)]);
         return { ok: report?.ok === true, command, report, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEnginePlayMovie":
+    case "realEngineStopMovie": {
+      const play = command === "realEnginePlayMovie";
+      try {
+        const result = await threadedEngine.engineCall(
+          play ? "cnc_port_real_engine_play_movie" : "cnc_port_real_engine_stop_movie",
+          "string",
+          play ? ["string"] : [],
+          play ? [String(payload.name ?? "VSSmall")] : [],
+          { timeoutMs: 120000 },
+        );
+        return {
+          ok: result?.ok === true,
+          command,
+          result,
+          binkVideo: harnessState.binkVideo ?? null,
+          threaded: true,
+        };
       } catch (error) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
@@ -5419,6 +5472,16 @@ async function loadWasmModule() {
         "string",
         ["number", "number"],
       ),
+        realEnginePlayMovie: module.cwrap(
+        "cnc_port_real_engine_play_movie",
+        "string",
+        ["string"],
+      ),
+      realEngineStopMovie: module.cwrap(
+        "cnc_port_real_engine_stop_movie",
+        "string",
+        [],
+      ),
       queryDrawables: module.cwrap(
         "cnc_port_query_drawables",
         "string",
@@ -5820,6 +5883,8 @@ function snapshotState() {
     moduleFactoryRuntime: harnessState.moduleFactoryRuntime,
     particleSystemRuntime: harnessState.particleSystemRuntime,
     audioRuntimeAssets: harnessState.audioRuntimeAssets,
+    binkVideoAssets: harnessState.binkVideoAssets,
+    binkVideo: harnessState.binkVideo,
     browserAudioRuntime: summarizeBrowserAudioRuntime(),
     browserAudioMixerRuntime: summarizeBrowserAudioMixerRuntime(),
     browserMssSamplePlaybackRuntime: summarizeBrowserMssSamplePlaybackRuntime(),
@@ -10391,6 +10456,70 @@ async function registerOpfsInterceptPrefix(prefix) {
   return { ok: true };
 }
 
+const BINK_RUNTIME_FILES = [
+  {
+    name: "GC_Background.bik",
+    url: new URL("../artifacts/real-assets/GC_Background.bik", import.meta.url).href,
+    enginePath: "Data/English/Movies/GC_Background.bik",
+  },
+  {
+    name: "GC_Background.bik (generic)",
+    url: new URL("../artifacts/real-assets/GC_Background.bik", import.meta.url).href,
+    enginePath: "Data/Movies/GC_Background.bik",
+  },
+  {
+    name: "VS_small.bik",
+    url: new URL("../artifacts/real-assets/VS_small.bik", import.meta.url).href,
+    enginePath: "Data/English/Movies/VS_small.bik",
+  },
+  {
+    name: "VS_small.bik (generic)",
+    url: new URL("../artifacts/real-assets/VS_small.bik", import.meta.url).href,
+    enginePath: "Data/Movies/VS_small.bik",
+  },
+  {
+    name: "bink-browser-video-manifest.json",
+    url: new URL(
+      "../artifacts/browser-video/bink/bink-browser-video-manifest.json",
+      import.meta.url,
+    ).href,
+    enginePath: "artifacts/browser-video/bink/bink-browser-video-manifest.json",
+  },
+];
+
+async function stageBinkRuntimeFiles(wasmModule, namespace, baseDirectory, stageMap) {
+  const files = [];
+  for (const file of BINK_RUNTIME_FILES) {
+    const enginePath = `${baseDirectory}/${file.enginePath}`;
+    const opfsPath = opfsPathForArchive(namespace, enginePath);
+    try {
+      const { bytesWritten } = await fetchArchiveToOpfsOffThread(file.url, opfsPath);
+      ensureMemfsDirectory(wasmModule.fs, parentDirectory(enginePath));
+      wasmModule.fs.writeFile(enginePath, new Uint8Array(0));
+      stageMap[enginePath] = opfsPath;
+      files.push({ ...file, enginePath, opfsPath, bytes: bytesWritten, ok: bytesWritten > 0 });
+    } catch (error) {
+      files.push({
+        ...file,
+        enginePath,
+        opfsPath,
+        bytes: 0,
+        ok: false,
+        error: error?.message ?? String(error),
+      });
+    }
+  }
+  harnessState.binkVideoAssets = {
+    ready: files.every((file) => file.ok),
+    files,
+  };
+  recordLog("Bink runtime files staged", {
+    ready: harnessState.binkVideoAssets.ready,
+    files: files.map((file) => ({ name: file.name, ok: file.ok, bytes: file.bytes })),
+  });
+  return files;
+}
+
 async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirectory) {
   const emitProgressEvents = payload.progressEvents !== false;
   const parsedArchives = archiveInputs.map((input) => archivePathFromPayload(input, baseDirectory));
@@ -10503,6 +10632,8 @@ async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirec
       bytesMatch: result.bytesWritten === expectedBytes,
     });
   }
+
+  await stageBinkRuntimeFiles(wasmModule, namespace, baseDirectory, stageMap);
 
   const prefix = baseDirectory.endsWith("/") ? baseDirectory : `${baseDirectory}/`;
   const registered = await registerOpfsInterceptPrefix(prefix);
@@ -10650,6 +10781,10 @@ async function mountPreparedArchives(payload = {}) {
       opfsPath,
     });
   }
+
+  const binkNamespace = `ns-${opfsBootId}-video-${++opfsMountSequence}`;
+  await acquireOpfsNamespaceLock();
+  await stageBinkRuntimeFiles(moduleResult.wasmModule, binkNamespace, baseDirectory, stageMap);
 
   if (installedRootName) await acquireOpfsInstallLock(installedRootName);
 
@@ -11722,6 +11857,22 @@ async function rpc(command, payload = {}) {
           browserMssStreamPlaybackRuntime: summarizeBrowserMssStreamPlaybackRuntime(),
           state: snapshotState(),
         };
+      }
+    case "realEnginePlayMovie":
+    case "realEngineStopMovie":
+      {
+        const moduleResult = await getWasmModuleForArchives(command);
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        try {
+          const result = JSON.parse(command === "realEnginePlayMovie"
+            ? moduleResult.wasmModule.realEnginePlayMovie(String(payload.name ?? "VSSmall"))
+            : moduleResult.wasmModule.realEngineStopMovie());
+          return { ok: result?.ok === true, command, result, state: snapshotState() };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
       }
     case "queryDrawables":
       {

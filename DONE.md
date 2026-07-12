@@ -10721,6 +10721,24 @@ mitigation track. Items resolved or retired by the pivot:
 
 ## M8 — Video (Bink → WebCodecs)
 
+- [x] Re-target the production threaded Bink path to browser video sidecars.
+      The play-page mount now stages the user-extracted `GC_Background.bik` and
+      `VS_small.bik` payloads at both original localized and generic paths plus
+      their generated WebM manifest in OPFS. The Bink provider reads those
+      files through the established synchronous OPFS fd seam, keeps original
+      `BinkVideoPlayer`/`Display` ownership, and synchronizes its frame cursor
+      to a main-realm `<video>` media clock. `engine_realm_boot.mjs` caches
+      transferred BGRA frames for synchronous `BinkCopyToBuffer` calls and
+      converts all original surface formats (BGR24, X8R8G8B8/BGRA, RGB555,
+      RGB565); late frames cannot resurrect closed handles. Browser volume and
+      seek events remain attached to the original Bink calls. The existing
+      threaded play gate now calls original `Display::playMovie("VSSmall")`,
+      requires multiple browser-decoded worker copies, captures the real W3D
+      viewport, stops through `Display::stopMovie`, and checks clean decoder
+      and worker teardown. The 2026-07-12 local run copied three RGB565 frames
+      with zero misses and captured the gold `VS_small` movie frame. Natural
+      full campaign/InGameUI coverage and complete Bink/audio synchronization
+      remain tracked in `TODO.md`.
 - Added `verify:bink-video-device-frontier` (`WebAssembly/tools/verify_bink_video_device_frontier.mjs`), a source-only frontier verifier that reads (never executes) the original Bink video device source/header, the wasm `shims/bink.h` declaration shim, and the wasm `CMakeLists.txt` compile frontier target. It pins the current original Bink video device frontier as exact source lines: `BinkVideoPlayer::init` (128) calls `VideoPlayer::init()` (131) then `initializeBinkWithMiles()` (133); `deinit` (140) calls `releaseHandleForBink()` (142) then `VideoPlayer::deinit()` (143); `open` (221) uses `BinkOpen` on the mod (233), localized (243), and fallback (249) paths then `createStream`; `createStream` (187) sets `m_handle` (200) and `BinkSetVolume` (210); `initializeBinkWithMiles` (283) calls `getHandleForBink` (286), `BinkSoundUseDirectSound` (290), and `BinkSetSoundTrack` (294); the `BinkVideoStream` destructor closes the handle via `BinkClose` (316); and `update`/`isFrameReady`/`frameDecompress`/`frameRender`/`frameNext`/`frameGoto`/`height`/`width`/`frameIndex`/`frameCount` map to `BinkWait`/`BinkDoFrame`/`BinkCopyToBuffer`/`BinkNextFrame`/`BinkGoto`/handle `Height`/`Width`/`FrameNum`/`Frames` fields. It also pins the header declarations and the declarations-only `shims/bink.h` contract, and emits JSON `{ ok, errors, sources, facts }`, exiting nonzero on any missing/moved hard fact. Runtime WebCodecs/`<video>` decode, frame upload, and audio sync remain open.
 - Added `inventory:bink-video-payloads` (`WebAssembly/tools/inventory_bink_video_payloads.mjs`), a source/data inventory preflight for shipped Bink video payloads. It reuses the existing BIGF directory-reading style from `inventory_startup_archives.mjs` / `inventory_audio_payloads.mjs`, indexes the current runtime BIG set plus any loose `.bik` files already present under the assets dir, sniffs a small header prefix from each entry, and classifies the leading signature (classic `BIK` or Bink 2 `KB2`) without decoding video. It emits JSON `{ ok, source, assetsDir, archiveCount, bigEntryCount, videoEntryCount, bikInBigCount, looseBikCount, byArchive, entries, looseBikFiles, dataCab, looseBikExtractionRequired, archives, errors, note }`, fails nonzero when archives cannot be read, and under `--expect-current-zh` pins the actually observed data: zero `.bik` entries inside the current Zero Hour runtime BIGs, and the assets dir in one of two honest loose-file states for the disc cabinet `Data1.cab` payloads (`GC_Background.bik` / `VS_small.bik`) — either not-yet-extracted (zero loose `.bik`, `looseBikExtractionRequired` true) or extracted (exactly those two loose `.bik` files with BIK/KB2 signatures). The runtime BIG set has no `.bik` entries and the disc cabinet is the only shipped Bink source, so loose Bink extraction is the prerequisite for any playback work. Runtime playback items in `TODO.md` M8 remain open.
 - [x] Preserve the shipped loose Bink payloads during runtime archive

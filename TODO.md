@@ -803,11 +803,6 @@ DONE.md with reasons.
       summaries) still read the MAIN scratch executor or answer
       explicit-unsupported — route worker-side equivalents through the
       `textureInventory`-style realm commands when a probe needs them;
-      (c-remainder) Bink hooks are installed in NEITHER realm on the play
-      path (movies cleanly skip via the provider's absent-hook path — parity
-      proven by the gate's menu-reached check); when a real movie-playback
-      consumer lands main-side (browser-video manifest + WebCodecs sidecar),
-      install matching forwarders in engine_realm_boot.mjs;
       (e-remainder) issue-recorder deep capture's direct `window.__cnc*`
       globals (`__cncSetDiagLevel`, `__cncD3D8PerfSummary`,
       `__cncSetD3D8SceneDrawHistoryLimit`) touch the main scratch executor in
@@ -3229,8 +3224,6 @@ residue and the next frontier.
 
 ## M8 — Video (Bink → WebCodecs)
 
-- [ ] Re-target `VideoDevice/Bink` (`BinkVideoPlayer`/`VideoStream`) to WebCodecs
-      or `<video>`.
 - [ ] Extend the current browser Bink provider from real-file open/header parsing
       and frame-cursor lifecycle to actual decoded frame copy/upload through
       WebCodecs or a deliberate decoder path; `test:bink-video-provider` now
@@ -3306,6 +3299,14 @@ residue and the next frontier.
       `InGameUI::freeMessageResources`, transition-handler calls, production
       `SkirmishBattleHonors` persistence, and real `GameLODManager` singleton
       ownership), and Bink/audio sync drive the same video surface.
+- [ ] Repair the final generic D3D draw in
+      `test:bink-w3d-video-presentation-browser`. Two isolated 2026-07-12 runs
+      passed every Bink-specific case through the 551-presentation Challenge
+      flow, then the smoke's trailing generic `W3DDisplay` draw consumed
+      corrupted render-state values and rendered black. The production
+      threaded movie gate is green, so keep this scoped to the focused smoke's
+      post-video state/lifetime corruption unless a real runtime reproduction
+      appears.
 - [ ] Promote the provider-owned WebM sidecar manifest metadata into the
       original `BinkVideoPlayer` runtime path: connect a browser video
       presentation handle to `BinkVideoStream` open/play/seek/frame progression
