@@ -187,6 +187,9 @@ try {
   await page.goto(harnessUrl.href, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
   await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
+  // This smoke deliberately reads D3D8 resolve/draw counters while otherwise
+  // using lite rendering diagnostics.
+  await page.evaluate(() => window.__cncSetD3D8PerfCounters?.(true));
   await page.evaluate(() => window.__cncSetD3D8SceneDrawHistoryLimit?.(4096));
 
   const mount = await rpc(page, "mountArchives", {

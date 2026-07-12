@@ -1169,6 +1169,18 @@ symptom is temporal — NOT a single still.
       stability profiling MUST inject synthetic 60Hz pointermove + live
       combat audio during measured passes or it will keep missing
       input/audio-correlated GC dips.
+      2026-07-12: the lite D3D8 executor now decodes native clip-plane,
+      material, and light payloads only when the active render state can reach
+      the shader, shares immutable disabled-state objects, and reuses fixed
+      typed-array scratch storage for light uniform uploads. An RTX 4080
+      Vulkan/ANGLE 600-frame production-style A/B (`realEngineFrameTick`, no
+      per-draw producer timing) skipped 79.05 clip payloads, 44.39 material
+      payloads, and 44.39 eight-light payloads per frame. Versus the unchanged
+      executor, engine frame time moved avg 7.59 → 6.87 ms, median 7.4 → 6.8,
+      p95 10.0 → 9.0, p99 11.9 → 10.4, and max 14.4 → 12.4; end-to-end RPC
+      wall time moved avg 11.46 → 10.72 ms and p95 15.29 → 14.51. Keep this
+      item open for combat/input/audio-correlated GC tracing and the structural
+      command buffer.
 - [ ] **GPU-process command volume is THE frame-rate cap (2026-07-09 play-trace
       finding)** — a 286s Chrome trace of real play on the Mac (Metal) showed
       the Chrome GPU process 90-98% busy for the entire match (~22ms
@@ -3797,6 +3809,27 @@ and then start with the PROFILE, not with any individual fix.
       payload object allocation, but the TODO stays open for remaining derived
       state objects, material/light/clip arrays, broader zero-copy / command
       buffering, and DevTools memory proof of reduced GC frequency.
+      2026-07-12: unused material/light/clip payload graphs are now skipped on
+      derived-cache misses in lite gameplay, disabled clip/light state shares
+      immutable fallbacks, and fixed-light uniform flattening reuses typed
+      scratch arrays. RTX 4080 shell-map measurement skipped all 79.05
+      clip-plane payload decodes plus 44.39 material and 44.39 eight-light
+      decodes per frame; active skirmish after 1200 AI frames skipped 73.33,
+      35.33, and 35.33 per frame respectively while retaining full state in
+      diagnostic mode. The broader TODO stays open for remaining render-state
+      objects, command buffering, and a DevTools memory/GC proof.
+      2026-07-12: a follow-up removed per-state callback closures, composite
+      state-key strings, per-draw no-op profiling closures, and the full
+      diagnostic applied-state object graph from lite gameplay. Two RTX 4080
+      shell-map runs averaged 2.1% lower wall time and 3.7% lower engine time,
+      with wall p95/p99 down 3.8%/3.9% and engine p99 down 15.1%. Full
+      diagnostics retain the complete state graph and warning/counter paths.
+      A subsequent isolated pass flattened the remaining lite uniform state
+      and replaced the per-rebuild base-uniform array/string key with a fixed
+      exact snapshot. Across three final retained-state runs versus the fresh
+      RTX baseline, wall/engine averages improved 3.2%/4.6% and wall/engine
+      p99 improved 5.0%/7.7%. Exact stage and alpha/fog snapshots were rejected
+      because their small average gain worsened p95/p99.
       Verify future work with p95/p99 frame time + a DevTools memory timeline.
       (by Claude)
 - [ ] **Optimize the real `HeightMap.render.tilePasses` bucket, not terrain
