@@ -1099,6 +1099,15 @@ function createThreadedEngineController() {
           window.dispatchEvent(new CustomEvent("cncport:threadedlooperror", { detail: msg }));
         } catch (_error) { /* no DOM event support */ }
         return;
+      case "quitRequested":
+        threadedLog("original engine requested runtime exit", {
+          logicFrame: msg.logicFrame ?? null,
+          clientFrame: msg.clientFrame ?? null,
+        });
+        try {
+          window.dispatchEvent(new CustomEvent("cncport:runtimequit", { detail: msg }));
+        } catch (_error) { /* no DOM event support */ }
+        return;
       case "tickError":
         threadedLog("engine tick error", { error: msg.error });
         return;

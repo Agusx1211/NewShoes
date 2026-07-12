@@ -1182,6 +1182,11 @@ window.ZeroHRuntime = {
   get closing() { return runtimeClosing; },
 };
 
+window.addEventListener("cncport:runtimequit", () => {
+  if (!runtimeStarted || runtimeClosing || runtimeClosed) return;
+  void exitToDesktop();
+});
+
 window.addEventListener("keydown", (event) => {
   if (!gameRunning || !event.ctrlKey || !event.altKey || event.key !== "Escape") return;
   event.preventDefault();

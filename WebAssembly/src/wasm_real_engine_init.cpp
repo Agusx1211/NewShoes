@@ -5449,6 +5449,13 @@ void run_real_engine_frames(int frame_count)
 	reset_frame_texture_diagnostics();
 	if (g_state.attempted && g_state.init_returned && TheGameEngine != NULL) {
 		for (int frame = 0; frame < frame_count; ++frame) {
+			// GameEngine::execute() owns the native lifetime contract: once an
+			// original UI callback sets m_quitting, it returns without another
+			// update. The browser drives update() one frame at a time, so preserve
+			// that guard here instead of drawing an empty post-quit world forever.
+			if (TheGameEngine->getQuitting() != FALSE) {
+				break;
+			}
 			++g_frame_state.frames_attempted;
 			const double frame_started_at = emscripten_get_now();
 			reset_engine_frame_profile();

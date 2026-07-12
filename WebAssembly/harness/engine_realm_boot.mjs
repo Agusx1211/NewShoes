@@ -699,6 +699,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     engineFrameTimes: [], // rolling real-engine update durations (ms)
     presentationFrameTimes: [], // rolling intervals between presented client frames (ms)
     pacingSamples: [], // last ~900 {t, logic} for pacing-evenness probes
+    quitRequested: false,
   };
   let framePacedFn = null;
 
@@ -733,6 +734,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     loop.engineFrameTimes.length = 0;
     loop.presentationFrameTimes.length = 0;
     loop.pacingSamples.length = 0;
+    loop.quitRequested = false;
     respond({ cmd: "startLoopResult", id: msg.id, ok: true, pacing, clientFps, logicFps });
   }
 
@@ -781,6 +783,9 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         for (let i = 0; i < logicToRun; i += 1) {
           result = parseMaybeJson(framePacedFn(1));
           loop.logicFrames += 1;
+          if (result?.quitting === true) {
+            break;
+          }
         }
       }
     } catch (error) {
@@ -817,6 +822,21 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     if (loop.pacingSamples.length > 900) {
       loop.pacingSamples.splice(0, loop.pacingSamples.length - 900);
     }
+    if (result.quitting === true) {
+      loop.active = false;
+      if (!loop.quitRequested) {
+        loop.quitRequested = true;
+        recordLog("original engine requested runtime exit", {
+          logicFrame: result.logicFrame,
+          clientFrame: result.clientFrame,
+        });
+        postToMain({
+          cmd: "quitRequested",
+          logicFrame: result.logicFrame,
+          clientFrame: result.clientFrame,
+        });
+      }
+    }
   }
 
   // ---- periodic status --------------------------------------------------------
@@ -848,6 +868,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         startedAt: loop.startedAt,
         clientFrames: loop.clientFrames,
         logicFrames: loop.logicFrames,
+        quitRequested: loop.quitRequested,
       },
       timing: {
         engineFrameMs: loop.engineFrameTimes.slice(),
