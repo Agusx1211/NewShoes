@@ -394,6 +394,17 @@ NetCommandRef * Connection::processAck(UnsignedShort commandID, UnsignedByte ori
 }
 
 void Connection::setFrameGrouping(time_t frameGrouping) {
+#ifdef __EMSCRIPTEN__
+	// The retail grouping interval assumes an lossy native UDP path and can grow
+	// to half the entire run-ahead window. On a reliable ordered DataChannel that
+	// delays frame-info and ACK traffic long enough to inflate the next latency
+	// estimate, creating a self-reinforcing batching loop. Keep browser sends to
+	// at most one 30 Hz logic tick; native behavior remains byte-for-byte intact.
+	const time_t browserFrameGroupingCap = 1000 / 30;
+	if (frameGrouping > browserFrameGroupingCap) {
+		frameGrouping = browserFrameGroupingCap;
+	}
+#endif
 	m_frameGrouping = frameGrouping;
 //	m_retryTime = frameGrouping * 4;
 }

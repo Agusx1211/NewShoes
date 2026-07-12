@@ -600,7 +600,7 @@ function assertGameNetworkProbe(state, label) {
 
   if (!probe.commandIds?.ok
       || probe.commandIds.maxFramesAhead !== 128
-      || probe.commandIds.minRunAhead !== 10
+      || probe.commandIds.minRunAhead !== 4
       || probe.commandIds.frameDataLength !== 258
       || probe.commandIds.framesToKeep !== 65) {
     throw new Error(`${label} GameNetwork command-id constants changed: ${JSON.stringify(probe)}`);

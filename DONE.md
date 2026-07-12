@@ -11640,6 +11640,38 @@ mitigation track. Items resolved or retired by the pivot:
       run with no dropped datagrams or CRC mismatch. A four-client threaded run
       also formed all six peer links and started four original `Network`
       instances before the memory-constrained SwiftShader host timed out.
+- [x] Fix periodic threaded WebRTC lockstep freezes caused by cross-port packet
+      loss. LANAPI port 8086 and game port 8088 still share the bounded worker
+      ring, but a per-port demultiplexer now defers mismatched datagrams instead
+      of destructively discarding them, preserves FIFO order per port, expires
+      stale lobby traffic explicitly, and records every drop. Reverse-poll-order
+      unit coverage proves interleaved lobby/game datagrams reach their intended
+      consumers, while the threaded match gate accounts every received 8088
+      trace through the engine. Paired captures showed the old bridge lost
+      23/317 and 16/198 active-game packets despite a healthy 3-7 ms ICE path;
+      two-machine manual testing confirmed the multi-second freezes and lag are
+      gone. Verified with `test:issue-recorder`, the diagnostics unit, a fresh
+      threaded release build, and the live two-machine match.
+- [x] Remove the browser-only lockstep batching feedback loop without changing
+      native timing. Emscripten connections cap frame grouping to one 30 Hz
+      logic tick (33 ms) and use the modern four-frame minimum run-ahead while
+      retaining original commands, ACKs, retries, and adaptation. The core
+      smoke pins both browser values; the threaded match adds CRC, grouping,
+      stall, logic-rate, and unexplained bridge-loss soak gates. SwiftShader is
+      unsuitable for the 28 FPS gate, but real two-machine LAN testing confirmed
+      smooth play after the change.
+- [x] Give browser multiplayer one consistent default identity and late-join
+      discovery contract. Fresh/migrated installs start in `default-room` with
+      a persisted funny commander name drawn from over 1.7 billion combinations
+      within the original 12-byte LAN limit; that identity reaches original
+      `LANPreferences`, so Settings, Trystero metadata, and the LAN lobby agree.
+      Production discovery now uses Trystero's maintained Nostr pool with
+      eight-way redundancy instead of a stale hardcoded five-relay list. A real
+      public-relay browser run held one peer alone for 12 seconds, then proved
+      late discovery, an ordered DataChannel, and byte-identical game transport;
+      the deterministic relay remains test-only. Verified with
+      `test:multiplayer-identity`, the launcher persistence browser check, and
+      deterministic/public late-join transport runs.
 - [x] Add opt-in, full-fidelity multiplayer diagnostics to issue dumps. The
       Game & Display diagnostics toggle now records every encrypted original
       Generals datagram with microsecond timestamps and complete payload hex,

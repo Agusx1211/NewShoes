@@ -12,6 +12,12 @@ import {
   runRuntimeShutdownSequence,
   runtimeShutdownWarning,
 } from "./runtime-shutdown-sequence.mjs";
+import {
+  generateCommanderName,
+  loadOrCreateNetworkSettings,
+  normalizeCommanderName,
+  saveNetworkSettings as persistNetworkSettings,
+} from "./multiplayer_identity.mjs";
 
 const analytics = window.ZeroHAnalytics;
 const track = (name, params) => analytics?.track(name, params);
@@ -43,8 +49,13 @@ const networkIceUsernameNode = document.querySelector("#networkIceUsername");
 const networkIceCredentialNode = document.querySelector("#networkIceCredential");
 const networkStatusNode = document.querySelector("#networkStatus");
 const networkDiagnosticsToggleNode = document.querySelector("#networkDiagnosticsToggle");
-const NETWORK_SETTINGS_KEY = "cncPortNetworkSettings.v1";
 const NETWORK_DIAGNOSTICS_SETTINGS_KEY = "cncPortNetworkDiagnosticsEnabled.v1";
+let networkStorage = null;
+try {
+  networkStorage = window.localStorage;
+} catch {
+  // Privacy settings can make the localStorage property itself throw.
+}
 
 function loadNetworkDiagnosticsEnabled() {
   const queryValue = queryParams.get("networkDiagnostics");
@@ -76,25 +87,22 @@ function setNetworkDiagnosticsEnabled(enabled, reason = "settings") {
 }
 
 function loadNetworkSettings() {
-  let stored = {};
-  try {
-    stored = JSON.parse(window.localStorage?.getItem(NETWORK_SETTINGS_KEY) ?? "{}") ?? {};
-  } catch {
-    stored = {};
-  }
+  const stored = loadOrCreateNetworkSettings({
+    storage: networkStorage,
+    queryParams,
+  });
   return {
-    room: queryParams.get("room") ?? stored.room ?? "",
-    name: queryParams.get("peer") ?? stored.name ?? "",
-    iceServerUrl: queryParams.get("ice") ?? stored.iceServerUrl ?? "",
-    iceUsername: queryParams.get("iceUser") ?? stored.iceUsername ?? "",
+    ...stored,
     iceCredential: "",
   };
 }
 
 function networkSettingsFromInputs() {
+  const name = normalizeCommanderName(networkNameNode?.value) || generateCommanderName();
+  if (networkNameNode && networkNameNode.value !== name) networkNameNode.value = name;
   return {
     room: networkRoomNode?.value.trim() ?? "",
-    name: networkNameNode?.value.trim() ?? "",
+    name,
     iceServerUrl: networkStunNode?.value.trim() ?? "",
     iceUsername: networkIceUsernameNode?.value ?? "",
     iceCredential: networkIceCredentialNode?.value ?? "",
@@ -119,12 +127,7 @@ function updateNetworkDraftStatus() {
 }
 
 function saveNetworkSettings(settings) {
-  try {
-    const { iceCredential: _ephemeralCredential, ...persisted } = settings;
-    window.localStorage?.setItem(NETWORK_SETTINGS_KEY, JSON.stringify(persisted));
-  } catch {
-    // Storage is optional; the current launch still uses the entered values.
-  }
+  persistNetworkSettings(networkStorage, settings);
 }
 
 initializeNetworkSettings();
@@ -938,6 +941,7 @@ async function start() {
         runDirectory: "/assets/real-init",
         shellMap,
         stepped: steppedInit,
+        commanderName: networkSettings.name,
         bootWidth: bootResolution?.width,
         bootHeight: bootResolution?.height,
       });

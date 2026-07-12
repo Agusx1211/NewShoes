@@ -1343,6 +1343,7 @@ function createThreadedEngineController() {
         bootWidth: payload.bootWidth,
         bootHeight: payload.bootHeight,
         stepBudgetMs: payload.stepBudgetMs,
+        commanderName: payload.commanderName,
       }, {
         // SwiftShader full boots take minutes; each init slice posts progress
         // which re-arms this deadline, so a genuine hang is what times out.
@@ -2802,6 +2803,7 @@ async function connectBrowserWebRtcUdpEndpoint({
           networkDiagnostics.recordEvent("bridge.incoming.dropped", {
             traceId: `in-${datagram.bridgeSequence ?? 0}`,
             byteLength: datagram.bytes?.byteLength ?? 0,
+            destinationPort: datagram.destinationPort,
             queueCount: sharedUdpRingCount(threadedUdpBridge.incoming),
             dropped: sharedUdpRingDropped(threadedUdpBridge.incoming),
           });
@@ -5428,6 +5430,11 @@ async function loadWasmModule() {
       realEngineInitBegin: module.cwrap("cnc_port_real_engine_init_begin", "string", ["string", "number"]),
       realEngineInitStep: module.cwrap("cnc_port_real_engine_init_step", "string", ["number"]),
       realEngineFrontier: module.cwrap("cnc_port_real_engine_frontier", "string", []),
+      realEngineSetCommanderName: module.cwrap(
+        "cnc_port_real_engine_set_commander_name",
+        "string",
+        ["string"],
+      ),
       mapCacheProbe: module.cwrap("cnc_port_map_cache_probe", "string", []),
       realEngineSetSkirmishMap: module.cwrap(
         "cnc_port_real_engine_set_skirmish_map",
@@ -10202,6 +10209,13 @@ async function realEngineInit(payload = {}) {
   if (bootWidth >= 640 && bootHeight >= 480
       && typeof wasmModule.realEngineSetBootResolution === "function") {
     wasmModule.realEngineSetBootResolution(bootWidth, bootHeight);
+  }
+  const commanderName = String(payload.commanderName ?? "");
+  if (commanderName && typeof wasmModule.realEngineSetCommanderName === "function") {
+    const identity = JSON.parse(wasmModule.realEngineSetCommanderName(commanderName));
+    if (identity?.ok !== true) {
+      return { ok: false, command: "realEngineInit", error: "commander identity rejected" };
+    }
   }
   const useStepped = payload.stepped === true
     && typeof wasmModule.realEngineInitBegin === "function"

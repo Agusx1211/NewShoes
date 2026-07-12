@@ -69,6 +69,12 @@ char *LANnextScreen = NULL;
 static Int	initialGadgetDelay = 2;
 static Bool justEntered = FALSE;
 
+#ifdef __EMSCRIPTEN__
+// The browser launcher owns one persisted commander identity. Keep the
+// original Network.ini behavior as the native/default fallback, but let the
+// browser supply that same identity to the original LAN lobby UI.
+extern "C" const char *cnc_port_browser_commander_name(void) __attribute__((weak));
+#endif
 
 
 LANPreferences::LANPreferences( void )
@@ -84,6 +90,17 @@ LANPreferences::~LANPreferences()
 UnicodeString LANPreferences::getUserName(void)
 {
 	UnicodeString ret;
+#ifdef __EMSCRIPTEN__
+	if (cnc_port_browser_commander_name != NULL)
+	{
+		const char *browserName = cnc_port_browser_commander_name();
+		if (browserName != NULL && browserName[0] != '\0')
+		{
+			ret.translate(AsciiString(browserName));
+			return ret;
+		}
+	}
+#endif
 	LANPreferences::const_iterator it = find("UserName");
 	if (it == end())
 	{

@@ -5,18 +5,11 @@ const FRAME_HEADER_BYTES = 16;
 const BROADCAST_IP = 0xffffffff;
 const MAX_BUFFERED_BYTES = 1024 * 1024;
 const MAX_ROOM_PEERS = 8;
+const DEFAULT_RELAY_REDUNDANCY = 8;
 const TRYSTERO_APP_ID = "project-new-shoes-lan-v1";
 const TRANSPORT_VERSION = 1;
 const DATA_CHANNEL_LABEL = "cnc-udp-v1";
 const DATA_CHANNEL_PROTOCOL = "cnc-generals-udp-v1";
-const PUBLIC_NOSTR_RELAYS = Object.freeze([
-  "wss://nos.lol",
-  "wss://relay.primal.net",
-  "wss://relay.damus.io",
-  "wss://nostr.wine",
-  "wss://relay.sigit.io",
-]);
-
 function normalizedBytes(value) {
   if (value instanceof Uint8Array) return value;
   if (value instanceof ArrayBuffer) return new Uint8Array(value);
@@ -155,9 +148,13 @@ export class WebRtcUdpEndpoint {
     this.displayName = cleanLabel(displayName, this.requestedPeerId);
     this.localIp = virtualIpForTrysteroPeer(selfId);
     this.iceServers = Array.isArray(iceServers) ? iceServers : [];
+    // Let Trystero maintain the production relay pool. Pinning five public
+    // endpoints made discovery fail as those services changed policy or went
+    // offline. Explicit relayUrls remain available for deterministic tests or
+    // self-hosting; otherwise connect redundantly to Trystero's current pool.
     this.relayUrls = relayUrls
       ? [...new Set(relayUrls.map((url) => String(url).trim()))]
-      : [...PUBLIC_NOSTR_RELAYS];
+      : null;
     this.onDatagram = onDatagram;
     this.onStateChange = onStateChange;
     this.onDiagnostic = onDiagnostic;
@@ -400,7 +397,9 @@ export class WebRtcUdpEndpoint {
   async connect(timeoutMs = 20000) {
     if (this.discoveryRoom) return this.snapshot();
     this.closed = false;
-    const relayConfig = { urls: this.relayUrls, redundancy: this.relayUrls.length };
+    const relayConfig = this.relayUrls
+      ? { urls: this.relayUrls }
+      : { redundancy: DEFAULT_RELAY_REDUNDANCY };
     this.discoveryRoom = joinRoom({
       appId: TRYSTERO_APP_ID,
       relayConfig,
@@ -419,7 +418,8 @@ export class WebRtcUdpEndpoint {
     this.discoveryRoom.onPeerJoin = (peerId) => this.addPeer(peerId);
     this.discoveryRoom.onPeerLeave = (peerId) => this.removePeer(peerId);
     this.emitDiagnostic({ kind: "event", type: "discovery.connect", detail: {
-      relayCount: this.relayUrls.length,
+      relayCount: this.relayUrls?.length ?? DEFAULT_RELAY_REDUNDANCY,
+      relaySource: this.relayUrls ? "configured" : "trystero-defaults",
       iceServerCount: this.iceServers.length,
     } });
     return this.waitForDiscoveryRelay(timeoutMs);

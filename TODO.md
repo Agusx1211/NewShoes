@@ -3524,30 +3524,6 @@ residue and the next frontier.
 
 ## M9 — Networking (GameSpy / LAN → WS/WebRTC)
 
-- [ ] Fix threaded WebRTC UDP receive demultiplexing before further latency
-      tuning. The paired July 2026 `webrtc-machine-dump-a/b` captures prove
-      that the nominated host-to-host ICE path is healthy (3-7 ms typical RTT,
-      zero WebRTC send discards), but `engine_realm_boot.mjs` destructively
-      dequeues and discards datagrams whose destination port differs from the
-      socket currently polling. With LANAPI (`8086`) and the in-match Network
-      (`8088`) sharing one ring, 23/317 and 16/198 active-game port-8088
-      datagrams were silently consumed by the wrong poller. Missing frame-info
-      packets return only through the original 2-second retry, producing 1-3 s
-      lockstep freezes and 12.7 actual logic FPS. Preserve unmatched datagrams
-      with a worker-side per-port backlog (or use per-port rings), record every
-      defer/drop explicitly, add interleaved reverse-poll-order ring coverage,
-      and gate a two-player soak on zero unexplained enqueue/dequeue loss.
-- [ ] Remove the browser multiplayer legacy packet-grouping latency feedback
-      loop after the cross-port receive loss above is fixed. A July 2026 LAN
-      capture used a nominated host-to-host UDP ICE pair (4 ms median RTT,
-      zero send discards), but original `ConnectionManager` batching produced
-      219 ms median inbound / 385 ms median outbound packet cadence,
-      0.34-1.18 s application ACK latency, and only 14.5-14.9 actual logic FPS
-      despite 60-62 rendered FPS. First A/B-test an Emscripten-only grouping
-      cap of one 30 Hz logic tick while retaining original commands and ACKs;
-      then evaluate the community-port `MIN_RUNAHEAD = 4` precedent and gate a
-      two-player soak at >=28 logic FPS with no CRC errors. Detailed packet,
-      RTC, cross-realm queue, and original lockstep diagnostics are now complete.
 - [ ] Harden the verified four-player WebRTC multiplayer path for
       unattended/public operation. UDP re-targeting and a full four-client
       threaded match are complete; the retained history below records the path

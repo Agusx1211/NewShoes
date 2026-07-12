@@ -30,6 +30,8 @@ const scripts = [
   "harness/launcher-os-shutdown.mjs",
   "harness/launcher-retail-presentation.mjs",
   "harness/launcher.js",
+  "harness/multiplayer_identity.mjs",
+  "harness/network-diagnostics.mjs",
   "harness/opfs_realm_files.mjs",
   "harness/pages_deployment_smoke.mjs",
   "harness/play.mjs",

@@ -14,6 +14,9 @@ const playerCount = Number.parseInt(process.env.CNC_MATCH_PLAYERS ?? "2", 10);
 const threadedTest = process.env.CNC_THREADED === "1";
 const allowWebGlContextLoss = process.env.CNC_ALLOW_WEBGL_CONTEXT_LOSS === "1";
 const captureNetworkDiagnostics = process.env.CNC_NETWORK_DIAGNOSTICS === "1";
+const soakMs = Number.parseInt(process.env.CNC_MATCH_SOAK_MS ?? "0", 10);
+const minimumLogicFps = Number.parseFloat(process.env.CNC_MIN_LOGIC_FPS ?? "0");
+const maximumLogicStallMs = Number.parseInt(process.env.CNC_MAX_LOGIC_STALL_MS ?? "0", 10);
 const maxAllowedLogicFrameSkew = threadedTest ? Math.max(6, playerCount - 1) : playerCount - 1;
 const maxAllowedFinalLogicFrameSkew = threadedTest ? 10 : maxAllowedLogicFrameSkew;
 const activeSampleInterval = threadedTest ? 5 : 30;
@@ -24,6 +27,11 @@ let parallelClientFrames = false;
 
 if (!Number.isInteger(playerCount) || playerCount < 2 || playerCount > 8) {
   throw new Error(`CNC_MATCH_PLAYERS must be between 2 and 8, received ${process.env.CNC_MATCH_PLAYERS}`);
+}
+if (!Number.isInteger(soakMs) || soakMs < 0
+    || !Number.isFinite(minimumLogicFps) || minimumLogicFps < 0
+    || !Number.isInteger(maximumLogicStallMs) || maximumLogicStallMs < 0) {
+  throw new Error("invalid multiplayer soak configuration");
 }
 
 const archiveSpecs = [
@@ -144,6 +152,32 @@ async function waitFor(label, read, predicate, timeoutMs = 30000, intervalMs = 2
   throw new Error(`${label} timed out: ${JSON.stringify(last)}`);
 }
 
+function networkGrouping(state) {
+  const network = state?.network;
+  return network?.slots?.filter((slot) => slot.slot !== network.localPlayerId
+    && slot.connectionQueue >= 0).map((slot) => slot.frameGroupingMs) ?? [];
+}
+
+function bridgePacketAccounting(diagnostics) {
+  const received = diagnostics?.packets?.filter((packet) => packet.direction === "receive"
+    && packet.destinationPort === 8088 && packet.outcome === "queued-for-engine") ?? [];
+  const dequeued = new Set((diagnostics?.events ?? [])
+    .filter((event) => event.type === "bridge.incoming.dequeued-by-engine")
+    .map((event) => event.detail?.traceId));
+  const explicitDrops = (diagnostics?.events ?? []).filter((event) =>
+    (event.type === "bridge.incoming.deferred-overflow"
+      || event.type === "bridge.incoming.deferred-expired"
+      || event.type === "bridge.incoming.capacity-drop"
+      || event.type === "bridge.incoming.dropped")
+      && event.detail?.destinationPort === 8088);
+  return {
+    received: received.length,
+    dequeued: received.filter((packet) => dequeued.has(packet.traceId)).length,
+    missing: received.filter((packet) => !dequeued.has(packet.traceId)).map((packet) => packet.traceId),
+    explicitDrops,
+  };
+}
+
 async function pumpLobby(clients) {
   await Promise.all(clients.map((client) => lanCommand(client, "update")));
   await allFrames(clients, 1);
@@ -182,7 +216,8 @@ async function createClient(browserOrContext, serverUrl, relayUrls, room, label,
       ignoreHTTPSErrors: process.env.CNC_IGNORE_HTTPS_ERRORS === "1",
     });
   const page = await context.newPage();
-  const client = { context, page, label, peerId, errors: [] };
+  const commanderName = peerId === "host" ? "SmokeHost" : `SmokeGuest${peerId.split("-").at(-1)}`;
+  const client = { context, page, label, peerId, commanderName, errors: [] };
   page.setDefaultTimeout(300000);
   page.setDefaultNavigationTimeout(300000);
   page.on("pageerror", (error) => client.errors.push(error?.message ?? String(error)));
@@ -218,7 +253,7 @@ async function createClient(browserOrContext, serverUrl, relayUrls, room, label,
   const connected = await rpc(client, "browserWebRtcEndpointConnect", {
     room,
     peerId,
-    displayName: label,
+    displayName: commanderName,
     iceServers: [],
     relayUrls: relayUrls.length ? relayUrls : null,
     timeoutMs: 30000,
@@ -230,6 +265,7 @@ async function createClient(browserOrContext, serverUrl, relayUrls, room, label,
     // The shell map is a full background match and makes two simultaneous
     // SwiftShader clients needlessly expensive before the LAN test begins.
     shellMap: false,
+    commanderName,
   });
   expect(init.ok === true && init.aborted === false && init.frontier?.initReturned === true,
     `${label} real engine init failed`, init.frontier ?? init);
@@ -310,8 +346,8 @@ try {
   console.error(`[lan-webrtc] ${playerCount} original LAN lobbies entered`);
   expect(new Set(lobbies.map((lobby) => lobby.localIp)).size === playerCount,
     "LAN clients did not receive unique virtual IPs", lobbies);
-  await Promise.all(clients.map((client, index) =>
-    lanCommand(client, "setName", `P${index + 1} WebRTC`)));
+  expect(lobbies.every((lobby, index) => lobby.localName === clients[index].commanderName),
+    "persisted browser commander identity did not reach the original LAN lobby", lobbies);
 
   const hostCreate = await lanCommand(host, "host", "Browser Match");
   expect(hostCreate.ok === true, "original LANAPI did not create the host game", hostCreate);
@@ -530,7 +566,57 @@ try {
       networks: finalStates.map((state) => state.network),
     });
 
+  let soak = null;
+  if (threadedTest && soakMs > 0) {
+    const startedAt = performance.now();
+    const initialStates = await Promise.all(clients.map((client) => lanState(client)));
+    const initialFrames = initialStates.map((state) => state.network?.logicFrame ?? 0);
+    const lastFrames = [...initialFrames];
+    const lastProgressAt = initialFrames.map(() => startedAt);
+    let peakStallMs = 0;
+    let soakStates = initialStates;
+    while (performance.now() - startedAt < soakMs) {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 200));
+      soakStates = await Promise.all(clients.map((client) => lanState(client)));
+      const now = performance.now();
+      soakStates.forEach((state, index) => {
+        const logicFrame = state.network?.logicFrame ?? lastFrames[index];
+        peakStallMs = Math.max(peakStallMs, now - lastProgressAt[index]);
+        if (logicFrame > lastFrames[index]) {
+          lastFrames[index] = logicFrame;
+          lastProgressAt[index] = now;
+        }
+      });
+    }
+    const elapsedMs = performance.now() - startedAt;
+    const finalFrames = soakStates.map((state) => state.network?.logicFrame ?? 0);
+    const logicFps = finalFrames.map((logicFrame, index) =>
+      (logicFrame - initialFrames[index]) * 1000 / elapsedMs);
+    const grouping = soakStates.map(networkGrouping);
+    soak = { elapsedMs, initialFrames, finalFrames, logicFps, peakStallMs, grouping };
+    expect(soakStates.every((state) => state.network?.crcMismatch === false)
+        && logicFps.every((fps) => fps >= minimumLogicFps)
+        && (maximumLogicStallMs === 0 || peakStallMs <= maximumLogicStallMs)
+        && grouping.every((values) => values.length === playerCount - 1
+          && values.every((value) => value >= 1 && value <= 33)),
+    "threaded multiplayer soak missed its logic-rate, stall, grouping, or CRC gate", soak);
+    console.error(`[lan-webrtc] soak ${elapsedMs.toFixed(0)}ms logic FPS=${logicFps
+      .map((fps) => fps.toFixed(2)).join(",")} peak stall=${peakStallMs.toFixed(0)}ms`);
+  }
+
   if (threadedTest) {
+    if (captureNetworkDiagnostics) {
+      await Promise.all(clients.map((client) => waitFor(
+        `${client.label} game packet bridge drain`,
+        () => client.page.evaluate(() => window.__cncNetworkDiagnosticsSnapshot?.()),
+        (diagnostics) => {
+          const accounting = bridgePacketAccounting(diagnostics);
+          return accounting.received > 0 && accounting.missing.length === 0;
+        },
+        5000,
+        100,
+      )));
+    }
     const stopped = await Promise.all(clients.map((client) => rpc(client, "threadedStopLoop")));
     expect(stopped.every((result) => result.ok === true),
       "threaded match loops did not stop cleanly", stopped);
@@ -562,15 +648,20 @@ try {
       window.__cncNetworkDiagnosticsSnapshot?.())))
     : null;
   if (captureNetworkDiagnostics) {
+    const bridgeAccounting = networkDiagnostics.map(bridgePacketAccounting);
     expect(networkDiagnostics.every((diagnostics) => diagnostics?.packets?.length > 0
         && diagnostics?.engineSamples?.some((sample) => sample.network?.network?.ready === true)
         && diagnostics?.rtcSamples?.length > 0
-        && diagnostics.complete === true),
+        && diagnostics.complete === true)
+        && bridgeAccounting.every((accounting) => accounting.received > 0
+          && accounting.missing.length === 0
+          && accounting.explicitDrops.length === 0),
     "threaded match diagnostics did not capture packets, RTC, and engine lockstep state",
     networkDiagnostics.map((diagnostics) => ({
       retained: diagnostics?.retained,
       complete: diagnostics?.complete,
       lastEngineSample: diagnostics?.engineSamples?.at(-1),
+      bridgeAccounting: bridgePacketAccounting(diagnostics),
     })));
   }
 
@@ -590,6 +681,7 @@ try {
     postActiveDriverTicks,
     requiredPostActiveLogicFrames,
     finalLogicFrameSkew,
+    soak,
     final: finalStates,
     endpoints: endpointStates.map((state) => state.runtime.endpoint),
     networkDiagnostics: networkDiagnostics?.map((diagnostics) => ({

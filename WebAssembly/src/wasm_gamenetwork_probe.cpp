@@ -1482,7 +1482,7 @@ bool probe_command_ids(GameNetworkProbeResult &result)
 		IsCommandSynchronized(NETCOMMANDTYPE_RUNAHEAD) &&
 		!IsCommandSynchronized(NETCOMMANDTYPE_CHAT) &&
 		result.max_frames_ahead == 128 &&
-		result.min_run_ahead == 10 &&
+		result.min_run_ahead == 4 &&
 		result.frame_data_length == 258 &&
 		result.frames_to_keep == 65;
 }

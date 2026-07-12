@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { NetworkDiagnosticsRecorder } from "./network-diagnostics.mjs";
 import {
+  createSharedUdpPortDemultiplexer,
   createSharedUdpRing,
   dequeueSharedUdpDatagram,
   enqueueSharedUdpDatagram,
@@ -54,5 +55,74 @@ const datagram = dequeueSharedUdpDatagram(ring);
 assert.deepEqual([...datagram.bytes], [9, 8, 7]);
 assert.equal(datagram.bridgeSequence, 42);
 assert.equal(datagram.bridgeQueuedAtUs, queuedAtUs);
+
+const multiplexedRing = createSharedUdpRing({ capacity: 8, maxBytes: 16 });
+const demultiplexEvents = [];
+const demultiplexer = createSharedUdpPortDemultiplexer(multiplexedRing, {
+  onEvent: (type, detail) => demultiplexEvents.push({ type, detail }),
+});
+for (const [bridgeSequence, destinationPort, value] of [
+  [1, 8086, 6],
+  [2, 8088, 8],
+  [3, 8086, 7],
+  [4, 8088, 9],
+]) {
+  assert.equal(enqueueSharedUdpDatagram(multiplexedRing, {
+    bytes: Uint8Array.of(value),
+    ip: 1,
+    port: destinationPort,
+    sourceIp: 2,
+    sourcePort: destinationPort,
+    destinationPort,
+    bridgeSequence,
+  }), true);
+}
+const gameOne = demultiplexer.receive({ capacity: 16, port: 8088 });
+const gameTwo = demultiplexer.receive({ capacity: 16, port: 8088 });
+const lobbyOne = demultiplexer.receive({ capacity: 16, port: 8086 });
+const lobbyTwo = demultiplexer.receive({ capacity: 16, port: 8086 });
+assert.deepEqual([gameOne.bridgeSequence, gameTwo.bridgeSequence], [2, 4]);
+assert.deepEqual([lobbyOne.bridgeSequence, lobbyTwo.bridgeSequence], [1, 3]);
+assert.deepEqual([...gameOne.bytes, ...gameTwo.bytes], [8, 9]);
+assert.deepEqual([...lobbyOne.bytes, ...lobbyTwo.bytes], [6, 7]);
+assert.equal(demultiplexer.receive({ capacity: 16, port: 8088 }), null);
+assert.deepEqual(demultiplexer.snapshot(), {
+  deferredCount: 0,
+  maxDeferred: 8,
+  maxDeferredAgeMs: 30000,
+  ports: [],
+});
+assert.deepEqual(demultiplexEvents.map((event) => [
+  event.type,
+  event.detail.bridgeSequence,
+  event.detail.destinationPort,
+]), [
+  ["bridge.incoming.deferred-for-port", 1, 8086],
+  ["bridge.incoming.deferred-for-port", 3, 8086],
+]);
+
+let demultiplexNow = 0;
+const expiringRing = createSharedUdpRing({ capacity: 2, maxBytes: 16 });
+const expirationEvents = [];
+const expiringDemultiplexer = createSharedUdpPortDemultiplexer(expiringRing, {
+  maxDeferredAgeMs: 100,
+  now: () => demultiplexNow,
+  onEvent: (type, detail) => expirationEvents.push({ type, detail }),
+});
+assert.equal(enqueueSharedUdpDatagram(expiringRing, {
+  bytes: Uint8Array.of(6),
+  ip: 1,
+  port: 8086,
+  sourceIp: 2,
+  sourcePort: 8086,
+  destinationPort: 8086,
+  bridgeSequence: 5,
+}), true);
+assert.equal(expiringDemultiplexer.receive({ capacity: 16, port: 8088 }), null);
+demultiplexNow = 100;
+assert.equal(expiringDemultiplexer.receive({ capacity: 16, port: 8088 }), null);
+assert.equal(expiringDemultiplexer.snapshot().deferredCount, 0);
+assert.equal(expirationEvents.at(-1).type, "bridge.incoming.deferred-expired");
+assert.equal(expirationEvents.at(-1).detail.traceId, "in-5");
 
 console.log("network diagnostics unit checks passed");

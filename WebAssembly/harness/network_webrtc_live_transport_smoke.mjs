@@ -11,6 +11,10 @@ const server = await startStaticServer({ root: wasmRoot });
 const publicDiscovery = process.env.CNC_TRYSTERO_PUBLIC === "1";
 const configuredRelayUrls = String(process.env.CNC_TRYSTERO_RELAYS ?? "")
   .split(",").map((url) => url.trim()).filter(Boolean);
+const lateJoinDelayMs = Number.parseInt(process.env.CNC_LATE_JOIN_DELAY_MS ?? "0", 10);
+if (!Number.isInteger(lateJoinDelayMs) || lateJoinDelayMs < 0) {
+  throw new Error("CNC_LATE_JOIN_DELAY_MS must be a non-negative integer");
+}
 let relayUrls = configuredRelayUrls;
 
 function expect(condition, message, payload) {
@@ -59,7 +63,7 @@ async function connectClient(client, room, peerId) {
 
 async function waitForPeer(client, peerId) {
   const result = await client.page.evaluate(() =>
-    window.CnCPort.rpc("browserWebRtcEndpointWaitForPeers", { count: 1, timeoutMs: 15000 }));
+    window.CnCPort.rpc("browserWebRtcEndpointWaitForPeers", { count: 1, timeoutMs: 60000 }));
   expect(result.ok === true
       && result.runtime?.endpoint?.openPeers === 1
       && result.runtime?.relayTransport === false
@@ -84,8 +88,8 @@ async function waitForDatagram(client) {
 let browser;
 let source;
 let destination;
-let testRelay;
 const browserEvents = [];
+let testRelay;
 
 try {
   if (!publicDiscovery && configuredRelayUrls.length === 0) {
@@ -99,6 +103,9 @@ try {
   destination = await createClient(browser, harnessUrl, "webrtc-destination", browserEvents);
 
   const sourceConnect = await connectClient(source, room, "source");
+  if (lateJoinDelayMs > 0) {
+    await new Promise((resolveWait) => setTimeout(resolveWait, lateJoinDelayMs));
+  }
   const destinationConnect = await connectClient(destination, room, "destination");
   const [sourceReady, destinationReady] = await Promise.all([
     waitForPeer(source, "source"),
@@ -174,6 +181,7 @@ try {
     p2p: true,
     reliable: true,
     ordered: true,
+    lateJoinDelayMs,
     gameBytesRelayedByDiscovery: 0,
     source: sourceFinal.runtime.endpoint,
     destination: destinationFinal.runtime.endpoint,
