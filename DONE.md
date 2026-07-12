@@ -44,6 +44,11 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       After the aggregate finishes its WW3D pixel checks, it releases the last
       synthetic 320x240 backbuffer and proves the canvas returned to the
       1280x720 CSS-owned viewport before GDI and final screenshot checks.
+- [x] Kept the WebAssembly Smoke job on its configured Node 22 after sourcing
+      emsdk 3.1.6. Emscripten still uses its generated toolchain configuration,
+      while npm and host-side `.mjs`/Playwright smokes no longer fall back to
+      emsdk's legacy Node and fail on supported built-ins such as
+      `node:timers/promises`.
 
 ## Pages deployment smoke split (2026-07-11)
 
