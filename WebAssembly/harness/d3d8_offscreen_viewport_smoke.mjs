@@ -32,7 +32,7 @@ try {
       throw new Error("WebGL2 context unavailable");
     }
 
-    const { hooks } = createD3D8Executor({
+    const { hooks, diag } = createD3D8Executor({
       canvas,
       gl,
       state: { graphics: {} },
@@ -75,6 +75,20 @@ try {
     }) === 1, "offscreen framebuffer bind failed");
 
     hooks.cncPortD3D8Clear(1, 255, 0, 0, 255, 1, 0);
+
+    // Terrain rendering leaves alpha writes disabled after drawing the
+    // destination-alpha shoreline mask. D3D8 Clear must still replace alpha;
+    // WebGL clear would preserve stale alpha unless the executor temporarily
+    // overrides and then restores the draw color mask.
+    diag.setD3D8ColorMask(true, true, true, false);
+    hooks.cncPortD3D8Clear(1, 12, 34, 56, 64, 1, 0);
+    const maskedClearPixel = readPixel(128, 128);
+    const restoredColorMask = Array.from(gl.getParameter(gl.COLOR_WRITEMASK));
+    expect(maskedClearPixel.join(",") === "12,34,56,64",
+      "D3D8 clear incorrectly obeyed the draw color mask", maskedClearPixel);
+    expect(restoredColorMask.join(",") === "true,true,true,false",
+      "D3D8 clear did not restore the draw color mask", restoredColorMask);
+    diag.setD3D8ColorMask(true, true, true, true);
     hooks.cncPortD3D8SetViewport({
       x: 0,
       y: 0,
@@ -149,6 +163,8 @@ try {
       renderTarget: [256, 256],
       offscreenViewport,
       offscreenScissor,
+      maskedClearPixel,
+      restoredColorMask,
       samples,
       restoredViewport,
       restoredScissor,

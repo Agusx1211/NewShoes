@@ -226,6 +226,7 @@ let d3d8CurrentElementArrayBuffer = null;
 let d3d8TemporaryIndexBuffer = null;
 let d3d8TemporaryIndexBufferBytes = 0;
 let d3d8CurrentDepthMask = true;
+let d3d8CurrentColorMask = [true, true, true, true];
 let d3d8LastAppliedViewportKey = null;
 let d3d8CachedViewportInput = null;
 let d3d8CachedNormalizedViewport = null;
@@ -239,6 +240,17 @@ function setD3D8DepthMask(enabled) {
   if (d3d8CurrentDepthMask !== next) {
     gl.depthMask(next);
     d3d8CurrentDepthMask = next;
+  }
+}
+
+function setD3D8ColorMask(red, green, blue, alpha) {
+  if (!gl) {
+    return;
+  }
+  const next = [Boolean(red), Boolean(green), Boolean(blue), Boolean(alpha)];
+  if (d3d8CurrentColorMask.some((enabled, index) => enabled !== next[index])) {
+    gl.colorMask(next[0], next[1], next[2], next[3]);
+    d3d8CurrentColorMask = next;
   }
 }
 
@@ -6416,23 +6428,33 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
     }
     if (d3d8PerfCountersEnabled) d3d8PerfStats.clearSetupMs += perfNow() - setupStartedAt;
     if (clearBits !== 0) {
-      // D3D8's Clear ignores the depth/stencil write masks, but WebGL's
-      // gl.clear RESPECTS gl.depthMask: if a prior draw left depth writes
-      // disabled (e.g. a transparent/UI pass with ZWRITE off), the depth clear
-      // is silently skipped, leaving a stale depth buffer that later geometry
-      // (the terrain) fails the depth test against — the whole map renders
-      // black. Force the depth write mask on for the clear, then restore it.
-      // (Stencil already forces stencilMask above before clearing stencil.)
+      // D3D8 Clear writes every component selected by its flags regardless of
+      // the draw write masks. WebGL clear obeys colorMask/depthMask/stencilMask.
+      // The terrain intentionally disables alpha writes after producing the
+      // soft-water shoreline mask, so failing to override colorMask here leaves
+      // stale screen-space alpha sectors that make water disappear as the
+      // camera moves. Force the affected masks on, then restore draw state.
+      const restoreColorMask = (clearBits & gl.COLOR_BUFFER_BIT) !== 0 &&
+        d3d8CurrentColorMask.some((enabled) => !enabled);
+      const previousColorMask = restoreColorMask ? d3d8CurrentColorMask : null;
       const depthMaskCheckStartedAt = perfNow();
       const restoreDepthMask =
         (clearBits & gl.DEPTH_BUFFER_BIT) !== 0 && !d3d8CurrentDepthMask;
       if (d3d8PerfCountersEnabled) d3d8PerfStats.clearDepthMaskCheckMs += perfNow() - depthMaskCheckStartedAt;
+      if (restoreColorMask) {
+        setD3D8ColorMask(true, true, true, true);
+      }
       if (restoreDepthMask) {
         const depthMaskToggleStartedAt = perfNow();
         setD3D8DepthMask(true);
         if (d3d8PerfCountersEnabled) d3d8PerfStats.clearDepthMaskToggleMs += perfNow() - depthMaskToggleStartedAt;
       }
       timedGlClear(clearBits);
+      if (previousColorMask) {
+        setD3D8ColorMask(
+          previousColorMask[0], previousColorMask[1],
+          previousColorMask[2], previousColorMask[3]);
+      }
       if (restoreDepthMask) {
         const depthMaskToggleStartedAt = perfNow();
         setD3D8DepthMask(false);
@@ -10917,7 +10939,7 @@ function applyD3D8RenderState(renderState, options = {}) {
   }
   if (d3d8RenderGlStateTupleChanged(
     "colorMask", colorMaskR, colorMaskG, colorMaskB, colorMaskA)) {
-    gl.colorMask(colorMaskR, colorMaskG, colorMaskB, colorMaskA);
+    setD3D8ColorMask(colorMaskR, colorMaskG, colorMaskB, colorMaskA);
   }
   setD3D8TrackedCapability(gl.STENCIL_TEST, "stencilEnabled", stencilEnabled);
   if (stencilEnabled) {
@@ -14019,6 +14041,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     d3dColorToNormalizedRgba,
     d3dMaterialSourceName,
     paintCanvasRgba,
+    setD3D8ColorMask,
     setD3D8GammaRamp,
     onD3D8BackbufferResize,
     releaseD3D8ProbeBackingStore,
