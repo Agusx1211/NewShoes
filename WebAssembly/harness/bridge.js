@@ -4,6 +4,7 @@ import { createGdiHooks } from "./gdi_executor.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
 import { createSavePersistenceCoordinator } from "./save-persistence-coordinator.mjs";
 import { createWebRtcUdpEndpoint } from "./webrtc-udp-endpoint.mjs";
+import { networkDiagnostics } from "./network-diagnostics.mjs";
 import {
   clearSharedUdpRing,
   createSharedUdpBridge,
@@ -168,6 +169,87 @@ const cncPortThreadedMode = (() => {
 const threadedUdpBridge = cncPortThreadedMode && typeof SharedArrayBuffer === "function"
   ? createSharedUdpBridge()
   : null;
+const NETWORK_DIAGNOSTICS_SETTINGS_KEY = "cncPortNetworkDiagnosticsEnabled.v1";
+let networkDiagnosticsRtcTimer = null;
+let networkDiagnosticsRtcInFlight = false;
+
+function recordNetworkDiagnostic(event) {
+  if (event?.kind === "packet") {
+    networkDiagnostics.recordPacket(event);
+  } else {
+    networkDiagnostics.recordEvent(event?.type ?? "transport.event", event?.detail ?? event ?? {});
+  }
+}
+
+function setNetworkDiagnosticsEnabled(enabled, { reset = enabled, reason = "settings" } = {}) {
+  const active = networkDiagnostics.setEnabled(enabled === true, { reset, reason });
+  if (threadedUdpBridge) {
+    Atomics.store(new Int32Array(threadedUdpBridge.state), 1, active ? 1 : 0);
+  }
+  if (networkDiagnosticsRtcTimer) {
+    clearInterval(networkDiagnosticsRtcTimer);
+    networkDiagnosticsRtcTimer = null;
+  }
+  if (active) {
+    networkDiagnosticsRtcTimer = setInterval(() => {
+      const endpoint = browserWebRtcUdpEndpointRuntime.endpoint;
+      if (!endpoint || networkDiagnosticsRtcInFlight) return;
+      networkDiagnosticsRtcInFlight = true;
+      void endpoint.collectRtcStats()
+        .then((sample) => networkDiagnostics.recordRtcSample({
+          ...sample,
+          page: {
+            visibilityState: globalThis.document?.visibilityState ?? null,
+            hasFocus: globalThis.document?.hasFocus?.() ?? null,
+          },
+          sharedUdpRings: threadedUdpBridge ? {
+            incomingCount: sharedUdpRingCount(threadedUdpBridge.incoming),
+            outgoingCount: sharedUdpRingCount(threadedUdpBridge.outgoing),
+            incomingDropped: sharedUdpRingDropped(threadedUdpBridge.incoming),
+            outgoingDropped: sharedUdpRingDropped(threadedUdpBridge.outgoing),
+          } : null,
+        }))
+        .catch((error) => networkDiagnostics.recordEvent("rtc.stats.error", {
+          error: error?.message ?? String(error),
+        }))
+        .finally(() => {
+          networkDiagnosticsRtcInFlight = false;
+        });
+    }, 1000);
+  }
+  return active;
+}
+
+globalThis.__cncSetNetworkDiagnostics = (enabled, options = {}) =>
+  setNetworkDiagnosticsEnabled(enabled === true, options);
+globalThis.__cncNetworkDiagnosticsSnapshot = () => networkDiagnostics.snapshot();
+globalThis.__cncNetworkDiagnosticsSummary = () => networkDiagnostics.summary();
+
+try {
+  const longTaskObserver = new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) {
+      networkDiagnostics.recordEvent("main.longtask", {
+        name: entry.name,
+        startTimeMs: Number(entry.startTime.toFixed(3)),
+        durationMs: Number(entry.duration.toFixed(3)),
+      });
+    }
+  });
+  longTaskObserver.observe({ type: "longtask", buffered: true });
+} catch {
+  // Long Tasks API is Chromium-only; the RTC heartbeat still exposes gaps.
+}
+
+let storedNetworkDiagnostics = false;
+try {
+  storedNetworkDiagnostics = globalThis.localStorage?.getItem(NETWORK_DIAGNOSTICS_SETTINGS_KEY) === "true";
+} catch {
+  // Storage is optional; diagnostics stay off unless enabled for this page.
+}
+setNetworkDiagnosticsEnabled(storedNetworkDiagnostics, {
+  reset: storedNetworkDiagnostics,
+  reason: "settings-load",
+});
 
 const canvas = document.querySelector("#viewport");
 // preserveDrawingBuffer forces the compositor to COPY the drawing buffer every
@@ -924,6 +1006,22 @@ function createThreadedEngineController() {
   function applyThreadedStatus(status) {
     lastStatus = status;
     harnessState.threadedEngine = status;
+    networkDiagnostics.recordEngineSample({
+      source: "engine-thread-status",
+      workerStatusSeq: status.seq ?? null,
+      workerNowMs: status.now ?? null,
+      live: status.live ?? null,
+      initState: status.initState ?? null,
+      loop: status.loop ?? null,
+      frame: status.frame ?? null,
+      network: status.networkDiagnostics ?? null,
+      sharedUdpRings: threadedUdpBridge ? {
+        incomingCount: sharedUdpRingCount(threadedUdpBridge.incoming),
+        outgoingCount: sharedUdpRingCount(threadedUdpBridge.outgoing),
+        incomingDropped: sharedUdpRingDropped(threadedUdpBridge.incoming),
+        outgoingDropped: sharedUdpRingDropped(threadedUdpBridge.outgoing),
+      } : null,
+    });
     const size = status.engineDisplaySize;
     if (size && Number.isFinite(size.width) && size.width > 1
         && Number.isFinite(size.height) && size.height > 1) {
@@ -977,6 +1075,9 @@ function createThreadedEngineController() {
         return;
       case "udpFlush":
         drainThreadedUdpOutgoing();
+        return;
+      case "networkDiagnostic":
+        recordNetworkDiagnostic(msg.event);
         return;
       case "status":
         applyThreadedStatus(msg);
@@ -1271,6 +1372,7 @@ function createThreadedEngineController() {
         bootWidth: payload.bootWidth,
         bootHeight: payload.bootHeight,
         stepBudgetMs: payload.stepBudgetMs,
+        commanderName: payload.commanderName,
       }, {
         // SwiftShader full boots take minutes; each init slice posts progress
         // which re-arms this deadline, so a genuine hang is what times out.
@@ -2683,7 +2785,7 @@ function connectBrowserUdpEndpoint({ webSocketUrl, client, incomingIp, incomingP
 }
 
 function resetBrowserWebRtcUdpEndpointRuntime() {
-  browserWebRtcUdpEndpointRuntime.endpoint?.close();
+  const closePromise = browserWebRtcUdpEndpointRuntime.endpoint?.close() ?? Promise.resolve();
   browserWebRtcUdpEndpointRuntime.enabled = false;
   browserWebRtcUdpEndpointRuntime.endpoint = null;
   browserWebRtcUdpEndpointRuntime.incoming = [];
@@ -2699,6 +2801,7 @@ function resetBrowserWebRtcUdpEndpointRuntime() {
     clearSharedUdpRing(threadedUdpBridge.outgoing);
     Atomics.store(new Int32Array(threadedUdpBridge.state), 0, 0);
   }
+  return closePromise;
 }
 
 function summarizeBrowserWebRtcUdpEndpointRuntime() {
@@ -2732,24 +2835,38 @@ function summarizeBrowserWebRtcUdpEndpointRuntime() {
 }
 
 async function connectBrowserWebRtcUdpEndpoint({
-  signalingUrl,
   room,
   peerId,
   displayName,
   iceServers,
-  timeoutMs = 10000,
+  relayUrls,
+  timeoutMs = 20000,
 }) {
-  resetBrowserWebRtcUdpEndpointRuntime();
+  await resetBrowserWebRtcUdpEndpointRuntime();
   const endpoint = createWebRtcUdpEndpoint({
-    signalingUrl,
     room,
     peerId,
     displayName,
     iceServers,
+    relayUrls,
     onDatagram: (datagram) => {
       if (threadedUdpBridge) {
         if (!enqueueSharedUdpDatagram(threadedUdpBridge.incoming, datagram)) {
           browserWebRtcUdpEndpointRuntime.lastError = "threaded WebRTC receive ring is full";
+          networkDiagnostics.recordEvent("bridge.incoming.dropped", {
+            traceId: `in-${datagram.bridgeSequence ?? 0}`,
+            byteLength: datagram.bytes?.byteLength ?? 0,
+            destinationPort: datagram.destinationPort,
+            queueCount: sharedUdpRingCount(threadedUdpBridge.incoming),
+            dropped: sharedUdpRingDropped(threadedUdpBridge.incoming),
+          });
+        } else {
+          networkDiagnostics.recordEvent("bridge.incoming.enqueued", {
+            traceId: `in-${datagram.bridgeSequence ?? 0}`,
+            byteLength: datagram.bytes?.byteLength ?? 0,
+            queuedAtUs: datagram.bridgeQueuedAtUs ?? null,
+            queueCount: sharedUdpRingCount(threadedUdpBridge.incoming),
+          });
         }
       } else {
         browserWebRtcUdpEndpointRuntime.incoming.push(datagram);
@@ -2767,6 +2884,7 @@ async function connectBrowserWebRtcUdpEndpoint({
     onStateChange: (state) => {
       browserWebRtcUdpEndpointRuntime.lastError = state.lastError;
     },
+    onDiagnostic: recordNetworkDiagnostic,
   });
   browserWebRtcUdpEndpointRuntime.endpoint = endpoint;
   browserWebRtcUdpEndpointRuntime.enabled = true;
@@ -2785,13 +2903,29 @@ function drainThreadedUdpOutgoing() {
   }
 }
 
-function cncPortBrowserWebRtcUdpSend({ bytes, ip, port, sourceIp, sourcePort }) {
+function cncPortBrowserWebRtcUdpSend({
+  bytes,
+  ip,
+  port,
+  sourceIp,
+  sourcePort,
+  bridgeSequence,
+  bridgeQueuedAtUs,
+}) {
   const endpoint = browserWebRtcUdpEndpointRuntime.endpoint;
   if (!browserWebRtcUdpEndpointRuntime.enabled || !endpoint) {
     return 0;
   }
   const datagram = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const written = endpoint.sendDatagram({ bytes: datagram, ip, port, sourceIp, sourcePort });
+  const written = endpoint.sendDatagram({
+    bytes: datagram,
+    ip,
+    port,
+    sourceIp,
+    sourcePort,
+    bridgeSequence,
+    bridgeQueuedAtUs,
+  });
   if (written > 0) {
     browserWebRtcUdpEndpointRuntime.lastSent = browserUdpWireSummary(datagram, ip >>> 0, port & 0xffff);
     browserWebRtcUdpEndpointRuntime.eventLog.push({
@@ -5282,7 +5416,7 @@ async function loadWasmModule() {
       probeBrowserNetworkTransportLiveSend: module.cwrap(
         "cnc_port_probe_browser_network_transport_live_send",
         "string",
-        [],
+        ["number"],
       ),
       probeBrowserNetworkTransportLiveReceive: module.cwrap(
         "cnc_port_probe_browser_network_transport_live_receive",
@@ -5349,6 +5483,11 @@ async function loadWasmModule() {
       realEngineInitBegin: module.cwrap("cnc_port_real_engine_init_begin", "string", ["string", "number"]),
       realEngineInitStep: module.cwrap("cnc_port_real_engine_init_step", "string", ["number"]),
       realEngineFrontier: module.cwrap("cnc_port_real_engine_frontier", "string", []),
+      realEngineSetCommanderName: module.cwrap(
+        "cnc_port_real_engine_set_commander_name",
+        "string",
+        ["string"],
+      ),
       mapCacheProbe: module.cwrap("cnc_port_map_cache_probe", "string", []),
       realEngineSetSkirmishMap: module.cwrap(
         "cnc_port_real_engine_set_skirmish_map",
@@ -5359,6 +5498,11 @@ async function loadWasmModule() {
         "cnc_port_real_engine_set_skirmish_local_template",
         "string",
         ["string"],
+      ),
+      realEngineSetNetworkTimeouts: module.cwrap(
+        "cnc_port_real_engine_set_network_timeouts",
+        "string",
+        ["number", "number"],
       ),
       realEngineLanState: module.cwrap("cnc_port_real_engine_lan_state", "string", []),
       realEngineLanCommand: module.cwrap(
@@ -8647,7 +8791,7 @@ async function shutdownBrowserRuntime() {
   const engine = threadedEngine
     ? await threadedEngine.shutdown()
     : { ok: true, alreadyStopped: true };
-  resetBrowserWebRtcUdpEndpointRuntime();
+  await resetBrowserWebRtcUdpEndpointRuntime();
   const audio = await shutdownBrowserAudioRuntime();
   const io = await shutdownIoWorker();
   const webLocksReleased = releaseOpfsWebLocks();
@@ -10131,6 +10275,13 @@ async function realEngineInit(payload = {}) {
       && typeof wasmModule.realEngineSetBootResolution === "function") {
     wasmModule.realEngineSetBootResolution(bootWidth, bootHeight);
   }
+  const commanderName = String(payload.commanderName ?? "");
+  if (commanderName && typeof wasmModule.realEngineSetCommanderName === "function") {
+    const identity = JSON.parse(wasmModule.realEngineSetCommanderName(commanderName));
+    if (identity?.ok !== true) {
+      return { ok: false, command: "realEngineInit", error: "commander identity rejected" };
+    }
+  }
   const useStepped = payload.stepped === true
     && typeof wasmModule.realEngineInitBegin === "function"
     && typeof wasmModule.realEngineInitStep === "function";
@@ -11325,6 +11476,22 @@ async function rpc(command, payload = {}) {
             lan: JSON.parse(moduleResult.wasmModule.realEngineLanState()),
             state: snapshotState(),
           };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "realEngineSetNetworkTimeouts":
+      {
+        const moduleResult = await getWasmModuleForArchives(command);
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        try {
+          const result = JSON.parse(moduleResult.wasmModule.realEngineSetNetworkTimeouts(
+            Number(payload.disconnectMs ?? 5000),
+            Number(payload.playerTimeoutMs ?? 60000),
+          ));
+          return { ok: result?.ok === true, command, result, state: snapshotState() };
         } catch (error) {
           return { ok: false, command, error: error?.message ?? String(error) };
         }
@@ -21729,12 +21896,12 @@ async function rpc(command, payload = {}) {
       {
         try {
           const runtime = await connectBrowserWebRtcUdpEndpoint({
-            signalingUrl: String(payload?.signalingUrl ?? ""),
             room: String(payload?.room ?? "cnc-room"),
             peerId: payload?.peerId == null ? null : String(payload.peerId),
             displayName: payload?.displayName == null ? null : String(payload.displayName),
             iceServers: Array.isArray(payload?.iceServers) ? payload.iceServers : [],
-            timeoutMs: Number(payload?.timeoutMs ?? 10000),
+            relayUrls: Array.isArray(payload?.relayUrls) ? payload.relayUrls : null,
+            timeoutMs: Number(payload?.timeoutMs ?? 20000),
           });
           return {
             ok: runtime.enabled === true && runtime.connected === true,
@@ -21788,7 +21955,7 @@ async function rpc(command, payload = {}) {
         state: snapshotState(),
       };
     case "browserWebRtcEndpointDisconnect":
-      resetBrowserWebRtcUdpEndpointRuntime();
+      await resetBrowserWebRtcUdpEndpointRuntime();
       return {
         ok: true,
         command,
@@ -21808,7 +21975,10 @@ async function rpc(command, payload = {}) {
         if (!wasmModule) {
           return { ok: false, command, error: "Wasm module unavailable; browser WebRTC network send cannot run" };
         }
-        const sendProbe = parseModuleState(wasmModule.probeBrowserNetworkTransportLiveSend());
+        const destinationIp = browserWebRtcUdpEndpointRuntime.endpoint?.snapshot()
+          ?.peers?.find((peer) => peer.channelState === "open")?.virtualIp ?? 0;
+        const sendProbe = parseModuleState(
+          wasmModule.probeBrowserNetworkTransportLiveSend(destinationIp));
         const runtime = summarizeBrowserWebRtcUdpEndpointRuntime();
         return {
           ok: Boolean(sendProbe?.ok)
@@ -21847,7 +22017,7 @@ async function rpc(command, payload = {}) {
         if (!wasmModule) {
           return { ok: false, command, error: "Wasm module unavailable; browser network live send cannot run" };
         }
-        const sendProbe = parseModuleState(wasmModule.probeBrowserNetworkTransportLiveSend());
+        const sendProbe = parseModuleState(wasmModule.probeBrowserNetworkTransportLiveSend(0));
         const runtime = summarizeBrowserUdpEndpointRuntime();
         return {
           ok: Boolean(sendProbe?.ok)

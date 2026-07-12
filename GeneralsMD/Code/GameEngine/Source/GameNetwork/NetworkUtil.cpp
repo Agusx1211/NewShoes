@@ -28,7 +28,14 @@
 #include "GameNetwork/NetworkUtil.h"
 
 Int MAX_FRAMES_AHEAD = 128;
+#ifdef __EMSCRIPTEN__
+// Reliable browser transports and the cross-realm UDP bridge have much lower
+// jitter than the retail Internet path. Keep native timing unchanged while
+// allowing low-latency WebRTC peers to use the modern four-frame floor.
+Int MIN_RUNAHEAD = 4;
+#else
 Int MIN_RUNAHEAD = 10;
+#endif
 Int FRAME_DATA_LENGTH = (MAX_FRAMES_AHEAD+1)*2;
 Int FRAMES_TO_KEEP = (MAX_FRAMES_AHEAD/2) + 1;
 

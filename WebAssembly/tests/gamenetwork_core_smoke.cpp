@@ -209,6 +209,11 @@ bool exerciseNetworkUtil()
 {
 	const UnsignedShort first = GenerateNextCommandID();
 	const UnsignedShort second = GenerateNextCommandID();
+#ifdef __EMSCRIPTEN__
+	const Int expected_min_run_ahead = 4;
+#else
+	const Int expected_min_run_ahead = 10;
+#endif
 
 	return expect(static_cast<UnsignedShort>(first + 1) == second, "GenerateNextCommandID did not advance") &&
 		expect(DoesCommandRequireACommandID(NETCOMMANDTYPE_GAMECOMMAND), "game command should require ids") &&
@@ -219,8 +224,23 @@ bool exerciseNetworkUtil()
 			"frameinfo command name failed") &&
 		expect(std::strcmp(GetAsciiNetCommandType(NETCOMMANDTYPE_MAX).str(), "UNKNOWN") == 0,
 			"unknown command name failed") &&
-		expect(MAX_FRAMES_AHEAD == 128 && MIN_RUNAHEAD == 10 && FRAME_DATA_LENGTH == 258 && FRAMES_TO_KEEP == 65,
+		expect(MAX_FRAMES_AHEAD == 128 && MIN_RUNAHEAD == expected_min_run_ahead && FRAME_DATA_LENGTH == 258 && FRAMES_TO_KEEP == 65,
 			"network frame globals changed");
+}
+
+bool exerciseBrowserConnectionGrouping()
+{
+	Connection *connection = newInstance(Connection);
+	connection->init();
+	connection->setFrameGrouping(250);
+#ifdef __EMSCRIPTEN__
+	const bool ok = expect(connection->getBrowserDiagnosticFrameGrouping() == 33,
+		"browser connection grouping exceeded one 30 Hz logic tick");
+#else
+	const bool ok = true;
+#endif
+	connection->deleteInstance();
+	return ok;
 }
 
 bool exerciseFrameData()
@@ -1354,7 +1374,8 @@ bool exerciseNetCommandListMerge()
 int main()
 {
 	initMemoryManager();
-	const bool ok = exerciseNetworkUtil() && exerciseFrameData() && exerciseNetCommandList() &&
+	const bool ok = exerciseNetworkUtil() && exerciseBrowserConnectionGrouping() &&
+		exerciseFrameData() && exerciseNetCommandList() &&
 		exerciseNetCommandListMerge() &&
 		exerciseNetPacketRoundTrip() && exerciseNetPacketWireFormat() && exerciseNetPacketAckRoundTrip() &&
 		exerciseNetPacketControlRoundTrip() && exerciseNetCommandWrapperList() && exerciseTransportQueue() &&

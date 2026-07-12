@@ -3,8 +3,8 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { startNostrTestRelayServer } from "./nostr-test-relay-server.mjs";
 import { startStaticServer } from "./static-server.mjs";
-import { attachWebRtcSignalingServer } from "./webrtc-signaling-server.mjs";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
@@ -13,13 +13,25 @@ const GAME_LAN = 1;
 const playerCount = Number.parseInt(process.env.CNC_MATCH_PLAYERS ?? "2", 10);
 const threadedTest = process.env.CNC_THREADED === "1";
 const allowWebGlContextLoss = process.env.CNC_ALLOW_WEBGL_CONTEXT_LOSS === "1";
+const captureNetworkDiagnostics = process.env.CNC_NETWORK_DIAGNOSTICS === "1";
+const soakMs = Number.parseInt(process.env.CNC_MATCH_SOAK_MS ?? "0", 10);
+const minimumLogicFps = Number.parseFloat(process.env.CNC_MIN_LOGIC_FPS ?? "0");
+const maximumLogicStallMs = Number.parseInt(process.env.CNC_MAX_LOGIC_STALL_MS ?? "0", 10);
 const maxAllowedLogicFrameSkew = threadedTest ? Math.max(6, playerCount - 1) : playerCount - 1;
 const maxAllowedFinalLogicFrameSkew = threadedTest ? 10 : maxAllowedLogicFrameSkew;
 const activeSampleInterval = threadedTest ? 5 : 30;
+const publicDiscovery = process.env.CNC_TRYSTERO_PUBLIC === "1";
+const configuredRelayUrls = String(process.env.CNC_TRYSTERO_RELAYS ?? "")
+  .split(",").map((url) => url.trim()).filter(Boolean);
 let parallelClientFrames = false;
 
 if (!Number.isInteger(playerCount) || playerCount < 2 || playerCount > 8) {
   throw new Error(`CNC_MATCH_PLAYERS must be between 2 and 8, received ${process.env.CNC_MATCH_PLAYERS}`);
+}
+if (!Number.isInteger(soakMs) || soakMs < 0
+    || !Number.isFinite(minimumLogicFps) || minimumLogicFps < 0
+    || !Number.isInteger(maximumLogicStallMs) || maximumLogicStallMs < 0) {
+  throw new Error("invalid multiplayer soak configuration");
 }
 
 const archiveSpecs = [
@@ -140,6 +152,32 @@ async function waitFor(label, read, predicate, timeoutMs = 30000, intervalMs = 2
   throw new Error(`${label} timed out: ${JSON.stringify(last)}`);
 }
 
+function networkGrouping(state) {
+  const network = state?.network;
+  return network?.slots?.filter((slot) => slot.slot !== network.localPlayerId
+    && slot.connectionQueue >= 0).map((slot) => slot.frameGroupingMs) ?? [];
+}
+
+function bridgePacketAccounting(diagnostics) {
+  const received = diagnostics?.packets?.filter((packet) => packet.direction === "receive"
+    && packet.destinationPort === 8088 && packet.outcome === "queued-for-engine") ?? [];
+  const dequeued = new Set((diagnostics?.events ?? [])
+    .filter((event) => event.type === "bridge.incoming.dequeued-by-engine")
+    .map((event) => event.detail?.traceId));
+  const explicitDrops = (diagnostics?.events ?? []).filter((event) =>
+    (event.type === "bridge.incoming.deferred-overflow"
+      || event.type === "bridge.incoming.deferred-expired"
+      || event.type === "bridge.incoming.capacity-drop"
+      || event.type === "bridge.incoming.dropped")
+      && event.detail?.destinationPort === 8088);
+  return {
+    received: received.length,
+    dequeued: received.filter((packet) => dequeued.has(packet.traceId)).length,
+    missing: received.filter((packet) => !dequeued.has(packet.traceId)).map((packet) => packet.traceId),
+    explicitDrops,
+  };
+}
+
 async function pumpLobby(clients) {
   await Promise.all(clients.map((client) => lanCommand(client, "update")));
   await allFrames(clients, 1);
@@ -169,13 +207,17 @@ async function enterLanLobby(client) {
   }, (state) => state.lanReady === true && state.localIp !== 0, 30000, 0);
 }
 
-async function createClient(browserOrContext, serverUrl, signalingUrl, room, label, peerId,
+async function createClient(browserOrContext, serverUrl, relayUrls, room, label, peerId,
   existingContext = false) {
   const context = existingContext
     ? browserOrContext
-    : await browserOrContext.newContext({ viewport: { width: 1280, height: 720 } });
+    : await browserOrContext.newContext({
+      viewport: { width: 1280, height: 720 },
+      ignoreHTTPSErrors: process.env.CNC_IGNORE_HTTPS_ERRORS === "1",
+    });
   const page = await context.newPage();
-  const client = { context, page, label, peerId, errors: [] };
+  const commanderName = peerId === "host" ? "SmokeHost" : `SmokeGuest${peerId.split("-").at(-1)}`;
+  const client = { context, page, label, peerId, commanderName, errors: [] };
   page.setDefaultTimeout(300000);
   page.setDefaultNavigationTimeout(300000);
   page.on("pageerror", (error) => client.errors.push(error?.message ?? String(error)));
@@ -192,6 +234,12 @@ async function createClient(browserOrContext, serverUrl, signalingUrl, room, lab
   await page.goto(pageUrl.href, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
   await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
+  if (captureNetworkDiagnostics) {
+    await page.evaluate(() => window.__cncSetNetworkDiagnostics?.(true, {
+      reset: true,
+      reason: "lan-webrtc-playable-match-smoke",
+    }));
+  }
 
   const mount = await rpc(client, "mountArchives", {
     path: `/assets/lan-${peerId}`,
@@ -203,11 +251,12 @@ async function createClient(browserOrContext, serverUrl, signalingUrl, room, lab
   console.error(`[lan-webrtc] ${label} archives mounted`);
 
   const connected = await rpc(client, "browserWebRtcEndpointConnect", {
-    signalingUrl,
     room,
     peerId,
-    displayName: label,
+    displayName: commanderName,
     iceServers: [],
+    relayUrls: relayUrls.length ? relayUrls : null,
+    timeoutMs: 30000,
   });
   expect(connected.ok === true, `${label} failed to connect WebRTC`, connected);
 
@@ -216,6 +265,7 @@ async function createClient(browserOrContext, serverUrl, signalingUrl, room, lab
     // The shell map is a full background match and makes two simultaneous
     // SwiftShader clients needlessly expensive before the LAN test begins.
     shellMap: false,
+    commanderName,
   });
   expect(init.ok === true && init.aborted === false && init.frontier?.initReturned === true,
     `${label} real engine init failed`, init.frontier ?? init);
@@ -224,7 +274,7 @@ async function createClient(browserOrContext, serverUrl, signalingUrl, room, lab
 }
 
 let server;
-let signaling;
+let testRelay;
 const browsers = [];
 const clients = [];
 const profileDirs = [];
@@ -232,12 +282,16 @@ const profileDirs = [];
 try {
   await mkdir(artifactRoot, { recursive: true });
   server = await startStaticServer({ root: wasmRoot });
-  signaling = attachWebRtcSignalingServer({ server: server.server });
-  const signalingUrl = new URL("/webrtc", server.url);
-  signalingUrl.protocol = "ws:";
+  if (!publicDiscovery && configuredRelayUrls.length === 0) {
+    testRelay = await startNostrTestRelayServer();
+  }
+  const relayUrls = testRelay ? [testRelay.url] : configuredRelayUrls;
   const room = `playable-match-${Date.now()}`;
 
   const launchOptions = {};
+  if (process.env.CNC_IGNORE_HTTPS_ERRORS === "1") {
+    launchOptions.ignoreHTTPSErrors = true;
+  }
   if (process.env.CNC_BROWSER_EXECUTABLE) {
     launchOptions.executablePath = process.env.CNC_BROWSER_EXECUTABLE;
   }
@@ -245,7 +299,8 @@ try {
     launchOptions.args = process.env.CNC_BROWSER_ARGS.split(/\s+/).filter(Boolean);
   }
   const separateBrowsers = playerCount >= 4 || process.env.CNC_BROWSER_PER_PLAYER === "1";
-  parallelClientFrames = threadedTest || separateBrowsers;
+  parallelClientFrames = process.env.CNC_SERIAL_CLIENT_FRAMES !== "1"
+    && (threadedTest || separateBrowsers);
   for (let index = 0; index < playerCount; ++index) {
     if (threadedTest) {
       const profileDir = resolve(wasmRoot, "artifacts/pw-profiles",
@@ -261,7 +316,7 @@ try {
       const label = host ? "WebRTC Host" : `WebRTC Guest ${index}`;
       const peerId = host ? "host" : `guest-${index}`;
       clients.push(await createClient(context,
-        server.url, signalingUrl.href, room, label, peerId, true));
+        server.url, relayUrls, room, label, peerId, true));
       continue;
     }
     if (separateBrowsers || browsers.length === 0) {
@@ -272,14 +327,13 @@ try {
     const peerId = host ? "host" : `guest-${index}`;
     const clientBrowser = separateBrowsers ? browsers[index] : browsers[0];
     clients.push(await createClient(clientBrowser,
-      server.url, signalingUrl.href, room, label, peerId));
+      server.url, relayUrls, room, label, peerId));
   }
   const [host, ...guests] = clients;
-  await signaling.waitForPeers(playerCount, 30000);
   const peerConnections = await Promise.all(clients.map((client) =>
     rpc(client, "browserWebRtcEndpointWaitForPeers", {
       count: playerCount - 1,
-      timeoutMs: 30000,
+      timeoutMs: 60000,
     })));
   expect(peerConnections.every((result) => result.ok === true
       && result.runtime?.endpoint?.openPeers === playerCount - 1),
@@ -292,8 +346,8 @@ try {
   console.error(`[lan-webrtc] ${playerCount} original LAN lobbies entered`);
   expect(new Set(lobbies.map((lobby) => lobby.localIp)).size === playerCount,
     "LAN clients did not receive unique virtual IPs", lobbies);
-  await Promise.all(clients.map((client, index) =>
-    lanCommand(client, "setName", `P${index + 1} WebRTC`)));
+  expect(lobbies.every((lobby, index) => lobby.localName === clients[index].commanderName),
+    "persisted browser commander identity did not reach the original LAN lobby", lobbies);
 
   const hostCreate = await lanCommand(host, "host", "Browser Match");
   expect(hostCreate.ok === true, "original LANAPI did not create the host game", hostCreate);
@@ -390,14 +444,18 @@ try {
     clearedLobbyDatagrams);
 
   let threadedLoops = [];
+  // The manual-frame verifier intentionally serializes expensive engine +
+  // SwiftShader work across browser clients. Keep the original disconnect
+  // logic enabled, but prevent wall-clock verifier stalls from looking like a
+  // network failure; the shipping autonomous loop does not have this delay.
+  const verifierTimeouts = await Promise.all(clients.map((client) =>
+    rpc(client, "realEngineSetNetworkTimeouts", {
+      disconnectMs: 900000,
+      playerTimeoutMs: 900000,
+    })));
+  expect(verifierTimeouts.every((result) => result.ok === true),
+    "verifier network timeouts could not be extended", verifierTimeouts);
   if (threadedTest) {
-    const verifierTimeouts = await Promise.all(clients.map((client) =>
-      rpc(client, "realEngineSetNetworkTimeouts", {
-        disconnectMs: 900000,
-        playerTimeoutMs: 900000,
-      })));
-    expect(verifierTimeouts.every((result) => result.ok === true),
-      "threaded verifier network timeouts could not be extended", verifierTimeouts);
     const loadStepping = await Promise.all(clients.map((client) =>
       rpc(client, "realEngineSetLoadStepping", { enabled: true, budgetMs: 5 })));
     expect(loadStepping.every((result) => result.ok === true),
@@ -508,7 +566,57 @@ try {
       networks: finalStates.map((state) => state.network),
     });
 
+  let soak = null;
+  if (threadedTest && soakMs > 0) {
+    const startedAt = performance.now();
+    const initialStates = await Promise.all(clients.map((client) => lanState(client)));
+    const initialFrames = initialStates.map((state) => state.network?.logicFrame ?? 0);
+    const lastFrames = [...initialFrames];
+    const lastProgressAt = initialFrames.map(() => startedAt);
+    let peakStallMs = 0;
+    let soakStates = initialStates;
+    while (performance.now() - startedAt < soakMs) {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 200));
+      soakStates = await Promise.all(clients.map((client) => lanState(client)));
+      const now = performance.now();
+      soakStates.forEach((state, index) => {
+        const logicFrame = state.network?.logicFrame ?? lastFrames[index];
+        peakStallMs = Math.max(peakStallMs, now - lastProgressAt[index]);
+        if (logicFrame > lastFrames[index]) {
+          lastFrames[index] = logicFrame;
+          lastProgressAt[index] = now;
+        }
+      });
+    }
+    const elapsedMs = performance.now() - startedAt;
+    const finalFrames = soakStates.map((state) => state.network?.logicFrame ?? 0);
+    const logicFps = finalFrames.map((logicFrame, index) =>
+      (logicFrame - initialFrames[index]) * 1000 / elapsedMs);
+    const grouping = soakStates.map(networkGrouping);
+    soak = { elapsedMs, initialFrames, finalFrames, logicFps, peakStallMs, grouping };
+    expect(soakStates.every((state) => state.network?.crcMismatch === false)
+        && logicFps.every((fps) => fps >= minimumLogicFps)
+        && (maximumLogicStallMs === 0 || peakStallMs <= maximumLogicStallMs)
+        && grouping.every((values) => values.length === playerCount - 1
+          && values.every((value) => value >= 1 && value <= 33)),
+    "threaded multiplayer soak missed its logic-rate, stall, grouping, or CRC gate", soak);
+    console.error(`[lan-webrtc] soak ${elapsedMs.toFixed(0)}ms logic FPS=${logicFps
+      .map((fps) => fps.toFixed(2)).join(",")} peak stall=${peakStallMs.toFixed(0)}ms`);
+  }
+
   if (threadedTest) {
+    if (captureNetworkDiagnostics) {
+      await Promise.all(clients.map((client) => waitFor(
+        `${client.label} game packet bridge drain`,
+        () => client.page.evaluate(() => window.__cncNetworkDiagnosticsSnapshot?.()),
+        (diagnostics) => {
+          const accounting = bridgePacketAccounting(diagnostics);
+          return accounting.received > 0 && accounting.missing.length === 0;
+        },
+        5000,
+        100,
+      )));
+    }
     const stopped = await Promise.all(clients.map((client) => rpc(client, "threadedStopLoop")));
     expect(stopped.every((result) => result.ok === true),
       "threaded match loops did not stop cleanly", stopped);
@@ -535,6 +643,27 @@ try {
   expect(endpointStates.every((state) => state.ok === true
       && state.runtime?.endpoint?.openPeers === playerCount - 1),
   "complete WebRTC peer mesh did not survive the match", endpointStates);
+  const networkDiagnostics = captureNetworkDiagnostics
+    ? await Promise.all(clients.map((client) => client.page.evaluate(() =>
+      window.__cncNetworkDiagnosticsSnapshot?.())))
+    : null;
+  if (captureNetworkDiagnostics) {
+    const bridgeAccounting = networkDiagnostics.map(bridgePacketAccounting);
+    expect(networkDiagnostics.every((diagnostics) => diagnostics?.packets?.length > 0
+        && diagnostics?.engineSamples?.some((sample) => sample.network?.network?.ready === true)
+        && diagnostics?.rtcSamples?.length > 0
+        && diagnostics.complete === true)
+        && bridgeAccounting.every((accounting) => accounting.received > 0
+          && accounting.missing.length === 0
+          && accounting.explicitDrops.length === 0),
+    "threaded match diagnostics did not capture packets, RTC, and engine lockstep state",
+    networkDiagnostics.map((diagnostics) => ({
+      retained: diagnostics?.retained,
+      complete: diagnostics?.complete,
+      lastEngineSample: diagnostics?.engineSamples?.at(-1),
+      bridgeAccounting: bridgePacketAccounting(diagnostics),
+    })));
+  }
 
   const result = {
     ok: true,
@@ -552,16 +681,32 @@ try {
     postActiveDriverTicks,
     requiredPostActiveLogicFrames,
     finalLogicFrameSkew,
+    soak,
     final: finalStates,
     endpoints: endpointStates.map((state) => state.runtime.endpoint),
-    signaling: signaling.stats(),
+    networkDiagnostics: networkDiagnostics?.map((diagnostics) => ({
+      retained: diagnostics.retained,
+      totals: diagnostics.totals,
+      complete: diagnostics.complete,
+    })) ?? null,
+    discovery: {
+      strategy: "trystero-nostr",
+      configuredRelays: relayUrls,
+      testRelay: testRelay?.stats() ?? null,
+    },
     screenshots,
     gpu,
     browserErrors: clients.map((client) => ({ peerId: client.peerId, errors: client.errors })),
   };
-  expect(result.signaling.gamePayloadBytes === 0
-      && result.signaling.rooms?.some((activeRoom) => activeRoom.peers.length === playerCount),
-  "signaling server relayed game payload bytes or lost room members", result.signaling);
+  expect(result.endpoints.every((endpoint) => endpoint.discoveryStrategy === "trystero-nostr"
+      && endpoint.openPeers === playerCount - 1)
+      && (!result.discovery.testRelay
+        || (result.discovery.testRelay.activeConnections === playerCount
+          && result.discovery.testRelay.binaryMessagesRejected === 0)),
+  "Trystero discovery lost room members or carried a binary game payload", {
+    endpoints: result.endpoints,
+    discovery: result.discovery,
+  });
   const unexpectedBrowserErrors = result.browserErrors.flatMap(({ peerId, errors }) =>
     errors.filter((error) => !allowWebGlContextLoss
       || !/WebGL context (?:LOST|restored)/i.test(error))
@@ -588,6 +733,6 @@ try {
   for (const profileDir of profileDirs) {
     await rm(profileDir, { recursive: true, force: true });
   }
-  signaling?.close();
+  await testRelay?.close().catch(() => {});
   await server?.close();
 }

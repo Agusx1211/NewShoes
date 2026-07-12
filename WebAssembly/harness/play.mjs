@@ -12,6 +12,12 @@ import {
   runRuntimeShutdownSequence,
   runtimeShutdownWarning,
 } from "./runtime-shutdown-sequence.mjs";
+import {
+  generateCommanderName,
+  loadOrCreateNetworkSettings,
+  normalizeCommanderName,
+  saveNetworkSettings as persistNetworkSettings,
+} from "./multiplayer_identity.mjs";
 
 const analytics = window.ZeroHAnalytics;
 const track = (name, params) => analytics?.track(name, params);
@@ -38,41 +44,65 @@ const performanceP95MsNode = document.querySelector("#performanceP95Ms");
 const performanceMaxMsNode = document.querySelector("#performanceMaxMs");
 const networkRoomNode = document.querySelector("#networkRoom");
 const networkNameNode = document.querySelector("#networkName");
-const networkSignalingNode = document.querySelector("#networkSignaling");
 const networkStunNode = document.querySelector("#networkStun");
 const networkIceUsernameNode = document.querySelector("#networkIceUsername");
 const networkIceCredentialNode = document.querySelector("#networkIceCredential");
 const networkStatusNode = document.querySelector("#networkStatus");
-const NETWORK_SETTINGS_KEY = "cncPortNetworkSettings.v1";
+const networkDiagnosticsToggleNode = document.querySelector("#networkDiagnosticsToggle");
+const NETWORK_DIAGNOSTICS_SETTINGS_KEY = "cncPortNetworkDiagnosticsEnabled.v1";
+let networkStorage = null;
+try {
+  networkStorage = window.localStorage;
+} catch {
+  // Privacy settings can make the localStorage property itself throw.
+}
 
-function defaultSignalingUrl() {
-  const url = new URL("/webrtc", window.location.href);
-  url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return url.href;
+function loadNetworkDiagnosticsEnabled() {
+  const queryValue = queryParams.get("networkDiagnostics");
+  if (queryValue === "1" || queryValue === "true" || queryValue === "on") return true;
+  if (queryValue === "0" || queryValue === "false" || queryValue === "off") return false;
+  try {
+    return window.localStorage?.getItem(NETWORK_DIAGNOSTICS_SETTINGS_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+let networkDiagnosticsEnabled = loadNetworkDiagnosticsEnabled();
+
+function setNetworkDiagnosticsEnabled(enabled, reason = "settings") {
+  networkDiagnosticsEnabled = enabled === true;
+  if (networkDiagnosticsToggleNode) networkDiagnosticsToggleNode.checked = networkDiagnosticsEnabled;
+  try {
+    window.localStorage?.setItem(NETWORK_DIAGNOSTICS_SETTINGS_KEY,
+      networkDiagnosticsEnabled ? "true" : "false");
+  } catch {
+    // Storage is optional; the setting still applies to this page.
+  }
+  window.__cncSetNetworkDiagnostics?.(networkDiagnosticsEnabled, {
+    reset: networkDiagnosticsEnabled,
+    reason,
+  });
+  return networkDiagnosticsEnabled;
 }
 
 function loadNetworkSettings() {
-  let stored = {};
-  try {
-    stored = JSON.parse(window.localStorage?.getItem(NETWORK_SETTINGS_KEY) ?? "{}") ?? {};
-  } catch {
-    stored = {};
-  }
+  const stored = loadOrCreateNetworkSettings({
+    storage: networkStorage,
+    queryParams,
+  });
   return {
-    room: queryParams.get("room") ?? stored.room ?? "",
-    name: queryParams.get("peer") ?? stored.name ?? "",
-    signalingUrl: queryParams.get("signal") ?? stored.signalingUrl ?? defaultSignalingUrl(),
-    iceServerUrl: queryParams.get("ice") ?? stored.iceServerUrl ?? "",
-    iceUsername: queryParams.get("iceUser") ?? stored.iceUsername ?? "",
+    ...stored,
     iceCredential: "",
   };
 }
 
 function networkSettingsFromInputs() {
+  const name = normalizeCommanderName(networkNameNode?.value) || generateCommanderName();
+  if (networkNameNode && networkNameNode.value !== name) networkNameNode.value = name;
   return {
     room: networkRoomNode?.value.trim() ?? "",
-    name: networkNameNode?.value.trim() ?? "",
-    signalingUrl: networkSignalingNode?.value.trim() || defaultSignalingUrl(),
+    name,
     iceServerUrl: networkStunNode?.value.trim() ?? "",
     iceUsername: networkIceUsernameNode?.value ?? "",
     iceCredential: networkIceCredentialNode?.value ?? "",
@@ -83,7 +113,6 @@ function initializeNetworkSettings() {
   const settings = loadNetworkSettings();
   if (networkRoomNode) networkRoomNode.value = settings.room;
   if (networkNameNode) networkNameNode.value = settings.name;
-  if (networkSignalingNode) networkSignalingNode.value = settings.signalingUrl;
   if (networkStunNode) networkStunNode.value = settings.iceServerUrl;
   if (networkIceUsernameNode) networkIceUsernameNode.value = settings.iceUsername;
   if (networkIceCredentialNode) networkIceCredentialNode.value = settings.iceCredential;
@@ -98,19 +127,23 @@ function updateNetworkDraftStatus() {
 }
 
 function saveNetworkSettings(settings) {
-  try {
-    const { iceCredential: _ephemeralCredential, ...persisted } = settings;
-    window.localStorage?.setItem(NETWORK_SETTINGS_KEY, JSON.stringify(persisted));
-  } catch {
-    // Storage is optional; the current launch still uses the entered values.
-  }
+  persistNetworkSettings(networkStorage, settings);
 }
 
 initializeNetworkSettings();
-[networkRoomNode, networkNameNode, networkSignalingNode, networkStunNode, networkIceUsernameNode]
+setNetworkDiagnosticsEnabled(networkDiagnosticsEnabled, "settings-load");
+[networkRoomNode, networkNameNode, networkStunNode, networkIceUsernameNode]
   .filter(Boolean)
   .forEach((input) => input.addEventListener("change", () => saveNetworkSettings(networkSettingsFromInputs())));
 networkRoomNode?.addEventListener("input", updateNetworkDraftStatus);
+networkDiagnosticsToggleNode?.addEventListener("change", (event) => {
+  setNetworkDiagnosticsEnabled(event.currentTarget.checked, "settings-toggle");
+  track("setting_changed", {
+    category: "diagnostics",
+    setting: "multiplayer_packet_capture",
+    value: event.currentTarget.checked ? "enabled" : "disabled",
+  });
+});
 updateNetworkDraftStatus();
 // Engine-thread mode: the engine runs on a pthread in the threaded build and
 // bridge.js moves the frame loop into the worker realm; this page only
@@ -276,6 +309,14 @@ const issueRecorder = createIssueRecorder({
     uploadDumpButton: document.querySelector("#uploadDump"),
     detailToggle: document.querySelector("#deepCapture"),
     videoToggle: document.querySelector("#videoCapture"),
+    captureOverlay: document.querySelector("#captureOverlay"),
+    captureTitle: document.querySelector("#captureOverlayTitle"),
+    captureStats: document.querySelector("#captureOverlayStats"),
+    captureStatus: document.querySelector("#captureOverlayStatus"),
+    captureToggle: document.querySelector("#captureOverlayToggle"),
+    captureIssue: document.querySelector("#captureOverlayIssue"),
+    captureDownload: document.querySelector("#captureOverlayDownload"),
+    captureDismiss: document.querySelector("#captureOverlayDismiss"),
     issueModal: document.querySelector("#issueModal"),
     issueTitle: document.querySelector("#issueTitle"),
     issueComment: document.querySelector("#issueComment"),
@@ -763,7 +804,7 @@ async function start() {
     let networkRuntime = null;
     if (networkSettings.room) {
       report(`joining P2P room ${networkSettings.room}...`);
-      if (networkStatusNode) networkStatusNode.textContent = "Connecting signaling and WebRTC ICE...";
+      if (networkStatusNode) networkStatusNode.textContent = "Discovering peers and connecting WebRTC ICE...";
       const iceServers = networkSettings.iceServerUrl
         ? [{
           urls: networkSettings.iceServerUrl.split(",").map((entry) => entry.trim()).filter(Boolean),
@@ -772,7 +813,6 @@ async function start() {
         }]
         : [];
       const networkConnect = await rpc("browserWebRtcEndpointConnect", {
-        signalingUrl: networkSettings.signalingUrl,
         room: networkSettings.room,
         peerId: networkSettings.name || null,
         displayName: networkSettings.name || null,
@@ -785,7 +825,7 @@ async function start() {
       const virtualIp = networkRuntime?.endpoint?.localIp >>> 0;
       const ipText = [24, 16, 8, 0].map((shift) => (virtualIp >>> shift) & 0xff).join(".");
       if (networkStatusNode) {
-        networkStatusNode.textContent = `Joined ${networkSettings.room} as ${networkRuntime.endpoint.peerId} (${ipText}). Open Multiplayer → LAN.`;
+        networkStatusNode.textContent = `Joined ${networkSettings.room} as ${networkRuntime.endpoint.displayName} (${ipText}). Open Multiplayer → LAN.`;
       }
     } else if (networkStatusNode) {
       networkStatusNode.textContent = "Offline. Enter a shared room to enable WebRTC multiplayer.";
@@ -904,6 +944,7 @@ async function start() {
         runDirectory: "/assets/real-init",
         shellMap,
         stepped: steppedInit,
+        commanderName: networkSettings.name,
         bootWidth: bootResolution?.width,
         bootHeight: bootResolution?.height,
       });
@@ -1816,6 +1857,8 @@ function installPlayHostApi() {
     setShaderTier,
     getShaderTier: effectiveShaderTier,
     setDiagnosticsLevel: setConfiguredDiagLevel,
+    setNetworkDiagnostics: setNetworkDiagnosticsEnabled,
+    getNetworkDiagnostics: () => window.__cncNetworkDiagnosticsSnapshot?.() ?? null,
     setConsoleVisible,
     issues: {
       startRecording: (...args) => issueRecorder.startRecording(...args),

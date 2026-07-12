@@ -26,6 +26,9 @@ python3 "$SKILL_DIR/scripts/decode_issue_dump.py" \
    - `issues/<issue-id>/timeline-window.json`
    - `issues/<issue-id>/logs-tail.txt`
    - `issues/<issue-id>/deep-snapshot.redacted.json`
+   - `network/packets.ndjson` (complete encrypted Generals datagrams when enabled)
+   - `network/events.ndjson` (worker-ring and channel lifecycle timing)
+   - `network/rtc-stats.ndjson` and `network/engine-lockstep.ndjson`
 4. Compare `manifest.build.server.git` when present. If absent, use
    `manifest.build.latestLastModified` and per-asset `Last-Modified`/size
    metadata to identify the served build.
@@ -68,6 +71,10 @@ Top-level fields:
   UI actions, storage, uploads, errors.
 - `frameSamples`: compact frame/RPC summaries from the live loop.
 - `logs`: tail of engine/harness logs.
+- `networkDiagnostics`: optional opt-in packet flight recorder containing raw
+  game datagrams, cross-realm queue transitions, sanitized RTC stats, and
+  original-engine lockstep/queue samples. The decoder extracts its large arrays
+  as NDJSON under `network/`.
 - `media.video`: optional WebM canvas recording as a data URL.
 - `replay`: metadata for `harness/replay_issue_dump.mjs`.
 

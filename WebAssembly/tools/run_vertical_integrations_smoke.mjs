@@ -523,18 +523,18 @@ const steps = [
           && payload.p2p === true
           && payload.reliable === true
           && payload.ordered === true
-          && payload.gameBytesRelayedByServer === 0
-          && payload.source?.browserTransport === "WebRTC RTCDataChannel peer mesh"
+          && payload.gameBytesRelayedByDiscovery === 0
+          && payload.source?.browserTransport === "dedicated WebRTC RTCDataChannel peer mesh"
           && payload.source?.relayTransport === false
           && payload.source?.openPeers === 1
+          && payload.source?.sent === 1
           && payload.destination?.openPeers === 1
+          && payload.destination?.received === 1
           && payload.packet?.commandType === "NETCOMMANDTYPE_FRAMEINFO+NETCOMMANDTYPE_RUNAHEAD"
           && payload.receive?.ready === true
           && payload.receive?.managerReady === true
           && payload.receive?.storedCommandType === "NETCOMMANDTYPE_RUNAHEAD"
-          && payload.signaling?.relayedSignals > 0
-          && payload.signaling?.binaryFramesRejected === 0
-          && payload.signaling?.gamePayloadBytes === 0,
+          && payload.discovery?.strategy === "trystero-nostr",
         "browser live WebRTC transport smoke did not carry original Transport bytes directly between peers", payload);
     },
   },

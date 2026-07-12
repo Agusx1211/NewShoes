@@ -41,7 +41,7 @@ import { createD3D8Executor } from "./d3d8_executor.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
 import {
   clearSharedUdpRing,
-  dequeueSharedUdpDatagram,
+  createSharedUdpPortDemultiplexer,
   enqueueSharedUdpDatagram,
 } from "./udp_realm_bridge.mjs";
 
@@ -413,30 +413,62 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
   // RTCDataChannel remains main-realm owned; fixed SharedArrayBuffer rings carry
   // datagrams between realms without blocking the browser event loop.
   const udpBridge = opts.udpBridge;
+  const udpBridgeState = udpBridge ? new Int32Array(udpBridge.state) : null;
+  let udpOutgoingSequence = 0;
+  const networkDiagnosticsEnabled = () => udpBridgeState
+    ? Atomics.load(udpBridgeState, 1) === 1
+    : false;
+  const epochMicroseconds = () => Math.round((performance.timeOrigin + performance.now()) * 1000);
+  const udpIncoming = udpBridge ? createSharedUdpPortDemultiplexer(udpBridge.incoming, {
+    onEvent: (type, detail) => {
+      if (!networkDiagnosticsEnabled()) return;
+      postToMain({ cmd: "networkDiagnostic", event: { kind: "event", type, detail } });
+    },
+  }) : null;
   Module.cncPortBrowserUdpClear = () => {
     if (!udpBridge) return 0;
     clearSharedUdpRing(udpBridge.incoming);
+    udpIncoming.clear();
     return 1;
   };
   Module.cncPortBrowserUdpSend = (datagram) => {
     const bytes = datagram?.bytes instanceof Uint8Array
       ? datagram.bytes
       : new Uint8Array(datagram?.bytes ?? 0);
-    if (!udpBridge || !enqueueSharedUdpDatagram(udpBridge.outgoing, datagram)) {
+    const queued = {
+      ...datagram,
+      bridgeSequence: ++udpOutgoingSequence,
+      bridgeQueuedAtUs: epochMicroseconds(),
+    };
+    if (!udpBridge || !enqueueSharedUdpDatagram(udpBridge.outgoing, queued)) {
       return -5;
     }
     postToMain({ cmd: "udpFlush" });
     return bytes.byteLength;
   };
   Module.cncPortBrowserUdpRecv = ({ capacity, port } = {}) => {
-    if (!udpBridge) return null;
-    let datagram;
-    while ((datagram = dequeueSharedUdpDatagram(udpBridge.incoming)) !== null) {
-      if (datagram.destinationPort !== (Number(port) & 0xffff)) continue;
-      if (datagram.bytes.byteLength > Number(capacity ?? 0)) return null;
-      return datagram;
+    const datagram = udpIncoming?.receive({ capacity, port }) ?? null;
+    if (datagram && networkDiagnosticsEnabled()) {
+      const dequeuedAtUs = epochMicroseconds();
+      postToMain({
+        cmd: "networkDiagnostic",
+        event: {
+          kind: "event",
+          type: "bridge.incoming.dequeued-by-engine",
+          detail: {
+            traceId: `in-${datagram.bridgeSequence ?? 0}`,
+            byteLength: datagram.bytes.byteLength,
+            destinationPort: datagram.destinationPort,
+            queuedAtUs: datagram.bridgeQueuedAtUs ?? null,
+            dequeuedAtUs,
+            queueDelayUs: datagram.bridgeQueuedAtUs
+              ? dequeuedAtUs - datagram.bridgeQueuedAtUs
+              : null,
+          },
+        },
+      });
     }
-    return null;
+    return datagram;
   };
   Module.cncPortBrowserNetworkVirtualIp = () => udpBridge
     ? Atomics.load(new Int32Array(udpBridge.state), 0) >>> 0
@@ -581,6 +613,15 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         if (bootWidth >= 640 && bootHeight >= 480
             && typeof Module._cnc_port_real_engine_set_boot_resolution === "function") {
           Module._cnc_port_real_engine_set_boot_resolution(bootWidth, bootHeight);
+        }
+        const commanderName = String(request.commanderName ?? "");
+        if (commanderName) {
+          const identity = parseMaybeJson(cwrapFor(
+            "cnc_port_real_engine_set_commander_name", "string", ["string"],
+          )(commanderName));
+          if (identity?.ok !== true) {
+            throw new Error("commander identity rejected");
+          }
         }
         if (request.stepped === false) {
           // ?initstep=0 fallback: the monolithic init call — blocks this
@@ -783,6 +824,16 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
   let statusSeq = 0;
   function buildStatus() {
     const result = loop.lastResult;
+    let networkDiagnostics = null;
+    if (live && networkDiagnosticsEnabled()) {
+      try {
+        networkDiagnostics = parseMaybeJson(cwrapFor(
+          "cnc_port_real_engine_lan_state", "string", [],
+        )());
+      } catch (error) {
+        networkDiagnostics = { ok: false, error: String(error) };
+      }
+    }
     return {
       cmd: "status",
       seq: ++statusSeq,
@@ -811,6 +862,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         lastFrameMs: result.lastFrameMs,
         quitting: result.quitting,
       } : null,
+      networkDiagnostics,
       engineDisplaySize: realmState.engineDisplaySize ?? null,
       canvas: { width: canvas.width, height: canvas.height },
       contextLost: typeof d3d8Diag?.webglContextLost === "function"
@@ -923,6 +975,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
           bootWidth: msg.bootWidth,
           bootHeight: msg.bootHeight,
           stepBudgetMs: msg.stepBudgetMs,
+          commanderName: String(msg.commanderName ?? ""),
         };
         init.respond = respond;
         return;

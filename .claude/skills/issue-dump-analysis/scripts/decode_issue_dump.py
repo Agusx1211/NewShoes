@@ -229,6 +229,59 @@ def event_type_counts(timeline: list[dict[str, Any]]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
+def value_counts(values: list[Any]) -> dict[str, int]:
+    counts: Counter[str] = Counter(str(value if value is not None else "unknown") for value in values)
+    return dict(sorted(counts.items()))
+
+
+def timestamp_gap_summary(values: list[Any]) -> dict[str, Any]:
+    timestamps = [finite_number(value.get("epochUs")) for value in values if isinstance(value, dict)]
+    concrete = [timestamp for timestamp in timestamps if timestamp is not None]
+    gaps_ms = [
+        (current - previous) / 1000
+        for previous, current in zip(concrete, concrete[1:])
+        if current >= previous
+    ]
+    return {
+        "maximum": max(gaps_ms) if gaps_ms else None,
+        "over500ms": sum(1 for gap in gaps_ms if gap >= 500),
+        "over2000ms": sum(1 for gap in gaps_ms if gap >= 2000),
+    }
+
+
+def network_diagnostics_summary(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    packets = value.get("packets") if isinstance(value.get("packets"), list) else []
+    events = value.get("events") if isinstance(value.get("events"), list) else []
+    rtc_samples = value.get("rtcSamples") if isinstance(value.get("rtcSamples"), list) else []
+    engine_samples = value.get("engineSamples") if isinstance(value.get("engineSamples"), list) else []
+    return {
+        "schema": value.get("schema"),
+        "enabled": value.get("enabled"),
+        "startedAt": value.get("startedAt"),
+        "stoppedAt": value.get("stoppedAt"),
+        "complete": value.get("complete"),
+        "retained": value.get("retained"),
+        "totals": value.get("totals"),
+        "evicted": value.get("evicted"),
+        "directions": value_counts([
+            packet.get("direction") for packet in packets if isinstance(packet, dict)
+        ]),
+        "outcomes": value_counts([
+            packet.get("outcome") for packet in packets if isinstance(packet, dict)
+        ]),
+        "eventTypes": value_counts([
+            event.get("type") for event in events if isinstance(event, dict)
+        ]),
+        "packetGapMs": timestamp_gap_summary(packets),
+        "rtcHeartbeatGapMs": timestamp_gap_summary(rtc_samples),
+        "engineHeartbeatGapMs": timestamp_gap_summary(engine_samples),
+        "rtcSamples": len(rtc_samples),
+        "engineSamples": len(engine_samples),
+    }
+
+
 def issue_summary(issue: dict[str, Any], paths: dict[str, Any] | None = None) -> dict[str, Any]:
     annotation = issue.get("annotation") if isinstance(issue.get("annotation"), dict) else {}
     screenshot = issue.get("screenshot") if isinstance(issue.get("screenshot"), dict) else {}
@@ -281,6 +334,7 @@ def summarize_dump(
     logic_values = [sample_logic_frame(sample) for sample in frame_samples if isinstance(sample, dict)]
     media = dump.get("media") if isinstance(dump.get("media"), dict) else {}
     video = media.get("video") if isinstance(media.get("video"), dict) else None
+    network_diagnostics = network_diagnostics_summary(dump.get("networkDiagnostics"))
 
     return {
         "schema": dump.get("schema"),
@@ -354,6 +408,7 @@ def summarize_dump(
             "videoMime": video.get("mime") if video else None,
             "videoBytesApprox": video.get("bytesApprox") if video else None,
         },
+        "networkDiagnostics": network_diagnostics,
         "replay": dump.get("replay"),
     }
 
@@ -361,6 +416,13 @@ def summarize_dump(
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def write_ndjson(path: Path, values: list[Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as output:
+        for value in values:
+            output.write(json.dumps(value, separators=(",", ":"), sort_keys=True) + "\n")
 
 
 def extract_issue(
@@ -443,6 +505,20 @@ def extract_dump(
         video_path = write_data_url(video.get("dataUrl"), out_dir / "media" / "video")
         if video_path:
             write_json(out_dir / "media" / "video.json", redact_data_urls(video))
+
+    network = dump.get("networkDiagnostics")
+    if isinstance(network, dict):
+        network_dir = out_dir / "network"
+        manifest = {
+            key: value
+            for key, value in network.items()
+            if key not in {"packets", "events", "rtcSamples", "engineSamples"}
+        }
+        write_json(network_dir / "manifest.json", manifest)
+        write_ndjson(network_dir / "packets.ndjson", network.get("packets") or [])
+        write_ndjson(network_dir / "events.ndjson", network.get("events") or [])
+        write_ndjson(network_dir / "rtc-stats.ndjson", network.get("rtcSamples") or [])
+        write_ndjson(network_dir / "engine-lockstep.ndjson", network.get("engineSamples") or [])
 
     return paths_by_issue
 

@@ -42,6 +42,8 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "launcher.css",
   "launcher.js",
   "manifest.webmanifest",
+  "multiplayer_identity.mjs",
+  "network-diagnostics.mjs",
   "opfs_realm_files.mjs",
   "play.mjs",
   "runtime-shutdown-sequence.mjs",
@@ -50,7 +52,10 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "udp_realm_bridge.mjs",
   "vendor/pako-LICENSE.txt",
   "vendor/pako.es5.min.js",
+  "vendor/noble-secp256k1-LICENSE.txt",
   "vendor/primer-octicons-LICENSE.txt",
+  "vendor/trystero-LICENSE.txt",
+  "vendor/trystero-nostr.min.mjs",
   "webrtc-udp-endpoint.mjs",
 ]);
 

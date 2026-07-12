@@ -287,10 +287,29 @@ static std::string g_last_game_logic_step;
 static std::string g_game_logic_breakpoint;
 static std::string g_last_script_phase;
 static std::string g_last_script_name;
+static std::string g_browser_commander_name;
 static int g_last_script_player_index = -1;
 static int g_last_script_side_index = -1;
 static int g_last_script_condition_type = -1;
 static int g_last_script_action_type = -1;
+
+extern "C" const char *cnc_port_browser_commander_name(void)
+{
+	return g_browser_commander_name.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_commander_name(const char *name)
+{
+	static std::string json;
+	g_browser_commander_name = name != NULL ? name : "";
+	if (g_browser_commander_name.size() > static_cast<std::size_t>(g_lanPlayerNameLength)) {
+		g_browser_commander_name.resize(g_lanPlayerNameLength);
+	}
+	json = g_browser_commander_name.empty()
+		? "{\"ok\":false,\"error\":\"emptyCommanderName\"}"
+		: "{\"ok\":true}";
+	return json.c_str();
+}
 static unsigned int g_frame_texture_apply_count = 0;
 static unsigned int g_frame_missing_texture_apply_count = 0;
 // ADD-ONLY Stage-1 diagnostic counters, incremented by W3DCommandBarBackgroundDraw.
@@ -8029,10 +8048,56 @@ void append_lan_runtime_json(std::string &json)
 		json += TheNetwork->isFrameDataReady() ? "true" : "false";
 		json += ",\"runAhead\":"
 			+ std::to_string(static_cast<unsigned long long>(TheNetwork->getRunAhead()));
+		json += ",\"frameRate\":"
+			+ std::to_string(static_cast<unsigned long long>(TheNetwork->getFrameRate()));
+		json += ",\"logicFrame\":"
+			+ std::to_string(TheGameLogic != NULL ? TheGameLogic->getFrame() : -1);
 		json += ",\"crcMismatch\":";
 		json += TheNetwork->sawCRCMismatch() ? "true" : "false";
 		json += ",\"packetRouter\":";
 		json += TheNetwork->isPacketRouter() ? "true" : "false";
+		json += ",\"averageFps\":" + std::to_string(TheNetwork->getAverageFPS());
+		json += ",\"averageLatencySeconds\":"
+			+ std::to_string(TheNetwork->getBrowserDiagnosticAverageLatency());
+		json += ",\"minimumCushion\":"
+			+ std::to_string(TheNetwork->getBrowserDiagnosticMinimumCushion());
+		json += ",\"incomingBytesPerSecond\":"
+			+ std::to_string(TheNetwork->getIncomingBytesPerSecond());
+		json += ",\"incomingPacketsPerSecond\":"
+			+ std::to_string(TheNetwork->getIncomingPacketsPerSecond());
+		json += ",\"outgoingBytesPerSecond\":"
+			+ std::to_string(TheNetwork->getOutgoingBytesPerSecond());
+		json += ",\"outgoingPacketsPerSecond\":"
+			+ std::to_string(TheNetwork->getOutgoingPacketsPerSecond());
+		json += ",\"queues\":{";
+		json += "\"pendingCommands\":"
+			+ std::to_string(TheNetwork->getBrowserDiagnosticPendingCommands());
+		json += ",\"relayedCommands\":"
+			+ std::to_string(TheNetwork->getBrowserDiagnosticRelayedCommands());
+		json += ",\"transportIncoming\":"
+			+ std::to_string(TheNetwork->getBrowserDiagnosticTransportIncoming());
+		json += ",\"transportOutgoing\":"
+			+ std::to_string(TheNetwork->getBrowserDiagnosticTransportOutgoing());
+		json += "}";
+		json += ",\"slots\":[";
+		for (Int slot = 0; slot < MAX_SLOTS; ++slot) {
+			if (slot > 0) {
+				json += ",";
+			}
+			json += "{\"slot\":" + std::to_string(slot);
+			json += ",\"frameGroupingMs\":"
+				+ std::to_string(TheNetwork->getBrowserDiagnosticFrameGrouping(slot));
+			json += ",\"connectionQueue\":"
+				+ std::to_string(TheNetwork->getBrowserDiagnosticConnectionQueue(slot));
+			json += ",\"frameCommands\":"
+				+ std::to_string(TheNetwork->getBrowserDiagnosticFrameCommands(
+					slot, static_cast<UnsignedInt>(TheNetwork->getExecutionFrame())));
+			json += ",\"expectedFrameCommands\":"
+				+ std::to_string(TheNetwork->getBrowserDiagnosticExpectedFrameCommands(
+					slot, static_cast<UnsignedInt>(TheNetwork->getExecutionFrame())));
+			json += "}";
+		}
+		json += "]";
 	}
 	json += "}";
 }
