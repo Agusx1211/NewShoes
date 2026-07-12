@@ -137,15 +137,20 @@ Still open:
 - Chrome hardening plus Firefox and Safari support; and
 - removal of the remaining legacy probe and compatibility surface.
 
-The active backlog is [TODO.md](TODO.md). Completed evidence is in
-[DONE.md](DONE.md).
+The original port checklist and its completion log are retired, frozen snapshots
+under [`archive/`](archive/). Current work is driven by feature requests,
+reproducible bugs, compatibility needs, measured performance, and product
+verification rather than the old milestone queue.
 
 ## Repository rules
 
-- Reuse original code whenever it exists.
+- Change original engine code carefully when it is the right ownership point;
+  prefer focused edits over parallel reimplementations or broad rewrites.
 - Keep retail assets, extracted archives, builds, profiles, and screenshots
   untracked.
-- Keep the real engine lifecycle as the progress metric.
+- Do not add stubs, no-op shims, canned-success paths, or fake compatibility
+  behavior without explicit approval.
 - Verify rendering with browser state or pixels.
-- Record new work in `TODO.md` and move verified completion to `DONE.md`.
+- Keep the archived port checklists frozen; they are historical evidence, not
+  the current workflow.
 - Check [LICENSE.md](LICENSE.md) before redistributing modified builds.

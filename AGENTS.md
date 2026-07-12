@@ -1,219 +1,137 @@
 # AGENTS.md
 
-## What this project is
+## Project state
 
-Port the **actual original Command & Conquer: Generals / Zero Hour source code**
-to run in the browser via WebAssembly.
+Project New Shoes runs the original Command & Conquer: Generals / Zero Hour C++
+engine in the browser through WebAssembly. The foundational port is substantially
+complete: the real engine boots, renders the shell, and runs playable skirmishes.
+Current work is product development—features, fidelity, bug fixes, compatibility,
+performance, hardening, and cleanup.
 
-This is a **port of the real game**, compiled from the genuine C++ source that is
-already in this repo. It is **not** a copy, **not** a reimplementation, **not** an
-"inspired by" clone, and **not** a simplified mini-game. The end goal is the real
-game running in a browser: the original simulation, AI, 3D rendering, sound,
-video, input, and networking — everything.
+Zero Hour in `GeneralsMD/Code/` is the primary target. The main source areas are:
 
-## Where the real source is
+- `GameEngine/` — simulation, AI, data loading, UI logic, objects, weapons, and
+  networking protocol;
+- `GameEngineDevice/` — rendering, audio, video, input, and OS-facing device
+  implementations;
+- `Libraries/Source/` — WW3D and the original third-party integration surface;
+- `WebAssembly/` — the Emscripten build, browser platform layer, launcher, asset
+  import, runtime bridge, and verification harness.
 
-- `Generals/Code/` — original Generals source.
-- `GeneralsMD/Code/` — original Zero Hour source (the primary target).
-  - `GameEngine/` — **platform-independent game logic** (simulation, AI, INI
-    loading, object/weapon/locomotor behavior, …). This compiles to wasm
-    largely as-is.
-  - `GameEngineDevice/` — **platform-specific implementations** behind the
-    engine's device interfaces:
-    - `W3DDevice/` → 3D rendering on DirectX 8 / the WW3D (W3D) engine.
-    - `MilesAudioDevice/` → audio via Miles Sound System.
-    - `VideoDevice/` → video (Bink).
-    - `Win32Device/` → OS layer: window, files, input, timing.
-  - `Libraries/Source/` — vendored deps: `DX90SDK`, `WWVegas` (W3D), `GameSpy`
-    (networking), `Compression`, `STLport`, etc.
+Read `PROJECT.md` for the current architecture before making broad or
+cross-cutting changes.
 
-## Reference documentation & code library
+## Engineering stance
 
-Documentation resources for the port — reference repos (community source
-ports, engine reimplementations, D3D8 implementations, format tooling), format
-specs, modding docs, and browser-target API references (WebGL2 spec +
-conformance tests, WebGPU, Web Audio, WebCodecs, WebAssembly, MDN) — are
-available locally in **`./assets/docs/`**. Search it with
-`python3 assets/docs/docsearch.py search "<terms>"` (ranked full-text;
-see the `/docs-search` skill), or `rg` for exact strings.
-**`./assets/docs/INDEX.md`** lists everything in there, how to access each
-resource, and what to use it for. Before reverse-engineering a format, a D3D8
-behavior, or a platform-layer question from scratch, check the index — someone
-has usually already solved or documented it. When you add a resource to
-`assets/docs/`, add an entry to `INDEX.md`. The directory is gitignored
-(local-only): treat it as read-only reference material and never copy code
-from it into checked-in files without checking its license.
+The original engine is the product, but it is no longer an untouchable artifact.
+Core engine files may be changed when that is the cleanest correct way to add a
+feature or fix a problem.
 
-## The port strategy
+Treat core changes with care:
 
-The game logic is already separated from the platform. **Keep the original game
-code; replace the platform layer.** Re-implement the device interfaces in
-`GameEngineDevice` and the `Libraries` deps against browser APIs:
+- understand the real call path, ownership, and invariants before editing it;
+- keep changes scoped and reviewable; avoid broad rewrites when a focused change
+  will do;
+- preserve simulation behavior, data compatibility, save/network determinism,
+  and native behavior unless the task intentionally changes them;
+- prefer existing engine abstractions and data-driven behavior over parallel
+  browser-only implementations;
+- use target-specific conditionals only for genuine platform differences, not
+  to avoid integrating the real code;
+- add or update verification at the level where the behavior is owned.
 
-| Original dependency | Browser target |
-|---|---|
-| DirectX 8 / W3D rendering | WebGL2 / WebGPU |
-| Miles Sound System | Web Audio API |
-| Bink video | WebCodecs / `<video>` |
-| Win32 (window, files, input, time) | Emscripten + DOM / Canvas / Pointer + Keyboard events |
-| GameSpy networking | WebSockets / WebRTC |
-| File/BIG archive I/O | streamed fetch → OPFS + engine-thread sync reads |
+Platform adapters are still normal and necessary. They must implement the
+semantics the engine relies on, with explicit unsupported/error behavior where a
+browser cannot provide them.
 
-Toolchain: **Emscripten** (`emcc`/`em++`) targeting `STANDALONE_WASM`/browser.
+## No new stubs or fake compatibility
 
-## How the port advances: the real `init()` strategy
+Do not introduce, preserve as the solution, or extend stubs, no-op
+implementations, canned-success paths, dummy data, weak fallback ownership, or
+“just enough to link” shims unless the user explicitly approves that tradeoff
+for the specific task.
 
-The port advances by running the **real engine lifecycle**, not by proving
-subsystems in isolation. The era of adding probe/smoke slices is over; the
-existing smokes stay only as regression tests.
+In particular:
 
-- **The driving loop is the real boot path**: `main()` →
-  `GameEngine::init()` → `GameEngine::execute()` linked into the single
-  `cnc-port` runtime. Boot it in the harness, hit the first crash / abort /
-  missing dependency, fix that, boot again. **"How far does real `init()` /
-  `execute()` get in the browser" is THE progress metric** — not probe counts.
-- **Compile and link everything.** All of `GameEngine`, `GameEngineDevice`,
-  and the required `Libraries` link into the one runtime target. Stub only at
-  the true platform boundary (Direct3D8 device, Miles, Bink, WinSock, Win32
-  window/input/CD). Do **not** shadow engine logic with weak symbols,
-  probe-local singletons, or "focused frontier" compile-only libraries.
-- **Every fix lands in the linked runtime.** Never build a fix into an
-  isolated probe that later needs "promotion to real ownership" — that is
-  double work and the backlog proves it. When the real path covers what a
-  probe proved, retire the probe and its TODO debt.
-- **Do not add new `-smoke` executables or probe targets.** New verification
-  goes through the harness driving the real `cnc-port` binary (boot, RPC
-  queries, screenshots). Reductions in the probe/stub/weak-symbol surface are
-  progress and should be committed as such.
-- **Fix the crash the real boot reports — nothing else.** The frontier is
-  whatever the last real `init()`/`execute()` run actually died on (subsystem
-  name + failure message from the run itself, never a hand-authored claim).
-  Work on that specific crash. Do **not** build ownership slices, preflights,
-  or "readiness" proofs for subsystems the real boot has not reached yet —
-  that is the probe-accretion loop this strategy retired.
-- **Use the hot-path build in the boot loop.** `npm run build:wasm` compiles
-  the full ~90-executable legacy smoke surface and pays a mass rebuild on
-  every touched engine header. The iterate loop should use
-  `npm run build:port` (just `cnc-port`) or `npm run build:startup-vertical`
-  (the `zh_startup_vertical_hotpath` aggregate — everything
-  `test:startup-vertical` runs). Full `build:wasm` is for the regression
-  suite (`test:all`, `test:vertical-integrations`), not for every iteration.
-  The legacy smokes remain canaries: they earn their keep when the regression
-  suite runs them, not by being recompiled in the inner loop.
+- do not silently claim success for behavior that did not happen;
+- do not shadow a real engine implementation with a simplified copy;
+- do not make a harness-only implementation stand in for product behavior;
+- do not hide unsupported behavior behind empty methods or invented defaults;
+- when existing legacy stubs are encountered, avoid expanding their role and
+  prefer retiring them through the real implementation.
 
-## Hard rules
+An existing legacy stub may remain when it is outside the requested scope, but
+it cannot be the implementation or completion evidence for new work.
 
-- **Reuse the original source.** Big rule of thumb: if code already exists in
-  the original source, **use it** — compile and port it. Only write new
-  machinery when something genuinely cannot work in the browser without it
-  (i.e. a platform/device dependency that must be re-targeted to a browser API).
-  Don't re-write engine/data logic that already exists and is platform-independent.
-- **Do not write a new game.** Do not reimplement gameplay, rendering, or AI
-  "from scratch" or as an approximation. Compile and port the real code.
-- **Do not invent data or behavior.** Behavior must come from the original
-  source and the real game assets, not from made-up values.
-- When something doesn't compile to wasm, the fix is to **port/shim its
-  dependency**, not to stub out or fake the feature.
-- Map missing platform APIs to browser equivalents; preserve original logic.
-- **Modifying original engine code is allowed when the browser requires it**
-  (policy updated 2026-07 — the port is mature enough that "never touch engine
-  source" is retired). When a genuine browser constraint — the single-threaded
-  event loop (nothing paints until control returns), async-only I/O, memory
-  limits — cannot be met at the platform seam alone, change the original C++:
-  add yield points, restructure a blocking loop, split a monolithic load
-  function. Constraints on such changes:
-  - Change **how** the code runs (scheduling, I/O, pumping), never **what**
-    the game does — same data, same simulation outcomes, same UI flow.
-  - Keep edits minimal and reviewable; prefer `#ifdef __EMSCRIPTEN__` gating
-    or the established weak-hook pattern (`cnc_port_*` weak decls in engine
-    files, strong defs in `wasm_real_engine_init.cpp`) so native builds keep
-    the original behavior byte-for-byte.
-  - A rewrite of a subsystem is still forbidden; surgical restructuring of a
-    function the browser physically cannot run as-is is fine.
+Test doubles that are scoped to tests and clearly identified as such are fine.
+Temporary diagnostic hooks are fine when they observe or drive the real runtime
+without replacing product behavior.
 
-## Don't work blind: keep a driveable harness
+## Implementation workflow
 
-A browser/wasm build is graphical and interactive, so an agent can't "see" it.
-**Always build and maintain a scriptable harness** that lets an agent (and CI)
-drive and observe the running build with no human in the loop:
+- Start from the requested feature, bug, or measured product problem. Reproduce
+  it when practical and trace the real runtime path before changing code.
+- Build fixes and features into the actual `cnc-port` runtime. Focused tests are
+  useful, but they do not replace integration through the shipping path.
+- Prefer `npm run build:port` for the normal iteration loop. Use broader builds
+  and regression suites in proportion to the change.
+- Preserve unrelated user changes and keep commits narrowly scoped.
+- When a task exposes separate follow-up work, report it clearly instead of
+  quietly widening the current change.
 
-- Run the build in a **headless browser** (e.g. Playwright/Puppeteer): boot it,
-  load to a known state, and **capture canvas screenshots** to confirm what
-  actually rendered. An agent cannot verify rendering any other way — screenshot
-  liberally.
-- Expose a **command / RPC control surface** (from the JS bridge or the engine
-  itself) so the harness can issue real inputs and queries: boot, load or skip
-  to a menu/map, click named UI buttons, select and move units, issue orders,
-  start and step a match, and read back game state and logs.
-- Prefer driving through the engine's **own input/command path** over blind
-  pixel-clicking, then verify the result with a screenshot and/or a state query.
-- Treat any change as **unverified until the harness boots the build and a
-  screenshot or state check proves it works**.
+## Verification: do not work blind
 
-Grow this harness with the port: every new subsystem (rendering, input, audio,
-AI, match flow) should be reachable and checkable through it.
+A browser/wasm game is graphical and interactive. Compilation alone cannot prove
+that user-visible behavior works.
 
-## Real-GPU verification
+- Graphical changes must be booted in the browser harness and verified with a
+  meaningful screenshot or pixel assertion plus relevant runtime state.
+- Input and UI work should be driven through the engine's real input/command path
+  where possible, with state and visual confirmation.
+- Gameplay changes should be exercised in the real match flow and checked through
+  observable state, screenshots, or deterministic assertions.
+- Rendering and performance changes should use the deterministic headless baseline
+  and, when relevant and available, Chrome on real GPU hardware through
+  `WebAssembly/harness/mac_verify.mjs`.
+- Non-graphical work should run the narrowest meaningful unit/integration tests
+  plus the relevant runtime gate.
 
-SwiftShader is the deterministic headless baseline, but it is a software
-renderer. Rendering and performance changes also need a run in Chrome on real
-GPU hardware. Use `WebAssembly/harness/mac_verify.mjs` when a remote macOS GPU
-host is available; the SSH host and worktree are caller-supplied arguments or
-environment variables. Keep each machine's ignored `harness/.certs` directory
-local because replacing its certificate invalidates the browser trust decision.
+Treat graphical work as unverified until the harness has produced evidence of the
+intended result. Do not weaken an existing gate merely to make it pass.
 
-The repository must live on a case-sensitive filesystem. The shim strategy has
-same-name headers that differ only by case, including `windows.h`, `Windows.h`,
-and `Windows.H`; copying through a case-insensitive filesystem can collapse
-them silently.
+## Reference documentation
 
-## Status
+Local reference material lives under `assets/docs/`. Before reverse-engineering
+an original-engine behavior, D3D8 semantic, file format, or browser API guarantee,
+search it with:
 
-`WebAssembly/` is the port work area: the Emscripten build (`CMakeLists.txt`),
-Win32/D3D8 header shims (`shims/`), the browser D3D8 to WebGL2 layer
-(`src/wasm_d3d8_shim.*`), the threaded worker runtime, launcher, asset import,
-and the browser harness. The real engine boots through all initialization
-stages, renders the shell and playable skirmishes, and remains under active
-fidelity, content, compatibility, and cleanup work.
+```sh
+python3 assets/docs/docsearch.py search "<terms>"
+```
 
-## Plan & checklist
+`assets/docs/INDEX.md` describes the available sources. The directory is
+gitignored reference material: check licenses before copying code or substantial
+content into tracked files.
 
-- `PROJECT.md` — broad outline of the whole port: architecture, the
-  device-layer mapping, milestones, and known hard problems.
-- `TODO.md` — open checklist of everything still to be done, tested, and
-  validated, grouped by milestone.
-- `DONE.md` — completed checklist history, grouped by the same milestones.
-  Search it when you need to verify that related work was already handled.
-- `IDEAS.md` — deferred experiments and longer design notes that should not
-  bloat the active checklist until they become current work.
+## Historical planning files
 
-**Every agent must, every time:**
+The port-era `TODO.md` and `DONE.md` checklists are retired. Their final snapshots
+live in `archive/TODO.md` and `archive/DONE.md` and are frozen historical records:
 
-- **Read `PROJECT.md` and `TODO.md` first** so you build from the current open
-  plan instead of guessing.
-- **Search `DONE.md` for related completed work before implementing in an
-  area**, so you build on existing progress instead of redoing it. Do not load
-  all of `DONE.md` by default unless broad history is genuinely needed.
-- **Always add any future TODO you encounter to `TODO.md`** if it isn't already
-  listed — new tasks, tests, edge cases, risks, follow-ups.
-- Put speculative future designs and non-current idea dumps in `IDEAS.md`,
-  then promote only the next concrete action into `TODO.md` when it becomes
-  active work.
-- As you complete work, move the item from `TODO.md` to `DONE.md` as `[x]`
-  instead of leaving completed entries in `TODO.md`. Remember: nothing
-  rendering-related is done until the harness proves it (see above).
-- Commit your work using short but descriptive commits. Sign it with your provider + model (granular, include subversion) name as author.
+- do not edit them;
+- do not move entries between them;
+- do not use them as the current backlog or completion gate.
 
-<!-- BEGIN orchestrator-skill (managed) -->
-## Orchestrator mode (pi-as-mcp sub-agents)
+Use the current user request, repository issues, tests, and relevant design docs
+to determine scope. `IDEAS.md` remains background material, not an active task
+queue.
 
-When asked to orchestrate, or to build / implement / fix work by delegating,
-act as a **hands-off orchestrator**: do not code, review, scout, test, or merge
-by hand — delegate every hands-on task to pi-as-mcp sub-agents and keep your own
-context clean. Full instructions and the available team:
+## Repository hygiene
 
-- `.claude/skills/orchestrator/SKILL.md` — how to orchestrate.
-- `.claude/skills/orchestrator/TEAM.md` — who is on the team.
-
-Read both before acting as the orchestrator.
-<!-- END orchestrator-skill (managed) -->
+- Keep retail assets, extracted archives, builds, profiles, screenshots, and
+  machine-local certificates untracked.
+- The repository must stay on a case-sensitive filesystem; the compatibility
+  headers include names that differ only by case.
+- Check `LICENSE.md` before redistributing modified builds.
+- Commit completed work with a short descriptive message and provider/model-specific
+  authorship, including the model subversion when it is available.

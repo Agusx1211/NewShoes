@@ -14,7 +14,7 @@ runtime BIG archive inventory.
 The directory contains 16 binary UI files: six brand/icon variants, one runtime
 logo, `zeroh-command-desert.webp`, and four full-size wallpaper/swatch pairs.
 Twenty unused launcher-concept logo candidates were removed before publication.
-The corresponding commits and `DONE.md` describe the retained files as
+The corresponding commits and `archive/DONE.md` describe the retained files as
 project-owned UI art.
 
 The code-native `#i-github` symbol in `play.html` is the official

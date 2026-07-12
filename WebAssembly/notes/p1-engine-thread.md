@@ -2,7 +2,7 @@
 
 Owner directive 2026-07-10: keep working until the engine-thread architecture
 is IN play.html. Design context: IDEAS.md "the browser as a 2003 PC"; P0
-evidence: DONE.md "Engine-thread architecture P0 spike" + threaded_boot_probe.
+evidence: archive/DONE.md "Engine-thread architecture P0 spike" + threaded_boot_probe.
 This note is the durable coordination doc for the P1 lanes — update it as
 gates pass so any future session can resume without re-deriving.
 
@@ -1228,5 +1228,5 @@ presentation verifier's display_drawimage_file line pins were removed with
 the smoke (ok:true again). Post-demolition gates: verify:threaded-play,
 probe:p2-opfs, p1_scaffold_probe, test:io-worker-offthread,
 shellmap_real_init_gate (the kept index.html legacy-boot surface), fresh
-build:port + build:port:threaded:release — results in DONE.md "Legacy
+build:port + build:port:threaded:release — results in archive/DONE.md "Legacy
 play-path demolition".

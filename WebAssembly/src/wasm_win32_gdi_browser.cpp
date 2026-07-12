@@ -17,7 +17,7 @@
 // to the same no-op behavior the stub has today, so this bridge is safe to link
 // in any single-threaded wasm context.
 //
-// See TODO.md (M4 — "Replace the probe's no-op browser stubs for the Win32 GDI
+// See archive/TODO.md (M4 — "Replace the probe's no-op browser stubs for the Win32 GDI
 // functions ...").
 
 #include "windows.h"
