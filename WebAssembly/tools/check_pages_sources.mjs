@@ -13,6 +13,7 @@ const scripts = [
   "harness/analytics.mjs",
   "harness/analytics_unit.mjs",
   "harness/analytics_browser_smoke.mjs",
+  "harness/bink_runtime.mjs",
   "harness/bridge.js",
   "harness/cloudflare_deployment_smoke.mjs",
   "harness/d3d8_executor.mjs",
