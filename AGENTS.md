@@ -79,6 +79,88 @@ without replacing product behavior.
 - When a task exposes separate follow-up work, report it clearly instead of
   quietly widening the current change.
 
+## Work tracking: GitHub Issues
+
+GitHub Issues in `Agusx1211/NewShoes` are the durable backlog and coordination
+record. The `origin` remote points at the EA source repository, where Issues are
+disabled, so every `gh issue` command must name the project repository explicitly:
+
+```sh
+gh issue list --repo Agusx1211/NewShoes --state open
+gh issue view <number> --repo Agusx1211/NewShoes
+```
+
+Before starting non-trivial feature, bug, compatibility, performance, or cleanup
+work:
+
+1. Search open and closed issues for the same work.
+2. Use the existing issue when one matches; otherwise create one with
+   `gh issue create --repo Agusx1211/NewShoes`.
+3. Read the full issue and its comments before choosing scope.
+4. Mark ownership with an assignee and/or a concise comment naming the branch so
+   another agent does not start the same work.
+
+Record newly discovered follow-ups as separate issues instead of expanding the
+current task or adding them to the archived checklists. Add concise progress or
+verification comments when they help a handoff. Close an issue only after the
+change is integrated and its required verification is complete.
+
+## Branch and worktree lifecycle
+
+All implementation work uses a dedicated branch created from an up-to-date
+`main`, checked out in a dedicated worktree under:
+
+```text
+~/worktrees/<project>/<feature>
+```
+
+For this repository, a normal path is
+`~/worktrees/CnC_Generals_Zero_Hour/<issue-number>-<short-name>`.
+
+Before creating it:
+
+- inspect `git worktree list`, local branches, and the matching GitHub issue;
+- confirm no other agent owns the issue, branch, or destination path;
+- confirm the primary `main` worktree has no user changes that would be disturbed;
+- fetch and fast-forward `main` without force, reset, or history rewriting;
+- if `main` cannot be updated safely, stop and report the conflict instead of
+  inventing a new base.
+
+Then create both the feature branch and worktree from `main`, for example:
+
+```sh
+mkdir -p ~/worktrees/CnC_Generals_Zero_Hour
+git worktree add \
+  -b issue-123-short-name \
+  ~/worktrees/CnC_Generals_Zero_Hour/issue-123-short-name \
+  main
+```
+
+Collision rules:
+
+- one agent owns a worktree at a time; never share or edit another agent's
+  worktree;
+- one branch should represent one issue or tightly related change;
+- do not reuse a path or branch that is active in `git worktree list`;
+- do not modify the primary checkout for feature work;
+- coordinate through the GitHub issue when related branches could touch the same
+  files or subsystem;
+- preserve unrelated changes and never clean, reset, or delete another agent's
+  files.
+
+Worktree cleanup is part of the definition of done. After committing and
+verifying the work:
+
+1. Confirm the feature worktree is clean with `git status --short`.
+2. Run `git worktree remove <path>` from another worktree.
+3. Run `git worktree prune` and confirm the directory is gone.
+4. Preserve the branch while it is awaiting review or integration; delete it
+   only after it is merged or explicitly abandoned.
+
+Never use forced worktree removal to discard uncommitted work. For a handoff,
+commit a recoverable state, remove your worktree, and let the next agent create
+its own worktree for the branch. Do not leave finished worktrees behind.
+
 ## Verification: do not work blind
 
 A browser/wasm game is graphical and interactive. Compilation alone cannot prove
@@ -122,9 +204,9 @@ live in `archive/TODO.md` and `archive/DONE.md` and are frozen historical record
 - do not move entries between them;
 - do not use them as the current backlog or completion gate.
 
-Use the current user request, repository issues, tests, and relevant design docs
-to determine scope. `IDEAS.md` remains background material, not an active task
-queue.
+Use the current user request, GitHub Issues in `Agusx1211/NewShoes`, tests, and
+relevant design docs to determine scope. `IDEAS.md` remains background material,
+not an active task queue.
 
 ## Repository hygiene
 

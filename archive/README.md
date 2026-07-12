@@ -5,8 +5,8 @@ workflow retired on 2026-07-12. They are preserved for historical context and
 verification archaeology only.
 
 These snapshots are frozen. Do not edit them, move entries between them, or use
-them as the current backlog. Current work is driven by feature requests, issues,
-tests, product behavior, and the guidance in `AGENTS.md`.
+them as the current backlog. Current work is tracked in the
+`Agusx1211/NewShoes` GitHub Issues and governed by the guidance in `AGENTS.md`.
 
 Frozen snapshot hashes:
 
