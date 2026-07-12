@@ -8,6 +8,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Forced-reload isolation recovery (2026-07-12)
+
+- [x] Reproduced the public report's post-force-reload failure against the
+      live `newshoes.gg` deployment. A Chrome navigation that bypassed the
+      service worker loaded the unisolated bootstrap with an activated
+      isolation-worker registration but no document controller, then failed
+      after 12 seconds with `The updated isolation helper did not take control
+      in time.` Restarting Chrome also cleared the condition, matching the
+      reporter's follow-up.
+- [x] Made the Pages bootstrap verify the registration's active worker
+      directly when a force-reloaded document has no controller, then perform
+      the normal navigation required for that worker to provide COOP/COEP.
+      The deployment smoke now drives the service-worker-bypass path through
+      Chrome DevTools and requires the canonical launcher, cross-origin
+      isolation, `SharedArrayBuffer`, the threaded RPC surface, shared wasm
+      heap, and transferred canvas afterward. The standard deployment smoke
+      and five consecutive pinned-old-worker rollout runs passed locally.
+
 ## Browser text-entry input repair (2026-07-12)
 
 - [x] Restored end-to-end browser text entry by removing the probe-only

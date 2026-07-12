@@ -255,6 +255,27 @@ try {
     if (new URL(rootPage.url()).pathname !== "/") {
       throw new Error(`Reloaded domain-root launcher exposed a noncanonical path: ${rootPage.url()}`);
     }
+
+    // Chrome's force reload bypasses the service worker for one navigation.
+    // The bootstrap page is therefore unisolated and has no controller, even
+    // though the registration still owns an activated isolation worker. The
+    // bootstrap must verify registration.active and navigate once normally;
+    // requiring a controller on the bypassed document strands users on the
+    // "could not start the threaded runtime" screen until Chrome restarts.
+    const devtools = await rootContext.newCDPSession(rootPage);
+    await devtools.send("Network.enable");
+    await devtools.send("Network.setBypassServiceWorker", { bypass: true });
+    await rootPage.reload({ waitUntil: "domcontentloaded" });
+    await devtools.send("Network.setBypassServiceWorker", { bypass: false });
+    await rootPage.waitForURL(rootBaseUrl, { timeout: 30000 });
+    await rootPage.waitForSelector("#desktop", { state: "visible", timeout: 30000 });
+    await rootPage.waitForFunction(() => window.crossOriginIsolated
+      && typeof SharedArrayBuffer === "function"
+      && Boolean(navigator.serviceWorker.controller)
+      && Boolean(window.CnCPort?.rpc), null, { timeout: 30000 });
+    if (new URL(rootPage.url()).pathname !== "/") {
+      throw new Error(`Force-reloaded domain-root launcher exposed a noncanonical path: ${rootPage.url()}`);
+    }
   } finally {
     await rootContext.close();
   }
@@ -419,6 +440,7 @@ try {
     runtime,
     canonicalPath: { first: firstPathname, reload: reloadPathname },
     domainRootCanonical: true,
+    forceReloadRecovery: true,
     workerRollout,
     legacyPlayRecovery: true,
     legalNotice: true,

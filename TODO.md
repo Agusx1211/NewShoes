@@ -23,6 +23,17 @@ shares structure and follows behind.
       `npm run test:pages-worker-rollout` when changing the Pages bootstrap or
       isolation worker; the production deployment gate continues to prove a
       fresh isolated root boot, reload, pthread heap, and OffscreenCanvas.
+      2026-07-12: forced-reload recovery coverage now passes along with five
+      consecutive local pinned-worker rollouts; constrained shared-CI
+      stability remains the open part of this item.
+- [ ] Reproduce the first `archive mount failed` half of the 2026-07-12 Reddit
+      long-session report independently from its now-reproduced force-reload
+      isolation failure. Capture the visible launch detail or issue dump, and
+      exercise background freeze/discard plus fresh-document relaunch against
+      a persistent installed archive set to distinguish an engine-realm death
+      from OPFS staging or sync-handle contention. Do not infer that cause from
+      the bootstrap failure alone; the reporter confirmed only that restarting
+      Chrome recovered both symptoms.
 
 MERGED to `main` (verified, clean, green build): perf-drawstate (state-skip perf + geometry/texture correctness fixes), zorder-fix (RTT null-FBO depth-pollution fix — 0 FBO failures), audio-ini-fix (non-Default audio INI entries → audio subsystem inits plus base-Generals `Music.big` extraction), live-skirmish-start, mounted MSS stream playback, DXT CPU fallback and DXT1/2/3/4/5 browser draw coverage, draw-order-fix (D3DRS_ZBIAS 24-bit depth-bias scale in bridge.js — commit 33641ab).
 
