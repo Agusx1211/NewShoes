@@ -131,6 +131,7 @@ canvas.addEventListener("webglcontextrestored", () => {
 });
 
 let d3d8DrawProgram = null;
+let d3d8ParticleProgram = null;
 // Fixed-function vertex/fragment GLSL sources, stashed when the FF draw
 // program is built; translated SM1 shaders link against them for mixed pairs
 // (FF vertex + translated pixel, translated vertex + FF pixel cascade — the
@@ -488,6 +489,7 @@ const D3DFVF_NORMAL = 0x010;
 const D3DFVF_DIFFUSE = 0x040;
 const D3DFVF_SPECULAR = 0x080;
 const D3DFVF_TEX1 = 0x100;
+const D3DFVF_TEX2 = 0x200;
 
 const D3DFVF_TEXCOUNT_MASK = 0xf00;
 const D3DFVF_TEXCOUNT_SHIFT = 8;
@@ -600,6 +602,7 @@ const d3d8PerfStats = {
   sm1ShaderDraws: 0,
   sm1TranslatedVsDraws: 0,
   sm1FallbackDraws: 0,
+  particleProgramDraws: 0,
   drawMatrixNormalizations: 0,
   drawMatrixScratchCopies: 0,
   drawMatrixAllocatedCopies: 0,
@@ -1045,6 +1048,7 @@ function d3d8PerfSummary() {
     sm1ShaderDraws: d3d8PerfStats.sm1ShaderDraws,
     sm1TranslatedVsDraws: d3d8PerfStats.sm1TranslatedVsDraws,
     sm1FallbackDraws: d3d8PerfStats.sm1FallbackDraws,
+    particleProgramDraws: d3d8PerfStats.particleProgramDraws,
     drawMatrixNormalizations: d3d8PerfStats.drawMatrixNormalizations,
     drawMatrixScratchCopies: d3d8PerfStats.drawMatrixScratchCopies,
     drawMatrixAllocatedCopies: d3d8PerfStats.drawMatrixAllocatedCopies,
@@ -7365,7 +7369,110 @@ function ensureD3D8DrawProgram() {
   }
 
   d3d8DrawProgram = buildD3D8DrawProgramLocations(program);
+  // Compile the small common-particle variant during renderer warm-up so the
+  // first explosion does not pay a shader compile/link hitch mid-frame.
+  ensureD3D8ParticleProgram();
   return d3d8DrawProgram;
+}
+
+function ensureD3D8ParticleProgram() {
+  if (!gl) {
+    return null;
+  }
+  if (d3d8ParticleProgram) {
+    return d3d8ParticleProgram;
+  }
+
+  const vertexShader = compileShader(gl.VERTEX_SHADER, `#version 300 es
+    in vec4 aPosition;
+    in vec4 aDiffuseBgra;
+    in vec2 aTexCoord0;
+    uniform mat4 uWorld;
+    uniform mat4 uView;
+    uniform mat4 uProjection;
+    uniform float uDepthBias;
+    out vec4 vColor;
+    out vec2 vTexCoord0;
+    void main() {
+      vec4 viewPosition = uView * (uWorld * vec4(aPosition.xyz, 1.0));
+      vec4 d3dClip = uProjection * viewPosition;
+      gl_Position = vec4(d3dClip.x, d3dClip.y,
+        d3dClip.z * 2.0 - d3dClip.w, d3dClip.w);
+      gl_Position.z -= uDepthBias * gl_Position.w;
+      vColor = vec4(aDiffuseBgra.b, aDiffuseBgra.g,
+        aDiffuseBgra.r, aDiffuseBgra.a);
+      vTexCoord0 = aTexCoord0;
+    }
+  `);
+  const fragmentShader = compileShader(gl.FRAGMENT_SHADER, `#version 300 es
+    precision highp float;
+    in vec4 vColor;
+    in vec2 vTexCoord0;
+    uniform sampler2D uTexture0;
+    uniform float uTexture0LodBias;
+    uniform bool uTexture0FlipY;
+    out vec4 fragColor;
+    void main() {
+      vec2 uv = uTexture0FlipY
+        ? vec2(vTexCoord0.x, 1.0 - vTexCoord0.y)
+        : vTexCoord0;
+      fragColor = texture(uTexture0, uv, uTexture0LodBias) * vColor;
+    }
+  `);
+  const program = gl.createProgram();
+  gl.attachShader(program, vertexShader);
+  gl.attachShader(program, fragmentShader);
+  gl.linkProgram(program);
+  gl.deleteShader(vertexShader);
+  gl.deleteShader(fragmentShader);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    const info = gl.getProgramInfoLog(program);
+    gl.deleteProgram(program);
+    throw new Error(`D3D8 particle program link failed: ${info}`);
+  }
+  d3d8ParticleProgram = buildD3D8DrawProgramLocations(program);
+  return d3d8ParticleProgram;
+}
+
+function d3d8CanUseParticleProgram({
+  renderState,
+  primitiveType,
+  vertexShaderFvf,
+  vertexStride,
+  canSampleTexture0,
+  canSampleTexture1,
+  canSampleTexture2,
+  canSampleTexture3,
+  texture0Coordinates,
+  texture0SemanticMode,
+  implicitAlphaCutoutThreshold,
+}) {
+  const stage0 = renderState?.textureStages?.[0];
+  const stage1 = renderState?.textureStages?.[1];
+  return (Number(primitiveType) >>> 0) === D3DPT_TRIANGLELIST &&
+    (Number(vertexShaderFvf) >>> 0) ===
+      (D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_TEX2) &&
+    (Number(vertexStride) >>> 0) === 44 &&
+    renderState?.lighting === 0 &&
+    renderState?.fogEnable === 0 &&
+    renderState?.alphaTestEnable === 0 &&
+    renderState?.cullMode === D3DCULL_NONE &&
+    d3d8ClipPlaneMask(renderState) === 0 &&
+    canSampleTexture0 && !canSampleTexture1 && !canSampleTexture2 && !canSampleTexture3 &&
+    texture0SemanticMode === 0 &&
+    texture0Coordinates?.mode === D3DTSS_TCI_PASSTHRU &&
+    texture0Coordinates?.coordSet === 0 &&
+    texture0Coordinates?.transformApplied !== true &&
+    implicitAlphaCutoutThreshold < 0 &&
+    stage0?.colorOp === D3DTOP_MODULATE &&
+    stage0?.colorArg1 === D3DTA_TEXTURE &&
+    stage0?.colorArg2 === D3DTA_DIFFUSE &&
+    stage0?.alphaOp === D3DTOP_MODULATE &&
+    stage0?.alphaArg1 === D3DTA_TEXTURE &&
+    stage0?.alphaArg2 === D3DTA_DIFFUSE &&
+    stage0?.resultArg === D3DTA_CURRENT &&
+    stage1?.colorOp === D3DTOP_DISABLE &&
+    stage1?.alphaOp === D3DTOP_DISABLE;
 }
 
 // Location table shared by the fixed-function draw program and the translated
@@ -12367,6 +12474,24 @@ function paintD3D8DrawIndexed(payload = {}) {
         ? ensureD3D8DepthStencilProgram()
         : ensureD3D8DepthStencilNoClipProgram())
       : ensureD3D8DrawProgram();
+    const particleProgramDraw = !depthStencilOnlyDraw && pixelShaderHandle === 0 &&
+      !sm1VertexDraw && d3d8CanUseParticleProgram({
+        renderState,
+        primitiveType: payload.primitiveType,
+        vertexShaderFvf,
+        vertexStride,
+        canSampleTexture0,
+        canSampleTexture1,
+        canSampleTexture2,
+        canSampleTexture3,
+        texture0Coordinates,
+        texture0SemanticMode,
+        implicitAlphaCutoutThreshold,
+      });
+    if (particleProgramDraw) {
+      bridgeProgram = ensureD3D8ParticleProgram();
+      if (d3d8PerfCountersEnabled) d3d8PerfStats.particleProgramDraws += 1;
+    }
     if (pixelShaderHandle !== 0 || sm1VertexDraw) {
       // Programmable SM1 draw: use the translated (vertexShader, pixelShader)
       // pair program. A missing pair (translation failed, vs-only draw)
