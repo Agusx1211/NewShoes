@@ -8,6 +8,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Browser text-entry input repair (2026-07-12)
+
+- [x] Restored end-to-end browser text entry by removing the probe-only
+      `IMEManager` header that masked the original interface while compiling
+      the real `WinMain.cpp` window procedure. The shipped skirmish player-name
+      gadget now receives printable characters, Backspace, and committed
+      composition text through the original IME manager and `GWM_IME_CHAR`
+      path.
+- [x] Extended the existing real skirmish harness with focused-gadget, text,
+      and IME attachment state. Playwright clicks the shipped player-name
+      entry, types and deletes text, commits a browser composition event,
+      captures the resulting menu, and then starts a playable match.
+
 ## Steam installed-folder compatibility (2026-07-12)
 
 - [x] Accepted Steam's complete English Zero Hour layout, where the required
