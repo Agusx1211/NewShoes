@@ -2946,13 +2946,6 @@ residue and the next frontier.
       input owner once the real engine `MessageStream` / `CommandList`
       lifecycle is no longer probe-owned.
 - [ ] Keyboard: DOM keyboard events → engine `Keyboard` (mapping, repeat, focus).
-- [ ] Fix browser text entry end-to-end through the real focused GUI gadget.
-      Reproduce with `SkirmishGameOptionsMenu.wnd:TextEntryPlayerName`, expose
-      focused-entry/IME/text state to the harness, and verify printable text,
-      Backspace, and composition input mutate `GadgetTextEntry` through
-      `GWM_IME_CHAR`. The existing `WM_CHAR` browser smoke proves only that a
-      message reaches the Win32 queue; it does not prove that the real
-      `IMEManager` is attached or that a text-entry gadget receives the text.
 - [ ] Promote the browser-backed frame-owned `Keyboard` path from
       disabled-by-default harness opt-in to the final default
       gameplay input owner once the real engine `MessageStream` /
