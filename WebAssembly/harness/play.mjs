@@ -852,6 +852,9 @@ async function start() {
       path: "/assets/real-init",
       verifyEach: false,
       archives,
+      videos: window.ZeroHAssetLibrary?.preparedVideos ?? [],
+      includeVideos: queryParams.get("videos") === "1"
+        || window.ZeroHAssetLibrary?.includeVideos === true,
     });
     if (mount?.archiveSet?.archiveCount !== archives.length) {
       throw launchFailure("archive mount failed", mount?.error ?? mount?.archiveSet);

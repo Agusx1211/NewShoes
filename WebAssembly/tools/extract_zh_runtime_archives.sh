@@ -325,6 +325,14 @@ extract_optional_base_startup_archives() {
   extract_optional_archives_from_cab "${base_data2_source}" "Data2.cab" "${base_disc2_data_archives[@]}"
   extract_optional_archives_from_cab "${base_language_source}" "Language.cab" "${base_language_archives[@]}"
 
+  # The original Generals campaign/end movies live as loose BIK entries in
+  # Data2.cab. Zero Hour's own localized Language.cab (extracted below) owns
+  # its intro, campaign briefings, and Challenge portraits, so do not replace
+  # those with the older base Language.cab variants.
+  if [[ -n "${base_data2_source}" && -f "${base_data2_source}" ]]; then
+    7z e -aos "-o${out_dir}" "${base_data2_source}" "*.bik" "*.BIK" >/dev/null
+  fi
+
   # Extract Music.big from base Generals Data1.cab into base_work_dir (base-generals/)
   # because the harness mounts it from base-generals/Music.big.
   # The ZH Data1.cab contains a 786KB stub Music.big with only generalsa.sec.
@@ -358,6 +366,7 @@ ensure_iso "${disc2_image}" "${disc2_iso}"
 7z e -y "-o${out_dir}" "${data_cab}" "${loose_script_payloads[@]}" >/dev/null
 node "${script_dir}/build_loose_scripts_big.mjs" "${out_dir}" "${out_dir}/LooseScripts.big" >/dev/null
 7z e -y "-o${out_dir}" "${language_cab}" "${language_archives[@]}" >/dev/null
+7z e -aos "-o${out_dir}" "${language_cab}" "*.bik" "*.BIK" >/dev/null
 
 # The original Win32 cursor path loads the installed Data\Cursors\*.ANI
 # files rather than BIG entries. Browsers cannot consume ANI directly, so
@@ -379,6 +388,13 @@ for video in "${loose_video_payloads[@]}"; do
   require_bink "${out_dir}/${video}"
 done
 
+while IFS= read -r -d '' video; do
+  require_bink "${video}"
+done < <(find "${out_dir}" -maxdepth 1 -type f -iname "*.bik" -print0)
+mapfile -t all_video_payloads < <(
+  find "${out_dir}" -maxdepth 1 -type f -iname "*.bik" -printf "%f\n" | sort
+)
+
 extract_optional_base_startup_archives
 
 # Boot splash for harness/play.html: the original WinMain.cpp load-screen
@@ -397,4 +413,5 @@ printf '%s\n' \
   cursors/manifest.json \
   "${loose_video_payloads[@]}" \
   "${loose_script_payloads[@]}" \
-  "${extracted_optional_archives[@]}" | sort -u
+  "${extracted_optional_archives[@]}" \
+  "${all_video_payloads[@]}" | sort -u

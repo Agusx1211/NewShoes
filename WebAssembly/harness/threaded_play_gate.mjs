@@ -62,6 +62,13 @@ const BOOT_TIMEOUT_MS = Number(process.env.BOOT_TIMEOUT_MS ?? 15 * 60 * 1000);
 // per RENDERED frame, so slow SwiftShader runs need tens of seconds before
 // the menu is fully lit.
 const SETTLE_MS = Number(process.env.SETTLE_MS ?? 30000);
+// Runs only the production Bink movie leg after boot. This keeps video
+// iteration fast while retaining the same real play page, archive mount,
+// engine loop, and screenshot path as the complete threaded gate.
+const BINK_VIDEO_ONLY = process.env.BINK_VIDEO_ONLY === "1";
+const BINK_VIDEO_DISABLED = process.env.BINK_VIDEO_DISABLED === "1";
+
+class BinkVideoGateComplete extends Error {}
 
 function log(line) {
   process.stdout.write(`[threaded-play-gate] ${line}\n`);
@@ -186,6 +193,96 @@ async function compareUpperDesktopScreenshots(page, actual, reference) {
   }, [actual.toString("base64"), reference.toString("base64")]);
 }
 
+async function runBinkVideoGate(page, summary, checks) {
+  const binkAssets = await page.evaluate(async () => {
+    const state = await window.CnCPort.rpc("state");
+    return state?.state?.binkVideoAssets ?? null;
+  });
+  const startupFrame = await page.evaluate(() =>
+    window.CnCPort.rpc("realEngineFrameSummary", { frames: 1 }));
+  const statusBeforeDiagnostic = await page.evaluate(() =>
+    window.CnCPort.state.threadedEngine?.bink ?? null);
+  let diagnosticPlays = [];
+  if ((statusBeforeDiagnostic?.openedSourcePaths?.length ?? 0) === 0) {
+    for (const name of ["EALogoMovie", "Sizzle"]) {
+      const play = await page.evaluate((movieName) =>
+        window.CnCPort.rpc("realEnginePlayMovie", { name: movieName }), name);
+      diagnosticPlays.push({ name, play });
+      if (play?.result?.moviePlaying === true) break;
+    }
+  }
+  let frameWaitError = null;
+  try {
+    await page.waitForFunction(() => {
+      const bink = window.CnCPort?.state?.threadedEngine?.bink;
+      const opened = bink?.openedSourcePaths ?? [];
+      return opened.some((path) => /EA_LOGO(?:640)?\.BIK$/i.test(path))
+        && opened.some((path) => /sizzle_review(?:640)?\.bik$/i.test(path))
+        && (bink?.framesReceived ?? 0) >= 3
+        && (bink?.copies ?? 0) >= 2;
+    }, null, { timeout: 60000, polling: 250 });
+  } catch (error) {
+    frameWaitError = error?.message ?? String(error);
+  }
+  const movieStatus = await page.evaluate(() => window.CnCPort.state.threadedEngine?.bink ?? null);
+  const decoderStatus = await page.evaluate(() => window.CnCPort.state.binkVideo ?? null);
+  const movieShotPath = join(shotDir, "p1c-bink-natural-intro-threaded.png");
+  const movieShot = await captureViewport(page, movieShotPath);
+  const moviePixels = await samplePageScreenshot(page, movieShot);
+  const movieStop = await page.evaluate(() => window.CnCPort.rpc("realEngineStopMovie"));
+  await page.waitForFunction(() =>
+    (window.CnCPort?.state?.threadedEngine?.bink?.activeHandles ?? 0) === 0,
+  null, { timeout: 30000, polling: 250 }).catch(() => {});
+  const movieStoppedStatus = await page.evaluate(() =>
+    window.CnCPort.state.threadedEngine?.bink ?? null);
+  summary.binkVideo = {
+    assets: binkAssets,
+    startupFrame,
+    diagnosticPlays,
+    frameWaitError,
+    decoder: decoderStatus,
+    status: movieStatus,
+    screenshot: movieShotPath,
+    screenshotBytes: movieShot.length,
+    pixels: moviePixels,
+    stop: movieStop,
+    stoppedStatus: movieStoppedStatus,
+  };
+  checks.push([
+    "Bink sources and browser sidecar manifest are staged",
+    binkAssets?.ready === true,
+  ]);
+  checks.push([
+    "original boot flow opens EA logo then sizzle",
+    (() => {
+      const opened = movieStatus?.openedSourcePaths ?? [];
+      const logo = opened.findIndex((path) => /EA_LOGO(?:640)?\.BIK$/i.test(path));
+      const sizzle = opened.findIndex((path) => /sizzle_review(?:640)?\.bik$/i.test(path));
+      return logo >= 0 && sizzle > logo;
+    })(),
+  ]);
+  checks.push([
+    "browser-decoded Bink frames reach and copy in the engine worker",
+    frameWaitError == null
+      && movieStatus?.opens >= 2
+      && movieStatus?.framesReceived >= 3
+      && movieStatus?.copies >= 2
+      && movieStatus?.bytesCopied > 0,
+  ]);
+  checks.push([
+    "Bink movie renders a non-flat viewport screenshot",
+    movieShot.length > 10 * 1024 && moviePixels.standardDeviation > 8,
+  ]);
+  checks.push([
+    "Display::stopMovie closes the browser decoder",
+    movieStop?.ok === true
+      && movieStop?.result?.wasPlaying === true
+      && movieStop?.result?.moviePlaying === false
+      && movieStoppedStatus?.activeHandles === 0
+      && movieStoppedStatus?.closes >= 1,
+  ]);
+}
+
 async function bootPlayPage(browser, url, label, consoleLines) {
   const page = await browser.newPage();
   // The non-threaded page saturates its main thread once the engine loop
@@ -279,6 +376,8 @@ async function main() {
 
     // ---------- threaded boot (GATE B) ----------
     const threadedQuery = "harness/play.html?autostart=1"
+      + (BINK_VIDEO_ONLY ? "&shellmap=0" : "")
+      + (BINK_VIDEO_ONLY && !BINK_VIDEO_DISABLED ? "&videos=1" : "")
       + (threadedPlayDist ? `&dist=${threadedPlayDist}` : "");
     log(`booting THREADED (${threadedPlayDist || "dist-threaded-release"}, engine on pthread, OPFS mounts)...`);
     const bootStartedAt = Date.now();
@@ -427,6 +526,34 @@ async function main() {
     summary.pacing.hitsTargetRates = clientRate >= 55 && clientRate <= 65
       && logicRate >= 27 && logicRate <= 33;
 
+    if (BINK_VIDEO_ONLY) {
+      if (BINK_VIDEO_DISABLED) {
+        const disabledVideo = await page.evaluate(async () => {
+          const state = await window.CnCPort.rpc("state");
+          return {
+            assets: state?.state?.binkVideoAssets ?? null,
+            worker: window.CnCPort.state.threadedEngine?.bink ?? null,
+          };
+        });
+        summary.binkVideoDisabled = disabledVideo;
+        checks.push([
+          "optional videos stay unstaged when installation choice is off",
+          disabledVideo.assets?.skipped === true
+            && disabledVideo.assets?.files?.length === 0
+            && disabledVideo.worker?.opens === 0,
+        ]);
+      } else {
+        await runBinkVideoGate(page, summary, checks);
+      }
+      summary.videoOnlyExit = await page.evaluate(() => window.ZeroHRuntime.exit());
+      checks.push([
+        "video-only gate shuts the threaded runtime down cleanly",
+        summary.videoOnlyExit?.ok === true
+          && summary.videoOnlyExit?.result?.engine?.workerTerminated === true,
+      ]);
+      throw new BinkVideoGateComplete();
+    }
+
     // ---------- GATE C: forwarded input reaches the engine ----------
     const canvasBox = await page.locator("#viewport").boundingBox();
     const targetCss = {
@@ -554,12 +681,15 @@ async function main() {
       ? windowsDump.windows.windows.length : 0;
     summary.windowsDump = { ok: windowsDump?.ok === true, windowCount };
     checks.push(["state RPC round-trips (realEngineDumpWindows)", windowsDump?.ok === true && windowCount > 0]);
-    // Boot intro/logo movie path completed (Bink provider cleanly skipped the
-    // missing .bik files — parity with the non-threaded page, which installs
-    // no Bink hooks either): the main-menu shell is up.
+    // The main-menu shell proves the ordinary intro flow completed without a
+    // hang. Exercise a real shipped movie explicitly so the gate can verify
+    // browser decode, worker frame copy, original display presentation, and
+    // teardown without depending on the user's intro-movie preference.
     const menuWindowPresent = JSON.stringify(windowsDump?.windows ?? {}).includes("MainMenu.wnd");
     summary.menuWindowPresent = menuWindowPresent;
     checks.push(["main-menu shell reached (intro movie path completed, no hang)", menuWindowPresent]);
+
+    await runBinkVideoGate(page, summary, checks);
 
     // ---------- threaded `state` carries the wasm cnc_port_state fields ----------
     const stateRpc = await page.evaluate(() => window.CnCPort.rpc("state"));
@@ -965,7 +1095,9 @@ async function main() {
     }, saveMarker);
     await savePage.close();
   } catch (error) {
-    failure = error instanceof Error ? error.stack ?? error.message : String(error);
+    if (!(error instanceof BinkVideoGateComplete)) {
+      failure = error instanceof Error ? error.stack ?? error.message : String(error);
+    }
   } finally {
     await browser.close();
     await server.close();

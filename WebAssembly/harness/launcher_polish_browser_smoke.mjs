@@ -98,14 +98,22 @@ try {
     for (const name of ["SkirmishScripts.scb", "MultiplayerScripts.scb", "Scripts.ini"]) {
       files.push(sourceFile(`${root}/Data/Scripts/${name}`, new Uint8Array([1, 2, 3, 4])));
     }
+    const bink = new Uint8Array(64);
+    bink.set(new TextEncoder().encode("BIKi"));
+    files.push(sourceFile(`${root}/Data/English/Movies/EA_LOGO.BIK`, bink));
     files.push(sourceFile(`${root}/PatchZH.big`, new Uint8Array([0, 1, 2, 3])));
     const result = await window.ZeroHAssetLibrary.scan(files);
+    window.ZeroHAssetLibrary.includeVideos = true;
+    const prepared = await window.ZeroHAssetLibrary.prepare("once");
     return {
       ok: result.ok,
       missing: result.missing,
       errors: result.errors,
       gensec: result.found.find((entry) => entry.name === "Gensec.big"),
       scripts: result.found.find((entry) => entry.name === "LooseScripts.big"),
+      videoCount: result.videoCount,
+      videoBytes: result.videoBytes,
+      preparedVideos: prepared.videos,
     };
   });
   assert.equal(steamFolderScan.ok, true);
@@ -113,6 +121,41 @@ try {
   assert.deepEqual(steamFolderScan.errors, []);
   assert.match(steamFolderScan.gensec?.source || "", /ZH_Generals\/gensec\.big$/);
   assert.equal(steamFolderScan.scripts?.sourceName, "loose installer scripts");
+  assert.equal(steamFolderScan.videoCount, 1);
+  assert.equal(steamFolderScan.videoBytes, 64);
+  assert.equal(steamFolderScan.preparedVideos?.length, 1);
+  assert.match(steamFolderScan.preparedVideos?.[0]?.opfsPath || "", /\/movies\/EA_LOGO\.BIK$/);
+  await page.evaluate(() => {
+    document.querySelectorAll("[data-wizard-page]").forEach((wizardPage) => {
+      const visible = wizardPage.dataset.wizardPage === "2";
+      wizardPage.classList.toggle("is-visible", visible);
+      wizardPage.setAttribute("aria-hidden", String(!visible));
+    });
+  });
+  const videoToggle = page.locator("#includeVideosToggle");
+  assert.equal(await videoToggle.isChecked(), false,
+    "optional videos must be disabled by default");
+  await page.locator(".option-tooltip").hover();
+  await page.locator("#includeVideosTooltip").waitFor({ state: "visible" });
+  assert.match(await page.locator("#includeVideosTooltip").textContent(), /0\.9 GB.*longer/i,
+    "the video option tooltip must explain its storage/time tradeoff");
+  await page.locator(".optional-content-copy").click();
+  assert.equal(await videoToggle.isChecked(), true,
+    "the optional-video install choice must be selectable");
+  await page.locator(".optional-content-copy").click();
+  assert.equal(await videoToggle.isChecked(), false,
+    "the optional-video install choice must return to its default-off state");
+  await page.locator(".option-tooltip").hover();
+  await page.waitForTimeout(200);
+  const videoOptionShot = join(shotDir, "optional-video-install-choice.png");
+  await page.screenshot({ path: videoOptionShot });
+  await page.evaluate(() => {
+    document.querySelectorAll("[data-wizard-page]").forEach((wizardPage) => {
+      const visible = wizardPage.dataset.wizardPage === "1";
+      wizardPage.classList.toggle("is-visible", visible);
+      wizardPage.setAttribute("aria-hidden", String(!visible));
+    });
+  });
 
   await page.getByRole("button", { name: "Game & Display settings" }).first().click();
   await page.waitForSelector("#settingsWindow.is-open #gamePanel:not([hidden])");
@@ -375,6 +418,7 @@ try {
     ok: true,
     screenshots: {
       fallbackShot,
+      videoOptionShot,
       settingsShot,
       derivedShot,
       mobileOnboardingShot,

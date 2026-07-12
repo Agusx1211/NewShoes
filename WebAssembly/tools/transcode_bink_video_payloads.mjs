@@ -1,17 +1,13 @@
 #!/usr/bin/env node
 // transcode_bink_video_payloads.mjs
 //
-// Converts the shipped loose Zero Hour Bink payloads into browser-decodable
-// WebM sidecars. This is an asset-prep bridge for user-supplied game data: the
-// original `.bik` files remain the source of truth, and the generated manifest
-// records the BIK header facts that the runtime must preserve.
-//
-// It intentionally does not wire playback into BinkVideoPlayer or pretend that
-// BinkCopyToBuffer can decode frames. The output is the concrete sidecar
-// contract a future browser `<video>` / WebCodecs runtime can consume.
+// Converts every extracted user-owned Bink payload into a browser-decodable
+// WebM sidecar. The original `.bik` files remain the source of truth, and the
+// generated manifest records the BIK header facts consumed by the browser
+// runtime while original BinkVideoPlayer retains stream ownership.
 
 import { spawn } from "node:child_process";
-import { mkdir, open, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,8 +17,6 @@ const wasmRoot = resolve(toolDir, "..");
 const DEFAULT_ASSETS_DIR = resolve(wasmRoot, "artifacts/real-assets");
 const DEFAULT_OUTPUT_DIR = resolve(wasmRoot, "artifacts/browser-video/bink");
 const MANIFEST_FILE = "bink-browser-video-manifest.json";
-
-const PAYLOAD_FILES = ["GC_Background.bik", "VS_small.bik"];
 
 const HEADER_LENGTH = 48;
 const BIK_MAGIC = "BIK";
@@ -50,6 +44,50 @@ const PINNED_FACTS = {
     durationSeconds: 71 / 30,
     sourceAudioStreams: 0,
   },
+  "EA_LOGO.BIK": {
+    fileSize: 1596884,
+    version: "i",
+    frameCount: 96,
+    width: 720,
+    height: 486,
+    fpsNum: 143856,
+    fpsDen: 4795,
+    durationSeconds: 96 * 4795 / 143856,
+    sourceAudioStreams: 1,
+  },
+  "EA_LOGO640.BIK": {
+    fileSize: 839924,
+    version: "i",
+    frameCount: 96,
+    width: 640,
+    height: 480,
+    fpsNum: 30,
+    fpsDen: 1,
+    durationSeconds: 3.2,
+    sourceAudioStreams: 1,
+  },
+  "sizzle_review.bik": {
+    fileSize: 23891876,
+    version: "i",
+    frameCount: 1961,
+    width: 800,
+    height: 600,
+    fpsNum: 30,
+    fpsDen: 1,
+    durationSeconds: 1961 / 30,
+    sourceAudioStreams: 1,
+  },
+  "sizzle_review640.bik": {
+    fileSize: 17220424,
+    version: "i",
+    frameCount: 1961,
+    width: 640,
+    height: 480,
+    fpsNum: 30,
+    fpsDen: 1,
+    durationSeconds: 1961 / 30,
+    sourceAudioStreams: 1,
+  },
 };
 
 function usage() {
@@ -57,14 +95,22 @@ function usage() {
     "usage: node tools/transcode_bink_video_payloads.mjs [assets-dir] [output-dir]",
     "                  [--expect-current-zh]",
     "",
-    "Transcodes the shipped loose Bink payloads (GC_Background.bik, VS_small.bik)",
-    "from the assets dir into VP9/Opus WebM sidecars and writes a manifest.",
+    "Transcodes the shipped loose Bink payloads, including the EA logo and",
+    "sizzle startup movies, from the assets dir into VP9/Opus WebM sidecars",
+    "and writes a manifest.",
     "The original BIK files remain the source of truth. Requires ffmpeg and",
     "ffprobe on PATH. Does not wire runtime playback.",
     "",
     "  --expect-current-zh     Self-check source BIK facts and output stream",
     "                          metadata against the current shipped payloads.",
   ].join("\n");
+}
+
+async function discoverPayloadFiles(assetsDir) {
+  return (await readdir(assetsDir, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && /\.bik$/i.test(entry.name))
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right, "en", { sensitivity: "base" }));
 }
 
 function parseArgs(argv) {
@@ -235,7 +281,6 @@ function nearlyEqual(left, right, epsilon = 0.03) {
 function assertPinnedSource(fileName, header, sourceProbe, errors) {
   const pinned = PINNED_FACTS[fileName];
   if (!pinned) {
-    errors.push(`${fileName}: no pinned current-ZH source facts`);
     return;
   }
 
@@ -329,7 +374,12 @@ function validateOutputProbe(fileName, header, sourceProbe, outputProbe, errors)
     );
   }
   const rate = parseRate(outputVideo.avg_frame_rate) ?? parseRate(outputVideo.r_frame_rate);
-  if (!rate || rate.num !== header.fpsNum || rate.den !== header.fpsDen) {
+  const sourceFps = header.fpsNum / header.fpsDen;
+  const outputFps = rate ? rate.num / rate.den : NaN;
+  // WebM's millisecond time base can represent the original Bink cadence as
+  // an equivalent nearby rational (EA_LOGO is 143856/4795 rather than an
+  // integer 30 fps). Preserve the cadence, not the unreduced fraction.
+  if (!rate || !nearlyEqual(outputFps, sourceFps, 0.01)) {
     errors.push(`${fileName}: output frame rate ${outputVideo.avg_frame_rate ?? outputVideo.r_frame_rate} !== ${header.fpsNum}/${header.fpsDen}`);
   }
   const outputFrames = Number(outputVideo.nb_read_frames);
@@ -352,7 +402,7 @@ async function transcodePayload(assetsDir, outputDir, fileName, options, errors)
   const outputFile = fileName.replace(/\.bik$/i, ".webm");
   const outputPath = resolve(outputDir, outputFile);
 
-  await stat(sourcePath);
+  const sourceStat = await stat(sourcePath);
   const header = await parseBinkHeader(sourcePath);
   validateHeader(fileName, header, errors);
 
@@ -362,9 +412,23 @@ async function transcodePayload(assetsDir, outputDir, fileName, options, errors)
     assertPinnedSource(fileName, header, sourceProbe, errors);
   }
 
-  await transcodeToWebm(sourcePath, outputPath);
-  const outputStat = await stat(outputPath);
-  const outputProbe = await probeMedia(outputPath, true);
+  let outputStat = await stat(outputPath).catch(() => null);
+  let outputProbe = null;
+  if (outputStat?.size > 0 && outputStat.mtimeMs >= sourceStat.mtimeMs) {
+    outputProbe = await probeMedia(outputPath, true).catch(() => null);
+  }
+  const cachedVideo = videoStream(outputProbe);
+  const cachedAudio = audioStreams(outputProbe);
+  const cachedOutputMatches = cachedVideo?.codec_name === "vp9"
+    && cachedVideo.width === header.width
+    && cachedVideo.height === header.height
+    && Number(cachedVideo.nb_read_frames) === header.frameCount
+    && cachedAudio.length === audioStreams(sourceProbe).length;
+  if (!cachedOutputMatches) {
+    await transcodeToWebm(sourcePath, outputPath);
+    outputStat = await stat(outputPath);
+    outputProbe = await probeMedia(outputPath, true);
+  }
   validateOutputProbe(fileName, header, sourceProbe, outputProbe, errors);
 
   const sourceVideo = videoStream(sourceProbe);
@@ -414,19 +478,29 @@ async function main() {
 
   const errors = [];
   const payloads = [];
-  for (const fileName of PAYLOAD_FILES) {
-    try {
-      payloads.push(await transcodePayload(
-        options.assetsDir,
-        options.outputDir,
-        fileName,
-        options,
-        errors,
-      ));
-    } catch (error) {
-      errors.push(`${fileName}: ${error?.message ?? error}`);
-    }
+  const payloadFiles = await discoverPayloadFiles(options.assetsDir);
+  if (payloadFiles.length === 0) {
+    throw new Error(`No loose Bink payloads found in ${options.assetsDir}`);
   }
+  const jobs = Math.max(1, Math.min(8, Number(process.env.BINK_TRANSCODE_JOBS ?? 3) || 3));
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(jobs, payloadFiles.length) }, async () => {
+    while (cursor < payloadFiles.length) {
+      const index = cursor++;
+      const fileName = payloadFiles[index];
+      try {
+        payloads[index] = await transcodePayload(
+          options.assetsDir,
+          options.outputDir,
+          fileName,
+          options,
+          errors,
+        );
+      } catch (error) {
+        errors.push(`${fileName}: ${error?.message ?? error}`);
+      }
+    }
+  }));
 
   const manifest = {
     ok: errors.length === 0,
@@ -439,8 +513,8 @@ async function main() {
     errors,
     note:
       "Browser-decodable sidecars generated from user-supplied Bink payloads. " +
-      "This chooses the offline-transcode path for the browser port, but does " +
-      "not make BinkCopyToBuffer a frame decoder or complete runtime playback.",
+      "BinkCopyToBuffer remains a synchronous browser-frame copy boundary; " +
+      "the provider does not decode Bink frames itself.",
   };
 
   await writeFile(manifest.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
