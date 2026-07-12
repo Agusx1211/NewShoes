@@ -9,6 +9,29 @@ const executablePath = process.env.LAUNCHER_POLISH_BROWSER
 const shotDir = process.env.LAUNCHER_POLISH_SHOTS || "/tmp/cnc-launcher-polish";
 await mkdir(shotDir, { recursive: true });
 
+async function assertTaskbarInVisibleViewport(page, label) {
+  const geometry = await page.evaluate(() => {
+    const desktop = document.querySelector("#desktop").getBoundingClientRect();
+    const taskbar = document.querySelector(".taskbar").getBoundingClientRect();
+    const viewport = window.visualViewport;
+    return {
+      desktop: { top: desktop.top, bottom: desktop.bottom, height: desktop.height },
+      taskbar: { top: taskbar.top, bottom: taskbar.bottom, height: taskbar.height },
+      visibleTop: viewport?.offsetTop ?? 0,
+      visibleBottom: (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight),
+      innerHeight: window.innerHeight,
+      dynamicViewportUnits: CSS.supports("height", "100dvh"),
+    };
+  });
+  assert.ok(geometry.taskbar.top >= geometry.visibleTop - 1,
+    `${label} taskbar must start inside the visible viewport: ${JSON.stringify(geometry)}`);
+  assert.ok(geometry.taskbar.bottom <= geometry.visibleBottom + 1,
+    `${label} taskbar must end inside the visible viewport: ${JSON.stringify(geometry)}`);
+  assert.ok(Math.abs(geometry.taskbar.bottom - geometry.desktop.bottom) <= 1,
+    `${label} taskbar must remain attached to the desktop bottom: ${JSON.stringify(geometry)}`);
+  return geometry;
+}
+
 const browser = await chromium.launch({ executablePath, headless: true, args: ["--ignore-certificate-errors"] });
 try {
   const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1365, height: 768 } });
@@ -283,6 +306,7 @@ try {
   const mobileContext = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 390, height: 844 }, isMobile: true });
   const mobile = await mobileContext.newPage();
   await mobile.goto(baseUrl, { waitUntil: "domcontentloaded" });
+  const phoneTaskbar = await assertTaskbarInVisibleViewport(mobile, "phone portrait");
   const mobileGithubBox = await mobile.locator("[data-github-shortcut]").boundingBox();
   assert.ok(mobileGithubBox && mobileGithubBox.x >= 0 && mobileGithubBox.x + mobileGithubBox.width <= 390);
   await mobile.locator(".ownership-help details").first().click();
@@ -294,7 +318,30 @@ try {
   assert.equal(await mobile.locator(".settings-nav").evaluate((node) => getComputedStyle(node).display), "flex");
   const mobileShot = join(shotDir, "mobile-game-settings.png");
   await mobile.screenshot({ path: mobileShot });
+  await mobile.setViewportSize({ width: 390, height: 664 });
+  await mobile.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const phoneTaskbarWithBrowserChrome = await assertTaskbarInVisibleViewport(mobile, "phone with expanded browser chrome");
+  const phoneTaskbarShot = join(shotDir, "mobile-taskbar-phone.png");
+  await mobile.screenshot({ path: phoneTaskbarShot });
   await mobileContext.close();
+
+  const tabletContext = await browser.newContext({
+    ignoreHTTPSErrors: true,
+    viewport: { width: 834, height: 1112 },
+    deviceScaleFactor: 2,
+    isMobile: true,
+    hasTouch: true,
+  });
+  const tablet = await tabletContext.newPage();
+  await tablet.goto(baseUrl, { waitUntil: "domcontentloaded" });
+  const tabletTaskbar = await assertTaskbarInVisibleViewport(tablet, "tablet portrait");
+  await tablet.locator("#startButton").click();
+  const tabletStartBox = await tablet.locator("#startMenu").boundingBox();
+  assert.ok(tabletStartBox && tabletStartBox.y >= 0 && tabletStartBox.y + tabletStartBox.height <= 1112,
+    `tablet Start menu must remain inside the visible viewport: ${JSON.stringify(tabletStartBox)}`);
+  const tabletTaskbarShot = join(shotDir, "mobile-taskbar-tablet.png");
+  await tablet.screenshot({ path: tabletTaskbarShot });
+  await tabletContext.close();
 
   const shortContext = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1024, height: 500 } });
   const short = await shortContext.newPage();
@@ -326,7 +373,17 @@ try {
 
   process.stdout.write(`${JSON.stringify({
     ok: true,
-    screenshots: { fallbackShot, settingsShot, derivedShot, mobileOnboardingShot, mobileShot, shortShot },
+    screenshots: {
+      fallbackShot,
+      settingsShot,
+      derivedShot,
+      mobileOnboardingShot,
+      mobileShot,
+      phoneTaskbarShot,
+      tabletTaskbarShot,
+      shortShot,
+    },
+    mobileTaskbar: { phoneTaskbar, phoneTaskbarWithBrowserChrome, tabletTaskbar },
     presentation,
     steamFolderScan,
     projectUrl: "https://github.com/Agusx1211/NewShoes",
