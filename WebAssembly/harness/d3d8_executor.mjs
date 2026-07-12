@@ -578,6 +578,12 @@ const d3d8PerfStats = {
   drawMatrixAllocatedCopies: 0,
   drawPayloadCalls: 0,
   drawPayloadReused: 0,
+  drawClipPlanePayloadCopies: 0,
+  drawClipPlanePayloadSkips: 0,
+  drawMaterialPayloadCopies: 0,
+  drawMaterialPayloadSkips: 0,
+  drawLightPayloadCopies: 0,
+  drawLightPayloadSkips: 0,
   drawDerivedCacheHits: 0,
   drawDerivedCacheMisses: 0,
   drawUniformCacheHits: 0,
@@ -1015,6 +1021,12 @@ function d3d8PerfSummary() {
     drawMatrixAllocatedCopies: d3d8PerfStats.drawMatrixAllocatedCopies,
     drawPayloadCalls: d3d8PerfStats.drawPayloadCalls,
     drawPayloadReused: d3d8PerfStats.drawPayloadReused,
+    drawClipPlanePayloadCopies: d3d8PerfStats.drawClipPlanePayloadCopies,
+    drawClipPlanePayloadSkips: d3d8PerfStats.drawClipPlanePayloadSkips,
+    drawMaterialPayloadCopies: d3d8PerfStats.drawMaterialPayloadCopies,
+    drawMaterialPayloadSkips: d3d8PerfStats.drawMaterialPayloadSkips,
+    drawLightPayloadCopies: d3d8PerfStats.drawLightPayloadCopies,
+    drawLightPayloadSkips: d3d8PerfStats.drawLightPayloadSkips,
     drawDerivedCacheHits: d3d8PerfStats.drawDerivedCacheHits,
     drawDerivedCacheMisses: d3d8PerfStats.drawDerivedCacheMisses,
     drawUniformCacheHits: d3d8PerfStats.drawUniformCacheHits,
@@ -3910,59 +3922,75 @@ function d3d8TextureLayoutUniformKey({
   return values.join(",");
 }
 
+const D3D8_DEFAULT_LIGHT_DIRECTION = Object.freeze([0, 0, 1]);
+const d3d8LightUniformScratch = {
+  types: new Int32Array(D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT),
+  colors: new Float32Array(D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT * 4),
+  vectors: new Float32Array(D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT * 3),
+  rangeAttenuation: new Float32Array(D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT * 4),
+  spot: new Float32Array(D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT * 3),
+};
+
 function flattenD3D8LightType(lights) {
-  const values = [];
+  const values = d3d8LightUniformScratch.types;
   for (let index = 0; index < D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT; ++index) {
-    values.push(lights[index]?.type ?? 0);
+    values[index] = lights[index]?.type ?? 0;
   }
-  return new Int32Array(values);
+  return values;
 }
 
 function flattenD3D8LightColor(lights, field, count = D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT) {
-  const values = [];
+  const values = d3d8LightUniformScratch.colors;
   for (let index = 0; index < count; ++index) {
-    values.push(...(lights[index]?.[field] ?? [0, 0, 0, 1]));
+    const source = lights[index]?.[field];
+    const base = index * 4;
+    values[base] = source?.[0] ?? 0;
+    values[base + 1] = source?.[1] ?? 0;
+    values[base + 2] = source?.[2] ?? 0;
+    values[base + 3] = source?.[3] ?? 1;
   }
-  return new Float32Array(values);
+  return values;
 }
 
 function flattenD3D8LightVector(lights, field, fallback, count = D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT) {
-  const values = [];
+  const values = d3d8LightUniformScratch.vectors;
   for (let index = 0; index < count; ++index) {
-    values.push(...(lights[index]?.[field] ?? fallback));
+    const source = lights[index]?.[field] ?? fallback;
+    const base = index * 3;
+    values[base] = source[0];
+    values[base + 1] = source[1];
+    values[base + 2] = source[2];
   }
-  return new Float32Array(values);
+  return values;
 }
 
 function flattenD3D8LightDirection(lights, count = D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT) {
-  return flattenD3D8LightVector(lights, "direction", [0, 0, 1], count);
+  return flattenD3D8LightVector(lights, "direction", D3D8_DEFAULT_LIGHT_DIRECTION, count);
 }
 
 function flattenD3D8LightRangeAttenuation(lights) {
-  const values = [];
+  const values = d3d8LightUniformScratch.rangeAttenuation;
   for (let index = 0; index < D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT; ++index) {
-    const light = lights[index] ?? {};
-    values.push(
-      finiteNumber(light.range, 0),
-      finiteNumber(light.attenuation0, 0),
-      finiteNumber(light.attenuation1, 0),
-      finiteNumber(light.attenuation2, 0),
-    );
+    const light = lights[index];
+    const base = index * 4;
+    values[base] = finiteNumber(light?.range, 0);
+    values[base + 1] = finiteNumber(light?.attenuation0, 0);
+    values[base + 2] = finiteNumber(light?.attenuation1, 0);
+    values[base + 3] = finiteNumber(light?.attenuation2, 0);
   }
-  return new Float32Array(values);
+  return values;
 }
 
 function flattenD3D8LightSpot(lights) {
-  const values = [];
+  const values = d3d8LightUniformScratch.spot;
   for (let index = 0; index < D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT; ++index) {
-    const light = lights[index] ?? {};
-    values.push(
-      finiteNumber(light.theta, 0),
-      finiteNumber(light.phi, 0),
-      finiteNumber(light.falloff, 0),
-    );
+    const light = lights[index];
+    const base = index * 3;
+    values[base] = finiteNumber(light?.theta, 0);
+    values[base + 1] = finiteNumber(light?.phi, 0);
+    values[base + 2] = finiteNumber(light?.falloff, 0);
   }
-  return new Float32Array(values);
+  return values;
 }
 
 function textureHasCompleteMipChain(resource) {
@@ -10361,8 +10389,24 @@ function d3d8ClipPlaneMask(renderState) {
     : 0;
 }
 
+// Immutable fallbacks for state that the active lite-mode shader cannot read.
+// Derived-cache entries may share these because no draw path mutates them.
+const D3D8_UNUSED_CLIP_PLANES = normalizeD3D8ClipPlanes();
+const D3D8_UNUSED_MATERIAL = normalizeD3D8Material();
+const D3D8_UNUSED_LIGHTS = Object.freeze([]);
+const D3D8_DISABLED_CLIP_PLANE_INFO = Object.freeze({
+  enabled: false,
+  clipping: 0,
+  mask: 0,
+  enabledIndices: Object.freeze([]),
+  planes: D3D8_UNUSED_CLIP_PLANES,
+});
+
 function d3d8ClipPlaneInfo(renderState, clipPlanes) {
   const mask = d3d8ClipPlaneMask(renderState);
+  if (mask === 0 && d3d8DiagLevel !== "full") {
+    return D3D8_DISABLED_CLIP_PLANE_INFO;
+  }
   return {
     enabled: mask !== 0,
     clipping: renderState.clipping,
@@ -11755,19 +11799,42 @@ function paintD3D8DrawIndexed(payload = {}) {
       : canonicalStatePayload
         ? payload.renderState
         : normalizeD3D8RenderState(payload.renderState);
-    clipPlanes = pointerStatePayload
-      ? copyD3D8ClipPlanesFromWasm(payload.clipPlanesPtr)
-      : canonicalStatePayload
-        ? payload.clipPlanes
-        : normalizeD3D8ClipPlanes(payload.clipPlanes);
-    material = pointerStatePayload
-      ? copyD3D8MaterialFromWasm(payload.materialPtr)
-      : canonicalStatePayload
-        ? payload.material
-        : normalizeD3D8Material(payload.material);
     renderState ??= normalizeD3D8RenderState();
-    clipPlanes ??= normalizeD3D8ClipPlanes();
-    material ??= normalizeD3D8Material();
+    depthStencilOnlyFastDerived = pixelShaderHandle === 0 && !sm1VertexDraw &&
+      d3d8DiagLevel !== "full" &&
+      d3d8CanUseDepthStencilOnlyProgramWithoutTextureProbe(renderState, primitiveType);
+    const preserveDiagnosticState = d3d8DiagLevel === "full";
+    const clipPlanesNeeded = preserveDiagnosticState || d3d8ClipPlaneMask(renderState) !== 0;
+    const materialNeeded = preserveDiagnosticState ||
+      (!depthStencilOnlyFastDerived && renderState.lighting !== 0);
+    if (pointerStatePayload) {
+      if (clipPlanesNeeded) {
+        d3d8PerfStats.drawClipPlanePayloadCopies += 1;
+      } else {
+        d3d8PerfStats.drawClipPlanePayloadSkips += 1;
+      }
+      if (materialNeeded) {
+        d3d8PerfStats.drawMaterialPayloadCopies += 1;
+      } else {
+        d3d8PerfStats.drawMaterialPayloadSkips += 1;
+      }
+    }
+    clipPlanes = clipPlanesNeeded
+      ? pointerStatePayload
+        ? copyD3D8ClipPlanesFromWasm(payload.clipPlanesPtr)
+        : canonicalStatePayload
+          ? payload.clipPlanes
+          : normalizeD3D8ClipPlanes(payload.clipPlanes)
+      : D3D8_UNUSED_CLIP_PLANES;
+    material = materialNeeded
+      ? pointerStatePayload
+        ? copyD3D8MaterialFromWasm(payload.materialPtr)
+        : canonicalStatePayload
+          ? payload.material
+          : normalizeD3D8Material(payload.material)
+      : D3D8_UNUSED_MATERIAL;
+    clipPlanes ??= D3D8_UNUSED_CLIP_PLANES;
+    material ??= D3D8_UNUSED_MATERIAL;
     // D3D ignores the texture matrix while transform flags are disabled. Most
     // scene states disable all four, so do not allocate and copy 64 floats for
     // matrices that cannot reach a shader.
@@ -11801,13 +11868,19 @@ function paintD3D8DrawIndexed(payload = {}) {
     texture1Id = drawCacheTexture1Id;
     texture2Id = drawCacheTexture2Id;
     texture3Id = drawCacheTexture3Id;
-    depthStencilOnlyFastDerived = pixelShaderHandle === 0 && !sm1VertexDraw &&
-      d3d8DiagLevel !== "full" &&
-      d3d8CanUseDepthStencilOnlyProgramWithoutTextureProbe(renderState, primitiveType);
+    const lightsNeeded = preserveDiagnosticState ||
+      (!depthStencilOnlyFastDerived && renderState.lighting !== 0);
+    if (pointerStatePayload) {
+      if (lightsNeeded) {
+        d3d8PerfStats.drawLightPayloadCopies += 1;
+      } else {
+        d3d8PerfStats.drawLightPayloadSkips += 1;
+      }
+    }
     if (depthStencilOnlyFastDerived) {
-      lights = [];
-      fixedFunctionLights = [];
-      directionalLights = [];
+      lights = D3D8_UNUSED_LIGHTS;
+      fixedFunctionLights = D3D8_UNUSED_LIGHTS;
+      directionalLights = D3D8_UNUSED_LIGHTS;
       firstDirectionalLight = null;
       texture0Resource = null;
       texture0Ready = false;
@@ -11836,14 +11909,18 @@ function paintD3D8DrawIndexed(payload = {}) {
       appliedStage3Combiner = null;
       implicitAlphaCutoutThreshold = -1;
     } else {
-      lights = pointerStatePayload
-        ? copyD3D8LightsFromWasm(payload.lightsPtr)
-        : canonicalStatePayload
-          ? payload.lights
-          : normalizeD3D8Lights(payload.lights);
-      lights ??= normalizeD3D8Lights();
-      fixedFunctionLights = d3d8FixedFunctionLights(lights);
-      directionalLights = d3d8DirectionalLights(lights);
+      lights = lightsNeeded
+        ? pointerStatePayload
+          ? copyD3D8LightsFromWasm(payload.lightsPtr)
+          : canonicalStatePayload
+            ? payload.lights
+            : normalizeD3D8Lights(payload.lights)
+        : D3D8_UNUSED_LIGHTS;
+      lights ??= D3D8_UNUSED_LIGHTS;
+      fixedFunctionLights = lightsNeeded
+        ? d3d8FixedFunctionLights(lights) : D3D8_UNUSED_LIGHTS;
+      directionalLights = lightsNeeded
+        ? d3d8DirectionalLights(lights) : D3D8_UNUSED_LIGHTS;
       firstDirectionalLight = directionalLights[0] ?? null;
       texture0Resource = texture0Id !== 0 ? d3d8Textures.get(texture0Id) : null;
       texture0Ready = Boolean(

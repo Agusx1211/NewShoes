@@ -213,6 +213,12 @@ function compactBrowserPerfSample(browserPerf) {
     drawMatrixAllocatedCopies: perFrame.drawMatrixAllocatedCopies,
     drawPayloadCalls: perFrame.drawPayloadCalls,
     drawPayloadReused: perFrame.drawPayloadReused,
+    drawClipPlanePayloadCopies: perFrame.drawClipPlanePayloadCopies,
+    drawClipPlanePayloadSkips: perFrame.drawClipPlanePayloadSkips,
+    drawMaterialPayloadCopies: perFrame.drawMaterialPayloadCopies,
+    drawMaterialPayloadSkips: perFrame.drawMaterialPayloadSkips,
+    drawLightPayloadCopies: perFrame.drawLightPayloadCopies,
+    drawLightPayloadSkips: perFrame.drawLightPayloadSkips,
     sortedDrawProfiledMs: perFrame.sortedDrawProfiledMs,
     sortedDrawUniformMs: perFrame.sortedDrawUniformMs,
     sortedDrawRenderUniformMs: perFrame.sortedDrawRenderUniformMs,
@@ -817,22 +823,23 @@ async function enterSkirmishScene(page) {
   };
 }
 
-async function queryRenderer(page) {
-  return page.evaluate(() => {
+async function queryRenderer(browser) {
+  try {
+    // Ask the browser process instead of creating a disposable page context.
+    // Headless real-GPU ANGLE can evict the game context when a second WebGL
+    // context is created, which turns the profiled canvas black before boot.
+    const session = await browser.newBrowserCDPSession();
     try {
-      const probe = document.createElement("canvas");
-      const gl = probe.getContext("webgl2") || probe.getContext("webgl");
-      if (!gl) {
-        return "NO_WEBGL";
-      }
-      const ext = gl.getExtension("WEBGL_debug_renderer_info");
-      return ext
-        ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)
-        : gl.getParameter(gl.RENDERER);
-    } catch (error) {
-      return `ERROR: ${error?.message ?? String(error)}`;
+      const info = await session.send("SystemInfo.getInfo");
+      return info?.gpu?.devices?.[0]?.deviceString
+        ?? info?.gpu?.auxAttributes?.glRenderer
+        ?? "NO_GPU_DEVICE";
+    } finally {
+      await session.detach();
     }
-  });
+  } catch (error) {
+    return `ERROR: ${error?.message ?? String(error)}`;
+  }
 }
 
 function readDrawSequence(state) {
@@ -864,6 +871,12 @@ const browserPerfFields = [
   "drawMatrixAllocatedCopies",
   "drawPayloadCalls",
   "drawPayloadReused",
+  "drawClipPlanePayloadCopies",
+  "drawClipPlanePayloadSkips",
+  "drawMaterialPayloadCopies",
+  "drawMaterialPayloadSkips",
+  "drawLightPayloadCopies",
+  "drawLightPayloadSkips",
   "drawDerivedCacheHits",
   "drawDerivedCacheMisses",
   "drawUniformCacheHits",
@@ -1199,6 +1212,16 @@ function browserPerfDelta(before, after, framesAdvanced) {
           drawMatrixAllocatedCopies: Number(delta.drawMatrixAllocatedCopies ?? 0) / framesAdvanced,
           drawPayloadCalls: Number(delta.drawPayloadCalls ?? 0) / framesAdvanced,
           drawPayloadReused: Number(delta.drawPayloadReused ?? 0) / framesAdvanced,
+          drawClipPlanePayloadCopies:
+            Number(delta.drawClipPlanePayloadCopies ?? 0) / framesAdvanced,
+          drawClipPlanePayloadSkips:
+            Number(delta.drawClipPlanePayloadSkips ?? 0) / framesAdvanced,
+          drawMaterialPayloadCopies:
+            Number(delta.drawMaterialPayloadCopies ?? 0) / framesAdvanced,
+          drawMaterialPayloadSkips:
+            Number(delta.drawMaterialPayloadSkips ?? 0) / framesAdvanced,
+          drawLightPayloadCopies: Number(delta.drawLightPayloadCopies ?? 0) / framesAdvanced,
+          drawLightPayloadSkips: Number(delta.drawLightPayloadSkips ?? 0) / framesAdvanced,
           drawDerivedCacheHits: Number(delta.drawDerivedCacheHits ?? 0) / framesAdvanced,
           drawDerivedCacheMisses: Number(delta.drawDerivedCacheMisses ?? 0) / framesAdvanced,
           drawUniformCacheHits: Number(delta.drawUniformCacheHits ?? 0) / framesAdvanced,
@@ -1519,6 +1542,7 @@ const engineFrameProfile = process.env.PERF_PROFILE_ENGINE_PROFILE === "1" ||
 const server = await startStaticServer({ root: wasmRoot });
 let browser;
 let page;
+let renderer;
 let profileCompleted = false;
 
 try {
@@ -1532,6 +1556,9 @@ try {
   }
 
   browser = await chromium.launch(launchOptions);
+  // SystemInfo may initialize the GPU process. Do that before the page creates
+  // the game's sole WebGL context so the query cannot disturb a live renderer.
+  renderer = await queryRenderer(browser);
   await mkdir(artifactsRoot, { recursive: true });
   await mkdir(screenshotsRoot, { recursive: true });
 
@@ -1554,7 +1581,6 @@ try {
   }
   await page.goto(harnessUrl.href, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
-  const renderer = await queryRenderer(page);
   await page.evaluate((level) => window.__cncSetDiagLevel?.(level), diagLevel);
   // Lite diag now disables per-GL-op perfNow() timing (play-page overhead fix);
   // the profiler needs the *_Ms stats, so force timing back on for this run.

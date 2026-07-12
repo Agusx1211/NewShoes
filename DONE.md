@@ -8,6 +8,33 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Browser draw-payload allocation reduction (2026-07-12)
+
+- [x] Stopped materializing native D3D8 clip-plane, material, and eight-light
+      JS object graphs on derived-state misses when the active lite-mode shader
+      cannot read them. Disabled clip/light state now shares immutable
+      fallbacks, and fixed-light uniform flattening reuses typed-array scratch
+      buffers instead of allocating intermediate arrays for each upload. Full
+      diagnostics preserve the complete original payload. An RTX 4080
+      Vulkan/ANGLE 600-frame production-style A/B reduced engine frame time
+      from 7.59 to 6.87 ms average, 7.4 to 6.8 median, 10.0 to 9.0 p95, and
+      11.9 to 10.4 p99, with no resolution, draw, shader, effect, texture,
+      simulation, or LOD change. Real-GPU shell-map and active-skirmish
+      screenshots retained terrain, water, particles, lighting, shadows,
+      models, textures, and UI; the skirmish advanced 1200 AI frames with
+      detected enemy activity. The debug `cnc-port` build and full
+      `EXPECT_WASM=1` browser smoke passed, including its clip-plane,
+      directional/point/spot/specular light, normal, local-viewer, and lit
+      material-source pixel checks; an RTX full-diagnostic profile also copied
+      every payload without taking a lite-mode skip.
+- [x] Made the runtime frame profiler identify the renderer through Chrome's
+      browser-process `SystemInfo` endpoint before page creation. This avoids
+      creating a disposable WebGL context—or initializing the GPU process
+      after the game context exists—which evicted the live canvas under
+      headless NVIDIA Vulkan/ANGLE. The resulting profiles report the RTX 4080
+      renderer and complete with nonblank screenshots instead of losing the
+      game context.
+
 ## Steam installed-folder compatibility (2026-07-12)
 
 - [x] Accepted Steam's complete English Zero Hour layout, where the required
