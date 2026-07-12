@@ -8,29 +8,6 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
-## Exact particle shader and rejected submission/atlas experiments (2026-07-12)
-
-- [x] Added a specialized WebGL2 program for the exact fixed-function state
-      used by the original smoke and explosion quads: transformed XYZ/normal/
-      diffuse/two-UV vertices, unlit diffuse color, one texture modulate,
-      original alpha blending, depth state, texture sampling, draw order, and
-      every original particle remain unchanged. In the RTX 4080 close-camera
-      eight-MOAB stress case it handled about 1,707 of 1,961 draws per frame;
-      final effect wall time fell from 13.587 to 7.787 ms, GPU time from 16.099
-      to 3.939 ms, wall p99 from 18.621 to 13.376 ms, and GPU p99 from 22.551
-      to 5.133 ms while the measured run rendered more on-screen particles.
-- [x] Prototyped the proposed one-crossing native sorted command buffer while
-      preserving the original depth sort and state sequence, then removed it:
-      copying immutable matrices, render state, lights, and material into the
-      queue cost more CPU than the boundary savings. A same-build RTX A/B
-      changed effect wall time from 8.205 to 9.377 ms even though GPU time
-      moved slightly from 4.192 to 4.123 ms.
-- [x] Prototyped lossless DXT-mip particle atlas storage with exact per-region
-      UV scaling and clamp filtering, then removed it. The actual particle
-      states use wrap addressing, leaving zero draws eligible for the exact
-      path; expanding it would alter cross-edge bilinear filtering and violate
-      the no-visual-downgrade requirement.
-
 ## Lite uniform-state and base-key flattening (2026-07-12)
 
 - [x] Tested three follow-up allocation reductions independently on RTX 4080

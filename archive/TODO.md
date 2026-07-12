@@ -3727,6 +3727,27 @@ and then start with the PROFILE, not with any individual fix.
       `diag=lite` has no warmup readbacks; DevTools is still needed before
       changing buffer/shader/draw submission internals that might be dominated
       by asynchronous ANGLE/GPU stalls.
+- [ ] **Try a per-frame draw command buffer to collapse per-draw wasm↔JS
+      crossings (structural complement to the per-draw uniform caching above).**
+      Profiles prove the sorted cost is *submission* (`sortedDrawUniformMs`
+      ~7.7 ms, `browserDrawIndexed`), not the sort (~0.01 ms) or the GL draw
+      (~0.02 ms): it is the per-draw EM_JS boundary crossing (27-arg call, ~5
+      matrix copies + state block, ~500/frame). The W3D `SortingRenderer` is
+      designed around D3D8's "thousands of tiny state-changing draws are free"
+      (transparent polys are depth-sorted → can't batch by material → ~1
+      draw/particle); D3D8 ate that, the wasm↔JS boundary does not, so cost
+      scales linearly with particle count — the root of the shell-map particle
+      FPS death-spiral (goal is to *handle* the particles, NOT cull via
+      dynamic-LOD `m_dynamicParticleSkipMask`). Idea: have
+      `DX8Wrapper::Draw`/`browser_draw_indexed` *append* each draw (indices into
+      the shared dynamic VB + a state/uniform token) into a wasm-heap command
+      list, then cross to JS **once per frame** and replay into WebGL. WebGL
+      still issues N `drawElements` (cheap), but you kill N boundary crossings +
+      ~N×5 matrix allocations. Attacks the *number* of crossings; the uniform
+      cache attacks *cost per* crossing — they compose, and the same shape may
+      help remaining ordered Render2D/text draws after the W3DDisplay GUI batch.
+      Verify against shell-map goldens; re-measure
+      `sortedDrawUniformMs`/`browserDrawIndexed` + particle-count-vs-FPS. (by Claude)
 - [ ] **Profile a LOADED skirmish (hundreds of units) — the real perf target,
       never yet measured.** All perf work to date optimizes the ~9 ms shell-map
       background; the scene that actually matters (an active battle with
