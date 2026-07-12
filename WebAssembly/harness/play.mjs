@@ -18,6 +18,7 @@ import {
   normalizeCommanderName,
   saveNetworkSettings as persistNetworkSettings,
 } from "./multiplayer_identity.mjs";
+import { shouldAutoConnectP2p } from "./multiplayer_launch_policy.mjs";
 
 const analytics = window.ZeroHAnalytics;
 const track = (name, params) => analytics?.track(name, params);
@@ -802,7 +803,7 @@ async function start() {
     const networkSettings = networkSettingsFromInputs();
     saveNetworkSettings(networkSettings);
     let networkRuntime = null;
-    if (networkSettings.room) {
+    if (shouldAutoConnectP2p(networkSettings.room)) {
       report(`joining P2P room ${networkSettings.room}...`);
       if (networkStatusNode) networkStatusNode.textContent = "Discovering peers and connecting WebRTC ICE...";
       const iceServers = networkSettings.iceServerUrl
@@ -828,7 +829,9 @@ async function start() {
         networkStatusNode.textContent = `Joined ${networkSettings.room} as ${networkRuntime.endpoint.displayName} (${ipText}). Open Multiplayer → LAN.`;
       }
     } else if (networkStatusNode) {
-      networkStatusNode.textContent = "Offline. Enter a shared room to enable WebRTC multiplayer.";
+      networkStatusNode.textContent = networkSettings.room
+        ? "P2P multiplayer is temporarily disabled. Starting offline."
+        : "Offline. P2P multiplayer is temporarily disabled.";
     }
     const startAudioRuntime = await rpc("resumeBrowserAudioRuntime", {
       trigger: "play.start",
