@@ -1534,6 +1534,8 @@ const d3d8AdjacentBatching = process.env.PERF_PROFILE_D3D8_BATCH !== "0";
 const d3d8LiteVertexMirrors = process.env.PERF_PROFILE_D3D8_VERTEX_MIRRORS === "1";
 const d3d8BufferProducers = process.env.PERF_PROFILE_D3D8_BUFFER_PRODUCERS === "1";
 const d3d8DrawProducers = process.env.PERF_PROFILE_D3D8_DRAW_PRODUCERS === "1";
+const d3d8PerfTimingSetting = parseOptionalBoolean("PERF_PROFILE_D3D8_TIMING");
+const d3d8PerfCountersSetting = parseOptionalBoolean("PERF_PROFILE_D3D8_COUNTERS");
 const d3d8BoundDrawDiagnostics = parseOptionalBoolean("PERF_PROFILE_D3D8_BOUND_DIAG");
 const engineFrameProfile = process.env.PERF_PROFILE_ENGINE_PROFILE === "1" ||
   d3d8BufferProducers ||
@@ -1582,9 +1584,12 @@ try {
   await page.goto(harnessUrl.href, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
   await page.evaluate((level) => window.__cncSetDiagLevel?.(level), diagLevel);
-  // Lite diag now disables per-GL-op perfNow() timing (play-page overhead fix);
-  // the profiler needs the *_Ms stats, so force timing back on for this run.
-  await page.evaluate(() => window.__cncSetD3D8PerfTiming?.(true));
+  // Profiling defaults to detailed counters/timings. Performance A/B runs can
+  // explicitly match the lean human-play path without changing the build.
+  const d3d8PerfTimingActive = await page.evaluate((enabled) =>
+    window.__cncSetD3D8PerfTiming?.(enabled) ?? null, d3d8PerfTimingSetting ?? true);
+  const d3d8PerfCountersActive = await page.evaluate((enabled) =>
+    window.__cncSetD3D8PerfCounters?.(enabled) ?? null, d3d8PerfCountersSetting ?? true);
   const d3d8AdjacentBatchingActive = await page.evaluate((enabled) =>
     window.__cncSetD3D8AdjacentBatching?.(enabled) ?? null, d3d8AdjacentBatching);
   const d3d8LiteVertexMirrorsActive = await page.evaluate((enabled) =>
@@ -1664,6 +1669,8 @@ try {
     d3d8LiteVertexMirrors: d3d8LiteVertexMirrorsActive,
     d3d8BufferProducers: d3d8BufferProducersActive,
     d3d8DrawProducers: d3d8DrawProducersActive,
+    d3d8PerfTiming: d3d8PerfTimingActive,
+    d3d8PerfCounters: d3d8PerfCountersActive,
     d3d8BoundDrawDiagnostics: d3d8BoundDrawDiagnosticsActive,
     engineFrameProfile,
     sampleBrowserPerf,

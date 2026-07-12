@@ -8,6 +8,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Lite-play D3D8 counter overhead removal (2026-07-12)
+
+- [x] Removed detailed D3D8 performance-counter bookkeeping from the lite
+      human-play hot path while preserving it by default in full diagnostics
+      and through an explicit profiler override. This changes diagnostics
+      only: draw commands, render state, shaders, assets, resolution, effects,
+      simulation, and LOD are untouched. Two production-style 600-frame
+      shell-map comparisons on RTX 4080 Vulkan/ANGLE, with per-operation clock
+      timing disabled in every run, measured 4.7-6.3% lower wall-frame average
+      and 6.0-8.5% lower engine-frame average; the confirming comparison also
+      improved wall p95/p99 by 1.7%/2.2% and engine p95/p99 by 6.2%/19.3%.
+      A lean active-skirmish run reached live human/AI match state with 224
+      objects and a correct real-GPU terrain/model/shadow/UI screenshot. The
+      full `EXPECT_WASM=1` browser smoke passed with detailed counters enabled,
+      and the runtime profiler plus the lite real-FX smoke can explicitly
+      retain counters when their assertions need them.
+
 ## Browser draw-payload allocation reduction (2026-07-12)
 
 - [x] Stopped materializing native D3D8 clip-plane, material, and eight-light
