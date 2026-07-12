@@ -21,6 +21,17 @@ Zero Hour in `GeneralsMD/Code/` is the primary target. The main source areas are
 Read `PROJECT.md` for the current architecture before making broad or
 cross-cutting changes.
 
+## Private agent instructions
+
+At the start of every task, read the repository-root `AGENTS_PRIVATE.md` after
+this file when it exists. It is the place for user- or machine-specific agent
+instructions that should remain local. Follow it as supplemental project
+guidance, subject to higher-priority instructions and the user's current
+request.
+
+`AGENTS_PRIVATE.md` is gitignored. Never stage, commit, quote, or publish its
+contents. Its absence is normal and does not block work.
+
 ## Engineering stance
 
 The original engine is the product, but it is no longer an untouchable artifact.
@@ -104,6 +115,28 @@ Record newly discovered follow-ups as separate issues instead of expanding the
 current task or adding them to the archived checklists. Add concise progress or
 verification comments when they help a handoff. Close an issue only after the
 change is integrated and its required verification is complete.
+
+## Agent identity and authorship
+
+Every repository artifact authored by an AI agent MUST identify the exact model
+that authored it. This applies to commits and all GitHub writes, including issue
+and pull request bodies, comments, reviews, discussions, and release notes.
+
+Before writing or committing, determine the most specific model identity exposed
+by the runtime or its configuration: provider, model family, version, and
+variant or subversion. Do not use a generic identity such as `Codex`, `Claude`,
+or `GPT-5`. If the exact identity cannot be determined, stop before publishing
+and ask the user rather than guessing.
+
+Put the identity on its own final line in GitHub prose and in every commit
+message as a trailer, using this format with the actual identity substituted:
+
+```text
+Agent-Model: OpenAI gpt-5.6-sol
+```
+
+The signature is required even for short comments, small commits, automated
+edits, and follow-up changes. Human-authored artifacts do not require it.
 
 ## Branch and worktree lifecycle
 
@@ -215,5 +248,5 @@ not an active task queue.
 - The repository must stay on a case-sensitive filesystem; the compatibility
   headers include names that differ only by case.
 - Check `LICENSE.md` before redistributing modified builds.
-- Commit completed work with a short descriptive message and provider/model-specific
-  authorship, including the model subversion when it is available.
+- Commit completed work with a short descriptive message and the mandatory
+  `Agent-Model` trailer defined above.
