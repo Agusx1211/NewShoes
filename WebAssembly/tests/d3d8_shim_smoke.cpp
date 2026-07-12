@@ -1204,13 +1204,80 @@ int main()
 		expect(state->browser_buffer_create_calls >= 2, "browser buffer create count mismatch") &&
 		expect(state->browser_buffer_update_calls >= 4, "browser buffer update count mismatch");
 
+	// SetRenderTarget resets the D3D8 viewport to the active surface size.  The
+	// browser bridge also relies on this state to distinguish a small RTT from
+	// the main backbuffer when it converts the top-left D3D viewport to WebGL.
+	IDirect3DSurface8 *default_render_target = nullptr;
+	IDirect3DSurface8 *default_depth_stencil = nullptr;
+	IDirect3DTexture8 *offscreen_texture = nullptr;
+	IDirect3DSurface8 *offscreen_render_target = nullptr;
+	D3DVIEWPORT8 offscreen_viewport = {};
+	D3DVIEWPORT8 depth_only_viewport = {};
+	D3DVIEWPORT8 restored_viewport = {};
+	D3DVIEWPORT8 partial_viewport = {};
+	partial_viewport.X = 4;
+	partial_viewport.Y = 2;
+	partial_viewport.Width = 32;
+	partial_viewport.Height = 16;
+	partial_viewport.MinZ = 0.25f;
+	partial_viewport.MaxZ = 0.75f;
+	const bool render_target_viewport_ok =
+		expect(SUCCEEDED(device->GetRenderTarget(&default_render_target)),
+			"GetRenderTarget for viewport reset failed") &&
+		expect(SUCCEEDED(device->GetDepthStencilSurface(&default_depth_stencil)),
+			"GetDepthStencilSurface for viewport reset failed") &&
+		expect(SUCCEEDED(device->CreateTexture(64, 32, 1, D3DUSAGE_RENDERTARGET,
+			D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &offscreen_texture)),
+			"CreateTexture for viewport reset failed") &&
+		expect(SUCCEEDED(offscreen_texture->GetSurfaceLevel(0, &offscreen_render_target)),
+			"GetSurfaceLevel for viewport reset failed") &&
+		expect(SUCCEEDED(device->SetRenderTarget(offscreen_render_target, nullptr)),
+			"SetRenderTarget to offscreen surface failed") &&
+		expect(SUCCEEDED(device->GetViewport(&offscreen_viewport)),
+			"GetViewport for offscreen surface failed") &&
+		expect(offscreen_viewport.X == 0 && offscreen_viewport.Y == 0 &&
+			offscreen_viewport.Width == 64 && offscreen_viewport.Height == 32 &&
+			near(offscreen_viewport.MinZ, 0.0f) && near(offscreen_viewport.MaxZ, 1.0f),
+			"offscreen render target did not reset viewport") &&
+		expect(SUCCEEDED(device->SetViewport(&partial_viewport)),
+			"SetViewport before depth-only render target change failed") &&
+		expect(SUCCEEDED(device->SetRenderTarget(nullptr, default_depth_stencil)),
+			"depth-only SetRenderTarget failed") &&
+		expect(SUCCEEDED(device->GetViewport(&depth_only_viewport)),
+			"GetViewport after depth-only render target change failed") &&
+		expect(depth_only_viewport.X == 0 && depth_only_viewport.Y == 0 &&
+			depth_only_viewport.Width == 64 && depth_only_viewport.Height == 32 &&
+			near(depth_only_viewport.MinZ, 0.0f) && near(depth_only_viewport.MaxZ, 1.0f),
+			"depth-only render target change did not retain the offscreen viewport") &&
+		expect(SUCCEEDED(device->SetRenderTarget(default_render_target, default_depth_stencil)),
+			"SetRenderTarget to default surface failed") &&
+		expect(SUCCEEDED(device->GetViewport(&restored_viewport)),
+			"GetViewport for restored surface failed") &&
+		expect(restored_viewport.X == 0 && restored_viewport.Y == 0 &&
+			restored_viewport.Width == 640 && restored_viewport.Height == 360 &&
+			near(restored_viewport.MinZ, 0.0f) && near(restored_viewport.MaxZ, 1.0f),
+			"default render target did not restore full viewport");
+
+	if (offscreen_render_target != nullptr) {
+		offscreen_render_target->Release();
+	}
+	if (offscreen_texture != nullptr) {
+		offscreen_texture->Release();
+	}
+	if (default_depth_stencil != nullptr) {
+		default_depth_stencil->Release();
+	}
+	if (default_render_target != nullptr) {
+		default_render_target->Release();
+	}
+
 	device->Release();
 	d3d->Release();
 
 	const bool release_ok =
 		expect(state->browser_buffer_release_calls >= 2, "browser buffer release count mismatch");
 
-	if (!state_ok || !release_ok) {
+	if (!state_ok || !render_target_viewport_ok || !release_ok) {
 		return 1;
 	}
 

@@ -1675,7 +1675,7 @@ function syncCanvasSize(options = {}) {
     invalidateD3D8NormalizedViewportCache();
   }
   if (gl && restoreViewport) {
-    restoreFullCanvasViewport();
+    restoreFullRenderTargetViewport();
   } else if (resized) {
     invalidateD3D8AppliedViewportCache();
   }
@@ -1708,7 +1708,7 @@ function onD3D8BackbufferResize(width, height, source = "engine") {
   invalidateD3D8NormalizedViewportCache();
   invalidateD3D8AppliedViewportCache();
   if (gl) {
-    restoreFullCanvasViewport();
+    restoreFullRenderTargetViewport();
   }
   refreshCanvasState();
   recordLog("d3d8 backbuffer resize", { width: bufferWidth, height: bufferHeight, source });
@@ -1756,24 +1756,32 @@ function clampNumber(value, min, max, fallback) {
   return Math.max(min, Math.min(max, finiteNumber(value, fallback)));
 }
 
-function currentDrawingBufferSize() {
+function currentRenderSurfaceSize() {
+  if (d3d8CurrentFramebuffer !== null &&
+      d3d8CurrentFramebufferWidth > 0 && d3d8CurrentFramebufferHeight > 0) {
+    return {
+      width: d3d8CurrentFramebufferWidth,
+      height: d3d8CurrentFramebufferHeight,
+    };
+  }
   return {
     width: gl ? gl.drawingBufferWidth : canvas.width,
     height: gl ? gl.drawingBufferHeight : canvas.height,
   };
 }
 
-function restoreFullCanvasViewport() {
+function restoreFullRenderTargetViewport() {
   if (!gl) {
     return;
   }
-  gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+  const target = currentRenderSurfaceSize();
+  gl.viewport(0, 0, target.width, target.height);
   gl.disable(gl.SCISSOR_TEST);
   gl.depthRange(0, 1);
   invalidateD3D8AppliedViewportCache();
 }
 
-function normalizeD3D8Viewport(payload = {}, drawingBuffer = currentDrawingBufferSize()) {
+function normalizeD3D8Viewport(payload = {}, drawingBuffer = currentRenderSurfaceSize()) {
   const bufferWidth = Math.max(0, drawingBuffer.width);
   const bufferHeight = Math.max(0, drawingBuffer.height);
   const requested = {
@@ -1840,7 +1848,7 @@ function normalizeD3D8Viewport(payload = {}, drawingBuffer = currentDrawingBuffe
   };
 }
 
-function currentD3D8ViewportPayload(drawingBuffer = currentDrawingBufferSize()) {
+function currentD3D8ViewportPayload(drawingBuffer = currentRenderSurfaceSize()) {
   if (d3d8ViewportState) {
     return d3d8ViewportState;
   }
@@ -1857,7 +1865,7 @@ function currentD3D8ViewportPayload(drawingBuffer = currentDrawingBufferSize()) 
 }
 
 function cachedD3D8NormalizedViewport() {
-  const drawingBuffer = currentDrawingBufferSize();
+  const drawingBuffer = currentRenderSurfaceSize();
   const bufferWidth = Math.max(0, drawingBuffer.width);
   const bufferHeight = Math.max(0, drawingBuffer.height);
   const payload = currentD3D8ViewportPayload({ width: bufferWidth, height: bufferHeight });
@@ -6357,7 +6365,7 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
   // Clear only touches clearColor/clearDepth/clearStencil (untracked), the
   // depth mask (via the tracked setD3D8DepthMask, restored below), the
   // stencil mask (tracked cache synced below), and — through syncCanvasSize's
-  // restoreFullCanvasViewport — viewport/scissor, whose applied-viewport cache
+  // restoreFullRenderTargetViewport — viewport/scissor, whose applied-viewport cache
   // that helper invalidates itself. The blend/cull/uniform/vertex-attrib
   // caches all stay valid, so only the pending batch needs flushing here
   // (it must draw under the pre-clear state).
