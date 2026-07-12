@@ -29,25 +29,31 @@ This public URL points to the current GitHub Pages deployment.
 
 ## Status
 
-This is a playable development build, not a finished release. The current
-threaded runtime:
+Project New Shoes is a playable browser port of Zero Hour. It boots the real
+engine, runs skirmishes against the original AI, renders the game through
+WebGL2, and uses the original UI, input, simulation, and command paths. It is
+still a development build, but the foundational port is working.
 
-- completes the original Zero Hour engine initialization path;
-- renders the shell, menus, terrain, objects, effects, and playable skirmishes
-  through WebGL2;
-- uses translated D3D8 vertex and pixel shaders by default, with the classic
-  fixed-function path still available;
-- routes Miles-style audio calls to Web Audio;
-- imports required data from original media or an existing installation into
-  browser-local OPFS storage;
-- accepts the original mouse and keyboard input paths;
-- has save persistence and a short four-player WebRTC match gate; and
-- can close and relaunch from the browser desktop.
+| Area | Status | Current support |
+|---|---|---|
+| Engine and shell | **Works** | The threaded WebAssembly runtime completes the original Zero Hour initialization path and renders the shell and menus. |
+| Skirmish | **Works** | Playable matches run against the original AI. All official multiplayer maps have been driven to a rendered skirmish state. |
+| Mouse, keyboard, and UI | **Works** | Browser events feed the original input path, including menus, text entry, camera controls, selection, building, production, movement, and common combat commands. |
+| Game-data installation | **Works** | The launcher imports an installed copy or complete original media, validates the required archives, and stores them locally in OPFS. |
+| Launcher lifecycle | **Works** | Display and shader settings, diagnostics, game launch, clean shutdown, save persistence, and relaunch are implemented. |
+| Rendering | **Partially works** | Terrain, objects, UI, particles, effects, and the shipped D3D8 shader model 1.1 programs render through WebGL2. Enhanced and classic tiers work; some shader, animation, terrain, effect, and UI fidelity issues remain. |
+| Audio | **Partially works** | Engine-driven music, speech, streams, and 2D/3D samples play through Web Audio. Natural gameplay coverage and mixing still need polish. |
+| Campaign and Generals Challenge | **Partially works** | The original engine paths are present, but complete mission, challenge, cutscene, and win/loss flows are not yet verified end to end. |
+| Saves and loading | **Partially works** | Browser-local save persistence works. Broader save creation, loading, compatibility, and full-match coverage remain in progress. |
+| Multiplayer | **Partially works** | The original lockstep protocol runs over WebRTC, with short matches verified at up to four players. Long sessions, reconnect/disconnect behavior, determinism coverage, and public signaling hardening remain. |
+| Movies | **Not yet** | Bink metadata and presentation paths have focused coverage, but full retail movie playback and audio sync are not complete. |
+| Browser support | **Chromium only for now** | Desktop Chrome and Chromium are the primary tested targets. Firefox and Safari are not yet release targets. |
+| Vanilla Generals | **Not yet** | Generals data is used by Zero Hour, but the launcher does not currently expose a separate vanilla Generals runtime. |
 
-Fidelity, campaigns, video, natural gameplay audio coverage, long multiplayer
-sessions, save/load coverage, performance, and browser compatibility still need
-work. Chrome and Chromium are the primary tested browsers. Firefox and Safari
-are not yet release targets.
+Performance, memory use, context-loss handling, crash recovery, and fidelity are
+active product work. See [GitHub Issues](https://github.com/Agusx1211/NewShoes/issues)
+for the live backlog; the table above describes current capability rather than
+a promise that every game path is complete.
 
 ## What you need
 
