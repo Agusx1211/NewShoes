@@ -186,6 +186,16 @@ export class NetworkDiagnosticsRecorder {
   snapshot() {
     return {
       schema: "cnc.network-diagnostics.v1",
+      ...this.summary(),
+      packets: this.packets.map((entry) => ({ ...entry })),
+      events: this.events.map((entry) => ({ ...entry })),
+      rtcSamples: this.rtcSamples.map((entry) => ({ ...entry })),
+      engineSamples: this.engineSamples.map((entry) => ({ ...entry })),
+    };
+  }
+
+  summary() {
+    return {
       enabled: this.enabled,
       startedAt: this.startedAt,
       stoppedAt: this.stoppedAt,
@@ -200,10 +210,6 @@ export class NetworkDiagnosticsRecorder {
       totals: { ...this.totals },
       evicted: { ...this.evicted },
       complete: Object.values(this.evicted).every((count) => count === 0),
-      packets: this.packets.map((entry) => ({ ...entry })),
-      events: this.events.map((entry) => ({ ...entry })),
-      rtcSamples: this.rtcSamples.map((entry) => ({ ...entry })),
-      engineSamples: this.engineSamples.map((entry) => ({ ...entry })),
     };
   }
 }

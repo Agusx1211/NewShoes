@@ -413,6 +413,7 @@
               <label class="setting-block toggle-setting"><div><strong>Performance overlay</strong><span>Top-left FPS, frame times, percentiles, and graph. Off by default.</span></div><input id="performanceOverlayToggle" type="checkbox"><span class="toggle"></span></label>
               <div class="setting-block game-performance-options"><div><strong>Graph window</strong><span>History length and vertical frame-time scale.</span></div><div><select id="performanceHistorySelect" aria-label="Performance graph history"><option value="3">3 seconds</option><option value="5" selected>5 seconds</option><option value="10">10 seconds</option></select><select id="performanceGraphMaxSelect" aria-label="Performance graph maximum"><option value="33.33">33 ms</option><option value="50" selected>50 ms</option><option value="100">100 ms</option></select></div></div>
               <label class="setting-block"><div><strong>Graphics diagnostics</strong><span>Lite is for play; full captures expensive per-draw evidence.</span></div><select id="diagnosticsSelect"><option value="lite">Lite</option><option value="full">Full</option></select></label>
+              <label class="setting-block toggle-setting"><div><strong>Detailed multiplayer diagnostics</strong><span>Record every game packet, worker-queue transition, lockstep sample, and WebRTC statistic in issue dumps. Dumps can be large; discovery messages and TURN credentials are excluded.</span></div><input id="networkDiagnosticsToggle" type="checkbox"><span class="toggle"></span></label>
               <div class="game-tool-grid"><button id="consoleToggle" type="button">Engine log</button><button id="recordToggle" type="button">Record</button><button id="issueButton" type="button">Report issue</button><button id="saveDump" type="button">Save dump</button><button id="uploadDump" type="button">Upload dump</button><label><input id="deepCapture" type="checkbox" checked> deep capture</label><label><input id="videoCapture" type="checkbox" checked> video</label><strong id="dumpStatus">idle</strong></div>
             </section>
             <section id="multiplayerPanel" class="settings-panel multiplayer-panel" role="tabpanel" aria-labelledby="multiplayerTab" data-settings-panel="multiplayer" hidden>
@@ -425,7 +426,6 @@
                 <label class="network-field" for="networkIceUsername"><span><strong>TURN username</strong><small>Optional</small></span><input id="networkIceUsername" type="text" autocomplete="username"></label>
                 <label class="network-field" for="networkIceCredential"><span><strong>TURN credential</strong><small>Kept only for this launch</small></span><input id="networkIceCredential" type="password" autocomplete="current-password"></label>
               </details>
-              <label class="setting-block toggle-setting"><div><strong>Detailed multiplayer diagnostics</strong><span>Record every game packet, worker-queue transition, lockstep sample, and WebRTC statistic in issue dumps. Dumps can be large; discovery messages and TURN credentials are excluded.</span></div><input id="networkDiagnosticsToggle" type="checkbox"><span class="toggle"></span></label>
               <p id="networkStatus" class="network-status" aria-live="polite">Offline. Enter a shared room to enable WebRTC multiplayer.</p>
             </section>
             <section id="hardwarePanel" class="settings-panel hardware-panel" role="tabpanel" aria-labelledby="hardwareTab" data-settings-panel="hardware" hidden>
@@ -520,6 +520,12 @@
               <span>p95 <strong id="performanceP95Ms">—</strong></span>
               <span>max <strong id="performanceMaxMs">—</strong></span>
             </div>
+          </aside>
+          <aside id="captureOverlay" class="captureOverlay hidden" aria-label="Issue capture controls" aria-live="polite">
+            <div class="captureOverlayHeader"><span id="captureOverlayIndicator" class="captureOverlayIndicator"></span><strong id="captureOverlayTitle">Capture stopped</strong><button id="captureOverlayDismiss" type="button" aria-label="Hide capture controls" title="Hide capture controls">×</button></div>
+            <div id="captureOverlayStats" class="captureOverlayStats">0:00 · 0 events · 0 packets</div>
+            <div id="captureOverlayStatus" class="captureOverlayStatus">ready</div>
+            <div class="captureOverlayActions"><button id="captureOverlayToggle" type="button">Pause</button><button id="captureOverlayIssue" type="button">Report issue</button><button id="captureOverlayDownload" type="button" class="captureOverlayPrimary">Save dump</button></div>
           </aside>
         </main>
       </section>

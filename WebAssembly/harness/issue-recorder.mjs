@@ -657,6 +657,12 @@ class IssueRecorder {
     this.wrappedRpc = null;
     this.animReportTimer = null;
     this.animReportSamples = [];
+    this.captureOverlayTimer = null;
+    this.captureOverlayShown = false;
+    this.captureActiveStartedAtMs = null;
+    this.captureAccumulatedMs = 0;
+    this.captureStatusText = "idle";
+    this.dumpBusy = false;
     this.lastStatusRefreshMs = Number.NEGATIVE_INFINITY;
     this.setStatus("idle");
   }
@@ -791,6 +797,28 @@ class IssueRecorder {
       if (!this.includeVideo && this.mediaRecorder) {
         void this.stopVideo();
       }
+    });
+    this.controls.captureToggle?.addEventListener("click", () => {
+      if (this.recording) {
+        void this.stopRecording("in-game-overlay");
+      } else {
+        void this.startRecording("in-game-overlay");
+      }
+    });
+    this.controls.captureIssue?.addEventListener("click", () => {
+      void this.openIssueDialog();
+    });
+    this.controls.captureDownload?.addEventListener("click", () => {
+      void this.downloadDump("in-game-overlay");
+    });
+    this.controls.captureDismiss?.addEventListener("click", () => {
+      if (this.recording) return;
+      this.captureOverlayShown = false;
+      if (this.captureOverlayTimer) {
+        clearInterval(this.captureOverlayTimer);
+        this.captureOverlayTimer = null;
+      }
+      this.refreshCaptureOverlay();
     });
     this.bindAnnotationCanvas();
   }
@@ -970,7 +998,10 @@ class IssueRecorder {
   }
 
   async startRecording(reason = "manual") {
+    if (this.recording) return;
     this.recording = true;
+    this.captureOverlayShown = true;
+    this.captureActiveStartedAtMs = stableNowMs();
     this.record("recording.start", {
       reason,
       browser: collectBrowserMetadata(this.canvas),
@@ -982,6 +1013,9 @@ class IssueRecorder {
     }
     if (this.includeVideo) {
       await this.startVideo();
+    }
+    if (!this.captureOverlayTimer) {
+      this.captureOverlayTimer = setInterval(() => this.refreshCaptureOverlay(), 250);
     }
     // Sample the anim/ghost report once per second while recording so the
     // bundle carries per-unit state for the exact moments the video shows a
@@ -1017,8 +1051,13 @@ class IssueRecorder {
   }
 
   async stopRecording(reason = "manual") {
+    if (!this.recording) return;
     this.record("recording.stop", { reason }, { force: true });
     this.recording = false;
+    if (this.captureActiveStartedAtMs != null) {
+      this.captureAccumulatedMs += Math.max(0, stableNowMs() - this.captureActiveStartedAtMs);
+      this.captureActiveStartedAtMs = null;
+    }
     if (this.animReportTimer) {
       clearInterval(this.animReportTimer);
       this.animReportTimer = null;
@@ -1476,18 +1515,25 @@ class IssueRecorder {
   }
 
   async downloadDump(reason = "manual") {
+    if (this.dumpBusy) return;
+    this.dumpBusy = true;
     this.setStatus("building dump");
-    const bundle = await this.buildBundle(reason);
-    const text = JSON.stringify(bundle, null, 2);
-    const filename = `${sanitizeDumpFileName(`${this.id}-${reason}`)}.cncdump.json`;
-    downloadBlob(new Blob([text], { type: "application/json" }), filename);
-    this.record("dump.download", {
-      reason,
-      filename,
-      bytes: text.length,
-    }, { force: true });
-    await this.persistDraft("download");
-    this.setStatus(`downloaded ${filename}`);
+    try {
+      const bundle = await this.buildBundle(reason);
+      const text = JSON.stringify(bundle, null, 2);
+      const filename = `${sanitizeDumpFileName(`${this.id}-${reason}`)}.cncdump.json`;
+      downloadBlob(new Blob([text], { type: "application/json" }), filename);
+      this.record("dump.download", {
+        reason,
+        filename,
+        bytes: text.length,
+      }, { force: true });
+      await this.persistDraft("download");
+      this.setStatus(`downloaded ${filename}`);
+    } finally {
+      this.dumpBusy = false;
+      this.refreshCaptureOverlay();
+    }
   }
 
   async uploadDump(reason = "manual") {
@@ -1522,22 +1568,65 @@ class IssueRecorder {
   }
 
   refreshStatus() {
-    if (!this.statusNode) {
-      return;
-    }
     const now = stableNowMs();
     if (now - this.lastStatusRefreshMs < 250) {
       return;
     }
     this.lastStatusRefreshMs = now;
     const label = this.recording ? "rec" : "idle";
-    this.statusNode.textContent = `${label} ${this.events.length}e ${this.issues.length}i`;
+    if (this.statusNode) {
+      this.statusNode.textContent = `${label} ${this.events.length}e ${this.issues.length}i`;
+    }
+    this.refreshCaptureOverlay(now);
   }
 
   setStatus(text) {
+    this.captureStatusText = text;
     if (this.statusNode) {
       this.lastStatusRefreshMs = stableNowMs();
       this.statusNode.textContent = text;
+    }
+    this.refreshCaptureOverlay();
+  }
+
+  refreshCaptureOverlay(now = stableNowMs()) {
+    const overlay = this.controls.captureOverlay;
+    if (!overlay) return;
+    overlay.classList.toggle("hidden", !this.captureOverlayShown);
+    overlay.classList.toggle("is-recording", this.recording);
+    if (!this.captureOverlayShown) return;
+
+    const activeMs = this.recording && this.captureActiveStartedAtMs != null
+      ? Math.max(0, now - this.captureActiveStartedAtMs)
+      : 0;
+    const elapsedSeconds = Math.floor((this.captureAccumulatedMs + activeMs) / 1000);
+    const minutes = Math.floor(elapsedSeconds / 60);
+    const seconds = String(elapsedSeconds % 60).padStart(2, "0");
+    const network = window.__cncNetworkDiagnosticsSummary?.();
+    const packetCount = network?.retained?.packets ?? 0;
+
+    if (this.controls.captureTitle) {
+      this.controls.captureTitle.textContent = this.recording ? "Recording issue dump" : "Capture stopped";
+    }
+    if (this.controls.captureStats) {
+      this.controls.captureStats.textContent = `${minutes}:${seconds} · ${this.events.length} events · ${packetCount} packets`;
+    }
+    if (this.controls.captureStatus) {
+      const packetCapture = network?.enabled === true ? " · packet capture on" : "";
+      this.controls.captureStatus.textContent = `${this.captureStatusText}${packetCapture}`;
+    }
+    if (this.controls.captureToggle) {
+      this.controls.captureToggle.textContent = this.recording ? "Pause" : "Resume";
+    }
+    if (this.controls.captureDownload) {
+      this.controls.captureDownload.disabled = this.dumpBusy;
+      this.controls.captureDownload.textContent = this.dumpBusy ? "Building…" : "Save dump";
+    }
+    if (this.controls.captureDismiss) {
+      this.controls.captureDismiss.disabled = this.recording;
+      this.controls.captureDismiss.title = this.recording
+        ? "Stop capture before hiding these controls"
+        : "Hide capture controls";
     }
   }
 }

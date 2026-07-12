@@ -481,6 +481,12 @@ Dev-box render-verify: symlink worktree `dist/` → main's built `dist/` renders
 
 ## Launcher follow-ups
 
+- [ ] Reproduce and fix the owner-reported runtime close hang from a live game.
+      The in-game issue-capture overlay now lets a user export a dump without
+      closing the engine, but that is only a diagnostics workaround; closing
+      must still complete save persistence, network/audio shutdown, worker and
+      OPFS release, canvas retirement, and the return to the desktop.
+
 - [ ] Support non-English retail archive sets in the ownership scanner and
       locally derived launcher presentation. The current launcher explains and
       validates the English archive contract explicitly; adding another locale

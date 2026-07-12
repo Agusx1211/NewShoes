@@ -144,6 +144,97 @@ body {
   margin: 7px 0 6px;
 }
 
+/* --- In-game issue capture controls -------------------------------------- */
+.captureOverlay {
+  position: fixed;
+  top: max(10px, env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
+  z-index: 55;
+  width: min(350px, calc(100vw - 20px));
+  padding: 10px;
+  color: #edf5fc;
+  background: rgba(8, 12, 16, 0.9);
+  border: 1px solid rgba(181, 207, 228, 0.24);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.34);
+  font: 11px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.captureOverlay.hidden { display: none; }
+.captureOverlayHeader {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 7px;
+}
+.captureOverlayHeader strong {
+  color: #e9f4fb;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+.captureOverlayIndicator {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #71818d;
+  box-shadow: 0 0 0 3px rgba(113, 129, 141, 0.12);
+}
+.captureOverlay.is-recording .captureOverlayIndicator {
+  background: #ff4c4c;
+  box-shadow: 0 0 0 3px rgba(255, 76, 76, 0.16);
+  animation: capturePulse 1.4s ease-in-out infinite;
+}
+@keyframes capturePulse { 50% { opacity: 0.45; } }
+.captureOverlayHeader button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: #9fb1be;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  font: 18px/1 sans-serif;
+  cursor: pointer;
+}
+.captureOverlayHeader button:hover { color: #fff; background: rgba(255, 255, 255, 0.08); }
+.captureOverlayHeader button:disabled { opacity: 0.35; cursor: not-allowed; }
+.captureOverlayStats { margin-top: 7px; color: #b8c8d3; }
+.captureOverlayStatus {
+  min-height: 1.3em;
+  margin-top: 3px;
+  color: #7f96a6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.captureOverlayActions {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  gap: 6px;
+  margin-top: 9px;
+}
+.captureOverlayActions button {
+  min-height: 30px;
+  padding: 5px 8px;
+  color: #dce8ef;
+  background: #18232b;
+  border: 1px solid #344550;
+  border-radius: 5px;
+  font: 11px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  cursor: pointer;
+}
+.captureOverlayActions button:hover { background: #22313b; border-color: #526975; }
+.captureOverlayActions button:disabled { opacity: 0.55; cursor: wait; }
+.captureOverlayActions .captureOverlayPrimary {
+  color: #07130d;
+  background: #8ad5a7;
+  border-color: #a2e6bc;
+  font-weight: 700;
+}
+.captureOverlayActions .captureOverlayPrimary:hover { background: #a2e6bc; }
+.reduce-motion .captureOverlayIndicator { animation: none; }
+
 /* ===========================================================================
    LAUNCHER SCREEN
    =========================================================================== */

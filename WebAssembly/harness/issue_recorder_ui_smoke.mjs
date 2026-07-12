@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { mkdir, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
@@ -6,6 +7,7 @@ import { startStaticServer } from "./static-server.mjs";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
+const screenshotRoot = resolve(wasmRoot, "artifacts/screenshots");
 const server = await startStaticServer({ root: wasmRoot, port: 0, host: "127.0.0.1" });
 const browser = await chromium.launch({ headless: true });
 
@@ -25,7 +27,9 @@ try {
     document.querySelector("#overlay")?.classList.add("hidden");
   });
   await page.locator('[data-open="settings"]').first().click();
-  await page.locator('[data-settings-tab="multiplayer"]').click();
+  assert.equal(await page.locator("#multiplayerPanel #networkDiagnosticsToggle").count(), 0);
+  assert.equal(await page.locator("#gamePanel #networkDiagnosticsToggle").count(), 1);
+  await page.locator('[data-settings-tab="game"]').click();
   await page.locator("#networkDiagnosticsToggle").check();
   const networkSetting = await page.evaluate(async () => ({
     stored: localStorage.getItem("cncPortNetworkDiagnosticsEnabled.v1"),
@@ -36,10 +40,23 @@ try {
   assert.equal(networkSetting.snapshot?.enabled, true);
   assert.equal(networkSetting.bundle?.networkDiagnostics?.schema, "cnc.network-diagnostics.v1");
   assert.equal(networkSetting.bundle?.manifest?.counts?.networkPackets, 0);
-  await page.locator('[data-settings-tab="game"]').click();
   await page.locator("#deepCapture").uncheck();
   await page.locator("#videoCapture").uncheck();
-  await page.locator("#issueButton").click();
+  await page.locator("#recordToggle").click();
+  await page.evaluate(() => {
+    const runtime = document.querySelector("#launchOverlay");
+    if (runtime) {
+      runtime.hidden = false;
+      runtime.classList.add("is-running");
+    }
+    document.querySelector("#launchLoader")?.setAttribute("hidden", "");
+  });
+  await page.locator("#captureOverlay:not(.hidden)").waitFor();
+  assert.match(await page.locator("#captureOverlayTitle").textContent(), /Recording/);
+  assert.equal(await page.locator("#captureOverlayDismiss").isDisabled(), true);
+  await mkdir(screenshotRoot, { recursive: true });
+  await page.screenshot({ path: resolve(screenshotRoot, "issue-capture-overlay-ui-smoke.png") });
+  await page.locator("#captureOverlayIssue").click();
   await page.locator("#issueModal:not(.hidden)").waitFor();
   await page.locator("#issueTitle").click();
   await page.keyboard.type("UI smoke");
@@ -74,6 +91,28 @@ try {
   assert.equal(issue.strokeCount, 1);
   assert.equal(issue.hasScreenshot, true);
   assert.equal(issue.hasAnnotated, true);
+  await page.locator("#captureOverlayToggle").click();
+  await page.waitForFunction(() => window.CnCIssueRecorder?.recording === false);
+  assert.match(await page.locator("#captureOverlayTitle").textContent(), /stopped/i);
+  assert.equal(await page.locator("#captureOverlay").isVisible(), true);
+  await page.locator("#captureOverlayToggle").click();
+  await page.waitForFunction(() => window.CnCIssueRecorder?.recording === true);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator("#captureOverlayDownload").click();
+  const download = await downloadPromise;
+  assert.match(download.suggestedFilename(), /in-game-overlay\.cncdump\.json$/);
+  const downloadPath = await download.path();
+  assert.ok(downloadPath, "capture overlay did not produce a downloadable issue dump");
+  const downloadedDump = JSON.parse(await readFile(downloadPath, "utf8"));
+  assert.equal(downloadedDump.schema, "cnc.issue-dump.v1");
+  assert.equal(downloadedDump.issues[0].title, "UI smoke");
+  assert.equal(downloadedDump.networkDiagnostics.schema, "cnc.network-diagnostics.v1");
+
+  await page.locator("#captureOverlayToggle").click();
+  await page.waitForFunction(() => window.CnCIssueRecorder?.recording === false);
+  await page.locator("#captureOverlayDismiss").click();
+  await page.locator("#captureOverlay").waitFor({ state: "hidden" });
   console.log("issue recorder UI smoke passed");
 } finally {
   await browser.close();

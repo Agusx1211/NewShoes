@@ -222,6 +222,7 @@ function setNetworkDiagnosticsEnabled(enabled, { reset = enabled, reason = "sett
 globalThis.__cncSetNetworkDiagnostics = (enabled, options = {}) =>
   setNetworkDiagnosticsEnabled(enabled === true, options);
 globalThis.__cncNetworkDiagnosticsSnapshot = () => networkDiagnostics.snapshot();
+globalThis.__cncNetworkDiagnosticsSummary = () => networkDiagnostics.summary();
 
 try {
   const longTaskObserver = new PerformanceObserver((list) => {
