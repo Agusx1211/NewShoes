@@ -5,11 +5,11 @@ const FRAME_HEADER_BYTES = 16;
 const BROADCAST_IP = 0xffffffff;
 const MAX_BUFFERED_BYTES = 1024 * 1024;
 const MAX_ROOM_PEERS = 8;
-const DEFAULT_RELAY_REDUNDANCY = 8;
 const TRYSTERO_APP_ID = "project-new-shoes-lan-v1";
 const TRANSPORT_VERSION = 1;
 const DATA_CHANNEL_LABEL = "cnc-udp-v1";
 const DATA_CHANNEL_PROTOCOL = "cnc-generals-udp-v1";
+const PROJECT_NOSTR_RELAY = "wss://relay.newshoes.gg/nostr";
 function normalizedBytes(value) {
   if (value instanceof Uint8Array) return value;
   if (value instanceof ArrayBuffer) return new Uint8Array(value);
@@ -148,13 +148,13 @@ export class WebRtcUdpEndpoint {
     this.displayName = cleanLabel(displayName, this.requestedPeerId);
     this.localIp = virtualIpForTrysteroPeer(selfId);
     this.iceServers = Array.isArray(iceServers) ? iceServers : [];
-    // Let Trystero maintain the production relay pool. Pinning five public
-    // endpoints made discovery fail as those services changed policy or went
-    // offline. Explicit relayUrls remain available for deterministic tests or
-    // self-hosting; otherwise connect redundantly to Trystero's current pool.
+    // Production discovery is project-owned so late joins do not depend on an
+    // arbitrary public Nostr pool. Explicit URLs remain available to tests and
+    // private deployments without changing the shipping endpoint.
     this.relayUrls = relayUrls
       ? [...new Set(relayUrls.map((url) => String(url).trim()))]
-      : null;
+      : [PROJECT_NOSTR_RELAY];
+    this.relaySource = relayUrls ? "configured" : "project";
     this.onDatagram = onDatagram;
     this.onStateChange = onStateChange;
     this.onDiagnostic = onDiagnostic;
@@ -204,6 +204,7 @@ export class WebRtcUdpEndpoint {
       discoveryStrategy: "trystero-nostr",
       productionTransport: true,
       relayTransport: false,
+      projectRelay: PROJECT_NOSTR_RELAY,
       enabled: !this.closed,
       connected: this.discoveryConnected || openPeers > 0,
       signalingConnected: this.discoveryConnected,
@@ -397,9 +398,7 @@ export class WebRtcUdpEndpoint {
   async connect(timeoutMs = 20000) {
     if (this.discoveryRoom) return this.snapshot();
     this.closed = false;
-    const relayConfig = this.relayUrls
-      ? { urls: this.relayUrls }
-      : { redundancy: DEFAULT_RELAY_REDUNDANCY };
+    const relayConfig = { urls: this.relayUrls, redundancy: this.relayUrls.length };
     this.discoveryRoom = joinRoom({
       appId: TRYSTERO_APP_ID,
       relayConfig,
@@ -418,8 +417,8 @@ export class WebRtcUdpEndpoint {
     this.discoveryRoom.onPeerJoin = (peerId) => this.addPeer(peerId);
     this.discoveryRoom.onPeerLeave = (peerId) => this.removePeer(peerId);
     this.emitDiagnostic({ kind: "event", type: "discovery.connect", detail: {
-      relayCount: this.relayUrls?.length ?? DEFAULT_RELAY_REDUNDANCY,
-      relaySource: this.relayUrls ? "configured" : "trystero-defaults",
+      relayCount: this.relayUrls.length,
+      relaySource: this.relaySource,
       iceServerCount: this.iceServers.length,
     } });
     return this.waitForDiscoveryRelay(timeoutMs);
