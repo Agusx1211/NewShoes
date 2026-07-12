@@ -3820,6 +3820,12 @@ and then start with the PROFILE, not with any individual fix.
       shell-map runs averaged 2.1% lower wall time and 3.7% lower engine time,
       with wall p95/p99 down 3.8%/3.9% and engine p99 down 15.1%. Full
       diagnostics retain the complete state graph and warning/counter paths.
+      A subsequent isolated pass flattened the remaining lite uniform state
+      and replaced the per-rebuild base-uniform array/string key with a fixed
+      exact snapshot. Across three final retained-state runs versus the fresh
+      RTX baseline, wall/engine averages improved 3.2%/4.6% and wall/engine
+      p99 improved 5.0%/7.7%. Exact stage and alpha/fog snapshots were rejected
+      because their small average gain worsened p95/p99.
       Verify future work with p95/p99 frame time + a DevTools memory timeline.
       (by Claude)
 - [ ] **Optimize the real `HeightMap.render.tilePasses` bucket, not terrain

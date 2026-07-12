@@ -208,7 +208,6 @@ const d3d8DrawMatrixScratch = {
 };
 let d3d8CurrentVertexArray = null;
 let d3d8CurrentVertexArrayKey = null;
-let d3d8LastBaseUniformKey = null;
 let d3d8LastMaterialUniformInfo = null;
 let d3d8LastFixedLightUniformKey = null;
 let d3d8LastStageUniformKey = null;
@@ -438,6 +437,24 @@ const D3DTA_COMPLEMENT = 0x00000010;
 const D3DTA_ALPHAREPLICATE = 0x00000020;
 const D3DTA_SUPPORTED_MODIFIERS = D3DTA_COMPLEMENT | D3DTA_ALPHAREPLICATE;
 const D3D8_CLIP_PLANE_COUNT = 6;
+const d3d8LastBaseUniformSnapshot = {
+  valid: false,
+  useTransforms: false,
+  pretransformed: false,
+  viewportX: 0,
+  viewportY: 0,
+  viewportWidth: 0,
+  viewportHeight: 0,
+  depthBiasNdc: 0,
+  clipPlaneMask: 0,
+  flatShade: false,
+  lightingEnabled: false,
+  specularEnabled: false,
+  normalizeNormals: false,
+  localViewer: false,
+  colorVertex: false,
+  clipPlanes: new Float32Array(D3D8_CLIP_PLANE_COUNT * 4),
+};
 const D3DTSS_TCI_PASSTHRU = 0x00000000;
 const D3DTSS_TCI_CAMERASPACENORMAL = 0x00010000;
 const D3DTSS_TCI_CAMERASPACEPOSITION = 0x00020000;
@@ -952,7 +969,7 @@ function d3d8DrawProducerSummary() {
 }
 
 function resetD3D8UniformSubgroupCaches() {
-  d3d8LastBaseUniformKey = null;
+  d3d8LastBaseUniformSnapshot.valid = false;
   d3d8LastMaterialUniformInfo = null;
   d3d8LastFixedLightUniformKey = null;
   d3d8LastStageUniformKey = null;
@@ -3712,19 +3729,6 @@ function d3d8FixedLightUniformKey(lights) {
   return values.join(",");
 }
 
-function d3d8ViewportUniformKey(viewport) {
-  const d3d = viewport?.d3d;
-  if (!d3d) {
-    return "0,0,0,0";
-  }
-  return [
-    finiteNumber(d3d.x, 0),
-    finiteNumber(d3d.y, 0),
-    Math.max(1, finiteNumber(d3d.width, 1)),
-    Math.max(1, finiteNumber(d3d.height, 1)),
-  ].join(",");
-}
-
 function d3d8CaptureRenderUniformKey(
     derivedStateHash,
     primitiveType,
@@ -3769,27 +3773,69 @@ function d3d8RenderUniformKeyMatches(
     key.viewportHeight === viewportHeight;
 }
 
-function d3d8BaseUniformKey(useTransforms, usePretransformedPosition, appliedViewport,
-    appliedRenderState, clipPlanes, shadeModeDraw) {
-  const values = [
-    useTransforms ? 1 : 0,
-    usePretransformedPosition ? 1 : 0,
-    usePretransformedPosition ? d3d8ViewportUniformKey(appliedViewport) : "",
-    appliedRenderState.depth.bias.ndc,
-    usePretransformedPosition ? 0 : appliedRenderState.clipPlanes.mask,
-    shadeModeDraw.usesFlatShader ? 1 : 0,
-    appliedRenderState.lighting.shaderEnabled ? 1 : 0,
-    appliedRenderState.lighting.specular.enabled ? 1 : 0,
-    appliedRenderState.lighting.normalizeNormals.enabled ? 1 : 0,
-    appliedRenderState.lighting.localViewer.enabled ? 1 : 0,
-    appliedRenderState.materialSources.colorVertex.enabled ? 1 : 0,
-  ];
-  if (!usePretransformedPosition && appliedRenderState.clipPlanes.mask !== 0) {
-    for (let planeIndex = 0; planeIndex < D3D8_CLIP_PLANE_COUNT; ++planeIndex) {
-      values.push(...(clipPlanes[planeIndex] ?? [0, 0, 0, 0]));
+function d3d8BaseUniformSnapshotMatches(useTransforms, usePretransformedPosition,
+    appliedViewport, appliedRenderState, clipPlanes, shadeModeDraw) {
+  const snapshot = d3d8LastBaseUniformSnapshot;
+  const d3d = usePretransformedPosition ? appliedViewport?.d3d : null;
+  const clipPlaneMask = usePretransformedPosition ? 0 : appliedRenderState.clipPlanes.mask;
+  if (!snapshot.valid ||
+      snapshot.useTransforms !== Boolean(useTransforms) ||
+      snapshot.pretransformed !== Boolean(usePretransformedPosition) ||
+      snapshot.viewportX !== (d3d ? finiteNumber(d3d.x, 0) : 0) ||
+      snapshot.viewportY !== (d3d ? finiteNumber(d3d.y, 0) : 0) ||
+      snapshot.viewportWidth !== (d3d ? Math.max(1, finiteNumber(d3d.width, 1)) : 0) ||
+      snapshot.viewportHeight !== (d3d ? Math.max(1, finiteNumber(d3d.height, 1)) : 0) ||
+      snapshot.depthBiasNdc !== appliedRenderState.depthBiasNdc ||
+      snapshot.clipPlaneMask !== clipPlaneMask ||
+      snapshot.flatShade !== Boolean(shadeModeDraw.usesFlatShader) ||
+      snapshot.lightingEnabled !== Boolean(appliedRenderState.lightingShaderEnabled) ||
+      snapshot.specularEnabled !== Boolean(appliedRenderState.specularEnabled) ||
+      snapshot.normalizeNormals !== Boolean(appliedRenderState.normalizeNormalsEnabled) ||
+      snapshot.localViewer !== Boolean(appliedRenderState.localViewerEnabled) ||
+      snapshot.colorVertex !== Boolean(appliedRenderState.colorVertexEnabled)) {
+    return false;
+  }
+  if (clipPlaneMask === 0) {
+    return true;
+  }
+  for (let planeIndex = 0; planeIndex < D3D8_CLIP_PLANE_COUNT; ++planeIndex) {
+    const plane = clipPlanes[planeIndex];
+    for (let component = 0; component < 4; ++component) {
+      if (snapshot.clipPlanes[planeIndex * 4 + component] !== Number(plane?.[component] ?? 0)) {
+        return false;
+      }
     }
   }
-  return values.join(",");
+  return true;
+}
+
+function rememberD3D8BaseUniformSnapshot(useTransforms, usePretransformedPosition,
+    appliedViewport, appliedRenderState, clipPlanes, shadeModeDraw) {
+  const snapshot = d3d8LastBaseUniformSnapshot;
+  const d3d = usePretransformedPosition ? appliedViewport?.d3d : null;
+  snapshot.valid = true;
+  snapshot.useTransforms = Boolean(useTransforms);
+  snapshot.pretransformed = Boolean(usePretransformedPosition);
+  snapshot.viewportX = d3d ? finiteNumber(d3d.x, 0) : 0;
+  snapshot.viewportY = d3d ? finiteNumber(d3d.y, 0) : 0;
+  snapshot.viewportWidth = d3d ? Math.max(1, finiteNumber(d3d.width, 1)) : 0;
+  snapshot.viewportHeight = d3d ? Math.max(1, finiteNumber(d3d.height, 1)) : 0;
+  snapshot.depthBiasNdc = appliedRenderState.depthBiasNdc;
+  snapshot.clipPlaneMask = usePretransformedPosition ? 0 : appliedRenderState.clipPlanes.mask;
+  snapshot.flatShade = Boolean(shadeModeDraw.usesFlatShader);
+  snapshot.lightingEnabled = Boolean(appliedRenderState.lightingShaderEnabled);
+  snapshot.specularEnabled = Boolean(appliedRenderState.specularEnabled);
+  snapshot.normalizeNormals = Boolean(appliedRenderState.normalizeNormalsEnabled);
+  snapshot.localViewer = Boolean(appliedRenderState.localViewerEnabled);
+  snapshot.colorVertex = Boolean(appliedRenderState.colorVertexEnabled);
+  if (snapshot.clipPlaneMask !== 0) {
+    for (let planeIndex = 0; planeIndex < D3D8_CLIP_PLANE_COUNT; ++planeIndex) {
+      const plane = clipPlanes[planeIndex];
+      for (let component = 0; component < 4; ++component) {
+        snapshot.clipPlanes[planeIndex * 4 + component] = Number(plane?.[component] ?? 0);
+      }
+    }
+  }
 }
 
 function d3d8StageUniformKey(renderState) {
@@ -3840,14 +3886,14 @@ function d3d8StageUniformKey(renderState) {
 
 function d3d8AlphaFogUniformKey(renderState, appliedRenderState) {
   return [
-    appliedRenderState.alphaTest.enabled ? 1 : 0,
+    appliedRenderState.alphaTestEnabled ? 1 : 0,
     renderState.alphaFunc,
-    appliedRenderState.alphaTest.ref,
-    appliedRenderState.fog.enabled ? 1 : 0,
-    appliedRenderState.fog.rangeEnabled ? 1 : 0,
-    ...appliedRenderState.fog.color,
-    appliedRenderState.fog.start,
-    appliedRenderState.fog.end,
+    appliedRenderState.alphaRef,
+    appliedRenderState.fogEnabled ? 1 : 0,
+    appliedRenderState.fogRangeEnabled ? 1 : 0,
+    ...appliedRenderState.fogColor,
+    appliedRenderState.fogStart,
+    appliedRenderState.fogEnd,
   ].join(",");
 }
 
@@ -10706,6 +10752,14 @@ function applyD3D8RenderState(renderState, options = {}) {
     fogEnd > fogStart;
   const fogColor = d3dColorToNormalizedRgba(state.fogColor).slice(0, 3);
   const depthBias = d3d8DepthBiasInfo(state.zBias);
+  const alphaTestEnabled = state.alphaTestEnable !== 0;
+  const alphaRef = (state.alphaRef & 0xff) / 255;
+  const fogRangeEnabled = state.rangeFogEnable !== 0;
+  const lightingEnabled = state.lighting !== 0;
+  const normalizeNormalsEnabled = state.normalizeNormals !== 0;
+  const localViewerEnabled = state.localViewer !== 0;
+  const colorVertexEnabled = state.colorVertex !== 0;
+  const sceneAmbient = d3dColorToNormalizedRgba(state.ambient);
   const colorMaskR = Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_RED);
   const colorMaskG = Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_GREEN);
   const colorMaskB = Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_BLUE);
@@ -10776,27 +10830,19 @@ function applyD3D8RenderState(renderState, options = {}) {
 
   if (d3d8DiagLevel !== "full") {
     return {
-      depth: { bias: depthBias },
-      alphaTest: {
-        enabled: state.alphaTestEnable !== 0,
-        ref: (state.alphaRef & 0xff) / 255,
-      },
-      fog: {
-        enabled: fogEnabled,
-        color: fogColor,
-        start: fogStart,
-        end: fogEnd,
-        rangeEnabled: state.rangeFogEnable !== 0,
-      },
-      lighting: {
-        enabled: state.lighting !== 0,
-        normalizeNormals: { enabled: state.normalizeNormals !== 0 },
-        localViewer: { enabled: state.localViewer !== 0 },
-      },
-      ambient: { rgba: d3dColorToNormalizedRgba(state.ambient) },
-      materialSources: {
-        colorVertex: { enabled: state.colorVertex !== 0 },
-      },
+      depthBiasNdc: depthBias.ndc,
+      alphaTestEnabled,
+      alphaRef,
+      fogEnabled,
+      fogRangeEnabled,
+      fogColor,
+      fogStart,
+      fogEnd,
+      lightingEnabled,
+      normalizeNormalsEnabled,
+      localViewerEnabled,
+      colorVertexEnabled,
+      sceneAmbient,
     };
   }
 
@@ -10807,6 +10853,19 @@ function applyD3D8RenderState(renderState, options = {}) {
     a: colorMaskA,
   };
   return {
+    depthBiasNdc: depthBias.ndc,
+    alphaTestEnabled,
+    alphaRef,
+    fogEnabled,
+    fogRangeEnabled,
+    fogColor,
+    fogStart,
+    fogEnd,
+    lightingEnabled,
+    normalizeNormalsEnabled,
+    localViewerEnabled,
+    colorVertexEnabled,
+    sceneAmbient,
     d3d: state,
     cull: {
       enabled: cullEnabled,
@@ -10841,9 +10900,9 @@ function applyD3D8RenderState(renderState, options = {}) {
       d3dWriteMask: state.stencilWriteMask,
     },
     alphaTest: {
-      enabled: state.alphaTestEnable !== 0,
+      enabled: alphaTestEnabled,
       func: d3dCmpToGl(state.alphaFunc),
-      ref: (state.alphaRef & 0xff) / 255,
+      ref: alphaRef,
     },
     fog: {
       enabled: fogEnabled,
@@ -10851,7 +10910,7 @@ function applyD3D8RenderState(renderState, options = {}) {
       start: fogStart,
       end: fogEnd,
       vertexMode: state.fogVertexMode,
-      rangeEnabled: state.rangeFogEnable !== 0,
+      rangeEnabled: fogRangeEnabled,
     },
     fillMode: {
       mode: state.fillMode,
@@ -10865,23 +10924,23 @@ function applyD3D8RenderState(renderState, options = {}) {
       phongRequested: state.shadeMode === D3DSHADE_PHONG,
     },
     lighting: {
-      enabled: state.lighting !== 0,
+      enabled: lightingEnabled,
       normalizeNormals: {
-        enabled: state.normalizeNormals !== 0,
+        enabled: normalizeNormalsEnabled,
         value: state.normalizeNormals,
       },
       localViewer: {
-        enabled: state.localViewer !== 0,
+        enabled: localViewerEnabled,
         value: state.localViewer,
       },
     },
     ambient: {
       color: state.ambient,
-      rgba: d3dColorToNormalizedRgba(state.ambient),
+      rgba: sceneAmbient,
     },
     materialSources: {
       colorVertex: {
-        enabled: state.colorVertex !== 0,
+        enabled: colorVertexEnabled,
         value: state.colorVertex,
       },
       diffuse: {
@@ -12739,38 +12798,42 @@ function paintD3D8DrawIndexed(payload = {}) {
         : null;
       appliedRenderState.clipPlanes = d3d8CachedDerived.clipPlaneInfo ??=
         d3d8ClipPlaneInfo(renderState, clipPlanes);
-      appliedRenderState.lighting = {
-        ...appliedRenderState.lighting,
-        shaderEnabled: !depthStencilOnlyDraw &&
-          !vertexPretransformed &&
-          appliedRenderState.lighting.enabled &&
-          fixedFunctionLights.length > 0,
-        normalTransform: {
-          source: usePositionTransforms ? "inverseTransposeWorld" : "attribute",
-          inverseTransposeWorld: Boolean(usePositionTransforms),
-          normalizeNormals: renderState.normalizeNormals !== 0,
-        },
-        viewDirection: {
-          source: renderState.localViewer !== 0 ? "cameraRelative" : "orthogonal",
-          localViewer: renderState.localViewer !== 0,
-        },
-        specular: {
-          enabled: renderState.specularEnable !== 0,
-          material: material.specular,
-          power: material.power,
-          source: renderState.specularMaterialSource,
-          sourceName: d3dMaterialSourceName(renderState.specularMaterialSource),
-        },
-        fixedFunctionLightSupported: fixedFunctionLights.length > 0,
-        fixedFunctionLightCount: fixedFunctionLights.length,
-        fixedFunctionLights,
-        directionalLightSupported: directionalLights.length > 0,
-        directionalLightCount: directionalLights.length,
-        directionalLights,
-        firstDirectionalLight,
-      };
+      appliedRenderState.lightingShaderEnabled = !depthStencilOnlyDraw &&
+        !vertexPretransformed &&
+        appliedRenderState.lightingEnabled &&
+        fixedFunctionLights.length > 0;
+      appliedRenderState.specularEnabled = renderState.specularEnable !== 0;
+      if (d3d8DiagLevel === "full") {
+        appliedRenderState.lighting = {
+          ...appliedRenderState.lighting,
+          shaderEnabled: appliedRenderState.lightingShaderEnabled,
+          normalTransform: {
+            source: usePositionTransforms ? "inverseTransposeWorld" : "attribute",
+            inverseTransposeWorld: Boolean(usePositionTransforms),
+            normalizeNormals: renderState.normalizeNormals !== 0,
+          },
+          viewDirection: {
+            source: renderState.localViewer !== 0 ? "cameraRelative" : "orthogonal",
+            localViewer: renderState.localViewer !== 0,
+          },
+          specular: {
+            enabled: appliedRenderState.specularEnabled,
+            material: material.specular,
+            power: material.power,
+            source: renderState.specularMaterialSource,
+            sourceName: d3dMaterialSourceName(renderState.specularMaterialSource),
+          },
+          fixedFunctionLightSupported: fixedFunctionLights.length > 0,
+          fixedFunctionLightCount: fixedFunctionLights.length,
+          fixedFunctionLights,
+          directionalLightSupported: directionalLights.length > 0,
+          directionalLightCount: directionalLights.length,
+          directionalLights,
+          firstDirectionalLight,
+        };
+      }
       recordRenderUniformDetail?.("sortedDrawRenderBuildMs");
-      const baseUniformKey = d3d8BaseUniformKey(
+      const baseUniformsUnchanged = d3d8BaseUniformSnapshotMatches(
         usePositionTransforms,
         vertexPretransformed,
         appliedViewport,
@@ -12778,7 +12841,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         clipPlanes,
         shadeModeDraw,
       );
-      if (baseUniformKey === d3d8LastBaseUniformKey) {
+      if (baseUniformsUnchanged) {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawBaseUniformCacheHits += 1;
       } else {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawBaseUniformCacheMisses += 1;
@@ -12798,7 +12861,7 @@ function paintD3D8DrawIndexed(payload = {}) {
           );
         }
         if (bridgeProgram.depthBias) {
-          d3d8CachedUniform1f(bridgeProgram.depthBias, appliedRenderState.depth.bias.ndc);
+          d3d8CachedUniform1f(bridgeProgram.depthBias, appliedRenderState.depthBiasNdc);
         }
         const effectiveClipPlaneMask = vertexPretransformed ? 0 : appliedRenderState.clipPlanes.mask;
         if (bridgeProgram.clipPlaneMask) {
@@ -12811,28 +12874,38 @@ function paintD3D8DrawIndexed(payload = {}) {
           d3d8CachedUniform1i(bridgeProgram.useFlatShade, shadeModeDraw.usesFlatShader ? 1 : 0);
         }
         if (bridgeProgram.lightingEnabled) {
-          d3d8CachedUniform1i(bridgeProgram.lightingEnabled, appliedRenderState.lighting.shaderEnabled ? 1 : 0);
+          d3d8CachedUniform1i(
+            bridgeProgram.lightingEnabled,
+            appliedRenderState.lightingShaderEnabled ? 1 : 0,
+          );
         }
         if (bridgeProgram.specularEnabled) {
           d3d8CachedUniform1i(bridgeProgram.specularEnabled,
-            appliedRenderState.lighting.specular.enabled ? 1 : 0);
+            appliedRenderState.specularEnabled ? 1 : 0);
         }
         if (bridgeProgram.normalizeNormals) {
           d3d8CachedUniform1i(bridgeProgram.normalizeNormals,
-            appliedRenderState.lighting.normalizeNormals.enabled ? 1 : 0);
+            appliedRenderState.normalizeNormalsEnabled ? 1 : 0);
         }
         if (bridgeProgram.localViewer) {
           d3d8CachedUniform1i(bridgeProgram.localViewer,
-            appliedRenderState.lighting.localViewer.enabled ? 1 : 0);
+            appliedRenderState.localViewerEnabled ? 1 : 0);
         }
         if (bridgeProgram.colorVertexEnabled) {
           d3d8CachedUniform1i(bridgeProgram.colorVertexEnabled,
-            appliedRenderState.materialSources.colorVertex.enabled ? 1 : 0);
+            appliedRenderState.colorVertexEnabled ? 1 : 0);
         }
-        d3d8LastBaseUniformKey = baseUniformKey;
+        rememberD3D8BaseUniformSnapshot(
+          usePositionTransforms,
+          vertexPretransformed,
+          appliedViewport,
+          appliedRenderState,
+          clipPlanes,
+          shadeModeDraw,
+        );
       }
       recordRenderUniformDetail?.("sortedDrawRenderBaseUniformMs");
-      const lightingUniformsNeeded = Boolean(appliedRenderState.lighting.shaderEnabled);
+      const lightingUniformsNeeded = Boolean(appliedRenderState.lightingShaderEnabled);
       if (!lightingUniformsNeeded) {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawMaterialUniformCacheHits += 1;
       } else if (d3d8MaterialUniformsEqual(renderState, material)) {
@@ -12840,7 +12913,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       } else {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawMaterialUniformCacheMisses += 1;
         if (bridgeProgram.sceneAmbient) {
-          setD3D8Uniform4FromArray(bridgeProgram.sceneAmbient, appliedRenderState.ambient.rgba);
+          setD3D8Uniform4FromArray(bridgeProgram.sceneAmbient, appliedRenderState.sceneAmbient);
         }
         if (bridgeProgram.materialDiffuse) {
           setD3D8Uniform4FromArray(bridgeProgram.materialDiffuse, material.diffuse);
@@ -13022,28 +13095,34 @@ function paintD3D8DrawIndexed(payload = {}) {
       } else {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawAlphaFogUniformCacheMisses += 1;
         if (bridgeProgram.alphaTestEnabled) {
-          d3d8CachedUniform1i(bridgeProgram.alphaTestEnabled, appliedRenderState.alphaTest.enabled ? 1 : 0);
+          d3d8CachedUniform1i(
+            bridgeProgram.alphaTestEnabled,
+            appliedRenderState.alphaTestEnabled ? 1 : 0,
+          );
         }
         if (bridgeProgram.alphaFunc) {
           d3d8CachedUniform1i(bridgeProgram.alphaFunc, renderState.alphaFunc);
         }
         if (bridgeProgram.alphaRef) {
-          d3d8CachedUniform1f(bridgeProgram.alphaRef, appliedRenderState.alphaTest.ref);
+          d3d8CachedUniform1f(bridgeProgram.alphaRef, appliedRenderState.alphaRef);
         }
         if (bridgeProgram.fogEnabled) {
-          d3d8CachedUniform1i(bridgeProgram.fogEnabled, appliedRenderState.fog.enabled ? 1 : 0);
+          d3d8CachedUniform1i(bridgeProgram.fogEnabled, appliedRenderState.fogEnabled ? 1 : 0);
         }
         if (bridgeProgram.fogRangeEnabled) {
-          d3d8CachedUniform1i(bridgeProgram.fogRangeEnabled, appliedRenderState.fog.rangeEnabled ? 1 : 0);
+          d3d8CachedUniform1i(
+            bridgeProgram.fogRangeEnabled,
+            appliedRenderState.fogRangeEnabled ? 1 : 0,
+          );
         }
         if (bridgeProgram.fogColor) {
-          setD3D8Uniform3FromArray(bridgeProgram.fogColor, appliedRenderState.fog.color);
+          setD3D8Uniform3FromArray(bridgeProgram.fogColor, appliedRenderState.fogColor);
         }
         if (bridgeProgram.fogStart) {
-          d3d8CachedUniform1f(bridgeProgram.fogStart, appliedRenderState.fog.start);
+          d3d8CachedUniform1f(bridgeProgram.fogStart, appliedRenderState.fogStart);
         }
         if (bridgeProgram.fogEnd) {
-          d3d8CachedUniform1f(bridgeProgram.fogEnd, appliedRenderState.fog.end);
+          d3d8CachedUniform1f(bridgeProgram.fogEnd, appliedRenderState.fogEnd);
         }
         d3d8LastAlphaFogUniformKey = alphaFogUniformKey;
       }

@@ -8,6 +8,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Lite uniform-state and base-key flattening (2026-07-12)
+
+- [x] Tested three follow-up allocation reductions independently on RTX 4080
+      Vulkan/ANGLE and retained the two that improved choppiness. Lite applied
+      render state now stores shader-consumed values as flat scalars/arrays and
+      only full diagnostics build the nested lighting, material-source, fog,
+      alpha, depth, and state-report objects. The base-uniform cache now compares
+      and updates a fixed exact snapshot, including viewport and clip-plane
+      values, instead of allocating an array and joined string on every render
+      rebuild. The isolated flat-state step improved wall/engine averages by
+      1.2%/1.1% and p99 by 4.5%/4.2%; the base snapshot then improved averages
+      another 3.4%/5.8%, p95 another 3.3%/9.0%, and p99 another 2.6%/6.6%.
+      Including a slower final retained-state run, the three-run retained mean
+      versus the fresh baseline was 3.2% lower wall average, 4.6% lower engine
+      average, 5.0% lower wall p99, and 7.7% lower engine p99. Exact stage and
+      alpha/fog snapshots were not kept: although averages improved 1.5%/2.0%,
+      wall p95/p99 regressed 1.7%/1.5% and engine p99 regressed 3.5%.
+      Full `EXPECT_WASM=1` browser diagnostics passed, and the retained RTX
+      active-skirmish run reached live human/AI state with 224 objects and an
+      intact terrain, lighting, shadow, model, texture, and faction-UI image.
+
 ## Lite-play D3D8 state-allocation reduction (2026-07-12)
 
 - [x] Removed callback closures from cached WebGL render-state application,
