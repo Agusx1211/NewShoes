@@ -89,6 +89,7 @@
     "probe:p2-opfs": "node harness/p2_opfs_probe.mjs",
     "test:issue-recorder": "node harness/issue_recorder_unit.mjs && node harness/network_diagnostics_unit.mjs && node harness/issue_dump_network_decode_smoke.mjs && node harness/issue_dump_upload_smoke.mjs && node harness/issue_recorder_ui_smoke.mjs",
     "test:multiplayer-identity": "node harness/multiplayer_identity_unit.mjs",
+    "test:multiplayer-launch-policy": "node harness/multiplayer_launch_policy_unit.mjs",
     "test:startup-vertical": "npm run build:startup-vertical && node tools/run_startup_vertical_smoke.mjs",
     "test:startup-vertical-browser": "npm run build:port && node harness/startup_vertical_smoke.mjs",
     "test:real-shellmap": "npm run build:port && node harness/shellmap_real_init_gate.mjs",

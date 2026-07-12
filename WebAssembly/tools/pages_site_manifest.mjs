@@ -43,6 +43,7 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "launcher.js",
   "manifest.webmanifest",
   "multiplayer_identity.mjs",
+  "multiplayer_launch_policy.mjs",
   "network-diagnostics.mjs",
   "opfs_realm_files.mjs",
   "play.mjs",
