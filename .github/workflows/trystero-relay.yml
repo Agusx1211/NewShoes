@@ -1,0 +1,74 @@
+name: Deploy Trystero Relay
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/trystero-relay.yml"
+      - "WebAssembly/cloudflare/trystero-relay/**"
+      - "WebAssembly/harness/trystero_relay_worker_smoke.mjs"
+      - "WebAssembly/package.json"
+      - "WebAssembly/package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trystero-relay-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Verify and deploy dedicated relay
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: cloudflare-relay
+      url: https://relay.newshoes.gg/health
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: WebAssembly/package-lock.json
+
+      - name: Install dependencies
+        working-directory: WebAssembly
+        run: npm ci
+
+      - name: Verify relay protocol locally
+        working-directory: WebAssembly
+        run: npm run test:trystero-relay
+
+      - name: Validate Cloudflare credentials
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          test -n "${CLOUDFLARE_ACCOUNT_ID}" || { echo "CLOUDFLARE_ACCOUNT_ID is not configured"; exit 1; }
+          test -n "${CLOUDFLARE_API_TOKEN}" || { echo "CLOUDFLARE_API_TOKEN is not configured"; exit 1; }
+
+      - name: Deploy relay Worker and Durable Object
+        working-directory: WebAssembly
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler deploy --config cloudflare/trystero-relay/wrangler.jsonc
+
+      - name: Verify deployed health endpoint
+        run: |
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent --show-error https://relay.newshoes.gg/health | grep -q '"ok":true'; then
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "deployed relay health endpoint did not become ready"
+          exit 1

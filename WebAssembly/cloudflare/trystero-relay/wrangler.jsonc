@@ -1,0 +1,35 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "newshoes-trystero-relay",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-07-12",
+  "workers_dev": true,
+  "routes": [
+    {
+      "pattern": "relay.newshoes.gg",
+      "custom_domain": true
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "TRYSTERO_RELAY",
+        "class_name": "TrysteroNostrRelay"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["TrysteroNostrRelay"]
+    }
+  ],
+  "vars": {
+    "ALLOWED_ORIGIN_HOSTS": "newshoes.gg,www.newshoes.gg,agusx1211.github.io,127.0.0.1,localhost",
+    "ALLOWED_ORIGIN_SUFFIXES": ".newshoes.pages.dev"
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.1
+  }
+}
