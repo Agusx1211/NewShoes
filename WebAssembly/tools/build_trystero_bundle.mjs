@@ -3,8 +3,9 @@
 import { build } from "esbuild";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const wasmRoot = resolve(import.meta.dirname, "..");
+const wasmRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputPath = resolve(wasmRoot, "harness/vendor/trystero-nostr.min.mjs");
 const checkOnly = process.argv.includes("--check");
 const banner = [
