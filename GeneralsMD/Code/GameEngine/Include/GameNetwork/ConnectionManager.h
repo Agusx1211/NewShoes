@@ -140,6 +140,19 @@ public:
 	Int getAverageFPS( void );
 	Int getSlotAverageFPS(Int slot);
 
+#ifdef __EMSCRIPTEN__
+	Real getBrowserDiagnosticAverageLatency();
+	Int getBrowserDiagnosticMinimumCushion();
+	Int getBrowserDiagnosticPendingCommands();
+	Int getBrowserDiagnosticRelayedCommands();
+	Int getBrowserDiagnosticTransportIncoming();
+	Int getBrowserDiagnosticTransportOutgoing();
+	Int getBrowserDiagnosticFrameGrouping(Int slot);
+	Int getBrowserDiagnosticConnectionQueue(Int slot);
+	Int getBrowserDiagnosticFrameCommands(Int slot, UnsignedInt frame);
+	Int getBrowserDiagnosticExpectedFrameCommands(Int slot, UnsignedInt frame);
+#endif
+
 #if defined(_DEBUG) || defined(_INTERNAL)
 	void debugPrintConnectionCommands();
 #endif

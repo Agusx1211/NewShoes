@@ -3519,16 +3519,16 @@ residue and the next frontier.
 ## M9 — Networking (GameSpy / LAN → WS/WebRTC)
 
 - [ ] Remove the browser multiplayer legacy packet-grouping latency feedback
-      loop and expose actual lockstep pacing in diagnostics. A July 2026 LAN
+      loop. A July 2026 LAN
       capture used a nominated host-to-host UDP ICE pair (4 ms median RTT,
       zero send discards), but original `ConnectionManager` batching produced
       219 ms median inbound / 385 ms median outbound packet cadence,
       0.34-1.18 s application ACK latency, and only 14.5-14.9 actual logic FPS
       despite 60-62 rendered FPS. First A/B-test an Emscripten-only grouping
       cap of one 30 Hz logic tick while retaining original commands and ACKs;
-      then evaluate the community-port `MIN_RUNAHEAD = 4` precedent, expose
-      RTC candidate/RTT plus application grouping/latency and actual logic-frame
-      deltas, and gate a two-player soak at >=28 logic FPS with no CRC errors.
+      then evaluate the community-port `MIN_RUNAHEAD = 4` precedent and gate a
+      two-player soak at >=28 logic FPS with no CRC errors. Detailed packet,
+      RTC, cross-realm queue, and original lockstep diagnostics are now complete.
 - [ ] Harden the verified four-player WebRTC multiplayer path for
       unattended/public operation. UDP re-targeting and a full four-client
       threaded match are complete; the retained history below records the path

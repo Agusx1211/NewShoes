@@ -265,6 +265,12 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
   // RTCDataChannel remains main-realm owned; fixed SharedArrayBuffer rings carry
   // datagrams between realms without blocking the browser event loop.
   const udpBridge = opts.udpBridge;
+  const udpBridgeState = udpBridge ? new Int32Array(udpBridge.state) : null;
+  let udpOutgoingSequence = 0;
+  const networkDiagnosticsEnabled = () => udpBridgeState
+    ? Atomics.load(udpBridgeState, 1) === 1
+    : false;
+  const epochMicroseconds = () => Math.round((performance.timeOrigin + performance.now()) * 1000);
   Module.cncPortBrowserUdpClear = () => {
     if (!udpBridge) return 0;
     clearSharedUdpRing(udpBridge.incoming);
@@ -274,7 +280,12 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     const bytes = datagram?.bytes instanceof Uint8Array
       ? datagram.bytes
       : new Uint8Array(datagram?.bytes ?? 0);
-    if (!udpBridge || !enqueueSharedUdpDatagram(udpBridge.outgoing, datagram)) {
+    const queued = {
+      ...datagram,
+      bridgeSequence: ++udpOutgoingSequence,
+      bridgeQueuedAtUs: epochMicroseconds(),
+    };
+    if (!udpBridge || !enqueueSharedUdpDatagram(udpBridge.outgoing, queued)) {
       return -5;
     }
     postToMain({ cmd: "udpFlush" });
@@ -286,6 +297,25 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     while ((datagram = dequeueSharedUdpDatagram(udpBridge.incoming)) !== null) {
       if (datagram.destinationPort !== (Number(port) & 0xffff)) continue;
       if (datagram.bytes.byteLength > Number(capacity ?? 0)) return null;
+      if (networkDiagnosticsEnabled()) {
+        const dequeuedAtUs = epochMicroseconds();
+        postToMain({
+          cmd: "networkDiagnostic",
+          event: {
+            kind: "event",
+            type: "bridge.incoming.dequeued-by-engine",
+            detail: {
+              traceId: `in-${datagram.bridgeSequence ?? 0}`,
+              byteLength: datagram.bytes.byteLength,
+              queuedAtUs: datagram.bridgeQueuedAtUs ?? null,
+              dequeuedAtUs,
+              queueDelayUs: datagram.bridgeQueuedAtUs
+                ? dequeuedAtUs - datagram.bridgeQueuedAtUs
+                : null,
+            },
+          },
+        });
+      }
       return datagram;
     }
     return null;
@@ -635,6 +665,16 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
   let statusSeq = 0;
   function buildStatus() {
     const result = loop.lastResult;
+    let networkDiagnostics = null;
+    if (live && networkDiagnosticsEnabled()) {
+      try {
+        networkDiagnostics = parseMaybeJson(cwrapFor(
+          "cnc_port_real_engine_lan_state", "string", [],
+        )());
+      } catch (error) {
+        networkDiagnostics = { ok: false, error: String(error) };
+      }
+    }
     return {
       cmd: "status",
       seq: ++statusSeq,
@@ -663,6 +703,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         lastFrameMs: result.lastFrameMs,
         quitting: result.quitting,
       } : null,
+      networkDiagnostics,
       engineDisplaySize: realmState.engineDisplaySize ?? null,
       canvas: { width: canvas.width, height: canvas.height },
       contextLost: typeof d3d8Diag?.webglContextLost === "function"

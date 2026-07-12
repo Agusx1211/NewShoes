@@ -183,6 +183,19 @@ public:
 	Int getPingsSent();
 	Int getPingsRecieved();
 
+#ifdef __EMSCRIPTEN__
+	Real getBrowserDiagnosticAverageLatency() { return m_conMgr != NULL ? m_conMgr->getBrowserDiagnosticAverageLatency() : 0.0f; }
+	Int getBrowserDiagnosticMinimumCushion() { return m_conMgr != NULL ? m_conMgr->getBrowserDiagnosticMinimumCushion() : -1; }
+	Int getBrowserDiagnosticPendingCommands() { return m_conMgr != NULL ? m_conMgr->getBrowserDiagnosticPendingCommands() : 0; }
+	Int getBrowserDiagnosticRelayedCommands() { return m_conMgr != NULL ? m_conMgr->getBrowserDiagnosticRelayedCommands() : 0; }
+	Int getBrowserDiagnosticTransportIncoming() { return m_conMgr != NULL ? m_conMgr->getBrowserDiagnosticTransportIncoming() : 0; }
+	Int getBrowserDiagnosticTransportOutgoing() { return m_conMgr != NULL ? m_conMgr->getBrowserDiagnosticTransportOutgoing() : 0; }
+	Int getBrowserDiagnosticFrameGrouping(Int slot) { return m_conMgr != NULL ? m_conMgr->getBrowserDiagnosticFrameGrouping(slot) : -1; }
+	Int getBrowserDiagnosticConnectionQueue(Int slot) { return m_conMgr != NULL ? m_conMgr->getBrowserDiagnosticConnectionQueue(slot) : -1; }
+	Int getBrowserDiagnosticFrameCommands(Int slot, UnsignedInt frame) { return m_conMgr != NULL ? m_conMgr->getBrowserDiagnosticFrameCommands(slot, frame) : -1; }
+	Int getBrowserDiagnosticExpectedFrameCommands(Int slot, UnsignedInt frame) { return m_conMgr != NULL ? m_conMgr->getBrowserDiagnosticExpectedFrameCommands(slot, frame) : -1; }
+#endif
+
 protected:
 	void GetCommandsFromCommandList();														///< Remove commands from TheCommandList and put them on the Network command list.
 	void SendCommandsToConnectionManager();												///< Send the new commands to the ConnectionManager

@@ -24,6 +24,19 @@ try {
     );
     document.querySelector("#overlay")?.classList.add("hidden");
   });
+  await page.locator('[data-open="settings"]').first().click();
+  await page.locator('[data-settings-tab="multiplayer"]').click();
+  await page.locator("#networkDiagnosticsToggle").check();
+  const networkSetting = await page.evaluate(async () => ({
+    stored: localStorage.getItem("cncPortNetworkDiagnosticsEnabled.v1"),
+    snapshot: window.__cncNetworkDiagnosticsSnapshot?.(),
+    bundle: await window.CnCIssueRecorder.buildBundle("ui-network-diagnostics"),
+  }));
+  assert.equal(networkSetting.stored, "true");
+  assert.equal(networkSetting.snapshot?.enabled, true);
+  assert.equal(networkSetting.bundle?.networkDiagnostics?.schema, "cnc.network-diagnostics.v1");
+  assert.equal(networkSetting.bundle?.manifest?.counts?.networkPackets, 0);
+  await page.locator('[data-settings-tab="game"]').click();
   await page.locator("#deepCapture").uncheck();
   await page.locator("#videoCapture").uncheck();
   await page.locator("#issueButton").click();

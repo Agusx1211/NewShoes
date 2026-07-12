@@ -425,6 +425,7 @@
                 <label class="network-field" for="networkIceUsername"><span><strong>TURN username</strong><small>Optional</small></span><input id="networkIceUsername" type="text" autocomplete="username"></label>
                 <label class="network-field" for="networkIceCredential"><span><strong>TURN credential</strong><small>Kept only for this launch</small></span><input id="networkIceCredential" type="password" autocomplete="current-password"></label>
               </details>
+              <label class="setting-block toggle-setting"><div><strong>Detailed multiplayer diagnostics</strong><span>Record every game packet, worker-queue transition, lockstep sample, and WebRTC statistic in issue dumps. Dumps can be large; discovery messages and TURN credentials are excluded.</span></div><input id="networkDiagnosticsToggle" type="checkbox"><span class="toggle"></span></label>
               <p id="networkStatus" class="network-status" aria-live="polite">Offline. Enter a shared room to enable WebRTC multiplayer.</p>
             </section>
             <section id="hardwarePanel" class="settings-panel hardware-panel" role="tabpanel" aria-labelledby="hardwareTab" data-settings-panel="hardware" hidden>

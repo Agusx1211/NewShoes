@@ -36,6 +36,10 @@ async function createClient(browser, harnessUrl, label, browserEvents) {
   const boot = await page.evaluate((source) => window.CnCPort.rpc("boot", { source }), label);
   expect(boot.ok === true && boot.state?.wasm === "loaded",
     `${label} browser context did not boot the wasm harness`, boot);
+  await page.evaluate(() => window.__cncSetNetworkDiagnostics?.(true, {
+    reset: true,
+    reason: "webrtc-transport-smoke",
+  }));
   return { context, page, boot };
 }
 
@@ -140,6 +144,22 @@ try {
     "final Trystero endpoint counters did not record the direct game datagram",
     { sourceFinal, destinationFinal });
 
+  await new Promise((resolveWait) => setTimeout(resolveWait, 1100));
+  const [sourceDiagnostics, destinationDiagnostics] = await Promise.all([
+    source.page.evaluate(() => window.__cncNetworkDiagnosticsSnapshot?.()),
+    destination.page.evaluate(() => window.__cncNetworkDiagnosticsSnapshot?.()),
+  ]);
+  const sentPacket = sourceDiagnostics?.packets?.find((packet) =>
+    packet.direction === "send" && packet.outcome === "sent");
+  const receivedPacket = destinationDiagnostics?.packets?.find((packet) =>
+    packet.direction === "receive" && packet.outcome === "queued-for-engine");
+  expect(sentPacket?.payloadHex?.length === sentPacket?.byteLength * 2
+      && receivedPacket?.payloadHex === sentPacket.payloadHex
+      && sourceDiagnostics?.rtcSamples?.length > 0
+      && destinationDiagnostics?.rtcSamples?.length > 0,
+    "detailed diagnostics did not preserve packet bytes and RTC samples",
+    { sourceDiagnostics, destinationDiagnostics });
+
   expect(sourceConnect.runtime?.endpoint?.openRelays > 0
       && destinationConnect.runtime?.endpoint?.openRelays > 0,
     "Trystero did not connect each browser to a discovery relay", { sourceConnect, destinationConnect });
@@ -159,6 +179,11 @@ try {
     destination: destinationFinal.runtime.endpoint,
     packet: sendResult.sendProbe.packet,
     receive: receiveResult.receiveProbe.frameData,
+    diagnostics: {
+      source: sourceDiagnostics.retained,
+      destination: destinationDiagnostics.retained,
+      payloadHex: sentPacket.payloadHex,
+    },
     discovery: {
       strategy: "trystero-nostr",
       testRelay: testRelay?.stats() ?? null,

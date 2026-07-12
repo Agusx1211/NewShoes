@@ -42,7 +42,38 @@ const networkStunNode = document.querySelector("#networkStun");
 const networkIceUsernameNode = document.querySelector("#networkIceUsername");
 const networkIceCredentialNode = document.querySelector("#networkIceCredential");
 const networkStatusNode = document.querySelector("#networkStatus");
+const networkDiagnosticsToggleNode = document.querySelector("#networkDiagnosticsToggle");
 const NETWORK_SETTINGS_KEY = "cncPortNetworkSettings.v1";
+const NETWORK_DIAGNOSTICS_SETTINGS_KEY = "cncPortNetworkDiagnosticsEnabled.v1";
+
+function loadNetworkDiagnosticsEnabled() {
+  const queryValue = queryParams.get("networkDiagnostics");
+  if (queryValue === "1" || queryValue === "true" || queryValue === "on") return true;
+  if (queryValue === "0" || queryValue === "false" || queryValue === "off") return false;
+  try {
+    return window.localStorage?.getItem(NETWORK_DIAGNOSTICS_SETTINGS_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+let networkDiagnosticsEnabled = loadNetworkDiagnosticsEnabled();
+
+function setNetworkDiagnosticsEnabled(enabled, reason = "settings") {
+  networkDiagnosticsEnabled = enabled === true;
+  if (networkDiagnosticsToggleNode) networkDiagnosticsToggleNode.checked = networkDiagnosticsEnabled;
+  try {
+    window.localStorage?.setItem(NETWORK_DIAGNOSTICS_SETTINGS_KEY,
+      networkDiagnosticsEnabled ? "true" : "false");
+  } catch {
+    // Storage is optional; the setting still applies to this page.
+  }
+  window.__cncSetNetworkDiagnostics?.(networkDiagnosticsEnabled, {
+    reset: networkDiagnosticsEnabled,
+    reason,
+  });
+  return networkDiagnosticsEnabled;
+}
 
 function loadNetworkSettings() {
   let stored = {};
@@ -97,10 +128,19 @@ function saveNetworkSettings(settings) {
 }
 
 initializeNetworkSettings();
+setNetworkDiagnosticsEnabled(networkDiagnosticsEnabled, "settings-load");
 [networkRoomNode, networkNameNode, networkStunNode, networkIceUsernameNode]
   .filter(Boolean)
   .forEach((input) => input.addEventListener("change", () => saveNetworkSettings(networkSettingsFromInputs())));
 networkRoomNode?.addEventListener("input", updateNetworkDraftStatus);
+networkDiagnosticsToggleNode?.addEventListener("change", (event) => {
+  setNetworkDiagnosticsEnabled(event.currentTarget.checked, "settings-toggle");
+  track("setting_changed", {
+    category: "diagnostics",
+    setting: "multiplayer_packet_capture",
+    value: event.currentTarget.checked ? "enabled" : "disabled",
+  });
+});
 updateNetworkDraftStatus();
 // Engine-thread mode: the engine runs on a pthread in the threaded build and
 // bridge.js moves the frame loop into the worker realm; this page only
@@ -1802,6 +1842,8 @@ function installPlayHostApi() {
     setShaderTier,
     getShaderTier: effectiveShaderTier,
     setDiagnosticsLevel: setConfiguredDiagLevel,
+    setNetworkDiagnostics: setNetworkDiagnosticsEnabled,
+    getNetworkDiagnostics: () => window.__cncNetworkDiagnosticsSnapshot?.() ?? null,
     setConsoleVisible,
     issues: {
       startRecording: (...args) => issueRecorder.startRecording(...args),

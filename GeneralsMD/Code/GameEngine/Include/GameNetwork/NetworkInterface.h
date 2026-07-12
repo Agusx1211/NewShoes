@@ -128,6 +128,22 @@ public:
 	virtual UnsignedInt getPingFrame() = 0;
 	virtual Int getPingsSent() = 0;
 	virtual Int getPingsRecieved() = 0;
+
+#ifdef __EMSCRIPTEN__
+	// Browser-only observability for issue dumps. Defaults keep secondary native
+	// implementations source-compatible; the real Zero Hour Network overrides
+	// these without changing lockstep behavior.
+	virtual Real getBrowserDiagnosticAverageLatency() { return 0.0f; }
+	virtual Int getBrowserDiagnosticMinimumCushion() { return -1; }
+	virtual Int getBrowserDiagnosticPendingCommands() { return 0; }
+	virtual Int getBrowserDiagnosticRelayedCommands() { return 0; }
+	virtual Int getBrowserDiagnosticTransportIncoming() { return 0; }
+	virtual Int getBrowserDiagnosticTransportOutgoing() { return 0; }
+	virtual Int getBrowserDiagnosticFrameGrouping(Int) { return -1; }
+	virtual Int getBrowserDiagnosticConnectionQueue(Int) { return -1; }
+	virtual Int getBrowserDiagnosticFrameCommands(Int, UnsignedInt) { return -1; }
+	virtual Int getBrowserDiagnosticExpectedFrameCommands(Int, UnsignedInt) { return -1; }
+#endif
 };
 
 

@@ -1661,6 +1661,88 @@ void ConnectionManager::setFrameGrouping(time_t frameGrouping) {
 	}
 }
 
+#ifdef __EMSCRIPTEN__
+Real ConnectionManager::getBrowserDiagnosticAverageLatency()
+{
+	return m_frameMetrics.getAverageLatency();
+}
+
+Int ConnectionManager::getBrowserDiagnosticMinimumCushion()
+{
+	return m_frameMetrics.getMinimumCushion();
+}
+
+Int ConnectionManager::getBrowserDiagnosticPendingCommands()
+{
+	return m_pendingCommands != NULL ? m_pendingCommands->length() : 0;
+}
+
+Int ConnectionManager::getBrowserDiagnosticRelayedCommands()
+{
+	return m_relayedCommands != NULL ? m_relayedCommands->length() : 0;
+}
+
+Int ConnectionManager::getBrowserDiagnosticTransportIncoming()
+{
+	if (m_transport == NULL) {
+		return 0;
+	}
+	Int count = 0;
+	for (Int i = 0; i < MAX_MESSAGES; ++i) {
+		if (m_transport->m_inBuffer[i].length != 0) {
+			++count;
+		}
+	}
+	return count;
+}
+
+Int ConnectionManager::getBrowserDiagnosticTransportOutgoing()
+{
+	if (m_transport == NULL) {
+		return 0;
+	}
+	Int count = 0;
+	for (Int i = 0; i < MAX_MESSAGES; ++i) {
+		if (m_transport->m_outBuffer[i].length != 0) {
+			++count;
+		}
+	}
+	return count;
+}
+
+Int ConnectionManager::getBrowserDiagnosticFrameGrouping(Int slot)
+{
+	if (slot < 0 || slot >= MAX_SLOTS || m_connections[slot] == NULL) {
+		return -1;
+	}
+	return static_cast<Int>(m_connections[slot]->getBrowserDiagnosticFrameGrouping());
+}
+
+Int ConnectionManager::getBrowserDiagnosticConnectionQueue(Int slot)
+{
+	if (slot < 0 || slot >= MAX_SLOTS || m_connections[slot] == NULL) {
+		return -1;
+	}
+	return m_connections[slot]->getBrowserDiagnosticQueueLength();
+}
+
+Int ConnectionManager::getBrowserDiagnosticFrameCommands(Int slot, UnsignedInt frame)
+{
+	if (slot < 0 || slot >= MAX_SLOTS || m_frameData[slot] == NULL) {
+		return -1;
+	}
+	return static_cast<Int>(m_frameData[slot]->getCommandCount(frame));
+}
+
+Int ConnectionManager::getBrowserDiagnosticExpectedFrameCommands(Int slot, UnsignedInt frame)
+{
+	if (slot < 0 || slot >= MAX_SLOTS || m_frameData[slot] == NULL) {
+		return -1;
+	}
+	return static_cast<Int>(m_frameData[slot]->getFrameCommandCount(frame));
+}
+#endif
+
 /*
 void ConnectionManager::determineRouterFallbackPlan() {
 	memset(m_packetRouterFallback, 0, sizeof(m_packetRouterFallback));

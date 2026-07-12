@@ -7980,10 +7980,56 @@ void append_lan_runtime_json(std::string &json)
 		json += TheNetwork->isFrameDataReady() ? "true" : "false";
 		json += ",\"runAhead\":"
 			+ std::to_string(static_cast<unsigned long long>(TheNetwork->getRunAhead()));
+		json += ",\"frameRate\":"
+			+ std::to_string(static_cast<unsigned long long>(TheNetwork->getFrameRate()));
+		json += ",\"logicFrame\":"
+			+ std::to_string(TheGameLogic != NULL ? TheGameLogic->getFrame() : -1);
 		json += ",\"crcMismatch\":";
 		json += TheNetwork->sawCRCMismatch() ? "true" : "false";
 		json += ",\"packetRouter\":";
 		json += TheNetwork->isPacketRouter() ? "true" : "false";
+		json += ",\"averageFps\":" + std::to_string(TheNetwork->getAverageFPS());
+		json += ",\"averageLatencySeconds\":"
+			+ std::to_string(TheNetwork->getBrowserDiagnosticAverageLatency());
+		json += ",\"minimumCushion\":"
+			+ std::to_string(TheNetwork->getBrowserDiagnosticMinimumCushion());
+		json += ",\"incomingBytesPerSecond\":"
+			+ std::to_string(TheNetwork->getIncomingBytesPerSecond());
+		json += ",\"incomingPacketsPerSecond\":"
+			+ std::to_string(TheNetwork->getIncomingPacketsPerSecond());
+		json += ",\"outgoingBytesPerSecond\":"
+			+ std::to_string(TheNetwork->getOutgoingBytesPerSecond());
+		json += ",\"outgoingPacketsPerSecond\":"
+			+ std::to_string(TheNetwork->getOutgoingPacketsPerSecond());
+		json += ",\"queues\":{";
+		json += "\"pendingCommands\":"
+			+ std::to_string(TheNetwork->getBrowserDiagnosticPendingCommands());
+		json += ",\"relayedCommands\":"
+			+ std::to_string(TheNetwork->getBrowserDiagnosticRelayedCommands());
+		json += ",\"transportIncoming\":"
+			+ std::to_string(TheNetwork->getBrowserDiagnosticTransportIncoming());
+		json += ",\"transportOutgoing\":"
+			+ std::to_string(TheNetwork->getBrowserDiagnosticTransportOutgoing());
+		json += "}";
+		json += ",\"slots\":[";
+		for (Int slot = 0; slot < MAX_SLOTS; ++slot) {
+			if (slot > 0) {
+				json += ",";
+			}
+			json += "{\"slot\":" + std::to_string(slot);
+			json += ",\"frameGroupingMs\":"
+				+ std::to_string(TheNetwork->getBrowserDiagnosticFrameGrouping(slot));
+			json += ",\"connectionQueue\":"
+				+ std::to_string(TheNetwork->getBrowserDiagnosticConnectionQueue(slot));
+			json += ",\"frameCommands\":"
+				+ std::to_string(TheNetwork->getBrowserDiagnosticFrameCommands(
+					slot, static_cast<UnsignedInt>(TheNetwork->getExecutionFrame())));
+			json += ",\"expectedFrameCommands\":"
+				+ std::to_string(TheNetwork->getBrowserDiagnosticExpectedFrameCommands(
+					slot, static_cast<UnsignedInt>(TheNetwork->getExecutionFrame())));
+			json += "}";
+		}
+		json += "]";
 	}
 	json += "}";
 }

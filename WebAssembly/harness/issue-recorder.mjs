@@ -1350,6 +1350,9 @@ class IssueRecorder {
     const logs = this.collectLogsTail();
     const videoDataUrl = await this.videoDataUrl();
     const build = this.build ?? await collectBuildAssets();
+    const networkDiagnostics = typeof window.__cncNetworkDiagnosticsSnapshot === "function"
+      ? window.__cncNetworkDiagnosticsSnapshot()
+      : null;
     // Frozen-animation debugging: capture per-drawable HAnim + muzzle-flash
     // truth (recoil state + the flash subobject's actual Is_Hidden flag)
     // three times ~400ms apart, so a dump shows whether flashes TOGGLE.
@@ -1404,6 +1407,11 @@ class IssueRecorder {
           issues: this.issues.length,
           logs: logs.length,
           videoBytes: this.videoBytes,
+          networkPackets: networkDiagnostics?.retained?.packets ?? 0,
+          networkPacketBytes: networkDiagnostics?.retained?.packetBytes ?? 0,
+          networkEvents: networkDiagnostics?.retained?.events ?? 0,
+          networkRtcSamples: networkDiagnostics?.retained?.rtcSamples ?? 0,
+          networkEngineSamples: networkDiagnostics?.retained?.engineSamples ?? 0,
         },
       },
       replay: {
@@ -1426,6 +1434,7 @@ class IssueRecorder {
       animReportSamples: this.animReportSamples,
       issues: this.issues,
       logs,
+      networkDiagnostics,
       media: {
         video: videoDataUrl
           ? {

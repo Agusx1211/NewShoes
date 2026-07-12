@@ -66,6 +66,11 @@ public:
 	User *getUser();
 	void setFrameGrouping(time_t frameGrouping);
 
+#ifdef __EMSCRIPTEN__
+	time_t getBrowserDiagnosticFrameGrouping() { return m_frameGrouping; }
+	Int getBrowserDiagnosticQueueLength() { return m_netCommandList != NULL ? m_netCommandList->length() : 0; }
+#endif
+
 	void sendNetCommandMsg(NetCommandMsg *msg, UnsignedByte relay);
 
 	// These two processAck calls do the same thing, just take different types of ACK commands.

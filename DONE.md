@@ -11640,6 +11640,26 @@ mitigation track. Items resolved or retired by the pivot:
       run with no dropped datagrams or CRC mismatch. A four-client threaded run
       also formed all six peer links and started four original `Network`
       instances before the memory-constrained SwiftShader host timed out.
+- [x] Add opt-in, full-fidelity multiplayer diagnostics to issue dumps. The
+      Multiplayer settings toggle now records every encrypted original
+      Generals datagram with microsecond timestamps and complete payload hex,
+      DataChannel buffering/outcomes, shared main/engine-realm enqueue and
+      dequeue delay, channel/peer lifecycle, sanitized one-second
+      `RTCPeerConnection.getStats()` samples, main-thread long tasks, and
+      half-second original lockstep state. Engine samples include real logic /
+      execution frames, frame readiness, run-ahead/frame rate, measured ACK
+      latency/FPS/cushion, bandwidth, transport and command queues, per-slot
+      frame grouping, queued commands, and received/expected commands for the
+      execution frame. Capture is off by default, bounded with explicit
+      eviction/completeness counters, excludes TURN credentials and candidate
+      addresses, and cannot throw into the transport. Issue dumps embed the
+      recorder and the analysis decoder extracts packet, event, RTC, and
+      lockstep NDJSON plus heartbeat-gap summaries. Verified with the issue
+      recorder unit/UI/extraction suite, the two-context direct DataChannel
+      transport gate (byte-identical send/receive payloads and RTC samples), a
+      fresh threaded release build, and a complete two-player threaded LAN
+      lobby-to-playable match: 361/361 packets retained per client, zero
+      eviction, no CRC mismatch, no browser errors, and visible screenshots.
 - [x] Carry the LANAPI discovery/join/game-start flow through browser
       WebSocket binary frames. `lanapi_websocket_flow_smoke.mjs` boots two
       isolated Playwright contexts, builds the existing original LAN announce,

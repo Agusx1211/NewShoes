@@ -13,6 +13,7 @@ const GAME_LAN = 1;
 const playerCount = Number.parseInt(process.env.CNC_MATCH_PLAYERS ?? "2", 10);
 const threadedTest = process.env.CNC_THREADED === "1";
 const allowWebGlContextLoss = process.env.CNC_ALLOW_WEBGL_CONTEXT_LOSS === "1";
+const captureNetworkDiagnostics = process.env.CNC_NETWORK_DIAGNOSTICS === "1";
 const maxAllowedLogicFrameSkew = threadedTest ? Math.max(6, playerCount - 1) : playerCount - 1;
 const maxAllowedFinalLogicFrameSkew = threadedTest ? 10 : maxAllowedLogicFrameSkew;
 const activeSampleInterval = threadedTest ? 5 : 30;
@@ -198,6 +199,12 @@ async function createClient(browserOrContext, serverUrl, relayUrls, room, label,
   await page.goto(pageUrl.href, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
   await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
+  if (captureNetworkDiagnostics) {
+    await page.evaluate(() => window.__cncSetNetworkDiagnostics?.(true, {
+      reset: true,
+      reason: "lan-webrtc-playable-match-smoke",
+    }));
+  }
 
   const mount = await rpc(client, "mountArchives", {
     path: `/assets/lan-${peerId}`,
@@ -550,6 +557,22 @@ try {
   expect(endpointStates.every((state) => state.ok === true
       && state.runtime?.endpoint?.openPeers === playerCount - 1),
   "complete WebRTC peer mesh did not survive the match", endpointStates);
+  const networkDiagnostics = captureNetworkDiagnostics
+    ? await Promise.all(clients.map((client) => client.page.evaluate(() =>
+      window.__cncNetworkDiagnosticsSnapshot?.())))
+    : null;
+  if (captureNetworkDiagnostics) {
+    expect(networkDiagnostics.every((diagnostics) => diagnostics?.packets?.length > 0
+        && diagnostics?.engineSamples?.some((sample) => sample.network?.network?.ready === true)
+        && diagnostics?.rtcSamples?.length > 0
+        && diagnostics.complete === true),
+    "threaded match diagnostics did not capture packets, RTC, and engine lockstep state",
+    networkDiagnostics.map((diagnostics) => ({
+      retained: diagnostics?.retained,
+      complete: diagnostics?.complete,
+      lastEngineSample: diagnostics?.engineSamples?.at(-1),
+    })));
+  }
 
   const result = {
     ok: true,
@@ -569,6 +592,11 @@ try {
     finalLogicFrameSkew,
     final: finalStates,
     endpoints: endpointStates.map((state) => state.runtime.endpoint),
+    networkDiagnostics: networkDiagnostics?.map((diagnostics) => ({
+      retained: diagnostics.retained,
+      totals: diagnostics.totals,
+      complete: diagnostics.complete,
+    })) ?? null,
     discovery: {
       strategy: "trystero-nostr",
       configuredRelays: relayUrls,

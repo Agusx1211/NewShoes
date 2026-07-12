@@ -61,6 +61,49 @@ function safeError(error) {
   return error?.message ?? String(error);
 }
 
+function epochMicroseconds() {
+  const monotonicMs = typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : 0;
+  const timeOrigin = typeof performance !== "undefined" && Number.isFinite(performance.timeOrigin)
+    ? performance.timeOrigin
+    : Date.now() - monotonicMs;
+  return Math.round((timeOrigin + monotonicMs) * 1000);
+}
+
+function candidateSummary(candidate) {
+  if (!candidate) return null;
+  return {
+    candidateType: candidate.candidateType ?? null,
+    protocol: candidate.protocol ?? null,
+    tcpType: candidate.tcpType ?? null,
+    relayProtocol: candidate.relayProtocol ?? null,
+    networkType: candidate.networkType ?? null,
+  };
+}
+
+function dataChannelSummary(channel) {
+  if (!channel) return null;
+  return {
+    label: channel.label ?? null,
+    protocol: channel.protocol ?? null,
+    readyState: channel.readyState ?? null,
+    ordered: channel.ordered ?? null,
+    maxPacketLifeTime: channel.maxPacketLifeTime ?? null,
+    maxRetransmits: channel.maxRetransmits ?? null,
+    bufferedAmount: channel.bufferedAmount ?? 0,
+    bufferedAmountLowThreshold: channel.bufferedAmountLowThreshold ?? 0,
+  };
+}
+
+function diagnosticBytes(value) {
+  try {
+    return normalizedBytes(value);
+  } catch {
+    return new Uint8Array(0);
+  }
+}
+
 function cleanLabel(value, fallback, maxLength = 80) {
   const label = String(value ?? "").trim().slice(0, maxLength);
   return label || fallback;
@@ -97,6 +140,7 @@ export class WebRtcUdpEndpoint {
     relayUrls = null,
     onDatagram = () => {},
     onStateChange = () => {},
+    onDiagnostic = () => {},
   }) {
     if (typeof room !== "string" || room.trim().length === 0) {
       throw new Error("WebRTC UDP endpoint requires a room name");
@@ -116,6 +160,7 @@ export class WebRtcUdpEndpoint {
       : [...PUBLIC_NOSTR_RELAYS];
     this.onDatagram = onDatagram;
     this.onStateChange = onStateChange;
+    this.onDiagnostic = onDiagnostic;
     this.discoveryRoom = null;
     this.discoveryConnected = false;
     this.closed = false;
@@ -124,6 +169,7 @@ export class WebRtcUdpEndpoint {
     this.pendingPeerIds = new Set();
     this.waiters = [];
     this.lastError = null;
+    this.diagnosticSequence = 0;
     this.stats = {
       discoveryErrors: 0,
       handshakes: 0,
@@ -179,6 +225,69 @@ export class WebRtcUdpEndpoint {
       ...this.stats,
       lastError: this.lastError,
     };
+  }
+
+  emitDiagnostic(event) {
+    try {
+      this.onDiagnostic(event);
+    } catch {
+      // Diagnostics must never affect the game transport.
+    }
+  }
+
+  async collectRtcStats() {
+    const peers = [];
+    for (const peer of this.peers.values()) {
+      try {
+        const report = await peer.connection.getStats();
+        const values = [...report.values()];
+        const transport = values.find((entry) => entry.type === "transport"
+          && entry.selectedCandidatePairId);
+        const pair = transport?.selectedCandidatePairId
+          ? report.get(transport.selectedCandidatePairId)
+          : values.find((entry) => entry.type === "candidate-pair"
+            && entry.state === "succeeded" && entry.nominated === true);
+        const localCandidate = pair?.localCandidateId ? report.get(pair.localCandidateId) : null;
+        const remoteCandidate = pair?.remoteCandidateId ? report.get(pair.remoteCandidateId) : null;
+        const channelStats = values.find((entry) => entry.type === "data-channel"
+          && entry.label === DATA_CHANNEL_LABEL);
+        peers.push({
+          peerId: peer.peerId,
+          connectionState: peer.connection.connectionState,
+          iceConnectionState: peer.connection.iceConnectionState,
+          iceGatheringState: peer.connection.iceGatheringState,
+          signalingState: peer.connection.signalingState,
+          channel: dataChannelSummary(peer.channel),
+          selectedCandidatePair: pair ? {
+            state: pair.state ?? null,
+            nominated: pair.nominated ?? null,
+            currentRoundTripTime: pair.currentRoundTripTime ?? null,
+            totalRoundTripTime: pair.totalRoundTripTime ?? null,
+            responsesReceived: pair.responsesReceived ?? null,
+            availableOutgoingBitrate: pair.availableOutgoingBitrate ?? null,
+            availableIncomingBitrate: pair.availableIncomingBitrate ?? null,
+            bytesSent: pair.bytesSent ?? null,
+            bytesReceived: pair.bytesReceived ?? null,
+            packetsSent: pair.packetsSent ?? null,
+            packetsReceived: pair.packetsReceived ?? null,
+            packetsDiscardedOnSend: pair.packetsDiscardedOnSend ?? null,
+            bytesDiscardedOnSend: pair.bytesDiscardedOnSend ?? null,
+            localCandidate: candidateSummary(localCandidate),
+            remoteCandidate: candidateSummary(remoteCandidate),
+          } : null,
+          dataChannelStats: channelStats ? {
+            state: channelStats.state ?? null,
+            messagesSent: channelStats.messagesSent ?? null,
+            messagesReceived: channelStats.messagesReceived ?? null,
+            bytesSent: channelStats.bytesSent ?? null,
+            bytesReceived: channelStats.bytesReceived ?? null,
+          } : null,
+        });
+      } catch (error) {
+        peers.push({ peerId: peer.peerId, error: safeError(error) });
+      }
+    }
+    return { source: "RTCPeerConnection.getStats", peers };
   }
 
   notifyState() {
@@ -309,6 +418,10 @@ export class WebRtcUdpEndpoint {
     });
     this.discoveryRoom.onPeerJoin = (peerId) => this.addPeer(peerId);
     this.discoveryRoom.onPeerLeave = (peerId) => this.removePeer(peerId);
+    this.emitDiagnostic({ kind: "event", type: "discovery.connect", detail: {
+      relayCount: this.relayUrls.length,
+      iceServerCount: this.iceServers.length,
+    } });
     return this.waitForDiscoveryRelay(timeoutMs);
   }
 
@@ -343,6 +456,11 @@ export class WebRtcUdpEndpoint {
     };
     connection.addEventListener("connectionstatechange", peer.connectionStateHandler);
     this.peers.set(peerId, peer);
+    this.emitDiagnostic({ kind: "event", type: "peer.added", detail: {
+      peerId,
+      virtualIp: peer.virtualIp >>> 0,
+      initiator: selfId < peerId,
+    } });
     if (selfId < peerId) {
       this.attachChannel(peer, connection.createDataChannel(DATA_CHANNEL_LABEL, {
         ordered: true,
@@ -364,33 +482,79 @@ export class WebRtcUdpEndpoint {
       this.stats.channelOpens += 1;
       this.lastError = null;
       this.notifyState();
+      this.emitDiagnostic({ kind: "event", type: "channel.open", detail: {
+        peerId: peer.peerId,
+        channel: dataChannelSummary(channel),
+      } });
     };
     channel.onclose = () => {
       this.stats.channelCloses += 1;
       this.notifyState();
+      this.emitDiagnostic({ kind: "event", type: "channel.close", detail: {
+        peerId: peer.peerId,
+        channel: dataChannelSummary(channel),
+      } });
     };
     channel.onerror = () => {
       this.lastError = `WebRTC data channel error from ${peer.peerId}`;
       this.notifyState();
+      this.emitDiagnostic({ kind: "event", type: "channel.error", detail: {
+        peerId: peer.peerId,
+        error: this.lastError,
+        channel: dataChannelSummary(channel),
+      } });
     };
     channel.onmessage = (event) => void this.handleDatagram(peer, event.data);
   }
 
   async handleDatagram(peer, raw) {
+    let value = raw;
     try {
-      const value = raw instanceof Blob ? await raw.arrayBuffer() : raw;
+      value = raw instanceof Blob ? await raw.arrayBuffer() : raw;
       const datagram = decodeDatagram(value);
+      const traceId = `in-${++this.diagnosticSequence}`;
+      const receivedAtUs = epochMicroseconds();
       if (datagram.sourceIp !== peer.virtualIp) {
         throw new Error(`WebRTC peer ${peer.peerId} sent a spoofed virtual IP`);
       }
       if (datagram.destinationIp !== BROADCAST_IP && datagram.destinationIp !== this.localIp) {
         this.stats.dropped += 1;
+        this.emitDiagnostic({
+          kind: "packet",
+          direction: "receive",
+          phase: "datachannel.receive",
+          traceId,
+          outcome: "wrong-destination",
+          bytes: datagram.bytes,
+          sourceIp: datagram.sourceIp,
+          sourcePort: datagram.sourcePort,
+          destinationIp: datagram.destinationIp,
+          destinationPort: datagram.destinationPort,
+          peerId: peer.peerId,
+          transportFrameBytes: normalizedBytes(value).byteLength,
+          channel: dataChannelSummary(peer.channel),
+        });
         this.notifyState();
         return;
       }
       this.stats.received += 1;
       this.stats.receivedBytes += datagram.bytes.byteLength;
       this.lastError = null;
+      this.emitDiagnostic({
+        kind: "packet",
+        direction: "receive",
+        phase: "datachannel.receive",
+        traceId,
+        outcome: "queued-for-engine",
+        bytes: datagram.bytes,
+        sourceIp: datagram.sourceIp,
+        sourcePort: datagram.sourcePort,
+        destinationIp: datagram.destinationIp,
+        destinationPort: datagram.destinationPort,
+        peerId: peer.peerId,
+        transportFrameBytes: normalizedBytes(value).byteLength,
+        channel: dataChannelSummary(peer.channel),
+      });
       this.onDatagram({
         bytes: datagram.bytes,
         ip: datagram.sourceIp,
@@ -398,16 +562,39 @@ export class WebRtcUdpEndpoint {
         destinationIp: datagram.destinationIp,
         destinationPort: datagram.destinationPort,
         peerId: peer.peerId,
+        bridgeSequence: this.diagnosticSequence,
+        bridgeQueuedAtUs: receivedAtUs,
       });
       this.notifyState();
     } catch (error) {
       this.stats.dropped += 1;
       this.lastError = safeError(error);
+      const malformedBytes = diagnosticBytes(value);
+      this.emitDiagnostic({
+        kind: "packet",
+        direction: "receive",
+        phase: "datachannel.receive",
+        traceId: `in-${++this.diagnosticSequence}`,
+        outcome: "malformed",
+        bytes: malformedBytes,
+        peerId: peer.peerId,
+        transportFrameBytes: malformedBytes.byteLength,
+        channel: dataChannelSummary(peer.channel),
+        detail: { error: this.lastError, encodedTransportFrame: true },
+      });
       this.notifyState();
     }
   }
 
-  sendDatagram({ bytes, ip, port, sourceIp = 0, sourcePort = 0 }) {
+  sendDatagram({
+    bytes,
+    ip,
+    port,
+    sourceIp = 0,
+    sourcePort = 0,
+    bridgeSequence: queuedSequence = 0,
+    bridgeQueuedAtUs: queuedAtUs = 0,
+  }) {
     if (this.closed) return -7;
     const payload = normalizedBytes(bytes);
     const destinationIp = ip >>> 0;
@@ -419,23 +606,54 @@ export class WebRtcUdpEndpoint {
       destinationPort: port,
     });
     const broadcast = destinationIp === BROADCAST_IP;
+    const bridgeSequence = Number(queuedSequence) >>> 0;
+    const workerQueuedAtUs = Number(queuedAtUs) || null;
+    const traceId = `out-${bridgeSequence || ++this.diagnosticSequence}`;
     const targets = [...this.peers.values()].filter((peer) =>
       (broadcast || peer.virtualIp === destinationIp) && peer.channel?.readyState === "open");
     if (!broadcast && targets.length === 0) {
       this.lastError = `No open WebRTC peer for virtual IP ${destinationIp}`;
+      this.emitDiagnostic({
+        kind: "packet", direction: "send", phase: "datachannel.send", traceId,
+        outcome: "no-peer", bytes: payload, sourceIp: this.localIp || (sourceIp >>> 0),
+        sourcePort, destinationIp, destinationPort: port, workerQueuedAtUs,
+        bridgeQueueDelayUs: workerQueuedAtUs ? epochMicroseconds() - workerQueuedAtUs : null,
+        detail: { error: this.lastError },
+      });
       this.notifyState();
       return -7;
     }
     if (targets.some((peer) => peer.channel.bufferedAmount + frame.byteLength > MAX_BUFFERED_BYTES)) {
       this.stats.dropped += 1;
       this.lastError = "WebRTC peer send buffer is full";
+      this.emitDiagnostic({
+        kind: "packet", direction: "send", phase: "datachannel.send", traceId,
+        outcome: "buffer-full", bytes: payload, sourceIp: this.localIp || (sourceIp >>> 0),
+        sourcePort, destinationIp, destinationPort: port, workerQueuedAtUs,
+        bridgeQueueDelayUs: workerQueuedAtUs ? epochMicroseconds() - workerQueuedAtUs : null,
+        channel: targets.map((peer) => ({ peerId: peer.peerId, ...dataChannelSummary(peer.channel) })),
+        detail: { error: this.lastError },
+      });
       this.notifyState();
       return -5;
     }
+    const before = targets.map((peer) => ({ peerId: peer.peerId, ...dataChannelSummary(peer.channel) }));
     for (const peer of targets) peer.channel.send(frame);
     this.stats.sent += 1;
     this.stats.sentBytes += payload.byteLength;
     this.lastError = null;
+    this.emitDiagnostic({
+      kind: "packet", direction: "send", phase: "datachannel.send", traceId,
+      outcome: "sent", bytes: payload, sourceIp: this.localIp || (sourceIp >>> 0),
+      sourcePort, destinationIp, destinationPort: port, workerQueuedAtUs,
+      bridgeQueueDelayUs: workerQueuedAtUs ? epochMicroseconds() - workerQueuedAtUs : null,
+      transportFrameBytes: frame.byteLength,
+      channel: {
+        before,
+        after: targets.map((peer) => ({ peerId: peer.peerId, ...dataChannelSummary(peer.channel) })),
+      },
+      detail: { broadcast, targetCount: targets.length },
+    });
     this.notifyState();
     return payload.byteLength;
   }
@@ -450,6 +668,7 @@ export class WebRtcUdpEndpoint {
     }
     this.pendingPeerIds.delete(peerId);
     this.pendingPeerMetadata.delete(peerId);
+    this.emitDiagnostic({ kind: "event", type: "peer.removed", detail: { peerId } });
     this.notifyState();
   }
 
