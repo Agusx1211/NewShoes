@@ -21,6 +21,76 @@ try {
   const fallbackShot = join(shotDir, "launcher-fallback-art.png");
   await page.screenshot({ path: fallbackShot });
 
+  const compatibilityChooserPromise = page.waitForEvent("filechooser");
+  await page.locator("#pickFolderFallbackButton").click();
+  const compatibilityChooser = await compatibilityChooserPromise;
+  assert.equal(compatibilityChooser.isMultiple(), true,
+    "the compatibility action must open the recursive folder input");
+
+  const steamFolderScan = await page.evaluate(async () => {
+    function writeU32be(bytes, offset, value) {
+      bytes[offset] = value >>> 24;
+      bytes[offset + 1] = value >>> 16;
+      bytes[offset + 2] = value >>> 8;
+      bytes[offset + 3] = value;
+    }
+    function syntheticBig(paths) {
+      const encoder = new TextEncoder();
+      const entries = paths.map((path) => ({ path: encoder.encode(path), data: new Uint8Array([1, 2, 3, 4]) }));
+      const dataStart = 16 + entries.reduce((sum, entry) => sum + 9 + entry.path.length, 0);
+      const bytes = new Uint8Array(dataStart + entries.length * 4);
+      const view = new DataView(bytes.buffer);
+      bytes.set(encoder.encode("BIGF"));
+      view.setUint32(4, bytes.length, true);
+      writeU32be(bytes, 8, entries.length);
+      let directoryCursor = 16;
+      let dataCursor = dataStart;
+      for (const entry of entries) {
+        writeU32be(bytes, directoryCursor, dataCursor);
+        writeU32be(bytes, directoryCursor + 4, entry.data.length);
+        bytes.set(entry.path, directoryCursor + 8);
+        directoryCursor += 9 + entry.path.length;
+        bytes.set(entry.data, dataCursor);
+        dataCursor += entry.data.length;
+      }
+      return bytes;
+    }
+    function sourceFile(path, bytes) {
+      const file = new File([bytes], path.split("/").pop());
+      Object.defineProperty(file, "relativePath", { value: path });
+      return file;
+    }
+    const root = "Command & Conquer Generals - Zero Hour";
+    const baseRoot = `${root}/ZH_Generals`;
+    const files = [];
+    for (const spec of window.ZeroHArchiveSpecs) {
+      if (spec.name === "LooseScripts.big") continue;
+      const path = spec.name === "Gensec.big" ? `${baseRoot}/gensec.big`
+        : spec.name.startsWith("ZZBase_") ? `${baseRoot}/${spec.sourceName}`
+        : `${root}/${spec.sourceName}`;
+      files.push(sourceFile(path, syntheticBig(
+        spec.requiredEntries.length ? spec.requiredEntries : ["Data\\placeholder.bin"])),
+      );
+    }
+    for (const name of ["SkirmishScripts.scb", "MultiplayerScripts.scb", "Scripts.ini"]) {
+      files.push(sourceFile(`${root}/Data/Scripts/${name}`, new Uint8Array([1, 2, 3, 4])));
+    }
+    files.push(sourceFile(`${root}/PatchZH.big`, new Uint8Array([0, 1, 2, 3])));
+    const result = await window.ZeroHAssetLibrary.scan(files);
+    return {
+      ok: result.ok,
+      missing: result.missing,
+      errors: result.errors,
+      gensec: result.found.find((entry) => entry.name === "Gensec.big"),
+      scripts: result.found.find((entry) => entry.name === "LooseScripts.big"),
+    };
+  });
+  assert.equal(steamFolderScan.ok, true);
+  assert.deepEqual(steamFolderScan.missing, []);
+  assert.deepEqual(steamFolderScan.errors, []);
+  assert.match(steamFolderScan.gensec?.source || "", /ZH_Generals\/gensec\.big$/);
+  assert.equal(steamFolderScan.scripts?.sourceName, "loose installer scripts");
+
   await page.getByRole("button", { name: "Game & Display settings" }).first().click();
   await page.waitForSelector("#settingsWindow.is-open #gamePanel:not([hidden])");
   assert.equal(await page.locator("#gameTab").getAttribute("aria-selected"), "true");
@@ -258,6 +328,7 @@ try {
     ok: true,
     screenshots: { fallbackShot, settingsShot, derivedShot, mobileOnboardingShot, mobileShot, shortShot },
     presentation,
+    steamFolderScan,
     projectUrl: "https://github.com/Agusx1211/NewShoes",
   }, null, 2)}\n`);
 } finally {

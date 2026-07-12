@@ -136,6 +136,7 @@
                     <span class="source-arrow">›</span>
                   </button>
                 </div>
+                <button type="button" class="folder-compatibility-picker" id="pickFolderFallbackButton">Windows blocked the Steam folder? Use compatibility folder picker</button>
                 <div class="launcher-quick-settings">
                   <span><strong>Already configured?</strong> Display, fullscreen, shaders, and performance tools are available before launch.</span>
                   <button type="button" data-open-settings="game">Game &amp; Display settings</button>
@@ -152,7 +153,8 @@
                       <ol>
                         <li>Install both <strong>Command &amp; Conquer: Generals</strong> and <strong>Command &amp; Conquer: Generals: Zero Hour</strong> from The Ultimate Collection. In Steam, set the game language to English before installing or verifying the files.</li>
                         <li>Open Steam Library, right-click Zero Hour, then choose <strong>Manage &gt; Browse local files</strong>. If Steam opens a collection folder, continue into the Zero Hour game folder.</li>
-                        <li>Return here, choose <strong>Add Game Folder</strong>, and select the root that contains the Zero Hour executable, a <code>Data</code> folder, and files such as <code>EnglishZH.big</code>, <code>INIZH.big</code>, and <code>W3DZH.big</code>. The scanner also needs the Generals base archives supplied by the same installation.</li>
+                        <li>Return here, choose <strong>Add Game Folder</strong>, and select the root that contains the Zero Hour executable, a <code>Data</code> folder, and files such as <code>EnglishZH.big</code>, <code>INIZH.big</code>, and <code>W3DZH.big</code>. The scanner also recognizes Steam&rsquo;s nested <code>ZH_Generals</code> base-data folder.</li>
+                        <li>If Windows says the Steam folder contains system files or refuses access under <code>Program Files</code>, use <strong>Windows blocked the Steam folder? Use compatibility folder picker</strong>. That picker can read the selected files for this session but cannot retain a reusable folder permission. Choose browser installation if you do not want to select it again. If the browser still refuses it, copy the complete Zero Hour folder to a normal user-owned folder such as a new folder inside Downloads, then select that copy.</li>
                       </ol>
                       <h3>EA app installation</h3>
                       <ol>
@@ -160,7 +162,7 @@
                         <li>Open that location in File Explorer, find the Zero Hour root, then choose <strong>Add Game Folder</strong> here. Select the folder containing the executable, <code>Data</code>, and the Zero Hour <code>.big</code> archives, not the parent that only lists every game in the collection.</li>
                       </ol>
                       <p><strong>What happens next:</strong> the browser asks for read permission and inventories file names and archive structure locally. Temporary mode asks again next visit. Remember mode retains a browser permission when the browser supports it. Install mode copies only the required archives into this site&rsquo;s private browser storage. Nothing is uploaded.</p>
-                      <p><strong>If validation fails:</strong> verify both Generals and Zero Hour in Steam or the EA app, confirm English is installed, and select the actual Zero Hour root. Modified or repacked releases may rename, recompress, or omit required retail archives and are not supported.</p>
+                      <p><strong>If validation fails:</strong> verify both Generals and Zero Hour in Steam or the EA app, confirm English is installed, and select the actual Zero Hour root. Current English Steam installations with the nested <code>ZH_Generals</code> folder are supported. Modified or repacked releases may rename, recompress, or omit required retail archives and are not supported.</p>
                     </div>
                   </details>
                   <details>

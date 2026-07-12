@@ -21,6 +21,7 @@ const MAX_LOOSE_SCRIPT_BYTES = 16 * 1024 * 1024;
 const MAX_PRESENTATION_ICON_BYTES = 32 * 1024 * 1024;
 
 const ARCHIVES = self.ZeroHArchiveSpecs;
+const ARCHIVE_SOURCE_NAMES = new Set(ARCHIVES.map((archive) => archive.sourceName.toLowerCase()));
 
 const SCRIPT_FILES = [
   { sourceName: "SkirmishScripts.scb", path: "Data\\Scripts\\SkirmishScripts.scb" },
@@ -407,6 +408,10 @@ async function scanSources(files, requestId) {
     emitProgress(requestId, "scan", `Inspecting ${leaf}`, scanned, normalized.length);
     try {
       if (lower.endsWith(".big")) {
+        // Installed games can include patch/mod archives that are not part of
+        // the browser runtime contract. Do not parse or warn about unrelated
+        // BIG files the launcher will never materialize.
+        if (!ARCHIVE_SOURCE_NAMES.has(lower)) continue;
         const reader = new BlobReader(item.file, item.path);
         await validateBigReader(reader, item.path);
         addCandidate(leaf, directEdition(item.path, directoryKinds, leaf), {
@@ -508,13 +513,15 @@ async function scanSources(files, requestId) {
   };
 }
 
-function chooseCandidate(sourceName, edition) {
+function chooseCandidate(sourceName, edition, acceptedEditions = [edition]) {
   const candidates = catalog.get(sourceName.toLowerCase()) || [];
   const scriptName = SCRIPT_FILES.some((script) =>
     script.sourceName.toLowerCase() === sourceName.toLowerCase());
   return [...candidates].sort((left, right) => {
     const score = (candidate) => {
-      let value = candidate.edition === edition ? 6 : candidate.edition === "unknown" ? 2 : 0;
+      let value = candidate.edition === edition ? 6
+        : acceptedEditions.includes(candidate.edition) ? 4
+        : candidate.edition === "unknown" ? 2 : 0;
       if (scriptName && candidate.kind === "cab") value += 3;
       if (scriptName && /(^|[\\/])data[\\/]scripts[\\/]/i.test(candidate.label)) value += 2;
       return value;
@@ -523,6 +530,10 @@ function chooseCandidate(sourceName, edition) {
     const rightScore = score(right);
     return rightScore - leftScore || right.sequence - left.sequence;
   })[0] || null;
+}
+
+function acceptedArchiveEditions(archive) {
+  return Array.isArray(archive.acceptedEditions) ? archive.acceptedEditions : [archive.edition];
 }
 
 function resolveCatalog() {
@@ -557,8 +568,10 @@ function resolveCatalog() {
       }
       continue;
     }
-    const candidate = chooseCandidate(archive.sourceName, archive.edition);
-    if (!candidate || (candidate.edition !== archive.edition && candidate.edition !== "unknown")) {
+    const acceptedEditions = acceptedArchiveEditions(archive);
+    const candidate = chooseCandidate(archive.sourceName, archive.edition, acceptedEditions);
+    if (!candidate || (candidate.edition !== "unknown"
+        && !acceptedEditions.includes(candidate.edition))) {
       missing.push(archive.sourceName);
       continue;
     }

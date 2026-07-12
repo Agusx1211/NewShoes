@@ -208,6 +208,9 @@ function syntheticPeIcon() {
   assert.match(html, /data-open-settings="game"/);
   assert.match(html, /I purchased and installed it online/);
   assert.match(html, /I own the original discs/);
+  assert.match(html, /id="pickFolderFallbackButton"/);
+  assert.match(html, /Windows blocked the Steam folder\? Use compatibility folder picker/);
+  assert.match(html, /nested <code>ZH_Generals<\/code>/);
   assert.match(html, /store\.steampowered\.com\/bundle\/39394/);
   assert.match(html, /ea\.com\/games\/command-and-conquer\/command-and-conquer-the-ultimate-collection/);
   assert.match(html, /id="endSessionButton"[^>]*>[\s\S]*Shut down/);
@@ -221,6 +224,8 @@ function syntheticPeIcon() {
     "retail presentation derivation must remain browser-local");
   assert.match(launcherSource, /data-single-activation-shortcut[\s\S]*event\.detail > 1[\s\S]*event\.preventDefault\(\)/,
     "desktop external shortcuts must coalesce the second click of a double-click");
+  assert.match(launcherSource, /pickFolderFallbackButton[\s\S]*folderInput[\s\S]*\.click\(\)/,
+    "the Program Files compatibility path must open the webkitdirectory picker");
 }
 
 process.stdout.write("launcher polish smoke: OK\n");

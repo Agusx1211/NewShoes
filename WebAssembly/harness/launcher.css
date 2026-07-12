@@ -117,6 +117,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, .desktop-icon-l
 .source-icon.folder { background: #fff3d6; }.source-icon svg { width: 35px; height: 35px; }
 .source-copy { display: grid; gap: 5px; }.source-copy strong { color: #2b4352; font-size: 13px; }.source-copy small { color: #7a8c97; font-size: 10px; }
 .source-arrow { color: #7791a1; font: 26px Georgia, serif; }
+.folder-compatibility-picker { min-height: 22px; display: block; margin: 5px 0 0 auto; padding: 3px 0; color: #286d9a; border: 0; background: transparent; font-size: 9px; text-decoration: underline; cursor: pointer; }
+.folder-compatibility-picker:hover { color: #154d74; }
+.folder-compatibility-picker:disabled { color: #89969d; cursor: wait; }
 .launcher-quick-settings { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 12px; padding: 9px 11px; color: #667b87; border: 1px solid #c9d6dd; border-radius: 4px; background: #f3f7f9; font-size: 8px; line-height: 1.4; }
 .launcher-quick-settings strong { color: #365466; }
 .launcher-quick-settings button { flex: 0 0 auto; min-height: 27px; padding: 0 10px; color: #174f82; border: 1px solid #7f9db9; border-radius: 2px; background: linear-gradient(#fff, #dce8f5); font-weight: bold; font-size: 8px; }

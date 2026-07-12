@@ -8,6 +8,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Steam installed-folder compatibility (2026-07-12)
+
+- [x] Accepted Steam's complete English Zero Hour layout, where the required
+      base Generals `gensec.big` is nested under `ZH_Generals`, without
+      weakening the edition preference that distinguishes similarly named
+      Zero Hour and base-game archives. The supplied 2.2 GB Steam folder now
+      validates all required archives and loose `Data/Scripts` files. Optional
+      patch/mod BIGs outside the runtime contract are skipped without a false
+      unreadable-source warning.
+- [x] Added an explicit compatibility folder picker for Windows installations
+      that Chromium refuses to expose through its persistent directory-handle
+      picker under `Program Files`. The fallback uses the recursive file-input
+      path, explains that it cannot retain a reusable permission, and keeps the
+      user-folder copy workaround for browsers that reject both paths.
+- [x] Extended the existing launcher browser smoke with the compatibility file
+      chooser and a complete synthetic Steam tree. It proves nested
+      `ZH_Generals/gensec.big`, loose scripts, and all required BIG entry
+      contracts resolve without missing media.
+
 ## Wasm CPU calibration smoke repair (2026-07-12)
 
 - [x] Updated the WWLib CPU-detection smoke to match the wasm workload

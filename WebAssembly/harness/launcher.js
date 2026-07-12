@@ -255,7 +255,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
   }
 
   function setSourcePickerBusy(busy) {
-    document.querySelectorAll("#pickImageButton, #pickFolderButton, #addMoreImagesButton, .selected-media-remove").forEach((button) => {
+    document.querySelectorAll("#pickImageButton, #pickFolderButton, #pickFolderFallbackButton, #addMoreImagesButton, .selected-media-remove").forEach((button) => {
       button.disabled = busy;
     });
     document.querySelector("#scanPanel").setAttribute("aria-busy", String(busy));
@@ -1021,6 +1021,10 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     } catch (error) {
       if (error?.name !== "AbortError") showToast("Could not open folder", error?.message || String(error), "warning");
     }
+  });
+  document.querySelector("#pickFolderFallbackButton").addEventListener("click", () => {
+    if (sourceChangeNeedsReload()) return;
+    document.querySelector("#folderInput").click();
   });
   document.querySelector("#imageInput").addEventListener("change", (event) => {
     const source = sourceFromFiles(event.target.files, "image");

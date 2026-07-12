@@ -39,10 +39,15 @@
       "Maps\\MapCache.ini",
       "Maps\\Alpine Assault\\Alpine Assault.map",
     ]],
-    ["Gensec.big", "Gensec.big", "zh"],
-  ].map(([name, sourceName, edition, artifactSourceName = sourceName, requiredEntries = []]) =>
+    // Original ZH media presents Gensec.big as part of the expansion set,
+    // while the Steam installation nests the same required archive under its
+    // ZH_Generals base-game directory.
+    ["Gensec.big", "Gensec.big", "zh", "Gensec.big", [], ["zh", "base"]],
+  ].map(([name, sourceName, edition, artifactSourceName = sourceName,
+    requiredEntries = [], acceptedEditions = [edition]]) =>
     Object.freeze({ name, sourceName, edition, artifactSourceName,
-      requiredEntries: Object.freeze(requiredEntries) }));
+      requiredEntries: Object.freeze(requiredEntries),
+      acceptedEditions: Object.freeze(acceptedEditions) }));
 
   globalThis.ZeroHArchiveSpecs = Object.freeze(specs);
 })();
