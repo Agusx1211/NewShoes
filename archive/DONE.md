@@ -8,6 +8,106 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Lite uniform-state and base-key flattening (2026-07-12)
+
+- [x] Tested three follow-up allocation reductions independently on RTX 4080
+      Vulkan/ANGLE and retained the two that improved choppiness. Lite applied
+      render state now stores shader-consumed values as flat scalars/arrays and
+      only full diagnostics build the nested lighting, material-source, fog,
+      alpha, depth, and state-report objects. The base-uniform cache now compares
+      and updates a fixed exact snapshot, including viewport and clip-plane
+      values, instead of allocating an array and joined string on every render
+      rebuild. The isolated flat-state step improved wall/engine averages by
+      1.2%/1.1% and p99 by 4.5%/4.2%; the base snapshot then improved averages
+      another 3.4%/5.8%, p95 another 3.3%/9.0%, and p99 another 2.6%/6.6%.
+      Including a slower final retained-state run, the three-run retained mean
+      versus the fresh baseline was 3.2% lower wall average, 4.6% lower engine
+      average, 5.0% lower wall p99, and 7.7% lower engine p99. Exact stage and
+      alpha/fog snapshots were not kept: although averages improved 1.5%/2.0%,
+      wall p95/p99 regressed 1.7%/1.5% and engine p99 regressed 3.5%.
+      Full `EXPECT_WASM=1` browser diagnostics passed, and the retained RTX
+      active-skirmish run reached live human/AI state with 224 objects and an
+      intact terrain, lighting, shadow, model, texture, and faction-UI image.
+
+## Lite-play D3D8 state-allocation reduction (2026-07-12)
+
+- [x] Removed callback closures from cached WebGL render-state application,
+      replaced per-call composite state-key strings with exact tuple snapshots,
+      stopped allocating two no-op profiling closures per unprofiled draw, and
+      kept the full applied-state diagnostic object graph and combiner warnings
+      out of lite gameplay. The lean state summary retains every field consumed
+      by shaders and uniform caches; GL calls, draw order, render values,
+      shaders, resolution, effects, simulation, and LOD are unchanged. Across
+      two 600-frame RTX 4080 Vulkan/ANGLE comparisons, wall-frame average fell
+      from 9.58 to 9.38 ms and engine-frame average from 5.85 to 5.64 ms; wall
+      p95/p99 improved from 13.75/15.52 to 13.23/14.92 ms and engine p99 from
+      9.95 to 8.45 ms. A mutable adjacent-batch scratch object was separately
+      rejected after regressing wall and engine latency. The retained path
+      passed the full `EXPECT_WASM=1` browser smoke and an RTX active-skirmish
+      run with 224 objects, active human/AI state, and intact terrain, lighting,
+      shadows, models, textures, and UI in the captured screenshot.
+
+## Lite-play D3D8 counter overhead removal (2026-07-12)
+
+- [x] Removed detailed D3D8 performance-counter bookkeeping from the lite
+      human-play hot path while preserving it by default in full diagnostics
+      and through an explicit profiler override. This changes diagnostics
+      only: draw commands, render state, shaders, assets, resolution, effects,
+      simulation, and LOD are untouched. Two production-style 600-frame
+      shell-map comparisons on RTX 4080 Vulkan/ANGLE, with per-operation clock
+      timing disabled in every run, measured 4.7-6.3% lower wall-frame average
+      and 6.0-8.5% lower engine-frame average; the confirming comparison also
+      improved wall p95/p99 by 1.7%/2.2% and engine p95/p99 by 6.2%/19.3%.
+      A lean active-skirmish run reached live human/AI match state with 224
+      objects and a correct real-GPU terrain/model/shadow/UI screenshot. The
+      full `EXPECT_WASM=1` browser smoke passed with detailed counters enabled,
+      and the runtime profiler plus the lite real-FX smoke can explicitly
+      retain counters when their assertions need them.
+
+## Browser draw-payload allocation reduction (2026-07-12)
+
+- [x] Stopped materializing native D3D8 clip-plane, material, and eight-light
+      JS object graphs on derived-state misses when the active lite-mode shader
+      cannot read them. Disabled clip/light state now shares immutable
+      fallbacks, and fixed-light uniform flattening reuses typed-array scratch
+      buffers instead of allocating intermediate arrays for each upload. Full
+      diagnostics preserve the complete original payload. An RTX 4080
+      Vulkan/ANGLE 600-frame production-style A/B reduced engine frame time
+      from 7.59 to 6.87 ms average, 7.4 to 6.8 median, 10.0 to 9.0 p95, and
+      11.9 to 10.4 p99, with no resolution, draw, shader, effect, texture,
+      simulation, or LOD change. Real-GPU shell-map and active-skirmish
+      screenshots retained terrain, water, particles, lighting, shadows,
+      models, textures, and UI; the skirmish advanced 1200 AI frames with
+      detected enemy activity. The debug `cnc-port` build and full
+      `EXPECT_WASM=1` browser smoke passed, including its clip-plane,
+      directional/point/spot/specular light, normal, local-viewer, and lit
+      material-source pixel checks; an RTX full-diagnostic profile also copied
+      every payload without taking a lite-mode skip.
+- [x] Made the runtime frame profiler identify the renderer through Chrome's
+      browser-process `SystemInfo` endpoint before page creation. This avoids
+      creating a disposable WebGL context—or initializing the GPU process
+      after the game context exists—which evicted the live canvas under
+      headless NVIDIA Vulkan/ANGLE. The resulting profiles report the RTX 4080
+      renderer and complete with nonblank screenshots instead of losing the
+      game context.
+## Forced-reload isolation recovery (2026-07-12)
+
+- [x] Reproduced the public report's post-force-reload failure against the
+      live `newshoes.gg` deployment. A Chrome navigation that bypassed the
+      service worker loaded the unisolated bootstrap with an activated
+      isolation-worker registration but no document controller, then failed
+      after 12 seconds with `The updated isolation helper did not take control
+      in time.` Restarting Chrome also cleared the condition, matching the
+      reporter's follow-up.
+- [x] Made the Pages bootstrap verify the registration's active worker
+      directly when a force-reloaded document has no controller, then perform
+      the normal navigation required for that worker to provide COOP/COEP.
+      The deployment smoke now drives the service-worker-bypass path through
+      Chrome DevTools and requires the canonical launcher, cross-origin
+      isolation, `SharedArrayBuffer`, the threaded RPC surface, shared wasm
+      heap, and transferred canvas afterward. The standard deployment smoke
+      and five consecutive pinned-old-worker rollout runs passed locally.
+
 ## Browser text-entry input repair (2026-07-12)
 
 - [x] Restored end-to-end browser text entry by removing the probe-only
@@ -20,7 +120,6 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       and IME attachment state. Playwright clicks the shipped player-name
       entry, types and deletes text, commits a browser composition event,
       captures the resulting menu, and then starts a playable match.
-
 ## Steam installed-folder compatibility (2026-07-12)
 
 - [x] Accepted Steam's complete English Zero Hour layout, where the required
@@ -10734,6 +10833,48 @@ mitigation track. Items resolved or retired by the pivot:
 
 ## M8 — Video (Bink → WebCodecs)
 
+- [x] Play the original automatic EA-logo and Zero Hour sizzle sequence, and
+      make the complete retail movie library optional at installation. The
+      launcher now presents an unchecked-by-default `Include original videos`
+      choice with an accessible tooltip explaining the measured English-media
+      cost (618,084,532 bytes of source BIKs plus 305,435,862 bytes of VP9/Opus
+      WebM sidecars, about 0.9 GB). Its worker inventories loose installed BIKs
+      and BIK entries in ISO/CAB media, copies them only when selected, keeps
+      them in the installed-library v5 manifest, validates BIK/KB2 headers,
+      and reuses those OPFS files at launch. Runtime extraction/transcoding
+      now covers all 70 supplied Zero Hour/base Generals movies and generates
+      the manifest dynamically instead of naming two test clips. The original
+      player receives localized and generic Win32-compatible aliases without
+      duplicating stored bytes; manifest source matching is case-insensitive
+      for cabinet names such as `EA_LOGO.BIK`. Large path maps are passed to
+      the engine realm as message data rather than dynamic-import query text,
+      avoiding Chromium's URL limit. The browser decoder now emits the exact
+      terminal frame on `ended`, allowing original `Display::playLogoMovie`
+      hold/copyright timing to advance naturally into `Display::playMovie`
+      for the sizzle. The release threaded gate observed
+      `Data\\Movies\\EA_LOGO.bik` followed by
+      `Data\\Movies\\sizzle_review.bik`, copied decoded frames with zero
+      misses, captured the real sizzle frame, closed the decoder, and shut the
+      worker down cleanly. Browser-local sidecar generation and complete
+      movie/audio-clock synchronization remain open in `TODO.md`.
+- [x] Re-target the production threaded Bink path to browser video sidecars.
+      The play-page mount now stages the user-extracted `GC_Background.bik` and
+      `VS_small.bik` payloads at both original localized and generic paths plus
+      their generated WebM manifest in OPFS. The Bink provider reads those
+      files through the established synchronous OPFS fd seam, keeps original
+      `BinkVideoPlayer`/`Display` ownership, and synchronizes its frame cursor
+      to a main-realm `<video>` media clock. `engine_realm_boot.mjs` caches
+      transferred BGRA frames for synchronous `BinkCopyToBuffer` calls and
+      converts all original surface formats (BGR24, X8R8G8B8/BGRA, RGB555,
+      RGB565); late frames cannot resurrect closed handles. Browser volume and
+      seek events remain attached to the original Bink calls. The existing
+      threaded play gate now calls original `Display::playMovie("VSSmall")`,
+      requires multiple browser-decoded worker copies, captures the real W3D
+      viewport, stops through `Display::stopMovie`, and checks clean decoder
+      and worker teardown. The 2026-07-12 local run copied three RGB565 frames
+      with zero misses and captured the gold `VS_small` movie frame. Natural
+      full campaign/InGameUI coverage and complete Bink/audio synchronization
+      remain tracked in `TODO.md`.
 - Added `verify:bink-video-device-frontier` (`WebAssembly/tools/verify_bink_video_device_frontier.mjs`), a source-only frontier verifier that reads (never executes) the original Bink video device source/header, the wasm `shims/bink.h` declaration shim, and the wasm `CMakeLists.txt` compile frontier target. It pins the current original Bink video device frontier as exact source lines: `BinkVideoPlayer::init` (128) calls `VideoPlayer::init()` (131) then `initializeBinkWithMiles()` (133); `deinit` (140) calls `releaseHandleForBink()` (142) then `VideoPlayer::deinit()` (143); `open` (221) uses `BinkOpen` on the mod (233), localized (243), and fallback (249) paths then `createStream`; `createStream` (187) sets `m_handle` (200) and `BinkSetVolume` (210); `initializeBinkWithMiles` (283) calls `getHandleForBink` (286), `BinkSoundUseDirectSound` (290), and `BinkSetSoundTrack` (294); the `BinkVideoStream` destructor closes the handle via `BinkClose` (316); and `update`/`isFrameReady`/`frameDecompress`/`frameRender`/`frameNext`/`frameGoto`/`height`/`width`/`frameIndex`/`frameCount` map to `BinkWait`/`BinkDoFrame`/`BinkCopyToBuffer`/`BinkNextFrame`/`BinkGoto`/handle `Height`/`Width`/`FrameNum`/`Frames` fields. It also pins the header declarations and the declarations-only `shims/bink.h` contract, and emits JSON `{ ok, errors, sources, facts }`, exiting nonzero on any missing/moved hard fact. Runtime WebCodecs/`<video>` decode, frame upload, and audio sync remain open.
 - Added `inventory:bink-video-payloads` (`WebAssembly/tools/inventory_bink_video_payloads.mjs`), a source/data inventory preflight for shipped Bink video payloads. It reuses the existing BIGF directory-reading style from `inventory_startup_archives.mjs` / `inventory_audio_payloads.mjs`, indexes the current runtime BIG set plus any loose `.bik` files already present under the assets dir, sniffs a small header prefix from each entry, and classifies the leading signature (classic `BIK` or Bink 2 `KB2`) without decoding video. It emits JSON `{ ok, source, assetsDir, archiveCount, bigEntryCount, videoEntryCount, bikInBigCount, looseBikCount, byArchive, entries, looseBikFiles, dataCab, looseBikExtractionRequired, archives, errors, note }`, fails nonzero when archives cannot be read, and under `--expect-current-zh` pins the actually observed data: zero `.bik` entries inside the current Zero Hour runtime BIGs, and the assets dir in one of two honest loose-file states for the disc cabinet `Data1.cab` payloads (`GC_Background.bik` / `VS_small.bik`) — either not-yet-extracted (zero loose `.bik`, `looseBikExtractionRequired` true) or extracted (exactly those two loose `.bik` files with BIK/KB2 signatures). The runtime BIG set has no `.bik` entries and the disc cabinet is the only shipped Bink source, so loose Bink extraction is the prerequisite for any playback work. Runtime playback items in `TODO.md` M8 remain open.
 - [x] Preserve the shipped loose Bink payloads during runtime archive
@@ -11624,78 +11765,6 @@ mitigation track. Items resolved or retired by the pivot:
       `build:port:threaded:release` and a four-client headless networking/
       simulation run; GPU rasterization was disabled because the allowed GPU
       machines were intentionally not used, so this is not visual evidence.
-- [x] Replace the project-owned WebSocket signaling service with Trystero for
-      the simulated-LAN multiplayer path. The launcher now joins rooms through
-      redundant public Nostr relays, exchanges transport metadata during the
-      Trystero admission handshake, derives collision-checked private `10/8`
-      virtual addresses from peer IDs, and opens a dedicated reliable/ordered
-      `cnc-udp-v1` DataChannel so original encrypted LAN and lockstep datagrams
-      never enter the discovery protocol. The browser bundle is pinned and
-      reproducibly generated from Trystero 0.25.2 with its MIT notices included
-      in Pages/Cloudflare artifacts; the obsolete `/webrtc` server and launcher
-      URL setting are removed. A protocol-shaped local Nostr fixture makes CI
-      deterministic without becoming production infrastructure. Verified with
-      the two-context original `Transport::doSend/doRecv` gate, a public Nostr
-      relay run, and a complete two-player original LAN lobby-to-rendered-match
-      run with no dropped datagrams or CRC mismatch. A four-client threaded run
-      also formed all six peer links and started four original `Network`
-      instances before the memory-constrained SwiftShader host timed out.
-- [x] Fix periodic threaded WebRTC lockstep freezes caused by cross-port packet
-      loss. LANAPI port 8086 and game port 8088 still share the bounded worker
-      ring, but a per-port demultiplexer now defers mismatched datagrams instead
-      of destructively discarding them, preserves FIFO order per port, expires
-      stale lobby traffic explicitly, and records every drop. Reverse-poll-order
-      unit coverage proves interleaved lobby/game datagrams reach their intended
-      consumers, while the threaded match gate accounts every received 8088
-      trace through the engine. Paired captures showed the old bridge lost
-      23/317 and 16/198 active-game packets despite a healthy 3-7 ms ICE path;
-      two-machine manual testing confirmed the multi-second freezes and lag are
-      gone. Verified with `test:issue-recorder`, the diagnostics unit, a fresh
-      threaded release build, and the live two-machine match.
-- [x] Remove the browser-only lockstep batching feedback loop without changing
-      native timing. Emscripten connections cap frame grouping to one 30 Hz
-      logic tick (33 ms) and use the modern four-frame minimum run-ahead while
-      retaining original commands, ACKs, retries, and adaptation. The core
-      smoke pins both browser values; the threaded match adds CRC, grouping,
-      stall, logic-rate, and unexplained bridge-loss soak gates. SwiftShader is
-      unsuitable for the 28 FPS gate, but real two-machine LAN testing confirmed
-      smooth play after the change.
-- [x] Give browser multiplayer one consistent default identity and late-join
-      discovery contract. Fresh/migrated installs start in `default-room` with
-      a persisted funny commander name drawn from over 1.7 billion combinations
-      within the original 12-byte LAN limit; that identity reaches original
-      `LANPreferences`, so Settings, Trystero metadata, and the LAN lobby agree.
-      Production discovery now uses Trystero's maintained Nostr pool with
-      eight-way redundancy instead of a stale hardcoded five-relay list. A real
-      public-relay browser run held one peer alone for 12 seconds, then proved
-      late discovery, an ordered DataChannel, and byte-identical game transport;
-      the deterministic relay remains test-only. Verified with
-      `test:multiplayer-identity`, the launcher persistence browser check, and
-      deterministic/public late-join transport runs.
-- [x] Add opt-in, full-fidelity multiplayer diagnostics to issue dumps. The
-      Game & Display diagnostics toggle now records every encrypted original
-      Generals datagram with microsecond timestamps and complete payload hex,
-      DataChannel buffering/outcomes, shared main/engine-realm enqueue and
-      dequeue delay, channel/peer lifecycle, sanitized one-second
-      `RTCPeerConnection.getStats()` samples, main-thread long tasks, and
-      half-second original lockstep state. Engine samples include real logic /
-      execution frames, frame readiness, run-ahead/frame rate, measured ACK
-      latency/FPS/cushion, bandwidth, transport and command queues, per-slot
-      frame grouping, queued commands, and received/expected commands for the
-      execution frame. Capture is off by default, bounded with explicit
-      eviction/completeness counters, excludes TURN credentials and candidate
-      addresses, and cannot throw into the transport. Issue dumps embed the
-      recorder and the analysis decoder extracts packet, event, RTC, and
-      lockstep NDJSON plus heartbeat-gap summaries. The same recorder now owns
-      a compact in-game overlay with elapsed/event/packet counters, pause and
-      resume, issue annotation, and direct Save dump controls; it remains
-      available after pausing, so export no longer depends on closing the game
-      or returning to the desktop. Verified with the issue
-      recorder unit/UI/extraction suite, the two-context direct DataChannel
-      transport gate (byte-identical send/receive payloads and RTC samples), a
-      fresh threaded release build, and a complete two-player threaded LAN
-      lobby-to-playable match: 361/361 packets retained per client, zero
-      eviction, no CRC mismatch, no browser errors, and visible screenshots.
 - [x] Carry the LANAPI discovery/join/game-start flow through browser
       WebSocket binary frames. `lanapi_websocket_flow_smoke.mjs` boots two
       isolated Playwright contexts, builds the existing original LAN announce,
@@ -13758,6 +13827,16 @@ mitigation track. Items resolved or retired by the pivot:
       opaque black tile. Canvas sampling verified alpha 0 at all four corners
       and alpha 255 at the emblem center, and the served desktop was recaptured
       as `project-new-shoes-transparent-icon-desktop.png`.
+- [x] Kept the Project New Shoes taskbar accessible on iPhone and iPad Safari.
+      The desktop now follows the dynamic viewport height with a `vh` fallback,
+      and the taskbar, window layer, and Start menu reserve the bottom safe-area
+      inset instead of anchoring below the visible browser viewport. Extended
+      the launcher browser check with a 390x844 phone viewport, a reduced
+      390x664 phone viewport that models expanded browser chrome, and an
+      834x1112 tablet viewport. All three keep the taskbar inside the visible
+      bounds; the tablet Start menu is also fully contained. The full launcher
+      interaction suite and static launcher check passed, with phone, tablet,
+      short-screen, and desktop screenshots captured without layout regressions.
 - [x] Made browser installation atomic and self-healing. Versioned install
       roots swap manifests only after both persistent and per-tab copies are
       complete, Web Locks serialize cross-tab install/forget/verification,

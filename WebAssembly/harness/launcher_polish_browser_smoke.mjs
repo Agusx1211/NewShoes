@@ -9,6 +9,29 @@ const executablePath = process.env.LAUNCHER_POLISH_BROWSER
 const shotDir = process.env.LAUNCHER_POLISH_SHOTS || "/tmp/cnc-launcher-polish";
 await mkdir(shotDir, { recursive: true });
 
+async function assertTaskbarInVisibleViewport(page, label) {
+  const geometry = await page.evaluate(() => {
+    const desktop = document.querySelector("#desktop").getBoundingClientRect();
+    const taskbar = document.querySelector(".taskbar").getBoundingClientRect();
+    const viewport = window.visualViewport;
+    return {
+      desktop: { top: desktop.top, bottom: desktop.bottom, height: desktop.height },
+      taskbar: { top: taskbar.top, bottom: taskbar.bottom, height: taskbar.height },
+      visibleTop: viewport?.offsetTop ?? 0,
+      visibleBottom: (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight),
+      innerHeight: window.innerHeight,
+      dynamicViewportUnits: CSS.supports("height", "100dvh"),
+    };
+  });
+  assert.ok(geometry.taskbar.top >= geometry.visibleTop - 1,
+    `${label} taskbar must start inside the visible viewport: ${JSON.stringify(geometry)}`);
+  assert.ok(geometry.taskbar.bottom <= geometry.visibleBottom + 1,
+    `${label} taskbar must end inside the visible viewport: ${JSON.stringify(geometry)}`);
+  assert.ok(Math.abs(geometry.taskbar.bottom - geometry.desktop.bottom) <= 1,
+    `${label} taskbar must remain attached to the desktop bottom: ${JSON.stringify(geometry)}`);
+  return geometry;
+}
+
 const browser = await chromium.launch({ executablePath, headless: true, args: ["--ignore-certificate-errors"] });
 try {
   const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1365, height: 768 } });
@@ -75,14 +98,22 @@ try {
     for (const name of ["SkirmishScripts.scb", "MultiplayerScripts.scb", "Scripts.ini"]) {
       files.push(sourceFile(`${root}/Data/Scripts/${name}`, new Uint8Array([1, 2, 3, 4])));
     }
+    const bink = new Uint8Array(64);
+    bink.set(new TextEncoder().encode("BIKi"));
+    files.push(sourceFile(`${root}/Data/English/Movies/EA_LOGO.BIK`, bink));
     files.push(sourceFile(`${root}/PatchZH.big`, new Uint8Array([0, 1, 2, 3])));
     const result = await window.ZeroHAssetLibrary.scan(files);
+    window.ZeroHAssetLibrary.includeVideos = true;
+    const prepared = await window.ZeroHAssetLibrary.prepare("once");
     return {
       ok: result.ok,
       missing: result.missing,
       errors: result.errors,
       gensec: result.found.find((entry) => entry.name === "Gensec.big"),
       scripts: result.found.find((entry) => entry.name === "LooseScripts.big"),
+      videoCount: result.videoCount,
+      videoBytes: result.videoBytes,
+      preparedVideos: prepared.videos,
     };
   });
   assert.equal(steamFolderScan.ok, true);
@@ -90,6 +121,41 @@ try {
   assert.deepEqual(steamFolderScan.errors, []);
   assert.match(steamFolderScan.gensec?.source || "", /ZH_Generals\/gensec\.big$/);
   assert.equal(steamFolderScan.scripts?.sourceName, "loose installer scripts");
+  assert.equal(steamFolderScan.videoCount, 1);
+  assert.equal(steamFolderScan.videoBytes, 64);
+  assert.equal(steamFolderScan.preparedVideos?.length, 1);
+  assert.match(steamFolderScan.preparedVideos?.[0]?.opfsPath || "", /\/movies\/EA_LOGO\.BIK$/);
+  await page.evaluate(() => {
+    document.querySelectorAll("[data-wizard-page]").forEach((wizardPage) => {
+      const visible = wizardPage.dataset.wizardPage === "2";
+      wizardPage.classList.toggle("is-visible", visible);
+      wizardPage.setAttribute("aria-hidden", String(!visible));
+    });
+  });
+  const videoToggle = page.locator("#includeVideosToggle");
+  assert.equal(await videoToggle.isChecked(), false,
+    "optional videos must be disabled by default");
+  await page.locator(".option-tooltip").hover();
+  await page.locator("#includeVideosTooltip").waitFor({ state: "visible" });
+  assert.match(await page.locator("#includeVideosTooltip").textContent(), /0\.9 GB.*longer/i,
+    "the video option tooltip must explain its storage/time tradeoff");
+  await page.locator(".optional-content-copy").click();
+  assert.equal(await videoToggle.isChecked(), true,
+    "the optional-video install choice must be selectable");
+  await page.locator(".optional-content-copy").click();
+  assert.equal(await videoToggle.isChecked(), false,
+    "the optional-video install choice must return to its default-off state");
+  await page.locator(".option-tooltip").hover();
+  await page.waitForTimeout(200);
+  const videoOptionShot = join(shotDir, "optional-video-install-choice.png");
+  await page.screenshot({ path: videoOptionShot });
+  await page.evaluate(() => {
+    document.querySelectorAll("[data-wizard-page]").forEach((wizardPage) => {
+      const visible = wizardPage.dataset.wizardPage === "1";
+      wizardPage.classList.toggle("is-visible", visible);
+      wizardPage.setAttribute("aria-hidden", String(!visible));
+    });
+  });
 
   await page.getByRole("button", { name: "Game & Display settings" }).first().click();
   await page.waitForSelector("#settingsWindow.is-open #gamePanel:not([hidden])");
@@ -283,6 +349,7 @@ try {
   const mobileContext = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 390, height: 844 }, isMobile: true });
   const mobile = await mobileContext.newPage();
   await mobile.goto(baseUrl, { waitUntil: "domcontentloaded" });
+  const phoneTaskbar = await assertTaskbarInVisibleViewport(mobile, "phone portrait");
   const mobileGithubBox = await mobile.locator("[data-github-shortcut]").boundingBox();
   assert.ok(mobileGithubBox && mobileGithubBox.x >= 0 && mobileGithubBox.x + mobileGithubBox.width <= 390);
   await mobile.locator(".ownership-help details").first().click();
@@ -294,7 +361,30 @@ try {
   assert.equal(await mobile.locator(".settings-nav").evaluate((node) => getComputedStyle(node).display), "flex");
   const mobileShot = join(shotDir, "mobile-game-settings.png");
   await mobile.screenshot({ path: mobileShot });
+  await mobile.setViewportSize({ width: 390, height: 664 });
+  await mobile.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const phoneTaskbarWithBrowserChrome = await assertTaskbarInVisibleViewport(mobile, "phone with expanded browser chrome");
+  const phoneTaskbarShot = join(shotDir, "mobile-taskbar-phone.png");
+  await mobile.screenshot({ path: phoneTaskbarShot });
   await mobileContext.close();
+
+  const tabletContext = await browser.newContext({
+    ignoreHTTPSErrors: true,
+    viewport: { width: 834, height: 1112 },
+    deviceScaleFactor: 2,
+    isMobile: true,
+    hasTouch: true,
+  });
+  const tablet = await tabletContext.newPage();
+  await tablet.goto(baseUrl, { waitUntil: "domcontentloaded" });
+  const tabletTaskbar = await assertTaskbarInVisibleViewport(tablet, "tablet portrait");
+  await tablet.locator("#startButton").click();
+  const tabletStartBox = await tablet.locator("#startMenu").boundingBox();
+  assert.ok(tabletStartBox && tabletStartBox.y >= 0 && tabletStartBox.y + tabletStartBox.height <= 1112,
+    `tablet Start menu must remain inside the visible viewport: ${JSON.stringify(tabletStartBox)}`);
+  const tabletTaskbarShot = join(shotDir, "mobile-taskbar-tablet.png");
+  await tablet.screenshot({ path: tabletTaskbarShot });
+  await tabletContext.close();
 
   const shortContext = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1024, height: 500 } });
   const short = await shortContext.newPage();
@@ -326,7 +416,18 @@ try {
 
   process.stdout.write(`${JSON.stringify({
     ok: true,
-    screenshots: { fallbackShot, settingsShot, derivedShot, mobileOnboardingShot, mobileShot, shortShot },
+    screenshots: {
+      fallbackShot,
+      videoOptionShot,
+      settingsShot,
+      derivedShot,
+      mobileOnboardingShot,
+      mobileShot,
+      phoneTaskbarShot,
+      tabletTaskbarShot,
+      shortShot,
+    },
+    mobileTaskbar: { phoneTaskbar, phoneTaskbarWithBrowserChrome, tabletTaskbar },
     presentation,
     steamFolderScan,
     projectUrl: "https://github.com/Agusx1211/NewShoes",

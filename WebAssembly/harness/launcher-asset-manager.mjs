@@ -6,9 +6,9 @@ import {
   retailPresentationSource,
 } from "./launcher-retail-presentation.mjs";
 
-const INSTALLED_KEY = "zeroh-installed-library.v4";
-const OLD_INSTALLED_KEYS = ["zeroh-installed-library.v3", "zeroh-installed-library.v2", "zeroh-installed-library.v1"];
-const LIBRARY_VERSION = 4;
+const INSTALLED_KEY = "zeroh-installed-library.v5";
+const OLD_INSTALLED_KEYS = ["zeroh-installed-library.v4", "zeroh-installed-library.v3", "zeroh-installed-library.v2", "zeroh-installed-library.v1"];
+const LIBRARY_VERSION = 5;
 const HANDLE_DB = "zeroh-asset-handles";
 const HANDLE_STORE = "sources";
 const LIBRARY_MUTATION_LOCK = "zeroh-library-mutation";
@@ -164,6 +164,8 @@ class AssetLibrary {
     this.scanResult = null;
     this.presentationIconCandidate = null;
     this.preparedArchives = null;
+    this.preparedVideos = [];
+    this.includeVideos = false;
     this.queue = Promise.resolve();
     this.rememberedHandlesPromise = readHandles().catch(() => []);
     this.createWorker();
@@ -428,8 +430,10 @@ class AssetLibrary {
         mode,
         namespaceRoot,
         installRoot,
+        includeVideos: this.includeVideos === true,
       }, onProgress);
       this.preparedArchives = result.archives;
+      this.preparedVideos = result.videos ?? [];
       result.effectiveMode = mode;
       if (mode === "install" && !persistenceGranted) {
         result.warning = {
@@ -438,13 +442,18 @@ class AssetLibrary {
         };
       }
       if (mode === "install" && result.installed) {
+        const installedArchives = result.installed.archives ?? [];
+        const installedVideos = result.installed.videos ?? [];
         const manifest = {
           version: LIBRARY_VERSION,
           game: "zeroHour",
           root: installRoot,
           preparedAt: Date.now(),
-          totalBytes: result.installed.reduce((sum, archive) => sum + archive.bytes, 0),
-          archives: result.installed,
+          totalBytes: [...installedArchives, ...installedVideos]
+            .reduce((sum, file) => sum + file.bytes, 0),
+          includeVideos: installedVideos.length > 0,
+          archives: installedArchives,
+          videos: installedVideos,
         };
         if (!storageSet(INSTALLED_KEY, JSON.stringify(manifest))) {
           throw new Error("Browser storage could not save the installed-library manifest");
@@ -495,6 +504,7 @@ class AssetLibrary {
           || value?.game !== "zeroHour"
           || !/^cnc-library\/install-[a-z0-9-]+$/i.test(value.root ?? "")
           || !Array.isArray(value.archives)
+          || !Array.isArray(value.videos)
           || value.archives.length !== REQUIRED_ARCHIVE_NAMES.length) return null;
       const names = new Set(value.archives.map((archive) => archive?.name));
       if (names.size !== REQUIRED_ARCHIVE_NAMES.length
@@ -502,7 +512,12 @@ class AssetLibrary {
       if (value.archives.some((archive) => archive.opfsPath !== `${value.root}/${archive.name}`
           || !Number.isSafeInteger(archive.bytes) || archive.bytes <= 16
           || !Number.isSafeInteger(archive.entryCount) || archive.entryCount <= 0)) return null;
-      const totalBytes = value.archives.reduce((sum, archive) => sum + archive.bytes, 0);
+      if (value.videos.some((video) => !/^[A-Za-z0-9_.-]+\.bik$/i.test(video.name)
+          || video.opfsPath !== `${value.root}/movies/${video.name}`
+          || !Number.isSafeInteger(video.bytes) || video.bytes <= 48)) return null;
+      if (value.includeVideos !== (value.videos.length > 0)) return null;
+      const totalBytes = [...value.archives, ...value.videos]
+        .reduce((sum, file) => sum + file.bytes, 0);
       if (!Number.isSafeInteger(value.totalBytes) || value.totalBytes !== totalBytes) return null;
       return value;
     } catch {
@@ -530,6 +545,13 @@ class AssetLibrary {
       for (const archive of installed.archives) {
         const file = await (await directory.getFileHandle(archive.name, { create: false })).getFile();
         if (file.size !== archive.bytes) throw new Error(`${archive.name} size changed`);
+      }
+      if (installed.videos.length) {
+        const movies = await directory.getDirectoryHandle("movies", { create: false });
+        for (const video of installed.videos) {
+          const file = await (await movies.getFileHandle(video.name, { create: false })).getFile();
+          if (file.size !== video.bytes) throw new Error(`${video.name} size changed`);
+        }
       }
       await this.collectInstalledRoots(installed.root);
       return installed;
@@ -586,6 +608,8 @@ class AssetLibrary {
     if (installed) {
       onProgress?.({ detail: "Installed Zero Hour library", completed: 1, total: 1 });
       this.preparedArchives = installed.archives.map((archive) => ({ ...archive }));
+      this.preparedVideos = installed.videos.map((video) => ({ ...video }));
+      this.includeVideos = installed.includeVideos;
       return this.preparedArchives;
     }
     throw new Error("Prepare your game library before launching");
@@ -629,6 +653,7 @@ class AssetLibrary {
       String(archive.opfsPath || "").split("/").slice(0, 2).join("/"))
       .filter((path) => path.startsWith(`${RUNTIME_ROOT}/`)));
     this.preparedArchives = null;
+    this.preparedVideos = [];
     for (const path of roots) {
       if (path) await this.request("discard", { path }).catch(() => {});
     }

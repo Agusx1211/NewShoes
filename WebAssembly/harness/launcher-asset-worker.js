@@ -1,9 +1,10 @@
 /* Browser-local installer media reader for the Project New Shoes launcher.
  *
  * The worker accepts loose installed-game files, ISO 9660 images, and raw
- * MODE1/2352 BIN images. It extracts only the original BIG archives needed by
- * cnc-port and writes them directly to OPFS. Microsoft Cabinet/MSZIP is the
- * format used by the original Generals and Zero Hour installer discs.
+ * MODE1/2352 BIN images. It extracts the original BIG archives needed by
+ * cnc-port plus optional loose Bink movies, and writes them directly to OPFS.
+ * Microsoft Cabinet/MSZIP is the format used by the original Generals and
+ * Zero Hour installer discs.
  */
 
 "use strict";
@@ -425,6 +426,12 @@ async function scanSources(files, requestId) {
         });
         continue;
       }
+      if (lower.endsWith(".bik")) {
+        addCandidate(leaf, directEdition(item.path, directoryKinds, leaf), {
+          kind: "reader", reader: new BlobReader(item.file, item.path), label: item.path,
+        });
+        continue;
+      }
       if (lower === "generalszh.ico" || lower === "generals.exe") {
         addCandidate(leaf, directEdition(item.path, directoryKinds, leaf), {
           kind: "reader", reader: new BlobReader(item.file, item.path), label: item.path,
@@ -481,6 +488,7 @@ async function scanSources(files, requestId) {
   }
 
   const selection = resolveCatalog();
+  const videoSelection = resolveVideoCatalog();
   const presentationCandidate = chooseCandidate("GeneralsZH.ico", "zh")
     || chooseCandidate("generals.exe", "zh");
   let presentationIcon = null;
@@ -508,6 +516,8 @@ async function scanSources(files, requestId) {
     found: selection.found,
     missing: selection.missing,
     totalBytes: selection.totalBytes,
+    videoCount: videoSelection.selected.length,
+    videoBytes: videoSelection.totalBytes,
     errors,
     presentationIcon,
   };
@@ -581,6 +591,33 @@ function resolveCatalog() {
     totalBytes += size;
   }
   return { selected, found, missing, totalBytes };
+}
+
+function resolveVideoCatalog() {
+  const selected = [];
+  let totalBytes = 0;
+  for (const sourceName of [...catalog.keys()]
+    .filter((name) => name.endsWith(".bik"))
+    .sort((left, right) => left.localeCompare(right, "en", { sensitivity: "base" }))) {
+    const candidate = chooseCandidate(sourceName, "zh", ["zh", "base"]);
+    if (!candidate) continue;
+    const size = candidate.kind === "cab" ? candidate.entry.size : candidate.reader.size;
+    selected.push({
+      archive: { name: candidate.sourceName, sourceName: candidate.sourceName },
+      kind: candidate.kind,
+      candidate,
+      size,
+      video: true,
+    });
+    totalBytes += size;
+  }
+  return { selected, totalBytes };
+}
+
+function targetOutputPath(outputRoot, target) {
+  return target.video
+    ? `${outputRoot}/movies/${target.archive.name}`
+    : `${outputRoot}/${target.archive.name}`;
 }
 
 async function getDirectory(path, create = true) {
@@ -694,7 +731,7 @@ async function extractCabGroup(cabinet, targets, requestId, progress, outputRoot
     const outputs = new Map();
     try {
       for (const target of folderTargets) {
-        outputs.set(target, await openOutput(`${outputRoot}/${target.archive.name}`));
+        outputs.set(target, await openOutput(targetOutputPath(outputRoot, target)));
       }
       let dataCursor = folder.dataOffset;
       let folderCursor = 0;
@@ -748,8 +785,11 @@ async function extractCabGroup(cabinet, targets, requestId, progress, outputRoot
         }
         const magic = new Uint8Array(4);
         output.read(magic, { at: 0 });
-        if (ascii(magic, 0, 4) !== "BIGF") {
-          throw new Error(`${target.archive.name}: extracted file is not a BIGF archive`);
+        const valid = target.video
+          ? ["BIK", "KB2"].includes(ascii(magic, 0, 3))
+          : ascii(magic, 0, 4) === "BIGF";
+        if (!valid) {
+          throw new Error(`${target.archive.name}: extracted file has an invalid ${target.video ? "Bink" : "BIGF"} header`);
         }
       }
     } finally {
@@ -886,16 +926,17 @@ async function readCabEntryGroup(cabinet, entries, maxBytes = MAX_LOOSE_SCRIPT_B
 }
 
 async function materializeSelection(selection, outputRoot, requestId,
-    progress = { completed: 0, total: selection.totalBytes }) {
+    progress = { completed: 0, total: selection.totalBytes }, videoSelection = { selected: [] }) {
   const cabGroups = new Map();
-  for (const target of selection.selected) {
+  const targets = [...selection.selected, ...videoSelection.selected];
+  for (const target of targets) {
     if (target.kind === "cab") {
       if (!cabGroups.has(target.candidate.cabinet)) cabGroups.set(target.candidate.cabinet, []);
       cabGroups.get(target.candidate.cabinet).push(target);
     } else if (target.kind === "scripts") {
       await writeLooseScripts(target, outputRoot, requestId, progress);
     } else {
-      await copyReader(target.candidate.reader, `${outputRoot}/${target.archive.name}`,
+      await copyReader(target.candidate.reader, targetOutputPath(outputRoot, target),
         requestId, progress);
     }
   }
@@ -914,7 +955,19 @@ async function materializeSelection(selection, outputRoot, requestId,
       await readOpfsFile(archive.opfsPath), archive.name, spec?.requiredEntries);
     archive.entryCount = validation.entryCount;
   }
-  return archives;
+  const videos = videoSelection.selected.map((target) => ({
+    name: target.archive.name,
+    bytes: target.size,
+    opfsPath: targetOutputPath(outputRoot, target),
+  }));
+  for (const video of videos) {
+    const reader = await readOpfsFile(video.opfsPath);
+    const magic = ascii(await reader.read(0, 4), 0, 3);
+    if (reader.size !== video.bytes || !["BIK", "KB2"].includes(magic)) {
+      throw new Error(`${video.name}: prepared Bink payload failed validation`);
+    }
+  }
+  return { archives, videos };
 }
 
 async function prepare(request, requestId) {
@@ -927,13 +980,19 @@ async function prepare(request, requestId) {
   if (!installRoot && !namespaceRoot) throw new Error("Invalid launcher archive namespace");
   if (request.mode === "install" && !installRoot) throw new Error("Invalid browser install namespace");
   const outputRoot = installRoot || namespaceRoot;
+  const videoSelection = request.includeVideos === true
+    ? resolveVideoCatalog() : { selected: [], totalBytes: 0 };
   const progress = {
     completed: 0,
-    total: selection.totalBytes,
+    total: selection.totalBytes + videoSelection.totalBytes,
   };
   try {
-    const archives = await materializeSelection(selection, outputRoot, requestId, progress);
-    return { archives, installed: installRoot ? archives : null };
+    const materialized = await materializeSelection(
+      selection, outputRoot, requestId, progress, videoSelection);
+    return {
+      ...materialized,
+      installed: installRoot ? materialized : null,
+    };
   } catch (error) {
     if (namespaceRoot) await removeOpfsPath(namespaceRoot).catch(() => {});
     if (installRoot) await removeOpfsPath(installRoot).catch(() => {});

@@ -24,6 +24,7 @@
 !/assets/docs/docsearch.py
 
 # Local configuration, certificates, and issue captures
+/AGENTS_PRIVATE.md
 .env
 .env.*
 !.env.example

@@ -23,6 +23,17 @@ shares structure and follows behind.
       `npm run test:pages-worker-rollout` when changing the Pages bootstrap or
       isolation worker; the production deployment gate continues to prove a
       fresh isolated root boot, reload, pthread heap, and OffscreenCanvas.
+      2026-07-12: forced-reload recovery coverage now passes along with five
+      consecutive local pinned-worker rollouts; constrained shared-CI
+      stability remains the open part of this item.
+- [ ] Reproduce the first `archive mount failed` half of the 2026-07-12 Reddit
+      long-session report independently from its now-reproduced force-reload
+      isolation failure. Capture the visible launch detail or issue dump, and
+      exercise background freeze/discard plus fresh-document relaunch against
+      a persistent installed archive set to distinguish an engine-realm death
+      from OPFS staging or sync-handle contention. Do not infer that cause from
+      the bootstrap failure alone; the reporter confirmed only that restarting
+      Chrome recovered both symptoms.
 
 MERGED to `main` (verified, clean, green build): perf-drawstate (state-skip perf + geometry/texture correctness fixes), zorder-fix (RTT null-FBO depth-pollution fix — 0 FBO failures), audio-ini-fix (non-Default audio INI entries → audio subsystem inits plus base-Generals `Music.big` extraction), live-skirmish-start, mounted MSS stream playback, DXT CPU fallback and DXT1/2/3/4/5 browser draw coverage, draw-order-fix (D3DRS_ZBIAS 24-bit depth-bias scale in bridge.js — commit 33641ab).
 
@@ -481,12 +492,6 @@ Dev-box render-verify: symlink worktree `dist/` → main's built `dist/` renders
 
 ## Launcher follow-ups
 
-- [ ] Reproduce and fix the owner-reported runtime close hang from a live game.
-      The in-game issue-capture overlay now lets a user export a dump without
-      closing the engine, but that is only a diagnostics workaround; closing
-      must still complete save persistence, network/audio shutdown, worker and
-      OPFS release, canvas retirement, and the return to the desktop.
-
 - [ ] Support non-English retail archive sets in the ownership scanner and
       locally derived launcher presentation. The current launcher explains and
       validates the English archive contract explicitly; adding another locale
@@ -809,11 +814,6 @@ DONE.md with reasons.
       summaries) still read the MAIN scratch executor or answer
       explicit-unsupported — route worker-side equivalents through the
       `textureInventory`-style realm commands when a probe needs them;
-      (c-remainder) Bink hooks are installed in NEITHER realm on the play
-      path (movies cleanly skip via the provider's absent-hook path — parity
-      proven by the gate's menu-reached check); when a real movie-playback
-      consumer lands main-side (browser-video manifest + WebCodecs sidecar),
-      install matching forwarders in engine_realm_boot.mjs;
       (e-remainder) issue-recorder deep capture's direct `window.__cnc*`
       globals (`__cncSetDiagLevel`, `__cncD3D8PerfSummary`,
       `__cncSetD3D8SceneDrawHistoryLimit`) touch the main scratch executor in
@@ -1169,6 +1169,18 @@ symptom is temporal — NOT a single still.
       stability profiling MUST inject synthetic 60Hz pointermove + live
       combat audio during measured passes or it will keep missing
       input/audio-correlated GC dips.
+      2026-07-12: the lite D3D8 executor now decodes native clip-plane,
+      material, and light payloads only when the active render state can reach
+      the shader, shares immutable disabled-state objects, and reuses fixed
+      typed-array scratch storage for light uniform uploads. An RTX 4080
+      Vulkan/ANGLE 600-frame production-style A/B (`realEngineFrameTick`, no
+      per-draw producer timing) skipped 79.05 clip payloads, 44.39 material
+      payloads, and 44.39 eight-light payloads per frame. Versus the unchanged
+      executor, engine frame time moved avg 7.59 → 6.87 ms, median 7.4 → 6.8,
+      p95 10.0 → 9.0, p99 11.9 → 10.4, and max 14.4 → 12.4; end-to-end RPC
+      wall time moved avg 11.46 → 10.72 ms and p95 15.29 → 14.51. Keep this
+      item open for combat/input/audio-correlated GC tracing and the structural
+      command buffer.
 - [ ] **GPU-process command volume is THE frame-rate cap (2026-07-09 play-trace
       finding)** — a 286s Chrome trace of real play on the Mac (Metal) showed
       the Chrome GPU process 90-98% busy for the entire match (~22ms
@@ -3228,8 +3240,6 @@ residue and the next frontier.
 
 ## M8 — Video (Bink → WebCodecs)
 
-- [ ] Re-target `VideoDevice/Bink` (`BinkVideoPlayer`/`VideoStream`) to WebCodecs
-      or `<video>`.
 - [ ] Extend the current browser Bink provider from real-file open/header parsing
       and frame-cursor lifecycle to actual decoded frame copy/upload through
       WebCodecs or a deliberate decoder path; `test:bink-video-provider` now
@@ -3305,6 +3315,14 @@ residue and the next frontier.
       `InGameUI::freeMessageResources`, transition-handler calls, production
       `SkirmishBattleHonors` persistence, and real `GameLODManager` singleton
       ownership), and Bink/audio sync drive the same video surface.
+- [ ] Repair the final generic D3D draw in
+      `test:bink-w3d-video-presentation-browser`. Two isolated 2026-07-12 runs
+      passed every Bink-specific case through the 551-presentation Challenge
+      flow, then the smoke's trailing generic `W3DDisplay` draw consumed
+      corrupted render-state values and rendered black. The production
+      threaded movie gate is green, so keep this scoped to the focused smoke's
+      post-video state/lifetime corruption unless a real runtime reproduction
+      appears.
 - [ ] Promote the provider-owned WebM sidecar manifest metadata into the
       original `BinkVideoPlayer` runtime path: connect a browser video
       presentation handle to `BinkVideoStream` open/play/seek/frame progression
@@ -3515,7 +3533,11 @@ residue and the next frontier.
       It is source-only and does NOT complete runtime Bink audio playback,
       per-frame audio-clock frame progression (`BinkWait`), or a Web Audio /
       DirectSound handoff; those remain open.
-- [ ] Logo / intro movie plays.
+- [ ] Make the optional-video installer generate and cache browser-decodable
+      sidecars entirely in the browser from the selected user-owned BIK files.
+      The current development/runtime path consumes host-prepared WebM
+      sidecars; production installation must stay local and cannot depend on
+      copyrighted derivatives being deployed with the site.
 - [ ] Mission briefing / cutscene playback with audio sync.
 - [ ] In-engine video surfaces (e.g. comms video) render to a texture.
 - [ ] Skippable; integrates with game flow/state machine.
@@ -3572,16 +3594,15 @@ residue and the next frontier.
       follow-on now extends that endpoint through `Network::update` and a
       two-client match-sync harness, replacing the relay-shaped
       byte path with a reliable ordered `RTCDataChannel` peer mesh, routes
-      unicast by deterministic peer-derived virtual IPv4 address, fans LAN
-      broadcasts out to every peer, and preserves source IP/port metadata
-      through the original wasm UDP seam. Trystero uses redundant Nostr relays
-      only for decentralized discovery and encrypted SDP exchange, while game
-      traffic uses a separate dedicated DataChannel. The two-context harness
+      unicast by signaling-assigned virtual IPv4 address, fans LAN broadcasts
+      out to every peer, and preserves source IP/port metadata through the
+      original wasm UDP seam. WebSocket is signaling-only (room membership,
+      SDP, ICE) and rejects binary game payloads. The two-context harness
       proves original encrypted `Transport::doSend/doRecv`, CRC validation,
       `ConnectionManager::doRelay`, and `FrameDataManager` readiness across a
-      direct DataChannel with zero game bytes sent through discovery relays.
+      direct DataChannel with zero game bytes relayed by the server.
       Remaining work is long-session soak coverage, reconnect/disconnect
-      handling, more than four players, and authenticated invitations.
+      handling, more than four players, and public deployment hardening.
 - [ ] Validate long-session lockstep determinism, disconnect behavior, and
       recovery across browser clients. Short live match sync through
       `FrameData`/`FrameDataManager`/`ConnectionManager` is complete.
@@ -3628,16 +3649,11 @@ residue and the next frontier.
       two-client gate carries it through map load and live match sync.
 - [ ] GameSpy matchmaking/chat (`GameSpy*`) → modern relay or stub gracefully.
 - [ ] NAT/firewall helpers replaced by WebRTC ICE.
-- [ ] Add authenticated invitations and abuse-resistant public matchmaking on
-      top of decentralized Trystero discovery. Shared room codes currently act
-      as discovery secrets; they are not accounts, moderation, revocation, or
-      durable room authorization.
-- [ ] Measure and, if needed, reduce Trystero's 20-offer warm pool cost with
-      four to eight full game clients. The 2026-07-12 four-client threaded
-      SwiftShader run formed the complete mesh and started all original
-      `Network` instances, but this 22 GiB development host exhausted RAM/swap
-      before the post-load frame query completed; keep the existing real-GPU
-      four-client follow-up and add a browser peer-connection/memory profile.
+- [ ] Harden a public signaling deployment with TLS termination,
+      authentication/room authorization, rate limits, and abuse controls. The
+      bundled signaling service is sufficient for trusted LAN/testing and
+      carries no game bytes, but is intentionally not an unauthenticated public
+      matchmaking service.
 - [ ] Cross-client **determinism** validated (no desync) over many frames.
       The four-client threaded WebRTC match gate now proves a short live run
       with no CRC mismatch; extend this to a long soak with periodic state
@@ -3793,6 +3809,27 @@ and then start with the PROFILE, not with any individual fix.
       payload object allocation, but the TODO stays open for remaining derived
       state objects, material/light/clip arrays, broader zero-copy / command
       buffering, and DevTools memory proof of reduced GC frequency.
+      2026-07-12: unused material/light/clip payload graphs are now skipped on
+      derived-cache misses in lite gameplay, disabled clip/light state shares
+      immutable fallbacks, and fixed-light uniform flattening reuses typed
+      scratch arrays. RTX 4080 shell-map measurement skipped all 79.05
+      clip-plane payload decodes plus 44.39 material and 44.39 eight-light
+      decodes per frame; active skirmish after 1200 AI frames skipped 73.33,
+      35.33, and 35.33 per frame respectively while retaining full state in
+      diagnostic mode. The broader TODO stays open for remaining render-state
+      objects, command buffering, and a DevTools memory/GC proof.
+      2026-07-12: a follow-up removed per-state callback closures, composite
+      state-key strings, per-draw no-op profiling closures, and the full
+      diagnostic applied-state object graph from lite gameplay. Two RTX 4080
+      shell-map runs averaged 2.1% lower wall time and 3.7% lower engine time,
+      with wall p95/p99 down 3.8%/3.9% and engine p99 down 15.1%. Full
+      diagnostics retain the complete state graph and warning/counter paths.
+      A subsequent isolated pass flattened the remaining lite uniform state
+      and replaced the per-rebuild base-uniform array/string key with a fixed
+      exact snapshot. Across three final retained-state runs versus the fresh
+      RTX baseline, wall/engine averages improved 3.2%/4.6% and wall/engine
+      p99 improved 5.0%/7.7%. Exact stage and alpha/fog snapshots were rejected
+      because their small average gain worsened p95/p99.
       Verify future work with p95/p99 frame time + a DevTools memory timeline.
       (by Claude)
 - [ ] **Optimize the real `HeightMap.render.tilePasses` bucket, not terrain

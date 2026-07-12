@@ -11,6 +11,36 @@ GitHub remains the build system and source of the audited artifact. Do not also
 connect this repository through Cloudflare's Git integration: a Pages project
 created for Direct Upload cannot later switch deployment modes.
 
+## Pull request previews
+
+Every successful pull request from a branch in this repository publishes the
+same audited direct-header artifact to a stable Cloudflare preview alias:
+
+```text
+https://pr-<number>.<project>.pages.dev/
+```
+
+GitHub attaches that URL to the pull request commit as a transient deployment,
+so the pull request shows a **View deployment** link. Later commits update the
+same alias. This stable origin is intentional: installed retail files live in
+origin-private browser storage, so changing to a per-commit hostname would make
+the player select or install those files again after every update.
+
+The preview handoff has two trust levels. `ci.yml` builds, audits, boots, and
+uploads the static `cloudflare-dist` artifact without Cloudflare credentials.
+After CI succeeds, `pr-preview.yml` runs from the workflow definition on the
+default branch, downloads that immutable artifact, and performs the upload with
+the protected `cloudflare-pages` environment. It does not check out or execute
+pull request code. Pull requests from forks are deliberately excluded because
+they are not trusted to request a credentialed deployment.
+
+No additional Cloudflare project or GitHub secret is required after the
+production setup below. The protected environment remains restricted to
+`main`: the credentialed handoff itself runs on `main`, while the artifact it
+publishes is tied to the pull request head SHA. Preview sites remain asset-free
+and never contain retail game data. Cloudflare marks preview deployments
+`noindex` automatically.
+
 ## One-time Cloudflare setup
 
 1. Create a **Pages / Direct Upload** project. Record its project name.

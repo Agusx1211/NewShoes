@@ -131,6 +131,7 @@ canvas.addEventListener("webglcontextrestored", () => {
 });
 
 let d3d8DrawProgram = null;
+let d3d8ParticleProgram = null;
 // Fixed-function vertex/fragment GLSL sources, stashed when the FF draw
 // program is built; translated SM1 shaders link against them for mixed pairs
 // (FF vertex + translated pixel, translated vertex + FF pixel cascade — the
@@ -208,7 +209,6 @@ const d3d8DrawMatrixScratch = {
 };
 let d3d8CurrentVertexArray = null;
 let d3d8CurrentVertexArrayKey = null;
-let d3d8LastBaseUniformKey = null;
 let d3d8LastMaterialUniformInfo = null;
 let d3d8LastFixedLightUniformKey = null;
 let d3d8LastStageUniformKey = null;
@@ -251,11 +251,27 @@ function d3d8RenderGlStateValueChanged(key, value) {
     d3d8CurrentRenderGlState = {};
   }
   if (d3d8CurrentRenderGlState[key] === value) {
-    d3d8PerfStats.drawRenderStateGlCacheHits += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.drawRenderStateGlCacheHits += 1;
     return false;
   }
   d3d8CurrentRenderGlState[key] = value;
-  d3d8PerfStats.drawRenderStateGlCacheMisses += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawRenderStateGlCacheMisses += 1;
+  return true;
+}
+
+function d3d8RenderGlStateTupleChanged(key, first, second, third, fourth) {
+  if (!d3d8CurrentRenderGlState) {
+    d3d8CurrentRenderGlState = {};
+  }
+  const previous = d3d8CurrentRenderGlState[key];
+  if (previous !== undefined &&
+      previous[0] === first && previous[1] === second &&
+      previous[2] === third && previous[3] === fourth) {
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.drawRenderStateGlCacheHits += 1;
+    return false;
+  }
+  d3d8CurrentRenderGlState[key] = [first, second, third, fourth];
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawRenderStateGlCacheMisses += 1;
   return true;
 }
 
@@ -267,12 +283,6 @@ function setD3D8TrackedCapability(capability, key, enabled) {
     } else {
       gl.disable(capability);
     }
-  }
-}
-
-function applyD3D8TrackedGlState(key, value, apply) {
-  if (d3d8RenderGlStateValueChanged(key, value)) {
-    apply();
   }
 }
 
@@ -428,6 +438,24 @@ const D3DTA_COMPLEMENT = 0x00000010;
 const D3DTA_ALPHAREPLICATE = 0x00000020;
 const D3DTA_SUPPORTED_MODIFIERS = D3DTA_COMPLEMENT | D3DTA_ALPHAREPLICATE;
 const D3D8_CLIP_PLANE_COUNT = 6;
+const d3d8LastBaseUniformSnapshot = {
+  valid: false,
+  useTransforms: false,
+  pretransformed: false,
+  viewportX: 0,
+  viewportY: 0,
+  viewportWidth: 0,
+  viewportHeight: 0,
+  depthBiasNdc: 0,
+  clipPlaneMask: 0,
+  flatShade: false,
+  lightingEnabled: false,
+  specularEnabled: false,
+  normalizeNormals: false,
+  localViewer: false,
+  colorVertex: false,
+  clipPlanes: new Float32Array(D3D8_CLIP_PLANE_COUNT * 4),
+};
 const D3DTSS_TCI_PASSTHRU = 0x00000000;
 const D3DTSS_TCI_CAMERASPACENORMAL = 0x00010000;
 const D3DTSS_TCI_CAMERASPACEPOSITION = 0x00020000;
@@ -461,6 +489,7 @@ const D3DFVF_NORMAL = 0x010;
 const D3DFVF_DIFFUSE = 0x040;
 const D3DFVF_SPECULAR = 0x080;
 const D3DFVF_TEX1 = 0x100;
+const D3DFVF_TEX2 = 0x200;
 
 const D3DFVF_TEXCOUNT_MASK = 0xf00;
 const D3DFVF_TEXCOUNT_SHIFT = 8;
@@ -573,11 +602,18 @@ const d3d8PerfStats = {
   sm1ShaderDraws: 0,
   sm1TranslatedVsDraws: 0,
   sm1FallbackDraws: 0,
+  particleProgramDraws: 0,
   drawMatrixNormalizations: 0,
   drawMatrixScratchCopies: 0,
   drawMatrixAllocatedCopies: 0,
   drawPayloadCalls: 0,
   drawPayloadReused: 0,
+  drawClipPlanePayloadCopies: 0,
+  drawClipPlanePayloadSkips: 0,
+  drawMaterialPayloadCopies: 0,
+  drawMaterialPayloadSkips: 0,
+  drawLightPayloadCopies: 0,
+  drawLightPayloadSkips: 0,
   drawDerivedCacheHits: 0,
   drawDerivedCacheMisses: 0,
   drawUniformCacheHits: 0,
@@ -706,11 +742,11 @@ const d3d8PerfStats = {
   bufferMirrorSkippedBytes: 0,
 };
 
-// Per-GL-op timing instrumentation. performance.now() twice around every GL
-// call is measurable overhead in draw-flood frames, so lite diag disables the
-// clock reads (counters keep counting; *Ms stats read 0). Full diag or
-// __cncSetD3D8PerfTiming(true) re-enables real timing.
+// Per-GL-op diagnostics are useful to the harness but measurable in draw-flood
+// frames. Lite mode keeps both clocks and counters out of the human-play hot
+// path; full diagnostics and explicit profiler overrides restore them.
 let d3d8PerfTimingEnabled = true;
+let d3d8PerfCountersEnabled = true;
 function perfNow() {
   if (!d3d8PerfTimingEnabled) {
     return 0;
@@ -743,7 +779,7 @@ function noteD3D8BufferProducerUpdate({
   orphaned,
   resized,
 }) {
-  if (!d3d8BufferProducerTrackingEnabled || !resource) {
+  if (!resource) {
     return;
   }
   const label = bufferProducerLabel(producer);
@@ -936,7 +972,7 @@ function d3d8DrawProducerSummary() {
 }
 
 function resetD3D8UniformSubgroupCaches() {
-  d3d8LastBaseUniformKey = null;
+  d3d8LastBaseUniformSnapshot.valid = false;
   d3d8LastMaterialUniformInfo = null;
   d3d8LastFixedLightUniformKey = null;
   d3d8LastStageUniformKey = null;
@@ -984,6 +1020,8 @@ function d3d8ViewportInputMatches(input, payload, bufferWidth, bufferHeight) {
 
 function d3d8PerfSummary() {
   return {
+    countersEnabled: d3d8PerfCountersEnabled,
+    timingEnabled: d3d8PerfTimingEnabled,
     draws: d3d8PerfStats.draws,
     drawElements: d3d8PerfStats.drawElements,
     drawIndices: d3d8PerfStats.drawIndices,
@@ -1010,11 +1048,18 @@ function d3d8PerfSummary() {
     sm1ShaderDraws: d3d8PerfStats.sm1ShaderDraws,
     sm1TranslatedVsDraws: d3d8PerfStats.sm1TranslatedVsDraws,
     sm1FallbackDraws: d3d8PerfStats.sm1FallbackDraws,
+    particleProgramDraws: d3d8PerfStats.particleProgramDraws,
     drawMatrixNormalizations: d3d8PerfStats.drawMatrixNormalizations,
     drawMatrixScratchCopies: d3d8PerfStats.drawMatrixScratchCopies,
     drawMatrixAllocatedCopies: d3d8PerfStats.drawMatrixAllocatedCopies,
     drawPayloadCalls: d3d8PerfStats.drawPayloadCalls,
     drawPayloadReused: d3d8PerfStats.drawPayloadReused,
+    drawClipPlanePayloadCopies: d3d8PerfStats.drawClipPlanePayloadCopies,
+    drawClipPlanePayloadSkips: d3d8PerfStats.drawClipPlanePayloadSkips,
+    drawMaterialPayloadCopies: d3d8PerfStats.drawMaterialPayloadCopies,
+    drawMaterialPayloadSkips: d3d8PerfStats.drawMaterialPayloadSkips,
+    drawLightPayloadCopies: d3d8PerfStats.drawLightPayloadCopies,
+    drawLightPayloadSkips: d3d8PerfStats.drawLightPayloadSkips,
     drawDerivedCacheHits: d3d8PerfStats.drawDerivedCacheHits,
     drawDerivedCacheMisses: d3d8PerfStats.drawDerivedCacheMisses,
     drawUniformCacheHits: d3d8PerfStats.drawUniformCacheHits,
@@ -1634,7 +1679,7 @@ function syncCanvasSize(options = {}) {
     invalidateD3D8NormalizedViewportCache();
   }
   if (gl && restoreViewport) {
-    restoreFullCanvasViewport();
+    restoreFullRenderTargetViewport();
   } else if (resized) {
     invalidateD3D8AppliedViewportCache();
   }
@@ -1667,7 +1712,7 @@ function onD3D8BackbufferResize(width, height, source = "engine") {
   invalidateD3D8NormalizedViewportCache();
   invalidateD3D8AppliedViewportCache();
   if (gl) {
-    restoreFullCanvasViewport();
+    restoreFullRenderTargetViewport();
   }
   refreshCanvasState();
   recordLog("d3d8 backbuffer resize", { width: bufferWidth, height: bufferHeight, source });
@@ -1715,24 +1760,32 @@ function clampNumber(value, min, max, fallback) {
   return Math.max(min, Math.min(max, finiteNumber(value, fallback)));
 }
 
-function currentDrawingBufferSize() {
+function currentRenderSurfaceSize() {
+  if (d3d8CurrentFramebuffer !== null &&
+      d3d8CurrentFramebufferWidth > 0 && d3d8CurrentFramebufferHeight > 0) {
+    return {
+      width: d3d8CurrentFramebufferWidth,
+      height: d3d8CurrentFramebufferHeight,
+    };
+  }
   return {
     width: gl ? gl.drawingBufferWidth : canvas.width,
     height: gl ? gl.drawingBufferHeight : canvas.height,
   };
 }
 
-function restoreFullCanvasViewport() {
+function restoreFullRenderTargetViewport() {
   if (!gl) {
     return;
   }
-  gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+  const target = currentRenderSurfaceSize();
+  gl.viewport(0, 0, target.width, target.height);
   gl.disable(gl.SCISSOR_TEST);
   gl.depthRange(0, 1);
   invalidateD3D8AppliedViewportCache();
 }
 
-function normalizeD3D8Viewport(payload = {}, drawingBuffer = currentDrawingBufferSize()) {
+function normalizeD3D8Viewport(payload = {}, drawingBuffer = currentRenderSurfaceSize()) {
   const bufferWidth = Math.max(0, drawingBuffer.width);
   const bufferHeight = Math.max(0, drawingBuffer.height);
   const requested = {
@@ -1799,7 +1852,7 @@ function normalizeD3D8Viewport(payload = {}, drawingBuffer = currentDrawingBuffe
   };
 }
 
-function currentD3D8ViewportPayload(drawingBuffer = currentDrawingBufferSize()) {
+function currentD3D8ViewportPayload(drawingBuffer = currentRenderSurfaceSize()) {
   if (d3d8ViewportState) {
     return d3d8ViewportState;
   }
@@ -1816,7 +1869,7 @@ function currentD3D8ViewportPayload(drawingBuffer = currentDrawingBufferSize()) 
 }
 
 function cachedD3D8NormalizedViewport() {
-  const drawingBuffer = currentDrawingBufferSize();
+  const drawingBuffer = currentRenderSurfaceSize();
   const bufferWidth = Math.max(0, drawingBuffer.width);
   const bufferHeight = Math.max(0, drawingBuffer.height);
   const payload = currentD3D8ViewportPayload({ width: bufferWidth, height: bufferHeight });
@@ -1876,9 +1929,9 @@ function applyD3D8Viewport(reason = "draw") {
 
   const cacheHit = d3d8ViewportAppliedKeyMatches(d3d8LastAppliedViewportKey, viewportKey);
   if (cacheHit) {
-    d3d8PerfStats.drawViewportCacheHits += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.drawViewportCacheHits += 1;
   } else {
-    d3d8PerfStats.drawViewportCacheMisses += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.drawViewportCacheMisses += 1;
     gl.viewport(viewport.gl.x, viewport.gl.y, viewport.gl.width, viewport.gl.height);
     gl.enable(gl.SCISSOR_TEST);
     gl.scissor(viewport.gl.x, viewport.gl.y, viewport.gl.width, viewport.gl.height);
@@ -2592,8 +2645,8 @@ function ensureD3D8DynamicRangeUploaded(resource, range) {
   }
   const bytes = resource.bytes.subarray(range.start, range.end);
   uploadD3D8DynamicSlot(resource, slot, bytes);
-  d3d8PerfStats.bufferDynamicRangeUploads += 1;
-  d3d8PerfStats.bufferDynamicRangeUploadBytes += bytes.byteLength;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferDynamicRangeUploads += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferDynamicRangeUploadBytes += bytes.byteLength;
   range.slot = slot;
   return slot;
 }
@@ -2623,7 +2676,7 @@ function ensureD3D8DynamicSharedBufferCurrent(resource) {
     resource.glUsage,
   );
   resource.dynSharedClean = true;
-  d3d8PerfStats.bufferDynamicRedirectFallbacks += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferDynamicRedirectFallbacks += 1;
   return true;
 }
 
@@ -2712,7 +2765,7 @@ function updateD3D8Buffer(payload = {}) {
   let subDataMs = 0;
   if (dynamicRedirect) {
     noteD3D8DynamicBufferUpdate(resource, byteOffset, bytes.byteLength, discard);
-    d3d8PerfStats.bufferDynamicRedirectedUpdates += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferDynamicRedirectedUpdates += 1;
   } else {
     const subDataStartedAt = perfNow();
     gl.bufferSubData(resource.target, byteOffset, bytes);
@@ -2728,53 +2781,55 @@ function updateD3D8Buffer(payload = {}) {
   d3d8BufferStats.mirrorBytes += mirroredBytes;
   d3d8BufferStats.mirrorMs += mirrorMs;
   d3d8BufferStats.mirrorSkippedBytes += skippedMirrorBytes;
-  d3d8PerfStats.bufferUpdates += 1;
-  d3d8PerfStats.bufferUploadBytes += bytes.byteLength;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferUpdates += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferUploadBytes += bytes.byteLength;
   if (resource.kindName === "vertex") {
-    d3d8PerfStats.bufferVertexUpdates += 1;
-    d3d8PerfStats.bufferVertexUploadBytes += bytes.byteLength;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferVertexUpdates += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferVertexUploadBytes += bytes.byteLength;
   } else if (resource.kindName === "index") {
-    d3d8PerfStats.bufferIndexUpdates += 1;
-    d3d8PerfStats.bufferIndexUploadBytes += bytes.byteLength;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferIndexUpdates += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferIndexUploadBytes += bytes.byteLength;
   }
   if (resource.dynamic) {
-    d3d8PerfStats.bufferDynamicUpdates += 1;
-    d3d8PerfStats.bufferDynamicUploadBytes += bytes.byteLength;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferDynamicUpdates += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferDynamicUploadBytes += bytes.byteLength;
   }
   if (discard) {
-    d3d8PerfStats.bufferDiscardUpdates += 1;
-    d3d8PerfStats.bufferDiscardUploadBytes += bytes.byteLength;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferDiscardUpdates += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferDiscardUploadBytes += bytes.byteLength;
   }
   if (noOverwrite) {
-    d3d8PerfStats.bufferNoOverwriteUpdates += 1;
-    d3d8PerfStats.bufferNoOverwriteUploadBytes += bytes.byteLength;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferNoOverwriteUpdates += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferNoOverwriteUploadBytes += bytes.byteLength;
   }
   if (orphaned) {
-    d3d8PerfStats.bufferOrphanedUpdates += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferOrphanedUpdates += 1;
   }
   if (resized) {
-    d3d8PerfStats.bufferResizedUpdates += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferResizedUpdates += 1;
   }
-  d3d8PerfStats.bufferUpdateMs += updateMs;
-  d3d8PerfStats.bufferSubDataMs += subDataMs;
-  d3d8PerfStats.bufferMirrorBytes += mirroredBytes;
-  d3d8PerfStats.bufferMirrorMs += mirrorMs;
-  d3d8PerfStats.bufferMirrorSkippedBytes += skippedMirrorBytes;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferUpdateMs += updateMs;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferSubDataMs += subDataMs;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferMirrorBytes += mirroredBytes;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferMirrorMs += mirrorMs;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferMirrorSkippedBytes += skippedMirrorBytes;
   const producer = d3d8BufferProducerTrackingEnabled ? bufferProducerLabel(payload.producer) : "";
-  noteD3D8BufferProducerUpdate({
-    producer,
-    resource,
-    byteLength: bytes.byteLength,
-    updateMs,
-    subDataMs,
-    mirrorMs,
-    mirroredBytes,
-    skippedMirrorBytes,
-    discard,
-    noOverwrite,
-    orphaned,
-    resized,
-  });
+  if (d3d8BufferProducerTrackingEnabled) {
+    noteD3D8BufferProducerUpdate({
+      producer,
+      resource,
+      byteLength: bytes.byteLength,
+      updateMs,
+      subDataMs,
+      mirrorMs,
+      mirroredBytes,
+      skippedMirrorBytes,
+      discard,
+      noOverwrite,
+      orphaned,
+      resized,
+    });
+  }
   d3d8BufferStats.lastUpdate = {
     id,
     kind: resource.kindName,
@@ -3686,19 +3741,6 @@ function d3d8FixedLightUniformKey(lights) {
   return values.join(",");
 }
 
-function d3d8ViewportUniformKey(viewport) {
-  const d3d = viewport?.d3d;
-  if (!d3d) {
-    return "0,0,0,0";
-  }
-  return [
-    finiteNumber(d3d.x, 0),
-    finiteNumber(d3d.y, 0),
-    Math.max(1, finiteNumber(d3d.width, 1)),
-    Math.max(1, finiteNumber(d3d.height, 1)),
-  ].join(",");
-}
-
 function d3d8CaptureRenderUniformKey(
     derivedStateHash,
     primitiveType,
@@ -3743,27 +3785,69 @@ function d3d8RenderUniformKeyMatches(
     key.viewportHeight === viewportHeight;
 }
 
-function d3d8BaseUniformKey(useTransforms, usePretransformedPosition, appliedViewport,
-    appliedRenderState, clipPlanes, shadeModeDraw) {
-  const values = [
-    useTransforms ? 1 : 0,
-    usePretransformedPosition ? 1 : 0,
-    usePretransformedPosition ? d3d8ViewportUniformKey(appliedViewport) : "",
-    appliedRenderState.depth.bias.ndc,
-    usePretransformedPosition ? 0 : appliedRenderState.clipPlanes.mask,
-    shadeModeDraw.usesFlatShader ? 1 : 0,
-    appliedRenderState.lighting.shaderEnabled ? 1 : 0,
-    appliedRenderState.lighting.specular.enabled ? 1 : 0,
-    appliedRenderState.lighting.normalizeNormals.enabled ? 1 : 0,
-    appliedRenderState.lighting.localViewer.enabled ? 1 : 0,
-    appliedRenderState.materialSources.colorVertex.enabled ? 1 : 0,
-  ];
-  if (!usePretransformedPosition && appliedRenderState.clipPlanes.mask !== 0) {
-    for (let planeIndex = 0; planeIndex < D3D8_CLIP_PLANE_COUNT; ++planeIndex) {
-      values.push(...(clipPlanes[planeIndex] ?? [0, 0, 0, 0]));
+function d3d8BaseUniformSnapshotMatches(useTransforms, usePretransformedPosition,
+    appliedViewport, appliedRenderState, clipPlanes, shadeModeDraw) {
+  const snapshot = d3d8LastBaseUniformSnapshot;
+  const d3d = usePretransformedPosition ? appliedViewport?.d3d : null;
+  const clipPlaneMask = usePretransformedPosition ? 0 : appliedRenderState.clipPlanes.mask;
+  if (!snapshot.valid ||
+      snapshot.useTransforms !== Boolean(useTransforms) ||
+      snapshot.pretransformed !== Boolean(usePretransformedPosition) ||
+      snapshot.viewportX !== (d3d ? finiteNumber(d3d.x, 0) : 0) ||
+      snapshot.viewportY !== (d3d ? finiteNumber(d3d.y, 0) : 0) ||
+      snapshot.viewportWidth !== (d3d ? Math.max(1, finiteNumber(d3d.width, 1)) : 0) ||
+      snapshot.viewportHeight !== (d3d ? Math.max(1, finiteNumber(d3d.height, 1)) : 0) ||
+      snapshot.depthBiasNdc !== appliedRenderState.depthBiasNdc ||
+      snapshot.clipPlaneMask !== clipPlaneMask ||
+      snapshot.flatShade !== Boolean(shadeModeDraw.usesFlatShader) ||
+      snapshot.lightingEnabled !== Boolean(appliedRenderState.lightingShaderEnabled) ||
+      snapshot.specularEnabled !== Boolean(appliedRenderState.specularEnabled) ||
+      snapshot.normalizeNormals !== Boolean(appliedRenderState.normalizeNormalsEnabled) ||
+      snapshot.localViewer !== Boolean(appliedRenderState.localViewerEnabled) ||
+      snapshot.colorVertex !== Boolean(appliedRenderState.colorVertexEnabled)) {
+    return false;
+  }
+  if (clipPlaneMask === 0) {
+    return true;
+  }
+  for (let planeIndex = 0; planeIndex < D3D8_CLIP_PLANE_COUNT; ++planeIndex) {
+    const plane = clipPlanes[planeIndex];
+    for (let component = 0; component < 4; ++component) {
+      if (snapshot.clipPlanes[planeIndex * 4 + component] !== Number(plane?.[component] ?? 0)) {
+        return false;
+      }
     }
   }
-  return values.join(",");
+  return true;
+}
+
+function rememberD3D8BaseUniformSnapshot(useTransforms, usePretransformedPosition,
+    appliedViewport, appliedRenderState, clipPlanes, shadeModeDraw) {
+  const snapshot = d3d8LastBaseUniformSnapshot;
+  const d3d = usePretransformedPosition ? appliedViewport?.d3d : null;
+  snapshot.valid = true;
+  snapshot.useTransforms = Boolean(useTransforms);
+  snapshot.pretransformed = Boolean(usePretransformedPosition);
+  snapshot.viewportX = d3d ? finiteNumber(d3d.x, 0) : 0;
+  snapshot.viewportY = d3d ? finiteNumber(d3d.y, 0) : 0;
+  snapshot.viewportWidth = d3d ? Math.max(1, finiteNumber(d3d.width, 1)) : 0;
+  snapshot.viewportHeight = d3d ? Math.max(1, finiteNumber(d3d.height, 1)) : 0;
+  snapshot.depthBiasNdc = appliedRenderState.depthBiasNdc;
+  snapshot.clipPlaneMask = usePretransformedPosition ? 0 : appliedRenderState.clipPlanes.mask;
+  snapshot.flatShade = Boolean(shadeModeDraw.usesFlatShader);
+  snapshot.lightingEnabled = Boolean(appliedRenderState.lightingShaderEnabled);
+  snapshot.specularEnabled = Boolean(appliedRenderState.specularEnabled);
+  snapshot.normalizeNormals = Boolean(appliedRenderState.normalizeNormalsEnabled);
+  snapshot.localViewer = Boolean(appliedRenderState.localViewerEnabled);
+  snapshot.colorVertex = Boolean(appliedRenderState.colorVertexEnabled);
+  if (snapshot.clipPlaneMask !== 0) {
+    for (let planeIndex = 0; planeIndex < D3D8_CLIP_PLANE_COUNT; ++planeIndex) {
+      const plane = clipPlanes[planeIndex];
+      for (let component = 0; component < 4; ++component) {
+        snapshot.clipPlanes[planeIndex * 4 + component] = Number(plane?.[component] ?? 0);
+      }
+    }
+  }
 }
 
 function d3d8StageUniformKey(renderState) {
@@ -3814,14 +3898,14 @@ function d3d8StageUniformKey(renderState) {
 
 function d3d8AlphaFogUniformKey(renderState, appliedRenderState) {
   return [
-    appliedRenderState.alphaTest.enabled ? 1 : 0,
+    appliedRenderState.alphaTestEnabled ? 1 : 0,
     renderState.alphaFunc,
-    appliedRenderState.alphaTest.ref,
-    appliedRenderState.fog.enabled ? 1 : 0,
-    appliedRenderState.fog.rangeEnabled ? 1 : 0,
-    ...appliedRenderState.fog.color,
-    appliedRenderState.fog.start,
-    appliedRenderState.fog.end,
+    appliedRenderState.alphaRef,
+    appliedRenderState.fogEnabled ? 1 : 0,
+    appliedRenderState.fogRangeEnabled ? 1 : 0,
+    ...appliedRenderState.fogColor,
+    appliedRenderState.fogStart,
+    appliedRenderState.fogEnd,
   ].join(",");
 }
 
@@ -3910,59 +3994,75 @@ function d3d8TextureLayoutUniformKey({
   return values.join(",");
 }
 
+const D3D8_DEFAULT_LIGHT_DIRECTION = Object.freeze([0, 0, 1]);
+const d3d8LightUniformScratch = {
+  types: new Int32Array(D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT),
+  colors: new Float32Array(D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT * 4),
+  vectors: new Float32Array(D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT * 3),
+  rangeAttenuation: new Float32Array(D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT * 4),
+  spot: new Float32Array(D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT * 3),
+};
+
 function flattenD3D8LightType(lights) {
-  const values = [];
+  const values = d3d8LightUniformScratch.types;
   for (let index = 0; index < D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT; ++index) {
-    values.push(lights[index]?.type ?? 0);
+    values[index] = lights[index]?.type ?? 0;
   }
-  return new Int32Array(values);
+  return values;
 }
 
 function flattenD3D8LightColor(lights, field, count = D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT) {
-  const values = [];
+  const values = d3d8LightUniformScratch.colors;
   for (let index = 0; index < count; ++index) {
-    values.push(...(lights[index]?.[field] ?? [0, 0, 0, 1]));
+    const source = lights[index]?.[field];
+    const base = index * 4;
+    values[base] = source?.[0] ?? 0;
+    values[base + 1] = source?.[1] ?? 0;
+    values[base + 2] = source?.[2] ?? 0;
+    values[base + 3] = source?.[3] ?? 1;
   }
-  return new Float32Array(values);
+  return values;
 }
 
 function flattenD3D8LightVector(lights, field, fallback, count = D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT) {
-  const values = [];
+  const values = d3d8LightUniformScratch.vectors;
   for (let index = 0; index < count; ++index) {
-    values.push(...(lights[index]?.[field] ?? fallback));
+    const source = lights[index]?.[field] ?? fallback;
+    const base = index * 3;
+    values[base] = source[0];
+    values[base + 1] = source[1];
+    values[base + 2] = source[2];
   }
-  return new Float32Array(values);
+  return values;
 }
 
 function flattenD3D8LightDirection(lights, count = D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT) {
-  return flattenD3D8LightVector(lights, "direction", [0, 0, 1], count);
+  return flattenD3D8LightVector(lights, "direction", D3D8_DEFAULT_LIGHT_DIRECTION, count);
 }
 
 function flattenD3D8LightRangeAttenuation(lights) {
-  const values = [];
+  const values = d3d8LightUniformScratch.rangeAttenuation;
   for (let index = 0; index < D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT; ++index) {
-    const light = lights[index] ?? {};
-    values.push(
-      finiteNumber(light.range, 0),
-      finiteNumber(light.attenuation0, 0),
-      finiteNumber(light.attenuation1, 0),
-      finiteNumber(light.attenuation2, 0),
-    );
+    const light = lights[index];
+    const base = index * 4;
+    values[base] = finiteNumber(light?.range, 0);
+    values[base + 1] = finiteNumber(light?.attenuation0, 0);
+    values[base + 2] = finiteNumber(light?.attenuation1, 0);
+    values[base + 3] = finiteNumber(light?.attenuation2, 0);
   }
-  return new Float32Array(values);
+  return values;
 }
 
 function flattenD3D8LightSpot(lights) {
-  const values = [];
+  const values = d3d8LightUniformScratch.spot;
   for (let index = 0; index < D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT; ++index) {
-    const light = lights[index] ?? {};
-    values.push(
-      finiteNumber(light.theta, 0),
-      finiteNumber(light.phi, 0),
-      finiteNumber(light.falloff, 0),
-    );
+    const light = lights[index];
+    const base = index * 3;
+    values[base] = finiteNumber(light?.theta, 0);
+    values[base + 1] = finiteNumber(light?.phi, 0);
+    values[base + 2] = finiteNumber(light?.falloff, 0);
   }
-  return new Float32Array(values);
+  return values;
 }
 
 function textureHasCompleteMipChain(resource) {
@@ -4887,12 +4987,12 @@ function invalidateD3D8GlTextureBindingCache(stage = null) {
 function setD3D8ActiveTextureUnitCached(stage) {
   const unit = Number(stage) >>> 0;
   if (d3d8CurrentActiveTextureUnit === unit) {
-    d3d8PerfStats.drawTextureActiveCacheHits += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.drawTextureActiveCacheHits += 1;
     return;
   }
   gl.activeTexture(gl.TEXTURE0 + unit);
   d3d8CurrentActiveTextureUnit = unit;
-  d3d8PerfStats.drawTextureActiveCacheMisses += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawTextureActiveCacheMisses += 1;
 }
 
 function d3d8FeedbackSafeTextureResource(resource) {
@@ -4956,8 +5056,8 @@ function d3d8FeedbackSafeTextureResource(resource) {
       );
     });
     snapshot.resolvedBindSerial = d3d8FramebufferBindSerial;
-    d3d8PerfStats.framebufferFeedbackResolves += 1;
-    d3d8PerfStats.framebufferFeedbackResolveMs += perfNow() - startedAt;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.framebufferFeedbackResolves += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.framebufferFeedbackResolveMs += perfNow() - startedAt;
   }
   return snapshot;
 }
@@ -4969,12 +5069,12 @@ function bindD3D8DrawTexture2D(stage, resource) {
   const unit = Number(stage) >>> 0;
   setD3D8ActiveTextureUnitCached(unit);
   if (d3d8CurrentTexture2DBindings.get(unit) === resource.texture) {
-    d3d8PerfStats.drawTextureBindCacheHits += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.drawTextureBindCacheHits += 1;
     return;
   }
   gl.bindTexture(gl.TEXTURE_2D, resource.texture);
   d3d8CurrentTexture2DBindings.set(unit, resource.texture);
-  d3d8PerfStats.drawTextureBindCacheMisses += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawTextureBindCacheMisses += 1;
 }
 
 function ensureD3D8DrawTexture2D(stage, textureStage, resource) {
@@ -4986,23 +5086,23 @@ function ensureD3D8DrawTexture2D(stage, textureStage, resource) {
   const textureBound = d3d8CurrentTexture2DBindings.get(unit) === sampleResource.texture;
   const rawSamplerCurrent = d3d8TextureSamplerRawStateCurrent(textureStage, sampleResource);
   if (textureBound && rawSamplerCurrent) {
-    d3d8PerfStats.drawTextureBindCacheHits += 1;
-    d3d8PerfStats.drawTextureSamplerCacheHits += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.drawTextureBindCacheHits += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.drawTextureSamplerCacheHits += 1;
     return sampleResource.samplerState;
   }
 
   bindD3D8DrawTexture2D(unit, sampleResource);
   if (rawSamplerCurrent) {
-    d3d8PerfStats.drawTextureSamplerCacheHits += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.drawTextureSamplerCacheHits += 1;
     return sampleResource.samplerState;
   }
   const samplerParams = d3d8TextureSamplerParams(textureStage, sampleResource);
   const samplerCurrent = d3d8TextureSamplerStateCurrent(textureStage, sampleResource, samplerParams);
   if (samplerCurrent) {
-    d3d8PerfStats.drawTextureSamplerCacheHits += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.drawTextureSamplerCacheHits += 1;
     return sampleResource.samplerState;
   }
-  d3d8PerfStats.drawTextureSamplerCacheMisses += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawTextureSamplerCacheMisses += 1;
   return applyD3D8TextureSamplerToBoundTexture(unit, textureStage, sampleResource, samplerParams);
 }
 
@@ -5035,16 +5135,16 @@ function timedReadPixels(x, y, width, height, format, type, pixels) {
   flushD3D8PendingDrawBatch("readPixels");
   const startedAt = perfNow();
   gl.readPixels(x, y, width, height, format, type, pixels);
-  d3d8PerfStats.readPixels += 1;
-  d3d8PerfStats.readPixelsPixels += Math.max(0, Number(width ?? 0) * Number(height ?? 0));
-  d3d8PerfStats.readPixelsMs += perfNow() - startedAt;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.readPixels += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.readPixelsPixels += Math.max(0, Number(width ?? 0) * Number(height ?? 0));
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.readPixelsMs += perfNow() - startedAt;
 }
 
 function timedGlClear(bits) {
   const startedAt = perfNow();
   gl.clear(bits);
-  d3d8PerfStats.clears += 1;
-  d3d8PerfStats.clearMs += perfNow() - startedAt;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.clears += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.clearMs += perfNow() - startedAt;
 }
 
 function sampleD3D8TexturePixel(resource, x, y) {
@@ -5336,9 +5436,11 @@ function bindD3D8Framebuffer(payload = {}) {
   }
   const bindStartedAt = perfNow();
   const finishFboBind = (result) => {
-    d3d8PerfStats.fboBinds += 1;
-    d3d8PerfStats.fboBindMs += perfNow() - bindStartedAt;
-    d3d8PerfStats.fboIncomplete = browser_fbo_incomplete_count;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.fboBinds += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.fboBindMs += perfNow() - bindStartedAt;
+    if (d3d8PerfCountersEnabled) {
+      d3d8PerfStats.fboIncomplete = browser_fbo_incomplete_count;
+    }
     if (d3d8DiagLevel === "full") {
       harnessState.graphics.d3d8Perf = d3d8PerfSummary();
     }
@@ -5531,7 +5633,7 @@ function bindD3D8Framebuffer(payload = {}) {
       height,
     };
     d3d8Framebuffers.set(framebufferKey, fboEntry);
-    d3d8PerfStats.fboCreates += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.fboCreates += 1;
   } else {
     // FBO completeness is validated at creation. Texture release/recreation and
     // level-0 storage changes evict their cached attachments, so a cache hit can
@@ -5694,7 +5796,7 @@ function updateD3D8Texture(payload = {}) {
       // For sub-rect updates with DXT, decode the full level and extract the sub-rect
       const decodeStartedAt = perfNow();
       const fullLevelBytes = decodeDxtToRgba8(payload.bytes, levelSize.width, levelSize.height, info.dxtDecode);
-      d3d8PerfStats.dxtDecodeMs += perfNow() - decodeStartedAt;
+      if (d3d8PerfCountersEnabled) d3d8PerfStats.dxtDecodeMs += perfNow() - decodeStartedAt;
       if (!fullLevelBytes) {
         d3d8TextureStats.unsupportedUpdates += 1;
         d3d8TextureStats.lastUnsupported = {
@@ -5724,7 +5826,7 @@ function updateD3D8Texture(payload = {}) {
       // Full level update - decode directly
       const decodeStartedAt = perfNow();
       uploadBytes = decodeDxtToRgba8(payload.bytes, width, height, info.dxtDecode);
-      d3d8PerfStats.dxtDecodeMs += perfNow() - decodeStartedAt;
+      if (d3d8PerfCountersEnabled) d3d8PerfStats.dxtDecodeMs += perfNow() - decodeStartedAt;
       if (!uploadBytes) {
         d3d8TextureStats.unsupportedUpdates += 1;
         d3d8TextureStats.lastUnsupported = {
@@ -5755,8 +5857,8 @@ function updateD3D8Texture(payload = {}) {
       : convertD3D8TextureBytes(format, payload.bytes, width, height);
     uploadBytes = info.compressed ? convertedBytes : d3d8TextureUploadView(info, convertedBytes);
   }
-  d3d8PerfStats.textureConvertBytes += Number(payload.bytes.byteLength ?? 0) >>> 0;
-  d3d8PerfStats.textureConvertMs += perfNow() - convertStartedAt;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.textureConvertBytes += Number(payload.bytes.byteLength ?? 0) >>> 0;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.textureConvertMs += perfNow() - convertStartedAt;
   resource.storage = info.storage;
   resource.semantic = info.semantic || null;
   const levelKey = String(level);
@@ -5797,10 +5899,10 @@ function updateD3D8Texture(payload = {}) {
     }
     swizzleApplied = applyD3D8TextureSwizzleIfChanged(resource, info);
   });
-  d3d8PerfStats.textureUploads += 1;
-  d3d8PerfStats.textureUploadBytes += Number(uploadBytes.byteLength ?? 0) >>> 0;
-  d3d8PerfStats.textureUploadPixels += Math.max(0, width * height);
-  d3d8PerfStats.textureUploadMs += perfNow() - uploadStartedAt;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.textureUploads += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.textureUploadBytes += Number(uploadBytes.byteLength ?? 0) >>> 0;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.textureUploadPixels += Math.max(0, width * height);
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.textureUploadMs += perfNow() - uploadStartedAt;
   invalidateD3D8DrawStateCache();
 
   resource.uploads += 1;
@@ -5944,8 +6046,8 @@ function updateD3D8VolumeTexture(payload = {}) {
   const convertStartedAt = perfNow();
   const convertedBytes = convertD3D8TextureBytes(format, payload.bytes, width, height, depth);
   const uploadBytes = d3d8TextureUploadView(info, convertedBytes);
-  d3d8PerfStats.textureConvertBytes += Number(payload.bytes.byteLength ?? 0) >>> 0;
-  d3d8PerfStats.textureConvertMs += perfNow() - convertStartedAt;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.textureConvertBytes += Number(payload.bytes.byteLength ?? 0) >>> 0;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.textureConvertMs += perfNow() - convertStartedAt;
   resource.storage = info.storage;
   resource.semantic = info.semantic || null;
   const levelKey = String(level);
@@ -5976,11 +6078,11 @@ function updateD3D8VolumeTexture(payload = {}) {
     }
     swizzleApplied = applyD3D8TextureSwizzleIfChanged(resource, info);
   });
-  d3d8PerfStats.textureUploads += 1;
-  d3d8PerfStats.volumeTextureUploads += 1;
-  d3d8PerfStats.textureUploadBytes += Number(uploadBytes.byteLength ?? 0) >>> 0;
-  d3d8PerfStats.textureUploadPixels += Math.max(0, width * height * depth);
-  d3d8PerfStats.textureUploadMs += perfNow() - uploadStartedAt;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.textureUploads += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.volumeTextureUploads += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.textureUploadBytes += Number(uploadBytes.byteLength ?? 0) >>> 0;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.textureUploadPixels += Math.max(0, width * height * depth);
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.textureUploadMs += perfNow() - uploadStartedAt;
   invalidateD3D8DrawStateCache();
 
   resource.uploads += 1;
@@ -6267,13 +6369,13 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
   // Clear only touches clearColor/clearDepth/clearStencil (untracked), the
   // depth mask (via the tracked setD3D8DepthMask, restored below), the
   // stencil mask (tracked cache synced below), and — through syncCanvasSize's
-  // restoreFullCanvasViewport — viewport/scissor, whose applied-viewport cache
+  // restoreFullRenderTargetViewport — viewport/scissor, whose applied-viewport cache
   // that helper invalidates itself. The blend/cull/uniform/vertex-attrib
   // caches all stay valid, so only the pending batch needs flushing here
   // (it must draw under the pre-clear state).
   const invalidateStartedAt = perfNow();
   flushD3D8PendingDrawBatch("clear");
-  d3d8PerfStats.clearInvalidateMs += perfNow() - invalidateStartedAt;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.clearInvalidateMs += perfNow() - invalidateStartedAt;
   const clearFlags = flags >>> 0;
   const rgba = [
     clampColorByte(red, 0),
@@ -6283,7 +6385,7 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
   ];
   const syncStartedAt = perfNow();
   syncCanvasSize();
-  d3d8PerfStats.clearSyncCanvasMs += perfNow() - syncStartedAt;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.clearSyncCanvasMs += perfNow() - syncStartedAt;
   if (gl) {
     const setupStartedAt = perfNow();
     let clearBits = 0;
@@ -6299,7 +6401,7 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
     if ((clearFlags & 0x4) !== 0) {
       const contextAttrStartedAt = perfNow();
       hasStencilBuffer = Boolean(gl.getContextAttributes()?.stencil);
-      d3d8PerfStats.clearContextAttrMs += perfNow() - contextAttrStartedAt;
+      if (d3d8PerfCountersEnabled) d3d8PerfStats.clearContextAttrMs += perfNow() - contextAttrStartedAt;
     }
     if ((clearFlags & 0x4) !== 0 && hasStencilBuffer) {
       const clearStencilMask = d3d8EffectiveStencilValue(0xffffffff);
@@ -6312,7 +6414,7 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
       gl.clearStencil(d3d8EffectiveStencilValue(stencil));
       clearBits |= gl.STENCIL_BUFFER_BIT;
     }
-    d3d8PerfStats.clearSetupMs += perfNow() - setupStartedAt;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.clearSetupMs += perfNow() - setupStartedAt;
     if (clearBits !== 0) {
       // D3D8's Clear ignores the depth/stencil write masks, but WebGL's
       // gl.clear RESPECTS gl.depthMask: if a prior draw left depth writes
@@ -6324,17 +6426,17 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
       const depthMaskCheckStartedAt = perfNow();
       const restoreDepthMask =
         (clearBits & gl.DEPTH_BUFFER_BIT) !== 0 && !d3d8CurrentDepthMask;
-      d3d8PerfStats.clearDepthMaskCheckMs += perfNow() - depthMaskCheckStartedAt;
+      if (d3d8PerfCountersEnabled) d3d8PerfStats.clearDepthMaskCheckMs += perfNow() - depthMaskCheckStartedAt;
       if (restoreDepthMask) {
         const depthMaskToggleStartedAt = perfNow();
         setD3D8DepthMask(true);
-        d3d8PerfStats.clearDepthMaskToggleMs += perfNow() - depthMaskToggleStartedAt;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.clearDepthMaskToggleMs += perfNow() - depthMaskToggleStartedAt;
       }
       timedGlClear(clearBits);
       if (restoreDepthMask) {
         const depthMaskToggleStartedAt = perfNow();
         setD3D8DepthMask(false);
-        d3d8PerfStats.clearDepthMaskToggleMs += perfNow() - depthMaskToggleStartedAt;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.clearDepthMaskToggleMs += perfNow() - depthMaskToggleStartedAt;
       }
     }
   } else if (fallbackContext && (clearFlags & 0x1) !== 0) {
@@ -6342,7 +6444,7 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
     fallbackContext.fillRect(0, 0, canvas.width, canvas.height);
   }
   if (d3d8DiagLevel !== "full") {
-    d3d8PerfStats.clearTotalMs += perfNow() - clearTotalStartedAt;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.clearTotalMs += perfNow() - clearTotalStartedAt;
     return 1; // lite: skip the post-clear readPixels + probe
   }
   const postDiagStartedAt = perfNow();
@@ -6366,8 +6468,8 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
     lastClearPixel: pixel,
     lastClearOk: colorOk,
   };
-  d3d8PerfStats.clearPostDiagMs += perfNow() - postDiagStartedAt;
-  d3d8PerfStats.clearTotalMs += perfNow() - clearTotalStartedAt;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.clearPostDiagMs += perfNow() - postDiagStartedAt;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.clearTotalMs += perfNow() - clearTotalStartedAt;
   return colorOk ? 1 : 0;
 }
 
@@ -7275,7 +7377,110 @@ function ensureD3D8DrawProgram() {
   }
 
   d3d8DrawProgram = buildD3D8DrawProgramLocations(program);
+  // Compile the small common-particle variant during renderer warm-up so the
+  // first explosion does not pay a shader compile/link hitch mid-frame.
+  ensureD3D8ParticleProgram();
   return d3d8DrawProgram;
+}
+
+function ensureD3D8ParticleProgram() {
+  if (!gl) {
+    return null;
+  }
+  if (d3d8ParticleProgram) {
+    return d3d8ParticleProgram;
+  }
+
+  const vertexShader = compileShader(gl.VERTEX_SHADER, `#version 300 es
+    in vec4 aPosition;
+    in vec4 aDiffuseBgra;
+    in vec2 aTexCoord0;
+    uniform mat4 uWorld;
+    uniform mat4 uView;
+    uniform mat4 uProjection;
+    uniform float uDepthBias;
+    out vec4 vColor;
+    out vec2 vTexCoord0;
+    void main() {
+      vec4 viewPosition = uView * (uWorld * vec4(aPosition.xyz, 1.0));
+      vec4 d3dClip = uProjection * viewPosition;
+      gl_Position = vec4(d3dClip.x, d3dClip.y,
+        d3dClip.z * 2.0 - d3dClip.w, d3dClip.w);
+      gl_Position.z -= uDepthBias * gl_Position.w;
+      vColor = vec4(aDiffuseBgra.b, aDiffuseBgra.g,
+        aDiffuseBgra.r, aDiffuseBgra.a);
+      vTexCoord0 = aTexCoord0;
+    }
+  `);
+  const fragmentShader = compileShader(gl.FRAGMENT_SHADER, `#version 300 es
+    precision highp float;
+    in vec4 vColor;
+    in vec2 vTexCoord0;
+    uniform sampler2D uTexture0;
+    uniform float uTexture0LodBias;
+    uniform bool uTexture0FlipY;
+    out vec4 fragColor;
+    void main() {
+      vec2 uv = uTexture0FlipY
+        ? vec2(vTexCoord0.x, 1.0 - vTexCoord0.y)
+        : vTexCoord0;
+      fragColor = texture(uTexture0, uv, uTexture0LodBias) * vColor;
+    }
+  `);
+  const program = gl.createProgram();
+  gl.attachShader(program, vertexShader);
+  gl.attachShader(program, fragmentShader);
+  gl.linkProgram(program);
+  gl.deleteShader(vertexShader);
+  gl.deleteShader(fragmentShader);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    const info = gl.getProgramInfoLog(program);
+    gl.deleteProgram(program);
+    throw new Error(`D3D8 particle program link failed: ${info}`);
+  }
+  d3d8ParticleProgram = buildD3D8DrawProgramLocations(program);
+  return d3d8ParticleProgram;
+}
+
+function d3d8CanUseParticleProgram({
+  renderState,
+  primitiveType,
+  vertexShaderFvf,
+  vertexStride,
+  canSampleTexture0,
+  canSampleTexture1,
+  canSampleTexture2,
+  canSampleTexture3,
+  texture0Coordinates,
+  texture0SemanticMode,
+  implicitAlphaCutoutThreshold,
+}) {
+  const stage0 = renderState?.textureStages?.[0];
+  const stage1 = renderState?.textureStages?.[1];
+  return (Number(primitiveType) >>> 0) === D3DPT_TRIANGLELIST &&
+    (Number(vertexShaderFvf) >>> 0) ===
+      (D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_TEX2) &&
+    (Number(vertexStride) >>> 0) === 44 &&
+    renderState?.lighting === 0 &&
+    renderState?.fogEnable === 0 &&
+    renderState?.alphaTestEnable === 0 &&
+    renderState?.cullMode === D3DCULL_NONE &&
+    d3d8ClipPlaneMask(renderState) === 0 &&
+    canSampleTexture0 && !canSampleTexture1 && !canSampleTexture2 && !canSampleTexture3 &&
+    texture0SemanticMode === 0 &&
+    texture0Coordinates?.mode === D3DTSS_TCI_PASSTHRU &&
+    texture0Coordinates?.coordSet === 0 &&
+    texture0Coordinates?.transformApplied !== true &&
+    implicitAlphaCutoutThreshold < 0 &&
+    stage0?.colorOp === D3DTOP_MODULATE &&
+    stage0?.colorArg1 === D3DTA_TEXTURE &&
+    stage0?.colorArg2 === D3DTA_DIFFUSE &&
+    stage0?.alphaOp === D3DTOP_MODULATE &&
+    stage0?.alphaArg1 === D3DTA_TEXTURE &&
+    stage0?.alphaArg2 === D3DTA_DIFFUSE &&
+    stage0?.resultArg === D3DTA_CURRENT &&
+    stage1?.colorOp === D3DTOP_DISABLE &&
+    stage1?.alphaOp === D3DTOP_DISABLE;
 }
 
 // Location table shared by the fixed-function draw program and the translated
@@ -8114,7 +8319,7 @@ function registerD3D8SM1Shader(spec) {
       d3d8SM1BuildFragmentSource(shader, { translatedVs: false, vsWritesFog: false });
       d3d8SM1PixelShaders.set(spec.handle, shader);
       d3d8SM1MostRecentPixelHandle = spec.handle;
-      d3d8PerfStats.sm1PixelShadersRegistered += 1;
+      if (d3d8PerfCountersEnabled) d3d8PerfStats.sm1PixelShadersRegistered += 1;
       // Warm the likely pairings so first use never compiles mid-frame: the
       // FF-vertex pair (terrain/roads/water/BW filter) and, when a vertex
       // shader was just created (Trees.vso -> Trees.pso), the translated-vs
@@ -8152,7 +8357,7 @@ function registerD3D8SM1Shader(spec) {
     d3d8SM1BuildVertexSource(shader); // eager validation
     d3d8SM1VertexShaders.set(spec.handle, shader);
     d3d8SM1MostRecentVertexHandle = spec.handle;
-    d3d8PerfStats.sm1VertexShadersRegistered += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.sm1VertexShadersRegistered += 1;
     // Warm the translated-vs + FF-pixel pair (the shipped tree path draws
     // with the vertex shader alone — its SetPixelShader call is #if 0'd out)
     // and the just-created-pixel pair (W3DWater creates wave.pso BEFORE
@@ -8271,11 +8476,11 @@ function ensureD3D8ShaderPairProgram(vsHandle, psHandle) {
       }));
     }
     entry.program = bridgeProgram;
-    d3d8PerfStats.sm1PairProgramsLinked += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.sm1PairProgramsLinked += 1;
     return bridgeProgram;
   } catch (error) {
     console.warn(`D3D8 SM1: pair program (vs=${vsHandle}, ps=${psHandle}) failed: ${error?.message ?? error}`);
-    d3d8PerfStats.sm1PairProgramFailures += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.sm1PairProgramFailures += 1;
     return null;
   }
 }
@@ -8317,7 +8522,7 @@ function d3d8SM1ConstantsChanged(location, values) {
       }
     }
     if (index === values.length) {
-      d3d8PerfStats.uniformGlSkipped += 1;
+      if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlSkipped += 1;
       return false;
     }
     last.set(values);
@@ -8445,12 +8650,12 @@ function uploadD3D8SM1DrawUniforms(bridgeProgram, payload, renderState) {
   if (bridgeProgram.psConst && payload.psConstants &&
       d3d8SM1ConstantsChanged(bridgeProgram.psConst, payload.psConstants)) {
     gl.uniform4fv(bridgeProgram.psConst, payload.psConstants);
-    d3d8PerfStats.uniformGlCalls += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlCalls += 1;
   }
   if (bridgeProgram.vsConst && payload.vsConstants &&
       d3d8SM1ConstantsChanged(bridgeProgram.vsConst, payload.vsConstants)) {
     gl.uniform4fv(bridgeProgram.vsConst, payload.vsConstants);
-    d3d8PerfStats.uniformGlCalls += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlCalls += 1;
   }
   if (bridgeProgram.bumpEnv) {
     const bump = d3d8SM1BumpEnvScratch;
@@ -8462,7 +8667,7 @@ function uploadD3D8SM1DrawUniforms(bridgeProgram, payload, renderState) {
       bump[stage * 4 + 3] = d3dDwordToFloat(stageState.bumpEnvMat11);
     }
     gl.uniform4fv(bridgeProgram.bumpEnv, bump);
-    d3d8PerfStats.uniformGlCalls += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlCalls += 1;
   }
   if (bridgeProgram.bumpEnvL) {
     const bumpL = d3d8SM1BumpEnvLScratch;
@@ -8472,7 +8677,7 @@ function uploadD3D8SM1DrawUniforms(bridgeProgram, payload, renderState) {
       bumpL[stage * 2 + 1] = d3dDwordToFloat(stageState.bumpEnvLOffset);
     }
     gl.uniform2fv(bridgeProgram.bumpEnvL, bumpL);
-    d3d8PerfStats.uniformGlCalls += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlCalls += 1;
   }
 }
 
@@ -9591,7 +9796,7 @@ function copyD3DMatrixFromHeap(ptr, scratch) {
   let target = scratch;
   if (!(target instanceof Float32Array) || target.length !== 16) {
     target = new Float32Array(16);
-    d3d8PerfStats.drawMatrixAllocatedCopies += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.drawMatrixAllocatedCopies += 1;
   }
   const offset = address >>> 2;
   if (offset + 16 > heap.length) {
@@ -9604,8 +9809,8 @@ function copyD3DMatrixFromHeap(ptr, scratch) {
     }
     target[index] = value;
   }
-  d3d8PerfStats.drawMatrixNormalizations += 1;
-  d3d8PerfStats.drawMatrixScratchCopies += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawMatrixNormalizations += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawMatrixScratchCopies += 1;
   return target;
 }
 
@@ -9622,16 +9827,16 @@ function normalizeD3DMatrix(matrix, scratch = null) {
       return null;
     }
   }
-  d3d8PerfStats.drawMatrixNormalizations += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawMatrixNormalizations += 1;
   if (scratch instanceof Float32Array && scratch.length === 16) {
     scratch.set(matrix);
-    d3d8PerfStats.drawMatrixScratchCopies += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.drawMatrixScratchCopies += 1;
     return scratch;
   }
   if (matrix instanceof Float32Array) {
     return matrix;
   }
-  d3d8PerfStats.drawMatrixAllocatedCopies += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawMatrixAllocatedCopies += 1;
   return new Float32Array(matrix);
 }
 
@@ -9680,11 +9885,11 @@ function d3d8CachedUniform1i(location, value) {
     return;
   }
   if (location.__cncLast === value) {
-    d3d8PerfStats.uniformGlSkipped += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlSkipped += 1;
     return;
   }
   location.__cncLast = value;
-  d3d8PerfStats.uniformGlCalls += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlCalls += 1;
   gl.uniform1i(location, value);
 }
 
@@ -9693,11 +9898,11 @@ function d3d8CachedUniform1f(location, value) {
     return;
   }
   if (location.__cncLast === value) {
-    d3d8PerfStats.uniformGlSkipped += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlSkipped += 1;
     return;
   }
   location.__cncLast = value;
-  d3d8PerfStats.uniformGlCalls += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlCalls += 1;
   gl.uniform1f(location, value);
 }
 
@@ -9706,12 +9911,12 @@ function d3d8CachedUniform2f(location, x, y) {
     return;
   }
   if (location.__cncLastX === x && location.__cncLastY === y) {
-    d3d8PerfStats.uniformGlSkipped += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlSkipped += 1;
     return;
   }
   location.__cncLastX = x;
   location.__cncLastY = y;
-  d3d8PerfStats.uniformGlCalls += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlCalls += 1;
   gl.uniform2f(location, x, y);
 }
 
@@ -9721,14 +9926,14 @@ function d3d8CachedUniform4f(location, x, y, z, w) {
   }
   if (location.__cncLastX === x && location.__cncLastY === y &&
       location.__cncLastZ === z && location.__cncLastW === w) {
-    d3d8PerfStats.uniformGlSkipped += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlSkipped += 1;
     return;
   }
   location.__cncLastX = x;
   location.__cncLastY = y;
   location.__cncLastZ = z;
   location.__cncLastW = w;
-  d3d8PerfStats.uniformGlCalls += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlCalls += 1;
   gl.uniform4f(location, x, y, z, w);
 }
 
@@ -9738,11 +9943,11 @@ function d3d8CachedUniformMatrix4fv(location, matrix) {
   }
   const cached = location.__cncLastMat;
   if (cached && d3d8MatrixEquals(cached, matrix)) {
-    d3d8PerfStats.uniformGlSkipped += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlSkipped += 1;
     return;
   }
   location.__cncLastMat = rememberD3D8TransformUniformSnapshot(cached, matrix);
-  d3d8PerfStats.uniformGlCalls += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlCalls += 1;
   gl.uniformMatrix4fv(location, false, matrix);
 }
 
@@ -9750,7 +9955,7 @@ function d3d8UploadChangedUniformMatrix4fv(location, matrix) {
   if (!location) {
     return;
   }
-  d3d8PerfStats.uniformGlCalls += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlCalls += 1;
   gl.uniformMatrix4fv(location, false, matrix);
 }
 
@@ -9760,13 +9965,13 @@ function setD3D8Uniform3FromArray(location, values) {
   }
   if (location.__cncLastX === values[0] && location.__cncLastY === values[1] &&
       location.__cncLastZ === values[2]) {
-    d3d8PerfStats.uniformGlSkipped += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlSkipped += 1;
     return;
   }
   location.__cncLastX = values[0];
   location.__cncLastY = values[1];
   location.__cncLastZ = values[2];
-  d3d8PerfStats.uniformGlCalls += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlCalls += 1;
   gl.uniform3f(location, values[0], values[1], values[2]);
 }
 
@@ -10361,8 +10566,24 @@ function d3d8ClipPlaneMask(renderState) {
     : 0;
 }
 
+// Immutable fallbacks for state that the active lite-mode shader cannot read.
+// Derived-cache entries may share these because no draw path mutates them.
+const D3D8_UNUSED_CLIP_PLANES = normalizeD3D8ClipPlanes();
+const D3D8_UNUSED_MATERIAL = normalizeD3D8Material();
+const D3D8_UNUSED_LIGHTS = Object.freeze([]);
+const D3D8_DISABLED_CLIP_PLANE_INFO = Object.freeze({
+  enabled: false,
+  clipping: 0,
+  mask: 0,
+  enabledIndices: Object.freeze([]),
+  planes: D3D8_UNUSED_CLIP_PLANES,
+});
+
 function d3d8ClipPlaneInfo(renderState, clipPlanes) {
   const mask = d3d8ClipPlaneMask(renderState);
+  if (mask === 0 && d3d8DiagLevel !== "full") {
+    return D3D8_DISABLED_CLIP_PLANE_INFO;
+  }
   return {
     enabled: mask !== 0,
     clipping: renderState.clipping,
@@ -10609,6 +10830,11 @@ function d3d8EffectiveStencilValue(value) {
   return (((Number(value ?? 0) >>> 0) & d3d8StencilValueMask()) >>> 0);
 }
 
+const D3D8_NORMALIZED_RENDER_STATE_OPTIONS = {
+  invertCullWinding: false,
+  normalized: true,
+};
+
 function applyD3D8RenderState(renderState, options = {}) {
   const state = options.normalized === true
     ? renderState
@@ -10641,22 +10867,32 @@ function applyD3D8RenderState(renderState, options = {}) {
     fogEnd > fogStart;
   const fogColor = d3dColorToNormalizedRgba(state.fogColor).slice(0, 3);
   const depthBias = d3d8DepthBiasInfo(state.zBias);
-  const colorMask = {
-    r: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_RED),
-    g: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_GREEN),
-    b: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_BLUE),
-    a: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_ALPHA),
-  };
+  const alphaTestEnabled = state.alphaTestEnable !== 0;
+  const alphaRef = (state.alphaRef & 0xff) / 255;
+  const fogRangeEnabled = state.rangeFogEnable !== 0;
+  const lightingEnabled = state.lighting !== 0;
+  const normalizeNormalsEnabled = state.normalizeNormals !== 0;
+  const localViewerEnabled = state.localViewer !== 0;
+  const colorVertexEnabled = state.colorVertex !== 0;
+  const sceneAmbient = d3dColorToNormalizedRgba(state.ambient);
+  const colorMaskR = Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_RED);
+  const colorMaskG = Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_GREEN);
+  const colorMaskB = Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_BLUE);
+  const colorMaskA = Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_ALPHA);
 
-  applyD3D8TrackedGlState("frontFace", gl.CCW, () => gl.frontFace(gl.CCW));
+  if (d3d8RenderGlStateValueChanged("frontFace", gl.CCW)) {
+    gl.frontFace(gl.CCW);
+  }
   setD3D8TrackedCapability(gl.CULL_FACE, "cullEnabled", cullEnabled);
-  if (cullEnabled) {
-    applyD3D8TrackedGlState("cullFace", cullFace, () => gl.cullFace(cullFace));
+  if (cullEnabled && d3d8RenderGlStateValueChanged("cullFace", cullFace)) {
+    gl.cullFace(cullFace);
   }
 
   setD3D8TrackedCapability(gl.DEPTH_TEST, "depthEnabled", depthEnabled);
   setD3D8DepthMask(state.zWriteEnable !== 0);
-  applyD3D8TrackedGlState("depthFunc", depthFunc, () => gl.depthFunc(depthFunc));
+  if (d3d8RenderGlStateValueChanged("depthFunc", depthFunc)) {
+    gl.depthFunc(depthFunc);
+  }
 
   // Emulate D3D8 D3DRS_ZBIAS with a slope-scaled polygon offset (see
   // d3d8DepthBiasInfo). This is what pulls the terrain-tessellated projected
@@ -10667,41 +10903,84 @@ function applyD3D8RenderState(renderState, options = {}) {
   // preventing any cross-draw bias leak.
   const polygonOffset = depthBias.polygonOffset;
   setD3D8TrackedCapability(gl.POLYGON_OFFSET_FILL, "polygonOffsetEnabled", polygonOffset.enabled);
-  applyD3D8TrackedGlState(
-    "polygonOffset",
-    `${polygonOffset.factor},${polygonOffset.units}`,
-    () => gl.polygonOffset(polygonOffset.factor, polygonOffset.units),
-  );
-
-  setD3D8TrackedCapability(gl.BLEND, "blendEnabled", blendEnabled);
-  applyD3D8TrackedGlState("blendFunc", `${srcBlend},${destBlend}`,
-    () => gl.blendFunc(srcBlend, destBlend));
-  applyD3D8TrackedGlState("blendEquation", blendEquation,
-    () => gl.blendEquation(blendEquation));
-  applyD3D8TrackedGlState(
-    "colorMask",
-    `${colorMask.r ? 1 : 0},${colorMask.g ? 1 : 0},${colorMask.b ? 1 : 0},${colorMask.a ? 1 : 0}`,
-    () => gl.colorMask(colorMask.r, colorMask.g, colorMask.b, colorMask.a),
-  );
-  setD3D8TrackedCapability(gl.STENCIL_TEST, "stencilEnabled", stencilEnabled);
-  if (stencilEnabled) {
-    applyD3D8TrackedGlState("stencilFunc", `${stencilFunc},${stencilRef},${stencilMask}`,
-      () => gl.stencilFunc(stencilFunc, stencilRef, stencilMask));
-    applyD3D8TrackedGlState("stencilOp", `${stencilFail},${stencilZFail},${stencilPass}`,
-      () => gl.stencilOp(stencilFail, stencilZFail, stencilPass));
-    applyD3D8TrackedGlState("stencilMask", stencilWriteMask,
-      () => gl.stencilMask(stencilWriteMask));
-  } else {
-    const resetStencilMask = d3d8EffectiveStencilValue(0xffffffff);
-    applyD3D8TrackedGlState("stencilFunc", `${gl.ALWAYS},0,${resetStencilMask}`,
-      () => gl.stencilFunc(gl.ALWAYS, 0, resetStencilMask));
-    applyD3D8TrackedGlState("stencilOp", `${gl.KEEP},${gl.KEEP},${gl.KEEP}`,
-      () => gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP));
-    applyD3D8TrackedGlState("stencilMask", resetStencilMask,
-      () => gl.stencilMask(resetStencilMask));
+  if (d3d8RenderGlStateTupleChanged(
+    "polygonOffset", polygonOffset.factor, polygonOffset.units)) {
+    gl.polygonOffset(polygonOffset.factor, polygonOffset.units);
   }
 
+  setD3D8TrackedCapability(gl.BLEND, "blendEnabled", blendEnabled);
+  if (d3d8RenderGlStateTupleChanged("blendFunc", srcBlend, destBlend)) {
+    gl.blendFunc(srcBlend, destBlend);
+  }
+  if (d3d8RenderGlStateValueChanged("blendEquation", blendEquation)) {
+    gl.blendEquation(blendEquation);
+  }
+  if (d3d8RenderGlStateTupleChanged(
+    "colorMask", colorMaskR, colorMaskG, colorMaskB, colorMaskA)) {
+    gl.colorMask(colorMaskR, colorMaskG, colorMaskB, colorMaskA);
+  }
+  setD3D8TrackedCapability(gl.STENCIL_TEST, "stencilEnabled", stencilEnabled);
+  if (stencilEnabled) {
+    if (d3d8RenderGlStateTupleChanged("stencilFunc", stencilFunc, stencilRef, stencilMask)) {
+      gl.stencilFunc(stencilFunc, stencilRef, stencilMask);
+    }
+    if (d3d8RenderGlStateTupleChanged("stencilOp", stencilFail, stencilZFail, stencilPass)) {
+      gl.stencilOp(stencilFail, stencilZFail, stencilPass);
+    }
+    if (d3d8RenderGlStateValueChanged("stencilMask", stencilWriteMask)) {
+      gl.stencilMask(stencilWriteMask);
+    }
+  } else {
+    const resetStencilMask = d3d8EffectiveStencilValue(0xffffffff);
+    if (d3d8RenderGlStateTupleChanged("stencilFunc", gl.ALWAYS, 0, resetStencilMask)) {
+      gl.stencilFunc(gl.ALWAYS, 0, resetStencilMask);
+    }
+    if (d3d8RenderGlStateTupleChanged("stencilOp", gl.KEEP, gl.KEEP, gl.KEEP)) {
+      gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+    }
+    if (d3d8RenderGlStateValueChanged("stencilMask", resetStencilMask)) {
+      gl.stencilMask(resetStencilMask);
+    }
+  }
+
+  if (d3d8DiagLevel !== "full") {
+    return {
+      depthBiasNdc: depthBias.ndc,
+      alphaTestEnabled,
+      alphaRef,
+      fogEnabled,
+      fogRangeEnabled,
+      fogColor,
+      fogStart,
+      fogEnd,
+      lightingEnabled,
+      normalizeNormalsEnabled,
+      localViewerEnabled,
+      colorVertexEnabled,
+      sceneAmbient,
+    };
+  }
+
+  const colorMask = {
+    r: colorMaskR,
+    g: colorMaskG,
+    b: colorMaskB,
+    a: colorMaskA,
+  };
   return {
+    depthBiasNdc: depthBias.ndc,
+    alphaTestEnabled,
+    alphaRef,
+    fogEnabled,
+    fogRangeEnabled,
+    fogColor,
+    fogStart,
+    fogEnd,
+    lightingEnabled,
+    normalizeNormalsEnabled,
+    localViewerEnabled,
+    colorVertexEnabled,
+    sceneAmbient,
     d3d: state,
     cull: {
       enabled: cullEnabled,
@@ -10736,9 +11015,9 @@ function applyD3D8RenderState(renderState, options = {}) {
       d3dWriteMask: state.stencilWriteMask,
     },
     alphaTest: {
-      enabled: state.alphaTestEnable !== 0,
+      enabled: alphaTestEnabled,
       func: d3dCmpToGl(state.alphaFunc),
-      ref: (state.alphaRef & 0xff) / 255,
+      ref: alphaRef,
     },
     fog: {
       enabled: fogEnabled,
@@ -10746,7 +11025,7 @@ function applyD3D8RenderState(renderState, options = {}) {
       start: fogStart,
       end: fogEnd,
       vertexMode: state.fogVertexMode,
-      rangeEnabled: state.rangeFogEnable !== 0,
+      rangeEnabled: fogRangeEnabled,
     },
     fillMode: {
       mode: state.fillMode,
@@ -10760,23 +11039,23 @@ function applyD3D8RenderState(renderState, options = {}) {
       phongRequested: state.shadeMode === D3DSHADE_PHONG,
     },
     lighting: {
-      enabled: state.lighting !== 0,
+      enabled: lightingEnabled,
       normalizeNormals: {
-        enabled: state.normalizeNormals !== 0,
+        enabled: normalizeNormalsEnabled,
         value: state.normalizeNormals,
       },
       localViewer: {
-        enabled: state.localViewer !== 0,
+        enabled: localViewerEnabled,
         value: state.localViewer,
       },
     },
     ambient: {
       color: state.ambient,
-      rgba: d3dColorToNormalizedRgba(state.ambient),
+      rgba: sceneAmbient,
     },
     materialSources: {
       colorVertex: {
-        enabled: state.colorVertex !== 0,
+        enabled: colorVertexEnabled,
         value: state.colorVertex,
       },
       diffuse: {
@@ -10809,8 +11088,12 @@ function applyD3D8RenderState(renderState, options = {}) {
 let d3d8DiagLevel = "full";
 // null = follow diag level (full => timed, lite => untimed); boolean = forced.
 let d3d8PerfTimingOverride = null;
+let d3d8PerfCountersOverride = null;
 function syncD3D8PerfTimingEnabled() {
   d3d8PerfTimingEnabled = d3d8PerfTimingOverride ?? (d3d8DiagLevel === "full");
+}
+function syncD3D8PerfCountersEnabled() {
+  d3d8PerfCountersEnabled = d3d8PerfCountersOverride ?? (d3d8DiagLevel === "full");
 }
 let d3d8SceneDrawHistoryLimit = 256;
 let d3d8AdjacentDrawBatchingEnabled = true;
@@ -10853,6 +11136,10 @@ try {
   if (_perfTiming === "1" || _perfTiming === "true") d3d8PerfTimingOverride = true;
   else if (_perfTiming === "0" || _perfTiming === "false") d3d8PerfTimingOverride = false;
   syncD3D8PerfTimingEnabled();
+  const _perfCounters = _params.get("perfCounters");
+  if (_perfCounters === "1" || _perfCounters === "true") d3d8PerfCountersOverride = true;
+  else if (_perfCounters === "0" || _perfCounters === "false") d3d8PerfCountersOverride = false;
+  syncD3D8PerfCountersEnabled();
   const _historyLimit = Number(_params.get("drawHistoryLimit"));
   if (Number.isFinite(_historyLimit) && _historyLimit > 0) {
     d3d8SceneDrawHistoryLimit = Math.min(8192, Math.max(1, Math.trunc(_historyLimit)));
@@ -10885,6 +11172,7 @@ if (typeof globalThis !== "undefined") {
       }
       d3d8DiagLevel = lvl;
       syncD3D8PerfTimingEnabled();
+      syncD3D8PerfCountersEnabled();
       applyD3D8BoundDrawDiagnosticsLevel();
     }
     return d3d8DiagLevel;
@@ -10893,6 +11181,11 @@ if (typeof globalThis !== "undefined") {
     d3d8PerfTimingOverride = enabled == null ? null : Boolean(enabled);
     syncD3D8PerfTimingEnabled();
     return d3d8PerfTimingEnabled;
+  };
+  globalThis.__cncSetD3D8PerfCounters = (enabled) => {
+    d3d8PerfCountersOverride = enabled == null ? null : Boolean(enabled);
+    syncD3D8PerfCountersEnabled();
+    return d3d8PerfCountersEnabled;
   };
   globalThis.__cncSetD3D8SceneDrawHistoryLimit = (limit) => {
     const numericLimit = Number(limit);
@@ -11119,14 +11412,16 @@ function tryMergeD3D8PendingDrawBatch(batchInfo) {
   pending.indexCount += batchInfo.indexCount;
   pending.nextIndexByteOffset = batchInfo.nextIndexByteOffset;
   pending.logicalDraws += 1;
-  d3d8PerfStats.drawBatchCandidates += 1;
-  d3d8PerfStats.drawBatchMerged += 1;
-  d3d8PerfStats.drawBatchSavedDrawElements += 1;
-  d3d8PerfStats.drawBatchMergedIndices += batchInfo.indexCount;
-  d3d8PerfStats.drawBatchMaxRunLength = Math.max(
-    d3d8PerfStats.drawBatchMaxRunLength,
-    pending.logicalDraws,
-  );
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawBatchCandidates += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawBatchMerged += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawBatchSavedDrawElements += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawBatchMergedIndices += batchInfo.indexCount;
+  if (d3d8PerfCountersEnabled) {
+    d3d8PerfStats.drawBatchMaxRunLength = Math.max(
+      d3d8PerfStats.drawBatchMaxRunLength,
+      pending.logicalDraws,
+    );
+  }
   return true;
 }
 
@@ -11138,9 +11433,11 @@ function queueD3D8PendingDrawBatch(batchInfo) {
     ...batchInfo,
     logicalDraws: 1,
   };
-  d3d8PerfStats.drawBatchCandidates += 1;
-  d3d8PerfStats.drawBatchQueued += 1;
-  d3d8PerfStats.drawBatchMaxRunLength = Math.max(d3d8PerfStats.drawBatchMaxRunLength, 1);
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawBatchCandidates += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawBatchQueued += 1;
+  if (d3d8PerfCountersEnabled) {
+    d3d8PerfStats.drawBatchMaxRunLength = Math.max(d3d8PerfStats.drawBatchMaxRunLength, 1);
+  }
   return true;
 }
 
@@ -11158,11 +11455,11 @@ function flushD3D8PendingDrawBatch(_reason = "flush") {
     pending.indexType,
     pending.indexByteOffset,
   );
-  d3d8PerfStats.draws += 1;
-  d3d8PerfStats.drawElements += 1;
-  d3d8PerfStats.drawIndices += Number(pending.indexCount ?? 0) >>> 0;
-  d3d8PerfStats.drawMs += perfNow() - drawStartedAt;
-  d3d8PerfStats.drawBatchFlushes += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.draws += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawElements += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawIndices += Number(pending.indexCount ?? 0) >>> 0;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawMs += perfNow() - drawStartedAt;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawBatchFlushes += 1;
   return 1;
 }
 
@@ -11509,9 +11806,9 @@ function paintD3D8DrawIndexed(payload = {}) {
   const indexSize = Number(payload.indexSize ?? 0) >>> 0;
   const indexCount = Number(payload.indexCount ?? 0) >>> 0;
   const primitiveType = Number(payload.primitiveType ?? 0) >>> 0;
-  d3d8PerfStats.drawPayloadCalls += 1;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawPayloadCalls += 1;
   if (payload.__reusedD3D8DrawPayload === true) {
-    d3d8PerfStats.drawPayloadReused += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.drawPayloadReused += 1;
   }
   const sortedDrawProfiled = payload.sortedDrawSubmitProfile === true;
   const drawProducer = d3d8DrawProducerTrackingEnabled ? bufferProducerLabel(payload.producer) : null;
@@ -11528,14 +11825,14 @@ function paintD3D8DrawIndexed(payload = {}) {
     ? () => {
         noteD3D8DrawProducerMs(drawProducerEntry, "drawProfiledMs", perfNow() - drawProducerStartedAt);
       }
-    : () => {};
+    : null;
   const finishSortedDrawProfile = sortedDrawProfiled
     ? () => {
         const elapsed = perfNow() - sortedDrawStartedAt;
-        d3d8PerfStats.sortedDrawProfiledMs += elapsed;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.sortedDrawProfiledMs += elapsed;
         noteD3D8DrawProducerMs(drawProducerEntry, "sortedDrawProfiledMs", elapsed);
       }
-    : () => {};
+    : null;
   const recordDrawPhase = drawSubphaseProfiled
     ? (field) => {
         const now = perfNow();
@@ -11564,7 +11861,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       }
     : null;
   if (sortedDrawProfiled) {
-    d3d8PerfStats.sortedDrawProfiledCalls += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.sortedDrawProfiledCalls += 1;
   }
   const baseGlPrimitive = d3dPrimitiveToGl(primitiveType);
   const vertexResource = d3d8Buffers.get(d3d8BufferKey(1, vertexBufferId));
@@ -11598,8 +11895,8 @@ function paintD3D8DrawIndexed(payload = {}) {
   });
   if (tryMergeD3D8PendingDrawBatch(earlyBatchInfo)) {
     recordDrawPhase?.("sortedDrawPreBatchMs");
-    finishSortedDrawProfile();
-    finishDrawProducerProfile();
+    finishSortedDrawProfile?.();
+    finishDrawProducerProfile?.();
     harnessState.graphics.d3d8DrawIndexedSequence = drawSequence;
     return 1;
   }
@@ -11672,9 +11969,9 @@ function paintD3D8DrawIndexed(payload = {}) {
     }
   }
   if (drawCacheHit) {
-    d3d8PerfStats.drawDerivedCacheHits += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDerivedCacheHits += 1;
   } else {
-    d3d8PerfStats.drawDerivedCacheMisses += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDerivedCacheMisses += 1;
   }
 
   let renderState, clipPlanes, material, lights;
@@ -11755,19 +12052,42 @@ function paintD3D8DrawIndexed(payload = {}) {
       : canonicalStatePayload
         ? payload.renderState
         : normalizeD3D8RenderState(payload.renderState);
-    clipPlanes = pointerStatePayload
-      ? copyD3D8ClipPlanesFromWasm(payload.clipPlanesPtr)
-      : canonicalStatePayload
-        ? payload.clipPlanes
-        : normalizeD3D8ClipPlanes(payload.clipPlanes);
-    material = pointerStatePayload
-      ? copyD3D8MaterialFromWasm(payload.materialPtr)
-      : canonicalStatePayload
-        ? payload.material
-        : normalizeD3D8Material(payload.material);
     renderState ??= normalizeD3D8RenderState();
-    clipPlanes ??= normalizeD3D8ClipPlanes();
-    material ??= normalizeD3D8Material();
+    depthStencilOnlyFastDerived = pixelShaderHandle === 0 && !sm1VertexDraw &&
+      d3d8DiagLevel !== "full" &&
+      d3d8CanUseDepthStencilOnlyProgramWithoutTextureProbe(renderState, primitiveType);
+    const preserveDiagnosticState = d3d8DiagLevel === "full";
+    const clipPlanesNeeded = preserveDiagnosticState || d3d8ClipPlaneMask(renderState) !== 0;
+    const materialNeeded = preserveDiagnosticState ||
+      (!depthStencilOnlyFastDerived && renderState.lighting !== 0);
+    if (pointerStatePayload) {
+      if (clipPlanesNeeded) {
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawClipPlanePayloadCopies += 1;
+      } else {
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawClipPlanePayloadSkips += 1;
+      }
+      if (materialNeeded) {
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawMaterialPayloadCopies += 1;
+      } else {
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawMaterialPayloadSkips += 1;
+      }
+    }
+    clipPlanes = clipPlanesNeeded
+      ? pointerStatePayload
+        ? copyD3D8ClipPlanesFromWasm(payload.clipPlanesPtr)
+        : canonicalStatePayload
+          ? payload.clipPlanes
+          : normalizeD3D8ClipPlanes(payload.clipPlanes)
+      : D3D8_UNUSED_CLIP_PLANES;
+    material = materialNeeded
+      ? pointerStatePayload
+        ? copyD3D8MaterialFromWasm(payload.materialPtr)
+        : canonicalStatePayload
+          ? payload.material
+          : normalizeD3D8Material(payload.material)
+      : D3D8_UNUSED_MATERIAL;
+    clipPlanes ??= D3D8_UNUSED_CLIP_PLANES;
+    material ??= D3D8_UNUSED_MATERIAL;
     // D3D ignores the texture matrix while transform flags are disabled. Most
     // scene states disable all four, so do not allocate and copy 64 floats for
     // matrices that cannot reach a shader.
@@ -11801,13 +12121,19 @@ function paintD3D8DrawIndexed(payload = {}) {
     texture1Id = drawCacheTexture1Id;
     texture2Id = drawCacheTexture2Id;
     texture3Id = drawCacheTexture3Id;
-    depthStencilOnlyFastDerived = pixelShaderHandle === 0 && !sm1VertexDraw &&
-      d3d8DiagLevel !== "full" &&
-      d3d8CanUseDepthStencilOnlyProgramWithoutTextureProbe(renderState, primitiveType);
+    const lightsNeeded = preserveDiagnosticState ||
+      (!depthStencilOnlyFastDerived && renderState.lighting !== 0);
+    if (pointerStatePayload) {
+      if (lightsNeeded) {
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawLightPayloadCopies += 1;
+      } else {
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawLightPayloadSkips += 1;
+      }
+    }
     if (depthStencilOnlyFastDerived) {
-      lights = [];
-      fixedFunctionLights = [];
-      directionalLights = [];
+      lights = D3D8_UNUSED_LIGHTS;
+      fixedFunctionLights = D3D8_UNUSED_LIGHTS;
+      directionalLights = D3D8_UNUSED_LIGHTS;
       firstDirectionalLight = null;
       texture0Resource = null;
       texture0Ready = false;
@@ -11836,14 +12162,18 @@ function paintD3D8DrawIndexed(payload = {}) {
       appliedStage3Combiner = null;
       implicitAlphaCutoutThreshold = -1;
     } else {
-      lights = pointerStatePayload
-        ? copyD3D8LightsFromWasm(payload.lightsPtr)
-        : canonicalStatePayload
-          ? payload.lights
-          : normalizeD3D8Lights(payload.lights);
-      lights ??= normalizeD3D8Lights();
-      fixedFunctionLights = d3d8FixedFunctionLights(lights);
-      directionalLights = d3d8DirectionalLights(lights);
+      lights = lightsNeeded
+        ? pointerStatePayload
+          ? copyD3D8LightsFromWasm(payload.lightsPtr)
+          : canonicalStatePayload
+            ? payload.lights
+            : normalizeD3D8Lights(payload.lights)
+        : D3D8_UNUSED_LIGHTS;
+      lights ??= D3D8_UNUSED_LIGHTS;
+      fixedFunctionLights = lightsNeeded
+        ? d3d8FixedFunctionLights(lights) : D3D8_UNUSED_LIGHTS;
+      directionalLights = lightsNeeded
+        ? d3d8DirectionalLights(lights) : D3D8_UNUSED_LIGHTS;
       firstDirectionalLight = directionalLights[0] ?? null;
       texture0Resource = texture0Id !== 0 ? d3d8Textures.get(texture0Id) : null;
       texture0Ready = Boolean(
@@ -11960,7 +12290,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     );
   }
   if (depthStencilOnlyFastDerived) {
-    d3d8PerfStats.drawDepthStencilOnlyFastDerivedDraws += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDepthStencilOnlyFastDerivedDraws += 1;
   }
   const usesDestinationAlpha = renderState.alphaBlendEnable !== 0 &&
     (renderState.srcBlend === D3DBLEND_DESTALPHA ||
@@ -11968,9 +12298,9 @@ function paintD3D8DrawIndexed(payload = {}) {
       renderState.destBlend === D3DBLEND_DESTALPHA ||
       renderState.destBlend === D3DBLEND_INVDESTALPHA);
   if (usesDestinationAlpha) {
-    d3d8PerfStats.destinationAlphaBlendDraws += 1;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.destinationAlphaBlendDraws += 1;
     if (d3d8CurrentFramebuffer !== null) {
-      d3d8PerfStats.destinationAlphaBlendOffscreenDraws += 1;
+      if (d3d8PerfCountersEnabled) d3d8PerfStats.destinationAlphaBlendOffscreenDraws += 1;
     }
   }
   // Terrain noise/cloud/lightmap detail-pass diagnostic. The original
@@ -11986,22 +12316,26 @@ function paintD3D8DrawIndexed(payload = {}) {
   // engine LOD / Options gate leaving m_useLightMap / m_useCloudMap off so the
   // ST_TERRAIN_BASE_NOISE* technique is never selected upstream (in which case
   // this counter stays 0), not a lost pass in the D3D8->WebGL2 bridge.
-  d3d8NoteTerrainNoiseMultiplyDraw(
-    renderState,
-    canSampleTexture0,
-    texture0Coordinates,
-    texture0Transform,
-    canSampleTexture1,
-    texture1Coordinates,
-    texture1Transform,
-  );
+  if (d3d8PerfCountersEnabled) {
+    d3d8NoteTerrainNoiseMultiplyDraw(
+      renderState,
+      canSampleTexture0,
+      texture0Coordinates,
+      texture0Transform,
+      canSampleTexture1,
+      texture1Coordinates,
+      texture1Transform,
+    );
+  }
   const vertexPretransformed = vertexLayout?.pretransformed === true;
   const usePositionTransforms = useTransforms && !vertexPretransformed;
   const includeSceneDrawHistory = usePositionTransforms || vertexPretransformed;
   const usesIdentityClipSpace = usePositionTransforms && matrixTransformsAreIdentity;
   recordDrawPhase?.("sortedDrawDerivedMs");
-  warnD3D8CombinerDiagnostics(renderState, appliedTexture0Combiner, appliedStage1Combiner,
-    appliedStage2Combiner, appliedStage3Combiner, drawSequence);
+  if (d3d8DiagLevel === "full") {
+    warnD3D8CombinerDiagnostics(renderState, appliedTexture0Combiner, appliedStage1Combiner,
+      appliedStage2Combiner, appliedStage3Combiner, drawSequence);
+  }
   if (d3d8DiagLevel === "full" && texture0Resource) {
     const caps = (harnessState.graphics.uiDrawCaptures ??= { atlas: [], small: [], census: {} });
     const dimKey = `${texture0Resource.width}x${texture0Resource.height}`;
@@ -12148,6 +12482,24 @@ function paintD3D8DrawIndexed(payload = {}) {
         ? ensureD3D8DepthStencilProgram()
         : ensureD3D8DepthStencilNoClipProgram())
       : ensureD3D8DrawProgram();
+    const particleProgramDraw = !depthStencilOnlyDraw && pixelShaderHandle === 0 &&
+      !sm1VertexDraw && d3d8CanUseParticleProgram({
+        renderState,
+        primitiveType: payload.primitiveType,
+        vertexShaderFvf,
+        vertexStride,
+        canSampleTexture0,
+        canSampleTexture1,
+        canSampleTexture2,
+        canSampleTexture3,
+        texture0Coordinates,
+        texture0SemanticMode,
+        implicitAlphaCutoutThreshold,
+      });
+    if (particleProgramDraw) {
+      bridgeProgram = ensureD3D8ParticleProgram();
+      if (d3d8PerfCountersEnabled) d3d8PerfStats.particleProgramDraws += 1;
+    }
     if (pixelShaderHandle !== 0 || sm1VertexDraw) {
       // Programmable SM1 draw: use the translated (vertexShader, pixelShader)
       // pair program. A missing pair (translation failed, vs-only draw)
@@ -12165,12 +12517,12 @@ function paintD3D8DrawIndexed(payload = {}) {
       );
       if (sm1Program) {
         bridgeProgram = sm1Program;
-        d3d8PerfStats.sm1ShaderDraws += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.sm1ShaderDraws += 1;
         if (sm1VertexDraw) {
-          d3d8PerfStats.sm1TranslatedVsDraws += 1;
+          if (d3d8PerfCountersEnabled) d3d8PerfStats.sm1TranslatedVsDraws += 1;
         }
       } else {
-        d3d8PerfStats.sm1FallbackDraws += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.sm1FallbackDraws += 1;
       }
       // Fidelity debugging: capture one representative draw state per pixel
       // shader when globalThis.__cncSM1DebugCapture is set (read the map from
@@ -12228,9 +12580,9 @@ function paintD3D8DrawIndexed(payload = {}) {
       }
     }
     if (depthStencilOnlyDraw) {
-      d3d8PerfStats.drawDepthStencilOnlyProgramDraws += 1;
+      if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDepthStencilOnlyProgramDraws += 1;
       if (!depthStencilNeedsClipPlanes) {
-        d3d8PerfStats.drawDepthStencilNoDiscardDraws += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDepthStencilNoDiscardDraws += 1;
       }
     }
     bindD3D8Program(bridgeProgram.program);
@@ -12286,14 +12638,14 @@ function paintD3D8DrawIndexed(payload = {}) {
     const textureUniformUnchanged =
       textureUniformKey === harnessState.graphics.lastD3D8TextureUniformKey;
     if (renderUniformUnchanged) {
-      d3d8PerfStats.drawUniformCacheHits += 1;
+      if (d3d8PerfCountersEnabled) d3d8PerfStats.drawUniformCacheHits += 1;
     } else {
-      d3d8PerfStats.drawUniformCacheMisses += 1;
+      if (d3d8PerfCountersEnabled) d3d8PerfStats.drawUniformCacheMisses += 1;
     }
     if (textureUniformUnchanged) {
-      d3d8PerfStats.drawTextureUniformCacheHits += 1;
+      if (d3d8PerfCountersEnabled) d3d8PerfStats.drawTextureUniformCacheHits += 1;
     } else {
-      d3d8PerfStats.drawTextureUniformCacheMisses += 1;
+      if (d3d8PerfCountersEnabled) d3d8PerfStats.drawTextureUniformCacheMisses += 1;
     }
     recordDrawSubphase?.("sortedDrawProgramMs");
     let fillModeDraw, shadeModeDraw;
@@ -12365,9 +12717,9 @@ function paintD3D8DrawIndexed(payload = {}) {
         effectiveVertexResource = { buffer: slot.buffer };
         effectiveVertexBufferId = slot.id;
         effectiveVertexByteOffset = vertexByteOffset - range.start;
-        d3d8PerfStats.drawDynamicVertexRedirects += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDynamicVertexRedirects += 1;
       } else if (vertexResource.dynRanges?.length > 0) {
-        d3d8PerfStats.drawDynamicVertexSharedFallbacks += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDynamicVertexSharedFallbacks += 1;
         ensureD3D8DynamicSharedBufferCurrent(vertexResource);
       }
     }
@@ -12382,9 +12734,9 @@ function paintD3D8DrawIndexed(payload = {}) {
         effectiveIndexResource = { buffer: slot.buffer };
         effectiveIndexBufferId = slot.id;
         shadeModeDraw.drawIndexByteOffset -= range.start;
-        d3d8PerfStats.drawDynamicIndexRedirects += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDynamicIndexRedirects += 1;
       } else if (indexResource.dynRanges?.length > 0) {
-        d3d8PerfStats.drawDynamicIndexSharedFallbacks += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDynamicIndexSharedFallbacks += 1;
         ensureD3D8DynamicSharedBufferCurrent(indexResource);
       }
     } else if (indexResource.dynamic === true) {
@@ -12423,7 +12775,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       (d3d8CurrentVertexArray === null &&
         d3d8VertexAttribKeyMatches(d3d8LastVertexAttribKey, vertexAttribKey));
     if (vertexAttribAlreadyBound) {
-      d3d8PerfStats.drawVertexAttribCacheHits += 1;
+      if (d3d8PerfCountersEnabled) d3d8PerfStats.drawVertexAttribCacheHits += 1;
       if (currentVertexArrayMatches && canUseVertexArrayCache && d3d8CurrentVertexArrayKey) {
         touchD3D8VertexArrayCacheEntry(d3d8CurrentVertexArrayKey);
       }
@@ -12432,8 +12784,8 @@ function paintD3D8DrawIndexed(payload = {}) {
         ? findD3D8VertexArrayCacheEntry(vertexAttribKey, effectiveIndexBufferId)
         : null;
       if (cachedVertexArray?.vertexArray) {
-        d3d8PerfStats.drawVertexAttribCacheHits += 1;
-        d3d8PerfStats.drawVertexArrayCacheHits += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawVertexAttribCacheHits += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawVertexArrayCacheHits += 1;
         bindD3D8VertexArray(
           cachedVertexArray.vertexArray,
           cachedVertexArray,
@@ -12449,9 +12801,9 @@ function paintD3D8DrawIndexed(payload = {}) {
           texture1Coordinates,
         );
       } else {
-        d3d8PerfStats.drawVertexAttribCacheMisses += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawVertexAttribCacheMisses += 1;
         if (canUseVertexArrayCache) {
-          d3d8PerfStats.drawVertexArrayCacheMisses += 1;
+          if (d3d8PerfCountersEnabled) d3d8PerfStats.drawVertexArrayCacheMisses += 1;
           const vertexArray = gl.createVertexArray();
           if (vertexArray) {
             const cachedEntry = rememberD3D8VertexArray(
@@ -12549,14 +12901,14 @@ function paintD3D8DrawIndexed(payload = {}) {
     // below.
     if (!renderUniformUnchanged) {
       const applyRenderStateStartedAt = drawSubphaseProfiled ? perfNow() : 0;
-      appliedRenderState = applyD3D8RenderState(renderState, {
-        invertCullWinding: false,
-        normalized: true,
-      });
+      appliedRenderState = applyD3D8RenderState(
+        renderState,
+        D3D8_NORMALIZED_RENDER_STATE_OPTIONS,
+      );
       if (drawSubphaseProfiled) {
         const elapsed = perfNow() - applyRenderStateStartedAt;
         if (sortedDrawProfiled) {
-          d3d8PerfStats.sortedDrawApplyRenderStateMs += elapsed;
+          if (d3d8PerfCountersEnabled) d3d8PerfStats.sortedDrawApplyRenderStateMs += elapsed;
         }
         noteD3D8DrawProducerPhaseMs(
           drawProducerEntry,
@@ -12579,38 +12931,42 @@ function paintD3D8DrawIndexed(payload = {}) {
         : null;
       appliedRenderState.clipPlanes = d3d8CachedDerived.clipPlaneInfo ??=
         d3d8ClipPlaneInfo(renderState, clipPlanes);
-      appliedRenderState.lighting = {
-        ...appliedRenderState.lighting,
-        shaderEnabled: !depthStencilOnlyDraw &&
-          !vertexPretransformed &&
-          appliedRenderState.lighting.enabled &&
-          fixedFunctionLights.length > 0,
-        normalTransform: {
-          source: usePositionTransforms ? "inverseTransposeWorld" : "attribute",
-          inverseTransposeWorld: Boolean(usePositionTransforms),
-          normalizeNormals: renderState.normalizeNormals !== 0,
-        },
-        viewDirection: {
-          source: renderState.localViewer !== 0 ? "cameraRelative" : "orthogonal",
-          localViewer: renderState.localViewer !== 0,
-        },
-        specular: {
-          enabled: renderState.specularEnable !== 0,
-          material: material.specular,
-          power: material.power,
-          source: renderState.specularMaterialSource,
-          sourceName: d3dMaterialSourceName(renderState.specularMaterialSource),
-        },
-        fixedFunctionLightSupported: fixedFunctionLights.length > 0,
-        fixedFunctionLightCount: fixedFunctionLights.length,
-        fixedFunctionLights,
-        directionalLightSupported: directionalLights.length > 0,
-        directionalLightCount: directionalLights.length,
-        directionalLights,
-        firstDirectionalLight,
-      };
+      appliedRenderState.lightingShaderEnabled = !depthStencilOnlyDraw &&
+        !vertexPretransformed &&
+        appliedRenderState.lightingEnabled &&
+        fixedFunctionLights.length > 0;
+      appliedRenderState.specularEnabled = renderState.specularEnable !== 0;
+      if (d3d8DiagLevel === "full") {
+        appliedRenderState.lighting = {
+          ...appliedRenderState.lighting,
+          shaderEnabled: appliedRenderState.lightingShaderEnabled,
+          normalTransform: {
+            source: usePositionTransforms ? "inverseTransposeWorld" : "attribute",
+            inverseTransposeWorld: Boolean(usePositionTransforms),
+            normalizeNormals: renderState.normalizeNormals !== 0,
+          },
+          viewDirection: {
+            source: renderState.localViewer !== 0 ? "cameraRelative" : "orthogonal",
+            localViewer: renderState.localViewer !== 0,
+          },
+          specular: {
+            enabled: appliedRenderState.specularEnabled,
+            material: material.specular,
+            power: material.power,
+            source: renderState.specularMaterialSource,
+            sourceName: d3dMaterialSourceName(renderState.specularMaterialSource),
+          },
+          fixedFunctionLightSupported: fixedFunctionLights.length > 0,
+          fixedFunctionLightCount: fixedFunctionLights.length,
+          fixedFunctionLights,
+          directionalLightSupported: directionalLights.length > 0,
+          directionalLightCount: directionalLights.length,
+          directionalLights,
+          firstDirectionalLight,
+        };
+      }
       recordRenderUniformDetail?.("sortedDrawRenderBuildMs");
-      const baseUniformKey = d3d8BaseUniformKey(
+      const baseUniformsUnchanged = d3d8BaseUniformSnapshotMatches(
         usePositionTransforms,
         vertexPretransformed,
         appliedViewport,
@@ -12618,10 +12974,10 @@ function paintD3D8DrawIndexed(payload = {}) {
         clipPlanes,
         shadeModeDraw,
       );
-      if (baseUniformKey === d3d8LastBaseUniformKey) {
-        d3d8PerfStats.drawBaseUniformCacheHits += 1;
+      if (baseUniformsUnchanged) {
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawBaseUniformCacheHits += 1;
       } else {
-        d3d8PerfStats.drawBaseUniformCacheMisses += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawBaseUniformCacheMisses += 1;
         d3d8CachedUniform1f(bridgeProgram.scale, 1.0);
         d3d8CachedUniform1i(bridgeProgram.useTransforms, usePositionTransforms ? 1 : 0);
         if (bridgeProgram.pretransformedPosition) {
@@ -12638,7 +12994,7 @@ function paintD3D8DrawIndexed(payload = {}) {
           );
         }
         if (bridgeProgram.depthBias) {
-          d3d8CachedUniform1f(bridgeProgram.depthBias, appliedRenderState.depth.bias.ndc);
+          d3d8CachedUniform1f(bridgeProgram.depthBias, appliedRenderState.depthBiasNdc);
         }
         const effectiveClipPlaneMask = vertexPretransformed ? 0 : appliedRenderState.clipPlanes.mask;
         if (bridgeProgram.clipPlaneMask) {
@@ -12651,36 +13007,46 @@ function paintD3D8DrawIndexed(payload = {}) {
           d3d8CachedUniform1i(bridgeProgram.useFlatShade, shadeModeDraw.usesFlatShader ? 1 : 0);
         }
         if (bridgeProgram.lightingEnabled) {
-          d3d8CachedUniform1i(bridgeProgram.lightingEnabled, appliedRenderState.lighting.shaderEnabled ? 1 : 0);
+          d3d8CachedUniform1i(
+            bridgeProgram.lightingEnabled,
+            appliedRenderState.lightingShaderEnabled ? 1 : 0,
+          );
         }
         if (bridgeProgram.specularEnabled) {
           d3d8CachedUniform1i(bridgeProgram.specularEnabled,
-            appliedRenderState.lighting.specular.enabled ? 1 : 0);
+            appliedRenderState.specularEnabled ? 1 : 0);
         }
         if (bridgeProgram.normalizeNormals) {
           d3d8CachedUniform1i(bridgeProgram.normalizeNormals,
-            appliedRenderState.lighting.normalizeNormals.enabled ? 1 : 0);
+            appliedRenderState.normalizeNormalsEnabled ? 1 : 0);
         }
         if (bridgeProgram.localViewer) {
           d3d8CachedUniform1i(bridgeProgram.localViewer,
-            appliedRenderState.lighting.localViewer.enabled ? 1 : 0);
+            appliedRenderState.localViewerEnabled ? 1 : 0);
         }
         if (bridgeProgram.colorVertexEnabled) {
           d3d8CachedUniform1i(bridgeProgram.colorVertexEnabled,
-            appliedRenderState.materialSources.colorVertex.enabled ? 1 : 0);
+            appliedRenderState.colorVertexEnabled ? 1 : 0);
         }
-        d3d8LastBaseUniformKey = baseUniformKey;
+        rememberD3D8BaseUniformSnapshot(
+          usePositionTransforms,
+          vertexPretransformed,
+          appliedViewport,
+          appliedRenderState,
+          clipPlanes,
+          shadeModeDraw,
+        );
       }
       recordRenderUniformDetail?.("sortedDrawRenderBaseUniformMs");
-      const lightingUniformsNeeded = Boolean(appliedRenderState.lighting.shaderEnabled);
+      const lightingUniformsNeeded = Boolean(appliedRenderState.lightingShaderEnabled);
       if (!lightingUniformsNeeded) {
-        d3d8PerfStats.drawMaterialUniformCacheHits += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawMaterialUniformCacheHits += 1;
       } else if (d3d8MaterialUniformsEqual(renderState, material)) {
-        d3d8PerfStats.drawMaterialUniformCacheHits += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawMaterialUniformCacheHits += 1;
       } else {
-        d3d8PerfStats.drawMaterialUniformCacheMisses += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawMaterialUniformCacheMisses += 1;
         if (bridgeProgram.sceneAmbient) {
-          setD3D8Uniform4FromArray(bridgeProgram.sceneAmbient, appliedRenderState.ambient.rgba);
+          setD3D8Uniform4FromArray(bridgeProgram.sceneAmbient, appliedRenderState.sceneAmbient);
         }
         if (bridgeProgram.materialDiffuse) {
           setD3D8Uniform4FromArray(bridgeProgram.materialDiffuse, material.diffuse);
@@ -12713,14 +13079,14 @@ function paintD3D8DrawIndexed(payload = {}) {
       }
       recordRenderUniformDetail?.("sortedDrawRenderMaterialUniformMs");
       if (!lightingUniformsNeeded) {
-        d3d8PerfStats.drawFixedLightUniformCacheHits += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawFixedLightUniformCacheHits += 1;
       } else {
         const fixedLightUniformKey = d3d8CachedDerived.fixedLightUniformKey ??=
           d3d8FixedLightUniformKey(fixedFunctionLights);
         if (fixedLightUniformKey === d3d8LastFixedLightUniformKey) {
-          d3d8PerfStats.drawFixedLightUniformCacheHits += 1;
+          if (d3d8PerfCountersEnabled) d3d8PerfStats.drawFixedLightUniformCacheHits += 1;
         } else {
-          d3d8PerfStats.drawFixedLightUniformCacheMisses += 1;
+          if (d3d8PerfCountersEnabled) d3d8PerfStats.drawFixedLightUniformCacheMisses += 1;
           if (bridgeProgram.fixedLightCount) {
             d3d8CachedUniform1i(bridgeProgram.fixedLightCount, fixedFunctionLights.length);
           }
@@ -12763,11 +13129,11 @@ function paintD3D8DrawIndexed(payload = {}) {
         ? null
         : d3d8CachedDerived.stageUniformKey ??= d3d8StageUniformKey(renderState);
       if (depthStencilOnlyDraw) {
-        d3d8PerfStats.drawStageUniformCacheHits += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawStageUniformCacheHits += 1;
       } else if (stageUniformKey === d3d8LastStageUniformKey) {
-        d3d8PerfStats.drawStageUniformCacheHits += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawStageUniformCacheHits += 1;
       } else {
-        d3d8PerfStats.drawStageUniformCacheMisses += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawStageUniformCacheMisses += 1;
         if (bridgeProgram.textureFactor) {
           setD3D8Uniform4FromArray(
             bridgeProgram.textureFactor,
@@ -12856,34 +13222,40 @@ function paintD3D8DrawIndexed(payload = {}) {
         : d3d8CachedDerived.alphaFogUniformKey ??=
           d3d8AlphaFogUniformKey(renderState, appliedRenderState);
       if (depthStencilOnlyDraw) {
-        d3d8PerfStats.drawAlphaFogUniformCacheHits += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawAlphaFogUniformCacheHits += 1;
       } else if (alphaFogUniformKey === d3d8LastAlphaFogUniformKey) {
-        d3d8PerfStats.drawAlphaFogUniformCacheHits += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawAlphaFogUniformCacheHits += 1;
       } else {
-        d3d8PerfStats.drawAlphaFogUniformCacheMisses += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawAlphaFogUniformCacheMisses += 1;
         if (bridgeProgram.alphaTestEnabled) {
-          d3d8CachedUniform1i(bridgeProgram.alphaTestEnabled, appliedRenderState.alphaTest.enabled ? 1 : 0);
+          d3d8CachedUniform1i(
+            bridgeProgram.alphaTestEnabled,
+            appliedRenderState.alphaTestEnabled ? 1 : 0,
+          );
         }
         if (bridgeProgram.alphaFunc) {
           d3d8CachedUniform1i(bridgeProgram.alphaFunc, renderState.alphaFunc);
         }
         if (bridgeProgram.alphaRef) {
-          d3d8CachedUniform1f(bridgeProgram.alphaRef, appliedRenderState.alphaTest.ref);
+          d3d8CachedUniform1f(bridgeProgram.alphaRef, appliedRenderState.alphaRef);
         }
         if (bridgeProgram.fogEnabled) {
-          d3d8CachedUniform1i(bridgeProgram.fogEnabled, appliedRenderState.fog.enabled ? 1 : 0);
+          d3d8CachedUniform1i(bridgeProgram.fogEnabled, appliedRenderState.fogEnabled ? 1 : 0);
         }
         if (bridgeProgram.fogRangeEnabled) {
-          d3d8CachedUniform1i(bridgeProgram.fogRangeEnabled, appliedRenderState.fog.rangeEnabled ? 1 : 0);
+          d3d8CachedUniform1i(
+            bridgeProgram.fogRangeEnabled,
+            appliedRenderState.fogRangeEnabled ? 1 : 0,
+          );
         }
         if (bridgeProgram.fogColor) {
-          setD3D8Uniform3FromArray(bridgeProgram.fogColor, appliedRenderState.fog.color);
+          setD3D8Uniform3FromArray(bridgeProgram.fogColor, appliedRenderState.fogColor);
         }
         if (bridgeProgram.fogStart) {
-          d3d8CachedUniform1f(bridgeProgram.fogStart, appliedRenderState.fog.start);
+          d3d8CachedUniform1f(bridgeProgram.fogStart, appliedRenderState.fogStart);
         }
         if (bridgeProgram.fogEnd) {
-          d3d8CachedUniform1f(bridgeProgram.fogEnd, appliedRenderState.fog.end);
+          d3d8CachedUniform1f(bridgeProgram.fogEnd, appliedRenderState.fogEnd);
         }
         d3d8LastAlphaFogUniformKey = alphaFogUniformKey;
       }
@@ -12925,35 +13297,35 @@ function paintD3D8DrawIndexed(payload = {}) {
         d3d8MatrixEquals(d3d8LastTransformUniformProjection, projection);
       recordTransformDetail?.("sortedDrawTransformCompareMs");
       if (worldTransformUnchanged && viewTransformUnchanged && projectionTransformUnchanged) {
-        d3d8PerfStats.drawTransformUniformCacheHits += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawTransformUniformCacheHits += 1;
       } else {
-        d3d8PerfStats.drawTransformUniformCacheMisses += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawTransformUniformCacheMisses += 1;
       }
       if (worldTransformUnchanged) {
-        d3d8PerfStats.drawWorldTransformUniformCacheHits += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawWorldTransformUniformCacheHits += 1;
         d3d8LastTransformUniformWorldRevision = worldRevision;
       } else {
-        d3d8PerfStats.drawWorldTransformUniformCacheMisses += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawWorldTransformUniformCacheMisses += 1;
         d3d8UploadChangedUniformMatrix4fv(bridgeProgram.world, world);
         rememberD3D8WorldTransformUniform(world);
         d3d8LastTransformUniformWorldRevision = worldRevision;
       }
       recordTransformDetail?.("sortedDrawWorldTransformUniformMs");
       if (viewTransformUnchanged) {
-        d3d8PerfStats.drawViewTransformUniformCacheHits += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawViewTransformUniformCacheHits += 1;
         d3d8LastTransformUniformViewRevision = viewRevision;
       } else {
-        d3d8PerfStats.drawViewTransformUniformCacheMisses += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawViewTransformUniformCacheMisses += 1;
         d3d8UploadChangedUniformMatrix4fv(bridgeProgram.view, view);
         rememberD3D8ViewTransformUniform(view);
         d3d8LastTransformUniformViewRevision = viewRevision;
       }
       recordTransformDetail?.("sortedDrawViewTransformUniformMs");
       if (projectionTransformUnchanged) {
-        d3d8PerfStats.drawProjectionTransformUniformCacheHits += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawProjectionTransformUniformCacheHits += 1;
         d3d8LastTransformUniformProjectionRevision = projectionRevision;
       } else {
-        d3d8PerfStats.drawProjectionTransformUniformCacheMisses += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawProjectionTransformUniformCacheMisses += 1;
         d3d8UploadChangedUniformMatrix4fv(bridgeProgram.projection, projection);
         rememberD3D8ProjectionTransformUniform(projection);
         d3d8LastTransformUniformProjectionRevision = projectionRevision;
@@ -12965,11 +13337,11 @@ function paintD3D8DrawIndexed(payload = {}) {
     recordDrawSubphase?.("sortedDrawTransformUniformMs");
     harnessState.graphics.lastD3D8StateHash = stateHash;
     if (depthStencilOnlyDraw) {
-      d3d8PerfStats.drawPointSpriteUniformCacheHits += 1;
+      if (d3d8PerfCountersEnabled) d3d8PerfStats.drawPointSpriteUniformCacheHits += 1;
     } else if (d3d8PointSpriteUniformsEqual(d3d8LastPointSpriteUniformInfo, appliedPointSprite)) {
-      d3d8PerfStats.drawPointSpriteUniformCacheHits += 1;
+      if (d3d8PerfCountersEnabled) d3d8PerfStats.drawPointSpriteUniformCacheHits += 1;
     } else {
-      d3d8PerfStats.drawPointSpriteUniformCacheMisses += 1;
+      if (d3d8PerfCountersEnabled) d3d8PerfStats.drawPointSpriteUniformCacheMisses += 1;
       if (bridgeProgram.drawingPoints !== null) {
         d3d8CachedUniform1i(bridgeProgram.drawingPoints, appliedPointSprite.drawingPoints ? 1 : 0);
       }
@@ -13297,10 +13669,10 @@ function paintD3D8DrawIndexed(payload = {}) {
           indexSize === 4 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
           shadeModeDraw.drawIndexByteOffset,
         );
-        d3d8PerfStats.draws += 1;
-        d3d8PerfStats.drawElements += 1;
-        d3d8PerfStats.drawIndices += Number(shadeModeDraw.drawIndexCount ?? 0) >>> 0;
-        d3d8PerfStats.drawMs += perfNow() - drawStartedAt;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.draws += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawElements += 1;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawIndices += Number(shadeModeDraw.drawIndexCount ?? 0) >>> 0;
+        if (d3d8PerfCountersEnabled) d3d8PerfStats.drawMs += perfNow() - drawStartedAt;
       }
     }
     recordDrawPhase?.("sortedDrawDrawOrBatchMs");
@@ -13317,8 +13689,8 @@ function paintD3D8DrawIndexed(payload = {}) {
     // lite: skip the ~40-field probe, per-draw texture sampling, and the
     // spread-copied draw-history array — keep only the cheap sequence counter.
     recordDrawPhase?.("sortedDrawTailMs");
-    finishSortedDrawProfile();
-    finishDrawProducerProfile();
+    finishSortedDrawProfile?.();
+    finishDrawProducerProfile?.();
     harnessState.graphics.d3d8DrawIndexedSequence = drawSequence;
     return drawOk ? 1 : 0;
   }
@@ -13585,8 +13957,8 @@ function paintD3D8DrawIndexed(payload = {}) {
     d3d8Perf: d3d8PerfSummary(),
   };
   recordDrawPhase?.("sortedDrawTailMs");
-  finishSortedDrawProfile();
-  finishDrawProducerProfile();
+  finishSortedDrawProfile?.();
+  finishDrawProducerProfile?.();
   return drawOk ? 1 : 0;
 }
 

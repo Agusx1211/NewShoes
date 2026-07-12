@@ -22,6 +22,7 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "assets/zeroh-command-desert.webp",
   "assets/zeroh-red-moon-front-1440p.webp",
   "assets/zeroh-red-moon-front-swatch.webp",
+  "bink_runtime.mjs",
   "bridge.js",
   "d3d8_executor.mjs",
   "engine_realm_boot.mjs",

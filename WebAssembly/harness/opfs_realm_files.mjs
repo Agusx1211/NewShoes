@@ -16,13 +16,12 @@
 //   globalThis.__cncOpfsRead(id, destPtr, len, at) -> bytesRead
 //   globalThis.__cncOpfsClose(id)                  -> 0
 //
-// The path map rides the import URL's ?map= query (JSON): the realm stub's
-// setup command forwards only { canvas, Module, realm }, and a
-// query-suffixed URL yields a fresh module instance per distinct map. All
-// instances share ONE realm-global registry (globalThis.__cncOpfsRegistry),
-// so staging is cumulative: engine_realm_boot's setup import and any number
-// of later stageOpfsFiles imports merge into the same open-file table and
-// the hooks/diag/message-listener are installed exactly once.
+// The realm stub's initial setup can still provide a small path map through
+// the import URL's ?map= query. Production stageOpfsFiles calls pass the map
+// directly to the exported setup function so large optional libraries do not
+// exceed Chromium's dynamic-import URL limit. All calls share ONE
+// realm-global registry (globalThis.__cncOpfsRegistry), so staging remains
+// cumulative and the hooks/diag/message-listener are installed exactly once.
 //
 // Runtime archives are opened read-only, allowing an installed archive set to
 // be mounted directly (and by multiple tabs) without a per-tab disk copy.
@@ -224,7 +223,7 @@ function ensureRegistry(Module) {
   return registry;
 }
 
-export default async function setupOpfsRealmFiles({ Module }) {
+export default async function setupOpfsRealmFiles({ Module, map: suppliedMap }) {
   if (!navigator.storage || typeof navigator.storage.getDirectory !== "function") {
     throw new Error("OPFS unavailable in this realm (navigator.storage.getDirectory missing)");
   }
@@ -232,7 +231,9 @@ export default async function setupOpfsRealmFiles({ Module }) {
   const registry = ensureRegistry(Module);
 
   const url = new URL(import.meta.url);
-  const map = JSON.parse(url.searchParams.get("map") || "{}");
+  const map = suppliedMap && typeof suppliedMap === "object"
+    ? suppliedMap
+    : JSON.parse(url.searchParams.get("map") || "{}");
 
   // Pre-open every sync access handle now, while this worker's event loop is
   // still free. Cumulative: already-staged enginePaths with the same

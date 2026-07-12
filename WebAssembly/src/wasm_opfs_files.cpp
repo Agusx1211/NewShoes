@@ -31,7 +31,7 @@
 // Positions/sizes cross the EM_JS boundary as doubles (emsdk 3.1.6 has no
 // BigInt interop); doubles are exact for any file < 2^53 bytes.
 
-// Small-read coalescing (P2 integration follow-up (a) in TODO.md): the
+// Small-read coalescing (P2 integration follow-up (a) in archive/TODO.md): the
 // engine's BIG TOC walk issues ~60k byte-wise reads across the archive set
 // at boot; at Chromium's ~0.6ms synchronous storage-IPC floor per OPFS read
 // that would cost ~35s. Each virtual fd therefore keeps a 64KB READAHEAD

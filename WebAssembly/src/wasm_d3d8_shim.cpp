@@ -3937,13 +3937,15 @@ public:
 		if (depth_stencil != nullptr) {
 			depth_stencil->AddRef();
 		}
-		if (m_back_buffer != nullptr) {
-			m_back_buffer->Release();
+		if (render_target != nullptr) {
+			if (m_back_buffer != nullptr) {
+				m_back_buffer->Release();
+			}
+			m_back_buffer = render_target;
 		}
 		if (m_depth_stencil != nullptr) {
 			m_depth_stencil->Release();
 		}
-		m_back_buffer = render_target;
 		m_depth_stencil = depth_stencil;
 
 		// Resolve texture IDs for FBO binding
@@ -3952,12 +3954,12 @@ public:
 		UINT width = 0;
 		UINT height = 0;
 
-		if (render_target != nullptr && render_target != m_default_render_target) {
+		if (m_back_buffer != nullptr && m_back_buffer != m_default_render_target) {
 			// Offscreen render target: get its texture ID and dimensions
-			BrowserD3DSurface *browser_surface = static_cast<BrowserD3DSurface *>(render_target);
+			BrowserD3DSurface *browser_surface = static_cast<BrowserD3DSurface *>(m_back_buffer);
 			color_texture_id = browser_surface->texture_owner_id();
 			D3DSURFACE_DESC desc;
-			if (SUCCEEDED(render_target->GetDesc(&desc))) {
+			if (SUCCEEDED(m_back_buffer->GetDesc(&desc))) {
 				width = desc.Width;
 				height = desc.Height;
 			}
@@ -3974,6 +3976,12 @@ public:
 		// Track current FBO state
 		m_current_fbo_color_texture_id = color_texture_id;
 		m_current_fbo_depth_texture_id = depth_texture_id;
+
+		// D3D8 resets the viewport to the full current render target on every
+		// SetRenderTarget call.  This is also what makes subsequent camera
+		// viewports use the offscreen surface dimensions rather than the main
+		// backbuffer dimensions.
+		reset_viewport_to_render_target();
 
 		return S_OK;
 	}
@@ -4093,15 +4101,7 @@ public:
 		m_viewport = *viewport;
 		g_state.viewport = m_viewport;
 		++g_state.set_viewport_calls;
-		wasm_d3d8_browser_set_viewport(
-			m_viewport.X,
-			m_viewport.Y,
-			m_viewport.Width,
-			m_viewport.Height,
-			m_viewport.MinZ,
-			m_viewport.MaxZ,
-			m_parameters.BackBufferWidth,
-			m_parameters.BackBufferHeight);
+		apply_browser_viewport();
 		return S_OK;
 	}
 
@@ -5528,6 +5528,52 @@ private:
 		}
 		*surface = new (std::nothrow) BrowserD3DSurface(this, width, height, format, usage);
 		return *surface != nullptr ? S_OK : D3DERR_OUTOFVIDEOMEMORY;
+	}
+
+	void get_render_target_size(UINT &width, UINT &height) const
+	{
+		width = m_parameters.BackBufferWidth;
+		height = m_parameters.BackBufferHeight;
+		if (m_back_buffer == nullptr) {
+			return;
+		}
+
+		D3DSURFACE_DESC description = {};
+		if (SUCCEEDED(m_back_buffer->GetDesc(&description))) {
+			width = description.Width;
+			height = description.Height;
+		}
+	}
+
+	void apply_browser_viewport()
+	{
+		UINT target_width = 0;
+		UINT target_height = 0;
+		get_render_target_size(target_width, target_height);
+		wasm_d3d8_browser_set_viewport(
+			m_viewport.X,
+			m_viewport.Y,
+			m_viewport.Width,
+			m_viewport.Height,
+			m_viewport.MinZ,
+			m_viewport.MaxZ,
+			target_width,
+			target_height);
+	}
+
+	void reset_viewport_to_render_target()
+	{
+		UINT target_width = 0;
+		UINT target_height = 0;
+		get_render_target_size(target_width, target_height);
+		m_viewport.X = 0;
+		m_viewport.Y = 0;
+		m_viewport.Width = target_width;
+		m_viewport.Height = target_height;
+		m_viewport.MinZ = 0.0f;
+		m_viewport.MaxZ = 1.0f;
+		g_state.viewport = m_viewport;
+		apply_browser_viewport();
 	}
 
 	ULONG m_ref_count = 1;

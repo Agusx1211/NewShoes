@@ -44,12 +44,15 @@ jobs:
       - name: Package and audit Pages artifact
         working-directory: WebAssembly
         env:
-          PAGES_SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/tree/${{ github.sha }}
+          PAGES_SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/tree/${{ github.event.pull_request.head.sha || github.sha }}
           GA_MEASUREMENT_ID: G-TEST000000
         run: |
           npm run test:pages-artifact-guard
+          npm run test:cloudflare-artifact-guard
           node tools/verify_pages_site.mjs pages-dist >"${RUNNER_TEMP}/pages-inventory.json"
+          node tools/verify_cloudflare_site.mjs cloudflare-dist >"${RUNNER_TEMP}/cloudflare-inventory.json"
           node -e 'const x=require(process.argv[1]); console.log(JSON.stringify({files:x.files,totalBytes:x.totalBytes}, null, 2))' "${RUNNER_TEMP}/pages-inventory.json"
+          node -e 'const x=require(process.argv[1]); console.log(JSON.stringify({files:x.files,totalBytes:x.totalBytes}, null, 2))' "${RUNNER_TEMP}/cloudflare-inventory.json"
 
       - name: Install Chromium
         working-directory: WebAssembly
@@ -60,3 +63,19 @@ jobs:
         env:
           PAGES_SMOKE_SCREENSHOT: ${{ runner.temp }}/pages-launcher.png
         run: npm run test:pages-deployment
+
+      - name: Prove direct-header threaded deployment
+        working-directory: WebAssembly
+        env:
+          CLOUDFLARE_SMOKE_SCREENSHOT: ${{ runner.temp }}/cloudflare-launcher.png
+        run: npm run test:cloudflare-deployment
+
+      - name: Upload trusted preview handoff
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cloudflare-preview-site
+          path: WebAssembly/cloudflare-dist
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0

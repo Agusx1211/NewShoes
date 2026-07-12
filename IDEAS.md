@@ -1,11 +1,8 @@
 # IDEAS.md - Deferred and experimental ideas
 
-Non-blocking ideas live here so `TODO.md` stays focused on the active open
-port checklist. When an idea becomes current work, promote the next concrete
-action into `TODO.md`; keep the longer rationale here.
-
-Search `DONE.md` before turning an idea into work, so completed history is not
-rediscovered as a new plan.
+Non-blocking design notes and experiments live here as background material.
+This file is not an active backlog. The retired port-era checklists are frozen
+under `archive/`; consult them only when their historical context is useful.
 
 ---
 
@@ -79,7 +76,8 @@ If first-play decode still shows up in Metal traces:
   routes completion callbacks asynchronously.
 - Do NOT move the engine's MilesAudioManager itself onto a pthread: its
   per-frame work is tiny, and the pthreads + ALLOW_MEMORY_GROWTH constraint
-  on emsdk 3.1.6 (see the IO-worker analysis in TODO.md) makes that
+  on emsdk 3.1.6 (see the historical IO-worker analysis in
+  `archive/TODO.md`) makes that
   high-risk for no measured win.
 
 ## Design: "the browser as a 2003 PC" — engine thread + OPFS disk (owner-directed, 2026-07-10)

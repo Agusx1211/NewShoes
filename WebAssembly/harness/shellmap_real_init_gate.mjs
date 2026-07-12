@@ -9,6 +9,13 @@ const wasmRoot = resolve(harnessRoot, "..");
 const archiveRoot = resolve(wasmRoot, "artifacts/real-assets");
 const screenshotDir = resolve(wasmRoot, "artifacts/screenshots");
 const shellmapScreenshot = resolve(screenshotDir, "shellmap-real-init-gate-canvas.png");
+const requestedWidth = Number.parseInt(process.env.CNC_SHELLMAP_WIDTH ?? "", 10);
+const requestedHeight = Number.parseInt(process.env.CNC_SHELLMAP_HEIGHT ?? "", 10);
+const requestedResolution =
+  Number.isFinite(requestedWidth) && requestedWidth > 0 &&
+  Number.isFinite(requestedHeight) && requestedHeight > 0
+    ? { width: requestedWidth, height: requestedHeight }
+    : null;
 
 // Whole-file archive set for the real GameEngine::init() lifecycle run.
 // Base Generals archives mount under ZZBase_* so Zero Hour archives keep the
@@ -180,7 +187,9 @@ try {
   browser = await chromium.launch();
   await mkdir(screenshotDir, { recursive: true });
 
-  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  const page = await browser.newPage({
+    viewport: requestedResolution ?? { width: 1280, height: 720 },
+  });
   page.setDefaultTimeout(240000);
   page.setDefaultNavigationTimeout(240000);
   page.on("pageerror", (error) => {
@@ -251,11 +260,27 @@ try {
   }
   assertShellMapFrame(frame);
 
+  let resolution = null;
+  if (requestedResolution) {
+    resolution = await page.evaluate((target) =>
+      window.CnCPort.rpc("setEngineResolution", target), requestedResolution);
+    expect(resolution?.ok === true
+        && resolution?.applied?.width === requestedResolution.width
+        && resolution?.applied?.height === requestedResolution.height,
+      "real shell-map resolution change failed", resolution);
+    frame = await page.evaluate(() =>
+      window.CnCPort.rpc("realEngineFrame", { frames: 3 }));
+    assertShellMapFrame(frame);
+  }
+
   const screenshot = await page.evaluate(() => window.CnCPort.rpc("screenshot"));
   const canvas = screenshot.screenshot;
   expect(screenshot.ok === true
       && canvas?.width > 0
       && canvas?.height > 0
+      && (!requestedResolution
+        || (canvas.width === requestedResolution.width
+          && canvas.height === requestedResolution.height))
       && pixelHasColor(canvas?.centerPixel),
     "shell-map canvas center stayed blank", {
       ok: screenshot.ok,
@@ -277,6 +302,7 @@ try {
     objectCount: clientState.gameplay.objectCount,
     drawableCount: clientState.gameplay.drawableCount,
     renderedObjectCount: clientState.gameplay.renderedObjectCount,
+    resolution: resolution?.applied ?? null,
     canvasSize: { width: canvas.width, height: canvas.height },
     centerPixel: canvas.centerPixel,
     screenshot: relative(wasmRoot, shellmapScreenshot),

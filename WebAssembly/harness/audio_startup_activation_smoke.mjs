@@ -59,14 +59,16 @@ async function exposeReadyLauncher(page) {
       });
     }
     const installed = {
-      version: 4,
+      version: 5,
       game: "zeroHour",
       root: installRoot,
       preparedAt: Date.now(),
       totalBytes: archives.reduce((sum, archive) => sum + archive.bytes, 0),
+      includeVideos: false,
       archives,
+      videos: [],
     };
-    localStorage.setItem("zeroh-installed-library.v4", JSON.stringify(installed));
+    localStorage.setItem("zeroh-installed-library.v5", JSON.stringify(installed));
     localStorage.setItem("zeroh-library", JSON.stringify({
       source: "audio startup activation fixture",
       mode: "install",

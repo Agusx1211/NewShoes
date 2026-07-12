@@ -13,6 +13,7 @@ const scripts = [
   "harness/analytics.mjs",
   "harness/analytics_unit.mjs",
   "harness/analytics_browser_smoke.mjs",
+  "harness/bink_runtime.mjs",
   "harness/bridge.js",
   "harness/cloudflare_deployment_smoke.mjs",
   "harness/d3d8_executor.mjs",
@@ -64,16 +65,42 @@ for (const script of scripts.filter((name) => !name.endsWith(".sh"))) {
   }
 }
 
-for (const workflow of [
+const workflowPaths = [
   ".github/actions/setup-wasm-build/action.yml",
   ".github/workflows/ci.yml",
   ".github/workflows/cloudflare-pages.yml",
   ".github/workflows/pages.yml",
+  ".github/workflows/pr-preview.yml",
   ".github/workflows/wasm-smoke.yml",
-]) {
+];
+
+for (const workflow of workflowPaths) {
   const source = await readFile(resolve(repoRoot, workflow), "utf8");
   const document = parse(source);
   if (!document || typeof document !== "object") throw new Error(`Invalid YAML document: ${workflow}`);
+}
+
+const pullRequestWorkflow = await readFile(resolve(repoRoot, ".github/workflows/ci.yml"), "utf8");
+for (const contract of [
+  "npm run test:cloudflare-artifact-guard",
+  "npm run test:cloudflare-deployment",
+  "name: cloudflare-preview-site",
+  "github.event.pull_request.head.repo.full_name == github.repository",
+]) {
+  if (!pullRequestWorkflow.includes(contract)) throw new Error(`Pull request preview handoff missing: ${contract}`);
+}
+
+const previewWorkflow = await readFile(resolve(repoRoot, ".github/workflows/pr-preview.yml"), "utf8");
+for (const contract of [
+  'workflows: ["Pull request CI"]',
+  "github.event.workflow_run.head_repository.full_name == github.repository",
+  "github.event.workflow_run.conclusion == 'success'",
+  "name: cloudflare-pages",
+  "name: cloudflare-preview-site",
+  '--branch="pr-${PR_NUMBER}"',
+  "transient_environment: true",
+]) {
+  if (!previewWorkflow.includes(contract)) throw new Error(`Trusted preview deployment contract missing: ${contract}`);
 }
 
 const serviceWorker = await readFile(resolve(wasmRoot, "pages/coi-serviceworker.js"), "utf8");
@@ -95,7 +122,9 @@ const bootstrap = await readFile(resolve(wasmRoot, "pages/coi-bootstrap.js"), "u
 for (const contract of [
   'const workerVersion = "project-new-shoes.pages-root.v1"',
   "await installCurrentWorker()",
-  "await waitForCurrentWorker()",
+  "await waitForCurrentWorker(registration)",
+  "const active = registration.active",
+  "await serviceWorkerVersion(active) === workerVersion",
   "if (destination === location.href)",
   "location.reload()",
 ]) {
@@ -108,4 +137,4 @@ if (shell.status !== 0) {
   throw new Error("Syntax check failed: tools/build_pages_runtime.sh");
 }
 
-console.log(`Checked ${scripts.length - 1} JavaScript files, 1 shell file, and 5 workflow YAML files.`);
+console.log(`Checked ${scripts.length - 1} JavaScript files, 1 shell file, and ${workflowPaths.length} workflow YAML files.`);

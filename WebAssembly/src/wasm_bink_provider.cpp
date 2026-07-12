@@ -2,11 +2,13 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <cstdint>
+#include <io.h>
 #include <string>
 #include <vector>
 
@@ -72,6 +74,14 @@ std::string dirname_of(const std::string &path)
 	return slash == std::string::npos ? std::string() : normalized.substr(0, slash);
 }
 
+bool equals_no_case(const std::string &left, const std::string &right)
+{
+	return left.size() == right.size() && std::equal(
+		left.begin(), left.end(), right.begin(), [](unsigned char a, unsigned char b) {
+			return std::tolower(a) == std::tolower(b);
+		});
+}
+
 void copy_string(char *dest, std::size_t dest_size, const std::string &value)
 {
 	if (dest_size == 0) {
@@ -82,44 +92,46 @@ void copy_string(char *dest, std::size_t dest_size, const std::string &value)
 
 bool read_file_header(const std::string &path, std::array<unsigned char, kBikHeaderBytes> &header, long &file_size)
 {
-	FILE *file = std::fopen(path.c_str(), "rb");
-	if (file == nullptr) {
+	const int file = _open(path.c_str(), _O_RDONLY | _O_BINARY);
+	if (file < 0) {
 		return false;
 	}
 
-	bool ok = false;
-	if (std::fseek(file, 0, SEEK_END) == 0) {
-		file_size = std::ftell(file);
-		if (file_size >= static_cast<long>(kBikHeaderBytes) &&
-				std::fseek(file, 0, SEEK_SET) == 0 &&
-				std::fread(header.data(), 1, header.size(), file) == header.size()) {
-			ok = true;
-		}
-	}
-
-	std::fclose(file);
+	const off_t size = _lseek(file, 0, SEEK_END);
+	const bool ok = size >= static_cast<off_t>(kBikHeaderBytes) &&
+		_lseek(file, 0, SEEK_SET) == 0 &&
+		_read(file, header.data(), static_cast<unsigned int>(header.size())) ==
+			static_cast<int>(header.size());
+	file_size = ok ? static_cast<long>(size) : 0;
+	_close(file);
 	return ok;
 }
 
 bool read_text_file(const std::string &path, std::string &text)
 {
-	FILE *file = std::fopen(path.c_str(), "rb");
-	if (file == nullptr) {
+	const int file = _open(path.c_str(), _O_RDONLY | _O_BINARY);
+	if (file < 0) {
 		return false;
 	}
 
-	bool ok = false;
-	if (std::fseek(file, 0, SEEK_END) == 0) {
-		const long size = std::ftell(file);
-		if (size >= 0 && std::fseek(file, 0, SEEK_SET) == 0) {
-			text.assign(static_cast<std::size_t>(size), '\0');
-			ok = size == 0 ||
-				std::fread(text.data(), 1, static_cast<std::size_t>(size), file) ==
-					static_cast<std::size_t>(size);
+	const off_t size = _lseek(file, 0, SEEK_END);
+	bool ok = size >= 0 && _lseek(file, 0, SEEK_SET) == 0;
+	if (ok) {
+		text.assign(static_cast<std::size_t>(size), '\0');
+		std::size_t total = 0;
+		while (total < text.size()) {
+			const int count = _read(
+				file,
+				&text[total],
+				static_cast<unsigned int>(text.size() - total));
+			if (count <= 0) {
+				ok = false;
+				break;
+			}
+			total += static_cast<std::size_t>(count);
 		}
 	}
-
-	std::fclose(file);
+	_close(file);
 	return ok;
 }
 
@@ -284,7 +296,7 @@ bool parse_manifest_payload(const std::string &manifest, const std::string &sour
 		const std::string section = manifest.substr(
 			source_key,
 			next_source_key == std::string::npos ? std::string::npos : next_source_key - source_key);
-		if (json_string_value(section, "sourceFile") != source_file) {
+		if (!equals_no_case(json_string_value(section, "sourceFile"), source_file)) {
 			search_pos = source_key + 12;
 			continue;
 		}
@@ -450,6 +462,14 @@ EM_JS(int, wasm_bink_browser_can_copy_frames, (), {
 	return typeof bridge === "function" ? 1 : 0;
 });
 
+EM_JS(unsigned int, wasm_bink_browser_current_frame, (unsigned int handle_id), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortBinkVideoCurrentFrame : null;
+	if (typeof bridge !== "function") {
+		return 0xffffffff;
+	}
+	return Number(bridge({ handle: handle_id >>> 0 })) >>> 0;
+});
+
 EM_JS(int, wasm_bink_browser_copy_to_buffer, (
 	unsigned int handle_id,
 	const char *source_path,
@@ -511,6 +531,11 @@ void wasm_bink_browser_video_close(unsigned int)
 }
 
 int wasm_bink_browser_can_copy_frames()
+{
+	return 0;
+}
+
+unsigned int wasm_bink_browser_current_frame(unsigned int)
 {
 	return 0;
 }
@@ -644,8 +669,25 @@ void BinkClose(HBINK bink)
 
 int BinkWait(HBINK bink)
 {
-	const BrowserBinkHandle *handle = to_browser_handle(bink);
-	return handle != nullptr && handle->frame_ready ? 0 : 1;
+	BrowserBinkHandle *handle = to_browser_handle(bink);
+	if (handle == nullptr || !handle->frame_ready) {
+		return 1;
+	}
+	if (!handle->browser_video_available || !wasm_bink_browser_can_copy_frames()) {
+		return 0;
+	}
+
+	const u32 browser_frame = wasm_bink_browser_current_frame(browser_handle_id(*handle));
+	if (browser_frame == 0xffffffffu) {
+		return 0;
+	}
+	if (browser_frame == 0 || browser_frame < handle->public_handle.FrameNum) {
+		return 1;
+	}
+	if (browser_frame > handle->public_handle.FrameNum) {
+		handle->public_handle.FrameNum = std::min(browser_frame, handle->public_handle.Frames);
+	}
+	return 0;
 }
 
 void BinkDoFrame(HBINK bink)
@@ -700,6 +742,7 @@ void BinkSetVolume(HBINK bink, u32, int volume)
 	BrowserBinkHandle *handle = to_browser_handle(bink);
 	if (handle != nullptr) {
 		handle->volume = volume;
+		notify_browser_video_event(*handle, "setVolume", static_cast<u32>(std::max(volume, 0)));
 	}
 }
 

@@ -260,6 +260,154 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     };
   }
 
+  // ---- Bink video bridge ----------------------------------------------------
+  // HTMLVideoElement/WebM demuxing lives on the main realm. Decoded RGBA
+  // frames arrive asynchronously and are cached here so BinkCopyToBuffer can
+  // remain a synchronous call from the original engine.
+  const binkFrames = new Map();
+  const closedBinkHandles = new Set();
+  const binkStats = {
+    opens: 0,
+    closes: 0,
+    framesReceived: 0,
+    copies: 0,
+    copyMisses: 0,
+    bytesReceived: 0,
+    bytesCopied: 0,
+    lastCopy: null,
+    openedSourcePaths: [],
+  };
+
+  Module.cncPortBinkVideoOpen = (payload) => {
+    const handle = Number(payload?.handle ?? 0) >>> 0;
+    closedBinkHandles.delete(handle);
+    if (handle) binkFrames.set(handle, { frameNum: 0, width: 0, height: 0, bytes: null });
+    binkStats.opens += 1;
+    const sourcePath = String(payload?.sourcePath ?? "");
+    if (sourcePath) binkStats.openedSourcePaths = [...binkStats.openedSourcePaths, sourcePath].slice(-16);
+    postToMain({ cmd: "bink", hook: "open", payload: payload ?? null });
+  };
+  Module.cncPortBinkVideoEvent = (payload) => {
+    postToMain({ cmd: "bink", hook: "event", payload: payload ?? null });
+  };
+  Module.cncPortBinkVideoClose = (payload) => {
+    const handle = Number(payload?.handle ?? 0) >>> 0;
+    binkFrames.delete(handle);
+    closedBinkHandles.add(handle);
+    binkStats.closes += 1;
+    postToMain({ cmd: "bink", hook: "close", payload: payload ?? null });
+  };
+  Module.cncPortBinkVideoCurrentFrame = (payload) => {
+    const handle = Number(payload?.handle ?? payload ?? 0) >>> 0;
+    return Number(binkFrames.get(handle)?.frameNum ?? 0) >>> 0;
+  };
+  Module.cncPortBinkCopyToBuffer = (payload) => {
+    const handle = Number(payload?.handle ?? 0) >>> 0;
+    const decoded = binkFrames.get(handle);
+    const heap = Module.HEAPU8;
+    const flags = Number(payload?.flags) >>> 0;
+    const bytesPerPixel = flags === 1 ? 3 : flags === 3 ? 4 : (flags === 5 || flags === 6) ? 2 : 0;
+    if (!decoded?.bytes || !(heap instanceof Uint8Array) || bytesPerPixel === 0) {
+      binkStats.copyMisses += 1;
+      binkStats.lastCopy = {
+        ok: false,
+        reason: !decoded?.bytes
+          ? "no decoded frame"
+          : !(heap instanceof Uint8Array) ? "no wasm heap" : "unsupported surface flags",
+        handle,
+        flags,
+        hasDecodedBytes: Boolean(decoded?.bytes),
+        heapBytes: heap?.byteLength ?? 0,
+      };
+      return false;
+    }
+
+    const dest = Number(payload.dest ?? 0) >>> 0;
+    const destPitch = Number(payload.destPitch ?? 0) >>> 0;
+    const destHeight = Number(payload.destHeight ?? 0) >>> 0;
+    const destX = Number(payload.destX ?? 0) >>> 0;
+    const destY = Number(payload.destY ?? 0) >>> 0;
+    const rowStart = destX * bytesPerPixel;
+    const rowCapacity = destPitch > rowStart ? destPitch - rowStart : 0;
+    const copyWidth = Math.min(
+      decoded.width,
+      Number(payload.width ?? 0) >>> 0,
+      Math.floor(rowCapacity / bytesPerPixel),
+    );
+    const copyHeight = Math.min(
+      decoded.height,
+      Number(payload.height ?? 0) >>> 0,
+      destHeight > destY ? destHeight - destY : 0,
+    );
+    const finalByte = dest + (destY + copyHeight - 1) * destPitch
+      + rowStart + copyWidth * bytesPerPixel;
+    if (!dest || copyWidth <= 0 || copyHeight <= 0 || finalByte > heap.byteLength) {
+      binkStats.copyMisses += 1;
+      binkStats.lastCopy = {
+        ok: false,
+        reason: "invalid destination geometry",
+        handle,
+        dest,
+        destPitch,
+        destHeight,
+        destX,
+        destY,
+        copyWidth,
+        copyHeight,
+        finalByte,
+        heapBytes: heap.byteLength,
+        decodedWidth: decoded.width,
+        decodedHeight: decoded.height,
+      };
+      return false;
+    }
+
+    const rowBytes = copyWidth * bytesPerPixel;
+    for (let y = 0; y < copyHeight; y += 1) {
+      const source = y * decoded.width * 4;
+      const target = dest + (destY + y) * destPitch + rowStart;
+      if (flags === 3) {
+        heap.set(decoded.bytes.subarray(source, source + rowBytes), target);
+        continue;
+      }
+      for (let x = 0; x < copyWidth; x += 1) {
+        const sourcePixel = source + x * 4;
+        const blue = decoded.bytes[sourcePixel];
+        const green = decoded.bytes[sourcePixel + 1];
+        const red = decoded.bytes[sourcePixel + 2];
+        const targetPixel = target + x * bytesPerPixel;
+        if (flags === 1) {
+          heap[targetPixel] = blue;
+          heap[targetPixel + 1] = green;
+          heap[targetPixel + 2] = red;
+        } else {
+          const packed = flags === 6
+            ? ((red >>> 3) << 11) | ((green >>> 2) << 5) | (blue >>> 3)
+            : ((red >>> 3) << 10) | ((green >>> 3) << 5) | (blue >>> 3);
+          heap[targetPixel] = packed & 0xff;
+          heap[targetPixel + 1] = packed >>> 8;
+        }
+      }
+    }
+    binkStats.copies += 1;
+    binkStats.bytesCopied += rowBytes * copyHeight;
+    binkStats.lastCopy = {
+      ok: true,
+      handle,
+      dest,
+      destPitch,
+      flags,
+      copyWidth,
+      copyHeight,
+      bytesCopied: rowBytes * copyHeight,
+      sourceCenterBgra: Array.from(decoded.bytes.subarray(
+        (Math.floor(copyHeight / 2) * decoded.width + Math.floor(copyWidth / 2)) * 4,
+        (Math.floor(copyHeight / 2) * decoded.width + Math.floor(copyWidth / 2)) * 4 + 4,
+      )),
+    };
+    return true;
+  };
+
   // ---- UDP hooks: synchronous worker side of the main-realm WebRTC bridge ---
   // The original UDP adapter calls these synchronously from the engine pthread.
   // RTCDataChannel remains main-realm owned; fixed SharedArrayBuffer rings carry
@@ -732,6 +880,17 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
           : null,
       },
       mssForward: { ...mssForwardStats },
+      bink: {
+        ...binkStats,
+        activeHandles: binkFrames.size,
+        frames: [...binkFrames.entries()].map(([handle, frame]) => ({
+          handle,
+          frameNum: frame.frameNum,
+          width: frame.width,
+          height: frame.height,
+          byteLength: frame.bytes?.byteLength ?? 0,
+        })),
+      },
       recentLogs: logs.slice(-5),
     };
   }
@@ -844,14 +1003,13 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         // from OPFS. Pure JS + OPFS (no wasm calls), so it is safe before
         // the engine pthread runs — and it MUST complete before boot/go
         // (async handle opens need this worker's free event loop; see
-        // notes/p1-engine-thread.md "P2-prep results"). The path map rides
-        // the module URL query because opfs_realm_files.mjs derives its map
-        // from import.meta.url; instances merge into one realm registry.
+        // notes/p1-engine-thread.md "P2-prep results"). Pass the map as data,
+        // not in the module URL: a complete optional-video library has enough
+        // paths to exceed Chromium's dynamic-import URL limit.
         const map = msg.map && typeof msg.map === "object" ? msg.map : {};
         const moduleUrl = new URL("./opfs_realm_files.mjs", import.meta.url);
-        moduleUrl.searchParams.set("map", JSON.stringify(map));
         import(moduleUrl.href)
-          .then((opfsModule) => opfsModule.default({ Module }))
+          .then((opfsModule) => opfsModule.default({ Module, map }))
           .then((result) => {
             recordLog("opfs archive handles staged", {
               staged: result?.stagedPaths?.length ?? 0,
@@ -961,6 +1119,24 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         }
         return;
       }
+      case "binkFrame": {
+        const handle = Number(msg.handle ?? 0) >>> 0;
+        const bytes = msg.bytes instanceof Uint8Array ? msg.bytes : null;
+        const width = Number(msg.width ?? 0) >>> 0;
+        const height = Number(msg.height ?? 0) >>> 0;
+        if (handle && !closedBinkHandles.has(handle)
+            && bytes && width > 0 && height > 0 && bytes.byteLength >= width * height * 4) {
+          binkFrames.set(handle, {
+            frameNum: Number(msg.frameNum ?? 0) >>> 0,
+            width,
+            height,
+            bytes,
+          });
+          binkStats.framesReceived += 1;
+          binkStats.bytesReceived += bytes.byteLength;
+        }
+        return;
+      }
       case "sm1ShaderAudit": {
         try {
           const enabled = typeof msg.enable === "boolean"
@@ -1064,6 +1240,11 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
       "cncGdiMeasure",
       "cncGdiRasterizeGlyph",
       ...MSS_HOOKS,
+      "cncPortBinkVideoOpen",
+      "cncPortBinkVideoEvent",
+      "cncPortBinkVideoClose",
+      "cncPortBinkVideoCurrentFrame",
+      "cncPortBinkCopyToBuffer",
       "cncPortBrowserUdpSend",
       "cncPortBrowserUdpRecv",
       "cncPortBrowserUdpClear",
