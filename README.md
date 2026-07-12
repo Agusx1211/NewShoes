@@ -127,9 +127,10 @@ WebAssembly/
   src/                browser platform and engine boundary code
   harness/            launcher, play page, RPC bridge, and browser tests
   tools/              build, archive extraction, and verification tools
-PROJECT.md            architecture and roadmap
-TODO.md               active work
-DONE.md               completed work and verification evidence
+PROJECT.md            architecture and product direction
+AGENTS.md              current coding-agent policy
+CLAUDE.md              symlink to AGENTS.md
+archive/               frozen port-era TODO and completion history
 ```
 
 Generated builds, browser profiles, screenshots, extracted archives, and retail
@@ -204,9 +205,11 @@ quality. The reproducible audit method and complete alias inventory are in
 
 ## Contributing
 
-Development architecture, build details, and the current roadmap are in
-[PROJECT.md](PROJECT.md), [WebAssembly/README.md](WebAssembly/README.md), and
-[TODO.md](TODO.md). Pull requests and reproducible bug reports are welcome.
+Development architecture and build details are in [PROJECT.md](PROJECT.md) and
+[WebAssembly/README.md](WebAssembly/README.md). The retired port-era checklists
+remain available as frozen history under [`archive/`](archive/). Pull requests
+and reproducible bug reports are welcome. Current features, bugs, and follow-ups
+are tracked in [the NewShoes GitHub Issues](https://github.com/Agusx1211/NewShoes/issues).
 
 ## Source, assets, and license
 

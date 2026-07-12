@@ -401,7 +401,8 @@ The wasm CMake skeleton currently builds:
   compatibility definition for the focused shipped-water parse, and weak
   fail-fast unused INI block parser definitions only to keep these startup data
   probes narrow; full all-block INI destinations, original terrain visual
-  ownership, and live map-cache rebuilds remain tracked in `TODO.md`. The
+  ownership, and live map-cache rebuilds were tracked in the retired
+  `archive/TODO.md`. The
   bootstrap also reports `startupAssets` so the
   harness can distinguish missing runtime archives, registered-but-unprobed
   runtime archives, and a boot-probe-verified archive set with required INI,
