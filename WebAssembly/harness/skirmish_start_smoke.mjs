@@ -79,6 +79,7 @@ const musicStopMaxFrames = parsePositiveInt("SKIRMISH_START_MUSIC_STOP_MAX_FRAME
 const requestedSkirmishMap = String(process.env.SKIRMISH_START_MAP ?? "").trim();
 const captureD3D8History = process.env.SKIRMISH_START_CAPTURE_D3D8_HISTORY === "1";
 const expectLightPulseProbe = process.env.SKIRMISH_START_LIGHT_PULSE_PROBE === "1";
+const expectScorchProbe = process.env.SKIRMISH_START_SCORCH_PROBE === "1";
 const distDir = parseDistDir();
 
 function parsePositiveInt(name, fallback) {
@@ -1031,6 +1032,59 @@ async function driveDecalProbe(page) {
   return info;
 }
 
+async function driveScorchProbe(page) {
+  const screenshot = resolve(screenshotsRoot, "scorch-depth-bias.png");
+  const reveal = await rpc(page, "revealLocalMap", { permanent: true });
+  expect(reveal?.ok === true, "scorch probe could not reveal the local map", reveal);
+  await runFrames(page, 2, "scorch reveal settle");
+
+  const drawables = await rpc(page, "queryDrawables");
+  const target = (drawables?.result?.drawables ?? []).find((drawable) =>
+    drawable.localOwned === true && drawable.onScreen === true &&
+    drawable.hidden !== true && drawable.worldPos);
+  expect(Boolean(target), "scorch probe could not find a visible local target", drawables?.result);
+
+  const position = {
+    x: Number(target.worldPos.x) + 40,
+    y: Number(target.worldPos.y) + 40,
+    z: Number(target.worldPos.z),
+  };
+  const trigger = await rpc(page, "realEngineDoFX", {
+    name: "WeaponFX_BattleshipTargetExplode",
+    useViewPosition: false,
+    clampToTerrain: true,
+    ...position,
+  });
+  expect(trigger?.ok === true, "scorch probe could not trigger the shipped explosion FX", trigger);
+
+  await page.evaluate(() => {
+    window.__cncSetD3D8SceneDrawHistoryLimit?.(4096);
+    window.__cncSetDiagLevel?.("full");
+  });
+  const frame = await rpc(page, "realEngineFrameSummary", { frames: 1 });
+  const labels = new Map(
+    (locateNested(frame?.frame, ["textureDiagnostics"])?.labels ?? [])
+      .map((label) => [Number(label.id), label.name || label.path || ""]),
+  );
+  const scorchDraws = (frame?.state?.graphics?.d3d8SceneDrawHistory ?? [])
+    .map((draw) => ({
+      sequence: draw.drawSequence,
+      texture: labels.get(Number(draw.texture0?.id ?? 0)) ?? "",
+      zBias: Number(draw.renderState?.zBias ?? 0),
+      polygonOffset: draw.appliedRenderState?.depth?.bias?.polygonOffset ?? null,
+    }))
+    .filter((draw) => /scorch/i.test(draw.texture));
+  await page.locator("#viewport").screenshot({ path: screenshot });
+  await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
+
+  expect(scorchDraws.length > 0,
+    "shipped explosion FX did not reach the terrain scorch draw", { trigger, scorchDraws });
+  expect(scorchDraws.every((draw) =>
+    draw.zBias === 1 && draw.polygonOffset?.enabled === true),
+    "terrain scorch draw did not reach WebGL with D3D8 depth bias enabled", scorchDraws);
+  return { target: target.name, position, trigger: trigger.result, scorchDraws, screenshot };
+}
+
 // Tree-lighting discriminator: read the baked per-vertex diffuse of the tree
 // draw pass (FVF XYZ|NORMAL|DIFFUSE|TEX1 = 0x152, stride 36) from the draw
 // history. If diffuse is ~white the CPU bake is wrong (sun-direction/light data
@@ -1429,6 +1483,11 @@ async function main() {
       decalProbe = await driveDecalProbe(page);
       console.error("[skirmish-start] decalProbe:", JSON.stringify(decalProbe));
     }
+    let scorchProbe = null;
+    if (expectScorchProbe) {
+      scorchProbe = await driveScorchProbe(page);
+      console.error("[skirmish-start] scorchProbe:", JSON.stringify(scorchProbe));
+    }
     await page.locator("#viewport").screenshot({ path: screenshotPath });
     const renderProbe = await sampleViewportGrid(page);
     expect(renderProbe.ok === true,
@@ -1634,6 +1693,7 @@ async function main() {
       enemyAiActivity,
       escMenuResume,
       rallyProbe,
+      scorchProbe,
       lightPulseProbe,
       renderProbe,
       // ADD-ONLY HUD diagnostics: full control-bar / shell / startNewGame state
