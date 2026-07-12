@@ -74,7 +74,7 @@ bool write_probe_tga()
 		bytes.push_back(0xff); // A
 	}
 
-	std::FILE *fp = std::fopen(kTextureMemfsPath, "wb");
+	std::FILE *fp = fopen(kTextureMemfsPath, "wb");
 	if (fp == nullptr) {
 		return false;
 	}

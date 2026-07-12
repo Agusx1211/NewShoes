@@ -26,6 +26,9 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `WasmRealFopenNormalized` without producing `std::WasmRealFopenNormalized`.
       Its directory helper also normalizes recognized backslash separators to
       POSIX slashes instead of restoring them into later nested `mkdir` calls.
+      Audited the remaining wasm smoke fixtures and converted their qualified
+      `std::fopen` spellings to the same platform-safe plain call before the
+      clean CI build could fail one target at a time.
 
 ## Privacy-bounded usage analytics (2026-07-11)
 

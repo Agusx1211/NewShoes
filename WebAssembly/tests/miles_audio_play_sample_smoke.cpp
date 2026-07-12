@@ -412,7 +412,7 @@ bool getNodeArgument(const char *flag, char *out, int outSize)
 std::vector<char> readFileBytes(const char *path)
 {
 	std::vector<char> bytes;
-	std::FILE *file = std::fopen(path, "rb");
+	std::FILE *file = fopen(path, "rb");
 	if (file == nullptr) {
 		return bytes;
 	}
@@ -431,7 +431,7 @@ std::vector<char> readFileBytes(const char *path)
 
 bool writeFileBytes(const char *path, const void *data, std::size_t size)
 {
-	std::FILE *file = std::fopen(path, "wb");
+	std::FILE *file = fopen(path, "wb");
 	if (file == nullptr) {
 		return false;
 	}

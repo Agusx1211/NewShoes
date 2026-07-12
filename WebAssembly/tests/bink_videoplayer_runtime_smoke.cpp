@@ -196,7 +196,7 @@ bool expect(bool condition, const char *message)
 
 bool file_exists(const char *path)
 {
-	std::FILE *file = std::fopen(path, "rb");
+	std::FILE *file = fopen(path, "rb");
 	if (file == nullptr) {
 		return false;
 	}
