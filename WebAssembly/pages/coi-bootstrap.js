@@ -69,9 +69,8 @@
     return fallback.href;
   }
 
-  function controlledWorkerVersion() {
-    const controller = navigator.serviceWorker.controller;
-    if (!controller) return Promise.resolve(null);
+  function serviceWorkerVersion(worker) {
+    if (!worker) return Promise.resolve(null);
     return new Promise((resolve) => {
       const channel = new MessageChannel();
       let timer = 0;
@@ -88,17 +87,25 @@
         finish(event.data?.version || null);
       };
       try {
-        controller.postMessage({ type: versionRequest }, [channel.port2]);
+        worker.postMessage({ type: versionRequest }, [channel.port2]);
       } catch {
         finish(null);
       }
     });
   }
 
-  async function waitForCurrentWorker() {
+  async function waitForCurrentWorker(registration) {
     const deadline = Date.now() + 12000;
     while (Date.now() < deadline) {
-      if (await controlledWorkerVersion() === workerVersion) return;
+      const controller = navigator.serviceWorker.controller;
+      if (await serviceWorkerVersion(controller) === workerVersion) return;
+      // A forced reload bypasses the service worker for that navigation, so
+      // this document has no controller even though the registration still
+      // has a healthy active worker. Verify that worker directly, then let
+      // openTarget() perform the normal navigation that it can control.
+      const active = registration.active;
+      if (active !== controller
+          && await serviceWorkerVersion(active) === workerVersion) return;
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     throw new Error("The updated isolation helper did not take control in time.");
@@ -110,7 +117,7 @@
       updateViaCache: "none",
     });
     await registration.update();
-    await waitForCurrentWorker();
+    await waitForCurrentWorker(registration);
   }
 
   function openTarget() {
