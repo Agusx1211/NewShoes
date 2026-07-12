@@ -8,6 +8,37 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ---
 
+## Forced-reload isolation recovery (2026-07-12)
+
+- [x] Reproduced the public report's post-force-reload failure against the
+      live `newshoes.gg` deployment. A Chrome navigation that bypassed the
+      service worker loaded the unisolated bootstrap with an activated
+      isolation-worker registration but no document controller, then failed
+      after 12 seconds with `The updated isolation helper did not take control
+      in time.` Restarting Chrome also cleared the condition, matching the
+      reporter's follow-up.
+- [x] Made the Pages bootstrap verify the registration's active worker
+      directly when a force-reloaded document has no controller, then perform
+      the normal navigation required for that worker to provide COOP/COEP.
+      The deployment smoke now drives the service-worker-bypass path through
+      Chrome DevTools and requires the canonical launcher, cross-origin
+      isolation, `SharedArrayBuffer`, the threaded RPC surface, shared wasm
+      heap, and transferred canvas afterward. The standard deployment smoke
+      and five consecutive pinned-old-worker rollout runs passed locally.
+
+## Browser text-entry input repair (2026-07-12)
+
+- [x] Restored end-to-end browser text entry by removing the probe-only
+      `IMEManager` header that masked the original interface while compiling
+      the real `WinMain.cpp` window procedure. The shipped skirmish player-name
+      gadget now receives printable characters, Backspace, and committed
+      composition text through the original IME manager and `GWM_IME_CHAR`
+      path.
+- [x] Extended the existing real skirmish harness with focused-gadget, text,
+      and IME attachment state. Playwright clicks the shipped player-name
+      entry, types and deletes text, commits a browser composition event,
+      captures the resulting menu, and then starts a playable match.
+
 ## Steam installed-folder compatibility (2026-07-12)
 
 - [x] Accepted Steam's complete English Zero Hour layout, where the required
@@ -13715,6 +13746,16 @@ mitigation track. Items resolved or retired by the pivot:
       opaque black tile. Canvas sampling verified alpha 0 at all four corners
       and alpha 255 at the emblem center, and the served desktop was recaptured
       as `project-new-shoes-transparent-icon-desktop.png`.
+- [x] Kept the Project New Shoes taskbar accessible on iPhone and iPad Safari.
+      The desktop now follows the dynamic viewport height with a `vh` fallback,
+      and the taskbar, window layer, and Start menu reserve the bottom safe-area
+      inset instead of anchoring below the visible browser viewport. Extended
+      the launcher browser check with a 390x844 phone viewport, a reduced
+      390x664 phone viewport that models expanded browser chrome, and an
+      834x1112 tablet viewport. All three keep the taskbar inside the visible
+      bounds; the tablet Start menu is also fully contained. The full launcher
+      interaction suite and static launcher check passed, with phone, tablet,
+      short-screen, and desktop screenshots captured without layout regressions.
 - [x] Made browser installation atomic and self-healing. Versioned install
       roots swap manifests only after both persistent and per-tab copies are
       complete, Web Locks serialize cross-tab install/forget/verification,

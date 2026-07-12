@@ -55,6 +55,9 @@ const screenshotPath = resolve(
 const loadingScreenshotPath = resolve(
   process.env.SKIRMISH_START_LOADING_SCREENSHOT ??
     resolve(screenshotsRoot, "skirmish-start-loading-screen.png"));
+const textEntryScreenshotPath = resolve(
+  process.env.SKIRMISH_TEXT_ENTRY_SCREENSHOT ??
+    resolve(screenshotsRoot, "skirmish-text-entry-smoke.png"));
 const outputPath = resolve(
   process.env.SKIRMISH_START_OUTPUT ??
     resolve(artifactsRoot, "skirmish-start-smoke.json"));
@@ -1223,6 +1226,50 @@ async function main() {
     const skirmishMenu = skirmishMenuReady.frame?.clientState?.skirmishMenu;
     expect(skirmishMenu?.parent?.found === true && skirmishMenu?.buttonStart?.clickable === true,
       "skirmish game options menu did not become startable", skirmishMenu);
+
+    console.error("[skirmish-start] type player name");
+    const playerNameEntry = skirmishMenu.textEntryPlayerName;
+    expect(playerNameEntry?.clickable === true,
+      "skirmish player-name entry is unavailable", playerNameEntry);
+    const playerNamePoint = { x: playerNameEntry.centerX, y: playerNameEntry.centerY };
+    await postMouse(page, WM_MOUSEMOVE, playerNamePoint);
+    await postMouse(page, WM_LBUTTONDOWN, playerNamePoint);
+    const playerNameFocused = await waitForCondition(
+      page,
+      "skirmish player-name focus",
+      (clientState) => clientState.input?.focusWindow?.id === playerNameEntry.id &&
+        clientState.skirmishMenu?.imeAttached === true,
+      30);
+    await postMouse(page, WM_LBUTTONUP, playerNamePoint);
+    await runFrames(page, 2, "skirmish player-name release");
+    await page.locator("#viewport").focus();
+
+    const playerNameBefore = playerNameFocused.frame.clientState.skirmishMenu.playerNameText;
+    await page.keyboard.type("zxq");
+    await page.waitForTimeout(50);
+    const playerNameTyped = await runFrames(page, 4, "skirmish player-name typing");
+    expect(playerNameTyped.frame?.clientState?.skirmishMenu?.playerNameText === `${playerNameBefore}zxq`,
+      "printable text did not mutate the real skirmish player-name gadget",
+      playerNameTyped.frame?.clientState?.skirmishMenu);
+
+    await page.keyboard.press("Backspace");
+    await page.waitForTimeout(50);
+    const playerNameBackspaced = await runFrames(page, 4, "skirmish player-name backspace");
+    expect(playerNameBackspaced.frame?.clientState?.skirmishMenu?.playerNameText === `${playerNameBefore}zx`,
+      "Backspace did not mutate the real skirmish player-name gadget",
+      playerNameBackspaced.frame?.clientState?.skirmishMenu);
+
+    await page.locator("#viewport").evaluate((canvas) => {
+      canvas.dispatchEvent(new CompositionEvent("compositionstart", { data: "" }));
+      canvas.dispatchEvent(new CompositionEvent("compositionupdate", { data: "r" }));
+      canvas.dispatchEvent(new CompositionEvent("compositionend", { data: "r" }));
+    });
+    await page.waitForTimeout(50);
+    const playerNameComposed = await runFrames(page, 4, "skirmish player-name composition");
+    expect(playerNameComposed.frame?.clientState?.skirmishMenu?.playerNameText === `${playerNameBefore}zxr`,
+      "composition text did not mutate the real skirmish player-name gadget",
+      playerNameComposed.frame?.clientState?.skirmishMenu);
+    await page.locator("#viewport").screenshot({ path: textEntryScreenshotPath });
 
     let skirmishMapSet = null;
     if (requestedSkirmishMap) {
