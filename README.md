@@ -29,33 +29,40 @@ This public URL points to the current GitHub Pages deployment.
 
 ## Status
 
-This is a playable development build, not a finished release. The current
-threaded runtime:
+Project New Shoes is already the real Zero Hour game running in a browser. It
+boots the original engine, runs skirmishes against the original AI, renders the
+game through WebGL2, and uses the original UI, input, simulation, and command
+paths. This is a playable development build with the major systems in place.
 
-- completes the original Zero Hour engine initialization path;
-- renders the shell, menus, terrain, objects, effects, and playable skirmishes
-  through WebGL2;
-- uses translated D3D8 vertex and pixel shaders by default, with the classic
-  fixed-function path still available;
-- routes Miles-style audio calls to Web Audio;
-- imports required data from original media or an existing installation into
-  browser-local OPFS storage;
-- accepts the original mouse and keyboard input paths;
-- has save persistence and a short four-player WebRTC match gate; and
-- can close and relaunch from the browser desktop.
+| Area | Status | Current support |
+|---|---|---|
+| Engine and shell | ✅ **Works** | The threaded WebAssembly runtime completes the original Zero Hour initialization path and renders the shell and menus. |
+| Skirmish | ✅ **Works** | Playable matches run against the original AI. All official multiplayer maps have been driven to a rendered skirmish state. |
+| Mouse, keyboard, and UI | ✅ **Works** | Browser events feed the original input path, including menus, text entry, camera controls, selection, building, production, movement, and common combat commands. |
+| Game-data installation | ✅ **Works** | The launcher imports an installed copy or complete original media, validates the required archives, and stores them locally in OPFS. |
+| Launcher lifecycle | ✅ **Works** | Display and shader settings, diagnostics, game launch, clean shutdown, browser-local storage, and relaunch are implemented. |
+| Rendering | ✅ **Works** | Terrain, objects, UI, particles, effects, and the shipped D3D8 shader model 1.1 programs render through WebGL2 in enhanced and classic modes. Remaining fidelity fixes are ongoing polish. |
+| Audio | ✅ **Works well** | Engine-driven music, speech, streams, and 2D/3D samples play through Web Audio. Remaining work is focused on edge-case coverage and mixing polish. |
+| Campaign and Generals Challenge | 🧪 **In testing** | The original campaign and challenge paths run through the real engine. Broader mission, cutscene, and win/loss validation is ongoing. |
+| Saves and loading | 🚧 **Broken** | In-game save and load flows are not currently reliable. Browser storage foundations exist, but saves should not yet be treated as supported. |
+| Multiplayer | 🧪 **Playable, experimental** | The original lockstep protocol runs over WebRTC, with short matches verified at up to four players. Long sessions, reconnect/disconnect behavior, determinism coverage, and public signaling hardening remain. |
+| Movies | ✅ **Implemented** | Bink movie presentation and browser-side playback are implemented in the threaded runtime. Broader format coverage and playback polish are ongoing. |
+| Browser support | ✅ **Works** | Chrome and Chromium receive the most testing. Other modern browsers also work when they provide the required web-platform features, but do not yet receive the same validation. |
+| Vanilla Generals | 🗓️ **Planned** | Generals data is used by Zero Hour, but the launcher does not currently expose a separate vanilla Generals runtime. |
 
-Fidelity, campaigns, video, natural gameplay audio coverage, long multiplayer
-sessions, save/load coverage, performance, and browser compatibility still need
-work. Chrome and Chromium are the primary tested browsers. Firefox and Safari
-are not yet release targets.
+The big pieces are in place. Current work is focused on fidelity, performance,
+reliability, broader gameplay coverage, and browser validation. See
+[GitHub Issues](https://github.com/Agusx1211/NewShoes/issues) for the live
+backlog.
 
 ## What you need
 
-The runtime currently requires a desktop Chromium browser with WebGL2,
-`SharedArrayBuffer`, cross-origin isolation, and Origin Private File System
-support. Localhost is sufficient for development. A LAN or hosted deployment
-must use HTTPS and send the required COOP/COEP headers; see the
-[deployment guide](WebAssembly/DEPLOYMENT.md).
+The runtime requires a modern desktop browser with WebGL2, `SharedArrayBuffer`,
+cross-origin isolation, and Origin Private File System support. Chrome and
+Chromium are the primary tested targets; other capable browsers also work
+without the same level of validation. Localhost is sufficient for development.
+A LAN or hosted deployment must use HTTPS and send the required COOP/COEP
+headers; see the [deployment guide](WebAssembly/DEPLOYMENT.md).
 
 You also need both Generals and Zero Hour retail data. The launcher supports two
 ownership paths:
