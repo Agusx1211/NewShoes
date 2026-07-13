@@ -41,6 +41,50 @@ publishes is tied to the pull request head SHA. Preview sites remain asset-free
 and never contain retail game data. Cloudflare marks preview deployments
 `noindex` automatically.
 
+## Development branch deployment
+
+Every push to the persistent `dev` branch runs the same release build, artifact
+guards, and browser deployment proof as a pull request. After those checks
+succeed, the default-branch `pr-preview.yml` workflow downloads the audited
+artifact and publishes it as Cloudflare Pages branch `dev`. It rejects a
+handoff when `dev` has advanced to a newer commit, so an older build cannot
+replace the current development site.
+
+The credentialed job still runs from the repository's default `main` branch and
+uses the existing `cloudflare-pages` environment. Do not grant the unprotected
+`dev` branch direct access to that environment or duplicate its secrets in a
+development-branch workflow. GitHub records the result as the non-production
+`cloudflare-pages-dev` deployment at:
+
+```text
+https://dev.newshoes.gg/
+```
+
+Both halves of the handoff must be present before the first deployment: merge
+the build trigger into `dev`, then promote the trusted deployment workflow to
+`main` through the normal release flow. After that promotion, either the next
+push to `dev` or a one-time manual run of **Pull request CI** from `dev` creates
+the first branch deployment. Later pushes deploy automatically.
+
+Cloudflare first exposes the branch at the stable
+`https://dev.<project>.pages.dev/` alias. Complete the custom-domain setup once,
+after the first successful `dev` deployment:
+
+1. In the existing Pages project, add `dev.newshoes.gg` under **Custom
+   domains** and activate it.
+2. In Cloudflare DNS, change the resulting `dev` CNAME target from
+   `<project>.pages.dev` to `dev.<project>.pages.dev`.
+3. Keep the CNAME proxied. An unproxied record sends the custom hostname to the
+   production branch instead of the `dev` alias.
+4. Open `https://dev.newshoes.gg/` in a fresh profile and confirm the first
+   response includes COOP/COEP, `crossOriginIsolated` is true, and the launcher
+   shows the `dev` commit reported by the GitHub deployment.
+
+The development hostname is a separate browser origin from `newshoes.gg`.
+Retail files installed into origin-private storage on one hostname are not
+available on the other. Cloudflare adds `X-Robots-Tag: noindex` to preview
+deployments, including the `dev` branch.
+
 ## One-time Cloudflare setup
 
 1. Create a **Pages / Direct Upload** project. Record its project name.
