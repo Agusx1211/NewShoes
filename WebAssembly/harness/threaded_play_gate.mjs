@@ -375,7 +375,7 @@ async function main() {
     summary.desktopReference = desktopReferencePath;
 
     // ---------- threaded boot (GATE B) ----------
-    const threadedQuery = "harness/play.html?autostart=1"
+    const threadedQuery = "harness/play.html?autostart=1&perfCounters=1"
       + (BINK_VIDEO_ONLY ? "&shellmap=0" : "")
       + (BINK_VIDEO_ONLY && !BINK_VIDEO_DISABLED ? "&videos=1" : "")
       + (threadedPlayDist ? `&dist=${threadedPlayDist}` : "");
@@ -510,10 +510,21 @@ async function main() {
       loopError: loopB?.error ?? null,
       frame: statusB?.status?.frame ?? null,
     };
+    const drawBatchPerf = statusB?.status?.graphics?.d3d8Perf ?? {};
+    summary.pacing.drawBatches = {
+      queued: drawBatchPerf.drawBatchQueued ?? null,
+      flushed: drawBatchPerf.drawBatchFlushes ?? null,
+    };
     log(`paced loop measured over ${seconds.toFixed(1)}s: client ${clientRate.toFixed(1)}/s logic ${logicRate.toFixed(1)}/s`);
     checks.push(["paced loop active on the engine thread", loopB?.active === true]);
     checks.push(["client frames advancing", clientRate > 1]);
     checks.push(["logic frames advancing", logicRate > 0.5]);
+    checks.push([
+      "threaded frame boundaries submit every queued draw batch",
+      drawBatchPerf.countersEnabled === true
+        && Number(drawBatchPerf.drawBatchQueued ?? 0) > 0
+        && drawBatchPerf.drawBatchQueued === drawBatchPerf.drawBatchFlushes,
+    ]);
     checks.push([
       // Paced-mode invariant: logic never exceeds catchup (2) logic frames
       // per client frame. Under SwiftShader overload the loop legitimately
@@ -1015,13 +1026,26 @@ async function main() {
         "/home/web_user/Command and Conquer Generals Zero Hour Data/Save/__threaded_gate_roundtrip.sav",
       )),
     }));
+    const originalExitClick = await page.evaluate(() =>
+      window.CnCPort.rpc("clickWindowByName", { name: "MainMenu.wnd:ButtonExit" }));
+    await page.waitForFunction(() =>
+      window.ZeroHRuntime?.closing === true || window.ZeroHRuntime?.closed === true, null, {
+      timeout: 30000,
+      polling: 100,
+    });
     const relaunchExit = await page.evaluate(() => window.ZeroHRuntime.exit());
-    summary.cleanExit.relaunch = { state: relaunchState, exit: relaunchExit };
+    summary.cleanExit.relaunch = {
+      state: relaunchState,
+      originalExitClick,
+      exit: relaunchExit,
+    };
     checks.push([
-      "desktop shortcut transparently relaunches and cleanly closes a fresh runtime",
+      "desktop shortcut relaunches and the original Exit button cleanly closes the fresh runtime",
       relaunchState.started === true
         && relaunchState.closed === false
         && JSON.stringify(relaunchState.saveBytes) === JSON.stringify([0x53, 0x41, 0x56, 0x45, 0x21])
+        && originalExitClick?.ok === true
+        && originalExitClick?.result?.clicked === true
         && relaunchExit?.ok === true
         && relaunchExit?.result?.engine?.workerTerminated === true
         && relaunchExit?.result?.engine?.pendingCommands === 0

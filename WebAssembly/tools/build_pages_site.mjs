@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { copyFile, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -8,6 +9,7 @@ import {
   PAGES_RUNTIME_FILES,
   PAGES_TEMPLATE_FILES,
 } from "./pages_site_manifest.mjs";
+import { createBuildInfo, readReleaseMetadata } from "./release_metadata.mjs";
 
 const wasmRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(wasmRoot, "..");
@@ -37,6 +39,13 @@ async function copyRegularFile(source, destination) {
   }
   await mkdir(dirname(destination), { recursive: true });
   await copyFile(source, destination);
+}
+
+function gitOutput(args) {
+  return execFileSync("git", ["-C", repoRoot, ...args], {
+    encoding: "utf8",
+    timeout: 5000,
+  }).trimEnd();
 }
 
 async function assertExactRuntimeDirectory() {
@@ -89,6 +98,24 @@ for (const name of PAGES_HARNESS_FILES) {
     await copyRegularFile(source, destination);
   }
 }
+
+const release = await readReleaseMetadata(repoRoot);
+const requestedCommit = String(process.env.PAGES_BUILD_COMMIT || "").trim();
+const buildCommit = requestedCommit || gitOutput(["rev-parse", "HEAD"]);
+if (!/^[a-f0-9]{40}$/i.test(buildCommit)) {
+  throw new Error(`PAGES_BUILD_COMMIT must be a full Git commit hash: ${buildCommit}`);
+}
+const buildStatus = gitOutput(["status", "--short"]);
+const buildInfo = createBuildInfo({
+  release,
+  commit: buildCommit,
+  branch: gitOutput(["branch", "--show-current"]),
+  describe: gitOutput(["describe", "--always", "--dirty", "--tags"]),
+  dirty: buildStatus !== "",
+  status: buildStatus ? buildStatus.split("\n").slice(0, 200) : [],
+});
+await mkdir(join(outputRoot, "harness"), { recursive: true });
+await writeFile(join(outputRoot, "harness", "build-info.json"), `${JSON.stringify(buildInfo, null, 2)}\n`);
 
 const playSource = await readFile(join(wasmRoot, "harness", "play.html"), "utf8");
 const directBootstrap = "    <script src=\"../coi-direct.js\"></script>\n";

@@ -424,27 +424,29 @@ async function queryAssetMetadata(url) {
   }
 }
 
-async function queryServerBuildInfo() {
-  try {
-    const response = await fetch(new URL("/__cnc_build_info", window.location.href), {
-      cache: "no-store",
-    });
-    if (!response.ok) {
-      return {
+async function queryBuildInfo() {
+  const candidates = [
+    new URL("./build-info.json", import.meta.url),
+    new URL("/__cnc_build_info", window.location.href),
+  ];
+  let failure = null;
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) {
+        failure = { ok: false, status: response.status, url: String(url) };
+        continue;
+      }
+      return { ok: true, ...(await response.json()) };
+    } catch (error) {
+      failure = {
         ok: false,
-        status: response.status,
+        url: String(url),
+        error: error instanceof Error ? error.message : String(error),
       };
     }
-    return {
-      ok: true,
-      ...(await response.json()),
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
   }
+  return failure || { ok: false, error: "build information is unavailable" };
 }
 
 async function collectBuildAssets() {
@@ -461,7 +463,7 @@ async function collectBuildAssets() {
   ].map((path) => new URL(path, base).href);
   const [assets, server] = await Promise.all([
     Promise.all(urls.map(queryAssetMetadata)),
-    queryServerBuildInfo(),
+    queryBuildInfo(),
   ]);
   const latestMs = assets.reduce((latest, asset) => {
     const ms = asset.lastModified ? Date.parse(asset.lastModified) : 0;

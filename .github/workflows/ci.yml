@@ -1,6 +1,8 @@
 name: Pull request CI
 
 on:
+  push:
+    branches: [dev]
   pull_request:
   workflow_dispatch:
 
@@ -71,7 +73,9 @@ jobs:
         run: npm run test:cloudflare-deployment
 
       - name: Upload trusted preview handoff
-        if: github.event.pull_request.head.repo.full_name == github.repository
+        if: >-
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: cloudflare-preview-site

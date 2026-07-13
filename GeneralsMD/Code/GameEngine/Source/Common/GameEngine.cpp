@@ -115,6 +115,10 @@ extern "C" void cnc_port_note_game_logic_step(const char *name) __attribute__((w
 // override is present. Applied after GameData/user-pref/command-line parsing,
 // before TheDisplay reads m_x/yResolution to create the device.
 extern "C" int cnc_port_boot_display_resolution(int *xres, int *yres) __attribute__((weak));
+// Browser launcher preference for the original MaxCameraHeight GameData field.
+// Applied beside the other pre-init configuration after INI/command-line
+// parsing, before GameClient creates the tactical view that consumes it.
+extern "C" int cnc_port_boot_max_camera_height(float *height) __attribute__((weak));
 #define CNC_PORT_NOTE_ENGINE_INIT_STEP(name) \
 	do { \
 		if (cnc_port_note_game_logic_step) { \
@@ -540,6 +544,13 @@ Bool GameEngine::runNextInitStep( void )
 					&& bootXRes >= 640 && bootYRes >= 480) {
 				TheWritableGlobalData->m_xResolution = bootXRes;
 				TheWritableGlobalData->m_yResolution = bootYRes;
+			}
+		}
+		if (cnc_port_boot_max_camera_height && TheWritableGlobalData != NULL) {
+			float maxCameraHeight = 0.0f;
+			if (cnc_port_boot_max_camera_height(&maxCameraHeight)
+					&& maxCameraHeight >= 310.0f && maxCameraHeight <= 500.0f) {
+				TheWritableGlobalData->m_maxCameraHeight = maxCameraHeight;
 			}
 		}
 #endif

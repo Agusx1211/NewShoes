@@ -2587,7 +2587,12 @@ static inline BOOL CreateDirectory(LPCSTR path, void *)
 
 static inline BOOL DeleteFile(LPCSTR filename)
 {
-	return filename != nullptr && remove(filename) == 0 ? TRUE : FALSE;
+	if (filename == nullptr) {
+		return FALSE;
+	}
+
+	const std::string normalized = WasmNormalizePath(filename);
+	return remove(normalized.c_str()) == 0 ? TRUE : FALSE;
 }
 
 static inline BOOL CopyFile(LPCSTR existing_filename, LPCSTR new_filename, BOOL fail_if_exists)

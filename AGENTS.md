@@ -116,6 +116,28 @@ current task or adding them to the archived checklists. Add concise progress or
 verification comments when they help a handoff. Close an issue only after the
 change is integrated and its required verification is complete.
 
+## GitHub authentication for agents
+
+Agent-authored GitHub writes MUST use the dedicated `new-shoes-agents[bot]`
+GitHub App identity when its credentials are available. This includes issues,
+pull requests, comments, reviews, releases, branch pushes, and writes made
+through `gh`, an API client, or a connector.
+
+On machines that provide the project wrappers:
+
+- use `new-shoes-gh` in place of `gh` for GitHub API and CLI operations;
+- use `new-shoes-agent-push` to push the current feature branch instead of
+  pushing through a maintainer's SSH key or personal access token;
+- confirm access before the first write with
+  `new-shoes-gh api /installation/repositories`;
+- let the wrappers mint short-lived installation tokens; never read, print,
+  copy, or embed the App private key or generated tokens.
+
+If the App wrapper, credentials, repository installation, or required
+permission is unavailable, do not silently fall back to a maintainer's GitHub
+identity. Stop before the GitHub write and ask the user how to proceed. Read-only
+operations may still use public endpoints or existing read credentials.
+
 ## Agent identity and authorship
 
 Every repository artifact authored by an AI agent MUST identify the exact model

@@ -3,6 +3,7 @@
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { dirname, extname, relative, resolve } from "node:path";
 import { PAGES_OUTPUT_FILES } from "./pages_site_manifest.mjs";
+import { validateBuildInfo } from "./release_metadata.mjs";
 
 const root = resolve(process.argv[2] || "pages-dist");
 const forbiddenExtensions = new Set([
@@ -107,7 +108,7 @@ for (const name of expectedFiles) {
 await verifyStaticModuleReferences();
 if (totalBytes > 250 * 1024 * 1024) findings.push(`artifact is unexpectedly large: ${totalBytes} bytes`);
 
-const [license, index, legal, launcher, play, manifestText, bootstrap, serviceWorker] = await Promise.all([
+const [license, index, legal, launcher, play, manifestText, bootstrap, serviceWorker, buildInfoText] = await Promise.all([
   readFile(resolve(root, "LICENSE.md"), "utf8").catch(() => ""),
   readFile(resolve(root, "index.html"), "utf8").catch(() => ""),
   readFile(resolve(root, "legal.html"), "utf8").catch(() => ""),
@@ -116,6 +117,7 @@ const [license, index, legal, launcher, play, manifestText, bootstrap, serviceWo
   readFile(resolve(root, "manifest.webmanifest"), "utf8").catch(() => ""),
   readFile(resolve(root, "coi-bootstrap.js"), "utf8").catch(() => ""),
   readFile(resolve(root, "coi-serviceworker.js"), "utf8").catch(() => ""),
+  readFile(resolve(root, "harness/build-info.json"), "utf8").catch(() => ""),
 ]);
 const analytics = await readFile(resolve(root, "harness/analytics.mjs"), "utf8").catch(() => "");
 if (analytics.includes("__GA_MEASUREMENT_ID__")) findings.push("harness/analytics.mjs: unresolved analytics configuration marker");
@@ -137,12 +139,20 @@ if (!launcher.includes('<base href="./harness/">')
     || !launcher.includes("data-cnc-play-page")
     || !launcher.includes('src="../coi-direct.js"')
     || !launcher.includes('href="../manifest.webmanifest"')
+    || !launcher.includes('id="aboutVersion"')
+    || !launcher.includes('id="aboutBuildCommit"')
+    || !launcher.includes('id="aboutChangelog"')
     || !launcher.includes('id="publicLegalNotice"')) {
   findings.push("launcher.html: canonical root launcher contract is missing");
 }
 if (!play.includes('rel="canonical" href="../"')
     || !play.includes('id="publicLegalNotice"') || !play.includes("Corresponding source")) {
   findings.push("harness/play.html: launcher About legal notice is missing");
+}
+try {
+  validateBuildInfo(JSON.parse(buildInfoText));
+} catch {
+  findings.push("harness/build-info.json: version, commit, or changelog metadata is invalid");
 }
 if (!bootstrap.includes('const workerVersion = "project-new-shoes.pages-root.v1"')
     || !bootstrap.includes("await installCurrentWorker()")
