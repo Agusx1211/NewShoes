@@ -51,7 +51,7 @@ jobs:
               .head.repo.full_name == $repo and
               .head.sha == $sha and
               .base.repo.full_name == $repo and
-              .base.ref == $base
+              (.base.ref == $base or .base.ref == "dev")
             )] | if length == 1 then .[0] else empty end' \
             <<<"${pulls}")"
           if [[ -z "${match}" ]]; then

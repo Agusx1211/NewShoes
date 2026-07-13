@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release"
+  short_description: "Promote dev to a documented main release"
+  default_prompt: "Use $release to prepare a versioned release from dev to main."

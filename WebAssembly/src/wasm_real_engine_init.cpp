@@ -945,6 +945,14 @@ const char *build_state_json()
 		json += ",\"inFlightSubsystem\":\"" + json_escape(g_state.in_flight) + "\"";
 	}
 	json += ",\"lastGameLogicStep\":\"" + json_escape(g_last_game_logic_step) + "\"";
+	if (TheGlobalData != NULL) {
+		char camera_height[64];
+		std::snprintf(camera_height, sizeof(camera_height), ",\"maxCameraHeight\":%.1f",
+			TheGlobalData->m_maxCameraHeight);
+		json += camera_height;
+	} else {
+		json += ",\"maxCameraHeight\":null";
+	}
 	json += "}";
 	g_state_json = json;
 	return g_state_json.c_str();
@@ -6085,6 +6093,29 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_load_steppi
 // ---------------------------------------------------------------------------
 static int g_boot_resolution_width = 0;
 static int g_boot_resolution_height = 0;
+static float g_boot_max_camera_height = 0.0f;
+
+extern "C" EMSCRIPTEN_KEEPALIVE int cnc_port_real_engine_set_max_camera_height(float height)
+{
+	if (!std::isfinite(height) || height < 310.0f || height > 500.0f) {
+		return 0;
+	}
+	g_boot_max_camera_height = height;
+	std::printf("cnc-port: max-camera-height requested=%.1f\n", height);
+	std::fflush(stdout);
+	return 1;
+}
+
+extern "C" int cnc_port_boot_max_camera_height(float *height)
+{
+	if (g_boot_max_camera_height < 310.0f || g_boot_max_camera_height > 500.0f) {
+		return 0;
+	}
+	if (height != NULL) {
+		*height = g_boot_max_camera_height;
+	}
+	return 1;
+}
 
 extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_boot_resolution(int width, int height)
 {

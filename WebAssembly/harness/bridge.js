@@ -898,6 +898,18 @@ function threadedWorkerDiagLevel() {
   }
 }
 
+function threadedWorkerPerfCounters() {
+  try {
+    const value = new URLSearchParams(globalThis.location?.search || "")
+      .get("perfCounters");
+    if (value === "1" || value === "true") return true;
+    if (value === "0" || value === "false") return false;
+  } catch (_error) {
+    // The worker follows its diagnostics level when no override is available.
+  }
+  return null;
+}
+
 function threadedWorkerShaderTier() {
   // The executor samples the shader tier once at device create via
   // d3d8ShaderTierQuery (URL ?shaderTier= param, then localStorage
@@ -1195,6 +1207,7 @@ function createThreadedEngineController() {
         canvas: offscreen,
         options: {
           diagLevel: threadedWorkerDiagLevel(),
+          perfCounters: threadedWorkerPerfCounters(),
           preserveDrawingBuffer: contextPreserveDrawingBuffer,
           shaderTier: threadedWorkerShaderTier(),
           udpBridge: threadedUdpBridge,
@@ -1372,6 +1385,7 @@ function createThreadedEngineController() {
         stepped: payload.stepped !== false,
         bootWidth: payload.bootWidth,
         bootHeight: payload.bootHeight,
+        maxCameraHeight: payload.maxCameraHeight,
         stepBudgetMs: payload.stepBudgetMs,
         commanderName: payload.commanderName,
       }, {
@@ -2257,6 +2271,8 @@ function ensureBrowserAudioRuntimeContext(trigger) {
       };
       if (state === "running") {
         ensureBrowserAudioMixerRuntime();
+      } else if (state === "suspended") {
+        recoverBrowserAudioRuntime("context.statechange");
       }
     });
     return browserAudioRuntime.context;
@@ -2303,6 +2319,17 @@ async function resumeBrowserAudioRuntime(trigger = "rpc.resumeBrowserAudioRuntim
     browserAudioRuntime.lastResumeError = error?.message ?? String(error);
   }
   return summarizeBrowserAudioRuntime();
+}
+
+function recoverBrowserAudioRuntime(trigger) {
+  const context = browserAudioRuntime.context;
+  if (!context
+      || context.state !== "suspended"
+      || browserAudioRuntime.resumeSuccesses === 0
+      || globalThis.document?.visibilityState === "hidden") {
+    return;
+  }
+  void resumeBrowserAudioRuntime(trigger);
 }
 
 function normalizeBrowserAudioMixerVolumes(defaults, overrides) {
@@ -5574,6 +5601,11 @@ async function loadWasmModule() {
         "cnc_port_real_engine_set_boot_resolution",
         null,
         ["number", "number"],
+      ),
+      realEngineSetMaxCameraHeight: module.cwrap(
+        "cnc_port_real_engine_set_max_camera_height",
+        "number",
+        ["number"],
       ),
       realEngineDumpWindows: module.cwrap(
         "cnc_port_real_engine_dump_windows",
@@ -10298,6 +10330,17 @@ async function realEngineInit(payload = {}) {
   if (bootWidth >= 640 && bootHeight >= 480
       && typeof wasmModule.realEngineSetBootResolution === "function") {
     wasmModule.realEngineSetBootResolution(bootWidth, bootHeight);
+  }
+  if (Object.hasOwn(payload, "maxCameraHeight")) {
+    const maxCameraHeight = Number(payload.maxCameraHeight);
+    if (!Number.isFinite(maxCameraHeight)
+        || maxCameraHeight < 310 || maxCameraHeight > 500) {
+      return { ok: false, command: "realEngineInit", error: "invalid camera zoom setting" };
+    }
+    const accepted = wasmModule.realEngineSetMaxCameraHeight(maxCameraHeight);
+    if (accepted !== 1) {
+      return { ok: false, command: "realEngineInit", error: "camera zoom setting rejected" };
+    }
   }
   const commanderName = String(payload.commanderName ?? "");
   if (commanderName && typeof wasmModule.realEngineSetCommanderName === "function") {
@@ -22945,6 +22988,22 @@ window.addEventListener("pointerdown", () => {
 window.addEventListener("click", () => {
   void resumeBrowserAudioRuntime("window.click");
 }, { capture: true });
+
+// Browsers can release audio hardware while a tab is backgrounded and leave
+// an already-authorized context suspended. Recover that existing context when
+// the page becomes active again; the ordinary input hooks remain the fallback
+// for browsers that require a fresh user activation.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    recoverBrowserAudioRuntime("document.visibilitychange");
+  }
+});
+window.addEventListener("focus", () => {
+  recoverBrowserAudioRuntime("window.focus");
+});
+window.addEventListener("pageshow", () => {
+  recoverBrowserAudioRuntime("window.pageshow");
+});
 
 canvas.addEventListener("pointermove", (event) => {
   const point = canvasInputPointFromEvent(event);
