@@ -5551,6 +5551,11 @@ async function loadWasmModule() {
         null,
         ["number", "number"],
       ),
+      realEngineSetMaxCameraHeight: module.cwrap(
+        "cnc_port_real_engine_set_max_camera_height",
+        "number",
+        ["number"],
+      ),
       realEngineDumpWindows: module.cwrap(
         "cnc_port_real_engine_dump_windows",
         "string",
@@ -10274,6 +10279,15 @@ async function realEngineInit(payload = {}) {
   if (bootWidth >= 640 && bootHeight >= 480
       && typeof wasmModule.realEngineSetBootResolution === "function") {
     wasmModule.realEngineSetBootResolution(bootWidth, bootHeight);
+  }
+  const maxCameraHeight = Number(payload.maxCameraHeight);
+  if (Number.isFinite(maxCameraHeight)
+      && maxCameraHeight >= 310 && maxCameraHeight <= 500
+      && typeof wasmModule.realEngineSetMaxCameraHeight === "function") {
+    const accepted = wasmModule.realEngineSetMaxCameraHeight(maxCameraHeight);
+    if (accepted !== 1) {
+      return { ok: false, command: "realEngineInit", error: "camera zoom setting rejected" };
+    }
   }
   const commanderName = String(payload.commanderName ?? "");
   if (commanderName && typeof wasmModule.realEngineSetCommanderName === "function") {
