@@ -28,6 +28,9 @@ const postActiveFrameChunk = parsePositiveInt(
   frameChunk);
 const drawHistoryLimit = parsePositiveInt("SKIRMISH_STRUCTURE_DRAW_HISTORY_LIMIT", 8192);
 const requestedSkirmishMap = String(process.env.SKIRMISH_STRUCTURE_MAP ?? "").trim();
+const requestedTargetName = String(process.env.SKIRMISH_STRUCTURE_TARGET ?? "").trim();
+const expectedNoImplicitCutoutTexture = String(
+  process.env.SKIRMISH_STRUCTURE_EXPECT_NO_IMPLICIT_CUTOUT ?? "").trim().toLowerCase();
 const revealLocalMap = process.env.SKIRMISH_STRUCTURE_REVEAL_MAP !== "0";
 const distDir = parseDistDir();
 let cleanupTimedOut = false;
@@ -344,10 +347,12 @@ async function runPostActiveFrames(page, totalFrames, chunkSize) {
   return { result: last, framesAdvanced, samples };
 }
 
-function chooseEnemyStructure(query) {
+function chooseTargetStructure(query) {
   const all = query?.result?.allDrawables ?? [];
+  const requestedTarget = requestedTargetName.toLowerCase();
   const candidates = all.filter((drawable) =>
-    drawable?.hostileToLocal === true &&
+    (!requestedTarget || String(drawable?.name ?? "").toLowerCase().includes(requestedTarget)) &&
+    (requestedTarget || drawable?.hostileToLocal === true) &&
     drawable?.structure === true &&
     drawable?.worldPos != null &&
     drawable?.effectivelyDead !== true &&
@@ -364,12 +369,13 @@ function chooseEnemyStructure(query) {
     .sort((left, right) => left.score - right.score || left.order - right.order);
 }
 
-async function frameEnemyStructure(page) {
+async function frameTargetStructure(page) {
   const initial = await rpc(page, "queryDrawables");
   expect(initial?.ok === true && initial?.result?.ready === true,
-    "queryDrawables failed before enemy-structure framing", initial);
-  const candidates = chooseEnemyStructure(initial);
-  expect(candidates.length > 0, "no hostile structures were available to frame", {
+    "queryDrawables failed before structure framing", initial);
+  const candidates = chooseTargetStructure(initial);
+  expect(candidates.length > 0, "no matching structures were available to frame", {
+    requestedTargetName: requestedTargetName || null,
     stats: initial.result?.stats ?? null,
     hostile: (initial.result?.allDrawables ?? [])
       .filter((drawable) => drawable?.hostileToLocal === true)
@@ -379,23 +385,23 @@ async function frameEnemyStructure(page) {
   const attempts = [];
   for (const { drawable } of candidates.slice(0, 12)) {
     const lookAt = await rpc(page, "tacticalViewLookAt", { worldPos: drawable.worldPos });
-    expect(lookAt?.ok === true, "tacticalViewLookAt failed for enemy structure", {
+    expect(lookAt?.ok === true, "tacticalViewLookAt failed for structure", {
       target: compactDrawable(drawable),
       lookAt,
     });
-    await runSummary(page, 12, "enemy structure camera settle");
+    await runSummary(page, 12, "structure camera settle");
     const framed = await rpc(page, "queryDrawables");
     expect(framed?.ok === true && framed?.result?.ready === true,
-      "queryDrawables failed after enemy-structure framing", framed);
-    const visible = (framed.result?.enemyDrawables ?? [])
+      "queryDrawables failed after structure framing", framed);
+    const visible = (framed.result?.allDrawables ?? [])
       .filter((candidate) =>
         candidate?.structure === true &&
-        candidate?.hostileToLocal === true &&
+        (requestedTargetName || candidate?.hostileToLocal === true) &&
         candidate?.onScreen === true &&
         candidate?.hidden !== true &&
         (!revealLocalMap || Number(candidate?.shroudStatus ?? 99) < 3));
     const matchingVisible = visible.find((candidate) => candidate.id === drawable.id) ?? null;
-    const selected = matchingVisible ?? visible[0] ?? null;
+    const selected = matchingVisible ?? (requestedTargetName ? null : visible[0] ?? null);
     attempts.push({
       requested: compactDrawable(drawable),
       lookAt: lookAt.result ?? null,
@@ -408,7 +414,8 @@ async function frameEnemyStructure(page) {
     }
   }
 
-  expect(false, "no hostile structure became visible after camera framing", {
+  expect(false, "no matching structure became visible after camera framing", {
+    requestedTargetName: requestedTargetName || null,
     attempts,
     initialStats: initial.result?.stats ?? null,
   });
@@ -600,6 +607,48 @@ function analyzeGeneratedHouseColorTextures(history) {
       whiteOnly: whiteOnly.length,
     },
     textures: Array.from(unique.values()).sort((left, right) => left.name.localeCompare(right.name)),
+  };
+}
+
+function analyzeExpectedNoImplicitCutout(history) {
+  if (!expectedNoImplicitCutoutTexture) {
+    return null;
+  }
+  const draws = history.filter((draw) =>
+    textureLabelName(draw.texture0).includes(expectedNoImplicitCutoutTexture) ||
+    textureLabelName(draw.texture1).includes(expectedNoImplicitCutoutTexture));
+  const opaqueDraws = draws.filter((draw) => {
+    const state = draw.renderState ?? {};
+    return Number(state.alphaTestEnable ?? 0) === 0 &&
+      Number(state.alphaBlendEnable ?? 0) === 0 &&
+      Number(state.zEnable ?? 0) !== 0 &&
+      Number(state.zWriteEnable ?? 0) !== 0;
+  });
+  const unexpectedCutouts = opaqueDraws.filter((draw) =>
+    draw.appliedRenderState?.implicitAlphaCutout?.enabled === true);
+  const errors = [];
+  if (draws.length === 0) {
+    errors.push(`expected texture ${expectedNoImplicitCutoutTexture} was not drawn`);
+  }
+  if (opaqueDraws.length === 0) {
+    errors.push(`expected an opaque depth-writing ${expectedNoImplicitCutoutTexture} draw`);
+  }
+  if (unexpectedCutouts.length > 0) {
+    errors.push(`opaque ${expectedNoImplicitCutoutTexture} draws used implicit cutout at seq ${unexpectedCutouts.map((draw) => draw.seq).join(",")}`);
+  }
+  return {
+    ok: errors.length === 0,
+    texture: expectedNoImplicitCutoutTexture,
+    errors,
+    counts: {
+      draws: draws.length,
+      opaqueDraws: opaqueDraws.length,
+      unexpectedCutouts: unexpectedCutouts.length,
+    },
+    alphaCoverage: Array.from(new Set(draws.flatMap((draw) =>
+      [draw.texture0, draw.texture1]
+        .filter((texture) => textureLabelName(texture).includes(expectedNoImplicitCutoutTexture))
+        .map((texture) => texture.alphaCoverage?.nonzeroCoverage ?? null)))),
   };
 }
 
@@ -843,7 +892,7 @@ async function main() {
     const renderer = await queryRenderer(page);
 
     const skirmishSetup = await enterSkirmish(page, server.url);
-    const framing = await frameEnemyStructure(page);
+    const framing = await frameTargetStructure(page);
 
     await page.evaluate((limit) =>
       window.__cncSetD3D8SceneDrawHistoryLimit?.(limit), drawHistoryLimit);
@@ -858,8 +907,9 @@ async function main() {
     const history = (full.state?.graphics?.d3d8SceneDrawHistory ?? [])
       .map((draw) => compactDraw(draw, labelById));
     const generatedHouseColor = analyzeGeneratedHouseColorTextures(history);
+    const noImplicitCutout = analyzeExpectedNoImplicitCutout(history);
     const targetPatch = analyzeTargetPatch(patch);
-    const ok = targetPatch.ok && generatedHouseColor.ok;
+    const ok = targetPatch.ok && generatedHouseColor.ok && (noImplicitCutout?.ok ?? true);
     const summary = {
       ok,
       source: "skirmish-structure-texture-capture",
@@ -869,6 +919,7 @@ async function main() {
       distDir,
       archiveCount: skirmishSetup.mount.archiveSet.archiveCount,
       requestedMap: requestedSkirmishMap || null,
+      requestedTarget: requestedTargetName || null,
       revealLocalMap: skirmishSetup.reveal?.result ?? null,
       skirmishMapSet: skirmishSetup.skirmishMapSet?.result ?? null,
       framesAdvancedAfterStart: skirmishSetup.active.framesAdvanced,
@@ -893,6 +944,7 @@ async function main() {
       assertions: {
         targetPatch,
         generatedHouseColor,
+        noImplicitCutout,
       },
       captures: {
         history,
@@ -915,6 +967,7 @@ async function main() {
       const errors = [
         ...targetPatch.errors,
         ...generatedHouseColor.errors,
+        ...(noImplicitCutout?.errors ?? []),
       ];
       throw new Error(`skirmish structure texture assertion failed: ${errors.join("; ")}`);
     }
