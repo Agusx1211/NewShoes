@@ -33,6 +33,7 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "launcher-archive-specs.js",
   "launcher-asset-manager.mjs",
   "launcher-asset-worker.js",
+  "launcher-build-info.js",
   "launcher-desktop-apps.js",
   "launcher-entry.mjs",
   "launcher-hardware-info.js",
@@ -77,6 +78,7 @@ export const PAGES_OUTPUT_FILES = Object.freeze([
   ...PAGES_TEMPLATE_FILES,
   ...PAGES_ROOT_LAUNCHER_FILES,
   ...PAGES_HARNESS_FILES.map((name) => `harness/${name}`),
+  "harness/build-info.json",
   "harness/play.html",
   ...PAGES_RUNTIME_FILES.map((name) => `dist-threaded-release/${name}`),
 ].sort());

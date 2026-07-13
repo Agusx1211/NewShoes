@@ -463,17 +463,24 @@
           </div>
         </article>
 
-        <article id="aboutWindow" class="window about-window" data-app="about" style="--x: 57%; --y: 43%; --w: 560px; --h: 420px;" aria-label="About Project New Shoes">
+        <article id="aboutWindow" class="window about-window" data-app="about" style="--x: 57%; --y: 43%; --w: 620px; --h: 570px;" aria-label="About Project New Shoes">
           <header class="titlebar">
             <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-info"/></svg></span><span>About Project New Shoes</span></div>
             <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
           </header>
-          <div class="about-body"><div class="about-brand"><span class="launcher-logo-slot about-launcher-logo"><img data-launcher-logo-image alt="Project New Shoes launcher mark" width="512" height="512"></span><div><small>Independent browser runtime</small><h1>NEW <span>SHOES</span></h1><p>Project New Shoes</p></div></div><div class="about-card"><svg><use href="#i-globe"/></svg><div><strong>The original game engine, running on the web</strong><p>Project New Shoes launches the original Generals and Zero Hour engine with user-owned assets. Media stays local; the desktop, filesystem, and game runtime execute in your browser.</p></div></div><dl class="about-facts"><div><dt>Runtime</dt><dd>WebAssembly + WebGL2</dd></div><div><dt>Storage</dt><dd>OPFS browser disk</dd></div><div><dt>Current target</dt><dd>Zero Hour</dd></div></dl><p class="about-legal">EA has not endorsed and does not support this product. Original game data is never bundled; you must supply files from a copy you own.</p></div>
+          <div class="about-body">
+            <div class="about-brand"><span class="launcher-logo-slot about-launcher-logo"><img data-launcher-logo-image alt="Project New Shoes launcher mark" width="512" height="512"></span><div><small>Independent browser runtime</small><h1>NEW <span>SHOES</span></h1><p>Project New Shoes</p></div></div>
+            <div class="about-card"><svg><use href="#i-globe"/></svg><div><strong>The original game engine, running on the web</strong><p>Project New Shoes launches the original Generals and Zero Hour engine with user-owned assets. Media stays local; the desktop, filesystem, and game runtime execute in your browser.</p></div></div>
+            <dl class="about-facts"><div><dt>Runtime</dt><dd>WebAssembly + WebGL2</dd></div><div><dt>Storage</dt><dd>OPFS browser disk</dd></div><div><dt>Current target</dt><dd>Zero Hour</dd></div></dl>
+            <dl class="about-build" aria-label="Build information"><div><dt>Version</dt><dd id="aboutVersion">Loading…</dd></div><div><dt>Build commit</dt><dd><a id="aboutBuildCommit" target="_blank" rel="noopener noreferrer">Loading…</a></dd></div></dl>
+            <section class="about-changelog" aria-labelledby="aboutChangelogTitle"><header><h2 id="aboutChangelogTitle">What&rsquo;s new</h2><a href="https://github.com/Agusx1211/NewShoes/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Full changelog</a></header><div id="aboutChangelog" aria-live="polite"><p>Loading release notes…</p></div></section>
+            <p class="about-legal">EA has not endorsed and does not support this product. Original game data is never bundled; you must supply files from a copy you own.</p>
+          </div>
         </article>
       </section>
 
       <section id="startMenu" class="start-menu" aria-label="Project New Shoes menu" hidden>
-        <header><span class="user-avatar">C</span><div><strong>Commander</strong><span>Local browser session</span></div></header>
+        <header><span class="user-avatar">C</span><div><strong>Commander</strong><span id="startMenuVersion">Loading build information…</span></div></header>
         <div class="start-content">
           <div class="start-primary">
             <button type="button" data-open="setup"><span class="start-icon"><img data-launcher-logo-image alt="" width="512" height="512"></span><div><strong>Project New Shoes Game Launcher</strong><small>Add files and start a game</small></div></button>

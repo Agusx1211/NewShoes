@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { parse } from "yaml";
+import { readReleaseMetadata } from "./release_metadata.mjs";
 
 const wasmRoot = resolve(import.meta.dirname, "..");
 const repoRoot = resolve(wasmRoot, "..");
@@ -25,6 +26,7 @@ const scripts = [
   "harness/launcher-archive-specs.js",
   "harness/launcher-asset-manager.mjs",
   "harness/launcher-asset-worker.js",
+  "harness/launcher-build-info.js",
   "harness/launcher-desktop-apps.js",
   "harness/launcher-entry.mjs",
   "harness/launcher-hardware-info.js",
@@ -54,6 +56,8 @@ const scripts = [
   "tools/cloudflare_site_manifest.mjs",
   "tools/pages_artifact_guard_smoke.mjs",
   "tools/pages_site_manifest.mjs",
+  "tools/release_metadata.mjs",
+  "tools/release_metadata_unit.mjs",
   "tools/verify_cloudflare_site.mjs",
   "tools/verify_pages_site.mjs",
 ];
@@ -99,6 +103,7 @@ for (const contract of [
   "name: cloudflare-pages",
   "name: cloudflare-preview-site",
   '--branch="pr-${PR_NUMBER}"',
+  '.base.ref == $base or .base.ref == "dev"',
   "transient_environment: true",
 ]) {
   if (!previewWorkflow.includes(contract)) throw new Error(`Trusted preview deployment contract missing: ${contract}`);
@@ -137,5 +142,7 @@ if (shell.status !== 0) {
   process.stderr.write(shell.stderr || shell.stdout);
   throw new Error("Syntax check failed: tools/build_pages_runtime.sh");
 }
+
+await readReleaseMetadata(repoRoot);
 
 console.log(`Checked ${scripts.length - 1} JavaScript files, 1 shell file, and ${workflowPaths.length} workflow YAML files.`);
