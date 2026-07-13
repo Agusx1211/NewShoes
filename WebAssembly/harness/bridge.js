@@ -4,6 +4,7 @@ import { createGdiHooks } from "./gdi_executor.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
 import { createSavePersistenceCoordinator } from "./save-persistence-coordinator.mjs";
 import { createReplayFileStore } from "./replay-file-store.mjs";
+import { createTransferUserDataStore } from "./transfer-user-data-store.mjs";
 import { createWebRtcUdpEndpoint } from "./webrtc-udp-endpoint.mjs";
 import { networkDiagnostics } from "./network-diagnostics.mjs";
 import {
@@ -5259,6 +5260,12 @@ const savePersistence = createSavePersistenceCoordinator(({ reason }) => (
 ));
 
 const replayFileStore = createReplayFileStore({
+  ready: () => wasmModulePromise,
+  getModule: () => cncPortEmscriptenModule,
+  persist: (reason) => persistSaveFilesystem(reason),
+});
+
+const transferUserDataStore = createTransferUserDataStore({
   ready: () => wasmModulePromise,
   getModule: () => cncPortEmscriptenModule,
   persist: (reason) => persistSaveFilesystem(reason),
@@ -23201,6 +23208,10 @@ window.CnCPort = {
   readReplay: (name) => replayFileStore.read(name),
   importReplay: (name, bytes) => replayFileStore.importFile(name, bytes),
   deleteReplay: (name, options) => replayFileStore.remove(name, options),
+  listTransferUserFiles: (options) => transferUserDataStore.list(options),
+  readTransferUserFileChunk: (file, offset, length) =>
+    transferUserDataStore.readChunk(file, offset, length),
+  beginTransferUserDataImport: (files) => transferUserDataStore.beginImport(files),
   // Raw emscripten Module accessor for harness diagnostics (threaded mode:
   // lets a probe read atomic counters / last-step markers FROM THE MAIN
   // THREAD while the engine thread is busy inside a long wasm call and the
