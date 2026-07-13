@@ -102,6 +102,7 @@
     "verify:launcher-polish": "node harness/launcher_polish_smoke.mjs",
     "verify:launcher-polish-browser": "node harness/launcher_polish_browser_smoke.mjs",
     "verify:audio-startup-activation": "node harness/audio_startup_activation_smoke.mjs",
+    "verify:audio-tab-recovery": "node harness/audio_tab_recovery_smoke.mjs",
     "test:real-fx-render": "npm run build:port && node harness/real_fx_render_smoke.mjs",
     "test:real-scorch-render": "npm run build:port && SKIRMISH_START_SCORCH_PROBE=1 node harness/skirmish_start_smoke.mjs",
     "test:real-heat-distortion": "npm run build:port && REAL_FX_EXPECT_HEAT=1 node harness/real_fx_render_smoke.mjs",

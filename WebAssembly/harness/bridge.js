@@ -2265,6 +2265,8 @@ function ensureBrowserAudioRuntimeContext(trigger) {
       };
       if (state === "running") {
         ensureBrowserAudioMixerRuntime();
+      } else if (state === "suspended") {
+        recoverBrowserAudioRuntime("context.statechange");
       }
     });
     return browserAudioRuntime.context;
@@ -2311,6 +2313,17 @@ async function resumeBrowserAudioRuntime(trigger = "rpc.resumeBrowserAudioRuntim
     browserAudioRuntime.lastResumeError = error?.message ?? String(error);
   }
   return summarizeBrowserAudioRuntime();
+}
+
+function recoverBrowserAudioRuntime(trigger) {
+  const context = browserAudioRuntime.context;
+  if (!context
+      || context.state !== "suspended"
+      || browserAudioRuntime.resumeSuccesses === 0
+      || globalThis.document?.visibilityState === "hidden") {
+    return;
+  }
+  void resumeBrowserAudioRuntime(trigger);
 }
 
 function normalizeBrowserAudioMixerVolumes(defaults, overrides) {
@@ -22897,6 +22910,22 @@ window.addEventListener("pointerdown", () => {
 window.addEventListener("click", () => {
   void resumeBrowserAudioRuntime("window.click");
 }, { capture: true });
+
+// Browsers can release audio hardware while a tab is backgrounded and leave
+// an already-authorized context suspended. Recover that existing context when
+// the page becomes active again; the ordinary input hooks remain the fallback
+// for browsers that require a fresh user activation.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    recoverBrowserAudioRuntime("document.visibilitychange");
+  }
+});
+window.addEventListener("focus", () => {
+  recoverBrowserAudioRuntime("window.focus");
+});
+window.addEventListener("pageshow", () => {
+  recoverBrowserAudioRuntime("window.pageshow");
+});
 
 canvas.addEventListener("pointermove", (event) => {
   const point = canvasInputPointFromEvent(event);
