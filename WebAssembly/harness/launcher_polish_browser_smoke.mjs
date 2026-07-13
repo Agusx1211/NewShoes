@@ -48,6 +48,8 @@ try {
   await page.locator('.desktop-icon[data-open="about"]').click();
   await page.waitForFunction((version) => document.querySelector("#aboutVersion")?.textContent === version,
     expectedVersion);
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.waitForTimeout(200);
   const aboutInfo = await page.evaluate(() => ({
     version: document.querySelector("#aboutVersion")?.textContent || "",
     build: document.querySelector("#aboutBuildCommit")?.textContent || "",
