@@ -209,9 +209,6 @@ async function main() {
         && Number(gameplay?.renderedObjectCount ?? 0) > 0;
     }, matchTimeoutMs);
     summary.activeGameplay = frame.gameplay ?? frame.clientState?.gameplay ?? null;
-    summary.beforeZoom = frame.view ?? frame.clientState?.view ?? null;
-    summary.beforeScreenshotBytes = await captureViewport(
-      page, join(outputDir, "camera-zoom-before.png"));
 
     const viewportBox = await page.locator("#viewport").boundingBox();
     expect(viewportBox != null, "runtime viewport has no browser geometry");
@@ -219,6 +216,19 @@ async function main() {
       viewportBox.x + viewportBox.width / 2,
       viewportBox.y + viewportBox.height / 2,
     );
+    for (let step = 0; step < 24; step += 1) {
+      await page.mouse.wheel(0, -120);
+      await page.waitForTimeout(40);
+    }
+    frame = await waitForFrame(page, "camera zoom into retail range", (candidate) => {
+      const view = candidate?.view ?? candidate?.clientState?.view;
+      return Number(view?.heightAboveGround ?? 500) < 300
+        && Number(view?.currentHeightAboveGround ?? 500) < 350;
+    }, 30000);
+    summary.beforeZoom = frame.view ?? frame.clientState?.view ?? null;
+    summary.beforeScreenshotBytes = await captureViewport(
+      page, join(outputDir, "camera-zoom-before.png"));
+
     for (let step = 0; step < 40; step += 1) {
       await page.mouse.wheel(0, 120);
       await page.waitForTimeout(40);
@@ -232,6 +242,12 @@ async function main() {
     summary.afterZoom = frame.view ?? frame.clientState?.view ?? null;
     expect(summary.afterZoom.currentHeightAboveGround <= 505,
       "camera exceeded the configured 500-unit upper bound", summary.afterZoom);
+    expect(
+      summary.afterZoom.currentHeightAboveGround
+        > summary.beforeZoom.currentHeightAboveGround + 100,
+      "wheel input did not produce a meaningful camera-height change",
+      { beforeZoom: summary.beforeZoom, afterZoom: summary.afterZoom },
+    );
     summary.afterScreenshotBytes = await captureViewport(
       page, join(outputDir, "camera-zoom-500.png"));
 
