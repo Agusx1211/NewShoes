@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { parse } from "yaml";
+import { readReleaseMetadata } from "./release_metadata.mjs";
 
 const wasmRoot = resolve(import.meta.dirname, "..");
 const repoRoot = resolve(wasmRoot, "..");
@@ -15,6 +16,10 @@ const scripts = [
   "harness/analytics_browser_smoke.mjs",
   "harness/bink_runtime.mjs",
   "harness/bridge.js",
+  "harness/camera-zoom-config.mjs",
+  "harness/camera_zoom_browser_smoke.mjs",
+  "harness/camera_zoom_config_unit.mjs",
+  "harness/camera_zoom_runtime_smoke.mjs",
   "harness/cloudflare_deployment_smoke.mjs",
   "harness/d3d8_executor.mjs",
   "harness/engine_realm_boot.mjs",
@@ -25,6 +30,7 @@ const scripts = [
   "harness/launcher-archive-specs.js",
   "harness/launcher-asset-manager.mjs",
   "harness/launcher-asset-worker.js",
+  "harness/launcher-build-info.js",
   "harness/launcher-desktop-apps.js",
   "harness/launcher-entry.mjs",
   "harness/launcher-hardware-info.js",
@@ -37,6 +43,8 @@ const scripts = [
   "harness/opfs_realm_files.mjs",
   "harness/pages_deployment_smoke.mjs",
   "harness/play.mjs",
+  "harness/replay-file-store.mjs",
+  "harness/replay_desktop_transfer_smoke.mjs",
   "harness/runtime-shutdown-sequence.mjs",
   "harness/save-persistence-coordinator.mjs",
   "harness/shader-tier-config.mjs",
@@ -54,6 +62,8 @@ const scripts = [
   "tools/cloudflare_site_manifest.mjs",
   "tools/pages_artifact_guard_smoke.mjs",
   "tools/pages_site_manifest.mjs",
+  "tools/release_metadata.mjs",
+  "tools/release_metadata_unit.mjs",
   "tools/verify_cloudflare_site.mjs",
   "tools/verify_pages_site.mjs",
 ];
@@ -99,6 +109,7 @@ for (const contract of [
   "name: cloudflare-pages",
   "name: cloudflare-preview-site",
   '--branch="pr-${PR_NUMBER}"',
+  '.base.ref == $base or .base.ref == "dev"',
   "transient_environment: true",
 ]) {
   if (!previewWorkflow.includes(contract)) throw new Error(`Trusted preview deployment contract missing: ${contract}`);
@@ -137,5 +148,7 @@ if (shell.status !== 0) {
   process.stderr.write(shell.stderr || shell.stdout);
   throw new Error("Syntax check failed: tools/build_pages_runtime.sh");
 }
+
+await readReleaseMetadata(repoRoot);
 
 console.log(`Checked ${scripts.length - 1} JavaScript files, 1 shell file, and ${workflowPaths.length} workflow YAML files.`);

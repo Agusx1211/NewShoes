@@ -3,6 +3,7 @@ import { createBinkVideoRuntime } from "./bink_runtime.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
 import { createSavePersistenceCoordinator } from "./save-persistence-coordinator.mjs";
+import { createReplayFileStore } from "./replay-file-store.mjs";
 import { createWebRtcUdpEndpoint } from "./webrtc-udp-endpoint.mjs";
 import { networkDiagnostics } from "./network-diagnostics.mjs";
 import {
@@ -897,6 +898,18 @@ function threadedWorkerDiagLevel() {
   }
 }
 
+function threadedWorkerPerfCounters() {
+  try {
+    const value = new URLSearchParams(globalThis.location?.search || "")
+      .get("perfCounters");
+    if (value === "1" || value === "true") return true;
+    if (value === "0" || value === "false") return false;
+  } catch (_error) {
+    // The worker follows its diagnostics level when no override is available.
+  }
+  return null;
+}
+
 function threadedWorkerShaderTier() {
   // The executor samples the shader tier once at device create via
   // d3d8ShaderTierQuery (URL ?shaderTier= param, then localStorage
@@ -1194,6 +1207,7 @@ function createThreadedEngineController() {
         canvas: offscreen,
         options: {
           diagLevel: threadedWorkerDiagLevel(),
+          perfCounters: threadedWorkerPerfCounters(),
           preserveDrawingBuffer: contextPreserveDrawingBuffer,
           shaderTier: threadedWorkerShaderTier(),
           udpBridge: threadedUdpBridge,
@@ -1371,6 +1385,7 @@ function createThreadedEngineController() {
         stepped: payload.stepped !== false,
         bootWidth: payload.bootWidth,
         bootHeight: payload.bootHeight,
+        maxCameraHeight: payload.maxCameraHeight,
         stepBudgetMs: payload.stepBudgetMs,
         commanderName: payload.commanderName,
       }, {
@@ -1666,6 +1681,10 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   "stopSavePersistenceScheduling",
   "persistSavesFinal",
   "listSaves",
+  "listReplays",
+  "readReplay",
+  "importReplay",
+  "deleteReplay",
   // WebRTC signaling and RTCDataChannels live in the window realm. Their
   // datagrams cross into the engine worker through threadedUdpBridge.
   "browserWebRtcEndpointConnect",
@@ -2262,6 +2281,8 @@ function ensureBrowserAudioRuntimeContext(trigger) {
       };
       if (state === "running") {
         ensureBrowserAudioMixerRuntime();
+      } else if (state === "suspended") {
+        recoverBrowserAudioRuntime("context.statechange");
       }
     });
     return browserAudioRuntime.context;
@@ -2308,6 +2329,17 @@ async function resumeBrowserAudioRuntime(trigger = "rpc.resumeBrowserAudioRuntim
     browserAudioRuntime.lastResumeError = error?.message ?? String(error);
   }
   return summarizeBrowserAudioRuntime();
+}
+
+function recoverBrowserAudioRuntime(trigger) {
+  const context = browserAudioRuntime.context;
+  if (!context
+      || context.state !== "suspended"
+      || browserAudioRuntime.resumeSuccesses === 0
+      || globalThis.document?.visibilityState === "hidden") {
+    return;
+  }
+  void resumeBrowserAudioRuntime(trigger);
 }
 
 function normalizeBrowserAudioMixerVolumes(defaults, overrides) {
@@ -5236,6 +5268,25 @@ const savePersistence = createSavePersistenceCoordinator(({ reason }) => (
   })
 ));
 
+const replayFileStore = createReplayFileStore({
+  ready: () => wasmModulePromise,
+  getModule: () => cncPortEmscriptenModule,
+  persist: (reason) => persistSaveFilesystem(reason),
+});
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  for (let offset = 0; offset < bytes.byteLength; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(value) {
+  const binary = atob(String(value ?? ""));
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
 function persistSaveFilesystem(reason = "manual") {
   return savePersistence.persist(reason);
 }
@@ -5560,6 +5611,11 @@ async function loadWasmModule() {
         "cnc_port_real_engine_set_boot_resolution",
         null,
         ["number", "number"],
+      ),
+      realEngineSetMaxCameraHeight: module.cwrap(
+        "cnc_port_real_engine_set_max_camera_height",
+        "number",
+        ["number"],
       ),
       realEngineDumpWindows: module.cwrap(
         "cnc_port_real_engine_dump_windows",
@@ -10290,6 +10346,17 @@ async function realEngineInit(payload = {}) {
       && typeof wasmModule.realEngineSetBootResolution === "function") {
     wasmModule.realEngineSetBootResolution(bootWidth, bootHeight);
   }
+  if (Object.hasOwn(payload, "maxCameraHeight")) {
+    const maxCameraHeight = Number(payload.maxCameraHeight);
+    if (!Number.isFinite(maxCameraHeight)
+        || maxCameraHeight < 310 || maxCameraHeight > 500) {
+      return { ok: false, command: "realEngineInit", error: "invalid camera zoom setting" };
+    }
+    const accepted = wasmModule.realEngineSetMaxCameraHeight(maxCameraHeight);
+    if (accepted !== 1) {
+      return { ok: false, command: "realEngineInit", error: "camera zoom setting rejected" };
+    }
+  }
   const commanderName = String(payload.commanderName ?? "");
   if (commanderName && typeof wasmModule.realEngineSetCommanderName === "function") {
     const identity = JSON.parse(wasmModule.realEngineSetCommanderName(commanderName));
@@ -11348,6 +11415,43 @@ async function rpc(command, payload = {}) {
       {
         const result = listSaveFiles();
         return { ok: Boolean(result.ok), command, ...result };
+      }
+    case "listReplays":
+      {
+        try {
+          return { command, ...await replayFileStore.list() };
+        } catch (error) {
+          return { ok: false, command, files: [], error: error?.message ?? String(error) };
+        }
+      }
+    case "readReplay":
+      {
+        try {
+          const bytes = await replayFileStore.read(payload.name);
+          return { ok: true, command, name: String(payload.name), bytesBase64: bytesToBase64(bytes) };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "importReplay":
+      {
+        try {
+          const result = await replayFileStore.importFile(payload.name, base64ToBytes(payload.bytesBase64));
+          return { command, ...result };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "deleteReplay":
+      {
+        try {
+          const result = await replayFileStore.remove(payload.name, {
+            allowLastReplay: payload.allowLastReplay === true,
+          });
+          return { command, ...result };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
       }
     case "mapCacheProbe":
       {
@@ -22924,6 +23028,22 @@ window.addEventListener("click", () => {
   void resumeBrowserAudioRuntime("window.click");
 }, { capture: true });
 
+// Browsers can release audio hardware while a tab is backgrounded and leave
+// an already-authorized context suspended. Recover that existing context when
+// the page becomes active again; the ordinary input hooks remain the fallback
+// for browsers that require a fresh user activation.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    recoverBrowserAudioRuntime("document.visibilitychange");
+  }
+});
+window.addEventListener("focus", () => {
+  recoverBrowserAudioRuntime("window.focus");
+});
+window.addEventListener("pageshow", () => {
+  recoverBrowserAudioRuntime("window.pageshow");
+});
+
 canvas.addEventListener("pointermove", (event) => {
   const point = canvasInputPointFromEvent(event);
   void pushBrowserInputToWasmLite({
@@ -23116,6 +23236,10 @@ window.CnCPort = {
   persistFinalSaves: persistFinalSaveFilesystem,
   stopSavePersistenceScheduling,
   listSaves: listSaveFiles,
+  listReplays: () => replayFileStore.list(),
+  readReplay: (name) => replayFileStore.read(name),
+  importReplay: (name, bytes) => replayFileStore.importFile(name, bytes),
+  deleteReplay: (name, options) => replayFileStore.remove(name, options),
   // Raw emscripten Module accessor for harness diagnostics (threaded mode:
   // lets a probe read atomic counters / last-step markers FROM THE MAIN
   // THREAD while the engine thread is busy inside a long wasm call and the
