@@ -19,10 +19,17 @@ merging feature branches directly into `main` or by pushing to `main`.
 3. Enumerate every pull request included in `main...dev`. Use GitHub PR data,
    not commit subjects alone, and inspect the complete diff for changes that
    are not associated with a PR.
-4. Choose the next semantic version. Update the repository-root `VERSION` file
+4. Inspect every GitHub issue referenced by the included pull requests and read
+   its current description and comments. Classify whether merging the release
+   fully resolves it or whether it still requires post-merge, deployment, or
+   manual verification. The release PR must use one full closing keyword per
+   fully resolved issue, for example `Closes #123`. Do not add a closing keyword
+   for an issue with required work or verification still pending; list that
+   issue and the remaining gate explicitly instead.
+5. Choose the next semantic version. Update the repository-root `VERSION` file
    to that exact version with no `v` prefix. A release version must not retain a
    `-dev` suffix.
-5. Update `CHANGELOG.md`:
+6. Update `CHANGELOG.md`:
    - keep each change to one short line;
    - include every PR in `main...dev`, including small fixes and cleanup;
    - end every line with a link to its source PR;
@@ -30,7 +37,7 @@ merging feature branches directly into `main` or by pushing to `main`.
      `## [<version>] - YYYY-MM-DD`, then add a new empty `Unreleased` section;
    - do not combine unrelated PRs into a vague summary or omit a PR because it
      looks minor.
-6. Run `npm run test:release-metadata` from `WebAssembly`, then run the product
+7. Run `npm run test:release-metadata` from `WebAssembly`, then run the product
    checks required by the changes included in the release. Verify the About UI
    shows the new version, the built commit, and the linked changelog.
 
@@ -41,6 +48,9 @@ Open one PR with source `dev` and base `main`. Its body must contain:
 - the release version;
 - a complete list of everything added, with one short line per change and
   links to all included PRs;
+- one `Closes #<number>` entry for every included issue fully resolved by the
+  release, plus an explicit list of referenced issues intentionally left open
+  and their remaining verification gates;
 - the verification that was actually run and any check that remains pending.
 
 The PR list and `CHANGELOG.md` must account for the same `main...dev` range.
