@@ -4908,6 +4908,135 @@ function d3d8TextureFormatHasAlpha(format) {
   }
 }
 
+const D3D8_IMPLICIT_ALPHA_CUTOUT_MIN_NONZERO_COVERAGE = 0.5;
+
+function d3d8TextureAlphaCoverage(format, bytes, width, height) {
+  const d3dFormat = Number(format) >>> 0;
+  const textureWidth = Number(width) >>> 0;
+  const textureHeight = Number(height) >>> 0;
+  const totalTexels = textureWidth * textureHeight;
+  if (!(bytes instanceof Uint8Array) || totalTexels === 0) {
+    return null;
+  }
+
+  const finish = (nonzeroTexels) => ({
+    nonzeroTexels,
+    totalTexels,
+    nonzeroCoverage: nonzeroTexels / totalTexels,
+  });
+  let nonzeroTexels = 0;
+
+  if (d3dFormat === D3DFMT_A8R8G8B8) {
+    if (bytes.length < totalTexels * 4) return null;
+    for (let texel = 0; texel < totalTexels; ++texel) {
+      if (bytes[texel * 4 + 3] !== 0) ++nonzeroTexels;
+    }
+    return finish(nonzeroTexels);
+  }
+  if (d3dFormat === D3DFMT_A1R5G5B5 || d3dFormat === D3DFMT_A4R4G4B4) {
+    if (bytes.length < totalTexels * 2) return null;
+    const alphaMask = d3dFormat === D3DFMT_A1R5G5B5 ? 0x8000 : 0xf000;
+    for (let texel = 0; texel < totalTexels; ++texel) {
+      const offset = texel * 2;
+      const value = bytes[offset] | (bytes[offset + 1] << 8);
+      if ((value & alphaMask) !== 0) ++nonzeroTexels;
+    }
+    return finish(nonzeroTexels);
+  }
+  if (d3dFormat === D3DFMT_A8 || d3dFormat === D3DFMT_A8L8) {
+    const texelBytes = d3dFormat === D3DFMT_A8 ? 1 : 2;
+    const alphaOffset = texelBytes - 1;
+    if (bytes.length < totalTexels * texelBytes) return null;
+    for (let texel = 0; texel < totalTexels; ++texel) {
+      if (bytes[texel * texelBytes + alphaOffset] !== 0) ++nonzeroTexels;
+    }
+    return finish(nonzeroTexels);
+  }
+
+  const dxt1 = d3dFormat === D3DFMT_DXT1;
+  const dxt3 = d3dFormat === D3DFMT_DXT2 || d3dFormat === D3DFMT_DXT3;
+  const dxt5 = d3dFormat === D3DFMT_DXT4 || d3dFormat === D3DFMT_DXT5;
+  if (!dxt1 && !dxt3 && !dxt5) {
+    return null;
+  }
+
+  const blockWidth = Math.ceil(textureWidth / 4);
+  const blockHeight = Math.ceil(textureHeight / 4);
+  const bytesPerBlock = dxt1 ? 8 : 16;
+  if (bytes.length < blockWidth * blockHeight * bytesPerBlock) {
+    return null;
+  }
+
+  for (let blockY = 0; blockY < blockHeight; ++blockY) {
+    for (let blockX = 0; blockX < blockWidth; ++blockX) {
+      const blockOffset = (blockY * blockWidth + blockX) * bytesPerBlock;
+      let alphaIndices = 0;
+      let nonzeroAlphaMask = 0xff;
+      let dxt1HasTransparentIndex = false;
+
+      if (dxt1) {
+        const color0 = bytes[blockOffset] | (bytes[blockOffset + 1] << 8);
+        const color1 = bytes[blockOffset + 2] | (bytes[blockOffset + 3] << 8);
+        dxt1HasTransparentIndex = color0 <= color1;
+        alphaIndices = bytes[blockOffset + 4]
+          + bytes[blockOffset + 5] * 0x100
+          + bytes[blockOffset + 6] * 0x10000
+          + bytes[blockOffset + 7] * 0x1000000;
+      } else if (dxt5) {
+        const alpha0 = bytes[blockOffset];
+        const alpha1 = bytes[blockOffset + 1];
+        nonzeroAlphaMask = (alpha0 !== 0 ? 0x01 : 0) | (alpha1 !== 0 ? 0x02 : 0);
+        if (alpha0 > alpha1) {
+          if (Math.round((6 * alpha0 + alpha1) / 7) !== 0) nonzeroAlphaMask |= 0x04;
+          if (Math.round((5 * alpha0 + 2 * alpha1) / 7) !== 0) nonzeroAlphaMask |= 0x08;
+          if (Math.round((4 * alpha0 + 3 * alpha1) / 7) !== 0) nonzeroAlphaMask |= 0x10;
+          if (Math.round((3 * alpha0 + 4 * alpha1) / 7) !== 0) nonzeroAlphaMask |= 0x20;
+          if (Math.round((2 * alpha0 + 5 * alpha1) / 7) !== 0) nonzeroAlphaMask |= 0x40;
+          if (Math.round((alpha0 + 6 * alpha1) / 7) !== 0) nonzeroAlphaMask |= 0x80;
+        } else {
+          if (Math.round((4 * alpha0 + alpha1) / 5) !== 0) nonzeroAlphaMask |= 0x04;
+          if (Math.round((3 * alpha0 + 2 * alpha1) / 5) !== 0) nonzeroAlphaMask |= 0x08;
+          if (Math.round((2 * alpha0 + 3 * alpha1) / 5) !== 0) nonzeroAlphaMask |= 0x10;
+          if (Math.round((alpha0 + 4 * alpha1) / 5) !== 0) nonzeroAlphaMask |= 0x20;
+          // In six-value mode selector 6 is zero and selector 7 is 255.
+          nonzeroAlphaMask |= 0x80;
+        }
+        for (let byte = 0; byte < 6; ++byte) {
+          alphaIndices += bytes[blockOffset + 2 + byte] * (2 ** (byte * 8));
+        }
+      }
+
+      const validWidth = Math.min(4, textureWidth - blockX * 4);
+      const validHeight = Math.min(4, textureHeight - blockY * 4);
+      for (let y = 0; y < validHeight; ++y) {
+        for (let x = 0; x < validWidth; ++x) {
+          const texel = y * 4 + x;
+          let alpha = 255;
+          if (dxt1) {
+            const index = Math.floor(alphaIndices / (2 ** (texel * 2))) % 4;
+            alpha = dxt1HasTransparentIndex && index === 3 ? 0 : 255;
+          } else if (dxt3) {
+            const packed = bytes[blockOffset + Math.floor(texel / 2)];
+            alpha = (texel & 1) === 0 ? (packed & 0x0f) : (packed >> 4);
+          } else {
+            const index = Math.floor(alphaIndices / (2 ** (texel * 3))) % 8;
+            alpha = nonzeroAlphaMask & (1 << index);
+          }
+          if (alpha !== 0) ++nonzeroTexels;
+        }
+      }
+    }
+  }
+  return finish(nonzeroTexels);
+}
+
+function d3d8TextureSupportsImplicitAlphaCutout(resource) {
+  const coverage = Number(resource?.alphaCoverage?.nonzeroCoverage);
+  return d3d8TextureFormatHasAlpha(resource?.format) &&
+    Number.isFinite(coverage) &&
+    coverage >= D3D8_IMPLICIT_ALPHA_CUTOUT_MIN_NONZERO_COVERAGE;
+}
+
 function d3d8TextureStageAlphaUsesBase(textureStage, base) {
   if (!textureStage || Number(textureStage.alphaOp) >>> 0 === D3DTOP_DISABLE) {
     return false;
@@ -4921,33 +5050,42 @@ function d3d8TextureStageAlphaUsesBase(textureStage, base) {
     || (d3dTextureCombinerOpUsesArg2(alphaOp) && (alphaArg2 & D3DTA_SELECTMASK) === base);
 }
 
-function d3d8FinalAlphaMayUseTexture(renderState, canSampleTexture0, texture0Resource,
+const D3D8_ALPHA_TEXTURE_CUTOUT_ELIGIBLE = 1;
+const D3D8_ALPHA_TEXTURE_CUTOUT_INELIGIBLE = 2;
+
+function d3d8TextureAlphaCutoutState(resource) {
+  if (!d3d8TextureFormatHasAlpha(resource?.format)) {
+    return 0;
+  }
+  return d3d8TextureSupportsImplicitAlphaCutout(resource)
+    ? D3D8_ALPHA_TEXTURE_CUTOUT_ELIGIBLE
+    : D3D8_ALPHA_TEXTURE_CUTOUT_INELIGIBLE;
+}
+
+function d3d8FinalAlphaTextureCutoutState(renderState, canSampleTexture0, texture0Resource,
     canSampleTexture1, texture1Resource) {
   const stage0 = renderState?.textureStages?.[0] ?? null;
   const stage1 = renderState?.textureStages?.[1] ?? null;
-  const stage0TextureAlpha = Boolean(
-    canSampleTexture0 &&
-    d3d8TextureFormatHasAlpha(texture0Resource?.format) &&
-    d3d8TextureStageAlphaUsesBase(stage0, D3DTA_TEXTURE),
-  );
-  const stage0CurrentAlpha = stage0TextureAlpha &&
-    ((Number(stage0?.resultArg ?? D3DTA_CURRENT) >>> 0) !== D3DTA_TEMP);
-  const stage0TempAlpha = stage0TextureAlpha &&
-    ((Number(stage0?.resultArg ?? D3DTA_CURRENT) >>> 0) === D3DTA_TEMP);
+  const stage0TextureAlpha = canSampleTexture0 &&
+    d3d8TextureStageAlphaUsesBase(stage0, D3DTA_TEXTURE)
+    ? d3d8TextureAlphaCutoutState(texture0Resource)
+    : 0;
+  const stage0WritesTemp = (Number(stage0?.resultArg ?? D3DTA_CURRENT) >>> 0) === D3DTA_TEMP;
+  const stage0CurrentAlpha = stage0WritesTemp ? 0 : stage0TextureAlpha;
+  const stage0TempAlpha = stage0WritesTemp ? stage0TextureAlpha : 0;
 
   const stage1AlphaOp = Number(stage1?.alphaOp ?? D3DTOP_DISABLE) >>> 0;
   if (stage1AlphaOp === D3DTOP_DISABLE) {
     return stage0CurrentAlpha;
   }
 
-  const stage1TextureAlpha = Boolean(
-    canSampleTexture1 &&
-    d3d8TextureFormatHasAlpha(texture1Resource?.format) &&
-    d3d8TextureStageAlphaUsesBase(stage1, D3DTA_TEXTURE),
-  );
-  return stage1TextureAlpha ||
-    (stage0CurrentAlpha && d3d8TextureStageAlphaUsesBase(stage1, D3DTA_CURRENT)) ||
-    (stage0TempAlpha && d3d8TextureStageAlphaUsesBase(stage1, D3DTA_TEMP));
+  const stage1TextureAlpha = canSampleTexture1 &&
+    d3d8TextureStageAlphaUsesBase(stage1, D3DTA_TEXTURE)
+    ? d3d8TextureAlphaCutoutState(texture1Resource)
+    : 0;
+  return stage1TextureAlpha |
+    (d3d8TextureStageAlphaUsesBase(stage1, D3DTA_CURRENT) ? stage0CurrentAlpha : 0) |
+    (d3d8TextureStageAlphaUsesBase(stage1, D3DTA_TEMP) ? stage0TempAlpha : 0);
 }
 
 function d3d8ImplicitAlphaCutoutThreshold(renderState, canSampleTexture0, texture0Resource,
@@ -4959,13 +5097,21 @@ function d3d8ImplicitAlphaCutoutThreshold(renderState, canSampleTexture0, textur
       renderState.zWriteEnable === 0) {
     return -1;
   }
-  return d3d8FinalAlphaMayUseTexture(
+  const textureAlphaState = d3d8FinalAlphaTextureCutoutState(
     renderState,
     canSampleTexture0,
     texture0Resource,
     canSampleTexture1,
     texture1Resource,
-  ) ? (1 / 255) : -1;
+  );
+
+  // D3D8 does not discard texels while alpha testing is disabled. This
+  // compatibility path exists only for shipped opaque passes whose mostly
+  // opaque alpha masks contain isolated holes (the shell-map battleship). Do
+  // not infer a cutout when zero alpha is the majority: some opaque materials,
+  // including the Tech Reinforcement Pad tower, carry an auxiliary/unused
+  // alpha channel that would otherwise erase most of the model.
+  return textureAlphaState === D3D8_ALPHA_TEXTURE_CUTOUT_ELIGIBLE ? (1 / 255) : -1;
 }
 
 function d3d8TextureSemanticMode(resource) {
@@ -5308,6 +5454,7 @@ function createD3D8Texture(payload = {}) {
     levelFormats: new Map(),
     completeMipChain: false,
     uploads: 0,
+    alphaCoverage: null,
     samplerState: null,
     samplerStateKey: null,
     samplerD3DStateKey: null,
@@ -5797,6 +5944,11 @@ function updateD3D8Texture(payload = {}) {
   if (x + width > levelSize.width || y + height > levelSize.height) {
     return 0;
   }
+  const level0AlphaCoverage = level !== 0
+    ? undefined
+    : (x === 0 && y === 0 && width === levelSize.width && height === levelSize.height
+      ? d3d8TextureAlphaCoverage(format, payload.bytes, width, height)
+      : null);
 
   const convertStartedAt = perfNow();
   // Handle DXT CPU decoding fallback
@@ -5915,6 +6067,9 @@ function updateD3D8Texture(payload = {}) {
   if (d3d8PerfCountersEnabled) d3d8PerfStats.textureUploadBytes += Number(uploadBytes.byteLength ?? 0) >>> 0;
   if (d3d8PerfCountersEnabled) d3d8PerfStats.textureUploadPixels += Math.max(0, width * height);
   if (d3d8PerfCountersEnabled) d3d8PerfStats.textureUploadMs += perfNow() - uploadStartedAt;
+  if (level0AlphaCoverage !== undefined) {
+    resource.alphaCoverage = level0AlphaCoverage;
+  }
   invalidateD3D8DrawStateCache();
 
   resource.uploads += 1;
@@ -5941,6 +6096,7 @@ function updateD3D8Texture(payload = {}) {
     compressed: Boolean(info.compressed),
     blockBytes: Number(info.blockBytes ?? 0) >>> 0,
     semantic: info.semantic || null,
+    alphaCoverage: resource.alphaCoverage,
     swizzle: swizzleApplied,
     pitch: Number(payload.pitch ?? 0) >>> 0,
     rowBytes: Number(payload.rowBytes ?? 0) >>> 0,
@@ -13311,11 +13467,14 @@ function paintD3D8DrawIndexed(payload = {}) {
             transformDetailStartedAt = now;
           }
         : null;
-      const worldTransformUnchanged = worldRevisionUnchanged ||
+      // bindD3D8Program resets the per-program uniform snapshots. The revision
+      // shortcuts above may still be true for the D3D transform itself, but
+      // they cannot prove that the newly bound GL program has received it.
+      const worldTransformUnchanged =
         d3d8MatrixEquals(d3d8LastTransformUniformWorld, world);
-      const viewTransformUnchanged = viewRevisionUnchanged ||
+      const viewTransformUnchanged =
         d3d8MatrixEquals(d3d8LastTransformUniformView, view);
-      const projectionTransformUnchanged = projectionRevisionUnchanged ||
+      const projectionTransformUnchanged =
         d3d8MatrixEquals(d3d8LastTransformUniformProjection, projection);
       recordTransformDetail?.("sortedDrawTransformCompareMs");
       if (worldTransformUnchanged && viewTransformUnchanged && projectionTransformUnchanged) {
@@ -13786,6 +13945,8 @@ function paintD3D8DrawIndexed(payload = {}) {
       format: texture0Resource?.format ?? 0,
       storage: texture0Resource?.storage ?? null,
       semantic: texture0Resource?.semantic ?? null,
+      alphaCoverage: texture0Resource?.alphaCoverage ?? null,
+      implicitAlphaCutoutEligible: d3d8TextureSupportsImplicitAlphaCutout(texture0Resource),
       semanticMode: texture0SemanticMode,
       uploads: texture0Resource?.uploads ?? 0,
       samplePixels: sampleD3D8TextureProbe(texture0Resource),
@@ -13827,6 +13988,8 @@ function paintD3D8DrawIndexed(payload = {}) {
       format: texture1Resource?.format ?? 0,
       storage: texture1Resource?.storage ?? null,
       semantic: texture1Resource?.semantic ?? null,
+      alphaCoverage: texture1Resource?.alphaCoverage ?? null,
+      implicitAlphaCutoutEligible: d3d8TextureSupportsImplicitAlphaCutout(texture1Resource),
       semanticMode: texture1SemanticMode,
       uploads: texture1Resource?.uploads ?? 0,
       samplePixels: sampleD3D8TextureProbe(texture1Resource),
@@ -13921,6 +14084,8 @@ function paintD3D8DrawIndexed(payload = {}) {
         format: probe.texture0.format,
         storage: probe.texture0.storage,
         semantic: probe.texture0.semantic,
+        alphaCoverage: probe.texture0.alphaCoverage,
+        implicitAlphaCutoutEligible: probe.texture0.implicitAlphaCutoutEligible,
         semanticMode: probe.texture0.semanticMode,
         uploads: probe.texture0.uploads,
         completeMipChain: probe.texture0.completeMipChain,
@@ -13940,6 +14105,8 @@ function paintD3D8DrawIndexed(payload = {}) {
         format: probe.texture1.format,
         storage: probe.texture1.storage,
         semantic: probe.texture1.semantic,
+        alphaCoverage: probe.texture1.alphaCoverage,
+        implicitAlphaCutoutEligible: probe.texture1.implicitAlphaCutoutEligible,
         semanticMode: probe.texture1.semanticMode,
         uploads: probe.texture1.uploads,
         completeMipChain: probe.texture1.completeMipChain,
@@ -14029,6 +14196,9 @@ function paintD3D8DrawIndexed(payload = {}) {
     sampleCanvasPixel,
     sampleCanvasRegion,
     sampleD3D8TexturePixel,
+    d3d8TextureAlphaCoverage,
+    d3d8TextureSupportsImplicitAlphaCutout,
+    d3d8ImplicitAlphaCutoutThreshold,
     sampleVirtualCanvasPixel,
     syncCanvasSize,
     updateD3D8BufferSummary,

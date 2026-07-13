@@ -42,11 +42,13 @@
 #include "Common/PlayerList.h"
 #include "Common/PlayerTemplate.h"
 #include "Common/Radar.h"
+#include "Common/Recorder.h"
 #include "Common/SubsystemInterface.h"
 #include "Common/GameLOD.h"
 #include "GameClient/ControlBar.h"
 #include "GameClient/ControlBarScheme.h"
 #include "GameClient/Gadget.h"
+#include "GameClient/GadgetListBox.h"
 #include "GameClient/GadgetPushButton.h"
 #include "GameClient/GadgetTextEntry.h"
 #include "WW3D2/assetmgr.h"
@@ -943,6 +945,14 @@ const char *build_state_json()
 		json += ",\"inFlightSubsystem\":\"" + json_escape(g_state.in_flight) + "\"";
 	}
 	json += ",\"lastGameLogicStep\":\"" + json_escape(g_last_game_logic_step) + "\"";
+	if (TheGlobalData != NULL) {
+		char camera_height[64];
+		std::snprintf(camera_height, sizeof(camera_height), ",\"maxCameraHeight\":%.1f",
+			TheGlobalData->m_maxCameraHeight);
+		json += camera_height;
+	} else {
+		json += ",\"maxCameraHeight\":null";
+	}
 	json += "}";
 	g_state_json = json;
 	return g_state_json.c_str();
@@ -4614,6 +4624,53 @@ void append_window_json(std::string &json, GameWindow *window, const char *reque
 	json += enabled ? "true" : "false";
 	json += ",\"clickable\":";
 	json += (!manager_hidden && enabled && (status & WIN_STATUS_NO_INPUT) == 0) ? "true" : "false";
+	if ((style & GWS_SCROLL_LISTBOX) != 0) {
+		const Int entry_count = GadgetListBoxGetNumEntries(window);
+		const Int column_count = GadgetListBoxGetNumColumns(window);
+		const ListboxData *list_data = static_cast<const ListboxData *>(window->winGetUserData());
+		const Int title_height = inst_data != NULL && inst_data->getTextLength() != 0
+			? TheWindowManager->winFontHeight(inst_data->getFont()) + 1
+			: 0;
+		Int selected = -1;
+		GadgetListBoxGetSelected(window, &selected);
+		json += ",\"listBox\":{";
+		json += "\"entryCount\":" + std::to_string(entry_count);
+		json += ",\"columnCount\":" + std::to_string(column_count);
+		json += ",\"selected\":" + std::to_string(selected);
+		json += ",\"topVisibleEntry\":"
+			+ std::to_string(GadgetListBoxGetTopVisibleEntry(window));
+		json += ",\"bottomVisibleEntry\":"
+			+ std::to_string(GadgetListBoxGetBottomVisibleEntry(window));
+		json += ",\"rows\":[";
+		for (Int row = 0; row < entry_count; ++row) {
+			if (row != 0) {
+				json += ",";
+			}
+			const Int cumulative_top = row > 0 && list_data != NULL
+				? list_data->listData[row - 1].listHeight
+				: 0;
+			const Int cumulative_bottom = list_data != NULL
+				? list_data->listData[row].listHeight
+				: 0;
+			const Int display_pos = list_data != NULL ? list_data->displayPos : 0;
+			json += "{\"top\":" + std::to_string(y + title_height + cumulative_top - display_pos);
+			json += ",\"bottom\":" + std::to_string(y + title_height + cumulative_bottom - display_pos);
+			json += ",\"cells\":[";
+			for (Int column = 0; column < column_count; ++column) {
+				if (column != 0) {
+					json += ",";
+				}
+				json += "\"" + json_escape(unicode_to_debug_ascii(
+					GadgetListBoxGetText(window, row, column))) + "\"";
+			}
+			json += "]}";
+		}
+		json += "]}";
+	}
+	if ((style & GWS_ENTRY_FIELD) != 0) {
+		json += ",\"entryText\":\"" + json_escape(unicode_to_debug_ascii(
+			GadgetTextEntryGetText(window))) + "\"";
+	}
 	if (inst_data != NULL) {
 		UnicodeString text = inst_data->getText();
 		json += ",\"text\":\"" + json_escape(unicode_to_debug_ascii(text)) + "\"";
@@ -4920,6 +4977,21 @@ void append_real_engine_client_state(std::string &json)
 			"\"loadingSave\":null,\"clearingGameData\":null,\"gamePaused\":null,"
 		"\"logicFrame\":null,\"objectCount\":0,\"progressComplete\":null";
 	}
+	json += ",\"recorder\":{";
+	json += "\"ready\":";
+	json += TheRecorder != NULL ? "true" : "false";
+	if (TheRecorder != NULL) {
+		json += ",\"mode\":" + std::to_string(static_cast<Int>(TheRecorder->getMode()));
+		json += ",\"recording\":";
+		json += TheRecorder->isRecording() ? "true" : "false";
+		json += ",\"playback\":";
+		json += TheRecorder->isPlayingBack() ? "true" : "false";
+		json += ",\"currentReplay\":\"" + json_escape(
+			TheRecorder->getCurrentReplayFilename().str()) + "\"";
+	} else {
+		json += ",\"mode\":null,\"recording\":false,\"playback\":false,\"currentReplay\":null";
+	}
+	json += "}";
 	json += ",\"lifecycleDebug\":{";
 	json += "\"newGameCount\":" + std::to_string(cnc_port_logic_dispatch_new_game_count());
 	json += ",\"lastNewGameMode\":" + std::to_string(cnc_port_logic_dispatch_last_new_game_mode());
@@ -5238,6 +5310,7 @@ void append_real_engine_client_state(std::string &json)
 	append_window_probe(json, "buttonChallenge", "MainMenu.wnd:ButtonChallenge");
 	append_window_probe(json, "buttonSkirmish", "MainMenu.wnd:ButtonSkirmish");
 	append_window_probe(json, "buttonLoadReplay", "MainMenu.wnd:ButtonLoadReplay");
+	append_window_probe(json, "buttonReplay", "MainMenu.wnd:ButtonReplay");
 	append_window_probe(json, "buttonOptions", "MainMenu.wnd:ButtonOptions");
 	append_window_probe(json, "buttonCredits", "MainMenu.wnd:ButtonCredits");
 	append_window_probe(json, "buttonExit", "MainMenu.wnd:ButtonExit");
@@ -5250,6 +5323,37 @@ void append_real_engine_client_state(std::string &json)
 	append_window_under_probe_center(json, "underButtonNetworkCenter", "MainMenu.wnd:ButtonNetwork");
 	append_window_under_probe_center(json, "underButtonUSACenter", "MainMenu.wnd:ButtonUSA");
 	append_window_under_probe_center(json, "underButtonEasyCenter", "MainMenu.wnd:ButtonEasy");
+	json += "}";
+
+	json += ",\"replayMenu\":{\"queried\":true";
+	append_window_probe(json, "parent", "ReplayMenu.wnd:ParentReplayMenu");
+	append_window_probe(json, "buttonLoad", "ReplayMenu.wnd:ButtonLoadReplay");
+	append_window_probe(json, "buttonBack", "ReplayMenu.wnd:ButtonBack");
+	append_window_probe(json, "buttonDelete", "ReplayMenu.wnd:ButtonDeleteReplay");
+	append_window_probe(json, "buttonCopy", "ReplayMenu.wnd:ButtonCopyReplay");
+	GameWindow *replay_list = find_window_by_name("ReplayMenu.wnd:ListboxReplayFiles");
+	json += ",\"listbox\":";
+	append_window_json(json, replay_list, "ReplayMenu.wnd:ListboxReplayFiles");
+	json += ",\"entryCount\":";
+	json += replay_list != NULL ? std::to_string(GadgetListBoxGetNumEntries(replay_list)) : "0";
+	json += ",\"selectedName\":";
+	if (replay_list != NULL && GadgetListBoxGetNumEntries(replay_list) > 0) {
+		Int selected = -1;
+		GadgetListBoxGetSelected(replay_list, &selected);
+		json += selected >= 0 ? "\"" + json_escape(unicode_to_debug_ascii(
+			GadgetListBoxGetText(replay_list, selected))) + "\"" : "null";
+	} else {
+		json += "null";
+	}
+	json += "}";
+
+	json += ",\"scoreScreen\":{\"queried\":true";
+	append_window_probe(json, "parent", "ScoreScreen.wnd:ParentScoreScreen");
+	append_window_probe(json, "buttonOk", "ScoreScreen.wnd:ButtonOk");
+	append_window_probe(json, "buttonSaveReplay", "ScoreScreen.wnd:ButtonSaveReplay");
+	append_window_probe(json, "popupParent", "PopupReplay.wnd:PopupReplayMenu");
+	append_window_probe(json, "popupButtonSave", "PopupReplay.wnd:ButtonSave");
+	append_window_probe(json, "popupTextEntry", "PopupReplay.wnd:TextEntryReplayName");
 	json += "}";
 
 	json += ",\"lanLobby\":{\"queried\":true";
@@ -5449,6 +5553,13 @@ void run_real_engine_frames(int frame_count)
 	reset_frame_texture_diagnostics();
 	if (g_state.attempted && g_state.init_returned && TheGameEngine != NULL) {
 		for (int frame = 0; frame < frame_count; ++frame) {
+			// GameEngine::execute() owns the native lifetime contract: once an
+			// original UI callback sets m_quitting, it returns without another
+			// update. The browser drives update() one frame at a time, so preserve
+			// that guard here instead of drawing an empty post-quit world forever.
+			if (TheGameEngine->getQuitting() != FALSE) {
+				break;
+			}
 			++g_frame_state.frames_attempted;
 			const double frame_started_at = emscripten_get_now();
 			reset_engine_frame_profile();
@@ -6036,6 +6147,29 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_load_steppi
 // ---------------------------------------------------------------------------
 static int g_boot_resolution_width = 0;
 static int g_boot_resolution_height = 0;
+static float g_boot_max_camera_height = 0.0f;
+
+extern "C" EMSCRIPTEN_KEEPALIVE int cnc_port_real_engine_set_max_camera_height(float height)
+{
+	if (!std::isfinite(height) || height < 310.0f || height > 500.0f) {
+		return 0;
+	}
+	g_boot_max_camera_height = height;
+	std::printf("cnc-port: max-camera-height requested=%.1f\n", height);
+	std::fflush(stdout);
+	return 1;
+}
+
+extern "C" int cnc_port_boot_max_camera_height(float *height)
+{
+	if (g_boot_max_camera_height < 310.0f || g_boot_max_camera_height > 500.0f) {
+		return 0;
+	}
+	if (height != NULL) {
+		*height = g_boot_max_camera_height;
+	}
+	return 1;
+}
 
 extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_boot_resolution(int width, int height)
 {
@@ -7895,6 +8029,19 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_click_window_by_name(const 
 	json += ",\"window\":";
 	append_window_json(json, window, window_name);
 	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_window_by_name(const char *window_name)
+{
+	static std::string json;
+	json.clear();
+	append_window_json(
+		json,
+		TheWindowManager != NULL && window_name != NULL && window_name[0] != '\0'
+			? find_window_by_name(window_name)
+			: NULL,
+		window_name != NULL ? window_name : "");
 	return json.c_str();
 }
 

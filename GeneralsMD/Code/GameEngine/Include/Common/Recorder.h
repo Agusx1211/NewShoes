@@ -106,6 +106,8 @@ public:
 	Bool readReplayHeader( ReplayHeader& header );
 
 	RecorderModeType getMode();												///< Returns the current operating mode.
+	Bool isRecording() const { return m_mode == RECORDERMODETYPE_RECORD && m_file != NULL; }
+	Bool isPlayingBack() const { return m_mode == RECORDERMODETYPE_PLAYBACK && m_file != NULL; }
 	void initControls();															///< Show or Hide the Replay controls
 
 	AsciiString getReplayDir();												///< Returns the directory that holds the replay files.

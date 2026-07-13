@@ -931,7 +931,11 @@ AsciiString GameState::portableMapPathToRealMapPath(const AsciiString& in) const
 		// uncaught exceptions crash us. better to just use a bad path.
 		prefix = in;
 	}
+#ifndef __EMSCRIPTEN__
+	// Windows paths are case-insensitive. Browser filesystems are not, so the
+	// WebAssembly build must preserve the real map/save directory prefix.
 	prefix.toLower();
+#endif
 	return prefix;
 }
 

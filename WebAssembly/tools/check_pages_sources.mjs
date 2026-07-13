@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { parse } from "yaml";
+import { readReleaseMetadata } from "./release_metadata.mjs";
 
 const wasmRoot = resolve(import.meta.dirname, "..");
 const repoRoot = resolve(wasmRoot, "..");
@@ -15,8 +16,15 @@ const scripts = [
   "harness/analytics_browser_smoke.mjs",
   "harness/bink_runtime.mjs",
   "harness/bridge.js",
+  "harness/camera-zoom-config.mjs",
+  "harness/camera_zoom_browser_smoke.mjs",
+  "harness/camera_zoom_config_unit.mjs",
+  "harness/camera_zoom_runtime_smoke.mjs",
   "harness/cloudflare_deployment_smoke.mjs",
   "harness/d3d8_executor.mjs",
+  "harness/device-transfer-protocol.mjs",
+  "harness/device_transfer_browser_smoke.mjs",
+  "harness/device_transfer_protocol_unit.mjs",
   "harness/engine_realm_boot.mjs",
   "harness/gdi_executor.mjs",
   "harness/fixtures/coi-serviceworker-18b95831.js",
@@ -25,7 +33,9 @@ const scripts = [
   "harness/launcher-archive-specs.js",
   "harness/launcher-asset-manager.mjs",
   "harness/launcher-asset-worker.js",
+  "harness/launcher-build-info.js",
   "harness/launcher-desktop-apps.js",
+  "harness/launcher-device-transfer.mjs",
   "harness/launcher-entry.mjs",
   "harness/launcher-hardware-info.js",
   "harness/launcher-os-shutdown.mjs",
@@ -37,10 +47,14 @@ const scripts = [
   "harness/opfs_realm_files.mjs",
   "harness/pages_deployment_smoke.mjs",
   "harness/play.mjs",
+  "harness/replay-file-store.mjs",
+  "harness/replay_desktop_transfer_smoke.mjs",
   "harness/runtime-shutdown-sequence.mjs",
   "harness/save-persistence-coordinator.mjs",
   "harness/shader-tier-config.mjs",
   "harness/udp_realm_bridge.mjs",
+  "harness/transfer-user-data-store.mjs",
+  "harness/transfer_user_data_store_unit.mjs",
   "harness/webrtc-udp-endpoint.mjs",
   "pages/coi-bootstrap.js",
   "pages/coi-direct.js",
@@ -54,6 +68,8 @@ const scripts = [
   "tools/cloudflare_site_manifest.mjs",
   "tools/pages_artifact_guard_smoke.mjs",
   "tools/pages_site_manifest.mjs",
+  "tools/release_metadata.mjs",
+  "tools/release_metadata_unit.mjs",
   "tools/verify_cloudflare_site.mjs",
   "tools/verify_pages_site.mjs",
 ];
@@ -81,14 +97,16 @@ for (const workflow of workflowPaths) {
   if (!document || typeof document !== "object") throw new Error(`Invalid YAML document: ${workflow}`);
 }
 
-const pullRequestWorkflow = await readFile(resolve(repoRoot, ".github/workflows/ci.yml"), "utf8");
+const buildWorkflow = await readFile(resolve(repoRoot, ".github/workflows/ci.yml"), "utf8");
 for (const contract of [
+  "branches: [dev]",
   "npm run test:cloudflare-artifact-guard",
   "npm run test:cloudflare-deployment",
   "name: cloudflare-preview-site",
+  "github.event_name != 'pull_request'",
   "github.event.pull_request.head.repo.full_name == github.repository",
 ]) {
-  if (!pullRequestWorkflow.includes(contract)) throw new Error(`Pull request preview handoff missing: ${contract}`);
+  if (!buildWorkflow.includes(contract)) throw new Error(`Trusted Cloudflare artifact handoff missing: ${contract}`);
 }
 
 const previewWorkflow = await readFile(resolve(repoRoot, ".github/workflows/pr-preview.yml"), "utf8");
@@ -98,10 +116,24 @@ for (const contract of [
   "github.event.workflow_run.conclusion == 'success'",
   "name: cloudflare-pages",
   "name: cloudflare-preview-site",
-  '--branch="pr-${PR_NUMBER}"',
-  "transient_environment: true",
+  '.base.ref == $base or .base.ref == "dev"',
+  "github.event.workflow_run.event == 'push'",
+  "github.event.workflow_run.event == 'workflow_dispatch'",
+  "github.event.workflow_run.head_branch == 'dev'",
+  '"repos/${GITHUB_REPOSITORY}/git/ref/heads/dev"',
+  'https://dev.newshoes.gg/',
+  'echo "branch=dev"',
+  'echo "environment=cloudflare-pages-dev"',
+  'echo "transient=false"',
+  'echo "branch=pr-${pr_number}"',
+  'echo "environment=pr-${pr_number}"',
+  'echo "transient=true"',
+  '--argjson transient "${DEPLOYMENT_TRANSIENT}"',
+  "transient_environment: $transient",
+  "production_environment: false",
+  '--branch="${DEPLOYMENT_BRANCH}"',
 ]) {
-  if (!previewWorkflow.includes(contract)) throw new Error(`Trusted preview deployment contract missing: ${contract}`);
+  if (!previewWorkflow.includes(contract)) throw new Error(`Trusted Cloudflare deployment contract missing: ${contract}`);
 }
 
 const serviceWorker = await readFile(resolve(wasmRoot, "pages/coi-serviceworker.js"), "utf8");
@@ -137,5 +169,7 @@ if (shell.status !== 0) {
   process.stderr.write(shell.stderr || shell.stdout);
   throw new Error("Syntax check failed: tools/build_pages_runtime.sh");
 }
+
+await readReleaseMetadata(repoRoot);
 
 console.log(`Checked ${scripts.length - 1} JavaScript files, 1 shell file, and ${workflowPaths.length} workflow YAML files.`);

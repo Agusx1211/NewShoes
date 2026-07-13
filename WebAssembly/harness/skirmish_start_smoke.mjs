@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { startStaticServer } from "./static-server.mjs";
@@ -79,7 +79,17 @@ const musicStopMaxFrames = parsePositiveInt("SKIRMISH_START_MUSIC_STOP_MAX_FRAME
 const requestedSkirmishMap = String(process.env.SKIRMISH_START_MAP ?? "").trim();
 const captureD3D8History = process.env.SKIRMISH_START_CAPTURE_D3D8_HISTORY === "1";
 const expectLightPulseProbe = process.env.SKIRMISH_START_LIGHT_PULSE_PROBE === "1";
+const expectReplayRoundTrip = process.env.SKIRMISH_START_REPLAY_ROUNDTRIP === "1";
+const retailReplayFixture = String(process.env.SKIRMISH_REPLAY_FIXTURE ?? "").trim();
+const expectScorchProbe = process.env.SKIRMISH_START_SCORCH_PROBE === "1";
 const distDir = parseDistDir();
+const replayMenuScreenshotPath = resolve(
+  process.env.SKIRMISH_REPLAY_MENU_SCREENSHOT ??
+    resolve(screenshotsRoot, "replay-menu-roundtrip.png"));
+const replayPlaybackScreenshotPath = resolve(
+  process.env.SKIRMISH_REPLAY_PLAYBACK_SCREENSHOT ??
+    resolve(screenshotsRoot, "replay-playback-roundtrip.png"));
+const browserProfileDir = String(process.env.SKIRMISH_START_PROFILE_DIR ?? "").trim();
 
 function parsePositiveInt(name, fallback) {
   const value = Number.parseInt(process.env[name] ?? "", 10);
@@ -161,9 +171,23 @@ async function sampleViewportGrid(page) {
     if (!(canvas instanceof HTMLCanvasElement)) {
       return { ok: false, error: "viewport canvas is missing" };
     }
-    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+    let gl = null;
+    try {
+      gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+    } catch {
+      // Threaded builds transfer this canvas to the engine worker. The
+      // placeholder remains drawable, but requesting its context is invalid.
+    }
+    let snapshot = null;
     if (gl == null) {
-      return { ok: false, error: "viewport WebGL context is missing" };
+      const scratch = document.createElement("canvas");
+      scratch.width = canvas.width;
+      scratch.height = canvas.height;
+      snapshot = scratch.getContext("2d", { willReadFrequently: true });
+      snapshot?.drawImage(canvas, 0, 0);
+    }
+    if (gl == null && snapshot == null) {
+      return { ok: false, error: "viewport pixels are unavailable" };
     }
 
     const samplePoints = [
@@ -185,7 +209,11 @@ async function sampleViewportGrid(page) {
     for (const point of samplePoints) {
       const x = Math.max(0, Math.min(canvas.width - 1, Math.floor(point.x * canvas.width)));
       const y = Math.max(0, Math.min(canvas.height - 1, Math.floor(point.y * canvas.height)));
-      gl.readPixels(x, canvas.height - y - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+      if (gl != null) {
+        gl.readPixels(x, canvas.height - y - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+      } else {
+        pixel.set(snapshot.getImageData(x, y, 1, 1).data);
+      }
       pixels[point.name] = Array.from(pixel);
     }
 
@@ -198,6 +226,7 @@ async function sampleViewportGrid(page) {
       ok: true,
       width: canvas.width,
       height: canvas.height,
+      source: gl != null ? "webgl" : "threaded-placeholder",
       sampleCount: samplePoints.length,
       visibleSampleCount: visible.length,
       uniqueColorCount: new Set(colors).size,
@@ -363,7 +392,10 @@ function compactClickFrame(frameResult) {
     top: clientState.shell?.topFilename ?? null,
     mainMenu: {
       buttonSinglePlayer: clientState.mainMenu?.buttonSinglePlayer ?? null,
+      buttonSingleBack: clientState.mainMenu?.buttonSingleBack ?? null,
       buttonSkirmish: clientState.mainMenu?.buttonSkirmish ?? null,
+      buttonLoadReplay: clientState.mainMenu?.buttonLoadReplay ?? null,
+      buttonReplay: clientState.mainMenu?.buttonReplay ?? null,
     },
     skirmishMenu: {
       parent: clientState.skirmishMenu?.parent ?? null,
@@ -535,7 +567,13 @@ function realMenuHitMatches(menu, hitProbeName, buttonFieldName) {
 
 function collectWindowRefs(clientState) {
   const refs = [];
-  for (const group of [clientState?.mainMenu, clientState?.skirmishMenu, clientState?.quitMenu]) {
+  for (const group of [
+    clientState?.mainMenu,
+    clientState?.skirmishMenu,
+    clientState?.quitMenu,
+    clientState?.replayMenu,
+    clientState?.scoreScreen,
+  ]) {
     for (const value of Object.values(group ?? {})) {
       if (value?.found === true && Number.isFinite(value.id)) {
         refs.push(value);
@@ -683,6 +721,211 @@ function visibleQuitMenuReturnHitProbe(quitMenu, button) {
   ];
   return candidates.find((probe) => probe?.window?.found === true &&
     probe.window.id === button?.id) ?? null;
+}
+
+function visibleQuitMenuExitButton(quitMenu) {
+  if (!quitMenu?.visible) return null;
+  for (const button of [quitMenu.buttonExitNoSave, quitMenu.buttonExitFull]) {
+    if (button?.clickable === true && button.hidden === false && button.managerHidden === false) return button;
+  }
+  return null;
+}
+
+async function clickWindowByName(page, name, label) {
+  const response = await rpc(page, "clickWindowByName", { name });
+  expect(response?.ok === true && response?.result?.clicked === true,
+    `${label} did not traverse the real window input path`, response);
+  return response.result;
+}
+
+async function driveReplayRoundTrip(page) {
+  const savedReplayBaseName = "Browser Roundtrip";
+  const savedReplayFileName = `${savedReplayBaseName}.rep`;
+  console.error("[skirmish-start] finalize and name replay");
+  const beforeExit = await runFrames(page, 2, "replay recording precheck");
+  expect(beforeExit.frame?.clientState?.gameplay?.recorder?.recording === true,
+    "active skirmish was not being recorded", beforeExit.frame?.clientState?.gameplay?.recorder);
+
+  await page.keyboard.down("Escape");
+  const opened = await waitForCondition(
+    page,
+    "replay roundtrip quit menu",
+    (clientState) => clientState.quitMenu?.visible === true
+      && visibleQuitMenuExitButton(clientState.quitMenu)?.clickable === true,
+    120);
+  await page.keyboard.up("Escape");
+  await runFrames(page, 1, "replay roundtrip escape release");
+  const exitButton = visibleQuitMenuExitButton(opened.frame.clientState.quitMenu);
+  await clickButton(page, exitButton, null, "replay roundtrip exit match", null);
+  await runFrames(page, 2, "replay roundtrip quit confirmation");
+  await clickWindowByName(page, "QuitMessageBox.wnd:ButtonYes", "quit confirmation");
+
+  const score = await waitForCondition(
+    page,
+    "replay roundtrip score screen",
+    (clientState) => clientState.scoreScreen?.buttonOk?.clickable === true
+      && clientState.gameplay?.recorder?.recording === false,
+    300);
+
+  await clickButton(page, score.frame.clientState.scoreScreen.buttonSaveReplay,
+    null, "score-screen save replay");
+  const savePopup = await waitForCondition(
+    page,
+    "save replay popup",
+    (clientState) => clientState.scoreScreen?.popupParent?.managerHidden === false
+      && clientState.scoreScreen?.popupTextEntry?.clickable === true,
+    120);
+  const replayNameEntry = savePopup.frame.clientState.scoreScreen.popupTextEntry;
+  const replayNamePoint = { x: replayNameEntry.centerX, y: replayNameEntry.centerY };
+  await postMouse(page, WM_MOUSEMOVE, replayNamePoint);
+  await postMouse(page, WM_LBUTTONDOWN, replayNamePoint);
+  await waitForCondition(
+    page,
+    "replay-name focus",
+    (clientState) => clientState.input?.focusWindow?.id === replayNameEntry.id,
+    30);
+  await postMouse(page, WM_LBUTTONUP, replayNamePoint);
+  await runFrames(page, 2, "replay-name release");
+  await page.locator("#viewport").focus();
+  await page.keyboard.type(savedReplayBaseName);
+  await page.waitForTimeout(50);
+  const namedSaveReady = await waitForCondition(
+    page,
+    "named replay entry",
+    (clientState) => clientState.scoreScreen?.popupButtonSave?.clickable === true,
+    60);
+  await clickButton(page, namedSaveReady.frame.clientState.scoreScreen.popupButtonSave,
+    null, "named replay save");
+  await page.waitForTimeout(1100);
+  await waitForCondition(
+    page,
+    "named replay save completion",
+    (clientState) => clientState.scoreScreen?.popupParent?.managerHidden === true
+      && clientState.scoreScreen?.buttonOk?.clickable === true,
+    120);
+
+  const persisted = await rpc(page, "persistSaves", { reason: "replay-roundtrip-finalized" });
+  expect(persisted?.ok === true, "finalized replay did not persist", persisted);
+  const replayFiles = await rpc(page, "listReplays");
+  const lastReplay = replayFiles?.files?.find((file) => file.name.toLowerCase() === "00000000.rep");
+  const namedReplay = replayFiles?.files?.find((file) => file.name === savedReplayFileName);
+  expect(replayFiles?.ok === true && Number(lastReplay?.size ?? 0) > 128,
+    "recording did not create Last Replay", replayFiles);
+  expect(Number(namedReplay?.size ?? 0) === Number(lastReplay.size),
+    "named replay was not copied from Last Replay", replayFiles);
+  const replayRead = await rpc(page, "readReplay", { name: namedReplay.name });
+  const replayPrefix = replayRead?.bytesBase64 ? atob(replayRead.bytesBase64).slice(0, 6) : "";
+  expect(replayRead?.ok === true && replayPrefix === "GENREP",
+    "recorded replay bytes were not downloadable", replayRead);
+
+  let playbackFile = namedReplay;
+  const removedLastReplay = await rpc(page, "deleteReplay", {
+    name: lastReplay.name,
+    allowLastReplay: true,
+  });
+  expect(removedLastReplay?.ok === true, "Last Replay could not be cleared", removedLastReplay);
+  if (retailReplayFixture) {
+    console.error("[skirmish-start] import retail replay fixture");
+    const fixtureBytes = await readFile(resolve(retailReplayFixture));
+    const imported = await rpc(page, "importReplay", {
+      name: basename(retailReplayFixture),
+      bytesBase64: fixtureBytes.toString("base64"),
+    });
+    expect(imported?.ok === true, "retail replay fixture could not be imported", imported);
+    const removed = await rpc(page, "deleteReplay", {
+      name: namedReplay.name,
+    });
+    expect(removed?.ok === true, "named replay could not be cleared for retail playback", removed);
+    playbackFile = imported;
+  }
+
+  await clickWindowByName(page, "ScoreScreen.wnd:ButtonOk", "score-screen OK");
+  console.error("[skirmish-start] open replay menu");
+  let shellMenu = await waitForCondition(
+    page,
+    "replay roundtrip post-score shell",
+    (clientState) => clientState.skirmishMenu?.buttonBack?.clickable === true
+      || clientState.mainMenu?.buttonLoadReplay?.clickable === true
+      || clientState.mainMenu?.buttonSingleBack?.clickable === true,
+    300);
+  if (shellMenu.frame.clientState.skirmishMenu?.buttonBack?.clickable === true) {
+    await clickButton(page, shellMenu.frame.clientState.skirmishMenu.buttonBack,
+      null, "replay roundtrip skirmish back");
+    shellMenu = await waitForCondition(
+      page,
+      "replay roundtrip main menu",
+      (clientState) => clientState.shell?.topIsMainMenu === true
+        && (clientState.mainMenu?.buttonLoadReplay?.clickable === true
+          || clientState.mainMenu?.buttonSingleBack?.clickable === true),
+      300);
+  }
+  if (shellMenu.frame.clientState.mainMenu?.buttonLoadReplay?.clickable !== true) {
+    await clickButton(page, shellMenu.frame.clientState.mainMenu.buttonSingleBack,
+      null, "replay roundtrip single-player back");
+  }
+  const replayEntry = shellMenu.frame.clientState.mainMenu?.buttonLoadReplay?.clickable === true
+    ? shellMenu
+    : await waitForCondition(
+      page,
+      "replay roundtrip load replay entry",
+      (clientState) => clientState.mainMenu?.buttonLoadReplay?.clickable === true,
+      180);
+  await clickButton(page, replayEntry.frame.clientState.mainMenu.buttonLoadReplay,
+    null, "replay roundtrip load replay");
+  const replayButton = await waitForCondition(
+    page,
+    "replay roundtrip replay entry",
+    (clientState) => clientState.mainMenu?.buttonReplay?.clickable === true,
+    180);
+  await clickButton(page, replayButton.frame.clientState.mainMenu.buttonReplay,
+    null, "replay roundtrip replay list");
+  const replayMenu = await waitForCondition(
+    page,
+    "replay menu populated",
+    (clientState) => clientState.replayMenu?.parent?.found === true
+      && clientState.replayMenu?.buttonLoad?.clickable === true
+      && clientState.replayMenu?.entryCount > 0,
+    240);
+  await page.locator("#viewport").screenshot({ path: replayMenuScreenshotPath });
+  await clickButton(page, replayMenu.frame.clientState.replayMenu.buttonLoad,
+    null, "replay menu play");
+  if (retailReplayFixture) {
+    await runFrames(page, 2, "retail replay version prompt");
+    await clickWindowByName(page, "MessageBox.wnd:ButtonOk",
+      "retail replay version confirmation");
+  }
+  console.error("[skirmish-start] wait for replay playback");
+  const playback = await waitForCondition(
+    page,
+    "recorded replay playback",
+    (clientState) => clientState.gameplay?.gameMode === 3
+      && clientState.gameplay?.inGame === true
+      && clientState.gameplay?.loadingMap === false
+      && clientState.gameplay?.recorder?.playback === true,
+    maxStartFrames);
+  await runFrames(page, 30, "recorded replay advances");
+  await page.locator("#viewport").screenshot({ path: replayPlaybackScreenshotPath });
+
+  return {
+    recording: beforeExit.frame.clientState.gameplay.recorder,
+    namedSave: {
+      name: namedReplay.name,
+      size: namedReplay.size,
+    },
+    recordedFile: lastReplay,
+    playbackFile,
+    selectedName: replayMenu.frame.clientState.replayMenu.selectedName,
+    playback: {
+      gameMode: playback.frame.clientState.gameplay.gameMode,
+      recorder: playback.frame.clientState.gameplay.recorder,
+      objectCount: playback.frame.clientState.gameplay.objectCount,
+      drawableCount: playback.frame.clientState.gameplay.drawableCount,
+    },
+    screenshots: {
+      menu: replayMenuScreenshotPath,
+      playback: replayPlaybackScreenshotPath,
+    },
+  };
 }
 
 async function driveEscMenuResume(page) {
@@ -1031,6 +1274,59 @@ async function driveDecalProbe(page) {
   return info;
 }
 
+async function driveScorchProbe(page) {
+  const screenshot = resolve(screenshotsRoot, "scorch-depth-bias.png");
+  const reveal = await rpc(page, "revealLocalMap", { permanent: true });
+  expect(reveal?.ok === true, "scorch probe could not reveal the local map", reveal);
+  await runFrames(page, 2, "scorch reveal settle");
+
+  const drawables = await rpc(page, "queryDrawables");
+  const target = (drawables?.result?.drawables ?? []).find((drawable) =>
+    drawable.localOwned === true && drawable.onScreen === true &&
+    drawable.hidden !== true && drawable.worldPos);
+  expect(Boolean(target), "scorch probe could not find a visible local target", drawables?.result);
+
+  const position = {
+    x: Number(target.worldPos.x) + 40,
+    y: Number(target.worldPos.y) + 40,
+    z: Number(target.worldPos.z),
+  };
+  const trigger = await rpc(page, "realEngineDoFX", {
+    name: "WeaponFX_BattleshipTargetExplode",
+    useViewPosition: false,
+    clampToTerrain: true,
+    ...position,
+  });
+  expect(trigger?.ok === true, "scorch probe could not trigger the shipped explosion FX", trigger);
+
+  await page.evaluate(() => {
+    window.__cncSetD3D8SceneDrawHistoryLimit?.(4096);
+    window.__cncSetDiagLevel?.("full");
+  });
+  const frame = await rpc(page, "realEngineFrameSummary", { frames: 1 });
+  const labels = new Map(
+    (locateNested(frame?.frame, ["textureDiagnostics"])?.labels ?? [])
+      .map((label) => [Number(label.id), label.name || label.path || ""]),
+  );
+  const scorchDraws = (frame?.state?.graphics?.d3d8SceneDrawHistory ?? [])
+    .map((draw) => ({
+      sequence: draw.drawSequence,
+      texture: labels.get(Number(draw.texture0?.id ?? 0)) ?? "",
+      zBias: Number(draw.renderState?.zBias ?? 0),
+      polygonOffset: draw.appliedRenderState?.depth?.bias?.polygonOffset ?? null,
+    }))
+    .filter((draw) => /scorch/i.test(draw.texture));
+  await page.locator("#viewport").screenshot({ path: screenshot });
+  await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
+
+  expect(scorchDraws.length > 0,
+    "shipped explosion FX did not reach the terrain scorch draw", { trigger, scorchDraws });
+  expect(scorchDraws.every((draw) =>
+    draw.zBias === 1 && draw.polygonOffset?.enabled === true),
+    "terrain scorch draw did not reach WebGL with D3D8 depth bias enabled", scorchDraws);
+  return { target: target.name, position, trigger: trigger.result, scorchDraws, screenshot };
+}
+
 // Tree-lighting discriminator: read the baked per-vertex diffuse of the tree
 // draw pass (FVF XYZ|NORMAL|DIFFUSE|TEX1 = 0x152, stride 36) from the draw
 // history. If diffuse is ~white the CPU bake is wrong (sun-direction/light data
@@ -1103,6 +1399,10 @@ async function driveTreeDiffuseProbe(page) {
 async function main() {
   await mkdir(dirname(screenshotPath), { recursive: true });
   await mkdir(dirname(outputPath), { recursive: true });
+  if (browserProfileDir) {
+    await rm(browserProfileDir, { recursive: true, force: true });
+    await mkdir(browserProfileDir, { recursive: true });
+  }
 
   const server = await startStaticServer({ root: wasmRoot });
   let browser;
@@ -1116,7 +1416,9 @@ async function main() {
       launchOptions.args = process.env.SKIRMISH_START_BROWSER_ARGS.split(/\s+/).filter(Boolean);
     }
 
-    browser = await chromium.launch(launchOptions);
+    browser = browserProfileDir
+      ? await chromium.launchPersistentContext(browserProfileDir, launchOptions)
+      : await chromium.launch(launchOptions);
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     page.setDefaultTimeout(300000);
     page.setDefaultNavigationTimeout(300000);
@@ -1134,6 +1436,7 @@ async function main() {
 
     const harnessUrl = new URL("harness/index.html", server.url);
     harnessUrl.searchParams.set("dist", distDir);
+    if (process.env.SKIRMISH_START_THREADS === "1") harnessUrl.searchParams.set("threads", "1");
     if (expectLightPulseProbe) {
       // Terrain buffers are created while diagnostics are in lite mode. Keep
       // their CPU mirrors from creation so the probe can compare the original
@@ -1180,6 +1483,19 @@ async function main() {
     });
     expect(init?.ok === true && init?.aborted === false && init?.frontier?.initReturned === true,
       "real engine init failed", init?.frontier ?? init);
+
+    if (expectReplayRoundTrip) {
+      const existingReplays = await rpc(page, "listReplays");
+      const priorLastReplay = existingReplays?.files?.find((file) =>
+        file.name.toLowerCase() === "00000000.rep");
+      if (priorLastReplay) {
+        const removed = await rpc(page, "deleteReplay", {
+          name: priorLastReplay.name,
+          allowLastReplay: true,
+        });
+        expect(removed?.ok === true, "old Last Replay could not be cleared", removed);
+      }
+    }
 
     let frame = await runFrames(page, 5, "initial menu frames");
     if (frame.frame?.clientState?.shell?.topIsMainMenu !== true) {
@@ -1429,6 +1745,11 @@ async function main() {
       decalProbe = await driveDecalProbe(page);
       console.error("[skirmish-start] decalProbe:", JSON.stringify(decalProbe));
     }
+    let scorchProbe = null;
+    if (expectScorchProbe) {
+      scorchProbe = await driveScorchProbe(page);
+      console.error("[skirmish-start] scorchProbe:", JSON.stringify(scorchProbe));
+    }
     await page.locator("#viewport").screenshot({ path: screenshotPath });
     const renderProbe = await sampleViewportGrid(page);
     expect(renderProbe.ok === true,
@@ -1599,6 +1920,7 @@ async function main() {
     } catch (error) {
       d3d8TextureInventory = { error: error?.message ?? String(error) };
     }
+    const replayRoundTrip = expectReplayRoundTrip ? await driveReplayRoundTrip(page) : null;
     const result = {
       ok: true,
       source: "skirmish-start-smoke",
@@ -1634,7 +1956,9 @@ async function main() {
       enemyAiActivity,
       escMenuResume,
       rallyProbe,
+      scorchProbe,
       lightPulseProbe,
+      replayRoundTrip,
       renderProbe,
       // ADD-ONLY HUD diagnostics: full control-bar / shell / startNewGame state
       // from the final active-match frame (read-only; does not gate anything).
@@ -1689,6 +2013,9 @@ async function main() {
       await browser.close();
     }
     await server.close();
+    if (browserProfileDir) {
+      await rm(browserProfileDir, { recursive: true, force: true });
+    }
   }
 }
 

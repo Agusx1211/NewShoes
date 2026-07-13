@@ -394,6 +394,67 @@
           </div>
         </article>
 
+        <article id="transferWindow" class="window transfer-window" data-app="transfer" style="--x: 55%; --y: 45%; --w: 720px; --h: 560px;" aria-label="Transfer game files">
+          <header class="titlebar">
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-globe"/></svg></span><span>Game File Transfer</span></div>
+            <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
+          </header>
+          <div class="transfer-body">
+            <section class="transfer-screen" data-transfer-screen="choose">
+              <div class="transfer-heading"><p class="eyebrow">DEVICE TRANSFER</p><h1>Move your installation</h1><p>Copy your own Zero Hour installation directly to another device you control.</p></div>
+              <div class="transfer-choice-grid">
+                <button id="transferChooseSend" type="button"><span><svg><use href="#i-upload"/></svg></span><strong>Send files</strong><small>This device has Zero Hour installed</small></button>
+                <button id="transferChooseReceive" type="button"><span><svg><use href="#i-download"/></svg></span><strong>Receive files</strong><small>Install from another device</small></button>
+              </div>
+              <p class="transfer-local-note"><svg><use href="#i-shield"/></svg> Files travel over an encrypted peer-to-peer connection. The discovery relay never carries game data.</p>
+            </section>
+
+            <section class="transfer-screen" data-transfer-screen="send-consent" hidden>
+              <div class="transfer-heading"><p class="eyebrow">SEND YOUR COPY</p><h1>Confirm ownership</h1><p>You may only transfer these files to another device you control. Transferring game files to third parties is not allowed.</p></div>
+              <div id="transferInstallStatus" class="transfer-install-status" role="status">Checking the installed library…</div>
+              <label class="transfer-legal-check"><input id="transferSendOwnership" type="checkbox"><span>✓</span><strong>I confirm that I legally own these game files and will only transfer them to a device I control.</strong></label>
+              <fieldset class="transfer-options"><legend>Also include</legend><label><input id="transferIncludeSaves" type="checkbox"><svg><use href="#i-save"/></svg><span><strong>Saved games</strong><small>Copy personal campaign and skirmish saves</small></span></label><label><input id="transferIncludeReplays" type="checkbox"><svg><use href="#i-replay"/></svg><span><strong>Replays</strong><small>Copy recorded matches</small></span></label></fieldset>
+              <footer class="transfer-actions"><button type="button" class="button secondary" data-transfer-back="choose">Back</button><button id="transferStartSend" type="button" class="button primary" disabled>Generate transfer code</button></footer>
+            </section>
+
+            <section class="transfer-screen" data-transfer-screen="send-live" hidden>
+              <div class="transfer-heading"><p class="eyebrow">SENDER ACTIVE</p><h1>Enter this code on your other device</h1><p>Keep this window open. The code is temporary and disappears when this page is refreshed or the transfer is stopped.</p></div>
+              <output id="transferSenderPin" class="transfer-pin" aria-label="12-digit transfer code">•••• •••• ••••</output>
+              <div class="transfer-secure-line"><svg><use href="#i-shield"/></svg><span><strong>PIN-encrypted WebRTC</strong><small id="transferSenderStatus">Opening a secure connection…</small></span></div>
+              <div class="transfer-progress" aria-live="polite"><div><strong id="transferSenderProgressLabel">Waiting for a receiving device</strong><span id="transferSenderMetrics">0 B · 0 B/s</span></div><div class="transfer-progress-track" role="progressbar" aria-label="Combined send progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="transferSenderProgressFill"></span></div></div>
+              <div id="transferReceiverList" class="transfer-peer-list"><p>No receiving devices connected yet.</p></div>
+              <footer class="transfer-actions"><button id="transferStopSend" type="button" class="button secondary">Stop sharing</button></footer>
+            </section>
+
+            <section class="transfer-screen" data-transfer-screen="receive-consent" hidden>
+              <div class="transfer-heading"><p class="eyebrow">RECEIVE YOUR COPY</p><h1>Confirm ownership</h1><p>Only receive game files that you legally own, from another device that you control.</p></div>
+              <label class="transfer-legal-check"><input id="transferReceiveOwnership" type="checkbox"><span>✓</span><strong>I confirm that I legally own the copy being received and that the sending device is under my control.</strong></label>
+              <div class="transfer-replace-note"><svg><use href="#i-drive"/></svg><p><strong>Your current files stay safe during transfer.</strong> If this browser already has an installation, it is replaced only after the complete incoming copy is verified.</p></div>
+              <footer class="transfer-actions"><button type="button" class="button secondary" data-transfer-back="choose">Back</button><button id="transferReceiveNext" type="button" class="button primary" disabled>Enter transfer code</button></footer>
+            </section>
+
+            <section class="transfer-screen" data-transfer-screen="receive-code" hidden>
+              <div class="transfer-heading"><p class="eyebrow">SECURE CONNECTION</p><h1>Enter the 12-digit code</h1><p>Find the temporary code on the sending device. You cannot choose or reuse a transfer code.</p></div>
+              <label class="transfer-pin-entry" for="transferPinInput"><span>Transfer code</span><input id="transferPinInput" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="14" placeholder="0000 0000 0000" aria-describedby="transferPinHelp"><small id="transferPinHelp">Three groups of four digits</small></label>
+              <p id="transferReceiveError" class="transfer-error" role="alert" hidden></p>
+              <footer class="transfer-actions"><button type="button" class="button secondary" data-transfer-back="receive-consent">Back</button><button id="transferConnect" type="button" class="button primary" disabled>Connect</button></footer>
+            </section>
+
+            <section class="transfer-screen" data-transfer-screen="receive-live" hidden>
+              <div class="transfer-heading"><p class="eyebrow">RECEIVING FILES</p><h1 id="transferReceiveTitle">Connecting to your device…</h1><p id="transferReceiveDetail">Waiting for the sender to approve this encrypted connection.</p></div>
+              <div class="transfer-secure-line"><svg><use href="#i-shield"/></svg><span><strong>PIN-encrypted WebRTC</strong><small>Game data is traveling directly between your devices</small></span></div>
+              <div class="transfer-progress large" aria-live="polite"><div><strong id="transferReceiverProgressLabel">Preparing browser storage…</strong><span id="transferReceiverMetrics">0 B · 0 B/s</span></div><div class="transfer-progress-track" role="progressbar" aria-label="Receive progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="transferReceiverProgressFill"></span></div></div>
+              <p id="transferReceiverFile" class="transfer-current-file">Waiting for manifest…</p>
+              <p id="transferLiveError" class="transfer-error" role="alert" hidden></p>
+              <footer class="transfer-actions"><button id="transferCancelReceive" type="button" class="button secondary">Cancel transfer</button></footer>
+            </section>
+
+            <section class="transfer-screen transfer-complete" data-transfer-screen="complete" hidden>
+              <span class="transfer-complete-icon">✓</span><p class="eyebrow">TRANSFER COMPLETE</p><h1>Zero Hour is installed</h1><p id="transferCompleteSummary">Your game files are ready on this device.</p><button id="transferDone" type="button" class="button primary">Done</button>
+            </section>
+          </div>
+        </article>
+
         <article id="settingsWindow" class="window settings-window" data-app="settings" style="--x: 52%; --y: 45%; --w: 820px; --h: 610px;" aria-label="Project New Shoes settings">
           <header class="titlebar">
             <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-gear"/></svg></span><span>Project New Shoes Settings</span></div>
@@ -421,6 +482,7 @@
               <div id="customResolutionRow" class="setting-block game-custom-resolution" hidden><div><strong>Custom resolution</strong><span>640 × 480 through 7680 × 4320.</span></div><div><input id="customResolutionWidth" type="number" min="640" max="7680" placeholder="width"><span>×</span><input id="customResolutionHeight" type="number" min="480" max="4320" placeholder="height"><button id="customResolutionApply" type="button">Apply</button></div></div>
               <div class="setting-block"><div><strong>Fullscreen</strong><span>Fullscreen the Project New Shoes desktop and game runtime.</span></div><button id="fullscreenButton" type="button" class="identity-lab-button">Enter fullscreen</button></div>
               <label class="setting-block"><div><strong>Shaders</strong><span>Enhanced ps.1.1 is the default and applies on the next game boot.</span></div><select id="shaderTierSelect"><option value="ps11" selected>Enhanced (pixel shaders)</option><option value="ff">Classic (fixed function)</option></select></label>
+              <label class="setting-block"><div><strong>Camera zoom</strong><span>Maximum zoom-out height. The original 310 setting is fastest; changes apply on the next game boot.</span></div><div class="camera-zoom-control"><input id="cameraZoomHeight" type="range" min="310" max="500" step="10" value="310"><output id="cameraZoomHeightValue" for="cameraZoomHeight">310</output></div></label>
               <label class="setting-block toggle-setting"><div><strong>Performance overlay</strong><span>Top-left FPS, frame times, percentiles, and graph. Off by default.</span></div><input id="performanceOverlayToggle" type="checkbox"><span class="toggle"></span></label>
               <div class="setting-block game-performance-options"><div><strong>Graph window</strong><span>History length and vertical frame-time scale.</span></div><div><select id="performanceHistorySelect" aria-label="Performance graph history"><option value="3">3 seconds</option><option value="5" selected>5 seconds</option><option value="10">10 seconds</option></select><select id="performanceGraphMaxSelect" aria-label="Performance graph maximum"><option value="33.33">33 ms</option><option value="50" selected>50 ms</option><option value="100">100 ms</option></select></div></div>
               <label class="setting-block"><div><strong>Graphics diagnostics</strong><span>Lite is for play; full captures expensive per-draw evidence.</span></div><select id="diagnosticsSelect"><option value="lite">Lite</option><option value="full">Full</option></select></label>
@@ -463,17 +525,24 @@
           </div>
         </article>
 
-        <article id="aboutWindow" class="window about-window" data-app="about" style="--x: 57%; --y: 43%; --w: 560px; --h: 420px;" aria-label="About Project New Shoes">
+        <article id="aboutWindow" class="window about-window" data-app="about" style="--x: 57%; --y: 43%; --w: 620px; --h: 570px;" aria-label="About Project New Shoes">
           <header class="titlebar">
             <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-info"/></svg></span><span>About Project New Shoes</span></div>
             <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
           </header>
-          <div class="about-body"><div class="about-brand"><span class="launcher-logo-slot about-launcher-logo"><img data-launcher-logo-image alt="Project New Shoes launcher mark" width="512" height="512"></span><div><small>Independent browser runtime</small><h1>NEW <span>SHOES</span></h1><p>Project New Shoes</p></div></div><div class="about-card"><svg><use href="#i-globe"/></svg><div><strong>The original game engine, running on the web</strong><p>Project New Shoes launches the original Generals and Zero Hour engine with user-owned assets. Media stays local; the desktop, filesystem, and game runtime execute in your browser.</p></div></div><dl class="about-facts"><div><dt>Runtime</dt><dd>WebAssembly + WebGL2</dd></div><div><dt>Storage</dt><dd>OPFS browser disk</dd></div><div><dt>Current target</dt><dd>Zero Hour</dd></div></dl><p class="about-legal">EA has not endorsed and does not support this product. Original game data is never bundled; you must supply files from a copy you own.</p></div>
+          <div class="about-body">
+            <div class="about-brand"><span class="launcher-logo-slot about-launcher-logo"><img data-launcher-logo-image alt="Project New Shoes launcher mark" width="512" height="512"></span><div><small>Independent browser runtime</small><h1>NEW <span>SHOES</span></h1><p>Project New Shoes</p></div></div>
+            <div class="about-card"><svg><use href="#i-globe"/></svg><div><strong>The original game engine, running on the web</strong><p>Project New Shoes launches the original Generals and Zero Hour engine with user-owned assets. Media stays local; the desktop, filesystem, and game runtime execute in your browser.</p></div></div>
+            <dl class="about-facts"><div><dt>Runtime</dt><dd>WebAssembly + WebGL2</dd></div><div><dt>Storage</dt><dd>OPFS browser disk</dd></div><div><dt>Current target</dt><dd>Zero Hour</dd></div></dl>
+            <dl class="about-build" aria-label="Build information"><div><dt>Version</dt><dd id="aboutVersion">Loading…</dd></div><div><dt>Build commit</dt><dd><a id="aboutBuildCommit" target="_blank" rel="noopener noreferrer">Loading…</a></dd></div></dl>
+            <section class="about-changelog" aria-labelledby="aboutChangelogTitle"><header><h2 id="aboutChangelogTitle">What&rsquo;s new</h2><a href="https://github.com/Agusx1211/NewShoes/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Full changelog</a></header><div id="aboutChangelog" aria-live="polite"><p>Loading release notes…</p></div></section>
+            <p class="about-legal">EA has not endorsed and does not support this product. Original game data is never bundled; you must supply files from a copy you own.</p>
+          </div>
         </article>
       </section>
 
       <section id="startMenu" class="start-menu" aria-label="Project New Shoes menu" hidden>
-        <header><span class="user-avatar">C</span><div><strong>Commander</strong><span>Local browser session</span></div></header>
+        <header><span class="user-avatar">C</span><div><strong>Commander</strong><span id="startMenuVersion">Loading build information…</span></div></header>
         <div class="start-content">
           <div class="start-primary">
             <button type="button" data-open="setup"><span class="start-icon"><img data-launcher-logo-image alt="" width="512" height="512"></span><div><strong>Project New Shoes Game Launcher</strong><small>Add files and start a game</small></div></button>
@@ -485,6 +554,7 @@
           </div>
           <div class="start-secondary">
             <button type="button" data-open-settings="game"><svg><use href="#i-game"/></svg> Game &amp; Display</button>
+            <button type="button" data-open="transfer"><svg><use href="#i-globe"/></svg> Transfer game files</button>
             <button type="button" data-open="settings"><svg><use href="#i-gear"/></svg> Settings</button>
             <button type="button" data-open="about"><svg><use href="#i-info"/></svg> About Project New Shoes</button>
             <div class="start-storage"><span>Browser storage</span><strong data-storage-free>Calculating…</strong><i><span></span></i></div>

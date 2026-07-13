@@ -7,6 +7,9 @@ import { extname, relative, resolve, sep } from "node:path";
 import { chromium } from "playwright";
 
 const root = resolve(process.argv[2] || "cloudflare-dist");
+const expectedBuildInfo = JSON.parse(await readFile(resolve(root, "harness/build-info.json"), "utf8"));
+const expectedChangelogEntries = expectedBuildInfo.release.changelog
+  .reduce((total, section) => total + section.entries.length, 0);
 const mime = new Map([
   [".css", "text/css; charset=utf-8"], [".html", "text/html; charset=utf-8"], [".ico", "image/x-icon"],
   [".js", "text/javascript; charset=utf-8"], [".json", "application/json; charset=utf-8"], [".md", "text/markdown; charset=utf-8"],
@@ -121,6 +124,18 @@ try {
   if (!Object.values(runtime).every(Boolean)) throw new Error(`Threaded runtime failed: ${JSON.stringify(runtime)}`);
   await page.locator('.desktop-icon[data-open="about"]').click();
   await page.waitForSelector("#publicLegalNotice", { state: "visible" });
+  await page.waitForFunction((version) => document.querySelector("#aboutVersion")?.textContent === version,
+    expectedBuildInfo.release.version);
+  const about = await page.evaluate(() => ({
+    version: document.querySelector("#aboutVersion")?.textContent || "",
+    buildHref: document.querySelector("#aboutBuildCommit")?.href || "",
+    changelogEntries: document.querySelectorAll("#aboutChangelog li").length,
+  }));
+  if (about.version !== expectedBuildInfo.release.version
+      || !about.buildHref.endsWith(`/commit/${expectedBuildInfo.git.commit}`)
+      || about.changelogEntries !== expectedChangelogEntries) {
+    throw new Error(`About build information failed: ${JSON.stringify(about)}`);
+  }
   if (errors.length) throw new Error(`Unexpected browser errors:\n${errors.join("\n")}`);
 
   const legacyContext = await browser.newContext({ serviceWorkers: "allow" });

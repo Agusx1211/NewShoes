@@ -1,5 +1,7 @@
 import "./analytics.mjs";
 import "./launcher-asset-manager.mjs";
 import "./launcher.js";
+import "./launcher-device-transfer.mjs";
 import "./launcher-desktop-apps.js";
 import "./launcher-hardware-info.js";
+import "./launcher-build-info.js";

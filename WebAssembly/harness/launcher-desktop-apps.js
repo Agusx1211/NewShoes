@@ -40,9 +40,15 @@
   let filePromptMode = "folder";
   let fileView = "list";
   let storageView = false;
+  let managedReplayNodes = [];
+  let replayRefreshPromise = null;
 
-  const nodeById = (id) => fileSystem.nodes.find((node) => node.id === id);
-  const childrenOf = (id) => fileSystem.nodes.filter((node) => node.parent === id);
+  const nodeById = (id) => fileSystem.nodes.find((node) => node.id === id)
+    || managedReplayNodes.find((node) => node.id === id);
+  const childrenOf = (id) => [
+    ...fileSystem.nodes.filter((node) => node.parent === id),
+    ...managedReplayNodes.filter((node) => node.parent === id),
+  ];
   const extensionOf = (name) => name.includes(".") ? name.split(".").pop().toLowerCase() : "";
   const isTextNode = (node) => node?.kind === "text" || TEXT_EXTENSIONS.has(extensionOf(node?.name || ""));
 
@@ -307,6 +313,7 @@
       folderHistoryIndex = folderHistory.length - 1;
     }
     renderExplorer();
+    if (folder.id === "replays") void refreshManagedReplays();
   }
 
   function setFileView(view) {
@@ -318,7 +325,7 @@
   function openNode(node) {
     if (node.type === "folder") return navigateTo(node.id);
     if (isTextNode(node)) return openTextFile(node.id);
-    downloadNode(node);
+    void downloadNode(node);
   }
 
   function blobForNode(node) {
@@ -333,7 +340,7 @@
     return new Blob([node.content], { type: isTextNode(node) ? "text/plain" : "application/octet-stream" });
   }
 
-  function downloadNode(node) {
+  async function downloadNode(node) {
     let blob;
     let name = node.name;
     if (node.type === "folder") {
@@ -345,6 +352,15 @@
       }
       blob = new Blob([JSON.stringify(fileSystem.nodes.filter((item) => ids.has(item.id)), null, 2)], { type: "application/json" });
       name = `${node.name}.new-shoes-folder.json`;
+    } else if (node.source === "engine-replay") {
+      try {
+        const bytes = await window.CnCPort?.readReplay?.(node.name);
+        if (!bytes) throw new Error("Replay filesystem is unavailable");
+        blob = new Blob([bytes], { type: "application/octet-stream" });
+      } catch (error) {
+        desktop.showToast("Replay download failed", error?.message || String(error), "warning");
+        return;
+      }
     } else {
       blob = blobForNode(node);
       if (!blob) {
@@ -396,9 +412,22 @@
     renderExplorer();
   }
 
-  function deleteSelectedNode() {
+  async function deleteSelectedNode() {
     const node = nodeById(selectedNodeId);
     if (!node || node.id === "root") return desktop.showToast("Select an item", "Choose a file or folder to delete.", "warning");
+    if (node.source === "engine-replay") {
+      try {
+        await window.CnCPort.deleteReplay(node.name, {
+          allowLastReplay: !window.ZeroHRuntime?.started,
+        });
+        selectedNodeId = null;
+        await refreshManagedReplays();
+        desktop.showToast("Replay deleted", node.name);
+      } catch (error) {
+        desktop.showToast("Replay could not be deleted", error?.message || String(error), "warning");
+      }
+      return;
+    }
     const snapshot = snapshotFileSystem();
     const deleted = new Set([node.id]);
     let changed = true;
@@ -418,6 +447,27 @@
   }
 
   async function importFiles(files) {
+    if (currentFolderId === "replays") {
+      const rejected = [];
+      let imported = 0;
+      for (const file of files) {
+        if (extensionOf(file.name) !== "rep") {
+          rejected.push(`${file.name} (not a .rep file)`);
+          continue;
+        }
+        try {
+          await window.CnCPort.importReplay(file.name, await file.arrayBuffer());
+          imported += 1;
+        } catch (error) {
+          rejected.push(`${file.name} (${error?.message || String(error)})`);
+        }
+      }
+      await refreshManagedReplays();
+      if (imported) desktop.showToast("Replay import complete", `${imported} replay${imported === 1 ? "" : "s"} added to Zero Hour.`);
+      if (rejected.length) desktop.showToast("Some replays were not imported", rejected.join(", "), "warning");
+      return;
+    }
+
     const snapshot = snapshotFileSystem();
     const rejected = [];
     let imported = 0;
@@ -456,6 +506,57 @@
     if (rejected.length) {
       desktop.showToast("Some files were not imported", `Virtual Drive keeps files up to 512 KB. Skipped ${rejected.join(", ")}.`, "warning");
     }
+  }
+
+  async function migrateVirtualReplays() {
+    const legacy = fileSystem.nodes.filter((node) => node.parent === "replays"
+      && node.type === "file" && node.kind === "replay" && node.source !== "engine-replay");
+    if (!legacy.length || typeof window.CnCPort?.importReplay !== "function") return;
+    const migrated = [];
+    for (const node of legacy) {
+      const blob = blobForNode(node);
+      if (!blob) continue;
+      try {
+        await window.CnCPort.importReplay(node.name, await blob.arrayBuffer());
+        migrated.push(node.id);
+      } catch {
+        // Keep the virtual-drive copy if the real replay store rejects it.
+      }
+    }
+    if (migrated.length) {
+      fileSystem.nodes = fileSystem.nodes.filter((node) => !migrated.includes(node.id));
+      persistFileSystem();
+    }
+  }
+
+  async function refreshManagedReplays(render = true) {
+    if (replayRefreshPromise) return replayRefreshPromise;
+    replayRefreshPromise = (async () => {
+      try {
+        await migrateVirtualReplays();
+        const result = await window.CnCPort?.listReplays?.();
+        managedReplayNodes = (result?.files || []).map((file) => ({
+          id: `engine-replay-${encodeURIComponent(file.name)}`,
+          parent: "replays",
+          type: "file",
+          kind: "replay",
+          source: "engine-replay",
+          name: file.name,
+          modified: file.modified || new Date().toISOString(),
+          size: Number(file.size || 0),
+        }));
+      } catch (error) {
+        managedReplayNodes = [];
+        if (currentFolderId === "replays") {
+          desktop.showToast("Replays unavailable", error?.message || String(error), "warning");
+        }
+      } finally {
+        replayRefreshPromise = null;
+      }
+      if (render) renderExplorer();
+      return managedReplayNodes;
+    })();
+    return replayRefreshPromise;
   }
 
   // Notepad
@@ -764,9 +865,9 @@
   });
   document.querySelector("#newFolderButton").addEventListener("click", () => openFilePrompt("folder"));
   document.querySelector("#renameFileButton").addEventListener("click", () => openFilePrompt("rename"));
-  document.querySelector("#deleteFileButton").addEventListener("click", deleteSelectedNode);
+  document.querySelector("#deleteFileButton").addEventListener("click", () => void deleteSelectedNode());
   document.querySelectorAll("[data-file-view]").forEach((button) => button.addEventListener("click", () => setFileView(button.dataset.fileView)));
-  document.querySelector("#downloadFileButton").addEventListener("click", () => { const node = nodeById(selectedNodeId); if (node) downloadNode(node); else desktop.showToast("Select an item", "Choose something to download.", "warning"); });
+  document.querySelector("#downloadFileButton").addEventListener("click", () => { const node = nodeById(selectedNodeId); if (node) void downloadNode(node); else desktop.showToast("Select an item", "Choose something to download.", "warning"); });
   document.querySelector("#importFileButton").addEventListener("click", () => document.querySelector("#fileInput").click());
   document.querySelector("#fileInput").addEventListener("change", async (event) => { if (event.target.files.length) await importFiles([...event.target.files]); event.target.value = ""; });
   document.querySelector("#filePromptCancel").addEventListener("click", closeFilePrompt);
@@ -783,7 +884,7 @@
   document.querySelector("#noteNewButton").addEventListener("click", newNote);
   document.querySelector("#noteSaveButton").addEventListener("click", saveNote);
   document.querySelector("#noteOpenButton").addEventListener("click", () => { navigateTo("notes"); desktop.openApp("explorer"); desktop.showToast("Open a note", "Double-click any text document in Notes."); });
-  document.querySelector("#noteDownloadButton").addEventListener("click", () => downloadNode({ name: document.querySelector("#notepadFileName").value || "Untitled.txt", type: "file", kind: "text", content: editor.value, size: new Blob([editor.value]).size }));
+  document.querySelector("#noteDownloadButton").addEventListener("click", () => void downloadNode({ name: document.querySelector("#notepadFileName").value || "Untitled.txt", type: "file", kind: "text", content: editor.value, size: new Blob([editor.value]).size }));
   document.querySelector("#noteSelectAllButton").addEventListener("click", () => { editor.focus(); editor.select(); });
   document.querySelector("#noteWrapButton").addEventListener("click", () => { editor.classList.toggle("no-wrap"); desktop.showToast("Word wrap", editor.classList.contains("no-wrap") ? "Disabled" : "Enabled"); });
   document.querySelector("#noteHelpButton").addEventListener("click", () => desktop.showToast("Notepad", "Documents save to the Notes folder on your New Shoes Drive."));
@@ -839,9 +940,11 @@
     resetMinefield();
     resetMemory();
   });
+  window.addEventListener("cncport:runtimeclosed", () => void refreshManagedReplays());
 
   persistFileSystem();
   renderExplorer();
+  void refreshManagedReplays();
   newNote();
   renderBrowser("newshoes://start");
   resetMinefield();

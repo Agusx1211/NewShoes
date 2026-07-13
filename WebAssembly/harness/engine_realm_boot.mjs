@@ -139,6 +139,9 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
       && typeof globalThis.__cncSetDiagLevel === "function") {
     globalThis.__cncSetDiagLevel(opts.diagLevel);
   }
+  if (typeof opts.perfCounters === "boolean") {
+    globalThis.__cncSetD3D8PerfCounters?.(opts.perfCounters);
+  }
 
   // ---- GDI text hooks (synchronous returns -> must live in this realm) ------
   const gdiHooks = createGdiHooks();
@@ -614,6 +617,19 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
             && typeof Module._cnc_port_real_engine_set_boot_resolution === "function") {
           Module._cnc_port_real_engine_set_boot_resolution(bootWidth, bootHeight);
         }
+        if (request.maxCameraHeight !== undefined) {
+          const maxCameraHeight = Number(request.maxCameraHeight);
+          if (!Number.isFinite(maxCameraHeight)
+              || maxCameraHeight < 310 || maxCameraHeight > 500) {
+            throw new Error("invalid camera zoom setting");
+          }
+          const accepted = cwrapFor(
+            "cnc_port_real_engine_set_max_camera_height", "number", ["number"],
+          )(maxCameraHeight);
+          if (accepted !== 1) {
+            throw new Error("camera zoom setting rejected");
+          }
+        }
         const commanderName = String(request.commanderName ?? "");
         if (commanderName) {
           const identity = parseMaybeJson(cwrapFor(
@@ -699,8 +715,21 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     engineFrameTimes: [], // rolling real-engine update durations (ms)
     presentationFrameTimes: [], // rolling intervals between presented client frames (ms)
     pacingSamples: [], // last ~900 {t, logic} for pacing-evenness probes
+    quitRequested: false,
   };
   let framePacedFn = null;
+
+  function runPacedFrame(runLogic) {
+    try {
+      return parseMaybeJson(framePacedFn(runLogic ? 1 : 0));
+    } finally {
+      // Lite rendering may defer the final indexed draw so it can be merged
+      // with an adjacent range.  The main-realm frame RPCs flush that draw
+      // after every engine frame; the autonomous worker loop must preserve
+      // the same frame boundary or the next frame's clear discards it.
+      d3d8Diag.flushD3D8PendingDrawBatch("threadedFramePaced");
+    }
+  }
 
   function startLoop(msg, respond) {
     const clientFps = Math.max(1, Math.min(240, Number(msg.clientFps ?? 60)));
@@ -733,6 +762,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     loop.engineFrameTimes.length = 0;
     loop.presentationFrameTimes.length = 0;
     loop.pacingSamples.length = 0;
+    loop.quitRequested = false;
     respond({ cmd: "startLoopResult", id: msg.id, ok: true, pacing, clientFps, logicFps });
   }
 
@@ -776,11 +806,14 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     let result = null;
     try {
       if (logicToRun === 0) {
-        result = parseMaybeJson(framePacedFn(0));
+        result = runPacedFrame(false);
       } else {
         for (let i = 0; i < logicToRun; i += 1) {
-          result = parseMaybeJson(framePacedFn(1));
+          result = runPacedFrame(true);
           loop.logicFrames += 1;
+          if (result?.quitting === true) {
+            break;
+          }
         }
       }
     } catch (error) {
@@ -817,6 +850,21 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     if (loop.pacingSamples.length > 900) {
       loop.pacingSamples.splice(0, loop.pacingSamples.length - 900);
     }
+    if (result.quitting === true) {
+      loop.active = false;
+      if (!loop.quitRequested) {
+        loop.quitRequested = true;
+        recordLog("original engine requested runtime exit", {
+          logicFrame: result.logicFrame,
+          clientFrame: result.clientFrame,
+        });
+        postToMain({
+          cmd: "quitRequested",
+          logicFrame: result.logicFrame,
+          clientFrame: result.clientFrame,
+        });
+      }
+    }
   }
 
   // ---- periodic status --------------------------------------------------------
@@ -848,6 +896,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         startedAt: loop.startedAt,
         clientFrames: loop.clientFrames,
         logicFrames: loop.logicFrames,
+        quitRequested: loop.quitRequested,
       },
       timing: {
         engineFrameMs: loop.engineFrameTimes.slice(),
@@ -974,6 +1023,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
           stepped: msg.stepped !== false,
           bootWidth: msg.bootWidth,
           bootHeight: msg.bootHeight,
+          maxCameraHeight: msg.maxCameraHeight,
           stepBudgetMs: msg.stepBudgetMs,
           commanderName: String(msg.commanderName ?? ""),
         };
