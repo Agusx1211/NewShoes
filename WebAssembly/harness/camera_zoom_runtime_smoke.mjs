@@ -18,6 +18,7 @@ const profileDir = resolve(process.env.CAMERA_ZOOM_PROFILE_DIR
 const executablePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH || undefined;
 const bootTimeoutMs = Number(process.env.BOOT_TIMEOUT_MS ?? 15 * 60 * 1000);
 const matchTimeoutMs = Number(process.env.MATCH_TIMEOUT_MS ?? 6 * 60 * 1000);
+const expectedRenderer = process.env.CAMERA_ZOOM_EXPECT_RENDERER || "";
 const verbose = process.env.VERBOSE === "1";
 
 function expect(condition, message, detail = null) {
@@ -45,7 +46,14 @@ async function waitForFrame(page, label, predicate, timeoutMs = 120000) {
     if (predicate(last)) return last;
     await page.waitForTimeout(250);
   }
-  throw new Error(`${label} timed out\n${JSON.stringify(last, null, 2)}`);
+  throw new Error(`${label} timed out\n${JSON.stringify({
+    transition: last?.clientState?.transition ?? null,
+    shell: last?.clientState?.shell ?? null,
+    mainMenu: last?.clientState?.mainMenu ?? null,
+    skirmishMenu: last?.clientState?.skirmishMenu ?? null,
+    gameplay: last?.gameplay ?? last?.clientState?.gameplay ?? null,
+    view: last?.view ?? last?.clientState?.view ?? null,
+  }, null, 2)}`);
 }
 
 async function enginePointToCss(page, point) {
@@ -91,17 +99,11 @@ async function captureViewport(page, path) {
   return bytes.length;
 }
 
-async function gpuRenderer(page) {
-  return page.evaluate(() => {
-    const canvas = document.createElement("canvas");
-    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
-    if (!gl) return null;
-    const extension = gl.getExtension("WEBGL_debug_renderer_info");
-    return {
-      vendor: extension ? gl.getParameter(extension.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR),
-      renderer: extension ? gl.getParameter(extension.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER),
-    };
-  });
+async function engineRenderer(page) {
+  await page.waitForFunction(() =>
+    Boolean(window.CnCPort?.state?.threadedEngine?.graphics?.renderer),
+  null, { timeout: 30000, polling: 250 });
+  return page.evaluate(() => window.CnCPort.state.threadedEngine.graphics.renderer);
 }
 
 async function main() {
@@ -133,16 +135,28 @@ async function main() {
     page.on("console", (message) => {
       if (verbose) process.stderr.write(`[camera-zoom-runtime] ${message.type()}: ${message.text()}\n`);
     });
-    const url = new URL("harness/play.html?autostart=1&dist=dist-threaded-release", server.url);
+    const url = new URL(
+      "harness/play.html?autostart=1&dist=dist-threaded-release&shellmap=0", server.url);
     await page.goto(url.href, { waitUntil: "load" });
     await page.waitForSelector("#overlay.hidden", { state: "attached", timeout: bootTimeoutMs });
 
     const frontierResult = await rpc(page, "realEngineFrontier");
     summary.frontier = frontierResult?.frontier ?? null;
-    summary.gpu = await gpuRenderer(page);
+    summary.engineRenderer = await engineRenderer(page);
     expect(summary.frontier?.initReturned === true, "real threaded engine did not initialize", summary.frontier);
     expect(summary.frontier?.maxCameraHeight === 500,
       "launcher camera setting did not reach GlobalData before engine initialization", summary.frontier);
+    if (expectedRenderer) {
+      expect(new RegExp(expectedRenderer, "i").test(summary.engineRenderer),
+        "engine worker did not use the expected renderer", {
+          expectedRenderer,
+          actualRenderer: summary.engineRenderer,
+        });
+    }
+
+    await moveToEnginePoint(page, { x: 32, y: 32 });
+    await page.waitForTimeout(250);
+    await moveToEnginePoint(page, { x: 96, y: 96 });
 
     let frame = await waitForFrame(page, "main menu", (candidate) =>
       candidate?.clientState?.mainMenu?.buttonSinglePlayer?.clickable === true);
