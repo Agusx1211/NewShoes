@@ -13311,11 +13311,14 @@ function paintD3D8DrawIndexed(payload = {}) {
             transformDetailStartedAt = now;
           }
         : null;
-      const worldTransformUnchanged = worldRevisionUnchanged ||
+      // bindD3D8Program resets the per-program uniform snapshots. The revision
+      // shortcuts above may still be true for the D3D transform itself, but
+      // they cannot prove that the newly bound GL program has received it.
+      const worldTransformUnchanged =
         d3d8MatrixEquals(d3d8LastTransformUniformWorld, world);
-      const viewTransformUnchanged = viewRevisionUnchanged ||
+      const viewTransformUnchanged =
         d3d8MatrixEquals(d3d8LastTransformUniformView, view);
-      const projectionTransformUnchanged = projectionRevisionUnchanged ||
+      const projectionTransformUnchanged =
         d3d8MatrixEquals(d3d8LastTransformUniformProjection, projection);
       recordTransformDetail?.("sortedDrawTransformCompareMs");
       if (worldTransformUnchanged && viewTransformUnchanged && projectionTransformUnchanged) {
