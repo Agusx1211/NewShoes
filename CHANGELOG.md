@@ -25,3 +25,4 @@ repository `release` skill describes the promotion workflow from `dev` to
 - Shut down and relaunch the runtime after the original engine exits ([PR #31](https://github.com/Agusx1211/NewShoes/pull/31)).
 - Add encrypted multi-device game file transfer with staged installation ([PR #50](https://github.com/Agusx1211/NewShoes/pull/50)).
 - Synchronize agent GitHub identity rules from `main` back into `dev` ([PR #52](https://github.com/Agusx1211/NewShoes/pull/52)).
+- Finalize version `0.1.0` and its complete release inventory ([PR #53](https://github.com/Agusx1211/NewShoes/pull/53)).
