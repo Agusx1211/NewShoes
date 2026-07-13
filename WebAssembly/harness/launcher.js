@@ -54,6 +54,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     notepad: { title: "Notepad", icon: "#i-note" },
     arcade: { title: "Project New Shoes Arcade", icon: "#i-arcade" },
     programs: { title: "Game Library", icon: "#i-apps" },
+    transfer: { title: "Game File Transfer", icon: "#i-globe" },
     settings: { title: "Project New Shoes Settings", icon: "#i-gear" },
     about: { title: "About Project New Shoes", icon: "#i-info" },
   };
@@ -1291,6 +1292,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     }
   }
 
+  window.addEventListener("zeroh:library-transferred", () => void reconcileStoredLibrary());
   void reconcileStoredLibrary();
 
   window.ZeroHDesktop = {
