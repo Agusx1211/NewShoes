@@ -888,6 +888,11 @@ async function driveReplayRoundTrip(page) {
   await page.locator("#viewport").screenshot({ path: replayMenuScreenshotPath });
   await clickButton(page, replayMenu.frame.clientState.replayMenu.buttonLoad,
     null, "replay menu play");
+  if (retailReplayFixture) {
+    await runFrames(page, 2, "retail replay version prompt");
+    await clickWindowByName(page, "MessageBox.wnd:ButtonOk",
+      "retail replay version confirmation");
+  }
   console.error("[skirmish-start] wait for replay playback");
   const playback = await waitForCondition(
     page,
