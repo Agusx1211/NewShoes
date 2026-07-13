@@ -2134,6 +2134,16 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
+    case "queryWindowByName": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_query_window_by_name", "string", ["string"],
+          [String(payload.name ?? payload.window ?? payload.windowName ?? "")]);
+        return { ok: result?.found === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "realEngineSetSkirmishMap": {
       // Same export the non-threaded handler cwraps; executed on the engine
       // thread. Enables in-game (skirmish) drives/measurements in threaded
@@ -5699,6 +5709,11 @@ async function loadWasmModule() {
       ),
       clickWindowByName: module.cwrap(
         "cnc_port_click_window_by_name",
+        "string",
+        ["string"],
+      ),
+      queryWindowByName: module.cwrap(
+        "cnc_port_query_window_by_name",
         "string",
         ["string"],
       ),
@@ -12418,6 +12433,30 @@ async function rpc(command, payload = {}) {
         return {
           ok: Boolean(result?.ready) && result?.clicked === true && !aborted,
           command: "clickWindowByName",
+          aborted,
+          abortMessage,
+          result,
+          state: snapshotState(),
+        };
+      }
+    case "queryWindowByName":
+      {
+        const moduleResult = await getWasmModuleForArchives("queryWindowByName");
+        if (moduleResult.error) {
+          return { ok: false, command: "queryWindowByName", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.queryWindowByName(String(payload.name ?? "")));
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        return {
+          ok: result?.found === true && !aborted,
+          command: "queryWindowByName",
           aborted,
           abortMessage,
           result,

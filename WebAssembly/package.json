@@ -118,6 +118,7 @@
     "test:skirmish-start-assets": "npm run build:port && SKIRMISH_START_EXPECT_ENEMY_START_ASSETS=1 node harness/skirmish_start_smoke.mjs",
     "test:skirmish-music-transition": "npm run build:port && SKIRMISH_START_EXPECT_MUSIC_STOP=1 node harness/skirmish_start_smoke.mjs",
     "test:skirmish-esc-menu": "npm run build:port && SKIRMISH_START_EXPECT_ESC_MENU_RESUME=1 node harness/skirmish_start_smoke.mjs",
+    "test:save-load-game": "npm run build:port:threaded:release && node harness/save_load_game_smoke.mjs",
     "test:replay-roundtrip": "npm run build:port:threaded:release && SKIRMISH_START_DIST=dist-threaded-release SKIRMISH_START_THREADS=1 SKIRMISH_START_REPLAY_ROUNDTRIP=1 SKIRMISH_START_PROFILE_DIR=artifacts/pw-profiles/replay-roundtrip node harness/skirmish_start_smoke.mjs",
     "profile:runtime-frames": "npm run build:port && node harness/runtime_frame_profile.mjs",
     "test:vertical-integrations": "npm run build:wasm && npm run transcode:bink-video && node tools/run_vertical_integrations_smoke.mjs",
