@@ -137,8 +137,8 @@ async function main() {
     await page.goto(url.href, { waitUntil: "load" });
     await page.waitForSelector("#overlay.hidden", { state: "attached", timeout: bootTimeoutMs });
 
-    const state = await rpc(page, "state");
-    summary.frontier = state?.state?.realEngineInit?.frontier ?? null;
+    const frontierResult = await rpc(page, "realEngineFrontier");
+    summary.frontier = frontierResult?.frontier ?? null;
     summary.gpu = await gpuRenderer(page);
     expect(summary.frontier?.initReturned === true, "real threaded engine did not initialize", summary.frontier);
     expect(summary.frontier?.maxCameraHeight === 500,
