@@ -158,6 +158,7 @@
     "test:w3d-device-utility": "npm run build:wasm && node dist/w3d-device-utility-smoke.cjs",
     "test:ww3d2-light-render": "npm run build:wasm && node dist/ww3d2-light-render-smoke.cjs",
     "test:d3d8-shim": "npm run build:wasm && node dist/d3d8-shim-smoke.cjs",
+    "test:d3d8-alpha-cutout": "node harness/d3d8_alpha_cutout_unit.mjs",
     "test:d3d8-offscreen-viewport-browser": "node harness/d3d8_offscreen_viewport_smoke.mjs",
     "test:d3d8-render-state-mapping": "npm run build:wasm && node dist/d3d8-render-state-mapping-smoke.cjs",
     "test:d3d8-texture-upload-readiness": "npm run build:wasm && node dist/d3d8-texture-upload-readiness-smoke.cjs",
