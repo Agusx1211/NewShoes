@@ -91,14 +91,16 @@ for (const workflow of workflowPaths) {
   if (!document || typeof document !== "object") throw new Error(`Invalid YAML document: ${workflow}`);
 }
 
-const pullRequestWorkflow = await readFile(resolve(repoRoot, ".github/workflows/ci.yml"), "utf8");
+const buildWorkflow = await readFile(resolve(repoRoot, ".github/workflows/ci.yml"), "utf8");
 for (const contract of [
+  "branches: [dev]",
   "npm run test:cloudflare-artifact-guard",
   "npm run test:cloudflare-deployment",
   "name: cloudflare-preview-site",
+  "github.event_name != 'pull_request'",
   "github.event.pull_request.head.repo.full_name == github.repository",
 ]) {
-  if (!pullRequestWorkflow.includes(contract)) throw new Error(`Pull request preview handoff missing: ${contract}`);
+  if (!buildWorkflow.includes(contract)) throw new Error(`Trusted Cloudflare artifact handoff missing: ${contract}`);
 }
 
 const previewWorkflow = await readFile(resolve(repoRoot, ".github/workflows/pr-preview.yml"), "utf8");
@@ -108,11 +110,24 @@ for (const contract of [
   "github.event.workflow_run.conclusion == 'success'",
   "name: cloudflare-pages",
   "name: cloudflare-preview-site",
-  '--branch="pr-${PR_NUMBER}"',
   '.base.ref == $base or .base.ref == "dev"',
-  "transient_environment: true",
+  "github.event.workflow_run.event == 'push'",
+  "github.event.workflow_run.event == 'workflow_dispatch'",
+  "github.event.workflow_run.head_branch == 'dev'",
+  '"repos/${GITHUB_REPOSITORY}/git/ref/heads/dev"',
+  'https://dev.newshoes.gg/',
+  'echo "branch=dev"',
+  'echo "environment=cloudflare-pages-dev"',
+  'echo "transient=false"',
+  'echo "branch=pr-${pr_number}"',
+  'echo "environment=pr-${pr_number}"',
+  'echo "transient=true"',
+  '--argjson transient "${DEPLOYMENT_TRANSIENT}"',
+  "transient_environment: $transient",
+  "production_environment: false",
+  '--branch="${DEPLOYMENT_BRANCH}"',
 ]) {
-  if (!previewWorkflow.includes(contract)) throw new Error(`Trusted preview deployment contract missing: ${contract}`);
+  if (!previewWorkflow.includes(contract)) throw new Error(`Trusted Cloudflare deployment contract missing: ${contract}`);
 }
 
 const serviceWorker = await readFile(resolve(wasmRoot, "pages/coi-serviceworker.js"), "utf8");
