@@ -617,6 +617,19 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
             && typeof Module._cnc_port_real_engine_set_boot_resolution === "function") {
           Module._cnc_port_real_engine_set_boot_resolution(bootWidth, bootHeight);
         }
+        if (request.maxCameraHeight !== undefined) {
+          const maxCameraHeight = Number(request.maxCameraHeight);
+          if (!Number.isFinite(maxCameraHeight)
+              || maxCameraHeight < 310 || maxCameraHeight > 500) {
+            throw new Error("invalid camera zoom setting");
+          }
+          const accepted = cwrapFor(
+            "cnc_port_real_engine_set_max_camera_height", "number", ["number"],
+          )(maxCameraHeight);
+          if (accepted !== 1) {
+            throw new Error("camera zoom setting rejected");
+          }
+        }
         const commanderName = String(request.commanderName ?? "");
         if (commanderName) {
           const identity = parseMaybeJson(cwrapFor(
@@ -989,6 +1002,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
           stepped: msg.stepped !== false,
           bootWidth: msg.bootWidth,
           bootHeight: msg.bootHeight,
+          maxCameraHeight: msg.maxCameraHeight,
           stepBudgetMs: msg.stepBudgetMs,
           commanderName: String(msg.commanderName ?? ""),
         };

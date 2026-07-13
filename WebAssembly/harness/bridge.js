@@ -1384,6 +1384,7 @@ function createThreadedEngineController() {
         stepped: payload.stepped !== false,
         bootWidth: payload.bootWidth,
         bootHeight: payload.bootHeight,
+        maxCameraHeight: payload.maxCameraHeight,
         stepBudgetMs: payload.stepBudgetMs,
         commanderName: payload.commanderName,
       }, {
@@ -5576,6 +5577,11 @@ async function loadWasmModule() {
         "cnc_port_real_engine_set_boot_resolution",
         null,
         ["number", "number"],
+      ),
+      realEngineSetMaxCameraHeight: module.cwrap(
+        "cnc_port_real_engine_set_max_camera_height",
+        "number",
+        ["number"],
       ),
       realEngineDumpWindows: module.cwrap(
         "cnc_port_real_engine_dump_windows",
@@ -10300,6 +10306,17 @@ async function realEngineInit(payload = {}) {
   if (bootWidth >= 640 && bootHeight >= 480
       && typeof wasmModule.realEngineSetBootResolution === "function") {
     wasmModule.realEngineSetBootResolution(bootWidth, bootHeight);
+  }
+  if (Object.hasOwn(payload, "maxCameraHeight")) {
+    const maxCameraHeight = Number(payload.maxCameraHeight);
+    if (!Number.isFinite(maxCameraHeight)
+        || maxCameraHeight < 310 || maxCameraHeight > 500) {
+      return { ok: false, command: "realEngineInit", error: "invalid camera zoom setting" };
+    }
+    const accepted = wasmModule.realEngineSetMaxCameraHeight(maxCameraHeight);
+    if (accepted !== 1) {
+      return { ok: false, command: "realEngineInit", error: "camera zoom setting rejected" };
+    }
   }
   const commanderName = String(payload.commanderName ?? "");
   if (commanderName && typeof wasmModule.realEngineSetCommanderName === "function") {

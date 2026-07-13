@@ -533,6 +533,9 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 .game-custom-resolution > div:last-child,
 .game-performance-options > div:last-child { display: flex; align-items: center; gap: 6px; }
 .game-custom-resolution input { width: 72px; height: 27px; padding: 0 6px; color: #3d5565; border: 1px solid #9fb2c0; background: #fff; font-size: 9px; }
+.camera-zoom-control { display: flex; align-items: center; gap: 12px; min-width: 220px; }
+.camera-zoom-control input { min-width: 160px; }
+.camera-zoom-control output { min-width: 3ch; color: #3c5563; font-weight: 700; text-align: right; }
 .game-custom-resolution button,
 .game-tool-grid button { min-height: 28px; padding: 0 10px; color: #153e70; border: 1px solid #7f9db9; border-radius: 2px; background: linear-gradient(#fff, #dce8f5); font-size: 9px; }
 .game-tool-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; gap: 7px; padding-top: 14px; color: #536b7a; font-size: 9px; }

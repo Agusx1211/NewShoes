@@ -7,6 +7,11 @@ import "./analytics.mjs";
 
 import "./launcher-archive-specs.js";
 import { createIssueRecorder } from "./issue-recorder.mjs";
+import {
+  loadCameraZoomHeight,
+  normalizeCameraZoomHeight,
+  saveCameraZoomHeight,
+} from "./camera-zoom-config.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
 import {
   runRuntimeShutdownSequence,
@@ -172,6 +177,9 @@ const threadedMode = threadedSupported;
 const threadedUnavailable = !threadedSupported;
 const viewportCanvas = document.querySelector("#viewport");
 const selectedDistDir = selectedCncPortDistDir();
+let cameraZoomHeight = window.CnCPortPlayConfig?.maxCameraHeight === undefined
+  ? loadCameraZoomHeight(networkStorage)
+  : normalizeCameraZoomHeight(window.CnCPortPlayConfig.maxCameraHeight);
 
 // Persisted display settings (v2) — the ONE source of resolution intent:
 //   { mode: "dynamic" }                     follow the window (default)
@@ -971,6 +979,7 @@ async function start() {
         shellMap,
         stepped: steppedInit,
         commanderName: networkSettings.name,
+        maxCameraHeight: cameraZoomHeight,
         bootWidth: bootResolution?.width,
         bootHeight: bootResolution?.height,
       });
@@ -1717,6 +1726,10 @@ function syncDesktopGameSettings() {
   if (diagnosticsSelect) diagnosticsSelect.value = configuredDiagLevel;
   const shaderTierSelect = document.querySelector("#shaderTierSelect");
   if (shaderTierSelect) shaderTierSelect.value = effectiveShaderTier();
+  const cameraZoomInput = document.querySelector("#cameraZoomHeight");
+  const cameraZoomOutput = document.querySelector("#cameraZoomHeightValue");
+  if (cameraZoomInput) cameraZoomInput.value = String(cameraZoomHeight);
+  if (cameraZoomOutput) cameraZoomOutput.value = String(cameraZoomHeight);
   const fullscreenButton = document.querySelector("#fullscreenButton");
   if (fullscreenButton) {
     fullscreenButton.hidden = !fullscreenSupported();
@@ -1771,6 +1784,18 @@ function bindDesktopGameSettings() {
   document.querySelector("#shaderTierSelect")?.addEventListener("change", (event) => {
     setShaderTier(event.currentTarget.value);
     track("setting_changed", { category: "shader", setting: "shader_tier", value: event.currentTarget.value === "ff" ? "classic" : "enhanced" });
+  });
+  const cameraZoomInput = document.querySelector("#cameraZoomHeight");
+  const updateCameraZoomOutput = () => {
+    const height = normalizeCameraZoomHeight(cameraZoomInput?.value);
+    const output = document.querySelector("#cameraZoomHeightValue");
+    if (output) output.value = String(height);
+  };
+  cameraZoomInput?.addEventListener("input", updateCameraZoomOutput);
+  cameraZoomInput?.addEventListener("change", (event) => {
+    cameraZoomHeight = saveCameraZoomHeight(networkStorage, event.currentTarget.value);
+    syncDesktopGameSettings();
+    track("setting_changed", { category: "gameplay", setting: "camera_zoom", value: String(cameraZoomHeight) });
   });
   document.querySelector("#performanceOverlayToggle")?.addEventListener("change", (event) => {
     setPerformanceOverlay({ enabled: event.currentTarget.checked });
@@ -1830,6 +1855,7 @@ function playConfiguration() {
     display: { ...displaySettings },
     diagnostics: configuredDiagLevel,
     shaderTier: effectiveShaderTier(),
+    maxCameraHeight: cameraZoomHeight,
     consoleVisible: !consolePanel.classList.contains("hidden"),
     fullscreen: Boolean(fullscreenElement()),
   };
@@ -1847,6 +1873,9 @@ async function configurePlay(options = {}) {
   }
   if (options.shaderTier === "ff" || options.shaderTier === "ps11") {
     setShaderTier(options.shaderTier);
+  }
+  if (Object.hasOwn(options, "maxCameraHeight")) {
+    cameraZoomHeight = saveCameraZoomHeight(networkStorage, options.maxCameraHeight);
   }
   if (typeof options.consoleVisible === "boolean") {
     setConsoleVisible(options.consoleVisible);
@@ -1882,6 +1911,12 @@ function installPlayHostApi() {
     fullscreenSupported,
     setShaderTier,
     getShaderTier: effectiveShaderTier,
+    setMaxCameraHeight: (height) => {
+      cameraZoomHeight = saveCameraZoomHeight(networkStorage, height);
+      if (desktopGameSettingsBound) syncDesktopGameSettings();
+      return cameraZoomHeight;
+    },
+    getMaxCameraHeight: () => cameraZoomHeight,
     setDiagnosticsLevel: setConfiguredDiagLevel,
     setNetworkDiagnostics: setNetworkDiagnosticsEnabled,
     getNetworkDiagnostics: () => window.__cncNetworkDiagnosticsSnapshot?.() ?? null,
