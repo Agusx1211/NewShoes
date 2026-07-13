@@ -18,7 +18,10 @@ import {
   normalizeCommanderName,
   saveNetworkSettings as persistNetworkSettings,
 } from "./multiplayer_identity.mjs";
-import { shouldAutoConnectP2p } from "./multiplayer_launch_policy.mjs";
+import {
+  registerP2pBestEffort,
+  shouldAutoConnectP2p,
+} from "./multiplayer_launch_policy.mjs";
 
 const analytics = window.ZeroHAnalytics;
 const track = (name, params) => analytics?.track(name, params);
@@ -804,8 +807,10 @@ async function start() {
     saveNetworkSettings(networkSettings);
     let networkRuntime = null;
     if (shouldAutoConnectP2p(networkSettings.room)) {
-      report(`joining P2P room ${networkSettings.room}...`);
-      if (networkStatusNode) networkStatusNode.textContent = "Discovering peers and connecting WebRTC ICE...";
+      networkRuntime = { status: "registering", room: networkSettings.room };
+      if (networkStatusNode) {
+        networkStatusNode.textContent = "Discovering peers in the background; game launch will continue offline until connected.";
+      }
       const iceServers = networkSettings.iceServerUrl
         ? [{
           urls: networkSettings.iceServerUrl.split(",").map((entry) => entry.trim()).filter(Boolean),
@@ -813,25 +818,43 @@ async function start() {
           ...(networkSettings.iceCredential ? { credential: networkSettings.iceCredential } : {}),
         }]
         : [];
-      const networkConnect = await rpc("browserWebRtcEndpointConnect", {
+      void registerP2pBestEffort({
+        rpc,
         room: networkSettings.room,
         peerId: networkSettings.name || null,
         displayName: networkSettings.name || null,
         iceServers,
+      }).then((registration) => {
+        if (registration.ok) {
+          networkRuntime = registration.runtime;
+          const endpoint = networkRuntime?.endpoint;
+          const virtualIp = endpoint?.localIp >>> 0;
+          const ipText = [24, 16, 8, 0]
+            .map((shift) => (virtualIp >>> shift) & 0xff).join(".");
+          if (networkStatusNode) {
+            networkStatusNode.textContent = `Joined ${networkSettings.room} as ${endpoint?.displayName ?? networkSettings.name} (${ipText}). Open Multiplayer → LAN.`;
+            networkStatusNode.removeAttribute("title");
+          }
+          track("p2p_discovery", { result: "connected" });
+        } else {
+          networkRuntime = {
+            status: "offline",
+            room: networkSettings.room,
+            error: registration.error,
+          };
+          if (networkStatusNode) {
+            networkStatusNode.textContent = "P2P unavailable. Game is running offline.";
+            networkStatusNode.title = registration.error ?? "P2P registration did not complete";
+          }
+          console.warn("[play] P2P registration failed; continuing offline", registration.error);
+          track("p2p_discovery", { result: "offline" });
+        }
+        issueRecorder.setSessionContext({ network: networkRuntime });
+      }).catch((error) => {
+        console.warn("[play] P2P registration status update failed; continuing offline", error);
       });
-      if (networkConnect?.ok !== true) {
-        throw new Error(networkConnect?.error ?? "P2P room connection failed");
-      }
-      networkRuntime = networkConnect.runtime;
-      const virtualIp = networkRuntime?.endpoint?.localIp >>> 0;
-      const ipText = [24, 16, 8, 0].map((shift) => (virtualIp >>> shift) & 0xff).join(".");
-      if (networkStatusNode) {
-        networkStatusNode.textContent = `Joined ${networkSettings.room} as ${networkRuntime.endpoint.displayName} (${ipText}). Open Multiplayer → LAN.`;
-      }
     } else if (networkStatusNode) {
-      networkStatusNode.textContent = networkSettings.room
-        ? "P2P multiplayer is temporarily disabled. Starting offline."
-        : "Offline. P2P multiplayer is temporarily disabled.";
+      networkStatusNode.textContent = "Offline. Enter a shared room to enable WebRTC multiplayer.";
     }
     const startAudioRuntime = await rpc("resumeBrowserAudioRuntime", {
       trigger: "play.start",
