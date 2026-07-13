@@ -137,6 +137,7 @@ if (!legal.includes("absolutely no warranty") || !legal.includes("Corresponding 
 if (!launcher.includes('<base href="./harness/">')
     || !launcher.includes('rel="canonical" href="../"')
     || !launcher.includes("data-cnc-play-page")
+    || !launcher.includes('data-bink-video-sidecars="unavailable"')
     || !launcher.includes('src="../coi-direct.js"')
     || !launcher.includes('href="../manifest.webmanifest"')
     || !launcher.includes('id="aboutVersion"')
@@ -146,6 +147,7 @@ if (!launcher.includes('<base href="./harness/">')
   findings.push("launcher.html: canonical root launcher contract is missing");
 }
 if (!play.includes('rel="canonical" href="../"')
+    || !play.includes('data-bink-video-sidecars="unavailable"')
     || !play.includes('id="publicLegalNotice"') || !play.includes("Corresponding source")) {
   findings.push("harness/play.html: launcher About legal notice is missing");
 }

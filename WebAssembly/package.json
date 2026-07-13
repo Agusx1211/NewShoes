@@ -19,6 +19,7 @@
     "test:analytics": "node harness/analytics_unit.mjs",
     "test:analytics-browser": "node harness/analytics_browser_smoke.mjs",
     "test:release-metadata": "node tools/release_metadata_unit.mjs",
+    "test:bink-video-capability": "node harness/bink_video_capability_unit.mjs",
     "build:wasm": "bash tools/build_wasm.sh",
     "build:port": "CNC_BUILD_TARGETS=cnc-port bash tools/build_wasm.sh",
     "build:port:threaded": "CNC_BUILD_DIR=build/wasm-threaded CNC_DIST_DIR=dist-threaded CNC_PORT_THREADS=1 CNC_BUILD_TARGETS=cnc-port bash tools/build_wasm.sh",

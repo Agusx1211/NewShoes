@@ -119,6 +119,7 @@ for (const contract of ["/launcher.html / 302", "/harness/play.html / 302"]) {
 if (!index.includes('<base href="./harness/">')
     || !index.includes('rel="canonical" href="../"')
     || !index.includes("data-cnc-play-page")
+    || !index.includes('data-bink-video-sidecars="unavailable"')
     || !index.includes('id="publicLegalNotice"')) {
   findings.push("index.html: direct root launcher contract is incomplete");
 }
