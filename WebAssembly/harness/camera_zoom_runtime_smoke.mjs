@@ -38,11 +38,24 @@ async function frameSummary(page) {
   return result.frame;
 }
 
-async function waitForFrame(page, label, predicate, timeoutMs = 120000) {
+async function fullFrame(page) {
+  const result = await rpc(page, "realEngineFrame", { frames: 1 });
+  expect(result?.ok === true && result?.aborted === false,
+    "real engine full frame failed", result);
+  return result.frame;
+}
+
+async function waitForFrame(
+  page,
+  label,
+  predicate,
+  timeoutMs = 120000,
+  readFrame = frameSummary,
+) {
   const deadline = Date.now() + timeoutMs;
   let last = null;
   while (Date.now() < deadline) {
-    last = await frameSummary(page);
+    last = await readFrame(page);
     if (predicate(last)) return last;
     await page.waitForTimeout(250);
   }
@@ -158,18 +171,33 @@ async function main() {
     await page.waitForTimeout(250);
     await moveToEnginePoint(page, { x: 96, y: 96 });
 
-    let frame = await waitForFrame(page, "main menu", (candidate) =>
-      candidate?.clientState?.mainMenu?.buttonSinglePlayer?.clickable === true);
+    let frame = await waitForFrame(
+      page,
+      "main menu",
+      (candidate) => candidate?.clientState?.mainMenu?.buttonSinglePlayer?.clickable === true,
+      120000,
+      fullFrame,
+    );
     summary.singlePlayerClick = await clickEngineButton(
       page, frame.clientState.mainMenu.buttonSinglePlayer, "Single Player button");
 
-    frame = await waitForFrame(page, "single-player menu", (candidate) =>
-      candidate?.clientState?.mainMenu?.buttonSkirmish?.clickable === true);
+    frame = await waitForFrame(
+      page,
+      "single-player menu",
+      (candidate) => candidate?.clientState?.mainMenu?.buttonSkirmish?.clickable === true,
+      120000,
+      fullFrame,
+    );
     summary.skirmishClick = await clickEngineButton(
       page, frame.clientState.mainMenu.buttonSkirmish, "Skirmish button");
 
-    frame = await waitForFrame(page, "skirmish options", (candidate) =>
-      candidate?.clientState?.skirmishMenu?.buttonStart?.clickable === true);
+    frame = await waitForFrame(
+      page,
+      "skirmish options",
+      (candidate) => candidate?.clientState?.skirmishMenu?.buttonStart?.clickable === true,
+      120000,
+      fullFrame,
+    );
     summary.startClick = await clickEngineButton(
       page, frame.clientState.skirmishMenu.buttonStart, "Start button");
 
