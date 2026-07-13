@@ -118,6 +118,9 @@ await mkdir(join(outputRoot, "harness"), { recursive: true });
 await writeFile(join(outputRoot, "harness", "build-info.json"), `${JSON.stringify(buildInfo, null, 2)}\n`);
 
 const playSource = await readFile(join(wasmRoot, "harness", "play.html"), "utf8");
+const videoPolicyMarker = 'data-bink-video-sidecars="auto"';
+if (!playSource.includes(videoPolicyMarker)) throw new Error("play.html has no Bink video sidecar policy marker");
+const hostedPlaySource = playSource.replace(videoPolicyMarker, 'data-bink-video-sidecars="unavailable"');
 const directBootstrap = "    <script src=\"../coi-direct.js\"></script>\n";
 const legacyDocumentHead = `    <link rel="canonical" href="../">\n${directBootstrap}`;
 const rootDocumentHead = [
@@ -133,13 +136,13 @@ if (!aboutLegalPattern.test(playSource)) throw new Error("play.html has no About
 await mkdir(join(outputRoot, "harness"), { recursive: true });
 await writeFile(
   join(outputRoot, "harness", "play.html"),
-  playSource
+  hostedPlaySource
     .replace("<head>\n", `<head>\n${legacyDocumentHead}`)
     .replace(aboutLegalPattern, legalNotice),
 );
 await writeFile(
   join(outputRoot, "launcher.html"),
-  playSource
+  hostedPlaySource
     .replace("<head>\n", `<head>\n${rootDocumentHead}`)
     .replace('href="./manifest.webmanifest"', 'href="../manifest.webmanifest"')
     .replace(aboutLegalPattern, legalNotice),

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-cnc-play-page>
+<html lang="en" data-cnc-play-page data-bink-video-sidecars="auto">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -231,15 +231,15 @@
                   </label>
                 </fieldset>
 
-                <label class="optional-content-choice" id="includeVideosChoice">
-                  <input id="includeVideosToggle" type="checkbox">
+                <label class="optional-content-choice is-disabled" id="includeVideosChoice">
+                  <input id="includeVideosToggle" type="checkbox" disabled>
                   <span class="optional-content-check" aria-hidden="true">✓</span>
                   <span class="optional-content-copy">
                     <strong>Include original videos <span class="option-badge">Optional</span></strong>
-                    <small>Install and play the EA intro and in-game cinematics.</small>
+                    <small id="includeVideosDescription">Checking video playback support…</small>
                   </span>
                   <span class="option-tooltip" tabindex="0" aria-describedby="includeVideosTooltip">i</span>
-                  <span id="includeVideosTooltip" class="option-tooltip-popover" role="tooltip">The English retail movie set uses about 0.9 GB extra: roughly 0.59 GB of original Bink files plus 0.29 GB of browser-compatible copies. Preparation also takes longer. Leave this off for the smallest, fastest installation; you can reinstall later to add them.</span>
+                  <span id="includeVideosTooltip" class="option-tooltip-popover" role="tooltip">Checking whether this build has the browser-compatible video runtime.</span>
                 </label>
 
                 <div class="space-warning" id="spaceWarning" hidden>

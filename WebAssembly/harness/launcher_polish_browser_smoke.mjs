@@ -36,11 +36,26 @@ async function assertTaskbarInVisibleViewport(page, label) {
 const browser = await chromium.launch({ executablePath, headless: true, args: ["--ignore-certificate-errors"] });
 try {
   const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1365, height: 768 } });
+  await context.route("**/artifacts/browser-video/bink/bink-browser-video-manifest.json", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      ok: true,
+      payloads: [{
+        sourceFile: "EA_LOGO.BIK",
+        outputFile: "EA_LOGO.webm",
+        frames: 96,
+        width: 640,
+        height: 480,
+        outputDurationSeconds: 3.2,
+      }],
+    }),
+  }));
   const localRequests = [];
   const page = await context.newPage();
   page.on("request", (request) => localRequests.push(request.url()));
   await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
   await page.waitForSelector("#setupWindow.is-open");
+  await page.waitForFunction(() => window.ZeroHDesktop?.videoSupport?.available === true);
   assert.equal(await page.locator("[data-retail-presentation]:visible").count(), 0);
   const fallbackShot = join(shotDir, "launcher-fallback-art.png");
   await page.screenshot({ path: fallbackShot });
