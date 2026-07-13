@@ -47,6 +47,7 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "network-diagnostics.mjs",
   "opfs_realm_files.mjs",
   "play.mjs",
+  "replay-file-store.mjs",
   "runtime-shutdown-sequence.mjs",
   "save-persistence-coordinator.mjs",
   "shader-tier-config.mjs",

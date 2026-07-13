@@ -37,6 +37,8 @@ const scripts = [
   "harness/opfs_realm_files.mjs",
   "harness/pages_deployment_smoke.mjs",
   "harness/play.mjs",
+  "harness/replay-file-store.mjs",
+  "harness/replay_desktop_transfer_smoke.mjs",
   "harness/runtime-shutdown-sequence.mjs",
   "harness/save-persistence-coordinator.mjs",
   "harness/shader-tier-config.mjs",
