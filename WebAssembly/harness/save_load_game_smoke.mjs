@@ -227,7 +227,7 @@ function summarizeDrawables(result) {
   };
 }
 
-async function waitForRestoredGame(page, label, expectedFrame, expectedState) {
+async function waitForRestoredGameState(page, label, expectedState) {
   let last = null;
   for (let attempt = 0; attempt < 120; attempt += 1) {
     const frame = await windowFrame(page);
@@ -236,13 +236,12 @@ async function waitForRestoredGame(page, label, expectedFrame, expectedState) {
     if (state.ok === true
         && state.localPlayerIndex === expectedState.localPlayerIndex
         && state.localOwned === expectedState.localOwned
-        && state.all === expectedState.all
-        && Math.abs(frame - expectedFrame) <= 30) {
+        && state.all === expectedState.all) {
       return last;
     }
     await page.waitForTimeout(1000);
   }
-  throw new Error(`${label} did not restore the saved frame and ownership: ${JSON.stringify(last)}`);
+  throw new Error(`${label} did not restore ownership and drawables: ${JSON.stringify(last)}`);
 }
 
 async function openInGameSaveLoad(page) {
@@ -354,6 +353,59 @@ async function windowFrame(page) {
   return page.evaluate(() => Number(window.CnCPort?.state?.threadedEngine?.frame?.logicFrame ?? -1));
 }
 
+async function armLogicFrameObserver(page) {
+  return page.evaluate(() => {
+    const initialFrame = Number(window.CnCPort?.state?.threadedEngine?.frame?.logicFrame ?? -1);
+    const observation = {
+      running: true,
+      initialFrame,
+      firstChanged: null,
+      firstDrop: null,
+      minimumFrame: initialFrame,
+      samples: [],
+    };
+    window.__saveLoadLogicFrameObserver = observation;
+    const sample = () => {
+      if (!observation.running || window.__saveLoadLogicFrameObserver !== observation) return;
+      const frame = Number(window.CnCPort?.state?.threadedEngine?.frame?.logicFrame ?? -1);
+      if (Number.isFinite(frame) && frame >= 0) {
+        const previous = observation.samples.at(-1)?.frame;
+        if (frame !== previous && observation.samples.length < 256) {
+          observation.samples.push({ frame, atMs: performance.now() });
+        }
+        observation.minimumFrame = Math.min(observation.minimumFrame, frame);
+        if (observation.firstChanged === null && Math.abs(frame - initialFrame) >= 5) {
+          observation.firstChanged = frame;
+        }
+        if (observation.firstDrop === null && frame <= initialFrame - 5) {
+          observation.firstDrop = frame;
+        }
+      }
+      requestAnimationFrame(sample);
+    };
+    sample();
+    return { initialFrame };
+  });
+}
+
+async function waitForLogicFrameObservation(page, field) {
+  expect(field === "firstDrop" || field === "firstChanged", "invalid frame observation field", field);
+  await page.waitForFunction((name) =>
+    Number.isFinite(window.__saveLoadLogicFrameObserver?.[name]),
+  field, { timeout: 120000, polling: 16 });
+  return page.evaluate(() => {
+    const observation = window.__saveLoadLogicFrameObserver;
+    observation.running = false;
+    return {
+      initialFrame: observation.initialFrame,
+      firstChanged: observation.firstChanged,
+      firstDrop: observation.firstDrop,
+      minimumFrame: observation.minimumFrame,
+      samples: observation.samples,
+    };
+  });
+}
+
 async function waitForLogicAdvance(page, minimumDelta) {
   const start = await windowFrame(page);
   await page.waitForFunction(({ startFrame, delta }) =>
@@ -459,17 +511,21 @@ async function loadFromInGameUi(page, savedFrame, expectedState) {
     window.found === true && window.hidden === false && window.clickable === true);
   await page.waitForTimeout(750);
   const confirmScreenshot = await captureViewport(page, "03-in-game-load-confirm.png");
+  await armLogicFrameObserver(page);
   await clickWithRetry(page, "PopupSaveLoad.wnd:ButtonLoadConfirm");
-  const restored = await waitForRestoredGame(page, "in-game loaded save", savedFrame, expectedState);
+  const rewind = await waitForLogicFrameObservation(page, "firstDrop");
+  expect(rewind.firstDrop < rewind.initialFrame - 10
+      && Math.abs(rewind.firstDrop - savedFrame) <= 20,
+    "loading did not publish the saved simulation frame rewind", { savedFrame, advanced, rewind });
+  const restored = await waitForRestoredGameState(page, "in-game loaded save", expectedState);
   log(`post-load ownership: ${JSON.stringify(restored.state)}`);
-  const loadedFrame = restored.frame;
-  expect(loadedFrame < advanced.end - 10 && loadedFrame <= savedFrame + 20,
-    "loading did not rewind the saved simulation frame", { savedFrame, advanced, loadedFrame });
   const controlBar = await waitForControlBarRestored(page);
   const screenshot = await captureViewport(page, "04-in-game-load-restored.png");
   return {
     advanced,
-    loadedFrame,
+    loadedFrame: rewind.firstDrop,
+    settledFrame: restored.frame,
+    rewind,
     restoredState: restored.state,
     controlBar,
     confirmScreenshot,
@@ -524,17 +580,27 @@ async function loadFromShellUi(page, overwrittenFrame, expectedState) {
     "persisted save description is missing from shell load UI", list.listBox.rows);
   const menuScreenshot = await captureViewport(page, "06-shell-load-menu.png");
   await selectListRow(page, "SaveLoad.wnd:ListboxGames", 0);
+  await armLogicFrameObserver(page);
   await clickWithRetry(page, "SaveLoad.wnd:ButtonLoad");
-  const restored = await waitForRestoredGame(
-    page, "shell loaded save", overwrittenFrame, expectedState);
-  const loadedFrame = restored.frame;
+  const transition = await waitForLogicFrameObservation(page, "firstChanged");
+  expect(Math.abs(transition.firstChanged - overwrittenFrame) <= 20,
+    "title load did not publish the saved simulation frame", { overwrittenFrame, transition });
+  const restored = await waitForRestoredGameState(page, "shell loaded save", expectedState);
   await page.waitForFunction(() =>
     window.CnCPort?.state?.threadedEngine?.frame?.loadSessionActive === false,
   null, { timeout: bootTimeoutMs, polling: 250 });
   await waitForLogicAdvance(page, 2);
   const controlBar = await waitForControlBarRestored(page);
   const screenshot = await captureViewport(page, "07-shell-load-restored.png");
-  return { loadedFrame, restoredState: restored.state, controlBar, menuScreenshot, screenshot };
+  return {
+    loadedFrame: transition.firstChanged,
+    settledFrame: restored.frame,
+    transition,
+    restoredState: restored.state,
+    controlBar,
+    menuScreenshot,
+    screenshot,
+  };
 }
 
 async function deleteThroughUi(page) {
