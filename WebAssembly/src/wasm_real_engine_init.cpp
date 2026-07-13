@@ -101,6 +101,7 @@
 #include "GameClient/ParticleSys.h"
 #include "GameLogic/Module/LaserUpdate.h"
 #include "W3DDevice/GameClient/BaseHeightMap.h"
+#include "W3DDevice/GameClient/WorldHeightMap.h"
 #include "W3DDevice/GameClient/W3DShroud.h"
 #include "wasm_function_lexicon_runtime.h"
 
@@ -1089,6 +1090,7 @@ void append_real_view_state(std::string &json)
 			"\"cameraPosition\":null,\"zoom\":null,\"pitch\":null,"
 			"\"angle\":null,\"fieldOfView\":null,"
 			"\"terrainHeightUnderCamera\":null,"
+			"\"terrainDrawArea\":null,"
 			"\"currentHeightAboveGround\":null,"
 			"\"heightAboveGround\":null,\"cameraMovementFinished\":null,"
 			"\"timeFrozen\":null,\"timeMultiplier\":null,"
@@ -1137,6 +1139,20 @@ void append_real_view_state(std::string &json)
 		std::to_string(static_cast<Int>(TheTacticalView->getCameraLock()));
 	json += ",\"zoomLimited\":";
 	json += TheTacticalView->isZoomLimited() ? "true" : "false";
+	WorldHeightMap *height_map = TheTerrainRenderObject != NULL ?
+		TheTerrainRenderObject->getMap() : NULL;
+	if (height_map != NULL) {
+		json += ",\"terrainDrawArea\":{\"originX\":" +
+			std::to_string(height_map->getDrawOrgX());
+		json += ",\"originY\":" + std::to_string(height_map->getDrawOrgY());
+		json += ",\"width\":" + std::to_string(height_map->getDrawWidth());
+		json += ",\"height\":" + std::to_string(height_map->getDrawHeight());
+		json += ",\"mapWidth\":" + std::to_string(height_map->getXExtent());
+		json += ",\"mapHeight\":" + std::to_string(height_map->getYExtent());
+		json += "}";
+	} else {
+		json += ",\"terrainDrawArea\":null";
+	}
 	json += "}";
 }
 

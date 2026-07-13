@@ -1261,17 +1261,34 @@ void HeightMapRenderObjClass::reset(void)
 //=============================================================================
 void HeightMapRenderObjClass::oversizeTerrain(Int tilesToOversize) 
 {
+	if (m_map == NULL)
+		return;
+
 	Int width = WorldHeightMap::NORMAL_DRAW_WIDTH;
 	Int height = WorldHeightMap::NORMAL_DRAW_HEIGHT;
 	if (tilesToOversize>0 && tilesToOversize<5) 
 	{
 		width += 32*tilesToOversize;
 		height += 32*tilesToOversize;
-		if (width>m_map->getXExtent()) 
-			width = m_map->getXExtent();
-		if (height>m_map->getYExtent()) 
-			height = m_map->getYExtent();
 	}
+	setTerrainDrawSize(width, height);
+}
+
+//=============================================================================
+// HeightMapRenderObjClass::setTerrainDrawSize
+//=============================================================================
+/** Resizes the terrain patch while preserving its current world-space center. */
+//=============================================================================
+void HeightMapRenderObjClass::setTerrainDrawSize(Int width, Int height)
+{
+	if (m_map == NULL)
+		return;
+
+	width = min(width, m_map->getXExtent());
+	height = min(height, m_map->getYExtent());
+	if (width == m_map->getDrawWidth() && height == m_map->getDrawHeight())
+		return;
+
 	Int dx = width-m_map->getDrawWidth();
 	Int dy = height-m_map->getDrawHeight();
  	m_map->setDrawWidth(width);
@@ -1635,6 +1652,22 @@ void HeightMapRenderObjClass::staticLightingChanged( void )
 #define BIG_JUMP 16
 #define WIDE_STEP 32
 
+static Int terrainDrawSizeForVisibleSpan(Real visibleSpan, Int mapExtent)
+{
+	Int drawSize = min((Int)WorldHeightMap::NORMAL_DRAW_WIDTH, mapExtent);
+	if (!WWMath::Is_Valid_Float(visibleSpan) || visibleSpan <= 0.0f)
+		return drawSize;
+
+	// Keep half a vertex-buffer tile beyond each side of the projected view.
+	// Apart from hiding small centering/height approximation errors, the full-tile
+	// margin prevents repeated reallocations near a tile-size boundary.
+	const Int paddedCells = REAL_TO_INT_CEIL(visibleSpan) + WIDE_STEP;
+	const Int tileCount = (paddedCells + VERTEX_BUFFER_TILE_LENGTH - 1) /
+		VERTEX_BUFFER_TILE_LENGTH;
+	drawSize = max(drawSize, 1 + tileCount * VERTEX_BUFFER_TILE_LENGTH);
+	return min(drawSize, mapExtent);
+}
+
 static Int visMinX, visMinY, visMaxX, visMaxY;
 static Bool check(const FrustumClass & frustum, WorldHeightMap *pMap, Int x, Int y) 
 {
@@ -1819,6 +1852,22 @@ void HeightMapRenderObjClass::updateCenter(CameraClass *camera , RefRenderObjLis
 	maxX /= MAP_XY_FACTOR;
 	minY /= MAP_XY_FACTOR;
 	maxY /= MAP_XY_FACTOR;
+
+	// The retail renderer keeps a fixed 129x129-cell terrain patch.  That is
+	// enough for the original 4:3 view and camera-height limit, but an ultrawide
+	// frustum or a larger zoom limit can project well beyond it.  Grow in the
+	// renderer's native vertex-buffer tile increments and retain the larger patch
+	// for the rest of this map so camera rotation/zoom cannot thrash resources.
+	const Int requiredWidth = terrainDrawSizeForVisibleSpan(
+		maxX - minX, m_map->getXExtent());
+	const Int requiredHeight = terrainDrawSizeForVisibleSpan(
+		maxY - minY, m_map->getYExtent());
+	if (requiredWidth > m_x || requiredHeight > m_y) {
+		setTerrainDrawSize(requiredWidth > m_x ? requiredWidth : m_x,
+			requiredHeight > m_y ? requiredHeight : m_y);
+		m_updating = false;
+		return;
+	}
 
 	minX += m_map->getBorderSizeInline();
 	maxX += m_map->getBorderSizeInline();
