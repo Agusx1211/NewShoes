@@ -139,6 +139,9 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
       && typeof globalThis.__cncSetDiagLevel === "function") {
     globalThis.__cncSetDiagLevel(opts.diagLevel);
   }
+  if (typeof opts.perfCounters === "boolean") {
+    globalThis.__cncSetD3D8PerfCounters?.(opts.perfCounters);
+  }
 
   // ---- GDI text hooks (synchronous returns -> must live in this realm) ------
   const gdiHooks = createGdiHooks();

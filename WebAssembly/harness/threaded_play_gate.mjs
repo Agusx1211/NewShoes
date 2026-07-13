@@ -375,7 +375,7 @@ async function main() {
     summary.desktopReference = desktopReferencePath;
 
     // ---------- threaded boot (GATE B) ----------
-    const threadedQuery = "harness/play.html?autostart=1"
+    const threadedQuery = "harness/play.html?autostart=1&perfCounters=1"
       + (BINK_VIDEO_ONLY ? "&shellmap=0" : "")
       + (BINK_VIDEO_ONLY && !BINK_VIDEO_DISABLED ? "&videos=1" : "")
       + (threadedPlayDist ? `&dist=${threadedPlayDist}` : "");
@@ -521,7 +521,8 @@ async function main() {
     checks.push(["logic frames advancing", logicRate > 0.5]);
     checks.push([
       "threaded frame boundaries submit every queued draw batch",
-      Number(drawBatchPerf.drawBatchQueued ?? -1) >= 0
+      drawBatchPerf.countersEnabled === true
+        && Number(drawBatchPerf.drawBatchQueued ?? 0) > 0
         && drawBatchPerf.drawBatchQueued === drawBatchPerf.drawBatchFlushes,
     ]);
     checks.push([
