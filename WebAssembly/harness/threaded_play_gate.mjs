@@ -1026,13 +1026,26 @@ async function main() {
         "/home/web_user/Command and Conquer Generals Zero Hour Data/Save/__threaded_gate_roundtrip.sav",
       )),
     }));
+    const originalExitClick = await page.evaluate(() =>
+      window.CnCPort.rpc("clickWindowByName", { name: "MainMenu.wnd:ButtonExit" }));
+    await page.waitForFunction(() =>
+      window.ZeroHRuntime?.closing === true || window.ZeroHRuntime?.closed === true, null, {
+      timeout: 30000,
+      polling: 100,
+    });
     const relaunchExit = await page.evaluate(() => window.ZeroHRuntime.exit());
-    summary.cleanExit.relaunch = { state: relaunchState, exit: relaunchExit };
+    summary.cleanExit.relaunch = {
+      state: relaunchState,
+      originalExitClick,
+      exit: relaunchExit,
+    };
     checks.push([
-      "desktop shortcut transparently relaunches and cleanly closes a fresh runtime",
+      "desktop shortcut relaunches and the original Exit button cleanly closes the fresh runtime",
       relaunchState.started === true
         && relaunchState.closed === false
         && JSON.stringify(relaunchState.saveBytes) === JSON.stringify([0x53, 0x41, 0x56, 0x45, 0x21])
+        && originalExitClick?.ok === true
+        && originalExitClick?.result?.clicked === true
         && relaunchExit?.ok === true
         && relaunchExit?.result?.engine?.workerTerminated === true
         && relaunchExit?.result?.engine?.pendingCommands === 0
