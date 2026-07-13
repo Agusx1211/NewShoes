@@ -170,9 +170,23 @@ async function sampleViewportGrid(page) {
     if (!(canvas instanceof HTMLCanvasElement)) {
       return { ok: false, error: "viewport canvas is missing" };
     }
-    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+    let gl = null;
+    try {
+      gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+    } catch {
+      // Threaded builds transfer this canvas to the engine worker. The
+      // placeholder remains drawable, but requesting its context is invalid.
+    }
+    let snapshot = null;
     if (gl == null) {
-      return { ok: false, error: "viewport WebGL context is missing" };
+      const scratch = document.createElement("canvas");
+      scratch.width = canvas.width;
+      scratch.height = canvas.height;
+      snapshot = scratch.getContext("2d", { willReadFrequently: true });
+      snapshot?.drawImage(canvas, 0, 0);
+    }
+    if (gl == null && snapshot == null) {
+      return { ok: false, error: "viewport pixels are unavailable" };
     }
 
     const samplePoints = [
@@ -194,7 +208,11 @@ async function sampleViewportGrid(page) {
     for (const point of samplePoints) {
       const x = Math.max(0, Math.min(canvas.width - 1, Math.floor(point.x * canvas.width)));
       const y = Math.max(0, Math.min(canvas.height - 1, Math.floor(point.y * canvas.height)));
-      gl.readPixels(x, canvas.height - y - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+      if (gl != null) {
+        gl.readPixels(x, canvas.height - y - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+      } else {
+        pixel.set(snapshot.getImageData(x, y, 1, 1).data);
+      }
       pixels[point.name] = Array.from(pixel);
     }
 
@@ -207,6 +225,7 @@ async function sampleViewportGrid(page) {
       ok: true,
       width: canvas.width,
       height: canvas.height,
+      source: gl != null ? "webgl" : "threaded-placeholder",
       sampleCount: samplePoints.length,
       visibleSampleCount: visible.length,
       uniqueColorCount: new Set(colors).size,
