@@ -17,7 +17,7 @@ const parsed = parseChangelog([
   "# Changelog",
   "",
   "## [Unreleased]",
-  "- Keep small changes visible ([PR #7](https://github.com/Agusx1211/NewShoes/pull/7)).",
+  "- Keep `small` changes visible ([PR #7](https://github.com/Agusx1211/NewShoes/pull/7)).",
   "",
   "## [0.1.0] - 2026-07-13",
   "- Ship the first version ([PR #6](https://github.com/Agusx1211/NewShoes/pull/6)).",

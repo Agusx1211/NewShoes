@@ -35,7 +35,7 @@ function parseEntry(line, lineNumber) {
   if (!prefix.endsWith("(") || !/^(?:\s*,\s*)*\)\.?$/.test(suffix)) {
     throw new Error(`CHANGELOG.md:${lineNumber}: PR links must end the entry in parentheses`);
   }
-  const text = prefix.slice(0, -1).trim();
+  const text = prefix.slice(0, -1).trim().replace(/`([^`]+)`/g, "$1");
   if (!text) {
     throw new Error(`CHANGELOG.md:${lineNumber}: entry text is empty`);
   }
