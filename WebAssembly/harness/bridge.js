@@ -897,6 +897,18 @@ function threadedWorkerDiagLevel() {
   }
 }
 
+function threadedWorkerPerfCounters() {
+  try {
+    const value = new URLSearchParams(globalThis.location?.search || "")
+      .get("perfCounters");
+    if (value === "1" || value === "true") return true;
+    if (value === "0" || value === "false") return false;
+  } catch (_error) {
+    // The worker follows its diagnostics level when no override is available.
+  }
+  return null;
+}
+
 function threadedWorkerShaderTier() {
   // The executor samples the shader tier once at device create via
   // d3d8ShaderTierQuery (URL ?shaderTier= param, then localStorage
@@ -1194,6 +1206,7 @@ function createThreadedEngineController() {
         canvas: offscreen,
         options: {
           diagLevel: threadedWorkerDiagLevel(),
+          perfCounters: threadedWorkerPerfCounters(),
           preserveDrawingBuffer: contextPreserveDrawingBuffer,
           shaderTier: threadedWorkerShaderTier(),
           udpBridge: threadedUdpBridge,
