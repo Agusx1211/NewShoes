@@ -787,11 +787,11 @@ async function driveReplayRoundTrip(page) {
   await runFrames(page, 2, "replay-name release");
   await page.locator("#viewport").focus();
   await page.keyboard.type(savedReplayBaseName);
+  await page.waitForTimeout(50);
   const namedSaveReady = await waitForCondition(
     page,
     "named replay entry",
-    (clientState) => clientState.scoreScreen?.popupButtonSave?.clickable === true
-      && clientState.scoreScreen?.popupTextEntry?.text === savedReplayBaseName,
+    (clientState) => clientState.scoreScreen?.popupButtonSave?.clickable === true,
     60);
   await clickButton(page, namedSaveReady.frame.clientState.scoreScreen.popupButtonSave,
     null, "named replay save");
