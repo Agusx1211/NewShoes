@@ -1,3 +1,84 @@
+export const BINK_VIDEO_MANIFEST_URL = new URL(
+  "../artifacts/browser-video/bink/bink-browser-video-manifest.json",
+  import.meta.url,
+).href;
+
+const HOSTED_VIDEO_UNAVAILABLE_REASON =
+  "Original-video playback is unavailable in this hosted build because browser-compatible movie copies are not packaged with it.";
+
+function manifestPolicy() {
+  return globalThis.document?.documentElement?.dataset?.binkVideoSidecars ?? "auto";
+}
+
+function validateBinkVideoManifest(manifest) {
+  if (manifest?.ok !== true || !Array.isArray(manifest.payloads) || manifest.payloads.length === 0) {
+    throw new Error("Bink video manifest is incomplete");
+  }
+  for (const payload of manifest.payloads) {
+    const sourceFile = String(payload?.sourceFile ?? "");
+    const outputFile = String(payload?.outputFile ?? "");
+    if (!/^[A-Za-z0-9_.-]+\.bik$/i.test(sourceFile)
+        || !/^[A-Za-z0-9_.-]+\.webm$/i.test(outputFile)
+        || !(Number(payload?.frames) > 0)
+        || !(Number(payload?.width) > 0)
+        || !(Number(payload?.height) > 0)
+        || !(Number(payload?.outputDurationSeconds) > 0)) {
+      throw new Error(`Bink video manifest contains an invalid payload for ${sourceFile || "an unnamed movie"}`);
+    }
+  }
+  return manifest;
+}
+
+export async function loadBinkVideoManifest({
+  policy = manifestPolicy(),
+  url = BINK_VIDEO_MANIFEST_URL,
+  fetchImpl = globalThis.fetch?.bind(globalThis),
+} = {}) {
+  if (policy === "unavailable") {
+    throw new Error(HOSTED_VIDEO_UNAVAILABLE_REASON);
+  }
+  if (policy !== "auto") {
+    throw new Error(`Unknown Bink video sidecar policy: ${policy}`);
+  }
+  if (typeof fetchImpl !== "function") {
+    throw new Error("Bink video manifest cannot be loaded because fetch is unavailable");
+  }
+  let response;
+  try {
+    response = await fetchImpl(url, { cache: "no-store" });
+  } catch (error) {
+    throw new Error(`Bink video manifest request failed: ${error?.message ?? String(error)}`);
+  }
+  if (!response?.ok) {
+    throw new Error(`Bink video manifest fetch failed (${response?.status ?? "unknown"})`);
+  }
+  const contentType = response.headers?.get?.("content-type") ?? "unknown content type";
+  let manifest;
+  try {
+    manifest = JSON.parse(await response.text());
+  } catch {
+    throw new Error(`Bink video manifest response is not JSON (${contentType})`);
+  }
+  return validateBinkVideoManifest(manifest);
+}
+
+export async function probeBinkVideoSupport(options = {}) {
+  try {
+    const manifest = await loadBinkVideoManifest(options);
+    return {
+      available: true,
+      payloadCount: manifest.payloads.length,
+      reason: null,
+    };
+  } catch (error) {
+    return {
+      available: false,
+      payloadCount: 0,
+      reason: error?.message ?? String(error),
+    };
+  }
+}
+
 function resolveVideoUrl(videoPath) {
   const normalized = String(videoPath ?? "").replace(/^\/+/, "");
   return new URL(`../${normalized}`, import.meta.url).href;

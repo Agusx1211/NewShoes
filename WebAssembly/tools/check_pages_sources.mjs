@@ -15,6 +15,7 @@ const scripts = [
   "harness/analytics_unit.mjs",
   "harness/analytics_browser_smoke.mjs",
   "harness/bink_runtime.mjs",
+  "harness/bink_video_capability_unit.mjs",
   "harness/bridge.js",
   "harness/camera-zoom-config.mjs",
   "harness/camera_zoom_browser_smoke.mjs",

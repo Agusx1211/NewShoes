@@ -1,5 +1,9 @@
 import { createD3D8Executor } from "./d3d8_executor.mjs";
-import { createBinkVideoRuntime } from "./bink_runtime.mjs";
+import {
+  BINK_VIDEO_MANIFEST_URL,
+  createBinkVideoRuntime,
+  loadBinkVideoManifest,
+} from "./bink_runtime.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
 import { createSavePersistenceCoordinator } from "./save-persistence-coordinator.mjs";
@@ -10705,18 +10709,8 @@ async function registerOpfsInterceptPrefix(prefix) {
   return { ok: true };
 }
 
-const BINK_MANIFEST_URL = new URL(
-  "../artifacts/browser-video/bink/bink-browser-video-manifest.json",
-  import.meta.url,
-).href;
-
 async function binkRuntimeFiles() {
-  const response = await fetch(BINK_MANIFEST_URL, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Bink video manifest fetch failed (${response.status})`);
-  const manifest = await response.json();
-  if (manifest?.ok !== true || !Array.isArray(manifest.payloads) || manifest.payloads.length === 0) {
-    throw new Error("Bink video manifest is incomplete");
-  }
+  const manifest = await loadBinkVideoManifest();
   const files = manifest.payloads.map((payload) => {
     const sourceFile = String(payload?.sourceFile ?? "");
     if (!/^[A-Za-z0-9_.-]+\.bik$/i.test(sourceFile)) {
@@ -10741,7 +10735,7 @@ async function binkRuntimeFiles() {
   }
   files.push({
     name: "bink-browser-video-manifest.json",
-    url: BINK_MANIFEST_URL,
+    url: BINK_VIDEO_MANIFEST_URL,
     enginePath: "artifacts/browser-video/bink/bink-browser-video-manifest.json",
   });
   return { files, manifest };
@@ -10750,7 +10744,20 @@ async function binkRuntimeFiles() {
 async function stageBinkRuntimeFiles(
   wasmModule, namespace, baseDirectory, stageMap, preparedVideos = [],
 ) {
-  const runtime = await binkRuntimeFiles();
+  let runtime;
+  try {
+    runtime = await binkRuntimeFiles();
+  } catch (error) {
+    const reason = error?.message ?? String(error);
+    harnessState.binkVideoAssets = {
+      ready: false,
+      unavailable: true,
+      reason,
+      files: [],
+    };
+    recordLog("Bink runtime files unavailable; continuing without optional movies", { reason });
+    return [];
+  }
   const files = [];
   const stagedSources = new Map();
   const preparedByName = new Map(preparedVideos.map((video) =>
