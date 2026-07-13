@@ -173,6 +173,32 @@
   font-size: 9px;
 }
 
+.game-difficulty {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 5px;
+  color: #555;
+  font-size: 8px;
+}
+
+.game-difficulty select {
+  max-width: 126px;
+  height: 21px;
+  color: #222;
+  border: 1px solid #7f9db9;
+  background: #fff;
+  font-size: 8px;
+}
+
+.xp-game-menu .game-sound-toggle {
+  width: 25px;
+  min-height: 21px;
+  margin-left: 3px;
+  padding: 0;
+  font-size: 12px;
+}
+
 .xp-game-menu button:hover {
   border-color: #9d9a8e;
   background: #f7f4e9;
@@ -193,7 +219,8 @@
   flex: 1;
   min-height: 0;
   position: relative;
-  overflow: auto;
+  overflow: hidden;
+  container-type: size;
   background: #183f34;
 }
 
@@ -217,12 +244,12 @@
 }
 
 .internet-ops {
-  min-height: 72px;
+  min-height: 66px;
   display: grid;
   grid-template-columns: minmax(250px, 1fr) auto;
   grid-template-rows: auto auto;
   gap: 4px 10px;
-  padding: 7px 9px;
+  padding: 5px 9px;
   color: #d8e5e2;
   border-bottom: 1px solid #071815;
   background: linear-gradient(#203b38, #132a28);
@@ -283,7 +310,8 @@
 .internet-ops p[data-kind="warning"] { color: #edb35e; }
 
 .card-table {
-  min-width: 650px;
+  width: 100%;
+  min-width: 0;
   min-height: 100%;
   padding: 14px;
   color: #e9f1ea;
@@ -311,7 +339,28 @@
   box-shadow: 1px 2px 3px rgba(0, 0, 0, .42), inset 0 0 0 2px #fff;
   overflow: hidden;
   font-family: Georgia, serif;
+  transition: transform .13s ease, filter .13s ease, box-shadow .13s ease;
 }
+
+.war-card.is-draggable { cursor: grab; touch-action: none; }
+.war-card.is-draggable:active { cursor: grabbing; }
+.is-card-dragging .war-card.is-draggable:not(.card-drag-ghost) { filter: brightness(.82); }
+
+.card-drag-ghost {
+  position: fixed !important;
+  z-index: 100000 !important;
+  left: 0;
+  top: 0;
+  margin: 0 !important;
+  pointer-events: none;
+  opacity: .92;
+  transform: translate(-50%, -55%) rotate(4deg) scale(1.05) !important;
+  filter: drop-shadow(7px 10px 8px rgba(0, 0, 0, .38));
+}
+
+.card-drop-target { transition: background-color .12s, box-shadow .12s, outline-color .12s; }
+.card-drop-target.is-drop-active { outline: 2px dashed rgba(255, 222, 101, .66); outline-offset: -3px; }
+.card-drop-target.is-drop-hover { outline: 3px solid #ffd360; outline-offset: -4px; background-color: rgba(255, 218, 86, .14) !important; box-shadow: inset 0 0 18px rgba(255, 221, 104, .32); }
 
 .war-card > strong {
   position: absolute;
@@ -430,8 +479,8 @@
 .mine-grid {
   width: max-content;
   display: grid;
-  grid-template-columns: repeat(9, 35px);
-  grid-template-rows: repeat(9, 35px);
+  grid-template-columns: repeat(var(--mine-columns, 9), var(--mine-cell-size, 35px));
+  grid-template-rows: repeat(var(--mine-rows, 9), var(--mine-cell-size, 35px));
   margin: 0 auto 16px;
   padding: 7px;
   border: 3px solid;
@@ -440,8 +489,8 @@
 }
 
 .mine-cell {
-  width: 35px;
-  height: 35px;
+  width: var(--mine-cell-size, 35px);
+  height: var(--mine-cell-size, 35px);
   display: grid;
   place-items: center;
   padding: 0;
@@ -453,6 +502,7 @@
 }
 
 .mine-cell.is-revealed { border: 1px solid #89938f; background: #d7dcd8; }
+.mine-cell.is-revealed { animation: mine-reveal .16s ease-out; }
 .mine-cell.is-flagged { color: #c8402a; }
 .mine-cell.is-mine { color: #171c1e; background: #db684b; }
 .mine-cell.n1 { color: #1558b0; }.mine-cell.n2 { color: #2c813c; }.mine-cell.n3 { color: #bd3c2b; }.mine-cell.n4 { color: #55338c; }
@@ -479,11 +529,11 @@
 
 .checkers-board,
 .reversi-board {
-  width: min(456px, calc(100% - 32px));
+  width: min(456px, calc(100cqw - 28px), calc(100cqh - 58px));
   aspect-ratio: 1;
   display: grid;
   grid-template-columns: repeat(8, 1fr);
-  margin: 15px auto;
+  margin: 8px auto;
   border: 7px solid #6c4932;
   box-shadow: 0 4px 11px rgba(0, 0, 0, .42), inset 0 0 0 1px #e7cc8f;
 }
@@ -520,13 +570,13 @@
 .reversi-board { border-color: #263b31; background: #244f3b; }
 .reversi-square { border: 1px solid #193a2b; background: #39835d; }
 .reversi-square.is-legal::after { content: ""; width: 18%; height: 18%; border-radius: 50%; background: #e8cb58; }
-.reversi-square span { width: 76%; height: 76%; border-radius: 50%; box-shadow: inset -5px -6px 7px rgba(0, 0, 0, .2), 1px 3px 3px rgba(0, 0, 0, .45); }
+.reversi-square span { width: 76%; height: 76%; border-radius: 50%; box-shadow: inset -5px -6px 7px rgba(0, 0, 0, .2), 1px 3px 3px rgba(0, 0, 0, .45); transform-style: preserve-3d; }
 .reversi-square span.is-black { background: #202a2a; border: 2px solid #0d1212; }
 .reversi-square span.is-white { background: #f3efdc; border: 2px solid #b6ae92; }
 
 .backgammon-command > div { display: flex; gap: 4px; }
 .backgammon-command i { width: 26px; height: 26px; display: grid; place-items: center; color: #222; border-radius: 4px; background: #f4edcf; box-shadow: inset -2px -2px #a3997e; font: bold 13px Arial, sans-serif; }
-.backgammon-board { min-width: 690px; min-height: 485px; position: relative; display: grid; grid-template-columns: 1fr 58px; grid-template-rows: 1fr 1fr; padding: 12px 80px 12px 12px; background: #8d5d35; }
+.backgammon-board { width: 100%; height: calc(100cqh - 42px); min-width: 0; min-height: 0; position: relative; display: grid; grid-template-columns: 1fr 58px; grid-template-rows: 1fr 1fr; padding: 9px 76px 9px 9px; background: #8d5d35; }
 .bg-half { grid-column: 1 / 2; display: grid; grid-template-columns: repeat(12, 1fr); background: #d5b276; border: 4px solid #4d3427; }
 .bg-top { grid-row: 1; }
 .bg-bottom { grid-row: 2; }
@@ -554,12 +604,12 @@
 .trick-score span { min-width: 85px; color: #aabbb3; text-align: center; }
 .trick-score span.is-local { color: #f1cc70; }
 .trick-score b { margin-left: 4px; font-size: 13px; }
-.trick-table { min-width: 650px; min-height: 455px; position: relative; padding: 8px 16px 105px; background: radial-gradient(ellipse at center, #28604c, #143d30 75%); overflow: hidden; }
+.trick-table { width: 100%; height: calc(100cqh - 42px); min-width: 0; min-height: 0; position: relative; padding: 8px 16px 96px; background: radial-gradient(ellipse at center, #28604c, #143d30 75%); overflow: hidden; }
 .trick-opponents { position: absolute; inset: 7px 12px auto; min-height: 70px; }
 .trick-opponent { position: absolute; min-width: 115px; display: grid; gap: 2px; padding: 6px 9px; color: #dae7df; border: 1px solid #607d70; background: rgba(9, 30, 24, .76); font-size: 8px; text-align: center; }
 .trick-opponent span, .trick-opponent small { color: #8fa79c; font-size: 7px; }
 .trick-opponent.seat-1 { left: 0; top: 55px; }.trick-opponent.seat-2 { left: 50%; transform: translateX(-50%); top: 0; }.trick-opponent.seat-3 { right: 0; top: 55px; }
-.trick-center { width: 250px; height: 195px; position: relative; margin: 70px auto 0; }
+.trick-center { width: 250px; height: min(195px, 43cqh); position: relative; margin: min(70px, 13cqh) auto 0; }
 .trick-center .war-card { position: absolute; }
 .trick-center .trick-seat-0 { left: 96px; bottom: 0; }.trick-center .trick-seat-1 { left: 20px; top: 53px; transform: rotate(90deg); }.trick-center .trick-seat-2 { left: 96px; top: 0; transform: rotate(180deg); }.trick-center .trick-seat-3 { right: 20px; top: 53px; transform: rotate(-90deg); }
 .trick-orders { min-height: 34px; position: absolute; left: 0; right: 0; bottom: 91px; display: flex; align-items: center; justify-content: center; gap: 8px; color: #dce8e0; background: rgba(8, 27, 21, .74); font-size: 8px; }
@@ -569,6 +619,12 @@
 .trick-hand .war-card:first-child { margin-left: 0; }
 .trick-hand .war-card:hover:not(:disabled), .trick-hand .war-card.is-selected { transform: translateY(-13px); z-index: 30; }
 
+@keyframes mine-reveal {
+  0% { transform: scale(.7) rotate(-3deg); filter: brightness(1.35); }
+  70% { transform: scale(1.08); }
+  100% { transform: scale(1); filter: none; }
+}
+
 @media (max-width: 760px) {
   .games-folder-body { grid-template-columns: 135px 1fr; }
   .games-folder-grid { grid-template-columns: repeat(2, minmax(100px, 1fr)); padding: 10px; }
@@ -577,7 +633,11 @@
   .internet-actions { grid-row: 2; }
   .internet-ops p { grid-row: 3; }
   .xp-game-status span:last-child, .xp-game-menu > span { display: none; }
-  .card-table { min-width: 620px; }
-  .mine-grid { grid-template-columns: repeat(9, 31px); grid-template-rows: repeat(9, 31px); }
-  .mine-cell { width: 31px; height: 31px; }
+  .game-difficulty { margin-left: 1px; }
+  .game-difficulty > span { display: none; }
+  .card-table { min-width: 600px; overflow: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .war-card, .checker-piece, .reversi-square span, .bg-checker-stack i, .mine-cell { animation: none !important; transition: none !important; }
 }

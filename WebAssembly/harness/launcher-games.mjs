@@ -6,6 +6,161 @@ const GAME_PORT = 47471;
 const CARD_BACK_PATH = "./assets/games/card-back-war.webp";
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const DIFFICULTIES = Object.freeze(["easy", "normal", "hard"]);
+
+const soundState = { enabled: true, context: null };
+try { soundState.enabled = window.localStorage.getItem("cnc-xp-games-sound") !== "off"; } catch { /* storage is optional */ }
+
+const SOUND_RECIPES = Object.freeze({
+  deal: [[420, 0, .035], [520, .045, .035], [660, .09, .045]],
+  move: [[310, 0, .045], [410, .035, .05]],
+  flip: [[560, 0, .035], [760, .03, .035]],
+  capture: [[180, 0, .07], [120, .045, .09]],
+  flag: [[690, 0, .045]],
+  blast: [[95, 0, .18], [65, .03, .22]],
+  error: [[170, 0, .08], [145, .09, .1]],
+  connect: [[330, 0, .05], [440, .06, .05], [660, .12, .09]],
+  disconnect: [[440, 0, .06], [250, .07, .11]],
+  win: [[392, 0, .08], [523, .09, .08], [659, .18, .08], [784, .27, .16]],
+});
+
+function playGameSound(name) {
+  if (!soundState.enabled || !SOUND_RECIPES[name]) return;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return;
+  soundState.context ||= new AudioContextClass();
+  void soundState.context.resume();
+  const start = soundState.context.currentTime + .005;
+  for (const [frequency, offset, duration] of SOUND_RECIPES[name]) {
+    const oscillator = soundState.context.createOscillator();
+    const gain = soundState.context.createGain();
+    oscillator.type = name === "blast" ? "sawtooth" : name === "capture" ? "square" : "triangle";
+    oscillator.frequency.setValueAtTime(frequency, start + offset);
+    gain.gain.setValueAtTime(name === "blast" ? .055 : .035, start + offset);
+    gain.gain.exponentialRampToValueAtTime(.0001, start + offset + duration);
+    oscillator.connect(gain).connect(soundState.context.destination);
+    oscillator.start(start + offset);
+    oscillator.stop(start + offset + duration);
+  }
+}
+
+function updateSoundButtons() {
+  document.querySelectorAll("[data-game-sound]").forEach((button) => {
+    button.textContent = soundState.enabled ? "🔊" : "🔇";
+    button.title = soundState.enabled ? "Mute game sounds" : "Enable game sounds";
+    button.setAttribute("aria-label", button.title);
+    button.setAttribute("aria-pressed", String(soundState.enabled));
+  });
+}
+
+function difficultyValue(root) {
+  const value = root.querySelector("[data-game-difficulty]")?.value;
+  return DIFFICULTIES.includes(value) ? value : "normal";
+}
+
+function difficultyOptions(spec) {
+  const labels = spec.kind === "minesweeper"
+    ? ["Beginner", "Intermediate", "Expert"]
+    : spec.kind === "spider"
+      ? ["1 suit", "2 suits", "4 suits"]
+      : spec.kind === "solitaire"
+        ? ["Draw 1", "Draw 3", "Draw 3 · one redeal"]
+        : ["Recruit", "Regular", "Veteran"];
+  return DIFFICULTIES.map((value, index) => `<option value="${value}"${value === "normal" ? " selected" : ""}>${labels[index]}</option>`).join("");
+}
+
+function captureMotion(root) {
+  return new Map([...root.querySelectorAll("[data-motion-key]")].map((node) => [node.dataset.motionKey, node.getBoundingClientRect()]));
+}
+
+function playMotion(root, before, { fresh = false } = {}) {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  requestAnimationFrame(() => {
+    let freshIndex = 0;
+    for (const node of root.querySelectorAll("[data-motion-key]")) {
+      const previous = before?.get(node.dataset.motionKey);
+      const current = node.getBoundingClientRect();
+      if (previous) {
+        const x = previous.left - current.left;
+        const y = previous.top - current.top;
+        if (Math.abs(x) > 1 || Math.abs(y) > 1) node.animate([
+          { transform: `translate(${x}px, ${y}px) rotate(${Math.max(-5, Math.min(5, x / 28))}deg)`, zIndex: 200 },
+          { transform: "translate(0, 0) rotate(0deg)", zIndex: 200 },
+        ], { duration: 230, easing: "cubic-bezier(.2,.8,.2,1)" });
+      } else if (fresh) {
+        node.animate([
+          { opacity: 0, transform: "translateY(-18px) rotate(-3deg) scale(.94)" },
+          { opacity: 1, transform: "translateY(0) rotate(0deg) scale(1)" },
+        ], { duration: 190, delay: Math.min(freshIndex++ * 12, 240), fill: "backwards", easing: "ease-out" });
+      }
+    }
+  });
+}
+
+function installPointerDrag(node, { root, payload, dropSelector, onDrop }) {
+  if (node.disabled) return;
+  node.classList.add("is-draggable");
+  let start = null;
+  let ghost = null;
+  let hover = null;
+  let dragged = false;
+  let suppressClick = false;
+
+  const clear = () => {
+    root.classList.remove("is-card-dragging");
+    root.querySelectorAll(`${dropSelector}.is-drop-active, ${dropSelector}.is-drop-hover`).forEach((target) => target.classList.remove("is-drop-active", "is-drop-hover"));
+    ghost?.remove();
+    ghost = null;
+    hover = null;
+    start = null;
+  };
+
+  node.addEventListener("click", (event) => {
+    if (!suppressClick) return;
+    suppressClick = false;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+
+  node.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    start = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+    node.setPointerCapture(event.pointerId);
+  });
+  node.addEventListener("pointermove", (event) => {
+    if (!start || start.pointerId !== event.pointerId) return;
+    if (!dragged && Math.hypot(event.clientX - start.x, event.clientY - start.y) < 6) return;
+    if (!dragged) {
+      dragged = true;
+      suppressClick = true;
+      ghost = node.cloneNode(true);
+      ghost.className = `${node.className} card-drag-ghost`;
+      ghost.removeAttribute("data-motion-key");
+      document.body.append(ghost);
+      root.classList.add("is-card-dragging");
+      root.querySelectorAll(dropSelector).forEach((target) => target.classList.add("is-drop-active"));
+      playGameSound("flip");
+    }
+    ghost.style.left = `${event.clientX}px`;
+    ghost.style.top = `${event.clientY}px`;
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(dropSelector);
+    if (hover !== target) {
+      hover?.classList.remove("is-drop-hover");
+      hover = target && root.contains(target) ? target : null;
+      hover?.classList.add("is-drop-hover");
+    }
+  });
+  const finish = (event) => {
+    if (!start || start.pointerId !== event.pointerId) return;
+    const target = hover;
+    const wasDragged = dragged;
+    dragged = false;
+    clear();
+    if (wasDragged && target) onDrop(target, payload);
+  };
+  node.addEventListener("pointerup", finish);
+  node.addEventListener("pointercancel", (event) => { dragged = false; finish(event); });
+}
 
 const GAME_SPECS = Object.freeze([
   { id: "solitaire", title: "Solitaire: Supply Drop", folderTitle: "Solitaire", subtitle: "Sort the requisitions before command notices.", icon: "#i-solitaire", kind: "solitaire" },
@@ -68,7 +223,7 @@ function gameWindow(spec, index) {
   return `<article id="${spec.id}Window" class="window xp-game-window" data-app="${spec.id}" style="--x: ${51 + (index % 4)}%; --y: ${43 + (index % 3)}%; --w: ${width}px; --h: ${height}px;" aria-label="${spec.title}">
     <header class="titlebar"><div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="${spec.icon}"/></svg></span><span>${spec.title}</span></div><div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div></header>
     <div class="xp-game-shell" data-game-root="${spec.id}">
-      <nav class="xp-game-menu"><button type="button" data-game-new><u>G</u>ame</button><button type="button" data-game-help><u>H</u>elp</button><span>${spec.subtitle}</span></nav>
+      <nav class="xp-game-menu"><button type="button" data-game-new><u>G</u>ame</button><button type="button" data-game-help><u>H</u>elp</button><label class="game-difficulty"><span>Difficulty</span><select data-game-difficulty>${difficultyOptions(spec)}</select></label><button type="button" class="game-sound-toggle" data-game-sound></button><span>${spec.subtitle}</span></nav>
       ${network}
       <div class="xp-game-board" data-game-board aria-label="${spec.folderTitle} game board"></div>
       <footer class="xp-game-status"><span data-game-status>Ready for orders.</span><span>${spec.internet ? "Trystero/Nostr + direct WebRTC" : "Local browser game"}</span></footer>
@@ -100,6 +255,7 @@ function createCardElement(card, { hidden = false, selected = false, disabled = 
   button.type = "button";
   button.className = `war-card${hidden || !card?.faceUp ? " is-back" : ""}${selected ? " is-selected" : ""}${isRed(card) ? " is-red" : ""}`;
   button.disabled = disabled;
+  if (card?.id) button.dataset.motionKey = `card:${card.id}`;
   if (hidden || !card?.faceUp) {
     button.style.setProperty("--card-back", `url(${JSON.stringify(CARD_BACK_PATH)})`);
     button.setAttribute("aria-label", label || "Face-down card");
@@ -125,28 +281,41 @@ function titlebarHelp(root, message) {
 }
 
 injectGameWindows();
+document.querySelectorAll("[data-game-sound]").forEach((button) => button.addEventListener("click", () => {
+  soundState.enabled = !soundState.enabled;
+  try { window.localStorage.setItem("cnc-xp-games-sound", soundState.enabled ? "on" : "off"); } catch { /* storage is optional */ }
+  updateSoundButtons();
+  if (soundState.enabled) playGameSound("connect");
+}));
+updateSoundButtons();
 
 function createMinesweeper(root) {
   const board = root.querySelector("[data-game-board]");
   board.innerHTML = `<div class="mine-command"><span>MINES <b data-mine-count>010</b></span><button type="button" data-mine-reset aria-label="Reset minefield">🙂</button><span>TIME <b data-mine-time>000</b></span></div><div class="mine-grid" data-mine-grid aria-label="Minefield"></div>`;
-  const size = 9;
-  const total = 10;
+  const configurations = {
+    easy: { rows: 9, columns: 9, total: 10, cellSize: 35 },
+    normal: { rows: 16, columns: 16, total: 40, cellSize: 22 },
+    hard: { rows: 16, columns: 30, total: 99, cellSize: 17 },
+  };
+  let rows;
+  let columns;
+  let total;
   let state;
 
   const neighbors = (cellIndex) => {
-    const row = Math.floor(cellIndex / size);
-    const column = cellIndex % size;
+    const row = Math.floor(cellIndex / columns);
+    const column = cellIndex % columns;
     const result = [];
     for (let y = -1; y <= 1; ++y) for (let x = -1; x <= 1; ++x) {
       const nextRow = row + y;
       const nextColumn = column + x;
-      if ((x || y) && nextRow >= 0 && nextRow < size && nextColumn >= 0 && nextColumn < size) result.push(nextRow * size + nextColumn);
+      if ((x || y) && nextRow >= 0 && nextRow < rows && nextColumn >= 0 && nextColumn < columns) result.push(nextRow * columns + nextColumn);
     }
     return result;
   };
 
   const placeMines = (safeIndex) => {
-    const choices = Array.from({ length: size * size }, (_, index) => index).filter((index) => index !== safeIndex);
+    const choices = Array.from({ length: rows * columns }, (_, index) => index).filter((index) => index !== safeIndex);
     for (let count = 0; count < total; ++count) {
       const pick = Math.floor(Math.random() * choices.length);
       state.cells[choices.splice(pick, 1)[0]].mine = true;
@@ -156,11 +325,15 @@ function createMinesweeper(root) {
 
   const render = () => {
     const grid = board.querySelector("[data-mine-grid]");
+    grid.style.setProperty("--mine-columns", String(columns));
+    grid.style.setProperty("--mine-rows", String(rows));
+    grid.style.setProperty("--mine-cell-size", `${configurations[state.difficulty].cellSize}px`);
     grid.replaceChildren();
     state.cells.forEach((cell, index) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `mine-cell${cell.revealed ? " is-revealed" : ""}${cell.flagged ? " is-flagged" : ""}${cell.revealed && cell.mine ? " is-mine" : ""}${cell.revealed && cell.nearby ? ` n${cell.nearby}` : ""}`;
+      button.dataset.motionKey = `mine:${index}`;
       button.textContent = cell.flagged ? "⚑" : cell.revealed && cell.mine ? "✹" : cell.revealed && cell.nearby ? String(cell.nearby) : "";
       button.setAttribute("aria-label", cell.flagged ? "Flagged sector" : !cell.revealed ? "Uncleared sector" : cell.mine ? "Mine" : `${cell.nearby} adjacent mines`);
       button.addEventListener("click", () => reveal(index));
@@ -179,6 +352,7 @@ function createMinesweeper(root) {
     clearInterval(state.timer);
     state.timer = null;
     if (!won) state.cells.forEach((cell) => { if (cell.mine) cell.revealed = true; });
+    playGameSound(won ? "win" : "blast");
     setStatus(root, won ? `Sector cleared in ${state.time} seconds.` : "Mine triggered. The paperwork survived.");
     showToast(won ? "Sector cleared" : "Mine triggered", won ? "Demining detail may stand down." : "Command has authorized one more attempt.", won ? "success" : "warning");
     render();
@@ -193,6 +367,7 @@ function createMinesweeper(root) {
       state.timer = setInterval(() => { state.time = Math.min(999, state.time + 1); render(); }, 1000);
     }
     if (chosen.mine) { chosen.revealed = true; finish(false); return; }
+    playGameSound("flip");
     const queue = [index];
     const visited = new Set();
     while (queue.length) {
@@ -204,7 +379,7 @@ function createMinesweeper(root) {
       cell.revealed = true;
       if (!cell.nearby) neighbors(current).forEach((neighbor) => queue.push(neighbor));
     }
-    if (state.cells.filter((cell) => cell.revealed && !cell.mine).length === size * size - total) finish(true);
+    if (state.cells.filter((cell) => cell.revealed && !cell.mine).length === rows * columns - total) finish(true);
     else render();
   };
 
@@ -212,18 +387,23 @@ function createMinesweeper(root) {
     const cell = state.cells[index];
     if (state.ended || cell.revealed) return;
     cell.flagged = !cell.flagged;
+    playGameSound("flag");
     render();
   };
 
-  const reset = () => {
+  const reset = (announce = false) => {
     clearInterval(state?.timer);
-    state = { cells: Array.from({ length: size * size }, () => ({ mine: false, nearby: 0, revealed: false, flagged: false })), started: false, ended: false, won: false, time: 0, timer: null };
-    setStatus(root, "Right-click to flag. First click is always safe.");
+    const difficulty = difficultyValue(root);
+    ({ rows, columns, total } = configurations[difficulty]);
+    state = { difficulty, rows, columns, total, cells: Array.from({ length: rows * columns }, () => ({ mine: false, nearby: 0, revealed: false, flagged: false })), started: false, ended: false, won: false, time: 0, timer: null };
+    setStatus(root, `${columns}×${rows} sector · ${total} mines · right-click to flag. First click is safe.`);
     render();
+    if (announce) playGameSound("deal");
   };
 
-  board.querySelector("[data-mine-reset]").addEventListener("click", reset);
-  root.querySelector("[data-game-new]").addEventListener("click", reset);
+  board.querySelector("[data-mine-reset]").addEventListener("click", () => reset(true));
+  root.querySelector("[data-game-new]").addEventListener("click", () => reset(true));
+  root.querySelector("[data-game-difficulty]").addEventListener("change", () => reset(true));
   titlebarHelp(root, "Clear every safe square. Right-click a suspected mine to plant a flag. The first sector you inspect is guaranteed safe.");
   reset();
   return { reset, snapshot: () => clone({ ...state, timer: null }), reveal };
@@ -248,10 +428,11 @@ function createSolitaire(root) {
     return state.tableau[selection.index].splice(selection.cardIndex);
   };
 
-  const afterMove = (selection) => {
+  const afterMove = (selection, motion) => {
+    let flipped = false;
     if (selection.zone === "tableau") {
       const column = state.tableau[selection.index];
-      if (column.length && !column.at(-1).faceUp) column.at(-1).faceUp = true;
+      if (column.length && !column.at(-1).faceUp) { column.at(-1).faceUp = true; flipped = true; }
     }
     state.moves += 1;
     state.selected = null;
@@ -259,8 +440,12 @@ function createSolitaire(root) {
       state.won = true;
       setStatus(root, `All supplies sorted in ${state.moves} moves. Command is suspicious.`);
       showToast("Supply drop secured", "Every requisition reached the correct depot.");
+      playGameSound("win");
+    } else {
+      playGameSound(flipped ? "flip" : "move");
     }
     render();
+    playMotion(board, motion);
   };
 
   const moveToFoundation = (foundationIndex) => {
@@ -272,9 +457,10 @@ function createSolitaire(root) {
     const foundationSuit = ["♠", "♥", "♦", "♣"][foundationIndex];
     if (card.suit !== foundationSuit || (pile.length === 0 && card.rank !== 1)
       || (pile.length && pile.at(-1).rank + 1 !== card.rank)) return false;
+    const motion = captureMotion(board);
     const selection = { ...state.selected };
     pile.push(...removeSelection());
-    afterMove(selection);
+    afterMove(selection, motion);
     return true;
   };
 
@@ -285,9 +471,10 @@ function createSolitaire(root) {
     const first = cards[0];
     if (!cards.length || !validDescendingAlternating(cards)) return false;
     if (column.length ? column.at(-1).rank !== first.rank + 1 || isRed(column.at(-1)) === isRed(first) : first.rank !== 13) return false;
+    const motion = captureMotion(board);
     const selection = { ...state.selected };
     column.push(...removeSelection());
-    afterMove(selection);
+    afterMove(selection, motion);
     return true;
   };
 
@@ -298,6 +485,16 @@ function createSolitaire(root) {
     render();
   };
 
+  const dropSelection = (target, selection) => {
+    state.selected = selection;
+    const moved = target.dataset.cardDrop === "foundation"
+      ? moveToFoundation(Number(target.dataset.foundationIndex))
+      : target.dataset.cardDrop === "tableau"
+        ? moveToTableau(Number(target.dataset.columnIndex))
+        : false;
+    if (!moved) { state.selected = null; playGameSound("error"); render(); }
+  };
+
   const render = () => {
     const stock = board.querySelector("[data-stock]");
     stock.replaceChildren();
@@ -306,16 +503,28 @@ function createSolitaire(root) {
     stockButton.classList.add("empty-card-target");
     stockButton.setAttribute("aria-label", state.stock.length ? `${state.stock.length} cards in stock` : "Recycle waste pile");
     stockButton.addEventListener("click", () => {
+      const motion = captureMotion(board);
       state.selected = null;
       if (state.stock.length) {
-        const card = state.stock.pop();
-        card.faceUp = true;
-        state.waste.push(card);
+        const drawCount = state.difficulty === "easy" ? 1 : 3;
+        for (let count = 0; count < drawCount && state.stock.length; ++count) {
+          const card = state.stock.pop();
+          card.faceUp = true;
+          state.waste.push(card);
+        }
       } else {
+        if (state.difficulty === "hard" && state.redeals >= 1) {
+          setStatus(root, "Veteran rules allow only one redeal. The remaining requisitions are final.");
+          playGameSound("error");
+          return;
+        }
         state.stock = state.waste.reverse().map((card) => ({ ...card, faceUp: false }));
         state.waste = [];
+        state.redeals += 1;
       }
+      playGameSound("deal");
       render();
+      playMotion(board, motion);
     });
     stock.append(stockButton);
 
@@ -326,6 +535,7 @@ function createSolitaire(root) {
       const button = createCardElement(card, { selected: state.selected?.zone === "waste" });
       button.addEventListener("click", () => { state.selected = state.selected?.zone === "waste" ? null : { zone: "waste", index: 0, cardIndex: null }; render(); });
       button.addEventListener("dblclick", () => autoFoundation("waste", 0));
+      installPointerDrag(button, { root, payload: { zone: "waste", index: 0, cardIndex: null }, dropSelector: ".card-drop-target", onDrop: dropSelection });
       waste.append(button);
     } else waste.innerHTML = `<span class="card-watermark">DROP</span>`;
 
@@ -333,7 +543,9 @@ function createSolitaire(root) {
     foundations.replaceChildren();
     state.foundations.forEach((pile, index) => {
       const slot = document.createElement("div");
-      slot.className = "card-slot foundation-slot";
+      slot.className = "card-slot foundation-slot card-drop-target";
+      slot.dataset.cardDrop = "foundation";
+      slot.dataset.foundationIndex = String(index);
       slot.innerHTML = `<span class="card-watermark">${["♠", "♥", "♦", "♣"][index]}</span>`;
       if (pile.length) {
         const button = createCardElement(pile.at(-1), { selected: state.selected?.zone === "foundation" && state.selected.index === index });
@@ -342,6 +554,7 @@ function createSolitaire(root) {
           state.selected = state.selected?.zone === "foundation" && state.selected.index === index ? null : { zone: "foundation", index, cardIndex: null };
           render();
         });
+        installPointerDrag(button, { root, payload: { zone: "foundation", index, cardIndex: null }, dropSelector: ".card-drop-target", onDrop: dropSelection });
         slot.append(button);
       } else slot.addEventListener("click", () => moveToFoundation(index));
       foundations.append(slot);
@@ -351,7 +564,9 @@ function createSolitaire(root) {
     tableau.replaceChildren();
     state.tableau.forEach((column, columnIndex) => {
       const pile = document.createElement("div");
-      pile.className = "card-column";
+      pile.className = "card-column card-drop-target";
+      pile.dataset.cardDrop = "tableau";
+      pile.dataset.columnIndex = String(columnIndex);
       pile.style.setProperty("--pile-size", String(Math.max(1, column.length)));
       if (!column.length) {
         const target = document.createElement("button");
@@ -373,14 +588,17 @@ function createSolitaire(root) {
           render();
         });
         button.addEventListener("dblclick", () => { if (cardIndex === column.length - 1 && card.faceUp) autoFoundation("tableau", columnIndex, cardIndex); });
+        if (card.faceUp && validDescendingAlternating(column.slice(cardIndex))) installPointerDrag(button, {
+          root, payload: { zone: "tableau", index: columnIndex, cardIndex }, dropSelector: ".card-drop-target", onDrop: dropSelection,
+        });
         pile.append(button);
       });
       tableau.append(pile);
     });
-    if (!state.won) setStatus(root, `${state.moves} moves · ${state.stock.length} cards await deployment.`);
+    if (!state.won) setStatus(root, `${state.moves} moves · ${state.stock.length} cards await deployment · ${state.difficulty === "easy" ? "draw 1" : "draw 3"}.`);
   };
 
-  const reset = () => {
+  const reset = (announce = false) => {
     const deck = shuffle(cardDeck()).map((card) => ({ ...card, faceUp: false }));
     const tableau = Array.from({ length: 7 }, () => []);
     for (let column = 0; column < 7; ++column) for (let row = 0; row <= column; ++row) {
@@ -388,12 +606,15 @@ function createSolitaire(root) {
       card.faceUp = row === column;
       tableau[column].push(card);
     }
-    state = { stock: deck, waste: [], foundations: [[], [], [], []], tableau, selected: null, moves: 0, won: false };
+    state = { difficulty: difficultyValue(root), stock: deck, waste: [], foundations: [[], [], [], []], tableau, selected: null, moves: 0, redeals: 0, won: false };
     render();
+    playMotion(board, null, { fresh: true });
+    if (announce) playGameSound("deal");
   };
 
-  root.querySelector("[data-game-new]").addEventListener("click", reset);
-  titlebarHelp(root, "Build alternating-color columns downward. Send Aces through Kings to the four supply depots. Only Kings may establish a new column.");
+  root.querySelector("[data-game-new]").addEventListener("click", () => reset(true));
+  root.querySelector("[data-game-difficulty]").addEventListener("change", () => reset(true));
+  titlebarHelp(root, "Drag cards or click a source and destination. Build alternating-color columns downward, send Aces through Kings to the supply depots, and use only Kings to establish a new column.");
   reset();
   return { reset, snapshot: () => clone(state) };
 }
@@ -407,6 +628,7 @@ function createSpider(root) {
     && (!offset || cards[offset - 1].rank === card.rank + 1 && cards[offset - 1].suit === card.suit));
 
   const completeRuns = () => {
+    const before = state.completed;
     for (const column of state.tableau) {
       let removed = true;
       while (removed && column.length >= 13) {
@@ -425,6 +647,7 @@ function createSpider(root) {
       setStatus(root, `Eight chains of command assembled in ${state.moves} moves.`);
       showToast("Web of command untangled", "All eight dossiers are in rank order. This will never happen at headquarters.");
     }
+    return state.completed - before;
   };
 
   const moveTo = (destination) => {
@@ -434,13 +657,17 @@ function createSpider(root) {
     const target = state.tableau[destination];
     if (destination === state.selected.column || !movableRun(source, state.selected.cardIndex)) return;
     if (target.length && target.at(-1).rank !== cards[0].rank + 1) return;
+    const motion = captureMotion(board);
     source.splice(state.selected.cardIndex);
     target.push(...cards);
     if (source.length) source.at(-1).faceUp = true;
     state.selected = null;
     state.moves += 1;
-    completeRuns();
+    const completed = completeRuns();
+    playGameSound(state.won ? "win" : completed ? "capture" : "move");
     render();
+    playMotion(board, motion);
+    return true;
   };
 
   const deal = () => {
@@ -448,8 +675,10 @@ function createSpider(root) {
     if (state.tableau.some((column) => !column.length)) {
       setStatus(root, "Fill every empty column before requesting more paperwork.");
       showToast("Deal denied", "Command refuses to deliver into an empty column.", "warning");
+      playGameSound("error");
       return;
     }
+    const motion = captureMotion(board);
     state.tableau.forEach((column) => {
       const card = state.stock.pop();
       card.faceUp = true;
@@ -457,8 +686,19 @@ function createSpider(root) {
     });
     state.moves += 1;
     state.selected = null;
-    completeRuns();
+    const completed = completeRuns();
+    playGameSound(state.won ? "win" : completed ? "capture" : "deal");
     render();
+    playMotion(board, motion);
+  };
+
+  const dropSelection = (target, selection) => {
+    state.selected = selection;
+    if (!moveTo(Number(target.dataset.columnIndex))) {
+      state.selected = null;
+      playGameSound("error");
+      render();
+    }
   };
 
   const render = () => {
@@ -482,7 +722,8 @@ function createSpider(root) {
     tableau.replaceChildren();
     state.tableau.forEach((column, columnIndex) => {
       const pile = document.createElement("div");
-      pile.className = "card-column";
+      pile.className = "card-column card-drop-target";
+      pile.dataset.columnIndex = String(columnIndex);
       if (!column.length) {
         const target = document.createElement("button");
         target.type = "button";
@@ -499,6 +740,9 @@ function createSpider(root) {
           state.selected = selected || !card.faceUp || !movableRun(column, cardIndex) ? null : { column: columnIndex, cardIndex };
           render();
         });
+        if (card.faceUp && movableRun(column, cardIndex)) installPointerDrag(button, {
+          root, payload: { column: columnIndex, cardIndex }, dropSelector: ".card-drop-target", onDrop: dropSelection,
+        });
         pile.append(button);
       });
       tableau.append(pile);
@@ -506,8 +750,11 @@ function createSpider(root) {
     if (!state.won) setStatus(root, `${state.moves} moves · ${state.completed}/8 complete chains · ${state.stock.length / 10} reserve deals.`);
   };
 
-  const reset = () => {
-    const deck = shuffle(cardDeck(8, ["♠"])).map((card) => ({ ...card, faceUp: false }));
+  const reset = (announce = false) => {
+    const difficulty = difficultyValue(root);
+    const deck = shuffle(difficulty === "easy" ? cardDeck(8, ["♠"])
+      : difficulty === "normal" ? cardDeck(4, ["♠", "♥"])
+        : cardDeck(2)).map((card) => ({ ...card, faceUp: false }));
     const tableau = Array.from({ length: 10 }, () => []);
     for (let row = 0; row < 6; ++row) for (let column = 0; column < 10; ++column) {
       if (row === 5 && column >= 4) continue;
@@ -515,13 +762,16 @@ function createSpider(root) {
       card.faceUp = row === (column < 4 ? 5 : 4);
       tableau[column].push(card);
     }
-    state = { stock: deck, tableau, selected: null, completed: 0, moves: 0, won: false };
+    state = { difficulty, stock: deck, tableau, selected: null, completed: 0, moves: 0, won: false };
     render();
+    playMotion(board, null, { fresh: true });
+    if (announce) playGameSound("deal");
   };
 
   board.querySelector("[data-spider-deal]").addEventListener("click", deal);
-  root.querySelector("[data-game-new]").addEventListener("click", reset);
-  titlebarHelp(root, "Build downward runs. A full King-to-Ace chain is extracted automatically. This one-suit briefing uses the original Spider deal and eight completed runs.");
+  root.querySelector("[data-game-new]").addEventListener("click", () => reset(true));
+  root.querySelector("[data-game-difficulty]").addEventListener("change", () => reset(true));
+  titlebarHelp(root, "Drag complete descending runs between columns. A same-suit King-to-Ace chain is extracted automatically; difficulty selects one, two, or four suits.");
   reset();
   return { reset, snapshot: () => clone(state) };
 }
@@ -549,15 +799,19 @@ function createFreeCell(root) {
     return state.cascades[selection.index].splice(selection.cardIndex);
   };
 
-  const finishMove = () => {
+  const finishMove = (motion) => {
     state.selected = null;
     state.moves += 1;
     if (state.foundations.every((pile) => pile.length === 13)) {
       state.won = true;
       setStatus(root, `All personnel extracted in ${state.moves} moves.`);
       showToast("Forward cells evacuated", "Nobody was left behind, including the paperwork.");
+      playGameSound("win");
+    } else {
+      playGameSound("move");
     }
     render();
+    playMotion(board, motion);
   };
 
   const moveFoundation = (index) => {
@@ -568,15 +822,17 @@ function createFreeCell(root) {
     const foundationSuit = ["♠", "♥", "♦", "♣"][index];
     if (card.suit !== foundationSuit || (pile.length && pile.at(-1).rank + 1 !== card.rank)
       || (!pile.length && card.rank !== 1)) return false;
+    const motion = captureMotion(board);
     pile.push(...removeSelection());
-    finishMove();
+    finishMove(motion);
     return true;
   };
 
   const moveCell = (index) => {
     if (state.freeCells[index] || sourceCards().length !== 1) return false;
+    const motion = captureMotion(board);
     state.freeCells[index] = removeSelection()[0];
-    finishMove();
+    finishMove(motion);
     return true;
   };
 
@@ -593,8 +849,9 @@ function createFreeCell(root) {
       setStatus(root, `That formation needs ${cards.length} spaces; current maneuver capacity is ${capacity}.`);
       return false;
     }
+    const motion = captureMotion(board);
     target.push(...removeSelection());
-    finishMove();
+    finishMove(motion);
     return true;
   };
 
@@ -605,12 +862,26 @@ function createFreeCell(root) {
     render();
   };
 
+  const dropSelection = (target, selection) => {
+    state.selected = selection;
+    const moved = target.dataset.cardDrop === "cell"
+      ? moveCell(Number(target.dataset.cellIndex))
+      : target.dataset.cardDrop === "foundation"
+        ? moveFoundation(Number(target.dataset.foundationIndex))
+        : target.dataset.cardDrop === "cascade"
+          ? moveCascade(Number(target.dataset.columnIndex))
+          : false;
+    if (!moved) { state.selected = null; playGameSound("error"); render(); }
+  };
+
   const render = () => {
     const cells = board.querySelector("[data-freecells]");
     cells.replaceChildren();
     state.freeCells.forEach((card, index) => {
       const slot = document.createElement("div");
-      slot.className = "card-slot free-cell-slot";
+      slot.className = "card-slot free-cell-slot card-drop-target";
+      slot.dataset.cardDrop = "cell";
+      slot.dataset.cellIndex = String(index);
       if (card) {
         const button = createCardElement(card, { selected: state.selected?.zone === "cell" && state.selected.index === index });
         button.addEventListener("click", () => {
@@ -619,6 +890,7 @@ function createFreeCell(root) {
           render();
         });
         button.addEventListener("dblclick", () => autoFoundation("cell", index));
+        installPointerDrag(button, { root, payload: { zone: "cell", index, cardIndex: null }, dropSelector: ".card-drop-target", onDrop: dropSelection });
         slot.append(button);
       } else {
         slot.innerHTML = `<span class="card-watermark">CELL</span>`;
@@ -631,7 +903,9 @@ function createFreeCell(root) {
     foundations.replaceChildren();
     state.foundations.forEach((pile, index) => {
       const slot = document.createElement("div");
-      slot.className = "card-slot foundation-slot";
+      slot.className = "card-slot foundation-slot card-drop-target";
+      slot.dataset.cardDrop = "foundation";
+      slot.dataset.foundationIndex = String(index);
       slot.innerHTML = `<span class="card-watermark">${["♠", "♥", "♦", "♣"][index]}</span>`;
       if (pile.length) {
         const button = createCardElement(pile.at(-1), { selected: state.selected?.zone === "foundation" && state.selected.index === index });
@@ -640,6 +914,7 @@ function createFreeCell(root) {
           state.selected = { zone: "foundation", index, cardIndex: null };
           render();
         });
+        installPointerDrag(button, { root, payload: { zone: "foundation", index, cardIndex: null }, dropSelector: ".card-drop-target", onDrop: dropSelection });
         slot.append(button);
       } else slot.addEventListener("click", () => moveFoundation(index));
       foundations.append(slot);
@@ -649,7 +924,9 @@ function createFreeCell(root) {
     cascades.replaceChildren();
     state.cascades.forEach((column, columnIndex) => {
       const pile = document.createElement("div");
-      pile.className = "card-column";
+      pile.className = "card-column card-drop-target";
+      pile.dataset.cardDrop = "cascade";
+      pile.dataset.columnIndex = String(columnIndex);
       if (!column.length) {
         const target = document.createElement("button");
         target.type = "button";
@@ -668,6 +945,9 @@ function createFreeCell(root) {
           render();
         });
         button.addEventListener("dblclick", () => { if (cardIndex === column.length - 1) autoFoundation("cascade", columnIndex, cardIndex); });
+        if (validDescendingAlternating(column.slice(cardIndex))) installPointerDrag(button, {
+          root, payload: { zone: "cascade", index: columnIndex, cardIndex }, dropSelector: ".card-drop-target", onDrop: dropSelection,
+        });
         pile.append(button);
       });
       cascades.append(pile);
@@ -675,15 +955,36 @@ function createFreeCell(root) {
     if (!state.won) setStatus(root, `${state.moves} moves · ${state.freeCells.filter((card) => !card).length} forward cells available.`);
   };
 
-  const reset = () => {
+  const createDeal = () => {
     const cascades = Array.from({ length: 8 }, () => []);
     shuffle(cardDeck()).forEach((card, index) => cascades[index % 8].push(card));
-    state = { cascades, freeCells: [null, null, null, null], foundations: [[], [], [], []], selected: null, moves: 0, won: false };
-    render();
+    return cascades;
   };
 
-  root.querySelector("[data-game-new]").addEventListener("click", reset);
-  titlebarHelp(root, "Move alternating colors downward. Each empty forward cell holds one card. Empty columns multiply the size of a formation you can move.");
+  const dealMobility = (cascades) => {
+    const tops = cascades.map((column) => column.at(-1));
+    let score = tops.reduce((total, card) => total + (card.rank <= 3 ? 8 - card.rank * 2 : 0), 0);
+    for (const card of tops) for (const target of tops) if (card !== target && target.rank === card.rank + 1 && isRed(target) !== isRed(card)) score += 3;
+    for (const column of cascades) {
+      const aceDepth = [...column].reverse().findIndex((card) => card.rank === 1);
+      if (aceDepth >= 0) score += Math.max(0, 7 - aceDepth);
+    }
+    return score;
+  };
+
+  const reset = (announce = false) => {
+    const difficulty = difficultyValue(root);
+    const candidates = Array.from({ length: 18 }, createDeal).sort((a, b) => dealMobility(b) - dealMobility(a));
+    const cascades = difficulty === "easy" ? candidates[0] : difficulty === "hard" ? candidates.at(-1) : candidates[9];
+    state = { difficulty, cascades, freeCells: [null, null, null, null], foundations: [[], [], [], []], selected: null, moves: 0, won: false };
+    render();
+    playMotion(board, null, { fresh: true });
+    if (announce) playGameSound("deal");
+  };
+
+  root.querySelector("[data-game-new]").addEventListener("click", () => reset(true));
+  root.querySelector("[data-game-difficulty]").addEventListener("change", () => reset(true));
+  titlebarHelp(root, "Drag cards and formations between columns, cells, and foundations. Each forward cell holds one card; empty columns multiply the size of a formation you can move.");
   reset();
   return { reset, snapshot: () => clone(state) };
 }
@@ -729,10 +1030,17 @@ function createCheckers(root, submit) {
 
   const advanceBots = () => {
     let guard = 0;
-    while (!state.winner && !state.humans.includes(state.turn) && guard++ < 80) {
+    while (state.winner == null && !state.humans.includes(state.turn) && guard++ < 80) {
       const moves = legalMoves(state.turn);
       if (!moves.length) { state.winner = 1 - state.turn; break; }
-      apply({ type: "move", from: moves[0].from, to: moves[0].to }, state.turn, true);
+      const choice = state.difficulty === "easy" ? moves[Math.floor(Math.random() * moves.length)]
+        : state.difficulty === "hard" ? [...moves].sort((a, b) => {
+          const score = (move) => (move.capture != null ? 50 : 0)
+            + ([0, 7].includes(rowOf(move.to)) ? 35 : 0)
+            + (3.5 - Math.abs(columnOf(move.to) - 3.5)) * 2;
+          return score(b) - score(a);
+        })[0] : moves.find((move) => move.capture != null) || moves[0];
+      apply({ type: "move", from: choice.from, to: choice.to }, state.turn, true);
     }
   };
 
@@ -740,6 +1048,7 @@ function createCheckers(root, submit) {
     if (state.winner != null || action?.type !== "move" || seat !== state.turn) return false;
     const move = legalMoves(seat).find((candidate) => candidate.from === Number(action.from) && candidate.to === Number(action.to));
     if (!move) return false;
+    const sourceRect = board.querySelector(`[data-checkers-square="${move.from}"] .checker-piece`)?.getBoundingClientRect();
     let piece = state.board[move.from];
     state.board[move.from] = 0;
     state.board[move.to] = piece;
@@ -758,6 +1067,15 @@ function createCheckers(root, submit) {
     }
     if (!bot) advanceBots();
     render();
+    const movedPiece = board.querySelector(`[data-checkers-square="${move.to}"] .checker-piece`);
+    if (sourceRect && movedPiece && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const destinationRect = movedPiece.getBoundingClientRect();
+      movedPiece.animate([
+        { transform: `translate(${sourceRect.left - destinationRect.left}px, ${sourceRect.top - destinationRect.top}px) scale(1.08)`, zIndex: 20 },
+        { transform: "translate(0, 0) scale(1)", zIndex: 20 },
+      ], { duration: move.capture != null ? 260 : 210, easing: "cubic-bezier(.2,.8,.2,1)" });
+    }
+    if (!bot) playGameSound(state.winner != null ? "win" : move.capture != null ? "capture" : "move");
     return true;
   };
 
@@ -771,6 +1089,7 @@ function createCheckers(root, submit) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `checkers-square${(rowOf(index) + columnOf(index)) % 2 ? " is-dark" : ""}${destinations.has(index) ? " is-destination" : ""}`;
+      button.dataset.checkersSquare = String(index);
       button.setAttribute("aria-label", piece ? `${owner(piece) === 0 ? "Red" : "Black"}${Math.abs(piece) === 2 ? " king" : " checker"}` : "Empty square");
       if (piece) {
         const checker = document.createElement("span");
@@ -788,25 +1107,31 @@ function createCheckers(root, submit) {
     setStatus(root, state.winner == null ? `${state.moves} moves · ${state.forced != null ? "Continue the capture." : "Captures are mandatory."}` : `Operation complete after ${state.moves} moves.`);
   };
 
-  const reset = (humans = state?.humans || [0, 1]) => {
+  const reset = (humans = state?.humans || [0, 1], difficulty = difficultyValue(root)) => {
     const cells = Array(64).fill(0);
     for (let row = 0; row < 3; ++row) for (let column = 0; column < 8; ++column) if ((row + column) % 2) cells[row * 8 + column] = -1;
     for (let row = 5; row < 8; ++row) for (let column = 0; column < 8; ++column) if ((row + column) % 2) cells[row * 8 + column] = 1;
-    state = { board: cells, turn: 0, selected: null, forced: null, winner: null, moves: 0, humans: [...humans] };
+    state = { difficulty, board: cells, turn: 0, selected: null, forced: null, winner: null, moves: 0, humans: [...humans] };
+    root.querySelector("[data-game-difficulty]").value = difficulty;
     advanceBots();
     render();
   };
 
   root.querySelector("[data-game-new]").addEventListener("click", () => submit({ type: "new" }));
+  root.querySelector("[data-game-difficulty]").addEventListener("change", (event) => submit({ type: "difficulty", value: event.target.value }));
   titlebarHelp(root, "Move diagonally on dark squares. Captures are mandatory, and a capturing checker must continue while another jump is available.");
   reset();
   return {
     reset,
-    apply(action, seat) { if (action?.type === "new") { reset(state.humans); return true; } return apply(action, seat); },
-    configureHumans(humans) { reset(humans); },
+    apply(action, seat) {
+      if (action?.type === "new") { reset(state.humans, state.difficulty); playGameSound("deal"); return true; }
+      if (action?.type === "difficulty" && seat === 0 && DIFFICULTIES.includes(action.value)) { reset(state.humans, action.value); playGameSound("deal"); return true; }
+      return apply(action, seat);
+    },
+    configureHumans(humans) { reset(humans, difficultyValue(root)); },
     updateHumans(humans) { state.humans = [...humans]; advanceBots(); render(); },
-    setLocalSeat(seat) { localSeat = seat; render(); },
-    load(next) { state = clone(next); state.selected = null; render(); },
+    setLocalSeat(seat) { localSeat = seat; root.querySelector("[data-game-difficulty]").disabled = seat !== 0; render(); },
+    load(next) { state = clone(next); state.selected = null; root.querySelector("[data-game-difficulty]").value = state.difficulty; render(); },
     snapshot: () => clone({ ...state, selected: null }),
   };
 }
@@ -818,6 +1143,8 @@ function createReversi(root, submit) {
   let localSeat = 0;
   const directions = [-9, -8, -7, -1, 1, 7, 8, 9];
   const seatValue = (seat) => seat === 0 ? 1 : -1;
+  const rowOf = (index) => Math.floor(index / 8);
+  const columnOf = (index) => index % 8;
 
   const flipsFor = (index, seat) => {
     if (state.board[index]) return [];
@@ -844,7 +1171,16 @@ function createReversi(root, submit) {
       if (!moves.length) {
         state.turn = 1 - state.turn;
         if (!legalMoves(state.turn).length) state.ended = true;
-      } else apply({ type: "place", index: moves.sort((a, b) => flipsFor(b, state.turn).length - flipsFor(a, state.turn).length)[0] }, state.turn, true);
+      } else {
+        const choice = state.difficulty === "easy" ? moves[Math.floor(Math.random() * moves.length)]
+          : [...moves].sort((a, b) => {
+            const score = (index) => flipsFor(index, state.turn).length
+              + ([0, 7, 56, 63].includes(index) ? (state.difficulty === "hard" ? 100 : 20) : 0)
+              + (state.difficulty === "hard" && (rowOf(index) === 0 || rowOf(index) === 7 || columnOf(index) === 0 || columnOf(index) === 7) ? 12 : 0);
+            return score(b) - score(a);
+          })[0];
+        apply({ type: "place", index: choice }, state.turn, true);
+      }
     }
   };
 
@@ -863,6 +1199,14 @@ function createReversi(root, submit) {
     }
     if (!bot) advanceBots();
     render();
+    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) for (const changed of [index, ...flips]) {
+      board.querySelector(`[data-reversi-square="${changed}"] span`)?.animate([
+        { transform: "rotateY(90deg) scale(.75)" },
+        { transform: "rotateY(0deg) scale(1.08)", offset: .7 },
+        { transform: "rotateY(0deg) scale(1)" },
+      ], { duration: 260, easing: "ease-out" });
+    }
+    if (!bot) playGameSound(state.ended ? "win" : flips.length > 2 ? "capture" : "move");
     return true;
   };
 
@@ -874,6 +1218,7 @@ function createReversi(root, submit) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `reversi-square${moves.has(index) ? " is-legal" : ""}`;
+      button.dataset.reversiSquare = String(index);
       button.setAttribute("aria-label", piece === 1 ? "Black unit" : piece === -1 ? "White unit" : moves.has(index) ? "Legal deployment" : "Empty territory");
       if (piece) {
         const disk = document.createElement("span");
@@ -891,25 +1236,31 @@ function createReversi(root, submit) {
     setStatus(root, state.ended ? `Final territory: ${black} black, ${white} white.` : `${state.moves} deployments · bracket enemy units to flip them.`);
   };
 
-  const reset = (humans = state?.humans || [0, 1]) => {
+  const reset = (humans = state?.humans || [0, 1], difficulty = difficultyValue(root)) => {
     const cells = Array(64).fill(0);
     cells[27] = cells[36] = -1;
     cells[28] = cells[35] = 1;
-    state = { board: cells, turn: 0, moves: 0, ended: false, humans: [...humans] };
+    state = { difficulty, board: cells, turn: 0, moves: 0, ended: false, humans: [...humans] };
+    root.querySelector("[data-game-difficulty]").value = difficulty;
     advanceBots();
     render();
   };
 
   root.querySelector("[data-game-new]").addEventListener("click", () => submit({ type: "new" }));
+  root.querySelector("[data-game-difficulty]").addEventListener("change", (event) => submit({ type: "difficulty", value: event.target.value }));
   titlebarHelp(root, "Deploy a disk so one or more straight lines of enemy units are bracketed between the new disk and your territory. Every bracketed unit flips allegiance.");
   reset();
   return {
     reset,
-    apply(action, seat) { if (action?.type === "new") { reset(state.humans); return true; } return apply(action, seat); },
-    configureHumans(humans) { reset(humans); },
+    apply(action, seat) {
+      if (action?.type === "new") { reset(state.humans, state.difficulty); playGameSound("deal"); return true; }
+      if (action?.type === "difficulty" && seat === 0 && DIFFICULTIES.includes(action.value)) { reset(state.humans, action.value); playGameSound("deal"); return true; }
+      return apply(action, seat);
+    },
+    configureHumans(humans) { reset(humans, difficultyValue(root)); },
     updateHumans(humans) { state.humans = [...humans]; advanceBots(); render(); },
-    setLocalSeat(seat) { localSeat = seat; render(); },
-    load(next) { state = clone(next); render(); },
+    setLocalSeat(seat) { localSeat = seat; root.querySelector("[data-game-difficulty]").disabled = seat !== 0; render(); },
+    load(next) { state = clone(next); root.querySelector("[data-game-difficulty]").value = state.difficulty; render(); },
     snapshot: () => clone(state),
   };
 }
@@ -978,7 +1329,13 @@ function createBackgammon(root, submit) {
       if (!moves.length) { nextTurn(); continue; }
       const hit = moves.find((move) => move.to !== "off" && owner(state.points[move.to]) === 1 - state.turn && Math.abs(state.points[move.to]) === 1);
       const bear = moves.find((move) => move.to === "off");
-      const choice = hit || bear || moves[0];
+      const choice = state.difficulty === "easy" ? moves[Math.floor(Math.random() * moves.length)]
+        : state.difficulty === "hard" ? [...moves].sort((a, b) => {
+          const score = (move) => (move.to === "off" ? 80 : 0)
+            + (move.to !== "off" && owner(state.points[move.to]) === 1 - state.turn && Math.abs(state.points[move.to]) === 1 ? 55 : 0)
+            + (typeof move.from === "number" && typeof move.to === "number" ? Math.abs(move.to - move.from) : 0);
+          return score(b) - score(a);
+        })[0] : hit || bear || moves[0];
       apply({ type: "move", from: choice.from, to: choice.to, die: choice.die }, state.turn, true);
     }
   };
@@ -988,6 +1345,8 @@ function createBackgammon(root, submit) {
     const move = legalMoves(seat).find((candidate) => String(candidate.from) === String(action.from)
       && String(candidate.to) === String(action.to) && candidate.die === Number(action.die));
     if (!move) return false;
+    const sourceRect = move.from === "bar" ? null : board.querySelector(`[data-point="${move.from}"] .bg-checker-stack i:last-of-type`)?.getBoundingClientRect();
+    const hit = move.to !== "off" && owner(state.points[move.to]) === 1 - seat && Math.abs(state.points[move.to]) === 1;
     if (move.from === "bar") state.bar[seat] -= 1;
     else state.points[move.from] -= sign(seat);
     if (move.to === "off") state.borne[seat] += 1;
@@ -1005,6 +1364,15 @@ function createBackgammon(root, submit) {
     else if (!state.remainingDice.length || !legalMoves(seat).length) nextTurn();
     if (!bot) advanceBots();
     render();
+    if (sourceRect && move.to !== "off" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const checker = board.querySelector(`[data-point="${move.to}"] .bg-checker-stack i:last-of-type`);
+      const destinationRect = checker?.getBoundingClientRect();
+      if (checker && destinationRect) checker.animate([
+        { transform: `translate(${sourceRect.left - destinationRect.left}px, ${sourceRect.top - destinationRect.top}px) scale(1.15)`, zIndex: 20 },
+        { transform: "translate(0, 0) scale(1)", zIndex: 20 },
+      ], { duration: 250, easing: "cubic-bezier(.2,.8,.2,1)" });
+    }
+    if (!bot) playGameSound(state.winner != null ? "win" : hit ? "capture" : move.to === "off" ? "flip" : "move");
     return true;
   };
 
@@ -1076,11 +1444,12 @@ function createBackgammon(root, submit) {
     setStatus(root, state.winner == null ? `${state.moves} moves · select a checker, then a highlighted point.` : `All 15 checkers withdrawn after ${state.moves} moves.`);
   };
 
-  const reset = (humans = state?.humans || [0, 1]) => {
+  const reset = (humans = state?.humans || [0, 1], difficulty = difficultyValue(root)) => {
     const points = Array(24).fill(0);
     points[23] = 2; points[12] = 5; points[7] = 3; points[5] = 5;
     points[0] = -2; points[11] = -5; points[16] = -3; points[18] = -5;
-    state = { points, bar: [0, 0], borne: [0, 0], turn: 0, dice: [], remainingDice: [], winner: null, moves: 0, passes: 0, humans: [...humans] };
+    state = { difficulty, points, bar: [0, 0], borne: [0, 0], turn: 0, dice: [], remainingDice: [], winner: null, moves: 0, passes: 0, humans: [...humans] };
+    root.querySelector("[data-game-difficulty]").value = difficulty;
     selected = null;
     roll();
     advanceBots();
@@ -1088,15 +1457,20 @@ function createBackgammon(root, submit) {
   };
 
   root.querySelector("[data-game-new]").addEventListener("click", () => submit({ type: "new" }));
+  root.querySelector("[data-game-difficulty]").addEventListener("change", (event) => submit({ type: "difficulty", value: event.target.value }));
   titlebarHelp(root, "Move supply checkers toward point 1 and opposition toward point 24. Hit exposed blots, re-enter bar units first, then bear all 15 units off from your home sector.");
   reset();
   return {
     reset,
-    apply(action, seat) { if (action?.type === "new") { reset(state.humans); return true; } return apply(action, seat); },
-    configureHumans(humans) { reset(humans); },
+    apply(action, seat) {
+      if (action?.type === "new") { reset(state.humans, state.difficulty); playGameSound("deal"); return true; }
+      if (action?.type === "difficulty" && seat === 0 && DIFFICULTIES.includes(action.value)) { reset(state.humans, action.value); playGameSound("deal"); return true; }
+      return apply(action, seat);
+    },
+    configureHumans(humans) { reset(humans, difficultyValue(root)); },
     updateHumans(humans) { state.humans = [...humans]; advanceBots(); render(); },
-    setLocalSeat(seat) { localSeat = seat; selected = null; render(); },
-    load(next) { state = clone(next); selected = null; render(); },
+    setLocalSeat(seat) { localSeat = seat; selected = null; root.querySelector("[data-game-difficulty]").disabled = seat !== 0; render(); },
+    load(next) { state = clone(next); selected = null; root.querySelector("[data-game-difficulty]").value = state.difficulty; render(); },
     snapshot: () => clone(state),
   };
 }
@@ -1110,13 +1484,27 @@ function createTrickGame(root, submit, mode) {
 
   const sortHand = (hand) => hand.sort((a, b) => ["♣", "♦", "♠", "♥"].indexOf(a.suit) - ["♣", "♦", "♠", "♥"].indexOf(b.suit) || a.rank - b.rank);
   const rankPower = (card) => card.rank === 1 ? 14 : card.rank;
-  const botHeartPass = (hand) => [...hand].sort((a, b) => {
+  const botHeartPass = (hand) => (state?.difficulty === "easy" ? shuffle([...hand]) : [...hand].sort((a, b) => {
     const danger = (card) => card.suit === "♠" && card.rank === 12 ? 100 : card.suit === "♥" ? 50 + rankPower(card) : rankPower(card);
     return danger(b) - danger(a);
-  }).slice(0, 3).map((card) => card.id);
-  const botBid = (hand) => Math.max(1, Math.min(13, Math.round(hand.reduce((total, card) => total
+  })).slice(0, 3).map((card) => card.id);
+  const botBid = (hand) => state?.difficulty === "easy" ? 1 + Math.floor(Math.random() * 4) : Math.max(1, Math.min(13, Math.round(hand.reduce((total, card) => total
     + (rankPower(card) >= 13 ? 0.8 : rankPower(card) === 12 ? 0.35 : 0)
-    + (card.suit === "♠" ? 0.18 : 0), 0))));
+    + (card.suit === "♠" ? (state?.difficulty === "hard" ? .28 : .18) : 0), 0))));
+
+  const botCard = (legal) => {
+    if (state.difficulty === "easy") return legal[Math.floor(Math.random() * legal.length)];
+    const leadSuit = state.trick[0]?.card.suit;
+    const currentPower = state.trick.length ? Math.max(...state.trick.filter((play) => play.card.suit === leadSuit).map((play) => rankPower(play.card)), 0) : 0;
+    return [...legal].sort((a, b) => {
+      const score = (card) => {
+        const penalty = heartsMode ? (card.suit === "♥" ? 20 : card.suit === "♠" && card.rank === 12 ? 45 : 0) : card.suit === "♠" ? 16 : 0;
+        const losesTrick = leadSuit && card.suit === leadSuit && rankPower(card) < currentPower;
+        return state.difficulty === "hard" && losesTrick ? -40 - rankPower(card) : penalty + rankPower(card);
+      };
+      return score(a) - score(b);
+    })[0];
+  };
 
   const legalCards = (seat) => {
     const hand = state.hands[seat];
@@ -1232,6 +1620,8 @@ function createTrickGame(root, submit, mode) {
   const playCard = (seat, cardId, bot = false) => {
     const card = legalCards(seat).find((candidate) => candidate.id === cardId);
     if (!card) return false;
+    const motion = bot ? null : captureMotion(board);
+    const completesTrick = state.trick.length === 3;
     state.hands[seat] = state.hands[seat].filter((candidate) => candidate.id !== card.id);
     state.trick.push({ seat, card });
     if (card.suit === "♥") state.heartsBroken = true;
@@ -1250,6 +1640,10 @@ function createTrickGame(root, submit, mode) {
     }
     if (!bot) advanceBots();
     render();
+    if (!bot) {
+      playMotion(board, motion);
+      playGameSound(state.phase === "ended" ? "win" : completesTrick ? "capture" : "move");
+    }
     return true;
   };
 
@@ -1263,17 +1657,19 @@ function createTrickGame(root, submit, mode) {
     while (state.phase === "play" && !state.humans.includes(state.turn) && guard++ < 80) {
       const seat = state.turn;
       const legal = legalCards(seat);
-      const choice = [...legal].sort((a, b) => {
-        const danger = (card) => heartsMode ? (card.suit === "♥" ? 20 : card.suit === "♠" && card.rank === 12 ? 40 : 0) + rankPower(card) : rankPower(card) + (card.suit === "♠" ? 15 : 0);
-        return danger(a) - danger(b);
-      })[0];
+      const choice = botCard(legal);
       if (!choice) break;
       playCard(seat, choice.id, true);
     }
   };
 
   const apply = (action, seat) => {
-    if (action?.type === "new") { reset(state.humans); return true; }
+    if (action?.type === "new") { reset(state.humans, state.difficulty); playGameSound("deal"); return true; }
+    if (action?.type === "difficulty" && seat === 0 && DIFFICULTIES.includes(action.value)) {
+      reset(state.humans, action.value);
+      playGameSound("deal");
+      return true;
+    }
     if (!state.humans.includes(seat)) return false;
     if (heartsMode && state.phase === "pass") {
       if (action?.type === "toggle-pass" && !state.passConfirmed[seat]) {
@@ -1283,6 +1679,7 @@ function createTrickGame(root, submit, mode) {
         if (selected.includes(card.id)) selected.splice(selected.indexOf(card.id), 1);
         else if (selected.length < 3) selected.push(card.id);
         else return false;
+        playGameSound("flip");
         render();
         return true;
       }
@@ -1290,6 +1687,7 @@ function createTrickGame(root, submit, mode) {
         state.passConfirmed[seat] = true;
         finishPassing();
         advanceBots();
+        playGameSound("move");
         render();
         return true;
       }
@@ -1301,6 +1699,7 @@ function createTrickGame(root, submit, mode) {
       state.bids[seat] = bid;
       state.bidConfirmed[seat] = true;
       advanceBots();
+      playGameSound("move");
       render();
       return true;
     }
@@ -1308,7 +1707,20 @@ function createTrickGame(root, submit, mode) {
     return false;
   };
 
+  const dropTrickCard = (target, card) => {
+    if (target.dataset.cardDrop === "orders" && state.phase === "pass") {
+      submit({ type: "toggle-pass", cardId: card.id });
+      return;
+    }
+    if (target.dataset.cardDrop === "play" && state.phase === "play" && legalCards(localSeat).some((candidate) => candidate.id === card.id)) {
+      submit({ type: "play", cardId: card.id });
+      return;
+    }
+    playGameSound("error");
+  };
+
   const render = () => {
+    root.querySelector("[data-game-difficulty]").value = state.difficulty;
     const scores = board.querySelector("[data-trick-score]");
     if (heartsMode) scores.innerHTML = state.scores.map((score, seat) => `<span class="${seat === localSeat ? "is-local" : ""}">C${seat + 1} <b>${score}</b>${state.roundPoints?.[seat] ? ` +${state.roundPoints[seat]}` : ""}</span>`).join("");
     else scores.innerHTML = `<span class="is-local">YOUR TEAM <b>${state.teamScores[localSeat % 2]}</b></span><span>ROUND ${state.round + 1}</span><span>OTHER TEAM <b>${state.teamScores[1 - (localSeat % 2)]}</b></span>`;
@@ -1324,6 +1736,8 @@ function createTrickGame(root, submit, mode) {
     }
 
     const center = board.querySelector("[data-trick-center]");
+    center.className = "trick-center trick-drop-target card-drop-target";
+    center.dataset.cardDrop = "play";
     center.replaceChildren();
     const shownTrick = state.trick.length ? state.trick : state.lastTrick;
     shownTrick.forEach((play) => {
@@ -1333,6 +1747,8 @@ function createTrickGame(root, submit, mode) {
     });
 
     const orders = board.querySelector("[data-trick-orders]");
+    orders.className = "trick-orders trick-drop-target card-drop-target";
+    orders.dataset.cardDrop = "orders";
     orders.replaceChildren();
     if (heartsMode && state.phase === "pass" && state.humans.includes(localSeat)) {
       const direction = ["left", "right", "across", "hold"][state.round % 4];
@@ -1374,28 +1790,37 @@ function createTrickGame(root, submit, mode) {
         if (state.phase === "pass") submit({ type: "toggle-pass", cardId: card.id });
         else if (state.phase === "play" && legal.has(card.id)) submit({ type: "play", cardId: card.id });
       });
+      if (state.phase === "pass" && !state.passConfirmed[localSeat]) installPointerDrag(button, {
+        root, payload: card, dropSelector: '.trick-drop-target[data-card-drop="orders"]', onDrop: dropTrickCard,
+      });
+      else if (state.phase === "play" && legal.has(card.id)) installPointerDrag(button, {
+        root, payload: card, dropSelector: '.trick-drop-target[data-card-drop="play"]', onDrop: dropTrickCard,
+      });
       hand.append(button);
     });
     const phaseLabel = ({ pass: "Passing intelligence", bid: "Negotiating contract", play: "Trick in progress", ended: "Operation complete" })[state.phase];
     setStatus(root, `${phaseLabel} · round ${state.round + 1} · ${state.tricksPlayed}/13 tricks.`);
   };
 
-  const reset = (humans = state?.humans || [0]) => {
+  const reset = (humans = state?.humans || [0], difficulty = difficultyValue(root)) => {
     state = {
-      humans: [...humans], round: 0, phase: "deal", hands: [[], [], [], []], trick: [], lastTrick: [], tricksPlayed: 0,
+      difficulty, humans: [...humans], round: 0, phase: "deal", hands: [[], [], [], []], trick: [], lastTrick: [], tricksPlayed: 0,
       scores: [0, 0, 0, 0], roundPoints: [0, 0, 0, 0], teamScores: [0, 0], bids: [null, null, null, null],
       bidConfirmed: [false, false, false, false], tricksWon: [0, 0, 0, 0], heartsBroken: false, spadesBroken: false,
       leader: 0, turn: 0, winners: [], passSelected: [[], [], [], []], passConfirmed: [false, false, false, false],
     };
+    root.querySelector("[data-game-difficulty]").value = difficulty;
     dealRound();
     advanceBots();
     render();
+    playMotion(board, null, { fresh: true });
   };
 
   root.querySelector("[data-game-new]").addEventListener("click", () => submit({ type: "new" }));
+  root.querySelector("[data-game-difficulty]").addEventListener("change", (event) => submit({ type: "difficulty", value: event.target.value }));
   titlebarHelp(root, heartsMode
-    ? "Follow suit. Every heart costs one point and the Queen of Spades costs thirteen. Lowest score wins; taking all 26 penalty points gives them to everyone else."
-    : "Bid your expected tricks, then follow suit. Spades trump other suits after they are broken. Teams are opposite seats and score together.");
+    ? "Drag a card to the orders strip to pass it, or to the table to play it. Follow suit: every heart costs one point and the Queen of Spades costs thirteen."
+    : "Bid your expected tricks, then drag a legal card to the table. Spades trump other suits after they are broken; opposite seats score as a team.");
   reset();
   const updateHumans = (humans) => {
     state.humans = [...humans];
@@ -1416,10 +1841,10 @@ function createTrickGame(root, submit, mode) {
   return {
     reset,
     apply,
-    configureHumans(humans) { reset(humans); },
+    configureHumans(humans) { reset(humans, difficultyValue(root)); },
     updateHumans,
-    setLocalSeat(seat) { localSeat = seat; render(); },
-    load(next) { state = clone(next); render(); },
+    setLocalSeat(seat) { localSeat = seat; root.querySelector("[data-game-difficulty]").disabled = seat !== 0; render(); },
+    load(next) { state = clone(next); root.querySelector("[data-game-difficulty]").value = state.difficulty; render(); },
     snapshot: () => clone(state),
   };
 }
@@ -1506,6 +1931,7 @@ function createInternetSession(spec, root, game) {
         send({ type: "welcome", seat, state: game.snapshot(), host: nameInput.value }, datagram.peerId);
         broadcastState();
         setNetworkStatus(seat >= 0 ? `${message.name || "A commander"} joined seat ${seat + 1}.` : "Room is full; the new peer is observing.", "online");
+        playGameSound("connect");
       } else if (message.type === "action") {
         const seat = peerSeats.get(datagram.peerId);
         if (seat >= 1 && game.apply(message.action, seat)) broadcastState();
@@ -1542,6 +1968,7 @@ function createInternetSession(spec, root, game) {
     roomInput.disabled = false;
     nameInput.disabled = false;
     setNetworkStatus("Offline. Host or join a room to deploy.");
+    if (closing) playGameSound("disconnect");
   };
 
   const connect = async ({ role: requestedRole, room = roomInput.value, name = nameInput.value, relayUrls = null, iceServers = null } = {}) => {
@@ -1590,6 +2017,7 @@ function createInternetSession(spec, root, game) {
       });
       const networkState = await endpoint.connect(20000);
       connecting = false;
+      playGameSound("connect");
       if (role === "host") {
         localSeat = 0;
         game.setLocalSeat(0);
@@ -1606,6 +2034,7 @@ function createInternetSession(spec, root, game) {
       const message = error?.message || String(error);
       await disconnect();
       setNetworkStatus(message, "warning");
+      playGameSound("error");
       throw error;
     }
   };
@@ -1613,6 +2042,7 @@ function createInternetSession(spec, root, game) {
   const submit = (action) => {
     if (!endpoint || localSeat < 0) {
       setNetworkStatus("Connect to a room before issuing game orders.", "warning");
+      playGameSound("error");
       return false;
     }
     if (role === "host") {
