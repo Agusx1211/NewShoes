@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
@@ -88,6 +88,7 @@ const replayMenuScreenshotPath = resolve(
 const replayPlaybackScreenshotPath = resolve(
   process.env.SKIRMISH_REPLAY_PLAYBACK_SCREENSHOT ??
     resolve(screenshotsRoot, "replay-playback-roundtrip.png"));
+const browserProfileDir = String(process.env.SKIRMISH_START_PROFILE_DIR ?? "").trim();
 
 function parsePositiveInt(name, fallback) {
   const value = Number.parseInt(process.env[name] ?? "", 10);
@@ -1320,6 +1321,10 @@ async function driveTreeDiffuseProbe(page) {
 async function main() {
   await mkdir(dirname(screenshotPath), { recursive: true });
   await mkdir(dirname(outputPath), { recursive: true });
+  if (browserProfileDir) {
+    await rm(browserProfileDir, { recursive: true, force: true });
+    await mkdir(browserProfileDir, { recursive: true });
+  }
 
   const server = await startStaticServer({ root: wasmRoot });
   let browser;
@@ -1333,7 +1338,9 @@ async function main() {
       launchOptions.args = process.env.SKIRMISH_START_BROWSER_ARGS.split(/\s+/).filter(Boolean);
     }
 
-    browser = await chromium.launch(launchOptions);
+    browser = browserProfileDir
+      ? await chromium.launchPersistentContext(browserProfileDir, launchOptions)
+      : await chromium.launch(launchOptions);
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     page.setDefaultTimeout(300000);
     page.setDefaultNavigationTimeout(300000);
@@ -1922,6 +1929,9 @@ async function main() {
       await browser.close();
     }
     await server.close();
+    if (browserProfileDir) {
+      await rm(browserProfileDir, { recursive: true, force: true });
+    }
   }
 }
 
