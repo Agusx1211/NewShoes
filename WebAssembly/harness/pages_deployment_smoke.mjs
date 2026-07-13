@@ -8,6 +8,9 @@ import { extname, relative, resolve, sep } from "node:path";
 import { chromium } from "playwright";
 
 const root = resolve(process.argv[2] || "pages-dist");
+const expectedBuildInfo = JSON.parse(await readFile(resolve(root, "harness/build-info.json"), "utf8"));
+const expectedChangelogEntries = expectedBuildInfo.release.changelog
+  .reduce((total, section) => total + section.entries.length, 0);
 const testWorkerRollout = process.argv.includes("--worker-rollout");
 const prefix = "/CnC_Generals_Zero_Hour/";
 const rolloutSeedName = "__coi_rollout_seed.html";
@@ -176,15 +179,23 @@ try {
 
   await page.locator('.desktop-icon[data-open="about"]').click();
   await page.waitForSelector("#publicLegalNotice", { state: "visible" });
+  await page.waitForFunction((version) => document.querySelector("#aboutVersion")?.textContent === version,
+    expectedBuildInfo.release.version);
   const notice = await page.evaluate(() => ({
     text: document.querySelector("#publicLegalNotice")?.textContent || "",
     license: document.querySelector('#publicLegalNotice a[href="../legal.html"]')?.href || "",
     source: [...document.querySelectorAll("#publicLegalNotice a")]
       .find((link) => link.textContent.includes("Corresponding source"))?.href || "",
+    version: document.querySelector("#aboutVersion")?.textContent || "",
+    buildHref: document.querySelector("#aboutBuildCommit")?.href || "",
+    changelogEntries: document.querySelectorAll("#aboutChangelog li").length,
   }));
   if (!/Copyright.*no warranty/i.test(notice.text)
       || !notice.license.endsWith(`${prefix}legal.html`)
-      || !notice.source.startsWith("https://github.com/")) {
+      || !notice.source.startsWith("https://github.com/")
+      || notice.version !== expectedBuildInfo.release.version
+      || !notice.buildHref.endsWith(`/commit/${expectedBuildInfo.git.commit}`)
+      || notice.changelogEntries !== expectedChangelogEntries) {
     throw new Error(`Launcher legal notice check failed: ${JSON.stringify(notice)}`);
   }
   const legalScreenshot = process.env.PAGES_SMOKE_LEGAL_SCREENSHOT;

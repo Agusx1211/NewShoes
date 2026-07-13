@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { chromium } from "playwright";
 
@@ -7,6 +7,7 @@ const baseUrl = process.env.LAUNCHER_POLISH_URL || "https://127.0.0.1:8457/harne
 const executablePath = process.env.LAUNCHER_POLISH_BROWSER
   || "/home/agusx1211/.cache/ms-playwright/chromium-1228/chrome-linux/chrome";
 const shotDir = process.env.LAUNCHER_POLISH_SHOTS || "/tmp/cnc-launcher-polish";
+const expectedVersion = (await readFile(new URL("../../VERSION", import.meta.url), "utf8")).trim();
 await mkdir(shotDir, { recursive: true });
 
 async function assertTaskbarInVisibleViewport(page, label) {
@@ -43,6 +44,23 @@ try {
   assert.equal(await page.locator("[data-retail-presentation]:visible").count(), 0);
   const fallbackShot = join(shotDir, "launcher-fallback-art.png");
   await page.screenshot({ path: fallbackShot });
+
+  await page.locator('.desktop-icon[data-open="about"]').click();
+  await page.waitForFunction((version) => document.querySelector("#aboutVersion")?.textContent === version,
+    expectedVersion);
+  const aboutInfo = await page.evaluate(() => ({
+    version: document.querySelector("#aboutVersion")?.textContent || "",
+    build: document.querySelector("#aboutBuildCommit")?.textContent || "",
+    buildHref: document.querySelector("#aboutBuildCommit")?.href || "",
+    changelogEntries: document.querySelectorAll("#aboutChangelog li").length,
+  }));
+  assert.equal(aboutInfo.version, expectedVersion);
+  assert.match(aboutInfo.build, /^[a-f0-9]{12}(?: \+ local changes)?$/i);
+  assert.match(aboutInfo.buildHref, /\/Agusx1211\/NewShoes\/commit\/[a-f0-9]{40}$/i);
+  assert.ok(aboutInfo.changelogEntries > 0, "the About window must show linked changelog entries");
+  const aboutBuildShot = join(shotDir, "about-build-and-changelog.png");
+  await page.screenshot({ path: aboutBuildShot });
+  await page.locator('#aboutWindow [data-window-action="close"]').click();
 
   const compatibilityChooserPromise = page.waitForEvent("filechooser");
   await page.locator("#pickFolderFallbackButton").click();
@@ -418,6 +436,7 @@ try {
     ok: true,
     screenshots: {
       fallbackShot,
+      aboutBuildShot,
       videoOptionShot,
       settingsShot,
       derivedShot,

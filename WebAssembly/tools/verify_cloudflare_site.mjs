@@ -3,6 +3,7 @@
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { dirname, extname, relative, resolve } from "node:path";
 import { CLOUDFLARE_OUTPUT_FILES } from "./cloudflare_site_manifest.mjs";
+import { validateBuildInfo } from "./release_metadata.mjs";
 
 const root = resolve(process.argv[2] || "cloudflare-dist");
 const expectedFiles = new Set(CLOUDFLARE_OUTPUT_FILES);
@@ -94,7 +95,7 @@ for (const { name } of inventory) {
   }
 }
 
-const [index, headers, redirects, license, legal, manifestText, analytics, retirementWorker, retirementBootstrap] = await Promise.all([
+const [index, headers, redirects, license, legal, manifestText, analytics, retirementWorker, retirementBootstrap, buildInfoText] = await Promise.all([
   readFile(resolve(root, "index.html"), "utf8").catch(() => ""),
   readFile(resolve(root, "_headers"), "utf8").catch(() => ""),
   readFile(resolve(root, "_redirects"), "utf8").catch(() => ""),
@@ -104,6 +105,7 @@ const [index, headers, redirects, license, legal, manifestText, analytics, retir
   readFile(resolve(root, "harness/analytics.mjs"), "utf8").catch(() => ""),
   readFile(resolve(root, "coi-serviceworker.js"), "utf8").catch(() => ""),
   readFile(resolve(root, "retire-service-worker.js"), "utf8").catch(() => ""),
+  readFile(resolve(root, "harness/build-info.json"), "utf8").catch(() => ""),
 ]);
 
 for (const contract of [
@@ -140,6 +142,11 @@ if (!license.includes("ADDITIONAL TERMS per GNU GPL Section 7") || !license.incl
 if (!legal.includes("absolutely no warranty") || !legal.includes("Corresponding source") || legal.includes("__PAGES_SOURCE_URL__")) findings.push("legal.html: resolved legal/source notice is missing");
 if (analytics.includes("__GA_MEASUREMENT_ID__")) findings.push("harness/analytics.mjs: unresolved analytics marker");
 for (const match of analytics.matchAll(/\bG-[A-Z0-9]+\b/g)) if (!/^G-[A-Z0-9]+$/.test(match[0])) findings.push("harness/analytics.mjs: invalid generated measurement ID");
+try {
+  validateBuildInfo(JSON.parse(buildInfoText));
+} catch {
+  findings.push("harness/build-info.json: version, commit, or changelog metadata is invalid");
+}
 try {
   const manifest = JSON.parse(manifestText);
   if (manifest.start_url !== "./" || manifest.scope !== "./") findings.push("manifest.webmanifest: root start URL or scope is invalid");
