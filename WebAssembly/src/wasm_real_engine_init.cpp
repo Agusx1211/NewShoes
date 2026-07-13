@@ -47,6 +47,7 @@
 #include "GameClient/ControlBar.h"
 #include "GameClient/ControlBarScheme.h"
 #include "GameClient/Gadget.h"
+#include "GameClient/GadgetListBox.h"
 #include "GameClient/GadgetPushButton.h"
 #include "GameClient/GadgetTextEntry.h"
 #include "WW3D2/assetmgr.h"
@@ -4614,6 +4615,53 @@ void append_window_json(std::string &json, GameWindow *window, const char *reque
 	json += enabled ? "true" : "false";
 	json += ",\"clickable\":";
 	json += (!manager_hidden && enabled && (status & WIN_STATUS_NO_INPUT) == 0) ? "true" : "false";
+	if ((style & GWS_SCROLL_LISTBOX) != 0) {
+		const Int entry_count = GadgetListBoxGetNumEntries(window);
+		const Int column_count = GadgetListBoxGetNumColumns(window);
+		const ListboxData *list_data = static_cast<const ListboxData *>(window->winGetUserData());
+		const Int title_height = inst_data != NULL && inst_data->getTextLength() != 0
+			? TheWindowManager->winFontHeight(inst_data->getFont()) + 1
+			: 0;
+		Int selected = -1;
+		GadgetListBoxGetSelected(window, &selected);
+		json += ",\"listBox\":{";
+		json += "\"entryCount\":" + std::to_string(entry_count);
+		json += ",\"columnCount\":" + std::to_string(column_count);
+		json += ",\"selected\":" + std::to_string(selected);
+		json += ",\"topVisibleEntry\":"
+			+ std::to_string(GadgetListBoxGetTopVisibleEntry(window));
+		json += ",\"bottomVisibleEntry\":"
+			+ std::to_string(GadgetListBoxGetBottomVisibleEntry(window));
+		json += ",\"rows\":[";
+		for (Int row = 0; row < entry_count; ++row) {
+			if (row != 0) {
+				json += ",";
+			}
+			const Int cumulative_top = row > 0 && list_data != NULL
+				? list_data->listData[row - 1].listHeight
+				: 0;
+			const Int cumulative_bottom = list_data != NULL
+				? list_data->listData[row].listHeight
+				: 0;
+			const Int display_pos = list_data != NULL ? list_data->displayPos : 0;
+			json += "{\"top\":" + std::to_string(y + title_height + cumulative_top - display_pos);
+			json += ",\"bottom\":" + std::to_string(y + title_height + cumulative_bottom - display_pos);
+			json += ",\"cells\":[";
+			for (Int column = 0; column < column_count; ++column) {
+				if (column != 0) {
+					json += ",";
+				}
+				json += "\"" + json_escape(unicode_to_debug_ascii(
+					GadgetListBoxGetText(window, row, column))) + "\"";
+			}
+			json += "]}";
+		}
+		json += "]}";
+	}
+	if ((style & GWS_ENTRY_FIELD) != 0) {
+		json += ",\"entryText\":\"" + json_escape(unicode_to_debug_ascii(
+			GadgetTextEntryGetText(window))) + "\"";
+	}
 	if (inst_data != NULL) {
 		UnicodeString text = inst_data->getText();
 		json += ",\"text\":\"" + json_escape(unicode_to_debug_ascii(text)) + "\"";
@@ -7895,6 +7943,19 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_click_window_by_name(const 
 	json += ",\"window\":";
 	append_window_json(json, window, window_name);
 	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_window_by_name(const char *window_name)
+{
+	static std::string json;
+	json.clear();
+	append_window_json(
+		json,
+		TheWindowManager != NULL && window_name != NULL && window_name[0] != '\0'
+			? find_window_by_name(window_name)
+			: NULL,
+		window_name != NULL ? window_name : "");
 	return json.c_str();
 }
 
