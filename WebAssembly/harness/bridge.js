@@ -3,6 +3,7 @@ import { createBinkVideoRuntime } from "./bink_runtime.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
 import { createSavePersistenceCoordinator } from "./save-persistence-coordinator.mjs";
+import { createReplayFileStore } from "./replay-file-store.mjs";
 import { createWebRtcUdpEndpoint } from "./webrtc-udp-endpoint.mjs";
 import { networkDiagnostics } from "./network-diagnostics.mjs";
 import {
@@ -1680,6 +1681,10 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   "stopSavePersistenceScheduling",
   "persistSavesFinal",
   "listSaves",
+  "listReplays",
+  "readReplay",
+  "importReplay",
+  "deleteReplay",
   // WebRTC signaling and RTCDataChannels live in the window realm. Their
   // datagrams cross into the engine worker through threadedUdpBridge.
   "browserWebRtcEndpointConnect",
@@ -5252,6 +5257,25 @@ const savePersistence = createSavePersistenceCoordinator(({ reason }) => (
     }
   })
 ));
+
+const replayFileStore = createReplayFileStore({
+  ready: () => wasmModulePromise,
+  getModule: () => cncPortEmscriptenModule,
+  persist: (reason) => persistSaveFilesystem(reason),
+});
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  for (let offset = 0; offset < bytes.byteLength; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(value) {
+  const binary = atob(String(value ?? ""));
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
 
 function persistSaveFilesystem(reason = "manual") {
   return savePersistence.persist(reason);
@@ -11376,6 +11400,43 @@ async function rpc(command, payload = {}) {
       {
         const result = listSaveFiles();
         return { ok: Boolean(result.ok), command, ...result };
+      }
+    case "listReplays":
+      {
+        try {
+          return { command, ...await replayFileStore.list() };
+        } catch (error) {
+          return { ok: false, command, files: [], error: error?.message ?? String(error) };
+        }
+      }
+    case "readReplay":
+      {
+        try {
+          const bytes = await replayFileStore.read(payload.name);
+          return { ok: true, command, name: String(payload.name), bytesBase64: bytesToBase64(bytes) };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "importReplay":
+      {
+        try {
+          const result = await replayFileStore.importFile(payload.name, base64ToBytes(payload.bytesBase64));
+          return { command, ...result };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "deleteReplay":
+      {
+        try {
+          const result = await replayFileStore.remove(payload.name, {
+            allowLastReplay: payload.allowLastReplay === true,
+          });
+          return { command, ...result };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
       }
     case "mapCacheProbe":
       {
@@ -23136,6 +23197,10 @@ window.CnCPort = {
   persistFinalSaves: persistFinalSaveFilesystem,
   stopSavePersistenceScheduling,
   listSaves: listSaveFiles,
+  listReplays: () => replayFileStore.list(),
+  readReplay: (name) => replayFileStore.read(name),
+  importReplay: (name, bytes) => replayFileStore.importFile(name, bytes),
+  deleteReplay: (name, options) => replayFileStore.remove(name, options),
   // Raw emscripten Module accessor for harness diagnostics (threaded mode:
   // lets a probe read atomic counters / last-step markers FROM THE MAIN
   // THREAD while the engine thread is busy inside a long wasm call and the

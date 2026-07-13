@@ -42,11 +42,13 @@
 #include "Common/PlayerList.h"
 #include "Common/PlayerTemplate.h"
 #include "Common/Radar.h"
+#include "Common/Recorder.h"
 #include "Common/SubsystemInterface.h"
 #include "Common/GameLOD.h"
 #include "GameClient/ControlBar.h"
 #include "GameClient/ControlBarScheme.h"
 #include "GameClient/Gadget.h"
+#include "GameClient/GadgetListBox.h"
 #include "GameClient/GadgetPushButton.h"
 #include "GameClient/GadgetTextEntry.h"
 #include "WW3D2/assetmgr.h"
@@ -4928,6 +4930,21 @@ void append_real_engine_client_state(std::string &json)
 			"\"loadingSave\":null,\"clearingGameData\":null,\"gamePaused\":null,"
 		"\"logicFrame\":null,\"objectCount\":0,\"progressComplete\":null";
 	}
+	json += ",\"recorder\":{";
+	json += "\"ready\":";
+	json += TheRecorder != NULL ? "true" : "false";
+	if (TheRecorder != NULL) {
+		json += ",\"mode\":" + std::to_string(static_cast<Int>(TheRecorder->getMode()));
+		json += ",\"recording\":";
+		json += TheRecorder->isRecording() ? "true" : "false";
+		json += ",\"playback\":";
+		json += TheRecorder->isPlayingBack() ? "true" : "false";
+		json += ",\"currentReplay\":\"" + json_escape(
+			TheRecorder->getCurrentReplayFilename().str()) + "\"";
+	} else {
+		json += ",\"mode\":null,\"recording\":false,\"playback\":false,\"currentReplay\":null";
+	}
+	json += "}";
 	json += ",\"lifecycleDebug\":{";
 	json += "\"newGameCount\":" + std::to_string(cnc_port_logic_dispatch_new_game_count());
 	json += ",\"lastNewGameMode\":" + std::to_string(cnc_port_logic_dispatch_last_new_game_mode());
@@ -5246,6 +5263,7 @@ void append_real_engine_client_state(std::string &json)
 	append_window_probe(json, "buttonChallenge", "MainMenu.wnd:ButtonChallenge");
 	append_window_probe(json, "buttonSkirmish", "MainMenu.wnd:ButtonSkirmish");
 	append_window_probe(json, "buttonLoadReplay", "MainMenu.wnd:ButtonLoadReplay");
+	append_window_probe(json, "buttonReplay", "MainMenu.wnd:ButtonReplay");
 	append_window_probe(json, "buttonOptions", "MainMenu.wnd:ButtonOptions");
 	append_window_probe(json, "buttonCredits", "MainMenu.wnd:ButtonCredits");
 	append_window_probe(json, "buttonExit", "MainMenu.wnd:ButtonExit");
@@ -5258,6 +5276,37 @@ void append_real_engine_client_state(std::string &json)
 	append_window_under_probe_center(json, "underButtonNetworkCenter", "MainMenu.wnd:ButtonNetwork");
 	append_window_under_probe_center(json, "underButtonUSACenter", "MainMenu.wnd:ButtonUSA");
 	append_window_under_probe_center(json, "underButtonEasyCenter", "MainMenu.wnd:ButtonEasy");
+	json += "}";
+
+	json += ",\"replayMenu\":{\"queried\":true";
+	append_window_probe(json, "parent", "ReplayMenu.wnd:ParentReplayMenu");
+	append_window_probe(json, "buttonLoad", "ReplayMenu.wnd:ButtonLoadReplay");
+	append_window_probe(json, "buttonBack", "ReplayMenu.wnd:ButtonBack");
+	append_window_probe(json, "buttonDelete", "ReplayMenu.wnd:ButtonDeleteReplay");
+	append_window_probe(json, "buttonCopy", "ReplayMenu.wnd:ButtonCopyReplay");
+	GameWindow *replay_list = find_window_by_name("ReplayMenu.wnd:ListboxReplayFiles");
+	json += ",\"listbox\":";
+	append_window_json(json, replay_list, "ReplayMenu.wnd:ListboxReplayFiles");
+	json += ",\"entryCount\":";
+	json += replay_list != NULL ? std::to_string(GadgetListBoxGetNumEntries(replay_list)) : "0";
+	json += ",\"selectedName\":";
+	if (replay_list != NULL && GadgetListBoxGetNumEntries(replay_list) > 0) {
+		Int selected = -1;
+		GadgetListBoxGetSelected(replay_list, &selected);
+		json += selected >= 0 ? "\"" + json_escape(unicode_to_debug_ascii(
+			GadgetListBoxGetText(replay_list, selected))) + "\"" : "null";
+	} else {
+		json += "null";
+	}
+	json += "}";
+
+	json += ",\"scoreScreen\":{\"queried\":true";
+	append_window_probe(json, "parent", "ScoreScreen.wnd:ParentScoreScreen");
+	append_window_probe(json, "buttonOk", "ScoreScreen.wnd:ButtonOk");
+	append_window_probe(json, "buttonSaveReplay", "ScoreScreen.wnd:ButtonSaveReplay");
+	append_window_probe(json, "popupParent", "PopupReplay.wnd:PopupReplayMenu");
+	append_window_probe(json, "popupButtonSave", "PopupReplay.wnd:ButtonSave");
+	append_window_probe(json, "popupTextEntry", "PopupReplay.wnd:TextEntryReplayName");
 	json += "}";
 
 	json += ",\"lanLobby\":{\"queried\":true";
