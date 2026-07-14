@@ -8228,10 +8228,14 @@ void append_lan_runtime_json(std::string &json)
 	json += "\"ready\":";
 	json += TheNetwork != NULL ? "true" : "false";
 	if (TheNetwork != NULL) {
+		// getExecutionFrame() raises m_lastExecutionFrame. Calling it from this
+		// observer during pregame would schedule peers on different timelines.
+		const Int diagnostic_execution_frame =
+			TheNetwork->getBrowserDiagnosticExecutionFrame();
 		json += ",\"localPlayerId\":"
 			+ std::to_string(static_cast<unsigned long long>(TheNetwork->getLocalPlayerID()));
 		json += ",\"numPlayers\":" + std::to_string(TheNetwork->getNumPlayers());
-		json += ",\"executionFrame\":" + std::to_string(TheNetwork->getExecutionFrame());
+		json += ",\"executionFrame\":" + std::to_string(diagnostic_execution_frame);
 		json += ",\"frameDataReady\":";
 		json += TheNetwork->isFrameDataReady() ? "true" : "false";
 		json += ",\"runAhead\":"
@@ -8279,10 +8283,10 @@ void append_lan_runtime_json(std::string &json)
 				+ std::to_string(TheNetwork->getBrowserDiagnosticConnectionQueue(slot));
 			json += ",\"frameCommands\":"
 				+ std::to_string(TheNetwork->getBrowserDiagnosticFrameCommands(
-					slot, static_cast<UnsignedInt>(TheNetwork->getExecutionFrame())));
+					slot, static_cast<UnsignedInt>(diagnostic_execution_frame)));
 			json += ",\"expectedFrameCommands\":"
 				+ std::to_string(TheNetwork->getBrowserDiagnosticExpectedFrameCommands(
-					slot, static_cast<UnsignedInt>(TheNetwork->getExecutionFrame())));
+					slot, static_cast<UnsignedInt>(diagnostic_execution_frame)));
 			json += "}";
 		}
 		json += "]";
