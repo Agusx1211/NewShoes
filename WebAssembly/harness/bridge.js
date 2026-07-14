@@ -7,6 +7,7 @@ import { createSavePersistenceCoordinator } from "./save-persistence-coordinator
 import { createReplayFileStore } from "./replay-file-store.mjs";
 import { createTransferUserDataStore } from "./transfer-user-data-store.mjs";
 import {
+  CNC_PORT_MOD_DATA_ROOT,
   loadActiveModContext,
   modContextPaths,
   vanillaModContext,
@@ -5328,6 +5329,23 @@ const transferUserDataStore = createTransferUserDataStore({
   persist: (reason) => persistSaveFilesystem(reason),
   userDataDirectory: CNC_PORT_ACTIVE_CONTEXT_PATHS.userDataDir,
 });
+
+function transferUserDataStoreForContext(contextId) {
+  const id = String(contextId ?? CNC_PORT_ACTIVE_MOD_CONTEXT.id);
+  if (id === CNC_PORT_ACTIVE_MOD_CONTEXT.id) return transferUserDataStore;
+  if (id !== "vanilla" && !/^[a-f0-9]{64}$/.test(id)) {
+    throw new Error("Transfer user-data mod configuration identity is invalid");
+  }
+  const userDataDirectory = id === "vanilla"
+    ? modContextPaths(vanillaModContext()).userDataDir
+    : `${CNC_PORT_MOD_DATA_ROOT}/${id}/Home/${CNC_PORT_USER_DATA_LEAF}`;
+  return createTransferUserDataStore({
+    ready: () => wasmModulePromise,
+    getModule: () => cncPortEmscriptenModule,
+    persist: (reason) => persistSaveFilesystem(reason),
+    userDataDirectory,
+  });
+}
 
 function bytesToBase64(bytes) {
   let binary = "";
@@ -23467,7 +23485,8 @@ window.CnCPort = {
   listTransferUserFiles: (options) => transferUserDataStore.list(options),
   readTransferUserFileChunk: (file, offset, length) =>
     transferUserDataStore.readChunk(file, offset, length),
-  beginTransferUserDataImport: (files) => transferUserDataStore.beginImport(files),
+  beginTransferUserDataImport: (files, contextId) =>
+    transferUserDataStoreForContext(contextId).beginImport(files),
   // Raw emscripten Module accessor for harness diagnostics (threaded mode:
   // lets a probe read atomic counters / last-step markers FROM THE MAIN
   // THREAD while the engine thread is busy inside a long wasm call and the

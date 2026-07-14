@@ -5,6 +5,7 @@ import {
   Sha256,
   classifyContainerEntries,
   createBigDirectory,
+  modContentHash,
   parse7zSlt,
   validateBigReader,
 } from "./mod-package-format.mjs";
@@ -363,15 +364,7 @@ async function importPackage(payload) {
         discovered.loose, sevenZip, opfsPath, discovered.bigs.length, totals);
       archives.push({ opfsPath, name, enabled: true, ...result });
     }
-    const contentIdentity = JSON.stringify({
-      schema: 1,
-      archives: archives.map((archive) => ({
-        name: archive.name.toLowerCase(),
-        size: archive.size,
-        sha256: archive.sha256,
-      })),
-    });
-    const contentHash = new Sha256().update(new TextEncoder().encode(contentIdentity)).digestHex();
+    const contentHash = modContentHash(archives);
     const warnings = [];
     if (discovered.ignoredNative.length > 0) {
       warnings.push(`Ignored ${discovered.ignoredNative.length} native Windows code file(s); DLL/EXE extensions cannot run in the browser.`);

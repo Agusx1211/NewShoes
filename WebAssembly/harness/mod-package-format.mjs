@@ -122,6 +122,18 @@ export class Sha256 {
   }
 }
 
+export function modContentHash(archives) {
+  const identity = JSON.stringify({
+    schema: 1,
+    archives: Array.from(archives ?? [], (archive) => ({
+      name: String(archive?.name ?? "").toLowerCase(),
+      size: Number(archive?.size),
+      sha256: String(archive?.sha256 ?? "").toLowerCase(),
+    })),
+  });
+  return new Sha256().update(new TextEncoder().encode(identity)).digestHex();
+}
+
 export function parse7zSlt(lines) {
   const entries = [];
   let current = null;

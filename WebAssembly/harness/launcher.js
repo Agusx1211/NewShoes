@@ -50,7 +50,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
   const APP_META = {
     setup: { title: "Project New Shoes Game Launcher", launcherLogo: true },
     explorer: { title: "My Files", icon: "#i-folder" },
-    mods: { title: "Mod Manager", icon: "#i-apps" },
+    mods: { title: "Mod Manager", icon: "#i-mod" },
     gameData: { title: "Save & Replay Manager", icon: "#i-save" },
     browser: { title: "Project New Shoes Browser", icon: "#i-browser" },
     notepad: { title: "Notepad", icon: "#i-note" },

@@ -4,6 +4,7 @@ import {
   classifyContainerEntries,
   createBigDirectory,
   enginePathFromContainerPath,
+  modContentHash,
   parse7zSlt,
   validateBigReader,
 } from "./mod-package-format.mjs";
@@ -13,6 +14,8 @@ assert.equal(new Sha256().update(new TextEncoder().encode("abc")).digestHex(),
 const long = new Uint8Array(1_000_000).fill(0x61);
 assert.equal(new Sha256().update(long.subarray(0, 17)).update(long.subarray(17)).digestHex(),
   "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
+assert.equal(modContentHash([{ name: "Content.BIG", size: 3, sha256: "a".repeat(64) }]),
+  modContentHash([{ name: "content.big", size: 3, sha256: "A".repeat(64) }]));
 
 const parsed = parse7zSlt([
   "  0M Scan /input/\b\bPath = Wrapper/Data/INI/GameData.ini",

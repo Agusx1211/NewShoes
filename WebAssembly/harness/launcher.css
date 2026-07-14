@@ -93,7 +93,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, .desktop-icon-l
 .installed-mods-panel > header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
 .installed-mods-panel > header > div:last-child { display: flex; gap: 7px; }
 .installed-mod-list { display: grid; gap: 7px; }
-.installed-mod-card { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto; gap: 10px; align-items: center; padding: 10px; border: 1px solid #c5d0d6; border-radius: 4px; background: #f8fafb; }
+.installed-mod-card { display: grid; grid-template-columns: minmax(220px, 1fr) auto; gap: 10px; align-items: center; padding: 10px; border: 1px solid #c5d0d6; border-radius: 4px; background: #f8fafb; }
 .installed-mod-card.is-enabled { border-color: #5b9bc3; background: #eef7fc; }
 .installed-mod-selection { display: flex; align-items: center; gap: 9px; cursor: pointer; }
 .installed-mod-selection span { display: grid; gap: 2px; }
@@ -104,8 +104,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, .desktop-icon-l
 .installed-mod-controls button, .game-data-file-row button { padding: 5px 8px; border: 1px solid #8da3b0; border-radius: 3px; color: #244d64; background: #fff; font-size: 11px; cursor: pointer; }
 .installed-mod-controls button:disabled { opacity: .4; cursor: default; }
 .installed-mod-warning { grid-column: 1 / -1; margin: 1px 0 0; padding: 6px 8px; border-left: 3px solid #d99421; color: #6d4a14; background: #fff6df; font-size: 11px; }
-.installed-mod-archives { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 12px; padding: 8px; border-top: 1px solid #c7d9e4; color: #38586a; background: rgba(255,255,255,.65); font-size: 11px; }
-.installed-mod-archives > strong { grid-column: 1 / -1; color: #244d64; }
+.installed-mod-archives { grid-column: 1 / -1; border-top: 1px solid #c7d9e4; color: #38586a; background: rgba(255,255,255,.65); font-size: 11px; }
+.installed-mod-archives summary { padding: 7px 8px; color: #506b7a; cursor: pointer; font-weight: 700; }
+.installed-mod-archives[open] summary { border-bottom: 1px solid #d6e1e7; color: #244d64; }
+.installed-mod-archive-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 12px; padding: 8px; }
+.installed-mod-content-id { grid-column: 1 / -1; display: flex; align-items: center; gap: 7px; color: #6c808b; font-size: 10px; }
 .installed-mod-archives label { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 6px; cursor: pointer; }
 .installed-mod-archives label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .installed-mod-archives label small { color: #728690; }
@@ -591,7 +594,7 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 .transfer-install-status.is-error { color: #80443d; border-color: #dfb7b1; background: #fff0ed; }
 .transfer-legal-check { position: relative; display: grid; grid-template-columns: 21px 1fr; align-items: center; gap: 10px; margin-top: 14px; padding: 13px; color: #405a68; border: 1px solid #c4d0d6; border-radius: 4px; background: #fff; cursor: pointer; font-size: 10px; line-height: 1.45; }
 .transfer-legal-check input { position: absolute; opacity: 0; }.transfer-legal-check > span { width: 20px; height: 20px; display: grid; place-items: center; color: transparent; border: 1px solid #8da2ad; border-radius: 3px; background: #fff; font-weight: bold; }.transfer-legal-check:has(input:checked) { border-color: #5f9a73; background: #f2f8f4; }.transfer-legal-check input:checked + span { color: #fff; border-color: #4c8b62; background: #4c8b62; }
-.transfer-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 13px 0 0; padding: 0; border: 0; }.transfer-options legend { margin-bottom: 7px; color: #6a7d87; font-size: 9px; font-weight: bold; }.transfer-options label { position: relative; min-height: 55px; display: grid; grid-template-columns: 22px 29px 1fr; align-items: center; gap: 8px; padding: 9px; border: 1px solid #ccd6db; border-radius: 4px; background: #fff; }.transfer-options label:has(input:checked) { border-color: #6797b4; background: #eff7fb; }.transfer-options input { width: 15px; height: 15px; }.transfer-options svg { width: 27px; height: 27px; }.transfer-options span { display: grid; gap: 2px; }.transfer-options strong { font-size: 10px; }.transfer-options small { color: #7b8c95; font-size: 8px; }
+.transfer-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 13px 0 0; padding: 0; border: 0; }.transfer-options legend { margin-bottom: 7px; color: #6a7d87; font-size: 9px; font-weight: bold; }.transfer-options label { position: relative; min-height: 55px; display: grid; grid-template-columns: 22px 29px 1fr; align-items: center; gap: 8px; padding: 9px; border: 1px solid #ccd6db; border-radius: 4px; background: #fff; }.transfer-options label:has(input:checked) { border-color: #6797b4; background: #eff7fb; }.transfer-options label:has(input:disabled) { opacity: .55; }.transfer-options input { width: 15px; height: 15px; }.transfer-options svg { width: 27px; height: 27px; }.transfer-options span { display: grid; gap: 2px; }.transfer-options strong { font-size: 10px; }.transfer-options small { color: #7b8c95; font-size: 8px; }
 .transfer-actions { margin-top: auto; display: flex; justify-content: flex-end; gap: 8px; padding-top: 18px; }
 .transfer-actions .button:disabled { opacity: .5; cursor: not-allowed; filter: grayscale(.3); }
 .transfer-pin { display: block; margin: 20px 0 14px; padding: 16px; color: #173e6d; border: 1px solid #7f9db9; border-radius: 5px; background: #fff; box-shadow: inset 0 0 0 3px #e4edf5; text-align: center; user-select: text; font: bold 32px/1.2 "Lucida Console", Consolas, monospace; letter-spacing: 5px; }

@@ -167,6 +167,11 @@ try {
   await page.locator('.desktop-icon[data-open="mods"]').click();
   await page.waitForSelector("#modsWindow.is-open");
   assert.equal(await page.locator(".installed-mod-card").count(), 2);
+  assert.equal(await page.locator(".installed-mod-archives").count(), 2);
+  assert.equal(await page.locator(".installed-mod-archives[open]").count(), 0,
+    "package file controls should be collapsed by default");
+  assert.equal(await page.locator('.desktop-icon[data-open="mods"] use').getAttribute("href"), "#i-mod");
+  assert.equal(await page.locator('.desktop-icon[data-open="programs"] use').getAttribute("href"), "#i-apps");
   assert.match(await page.locator("#activeModBadge").textContent(), /Vanilla/);
   const screenshot = join(shotDir, "mod-manager-imported-packages.png");
   await page.screenshot({ path: screenshot });

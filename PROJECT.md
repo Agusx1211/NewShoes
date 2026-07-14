@@ -80,8 +80,10 @@ under the persistent user-data mount, so saves and replays do not leak between
 vanilla or differently ordered mod sets. The launcher can browse those isolated
 folders and make an explicit, risk-acknowledged compatibility copy without
 changing the source file. Multiplayer discovery incorporates the same identity,
-preventing peers with different content or load order from sharing a room.
-Cross-device save/replay transfer also requires matching active identities.
+preventing peers with different content or load order from sharing a room. The
+encrypted device-transfer flow can copy the installed mod library together with
+its active load order. Saves and replays transferred in the same session are
+written into that exact configuration's isolated user-data folder.
 
 ### Audio, video, and networking
 
@@ -154,6 +156,7 @@ Verified today:
 - browser-local asset installation and save persistence;
 - browser-local ordered mod installation, exact composition identities, and
   isolated save/replay management;
+- encrypted device transfer of installed games, mods, saves, and replays;
 - short WebRTC multiplayer paths up to four players; and
 - launcher shutdown and clean relaunch.
 

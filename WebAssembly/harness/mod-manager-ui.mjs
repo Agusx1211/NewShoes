@@ -16,6 +16,7 @@ const store = new ModPackageStore({
   },
 });
 let enabledOrder = store.active().mods.map((mod) => mod.id);
+const expandedMods = new Set();
 let importBusy = false;
 
 function selectionKey(mods) {
@@ -51,9 +52,6 @@ function modCard(mod, enabledIndex) {
   detail.textContent = `${mod.version} · ${formatBytes(mod.totalBytes)} · ${mod.archives.length} BIG archive${mod.archives.length === 1 ? "" : "s"}`;
   copy.append(title, detail);
   selection.append(checkbox, copy);
-  const hash = document.createElement("code");
-  hash.textContent = mod.contentHash.slice(0, 12);
-  hash.title = `Content identity: ${mod.contentHash}`;
   const controls = document.createElement("div");
   controls.className = "installed-mod-controls";
   const up = document.createElement("button");
@@ -83,6 +81,7 @@ function modCard(mod, enabledIndex) {
     try {
       await store.remove(mod.id);
       enabledOrder = enabledOrder.filter((id) => id !== mod.id);
+      expandedMods.delete(mod.id);
       toast("Mod removed", `${mod.name} was deleted from this browser.`);
       renderMods();
     } catch (error) {
@@ -91,13 +90,29 @@ function modCard(mod, enabledIndex) {
     }
   });
   controls.append(up, down, remove);
-  card.append(selection, hash, controls);
-  if (mod.archives.length > 1) {
-    const archiveList = document.createElement("div");
+  card.append(selection, controls);
+  {
+    const archiveList = document.createElement("details");
     archiveList.className = "installed-mod-archives";
-    const heading = document.createElement("strong");
-    heading.textContent = "Package archives";
-    archiveList.append(heading);
+    archiveList.open = expandedMods.has(mod.id);
+    archiveList.addEventListener("toggle", () => {
+      if (archiveList.open) expandedMods.add(mod.id);
+      else expandedMods.delete(mod.id);
+    });
+    const heading = document.createElement("summary");
+    const enabledArchives = mod.archives.filter((archive) => archive.enabled).length;
+    heading.textContent = `Advanced · ${enabledArchives} of ${mod.archives.length} package file${mod.archives.length === 1 ? "" : "s"} enabled`;
+    const options = document.createElement("div");
+    options.className = "installed-mod-archive-options";
+    const identity = document.createElement("span");
+    identity.className = "installed-mod-content-id";
+    identity.textContent = "Content ID";
+    const hash = document.createElement("code");
+    hash.textContent = mod.contentHash.slice(0, 12);
+    hash.title = `Content identity: ${mod.contentHash}`;
+    identity.append(hash);
+    options.append(identity);
+    archiveList.append(heading, options);
     for (const archive of mod.archives) {
       const option = document.createElement("label");
       const archiveCheckbox = document.createElement("input");
@@ -117,7 +132,7 @@ function modCard(mod, enabledIndex) {
       const size = document.createElement("small");
       size.textContent = formatBytes(archive.size);
       option.append(archiveCheckbox, name, size);
-      archiveList.append(option);
+      options.append(option);
     }
     card.append(archiveList);
   }
@@ -366,6 +381,11 @@ document.querySelector("#compatibilityOverrideCopy").addEventListener("click", a
 
 document.querySelectorAll('[data-open="gameData"]').forEach((button) =>
   button.addEventListener("click", () => void refreshGameData()));
+window.addEventListener("zeroh:mods-transferred", () => {
+  enabledOrder = store.active().mods.map((mod) => mod.id);
+  expandedMods.clear();
+  renderMods();
+});
 renderMods();
 
 window.ZeroHModManager = {
