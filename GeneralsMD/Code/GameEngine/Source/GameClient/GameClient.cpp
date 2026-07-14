@@ -336,6 +336,12 @@ void GameClient::init( void )
 	// create the mouse
 	TheMouse = createMouse();
 	TheMouse->parseIni();
+#if defined(__EMSCRIPTEN__)
+	// Browser cursors are composited by the user agent, outside the transferred
+	// game canvas.  Keep the original Win32/ANI cursor path active so the wasm
+	// platform adapter can present the engine-selected cursor through CSS.
+	TheMouse->setRedrawMode(Mouse::RM_WINDOWS);
+#endif
 	TheMouse->initCursorResources();
  	TheMouse->setName("TheMouse");
 

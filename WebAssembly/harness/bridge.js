@@ -9,6 +9,7 @@ import {
 import { createBinkDecoderSourceRegistry } from "./bink_decoder.mjs";
 import { createBinkDirectVideoRuntime } from "./bink_direct_runtime.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
+import { loadCursorStyle } from "./cursor-style-config.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
 import { createSavePersistenceCoordinator } from "./save-persistence-coordinator.mjs";
 import { createReplayFileStore } from "./replay-file-store.mjs";
@@ -1135,6 +1136,14 @@ function createThreadedEngineController() {
         return;
       case "status":
         applyThreadedStatus(msg);
+        return;
+      case "browserCursor":
+        harnessState.browserInput = {
+          ...(harnessState.browserInput ?? {}),
+          cursorSet: msg.cursorSet === true,
+          cursorFile: typeof msg.cursorFile === "string" ? msg.cursorFile : null,
+        };
+        syncBrowserCursor(harnessState.browserInput);
         return;
       case "live":
         threadedLog("engine thread live");
@@ -4918,8 +4927,11 @@ let originalCursorAnimation = {
 
 function loadOriginalCursorManifest() {
   if (!originalCursorManifestPromise) {
-    originalCursorManifestPromise = fetch(originalCursorManifestUrl, { cache: "no-store" })
-      .then((response) => {
+    originalCursorManifestPromise = Promise.resolve()
+      .then(async () => {
+        const prepared = await window.ZeroHAssetLibrary?.originalCursorManifestForLaunch?.();
+        if (prepared) return prepared;
+        const response = await fetch(originalCursorManifestUrl, { cache: "no-store" });
         if (!response.ok) {
           throw new Error(`cursor manifest fetch failed (${response.status})`);
         }
@@ -4937,11 +4949,6 @@ function loadOriginalCursorManifest() {
   }
   return originalCursorManifestPromise;
 }
-
-// Start this small fetch before the engine and SwiftShader begin competing
-// for the local machine. Cursor selection happens during real init, so the
-// manifest is normally ready by the first SetCursor call.
-loadOriginalCursorManifest().catch(() => {});
 
 function originalCursorKey(cursorFile) {
   const normalized = String(cursorFile ?? "").replaceAll("\\", "/");
@@ -5009,6 +5016,7 @@ async function startOriginalCursorAnimation(cursorFile) {
         step,
         stepCount: cursor.sequence.length,
         frameUrl,
+        assetSource: manifest.source ?? "developer_cursor_artifacts",
       };
       const rate = Math.max(1, cursor.rates?.[step] ?? 1);
       step = (step + 1) % cursor.sequence.length;
@@ -5035,6 +5043,19 @@ async function startOriginalCursorAnimation(cursorFile) {
 }
 
 function syncBrowserCursor(input = harnessState.browserInput) {
+  if (loadCursorStyle() === "system") {
+    stopOriginalCursorAnimation();
+    const css = "default";
+    canvas.style.cursor = css;
+    harnessState.browserCursor = {
+      source: "system_cursor_setting",
+      cursorSet: Boolean(input?.cursorSet),
+      cursorFile: typeof input?.cursorFile === "string" ? input.cursorFile : null,
+      css,
+      visible: true,
+    };
+    return;
+  }
   if (!input) {
     const css = canvas.style.cursor || "auto";
     harnessState.browserCursor = {
@@ -5076,6 +5097,20 @@ function syncBrowserCursor(input = harnessState.browserInput) {
     visible: true,
   };
 }
+
+window.addEventListener("cncport:cursorstylechange", () => {
+  syncBrowserCursor();
+});
+
+window.addEventListener("cncport:cursorassetschange", () => {
+  originalCursorManifestPromise = null;
+  const cursorFile = harnessState.browserInput?.cursorFile;
+  if (loadCursorStyle() === "game" && cursorFile) {
+    startOriginalCursorAnimation(cursorFile);
+  } else {
+    syncBrowserCursor();
+  }
+});
 
 const HARNESS_LOG_LIMIT = 512;
 

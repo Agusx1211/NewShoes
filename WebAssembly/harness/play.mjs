@@ -12,6 +12,7 @@ import {
   normalizeCameraZoomHeight,
   saveCameraZoomHeight,
 } from "./camera-zoom-config.mjs";
+import { loadCursorStyle, saveCursorStyle } from "./cursor-style-config.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
 import {
   runRuntimeShutdownSequence,
@@ -71,6 +72,7 @@ try {
 } catch {
   // Privacy settings can make the localStorage property itself throw.
 }
+let cursorStyle = loadCursorStyle(networkStorage);
 
 function binkPreparationPercent(detail) {
   const progress = Number.isFinite(Number(detail?.progress))
@@ -1790,6 +1792,8 @@ function syncDesktopGameSettings() {
   const cameraZoomOutput = document.querySelector("#cameraZoomHeightValue");
   if (cameraZoomInput) cameraZoomInput.value = String(cameraZoomHeight);
   if (cameraZoomOutput) cameraZoomOutput.value = String(cameraZoomHeight);
+  const gameCursorToggle = document.querySelector("#gameCursorToggle");
+  if (gameCursorToggle) gameCursorToggle.checked = cursorStyle === "game";
   const fullscreenButton = document.querySelector("#fullscreenButton");
   if (fullscreenButton) {
     fullscreenButton.hidden = !fullscreenSupported();
@@ -1857,6 +1861,17 @@ function bindDesktopGameSettings() {
     syncDesktopGameSettings();
     track("setting_changed", { category: "gameplay", setting: "camera_zoom", value: String(cameraZoomHeight) });
   });
+  document.querySelector("#gameCursorToggle")?.addEventListener("change", (event) => {
+    cursorStyle = saveCursorStyle(networkStorage, event.currentTarget.checked ? "game" : "system");
+    window.dispatchEvent(new CustomEvent("cncport:cursorstylechange", {
+      detail: { style: cursorStyle },
+    }));
+    track("setting_changed", {
+      category: "display",
+      setting: "cursor_style",
+      value: cursorStyle === "game" ? "original" : "system",
+    });
+  });
   document.querySelector("#performanceOverlayToggle")?.addEventListener("change", (event) => {
     setPerformanceOverlay({ enabled: event.currentTarget.checked });
     track("setting_changed", { category: "performance", setting: "performance_overlay", value: event.currentTarget.checked ? "enabled" : "disabled" });
@@ -1915,6 +1930,7 @@ function playConfiguration() {
     display: { ...displaySettings },
     diagnostics: configuredDiagLevel,
     shaderTier: effectiveShaderTier(),
+    cursorStyle,
     maxCameraHeight: cameraZoomHeight,
     consoleVisible: !consolePanel.classList.contains("hidden"),
     fullscreen: Boolean(fullscreenElement()),

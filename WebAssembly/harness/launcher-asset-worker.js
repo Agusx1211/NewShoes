@@ -20,6 +20,10 @@ const MAX_BIG_DIRECTORY_BYTES = 64 * 1024 * 1024;
 const MAX_ISO_ROOT_BYTES = 64 * 1024 * 1024;
 const MAX_LOOSE_SCRIPT_BYTES = 16 * 1024 * 1024;
 const MAX_PRESENTATION_ICON_BYTES = 32 * 1024 * 1024;
+const MAX_CURSOR_FILE_BYTES = 1024 * 1024;
+const MAX_CURSOR_PACK_BYTES = 16 * 1024 * 1024;
+const ORIGINAL_CURSOR_PACK_NAME = "OriginalCursors.big";
+const REQUIRED_CURSOR_NAMES = ["sccpointer.ani", "sccattack.ani"];
 
 const ARCHIVES = self.ZeroHArchiveSpecs;
 const ARCHIVE_SOURCE_NAMES = new Set(ARCHIVES.map((archive) => archive.sourceName.toLowerCase()));
@@ -456,6 +460,12 @@ async function scanSources(files, requestId) {
         });
         continue;
       }
+      if (lower.endsWith(".ani")) {
+        addCandidate(leaf, directEdition(item.path, directoryKinds, leaf), {
+          kind: "reader", reader: new BlobReader(item.file, item.path), label: item.path,
+        });
+        continue;
+      }
       if (lower.endsWith(".bik")) {
         addCandidate(leaf, directEdition(item.path, directoryKinds, leaf), {
           kind: "reader", reader: new BlobReader(item.file, item.path), label: item.path,
@@ -519,6 +529,7 @@ async function scanSources(files, requestId) {
 
   const selection = resolveCatalog();
   const videoSelection = resolveVideoCatalog();
+  const cursorSelection = resolveCursorCatalog();
   const presentationCandidate = chooseCandidate("GeneralsZH.ico", "zh")
     || chooseCandidate("generals.exe", "zh");
   let presentationIcon = null;
@@ -548,6 +559,8 @@ async function scanSources(files, requestId) {
     totalBytes: selection.totalBytes,
     videoCount: videoSelection.selected.length,
     videoBytes: videoSelection.totalBytes,
+    cursorCount: cursorSelection.selected.length,
+    cursorMissing: cursorSelection.missing,
     errors,
     presentationIcon,
   };
@@ -642,6 +655,31 @@ function resolveVideoCatalog() {
     totalBytes += size;
   }
   return { selected, totalBytes };
+}
+
+function resolveCursorCatalog() {
+  const selected = [];
+  for (const sourceName of [...catalog.keys()]
+    .filter((name) => name.endsWith(".ani"))
+    .sort((left, right) => left.localeCompare(right, "en", { sensitivity: "base" }))) {
+    const candidate = chooseCandidate(sourceName, "zh");
+    if (!candidate || !["zh", "unknown"].includes(candidate.edition)) continue;
+    const size = candidate.kind === "cab" ? candidate.entry.size : candidate.reader.size;
+    if (!Number.isSafeInteger(size) || size <= 12 || size > MAX_CURSOR_FILE_BYTES) continue;
+    selected.push({ sourceName: basename(candidate.sourceName), candidate, size });
+  }
+  const names = new Set(selected.map((entry) => entry.sourceName.toLowerCase()));
+  const missing = REQUIRED_CURSOR_NAMES.filter((name) => !names.has(name));
+  const directoryBytes = selected.reduce((sum, entry) =>
+    sum + 9 + textEncoder.encode(`Data\\Cursors\\${entry.sourceName}`).byteLength, 0);
+  const totalBytes = 16 + directoryBytes
+    + selected.reduce((sum, entry) => sum + entry.size, 0);
+  return {
+    selected,
+    missing,
+    ready: missing.length === 0 && totalBytes <= MAX_CURSOR_PACK_BYTES,
+    totalBytes,
+  };
 }
 
 function targetOutputPath(outputRoot, target) {
@@ -868,6 +906,85 @@ async function writeLooseScripts(target, outputRoot, requestId, progress) {
   emitProgress(requestId, "prepare", target.archive.name, progress.completed, progress.total);
 }
 
+async function loadCursorFiles(selection) {
+  const files = new Map();
+  const cabinetGroups = new Map();
+  for (const selected of selection.selected) {
+    if (selected.candidate.kind !== "cab") {
+      files.set(selected, await selected.candidate.reader.read(0, selected.size));
+      continue;
+    }
+    const { cabinet, entry } = selected.candidate;
+    if (!cabinetGroups.has(cabinet)) cabinetGroups.set(cabinet, new Map());
+    const byFolder = cabinetGroups.get(cabinet);
+    if (!byFolder.has(entry.folderIndex)) byFolder.set(entry.folderIndex, []);
+    byFolder.get(entry.folderIndex).push(selected);
+  }
+
+  for (const [cabinet, byFolder] of cabinetGroups) {
+    for (const selections of byFolder.values()) {
+      const entries = selections.map((selected) => selected.candidate.entry);
+      const extracted = await readCabEntryGroup(cabinet, entries, MAX_CURSOR_FILE_BYTES);
+      for (const selected of selections) {
+        const bytes = extracted.get(selected.candidate.entry);
+        if (!bytes) throw new Error(`${selected.candidate.label}: cursor entry was not extracted`);
+        files.set(selected, bytes);
+      }
+    }
+  }
+  return files;
+}
+
+async function writeOriginalCursorPack(selection, outputRoot, requestId, progress) {
+  if (!selection.ready) return null;
+  const loaded = await loadCursorFiles(selection);
+  const entries = selection.selected.map((selected) => ({
+    pathBytes: textEncoder.encode(`Data\\Cursors\\${selected.sourceName}`),
+    bytes: loaded.get(selected),
+  }));
+  const directoryBytes = entries.reduce((sum, entry) => sum + 9 + entry.pathBytes.byteLength, 0);
+  const dataStart = 16 + directoryBytes;
+  const total = dataStart + entries.reduce((sum, entry) => sum + entry.bytes.byteLength, 0);
+  if (total !== selection.totalBytes || total > MAX_CURSOR_PACK_BYTES) {
+    throw new Error("Original cursor pack size changed during extraction");
+  }
+  const pack = new Uint8Array(total);
+  pack.set([0x42, 0x49, 0x47, 0x46], 0);
+  setU32LE(pack, 4, total);
+  setU32BE(pack, 8, entries.length);
+  let directoryCursor = 16;
+  let dataCursor = dataStart;
+  for (const entry of entries) {
+    setU32BE(pack, directoryCursor, dataCursor);
+    setU32BE(pack, directoryCursor + 4, entry.bytes.byteLength);
+    pack.set(entry.pathBytes, directoryCursor + 8);
+    pack.set(entry.bytes, dataCursor);
+    directoryCursor += 9 + entry.pathBytes.byteLength;
+    dataCursor += entry.bytes.byteLength;
+  }
+
+  const outputPath = `${outputRoot}/${ORIGINAL_CURSOR_PACK_NAME}`;
+  const output = await openOutput(outputPath);
+  try {
+    writeAll(output, pack, 0, ORIGINAL_CURSOR_PACK_NAME);
+    output.flush();
+    if (output.getSize() !== total) throw new Error(`${ORIGINAL_CURSOR_PACK_NAME}: OPFS size mismatch`);
+  } finally {
+    output.close();
+  }
+  progress.completed += total;
+  emitProgress(requestId, "prepare", "Original game cursors", progress.completed, progress.total);
+  const validation = await validateBigReader(
+    await readOpfsFile(outputPath), ORIGINAL_CURSOR_PACK_NAME,
+    REQUIRED_CURSOR_NAMES.map((name) => `Data\\Cursors\\${name}`));
+  return {
+    name: ORIGINAL_CURSOR_PACK_NAME,
+    bytes: total,
+    entryCount: validation.entryCount,
+    opfsPath: outputPath,
+  };
+}
+
 async function readCandidateBytes(candidate) {
   if (candidate.kind !== "cab") {
     if (candidate.reader.size > MAX_LOOSE_SCRIPT_BYTES) {
@@ -956,7 +1073,8 @@ async function readCabEntryGroup(cabinet, entries, maxBytes = MAX_LOOSE_SCRIPT_B
 }
 
 async function materializeSelection(selection, outputRoot, requestId,
-    progress = { completed: 0, total: selection.totalBytes }, videoSelection = { selected: [] }) {
+    progress = { completed: 0, total: selection.totalBytes }, videoSelection = { selected: [] },
+    cursorSelection = { ready: false }) {
   const cabGroups = new Map();
   const targets = [...selection.selected, ...videoSelection.selected];
   for (const target of targets) {
@@ -997,7 +1115,9 @@ async function materializeSelection(selection, outputRoot, requestId,
     }
     Object.assign(video, parseBinkHeader(await reader.read(0, 44), reader.size, video.name));
   }
-  return { archives, videos };
+  const cursorAsset = await writeOriginalCursorPack(
+    cursorSelection, outputRoot, requestId, progress);
+  return { archives, videos, cursorAsset };
 }
 
 async function prepare(request, requestId) {
@@ -1012,13 +1132,15 @@ async function prepare(request, requestId) {
   const outputRoot = installRoot || namespaceRoot;
   const videoSelection = request.includeVideos === true
     ? resolveVideoCatalog() : { selected: [], totalBytes: 0 };
+  const cursorSelection = resolveCursorCatalog();
   const progress = {
     completed: 0,
-    total: selection.totalBytes + videoSelection.totalBytes,
+    total: selection.totalBytes + videoSelection.totalBytes
+      + (cursorSelection.ready ? cursorSelection.totalBytes : 0),
   };
   try {
     const materialized = await materializeSelection(
-      selection, outputRoot, requestId, progress, videoSelection);
+      selection, outputRoot, requestId, progress, videoSelection, cursorSelection);
     return {
       ...materialized,
       installed: installRoot ? materialized : null,
