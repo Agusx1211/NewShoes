@@ -2,16 +2,15 @@
 
 import { copyFile, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   PAGES_HARNESS_FILES,
   PAGES_RUNTIME_FILES,
   PAGES_TEMPLATE_FILES,
-  PAGES_VIDEO_RUNTIME_FILES,
 } from "./pages_site_manifest.mjs";
 import { createBuildInfo, readReleaseMetadata } from "./release_metadata.mjs";
+import { buildBinkDecoderRuntime } from "./build_bink_decoder.mjs";
 
 const wasmRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(wasmRoot, "..");
@@ -21,10 +20,6 @@ const runtimeDist = resolve(process.env.PAGES_RUNTIME_DIST
 const defaultSourceUrl = "https://github.com/Agusx1211/NewShoes";
 const sourceUrl = String(process.env.PAGES_SOURCE_URL || defaultSourceUrl);
 const requestedMeasurementId = String(process.env.GA_MEASUREMENT_ID || "").trim();
-const ffmpegCoreVersion = "0.12.10";
-const ffmpegCoreCommit = "c3a763857c5e615ae8674715ad5e4f63ff469e9d";
-const ffmpegCorePartBytes = 8 * 1024 * 1024;
-const ffmpegCoreRoot = join(wasmRoot, "node_modules", "@ffmpeg", "core");
 const measurementId = /^G-[A-Z0-9]+$/.test(requestedMeasurementId) ? requestedMeasurementId : "";
 if (requestedMeasurementId && !measurementId) {
   console.warn("GA_MEASUREMENT_ID is invalid; analytics will be disabled in this artifact.");
@@ -70,57 +65,6 @@ async function assertExactRuntimeDirectory() {
       throw new Error(`Runtime artifact must be a regular non-symlink file: ${entry.name}`);
     }
   }
-}
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
-
-async function buildVideoRuntime() {
-  const packageJson = JSON.parse(await readFile(join(ffmpegCoreRoot, "package.json"), "utf8"));
-  if (packageJson.version !== ffmpegCoreVersion) {
-    throw new Error(`Hosted video runtime requires @ffmpeg/core ${ffmpegCoreVersion}; found ${packageJson.version}`);
-  }
-  const sourceRoot = join(ffmpegCoreRoot, "dist", "esm");
-  const coreScript = "ffmpeg-core.js";
-  const wasmSource = join(sourceRoot, "ffmpeg-core.wasm");
-  await copyRegularFile(join(sourceRoot, coreScript), join(outputRoot, "video-runtime", coreScript));
-  const wasm = await readFile(wasmSource);
-  const wasmParts = [];
-  for (let offset = 0; offset < wasm.byteLength; offset += ffmpegCorePartBytes) {
-    const bytes = wasm.subarray(offset, Math.min(offset + ffmpegCorePartBytes, wasm.byteLength));
-    const name = `ffmpeg-core.wasm.part${wasmParts.length}`;
-    await writeFile(join(outputRoot, "video-runtime", name), bytes);
-    wasmParts.push({ name, bytes: bytes.byteLength, sha256: sha256(bytes) });
-  }
-  const expectedPartNames = PAGES_VIDEO_RUNTIME_FILES
-    .filter((name) => name.includes(".wasm.part"))
-    .map((name) => name.split("/").pop());
-  if (JSON.stringify(wasmParts.map(({ name }) => name)) !== JSON.stringify(expectedPartNames)) {
-    throw new Error(`Unexpected @ffmpeg/core chunk count for ${wasm.byteLength} bytes`);
-  }
-  const manifest = {
-    schema: "cnc-zh-browser-video-runtime/v1",
-    coreVersion: ffmpegCoreVersion,
-    coreScript,
-    wasmBytes: wasm.byteLength,
-    wasmSha256: sha256(wasm),
-    wasmParts,
-  };
-  await writeFile(
-    join(outputRoot, "video-runtime", "ffmpeg-core-manifest.json"),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-  );
-  const sourceNotice = [
-    `@ffmpeg/core ${ffmpegCoreVersion}`,
-    "License: GNU GPL version 2 or later",
-    `Upstream revision: https://github.com/ffmpegwasm/ffmpeg.wasm/commit/${ffmpegCoreCommit}`,
-    `Corresponding source: https://github.com/ffmpegwasm/ffmpeg.wasm/tree/${ffmpegCoreCommit}`,
-    "This unmodified npm runtime is split into transport chunks during site packaging.",
-    "The browser reassembles and validates those chunks before loading the module.",
-    "",
-  ].join("\n");
-  await writeFile(join(outputRoot, "video-runtime", "ffmpeg-core-SOURCE.txt"), sourceNotice);
 }
 
 await assertExactRuntimeDirectory();
@@ -177,7 +121,7 @@ await writeFile(join(outputRoot, "harness", "build-info.json"), `${JSON.stringif
 const playSource = await readFile(join(wasmRoot, "harness", "play.html"), "utf8");
 const videoPolicyMarker = 'data-bink-video-sidecars="auto"';
 if (!playSource.includes(videoPolicyMarker)) throw new Error("play.html has no Bink video sidecar policy marker");
-const hostedPlaySource = playSource.replace(videoPolicyMarker, 'data-bink-video-sidecars="transcode"');
+const hostedPlaySource = playSource.replace(videoPolicyMarker, 'data-bink-video-sidecars="direct"');
 const directBootstrap = "    <script src=\"../coi-direct.js\"></script>\n";
 const legacyDocumentHead = `    <link rel="canonical" href="../">\n${directBootstrap}`;
 const rootDocumentHead = [
@@ -220,7 +164,7 @@ await writeFile(join(outputRoot, "manifest.webmanifest"), `${JSON.stringify(root
 for (const name of PAGES_RUNTIME_FILES) {
   await copyRegularFile(join(runtimeDist, name), join(outputRoot, "dist-threaded-release", name));
 }
-await buildVideoRuntime();
+await buildBinkDecoderRuntime(outputRoot);
 await copyRegularFile(join(repoRoot, "LICENSE.md"), join(outputRoot, "LICENSE.md"));
 await writeFile(join(outputRoot, ".nojekyll"), "");
 console.log(outputRoot);

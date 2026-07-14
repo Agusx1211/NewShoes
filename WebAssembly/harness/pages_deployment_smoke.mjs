@@ -162,34 +162,27 @@ try {
     disabled: document.querySelector("#includeVideosToggle")?.disabled,
     description: document.querySelector("#includeVideosDescription")?.textContent || "",
   }));
-  if (videoSupport.policy !== "transcode"
+  if (videoSupport.policy !== "direct"
       || videoSupport.support?.available !== true
-      || videoSupport.support?.mode !== "transcode"
+      || videoSupport.support?.mode !== "direct"
       || videoSupport.disabled !== false
-      || !/prepare and play original movies locally/i.test(videoSupport.description)) {
+      || !/play original movies directly/i.test(videoSupport.description)) {
     throw new Error(`Hosted optional-video support failed: ${JSON.stringify(videoSupport)}`);
   }
   const videoRuntime = await page.evaluate(async () => {
     const base = new URL("../video-runtime/", document.baseURI);
-    const manifestResponse = await fetch(new URL("ffmpeg-core-manifest.json", base));
+    const manifestResponse = await fetch(new URL("bink-decoder-manifest.json", base));
     const manifest = await manifestResponse.json();
-    const scriptResponse = await fetch(new URL(manifest.coreScript, base));
-    const parts = [];
-    let total = 0;
-    for (const part of manifest.wasmParts) {
-      const response = await fetch(new URL(part.name, base));
-      const bytes = await response.arrayBuffer();
-      const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
-        .map((value) => value.toString(16).padStart(2, "0")).join("");
-      total += bytes.byteLength;
-      parts.push({ ok: response.ok, bytes: bytes.byteLength, digest, expected: part });
-    }
-    return { manifestOk: manifestResponse.ok, scriptOk: scriptResponse.ok, manifest, total, parts };
+    const response = await fetch(new URL(manifest.wasmFile, base));
+    const bytes = await response.arrayBuffer();
+    const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
+      .map((value) => value.toString(16).padStart(2, "0")).join("");
+    return { manifestOk: manifestResponse.ok, wasmOk: response.ok, manifest, bytes: bytes.byteLength, digest };
   });
-  if (!videoRuntime.manifestOk || !videoRuntime.scriptOk
-      || videoRuntime.total !== videoRuntime.manifest.wasmBytes
-      || videoRuntime.parts.some((part) => !part.ok
-        || part.bytes !== part.expected.bytes || part.digest !== part.expected.sha256)) {
+  if (!videoRuntime.manifestOk || !videoRuntime.wasmOk
+      || videoRuntime.bytes !== videoRuntime.manifest.wasmBytes
+      || videoRuntime.bytes > 128 * 1024
+      || videoRuntime.digest !== videoRuntime.manifest.wasmSha256) {
     throw new Error(`Hosted video runtime delivery failed: ${JSON.stringify(videoRuntime)}`);
   }
 
@@ -507,7 +500,7 @@ try {
     isolation,
     wasm,
     videoSupport,
-    videoRuntime: { total: videoRuntime.total, parts: videoRuntime.parts.length },
+    videoRuntime: { bytes: videoRuntime.bytes, abiVersion: videoRuntime.manifest.abiVersion },
     runtime,
     canonicalPath: { first: firstPathname, reload: reloadPathname },
     domainRootCanonical: true,

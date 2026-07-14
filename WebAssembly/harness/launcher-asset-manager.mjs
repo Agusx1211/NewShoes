@@ -6,7 +6,7 @@ import {
   retailPresentationSource,
 } from "./launcher-retail-presentation.mjs";
 import { DEVICE_TRANSFER_VERSION } from "./device-transfer-protocol.mjs";
-import { parseBrowserBinkHeader } from "./bink_transcoder.mjs";
+import { parseBrowserBinkHeader } from "./bink_decoder.mjs";
 
 const INSTALLED_KEY = "zeroh-installed-library.v5";
 const OLD_INSTALLED_KEYS = ["zeroh-installed-library.v4", "zeroh-installed-library.v3", "zeroh-installed-library.v2", "zeroh-installed-library.v1"];

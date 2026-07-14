@@ -4,7 +4,7 @@ import {
   loadBinkVideoManifest,
   probeBinkVideoSupport,
 } from "./bink_runtime.mjs";
-import { parseBrowserBinkHeader } from "./bink_transcoder.mjs";
+import { parseBrowserBinkHeader } from "./bink_decoder.mjs";
 
 function response(status, body, contentType = "application/json") {
   return {
@@ -27,43 +27,39 @@ const validManifest = {
   }],
 };
 
-const transcodeScope = {
+const directScope = {
   Worker: class {},
   WebAssembly: {},
   crypto: { subtle: { digest() {} } },
   navigator: { storage: { getDirectory() {} } },
-  URL: { createObjectURL() {} },
 };
 
 const runtimeManifest = {
-  schema: "cnc-zh-browser-video-runtime/v1",
-  coreVersion: "0.12.10",
-  coreScript: "ffmpeg-core.js",
-  wasmParts: Array.from({ length: 4 }, (_, index) => ({
-    name: `ffmpeg-core.wasm.part${index}`,
-    bytes: 1,
-    sha256: "0".repeat(64),
-  })),
+  schema: "cnc-zh-bink-decoder-runtime/v1",
+  abiVersion: 1,
+  wasmFile: "bink-decoder.wasm",
+  wasmBytes: 103710,
+  wasmSha256: "0".repeat(64),
 };
 
 {
   const support = await probeBinkVideoSupport({
-    policy: "transcode",
-    scope: transcodeScope,
+    policy: "direct",
+    scope: directScope,
     fetchImpl: async () => response(200, JSON.stringify(runtimeManifest)),
   });
   assert.deepEqual(support, {
     available: true,
     payloadCount: 0,
     reason: null,
-    mode: "transcode",
+    mode: "direct",
   });
 }
 
 {
   const support = await probeBinkVideoSupport({
-    policy: "transcode",
-    scope: { ...transcodeScope, Worker: undefined },
+    policy: "direct",
+    scope: { ...directScope, Worker: undefined },
     fetchImpl: async () => { throw new Error("must not fetch without worker support"); },
   });
   assert.equal(support.available, false);
@@ -134,8 +130,9 @@ const runtimeManifest = {
     bytes: bytes.byteLength,
     ...header,
   }]);
-  assert.equal(manifest.payloads[0].preparation, "on-device");
-  assert.equal(manifest.payloads[0].outputVideoCodec, "vp8");
+  assert.equal(manifest.payloads[0].preparation, "streaming-direct");
+  assert.equal(manifest.payloads[0].outputVideoCodec, "bink-v1-wasm");
+  assert.equal(manifest.payloads[0].outputFile, "EA_LOGO.BIK");
   assert.deepEqual(manifest.payloads[0].outputAudioCodecs, ["pcm_s16le"]);
 }
 
