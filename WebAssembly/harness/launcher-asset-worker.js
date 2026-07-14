@@ -62,6 +62,36 @@ function ascii(bytes, start, length) {
   return textDecoder.decode(bytes.subarray(start, start + length));
 }
 
+function hex(bytes) {
+  return [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function parseBinkHeader(bytes, fileSize, name) {
+  if (bytes.byteLength < 44 || ascii(bytes, 0, 3) !== "BIK") {
+    throw new Error(`${name}: only classic Bink movies are supported`);
+  }
+  const frames = u32(bytes, 8);
+  const width = u32(bytes, 20);
+  const height = u32(bytes, 24);
+  const fpsNum = u32(bytes, 28);
+  const fpsDen = u32(bytes, 32);
+  if (fileSize <= 44 || u32(bytes, 4) !== fileSize - 8
+      || frames === 0 || u32(bytes, 16) !== frames
+      || width === 0 || height === 0 || fpsNum === 0 || fpsDen === 0) {
+    throw new Error(`${name}: prepared Bink payload has an invalid header`);
+  }
+  return {
+    signature: `BIK${String.fromCharCode(bytes[3])}`,
+    headerHex: hex(bytes.subarray(0, 44)),
+    frames,
+    width,
+    height,
+    fpsNum,
+    fpsDen,
+    audioTracks: u32(bytes, 40),
+  };
+}
+
 function basename(path) {
   return String(path).replaceAll("\\", "/").split("/").pop() || "";
 }
@@ -962,10 +992,10 @@ async function materializeSelection(selection, outputRoot, requestId,
   }));
   for (const video of videos) {
     const reader = await readOpfsFile(video.opfsPath);
-    const magic = ascii(await reader.read(0, 4), 0, 3);
-    if (reader.size !== video.bytes || !["BIK", "KB2"].includes(magic)) {
+    if (reader.size !== video.bytes) {
       throw new Error(`${video.name}: prepared Bink payload failed validation`);
     }
+    Object.assign(video, parseBinkHeader(await reader.read(0, 44), reader.size, video.name));
   }
   return { archives, videos };
 }

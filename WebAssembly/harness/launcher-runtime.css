@@ -104,6 +104,32 @@ body {
   position: absolute;
 }
 
+.binkPreparationOverlay {
+  position: absolute;
+  z-index: 8;
+  left: 50%;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  width: min(440px, calc(100% - 32px));
+  padding: 14px 16px;
+  transform: translateX(-50%);
+  color: #eef6f3;
+  border: 1px solid rgba(225, 185, 91, .55);
+  border-radius: 5px;
+  background: rgba(10, 24, 27, .94);
+  box-shadow: 0 12px 35px rgba(0, 0, 0, .55);
+  pointer-events: auto;
+}
+
+.binkPreparationOverlay[hidden] { display: none; }
+.binkPreparationOverlay > div:first-child { display: flex; justify-content: space-between; gap: 12px; }
+.binkPreparationOverlay strong { color: #e5c36c; font-size: 12px; letter-spacing: .04em; }
+.binkPreparationOverlay > div:first-child span { overflow: hidden; color: #a9bab7; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.binkPreparationOverlay p { margin: 8px 72px 0 0; color: #b5c3c1; font-size: 10px; }
+.binkPreparationOverlay button { position: absolute; right: 16px; bottom: 11px; padding: 5px 9px; color: #e6ca83; border: 1px solid #806d3d; border-radius: 3px; background: #263336; cursor: pointer; }
+.binkPreparationOverlay button:disabled { opacity: .55; cursor: wait; }
+.binkPreparationProgress { height: 4px; margin-top: 10px; overflow: hidden; background: #304043; }
+.binkPreparationProgress span { display: block; width: 0; height: 100%; background: linear-gradient(90deg, #b58138, #efd77e); transition: width .18s linear; }
+
 #consolePanel {
   z-index: 22010;
 }

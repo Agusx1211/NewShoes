@@ -23,6 +23,9 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "assets/zeroh-command-desert.webp",
   "assets/zeroh-red-moon-front-1440p.webp",
   "assets/zeroh-red-moon-front-swatch.webp",
+  "bink_decode_worker.mjs",
+  "bink_decoder.mjs",
+  "bink_direct_runtime.mjs",
   "bink_runtime.mjs",
   "bridge.js",
   "camera-zoom-config.mjs",
@@ -75,6 +78,12 @@ export const PAGES_RUNTIME_FILES = Object.freeze([
   "cnc-port.worker.js",
 ]);
 
+export const PAGES_VIDEO_RUNTIME_FILES = Object.freeze([
+  "video-runtime/bink-decoder.wasm",
+  "video-runtime/bink-decoder-manifest.json",
+  "video-runtime/bink-decoder-SOURCE.txt",
+]);
+
 export const PAGES_ROOT_LAUNCHER_FILES = Object.freeze([
   "launcher.html",
   "manifest.webmanifest",
@@ -89,4 +98,5 @@ export const PAGES_OUTPUT_FILES = Object.freeze([
   "harness/build-info.json",
   "harness/play.html",
   ...PAGES_RUNTIME_FILES.map((name) => `dist-threaded-release/${name}`),
+  ...PAGES_VIDEO_RUNTIME_FILES,
 ].sort());

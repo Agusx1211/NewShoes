@@ -72,9 +72,12 @@ Miles-compatible calls schedule Web Audio buffers, streams, mixer buses, and
 3D panners. Coverage exists for engine-driven music, speech, and 2D/3D samples;
 natural gameplay coverage and mixing polish remain active work.
 
-Bink metadata and presentation paths are ported, with browser-decodable sidecar
-fixtures used by focused tests. Full game movie playback and audio sync are not
-complete.
+Bink metadata and presentation stay in the original engine path. Local builds
+can use prebuilt browser sidecars; hosted builds lazily convert selected
+user-owned Bink files on-device to VP8 video plus PCM audio, cache the results
+in OPFS, and feed decoded frames back through the original W3D video surface.
+Broader campaign coverage, format handling, and audio-sync polish remain active
+work.
 
 The original UDP and lockstep packet paths are retained behind a browser
 transport adapter. Dedicated WebRTC data channels carry game packets, while
@@ -141,7 +144,7 @@ Ongoing product areas include:
 
 - complete campaign, challenge, save/load, and win/loss flows;
 - remaining shader, animation, terrain, effect, and UI fidelity;
-- complete natural gameplay audio and movie playback;
+- broader natural gameplay audio, campaign-movie, and movie-sync coverage;
 - long multiplayer determinism, reconnect, and authenticated invitations;
 - memory, performance, context-loss, and crash recovery work;
 - Chrome hardening plus Firefox and Safari support; and

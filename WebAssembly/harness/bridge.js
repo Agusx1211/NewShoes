@@ -1,5 +1,13 @@
 import { createD3D8Executor } from "./d3d8_executor.mjs";
-import { createBinkVideoRuntime } from "./bink_runtime.mjs";
+import {
+  BINK_VIDEO_MANIFEST_URL,
+  binkVideoPolicy,
+  buildPreparedBinkManifest,
+  createBinkVideoRuntime,
+  loadBinkVideoManifest,
+} from "./bink_runtime.mjs";
+import { createBinkDecoderSourceRegistry } from "./bink_decoder.mjs";
+import { createBinkDirectVideoRuntime } from "./bink_direct_runtime.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
 import { createSavePersistenceCoordinator } from "./save-persistence-coordinator.mjs";
@@ -943,6 +951,7 @@ function createThreadedEngineController() {
   let lastLoopError = null;
   let mssHandlers = null;
   let binkRuntime = null;
+  let binkSources = null;
 
   function threadedLog(message, data) {
     recordLog(`threaded ${message}`, data);
@@ -997,14 +1006,45 @@ function createThreadedEngineController() {
 
   function binkVideoRuntime() {
     if (!binkRuntime) {
-      binkRuntime = createBinkVideoRuntime({
+      const common = {
         log: (message, data) => threadedLog(message, data),
+        onPreparation: (detail) => publishBinkPreparation(detail),
         sendFrame: ({ handle, frameNum, width, height, bytes }) => {
           sendPortCommand({ cmd: "binkFrame", handle, frameNum, width, height, bytes }, [bytes.buffer]);
         },
-      });
+      };
+      binkRuntime = binkVideoPolicy() === "direct"
+        ? createBinkDirectVideoRuntime({
+          ...common,
+          resolveSource: (payload, options) => binkSourceRegistry().sourceFor(payload, options),
+          audioContext: () => ensureBrowserAudioRuntimeContext("bink-direct-playback"),
+        })
+        : createBinkVideoRuntime(common);
     }
     return binkRuntime;
+  }
+
+  function publishBinkPreparation(detail) {
+    try {
+      window.dispatchEvent(new CustomEvent("cncport:binkprepare", { detail }));
+    } catch { /* DOM event support is optional in focused harnesses */ }
+  }
+
+  function binkSourceRegistry() {
+    if (!binkSources) {
+      binkSources = createBinkDecoderSourceRegistry({
+        log: (message, data) => threadedLog(message, data),
+      });
+    }
+    return binkSources;
+  }
+
+  function registerBinkSources(sources) {
+    binkSourceRegistry().registerSources(sources);
+  }
+
+  function cancelBinkPreparation() {
+    return binkRuntime?.cancelActive?.() === true;
   }
 
   function handleBinkMessage(msg) {
@@ -1483,6 +1523,7 @@ function createThreadedEngineController() {
     cncPortMssCacheDropNotifier = null;
     binkRuntime?.shutdown();
     binkRuntime = null;
+    binkSources = null;
     inputOutbox.length = 0;
     for (const [, entry] of pending) {
       if (entry.timer) clearTimeout(entry.timer);
@@ -1609,6 +1650,8 @@ function createThreadedEngineController() {
     forwardInput,
     sendCommand,
     postCommand,
+    registerBinkSources,
+    cancelBinkPreparation,
     get lastStatus() { return lastStatus; },
     get lastLoopError() { return lastLoopError; },
     get engineThreadStarted() { return engineThreadStarted; },
@@ -10705,18 +10748,11 @@ async function registerOpfsInterceptPrefix(prefix) {
   return { ok: true };
 }
 
-const BINK_MANIFEST_URL = new URL(
-  "../artifacts/browser-video/bink/bink-browser-video-manifest.json",
-  import.meta.url,
-).href;
-
-async function binkRuntimeFiles() {
-  const response = await fetch(BINK_MANIFEST_URL, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Bink video manifest fetch failed (${response.status})`);
-  const manifest = await response.json();
-  if (manifest?.ok !== true || !Array.isArray(manifest.payloads) || manifest.payloads.length === 0) {
-    throw new Error("Bink video manifest is incomplete");
-  }
+async function binkRuntimeFiles(preparedVideos = []) {
+  const policy = binkVideoPolicy();
+  const manifest = policy === "direct"
+    ? buildPreparedBinkManifest(preparedVideos)
+    : await loadBinkVideoManifest({ policy });
   const files = manifest.payloads.map((payload) => {
     const sourceFile = String(payload?.sourceFile ?? "");
     if (!/^[A-Za-z0-9_.-]+\.bik$/i.test(sourceFile)) {
@@ -10725,7 +10761,8 @@ async function binkRuntimeFiles() {
     return {
       name: sourceFile,
       sourceFile,
-      url: new URL(`../artifacts/real-assets/${encodeURIComponent(sourceFile)}`, import.meta.url).href,
+      url: policy === "direct" ? null
+        : new URL(`../artifacts/real-assets/${encodeURIComponent(sourceFile)}`, import.meta.url).href,
       // The original BinkVideoPlayer always appends the lowercase VIDEO_EXT
       // ("bik"). Win32 was case-insensitive even when the cabinet entry was
       // named EA_LOGO.BIK; the OPFS path map must preserve that behavior.
@@ -10741,16 +10778,30 @@ async function binkRuntimeFiles() {
   }
   files.push({
     name: "bink-browser-video-manifest.json",
-    url: BINK_MANIFEST_URL,
+    url: policy === "direct" ? null : BINK_VIDEO_MANIFEST_URL,
+    content: policy === "direct" ? `${JSON.stringify(manifest, null, 2)}\n` : null,
     enginePath: "artifacts/browser-video/bink/bink-browser-video-manifest.json",
   });
-  return { files, manifest };
+  return { files, manifest, policy };
 }
 
 async function stageBinkRuntimeFiles(
   wasmModule, namespace, baseDirectory, stageMap, preparedVideos = [],
 ) {
-  const runtime = await binkRuntimeFiles();
+  let runtime;
+  try {
+    runtime = await binkRuntimeFiles(preparedVideos);
+  } catch (error) {
+    const reason = error?.message ?? String(error);
+    harnessState.binkVideoAssets = {
+      ready: false,
+      unavailable: true,
+      reason,
+      files: [],
+    };
+    recordLog("Bink runtime files unavailable; continuing without optional movies", { reason });
+    return [];
+  }
   const files = [];
   const stagedSources = new Map();
   const preparedByName = new Map(preparedVideos.map((video) =>
@@ -10797,7 +10848,19 @@ async function stageBinkRuntimeFiles(
         });
         continue;
       }
-      const { bytesWritten } = await fetchArchiveToOpfsOffThread(file.url, opfsPath);
+      if (file.sourceFile && !file.url) {
+        throw new Error(`Selected movie source is unavailable: ${file.sourceFile}`);
+      }
+      let sourceUrl = file.url;
+      if (file.content != null) {
+        sourceUrl = URL.createObjectURL(new Blob([file.content], { type: "application/json" }));
+      }
+      let bytesWritten;
+      try {
+        ({ bytesWritten } = await fetchArchiveToOpfsOffThread(sourceUrl, opfsPath));
+      } finally {
+        if (file.content != null) URL.revokeObjectURL(sourceUrl);
+      }
       ensureMemfsDirectory(wasmModule.fs, parentDirectory(enginePath));
       wasmModule.fs.writeFile(enginePath, new Uint8Array(0));
       stageMap[enginePath] = opfsPath;
@@ -10818,9 +10881,13 @@ async function stageBinkRuntimeFiles(
   }
   harnessState.binkVideoAssets = {
     ready: files.every((file) => file.ok),
+    mode: runtime.policy,
     payloadCount: runtime.manifest.payloads.length,
     files,
   };
+  if (runtime.policy === "direct" && harnessState.binkVideoAssets.ready) {
+    threadedEngine?.registerBinkSources(preparedVideos);
+  }
   recordLog("Bink runtime files staged", {
     ready: harnessState.binkVideoAssets.ready,
     files: files.map((file) => ({ name: file.name, ok: file.ok, bytes: file.bytes })),
@@ -11128,7 +11195,19 @@ async function mountPreparedArchives(payload = {}) {
     if (!Number.isSafeInteger(bytes) || bytes <= 48) {
       return { ok: false, command: "mountPreparedArchives", error: `Invalid prepared video size: ${name}` };
     }
-    preparedVideos.push({ name, opfsPath, bytes });
+    preparedVideos.push({
+      name,
+      opfsPath,
+      bytes,
+      signature: String(input?.signature ?? ""),
+      headerHex: String(input?.headerHex ?? ""),
+      frames: Number(input?.frames),
+      width: Number(input?.width),
+      height: Number(input?.height),
+      fpsNum: Number(input?.fpsNum),
+      fpsDen: Number(input?.fpsDen),
+      audioTracks: Number(input?.audioTracks ?? 0),
+    });
   }
 
   if (payload.includeVideos === true) {
@@ -23251,6 +23330,7 @@ window.CnCPort = {
   persistScheduledSaves: persistScheduledSaveFilesystem,
   persistFinalSaves: persistFinalSaveFilesystem,
   stopSavePersistenceScheduling,
+  cancelBinkPreparation: () => threadedEngine?.cancelBinkPreparation() === true,
   listSaves: listSaveFiles,
   listReplays: () => replayFileStore.list(),
   readReplay: (name) => replayFileStore.read(name),

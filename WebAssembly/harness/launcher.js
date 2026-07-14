@@ -1,4 +1,5 @@
 import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
+import { probeBinkVideoSupport } from "./bink_runtime.mjs";
 
 (() => {
   "use strict";
@@ -75,6 +76,12 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     source: null,
     storageMode: "once",
     includeVideos: false,
+    videoSupport: {
+      available: false,
+      checking: true,
+      payloadCount: 0,
+      reason: "Checking video playback support…",
+    },
     launching: false,
     preparingLibrary: false,
     library: readStoredLibrary(),
@@ -91,6 +98,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
   let lastStorageBuckets = "";
   let installStartedAt = 0;
   let installProgressMilestones = new Set();
+  let videoSupportReady = null;
 
   function readStoredLibrary() {
     try { return JSON.parse(storageGet("zeroh-library") || storageGet("fielddesk-library")) || null; }
@@ -253,18 +261,53 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
   function syncVideoOptionUI() {
     const input = document.querySelector("#includeVideosToggle");
     if (!input) return;
-    input.checked = state.includeVideos;
-    document.querySelector("#includeVideosChoice")?.classList.toggle("is-selected", input.checked);
+    const choice = document.querySelector("#includeVideosChoice");
+    const description = document.querySelector("#includeVideosDescription");
+    const tooltip = document.querySelector("#includeVideosTooltip");
+    const available = state.videoSupport.available === true;
+    if (!available) state.includeVideos = false;
+    input.checked = available && state.includeVideos;
+    input.disabled = state.videoSupport.checking === true || !available || state.preparingLibrary;
+    choice?.classList.toggle("is-selected", input.checked);
+    choice?.classList.toggle("is-disabled", input.disabled);
+    if (state.videoSupport.checking) {
+      if (description) description.textContent = "Checking video playback support…";
+      if (tooltip) tooltip.textContent = "Checking whether this build has the browser-compatible video runtime.";
+    } else if (available) {
+      if (description) description.textContent = state.videoSupport.mode === "direct"
+        ? "Play original movies directly on this device."
+        : "Install and play the EA intro and in-game cinematics.";
+      if (tooltip) {
+        tooltip.textContent = state.videoSupport.mode === "direct"
+          ? "The original Bink files stay on this device and are decoded as they play. Nothing is converted, cached, or uploaded; the tiny decoder downloads only when a movie is opened."
+          : "The English retail movie set uses about 0.9 GB extra: roughly 0.59 GB of original Bink files plus 0.29 GB of browser-compatible copies. Preparation also takes longer. Leave this off for the smallest, fastest installation; you can reinstall later to add them.";
+      }
+    } else {
+      if (description) description.textContent = "Unavailable in this build; the game still launches normally.";
+      if (tooltip) tooltip.textContent = state.videoSupport.reason;
+    }
     updateInstallSizeEstimate();
+  }
+
+  async function resolveVideoSupport() {
+    const support = await probeBinkVideoSupport();
+    state.videoSupport = { ...support, checking: false };
+    syncVideoOptionUI();
+    updateLibraryUI();
+    window.dispatchEvent(new CustomEvent("zeroh:video-support", {
+      detail: { ...state.videoSupport },
+    }));
+    return state.videoSupport;
   }
 
   function updateInstallSizeEstimate() {
     const scan = state.source?.scan;
     if (!scan) return;
-    // The supplied English corpus produces browser sidecars at ~49% of the
-    // source BIK size (305,435,862 / 618,084,532 bytes). Round to 1.5x so the
-    // install estimate covers both copies without promising byte precision.
-    const videoInstallBytes = Math.ceil(Number(scan.videoBytes ?? 0) * 1.5);
+    // Hosted builds decode the original Bink sources directly, with no
+    // browser-media copies added to the installed library.
+    const sidecarsIncludedAtInstall = state.videoSupport.mode !== "direct";
+    const videoMultiplier = sidecarsIncludedAtInstall ? 1.5 : 1;
+    const videoInstallBytes = Math.ceil(Number(scan.videoBytes ?? 0) * videoMultiplier);
     const bytes = scan.totalBytes + (state.includeVideos ? videoInstallBytes : 0);
     const videoSuffix = state.includeVideos && scan.videoCount
       ? ` · ${scan.videoCount} videos` : "";
@@ -805,6 +848,10 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     track("install_progress", { milestone: "start", mode: requestedMode });
     setLibraryPreparationState(true, requestedMode);
     try {
+      const videoSupport = await videoSupportReady;
+      if (state.includeVideos && videoSupport.available !== true) {
+        throw new Error(videoSupport.reason || "Original-video playback is unavailable in this build");
+      }
       window.ZeroHAssetLibrary.includeVideos = state.includeVideos;
       const result = await window.ZeroHAssetLibrary.prepare(
         requestedMode, updateLibraryPreparationProgress);
@@ -818,7 +865,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
         mode: state.storageMode,
         preparedAt: Date.now(),
         totalBytes,
-        includeVideos: state.includeVideos,
+        includeVideos: (result.videos?.length ?? 0) > 0,
         presentationKey: window.ZeroHAssetLibrary.presentationKey(result.archives),
       };
       const metadataStored = persistLibrary();
@@ -856,8 +903,15 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     };
     const labels = labelsByMode[mode];
     document.querySelector("#readyStorageLabel").textContent = labels.ready;
+    const videoStatus = state.library?.includeVideos
+      ? state.videoSupport.checking
+        ? " with original videos"
+        : state.videoSupport.available
+          ? " with original videos"
+          : " with original videos installed, but playback unavailable in this build"
+      : " without optional videos";
     document.querySelector("#readyMessage").textContent = state.library
-      ? `Zero Hour is ${mode === "install" ? "installed and ready without the original media" : "available from your selected source"}${state.library.includeVideos ? " with original videos" : " without optional videos"}.`
+      ? `Zero Hour is ${mode === "install" ? "installed and ready without the original media" : "available from your selected source"}${videoStatus}.`
       : "Add the original Generals and Zero Hour media to begin.";
     document.querySelectorAll(".library-state-label").forEach((label) => {
       label.textContent = state.library ? labels.state : "Original files required";
@@ -919,7 +973,14 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     mount.classList.remove("is-done");
     engine.classList.remove("is-done");
     try {
-      window.ZeroHAssetLibrary.includeVideos = state.library.includeVideos === true;
+      const videoSupport = await videoSupportReady;
+      const includeVideos = state.library.includeVideos === true && videoSupport.available === true;
+      if (state.library.includeVideos === true && !includeVideos) {
+        showToast("Optional videos unavailable",
+          `${videoSupport.reason || "This build has no browser-compatible movie runtime"} Zero Hour will launch without movies.`,
+          "warning");
+      }
+      window.ZeroHAssetLibrary.includeVideos = includeVideos;
       if (state.library.mode === "remember" && !window.ZeroHAssetLibrary.preparedArchives) {
         status.textContent = "Restoring permission to your original files…";
         const scan = await window.ZeroHAssetLibrary.restoreRemembered({ requestPermission: true });
@@ -933,6 +994,9 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
         status.textContent = `Staging ${progress.detail}…`;
         fill.style.width = `${Math.min(34, Math.round((progress.completed / progress.total) * 34))}%`;
       });
+      // archivesForLaunch restores the installed library's saved preference;
+      // reapply this build's capability decision before play.mjs reads it.
+      window.ZeroHAssetLibrary.includeVideos = includeVideos;
       mount.textContent = "◌ Mount";
       runtimeLaunchRequested = true;
       await window.ZeroHRuntime.launch();
@@ -1115,6 +1179,13 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     track("storage_mode_selected", { mode: state.storageMode });
   }));
   document.querySelector("#includeVideosToggle").addEventListener("change", (event) => {
+    if (state.videoSupport.available !== true) {
+      event.currentTarget.checked = false;
+      state.includeVideos = false;
+      syncVideoOptionUI();
+      showToast("Optional videos unavailable", state.videoSupport.reason, "warning");
+      return;
+    }
     state.includeVideos = event.currentTarget.checked;
     syncVideoOptionUI();
     track("setting_changed", {
@@ -1245,6 +1316,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
   updateLibraryUI();
   syncStorageModeUI();
   syncVideoOptionUI();
+  videoSupportReady = resolveVideoSupport();
   void refreshStorageUI();
   setRememberAvailability(typeof window.showOpenFilePicker === "function"
     || typeof window.showDirectoryPicker === "function");
@@ -1312,5 +1384,6 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     requestShutdown: () => document.querySelector("#endSessionButton").click(),
     showToast,
     get preparingLibrary() { return state.preparingLibrary; },
+    get videoSupport() { return { ...state.videoSupport }; },
   };
 })();
