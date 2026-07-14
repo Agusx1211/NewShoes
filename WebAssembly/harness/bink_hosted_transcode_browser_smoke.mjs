@@ -7,6 +7,11 @@ const siteRoot = resolve(process.argv[2] || "pages-dist");
 const sourcePath = resolve(process.argv[3] || "artifacts/real-assets/EA_LOGO640.BIK");
 const screenshotPath = process.env.BINK_HOSTED_TRANSCODE_SCREENSHOT
   ? resolve(process.env.BINK_HOSTED_TRANSCODE_SCREENSHOT) : null;
+const browserArgs = JSON.parse(process.env.BINK_HOSTED_BROWSER_ARGS || "[]");
+if (!Array.isArray(browserArgs) || !browserArgs.every((arg) => typeof arg === "string")) {
+  throw new Error("BINK_HOSTED_BROWSER_ARGS must be a JSON array of Chromium arguments");
+}
+const expectedRenderer = String(process.env.BINK_HOSTED_EXPECT_RENDERER || "").trim();
 const sourceName = basename(sourcePath);
 const sourceBytes = await readFile(sourcePath);
 if (!(await stat(siteRoot)).isDirectory() || sourceBytes.byteLength <= 44) {
@@ -15,7 +20,7 @@ if (!(await stat(siteRoot)).isDirectory() || sourceBytes.byteLength <= 44) {
 if (screenshotPath) await mkdir(resolve(screenshotPath, ".."), { recursive: true });
 
 const server = await startStaticServer({ root: siteRoot });
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, args: browserArgs });
 const context = await browser.newContext();
 const page = await context.newPage({ viewport: { width: 900, height: 720 } });
 const errors = [];
@@ -32,6 +37,12 @@ await page.route("**/__hosted_bink_source", (route) => route.fulfill({
 try {
   await page.goto(new URL("legal.html", server.url).href, { waitUntil: "domcontentloaded" });
   const result = await page.evaluate(async ({ sourceName }) => {
+    const rendererCanvas = document.createElement("canvas");
+    const gl = rendererCanvas.getContext("webgl2");
+    const rendererExtension = gl?.getExtension("WEBGL_debug_renderer_info");
+    const renderer = rendererExtension
+      ? gl.getParameter(rendererExtension.UNMASKED_RENDERER_WEBGL)
+      : gl?.getParameter(gl.RENDERER) ?? null;
     const module = await import("./harness/bink_transcoder.mjs");
     const runtimeModule = await import("./harness/bink_runtime.mjs");
     const sourceResponse = await fetch("/__hosted_bink_source");
@@ -205,6 +216,7 @@ try {
       if (handle.kind === "file") cacheFiles.push(name);
     }
     const result = {
+      renderer,
       header,
       cancellation,
       firstCached: first.cached,
@@ -229,7 +241,8 @@ try {
   }, { sourceName });
 
   const durationDelta = Math.abs(result.video.duration - result.header.durationSeconds);
-  if (result.cancellation?.name !== "AbortError"
+  if ((expectedRenderer && !result.renderer?.toLowerCase().includes(expectedRenderer.toLowerCase()))
+      || result.cancellation?.name !== "AbortError"
       || result.firstCached !== false || result.runtimeCached !== true
       || result.runtimeReady?.phase !== "ready"
       || result.runtimeFrame?.width !== result.header.width
